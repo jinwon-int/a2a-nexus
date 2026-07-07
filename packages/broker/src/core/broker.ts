@@ -119,12 +119,9 @@ import {
   normalizeTaskPolicyContext,
   PolicyError,
 } from "./policy.js";
-import {
-  deriveTaskWorkerClass,
-  evaluateTaskPolicy,
-  type BrokerPolicyDecision,
-  type BrokerPolicyDocument,
-} from "./broker-policy.js";
+import type { BrokerPolicyDocument } from "./broker-policy.js";
+import * as taskAdmission from "./broker-task-admission.js";
+import type { TaskAdmissionContext } from "./broker-task-admission.js";
 import {
   CURRENT_BROKER_STATE_VERSION,
   type BrokerSnapshot,
@@ -134,7 +131,6 @@ import {
 import { validateGithubTaskCompletionEvidence } from "./github-task-completion.js";
 import { validateReviewEvidence } from "../worker-review.js";
 import {
-  evaluateTaskReadiness,
   normalizeTaskReadinessMode,
   type TaskReadinessMode,
 } from "../task-readiness.js";
@@ -157,14 +153,10 @@ import { normalizeA2ARoundTaskRequest } from "./a2a-round-policy.js";
 import {
   assertWorkerRegistrationPayload,
   assertProposalPayload,
-  assertA2ARoundTaskPolicy,
-  assertWorkModeDecisionEvidence,
-  assertTerminalBriefMetadata,
 } from "./broker-payload-validators.js";
 import {
   assertTransition,
   assertTaskStatus,
-  assertTaskOwnership,
   assertTaskCreationOwnership,
 } from "./broker-transition-guards.js";
 import { readExchange, readExchanges } from "./broker-exchange-read.js";
@@ -303,7 +295,6 @@ const TASK_INTERRUPT_DECISION_TYPES: readonly TaskInterruptDecisionType[] = [
 
 const DEFAULT_CHECKPOINT_TIMEOUT_MS = 24 * 60 * 60 * 1000;
 
-const DEFAULT_A2A_ROUND_WORKER_OFFLINE_AFTER_MS = 90_000;
 
 function uniqueTaskErrorHistory(history: TaskError[] | undefined, error: TaskError): TaskError[] {
   const values = [...(history ?? []), error];
@@ -2728,245 +2719,51 @@ export class InMemoryA2ABroker {
     this.setExchangeRecord(exchange);
   }
 
-  private assertTaskPayload(request: CreateTaskRequest): void {
-    if (!request.requester?.id || !request.target?.id) {
-      throw new BrokerError("bad_request", "requester.id and target.id are required");
-    }
-    if (!request.intent) {
-      throw new BrokerError("bad_request", "intent is required");
-    }
-    if (request.workspace) {
-      const workspace = request.workspace as { nodeId?: unknown; workspaceId?: unknown };
-      if (
-        typeof workspace.nodeId !== "string" ||
-        !workspace.nodeId.trim() ||
-        typeof workspace.workspaceId !== "string" ||
-        !workspace.workspaceId.trim()
-      ) {
-        throw new BrokerError(
-          "bad_request",
-          "workspace.nodeId and workspace.workspaceId are required",
-        );
-      }
-      if (workspace.nodeId !== request.target.id) {
-        throw new BrokerError(
-          "policy_denied",
-          "task workspace.nodeId must match the target worker node",
-        );
-      }
-    }
-    if (request.assignedWorkerId && !request.assignedWorkerId.trim()) {
-      throw new BrokerError("bad_request", "assignedWorkerId must not be empty");
-    }
+  // Task admission gates (#1289 L-broker-9): the create/claim-time checks
+  // moved to broker-task-admission.ts with callback-injected state effects.
+  // These thin delegators keep every call site unchanged.
+  private taskAdmissionContext(): TaskAdmissionContext {
+    return {
+      brokerId: this.brokerId,
+      teamId: this.teamId,
+      taskReadinessMode: this.taskReadinessMode,
+      policyDocument: this.policyDocument,
+      tasks: this.tasks,
+      getWorker: (nodeId) => this.getWorker(nodeId),
+      getWorkerView: (nodeId, offlineAfterMs) => this.getWorkerView(nodeId, offlineAfterMs),
+      requireWorker: (nodeId) => this.requireWorker(nodeId),
+      requireProposal: (id) => this.requireProposal(id),
+      appendAuditEvent: (input) => this.appendAuditEvent(input),
+      persistState: () => this.persistState(),
+    };
+  }
 
-    // Fail-closed Terminal Brief metadata validation (R15).
-    // When the task payload carries parentRoundId (or a recognised alias), the
-    // canonical dispatch metadata must be present and internally consistent.
-    // This prevents silently creating tasks that would later fail at projection
-    // ingestion due to missing/inconsistent round metadata.
-    assertA2ARoundTaskPolicy(request, this.brokerId);
-    assertWorkModeDecisionEvidence(request);
-    assertTerminalBriefMetadata(request.payload, this.brokerId);
+  private assertTaskPayload(request: CreateTaskRequest): void {
+    taskAdmission.assertTaskPayload(request, this.taskAdmissionContext());
   }
 
   private assertTaskReadiness(request: CreateTaskRequest): void {
-    const result = evaluateTaskReadiness(request.payload, {
-      intent: request.intent,
-      mode: this.taskReadinessMode,
-    });
-    if (result.ok || !result.applies) {
-      return;
-    }
-
-    const details = {
-      missing: result.missing,
-      mode: result.mode,
-      taskId: request.id,
-      intent: request.intent,
-      ...(result.details ?? {}),
-    };
-    const code = result.code ?? "spec_underspecified";
-    if (result.mode === "warn") {
-      console.warn(`[a2a-broker] task readiness ${code}`, details);
-      return;
-    }
-
-    const message = code === "source_projection_empty"
-      ? "source-only analysis task has no source files; refusing zero_files projection at dispatch"
-      : `task readiness specification is underspecified: missing ${result.missing.join(", ")}`;
-    throw new BrokerError(code, message, details);
+    taskAdmission.assertTaskReadiness(request, this.taskAdmissionContext());
   }
 
-  /**
-   * Anonymous worker class for policy matching (#1355). Mirrors the
-   * /stats/tasks derivation via the shared deriveTaskWorkerClass so budgets
-   * and stats count the same classes.
-   */
-  private workerClassForPolicy(payload: TaskRecord["payload"] | undefined, workerId: string | undefined): string {
-    const worker = workerId ? this.getWorker(workerId) : null;
-    return deriveTaskWorkerClass({
-      sourceOnly: payload?.sourceOnly === true,
-      payloadMode: typeof payload?.mode === "string" ? payload.mode : undefined,
-      workerFound: Boolean(worker),
-      workerMode: worker?.workerMode,
-    });
+  private evaluateCreateTaskPolicy(request: CreateTaskRequest) {
+    return taskAdmission.evaluateCreateTaskPolicy(request, this.taskAdmissionContext());
   }
 
-  private countTasksCreatedTodayInClass(workerClass: string): number {
-    const utcDay = isoNow().slice(0, 10);
-    let count = 0;
-    for (const task of this.tasks.values()) {
-      if (!task.createdAt?.startsWith(utcDay)) continue;
-      if (this.workerClassForPolicy(task.payload, task.assignedWorkerId ?? task.targetNodeId) === workerClass) {
-        count += 1;
-      }
-    }
-    return count;
-  }
-
-  /**
-   * Create-time policy evaluation (#1355 G1-b). Returns the decision for the
-   * caller to fold into task creation, or undefined when no policy document is
-   * configured (legacy behavior — everything allowed). An enforce-mode deny
-   * throws policy_denied after recording audit evidence.
-   */
-  private evaluateCreateTaskPolicy(request: CreateTaskRequest): BrokerPolicyDecision | undefined {
-    const doc = this.policyDocument;
-    if (!doc) return undefined;
-    const workerClass = this.workerClassForPolicy(request.payload, request.assignedWorkerId ?? request.target.id);
-    const decision = evaluateTaskPolicy({
-      intent: request.intent,
-      mode: typeof request.payload?.mode === "string" ? request.payload.mode : undefined,
-      workerClass,
-      countTasksToday: () => this.countTasksCreatedTodayInClass(workerClass),
-    }, doc);
-    if (decision.action === "deny") {
-      if (doc.mode === "enforce") {
-        this.appendAuditEvent({
-          actorId: request.requester.id,
-          action: "task.policy_denied",
-          targetType: "task",
-          targetId: request.id ?? "unassigned",
-          note: `rule ${decision.ruleId}: ${decision.reason}`,
-        });
-        this.persistState();
-        throw new BrokerError("policy_denied", decision.reason, { ruleId: decision.ruleId, workerClass });
-      }
-      console.warn(`[a2a-broker] task policy deny (warn mode, rule ${decision.ruleId})`, {
-        reason: decision.reason,
-        intent: request.intent,
-        workerClass,
-      });
-    }
-    return decision;
-  }
-
-  /**
-   * Claim-time policy re-evaluation (#1355 G1-b): the CLAIMING worker's class
-   * may differ from the create-time target's, so class-match rules are checked
-   * again. Budgets are create-time only, and an operator approval already on
-   * the task satisfies a require_approval rule.
-   */
   private assertClaimTaskPolicy(task: TaskRecord, workerId: string): void {
-    const doc = this.policyDocument;
-    if (!doc) return;
-    const workerClass = this.workerClassForPolicy(task.payload, workerId);
-    const decision = evaluateTaskPolicy({
-      intent: task.intent,
-      mode: typeof task.payload?.mode === "string" ? task.payload.mode : undefined,
-      workerClass,
-    }, doc);
-    if (decision.action === "allow") return;
-    if (decision.action === "require_approval" && task.approval) return;
-    const note = `rule ${decision.ruleId}: ${decision.reason}`;
-    if (doc.mode === "enforce") {
-      this.appendAuditEvent({
-        actorId: workerId,
-        action: "task.policy_denied",
-        targetType: "task",
-        targetId: task.id,
-        note,
-      });
-      this.persistState();
-      throw new BrokerError("policy_denied", decision.reason, { ruleId: decision.ruleId, workerClass });
-    }
-    console.warn(`[a2a-broker] task policy claim violation (warn mode)`, { note, taskId: task.id, workerClass });
-    this.appendAuditEvent({
-      actorId: workerId,
-      action: "task.policy_warned",
-      targetType: "task",
-      targetId: task.id,
-      note,
-    });
+    taskAdmission.assertClaimTaskPolicy(task, workerId, this.taskAdmissionContext());
   }
 
   private assertA2ARoundWorkerAvailability(request: CreateTaskRequest): void {
-    if (!request.payload || request.payload["parentRoundResolution"] === undefined) {
-      return;
-    }
-    const workerIds = [request.target?.id, request.assignedWorkerId].filter(
-      (value, index, values): value is string => typeof value === "string" && value.trim().length > 0 && values.indexOf(value) === index,
-    );
-    for (const workerId of workerIds) {
-      const view = this.getWorkerView(workerId, DEFAULT_A2A_ROUND_WORKER_OFFLINE_AFTER_MS);
-      if (!view) {
-        throw new BrokerError("not_found", "worker not found");
-      }
-      if (view.status === "stale") {
-        throw new BrokerError(
-          "bad_request",
-          `A2A round worker availability validation failed: stale worker ${workerId}`,
-        );
-      }
-    }
+    taskAdmission.assertA2ARoundWorkerAvailability(request, this.taskAdmissionContext());
   }
 
   private assertTaskProposalLink(request: CreateTaskRequest): void {
-    if (!request.proposalId) {
-      return;
-    }
-
-    const proposal = this.requireProposal(request.proposalId);
-    if (request.target.id !== proposal.targetNodeId) {
-      throw new BrokerError(
-        "policy_denied",
-        "task target must match the proposal target node",
-      );
-    }
-
-    if (request.intent === "validate_change") {
-      assertTransition(proposal.status, ["submitted", "validated"], "queue validation task for");
-      return;
-    }
-
-    if (request.intent === "apply_local_change") {
-      assertTransition(proposal.status, ["approved"], "queue apply task for");
-      if (!request.workspace?.workspaceId || request.workspace.nodeId !== proposal.targetNodeId) {
-        throw new BrokerError(
-          "bad_request",
-          "apply tasks require a target-owned workspace",
-        );
-      }
-    }
+    taskAdmission.assertTaskProposalLink(request, this.taskAdmissionContext());
   }
 
   private assertTaskWorker(task: TaskRecord, workerId: string, action: string): void {
-    assertTaskOwnership(task, action, this.brokerId, this.teamId);
-    this.requireWorker(workerId);
-    const expectedWorkerId = task.assignedWorkerId ?? task.targetNodeId;
-    if (workerId !== expectedWorkerId) {
-      throw new BrokerError(
-        "policy_denied",
-        `${action} requires the assigned worker`,
-      );
-    }
-
-    if (task.claimedBy && task.claimedBy !== workerId) {
-      throw new BrokerError(
-        "policy_denied",
-        `${action} requires the worker that claimed the task`,
-      );
-    }
+    taskAdmission.assertTaskWorker(task, workerId, action, this.taskAdmissionContext());
   }
 
   /**
