@@ -882,6 +882,18 @@ export function createBrokerServer(options: BrokerServerOptions = {}): BrokerSer
     }
   };
 
+  // Graceful drain (#1405): while draining, every response carries
+  // `Connection: close` so keep-alive sockets end cleanly after their in-flight
+  // response, and the two NEW-WORK routes (task poll + claim) are refused with
+  // 503 broker_draining + Retry-After. Submission/lifecycle routes keep working
+  // so in-flight worker results land before the process exits.
+  let draining = false;
+  const drainRetryAfterSec = 2;
+  const isDrainRefusedRoute = (method: string | undefined, path: string, segments: string[]): boolean => {
+    if (method === "GET" && path === "/tasks") return true;
+    return method === "POST" && segments.length === 3 && segments[0] === "tasks" && segments[2] === "claim";
+  };
+
   const handler: RequestListener<typeof IncomingMessage, typeof ServerResponse> = async (req, res) => {
     const url = new URL(req.url ?? "/", `http://${req.headers.host ?? "localhost"}`);
     const path = url.pathname;
@@ -918,6 +930,19 @@ export function createBrokerServer(options: BrokerServerOptions = {}): BrokerSer
         }
       }
 
+      if (draining) {
+        res.setHeader("connection", "close");
+        if (isDrainRefusedRoute(req.method, path, segments)) {
+          res.setHeader("retry-after", String(drainRetryAfterSec));
+          return sendJson(res, 503, {
+            error: {
+              code: "broker_draining",
+              message: "broker is draining for shutdown; retry against the new instance",
+            },
+          });
+        }
+      }
+
       if (req.method === "GET" && path === "/livez") {
         const lifecycleTiming = readRequestLifecycleTiming(req);
         const handlerStartUnixMs = lifecycleTiming?.handlerStartUnixMs ?? Date.now();
@@ -931,6 +956,7 @@ export function createBrokerServer(options: BrokerServerOptions = {}): BrokerSer
           ok: true,
           service: serviceName,
           brokerId,
+          draining,
           uptimeSec: Math.round(process.uptime()),
           eventLoop: {
             delayMs: eventLoopDelayMs,
@@ -1784,6 +1810,13 @@ export function createBrokerServer(options: BrokerServerOptions = {}): BrokerSer
     server,
     handler,
     broker,
+    beginDrain: () => {
+      if (draining) return;
+      draining = true;
+      console.log("[a2a-broker] drain started: refusing new poll/claim work, closing idle connections");
+      server.closeIdleConnections?.();
+    },
+    isDraining: () => draining,
     runStaleReaperSweep,
     stopStaleReaper,
     getStaleReaperStatus,
