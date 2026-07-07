@@ -3,6 +3,7 @@ import type { ArtifactRuntimeRepository } from "./artifact-repository.js";
 import type { AuditRuntimeRepository } from "./audit-repository.js";
 import type { BrokerPolicyDocument } from "./broker-policy.js";
 import type { InjectedKnowledgeSnapshot } from "./broker-knowledge-injection.js";
+import type { FinalizerVerdictEnforcement } from "./finalizer-verdict-admission.js";
 import type { ExchangeMessageRuntimeRepository, ExchangeRuntimeRepository } from "./exchange-repository.js";
 import type { ProposalRuntimeRepository } from "./proposal-repository.js";
 import type { TaskRuntimeRepository } from "./task-repository.js";
@@ -125,6 +126,14 @@ export interface InMemoryA2ABrokerOptions {
    * policyContext.injectedKnowledge. Absent = no injection (legacy behavior).
    */
   injectedKnowledge?: InjectedKnowledgeSnapshot;
+  /**
+   * Accept-path finalizer-verdict posture (#1383 V-c). "off" (default) leaves
+   * completion byte-identical to legacy; "warn"/"enforce" apply only to tasks
+   * that opt in via payload.requireFinalizerVerdict. The broker checks verdict
+   * structure/decision/subject-binding/independence — signature authenticity
+   * stays with the repo merge gate.
+   */
+  finalizerVerdictEnforcement?: FinalizerVerdictEnforcement;
   /** Optional lightweight profiling hook for broker internals. Listener errors are ignored. */
   profilingListener?: BrokerProfilingListener;
   /** Optional non-core state to include in full broker snapshots. */

@@ -166,9 +166,24 @@ operator still triggers the run and authors the judgment content.
   even across JWK/PEM serializations). Run it over the operator-held registries
   as a preflight; remaining V-c work is finalizer-keyring lifecycle fields
   (status/notBefore/expiresAt, reusing `request-security.ts` `parseRegistryLifecycle`).
-- **Broker accept-path enforcement**: a broker-side variant of the gate reusing
-  the #1382 complete-path pattern (this contract's v0 enforcement is the repo
-  merge gate).
+- **Broker accept-path enforcement** (v0 landed, #1383 V-c): `completeTask`
+  checks an opted-in task's verdict at the accept moment, before side-effects.
+  Posture `A2A_FINALIZER_VERDICT_ENFORCEMENT=off|warn|enforce` (default off),
+  scope `payload.requireFinalizerVerdict === true`, error `finalizer_verdict_invalid`.
+  The broker checks STRUCTURE (schema, `decision === "go"`), SUBJECT-BINDING
+  (`subject.resultHash === result.provenance.resultHash` — the canonical
+  provenance-anchored result identity; a verdict-requiring completion must be
+  provenance-anchored), and INDEPENDENCE (finalizer identity in the disjoint
+  `finalizer:` role namespace and not the producing `result.provenance.workerKeyId`).
+  **v0 boundary**: the broker does NOT verify the verdict SIGNATURE — the broker
+  runtime cannot reuse the offline verifier (`scripts/lib`) without a JCS/JWS
+  reimplementation, so signature authenticity and registered-key / attester-
+  allowlist membership stay with the repo merge gate
+  (`scripts/check-finalizer-verdict.mjs`), which MUST be wired as a required
+  check when broker enforcement is on. The accept-path hook is defense-in-depth
+  (block missing / wrong-decision / unbound / non-independent verdicts before
+  side-effects); true in-broker signature verification (a shared verifier module
+  importable by both broker `src` and `scripts`) is a follow-up.
 - **Auto-derived producing worker keys**: the gate should read the producing
   worker key ids from the round's `result.provenance` rather than a CLI arg.
 - **Multi-finalizer panels** (M-of-N verdicts) for higher-stakes subjects.

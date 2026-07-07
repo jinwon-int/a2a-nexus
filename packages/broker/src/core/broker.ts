@@ -104,6 +104,7 @@ import {
   selectInjectedKnowledge,
   type InjectedKnowledgeSnapshot,
 } from "./broker-knowledge-injection.js";
+import type { FinalizerVerdictEnforcement } from "./finalizer-verdict-admission.js";
 import * as taskAdmission from "./broker-task-admission.js";
 import type { TaskAdmissionContext } from "./broker-task-admission.js";
 import * as staleTaskRequeue from "./broker-stale-task-requeue.js";
@@ -316,6 +317,7 @@ export class InMemoryA2ABroker {
   private readonly taskReadinessMode: TaskReadinessMode;
   private readonly policyDocument?: BrokerPolicyDocument;
   private readonly injectedKnowledge?: InjectedKnowledgeSnapshot;
+  private readonly finalizerVerdictEnforcement: FinalizerVerdictEnforcement;
   private readonly workerHeartbeatPersistIntervalMs: number;
   private lastFullRetentionPersistAtMs = Date.now();
 
@@ -341,6 +343,7 @@ export class InMemoryA2ABroker {
     this.taskReadinessMode = normalizeTaskReadinessMode(options.taskReadinessMode);
     this.policyDocument = options.policyDocument;
     this.injectedKnowledge = options.injectedKnowledge;
+    this.finalizerVerdictEnforcement = options.finalizerVerdictEnforcement ?? "off";
     this.workerHeartbeatPersistIntervalMs = Math.max(0, options.workerHeartbeatPersistIntervalMs ?? DEFAULT_WORKER_HEARTBEAT_PERSIST_INTERVAL_MS);
     this.retentionPolicy = normalizeBrokerRetentionPolicy(options.retention);
     this.maxRequeueAttempts = normalizeMaxRequeueAttempts(options.maxRequeueAttempts);
@@ -1238,6 +1241,7 @@ export class InMemoryA2ABroker {
     return {
       tasks: this.tasks,
       maxRequeueAttempts: this.maxRequeueAttempts,
+      finalizerVerdictEnforcement: this.finalizerVerdictEnforcement,
       requireTask: (id) => this.requireTask(id),
       assertTaskWorker: (task, workerId, action) => this.assertTaskWorker(task, workerId, action),
       setTaskRecord: (task) => this.setTaskRecord(task),

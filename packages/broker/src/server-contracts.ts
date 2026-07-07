@@ -178,6 +178,13 @@ export interface BrokerServerOptions extends BrokerRuntimeHotLimitOptions {
    */
   injectedKnowledgeFile?: string;
   /**
+   * Accept-path finalizer-verdict posture (#1383 V-c): off (default) | warn |
+   * enforce. Falls back to A2A_FINALIZER_VERDICT_ENFORCEMENT. An invalid value
+   * fails startup loudly. Applies only to tasks that opt in via
+   * payload.requireFinalizerVerdict; off keeps completion byte-identical.
+   */
+  finalizerVerdictEnforcement?: "off" | "warn" | "enforce";
+  /**
    * JSON trust-anchor file ({ "<brokerId>": "<SPKI public key PEM>" }) for
    * the cross-broker terminal-brief receiver. When set, every inbound
    * projection must carry a request-bound `senderProof` (a JWS over

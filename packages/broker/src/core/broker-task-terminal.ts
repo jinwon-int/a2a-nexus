@@ -19,6 +19,10 @@ import {
 import { planClassAwareTaskRetry } from "./task-retry-policy.js";
 import { validateGithubTaskCompletionEvidence } from "./github-task-completion.js";
 import { validateReviewEvidence } from "../worker-review.js";
+import {
+  evaluateFinalizerVerdictAdmission,
+  type FinalizerVerdictEnforcement,
+} from "./finalizer-verdict-admission.js";
 import type { TaskUpdateReason } from "./broker-contracts.js";
 import type {
   A2AExchangeState,
@@ -37,6 +41,8 @@ import type {
 export interface TaskTerminalContext {
   tasks: ReadonlyMap<string, TaskRecord>;
   maxRequeueAttempts: number;
+  /** Accept-path finalizer-verdict posture (#1383 V-c). Default "off". */
+  finalizerVerdictEnforcement: FinalizerVerdictEnforcement;
   requireTask(id: string): TaskRecord;
   assertTaskWorker(task: TaskRecord, workerId: string, action: string): void;
   setTaskRecord(task: TaskRecord): void;
@@ -109,6 +115,34 @@ export function completeTask(
       completionEvidenceError.details,
     );
   }
+
+  // Accept-path finalizer-verdict admission (#1383 V-c). Runs BEFORE any
+  // completion side-effect. Default-inert: no-op unless the posture is
+  // warn|enforce AND the task opted in via payload.requireFinalizerVerdict.
+  // enforce blocks (fail-closed) with finalizer_verdict_invalid; warn records
+  // an audit event and proceeds. Signature authenticity stays with the repo
+  // merge gate (documented v0 boundary in contracts/a2a/finalizer-verdict.md).
+  const verdictAdmission = evaluateFinalizerVerdictAdmission({
+    task,
+    result: normalizedResult,
+    enforcement: context.finalizerVerdictEnforcement,
+  });
+  if (verdictAdmission.applies && !verdictAdmission.ok) {
+    const detail = verdictAdmission.violations.join("; ");
+    if (context.finalizerVerdictEnforcement === "enforce") {
+      throw new BrokerError("finalizer_verdict_invalid", detail, {
+        violations: verdictAdmission.violations,
+      });
+    }
+    context.appendAuditEvent({
+      actorId: workerId,
+      action: "task.finalizer_verdict_warned",
+      targetType: "task",
+      targetId: task.id,
+      note: `finalizer verdict admission (warn): ${detail}`,
+    });
+  }
+
   applyTaskCompletion(task, workerId, normalizedResult, context);
 
   const now = isoNow();

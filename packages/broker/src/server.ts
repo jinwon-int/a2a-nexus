@@ -113,6 +113,7 @@ import { resolveBrokerBuildInfo } from "./broker-build-info.js";
 import { normalizeTaskReadinessMode, type TaskReadinessMode } from "./task-readiness.js";
 import { loadBrokerPolicyFile } from "./core/broker-policy.js";
 import { loadInjectedKnowledgeFile } from "./core/broker-knowledge-injection.js";
+import { resolveFinalizerVerdictEnforcement } from "./core/finalizer-verdict-admission.js";
 import { normalizePersistenceBackend, normalizeSqliteLoadSource } from "./persistence-options.js";
 import {
   resolveBrokerId,
@@ -396,6 +397,11 @@ export function createBrokerServer(options: BrokerServerOptions = {}): BrokerSer
   // legacy behavior (no injection).
   const injectedKnowledgeFile = options.injectedKnowledgeFile ?? process.env.A2A_INJECTED_KNOWLEDGE_FILE;
   const injectedKnowledge = injectedKnowledgeFile ? loadInjectedKnowledgeFile(injectedKnowledgeFile) : undefined;
+  // Accept-path finalizer-verdict posture (#1383 V-c). Invalid value fails
+  // startup loudly (resolve throws); default off keeps completion unchanged.
+  const finalizerVerdictEnforcement = resolveFinalizerVerdictEnforcement(
+    options.finalizerVerdictEnforcement ?? process.env.A2A_FINALIZER_VERDICT_ENFORCEMENT,
+  );
   const hotRuntimeLimits = resolveHotRuntimeLimits(options);
   const maxSnapshotBytes = Math.max(
     1,
@@ -544,6 +550,7 @@ export function createBrokerServer(options: BrokerServerOptions = {}): BrokerSer
       taskReadinessMode,
       policyDocument: brokerPolicyDocument,
       injectedKnowledge,
+      finalizerVerdictEnforcement,
       snapshotExtensions: pushNotificationSnapshotExtension,
     });
   if (options.broker && pushNotificationSnapshotExtension) {
