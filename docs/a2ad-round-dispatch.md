@@ -316,6 +316,46 @@ the queue-drain stampede) with:
 
 Confirmation reads use `GET /tasks/:id` with the same auth headers.
 
+### Pre-dispatch risk hints (#1300 M2-b/c — recommended, not enforced)
+
+Before dispatching a round, look up the accumulated memory for the round's
+task class and note a one-line hint summary in the round manifest:
+
+```
+node scripts/dispatch-risk-hints.mjs --task-class <intent>
+node scripts/lane-reliability-report.mjs        # full reputation table
+```
+
+- Hints combine the M1 lane-reliability ledger (low substantive-yield combos
+  at sufficient sample size, counts-only) and the scorecard failure taxonomy
+  (categories whose cumulative count crossed the threshold — the class of
+  signal that would have short-circuited the seven-round zero_files
+  rediscovery). Taxonomy hints are global signals: scorecard entries carry no
+  task-class axis.
+- **Informational only.** Hints never block a dispatch or exclude a lane.
+  Ignoring a hint carries no recording duty — the subsequent round's scorecard
+  entry is the measurement.
+- Missing ledger/scorecard produces an explicit `no_data` output, never a
+  silent success. Small samples (< 5) are never rendered as rates.
+
+### Reputation-weighted routing preconditions (#1300 M2-d — specification only)
+
+Automating lane selection from the reputation ledger is OUT of M2 scope. If it
+is ever proposed, all of the following must hold first, and the flip itself is
+a separate operator approval (the #1263 warn→enforce pattern):
+
+1. **Minimum evidence**: every (adapterClass × taskClass) cell consulted for a
+   routing decision has ≥ 3 ledger windows and ≥ 15 dispatched samples —
+   below that, routing must treat the cell as unknown, not bad.
+2. **Anonymous axes only**: routing keys stay on the ledger's anonymous class
+   axes; any proposal keyed on worker/node identity is rejected outright.
+3. **Escape hatch**: a routing exclusion must be overridable per round by the
+   operator, and every automated exclusion is logged with the ledger evidence
+   that produced it.
+4. **Measured benefit**: a warn-mode observation window (recommendations
+   logged, not applied) shows the recommendations would have improved
+   substantive yield before any enforce flip.
+
 ### Injected knowledge contract (#1373 K1)
 
 When a lane's payload sets `injectKnowledge: true` **and** the broker is
