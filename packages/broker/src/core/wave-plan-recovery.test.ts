@@ -67,3 +67,34 @@ test("sweepStalledWavePlans emits one wave.stalled audit event per stall", () =>
   assert.equal(broker.sweepStalledWavePlans(3_600_000, future).length, 0);
   assert.equal(broker.listAuditEvents({ action: "wave.stalled" }).length, 1);
 });
+
+test("wave transitions always reach the canonical snapshot, even when hot-persist is throttling", () => {
+  // The hot-persist fast path (pending hot rows within the retention interval)
+  // writes only hot-table rows — and wave plans have no hot table. A wave
+  // transition that rides that branch would be ACKed but absent from the
+  // canonical blob, so a restart in the window loses it (G3-d canary FAIL).
+  // sweepStalledWavePlans hits this exactly: it stages its own wave.stalled
+  // audit event before persisting. Wave persists must force the full path.
+  const saves: { kind: "full" | "hot"; wavePlans?: unknown[] }[] = [];
+  const stubStore = {
+    load: () => ({ version: 8, exchanges: [], exchangeMessages: [], proposals: [], artifacts: [], validations: [], auditEvents: [], workers: [], tasks: [] }),
+    save: (snapshot: { wavePlans?: unknown[] }) => {
+      saves.push({ kind: "full", wavePlans: snapshot.wavePlans });
+    },
+    saveHotEntities: () => {
+      saves.push({ kind: "hot" });
+    },
+  };
+  const broker = new InMemoryA2ABroker(stubStore as never);
+  broker.createWavePlan(retryOnceSpec());
+  broker.startWavePlan("wave-recovery-1");
+
+  saves.length = 0;
+  const stalled = broker.sweepStalledWavePlans(1, Date.parse("2030-01-01T00:00:00.000Z"));
+  assert.equal(stalled.length, 1);
+
+  const fullSaves = saves.filter((entry) => entry.kind === "full");
+  assert.ok(fullSaves.length >= 1, "a wave transition must produce a full canonical save, not a hot-only save");
+  const persisted = fullSaves.at(-1)?.wavePlans as { stalledNotifiedAt?: string }[] | undefined;
+  assert.ok(persisted?.[0]?.stalledNotifiedAt, "the canonical blob must carry the post-sweep wave state");
+});

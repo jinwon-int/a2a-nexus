@@ -447,19 +447,19 @@ export class InMemoryA2ABroker {
 
   createWavePlan(spec: unknown): WavePlan {
     const plan = this.wavePlans.create(spec);
-    this.persistState();
+    this.persistState(undefined, { forceFull: true });
     return plan;
   }
 
   startWavePlan(wavePlanId: string): WavePlan {
     const plan = this.wavePlans.start(wavePlanId);
-    this.persistState();
+    this.persistState(undefined, { forceFull: true });
     return plan;
   }
 
   reportWaveStageEvidence(wavePlanId: string, evidence: WaveStageEvidence): WavePlan {
     const plan = this.wavePlans.reportEvidence(wavePlanId, evidence);
-    this.persistState();
+    this.persistState(undefined, { forceFull: true });
     return plan;
   }
 
@@ -475,13 +475,13 @@ export class InMemoryA2ABroker {
 
   advanceWavePlan(wavePlanId: string): WavePlan {
     const plan = this.wavePlans.advance(wavePlanId);
-    this.persistState();
+    this.persistState(undefined, { forceFull: true });
     return plan;
   }
 
   abortWavePlan(wavePlanId: string): WavePlan {
     const plan = this.wavePlans.abort(wavePlanId);
-    this.persistState();
+    this.persistState(undefined, { forceFull: true });
     return plan;
   }
 
@@ -512,7 +512,7 @@ export class InMemoryA2ABroker {
       this.wavePlans.markStalledNotified(plan.wavePlanId);
     }
     if (stalled.length > 0) {
-      this.persistState();
+      this.persistState(undefined, { forceFull: true });
     }
     return stalled;
   }
@@ -1567,11 +1567,23 @@ export class InMemoryA2ABroker {
     this.applyRetentionPolicy();
   }
 
-  private persistState(change: BrokerStateChange = { kind: "state.persisted" }): void {
+  private persistState(
+    change: BrokerStateChange = { kind: "state.persisted" },
+    options?: {
+      /**
+       * Skip the hot-entities fast path and write the full canonical snapshot.
+       * Required for state that has no hot table (wave plans): a hot-only save
+       * would ACK the mutation while leaving it out of the canonical blob, so a
+       * restart inside the throttle window would silently lose it.
+       */
+      forceFull?: boolean;
+    },
+  ): void {
     const startedAtMs = Date.now();
     const startedAt = new Date(startedAtMs).toISOString();
     const hotSave = this.stateStore?.saveHotEntities;
     if (
+      !options?.forceFull &&
       hotSave &&
       this.pendingHot.hasPending() &&
       startedAtMs - this.lastFullRetentionPersistAtMs < HOT_PERSIST_FULL_RETENTION_INTERVAL_MS

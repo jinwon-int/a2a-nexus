@@ -1568,3 +1568,46 @@ test("SqliteTombstoneRuntimeRepository writes tombstones directly to broker_tomb
     temp.cleanup();
   }
 });
+
+test("SqliteBrokerStateStore hot-table load preserves canonical wave plans (#1357 G3-d canary fix)", () => {
+  const temp = withTempFile("state.sqlite");
+  try {
+    // A running wave with a consumed retry budget — exactly the G3-d canary
+    // shape that was lost across a hot-tables restart.
+    const wavePlan = {
+      plan: {
+        wavePlanId: "wave-hot-restart",
+        stages: [{ id: "design", gate: { type: "quorum" as const, minSubstantive: 2 }, onGateFail: "retry-once" as const }],
+        state: "running" as const,
+        currentStage: 0,
+        retriedStages: [0],
+      },
+      updatedAt: "2026-07-07T15:00:00.000Z",
+    };
+    const store = new SqliteBrokerStateStore(temp.filePath, { loadSource: "hot-tables" });
+    store.save({
+      version: CURRENT_BROKER_STATE_VERSION,
+      exchanges: [],
+      exchangeMessages: [],
+      proposals: [],
+      artifacts: [],
+      validations: [],
+      workers: [],
+      tasks: [],
+      auditEvents: [],
+      tombstones: [],
+      terminalOutbox: [],
+      crossBrokerTerminalBriefs: [],
+      wavePlans: [wavePlan],
+    });
+    store.close();
+
+    // Broker restart on the sqlite hot-tables backend.
+    const reloaded = new SqliteBrokerStateStore(temp.filePath, { loadSource: "hot-tables" });
+    const snapshot = reloaded.load();
+    assert.deepEqual(snapshot.wavePlans, [wavePlan], "hot-tables load must carry canonical wave plans across a restart");
+    reloaded.close();
+  } finally {
+    temp.cleanup();
+  }
+});
