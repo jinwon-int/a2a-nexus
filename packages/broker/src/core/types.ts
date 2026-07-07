@@ -187,6 +187,7 @@ export type AuditAction =
   | "task.approval_rejected"
   | "task.policy_warned"
   | "task.policy_denied"
+  | "task.finalizer_verdict_warned"
   | "task.claimed"
   | "task.started"
   | "task.heartbeat"
@@ -442,6 +443,13 @@ export interface TaskResult {
   validations?: TaskValidationPayload[];
   /** Optional signed worker/broker provenance for result payloads (G2 v1 additive). */
   provenance?: unknown;
+  /**
+   * Optional signed finalizer verdict bound to this result (#1383 V-c). The
+   * broker accept-path checks its structure/decision/subject-binding/independence
+   * when the task opts in via payload.requireFinalizerVerdict; signature
+   * authenticity is the repo merge gate's job (documented v0 boundary).
+   */
+  finalizerVerdict?: unknown;
   apply?: TaskApplyPayload;
 }
 
