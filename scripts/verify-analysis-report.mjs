@@ -48,7 +48,12 @@ export const RETRIEVAL_SNAPSHOT_SCHEMA = "a2a.retrieval.snapshot.v1";
 // Provenance verification (mirrors provenance.ts semantics, standalone).
 // ---------------------------------------------------------------------------
 function hashTaskResult(result) {
-  const { provenance: _omit, ...rest } = result;
+  // Core result hash excludes BOTH attestation wrappers computed over it:
+  // provenance (signatures cover the hash) and finalizerVerdict (#1383 V-c: the
+  // finalizer binds subject.resultHash to this hash before embedding, so
+  // including it would be an unsatisfiable fixed point). No-op for reports
+  // without either field. Mirrors provenance.ts stripResultProvenance.
+  const { provenance: _prov, finalizerVerdict: _verdict, ...rest } = result;
   return sha256Prefix(canonicalizeJson(rest));
 }
 

@@ -58,6 +58,28 @@ test("G2 result hash is stable across key order and ignores provenance field", (
   assert.equal(hashTaskResult(first), hashTaskResult({ ...second, provenance }));
 });
 
+test("G2 result hash also excludes finalizerVerdict — no verdict subject-binding circularity (#1383 V-c)", () => {
+  // The finalizer signs a verdict BEFORE it is embedded, binding subject.resultHash
+  // to the core result hash. If hashTaskResult included the embedded verdict, the
+  // provenance anchor (computed after embedding) could never equal a pre-signed
+  // subject hash — an unsatisfiable sha256 fixed point. The core hash must be
+  // stable whether or not the verdict is present.
+  const core = { summary: "done", output: { ok: true } };
+  const coreHash = hashTaskResult(core);
+  const withVerdict = {
+    ...core,
+    finalizerVerdict: {
+      schemaVersion: "a2a.finalizer.verdict.v1",
+      subject: { kind: "task-result", resultHash: coreHash },
+      decision: "go",
+      finalizerKeyId: "finalizer:panel:v1",
+      sig: { protected: "x", signature: "y" },
+    },
+  };
+  // Post-embedding provenance anchor must equal the pre-signed subject hash.
+  assert.equal(hashTaskResult(withVerdict), coreHash, "hashTaskResult must exclude finalizerVerdict");
+});
+
 test("G2 broker countersignature records the accepted worker signature without changing worker verification", () => {
   const worker = ed25519Keys();
   const broker = ed25519Keys();
