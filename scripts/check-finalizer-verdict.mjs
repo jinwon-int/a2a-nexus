@@ -23,10 +23,13 @@
  *
  * Usage:
  *   node scripts/check-finalizer-verdict.mjs --verdict <v.json> --head-sha <sha> \
- *     --finalizer-keyring <k.json> [--worker-keys id1,id2] \
+ *     --finalizer-keyring <k.json> [--worker-keys id1,id2] [--result r.json ...] \
  *     [--producing-attester-subjects sub1,sub2] [--mode warn|enforce] [--json]
  *
  * --worker-keys are producing worker KEY IDS (static-key independence axis);
+ * --result points at the analysis result/report JSON(s) whose signed
+ * provenance identifies the producing worker key (auto-derived, so independence
+ * does not depend on a hand-passed list — #1383 V-c A2);
  * --producing-attester-subjects are producing workflow IDENTITIES (attested-
  * identity independence axis). They are disjoint namespaces — supply the one(s)
  * that describe how the subject was produced.
@@ -37,9 +40,32 @@ import { parseArgs } from "node:util";
 import { verifyVerdict } from "./verify-finalizer-verdict.mjs";
 
 /**
+ * Derive producing worker key ids from analysis result/report objects (#1383
+ * V-c A2). The independence check must key off the ACTUAL producing key
+ * recorded in signed provenance, not a hand-passed --worker-keys list a caller
+ * can omit or truncate. Accepts both a bare result (`{ provenance: { workerKeyId } }`)
+ * and a report bundle (`{ result: { provenance: { workerKeyId } } }`).
+ * De-duplicated, provenance-less entries ignored.
+ */
+export function deriveProducingWorkerKeyIds(reports) {
+  const ids = [];
+  for (const report of reports ?? []) {
+    const provenance = report?.result?.provenance ?? report?.provenance;
+    const workerKeyId = provenance?.workerKeyId;
+    if (typeof workerKeyId === "string" && workerKeyId && !ids.includes(workerKeyId)) {
+      ids.push(workerKeyId);
+    }
+  }
+  return ids;
+}
+
+/**
  * Evaluate the gate for a PR. Returns { ok, blocked, mode, decision,
- * finalizerKeyId, reasons }. `ok` = the verdict fully satisfies the gate;
- * `blocked` = the gate blocks the merge (enforce mode with violations).
+ * finalizerKeyId, producerIdentityKnown, reasons }. `ok` = the verdict fully
+ * satisfies the gate; `blocked` = the gate blocks the merge (enforce mode with
+ * violations). `producerIdentityKnown` surfaces whether any producing worker
+ * key id was supplied/derived — an empty set means independence is UNVERIFIED
+ * (vacuously not violated), which callers should not mistake for verified.
  */
 export function evaluateVerdictGate({
   verdict, headSha, finalizerKeyring, producingWorkerKeyIds = [],
@@ -84,6 +110,9 @@ export function evaluateVerdictGate({
     decision: v.decision,
     finalizerKeyId: v.finalizerKeyId,
     attesterSubject: v.attesterSubject,
+    // Independence is only meaningfully checked when a producing identity is
+    // known; surface that so an empty set is not mistaken for "verified".
+    producerIdentityKnown: producingWorkerKeyIds.length > 0 || producingAttesterSubjects.length > 0,
     reasons,
   };
 }
@@ -96,6 +125,7 @@ function main(argv) {
       "head-sha": { type: "string" },
       "finalizer-keyring": { type: "string" },
       "worker-keys": { type: "string" },
+      "result": { type: "string", multiple: true },
       "producing-attester-subjects": { type: "string" },
       mode: { type: "string", default: "warn" },
       json: { type: "boolean", default: false },
@@ -118,7 +148,19 @@ function main(argv) {
     process.stderr.write(`cannot read input: ${err.message}\n`);
     return 2;
   }
-  const producingWorkerKeyIds = (values["worker-keys"] ?? "").split(",").map((s) => s.trim()).filter(Boolean);
+  const explicitWorkerKeys = (values["worker-keys"] ?? "").split(",").map((s) => s.trim()).filter(Boolean);
+  // Auto-derive producing worker key ids from signed result/report provenance
+  // (#1383 V-c A2) so independence does not depend on a hand-passed list.
+  let derivedWorkerKeys = [];
+  for (const resultPath of values["result"] ?? []) {
+    try {
+      derivedWorkerKeys.push(...deriveProducingWorkerKeyIds([JSON.parse(fs.readFileSync(resultPath, "utf8"))]));
+    } catch (err) {
+      process.stderr.write(`cannot read --result '${resultPath}': ${err.message}\n`);
+      return 2;
+    }
+  }
+  const producingWorkerKeyIds = [...new Set([...explicitWorkerKeys, ...derivedWorkerKeys])];
   const producingAttesterSubjects = (values["producing-attester-subjects"] ?? "").split(",").map((s) => s.trim()).filter(Boolean);
 
   const result = evaluateVerdictGate({
@@ -134,6 +176,9 @@ function main(argv) {
     process.stdout.write(`${JSON.stringify(result, null, 2)}\n`);
   } else if (result.ok) {
     process.stdout.write(`finalizer-verdict gate ok (kind=${result.kind}, decision=go, key=${result.finalizerKeyId}, mode=${result.mode})\n`);
+    if (!result.producerIdentityKnown) {
+      process.stdout.write("NOTE  independence is UNVERIFIED: no producing worker key ids supplied/derived (pass --result or --worker-keys to check self-certification)\n");
+    }
   } else {
     const label = result.blocked ? "BLOCKED" : "WARN";
     for (const r of result.reasons) process.stdout.write(`${label}  ${r}\n`);
