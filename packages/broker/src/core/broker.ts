@@ -109,6 +109,8 @@ import type { StaleTaskRequeueContext } from "./broker-stale-task-requeue.js";
 import * as proposalWrite from "./broker-proposal-write.js";
 import * as taskApproval from "./broker-task-approval.js";
 import * as taskCancellation from "./broker-task-cancellation.js";
+import * as taskCheckpoint from "./broker-task-checkpoint.js";
+import type { TaskCheckpointContext } from "./broker-task-checkpoint.js";
 import type { TaskCancellationContext } from "./broker-task-cancellation.js";
 import type { TaskApprovalContext } from "./broker-task-approval.js";
 import type { ProposalWriteContext } from "./broker-proposal-write.js";
@@ -207,7 +209,6 @@ import type {
   TaskApprovalOutcomeStatus,
   TaskListFilters,
   TaskCheckpointState,
-  TaskInterruptDecisionType,
   TaskRecord,
   TaskReassignRequest,
   TaskResult,
@@ -273,14 +274,6 @@ export type {
 } from "./broker-contracts.js";
 
 const HOT_PERSIST_FULL_RETENTION_INTERVAL_MS = 5 * 60_000;
-
-/** Frozen interrupt decision types (contracts/a2a/checkpoint-interrupt.md §2.2). */
-const TASK_INTERRUPT_DECISION_TYPES: readonly TaskInterruptDecisionType[] = [
-  "safety_gate",
-  "ambiguous_scope",
-  "approval_required",
-  "conflict_detected",
-];
 
 const DEFAULT_CHECKPOINT_TIMEOUT_MS = 24 * 60 * 60 * 1000;
 
@@ -1836,14 +1829,26 @@ export class InMemoryA2ABroker {
     return taskCancellation.cancelTaskTree(task, params, this.taskCancellationContext());
   }
 
-  // --- Task Heartbeat ---
+  // Checkpoint/interrupt cluster (#1289 L-broker-14): moved to
+  // broker-task-checkpoint.ts with callback-injected state effects; the
+  // heartbeat-audit throttle state stays class-owned behind two callbacks.
+  private taskCheckpointContext(): TaskCheckpointContext {
+    return {
+      requireTask: (id) => this.requireTask(id),
+      assertTaskWorker: (task, workerId, action) => this.assertTaskWorker(task, workerId, action),
+      setTaskRecord: (task) => this.setTaskRecord(task),
+      appendAuditEvent: (input) => this.appendAuditEvent(input),
+      persistState: () => this.persistState(),
+      emitTaskEvent: (task, reason) => this.taskEvents.emit(task, reason),
+      shouldPersistHeartbeatAudit: (taskId, nowMs) => this.taskHeartbeatAuditPersist.shouldPersist(
+        taskId,
+        nowMs,
+        this.retentionPolicy.heartbeatAuditSampleIntervalMs,
+      ),
+      markHeartbeatAuditPersisted: (taskId, nowMs) => this.taskHeartbeatAuditPersist.markPersisted(taskId, nowMs),
+    };
+  }
 
-  /** Record a task-level heartbeat from the assigned worker. */
-  /**
-   * Record a checkpoint (contracts/a2a/checkpoint-interrupt.md). The task
-   * stays non-terminal; `awaiting_operator` marks a human-interrupt pause
-   * that projects as the A2A `input-required` state until cleared.
-   */
   checkpointTask(
     taskId: string,
     workerId: string,
@@ -1855,137 +1860,16 @@ export class InMemoryA2ABroker {
       artifactRefs?: string[];
     },
   ): TaskRecord {
-    const task = this.requireTask(taskId);
-    this.assertTaskWorker(task, workerId, "checkpoint");
-    assertTaskStatus(task.status, ["claimed", "running"], "checkpoint");
-    if (request.state !== "paused" && request.state !== "awaiting_operator") {
-      throw new BrokerError("bad_request", "checkpoint state must be paused or awaiting_operator");
-    }
-
-    // Checkpoint inputs become operator-visible and audit-visible state, so
-    // they are bounded and shape-checked before being recorded (contract
-    // §2.4: redacted, no raw internal state).
-    const checkpointId = request.checkpointId?.trim() || randomUUID();
-    if (checkpointId.length > 128 || !/^[A-Za-z0-9._:-]+$/.test(checkpointId)) {
-      throw new BrokerError("bad_request", "checkpointId must be <=128 chars of [A-Za-z0-9._:-]");
-    }
-    const reason = request.reason?.trim() || undefined;
-    if (reason !== undefined && (reason.length > 500 || /[\u0000-\u0008\u000b\u000c\u000e-\u001f]/.test(reason))) {
-      throw new BrokerError("bad_request", "checkpoint reason must be <=500 chars with no control characters");
-    }
-    let decisionType: TaskInterruptDecisionType | undefined;
-    if (request.state === "awaiting_operator") {
-      // Contract §2.2: human interrupts carry one of the four frozen
-      // decision types; approval_required is the default interrupt shape.
-      const requested = request.decisionType?.trim() || "approval_required";
-      if (!TASK_INTERRUPT_DECISION_TYPES.includes(requested as TaskInterruptDecisionType)) {
-        throw new BrokerError(
-          "bad_request",
-          `decisionType must be one of ${TASK_INTERRUPT_DECISION_TYPES.join(", ")}`,
-        );
-      }
-      decisionType = requested as TaskInterruptDecisionType;
-    } else if (request.decisionType?.trim()) {
-      throw new BrokerError("bad_request", "decisionType only applies to awaiting_operator checkpoints");
-    }
-    let artifactRefs: string[] | undefined;
-    if (request.artifactRefs !== undefined) {
-      if (!Array.isArray(request.artifactRefs) || request.artifactRefs.length > 32) {
-        throw new BrokerError("bad_request", "artifactRefs must be an array of at most 32 references");
-      }
-      artifactRefs = request.artifactRefs.map((ref) => {
-        const trimmed = typeof ref === "string" ? ref.trim() : "";
-        if (!trimmed || trimmed.length > 256 || /[\u0000-\u001f]/.test(trimmed)) {
-          throw new BrokerError("bad_request", "each artifactRef must be a 1-256 char string with no control characters");
-        }
-        return trimmed;
-      });
-    }
-
-    const now = isoNow();
-    task.checkpoint = {
-      state: request.state,
-      checkpointId,
-      reason,
-      ...(decisionType ? { decisionType } : {}),
-      ...(artifactRefs && artifactRefs.length > 0 ? { artifactRefs } : {}),
-      recordedAt: now,
-      recordedBy: workerId,
-    };
-    task.updatedAt = now;
-    this.setTaskRecord(task);
-    this.appendAuditEvent({
-      actorId: workerId,
-      action: "task.checkpointed",
-      targetType: "task",
-      targetId: task.id,
-      proposalId: task.proposalId,
-      note: `checkpoint ${task.checkpoint.state}${decisionType ? ` (${decisionType})` : ""}: ${task.checkpoint.reason ?? task.checkpoint.checkpointId}`,
-    });
-    this.persistState();
-    this.taskEvents.emit(task, "checkpointed");
-    return task;
+    return taskCheckpoint.checkpointTask(taskId, workerId, request, this.taskCheckpointContext());
   }
 
   /** Clear an active checkpoint (operator approval, requester input, or worker resume). */
   resumeTask(taskId: string, actorId: string, request: { checkpointId?: string } = {}): TaskRecord {
-    const task = this.requireTask(taskId);
-    if (!task.checkpoint) {
-      return task; // idempotent: nothing to resume
-    }
-    if (isTerminalTaskStatus(task.status)) {
-      throw new BrokerError("invalid_transition", `cannot resume task while status is ${task.status}`);
-    }
-    if (request.checkpointId && request.checkpointId !== task.checkpoint.checkpointId) {
-      throw new BrokerError("bad_request", "checkpointId does not match the active checkpoint");
-    }
-
-    const cleared = task.checkpoint;
-    task.checkpoint = undefined;
-    task.updatedAt = isoNow();
-    this.setTaskRecord(task);
-    this.appendAuditEvent({
-      actorId,
-      action: "task.resumed",
-      targetType: "task",
-      targetId: task.id,
-      proposalId: task.proposalId,
-      note: `resumed from ${cleared.state} checkpoint ${cleared.checkpointId}`,
-    });
-    this.persistState();
-    this.taskEvents.emit(task, "resumed");
-    return task;
+    return taskCheckpoint.resumeTask(taskId, actorId, request, this.taskCheckpointContext());
   }
 
   heartbeatTask(taskId: string, workerId: string): TaskRecord {
-    const task = this.requireTask(taskId);
-    this.assertTaskWorker(task, workerId, "heartbeat");
-    assertTaskStatus(task.status, ["claimed", "running"], "heartbeat");
-
-    const now = isoNow();
-    const nowMs = Date.parse(now);
-    task.lastHeartbeatAt = now;
-    task.updatedAt = now;
-    this.setTaskRecord(task);
-    const shouldPersistHeartbeatAudit = this.taskHeartbeatAuditPersist.shouldPersist(
-      task.id,
-      nowMs,
-      this.retentionPolicy.heartbeatAuditSampleIntervalMs,
-    );
-    if (shouldPersistHeartbeatAudit) {
-      this.appendAuditEvent({
-        actorId: workerId,
-        action: "task.heartbeat",
-        targetType: "task",
-        targetId: task.id,
-        proposalId: task.proposalId,
-        note: "task heartbeat",
-      });
-      this.taskHeartbeatAuditPersist.markPersisted(task.id, nowMs);
-    }
-    this.persistState();
-    this.taskEvents.emit(task, "started"); // re-emit so subscribers see the heartbeat
-    return task;
+    return taskCheckpoint.heartbeatTask(taskId, workerId, this.taskCheckpointContext());
   }
 
   // --- Diagnostics ---
