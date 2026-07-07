@@ -1145,6 +1145,32 @@
         "on/off pairing: compare against a2a-nexus-m1-ledger-20260705 (knowledgeInjection=off, substantive 7/10); one wave is a signal, not a promotion decision — injection-by-default remains a separate operator decision after more measured windows (#1373 K1-d contract)"
       ],
       "recordedAt": "2026-07-07"
+    },
+    {
+      "id": "a2a-nexus-1383-vc-adversarial-20260707-r1",
+      "window": {
+        "from": "2026-07-07",
+        "to": "2026-07-07"
+      },
+      "scope": "#1383 V-c adversarial design round: 4 analyze lanes (registry / attack-surface / accept-path / migration lenses) over the finalizer-verdict independence source bundle (6 files, ~2.3k lines); one environment-class worker excluded up front after the prior rounds' failures and another worker class substituted",
+      "knowledgeInjection": "off",
+      "metrics": {
+        "carryOverCount": 0,
+        "falseFindingCount": 0,
+        "reworkIssueCount": 0,
+        "substantiveLaneCount": 2,
+        "dispatchedLaneCount": 4
+      },
+      "failureBreakdown": {
+        "environment": 1
+      },
+      "evidence": [
+        "lens coverage: the registry-design lane is substantive (6 findings / 6 recommendations / 5 risks with line citations into the bundle sources) and the accept-path lane is substantive (concrete completeTask gate insertion point plus a warn->enforce mapping inheriting the #1382 countersign-enforce template); the migration lane succeeded readiness-only (generic source-bridge meta output — third consecutive round for that worker class, tracked as a follow-up issue); the attack-surface lane failed",
+        "failure classification — environment 1: handler_exit_nonzero -> openclaw_analysis_failed with the bridge no-stdin warning masking the real cause. This occurrence CORRECTS the earlier single-host attribution: the same class has now reproduced on a second worker class, so it is the fleet-common pre-#1421 bridge defect (suspected correlation with the ~84KB source bundle size); real-cause excerpts stay masked until the worker bundles redeploy with #1421 — worker bundle update priority raised",
+        "finalizer gate: BLOCKED (3/4 succeeded, the attack-surface lens vacant with no draft) — round treated as PRELIMINARY design input; the attack-surface lens re-runs as an idempotent retry lane with a trimmed bundle before the V-c implementation slice consumes the design",
+        "off control (K1 #1373 measurement): all four lanes verified with injectKnowledge absent from payload AND policyContext.injectedKnowledge absent — clean knowledgeInjection=off accumulation; the paired on-wave (k1d r2) also measured 2/4, so this on/off pairing is rate-equal at current sample sizes"
+      ],
+      "recordedAt": "2026-07-07"
     }
   ]
 }
