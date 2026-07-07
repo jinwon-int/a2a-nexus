@@ -165,6 +165,49 @@ test("unknown finalizer key fails closed", () => {
   assert.match(check(r, "finalizer-signature").detail, /not in keyring/);
 });
 
+// --- lifecycle keyring records (#1383 V-c: unify repo/broker keyring formats) ---
+
+test("a lifecycle-record keyring entry ({pem,...}) verifies like a bare PEM", () => {
+  const ctx = makeCtx();
+  const pem = ctx.keyring.keys["finalizer-1"];
+  const r = verifyVerdict(buildVerdict(ctx), { keys: { "finalizer-1": { pem, status: "active" } } });
+  assert.equal(r.valid, true, JSON.stringify(r.checks));
+});
+
+test("a revoked keyring record fails closed regardless of a valid signature", () => {
+  const ctx = makeCtx();
+  const pem = ctx.keyring.keys["finalizer-1"];
+  const r = verifyVerdict(buildVerdict(ctx), { keys: { "finalizer-1": { pem, status: "revoked" } } });
+  assert.equal(r.valid, false);
+  assert.match(check(r, "finalizer-signature").detail, /revoked/);
+});
+
+test("producedAt outside the record validity window fails; inside passes", () => {
+  const ctx = makeCtx();
+  const pem = ctx.keyring.keys["finalizer-1"];
+  // buildVerdict pins producedAt 2026-07-06
+  const inside = verifyVerdict(buildVerdict(ctx), {
+    keys: { "finalizer-1": { pem, notBefore: "2026-07-01T00:00:00.000Z", expiresAt: "2026-08-01T00:00:00.000Z" } },
+  });
+  assert.equal(inside.valid, true, JSON.stringify(inside.checks));
+  const outside = verifyVerdict(buildVerdict(ctx), {
+    keys: { "finalizer-1": { pem, notBefore: "2026-07-07T00:00:00.000Z" } },
+  });
+  assert.equal(outside.valid, false);
+  assert.match(check(outside, "finalizer-signature").detail, /window|notBefore/);
+});
+
+test("a validity window with no producedAt on the verdict fails closed", () => {
+  const ctx = makeCtx();
+  const pem = ctx.keyring.keys["finalizer-1"];
+  const verdict = buildVerdict(ctx);
+  delete verdict.producedAt;
+  verdict.sig = signJws(verdict, ctx.finalizerPriv, ctx.finalizerKeyId);
+  const r = verifyVerdict(verdict, { keys: { "finalizer-1": { pem, expiresAt: "2026-08-01T00:00:00.000Z" } } });
+  assert.equal(r.valid, false);
+  assert.match(check(r, "finalizer-signature").detail, /producedAt/);
+});
+
 test("a signed verdict without the assurance invariant is still RED", () => {
   const ctx = makeCtx();
   const r = verifyVerdict(buildVerdict(ctx, { omitAssurance: true }), ctx.keyring);
