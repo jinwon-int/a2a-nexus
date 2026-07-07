@@ -27,7 +27,7 @@ import { createDocCheckContext } from './lib/doc-check.mjs';
 // its regression test were added. Raising any budget is allowed but must be
 // deliberate — see a2a-nexus#882.
 export const BUDGETS = {
-  scriptsMjs: 147, // includes brokerAlpha A2A skill guard CLI/test promoted from ops skills (#1035)
+  scriptsMjs: 150, // +3: #1300 M2 ledger consumers (lane-reliability-report, dispatch-risk-hints + tests) net of the #1373 K1 builder pair absorbed earlier — both issues explicitly scope these as new scripts/*.mjs surfaces
   rootNpmScripts: 100, // ratcheted after C3 historical archive wrappers were consolidated under check:historical (#1201)
   brokerNpmScripts: 150, // includes broker clean:dist stale-build guard from #997/#999 closeout
 };
