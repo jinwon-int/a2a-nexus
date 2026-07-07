@@ -1,0 +1,4 @@
+{
+  "$comment": "Cost-per-accepted-outcome metric (#1303 M5). Operator-supplied NORMALIZED cost units joined with the M1 lane-reliability ledger on anonymous axes. No real currency, prices, contract amounts, worker names, or node ids — check-cost-per-outcome.mjs enforces this fail-closed. Report-only: no budget-based blocking or routing.",
+  "entries": []
+}

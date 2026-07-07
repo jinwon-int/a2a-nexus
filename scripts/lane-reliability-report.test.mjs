@@ -83,3 +83,31 @@ test("report rows pass the ledger anonymity gate (pass-through, no identifiers)"
     }
   }
 });
+
+// --- M5-c (#1303): costPerAccepted column ------------------------------------
+import { attachCostColumn } from "./lane-reliability-report.mjs";
+import { NO_ACCEPTED_MARKER } from "./check-cost-per-outcome.mjs";
+
+test("attachCostColumn aggregates cost entries across modelClass/window per report cell (#1303 M5-c)", () => {
+  const rows = [
+    { adapterClass: "hermes-analysis", taskClass: "review", windows: ["2026-07"], sampleCount: 10, substantiveCount: 7, substantiveRate: 0.7, acceptancePassRate: "no_acceptance_data" },
+    { adapterClass: "source-only", taskClass: "review", windows: ["2026-07"], sampleCount: 3, substantiveCount: 1, substantiveRate: "insufficient_data", acceptancePassRate: "no_acceptance_data" },
+  ];
+  const costDoc = {
+    entries: [
+      { adapterClass: "hermes-analysis", modelClass: "mixed", taskClass: "review", window: "2026-07", costUnitsSpent: 6, acceptedCount: 2 },
+      { adapterClass: "hermes-analysis", modelClass: "small", taskClass: "review", window: "2026-08", costUnitsSpent: 4, acceptedCount: 2 },
+      { adapterClass: "source-only", modelClass: "none", taskClass: "review", window: "2026-07", costUnitsSpent: 3, acceptedCount: 0 },
+    ],
+  };
+  const withCost = attachCostColumn(rows, costDoc);
+  assert.equal(withCost[0].costPerAccepted, 2.5, "two cost entries for the cell must aggregate before dividing");
+  assert.equal(withCost[1].costPerAccepted, NO_ACCEPTED_MARKER, "zero accepted inherits the divide-by-zero marker");
+});
+
+test("cells without cost data print no_cost_data, never a fabricated number", () => {
+  const rows = [{ adapterClass: "vps-claude", taskClass: "implement", windows: [], sampleCount: 8, substantiveCount: 8, substantiveRate: 1, acceptancePassRate: 1 }];
+  const withCost = attachCostColumn(rows, { entries: [] });
+  assert.equal(withCost[0].costPerAccepted, "no_cost_data");
+  assert.equal(attachCostColumn(rows, undefined)[0].costPerAccepted, "no_cost_data");
+});
