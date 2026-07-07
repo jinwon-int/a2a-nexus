@@ -55,9 +55,6 @@ import {
 } from "./broker-status-predicates.js";
 import {
   normalizeWakeString,
-  normalizeApprovalId,
-  normalizeApprovalReason,
-  normalizeApprovalTerminalStatus,
   buildTaskWakeKey,
   defaultWakeDecisionMessage,
   wakeDecisionAuditAction,
@@ -106,16 +103,15 @@ import {
 
 import type { RoundStatusSummary } from "./round-status.js";
 
-import {
-  isPrivilegedTaskApprover,
-  normalizeTaskPolicyContext,
-} from "./policy.js";
+import { normalizeTaskPolicyContext } from "./policy.js";
 import type { BrokerPolicyDocument } from "./broker-policy.js";
 import * as taskAdmission from "./broker-task-admission.js";
 import type { TaskAdmissionContext } from "./broker-task-admission.js";
 import * as staleTaskRequeue from "./broker-stale-task-requeue.js";
 import type { StaleTaskRequeueContext } from "./broker-stale-task-requeue.js";
 import * as proposalWrite from "./broker-proposal-write.js";
+import * as taskApproval from "./broker-task-approval.js";
+import type { TaskApprovalContext } from "./broker-task-approval.js";
 import type { ProposalWriteContext } from "./broker-proposal-write.js";
 import {
   CURRENT_BROKER_STATE_VERSION,
@@ -1186,112 +1182,27 @@ export class InMemoryA2ABroker {
     });
   }
 
-  approveTask(taskId: string, request: TaskApprovalRequest): TaskRecord {
-    const task = this.requireTask(taskId);
-    if (!request.actor?.id) {
-      throw new BrokerError("bad_request", "actor.id is required");
-    }
-    if (!isPrivilegedTaskApprover(request.actor)) {
-      throw new BrokerError("policy_denied", "task approval requires a hub or operator actor");
-    }
-    if (task.policyContext?.requiresApproval !== true) {
-      throw new BrokerError("invalid_transition", "task does not require approval");
-    }
-    if (task.approval) {
-      return task;
-    }
-    if (isTerminalTaskStatus(task.status)) {
-      throw new BrokerError("invalid_transition", `cannot approve task while status is ${task.status}`);
-    }
-    if (task.status !== "blocked" && task.status !== "queued") {
-      throw new BrokerError("invalid_transition", `cannot approve task while status is ${task.status}`);
-    }
+  // Operator approval decision pair (#1289 L-broker-12): moved to
+  // broker-task-approval.ts with callback-injected state effects. These public
+  // delegators keep the API and call sites unchanged.
+  private taskApprovalContext(): TaskApprovalContext {
+    return {
+      requireTask: (id) => this.requireTask(id),
+      setTaskRecord: (task) => this.setTaskRecord(task),
+      syncExchangeStateFromTask: (task, nextStatus) => this.syncExchangeStateFromTask(task, nextStatus),
+      appendAuditEvent: (input) => this.appendAuditEvent(input),
+      persistState: () => this.persistState(),
+      emitTaskEvent: (task, reason) => this.taskEvents.emit(task, reason),
+      cancelTaskTree: (task, params) => this.cancelTaskTree(task, params),
+    };
+  }
 
-    const now = isoNow();
-    task.approval = {
-      approvalId: normalizeApprovalId(request.approvalId) ?? randomUUID(),
-      approvedAt: now,
-      approvedBy: request.actor.id,
-      actorRole: request.actor.role,
-      requesterRole: task.requester.role,
-      reason: normalizeApprovalReason(request.reason),
-    };
-    task.approvalOutcome = {
-      status: "approved",
-      approvalId: task.approval.approvalId,
-      decidedAt: now,
-      decidedBy: request.actor.id,
-      actorRole: request.actor.role,
-      requesterRole: task.requester.role,
-      reason: task.approval.reason,
-    };
-    task.status = "queued";
-    task.updatedAt = now;
-    this.setTaskRecord(task);
-    this.syncExchangeStateFromTask(task, "queued");
-    this.appendAuditEvent({
-      actorId: request.actor.id,
-      action: "task.approved",
-      targetType: "task",
-      targetId: task.id,
-      proposalId: task.proposalId,
-      note: task.approval.reason ?? `approvalId=${task.approval.approvalId}`,
-    });
-    this.persistState();
-    this.taskEvents.emit(task, "approved");
-    return task;
+  approveTask(taskId: string, request: TaskApprovalRequest): TaskRecord {
+    return taskApproval.approveTask(taskId, request, this.taskApprovalContext());
   }
 
   rejectTaskApproval(taskId: string, request: TaskApprovalTerminalRequest): TaskRecord {
-    const task = this.requireTask(taskId);
-    if (!request.actor?.id) {
-      throw new BrokerError("bad_request", "actor.id is required");
-    }
-    if (!isPrivilegedTaskApprover(request.actor)) {
-      throw new BrokerError("policy_denied", "task approval rejection requires a hub or operator actor");
-    }
-    if (task.policyContext?.requiresApproval !== true) {
-      throw new BrokerError("invalid_transition", "task does not require approval");
-    }
-    if (task.approval || task.approvalOutcome?.status === "approved") {
-      throw new BrokerError("invalid_transition", "task approval is already approved");
-    }
-    if (task.approvalOutcome) {
-      return task;
-    }
-    if (isTerminalTaskStatus(task.status)) {
-      throw new BrokerError("invalid_transition", `cannot reject approval while task status is ${task.status}`);
-    }
-    if (task.status !== "blocked" && task.status !== "queued") {
-      throw new BrokerError("invalid_transition", `cannot reject approval while task status is ${task.status}`);
-    }
-
-    const now = isoNow();
-    const status = normalizeApprovalTerminalStatus(request.status);
-    const reason = normalizeApprovalReason(request.reason) ?? `approval ${status}`;
-    task.approvalOutcome = {
-      status,
-      approvalId: normalizeApprovalId(request.approvalId) ?? randomUUID(),
-      decidedAt: now,
-      decidedBy: request.actor.id,
-      actorRole: request.actor.role,
-      requesterRole: task.requester.role,
-      reason,
-    };
-    const canceled = this.cancelTaskTree(task, {
-      actorId: request.actor.id,
-      reason,
-    });
-    this.appendAuditEvent({
-      actorId: request.actor.id,
-      action: "task.approval_rejected",
-      targetType: "task",
-      targetId: task.id,
-      proposalId: task.proposalId,
-      note: `${status}: ${reason}`,
-    });
-    this.persistState();
-    return canceled;
+    return taskApproval.rejectTaskApproval(taskId, request, this.taskApprovalContext());
   }
 
   claimTask(taskId: string, workerId: string): TaskRecord {
