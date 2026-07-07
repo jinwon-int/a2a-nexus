@@ -487,6 +487,12 @@
       "class": "gate",
       "round": null,
       "note": "Tests for #1301 M3-c attestation bundle checker: fail-closed schema, sha256-jcs integrity recomputation, PII/identifier second-line scan."
+    },
+    {
+      "file": "scripts/check-spec-broker-conformance.test.mjs",
+      "class": "gate",
+      "round": null,
+      "note": "Tests for #1304 M6-b spec<->broker conformance: committed spec matches broker source, mutation/missing-block/unknown-key/dead-path all fail closed."
     }
   ]
 }
