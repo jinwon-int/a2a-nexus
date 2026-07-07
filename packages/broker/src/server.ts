@@ -250,6 +250,7 @@ import { handleAuditReadRouteIfMatched } from "./http/audit-read-route.js";
 import { handleProposalsReadRouteIfMatched } from "./http/proposals-read.js";
 import { handleExchangeRoutesIfMatched } from "./http/exchanges-read.js";
 import { handleComplexityOrchestrationRoutesIfMatched } from "./http/complexity-orchestration-routes.js";
+import { handleWavePlanRoutesIfMatched } from "./http/wave-plan-routes.js";
 import { handleTerminalBriefCloseoutRoutesIfMatched } from "./http/terminal-brief-routes.js";
 import {
   handleWorkersReadRouteIfMatched,
@@ -1174,6 +1175,19 @@ export function createBrokerServer(options: BrokerServerOptions = {}): BrokerSer
         path,
         req,
         res,
+        enforceRequesterIdentity,
+        requesterIdentity,
+      })) {
+        return;
+      }
+
+      if (await handleWavePlanRoutesIfMatched({
+        method: req.method,
+        path,
+        req,
+        res,
+        broker,
+        stateStore,
         enforceRequesterIdentity,
         requesterIdentity,
       })) {
