@@ -48,6 +48,31 @@ export const VERDICT_KINDS = ["battery", "judgment"];
 function fail(checks, id, detail) { checks.push({ id, ok: false, detail }); }
 function pass(checks, id) { checks.push({ id, ok: true }); }
 
+/**
+ * Lifecycle check for a keyring record { pem, status, notBefore, expiresAt }
+ * (#1383 V-c). Returns a violation string, or undefined when the key is usable
+ * for this verdict. Mirrors the broker's in-broker verifier so one keyring file
+ * serves both. A revoked key is rejected immediately; a validity window is
+ * checked against the verdict's producedAt (a window with no producedAt fails
+ * closed).
+ */
+function finalizerKeyLifecycleViolation(record, verdict) {
+  if (record.status === "revoked") return `finalizer key '${verdict.finalizerKeyId}' is revoked`;
+  if (record.notBefore !== undefined || record.expiresAt !== undefined) {
+    const producedMs = typeof verdict.producedAt === "string" ? Date.parse(verdict.producedAt) : NaN;
+    if (!Number.isFinite(producedMs)) {
+      return `verdict has no valid producedAt to check against key '${verdict.finalizerKeyId}' validity window (fail-closed)`;
+    }
+    if (record.notBefore !== undefined && producedMs < Date.parse(record.notBefore)) {
+      return `verdict producedAt is before key '${verdict.finalizerKeyId}' notBefore (outside validity window)`;
+    }
+    if (record.expiresAt !== undefined && producedMs > Date.parse(record.expiresAt)) {
+      return `verdict producedAt is after key '${verdict.finalizerKeyId}' expiresAt (outside validity window)`;
+    }
+  }
+  return undefined;
+}
+
 function subjectsEqual(a, b) {
   return canonicalizeJson(a) === canonicalizeJson(b);
 }
@@ -176,12 +201,19 @@ export function verifyVerdict(verdict, keyring, opts = {}) {
       fail(checks, "attester-identity", att.reason);
     }
   } else {
-    const pem = keys[verdict.finalizerKeyId];
-    if (!pem) {
+    // Keyring entry is a bare PEM string OR a lifecycle record
+    // { pem, status, notBefore, expiresAt } — the SAME format the broker's
+    // in-broker verifier accepts (#1383 V-c), so one keyring file serves both.
+    const entry = keys[verdict.finalizerKeyId];
+    const record = typeof entry === "string" ? { pem: entry } : (entry && typeof entry === "object" ? entry : undefined);
+    const lifecycle = record ? finalizerKeyLifecycleViolation(record, verdict) : undefined;
+    if (!record || typeof record.pem !== "string") {
       fail(checks, "finalizer-signature", `finalizerKeyId '${verdict.finalizerKeyId}' not in keyring (fail-closed)`);
+    } else if (lifecycle) {
+      fail(checks, "finalizer-signature", lifecycle);
     } else {
       const { sig: _omit, ...unsigned } = verdict;
-      if (verifyJwsSignature(unsigned, verdict.sig, pem)) {
+      if (verifyJwsSignature(unsigned, verdict.sig, record.pem)) {
         pass(checks, "finalizer-signature");
       } else {
         fail(checks, "finalizer-signature", "finalizer signature failed verification");

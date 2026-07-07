@@ -203,7 +203,10 @@ operator still triggers the run and authors the judgment content.
   bare PEM (active, no window) or a record
   `{ pem, status: "active"|"revoked", notBefore, expiresAt }` — a revoked key is
   rejected immediately (closing the revocation-lag gap), and the verdict's
-  `producedAt` must fall within the notBefore/expiresAt window.
+  `producedAt` must fall within the notBefore/expiresAt window. **The offline
+  verifier / merge gate (`verify-finalizer-verdict.mjs`) accepts the SAME record
+  format**, so a single keyring file serves both the broker and the repo merge
+  gate (no bare-PEM-only fork). Both apply identical revocation + window checks.
 - **Auto-derived producing worker keys** (landed, #1383 V-c A2): the gate's
   `--result <report.json>` reads the producing worker key id from the analysis
   result/report's signed `result.provenance.workerKeyId` (`deriveProducingWorkerKeyIds`),
