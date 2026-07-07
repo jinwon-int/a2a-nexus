@@ -534,7 +534,25 @@ pure plan) for the **stale-wave reaper**: `sweepStalledWavePlans(staleAfterMs)`
 flags live (`running`/`stage_ready`) plans idle past the threshold and emits one
 `wave.stalled` warning audit event per stall (`targetType: "wave-plan"`),
 deduped until the plan next makes progress. The reaper **only warns** — it never
-auto-aborts; advancing or aborting a stalled wave stays the operator's call. The
-HTTP routes (create/advance/abort/status; `advance` restricted to hub/operator)
-and the finalizer-gate substantive-classifier single-source wiring are the
-remaining G3 slices.
+auto-aborts; advancing or aborting a stalled wave stays the operator's call.
+
+### HTTP surface (G3-c)
+
+The lifecycle is drivable over HTTP:
+
+| Method + path | Action | Roles |
+| --- | --- | --- |
+| `POST /wave-plans` | create a draft from a spec | hub/operator |
+| `POST /wave-plans/{id}/start` | draft → running | hub/operator |
+| `POST /wave-plans/{id}/evidence` | report current-stage evidence + apply gate | hub/operator |
+| `POST /wave-plans/{id}/advance` | stage_ready → next / completed (**privileged**) | hub/operator |
+| `POST /wave-plans/{id}/abort` | non-terminal → aborted | hub/operator |
+| `GET /wave-plans` | list plans | hub/operator/analyst/researcher/live-trader |
+| `GET /wave-plans/{id}` | one plan (status) | hub/operator/analyst/researcher/live-trader |
+
+`advance` is the privileged next-stage step — the HTTP handler enforces the same
+hub/operator scope as the other mutations, and the state machine rejects an
+advance before the gate is met (`409 invalid_transition`). A malformed spec is
+`400 bad_request`; an unknown plan id is `404`; a duplicate create is `409`.
+The finalizer-gate substantive-classifier single-source wiring is the remaining
+G3 slice.
