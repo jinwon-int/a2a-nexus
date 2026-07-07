@@ -525,9 +525,16 @@ names or prompt text.
 state machine is timestamp-free, a saved plan reloads byte-identically — a
 running wave, its stage cursor, and its consumed retry-once budget all survive
 a broker restart through the ordinary snapshot path (`wavePlans` in
-`BrokerSnapshot`, canonical-blob persistence like `crossBrokerTerminalBriefs`,
-no hot table). Resume is deterministic: re-evaluating a stage gate on the same
-evidence after a restart yields the same decision and next state.
+`BrokerSnapshot`, canonical-blob persistence, no hot table). Resume is
+deterministic: re-evaluating a stage gate on the same evidence after a restart
+yields the same decision and next state.
+
+Because wave plans have no hot table, both persistence paths special-case them
+(G3-d canary fix): on the sqlite `hot-tables` load source the runtime snapshot
+carries `wavePlans` from the canonical blob (like the push-notification-config
+sidecar), and every wave mutation persists with a forced **full** canonical
+save — the hot-entities fast path would otherwise ACK the mutation while
+leaving it out of the blob, losing it on a restart inside the throttle window.
 
 The store stamps a broker-clock `updatedAt` on every transition (outside the
 pure plan) for the **stale-wave reaper**: `sweepStalledWavePlans(staleAfterMs)`

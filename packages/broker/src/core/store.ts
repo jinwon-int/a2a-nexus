@@ -389,7 +389,7 @@ export class SqliteBrokerStateStore implements BrokerStateStore {
   }
 
   readHotRuntimeSnapshot(): BrokerSnapshot {
-    const pushNotificationConfigs = this.readCanonicalPushNotificationConfigs();
+    const sidecars = this.readCanonicalSnapshotSidecars();
     const snapshot: BrokerSnapshot = {
       version: CURRENT_BROKER_STATE_VERSION_VALUE,
       exchanges: this.readHotExchanges(),
@@ -403,10 +403,10 @@ export class SqliteBrokerStateStore implements BrokerStateStore {
       tombstones: this.readHotTombstones(),
       terminalOutbox: this.readHotTerminalOutbox({ limit: this.maxHotRuntimeTerminalOutboxEvents }),
       crossBrokerTerminalBriefs: [],
-      wavePlans: [],
+      wavePlans: sidecars.wavePlans ?? [],
     };
-    if (pushNotificationConfigs !== undefined) {
-      snapshot.pushNotificationConfigs = pushNotificationConfigs;
+    if (sidecars.pushNotificationConfigs !== undefined) {
+      snapshot.pushNotificationConfigs = sidecars.pushNotificationConfigs;
     }
     return snapshot;
   }
@@ -1055,21 +1055,31 @@ export class SqliteBrokerStateStore implements BrokerStateStore {
     return emptySnapshot();
   }
 
-  private readCanonicalPushNotificationConfigs(): TaskPushNotificationConfig[] | undefined {
+  /**
+   * Snapshot-only sidecar fields that have no hot table (push-notification
+   * configs, wave plans) live in the canonical blob and must be carried into
+   * the hot-table runtime snapshot, or a hot-tables restart silently drops
+   * them (#1357 G3-d canary: a running wave plan vanished across a redeploy).
+   */
+  private readCanonicalSnapshotSidecars(): Pick<BrokerSnapshot, "pushNotificationConfigs" | "wavePlans"> {
     const row = this.db
       .prepare("SELECT payload FROM broker_snapshots WHERE id = 1")
       .get() as { payload?: string } | undefined;
     if (typeof row?.payload !== "string") {
-      return undefined;
+      return {};
     }
     try {
-      return parseSnapshotPayload(row.payload, `SQLite broker snapshot at ${this.dbFile}`, this.maxBytes).pushNotificationConfigs;
+      const canonical = parseSnapshotPayload(row.payload, `SQLite broker snapshot at ${this.dbFile}`, this.maxBytes);
+      return {
+        pushNotificationConfigs: canonical.pushNotificationConfigs,
+        wavePlans: canonical.wavePlans,
+      };
     } catch {
       // Hot-table runtime loading must remain recoverable even when the legacy
-      // canonical snapshot is stale/corrupt/oversized. Push configs are a
-      // snapshot-only sidecar, so skip them rather than making hot-table
-      // recovery depend on parsing the entire canonical payload.
-      return undefined;
+      // canonical snapshot is stale/corrupt/oversized. Sidecar fields are
+      // snapshot-only, so skip them rather than making hot-table recovery
+      // depend on parsing the entire canonical payload.
+      return {};
     }
   }
 
