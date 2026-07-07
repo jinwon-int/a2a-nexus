@@ -162,6 +162,14 @@ export interface BrokerServerOptions extends BrokerRuntimeHotLimitOptions {
    */
   resultProvenanceCountersign?: "enforce" | "auto" | "off";
   /**
+   * JSON file with the declarative worker-class policy document (#1355 G1),
+   * schema a2a.broker.policy.v1. Falls back to A2A_BROKER_POLICY_FILE. The
+   * document's own `mode` field decides warn vs enforce; a configured-but-
+   * invalid or unreadable document fails startup loudly. Unset = no policy
+   * evaluation (legacy behavior).
+   */
+  brokerPolicyFile?: string;
+  /**
    * JSON trust-anchor file ({ "<brokerId>": "<SPKI public key PEM>" }) for
    * the cross-broker terminal-brief receiver. When set, every inbound
    * projection must carry a request-bound `senderProof` (a JWS over

@@ -1,0 +1,6 @@
+{
+  "schemaVersion": "a2a.broker.policy.v1",
+  "mode": "warn",
+  "defaultAction": "allow",
+  "rules": []
+}
