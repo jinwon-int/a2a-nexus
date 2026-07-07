@@ -1,0 +1,25 @@
+{
+  "$comment": "Rollout canary 2/4 (#1291 R6): the healthy control - a small, well-formed sourceBundle. Intended verdict: readiness passes and the deterministic bridge projects both files with quality complete. All content synthetic.",
+  "expectedVerdict": { "readiness": "pass", "projectedFiles": 2, "bridgeQuality": "complete" },
+  "task": {
+    "id": "canary-normal-source-bundle",
+    "intent": "analyze",
+    "status": "claimed",
+    "createdAt": "2026-07-07T00:00:00.000Z",
+    "message": "synthetic rollout canary: normal sourceBundle"
+  },
+  "payload": {
+    "mode": "analysis-only",
+    "roundMode": "a2ad",
+    "sourceOnly": true,
+    "noLive": true,
+    "taskClass": "canary",
+    "parentRoundId": "canary-fixture-round",
+    "sourceBundle": {
+      "files": [
+        { "repo": "synthetic/repo", "path": "src/gamma.js", "content": "export const gamma = () => 3; // synthetic canary content\n" },
+        { "repo": "synthetic/repo", "path": "src/delta.js", "content": "export const delta = () => 4; // synthetic canary content\n" }
+      ]
+    }
+  }
+}

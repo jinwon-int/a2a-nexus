@@ -1,0 +1,20 @@
+{
+  "$comment": "Rollout canary 1/4 (#1291 R6): source-only analyze dispatch whose sourceBundle is EMPTY. Intended verdict: readiness rejects with source_projection_empty and the deterministic bridge reports quality zero_files. A broker/bridge build that ACCEPTS this payload is broken fail-open. All content synthetic.",
+  "expectedVerdict": { "readiness": "fail", "readinessCode": "source_projection_empty", "bridgeQuality": "zero_files" },
+  "task": {
+    "id": "canary-empty-source-bundle",
+    "intent": "analyze",
+    "status": "claimed",
+    "createdAt": "2026-07-07T00:00:00.000Z",
+    "message": "synthetic rollout canary: empty sourceBundle"
+  },
+  "payload": {
+    "mode": "analysis-only",
+    "roundMode": "a2ad",
+    "sourceOnly": true,
+    "noLive": true,
+    "taskClass": "canary",
+    "parentRoundId": "canary-fixture-round",
+    "sourceBundle": { "files": [] }
+  }
+}

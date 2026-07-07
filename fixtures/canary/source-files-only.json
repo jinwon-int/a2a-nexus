@@ -1,0 +1,23 @@
+{
+  "$comment": "Rollout canary 3/4 (#1291 R6): every file rides the TOP-LEVEL sourceFiles[] carrier - no sourceBundle at all. This canary exists because a bridge parallel-copy drift dropped sourceFiles[] (third drift instance, hotfixed as PR #1271); a build that projects zero files here has regressed that fix. Intended verdict: readiness passes, both files project, bridge quality complete. All content synthetic.",
+  "expectedVerdict": { "readiness": "pass", "projectedFiles": 2, "bridgeQuality": "complete" },
+  "task": {
+    "id": "canary-source-files-only",
+    "intent": "analyze",
+    "status": "claimed",
+    "createdAt": "2026-07-07T00:00:00.000Z",
+    "message": "synthetic rollout canary: sourceFiles carrier only"
+  },
+  "payload": {
+    "mode": "analysis-only",
+    "roundMode": "a2ad",
+    "sourceOnly": true,
+    "noLive": true,
+    "taskClass": "canary",
+    "parentRoundId": "canary-fixture-round",
+    "sourceFiles": [
+      { "repo": "synthetic/repo", "path": "src/epsilon.js", "content": "export const epsilon = () => 5; // synthetic canary content\n" },
+      { "repo": "synthetic/repo", "path": "src/zeta.js", "content": "export const zeta = () => 6; // synthetic canary content\n" }
+    ]
+  }
+}
