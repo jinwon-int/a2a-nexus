@@ -454,3 +454,51 @@ test("session-scoped workspace uses session-id to isolate task sessions", () => 
     rmSync(tempDir, { recursive: true, force: true });
   }
 });
+
+test("Claude Code A2A analysis bridge closes stdin and keeps stdout in failure excerpts (#1337 ENV1)", () => {
+  const tempDir = mkdtempSync(join(tmpdir(), "claude-a2a-bridge-fail-test-"));
+  const fakeClaudePath = join(tempDir, "fake-claude-fail.mjs");
+
+  try {
+    writeFileSync(fakeClaudePath, [
+      "#!/usr/bin/env node",
+      "import { readFileSync } from 'node:fs';",
+      "// With stdin spawned as 'ignore' this returns immediately (EOF from /dev/null).",
+      "// With a regression back to an open never-written pipe, this blocks until the",
+      "// bridge watchdog fires, so the assertions below would fail on the timeout path.",
+      "const stdinData = readFileSync(0, 'utf8');",
+      "if (stdinData !== '') throw new Error('expected empty stdin');",
+      "process.stderr.write('Warning: no stdin data received, proceeding without it.\\n');",
+      "process.stdout.write('real failure detail: model bridge auth exploded\\n');",
+      "process.exit(1);",
+      "",
+    ].join("\n"));
+    chmodSync(fakeClaudePath, 0o755);
+
+    const result = spawnSync(bridgePath, [
+      "agent",
+      "--local",
+      "--agent", "main",
+      "--session-id", "a2a-fail-excerpt",
+      "--message", "failure excerpt regression fixture",
+      "--model", "claude-code/default",
+      "--thinking", "low",
+      "--timeout", "10",
+      "--json",
+    ], {
+      encoding: "utf8",
+      env: { ...process.env, A2A_CLAUDE_CODE_BIN: fakeClaudePath },
+    });
+
+    assert.notEqual(result.status, 0, "bridge must fail when claude exits non-zero");
+    assert.match(result.stderr, /exited with 1/, "failure must surface the child exit code, not a timeout");
+    assert.match(result.stderr, /Warning: no stdin data received/, "stderr stream must be preserved");
+    assert.match(
+      result.stderr,
+      /real failure detail: model bridge auth exploded/,
+      "stdout stream must be preserved alongside stderr so warnings cannot mask the real cause",
+    );
+  } finally {
+    rmSync(tempDir, { recursive: true, force: true });
+  }
+});
