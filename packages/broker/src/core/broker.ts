@@ -46,7 +46,6 @@ import {
 } from "./broker-exchange-normalizers.js";
 import {
   normalizeGitHubPatchTaskRequest,
-  cleanOptionalTaskCancelField,
   normalizeOwnershipString,
 } from "./broker-task-request-normalizers.js";
 import {
@@ -71,8 +70,6 @@ export { MOBILE_OFFLINE_AFTER_MS, MOBILE_DISCONNECTED_AFTER_MS } from "./broker-
 import {
   isoNow,
   uniqueIds,
-  sortedCopy,
-  sortNewestFirst,
 } from "./broker-helpers.js";
 import { buildBrokerDashboard } from "./broker-dashboard.js";
 import {
@@ -111,6 +108,8 @@ import * as staleTaskRequeue from "./broker-stale-task-requeue.js";
 import type { StaleTaskRequeueContext } from "./broker-stale-task-requeue.js";
 import * as proposalWrite from "./broker-proposal-write.js";
 import * as taskApproval from "./broker-task-approval.js";
+import * as taskCancellation from "./broker-task-cancellation.js";
+import type { TaskCancellationContext } from "./broker-task-cancellation.js";
 import type { TaskApprovalContext } from "./broker-task-approval.js";
 import type { ProposalWriteContext } from "./broker-proposal-write.js";
 import {
@@ -1125,61 +1124,24 @@ export class InMemoryA2ABroker {
     return task;
   }
 
+  // Task cancellation machinery (#1289 L-broker-13): moved to
+  // broker-task-cancellation.ts with callback-injected state effects. The
+  // private delegators stay because other extracted-module contexts bind them.
+  private taskCancellationContext(): TaskCancellationContext {
+    return {
+      tasks: this.tasks,
+      requireTask: (id) => this.requireTask(id),
+      setTaskRecord: (task) => this.setTaskRecord(task),
+      syncExchangeStateFromTask: (task, nextStatus) => this.syncExchangeStateFromTask(task, nextStatus),
+      appendAuditEvent: (input) => this.appendAuditEvent(input),
+      writeTombstone: (task, reason, tombstoneContext) => this.writeTombstone(task, reason, tombstoneContext),
+      persistState: () => this.persistState(),
+      emitTaskEvent: (task, reason) => this.taskEvents.emit(task, reason),
+    };
+  }
+
   cancelTask(taskId: string, request: TaskCancelRequest): TaskRecord {
-    const task = this.requireTask(taskId);
-    if (!request.actor?.id) {
-      throw new BrokerError("bad_request", "actor.id is required");
-    }
-
-    const actorId = request.actor.id;
-    const actorRole = request.actor.role;
-    const requesterMatch = actorId === task.requester.id;
-    const workerMatch =
-      actorId === task.claimedBy ||
-      actorId === task.assignedWorkerId ||
-      actorId === task.targetNodeId;
-
-    if (
-      actorRole !== "hub" &&
-      actorRole !== "operator" &&
-      !requesterMatch &&
-      !workerMatch
-    ) {
-      throw new BrokerError(
-        "policy_denied",
-        "task cancellation requires a hub, operator, requester, or assigned worker actor",
-      );
-    }
-
-    if (task.status === "succeeded" || task.status === "failed" || task.status === "canceled") {
-      return task;
-    }
-
-    const supersededByTaskId = cleanOptionalTaskCancelField(request.supersededByTaskId);
-    const supersededByPrUrl = cleanOptionalTaskCancelField(request.supersededByPrUrl);
-    const roundId = cleanOptionalTaskCancelField(request.roundId);
-    if (supersededByTaskId === task.id) {
-      throw new BrokerError("bad_request", "supersededByTaskId must refer to a different task");
-    }
-    if (supersededByTaskId) {
-      const winner = this.requireTask(supersededByTaskId);
-      if (!isTerminalTaskStatus(winner.status)) {
-        throw new BrokerError("invalid_transition", `cannot supersede task by non-terminal task ${supersededByTaskId}`);
-      }
-    }
-    const superseded = Boolean(supersededByTaskId || supersededByPrUrl);
-    const reason = request.reason ?? (superseded
-      ? `superseded by ${supersededByPrUrl ?? supersededByTaskId}`
-      : undefined);
-
-    return this.cancelTaskTree(task, {
-      actorId,
-      reason,
-      kind: superseded ? "superseded" : undefined,
-      supersededByTaskId,
-      supersededByPrUrl,
-      roundId,
-    });
+    return taskCancellation.cancelTask(taskId, request, this.taskCancellationContext());
   }
 
   // Operator approval decision pair (#1289 L-broker-12): moved to
@@ -1856,72 +1818,7 @@ export class InMemoryA2ABroker {
   }
 
   private cancelActiveExchangeTask(exchange: A2AExchangeState, reason: string): void {
-    if (!exchange.activeTaskId) {
-      return;
-    }
-    const task = this.tasks.get(exchange.activeTaskId);
-    if (!task) {
-      return;
-    }
-    if (task.status === "succeeded" || task.status === "failed" || task.status === "canceled") {
-      return;
-    }
-    this.cancelTaskRecord(task, {
-      actorId: "broker",
-      reason,
-    });
-  }
-
-  private cancelTaskRecord(
-    task: TaskRecord,
-    params: {
-      actorId: string;
-      reason?: string;
-      sourceTaskId?: string;
-      kind?: "superseded";
-      supersededByTaskId?: string;
-      supersededByPrUrl?: string;
-      roundId?: string;
-    },
-  ): TaskRecord {
-    const canceledAt = isoNow();
-    // Cancellation is one of the two contract-sanctioned exits from a
-    // checkpoint (resume | cancel): clear the gate so terminal tasks never
-    // carry stale checkpoint metadata.
-    task.checkpoint = undefined;
-    task.status = "canceled";
-    task.claimedBy = undefined;
-    task.claimedAt = undefined;
-    task.completedAt = canceledAt;
-    task.updatedAt = canceledAt;
-    task.result = undefined;
-    task.error = undefined;
-    task.cancellation = {
-      requestedAt: canceledAt,
-      requestedBy: params.actorId,
-      kind: params.kind ?? "operator_cancel",
-      reason: params.reason,
-      sourceTaskId: params.sourceTaskId,
-      supersededByTaskId: params.supersededByTaskId,
-      supersededByPrUrl: params.supersededByPrUrl,
-      roundId: params.roundId,
-    };
-    this.setTaskRecord(task);
-    this.syncExchangeStateFromTask(task, "queued");
-    this.appendAuditEvent({
-      actorId: params.actorId,
-      action: "task.canceled",
-      targetType: "task",
-      targetId: task.id,
-      proposalId: task.proposalId,
-      note: params.reason,
-    });
-    // Tombstone before persist so a crash between the two cannot lose it
-    // (writeTombstone mutates state but does not persist on its own).
-    this.writeTombstone(task, "canceled", { actorId: params.actorId, reason: params.reason });
-    this.persistState();
-    this.taskEvents.emit(task, "canceled");
-    return task;
+    taskCancellation.cancelActiveExchangeTask(exchange, reason, this.taskCancellationContext());
   }
 
   private cancelTaskTree(
@@ -1935,41 +1832,8 @@ export class InMemoryA2ABroker {
       supersededByPrUrl?: string;
       roundId?: string;
     },
-    visited = new Set<string>(),
   ): TaskRecord {
-    if (visited.has(task.id)) {
-      return task;
-    }
-    visited.add(task.id);
-
-    const canceledTask = this.cancelTaskRecord(task, params);
-    for (const childTask of this.listChildTasks(task.id)) {
-      if (isTerminalTaskStatus(childTask.status)) {
-        continue;
-      }
-      this.cancelTaskTree(
-        childTask,
-        {
-          actorId: params.actorId,
-          reason: params.reason,
-          sourceTaskId: task.id,
-          kind: params.kind,
-          supersededByTaskId: params.supersededByTaskId,
-          supersededByPrUrl: params.supersededByPrUrl,
-          roundId: params.roundId,
-        },
-        visited,
-      );
-    }
-
-    return canceledTask;
-  }
-
-  private listChildTasks(parentTaskId: string): TaskRecord[] {
-    return sortedCopy(
-      [...this.tasks.values()].filter((task) => task.parentTaskId === parentTaskId),
-      sortNewestFirst,
-    );
+    return taskCancellation.cancelTaskTree(task, params, this.taskCancellationContext());
   }
 
   // --- Task Heartbeat ---
