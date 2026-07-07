@@ -158,7 +158,14 @@ operator still triggers the run and authors the judgment content.
 ## 6. Follow-ups
 
 - **V-c** (A2A): a registered finalizer-key registry as a role disjoint from
-  worker/broker keys — the structural source of independence.
+  worker/broker keys — the structural source of independence. **Disjointness is
+  enforced by `scripts/validate-key-registry-disjoint.mjs`**: every keyId carries
+  its role prefix (`worker:` / `finalizer:` / `broker:`), keyIds are globally
+  unique, and — the load-bearing check — no public key is registered under two
+  roles (normalized SPKI-PEM comparison, so the same keypair cannot be dual-role
+  even across JWK/PEM serializations). Run it over the operator-held registries
+  as a preflight; remaining V-c work is finalizer-keyring lifecycle fields
+  (status/notBefore/expiresAt, reusing `request-security.ts` `parseRegistryLifecycle`).
 - **Broker accept-path enforcement**: a broker-side variant of the gate reusing
   the #1382 complete-path pattern (this contract's v0 enforcement is the repo
   merge gate).
