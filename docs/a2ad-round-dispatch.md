@@ -517,5 +517,24 @@ gate is met the broker records readiness and emits a `wave.stage_ready`
 event/audit; it does NOT dispatch the next stage. The next-stage dispatch is a
 privileged action taken only by an explicit operator/hub `advance` call. A
 plan holds stage ids + dispatch manifest refs + gate specs — never worker
-names or prompt text. Persistence/resume and the HTTP routes
-(create/advance/abort/status) are the G3-c slice.
+names or prompt text.
+
+### Persistence + resume (G3-c)
+
+`WavePlanStore` holds each plan and drives the pure transitions. Because the
+state machine is timestamp-free, a saved plan reloads byte-identically — a
+running wave, its stage cursor, and its consumed retry-once budget all survive
+a broker restart through the ordinary snapshot path (`wavePlans` in
+`BrokerSnapshot`, canonical-blob persistence like `crossBrokerTerminalBriefs`,
+no hot table). Resume is deterministic: re-evaluating a stage gate on the same
+evidence after a restart yields the same decision and next state.
+
+The store stamps a broker-clock `updatedAt` on every transition (outside the
+pure plan) for the **stale-wave reaper**: `sweepStalledWavePlans(staleAfterMs)`
+flags live (`running`/`stage_ready`) plans idle past the threshold and emits one
+`wave.stalled` warning audit event per stall (`targetType: "wave-plan"`),
+deduped until the plan next makes progress. The reaper **only warns** — it never
+auto-aborts; advancing or aborting a stalled wave stays the operator's call. The
+HTTP routes (create/advance/abort/status; `advance` restricted to hub/operator)
+and the finalizer-gate substantive-classifier single-source wiring are the
+remaining G3 slices.

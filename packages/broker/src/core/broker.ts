@@ -138,6 +138,8 @@ import {
   type TerminalTaskOutboxReceiptUpdateInput,
 } from "./terminal-event-outbox.js";
 import { ConferenceRoomManager } from "./conference-room.js";
+import { WavePlanStore, type StalledWavePlan } from "./wave-plan-store.js";
+import type { WavePlan, WaveStageEvidence } from "./wave-plan.js";
 import {
   CrossBrokerTerminalBriefProjectionStore,
   type CrossBrokerTerminalBriefProjection,
@@ -301,6 +303,7 @@ export class InMemoryA2ABroker {
   private readonly taskEventStream: TaskEventStream;
   private readonly terminalTaskEventOutbox: TerminalTaskEventOutbox;
   private readonly crossBrokerTerminalBriefs: CrossBrokerTerminalBriefProjectionStore;
+  private readonly wavePlans = new WavePlanStore();
   private readonly conferenceManager: ConferenceRoomManager;
   private readonly taskRepository?: TaskRuntimeRepository;
   private readonly auditRepository?: AuditRuntimeRepository;
@@ -432,6 +435,75 @@ export class InMemoryA2ABroker {
 
   getCrossBrokerTerminalBriefProjection(parentRoundId: string, originBrokerId: string): CrossBrokerTerminalBriefProjection | undefined {
     return this.crossBrokerTerminalBriefs.get(parentRoundId, originBrokerId);
+  }
+
+  // --- Durable wave plans (#1357 G3) -----------------------------------------
+  // Lifecycle passes through the pure state machine (wave-plan.ts) held by
+  // WavePlanStore; each mutation persists so a running wave survives a restart.
+  // `advanceWavePlan` is the privileged next-stage step — HTTP routing restricts
+  // it to hub/operator (a separate slice); the broker method itself just applies
+  // the transition fail-closed.
+
+  createWavePlan(spec: unknown): WavePlan {
+    const plan = this.wavePlans.create(spec);
+    this.persistState();
+    return plan;
+  }
+
+  startWavePlan(wavePlanId: string): WavePlan {
+    const plan = this.wavePlans.start(wavePlanId);
+    this.persistState();
+    return plan;
+  }
+
+  reportWaveStageEvidence(wavePlanId: string, evidence: WaveStageEvidence): WavePlan {
+    const plan = this.wavePlans.reportEvidence(wavePlanId, evidence);
+    this.persistState();
+    return plan;
+  }
+
+  advanceWavePlan(wavePlanId: string): WavePlan {
+    const plan = this.wavePlans.advance(wavePlanId);
+    this.persistState();
+    return plan;
+  }
+
+  abortWavePlan(wavePlanId: string): WavePlan {
+    const plan = this.wavePlans.abort(wavePlanId);
+    this.persistState();
+    return plan;
+  }
+
+  getWavePlan(wavePlanId: string): WavePlan | undefined {
+    return this.wavePlans.get(wavePlanId);
+  }
+
+  listWavePlans(): WavePlan[] {
+    return this.wavePlans.list();
+  }
+
+  /**
+   * Reaper sweep: flag live wave plans idle past `staleAfterMs` and emit a
+   * `wave.stalled` warning audit event for each (once per stall). This never
+   * auto-aborts — it surfaces the stall so the operator/hub can act. Returns the
+   * plans that were newly flagged this sweep.
+   */
+  sweepStalledWavePlans(staleAfterMs: number, nowMs = Date.now()): StalledWavePlan[] {
+    const stalled = this.wavePlans.findStalled(staleAfterMs, nowMs);
+    for (const plan of stalled) {
+      this.appendAuditEvent({
+        actorId: this.brokerId ?? "broker",
+        action: "wave.stalled",
+        targetType: "wave-plan",
+        targetId: plan.wavePlanId,
+        note: `wave plan '${plan.wavePlanId}' stalled at stage '${plan.stageId}' (state ${plan.state}, idle ${Math.round(plan.idleMs / 1000)}s)`,
+      });
+      this.wavePlans.markStalledNotified(plan.wavePlanId);
+    }
+    if (stalled.length > 0) {
+      this.persistState();
+    }
+    return stalled;
   }
 
   /**
@@ -1385,6 +1457,7 @@ export class InMemoryA2ABroker {
       tombstones: [...this.tombstones.values()],
       terminalOutbox: this.terminalTaskEventOutbox.snapshot(),
       crossBrokerTerminalBriefs: this.crossBrokerTerminalBriefs.snapshot(),
+      wavePlans: this.wavePlans.snapshot(),
       ...this.snapshotExtensions.collectFields(),
     };
   }
@@ -1478,6 +1551,7 @@ export class InMemoryA2ABroker {
 
     this.terminalTaskEventOutbox.restoreSnapshot(snapshot.terminalOutbox ?? []);
     this.crossBrokerTerminalBriefs.restore(snapshot.crossBrokerTerminalBriefs ?? []);
+    this.wavePlans.restore(snapshot.wavePlans ?? []);
 
     this.applyRetentionPolicy();
   }

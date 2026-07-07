@@ -208,6 +208,7 @@ function isAuditEventProtected(
     case "exchange-message":
       return protectedIds.exchangeMessageIds.has(event.targetId);
     case "broker":
+    case "wave-plan":
       return false;
   }
 }
