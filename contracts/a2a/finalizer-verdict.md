@@ -182,8 +182,14 @@ operator still triggers the run and authors the judgment content.
   (`scripts/check-finalizer-verdict.mjs`), which MUST be wired as a required
   check when broker enforcement is on. The accept-path hook is defense-in-depth
   (block missing / wrong-decision / unbound / non-independent verdicts before
-  side-effects); true in-broker signature verification (a shared verifier module
-  importable by both broker `src` and `scripts`) is a follow-up.
+  side-effects). **In-broker static-key signature verification landed**: when a
+  finalizer keyring is configured (`A2A_FINALIZER_KEYRING_FILE`, keyIds under the
+  `finalizer:` role prefix), the accept-path verifies the static-key verdict
+  SIGNATURE at completion time, reusing the broker's own rfc8785-jcs-v1 JCS +
+  EdDSA (a golden JCS pin guards drift from the offline verifier). Without a
+  keyring, signature authenticity stays deferred to the merge gate. The attester
+  (S3) path's X509/Fulcio chain verification remains the merge gate's job (kept
+  out of the completion hot path).
 - **Auto-derived producing worker keys**: the gate should read the producing
   worker key ids from the round's `result.provenance` rather than a CLI arg.
 - **Multi-finalizer panels** (M-of-N verdicts) for higher-stakes subjects.

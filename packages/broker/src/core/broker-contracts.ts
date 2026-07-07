@@ -4,6 +4,7 @@ import type { AuditRuntimeRepository } from "./audit-repository.js";
 import type { BrokerPolicyDocument } from "./broker-policy.js";
 import type { InjectedKnowledgeSnapshot } from "./broker-knowledge-injection.js";
 import type { FinalizerVerdictEnforcement } from "./finalizer-verdict-admission.js";
+import type { FinalizerKeyring } from "./finalizer-verdict-signature.js";
 import type { ExchangeMessageRuntimeRepository, ExchangeRuntimeRepository } from "./exchange-repository.js";
 import type { ProposalRuntimeRepository } from "./proposal-repository.js";
 import type { TaskRuntimeRepository } from "./task-repository.js";
@@ -134,6 +135,12 @@ export interface InMemoryA2ABrokerOptions {
    * stays with the repo merge gate.
    */
   finalizerVerdictEnforcement?: FinalizerVerdictEnforcement;
+  /**
+   * Registered finalizer keyring (#1383 V-c follow-up). When present, the
+   * accept-path verifies static-key verdict signatures in-broker at completion
+   * time; absent = signature authenticity deferred to the repo merge gate.
+   */
+  finalizerKeyring?: FinalizerKeyring;
   /** Optional lightweight profiling hook for broker internals. Listener errors are ignored. */
   profilingListener?: BrokerProfilingListener;
   /** Optional non-core state to include in full broker snapshots. */

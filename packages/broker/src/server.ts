@@ -114,6 +114,7 @@ import { normalizeTaskReadinessMode, type TaskReadinessMode } from "./task-readi
 import { loadBrokerPolicyFile } from "./core/broker-policy.js";
 import { loadInjectedKnowledgeFile } from "./core/broker-knowledge-injection.js";
 import { resolveFinalizerVerdictEnforcement } from "./core/finalizer-verdict-admission.js";
+import { loadFinalizerKeyringFile } from "./core/finalizer-verdict-signature.js";
 import { normalizePersistenceBackend, normalizeSqliteLoadSource } from "./persistence-options.js";
 import {
   resolveBrokerId,
@@ -402,6 +403,11 @@ export function createBrokerServer(options: BrokerServerOptions = {}): BrokerSer
   const finalizerVerdictEnforcement = resolveFinalizerVerdictEnforcement(
     options.finalizerVerdictEnforcement ?? process.env.A2A_FINALIZER_VERDICT_ENFORCEMENT,
   );
+  // Optional registered finalizer keyring (#1383 V-c follow-up): when set, the
+  // accept-path verifies static-key verdict signatures in-broker. Invalid file
+  // fails startup loudly; unset defers signature checks to the merge gate.
+  const finalizerKeyringFile = options.finalizerKeyringFile ?? process.env.A2A_FINALIZER_KEYRING_FILE;
+  const finalizerKeyring = finalizerKeyringFile ? loadFinalizerKeyringFile(finalizerKeyringFile) : undefined;
   const hotRuntimeLimits = resolveHotRuntimeLimits(options);
   const maxSnapshotBytes = Math.max(
     1,
@@ -551,6 +557,7 @@ export function createBrokerServer(options: BrokerServerOptions = {}): BrokerSer
       policyDocument: brokerPolicyDocument,
       injectedKnowledge,
       finalizerVerdictEnforcement,
+      finalizerKeyring,
       snapshotExtensions: pushNotificationSnapshotExtension,
     });
   if (options.broker && pushNotificationSnapshotExtension) {

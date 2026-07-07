@@ -24,6 +24,7 @@
 // check when broker enforcement is on. This hook is defense-in-depth that
 // blocks missing / wrong-decision / unbound / non-independent verdicts at the
 // accept moment, before side-effects, without faking the crypto it cannot do.
+import { verifyFinalizerVerdictSignature, type FinalizerKeyring } from "./finalizer-verdict-signature.js";
 import type { TaskRecord, TaskResult } from "./types.js";
 
 export const FINALIZER_VERDICT_SCHEMA = "a2a.finalizer.verdict.v1";
@@ -59,10 +60,18 @@ export function evaluateFinalizerVerdictAdmission({
   task,
   result,
   enforcement,
+  finalizerKeyring,
 }: {
   task: TaskRecord;
   result: TaskResult | undefined;
   enforcement: FinalizerVerdictEnforcement;
+  /**
+   * Registered finalizer keyring (#1383 V-c follow-up). When present, the
+   * broker verifies the STATIC-KEY verdict signature at accept time; when
+   * absent, signature authenticity is deferred to the merge gate (the option-2
+   * v0 boundary). The attester (S3) path is always gate-verified.
+   */
+  finalizerKeyring?: FinalizerKeyring;
 }): FinalizerVerdictAdmissionResult {
   const optedIn = task.payload?.["requireFinalizerVerdict"] === true;
   if (enforcement === "off" || !optedIn) {
@@ -114,6 +123,16 @@ export function evaluateFinalizerVerdictAdmission({
     }
     if (typeof producingKey === "string" && producingKey === finalizerKeyId) {
       violations.push(`finalizer_verdict_not_independent: finalizerKeyId '${finalizerKeyId}' produced the result (self-certification)`);
+    }
+    // In-broker signature verification (#1383 V-c follow-up): when a finalizer
+    // keyring is configured, the static-key signature is verified here, at the
+    // accept moment. Without a keyring, signature authenticity stays with the
+    // merge gate (documented v0 boundary).
+    if (finalizerKeyring) {
+      const sigResult = verifyFinalizerVerdictSignature(verdict, finalizerKeyring);
+      if (!sigResult.ok) {
+        violations.push(`finalizer_verdict_signature_invalid: ${sigResult.reason}`);
+      }
     }
   } else if (isRecord(attester) && typeof attester["subject"] === "string" && attester["subject"]) {
     // attested path: presence ok; allowlist + cert-chain independence at the gate.

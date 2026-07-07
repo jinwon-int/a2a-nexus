@@ -23,6 +23,7 @@ import {
   evaluateFinalizerVerdictAdmission,
   type FinalizerVerdictEnforcement,
 } from "./finalizer-verdict-admission.js";
+import type { FinalizerKeyring } from "./finalizer-verdict-signature.js";
 import type { TaskUpdateReason } from "./broker-contracts.js";
 import type {
   A2AExchangeState,
@@ -43,6 +44,8 @@ export interface TaskTerminalContext {
   maxRequeueAttempts: number;
   /** Accept-path finalizer-verdict posture (#1383 V-c). Default "off". */
   finalizerVerdictEnforcement: FinalizerVerdictEnforcement;
+  /** Registered finalizer keyring (#1383 V-c). When set, the accept-path verifies static-key verdict signatures in-broker. */
+  finalizerKeyring?: FinalizerKeyring;
   requireTask(id: string): TaskRecord;
   assertTaskWorker(task: TaskRecord, workerId: string, action: string): void;
   setTaskRecord(task: TaskRecord): void;
@@ -126,6 +129,7 @@ export function completeTask(
     task,
     result: normalizedResult,
     enforcement: context.finalizerVerdictEnforcement,
+    finalizerKeyring: context.finalizerKeyring,
   });
   if (verdictAdmission.applies && !verdictAdmission.ok) {
     const detail = verdictAdmission.violations.join("; ");
