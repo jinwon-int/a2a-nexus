@@ -11,6 +11,7 @@ import type {
   WorkerRecord,
 } from "./types.js";
 import type { CrossBrokerTerminalBriefProjection } from "./cross-broker-terminal-brief.js";
+import type { PersistedWavePlan } from "./wave-plan-store.js";
 import type { TerminalTaskOutboxEvent } from "./terminal-event-outbox.js";
 import type { TaskPushNotificationConfig } from "../a2a/push-notification-config.js";
 import type {
@@ -37,6 +38,7 @@ export interface BrokerSnapshot {
   tombstones?: TaskTombstone[];
   terminalOutbox?: TerminalTaskOutboxEvent[];
   crossBrokerTerminalBriefs?: CrossBrokerTerminalBriefProjection[];
+  wavePlans?: PersistedWavePlan[];
   pushNotificationConfigs?: TaskPushNotificationConfig[];
 }
 

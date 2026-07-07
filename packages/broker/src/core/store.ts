@@ -403,6 +403,7 @@ export class SqliteBrokerStateStore implements BrokerStateStore {
       tombstones: this.readHotTombstones(),
       terminalOutbox: this.readHotTerminalOutbox({ limit: this.maxHotRuntimeTerminalOutboxEvents }),
       crossBrokerTerminalBriefs: [],
+      wavePlans: [],
     };
     if (pushNotificationConfigs !== undefined) {
       snapshot.pushNotificationConfigs = pushNotificationConfigs;
