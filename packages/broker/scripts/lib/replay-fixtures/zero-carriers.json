@@ -1,0 +1,19 @@
+{
+  "$comment": "Synthetic zero-carrier dispatch (#1302 M4-b): a source-only analyze payload whose every carrier is empty. Replay must reproduce the exact live rejection (source_projection_empty, quality zero_files) locally - the negative control for the incident fixture.",
+  "task": {
+    "id": "replay-zero-carriers",
+    "intent": "analyze",
+    "status": "claimed",
+    "createdAt": "2026-07-07T00:00:00.000Z",
+    "message": "A2A analysis dispatch with no source carriers."
+  },
+  "payload": {
+    "mode": "analysis-only",
+    "roundMode": "a2ad",
+    "sourceOnly": true,
+    "noLive": true,
+    "taskClass": "review",
+    "parentRoundId": "replay-fixture-round-r1",
+    "sourceBundle": { "files": [] }
+  }
+}

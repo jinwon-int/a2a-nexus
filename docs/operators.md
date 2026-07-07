@@ -80,6 +80,28 @@ The broker standard field is `result.error.details` / `task.error.details` with 
 
 `other` is still allowed, but it must explain why a narrower category is impossible. The scorecard gate prints a warning when consecutive new scorecard entries have `failureBreakdown.other` as the majority, because that pattern means failed-lane readback is not giving the finalizer enough repo-visible evidence.
 
+#### Round replay before live re-dispatch (#1302)
+
+Before burning a live round on a `projection`/`dispatch`-stage failure
+hypothesis, bisect the stage locally by replaying the preserved payload
+through the deterministic orchestration paths:
+
+```
+node packages/broker/scripts/replay-round.mjs --payload <preserved-payload.json> [--task task.json] [--result result.json] [--json]
+```
+
+Stages replayed: readiness → carrier projection → bridge-input files (with the
+3-point carrier stats and the message-excerpt drift probe — the zero_files
+signature) → the deterministic source-only bridge → acceptance judgment over a
+preserved worker result. Provider/model calls, worker dispatch, GitHub side
+effects, and acceptance command execution are never replayed (explicit skip
+markers). The replay is read-only and prints live-comparable error codes
+(`source_projection_empty`, `projection_zero_files`, …), so a
+projection-classified incident should reproduce here before any re-dispatch;
+attaching the replay log to the incident issue is recommended (not required).
+Committed regression fixtures live in
+`packages/broker/scripts/lib/replay-fixtures/`.
+
 ### Dialectic health counters (#1296)
 
 When a round uses ordinary A2A lanes as a weak dialectic, the finalizer should record aggregate lane-health counters in the scorecard when readback evidence is available:
