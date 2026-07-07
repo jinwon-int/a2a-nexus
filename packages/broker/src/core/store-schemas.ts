@@ -154,6 +154,13 @@ export const taskPolicyContextSchema = z
     requiresApproval: z.boolean().optional(),
     liveImpact: z.boolean().optional(),
     targetEnvironment: z.string().min(1).optional(),
+    injectedKnowledge: z
+      .object({
+        source: z.string().min(1),
+        asOf: z.string().min(1),
+        hints: z.array(z.string().min(1)),
+      })
+      .optional(),
   })
   .passthrough();
 

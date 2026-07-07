@@ -2,6 +2,7 @@ import type { TaskReadinessMode } from "../task-readiness.js";
 import type { ArtifactRuntimeRepository } from "./artifact-repository.js";
 import type { AuditRuntimeRepository } from "./audit-repository.js";
 import type { BrokerPolicyDocument } from "./broker-policy.js";
+import type { InjectedKnowledgeSnapshot } from "./broker-knowledge-injection.js";
 import type { ExchangeMessageRuntimeRepository, ExchangeRuntimeRepository } from "./exchange-repository.js";
 import type { ProposalRuntimeRepository } from "./proposal-repository.js";
 import type { TaskRuntimeRepository } from "./task-repository.js";
@@ -117,6 +118,13 @@ export interface InMemoryA2ABrokerOptions {
    * evaluation (legacy behavior, everything allowed).
    */
   policyDocument?: BrokerPolicyDocument;
+  /**
+   * Deterministic anonymous knowledge snapshot (#1373 K1), pre-validated by
+   * validateInjectedKnowledgeSnapshot. When present, tasks created with
+   * payload.injectKnowledge === true receive counts-only hints in
+   * policyContext.injectedKnowledge. Absent = no injection (legacy behavior).
+   */
+  injectedKnowledge?: InjectedKnowledgeSnapshot;
   /** Optional lightweight profiling hook for broker internals. Listener errors are ignored. */
   profilingListener?: BrokerProfilingListener;
   /** Optional non-core state to include in full broker snapshots. */

@@ -102,6 +102,12 @@ export interface NormalizedTaskPolicyContext {
   requiresApproval?: boolean;
   liveImpact?: boolean;
   targetEnvironment?: A2AWorkerEnvironment;
+  /** Broker-injected anonymous hints (#1373 K1); see types.ts policyContext. */
+  injectedKnowledge?: {
+    source: string;
+    asOf: string;
+    hints: string[];
+  };
 }
 
 export function normalizeTaskPolicyContext(

@@ -170,6 +170,14 @@ export interface BrokerServerOptions extends BrokerRuntimeHotLimitOptions {
    */
   brokerPolicyFile?: string;
   /**
+   * JSON file with the deterministic anonymous knowledge snapshot (#1373 K1),
+   * schema a2a.injected-knowledge.v1, built offline by
+   * scripts/build-injected-knowledge.mjs. Falls back to
+   * A2A_INJECTED_KNOWLEDGE_FILE. A configured-but-invalid or unreadable
+   * snapshot fails startup loudly. Unset = no injection (legacy behavior).
+   */
+  injectedKnowledgeFile?: string;
+  /**
    * JSON trust-anchor file ({ "<brokerId>": "<SPKI public key PEM>" }) for
    * the cross-broker terminal-brief receiver. When set, every inbound
    * projection must carry a request-bound `senderProof` (a JWS over

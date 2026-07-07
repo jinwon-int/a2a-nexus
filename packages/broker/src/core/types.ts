@@ -379,6 +379,17 @@ export interface A2ATaskRequest {
     requiresApproval?: boolean;
     liveImpact?: boolean;
     targetEnvironment?: A2AWorkerEnvironment;
+    /**
+     * Broker-owned anonymous memory injection (#1373 K1): counts-only hint
+     * sentences selected from a deterministic asOf-pinned snapshot when the
+     * requester opts in via payload.injectKnowledge. Worker-generation input
+     * only — never a finalizer/verdict input (K3 #1372).
+     */
+    injectedKnowledge?: {
+      source: string;
+      asOf: string;
+      hints: string[];
+    };
   };
   createdAt: string;
 }

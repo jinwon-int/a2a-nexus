@@ -99,6 +99,7 @@ import type { RoundStatusSummary } from "./round-status.js";
 
 import { normalizeTaskPolicyContext } from "./policy.js";
 import type { BrokerPolicyDocument } from "./broker-policy.js";
+import { selectInjectedKnowledge, type InjectedKnowledgeSnapshot } from "./broker-knowledge-injection.js";
 import * as taskAdmission from "./broker-task-admission.js";
 import type { TaskAdmissionContext } from "./broker-task-admission.js";
 import * as staleTaskRequeue from "./broker-stale-task-requeue.js";
@@ -310,6 +311,7 @@ export class InMemoryA2ABroker {
   private readonly teamId?: string;
   private readonly taskReadinessMode: TaskReadinessMode;
   private readonly policyDocument?: BrokerPolicyDocument;
+  private readonly injectedKnowledge?: InjectedKnowledgeSnapshot;
   private readonly workerHeartbeatPersistIntervalMs: number;
   private lastFullRetentionPersistAtMs = Date.now();
 
@@ -334,6 +336,7 @@ export class InMemoryA2ABroker {
     this.teamId = normalizeOwnershipString(options.teamId);
     this.taskReadinessMode = normalizeTaskReadinessMode(options.taskReadinessMode);
     this.policyDocument = options.policyDocument;
+    this.injectedKnowledge = options.injectedKnowledge;
     this.workerHeartbeatPersistIntervalMs = Math.max(0, options.workerHeartbeatPersistIntervalMs ?? DEFAULT_WORKER_HEARTBEAT_PERSIST_INTERVAL_MS);
     this.retentionPolicy = normalizeBrokerRetentionPolicy(options.retention);
     this.maxRequeueAttempts = normalizeMaxRequeueAttempts(options.maxRequeueAttempts);
@@ -849,9 +852,26 @@ export class InMemoryA2ABroker {
 
     const now = isoNow();
     const basePolicyContext = normalizeTaskPolicyContext(normalizedRequest);
-    const policyContext = policyDecision?.action === "require_approval"
+    let policyContext = policyDecision?.action === "require_approval"
       ? { ...(basePolicyContext ?? {}), requiresApproval: true }
       : basePolicyContext;
+    // Broker-owned anonymous memory injection (#1373 K1): opt-in via
+    // payload.injectKnowledge. Fail-open — hints are aids, never blockers; a
+    // skipped injection is telemetry, not an error. Worker-generation input
+    // only (K3 #1372: never a finalizer/verdict input).
+    if (this.injectedKnowledge && normalizedRequest.payload?.["injectKnowledge"] === true) {
+      try {
+        const injected = selectInjectedKnowledge(this.injectedKnowledge, normalizedRequest.intent);
+        if (injected) {
+          policyContext = { ...(policyContext ?? {}), injectedKnowledge: injected };
+        }
+      } catch (error) {
+        console.warn("[a2a-broker] knowledge injection skipped (fail-open)", {
+          taskId: normalizedRequest.id,
+          reason: error instanceof Error ? error.message : String(error),
+        });
+      }
+    }
     const initialStatus: TaskStatus = policyContext?.requiresApproval === true ? "blocked" : "queued";
     const teamId = normalizeOwnershipString(normalizedRequest.teamId) ?? this.teamId;
     assertTaskCreationOwnership(brokerOfRecord, this.brokerId);

@@ -20,6 +20,8 @@ const DEFAULT_SUBSTANTIVE_LANE_WARNING_WINDOW = 2;
 const DEFAULT_SUBSTANTIVE_LANE_WARNING_THRESHOLD = 0.5;
 const ISO_DATE = /^\d{4}-\d{2}-\d{2}$/;
 const IMPLEMENTATION_MODES = ['solo', 'h1-pipeline', 'h2-hybrid'];
+// K1 (#1373) injection-wave marker for H3 cross-referencing.
+const KNOWLEDGE_INJECTION_VALUES = ['on', 'off'];
 const IMPLEMENTATION_DURATION_BANDS = ['<1h', '1-4h', '>4h'];
 
 /**
@@ -92,6 +94,9 @@ export function evaluateScorecard(doc) {
       } else if (!IMPLEMENTATION_DURATION_BANDS.includes(entry.implementationDurationBand)) {
         failures.push(`${where}: implementationDurationBand must be one of: ${IMPLEMENTATION_DURATION_BANDS.join(', ')}`);
       }
+    }
+    if (entry?.knowledgeInjection !== undefined && !KNOWLEDGE_INJECTION_VALUES.includes(entry.knowledgeInjection)) {
+      failures.push(`${where}: knowledgeInjection must be one of: ${KNOWLEDGE_INJECTION_VALUES.join(', ')}`);
     }
     const breakdown = entry?.failureBreakdown;
     if (breakdown !== undefined) {
