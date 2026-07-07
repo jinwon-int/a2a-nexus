@@ -109,7 +109,16 @@ function decodeProtectedAlg(signature: AgentCardSignature): "EdDSA" | "ES256" {
 }
 
 function stripResultProvenance(result: Record<string, unknown>): Record<string, unknown> {
-  const { provenance: _omit, ...rest } = result;
+  // The result hash covers the CORE result only — it must exclude both
+  // attestation wrappers that are computed OVER it:
+  //  - provenance: the worker/broker signatures cover the hash, so they cannot
+  //    be inside it.
+  //  - finalizerVerdict (#1383 V-c): the finalizer binds subject.resultHash to
+  //    this hash and signs the verdict BEFORE it is embedded, so including the
+  //    verdict would make the post-embedding anchor an unsatisfiable sha256
+  //    fixed point (the verdict subject can never equal a hash that covers the
+  //    verdict). Excluding it is a no-op for verdict-less results (back-compat).
+  const { provenance: _prov, finalizerVerdict: _verdict, ...rest } = result;
   return rest;
 }
 

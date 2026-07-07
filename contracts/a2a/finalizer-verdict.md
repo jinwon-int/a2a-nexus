@@ -175,6 +175,16 @@ operator still triggers the run and authors the judgment content.
   provenance-anchored result identity; a verdict-requiring completion must be
   provenance-anchored), and INDEPENDENCE (finalizer identity in the disjoint
   `finalizer:` role namespace and not the producing `result.provenance.workerKeyId`).
+  **The finalizer MUST bind `subject.resultHash` to `hashTaskResult(result)`**
+  — the shared core-result hash, which excludes BOTH `provenance` AND
+  `finalizerVerdict` (#1383 V-c). Excluding the verdict is essential: the
+  finalizer signs the verdict before it is embedded, so an anchor that covered
+  the verdict would be an unsatisfiable sha256 fixed point (the pre-signed
+  subject can never equal a hash computed over the embedded verdict). This is a
+  no-op for verdict-less results, so provenance verification of existing G2
+  traffic is unchanged; worker and broker must run the same build so both
+  compute the verdict-excluding hash. The producing worker and the finalizer
+  therefore anchor to the same value and the binding is satisfiable.
   **v0 boundary**: the broker does NOT verify the verdict SIGNATURE — the broker
   runtime cannot reuse the offline verifier (`scripts/lib`) without a JCS/JWS
   reimplementation, so signature authenticity and registered-key / attester-
