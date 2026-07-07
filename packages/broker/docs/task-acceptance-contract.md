@@ -77,3 +77,22 @@ Required fields for patch/implementation tasks:
 | `evidenceGate` | Non-empty operator-facing RED/GREEN evidence description. |
 
 Analysis/read-only tasks (`intent: "analyze"`, read-only validation modes, etc.) are exempt. Implementation: `src/task-readiness.ts`; behavior tests: `src/task-readiness.test.ts`.
+
+### Hybrid-subagent scope enforcement: two distinct guards (#1348 / #1376)
+
+For `executionMode: "hybrid-subagent"` patch lanes, `declaredScope.paths` is
+enforced by **two guards with different trust postures** — the difference is
+load-bearing:
+
+- **Post-run evidence gate** (`hybridDeclaredScopePreflight`, #1348): runs the
+  #1235 directory-boundary write-set matcher over the runner's **self-reported**
+  `filesChanged`. Catches honest scope drift, but a malicious/buggy runner can
+  write out of scope and under-report (`filesChanged: []`) to evade it. This is
+  a lint/readback guard, not a write-prevention boundary.
+- **Write-point readback** (`hybridWritePointPreflight`, #1376): independently
+  inspects the runner's git worktree (`git status --porcelain -z`) and runs the
+  same matcher over the **actual** touched paths — no trust in self-report. An
+  under-reporting runner fails closed (`hybrid_declared_scope_writepoint_violation`).
+  When the worktree is not git-inspectable it degrades to self-report only; the
+  v1 trust posture (opt-in trusted self-fleet, no auto-merge of hybrid PRs)
+  covers that residual gap.
