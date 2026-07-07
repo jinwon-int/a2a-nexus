@@ -384,7 +384,15 @@ Rules:
   when loading the snapshot — a violating snapshot fails broker startup.
 - **Deterministic.** The snapshot is pinned by `asOf`; replaying the same round
   against the same snapshot yields the same hints (max 8, snapshot order,
-  matched by `taskClass` = task intent plus classless hints).
+  matched by hint `taskClass` = the lane's declared class plus classless hints).
+- **Matching key: `payload.taskClass`, falling back to the task intent.** The
+  snapshot `taskClass` axis is the M1 ledger LANE classification, not the task
+  intent — substantive review lanes dispatch as intent `analyze` (the worker
+  analysis-bridge routing key). Declare the lane class explicitly:
+  `payload: { "injectKnowledge": true, "taskClass": "review" }` with intent
+  `analyze`. Matching on intent alone made "hints match" and "worker runs the
+  analysis bridge" mutually exclusive for review lanes (discovered by the
+  2026-07-07 K1-d wave: injection confirmed live, 0/4 substantive output).
 - **Opt-in and fail-open.** No `injectKnowledge: true` (or no snapshot
   configured) means the payload is byte-identical to today. A failed injection
   never blocks the task — it proceeds hint-less and the skip is logged.

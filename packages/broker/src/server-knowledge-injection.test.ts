@@ -10,6 +10,7 @@ import { join } from "node:path";
 import {
   INJECTED_KNOWLEDGE_SCHEMA,
   MAX_INJECTED_HINTS,
+  resolveInjectedKnowledgeTaskClass,
   selectInjectedKnowledge,
   validateInjectedKnowledgeSnapshot,
   type InjectedKnowledgeSnapshot,
@@ -86,6 +87,30 @@ test("selection is intent-matched, order-preserving, capped, and asOf-pinned", (
   assert.equal(selectInjectedKnowledge(many, "analyze")?.hints.length, MAX_INJECTED_HINTS);
 });
 
+// --- matching key: payload.taskClass overrides intent (#1373 K1-d follow-up) ---
+// The ledger/snapshot taskClass axis is a lane classification, not the task
+// intent: substantive review lanes dispatch as intent "analyze" (the worker
+// analysis-bridge routing key) with the lane class declared separately.
+// Matching on intent alone made "hints match" and "worker runs analysis"
+// mutually exclusive for review lanes.
+
+test("payload.taskClass is the hint matching key when present; intent stays the fallback", () => {
+  const snap = snapshot();
+  // review lane dispatched the working way: intent analyze + declared class review
+  assert.equal(resolveInjectedKnowledgeTaskClass("analyze", { taskClass: "review" }), "review");
+  const selected = selectInjectedKnowledge(snap, resolveInjectedKnowledgeTaskClass("analyze", { taskClass: "review" }));
+  assert.ok(selected);
+  assert.deepEqual(selected.hints, [
+    "failureClass environment recurred 3 consecutive rounds",
+    "adapterClass=hermes-analysis taskClass=review: substantive 7/10",
+  ]);
+  // fallback: no payload / no taskClass / non-string or blank taskClass => intent
+  assert.equal(resolveInjectedKnowledgeTaskClass("analyze", undefined), "analyze");
+  assert.equal(resolveInjectedKnowledgeTaskClass("analyze", {}), "analyze");
+  assert.equal(resolveInjectedKnowledgeTaskClass("analyze", { taskClass: 7 }), "analyze");
+  assert.equal(resolveInjectedKnowledgeTaskClass("analyze", { taskClass: "   " }), "analyze");
+});
+
 // --- broker integration ---
 
 test("opt-in task creation injects hints into policyContext; default stays unchanged (#1373)", async () => {
@@ -131,6 +156,46 @@ test("opt-in task creation injects hints into policyContext; default stays uncha
     assert.equal(noOptIn.status, 201);
     const plain = await noOptIn.json() as { policyContext?: { injectedKnowledge?: unknown } };
     assert.equal(plain.policyContext?.injectedKnowledge, undefined, "no opt-in => unchanged");
+  } finally {
+    await server.close();
+  }
+});
+
+test("intent analyze + payload.taskClass review matches review-class hints end-to-end", async () => {
+  const file = snapshotFile({
+    schemaVersion: INJECTED_KNOWLEDGE_SCHEMA,
+    asOf: "2026-07-07",
+    source: "reliability-ledger+taxonomy",
+    hints: [{ taskClass: "review", text: "adapterClass=hermes-analysis taskClass=review: substantive 7/10" }],
+  });
+  const server = await startTestServer({ enforceRequesterIdentity: false, injectedKnowledgeFile: file });
+  try {
+    const res = await fetch(`${server.baseUrl}/workers/register`, {
+      method: "POST", headers: jsonHeaders(), body: JSON.stringify(workerPayload("workerbeta")),
+    });
+    assert.ok(res.status === 200 || res.status === 201);
+    const created = await fetch(`${server.baseUrl}/tasks`, {
+      method: "POST",
+      headers: jsonHeaders({ "x-a2a-requester-id": "hub-a", "x-a2a-requester-role": "hub" }),
+      body: JSON.stringify({
+        id: "k1-task-class-key",
+        intent: "analyze",
+        requester: { id: "hub-a", kind: "node", role: "hub" },
+        target: { id: "workerbeta", kind: "node", role: "analyst" },
+        targetNodeId: "workerbeta",
+        message: "injection test",
+        taskOrigin: "api",
+        payload: { injectKnowledge: true, taskClass: "review" },
+      }),
+    });
+    assert.equal(created.status, 201);
+    const body = await created.json() as {
+      policyContext?: { injectedKnowledge?: { asOf: string; hints: string[] } };
+    };
+    assert.ok(body.policyContext?.injectedKnowledge, "declared lane class must match review hints");
+    assert.deepEqual(body.policyContext.injectedKnowledge.hints, [
+      "adapterClass=hermes-analysis taskClass=review: substantive 7/10",
+    ]);
   } finally {
     await server.close();
   }
