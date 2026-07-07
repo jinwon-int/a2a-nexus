@@ -23,8 +23,6 @@ import {
 } from "./broker-worker-runtime.js";
 import {
   normalizeTaskPayload,
-  normalizeTaskResult,
-  normalizeTaskError,
   normalizeTaskRecord,
   hoistParentRoundFields,
 } from "./broker-task-record-normalizers.js";
@@ -79,7 +77,6 @@ import {
 } from "./broker-exchange.js";
 import { applyBrokerExchangeMessageDecision } from "./broker-exchange-task-decision.js";
 import { getBrokerRoundStatus, listBrokerTasks, readBrokerTask } from "./broker-task-read.js";
-import { planClassAwareTaskRetry } from "./task-retry-policy.js";
 import { readBrokerProposal, listBrokerProposals } from "./broker-proposal-read.js";
 import {
   listBrokerArtifactsForProposal,
@@ -110,6 +107,8 @@ import * as proposalWrite from "./broker-proposal-write.js";
 import * as taskApproval from "./broker-task-approval.js";
 import * as taskCancellation from "./broker-task-cancellation.js";
 import * as taskCheckpoint from "./broker-task-checkpoint.js";
+import * as taskTerminal from "./broker-task-terminal.js";
+import type { TaskTerminalContext } from "./broker-task-terminal.js";
 import type { TaskCheckpointContext } from "./broker-task-checkpoint.js";
 import type { TaskCancellationContext } from "./broker-task-cancellation.js";
 import type { TaskApprovalContext } from "./broker-task-approval.js";
@@ -120,8 +119,6 @@ import {
   type BrokerStateSaveHints,
   type BrokerStateStore,
 } from "./store.js";
-import { validateGithubTaskCompletionEvidence } from "./github-task-completion.js";
-import { validateReviewEvidence } from "../worker-review.js";
 import {
   normalizeTaskReadinessMode,
   type TaskReadinessMode,
@@ -277,11 +274,6 @@ const HOT_PERSIST_FULL_RETENTION_INTERVAL_MS = 5 * 60_000;
 
 const DEFAULT_CHECKPOINT_TIMEOUT_MS = 24 * 60 * 60 * 1000;
 
-
-function uniqueTaskErrorHistory(history: TaskError[] | undefined, error: TaskError): TaskError[] {
-  const values = [...(history ?? []), error];
-  return values.slice(-5).map((item) => normalizeTaskError(item));
-}
 
 export class InMemoryA2ABroker {
   private readonly exchanges = new Map<string, A2AExchangeState>();
@@ -1212,181 +1204,33 @@ export class InMemoryA2ABroker {
     return task;
   }
 
+  // Worker terminal transitions (#1289 L-broker-15): moved to
+  // broker-task-terminal.ts with callback-injected state effects; proposal
+  // side-effects route through the extracted proposal-write delegators.
+  private taskTerminalContext(): TaskTerminalContext {
+    return {
+      tasks: this.tasks,
+      maxRequeueAttempts: this.maxRequeueAttempts,
+      requireTask: (id) => this.requireTask(id),
+      assertTaskWorker: (task, workerId, action) => this.assertTaskWorker(task, workerId, action),
+      setTaskRecord: (task) => this.setTaskRecord(task),
+      setProposalRecord: (proposal) => this.setProposalRecord(proposal),
+      syncExchangeStateFromTask: (task, nextStatus) => this.syncExchangeStateFromTask(task, nextStatus),
+      appendAuditEvent: (input) => this.appendAuditEvent(input),
+      writeTombstone: (task, reason, tombstoneContext) => this.writeTombstone(task, reason, tombstoneContext),
+      persistState: () => this.persistState(),
+      emitTaskEvent: (task, reason) => this.taskEvents.emit(task, reason),
+      submitValidationResult: (proposalId, request) => this.submitValidationResult(proposalId, request),
+      applyProposalLocally: (proposalId, request) => this.applyProposalLocally(proposalId, request),
+    };
+  }
+
   completeTask(taskId: string, workerId: string, result?: TaskResult): TaskRecord {
-    const task = this.requireTask(taskId);
-    this.assertTaskWorker(task, workerId, "complete");
-
-    // If already canceled, record late completion evidence instead of silently dropping.
-    if (task.status === "canceled") {
-      return this.recordLateEvidenceAfterCancel(task, workerId, "complete", { result });
-    }
-    // Idempotent: if already succeeded/failed, return as-is without mutation
-    if (task.status === "succeeded" || task.status === "failed") {
-      return task;
-    }
-    if (task.status !== "claimed" && task.status !== "running") {
-      throw new BrokerError("invalid_transition", "cannot complete task while status is " + task.status);
-    }
-    // Contract §1.3: a checkpointed task is a real lifecycle gate. The worker
-    // must not land terminal mutations while paused/awaiting_operator —
-    // resume (operator/requester input) or cancel first.
-    if (task.checkpoint) {
-      throw new BrokerError(
-        "invalid_transition",
-        `cannot complete task while a ${task.checkpoint.state} checkpoint is active; resume or cancel first`,
-      );
-    }
-
-    const normalizedResult = normalizeTaskResult(result);
-    const completionEvidenceError =
-      validateReviewEvidence(task, normalizedResult, workerId) ?? validateGithubTaskCompletionEvidence(task, normalizedResult);
-    if (completionEvidenceError) {
-      const brokerErrorCode =
-        completionEvidenceError.code === "review_evidence_missing" ||
-        completionEvidenceError.code === "review_not_independent" ||
-        completionEvidenceError.code === "review_verdict_failed" ||
-        completionEvidenceError.code === "github_completion_receipt_invalid"
-          ? completionEvidenceError.code
-          : "github_completion_evidence_missing";
-      throw new BrokerError(
-        brokerErrorCode,
-        completionEvidenceError.message,
-        completionEvidenceError.details,
-      );
-    }
-    this.applyTaskCompletion(task, workerId, normalizedResult);
-
-    const now = isoNow();
-    task.status = "succeeded";
-    task.claimedBy = workerId;
-    task.updatedAt = now;
-    task.completedAt = now;
-    task.result = normalizedResult;
-    task.error = undefined;
-    task.artifactIds = uniqueIds([
-      ...(task.artifactIds ?? []),
-      ...(normalizedResult.artifactIds ?? []),
-      ...(normalizedResult.validation?.artifactIds ?? []),
-      ...(normalizedResult.apply?.artifactIds ?? []),
-    ]);
-    this.setTaskRecord(task);
-    this.syncExchangeStateFromTask(task, "completed");
-    this.appendAuditEvent({
-      actorId: workerId,
-      action: "task.succeeded",
-      targetType: "task",
-      targetId: task.id,
-      proposalId: task.proposalId,
-      note: normalizedResult.note ?? normalizedResult.summary ?? task.intent,
-    });
-    this.persistState();
-    this.taskEvents.emit(task, "succeeded");
-    // Succeeded tasks don't get a tombstone — they completed normally.
-    return task;
+    return taskTerminal.completeTask(taskId, workerId, result, this.taskTerminalContext());
   }
 
   failTask(taskId: string, workerId: string, error?: TaskError): TaskRecord {
-    const task = this.requireTask(taskId);
-    this.assertTaskWorker(task, workerId, "fail");
-
-    // If already canceled, record late failure evidence instead of silently dropping.
-    if (task.status === "canceled") {
-      return this.recordLateEvidenceAfterCancel(task, workerId, "fail", { error });
-    }
-    // Idempotent: if already succeeded/failed, return as-is without mutation
-    if (task.status === "succeeded" || task.status === "failed") {
-      return task;
-    }
-    if (task.status !== "claimed" && task.status !== "running") {
-      throw new BrokerError("invalid_transition", "cannot fail task while status is " + task.status);
-    }
-    // Contract §1.3: terminal mutations are gated while a checkpoint is
-    // active (see completeTask).
-    if (task.checkpoint) {
-      throw new BrokerError(
-        "invalid_transition",
-        `cannot fail task while a ${task.checkpoint.state} checkpoint is active; resume or cancel first`,
-      );
-    }
-
-    const now = isoNow();
-    const normalizedError = normalizeTaskError(error);
-    task.status = "failed";
-    task.claimedBy = workerId;
-    task.updatedAt = now;
-    task.completedAt = now;
-    task.error = normalizedError;
-
-    const retryPlan = planClassAwareTaskRetry(task, normalizedError, {
-      maxRequeueAttempts: this.maxRequeueAttempts,
-      nowMs: Date.parse(now),
-      taskIdExists: (id) => this.tasks.has(id),
-    });
-    let retryTask: TaskRecord | undefined;
-    if (retryPlan.shouldRetry && retryPlan.retryTaskId && retryPlan.nextAttempt !== undefined) {
-      task.retriedBy = retryPlan.retryTaskId;
-      const retryPayload = {
-        ...task.payload,
-        retryClass: retryPlan.retryClass,
-        retryAttempt: retryPlan.nextAttempt,
-        retryOfTaskId: task.retryOfTaskId ?? task.id,
-        retriedFromTaskId: task.id,
-        ...(retryPlan.retryNotBeforeAt ? { retryNotBeforeAt: retryPlan.retryNotBeforeAt } : {}),
-      };
-      retryTask = normalizeTaskRecord({
-        ...task,
-        id: retryPlan.retryTaskId,
-        parentTaskId: task.parentTaskId ?? task.id,
-        referenceTaskIds: uniqueIds([...(task.referenceTaskIds ?? []), task.id]),
-        status: "queued",
-        payload: retryPayload,
-        retryOfTaskId: task.retryOfTaskId ?? task.id,
-        attempt: retryPlan.nextAttempt,
-        retriedBy: undefined,
-        requeueCount: retryPlan.nextRequeueCount,
-        claimedAt: undefined,
-        claimedBy: undefined,
-        completedAt: undefined,
-        result: undefined,
-        error: undefined,
-        errorHistory: uniqueTaskErrorHistory(task.errorHistory, normalizedError),
-        checkpoint: undefined,
-        attemptId: undefined,
-        createdAt: now,
-        updatedAt: now,
-      });
-    }
-
-    this.setTaskRecord(task);
-    if (retryTask) {
-      this.setTaskRecord(retryTask);
-    }
-    this.syncExchangeStateFromTask(task, "failed");
-    this.appendAuditEvent({
-      actorId: workerId,
-      action: "task.failed",
-      targetType: "task",
-      targetId: task.id,
-      proposalId: task.proposalId,
-      note: normalizedError.message,
-    });
-    if (retryTask) {
-      this.appendAuditEvent({
-        actorId: "broker",
-        action: "task.retry_scheduled",
-        targetType: "task",
-        targetId: task.id,
-        proposalId: task.proposalId,
-        note: `scheduled retry ${retryTask.id} attempt ${retryTask.attempt} class ${retryPlan.retryClass}`,
-      });
-    }
-    // writeTombstone mutates state (tombstone + audit event) without persisting,
-    // so it must run before persistState() — otherwise a crash between the two
-    // loses the tombstone until the next unrelated persist.
-    this.writeTombstone(task, "failed");
-    this.persistState();
-    this.taskEvents.emit(task, "failed");
-    return task;
+    return taskTerminal.failTask(taskId, workerId, error, this.taskTerminalContext());
   }
 
   // Stale-task requeue engine (#1289 L-broker-10): the sweep moved to
@@ -2154,100 +1998,6 @@ export class InMemoryA2ABroker {
     taskAdmission.assertTaskWorker(task, workerId, action, this.taskAdmissionContext());
   }
 
-  /**
-   * Record evidence that a worker posted after the task was already canceled.
-   * The task stays canceled; late evidence is preserved for diagnostics.
-   */
-  private recordLateEvidenceAfterCancel(
-    task: TaskRecord,
-    workerId: string,
-    kind: "complete" | "fail",
-    data: { result?: TaskResult; error?: TaskError },
-  ): TaskRecord {
-    // Idempotent: if late evidence already recorded, return without mutation
-    if (task.lateEvidenceAfterCancel) {
-      return task;
-    }
-    const now = isoNow();
-    task.lateEvidenceAfterCancel = {
-      kind,
-      result: data.result ? structuredClone(data.result) : undefined,
-      error: data.error ? structuredClone(data.error) : undefined,
-      submittedAt: now,
-      submittedBy: workerId,
-    };
-    task.updatedAt = now;
-    this.setTaskRecord(task);
-    this.appendAuditEvent({
-      actorId: workerId,
-      action: "task.updated",
-      targetType: "task",
-      targetId: task.id,
-      proposalId: task.proposalId,
-      note: `late ${kind} evidence after cancel (issue #954)`,
-    });
-    this.writeTombstone(task, "canceled_with_late_completion", {
-      actorId: workerId,
-      reason: `worker posted ${kind} evidence after cancel`,
-    });
-    this.persistState();
-    return task;
-  }
-
-  private applyTaskCompletion(task: TaskRecord, workerId: string, result: TaskResult): void {
-    if (!task.proposalId) {
-      return;
-    }
-
-    if (task.intent === "validate_change") {
-      if (!result.validation) {
-        throw new BrokerError(
-          "bad_request",
-          "validate_change completion requires result.validation",
-        );
-      }
-      this.submitValidationResult(task.proposalId, {
-        nodeId: result.validation.nodeId ?? workerId,
-        kind: result.validation.kind,
-        verdict: result.validation.verdict,
-        metrics: result.validation.metrics,
-        artifactIds: uniqueIds([
-          ...(result.artifactIds ?? []),
-          ...(result.validation.artifactIds ?? []),
-        ]),
-        note: result.validation.note ?? result.note ?? result.summary,
-      });
-      return;
-    }
-
-    if (task.intent === "apply_local_change") {
-      const workspace = result.apply?.workspace ?? task.workspace;
-      if (!workspace) {
-        throw new BrokerError(
-          "bad_request",
-          "apply_local_change completion requires a workspace",
-        );
-      }
-      const proposal = this.applyProposalLocally(task.proposalId, {
-        actor: {
-          id: workerId,
-          role: task.target.role,
-          kind: task.target.kind,
-        },
-        workspace,
-        note: result.apply?.note ?? result.note ?? result.summary,
-      });
-      const artifactIds = uniqueIds([
-        ...(result.artifactIds ?? []),
-        ...(result.apply?.artifactIds ?? []),
-      ]);
-      if (artifactIds.length > 0) {
-        proposal.artifactIds = uniqueIds([...proposal.artifactIds, ...artifactIds]);
-        proposal.updatedAt = isoNow();
-        this.setProposalRecord(proposal);
-      }
-    }
-  }
 }
 
 
