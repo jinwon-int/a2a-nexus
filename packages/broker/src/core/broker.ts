@@ -10,7 +10,6 @@ import {
   countStateSaveHints,
 } from "./broker-record-helpers.js";
 import {
-  getTaskRequeueReason,
   findLatestTaskAuditEvent,
   buildTaskDiagnosticReport,
 } from "./broker-task-diagnostics.js";
@@ -69,9 +68,6 @@ import {
   getHeartbeatAuditEventId,
   pruneMapEntries,
 } from "./broker-retention-selectors.js";
-import {
-  isWorkerStale,
-} from "./broker-worker-status.js";
 // Re-exported to preserve the existing public surface; the thresholds now live
 // in broker-worker-status.js alongside the logic that classifies against them.
 export { MOBILE_OFFLINE_AFTER_MS, MOBILE_DISCONNECTED_AFTER_MS } from "./broker-worker-status.js";
@@ -122,6 +118,8 @@ import {
 import type { BrokerPolicyDocument } from "./broker-policy.js";
 import * as taskAdmission from "./broker-task-admission.js";
 import type { TaskAdmissionContext } from "./broker-task-admission.js";
+import * as staleTaskRequeue from "./broker-stale-task-requeue.js";
+import type { StaleTaskRequeueContext } from "./broker-stale-task-requeue.js";
 import {
   CURRENT_BROKER_STATE_VERSION,
   type BrokerSnapshot,
@@ -1698,6 +1696,25 @@ export class InMemoryA2ABroker {
     return task;
   }
 
+  // Stale-task requeue engine (#1289 L-broker-10): the sweep moved to
+  // broker-stale-task-requeue.ts with callback-injected state effects. These
+  // delegators keep the public API and every call site unchanged.
+  private staleTaskRequeueContext(): StaleTaskRequeueContext {
+    return {
+      tasks: this.tasks,
+      workers: this.workers,
+      maxRequeueAttempts: this.maxRequeueAttempts,
+      checkpointTimeoutMs: this.checkpointTimeoutMs,
+      setTaskRecord: (task) => this.setTaskRecord(task),
+      syncExchangeStateFromTask: (task, nextStatus) => this.syncExchangeStateFromTask(task, nextStatus),
+      appendAuditEvent: (input) => this.appendAuditEvent(input),
+      writeTombstone: (task, reason) => this.writeTombstone(task, reason),
+      persistState: () => this.persistState(),
+      emitTaskEvent: (task, reason) => this.taskEvents.emit(task, reason),
+      cancelTask: (taskId, request) => this.cancelTask(taskId, request),
+    };
+  }
+
   requeueStaleTasks(
     olderThanMs: number,
     options?: {
@@ -1705,8 +1722,7 @@ export class InMemoryA2ABroker {
       workerOfflineAfterMs?: number;
     },
   ): TaskRecord[] {
-    const result = this.requeueStaleTasksDetailed(olderThanMs, options);
-    return result.requeued;
+    return staleTaskRequeue.requeueStaleTasks(olderThanMs, options, this.staleTaskRequeueContext());
   }
 
   /**
@@ -1722,125 +1738,11 @@ export class InMemoryA2ABroker {
       workerOfflineAfterMs?: number;
     },
   ): { requeued: TaskRecord[]; deadLettered: TaskRecord[] } {
-    const thresholdMs = Math.max(0, olderThanMs);
-    const nowMs = options?.nowMs ?? Date.now();
-    const nowIso = new Date(nowMs).toISOString();
-    const staleWorkerIds =
-      options?.workerOfflineAfterMs && options.workerOfflineAfterMs >= 0
-        ? new Set(this.listStaleWorkerIds(options.workerOfflineAfterMs, nowMs))
-        : new Set<string>();
-    const requeued: TaskRecord[] = [];
-    const deadLettered: TaskRecord[] = [];
-
-    const expiredCheckpointTaskIds: string[] = [];
-    for (const task of this.tasks.values()) {
-      // Contract §1.4/§2.3: a checkpoint that is never resumed transitions to
-      // cancelled when its timeout expires (collected first; cancelTask
-      // mutates and persists, so it runs after this scan).
-      if (
-        task.checkpoint &&
-        this.checkpointTimeoutMs > 0 &&
-        (task.status === "claimed" || task.status === "running") &&
-        nowMs - Date.parse(task.checkpoint.recordedAt) >= this.checkpointTimeoutMs
-      ) {
-        expiredCheckpointTaskIds.push(task.id);
-        continue;
-      }
-      const requeueReason = getTaskRequeueReason(task, thresholdMs, staleWorkerIds, nowMs);
-      if (!requeueReason) {
-        continue;
-      }
-
-      const currentRequeues = task.requeueCount ?? 0;
-      const previousStatus = task.status;
-
-      if (this.maxRequeueAttempts > 0 && currentRequeues >= this.maxRequeueAttempts) {
-        // Dead-letter: mark failed so operators see the real state instead of an endless
-        // requeue loop. Preserve `claimedBy` and the final `requeueCount` for forensics.
-        task.status = "failed";
-        task.updatedAt = nowIso;
-        task.completedAt = nowIso;
-        task.error = {
-          code: REQUEUE_EXHAUSTED_ERROR_CODE,
-          message: `dead-lettered after ${currentRequeues} automatic requeue${
-            currentRequeues === 1 ? "" : "s"
-          }: ${requeueReason}`,
-          details: {
-            requeueCount: currentRequeues,
-            maxRequeueAttempts: this.maxRequeueAttempts,
-            previousStatus,
-            lastRequeueReason: requeueReason,
-          },
-        };
-        this.setTaskRecord(task);
-        this.syncExchangeStateFromTask(task, "failed");
-        this.appendAuditEvent({
-          actorId: "broker",
-          action: "task.failed",
-          targetType: "task",
-          targetId: task.id,
-          proposalId: task.proposalId,
-          note: task.error.message,
-        });
-        deadLettered.push(task);
-        this.writeTombstone(task, "dead_lettered");
-        continue;
-      }
-
-      task.status = "queued";
-      task.claimedBy = undefined;
-      task.claimedAt = undefined;
-      task.completedAt = undefined;
-      task.attemptId = undefined;
-      task.updatedAt = nowIso;
-      task.requeueCount = currentRequeues + 1;
-      this.setTaskRecord(task);
-      this.syncExchangeStateFromTask(task, "queued");
-      this.appendAuditEvent({
-        actorId: "broker",
-        action: "task.requeued",
-        targetType: "task",
-        targetId: task.id,
-        proposalId: task.proposalId,
-        note: `requeued ${previousStatus} task without reassignment (attempt ${task.requeueCount}): ${requeueReason}`,
-      });
-      requeued.push(task);
-    }
-
-    if (requeued.length > 0 || deadLettered.length > 0) {
-      this.persistState();
-    }
-
-    for (const task of deadLettered) {
-      this.taskEvents.emit(task, "dead_lettered");
-    }
-    for (const task of requeued) {
-      this.taskEvents.emit(task, "requeued");
-    }
-
-    // Expired checkpoints transition to cancelled (contract §1.4/§2.3:
-    // "transition to cancelled if the timeout expires without resume").
-    // cancelTask clears the lifecycle gate, records cancellation evidence,
-    // audits, persists, and emits the terminal update.
-    for (const taskId of expiredCheckpointTaskIds) {
-      const expired = this.tasks.get(taskId);
-      if (!expired?.checkpoint) {
-        continue;
-      }
-      const checkpoint = expired.checkpoint;
-      this.cancelTask(taskId, {
-        actor: { id: "broker", kind: "service", role: "operator" },
-        reason: `${checkpoint.state} checkpoint ${checkpoint.checkpointId} expired after ${this.checkpointTimeoutMs}ms without resume`,
-      });
-    }
-
-    return { requeued, deadLettered };
+    return staleTaskRequeue.requeueStaleTasksDetailed(olderThanMs, options, this.staleTaskRequeueContext());
   }
 
   private listStaleWorkerIds(offlineAfterMs: number, nowMs: number): string[] {
-    return [...this.workers.values()]
-      .filter((worker) => isWorkerStale(worker.lastSeenAt, offlineAfterMs, nowMs))
-      .map((worker) => worker.nodeId);
+    return staleTaskRequeue.listStaleWorkerIds(offlineAfterMs, nowMs, { workers: this.workers });
   }
 
   getArtifact(id: string): ArtifactRecord | null {
