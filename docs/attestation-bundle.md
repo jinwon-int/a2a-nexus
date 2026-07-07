@@ -86,6 +86,9 @@ validate it independently.
 node packages/broker/scripts/export-attestation-bundle.mjs --task-file task.json --out bundle.json
 
 # from a read-only sqlite snapshot (npm run export:sqlite)
+# NOTE: on a broker running BROKER_SQLITE_LOAD_SOURCE=hot-tables, pass
+# --load-source hot-tables to export:sqlite — the canonical snapshot blob
+# goes stale in that mode and would silently export old state
 node packages/broker/scripts/export-attestation-bundle.mjs --state-json state.json --task <id> --out bundle.json
 
 # one bundle per lane of a round
