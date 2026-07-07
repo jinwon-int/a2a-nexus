@@ -133,6 +133,14 @@ requires `attester.subject` to be in the **registered attester allowlist** (the
 permitted finalizer workflow identities) and not a producing identity
 (independence).
 
+Independence on the attested path is checked on the **matching namespace**: an
+`attester.subject` is a workflow identity, never a key id, so the gate compares
+it against the **producing attester subjects** (gate input
+`producingAttesterSubjects` / CLI `--producing-attester-subjects`), not against
+producing worker key ids. The static-key path independence uses the disjoint
+**producing worker key ids** axis. Comparing an attester subject against worker
+key ids can never match and is not a real check (#1383 V-c A3).
+
 **v0 boundary**: cert chain + SAN identity + validity + payload signature are
 fully verified offline; the Rekor **inclusion-proof** math is the Sigstore
 library / CI step and is only checked here for structural presence. And S3

@@ -184,8 +184,27 @@ test("an attested finalizer that also produced the subject is an independence vi
   const verdict = buildAttestedVerdict(certs, { subject: { kind: "pr", prHeadSha: "head-1" } });
   const r = evaluateVerdictGate({
     verdict, headSha: "head-1", finalizerKeyring: { keys: {}, roots: [certs.caPem] },
-    attesterAllowlist: [ATTESTER_SUBJECT], producingWorkerKeyIds: [ATTESTER_SUBJECT], mode: "enforce",
+    // The producing identity is an attester SUBJECT (a workflow identity), not a
+    // key id — it must be supplied on the matching namespace axis.
+    attesterAllowlist: [ATTESTER_SUBJECT], producingAttesterSubjects: [ATTESTER_SUBJECT], mode: "enforce",
   });
   assert.equal(r.blocked, true);
   assert.ok(r.reasons.some((x) => /independence/.test(x)));
+});
+
+test("attester independence does NOT rely on the worker-key-id namespace (#1383 V-c A3 dead-code fix)", (t) => {
+  const certs = certsForGate();
+  if (!certs) return t.skip("openssl unavailable");
+  const verdict = buildAttestedVerdict(certs, { subject: { kind: "pr", prHeadSha: "head-1" } });
+  // Stuffing the attester subject into producingWorkerKeyIds — the OLD dead-code
+  // path — must NOT trip independence: worker key ids and attester subjects are
+  // disjoint namespaces, so a real worker-key list can never contain a workflow
+  // identity. Only producingAttesterSubjects governs the attester path.
+  const r = evaluateVerdictGate({
+    verdict, headSha: "head-1", finalizerKeyring: { keys: {}, roots: [certs.caPem] },
+    attesterAllowlist: [ATTESTER_SUBJECT], producingWorkerKeyIds: [ATTESTER_SUBJECT], mode: "enforce",
+  });
+  assert.equal(r.ok, true, JSON.stringify(r.reasons));
+  assert.equal(r.blocked, false);
+  assert.ok(!r.reasons.some((x) => /independence/.test(x)), "worker-key-id list must not govern attester independence");
 });

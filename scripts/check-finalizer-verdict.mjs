@@ -23,7 +23,13 @@
  *
  * Usage:
  *   node scripts/check-finalizer-verdict.mjs --verdict <v.json> --head-sha <sha> \
- *     --finalizer-keyring <k.json> [--worker-keys id1,id2] [--mode warn|enforce] [--json]
+ *     --finalizer-keyring <k.json> [--worker-keys id1,id2] \
+ *     [--producing-attester-subjects sub1,sub2] [--mode warn|enforce] [--json]
+ *
+ * --worker-keys are producing worker KEY IDS (static-key independence axis);
+ * --producing-attester-subjects are producing workflow IDENTITIES (attested-
+ * identity independence axis). They are disjoint namespaces — supply the one(s)
+ * that describe how the subject was produced.
  */
 import fs from "node:fs";
 import { parseArgs } from "node:util";
@@ -37,7 +43,7 @@ import { verifyVerdict } from "./verify-finalizer-verdict.mjs";
  */
 export function evaluateVerdictGate({
   verdict, headSha, finalizerKeyring, producingWorkerKeyIds = [],
-  attesterAllowlist = [], mode = "warn",
+  producingAttesterSubjects = [], attesterAllowlist = [], mode = "warn",
 }) {
   const reasons = [];
   const expectedSubject = { kind: "pr", prHeadSha: headSha };
@@ -51,11 +57,17 @@ export function evaluateVerdictGate({
   // Attested identity (S3): verifyVerdict proves the OIDC identity is valid and
   // trusted-root-chained, but not that it is an ALLOWED finalizer workflow. The
   // gate enforces the registered attester allowlist.
+  //
+  // Independence on the attested path is checked on the MATCHING namespace: an
+  // attester subject is a workflow identity, never a key id, so it must be
+  // compared against the producing ATTESTER SUBJECTS — comparing it against
+  // producing worker KEY IDS can never match and is not a real check (#1383
+  // V-c A3: that cross-namespace comparison was dead code).
   if (v.attesterSubject) {
     if (!attesterAllowlist.includes(v.attesterSubject)) {
       reasons.push(`attester subject '${v.attesterSubject}' is not in the registered finalizer attester allowlist`);
     }
-    if (producingWorkerKeyIds.includes(v.attesterSubject)) {
+    if (producingAttesterSubjects.includes(v.attesterSubject)) {
       reasons.push(`independence violation: attester subject '${v.attesterSubject}' produced the subject (self-certification)`);
     }
   }
@@ -84,12 +96,13 @@ function main(argv) {
       "head-sha": { type: "string" },
       "finalizer-keyring": { type: "string" },
       "worker-keys": { type: "string" },
+      "producing-attester-subjects": { type: "string" },
       mode: { type: "string", default: "warn" },
       json: { type: "boolean", default: false },
     },
   });
   if (!values.verdict || !values["head-sha"] || !values["finalizer-keyring"]) {
-    process.stderr.write("usage: check-finalizer-verdict.mjs --verdict <v.json> --head-sha <sha> --finalizer-keyring <k.json> [--worker-keys id1,id2] [--mode warn|enforce]\n");
+    process.stderr.write("usage: check-finalizer-verdict.mjs --verdict <v.json> --head-sha <sha> --finalizer-keyring <k.json> [--worker-keys id1,id2] [--producing-attester-subjects sub1,sub2] [--mode warn|enforce]\n");
     return 2;
   }
   if (values.mode !== "warn" && values.mode !== "enforce") {
@@ -106,12 +119,14 @@ function main(argv) {
     return 2;
   }
   const producingWorkerKeyIds = (values["worker-keys"] ?? "").split(",").map((s) => s.trim()).filter(Boolean);
+  const producingAttesterSubjects = (values["producing-attester-subjects"] ?? "").split(",").map((s) => s.trim()).filter(Boolean);
 
   const result = evaluateVerdictGate({
     verdict,
     headSha: values["head-sha"],
     finalizerKeyring,
     producingWorkerKeyIds,
+    producingAttesterSubjects,
     mode: values.mode,
   });
 
