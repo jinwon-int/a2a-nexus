@@ -271,3 +271,81 @@ test("conformance: real #1380 provenance signers verify offline", async (t) => {
   bundle.result.summary = "tampered";
   assert.equal(verifyReport(bundle, keyring).green, false);
 });
+
+// --- verifyResultProvenance: standalone result-provenance verification -------
+// (#1356 G2-d) — the same checks 3-5 the report bundle runs, exported for
+// bundle-shaped consumers (the M3 attestation exporter) so the provenance
+// verification logic has one source.
+import { verifyResultProvenance } from "./verify-analysis-report.mjs";
+
+function signedResult(ctx, { taskId = "task-1", countersign = true } = {}) {
+  const core = { summary: "analysis body" };
+  const resultHash = sha256Prefix(canonicalizeJson(core));
+  const workerSig = signJws(
+    { schemaVersion: RESULT_PROVENANCE_SCHEMA, canonicalization: CANONICALIZATION, taskId, claimedAt: CLAIMED_AT, resultHash },
+    ctx.workerPriv,
+    ctx.workerKeyId,
+  );
+  const provenance = {
+    schemaVersion: RESULT_PROVENANCE_SCHEMA,
+    canonicalization: CANONICALIZATION,
+    alg: "EdDSA",
+    workerKeyId: ctx.workerKeyId,
+    claimedAt: CLAIMED_AT,
+    resultHash,
+    workerSig,
+  };
+  if (countersign) {
+    provenance.brokerCountersig = {
+      brokerKeyId: ctx.brokerKeyId,
+      verifiedAt: VERIFIED_AT,
+      sig: signJws(
+        { schemaVersion: BROKER_COUNTERSIG_SCHEMA, canonicalization: CANONICALIZATION, taskId, verifiedAt: VERIFIED_AT, workerSig },
+        ctx.brokerPriv,
+        ctx.brokerKeyId,
+      ),
+    };
+  }
+  return { ...core, provenance };
+}
+
+test("verifyResultProvenance verifies a full chain and reports enum verdicts (#1356 G2-d)", () => {
+  const ctx = makeCtx();
+  const verdict = verifyResultProvenance(signedResult(ctx), "task-1", ctx.keyring.keys);
+  assert.equal(verdict.workerSig, "verified");
+  assert.equal(verdict.brokerCountersig, "verified");
+  assert.ok(verdict.checks.every((c) => c.ok), JSON.stringify(verdict.checks));
+});
+
+test("verifyResultProvenance flags a tampered result and a cross-task transplant as invalid", () => {
+  const ctx = makeCtx();
+  const tampered = { ...signedResult(ctx), summary: "analysis body!" };
+  assert.equal(verifyResultProvenance(tampered, "task-1", ctx.keyring.keys).workerSig, "invalid");
+  // taskId is bound by the worker signature — a result presented under another
+  // task must fail even though its hash still matches its own body.
+  assert.equal(verifyResultProvenance(signedResult(ctx), "task-2", ctx.keyring.keys).workerSig, "invalid");
+});
+
+test("verifyResultProvenance reports a missing countersig as absent and keeps the fail-closed check", () => {
+  const ctx = makeCtx();
+  const verdict = verifyResultProvenance(signedResult(ctx, { countersign: false }), "task-1", ctx.keyring.keys);
+  assert.equal(verdict.workerSig, "verified");
+  assert.equal(verdict.brokerCountersig, "absent");
+  const counterCheck = verdict.checks.find((c) => c.id === "broker-countersignature");
+  assert.equal(counterCheck?.ok, false, "report-bundle parity: missing countersig stays a failed check");
+});
+
+test("verifyReport and verifyResultProvenance agree on the same bundle (single source)", () => {
+  const ctx = makeCtx();
+  const bundle = buildBundle(ctx);
+  const report = verifyReport(bundle, ctx.keyring);
+  const standalone = verifyResultProvenance(bundle.result, bundle.taskId, ctx.keyring.keys);
+  const ids = ["provenance-schema", "result-hash", "worker-signature", "broker-countersignature"];
+  for (const id of ids) {
+    assert.equal(
+      report.checks.find((c) => c.id === id)?.ok,
+      standalone.checks.find((c) => c.id === id)?.ok,
+      `check '${id}' must agree between the report path and the standalone path`,
+    );
+  }
+});

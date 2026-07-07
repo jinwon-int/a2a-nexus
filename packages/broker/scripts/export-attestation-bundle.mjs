@@ -28,6 +28,11 @@
  *   node scripts/export-attestation-bundle.mjs --task-file <task.json> [--out <bundle.json>] [--scrub-ids a,b]
  *   node scripts/export-attestation-bundle.mjs --state-json <snapshot.json> --task <id> [--out <bundle.json>]
  *   node scripts/export-attestation-bundle.mjs --state-json <snapshot.json> --round <parentRoundId> --out-dir <dir>
+ *
+ * Pass --keyring <keys.json> ({ keys: { keyId: pemPublicKey } }) to embed a
+ * cryptographic provenance verification VERDICT (#1356 G2-d) in
+ * evidence.provenance.verification — enum values only, key ids never enter
+ * the bundle. Verification reuses scripts/verify-analysis-report.mjs.
  */
 import fs from "node:fs";
 import path from "node:path";
@@ -36,6 +41,7 @@ import { parseArgs } from "node:util";
 
 import { redactAndBoundFailureExcerpt, failureReadbackFromError } from "../dist/core/task-error-details.js";
 import { canonicalizeJson } from "../../../scripts/lib/a2a-offline-verify.mjs";
+import { verifyResultProvenance } from "../../../scripts/verify-analysis-report.mjs";
 
 export const BUNDLE_VERSION = "0";
 const MISSING = "missing";
@@ -101,7 +107,7 @@ function orMissing(value, sanitize) {
  * deterministic; throws (fail-closed) when the record cannot anchor an audit
  * document at all.
  */
-export function buildAttestationBundle(task, { scrubIds = [] } = {}) {
+export function buildAttestationBundle(task, { scrubIds = [], keyring } = {}) {
   if (!task || typeof task !== "object") throw new Error("refused: task record is not an object");
   if (typeof task.id !== "string" || task.id.length === 0) throw new Error("refused: task.id missing");
   const sanitize = makeSanitizer(collectScrubIds(task, scrubIds));
@@ -133,11 +139,20 @@ export function buildAttestationBundle(task, { scrubIds = [] } = {}) {
   }
 
   const provenance = task.result?.provenance;
+  // With a keyring, the distillation also carries a cryptographic verification
+  // VERDICT (#1356 G2-d) — enum values only: the underlying check details name
+  // key ids, which embed node names and must not enter the bundle (rule 4).
+  const verification = keyring && provenance && typeof provenance === "object"
+    ? (({ workerSig, brokerCountersig }) => ({ workerSig, brokerCountersig }))(
+      verifyResultProvenance(task.result, task.id, keyring.keys ?? {}),
+    )
+    : undefined;
   const distilledProvenance = provenance && typeof provenance === "object"
     ? {
       resultHash: typeof provenance.resultHash === "string" ? provenance.resultHash : MISSING,
       workerSigned: Boolean(provenance.workerSig),
       brokerCountersigned: Boolean(provenance.brokerCountersig),
+      ...(verification ? { verification } : {}),
     }
     : MISSING;
 
@@ -188,9 +203,11 @@ function main(argv) {
       out: { type: "string" },
       "out-dir": { type: "string" },
       "scrub-ids": { type: "string", default: "" },
+      keyring: { type: "string" },
     },
   });
   const scrubIds = values["scrub-ids"].split(",").map((id) => id.trim()).filter(Boolean);
+  const keyring = values.keyring ? JSON.parse(fs.readFileSync(values.keyring, "utf8")) : undefined;
 
   let tasks;
   if (values["task-file"]) {
@@ -204,13 +221,13 @@ function main(argv) {
     }
   } else {
     process.stderr.write(
-      "usage: export-attestation-bundle.mjs --task-file <task.json> [--out f] | --state-json <snapshot.json> (--task <id> [--out f] | --round <parentRoundId> --out-dir <dir>) [--scrub-ids a,b]\n",
+      "usage: export-attestation-bundle.mjs --task-file <task.json> [--out f] | --state-json <snapshot.json> (--task <id> [--out f] | --round <parentRoundId> --out-dir <dir>) [--scrub-ids a,b] [--keyring keys.json]\n",
     );
     return 2;
   }
 
   for (const task of tasks) {
-    const bundle = buildAttestationBundle(task, { scrubIds });
+    const bundle = buildAttestationBundle(task, { scrubIds, keyring });
     const serialized = `${JSON.stringify(bundle, null, 2)}\n`;
     if (values["out-dir"]) {
       fs.mkdirSync(values["out-dir"], { recursive: true });

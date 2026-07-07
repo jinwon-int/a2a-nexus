@@ -36,7 +36,12 @@ validate it independently.
     "failures": [
       { "code": "handler_exit_nonzero", "stage": "handler", "excerpt": "…redacted, bounded…" }
     ],
-    "provenance": { "resultHash": "sha256:…", "workerSigned": true, "brokerCountersigned": true }
+    "provenance": {
+      "resultHash": "sha256:…",
+      "workerSigned": true,
+      "brokerCountersigned": true,
+      "verification": { "workerSig": "verified", "brokerCountersig": "verified" }
+    }
   },
   "integrity": { "alg": "sha256-jcs", "hash": "<64 hex>" }
 }
@@ -66,6 +71,16 @@ validate it independently.
    presence. Full cryptographic verification stays with the provenance report
    path (`contracts/a2a/verifiable-analysis-report.md`) — the bundle points at
    the same `resultHash` so the two documents cross-reference.
+   With `--keyring` (#1356 G2-d) the exporter additionally embeds a
+   **verification verdict** — `verification.workerSig`
+   (`verified` | `invalid`) and `verification.brokerCountersig`
+   (`verified` | `invalid` | `absent`), computed by the same offline
+   verification as `scripts/verify-analysis-report.mjs` (hash recompute +
+   worker signature + broker countersignature against the supplied public
+   keys). Enum values only — key ids, reasons, and signature material never
+   enter the bundle. The verdict attests that the *exporter* ran verification
+   at export time; a third party wanting independent proof still verifies the
+   raw result through the report path.
 5. **Integrity.** `integrity.hash` = SHA-256 over the RFC 8785 (JCS)
    canonicalization of the bundle **without** its `integrity` field
    (`alg: "sha256-jcs"`, same canonicalization path as the offline verifiers
@@ -93,6 +108,10 @@ node packages/broker/scripts/export-attestation-bundle.mjs --state-json state.js
 
 # one bundle per lane of a round
 node packages/broker/scripts/export-attestation-bundle.mjs --state-json state.json --round <parentRoundId> --out-dir bundles/
+
+# embed a cryptographic provenance verification verdict (#1356 G2-d)
+node packages/broker/scripts/export-attestation-bundle.mjs --task-file task.json \
+  --keyring keys.json --out bundle.json   # keys.json = { "keys": { "<keyId>": "<pem>" } }
 
 # consumer-side verification (no broker access)
 node scripts/check-attestation-bundle.mjs bundle.json
