@@ -107,19 +107,16 @@ import {
 import type { RoundStatusSummary } from "./round-status.js";
 
 import {
-  assertProposalApplyAllowed,
-  assertProposalCreationAllowed,
-  assertProposalReviewAllowed,
-  assertValidationSubmissionAllowed,
   isPrivilegedTaskApprover,
   normalizeTaskPolicyContext,
-  PolicyError,
 } from "./policy.js";
 import type { BrokerPolicyDocument } from "./broker-policy.js";
 import * as taskAdmission from "./broker-task-admission.js";
 import type { TaskAdmissionContext } from "./broker-task-admission.js";
 import * as staleTaskRequeue from "./broker-stale-task-requeue.js";
 import type { StaleTaskRequeueContext } from "./broker-stale-task-requeue.js";
+import * as proposalWrite from "./broker-proposal-write.js";
+import type { ProposalWriteContext } from "./broker-proposal-write.js";
 import {
   CURRENT_BROKER_STATE_VERSION,
   type BrokerSnapshot,
@@ -150,7 +147,6 @@ import {
 import { normalizeA2ARoundTaskRequest } from "./a2a-round-policy.js";
 import {
   assertWorkerRegistrationPayload,
-  assertProposalPayload,
 } from "./broker-payload-validators.js";
 import {
   assertTransition,
@@ -769,45 +765,22 @@ export class InMemoryA2ABroker {
     return registerDefaultBrokerCapabilityProfile(this.capabilityCards, worker, defaults);
   }
 
-  createProposal(request: CreateProposalRequest): ChangeProposal {
-    assertProposalPayload(request);
-
-    try {
-      assertProposalCreationAllowed(request.source, request.target);
-    } catch (error) {
-      throw normalizePolicyError(error);
-    }
-
-    const now = isoNow();
-    const proposal: ChangeProposal = {
-      id: randomUUID(),
-      source: request.source,
-      target: request.target,
-      sourceNodeId: request.source.id,
-      targetNodeId: request.target.id,
-      kind: request.kind,
-      summary: request.summary,
-      rationale: request.rationale,
-      workspace: request.workspace,
-      patchText: request.patchText,
-      parameterPayload: request.parameterPayload,
-      artifactIds: [...(request.artifactIds ?? [])],
-      status: "submitted",
-      createdAt: now,
-      updatedAt: now,
+  // Proposal write paths (#1289 L-broker-11): the six RBAC-gated lifecycle
+  // writes moved to broker-proposal-write.ts with callback-injected state
+  // effects. These public delegators keep the API and call sites unchanged.
+  private proposalWriteContext(): ProposalWriteContext {
+    return {
+      requireProposal: (id) => this.requireProposal(id),
+      setProposalRecord: (proposal) => this.setProposalRecord(proposal),
+      setArtifactRecord: (artifact) => this.setArtifactRecord(artifact),
+      setValidationRecord: (validation) => this.setValidationRecord(validation),
+      appendAuditEvent: (input) => this.appendAuditEvent(input),
+      persistState: () => this.persistState(),
     };
+  }
 
-    this.setProposalRecord(proposal);
-    this.appendAuditEvent({
-      actorId: request.source.id,
-      action: "proposal.created",
-      targetType: "proposal",
-      targetId: proposal.id,
-      proposalId: proposal.id,
-      note: request.summary,
-    });
-    this.persistState();
-    return proposal;
+  createProposal(request: CreateProposalRequest): ChangeProposal {
+    return proposalWrite.createProposal(request, this.proposalWriteContext());
   }
 
   getProposal(id: string): ChangeProposal | null {
@@ -833,172 +806,26 @@ export class InMemoryA2ABroker {
   }
 
   attachArtifact(proposalId: string, request: AttachArtifactRequest): ArtifactRecord {
-    const proposal = this.requireProposal(proposalId);
-    if (!request.kind || !request.uri) {
-      throw new BrokerError("bad_request", "kind and uri are required");
-    }
-
-    const artifact: ArtifactRecord = {
-      id: randomUUID(),
-      proposalId,
-      kind: request.kind,
-      uri: request.uri,
-      contentType: request.contentType,
-      sizeBytes: request.sizeBytes,
-      summary: request.summary,
-      createdAt: isoNow(),
-    };
-
-    this.setArtifactRecord(artifact);
-    proposal.artifactIds = uniqueIds([...proposal.artifactIds, artifact.id]);
-    proposal.updatedAt = isoNow();
-    this.setProposalRecord(proposal);
-
-    this.appendAuditEvent({
-      actorId: proposal.sourceNodeId,
-      action: "artifact.attached",
-      targetType: "artifact",
-      targetId: artifact.id,
-      proposalId,
-      note: artifact.summary,
-    });
-
-    this.persistState();
-    return artifact;
+    return proposalWrite.attachArtifact(proposalId, request, this.proposalWriteContext());
   }
 
   submitValidationResult(
     proposalId: string,
     request: SubmitValidationRequest,
   ): ValidationResult {
-    const proposal = this.requireProposal(proposalId);
-    if (!request.kind || !request.verdict || !request.nodeId) {
-      throw new BrokerError("bad_request", "nodeId, kind, and verdict are required");
-    }
-
-    try {
-      assertValidationSubmissionAllowed(proposal, request);
-    } catch (error) {
-      throw normalizePolicyError(error);
-    }
-
-    const validation: ValidationResult = {
-      id: randomUUID(),
-      proposalId,
-      nodeId: request.nodeId,
-      kind: request.kind,
-      verdict: request.verdict,
-      metrics: request.metrics ?? {},
-      artifactIds: [...(request.artifactIds ?? [])],
-      note: request.note,
-      createdAt: isoNow(),
-    };
-
-    this.setValidationRecord(validation);
-    // Only advance to "validated" from a pre-decision state. A stale validation
-    // — e.g. a validate_change task that completes after the proposal was
-    // already approved/applied/rejected — must not rewind the proposal into a
-    // second approve/apply cycle. The validation is still recorded as evidence.
-    if (proposal.status === "submitted" || proposal.status === "validated") {
-      proposal.status = "validated";
-    }
-    proposal.updatedAt = isoNow();
-    proposal.artifactIds = uniqueIds([...proposal.artifactIds, ...validation.artifactIds]);
-    this.setProposalRecord(proposal);
-
-    this.appendAuditEvent({
-      actorId: request.nodeId,
-      action: "validation.submitted",
-      targetType: "validation",
-      targetId: validation.id,
-      proposalId,
-      note: request.note,
-    });
-
-    this.persistState();
-    return validation;
+    return proposalWrite.submitValidationResult(proposalId, request, this.proposalWriteContext());
   }
 
   approveProposal(proposalId: string, request: ProposalActorRequest): ChangeProposal {
-    const proposal = this.requireProposal(proposalId);
-    assertTransition(proposal.status, ["submitted", "validated"], "approve");
-
-    try {
-      assertProposalReviewAllowed(proposal, request);
-    } catch (error) {
-      throw normalizePolicyError(error);
-    }
-
-    proposal.status = "approved";
-    proposal.updatedAt = isoNow();
-    this.setProposalRecord(proposal);
-    this.appendAuditEvent({
-      actorId: request.actor.id,
-      action: "proposal.approved",
-      targetType: "proposal",
-      targetId: proposal.id,
-      proposalId,
-      note: request.note,
-    });
-    this.persistState();
-    return proposal;
+    return proposalWrite.approveProposal(proposalId, request, this.proposalWriteContext());
   }
 
   rejectProposal(proposalId: string, request: ProposalActorRequest): ChangeProposal {
-    const proposal = this.requireProposal(proposalId);
-    assertTransition(proposal.status, ["submitted", "validated"], "reject");
-
-    try {
-      assertProposalReviewAllowed(proposal, request);
-    } catch (error) {
-      throw normalizePolicyError(error);
-    }
-
-    proposal.status = "rejected";
-    proposal.updatedAt = isoNow();
-    this.setProposalRecord(proposal);
-    this.appendAuditEvent({
-      actorId: request.actor.id,
-      action: "proposal.rejected",
-      targetType: "proposal",
-      targetId: proposal.id,
-      proposalId,
-      note: request.note,
-    });
-    this.persistState();
-    return proposal;
+    return proposalWrite.rejectProposal(proposalId, request, this.proposalWriteContext());
   }
 
   applyProposalLocally(proposalId: string, request: ApplyProposalRequest): ChangeProposal {
-    const proposal = this.requireProposal(proposalId);
-    assertTransition(proposal.status, ["approved"], "apply");
-
-    if (request.workspace.nodeId !== proposal.targetNodeId) {
-      throw new BrokerError(
-        "policy_denied",
-        "apply workspace nodeId must match the proposal target node",
-      );
-    }
-
-    try {
-      assertProposalApplyAllowed(proposal, request);
-    } catch (error) {
-      throw normalizePolicyError(error);
-    }
-
-    proposal.status = "applied";
-    proposal.updatedAt = isoNow();
-    this.setProposalRecord(proposal);
-    this.appendAuditEvent({
-      actorId: request.actor.id,
-      action: "proposal.applied",
-      targetType: "proposal",
-      targetId: proposal.id,
-      proposalId,
-      note: request.note,
-    });
-    this.persistState();
-    return proposal;
+    return proposalWrite.applyProposalLocally(proposalId, request, this.proposalWriteContext());
   }
 
   createTask(request: CreateTaskRequest): TaskRecord {
@@ -2764,15 +2591,4 @@ export class InMemoryA2ABroker {
   }
 }
 
-function normalizePolicyError(error: unknown): BrokerError {
-  if (error instanceof BrokerError) {
-    return error;
-  }
-
-  if (error instanceof PolicyError) {
-    return new BrokerError(error.code, error.message);
-  }
-
-  return new BrokerError("policy_denied", "policy denied");
-}
 
