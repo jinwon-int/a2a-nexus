@@ -1,0 +1,56 @@
+# Finalizer-verdict merge gate (#1383 V-d) — the required check that holds the
+# CRYPTOGRAPHIC authority for verdict signature authenticity (documented v0
+# boundary: the broker accept-path verifies structure/binding/independence and
+# static-key signatures, but registered-key + attester-allowlist membership and
+# the attested-identity chain live here, at the merge point).
+#
+# Contract: contracts/a2a/finalizer-verdict.md
+# Verdict files: .a2a/finalizer-verdicts/<slug>.json (see its README)
+# Keyring: docs/ops/finalizer-keyring.json (public keys only)
+#
+# PRs that carry no verdict files pass ("no verdict-carrying changes"), so the
+# job is safe to require globally. Every present verdict is verified in
+# enforce mode against the PR head SHA, fail-closed.
+name: finalizer-verdict-gate
+
+on:
+  pull_request:
+  merge_group:
+
+permissions:
+  contents: read
+
+jobs:
+  finalizer-verdict-gate:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Verify PR finalizer verdicts (enforce, fail-closed)
+        env:
+          HEAD_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+        run: |
+          set -euo pipefail
+          shopt -s nullglob
+          candidates=(.a2a/finalizer-verdicts/*.json)
+          verdicts=()
+          for f in "${candidates[@]}"; do
+            case "$f" in *.report.json) ;; *) verdicts+=("$f");; esac
+          done
+          if [ ${#verdicts[@]} -eq 0 ]; then
+            echo "finalizer-verdict-gate: no verdict-carrying changes — pass."
+            exit 0
+          fi
+          for v in "${verdicts[@]}"; do
+            report="${v%.json}.report.json"
+            args=(--verdict "$v" --head-sha "$HEAD_SHA" \
+                  --finalizer-keyring docs/ops/finalizer-keyring.json \
+                  --mode enforce --json)
+            if [ -f "$report" ]; then
+              args+=(--result "$report")
+            fi
+            echo "verifying $v (report: ${report@Q})"
+            node scripts/check-finalizer-verdict.mjs "${args[@]}"
+          done
