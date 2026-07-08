@@ -250,6 +250,38 @@ The fixture is [`../../fixtures/contract/retrieval-approval-contract.json`](../.
 node test/conformance/check-retrieval-approval-contract.mjs
 ```
 
+### Source-carrier binding hardening
+
+The approval packet, signed snapshot, source carrier, and report are four views
+of the same source input. A conforming K2 source-carrier bundle MUST bind them
+offline before any future live fetch path is considered:
+
+1. `sourceCarrier.schemaVersion` is `a2a.retrieval.sourceCarrier.v0` with
+   `sourceOnly=true`, `noLive=true`, `analysisNetworkAccess=false`,
+   `liveFetchPerformed=false`, and `networkPolicyChanged=false`.
+2. `sourceCarrier.approvalRef` MUST equal `approval.approvalRef`.
+3. Every `report.sources[]` snapshot MUST stay inside the approved retrieval
+   scope: `source`, `repo`, `requestedRef`, `resolvedRef`, and `path` match the
+   approval packet. SHA-pinned `ref === resolvedRef` remains mandatory.
+4. Every `sourceCarrier.items[]` entry MUST use the `untrusted_external_data`
+   envelope, cite `contentHash`, and match a signed `report.sources[]` snapshot
+   by `contentHash`, `byteLen`, `repo`, `requestedRef`, `resolvedRef`, and
+   `path`.
+5. Every result citation in `result.output.sources[]` MUST match a
+   source-carrier item by `sourceId` and `contentHash`; every snapshot and every
+   declared result source MUST be projected into the carrier. This makes
+   approval→snapshot→carrier→report a bijection over the frozen source set.
+6. Raw secret-like material in carrier/report text fails closed. Captured source
+   text is redacted fixture/test material only and remains untrusted.
+
+The fixture is
+[`../../fixtures/contract/retrieval-source-carrier-binding.json`](../../fixtures/contract/retrieval-source-carrier-binding.json),
+and the local conformance guard is:
+
+```bash
+node test/conformance/check-retrieval-source-carrier-binding.mjs
+```
+
 ## 7. Safety boundaries
 
 - Public key ids only; private keys never emitted anywhere.

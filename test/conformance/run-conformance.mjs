@@ -35,6 +35,7 @@ export const CHECKS = [
   'check-completion-certificate-fake-rail.mjs',
   'check-completion-certificate-live-approval-gate.mjs',
   'check-retrieval-approval-contract.mjs',
+  'check-retrieval-source-carrier-binding.mjs',
   'check-trace-propagation.mjs',
   'check-three-component-e2e.mjs',
 ];

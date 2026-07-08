@@ -1,0 +1,51 @@
+{
+  "v0Freeze": {
+    "frozenAt": "2026-07-08T16:31:31.000Z",
+    "round": "a2a-nexus-1374-source-carrier-binding-20260708T163131Z",
+    "sourceOnly": true,
+    "noLive": true
+  },
+  "schemaVersion": "a2a.retrieval.sourceCarrier.v0",
+  "issue": 1374,
+  "sourceOnly": true,
+  "noLive": true,
+  "approvalContract": "fixtures/contract/retrieval-approval-contract.json",
+  "reportContract": "contracts/a2a/verifiable-analysis-report.md",
+  "sourceCarrier": {
+    "schemaVersion": "a2a.retrieval.sourceCarrier.v0",
+    "sourceOnly": true,
+    "noLive": true,
+    "approvalRef": "issue-comment:#1374:source-only-contract-only",
+    "envelope": "untrusted_external_data",
+    "analysisNetworkAccess": false,
+    "liveFetchPerformed": false,
+    "networkPolicyChanged": false,
+    "items": [
+      {
+        "sourceId": "k2-s1",
+        "envelope": "untrusted_external_data",
+        "repo": "jinwon-int/a2a-nexus",
+        "requestedRef": "73c47399096fce9686edda8ed3ed97ba7f6a0424",
+        "resolvedRef": "73c47399096fce9686edda8ed3ed97ba7f6a0424",
+        "path": "contracts/a2a/verifiable-analysis-report.md",
+        "contentHash": "sha256:<filled-by-conformance-builder>",
+        "byteLen": 0,
+        "renderedText": "<untrusted_external_data sourceId=\"k2-s1\" contentHash=\"sha256:<filled-by-conformance-builder>\">public-safe redacted external source fixture</untrusted_external_data>"
+      }
+    ]
+  },
+  "bindingAssertions": [
+    "approvalPacket.approval.approvalRef equals sourceCarrier.approvalRef",
+    "approvalPacket.retrievalRequest repo/ref/resolvedRef/path scope matches every report.sources snapshot",
+    "sourceCarrier.items contentHash and byteLen match report.sources snapshots",
+    "result.output.sources declares every sourceCarrier item by sourceId and contentHash",
+    "sourceCarrier.renderedText wraps content only in untrusted_external_data and cites contentHash",
+    "analysisNetworkAccess, liveFetchPerformed, and networkPolicyChanged are explicit false",
+    "raw secret-like material in carrier/report fails closed"
+  ],
+  "validationCommands": [
+    "node test/conformance/check-retrieval-source-carrier-binding.mjs",
+    "npm run test:conformance",
+    "npm run check"
+  ]
+}
