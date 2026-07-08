@@ -108,6 +108,28 @@ analysis lanes should also require at least one task-specific `finding`, `risk`,
 or `recommendation`; outputs that only confirm source-only/no-live/readiness
 boundaries are classified as `readiness_only`, not quorum evidence.
 
+#### Source-only local bridge disposition (#1427)
+
+A worker class intentionally installed with a source-only local analysis bridge is
+a readiness/health lane, not a substantive review lane. Its expected successful
+output is metadata such as run id, source readability, no-live boundary, and
+source-projection budget status. If three or more rounds show the same
+`readiness_only` pattern and read-only inspection confirms the class has no
+model/provider bridge configured, treat the class as **as-designed** rather than
+as a broken worker.
+
+Operational rule:
+
+- exclude that class from substantive-required lenses by default;
+- use it only for source-projection, routing, and no-live health coverage;
+- do not count it toward A2AD quorum or `substantiveLaneCount`;
+- reclassify it only after a separately approved provider/model bridge
+  provisioning and worker restart/canary proves at least one task-specific
+  finding.
+
+This avoids repeatedly rediscovering the same readiness-only behavior while
+preserving the class for deterministic source-only health checks.
+
 #### Source projection policy for broad/finalizer lanes
 
 For source-heavy lanes, especially broad finalizer reviewers, do not rely on a

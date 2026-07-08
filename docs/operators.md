@@ -111,6 +111,8 @@ When a round uses ordinary A2A lanes as a weak dialectic, the finalizer should r
 
 Do not invent a second classifier for this field. `readiness_only`, `generic_ack`, `wrapper_only`, `empty_substantive_output`, projection/infra failures, and provider/model failures are non-substantive. Record counts only — no worker names, node ids, private prompts, or raw excerpts. The scorecard gate validates `substantiveLaneCount <= dispatchedLaneCount` and warns when consecutive scorecard entries fall below the configured substantive-lane ratio threshold.
 
+For a source-only local bridge class that is intentionally configured without a model/provider bridge (#1427), repeated successful `readiness_only` output is an as-designed health signal, not a defect. Keep it in `dispatchedLaneCount` when it was dispatched, exclude it from `substantiveLaneCount`, and avoid assigning it to substantive-required lenses unless an approved bridge/provisioning change has been canaried.
+
 ### Lane reliability ledger update (#1299)
 
 When a finalizer has bounded lane readback for a completed round, add a report-only ledger update before closeout when it can be done without guessing:
