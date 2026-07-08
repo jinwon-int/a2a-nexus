@@ -336,11 +336,40 @@
       }
     }
   ],
+  "liveRailApprovalGate": {
+    "schemaVersion": "a2a.completion.liveRailApprovalPacket.v0",
+    "sourceOnly": true,
+    "noLive": true,
+    "liveExecutionEnabled": false,
+    "rail": {
+      "provider": "stripe",
+      "mode": "offline-approval-gate-only",
+      "mainnetAllowed": false,
+      "liveCallAllowed": false
+    },
+    "requiredBeforeAnyFutureLiveRail": [
+      "rail-specific operator approval",
+      "credential reference without raw secret material",
+      "bounded test-mode-or-testnet canary scope",
+      "fake/no-live rehearsal receipt",
+      "rollback plan"
+    ],
+    "forbiddenInApprovalGateOnlyPacket": [
+      "raw payment credentials",
+      "live payment rail call",
+      "funds movement",
+      "provider send",
+      "DB/outbox/ACK/replay mutation",
+      "deploy or restart",
+      "mainnet execution"
+    ]
+  },
   "validationCommands": [
     "node test/conformance/check-completion-certificate.mjs",
     "node test/conformance/check-completion-certificate-verifier.mjs",
     "node test/conformance/check-completion-certificate-generator.mjs",
     "node test/conformance/check-completion-certificate-fake-rail.mjs",
+    "node test/conformance/check-completion-certificate-live-approval-gate.mjs",
     "npm run test:conformance",
     "npm run check"
   ]

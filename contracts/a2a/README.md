@@ -63,6 +63,7 @@ Machine-readable reference fixtures for broker/plugin/runner validation:
 - `node test/conformance/check-completion-certificate-verifier.mjs` — validates the source-only offline completion certificate verifier against signature, subject-binding, expiry, issuer-key, and assurance-boundary negative cases
 - `node test/conformance/check-completion-certificate-generator.mjs` — validates the report-only no-live completion certificate generator and generator→verifier round-trip
 - `node test/conformance/check-completion-certificate-fake-rail.mjs` — validates the fake/no-live payment rail rehearsal adapter decision mapping, idempotency, and no-live boundaries
+- `node test/conformance/check-completion-certificate-live-approval-gate.mjs` — validates the source-only live rail approval-gate packet, canary/rollback requirements, approval freshness, and secret/no-live boundaries
 - `node scripts/generate-completion-certificate.mjs <report.json> --signing-key <ed25519-private.pem>` — emits a signed report-only completion certificate from a public-safe no-live report; this is not payment release authorization
 - `node scripts/verify-completion-certificate.mjs <certificate.json> --keyring <keyring.json>` — independently verifies a signed completion certificate offline; this is an integrity check, not payment release authorization
 - `node test/conformance/check-terminal-evidence-ack-boundary.mjs` — validates accepted-send non-ACK fixture
