@@ -1,9 +1,14 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { createHash, generateKeyPairSync, sign } from "node:crypto";
+import { mkdtempSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+import { spawnSync } from "node:child_process";
 
 import {
   verifyReport,
+  verifyRetrievalSnapshot,
   canonicalizeJson,
   REPORT_VERSION,
   CANONICALIZATION,
@@ -103,6 +108,40 @@ test("valid bundle verifies GREEN with every check passing", () => {
   const result = verifyReport(buildBundle(ctx), ctx.keyring);
   assert.equal(result.green, true, JSON.stringify(result.checks));
   assert.ok(result.checks.every((c) => c.ok));
+});
+
+test("K2 snapshot-only verifier validates a signed retrieval snapshot without a report bundle (#1374)", () => {
+  const ctx = makeCtx();
+  const bundle = buildBundle(ctx);
+  const result = verifyRetrievalSnapshot(bundle.sources[0], ctx.keyring.keys);
+  assert.equal(result.green, true, JSON.stringify(result.checks));
+  assert.equal(check(result, "source[0]").ok, true);
+
+  const tampered = structuredClone(bundle.sources[0]);
+  tampered.content = tampered.content.replace("A2A", "B2B");
+  const bad = verifyRetrievalSnapshot(tampered, ctx.keyring.keys);
+  assert.equal(bad.green, false);
+  assert.match(check(bad, "source[0]").detail, /contentHash mismatch/);
+});
+
+test("K2 snapshot-only CLI mode verifies snapshots and fails closed on missing key (#1374)", () => {
+  const ctx = makeCtx();
+  const bundle = buildBundle(ctx);
+  const dir = mkdtempSync(join(tmpdir(), "a2a-snapshot-"));
+  const snapshotPath = join(dir, "snapshot.json");
+  const keyringPath = join(dir, "keyring.json");
+  const missingKeyringPath = join(dir, "missing-keyring.json");
+  writeFileSync(snapshotPath, JSON.stringify(bundle.sources[0]), "utf8");
+  writeFileSync(keyringPath, JSON.stringify(ctx.keyring), "utf8");
+  writeFileSync(missingKeyringPath, JSON.stringify({ keys: {} }), "utf8");
+
+  const ok = spawnSync(process.execPath, ["scripts/verify-analysis-report.mjs", snapshotPath, "--keyring", keyringPath, "--snapshot", "--json"], { encoding: "utf8" });
+  assert.equal(ok.status, 0, ok.stderr || ok.stdout);
+  assert.equal(JSON.parse(ok.stdout).green, true);
+
+  const red = spawnSync(process.execPath, ["scripts/verify-analysis-report.mjs", snapshotPath, "--keyring", missingKeyringPath, "--snapshot", "--json"], { encoding: "utf8" });
+  assert.equal(red.status, 1);
+  assert.equal(JSON.parse(red.stdout).green, false);
 });
 
 test("tampered result body breaks the result-hash master check", () => {

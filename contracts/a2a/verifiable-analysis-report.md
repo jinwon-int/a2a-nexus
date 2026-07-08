@@ -55,6 +55,17 @@ whole point of offline verification. The re-implementation mirrors
 confirms byte-compatibility (see PR evidence). `sha256:<hex>` is lowercase-hex
 SHA-256 over canonical UTF-8 bytes.
 
+The same verifier also exposes K2 snapshot-only mode:
+
+```bash
+node scripts/verify-analysis-report.mjs snapshot.json --keyring keyring.json --snapshot --json
+```
+
+That mode verifies a single frozen retrieval snapshot without requiring a full
+analysis report bundle: byte length, content hash, JWS signing key, and the
+whole-tuple signature over `snapshot sans signature`. It is intentionally
+source-only and performs no network fetch.
+
 ## 3. Bundle shape
 
 ```jsonc
