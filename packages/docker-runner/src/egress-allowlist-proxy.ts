@@ -1,4 +1,5 @@
 import { createHash, createPrivateKey, createPublicKey, sign as cryptoSign, verify as cryptoVerify } from "node:crypto";
+import type { LookupAddress } from "node:dns";
 import { lookup } from "node:dns/promises";
 import { request as httpsRequest } from "node:https";
 import { isIP } from "node:net";
@@ -222,6 +223,25 @@ async function resolveAndPinHost(
   return rows[0]!;
 }
 
+type PinnedLookupCallback = (
+  error: NodeJS.ErrnoException | null,
+  address: string | LookupAddress[],
+  family?: number,
+) => void;
+
+export function createPinnedLookup(resolvedIp: string, family: 4 | 6) {
+  return (_hostname: string, opts: unknown, cb?: unknown): void => {
+    const callback = typeof opts === "function" ? opts : cb;
+    if (typeof callback !== "function") return;
+    const all = typeof opts === "object" && opts !== null && "all" in opts && (opts as { all?: boolean }).all === true;
+    if (all) {
+      (callback as PinnedLookupCallback)(null, [{ address: resolvedIp, family }]);
+      return;
+    }
+    (callback as PinnedLookupCallback)(null, resolvedIp, family);
+  };
+}
+
 async function defaultRequest({ url, resolvedIp, family, timeoutMs, maxBytes }: EgressHttpRequest): Promise<Omit<EgressHttpResponse, "finalUrl" | "resolvedIp">> {
   return new Promise((resolve, reject) => {
     const req = httpsRequest({
@@ -232,7 +252,7 @@ async function defaultRequest({ url, resolvedIp, family, timeoutMs, maxBytes }: 
       method: "GET",
       headers: { host: url.host, "user-agent": "a2a-docker-runner-egress-proxy/1" },
       timeout: timeoutMs,
-      lookup: (_hostname, _opts, cb) => cb(null, resolvedIp, family),
+      lookup: createPinnedLookup(resolvedIp, family),
     }, (res) => {
       const chunks: Buffer[] = [];
       let total = 0;
