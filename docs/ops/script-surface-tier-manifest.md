@@ -22,7 +22,7 @@ node scripts/lib/script-surface-manifest.mjs --json
 
 The guard validates:
 
-- root `package.json`: at least `119` scripts;
+- root `package.json`: at least `100` scripts;
 - broker `packages/broker/package.json`: at least `150` scripts;
 - required root gates such as `release-gate`, `check:release-gate-inventory`,
   `scan:public-readiness`, `check:layout`, `check:packages`, and

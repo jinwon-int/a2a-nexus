@@ -68,6 +68,21 @@ test("prepares trusted non-root container workdir ownership before launch", asyn
   const dir = mkdtempSync(join(tmpdir(), "a2a-runner-nonroot-workdir-"));
   const runScript = join(dir, "run.sh");
   const patchScript = join(dir, "patch-command.sh");
+  const containerUid = 1000;
+  const containerGid = 1000;
+
+  const hasContainerAccess = (path: string, access: "read" | "execute") => {
+    const st = statSync(path);
+    const ownerBit = access === "read" ? 0o400 : 0o100;
+    const groupBit = access === "read" ? 0o040 : 0o010;
+    const otherBit = access === "read" ? 0o004 : 0o001;
+    return (
+      (st.uid === containerUid && (st.mode & ownerBit) !== 0) ||
+      (st.gid === containerGid && (st.mode & groupBit) !== 0) ||
+      (st.mode & otherBit) !== 0
+    );
+  };
+
   try {
     writeFileSync(runScript, "#!/usr/bin/env bash\necho run\n", { mode: 0o700 });
     writeFileSync(patchScript, "#!/usr/bin/env bash\necho patch\n", { mode: 0o700 });
@@ -75,13 +90,16 @@ test("prepares trusted non-root container workdir ownership before launch", asyn
     await prepareWorkDirForContainerUser(dir, "1000:1000");
 
     if (typeof process.getuid === "function" && process.getuid() === 0) {
-      assert.equal(statSync(dir).uid, 1000);
-      assert.equal(statSync(runScript).uid, 1000);
-      assert.equal(statSync(patchScript).uid, 1000);
-    } else {
-      assert.ok((statSync(dir).mode & 0o007) !== 0, "fallback must make the workdir accessible");
-      assert.ok((statSync(runScript).mode & 0o004) !== 0, "fallback must make run.sh readable by the container user");
+      assert.equal(statSync(dir).uid, containerUid);
+      assert.equal(statSync(runScript).uid, containerUid);
+      assert.equal(statSync(patchScript).uid, containerUid);
     }
+
+    assert.ok(hasContainerAccess(dir, "execute"), "container user must be able to traverse the workdir");
+    assert.ok(hasContainerAccess(runScript, "read"), "container user must be able to read run.sh");
+    assert.ok(hasContainerAccess(runScript, "execute"), "container user must be able to execute run.sh");
+    assert.ok(hasContainerAccess(patchScript, "read"), "container user must be able to read patch-command.sh");
+    assert.ok(hasContainerAccess(patchScript, "execute"), "container user must be able to execute patch-command.sh");
   } finally {
     rmSync(dir, { recursive: true, force: true });
   }
