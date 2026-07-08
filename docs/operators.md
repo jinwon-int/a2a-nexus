@@ -219,6 +219,23 @@ Use this contract as guidance for medium+ tasks when declared scope spans multip
 
 Approval-sensitive execution records live under `fixtures/approvals/` and are validated by `npm run check:approval-records`. New approval records must use `approverRole: "operator"` and must not include personal-channel or raw-secret fields.
 
+## Dated report naming and placement (#1290)
+
+A dated report — any write-up whose value is the record of a completed
+investigation, validation, triage, or closeout (name shape
+`<topic>-YYYY-MM[-vN].md`) — is created under `docs/history/` from the start,
+with a one-line row added to `docs/history/README.md`. It never lands in the
+`docs/` top level, which is reserved for the living user and operator surface
+(`docs/README.md` is the tier index). Machine-consumed dated evidence (JSON
+ledgers, scorecards, registries) stays under `docs/ops/` while a gate reads
+it, keeping the same `<topic>-YYYY-MM[-vN]` name shape; when its gate
+retires, it moves to `docs/history/` in the same change. A living document
+that later completes (an executed plan, a finished roadmap) moves to
+`docs/history/` with every repository reference updated in the same PR —
+`npm run check:markdown-links` is the safety net — and leaves a one-line
+forwarding stub only when the old path was externally linkable (linked from
+the root README or SECURITY).
+
 ## Agent Olympics Boundary
 
 `agent-olympics` is independent. It must not be treated as an A2A package, source label, issue-routing lane, or blocker for A2A Nexus public-alpha work.

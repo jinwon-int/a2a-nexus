@@ -83,7 +83,7 @@ These must stay in **private/source repos or operator-only flows**:
 - [ ] **Evidence chain** — every `PR`/`Done`/`Block` result links back to the originating task and the worker run ID for auditability.
 - [ ] **Release process doc** (`docs/release-process.md`) covering semver for broker contracts, changelog generation, and release notes.
 - [ ] **GitHub issue/epic templates** refined from real usage patterns in the 0–90 day period.
-- [ ] **Public-readiness re-evaluation** against the updated `docs/public-readiness.md` gate table.
+- [ ] **Public-readiness re-evaluation** against the updated `docs/history/public-readiness.md` gate table.
 
 **Exit gate:** Two independent worker implementations coexist, a third-party developer can add a worker without broker changes, and every terminal result is traceable to source.
 

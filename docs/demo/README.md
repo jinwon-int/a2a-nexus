@@ -2,7 +2,7 @@
 
 Welcome to the A2A Nexus demo packaging. This directory is the public-safe entry point for external operators evaluating A2A Nexus from a fresh checkout. All demos use only loopback networking, placeholder credentials, and no-live-send task fixtures.
 
-> **Status:** private-readiness candidate. Do not make this repository public until every gate in [`docs/public-readiness.md`](../public-readiness.md) is closed and an operator explicitly approves the visibility change.
+> **Status:** private-readiness candidate. Do not make this repository public until every gate in [`docs/history/public-readiness.md`](../history/public-readiness.md) is closed and an operator explicitly approves the visibility change.
 
 ## Component map
 

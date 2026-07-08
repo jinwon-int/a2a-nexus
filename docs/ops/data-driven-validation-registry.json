@@ -6639,7 +6639,7 @@
       "id": "monorepo-docs-routing",
       "title": "monorepo docs routing",
       "fixture": "fixtures/current-state/monorepo-docs-routing.json",
-      "doc": "docs/migration.md",
+      "doc": "docs/history/migration.md",
       "currentState": "docs/current-state.md",
       "extraDocs": {
             "operators": "docs/operators.md",
@@ -6932,7 +6932,7 @@
       "extraDocs": {
             "reentryDoc": "docs/history/monorepo-reentry-decision.md",
             "operators": "docs/operators.md",
-            "migration": "docs/migration.md"
+            "migration": "docs/history/migration.md"
       },
       "packageScript": {
             "name": "check:monorepo-branch-release-policy",

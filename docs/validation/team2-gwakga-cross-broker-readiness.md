@@ -15,7 +15,7 @@ This note is a libero validation artifact for the Team2 lanes. It does not perfo
 - Cross-broker contract surface: `contracts/a2a/broker-handoff-protocol.md`.
 - Team2/brokerBeta runbook surface: `packages/broker/docs/team2-broker-beta-worker-onboarding-retargeting.md`.
 - Terminal evidence boundary: `contracts/a2a/terminal-semantics.md`, `contracts/a2a/task-lifecycle.md`, and `fixtures/terminal-evidence/accepted-send-non-ack.json`.
-- Public-readiness boundary: `docs/public-readiness.md` and runtime/bootstrap hygiene guard paths.
+- Public-readiness boundary: `docs/history/public-readiness.md` and runtime/bootstrap hygiene guard paths.
 
 ## Evidence snapshot
 
@@ -34,7 +34,7 @@ The parent dispatch summary records all Team2 tasks as claimed/running under the
 | Broker of record | Pass for dispatch boundary | Parent #146 and Team2 child issues identify brokerBeta as Team2 broker of record. `contracts/a2a/broker-handoff-protocol.md` requires `brokerOfRecord` to equal the destination broker and forbids cross-worker registration. | Keep brokerAlpha as source/global link owner only; Team2 task claim/start/finish state must remain under brokerBeta policy. |
 | No-live assumptions | Pass for this validation artifact | This lane used issue/docs inspection only. No deploy, restart, live provider send, DB mutation, terminal-outbox ACK, edge-secret rotation, or visibility change was performed. | Require the same statement in #151/#152 terminal evidence, with exact local commands where they modify docs/fixtures. |
 | Accepted-send boundary | Pass for wording | Existing terminal evidence docs and fixtures keep provider send success/message id as accepted-send evidence only. This validation repeats that provider acceptance is not requester-visible receipt, operator-visible receipt, human-seen proof, or terminal ACK. | Reject any Team2 proof that upgrades provider acceptance or a message id into receipt/ACK evidence. |
-| Public-readiness sufficiency | Waiting | Team2 dispatch/running evidence plus this validation note are not enough for public docs. The Team2 proof needs #151 and #152 PR/Done evidence, local validation output, clean runtime/bootstrap hygiene, and the repository-level scanner/operator approval gates from `docs/public-readiness.md`. | Keep public-readiness **NO-GO/Waiting** until all Team2 sibling lanes and repository gates are complete. |
+| Public-readiness sufficiency | Waiting | Team2 dispatch/running evidence plus this validation note are not enough for public docs. The Team2 proof needs #151 and #152 PR/Done evidence, local validation output, clean runtime/bootstrap hygiene, and the repository-level scanner/operator approval gates from `docs/history/public-readiness.md`. | Keep public-readiness **NO-GO/Waiting** until all Team2 sibling lanes and repository gates are complete. |
 | Runtime/bootstrap hygiene | Pass for this branch diff | This document contains only redacted issue links, public repo paths, worker IDs from the issues, and no raw session dumps or host-private paths. | Fail closed if `AGENTS.md`, `SOUL.md`, `USER.md`, `TOOLS.md`, `HEARTBEAT.md`, `IDENTITY.md`, or `.openclaw/**` enter a branch diff or artifact evidence. |
 
 ## Team2 merge-order recommendation

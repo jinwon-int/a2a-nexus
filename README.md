@@ -58,7 +58,7 @@ Then follow the public docs path in this order:
 
 This path uses safe placeholders only. Do not paste real broker URLs, tokens, private node IDs, provider IDs, Telegram IDs, host-local paths, raw session dumps, or production data into public issues, pull requests, docs, or artifacts.
 
-Historical coordination and completed migration records are summarized in [`docs/history/README.md`](docs/history/README.md), [`docs/public-readiness.md`](docs/public-readiness.md), and [`docs/current-state.md`](docs/current-state.md).
+Historical coordination and completed migration records are summarized in [`docs/history/README.md`](docs/history/README.md), [`docs/history/public-readiness.md`](docs/history/public-readiness.md), and [`docs/current-state.md`](docs/current-state.md).
 
 
 ## What A2A Nexus does
@@ -142,7 +142,7 @@ Draft A2A Nexus announcement text and repository metadata recommendations live i
 Release decision prep:
 
 - [`docs/release-checklist.md`](docs/release-checklist.md)
-- [`docs/promotion-validation.md`](docs/promotion-validation.md)
+- [`docs/history/promotion-validation.md`](docs/history/promotion-validation.md)
 - [`CHANGELOG.md`](CHANGELOG.md)
 
 ## Reference OpenClaw integration example

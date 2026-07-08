@@ -18,7 +18,7 @@ This is a redacted validation artifact only. It does not change repository visib
 - Team1 broker lane: [a2a-broker#475](https://github.com/jinwon-int/a2a-broker/issues/475); PR [a2a-broker#478](https://github.com/jinwon-int/a2a-broker/pull/478) provides the broker release-gate evidence packet.
 - Team1 plugin lane: [openclaw-plugin-a2a#254](https://github.com/jinwon-int/openclaw-plugin-a2a/issues/254); PR [openclaw-plugin-a2a#255](https://github.com/jinwon-int/openclaw-plugin-a2a/pull/255) adds plugin source-public support docs and alpha boundary material.
 - Team1 runner lane: [a2a-docker-runner#173](https://github.com/jinwon-int/a2a-docker-runner/issues/173); PR [a2a-docker-runner#176](https://github.com/jinwon-int/a2a-docker-runner/pull/176) adds runner source-public support docs, license, issue templates, and public-readiness framing.
-- Local A2A Nexus gates: `docs/public-readiness.md`, `docs/release-gate.md`, `docs/readiness/fail-closed-scanner-readiness.md`, `docs/governance/public-private-boundary-gates.md`, `contracts/a2a/terminal-semantics.md`, and `contracts/compatibility/terminal-evidence-ack-boundary.md`.
+- Local A2A Nexus gates: `docs/history/public-readiness.md`, `docs/release-gate.md`, `docs/readiness/fail-closed-scanner-readiness.md`, `docs/governance/public-private-boundary-gates.md`, `contracts/a2a/terminal-semantics.md`, and `contracts/compatibility/terminal-evidence-ack-boundary.md`.
 - Prior source/evidence closeout matrices: `docs/validation/team1-source-public-readiness-libero.md` and `docs/validation/team1-evidence-nochange-hardening-libero.md`.
 
 ## Team1 output state

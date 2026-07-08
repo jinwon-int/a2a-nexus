@@ -52,7 +52,7 @@ Record the PR order, command, and successful output on #163 before merging the f
 
 Reviewed surfaces for this validation artifact:
 
-- `docs/public-readiness.md`
+- `docs/history/public-readiness.md`
 - `docs/release-checklist.md`
 - `docs/readiness/fail-closed-gates.json`
 

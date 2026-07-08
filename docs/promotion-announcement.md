@@ -1,6 +1,6 @@
 # A2A Nexus Promotion Announcement Draft
 
-A2A Nexus is a public alpha, feedback-welcome project. The repository is publicly readable, but broader promotion (stable release, public docs site launch, npm/Docker publication, announcements, production deployment, or live operations) remains blocked on the promotion-readiness gates in [`docs/public-readiness.md`](./public-readiness.md) and separate explicit operator approval. Do not post announcements from task automation.
+A2A Nexus is a public alpha, feedback-welcome project. The repository is publicly readable, but broader promotion (stable release, public docs site launch, npm/Docker publication, announcements, production deployment, or live operations) remains blocked on the promotion-readiness gates in [`docs/history/public-readiness.md`](history/public-readiness.md) and separate explicit operator approval. Do not post announcements from task automation.
 
 ## Short Korean copy
 
@@ -25,7 +25,7 @@ Before any announcement is posted:
 
 - Keep the product name as A2A Nexus in announcement drafts, repository metadata, and public copy.
 - Keep the tone public alpha / feedback-welcome; do not imply production readiness.
-- Confirm `docs/public-readiness.md` records the current public-alpha state and keeps visibility transfer, promotion, release, publication, deployment, and live-operation gates separate.
+- Confirm `docs/history/public-readiness.md` records the current public-alpha state and keeps visibility transfer, promotion, release, publication, deployment, and live-operation gates separate.
 - Confirm external secret/history scanner evidence is clean or explicitly dispositioned in a public-safe way.
 - Confirm promotion authorization is separate from any execution step.
 - Do not include private endpoints, host paths, provider IDs, tokens, raw transcripts, or production evidence.
