@@ -30,3 +30,14 @@ updates:
       npm-major:
         update-types:
           - major
+    ignore:
+      # Runtime-major alignment policy (#1414): @types/node is pinned to the
+      # deployed Node runtime major (node:22-alpine across broker and fleet) —
+      # types for a newer runtime admit APIs that do not exist at runtime.
+      # TypeScript majors need a deliberate migration lane with a full release
+      # gate. Both land through planned toolchain issues, never through
+      # grouped major bumps.
+      - dependency-name: "@types/node"
+        update-types: ["version-update:semver-major"]
+      - dependency-name: typescript
+        update-types: ["version-update:semver-major"]

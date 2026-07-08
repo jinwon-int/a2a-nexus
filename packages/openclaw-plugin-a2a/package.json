@@ -24,9 +24,9 @@
     "openclaw": "*"
   },
   "devDependencies": {
-    "@types/node": "^24.6.0",
+    "@types/node": "^22.20.0",
     "openclaw": "file:test/fixtures/openclaw",
-    "typescript": "^5.9.3"
+    "typescript": "^6.0.3"
   },
   "main": "./dist/index.js",
   "bin": {
