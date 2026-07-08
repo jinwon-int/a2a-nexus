@@ -1,10 +1,10 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { mkdirSync, writeFileSync, rmSync, mkdtempSync } from "node:fs";
+import { mkdirSync, writeFileSync, rmSync, mkdtempSync, statSync } from "node:fs";
 import { execFileSync } from "node:child_process";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
-import { buildActionableError, buildContainerScript, buildRunArgs, extractPrUrl, jsonArgvToScript, redactSecrets, runTask, shouldTreatDetectedPrUrlAsCanonical } from "./runner.js";
+import { buildActionableError, buildContainerScript, buildRunArgs, extractPrUrl, jsonArgvToScript, prepareWorkDirForContainerUser, redactSecrets, runTask, shouldTreatDetectedPrUrlAsCanonical } from "./runner.js";
 import type { NormalizedRunnerTask, RunnerConfig, RunnerTask } from "./types.js";
 
 const baseConfig: RunnerConfig = {
@@ -62,6 +62,29 @@ test("redacts OpenClaw runtime paths from result streams", () => {
   assert.ok(redacted.includes("<openclaw-dir>"));
   assert.ok(redacted.includes("<openclaw-workspace>"));
   assert.ok(redacted.includes("/work/repo/AGENTS.md"), "repo-relative bootstrap evidence must remain visible");
+});
+
+test("prepares trusted non-root container workdir ownership before launch", async () => {
+  const dir = mkdtempSync(join(tmpdir(), "a2a-runner-nonroot-workdir-"));
+  const runScript = join(dir, "run.sh");
+  const patchScript = join(dir, "patch-command.sh");
+  try {
+    writeFileSync(runScript, "#!/usr/bin/env bash\necho run\n", { mode: 0o700 });
+    writeFileSync(patchScript, "#!/usr/bin/env bash\necho patch\n", { mode: 0o700 });
+
+    await prepareWorkDirForContainerUser(dir, "1000:1000");
+
+    if (typeof process.getuid === "function" && process.getuid() === 0) {
+      assert.equal(statSync(dir).uid, 1000);
+      assert.equal(statSync(runScript).uid, 1000);
+      assert.equal(statSync(patchScript).uid, 1000);
+    } else {
+      assert.ok((statSync(dir).mode & 0o007) !== 0, "fallback must make the workdir accessible");
+      assert.ok((statSync(runScript).mode & 0o004) !== 0, "fallback must make run.sh readable by the container user");
+    }
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
 });
 
 test("sanitises task id for filesystem safety", async () => {
@@ -491,7 +514,7 @@ test("buildContainerScript provisions latest-capable gh and update-branch fallba
   const script = buildContainerScript(task);
   assert.ok(script.includes("gh pr update-branch --help"), "Expected gh capability check for update-branch");
   assert.ok(script.includes("cli.github.com/packages"), "Expected official GitHub CLI apt repository");
-  assert.ok(script.includes("/usr/local/bin/a2a-gh-pr-update-branch"), "Expected fallback helper installation");
+  assert.ok(script.includes("/work/.a2a-bin/a2a-gh-pr-update-branch"), "Expected writable fallback helper installation");
   assert.ok(script.includes("warning=gh_pr_update_branch_failed_using_git_fallback"), "Expected git fallback marker");
 });
 

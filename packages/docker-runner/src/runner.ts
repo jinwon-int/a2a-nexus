@@ -1,6 +1,6 @@
 import { createHash } from "node:crypto";
 import { readFileSync } from "node:fs";
-import { mkdir, writeFile, readdir, readFile, stat } from "node:fs/promises";
+import { chmod, chown, mkdir, writeFile, readdir, readFile, stat } from "node:fs/promises";
 import { basename, join, relative, resolve } from "node:path";
 import { runContainerWithRetry, type ContainerRetryEvidence } from "./container-retry.js";
 import { buildContainerScript, jsonArgvToScript } from "./script-generators.js";
@@ -73,6 +73,7 @@ export async function runTask(config: RunnerConfig, task: RunnerTask): Promise<R
 
   const script = buildContainerScript(normalizedTask);
   await writeFile(join(workDir, "run.sh"), script, { mode: 0o700 });
+  await prepareWorkDirForContainerUser(workDir, config.user);
 
   const args = buildRunArgs(config, normalizedTask, workDir, runToken);
   const timeoutMs = normalizedTask.timeoutMs ?? config.defaultTimeoutMs;
@@ -208,6 +209,47 @@ export async function runTask(config: RunnerConfig, task: RunnerTask): Promise<R
   }
 
   return result;
+}
+
+export async function prepareWorkDirForContainerUser(workDir: string, user?: string): Promise<void> {
+  const parsed = parseNumericContainerUser(user);
+  if (!parsed) return;
+
+  await chownTreeBestEffort(workDir, parsed.uid, parsed.gid);
+}
+
+function parseNumericContainerUser(user?: string): { uid: number; gid: number } | undefined {
+  const trimmed = user?.trim();
+  if (!trimmed || /^(0|root)(?::(?:0|root))?$/i.test(trimmed)) return undefined;
+
+  const [uidText, gidText] = trimmed.split(":", 2);
+  if (!/^\d+$/.test(uidText)) return undefined;
+
+  const uid = Number(uidText);
+  const gid = gidText === undefined || gidText === "" ? uid : /^\d+$/.test(gidText) ? Number(gidText) : NaN;
+  if (!Number.isSafeInteger(uid) || uid <= 0 || !Number.isSafeInteger(gid) || gid < 0) return undefined;
+
+  return { uid, gid };
+}
+
+async function chownTreeBestEffort(path: string, uid: number, gid: number): Promise<void> {
+  try {
+    await chown(path, uid, gid);
+  } catch {
+    await chmod(path, 0o777).catch(() => undefined);
+  }
+
+  const entries = await readdir(path, { withFileTypes: true }).catch(() => []);
+  for (const entry of entries) {
+    const child = join(path, entry.name);
+    if (entry.isDirectory()) {
+      await chownTreeBestEffort(child, uid, gid);
+      continue;
+    }
+    await chown(child, uid, gid).catch(async () => {
+      await chmod(child, 0o777).catch(() => undefined);
+    });
+  }
 }
 
 function isMissingPatchCommand(stdout: string, stderr: string): boolean {

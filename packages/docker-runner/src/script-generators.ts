@@ -112,7 +112,8 @@ printf 'github_cli=%s\n' "$(gh --version | head -n 1)" | tee -a /work/artifacts/
 }
 
 function installGhUpdateBranchFallbackScript(): string {
-  return `cat > /usr/local/bin/a2a-gh-pr-update-branch <<'A2A_GH_UPDATE_BRANCH_EOF'
+  return `mkdir -p /work/.a2a-bin
+cat > /work/.a2a-bin/a2a-gh-pr-update-branch <<'A2A_GH_UPDATE_BRANCH_EOF'
 #!/usr/bin/env bash
 set -euo pipefail
 selector="\${1:-}"
@@ -155,7 +156,8 @@ fi
 git merge --no-edit "origin/$base_ref"
 git push origin "$head_ref"
 A2A_GH_UPDATE_BRANCH_EOF
-chmod 755 /usr/local/bin/a2a-gh-pr-update-branch
+chmod 755 /work/.a2a-bin/a2a-gh-pr-update-branch
+export PATH="/work/.a2a-bin:$PATH"
 `;
 }
 
