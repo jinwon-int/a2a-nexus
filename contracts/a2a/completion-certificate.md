@@ -174,13 +174,72 @@ export interface PaymentRailAdapter {
 
 v0 defines the boundary only. A concrete adapter must be opt-in, rail-specific, credential-isolated, replay-safe, idempotent, and approval-gated.
 
+### 7.1 Live rail approval-gate packet
+
+Before any AP2, x402, Stripe-style, or other payment rail adapter can make a live or test-mode call, the operator must produce a rail-specific approval packet. The source-only approval-gate packet is deliberately non-executable: it records the future approval prerequisites while keeping every live side-effect flag false.
+
+```jsonc
+{
+  "schemaVersion": "a2a.completion.liveRailApprovalPacket.v0",
+  "issue": 1393,
+  "sourceOnly": true,
+  "noLive": true,
+  "liveExecutionEnabled": false,
+  "operatorChoiceRef": "issue-comment:#1393:option-4-approval-gate-pr-only",
+  "approval": {
+    "approvalRef": "issue-comment:#1393:<future-rail-specific-approval>",
+    "approvedBy": "operator-id",
+    "approvedAt": "2026-07-08T00:00:00Z",
+    "expiresAt": "2026-07-15T00:00:00Z",
+    "executionApproval": false
+  },
+  "rail": {
+    "provider": "stripe",
+    "mode": "offline-approval-gate-only",
+    "mainnetAllowed": false,
+    "liveCallAllowed": false
+  },
+  "credentials": {
+    "credentialRef": "vault-ref://payment-rails/stripe/test-mode/future-ref",
+    "rawSecretPresent": false,
+    "secretMaterialEmbedded": false
+  },
+  "canaryBounds": {
+    "executionAllowed": false,
+    "maxAttempts": 0,
+    "maxAmount": { "currency": "TESTUSD", "value": "0" },
+    "windowSeconds": 0,
+    "testModeOrTestnetOnly": true
+  },
+  "rollbackPlan": {
+    "planRef": "runbook-ref://a2a/completion-certificate/live-rail-rollback-v0",
+    "steps": ["revoke-credentials", "disable-adapter", "halt-canary", "verify-no-db-outbox-ack-replay"]
+  },
+  "noLiveRehearsal": {
+    "adapter": "fake-no-live",
+    "receiptRef": "fake-no-live:sha256:...",
+    "deterministic": true
+  }
+}
+```
+
+Approval-gate rules:
+
+1. `liveExecutionEnabled` and `approval.executionApproval` MUST be `false` in an approval-gate-only packet.
+2. `rail.mode` MUST be `"offline-approval-gate-only"`; `mainnetAllowed` and `liveCallAllowed` MUST be `false`.
+3. Credentials are references only. Raw payment credentials, signing keys, bearer tokens, webhook secrets, and private keys MUST NOT be embedded in the packet, fixtures, PR bodies, issue comments, or logs.
+4. Canary bounds remain zero-execution until a later rail-specific approval names the provider, credentials, bounded test-mode/testnet scope, and rollback path.
+5. Rollback evidence MUST include, at minimum, credential revocation, adapter disablement, canary halt, and verification that DB/outbox/ACK/replay state was not mutated by the approval-gate step.
+6. A fake/no-live rehearsal receipt is required before any future rail-specific live integration PR can claim readiness.
+
 ## 8. Minimum future implementation slices
 
 1. Schema/fixture gate for `completionConditions` and certificate shape. **Landed:** `fixtures/contract/completion-certificate.json` and `test/conformance/check-completion-certificate.mjs`.
 2. Offline certificate verifier that checks JCS/JWS signature, subject binding, issuer key, expiry, and assurance invariants. **Landed:** `scripts/verify-completion-certificate.mjs`, `scripts/lib/completion-certificate-verifier.mjs`, and `test/conformance/check-completion-certificate-verifier.mjs`.
 3. Report-only certificate generator for completed no-live tasks. **Landed:** `scripts/generate-completion-certificate.mjs`, `scripts/lib/completion-certificate-generator.mjs`, and `test/conformance/check-completion-certificate-generator.mjs`.
 4. Payment rail adapter rehearsal with fake/no-live rail. **Landed:** `scripts/lib/completion-certificate-fake-rail.mjs` and `test/conformance/check-completion-certificate-fake-rail.mjs`.
-5. Only after explicit approval: live rail integration.
+5. Source-only live rail approval-gate packet and conformance. **Landed:** `scripts/lib/completion-certificate-live-approval-gate.mjs` and `test/conformance/check-completion-certificate-live-approval-gate.mjs`. This does not execute a live call.
+6. Only after a fresh rail-specific approval with credentials, bounded canary scope, fake/no-live rehearsal evidence, and rollback plan: live rail integration.
 
 The source-only fixture gate is represented by [`../../fixtures/contract/completion-certificate.json`](../../fixtures/contract/completion-certificate.json) and checked with `node test/conformance/check-completion-certificate.mjs`. It validates decision semantics and safety invariants only; cryptographic signature verification remains slice 2.
 
@@ -190,3 +249,4 @@ The source-only fixture gate is represented by [`../../fixtures/contract/complet
 - `payment-authorized` and `funds-available` must remain in `assurance.doesNotProve` unless a future external rail proof is added.
 - Private payment credentials and account identifiers must never appear in certificates, fixtures, PR bodies, issue comments, or logs.
 - Unknown certificate fields must be ignored by readers but preserved by signers only if covered by JCS; enforcement gates should fail closed on unknown required condition kinds.
+- An approval-gate packet is not execution approval: absent a later rail-specific approval, the only permitted rail path remains the fake/no-live rehearsal adapter.
