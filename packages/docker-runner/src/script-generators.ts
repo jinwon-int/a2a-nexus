@@ -174,10 +174,10 @@ case "$1" in
 esac
 ASKPASS
     chmod 700 /tmp/git-askpass
-    mkdir -p /root/.config/gh
-    cp /run/secrets/gh-hosts.yml /root/.config/gh/hosts.yml
-    chmod 600 /root/.config/gh/hosts.yml
-    export GH_CONFIG_DIR=/root/.config/gh
+    mkdir -p /work/.config/gh
+    cp /run/secrets/gh-hosts.yml /work/.config/gh/hosts.yml
+    chmod 600 /work/.config/gh/hosts.yml
+    export GH_CONFIG_DIR=/work/.config/gh
     export GH_TOKEN="$token"
     export GIT_ASKPASS=/tmp/git-askpass
     export GIT_TERMINAL_PROMPT=0
