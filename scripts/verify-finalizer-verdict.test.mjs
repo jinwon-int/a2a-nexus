@@ -105,7 +105,7 @@ function buildVerdict(ctx, opts = {}) {
       disclaimer: "Attests an independent GO on this exact artifact; does not certify correctness.",
     },
     finalizerKeyId: opts.finalizerKeyId ?? ctx.finalizerKeyId,
-    producedAt: "2026-07-06T00:00:00.000Z",
+    producedAt: opts.producedAt ?? "2026-07-06T00:00:00.000Z",
   };
   if (opts.omitAssurance) delete verdict.assurance;
   if (opts.omitKind) delete verdict.kind;
@@ -245,6 +245,30 @@ test("a battery verdict verifies without a reproducibility disclaimer", () => {
   const r = verifyVerdict(buildVerdict(ctx, { kind: "battery" }), ctx.keyring);
   assert.equal(r.valid, true, JSON.stringify(r.checks));
   assert.equal(r.kind, "battery");
+});
+
+test("optional max-age freshness check rejects stale verdicts without changing default verification (#1462)", () => {
+  const ctx = makeCtx();
+  const verdict = buildVerdict(ctx, { producedAt: "2026-07-06T00:00:00.000Z" });
+
+  const defaultResult = verifyVerdict(verdict, ctx.keyring);
+  assert.equal(defaultResult.valid, true, JSON.stringify(defaultResult.checks));
+  assert.equal(check(defaultResult, "verdict-freshness"), undefined, "unset max-age is byte-compatible");
+
+  const fresh = verifyVerdict(verdict, ctx.keyring, {
+    maxAgeSeconds: 24 * 60 * 60,
+    now: "2026-07-06T12:00:00.000Z",
+  });
+  assert.equal(fresh.valid, true, JSON.stringify(fresh.checks));
+  assert.equal(check(fresh, "verdict-freshness").ok, true);
+
+  const stale = verifyVerdict(verdict, ctx.keyring, {
+    maxAgeSeconds: 60 * 60,
+    now: "2026-07-06T02:00:01.000Z",
+  });
+  assert.equal(stale.valid, false);
+  assert.equal(check(stale, "verdict-freshness").ok, false);
+  assert.match(check(stale, "verdict-freshness").detail, /exceeds max-age/);
 });
 
 test("malformed verdict is a fail-closed result, not a crash", () => {

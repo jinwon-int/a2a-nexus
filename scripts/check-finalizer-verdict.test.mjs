@@ -63,7 +63,7 @@ function key() {
 
 const HEAD = "headsha-1";
 
-function buildVerdict(signerPriv, keyId, { subject = { kind: "pr", prHeadSha: HEAD }, decision = "go" } = {}) {
+function buildVerdict(signerPriv, keyId, { subject = { kind: "pr", prHeadSha: HEAD }, decision = "go", producedAt = "2026-07-06T00:00:00.000Z" } = {}) {
   const verdict = {
     schemaVersion: VERDICT_SCHEMA,
     canonicalization: CANONICALIZATION,
@@ -77,7 +77,7 @@ function buildVerdict(signerPriv, keyId, { subject = { kind: "pr", prHeadSha: HE
       disclaimer: "Attests GO, not correctness.",
     },
     finalizerKeyId: keyId,
-    producedAt: "2026-07-06T00:00:00.000Z",
+    producedAt,
   };
   verdict.sig = signJws(verdict, signerPriv, keyId);
   return verdict;
@@ -105,6 +105,27 @@ test("a NO-GO verdict blocks under enforce", () => {
   assert.equal(r.ok, false);
   assert.equal(r.blocked, true);
   assert.ok(r.reasons.some((x) => /decision/.test(x)));
+});
+
+test("max-age freshness violation is warn-only or blocking according to gate mode (#1462)", () => {
+  const f = key();
+  const verdict = buildVerdict(f.priv, "finalizer-1", { producedAt: "2026-07-06T00:00:00.000Z" });
+  const base = {
+    verdict,
+    headSha: HEAD,
+    finalizerKeyring: { keys: { "finalizer-1": f.pem } },
+    producingWorkerKeyIds: ["worker-9"],
+    maxAgeSeconds: 60,
+  };
+  const warn = evaluateVerdictGate({ ...base, mode: "warn" });
+  assert.equal(warn.ok, false);
+  assert.equal(warn.blocked, false);
+  assert.ok(warn.reasons.some((x) => /verdict-freshness.*max-age/.test(x)), JSON.stringify(warn.reasons));
+
+  const enforce = evaluateVerdictGate({ ...base, mode: "enforce" });
+  assert.equal(enforce.ok, false);
+  assert.equal(enforce.blocked, true);
+  assert.ok(enforce.reasons.some((x) => /verdict-freshness.*max-age/.test(x)), JSON.stringify(enforce.reasons));
 });
 
 test("a verdict for a different head SHA is rejected (no stale/transplant)", () => {
