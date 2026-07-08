@@ -179,7 +179,7 @@ v0 defines the boundary only. A concrete adapter must be opt-in, rail-specific, 
 1. Schema/fixture gate for `completionConditions` and certificate shape. **Landed:** `fixtures/contract/completion-certificate.json` and `test/conformance/check-completion-certificate.mjs`.
 2. Offline certificate verifier that checks JCS/JWS signature, subject binding, issuer key, expiry, and assurance invariants. **Landed:** `scripts/verify-completion-certificate.mjs`, `scripts/lib/completion-certificate-verifier.mjs`, and `test/conformance/check-completion-certificate-verifier.mjs`.
 3. Report-only certificate generator for completed no-live tasks. **Landed:** `scripts/generate-completion-certificate.mjs`, `scripts/lib/completion-certificate-generator.mjs`, and `test/conformance/check-completion-certificate-generator.mjs`.
-4. Only after the above: payment rail adapter rehearsal with fake/no-live rail.
+4. Payment rail adapter rehearsal with fake/no-live rail. **Landed:** `scripts/lib/completion-certificate-fake-rail.mjs` and `test/conformance/check-completion-certificate-fake-rail.mjs`.
 5. Only after explicit approval: live rail integration.
 
 The source-only fixture gate is represented by [`../../fixtures/contract/completion-certificate.json`](../../fixtures/contract/completion-certificate.json) and checked with `node test/conformance/check-completion-certificate.mjs`. It validates decision semantics and safety invariants only; cryptographic signature verification remains slice 2.
