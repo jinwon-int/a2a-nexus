@@ -338,6 +338,7 @@
   ],
   "validationCommands": [
     "node test/conformance/check-completion-certificate.mjs",
+    "node test/conformance/check-completion-certificate-verifier.mjs",
     "npm run test:conformance",
     "npm run check"
   ]

@@ -117,7 +117,7 @@ Rules:
 }
 ```
 
-The signature covers `JCS(certificate sans sig)`. The subject must bind the exact task result or artifact hashes used for the condition evaluation so the certificate cannot be replayed against a different task, worker, or artifact.
+The signature covers `JCS(certificate sans sig)`. The subject must bind the exact task result or artifact hashes used for the condition evaluation so the certificate cannot be replayed against a different task, worker, or artifact. The source-only offline verifier is `scripts/verify-completion-certificate.mjs` (library: `scripts/lib/completion-certificate-verifier.mjs`), with conformance coverage in `test/conformance/check-completion-certificate-verifier.mjs`; it checks integrity and fail-closed semantics only, not payment authorization.
 
 ## 5. Condition result semantics
 
@@ -176,8 +176,8 @@ v0 defines the boundary only. A concrete adapter must be opt-in, rail-specific, 
 
 ## 8. Minimum future implementation slices
 
-1. Schema/fixture gate for `completionConditions` and certificate shape.
-2. Offline certificate verifier that checks JCS/JWS signature, subject binding, issuer key, expiry, and assurance invariants.
+1. Schema/fixture gate for `completionConditions` and certificate shape. **Landed:** `fixtures/contract/completion-certificate.json` and `test/conformance/check-completion-certificate.mjs`.
+2. Offline certificate verifier that checks JCS/JWS signature, subject binding, issuer key, expiry, and assurance invariants. **Landed:** `scripts/verify-completion-certificate.mjs`, `scripts/lib/completion-certificate-verifier.mjs`, and `test/conformance/check-completion-certificate-verifier.mjs`.
 3. Report-only certificate generator for completed no-live tasks.
 4. Only after the above: payment rail adapter rehearsal with fake/no-live rail.
 5. Only after explicit approval: live rail integration.
