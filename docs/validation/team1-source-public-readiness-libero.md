@@ -18,7 +18,7 @@ This is a redacted validation artifact only. It does not change repository visib
 - Broker lane: [a2a-broker#469](https://github.com/jinwon-int/a2a-broker/issues/469); implementation PR [a2a-broker#470](https://github.com/jinwon-int/a2a-broker/pull/470).
 - Plugin lane: [openclaw-plugin-a2a#251](https://github.com/jinwon-int/openclaw-plugin-a2a/issues/251).
 - Runner lane: [a2a-docker-runner#168](https://github.com/jinwon-int/a2a-docker-runner/issues/168); recurrence-prevention follow-up [a2a-docker-runner#169](https://github.com/jinwon-int/a2a-docker-runner/issues/169).
-- Local public-readiness surfaces: `contracts/a2a/terminal-semantics.md`, `contracts/compatibility/terminal-evidence-ack-boundary.md`, `docs/readiness/fail-closed-scanner-readiness.md`, `docs/governance/public-private-boundary-gates.md`, `docs/public-readiness.md`, and `docs/promotion-validation.md`.
+- Local public-readiness surfaces: `contracts/a2a/terminal-semantics.md`, `contracts/compatibility/terminal-evidence-ack-boundary.md`, `docs/readiness/fail-closed-scanner-readiness.md`, `docs/governance/public-private-boundary-gates.md`, `docs/history/public-readiness.md`, and `docs/history/promotion-validation.md`.
 - GitHub metadata observed read-only during this review: `a2a-plane (internal tracker, private)` is public; `jinwon-int/a2a-broker`, `jinwon-int/openclaw-plugin-a2a`, and `jinwon-int/a2a-docker-runner` remain private source repositories.
 
 ## Integrated validation matrix

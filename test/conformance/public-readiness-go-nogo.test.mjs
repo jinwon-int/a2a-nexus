@@ -10,7 +10,7 @@ import { readFileSync } from 'node:fs';
 import { resolve, join } from 'node:path';
 
 const REPO_ROOT = resolve(import.meta.dirname ?? '.', '../..');
-const NOTE_PATH = join(REPO_ROOT, 'docs/public-readiness-go-nogo.md');
+const NOTE_PATH = join(REPO_ROOT, 'docs/history/public-readiness-go-nogo.md');
 
 function readNote() {
   try {
@@ -22,7 +22,7 @@ function readNote() {
 
 test('GO/NO-GO readiness note exists', () => {
   const note = readNote();
-  assert.ok(note !== null, 'docs/public-readiness-go-nogo.md must exist');
+  assert.ok(note !== null, 'docs/history/public-readiness-go-nogo.md must exist');
 });
 
 test('GO/NO-GO note declares NO-GO for visibility change', () => {

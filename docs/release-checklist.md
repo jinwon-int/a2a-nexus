@@ -37,9 +37,9 @@ Before merging a round with more than one PR, build the exact intended merge tra
 
 ## Docs and release notes
 
-- [ ] Review `README.md`, `CHANGELOG.md`, `docs/release-gate.md`, `docs/public-readiness.md`, and `docs/known-limitations.md` for current status.
+- [ ] Review `README.md`, `CHANGELOG.md`, `docs/release-gate.md`, `docs/history/public-readiness.md`, and `docs/known-limitations.md` for current status.
 - [ ] Ensure compatibility baselines in `contracts/compatibility/matrix.md` are exact and current.
-- [ ] Keep unresolved blockers listed in `docs/public-readiness.md`; do not convert Block/NO-GO evidence into Done evidence.
+- [ ] Keep unresolved blockers listed in `docs/history/public-readiness.md`; do not convert Block/NO-GO evidence into Done evidence.
 
 ## Final operator gate
 

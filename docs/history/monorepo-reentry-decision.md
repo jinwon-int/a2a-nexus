@@ -109,7 +109,7 @@ a2a-plane/
   validated by `npm run check:monorepo-ci-parity`. Not green means split repo CI
   remains canonical.
 - Record the docs, CODEOWNERS, and issue-routing draft in
-  [`docs/migration.md`](../migration.md), [`docs/operators.md`](../operators.md),
+  [`docs/migration.md`](./migration.md), [`docs/operators.md`](../operators.md),
   [`docs/developers.md`](../developers.md), and [`docs/issue-routing.md`](../issue-routing.md),
   and keep it validated by `npm run check:monorepo-docs-routing`.
 - Record the branch protection and release/package policy in

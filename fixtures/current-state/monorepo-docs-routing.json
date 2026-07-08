@@ -7,7 +7,7 @@
   "canonicalUntilExplicitSignoff": "split_repos",
   "canonicalFlipApproved": false,
   "docs": [
-    "docs/migration.md",
+    "docs/history/migration.md",
     "docs/operators.md",
     "docs/developers.md",
     "docs/issue-routing.md",

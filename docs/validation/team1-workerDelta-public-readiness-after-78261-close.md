@@ -15,7 +15,7 @@ This is a redacted source-readiness artifact only. It does not deploy or restart
 - a2a-plane#94 (a2a-plane#94, internal tracker private) public A2A/orchestrator compatibility and policy follow-ups.
 - `contracts/a2a/terminal-semantics.md` and `contracts/compatibility/terminal-evidence-ack-boundary.md` for the accepted-send/non-ACK terminal evidence boundary.
 - `fixtures/terminal-evidence/accepted-send-non-ack.json`, `fixtures/terminal-evidence/github-comment-projection.json`, and `fixtures/contract/public-compatibility-policy.json` for fixture-backed public-safe evidence.
-- `docs/public-readiness.md`, `docs/governance/public-private-boundary-gates.md`, and `docs/compatibility/public-policy-followup-review.md` for fail-closed readiness and approval separation.
+- `docs/history/public-readiness.md`, `docs/governance/public-private-boundary-gates.md`, and `docs/compatibility/public-policy-followup-review.md` for fail-closed readiness and approval separation.
 
 ## Integrated readiness matrix
 
