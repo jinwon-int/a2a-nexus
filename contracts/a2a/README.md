@@ -61,6 +61,8 @@ Machine-readable reference fixtures for broker/plugin/runner validation:
 - `node test/conformance/check-contract-fixtures.mjs` — validates contract v0 fixtures
 - `node test/conformance/check-completion-certificate.mjs` — validates completion certificate source-only condition fixtures and payment-boundary invariants
 - `node test/conformance/check-completion-certificate-verifier.mjs` — validates the source-only offline completion certificate verifier against signature, subject-binding, expiry, issuer-key, and assurance-boundary negative cases
+- `node test/conformance/check-completion-certificate-generator.mjs` — validates the report-only no-live completion certificate generator and generator→verifier round-trip
+- `node scripts/generate-completion-certificate.mjs <report.json> --signing-key <ed25519-private.pem>` — emits a signed report-only completion certificate from a public-safe no-live report; this is not payment release authorization
 - `node scripts/verify-completion-certificate.mjs <certificate.json> --keyring <keyring.json>` — independently verifies a signed completion certificate offline; this is an integrity check, not payment release authorization
 - `node test/conformance/check-terminal-evidence-ack-boundary.mjs` — validates accepted-send non-ACK fixture
 - `node test/conformance/check-a2a-tck-plan.mjs` — validates the A2A TCK and v0→v1 compatibility plan spec, fixture, gate mapping, and external-harness reference (#916)
