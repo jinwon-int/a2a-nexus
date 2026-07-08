@@ -41,6 +41,8 @@ The following actions require fresh explicit operator approval for the specific 
 - secret rotation, credential movement, or visibility change;
 - force push/history rewrite.
 
+A constrained `node-op` A2A lane is permitted only when it follows [`contracts/a2a/node-op-lane.md`](../contracts/a2a/node-op-lane.md): allowlisted operation name, pinned operation version, schema-validated args, worker-readiness proof, structured redacted evidence, and explicit approval for write-capable operations. A raw shell/exec lane is prohibited.
+
 A spec, plan, or task list must say whether any of these are out of scope or require later approval.
 
 ### 6. Evidence is required for closeout
