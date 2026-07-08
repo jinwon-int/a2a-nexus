@@ -113,3 +113,4 @@ following evidence so the round is auditable end-to-end:
   state, reported alongside `filesChanged` and `tests`.
 - **Trusted self-fleet / no-auto-merge boundary** — the canary preserves the v1
   trust posture: opt-in trusted self-fleet only, and hybrid PRs are never
+  auto-merged without human review.
