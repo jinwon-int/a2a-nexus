@@ -165,21 +165,22 @@ function githubAuthScript(): string {
   return `if [ -r /run/secrets/gh-hosts.yml ]; then
   token=$(sed -n 's/^[[:space:]]*oauth_token:[[:space:]]*//p' /run/secrets/gh-hosts.yml | head -n 1)
   if [ -n "$token" ]; then
-    cat > /tmp/git-askpass <<'ASKPASS'
+    mkdir -p /work/.a2a-bin
+    cat > /work/.a2a-bin/git-askpass <<'ASKPASS'
 #!/usr/bin/env bash
 case "$1" in
-  *Username*) printf '%s\\n' "x-access-token" ;;
+  *Username*) printf '%s\n' "x-access-token" ;;
   *Password*) sed -n 's/^[[:space:]]*oauth_token:[[:space:]]*//p' /run/secrets/gh-hosts.yml | head -n 1 ;;
-  *) printf '\\n' ;;
+  *) printf '\n' ;;
 esac
 ASKPASS
-    chmod 700 /tmp/git-askpass
+    chmod 700 /work/.a2a-bin/git-askpass
     mkdir -p /work/.config/gh
     cp /run/secrets/gh-hosts.yml /work/.config/gh/hosts.yml
     chmod 600 /work/.config/gh/hosts.yml
     export GH_CONFIG_DIR=/work/.config/gh
     export GH_TOKEN="$token"
-    export GIT_ASKPASS=/tmp/git-askpass
+    export GIT_ASKPASS=/work/.a2a-bin/git-askpass
     export GIT_TERMINAL_PROMPT=0
     printf 'github_auth=hosts.yml\\n' | tee -a /work/artifacts/summary.txt
   fi
