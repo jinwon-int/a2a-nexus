@@ -3,6 +3,7 @@ import { generateKeyPairSync } from "node:crypto";
 import test from "node:test";
 
 import {
+  createPinnedLookup,
   EgressAllowlistError,
   fetchGithubResolvedRefSnapshot,
   fetchWithEgressAllowlist,
@@ -43,6 +44,25 @@ function deps(overrides: Partial<EgressAllowlistDeps> = {}): EgressAllowlistDeps
     ...overrides,
   };
 }
+
+test("GREEN: pinned DNS lookup supports Node all:true callers", async () => {
+  const lookup = createPinnedLookup("203.0.113.44", 4);
+  const one = await new Promise<{ address: string; family: number }>((resolve, reject) => {
+    lookup("api.github.com", {}, (error: Error | null, address: string, family: number) => {
+      if (error) reject(error);
+      else resolve({ address, family });
+    });
+  });
+  assert.deepEqual(one, { address: "203.0.113.44", family: 4 });
+
+  const all = await new Promise<Array<{ address: string; family: number }>>((resolve, reject) => {
+    lookup("api.github.com", { all: true }, (error: Error | null, addresses: Array<{ address: string; family: number }>) => {
+      if (error) reject(error);
+      else resolve(addresses);
+    });
+  });
+  assert.deepEqual(all, [{ address: "203.0.113.44", family: 4 }]);
+});
 
 test("RED adversarial: non-allowlist host is denied before request", async () => {
   let requested = false;
