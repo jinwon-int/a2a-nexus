@@ -96,3 +96,21 @@ load-bearing:
   When the worktree is not git-inspectable it degrades to self-report only; the
   v1 trust posture (opt-in trusted self-fleet, no auto-merge of hybrid PRs)
   covers that residual gap.
+
+#### Live canary evidence requirements
+
+A hybrid-subagent live canary (e.g. the H2 retry for #1348) must attach the
+following evidence so the round is auditable end-to-end:
+
+- **Task id** — the originating issue/round id (e.g. `#1348`) the canary refs.
+- **`executionMode: "hybrid-subagent"`** — recorded on the payload so the lane
+  is classified as an opt-in hybrid patch, not a plain runner patch.
+- **`subagentBudget`** — the `{ max, remaining }` budget the canary ran under.
+- **`declaredScope`** — the exact `paths` allow-list the patch stayed within.
+- **PR URL** — the opened pull request; its body refs the task (`Refs #1348`),
+  never `Closes`/`Fixes`, so the issue is not auto-resolved by the canary.
+- **Review/merge checks** — the docs/markdown-link check result plus PR review
+  state, reported alongside `filesChanged` and `tests`.
+- **Trusted self-fleet / no-auto-merge boundary** — the canary preserves the v1
+  trust posture: opt-in trusted self-fleet only, and hybrid PRs are never
+  auto-merged without human review.
