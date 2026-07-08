@@ -21,6 +21,7 @@
  *
  * Usage:
  *   node scripts/verify-analysis-report.mjs <report.json> --keyring <keyring.json> [--json]
+ *   node scripts/verify-analysis-report.mjs <snapshot.json> --keyring <keyring.json> --snapshot [--json]
  * Exit 0 = GREEN (every check passed); non-zero = fail-closed.
  */
 import fs from "node:fs";
@@ -143,6 +144,43 @@ export function verifyResultProvenance(result, taskId, keys) {
 }
 
 /**
+ * Verify one signed retrieval snapshot independently of a report bundle.
+ *
+ * This is the K2 #1374 snapshot-only verifier surface: callers can check the
+ * frozen source input (byte length, content hash, signing key, and JWS over the
+ * complete unsigned tuple) before or without constructing a full analysis
+ * report. It performs no network access and never trusts live content.
+ */
+export function verifyRetrievalSnapshot(snapshot, keys, id = "source[0]") {
+  const checks = [];
+  if (!snapshot || typeof snapshot !== "object" || snapshot.schemaVersion !== RETRIEVAL_SNAPSHOT_SCHEMA || snapshot.canonicalization !== CANONICALIZATION) {
+    fail(checks, id, "unsupported/invalid snapshot");
+    return { green: false, checks };
+  }
+  if (typeof snapshot.content !== "string" || snapshot.byteLen !== Buffer.byteLength(snapshot.content, "utf8")) {
+    fail(checks, id, "byteLen mismatch");
+    return { green: false, checks };
+  }
+  if (snapshot.contentHash !== sha256Prefix(snapshot.content)) {
+    fail(checks, id, "contentHash mismatch — snapshot content altered");
+    return { green: false, checks };
+  }
+  const kid = kidOf(snapshot.signature);
+  const pem = kid && keys[kid];
+  if (!pem) {
+    fail(checks, id, `snapshot signing key '${kid ?? "?"}' not in keyring (fail-closed)`);
+    return { green: false, checks };
+  }
+  const { signature: _omit, ...unsigned } = snapshot;
+  if (!verifyJwsSignature(unsigned, snapshot.signature, pem)) {
+    fail(checks, id, "snapshot signature failed verification");
+    return { green: false, checks };
+  }
+  pass(checks, id);
+  return { green: true, checks };
+}
+
+/**
  * Verify a report bundle against a keyring `{ keys: { [keyId]: pemPublicKey } }`.
  * Returns { green, checks: [{id, ok, detail?}] }. Never throws on a malformed
  * bundle — that is a fail-closed result, not a crash.
@@ -181,26 +219,7 @@ export function verifyReport(report, keyring) {
   // 6. Retrieval snapshots: each snapshot self-verifies (byteLen + contentHash + signature).
   // An empty sources array is allowed (analysis with no external source).
   report.sources.forEach((snap, i) => {
-    const id = `source[${i}]`;
-    if (!snap || typeof snap !== "object" || snap.schemaVersion !== RETRIEVAL_SNAPSHOT_SCHEMA || snap.canonicalization !== CANONICALIZATION) {
-      return fail(checks, id, "unsupported/invalid snapshot");
-    }
-    if (typeof snap.content !== "string" || snap.byteLen !== Buffer.byteLength(snap.content, "utf8")) {
-      return fail(checks, id, "byteLen mismatch");
-    }
-    if (snap.contentHash !== sha256Prefix(snap.content)) {
-      return fail(checks, id, "contentHash mismatch — snapshot content altered");
-    }
-    const kid = kidOf(snap.signature);
-    const pem = kid && keys[kid];
-    if (!pem) {
-      return fail(checks, id, `snapshot signing key '${kid ?? "?"}' not in keyring (fail-closed)`);
-    }
-    const { signature: _omit, ...unsigned } = snap;
-    if (!verifyJwsSignature(unsigned, snap.signature, pem)) {
-      return fail(checks, id, "snapshot signature failed verification");
-    }
-    return pass(checks, id);
+    checks.push(...verifyRetrievalSnapshot(snap, keys, `source[${i}]`).checks);
   });
 
   // 7. Result<->source binding (K2 #1374 / closes #1386 T2). A snapshot may only
@@ -234,11 +253,11 @@ function main(argv) {
   const { values, positionals } = parseArgs({
     args: argv,
     allowPositionals: true,
-    options: { keyring: { type: "string" }, json: { type: "boolean", default: false } },
+    options: { keyring: { type: "string" }, json: { type: "boolean", default: false }, snapshot: { type: "boolean", default: false } },
   });
   const reportPath = positionals[0];
   if (!reportPath || !values.keyring) {
-    process.stderr.write("usage: verify-analysis-report.mjs <report.json> --keyring <keyring.json> [--json]\n");
+    process.stderr.write("usage: verify-analysis-report.mjs <report.json> --keyring <keyring.json> [--json]\n       verify-analysis-report.mjs <snapshot.json> --keyring <keyring.json> --snapshot [--json]\n");
     return 2;
   }
   let report;
@@ -256,14 +275,15 @@ function main(argv) {
     return 2;
   }
 
-  const result = verifyReport(report, keyring);
+  const result = values.snapshot ? verifyRetrievalSnapshot(report, keyring.keys || {}) : verifyReport(report, keyring);
   if (values.json) {
     process.stdout.write(`${JSON.stringify(result, null, 2)}\n`);
   } else {
     for (const c of result.checks) {
       process.stdout.write(`${c.ok ? "PASS" : "FAIL"}  ${c.id}${c.detail ? ` — ${c.detail}` : ""}\n`);
     }
-    process.stdout.write(`\n${result.green ? "GREEN — report verified" : "RED — verification failed (fail-closed)"}\n`);
+    const noun = values.snapshot ? "retrieval snapshot" : "report";
+    process.stdout.write(`\n${result.green ? `GREEN — ${noun} verified` : "RED — verification failed (fail-closed)"}\n`);
   }
   return result.green ? 0 : 1;
 }
