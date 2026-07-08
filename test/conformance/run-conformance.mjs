@@ -30,6 +30,7 @@ export const CHECKS = [
   'check-terminal-brief-canary-acceptance.mjs',
   'check-terminal-brief-core-contract.mjs',
   'check-completion-certificate.mjs',
+  'check-completion-certificate-verifier.mjs',
   'check-trace-propagation.mjs',
   'check-three-component-e2e.mjs',
 ];
