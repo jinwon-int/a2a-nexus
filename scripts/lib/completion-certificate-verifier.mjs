@@ -141,24 +141,27 @@ function assuranceViolation(certificate) {
   return undefined;
 }
 
-function derivedDecisionViolation(certificate) {
+function expectedDecision(certificate) {
   if (certificate.conditions.artifactHashRequired && !hasArtifactBinding(certificate.subject)) {
-    return { reason: 'artifact-hash-required' };
+    return 'not-eligible';
   }
   for (const battery of certificate.conditions.requiredBatteries) {
     const result = resultById(certificate, `battery:${battery}`);
-    if (!result || result.status === 'missing') return { reason: 'required-battery-missing', battery };
-    if (result.status !== 'met') return { reason: 'required-battery-not-met', battery, status: result.status };
+    if (!result || result.status !== 'met') return 'not-eligible';
   }
   const verdict = resultById(certificate, 'judgment:finalizer-go');
   if (!verdict || verdict.kind !== 'finalizer-verdict' || verdict.status !== 'met') {
-    return { reason: 'required-finalizer-verdict-not-met' };
+    return 'not-eligible';
   }
   const artifactResult = resultById(certificate, 'artifact-hash-bound');
   if (certificate.conditions.artifactHashRequired && (!artifactResult || artifactResult.status !== 'met')) {
-    return { reason: 'artifact-hash-required' };
+    return 'not-eligible';
   }
-  const expected = certificate.conditions.externalConditions.length > 0 ? 'external-pending' : 'eligible';
+  return certificate.conditions.externalConditions.length > 0 ? 'external-pending' : 'eligible';
+}
+
+function derivedDecisionViolation(certificate) {
+  const expected = expectedDecision(certificate);
   if (certificate.decision !== expected) {
     return { reason: 'decision-mismatch', expected, actual: certificate.decision };
   }

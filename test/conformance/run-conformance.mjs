@@ -31,6 +31,7 @@ export const CHECKS = [
   'check-terminal-brief-core-contract.mjs',
   'check-completion-certificate.mjs',
   'check-completion-certificate-verifier.mjs',
+  'check-completion-certificate-generator.mjs',
   'check-trace-propagation.mjs',
   'check-three-component-e2e.mjs',
 ];
