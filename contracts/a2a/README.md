@@ -24,6 +24,7 @@ Public-safe contract skeletons for A2A protocol and task lifecycle behavior.
 - [Adapter receipt capability](./adapter-receipt-capability.md) — capability levels C1–C6 for non-OpenClaw/Hermes/spool Terminal Brief adapters, mapping produced/spooled/provider-only states to the four receipt levels, and explicit non-ACK boundary for adapter-level evidence
 - [Harness-neutral analysis adapter](./harness-neutral-analysis-adapter.md) — source-only analysis task inputs, adapter output fields, evidence classes, and finalizer counting rules independent of Hermes/OpenClaw/Docker-runner harnesses
 - [Constrained node-op lane](./node-op-lane.md) — allowlisted node-local fleet operation contract; explicitly rejects raw shell/exec and freezes approval, readiness, integrity, redaction, and rollback gates
+- [Completion certificate](./completion-certificate.md) — source-only proof object for declared task completion conditions; composes battery/judgment verdicts for external payment-release evaluators without moving funds or integrating live rails
 
 ## Compatibility
 
