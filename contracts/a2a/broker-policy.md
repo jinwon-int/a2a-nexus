@@ -93,6 +93,29 @@ change until the operator commits rules. Promotion to `enforce` is a separate
 operator decision after a warn-mode observation window with zero false
 positives (per-rule `task.policy_warned` counts are the evidence).
 
+### 5.1 Observation report shape
+
+The warn-mode observation report MUST distinguish two counts:
+
+1. **Task-deduplicated policy hits** — one hit per `(taskId, ruleId)` pair. This
+   is the false-positive denominator: if create-time and claim-time both warn
+   for the same intended canary task, that is still one policy judgment surface.
+2. **Raw enforcement-point hits** — one hit per audit event. This forecasts the
+   exact create-time and claim-time surfaces that would turn into `policy_denied`
+   under `enforce`.
+
+A valid G1-d promotion packet SHOULD include both tables, for example:
+
+```text
+ruleId                    taskDedupWarns  rawWarnEvents  intendedCanaryTasks  falsePositiveTasks
+source-only-analyze-only  1               2              1                    0
+```
+
+The report must also name the broker population covered by the window. If one
+broker has `A2A_BROKER_POLICY_FILE` wired and another does not, the packet must
+say so; an `enforce` flip should not be treated as fleet-wide until every broker
+that will enforce has loaded the same operator-committed policy document.
+
 ## 6. Boundaries / non-goals (v1)
 
 - Budgets are create-time counters over the current UTC day, derived on demand;
