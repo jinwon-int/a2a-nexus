@@ -93,6 +93,14 @@ The historical monorepo work built the *migration path* and *cutover gates* but 
 
 Several docs historically described private/NO-GO/public-readiness-candidate status even though all repos are already PUBLIC. That stale-private-docs reconciliation was completed after the topology decision; use #506 (a2a-plane#506, internal tracker private) and [`docs/current-state.md`](current-state.md) for current active A2A coordination.
 
+### Constrained node-op fleet operations
+
+The split topology keeps broker, runner, plugin, and node-local ccc-node/Hermes surfaces in separate trust domains. Some fleet operations are nevertheless node-local and cannot be represented as GitHub patch lanes: guard checks, self-update checks, and reviewed config convergence helpers.
+
+The accepted topology for those operations is a constrained `node-op` task type, not repository consolidation and not raw remote shell. A broker may dispatch only an allowlisted, versioned, repo-shipped operation with schema-validated args and structured redacted evidence. Write-capable operations require fresh operator approval and worker-readiness proof before execution.
+
+This preserves the split-repo trust boundaries: the broker owns auth, assignment, audit, and finalizer judgment; the worker owns local guard enforcement and operation execution; the repo that ships the operation owns review and versioning. The contract is frozen in [`contracts/a2a/node-op-lane.md`](../contracts/a2a/node-op-lane.md).
+
 ---
 
 ## 4. Decision: Hold Monorepo Consolidation
