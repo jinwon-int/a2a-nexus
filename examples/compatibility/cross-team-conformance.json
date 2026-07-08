@@ -28,6 +28,7 @@
     "fixtures/contract/adapter-receipt-capability.json",
     "fixtures/contract/harness-neutral-analysis-adapter.json",
     "fixtures/contract/completion-certificate.json",
+    "fixtures/contract/retrieval-approval-contract.json",
     "fixtures/contract/terminal-evidence-state-machine.json"
   ],
   "validationCommand": "node test/conformance/check-contract-fixtures.mjs",

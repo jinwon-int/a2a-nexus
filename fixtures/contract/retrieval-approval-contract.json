@@ -1,0 +1,79 @@
+{
+  "v0Freeze": {
+    "frozenAt": "2026-07-08T16:03:24.000Z",
+    "round": "a2a-nexus-1374-retrieval-approval-contract-20260708T160324Z",
+    "sourceOnly": true,
+    "noLive": true
+  },
+  "schemaVersion": "a2a.retrieval.approvalPacket.v0",
+  "issue": 1374,
+  "sourceOnly": true,
+  "noLive": true,
+  "liveRetrievalEnabled": false,
+  "operatorChoiceRef": "issue-comment:#1374:k2-retrieval-allowlist-approval-contract-source-only",
+  "approval": {
+    "approvalRef": "issue-comment:#1374:source-only-contract-only",
+    "approvedBy": "operator-id",
+    "approvedAt": "2026-07-08T16:03:24.000Z",
+    "expiresAt": "2026-07-15T16:03:24.000Z",
+    "executionApproval": false
+  },
+  "retrievalRequest": {
+    "source": "github",
+    "repo": "jinwon-int/a2a-nexus",
+    "ref": "73c47399096fce9686edda8ed3ed97ba7f6a0424",
+    "resolvedRef": "73c47399096fce9686edda8ed3ed97ba7f6a0424",
+    "symbolicRefAllowed": false,
+    "paths": [
+      "contracts/a2a/verifiable-analysis-report.md",
+      "scripts/verify-analysis-report.mjs"
+    ],
+    "byteBudget": {
+      "maxFileBytes": 262144,
+      "maxTotalBytes": 524288
+    }
+  },
+  "egressPolicy": {
+    "mode": "deny-by-default",
+    "profile": "github-read-only",
+    "allowedHosts": ["api.github.com"],
+    "guards": {
+      "requireHttps": true,
+      "blockLoopback": true,
+      "blockPrivateNetworks": true,
+      "blockLinkLocal": true,
+      "blockImds": true,
+      "blockRedirectToPrivate": true,
+      "blockDnsRebind": true,
+      "logEveryRequest": true,
+      "captureResponseHash": true
+    }
+  },
+  "snapshotContract": {
+    "schemaVersion": "a2a.retrieval.snapshot.v1",
+    "signWholeTuple": true,
+    "requireContentHash": true,
+    "requireByteLen": true,
+    "analysisNetworkAccess": false,
+    "sourceCarrierEnvelope": "untrusted_external_data",
+    "contentHashCitationRequired": true,
+    "redactionRequired": true
+  },
+  "safety": {
+    "liveFetchPerformed": false,
+    "egressProxyEnabled": false,
+    "networkPolicyChanged": false,
+    "databaseMutation": false,
+    "terminalAckReplay": false,
+    "deployOrRestart": false,
+    "providerSend": false,
+    "signingKeyMovement": false,
+    "rawSecretMaterial": false,
+    "futureLiveActivationRequiresFreshApproval": true
+  },
+  "validationCommands": [
+    "node test/conformance/check-retrieval-approval-contract.mjs",
+    "npm run test:conformance",
+    "npm run check"
+  ]
+}
