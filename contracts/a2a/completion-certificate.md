@@ -55,6 +55,7 @@ Rules:
 3. `requiredVerdict` is currently `"go"` only; a non-`go` or missing judgment verdict fails the condition.
 4. `artifactHashRequired=true` requires the certificate subject to bind at least one `sha256:` artifact or result hash.
 5. `externalConditions[]` are declarations only. They may be copied into the certificate as unresolved or externally-attested conditions, but A2A does not evaluate them unless a future adapter contract says how.
+6. Forward compatibility is fail-closed for required A2A-evaluable conditions: an unknown `conditionResults[].kind` MUST NOT be marked `met` unless a later contract defines that kind. Unknown external rail declarations remain `external-pending` and never authorize release by themselves.
 
 ## 4. Completion certificate shape
 
@@ -180,6 +181,8 @@ v0 defines the boundary only. A concrete adapter must be opt-in, rail-specific, 
 3. Report-only certificate generator for completed no-live tasks.
 4. Only after the above: payment rail adapter rehearsal with fake/no-live rail.
 5. Only after explicit approval: live rail integration.
+
+The source-only fixture gate is represented by [`../../fixtures/contract/completion-certificate.json`](../../fixtures/contract/completion-certificate.json) and checked with `node test/conformance/check-completion-certificate.mjs`. It validates decision semantics and safety invariants only; cryptographic signature verification remains slice 2.
 
 ## 9. Safety invariants
 

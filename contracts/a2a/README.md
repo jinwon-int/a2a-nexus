@@ -49,6 +49,7 @@ Machine-readable reference fixtures for broker/plugin/runner validation:
 - [Embedded execution stability policy](../../fixtures/contract/embedded-execution-stability-policy.json) — machine-readable embedded execution stability policy fixture
 - [Action reconciliation](../../fixtures/contract/action-reconciliation.json) — approval-gated auto-closeout action reconciliation scenarios
 - [Harness-neutral analysis adapter](../../fixtures/contract/harness-neutral-analysis-adapter.json) — source-only analysis evidence classification scenarios for substantive, wrapper-only, source-blocked, handler-artifact, queued, and provider/model-failure lanes
+- [Completion certificate](../../fixtures/contract/completion-certificate.json) — source-only completion proof fixtures for eligible, not-eligible, external-pending, and fail-closed payment-boundary cases
 - [External harness no-live conformance](../../fixtures/external-harness/no-live-conformance.json) — public-safe external harness fixture for OpenClaw-agnostic no-live integration
 
 ### Compatibility fixtures
@@ -58,6 +59,7 @@ Machine-readable reference fixtures for broker/plugin/runner validation:
 ## Conformance
 
 - `node test/conformance/check-contract-fixtures.mjs` — validates contract v0 fixtures
+- `node test/conformance/check-completion-certificate.mjs` — validates completion certificate source-only condition fixtures and payment-boundary invariants
 - `node test/conformance/check-terminal-evidence-ack-boundary.mjs` — validates accepted-send non-ACK fixture
 - `node test/conformance/check-a2a-tck-plan.mjs` — validates the A2A TCK and v0→v1 compatibility plan spec, fixture, gate mapping, and external-harness reference (#916)
 
