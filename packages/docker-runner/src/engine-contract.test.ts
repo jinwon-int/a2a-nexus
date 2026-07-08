@@ -186,7 +186,7 @@ test("container script installs and exposes mounted gh hosts.yml to gh CLI and g
   assert.ok(script.includes("cp /run/secrets/gh-hosts.yml /work/.config/gh/hosts.yml"));
   assert.ok(script.includes("export GH_CONFIG_DIR=/work/.config/gh"));
   assert.ok(script.includes('export GH_TOKEN="$token"'));
-  assert.ok(script.includes("export GIT_ASKPASS=/tmp/git-askpass"));
+  assert.ok(script.includes("export GIT_ASKPASS=/work/.a2a-bin/git-askpass"));
 });
 
 test("commandJson has precedence over commandTemplate", () => {
