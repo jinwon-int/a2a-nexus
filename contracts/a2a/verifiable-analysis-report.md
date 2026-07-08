@@ -179,7 +179,78 @@ snapshots supplied. It records `contentHash` (and an opaque `sourceId`) only —
 never the snapshot body, which travels in `report.sources` / the attestation
 bundle.
 
-## 6. Safety boundaries
+## 6. Retrieval allowlist approval contract (K2 #1374)
+
+The snapshot verifier proves a frozen snapshot is intact. It does **not** by itself authorize a future fetch path. Before any docker-runner egress proxy or GitHub-read fetcher can be enabled, an approval packet must pass the source-only K2 approval contract:
+
+```jsonc
+{
+  "schemaVersion": "a2a.retrieval.approvalPacket.v0",
+  "issue": 1374,
+  "sourceOnly": true,
+  "noLive": true,
+  "liveRetrievalEnabled": false,
+  "approval": {
+    "approvalRef": "issue-comment:#1374:<source-only-contract-only>",
+    "approvedBy": "operator-id",
+    "approvedAt": "2026-07-08T00:00:00Z",
+    "expiresAt": "2026-07-15T00:00:00Z",
+    "executionApproval": false
+  },
+  "retrievalRequest": {
+    "source": "github",
+    "repo": "owner/repo",
+    "ref": "<40-or-64-char-lowercase-sha>",
+    "resolvedRef": "<same-sha>",
+    "symbolicRefAllowed": false,
+    "paths": ["relative/path.md"],
+    "byteBudget": { "maxFileBytes": 262144, "maxTotalBytes": 524288 }
+  },
+  "egressPolicy": {
+    "mode": "deny-by-default",
+    "profile": "github-read-only",
+    "allowedHosts": ["api.github.com"],
+    "guards": {
+      "requireHttps": true,
+      "blockLoopback": true,
+      "blockPrivateNetworks": true,
+      "blockLinkLocal": true,
+      "blockImds": true,
+      "blockRedirectToPrivate": true,
+      "blockDnsRebind": true,
+      "logEveryRequest": true,
+      "captureResponseHash": true
+    }
+  },
+  "snapshotContract": {
+    "schemaVersion": "a2a.retrieval.snapshot.v1",
+    "signWholeTuple": true,
+    "requireContentHash": true,
+    "requireByteLen": true,
+    "analysisNetworkAccess": false,
+    "sourceCarrierEnvelope": "untrusted_external_data",
+    "contentHashCitationRequired": true,
+    "redactionRequired": true
+  }
+}
+```
+
+Approval-contract rules:
+
+1. `liveRetrievalEnabled` and `approval.executionApproval` MUST be `false` in this source-only contract packet.
+2. v1 retrieval requests MUST be GitHub-read only and SHA-pinned. Symbolic refs (`main`, `master`, branches, tags) are forbidden; `ref` and `resolvedRef` must already match the immutable SHA.
+3. Paths MUST be relative and budgeted. Absolute paths, `..`, backslash traversal, and over-budget requests fail closed.
+4. Egress is deny-by-default. The only v1 host is `api.github.com`, with HTTPS required and loopback/RFC1918/link-local/IMDS, redirect-to-private, and DNS-rebind guards enabled.
+5. Captured content remains untrusted external data. It must be redacted, wrapped in the `untrusted_external_data` source-carrier envelope, signed as a whole snapshot tuple, and cited by `contentHash` from analysis output.
+6. The analysis lane MUST NOT receive network/fetch access. Future live proxy/fetch activation, signing-key operations, Docker runner deployment, or network policy changes still require fresh operator approval.
+
+The fixture is [`../../fixtures/contract/retrieval-approval-contract.json`](../../fixtures/contract/retrieval-approval-contract.json), and the local conformance guard is:
+
+```bash
+node test/conformance/check-retrieval-approval-contract.mjs
+```
+
+## 7. Safety boundaries
 
 - Public key ids only; private keys never emitted anywhere.
 - Attested subject is an anonymized class / key id — never a real worker name.
@@ -187,8 +258,10 @@ bundle.
 - Backward compatible on the emit side: a result without a bundle is unchanged.
 - Reuse existing deployed signing keys; do not invent a new key-distribution
   scheme. Rotation/revocation is operator-only.
+- A retrieval approval packet is not live-fetch approval. It only validates the
+  contract that a later rail/proxy/fetch slice must satisfy.
 
-## 7. Follow-up
+## 8. Follow-up
 
 - A permanent CI conformance guard (round-trip `#1380` real signers → this
   verifier) should live where the broker dist is built after the release-gate

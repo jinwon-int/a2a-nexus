@@ -24,6 +24,7 @@ const fixtureFiles = {
   adapterReceiptCapability: 'adapter-receipt-capability.json',
   harnessNeutralAnalysisAdapter: 'harness-neutral-analysis-adapter.json',
   completionCertificate: 'completion-certificate.json',
+  retrievalApprovalContract: 'retrieval-approval-contract.json',
   terminalEvidenceStateMachine: 'terminal-evidence-state-machine.json',
 };
 
