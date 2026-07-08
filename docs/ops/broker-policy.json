@@ -2,5 +2,31 @@
   "schemaVersion": "a2a.broker.policy.v1",
   "mode": "warn",
   "defaultAction": "allow",
-  "rules": []
+  "rules": [
+    {
+      "id": "mobile-analyze-only",
+      "workerClass": "mobile",
+      "allowIntents": [
+        "analyze"
+      ],
+      "denyModes": [
+        "github-propose-patch",
+        "propose-patch",
+        "patch"
+      ],
+      "maxTasksPerDay": 20
+    },
+    {
+      "id": "source-only-analyze-only",
+      "workerClass": "source-only",
+      "allowIntents": [
+        "analyze"
+      ],
+      "denyModes": [
+        "github-propose-patch",
+        "propose-patch",
+        "patch"
+      ]
+    }
+  ]
 }
