@@ -1,0 +1,344 @@
+{
+  "meta": {
+    "contract": "completion-certificate",
+    "schemaVersion": "a2a.completion.fixture.v0",
+    "issues": [
+      "https://github.com/jinwon-int/a2a-nexus/issues/1393",
+      "https://github.com/jinwon-int/a2a-nexus/issues/1395"
+    ],
+    "sourceOnly": true,
+    "noLive": true,
+    "description": "Public-safe fixtures for the completion certificate proof layer. These fixtures validate condition evaluation shape only; they do not perform payment rail calls, escrow actions, live signing, provider sends, or secret/key movement."
+  },
+  "v0Freeze": {
+    "frozenAt": "2026-07-08T00:00:00Z",
+    "round": "a2a-nexus-1393-source-only-r2-20260708T124257Z",
+    "sourceOnly": true,
+    "noLive": true
+  },
+  "safety": {
+    "paymentRailCall": false,
+    "escrowCustody": false,
+    "fundsMovement": false,
+    "providerSend": false,
+    "telegramSend": false,
+    "databaseMutation": false,
+    "terminalAckReplay": false,
+    "deployOrRestart": false,
+    "secretRequired": false,
+    "liveSigningKeyRequired": false
+  },
+  "completionConditionsPassthrough": {
+    "id": "absent-completion-conditions-preserves-current-task-behavior",
+    "inputPayload": {
+      "mode": "github-propose-patch",
+      "repo": "owner/name"
+    },
+    "expectedGateActive": false,
+    "rationale": "contracts/a2a/completion-certificate.md states that absence of payload.completionConditions preserves current task behavior byte-for-byte."
+  },
+  "positiveCertificates": [
+    {
+      "id": "eligible-all-required-a2a-conditions-met",
+      "expectDecision": "eligible",
+      "certificate": {
+        "schemaVersion": "a2a.completion.certificate.v0",
+        "canonicalization": "rfc8785-jcs-v1",
+        "subject": {
+          "kind": "task-result",
+          "taskId": "task-1393-fixture-eligible",
+          "workerId": "worker-alpha",
+          "resultHash": "sha256:1111111111111111111111111111111111111111111111111111111111111111",
+          "artifactHashes": [
+            "sha256:2222222222222222222222222222222222222222222222222222222222222222"
+          ]
+        },
+        "conditions": {
+          "schemaVersion": "a2a.completion.conditions.v0",
+          "requiredBatteries": ["unit-tests", "contract-conformance"],
+          "requiredVerdict": "go",
+          "artifactHashRequired": true,
+          "externalConditions": []
+        },
+        "conditionResults": [
+          {
+            "id": "battery:unit-tests",
+            "kind": "battery",
+            "status": "met",
+            "evidenceRef": "battery-verdict:unit-tests:sha256:3333333333333333333333333333333333333333333333333333333333333333"
+          },
+          {
+            "id": "battery:contract-conformance",
+            "kind": "battery",
+            "status": "met",
+            "evidenceRef": "battery-verdict:contract-conformance:sha256:4444444444444444444444444444444444444444444444444444444444444444"
+          },
+          {
+            "id": "judgment:finalizer-go",
+            "kind": "finalizer-verdict",
+            "status": "met",
+            "evidenceRef": "finalizer-verdict:sha256:5555555555555555555555555555555555555555555555555555555555555555"
+          },
+          {
+            "id": "artifact-hash-bound",
+            "kind": "artifact-hash",
+            "status": "met",
+            "evidenceRef": "sha256:2222222222222222222222222222222222222222222222222222222222222222"
+          }
+        ],
+        "decision": "eligible",
+        "issuedAt": "2026-07-08T00:00:00Z",
+        "expiresAt": "2026-07-15T00:00:00Z",
+        "issuer": {
+          "kind": "broker",
+          "brokerId": "broker-alpha",
+          "keyId": "broker:broker-alpha:completion:v1"
+        },
+        "assurance": {
+          "proves": ["condition-evaluation-occurred", "subject-binding", "certificate-integrity"],
+          "doesNotProve": ["payment-authorized", "funds-available", "legal-settlement", "analytical-correctness"],
+          "disclaimer": "Attests that A2A Nexus evaluated declared task completion conditions for the bound subject. It does not move funds or certify legal payment eligibility."
+        },
+        "sig": {
+          "protected": "fixture-protected-header",
+          "signature": "fixture-signature"
+        }
+      }
+    },
+    {
+      "id": "external-condition-keeps-release-pending",
+      "expectDecision": "external-pending",
+      "certificate": {
+        "schemaVersion": "a2a.completion.certificate.v0",
+        "canonicalization": "rfc8785-jcs-v1",
+        "subject": {
+          "kind": "task-result",
+          "taskId": "task-1393-fixture-external",
+          "workerId": "worker-alpha",
+          "resultHash": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+          "artifactHashes": [
+            "sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+          ]
+        },
+        "conditions": {
+          "schemaVersion": "a2a.completion.conditions.v0",
+          "requiredBatteries": ["unit-tests"],
+          "requiredVerdict": "go",
+          "artifactHashRequired": true,
+          "externalConditions": [
+            {
+              "id": "rail-intent-mandate",
+              "kind": "payment-rail-declared-condition",
+              "description": "External rail condition identifier; not evaluated by A2A Nexus."
+            }
+          ]
+        },
+        "conditionResults": [
+          {
+            "id": "battery:unit-tests",
+            "kind": "battery",
+            "status": "met",
+            "evidenceRef": "battery-verdict:unit-tests:sha256:cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc"
+          },
+          {
+            "id": "judgment:finalizer-go",
+            "kind": "finalizer-verdict",
+            "status": "met",
+            "evidenceRef": "finalizer-verdict:sha256:dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd"
+          },
+          {
+            "id": "artifact-hash-bound",
+            "kind": "artifact-hash",
+            "status": "met",
+            "evidenceRef": "sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+          },
+          {
+            "id": "external:rail-intent-mandate",
+            "kind": "payment-rail-declared-condition",
+            "status": "external-pending",
+            "evidenceRef": "external-condition:rail-intent-mandate"
+          }
+        ],
+        "decision": "external-pending",
+        "issuedAt": "2026-07-08T00:00:00Z",
+        "expiresAt": "2026-07-15T00:00:00Z",
+        "issuer": {
+          "kind": "broker",
+          "brokerId": "broker-alpha",
+          "keyId": "broker:broker-alpha:completion:v1"
+        },
+        "assurance": {
+          "proves": ["condition-evaluation-occurred", "subject-binding", "certificate-integrity"],
+          "doesNotProve": ["payment-authorized", "funds-available", "legal-settlement", "analytical-correctness"],
+          "disclaimer": "Attests that A2A Nexus evaluated declared task completion conditions for the bound subject. It does not move funds or certify legal payment eligibility."
+        },
+        "sig": {
+          "protected": "fixture-protected-header",
+          "signature": "fixture-signature"
+        }
+      }
+    }
+  ],
+  "negativeCertificates": [
+    {
+      "id": "missing-required-battery-is-not-eligible",
+      "expectReason": "required-battery-missing",
+      "certificatePatch": {
+        "decision": "not-eligible",
+        "conditionResults": [
+          {
+            "id": "battery:unit-tests",
+            "kind": "battery",
+            "status": "missing",
+            "evidenceRef": "battery-verdict:unit-tests:missing"
+          },
+          {
+            "id": "judgment:finalizer-go",
+            "kind": "finalizer-verdict",
+            "status": "met",
+            "evidenceRef": "finalizer-verdict:sha256:5555555555555555555555555555555555555555555555555555555555555555"
+          },
+          {
+            "id": "artifact-hash-bound",
+            "kind": "artifact-hash",
+            "status": "met",
+            "evidenceRef": "sha256:2222222222222222222222222222222222222222222222222222222222222222"
+          }
+        ]
+      }
+    },
+    {
+      "id": "non-go-finalizer-verdict-is-not-eligible",
+      "expectReason": "required-finalizer-verdict-not-met",
+      "certificatePatch": {
+        "decision": "not-eligible",
+        "conditionResults": [
+          {
+            "id": "battery:unit-tests",
+            "kind": "battery",
+            "status": "met",
+            "evidenceRef": "battery-verdict:unit-tests:sha256:3333333333333333333333333333333333333333333333333333333333333333"
+          },
+          {
+            "id": "battery:contract-conformance",
+            "kind": "battery",
+            "status": "met",
+            "evidenceRef": "battery-verdict:contract-conformance:sha256:4444444444444444444444444444444444444444444444444444444444444444"
+          },
+          {
+            "id": "judgment:finalizer-go",
+            "kind": "finalizer-verdict",
+            "status": "unmet",
+            "evidenceRef": "finalizer-verdict:sha256:5555555555555555555555555555555555555555555555555555555555555555"
+          },
+          {
+            "id": "artifact-hash-bound",
+            "kind": "artifact-hash",
+            "status": "met",
+            "evidenceRef": "sha256:2222222222222222222222222222222222222222222222222222222222222222"
+          }
+        ]
+      }
+    },
+    {
+      "id": "artifact-hash-required-but-unbound",
+      "expectReason": "artifact-hash-required",
+      "certificatePatch": {
+        "decision": "not-eligible",
+        "subject": {
+          "kind": "task-result",
+          "taskId": "task-1393-fixture-no-hash",
+          "workerId": "worker-alpha"
+        },
+        "conditionResults": [
+          {
+            "id": "battery:unit-tests",
+            "kind": "battery",
+            "status": "met",
+            "evidenceRef": "battery-verdict:unit-tests:sha256:3333333333333333333333333333333333333333333333333333333333333333"
+          },
+          {
+            "id": "battery:contract-conformance",
+            "kind": "battery",
+            "status": "met",
+            "evidenceRef": "battery-verdict:contract-conformance:sha256:4444444444444444444444444444444444444444444444444444444444444444"
+          },
+          {
+            "id": "judgment:finalizer-go",
+            "kind": "finalizer-verdict",
+            "status": "met",
+            "evidenceRef": "finalizer-verdict:sha256:5555555555555555555555555555555555555555555555555555555555555555"
+          }
+        ]
+      }
+    },
+    {
+      "id": "decision-mismatch-fails-closed",
+      "expectReason": "decision-mismatch",
+      "certificatePatch": {
+        "decision": "not-eligible"
+      }
+    },
+    {
+      "id": "unknown-met-condition-kind-fails-closed",
+      "expectReason": "unknown-met-condition-kind",
+      "certificatePatch": {
+        "conditionResults": [
+          {
+            "id": "battery:unit-tests",
+            "kind": "battery",
+            "status": "met",
+            "evidenceRef": "battery-verdict:unit-tests:sha256:3333333333333333333333333333333333333333333333333333333333333333"
+          },
+          {
+            "id": "battery:contract-conformance",
+            "kind": "battery",
+            "status": "met",
+            "evidenceRef": "battery-verdict:contract-conformance:sha256:4444444444444444444444444444444444444444444444444444444444444444"
+          },
+          {
+            "id": "judgment:finalizer-go",
+            "kind": "finalizer-verdict",
+            "status": "met",
+            "evidenceRef": "finalizer-verdict:sha256:5555555555555555555555555555555555555555555555555555555555555555"
+          },
+          {
+            "id": "artifact-hash-bound",
+            "kind": "artifact-hash",
+            "status": "met",
+            "evidenceRef": "sha256:2222222222222222222222222222222222222222222222222222222222222222"
+          },
+          {
+            "id": "rail:live-release",
+            "kind": "live-payment-release",
+            "status": "met",
+            "evidenceRef": "forbidden-live-rail-placeholder"
+          }
+        ]
+      }
+    },
+    {
+      "id": "payment-authorized-missing-from-does-not-prove",
+      "expectReason": "assurance-boundary-missing",
+      "certificatePatch": {
+        "assurance": {
+          "proves": ["condition-evaluation-occurred", "subject-binding", "certificate-integrity"],
+          "doesNotProve": ["legal-settlement", "analytical-correctness"],
+          "disclaimer": "Incomplete fixture: missing payment boundary caveats."
+        }
+      }
+    },
+    {
+      "id": "missing-signature-is-shape-invalid",
+      "expectReason": "signature-missing",
+      "certificatePatch": {
+        "sig": null
+      }
+    }
+  ],
+  "validationCommands": [
+    "node test/conformance/check-completion-certificate.mjs",
+    "npm run test:conformance",
+    "npm run check"
+  ]
+}

@@ -23,6 +23,7 @@ const fixtureFiles = {
   embeddedExecutionStability: 'embedded-execution-stability-policy.json',
   adapterReceiptCapability: 'adapter-receipt-capability.json',
   harnessNeutralAnalysisAdapter: 'harness-neutral-analysis-adapter.json',
+  completionCertificate: 'completion-certificate.json',
   terminalEvidenceStateMachine: 'terminal-evidence-state-machine.json',
 };
 

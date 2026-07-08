@@ -29,6 +29,7 @@ export const CHECKS = [
   'check-github-evidence-projection.mjs',
   'check-terminal-brief-canary-acceptance.mjs',
   'check-terminal-brief-core-contract.mjs',
+  'check-completion-certificate.mjs',
   'check-trace-propagation.mjs',
   'check-three-component-e2e.mjs',
 ];
