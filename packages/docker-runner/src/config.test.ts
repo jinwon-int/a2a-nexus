@@ -663,7 +663,10 @@ test("loadConfig builds first-class Hermes patch profile", async () => {
   assert.equal(config.user, "1000:1000");
   assert.match(config.commandScript ?? "", /command -v hermes/);
   assert.match(config.commandScript ?? "", /hermes --version/);
-  assert.match(config.commandScript ?? "", /export HERMES_HOME=\/root\/\.hermes/);
+  assert.match(config.commandScript ?? "", /export HOME=\/work/);
+  assert.match(config.commandScript ?? "", /export HERMES_HOME=\/work\/\.hermes/);
+  assert.match(config.commandScript ?? "", /export HERMES_WORKSPACE_DIR=\/work\/hermes-agent-workspace/);
+  assert.doesNotMatch(config.commandScript ?? "", /rm -rf \/root\/\.hermes/);
   assert.match(config.commandScript ?? "", /copy_file_if_exists \/run\/secrets\/hermes-dir\/config\.yaml/);
   assert.match(config.commandScript ?? "", /copy_file_if_exists \/run\/secrets\/hermes-dir\/\.env/);
   assert.match(config.commandScript ?? "", /copy_file_if_exists \/run\/secrets\/hermes-dir\/auth\.json/);
@@ -873,24 +876,24 @@ test("Hermes native model resolver heredoc parses and ignores unsupported flash 
   assert.match(resolver, /String\.fromCharCode\(10\)/);
   assert.match(resolver, /deepseek\/deepseek-v4-flash/);
   assert.equal(runResolverScript(resolver, {
-    "/root/.hermes/.env": [
+    "/work/.hermes/.env": [
       "A2A_HERMES_MODEL=deepseek-v4-flash",
       "HERMES_MODEL=token = should-not-be-a-model",
-      "MODEL=apiKey: should-not-be-a-model",
+      "MODEL=apiKey: should...el",
     ].join("\n"),
-    "/root/.hermes/config.yaml": [
+    "/work/.hermes/config.yaml": [
       "provider: openai",
       "model: gpt-5.5",
     ].join("\n"),
-  }), "openai/gpt-5.5");
+  }, { HERMES_HOME: "/work/.hermes" }), "openai/gpt-5.5");
   assert.equal(runResolverScript(resolver, {
-    "/root/.hermes/.env": [
+    "/work/.hermes/.env": [
       "A2A_HERMES_MODEL=deepseek/deepseek-v4-flash",
       "HERMES_MODEL=secret : should-not-be-a-model",
       "MODEL=apikey=should-not-be-a-model",
     ].join("\n"),
-    "/root/.hermes/config.yaml": "model: api-key: should-not-be-a-model\n",
-  }), "");
+    "/work/.hermes/config.yaml": "model: api-key: should...\n",
+  }, { HERMES_HOME: "/work/.hermes" }), "");
 });
 
 test("OpenClaw patch profile defaults command timeout to 60 minutes", async () => {

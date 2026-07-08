@@ -774,8 +774,10 @@ if ! command -v hermes >/dev/null 2>&1; then
 fi
 printf 'hermes_cli=%s\\n' "$(hermes --version | head -n 1)" | tee -a /work/artifacts/summary.txt
 
-rm -rf /root/.hermes
-mkdir -p /root/.hermes
+export HOME=/work
+export HERMES_HOME=/work/.hermes
+rm -rf "$HERMES_HOME"
+mkdir -p "$HERMES_HOME"
 
 copy_file_if_exists() {
   src="$1"
@@ -797,11 +799,11 @@ copy_dir_if_exists() {
 
 # Copy only the files Hermes needs for this disposable container. Avoid broad
 # session/log/cache copies and keep the mounted host profile read-only.
-copy_file_if_exists /run/secrets/hermes-dir/config.yaml /root/.hermes/config.yaml
-copy_file_if_exists /run/secrets/hermes-dir/.env /root/.hermes/.env
-copy_file_if_exists /run/secrets/hermes-dir/auth.json /root/.hermes/auth.json
-copy_file_if_exists /run/secrets/hermes-dir/honcho.json /root/.hermes/honcho.json
-copy_dir_if_exists /run/secrets/hermes-dir/skills /root/.hermes/skills
+copy_file_if_exists /run/secrets/hermes-dir/config.yaml "$HERMES_HOME/config.yaml"
+copy_file_if_exists /run/secrets/hermes-dir/.env "$HERMES_HOME/.env"
+copy_file_if_exists /run/secrets/hermes-dir/auth.json "$HERMES_HOME/auth.json"
+copy_file_if_exists /run/secrets/hermes-dir/honcho.json "$HERMES_HOME/honcho.json"
+copy_dir_if_exists /run/secrets/hermes-dir/skills "$HERMES_HOME/skills"
 
 resolve_hermes_native_model() {
   node <<'A2A_RESOLVE_HERMES_NATIVE_MODEL'
@@ -845,7 +847,7 @@ function safeCandidate(value) {
   return true;
 }
 try {
-  const envText = fs.readFileSync("/root/.hermes/.env", "utf8");
+  const envText = fs.readFileSync(process.env.HERMES_HOME + "/.env", "utf8");
   for (const rawLine of envText.split(String.fromCharCode(10))) {
     const trimmed = rawLine.replace(String.fromCharCode(13), "").trim();
     const line = trimmed.startsWith("export ") ? trimmed.slice(7).trimStart() : trimmed;
@@ -857,7 +859,7 @@ try {
   }
 } catch {}
 try {
-  const yaml = fs.readFileSync("/root/.hermes/config.yaml", "utf8");
+  const yaml = fs.readFileSync(process.env.HERMES_HOME + "/config.yaml", "utf8");
   let provider = "";
   let model = "";
   for (const rawLine of yaml.split(String.fromCharCode(10))) {
@@ -889,13 +891,12 @@ else
   printf 'model_source=%s profile=hermes\\n' "\${A2A_DOCKER_RUNNER_MODEL_SOURCE}" | tee -a /work/artifacts/summary.txt
 fi
 
-chmod -R u+rwX /root/.hermes
-export HERMES_HOME=/root/.hermes
+chmod -R u+rwX "$HERMES_HOME"
 export HERMES_ACCEPT_HOOKS=1
 export HERMES_SOURCE=a2a-docker-runner
-export HERMES_WORKSPACE_DIR=/tmp/hermes-agent-workspace
+export HERMES_WORKSPACE_DIR=/work/hermes-agent-workspace
 mkdir -p "$HERMES_WORKSPACE_DIR"
-printf 'hermes_config_bytes=%s\n' "$(du -sb /root/.hermes | awk '{print $1}')" | tee -a /work/artifacts/summary.txt
+printf 'hermes_config_bytes=%s\n' "$(du -sb "$HERMES_HOME" | awk '{print $1}')" | tee -a /work/artifacts/summary.txt
 printf 'hermes_workspace=%s\n' "$HERMES_WORKSPACE_DIR" | tee -a /work/artifacts/summary.txt
 ${subagentSummary}
 
