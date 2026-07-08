@@ -316,6 +316,95 @@ the queue-drain stampede) with:
 
 Confirmation reads use `GET /tasks/:id` with the same auth headers.
 
+### Pre-dispatch risk hints (#1300 M2-b/c — recommended, not enforced)
+
+Before dispatching a round, look up the accumulated memory for the round's
+task class and note a one-line hint summary in the round manifest:
+
+```
+node scripts/dispatch-risk-hints.mjs --task-class <intent>
+node scripts/lane-reliability-report.mjs        # full reputation table
+```
+
+- Hints combine the M1 lane-reliability ledger (low substantive-yield combos
+  at sufficient sample size, counts-only) and the scorecard failure taxonomy
+  (categories whose cumulative count crossed the threshold — the class of
+  signal that would have short-circuited the seven-round zero_files
+  rediscovery). Taxonomy hints are global signals: scorecard entries carry no
+  task-class axis.
+- **Informational only.** Hints never block a dispatch or exclude a lane.
+  Ignoring a hint carries no recording duty — the subsequent round's scorecard
+  entry is the measurement.
+- Missing ledger/scorecard produces an explicit `no_data` output, never a
+  silent success. Small samples (< 5) are never rendered as rates.
+
+### Reputation-weighted routing preconditions (#1300 M2-d — specification only)
+
+Automating lane selection from the reputation ledger is OUT of M2 scope. If it
+is ever proposed, all of the following must hold first, and the flip itself is
+a separate operator approval (the #1263 warn→enforce pattern):
+
+1. **Minimum evidence**: every (adapterClass × taskClass) cell consulted for a
+   routing decision has ≥ 3 ledger windows and ≥ 15 dispatched samples —
+   below that, routing must treat the cell as unknown, not bad.
+2. **Anonymous axes only**: routing keys stay on the ledger's anonymous class
+   axes; any proposal keyed on worker/node identity is rejected outright.
+3. **Escape hatch**: a routing exclusion must be overridable per round by the
+   operator, and every automated exclusion is logged with the ledger evidence
+   that produced it.
+4. **Measured benefit**: a warn-mode observation window (recommendations
+   logged, not applied) shows the recommendations would have improved
+   substantive yield before any enforce flip.
+
+### Injected knowledge contract (#1373 K1)
+
+When a lane's payload sets `injectKnowledge: true` **and** the broker is
+configured with `A2A_INJECTED_KNOWLEDGE_FILE`, the broker (never the dispatch
+client) injects anonymous, counts-only hints into the created task:
+
+```jsonc
+"policyContext": {
+  "injectedKnowledge": {
+    "source": "reliability-ledger+taxonomy",
+    "asOf": "2026-07-07",
+    "hints": [
+      "adapterClass=hermes-analysis taskClass=analyze: substantive 4/10 last window",
+      "failureClass environment recurred 3 consecutive rounds"
+    ]
+  }
+}
+```
+
+Rules:
+
+- **Counts/sentence summaries only.** Worker names, node ids, URLs, secrets,
+  and private paths are rejected fail-closed: the full anonymity gate runs in
+  `scripts/build-injected-knowledge.mjs` at snapshot build time (reusing the M1
+  ledger gate's identifier rejection), and the broker re-runs a structural gate
+  when loading the snapshot — a violating snapshot fails broker startup.
+- **Deterministic.** The snapshot is pinned by `asOf`; replaying the same round
+  against the same snapshot yields the same hints (max 8, snapshot order,
+  matched by hint `taskClass` = the lane's declared class plus classless hints).
+- **Matching key: `payload.taskClass`, falling back to the task intent.** The
+  snapshot `taskClass` axis is the M1 ledger LANE classification, not the task
+  intent — substantive review lanes dispatch as intent `analyze` (the worker
+  analysis-bridge routing key). Declare the lane class explicitly:
+  `payload: { "injectKnowledge": true, "taskClass": "review" }` with intent
+  `analyze`. Matching on intent alone made "hints match" and "worker runs the
+  analysis bridge" mutually exclusive for review lanes (discovered by the
+  2026-07-07 K1-d wave: injection confirmed live, 0/4 substantive output).
+- **Opt-in and fail-open.** No `injectKnowledge: true` (or no snapshot
+  configured) means the payload is byte-identical to today. A failed injection
+  never blocks the task — it proceeds hint-less and the skip is logged.
+- **K3 boundary (#1372).** Injected knowledge is worker-GENERATION input only.
+  Finalizer/verdict inputs never include it — the finalizer still verifies
+  independently from the repo. Do not cite injected hints as verdict evidence.
+- Sources today: M1 lane-reliability ledger + scorecard failure taxonomy. The
+  M2 risk-hint CLI (#1300) is a documented future source.
+- Measurement (#1373 K1-d): scorecard entries may carry
+  `knowledgeInjection: "on" | "off"` so injection waves cross-reference the H3
+  fields; injection-by-default requires measured improvement first.
+
 ## Lane classification
 
 | Classification         | When |
@@ -394,3 +483,109 @@ secret and the forbidden banner never appear in output.
 ```bash
 npm run dispatch:round:test
 ```
+
+## Durable wave plan (#1357 G3)
+
+The manual wave rhythm — dispatch → readback → quorum/gate → implement → review
+→ merge → next stage — is objectified as a broker-side **wave plan** so a
+multi-stage campaign survives broker restarts and advances by gate decision
+instead of operator memory. v1 is linear stages only (no DAG/branching/cron).
+
+State machine (`packages/broker/src/core/wave-plan.ts`, explicit transition
+table, illegal transitions fail closed):
+
+```
+draft --start--> running --gate met--> stage_ready --advance--> running(next) | completed
+                    |                                    ^
+                    | gate not met (onGateFail)          |
+                    +--> halted   (halt, or retry-once budget spent)
+                    +--> running  (retry-once, one more attempt)
+any non-terminal --abort--> aborted
+```
+
+Per-stage `gate`:
+
+- `quorum` (`minSubstantive`): met when the stage's substantive lane count is at
+  or above the threshold. Substantive classification is the finalizer-gate
+  evidence-class criterion (single source; the broker computes the count and
+  feeds it to the pure evaluator).
+- `approval`: routed through the existing `approval_required` path.
+- `manual`: operator-recorded pass only.
+
+**Load-bearing contract — `stage_ready` is a signal, not an action.** When a
+gate is met the broker records readiness and emits a `wave.stage_ready`
+event/audit; it does NOT dispatch the next stage. The next-stage dispatch is a
+privileged action taken only by an explicit operator/hub `advance` call. A
+plan holds stage ids + dispatch manifest refs + gate specs — never worker
+names or prompt text.
+
+### Persistence + resume (G3-c)
+
+`WavePlanStore` holds each plan and drives the pure transitions. Because the
+state machine is timestamp-free, a saved plan reloads byte-identically — a
+running wave, its stage cursor, and its consumed retry-once budget all survive
+a broker restart through the ordinary snapshot path (`wavePlans` in
+`BrokerSnapshot`, canonical-blob persistence, no hot table). Resume is
+deterministic: re-evaluating a stage gate on the same evidence after a restart
+yields the same decision and next state.
+
+Because wave plans have no hot table, both persistence paths special-case them
+(G3-d canary fix): on the sqlite `hot-tables` load source the runtime snapshot
+carries `wavePlans` from the canonical blob (like the push-notification-config
+sidecar), and every wave mutation persists with a forced **full** canonical
+save — the hot-entities fast path would otherwise ACK the mutation while
+leaving it out of the blob, losing it on a restart inside the throttle window.
+The same snapshot-only rule covers cross-broker Terminal Brief projections
+(#1446): the hot-tables load carries `crossBrokerTerminalBriefs` from the blob,
+projection ingest forces the full save, and a hint-carrying full save never
+skips rewriting the blob while it holds wave plans or projections.
+
+The store stamps a broker-clock `updatedAt` on every transition (outside the
+pure plan) for the **stale-wave reaper**: `sweepStalledWavePlans(staleAfterMs)`
+flags live (`running`/`stage_ready`) plans idle past the threshold and emits one
+`wave.stalled` warning audit event per stall (`targetType: "wave-plan"`),
+deduped until the plan next makes progress. The reaper **only warns** — it never
+auto-aborts; advancing or aborting a stalled wave stays the operator's call.
+In production the sweep rides the existing stale-task reaper interval
+(`STALE_REAPER_INTERVAL_SEC`), gated by `WAVE_STALE_AFTER_SEC` (default 21600 =
+6h; 0 disables the wave sweep). The threshold is visible at
+`/health` → `staleReaper.waveStaleAfterSec`, and each flagged wave logs one
+greppable `[a2a-broker] wave reaper flagged ...` line.
+
+### HTTP surface (G3-c)
+
+The lifecycle is drivable over HTTP:
+
+| Method + path | Action | Roles |
+| --- | --- | --- |
+| `POST /wave-plans` | create a draft from a spec | hub/operator |
+| `POST /wave-plans/{id}/start` | draft → running | hub/operator |
+| `POST /wave-plans/{id}/evidence` | report current-stage evidence + apply gate | hub/operator |
+| `POST /wave-plans/{id}/advance` | stage_ready → next / completed (**privileged**) | hub/operator |
+| `POST /wave-plans/{id}/abort` | non-terminal → aborted | hub/operator |
+| `GET /wave-plans` | list plans | hub/operator/analyst/researcher/live-trader |
+| `GET /wave-plans/{id}` | one plan (status) | hub/operator/analyst/researcher/live-trader |
+
+`advance` is the privileged next-stage step — the HTTP handler enforces the same
+hub/operator scope as the other mutations, and the state machine rejects an
+advance before the gate is met (`409 invalid_transition`). A malformed spec is
+`400 bad_request`; an unknown plan id is `404`; a duplicate create is `409`.
+
+### Substantive classifier single source (G3-c)
+
+The quorum gate's `substantiveCount` is broker-derived, not caller-asserted.
+`POST /wave-plans/{id}/evidence` accepts a `lanes` array of
+`{ evidenceClass }` records; the broker counts them through the canonical
+predicate in `wave-evidence.ts` — exactly the `substantive` class counts,
+identical to the offline finalizer gate (`scripts/a2ad-finalizer-gate.mjs`).
+Unknown evidence classes fail closed (`400`), and sending `lanes` together with
+an explicit `substantiveCount` is rejected as ambiguous (`400`). The raw
+`substantiveCount` field remains for callers that pre-aggregate.
+
+The finalizer gate stays deliberately broker-independent (it is the offline
+publication guard and must run without a broker build), so the single-source
+contract is enforced in reverse: a conformance test in
+`scripts/a2ad-finalizer-gate.test.mjs` pins the broker taxonomy
+(`WAVE_LANE_EVIDENCE_CLASSES`) to the gate's `EVIDENCE_CLASSES` exactly and
+asserts both sides count exactly `substantive` toward quorum — any drift fails
+CI.

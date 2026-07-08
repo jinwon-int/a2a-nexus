@@ -1,6 +1,7 @@
 import type { ServerResponse } from "node:http";
 
 import { BrokerError, InMemoryA2ABroker } from "../core/broker.js";
+import { deriveTaskWorkerClass } from "../core/broker-policy.js";
 import { aggregateTaskStats } from "../core/task-stats.js";
 import type { BrokerStateStore } from "../core/store.js";
 import type { TaskRecord } from "../core/types.js";
@@ -39,17 +40,15 @@ export function parseTaskStatsWindow(url: URL, now = new Date()): { since: Date;
   return { since, until };
 }
 
-function isSourceOnlyTask(task: TaskRecord): boolean {
-  return task.payload?.sourceOnly === true || task.payload?.mode === "source-only";
-}
-
 export function workerClassForStatsTask(broker: InMemoryA2ABroker, task: TaskRecord): string {
-  if (isSourceOnlyTask(task)) return "source-only";
   const workerId = task.assignedWorkerId ?? task.targetNodeId;
   const worker = workerId ? broker.getWorker(workerId) : null;
-  if (!worker) return "unclassified";
-  if (worker.workerMode === "mobile") return "mobile";
-  return "vps";
+  return deriveTaskWorkerClass({
+    sourceOnly: task.payload?.sourceOnly === true,
+    payloadMode: typeof task.payload?.mode === "string" ? task.payload.mode : undefined,
+    workerFound: Boolean(worker),
+    workerMode: worker?.workerMode,
+  });
 }
 
 export function handleTaskStatsRouteIfMatched(ctx: TaskStatsRouteContext): boolean {

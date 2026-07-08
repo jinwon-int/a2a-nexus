@@ -113,7 +113,7 @@ All closeout activity must obey these constraints:
 - External secret scanner evidence remains unavailable (fail-closed).
 - Explicit operator approval for repository visibility is still required.
 
-The public-readiness decision matrix in [docs/public-readiness.md](./public-readiness.md) remains authoritative. This document is an operator procedure reference only — it does not override, amend, or satisfy any public-readiness gate.
+The public-readiness decision matrix in [docs/history/public-readiness.md](history/public-readiness.md) remains authoritative. This document is an operator procedure reference only — it does not override, amend, or satisfy any public-readiness gate.
 
 ## Cross-References
 
@@ -124,7 +124,7 @@ The public-readiness decision matrix in [docs/public-readiness.md](./public-read
 | [jinwon-int/a2a-broker#294](https://github.com/jinwon-int/a2a-broker/issues/294) | A2A broker roadmap |
 | a2a-plane#102 (internal tracker, private) (a2a-plane#102, internal tracker private) | This plane closeout issue |
 | [openclaw/openclaw#78261](https://github.com/openclaw/openclaw/pull/78261) | Closed/superseded upstream context; no longer a merge gate |
-| [docs/public-readiness.md](./public-readiness.md) | Authoritative public-readiness decision matrix |
+| [docs/history/public-readiness.md](history/public-readiness.md) | Authoritative public-readiness decision matrix |
 | [packages/docker-runner/docs/design.md](../packages/docker-runner/docs/design.md) | Docker Runner task lifecycle design |
 | [packages/docker-runner/docs/integration.md](../packages/docker-runner/docs/integration.md) | Handler integration and failure modes |
 

@@ -20,6 +20,8 @@ const SHUTDOWN_FORCE_CLOSE_MS = 5_000;
 
 interface BrokerLifecycleRuntime {
   server: Server;
+  /** Enter drain mode before close (#1405); optional for older runtime shapes. */
+  beginDrain?: () => void;
   stopStaleReaper: () => void;
   stopPoller: () => void;
   closeWorkerPersistence: () => Promise<void>;
@@ -54,8 +56,16 @@ export function startBrokerServerWithFactory<Options, Runtime extends BrokerLife
     }
   });
 
-  const gracefulShutdown = (signal: NodeJS.Signals | "uncaughtException") => {
-    console.log(`[a2a-broker] received ${signal}, stopping stale reaper and closing server`);
+  // Graceful drain window before close (#1405). While draining, the handler
+  // refuses new poll/claim work (503 broker_draining + Retry-After) and marks
+  // every response `Connection: close`, so in-flight worker submissions finish
+  // instead of landing on a socket that is about to be severed. 0 (default)
+  // preserves today's immediate-close behavior; the redeploy runbook
+  // recommends 5000.
+  const shutdownDrainMs = Math.max(0, Math.floor(Number(process.env.A2A_SHUTDOWN_DRAIN_MS ?? 0)) || 0);
+
+  const closeServer = (signal: NodeJS.Signals | "uncaughtException") => {
+    console.log(`[a2a-broker] ${signal}: stopping stale reaper and closing server`);
     runtime.stopStaleReaper();
     runtime.stopPoller();
     runtime.server.close(() => {
@@ -74,6 +84,17 @@ export function startBrokerServerWithFactory<Options, Runtime extends BrokerLife
     setTimeout(() => {
       runtime.server.closeAllConnections?.();
     }, SHUTDOWN_FORCE_CLOSE_MS).unref?.();
+  };
+
+  const gracefulShutdown = (signal: NodeJS.Signals | "uncaughtException") => {
+    if (shutdownDrainMs > 0 && runtime.beginDrain) {
+      console.log(`[a2a-broker] received ${signal}, draining for ${shutdownDrainMs}ms before close`);
+      runtime.beginDrain();
+      setTimeout(() => closeServer(signal), shutdownDrainMs).unref?.();
+      return;
+    }
+    console.log(`[a2a-broker] received ${signal}`);
+    closeServer(signal);
   };
   process.once("SIGINT", gracefulShutdown);
   process.once("SIGTERM", gracefulShutdown);

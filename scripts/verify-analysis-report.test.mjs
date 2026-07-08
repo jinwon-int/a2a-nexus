@@ -48,7 +48,18 @@ function makeCtx() {
 
 function buildBundle(ctx, opts = {}) {
   const taskId = opts.taskId ?? "task-1";
-  const result = { summary: "finding X holds", output: { a: 1, b: 2 } };
+  const content = opts.snapContent ?? "# A2A Nexus\n";
+  const snapContentHash = sha256Prefix(content);
+
+  // By default the result declares the one snapshot it consumed (bijection).
+  // opts.declaredSources overrides (null = omit the field entirely).
+  const declared = opts.declaredSources !== undefined
+    ? opts.declaredSources
+    : (opts.omitSources ? null : [{ sourceId: "s1", contentHash: snapContentHash }]);
+  const output = { a: 1, b: 2 };
+  if (Array.isArray(declared)) output.sources = declared;
+  const result = { summary: "finding X holds", output };
+
   const resultHash = sha256Prefix(canonicalizeJson(result));
   const workerSig = signJws(
     { schemaVersion: RESULT_PROVENANCE_SCHEMA, canonicalization: CANONICALIZATION, taskId, claimedAt: CLAIMED_AT, resultHash },
@@ -64,11 +75,10 @@ function buildBundle(ctx, opts = {}) {
     brokerCountersig: { brokerKeyId: ctx.brokerKeyId, verifiedAt: VERIFIED_AT, sig: counterSig },
   };
 
-  const content = opts.snapContent ?? "# A2A Nexus\n";
   const unsigned = {
     schemaVersion: RETRIEVAL_SNAPSHOT_SCHEMA, canonicalization: CANONICALIZATION, source: "github",
     repo: "a/b", requestedRef: "r", resolvedRef: "r", path: "README.md", fetchedAt: CLAIMED_AT,
-    byteLen: Buffer.byteLength(content, "utf8"), contentHash: sha256Prefix(content), content,
+    byteLen: Buffer.byteLength(content, "utf8"), contentHash: snapContentHash, content,
   };
   const snapshot = { ...unsigned, signature: signJws(unsigned, ctx.runnerPriv, ctx.runnerKeyId) };
 
@@ -180,6 +190,43 @@ test("empty sources array is allowed (analysis with no external source)", () => 
   const ctx = makeCtx();
   const result = verifyReport(buildBundle(ctx, { omitSources: true }), ctx.keyring);
   assert.equal(result.green, true, JSON.stringify(result.checks));
+  assert.equal(check(result, "source-binding"), undefined, "no binding check when there are no sources");
+});
+
+test("a valid bundle binds its snapshot to result.output.sources", () => {
+  const ctx = makeCtx();
+  const result = verifyReport(buildBundle(ctx), ctx.keyring);
+  assert.equal(check(result, "source-binding").ok, true);
+  assert.equal(result.green, true);
+});
+
+test("an unbound snapshot (present but not declared by the result) is rejected", () => {
+  const ctx = makeCtx();
+  // snapshot present in report.sources, but result declares no sources.
+  const result = verifyReport(buildBundle(ctx, { declaredSources: null }), ctx.keyring);
+  assert.equal(check(result, "source-binding").ok, false);
+  assert.match(check(result, "source-binding").detail, /unbound/);
+  assert.equal(result.green, false);
+});
+
+test("a dangling source declaration (declared but no snapshot) is rejected", () => {
+  const ctx = makeCtx();
+  const result = verifyReport(
+    buildBundle(ctx, { omitSources: true, declaredSources: [{ sourceId: "ghost", contentHash: "sha256:ffff" }] }),
+    ctx.keyring,
+  );
+  assert.equal(check(result, "source-binding").ok, false);
+  assert.match(check(result, "source-binding").detail, /no matching snapshot/);
+  assert.equal(result.green, false);
+});
+
+test("tampering the declared source set breaks the signature (binding is signed)", () => {
+  const ctx = makeCtx();
+  const bundle = buildBundle(ctx);
+  bundle.result.output.sources[0].contentHash = "sha256:swapped";
+  const result = verifyReport(bundle, ctx.keyring);
+  assert.equal(check(result, "result-hash").ok, false, "declared sources are inside the signed result");
+  assert.equal(result.green, false);
 });
 
 test("malformed bundle is a fail-closed result, not a crash", () => {
@@ -208,11 +255,12 @@ test("conformance: real #1380 provenance signers verify offline", async (t) => {
   };
   const w = keys(), b = keys(), r = keys();
   const taskId = "task-conformance";
-  const result = { summary: "finding X holds", output: { a: 1, b: 2 } };
-  let prov = mod.signTaskResultProvenance(result, { taskId, claimedAt: CLAIMED_AT, privateKeyPem: w.priv, workerKeyId: "w1" });
-  prov = mod.countersignTaskResultProvenance(prov, { taskId, verifiedAt: VERIFIED_AT, privateKeyPem: b.priv, brokerKeyId: "b1" });
   let snap = mod.buildGithubRetrievalSnapshot({ repo: "a/b", requestedRef: "r", resolvedRef: "r", path: "README.md", fetchedAt: CLAIMED_AT, content: "# A2A Nexus\n" });
   snap = mod.signRetrievalSnapshot(snap, { privateKeyPem: r.priv, keyId: "runner1" });
+  // result declares the consumed snapshot (K2 Wave 2 binding) before it is signed.
+  const result = { summary: "finding X holds", output: { a: 1, b: 2, sources: [{ sourceId: "s1", contentHash: snap.contentHash }] } };
+  let prov = mod.signTaskResultProvenance(result, { taskId, claimedAt: CLAIMED_AT, privateKeyPem: w.priv, workerKeyId: "w1" });
+  prov = mod.countersignTaskResultProvenance(prov, { taskId, verifiedAt: VERIFIED_AT, privateKeyPem: b.priv, brokerKeyId: "b1" });
   const bundle = {
     reportVersion: REPORT_VERSION, taskId, result: { ...result, provenance: prov }, sources: [snap],
     assurance: { proves: ["source-grounding", "integrity", "process-provenance"], doesNotProve: ["analytical-correctness", "normative-judgment"], disclaimer: "Proves production + integrity, not correctness." },
@@ -222,4 +270,82 @@ test("conformance: real #1380 provenance signers verify offline", async (t) => {
   assert.equal(res.green, true, `real #1380 output must verify offline: ${JSON.stringify(res.checks)}`);
   bundle.result.summary = "tampered";
   assert.equal(verifyReport(bundle, keyring).green, false);
+});
+
+// --- verifyResultProvenance: standalone result-provenance verification -------
+// (#1356 G2-d) — the same checks 3-5 the report bundle runs, exported for
+// bundle-shaped consumers (the M3 attestation exporter) so the provenance
+// verification logic has one source.
+import { verifyResultProvenance } from "./verify-analysis-report.mjs";
+
+function signedResult(ctx, { taskId = "task-1", countersign = true } = {}) {
+  const core = { summary: "analysis body" };
+  const resultHash = sha256Prefix(canonicalizeJson(core));
+  const workerSig = signJws(
+    { schemaVersion: RESULT_PROVENANCE_SCHEMA, canonicalization: CANONICALIZATION, taskId, claimedAt: CLAIMED_AT, resultHash },
+    ctx.workerPriv,
+    ctx.workerKeyId,
+  );
+  const provenance = {
+    schemaVersion: RESULT_PROVENANCE_SCHEMA,
+    canonicalization: CANONICALIZATION,
+    alg: "EdDSA",
+    workerKeyId: ctx.workerKeyId,
+    claimedAt: CLAIMED_AT,
+    resultHash,
+    workerSig,
+  };
+  if (countersign) {
+    provenance.brokerCountersig = {
+      brokerKeyId: ctx.brokerKeyId,
+      verifiedAt: VERIFIED_AT,
+      sig: signJws(
+        { schemaVersion: BROKER_COUNTERSIG_SCHEMA, canonicalization: CANONICALIZATION, taskId, verifiedAt: VERIFIED_AT, workerSig },
+        ctx.brokerPriv,
+        ctx.brokerKeyId,
+      ),
+    };
+  }
+  return { ...core, provenance };
+}
+
+test("verifyResultProvenance verifies a full chain and reports enum verdicts (#1356 G2-d)", () => {
+  const ctx = makeCtx();
+  const verdict = verifyResultProvenance(signedResult(ctx), "task-1", ctx.keyring.keys);
+  assert.equal(verdict.workerSig, "verified");
+  assert.equal(verdict.brokerCountersig, "verified");
+  assert.ok(verdict.checks.every((c) => c.ok), JSON.stringify(verdict.checks));
+});
+
+test("verifyResultProvenance flags a tampered result and a cross-task transplant as invalid", () => {
+  const ctx = makeCtx();
+  const tampered = { ...signedResult(ctx), summary: "analysis body!" };
+  assert.equal(verifyResultProvenance(tampered, "task-1", ctx.keyring.keys).workerSig, "invalid");
+  // taskId is bound by the worker signature — a result presented under another
+  // task must fail even though its hash still matches its own body.
+  assert.equal(verifyResultProvenance(signedResult(ctx), "task-2", ctx.keyring.keys).workerSig, "invalid");
+});
+
+test("verifyResultProvenance reports a missing countersig as absent and keeps the fail-closed check", () => {
+  const ctx = makeCtx();
+  const verdict = verifyResultProvenance(signedResult(ctx, { countersign: false }), "task-1", ctx.keyring.keys);
+  assert.equal(verdict.workerSig, "verified");
+  assert.equal(verdict.brokerCountersig, "absent");
+  const counterCheck = verdict.checks.find((c) => c.id === "broker-countersignature");
+  assert.equal(counterCheck?.ok, false, "report-bundle parity: missing countersig stays a failed check");
+});
+
+test("verifyReport and verifyResultProvenance agree on the same bundle (single source)", () => {
+  const ctx = makeCtx();
+  const bundle = buildBundle(ctx);
+  const report = verifyReport(bundle, ctx.keyring);
+  const standalone = verifyResultProvenance(bundle.result, bundle.taskId, ctx.keyring.keys);
+  const ids = ["provenance-schema", "result-hash", "worker-signature", "broker-countersignature"];
+  for (const id of ids) {
+    assert.equal(
+      report.checks.find((c) => c.id === id)?.ok,
+      standalone.checks.find((c) => c.id === id)?.ok,
+      `check '${id}' must agree between the report path and the standalone path`,
+    );
+  }
 });

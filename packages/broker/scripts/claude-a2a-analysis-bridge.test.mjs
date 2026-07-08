@@ -1,5 +1,6 @@
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
+import { createHash } from "node:crypto";
 import { chmodSync, existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -19,6 +20,29 @@ function bridgeArgs(message) {
     "--timeout", "60",
     "--json",
   ];
+}
+
+function sha256Prefix(text) {
+  return `sha256:${createHash("sha256").update(text, "utf8").digest("hex")}`;
+}
+
+function signedSnapshotFixture(overrides = {}) {
+  const content = overrides.content ?? "# signed Claude bridge source\nconst claudeSnapshotGrounding = true;\n";
+  return {
+    schemaVersion: "a2a.retrieval.snapshot.v1",
+    canonicalization: "rfc8785-jcs-v1",
+    source: "github",
+    repo: "jinwon-int/a2a-nexus",
+    requestedRef: "838e58a7587d0f352cc1d19e6a0c5edae9903251",
+    resolvedRef: "838e58a7587d0f352cc1d19e6a0c5edae9903251",
+    path: "packages/broker/README.md",
+    fetchedAt: "2026-07-06T00:00:00.000Z",
+    byteLen: Buffer.byteLength(content, "utf8"),
+    contentHash: sha256Prefix(content),
+    content,
+    signature: { protected: "signed-header", signature: "signed-body" },
+    ...overrides,
+  };
 }
 
 test("Claude Code A2A analysis bridge exists and is executable JavaScript", () => {
@@ -98,6 +122,66 @@ test("Claude Code A2A analysis bridge calls claude -p and returns OpenClaw envel
     assert.equal(args[args.indexOf("--disallowedTools") + 1], "Bash Edit Write NotebookEdit WebFetch WebSearch");
     assert.equal(args.includes("--model"), false, "Claude bridge should not pass A2A worker model as a raw Claude --model value");
     assert.match(readFileSync(promptPath, "utf8"), /Claude Code CLI-backed A2A analysis bridge/);
+  } finally {
+    rmSync(tempDir, { recursive: true, force: true });
+  }
+});
+
+test("Claude Code A2A analysis bridge injects signed retrieval snapshots without widening tool policy (#1378 K2 wave2)", () => {
+  const tempDir = mkdtempSync(join(tmpdir(), "claude-a2a-bridge-snapshot-"));
+  const fakeClaudePath = join(tempDir, "fake-claude.mjs");
+  const argsPath = join(tempDir, "claude-args.json");
+  const promptPath = join(tempDir, "claude-prompt.txt");
+  const payloadPath = join(tempDir, "payload.json");
+  const snapshot = signedSnapshotFixture();
+
+  try {
+    writeFileSync(payloadPath, JSON.stringify({
+      mode: "analysis-only",
+      noLive: true,
+      sourceOnly: true,
+      sourceBundle: { files: [] },
+      sourceProjectionPolicy: { requiredPaths: ["packages/broker/README.md"] },
+      retrievalSnapshots: [snapshot],
+    }));
+    writeFileSync(fakeClaudePath, [
+      "#!/usr/bin/env node",
+      "import { writeFileSync } from 'node:fs';",
+      "const args = process.argv.slice(2);",
+      "writeFileSync(process.env.CAPTURE_ARGS_PATH, JSON.stringify(args));",
+      "const prompt = args[args.indexOf('-p') + 1];",
+      "writeFileSync(process.env.CAPTURE_PROMPT_PATH, prompt);",
+      "if (!prompt.includes('<untrusted_external_data ')) throw new Error('untrusted snapshot wrapper missing from Claude prompt');",
+      "if (!prompt.includes('packages/broker/README.md')) throw new Error('snapshot path missing from Claude prompt');",
+      "if (!prompt.includes('claudeSnapshotGrounding')) throw new Error('snapshot content missing from Claude prompt');",
+      "const analysis = { status: 'done', summary: 'snapshot projected into Claude prompt', findings: ['snapshot source consumed'], risks: [], recommendations: ['keep Read Glob Grep only'], evidenceRefs: ['jinwon-int/a2a-nexus:packages/broker/README.md'] };",
+      "console.log(JSON.stringify({ type: 'result', result: JSON.stringify(analysis) }));",
+      "",
+    ].join("\n"));
+    chmodSync(fakeClaudePath, 0o755);
+
+    const result = spawnSync(bridgePath, bridgeArgs("Payload JSON:\n" + JSON.stringify({ mode: "analysis-only", noLive: true, sourceOnly: true })), {
+      encoding: "utf8",
+      env: {
+        ...process.env,
+        A2A_CLAUDE_CODE_BIN: fakeClaudePath,
+        A2A_CLAUDE_CODE_MAX_TURNS: "3",
+        A2A_ANALYSIS_PAYLOAD_FILE: payloadPath,
+        A2A_CLAUDE_CODE_ALLOWED_TOOLS: "Bash WebFetch WebSearch",
+        CAPTURE_ARGS_PATH: argsPath,
+        CAPTURE_PROMPT_PATH: promptPath,
+      },
+    });
+
+    assert.equal(result.status, 0, result.stderr);
+    const envelope = JSON.parse(result.stdout);
+    const payload = JSON.parse(envelope.payloads[0]?.text);
+    assert.equal(payload.status, "done");
+    assert.equal(payload.summary, "snapshot projected into Claude prompt");
+    const args = JSON.parse(readFileSync(argsPath, "utf8"));
+    assert.equal(args[args.indexOf("--allowedTools") + 1], "Read Glob Grep");
+    assert.equal(args[args.indexOf("--disallowedTools") + 1], "Bash Edit Write NotebookEdit WebFetch WebSearch");
+    assert.match(readFileSync(promptPath, "utf8"), /<untrusted_external_data /);
   } finally {
     rmSync(tempDir, { recursive: true, force: true });
   }
@@ -366,6 +450,54 @@ test("session-scoped workspace uses session-id to isolate task sessions", () => 
     // Workspaces must be cleaned up after use.
     assert.equal(existsSync(cwdA), false, "session workspace A must be cleaned up after execution");
     assert.equal(existsSync(cwdB), false, "session workspace B must be cleaned up after execution");
+  } finally {
+    rmSync(tempDir, { recursive: true, force: true });
+  }
+});
+
+test("Claude Code A2A analysis bridge closes stdin and keeps stdout in failure excerpts (#1337 ENV1)", () => {
+  const tempDir = mkdtempSync(join(tmpdir(), "claude-a2a-bridge-fail-test-"));
+  const fakeClaudePath = join(tempDir, "fake-claude-fail.mjs");
+
+  try {
+    writeFileSync(fakeClaudePath, [
+      "#!/usr/bin/env node",
+      "import { readFileSync } from 'node:fs';",
+      "// With stdin spawned as 'ignore' this returns immediately (EOF from /dev/null).",
+      "// With a regression back to an open never-written pipe, this blocks until the",
+      "// bridge watchdog fires, so the assertions below would fail on the timeout path.",
+      "const stdinData = readFileSync(0, 'utf8');",
+      "if (stdinData !== '') throw new Error('expected empty stdin');",
+      "process.stderr.write('Warning: no stdin data received, proceeding without it.\\n');",
+      "process.stdout.write('real failure detail: model bridge auth exploded\\n');",
+      "process.exit(1);",
+      "",
+    ].join("\n"));
+    chmodSync(fakeClaudePath, 0o755);
+
+    const result = spawnSync(bridgePath, [
+      "agent",
+      "--local",
+      "--agent", "main",
+      "--session-id", "a2a-fail-excerpt",
+      "--message", "failure excerpt regression fixture",
+      "--model", "claude-code/default",
+      "--thinking", "low",
+      "--timeout", "10",
+      "--json",
+    ], {
+      encoding: "utf8",
+      env: { ...process.env, A2A_CLAUDE_CODE_BIN: fakeClaudePath },
+    });
+
+    assert.notEqual(result.status, 0, "bridge must fail when claude exits non-zero");
+    assert.match(result.stderr, /exited with 1/, "failure must surface the child exit code, not a timeout");
+    assert.match(result.stderr, /Warning: no stdin data received/, "stderr stream must be preserved");
+    assert.match(
+      result.stderr,
+      /real failure detail: model bridge auth exploded/,
+      "stdout stream must be preserved alongside stderr so warnings cannot mask the real cause",
+    );
   } finally {
     rmSync(tempDir, { recursive: true, force: true });
   }

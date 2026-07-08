@@ -1,0 +1,109 @@
+{
+  "$comment": "Rollout canary 4/4 (#1291 R6): the LARGE manifest - two carriers (sourceBundle.files and sourceFiles) with eight items each, sixteen files total. This shape was promoted to a release blocker: bounded prompt excerpts truncate on manifests this size, so any build that recovers its payload from message text instead of the payload file collapses to zero carriers (the zero_files class). Intended verdict: readiness passes and ALL sixteen files project with quality complete. All content synthetic.",
+  "expectedVerdict": {
+    "readiness": "pass",
+    "projectedFiles": 16,
+    "bridgeQuality": "complete"
+  },
+  "task": {
+    "id": "canary-large-manifest-two-carriers",
+    "intent": "analyze",
+    "status": "claimed",
+    "createdAt": "2026-07-07T00:00:00.000Z",
+    "message": "synthetic rollout canary: large manifest, two carriers, eight items each"
+  },
+  "payload": {
+    "mode": "analysis-only",
+    "roundMode": "a2ad",
+    "sourceOnly": true,
+    "noLive": true,
+    "taskClass": "canary",
+    "parentRoundId": "canary-fixture-round",
+    "sourceBundle": {
+      "files": [
+        {
+          "repo": "synthetic/repo",
+          "path": "src/bundle/file-0.js",
+          "content": "// synthetic canary content - bundle item 0\nexport const bundle_0_0 = 0;\nexport const bundle_0_1 = 1;\nexport const bundle_0_2 = 2;\nexport const bundle_0_3 = 3;\nexport const bundle_0_4 = 4;\nexport const bundle_0_5 = 5;\nexport const bundle_0_6 = 6;\nexport const bundle_0_7 = 7;\nexport const bundle_0_8 = 8;\nexport const bundle_0_9 = 9;\n"
+        },
+        {
+          "repo": "synthetic/repo",
+          "path": "src/bundle/file-1.js",
+          "content": "// synthetic canary content - bundle item 1\nexport const bundle_1_0 = 0;\nexport const bundle_1_1 = 1;\nexport const bundle_1_2 = 2;\nexport const bundle_1_3 = 3;\nexport const bundle_1_4 = 4;\nexport const bundle_1_5 = 5;\nexport const bundle_1_6 = 6;\nexport const bundle_1_7 = 7;\nexport const bundle_1_8 = 8;\nexport const bundle_1_9 = 9;\n"
+        },
+        {
+          "repo": "synthetic/repo",
+          "path": "src/bundle/file-2.js",
+          "content": "// synthetic canary content - bundle item 2\nexport const bundle_2_0 = 0;\nexport const bundle_2_1 = 1;\nexport const bundle_2_2 = 2;\nexport const bundle_2_3 = 3;\nexport const bundle_2_4 = 4;\nexport const bundle_2_5 = 5;\nexport const bundle_2_6 = 6;\nexport const bundle_2_7 = 7;\nexport const bundle_2_8 = 8;\nexport const bundle_2_9 = 9;\n"
+        },
+        {
+          "repo": "synthetic/repo",
+          "path": "src/bundle/file-3.js",
+          "content": "// synthetic canary content - bundle item 3\nexport const bundle_3_0 = 0;\nexport const bundle_3_1 = 1;\nexport const bundle_3_2 = 2;\nexport const bundle_3_3 = 3;\nexport const bundle_3_4 = 4;\nexport const bundle_3_5 = 5;\nexport const bundle_3_6 = 6;\nexport const bundle_3_7 = 7;\nexport const bundle_3_8 = 8;\nexport const bundle_3_9 = 9;\n"
+        },
+        {
+          "repo": "synthetic/repo",
+          "path": "src/bundle/file-4.js",
+          "content": "// synthetic canary content - bundle item 4\nexport const bundle_4_0 = 0;\nexport const bundle_4_1 = 1;\nexport const bundle_4_2 = 2;\nexport const bundle_4_3 = 3;\nexport const bundle_4_4 = 4;\nexport const bundle_4_5 = 5;\nexport const bundle_4_6 = 6;\nexport const bundle_4_7 = 7;\nexport const bundle_4_8 = 8;\nexport const bundle_4_9 = 9;\n"
+        },
+        {
+          "repo": "synthetic/repo",
+          "path": "src/bundle/file-5.js",
+          "content": "// synthetic canary content - bundle item 5\nexport const bundle_5_0 = 0;\nexport const bundle_5_1 = 1;\nexport const bundle_5_2 = 2;\nexport const bundle_5_3 = 3;\nexport const bundle_5_4 = 4;\nexport const bundle_5_5 = 5;\nexport const bundle_5_6 = 6;\nexport const bundle_5_7 = 7;\nexport const bundle_5_8 = 8;\nexport const bundle_5_9 = 9;\n"
+        },
+        {
+          "repo": "synthetic/repo",
+          "path": "src/bundle/file-6.js",
+          "content": "// synthetic canary content - bundle item 6\nexport const bundle_6_0 = 0;\nexport const bundle_6_1 = 1;\nexport const bundle_6_2 = 2;\nexport const bundle_6_3 = 3;\nexport const bundle_6_4 = 4;\nexport const bundle_6_5 = 5;\nexport const bundle_6_6 = 6;\nexport const bundle_6_7 = 7;\nexport const bundle_6_8 = 8;\nexport const bundle_6_9 = 9;\n"
+        },
+        {
+          "repo": "synthetic/repo",
+          "path": "src/bundle/file-7.js",
+          "content": "// synthetic canary content - bundle item 7\nexport const bundle_7_0 = 0;\nexport const bundle_7_1 = 1;\nexport const bundle_7_2 = 2;\nexport const bundle_7_3 = 3;\nexport const bundle_7_4 = 4;\nexport const bundle_7_5 = 5;\nexport const bundle_7_6 = 6;\nexport const bundle_7_7 = 7;\nexport const bundle_7_8 = 8;\nexport const bundle_7_9 = 9;\n"
+        }
+      ]
+    },
+    "sourceFiles": [
+      {
+        "repo": "synthetic/repo",
+        "path": "src/files/file-0.js",
+        "content": "// synthetic canary content - files item 0\nexport const files_0_0 = 0;\nexport const files_0_1 = 1;\nexport const files_0_2 = 2;\nexport const files_0_3 = 3;\nexport const files_0_4 = 4;\nexport const files_0_5 = 5;\nexport const files_0_6 = 6;\nexport const files_0_7 = 7;\nexport const files_0_8 = 8;\nexport const files_0_9 = 9;\n"
+      },
+      {
+        "repo": "synthetic/repo",
+        "path": "src/files/file-1.js",
+        "content": "// synthetic canary content - files item 1\nexport const files_1_0 = 0;\nexport const files_1_1 = 1;\nexport const files_1_2 = 2;\nexport const files_1_3 = 3;\nexport const files_1_4 = 4;\nexport const files_1_5 = 5;\nexport const files_1_6 = 6;\nexport const files_1_7 = 7;\nexport const files_1_8 = 8;\nexport const files_1_9 = 9;\n"
+      },
+      {
+        "repo": "synthetic/repo",
+        "path": "src/files/file-2.js",
+        "content": "// synthetic canary content - files item 2\nexport const files_2_0 = 0;\nexport const files_2_1 = 1;\nexport const files_2_2 = 2;\nexport const files_2_3 = 3;\nexport const files_2_4 = 4;\nexport const files_2_5 = 5;\nexport const files_2_6 = 6;\nexport const files_2_7 = 7;\nexport const files_2_8 = 8;\nexport const files_2_9 = 9;\n"
+      },
+      {
+        "repo": "synthetic/repo",
+        "path": "src/files/file-3.js",
+        "content": "// synthetic canary content - files item 3\nexport const files_3_0 = 0;\nexport const files_3_1 = 1;\nexport const files_3_2 = 2;\nexport const files_3_3 = 3;\nexport const files_3_4 = 4;\nexport const files_3_5 = 5;\nexport const files_3_6 = 6;\nexport const files_3_7 = 7;\nexport const files_3_8 = 8;\nexport const files_3_9 = 9;\n"
+      },
+      {
+        "repo": "synthetic/repo",
+        "path": "src/files/file-4.js",
+        "content": "// synthetic canary content - files item 4\nexport const files_4_0 = 0;\nexport const files_4_1 = 1;\nexport const files_4_2 = 2;\nexport const files_4_3 = 3;\nexport const files_4_4 = 4;\nexport const files_4_5 = 5;\nexport const files_4_6 = 6;\nexport const files_4_7 = 7;\nexport const files_4_8 = 8;\nexport const files_4_9 = 9;\n"
+      },
+      {
+        "repo": "synthetic/repo",
+        "path": "src/files/file-5.js",
+        "content": "// synthetic canary content - files item 5\nexport const files_5_0 = 0;\nexport const files_5_1 = 1;\nexport const files_5_2 = 2;\nexport const files_5_3 = 3;\nexport const files_5_4 = 4;\nexport const files_5_5 = 5;\nexport const files_5_6 = 6;\nexport const files_5_7 = 7;\nexport const files_5_8 = 8;\nexport const files_5_9 = 9;\n"
+      },
+      {
+        "repo": "synthetic/repo",
+        "path": "src/files/file-6.js",
+        "content": "// synthetic canary content - files item 6\nexport const files_6_0 = 0;\nexport const files_6_1 = 1;\nexport const files_6_2 = 2;\nexport const files_6_3 = 3;\nexport const files_6_4 = 4;\nexport const files_6_5 = 5;\nexport const files_6_6 = 6;\nexport const files_6_7 = 7;\nexport const files_6_8 = 8;\nexport const files_6_9 = 9;\n"
+      },
+      {
+        "repo": "synthetic/repo",
+        "path": "src/files/file-7.js",
+        "content": "// synthetic canary content - files item 7\nexport const files_7_0 = 0;\nexport const files_7_1 = 1;\nexport const files_7_2 = 2;\nexport const files_7_3 = 3;\nexport const files_7_4 = 4;\nexport const files_7_5 = 5;\nexport const files_7_6 = 6;\nexport const files_7_7 = 7;\nexport const files_7_8 = 8;\nexport const files_7_9 = 9;\n"
+      }
+    ]
+  }
+}

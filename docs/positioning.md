@@ -17,4 +17,31 @@ A2A Nexus sits at the intersection of **Broker / Worker runtime** and **Control 
 - **Source-only analysis bridge**: read-only review lanes can produce broker-backed evidence without live side effects.
 - **Isolated patch runner**: implementation work can be separated from broker/operator approval boundaries.
 
+## Product layering and sequencing (#1386 S7)
+
+Fixed ordering to prevent narrative sprawl. Every product position articulated
+for this stack ("verified evidence data layer", "referee/escrow",
+"clearinghouse", "certification") is a variation of one thesis — **verifiable
+third-party judgment** — and ships in this order:
+
+1. **Engine (now): a2a-nexus.** Orchestration plus the trust primitives —
+   result provenance (#1380/#1382), verifiable analysis report (#1378/#1381),
+   signed finalizer verdict + enforcement gate (#1383/#1384). The engine's
+   first customer is its own implementation loop (dogfood).
+2. **First product (gated on completed dogfood): the verifiable analysis
+   report.** A round output a third party can verify offline without the
+   broker. Ship gate: V0-c dogfood closed end-to-end on the live fleet.
+3. **Certification CA (gated on external pull): product certification for
+   AI-built software (#1385).** Self-service, trusted-attester (CI-OIDC/TEE)
+   model; first wedge is MCP servers/agent plugins. Do NOT build the registry/
+   badge organization before an external demand signal exists — mechanism
+   first, organization after pull.
+
+Moat discipline (from #1385/#1386): ride commodity attestation plumbing
+(SLSA/Sigstore/CI-OIDC/TEE — never rebuild it); the defensible layer is the
+curated battery + reproducible-verdict format + registry/badge trust +
+AI-agent-ecosystem niche. Honesty boundary: reproducibility claims apply to
+battery verdicts only, never to judgment verdicts
+(contracts/a2a/finalizer-verdict.md §2a).
+
 A2A Nexus is an alpha reference implementation, not an official a2aproject distribution or endorsement.

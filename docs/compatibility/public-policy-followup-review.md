@@ -28,4 +28,4 @@ Expected result: both commands pass from the repository checkout using only trac
 
 ## Remaining gaps
 
-This does not close the repository-level public visibility gates. External secret/history scanner evidence and explicit operator visibility approval remain separate requirements in `docs/public-readiness.md` and `docs/governance/public-private-boundary-gates.md`.
+This does not close the repository-level public visibility gates. External secret/history scanner evidence and explicit operator visibility approval remain separate requirements in `docs/history/public-readiness.md` and `docs/governance/public-private-boundary-gates.md`.

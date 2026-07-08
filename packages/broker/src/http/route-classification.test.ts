@@ -31,6 +31,8 @@ test("classifyEndpointGroup preserves coarse endpoint attribution", () => {
   assert.equal(classifyEndpointGroup("POST", "/workers/worker-a/heartbeat", segments("/workers/worker-a/heartbeat")), "workers.heartbeat");
   assert.equal(classifyEndpointGroup("GET", "/a2a/workers/worker-a/assignment-events", segments("/a2a/workers/worker-a/assignment-events")), "workers.assignment-events");
   assert.equal(classifyEndpointGroup("POST", "/a2a/jsonrpc", segments("/a2a/jsonrpc")), "a2a");
+  assert.equal(classifyEndpointGroup("POST", "/wave-plans", segments("/wave-plans")), "wave-plan");
+  assert.equal(classifyEndpointGroup("POST", "/wave-plans/wave-1/advance", segments("/wave-plans/wave-1/advance")), "wave-plan");
   assert.equal(classifyEndpointGroup("GET", "/unknown", segments("/unknown")), "other");
 });
 
@@ -45,6 +47,9 @@ test("classifyRequestRoute preserves fine-grained route attribution", () => {
     ["GET", "/terminal-brief/closeout/1", "terminal-brief.closeout"],
     ["GET", "/terminal-brief/inbox", "terminal-brief.inbox"],
     ["GET", "/complexity", "complexity"],
+    ["POST", "/wave-plans", "wave-plan"],
+    ["POST", "/wave-plans/wave-1/advance", "wave-plan"],
+    ["GET", "/wave-plans/wave-1", "wave-plan"],
     ["GET", "/workers", "workers.list"],
     ["GET", "/workers/capacity", "workers.capacity"],
     ["POST", "/workers/register", "workers.register"],

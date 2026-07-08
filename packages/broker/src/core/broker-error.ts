@@ -18,6 +18,7 @@ export type BrokerErrorCode =
   | "review_evidence_missing"
   | "review_not_independent"
   | "review_verdict_failed"
+  | "finalizer_verdict_invalid"
   | "queue_saturated"
   | "queue_drain_timeout"
   | "queue_closed"

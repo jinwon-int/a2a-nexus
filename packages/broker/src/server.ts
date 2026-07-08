@@ -111,6 +111,10 @@ import { readRuntimeMemoryUsage, readEventLoopDelayMs, readGcDiagnostics, readCp
 import { computeReusedSocketGate } from "./diagnostics/reused-socket-gate.js";
 import { resolveBrokerBuildInfo } from "./broker-build-info.js";
 import { normalizeTaskReadinessMode, type TaskReadinessMode } from "./task-readiness.js";
+import { loadBrokerPolicyFile } from "./core/broker-policy.js";
+import { loadInjectedKnowledgeFile } from "./core/broker-knowledge-injection.js";
+import { resolveFinalizerVerdictEnforcement } from "./core/finalizer-verdict-admission.js";
+import { loadFinalizerKeyringFile } from "./core/finalizer-verdict-signature.js";
 import { normalizePersistenceBackend, normalizeSqliteLoadSource } from "./persistence-options.js";
 import {
   resolveBrokerId,
@@ -246,6 +250,7 @@ import { handleAuditReadRouteIfMatched } from "./http/audit-read-route.js";
 import { handleProposalsReadRouteIfMatched } from "./http/proposals-read.js";
 import { handleExchangeRoutesIfMatched } from "./http/exchanges-read.js";
 import { handleComplexityOrchestrationRoutesIfMatched } from "./http/complexity-orchestration-routes.js";
+import { handleWavePlanRoutesIfMatched } from "./http/wave-plan-routes.js";
 import { handleTerminalBriefCloseoutRoutesIfMatched } from "./http/terminal-brief-routes.js";
 import {
   handleWorkersReadRouteIfMatched,
@@ -282,6 +287,20 @@ import {
 
 const DEFAULT_OPERATOR_EVENT_BUFFER_LIMIT = 200;
 const DEFAULT_MAX_TASK_PAYLOAD_BYTES = 1 * 1024 * 1024;
+
+/**
+ * Resolve the result-provenance countersigning posture (#1389). Defaults to
+ * "auto" when unset/empty; a non-empty but unrecognized value is a loud
+ * configuration error rather than a silent fallback.
+ */
+function resolveResultProvenanceCountersignMode(raw: string | undefined): "enforce" | "auto" | "off" {
+  const value = (raw ?? "").trim().toLowerCase();
+  if (value === "") return "auto";
+  if (value === "enforce" || value === "auto" || value === "off") return value;
+  throw new Error(
+    `invalid A2A_RESULT_PROVENANCE_COUNTERSIGN='${raw}' (expected enforce | auto | off)`,
+  );
+}
 
 export function createBrokerServer(options: BrokerServerOptions = {}): BrokerServerRuntime {
   const host = options.host ?? process.env.HOST ?? "0.0.0.0";
@@ -352,6 +371,17 @@ export function createBrokerServer(options: BrokerServerOptions = {}): BrokerSer
     ? "inline"
     : (a2aHttpSignatureKeyRegistryFile ? "file" : "empty");
   const a2aHttpSignatureReplayCache = new A2AHttpSignatureReplayCache();
+  // Small forward clock-skew tolerance on the signature `created` timestamp
+  // (#1402): absorbs sub-second worker/broker drift that otherwise flips
+  // a2a_signature_time_invalid at second boundaries. Default 2s; expires stays
+  // strict. A2A_SIGNATURE_CLOCK_SKEW_SEC overrides (0 restores strict behavior).
+  const a2aSignatureClockSkewSeconds = Math.max(
+    0,
+    Math.floor(
+      options.a2aSignatureClockSkewSeconds
+        ?? Number(process.env.A2A_SIGNATURE_CLOCK_SKEW_SEC ?? 2),
+    ) || 0,
+  );
   const allowInsecureDev = options.allowInsecureDev ?? resolveBooleanEnv(process.env.A2A_ALLOW_INSECURE_DEV, false);
   validateBrokerStartupSecurity({
     host,
@@ -370,6 +400,26 @@ export function createBrokerServer(options: BrokerServerOptions = {}): BrokerSer
   const taskReadinessMode = normalizeTaskReadinessMode(
     options.taskReadinessMode ?? process.env.A2A_TASK_READINESS_MODE ?? process.env.BROKER_TASK_READINESS_MODE,
   );
+  // Declarative worker-class policy (#1355 G1). A configured-but-invalid or
+  // unreadable document fails startup loudly (loadBrokerPolicyFile throws);
+  // unset keeps legacy behavior (no policy evaluation).
+  const brokerPolicyFile = options.brokerPolicyFile ?? process.env.A2A_BROKER_POLICY_FILE;
+  const brokerPolicyDocument = brokerPolicyFile ? loadBrokerPolicyFile(brokerPolicyFile) : undefined;
+  // Anonymous knowledge injection snapshot (#1373 K1). Same stance as the
+  // policy file: configured-but-invalid fails startup loudly; unset keeps
+  // legacy behavior (no injection).
+  const injectedKnowledgeFile = options.injectedKnowledgeFile ?? process.env.A2A_INJECTED_KNOWLEDGE_FILE;
+  const injectedKnowledge = injectedKnowledgeFile ? loadInjectedKnowledgeFile(injectedKnowledgeFile) : undefined;
+  // Accept-path finalizer-verdict posture (#1383 V-c). Invalid value fails
+  // startup loudly (resolve throws); default off keeps completion unchanged.
+  const finalizerVerdictEnforcement = resolveFinalizerVerdictEnforcement(
+    options.finalizerVerdictEnforcement ?? process.env.A2A_FINALIZER_VERDICT_ENFORCEMENT,
+  );
+  // Optional registered finalizer keyring (#1383 V-c follow-up): when set, the
+  // accept-path verifies static-key verdict signatures in-broker. Invalid file
+  // fails startup loudly; unset defers signature checks to the merge gate.
+  const finalizerKeyringFile = options.finalizerKeyringFile ?? process.env.A2A_FINALIZER_KEYRING_FILE;
+  const finalizerKeyring = finalizerKeyringFile ? loadFinalizerKeyringFile(finalizerKeyringFile) : undefined;
   const hotRuntimeLimits = resolveHotRuntimeLimits(options);
   const maxSnapshotBytes = Math.max(
     1,
@@ -397,6 +447,13 @@ export function createBrokerServer(options: BrokerServerOptions = {}): BrokerSer
       process.env.STALE_REAPER_OLDER_THAN_SEC,
       Math.max(workerOfflineAfterSec, 1),
     ),
+  );
+  // Stale wave-plan sweep threshold (#1357 G3-c reaper wiring). Rides the same
+  // reaper interval; a live wave idle past this window gets one wave.stalled
+  // warning audit event (never an auto-abort). 0 disables the wave sweep.
+  const waveStaleAfterSec = Math.max(
+    0,
+    resolveIntegerOption(options.waveStaleAfterSec, process.env.WAVE_STALE_AFTER_SEC, 21_600),
   );
   const maxRequeueAttempts = Math.max(
     0,
@@ -516,6 +573,10 @@ export function createBrokerServer(options: BrokerServerOptions = {}): BrokerSer
       brokerId,
       teamId,
       taskReadinessMode,
+      policyDocument: brokerPolicyDocument,
+      injectedKnowledge,
+      finalizerVerdictEnforcement,
+      finalizerKeyring,
       snapshotExtensions: pushNotificationSnapshotExtension,
     });
   if (options.broker && pushNotificationSnapshotExtension) {
@@ -565,6 +626,24 @@ export function createBrokerServer(options: BrokerServerOptions = {}): BrokerSer
   const signingKeyFile = options.agentCardSigningKeyFile ?? process.env.AGENT_CARD_SIGNING_KEY_FILE;
   const signingKeyPem = signingKeyFile ? readFileSync(signingKeyFile, "utf8") : undefined;
   const agentCardSigningKid = options.agentCardSigningKid ?? process.env.AGENT_CARD_SIGNING_KID;
+  // Result-provenance countersigning posture (#1382 G2 / #1389 deploy gap). The
+  // #1389 incident: a new build that unconditionally enforced countersigning
+  // shipped before the signer key/env reached the container, so every provenance-
+  // bearing worker submission failed with "countersigning key is not configured".
+  // "enforce" turns that code-vs-env skew into a LOUD STARTUP failure (mirroring
+  // the "configured-but-unreadable key fails startup" agent-card stance) instead
+  // of a per-task failure discovered later by workers. "auto" (default) never
+  // rejects a worker task for a missing broker key. "off" is a kill switch.
+  const resultProvenanceCountersign = resolveResultProvenanceCountersignMode(
+    options.resultProvenanceCountersign ?? process.env.A2A_RESULT_PROVENANCE_COUNTERSIGN,
+  );
+  if (resultProvenanceCountersign === "enforce" && !signingKeyPem) {
+    throw new Error(
+      "A2A_RESULT_PROVENANCE_COUNTERSIGN=enforce requires a broker signing key, but none is configured. " +
+        "Set AGENT_CARD_SIGNING_KEY_FILE to a readable Ed25519/EC-P256 private key, or set " +
+        "A2A_RESULT_PROVENANCE_COUNTERSIGN=off to disable result-provenance countersigning.",
+    );
+  }
   const crossBrokerTrustAnchors = loadCrossBrokerTrustAnchors(
     options.crossBrokerSenderProofKeysFile ?? process.env.CROSS_BROKER_SENDER_PROOF_KEYS_FILE,
   );
@@ -616,7 +695,17 @@ export function createBrokerServer(options: BrokerServerOptions = {}): BrokerSer
             .join(", ")}`,
         );
       }
-      if (requeued.length > 0 || deadLettered.length > 0) {
+      // Stale wave-plan sweep rides the same interval: warn-only wave.stalled
+      // audit events for live waves idle past the threshold (never auto-abort).
+      const stalledWaves = waveStaleAfterSec > 0 ? broker.sweepStalledWavePlans(waveStaleAfterSec * 1000) : [];
+      if (stalledWaves.length > 0) {
+        console.warn(
+          `[a2a-broker] wave reaper flagged ${stalledWaves.length} stalled wave plan(s): ${stalledWaves
+            .map((wave) => `${wave.wavePlanId}@${wave.stageId}`)
+            .join(", ")}`,
+        );
+      }
+      if (requeued.length > 0 || deadLettered.length > 0 || stalledWaves.length > 0) {
         publishOperatorEvents();
       }
       return requeued.length;
@@ -644,6 +733,7 @@ export function createBrokerServer(options: BrokerServerOptions = {}): BrokerSer
       enabled: staleReaperEnabled,
       intervalSec: staleReaperIntervalSec,
       olderThanSec: staleReaperOlderThanSec,
+      waveStaleAfterSec,
       maxRequeueAttempts,
     });
 
@@ -802,7 +892,7 @@ export function createBrokerServer(options: BrokerServerOptions = {}): BrokerSer
       headers: requestHeadersForA2AHttpSignature(req),
       signatureInput: headerValue(req, "signature-input") ?? "",
       signature: headerValue(req, "signature"),
-    }, a2aHttpSignatureKeyRegistry);
+    }, a2aHttpSignatureKeyRegistry, { clockSkewSeconds: a2aSignatureClockSkewSeconds });
 
     if (!result.ok) {
       throw new BrokerError("unauthorized", `${result.code}: ${result.message}`);
@@ -843,6 +933,18 @@ export function createBrokerServer(options: BrokerServerOptions = {}): BrokerSer
     }
   };
 
+  // Graceful drain (#1405): while draining, every response carries
+  // `Connection: close` so keep-alive sockets end cleanly after their in-flight
+  // response, and the two NEW-WORK routes (task poll + claim) are refused with
+  // 503 broker_draining + Retry-After. Submission/lifecycle routes keep working
+  // so in-flight worker results land before the process exits.
+  let draining = false;
+  const drainRetryAfterSec = 2;
+  const isDrainRefusedRoute = (method: string | undefined, path: string, segments: string[]): boolean => {
+    if (method === "GET" && path === "/tasks") return true;
+    return method === "POST" && segments.length === 3 && segments[0] === "tasks" && segments[2] === "claim";
+  };
+
   const handler: RequestListener<typeof IncomingMessage, typeof ServerResponse> = async (req, res) => {
     const url = new URL(req.url ?? "/", `http://${req.headers.host ?? "localhost"}`);
     const path = url.pathname;
@@ -879,6 +981,19 @@ export function createBrokerServer(options: BrokerServerOptions = {}): BrokerSer
         }
       }
 
+      if (draining) {
+        res.setHeader("connection", "close");
+        if (isDrainRefusedRoute(req.method, path, segments)) {
+          res.setHeader("retry-after", String(drainRetryAfterSec));
+          return sendJson(res, 503, {
+            error: {
+              code: "broker_draining",
+              message: "broker is draining for shutdown; retry against the new instance",
+            },
+          });
+        }
+      }
+
       if (req.method === "GET" && path === "/livez") {
         const lifecycleTiming = readRequestLifecycleTiming(req);
         const handlerStartUnixMs = lifecycleTiming?.handlerStartUnixMs ?? Date.now();
@@ -892,6 +1007,7 @@ export function createBrokerServer(options: BrokerServerOptions = {}): BrokerSer
           ok: true,
           service: serviceName,
           brokerId,
+          draining,
           uptimeSec: Math.round(process.uptime()),
           eventLoop: {
             delayMs: eventLoopDelayMs,
@@ -1077,6 +1193,19 @@ export function createBrokerServer(options: BrokerServerOptions = {}): BrokerSer
         path,
         req,
         res,
+        enforceRequesterIdentity,
+        requesterIdentity,
+      })) {
+        return;
+      }
+
+      if (await handleWavePlanRoutesIfMatched({
+        method: req.method,
+        path,
+        req,
+        res,
+        broker,
+        stateStore,
         enforceRequesterIdentity,
         requesterIdentity,
       })) {
@@ -1529,6 +1658,7 @@ export function createBrokerServer(options: BrokerServerOptions = {}): BrokerSer
               brokerKeyId: agentCardSigningKid ?? brokerId,
             }
           : undefined,
+        resultProvenanceCountersign,
       })) {
         return;
       }
@@ -1744,6 +1874,13 @@ export function createBrokerServer(options: BrokerServerOptions = {}): BrokerSer
     server,
     handler,
     broker,
+    beginDrain: () => {
+      if (draining) return;
+      draining = true;
+      console.log("[a2a-broker] drain started: refusing new poll/claim work, closing idle connections");
+      server.closeIdleConnections?.();
+    },
+    isDraining: () => draining,
     runStaleReaperSweep,
     stopStaleReaper,
     getStaleReaperStatus,
@@ -1784,6 +1921,7 @@ export function createBrokerServer(options: BrokerServerOptions = {}): BrokerSer
       staleReaperEnabled,
       staleReaperIntervalSec,
       staleReaperOlderThanSec,
+      waveStaleAfterSec,
       maxRequeueAttempts,
       taskSubscribeHeartbeatSec,
       peerStatusEnabled,

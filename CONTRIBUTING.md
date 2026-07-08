@@ -47,3 +47,15 @@ Use the **A2A spec-first change** issue template for Medium/Large work. Pull req
 The default language for public-facing surfaces is English: README, docs intended for external readers, issue templates, PR templates, package metadata, and examples. A bilingual document is allowed when the document states that intent near the top, as in `docs/ecosystem-guide.md`.
 
 Historical records may preserve non-English approval quotes only when they are necessary audit evidence and are kept in `docs/history/` or other explicitly historical fixtures. New public docs should summarize private approvals in role-based English and link the relevant issue/approval record instead of copying personal-channel text.
+
+## Toolchain majors (runtime-major alignment)
+
+`@types/node` stays pinned to the **deployed Node runtime major** (currently
+Node 22, `node:22-alpine` across the broker image and fleet workers): types
+for a newer runtime admit APIs that do not exist at runtime, which is a
+silent correctness hazard rather than a build failure. TypeScript major
+upgrades are deliberate migrations with a full release gate, not grouped
+dependency bumps. Dependabot is configured to ignore major updates for both
+packages — raising either major starts with a toolchain issue (see #1414 for
+the policy origin), and a runtime-major move updates the images, the fleet,
+and `@types/node` together.

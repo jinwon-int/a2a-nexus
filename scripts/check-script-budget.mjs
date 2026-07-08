@@ -27,7 +27,7 @@ import { createDocCheckContext } from './lib/doc-check.mjs';
 // its regression test were added. Raising any budget is allowed but must be
 // deliberate — see a2a-nexus#882.
 export const BUDGETS = {
-  scriptsMjs: 147, // includes brokerAlpha A2A skill guard CLI/test promoted from ops skills (#1035)
+  scriptsMjs: 160, // +4: #1303 M5 cost-per-outcome gate + join CLI + their tests — the issue explicitly scopes both as new scripts/*.mjs surfaces (prior raise: #1383 V-c registry validator)
   rootNpmScripts: 100, // ratcheted after C3 historical archive wrappers were consolidated under check:historical (#1201)
   brokerNpmScripts: 150, // includes broker clean:dist stale-build guard from #997/#999 closeout
 };

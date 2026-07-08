@@ -151,10 +151,12 @@ test("ANALYSIS intent -> bridge behaves like the analysis bridge (no regression)
   const tempDir = mkdtempSync(join(tmpdir(), "claude-patch-analysis-"));
   const fakeClaudePath = join(tempDir, "fake-claude.mjs");
   const promptPath = join(tempDir, "claude-prompt.txt");
+  const argsPath = join(tempDir, "claude-args.json");
   try {
     writeStubClaude(fakeClaudePath, [
       "import { writeFileSync } from 'node:fs';",
       "const args = process.argv.slice(2);",
+      "writeFileSync(process.env.CAPTURE_ARGS_PATH, JSON.stringify(args));",
       "const prompt = args[args.indexOf('-p') + 1];",
       "writeFileSync(process.env.CAPTURE_PROMPT_PATH, prompt);",
       "if (!prompt.includes('Do not modify files')) throw new Error('read-only instruction missing');",
@@ -171,7 +173,12 @@ test("ANALYSIS intent -> bridge behaves like the analysis bridge (no regression)
     ]);
     const result = spawnSync(bridgePath, bridgeArgs(analysisMessage()), {
       encoding: "utf8",
-      env: { ...process.env, A2A_CLAUDE_CODE_BIN: fakeClaudePath, CAPTURE_PROMPT_PATH: promptPath },
+      env: {
+        ...process.env,
+        A2A_CLAUDE_CODE_BIN: fakeClaudePath,
+        CAPTURE_ARGS_PATH: argsPath,
+        CAPTURE_PROMPT_PATH: promptPath,
+      },
     });
 
     assert.equal(result.status, 0, result.stderr);
@@ -180,6 +187,9 @@ test("ANALYSIS intent -> bridge behaves like the analysis bridge (no regression)
     assert.equal(payload.status, "done");
     assert.equal(payload.summary, "analysis complete via patch bridge analysis mode");
     assert.deepEqual(payload.evidenceRefs, ["embedded:analysis-mode-test"]);
+    const args = JSON.parse(readFileSync(argsPath, "utf8"));
+    assert.equal(args[args.indexOf("--allowedTools") + 1], "Read Glob Grep");
+    assert.equal(args[args.indexOf("--disallowedTools") + 1], "Bash Edit Write NotebookEdit WebFetch WebSearch");
     // analysis mode must NOT inject the patch preamble
     assert.match(readFileSync(promptPath, "utf8"), /Claude Code CLI-backed A2A analysis bridge/);
     assert.doesNotMatch(readFileSync(promptPath, "utf8"), /GitHub PATCH bridge/);

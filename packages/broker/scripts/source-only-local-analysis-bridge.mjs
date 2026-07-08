@@ -9,6 +9,7 @@ import {
   sourceCarrierPath,
   sourceCarrierRepo,
 } from "./lib/source-carriers.mjs";
+import { payloadWithRetrievalSnapshotSourceCarriers } from "./lib/retrieval-snapshot-carriers.mjs";
 
 function safeText(value, fallback = "") {
   return typeof value === "string" && value.trim() ? value.trim() : fallback;
@@ -92,9 +93,37 @@ function sourceOnlyBoundary(payload) {
 }
 
 function buildAnalysis({ task, payload }) {
-  const files = payloadSourceFiles(payload);
-  const projection = buildSourceProjection(payload, files);
-  const runId = safeText(payload.runId || payload.parentRoundId || task.id, "unknown-run");
+  let effectivePayload;
+  try {
+    effectivePayload = payloadWithRetrievalSnapshotSourceCarriers(payload).payload;
+  } catch (error) {
+    return {
+      status: "blocked",
+      summary: `source-only local bridge blocked signed retrieval snapshot payload: ${error.message}`,
+      findings: [`signed retrieval snapshot validation failed: ${error.message}`],
+      risks: ["signed retrieval snapshots must pass byte/hash/signature shape checks before analysis"],
+      recommendations: ["Regenerate the retrieval snapshot through the docker-runner egress allowlist proxy and keep it within the analysis byte cap."],
+      evidenceRefs: [],
+      sourceProjection: {
+        quality: "insufficient",
+        budgetReason: "invalid_retrieval_snapshot",
+        canonicalFileCount: 0,
+        projectedFileCount: 0,
+        canonicalBytes: 0,
+        projectedBytes: 0,
+        requiredPaths: [],
+        requiredFilesMissing: [],
+        requiredFilesBelowMinBytes: [],
+      },
+      failureReadback: { stage: "retrieval_snapshot", excerpt: error.message },
+      bridgeAdapter: "source_only_local",
+      requestedModel: safeText(process.env.A2A_OPENCLAW_ANALYSIS_MODEL || process.env.A2A_HERMES_ANALYSIS_MODEL || "source-only-local", "source-only-local"),
+      modelInheritanceMode: "local_source_only_no_provider",
+    };
+  }
+  const files = payloadSourceFiles(effectivePayload);
+  const projection = buildSourceProjection(effectivePayload, files);
+  const runId = safeText(effectivePayload.runId || effectivePayload.parentRoundId || task.id, "unknown-run");
   const evidenceRefs = files.map((file) => `${sourceCarrierRepo(file)}:${sourceCarrierPath(file)}`);
   const healthFileNames = files.map(sourceCarrierPath).join(", ") || "no files";
   const boundaryOk = noLiveBoundary(payload) && sourceOnlyBoundary(payload);

@@ -37,6 +37,17 @@ const KNOWN_NODE_WORDS = [
   'gwak' + 'ga',
 ];
 const AXIS_FORBIDDEN = new RegExp(`(?:https?:\\/\\/|github\\.com\\/|\\b(?:${KNOWN_NODE_WORDS.join('|')}|vps\\d+|worker-[a-z0-9_-]+|node-[a-z0-9_-]+)\\b)`, 'i');
+
+/**
+ * Reusable fail-closed anonymity check (#1373 K1 shares it): returns a
+ * violation string when the text carries a worker/node pseudonym, URL, host,
+ * or private identifier; undefined when clean.
+ */
+export function forbiddenIdentifierViolation(text) {
+  return AXIS_FORBIDDEN.test(String(text ?? ''))
+    ? 'text carries a worker/node/url/private identifier (anonymous classes only)'
+    : undefined;
+}
 const ISO_WINDOW = /^\d{4}-\d{2}(?:-\d{2})?$/;
 
 function isNonEmptyString(value) {

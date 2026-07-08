@@ -1568,3 +1568,176 @@ test("SqliteTombstoneRuntimeRepository writes tombstones directly to broker_tomb
     temp.cleanup();
   }
 });
+
+test("SqliteBrokerStateStore hot-table load preserves canonical wave plans (#1357 G3-d canary fix)", () => {
+  const temp = withTempFile("state.sqlite");
+  try {
+    // A running wave with a consumed retry budget — exactly the G3-d canary
+    // shape that was lost across a hot-tables restart.
+    const wavePlan = {
+      plan: {
+        wavePlanId: "wave-hot-restart",
+        stages: [{ id: "design", gate: { type: "quorum" as const, minSubstantive: 2 }, onGateFail: "retry-once" as const }],
+        state: "running" as const,
+        currentStage: 0,
+        retriedStages: [0],
+      },
+      updatedAt: "2026-07-07T15:00:00.000Z",
+    };
+    const store = new SqliteBrokerStateStore(temp.filePath, { loadSource: "hot-tables" });
+    store.save({
+      version: CURRENT_BROKER_STATE_VERSION,
+      exchanges: [],
+      exchangeMessages: [],
+      proposals: [],
+      artifacts: [],
+      validations: [],
+      workers: [],
+      tasks: [],
+      auditEvents: [],
+      tombstones: [],
+      terminalOutbox: [],
+      crossBrokerTerminalBriefs: [],
+      wavePlans: [wavePlan],
+    });
+    store.close();
+
+    // Broker restart on the sqlite hot-tables backend.
+    const reloaded = new SqliteBrokerStateStore(temp.filePath, { loadSource: "hot-tables" });
+    const snapshot = reloaded.load();
+    assert.deepEqual(snapshot.wavePlans, [wavePlan], "hot-tables load must carry canonical wave plans across a restart");
+    reloaded.close();
+  } finally {
+    temp.cleanup();
+  }
+});
+
+function crossBrokerBriefFixture() {
+  return {
+    id: "projection-hot-restart",
+    parentRoundId: "round-parent",
+    originBrokerId: "child-broker-a",
+    brokerOfRecordId: "parent-broker",
+    childTaskId: "child-task-1",
+    status: "succeeded" as const,
+    summary: "child completed safely",
+    completedAt: "2026-07-07T15:00:00.000Z",
+    emittedAt: "2026-07-07T15:00:01.000Z",
+    receivedAt: "2026-07-07T15:00:02.000Z",
+    sourceDigest: "digest-1",
+    replayCount: 0,
+    ack: {
+      decision: "accepted" as const,
+      terminalAck: false as const,
+      reason: "accepted cross-broker projection",
+      updatedAt: "2026-07-07T15:00:02.000Z",
+    },
+  };
+}
+
+test("SqliteBrokerStateStore hot-table load preserves canonical cross-broker Terminal Brief projections (#1446)", () => {
+  const temp = withTempFile("state.sqlite");
+  try {
+    // Same class of gap as the wave-plan G3-d canary fix: projections are a
+    // snapshot-only sidecar (no hot table), so a hot-tables restart must carry
+    // them from the canonical blob or the collected evidence vanishes.
+    const brief = crossBrokerBriefFixture();
+    const store = new SqliteBrokerStateStore(temp.filePath, { loadSource: "hot-tables" });
+    store.save({
+      version: CURRENT_BROKER_STATE_VERSION,
+      exchanges: [],
+      exchangeMessages: [],
+      proposals: [],
+      artifacts: [],
+      validations: [],
+      workers: [],
+      tasks: [],
+      auditEvents: [],
+      tombstones: [],
+      terminalOutbox: [],
+      crossBrokerTerminalBriefs: [brief],
+      wavePlans: [],
+    });
+    store.close();
+
+    // Broker restart on the sqlite hot-tables backend.
+    const reloaded = new SqliteBrokerStateStore(temp.filePath, { loadSource: "hot-tables" });
+    const snapshot = reloaded.load();
+    assert.deepEqual(
+      snapshot.crossBrokerTerminalBriefs,
+      [brief],
+      "hot-tables load must carry canonical cross-broker Terminal Brief projections across a restart",
+    );
+    reloaded.close();
+  } finally {
+    temp.cleanup();
+  }
+});
+
+test("SqliteBrokerStateStore hint-carrying full save still writes snapshot-only sidecar state to the canonical blob (#1446)", () => {
+  const temp = withTempFile("state.sqlite");
+  try {
+    // A full save that arrives with hot-entity hints skips rewriting the
+    // canonical blob as an optimization. That skip must not apply while the
+    // snapshot carries sidecar state with no hot table (wave plans,
+    // cross-broker projections) — otherwise the mutation is ACKed but the
+    // blob keeps the stale pre-mutation sidecar rows.
+    const baseSnapshot = {
+      version: CURRENT_BROKER_STATE_VERSION,
+      exchanges: [],
+      exchangeMessages: [],
+      proposals: [],
+      artifacts: [],
+      validations: [],
+      workers: [],
+      tasks: [],
+      auditEvents: [],
+      tombstones: [],
+      terminalOutbox: [],
+      crossBrokerTerminalBriefs: [],
+      wavePlans: [],
+    };
+    const brief = crossBrokerBriefFixture();
+    const wavePlan = {
+      plan: {
+        wavePlanId: "wave-hint-save",
+        stages: [{ id: "design", gate: { type: "quorum" as const, minSubstantive: 2 }, onGateFail: "halt" as const }],
+        state: "running" as const,
+        currentStage: 0,
+        retriedStages: [],
+      },
+      updatedAt: "2026-07-07T15:00:00.000Z",
+    };
+    const auditEvent = {
+      id: "audit-hint-1",
+      actorId: "worker-child",
+      action: "worker.heartbeat" as const,
+      targetType: "worker" as const,
+      targetId: "worker-child",
+      createdAt: "2026-07-07T15:00:03.000Z",
+    };
+
+    const store = new SqliteBrokerStateStore(temp.filePath);
+    store.save(baseSnapshot);
+    store.save(
+      {
+        ...baseSnapshot,
+        auditEvents: [auditEvent],
+        crossBrokerTerminalBriefs: [brief],
+        wavePlans: [wavePlan],
+      },
+      { hotAuditEvents: [auditEvent] },
+    );
+    store.close();
+
+    // Canonical reload: the second save carried sidecar state, so the blob
+    // must have been rewritten despite the hot hints.
+    const reloaded = new SqliteBrokerStateStore(temp.filePath);
+    const snapshot = reloaded.load();
+    assert.deepEqual(snapshot.crossBrokerTerminalBriefs, [brief], "hint-carrying save must persist cross-broker projections to the canonical blob");
+    assert.deepEqual(snapshot.wavePlans, [wavePlan], "hint-carrying save must persist wave plans to the canonical blob");
+    reloaded.close();
+  } finally {
+    temp.cleanup();
+  }
+});

@@ -154,6 +154,13 @@ export const taskPolicyContextSchema = z
     requiresApproval: z.boolean().optional(),
     liveImpact: z.boolean().optional(),
     targetEnvironment: z.string().min(1).optional(),
+    injectedKnowledge: z
+      .object({
+        source: z.string().min(1),
+        asOf: z.string().min(1),
+        hints: z.array(z.string().min(1)),
+      })
+      .optional(),
   })
   .passthrough();
 
@@ -410,6 +417,39 @@ export const pushNotificationConfigSchema = z
   })
   .passthrough();
 
+const waveStageGateSchema = z.union([
+  z.object({ type: z.literal("quorum"), minSubstantive: z.number().int().nonnegative() }).passthrough(),
+  z.object({ type: z.literal("approval") }).passthrough(),
+  z.object({ type: z.literal("manual") }).passthrough(),
+]);
+
+const waveStageSchema = z
+  .object({
+    id: z.string().min(1),
+    dispatch: z.object({ manifestRef: z.string().min(1) }).passthrough().optional(),
+    gate: waveStageGateSchema,
+    onGateFail: z.enum(["halt", "retry-once"]).optional(),
+  })
+  .passthrough();
+
+export const wavePlanSchema = z
+  .object({
+    wavePlanId: z.string().min(1),
+    stages: z.array(waveStageSchema),
+    state: z.enum(["draft", "running", "stage_ready", "halted", "completed", "aborted"]),
+    currentStage: z.number().int().nonnegative(),
+    retriedStages: z.array(z.number().int().nonnegative()).default([]),
+  })
+  .passthrough();
+
+export const persistedWavePlanSchema = z
+  .object({
+    plan: wavePlanSchema,
+    updatedAt: z.string().min(1),
+    stalledNotifiedAt: z.string().min(1).optional(),
+  })
+  .passthrough();
+
 export const brokerSnapshotSchema = z
   .object({
     version: z.number().int().nonnegative().optional().default(CURRENT_BROKER_STATE_VERSION),
@@ -424,6 +464,7 @@ export const brokerSnapshotSchema = z
     tombstones: z.array(tombstoneSchema).optional().default([]),
     terminalOutbox: z.array(terminalOutboxEventSchema).optional().default([]),
     crossBrokerTerminalBriefs: z.array(crossBrokerTerminalBriefProjectionSchema).optional().default([]),
+    wavePlans: z.array(persistedWavePlanSchema).optional().default([]),
     pushNotificationConfigs: z.array(pushNotificationConfigSchema).optional(),
   })
   .passthrough();

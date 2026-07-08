@@ -207,7 +207,7 @@ split repo disposition, release, publish, deploy, restart, credential movement,
 provider send, or Terminal ACK/replay.
 
 The `#515` docs, CODEOWNERS, and issue-routing policy is documented in
-[`docs/migration.md`](migration.md), [`docs/operators.md`](operators.md),
+[`docs/history/migration.md`](history/migration.md), [`docs/operators.md`](operators.md),
 [`docs/developers.md`](developers.md), [`docs/issue-routing.md`](issue-routing.md),
 and [`.github/CODEOWNERS`](../.github/CODEOWNERS). It is validated by
 `scripts/check-monorepo-docs-routing.mjs` and keeps `agent-olympics` outside A2A

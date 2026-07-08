@@ -24,8 +24,19 @@
  * Exit 0 = GREEN (every check passed); non-zero = fail-closed.
  */
 import fs from "node:fs";
-import { createHash, createPublicKey, verify as cryptoVerify } from "node:crypto";
 import { parseArgs } from "node:util";
+
+// Shared broker-independent JCS + JWS primitives (also used by the finalizer
+// verdict verifier #1383) — one crypto path, no drift. canonicalizeJson is
+// re-exported for callers/tests that build fixtures against this exact JCS.
+import {
+  canonicalizeJson,
+  sha256Prefix,
+  verifyJwsSignature,
+  kidOf,
+} from "./lib/a2a-offline-verify.mjs";
+
+export { canonicalizeJson, verifyJwsSignature };
 
 export const REPORT_VERSION = "verifiable-analysis-report/v1";
 export const CANONICALIZATION = "rfc8785-jcs-v1";
@@ -34,132 +45,102 @@ export const BROKER_COUNTERSIG_SCHEMA = "a2a.result.provenance.broker-countersig
 export const RETRIEVAL_SNAPSHOT_SCHEMA = "a2a.retrieval.snapshot.v1";
 
 // ---------------------------------------------------------------------------
-// RFC 8785 (JCS) canonicalization — mirrors agent-card-signing.ts canonicalizeJson.
-// ---------------------------------------------------------------------------
-export function canonicalizeJson(value) {
-  if (value === null || typeof value === "boolean" || typeof value === "string") {
-    return JSON.stringify(value);
-  }
-  if (typeof value === "number") {
-    if (!Number.isFinite(value)) throw new Error("RFC 8785 cannot canonicalize a non-finite number");
-    return JSON.stringify(value);
-  }
-  if (Array.isArray(value)) {
-    return `[${value.map((entry) => canonicalizeJson(entry === undefined ? null : entry)).join(",")}]`;
-  }
-  if (typeof value === "object") {
-    const record = value;
-    const keys = Object.keys(record).filter((key) => record[key] !== undefined).sort();
-    return `{${keys.map((key) => `${JSON.stringify(key)}:${canonicalizeJson(record[key])}`).join(",")}}`;
-  }
-  throw new Error(`RFC 8785 cannot canonicalize value of type ${typeof value}`);
-}
-
-function sha256Prefix(text) {
-  return `sha256:${createHash("sha256").update(text, "utf8").digest("hex")}`;
-}
-
-// ---------------------------------------------------------------------------
-// JWS verification — mirrors agent-card-signing.ts verifyAgentCardSignature.
-// Signature covers `${protected}.${base64url(JCS(payload))}`. ES256 signatures
-// are stored JOSE-raw (r||s) and converted to DER for node's verify.
-// ---------------------------------------------------------------------------
-function base64url(input) {
-  return Buffer.from(input).toString("base64url");
-}
-
-function algorithmForKey(key) {
-  if (key.asymmetricKeyType === "ed25519") return { alg: "EdDSA", cryptoAlg: null };
-  if (key.asymmetricKeyType === "ec") return { alg: "ES256", cryptoAlg: "sha256" };
-  return null;
-}
-
-function readDerLength(input, offset) {
-  const first = input[offset];
-  if (first === undefined) throw new Error("invalid ECDSA DER signature length");
-  if (first < 0x80) return { length: first, offset: offset + 1 };
-  const octets = first & 0x7f;
-  if (octets === 0 || octets > 2) throw new Error("unsupported ECDSA DER length encoding");
-  let length = 0;
-  for (let i = 0; i < octets; i += 1) {
-    const value = input[offset + 1 + i];
-    if (value === undefined) throw new Error("truncated ECDSA DER length");
-    length = (length << 8) | value;
-  }
-  return { length, offset: offset + 1 + octets };
-}
-
-function encodeDerLength(length) {
-  if (length < 0x80) return Buffer.from([length]);
-  if (length < 0x100) return Buffer.from([0x81, length]);
-  return Buffer.from([0x82, (length >> 8) & 0xff, length & 0xff]);
-}
-
-function normalizeUnsignedInteger(input) {
-  let value = input;
-  while (value.length > 1 && value[0] === 0) value = value.subarray(1);
-  return value[0] !== undefined && (value[0] & 0x80) !== 0 ? Buffer.concat([Buffer.from([0]), value]) : value;
-}
-
-function joseEcdsaSignatureToDer(raw, partLength) {
-  if (raw.length !== partLength * 2) throw new Error(`invalid ES256 signature length: ${raw.length}`);
-  const r = normalizeUnsignedInteger(raw.subarray(0, partLength));
-  const s = normalizeUnsignedInteger(raw.subarray(partLength));
-  const rPart = Buffer.concat([Buffer.from([0x02]), encodeDerLength(r.length), r]);
-  const sPart = Buffer.concat([Buffer.from([0x02]), encodeDerLength(s.length), s]);
-  const body = Buffer.concat([rPart, sPart]);
-  return Buffer.concat([Buffer.from([0x30]), encodeDerLength(body.length), body]);
-}
-
-/** Verify an AgentCardSignature `{protected, signature}` over `payloadObject`. Fail-closed. */
-export function verifyJwsSignature(payloadObject, signatureEntry, publicKeyPem) {
-  if (!signatureEntry || typeof signatureEntry.protected !== "string" || typeof signatureEntry.signature !== "string") {
-    return false;
-  }
-  let key;
-  try {
-    key = createPublicKey(publicKeyPem);
-  } catch {
-    return false;
-  }
-  const algorithm = algorithmForKey(key);
-  if (!algorithm) return false;
-  let payload;
-  try {
-    payload = base64url(canonicalizeJson(payloadObject));
-  } catch {
-    return false;
-  }
-  const signingInput = `${signatureEntry.protected}.${payload}`;
-  let signature = Buffer.from(signatureEntry.signature, "base64url");
-  try {
-    if (algorithm.alg === "ES256") signature = joseEcdsaSignatureToDer(signature, 32);
-    return cryptoVerify(algorithm.cryptoAlg, Buffer.from(signingInput, "utf8"), key, signature);
-  } catch {
-    return false;
-  }
-}
-
-/** Decode the `kid` claim from a JWS protected header, or null. */
-function kidOf(signatureEntry) {
-  try {
-    const header = JSON.parse(Buffer.from(signatureEntry.protected, "base64url").toString("utf8"));
-    return typeof header.kid === "string" ? header.kid : null;
-  } catch {
-    return null;
-  }
-}
-
-// ---------------------------------------------------------------------------
 // Provenance verification (mirrors provenance.ts semantics, standalone).
 // ---------------------------------------------------------------------------
 function hashTaskResult(result) {
-  const { provenance: _omit, ...rest } = result;
+  // Core result hash excludes BOTH attestation wrappers computed over it:
+  // provenance (signatures cover the hash) and finalizerVerdict (#1383 V-c: the
+  // finalizer binds subject.resultHash to this hash before embedding, so
+  // including it would be an unsatisfiable fixed point). No-op for reports
+  // without either field. Mirrors provenance.ts stripResultProvenance.
+  const { provenance: _prov, finalizerVerdict: _verdict, ...rest } = result;
   return sha256Prefix(canonicalizeJson(rest));
 }
 
 function fail(checks, id, detail) { checks.push({ id, ok: false, detail }); }
 function pass(checks, id) { checks.push({ id, ok: true }); }
+
+/**
+ * Verify ONE result's provenance chain — the report bundle's checks 3-5
+ * (schema, resultHash binding, worker signature, broker countersignature) —
+ * against keyring keys `{ [keyId]: pemPublicKey }`. Exported standalone
+ * (#1356 G2-d) so bundle-shaped consumers (the M3 attestation exporter) reuse
+ * this exact verification instead of re-implementing it.
+ *
+ * Returns { checks, workerSig, brokerCountersig } where workerSig is
+ * "verified" | "invalid" (verified = schema + hash + signature all pass) and
+ * brokerCountersig is "verified" | "invalid" | "absent". A missing countersig
+ * is reported as "absent" AND as a failed check — report-bundle parity, where
+ * an incomplete chain is fail-closed; enum consumers decide how to surface it.
+ */
+export function verifyResultProvenance(result, taskId, keys) {
+  const checks = [];
+  const prov = result && typeof result === "object" ? result.provenance : undefined;
+  if (!prov || typeof prov !== "object") {
+    fail(checks, "provenance-schema", "missing result.provenance");
+    return { checks, workerSig: "invalid", brokerCountersig: "absent" };
+  }
+  if (prov.schemaVersion !== RESULT_PROVENANCE_SCHEMA || prov.canonicalization !== CANONICALIZATION) {
+    fail(checks, "provenance-schema", "unsupported provenance schema/canonicalization");
+  } else {
+    pass(checks, "provenance-schema");
+  }
+  const actualHash = hashTaskResult(result);
+  if (actualHash !== prov.resultHash) {
+    fail(checks, "result-hash", "resultHash does not match sha256(JCS(result sans provenance)) — result was altered");
+  } else {
+    pass(checks, "result-hash");
+  }
+  const workerPem = keys[prov.workerKeyId];
+  if (!workerPem) {
+    fail(checks, "worker-signature", `workerKeyId '${prov.workerKeyId}' not in keyring (fail-closed)`);
+  } else {
+    const payload = {
+      schemaVersion: RESULT_PROVENANCE_SCHEMA,
+      canonicalization: CANONICALIZATION,
+      taskId,
+      claimedAt: prov.claimedAt,
+      resultHash: prov.resultHash,
+    };
+    if (verifyJwsSignature(payload, prov.workerSig, workerPem)) {
+      pass(checks, "worker-signature");
+    } else {
+      fail(checks, "worker-signature", "worker signature failed verification");
+    }
+  }
+  const counter = prov.brokerCountersig;
+  let brokerCountersig;
+  if (!counter || typeof counter !== "object") {
+    fail(checks, "broker-countersignature", "missing brokerCountersig (fail-closed)");
+    brokerCountersig = "absent";
+  } else {
+    const brokerPem = keys[counter.brokerKeyId];
+    if (!brokerPem) {
+      fail(checks, "broker-countersignature", `brokerKeyId '${counter.brokerKeyId}' not in keyring (fail-closed)`);
+      brokerCountersig = "invalid";
+    } else {
+      const payload = {
+        schemaVersion: BROKER_COUNTERSIG_SCHEMA,
+        canonicalization: CANONICALIZATION,
+        taskId,
+        verifiedAt: counter.verifiedAt,
+        workerSig: prov.workerSig,
+      };
+      if (verifyJwsSignature(payload, counter.sig, brokerPem)) {
+        pass(checks, "broker-countersignature");
+        brokerCountersig = "verified";
+      } else {
+        fail(checks, "broker-countersignature", "broker countersignature failed verification");
+        brokerCountersig = "invalid";
+      }
+    }
+  }
+  const workerSig = ["provenance-schema", "result-hash", "worker-signature"]
+    .every((id) => checks.find((c) => c.id === id)?.ok)
+    ? "verified"
+    : "invalid";
+  return { checks, workerSig, brokerCountersig };
+}
 
 /**
  * Verify a report bundle against a keyring `{ keys: { [keyId]: pemPublicKey } }`.
@@ -193,62 +174,11 @@ export function verifyReport(report, keyring) {
     pass(checks, "assurance-invariant");
   }
 
-  // 3-5. Result provenance: resultHash binding + worker signature + broker countersignature.
-  const prov = report.result.provenance;
-  if (prov.schemaVersion !== RESULT_PROVENANCE_SCHEMA || prov.canonicalization !== CANONICALIZATION) {
-    fail(checks, "provenance-schema", "unsupported provenance schema/canonicalization");
-  } else {
-    pass(checks, "provenance-schema");
-  }
-  const actualHash = hashTaskResult(report.result);
-  if (actualHash !== prov.resultHash) {
-    fail(checks, "result-hash", "resultHash does not match sha256(JCS(result sans provenance)) — result was altered");
-  } else {
-    pass(checks, "result-hash");
-  }
-  const workerPem = keys[prov.workerKeyId];
-  if (!workerPem) {
-    fail(checks, "worker-signature", `workerKeyId '${prov.workerKeyId}' not in keyring (fail-closed)`);
-  } else {
-    const payload = {
-      schemaVersion: RESULT_PROVENANCE_SCHEMA,
-      canonicalization: CANONICALIZATION,
-      taskId: report.taskId,
-      claimedAt: prov.claimedAt,
-      resultHash: prov.resultHash,
-    };
-    if (verifyJwsSignature(payload, prov.workerSig, workerPem)) {
-      pass(checks, "worker-signature");
-    } else {
-      fail(checks, "worker-signature", "worker signature failed verification");
-    }
-  }
-  const counter = prov.brokerCountersig;
-  if (!counter || typeof counter !== "object") {
-    fail(checks, "broker-countersignature", "missing brokerCountersig (fail-closed)");
-  } else {
-    const brokerPem = keys[counter.brokerKeyId];
-    if (!brokerPem) {
-      fail(checks, "broker-countersignature", `brokerKeyId '${counter.brokerKeyId}' not in keyring (fail-closed)`);
-    } else {
-      const payload = {
-        schemaVersion: BROKER_COUNTERSIG_SCHEMA,
-        canonicalization: CANONICALIZATION,
-        taskId: report.taskId,
-        verifiedAt: counter.verifiedAt,
-        workerSig: prov.workerSig,
-      };
-      if (verifyJwsSignature(payload, counter.sig, brokerPem)) {
-        pass(checks, "broker-countersignature");
-      } else {
-        fail(checks, "broker-countersignature", "broker countersignature failed verification");
-      }
-    }
-  }
+  // 3-5. Result provenance: resultHash binding + worker signature + broker
+  // countersignature — one source with the standalone verifier (#1356 G2-d).
+  checks.push(...verifyResultProvenance(report.result, report.taskId, keys).checks);
 
   // 6. Retrieval snapshots: each snapshot self-verifies (byteLen + contentHash + signature).
-  //    v1 verifies each source's authenticity; cryptographic result<->source binding is a
-  //    documented gap pending the K2 executor wiring (see contract §5).
   // An empty sources array is allowed (analysis with no external source).
   report.sources.forEach((snap, i) => {
     const id = `source[${i}]`;
@@ -272,6 +202,30 @@ export function verifyReport(report, keyring) {
     }
     return pass(checks, id);
   });
+
+  // 7. Result<->source binding (K2 #1374 / closes #1386 T2). A snapshot may only
+  //    claim to have fed this result if the SIGNED result declares its
+  //    contentHash in result.output.sources[], and every declared source must
+  //    have its snapshot present. Because result.output.sources is inside the
+  //    signed result, resultHash covers it — so the binding is tamper-bound.
+  //    Empty on both sides (analysis with no external source) is allowed.
+  const declaredSources = Array.isArray(report.result?.output?.sources)
+    ? report.result.output.sources.map((s) => s && s.contentHash).filter((h) => typeof h === "string")
+    : [];
+  const snapshotHashes = report.sources.map((s) => s && s.contentHash).filter((h) => typeof h === "string");
+  if (declaredSources.length > 0 || snapshotHashes.length > 0) {
+    const declaredSet = new Set(declaredSources);
+    const snapshotSet = new Set(snapshotHashes);
+    const unboundSnapshot = snapshotHashes.find((h) => !declaredSet.has(h));
+    const danglingDeclaration = declaredSources.find((h) => !snapshotSet.has(h));
+    if (unboundSnapshot) {
+      fail(checks, "source-binding", `snapshot ${unboundSnapshot} is not declared by result.output.sources (unbound source)`);
+    } else if (danglingDeclaration) {
+      fail(checks, "source-binding", `result.output.sources declares ${danglingDeclaration} with no matching snapshot`);
+    } else {
+      pass(checks, "source-binding");
+    }
+  }
 
   return { green: checks.every((c) => c.ok), checks };
 }

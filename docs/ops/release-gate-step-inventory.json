@@ -616,6 +616,16 @@
       "tier": "core",
       "retirement": "keep",
       "note": "#1150 operating-cost refactor guard: validates root/broker script tiers without deleting gates."
+    },
+    {
+      "name": "spec-broker-conformance",
+      "command": "node",
+      "args": [
+        "scripts/check-spec-broker-conformance.mjs"
+      ],
+      "tier": "core",
+      "retirement": "keep",
+      "note": "Spec<->broker conformance for docs/spec/verifiable-delegation-contract-v0.md (#1304 M6-b) — the delegation-contract spec must not drift from the broker source in either direction."
     }
   ]
 }

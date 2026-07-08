@@ -5,7 +5,7 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { spawnSync } from 'node:child_process';
 
-import { evaluateScorecard, evaluateScorecardWarnings, FAILURE_CATEGORIES } from './check-round-quality-scorecard.mjs';
+import { evaluateScorecard, evaluateScorecardWarnings, summarizeScorecardTrend, FAILURE_CATEGORIES } from './check-round-quality-scorecard.mjs';
 
 const repo = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const script = path.join(repo, 'scripts/check-round-quality-scorecard.mjs');
@@ -21,6 +21,27 @@ const VALID_ENTRY = {
 
 test('valid entry passes', () => {
   assert.deepEqual(evaluateScorecard({ entries: [VALID_ENTRY] }), []);
+});
+
+test('summarizeScorecardTrend reports last-N carryOver, deviation, and top failure category (#1291 R6)', () => {
+  const entries = [
+    // older entries that must be OUTSIDE the last-3 window
+    { ...VALID_ENTRY, id: 'old-1', metrics: { carryOverCount: 9, falseFindingCount: 0, reworkIssueCount: 0 }, failureBreakdown: { scope_drift: 9 } },
+    { ...VALID_ENTRY, id: 't-1', metrics: { carryOverCount: 1, falseFindingCount: 0, reworkIssueCount: 0, evidenceGateDeviationCount: 0 }, failureBreakdown: { environment: 2 } },
+    { ...VALID_ENTRY, id: 't-2', metrics: { carryOverCount: 0, falseFindingCount: 0, reworkIssueCount: 0, evidenceGateDeviationCount: 1 }, failureBreakdown: { environment: 1, other: 1 } },
+    { ...VALID_ENTRY, id: 't-3', metrics: { carryOverCount: 0, falseFindingCount: 0, reworkIssueCount: 0 }, failureBreakdown: {} },
+  ];
+  assert.equal(
+    summarizeScorecardTrend(entries, 3),
+    'trend(last 3): carryOver 1, deviation 1, top failure category: environment',
+  );
+  // no failure categories in the window -> explicit none
+  assert.equal(
+    summarizeScorecardTrend([{ ...VALID_ENTRY, metrics: { carryOverCount: 0, falseFindingCount: 0, reworkIssueCount: 0 } }], 3),
+    'trend(last 1): carryOver 0, deviation 0, top failure category: none',
+  );
+  // empty scorecard -> no trend line
+  assert.equal(summarizeScorecardTrend([], 5), '');
 });
 
 test('missing required metric, negative count, and bad date fail closed', () => {

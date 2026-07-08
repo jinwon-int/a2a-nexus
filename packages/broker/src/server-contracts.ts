@@ -150,6 +150,54 @@ export interface BrokerServerOptions extends BrokerRuntimeHotLimitOptions {
   /** Optional JWS kid header for the agent-card signature. Falls back to AGENT_CARD_SIGNING_KID. */
   agentCardSigningKid?: string;
   /**
+   * Result-provenance broker countersigning posture (#1382 G2, #1389 deploy gap).
+   * Falls back to A2A_RESULT_PROVENANCE_COUNTERSIGN.
+   * - "enforce": the broker MUST countersign worker result provenance — startup
+   *   fails loudly if no signing key is configured, so a code-vs-env skew is
+   *   caught at boot instead of failing worker submissions later.
+   * - "auto" (default): countersign when a signing key is present, otherwise pass
+   *   the worker-signed result through un-countersigned (never fails the task).
+   * - "off": provenance is passed through untouched — a kill switch that never
+   *   verifies or countersigns.
+   */
+  resultProvenanceCountersign?: "enforce" | "auto" | "off";
+  /**
+   * JSON file with the declarative worker-class policy document (#1355 G1),
+   * schema a2a.broker.policy.v1. Falls back to A2A_BROKER_POLICY_FILE. The
+   * document's own `mode` field decides warn vs enforce; a configured-but-
+   * invalid or unreadable document fails startup loudly. Unset = no policy
+   * evaluation (legacy behavior).
+   */
+  brokerPolicyFile?: string;
+  /**
+   * JSON file with the deterministic anonymous knowledge snapshot (#1373 K1),
+   * schema a2a.injected-knowledge.v1, built offline by
+   * scripts/build-injected-knowledge.mjs. Falls back to
+   * A2A_INJECTED_KNOWLEDGE_FILE. A configured-but-invalid or unreadable
+   * snapshot fails startup loudly. Unset = no injection (legacy behavior).
+   */
+  injectedKnowledgeFile?: string;
+  /**
+   * Accept-path finalizer-verdict posture (#1383 V-c): off (default) | warn |
+   * enforce. Falls back to A2A_FINALIZER_VERDICT_ENFORCEMENT. An invalid value
+   * fails startup loudly. Applies only to tasks that opt in via
+   * payload.requireFinalizerVerdict; off keeps completion byte-identical.
+   */
+  finalizerVerdictEnforcement?: "off" | "warn" | "enforce";
+  /**
+   * Accepted forward clock skew (seconds) on the A2A HTTP signature `created`
+   * timestamp (#1402). Falls back to A2A_SIGNATURE_CLOCK_SKEW_SEC (default 2).
+   * 0 restores strict zero-tolerance behavior; `expires` is always strict.
+   */
+  a2aSignatureClockSkewSeconds?: number;
+  /**
+   * JSON finalizer keyring file ({ "keys": { "finalizer:<id>": "<SPKI PEM>" } })
+   * for in-broker static-key verdict signature verification (#1383 V-c). Falls
+   * back to A2A_FINALIZER_KEYRING_FILE. Invalid file fails startup loudly; unset
+   * defers signature authenticity to the repo merge gate.
+   */
+  finalizerKeyringFile?: string;
+  /**
    * JSON trust-anchor file ({ "<brokerId>": "<SPKI public key PEM>" }) for
    * the cross-broker terminal-brief receiver. When set, every inbound
    * projection must carry a request-bound `senderProof` (a JWS over
@@ -188,6 +236,8 @@ export interface BrokerServerOptions extends BrokerRuntimeHotLimitOptions {
   staleReaperEnabled?: boolean;
   staleReaperIntervalSec?: number;
   staleReaperOlderThanSec?: number;
+  /** Idle threshold before a live wave plan is flagged wave.stalled; 0 disables the wave sweep. */
+  waveStaleAfterSec?: number;
   /**
    * Max times the stale-task reaper (or manual requeue) may recycle a single task back to
    * `queued` before dead-lettering it to `failed`. `0` disables the cap. Env:
@@ -244,6 +294,7 @@ export interface BrokerStaleReaperStatus {
   enabled: boolean;
   intervalSec: number;
   olderThanSec: number;
+  waveStaleAfterSec: number;
   maxRequeueAttempts: number;
   lastRunAt?: string;
   lastRequeued?: number;
@@ -257,6 +308,16 @@ export interface BrokerServerRuntime {
   server: Server;
   handler: RequestListener<typeof IncomingMessage, typeof ServerResponse>;
   broker: InMemoryA2ABroker;
+  /**
+   * Enter drain mode (#1405): every response gains `Connection: close`, task
+   * poll/claim are refused with 503 broker_draining + Retry-After, and idle
+   * keep-alive connections are closed. In-flight submission/lifecycle routes
+   * keep working. Idempotent. Driven by the SIGTERM drain window
+   * (A2A_SHUTDOWN_DRAIN_MS) in server-lifecycle.ts.
+   */
+  beginDrain: () => void;
+  /** Whether the server is currently draining for shutdown. */
+  isDraining: () => boolean;
   /** Run the stale-task reaper sweep once. Returns the number of requeued tasks. */
   runStaleReaperSweep: () => number;
   /** Stop the periodic stale-task reaper timer (if started). Safe to call multiple times. */
@@ -303,6 +364,7 @@ export interface BrokerServerRuntime {
     staleReaperEnabled: boolean;
     staleReaperIntervalSec: number;
     staleReaperOlderThanSec: number;
+    waveStaleAfterSec: number;
     maxRequeueAttempts: number;
     taskSubscribeHeartbeatSec: number;
     peerStatusEnabled: boolean;

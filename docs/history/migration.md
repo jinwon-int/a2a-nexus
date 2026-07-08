@@ -14,7 +14,7 @@ canonical:
 `a2a-plane` is the public umbrella, contracts, fixtures, release/readiness gate,
 and coordination workspace. The current `packages/*` mirrors are not green for
 canonical ownership. See
-[`history/monorepo-ci-parity-matrix.md`](history/monorepo-ci-parity-matrix.md).
+[`history/monorepo-ci-parity-matrix.md`](../history/monorepo-ci-parity-matrix.md).
 
 ## What This Migration Is
 
@@ -28,7 +28,7 @@ This migration is staged:
 6. Ask for explicit operator sign-off before any canonical flip.
 
 The branch protection and release/package policy review is recorded by
-[`release/monorepo-branch-release-package-policy.md`](release/monorepo-branch-release-package-policy.md)
+[`release/monorepo-branch-release-package-policy.md`](../release/monorepo-branch-release-package-policy.md)
 for #517 (a2a-plane#517, internal tracker private). It keeps
 branch protection changes, GitHub Releases, npm/GitHub Packages, Docker/GHCR
 publication, and canonical flip actions blocked until separate explicit

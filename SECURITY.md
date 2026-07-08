@@ -4,7 +4,7 @@
 
 This repository is public and remains an **alpha** project. Public visibility means the code, docs, issues, and PRs are readable by the public; it does not imply production readiness, stability guarantees, stable release support, package publication, or permission to use production infrastructure.
 
-Broader promotion (stable release, announcements, public docs site, package/image publication, production deployment, and live operations) remains blocked on the readiness gates recorded in [`docs/public-readiness.md`](docs/public-readiness.md) and separate explicit operator approval.
+Broader promotion (stable release, announcements, public docs site, package/image publication, production deployment, and live operations) remains blocked on the readiness gates recorded in [`docs/history/public-readiness.md`](docs/history/public-readiness.md) and separate explicit operator approval.
 
 ## Reporting a vulnerability
 

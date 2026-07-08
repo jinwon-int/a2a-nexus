@@ -15,6 +15,7 @@ import {
   resolveWorkerThinkingInput,
 } from "./worker-model-policy.mjs";
 import { sourceCarrierStats } from "./lib/source-carriers.mjs";
+import { payloadWithRetrievalSnapshotSourceCarriers } from "./lib/retrieval-snapshot-carriers.mjs";
 import { evaluateDeclaredWriteSetGate } from "../dist/core/runtime-safety-gates.js";
 
 const HANDLER_VERSION = "0.2.14";
@@ -193,6 +194,59 @@ function hybridDeclaredScopePreflight(task, touchedFiles) {
         filesChanged,
         outsideDeclaredScope: decision.outOfScopeFiles,
         reason: decision.reason,
+        buildInfo: BUILD_INFO,
+      },
+    },
+  };
+}
+
+/**
+ * Independently read the ACTUAL touched files from the runner's git worktree
+ * (#1376). Unlike hybridDeclaredScopePreflight — which trusts the runner's
+ * self-reported filesChanged and is a lint/readback guard — this inspects the
+ * real git state, so an under-reporting runner (out-of-scope write +
+ * filesChanged:[]) cannot slip past. Returns repo-relative paths, or undefined
+ * when the workDir is not a git-inspectable worktree (documented degradation to
+ * self-report; the v1 trust posture in #1376 covers that gap).
+ */
+function hybridActualTouchedFiles(workDir) {
+  if (!workDir) return undefined;
+  const res = spawnSync("git", ["-C", workDir, "status", "--porcelain", "-uall", "-z"], { encoding: "utf8" });
+  if (res.status !== 0 || typeof res.stdout !== "string") return undefined;
+  const files = [];
+  // -z: NUL-separated records; each record is "XY <path>" (renames add a second
+  // NUL-terminated original path, which we skip — the new path is authoritative).
+  const records = res.stdout.split("\u0000");
+  for (let i = 0; i < records.length; i += 1) {
+    const record = records[i];
+    if (!record) continue;
+    const status = record.slice(0, 2);
+    const path = record.slice(3);
+    if (!path) continue;
+    files.push(path);
+    if (status[0] === "R" || status[0] === "C") i += 1; // skip the rename/copy source path
+  }
+  return files;
+}
+
+function hybridWritePointPreflight(task, parsed) {
+  if (!isHybridSubagentTask(task)) return undefined;
+  const actual = hybridActualTouchedFiles(safeText(parsed?.workDir, ""));
+  if (actual === undefined) return undefined; // not git-inspectable — self-report readback still applies
+  const declared = declaredScopePaths(task);
+  const decision = evaluateDeclaredWriteSetGate({ declaredWriteSet: declared, touchedFiles: actual });
+  if (decision.allowed) return undefined;
+  return {
+    error: {
+      code: "hybrid_declared_scope_writepoint_violation",
+      message: `hybrid-subagent runner WROTE files outside declaredScope.paths (independent git readback, not runner self-report): ${decision.outOfScopeFiles.join(", ")}`,
+      details: {
+        executionMode: "hybrid-subagent",
+        declaredScopePaths: declared,
+        actualTouchedFiles: actual,
+        outsideDeclaredScope: decision.outOfScopeFiles,
+        reason: decision.reason,
+        readback: "git-worktree",
         buildInfo: BUILD_INFO,
       },
     },
@@ -887,7 +941,21 @@ if (existing?.html_url) {
 }
 
 function runOpenClawAnalysisBridge(task, env = process.env) {
-  const payload = taskPayload(task);
+  let payload = taskPayload(task);
+  let suppliedSnapshotSources = [];
+  try {
+    const augmented = payloadWithRetrievalSnapshotSourceCarriers(payload, env);
+    payload = augmented.payload;
+    suppliedSnapshotSources = augmented.sources;
+  } catch (error) {
+    return {
+      error: {
+        code: "retrieval_snapshot_invalid",
+        message: `signed retrieval snapshot payload rejected before analysis bridge: ${error.message}`,
+        details: { buildInfo: BUILD_INFO },
+      },
+    };
+  }
   // Resolve effective worker model/thinking from task payload overrides
   const { model: effectiveModel, fromPayload: modelFromPayload } = resolveWorkerModel(task, env);
   const { thinking: effectiveThinking, fromPayload: thinkingFromPayload } = resolveWorkerThinking(task);
@@ -1079,6 +1147,7 @@ function runOpenClawAnalysisBridge(task, env = process.env) {
     strictJsonInstructionApplied: Boolean(strictJsonInstruction) || undefined,
     promptPayloadLimit,
     bridgeInputMode: "payload_file",
+    sources: suppliedSnapshotSources.length ? suppliedSnapshotSources : undefined,
     effectiveModel,
     effectiveThinking,
     modelFromPayload: modelFromPayload || undefined,
@@ -1925,6 +1994,10 @@ function runDockerRunner(task, env = process.env) {
     if (filesChanged.length) output.filesChanged = filesChanged;
     const hybridScopePreflight = hybridDeclaredScopePreflight(task, filesChanged);
     if (hybridScopePreflight) return hybridScopePreflight;
+    // Defense-in-depth (#1376): independent git-worktree readback catches an
+    // under-reporting runner that wrote out of scope but hid it in filesChanged.
+    const hybridWritePoint = hybridWritePointPreflight(task, parsed);
+    if (hybridWritePoint) return hybridWritePoint;
     const risks = normalizeStringArray(parsed.risks);
     if (risks.length) output.risks = risks;
 

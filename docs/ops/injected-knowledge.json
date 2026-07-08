@@ -1,0 +1,12 @@
+{
+  "schemaVersion": "a2a.injected-knowledge.v1",
+  "asOf": "2026-07-07",
+  "source": "reliability-ledger+taxonomy",
+  "hints": [
+    {
+      "taskClass": "review",
+      "adapterClass": "hermes-analysis",
+      "text": "adapterClass=hermes-analysis taskClass=review window=2026-07: substantive 7/10; top failure classes: analysis_bridge_invalid_json 1/10, failed 1/10"
+    }
+  ]
+}

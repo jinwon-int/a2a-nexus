@@ -48,6 +48,7 @@ This rule is machine-monitored (#1210): the scheduled [`closeout-hygiene`](../.g
 ### Finalizer judgment rules (#1220)
 
 - **Oracle independence.** Never judge a round with a detector or gate that the same round built — the detector's blind spots are the implementation's blind spots (#1194 RC-A; observed in #1204). The reference for completion is always the issue's own acceptance criteria, read from the issue text.
+- **Finalizer purity.** Verification/finalizer lanes must be reproducible from repository-visible evidence and the preserved task payload, not private memory, live web drift, or ad hoc execution. The Claude-backed finalizer/analysis tool policy is `Read Glob Grep` only; `Bash`, `Edit`, `Write`, `NotebookEdit`, `WebFetch`, and `WebSearch` are denied. Hermes-backed analysis lanes are pinned to the repository's finalizer-safe toolset and must not widen that policy via worker environment overrides. Verdicts must cite concrete file:line evidence, test output, workflow result, or commit/PR identifiers. K1 memory hints and K2 captured content may inform worker generation inputs, but finalizer verdicts may only rely on frozen/repo-visible artifacts; refetching live content is drift detection, not proof of completion.
 - **Standard rejection reasons.** A PR that adds a new gate, scanner rule, or test without a red→green log (the check failing on the pre-change tree) is returned, not merged. A task whose spec demands mutation evidence is returned without the mutation log. These are standard dispositions, not discretionary calls.
 - **Verification methodology.** When judging that an artifact is absent, sweep synonyms before concluding (a doc named `process-local-*` satisfies a "per-process" requirement), and trace config-layer defaults before reading runtime conditionals as opt-in (`config.ts` defaults flow into `runner.ts` guards). Both failure modes produced false findings in #1209.
 - **Red→green evidence is a blocking closeout check (#1236).** A lane PR that introduces or extends a gate, scanner rule, or validator must carry the pre-change FAIL log in its PR body at review time. A finalizer retro-filling the log afterward (as happened for #1233 and #1234) is a recorded deviation (`evidenceGateDeviationCount` in the round-quality scorecard), not a substitute — closing the lane with neither the log nor a deviation record is a NO-GO.
@@ -78,6 +79,28 @@ When a lane fails, the PR body or finalizer disposition readback must preserve e
 The broker standard field is `result.error.details` / `task.error.details` with optional `stage` and `excerpt` keys. `excerpt` must be operator-safe: no raw prompts, session dumps, secrets, personal data, private host paths, provider targets, or full unbounded logs. The broker normalizer bounds and redacts `excerpt`; writers should still submit only the minimum lines needed to explain the failure.
 
 `other` is still allowed, but it must explain why a narrower category is impossible. The scorecard gate prints a warning when consecutive new scorecard entries have `failureBreakdown.other` as the majority, because that pattern means failed-lane readback is not giving the finalizer enough repo-visible evidence.
+
+#### Round replay before live re-dispatch (#1302)
+
+Before burning a live round on a `projection`/`dispatch`-stage failure
+hypothesis, bisect the stage locally by replaying the preserved payload
+through the deterministic orchestration paths:
+
+```
+node packages/broker/scripts/replay-round.mjs --payload <preserved-payload.json> [--task task.json] [--result result.json] [--json]
+```
+
+Stages replayed: readiness → carrier projection → bridge-input files (with the
+3-point carrier stats and the message-excerpt drift probe — the zero_files
+signature) → the deterministic source-only bridge → acceptance judgment over a
+preserved worker result. Provider/model calls, worker dispatch, GitHub side
+effects, and acceptance command execution are never replayed (explicit skip
+markers). The replay is read-only and prints live-comparable error codes
+(`source_projection_empty`, `projection_zero_files`, …), so a
+projection-classified incident should reproduce here before any re-dispatch;
+attaching the replay log to the incident issue is recommended (not required).
+Committed regression fixtures live in
+`packages/broker/scripts/lib/replay-fixtures/`.
 
 ### Dialectic health counters (#1296)
 
@@ -136,10 +159,31 @@ Comparison protocol:
 2. Use the existing quality axes: review/finalizer defects, `reworkIssueCount`,
    `falseFindingCount`, `evidenceGateDeviationCount`, and failure narratives.
 3. Use only the duration band for speed; do not record exact timestamps or
-   session identifiers.
-4. Promote a mode to the default recommendation only after three consecutive
+   session identifiers. **The band covers the whole wave wall-clock, including
+   failed or discarded dispatch rounds before the successful one** — dispatch
+   friction is part of a mode's real cost, and counting only the successful
+   round understates it (ratified after Wave 1, where rounds r1–r3 were
+   excluded from evidence but still consumed wall-clock). Record
+   rounds-to-success as a one-line note in the entry narrative. Do not
+   backfill earlier entries.
+4. **Speed comparison requires a measured solo control.** Pre-H3 baseline
+   entries (the #1289 L-broker series) carry quality counters but no duration
+   bands, so a speed verdict against them is indeterminate. A promotion series
+   must therefore include at least one fresh solo control wave on same-class
+   work with the band recorded, run under the same evidence gates and the same
+   finalizer verification as the h1/h2 waves (implementation mode is the only
+   variable).
+5. Promote a mode to the default recommendation only after three consecutive
    comparable waves show quality no worse than solo and a better duration band.
    Any quality regression blocks promotion pending cause analysis.
+
+Solo baseline reference (H3-c; #1289 L-broker series, same-class R4 seam work,
+entries unchanged): across the seven entries, `reworkIssueCount` and
+`falseFindingCount` were 0 throughout, `evidenceGateDeviationCount` was 1 in
+two waves, and substantive-lane rates ranged roughly 63–95%. No duration bands
+exist for these entries (pre-H3-a) — hence rule 4. Quality parity against this
+baseline means holding the zero counters; the substantive-lane rate is a
+secondary signal, not a promotion axis.
 
 ## Independent review evidence for medium+ tasks (#1237)
 
@@ -174,6 +218,23 @@ Use this contract as guidance for medium+ tasks when declared scope spans multip
 ## Approval records
 
 Approval-sensitive execution records live under `fixtures/approvals/` and are validated by `npm run check:approval-records`. New approval records must use `approverRole: "operator"` and must not include personal-channel or raw-secret fields.
+
+## Dated report naming and placement (#1290)
+
+A dated report — any write-up whose value is the record of a completed
+investigation, validation, triage, or closeout (name shape
+`<topic>-YYYY-MM[-vN].md`) — is created under `docs/history/` from the start,
+with a one-line row added to `docs/history/README.md`. It never lands in the
+`docs/` top level, which is reserved for the living user and operator surface
+(`docs/README.md` is the tier index). Machine-consumed dated evidence (JSON
+ledgers, scorecards, registries) stays under `docs/ops/` while a gate reads
+it, keeping the same `<topic>-YYYY-MM[-vN]` name shape; when its gate
+retires, it moves to `docs/history/` in the same change. A living document
+that later completes (an executed plan, a finished roadmap) moves to
+`docs/history/` with every repository reference updated in the same PR —
+`npm run check:markdown-links` is the safety net — and leaves a one-line
+forwarding stub only when the old path was externally linkable (linked from
+the root README or SECURITY).
 
 ## Agent Olympics Boundary
 

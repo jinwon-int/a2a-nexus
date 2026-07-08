@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import { createHash } from "node:crypto";
 import { chmodSync, existsSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -33,6 +34,29 @@ function task(overrides = {}) {
       sourceOnly: true,
       ...overrides.payload,
     },
+    ...overrides,
+  };
+}
+
+function sha256Prefix(text) {
+  return `sha256:${createHash("sha256").update(text, "utf8").digest("hex")}`;
+}
+
+function signedSnapshotFixture(overrides = {}) {
+  const content = overrides.content ?? "# source-grounded analysis fixture\nconst answer = 42;\n";
+  return {
+    schemaVersion: "a2a.retrieval.snapshot.v1",
+    canonicalization: "rfc8785-jcs-v1",
+    source: "github",
+    repo: "jinwon-int/a2a-nexus",
+    requestedRef: "838e58a7587d0f352cc1d19e6a0c5edae9903251",
+    resolvedRef: "838e58a7587d0f352cc1d19e6a0c5edae9903251",
+    path: "packages/broker/README.md",
+    fetchedAt: "2026-07-06T00:00:00.000Z",
+    byteLen: Buffer.byteLength(content, "utf8"),
+    contentHash: sha256Prefix(content),
+    content,
+    signature: { protected: "signed-header", signature: "signed-body" },
     ...overrides,
   };
 }
@@ -813,6 +837,106 @@ process.stdout.write(JSON.stringify({
   }
 });
 
+test("H2 RED: write-point readback catches an under-reporting runner (out-of-scope write, filesChanged:[]) (#1376)", () => {
+  const dir = mkdtempSync(join(tmpdir(), "a2a-h2-writepoint-red-"));
+  const runner = join(dir, "fake-runner.mjs");
+  // The runner writes an OUT-OF-SCOPE file into a git worktree it controls but
+  // UNDER-REPORTS filesChanged:[] — the self-report gate would pass. The handler
+  // must independently git-inspect workDir and fail closed.
+  writeHybridRunnerStub(runner, `
+import { mkdtempSync, mkdirSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join, dirname } from "node:path";
+import { spawnSync } from "node:child_process";
+const wd = mkdtempSync(join(tmpdir(), "h2-runner-worktree-"));
+spawnSync("git", ["-C", wd, "init", "-q"], { encoding: "utf8" });
+const evil = join(wd, "packages/broker/src/core/store.ts");
+mkdirSync(dirname(evil), { recursive: true });
+writeFileSync(evil, "// out-of-scope write the runner hid\\n");
+process.stdout.write(JSON.stringify({
+  ok: true,
+  status: "pr_opened",
+  prUrl: "https://github.com/jinwon-int/a2a-nexus/pull/9994",
+  branch: "h2-underreport",
+  workDir: wd,
+  filesChanged: [],
+  tests: ["under-report should be caught by write-point readback"]
+}) + "\\n");
+`);
+
+  try {
+    const result = handleTask(patchTask({
+      id: "task-h2-underreport",
+      payload: {
+        repo: "jinwon-int/a2a-nexus",
+        issue: "#1376",
+        issueUrl: "https://github.com/jinwon-int/a2a-nexus/issues/1376",
+        executionMode: "hybrid-subagent",
+        subagentBudget: { max: 2, remaining: 1 },
+        declaredScope: { paths: ["packages/broker/src/core/broker-exchange-task-decision.ts"] },
+      },
+    }), {
+      PATH: process.env.PATH,
+      A2A_EXECUTOR_MODE: "docker",
+      A2A_DOCKER_RUNNER_BIN: runner,
+    });
+
+    assert.equal(result.result, undefined, "under-reporting runner must not produce accepted evidence");
+    assert.equal(result.error?.code, "hybrid_declared_scope_writepoint_violation");
+    assert.deepEqual(result.error?.details?.outsideDeclaredScope, ["packages/broker/src/core/store.ts"]);
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test("H2 GREEN: write-point readback accepts an in-scope actual git diff (#1376)", () => {
+  const dir = mkdtempSync(join(tmpdir(), "a2a-h2-writepoint-green-"));
+  const runner = join(dir, "fake-runner.mjs");
+  writeHybridRunnerStub(runner, `
+import { mkdtempSync, mkdirSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join, dirname } from "node:path";
+import { spawnSync } from "node:child_process";
+const wd = mkdtempSync(join(tmpdir(), "h2-runner-worktree-"));
+spawnSync("git", ["-C", wd, "init", "-q"], { encoding: "utf8" });
+const inScope = join(wd, "packages/broker/src/core/broker-exchange-task-decision.ts");
+mkdirSync(dirname(inScope), { recursive: true });
+writeFileSync(inScope, "// in-scope change\\n");
+process.stdout.write(JSON.stringify({
+  ok: true,
+  status: "pr_opened",
+  prUrl: "https://github.com/jinwon-int/a2a-nexus/pull/9993",
+  branch: "h2-writepoint-ok",
+  workDir: wd,
+  filesChanged: ["packages/broker/src/core/broker-exchange-task-decision.ts"],
+  tests: ["in-scope write-point readback passes"]
+}) + "\\n");
+`);
+
+  try {
+    const result = handleTask(patchTask({
+      id: "task-h2-writepoint-ok",
+      payload: {
+        repo: "jinwon-int/a2a-nexus",
+        issue: "#1376",
+        issueUrl: "https://github.com/jinwon-int/a2a-nexus/issues/1376",
+        executionMode: "hybrid-subagent",
+        subagentBudget: { max: 2, remaining: 1 },
+        declaredScope: { paths: ["packages/broker/src/core/broker-exchange-task-decision.ts"] },
+      },
+    }), {
+      PATH: process.env.PATH,
+      A2A_EXECUTOR_MODE: "docker",
+      A2A_DOCKER_RUNNER_BIN: runner,
+    });
+
+    assert.equal(result.error, undefined, result.error?.message ?? "");
+    assert.equal(result.result?.output?.prUrl, "https://github.com/jinwon-int/a2a-nexus/pull/9993");
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
 test("github-read-only-validation uses the read-only analysis bridge when enabled (#884)", () => {
   const dir = mkdtempSync(join(tmpdir(), "a2a-openclaw-analysis-"));
   const bin = join(dir, "fake-openclaw.mjs");
@@ -861,6 +985,104 @@ process.stdout.write(JSON.stringify({ text: JSON.stringify(response) }) + "\\n")
     assert.match(result.result.summary, /analysis bridge done/);
     assert.equal(result.result.note, "read-only A2A analysis completed through analysis bridge");
     assert.deepEqual(result.result.output.findings, ["bridge invoked"]);
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test("analysis bridge injects signed retrieval snapshots and declares result.output.sources (#1378 K2 wave2)", () => {
+  const dir = mkdtempSync(join(tmpdir(), "a2a-analysis-snapshot-binding-"));
+  const bin = join(dir, "fake-openclaw-snapshot.mjs");
+  const snapshot = signedSnapshotFixture();
+  writeFileSync(bin, `#!/usr/bin/env node
+import { readFileSync } from "node:fs";
+const payload = JSON.parse(readFileSync(process.env.A2A_ANALYSIS_PAYLOAD_FILE, "utf8"));
+const files = payload.sourceBundle?.files || [];
+if (files.length !== 1) throw new Error("expected exactly one retrieval snapshot source carrier");
+if (!files[0].untrustedExternalData) throw new Error("snapshot carrier must be marked untrustedExternalData");
+if (!String(files[0].contentText || "").includes("<untrusted_external_data ")) throw new Error("snapshot content must be delimiter-safe external data");
+if (String(files[0].contentText || "").includes("signature")) throw new Error("source carrier text must not expose signature material");
+const response = {
+  status: "done",
+  summary: "snapshot-backed analysis reached bridge",
+  findings: ["bridge consumed signed snapshot carrier"],
+  risks: [],
+  recommendations: ["declare consumed snapshot in result.output.sources"],
+  evidenceRefs: [files[0].repo + ":" + files[0].path]
+};
+process.stdout.write(JSON.stringify({ payloads: [{ text: JSON.stringify(response) }] }) + "\\n");
+`);
+  chmodSync(bin, 0o755);
+  try {
+    const result = handleTask({
+      id: "task-snapshot-binding",
+      intent: "analyze",
+      assignedWorkerId: "workergamma",
+      message: "Analyze from signed retrieval snapshot only",
+      payload: {
+        mode: "github-read-only-validation",
+        repo: "jinwon-int/a2a-nexus",
+        issue: "#1378",
+        sourceOnly: true,
+        readOnlyValidation: true,
+        noLive: true,
+        noGitHubWrites: true,
+        sourceBundle: { files: [] },
+        retrievalSnapshots: [snapshot],
+      },
+    }, {
+      PATH: process.env.PATH,
+      A2A_EXECUTOR_MODE: "builtin",
+      A2A_OPENCLAW_ANALYSIS_ENABLED: "1",
+      A2A_OPENCLAW_ANALYSIS_BIN: bin,
+      A2A_OPENCLAW_ANALYSIS_TIMEOUT_SEC: "1",
+      A2A_NODE_ID: "workergamma",
+    });
+
+    assert.equal(result.error, undefined);
+    assert.equal(result.result.output.analysisStatus, "done");
+    assert.equal(result.result.output.sources.length, 1);
+    assert.match(result.result.output.sources[0].sourceId, /^github-retrieval:sha256:[0-9a-f]{64}$/);
+    assert.equal(result.result.output.sources[0].contentHash, snapshot.contentHash);
+    assert.doesNotMatch(JSON.stringify(result.result.output.sources), /source-grounded analysis fixture/);
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test("analysis bridge rejects unsigned retrieval snapshots before invoking bridge (#1378 K2 wave2)", () => {
+  const dir = mkdtempSync(join(tmpdir(), "a2a-analysis-unsigned-snapshot-"));
+  const bin = join(dir, "must-not-run.mjs");
+  writeFileSync(bin, `#!/usr/bin/env node\nthrow new Error("analysis bridge must not run for unsigned snapshots");\n`);
+  chmodSync(bin, 0o755);
+  try {
+    const snapshot = signedSnapshotFixture();
+    delete snapshot.signature;
+    const result = handleTask({
+      id: "task-unsigned-snapshot",
+      intent: "analyze",
+      assignedWorkerId: "workergamma",
+      message: "Analyze from signed retrieval snapshot only",
+      payload: {
+        mode: "github-read-only-validation",
+        sourceOnly: true,
+        readOnlyValidation: true,
+        noLive: true,
+        noGitHubWrites: true,
+        sourceBundle: { files: [] },
+        retrievalSnapshots: [snapshot],
+      },
+    }, {
+      PATH: process.env.PATH,
+      A2A_EXECUTOR_MODE: "builtin",
+      A2A_OPENCLAW_ANALYSIS_ENABLED: "1",
+      A2A_OPENCLAW_ANALYSIS_BIN: bin,
+      A2A_OPENCLAW_ANALYSIS_TIMEOUT_SEC: "1",
+      A2A_NODE_ID: "workergamma",
+    });
+
+    assert.equal(result.error.code, "retrieval_snapshot_invalid");
+    assert.match(result.error.message, /missing signed snapshot signature/);
   } finally {
     rmSync(dir, { recursive: true, force: true });
   }

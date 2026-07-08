@@ -185,6 +185,9 @@ export type AuditAction =
   | "task.created"
   | "task.approved"
   | "task.approval_rejected"
+  | "task.policy_warned"
+  | "task.policy_denied"
+  | "task.finalizer_verdict_warned"
   | "task.claimed"
   | "task.started"
   | "task.heartbeat"
@@ -205,6 +208,7 @@ export type AuditAction =
   | "worker.registered"
   | "worker.heartbeat"
   | "worker.identity_churn_detected"
+  | "wave.stalled"
   | "broker.cleanup.applied";
 export type A2AWorkerEnvironment = "research" | "staging" | "live";
 export type WorkerStatus = "online" | "stale";
@@ -377,6 +381,17 @@ export interface A2ATaskRequest {
     requiresApproval?: boolean;
     liveImpact?: boolean;
     targetEnvironment?: A2AWorkerEnvironment;
+    /**
+     * Broker-owned anonymous memory injection (#1373 K1): counts-only hint
+     * sentences selected from a deterministic asOf-pinned snapshot when the
+     * requester opts in via payload.injectKnowledge. Worker-generation input
+     * only — never a finalizer/verdict input (K3 #1372).
+     */
+    injectedKnowledge?: {
+      source: string;
+      asOf: string;
+      hints: string[];
+    };
   };
   createdAt: string;
 }
@@ -429,6 +444,13 @@ export interface TaskResult {
   validations?: TaskValidationPayload[];
   /** Optional signed worker/broker provenance for result payloads (G2 v1 additive). */
   provenance?: unknown;
+  /**
+   * Optional signed finalizer verdict bound to this result (#1383 V-c). The
+   * broker accept-path checks its structure/decision/subject-binding/independence
+   * when the task opts in via payload.requireFinalizerVerdict; signature
+   * authenticity is the repo merge gate's job (documented v0 boundary).
+   */
+  finalizerVerdict?: unknown;
   apply?: TaskApplyPayload;
 }
 
@@ -788,7 +810,7 @@ export interface AuditEvent {
   id: string;
   actorId: string;
   action: AuditAction;
-  targetType: "proposal" | "artifact" | "validation" | "worker" | "task" | "exchange" | "exchange-message" | "broker";
+  targetType: "proposal" | "artifact" | "validation" | "worker" | "task" | "exchange" | "exchange-message" | "broker" | "wave-plan";
   targetId: string;
   proposalId?: string;
   note?: string;

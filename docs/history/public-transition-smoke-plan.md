@@ -75,4 +75,4 @@ Prepare, but do not publish, A2A Nexus announcement copy that includes:
 - [ ] What is not included: source repository histories, production deploy state, secrets, provider IDs, Telegram IDs, live outbox ACK state, or private runtime/bootstrap context.
 - [ ] Security contact and issue-reporting guidance.
 - [ ] A note that npm/Docker artifacts and public releases remain separate approval-gated actions.
-- [ ] Korean and English short announcement text with alpha/feedback-welcome tone from [`promotion-announcement.md`](./promotion-announcement.md).
+- [ ] Korean and English short announcement text with alpha/feedback-welcome tone from [`promotion-announcement.md`](../promotion-announcement.md).

@@ -747,6 +747,7 @@
         "to": "2026-07-05"
       },
       "scope": "#1299 M1 lane reliability ledger (#1358) + two-team design round (finalizer consensus BLOCKED — classifier self-interference defect discovered, FG1 #1359)",
+      "knowledgeInjection": "off",
       "metrics": {
         "carryOverCount": 0,
         "falseFindingCount": 1,
@@ -959,6 +960,217 @@
         "Safety boundary: broker-only deploy/recreate and bounded operator live canary; no Hermes Gateway restart, provider send outside the canary, DB/outbox/ACK/replay/prune/migration, release/tag/package publication, GitHub settings mutation, force-push/history rewrite, or raw sensitive-value recording."
       ],
       "recordedAt": "2026-07-06"
+    },
+    {
+      "id": "a2a-nexus-g2-v0c-dogfood-live-provenance-20260706",
+      "window": {
+        "from": "2026-07-06",
+        "to": "2026-07-06"
+      },
+      "scope": "#1382 G2 result-provenance fleet deployment plus #1378/#1381 V0-c dogfood full-fleet live canary on two deployed broker groups and nine worker classes at 137da5527ac0a227bb3b72e1aaede3033ba0f846, independently offline-verified by the external finalizer",
+      "implementationMode": "h1-pipeline",
+      "implementationDurationBand": "1-4h",
+      "metrics": {
+        "carryOverCount": 0,
+        "falseFindingCount": 0,
+        "reworkIssueCount": 0,
+        "evidenceGateDeviationCount": 0,
+        "substantiveLaneCount": 9,
+        "dispatchedLaneCount": 9
+      },
+      "failureBreakdown": {
+        "environment": 1
+      },
+      "evidence": [
+        "Deployment evidence: two deployed broker groups were rebuilt/recreated at 137da5527ac0a227bb3b72e1aaede3033ba0f846 and nine worker classes were artifact-synced/restarted with per-worker signing keys registered in the broker HTTP-signature registries (9/9 key-registry preflight OK). Identifiers redacted to broker-group/worker-class counts per public-readiness precedent.",
+        "Canary evidence: 9/9 no-op provenance canary tasks succeeded across both broker groups; all nine results carried result.provenance with worker EdDSA signatures (9/9) and broker countersignatures (9/9), including one heterogeneous mobile-class worker result shape.",
+        "Independent offline verification: the external finalizer verified all nine results WITHOUT broker access using scripts/verify-analysis-report.mjs — per-task JCS resultHash recomputation, provenance.claimedAt vs task.claimedAt cross-check, workerKeyId-to-assigned-worker binding, worker signature, and broker countersignature all green (9/9 GREEN). Verification bundle sha256:f35d5f2473f456d315b666e1c0f78e0ef2514196a43cca530792d0051b514779.",
+        "Adversarial non-vacuity: on the same live artifacts, a tampered result field, a cross-task replay, and a wrong-broker-key transplant were each rejected RED by the same verifier, so the 9/9 GREEN is a discriminating verdict rather than a vacuous pass.",
+        "Environment failure narrative (failureBreakdown environment:1): one broker group had an existing agent-card signing key on the host but the live container was not receiving the signing-key env, so its first signed completions failed closed with provenance_invalid (countersigning key not configured). Corrected by injecting the signing-key env and force-recreating only that broker container (a plain restart was insufficient because container env is fixed at create time); the rerun was fully green. The fail-closed complete-path caught a real production misconfiguration exactly as designed.",
+        "Safety boundary: broker container recreate and bounded operator no-op canary only; no gateway restart, provider send outside the canary, DB/outbox/ACK/replay/prune/migration, release/tag/package publication, GitHub settings mutation, force-push/history rewrite, or raw sensitive-value recording; scorecard and wiki narratives carry only anonymized counts and artifact hashes."
+      ],
+      "recordedAt": "2026-07-06"
+    },
+    {
+      "id": "a2a-nexus-1349-h3-wave1-r4-20260706",
+      "window": {
+        "from": "2026-07-06",
+        "to": "2026-07-06"
+      },
+      "scope": "H3 #1349 Wave 1 measurement for #1289 R4 seam extraction — h1-pipeline treatment, store hot-retention planning seam (#1289 remains open)",
+      "implementationMode": "h1-pipeline",
+      "implementationDurationBand": "1-4h",
+      "metrics": {
+        "carryOverCount": 0,
+        "falseFindingCount": 0,
+        "reworkIssueCount": 0,
+        "evidenceGateDeviationCount": 0,
+        "substantiveLaneCount": 4,
+        "dispatchedLaneCount": 4
+      },
+      "evidence": [
+        "h1-pipeline dispatch round a2a-nexus-1349-h3-wave1-r4-20260706-r4 created 4/4 source-only analysis lanes and read back 4/4 succeeded with classifiable substance; a preflight lesson from r1-r3 is recorded separately in the PR body: deployed broker treats taskOrigin=local sourceBundle lanes as non-readbackable, so r4 omitted taskOrigin and verified queued/readback before worker completion.",
+        "implementation extracted the store hot-retention planning seam into packages/broker/src/core/store-hot-retention-planning.ts as a parameter-injected pure move: planTaskRetentionFromRecords, planAuditRetentionFromRecords, planWorkerRetentionFromRecords, planTerminalOutboxRetentionFromRecords, buildHotEntityHintCoverage, buildRetentionPlan, normalizeAuditRetentionProtection, and isAuditEventProtected moved out of store.ts while store.ts re-exports buildHotEntityHintCoverage for the existing public test/import surface.",
+        "surface-preservation proof: store.ts 2880→2687, new module 213 lines, broker.ts unchanged at 2947; existing imports from ./store.js continue to see buildHotEntityHintCoverage, and the focused clean-env store suites passed 70/70 after the move.",
+        "quality comparison input for #1349: rework/falseFinding/evidenceGateDeviation all remain 0, matching the solo R4 seam quality baseline for this wave; because this is only wave 1 of the preregistered three-wave rule, the scorecard records HOLD for process promotion until two further h1-pipeline waves preserve quality and improve the duration band."
+      ],
+      "recordedAt": "2026-07-06"
+    },
+    {
+      "id": "a2a-nexus-1349-h3-wave2-solo-r4-20260706",
+      "window": {
+        "from": "2026-07-06",
+        "to": "2026-07-06"
+      },
+      "scope": "H3 #1349 Wave 2 solo control for #1289 R4 seam extraction — store hot-select/projection seam, same evidence gates as Wave 1; #1289 remains open",
+      "implementationMode": "solo",
+      "implementationDurationBand": "<1h",
+      "metrics": {
+        "carryOverCount": 0,
+        "falseFindingCount": 0,
+        "reworkIssueCount": 0,
+        "evidenceGateDeviationCount": 0,
+        "substantiveLaneCount": 1,
+        "dispatchedLaneCount": 1
+      },
+      "evidence": [
+        "solo control: one implementation lane, no h1-pipeline/subagent orchestration; same finalizer/evidence gates as Wave 1, with implementation mode as the variable.",
+        "rounds-to-success: 1; no failed or discarded dispatch/implementation rounds were counted before the successful solo seam extraction, and the duration band covers the whole wave wall-clock per #1391.",
+        "implementation extracted the recommended store hot-select/projection seam into packages/broker/src/core/store-hot-select-projections.ts: normalizeNonNegativeSqliteLimit, normalizeOptionalSqliteLimit, buildHotTableSelect, buildHotTaskListItemSelect, parseHotTaskListItemProjection, parseJsonColumn, optionalStringValue, optionalNumberValue, omitUndefinedProperties, and normalizeRuntimeTaskListLimit moved out of store.ts; broker.ts stayed unchanged.",
+        "surface-preservation proof: broker.ts 2947 unchanged; store.ts 2687→2544; new store-hot-select-projections.ts 169 lines; PURE_MOVE_AUDIT=ok against the pre-branch store.ts function bodies after normalizing only added export prefixes.",
+        "quality comparison input for #1349: rework/falseFinding/evidenceGateDeviation all remain 0, with substantiveLaneCount/dispatchedLaneCount 1/1 for the solo control; this provides the required banded solo anchor for later Wave 3 judgment, not a standalone promotion decision."
+      ],
+      "recordedAt": "2026-07-06"
+    },
+    {
+      "id": "a2a-nexus-1349-h3-wave3-r4-20260706",
+      "window": {
+        "from": "2026-07-06",
+        "to": "2026-07-06"
+      },
+      "scope": "H3 #1349 Wave 3 final h1-pipeline measurement for #1289 R4 seam extraction — store runtime-filters seam; #1289 remains open",
+      "implementationMode": "h1-pipeline",
+      "implementationDurationBand": "<1h",
+      "metrics": {
+        "carryOverCount": 0,
+        "falseFindingCount": 0,
+        "reworkIssueCount": 0,
+        "evidenceGateDeviationCount": 0,
+        "substantiveLaneCount": 3,
+        "dispatchedLaneCount": 4
+      },
+      "evidence": [
+        "h1-pipeline dispatch round a2a-nexus-1349-h3-wave3-r4-20260706-r1 created 4/4 source-only analysis lanes, verified readbackable while running, and read back 4/4 succeeded; 3/4 lanes carried classifiable substantive seam/finalizer guidance, while one succeeded lane returned an ellipsis-only analysis summary and is conservatively excluded from substantiveLaneCount.",
+        "rounds-to-success: 1; no failed or discarded dispatch/implementation rounds were counted before the successful Wave 3 h1-pipeline seam extraction, and the duration band covers the whole wave wall-clock per #1391.",
+        "implementation extracted the recommended store runtime-filters seam into packages/broker/src/core/store-runtime-filters.ts: taskMatchesRuntimeFilters, workerMatchesRuntimeFilters, and workerProviderCapabilityMatchesRuntimeFilters moved out of store.ts; broker.ts stayed unchanged.",
+        "surface-preservation proof: broker.ts 2947 unchanged; store.ts 2544→2490; new store-runtime-filters.ts 64 lines; PURE_MOVE_AUDIT=ok against origin/main function bodies after normalizing only added export prefixes; focused clean-env store suites passed 70/70 and the full broker suite passed 3738/3738.",
+        "final #1349 comparison input: rework/falseFinding/evidenceGateDeviation all remain 0, so quality stayed equal to the solo control; implementationDurationBand matched the Wave 2 solo control at <1h rather than improving beyond it, so the final process recommendation remains HOLD rather than GO."
+      ],
+      "recordedAt": "2026-07-06"
+    },
+    {
+      "id": "a2a-nexus-1374-k2-executor-wave1-2-20260707",
+      "window": {
+        "from": "2026-07-07",
+        "to": "2026-07-07"
+      },
+      "scope": "K2 executor (#1374): Wave 1 docker-runner egress-allowlist proxy + signed retrieval snapshots (#1397), Wave 2 analysis-lane snapshot feed + result<->source binding (#1399), on the #1378 contract-first binding verifier (#1398); completes the #1378 verifiable analysis report source-grounding path and independently offline-verified by the external finalizer",
+      "implementationMode": "h1-pipeline",
+      "implementationDurationBand": "1-4h",
+      "metrics": {
+        "carryOverCount": 0,
+        "falseFindingCount": 0,
+        "reworkIssueCount": 0,
+        "evidenceGateDeviationCount": 0,
+        "substantiveLaneCount": 2,
+        "dispatchedLaneCount": 4
+      },
+      "evidence": [
+        "Wave 1 (#1397) added packages/docker-runner/src/egress-allowlist-proxy.ts: deny-by-default host allowlist hard-limited to api.github.com/raw.githubusercontent.com, internal-range denial (RFC1918/169.254/loopback/::1/ULA/.internal incl IPv4-mapped IPv6), DNS-resolve-then-pin against rebinding, per-hop redirect revalidation with protocol-downgrade block, 40-hex commit-SHA enforcement, and byte/timeout caps.",
+        "External finalizer adversarial verification of Wave 1: drove 12 attack classes through the compiled proxy with injected DNS/request deps (non-allowlist host, internal IP literal, DNS rebind to 169.254 and RFC1918, IPv4-mapped-IPv6, IPv6 ULA, HTTP downgrade, redirect-to-internal, redirect-to-non-allowlist, redirect-downgrade, symbolic ref, path traversal) — all fail-closed; positive round-trip signed snapshot verified, tampered/symbolic/non-2xx rejected.",
+        "Wave 2 (#1399) fed Wave 1 signed snapshots into the network-isolated analysis lane as delimiter-safe untrusted external data and bound consumed snapshots into result.output.sources[{sourceId, contentHash}] per the #1398 contract; the analysis tool policy stayed Read/Glob/Grep with an adversarial env-override regression test proving it cannot be widened.",
+        "External finalizer end-to-end verification of Wave 2: reconstructed the chain (signed snapshot -> isolated bridge consumption -> declared binding -> worker signature -> broker countersignature) and confirmed a source-grounded report verifies GREEN offline including the source-binding check; consumption-boundary revalidation rejected tampered content, unsigned snapshot, duplicate declaration, and over-cap, and an unbound snapshot was rejected RED by the offline verifier.",
+        "Scope boundary: merge does not activate live fetch; live GitHub fetch over the deployed proxy still requires worker/runner redeploy plus an operator-gated live fetch canary (out of this record's scope). Dispatch friction: 4 lanes dispatched across the two waves' A2A rounds with 2 substantive lanes used as implementation input; no worker names, secrets, endpoints, or private keys recorded.",
+        "Safety boundary: source refactor plus offline verifier/contract; no deploy/restart, DB/outbox/ACK/replay/prune/migration, provider send, release/tag/package publication, GitHub settings mutation, force-push/history rewrite, or raw sensitive-value recording."
+      ],
+      "recordedAt": "2026-07-07"
+    },
+    {
+      "id": "a2a-nexus-1373-k1d-injection-wave-20260707-r1",
+      "window": {
+        "from": "2026-07-07",
+        "to": "2026-07-07"
+      },
+      "scope": "#1373 K1-d knowledge-injection wave r1 (4 review lanes, payload injectKnowledge opt-in) — injection path confirmed live, but the wave is NOT usable for on/off comparison due to a dispatch recipe defect fixed by #1420",
+      "knowledgeInjection": "on",
+      "metrics": {
+        "carryOverCount": 0,
+        "falseFindingCount": 0,
+        "reworkIssueCount": 0,
+        "substantiveLaneCount": 0,
+        "dispatchedLaneCount": 4
+      },
+      "evidence": [
+        "injection confirmed live: lanes created with policyContext.injectedKnowledge pinned to the 2026-07-07 snapshot (source reliability-ledger+taxonomy, one intent-matched counts-only hint); the fail-open path never blocked a lane",
+        "4/4 lanes succeeded but 0/4 substantive: every result is the generic versioned-task-handler acceptance echo — the wave dispatched intent 'review' (the hint-matching key at the time), which no worker analysis branch recognizes, and the payload lacked the analysis-mode/sourceOnly recipe; the taskClass-vs-intent axis mismatch and its fix (payload.taskClass matching key with intent fallback) landed as #1420 and are documented in docs/a2ad-round-dispatch.md",
+        "measurement disposition: recorded honestly as knowledgeInjection=on with 0/4 substantive but EXCLUDED from on/off comparison — the r2 wave on the corrected recipe is the measurement wave",
+        "byproduct retained: one completed lane's provenance report was exported and offline-verified GREEN 5/5 under the enforce countersign posture with TOFU-pinned registered keys, and tamper/replay/wrong-key mutations all rejected RED (report sha256 36c262902c61748e93c0aae4be40244dcc7e84c71e7a1a094b20ed967b0f40b2) — closes the V0-c post-cutover new-completion acceptance piece (#1373 evidence comment)"
+      ],
+      "recordedAt": "2026-07-07"
+    },
+    {
+      "id": "a2a-nexus-1373-k1d-injection-wave-20260707-r2",
+      "window": {
+        "from": "2026-07-07",
+        "to": "2026-07-07"
+      },
+      "scope": "#1373 K1-d knowledge-injection measurement wave r2: 4 analyze-intent review-class lanes on the #1420 payload.taskClass matching key, base payload reused from the a2a-nexus-1299-m1-ledger-20260706-team2-r1 round family for a minimal-delta dispatch; off control pair: a2a-nexus-m1-ledger-20260705",
+      "knowledgeInjection": "on",
+      "metrics": {
+        "carryOverCount": 0,
+        "falseFindingCount": 0,
+        "reworkIssueCount": 0,
+        "substantiveLaneCount": 2,
+        "dispatchedLaneCount": 4
+      },
+      "failureBreakdown": {
+        "environment": 1
+      },
+      "evidence": [
+        "injection: all 4 lanes carry policyContext.injectedKnowledge with asOf 2026-07-07 and the single review-class hint (exact expected value), including the failed lane — injection is recorded at dispatch time regardless of lane outcome",
+        "substantive 2/4: one lane delivered an M1 ledger design analysis with 7 findings / 7 recommendations naming 4 concrete risk classes; a second delivered 6 findings with line-level citations into scripts/check-round-quality-scorecard.mjs; a third succeeded readiness-only (source/no-live meta checks, no task-specific findings — not substantive per the FG1-d criterion); the fourth failed (environment)",
+        "falseFindingCount 0 cross-check: the round's strongest claim (finalizer-gate visible exports are three status Sets only) is TRUE against that lane's pinned source bundle (a truncated 12KB projection); current main exports EVIDENCE_CLASSES since #1358 (2026-07-06) — a bundle-freshness limitation, not a false finding",
+        "reworkIssueCount 0: no rework issue originated from this round at snapshot time; the round's key recommendation (single-source taxonomy export) was already implemented by #1358",
+        "failure classification — environment 1: one lane failed openclaw_analysis_failed (worker execution environment, unrelated to the injection path); the real-cause excerpt was masked by the bridge no-stdin warning that #1421 (merged in this window) removes, and the same worker-class environment failure recurs in the base round family — refine this narrative when the next failure surfaces a clean excerpt",
+        "on/off pairing: compare against a2a-nexus-m1-ledger-20260705 (knowledgeInjection=off, substantive 7/10); one wave is a signal, not a promotion decision — injection-by-default remains a separate operator decision after more measured windows (#1373 K1-d contract)"
+      ],
+      "recordedAt": "2026-07-07"
+    },
+    {
+      "id": "a2a-nexus-1383-vc-adversarial-20260707-r1",
+      "window": {
+        "from": "2026-07-07",
+        "to": "2026-07-07"
+      },
+      "scope": "#1383 V-c adversarial design round: 4 analyze lanes (registry / attack-surface / accept-path / migration lenses) over the finalizer-verdict independence source bundle (6 files, ~2.3k lines); one environment-class worker excluded up front after the prior rounds' failures and another worker class substituted",
+      "knowledgeInjection": "off",
+      "metrics": {
+        "carryOverCount": 0,
+        "falseFindingCount": 0,
+        "reworkIssueCount": 0,
+        "substantiveLaneCount": 2,
+        "dispatchedLaneCount": 4
+      },
+      "failureBreakdown": {
+        "environment": 1
+      },
+      "evidence": [
+        "lens coverage: the registry-design lane is substantive (6 findings / 6 recommendations / 5 risks with line citations into the bundle sources) and the accept-path lane is substantive (concrete completeTask gate insertion point plus a warn->enforce mapping inheriting the #1382 countersign-enforce template); the migration lane succeeded readiness-only (generic source-bridge meta output — third consecutive round for that worker class, tracked as a follow-up issue); the attack-surface lane failed",
+        "failure classification — environment 1: handler_exit_nonzero -> openclaw_analysis_failed with the bridge no-stdin warning masking the real cause. This occurrence CORRECTS the earlier single-host attribution: the same class has now reproduced on a second worker class, so it is the fleet-common pre-#1421 bridge defect (suspected correlation with the ~84KB source bundle size); real-cause excerpts stay masked until the worker bundles redeploy with #1421 — worker bundle update priority raised",
+        "finalizer gate: BLOCKED (3/4 succeeded, the attack-surface lens vacant with no draft) — round treated as PRELIMINARY design input; the attack-surface lens re-runs as an idempotent retry lane with a trimmed bundle before the V-c implementation slice consumes the design",
+        "off control (K1 #1373 measurement): all four lanes verified with injectKnowledge absent from payload AND policyContext.injectedKnowledge absent — clean knowledgeInjection=off accumulation; the paired on-wave (k1d r2) also measured 2/4, so this on/off pairing is rate-equal at current sample sizes"
+      ],
+      "recordedAt": "2026-07-07"
     }
   ]
 }

@@ -7,35 +7,42 @@ import { z } from "zod";
 import type {
   ArtifactRecord,
   AuditEvent,
-  AuditListFilters,
   A2AExchangeMessageRecord,
   A2AExchangeState,
   ChangeProposal,
-  ProposalListFilters,
-  TaskListFilters,
   GoalRecord,
   TaskRecord,
   TaskTombstone,
-  TombstoneListFilters,
   ValidationResult,
-  WorkerListFilters,
   WorkerRecord,
 } from "./types.js";
 import type { CrossBrokerTerminalBriefProjection } from "./cross-broker-terminal-brief.js";
+import { isHeartbeatAuditEvent } from "./broker-retention-selectors.js";
 import {
-  parseRetentionTimestamp,
-  isHeartbeatAuditEvent,
-  getHeartbeatAuditEventId,
-} from "./broker-retention-selectors.js";
-import { isTerminalTaskStatus } from "./broker-status-predicates.js";
-import type { ArtifactRuntimeRepository } from "./artifact-repository.js";
-import type { AuditRuntimeRepository } from "./audit-repository.js";
-import type { ExchangeMessageRuntimeRepository, ExchangeRuntimeRepository } from "./exchange-repository.js";
-import type { ProposalRuntimeRepository } from "./proposal-repository.js";
-import type { TaskRuntimeRepository } from "./task-repository.js";
-import type { TombstoneRuntimeRepository } from "./tombstone-repository.js";
-import type { ValidationRuntimeRepository } from "./validation-repository.js";
-import type { WorkerRuntimeRepository } from "./worker-repository.js";
+  buildHotEntityHintCoverage,
+  planAuditRetentionFromRecords,
+  planTaskRetentionFromRecords,
+  planTerminalOutboxRetentionFromRecords,
+  planWorkerRetentionFromRecords,
+} from "./store-hot-retention-planning.js";
+import {
+  buildHotTableSelect,
+  buildHotTaskListItemSelect,
+  normalizeNonNegativeSqliteLimit,
+  normalizeOptionalSqliteLimit,
+  parseHotTaskListItemProjection,
+} from "./store-hot-select-projections.js";
+import { DEFAULT_HOT_RUNTIME_MAX_HEARTBEAT_AUDIT_EVENTS } from "./store-runtime-repositories.js";
+import * as hotDiagnostics from "./store-hot-diagnostics-read.js";
+import {
+  coerceSqliteCount,
+  parseHotEntityPayloadResult,
+  SQLITE_HOT_ENTITY_HINT_TABLES,
+  SQLITE_HOT_ENTITY_SNAPSHOT_KEYS,
+  SQLITE_HOT_ENTITY_TABLES,
+  type HotDiagnosticsReadContext,
+  type SqliteHotEntityTable,
+} from "./store-hot-diagnostics-read.js";
 import {
   DEFAULT_TERMINAL_TASK_OUTBOX_RETENTION,
   type TerminalTaskOutboxEvent,
@@ -46,7 +53,6 @@ import {
   DEFAULT_BROKER_STATE_MAX_BYTES as DEFAULT_BROKER_STATE_MAX_BYTES_VALUE,
 } from "./store-contracts.js";
 import type {
-  BrokerHotTableLoadMetricEntry,
   BrokerHotTableLoadMetrics,
   BrokerHotTableRuntimeLoadLimits,
   BrokerPersistenceInfo,
@@ -54,7 +60,6 @@ import type {
   BrokerStateSaveHints,
   BrokerStateStore,
   JsonFileBrokerStateStoreOptions,
-  SqliteAuditRuntimeRepositoryOptions,
   SqliteBrokerLoadSource,
   SqliteBrokerStateStoreOptions,
 } from "./store-contracts.js";
@@ -80,12 +85,9 @@ import type {
   BrokerHotAuditDiagnostics,
   BrokerHotEntityDiagnostics,
   BrokerHotEntityHintCoverage,
-  BrokerHotEntityMirrorMismatch,
-  BrokerHotEntityMirrorRetentionWindow,
   BrokerHotEntityMirrorStatus,
   BrokerHotHintCounts,
   BrokerHotTerminalOutboxDiagnostics,
-  BrokerInvalidHotEntityRow,
 } from "./hot-diagnostics.js";
 import {
   partyRefSchema,
@@ -128,6 +130,7 @@ export {
   serializeBrokerSnapshot,
   writeBrokerSnapshotFile,
 } from "./store-snapshot-io.js";
+export { buildHotEntityHintCoverage } from "./store-hot-retention-planning.js";
 
 
 export type {
@@ -309,61 +312,14 @@ export interface SqliteTerminalOutboxHotRetentionPlanOptions {
 }
 
 const SQLITE_SCHEMA_VERSION = 10;
-const HOT_AUDIT_RECENT_WINDOW_MS = 10 * 60 * 1000;
-const HOT_AUDIT_HEARTBEAT_CHURN_WARNING_COUNT = 20;
-const SQLITE_HOT_ENTITY_TABLES = [
-  "broker_exchanges",
-  "broker_exchange_messages",
-  "broker_proposals",
-  "broker_artifacts",
-  "broker_validations",
-  "broker_tasks",
-  "broker_tombstones",
-  "broker_workers",
-  "broker_audit_events",
-  "broker_terminal_outbox",
-] as const;
-const SQLITE_HOT_ENTITY_HINT_TABLES = [
-  "broker_exchanges",
-  "broker_exchange_messages",
-  "broker_proposals",
-  "broker_artifacts",
-  "broker_validations",
-  "broker_tasks",
-  "broker_tombstones",
-  "broker_workers",
-  "broker_audit_events",
-  "broker_terminal_outbox",
-] as const;
-type SqliteHotEntityTable = typeof SQLITE_HOT_ENTITY_TABLES[number];
-type BrokerSnapshotArrayKey = Exclude<{
-  [K in keyof BrokerSnapshot]: BrokerSnapshot[K] extends unknown[] | undefined ? K : never;
-}[keyof BrokerSnapshot], undefined>;
-const SQLITE_HOT_ENTITY_SNAPSHOT_KEYS: Record<SqliteHotEntityTable, BrokerSnapshotArrayKey> = {
-  broker_exchanges: "exchanges",
-  broker_exchange_messages: "exchangeMessages",
-  broker_proposals: "proposals",
-  broker_artifacts: "artifacts",
-  broker_validations: "validations",
-  broker_tasks: "tasks",
-  broker_tombstones: "tombstones",
-  broker_workers: "workers",
-  broker_audit_events: "auditEvents",
-  broker_terminal_outbox: "terminalOutbox",
-};
-
-
 export const DEFAULT_HOT_RUNTIME_MAX_NON_TERMINAL_TASKS = 500;
 export const DEFAULT_HOT_RUNTIME_MAX_TERMINAL_TASKS = 2_000;
 export const DEFAULT_HOT_RUNTIME_MAX_AUDIT_EVENTS = 5_000;
-export const DEFAULT_HOT_RUNTIME_MAX_HEARTBEAT_AUDIT_EVENTS = 500;
+// Defined in store-runtime-repositories.ts (its only value consumer besides
+// this file) so that module's back-reference to store.js stays type-only;
+// re-exported here to preserve the existing import path.
+export { DEFAULT_HOT_RUNTIME_MAX_HEARTBEAT_AUDIT_EVENTS } from "./store-runtime-repositories.js";
 export const DEFAULT_HOT_RUNTIME_MAX_TERMINAL_OUTBOX_EVENTS = DEFAULT_TERMINAL_TASK_OUTBOX_RETENTION;
-
-function coerceSqliteCount(row: { count?: number | bigint } | undefined): number {
-  return typeof row?.count === "bigint"
-    ? Number(row.count)
-    : typeof row?.count === "number" ? row.count : 0;
-}
 
 export class SqliteBrokerStateStore implements BrokerStateStore {
   private readonly maxBytes: number;
@@ -433,7 +389,7 @@ export class SqliteBrokerStateStore implements BrokerStateStore {
   }
 
   readHotRuntimeSnapshot(): BrokerSnapshot {
-    const pushNotificationConfigs = this.readCanonicalPushNotificationConfigs();
+    const sidecars = this.readCanonicalSnapshotSidecars();
     const snapshot: BrokerSnapshot = {
       version: CURRENT_BROKER_STATE_VERSION_VALUE,
       exchanges: this.readHotExchanges(),
@@ -446,10 +402,11 @@ export class SqliteBrokerStateStore implements BrokerStateStore {
       tasks: this.readHotTasksForRuntime(),
       tombstones: this.readHotTombstones(),
       terminalOutbox: this.readHotTerminalOutbox({ limit: this.maxHotRuntimeTerminalOutboxEvents }),
-      crossBrokerTerminalBriefs: [],
+      crossBrokerTerminalBriefs: sidecars.crossBrokerTerminalBriefs ?? [],
+      wavePlans: sidecars.wavePlans ?? [],
     };
-    if (pushNotificationConfigs !== undefined) {
-      snapshot.pushNotificationConfigs = pushNotificationConfigs;
+    if (sidecars.pushNotificationConfigs !== undefined) {
+      snapshot.pushNotificationConfigs = sidecars.pushNotificationConfigs;
     }
     return snapshot;
   }
@@ -711,296 +668,45 @@ export class SqliteBrokerStateStore implements BrokerStateStore {
     return buildHotEntityHintCoverage(SQLITE_HOT_ENTITY_TABLES, SQLITE_HOT_ENTITY_HINT_TABLES);
   }
 
-  readHotEntityDiagnostics(): BrokerHotEntityDiagnostics {
+  // Hot-entity diagnostics READ paths (#1289 L-store-4): moved to
+  // store-hot-diagnostics-read.ts with a callback-injected context. These
+  // delegators keep the public read surface unchanged.
+  private hotDiagnosticsReadContext(): HotDiagnosticsReadContext {
     return {
-      invalidRows: coalesceInvalidHotEntityRows([
-        ...this.readInvalidHotTaskRows(),
-        ...this.readInvalidHotWorkerRows(),
-      ]),
+      db: this.db,
+      maxHotRuntimeNonTerminalTasks: this.maxHotRuntimeNonTerminalTasks,
+      maxHotRuntimeTerminalTasks: this.maxHotRuntimeTerminalTasks,
+      maxHotRuntimeAuditEvents: this.maxHotRuntimeAuditEvents,
+      maxHotRuntimeTerminalOutboxEvents: this.maxHotRuntimeTerminalOutboxEvents,
+      readSnapshotRow: () => this.readSnapshotRow(),
+      readLastPersistDiagnostics: () => this.readLastPersistDiagnostics(),
+      readTableIds: (tableName) => this.readTableIds(tableName),
+      readTableCount: (tableName) => this.readTableCount(tableName),
     };
   }
 
-  private readInvalidHotTaskRows(): BrokerInvalidHotEntityRow[] {
-    return (this.db
-      .prepare(
-        `SELECT id AS primaryKey, payload FROM (
-           SELECT id, payload, updated_at
-           FROM broker_tasks
-           WHERE status NOT IN ('succeeded', 'failed', 'canceled')
-           ORDER BY updated_at DESC, id ASC
-           LIMIT ?
-         )
-         UNION ALL
-         SELECT id AS primaryKey, payload FROM (
-           SELECT id, payload, updated_at
-           FROM broker_tasks
-           WHERE status IN ('succeeded', 'failed', 'canceled')
-           ORDER BY updated_at DESC, id ASC
-           LIMIT ?
-         )`,
-      )
-      .all(this.maxHotRuntimeNonTerminalTasks, this.maxHotRuntimeTerminalTasks) as Array<{
-      primaryKey?: unknown;
-      payload?: unknown;
-    }>).flatMap((row): BrokerInvalidHotEntityRow[] => {
-        const parsed = parseHotEntityPayloadResult(row, taskSchema, "broker_tasks");
-        if (parsed.success) {
-          return [];
-        }
-        return [{
-          table: "broker_tasks",
-          primaryKey: sanitizeDiagnosticValue(row.primaryKey),
-          schemaError: parsed.error,
-          count: 1,
-        }];
-      });
-  }
-
-  private readInvalidHotWorkerRows(): BrokerInvalidHotEntityRow[] {
-    const invalidRows = (this.db
-      .prepare("SELECT node_id AS primaryKey, payload FROM broker_workers ORDER BY node_id ASC")
-      .all() as Array<{ primaryKey?: unknown; payload?: unknown }>).flatMap((row): BrokerInvalidHotEntityRow[] => {
-        const parsed = parseHotEntityPayloadResult(row, workerSchema, "broker_workers");
-        if (parsed.success) {
-          return [];
-        }
-        return [{
-          table: "broker_workers",
-          primaryKey: sanitizeDiagnosticValue(row.primaryKey),
-          schemaError: parsed.error,
-          count: 1,
-        }];
-      });
-    return coalesceInvalidHotEntityRows(invalidRows);
+  readHotEntityDiagnostics(): BrokerHotEntityDiagnostics {
+    return hotDiagnostics.readHotEntityDiagnostics(this.hotDiagnosticsReadContext());
   }
 
   readHotEntityMirrorStatus(): BrokerHotEntityMirrorStatus {
-    const tableCounts = this.readHotEntityTableCounts();
-    const snapshot = this.readSnapshotRow();
-    const persistDiag = this.readLastPersistDiagnostics();
-    if (snapshot && persistDiag.lastPersistSkippedFullSnapshot) {
-      // In incremental hot-table mode, the canonical snapshot row is intentionally
-      // left at the last full checkpoint. Treat the hot tables as authoritative
-      // for mirror health until the next full snapshot/checkpoint is written.
-      // Drift against an older snapshot would be expected and should not surface
-      // as corruption. Manual drift after a full persist is still detected when
-      // this flag is false.
-      return {
-        ok: true,
-        tableCounts,
-        snapshotCounts: countSnapshotEntities(snapshot),
-        mismatches: [],
-      };
-    }
-    if (!snapshot) {
-      return {
-        ok: Object.values(tableCounts).every((count) => count === 0),
-        tableCounts,
-        mismatches: Object.entries(tableCounts)
-          .filter(([, tableCount]) => tableCount !== 0)
-          .map(([table, tableCount]) => ({
-            table,
-            snapshotKey: SQLITE_HOT_ENTITY_SNAPSHOT_KEYS[table as SqliteHotEntityTable],
-            tableCount,
-            snapshotCount: 0,
-          })),
-      };
-    }
-
-    const snapshotCounts = countSnapshotEntities(snapshot);
-    const snapshotAuditIds = new Set((snapshot.auditEvents ?? []).map((event) => event.id));
-    const retentionWindows: BrokerHotEntityMirrorRetentionWindow[] = [];
-    const mismatches: BrokerHotEntityMirrorMismatch[] = SQLITE_HOT_ENTITY_TABLES.flatMap((table): BrokerHotEntityMirrorMismatch[] => {
-      const snapshotKey = SQLITE_HOT_ENTITY_SNAPSHOT_KEYS[table];
-      const tableCount = tableCounts[table] ?? 0;
-      const snapshotCount = snapshotCounts[snapshotKey] ?? 0;
-      if (table === "broker_audit_events") {
-        const hotAuditIds = this.readTableIds("broker_audit_events");
-        const hotAuditIdsAreSnapshotRows = hotAuditIds.every((id) => snapshotAuditIds.has(id));
-        if (tableCount < snapshotCount && hotAuditIdsAreSnapshotRows) {
-          retentionWindows.push({
-            table,
-            snapshotKey,
-            tableCount,
-            snapshotCount,
-            reason: "audit_hot_retention",
-            prunedCount: snapshotCount - tableCount,
-          });
-          return [];
-        }
-        if (tableCount === snapshotCount && hotAuditIdsAreSnapshotRows) {
-          return [];
-        }
-        return [{
-          table,
-          snapshotKey,
-          tableCount,
-          snapshotCount,
-          reason: tableCount === snapshotCount ? "id_drift" as const : "count_drift" as const,
-        }];
-      }
-      if (tableCount === snapshotCount) {
-        return [];
-      }
-      return [{ table, snapshotKey, tableCount, snapshotCount }];
-    });
-    return {
-      ok: mismatches.length === 0,
-      tableCounts,
-      snapshotCounts,
-      mismatches,
-      ...(retentionWindows.length > 0 ? { retentionWindows } : {}),
-    };
+    return hotDiagnostics.readHotEntityMirrorStatus(this.hotDiagnosticsReadContext());
   }
 
   readHotEntityTableCounts(): Record<string, number> {
-    return Object.fromEntries(
-      SQLITE_HOT_ENTITY_TABLES.map((table) => [table, this.readTableCount(table)]),
-    );
+    return hotDiagnostics.readHotEntityTableCounts(this.hotDiagnosticsReadContext());
   }
 
   readHotAuditDiagnostics(): BrokerHotAuditDiagnostics {
-    const total = this.readTableCount("broker_audit_events");
-    const workerHeartbeat = coerceSqliteCount(
-      this.db.prepare("SELECT COUNT(*) AS count FROM broker_audit_events WHERE action = 'worker.heartbeat'").get() as
-        | { count?: number | bigint }
-        | undefined,
-    );
-    const taskHeartbeat = coerceSqliteCount(
-      this.db.prepare("SELECT COUNT(*) AS count FROM broker_audit_events WHERE action = 'task.heartbeat'").get() as
-        | { count?: number | bigint }
-        | undefined,
-    );
-    const heartbeat = workerHeartbeat + taskHeartbeat;
-    const heartbeatRatio = total > 0 ? heartbeat / total : 0;
-    const workerHeartbeatRatio = total > 0 ? workerHeartbeat / total : 0;
-    const taskHeartbeatRatio = total > 0 ? taskHeartbeat / total : 0;
-    const recentCutoff = new Date(Date.now() - HOT_AUDIT_RECENT_WINDOW_MS).toISOString();
-    const recentTotal = coerceSqliteCount(
-      this.db.prepare("SELECT COUNT(*) AS count FROM broker_audit_events WHERE created_at >= ?").get(recentCutoff) as
-        | { count?: number | bigint }
-        | undefined,
-    );
-    const recentWorkerHeartbeat = coerceSqliteCount(
-      this.db.prepare("SELECT COUNT(*) AS count FROM broker_audit_events WHERE action = 'worker.heartbeat' AND created_at >= ?").get(recentCutoff) as
-        | { count?: number | bigint }
-        | undefined,
-    );
-    const recentTaskHeartbeat = coerceSqliteCount(
-      this.db.prepare("SELECT COUNT(*) AS count FROM broker_audit_events WHERE action = 'task.heartbeat' AND created_at >= ?").get(recentCutoff) as
-        | { count?: number | bigint }
-        | undefined,
-    );
-    const recentHeartbeat = recentWorkerHeartbeat + recentTaskHeartbeat;
-    const recentHeartbeatRatio = recentTotal > 0 ? recentHeartbeat / recentTotal : 0;
-    const recentWorkerHeartbeatRatio = recentTotal > 0 ? recentWorkerHeartbeat / recentTotal : 0;
-    const recentTaskHeartbeatRatio = recentTotal > 0 ? recentTaskHeartbeat / recentTotal : 0;
-    const warnings: string[] = [];
-    if (total > 8_000) {
-      warnings.push(`broker_audit_events has ${total} rows; expected SQLite hot-table retention near 5000`);
-    }
-    if (recentHeartbeat >= HOT_AUDIT_HEARTBEAT_CHURN_WARNING_COUNT && recentHeartbeatRatio > 0.8) {
-      warnings.push(`heartbeat audit events are ${Math.round(recentHeartbeatRatio * 100)}% of broker_audit_events in the last ${Math.round(HOT_AUDIT_RECENT_WINDOW_MS / 60_000)} minutes`);
-    }
-    return {
-      total,
-      heartbeat,
-      heartbeatRatio,
-      workerHeartbeat,
-      workerHeartbeatRatio,
-      taskHeartbeat,
-      taskHeartbeatRatio,
-      recentWindowMs: HOT_AUDIT_RECENT_WINDOW_MS,
-      recentTotal,
-      recentHeartbeat,
-      recentHeartbeatRatio,
-      recentWorkerHeartbeat,
-      recentWorkerHeartbeatRatio,
-      recentTaskHeartbeat,
-      recentTaskHeartbeatRatio,
-      warnings,
-    };
+    return hotDiagnostics.readHotAuditDiagnostics(this.hotDiagnosticsReadContext());
   }
 
   readHotTerminalOutboxDiagnostics(): BrokerHotTerminalOutboxDiagnostics {
-    const nowMs = Date.now();
-    const total = this.readTableCount("broker_terminal_outbox");
-    const ackedRow = this.db.prepare(
-      "SELECT COUNT(*) AS count FROM broker_terminal_outbox WHERE acknowledged_at IS NOT NULL",
-    ).get() as { count?: number | bigint } | undefined;
-    const acked = coerceSqliteCount(ackedRow);
-    const rawUnacked = total - acked;
-    const unackedRows = this.db.prepare(
-      "SELECT created_at AS createdAt, payload FROM broker_terminal_outbox WHERE acknowledged_at IS NULL ORDER BY created_at ASC",
-    ).all() as Array<{ createdAt?: string; payload?: string }>;
-    let ackIneligibleUnacked = 0;
-    let oldestUnackedCreatedAt: string | null = null;
-    const ageBuckets: BrokerHotTerminalOutboxDiagnostics["ageBuckets"] = {
-      lt1d: 0,
-      "1to7d": 0,
-      "7to14d": 0,
-      gte14d: 0,
-      unknown: 0,
-    };
-    const byTerminalStatus: Record<string, number> = {};
-    const byReceiptStatus: Record<string, number> = {};
-    const byBrokerOfRecord: Record<string, number> = {};
-    const byWorker: Record<string, number> = {};
-    for (const row of unackedRows) {
-      const event = parseTerminalOutboxEventPayload(row.payload);
-      incrementDiagnosticsCounter(byTerminalStatus, event?.payload?.status);
-      incrementDiagnosticsCounter(byReceiptStatus, event?.receipt?.status);
-      incrementDiagnosticsCounter(byBrokerOfRecord, event?.payload?.brokerOfRecordId);
-      incrementDiagnosticsCounter(byWorker, event?.payload?.worker ?? event?.payload?.crossBrokerHandoff?.childWorkerId);
-      incrementDiagnosticsCounter(ageBuckets, terminalOutboxAgeBucket(row.createdAt, nowMs));
-      if (isAckIneligibleTerminalOutboxEvent(event)) {
-        ackIneligibleUnacked += 1;
-        continue;
-      }
-      if (oldestUnackedCreatedAt === null && typeof row.createdAt === "string") {
-        oldestUnackedCreatedAt = row.createdAt;
-      }
-    }
-    const ackEligibleUnacked = Math.max(0, rawUnacked - ackIneligibleUnacked);
-    const unacked = ackEligibleUnacked;
-    const unackedRatio = total > 0 ? unacked / total : 0;
-    const oldestUnackedAgeMs = oldestUnackedCreatedAt !== null
-      ? nowMs - Date.parse(oldestUnackedCreatedAt)
-      : null;
-    const actionableBacklog = ackEligibleUnacked > 0 && oldestUnackedAgeMs !== null && oldestUnackedAgeMs > 7 * 24 * 60 * 60 * 1000;
-    const classification: BrokerHotTerminalOutboxDiagnostics["classification"] = actionableBacklog
-      ? "actionable_review_required"
-      : ackEligibleUnacked > 0
-        ? "recent_unacked_watch"
-        : ackIneligibleUnacked > 0
-          ? "ack_ineligible_historical_residue"
-          : "clean";
-    const warnings: string[] = [];
-    if (unacked > 500) {
-      warnings.push(`broker_terminal_outbox has ${unacked} unacked entries; may indicate stalled provider delivery`);
-    }
-    if (oldestUnackedAgeMs !== null && oldestUnackedAgeMs > 7 * 24 * 60 * 60 * 1000) {
-      warnings.push(`oldest unacked terminal outbox entry is ${Math.round(oldestUnackedAgeMs / (24 * 60 * 60 * 1000))} days old`);
-    }
-    return {
-      total,
-      acked,
-      rawUnacked,
-      unacked,
-      ackEligibleUnacked,
-      ackIneligibleUnacked,
-      unackedRatio,
-      oldestUnackedCreatedAt,
-      oldestUnackedAgeMs,
-      classification,
-      actionableBacklog,
-      ageBuckets,
-      byTerminalStatus,
-      byReceiptStatus,
-      byBrokerOfRecord,
-      byWorker,
-      warnings,
-    };
+    return hotDiagnostics.readHotTerminalOutboxDiagnostics(this.hotDiagnosticsReadContext());
+  }
+
+  readHotTableLoadMetrics(): BrokerHotTableLoadMetrics {
+    return hotDiagnostics.readHotTableLoadMetrics(this.hotDiagnosticsReadContext());
   }
 
   readHotTableRuntimeLoadLimits(): BrokerHotTableRuntimeLoadLimits {
@@ -1009,76 +715,6 @@ export class SqliteBrokerStateStore implements BrokerStateStore {
       auditEvents: this.maxHotRuntimeAuditEvents,
       terminalOutboxEvents: this.maxHotRuntimeTerminalOutboxEvents,
     };
-  }
-
-  readHotTableLoadMetrics(): BrokerHotTableLoadMetrics {
-    const tables: Record<string, BrokerHotTableLoadMetricEntry> = {};
-    for (const table of SQLITE_HOT_ENTITY_TABLES) {
-      const count = this.readTableCount(table);
-      const maxPayloadBytes = count === 0 ? 0 : this.readMaxPayloadBytes(table);
-      const totalPayloadBytes = count === 0 ? 0 : this.readTotalPayloadBytes(table);
-      const entry: BrokerHotTableLoadMetricEntry = { count, maxPayloadBytes, totalPayloadBytes };
-      if (table === "broker_tasks") {
-        const terminalCount = this.readTerminalTaskCount();
-        const activeCount = count - terminalCount;
-        const terminalLoadedCount = Math.min(terminalCount, this.maxHotRuntimeTerminalTasks);
-        entry.runtimeLoad = {
-          limit: this.maxHotRuntimeTerminalTasks,
-          loadedCount: activeCount + terminalLoadedCount,
-          skippedCount: Math.max(0, terminalCount - terminalLoadedCount),
-          activeCount,
-          terminalCount,
-        };
-      } else if (table === "broker_audit_events") {
-        const loadedCount = Math.min(count, this.maxHotRuntimeAuditEvents);
-        entry.runtimeLoad = {
-          limit: this.maxHotRuntimeAuditEvents,
-          loadedCount,
-          skippedCount: Math.max(0, count - loadedCount),
-        };
-      } else if (table === "broker_terminal_outbox") {
-        const unackedRow = this.db
-          .prepare(
-            "SELECT COUNT(*) AS count FROM broker_terminal_outbox WHERE acknowledged_at IS NULL",
-          )
-          .get() as { count?: number | bigint } | undefined;
-        const unackedCount = coerceSqliteCount(unackedRow);
-        const loadedCount = Math.min(count, this.maxHotRuntimeTerminalOutboxEvents);
-        entry.unackedCount = unackedCount;
-        entry.runtimeLoad = {
-          limit: this.maxHotRuntimeTerminalOutboxEvents,
-          loadedCount,
-          skippedCount: Math.max(0, count - loadedCount),
-        };
-      }
-      tables[table] = entry;
-    }
-    return { tables };
-  }
-
-  private readMaxPayloadBytes(table: SqliteHotEntityTable): number {
-    const maxRow = this.db
-      .prepare(`SELECT COALESCE(MAX(LENGTH(payload)), 0) AS maxLen FROM ${table}`)
-      .get() as { maxLen?: number | bigint } | undefined;
-    return typeof maxRow?.maxLen === "bigint"
-      ? Number(maxRow.maxLen)
-      : typeof maxRow?.maxLen === "number" ? maxRow.maxLen : 0;
-  }
-
-  private readTotalPayloadBytes(table: SqliteHotEntityTable): number {
-    const sumRow = this.db
-      .prepare(`SELECT COALESCE(SUM(LENGTH(payload)), 0) AS totalLen FROM ${table}`)
-      .get() as { totalLen?: number | bigint } | undefined;
-    return typeof sumRow?.totalLen === "bigint"
-      ? Number(sumRow.totalLen)
-      : typeof sumRow?.totalLen === "number" ? sumRow.totalLen : 0;
-  }
-
-  private readTerminalTaskCount(): number {
-    const row = this.db
-      .prepare("SELECT COUNT(*) AS count FROM broker_tasks WHERE status IN ('succeeded', 'failed', 'canceled')")
-      .get() as { count?: number | bigint } | undefined;
-    return coerceSqliteCount(row);
   }
 
   planHotTaskRetention(options: SqliteTaskHotRetentionPlanOptions): SqliteHotRetentionPlan {
@@ -1419,21 +1055,33 @@ export class SqliteBrokerStateStore implements BrokerStateStore {
     return emptySnapshot();
   }
 
-  private readCanonicalPushNotificationConfigs(): TaskPushNotificationConfig[] | undefined {
+  /**
+   * Snapshot-only sidecar fields that have no hot table (push-notification
+   * configs, wave plans, cross-broker Terminal Brief projections) live in the
+   * canonical blob and must be carried into the hot-table runtime snapshot, or
+   * a hot-tables restart silently drops them (#1357 G3-d canary: a running
+   * wave plan vanished across a redeploy; #1446: same gap for projections).
+   */
+  private readCanonicalSnapshotSidecars(): Pick<BrokerSnapshot, "pushNotificationConfigs" | "wavePlans" | "crossBrokerTerminalBriefs"> {
     const row = this.db
       .prepare("SELECT payload FROM broker_snapshots WHERE id = 1")
       .get() as { payload?: string } | undefined;
     if (typeof row?.payload !== "string") {
-      return undefined;
+      return {};
     }
     try {
-      return parseSnapshotPayload(row.payload, `SQLite broker snapshot at ${this.dbFile}`, this.maxBytes).pushNotificationConfigs;
+      const canonical = parseSnapshotPayload(row.payload, `SQLite broker snapshot at ${this.dbFile}`, this.maxBytes);
+      return {
+        pushNotificationConfigs: canonical.pushNotificationConfigs,
+        wavePlans: canonical.wavePlans,
+        crossBrokerTerminalBriefs: canonical.crossBrokerTerminalBriefs,
+      };
     } catch {
       // Hot-table runtime loading must remain recoverable even when the legacy
-      // canonical snapshot is stale/corrupt/oversized. Push configs are a
-      // snapshot-only sidecar, so skip them rather than making hot-table
-      // recovery depend on parsing the entire canonical payload.
-      return undefined;
+      // canonical snapshot is stale/corrupt/oversized. Sidecar fields are
+      // snapshot-only, so skip them rather than making hot-table recovery
+      // depend on parsing the entire canonical payload.
+      return {};
     }
   }
 
@@ -1466,7 +1114,12 @@ export class SqliteBrokerStateStore implements BrokerStateStore {
     const updatedAt = new Date().toISOString();
     this.runImmediateTransaction(() => {
       const hasHotHints = hintsHasAnyEntries(hints);
-      const hasSnapshotOnlySidecarState = snapshot.pushNotificationConfigs !== undefined;
+      // Sidecar state with no hot table only reaches disk through the canonical
+      // blob, so its presence must veto the hint-covered blob-write skip below.
+      const hasSnapshotOnlySidecarState =
+        snapshot.pushNotificationConfigs !== undefined ||
+        (snapshot.wavePlans?.length ?? 0) > 0 ||
+        (snapshot.crossBrokerTerminalBriefs?.length ?? 0) > 0;
       const skipFullSnapshot = hasHotHints && !hasSnapshotOnlySidecarState;
       this.writeSnapshotRow(snapshot, updatedAt, hints, { skipFullSnapshot });
       this.writeMetadata("state_version", String(CURRENT_BROKER_STATE_VERSION_VALUE));
@@ -2139,291 +1792,20 @@ export class SqliteBrokerStateStore implements BrokerStateStore {
   }
 }
 
-function parseTerminalOutboxEventPayload(payload: unknown): {
-  payload?: {
-    status?: unknown;
-    brokerOfRecordId?: unknown;
-    worker?: unknown;
-    crossBrokerHandoff?: { childWorkerId?: unknown };
-    notificationOwnership?: { terminalAckPermittedByProjection?: unknown };
-  };
-  receipt?: { status?: unknown };
-} | null {
-  if (typeof payload !== "string" || !payload.trim()) {
-    return null;
-  }
-  try {
-    const parsed = JSON.parse(payload);
-    return parsed && typeof parsed === "object" ? parsed : null;
-  } catch {
-    return null;
-  }
-}
-
-function isAckIneligibleTerminalOutboxEvent(event: ReturnType<typeof parseTerminalOutboxEventPayload>): boolean {
-  return event?.payload?.notificationOwnership?.terminalAckPermittedByProjection === false;
-}
-
-function isAckIneligibleTerminalOutboxPayload(payload: unknown): boolean {
-  return isAckIneligibleTerminalOutboxEvent(parseTerminalOutboxEventPayload(payload));
-}
-
-function terminalOutboxAgeBucket(createdAt: unknown, nowMs: number): "lt1d" | "1to7d" | "7to14d" | "gte14d" | "unknown" {
-  if (typeof createdAt !== "string") return "unknown";
-  const createdAtMs = Date.parse(createdAt);
-  if (!Number.isFinite(createdAtMs)) return "unknown";
-  const ageMs = Math.max(0, nowMs - createdAtMs);
-  const dayMs = 24 * 60 * 60 * 1000;
-  if (ageMs < dayMs) return "lt1d";
-  if (ageMs < 7 * dayMs) return "1to7d";
-  if (ageMs < 14 * dayMs) return "7to14d";
-  return "gte14d";
-}
-
-function incrementDiagnosticsCounter(counter: Record<string, number>, value: unknown): void {
-  const key = typeof value === "string" && value.trim() ? value.trim() : "unknown";
-  counter[key] = (counter[key] ?? 0) + 1;
-}
-
-export class SqliteTaskRuntimeRepository implements TaskRuntimeRepository {
-  constructor(private readonly store: SqliteBrokerStateStore) {}
-
-  getTask(id: string): TaskRecord | null {
-    return this.store.readHotTasks({ id })[0] ?? null;
-  }
-
-  listTasks(filters: TaskListFilters = {}): TaskRecord[] {
-    const sqliteCanApplyLimit = !filters.exchangeId && !filters.proposalId && !filters.claimedBy;
-    return this.store
-      .readHotTasks({
-        status: filters.status,
-        targetNodeId: filters.targetNodeId,
-        intent: filters.intent,
-        assignedWorkerId: filters.assignedWorkerId,
-        taskOrigin: filters.taskOrigin,
-        limit: sqliteCanApplyLimit ? filters.limit : undefined,
-      })
-      .filter((task) => taskMatchesRuntimeFilters(task, filters))
-      .slice(0, normalizeRuntimeTaskListLimit(filters.limit));
-  }
-
-  upsertTask(task: TaskRecord): void {
-    this.store.upsertHotTasks([task]);
-  }
-}
-
-export class SqliteExchangeRuntimeRepository implements ExchangeRuntimeRepository {
-  constructor(private readonly store: SqliteBrokerStateStore) {}
-
-  getExchange(id: string): A2AExchangeState | null {
-    return this.store.readHotExchanges({ id })[0] ?? null;
-  }
-
-  listExchanges(): A2AExchangeState[] {
-    return this.store.readHotExchanges();
-  }
-
-  upsertExchange(exchange: A2AExchangeState): void {
-    this.store.upsertHotExchanges([exchange]);
-  }
-}
-
-export class SqliteExchangeMessageRuntimeRepository implements ExchangeMessageRuntimeRepository {
-  constructor(private readonly store: SqliteBrokerStateStore) {}
-
-  getExchangeMessage(id: string): A2AExchangeMessageRecord | null {
-    return this.store.readHotExchangeMessages({ id })[0] ?? null;
-  }
-
-  listExchangeMessages(exchangeId: string): A2AExchangeMessageRecord[] {
-    return this.store.readHotExchangeMessages({ exchangeId });
-  }
-
-  upsertExchangeMessage(message: A2AExchangeMessageRecord): void {
-    this.store.upsertHotExchangeMessages([message]);
-  }
-}
-
-export class SqliteProposalRuntimeRepository implements ProposalRuntimeRepository {
-  constructor(private readonly store: SqliteBrokerStateStore) {}
-
-  getProposal(id: string): ChangeProposal | null {
-    return this.store.readHotProposals({ id })[0] ?? null;
-  }
-
-  listProposals(filters: ProposalListFilters = {}): ChangeProposal[] {
-    return this.store.readHotProposals(filters);
-  }
-
-  upsertProposal(proposal: ChangeProposal): void {
-    this.store.upsertHotProposals([proposal]);
-  }
-}
-
-export class SqliteArtifactRuntimeRepository implements ArtifactRuntimeRepository {
-  constructor(private readonly store: SqliteBrokerStateStore) {}
-
-  getArtifact(id: string): ArtifactRecord | null {
-    return this.store.readHotArtifacts({ id })[0] ?? null;
-  }
-
-  listArtifactsForProposal(proposalId: string): ArtifactRecord[] {
-    return this.store.readHotArtifacts({ proposalId });
-  }
-
-  upsertArtifact(artifact: ArtifactRecord): void {
-    this.store.upsertHotArtifacts([artifact]);
-  }
-}
-
-export class SqliteValidationRuntimeRepository implements ValidationRuntimeRepository {
-  constructor(private readonly store: SqliteBrokerStateStore) {}
-
-  getValidation(id: string): ValidationResult | null {
-    return this.store.readHotValidations({ id })[0] ?? null;
-  }
-
-  listValidationsForProposal(proposalId: string): ValidationResult[] {
-    return this.store.readHotValidations({ proposalId });
-  }
-
-  upsertValidation(validation: ValidationResult): void {
-    this.store.upsertHotValidations([validation]);
-  }
-}
-
-function taskMatchesRuntimeFilters(task: TaskRecord, filters: TaskListFilters): boolean {
-  if (filters.exchangeId && task.exchangeId !== filters.exchangeId) {
-    return false;
-  }
-  if (filters.status && task.status !== filters.status) {
-    return false;
-  }
-  if (filters.targetNodeId && task.targetNodeId !== filters.targetNodeId) {
-    return false;
-  }
-  if (filters.proposalId && task.proposalId !== filters.proposalId) {
-    return false;
-  }
-  if (filters.intent && task.intent !== filters.intent) {
-    return false;
-  }
-  if (filters.claimedBy && task.claimedBy !== filters.claimedBy) {
-    return false;
-  }
-  if (filters.assignedWorkerId && task.assignedWorkerId !== filters.assignedWorkerId) {
-    return false;
-  }
-  if (filters.taskOrigin && (task.taskOrigin ?? "unknown") !== filters.taskOrigin) {
-    return false;
-  }
-  return true;
-}
-
-export class SqliteWorkerRuntimeRepository implements WorkerRuntimeRepository {
-  constructor(private readonly store: SqliteBrokerStateStore) {}
-
-  getWorker(nodeId: string): WorkerRecord | null {
-    return this.store.readHotWorkers({ nodeId })[0] ?? null;
-  }
-
-  listWorkers(filters: WorkerListFilters = {}): WorkerRecord[] {
-    return this.store
-      .readHotWorkers({ role: filters.role })
-      .filter((worker) => workerMatchesRuntimeFilters(worker, filters));
-  }
-
-  upsertWorker(worker: WorkerRecord): void {
-    this.store.upsertHotWorkers([worker]);
-  }
-}
-
-function workerMatchesRuntimeFilters(worker: WorkerRecord, filters: WorkerListFilters): boolean {
-  if (filters.role && worker.role !== filters.role) {
-    return false;
-  }
-  if (filters.environment && !worker.capabilities.environments.includes(filters.environment)) {
-    return false;
-  }
-  if (filters.workspaceId && !worker.capabilities.workspaceIds.includes(filters.workspaceId)) {
-    return false;
-  }
-  if (!workerProviderCapabilityMatchesRuntimeFilters(worker.capabilities.providerCapabilities, filters)) {
-    return false;
-  }
-  return true;
-}
-
-function workerProviderCapabilityMatchesRuntimeFilters(
-  capabilities: WorkerRecord["capabilities"]["providerCapabilities"] | undefined,
-  filters: WorkerListFilters,
-): boolean {
-  if (!filters.providerId && !filters.modelFamily && !filters.modelId && !filters.providerAvailability) return true;
-  return (capabilities ?? []).some((capability) => {
-    if (filters.providerId && capability.providerId !== filters.providerId.trim().toLowerCase()) return false;
-    if (filters.modelFamily && capability.modelFamily !== filters.modelFamily.trim().toLowerCase()) return false;
-    if (filters.modelId && capability.modelId !== filters.modelId.trim().toLowerCase()) return false;
-    if (filters.providerAvailability && capability.availability !== filters.providerAvailability) return false;
-    return true;
-  });
-}
-
-export class SqliteAuditRuntimeRepository implements AuditRuntimeRepository {
-  private readonly maxHotAuditEvents: number;
-  private readonly maxHotHeartbeatAuditEvents: number;
-
-  constructor(
-    private readonly store: SqliteBrokerStateStore,
-    options: SqliteAuditRuntimeRepositoryOptions = {},
-  ) {
-    this.maxHotAuditEvents = Math.max(0, Math.floor(options.maxHotAuditEvents ?? 5_000));
-    this.maxHotHeartbeatAuditEvents = Math.max(
-      0,
-      Math.floor(options.maxHotHeartbeatAuditEvents ?? Math.min(this.maxHotAuditEvents, DEFAULT_HOT_RUNTIME_MAX_HEARTBEAT_AUDIT_EVENTS)),
-    );
-  }
-
-  listAuditEvents(filters: AuditListFilters = {}): AuditEvent[] {
-    return this.store.readHotAuditEvents(filters);
-  }
-
-  appendAuditEvent(event: AuditEvent): void {
-    const hotEvent = { ...event, id: getHeartbeatAuditEventId(event) ?? event.id };
-    this.store.upsertHotAuditEvents([hotEvent]);
-    if (isHeartbeatAuditEvent(hotEvent)) {
-      this.store.pruneHotHeartbeatAuditEventsToMax(this.maxHotHeartbeatAuditEvents);
-    }
-    this.store.pruneHotAuditEventsToMax(this.maxHotAuditEvents);
-  }
-}
-
-export class SqliteTombstoneRuntimeRepository implements TombstoneRuntimeRepository {
-  constructor(private readonly store: SqliteBrokerStateStore) {}
-
-  getTombstone(taskId: string): TaskTombstone | null {
-    return this.store.readHotTombstones({ taskId })[0] ?? null;
-  }
-
-  listTombstones(filters: TombstoneListFilters = {}): TaskTombstone[] {
-    return this.store.readHotTombstones(filters);
-  }
-
-  upsertTombstone(tombstone: TaskTombstone): void {
-    this.store.upsertHotTombstones([tombstone]);
-  }
-}
-
-function normalizeNonNegativeSqliteLimit(value: number | undefined, fallback: number): number {
-  if (typeof value === "number" && Number.isFinite(value)) {
-    return Math.max(0, Math.trunc(value));
-  }
-  return Math.max(0, Math.trunc(fallback));
-}
-
-function normalizeOptionalSqliteLimit(value: number | undefined): number | undefined {
-  if (value === undefined) return undefined;
-  return normalizeNonNegativeSqliteLimit(value, 0);
-}
+// Table-native runtime repository adapters moved to
+// store-runtime-repositories.ts (#1289 R4 L-store-3); re-exported here so
+// existing `from "./store.js"` imports keep working.
+export {
+  SqliteTaskRuntimeRepository,
+  SqliteExchangeRuntimeRepository,
+  SqliteExchangeMessageRuntimeRepository,
+  SqliteProposalRuntimeRepository,
+  SqliteArtifactRuntimeRepository,
+  SqliteValidationRuntimeRepository,
+  SqliteWorkerRuntimeRepository,
+  SqliteAuditRuntimeRepository,
+  SqliteTombstoneRuntimeRepository,
+} from "./store-runtime-repositories.js";
 
 function canonicalSnapshotCounts(snapshot: BrokerSnapshot): NonNullable<SqliteCanonicalSnapshotRetentionSyncResult["before"]> {
   return {
@@ -2434,356 +1816,12 @@ function canonicalSnapshotCounts(snapshot: BrokerSnapshot): NonNullable<SqliteCa
   };
 }
 
-function buildHotTableSelect(
-  tableName: SqliteHotEntityTable,
-  filters: Array<[string, string | undefined]>,
-  orderBy: string,
-  limit?: number,
-): { sql: string; params: Array<string | number> } {
-  const params: Array<string | number> = [];
-  const clauses = filters.flatMap(([column, value]) => {
-    if (!value) {
-      return [];
-    }
-    params.push(value);
-    return [`${column} = ?`];
-  });
-  const hasLimit = typeof limit === "number" && Number.isInteger(limit) && limit > 0;
-  return {
-    sql: `SELECT payload FROM ${tableName}${clauses.length ? ` WHERE ${clauses.join(" AND ")}` : ""} ORDER BY ${orderBy}${hasLimit ? " LIMIT ?" : ""}`,
-    params: hasLimit ? [...params, limit] : params,
-  };
-}
-
-function buildHotTaskListItemSelect(filters: SqliteTaskHotTableFilters): { sql: string; params: Array<string | number> } {
-  const params: Array<string | number> = [];
-  const clauses = [
-    ["id", filters.id],
-    ["status", filters.status],
-    ["target_node_id", filters.targetNodeId],
-    ["intent", filters.intent],
-    ["assigned_worker_id", filters.assignedWorkerId],
-    ["task_origin", filters.taskOrigin],
-  ].flatMap(([column, value]) => {
-    if (!value) {
-      return [];
-    }
-    params.push(value);
-    return [`${column} = ?`];
-  });
-  clauses.push("json_valid(payload)");
-  const limit = filters.limit ?? (filters.maxRows !== undefined && filters.maxRows > 0
-    ? normalizeOptionalSqliteLimit(filters.maxRows)
-    : undefined);
-  const hasLimit = typeof limit === "number" && Number.isInteger(limit) && limit > 0;
-  return {
-    sql: `SELECT
-        id,
-        status,
-        intent,
-        target_node_id AS targetNodeId,
-        assigned_worker_id AS assignedWorkerId,
-        task_origin AS taskOrigin,
-        updated_at AS updatedAt,
-        json_extract(payload, '$.requester') AS requester,
-        json_extract(payload, '$.target') AS target,
-        json_extract(payload, '$.exchangeId') AS exchangeId,
-        json_extract(payload, '$.parentTaskId') AS parentTaskId,
-        json_extract(payload, '$.proposalId') AS proposalId,
-        json_extract(payload, '$.claimedBy') AS claimedBy,
-        COALESCE(json_extract(payload, '$.result.artifactIds'), json_extract(payload, '$.artifactIds')) AS artifactIds,
-        COALESCE(json_extract(payload, '$.result.summary'), json_extract(payload, '$.result.note')) AS resultSummary,
-        json_extract(payload, '$.error') AS error,
-        json_extract(payload, '$.requeueCount') AS requeueCount,
-        json_extract(payload, '$.createdAt') AS createdAt,
-        json_extract(payload, '$.claimedAt') AS claimedAt,
-        json_extract(payload, '$.completedAt') AS completedAt
-      FROM broker_tasks
-      WHERE ${clauses.join(" AND ")}
-      ORDER BY updated_at DESC, id ASC${hasLimit ? " LIMIT ?" : ""}`,
-    params: hasLimit ? [...params, limit] : params,
-  };
-}
-
-function parseHotTaskListItemProjection(row: unknown): SqliteTaskListItemProjection[] {
-  const record = row as Record<string, unknown>;
-  const id = optionalStringValue(record.id);
-  const intent = optionalStringValue(record.intent) as TaskRecord["intent"] | undefined;
-  const status = optionalStringValue(record.status) as TaskRecord["status"] | undefined;
-  const targetNodeId = optionalStringValue(record.targetNodeId);
-  const requester = parseJsonColumn<TaskRecord["requester"]>(record.requester);
-  const target = parseJsonColumn<TaskRecord["target"]>(record.target);
-  const updatedAt = optionalStringValue(record.updatedAt);
-  const createdAt = optionalStringValue(record.createdAt) ?? updatedAt;
-  if (!id || !intent || !status || !targetNodeId || !requester || !target || !updatedAt || !createdAt) {
-    return [];
-  }
-  const error = parseJsonColumn<TaskRecord["error"]>(record.error);
-  return [omitUndefinedProperties({
-    id,
-    intent,
-    status,
-    targetNodeId,
-    requester,
-    target,
-    exchangeId: optionalStringValue(record.exchangeId),
-    parentTaskId: optionalStringValue(record.parentTaskId),
-    proposalId: optionalStringValue(record.proposalId),
-    assignedWorkerId: optionalStringValue(record.assignedWorkerId),
-    claimedBy: optionalStringValue(record.claimedBy),
-    taskOrigin: optionalStringValue(record.taskOrigin) as TaskRecord["taskOrigin"] | undefined,
-    artifactIds: parseJsonColumn<string[]>(record.artifactIds),
-    resultSummary: optionalStringValue(record.resultSummary),
-    error: error ? { code: error.code, message: error.message } : undefined,
-    requeueCount: optionalNumberValue(record.requeueCount),
-    createdAt,
-    updatedAt,
-    claimedAt: optionalStringValue(record.claimedAt),
-    completedAt: optionalStringValue(record.completedAt),
-  })];
-}
-
-function parseJsonColumn<T>(value: unknown): T | undefined {
-  if (value === null || value === undefined) {
-    return undefined;
-  }
-  if (typeof value !== "string") {
-    return value as T;
-  }
-  try {
-    return JSON.parse(value) as T;
-  } catch {
-    return undefined;
-  }
-}
-
-function optionalStringValue(value: unknown): string | undefined {
-  return typeof value === "string" && value.length > 0 ? value : undefined;
-}
-
-function optionalNumberValue(value: unknown): number | undefined {
-  return typeof value === "number" && Number.isFinite(value) ? value : undefined;
-}
-
-function omitUndefinedProperties<T extends Record<string, unknown>>(value: T): T {
-  return Object.fromEntries(Object.entries(value).filter(([, entry]) => entry !== undefined)) as T;
-}
-
-function normalizeRuntimeTaskListLimit(limit: number | undefined): number | undefined {
-  return typeof limit === "number" && Number.isInteger(limit) && limit >= 0 ? limit : undefined;
-}
-
-function countSnapshotEntities(snapshot: BrokerSnapshot): Record<string, number> {
-  return Object.fromEntries(
-    Object.values(SQLITE_HOT_ENTITY_SNAPSHOT_KEYS).map((key) => [key, (snapshot[key] ?? []).length]),
-  );
-}
-
 function hasSnapshotRuntimeRows(snapshot: BrokerSnapshot): boolean {
   return Object.values(SQLITE_HOT_ENTITY_SNAPSHOT_KEYS).some(
     (key) => (snapshot[key] ?? []).length > 0,
   );
 }
 
-function planTaskRetentionFromRecords(
-  records: TaskRecord[],
-  options: SqliteTaskHotRetentionPlanOptions,
-): SqliteHotRetentionPlan {
-  const nowMs = options.nowMs ?? Date.now();
-  const cutoffMs = nowMs - options.retentionMs;
-  const retainedIds = new Set(options.protectedTaskIds ?? []);
-  const olderTerminalCandidates: Array<{ id: string; timestampMs: number }> = [];
-
-  for (const task of records) {
-    if (!isTerminalTaskStatus(task.status) || retainedIds.has(task.id)) {
-      retainedIds.add(task.id);
-      continue;
-    }
-    const timestampMs = parseRetentionTimestamp(task.completedAt ?? task.updatedAt);
-    if (timestampMs === null || timestampMs >= cutoffMs) {
-      retainedIds.add(task.id);
-      continue;
-    }
-    olderTerminalCandidates.push({ id: task.id, timestampMs });
-  }
-
-  const capSorted = [...olderTerminalCandidates]
-    .sort((a, b) => b.timestampMs - a.timestampMs || a.id.localeCompare(b.id));
-  const capRetained = capSorted.slice(0, options.maxTerminalRecords);
-  capRetained.forEach((entry) => retainedIds.add(entry.id));
-
-  const plan = buildRetentionPlan("broker_tasks", cutoffMs, records.map((record) => record.id), retainedIds);
-  plan.retainedByCapCount = capRetained.length;
-  return plan;
-}
-
-function planAuditRetentionFromRecords(
-  records: AuditEvent[],
-  options: SqliteAuditHotRetentionPlanOptions,
-): SqliteHotRetentionPlan {
-  const nowMs = options.nowMs ?? Date.now();
-  const cutoffMs = nowMs - options.retentionMs;
-  const retainedIds = new Set<string>();
-  const retentionCandidates: Array<{ id: string; timestampMs: number }> = [];
-  const protectedIds = normalizeAuditRetentionProtection(options.protectedIds);
-
-  for (const event of records) {
-    const timestampMs = parseRetentionTimestamp(event.createdAt);
-    if (isAuditEventProtected(event, protectedIds) || timestampMs === null) {
-      retainedIds.add(event.id);
-      continue;
-    }
-    retentionCandidates.push({ id: event.id, timestampMs });
-  }
-
-  const capSorted = [...retentionCandidates]
-    .sort((a, b) => b.timestampMs - a.timestampMs || a.id.localeCompare(b.id))
-    .filter((entry) => entry.timestampMs >= cutoffMs);
-  const capRetained = capSorted.slice(0, options.maxRecords);
-  capRetained.forEach((entry) => retainedIds.add(entry.id));
-
-  const plan = buildRetentionPlan("broker_audit_events", cutoffMs, records.map((record) => record.id), retainedIds);
-  plan.retainedByCapCount = capRetained.length;
-  return plan;
-}
-
-function planWorkerRetentionFromRecords(
-  records: WorkerRecord[],
-  options: SqliteWorkerHotRetentionPlanOptions,
-): SqliteHotRetentionPlan {
-  const nowMs = options.nowMs ?? Date.now();
-  const cutoffMs = nowMs - options.retentionMs;
-  const retainedIds = new Set(options.protectedWorkerIds ?? []);
-  const olderInactiveCandidates: Array<{ id: string; timestampMs: number }> = [];
-
-  for (const worker of records) {
-    if (retainedIds.has(worker.nodeId)) {
-      continue;
-    }
-    const timestampMs = parseRetentionTimestamp(worker.lastSeenAt);
-    if (timestampMs === null || timestampMs >= cutoffMs) {
-      retainedIds.add(worker.nodeId);
-      continue;
-    }
-    olderInactiveCandidates.push({ id: worker.nodeId, timestampMs });
-  }
-
-  const capSorted = [...olderInactiveCandidates]
-    .sort((a, b) => b.timestampMs - a.timestampMs || a.id.localeCompare(b.id));
-  const capRetained = capSorted.slice(0, options.maxInactiveWorkers);
-  capRetained.forEach((entry) => retainedIds.add(entry.id));
-
-  const plan = buildRetentionPlan("broker_workers", cutoffMs, records.map((record) => record.nodeId), retainedIds);
-  plan.retainedByCapCount = capRetained.length;
-  return plan;
-}
-
-function planTerminalOutboxRetentionFromRecords(
-  records: TerminalTaskOutboxEvent[],
-  options: SqliteTerminalOutboxHotRetentionPlanOptions,
-): SqliteHotRetentionPlan {
-  const nowMs = options.nowMs ?? Date.now();
-  const cutoffMs = nowMs - options.retentionMs;
-  const retainedIds = new Set<string>();
-  const acknowledgedCandidates: Array<{ id: string; timestampMs: number }> = [];
-
-  for (const event of records) {
-    const acknowledgedAt = event.ack?.acknowledgedAt ?? event.deliveredAt;
-    const acknowledgedMs = acknowledgedAt ? parseRetentionTimestamp(acknowledgedAt) : null;
-    if (acknowledgedMs === null) {
-      retainedIds.add(event.id);
-      continue;
-    }
-    if (acknowledgedMs >= cutoffMs) {
-      retainedIds.add(event.id);
-      continue;
-    }
-    acknowledgedCandidates.push({ id: event.id, timestampMs: acknowledgedMs });
-  }
-
-  const capSorted = [...acknowledgedCandidates]
-    .sort((a, b) => b.timestampMs - a.timestampMs || a.id.localeCompare(b.id));
-  const capRetained = capSorted.slice(0, options.maxAcknowledgedRecords);
-  capRetained.forEach((entry) => retainedIds.add(entry.id));
-
-  const plan = buildRetentionPlan("broker_terminal_outbox", cutoffMs, records.map((record) => record.id), retainedIds);
-  plan.retainedByCapCount = capRetained.length;
-  return plan;
-}
-
-export function buildHotEntityHintCoverage(
-  hotEntityTables: readonly string[],
-  hintedWriteTables: readonly string[],
-): BrokerHotEntityHintCoverage {
-  const supportedTables = [...hintedWriteTables];
-  const supported = new Set(supportedTables);
-  const missingTables = hotEntityTables.filter((table) => !supported.has(table));
-  return {
-    ok: missingTables.length === 0,
-    supportedTables,
-    missingTables,
-    supportedCount: supportedTables.length,
-    totalCount: hotEntityTables.length,
-  };
-}
-
-function buildRetentionPlan(
-  table: SqliteHotRetentionPlan["table"],
-  cutoffMs: number,
-  allIds: string[],
-  retainedIds: Set<string>,
-): SqliteHotRetentionPlan {
-  return {
-    table,
-    cutoffMs,
-    retainedIds: allIds.filter((id) => retainedIds.has(id)).sort(),
-    pruneIds: allIds.filter((id) => !retainedIds.has(id)).sort(),
-  };
-}
-
-function normalizeAuditRetentionProtection(
-  input: SqliteAuditHotRetentionProtection | undefined,
-): Required<Record<keyof SqliteAuditHotRetentionProtection, Set<string>>> {
-  return {
-    proposalIds: new Set(input?.proposalIds ?? []),
-    taskIds: new Set(input?.taskIds ?? []),
-    exchangeIds: new Set(input?.exchangeIds ?? []),
-    exchangeMessageIds: new Set(input?.exchangeMessageIds ?? []),
-    artifactIds: new Set(input?.artifactIds ?? []),
-    validationIds: new Set(input?.validationIds ?? []),
-    workerIds: new Set(input?.workerIds ?? []),
-  };
-}
-
-function isAuditEventProtected(
-  event: AuditEvent,
-  protectedIds: Required<Record<keyof SqliteAuditHotRetentionProtection, Set<string>>>,
-): boolean {
-  if (isHeartbeatAuditEvent(event)) {
-    return false;
-  }
-  if (event.proposalId && protectedIds.proposalIds.has(event.proposalId)) {
-    return true;
-  }
-  switch (event.targetType) {
-    case "proposal":
-      return protectedIds.proposalIds.has(event.targetId);
-    case "artifact":
-      return protectedIds.artifactIds.has(event.targetId);
-    case "validation":
-      return protectedIds.validationIds.has(event.targetId);
-    case "worker":
-      return protectedIds.workerIds.has(event.targetId);
-    case "task":
-      return protectedIds.taskIds.has(event.targetId);
-    case "exchange":
-      return protectedIds.exchangeIds.has(event.targetId);
-    case "exchange-message":
-      return protectedIds.exchangeMessageIds.has(event.targetId);
-    case "broker":
-      return false;
-  }
-}
 
 function parseHotEntityPayload<T>(row: unknown, schema: z.ZodType<T>, tableName: string): T {
   const parsed = parseHotEntityPayloadResult(row, schema, tableName);
@@ -2801,51 +1839,6 @@ function parseHotEntityPayloadSafe<T>(row: unknown, schema: z.ZodType<T>, tableN
     return [];
   }
   return [parsed.data];
-}
-
-function parseHotEntityPayloadResult<T>(row: unknown, schema: z.ZodType<T>, tableName: string): { success: true; data: T } | { success: false; error: string } {
-  let value: unknown;
-  try {
-    value = JSON.parse(readSqlitePayload(row, tableName));
-  } catch (error) {
-    return { success: false, error: sanitizeDiagnosticValue(error instanceof Error ? error.message : String(error)) };
-  }
-  const parsed = schema.safeParse(value);
-  if (!parsed.success) {
-    return { success: false, error: sanitizeDiagnosticValue(parsed.error.issues[0]?.message ?? "unknown schema error") };
-  }
-  return { success: true, data: parsed.data };
-}
-
-function sanitizeDiagnosticValue(value: unknown): string {
-  const raw = typeof value === "string" ? value : String(value ?? "unknown");
-  return raw.replace(/[\r\n\t]+/g, " ").slice(0, 240);
-}
-
-function coalesceInvalidHotEntityRows(rows: BrokerInvalidHotEntityRow[]): BrokerInvalidHotEntityRow[] {
-  const byKey = new Map<string, BrokerInvalidHotEntityRow>();
-  for (const row of rows) {
-    const key = `${row.table}\u0000${row.primaryKey}\u0000${row.schemaError}`;
-    const existing = byKey.get(key);
-    if (existing) {
-      existing.count += row.count;
-    } else {
-      byKey.set(key, { ...row });
-    }
-  }
-  return [...byKey.values()];
-}
-
-function readSqlitePayload(row: unknown, tableName: string): string {
-  if (
-    typeof row === "object" &&
-    row !== null &&
-    "payload" in row &&
-    typeof row.payload === "string"
-  ) {
-    return row.payload;
-  }
-  throw new Error(`missing payload column from ${tableName}`);
 }
 
 function hintsHasAnyEntries(hints: BrokerStateSaveHints | undefined): boolean {

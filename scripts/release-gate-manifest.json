@@ -411,6 +411,30 @@
       "note": "Unit tests for #1261 L1 release-gate manifest absence-sweep; keeps new scripts/*.test.mjs and scripts/lib/*.test.mjs registered."
     },
     {
+      "file": "scripts/check-broker-policy.test.mjs",
+      "class": "gate",
+      "round": null,
+      "note": "Unit tests for the #1355 G1 declarative worker-class policy engine validator (docs/ops/broker-policy.json schema a2a.broker.policy.v1)."
+    },
+    {
+      "file": "scripts/lane-reliability-report.test.mjs",
+      "class": "gate",
+      "round": null,
+      "note": "Unit tests for the #1300 M2-a reputation report (small-sample insufficient_data guard, supersede-aware aggregation, anonymity pass-through)."
+    },
+    {
+      "file": "scripts/dispatch-risk-hints.test.mjs",
+      "class": "gate",
+      "round": null,
+      "note": "Unit tests for the #1300 M2-b pre-dispatch risk hints (ledger low-substantive warnings, taxonomy cumulative threshold, explicit no_data, anonymity gate)."
+    },
+    {
+      "file": "scripts/build-injected-knowledge.test.mjs",
+      "class": "gate",
+      "round": null,
+      "note": "Unit tests for the #1373 K1 broker-owned anonymous memory injection builder."
+    },
+    {
       "file": "scripts/check-dialectic-hygiene.test.mjs",
       "class": "gate",
       "round": null,
@@ -439,6 +463,54 @@
       "class": "gate",
       "round": null,
       "note": "Adversarial + #1380-conformance tests for #1378 v1 independent offline verifier: tamper/replay/keyring-absent/assurance-invariant fail-closed, real broker-signer round-trip."
+    },
+    {
+      "file": "scripts/verify-finalizer-verdict.test.mjs",
+      "class": "gate",
+      "round": null,
+      "note": "Adversarial tests for #1383 V-b finalizer-verdict offline verifier: tamper/subject-binding/keyring-absent/assurance-invariant fail-closed."
+    },
+    {
+      "file": "scripts/export-analysis-report.test.mjs",
+      "class": "gate",
+      "round": null,
+      "note": "Tests for #1378 report exporter: fail-closed emission (no provenance/countersig/non-succeeded refused), live round-trip to the offline verifier, assurance stamping."
+    },
+    {
+      "file": "scripts/check-finalizer-verdict.test.mjs",
+      "class": "gate",
+      "round": null,
+      "note": "Tests for #1383 V-d finalizer-verdict enforcement gate: independence/subject-binding/decision/registered-key, warn->enforce."
+    },
+    {
+      "file": "scripts/check-attestation-bundle.test.mjs",
+      "class": "gate",
+      "round": null,
+      "note": "Tests for #1301 M3-c attestation bundle checker: fail-closed schema, sha256-jcs integrity recomputation, PII/identifier second-line scan."
+    },
+    {
+      "file": "scripts/check-cost-per-outcome.test.mjs",
+      "class": "gate",
+      "round": null,
+      "note": "Tests for #1303 M5-a cost-per-outcome gate: fail-closed schema, currency-marker rejection, derived costPerAccepted with divide-by-zero marker, M1 anonymity axes, ledger-alignment warnings."
+    },
+    {
+      "file": "scripts/cost-per-outcome-aggregate.test.mjs",
+      "class": "gate",
+      "round": null,
+      "note": "Tests for #1303 M5-b cost join CLI: supersedes-aware ledger join, unmatched reporting, gate-checked output, idempotent merge."
+    },
+    {
+      "file": "scripts/check-spec-broker-conformance.test.mjs",
+      "class": "gate",
+      "round": null,
+      "note": "Tests for #1304 M6-b spec<->broker conformance: committed spec matches broker source, mutation/missing-block/unknown-key/dead-path all fail closed."
+    },
+    {
+      "file": "scripts/validate-key-registry-disjoint.test.mjs",
+      "class": "gate",
+      "round": null,
+      "note": "Tests for #1383 V-c disjoint role-registry validator: role prefix, global keyId uniqueness, and normalized public-key uniqueness (same keypair cannot be dual-role) all fail closed."
     }
   ]
 }

@@ -1,0 +1,29 @@
+{
+  "$comment": "Synthetic reproduction of the zero_files incident shape (#1302 M4-b; incident #1257 -> fix #1278): the task message embeds an intentionally TRUNCATED 'Payload JSON:' excerpt while the structured payload file carries the full sourceBundle. A pre-fix bridge parsing the message excerpt recovers zero carriers (zero_files with a healthy-looking worker exit); current bridges read A2A_ANALYSIS_PAYLOAD_FILE. All content synthetic - shape only, no operational data.",
+  "task": {
+    "id": "replay-zero-files-incident",
+    "intent": "analyze",
+    "status": "claimed",
+    "createdAt": "2026-07-07T00:00:00.000Z",
+    "message": "A2A analysis dispatch.\nUse A2A_ANALYSIS_PAYLOAD_FILE for the full payload; the prompt payload below is an intentionally bounded excerpt.\nPayload JSON: {\"mode\":\"analysis-only\",\"sourceOnly\":true,\"noLive\":true,\"sourceBundle\":{\"files\":[{\"repo\":\"synthetic/repo\",\"path\":\"src/alpha.js\",\"content\":\"export const alpha = () =>"
+  },
+  "payload": {
+    "mode": "analysis-only",
+    "roundMode": "a2ad",
+    "sourceOnly": true,
+    "noLive": true,
+    "taskClass": "review",
+    "parentRoundId": "replay-fixture-round-r1",
+    "sourceBundle": {
+      "files": [
+        { "repo": "synthetic/repo", "path": "src/alpha.js", "content": "export const alpha = () => 1;\n" },
+        { "repo": "synthetic/repo", "path": "src/beta.js", "content": "export const beta = () => 2;\n" }
+      ]
+    },
+    "acceptance": { "command": ["node", "--version"], "expectExitCode": 0 }
+  },
+  "result": {
+    "summary": "synthetic preserved worker result for acceptance replay",
+    "validations": [{ "kind": "smoke", "verdict": "pass", "note": "synthetic smoke evidence" }]
+  }
+}

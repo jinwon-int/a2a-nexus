@@ -202,6 +202,12 @@ export interface RunnerConfig {
   proofSigningKeyFile?: string;
   /** Optional JWS kid for execution-proof signatures. */
   proofSigningKid?: string;
+  /** Explicit deny-by-default host allowlist for controlled source-retrieval egress. */
+  egressAllowlistHosts?: string[];
+  /** Maximum bytes a controlled source-retrieval egress fetch may read. */
+  egressMaxBytes?: number;
+  /** Per-request timeout for controlled source-retrieval egress fetches. */
+  egressTimeoutMs?: number;
   /**
    * Escape hatch for github-propose-patch/propose_patch mode.
    * When set, injected as A2A_PATCH_COMMAND env var into containers.

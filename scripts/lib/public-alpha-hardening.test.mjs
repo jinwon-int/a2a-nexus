@@ -15,8 +15,8 @@ function exists(rel) {
 }
 
 test('public alpha hardening evidence documents fresh-clone smoke and approval boundaries', () => {
-  assert.equal(exists('docs/public-alpha-hardening.md'), true, 'missing docs/public-alpha-hardening.md');
-  const doc = read('docs/public-alpha-hardening.md');
+  assert.equal(exists('docs/history/public-alpha-hardening.md'), true, 'missing docs/history/public-alpha-hardening.md');
+  const doc = read('docs/history/public-alpha-hardening.md');
 
   assert.match(doc, /#1163/);
   assert.match(doc, /fresh clone smoke/i);
@@ -114,8 +114,8 @@ test('external publicization roadmap captures A2AD evidence, local-first path, a
 });
 
 test('public externalization follow-up closeout records contribution, traffic, and homepage decisions', () => {
-  assert.equal(exists('docs/public-externalization-followups.md'), true, 'missing docs/public-externalization-followups.md');
-  const doc = read('docs/public-externalization-followups.md');
+  assert.equal(exists('docs/history/public-externalization-followups.md'), true, 'missing docs/history/public-externalization-followups.md');
+  const doc = read('docs/history/public-externalization-followups.md');
 
   assert.match(doc, /#1172/);
   assert.match(doc, /#1173/);
@@ -191,8 +191,8 @@ test('public externalization next-action docs cover README, architecture, entry 
 });
 
 test('public feedback intake records issue form and monitoring follow-up boundaries', () => {
-  assert.equal(exists('docs/public-feedback-intake.md'), true, 'missing docs/public-feedback-intake.md');
-  const doc = read('docs/public-feedback-intake.md');
+  assert.equal(exists('docs/history/public-feedback-intake.md'), true, 'missing docs/history/public-feedback-intake.md');
+  const doc = read('docs/history/public-feedback-intake.md');
 
   assert.match(doc, /#1169/);
   assert.match(doc, /issueTemplates:\s*\[\]/);

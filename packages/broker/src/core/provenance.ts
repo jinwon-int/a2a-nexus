@@ -1,3 +1,16 @@
+/**
+ * Result/retrieval provenance primitives (G2 #1356/#1380, K2 #1374).
+ *
+ * Scope of proof — read before trusting a provenance chain (#1386 S5):
+ * - PROVES: the keyed worker signed and SUBMITTED this exact result for this
+ *   task (integrity + submission provenance), and the broker countersigned the
+ *   accepted worker signature.
+ * - Does NOT prove AUTHORSHIP: a finished artifact produced elsewhere and fed
+ *   to a signing worker acquires valid provenance. These are process
+ *   attestations, not proofs that the worker created the work.
+ * - Does NOT prove correctness: a signed wrong result is a wrong result with
+ *   good provenance.
+ */
 import { createHash } from "node:crypto";
 
 import {
@@ -96,7 +109,16 @@ function decodeProtectedAlg(signature: AgentCardSignature): "EdDSA" | "ES256" {
 }
 
 function stripResultProvenance(result: Record<string, unknown>): Record<string, unknown> {
-  const { provenance: _omit, ...rest } = result;
+  // The result hash covers the CORE result only — it must exclude both
+  // attestation wrappers that are computed OVER it:
+  //  - provenance: the worker/broker signatures cover the hash, so they cannot
+  //    be inside it.
+  //  - finalizerVerdict (#1383 V-c): the finalizer binds subject.resultHash to
+  //    this hash and signs the verdict BEFORE it is embedded, so including the
+  //    verdict would make the post-embedding anchor an unsatisfiable sha256
+  //    fixed point (the verdict subject can never equal a hash that covers the
+  //    verdict). Excluding it is a no-op for verdict-less results (back-compat).
+  const { provenance: _prov, finalizerVerdict: _verdict, ...rest } = result;
   return rest;
 }
 

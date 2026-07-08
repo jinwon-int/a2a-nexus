@@ -20,6 +20,8 @@ const DEFAULT_SUBSTANTIVE_LANE_WARNING_WINDOW = 2;
 const DEFAULT_SUBSTANTIVE_LANE_WARNING_THRESHOLD = 0.5;
 const ISO_DATE = /^\d{4}-\d{2}-\d{2}$/;
 const IMPLEMENTATION_MODES = ['solo', 'h1-pipeline', 'h2-hybrid'];
+// K1 (#1373) injection-wave marker for H3 cross-referencing.
+const KNOWLEDGE_INJECTION_VALUES = ['on', 'off'];
 const IMPLEMENTATION_DURATION_BANDS = ['<1h', '1-4h', '>4h'];
 
 /**
@@ -39,6 +41,32 @@ export const FAILURE_CATEGORIES = [
 ];
 
 export const DEFAULT_OTHER_MAJORITY_WARNING_WINDOW = 2;
+export const DEFAULT_TREND_WINDOW = 5;
+
+/**
+ * One-line trend over the last N entries (#1291 R6) so the growing scorecard is
+ * readable without re-reading every entry. Report-only — never affects
+ * validation. Returns '' for an empty scorecard.
+ */
+export function summarizeScorecardTrend(entries, window = DEFAULT_TREND_WINDOW) {
+  const list = Array.isArray(entries) ? entries : [];
+  if (list.length === 0) return '';
+  const n = Math.max(1, Math.min(window, list.length));
+  const recent = list.slice(-n);
+  let carryOver = 0;
+  let deviation = 0;
+  const failureTotals = {};
+  for (const entry of recent) {
+    carryOver += Number(entry?.metrics?.carryOverCount) || 0;
+    deviation += Number(entry?.metrics?.evidenceGateDeviationCount) || 0;
+    for (const [category, count] of Object.entries(entry?.failureBreakdown ?? {})) {
+      if (Number.isInteger(count) && count > 0) failureTotals[category] = (failureTotals[category] ?? 0) + count;
+    }
+  }
+  const top = Object.entries(failureTotals).sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0]))[0];
+  const topCategory = top ? top[0] : 'none';
+  return `trend(last ${n}): carryOver ${carryOver}, deviation ${deviation}, top failure category: ${topCategory}`;
+}
 
 export function evaluateScorecard(doc) {
   const failures = [];
@@ -92,6 +120,9 @@ export function evaluateScorecard(doc) {
       } else if (!IMPLEMENTATION_DURATION_BANDS.includes(entry.implementationDurationBand)) {
         failures.push(`${where}: implementationDurationBand must be one of: ${IMPLEMENTATION_DURATION_BANDS.join(', ')}`);
       }
+    }
+    if (entry?.knowledgeInjection !== undefined && !KNOWLEDGE_INJECTION_VALUES.includes(entry.knowledgeInjection)) {
+      failures.push(`${where}: knowledgeInjection must be one of: ${KNOWLEDGE_INJECTION_VALUES.join(', ')}`);
     }
     const breakdown = entry?.failureBreakdown;
     if (breakdown !== undefined) {
@@ -207,6 +238,8 @@ function main() {
     ? `; substantive lanes ${substantiveLaneTotals.substantiveLaneCount}/${substantiveLaneTotals.dispatchedLaneCount}`
     : '';
   console.log(`round quality scorecard ok (${doc.entries.length} entr${doc.entries.length === 1 ? 'y' : 'ies'}; totals ${JSON.stringify(totals)}${failureSummary}${substantiveSummary})`);
+  const trend = summarizeScorecardTrend(doc.entries);
+  if (trend) console.log(trend);
 }
 
 const isDirectRun = process.argv[1] && import.meta.url.endsWith(process.argv[1].split('/').pop());
