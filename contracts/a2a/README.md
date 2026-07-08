@@ -25,6 +25,7 @@ Public-safe contract skeletons for A2A protocol and task lifecycle behavior.
 - [Harness-neutral analysis adapter](./harness-neutral-analysis-adapter.md) — source-only analysis task inputs, adapter output fields, evidence classes, and finalizer counting rules independent of Hermes/OpenClaw/Docker-runner harnesses
 - [Constrained node-op lane](./node-op-lane.md) — allowlisted node-local fleet operation contract; explicitly rejects raw shell/exec and freezes approval, readiness, integrity, redaction, and rollback gates
 - [Completion certificate](./completion-certificate.md) — source-only proof object for declared task completion conditions; composes battery/judgment verdicts for external payment-release evaluators without moving funds or integrating live rails
+- [Product artifact certificate](./product-artifact-certificate.md) — source-only claim-bound certificate for pinned software artifacts; separates finite evidence claims from broad safety/quality marketing
 
 ## Compatibility
 
