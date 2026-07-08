@@ -24,7 +24,7 @@
  * Usage:
  *   node scripts/check-finalizer-verdict.mjs --verdict <v.json> --head-sha <sha> \
  *     --finalizer-keyring <k.json> [--worker-keys id1,id2] [--result r.json ...] \
- *     [--producing-attester-subjects sub1,sub2] [--mode warn|enforce] [--json]
+ *     [--producing-attester-subjects sub1,sub2] [--max-age-seconds N] [--mode warn|enforce] [--json]
  *
  * --worker-keys are producing worker KEY IDS (static-key independence axis);
  * --result points at the analysis result/report JSON(s) whose signed
@@ -69,11 +69,11 @@ export function deriveProducingWorkerKeyIds(reports) {
  */
 export function evaluateVerdictGate({
   verdict, headSha, finalizerKeyring, producingWorkerKeyIds = [],
-  producingAttesterSubjects = [], attesterAllowlist = [], mode = "warn",
+  producingAttesterSubjects = [], attesterAllowlist = [], maxAgeSeconds, mode = "warn",
 }) {
   const reasons = [];
   const expectedSubject = { kind: "pr", prHeadSha: headSha };
-  const v = verifyVerdict(verdict, finalizerKeyring, { expectedSubject });
+  const v = verifyVerdict(verdict, finalizerKeyring, { expectedSubject, maxAgeSeconds });
   for (const c of v.checks) {
     if (!c.ok) reasons.push(`${c.id}: ${c.detail}`);
   }
@@ -127,12 +127,13 @@ function main(argv) {
       "worker-keys": { type: "string" },
       "result": { type: "string", multiple: true },
       "producing-attester-subjects": { type: "string" },
+      "max-age-seconds": { type: "string" },
       mode: { type: "string", default: "warn" },
       json: { type: "boolean", default: false },
     },
   });
   if (!values.verdict || !values["head-sha"] || !values["finalizer-keyring"]) {
-    process.stderr.write("usage: check-finalizer-verdict.mjs --verdict <v.json> --head-sha <sha> --finalizer-keyring <k.json> [--worker-keys id1,id2] [--producing-attester-subjects sub1,sub2] [--mode warn|enforce]\n");
+    process.stderr.write("usage: check-finalizer-verdict.mjs --verdict <v.json> --head-sha <sha> --finalizer-keyring <k.json> [--worker-keys id1,id2] [--producing-attester-subjects sub1,sub2] [--max-age-seconds N] [--mode warn|enforce]\n");
     return 2;
   }
   if (values.mode !== "warn" && values.mode !== "enforce") {
@@ -162,6 +163,11 @@ function main(argv) {
   }
   const producingWorkerKeyIds = [...new Set([...explicitWorkerKeys, ...derivedWorkerKeys])];
   const producingAttesterSubjects = (values["producing-attester-subjects"] ?? "").split(",").map((s) => s.trim()).filter(Boolean);
+  const maxAgeSeconds = values["max-age-seconds"] === undefined ? undefined : Number(values["max-age-seconds"]);
+  if (values["max-age-seconds"] !== undefined && (!Number.isFinite(maxAgeSeconds) || maxAgeSeconds < 0)) {
+    process.stderr.write(`invalid --max-age-seconds '${values["max-age-seconds"]}' (expected non-negative seconds)\n`);
+    return 2;
+  }
 
   const result = evaluateVerdictGate({
     verdict,
@@ -169,6 +175,7 @@ function main(argv) {
     finalizerKeyring,
     producingWorkerKeyIds,
     producingAttesterSubjects,
+    maxAgeSeconds,
     mode: values.mode,
   });
 

@@ -21,7 +21,7 @@
  * credential action. Never emits private key material.
  *
  * Usage:
- *   node scripts/verify-finalizer-verdict.mjs <verdict.json> --keyring <keyring.json> [--json]
+ *   node scripts/verify-finalizer-verdict.mjs <verdict.json> --keyring <keyring.json> [--max-age-seconds N] [--json]
  * Exit 0 = verdict integrity OK; non-zero = fail-closed.
  */
 import fs from "node:fs";
@@ -75,6 +75,29 @@ function finalizerKeyLifecycleViolation(record, verdict) {
 
 function subjectsEqual(a, b) {
   return canonicalizeJson(a) === canonicalizeJson(b);
+}
+
+function freshnessViolation(verdict, { maxAgeSeconds, now } = {}) {
+  if (maxAgeSeconds === undefined || maxAgeSeconds === null) return undefined;
+  if (!Number.isFinite(maxAgeSeconds) || maxAgeSeconds < 0) {
+    return `invalid maxAgeSeconds '${maxAgeSeconds}' (expected non-negative seconds)`;
+  }
+  const producedMs = typeof verdict.producedAt === "string" ? Date.parse(verdict.producedAt) : NaN;
+  if (!Number.isFinite(producedMs)) {
+    return "verdict has no valid producedAt for max-age freshness check (fail-closed)";
+  }
+  const nowMs = now instanceof Date ? now.getTime() : (now === undefined ? Date.now() : Date.parse(String(now)));
+  if (!Number.isFinite(nowMs)) {
+    return `invalid freshness reference time '${now}'`;
+  }
+  const ageMs = nowMs - producedMs;
+  if (ageMs < 0) {
+    return "verdict producedAt is in the future relative to the verifier clock";
+  }
+  if (ageMs > maxAgeSeconds * 1000) {
+    return `verdict age ${Math.floor(ageMs / 1000)}s exceeds max-age ${maxAgeSeconds}s`;
+  }
+  return undefined;
 }
 
 /**
@@ -188,6 +211,13 @@ export function verifyVerdict(verdict, keyring, opts = {}) {
     pass(checks, "assurance-invariant");
   }
 
+  const stale = freshnessViolation(verdict, opts);
+  if (stale) {
+    fail(checks, "verdict-freshness", stale);
+  } else if (opts.maxAgeSeconds !== undefined && opts.maxAgeSeconds !== null) {
+    pass(checks, "verdict-freshness");
+  }
+
   // Authentication — either the attested-identity path (S3) or the static key.
   // Both cover JCS(verdict sans their own signature), so every signed field
   // (subject, decision, producedAt, and the identity itself) is tamper-bound.
@@ -245,11 +275,11 @@ function main(argv) {
   const { values, positionals } = parseArgs({
     args: argv,
     allowPositionals: true,
-    options: { keyring: { type: "string" }, json: { type: "boolean", default: false } },
+    options: { keyring: { type: "string" }, "max-age-seconds": { type: "string" }, json: { type: "boolean", default: false } },
   });
   const verdictPath = positionals[0];
   if (!verdictPath || !values.keyring) {
-    process.stderr.write("usage: verify-finalizer-verdict.mjs <verdict.json> --keyring <keyring.json> [--json]\n");
+    process.stderr.write("usage: verify-finalizer-verdict.mjs <verdict.json> --keyring <keyring.json> [--max-age-seconds N] [--json]\n");
     return 2;
   }
   let verdict;
@@ -267,7 +297,12 @@ function main(argv) {
     return 2;
   }
 
-  const result = verifyVerdict(verdict, keyring);
+  const maxAgeSeconds = values["max-age-seconds"] === undefined ? undefined : Number(values["max-age-seconds"]);
+  if (values["max-age-seconds"] !== undefined && (!Number.isFinite(maxAgeSeconds) || maxAgeSeconds < 0)) {
+    process.stderr.write(`invalid --max-age-seconds '${values["max-age-seconds"]}' (expected non-negative seconds)\n`);
+    return 2;
+  }
+  const result = verifyVerdict(verdict, keyring, { maxAgeSeconds });
   if (values.json) {
     process.stdout.write(`${JSON.stringify(result, null, 2)}\n`);
   } else {

@@ -215,4 +215,10 @@ operator still triggers the run and authors the judgment content.
   `producerIdentityKnown`; an empty producing set means independence is
   UNVERIFIED (vacuously not violated) — the CLI prints a NOTE so callers do not
   mistake it for verified.
+- **Max-age freshness cutoff** (landed, #1462): verifier/gate callers may pass
+  `--max-age-seconds N` / `maxAgeSeconds` to fail stale verdicts closed against
+  `producedAt`. Unset preserves existing behavior; `warn` mode reports
+  `verdict-freshness` without blocking, and `enforce` blocks. Promotion to a
+  required max-age value is an operator policy decision after observing live
+  dispatch patterns.
 - **Multi-finalizer panels** (M-of-N verdicts) for higher-stakes subjects.
