@@ -1,0 +1,25 @@
+{
+  "keys": {
+    "worker:sample-analysis": "-----BEGIN PUBLIC KEY-----\nMCowBQYDK2VwAyEA4Yt1Lo7b/lfy6ZzjfGNVUhLPujHl6rqhfb2/1AzxHRQ=\n-----END PUBLIC KEY-----\n",
+    "broker:sample-countersig": "-----BEGIN PUBLIC KEY-----\nMCowBQYDK2VwAyEAg4D/FVNDuCFVFdVYwpESTEnhTblexla+Ya+H5p7bOiY=\n-----END PUBLIC KEY-----\n",
+    "runner:sample-source-snapshot": "-----BEGIN PUBLIC KEY-----\nMCowBQYDK2VwAyEARcgtUAbY6YEuscHQPH2TrQHw1pxkifVll6Y84zmpKbk=\n-----END PUBLIC KEY-----\n",
+    "finalizer:sample-report-review": {
+      "pem": "-----BEGIN PUBLIC KEY-----\nMCowBQYDK2VwAyEARJP50pq6dc7cfC2SxBAO8/h24haqtuZ8Oyz3DCDgOmY=\n-----END PUBLIC KEY-----\n",
+      "status": "active",
+      "notBefore": "2026-07-01T00:00:00.000Z",
+      "expiresAt": "2026-12-31T23:59:59.000Z"
+    },
+    "broker:sample-agent-work-proof:completion:v1": {
+      "pem": "-----BEGIN PUBLIC KEY-----\nMCowBQYDK2VwAyEAJOwfJXRCwjab5cDB5QvHBdXhzQ1leNO25Z7yihVmRY8=\n-----END PUBLIC KEY-----\n",
+      "status": "active",
+      "notBefore": "2026-07-01T00:00:00.000Z",
+      "expiresAt": "2099-12-31T23:59:59.000Z"
+    },
+    "finalizer:sample-agent-work-proof:v1": {
+      "pem": "-----BEGIN PUBLIC KEY-----\nMCowBQYDK2VwAyEAo6gcVj/C5N/2iF6ph4H+NZ0Umauv058KTrj2aLfOxLU=\n-----END PUBLIC KEY-----\n",
+      "status": "active",
+      "notBefore": "2026-07-01T00:00:00.000Z",
+      "expiresAt": "2099-12-31T23:59:59.000Z"
+    }
+  }
+}
