@@ -18,6 +18,18 @@ Do not include secrets, credentials, private endpoints, local operator paths, Te
 
 Do not perform repository visibility changes, tag/release creation, npm/Docker publication, production deploys, Gateway/broker/worker restarts, database mutations, provider sends, terminal-outbox ACK/replay mutations, or secret/credential movement unless an operator explicitly approves that specific action.
 
+## Validation entrypoints
+
+Use [`docs/ops/script-surface-entrypoints.md`](docs/ops/script-surface-entrypoints.md) to choose the command level:
+
+| Situation | Command path |
+|---|---|
+| Local quick check | focused package/doc command for touched files |
+| PR check | `npm run check` |
+| Public candidate check | `npm run scan:public-readiness`, `npm run scan:external-secrets`, and relevant package/readiness audits |
+
+Focused checks are fast feedback. A public/release/package candidate still needs the explicit public-readiness and secret/history scans, and no validation command authorizes publication, deployment, provider sends, DB/outbox/ACK/replay mutation, or secret movement.
+
 ## A2A Spec-First Change Protocol
 
 Medium and large A2A changes must start from a lightweight spec-first workflow before implementation. This is a documentation and operating layer; it does not authorize production deploys, Gateway restarts, live canaries, DB/outbox mutations, manual Terminal Brief ACK/replay, releases, secret movement, or visibility changes.

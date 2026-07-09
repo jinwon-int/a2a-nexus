@@ -40,7 +40,13 @@ This repository is now public and remains an alpha project:
 
 ## What to try first
 
-If you are evaluating A2A Nexus from the public repository, stay on the local-only path first:
+If you are evaluating A2A Nexus from the public repository, stay on the local-only path first. Use the script-surface entrypoint layer to pick the smallest safe command before the full PR gate:
+
+| Situation | Command path |
+|---|---|
+| Local quick check | focused package/doc command for the touched files, for example `npm run check:markdown-links` for docs-only edits |
+| PR check | `npm run check` |
+| Public candidate check | `npm run scan:public-readiness`, `npm run scan:external-secrets`, and the relevant package/readiness audit |
 
 ```bash
 npm ci --ignore-scripts --include=dev
@@ -50,6 +56,7 @@ npm run scan:public-readiness
 npm run scan:external-secrets
 ```
 
+The full script-surface operator map lives in [`docs/ops/script-surface-entrypoints.md`](docs/ops/script-surface-entrypoints.md).
 Then follow the public docs path in this order:
 
 1. [Public umbrella quickstart](docs/quickstart/public-umbrella.md)

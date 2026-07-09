@@ -11,6 +11,18 @@ The goal is operating-cost reduction without feature or gate deletion:
 - fail closed when required scripts disappear or become unclassified;
 - give future cleanup PRs a stable baseline before retiring wrappers.
 
+## Operator entrypoint layer
+
+Use [script-surface-entrypoints.md](script-surface-entrypoints.md) when choosing which command to run for a local edit, an ordinary PR, or a public/release candidate. That guide is an operator-facing overlay on this manifest; it does not replace the manifest as the classification baseline.
+
+The three operator entrypoints are:
+
+| Situation | Command path | Boundary |
+|---|---|---|
+| Local quick check | focused package/doc command for touched files | Fast feedback only; not release or live-operation approval. |
+| PR check | `npm run check` | Default ordinary PR gate; required gates stay explicit. |
+| Public candidate check | `npm run scan:public-readiness` + `npm run scan:external-secrets` + relevant package/readiness audit | Evidence for public/release/package decisions only; not publication approval. |
+
 ## Commands
 
 ```bash

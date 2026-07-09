@@ -12,6 +12,14 @@ A good first contribution candidate must:
 - avoid release, package publication, deployment, homepage metadata, branch protection, database/outbox/ACK/replay, or notification/provider-send authority;
 - leave final maintainer review and issue creation to normal PR/issue workflow.
 
+Use the [script-surface operator entrypoints](ops/script-surface-entrypoints.md) to choose validation:
+
+| Situation | Command path |
+|---|---|
+| Local quick check | focused command listed by the candidate table or touched package |
+| PR check | `npm run check` |
+| Public candidate check | `npm run scan:public-readiness`, `npm run scan:external-secrets`, and the relevant package/readiness audit |
+
 ## Candidate 1 — A2A compatibility example fixture
 
 | Field | Value |

@@ -8,6 +8,18 @@ This page is the current public source-of-truth index for the A2A split-repo
 surface. It separates current work from historical public-readiness and
 topology gates.
 
+## Current validation entrypoints
+
+The operator-facing script surface is intentionally large, so the current entrypoint rule is three-tiered rather than script deletion:
+
+| Situation | Command path | Source of truth |
+|---|---|---|
+| Local quick check | Focused package/doc command for touched files | [`docs/ops/script-surface-entrypoints.md`](ops/script-surface-entrypoints.md) |
+| PR check | `npm run check` | [`docs/release-gate.md`](release-gate.md) |
+| Public candidate check | `npm run scan:public-readiness`, `npm run scan:external-secrets`, and relevant package/readiness audit | [`docs/ops/script-surface-tier-manifest.json`](ops/script-surface-tier-manifest.json) |
+
+The manifest baseline remains root `package.json` at `100` scripts and `packages/broker/package.json` at `150` scripts. Verify the baseline with `node scripts/lib/script-surface-manifest.mjs`.
+
 ## Current Active Work
 
 The active A2A coordination work is the `a2a-nexus#553` monorepo canonical
