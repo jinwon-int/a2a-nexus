@@ -26,7 +26,7 @@ A cleanup PR must not reduce required-gate coverage or remove manual/legacy wrap
 |---|---|---|---|
 | Local quick check | Focused package or doc command for touched files | You are editing one package, fixture, or document and need fast feedback. | Passing a focused check is not release, publication, deploy, or live-operation approval. |
 | PR check | `npm run check` | You are preparing a normal pull request. This runs the ordinary release gate tiers. | Do not skip public-readiness or secret/history checks because path-filtered CI skipped package jobs. |
-| Public candidate check | `npm run scan:public-readiness` + `npm run scan:external-secrets` + relevant package/readiness audit | You are preparing external/public-alpha, release/package, or repo-split candidate evidence. | This still does not authorize tags, releases, npm/Docker/GHCR publication, homepage metadata, visibility changes, or live operations. |
+| Public candidate check | `npm run scan:public-readiness` + `npm run scan:external-secrets` + relevant package/readiness audit such as `node scripts/build-release-candidate-evidence.mjs --out-dir artifacts/release-candidate` | You are preparing external/public-alpha, release/package, or repo-split candidate evidence. | This still does not authorize tags, releases, npm/Docker/GHCR publication, homepage metadata, visibility changes, or live operations. |
 
 ## Local quick check menu
 
