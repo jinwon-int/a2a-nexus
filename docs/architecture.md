@@ -134,15 +134,16 @@ At architecture level, remember three boundaries:
 
 ## Nexus core vs feature repo candidates
 
-`a2a-nexus` remains the canonical monorepo for the broker, plugin, Docker runner, shared contracts, public docs, and readiness gates. Feature repos can be derived only when a primitive has a clear contract and a public-safe boundary.
+`a2a-nexus` remains the canonical monorepo for the broker, reference plugin, Docker runner, shared contracts, public docs, and readiness gates. Feature repositories can be derived only when a primitive has a clear contract, a public-safe boundary, and a one-way dependency on pinned Nexus sources. The detailed G0 map is [Product boundaries and extraction contract](product-boundaries.md).
 
-| Surface | Stays in Nexus core | Natural feature-repo candidate when ready |
-|---|---|---|
-| Broker runtime | task lifecycle, worker registry, policy hooks, persistence, status APIs | policy-referee extraction only after policy semantics are stable and separately approved |
-| Evidence/proof contracts | shared schemas, conformance fixtures, offline verifiers | agent-work-proof, verifiable-analysis-report, certification-battery |
-| Payment-adjacent proof | completion certificate contract and no-live rehearsals | escrow-proof adapter only as proof-of-condition, not funds custody |
-| Patch execution | Docker runner source and public-safe local demos | runner-specific packaging when publication/release gates are separately approved |
-| Integration adapters | reference plugin contracts and examples | additional protocol adapters that preserve broker validation and write-set rules |
+| Surface | Stays in Nexus core | Natural feature-repo candidate when ready | Dependency direction |
+|---|---|---|---|
+| Broker runtime | task lifecycle, worker registry, policy hooks, persistence, status APIs | API wrapper/SDK only; lifecycle semantics stay in Nexus | product -> Nexus API contract; Nexus -> product forbidden |
+| Policy primitive | broker policy document, create/claim checks, approval-required semantics, audit shape | policy-referee extraction only after policy semantics are stable and separately approved | product -> `contracts/a2a/broker-policy.md`; no #1355 observation-surface changes |
+| Evidence/proof contracts | shared schemas, conformance fixtures, offline verifier semantics | agent-work-proof, verifiable-analysis-report, certification-battery, dispute packet packages | product -> pinned contract/fixture/verifier pattern |
+| Payment-adjacent proof | completion certificate and no-live proof contracts | escrow-proof or payment-dispute adapters only as evidence packages | product -> proof contract; never funds custody or rail execution |
+| Patch execution | Docker runner source and public-safe local demos | runner package after package contents audit and release gates | product -> runner contract; no live enrollment by packaging |
+| Integration adapters | reference plugin contracts and examples | additional protocol adapters that preserve broker validation and write-set rules | adapter -> broker contract; broker -> adapter forbidden |
 
 ## External-reader flow
 

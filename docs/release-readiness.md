@@ -26,7 +26,23 @@ Before any `v0.1.0-alpha`, GitHub Release, tag, npm package, Docker image, or GH
 - [ ] package contents audit for any selected package surface;
 - [ ] license and NOTICE review;
 - [ ] public API / compatibility boundary review;
+- [ ] product-boundary / split-candidate evidence when the candidate moves a Nexus primitive into a feature repository;
 - [ ] known limitations and rollback/deprecation expectations.
+
+## Split-candidate evidence before extraction
+
+Before any feature repository is created or any Nexus primitive is extracted into a product package, record the G0 evidence from [Product boundaries and extraction contract](product-boundaries.md):
+
+- [ ] candidate repository owner/name and proposed package name;
+- [ ] candidate CLI names, exported modules, artifact type, and package contents inventory;
+- [ ] exact Nexus commit SHA, contract file(s), fixture(s), verifier(s), and conformance test(s) used as the upstream source;
+- [ ] dependency direction: product repo consumes a pinned Nexus contract; Nexus core does not import or require the product runtime;
+- [ ] local source-only verification command output from a disposable checkout;
+- [ ] public-readiness and external-secret scan results, with only accepted synthetic fixture findings;
+- [ ] compatibility note for future contract drift, deprecation, and rollback;
+- [ ] explicit non-authorization for repository creation, tag/release, npm/Docker/GHCR publication, homepage metadata, deploy/restart, live broker policy changes, provider sends, DB/outbox/ACK/replay/prune/migration, and credential movement.
+
+Split-candidate evidence is still design/readiness evidence. It does not authorize publication or live operation.
 
 ## Automated candidate evidence packet
 
@@ -108,4 +124,5 @@ Those actions require a separate explicit operator-approved task with its own ve
 - [Existing release checklist](release-checklist.md)
 - [Public alpha landing draft](public-alpha-landing.md)
 - [Public architecture](architecture.md)
+- [Product boundaries and extraction contract](product-boundaries.md)
 - [External publicization roadmap](publicization-roadmap.md)
