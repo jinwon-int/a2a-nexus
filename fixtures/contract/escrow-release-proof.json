@@ -1,0 +1,865 @@
+{
+  "schemaVersion": "a2a.escrow-release-proof.bundle.v0",
+  "canonicalization": "rfc8785-jcs-v1",
+  "proofId": "sample-escrow-release-proof-source-only-001",
+  "sourceOnly": true,
+  "noLive": true,
+  "issueRefs": [
+    "https://github.com/jinwon-int/a2a-nexus/issues/1482",
+    "https://github.com/jinwon-int/a2a-nexus/issues/1481",
+    "https://github.com/jinwon-int/a2a-nexus/issues/1393"
+  ],
+  "paymentBoundary": {
+    "paymentRailCall": false,
+    "escrowCustody": false,
+    "fundsMovement": false,
+    "providerCredentialRequired": false,
+    "rawCardDataPresent": false,
+    "liveWebhookDeployed": false,
+    "automaticCapture": false,
+    "payoutExecuted": false,
+    "refundExecuted": false,
+    "releaseExecuted": false
+  },
+  "publicSafety": {
+    "containsPrivatePaths": false,
+    "containsRawLogs": false,
+    "containsTokens": false,
+    "containsProviderIds": false,
+    "containsPrivateKeys": false,
+    "containsTelegramIds": false,
+    "containsRawCardData": false,
+    "containsRawSessionDump": false
+  },
+  "agentWorkProofHash": "sha256:5e552b6e50eea814b4c59ac9a38a765573a7a7d1830f47d8c61d26418f897b2b",
+  "agentWorkProof": {
+    "schemaVersion": "a2a.agent-work-proof.bundle.v0",
+    "canonicalization": "rfc8785-jcs-v1",
+    "proofId": "sample-agent-work-proof-source-only-001",
+    "sourceOnly": true,
+    "noLive": true,
+    "issueRefs": [
+      "https://github.com/jinwon-int/a2a-nexus/issues/1481",
+      "https://github.com/jinwon-int/a2a-nexus/issues/1478"
+    ],
+    "task": {
+      "taskId": "sample-verifiable-analysis-report-dogfood-001",
+      "workerId": "worker:sample-analysis",
+      "resultHash": "sha256:f82f2e329eeeb306edd87699a98b01692e1fe2e75b91802f815a97956a4ddde6",
+      "intent": "analyze",
+      "mode": "analysis-only",
+      "artifactHashes": [
+        "sha256:3a80ae399f00ec706504fc418355a23792d35944461d9ab355da50f075cd969d",
+        "sha256:bc06f5e5a6b4b45ad3762fdd00f0682a53c7523528604e5b69d1e5b320119127"
+      ]
+    },
+    "evidenceHashes": {
+      "reportProductHash": "sha256:3a80ae399f00ec706504fc418355a23792d35944461d9ab355da50f075cd969d",
+      "certificationBatteryHash": "sha256:bc06f5e5a6b4b45ad3762fdd00f0682a53c7523528604e5b69d1e5b320119127",
+      "completionCertificateHash": "sha256:1b254e0f3b390ef0cb2e06ababbfb180a2985fc1558a8585a992b7c6555a3328"
+    },
+    "artifactManifestHash": "sha256:b5fd5414c239f1f449a253d4d18b4bc72666f2aca164ee5d49b5daff8ab771cc",
+    "artifactManifest": {
+      "schemaVersion": "a2a.agent-work-proof.artifactManifest.v0",
+      "sourceOnly": true,
+      "noLive": true,
+      "releasePublished": false,
+      "registryWrite": false,
+      "badgePublication": false,
+      "liveBrokerDashboard": false,
+      "generatedBy": "fixtures/contract/agent-work-proof-bundle.json synthetic generator",
+      "publicSafety": {
+        "containsPrivatePaths": false,
+        "containsRawLogs": false,
+        "containsTokens": false,
+        "containsProviderIds": false,
+        "containsPrivateKeys": false,
+        "containsTelegramIds": false
+      },
+      "artifacts": [
+        {
+          "id": "verifiable-analysis-report-product",
+          "kind": "a2a.verifiable-analysis-report.product.v0",
+          "contentHash": "sha256:3a80ae399f00ec706504fc418355a23792d35944461d9ab355da50f075cd969d",
+          "description": "Source-grounded analysis report product package from #1483."
+        },
+        {
+          "id": "certification-battery-fixture",
+          "kind": "a2a.certification-battery.fixture.v0",
+          "contentHash": "sha256:bc06f5e5a6b4b45ad3762fdd00f0682a53c7523528604e5b69d1e5b320119127",
+          "description": "Deterministic battery/result/verdict fixture from #1487."
+        },
+        {
+          "id": "completion-certificate",
+          "kind": "a2a.completion.certificate.v0",
+          "contentHash": "sha256:1b254e0f3b390ef0cb2e06ababbfb180a2985fc1558a8585a992b7c6555a3328",
+          "description": "Signed source-only completion certificate for the bound task subject."
+        }
+      ]
+    },
+    "evidence": {
+      "reportProduct": {
+        "schemaVersion": "a2a.verifiable-analysis-report.product.v0",
+        "sourceOnly": true,
+        "noLive": true,
+        "problemStatement": "Do not ask readers to trust a code-review analysis report; give them a local artifact whose sources, hash, manifest, and finalizer verdict verify offline.",
+        "reportHash": "sha256:4de0749044621fd16a0d8c0aabf755051067a4151ba1d88db9b0b4ae6939190b",
+        "artifactManifestHash": "sha256:62fdb50b4b1059b63fa39a2f4ee5abeb5d1260039eb30f9adc46fd7dabc06b9a",
+        "report": {
+          "reportVersion": "verifiable-analysis-report/v1",
+          "taskId": "sample-verifiable-analysis-report-dogfood-001",
+          "result": {
+            "summary": "A2A Nexus can package a source-grounded analysis report so a third party verifies provenance and integrity offline.",
+            "output": {
+              "reportType": "github-pr-code-review-analysis-example",
+              "sources": [
+                {
+                  "sourceId": "positioning-doc-excerpt",
+                  "contentHash": "sha256:7e36381542d35ca7a3ad26dca64e7b6c989f10577b60b350e33963fc0175ccc1"
+                }
+              ],
+              "findings": [
+                {
+                  "id": "product-sentence-clear-enough-for-first-screen",
+                  "verdict": "pass",
+                  "rationale": "The report states the problem, evidence boundary, and offline verification path without requiring live broker context.",
+                  "sourceRefs": [
+                    "positioning-doc-excerpt"
+                  ]
+                }
+              ],
+              "limitations": [
+                "This report proves source grounding, signature integrity, and finalizer-review occurrence; it does not prove analytical correctness.",
+                "This fixture is source-only and synthetic; it is not a release artifact or package publication."
+              ]
+            },
+            "provenance": {
+              "schemaVersion": "a2a.result.provenance.v1",
+              "canonicalization": "rfc8785-jcs-v1",
+              "alg": "EdDSA",
+              "workerKeyId": "worker:sample-analysis",
+              "claimedAt": "2026-07-09T00:00:00.000Z",
+              "resultHash": "sha256:f82f2e329eeeb306edd87699a98b01692e1fe2e75b91802f815a97956a4ddde6",
+              "workerSig": {
+                "protected": "eyJhbGciOiJFZERTQSIsImtpZCI6IndvcmtlcjpzYW1wbGUtYW5hbHlzaXMiLCJ0eXAiOiJKT1NFIn0",
+                "signature": "dYoCVdJ4lO68-Wlfq0HruCGxMpa66aGZriwA0eaEFYUfZWyYmGNnhm_GM1ussdSGpbnujIE2_vuAn7Ow-vo5AQ"
+              },
+              "brokerCountersig": {
+                "brokerKeyId": "broker:sample-countersig",
+                "verifiedAt": "2026-07-09T00:01:00.000Z",
+                "sig": {
+                  "protected": "eyJhbGciOiJFZERTQSIsImtpZCI6ImJyb2tlcjpzYW1wbGUtY291bnRlcnNpZyIsInR5cCI6IkpPU0UifQ",
+                  "signature": "F6sLLG6b516Alhm_wmKANdtGpcAaTx8G8bCKy4au0g97wHoh1f-PwcM4Wl899i5fvpeDRYAouQoj1FbD5f4lDw"
+                }
+              }
+            }
+          },
+          "sources": [
+            {
+              "schemaVersion": "a2a.retrieval.snapshot.v1",
+              "canonicalization": "rfc8785-jcs-v1",
+              "source": "github",
+              "repo": "jinwon-int/a2a-nexus",
+              "requestedRef": "d9ae2ec4f43f5b61bfdde6988e4ad120fc1ac734",
+              "resolvedRef": "d9ae2ec4f43f5b61bfdde6988e4ad120fc1ac734",
+              "path": "docs/positioning.md",
+              "fetchedAt": "2026-07-09T00:00:00.000Z",
+              "byteLen": 384,
+              "contentHash": "sha256:7e36381542d35ca7a3ad26dca64e7b6c989f10577b60b350e33963fc0175ccc1",
+              "content": "# Public-safe dogfood source excerpt\n\nThis fixture is synthetic and local-only. It models a GitHub PR/code-review analysis input without private paths, raw logs, tokens, provider IDs, or live broker data.\n\n- Finding target: docs/positioning.md product sentence\n- Evidence boundary: source-only report artifact; no release, publish, deploy, dashboard, provider send, or broker restart\n",
+              "signature": {
+                "protected": "eyJhbGciOiJFZERTQSIsImtpZCI6InJ1bm5lcjpzYW1wbGUtc291cmNlLXNuYXBzaG90IiwidHlwIjoiSk9TRSJ9",
+                "signature": "ka98mE1YJWPCn8RDBxFXk6r9iGwr6yo9XGvJbstLWFXDOMn01ux8k0ERAymBSiKZtUfxOAoU1s6wSgwuhoPLAw"
+              }
+            }
+          ],
+          "assurance": {
+            "proves": [
+              "source-grounding",
+              "integrity",
+              "process-provenance"
+            ],
+            "doesNotProve": [
+              "analytical-correctness",
+              "normative-judgment",
+              "authorship"
+            ],
+            "disclaimer": "This report proves source grounding, provenance, and integrity for the packaged artifact. It does NOT certify that the analysis is correct, and it does not prove authorship of the work."
+          }
+        },
+        "artifactManifest": {
+          "schemaVersion": "a2a.verifiable-analysis-report.artifactManifest.v0",
+          "sourceOnly": true,
+          "noLive": true,
+          "liveBrokerDashboard": false,
+          "releasePublished": false,
+          "reportHash": "sha256:4de0749044621fd16a0d8c0aabf755051067a4151ba1d88db9b0b4ae6939190b",
+          "generatedBy": "fixtures/contract/verifiable-analysis-report-product.json",
+          "dogfoodRun": {
+            "id": "source-only-sample-dogfood-run-001",
+            "kind": "synthetic-public-safe-fixture",
+            "producedAt": "2026-07-09T00:00:00.000Z"
+          },
+          "artifacts": [
+            {
+              "id": "report-bundle",
+              "kind": "verifiable-analysis-report/v1",
+              "logicalPath": "sample/report.json",
+              "mediaType": "application/json",
+              "contentHash": "sha256:4de0749044621fd16a0d8c0aabf755051067a4151ba1d88db9b0b4ae6939190b"
+            }
+          ],
+          "publicSafety": {
+            "containsPrivatePaths": false,
+            "containsRawLogs": false,
+            "containsTokens": false,
+            "containsProviderIds": false
+          },
+          "nonGoals": [
+            "release",
+            "package-publish",
+            "live-dashboard",
+            "provider-send",
+            "broker-deploy"
+          ]
+        },
+        "finalizerVerdict": {
+          "schemaVersion": "a2a.finalizer.verdict.v1",
+          "canonicalization": "rfc8785-jcs-v1",
+          "kind": "judgment",
+          "subject": {
+            "kind": "verifiable-analysis-report",
+            "taskId": "sample-verifiable-analysis-report-dogfood-001",
+            "reportHash": "sha256:4de0749044621fd16a0d8c0aabf755051067a4151ba1d88db9b0b4ae6939190b",
+            "artifactManifestHash": "sha256:62fdb50b4b1059b63fa39a2f4ee5abeb5d1260039eb30f9adc46fd7dabc06b9a"
+          },
+          "decision": "go",
+          "evidenceRefs": [
+            {
+              "kind": "report-hash",
+              "ref": "sha256:4de0749044621fd16a0d8c0aabf755051067a4151ba1d88db9b0b4ae6939190b"
+            },
+            {
+              "kind": "artifact-manifest-hash",
+              "ref": "sha256:62fdb50b4b1059b63fa39a2f4ee5abeb5d1260039eb30f9adc46fd7dabc06b9a"
+            },
+            {
+              "kind": "source-only-fixture",
+              "ref": "fixtures/contract/verifiable-analysis-report-product.json"
+            }
+          ],
+          "assurance": {
+            "proves": [
+              "independent-review-occurred",
+              "verdict-integrity",
+              "subject-binding"
+            ],
+            "doesNotProve": [
+              "analytical-correctness",
+              "reproducibility"
+            ],
+            "disclaimer": "Attests an independent GO on this exact source-only report package; does not certify analytical correctness or reproducibility of the judgment."
+          },
+          "finalizerKeyId": "finalizer:sample-report-review",
+          "producedAt": "2026-07-09T00:02:00.000Z",
+          "sig": {
+            "protected": "eyJhbGciOiJFZERTQSIsImtpZCI6ImZpbmFsaXplcjpzYW1wbGUtcmVwb3J0LXJldmlldyIsInR5cCI6IkpPU0UifQ",
+            "signature": "gk4cuamKhotAnyqX3Fzc4bnMfgUl8jXMQe_AA4281EeK4DaEcYVwlx9ZfyAsBXIF1eh1tCnJDvQvx_HAgE06BQ"
+          }
+        }
+      },
+      "certificationBattery": {
+        "meta": {
+          "contract": "certification-battery",
+          "schemaVersion": "a2a.certification-battery.fixture.v0",
+          "sourceOnly": true,
+          "noLive": true,
+          "issues": [
+            "https://github.com/jinwon-int/a2a-nexus/issues/1487",
+            "https://github.com/jinwon-int/a2a-nexus/issues/1478"
+          ]
+        },
+        "safety": {
+          "productionBrokerRequired": false,
+          "providerSend": false,
+          "telegramSend": false,
+          "databaseMutation": false,
+          "terminalAckReplay": false,
+          "deployOrRestart": false,
+          "secretRequired": false,
+          "releaseOrPublish": false,
+          "registryWrite": false,
+          "badgePublication": false,
+          "visibilityChange": false
+        },
+        "batteryPack": {
+          "schemaVersion": "a2a.certification-battery.pack.v0",
+          "canonicalization": "rfc8785-jcs-v1",
+          "batteryId": "mcp-plugin-baseline-public-safe",
+          "batteryVersion": "mcp-plugin-baseline-v0",
+          "subjectProfile": "public-safe-mcp-plugin",
+          "target": {
+            "kind": "mcp-plugin",
+            "name": "example-public-safe-mcp-plugin",
+            "artifactKind": "git-repository",
+            "repo": "example/mcp-plugin-fixture",
+            "commitSha": "0123456789abcdef0123456789abcdef01234567",
+            "artifactHashes": [
+              "sha256:69ff5b9142d979298ff4981ab32dc34209e759b02a68eb289f6b9a6eda1bb765"
+            ]
+          },
+          "deterministic": true,
+          "registryRequired": false,
+          "badgeRequired": false,
+          "checks": [
+            {
+              "id": "manifest-schema",
+              "kind": "schema",
+              "inputRefs": [
+                "plugin-manifest.json"
+              ],
+              "expected": "pass",
+              "reproducible": true,
+              "noLive": true
+            },
+            {
+              "id": "declared-capability-boundary",
+              "kind": "capability-boundary",
+              "inputRefs": [
+                "plugin-manifest.json",
+                "capability-policy.json"
+              ],
+              "expected": "pass",
+              "reproducible": true,
+              "noLive": true
+            },
+            {
+              "id": "secret-scan-fixture",
+              "kind": "secret-scan",
+              "inputRefs": [
+                "src/**",
+                "plugin-manifest.json"
+              ],
+              "expected": "pass",
+              "reproducible": true,
+              "noLive": true
+            }
+          ],
+          "attestationIntegration": {
+            "reviewed": [
+              "github-actions-oidc",
+              "sigstore",
+              "slsa"
+            ],
+            "posture": "reuse-existing-attestation-infra; do-not-reimplement"
+          },
+          "limitations": [
+            "fixture-scope-only",
+            "does-not-prove-general-safety",
+            "does-not-prove-absence-of-all-vulnerabilities"
+          ]
+        },
+        "batteryResult": {
+          "schemaVersion": "a2a.certification-battery.result.v0",
+          "canonicalization": "rfc8785-jcs-v1",
+          "packRef": {
+            "batteryId": "mcp-plugin-baseline-public-safe",
+            "batteryVersion": "mcp-plugin-baseline-v0",
+            "packHash": "sha256:d256e42fb33f3ccc7bb7aff57a16aafaa54e643ad32c464ee0fdd85da2140225"
+          },
+          "subject": {
+            "kind": "mcp-plugin",
+            "name": "example-public-safe-mcp-plugin",
+            "artifactKind": "git-repository",
+            "repo": "example/mcp-plugin-fixture",
+            "commitSha": "0123456789abcdef0123456789abcdef01234567",
+            "artifactHashes": [
+              "sha256:69ff5b9142d979298ff4981ab32dc34209e759b02a68eb289f6b9a6eda1bb765"
+            ]
+          },
+          "run": {
+            "kind": "fixture-replay",
+            "runner": "local-conformance",
+            "executedAt": "2026-07-09T00:00:00.000Z",
+            "liveNetwork": false,
+            "providerSend": false,
+            "registryWrite": false
+          },
+          "checkResults": [
+            {
+              "id": "manifest-schema",
+              "status": "pass",
+              "outputHash": "sha256:e15a9e9707ea02c3f8720dbd17e7c442ba17a87b839824a78e0e827f630deb8b"
+            },
+            {
+              "id": "declared-capability-boundary",
+              "status": "pass",
+              "outputHash": "sha256:00a448f1fdf004cf6f598f63cc4b3b70ea68990c86c576211376aefd3373bc3d"
+            },
+            {
+              "id": "secret-scan-fixture",
+              "status": "pass",
+              "outputHash": "sha256:7bfc135728c56680e0e9b5a3f2c9861d1593a7c58f27ac44f3adf86c6e4c5314"
+            }
+          ],
+          "decision": "pass",
+          "resultHash": "sha256:a0bf83e8634c1b2bd92fe78bf5c73ceb42070cc6d210941cb08ac6d701ad5a2f"
+        },
+        "batteryVerdict": {
+          "schemaVersion": "a2a.finalizer.verdict.v1",
+          "canonicalization": "rfc8785-jcs-v1",
+          "kind": "battery",
+          "subject": {
+            "kind": "battery-result",
+            "batteryId": "mcp-plugin-baseline-public-safe",
+            "batteryVersion": "mcp-plugin-baseline-v0",
+            "resultHash": "sha256:a0bf83e8634c1b2bd92fe78bf5c73ceb42070cc6d210941cb08ac6d701ad5a2f"
+          },
+          "decision": "go",
+          "evidenceRefs": [
+            {
+              "kind": "battery-result",
+              "ref": "certification-battery-result:sha256:a0bf83e8634c1b2bd92fe78bf5c73ceb42070cc6d210941cb08ac6d701ad5a2f"
+            }
+          ],
+          "assurance": {
+            "proves": [
+              "deterministic-checks-ran",
+              "reproducibility",
+              "subject-binding",
+              "verdict-integrity"
+            ],
+            "doesNotProve": [
+              "analytical-correctness",
+              "general-safety",
+              "legal-compliance",
+              "marketplace-approval",
+              "absence-of-all-vulnerabilities"
+            ],
+            "disclaimer": "Attests deterministic fixture battery outcome for a pinned artifact; does not certify general quality or safety."
+          },
+          "finalizerKeyId": "finalizer:fixture-certification-battery",
+          "producedAt": "2026-07-09T00:01:00.000Z",
+          "sig": {
+            "protected": "fixture-not-a-live-signature",
+            "signature": "fixture-not-a-live-signature"
+          }
+        },
+        "judgmentBoundaryExample": {
+          "schemaVersion": "a2a.finalizer.verdict.v1",
+          "canonicalization": "rfc8785-jcs-v1",
+          "kind": "judgment",
+          "subject": {
+            "kind": "product-artifact",
+            "commitSha": "0123456789abcdef0123456789abcdef01234567"
+          },
+          "decision": "go",
+          "evidenceRefs": [
+            {
+              "kind": "review",
+              "ref": "source-only-review:fixture"
+            }
+          ],
+          "assurance": {
+            "proves": [
+              "independent-review-occurred",
+              "verdict-integrity",
+              "subject-binding"
+            ],
+            "doesNotProve": [
+              "analytical-correctness",
+              "reproducibility",
+              "general-safety",
+              "legal-compliance"
+            ],
+            "disclaimer": "Attests that an independent judgment occurred; the judgment itself is not reproducible."
+          },
+          "finalizerKeyId": "finalizer:fixture-judgment-review",
+          "producedAt": "2026-07-09T00:02:00.000Z",
+          "sig": {
+            "protected": "fixture-not-a-live-signature",
+            "signature": "fixture-not-a-live-signature"
+          }
+        },
+        "productArtifactCertificateSample": {
+          "schemaVersion": "a2a.product-artifact.certificate.v0",
+          "canonicalization": "rfc8785-jcs-v1",
+          "subject": {
+            "kind": "mcp-plugin",
+            "name": "example-public-safe-mcp-plugin",
+            "artifactKind": "git-repository",
+            "repo": "example/mcp-plugin-fixture",
+            "commitSha": "0123456789abcdef0123456789abcdef01234567",
+            "artifactHashes": [
+              "sha256:69ff5b9142d979298ff4981ab32dc34209e759b02a68eb289f6b9a6eda1bb765"
+            ]
+          },
+          "batteryVersion": "mcp-plugin-baseline-v0",
+          "claims": [
+            {
+              "id": "battery:mcp-plugin-baseline-public-safe",
+              "kind": "capability-boundary",
+              "status": "pass",
+              "evidenceRef": "battery-verdict:sha256:c2e45d3705c96476975f0256601bc5d14653c258b3c54c5b22f86086dbce75ad",
+              "scope": [
+                "plugin-manifest.json",
+                "src/**"
+              ],
+              "limitations": [
+                "fixture-scope-only"
+              ]
+            },
+            {
+              "id": "secret-scan:no-high-confidence-findings",
+              "kind": "secret-scan",
+              "status": "pass",
+              "evidenceRef": "battery-result:sha256:a0bf83e8634c1b2bd92fe78bf5c73ceb42070cc6d210941cb08ac6d701ad5a2f",
+              "scope": [
+                "plugin-manifest.json",
+                "src/**"
+              ],
+              "limitations": [
+                "patterns-only",
+                "does-not-prove-absence-of-all-secrets"
+              ]
+            }
+          ],
+          "decision": "certified",
+          "issuedAt": "2026-07-09T00:03:00.000Z",
+          "expiresAt": "2026-10-09T00:03:00.000Z",
+          "issuer": {
+            "kind": "source-only-fixture",
+            "attesterSubject": "repo:example/certification-fixture:workflow_ref:source-only"
+          },
+          "assurance": {
+            "proves": [
+              "claim-evaluation-occurred",
+              "subject-binding",
+              "certificate-integrity"
+            ],
+            "doesNotProve": [
+              "general-safety",
+              "bug-free",
+              "legal-compliance",
+              "marketplace-approval",
+              "absence-of-all-vulnerabilities"
+            ],
+            "disclaimer": "Attests finite claim outcomes for a pinned artifact. It is not a general quality, safety, legal, or registry certification."
+          },
+          "sig": {
+            "protected": "fixture-not-a-live-signature",
+            "signature": "fixture-not-a-live-signature"
+          }
+        },
+        "extractionReadiness": {
+          "registryRequiredForValue": false,
+          "badgeRequiredForValue": false,
+          "valueWithoutRegistry": [
+            "third-party can inspect the pack",
+            "third-party can re-run or inspect pinned checks",
+            "third-party can verify result/verdict/certificate binding"
+          ],
+          "externalDemandSignals": [
+            {
+              "kind": "operator-roadmap",
+              "source": "https://github.com/jinwon-int/a2a-nexus/issues/1487",
+              "status": "recorded",
+              "extractionWeight": "insufficient-alone"
+            }
+          ],
+          "decision": "defer-extraction-until-external-demand"
+        },
+        "validationCommands": [
+          "node test/conformance/check-certification-battery.mjs",
+          "npm run test:conformance"
+        ]
+      },
+      "completionCertificate": {
+        "schemaVersion": "a2a.completion.certificate.v0",
+        "canonicalization": "rfc8785-jcs-v1",
+        "subject": {
+          "kind": "task-result",
+          "taskId": "sample-verifiable-analysis-report-dogfood-001",
+          "workerId": "worker:sample-analysis",
+          "resultHash": "sha256:f82f2e329eeeb306edd87699a98b01692e1fe2e75b91802f815a97956a4ddde6",
+          "artifactHashes": [
+            "sha256:3a80ae399f00ec706504fc418355a23792d35944461d9ab355da50f075cd969d",
+            "sha256:bc06f5e5a6b4b45ad3762fdd00f0682a53c7523528604e5b69d1e5b320119127"
+          ]
+        },
+        "conditions": {
+          "schemaVersion": "a2a.completion.conditions.v0",
+          "requiredBatteries": [
+            "mcp-plugin-baseline-public-safe"
+          ],
+          "requiredVerdict": "go",
+          "artifactHashRequired": true,
+          "externalConditions": []
+        },
+        "conditionResults": [
+          {
+            "id": "battery:mcp-plugin-baseline-public-safe",
+            "kind": "battery",
+            "status": "met",
+            "evidenceRef": "battery-result:sha256:a0bf83e8634c1b2bd92fe78bf5c73ceb42070cc6d210941cb08ac6d701ad5a2f"
+          },
+          {
+            "id": "judgment:finalizer-go",
+            "kind": "finalizer-verdict",
+            "status": "met",
+            "evidenceRef": "finalizer-verdict:sha256:4de0749044621fd16a0d8c0aabf755051067a4151ba1d88db9b0b4ae6939190b"
+          },
+          {
+            "id": "artifact-hash-bound",
+            "kind": "artifact-hash",
+            "status": "met",
+            "evidenceRef": "sha256:3a80ae399f00ec706504fc418355a23792d35944461d9ab355da50f075cd969d"
+          }
+        ],
+        "decision": "eligible",
+        "issuedAt": "2026-07-09T06:00:00.000Z",
+        "expiresAt": "2099-12-31T23:59:59.000Z",
+        "issuer": {
+          "kind": "broker",
+          "brokerId": "sample-agent-work-proof-broker",
+          "keyId": "broker:sample-agent-work-proof:completion:v1"
+        },
+        "assurance": {
+          "proves": [
+            "condition-evaluation-occurred",
+            "subject-binding",
+            "certificate-integrity"
+          ],
+          "doesNotProve": [
+            "payment-authorized",
+            "funds-available",
+            "legal-settlement",
+            "analytical-correctness"
+          ],
+          "disclaimer": "Attests that source-only A2A task completion conditions were evaluated for the bound subject. It does not move funds, authorize payment, or certify analytical correctness."
+        },
+        "sig": {
+          "protected": "eyJhbGciOiJFZERTQSIsImtpZCI6ImJyb2tlcjpzYW1wbGUtYWdlbnQtd29yay1wcm9vZjpjb21wbGV0aW9uOnYxIn0",
+          "signature": "HdCspjA3SEfo_fxeQ5SKfiqFm5VCFL4uWkF5kUDclM-qWEESH9Gxk425E33UnGWf1VKWOdBacbBbsQ5qljDRDw"
+        }
+      }
+    },
+    "workProofVerdict": {
+      "schemaVersion": "a2a.finalizer.verdict.v1",
+      "canonicalization": "rfc8785-jcs-v1",
+      "kind": "judgment",
+      "decision": "go",
+      "subject": {
+        "kind": "agent-work-proof-bundle",
+        "proofId": "sample-agent-work-proof-source-only-001",
+        "taskId": "sample-verifiable-analysis-report-dogfood-001",
+        "workerId": "worker:sample-analysis",
+        "resultHash": "sha256:f82f2e329eeeb306edd87699a98b01692e1fe2e75b91802f815a97956a4ddde6",
+        "reportProductHash": "sha256:3a80ae399f00ec706504fc418355a23792d35944461d9ab355da50f075cd969d",
+        "certificationBatteryHash": "sha256:bc06f5e5a6b4b45ad3762fdd00f0682a53c7523528604e5b69d1e5b320119127",
+        "completionCertificateHash": "sha256:1b254e0f3b390ef0cb2e06ababbfb180a2985fc1558a8585a992b7c6555a3328",
+        "artifactManifestHash": "sha256:b5fd5414c239f1f449a253d4d18b4bc72666f2aca164ee5d49b5daff8ab771cc"
+      },
+      "producedAt": "2026-07-09T06:05:00.000Z",
+      "finalizerKeyId": "finalizer:sample-agent-work-proof:v1",
+      "assurance": {
+        "proves": [
+          "independent-review-occurred",
+          "subject-binding",
+          "work-proof-bundle-integrity"
+        ],
+        "doesNotProve": [
+          "analytical-correctness",
+          "reproducibility",
+          "general-safety",
+          "payment-authorized",
+          "legal-settlement"
+        ],
+        "disclaimer": "This judgment verifies that the work-proof bundle composes signed source-only evidence for the bound task. It does not prove analytical correctness, deterministic reproducibility of judgment, general safety, payment authorization, or legal settlement."
+      },
+      "sig": {
+        "protected": "eyJhbGciOiJFZERTQSIsImtpZCI6ImZpbmFsaXplcjpzYW1wbGUtYWdlbnQtd29yay1wcm9vZjp2MSJ9",
+        "signature": "bPs4i79WpdWcAHzDFcACB-zTbMllH9QYGnv6Vw-dY_rQNMVTZrw8KkCsPu0H6tVqeJd2E589zezaKOeWz7eIDQ"
+      }
+    },
+    "assurance": {
+      "proves": [
+        "work-completion-evidence-bundled",
+        "subject-binding",
+        "offline-verification-path"
+      ],
+      "doesNotProve": [
+        "analytical-correctness",
+        "payment-authorized",
+        "legal-settlement",
+        "general-safety",
+        "llm-judgment-reproducibility"
+      ],
+      "disclaimer": "Agent work proof bundles evidence that a bound task produced signed, hash-bound, offline-verifiable artifacts. It does not prove the work is correct, safe, legally settled, or payment-authorized."
+    },
+    "extractionReadiness": {
+      "registryRequiredForValue": false,
+      "badgeRequiredForValue": false,
+      "decision": "defer-extraction-until-external-demand",
+      "valueWithoutRegistry": [
+        "A third party can verify all bundle hashes and signatures offline.",
+        "The bundle shows what was executed, what artifacts were produced, and which deterministic/judgment checks were bound to the task."
+      ],
+      "externalDemandSignals": [
+        {
+          "kind": "operator-roadmap",
+          "status": "recorded",
+          "ref": "https://github.com/jinwon-int/a2a-nexus/issues/1481"
+        }
+      ]
+    }
+  },
+  "releaseConditionHash": "sha256:3562b13ce31c7a7fc174d39205ee6aad61b35a8c5ffaea5274d3755e46c721c8",
+  "releaseCondition": {
+    "schemaVersion": "a2a.escrow-release.condition.v0",
+    "conditionId": "sample-escrow-release-condition-001",
+    "sourceOnly": true,
+    "noLive": true,
+    "providerCredentialRequired": false,
+    "paymentReferenceHash": "sha256:4d772d17f2a2f61ed0d4a62d0ed4328abf2ad96467f13c6cb7856e397f2dcf70",
+    "paymentReferenceKind": "synthetic-hash-only-payment-intent-reference",
+    "escrowReference": {
+      "kind": "synthetic-reference",
+      "escrowIdHash": "sha256:55d6d58e1ff3b1abf8c87ec64b010715e25f80b7c2e67c34f46f0f8987d2e748",
+      "rawEscrowIdPresent": false
+    },
+    "amount": {
+      "currency": "USD",
+      "value": "42.00",
+      "syntheticOnly": true
+    },
+    "requiredEvidence": {
+      "agentWorkProofHash": "sha256:5e552b6e50eea814b4c59ac9a38a765573a7a7d1830f47d8c61d26418f897b2b",
+      "signedVerdictRequired": true,
+      "deterministicChecks": [
+        "certification-battery"
+      ],
+      "completionCertificateRequired": true,
+      "offlineVerifier": "scripts/verify-agent-work-proof.mjs"
+    },
+    "approval": {
+      "required": false,
+      "status": "not_required",
+      "reason": "sample source-only condition has no operator approval requirement; live rails remain separately approval-gated"
+    },
+    "externalRailConditions": [],
+    "checks": [
+      {
+        "id": "agent-work-proof-valid",
+        "kind": "agent-work-proof",
+        "status": "met",
+        "evidenceHash": "sha256:5e552b6e50eea814b4c59ac9a38a765573a7a7d1830f47d8c61d26418f897b2b"
+      },
+      {
+        "id": "deterministic-battery-passed",
+        "kind": "deterministic-battery",
+        "status": "met",
+        "evidenceHash": "sha256:bc06f5e5a6b4b45ad3762fdd00f0682a53c7523528604e5b69d1e5b320119127"
+      },
+      {
+        "id": "signed-work-proof-verdict-go",
+        "kind": "finalizer-verdict",
+        "status": "met",
+        "evidenceHash": "sha256:b5fd5414c239f1f449a253d4d18b4bc72666f2aca164ee5d49b5daff8ab771cc"
+      },
+      {
+        "id": "completion-certificate-eligible",
+        "kind": "completion-certificate",
+        "status": "met",
+        "evidenceHash": "sha256:1b254e0f3b390ef0cb2e06ababbfb180a2985fc1558a8585a992b7c6555a3328"
+      },
+      {
+        "id": "provider-credential-not-required",
+        "kind": "payment-boundary",
+        "status": "met",
+        "evidenceRef": "source-only-no-provider-credential"
+      }
+    ]
+  },
+  "releaseDecision": {
+    "decision": "release_authorized",
+    "releaseState": "release_authorized",
+    "approvalState": "approval_not_required",
+    "decidedAt": "2026-07-09T07:30:00.000Z",
+    "reasonCodes": [
+      "AGENT_WORK_PROOF_VALID",
+      "DETERMINISTIC_CONDITIONS_PASSED",
+      "SIGNED_VERDICT_GO",
+      "COMPLETION_CERTIFICATE_VALID",
+      "PROVIDER_CREDENTIAL_NOT_REQUIRED",
+      "RELEASE_AUTHORIZED"
+    ],
+    "paymentInstruction": "no-live-release-instruction-emitted"
+  },
+  "releaseVerdict": {
+    "schemaVersion": "a2a.finalizer.verdict.v1",
+    "canonicalization": "rfc8785-jcs-v1",
+    "kind": "judgment",
+    "decision": "go",
+    "subject": {
+      "kind": "escrow-release-proof",
+      "proofId": "sample-escrow-release-proof-source-only-001",
+      "releaseConditionHash": "sha256:3562b13ce31c7a7fc174d39205ee6aad61b35a8c5ffaea5274d3755e46c721c8",
+      "agentWorkProofHash": "sha256:5e552b6e50eea814b4c59ac9a38a765573a7a7d1830f47d8c61d26418f897b2b",
+      "paymentReferenceHash": "sha256:4d772d17f2a2f61ed0d4a62d0ed4328abf2ad96467f13c6cb7856e397f2dcf70",
+      "decision": "release_authorized"
+    },
+    "producedAt": "2026-07-09T07:30:00.000Z",
+    "finalizerKeyId": "finalizer:sample-escrow-release-proof:v1",
+    "assurance": {
+      "proves": [
+        "independent-release-condition-review-occurred",
+        "subject-binding",
+        "release-condition-integrity"
+      ],
+      "doesNotProve": [
+        "analytical-correctness",
+        "reproducibility",
+        "payment-authorized",
+        "funds-available",
+        "legal-settlement",
+        "chargeback-liability"
+      ],
+      "disclaimer": "This judgment attests that a source-only release condition proof was reviewed and bound to evidence. It does not authorize payment, move funds, prove funds are available, decide legal settlement, or decide chargeback liability."
+    },
+    "sig": {
+      "protected": "eyJhbGciOiJFZERTQSIsImtpZCI6ImZpbmFsaXplcjpzYW1wbGUtZXNjcm93LXJlbGVhc2UtcHJvb2Y6djEifQ",
+      "signature": "lDGHNv3v0aYc5WqXFws4DwJVY4qfJ-9NlL2I-gedPsvDMdU1dUjzEMv12Z8wepLfy2Ld7tOEKj5TSnagZKriCA"
+    }
+  },
+  "assurance": {
+    "proves": [
+      "release-condition-evaluated",
+      "agent-work-proof-bound",
+      "offline-verification-path"
+    ],
+    "doesNotProve": [
+      "payment-authorized",
+      "funds-available",
+      "escrow-custody",
+      "legal-settlement",
+      "chargeback-liability",
+      "card-network-authorization",
+      "live-rail-execution"
+    ],
+    "disclaimer": "Escrow release proof verifies source-only release-condition evidence. It does not move money, authorize payment, custody escrow, prove funds availability, decide final network chargeback liability, or execute a live rail action."
+  },
+  "extractionReadiness": {
+    "repoExtractionReady": false,
+    "registryWrite": false,
+    "badgePublication": false,
+    "liveWebhookDeployment": false,
+    "decision": "defer-live-rail-integration-until-fresh-approval",
+    "futureProductRepo": "a2a-escrow-proof",
+    "futureCli": "a2a-escrow-proof verify-release release-proof.json"
+  },
+  "relatedFutureWork": {
+    "disputePacketIssue": "https://github.com/jinwon-int/a2a-nexus/issues/1488",
+    "note": "User-delegation dispute packets are a child layer and remain separate from this release-condition proof slice."
+  }
+}

@@ -27,6 +27,7 @@ The architecture is designed so that "the agent said it was fine" is never the f
 | Completion certificate | Declared A2A-evaluable completion conditions were evaluated for a bound subject. | Payment authorization, funds availability, legal settlement, or live rail execution. | [Completion Certificate v0](../contracts/a2a/completion-certificate.md) |
 | Product artifact certificate | A named artifact was checked against declared claims and evidence. | Stable release status or production support. | [Product Artifact Certificate](../contracts/a2a/product-artifact-certificate.md) |
 | Agent work proof | A task's report product, deterministic battery, completion certificate, artifact manifest, and work-proof verdict are hash-bound and offline-verifiable as one bundle. | Analytical correctness, authorship, payment authorization, legal settlement, release approval, or judgment reproducibility. | [Agent Work Proof Bundle v0](../contracts/a2a/agent-work-proof.md) |
+| Escrow release proof | A source-only release condition was evaluated against a hash-bound agent work proof and signed release verdict. | Payment authorization, funds availability, escrow custody, legal settlement, chargeback liability, or live rail execution. | [Escrow Release Proof Bundle v0](../contracts/a2a/escrow-release-proof.md) |
 
 ## Separation rules
 
@@ -97,7 +98,7 @@ Feature repositories should be split only when their trust boundary is legible o
 |---|---|---|
 | Policy referee | policy document schema, evaluator fixtures, observation report shape | Enforcement promotion is an operator decision. |
 | Agent work proof | agent work proof bundle fixture + offline verifier | Provenance does not prove authorship or correctness. |
-| Escrow proof | completion certificate and no-live adapter receipts | A2A does not hold or move funds. |
+| Escrow proof | escrow release proof bundle fixture + offline verifier | A2A does not authorize payment, hold escrow, move funds, or decide chargeback liability. |
 | Verifiable analysis report | signed result + source snapshot binding | Authentic source grounding does not prove the analysis is true. |
 | Certification battery | deterministic fixture manifest and re-run instructions | Battery reproducibility applies only to pinned checks, not judgment verdicts. |
 
