@@ -1,0 +1,306 @@
+{
+  "meta": {
+    "contract": "certification-battery",
+    "schemaVersion": "a2a.certification-battery.fixture.v0",
+    "sourceOnly": true,
+    "noLive": true,
+    "issues": [
+      "https://github.com/jinwon-int/a2a-nexus/issues/1487",
+      "https://github.com/jinwon-int/a2a-nexus/issues/1478"
+    ]
+  },
+  "safety": {
+    "productionBrokerRequired": false,
+    "providerSend": false,
+    "telegramSend": false,
+    "databaseMutation": false,
+    "terminalAckReplay": false,
+    "deployOrRestart": false,
+    "secretRequired": false,
+    "releaseOrPublish": false,
+    "registryWrite": false,
+    "badgePublication": false,
+    "visibilityChange": false
+  },
+  "batteryPack": {
+    "schemaVersion": "a2a.certification-battery.pack.v0",
+    "canonicalization": "rfc8785-jcs-v1",
+    "batteryId": "mcp-plugin-baseline-public-safe",
+    "batteryVersion": "mcp-plugin-baseline-v0",
+    "subjectProfile": "public-safe-mcp-plugin",
+    "target": {
+      "kind": "mcp-plugin",
+      "name": "example-public-safe-mcp-plugin",
+      "artifactKind": "git-repository",
+      "repo": "example/mcp-plugin-fixture",
+      "commitSha": "0123456789abcdef0123456789abcdef01234567",
+      "artifactHashes": [
+        "sha256:69ff5b9142d979298ff4981ab32dc34209e759b02a68eb289f6b9a6eda1bb765"
+      ]
+    },
+    "deterministic": true,
+    "registryRequired": false,
+    "badgeRequired": false,
+    "checks": [
+      {
+        "id": "manifest-schema",
+        "kind": "schema",
+        "inputRefs": [
+          "plugin-manifest.json"
+        ],
+        "expected": "pass",
+        "reproducible": true,
+        "noLive": true
+      },
+      {
+        "id": "declared-capability-boundary",
+        "kind": "capability-boundary",
+        "inputRefs": [
+          "plugin-manifest.json",
+          "capability-policy.json"
+        ],
+        "expected": "pass",
+        "reproducible": true,
+        "noLive": true
+      },
+      {
+        "id": "secret-scan-fixture",
+        "kind": "secret-scan",
+        "inputRefs": [
+          "src/**",
+          "plugin-manifest.json"
+        ],
+        "expected": "pass",
+        "reproducible": true,
+        "noLive": true
+      }
+    ],
+    "attestationIntegration": {
+      "reviewed": [
+        "github-actions-oidc",
+        "sigstore",
+        "slsa"
+      ],
+      "posture": "reuse-existing-attestation-infra; do-not-reimplement"
+    },
+    "limitations": [
+      "fixture-scope-only",
+      "does-not-prove-general-safety",
+      "does-not-prove-absence-of-all-vulnerabilities"
+    ]
+  },
+  "batteryResult": {
+    "schemaVersion": "a2a.certification-battery.result.v0",
+    "canonicalization": "rfc8785-jcs-v1",
+    "packRef": {
+      "batteryId": "mcp-plugin-baseline-public-safe",
+      "batteryVersion": "mcp-plugin-baseline-v0",
+      "packHash": "sha256:d256e42fb33f3ccc7bb7aff57a16aafaa54e643ad32c464ee0fdd85da2140225"
+    },
+    "subject": {
+      "kind": "mcp-plugin",
+      "name": "example-public-safe-mcp-plugin",
+      "artifactKind": "git-repository",
+      "repo": "example/mcp-plugin-fixture",
+      "commitSha": "0123456789abcdef0123456789abcdef01234567",
+      "artifactHashes": [
+        "sha256:69ff5b9142d979298ff4981ab32dc34209e759b02a68eb289f6b9a6eda1bb765"
+      ]
+    },
+    "run": {
+      "kind": "fixture-replay",
+      "runner": "local-conformance",
+      "executedAt": "2026-07-09T00:00:00.000Z",
+      "liveNetwork": false,
+      "providerSend": false,
+      "registryWrite": false
+    },
+    "checkResults": [
+      {
+        "id": "manifest-schema",
+        "status": "pass",
+        "outputHash": "sha256:e15a9e9707ea02c3f8720dbd17e7c442ba17a87b839824a78e0e827f630deb8b"
+      },
+      {
+        "id": "declared-capability-boundary",
+        "status": "pass",
+        "outputHash": "sha256:00a448f1fdf004cf6f598f63cc4b3b70ea68990c86c576211376aefd3373bc3d"
+      },
+      {
+        "id": "secret-scan-fixture",
+        "status": "pass",
+        "outputHash": "sha256:7bfc135728c56680e0e9b5a3f2c9861d1593a7c58f27ac44f3adf86c6e4c5314"
+      }
+    ],
+    "decision": "pass",
+    "resultHash": "sha256:a0bf83e8634c1b2bd92fe78bf5c73ceb42070cc6d210941cb08ac6d701ad5a2f"
+  },
+  "batteryVerdict": {
+    "schemaVersion": "a2a.finalizer.verdict.v1",
+    "canonicalization": "rfc8785-jcs-v1",
+    "kind": "battery",
+    "subject": {
+      "kind": "battery-result",
+      "batteryId": "mcp-plugin-baseline-public-safe",
+      "batteryVersion": "mcp-plugin-baseline-v0",
+      "resultHash": "sha256:a0bf83e8634c1b2bd92fe78bf5c73ceb42070cc6d210941cb08ac6d701ad5a2f"
+    },
+    "decision": "go",
+    "evidenceRefs": [
+      {
+        "kind": "battery-result",
+        "ref": "certification-battery-result:sha256:a0bf83e8634c1b2bd92fe78bf5c73ceb42070cc6d210941cb08ac6d701ad5a2f"
+      }
+    ],
+    "assurance": {
+      "proves": [
+        "deterministic-checks-ran",
+        "reproducibility",
+        "subject-binding",
+        "verdict-integrity"
+      ],
+      "doesNotProve": [
+        "analytical-correctness",
+        "general-safety",
+        "legal-compliance",
+        "marketplace-approval",
+        "absence-of-all-vulnerabilities"
+      ],
+      "disclaimer": "Attests deterministic fixture battery outcome for a pinned artifact; does not certify general quality or safety."
+    },
+    "finalizerKeyId": "finalizer:fixture-certification-battery",
+    "producedAt": "2026-07-09T00:01:00.000Z",
+    "sig": {
+      "protected": "fixture-not-a-live-signature",
+      "signature": "fixture-not-a-live-signature"
+    }
+  },
+  "judgmentBoundaryExample": {
+    "schemaVersion": "a2a.finalizer.verdict.v1",
+    "canonicalization": "rfc8785-jcs-v1",
+    "kind": "judgment",
+    "subject": {
+      "kind": "product-artifact",
+      "commitSha": "0123456789abcdef0123456789abcdef01234567"
+    },
+    "decision": "go",
+    "evidenceRefs": [
+      {
+        "kind": "review",
+        "ref": "source-only-review:fixture"
+      }
+    ],
+    "assurance": {
+      "proves": [
+        "independent-review-occurred",
+        "verdict-integrity",
+        "subject-binding"
+      ],
+      "doesNotProve": [
+        "analytical-correctness",
+        "reproducibility",
+        "general-safety",
+        "legal-compliance"
+      ],
+      "disclaimer": "Attests that an independent judgment occurred; the judgment itself is not reproducible."
+    },
+    "finalizerKeyId": "finalizer:fixture-judgment-review",
+    "producedAt": "2026-07-09T00:02:00.000Z",
+    "sig": {
+      "protected": "fixture-not-a-live-signature",
+      "signature": "fixture-not-a-live-signature"
+    }
+  },
+  "productArtifactCertificateSample": {
+    "schemaVersion": "a2a.product-artifact.certificate.v0",
+    "canonicalization": "rfc8785-jcs-v1",
+    "subject": {
+      "kind": "mcp-plugin",
+      "name": "example-public-safe-mcp-plugin",
+      "artifactKind": "git-repository",
+      "repo": "example/mcp-plugin-fixture",
+      "commitSha": "0123456789abcdef0123456789abcdef01234567",
+      "artifactHashes": [
+        "sha256:69ff5b9142d979298ff4981ab32dc34209e759b02a68eb289f6b9a6eda1bb765"
+      ]
+    },
+    "batteryVersion": "mcp-plugin-baseline-v0",
+    "claims": [
+      {
+        "id": "battery:mcp-plugin-baseline-public-safe",
+        "kind": "capability-boundary",
+        "status": "pass",
+        "evidenceRef": "battery-verdict:sha256:c2e45d3705c96476975f0256601bc5d14653c258b3c54c5b22f86086dbce75ad",
+        "scope": [
+          "plugin-manifest.json",
+          "src/**"
+        ],
+        "limitations": [
+          "fixture-scope-only"
+        ]
+      },
+      {
+        "id": "secret-scan:no-high-confidence-findings",
+        "kind": "secret-scan",
+        "status": "pass",
+        "evidenceRef": "battery-result:sha256:a0bf83e8634c1b2bd92fe78bf5c73ceb42070cc6d210941cb08ac6d701ad5a2f",
+        "scope": [
+          "plugin-manifest.json",
+          "src/**"
+        ],
+        "limitations": [
+          "patterns-only",
+          "does-not-prove-absence-of-all-secrets"
+        ]
+      }
+    ],
+    "decision": "certified",
+    "issuedAt": "2026-07-09T00:03:00.000Z",
+    "expiresAt": "2026-10-09T00:03:00.000Z",
+    "issuer": {
+      "kind": "source-only-fixture",
+      "attesterSubject": "repo:example/certification-fixture:workflow_ref:source-only"
+    },
+    "assurance": {
+      "proves": [
+        "claim-evaluation-occurred",
+        "subject-binding",
+        "certificate-integrity"
+      ],
+      "doesNotProve": [
+        "general-safety",
+        "bug-free",
+        "legal-compliance",
+        "marketplace-approval",
+        "absence-of-all-vulnerabilities"
+      ],
+      "disclaimer": "Attests finite claim outcomes for a pinned artifact. It is not a general quality, safety, legal, or registry certification."
+    },
+    "sig": {
+      "protected": "fixture-not-a-live-signature",
+      "signature": "fixture-not-a-live-signature"
+    }
+  },
+  "extractionReadiness": {
+    "registryRequiredForValue": false,
+    "badgeRequiredForValue": false,
+    "valueWithoutRegistry": [
+      "third-party can inspect the pack",
+      "third-party can re-run or inspect pinned checks",
+      "third-party can verify result/verdict/certificate binding"
+    ],
+    "externalDemandSignals": [
+      {
+        "kind": "operator-roadmap",
+        "source": "https://github.com/jinwon-int/a2a-nexus/issues/1487",
+        "status": "recorded",
+        "extractionWeight": "insufficient-alone"
+      }
+    ],
+    "decision": "defer-extraction-until-external-demand"
+  },
+  "validationCommands": [
+    "node test/conformance/check-certification-battery.mjs",
+    "npm run test:conformance"
+  ]
+}
