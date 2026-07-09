@@ -37,7 +37,8 @@ assert.equal(fixture.meta.contract, 'certification-battery');
 assert.equal(fixture.meta.schemaVersion, 'a2a.certification-battery.fixture.v0');
 assert.equal(fixture.meta.sourceOnly, true);
 assert.equal(fixture.meta.noLive, true);
-assert.ok(fixture.meta.issues.includes('https://github.com/jinwon-int/a2a-nexus/issues/1487'));
+assert.equal(Array.isArray(fixture.meta.issues), true);
+assert.ok(fixture.meta.issues.some((issue) => issue === 'https://github.com/jinwon-int/a2a-nexus/issues/1487'));
 
 const valid = verifyCertificationBatteryBundle(fixture, { fixtureText });
 assert.equal(valid.ok, true, JSON.stringify(valid.checks.filter((check) => !check.ok), null, 2));
