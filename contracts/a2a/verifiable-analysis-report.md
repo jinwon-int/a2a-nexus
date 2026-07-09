@@ -282,7 +282,34 @@ and the local conformance guard is:
 node test/conformance/check-retrieval-source-carrier-binding.mjs
 ```
 
-## 7. Safety boundaries
+## 7. Product package sample (#1483)
+
+The first extractable product slice is a **source-only product package** that
+wraps this report with the other artifacts a third party expects to verify:
+
+- `reportHash = sha256:JCS(report)`;
+- an artifact manifest whose `report-bundle` entry is bound to `reportHash`;
+- `artifactManifestHash = sha256:JCS(artifactManifest)`;
+- a signed finalizer verdict with subject
+  `{ kind:"verifiable-analysis-report", taskId, reportHash, artifactManifestHash }`.
+
+The sample package lives at
+[`../../fixtures/contract/verifiable-analysis-report-product.json`](../../fixtures/contract/verifiable-analysis-report-product.json),
+with a public-key-only keyring at
+[`../../fixtures/contract/verifiable-analysis-report-product-keyring.json`](../../fixtures/contract/verifiable-analysis-report-product-keyring.json).
+Verify it locally:
+
+```bash
+node scripts/verify-analysis-report.mjs \
+  fixtures/contract/verifiable-analysis-report-product.json \
+  --keyring fixtures/contract/verifiable-analysis-report-product-keyring.json \
+  --product
+```
+
+This mode still performs no network fetch, broker access, release, publish,
+dashboard, or deployment action. It only verifies the package received on disk.
+
+## 8. Safety boundaries
 
 - Public key ids only; private keys never emitted anywhere.
 - Attested subject is an anonymized class / key id — never a real worker name.
@@ -293,7 +320,7 @@ node test/conformance/check-retrieval-source-carrier-binding.mjs
 - A retrieval approval packet is not live-fetch approval. It only validates the
   contract that a later rail/proxy/fetch slice must satisfy.
 
-## 8. Follow-up
+## 9. Follow-up
 
 - A permanent CI conformance guard (round-trip `#1380` real signers → this
   verifier) should live where the broker dist is built after the release-gate

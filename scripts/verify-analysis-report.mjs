@@ -22,10 +22,13 @@
  * Usage:
  *   node scripts/verify-analysis-report.mjs <report.json> --keyring <keyring.json> [--json]
  *   node scripts/verify-analysis-report.mjs <snapshot.json> --keyring <keyring.json> --snapshot [--json]
+ *   node scripts/verify-analysis-report.mjs <product-package.json> --keyring <keyring.json> --product [--json]
  * Exit 0 = GREEN (every check passed); non-zero = fail-closed.
  */
 import fs from "node:fs";
 import { parseArgs } from "node:util";
+
+import { verifyVerdict } from "./verify-finalizer-verdict.mjs";
 
 // Shared broker-independent JCS + JWS primitives (also used by the finalizer
 // verdict verifier #1383) — one crypto path, no drift. canonicalizeJson is
@@ -44,6 +47,8 @@ export const CANONICALIZATION = "rfc8785-jcs-v1";
 export const RESULT_PROVENANCE_SCHEMA = "a2a.result.provenance.v1";
 export const BROKER_COUNTERSIG_SCHEMA = "a2a.result.provenance.broker-countersig.v1";
 export const RETRIEVAL_SNAPSHOT_SCHEMA = "a2a.retrieval.snapshot.v1";
+export const ANALYSIS_PRODUCT_SCHEMA = "a2a.verifiable-analysis-report.product.v0";
+export const ANALYSIS_ARTIFACT_MANIFEST_SCHEMA = "a2a.verifiable-analysis-report.artifactManifest.v0";
 
 // ---------------------------------------------------------------------------
 // Provenance verification (mirrors provenance.ts semantics, standalone).
@@ -249,15 +254,147 @@ export function verifyReport(report, keyring) {
   return { green: checks.every((c) => c.ok), checks };
 }
 
+function unsafeStringFindings(value, trail = []) {
+  const findings = [];
+  const visit = (node, pathParts) => {
+    if (typeof node === "string") {
+      const patterns = [
+        ["private-path", /(?:^|\s)(?:\/root\/|\/home\/|\/Users\/|[A-Za-z]:\\\\Users\\\\)/],
+        ["raw-secret", /(ghp_[A-Za-z0-9_]{20,}|github_pat_[A-Za-z0-9_]+|xox[baprs]-[A-Za-z0-9-]+|A2A_EDGE_SECRET=|EDGE_SECRET=|-----BEGIN (?:RSA |OPENSSH |EC |DSA )?PRIVATE KEY-----)/],
+      ];
+      for (const [id, pattern] of patterns) {
+        if (pattern.test(node)) findings.push({ id, path: pathParts.join(".") });
+      }
+    } else if (Array.isArray(node)) {
+      node.forEach((item, index) => visit(item, [...pathParts, String(index)]));
+    } else if (node && typeof node === "object") {
+      for (const [key, item] of Object.entries(node)) visit(item, [...pathParts, key]);
+    }
+  };
+  visit(value, trail);
+  return findings;
+}
+
+function artifactManifestChecks(product, checks) {
+  const manifest = product?.artifactManifest;
+  if (!manifest || typeof manifest !== "object" || Array.isArray(manifest)) {
+    fail(checks, "artifact-manifest", "artifactManifest object required");
+    return;
+  }
+  if (manifest.schemaVersion !== ANALYSIS_ARTIFACT_MANIFEST_SCHEMA) {
+    fail(checks, "artifact-manifest-schema", `schemaVersion must be ${ANALYSIS_ARTIFACT_MANIFEST_SCHEMA}`);
+  } else {
+    pass(checks, "artifact-manifest-schema");
+  }
+  if (manifest.sourceOnly !== true || manifest.noLive !== true || manifest.releasePublished !== false || manifest.liveBrokerDashboard !== false) {
+    fail(checks, "artifact-manifest-source-only", "artifact manifest must declare sourceOnly/noLive and no live dashboard/release publication");
+  } else {
+    pass(checks, "artifact-manifest-source-only");
+  }
+  if (manifest.reportHash !== product.reportHash) {
+    fail(checks, "artifact-manifest-report-hash", "artifactManifest.reportHash must match package.reportHash");
+  } else {
+    pass(checks, "artifact-manifest-report-hash");
+  }
+  const artifactMatches = Array.isArray(manifest.artifacts) && manifest.artifacts.some((artifact) =>
+    artifact && artifact.id === "report-bundle" && artifact.contentHash === product.reportHash,
+  );
+  if (!artifactMatches) {
+    fail(checks, "artifact-manifest-report-artifact", "artifact manifest must include report-bundle artifact with reportHash contentHash");
+  } else {
+    pass(checks, "artifact-manifest-report-artifact");
+  }
+  const safety = manifest.publicSafety || {};
+  const safetyFields = ["containsPrivatePaths", "containsRawLogs", "containsTokens", "containsProviderIds"];
+  const unsafeFlags = safetyFields.filter((field) => safety[field] !== false);
+  if (unsafeFlags.length > 0) {
+    fail(checks, "artifact-manifest-public-safety", `publicSafety fields must be false: ${unsafeFlags.join(", ")}`);
+  } else {
+    pass(checks, "artifact-manifest-public-safety");
+  }
+}
+
+/**
+ * Verify the source-only product package for the first extractable
+ * `a2a-verifiable-analysis-report` slice (#1483). The product package ties the
+ * report bundle to a report hash, a public-safe artifact manifest, and a signed
+ * finalizer verdict. It is deliberately offline-only: no broker, network,
+ * release, publication, dashboard, or live fetch is touched.
+ */
+export function verifyAnalysisReportProductPackage(product, keyring) {
+  const checks = [];
+  if (!product || typeof product !== "object" || Array.isArray(product) || product.schemaVersion !== ANALYSIS_PRODUCT_SCHEMA) {
+    fail(checks, "product-shape", `schemaVersion must be ${ANALYSIS_PRODUCT_SCHEMA}`);
+    return { green: false, checks };
+  }
+  pass(checks, "product-shape");
+  if (product.sourceOnly !== true || product.noLive !== true) {
+    fail(checks, "product-source-only", "product package must declare sourceOnly=true and noLive=true");
+  } else {
+    pass(checks, "product-source-only");
+  }
+
+  const reportResult = verifyReport(product.report, keyring);
+  if (reportResult.green) {
+    pass(checks, "report-verifier");
+  } else {
+    const failing = reportResult.checks.filter((c) => !c.ok).map((c) => c.id).join(", ") || "unknown";
+    fail(checks, "report-verifier", `embedded report failed verification: ${failing}`);
+  }
+
+  const computedReportHash = product.report ? sha256Prefix(canonicalizeJson(product.report)) : undefined;
+  if (computedReportHash !== product.reportHash) {
+    fail(checks, "report-hash", "package.reportHash must equal sha256:JCS(report)");
+  } else {
+    pass(checks, "report-hash");
+  }
+
+  const computedManifestHash = product.artifactManifest ? sha256Prefix(canonicalizeJson(product.artifactManifest)) : undefined;
+  if (computedManifestHash !== product.artifactManifestHash) {
+    fail(checks, "artifact-manifest-hash", "package.artifactManifestHash must equal sha256:JCS(artifactManifest)");
+  } else {
+    pass(checks, "artifact-manifest-hash");
+  }
+  artifactManifestChecks(product, checks);
+
+  const expectedSubject = {
+    kind: "verifiable-analysis-report",
+    taskId: product.report?.taskId,
+    reportHash: product.reportHash,
+    artifactManifestHash: product.artifactManifestHash,
+  };
+  const verdictResult = verifyVerdict(product.finalizerVerdict, keyring, { expectedSubject });
+  if (verdictResult.valid && verdictResult.decision === "go") {
+    pass(checks, "finalizer-verdict");
+  } else {
+    const failing = verdictResult.checks.filter((c) => !c.ok).map((c) => c.id).join(", ") || `decision=${verdictResult.decision ?? "absent"}`;
+    fail(checks, "finalizer-verdict", `finalizer verdict must be valid, subject-bound, and decision=go: ${failing}`);
+  }
+
+  const unsafeStrings = unsafeStringFindings({ report: product.report, artifactManifest: product.artifactManifest });
+  if (unsafeStrings.length > 0) {
+    fail(checks, "public-safe-report", `unsafe public fixture string(s): ${unsafeStrings.map((f) => `${f.id}@${f.path}`).join(", ")}`);
+  } else {
+    pass(checks, "public-safe-report");
+  }
+
+  return { green: checks.every((c) => c.ok), checks };
+}
+
 function main(argv) {
   const { values, positionals } = parseArgs({
     args: argv,
     allowPositionals: true,
-    options: { keyring: { type: "string" }, json: { type: "boolean", default: false }, snapshot: { type: "boolean", default: false } },
+    options: {
+      keyring: { type: "string" },
+      json: { type: "boolean", default: false },
+      snapshot: { type: "boolean", default: false },
+      product: { type: "boolean", default: false },
+    },
   });
   const reportPath = positionals[0];
   if (!reportPath || !values.keyring) {
-    process.stderr.write("usage: verify-analysis-report.mjs <report.json> --keyring <keyring.json> [--json]\n       verify-analysis-report.mjs <snapshot.json> --keyring <keyring.json> --snapshot [--json]\n");
+    process.stderr.write("usage: verify-analysis-report.mjs <report.json> --keyring <keyring.json> [--json]\n       verify-analysis-report.mjs <snapshot.json> --keyring <keyring.json> --snapshot [--json]\n       verify-analysis-report.mjs <product-package.json> --keyring <keyring.json> --product [--json]\n");
     return 2;
   }
   let report;
@@ -275,14 +412,23 @@ function main(argv) {
     return 2;
   }
 
-  const result = values.snapshot ? verifyRetrievalSnapshot(report, keyring.keys || {}) : verifyReport(report, keyring);
+  const modeCount = [values.snapshot, values.product].filter(Boolean).length;
+  if (modeCount > 1) {
+    process.stderr.write("choose only one mode: --snapshot or --product\n");
+    return 2;
+  }
+  const result = values.snapshot
+    ? verifyRetrievalSnapshot(report, keyring.keys || {})
+    : values.product
+      ? verifyAnalysisReportProductPackage(report, keyring)
+      : verifyReport(report, keyring);
   if (values.json) {
     process.stdout.write(`${JSON.stringify(result, null, 2)}\n`);
   } else {
     for (const c of result.checks) {
       process.stdout.write(`${c.ok ? "PASS" : "FAIL"}  ${c.id}${c.detail ? ` — ${c.detail}` : ""}\n`);
     }
-    const noun = values.snapshot ? "retrieval snapshot" : "report";
+    const noun = values.snapshot ? "retrieval snapshot" : (values.product ? "analysis report product package" : "report");
     process.stdout.write(`\n${result.green ? `GREEN — ${noun} verified` : "RED — verification failed (fail-closed)"}\n`);
   }
   return result.green ? 0 : 1;

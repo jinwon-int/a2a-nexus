@@ -1,0 +1,13 @@
+{
+  "keys": {
+    "worker:sample-analysis": "-----BEGIN PUBLIC KEY-----\nMCowBQYDK2VwAyEA4Yt1Lo7b/lfy6ZzjfGNVUhLPujHl6rqhfb2/1AzxHRQ=\n-----END PUBLIC KEY-----\n",
+    "broker:sample-countersig": "-----BEGIN PUBLIC KEY-----\nMCowBQYDK2VwAyEAg4D/FVNDuCFVFdVYwpESTEnhTblexla+Ya+H5p7bOiY=\n-----END PUBLIC KEY-----\n",
+    "runner:sample-source-snapshot": "-----BEGIN PUBLIC KEY-----\nMCowBQYDK2VwAyEARcgtUAbY6YEuscHQPH2TrQHw1pxkifVll6Y84zmpKbk=\n-----END PUBLIC KEY-----\n",
+    "finalizer:sample-report-review": {
+      "pem": "-----BEGIN PUBLIC KEY-----\nMCowBQYDK2VwAyEARJP50pq6dc7cfC2SxBAO8/h24haqtuZ8Oyz3DCDgOmY=\n-----END PUBLIC KEY-----\n",
+      "status": "active",
+      "notBefore": "2026-07-01T00:00:00.000Z",
+      "expiresAt": "2026-12-31T23:59:59.000Z"
+    }
+  }
+}

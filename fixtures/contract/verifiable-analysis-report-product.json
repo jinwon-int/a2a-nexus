@@ -1,0 +1,170 @@
+{
+  "schemaVersion": "a2a.verifiable-analysis-report.product.v0",
+  "sourceOnly": true,
+  "noLive": true,
+  "problemStatement": "Do not ask readers to trust a code-review analysis report; give them a local artifact whose sources, hash, manifest, and finalizer verdict verify offline.",
+  "reportHash": "sha256:4de0749044621fd16a0d8c0aabf755051067a4151ba1d88db9b0b4ae6939190b",
+  "artifactManifestHash": "sha256:62fdb50b4b1059b63fa39a2f4ee5abeb5d1260039eb30f9adc46fd7dabc06b9a",
+  "report": {
+    "reportVersion": "verifiable-analysis-report/v1",
+    "taskId": "sample-verifiable-analysis-report-dogfood-001",
+    "result": {
+      "summary": "A2A Nexus can package a source-grounded analysis report so a third party verifies provenance and integrity offline.",
+      "output": {
+        "reportType": "github-pr-code-review-analysis-example",
+        "sources": [
+          {
+            "sourceId": "positioning-doc-excerpt",
+            "contentHash": "sha256:7e36381542d35ca7a3ad26dca64e7b6c989f10577b60b350e33963fc0175ccc1"
+          }
+        ],
+        "findings": [
+          {
+            "id": "product-sentence-clear-enough-for-first-screen",
+            "verdict": "pass",
+            "rationale": "The report states the problem, evidence boundary, and offline verification path without requiring live broker context.",
+            "sourceRefs": [
+              "positioning-doc-excerpt"
+            ]
+          }
+        ],
+        "limitations": [
+          "This report proves source grounding, signature integrity, and finalizer-review occurrence; it does not prove analytical correctness.",
+          "This fixture is source-only and synthetic; it is not a release artifact or package publication."
+        ]
+      },
+      "provenance": {
+        "schemaVersion": "a2a.result.provenance.v1",
+        "canonicalization": "rfc8785-jcs-v1",
+        "alg": "EdDSA",
+        "workerKeyId": "worker:sample-analysis",
+        "claimedAt": "2026-07-09T00:00:00.000Z",
+        "resultHash": "sha256:f82f2e329eeeb306edd87699a98b01692e1fe2e75b91802f815a97956a4ddde6",
+        "workerSig": {
+          "protected": "eyJhbGciOiJFZERTQSIsImtpZCI6IndvcmtlcjpzYW1wbGUtYW5hbHlzaXMiLCJ0eXAiOiJKT1NFIn0",
+          "signature": "dYoCVdJ4lO68-Wlfq0HruCGxMpa66aGZriwA0eaEFYUfZWyYmGNnhm_GM1ussdSGpbnujIE2_vuAn7Ow-vo5AQ"
+        },
+        "brokerCountersig": {
+          "brokerKeyId": "broker:sample-countersig",
+          "verifiedAt": "2026-07-09T00:01:00.000Z",
+          "sig": {
+            "protected": "eyJhbGciOiJFZERTQSIsImtpZCI6ImJyb2tlcjpzYW1wbGUtY291bnRlcnNpZyIsInR5cCI6IkpPU0UifQ",
+            "signature": "F6sLLG6b516Alhm_wmKANdtGpcAaTx8G8bCKy4au0g97wHoh1f-PwcM4Wl899i5fvpeDRYAouQoj1FbD5f4lDw"
+          }
+        }
+      }
+    },
+    "sources": [
+      {
+        "schemaVersion": "a2a.retrieval.snapshot.v1",
+        "canonicalization": "rfc8785-jcs-v1",
+        "source": "github",
+        "repo": "jinwon-int/a2a-nexus",
+        "requestedRef": "d9ae2ec4f43f5b61bfdde6988e4ad120fc1ac734",
+        "resolvedRef": "d9ae2ec4f43f5b61bfdde6988e4ad120fc1ac734",
+        "path": "docs/positioning.md",
+        "fetchedAt": "2026-07-09T00:00:00.000Z",
+        "byteLen": 384,
+        "contentHash": "sha256:7e36381542d35ca7a3ad26dca64e7b6c989f10577b60b350e33963fc0175ccc1",
+        "content": "# Public-safe dogfood source excerpt\n\nThis fixture is synthetic and local-only. It models a GitHub PR/code-review analysis input without private paths, raw logs, tokens, provider IDs, or live broker data.\n\n- Finding target: docs/positioning.md product sentence\n- Evidence boundary: source-only report artifact; no release, publish, deploy, dashboard, provider send, or broker restart\n",
+        "signature": {
+          "protected": "eyJhbGciOiJFZERTQSIsImtpZCI6InJ1bm5lcjpzYW1wbGUtc291cmNlLXNuYXBzaG90IiwidHlwIjoiSk9TRSJ9",
+          "signature": "ka98mE1YJWPCn8RDBxFXk6r9iGwr6yo9XGvJbstLWFXDOMn01ux8k0ERAymBSiKZtUfxOAoU1s6wSgwuhoPLAw"
+        }
+      }
+    ],
+    "assurance": {
+      "proves": [
+        "source-grounding",
+        "integrity",
+        "process-provenance"
+      ],
+      "doesNotProve": [
+        "analytical-correctness",
+        "normative-judgment",
+        "authorship"
+      ],
+      "disclaimer": "This report proves source grounding, provenance, and integrity for the packaged artifact. It does NOT certify that the analysis is correct, and it does not prove authorship of the work."
+    }
+  },
+  "artifactManifest": {
+    "schemaVersion": "a2a.verifiable-analysis-report.artifactManifest.v0",
+    "sourceOnly": true,
+    "noLive": true,
+    "liveBrokerDashboard": false,
+    "releasePublished": false,
+    "reportHash": "sha256:4de0749044621fd16a0d8c0aabf755051067a4151ba1d88db9b0b4ae6939190b",
+    "generatedBy": "fixtures/contract/verifiable-analysis-report-product.json",
+    "dogfoodRun": {
+      "id": "source-only-sample-dogfood-run-001",
+      "kind": "synthetic-public-safe-fixture",
+      "producedAt": "2026-07-09T00:00:00.000Z"
+    },
+    "artifacts": [
+      {
+        "id": "report-bundle",
+        "kind": "verifiable-analysis-report/v1",
+        "logicalPath": "sample/report.json",
+        "mediaType": "application/json",
+        "contentHash": "sha256:4de0749044621fd16a0d8c0aabf755051067a4151ba1d88db9b0b4ae6939190b"
+      }
+    ],
+    "publicSafety": {
+      "containsPrivatePaths": false,
+      "containsRawLogs": false,
+      "containsTokens": false,
+      "containsProviderIds": false
+    },
+    "nonGoals": [
+      "release",
+      "package-publish",
+      "live-dashboard",
+      "provider-send",
+      "broker-deploy"
+    ]
+  },
+  "finalizerVerdict": {
+    "schemaVersion": "a2a.finalizer.verdict.v1",
+    "canonicalization": "rfc8785-jcs-v1",
+    "kind": "judgment",
+    "subject": {
+      "kind": "verifiable-analysis-report",
+      "taskId": "sample-verifiable-analysis-report-dogfood-001",
+      "reportHash": "sha256:4de0749044621fd16a0d8c0aabf755051067a4151ba1d88db9b0b4ae6939190b",
+      "artifactManifestHash": "sha256:62fdb50b4b1059b63fa39a2f4ee5abeb5d1260039eb30f9adc46fd7dabc06b9a"
+    },
+    "decision": "go",
+    "evidenceRefs": [
+      {
+        "kind": "report-hash",
+        "ref": "sha256:4de0749044621fd16a0d8c0aabf755051067a4151ba1d88db9b0b4ae6939190b"
+      },
+      {
+        "kind": "artifact-manifest-hash",
+        "ref": "sha256:62fdb50b4b1059b63fa39a2f4ee5abeb5d1260039eb30f9adc46fd7dabc06b9a"
+      },
+      {
+        "kind": "source-only-fixture",
+        "ref": "fixtures/contract/verifiable-analysis-report-product.json"
+      }
+    ],
+    "assurance": {
+      "proves": [
+        "independent-review-occurred",
+        "verdict-integrity",
+        "subject-binding"
+      ],
+      "doesNotProve": [
+        "analytical-correctness",
+        "reproducibility"
+      ],
+      "disclaimer": "Attests an independent GO on this exact source-only report package; does not certify analytical correctness or reproducibility of the judgment."
+    },
+    "finalizerKeyId": "finalizer:sample-report-review",
+    "producedAt": "2026-07-09T00:02:00.000Z",
+    "sig": {
+      "protected": "eyJhbGciOiJFZERTQSIsImtpZCI6ImZpbmFsaXplcjpzYW1wbGUtcmVwb3J0LXJldmlldyIsInR5cCI6IkpPU0UifQ",
+      "signature": "gk4cuamKhotAnyqX3Fzc4bnMfgUl8jXMQe_AA4281EeK4DaEcYVwlx9ZfyAsBXIF1eh1tCnJDvQvx_HAgE06BQ"
+    }
+  }
+}

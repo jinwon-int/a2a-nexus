@@ -27,6 +27,7 @@ Public-safe contract skeletons for A2A protocol and task lifecycle behavior.
 - [Completion certificate](./completion-certificate.md) — source-only proof object for declared task completion conditions; composes battery/judgment verdicts for external payment-release evaluators without moving funds or integrating live rails
 - [Product artifact certificate](./product-artifact-certificate.md) — source-only claim-bound certificate for pinned software artifacts; separates finite evidence claims from broad safety/quality marketing
 - [Certification battery](./certification-battery.md) — source-only deterministic test-pack/result/verdict contract for reproducible finite artifact checks before any registry/badge extraction
+- [Verifiable analysis report](./verifiable-analysis-report.md) — offline-verifiable report bundle; source-only product package sample is documented in [docs/verifiable-analysis-report.md](../../docs/verifiable-analysis-report.md)
 
 ## Compatibility
 
@@ -54,6 +55,7 @@ Machine-readable reference fixtures for broker/plugin/runner validation:
 - [Retrieval approval contract](../../fixtures/contract/retrieval-approval-contract.json) — source-only K2 GitHub-read request and egress allowlist approval packet fixture; no live fetch or proxy enablement
 - [Retrieval source-carrier binding](../../fixtures/contract/retrieval-source-carrier-binding.json) — source-only K2 approval→snapshot→source-carrier→report binding fixture; no live fetch or proxy enablement
 - [Certification battery](../../fixtures/contract/certification-battery.json) — source-only deterministic battery pack/result/verdict/certificate fixture for public-safe MCP/plugin checks; no registry/badge publication
+- [Verifiable analysis report product package](../../fixtures/contract/verifiable-analysis-report-product.json) — source-only sample report package with report hash, artifact manifest, and signed finalizer verdict; no release/publish/dashboard action
 - [External harness no-live conformance](../../fixtures/external-harness/no-live-conformance.json) — public-safe external harness fixture for OpenClaw-agnostic no-live integration
 
 ### Compatibility fixtures
