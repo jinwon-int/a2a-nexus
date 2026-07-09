@@ -8,6 +8,7 @@ and is unchanged; this index is the map of everything under `docs/`.
 
 - [quickstart.md](quickstart.md) — five-minute local quickstart
 - [architecture.md](architecture.md) — conceptual architecture map
+- [trust-boundaries.md](trust-boundaries.md) — trust primitives and approval boundaries
 - [developers.md](developers.md) — package surfaces and local validation
 - [contribution-entry-points.md](contribution-entry-points.md) — first-contribution guide
 - [conformance.md](conformance.md) — running the public conformance runner
