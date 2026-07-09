@@ -16,7 +16,15 @@ entrypoints or shared contract fixtures.
 
 ## Local Validation
 
-Use focused checks while editing, then run the relevant release-gate subset:
+Use the [script-surface operator entrypoints](ops/script-surface-entrypoints.md) to choose the validation level:
+
+| Situation | Command path |
+|---|---|
+| Local quick check | focused package/doc command for the touched files |
+| PR check | `npm run check` |
+| Public candidate check | `npm run scan:public-readiness`, `npm run scan:external-secrets`, and relevant package/readiness audits |
+
+Examples for focused checks while editing:
 
 ```bash
 npm run check:layout
@@ -34,8 +42,7 @@ npm run scan:public-readiness
 npm run scan:readiness-gates
 ```
 
-`npm run check` is the root release gate. It may require external scanner
-tooling locally; GitHub CI installs the supported scanner path for PRs.
+`npm run check` is the root PR gate. It may require external scanner tooling locally; GitHub CI installs the supported scanner path for PRs. `docs/ops/script-surface-tier-manifest.json` remains the baseline for classifying the root and broker script surfaces; verify it with `node scripts/lib/script-surface-manifest.mjs`.
 
 ## Development Boundaries
 

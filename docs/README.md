@@ -34,6 +34,7 @@ and is unchanged; this index is the map of everything under `docs/`.
 - [issue-routing.md](issue-routing.md) — issue routing policy
 - [pr-review-guardrails.md](pr-review-guardrails.md) — review/merge runbook
 - [release-gate.md](release-gate.md) — release-gate mechanics
+- [ops/script-surface-entrypoints.md](ops/script-surface-entrypoints.md) — local quick check / PR check / public candidate check entrypoints
 - [release-checklist.md](release-checklist.md) — release evidence checklist
 - [release-readiness.md](release-readiness.md) — readiness-vs-publication matrix
 - [publicization-roadmap.md](publicization-roadmap.md) — gated publicization roadmap
