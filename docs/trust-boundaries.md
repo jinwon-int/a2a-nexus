@@ -26,6 +26,7 @@ The architecture is designed so that "the agent said it was fine" is never the f
 | Finalizer verdict | An independent finalizer or deterministic battery rendered a subject-bound GO/NO-GO verdict. | Analytical correctness; reproducibility for judgment verdicts. | [Finalizer Verdict v1](../contracts/a2a/finalizer-verdict.md) |
 | Completion certificate | Declared A2A-evaluable completion conditions were evaluated for a bound subject. | Payment authorization, funds availability, legal settlement, or live rail execution. | [Completion Certificate v0](../contracts/a2a/completion-certificate.md) |
 | Product artifact certificate | A named artifact was checked against declared claims and evidence. | Stable release status or production support. | [Product Artifact Certificate](../contracts/a2a/product-artifact-certificate.md) |
+| Agent work proof | A task's report product, deterministic battery, completion certificate, artifact manifest, and work-proof verdict are hash-bound and offline-verifiable as one bundle. | Analytical correctness, authorship, payment authorization, legal settlement, release approval, or judgment reproducibility. | [Agent Work Proof Bundle v0](../contracts/a2a/agent-work-proof.md) |
 
 ## Separation rules
 
@@ -95,7 +96,7 @@ Feature repositories should be split only when their trust boundary is legible o
 | Candidate surface | Good first extraction artifact | Boundary to keep explicit |
 |---|---|---|
 | Policy referee | policy document schema, evaluator fixtures, observation report shape | Enforcement promotion is an operator decision. |
-| Agent work proof | task result provenance, finalizer verdict, attestation bundle | Provenance does not prove authorship or correctness. |
+| Agent work proof | agent work proof bundle fixture + offline verifier | Provenance does not prove authorship or correctness. |
 | Escrow proof | completion certificate and no-live adapter receipts | A2A does not hold or move funds. |
 | Verifiable analysis report | signed result + source snapshot binding | Authentic source grounding does not prove the analysis is true. |
 | Certification battery | deterministic fixture manifest and re-run instructions | Battery reproducibility applies only to pinned checks, not judgment verdicts. |

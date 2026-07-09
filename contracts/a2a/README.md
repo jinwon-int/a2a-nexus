@@ -28,6 +28,7 @@ Public-safe contract skeletons for A2A protocol and task lifecycle behavior.
 - [Product artifact certificate](./product-artifact-certificate.md) — source-only claim-bound certificate for pinned software artifacts; separates finite evidence claims from broad safety/quality marketing
 - [Certification battery](./certification-battery.md) — source-only deterministic test-pack/result/verdict contract for reproducible finite artifact checks before any registry/badge extraction
 - [Verifiable analysis report](./verifiable-analysis-report.md) — offline-verifiable report bundle; source-only product package sample is documented in [docs/verifiable-analysis-report.md](../../docs/verifiable-analysis-report.md)
+- [Agent work proof](./agent-work-proof.md) — source-only composition bundle for signed work-completion evidence, artifact manifest, deterministic battery, completion certificate, and offline verifier
 
 ## Compatibility
 
@@ -56,6 +57,7 @@ Machine-readable reference fixtures for broker/plugin/runner validation:
 - [Retrieval source-carrier binding](../../fixtures/contract/retrieval-source-carrier-binding.json) — source-only K2 approval→snapshot→source-carrier→report binding fixture; no live fetch or proxy enablement
 - [Certification battery](../../fixtures/contract/certification-battery.json) — source-only deterministic battery pack/result/verdict/certificate fixture for public-safe MCP/plugin checks; no registry/badge publication
 - [Verifiable analysis report product package](../../fixtures/contract/verifiable-analysis-report-product.json) — source-only sample report package with report hash, artifact manifest, and signed finalizer verdict; no release/publish/dashboard action
+- [Agent work proof bundle](../../fixtures/contract/agent-work-proof-bundle.json) — source-only work-completion evidence package with report product, certification battery, completion certificate, artifact manifest, and signed work-proof verdict
 - [External harness no-live conformance](../../fixtures/external-harness/no-live-conformance.json) — public-safe external harness fixture for OpenClaw-agnostic no-live integration
 
 ### Compatibility fixtures
@@ -71,10 +73,13 @@ Machine-readable reference fixtures for broker/plugin/runner validation:
 - `node test/conformance/check-completion-certificate-fake-rail.mjs` — validates the fake/no-live payment rail rehearsal adapter decision mapping, idempotency, and no-live boundaries
 - `node test/conformance/check-completion-certificate-live-approval-gate.mjs` — validates the source-only live rail approval-gate packet, canary/rollback requirements, approval freshness, and secret/no-live boundaries
 - `node test/conformance/check-certification-battery.mjs` — validates source-only deterministic certification battery pack/result/verdict/certificate binding, public-safe MCP/plugin fixture value without registry/badge, and extraction demand-signal gate
+- `node test/conformance/check-verifiable-analysis-report-product.mjs` — validates source-only report product package hash, artifact manifest, signed finalizer verdict, and public-safe sample boundaries
+- `node test/conformance/check-agent-work-proof.mjs` — validates source-only agent work proof bundle composition, hashes, completion certificate, work-proof verdict, public-safety, and extraction-boundary negatives
 - `node test/conformance/check-retrieval-approval-contract.mjs` — validates the K2 source-only retrieval allowlist approval packet: SHA-only GitHub request, deny-by-default egress guards, untrusted envelope, no-live safety, and raw-secret denial
 - `node test/conformance/check-retrieval-source-carrier-binding.mjs` — validates source-only K2 binding from approval packet to signed snapshot, `untrusted_external_data` carrier, and verifiable analysis report citations
 - `node scripts/generate-completion-certificate.mjs <report.json> --signing-key <ed25519-private.pem>` — emits a signed report-only completion certificate from a public-safe no-live report; this is not payment release authorization
 - `node scripts/verify-completion-certificate.mjs <certificate.json> --keyring <keyring.json>` — independently verifies a signed completion certificate offline; this is an integrity check, not payment release authorization
+- `node scripts/verify-agent-work-proof.mjs fixtures/contract/agent-work-proof-bundle.json --keyring fixtures/contract/agent-work-proof-keyring.json` — independently verifies the source-only agent work proof bundle offline; this is evidence integrity, not payment/release authorization
 - `node test/conformance/check-terminal-evidence-ack-boundary.mjs` — validates accepted-send non-ACK fixture
 - `node test/conformance/check-a2a-tck-plan.mjs` — validates the A2A TCK and v0→v1 compatibility plan spec, fixture, gate mapping, and external-harness reference (#916)
 
