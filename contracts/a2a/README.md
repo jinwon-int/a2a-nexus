@@ -26,6 +26,7 @@ Public-safe contract skeletons for A2A protocol and task lifecycle behavior.
 - [Constrained node-op lane](./node-op-lane.md) — allowlisted node-local fleet operation contract; explicitly rejects raw shell/exec and freezes approval, readiness, integrity, redaction, and rollback gates
 - [Completion certificate](./completion-certificate.md) — source-only proof object for declared task completion conditions; composes battery/judgment verdicts for external payment-release evaluators without moving funds or integrating live rails
 - [Product artifact certificate](./product-artifact-certificate.md) — source-only claim-bound certificate for pinned software artifacts; separates finite evidence claims from broad safety/quality marketing
+- [Certification battery](./certification-battery.md) — source-only deterministic test-pack/result/verdict contract for reproducible finite artifact checks before any registry/badge extraction
 
 ## Compatibility
 
@@ -52,6 +53,7 @@ Machine-readable reference fixtures for broker/plugin/runner validation:
 - [Completion certificate](../../fixtures/contract/completion-certificate.json) — source-only completion proof fixtures for eligible, not-eligible, external-pending, and fail-closed payment-boundary cases
 - [Retrieval approval contract](../../fixtures/contract/retrieval-approval-contract.json) — source-only K2 GitHub-read request and egress allowlist approval packet fixture; no live fetch or proxy enablement
 - [Retrieval source-carrier binding](../../fixtures/contract/retrieval-source-carrier-binding.json) — source-only K2 approval→snapshot→source-carrier→report binding fixture; no live fetch or proxy enablement
+- [Certification battery](../../fixtures/contract/certification-battery.json) — source-only deterministic battery pack/result/verdict/certificate fixture for public-safe MCP/plugin checks; no registry/badge publication
 - [External harness no-live conformance](../../fixtures/external-harness/no-live-conformance.json) — public-safe external harness fixture for OpenClaw-agnostic no-live integration
 
 ### Compatibility fixtures
@@ -66,6 +68,7 @@ Machine-readable reference fixtures for broker/plugin/runner validation:
 - `node test/conformance/check-completion-certificate-generator.mjs` — validates the report-only no-live completion certificate generator and generator→verifier round-trip
 - `node test/conformance/check-completion-certificate-fake-rail.mjs` — validates the fake/no-live payment rail rehearsal adapter decision mapping, idempotency, and no-live boundaries
 - `node test/conformance/check-completion-certificate-live-approval-gate.mjs` — validates the source-only live rail approval-gate packet, canary/rollback requirements, approval freshness, and secret/no-live boundaries
+- `node test/conformance/check-certification-battery.mjs` — validates source-only deterministic certification battery pack/result/verdict/certificate binding, public-safe MCP/plugin fixture value without registry/badge, and extraction demand-signal gate
 - `node test/conformance/check-retrieval-approval-contract.mjs` — validates the K2 source-only retrieval allowlist approval packet: SHA-only GitHub request, deny-by-default egress guards, untrusted envelope, no-live safety, and raw-secret denial
 - `node test/conformance/check-retrieval-source-carrier-binding.mjs` — validates source-only K2 binding from approval packet to signed snapshot, `untrusted_external_data` carrier, and verifiable analysis report citations
 - `node scripts/generate-completion-certificate.mjs <report.json> --signing-key <ed25519-private.pem>` — emits a signed report-only completion certificate from a public-safe no-live report; this is not payment release authorization
