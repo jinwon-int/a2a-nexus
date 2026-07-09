@@ -20,6 +20,7 @@ and is unchanged; this index is the map of everything under `docs/`.
 - [positioning.md](positioning.md) — landscape and positioning
 - [known-limitations.md](known-limitations.md) — limitations
 - [attestation-bundle.md](attestation-bundle.md) — attestation bundle format
+- [verifiable-analysis-report.md](verifiable-analysis-report.md) — offline-verifiable report product slice and sample fixture
 - [adapter-migration-path.md](adapter-migration-path.md) — adapter migration design
 - [topology-decision-record.md](topology-decision-record.md) — topology ADR
 - [termux-proot-distro-a2a-runner.md](termux-proot-distro-a2a-runner.md) — Termux worker setup

@@ -16,6 +16,7 @@ For external readers, start here first:
 4. [Public contribution entry points](docs/contribution-entry-points.md) — safe first-task candidates for outside contributors.
 5. [Release and package readiness](docs/release-readiness.md) — checklist before any release, tag, npm, Docker, or GHCR decision.
 6. [Public alpha landing draft](docs/public-alpha-landing.md) — content draft only; no homepage metadata or deployment approval.
+7. [Verifiable analysis report sample](docs/verifiable-analysis-report.md) — offline-checkable report product slice with a public-safe fixture.
 
 > **Status:** public alpha — the repository is publicly readable, but public visibility is not a production deployment, stable release, tag, package publish, homepage/docs-site launch, broad promotion, or live-action authorization. See [Current public alpha state](#current-public-alpha-state) for the remaining approval-gated actions.
 
