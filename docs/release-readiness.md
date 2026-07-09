@@ -28,6 +28,34 @@ Before any `v0.1.0-alpha`, GitHub Release, tag, npm package, Docker image, or GH
 - [ ] public API / compatibility boundary review;
 - [ ] known limitations and rollback/deprecation expectations.
 
+## Automated candidate evidence packet
+
+Use this command to build the source-only candidate evidence packet for the current checkout:
+
+```bash
+node scripts/build-release-candidate-evidence.mjs --out-dir artifacts/release-candidate
+```
+
+The command writes:
+
+- `artifacts/release-candidate/evidence.json`
+- `artifacts/release-candidate/summary.md`
+
+The generated directory is ignored by Git by default so operators can regenerate it for a specific candidate SHA without accidentally committing local evidence. The packet records the candidate SHA/branch, root package metadata, package contents audit for workspace packages, validation commands that still need fresh execution, known limitations, and rollback notes.
+
+Safety boundary: the evidence builder is source-only. It does **not** run `npm ci`, `npm run check`, quickstart smoke, public-readiness scans, external secret scans, `npm pack`, release/tag creation, npm/Docker/GHCR publication, deployment, broker/Gateway/worker restart, provider or Telegram send, DB/outbox/ACK/replay/prune/migration mutation, secret movement, repository visibility change, history rewrite, or force push.
+
+To inspect a narrower package surface, repeat `--package`:
+
+```bash
+node scripts/build-release-candidate-evidence.mjs \
+  --package packages/broker \
+  --package packages/docker-runner \
+  --package packages/openclaw-plugin-a2a
+```
+
+The package contents audit uses workspace `package.json` files plus tracked-file inventory. It intentionally avoids `npm pack` because pack lifecycle hooks could execute package scripts; actual package publication remains separately approval-gated.
+
 ## Package contents audit
 
 For any candidate package/image surface, the release issue or PR must show:
