@@ -38,6 +38,7 @@ export const CHECKS = [
   'check-verifiable-analysis-report-product.mjs',
   'check-agent-work-proof.mjs',
   'check-escrow-release-proof.mjs',
+  'check-agent-payment-dispute-packet.mjs',
   'check-retrieval-approval-contract.mjs',
   'check-retrieval-source-carrier-binding.mjs',
   'check-trace-propagation.mjs',

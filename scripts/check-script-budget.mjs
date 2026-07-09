@@ -27,7 +27,7 @@ import { createDocCheckContext } from './lib/doc-check.mjs';
 // its regression test were added. Raising any budget is allowed but must be
 // deliberate — see a2a-nexus#882.
 export const BUDGETS = {
-  scriptsMjs: 166, // +1 from 165 baseline: #1482 source-only escrow-release-proof offline verifier CLI; no npm wrapper added
+  scriptsMjs: 167, // +1 from 166 baseline: #1488 source-only agent-payment-dispute-packet offline verifier CLI; no npm wrapper added
   rootNpmScripts: 100, // ratcheted after C3 historical archive wrappers were consolidated under check:historical (#1201)
   brokerNpmScripts: 150, // includes broker clean:dist stale-build guard from #997/#999 closeout
 };
