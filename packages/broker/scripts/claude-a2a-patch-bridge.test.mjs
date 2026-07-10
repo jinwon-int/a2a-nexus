@@ -836,3 +836,185 @@ test("session-scoped workspace uses session-id in patch mode for task isolation"
     rmSync(tempDir, { recursive: true, force: true });
   }
 });
+
+// ---- Explicit Claude model passthrough (#1508) ----
+
+function modelCaptureStub() {
+  return [
+    "import { writeFileSync } from 'node:fs';",
+    "const args = process.argv.slice(2);",
+    "writeFileSync(process.env.CAPTURE_ARGS_PATH, JSON.stringify(args));",
+    "const result = {",
+    "  status: 'pr_opened',",
+    "  summary: 'ok',",
+    "  prUrl: 'https://github.com/jinwon-int/example/pull/9',",
+    "  branch: 'feat/model',",
+    "  tests: [],",
+    "  filesChanged: [],",
+    "  risks: []",
+    "};",
+    "console.log(JSON.stringify({ type: 'result', subtype: 'success', result: JSON.stringify(result) }));",
+  ];
+}
+
+test("PATCH: A2A_CLAUDE_MODEL=claude-sonnet-5 -> spawned claude argv includes --model claude-sonnet-5 (#1508)", () => {
+  const tempDir = mkdtempSync(join(tmpdir(), "claude-patch-model-env-"));
+  const fakeClaudePath = join(tempDir, "fake-claude.mjs");
+  const argsCapturePath = join(tempDir, "claude-args.json");
+  try {
+    writeStubClaude(fakeClaudePath, modelCaptureStub());
+    const result = spawnSync(bridgePath, bridgeArgs(patchMessage()), {
+      encoding: "utf8",
+      env: {
+        ...process.env,
+        A2A_CLAUDE_CODE_BIN: fakeClaudePath,
+        A2A_CLAUDE_MODEL: "claude-sonnet-5",
+        CAPTURE_ARGS_PATH: argsCapturePath,
+      },
+    });
+    assert.equal(result.status, 0, result.stderr);
+    const args = JSON.parse(readFileSync(argsCapturePath, "utf8"));
+    const modelIndex = args.indexOf("--model");
+    assert.notEqual(modelIndex, -1, "claude argv must include --model when A2A_CLAUDE_MODEL is claude-shaped");
+    assert.equal(args[modelIndex + 1], "claude-sonnet-5");
+  } finally {
+    rmSync(tempDir, { recursive: true, force: true });
+  }
+});
+
+test("PATCH: non-Claude A2A_CLAUDE_MODEL (legacy leftover) is ignored -> no --model in claude argv (#1508)", () => {
+  const tempDir = mkdtempSync(join(tmpdir(), "claude-patch-model-legacy-"));
+  const fakeClaudePath = join(tempDir, "fake-claude.mjs");
+  const argsCapturePath = join(tempDir, "claude-args.json");
+  try {
+    writeStubClaude(fakeClaudePath, modelCaptureStub());
+    const result = spawnSync(bridgePath, bridgeArgs(patchMessage()), {
+      encoding: "utf8",
+      env: {
+        ...process.env,
+        A2A_CLAUDE_CODE_BIN: fakeClaudePath,
+        A2A_CLAUDE_MODEL: "openai-codex/gpt-5.5",
+        CAPTURE_ARGS_PATH: argsCapturePath,
+      },
+    });
+    assert.equal(result.status, 0, result.stderr);
+    const args = JSON.parse(readFileSync(argsCapturePath, "utf8"));
+    assert.equal(args.indexOf("--model"), -1,
+      "legacy non-Claude identifiers must NOT reach claude argv (mounted config default keeps deciding)");
+  } finally {
+    rmSync(tempDir, { recursive: true, force: true });
+  }
+});
+
+test("PATCH: informational flags --model claude-code/default stays ignored (provider-style id, no regression) (#1508)", () => {
+  const tempDir = mkdtempSync(join(tmpdir(), "claude-patch-model-flag-"));
+  const fakeClaudePath = join(tempDir, "fake-claude.mjs");
+  const argsCapturePath = join(tempDir, "claude-args.json");
+  try {
+    writeStubClaude(fakeClaudePath, modelCaptureStub());
+    // bridgeArgs() already passes --model claude-code/default (host-lane informational value).
+    const result = spawnSync(bridgePath, bridgeArgs(patchMessage()), {
+      encoding: "utf8",
+      env: {
+        ...process.env,
+        A2A_CLAUDE_CODE_BIN: fakeClaudePath,
+        CAPTURE_ARGS_PATH: argsCapturePath,
+      },
+    });
+    assert.equal(result.status, 0, result.stderr);
+    const args = JSON.parse(readFileSync(argsCapturePath, "utf8"));
+    assert.equal(args.indexOf("--model"), -1,
+      "provider-style flags.model must not be forwarded to claude argv");
+  } finally {
+    rmSync(tempDir, { recursive: true, force: true });
+  }
+});
+
+test("ANALYSIS: A2A_CLAUDE_MODEL=sonnet alias -> spawned claude argv includes --model sonnet (#1508)", () => {
+  const tempDir = mkdtempSync(join(tmpdir(), "claude-analysis-model-env-"));
+  const fakeClaudePath = join(tempDir, "fake-claude.mjs");
+  const argsCapturePath = join(tempDir, "claude-args.json");
+  try {
+    writeStubClaude(fakeClaudePath, [
+      "import { writeFileSync } from 'node:fs';",
+      "const args = process.argv.slice(2);",
+      "writeFileSync(process.env.CAPTURE_ARGS_PATH, JSON.stringify(args));",
+      "const analysis = {",
+      "  status: 'done',",
+      "  summary: 'model alias passthrough analysis',",
+      "  findings: [],",
+      "  risks: [],",
+      "  recommendations: [],",
+      "  evidenceRefs: ['embedded:model-alias-test']",
+      "};",
+      "console.log(JSON.stringify({ type: 'result', subtype: 'success', result: JSON.stringify(analysis) }));",
+    ]);
+    const result = spawnSync(bridgePath, bridgeArgs(analysisMessage()), {
+      encoding: "utf8",
+      env: {
+        ...process.env,
+        A2A_CLAUDE_CODE_BIN: fakeClaudePath,
+        A2A_CLAUDE_MODEL: "sonnet",
+        CAPTURE_ARGS_PATH: argsCapturePath,
+      },
+    });
+    assert.equal(result.status, 0, result.stderr);
+    const args = JSON.parse(readFileSync(argsCapturePath, "utf8"));
+    const modelIndex = args.indexOf("--model");
+    assert.notEqual(modelIndex, -1, "analysis claude argv must include --model for alias values");
+    assert.equal(args[modelIndex + 1], "sonnet");
+  } finally {
+    rmSync(tempDir, { recursive: true, force: true });
+  }
+});
+
+test("SINGLE-SHOT: A2A_CLAUDE_MODEL=claude-sonnet-5 -> claude argv includes --model (docker runner path) (#1508)", () => {
+  const tempDir = mkdtempSync(join(tmpdir(), "claude-singleshot-model-"));
+  const { workSeed } = setupLocalFakeOrigin(tempDir);
+  const fakeGitPath = join(tempDir, "fake-git.mjs");
+  const fakeGhPath = join(tempDir, "fake-gh.mjs");
+  const fakeClaudePath = join(tempDir, "fake-claude.mjs");
+  const argsCapturePath = join(tempDir, "captured-args.json");
+  try {
+    writeFakeGitStub(fakeGitPath);
+    writeFakeGhStub(fakeGhPath);
+    const validDiff = [
+      "diff --git a/hello.txt b/hello.txt",
+      "index ce01362..6b0f5f6 100644",
+      "--- a/hello.txt",
+      "+++ b/hello.txt",
+      "@@ -1 +1 @@",
+      "-hello world",
+      "+hello world (patched by single-shot)",
+    ].join("\n");
+    writeDiffClaudeStub(fakeClaudePath, validDiff);
+
+    const result = spawnSync(bridgePath, bridgeArgs(singleShotMessage()), {
+      encoding: "utf8",
+      env: {
+        ...process.env,
+        A2A_CLAUDE_CODE_BIN: fakeClaudePath,
+        A2A_CLAUDE_CODE_GIT_BIN: fakeGitPath,
+        A2A_CLAUDE_CODE_GH_BIN: fakeGhPath,
+        A2A_CLAUDE_CODE_PATCH_MODE: "single-shot",
+        A2A_CLAUDE_MODEL: "claude-sonnet-5",
+        FAKE_GIT_SEED_PATH: workSeed,
+        FAKE_GH_PR_URL: "https://github.com/jinwon-int/a2a-nexus/pull/1021",
+        CAPTURE_ARGS_PATH: argsCapturePath,
+        REAL_GIT_BIN: "git",
+        REAL_GH_BIN: "gh",
+      },
+    });
+
+    assert.equal(result.status, 0, result.stderr);
+    const envelope = JSON.parse(result.stdout);
+    const payload = JSON.parse(envelope.payloads[0].text);
+    assert.equal(payload.status, "pr_opened");
+    const args = JSON.parse(readFileSync(argsCapturePath, "utf8"));
+    const modelIndex = args.indexOf("--model");
+    assert.notEqual(modelIndex, -1, "single-shot claude argv must include --model when A2A_CLAUDE_MODEL is claude-shaped");
+    assert.equal(args[modelIndex + 1], "claude-sonnet-5");
+  } finally {
+    rmSync(tempDir, { recursive: true, force: true });
+  }
+});
