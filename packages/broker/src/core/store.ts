@@ -311,7 +311,7 @@ export interface SqliteTerminalOutboxHotRetentionPlanOptions {
   maxAcknowledgedRecords: number;
 }
 
-const SQLITE_SCHEMA_VERSION = 10;
+const SQLITE_SCHEMA_VERSION = 11;
 export const DEFAULT_HOT_RUNTIME_MAX_NON_TERMINAL_TASKS = 500;
 export const DEFAULT_HOT_RUNTIME_MAX_TERMINAL_TASKS = 2_000;
 export const DEFAULT_HOT_RUNTIME_MAX_AUDIT_EVENTS = 5_000;
@@ -870,6 +870,26 @@ export class SqliteBrokerStateStore implements BrokerStateStore {
     });
   }
 
+  consumeLiveApprovalKey(key: string, consumedAt: string): boolean {
+    const normalizedKey = String(key ?? "").trim();
+    const normalizedConsumedAt = String(consumedAt ?? "").trim();
+    if (!normalizedKey || normalizedKey.length > 512) {
+      throw new Error("live approval consumption key must contain 1..512 characters");
+    }
+    const parsedConsumedAt = new Date(normalizedConsumedAt);
+    if (!normalizedConsumedAt || !Number.isFinite(parsedConsumedAt.getTime()) || parsedConsumedAt.toISOString() !== normalizedConsumedAt) {
+      throw new Error("live approval consumedAt must be a canonical ISO timestamp");
+    }
+    const result = this.db
+      .prepare(
+        `INSERT OR IGNORE INTO broker_live_approval_consumptions
+           (consumption_key, consumed_at)
+         VALUES (?, ?)`,
+      )
+      .run(normalizedKey, normalizedConsumedAt);
+    return Number(result.changes) === 1;
+  }
+
   private initializeDatabase(): string {
     const journal = this.db.prepare("PRAGMA journal_mode = WAL").get() as
       | { journal_mode?: string }
@@ -1007,6 +1027,12 @@ export class SqliteBrokerStateStore implements BrokerStateStore {
         ON broker_audit_events(target_type, target_id, created_at);
       CREATE INDEX IF NOT EXISTS broker_audit_events_action_idx
         ON broker_audit_events(action, created_at);
+      CREATE TABLE IF NOT EXISTS broker_live_approval_consumptions (
+        consumption_key TEXT PRIMARY KEY,
+        consumed_at TEXT NOT NULL
+      );
+      CREATE INDEX IF NOT EXISTS broker_live_approval_consumptions_time_idx
+        ON broker_live_approval_consumptions(consumed_at);
       CREATE TABLE IF NOT EXISTS broker_terminal_outbox (
         id TEXT PRIMARY KEY,
         task_event_id INTEGER NOT NULL,
