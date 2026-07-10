@@ -188,6 +188,25 @@ test("JsonFileBrokerStateStore recovers from corrupt primary snapshot using one-
   }
 });
 
+test("SqliteBrokerStateStore atomically consumes a live approval key once across restarts", () => {
+  const temp = withTempFile("state.sqlite");
+  try {
+    const first = new SqliteBrokerStateStore(temp.filePath);
+    assert.equal(first.consumeLiveApprovalKey("live-approval:scope-1", "2026-07-10T19:50:00.000Z"), true);
+    assert.equal(first.consumeLiveApprovalKey("live-approval:scope-1", "2026-07-10T19:50:01.000Z"), false);
+    assert.throws(() => first.consumeLiveApprovalKey(" ", "2026-07-10T19:50:01.000Z"), /1\.\.512/);
+    assert.throws(() => first.consumeLiveApprovalKey("live-approval:scope-3", "2026-07-10"), /canonical ISO/);
+    first.close();
+
+    const restarted = new SqliteBrokerStateStore(temp.filePath);
+    assert.equal(restarted.consumeLiveApprovalKey("live-approval:scope-1", "2026-07-10T19:50:02.000Z"), false);
+    assert.equal(restarted.consumeLiveApprovalKey("live-approval:scope-2", "2026-07-10T19:50:03.000Z"), true);
+    restarted.close();
+  } finally {
+    temp.cleanup();
+  }
+});
+
 test("SqliteBrokerStateStore saves and reloads snapshots with WAL metadata", () => {
   const temp = withTempFile("state.sqlite");
   try {
@@ -260,7 +279,7 @@ test("SqliteBrokerStateStore saves and reloads snapshots with WAL metadata", () 
       dbFile: temp.filePath,
       stateVersion: CURRENT_BROKER_STATE_VERSION,
       loadSource: "snapshot",
-      schemaVersion: 10,
+      schemaVersion: 11,
       journalMode: "wal",
       hotEntityTables: [
         "broker_exchanges",

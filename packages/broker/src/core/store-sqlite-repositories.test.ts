@@ -1049,7 +1049,7 @@ test("SqliteBrokerStateStore migrates v2 task hot table with task origin column"
       store.readHotTasks({ taskOrigin: "api", targetNodeId: "worker-a" }).map((task) => task.id),
       ["task-migrated"],
     );
-    assert.equal(store.getPersistenceInfo().schemaVersion, 10);
+    assert.equal(store.getPersistenceInfo().schemaVersion, 11);
     store.close();
   } finally {
     temp.cleanup();

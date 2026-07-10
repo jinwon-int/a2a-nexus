@@ -58,6 +58,8 @@ export interface BrokerStateStore {
    */
   awaitDurablePersistenceAck?(): Promise<void>;
   getPersistenceInfo?(): BrokerPersistenceInfo;
+  /** Atomically record first use of a live-approval scope key. Returns false on replay. */
+  consumeLiveApprovalKey?(key: string, consumedAt: string): boolean;
 }
 
 export interface BrokerStateSaveHints {
