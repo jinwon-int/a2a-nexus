@@ -150,6 +150,26 @@ function die(message) {
   process.exit(1);
 }
 
+// Explicit Claude model passthrough (#1508). Only Claude-shaped identifiers
+// are honored: a "claude-" prefix or an official CLI alias. Provider-style ids
+// (anything containing "/", e.g. host-lane informational "claude-code/default"
+// or legacy openclaw/hermes leftovers like "openai-codex/gpt-5.5") and
+// non-Claude names (e.g. "minimax-m3") are ignored so the mounted Claude
+// config default keeps deciding — preserving pre-#1508 behavior on hosts that
+// still carry stale model env values.
+const CLAUDE_MODEL_ALIASES = new Set(["sonnet", "opus", "haiku", "fable"]);
+
+function resolveExplicitClaudeModel(flags, env = process.env) {
+  const candidates = [safeText(flags?.model, ""), safeText(env.A2A_CLAUDE_MODEL, "")];
+  for (const candidate of candidates) {
+    const value = candidate.trim();
+    if (!value || value.includes("/")) continue;
+    const normalized = value.toLowerCase();
+    if (normalized.startsWith("claude-") || CLAUDE_MODEL_ALIASES.has(normalized)) return value;
+  }
+  return "";
+}
+
 function parseArgs(argv) {
   const flags = { subcommand: argv[2] };
   for (let i = 3; i < argv.length; i += 1) {
@@ -409,9 +429,12 @@ async function runClaudeAnalysis(prompt, flags, env = process.env) {
   // Session-scoped isolation (#1129): each task session gets its own temp dir.
   const sessionWorkspace = mkdtempSync(join(tmpdir(), `a2a-analysis-${sanitizeSessionSegment(sessionId)}-`));
 
+  const explicitModel = resolveExplicitClaudeModel(flags, env);
+
   try {
     const args = [
       "-p", prompt,
+      ...(explicitModel ? ["--model", explicitModel] : []),
       "--output-format", "json",
       "--max-turns", String(maxTurns),
       ...buildClaudeFinalizerToolArgs(),
@@ -508,9 +531,11 @@ async function runClaudePatch(prompt, flags, env, cwd) {
   const timeoutSec = positiveInteger(flags.timeout, positiveInteger(env.A2A_CLAUDE_CODE_TIMEOUT_SEC, 1800));
   const maxTurns = positiveInteger(env.A2A_CLAUDE_CODE_MAX_TURNS, 40);
   const maxBuffer = positiveInteger(env.A2A_CLAUDE_CODE_MAX_OUTPUT_BYTES, 64 * 1024 * 1024);
+  const explicitModel = resolveExplicitClaudeModel(flags, env);
   // NOTE: no --dangerously-skip-permissions: it is refused when running as root (the proot case).
   const args = [
     "-p", prompt,
+    ...(explicitModel ? ["--model", explicitModel] : []),
     "--output-format", "json",
     "--allowedTools", "Bash Edit Write Read Glob Grep",
     "--max-turns", String(maxTurns),
@@ -962,8 +987,10 @@ async function callClaudeOnce(prompt, flags, env, cwd) {
   const timeoutSec = positiveInteger(flags.timeout, positiveInteger(env.A2A_CLAUDE_CODE_TIMEOUT_SEC, 300));
   const maxTurns = positiveInteger(env.A2A_CLAUDE_CODE_PATCH_MAX_TURNS, 6);
   const maxBuffer = positiveInteger(env.A2A_CLAUDE_CODE_MAX_OUTPUT_BYTES, 16 * 1024 * 1024);
+  const explicitModel = resolveExplicitClaudeModel(flags, env);
   const args = [
     "-p", prompt,
+    ...(explicitModel ? ["--model", explicitModel] : []),
     "--output-format", "json",
     "--max-turns", String(maxTurns),
     "--tools", "Read Grep Glob",
