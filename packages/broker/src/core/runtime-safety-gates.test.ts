@@ -6,12 +6,15 @@ import {
   evaluateDeclaredWriteSetGate,
   type TerminalActionRequest,
   buildStableRuntimeIdempotencyKey,
+  buildLiveApprovalConsumptionKey,
+  buildLiveApprovalToken,
   evaluateRuntimeReplayGate,
   evaluateWorkerRuntimeBoundary,
   buildRuntimeAuditEvent,
 } from "./runtime-safety-gates.js";
 
 const NOW = "2026-06-29T14:20:00.000Z";
+const LIVE_APPROVAL_SIGNING_KEY = "test-live-approval-signing-key";
 
 function request(overrides: Partial<TerminalActionRequest> = {}): TerminalActionRequest {
   return {
@@ -63,6 +66,95 @@ test("terminal action gate denies stale finalizer approval tokens", () => {
   assert.equal(decision.allowed, false);
   assert.equal(decision.reason, "stale_approval_token");
   assert.match(decision.blockers.join("\n"), /fresh approval token/);
+});
+
+test("promote-to-live apply requires an exact approval scope binding", () => {
+  const approvalScope = {
+    taskId: "task-live-1",
+    runId: "run-live-1",
+    action: "promote_to_live_apply" as const,
+    target: "ccc-node:nosuk:dff7c773",
+  };
+  const decision = evaluateTerminalActionGate(request({
+    action: "promote_to_live_apply",
+    actorRole: "finalizer",
+    freshApprovalToken: buildLiveApprovalToken(
+      { ...approvalScope, target: "ccc-node:dungae:dff7c773" },
+      "nonce-mismatch",
+      LIVE_APPROVAL_SIGNING_KEY,
+    ),
+    approvalTokenIssuedAt: "2026-06-29T14:19:30.000Z",
+    approvalScope,
+    approvalTokenSigningKey: LIVE_APPROVAL_SIGNING_KEY,
+  }));
+
+  assert.equal(decision.allowed, false);
+  assert.equal(decision.reason, "approval_scope_mismatch");
+  assert.match(decision.blockers.join("\n"), /bound to the exact live operation scope/);
+});
+
+test("promote-to-live apply rejects a token from a different approval authority", () => {
+  const approvalScope = {
+    taskId: "task-live-1",
+    runId: "run-live-1",
+    action: "promote_to_live_apply" as const,
+    target: "ccc-node:nosuk:dff7c773",
+  };
+  const decision = evaluateTerminalActionGate(request({
+    action: "promote_to_live_apply",
+    actorRole: "finalizer",
+    freshApprovalToken: buildLiveApprovalToken(approvalScope, "nonce-wrong-authority", "other-key"),
+    approvalTokenIssuedAt: "2026-06-29T14:19:30.000Z",
+    approvalScope,
+    approvalTokenSigningKey: LIVE_APPROVAL_SIGNING_KEY,
+  }));
+
+  assert.equal(decision.allowed, false);
+  assert.equal(decision.reason, "approval_scope_mismatch");
+});
+
+test("promote-to-live apply rejects a missing approval scope", () => {
+  const decision = evaluateTerminalActionGate(request({
+    action: "promote_to_live_apply",
+    actorRole: "finalizer",
+    freshApprovalToken: "approval-live:" + "0".repeat(64) + ":nonce",
+    approvalTokenIssuedAt: "2026-06-29T14:19:30.000Z",
+  }));
+
+  assert.equal(decision.allowed, false);
+  assert.equal(decision.reason, "missing_approval_scope");
+});
+
+test("promote-to-live apply rejects an already-consumed scope key", () => {
+  const approvalScope = {
+    taskId: "task-live-1",
+    runId: "run-live-1",
+    action: "promote_to_live_apply" as const,
+    target: "ccc-node:nosuk:dff7c773",
+  };
+  const approvalKey = buildLiveApprovalConsumptionKey(approvalScope);
+  const allowed = evaluateTerminalActionGate(request({
+    action: "promote_to_live_apply",
+    actorRole: "finalizer",
+    freshApprovalToken: buildLiveApprovalToken(approvalScope, "nonce-live-1", LIVE_APPROVAL_SIGNING_KEY),
+    approvalTokenIssuedAt: "2026-06-29T14:19:30.000Z",
+    approvalScope,
+    approvalTokenSigningKey: LIVE_APPROVAL_SIGNING_KEY,
+    consumedApprovalKeys: [],
+  }));
+  const replayed = evaluateTerminalActionGate(request({
+    action: "promote_to_live_apply",
+    actorRole: "finalizer",
+    freshApprovalToken: buildLiveApprovalToken(approvalScope, "nonce-live-1", LIVE_APPROVAL_SIGNING_KEY),
+    approvalTokenIssuedAt: "2026-06-29T14:19:30.000Z",
+    approvalScope,
+    approvalTokenSigningKey: LIVE_APPROVAL_SIGNING_KEY,
+    consumedApprovalKeys: [approvalKey],
+  }));
+
+  assert.equal(allowed.allowed, true);
+  assert.equal(replayed.allowed, false);
+  assert.equal(replayed.reason, "approval_scope_already_consumed");
 });
 
 test("declared write-set gate allows exact and glob-scoped files", () => {

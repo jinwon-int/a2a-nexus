@@ -1,14 +1,25 @@
+import { createHmac } from "node:crypto";
+
 export type TerminalAction =
   | "pr_open"
   | "pr_merge"
   | "git_push"
   | "deploy_restart"
+  | "promote_to_live_apply"
+  | "promote_to_live_rollback"
   | "release_tag"
   | "terminal_ack_replay"
   | "db_migration_prune"
   | "secret_handling";
 
 export type TerminalActorRole = "explorer" | "researcher" | "implementer" | "verifier" | "finalizer" | "operator";
+
+export interface LiveApprovalScope {
+  taskId: string;
+  runId: string;
+  action: "promote_to_live_apply" | "promote_to_live_rollback";
+  target: string;
+}
 
 export interface TerminalActionRequest {
   action: TerminalAction;
@@ -18,6 +29,9 @@ export interface TerminalActionRequest {
   freshApprovalToken?: string | null;
   approvalTokenIssuedAt?: string | null;
   approvalTokenMaxAgeMs?: number;
+  approvalScope?: LiveApprovalScope;
+  approvalTokenSigningKey?: string;
+  consumedApprovalKeys?: string[];
   now?: string;
 }
 
@@ -117,12 +131,16 @@ export function evaluateTerminalActionGate(request: TerminalActionRequest): Term
   const requiresFinalizer = request.finalizerOnly !== false;
   const actorIsFinalizer = request.actorRole === "finalizer";
   const approval = evaluateApprovalFreshness(request);
+  const liveApproval = evaluateLiveApprovalBinding(request);
 
   if (requiresFinalizer && !actorIsFinalizer) {
     blockers.push(`terminal action ${request.action} requires finalizer actor`);
   }
   if (!approval.fresh) {
     blockers.push(`terminal action ${request.action} requires a fresh approval token`);
+  }
+  if (!liveApproval.allowed) {
+    blockers.push(liveApproval.blocker);
   }
 
   if (blockers.length === 0) {
@@ -131,9 +149,83 @@ export function evaluateTerminalActionGate(request: TerminalActionRequest): Term
 
   return {
     allowed: false,
-    reason: !actorIsFinalizer && requiresFinalizer ? "non_finalizer_actor" : approval.reason,
+    reason: !actorIsFinalizer && requiresFinalizer
+      ? "non_finalizer_actor"
+      : !approval.fresh
+        ? approval.reason
+        : liveApproval.reason,
     blockers,
   };
+}
+
+function isLiveMutationAction(action: TerminalAction): action is LiveApprovalScope["action"] {
+  return action === "promote_to_live_apply" || action === "promote_to_live_rollback";
+}
+
+export function buildLiveApprovalConsumptionKey(scope: LiveApprovalScope): string {
+  return buildStableRuntimeIdempotencyKey({ ...scope, phase: "process" });
+}
+
+export function buildLiveApprovalToken(scope: LiveApprovalScope, nonce: string, signingKey: string): string {
+  const normalizedKey = String(signingKey ?? "").trim();
+  if (!normalizedKey) {
+    throw new Error("live approval signing key is required");
+  }
+  const digest = createHmac("sha256", normalizedKey).update(buildLiveApprovalConsumptionKey(scope)).digest("hex");
+  const normalizedNonce = String(nonce ?? "").trim();
+  if (!normalizedNonce || /[^A-Za-z0-9_-]/.test(normalizedNonce)) {
+    throw new Error("live approval nonce must be a non-empty URL-safe token");
+  }
+  return `approval-live:${digest}:${normalizedNonce}`;
+}
+
+function liveApprovalTokenDigest(token: string): string | null {
+  const match = /^approval-live:([a-f0-9]{64}):[A-Za-z0-9_-]+$/.exec(String(token ?? "").trim());
+  return match?.[1] ?? null;
+}
+
+function evaluateLiveApprovalBinding(request: TerminalActionRequest): {
+  allowed: boolean;
+  reason: string;
+  blocker: string;
+} {
+  if (!isLiveMutationAction(request.action)) {
+    return { allowed: true, reason: "live_approval_not_required", blocker: "" };
+  }
+  const requested = request.approvalScope;
+  if (!requested) {
+    return {
+      allowed: false,
+      reason: "missing_approval_scope",
+      blocker: `terminal action ${request.action} requires an approval bound to the exact live operation scope`,
+    };
+  }
+  const signingKey = String(request.approvalTokenSigningKey ?? "").trim();
+  if (!signingKey) {
+    return {
+      allowed: false,
+      reason: "missing_approval_authority",
+      blocker: `terminal action ${request.action} requires a trusted live approval authority`,
+    };
+  }
+  const requestedKey = buildLiveApprovalConsumptionKey(requested);
+  const expectedDigest = createHmac("sha256", signingKey).update(requestedKey).digest("hex");
+  const grantedDigest = liveApprovalTokenDigest(String(request.freshApprovalToken ?? ""));
+  if (requested.action !== request.action || grantedDigest !== expectedDigest) {
+    return {
+      allowed: false,
+      reason: "approval_scope_mismatch",
+      blocker: `terminal action ${request.action} requires an approval bound to the exact live operation scope`,
+    };
+  }
+  if (normalizeStringList(request.consumedApprovalKeys ?? []).includes(requestedKey)) {
+    return {
+      allowed: false,
+      reason: "approval_scope_already_consumed",
+      blocker: `terminal action ${request.action} approval scope was already consumed`,
+    };
+  }
+  return { allowed: true, reason: "approval_scope_bound", blocker: "" };
 }
 
 function evaluateApprovalFreshness(request: TerminalActionRequest): { fresh: boolean; reason: string } {
