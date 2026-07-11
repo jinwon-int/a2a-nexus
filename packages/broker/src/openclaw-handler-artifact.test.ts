@@ -60,7 +60,7 @@ test("versioned A2A task handler exposes credential-free build metadata", () => 
   assert.equal(result.status, 0, result.stderr);
   const payload = JSON.parse(result.stdout);
   assert.equal(payload.result.handler.name, "a2a-task-handler");
-  assert.equal(payload.result.handler.version, "0.2.14");
+  assert.equal(payload.result.handler.version, "0.2.15");
   assert.equal(payload.result.handler.source, "repo:scripts/a2a-task-handler.mjs");
   assert.match(payload.result.handler.sourceSha256, /^[a-f0-9]{64}$/);
   assert.equal(payload.result.handler.credentialFree, true);
