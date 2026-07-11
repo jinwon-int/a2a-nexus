@@ -1,0 +1,10 @@
+{
+  "schema": "a2a.live-runbooks.v1",
+  "runbooks": {
+    "ccc-node-3node-rollout-v1": {
+      "command": "/usr/local/libexec/a2a-ccc-node-rollout",
+      "targetPrefix": "ccc-node:",
+      "timeoutSec": 900
+    }
+  }
+}

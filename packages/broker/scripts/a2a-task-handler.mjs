@@ -17,8 +17,9 @@ import {
 import { sourceCarrierStats } from "./lib/source-carriers.mjs";
 import { payloadWithRetrievalSnapshotSourceCarriers } from "./lib/retrieval-snapshot-carriers.mjs";
 import { evaluateDeclaredWriteSetGate } from "../dist/core/runtime-safety-gates.js";
+import { runLiveOperationTask } from "./lib/live-operation-adapter.mjs";
 
-const HANDLER_VERSION = "0.2.14";
+const HANDLER_VERSION = "0.2.15";
 const SOURCE_PATH = fileURLToPath(import.meta.url);
 const sourceSha256 = createHash("sha256").update(readFileSync(SOURCE_PATH)).digest("hex");
 
@@ -2351,6 +2352,10 @@ export function handleTask(task, env = process.env) {
   const overrideValidation = validateWorkerOverrides(task, env);
   if (overrideValidation) {
     return overrideValidation;
+  }
+
+  if (taskMode(task).toLowerCase() === "promote-to-live-v1") {
+    return runLiveOperationTask(task, env);
   }
 
   if (shouldUseDecisionDialecticBridge(task, env)) {
