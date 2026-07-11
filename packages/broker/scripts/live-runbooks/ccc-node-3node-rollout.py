@@ -92,11 +92,11 @@ printf 'old=%s\nhead=%s\norigin=%s\nservice=%s\npid=%s\nrestarts=%s\n' "$old" "$
         )
         return common + mutation + f"""
 python3 -m py_compile bridge/core/*.py bridge/utils/*.py bridge/session/*.py bridge/interaction/*.py
-if [ -x bridge/venv/bin/python ] && bridge/venv/bin/python -c 'import pytest' >/dev/null 2>&1; then PY=bridge/venv/bin/python; else PY=python3; fi
-$PY -c 'import pytest' >/dev/null 2>&1
-$PY -m pytest -q bridge/tests/test_revert.py bridge/tests/test_watchdog.py bridge/tests/test_project_chat_retry.py
-command -v shellcheck >/dev/null
-command -v jq >/dev/null
+if [ -x bridge/venv/bin/python ]; then PY=bridge/venv/bin/python; else PY=python3; fi
+export PROJECT_ROOT="$(pwd)"
+for suite in bridge.tests.test_bash_policy bridge.tests.test_revert bridge.tests.test_watchdog; do
+  $PY -m unittest -q "$suite"
+done
 bash scripts/validate-harness.sh
 systemctl restart {SERVICE}
 for i in 1 2 3 4 5; do systemctl is-active --quiet {SERVICE} && break; sleep 1; done
@@ -128,7 +128,9 @@ def run_node(node: str, script: str) -> dict[str, str]:
         check=False,
     )
     if completed.returncode != 0:
-        excerpt = completed.stderr.strip().replace("\n", " ")[-1000:]
+        stderr_excerpt = completed.stderr.strip().replace("\n", " ")[-1000:]
+        stdout_excerpt = completed.stdout.strip().replace("\n", " ")[-1000:]
+        excerpt = stderr_excerpt or stdout_excerpt or "no subprocess output"
         raise RuntimeError(f"{node} failed rc={completed.returncode}: {excerpt}")
     evidence: dict[str, str] = {"node": node}
     for line in completed.stdout.splitlines():
