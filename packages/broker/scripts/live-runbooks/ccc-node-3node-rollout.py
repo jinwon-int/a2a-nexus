@@ -64,6 +64,8 @@ def parse_args(argv: list[str]) -> argparse.Namespace:
 def remote_script(phase: str, target_sha: str, action: str) -> str:
     common = f"""
 set -euo pipefail
+export HOME=/root
+export LANG=C.UTF-8
 cd {REPO}
 remote=$(git remote get-url origin)
 case "$remote" in *github.com/jinwon-int/ccc-node*) ;; *) echo BAD_REMOTE >&2; exit 41;; esac
@@ -130,7 +132,7 @@ def run_node(node: str, script: str) -> dict[str, str]:
     if completed.returncode != 0:
         stderr_excerpt = completed.stderr.strip().replace("\n", " ")[-1000:]
         stdout_excerpt = completed.stdout.strip().replace("\n", " ")[-1000:]
-        excerpt = stderr_excerpt or stdout_excerpt or "no subprocess output"
+        excerpt = f"stderr={stderr_excerpt or '[empty]'} stdout={stdout_excerpt or '[empty]'}"
         raise RuntimeError(f"{node} failed rc={completed.returncode}: {excerpt}")
     evidence: dict[str, str] = {"node": node}
     for line in completed.stdout.splitlines():

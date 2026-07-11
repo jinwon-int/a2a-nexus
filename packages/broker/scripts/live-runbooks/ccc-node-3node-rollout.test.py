@@ -46,6 +46,8 @@ class RolloutTests(unittest.TestCase):
         self.assertIn("cd /opt/ccc-node", script)
         self.assertIn("ccc-telegram-bridge.service", script)
         self.assertIn(f"git merge --ff-only {sha}", script)
+        self.assertIn("export HOME=/root", script)
+        self.assertIn("export LANG=C.UTF-8", script)
         self.assertIn("bridge.tests.test_bash_policy", script)
         self.assertIn("bridge.tests.test_revert", script)
         self.assertIn("bridge.tests.test_watchdog", script)
