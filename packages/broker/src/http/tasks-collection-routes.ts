@@ -26,6 +26,7 @@ import { readJson } from "./body.js";
 import { DEFAULT_TASK_LIST_LIMIT, numberQueryParam, taskFiltersFromUrl } from "./read-path-filters.js";
 import { sendJson } from "./response.js";
 import { parseTaskAcceptance } from "../worker-acceptance.js";
+import { LIVE_TASK_MODE, admitLiveTaskSubmission } from "../core/live-task-admission.js";
 
 export interface TasksCollectionRouteContext {
   method: string | undefined;
@@ -39,6 +40,8 @@ export interface TasksCollectionRouteContext {
   requesterIdentity: RequesterIdentity | null;
   maxTaskPayloadBytes: number;
   workerOfflineAfterSec: number;
+  liveApprovalSigningKey: string;
+  brokerId: string;
   assertWorkerHttpSignatureRoute: (
     req: IncomingMessage,
     url: URL,
@@ -96,7 +99,7 @@ function assertTaskAcceptanceShapeAtCreate(body: CreateTaskRequest): void {
 
 /** POST /tasks — create a task; 202 (with the created task) on a persistence-ack timeout. */
 export async function handleCreateTaskRequest(ctx: TasksCollectionRouteContext): Promise<void> {
-  const body = await readJson<CreateTaskRequest>(ctx.req);
+  let body = await readJson<CreateTaskRequest>(ctx.req);
   if (!body) {
     throw new BrokerError("bad_request", "request body is required");
   }
@@ -110,6 +113,19 @@ export async function handleCreateTaskRequest(ctx: TasksCollectionRouteContext):
     );
   }
   assertCreateTaskPayloadWithinLimit(body, ctx.maxTaskPayloadBytes);
+  if (body.payload?.mode === LIVE_TASK_MODE) {
+    if (body.id && ctx.broker.getTask(body.id)) {
+      throw new BrokerError("invalid_transition", `task ${body.id} already exists`);
+    }
+    const worker = ctx.broker.getWorkerView(body.target.id, ctx.workerOfflineAfterSec * 1000);
+    body = admitLiveTaskSubmission(body, {
+      requesterIdentity: ctx.requesterIdentity,
+      worker,
+      stateStore: ctx.stateStore,
+      signingKey: ctx.liveApprovalSigningKey,
+      brokerId: ctx.brokerId,
+    });
+  }
   const task = ctx.broker.createTask(body);
   // Durable-ack disambiguation (a2a-nexus#636/#638): at this point the task
   // EXISTS in the broker — a persistence-queue ack timeout must not be reported

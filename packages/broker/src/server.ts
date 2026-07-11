@@ -355,6 +355,7 @@ export function createBrokerServer(options: BrokerServerOptions = {}): BrokerSer
   const enforceRequesterIdentity =
     options.enforceRequesterIdentity ?? process.env.ENFORCE_REQUESTER_IDENTITY !== "0";
   const edgeSecret = options.edgeSecret ?? process.env.EDGE_SECRET ?? process.env.A2A_EDGE_SECRET;
+  const liveApprovalSigningKey = options.liveApprovalSigningKey ?? process.env.A2A_LIVE_APPROVAL_SIGNING_KEY ?? "";
   const a2aHttpSignatureWorkerAuth = resolveA2AHttpSignatureWorkerAuthMode(
     options.a2aHttpSignatureWorkerAuth ?? process.env.A2A_HTTP_SIGNATURE_WORKER_AUTH,
   );
@@ -1444,6 +1445,8 @@ export function createBrokerServer(options: BrokerServerOptions = {}): BrokerSer
         requesterIdentity,
         maxTaskPayloadBytes,
         workerOfflineAfterSec,
+        liveApprovalSigningKey,
+        brokerId,
         assertWorkerHttpSignatureRoute,
         assertVerifiedWorkerMatches,
       })) {

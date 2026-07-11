@@ -119,6 +119,8 @@ export interface BrokerServerOptions extends BrokerRuntimeHotLimitOptions {
   workerRateLimitMaxRequests?: number;
   enforceRequesterIdentity?: boolean;
   edgeSecret?: string;
+  /** HMAC authority key for broker-only live-task approval admission. Env: `A2A_LIVE_APPROVAL_SIGNING_KEY`. */
+  liveApprovalSigningKey?: string;
   /** Explicit dev-only opt-in for unauthenticated local broker startup. Env: `A2A_ALLOW_INSECURE_DEV=1`. */
   allowInsecureDev?: boolean;
   /**
