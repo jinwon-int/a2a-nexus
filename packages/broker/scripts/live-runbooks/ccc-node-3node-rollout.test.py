@@ -46,7 +46,11 @@ class RolloutTests(unittest.TestCase):
         self.assertIn("cd /opt/ccc-node", script)
         self.assertIn("ccc-telegram-bridge.service", script)
         self.assertIn(f"git merge --ff-only {sha}", script)
-        self.assertIn("test_project_chat_retry.py", script)
+        self.assertIn("bridge.tests.test_bash_policy", script)
+        self.assertIn("bridge.tests.test_revert", script)
+        self.assertIn("bridge.tests.test_watchdog", script)
+        self.assertNotIn("test_project_chat_retry", script)
+        self.assertNotIn("command -v shellcheck", script)
         self.assertNotIn("eval", script)
 
     def test_mutating_phase_is_idempotent_by_task_run_and_phase(self):
