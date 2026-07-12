@@ -27,7 +27,7 @@
       "rules": [
         {
           "id": "root-core-release-gates",
-          "pattern": "^(check|release-gate|test|build|check:release-gate-inventory|test:release-gate|test:release-gate:list|check:layout|check:packages|check:promotion-capstone|check:runner-import-smoke|check:terminal-brief-routing|check:message-id-ack-boundary|check:external-harness-conformance|check:quickstart-conformance|check:script-budget|check:script-budget:test)$",
+          "pattern": "^(check|release-gate|test|build|check:release-gate-inventory|test:release-gate|test:release-gate:list|check:layout|check:packages|check:promotion-capstone|check:runner-import-smoke|check:terminal-brief-routing|check:message-id-ack-boundary|check:external-harness-conformance|check:quickstart-conformance|check:quickstart-doctest|check:script-budget|check:script-budget:test)$",
           "tier": "core-release-gate",
           "kind": "required-gate",
           "note": "Default release/test/build gates and their direct self-check helpers must stay classified as required gates."
