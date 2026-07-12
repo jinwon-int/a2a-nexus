@@ -6,6 +6,7 @@
 import process from 'node:process';
 import { existsSync } from 'node:fs';
 import { DatabaseSync } from 'node:sqlite';
+import { encodeMarkdownCell } from './lib/markdown-cell.mjs';
 import { z } from 'zod';
 
 const DEFAULT_MAX_UNACKED_AGE_MS = 15 * 60 * 1000;
@@ -491,8 +492,7 @@ export function runTerminalReceiptCloseoutReport(rawOptions = {}) {
 }
 
 function escapeCell(value) {
-  if (value === null || value === undefined) return '';
-  return String(value).replace(/\|/g, '\\|').replace(/\n/g, ' ');
+  return encodeMarkdownCell(value);
 }
 
 function renderRows(title, rows) {
