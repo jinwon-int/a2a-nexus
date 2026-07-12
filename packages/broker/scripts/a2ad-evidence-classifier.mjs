@@ -10,6 +10,7 @@
  * sends, no GitHub mutation, no live network calls.
  */
 import { readFileSync } from 'node:fs';
+import { encodeMarkdownCell } from './lib/markdown-cell.mjs';
 
 const SOURCE_BLOCKED_PATTERNS = [
   /analysis bridge blocked/i,
@@ -448,10 +449,7 @@ function parseArgs(argv) {
 }
 
 function markdownCell(value) {
-  return asText(value)
-    .replace(/\r?\n/g, '<br>')
-    .replace(/\|/g, '\\|')
-    .trim() || '—';
+  return encodeMarkdownCell(value).trim() || '—';
 }
 
 export function renderMarkdownReport(report) {

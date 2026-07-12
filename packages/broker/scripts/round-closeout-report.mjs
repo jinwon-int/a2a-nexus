@@ -6,6 +6,7 @@
 import { readFileSync, mkdirSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { classifyEvidenceRecord } from './a2ad-evidence-classifier.mjs';
+import { encodeMarkdownCell } from './lib/markdown-cell.mjs';
 
 const TERMINAL = new Set(['succeeded', 'failed', 'canceled', 'blocked']);
 
@@ -126,7 +127,7 @@ function renderMarkdown(report) {
     '',
     '| order | worker | task | status | evidence | source | reason | supplementOf |',
     '|---:|---|---|---|---|---|---|---|',
-    ...rows.map((row) => `| ${row.map((cell) => String(cell).replace(/\|/g, '\\|')).join(' | ')} |`),
+    ...rows.map((row) => `| ${row.map((cell) => encodeMarkdownCell(cell)).join(' | ')} |`),
     '',
     'Safety: local snapshot report only; no broker writes, live actions, provider sends, DB/ACK/replay, releases, or secrets.',
     '',

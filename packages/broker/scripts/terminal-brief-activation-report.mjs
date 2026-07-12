@@ -5,6 +5,7 @@
 // ACKs terminal-outbox records.
 
 import process from 'node:process';
+import { encodeMarkdownCell } from './lib/markdown-cell.mjs';
 
 const ISSUE = '#392';
 const PARENT = '#383';
@@ -241,8 +242,7 @@ export function runTerminalBriefActivationReport(options = {}) {
 }
 
 function escapeCell(value) {
-  if (value === null || value === undefined) return '';
-  return String(value).replace(/\|/g, '\\|').replace(/\n/g, ' ');
+  return encodeMarkdownCell(value);
 }
 
 export function renderMarkdown(report) {
