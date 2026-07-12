@@ -626,6 +626,27 @@
       "tier": "core",
       "retirement": "keep",
       "note": "Spec<->broker conformance for docs/spec/verifiable-delegation-contract-v0.md (#1304 M6-b) — the delegation-contract spec must not drift from the broker source in either direction."
+    },
+    {
+      "name": "current-state-drift",
+      "command": "node",
+      "args": [
+        "scripts/lib/check-current-state-drift.mjs"
+      ],
+      "tier": "core",
+      "retirement": "keep",
+      "note": "Source-only current-state drift gate (#1501): docs/current-state.md must not frame an issue recorded closed in docs/ops/github-state-snapshot.json as active coordination; offline, no network."
+    },
+    {
+      "name": "current-state-drift-test",
+      "command": "node",
+      "args": [
+        "--test",
+        "scripts/lib/check-current-state-drift.test.mjs"
+      ],
+      "tier": "core",
+      "retirement": "keep",
+      "note": "Unit test for the #1501 current-state drift gate (RED closed-as-active, GREEN historical framing); local/read-only, budget-neutral scripts/lib placement."
     }
   ]
 }

@@ -1,0 +1,8 @@
+{
+  "$comment": "Committed, read-only snapshot of live GitHub issue state consumed by scripts/lib/check-current-state-drift.mjs (a2a-nexus#1501). The checker is OFFLINE (no network); refreshing this file from the live GitHub API is a deferred read-only periodic job and is intentionally out of scope for this slice. Add issues here as current-state.md begins to reference them.",
+  "checkedAt": "2026-07-13",
+  "source": "GitHub API readback (manual, committed)",
+  "issues": [
+    { "number": 553, "state": "closed", "closedAt": "2026-06-11", "note": "monorepo canonical-flip parent; MONOREPO_PACKAGES_CANONICAL executed" }
+  ]
+}
