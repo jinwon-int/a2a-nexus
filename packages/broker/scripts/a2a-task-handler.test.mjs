@@ -94,6 +94,8 @@ test("unsupported workerModel fails closed before a patch attempt", () => {
     "deepseek/deepseek-v4-flash",
     "deepseek/deepseek-v4-pro",
     "deepseek-v4-pro",
+    "openai-codex/gpt-5.6-sol",
+    "gpt-5.6-sol",
     "openai-codex/gpt-5.5",
     "gpt-5.5",
     "grok-4.20",
@@ -112,6 +114,8 @@ test("minimax-m3 payload workerModel is allowlisted and accepted (#673)", () => 
 });
 
 const FLEET_BASELINE_WORKER_MODELS = [
+  "openai-codex/gpt-5.6-sol",
+  "gpt-5.6-sol",
   "openai-codex/gpt-5.5",
   "gpt-5.5",
   "grok-4.20",
@@ -156,6 +160,8 @@ test("worker model policy module exposes auditable allowlist and fallbacks (#799
     "deepseek/deepseek-v4-flash",
     "deepseek/deepseek-v4-pro",
     "deepseek-v4-pro",
+    "openai-codex/gpt-5.6-sol",
+    "gpt-5.6-sol",
     "openai-codex/gpt-5.5",
     "gpt-5.5",
     "grok-4.20",
@@ -193,6 +199,7 @@ test("worker model policy module exposes auditable allowlist and fallbacks (#799
 
 test("worker model policy prevents Hermes profile from accepting unsupported aliases (#799)", () => {
   assert.equal(canonicalizeWorkerModel("deepseek-v4-flash"), "deepseek/deepseek-v4-flash");
+  assert.equal(canonicalizeWorkerModel("gpt-5.6-sol"), "openai-codex/gpt-5.6-sol");
   assert.equal(canonicalizeWorkerModel("gpt-5.5"), "openai-codex/gpt-5.5");
   assert.equal(canonicalizeWorkerModel("custom:minimax/minimax-m3"), "minimax-m3");
 
