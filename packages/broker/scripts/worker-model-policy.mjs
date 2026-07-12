@@ -7,6 +7,8 @@ export const ALLOWED_WORKER_MODELS = Object.freeze([
   "deepseek/deepseek-v4-pro",
   "deepseek-v4-pro",
   // Current native Hermes fleet baseline models (#766).
+  "openai-codex/gpt-5.6-sol",
+  "gpt-5.6-sol",
   "openai-codex/gpt-5.5",
   "gpt-5.5",
   "grok-4.20",
@@ -99,6 +101,7 @@ export function canonicalizeWorkerModel(model) {
   const value = safeText(model, "");
   if (value === "deepseek-v4-flash") return "deepseek/deepseek-v4-flash";
   if (value === "deepseek-v4-pro") return "deepseek/deepseek-v4-pro";
+  if (value === "gpt-5.6-sol") return "openai-codex/gpt-5.6-sol";
   if (value === "gpt-5.5") return "openai-codex/gpt-5.5";
   if (value === "custom:minimax/minimax-m3") return "minimax-m3";
   return value;
@@ -114,7 +117,7 @@ export function isWorkerModelSupportedByPatchProfile(profile, model) {
       profile: normalizedProfile,
       requestedModel: safeText(model, ""),
       canonicalModel,
-      supportedAction: "Use a Hermes-supported model such as openai-codex/gpt-5.5 or route this task to a non-Hermes patch profile.",
+      supportedAction: "Use a Hermes-supported model such as openai-codex/gpt-5.6-sol or route this task to a non-Hermes patch profile.",
     };
   }
   return {
