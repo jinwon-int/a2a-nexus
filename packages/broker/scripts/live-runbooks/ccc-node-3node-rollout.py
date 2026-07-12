@@ -67,7 +67,7 @@ set -euo pipefail
 export HOME=/root
 export LANG=C.UTF-8
 export PYTHONPATH=/opt/ccc-node/.github/pythonpath
-export TELEGRAM_BOT_TOKEN=a2a-runbook-test-placeholder
+export TELEGRAM_BOT_TOKEN="${{TELEGRAM_BOT_TOKEN:-a2a-runbook-test-placeholder}}"
 cd {REPO}
 remote=$(git remote get-url origin)
 case "$remote" in *github.com/jinwon-int/ccc-node*) ;; *) echo BAD_REMOTE >&2; exit 41;; esac

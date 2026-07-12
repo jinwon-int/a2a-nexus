@@ -27,7 +27,9 @@ paths = [
   '''^packages/docker-runner/dist/scanner\.test\.js$''',
   '''^packages/docker-runner/src/scanner\.test\.ts$''',
   '''^packages/openclaw-plugin-a2a/tests/cross-broker-terminal-relay\.test\.ts$''',
-  '''^packages/openclaw-plugin-a2a/tests/proposal-marker-bridge\.test\.ts$'''
+  '''^packages/openclaw-plugin-a2a/tests/proposal-marker-bridge\.test\.ts$''',
+  '''^packages/broker/src/server-live-task-admission\.test\.ts$''',
+  '''^packages/broker/dist/server-live-task-admission\.test\.js$'''
 ]
 
 [[allowlists]]
