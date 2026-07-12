@@ -8,6 +8,10 @@ This guide is the external-reader path for a disposable local A2A Nexus broker p
 - npm matching the lockfile
 - a local checkout of this repository
 
+### Supported install path
+
+Source-only install from this checkout is the **only supported install path** for the public alpha. All workspace packages (`packages/broker`, `packages/openclaw-plugin-a2a`, `packages/docker-runner`) are `private` and unpublished, so there is **no supported `npm install`, Docker image, or GHCR pull path** — those remain approval-gated and are not authorized by public repository visibility alone. Clone the repo, then build and run from `packages/*` as shown below. See [Product boundaries](product-boundaries.md) for the full supported-vs-unsupported surface.
+
 Install dependencies without lifecycle scripts:
 
 ```bash
@@ -51,11 +55,13 @@ Start the built-in local echo worker fixture:
 ```bash
 cd packages/broker
 LOCAL_A2A_BROKER_URL=http://127.0.0.1:8787 \
-LOCAL_A2A_WORKER_ID=<local-echo-worker> \
+LOCAL_A2A_WORKER_ID=local-echo-worker \
 npm run worker:echo
 ```
 
 The worker registers as `local-echo-worker` and uses the built-in `echo` handler. Keep it attached only to the loopback broker.
+
+> The worker id above is a literal value, not a placeholder to substitute. `npm run worker:echo` already defaults `LOCAL_A2A_WORKER_ID` to `local-echo-worker`, so the line is optional and never uses angle-bracket tokens. Copy-pasting this block runs as-is with no shell redirection or accidental file creation.
 
 ## 2a. Verify broker health
 
@@ -151,6 +157,12 @@ Also run the quickstart conformance check directly:
 npm run check:quickstart-conformance
 ```
 
+The commands in sections 1–4 are exercised end-to-end by an executable doctest that boots the loopback broker, starts the echo worker, submits the checked-in fixture, and asserts a terminal `Done` result. It runs in CI as part of `npm run smoke:quickstart`, and you can run it directly:
+
+```bash
+npm run check:quickstart-doctest
+```
+
 ## 6. Teardown
 
 When you are done with the local demo, stop the broker and worker processes.
@@ -190,6 +202,15 @@ This script stops Docker stacks, kills local broker processes, cleans state file
 - [Promotion capstone](promotion-capstone.md) — CI-backed 5-minute and 20-minute no-live promotion-ready paths
 - [Canonical demo description](canonical-demo.md) — sequence diagram and evidence rules
 - [Ecosystem guide](ecosystem-guide.md) — full repository map and Korean/English terms
+
+## Limitations and compatibility
+
+Read these before assuming behavior beyond the local demo — known limitations and A2A TCK / protocol compatibility are linked together here so you see both at once:
+
+- [Known limitations](known-limitations.md) — what the alpha does not yet do, and the boundaries of the local path
+- [Compatibility matrix](../contracts/compatibility/matrix.md) — supported baselines for the A2A surfaces
+- [A2A TCK and v0→v1 compatibility plan](../contracts/compatibility/a2a-tck-and-v0-to-v1-compatibility-plan.md) — TCK conformance scope and version migration plan
+- [Compatibility overview](compatibility/README.md) — how compatibility is tracked and gated
 
 ## Safety checklist
 

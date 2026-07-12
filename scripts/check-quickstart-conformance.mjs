@@ -64,6 +64,24 @@ if (quickstart) {
   // Post-78261: replay-safe expectations
   expect(/replay-safe/i.test(quickstart), 'quickstart: must mention replay-safe expectations');
   expect(/idempotent/i.test(quickstart), 'quickstart: must reference idempotent replay');
+
+  // #1505 criterion 3: no angle-bracket placeholders that a shell interprets as redirection
+  expect(!/<local-echo-worker>/.test(quickstart), 'quickstart: worker id must be the literal local-echo-worker, not a <...> placeholder');
+  expect(!/=<[A-Za-z]/.test(quickstart), 'quickstart: command examples must not assign =<...> angle-bracket placeholders (shell redirection hazard)');
+  expect(/LOCAL_A2A_WORKER_ID=local-echo-worker/.test(quickstart), 'quickstart: worker block must use literal LOCAL_A2A_WORKER_ID=local-echo-worker');
+
+  // #1505 criterion 4: source-only is the only supported install path
+  expect(/only supported install path/i.test(quickstart), 'quickstart: must state source-only is the only supported install path');
+  expect(/no supported `npm install`/i.test(quickstart), 'quickstart: must state there is no supported npm install/Docker/GHCR path');
+
+  // #1505 criterion 5: known limitations and TCK compatibility linked together
+  expect(/## Limitations and compatibility/i.test(quickstart), 'quickstart: must have a Limitations and compatibility section');
+  expect(/known-limitations\.md/.test(quickstart), 'quickstart: must link known limitations');
+  expect(/compatibility\/matrix\.md/.test(quickstart), 'quickstart: must link the compatibility matrix');
+  expect(/a2a-tck-and-v0-to-v1-compatibility-plan\.md/.test(quickstart), 'quickstart: must link the A2A TCK compatibility plan');
+
+  // #1505 criterion 2: quickstart references the executable doctest
+  expect(/check:quickstart-doctest/.test(quickstart), 'quickstart: must reference the executable doctest (npm run check:quickstart-doctest)');
 }
 
 // ── Canonical demo doc ──────────────────────────────────────────────────────
@@ -121,6 +139,11 @@ expect(typeof pkg.scripts?.['smoke:quickstart'] === 'string', 'root package.json
 expect(/build/.test(pkg.scripts?.['smoke:quickstart'] || ''), 'smoke:quickstart must include build step');
 expect(/check:quickstart-conformance/.test(pkg.scripts?.['smoke:quickstart'] || ''), 'smoke:quickstart must include quickstart conformance check');
 expect(/test:release-gate/.test(pkg.scripts?.['smoke:quickstart'] || ''), 'smoke:quickstart must include release-gate tests');
+
+// #1505 criterion 2: executable doctest exists and is wired into smoke:quickstart (which CI runs)
+expect(fileExists('scripts/check-quickstart-doctest.mjs'), 'missing scripts/check-quickstart-doctest.mjs (executable quickstart doctest)');
+expect(typeof pkg.scripts?.['check:quickstart-doctest'] === 'string', 'root package.json missing check:quickstart-doctest script');
+expect(/check:quickstart-doctest/.test(pkg.scripts?.['smoke:quickstart'] || ''), 'smoke:quickstart must include the executable quickstart doctest');
 expect(typeof pkg.scripts?.['release-gate'] === 'string', 'root package.json missing release-gate script');
 const brokerPkg = JSON.parse(readRel('packages/broker/package.json') || '{}');
 expect(typeof brokerPkg.scripts?.['start:local'] === 'string', 'broker package.json missing start:local script');

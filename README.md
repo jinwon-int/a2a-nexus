@@ -45,10 +45,13 @@ This repository is now public and remains an alpha project:
 
 ## What to try first
 
-If you are evaluating A2A Nexus from the public repository, stay on the local-only path first. Use the script-surface entrypoint layer to pick the smallest safe command before the full PR gate:
+If you want to see A2A Nexus actually run, start with the **[Five-minute local quickstart](docs/quickstart.md)**: it is the runnable, copy-paste path from a fresh checkout that boots a loopback broker plus echo worker, submits a no-live task, and reaches a terminal `Done` result. Source-only install from this checkout is the only supported install path — all packages are `private`/unpublished, so there is no supported `npm install`, Docker, or GHCR path.
+
+The command block below is the **pre-PR verification gate**, not the runnable broker path. Unlike the quickstart, `scan:external-secrets` additionally requires an external secret/history scanner (`gitleaks` or `trufflehog`) on `PATH` (see [Verification](#verification)); a bare fresh checkout can run the quickstart without it. Use the script-surface entrypoint layer to pick the smallest safe command before the full PR gate:
 
 | Situation | Command path |
 |---|---|
+| See it run end-to-end | `docs/quickstart.md` (loopback broker + echo worker → terminal `Done`) |
 | Local quick check | focused package/doc command for the touched files, for example `npm run check:markdown-links` for docs-only edits |
 | PR check | `npm run check` |
 | Public candidate check | `npm run scan:public-readiness`, `npm run scan:external-secrets`, and the relevant package/readiness audit |

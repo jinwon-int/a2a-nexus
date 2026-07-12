@@ -9,7 +9,7 @@
   "scripts": {
     "build": "npm run build -ws",
     "check": "npm run release-gate",
-    "smoke:quickstart": "npm run build && npm run check:quickstart-conformance && npm run check:promotion-capstone && npm run check:external-harness-conformance && npm run test:release-gate",
+    "smoke:quickstart": "npm run build && npm run check:quickstart-conformance && npm run check:quickstart-doctest && npm run check:promotion-capstone && npm run check:external-harness-conformance && npm run test:release-gate",
     "release-gate": "node scripts/release-gate.mjs",
     "check:release-gate-inventory": "node scripts/check-release-gate-step-inventory.mjs && node --test scripts/release-gate-tiering.test.mjs",
     "check:layout": "node scripts/check-layout.mjs",
@@ -21,6 +21,7 @@
     "check:message-id-ack-boundary": "node scripts/check-message-id-ack-boundary.mjs",
     "check:compatibility-baselines": "node scripts/check-compatibility-baselines.mjs",
     "check:quickstart-conformance": "node scripts/check-quickstart-conformance.mjs",
+    "check:quickstart-doctest": "node scripts/check-quickstart-doctest.mjs",
     "check:split-repo-local-demo": "node scripts/check-split-repo-local-demo-conformance.mjs",
     "check:external-harness-conformance": "node scripts/check-external-harness-conformance.mjs",
     "check:hermes-reference-worker": "node --test scripts/check-hermes-reference-worker.test.mjs",
