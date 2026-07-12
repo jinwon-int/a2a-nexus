@@ -1,7 +1,7 @@
 FROM node:22-bookworm-slim
 
 ARG HERMES_REPO=https://github.com/NousResearch/hermes-agent.git
-ARG HERMES_REF=a317e54935848fbb730a0961e039f2ebbba8cda1
+ARG HERMES_REF=9de9c25f620ff7f1ce0fd5457d596052d5159596
 ARG GH_VERSION=2.93.0
 ARG GITLEAKS_VERSION=8.30.1
 
