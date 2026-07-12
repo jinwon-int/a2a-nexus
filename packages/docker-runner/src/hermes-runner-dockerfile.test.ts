@@ -5,6 +5,14 @@ import { test } from "node:test";
 const dockerfile = readFileSync(new URL("../docker/hermes-runner.Dockerfile", import.meta.url), "utf8");
 const claudeCodeDockerfile = readFileSync(new URL("../docker/claude-code-runner.Dockerfile", import.meta.url), "utf8");
 
+test("Hermes runner image pins the current GPT-5.6-capable Hermes release", () => {
+  assert.match(
+    dockerfile,
+    /ARG HERMES_REF=9de9c25f620ff7f1ce0fd5457d596052d5159596/,
+  );
+  assert.match(dockerfile, /org\.openclaw\.a2a-docker-runner\.hermes\.ref="\$\{HERMES_REF\}"/);
+});
+
 test("Hermes runner image bakes in an external secret scanner for release-gate tasks (#780)", () => {
   assert.match(dockerfile, /ARG GITLEAKS_VERSION=\d+\.\d+\.\d+/);
   assert.match(dockerfile, /gitleaks_\$\{GITLEAKS_VERSION\}_linux_\$\{gitleaks_arch\}\.tar\.gz/);
