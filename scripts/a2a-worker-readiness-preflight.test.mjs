@@ -305,7 +305,7 @@ test("Hermes patch profile with unsupported default model is classified before d
   assert.ok(codes(r).includes("worker_model_profile_mismatch"));
   const reason = r.violations.find((v) => v.code === "worker_model_profile_mismatch")?.reason ?? "";
   assert.match(reason, /Hermes/i);
-  assert.match(reason, /openai-codex\/gpt-5\.5/);
+  assert.match(reason, /openai-codex\/gpt-5\.6-sol/);
 });
 
 test("Hermes patch profile accepts supported default model in readiness preflight (#810)", () => {
