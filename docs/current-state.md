@@ -1,7 +1,7 @@
 # A2A Current State
 
-> **Snapshot date:** 2026-06-10
-> **Active coordination:** [a2a-nexus#553](https://github.com/jinwon-int/a2a-nexus/issues/553)
+> **Snapshot date:** 2026-07-13
+> **Active coordination:** [a2a-nexus#1498](https://github.com/jinwon-int/a2a-nexus/issues/1498) (repository hardening umbrella; the monorepo canonical flip is complete — recorded below)
 > **Status:** public alpha, actual source-state canonical flip executed for `a2a-nexus` packages at source level; external/live execution-sensitive actions remain separated.
 
 This page is the current public source-of-truth index for the A2A split-repo
@@ -22,12 +22,12 @@ The manifest baseline remains root `package.json` at `100` scripts and `packages
 
 ## Current Active Work
 
-The active A2A coordination work is the `a2a-nexus#553` monorepo canonical
-planning lane after operator approval:
+The monorepo canonical-flip planning lane (`a2a-nexus#553`) is complete; it is
+recorded below for continuity:
 
 | Issue | Owning repo | Purpose |
 | --- | --- | --- |
-| [a2a-nexus#553](https://github.com/jinwon-int/a2a-nexus/issues/553) | `a2a-nexus` | Actual source-state canonical flip executed: `packages/broker`, `packages/docker-runner`, and `packages/openclaw-plugin-a2a` are `MONOREPO_PACKAGES_CANONICAL`. External/live execution-sensitive actions remain separated. |
+| [a2a-nexus#553](https://github.com/jinwon-int/a2a-nexus/issues/553) | `a2a-nexus` | Closed 2026-06-11 (completed). Actual source-state canonical flip executed: `packages/broker`, `packages/docker-runner`, and `packages/openclaw-plugin-a2a` are `MONOREPO_PACKAGES_CANONICAL`. External/live execution-sensitive actions remain separated. |
 
 Recently completed broker-mode work is recorded for continuity only:
 `a2a-broker#1320` and `a2a-broker#1321` are not the active `a2a-plane`
@@ -123,7 +123,7 @@ It keeps the split implementation repos canonical while recording active,
 mirrored, read-only, and archive/redirect options plus rollback owner fields
 for before-flip and after-flip scenarios.
 
-The active `a2a-nexus#553` split-repo disposition refresh updates the same
+The historical `a2a-nexus#553` split-repo disposition refresh updates the same
 packet for the `a2a-nexus` target after #563/#564. It records Team1+Team2
 source-only A2A evidence and keeps `a2a-broker`, `a2a-docker-runner`, and
 `plugin-a2a` at `active_canonical`. `active_mirrored` is candidate-only;
@@ -138,7 +138,7 @@ and validated by
 candidate package metadata, release/tag/npm/Docker approval fields, and dry-run
 commands while keeping every execution field at `NO_GO / Waiting`.
 
-The active `a2a-nexus#553` final operator sign-off / canonical source packet is
+The historical `a2a-nexus#553` final operator sign-off / canonical source packet is
 documented in
 [`docs/history/monorepo-final-operator-signoff-matrix.md`](history/monorepo-final-operator-signoff-matrix.md)
 and validated by
@@ -152,7 +152,7 @@ archive/read-only/redirect, deploy, DB, secret, provider send, and Terminal
 ACK/replay remain separate `NO_GO / Waiting` actions.
 
 
-The active `a2a-nexus#553` canonical source flip execution handoff packet is
+The historical `a2a-nexus#553` canonical source flip execution handoff packet is
 documented in
 [`docs/history/monorepo-canonical-source-flip-execution-handoff.md`](history/monorepo-canonical-source-flip-execution-handoff.md)
 and validated by
@@ -163,7 +163,7 @@ blocked; only the source-only handoff may advance.
 
 
 
-The active `a2a-nexus#553` actual canonical flip execution preflight packet is
+The historical `a2a-nexus#553` actual canonical flip execution preflight packet is
 documented in
 [`docs/history/monorepo-actual-canonical-flip-execution-preflight.md`](history/monorepo-actual-canonical-flip-execution-preflight.md)
 and validated by
@@ -174,7 +174,7 @@ future execution run, while actual canonical flip execution remains separate
 
 
 
-The active `a2a-nexus#553` actual canonical flip execution result is
+The historical `a2a-nexus#553` actual canonical flip execution result is
 documented in
 [`docs/history/monorepo-actual-canonical-flip-execution-result.md`](history/monorepo-actual-canonical-flip-execution-result.md)
 and validated by
@@ -183,7 +183,7 @@ and validated by
 
 
 
-The active `a2a-nexus#553` split-repo disposition preflight is documented in
+The historical `a2a-nexus#553` split-repo disposition preflight is documented in
 [`docs/history/monorepo-split-repo-disposition-preflight.md`](history/monorepo-split-repo-disposition-preflight.md)
 and validated by `scripts/check-monorepo-split-repo-disposition-preflight.mjs`.
 It records `ACTIVE_PROVENANCE_MIRROR` as the future candidate disposition after
@@ -194,7 +194,7 @@ remain separate HOLD surfaces.
 
 
 
-The active `a2a-nexus#553` active provenance mirror execution result is
+The historical `a2a-nexus#553` provenance-mirror execution result is
 documented in
 [`docs/history/monorepo-active-provenance-mirror-execution-result.md`](history/monorepo-active-provenance-mirror-execution-result.md)
 and validated by `scripts/check-monorepo-active-provenance-mirror-execution-result.mjs`.
