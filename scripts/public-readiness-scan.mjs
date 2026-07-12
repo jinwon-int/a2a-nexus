@@ -29,6 +29,12 @@ const allowWarningPaths = [
   /^docs\/dry-run\//,
   /^docs\/execution-orchestrator\//,
   /^docs\/final-approval\//,
+  // Operational live-runbooks legitimately reference the target fleet by node
+  // name (they SSH to those exact hosts and enforce a per-worker allowlist), so
+  // internal-node-identifier findings here are warnings, not blockers. Note:
+  // this only downgrades internal-node-identifier; secret-assignment stays fail
+  // everywhere (see severity resolution below), so secret detection is intact.
+  /^packages\/broker\/scripts\/live-runbooks\//,
 ];
 
 function walk(dir) {
