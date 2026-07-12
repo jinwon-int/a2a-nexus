@@ -647,6 +647,27 @@
       "tier": "core",
       "retirement": "keep",
       "note": "Unit test for the #1501 current-state drift gate (RED closed-as-active, GREEN historical framing); local/read-only, budget-neutral scripts/lib placement."
+    },
+    {
+      "name": "package-matrix",
+      "command": "node",
+      "args": [
+        "scripts/lib/check-package-matrix.mjs"
+      ],
+      "tier": "core",
+      "retirement": "keep",
+      "note": "Source-only package matrix gate (#1501): README Package/Repository Map and the all-private/unpublished claim must stay a single-source projection of the actual packages/*/package.json manifests; offline, no network."
+    },
+    {
+      "name": "package-matrix-test",
+      "command": "node",
+      "args": [
+        "--test",
+        "scripts/lib/check-package-matrix.test.mjs"
+      ],
+      "tier": "core",
+      "retirement": "keep",
+      "note": "Unit test for the #1501 package matrix gate (RED missing/stale package + visibility drift, GREEN consistent projection); local/read-only, budget-neutral scripts/lib placement."
     }
   ]
 }
