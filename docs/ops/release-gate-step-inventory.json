@@ -668,6 +668,27 @@
       "tier": "core",
       "retirement": "keep",
       "note": "Unit test for the #1501 package matrix gate (RED missing/stale package + visibility drift, GREEN consistent projection); local/read-only, budget-neutral scripts/lib placement."
+    },
+    {
+      "name": "review-policy",
+      "command": "node",
+      "args": [
+        "scripts/lib/check-review-policy.mjs"
+      ],
+      "tier": "core",
+      "retirement": "keep",
+      "note": "Source-only review-policy gate (#1507): GOVERNANCE.md must document author-independent review, a backup reviewer path, and review-evidence over pull-request velocity; offline, no network, no settings mutation."
+    },
+    {
+      "name": "review-policy-test",
+      "command": "node",
+      "args": [
+        "--test",
+        "scripts/lib/check-review-policy.test.mjs"
+      ],
+      "tier": "core",
+      "retirement": "keep",
+      "note": "Unit test for the #1507 review-policy gate (RED missing section/commitment, GREEN complete policy); local/read-only, budget-neutral scripts/lib placement."
     }
   ]
 }

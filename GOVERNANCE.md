@@ -6,6 +6,14 @@ A2A Nexus is maintained by the repository owner and repository administrators. C
 
 Maintainers review issues and pull requests through the normal GitHub review process. Documentation, tests, examples, and code changes must include appropriate validation evidence.
 
+## Review policy
+
+Review protects the author's approved intent and the repository's evidence trail, not reviewer preference.
+
+- **Author-independent review.** Every pull request must be approved by a reviewer who is not its author; the author cannot be the sole approver. `main` branch protection enforces at least one approving review, and the approving review must come from a role distinct from the PR author. This holds regardless of merge automation or high throughput.
+- **Backup reviewer path.** To avoid a single-reviewer bottleneck and bus-factor risk, review routing names a designated backup reviewer in addition to the primary CODEOWNERS reviewer. When the primary reviewer is unavailable, the backup reviewer provides the author-independent approval so review does not silently degrade into self-approval or an unbounded wait.
+- **Review evidence over velocity.** Repository health is measured by review-evidence cardinality and closeout completeness — linked issue, CI status, no-live boundaries, and any required approval records — not by pull-request velocity alone. A high merge rate does not substitute for author-independent review evidence, and closeout must name approval-sensitive actions that were not performed.
+
 
 ## Roles and authority
 
