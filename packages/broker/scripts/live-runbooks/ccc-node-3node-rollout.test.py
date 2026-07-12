@@ -49,7 +49,7 @@ class RolloutTests(unittest.TestCase):
         self.assertIn("export HOME=/root", script)
         self.assertIn("export LANG=C.UTF-8", script)
         self.assertIn("export PYTHONPATH=/opt/ccc-node/.github/pythonpath", script)
-        self.assertIn("export TELEGRAM_BOT_TOKEN=a2a-runbook-test-placeholder", script)
+        self.assertIn('export TELEGRAM_BOT_TOKEN="${TELEGRAM_BOT_TOKEN:-a2a-runbook-test-placeholder}"', script)
         self.assertIn("bridge.tests.test_bash_policy", script)
         self.assertIn("bridge.tests.test_revert", script)
         self.assertIn("bridge.tests.test_watchdog", script)
