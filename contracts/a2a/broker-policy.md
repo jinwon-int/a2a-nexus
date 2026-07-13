@@ -119,8 +119,12 @@ that will enforce has loaded the same operator-committed policy document.
 ## 6. Boundaries / non-goals (v1)
 
 - Budgets are create-time counters over the current UTC day, derived on demand;
-  no persistent rolling counters, no cost/token budgets (`maxSubagentBudget` is
-  deferred until a counter source exists).
+  no persistent rolling counters. A **source-only** sub-agent token counter source
+  now exists (`a2a-broker.worker-subagent-budget-counter.packet`,
+  `packages/broker/src/core/worker-subagent-budget-counter.ts`): it derives a
+  shrink-only spawn ceiling from supplied normalized token usage but does **not**
+  enforce at runtime. `maxSubagentBudget` runtime enforcement stays deferred until
+  a runtime spawn gate consumes this counter.
 - No per-worker (named) rules, ever — the class axis is the contract.
 - The policy engine gates task lifecycle only; it does not re-run judgments or
   replace the finalizer verdict / approval systems it routes into.
