@@ -131,6 +131,12 @@ const SAFE_CHILD_ENV_KEYS = new Set([
   "HOME", "PATH", "LANG", "LC_ALL", "LC_CTYPE", "TERM", "TMPDIR", "TEMP", "TMP",
   "USER", "LOGNAME", "SHELL", "SSH_AUTH_SOCK", "XDG_CONFIG_HOME", "XDG_CACHE_HOME", "XDG_DATA_HOME",
   "CLAUDE_CONFIG_DIR", "CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC", "DISABLE_AUTOUPDATER",
+  // Termux/Android native workers: Claude Code subprocess shebangs resolve
+  // `/usr/bin/env` only through termux-exec (injected via LD_PRELOAD). Dropping
+  // these from the session-isolation env (#1129) breaks the child with
+  // `env: 'node': Permission denied` on Termux. System loader/prefix hints, not
+  // secrets, so preserving them is safe.
+  "LD_PRELOAD", "LD_LIBRARY_PATH", "PREFIX", "TERMUX_EXEC__PROC_SELF_EXE", "TERMUX_VERSION",
   // Phase-2 WS4: fanout — let the runner-advertised contained-subagent budget and the
   // fanout turn budget reach the claude child (used only in fanout mode; runner injects
   // these only when the fanout flag is on).

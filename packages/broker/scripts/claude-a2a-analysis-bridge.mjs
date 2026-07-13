@@ -141,6 +141,16 @@ const SAFE_CHILD_ENV_KEYS = new Set([
   "CLAUDE_CONFIG_DIR",
   "CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC",
   "DISABLE_AUTOUPDATER",
+  // Termux/Android native workers: Claude Code (and its subprocess shebangs)
+  // resolve `/usr/bin/env` only through termux-exec, which is injected via
+  // LD_PRELOAD. Dropping these from the session-isolation env (#1129) breaks the
+  // child with `env: 'node': Permission denied` on Termux. These are system
+  // loader/prefix hints, not secrets, so preserving them is safe.
+  "LD_PRELOAD",
+  "LD_LIBRARY_PATH",
+  "PREFIX",
+  "TERMUX_EXEC__PROC_SELF_EXE",
+  "TERMUX_VERSION",
 ]);
 
 function buildClaudeChildEnv(env = process.env) {
