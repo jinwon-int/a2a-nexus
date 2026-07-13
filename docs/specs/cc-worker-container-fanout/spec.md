@@ -46,6 +46,20 @@ This is policy-compliant today (`mandatoryProductionSpawn: false`, Escape Hatch)
 - **Determinism** — **unchanged by model tier.** Concurrency non-determinism, host-state-dependent spawn topology, and evidence-bundle byte-reproducibility (JCS/JWS signing) remain the hardest problem and are addressed in Phase 1.
 - **Safety** — model tier keeps redaction/injection strong, but the structural items (widened tool surface for implementer/researcher, N injection surfaces, code-enforced single-finalizer) remain and are addressed in Phase 1.
 
+## Shared context brief (cost optimization)
+
+The dominant fanout cost driver is **token-volume amplification**: N sub-agents each re-read the repo/issue context. A **shared context brief** amortizes this — the finalizer (or a first explorer pass) explores **once** and produces one curated, redacted brief; each sub-agent then **reads the brief instead of re-exploring**. This turns *N explorations* into *1 exploration + N cheap brief-reads*, a large saving when the raw context is much larger than the brief. It is complementary to the Sonnet-5 model choice, not a replacement.
+
+Scope and caveats (correctness-critical):
+
+- **Cuts input re-reading, not reasoning.** Each sub-agent still reasons/generates (irreducible); the brief removes only the redundant context-gathering. Net win for N ≥ 2; for N = 1 / trivial tasks the brief is overhead (the 0-budget Escape Hatch still applies).
+- **Staleness — the brief is not a write-time source of truth.** An implementer must **read the live file immediately before editing**; the brief is shared understanding + pointers, not a snapshot to edit from. Parallel implementers editing off a stale brief risk corruption.
+- **Lossy compression.** The brief is a finalizer summary; it must carry precise **`file:line` pointers** so a sub-agent can cheaply fetch the exact thing it needs, with fallback to reading source — otherwise omissions cause quality loss or a re-exploration that erases the saving.
+- **Redaction-mandatory.** The brief is shared across agents and becomes evidence, so every free-text field is programmatically redacted and byte-bounded — this **composes with the redaction gate** (Phase-1) and establishes its mechanism.
+- **Determinism synergy.** The brief is content-addressed (JCS digest) and recordable, aiding the reproducibility controls.
+
+Realized as the source-only `a2a-broker.worker-subagent-context-brief.packet` (finalizer builds; sub-agents consume). Phase-2 wiring injects the brief into each sub-agent instead of a blank repo exploration.
+
 ## Phased plan
 
 ### Phase 0 — Prerequisites (DONE)

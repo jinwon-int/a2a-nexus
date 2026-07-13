@@ -1,0 +1,32 @@
+{
+  "workerId": "workergamma",
+  "taskId": "task-large-independent",
+  "finalizer": "brokeralpha",
+  "summary": "Add a planner cache and cover it with tests. The change is large and independent across three disjoint areas.",
+  "assignments": [
+    {
+      "role": "explorer",
+      "objective": "Map the planner module and report exact insertion points; read-only.",
+      "pointers": [{ "path": "src/core/planner.ts", "lines": "40-120", "note": "planner entrypoint and hot path" }]
+    },
+    {
+      "role": "implementer",
+      "objective": "Add an in-memory cache keyed by task profile; read the live file before editing.",
+      "writeSet": ["src/core/planner-cache.ts"],
+      "pointers": [{ "path": "src/core/planner.ts", "lines": "88-96", "note": "call site to wrap" }]
+    },
+    {
+      "role": "verifier",
+      "objective": "Add and run tests for cache hit/miss and eviction; no source edits.",
+      "writeSet": ["test/planner-cache.test.ts"]
+    }
+  ],
+  "pointers": [
+    { "path": "docs/planner.md", "lines": "1-30", "note": "design intent and constraints" }
+  ],
+  "acceptanceCriteria": [
+    "cache hit and miss both covered by tests",
+    "no behavior change when cache is cold",
+    "disjoint write sets: planner-cache.ts vs planner-cache.test.ts"
+  ]
+}
