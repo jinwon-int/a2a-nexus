@@ -362,6 +362,70 @@ test("GitHub patch readiness Claude Code profile failure includes cccb provision
   assert.ok(paths.some((entry: string) => entry.includes("a2a-docker-runner-cccb")));
 });
 
+test("GitHub patch readiness Codex profile reports CLI and credential mount readiness", () => {
+  const report = checkGitHubPatchReadiness({
+    rootDir: "/tmp/a2a-test",
+    engine: "docker",
+    image: "a2a-docker-runner-codex:latest",
+    defaultTimeoutMs: 1000,
+    commandProfile: "codex",
+    commandScript: "#!/usr/bin/env bash\ncodex exec --help\n",
+    codexProfile: { configDir: "/srv/codex-profile" },
+  }, {
+    codexProfileProbe: () => ({
+      cliOnPath: true,
+      cliPath: "/usr/local/bin/codex",
+      cliVersionOk: true,
+      cliVersion: "codex-cli 0.144.1",
+      profileMountExists: true,
+      expectedMountPath: "/run/secrets/codex-dir",
+      authFileExists: true,
+      errors: [],
+    }),
+  });
+
+  assert.equal(report.status, "ok");
+  assert.equal(report.message, "GitHub patch execution is ready via Codex profile");
+  const detail = report.detail as Record<string, unknown>;
+  assert.equal(detail.profile, "codex");
+  assert.equal(detail.failureCategory, "ok");
+  assert.deepEqual(detail.checks, [
+    { kind: "codex_cli_resolved", passed: true },
+    { kind: "codex_cli_version_ok", passed: true },
+    { kind: "codex_profile_mount_present", passed: true },
+    { kind: "codex_auth_file_present", passed: true },
+  ]);
+});
+
+test("GitHub patch readiness Codex profile failure includes provisioning guidance", () => {
+  const report = checkGitHubPatchReadiness({
+    rootDir: "/tmp/a2a-test",
+    engine: "docker",
+    image: "node:22-bookworm-slim",
+    defaultTimeoutMs: 1000,
+    commandProfile: "codex",
+    commandScript: "#!/usr/bin/env bash\ncodex --version\n",
+    codexProfile: { configDir: "/srv/codex-profile" },
+  }, {
+    codexProfileProbe: () => ({
+      cliOnPath: false,
+      cliVersionOk: false,
+      profileMountExists: false,
+      expectedMountPath: "/run/secrets/codex-dir",
+      authFileExists: false,
+      errors: ["container probe exited with status 127"],
+    }),
+  });
+
+  assert.equal(report.status, "fail");
+  const detail = report.detail as Record<string, unknown>;
+  assert.equal(detail.failureCategory, "codex_cli_unavailable");
+  const paths = detail.provisioningPaths as string[];
+  assert.ok(paths.some((entry: string) => entry.includes("docker/codex-runner.Dockerfile")));
+  assert.ok(paths.some((entry: string) => entry.includes("A2A_DOCKER_RUNNER_CODEX_CONFIG_DIR")));
+  assert.ok(paths.some((entry: string) => entry.includes("a2a-docker-runner-codex")));
+});
+
 test("deploy marker doctor fails for mismatched revision even without upstream", async () => {
   const { repo, head } = await makeRevisionRepo();
   // Check against the right revision — should still pass even though there's

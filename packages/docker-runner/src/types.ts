@@ -114,7 +114,7 @@ export interface ExecutionProofSignature {
   signature: string;
 }
 
-export type RunnerCommandProfile = "openclaw" | "hermes" | "claude-code";
+export type RunnerCommandProfile = "openclaw" | "hermes" | "claude-code" | "codex";
 
 export interface RunnerOpenClawProfileConfig {
   /*
@@ -129,6 +129,10 @@ export interface RunnerHermesProfileConfig {
 }
 
 export interface RunnerClaudeCodeProfileConfig {
+  configDir: string;
+}
+
+export interface RunnerCodexProfileConfig {
   configDir: string;
 }
 
@@ -196,6 +200,8 @@ export interface RunnerConfig {
   hermesProfile?: RunnerHermesProfileConfig;
   /** Claude Code patch profile readiness metadata. */
   claudeCodeProfile?: RunnerClaudeCodeProfileConfig;
+  /** Codex patch profile readiness metadata. */
+  codexProfile?: RunnerCodexProfileConfig;
   /** Guarded OpenClaw/Hermes subagent policy for Docker-contained task work. */
   containedSubagents?: RunnerContainedSubagentsConfig;
   /** PEM private key file for opt-in execution-proof JWS signing. */

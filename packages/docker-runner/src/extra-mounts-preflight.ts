@@ -26,7 +26,7 @@ import {
 } from "./config.js";
 
 /** Patch-command profile relevant to mount selection. */
-export type ExtraMountsProfile = "openclaw" | "hermes" | "claude-code" | "none";
+export type ExtraMountsProfile = "openclaw" | "hermes" | "claude-code" | "codex" | "none";
 
 /**
  * Preflight failure classification.
@@ -47,6 +47,7 @@ export type ExtraMountsPreflightCategory =
   | "hermes_profile_mount_missing"
   | "openclaw_profile_mount_missing"
   | "claude_code_profile_mount_missing"
+  | "codex_profile_mount_missing"
   | "profile_mount_source_conflict"
   | "forbidden_writable_runtime_mount"
   | "extra_mounts_json_invalid"
@@ -120,6 +121,7 @@ function classify(
       case "profile_mount_missing":
         if (profile === "openclaw") return "openclaw_profile_mount_missing";
         if (profile === "claude-code") return "claude_code_profile_mount_missing";
+        if (profile === "codex") return "codex_profile_mount_missing";
         return "hermes_profile_mount_missing";
       case "profile_mount_source_conflict":
         return "profile_mount_source_conflict";

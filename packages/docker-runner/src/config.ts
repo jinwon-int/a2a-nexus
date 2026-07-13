@@ -55,6 +55,8 @@ const DEFAULT_TIMEOUT_MS = 60 * 60 * 1000;
 const DEFAULT_OPENCLAW_TIMEOUT_SEC = "3600";
 const DEFAULT_HERMES_TIMEOUT_SEC = "3600";
 const DEFAULT_CLAUDE_CODE_TIMEOUT_SEC = "3600";
+const DEFAULT_CODEX_TIMEOUT_SEC = "3600";
+const DEFAULT_CODEX_CONFIG_DIR = "/var/lib/a2a-runner/codex-dir";
 export const DEFAULT_SERVICE_ENV_FILE = "/etc/default/openclaw-a2a-worker";
 
 export function loadEnvFile(path: string): Record<string, string> {
@@ -129,7 +131,7 @@ export async function loadConfig(env = process.env): Promise<RunnerConfig> {
     defaultTimeoutMs: Number(env.A2A_DOCKER_RUNNER_TIMEOUT_MS || DEFAULT_TIMEOUT_MS),
     memory: env.A2A_DOCKER_RUNNER_MEMORY || "2g",
     cpus: env.A2A_DOCKER_RUNNER_CPUS || "2",
-    network: env.A2A_DOCKER_RUNNER_NETWORK || (trustedOperator && (profile === "openclaw" || profile === "hermes" || profile === "claude-code") ? "bridge" : "none"),
+    network: env.A2A_DOCKER_RUNNER_NETWORK || (trustedOperator && (profile === "openclaw" || profile === "hermes" || profile === "claude-code" || profile === "codex") ? "bridge" : "none"),
     readOnlyRootFilesystem: normalizeDefaultTrue(env.A2A_DOCKER_RUNNER_READ_ONLY_ROOTFS, trustedOperator),
     user: normalizeContainerUser(env.A2A_DOCKER_RUNNER_USER, trustedOperator),
     trustedOperator,
@@ -278,6 +280,13 @@ export function loadExtraMounts(env: NodeJS.ProcessEnv): RunnerExtraMount[] | un
         readOnly: true,
       }];
     }
+    if (profile === "codex") {
+      return [{
+        source: env.A2A_DOCKER_RUNNER_CODEX_CONFIG_DIR || DEFAULT_CODEX_CONFIG_DIR,
+        target: "/run/secrets/codex-dir",
+        readOnly: true,
+      }];
+    }
     return undefined;
   }
 
@@ -350,6 +359,16 @@ function validateProfileMountSelection(mounts: RunnerExtraMount[], env: NodeJS.P
       "claude-code",
       "Claude Code",
     );
+    return;
+  }
+  if (profile === "codex") {
+    validateNamedProfileMountSelection(
+      mounts,
+      "/run/secrets/codex-dir",
+      env.A2A_DOCKER_RUNNER_CODEX_CONFIG_DIR,
+      "codex",
+      "Codex",
+    );
   }
 }
 
@@ -392,12 +411,14 @@ function validateOpenClawRuntimeMount(mount: RunnerExtraMount, index: number): v
   const protectedHermesTarget = isProtectedHermesRuntimePath(target);
   const protectedClaudeSource = isProtectedClaudeRuntimePath(source);
   const protectedClaudeTarget = isProtectedClaudeRuntimePath(target);
+  const protectedCodexSource = isProtectedCodexRuntimePath(source);
+  const protectedCodexTarget = isProtectedCodexRuntimePath(target);
 
-  if (writable && (protectedSource || protectedTarget || protectedHermesSource || protectedHermesTarget || protectedClaudeSource || protectedClaudeTarget)) {
+  if (writable && (protectedSource || protectedTarget || protectedHermesSource || protectedHermesTarget || protectedClaudeSource || protectedClaudeTarget || protectedCodexSource || protectedCodexTarget)) {
     throw new ExtraMountsConfigError(
       "forbidden_writable_runtime_mount",
       `invalid extra mount at index ${index}: writable agent runtime/session paths are forbidden; ` +
-      "mount only scratch paths read-write and keep host ~/.openclaw / ~/.hermes / ~/.claude sessions read-only",
+      "mount only scratch paths read-write and keep host ~/.openclaw / ~/.hermes / ~/.claude / ~/.codex sessions read-only",
     );
   }
 }
@@ -437,9 +458,18 @@ function isProtectedClaudeRuntimePath(value: string): boolean {
   ].some((pattern) => pattern.test(normalized));
 }
 
+function isProtectedCodexRuntimePath(value: string): boolean {
+  const normalized = value.replace(/\/+/g, "/").replace(/\/$/, "") || "/";
+  return [
+    /^\/root\/\.codex(?:\/|$)/,
+    /^\/home\/[^/]+\/\.codex(?:\/|$)/,
+    /^\/run\/secrets\/codex-dir(?:\/|$)/,
+  ].some((pattern) => pattern.test(normalized));
+}
+
 function loadPatchCommandConfig(
   env: NodeJS.ProcessEnv,
-): Pick<RunnerConfig, "commandScript" | "commandJson" | "commandTemplate" | "commandProfile" | "openclawProfile" | "hermesProfile" | "claudeCodeProfile"> {
+): Pick<RunnerConfig, "commandScript" | "commandJson" | "commandTemplate" | "commandProfile" | "openclawProfile" | "hermesProfile" | "claudeCodeProfile" | "codexProfile"> {
   const commandScript = env.A2A_DOCKER_RUNNER_PATCH_COMMAND_SCRIPT || undefined;
   if (commandScript) return { commandScript };
 
@@ -471,6 +501,15 @@ function loadPatchCommandConfig(
       commandScript: buildClaudeCodePatchCommandScript(env),
       claudeCodeProfile: {
         configDir: env.A2A_DOCKER_RUNNER_CLAUDE_CONFIG_DIR || "/root/.claude",
+      },
+    };
+  }
+  if (profile === "codex") {
+    return {
+      commandProfile: "codex",
+      commandScript: buildCodexPatchCommandScript(env),
+      codexProfile: {
+        configDir: env.A2A_DOCKER_RUNNER_CODEX_CONFIG_DIR || DEFAULT_CODEX_CONFIG_DIR,
       },
     };
   }
@@ -638,6 +677,7 @@ export function normalizePatchCommandProfile(value?: string): RunnerCommandProfi
   if (normalized === "openclaw") return "openclaw";
   if (normalized === "hermes") return "hermes";
   if (normalized === "claude-code" || normalized === "claude" || normalized === "cccb") return "claude-code";
+  if (normalized === "codex") return "codex";
   throw new Error(`unsupported A2A_DOCKER_RUNNER_PATCH_COMMAND_PROFILE: ${value}`);
 }
 
@@ -677,7 +717,55 @@ function inferRunnerImageProfileFamily(image: string): RunnerCommandProfile | un
   if (/(^|[/:])a2a-docker-runner-hermes(?=[:@/]|$)/.test(normalized)) return "hermes";
   if (/(^|[/:])a2a-docker-runner-openclaw(?=[:@/]|$)/.test(normalized)) return "openclaw";
   if (/(^|[/:])a2a-docker-runner-(?:cccb|claude-code)(?=[:@/]|$)/.test(normalized)) return "claude-code";
+  if (/(^|[/:])a2a-docker-runner-codex(?=[:@/]|$)/.test(normalized)) return "codex";
   return undefined;
+}
+
+export function buildCodexPatchCommandScript(env: NodeJS.ProcessEnv): string {
+  const defaultModel = shellSingleQuote(env.A2A_CODEX_MODEL || "gpt-5.6-sol");
+  const defaultReasoning = shellSingleQuote(env.A2A_CODEX_REASONING_EFFORT || "high");
+  const defaultTimeout = shellSingleQuote(env.A2A_CODEX_TIMEOUT_SEC || DEFAULT_CODEX_TIMEOUT_SEC);
+  return `#!/usr/bin/env bash
+set -euo pipefail
+export DEBIAN_FRONTEND=noninteractive
+A2A_CODEX_DEFAULT_MODEL=${defaultModel}
+A2A_CODEX_DEFAULT_REASONING_EFFORT=${defaultReasoning}
+A2A_CODEX_TIMEOUT_SEC="\${A2A_CODEX_TIMEOUT_SEC:-${defaultTimeout}}"
+A2A_CODEX_MODEL="\${A2A_CODEX_MODEL:-$A2A_CODEX_DEFAULT_MODEL}"
+A2A_CODEX_MODEL="\${A2A_CODEX_MODEL#openai-codex/}"
+A2A_CODEX_REASONING_EFFORT="\${A2A_CODEX_REASONING_EFFORT:-$A2A_CODEX_DEFAULT_REASONING_EFFORT}"
+export A2A_CODEX_MODEL A2A_CODEX_REASONING_EFFORT A2A_CODEX_TIMEOUT_SEC
+if [ ! -d /run/secrets/codex-dir ] || [ ! -f /run/secrets/codex-dir/auth.json ]; then
+  printf 'error=codex_config_mount_missing\n' | tee -a /work/artifacts/summary.txt
+  printf 'Mount a minimal Codex config directory containing auth.json at /run/secrets/codex-dir.\n' | tee /work/artifacts/patch-command.log
+  exit 2
+fi
+if ! command -v codex >/dev/null 2>&1; then
+  printf 'error=codex_cli_missing\n' | tee -a /work/artifacts/summary.txt
+  printf 'failure_category=codex_cli_unavailable\n' | tee -a /work/artifacts/summary.txt
+  printf 'Use an a2a-docker-runner-codex image with Codex CLI preinstalled.\n' | tee /work/artifacts/patch-command.log
+  exit 2
+fi
+rm -rf /tmp/codex-home
+install -d -m 0700 /tmp/codex-home
+install -m 0600 /run/secrets/codex-dir/auth.json /tmp/codex-home/auth.json
+if [ -f /run/secrets/codex-dir/config.toml ]; then
+  install -m 0600 /run/secrets/codex-dir/config.toml /tmp/codex-home/config.toml
+fi
+export CODEX_HOME=/tmp/codex-home
+printf 'codex_cli=%s\n' "$(codex --version 2>/dev/null | head -n 1 || printf unknown)" | tee -a /work/artifacts/summary.txt
+printf 'model=%s reasoning=%s profile=codex\n' "$A2A_CODEX_MODEL" "$A2A_CODEX_REASONING_EFFORT" | tee -a /work/artifacts/summary.txt
+timeout "$A2A_CODEX_TIMEOUT_SEC" codex exec \
+  --skip-git-repo-check \
+  --ephemeral \
+  --json \
+  --model "$A2A_CODEX_MODEL" \
+  --sandbox danger-full-access \
+  -c 'approval_policy="never"' \
+  -c "model_reasoning_effort=\"$A2A_CODEX_REASONING_EFFORT\"" \
+  -C "$PWD" \
+  - < /work/artifacts/prompt.md
+`;
 }
 
 export function buildClaudeCodePatchCommandScript(env: NodeJS.ProcessEnv): string {
@@ -1620,6 +1708,12 @@ function validatePatchExecutorPolicy(
         "mount only the active profile credentials or scratch paths",
       );
     }
+    if (profile !== "codex" && (referencesCodexMount(mount.source) || referencesCodexMount(mount.target))) {
+      throw new Error(
+        "extraMounts reference Codex credentials, which require A2A_DOCKER_RUNNER_PATCH_COMMAND_PROFILE=codex; " +
+        "mount only the active profile credentials or scratch paths",
+      );
+    }
   }
 }
 
@@ -1635,6 +1729,10 @@ function referencesClaudeExecutor(value: string): boolean {
 
 function referencesClaudeMount(value: string): boolean {
   return /(^|\/)\.claude(?:\.json|\/|$)/i.test(value) || /(^|\/)claude(?:\.json|-dir)?$/i.test(value);
+}
+
+function referencesCodexMount(value: string): boolean {
+  return /(^|\/)\.codex(?:\/|$)/i.test(value) || /(^|\/)codex-dir$/i.test(value);
 }
 
 function referencesAllowedPatchExecutor(value: string, profile?: RunnerCommandProfile): boolean {
