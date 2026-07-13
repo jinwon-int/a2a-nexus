@@ -586,6 +586,7 @@ function shouldUseOpenClawAnalysisBridge(task, env = process.env) {
 
 function normalizeAnalysisBridgeAdapter(value) {
   const adapter = safeText(value, "").toLowerCase().replace(/_/g, "-");
+  if (["codex", "codex-cli", "codex-analysis"].includes(adapter)) return "codex";
   if (["claude", "claude-code", "claude_code"].includes(adapter)) return "claude_code";
   if (["hermes", "hermes-agent", "hermes-agent-source-only", "termux-hermes"].includes(adapter)) return "hermes";
   if (["openclaw", "openclaw-analysis"].includes(adapter)) return "openclaw";
@@ -752,7 +753,8 @@ function analysisBridgeTelemetry(command, env = process.env) {
     safeText(env.WORKER_METADATA_JSON, ""),
   ].join("\n").toLowerCase();
   let bridgeAdapter = "openclaw";
-  if (combined.includes("claude")) bridgeAdapter = "claude_code";
+  if (combined.includes("codex")) bridgeAdapter = "codex";
+  else if (combined.includes("claude")) bridgeAdapter = "claude_code";
   else if (combined.includes("hermes")) bridgeAdapter = "hermes";
   return {
     analysisKind: "analysis_bridge",

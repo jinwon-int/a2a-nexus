@@ -70,6 +70,10 @@
     {
       "name": "step-17",
       "command": "node --test scripts/lib/source-carriers.test.mjs scripts/lib/markdown-cell.test.mjs scripts/a2a-task-handler.test.mjs scripts/hermes-a2a-analysis-bridge.test.mjs scripts/claude-a2a-analysis-bridge.test.mjs scripts/claude-a2a-patch-bridge.test.mjs scripts/source-only-local-analysis-bridge.test.mjs scripts/npm-scripts-inventory.test.mjs scripts/a2ad-evidence-classifier.test.mjs scripts/worker-compatibility-audit.test.mjs scripts/worker-artifact-rollout-guard.test.mjs scripts/worker-http-signature-rollout-preflight.test.mjs scripts/a2a-tck-harness-args.test.mjs scripts/append-tck-history.test.mjs scripts/check-tck-regressions.test.mjs scripts/check-tck-promoted-gate.test.mjs scripts/parent-aggregate-comment.test.mjs scripts/round-parent-aggregate-report.test.mjs scripts/round-closeout-report.test.mjs scripts/conformance-inspector.test.mjs scripts/a2a-round-artifact-scan.test.mjs scripts/a2a-worker-readiness-matrix.test.mjs scripts/export-attestation-bundle.test.mjs scripts/export-sqlite-state.test.mjs scripts/replay-round.test.mjs scripts/canary-fixtures.test.mjs dist/*.test.js dist/core/*.test.js dist/a2a/*.test.js dist/github/*.test.js dist/http/*.test.js dist/diagnostics/*.test.js dist/workers/*.test.js dist/trading-dialectic/*.test.js dist/decision-dialectic/*.test.js"
+    },
+    {
+      "name": "step-18",
+      "command": "node --test scripts/codex-a2a-analysis-bridge.test.mjs"
     }
   ]
 }
