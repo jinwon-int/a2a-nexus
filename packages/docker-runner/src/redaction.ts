@@ -20,7 +20,7 @@ function redactSecretsSegment(value: string): string {
     .replace(/\/tmp\/openclaw-agent-workspace(?:\/[^\s"',}]+)?/g, "<openclaw-workspace>")
     .replace(/\/(?:home|Users)\/[^\s"',}]+(?:\/[^\s"',}]+)?/g, "<private-dir>")
     .replace(/\btelegram:-?\d{6,}\b/gi, "telegram:<redacted-target>")
-    .replace(/(["']?(?:telegram|chat[_-]?id|thread[_-]?id|target[_-]?id|channel[_-]?id)["']?\s*[:=]\s*)-?\d{6,}\b/gi, "$1<redacted-target>")
+    .replace(/(["']?(?:telegram|chat[_-]?id|thread[_-]?id|target[_-]?id|channel[_-]?id)["']?\s*[:=]\s*)(["']?)\s*(-?\d{6,})\s*\2/gi, "$1$2<redacted-target>$2")
     // xai / supermemory / openai API key patterns (synthetic format)
     // Must fire BEFORE generic key=value redaction to catch the full key.
     .replace(/xai-[A-Za-z0-9_-]{40,}/g, "<redacted-api-key>")

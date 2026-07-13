@@ -71,8 +71,8 @@ test("redacts controls, prefixed secrets, structured provider targets, and priva
     `${["OPENAI", "API", "KEY"].join("_")}=\"short value\"`,
     `${["github", "token"].join("_")}: short-token`,
   ].join(" ");
-  const redacted = redactSecrets(`${secrets} before\u0000after\u0007 \"chat_id\": 123456789 /root/.hermes/private`);
-  assert.doesNotMatch(redacted, /hunter2|abc123|short value|short-token|\u0000|\u0007|123456789|\/root\/\.hermes/);
+  const redacted = redactSecrets(`${secrets} before\u0000after\u0007 \"chat_id\": 123456789 \"thread_id\": '-123456789' telegram = \" 234567890 \" /root/.hermes/private`);
+  assert.doesNotMatch(redacted, /hunter2|abc123|short value|short-token|\u0000|\u0007|123456789|234567890|\/root\/\.hermes/);
 });
 
 test("redactAndBound enforces UTF-8 bytes without splitting code points", () => {

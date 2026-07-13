@@ -22,7 +22,7 @@ export function redactSecretsText(value: string): string {
     .replace(/(["']?(?:[A-Z0-9]+[_-])*(?:token|secret|password|key|api[_-]?key|apikey|access[_-]?token|edge[_-]?secret)["']?\s*:\s*)[^"'\s,;}]+/gi, "$1" + REDACTED)
     .replace(/\b[A-Za-z0-9_-]{40,}\b/g, REDACTED)
     .replace(/\btelegram:-?\d{6,}\b/gi, "telegram:<redacted-target>")
-    .replace(/(["']?(?:telegram|chat[_-]?id|thread[_-]?id|target[_-]?id|channel[_-]?id)["']?\s*[:=]\s*)-?\d{6,}\b/gi, "$1<redacted-target>")
+    .replace(/(["']?(?:telegram|chat[_-]?id|thread[_-]?id|target[_-]?id|channel[_-]?id)["']?\s*[:=]\s*)(["']?)\s*(-?\d{6,})\s*\2/gi, "$1$2<redacted-target>$2")
     .replace(/\b(?:discord|slack):#[A-Za-z0-9._-]+\b/gi, (match) => `${match.split(":")[0]}:#<redacted-target>`)
     .replace(/\b[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}\b/gi, "<redacted-email>")
     .replace(/\+\d[\d .()-]{7,}\d/g, "<redacted-phone>")

@@ -97,12 +97,12 @@ test("removes raw controls, prefixed secrets, and structured provider targets", 
     entries: [{
       role: "verifier",
       id: "ev-controls",
-      output: `${prefixed} \"chat_id\": 123456789 chat_id: 987654321 before\u0000after\u0007`,
+      output: `${prefixed} \"chat_id\": 123456789 chat_id: 987654321 \"thread_id\": '-123456789' telegram = \" 234567890 \" before\u0000after\u0007`,
     }],
   });
 
   const cleaned = packet.cleanedEntries[0]?.output ?? "";
-  assert.doesNotMatch(cleaned, /hunter2|abc123|short value|short-token|123456789|987654321|\u0000|\u0007/);
+  assert.doesNotMatch(cleaned, /hunter2|abc123|short value|short-token|123456789|987654321|234567890|\u0000|\u0007/);
   assert.equal(packet.results[0]?.redacted, true);
 });
 
