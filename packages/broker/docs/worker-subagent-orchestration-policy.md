@@ -132,3 +132,20 @@ It assembles and canonicalizes only: `signsEvidence: false` with all boundaries 
 CLI:
 
 `npm run worker_subagent_evidence_assembly -- --input fixtures/worker-subagent-orchestration/evidence-assembly-basic.json --json`
+
+## Context Brief
+
+`a2a-broker.worker-subagent-context-brief.packet` is a **cost optimization** for fanout. The finalizer explores the task/issue **once** and produces one curated, redacted brief (task summary, per-role assignments with disjoint write sets, `file:line` pointers, acceptance criteria, invariants); each sub-agent then **reads the brief instead of re-exploring the repo**, turning *N explorations* into *1 exploration + N cheap brief-reads*.
+
+Discipline baked into the packet:
+
+- **Redaction-mandatory + byte-bounded** — every free-text field is passed through a programmatic redactor (bearer/`KEY=…`/URL/JSON-secret/gh-token/long-token shapes) and bounded to `maxFieldChars`. `redaction.redactionApplied: true`. This establishes the mechanism the redaction gate generalizes to all sub-agent output.
+- **Not a write-time source of truth** — a default invariant instructs implementers to **read the live file immediately before editing**; the brief is shared understanding + pointers, not a snapshot to edit from (`usage.readLiveFileBeforeEditing: true`).
+- **Pointers over prose** — `file:line` pointers let a sub-agent fetch the exact thing cheaply, with source fallback.
+- **Content-addressed** — an RFC 8785 (JCS) `contentDigest` (excluding `generatedAt`) makes the brief reproducible; `idempotencyKey` is derived from it.
+
+Source-only, all boundaries false: it builds a brief and does not spawn, dispatch, or mutate. Phase-2 wiring injects the brief into each sub-agent.
+
+CLI:
+
+`npm run worker_subagent_context_brief -- --input fixtures/worker-subagent-orchestration/context-brief-basic.json --json`
