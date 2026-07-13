@@ -676,10 +676,13 @@ function inferRunnerImageProfileFamily(image: string): RunnerCommandProfile | un
   return undefined;
 }
 
-function buildClaudeCodePatchCommandScript(env: NodeJS.ProcessEnv): string {
+export function buildClaudeCodePatchCommandScript(env: NodeJS.ProcessEnv): string {
   const defaultModel = shellSingleQuote(env.A2A_CLAUDE_MODEL || env.A2A_OPENCLAW_MODEL || "sonnet");
   const defaultTimeout = shellSingleQuote(env.A2A_CLAUDE_TIMEOUT_SEC || env.A2A_OPENCLAW_TIMEOUT_SEC || DEFAULT_CLAUDE_CODE_TIMEOUT_SEC);
   const bridgePath = shellSingleQuote(env.A2A_CLAUDE_PATCH_BRIDGE || "/opt/a2a-broker/scripts/claude-a2a-patch-bridge.mjs");
+  // Phase-2 WS1: opt-in fanout mode. Default (flag unset/!=1) stays single-shot,
+  // so behavior is unchanged; rollback = unset A2A_DOCKER_RUNNER_CLAUDE_CODE_FANOUT_ENABLED.
+  const patchMode = env.A2A_DOCKER_RUNNER_CLAUDE_CODE_FANOUT_ENABLED === "1" ? "fanout" : "single-shot";
   return `#!/usr/bin/env bash
 set -euo pipefail
 export DEBIAN_FRONTEND=noninteractive
@@ -720,7 +723,7 @@ if [ -d /run/secrets/claude-dir ]; then
 fi
 chmod -R u+rwX /root/.claude
 export HOME=/root
-export A2A_CLAUDE_CODE_PATCH_MODE=single-shot
+export A2A_CLAUDE_CODE_PATCH_MODE=${patchMode}
 export A2A_CLAUDE_CODE_MAX_OUTPUT_BYTES="\${A2A_CLAUDE_CODE_MAX_OUTPUT_BYTES:-16777216}"
 printf 'claude_cli=%s\\n' "$(claude --version 2>/dev/null | head -n 1 || printf unknown)" | tee -a /work/artifacts/summary.txt
 printf 'model_source=env profile=claude-code\\n' | tee -a /work/artifacts/summary.txt

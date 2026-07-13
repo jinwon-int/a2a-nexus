@@ -5,7 +5,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
 import { Script } from "node:vm";
-import { loadConfig, loadEnvFile, mergeRunnerEnvFile, validateRunnerConfig } from "./config.js";
+import { buildClaudeCodePatchCommandScript, loadConfig, loadEnvFile, mergeRunnerEnvFile, validateRunnerConfig } from "./config.js";
 import type { RunnerConfig } from "./types.js";
 
 const baseEnv = {
@@ -1402,5 +1402,20 @@ test("loadConfig runs pre-deploy validation on invalid memory", async () => {
       A2A_DOCKER_RUNNER_MEMORY: "not-a-number",
     }),
     /runner pre-deploy config validation failed/,
+  );
+});
+
+test("claude-code patch mode: single-shot by default, fanout only when the flag is 1 (Phase-2 WS1)", () => {
+  // Default (flag unset) — behavior unchanged.
+  assert.match(buildClaudeCodePatchCommandScript({}), /export A2A_CLAUDE_CODE_PATCH_MODE=single-shot\b/);
+  // A non-"1" value stays single-shot (fail-safe).
+  assert.match(
+    buildClaudeCodePatchCommandScript({ A2A_DOCKER_RUNNER_CLAUDE_CODE_FANOUT_ENABLED: "true" }),
+    /export A2A_CLAUDE_CODE_PATCH_MODE=single-shot\b/,
+  );
+  // Opt-in.
+  assert.match(
+    buildClaudeCodePatchCommandScript({ A2A_DOCKER_RUNNER_CLAUDE_CODE_FANOUT_ENABLED: "1" }),
+    /export A2A_CLAUDE_CODE_PATCH_MODE=fanout\b/,
   );
 });

@@ -1018,3 +1018,16 @@ test("SINGLE-SHOT: A2A_CLAUDE_MODEL=claude-sonnet-5 -> claude argv includes --mo
     rmSync(tempDir, { recursive: true, force: true });
   }
 });
+
+test("fanout mode is recognized and routes to single-shot for now (Phase-2 WS1)", () => {
+  // patch-intent message with NO Repository: line -> reaches runPatchMode, and
+  // single-shot's own repo guard fires early (no git/network needed).
+  const result = spawnSync(bridgePath, bridgeArgs("Please open a pull request implementing the fix."), {
+    encoding: "utf8",
+    env: { ...process.env, A2A_CLAUDE_CODE_PATCH_MODE: "fanout" },
+  });
+  // The fanout branch emits this notice before delegating to single-shot...
+  assert.match(result.stderr ?? "", /A2A_CLAUDE_CODE_PATCH_MODE=fanout: sub-agent orchestration not yet wired/);
+  // ...and single-shot's no-repo guard then fires, proving it ran the single-shot path.
+  assert.match(result.stderr ?? "", /single-shot patch mode requires Repository/);
+});
