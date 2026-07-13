@@ -775,6 +775,8 @@ export interface RunnerTask {
   /** Shell commands executed inside the container after checkout. */
   commands?: string[];
   prompt?: string;
+  /** Broker-produced, redacted and byte-bounded brief mounted for authorized contained sub-agents. */
+  subagentContextBrief?: string;
   env?: Record<string, string>;
   /** Per-task embedded OpenClaw model override, e.g. deepseek/deepseek-v4-pro. */
   workerModel?: string;

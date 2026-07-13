@@ -4,6 +4,20 @@ import {
   buildA2AWorkerSubagentOrchestrationPolicy,
   type A2AWorkerSubagentTaskProfile,
 } from "./core/worker-subagent-orchestration-policy.js";
+import {
+  buildA2AWorkerSubagentBudgetCounter,
+  extractA2AWorkerSubagentBudgetCounterInput,
+} from "./core/worker-subagent-budget-counter.js";
+import {
+  buildA2AWorkerSubagentContextBrief,
+  extractA2AWorkerSubagentContextBriefInput,
+  renderA2AWorkerSubagentContextBriefMarkdown,
+} from "./core/worker-subagent-context-brief.js";
+import {
+  buildA2AWorkerSubagentSpawnGateDecision,
+  extractA2AWorkerSubagentSpawnGateDecisionInput,
+} from "./core/worker-subagent-spawn-gate-decision.js";
+import { redactSecretsText } from "./core/worker-subagent-redaction.js";
 import { mkdir, readFile, writeFile } from "node:fs/promises";
 import { dirname } from "node:path";
 import { setTimeout as delay } from "node:timers/promises";
@@ -840,6 +854,228 @@ export function buildSubagentDirectiveEnv(
   };
 }
 
+export interface DynamicSubagentRuntimeOptions {
+  workerId: string;
+  subagentCap: number;
+  executionIsolation?: "isolated" | "shared";
+  fanoutEnabled: boolean;
+  staticRunnerMax: number;
+  staticRunnerRoles: string[];
+}
+
+export interface DynamicSubagentRuntime {
+  env: Record<string, string>;
+  subagentContextBrief?: string;
+}
+
+const CLOSED_DYNAMIC_SUBAGENT_ENV = {
+  A2A_DOCKER_RUNNER_CLAUDE_CODE_FANOUT_ENABLED: "0",
+  A2A_DOCKER_RUNNER_CONTAINED_SUBAGENTS_MAX: "0",
+  A2A_DOCKER_RUNNER_CONTAINED_SUBAGENTS_ROLES: "",
+  A2A_SUBAGENT_CONDUCTOR: "1",
+  A2A_SUBAGENT_MAX: "0",
+  A2A_SUBAGENT_ROLES: "",
+} as const;
+
+const DYNAMIC_SUBAGENT_ROLES = new Set(["explorer", "implementer", "verifier"]);
+const SUBAGENT_CONTEXT_BRIEF_PATH = "/work/artifacts/context-brief.md";
+
+/** Convert source-only Phase-1 packets into shrink-only per-task runner authorization. */
+export function buildDynamicSubagentRuntime(
+  task: TaskRecord,
+  options: DynamicSubagentRuntimeOptions,
+): DynamicSubagentRuntime {
+  if (!options.fanoutEnabled) return { env: {} };
+
+  const staticRunnerMax = Number.isInteger(options.staticRunnerMax)
+    ? Math.max(0, Math.min(4, options.staticRunnerMax))
+    : 0;
+  const staticRunnerRoles = [...new Set(options.staticRunnerRoles)]
+    .filter((role) => DYNAMIC_SUBAGENT_ROLES.has(role));
+  const plan = (fields: Record<string, unknown>) => JSON.stringify({
+    version: 1,
+    taskId: task.id,
+    oneFinalizerRequired: true,
+    writeSetIsolationRequired: true,
+    staticRunnerMax,
+    staticRunnerRoles,
+    ...fields,
+  });
+  const closed = (reason: string, fields: Record<string, unknown> = {}): DynamicSubagentRuntime => ({
+    env: {
+      ...CLOSED_DYNAMIC_SUBAGENT_ENV,
+      A2A_DOCKER_RUNNER_CONTAINED_SUBAGENTS_REASONS: reason,
+      A2A_SUBAGENT_PLAN: plan({
+        state: "refused",
+        reason,
+        authorizedSubagentCount: 0,
+        ...fields,
+      }),
+    },
+  });
+
+  if (staticRunnerMax === 0 || staticRunnerRoles.length === 0) {
+    return closed("static_runner_policy_refused");
+  }
+
+  const approval = task.approval;
+  const approvalRole = approval?.actorRole ?? approval?.requesterRole;
+  if (
+    !approval
+    || typeof approval.approvalId !== "string"
+    || approval.approvalId.length === 0
+    || typeof approval.approvedAt !== "string"
+    || typeof approval.approvedBy !== "string"
+    || (approvalRole !== "operator" && approvalRole !== "hub")
+  ) {
+    return closed("broker_approval_missing_or_untrusted", { approvalState: "missing-or-untrusted" });
+  }
+
+  const payload = (task.payload ?? {}) as Record<string, unknown>;
+  const budgetInput = payload.workerSubagentBudgetCounter ?? payload.budgetCounter;
+  const authorizationInput = payload.spawnAuthorization ?? payload.authorization;
+  if (!budgetInput || typeof budgetInput !== "object" || Array.isArray(budgetInput)) {
+    return closed("budget_input_missing");
+  }
+  if (!authorizationInput || typeof authorizationInput !== "object" || Array.isArray(authorizationInput)) {
+    return closed("authorization_input_missing");
+  }
+
+  try {
+    const extractedBudget = extractA2AWorkerSubagentBudgetCounterInput(budgetInput);
+    const budget = buildA2AWorkerSubagentBudgetCounter(extractedBudget);
+    if (budget.state !== "within-budget") {
+      return closed("budget_not_within_ceiling", { budgetState: budget.state });
+    }
+    if (budget.workerId !== options.workerId) {
+      return closed("budget_worker_binding_invalid", { budgetState: budget.state });
+    }
+    if (extractedBudget.usage.taskId !== task.id) {
+      return closed("budget_task_binding_invalid", { budgetState: budget.state });
+    }
+    const authorizationTaskId = (authorizationInput as Record<string, unknown>).taskId;
+    if (authorizationTaskId !== task.id) {
+      return closed("authorization_task_binding_invalid", { budgetState: budget.state });
+    }
+
+    const profile = deriveSubagentTaskProfile(task);
+    const policy = buildA2AWorkerSubagentOrchestrationPolicy({
+      task: profile,
+      executionIsolation: options.executionIsolation,
+      host: {
+        workerId: options.workerId,
+        workerSubagentCap: Math.max(0, Math.min(4, options.subagentCap)),
+        activeSubagents: 0,
+      },
+    });
+    if (policy.decision.parallelismHint === 0) {
+      return closed("orchestration_policy_refused", {
+        budgetState: budget.state,
+        reducedBy: policy.resourceGate.reducedBy,
+      });
+    }
+
+    const gate = buildA2AWorkerSubagentSpawnGateDecision(extractA2AWorkerSubagentSpawnGateDecisionInput({
+      spawnAuthorization: authorizationInput,
+      budgetCounter: budget,
+      requestedSpawn: {
+        subagents: policy.decision.recommendedSubagents.map((agent) => ({
+          role: agent.role,
+          writeSet: agent.writeSet ? [agent.writeSet] : undefined,
+        })),
+      },
+    }));
+    if (gate.state !== "authorized" || gate.authorizedSubagentCount <= 0) {
+      return closed("spawn_gate_refused", {
+        budgetState: budget.state,
+        gateState: gate.state,
+        blockers: gate.blockers,
+        reviews: gate.reviews,
+      });
+    }
+    if (gate.workerId !== options.workerId) {
+      return closed("gate_worker_binding_invalid", { budgetState: budget.state, gateState: gate.state });
+    }
+    if (gate.taskId !== task.id) {
+      return closed("gate_task_binding_invalid", { budgetState: budget.state, gateState: gate.state });
+    }
+
+    const authorizedRoles = policy.decision.recommendedSubagents
+      .map((agent) => agent.role)
+      .filter((role) => staticRunnerRoles.includes(role))
+      .slice(0, Math.min(gate.authorizedSubagentCount, staticRunnerMax));
+    const authorizedSubagentCount = authorizedRoles.length;
+    if (authorizedSubagentCount === 0) {
+      return closed("static_runner_role_intersection_empty", {
+        budgetState: budget.state,
+        gateState: gate.state,
+      });
+    }
+    const authorizedAssignments = policy.decision.recommendedSubagents
+      .filter((agent) => authorizedRoles.includes(agent.role))
+      .slice(0, authorizedSubagentCount)
+      .map((agent) => ({
+        role: agent.role,
+        objective: agent.purpose,
+        writeSet: agent.writeSet ? [agent.writeSet] : undefined,
+      }));
+
+    const contextInput = payload.workerSubagentContextBrief ?? payload.contextBrief;
+    const extractedContext = contextInput && typeof contextInput === "object" && !Array.isArray(contextInput)
+      ? extractA2AWorkerSubagentContextBriefInput(contextInput)
+      : {
+          workerId: options.workerId,
+          taskId: task.id,
+          summary: task.message,
+        };
+    const contextPacket = buildA2AWorkerSubagentContextBrief({
+      ...extractedContext,
+      workerId: options.workerId,
+      taskId: task.id,
+      assignments: authorizedAssignments,
+    });
+    const subagentContextBrief = redactSecretsText(
+      renderA2AWorkerSubagentContextBriefMarkdown(contextPacket),
+    );
+    if (Buffer.byteLength(subagentContextBrief, "utf8") > 64 * 1024) {
+      return closed("context_brief_too_large", { budgetState: budget.state, gateState: gate.state });
+    }
+
+    const reducedBy = [...new Set([
+      ...policy.resourceGate.reducedBy,
+      ...(authorizedSubagentCount < gate.authorizedSubagentCount ? ["static_runner_policy"] : []),
+    ])];
+    const briefDigest = `sha256:${createHash("sha256").update(subagentContextBrief, "utf8").digest("hex")}`;
+    const planEvidence = plan({
+      state: "authorized",
+      approvalRef: approval.approvalId,
+      budgetState: budget.state,
+      gateState: gate.state,
+      requestedSubagentCount: gate.requestedSubagentCount,
+      authorizedSubagentCount,
+      authorizedRoles,
+      reducedBy,
+      briefDigest,
+      briefPath: SUBAGENT_CONTEXT_BRIEF_PATH,
+    });
+    return {
+      env: {
+        A2A_SUBAGENT_CONDUCTOR: "1",
+        A2A_SUBAGENT_MAX: String(authorizedSubagentCount),
+        A2A_SUBAGENT_ROLES: authorizedRoles.join(","),
+        A2A_SUBAGENT_PLAN: planEvidence,
+        A2A_DOCKER_RUNNER_CLAUDE_CODE_FANOUT_ENABLED: "1",
+        A2A_DOCKER_RUNNER_CONTAINED_SUBAGENTS_MAX: String(authorizedSubagentCount),
+        A2A_DOCKER_RUNNER_CONTAINED_SUBAGENTS_ROLES: authorizedRoles.join(","),
+        A2A_DOCKER_RUNNER_CONTAINED_SUBAGENTS_REASONS: reducedBy.join(",") || "authorized",
+      },
+      subagentContextBrief,
+    };
+  } catch {
+    return closed("invalid_runtime_packet");
+  }
+}
+
 /**
  * Derive a conservative task profile for the orchestration policy.
  * Explicit payload.subagentProfile wins; otherwise patch-shaped intents are
@@ -972,13 +1208,32 @@ export function createExternalWorkerHandler(config: ExternalWorkerHandlerConfig)
     const directiveBudget = config.subagentDirectiveDisabled
       ? null
       : Number(directiveEnv.A2A_SUBAGENT_MAX ?? 0);
+    const dynamicRuntime = buildDynamicSubagentRuntime(task, {
+      workerId: config.workerId ?? "worker",
+      subagentCap: config.subagentCap ?? 4,
+      executionIsolation: config.subagentExecutionIsolation ?? "shared",
+      fanoutEnabled: config.env?.A2A_DOCKER_RUNNER_CLAUDE_CODE_FANOUT_ENABLED === "1",
+      staticRunnerMax: Number(config.env?.A2A_DOCKER_RUNNER_CONTAINED_SUBAGENTS_MAX ?? 0),
+      staticRunnerRoles: (config.env?.A2A_DOCKER_RUNNER_CONTAINED_SUBAGENTS_ROLES ?? "")
+        .split(",")
+        .map((role) => role.trim())
+        .filter(Boolean),
+    });
+    const dynamicDirectiveBudget = dynamicRuntime.env.A2A_DOCKER_RUNNER_CLAUDE_CODE_FANOUT_ENABLED === "1"
+      ? Number(dynamicRuntime.env.A2A_DOCKER_RUNNER_CONTAINED_SUBAGENTS_MAX ?? 0)
+      : dynamicRuntime.env.A2A_DOCKER_RUNNER_CLAUDE_CODE_FANOUT_ENABLED === "0"
+        ? 0
+        : directiveBudget;
+    const handlerInput = dynamicRuntime.subagentContextBrief
+      ? { ...task, subagentContextBrief: dynamicRuntime.subagentContextBrief }
+      : task;
     const { stdout, stderr, code, signal, timedOut } = await runExternalHandler({
       command: config.command,
       args,
       cwd: config.cwd,
-      env: { ...config.env, ...traceEnv, ...directiveEnv },
+      env: { ...config.env, ...traceEnv, ...directiveEnv, ...dynamicRuntime.env },
       timeoutMs,
-      input: JSON.stringify(task),
+      input: JSON.stringify(handlerInput),
     });
 
     if (timedOut) {
@@ -1044,10 +1299,10 @@ export function createExternalWorkerHandler(config: ExternalWorkerHandlerConfig)
     }
 
     if (record.result && typeof record.result === "object" && !Array.isArray(record.result)) {
-      return finalizeSubagentEvidence(record.result as TaskResult, directiveBudget, config.command);
+      return finalizeSubagentEvidence(record.result as TaskResult, dynamicDirectiveBudget, config.command);
     }
 
-    return finalizeSubagentEvidence(record as TaskResult, directiveBudget, config.command);
+    return finalizeSubagentEvidence(record as TaskResult, dynamicDirectiveBudget, config.command);
   };
 }
 

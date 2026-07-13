@@ -502,6 +502,28 @@ test("runner task carries model and thinking overrides to downstream runner comm
   assert.equal(runnerTask.workerThinking, "high");
 });
 
+test("runner task preserves the broker-generated bounded subagent context brief (Phase-2 WS5)", () => {
+  const brief = "# A2A sub-agent context brief\n\nredacted shared context";
+  const runnerTask = __test.buildRunnerTask(task({
+    intent: "propose_patch",
+    subagentContextBrief: brief,
+    payload: {
+      mode: "github-propose-patch",
+      repo: "jinwon-int/a2a-nexus",
+    },
+  }), {});
+
+  assert.equal(runnerTask.subagentContextBrief, brief);
+  assert.throws(
+    () => __test.buildRunnerTask(task({
+      intent: "propose_patch",
+      subagentContextBrief: "x".repeat(64 * 1024 + 1),
+      payload: { mode: "github-propose-patch", repo: "jinwon-int/a2a-nexus" },
+    }), {}),
+    /subagentContextBrief exceeds the 65536-byte limit/,
+  );
+});
+
 test("effective model evidence is sanitized and contains no secret fields", () => {
   const result = handleTask(task({
     payload: {
