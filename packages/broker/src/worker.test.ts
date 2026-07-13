@@ -1895,6 +1895,7 @@ test("conductor budget is a verifiable contract: reports are annotated, overruns
 });
 
 test("dynamic subagent runtime consults Phase-1 deciders and produces a redacted mounted brief payload (Phase-2 WS5)", async () => {
+  const structuralSecret = `ghp_${"y".repeat(36)}`;
   const task = {
     id: "task-ws5",
     exchangeId: "exchange-ws5",
@@ -1904,6 +1905,13 @@ test("dynamic subagent runtime consults Phase-1 deciders and produces a redacted
     message: "large independent patch",
     status: "running",
     targetNodeId: "worker-ws5",
+    approval: {
+      approvalId: "approval-ws5",
+      approvedAt: "2026-07-13T00:00:00Z",
+      approvedBy: "seoseo-a2a-finalizer",
+      actorRole: "operator",
+      requesterRole: "operator",
+    },
     payload: {
       subagentProfile: {
         size: "large",
@@ -1927,7 +1935,12 @@ test("dynamic subagent runtime consults Phase-1 deciders and produces a redacted
         taskId: "task-ws5",
         finalizer: "broker-finalizer",
         summary: `Use token ghp_${"x".repeat(36)} while editing src/a.ts`,
-        assignments: [{ role: "implementer", objective: "edit src/a.ts", writeSet: ["src/a.ts"] }],
+        assignments: [{
+          role: `implementer-${structuralSecret}`,
+          objective: "edit src/a.ts",
+          writeSet: [`src/${structuralSecret}.ts`],
+          pointers: [{ path: "src/a.ts", lines: structuralSecret, note: "inspect this range" }],
+        }],
         acceptanceCriteria: ["focused tests pass"],
       },
     },
@@ -1948,6 +1961,7 @@ test("dynamic subagent runtime consults Phase-1 deciders and produces a redacted
   assert.equal(runtime.env.A2A_DOCKER_RUNNER_CONTAINED_SUBAGENTS_ROLES, "explorer,verifier");
   const runtimePlan = JSON.parse(runtime.env.A2A_SUBAGENT_PLAN ?? "{}");
   assert.equal(runtimePlan.state, "authorized");
+  assert.equal(runtimePlan.approvalRef, "approval-ws5");
   assert.equal(runtimePlan.taskId, "task-ws5");
   assert.equal(runtimePlan.authorizedSubagentCount, 2);
   assert.equal(runtimePlan.budgetState, "within-budget");
@@ -1957,6 +1971,19 @@ test("dynamic subagent runtime consults Phase-1 deciders and produces a redacted
   assert.match(runtime.subagentContextBrief ?? "", /^# A2A sub-agent context brief/m);
   assert.match(runtime.subagentContextBrief ?? "", /\[redacted\]/);
   assert.doesNotMatch(runtime.subagentContextBrief ?? "", /ghp_/);
+
+  const unapproved = { ...(task as Record<string, unknown>) };
+  delete unapproved.approval;
+  const denied = buildDynamicSubagentRuntime(unapproved as never, {
+    workerId: "worker-ws5",
+    subagentCap: 4,
+    executionIsolation: "shared",
+    fanoutEnabled: true,
+    staticRunnerMax: 2,
+    staticRunnerRoles: ["explorer", "verifier"],
+  });
+  assert.equal(denied.env.A2A_DOCKER_RUNNER_CLAUDE_CODE_FANOUT_ENABLED, "0");
+  assert.equal(JSON.parse(denied.env.A2A_SUBAGENT_PLAN ?? "{}").reason, "broker_approval_missing_or_untrusted");
 
   const { mkdtempSync, writeFileSync } = await import("node:fs");
   const { tmpdir } = await import("node:os");
@@ -1993,12 +2020,63 @@ test("dynamic subagent runtime consults Phase-1 deciders and produces a redacted
   assert.match(boundary.result.output.brief, /\[redacted\]/);
 });
 
+test("dynamic subagent runtime requires broker-recorded operator approval before fanout (Phase-2 WS5)", () => {
+  const task = {
+    id: "task-ws5-unapproved",
+    exchangeId: "exchange-ws5-unapproved",
+    intent: "propose_patch",
+    requester: { id: "hub", kind: "node", role: "hub" },
+    target: { id: "worker-ws5", kind: "node", role: "analyst" },
+    message: "large independent patch",
+    status: "running",
+    targetNodeId: "worker-ws5",
+    payload: {
+      subagentProfile: {
+        size: "large",
+        coupling: "low",
+        hasIndependentSubtasks: true,
+        writeSets: ["src/a.ts", "src/b.ts"],
+      },
+      spawnAuthorization: {
+        state: "authorization_request_draft_ready",
+        workerId: "worker-ws5",
+        taskId: "task-ws5-unapproved",
+        source: { plannerParallelismHint: 3 },
+        finalizerReview: { oneFinalizerRequired: true, writeSetIsolationRequired: true },
+      },
+      workerSubagentBudgetCounter: {
+        workerId: "worker-ws5",
+        usage: { taskId: "task-ws5-unapproved", taskTokensSpent: 100, taskTokenCeiling: 1_000 },
+      },
+    },
+    createdAt: "2026-07-13T00:00:00Z",
+    updatedAt: "2026-07-13T00:00:00Z",
+  } as never;
+  const runtime = buildDynamicSubagentRuntime(task, {
+    workerId: "worker-ws5",
+    subagentCap: 4,
+    executionIsolation: "shared",
+    fanoutEnabled: true,
+    staticRunnerMax: 3,
+    staticRunnerRoles: ["explorer", "implementer", "verifier"],
+  });
+  assert.equal(runtime.env.A2A_DOCKER_RUNNER_CLAUDE_CODE_FANOUT_ENABLED, "0");
+  assert.equal(JSON.parse(runtime.env.A2A_SUBAGENT_PLAN ?? "{}").reason, "broker_approval_missing_or_untrusted");
+});
+
 test("dynamic subagent runtime is default-off and fails closed on absent, insufficient, exhausted, or refused inputs (Phase-2 WS5)", () => {
   const base = {
     id: "task-ws5-closed", exchangeId: "exchange-ws5-closed", intent: "propose_patch",
     requester: { id: "hub", kind: "node", role: "hub" },
     target: { id: "worker-ws5", kind: "node", role: "analyst" },
     message: "large independent patch", status: "running", targetNodeId: "worker-ws5",
+    approval: {
+      approvalId: "approval-ws5-closed",
+      approvedAt: "2026-07-13T00:00:00Z",
+      approvedBy: "seoseo-a2a-finalizer",
+      actorRole: "operator",
+      requesterRole: "operator",
+    },
     payload: {
       subagentProfile: { size: "large", coupling: "low", hasIndependentSubtasks: true, writeSets: ["src/a.ts", "src/b.ts"] },
       spawnAuthorization: {

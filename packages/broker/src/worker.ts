@@ -17,6 +17,7 @@ import {
   buildA2AWorkerSubagentSpawnGateDecision,
   extractA2AWorkerSubagentSpawnGateDecisionInput,
 } from "./core/worker-subagent-spawn-gate-decision.js";
+import { redactSecretsText } from "./core/worker-subagent-redaction.js";
 import { mkdir, readFile, writeFile } from "node:fs/promises";
 import { dirname } from "node:path";
 import { setTimeout as delay } from "node:timers/promises";
@@ -917,6 +918,19 @@ export function buildDynamicSubagentRuntime(
     return closed("static_runner_policy_refused");
   }
 
+  const approval = task.approval;
+  const approvalRole = approval?.actorRole ?? approval?.requesterRole;
+  if (
+    !approval
+    || typeof approval.approvalId !== "string"
+    || approval.approvalId.length === 0
+    || typeof approval.approvedAt !== "string"
+    || typeof approval.approvedBy !== "string"
+    || (approvalRole !== "operator" && approvalRole !== "hub")
+  ) {
+    return closed("broker_approval_missing_or_untrusted", { approvalState: "missing-or-untrusted" });
+  }
+
   const payload = (task.payload ?? {}) as Record<string, unknown>;
   const budgetInput = payload.workerSubagentBudgetCounter ?? payload.budgetCounter;
   const authorizationInput = payload.spawnAuthorization ?? payload.authorization;
@@ -1004,7 +1018,9 @@ export function buildDynamicSubagentRuntime(
       workerId: options.workerId,
       taskId: task.id,
     });
-    const subagentContextBrief = renderA2AWorkerSubagentContextBriefMarkdown(contextPacket);
+    const subagentContextBrief = redactSecretsText(
+      renderA2AWorkerSubagentContextBriefMarkdown(contextPacket),
+    );
     if (Buffer.byteLength(subagentContextBrief, "utf8") > 64 * 1024) {
       return closed("context_brief_too_large", { budgetState: budget.state, gateState: gate.state });
     }
@@ -1024,9 +1040,10 @@ export function buildDynamicSubagentRuntime(
       ...policy.resourceGate.reducedBy,
       ...(authorizedSubagentCount < gate.authorizedSubagentCount ? ["static_runner_policy"] : []),
     ])];
-    const briefDigest = contextPacket.determinism.contentDigest;
+    const briefDigest = `sha256:${createHash("sha256").update(subagentContextBrief, "utf8").digest("hex")}`;
     const planEvidence = plan({
       state: "authorized",
+      approvalRef: approval.approvalId,
       budgetState: budget.state,
       gateState: gate.state,
       requestedSubagentCount: gate.requestedSubagentCount,
