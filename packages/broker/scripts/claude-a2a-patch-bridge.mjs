@@ -21,6 +21,7 @@ import { spawn } from "node:child_process";
 import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { pathToFileURL } from "node:url";
 import { buildClaudeFinalizerToolArgs } from "./finalizer-tool-policy.mjs";
 
 // ---------------------------------------------------------------------------
@@ -1244,4 +1245,10 @@ async function main() {
   await runAnalysisMode(message, flags);
 }
 
-main();
+// Run main() only when invoked directly as a CLI (systemd/container/tests always
+// spawn this file as argv[1]). When the module is imported — e.g. a build-time
+// module-resolution check — main() must not run, so importing the bridge stays
+// side-effect-free and can surface a missing sibling import as a build failure.
+if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
+  main();
+}
