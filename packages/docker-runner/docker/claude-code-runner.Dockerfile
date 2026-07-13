@@ -49,7 +49,9 @@ RUN set -eux; \
   git checkout "$A2A_NEXUS_REF"; \
   install -d -m 0755 /opt/a2a-broker/scripts; \
   install -m 0755 packages/broker/scripts/claude-a2a-patch-bridge.mjs /opt/a2a-broker/scripts/claude-a2a-patch-bridge.mjs; \
+  install -m 0755 packages/broker/scripts/finalizer-tool-policy.mjs /opt/a2a-broker/scripts/finalizer-tool-policy.mjs; \
   node --check /opt/a2a-broker/scripts/claude-a2a-patch-bridge.mjs; \
+  node --input-type=module -e "import('/opt/a2a-broker/scripts/finalizer-tool-policy.mjs')"; \
   rm -rf /tmp/a2a-nexus
 
 LABEL org.openclaw.a2a-docker-runner.harness="claude-code" \
