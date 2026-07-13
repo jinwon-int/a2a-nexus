@@ -74,6 +74,9 @@ Realized as the source-only `a2a-broker.worker-subagent-context-brief.packet` (f
 - [ ] **Determinism controls** — deterministic evidence assembly (stable ordering + canonicalization before signing); record the execution graph (roles spawned, budget, host snapshot) in the evidence bundle for replay.
 
 ### Phase 2 — Wire the claude-code lane (new mode; single-shot stays default)
+
+> Concrete wiring design (anchors, per-workstream changes, data flow, flag/rollback, open decisions): [`phase-2-wiring.md`](./phase-2-wiring.md). Tracked in epic #1543.
+
 - [ ] **Tier→model mapping** in the runner: `low-cost` → concrete Sonnet-5 id for sub-agents; finalizer keeps parent.
 - [ ] Add **`Task`/Agent tool** to allowedTools for a NEW fanout mode (distinct from `single-shot`; leave the default path untouched).
 - [ ] **Expose the roster** — make the mounted `~/.claude/agents/` discoverable to the session (or `--agents` / bake).
