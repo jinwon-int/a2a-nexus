@@ -2022,8 +2022,8 @@ test("dynamic subagent runtime consults Phase-1 deciders and produces a redacted
     "const chunks = []; for await (const chunk of process.stdin) chunks.push(chunk);",
     "const task = JSON.parse(Buffer.concat(chunks).toString('utf8'));",
     "const reportEntries = [",
-    "  { role: task.payload?.reportedRole ?? 'explorer', id: 'helper-explorer', writeSet: [], status: 'complete', output: 'read /root/.openclaw/config then TOKEN=runtime-synthetic' },",
-    "  { role: 'verifier', id: 'helper-verifier', writeSet: [], status: 'complete', output: 'notify telegram:123456789 after tests pass' },",
+    "  { role: task.payload?.reportedRole ?? 'explorer', id: 'helper-explorer', writeSet: [], status: 'complete', output: task.payload?.preRedacted ? 'read <private-dir> then notify telegram:<redacted-target>' : 'read /root/.openclaw/config then TOKEN=runtime-synthetic', redacted: task.payload?.preRedacted === true },",
+    "  { role: 'verifier', id: 'helper-verifier', writeSet: [], status: 'complete', output: task.payload?.preRedacted ? 'tests pass' : 'notify telegram:123456789 after tests pass' },",
     "];",
     "if (task.payload?.reverseReport === true) reportEntries.reverse();",
     "process.stdout.write(JSON.stringify({ result: { summary: 'ok', output: {",
@@ -2102,6 +2102,28 @@ test("dynamic subagent runtime consults Phase-1 deciders and produces a redacted
   } as never;
   const duplicateRole = await handler(duplicateRoleTask) as { error: { code: string } };
   assert.equal(duplicateRole.error.code, "subagent_report_duplicate_role");
+
+  const rejectHandler = createExternalWorkerHandler({
+    command: process.execPath,
+    args: [scriptPath],
+    workerId: "worker-ws5",
+    subagentCap: 4,
+    env: {
+      A2A_DOCKER_RUNNER_CLAUDE_CODE_FANOUT_ENABLED: "1",
+      A2A_DOCKER_RUNNER_CONTAINED_SUBAGENTS_MAX: "2",
+      A2A_DOCKER_RUNNER_CONTAINED_SUBAGENTS_ROLES: "explorer,verifier",
+      A2A_WORKER_SUBAGENT_REDACTION_MODE: "reject",
+    },
+  });
+  const preRedactedTask = {
+    ...(task as Record<string, unknown>),
+    payload: {
+      ...((task as { payload: Record<string, unknown> }).payload),
+      preRedacted: true,
+    },
+  } as never;
+  const preRedacted = await rejectHandler(preRedactedTask) as { error: { code: string } };
+  assert.equal(preRedacted.error.code, "subagent_evidence_rejected");
 
   const unauthorizedTask = {
     ...(task as Record<string, unknown>),

@@ -1248,6 +1248,8 @@ export interface RunnerSubagentReportEntry {
   writeSet: string[];
   status: "complete" | "blocked" | "failed" | "skipped";
   output: string;
+  /** True when the runner masked output or write-set data before broker handoff. */
+  redacted: boolean;
 }
 
 export interface RunnerSubagentReport {

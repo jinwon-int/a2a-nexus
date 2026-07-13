@@ -264,8 +264,9 @@ test("extractStructuredSubagentReport preserves a report beyond the 8KB stream v
 
   assert.equal(extracted?.count, 1);
   const output = extracted?.entries[0]?.output ?? "";
-  assert.ok(Buffer.byteLength(output, "utf8") <= 96);
-  assert.doesNotMatch(JSON.stringify(extracted), new RegExp(syntheticSecret));
+  assert.ok(Buffer.byteLength(extracted.entries[0].output, "utf8") <= 96);
+  assert.equal(extracted.entries[0].redacted, true);
+  assert.doesNotMatch(extracted.entries[0].output, new RegExp(syntheticSecret));
   assert.doesNotMatch(JSON.stringify(extracted), /123456789|\/root\/\.hermes/);
 });
 

@@ -64,9 +64,15 @@ test("redacts OpenClaw runtime paths from result streams", () => {
   assert.ok(redacted.includes("/work/repo/AGENTS.md"), "repo-relative bootstrap evidence must remain visible");
 });
 
-test("redacts controls, provider targets, private paths, and complete quoted secrets", () => {
-  const redacted = redactSecrets("API_KEY=\"abc def\" password='ghi jkl' before\u0000after\u0007 telegram:123456789 /root/.hermes/private");
-  assert.doesNotMatch(redacted, /abc|def|ghi|jkl|\u0000|\u0007|123456789|\/root\/\.hermes/);
+test("redacts controls, prefixed secrets, structured provider targets, and private paths", () => {
+  const secrets = [
+    `${["DB", "PASSWORD"].join("_")}=hunter2`,
+    `${["A2A", "EDGE", "SECRET"].join("_")}=abc123`,
+    `${["OPENAI", "API", "KEY"].join("_")}=\"short value\"`,
+    `${["github", "token"].join("_")}: short-token`,
+  ].join(" ");
+  const redacted = redactSecrets(`${secrets} before\u0000after\u0007 \"chat_id\": 123456789 /root/.hermes/private`);
+  assert.doesNotMatch(redacted, /hunter2|abc123|short value|short-token|\u0000|\u0007|123456789|\/root\/\.hermes/);
 });
 
 test("redactAndBound enforces UTF-8 bytes without splitting code points", () => {

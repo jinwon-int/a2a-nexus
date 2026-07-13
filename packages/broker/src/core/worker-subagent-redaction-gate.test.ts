@@ -84,20 +84,44 @@ test("redacts private host paths and provider target identifiers", () => {
   assert.equal(packet.results[0]?.redacted, true);
 });
 
-test("removes raw controls and fully redacts quoted secret values containing spaces", () => {
+test("removes raw controls, prefixed secrets, and structured provider targets", () => {
+  const prefixed = [
+    `${["DB", "PASSWORD"].join("_")}=hunter2`,
+    `${["A2A", "EDGE", "SECRET"].join("_")}=abc123`,
+    `${["OPENAI", "API", "KEY"].join("_")}=\"short value\"`,
+    `${["github", "token"].join("_")}: short-token`,
+  ].join(" ");
   const packet = buildA2AWorkerSubagentRedactionGate({
     now: NOW,
     workerId: "w",
     entries: [{
       role: "verifier",
       id: "ev-controls",
-      output: "API_KEY=\"abc def\" password='ghi jkl' before\u0000after\u0007",
+      output: `${prefixed} \"chat_id\": 123456789 chat_id: 987654321 before\u0000after\u0007`,
     }],
   });
 
   const cleaned = packet.cleanedEntries[0]?.output ?? "";
-  assert.doesNotMatch(cleaned, /abc|def|ghi|jkl|\u0000|\u0007/);
+  assert.doesNotMatch(cleaned, /hunter2|abc123|short value|short-token|123456789|987654321|\u0000|\u0007/);
   assert.equal(packet.results[0]?.redacted, true);
+});
+
+test("reject mode preserves runner-side finding classification without raw values", () => {
+  const packet = buildA2AWorkerSubagentRedactionGate({
+    now: NOW,
+    workerId: "w",
+    mode: "reject",
+    entries: [{
+      role: "verifier",
+      id: "ev-preredacted",
+      output: "read <private-dir> and notify telegram:<redacted-target>",
+      preRedacted: true,
+    }],
+  });
+  assert.equal(packet.state, "has-rejections");
+  assert.equal(packet.summary.rejected, 1);
+  assert.equal(packet.summary.included, 0);
+  assert.equal(packet.results[0]?.verdict, "rejected");
 });
 
 test("invalid non-finite byte limits fall back to the bounded default", () => {

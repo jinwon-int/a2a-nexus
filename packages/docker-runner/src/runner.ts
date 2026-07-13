@@ -71,22 +71,26 @@ export function extractStructuredSubagentReport(
       const id = typeof item.id === "string" ? item.id.trim() : "";
       const status = typeof item.status === "string" ? item.status.trim().toLowerCase() : "complete";
       const output = typeof item.output === "string" ? item.output : undefined;
-      const writeSet = Array.isArray(item.writeSet)
+      const rawWriteSet = Array.isArray(item.writeSet)
         && item.writeSet.every((path) => typeof path === "string" && path.trim().length > 0)
-        ? item.writeSet.map((path) => redactSecrets(String(path).trim()))
+        ? item.writeSet.map((path) => String(path).trim())
         : item.writeSet === undefined
           ? []
           : undefined;
       if (!role || !allowedRoles.has(role)) return undefined;
       if (!/^[A-Za-z0-9._:-]{1,128}$/.test(id) || seenIds.has(id)) return undefined;
-      if (!writeSet || !new Set(["complete", "blocked", "failed", "skipped"]).has(status) || output === undefined) return undefined;
+      if (!rawWriteSet || !new Set(["complete", "blocked", "failed", "skipped"]).has(status) || output === undefined) return undefined;
+      const writeSet = rawWriteSet.map((path) => redactSecrets(path));
+      const redactedOutput = redactSecrets(output);
+      const redacted = redactedOutput !== output || writeSet.some((path, index) => path !== rawWriteSet[index]);
       seenIds.add(id);
       entries.push({
         role,
         id,
         writeSet,
         status: status as RunnerSubagentReport["entries"][number]["status"],
-        output: boundUtf8(redactSecrets(output), options.maxOutputBytes),
+        output: boundUtf8(redactedOutput, options.maxOutputBytes),
+        redacted,
       });
     }
     return { count, entries };
