@@ -49,6 +49,15 @@ Fanout stays **opt-in**: with the flag off (default) no
 `A2A_CONTAINED_SUBAGENTS_*` env is injected and the harness must not spawn
 helpers.
 
+> **The `claude-code` runner image is single-shot by design.** It runs the
+> deterministic patch/analysis bridge (`claude-a2a-patch-bridge.mjs`,
+> `A2A_CLAUDE_CODE_PATCH_MODE=single-shot`) with **no `Task`/Agent tool** and
+> does **not** consume `A2A_CONTAINED_SUBAGENTS_*` — so it never spawns helpers,
+> even with the flag on. Contained fanout here applies to the OpenClaw / Hermes
+> in-container harness only. Sub-agent fanout for Claude Code is realized in the
+> host / native CC-harness lane — see the *Execution lanes (applicability)*
+> section of `packages/broker/docs/worker-subagent-orchestration-policy.md`.
+
 ## Invariants
 
 1. Hard cap 4 — config validation rejects higher values everywhere.
