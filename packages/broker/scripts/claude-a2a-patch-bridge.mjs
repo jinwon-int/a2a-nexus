@@ -1240,14 +1240,15 @@ async function runPatchMode(message, flags) {
     await runSingleShotPatchMode(message, flags);
     return;
   }
-  // Fanout (Phase-2 WS3/WS4/WS5): run the agentic patch with the Task tool + roster + a
+  // Fanout (Phase-2 WS3/WS4 + WS5 slice 1): run the agentic patch with the Task tool + roster + a
   // spawn-instructing prompt + a raised turn budget so a claude-code worker can
   // orchestrate sub-agents. The broker's per-task Phase-1 gate/budget authorization
-  // shrinks this opt-in and supplies the mounted redacted context brief.
+  // shrinks this opt-in and supplies the mounted redacted context brief. WS5 return-path
+  // redaction and deterministic evidence assembly remain pending in slice 2.
   // Rollback = unset A2A_DOCKER_RUNNER_CLAUDE_CODE_FANOUT_ENABLED.
   const fanout = isFanoutPatchMode(process.env);
   if (fanout) {
-    process.stderr.write("A2A_CLAUDE_CODE_PATCH_MODE=fanout: dynamically authorized sub-agent orchestration (Task tool + redacted context brief)\n");
+    process.stderr.write("A2A_CLAUDE_CODE_PATCH_MODE=fanout: agentic patch with sub-agent orchestration (Task tool + dynamic authorization + redacted context brief); WS5 return redaction/assembly pending\n");
   }
   // Session-scoped isolation (#1129): prefix the workspace with the session id.
   const sessionId = safeText(flags["session-id"], "default");

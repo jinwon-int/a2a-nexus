@@ -45,7 +45,7 @@ export async function runTask(config: RunnerConfig, task: RunnerTask): Promise<R
     }
   }
 
-  const normalizedTask = normalizeTask(expandedTask ?? task);
+  const normalizedTask = sanitizeSubagentContextBrief(normalizeTask(expandedTask ?? task));
   const root = resolve(config.rootDir);
   const runToken = createRunToken();
   const safeTaskId = safeId(task.id);
@@ -219,6 +219,15 @@ export async function prepareWorkDirForContainerUser(workDir: string, user?: str
   await chownTreeBestEffort(workDir, parsed.uid, parsed.gid);
 }
 
+export function sanitizeSubagentContextBrief<T extends RunnerTask>(task: T): T {
+  const brief = task.subagentContextBrief;
+  if (typeof brief !== "string" || brief.length === 0) return task;
+  if (Buffer.byteLength(brief, "utf8") > 64 * 1024) {
+    throw new Error("task.subagentContextBrief exceeds the 65536-byte limit");
+  }
+  return { ...task, subagentContextBrief: redactSecrets(brief) };
+}
+
 export async function materializeSubagentContextBrief(
   workDir: string,
   task: RunnerTask,
@@ -228,10 +237,11 @@ export async function materializeSubagentContextBrief(
   if (Buffer.byteLength(brief, "utf8") > 64 * 1024) {
     throw new Error("task.subagentContextBrief exceeds the 65536-byte limit");
   }
+  const redactedBrief = redactSecrets(brief);
   const artifactsDir = join(workDir, "artifacts");
   await mkdir(artifactsDir, { recursive: true, mode: 0o700 });
-  const artifactPath = join(artifactsDir, "subagent-context-brief.md");
-  await writeFile(artifactPath, brief, { mode: 0o600 });
+  const artifactPath = join(artifactsDir, "context-brief.md");
+  await writeFile(artifactPath, redactedBrief, { mode: 0o600 });
   return artifactPath;
 }
 
@@ -602,7 +612,7 @@ export function buildRunArgs(config: RunnerConfig, task: RunnerTask, workDir: st
     args.push("-e", `A2A_CONTAINED_SUBAGENTS_OUTPUT_BYTES=${config.containedSubagents.outputBytes}`);
     args.push("-e", `A2A_CONTAINED_SUBAGENTS_REASONS=${config.containedSubagents.reasons.join(",")}`);
     if (typeof task.subagentContextBrief === "string" && task.subagentContextBrief.length > 0) {
-      args.push("-e", "A2A_SUBAGENT_CONTEXT_BRIEF=/work/artifacts/subagent-context-brief.md");
+      args.push("-e", "A2A_SUBAGENT_CONTEXT_BRIEF=/work/artifacts/context-brief.md");
     }
   }
 

@@ -4,7 +4,7 @@ import { mkdtempSync } from "node:fs";
 import { readFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { buildContainerScript, buildRunArgs, jsonArgvToScript, materializeSubagentContextBrief, redactSecrets, runTask } from "./runner.js";
+import { buildContainerScript, buildRunArgs, jsonArgvToScript, materializeSubagentContextBrief, redactSecrets, runTask, sanitizeSubagentContextBrief } from "./runner.js";
 import type { RunnerConfig, RunnerTask } from "./types.js";
 
 const config: RunnerConfig = {
@@ -477,14 +477,26 @@ test("buildRunArgs advertises the contained-subagent conductor budget to the con
   assert.ok(!withoutSubagents.some((arg) => arg.startsWith("A2A_CONTAINED_SUBAGENTS")));
 });
 
+test("sanitizes the subagent brief before task.json and container staging (Phase-2 WS5)", () => {
+  const raw: RunnerTask = {
+    ...task,
+    subagentContextBrief: `Use ghp_${"x".repeat(36)} only for this test`,
+  };
+  const sanitized = sanitizeSubagentContextBrief(raw);
+  assert.match(sanitized.subagentContextBrief ?? "", /redacted/);
+  assert.doesNotMatch(sanitized.subagentContextBrief ?? "", /ghp_/);
+});
+
 test("materializes the broker-redacted context brief in the mounted workspace and advertises its path (Phase-2 WS5)", async () => {
   const workDir = mkdtempSync(join(tmpdir(), "a2a-ws5-brief-"));
-  const brief = "# A2A sub-agent context brief\n\nredacted shared context";
+  const brief = `# A2A sub-agent context brief\n\nUse ghp_${"x".repeat(36)} only for this test`;
   const taskWithBrief: RunnerTask = { ...task, subagentContextBrief: brief };
 
   const artifactPath = await materializeSubagentContextBrief(workDir, taskWithBrief);
-  assert.equal(artifactPath, join(workDir, "artifacts", "subagent-context-brief.md"));
-  assert.equal(await readFile(artifactPath ?? "", "utf8"), brief);
+  assert.equal(artifactPath, join(workDir, "artifacts", "context-brief.md"));
+  const materialized = await readFile(artifactPath ?? "", "utf8");
+  assert.match(materialized, /redacted/);
+  assert.doesNotMatch(materialized, /ghp_/);
 
   const args = buildRunArgs({
     ...config,
@@ -496,7 +508,7 @@ test("materializes the broker-redacted context brief in the mounted workspace an
       roles: ["explorer", "verifier"],
     },
   }, taskWithBrief, workDir, "ci-ws5-brief");
-  assert.ok(args.includes("A2A_SUBAGENT_CONTEXT_BRIEF=/work/artifacts/subagent-context-brief.md"));
+  assert.ok(args.includes("A2A_SUBAGENT_CONTEXT_BRIEF=/work/artifacts/context-brief.md"));
 
   const withoutAuthorization = buildRunArgs(config, taskWithBrief, workDir, "ci-ws5-disabled");
   assert.ok(!withoutAuthorization.some((arg) => arg.startsWith("A2A_SUBAGENT_CONTEXT_BRIEF=")));

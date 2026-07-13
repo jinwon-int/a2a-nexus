@@ -1042,9 +1042,9 @@ test("buildFanoutSubagentPrompt points authorized helpers at the mounted context
   const prompt = buildFanoutSubagentPrompt({
     A2A_CONTAINED_SUBAGENTS_ENABLED: "1",
     A2A_CONTAINED_SUBAGENTS_MAX: "2",
-    A2A_SUBAGENT_CONTEXT_BRIEF: "/work/artifacts/subagent-context-brief.md",
+    A2A_SUBAGENT_CONTEXT_BRIEF: "/work/artifacts/context-brief.md",
   });
-  assert.match(prompt, /Read the shared redacted context brief at \/work\/artifacts\/subagent-context-brief\.md/);
+  assert.match(prompt, /Read the shared redacted context brief at \/work\/artifacts\/context-brief\.md/);
 });
 
 test("fanout mode runs the agentic patch with Task tool + spawn prompt + fanout max-turns (Phase-2 WS3/WS4)", () => {

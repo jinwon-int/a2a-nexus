@@ -1,6 +1,6 @@
 # Phase-2 wiring design: claude-code container-lane sub-agent fanout
 
-Concrete wiring design for **Phase 2** of `spec.md` (epic #1543). Turns the Phase-2 checklist into implementable changes against current code. Status: **design; not yet implemented.** Everything stays opt-in and default-off; `single-shot` remains the default with a one-flag rollback.
+Concrete wiring design for **Phase 2** of `spec.md` (epic #1543). Turns the Phase-2 checklist into implementable changes against current code. Status: **WS1/WS3/WS4 implemented; WS5 slice 1 implemented; WS2 and WS5 slice 2 pending.** Everything stays opt-in and default-off; `single-shot` remains the default with a one-flag rollback.
 
 ## Where each concern lives (the key split)
 
@@ -16,49 +16,49 @@ The container never re-derives the gate/brief; it consumes what the broker compu
 
 | Concern | Location | Current state |
 |---|---|---|
-| Patch mode | bridge `isSingleShotPatchMode` (L646-648), marker `single-shot` (L643) | only `single-shot` vs legacy agentic; **no `fanout` mode** |
-| Mode forced | `config.ts` L723 `export A2A_CLAUDE_CODE_PATCH_MODE=single-shot` | claude-code always single-shot |
-| Tools | bridge single-shot L997/1035 `--tools "Read Grep Glob"`; agentic L541 `--allowedTools "Bash Edit Write Read Glob Grep"` | **no `Task`** anywhere |
-| max-turns | single-shot 6; agentic 40 (L541/996/1034) | single-shot too small to orchestrate |
-| Child env allowlist | bridge `SAFE_CHILD_ENV_KEYS` (L130), filter L140 | `A2A_CONTAINED_SUBAGENTS_*` **stripped** |
-| Contained default | `config.ts` `containedSubagentsEnabledByDefault` L513-518 | openclaw/hermes only (claude-code off) |
-| Env injection | `runner.ts` L581-586 injects `A2A_CONTAINED_SUBAGENTS_*` when enabled | works once enabled |
-| Spawn prompt | `config.ts` `buildContainedSubagentPrompt` L1543 (`"OpenClaw"|"Hermes"`) | not built for claude-code |
+| Patch mode | bridge `isFanoutPatchMode` beside `isSingleShotPatchMode` | `fanout` exists behind the opt-in flag; default remains `single-shot` |
+| Mode selection | claude-code command script in `config.ts` | emits `fanout` only for `A2A_DOCKER_RUNNER_CLAUDE_CODE_FANOUT_ENABLED=1` |
+| Tools | bridge fanout path | adds `Task`; single-shot tool budget remains unchanged |
+| max-turns | bridge fanout path | bounded `A2A_CLAUDE_CODE_FANOUT_MAX_TURNS`; single-shot remains 6 |
+| Child env allowlist | bridge `SAFE_CHILD_ENV_KEYS` | contained-subagent policy plus the context-brief **path** reach the child; brief content does not |
+| Contained default | `config.ts` | claude-code is enabled only by the explicit fanout flag |
+| Env injection | `worker.ts` + runner | per-task max/roles shrink the static runner policy; refusal injects max 0 |
+| Spawn prompt | bridge `buildFanoutSubagentPrompt` | advertises helper budget/roles and `/work/artifacts/context-brief.md` when authorized |
 | Model | `config.ts` L680/687-692; bridge `resolveExplicitClaudeModel` | parent model only; `model_tier` advisory, unmapped |
 
 ## Workstream designs
 
-### WS1 — opt-in fanout mode + rollback (do first)
+### WS1 — opt-in fanout mode + rollback (**implemented**)
 - Add flag `A2A_DOCKER_RUNNER_CLAUDE_CODE_FANOUT_ENABLED` (default `0`). In `config.ts` claude-code script (near L723), emit `A2A_CLAUDE_CODE_PATCH_MODE=fanout` **only when the flag is `1`**, else keep `single-shot`.
 - In the bridge, add `FANOUT_PATCH_MARKER = "fanout"` + `isFanoutPatchMode(env)` beside `isSingleShotPatchMode`; `main()` selects: fanout (flag on) → new orchestration path; else the existing single-shot/agentic path unchanged.
 - **Rollback** = set the flag to `0` (or unset) ⇒ `single-shot`. **Acceptance:** flag off ⇒ byte-identical to today; on ⇒ fanout path; toggling back restores single-shot.
 
-### WS2 — tier → Sonnet-5 model mapping
+### WS2 — tier → Sonnet-5 model mapping (**pending ccc-node harness**)
 - **Mechanism = the roster agent md `model:` frontmatter (host harness), not a runner env** (see resolved decision D3). Claude Code resolves a sub-agent's model from its agent md `model:` field; the current roster md carries a custom `model_tier: low-cost` that Claude Code ignores. Set `model: sonnet` (alias → the node's Sonnet-5-grade) on each `~/.claude/agents/a2a-*.md`. The parent/finalizer keeps `A2A_CLAUDE_MODEL` (e.g. opus). An `A2A_CONTAINED_SUBAGENTS_MODEL` env would be inert for model selection.
 - This makes WS2 a **host-harness (ccc-node) roster change**, not a nexus runner change; nexus's role is only to mount that harness (already does).
 - **Acceptance:** in fanout mode, sub-agents run at Sonnet-5-grade (from the md `model:`), finalizer at the parent model. Confirm the deployed Claude Code CLI version honors the `model:` frontmatter field.
 
-### WS3 — Task tool + roster exposure
+### WS3 — Task tool + roster exposure (**implemented**)
 - Bridge fanout path builds the claude call with `--allowedTools "Task Read Grep Glob Bash Edit Write"` (adds `Task`). Single-shot/agentic tool sets unchanged.
 - Roster: the mounted `~/.claude/agents/` is copied to `/root/.claude` in-container (`config.ts` L274-279 / 716-721) and auto-discovered by Claude Code — confirm the `a2a-explorer/researcher/implementer/verifier` md files are present in the mounted host config; add `--agents`/bake only if discovery needs it.
 - **Acceptance:** fanout worker can spawn the roster; single-shot still has no `Task`.
 
-### WS4 — spawn prompt + un-strip env + raise max-turns
+### WS4 — spawn prompt + un-strip env + raise max-turns (**implemented**)
 - Add `A2A_CONTAINED_SUBAGENTS_ENABLED/MAX/ROLES/OUTPUT_BYTES/REASONS` to bridge `SAFE_CHILD_ENV_KEYS` (L130) so they reach the claude child. (Sub-agent **model** is set via the roster md `model:`, per D3 — not an env var.)
 - Extend `containedSubagentsEnabledByDefault` (L513-518) to include `claude-code` **when the WS1 flag is on**; `runner.ts` L581 then injects the env.
 - Spawn prompt: generalize `buildContainedSubagentPrompt` label to include `"Claude Code"` and have the bridge fanout path add it via `--append-system-prompt` (built from the injected budget/roles/reasons/outputBytes).
 - Raise fanout `--max-turns` (configurable env, default e.g. 40) vs single-shot's 6.
 - **Acceptance:** fanout worker receives budget+roles+instruction and orchestrates within the raised turn budget.
 
-### WS5 — runtime consumption of the Phase-1 packets
-- **Broker handler (before dispatch):** compute `budget-counter` → `spawn-gate-decision`; if `refused` (or `spawnBudgetCeiling === 0`), keep fanout disabled / budget 0 for this task (**this is the "cost counter live with a hard ceiling" enforcement the source-only counter deferred**). Build `context-brief`; inject brief as a `/work/artifacts/context-brief.md` file (per D1) + the authorized `A2A_CONTAINED_SUBAGENTS_MAX/ROLES`.
-- **Broker handler (after return):** run each sub-agent evidence through `redaction-gate` (reject mode ⇒ drop leaking output), then `evidence-assembly` for the canonical, ordered, digest-anchored bundle → terminal evidence.
-- **Acceptance:** a `refused` verdict blocks the spawn at runtime; a secret in output is masked/excluded before evidence; the terminal bundle is the assembled canonical one.
+### WS5 — runtime consumption of the Phase-1 packets (**slice 1 implemented; slice 2 pending**)
+- **Slice 1 — broker handler before dispatch (implemented):** compute `budget-counter` → `spawn-gate-decision`; missing, exhausted, mismatched, or refused packets keep fanout disabled / budget 0 for this task. Dynamic max/roles can only shrink the static host policy. The broker builds a bounded/redacted context brief, the adapter preserves it, and the runner writes `/work/artifacts/context-brief.md`; plan evidence records task/budget/gate/authorized count/reduction/brief digest.
+- **Slice 2 — broker handler after return (pending):** run each bounded sub-agent report entry through `redaction-gate` (reject mode ⇒ drop leaking output), then `evidence-assembly` for the canonical, ordered, digest-anchored bundle → terminal evidence.
+- **Full WS5 acceptance (after slice 2):** a `refused` verdict blocks the spawn at runtime; a secret in output is masked/excluded before evidence; the terminal bundle is the assembled canonical one.
 
 ## Flag & rollback summary
 
 - `A2A_DOCKER_RUNNER_CLAUDE_CODE_FANOUT_ENABLED=0` (default) ⇒ single-shot, unchanged behavior.
-- `=1` ⇒ fanout path (WS1-5). One flag flips back to single-shot (rollback). The 0-subagent Escape Hatch is always valid regardless of flag.
+- `=1` ⇒ opt-in fanout path with WS1/WS3/WS4 and WS5 slice 1. WS2 harness validation and WS5 slice 2 remain required before production enable. One flag flips back to single-shot (rollback). The 0-subagent Escape Hatch is always valid regardless of flag.
 
 ## Resolved decisions
 
