@@ -6,7 +6,7 @@ export const ALLOWED_WORKER_MODELS = Object.freeze([
   "deepseek/deepseek-v4-flash",
   "deepseek/deepseek-v4-pro",
   "deepseek-v4-pro",
-  // Current native Hermes fleet baseline models (#766).
+  // Current Codex fleet baseline plus the retained GPT-5.5 rollback alias.
   "openai-codex/gpt-5.6-sol",
   "gpt-5.6-sol",
   "openai-codex/gpt-5.5",
@@ -16,13 +16,13 @@ export const ALLOWED_WORKER_MODELS = Object.freeze([
   "minimax-m3",
 ]);
 
-export const DEFAULT_WORKER_MODEL = "openai-codex/gpt-5.5";
+export const DEFAULT_WORKER_MODEL = "openai-codex/gpt-5.6-sol";
 
 export const VALID_WORKER_THINKING_LEVELS = Object.freeze([
   "off", "minimal", "low", "medium", "high", "xhigh", "adaptive", "max",
 ]);
 
-export const DEFAULT_WORKER_THINKING = "low";
+export const DEFAULT_WORKER_THINKING = "high";
 
 export const HERMES_UNSUPPORTED_WORKER_MODELS = Object.freeze([
   "deepseek/deepseek-v4-flash",

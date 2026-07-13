@@ -61,6 +61,30 @@ test("blocks claude-code profile when the claude-dir mount is missing", () => {
   assert.match(outcome.blockReason, /claude-code patch profile requires a \/run\/secrets\/claude-dir mount/);
 });
 
+test("ready when codex profile includes the required codex-dir mount", () => {
+  const outcome = evaluateExtraMountsPreflight({
+    A2A_DOCKER_RUNNER_PATCH_COMMAND_PROFILE: "codex",
+    A2A_DOCKER_RUNNER_CODEX_CONFIG_DIR: "/srv/codex-profile",
+    A2A_DOCKER_RUNNER_EXTRA_MOUNTS_JSON: JSON.stringify([
+      { source: "/srv/codex-profile", target: "/run/secrets/codex-dir", readOnly: true },
+    ]),
+  });
+  assert.equal(outcome.ok, true);
+  assert.equal(outcome.profile, "codex");
+});
+
+test("blocks codex profile when the codex-dir mount is missing", () => {
+  const outcome = evaluateExtraMountsPreflight({
+    A2A_DOCKER_RUNNER_PATCH_COMMAND_PROFILE: "codex",
+    A2A_DOCKER_RUNNER_EXTRA_MOUNTS_JSON: JSON.stringify([
+      { source: "/tmp/scratch", target: "/work/scratch", readOnly: false },
+    ]),
+  });
+  assert.equal(outcome.ok, false);
+  assert.equal(outcome.failureCategory, "codex_profile_mount_missing");
+  assert.match(outcome.blockReason, /codex patch profile requires a \/run\/secrets\/codex-dir mount/);
+});
+
 test("blocks hermes profile when the hermes-dir mount is missing (the #775 incident)", () => {
   const outcome = evaluateExtraMountsPreflight({
     A2A_DOCKER_RUNNER_PATCH_COMMAND_PROFILE: "hermes",

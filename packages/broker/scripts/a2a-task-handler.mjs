@@ -356,6 +356,7 @@ const GITHUB_READ_ONLY_VALIDATION_MODES = new Set([
  */
 function workerModelEnvCandidates(env = process.env) {
   return [
+    env.A2A_CODEX_MODEL,
     env.A2A_OPENCLAW_MODEL,
     env.A2A_HERMES_DEFAULT_MODEL,
     // Legacy worker/runner environments can still inject the model under the
@@ -398,9 +399,11 @@ function resolveWorkerThinking(task) {
 
 function normalizedPatchCommandProfile(env = process.env) {
   const profile = safeText(env.A2A_DOCKER_RUNNER_PATCH_COMMAND_PROFILE, "").toLowerCase().replace(/_/g, "-");
+  if (profile === "codex") return "codex";
   if (profile === "hermes") return "hermes";
   if (profile === "openclaw") return "openclaw";
   const image = safeText(env.A2A_DOCKER_RUNNER_IMAGE, "").toLowerCase();
+  if (image.includes("codex")) return "codex";
   return image.includes("hermes") ? "hermes" : "";
 }
 

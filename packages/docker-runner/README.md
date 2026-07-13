@@ -603,6 +603,7 @@ Precedence is `commandScript > commandJson > commandProfile > commandTemplate`:
 | `A2A_DOCKER_RUNNER_PATCH_COMMAND_PROFILE=hermes` | generated `commandScript` | `/work/patch-command.sh` | Operator-only trusted-worker profile. Mounts `A2A_DOCKER_RUNNER_HERMES_CONFIG_DIR` (or `/root/.hermes`) read-only at `/run/secrets/hermes-dir`, then runs `hermes chat --query ... --quiet --yolo` in the checked-out repo. Explicit `A2A_HERMES_MODEL` / legacy `A2A_OPENCLAW_MODEL` overrides still win. When `A2A_DOCKER_RUNNER_MODEL_SOURCE=native`, the runner reads the copied Hermes profile `.env` / `config.yaml` for the model and fails closed if no safe model is found. |
 | `A2A_DOCKER_RUNNER_PATCH_COMMAND_PROFILE=openclaw` | generated `commandScript` | `/work/patch-command.sh` | Legacy operator-only trusted-worker profile. Mounts `A2A_DOCKER_RUNNER_OPENCLAW_CONFIG_DIR` (or the profile default when unset) read-only at `/run/secrets/openclaw-dir`, then runs `openclaw agent` in the checked-out repo. Explicit `A2A_OPENCLAW_MODEL` overrides still win. Default legacy behavior remains `openai-codex/gpt-5.5` so OAuth-backed Codex auth is used instead of same-name OpenAI API-key models. When `A2A_DOCKER_RUNNER_MODEL_SOURCE=native`, the runner reads the copied OpenClaw profile agent/default model and fails closed if no safe model is found. Do not present this profile or host-network mode as a public sandbox default. |
 | `A2A_DOCKER_RUNNER_PATCH_COMMAND_PROFILE=claude-code` (`cccb`) | generated `commandScript` | `/work/patch-command.sh` | Operator-only trusted-worker profile. Mounts `A2A_DOCKER_RUNNER_CLAUDE_CONFIG_DIR` (or `/root/.claude`) read-only at `/run/secrets/claude-dir`, then runs the bundled `claude-a2a-patch-bridge.mjs` through the `claude` CLI in single-shot mode. Use the `a2a-docker-runner-cccb:<runner-sha>` image; credentials are mounted at runtime only and are not baked into image layers. |
+| `A2A_DOCKER_RUNNER_PATCH_COMMAND_PROFILE=codex` | generated `commandScript` | `/work/patch-command.sh` | Operator-only trusted-worker profile. Mounts `A2A_DOCKER_RUNNER_CODEX_CONFIG_DIR` (default `/var/lib/a2a-runner/codex-dir`) read-only at `/run/secrets/codex-dir`, copies only `auth.json` and optional `config.toml` into ephemeral `/tmp`, then runs `codex exec --ephemeral --json` with `gpt-5.6-sol`, reasoning `high`, approval `never`, and `danger-full-access` inside the external container boundary. Use `a2a-docker-runner-codex:<runner-sha>`; credentials are never baked into image layers or runner artifacts. |
 | `A2A_DOCKER_RUNNER_PATCH_COMMAND_TEMPLATE` | `commandTemplate` | `/work/patch-command.sh` | Legacy eval path; rejected for GitHub patch execution. |
 
 For the OpenClaw profile, prefer a runner image that already contains the
@@ -663,6 +664,28 @@ export A2A_CLAUDE_MODEL=sonnet
 export A2A_CLAUDE_TIMEOUT_SEC=3600
 ```
 
+For the Codex profile, build the pinned Codex CLI image and mount a minimal
+node-local auth directory. Do not mount the whole host session/history tree:
+
+```bash
+docker build -f docker/codex-runner.Dockerfile \
+  -t a2a-docker-runner-codex:<runner-sha> .
+
+install -d -m 0700 /var/lib/a2a-runner/codex-dir
+install -m 0600 /root/.codex/auth.json /var/lib/a2a-runner/codex-dir/auth.json
+install -m 0600 /root/.codex/config.toml /var/lib/a2a-runner/codex-dir/config.toml
+
+export A2A_DOCKER_RUNNER_PATCH_COMMAND_PROFILE=codex
+export A2A_DOCKER_RUNNER_EXPECTED_PATCH_COMMAND_PROFILE=codex
+export A2A_DOCKER_RUNNER_CODEX_CONFIG_DIR=/var/lib/a2a-runner/codex-dir
+export A2A_DOCKER_RUNNER_IMAGE=a2a-docker-runner-codex:<runner-sha>
+export A2A_DOCKER_RUNNER_USER=root
+export A2A_DOCKER_RUNNER_CAP_DROP=ALL
+export A2A_CODEX_MODEL=gpt-5.6-sol
+export A2A_CODEX_REASONING_EFFORT=high
+export A2A_CODEX_TIMEOUT_SEC=3600
+```
+
 For fixed-role workers, set `A2A_DOCKER_RUNNER_EXPECTED_PATCH_COMMAND_PROFILE`
 with the node's intended harness. For example, Hermes nodes should set it to
 `hermes`; if the service env later drifts back to `openclaw` or unset, runner
@@ -670,7 +693,8 @@ config validation fails before task execution. Known runner image families are
 also checked against the selected profile, so `a2a-docker-runner-hermes:*` cannot
 be paired with the `openclaw` profile and `a2a-docker-runner-openclaw:*` cannot
 be paired with the `hermes` profile; `a2a-docker-runner-cccb:*` and
-`a2a-docker-runner-claude-code:*` must use the `claude-code` profile.
+`a2a-docker-runner-claude-code:*` must use the `claude-code` profile, and
+`a2a-docker-runner-codex:*` must use the `codex` profile.
 
 Examples:
 

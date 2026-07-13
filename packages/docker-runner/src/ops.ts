@@ -58,6 +58,7 @@ export interface GitHubPatchReadinessOptions {
   openclawProfileProbe?: (config: RunnerConfig, engine: RunnerEngine) => OpenClawProfileReadinessInput;
   hermesProfileProbe?: (config: RunnerConfig, engine: RunnerEngine) => HermesProfileReadinessInput;
   claudeCodeProfileProbe?: (config: RunnerConfig, engine: RunnerEngine) => ClaudeCodeProfileReadinessInput;
+  codexProfileProbe?: (config: RunnerConfig, engine: RunnerEngine) => CodexProfileReadinessInput;
 }
 
 interface HermesProfileReadinessInput {
@@ -80,6 +81,17 @@ interface ClaudeCodeProfileReadinessInput {
   expectedMountPath: string;
   bridgeExists: boolean;
   bridgePath: string;
+  errors: string[];
+}
+
+interface CodexProfileReadinessInput {
+  cliOnPath: boolean;
+  cliPath?: string;
+  cliVersionOk: boolean;
+  cliVersion?: string;
+  profileMountExists: boolean;
+  expectedMountPath: string;
+  authFileExists: boolean;
   errors: string[];
 }
 
@@ -516,6 +528,9 @@ export function checkGitHubPatchReadiness(config: RunnerConfig, options: GitHubP
   if (config.commandProfile === "claude-code") {
     return checkClaudeCodeProfilePatchReadiness(config, options);
   }
+  if (config.commandProfile === "codex") {
+    return checkCodexProfilePatchReadiness(config, options);
+  }
 
   if (config.commandScript) {
     return {
@@ -667,6 +682,56 @@ function checkClaudeCodeProfilePatchReadiness(config: RunnerConfig, options: Git
   return {
     status: "fail",
     message: "GitHub patch execution is blocked: Claude Code profile runtime is not ready",
+    detail,
+  };
+}
+
+function checkCodexProfilePatchReadiness(config: RunnerConfig, options: GitHubPatchReadinessOptions): OpsCheck {
+  if (!config.commandScript) {
+    return {
+      status: "fail",
+      message: "GitHub patch execution is blocked: Codex profile selected without a generated commandScript",
+      detail: { profile: "codex", safe: false, eval: false },
+    };
+  }
+
+  const engine = options.engine ?? config.engine ?? "docker";
+  const probeInput = options.codexProfileProbe
+    ? options.codexProfileProbe(config, engine)
+    : probeCodexProfileInContainer(config, engine);
+  const checks = [
+    { kind: "codex_cli_resolved", passed: probeInput.cliOnPath && Boolean(probeInput.cliPath) },
+    { kind: "codex_cli_version_ok", passed: probeInput.cliVersionOk && Boolean(probeInput.cliVersion) },
+    { kind: "codex_profile_mount_present", passed: probeInput.profileMountExists },
+    { kind: "codex_auth_file_present", passed: probeInput.authFileExists },
+  ];
+  const failureCategory = classifyCodexProfileFailure(probeInput);
+  const detail: Record<string, unknown> = {
+    path: "/work/patch-command.sh",
+    profile: "codex",
+    safe: true,
+    eval: false,
+    failureCategory,
+    summary: buildCodexProfileSummary(probeInput, failureCategory),
+    checks,
+  };
+
+  if (failureCategory === "ok") {
+    return {
+      status: "ok",
+      message: "GitHub patch execution is ready via Codex profile",
+      detail,
+    };
+  }
+
+  detail.provisioningPaths = [
+    "preferred: pre-bake Codex CLI into the runner base image (docker/codex-runner.Dockerfile)",
+    "set A2A_DOCKER_RUNNER_CODEX_CONFIG_DIR and mount a minimal host dir containing auth.json",
+    "use A2A_DOCKER_RUNNER_IMAGE=a2a-docker-runner-codex:<runner-sha>",
+  ];
+  return {
+    status: "fail",
+    message: "GitHub patch execution is blocked: Codex profile runtime is not ready",
     detail,
   };
 }
@@ -890,6 +955,75 @@ function buildClaudeCodeProfileSummary(input: ClaudeCodeProfileReadinessInput, f
   return parts.join(" ");
 }
 
+function probeCodexProfileInContainer(config: RunnerConfig, engine: RunnerEngine): CodexProfileReadinessInput {
+  const args = [
+    "run",
+    "--rm",
+    "--network",
+    config.network ?? "bridge",
+    "--entrypoint",
+    "sh",
+  ];
+
+  for (const mount of config.extraMounts ?? []) {
+    const mode = mount.readOnly === false ? "rw" : "ro";
+    args.push("-v", mount.source + ":" + mount.target + ":" + mode);
+  }
+
+  args.push(config.image, "-lc", CODEX_PROFILE_PROBE_SCRIPT);
+
+  const result = spawnSync(engine, args, {
+    encoding: "utf8",
+    timeout: 30_000,
+    maxBuffer: 256 * 1024,
+  });
+
+  if (result.status !== 0) {
+    return {
+      cliOnPath: false,
+      cliVersionOk: false,
+      profileMountExists: false,
+      expectedMountPath: CODEX_PROFILE_MOUNT_PATH,
+      authFileExists: false,
+      errors: [boundedProbeError(result.status, result.error)],
+    };
+  }
+
+  const values = parseProbeKeyValues(result.stdout ?? "");
+  const cliPath = boundedProbeValue(values.get("cli_path"), 200);
+  const cliVersion = boundedProbeValue(values.get("cli_version"), 100);
+  return {
+    cliOnPath: Boolean(cliPath),
+    cliPath,
+    cliVersionOk: values.get("cli_version_ok") === "1" && Boolean(cliVersion),
+    cliVersion,
+    profileMountExists: values.get("profile_mount_exists") === "1",
+    expectedMountPath: CODEX_PROFILE_MOUNT_PATH,
+    authFileExists: values.get("auth_file_exists") === "1",
+    errors: [],
+  };
+}
+
+function classifyCodexProfileFailure(input: CodexProfileReadinessInput): string {
+  if (!input.cliOnPath) return "codex_cli_unavailable";
+  if (!input.cliVersionOk) return "codex_version_failed";
+  if (!input.profileMountExists) return "codex_profile_unavailable";
+  if (!input.authFileExists) return "codex_auth_unavailable";
+  return "ok";
+}
+
+function buildCodexProfileSummary(input: CodexProfileReadinessInput, failureCategory: string): string {
+  const parts = [
+    "failureCategory=" + failureCategory,
+    "cli=" + (input.cliPath ?? "missing"),
+    "version=" + (input.cliVersion ?? "missing"),
+    "mount=" + (input.profileMountExists ? input.expectedMountPath : "missing"),
+    "auth=" + (input.authFileExists ? "present" : "missing"),
+  ];
+  if (input.errors.length) parts.push("errors=" + input.errors.slice(0, 3).join("; "));
+  return parts.join(" ");
+}
+
 function probeOpenClawProfileInContainer(config: RunnerConfig, engine: RunnerEngine): OpenClawProfileReadinessInput {
   const args = [
     "run",
@@ -945,6 +1079,7 @@ function probeOpenClawProfileInContainer(config: RunnerConfig, engine: RunnerEng
 
 const HERMES_PROFILE_MOUNT_PATH = "/run/secrets/hermes-dir";
 const CLAUDE_CODE_PROFILE_MOUNT_PATH = "/run/secrets/claude-dir";
+const CODEX_PROFILE_MOUNT_PATH = "/run/secrets/codex-dir";
 const CLAUDE_CODE_PATCH_BRIDGE_PATH = "/opt/a2a-broker/scripts/claude-a2a-patch-bridge.mjs";
 
 const HERMES_PROFILE_PROBE_SCRIPT = [
@@ -1002,6 +1137,21 @@ const CLAUDE_CODE_PROFILE_PROBE_SCRIPT = [
   "printf 'profile_mount_exists=%s\\n' \"$profile_mount_exists\"",
   "printf 'bridge_exists=%s\\n' \"$bridge_exists\"",
   "printf 'bridge_path=%s\\n' \"$bridge_path\"",
+].join("\n");
+
+const CODEX_PROFILE_PROBE_SCRIPT = [
+  "set -eu",
+  "cli_path=$(command -v codex 2>/dev/null || true)",
+  "printf 'cli_path=%s\\n' \"$cli_path\"",
+  "if [ -n \"$cli_path\" ]; then",
+  "  cli_version=$(codex --version 2>/dev/null | head -n 1 || true)",
+  "  printf 'cli_version=%s\\n' \"$cli_version\"",
+  "  if [ -n \"$cli_version\" ]; then printf 'cli_version_ok=1\\n'; else printf 'cli_version_ok=0\\n'; fi",
+  "else",
+  "  printf 'cli_version=\\ncli_version_ok=0\\n'",
+  "fi",
+  "if [ -d " + CODEX_PROFILE_MOUNT_PATH + " ]; then printf 'profile_mount_exists=1\\n'; else printf 'profile_mount_exists=0\\n'; fi",
+  "if [ -f " + CODEX_PROFILE_MOUNT_PATH + "/auth.json ]; then printf 'auth_file_exists=1\\n'; else printf 'auth_file_exists=0\\n'; fi",
 ].join("\n");
 
 const OPENCLAW_PROFILE_PROBE_SCRIPT = [
