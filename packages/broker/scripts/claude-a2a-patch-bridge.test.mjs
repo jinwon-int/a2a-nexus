@@ -5,6 +5,8 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { test } from "node:test";
 
+import { buildFanoutSubagentPrompt } from "./claude-a2a-patch-bridge.mjs";
+
 const bridgePath = new URL("./claude-a2a-patch-bridge.mjs", import.meta.url).pathname;
 
 function bridgeArgs(message) {
@@ -1019,15 +1021,62 @@ test("SINGLE-SHOT: A2A_CLAUDE_MODEL=claude-sonnet-5 -> claude argv includes --mo
   }
 });
 
-test("fanout mode is recognized and routes to single-shot for now (Phase-2 WS1)", () => {
-  // patch-intent message with NO Repository: line -> reaches runPatchMode, and
-  // single-shot's own repo guard fires early (no git/network needed).
-  const result = spawnSync(bridgePath, bridgeArgs("Please open a pull request implementing the fix."), {
-    encoding: "utf8",
-    env: { ...process.env, A2A_CLAUDE_CODE_PATCH_MODE: "fanout" },
+test("buildFanoutSubagentPrompt encodes the fanout policy when advertised, empty otherwise (Phase-2 WS4)", () => {
+  assert.equal(buildFanoutSubagentPrompt({}), "");
+  assert.equal(buildFanoutSubagentPrompt({ A2A_CONTAINED_SUBAGENTS_ENABLED: "1", A2A_CONTAINED_SUBAGENTS_MAX: "0" }), "");
+  const p = buildFanoutSubagentPrompt({
+    A2A_CONTAINED_SUBAGENTS_ENABLED: "1",
+    A2A_CONTAINED_SUBAGENTS_MAX: "3",
+    A2A_CONTAINED_SUBAGENTS_ROLES: "explorer,implementer,verifier",
+    A2A_CONTAINED_SUBAGENTS_OUTPUT_BYTES: "12000",
   });
-  // The fanout branch emits this notice before delegating to single-shot...
-  assert.match(result.stderr ?? "", /A2A_CLAUDE_CODE_PATCH_MODE=fanout: sub-agent orchestration not yet wired/);
-  // ...and single-shot's no-repo guard then fires, proving it ran the single-shot path.
-  assert.match(result.stderr ?? "", /single-shot patch mode requires Repository/);
+  assert.ok(p.includes("up to 3"));
+  assert.ok(p.includes("Task tool"));
+  assert.ok(p.includes("single finalizer"));
+  assert.ok(p.includes("explorer,implementer,verifier"));
+  assert.ok(/never emit secrets/i.test(p));
+  assert.ok(/Zero sub-agents is always valid/.test(p));
+});
+
+test("fanout mode runs the agentic patch with Task tool + spawn prompt + fanout max-turns (Phase-2 WS3/WS4)", () => {
+  const tempDir = mkdtempSync(join(tmpdir(), "claude-fanout-"));
+  const fakeClaudePath = join(tempDir, "fake-claude.mjs");
+  const argsCapturePath = join(tempDir, "claude-args.json");
+  try {
+    writeStubClaude(fakeClaudePath, [
+      "import { writeFileSync } from 'node:fs';",
+      "const args = process.argv.slice(2);",
+      "writeFileSync(process.env.CAPTURE_ARGS_PATH, JSON.stringify(args));",
+      "if (args[args.indexOf('--allowedTools') + 1] !== 'Task Bash Edit Write Read Glob Grep') throw new Error('fanout must add Task to allowedTools');",
+      "const ap = args[args.indexOf('--append-system-prompt') + 1] || '';",
+      "if (!ap.includes('Task tool') || !ap.includes('single finalizer')) throw new Error('fanout spawn prompt missing');",
+      "const result = { status: 'pr_opened', summary: 'ok', prUrl: 'https://github.com/jinwon-int/example/pull/42', filesChanged: ['src/x.mjs'] };",
+      "console.log(JSON.stringify({ type: 'result', subtype: 'success', result: JSON.stringify(result) }));",
+    ]);
+
+    const result = spawnSync(bridgePath, bridgeArgs(patchMessage()), {
+      encoding: "utf8",
+      env: {
+        ...process.env,
+        A2A_CLAUDE_CODE_PATCH_MODE: "fanout",
+        A2A_CONTAINED_SUBAGENTS_ENABLED: "1",
+        A2A_CONTAINED_SUBAGENTS_MAX: "3",
+        A2A_CONTAINED_SUBAGENTS_ROLES: "explorer,implementer,verifier",
+        A2A_CLAUDE_CODE_FANOUT_MAX_TURNS: "50",
+        A2A_CLAUDE_CODE_BIN: fakeClaudePath,
+        CAPTURE_ARGS_PATH: argsCapturePath,
+      },
+    });
+
+    assert.match(result.stderr ?? "", /A2A_CLAUDE_CODE_PATCH_MODE=fanout: agentic patch with sub-agent orchestration/);
+    assert.equal(result.status, 0, result.stderr);
+    const payload = JSON.parse(JSON.parse(result.stdout).payloads[0].text);
+    assert.equal(payload.prUrl, "https://github.com/jinwon-int/example/pull/42");
+    const args = JSON.parse(readFileSync(argsCapturePath, "utf8"));
+    assert.equal(args[args.indexOf("--allowedTools") + 1], "Task Bash Edit Write Read Glob Grep");
+    assert.equal(args[args.indexOf("--max-turns") + 1], "50");
+    assert.ok(args.includes("--append-system-prompt"));
+  } finally {
+    rmSync(tempDir, { recursive: true, force: true });
+  }
 });

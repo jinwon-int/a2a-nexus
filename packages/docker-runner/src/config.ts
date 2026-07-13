@@ -478,12 +478,16 @@ function loadPatchCommandConfig(
   return { commandTemplate: env.A2A_DOCKER_RUNNER_PATCH_COMMAND_TEMPLATE || undefined };
 }
 
-function loadContainedSubagentsConfig(
+export function loadContainedSubagentsConfig(
   env: NodeJS.ProcessEnv,
   effectiveProfile: RunnerCommandProfile | undefined,
   selectedProfile: RunnerCommandProfile | undefined = effectiveProfile,
 ): RunnerContainedSubagentsConfig {
-  const enabled = containedSubagentsEnabledByDefault(env.A2A_DOCKER_RUNNER_CONTAINED_SUBAGENTS_ENABLED, effectiveProfile);
+  // Phase-2 WS4: the claude-code fanout flag also enables contained sub-agents for
+  // the claude-code lane, so runner.ts injects A2A_CONTAINED_SUBAGENTS_* for the
+  // bridge's fanout path. Default (flag off / other profiles) is unchanged.
+  const enabled = containedSubagentsEnabledByDefault(env.A2A_DOCKER_RUNNER_CONTAINED_SUBAGENTS_ENABLED, effectiveProfile)
+    || (effectiveProfile === "claude-code" && env.A2A_DOCKER_RUNNER_CLAUDE_CODE_FANOUT_ENABLED === "1");
   const maxCount = enabled
     ? parseBoundedInteger(env.A2A_DOCKER_RUNNER_CONTAINED_SUBAGENTS_MAX, 3, 1, 4, "A2A_DOCKER_RUNNER_CONTAINED_SUBAGENTS_MAX")
     : 0;
