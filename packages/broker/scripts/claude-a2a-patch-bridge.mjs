@@ -648,6 +648,15 @@ function isSingleShotPatchMode(env) {
   return raw === SINGLE_SHOT_PATCH_MARKER || raw === "single_shot" || raw === "singleshot";
 }
 
+// Phase-2 WS1: fanout mode is recognized here so later workstreams (Task tool,
+// roster, gate/brief consumption) hook into the fanout branch of runPatchMode.
+// Until that orchestration lands, fanout executes single-shot, so enabling the
+// flag is behavior-safe; rollback = unset the runner flag.
+const FANOUT_PATCH_MARKER = "fanout";
+function isFanoutPatchMode(env) {
+  return safeText(env.A2A_CLAUDE_CODE_PATCH_MODE, "").trim().toLowerCase() === FANOUT_PATCH_MARKER;
+}
+
 // Extracts "owner/repo" and "#NNN" from the handler's prompt template lines.
 // Tolerates Issue: <url> and Issue URL: <url> forms; returns empty strings on miss.
 function parseTaskContext(message) {
@@ -1187,6 +1196,15 @@ async function runSingleShotPatchMode(message, flags) {
 }
 
 async function runPatchMode(message, flags) {
+  if (isFanoutPatchMode(process.env)) {
+    // Phase-2 WS1 foundation: fanout mode routed here. Sub-agent orchestration
+    // (Task tool, roster, gate/brief consumption) is wired in Phase-2 WS3-5;
+    // until then run single-shot so the flag is behavior-safe. Rollback = unset
+    // A2A_DOCKER_RUNNER_CLAUDE_CODE_FANOUT_ENABLED.
+    process.stderr.write("A2A_CLAUDE_CODE_PATCH_MODE=fanout: sub-agent orchestration not yet wired (Phase-2 WS3-5); running single-shot for now\n");
+    await runSingleShotPatchMode(message, flags);
+    return;
+  }
   if (isSingleShotPatchMode(process.env)) {
     await runSingleShotPatchMode(message, flags);
     return;
