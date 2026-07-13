@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import { createHash } from "node:crypto";
 import test from "node:test";
 import { mkdtempSync } from "node:fs";
 import { readFile } from "node:fs/promises";
@@ -477,26 +478,39 @@ test("buildRunArgs advertises the contained-subagent conductor budget to the con
   assert.ok(!withoutSubagents.some((arg) => arg.startsWith("A2A_CONTAINED_SUBAGENTS")));
 });
 
-test("sanitizes the subagent brief before task.json and container staging (Phase-2 WS5)", () => {
+test("rejects an unredacted subagent brief before task.json and preserves broker-redacted bytes (Phase-2 WS5)", () => {
   const raw: RunnerTask = {
     ...task,
     subagentContextBrief: `Use ghp_${"x".repeat(36)} only for this test`,
   };
-  const sanitized = sanitizeSubagentContextBrief(raw);
-  assert.match(sanitized.subagentContextBrief ?? "", /redacted/);
-  assert.doesNotMatch(sanitized.subagentContextBrief ?? "", /ghp_/);
+  assert.throws(() => sanitizeSubagentContextBrief(raw), /not fully redacted/);
+
+  const brief = "Authorization: Bearer [redacted]\nTOKEN=[redacted]";
+  const sanitized = sanitizeSubagentContextBrief({ ...task, subagentContextBrief: brief });
+  assert.equal(sanitized.subagentContextBrief, brief);
+  assert.equal(redactSecrets(brief), brief);
 });
 
 test("materializes the broker-redacted context brief in the mounted workspace and advertises its path (Phase-2 WS5)", async () => {
   const workDir = mkdtempSync(join(tmpdir(), "a2a-ws5-brief-"));
-  const brief = `# A2A sub-agent context brief\n\nUse ghp_${"x".repeat(36)} only for this test`;
+  const brief = "# A2A sub-agent context brief\n\nAuthorization: Bearer [redacted]\nTOKEN=[redacted]";
   const taskWithBrief: RunnerTask = { ...task, subagentContextBrief: brief };
 
   const artifactPath = await materializeSubagentContextBrief(workDir, taskWithBrief);
   assert.equal(artifactPath, join(workDir, "artifacts", "context-brief.md"));
   const materialized = await readFile(artifactPath ?? "", "utf8");
-  assert.match(materialized, /redacted/);
-  assert.doesNotMatch(materialized, /ghp_/);
+  assert.equal(materialized, brief);
+  assert.equal(
+    createHash("sha256").update(materialized, "utf8").digest("hex"),
+    createHash("sha256").update(brief, "utf8").digest("hex"),
+  );
+  await assert.rejects(
+    materializeSubagentContextBrief(workDir, {
+      ...task,
+      subagentContextBrief: `Use ghp_${"x".repeat(36)} only for this test`,
+    }),
+    /not fully redacted/,
+  );
 
   const args = buildRunArgs({
     ...config,

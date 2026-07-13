@@ -219,13 +219,21 @@ export async function prepareWorkDirForContainerUser(workDir: string, user?: str
   await chownTreeBestEffort(workDir, parsed.uid, parsed.gid);
 }
 
+function requireFullyRedactedSubagentBrief(brief: string): string {
+  const runnerRedacted = redactSecrets(brief);
+  if (runnerRedacted !== brief) {
+    throw new Error("task.subagentContextBrief is not fully redacted at the broker boundary");
+  }
+  return brief;
+}
+
 export function sanitizeSubagentContextBrief<T extends RunnerTask>(task: T): T {
   const brief = task.subagentContextBrief;
   if (typeof brief !== "string" || brief.length === 0) return task;
   if (Buffer.byteLength(brief, "utf8") > 64 * 1024) {
     throw new Error("task.subagentContextBrief exceeds the 65536-byte limit");
   }
-  return { ...task, subagentContextBrief: redactSecrets(brief) };
+  return { ...task, subagentContextBrief: requireFullyRedactedSubagentBrief(brief) };
 }
 
 export async function materializeSubagentContextBrief(
@@ -237,11 +245,11 @@ export async function materializeSubagentContextBrief(
   if (Buffer.byteLength(brief, "utf8") > 64 * 1024) {
     throw new Error("task.subagentContextBrief exceeds the 65536-byte limit");
   }
-  const redactedBrief = redactSecrets(brief);
+  const materializedBrief = requireFullyRedactedSubagentBrief(brief);
   const artifactsDir = join(workDir, "artifacts");
   await mkdir(artifactsDir, { recursive: true, mode: 0o700 });
   const artifactPath = join(artifactsDir, "context-brief.md");
-  await writeFile(artifactPath, redactedBrief, { mode: 0o600 });
+  await writeFile(artifactPath, materializedBrief, { mode: 0o600 });
   return artifactPath;
 }
 
