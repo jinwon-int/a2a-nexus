@@ -30,6 +30,8 @@ export interface A2AWorkerSubagentRedactionEntryInput {
   output: string;
   /** True when an upstream trusted transport already masked a finding. */
   preRedacted?: boolean;
+  /** True when an upstream trusted transport already byte-truncated output. */
+  preTruncated?: boolean;
 }
 
 export interface A2AWorkerSubagentRedactionGateInput {
@@ -141,12 +143,13 @@ export function buildA2AWorkerSubagentRedactionGate(
     const report = redactAndBoundReport(entry.output ?? "", maxOutputBytes);
     const markerDetected = /(?:\[redacted\]|<redacted(?:-[^>]+)?>|<private-dir>|<openclaw-dir>|<openclaw-workspace>)/i.test(entry.output ?? "");
     const redacted = report.redacted || entry.preRedacted === true || markerDetected;
+    const truncated = report.truncated || entry.preTruncated === true;
     const rejected = mode === "reject" && redacted;
     const included = !rejected;
-    const verdict = verdictFor(redacted, report.truncated, rejected);
+    const verdict = verdictFor(redacted, truncated, rejected);
 
     if (redacted) redactedCount += 1;
-    if (report.truncated) truncatedCount += 1;
+    if (truncated) truncatedCount += 1;
     if (rejected) rejectedCount += 1;
     if (verdict === "clean") clean += 1;
 
@@ -155,7 +158,7 @@ export function buildA2AWorkerSubagentRedactionGate(
       id: entry.id,
       verdict,
       redacted,
-      truncated: report.truncated,
+      truncated,
       included,
       cleaned: included ? report.cleaned : undefined,
     });
@@ -240,6 +243,7 @@ export function extractA2AWorkerSubagentRedactionGateInput(input: unknown): A2AW
       id: optionalString(e.id ?? e.idempotencyKey),
       output: optionalString(e.output ?? e.text) ?? "",
       preRedacted: e.preRedacted === true || e.pre_redacted === true,
+      preTruncated: e.preTruncated === true || e.pre_truncated === true,
     }));
 
   return {

@@ -1250,6 +1250,8 @@ export interface RunnerSubagentReportEntry {
   output: string;
   /** True when the runner masked output or write-set data before broker handoff. */
   redacted: boolean;
+  /** True when the runner byte-truncated output before broker handoff. */
+  truncated: boolean;
 }
 
 export interface RunnerSubagentReport {

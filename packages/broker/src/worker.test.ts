@@ -2022,8 +2022,8 @@ test("dynamic subagent runtime consults Phase-1 deciders and produces a redacted
     "const chunks = []; for await (const chunk of process.stdin) chunks.push(chunk);",
     "const task = JSON.parse(Buffer.concat(chunks).toString('utf8'));",
     "const reportEntries = [",
-    "  { role: task.payload?.reportedRole ?? 'explorer', id: 'helper-explorer', writeSet: [], status: 'complete', output: task.payload?.preRedacted ? 'read <private-dir> then notify telegram:<redacted-target>' : 'read /root/.openclaw/config then TOKEN=runtime-synthetic', redacted: task.payload?.preRedacted === true },",
-    "  { role: 'verifier', id: 'helper-verifier', writeSet: [], status: 'complete', output: task.payload?.preRedacted ? 'tests pass' : 'notify telegram:123456789 after tests pass' },",
+    "  { role: task.payload?.reportedRole ?? 'explorer', id: 'helper-explorer', writeSet: [], status: 'complete', output: task.payload?.preRedacted ? 'read <private-dir> then notify telegram:<redacted-target>' : task.payload?.preTruncated ? 'bounded clean prefix' : 'read /root/.openclaw/config then TOKEN=runtime-synthetic', redacted: task.payload?.preRedacted === true, truncated: task.payload?.preTruncated === true },",
+    "  { role: 'verifier', id: 'helper-verifier', writeSet: [], status: 'complete', output: task.payload?.preRedacted || task.payload?.preTruncated ? 'tests pass' : 'notify telegram:123456789 after tests pass' },",
     "];",
     "if (task.payload?.reverseReport === true) reportEntries.reverse();",
     "process.stdout.write(JSON.stringify({ result: { summary: 'ok', output: {",
@@ -2063,7 +2063,7 @@ test("dynamic subagent runtime consults Phase-1 deciders and produces a redacted
     kind: string;
     workerId: string;
     taskId: string;
-    redaction: { summary: { redacted: number }; cleanedEntries: Array<{ output: string }>; determinism: { contentDigest: string } };
+    redaction: { summary: { redacted: number; truncated: number }; cleanedEntries: Array<{ output: string }>; determinism: { contentDigest: string } };
     assembly: { assembledEvidence: Array<{ role: string; summary: string }>; determinism: { contentDigest: string } };
     runtime: { enforced: boolean; actualSubagentCount: number };
   };
@@ -2124,6 +2124,18 @@ test("dynamic subagent runtime consults Phase-1 deciders and produces a redacted
   } as never;
   const preRedacted = await rejectHandler(preRedactedTask) as { error: { code: string } };
   assert.equal(preRedacted.error.code, "subagent_evidence_rejected");
+
+  const preTruncatedTask = {
+    ...(task as Record<string, unknown>),
+    payload: {
+      ...((task as { payload: Record<string, unknown> }).payload),
+      preTruncated: true,
+    },
+  } as never;
+  const preTruncated = await handler(preTruncatedTask) as { result: { output: Record<string, unknown> } };
+  const preTruncatedEvidence = preTruncated.result.output.subagentEvidence as typeof evidence;
+  assert.equal(preTruncatedEvidence.redaction.summary.truncated, 1);
+  assert.equal(preTruncatedEvidence.assembly.assembledEvidence[0]?.summary, "bounded clean prefix");
 
   const unauthorizedTask = {
     ...(task as Record<string, unknown>),

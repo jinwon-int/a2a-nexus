@@ -124,6 +124,23 @@ test("reject mode preserves runner-side finding classification without raw value
   assert.equal(packet.results[0]?.verdict, "rejected");
 });
 
+test("preserves upstream byte-truncation classification without raw suffix data", () => {
+  const packet = buildA2AWorkerSubagentRedactionGate({
+    now: NOW,
+    workerId: "w",
+    entries: [{
+      role: "verifier",
+      id: "ev-pretruncated",
+      output: "bounded clean prefix",
+      preTruncated: true,
+    }],
+  });
+  assert.equal(packet.state, "modified");
+  assert.equal(packet.summary.truncated, 1);
+  assert.equal(packet.results[0]?.verdict, "truncated");
+  assert.equal(packet.results[0]?.included, true);
+});
+
 test("invalid non-finite byte limits fall back to the bounded default", () => {
   const packet = buildA2AWorkerSubagentRedactionGate({
     now: NOW,

@@ -83,14 +83,17 @@ export function extractStructuredSubagentReport(
       const writeSet = rawWriteSet.map((path) => redactSecrets(path));
       const redactedOutput = redactSecrets(output);
       const redacted = redactedOutput !== output || writeSet.some((path, index) => path !== rawWriteSet[index]);
+      const boundedOutput = boundUtf8(redactedOutput, options.maxOutputBytes);
+      const truncated = Buffer.byteLength(redactedOutput, "utf8") > Buffer.byteLength(boundedOutput, "utf8");
       seenIds.add(id);
       entries.push({
         role,
         id,
         writeSet,
         status: status as RunnerSubagentReport["entries"][number]["status"],
-        output: boundUtf8(redactedOutput, options.maxOutputBytes),
+        output: boundedOutput,
         redacted,
+        truncated,
       });
     }
     return { count, entries };

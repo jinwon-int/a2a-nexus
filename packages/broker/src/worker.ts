@@ -1367,6 +1367,7 @@ interface RuntimeSubagentReportEntry {
   status: string;
   output: string;
   preRedacted: boolean;
+  preTruncated: boolean;
 }
 
 function runtimeRecord(value: unknown): value is Record<string, unknown> {
@@ -1554,6 +1555,7 @@ function finalizeSubagentEvidence(
     const status = typeof candidate.status === "string" ? candidate.status.trim().toLowerCase() : "complete";
     const outputText = typeof candidate.output === "string" ? candidate.output : undefined;
     const preRedacted = candidate.redacted === true || candidate.redactionChanged === true;
+    const preTruncated = candidate.truncated === true || candidate.outputTruncated === true;
     const writeSet = candidate.writeSet === undefined ? [] : runtimeStringList(candidate.writeSet);
     if (!authorizedRoles.includes(role) || !assignments.has(role)) {
       return subagentEvidenceError(
@@ -1592,7 +1594,7 @@ function finalizeSubagentEvidence(
     }
     seenIds.add(id);
     seenRoles.add(role);
-    entries.push({ role, id, writeSet, status, output: outputText, preRedacted });
+    entries.push({ role, id, writeSet, status, output: outputText, preRedacted, preTruncated });
   }
 
   entries.sort((left, right) => left.role.localeCompare(right.role) || left.id.localeCompare(right.id));
