@@ -106,3 +106,15 @@ Example input:
   }
 }
 ```
+
+## Spawn Gate Decision
+
+`a2a-broker.worker-subagent-spawn-gate-decision.packet` consumes a spawn-authorization-request packet and (optionally) a `worker-subagent-budget-counter.packet`, together with a concrete requested spawn, and emits a **binding `authorized` / `refused` verdict**. Unlike the authorization-request draft (which "is not a runtime spawn gate"), this packet IS the deterministic gate decision.
+
+It refuses when the authorization draft is not ready, the single-finalizer rule is not asserted, the token/cost budget is exhausted (`spawnBudgetCeiling === 0`), the requested count exceeds the effective ceiling (`clampParallelism(plannerParallelismHint)`, hard cap 4, shrunk to 0 by an exhausted budget), or implementer write sets overlap (`hasOverlappingWriteSets`). A missing budget counter is a non-blocking `review` (the count budget still governs); zero requested sub-agents is always authorized (Escape Hatch).
+
+The packet DECIDES only. It produces `producesBindingVerdict: true` but `enforcesSpawn: false` with all boundaries false — it does not itself spawn, dispatch, claim, invoke executors, mutate state, deploy/restart, send providers, ACK/replay, publish, or move secrets. A Phase-2 runtime consults the verdict before an actual spawn.
+
+CLI:
+
+`npm run worker_subagent_spawn_gate_decision -- --input fixtures/worker-subagent-orchestration/spawn-gate-decision-authorized.json --json`

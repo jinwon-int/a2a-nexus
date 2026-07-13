@@ -256,11 +256,11 @@ function rolesFor(task: A2AWorkerSubagentTaskProfile, count: 0 | 1 | 2 | 3 | 4):
   ];
 }
 
-function hasOverlappingWriteSets(writeSets: string[]): boolean {
+export function hasOverlappingWriteSets(writeSets: string[]): boolean {
   return new Set(writeSets).size !== writeSets.length;
 }
 
-function clampParallelism(value: number): 0 | 1 | 2 | 3 | 4 {
+export function clampParallelism(value: number): 0 | 1 | 2 | 3 | 4 {
   if (value <= 0) return 0;
   if (value === 1) return 1;
   if (value === 2) return 2;
