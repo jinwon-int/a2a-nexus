@@ -8,7 +8,7 @@ import { once } from "node:events";
 
 import { emptySnapshot, type BrokerStateStore } from "./core/store.js";
 import { createBrokerServer, type BrokerServerOptions } from "./server.js";
-import { A2ABrokerWorker, createExternalWorkerHandler, createWorkerConfigFromEnv, type BrokerWorkerConfig } from "./worker.js";
+import { A2ABrokerWorker, buildDynamicSubagentRuntime, createExternalWorkerHandler, createWorkerConfigFromEnv, type BrokerWorkerConfig } from "./worker.js";
 import { verifyA2AHttpSignature, type A2AHttpSignatureKeyRegistry } from "./core/request-security.js";
 
 function createInMemoryStateStore(): BrokerStateStore {
@@ -1892,4 +1892,293 @@ test("conductor budget is a verifiable contract: reports are annotated, overruns
   });
   const silent = (await silentHandler(makeTask("budget-silent", {}))) as { result: { summary: string } };
   assert.equal(silent.result.summary, "no report");
+});
+
+test("dynamic subagent runtime consults Phase-1 deciders and produces a redacted mounted brief payload (Phase-2 WS5)", async () => {
+  const structuralSecret = `ghp_${"y".repeat(36)}`;
+  const task = {
+    id: "task-ws5",
+    exchangeId: "exchange-ws5",
+    intent: "propose_patch",
+    requester: { id: "hub", kind: "node", role: "hub" },
+    target: { id: "worker-ws5", kind: "node", role: "analyst" },
+    message: "large independent patch",
+    status: "running",
+    targetNodeId: "worker-ws5",
+    approval: {
+      approvalId: "approval-ws5",
+      approvedAt: "2026-07-13T00:00:00Z",
+      approvedBy: "seoseo-a2a-finalizer",
+      actorRole: "operator",
+      requesterRole: "operator",
+    },
+    payload: {
+      subagentProfile: {
+        size: "large",
+        coupling: "low",
+        hasIndependentSubtasks: true,
+        writeSets: ["src/a.ts", "src/b.ts"],
+      },
+      spawnAuthorization: {
+        state: "authorization_request_draft_ready",
+        workerId: "worker-ws5",
+        taskId: "task-ws5",
+        source: { plannerParallelismHint: 3 },
+        finalizerReview: { oneFinalizerRequired: true, writeSetIsolationRequired: true },
+      },
+      workerSubagentBudgetCounter: {
+        workerId: "worker-ws5",
+        usage: { taskId: "task-ws5", taskTokensSpent: 100, taskTokenCeiling: 1_000 },
+      },
+      workerSubagentContextBrief: {
+        workerId: "worker-ws5",
+        taskId: "task-ws5",
+        finalizer: "broker-finalizer",
+        summary: `Use token ghp_${"x".repeat(36)} while editing src/a.ts`,
+        assignments: [{
+          role: `implementer-${structuralSecret}`,
+          objective: "edit src/a.ts",
+          writeSet: [`src/${structuralSecret}.ts`],
+          pointers: [{ path: "src/a.ts", lines: structuralSecret, note: "inspect this range" }],
+        }],
+        pointers: [{ path: "src/a.ts", lines: structuralSecret, note: "top-level pointer" }],
+        acceptanceCriteria: ["focused tests pass"],
+      },
+    },
+    createdAt: "2026-07-13T00:00:00Z",
+    updatedAt: "2026-07-13T00:00:00Z",
+  } as never;
+
+  const runtime = buildDynamicSubagentRuntime(task, {
+    workerId: "worker-ws5",
+    subagentCap: 4,
+    executionIsolation: "shared",
+    fanoutEnabled: true,
+    staticRunnerMax: 2,
+    staticRunnerRoles: ["explorer", "verifier"],
+  });
+  assert.equal(runtime.env.A2A_DOCKER_RUNNER_CLAUDE_CODE_FANOUT_ENABLED, "1");
+  assert.equal(runtime.env.A2A_DOCKER_RUNNER_CONTAINED_SUBAGENTS_MAX, "2");
+  assert.equal(runtime.env.A2A_DOCKER_RUNNER_CONTAINED_SUBAGENTS_ROLES, "explorer,verifier");
+  const runtimePlan = JSON.parse(runtime.env.A2A_SUBAGENT_PLAN ?? "{}");
+  assert.equal(runtimePlan.state, "authorized");
+  assert.equal(runtimePlan.approvalRef, "approval-ws5");
+  assert.equal(runtimePlan.taskId, "task-ws5");
+  assert.equal(runtimePlan.authorizedSubagentCount, 2);
+  assert.equal(runtimePlan.budgetState, "within-budget");
+  assert.equal(runtimePlan.gateState, "authorized");
+  assert.equal(runtimePlan.briefPath, "/work/artifacts/context-brief.md");
+  assert.match(runtimePlan.briefDigest, /^sha256:[0-9a-f]{64}$/);
+  assert.match(runtime.subagentContextBrief ?? "", /^# A2A sub-agent context brief/m);
+  assert.match(runtime.subagentContextBrief ?? "", /\[redacted\]/);
+  assert.doesNotMatch(runtime.subagentContextBrief ?? "", /ghp_/);
+  assert.match(runtime.subagentContextBrief ?? "", /^### explorer$/m);
+  assert.match(runtime.subagentContextBrief ?? "", /^### verifier$/m);
+  assert.doesNotMatch(runtime.subagentContextBrief ?? "", /^### implementer/m);
+
+  const unapproved = { ...(task as Record<string, unknown>) };
+  delete unapproved.approval;
+  const denied = buildDynamicSubagentRuntime(unapproved as never, {
+    workerId: "worker-ws5",
+    subagentCap: 4,
+    executionIsolation: "shared",
+    fanoutEnabled: true,
+    staticRunnerMax: 2,
+    staticRunnerRoles: ["explorer", "verifier"],
+  });
+  assert.equal(denied.env.A2A_DOCKER_RUNNER_CLAUDE_CODE_FANOUT_ENABLED, "0");
+  assert.equal(JSON.parse(denied.env.A2A_SUBAGENT_PLAN ?? "{}").reason, "broker_approval_missing_or_untrusted");
+
+  const { mkdtempSync, writeFileSync } = await import("node:fs");
+  const { tmpdir } = await import("node:os");
+  const { join } = await import("node:path");
+  const dir = mkdtempSync(join(tmpdir(), "a2a-ws5-boundary-"));
+  const scriptPath = join(dir, "probe.mjs");
+  writeFileSync(scriptPath, [
+    "const chunks = []; for await (const chunk of process.stdin) chunks.push(chunk);",
+    "const task = JSON.parse(Buffer.concat(chunks).toString('utf8'));",
+    "process.stdout.write(JSON.stringify({ result: { summary: 'ok', output: {",
+    "  enabled: process.env.A2A_DOCKER_RUNNER_CLAUDE_CODE_FANOUT_ENABLED,",
+    "  max: process.env.A2A_DOCKER_RUNNER_CONTAINED_SUBAGENTS_MAX,",
+    "  roles: process.env.A2A_DOCKER_RUNNER_CONTAINED_SUBAGENTS_ROLES,",
+    "  plan: process.env.A2A_SUBAGENT_PLAN,",
+    "  brief: task.subagentContextBrief ?? null,",
+    "} } }));",
+  ].join("\n"));
+  const handler = createExternalWorkerHandler({
+    command: process.execPath,
+    args: [scriptPath],
+    workerId: "worker-ws5",
+    subagentCap: 4,
+    env: {
+      A2A_DOCKER_RUNNER_CLAUDE_CODE_FANOUT_ENABLED: "1",
+      A2A_DOCKER_RUNNER_CONTAINED_SUBAGENTS_MAX: "2",
+      A2A_DOCKER_RUNNER_CONTAINED_SUBAGENTS_ROLES: "explorer,verifier",
+    },
+  });
+  const boundary = await handler(task as never) as { result: { output: Record<string, string> } };
+  assert.equal(boundary.result.output.enabled, "1");
+  assert.equal(boundary.result.output.max, "2");
+  assert.equal(boundary.result.output.roles, "explorer,verifier");
+  assert.equal(JSON.parse(boundary.result.output.plan).authorizedSubagentCount, 2);
+  assert.match(boundary.result.output.brief, /\[redacted\]/);
+});
+
+test("dynamic subagent runtime requires broker-recorded operator approval before fanout (Phase-2 WS5)", () => {
+  const task = {
+    id: "task-ws5-unapproved",
+    exchangeId: "exchange-ws5-unapproved",
+    intent: "propose_patch",
+    requester: { id: "hub", kind: "node", role: "hub" },
+    target: { id: "worker-ws5", kind: "node", role: "analyst" },
+    message: "large independent patch",
+    status: "running",
+    targetNodeId: "worker-ws5",
+    payload: {
+      subagentProfile: {
+        size: "large",
+        coupling: "low",
+        hasIndependentSubtasks: true,
+        writeSets: ["src/a.ts", "src/b.ts"],
+      },
+      spawnAuthorization: {
+        state: "authorization_request_draft_ready",
+        workerId: "worker-ws5",
+        taskId: "task-ws5-unapproved",
+        source: { plannerParallelismHint: 3 },
+        finalizerReview: { oneFinalizerRequired: true, writeSetIsolationRequired: true },
+      },
+      workerSubagentBudgetCounter: {
+        workerId: "worker-ws5",
+        usage: { taskId: "task-ws5-unapproved", taskTokensSpent: 100, taskTokenCeiling: 1_000 },
+      },
+    },
+    createdAt: "2026-07-13T00:00:00Z",
+    updatedAt: "2026-07-13T00:00:00Z",
+  } as never;
+  const runtime = buildDynamicSubagentRuntime(task, {
+    workerId: "worker-ws5",
+    subagentCap: 4,
+    executionIsolation: "shared",
+    fanoutEnabled: true,
+    staticRunnerMax: 3,
+    staticRunnerRoles: ["explorer", "implementer", "verifier"],
+  });
+  assert.equal(runtime.env.A2A_DOCKER_RUNNER_CLAUDE_CODE_FANOUT_ENABLED, "0");
+  assert.equal(JSON.parse(runtime.env.A2A_SUBAGENT_PLAN ?? "{}").reason, "broker_approval_missing_or_untrusted");
+});
+
+test("dynamic subagent runtime is default-off and fails closed on absent, insufficient, exhausted, or refused inputs (Phase-2 WS5)", () => {
+  const base = {
+    id: "task-ws5-closed", exchangeId: "exchange-ws5-closed", intent: "propose_patch",
+    requester: { id: "hub", kind: "node", role: "hub" },
+    target: { id: "worker-ws5", kind: "node", role: "analyst" },
+    message: "large independent patch", status: "running", targetNodeId: "worker-ws5",
+    approval: {
+      approvalId: "approval-ws5-closed",
+      approvedAt: "2026-07-13T00:00:00Z",
+      approvedBy: "seoseo-a2a-finalizer",
+      actorRole: "operator",
+      requesterRole: "operator",
+    },
+    payload: {
+      subagentProfile: { size: "large", coupling: "low", hasIndependentSubtasks: true, writeSets: ["src/a.ts", "src/b.ts"] },
+      spawnAuthorization: {
+        state: "authorization_request_draft_ready", workerId: "worker-ws5", taskId: "task-ws5-closed",
+        source: { plannerParallelismHint: 3 },
+        finalizerReview: { oneFinalizerRequired: true, writeSetIsolationRequired: true },
+      },
+      workerSubagentContextBrief: { workerId: "worker-ws5", summary: "must not be mounted while refused" },
+    },
+    createdAt: "2026-07-13T00:00:00Z", updatedAt: "2026-07-13T00:00:00Z",
+  } as never;
+  const options = {
+    workerId: "worker-ws5",
+    subagentCap: 4,
+    executionIsolation: "shared" as const,
+    fanoutEnabled: true,
+    staticRunnerMax: 3,
+    staticRunnerRoles: ["explorer", "implementer", "verifier"],
+  };
+  const expectClosed = (task: never) => {
+    const runtime = buildDynamicSubagentRuntime(task, options);
+    assert.equal(runtime.env.A2A_DOCKER_RUNNER_CLAUDE_CODE_FANOUT_ENABLED, "0");
+    assert.equal(runtime.env.A2A_DOCKER_RUNNER_CONTAINED_SUBAGENTS_MAX, "0");
+    assert.equal(runtime.env.A2A_SUBAGENT_MAX, "0");
+    const plan = JSON.parse(runtime.env.A2A_SUBAGENT_PLAN ?? "{}");
+    assert.equal(plan.state, "refused");
+    assert.equal(plan.taskId, "task-ws5-closed");
+    assert.equal(typeof plan.reason, "string");
+    assert.equal(runtime.subagentContextBrief, undefined);
+  };
+
+  expectClosed(base);
+  expectClosed({
+    ...(base as Record<string, unknown>),
+    payload: {
+      ...((base as { payload: Record<string, unknown> }).payload),
+      workerSubagentBudgetCounter: { workerId: "worker-ws5", usage: { taskTokensSpent: 100 } },
+    },
+  } as never);
+  expectClosed({
+    ...(base as Record<string, unknown>),
+    payload: {
+      ...((base as { payload: Record<string, unknown> }).payload),
+      workerSubagentBudgetCounter: {
+        workerId: "worker-ws5",
+        usage: { taskTokensSpent: 100, taskTokenCeiling: 1_000 },
+      },
+    },
+  } as never);
+  expectClosed({
+    ...(base as Record<string, unknown>),
+    payload: {
+      ...((base as { payload: Record<string, unknown> }).payload),
+      spawnAuthorization: {
+        state: "authorization_request_draft_ready",
+        workerId: "worker-ws5",
+        source: { plannerParallelismHint: 3 },
+        finalizerReview: { oneFinalizerRequired: true, writeSetIsolationRequired: true },
+      },
+      workerSubagentBudgetCounter: {
+        workerId: "worker-ws5",
+        usage: { taskId: "task-ws5-closed", taskTokensSpent: 100, taskTokenCeiling: 1_000 },
+      },
+    },
+  } as never);
+  expectClosed({
+    ...(base as Record<string, unknown>),
+    payload: {
+      ...((base as { payload: Record<string, unknown> }).payload),
+      workerSubagentBudgetCounter: { workerId: "worker-ws5", usage: { taskTokensSpent: 1_000, taskTokenCeiling: 1_000 } },
+    },
+  } as never);
+  expectClosed({
+    ...(base as Record<string, unknown>),
+    payload: {
+      ...((base as { payload: Record<string, unknown> }).payload),
+      spawnAuthorization: {
+        state: "blocked",
+        workerId: "worker-ws5",
+        taskId: "task-ws5-closed",
+        finalizerReview: { oneFinalizerRequired: true, writeSetIsolationRequired: true },
+      },
+      workerSubagentBudgetCounter: {
+        workerId: "worker-ws5",
+        usage: { taskId: "task-ws5-closed", taskTokensSpent: 100, taskTokenCeiling: 1_000 },
+      },
+    },
+  } as never);
+  const off = buildDynamicSubagentRuntime({
+    ...(base as Record<string, unknown>),
+    payload: {
+      ...((base as { payload: Record<string, unknown> }).payload),
+      workerSubagentBudgetCounter: {
+        workerId: "worker-ws5",
+        usage: { taskId: "task-ws5-closed", taskTokensSpent: 100, taskTokenCeiling: 1_000 },
+      },
+    },
+  } as never, { ...options, fanoutEnabled: false });
+  assert.deepEqual(off.env, {});
+  assert.equal(off.subagentContextBrief, undefined);
 });

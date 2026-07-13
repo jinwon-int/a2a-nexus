@@ -1,9 +1,11 @@
 import assert from "node:assert/strict";
+import { createHash } from "node:crypto";
 import test from "node:test";
 import { mkdtempSync } from "node:fs";
+import { readFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { buildContainerScript, buildRunArgs, jsonArgvToScript, redactSecrets, runTask } from "./runner.js";
+import { buildContainerScript, buildRunArgs, jsonArgvToScript, materializeSubagentContextBrief, redactSecrets, runTask, sanitizeSubagentContextBrief } from "./runner.js";
 import type { RunnerConfig, RunnerTask } from "./types.js";
 
 const config: RunnerConfig = {
@@ -474,6 +476,56 @@ test("buildRunArgs advertises the contained-subagent conductor budget to the con
   // Default (disabled) keeps the container env clean — fanout stays opt-in.
   const withoutSubagents = buildRunArgs(config, task, "/tmp/a2a-work", "ci-run-no-subagents");
   assert.ok(!withoutSubagents.some((arg) => arg.startsWith("A2A_CONTAINED_SUBAGENTS")));
+});
+
+test("rejects an unredacted subagent brief before task.json and preserves broker-redacted bytes (Phase-2 WS5)", () => {
+  const raw: RunnerTask = {
+    ...task,
+    subagentContextBrief: `Use ghp_${"x".repeat(36)} only for this test`,
+  };
+  assert.throws(() => sanitizeSubagentContextBrief(raw), /not fully redacted/);
+
+  const brief = "Authorization: Bearer [redacted]\nTOKEN=[redacted]";
+  const sanitized = sanitizeSubagentContextBrief({ ...task, subagentContextBrief: brief });
+  assert.equal(sanitized.subagentContextBrief, brief);
+  assert.equal(redactSecrets(brief), brief);
+});
+
+test("materializes the broker-redacted context brief in the mounted workspace and advertises its path (Phase-2 WS5)", async () => {
+  const workDir = mkdtempSync(join(tmpdir(), "a2a-ws5-brief-"));
+  const brief = "# A2A sub-agent context brief\n\nAuthorization: Bearer [redacted]\nTOKEN=[redacted]";
+  const taskWithBrief: RunnerTask = { ...task, subagentContextBrief: brief };
+
+  const artifactPath = await materializeSubagentContextBrief(workDir, taskWithBrief);
+  assert.equal(artifactPath, join(workDir, "artifacts", "context-brief.md"));
+  const materialized = await readFile(artifactPath ?? "", "utf8");
+  assert.equal(materialized, brief);
+  assert.equal(
+    createHash("sha256").update(materialized, "utf8").digest("hex"),
+    createHash("sha256").update(brief, "utf8").digest("hex"),
+  );
+  await assert.rejects(
+    materializeSubagentContextBrief(workDir, {
+      ...task,
+      subagentContextBrief: `Use ghp_${"x".repeat(36)} only for this test`,
+    }),
+    /not fully redacted/,
+  );
+
+  const args = buildRunArgs({
+    ...config,
+    containedSubagents: {
+      enabled: true,
+      maxCount: 2,
+      outputBytes: 12_000,
+      reasons: ["context_heavy"],
+      roles: ["explorer", "verifier"],
+    },
+  }, taskWithBrief, workDir, "ci-ws5-brief");
+  assert.ok(args.includes("A2A_SUBAGENT_CONTEXT_BRIEF=/work/artifacts/context-brief.md"));
+
+  const withoutAuthorization = buildRunArgs(config, taskWithBrief, workDir, "ci-ws5-disabled");
+  assert.ok(!withoutAuthorization.some((arg) => arg.startsWith("A2A_SUBAGENT_CONTEXT_BRIEF=")));
 });
 
 test("task env cannot override the contained-subagent conductor policy (a2a-nexus#614 review)", () => {

@@ -282,7 +282,14 @@ function buildRunnerTask(task, env = process.env) {
   const issueNumber = safeText(payload.issueNumber, "");
   const reportLanguage = safeText(payload.reportLanguage, "");
   const requestedBy = safeText(payload.requestedBy, safeText(task?.requester?.id, ""));
+  const subagentContextBrief = typeof task?.subagentContextBrief === "string"
+    ? task.subagentContextBrief
+    : "";
+  if (subagentContextBrief && Buffer.byteLength(subagentContextBrief, "utf8") > 64 * 1024) {
+    throw new Error("task.subagentContextBrief exceeds the 65536-byte limit");
+  }
 
+  if (subagentContextBrief) runnerTask.subagentContextBrief = subagentContextBrief;
   if (issueUrl) runnerTask.issueUrl = issueUrl;
   if (issue) runnerTask.issue = issue;
   if (issueNumber) runnerTask.issueNumber = issueNumber;

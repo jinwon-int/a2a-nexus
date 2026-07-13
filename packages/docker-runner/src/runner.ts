@@ -45,7 +45,7 @@ export async function runTask(config: RunnerConfig, task: RunnerTask): Promise<R
     }
   }
 
-  const normalizedTask = normalizeTask(expandedTask ?? task);
+  const normalizedTask = sanitizeSubagentContextBrief(normalizeTask(expandedTask ?? task));
   const root = resolve(config.rootDir);
   const runToken = createRunToken();
   const safeTaskId = safeId(task.id);
@@ -54,6 +54,7 @@ export async function runTask(config: RunnerConfig, task: RunnerTask): Promise<R
   await mkdir(taskRoot, { recursive: true, mode: 0o700 });
   await mkdir(workDir, { recursive: false, mode: 0o700 });
   await writeFile(join(workDir, "task.json"), JSON.stringify(normalizedTask, null, 2));
+  await materializeSubagentContextBrief(workDir, normalizedTask);
   await writeFile(join(workDir, "run.json"), JSON.stringify({
     taskId: task.id,
     safeTaskId,
@@ -216,6 +217,40 @@ export async function prepareWorkDirForContainerUser(workDir: string, user?: str
   if (!parsed) return;
 
   await chownTreeBestEffort(workDir, parsed.uid, parsed.gid);
+}
+
+function requireFullyRedactedSubagentBrief(brief: string): string {
+  const runnerRedacted = redactSecrets(brief);
+  if (runnerRedacted !== brief) {
+    throw new Error("task.subagentContextBrief is not fully redacted at the broker boundary");
+  }
+  return brief;
+}
+
+export function sanitizeSubagentContextBrief<T extends RunnerTask>(task: T): T {
+  const brief = task.subagentContextBrief;
+  if (typeof brief !== "string" || brief.length === 0) return task;
+  if (Buffer.byteLength(brief, "utf8") > 64 * 1024) {
+    throw new Error("task.subagentContextBrief exceeds the 65536-byte limit");
+  }
+  return { ...task, subagentContextBrief: requireFullyRedactedSubagentBrief(brief) };
+}
+
+export async function materializeSubagentContextBrief(
+  workDir: string,
+  task: RunnerTask,
+): Promise<string | undefined> {
+  const brief = task.subagentContextBrief;
+  if (typeof brief !== "string" || brief.length === 0) return undefined;
+  if (Buffer.byteLength(brief, "utf8") > 64 * 1024) {
+    throw new Error("task.subagentContextBrief exceeds the 65536-byte limit");
+  }
+  const materializedBrief = requireFullyRedactedSubagentBrief(brief);
+  const artifactsDir = join(workDir, "artifacts");
+  await mkdir(artifactsDir, { recursive: true, mode: 0o700 });
+  const artifactPath = join(artifactsDir, "context-brief.md");
+  await writeFile(artifactPath, materializedBrief, { mode: 0o600 });
+  return artifactPath;
 }
 
 function parseNumericContainerUser(user?: string): { uid: number; gid: number } | undefined {
@@ -584,6 +619,9 @@ export function buildRunArgs(config: RunnerConfig, task: RunnerTask, workDir: st
     args.push("-e", `A2A_CONTAINED_SUBAGENTS_ROLES=${config.containedSubagents.roles.join(",")}`);
     args.push("-e", `A2A_CONTAINED_SUBAGENTS_OUTPUT_BYTES=${config.containedSubagents.outputBytes}`);
     args.push("-e", `A2A_CONTAINED_SUBAGENTS_REASONS=${config.containedSubagents.reasons.join(",")}`);
+    if (typeof task.subagentContextBrief === "string" && task.subagentContextBrief.length > 0) {
+      args.push("-e", "A2A_SUBAGENT_CONTEXT_BRIEF=/work/artifacts/context-brief.md");
+    }
   }
 
   for (const mount of config.extraMounts ?? []) {
@@ -620,6 +658,7 @@ export function buildRunArgs(config: RunnerConfig, task: RunnerTask, workDir: st
     "A2A_CONTAINED_SUBAGENTS_ROLES",
     "A2A_CONTAINED_SUBAGENTS_OUTPUT_BYTES",
     "A2A_CONTAINED_SUBAGENTS_REASONS",
+    "A2A_SUBAGENT_CONTEXT_BRIEF",
   ]);
   for (const [key, value] of Object.entries(task.env ?? {})) {
     if (reservedSubagentEnv.has(key)) continue;

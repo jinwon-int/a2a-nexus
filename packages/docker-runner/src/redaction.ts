@@ -1,6 +1,11 @@
 export const RESULT_STREAM_LIMIT = 8_000;
 
 export function redactSecrets(value: string): string {
+  const brokerMarker = "[redacted]";
+  return value.split(brokerMarker).map(redactSecretsSegment).join(brokerMarker);
+}
+
+function redactSecretsSegment(value: string): string {
   return value
     // GitHub tokens (classic + fine-grained + PAT v2)
     .replace(new RegExp("gh[pousr]" + "_" + "[A-Za-z0-9_]{20,}", "g"), "<redacted-github-token>")
