@@ -1000,31 +1000,6 @@ export function buildDynamicSubagentRuntime(
       return closed("gate_task_binding_invalid", { budgetState: budget.state, gateState: gate.state });
     }
 
-    const contextInput = payload.workerSubagentContextBrief ?? payload.contextBrief;
-    const extractedContext = contextInput && typeof contextInput === "object" && !Array.isArray(contextInput)
-      ? extractA2AWorkerSubagentContextBriefInput(contextInput)
-      : {
-          workerId: options.workerId,
-          taskId: task.id,
-          summary: task.message,
-          assignments: policy.decision.recommendedSubagents.map((agent) => ({
-            role: agent.role,
-            objective: agent.purpose,
-            writeSet: agent.writeSet ? [agent.writeSet] : undefined,
-          })),
-        };
-    const contextPacket = buildA2AWorkerSubagentContextBrief({
-      ...extractedContext,
-      workerId: options.workerId,
-      taskId: task.id,
-    });
-    const subagentContextBrief = redactSecretsText(
-      renderA2AWorkerSubagentContextBriefMarkdown(contextPacket),
-    );
-    if (Buffer.byteLength(subagentContextBrief, "utf8") > 64 * 1024) {
-      return closed("context_brief_too_large", { budgetState: budget.state, gateState: gate.state });
-    }
-
     const authorizedRoles = policy.decision.recommendedSubagents
       .map((agent) => agent.role)
       .filter((role) => staticRunnerRoles.includes(role))
@@ -1036,6 +1011,36 @@ export function buildDynamicSubagentRuntime(
         gateState: gate.state,
       });
     }
+    const authorizedAssignments = policy.decision.recommendedSubagents
+      .filter((agent) => authorizedRoles.includes(agent.role))
+      .slice(0, authorizedSubagentCount)
+      .map((agent) => ({
+        role: agent.role,
+        objective: agent.purpose,
+        writeSet: agent.writeSet ? [agent.writeSet] : undefined,
+      }));
+
+    const contextInput = payload.workerSubagentContextBrief ?? payload.contextBrief;
+    const extractedContext = contextInput && typeof contextInput === "object" && !Array.isArray(contextInput)
+      ? extractA2AWorkerSubagentContextBriefInput(contextInput)
+      : {
+          workerId: options.workerId,
+          taskId: task.id,
+          summary: task.message,
+        };
+    const contextPacket = buildA2AWorkerSubagentContextBrief({
+      ...extractedContext,
+      workerId: options.workerId,
+      taskId: task.id,
+      assignments: authorizedAssignments,
+    });
+    const subagentContextBrief = redactSecretsText(
+      renderA2AWorkerSubagentContextBriefMarkdown(contextPacket),
+    );
+    if (Buffer.byteLength(subagentContextBrief, "utf8") > 64 * 1024) {
+      return closed("context_brief_too_large", { budgetState: budget.state, gateState: gate.state });
+    }
+
     const reducedBy = [...new Set([
       ...policy.resourceGate.reducedBy,
       ...(authorizedSubagentCount < gate.authorizedSubagentCount ? ["static_runner_policy"] : []),

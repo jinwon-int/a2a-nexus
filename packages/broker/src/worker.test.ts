@@ -1941,6 +1941,7 @@ test("dynamic subagent runtime consults Phase-1 deciders and produces a redacted
           writeSet: [`src/${structuralSecret}.ts`],
           pointers: [{ path: "src/a.ts", lines: structuralSecret, note: "inspect this range" }],
         }],
+        pointers: [{ path: "src/a.ts", lines: structuralSecret, note: "top-level pointer" }],
         acceptanceCriteria: ["focused tests pass"],
       },
     },
@@ -1971,6 +1972,9 @@ test("dynamic subagent runtime consults Phase-1 deciders and produces a redacted
   assert.match(runtime.subagentContextBrief ?? "", /^# A2A sub-agent context brief/m);
   assert.match(runtime.subagentContextBrief ?? "", /\[redacted\]/);
   assert.doesNotMatch(runtime.subagentContextBrief ?? "", /ghp_/);
+  assert.match(runtime.subagentContextBrief ?? "", /^### explorer$/m);
+  assert.match(runtime.subagentContextBrief ?? "", /^### verifier$/m);
+  assert.doesNotMatch(runtime.subagentContextBrief ?? "", /^### implementer/m);
 
   const unapproved = { ...(task as Record<string, unknown>) };
   delete unapproved.approval;
