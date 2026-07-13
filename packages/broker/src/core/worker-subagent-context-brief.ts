@@ -3,6 +3,11 @@ import { createHash } from "node:crypto";
 
 import { numberValue, optionalString } from "./value-text.js";
 import { canonicalizeJson } from "../a2a/agent-card-signing.js";
+import { redactAndBound } from "./worker-subagent-redaction.js";
+
+// Re-exported for backward compatibility; the mechanism now lives in the shared
+// worker-subagent-redaction module (also used by the redaction gate).
+export { redactAndBound };
 
 // Source-only shared CONTEXT BRIEF for sub-agent fanout.
 //
@@ -22,7 +27,6 @@ import { canonicalizeJson } from "../a2a/agent-card-signing.js";
 // It builds a brief only — no spawn, dispatch, or mutation (boundaries false).
 
 const DEFAULT_MAX_FIELD_CHARS = 2000;
-const REDACTED = "[redacted]";
 
 const DEFAULT_INVARIANTS = [
   "Single-finalizer: exactly one finalizer owns the terminal result; sub-agents are evidence-only.",
@@ -105,21 +109,6 @@ export interface A2AWorkerSubagentContextBriefPacket {
     releaseOrPublish: false;
     secretMovement: false;
   };
-}
-
-// Programmatic secret redaction + byte bound, consistent with the repo's
-// established redactors (round-status redactSensitiveText, patch-bridge
-// redactSecrets): masks bearer/auth, KEY=VALUE secrets, URL and JSON secret
-// values, token-shaped and gh-token strings, then bounds the length.
-export function redactAndBound(value: string, maxChars: number): string {
-  const redacted = value
-    .replace(/(Authorization:\s*Bearer\s+)[^\s,;]+/gi, "$1" + REDACTED)
-    .replace(/\bgh[pousr]_[A-Za-z0-9_]+/g, REDACTED)
-    .replace(/\b(TOKEN|SECRET|KEY|PASSWORD|API[_-]?KEY|APIKEY|ACCESS_TOKEN|EDGE_SECRET)=([^\s,;&]+)/gi, "$1=" + REDACTED)
-    .replace(/([?&](?:token|access_token|api_key|apikey|secret|key|password)=)[^&\s,;]+/gi, "$1" + REDACTED)
-    .replace(/((?:"|')?(?:token|access_token|api_key|apikey|secret|key|password)(?:"|')?\s*:\s*(?:"|')?)[^"'\s,;}]+/gi, "$1" + REDACTED)
-    .replace(/\b[A-Za-z0-9_-]{40,}\b/g, REDACTED);
-  return redacted.length > maxChars ? redacted.slice(0, maxChars) : redacted;
 }
 
 function redactOptional(value: string | undefined, maxChars: number): string | undefined {

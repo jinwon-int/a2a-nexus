@@ -149,3 +149,19 @@ Source-only, all boundaries false: it builds a brief and does not spawn, dispatc
 CLI:
 
 `npm run worker_subagent_context_brief -- --input fixtures/worker-subagent-orchestration/context-brief-basic.json --json`
+
+## Redaction Gate
+
+`a2a-broker.worker-subagent-redaction-gate.packet` enforces redaction + a byte bound on **every** sub-agent output **programmatically, before the finalizer assembles evidence** — not merely requested in a prompt. It shares the same redactor as the context brief (`worker-subagent-redaction`).
+
+Per entry it reports a verdict (`clean` / `redacted` / `truncated` / `redacted+truncated` / `rejected`):
+
+- **`redact` mode (default)** — secret findings are masked and the cleaned entry is passed through.
+- **`reject` mode** — an entry with a secret finding is **excluded** from the assembled set (`included: false`), so a leaking sub-agent output never reaches evidence.
+- over-budget output is truncated to `maxOutputChars`.
+
+The `cleanedEntries` output feeds directly into the **evidence-assembly** packet, so the pipeline is: gate decision → (spawn) → redaction gate → deterministic evidence assembly. Source-only, all boundaries false, content-addressed JCS digest; it cleans/decides only and does not spawn, dispatch, or mutate.
+
+CLI:
+
+`npm run worker_subagent_redaction_gate -- --input fixtures/worker-subagent-orchestration/redaction-gate-basic.json --json`
