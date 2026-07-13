@@ -155,6 +155,15 @@ test("A2A_HERMES_DEFAULT_MODEL env resolves minimax-m3 as a fallback (#673)", ()
   assert.equal(viaOpenclawEnv.model, "minimax-m3");
 });
 
+test("A2A_CODEX_MODEL env selects the first-class Codex fleet model", () => {
+  const viaCodexEnv = __test.resolveWorkerModel(task({}), {
+    A2A_CODEX_MODEL: "openai-codex/gpt-5.6-sol",
+    A2A_OPENCLAW_MODEL: "openai-codex/gpt-5.5",
+  });
+  assert.equal(viaCodexEnv.model, "openai-codex/gpt-5.6-sol");
+  assert.equal(viaCodexEnv.fromPayload, false);
+});
+
 test("worker model policy module exposes auditable allowlist and fallbacks (#799)", () => {
   assert.deepEqual(ALLOWED_WORKER_MODELS, [
     "deepseek/deepseek-v4-flash",
@@ -167,7 +176,7 @@ test("worker model policy module exposes auditable allowlist and fallbacks (#799
     "grok-4.20",
     "minimax-m3",
   ]);
-  assert.equal(DEFAULT_WORKER_MODEL, "openai-codex/gpt-5.5");
+  assert.equal(DEFAULT_WORKER_MODEL, "openai-codex/gpt-5.6-sol");
   assert.deepEqual(HERMES_UNSUPPORTED_WORKER_MODELS, [
     "deepseek/deepseek-v4-flash",
     "deepseek-v4-flash",
@@ -194,7 +203,7 @@ test("worker model policy module exposes auditable allowlist and fallbacks (#799
     fromPayload: false,
   });
   assert.deepEqual(resolveWorkerThinkingInput("max"), { thinking: "max", fromPayload: true });
-  assert.deepEqual(resolveWorkerThinkingInput("invalid"), { thinking: "low", fromPayload: false });
+  assert.deepEqual(resolveWorkerThinkingInput("invalid"), { thinking: "high", fromPayload: false });
 });
 
 test("worker model policy prevents Hermes profile from accepting unsupported aliases (#799)", () => {
@@ -263,7 +272,7 @@ test("advisory sidecar routing permits advisory metadata without changing operat
     route: "default_worker",
     advisoryOnly: true,
     selectedModel: "deepseek/deepseek-v4-pro",
-    selectedThinking: "low",
+    selectedThinking: "high",
     reasons: [],
     evidence: {
       labelMatched: "advisory-sidecar",
@@ -338,7 +347,7 @@ test("advisory sidecar routing falls back deterministically when no activation l
     route: "default_worker",
     advisoryOnly: true,
     selectedModel: DEFAULT_WORKER_MODEL,
-    selectedThinking: "low",
+    selectedThinking: "high",
     reasons: ["no_advisory_route_label"],
     evidence: {
       labelMatched: null,
@@ -446,7 +455,7 @@ test("advisory sidecar fallback decision accepts only valid advisory-only schema
   assert.equal(decision.advisoryOnly, true);
 });
 
-test("normal source-only task uses current fleet baseline model and low thinking by default (#766)", () => {
+test("normal source-only task uses the Codex fleet baseline model and high reasoning by default", () => {
   const runnerTask = __test.buildRunnerTask(task({
     intent: "propose_patch",
     payload: {
@@ -457,8 +466,8 @@ test("normal source-only task uses current fleet baseline model and low thinking
     },
   }), {});
 
-  assert.equal(runnerTask.workerModel, "openai-codex/gpt-5.5");
-  assert.equal(runnerTask.workerThinking, "low");
+  assert.equal(runnerTask.workerModel, "openai-codex/gpt-5.6-sol");
+  assert.equal(runnerTask.workerThinking, "high");
 });
 
 test("github runner task defaults to 60 minutes", () => {

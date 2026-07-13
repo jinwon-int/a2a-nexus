@@ -73,7 +73,7 @@ export interface Team1RoundSpec {
 
 // ── Worker model policy ────────────────────────────────────────────────────
 
-export const TEAM1_DEFAULT_WORKER_MODEL = "openai-codex/gpt-5.5";
+export const TEAM1_DEFAULT_WORKER_MODEL = "openai-codex/gpt-5.6-sol";
 export const TEAM1_PRO_ESCALATION_MODEL = "deepseek/deepseek-v4-pro";
 
 export type Team1ModelEscalationReason =
@@ -96,13 +96,15 @@ export const TEAM1_ALLOWED_WORKER_MODELS: ReadonlySet<string> = new Set([
   TEAM1_PRO_ESCALATION_MODEL,
   "deepseek/deepseek-v4-flash",
   "deepseek-v4-pro",
+  "openai-codex/gpt-5.5",
   "gpt-5.5",
+  "gpt-5.6-sol",
   "grok-4.20",
   "minimax-m3",
 ]);
 
 /** Default thinking level when not overridden per-task. */
-export const TEAM1_DEFAULT_WORKER_THINKING = "low";
+export const TEAM1_DEFAULT_WORKER_THINKING = "high";
 
 /**
  * Valid OpenClaw --thinking values.
@@ -133,6 +135,7 @@ export interface Team1WorkerModelPolicy {
   reasons: Team1ModelEscalationReason[];
   env: {
     A2A_OPENCLAW_MODEL: string;
+    A2A_CODEX_MODEL: string;
   };
   boundary: "per-task model override only; no default change, restart, deploy, or credential change";
   /** Payload override fields for the broker task payload. */
@@ -569,7 +572,9 @@ export function resolveTeam1WorkerModelPolicy(roundSpec: Team1RoundSpec): Team1W
   // Build the payload override fields that the handler/runner will read
   const payloadOverrides: Team1WorkerModelPayloadOverrides = {
     workerModel: selectedModel,
-    workerThinking: selectedThinking !== TEAM1_DEFAULT_WORKER_THINKING ? selectedThinking : undefined,
+    workerThinking: roundSpec.workerThinking && TEAM1_ALLOWED_WORKER_THINKING_LEVELS.has(roundSpec.workerThinking)
+      ? selectedThinking
+      : undefined,
     workerModelEscalationReasons: finalReasons.length > 0 ? finalReasons.join(",") : undefined,
   };
 
@@ -584,6 +589,7 @@ export function resolveTeam1WorkerModelPolicy(roundSpec: Team1RoundSpec): Team1W
     reasons: finalReasons,
     env: {
       A2A_OPENCLAW_MODEL: selectedModel,
+      A2A_CODEX_MODEL: selectedModel,
     },
     boundary: "per-task model override only; no default change, restart, deploy, or credential change",
     payloadOverrides,
@@ -886,6 +892,7 @@ export function buildTeam1DispatchPlan(
   }
 
   dispatchActions.push(`[model] A2A_OPENCLAW_MODEL=${modelPolicy.selectedModel}`);
+  dispatchActions.push(`[model] A2A_CODEX_MODEL=${modelPolicy.selectedModel}`);
   dispatchActions.push(`[model] thinking=${modelPolicy.selectedThinking}`);
   if (roundSpec.workerModel && TEAM1_ALLOWED_WORKER_MODELS.has(roundSpec.workerModel)) {
     dispatchActions.push(`[model] explicit override: workerModel=${roundSpec.workerModel}`);

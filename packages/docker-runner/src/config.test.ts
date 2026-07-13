@@ -353,6 +353,55 @@ test("mergeRunnerEnvFile supports Claude Code cccb patch profile", async () => {
   }
 });
 
+test("mergeRunnerEnvFile supports first-class Codex patch profile", async () => {
+  const dir = mkdtempSync(join(tmpdir(), "a2a-runner-env-"));
+  try {
+    const file = join(dir, "worker.env");
+    writeFileSync(file, [
+      "A2A_DOCKER_RUNNER_PATCH_COMMAND_PROFILE=codex",
+      "A2A_DOCKER_RUNNER_TRUSTED_OPERATOR=1",
+      "A2A_DOCKER_RUNNER_CODEX_CONFIG_DIR=/srv/codex-profile",
+      "A2A_DOCKER_RUNNER_IMAGE=a2a-docker-runner-codex:latest",
+      "A2A_CODEX_MODEL=gpt-5.6-sol",
+      "A2A_CODEX_REASONING_EFFORT=high",
+    ].join("\n"));
+
+    const config = await loadConfig(mergeRunnerEnvFile(baseEnv, file));
+
+    assert.equal(config.commandProfile, "codex");
+    assert.equal(config.image, "a2a-docker-runner-codex:latest");
+    assert.equal(config.network, "bridge");
+    assert.match(config.commandScript ?? "", /codex exec/);
+    assert.match(config.commandScript ?? "", /gpt-5\.6-sol/);
+    assert.match(config.commandScript ?? "", /model_reasoning_effort="\$A2A_CODEX_REASONING_EFFORT"/);
+    assert.match(config.commandScript ?? "", /--sandbox danger-full-access/);
+    assert.deepEqual(config.codexProfile, { configDir: "/srv/codex-profile" });
+    assert.deepEqual(config.extraMounts, [
+      { source: "/srv/codex-profile", target: "/run/secrets/codex-dir", readOnly: true },
+    ]);
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test("Codex patch profile defaults to the dedicated minimal credential directory", async () => {
+  const config = await loadConfig({
+    ...baseEnv,
+    A2A_DOCKER_RUNNER_PATCH_COMMAND_PROFILE: "codex",
+    A2A_DOCKER_RUNNER_TRUSTED_OPERATOR: "1",
+    A2A_DOCKER_RUNNER_IMAGE: "a2a-docker-runner-codex:latest",
+  });
+
+  assert.deepEqual(config.codexProfile, { configDir: "/var/lib/a2a-runner/codex-dir" });
+  assert.deepEqual(config.extraMounts, [
+    {
+      source: "/var/lib/a2a-runner/codex-dir",
+      target: "/run/secrets/codex-dir",
+      readOnly: true,
+    },
+  ]);
+});
+
 test("loadConfig treats A2A_DOCKER_RUNNER_SKIP_ENGINE_DETECT truthily, not by mere presence", async () => {
   // Truthy values skip detection and force docker (deterministic on any host).
   for (const value of ["1", "true", "yes", "on"]) {
@@ -376,6 +425,15 @@ test("loadConfig treats A2A_DOCKER_RUNNER_SKIP_ENGINE_DETECT truthily, not by me
 });
 
 test("loadConfig enforces expected patch command profile", async () => {
+  const codex = await loadConfig({
+    ...baseEnv,
+    A2A_DOCKER_RUNNER_EXPECTED_PATCH_COMMAND_PROFILE: "codex",
+    A2A_DOCKER_RUNNER_PATCH_COMMAND_PROFILE: "codex",
+    A2A_DOCKER_RUNNER_TRUSTED_OPERATOR: "1",
+    A2A_DOCKER_RUNNER_IMAGE: "a2a-docker-runner-codex:d9d7d64",
+  });
+  assert.equal(codex.commandProfile, "codex");
+
   const claudeCode = await loadConfig({
     ...baseEnv,
     A2A_DOCKER_RUNNER_EXPECTED_PATCH_COMMAND_PROFILE: "claude-code",
@@ -417,6 +475,16 @@ test("loadConfig enforces expected patch command profile", async () => {
 });
 
 test("loadConfig rejects known runner image/profile family mismatches", async () => {
+  await assert.rejects(
+    () => loadConfig({
+      ...baseEnv,
+      A2A_DOCKER_RUNNER_PATCH_COMMAND_PROFILE: "hermes",
+      A2A_DOCKER_RUNNER_TRUSTED_OPERATOR: "1",
+      A2A_DOCKER_RUNNER_IMAGE: "a2a-docker-runner-codex:d9d7d64",
+    }),
+    /image\/profile mismatch.*codex runner image.*PROFILE=hermes/,
+  );
+
   await assert.rejects(
     () => loadConfig({
       ...baseEnv,

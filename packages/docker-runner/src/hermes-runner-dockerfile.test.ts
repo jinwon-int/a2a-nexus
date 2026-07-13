@@ -4,6 +4,7 @@ import { test } from "node:test";
 
 const dockerfile = readFileSync(new URL("../docker/hermes-runner.Dockerfile", import.meta.url), "utf8");
 const claudeCodeDockerfile = readFileSync(new URL("../docker/claude-code-runner.Dockerfile", import.meta.url), "utf8");
+const codexDockerfile = readFileSync(new URL("../docker/codex-runner.Dockerfile", import.meta.url), "utf8");
 
 test("Hermes runner image pins the current GPT-5.6-capable Hermes release", () => {
   assert.match(
@@ -36,4 +37,16 @@ test("Claude Code cccb runner image keeps credentials runtime-mounted only (#103
   assert.doesNotMatch(claudeCodeDockerfile, /ADD\s+.*\.claude/i);
   assert.doesNotMatch(claudeCodeDockerfile, /A2A_DOCKER_RUNNER_CLAUDE_CONFIG_DIR\s*=/);
   assert.match(claudeCodeDockerfile, /credentials are mounted at runtime/i);
+});
+
+test("Codex runner image pins the validated CLI and keeps credentials runtime-mounted", () => {
+  assert.match(codexDockerfile, /ARG CODEX_PACKAGE=@openai\/codex@0\.144\.1/);
+  assert.match(codexDockerfile, /npm install -g "\$\{CODEX_PACKAGE\}"/);
+  assert.match(codexDockerfile, /codex --version/);
+  assert.match(codexDockerfile, /\s+python3\s+\\/);
+  assert.match(codexDockerfile, /\s+ripgrep\s+\\/);
+  assert.match(codexDockerfile, /org\.openclaw\.a2a-docker-runner\.harness="codex"/);
+  assert.doesNotMatch(codexDockerfile, /COPY\s+.*\.codex/i);
+  assert.doesNotMatch(codexDockerfile, /ADD\s+.*\.codex/i);
+  assert.match(codexDockerfile, /credentials are mounted at runtime/i);
 });
