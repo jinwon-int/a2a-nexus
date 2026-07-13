@@ -131,6 +131,11 @@ const SAFE_CHILD_ENV_KEYS = new Set([
   "HOME", "PATH", "LANG", "LC_ALL", "LC_CTYPE", "TERM", "TMPDIR", "TEMP", "TMP",
   "USER", "LOGNAME", "SHELL", "SSH_AUTH_SOCK", "XDG_CONFIG_HOME", "XDG_CACHE_HOME", "XDG_DATA_HOME",
   "CLAUDE_CONFIG_DIR", "CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC", "DISABLE_AUTOUPDATER",
+  // Phase-2 WS4: fanout — let the runner-advertised contained-subagent budget and the
+  // fanout turn budget reach the claude child (used only in fanout mode; runner injects
+  // these only when the fanout flag is on).
+  "A2A_CONTAINED_SUBAGENTS_ENABLED", "A2A_CONTAINED_SUBAGENTS_MAX", "A2A_CONTAINED_SUBAGENTS_ROLES",
+  "A2A_CONTAINED_SUBAGENTS_OUTPUT_BYTES", "A2A_CONTAINED_SUBAGENTS_REASONS", "A2A_CLAUDE_CODE_FANOUT_MAX_TURNS",
 ]);
 const PATCH_BRIDGE_CONTRACT_VERSION = "claude-a2a-patch.v1";
 
@@ -527,19 +532,51 @@ function buildPatchPrompt(message) {
   return `${preamble}\n${message}`;
 }
 
-async function runClaudePatch(prompt, flags, env, cwd) {
+// Phase-2 WS4: build the fanout spawn-instructing prompt from the runner-advertised
+// A2A_CONTAINED_SUBAGENTS_* budget. Empty string when fanout isn't advertised. Encodes
+// the policy invariants (single-finalizer, disjoint write sets, evidence-only, redaction,
+// read-live-before-edit, zero-subagent escape hatch).
+export function buildFanoutSubagentPrompt(env) {
+  if (safeText(env.A2A_CONTAINED_SUBAGENTS_ENABLED).trim() !== "1") return "";
+  const max = positiveInteger(env.A2A_CONTAINED_SUBAGENTS_MAX, 0);
+  if (max <= 0) return "";
+  const roles = safeText(env.A2A_CONTAINED_SUBAGENTS_ROLES, "explorer,implementer,verifier");
+  const outputBytes = positiveInteger(env.A2A_CONTAINED_SUBAGENTS_OUTPUT_BYTES, 12000);
+  const reasons = safeText(env.A2A_CONTAINED_SUBAGENTS_REASONS, "").trim();
+  return [
+    "",
+    "Sub-agent orchestration (contained fanout):",
+    `- You MAY spawn up to ${max} sub-agent(s) via the Task tool when the assignment warrants it${reasons ? ` (reasons: ${reasons})` : ""}.`,
+    `- Allowed helper roles: ${roles}.`,
+    "- Sub-agents are evidence-only helpers with disjoint file/module write sets. You remain the single finalizer: only you open/merge PRs, post Done/Block evidence, and own the terminal result.",
+    "- Read the live file immediately before editing it; keep all work inside the cloned repo and the disposable workspace.",
+    `- Bound each helper's evidence to ${outputBytes} bytes or less; never emit secrets, tokens, .env, or private host paths.`,
+    "- Zero sub-agents is always valid — work directly when the task is small, sensitive, urgent, or tightly coupled.",
+  ].join("\n");
+}
+
+async function runClaudePatch(prompt, flags, env, cwd, opts = {}) {
+  const fanout = opts.fanout === true;
   const claudeBin = safeText(env.A2A_CLAUDE_CODE_BIN, safeText(env.CLAUDE_BIN, "claude"));
   const timeoutSec = positiveInteger(flags.timeout, positiveInteger(env.A2A_CLAUDE_CODE_TIMEOUT_SEC, 1800));
-  const maxTurns = positiveInteger(env.A2A_CLAUDE_CODE_MAX_TURNS, 40);
+  // Fanout needs a larger turn budget to orchestrate; env-configurable, hard-capped at 200.
+  const maxTurns = fanout
+    ? Math.min(positiveInteger(env.A2A_CLAUDE_CODE_FANOUT_MAX_TURNS, 40), 200)
+    : positiveInteger(env.A2A_CLAUDE_CODE_MAX_TURNS, 40);
   const maxBuffer = positiveInteger(env.A2A_CLAUDE_CODE_MAX_OUTPUT_BYTES, 64 * 1024 * 1024);
   const explicitModel = resolveExplicitClaudeModel(flags, env);
+  // Fanout adds the Task tool so the worker can spawn the roster (WS3). The mounted
+  // ~/.claude/agents/ roster is auto-discovered by Claude Code.
+  const allowedTools = fanout ? "Task Bash Edit Write Read Glob Grep" : "Bash Edit Write Read Glob Grep";
+  const fanoutPrompt = fanout ? buildFanoutSubagentPrompt(env) : "";
   // NOTE: no --dangerously-skip-permissions: it is refused when running as root (the proot case).
   const args = [
     "-p", prompt,
     ...(explicitModel ? ["--model", explicitModel] : []),
     "--output-format", "json",
-    "--allowedTools", "Bash Edit Write Read Glob Grep",
+    "--allowedTools", allowedTools,
     "--max-turns", String(maxTurns),
+    ...(fanoutPrompt ? ["--append-system-prompt", fanoutPrompt] : []),
   ];
   const child = await spawnWithProcessGroupKill(claudeBin, args, {
     cwd,
@@ -1196,18 +1233,18 @@ async function runSingleShotPatchMode(message, flags) {
 }
 
 async function runPatchMode(message, flags) {
-  if (isFanoutPatchMode(process.env)) {
-    // Phase-2 WS1 foundation: fanout mode routed here. Sub-agent orchestration
-    // (Task tool, roster, gate/brief consumption) is wired in Phase-2 WS3-5;
-    // until then run single-shot so the flag is behavior-safe. Rollback = unset
-    // A2A_DOCKER_RUNNER_CLAUDE_CODE_FANOUT_ENABLED.
-    process.stderr.write("A2A_CLAUDE_CODE_PATCH_MODE=fanout: sub-agent orchestration not yet wired (Phase-2 WS3-5); running single-shot for now\n");
-    await runSingleShotPatchMode(message, flags);
-    return;
-  }
   if (isSingleShotPatchMode(process.env)) {
     await runSingleShotPatchMode(message, flags);
     return;
+  }
+  // Fanout (Phase-2 WS3/WS4): run the agentic patch with the Task tool + roster + a
+  // spawn-instructing prompt + a raised turn budget so a claude-code worker can
+  // orchestrate sub-agents. WS5 (per-task gate/budget enforcement + redaction +
+  // deterministic assembly) is NOT wired yet — keep the runner flag off in production
+  // until then. Rollback = unset A2A_DOCKER_RUNNER_CLAUDE_CODE_FANOUT_ENABLED.
+  const fanout = isFanoutPatchMode(process.env);
+  if (fanout) {
+    process.stderr.write("A2A_CLAUDE_CODE_PATCH_MODE=fanout: agentic patch with sub-agent orchestration (Task tool); WS5 gate/redaction not yet wired\n");
   }
   // Session-scoped isolation (#1129): prefix the workspace with the session id.
   const sessionId = safeText(flags["session-id"], "default");
@@ -1216,7 +1253,7 @@ async function runPatchMode(message, flags) {
   let envelope = null;
   try {
     const prompt = buildPatchPrompt(message);
-    const stdout = await runClaudePatch(prompt, flags, process.env, workspace);
+    const stdout = await runClaudePatch(prompt, flags, process.env, workspace, { fanout });
 
     let outer;
     try {

@@ -5,7 +5,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
 import { Script } from "node:vm";
-import { buildClaudeCodePatchCommandScript, loadConfig, loadEnvFile, mergeRunnerEnvFile, validateRunnerConfig } from "./config.js";
+import { buildClaudeCodePatchCommandScript, loadContainedSubagentsConfig, loadConfig, loadEnvFile, mergeRunnerEnvFile, validateRunnerConfig } from "./config.js";
 import type { RunnerConfig } from "./types.js";
 
 const baseEnv = {
@@ -1418,4 +1418,19 @@ test("claude-code patch mode: single-shot by default, fanout only when the flag 
     buildClaudeCodePatchCommandScript({ A2A_DOCKER_RUNNER_CLAUDE_CODE_FANOUT_ENABLED: "1" }),
     /export A2A_CLAUDE_CODE_PATCH_MODE=fanout\b/,
   );
+});
+
+test("contained sub-agents: claude-code enabled only when the fanout flag is 1 (Phase-2 WS4)", () => {
+  // Default (flag off) — claude-code has no contained sub-agents.
+  const off = loadContainedSubagentsConfig({}, "claude-code");
+  assert.equal(off.enabled, false);
+  assert.equal(off.maxCount, 0);
+  // Opt-in via the fanout flag.
+  const on = loadContainedSubagentsConfig({ A2A_DOCKER_RUNNER_CLAUDE_CODE_FANOUT_ENABLED: "1" }, "claude-code");
+  assert.equal(on.enabled, true);
+  assert.ok(on.maxCount >= 1 && on.maxCount <= 4);
+  assert.ok(on.roles.includes("explorer"));
+  // openclaw/hermes stay enabled-by-default regardless of the fanout flag (unchanged).
+  assert.equal(loadContainedSubagentsConfig({}, "hermes").enabled, true);
+  assert.equal(loadContainedSubagentsConfig({}, "openclaw").enabled, true);
 });
