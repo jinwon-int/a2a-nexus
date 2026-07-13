@@ -4,6 +4,19 @@ import {
   buildA2AWorkerSubagentOrchestrationPolicy,
   type A2AWorkerSubagentTaskProfile,
 } from "./core/worker-subagent-orchestration-policy.js";
+import {
+  buildA2AWorkerSubagentBudgetCounter,
+  extractA2AWorkerSubagentBudgetCounterInput,
+} from "./core/worker-subagent-budget-counter.js";
+import {
+  buildA2AWorkerSubagentContextBrief,
+  extractA2AWorkerSubagentContextBriefInput,
+  renderA2AWorkerSubagentContextBriefMarkdown,
+} from "./core/worker-subagent-context-brief.js";
+import {
+  buildA2AWorkerSubagentSpawnGateDecision,
+  extractA2AWorkerSubagentSpawnGateDecisionInput,
+} from "./core/worker-subagent-spawn-gate-decision.js";
 import { mkdir, readFile, writeFile } from "node:fs/promises";
 import { dirname } from "node:path";
 import { setTimeout as delay } from "node:timers/promises";
@@ -840,6 +853,110 @@ export function buildSubagentDirectiveEnv(
   };
 }
 
+export interface DynamicSubagentRuntimeOptions {
+  workerId: string;
+  subagentCap: number;
+  executionIsolation?: "isolated" | "shared";
+  fanoutEnabled: boolean;
+}
+
+export interface DynamicSubagentRuntime {
+  env: Record<string, string>;
+  subagentContextBrief?: string;
+}
+
+const CLOSED_DYNAMIC_SUBAGENT_ENV = {
+  A2A_DOCKER_RUNNER_CLAUDE_CODE_FANOUT_ENABLED: "0",
+  A2A_DOCKER_RUNNER_CONTAINED_SUBAGENTS_MAX: "0",
+} as const;
+
+/** Convert source-only Phase-1 packets into shrink-only per-task runner authorization. */
+export function buildDynamicSubagentRuntime(
+  task: TaskRecord,
+  options: DynamicSubagentRuntimeOptions,
+): DynamicSubagentRuntime {
+  const closed = (): DynamicSubagentRuntime => ({ env: { ...CLOSED_DYNAMIC_SUBAGENT_ENV } });
+  if (!options.fanoutEnabled) return closed();
+
+  const payload = (task.payload ?? {}) as Record<string, unknown>;
+  const budgetInput = payload.workerSubagentBudgetCounter ?? payload.budgetCounter;
+  const authorizationInput = payload.spawnAuthorization ?? payload.authorization;
+  if (!budgetInput || typeof budgetInput !== "object" || Array.isArray(budgetInput)) return closed();
+  if (!authorizationInput || typeof authorizationInput !== "object" || Array.isArray(authorizationInput)) return closed();
+
+  try {
+    const extractedBudget = extractA2AWorkerSubagentBudgetCounterInput(budgetInput);
+    const budget = buildA2AWorkerSubagentBudgetCounter(extractedBudget);
+    if (budget.state !== "within-budget" || budget.workerId !== options.workerId) return closed();
+    if (extractedBudget.usage.taskId && extractedBudget.usage.taskId !== task.id) return closed();
+
+    const profile = deriveSubagentTaskProfile(task);
+    const policy = buildA2AWorkerSubagentOrchestrationPolicy({
+      task: profile,
+      executionIsolation: options.executionIsolation,
+      host: {
+        workerId: options.workerId,
+        workerSubagentCap: Math.max(0, Math.min(4, options.subagentCap)),
+        activeSubagents: 0,
+      },
+    });
+    if (policy.decision.parallelismHint === 0) return closed();
+
+    const gate = buildA2AWorkerSubagentSpawnGateDecision(extractA2AWorkerSubagentSpawnGateDecisionInput({
+      spawnAuthorization: authorizationInput,
+      budgetCounter: budget,
+      requestedSpawn: {
+        subagents: policy.decision.recommendedSubagents.map((agent) => ({
+          role: agent.role,
+          writeSet: agent.writeSet ? [agent.writeSet] : undefined,
+        })),
+      },
+    }));
+    if (
+      gate.state !== "authorized" ||
+      gate.authorizedSubagentCount <= 0 ||
+      gate.workerId !== options.workerId ||
+      (gate.taskId !== undefined && gate.taskId !== task.id)
+    ) return closed();
+
+    const contextInput = payload.workerSubagentContextBrief ?? payload.contextBrief;
+    const extractedContext = contextInput && typeof contextInput === "object" && !Array.isArray(contextInput)
+      ? extractA2AWorkerSubagentContextBriefInput(contextInput)
+      : {
+          workerId: options.workerId,
+          taskId: task.id,
+          summary: task.message,
+          assignments: policy.decision.recommendedSubagents.map((agent) => ({
+            role: agent.role,
+            objective: agent.purpose,
+            writeSet: agent.writeSet ? [agent.writeSet] : undefined,
+          })),
+        };
+    const contextPacket = buildA2AWorkerSubagentContextBrief({
+      ...extractedContext,
+      workerId: options.workerId,
+      taskId: task.id,
+    });
+    const subagentContextBrief = renderA2AWorkerSubagentContextBriefMarkdown(contextPacket);
+    if (Buffer.byteLength(subagentContextBrief, "utf8") > 64 * 1024) return closed();
+
+    const authorizedRoles = policy.decision.recommendedSubagents
+      .slice(0, gate.authorizedSubagentCount)
+      .map((agent) => agent.role);
+    return {
+      env: {
+        A2A_DOCKER_RUNNER_CLAUDE_CODE_FANOUT_ENABLED: "1",
+        A2A_DOCKER_RUNNER_CONTAINED_SUBAGENTS_MAX: String(gate.authorizedSubagentCount),
+        A2A_DOCKER_RUNNER_CONTAINED_SUBAGENTS_ROLES: authorizedRoles.join(","),
+        A2A_DOCKER_RUNNER_CONTAINED_SUBAGENTS_REASONS: "context_heavy",
+      },
+      subagentContextBrief,
+    };
+  } catch {
+    return closed();
+  }
+}
+
 /**
  * Derive a conservative task profile for the orchestration policy.
  * Explicit payload.subagentProfile wins; otherwise patch-shaped intents are
@@ -972,13 +1089,22 @@ export function createExternalWorkerHandler(config: ExternalWorkerHandlerConfig)
     const directiveBudget = config.subagentDirectiveDisabled
       ? null
       : Number(directiveEnv.A2A_SUBAGENT_MAX ?? 0);
+    const dynamicRuntime = buildDynamicSubagentRuntime(task, {
+      workerId: config.workerId ?? "worker",
+      subagentCap: config.subagentCap ?? 4,
+      executionIsolation: config.subagentExecutionIsolation ?? "shared",
+      fanoutEnabled: config.env?.A2A_DOCKER_RUNNER_CLAUDE_CODE_FANOUT_ENABLED === "1",
+    });
+    const handlerInput = dynamicRuntime.subagentContextBrief
+      ? { ...task, subagentContextBrief: dynamicRuntime.subagentContextBrief }
+      : task;
     const { stdout, stderr, code, signal, timedOut } = await runExternalHandler({
       command: config.command,
       args,
       cwd: config.cwd,
-      env: { ...config.env, ...traceEnv, ...directiveEnv },
+      env: { ...config.env, ...traceEnv, ...directiveEnv, ...dynamicRuntime.env },
       timeoutMs,
-      input: JSON.stringify(task),
+      input: JSON.stringify(handlerInput),
     });
 
     if (timedOut) {

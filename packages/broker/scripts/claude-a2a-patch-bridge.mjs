@@ -136,6 +136,7 @@ const SAFE_CHILD_ENV_KEYS = new Set([
   // these only when the fanout flag is on).
   "A2A_CONTAINED_SUBAGENTS_ENABLED", "A2A_CONTAINED_SUBAGENTS_MAX", "A2A_CONTAINED_SUBAGENTS_ROLES",
   "A2A_CONTAINED_SUBAGENTS_OUTPUT_BYTES", "A2A_CONTAINED_SUBAGENTS_REASONS", "A2A_CLAUDE_CODE_FANOUT_MAX_TURNS",
+  "A2A_SUBAGENT_CONTEXT_BRIEF",
 ]);
 const PATCH_BRIDGE_CONTRACT_VERSION = "claude-a2a-patch.v1";
 
@@ -543,11 +544,13 @@ export function buildFanoutSubagentPrompt(env) {
   const roles = safeText(env.A2A_CONTAINED_SUBAGENTS_ROLES, "explorer,implementer,verifier");
   const outputBytes = positiveInteger(env.A2A_CONTAINED_SUBAGENTS_OUTPUT_BYTES, 12000);
   const reasons = safeText(env.A2A_CONTAINED_SUBAGENTS_REASONS, "").trim();
+  const contextBrief = safeText(env.A2A_SUBAGENT_CONTEXT_BRIEF, "").trim();
   return [
     "",
     "Sub-agent orchestration (contained fanout):",
     `- You MAY spawn up to ${max} sub-agent(s) via the Task tool when the assignment warrants it${reasons ? ` (reasons: ${reasons})` : ""}.`,
     `- Allowed helper roles: ${roles}.`,
+    ...(contextBrief ? [`- Read the shared redacted context brief at ${contextBrief} before delegating; use its pointers instead of re-exploring.`] : []),
     "- Sub-agents are evidence-only helpers with disjoint file/module write sets. You remain the single finalizer: only you open/merge PRs, post Done/Block evidence, and own the terminal result.",
     "- Read the live file immediately before editing it; keep all work inside the cloned repo and the disposable workspace.",
     `- Bound each helper's evidence to ${outputBytes} bytes or less; never emit secrets, tokens, .env, or private host paths.`,
@@ -1237,14 +1240,14 @@ async function runPatchMode(message, flags) {
     await runSingleShotPatchMode(message, flags);
     return;
   }
-  // Fanout (Phase-2 WS3/WS4): run the agentic patch with the Task tool + roster + a
+  // Fanout (Phase-2 WS3/WS4/WS5): run the agentic patch with the Task tool + roster + a
   // spawn-instructing prompt + a raised turn budget so a claude-code worker can
-  // orchestrate sub-agents. WS5 (per-task gate/budget enforcement + redaction +
-  // deterministic assembly) is NOT wired yet — keep the runner flag off in production
-  // until then. Rollback = unset A2A_DOCKER_RUNNER_CLAUDE_CODE_FANOUT_ENABLED.
+  // orchestrate sub-agents. The broker's per-task Phase-1 gate/budget authorization
+  // shrinks this opt-in and supplies the mounted redacted context brief.
+  // Rollback = unset A2A_DOCKER_RUNNER_CLAUDE_CODE_FANOUT_ENABLED.
   const fanout = isFanoutPatchMode(process.env);
   if (fanout) {
-    process.stderr.write("A2A_CLAUDE_CODE_PATCH_MODE=fanout: agentic patch with sub-agent orchestration (Task tool); WS5 gate/redaction not yet wired\n");
+    process.stderr.write("A2A_CLAUDE_CODE_PATCH_MODE=fanout: dynamically authorized sub-agent orchestration (Task tool + redacted context brief)\n");
   }
   // Session-scoped isolation (#1129): prefix the workspace with the session id.
   const sessionId = safeText(flags["session-id"], "default");
