@@ -1,0 +1,19 @@
+{
+  "spawnAuthorization": {
+    "state": "authorization_request_draft_ready",
+    "workerId": "workergamma",
+    "taskId": "task-large-independent",
+    "source": { "plannerParallelismHint": 3 },
+    "finalizerReview": { "oneFinalizerRequired": true, "writeSetIsolationRequired": true }
+  },
+  "budgetCounter": {
+    "state": "within-budget",
+    "counter": { "spawnBudgetCeiling": null, "budgetExhausted": false }
+  },
+  "requestedSpawn": {
+    "subagents": [
+      { "role": "implementer", "writeSet": ["src/shared.ts"] },
+      { "role": "implementer", "writeSet": ["src/shared.ts"] }
+    ]
+  }
+}
