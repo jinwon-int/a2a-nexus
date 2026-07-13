@@ -1905,6 +1905,25 @@ function buildOutputGithub(parsed) {
   return hasTerminal ? github : undefined;
 }
 
+function extractRunnerSubagentReport(parsed) {
+  if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) return undefined;
+  const direct = parsed.subagentReport;
+  if (direct && typeof direct === "object" && !Array.isArray(direct)) return direct;
+  const stdout = safeText(parsed.stdout, "");
+  const stderr = safeText(parsed.stderr, "");
+  if (!stdout && !stderr) return undefined;
+  try {
+    const envelope = parseOpenClawEnvelope(stdout, stderr);
+    const text = extractOpenClawText(envelope);
+    if (!text) return undefined;
+    const payload = JSON.parse(text);
+    const report = payload?.subagentReport;
+    return report && typeof report === "object" && !Array.isArray(report) ? report : undefined;
+  } catch {
+    return undefined;
+  }
+}
+
 function runDockerRunner(task, env = process.env) {
   // docker-first readiness guard: explicit docker mode or all-github scope requires
   // A2A_DOCKER_RUNNER_BIN to be set so the operator has consciously chosen a runner path.
@@ -1984,6 +2003,8 @@ function runDockerRunner(task, env = process.env) {
         artifacts: Array.isArray(parsed.artifacts) ? parsed.artifacts : [],
       },
     };
+    const subagentReport = extractRunnerSubagentReport(parsed);
+    if (subagentReport) output.subagentReport = subagentReport;
 
     if (repo) output.repo = repo;
     if (issue) output.issue = issue;

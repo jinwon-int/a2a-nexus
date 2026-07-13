@@ -68,6 +68,63 @@ test("truncates over-budget output", () => {
   assert.equal(packet.cleanedEntries[0].output.length, 50);
 });
 
+test("redacts private host paths and provider target identifiers", () => {
+  const packet = buildA2AWorkerSubagentRedactionGate({
+    now: NOW,
+    workerId: "w",
+    entries: [{
+      role: "verifier",
+      id: "ev-private",
+      output: "read /root/.openclaw/agents/main and /home/alice/private then telegram:123456789 and chat_id=987654321",
+    }],
+  });
+
+  const cleaned = packet.cleanedEntries[0]?.output ?? "";
+  assert.doesNotMatch(cleaned, /\/root\/\.openclaw|\/home\/alice|123456789|987654321/);
+  assert.equal(packet.results[0]?.redacted, true);
+});
+
+test("removes raw controls and fully redacts quoted secret values containing spaces", () => {
+  const packet = buildA2AWorkerSubagentRedactionGate({
+    now: NOW,
+    workerId: "w",
+    entries: [{
+      role: "verifier",
+      id: "ev-controls",
+      output: "API_KEY=\"abc def\" password='ghi jkl' before\u0000after\u0007",
+    }],
+  });
+
+  const cleaned = packet.cleanedEntries[0]?.output ?? "";
+  assert.doesNotMatch(cleaned, /abc|def|ghi|jkl|\u0000|\u0007/);
+  assert.equal(packet.results[0]?.redacted, true);
+});
+
+test("invalid non-finite byte limits fall back to the bounded default", () => {
+  const packet = buildA2AWorkerSubagentRedactionGate({
+    now: NOW,
+    workerId: "w",
+    maxOutputBytes: Number.POSITIVE_INFINITY,
+    entries: [{ role: "verifier", id: "ev-limit", output: "ok" }],
+  });
+  assert.equal(packet.maxOutputBytes, 4000);
+  assert.equal(packet.maxOutputChars, 4000);
+});
+
+test("bounds cleaned output by UTF-8 bytes without splitting code points", () => {
+  const packet = buildA2AWorkerSubagentRedactionGate({
+    now: NOW,
+    workerId: "w",
+    maxOutputBytes: 5,
+    entries: [{ role: "explorer", id: "ev-utf8", output: "😀ab" }],
+  } as never);
+  const cleaned = packet.cleanedEntries[0].output;
+  assert.equal(packet.results[0].truncated, true);
+  assert.equal(Buffer.byteLength(cleaned, "utf8"), 5);
+  assert.equal(cleaned, "😀a");
+  assert.doesNotMatch(cleaned, /�/);
+});
+
 test("all-clean when nothing needs redaction or truncation", () => {
   const packet = buildA2AWorkerSubagentRedactionGate({
     now: NOW,

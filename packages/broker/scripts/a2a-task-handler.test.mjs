@@ -707,6 +707,52 @@ process.stdout.write(JSON.stringify({
   }
 });
 
+test("WS5: docker runner bridge envelope preserves bounded subagentReport for broker redaction", () => {
+  const dir = mkdtempSync(join(tmpdir(), "a2a-ws5-report-"));
+  const runner = join(dir, "fake-runner.mjs");
+  writeHybridRunnerStub(runner, `
+const subagentReport = {
+  count: 1,
+  entries: [{ role: "verifier", id: "verify-1", writeSet: [], status: "complete", output: "checked TOKEN=runtime-synthetic" }]
+};
+const stdout = JSON.stringify({ payloads: [{ text: JSON.stringify({
+  prUrl: "https://github.com/jinwon-int/a2a-nexus/pull/9995",
+  subagentReport
+}) }] });
+process.stdout.write(JSON.stringify({
+  ok: true,
+  status: "pr_opened",
+  prUrl: "https://github.com/jinwon-int/a2a-nexus/pull/9995",
+  branch: "ws5-report-handoff",
+  filesChanged: ["packages/broker/src/worker.ts"],
+  tests: ["report handoff"],
+  stdout
+}) + "\\n");
+`);
+
+  try {
+    const result = handleTask(patchTask({
+      id: "task-ws5-report-handoff",
+      payload: {
+        repo: "jinwon-int/a2a-nexus",
+        issue: "#1543",
+        issueUrl: "https://github.com/jinwon-int/a2a-nexus/issues/1543",
+      },
+    }), {
+      PATH: process.env.PATH,
+      A2A_EXECUTOR_MODE: "docker",
+      A2A_DOCKER_RUNNER_BIN: runner,
+    });
+
+    assert.equal(result.error, undefined);
+    assert.equal(result.result?.output?.subagentReport?.count, 1);
+    assert.equal(result.result?.output?.subagentReport?.entries?.[0]?.role, "verifier");
+    assert.match(result.result?.output?.subagentReport?.entries?.[0]?.output ?? "", /runtime-synthetic/);
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
 test("H2 RED: hybrid-subagent budget exhaustion fails closed before runner spawn (#1348)", () => {
   const dir = mkdtempSync(join(tmpdir(), "a2a-h2-budget-red-"));
   const runner = join(dir, "fake-runner.mjs");

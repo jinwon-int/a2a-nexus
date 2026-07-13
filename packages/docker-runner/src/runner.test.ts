@@ -4,7 +4,7 @@ import { mkdirSync, writeFileSync, rmSync, mkdtempSync, statSync } from "node:fs
 import { execFileSync } from "node:child_process";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
-import { buildActionableError, buildContainerScript, buildRunArgs, extractPrUrl, jsonArgvToScript, prepareWorkDirForContainerUser, redactSecrets, runTask, shouldTreatDetectedPrUrlAsCanonical } from "./runner.js";
+import { buildActionableError, buildContainerScript, buildRunArgs, extractPrUrl, jsonArgvToScript, prepareWorkDirForContainerUser, redactAndBound, redactSecrets, runTask, shouldTreatDetectedPrUrlAsCanonical } from "./runner.js";
 import type { NormalizedRunnerTask, RunnerConfig, RunnerTask } from "./types.js";
 
 const baseConfig: RunnerConfig = {
@@ -62,6 +62,17 @@ test("redacts OpenClaw runtime paths from result streams", () => {
   assert.ok(redacted.includes("<openclaw-dir>"));
   assert.ok(redacted.includes("<openclaw-workspace>"));
   assert.ok(redacted.includes("/work/repo/AGENTS.md"), "repo-relative bootstrap evidence must remain visible");
+});
+
+test("redacts controls, provider targets, private paths, and complete quoted secrets", () => {
+  const redacted = redactSecrets("API_KEY=\"abc def\" password='ghi jkl' before\u0000after\u0007 telegram:123456789 /root/.hermes/private");
+  assert.doesNotMatch(redacted, /abc|def|ghi|jkl|\u0000|\u0007|123456789|\/root\/\.hermes/);
+});
+
+test("redactAndBound enforces UTF-8 bytes without splitting code points", () => {
+  const bounded = redactAndBound("😀".repeat(10), 13);
+  assert.ok(Buffer.byteLength(bounded, "utf8") <= 13);
+  assert.doesNotMatch(bounded, /�/);
 });
 
 test("prepares trusted non-root container workdir ownership before launch", async () => {
