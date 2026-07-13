@@ -118,3 +118,17 @@ The packet DECIDES only. It produces `producesBindingVerdict: true` but `enforce
 CLI:
 
 `npm run worker_subagent_spawn_gate_decision -- --input fixtures/worker-subagent-orchestration/spawn-gate-decision-authorized.json --json`
+
+## Deterministic Evidence Assembly
+
+`a2a-broker.worker-subagent-evidence-assembly.packet` assembles the sub-agent evidence entries into a **byte-reproducible** bundle so a fanned-out run can be signed and replayed despite non-deterministic completion order. It:
+
+- **stable-orders** entries by a content-derived total order (independent of input/completion order; write-set members are sorted too);
+- records the **execution graph** — a `finalizer` node plus one node per sub-agent, with `spawn` and `evidence` edges (the single-finalizer, evidence-only topology) and the recorded `execution` context (gate-decision / budget-counter idempotency keys, authorized count, host snapshot);
+- emits an **RFC 8785 (JCS) `contentDigest`** over the ordered bundle, excluding the wall-clock `generatedAt`, so the same evidence always hashes to the same anchor. The packet's `idempotencyKey` is content-addressed from that digest.
+
+It assembles and canonicalizes only: `signsEvidence: false` with all boundaries false — it produces the reproducible bytes a downstream JCS/JWS signer would sign, but does not itself sign, spawn, dispatch, or mutate anything.
+
+CLI:
+
+`npm run worker_subagent_evidence_assembly -- --input fixtures/worker-subagent-orchestration/evidence-assembly-basic.json --json`

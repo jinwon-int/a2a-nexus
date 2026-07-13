@@ -97,6 +97,7 @@
     "worker_subagent_spawn_authorization_request": "npm run build && node scripts/worker-subagent-spawn-authorization-request.mjs",
     "worker_subagent_budget_counter": "npm run build && node scripts/worker-subagent-budget-counter.mjs",
     "worker_subagent_spawn_gate_decision": "npm run build && node scripts/worker-subagent-spawn-gate-decision.mjs",
+    "worker_subagent_evidence_assembly": "npm run build && node scripts/worker-subagent-evidence-assembly.mjs",
     "orchestration_intelligence_worker_spawn_approval_decision_evidence": "npm run build && node scripts/orchestration-intelligence-worker-spawn-approval-decision-evidence.mjs",
     "orchestration_intelligence_worker_subagent_spawn_authorization_bridge": "npm run build && node scripts/orchestration-intelligence-worker-subagent-spawn-authorization-bridge.mjs",
     "complexity_orchestration_recommendation": "npm run build && node scripts/complexity-orchestration-recommendation.mjs",
