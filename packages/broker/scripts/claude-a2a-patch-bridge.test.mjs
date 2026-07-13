@@ -1058,8 +1058,8 @@ test("fanout mode runs the agentic patch with Task tool + spawn prompt + fanout 
       "writeFileSync(process.env.CAPTURE_ARGS_PATH, JSON.stringify(args));",
       "if (args[args.indexOf('--allowedTools') + 1] !== 'Task Bash Edit Write Read Glob Grep') throw new Error('fanout must add Task to allowedTools');",
       "const ap = args[args.indexOf('--append-system-prompt') + 1] || '';",
-      "if (!ap.includes('Task tool') || !ap.includes('single finalizer')) throw new Error('fanout spawn prompt missing');",
-      "const result = { status: 'pr_opened', summary: 'ok', prUrl: 'https://github.com/jinwon-int/example/pull/42', filesChanged: ['src/x.mjs'] };",
+      "if (!ap.includes('Task tool') || !ap.includes('single finalizer') || !ap.includes('subagentReport')) throw new Error('fanout spawn/report prompt missing');",
+      "const result = { status: 'pr_opened', summary: 'ok', prUrl: 'https://github.com/jinwon-int/example/pull/42', filesChanged: ['src/x.mjs'], subagentReport: { count: 1, entries: [{ role: 'verifier', id: 'helper-1', writeSet: [], status: 'complete', output: 'checked TOKEN=runtime-synthetic' }] } };",
       "console.log(JSON.stringify({ type: 'result', subtype: 'success', result: JSON.stringify(result) }));",
     ]);
 
@@ -1081,6 +1081,9 @@ test("fanout mode runs the agentic patch with Task tool + spawn prompt + fanout 
     assert.equal(result.status, 0, result.stderr);
     const payload = JSON.parse(JSON.parse(result.stdout).payloads[0].text);
     assert.equal(payload.prUrl, "https://github.com/jinwon-int/example/pull/42");
+    assert.equal(payload.subagentReport.count, 1);
+    assert.equal(payload.subagentReport.entries[0].id, "helper-1");
+    assert.match(payload.subagentReport.entries[0].output, /TOKEN=runtime-synthetic/);
     const args = JSON.parse(readFileSync(argsCapturePath, "utf8"));
     assert.equal(args[args.indexOf("--allowedTools") + 1], "Task Bash Edit Write Read Glob Grep");
     assert.equal(args[args.indexOf("--max-turns") + 1], "50");

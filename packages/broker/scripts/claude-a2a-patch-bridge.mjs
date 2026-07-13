@@ -560,6 +560,8 @@ export function buildFanoutSubagentPrompt(env) {
     "- Sub-agents are evidence-only helpers with disjoint file/module write sets. You remain the single finalizer: only you open/merge PRs, post Done/Block evidence, and own the terminal result.",
     "- Read the live file immediately before editing it; keep all work inside the cloned repo and the disposable workspace.",
     `- Bound each helper's evidence to ${outputBytes} bytes or less; never emit secrets, tokens, .env, or private host paths.`,
+    '- Your final JSON MUST include `subagentReport: {"count":N,"entries":[{"role":"...","id":"...","writeSet":["..."],"status":"complete|blocked","output":"bounded helper evidence"}]}`.',
+    '- If you spawn no helpers, return `subagentReport: {"count":0,"entries":[]}`. Never omit the report in fanout mode.',
     "- Zero sub-agents is always valid — work directly when the task is small, sensitive, urgent, or tightly coupled.",
   ].join("\n");
 }
@@ -634,7 +636,48 @@ function findGithubEvidenceObject(value, depth = 0) {
   return null;
 }
 
-function normalizePatchResponse(obj) {
+function normalizeFanoutSubagentReport(value, options) {
+  if (!value || typeof value !== "object" || Array.isArray(value)) {
+    throw new Error("fanout patch response missing subagentReport object");
+  }
+  const count = Number(value.count);
+  const entriesRaw = value.entries;
+  if (!Number.isInteger(count) || count < 0 || count > options.maxSubagents) {
+    throw new Error(`fanout subagentReport.count must be an integer from 0 to ${options.maxSubagents}`);
+  }
+  if (!Array.isArray(entriesRaw) || entriesRaw.length !== count) {
+    throw new Error("fanout subagentReport.entries length must equal count");
+  }
+  const seenIds = new Set();
+  const entries = entriesRaw.map((entry, index) => {
+    if (!entry || typeof entry !== "object" || Array.isArray(entry)) {
+      throw new Error(`fanout subagentReport.entries[${index}] must be an object`);
+    }
+    const role = safeText(entry.role, "");
+    const id = safeText(entry.id, "");
+    const output = typeof entry.output === "string" ? entry.output : "";
+    if (!options.allowedRoles.has(role)) {
+      throw new Error(`fanout subagentReport.entries[${index}] has unauthorized role`);
+    }
+    if (!/^[A-Za-z0-9._:-]{1,128}$/.test(id) || seenIds.has(id)) {
+      throw new Error(`fanout subagentReport.entries[${index}] has invalid or duplicate id`);
+    }
+    if (Buffer.byteLength(output, "utf8") > options.maxOutputBytes) {
+      throw new Error(`fanout subagentReport.entries[${index}].output exceeds ${options.maxOutputBytes} bytes`);
+    }
+    seenIds.add(id);
+    return {
+      role,
+      id,
+      writeSet: normalizeStringArray(entry.writeSet),
+      status: safeText(entry.status, "complete"),
+      output,
+    };
+  });
+  return { count, entries };
+}
+
+function normalizePatchResponse(obj, options = {}) {
   const prUrl = safeText(obj.prUrl || obj.pullRequestUrl, "");
   const doneCommentUrl = safeText(obj.doneCommentUrl || obj.commentUrl, "");
   const blockCommentUrl = safeText(obj.blockCommentUrl || obj.blockerCommentUrl, "");
@@ -668,6 +711,9 @@ function normalizePatchResponse(obj) {
   if (prUrl) result.prUrl = prUrl;
   if (doneCommentUrl) result.doneCommentUrl = doneCommentUrl;
   if (blockCommentUrl) result.blockCommentUrl = blockCommentUrl;
+  if (options.fanout === true) {
+    result.subagentReport = normalizeFanoutSubagentReport(obj.subagentReport, options);
+  }
 
   if (!prUrl && !doneCommentUrl && !blockCommentUrl) {
     throw new Error("patch response missing prUrl, doneCommentUrl, or blockCommentUrl");
@@ -1275,7 +1321,18 @@ async function runPatchMode(message, flags) {
     if (!evidenceObj) {
       throw new Error("Claude patch output missing GitHub evidence (prUrl/doneCommentUrl/blockCommentUrl)");
     }
-    const result = normalizePatchResponse(evidenceObj);
+    const maxSubagents = positiveInteger(process.env.A2A_CONTAINED_SUBAGENTS_MAX, 0);
+    const allowedRoles = new Set(
+      safeText(process.env.A2A_CONTAINED_SUBAGENTS_ROLES, "")
+        .split(",")
+        .map((role) => role.trim())
+        .filter(Boolean),
+    );
+    const maxOutputBytes = Math.min(
+      positiveInteger(process.env.A2A_CONTAINED_SUBAGENTS_OUTPUT_BYTES, 12000),
+      64 * 1024,
+    );
+    const result = normalizePatchResponse(evidenceObj, { fanout, maxSubagents, allowedRoles, maxOutputBytes });
     envelope = JSON.stringify({ payloads: [{ text: JSON.stringify(result) }] });
   } catch (error) {
     // Non-zero exit so the handler surfaces openclaw_bridge_evidence_missing / failure.

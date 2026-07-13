@@ -4,7 +4,7 @@ import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { dirname, join } from "node:path";
 import { tmpdir } from "node:os";
 import { fileURLToPath } from "node:url";
-import { buildArtifactManifest, buildContainerScript, buildGitHubCommentProjection, buildResultSummary, buildRunnerEvidenceHints, buildSourcePublicApprovalRehearsal, redactAndBound, sanitizeCleanupRehearsal, RESULT_STREAM_LIMIT, sanitizeReceiptTrace, sanitizeSourcePublicApprovalRehearsal, sanitizeTaskArtifactPayload } from "./runner.js";
+import { buildArtifactManifest, buildContainerScript, buildGitHubCommentProjection, buildResultSummary, buildRunnerEvidenceHints, buildSourcePublicApprovalRehearsal, extractStructuredSubagentReport, redactAndBound, sanitizeCleanupRehearsal, RESULT_STREAM_LIMIT, sanitizeReceiptTrace, sanitizeSourcePublicApprovalRehearsal, sanitizeTaskArtifactPayload } from "./runner.js";
 import { evaluateDeclaredScopeDrift, normalizeTask } from "./task-normalizer.js";
 import { buildBlockCommentBody } from "./github-evidence.js";
 
@@ -237,6 +237,38 @@ test("redactAndBound redacts secret-like values and truncates large output", () 
   assert.ok(bounded.includes("password=<redacted>"));
   assert.ok(bounded.length < output.length);
   assert.match(bounded, /<truncated \d+ chars>/);
+});
+
+test("extractStructuredSubagentReport preserves a report beyond the 8KB stream view while redacting and byte-bounding entries", () => {
+  const syntheticSecret = "github" + "_pat" + "_" + "C".repeat(90);
+  const report = {
+    count: 1,
+    entries: [{
+      role: "verifier",
+      id: "verify-1",
+      writeSet: [],
+      status: "complete",
+      output: `token=${syntheticSecret} telegram:123456789 /root/.hermes/config ${"😀".repeat(5000)}`,
+    }],
+  };
+  const stdout = JSON.stringify({
+    payloads: [{ text: JSON.stringify({ prUrl: "https://github.com/jinwon-int/a2a-nexus/pull/9995", subagentReport: report }) }],
+  });
+
+  assert.ok(stdout.length > RESULT_STREAM_LIMIT);
+  const extracted = extractStructuredSubagentReport(stdout, {
+    maxCount: 2,
+    maxOutputBytes: 96,
+    allowedRoles: ["explorer", "verifier"],
+  });
+
+  assert.equal(extracted?.count, 1);
+  const output = extracted?.entries[0]?.output ?? "";
+  assert.ok(Buffer.byteLength(extracted.entries[0].output, "utf8") <= 96);
+  assert.equal(extracted.entries[0].redacted, true);
+  assert.equal(extracted.entries[0].truncated, true);
+  assert.doesNotMatch(extracted.entries[0].output, new RegExp(syntheticSecret));
+  assert.doesNotMatch(JSON.stringify(extracted), /123456789|\/root\/\.hermes/);
 });
 
 test("sanitizeTaskArtifactPayload redacts env secrets and secret-like prompt text", () => {

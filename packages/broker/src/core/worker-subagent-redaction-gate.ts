@@ -14,7 +14,7 @@ import { redactAndBoundReport } from "./worker-subagent-redaction.js";
 // assembled set. Over-budget output is truncated. The cleaned entries feed the
 // evidence-assembly packet. Source-only: it cleans/decides, no spawn or mutation.
 
-const DEFAULT_MAX_OUTPUT_CHARS = 4000;
+const DEFAULT_MAX_OUTPUT_BYTES = 4000;
 
 export type A2AWorkerSubagentRedactionMode = "redact" | "reject";
 export type A2AWorkerSubagentRedactionVerdict =
@@ -28,6 +28,10 @@ export interface A2AWorkerSubagentRedactionEntryInput {
   role?: string;
   id?: string;
   output: string;
+  /** True when an upstream trusted transport already masked a finding. */
+  preRedacted?: boolean;
+  /** True when an upstream trusted transport already byte-truncated output. */
+  preTruncated?: boolean;
 }
 
 export interface A2AWorkerSubagentRedactionGateInput {
@@ -35,6 +39,8 @@ export interface A2AWorkerSubagentRedactionGateInput {
   workerId: string;
   taskId?: string;
   mode?: A2AWorkerSubagentRedactionMode;
+  maxOutputBytes?: number;
+  /** @deprecated Use maxOutputBytes. Kept as an input compatibility alias. */
   maxOutputChars?: number;
   entries: A2AWorkerSubagentRedactionEntryInput[];
 }
@@ -64,6 +70,8 @@ export interface A2AWorkerSubagentRedactionGatePacket {
   workerId: string;
   taskId?: string;
   mode: A2AWorkerSubagentRedactionMode;
+  maxOutputBytes: number;
+  /** @deprecated Equal to maxOutputBytes for packet compatibility. */
   maxOutputChars: number;
   state: "all-clean" | "modified" | "has-rejections";
   summary: {
@@ -119,7 +127,10 @@ export function buildA2AWorkerSubagentRedactionGate(
 ): A2AWorkerSubagentRedactionGatePacket {
   const generatedAt = input.now ?? new Date().toISOString();
   const mode: A2AWorkerSubagentRedactionMode = input.mode === "reject" ? "reject" : "redact";
-  const maxOutputChars = input.maxOutputChars && input.maxOutputChars > 0 ? input.maxOutputChars : DEFAULT_MAX_OUTPUT_CHARS;
+  const requestedLimit = input.maxOutputBytes ?? input.maxOutputChars;
+  const maxOutputBytes = Number.isFinite(requestedLimit) && Number(requestedLimit) > 0
+    ? Math.min(64 * 1024, Math.floor(Number(requestedLimit)))
+    : DEFAULT_MAX_OUTPUT_BYTES;
 
   const results: A2AWorkerSubagentRedactionResultEntry[] = [];
   const cleanedEntries: A2AWorkerSubagentCleanedEntry[] = [];
@@ -129,13 +140,16 @@ export function buildA2AWorkerSubagentRedactionGate(
   let rejectedCount = 0;
 
   for (const entry of input.entries ?? []) {
-    const report = redactAndBoundReport(entry.output ?? "", maxOutputChars);
-    const rejected = mode === "reject" && report.redacted;
+    const report = redactAndBoundReport(entry.output ?? "", maxOutputBytes);
+    const markerDetected = /(?:\[redacted\]|<redacted(?:-[^>]+)?>|<private-dir>|<openclaw-dir>|<openclaw-workspace>)/i.test(entry.output ?? "");
+    const redacted = report.redacted || entry.preRedacted === true || markerDetected;
+    const truncated = report.truncated || entry.preTruncated === true;
+    const rejected = mode === "reject" && redacted;
     const included = !rejected;
-    const verdict = verdictFor(report.redacted, report.truncated, rejected);
+    const verdict = verdictFor(redacted, truncated, rejected);
 
-    if (report.redacted) redactedCount += 1;
-    if (report.truncated) truncatedCount += 1;
+    if (redacted) redactedCount += 1;
+    if (truncated) truncatedCount += 1;
     if (rejected) rejectedCount += 1;
     if (verdict === "clean") clean += 1;
 
@@ -143,8 +157,8 @@ export function buildA2AWorkerSubagentRedactionGate(
       role: entry.role,
       id: entry.id,
       verdict,
-      redacted: report.redacted,
-      truncated: report.truncated,
+      redacted,
+      truncated,
       included,
       cleaned: included ? report.cleaned : undefined,
     });
@@ -157,7 +171,7 @@ export function buildA2AWorkerSubagentRedactionGate(
   const state: A2AWorkerSubagentRedactionGatePacket["state"] =
     rejectedCount > 0 ? "has-rejections" : redactedCount + truncatedCount > 0 ? "modified" : "all-clean";
 
-  const canonicalBody = { workerId: input.workerId, taskId: input.taskId, mode, maxOutputChars, results, cleanedEntries };
+  const canonicalBody = { workerId: input.workerId, taskId: input.taskId, mode, maxOutputBytes, results, cleanedEntries };
   const contentDigest = "sha256:" + createHash("sha256").update(canonicalizeJson(canonicalBody), "utf8").digest("hex");
   const idempotencyKey = "a2a-worker-subagent-redaction-gate:" + contentDigest.slice("sha256:".length, "sha256:".length + 24);
 
@@ -170,7 +184,8 @@ export function buildA2AWorkerSubagentRedactionGate(
     workerId: input.workerId,
     taskId: input.taskId,
     mode,
-    maxOutputChars,
+    maxOutputBytes,
+    maxOutputChars: maxOutputBytes,
     state,
     summary: { total, clean, redacted: redactedCount, truncated: truncatedCount, rejected: rejectedCount, included: cleanedEntries.length },
     results,
@@ -227,6 +242,8 @@ export function extractA2AWorkerSubagentRedactionGateInput(input: unknown): A2AW
       role: optionalString(e.role),
       id: optionalString(e.id ?? e.idempotencyKey),
       output: optionalString(e.output ?? e.text) ?? "",
+      preRedacted: e.preRedacted === true || e.pre_redacted === true,
+      preTruncated: e.preTruncated === true || e.pre_truncated === true,
     }));
 
   return {
@@ -234,6 +251,7 @@ export function extractA2AWorkerSubagentRedactionGateInput(input: unknown): A2AW
     workerId,
     taskId: optionalString(candidate.taskId ?? candidate.task_id),
     mode: modeRaw === "reject" ? "reject" : modeRaw === "redact" ? "redact" : undefined,
+    maxOutputBytes: numberValue(candidate.maxOutputBytes ?? candidate.max_output_bytes),
     maxOutputChars: numberValue(candidate.maxOutputChars ?? candidate.max_output_chars),
     entries,
   };
@@ -244,7 +262,7 @@ export function renderA2AWorkerSubagentRedactionGateMarkdown(packet: A2AWorkerSu
     "A2A worker sub-agent redaction gate",
     "Worker: " + packet.workerId,
     "Generated: " + packet.generatedAt,
-    "Mode: " + packet.mode + " | max output chars: " + packet.maxOutputChars,
+    "Mode: " + packet.mode + " | max output bytes: " + packet.maxOutputBytes,
     "State: " + packet.state,
     "Summary: total=" + packet.summary.total
       + " clean=" + packet.summary.clean

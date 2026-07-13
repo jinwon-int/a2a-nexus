@@ -1242,6 +1242,23 @@ export interface ResultSummary {
   externalScannerEvidence?: ExternalScannerEvidence[];
 }
 
+export interface RunnerSubagentReportEntry {
+  role: RunnerContainedSubagentRole;
+  id: string;
+  writeSet: string[];
+  status: "complete" | "blocked" | "failed" | "skipped";
+  output: string;
+  /** True when the runner masked output or write-set data before broker handoff. */
+  redacted: boolean;
+  /** True when the runner byte-truncated output before broker handoff. */
+  truncated: boolean;
+}
+
+export interface RunnerSubagentReport {
+  count: number;
+  entries: RunnerSubagentReportEntry[];
+}
+
 export interface RunnerResult {
   ok: boolean;
   taskId: string;
@@ -1251,6 +1268,8 @@ export interface RunnerResult {
   signal?: NodeJS.Signals | null;
   stdout: string;
   stderr: string;
+  /** Structured, runner-redacted helper evidence extracted before stdout stream truncation. */
+  subagentReport?: RunnerSubagentReport;
   artifacts: string[];
   /** Structured manifest for artifacts emitted by this execution. */
   artifactManifest?: ArtifactManifest;

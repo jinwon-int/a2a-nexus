@@ -68,6 +68,104 @@ test("truncates over-budget output", () => {
   assert.equal(packet.cleanedEntries[0].output.length, 50);
 });
 
+test("redacts private host paths and provider target identifiers", () => {
+  const packet = buildA2AWorkerSubagentRedactionGate({
+    now: NOW,
+    workerId: "w",
+    entries: [{
+      role: "verifier",
+      id: "ev-private",
+      output: "read /root/.openclaw/agents/main and /home/alice/private then telegram:123456789 and chat_id=987654321",
+    }],
+  });
+
+  const cleaned = packet.cleanedEntries[0]?.output ?? "";
+  assert.doesNotMatch(cleaned, /\/root\/\.openclaw|\/home\/alice|123456789|987654321/);
+  assert.equal(packet.results[0]?.redacted, true);
+});
+
+test("removes raw controls, prefixed secrets, and structured provider targets", () => {
+  const prefixed = [
+    `${["DB", "PASSWORD"].join("_")}=hunter2`,
+    `${["A2A", "EDGE", "SECRET"].join("_")}=abc123`,
+    `${["OPENAI", "API", "KEY"].join("_")}=\"short value\"`,
+    `${["github", "token"].join("_")}: short-token`,
+  ].join(" ");
+  const packet = buildA2AWorkerSubagentRedactionGate({
+    now: NOW,
+    workerId: "w",
+    entries: [{
+      role: "verifier",
+      id: "ev-controls",
+      output: `${prefixed} \"chat_id\": 123456789 chat_id: 987654321 \"thread_id\": '-123456789' telegram = \" 234567890 \" before\u0000after\u0007`,
+    }],
+  });
+
+  const cleaned = packet.cleanedEntries[0]?.output ?? "";
+  assert.doesNotMatch(cleaned, /hunter2|abc123|short value|short-token|123456789|987654321|234567890|\u0000|\u0007/);
+  assert.equal(packet.results[0]?.redacted, true);
+});
+
+test("reject mode preserves runner-side finding classification without raw values", () => {
+  const packet = buildA2AWorkerSubagentRedactionGate({
+    now: NOW,
+    workerId: "w",
+    mode: "reject",
+    entries: [{
+      role: "verifier",
+      id: "ev-preredacted",
+      output: "read <private-dir> and notify telegram:<redacted-target>",
+      preRedacted: true,
+    }],
+  });
+  assert.equal(packet.state, "has-rejections");
+  assert.equal(packet.summary.rejected, 1);
+  assert.equal(packet.summary.included, 0);
+  assert.equal(packet.results[0]?.verdict, "rejected");
+});
+
+test("preserves upstream byte-truncation classification without raw suffix data", () => {
+  const packet = buildA2AWorkerSubagentRedactionGate({
+    now: NOW,
+    workerId: "w",
+    entries: [{
+      role: "verifier",
+      id: "ev-pretruncated",
+      output: "bounded clean prefix",
+      preTruncated: true,
+    }],
+  });
+  assert.equal(packet.state, "modified");
+  assert.equal(packet.summary.truncated, 1);
+  assert.equal(packet.results[0]?.verdict, "truncated");
+  assert.equal(packet.results[0]?.included, true);
+});
+
+test("invalid non-finite byte limits fall back to the bounded default", () => {
+  const packet = buildA2AWorkerSubagentRedactionGate({
+    now: NOW,
+    workerId: "w",
+    maxOutputBytes: Number.POSITIVE_INFINITY,
+    entries: [{ role: "verifier", id: "ev-limit", output: "ok" }],
+  });
+  assert.equal(packet.maxOutputBytes, 4000);
+  assert.equal(packet.maxOutputChars, 4000);
+});
+
+test("bounds cleaned output by UTF-8 bytes without splitting code points", () => {
+  const packet = buildA2AWorkerSubagentRedactionGate({
+    now: NOW,
+    workerId: "w",
+    maxOutputBytes: 5,
+    entries: [{ role: "explorer", id: "ev-utf8", output: "😀ab" }],
+  } as never);
+  const cleaned = packet.cleanedEntries[0].output;
+  assert.equal(packet.results[0].truncated, true);
+  assert.equal(Buffer.byteLength(cleaned, "utf8"), 5);
+  assert.equal(cleaned, "😀a");
+  assert.doesNotMatch(cleaned, /�/);
+});
+
 test("all-clean when nothing needs redaction or truncation", () => {
   const packet = buildA2AWorkerSubagentRedactionGate({
     now: NOW,

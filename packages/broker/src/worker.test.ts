@@ -1866,6 +1866,7 @@ test("conductor budget is a verifiable contract: reports are annotated, overruns
   assert.equal(ok.result.output.subagentReport.count, 3);
   assert.equal(ok.result.output.subagentReport.budget, 3);
   assert.equal(ok.result.output.subagentReport.withinBudget, true);
+  assert.equal(ok.result.output.subagentReport.roles, undefined, "legacy count-only reports must not reflect arbitrary fields");
 
   // Over budget: fail closed.
   const over = (await handler(makeTask("budget-over", { ...heavyProfile, reportCount: 5 }))) as {
@@ -1989,6 +1990,29 @@ test("dynamic subagent runtime consults Phase-1 deciders and produces a redacted
   assert.equal(denied.env.A2A_DOCKER_RUNNER_CLAUDE_CODE_FANOUT_ENABLED, "0");
   assert.equal(JSON.parse(denied.env.A2A_SUBAGENT_PLAN ?? "{}").reason, "broker_approval_missing_or_untrusted");
 
+  const unsafeWriteSetTask = {
+    ...(task as Record<string, unknown>),
+    payload: {
+      ...((task as { payload: Record<string, unknown> }).payload),
+      subagentProfile: {
+        size: "large",
+        coupling: "low",
+        hasIndependentSubtasks: true,
+        writeSets: ["/root/.openclaw/agents/main.json", "src/b.ts"],
+      },
+    },
+  } as never;
+  const unsafeWriteSet = buildDynamicSubagentRuntime(unsafeWriteSetTask, {
+    workerId: "worker-ws5",
+    subagentCap: 4,
+    executionIsolation: "shared",
+    fanoutEnabled: true,
+    staticRunnerMax: 2,
+    staticRunnerRoles: ["explorer", "implementer", "verifier"],
+  });
+  assert.equal(unsafeWriteSet.env.A2A_DOCKER_RUNNER_CLAUDE_CODE_FANOUT_ENABLED, "0");
+  assert.equal(JSON.parse(unsafeWriteSet.env.A2A_SUBAGENT_PLAN ?? "{}").reason, "authorized_write_set_invalid");
+
   const { mkdtempSync, writeFileSync } = await import("node:fs");
   const { tmpdir } = await import("node:os");
   const { join } = await import("node:path");
@@ -1997,12 +2021,18 @@ test("dynamic subagent runtime consults Phase-1 deciders and produces a redacted
   writeFileSync(scriptPath, [
     "const chunks = []; for await (const chunk of process.stdin) chunks.push(chunk);",
     "const task = JSON.parse(Buffer.concat(chunks).toString('utf8'));",
+    "const reportEntries = [",
+    "  { role: task.payload?.reportedRole ?? 'explorer', id: 'helper-explorer', writeSet: [], status: 'complete', output: task.payload?.preRedacted ? 'read <private-dir> then notify telegram:<redacted-target>' : task.payload?.preTruncated ? 'bounded clean prefix' : 'read /root/.openclaw/config then TOKEN=runtime-synthetic', redacted: task.payload?.preRedacted === true, truncated: task.payload?.preTruncated === true },",
+    "  { role: 'verifier', id: 'helper-verifier', writeSet: [], status: 'complete', output: task.payload?.preRedacted || task.payload?.preTruncated ? 'tests pass' : 'notify telegram:123456789 after tests pass' },",
+    "];",
+    "if (task.payload?.reverseReport === true) reportEntries.reverse();",
     "process.stdout.write(JSON.stringify({ result: { summary: 'ok', output: {",
     "  enabled: process.env.A2A_DOCKER_RUNNER_CLAUDE_CODE_FANOUT_ENABLED,",
     "  max: process.env.A2A_DOCKER_RUNNER_CONTAINED_SUBAGENTS_MAX,",
     "  roles: process.env.A2A_DOCKER_RUNNER_CONTAINED_SUBAGENTS_ROLES,",
     "  plan: process.env.A2A_SUBAGENT_PLAN,",
     "  brief: task.subagentContextBrief ?? null,",
+    "  subagentReport: { count: 2, entries: reportEntries },",
     "} } }));",
   ].join("\n"));
   const handler = createExternalWorkerHandler({
@@ -2016,12 +2046,107 @@ test("dynamic subagent runtime consults Phase-1 deciders and produces a redacted
       A2A_DOCKER_RUNNER_CONTAINED_SUBAGENTS_ROLES: "explorer,verifier",
     },
   });
-  const boundary = await handler(task as never) as { result: { output: Record<string, string> } };
+  const boundary = await handler(task as never) as { result: { output: Record<string, unknown> } };
   assert.equal(boundary.result.output.enabled, "1");
   assert.equal(boundary.result.output.max, "2");
   assert.equal(boundary.result.output.roles, "explorer,verifier");
-  assert.equal(JSON.parse(boundary.result.output.plan).authorizedSubagentCount, 2);
-  assert.match(boundary.result.output.brief, /\[redacted\]/);
+  const boundaryPlan = JSON.parse(String(boundary.result.output.plan));
+  assert.equal(boundaryPlan.authorizedSubagentCount, 2);
+  assert.deepEqual(boundaryPlan.authorizedAssignments.map((entry: { role: string }) => entry.role), ["explorer", "verifier"]);
+  assert.match(String(boundary.result.output.brief), /\[redacted\]/);
+  const report = boundary.result.output.subagentReport as Record<string, unknown>;
+  assert.equal(report.count, 2);
+  assert.equal(report.budget, 2);
+  assert.equal(report.withinBudget, true);
+  assert.equal(report.entries, undefined, "raw helper entries must not survive in TaskResult output");
+  const evidence = boundary.result.output.subagentEvidence as {
+    kind: string;
+    workerId: string;
+    taskId: string;
+    redaction: { summary: { redacted: number; truncated: number }; cleanedEntries: Array<{ output: string }>; determinism: { contentDigest: string } };
+    assembly: { assembledEvidence: Array<{ role: string; summary: string }>; determinism: { contentDigest: string } };
+    runtime: { enforced: boolean; actualSubagentCount: number };
+  };
+  assert.equal(evidence.kind, "a2a-broker.worker-subagent-runtime-evidence");
+  assert.equal(evidence.workerId, "worker-ws5");
+  assert.equal(evidence.taskId, "task-ws5");
+  assert.equal(evidence.runtime.enforced, true);
+  assert.equal(evidence.runtime.actualSubagentCount, 2);
+  assert.equal(evidence.redaction.summary.redacted, 2);
+  assert.equal(evidence.assembly.assembledEvidence.length, 2);
+  assert.match(evidence.assembly.determinism.contentDigest, /^sha256:[0-9a-f]{64}$/);
+  const serialized = JSON.stringify(boundary.result.output);
+  assert.doesNotMatch(serialized, /runtime-synthetic|\/root\/\.openclaw|123456789/);
+
+  const reversedTask = {
+    ...(task as Record<string, unknown>),
+    payload: {
+      ...((task as { payload: Record<string, unknown> }).payload),
+      reverseReport: true,
+    },
+  } as never;
+  const reversed = await handler(reversedTask) as { result: { output: Record<string, unknown> } };
+  const reversedEvidence = reversed.result.output.subagentEvidence as typeof evidence;
+  assert.equal(reversedEvidence.redaction.determinism.contentDigest, evidence.redaction.determinism.contentDigest);
+  assert.deepEqual(reversedEvidence.assembly.assembledEvidence, evidence.assembly.assembledEvidence);
+  const reversedReport = reversed.result.output.subagentReport as Record<string, unknown>;
+  assert.deepEqual(reversedReport.roles, report.roles);
+  assert.deepEqual(reversedReport.writeSets, report.writeSets);
+
+  const duplicateRoleTask = {
+    ...(task as Record<string, unknown>),
+    payload: {
+      ...((task as { payload: Record<string, unknown> }).payload),
+      reportedRole: "verifier",
+    },
+  } as never;
+  const duplicateRole = await handler(duplicateRoleTask) as { error: { code: string } };
+  assert.equal(duplicateRole.error.code, "subagent_report_duplicate_role");
+
+  const rejectHandler = createExternalWorkerHandler({
+    command: process.execPath,
+    args: [scriptPath],
+    workerId: "worker-ws5",
+    subagentCap: 4,
+    env: {
+      A2A_DOCKER_RUNNER_CLAUDE_CODE_FANOUT_ENABLED: "1",
+      A2A_DOCKER_RUNNER_CONTAINED_SUBAGENTS_MAX: "2",
+      A2A_DOCKER_RUNNER_CONTAINED_SUBAGENTS_ROLES: "explorer,verifier",
+      A2A_WORKER_SUBAGENT_REDACTION_MODE: "reject",
+    },
+  });
+  const preRedactedTask = {
+    ...(task as Record<string, unknown>),
+    payload: {
+      ...((task as { payload: Record<string, unknown> }).payload),
+      preRedacted: true,
+    },
+  } as never;
+  const preRedacted = await rejectHandler(preRedactedTask) as { error: { code: string } };
+  assert.equal(preRedacted.error.code, "subagent_evidence_rejected");
+
+  const preTruncatedTask = {
+    ...(task as Record<string, unknown>),
+    payload: {
+      ...((task as { payload: Record<string, unknown> }).payload),
+      preTruncated: true,
+    },
+  } as never;
+  const preTruncated = await handler(preTruncatedTask) as { result: { output: Record<string, unknown> } };
+  const preTruncatedEvidence = preTruncated.result.output.subagentEvidence as typeof evidence;
+  assert.equal(preTruncatedEvidence.redaction.summary.truncated, 1);
+  assert.equal(preTruncatedEvidence.assembly.assembledEvidence[0]?.summary, "bounded clean prefix");
+
+  const unauthorizedTask = {
+    ...(task as Record<string, unknown>),
+    payload: {
+      ...((task as { payload: Record<string, unknown> }).payload),
+      reportedRole: "TOKEN=runtime-synthetic-role",
+    },
+  } as never;
+  const unauthorized = await handler(unauthorizedTask) as { error: { code: string } };
+  assert.equal(unauthorized.error.code, "subagent_report_unauthorized_role");
+  assert.doesNotMatch(JSON.stringify(unauthorized), /runtime-synthetic-role/);
 });
 
 test("dynamic subagent runtime requires broker-recorded operator approval before fanout (Phase-2 WS5)", () => {

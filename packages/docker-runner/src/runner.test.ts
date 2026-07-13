@@ -4,7 +4,7 @@ import { mkdirSync, writeFileSync, rmSync, mkdtempSync, statSync } from "node:fs
 import { execFileSync } from "node:child_process";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
-import { buildActionableError, buildContainerScript, buildRunArgs, extractPrUrl, jsonArgvToScript, prepareWorkDirForContainerUser, redactSecrets, runTask, shouldTreatDetectedPrUrlAsCanonical } from "./runner.js";
+import { buildActionableError, buildContainerScript, buildRunArgs, extractPrUrl, jsonArgvToScript, prepareWorkDirForContainerUser, redactAndBound, redactSecrets, runTask, shouldTreatDetectedPrUrlAsCanonical } from "./runner.js";
 import type { NormalizedRunnerTask, RunnerConfig, RunnerTask } from "./types.js";
 
 const baseConfig: RunnerConfig = {
@@ -62,6 +62,23 @@ test("redacts OpenClaw runtime paths from result streams", () => {
   assert.ok(redacted.includes("<openclaw-dir>"));
   assert.ok(redacted.includes("<openclaw-workspace>"));
   assert.ok(redacted.includes("/work/repo/AGENTS.md"), "repo-relative bootstrap evidence must remain visible");
+});
+
+test("redacts controls, prefixed secrets, structured provider targets, and private paths", () => {
+  const secrets = [
+    `${["DB", "PASSWORD"].join("_")}=hunter2`,
+    `${["A2A", "EDGE", "SECRET"].join("_")}=abc123`,
+    `${["OPENAI", "API", "KEY"].join("_")}=\"short value\"`,
+    `${["github", "token"].join("_")}: short-token`,
+  ].join(" ");
+  const redacted = redactSecrets(`${secrets} before\u0000after\u0007 \"chat_id\": 123456789 \"thread_id\": '-123456789' telegram = \" 234567890 \" /root/.hermes/private`);
+  assert.doesNotMatch(redacted, /hunter2|abc123|short value|short-token|\u0000|\u0007|123456789|234567890|\/root\/\.hermes/);
+});
+
+test("redactAndBound enforces UTF-8 bytes without splitting code points", () => {
+  const bounded = redactAndBound("😀".repeat(10), 13);
+  assert.ok(Buffer.byteLength(bounded, "utf8") <= 13);
+  assert.doesNotMatch(bounded, /�/);
 });
 
 test("prepares trusted non-root container workdir ownership before launch", async () => {

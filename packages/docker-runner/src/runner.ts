@@ -15,7 +15,92 @@ import { buildExecutionProof } from "./execution-proof.js";
 import { detectEmbeddedModelTimeoutNoFallback } from "./failure-classification.js";
 import { redactAndBound, redactSecrets } from "./redaction.js";
 export { RESULT_STREAM_LIMIT, redactAndBound, redactSecrets } from "./redaction.js";
-import type { ArtifactEvidencePart, ArtifactManifest, ArtifactManifestEntry, ArtifactManifestStatus, CleanupRehearsalEvidence, GitHubCommentProjection, GitHubCommentProjectionKind, NormalizedRunnerTask, ResultSummary, RunnerBudgetEvidence, RunnerConfig, RunnerContinuationEvidence, RunnerDiffHygieneEvidence, RunnerEvidenceHints, RunnerPostPatchVerificationEvidence, RunnerReceiptTrace, RunnerReproducibilityMetadata, RunnerResult, RunnerTask, SourcePublicApprovalDecision, SourcePublicApprovalPacket, SourcePublicApprovalRehearsal, SourcePublicExecutionPreflight } from "./types.js";
+import type { ArtifactEvidencePart, ArtifactManifest, ArtifactManifestEntry, ArtifactManifestStatus, CleanupRehearsalEvidence, GitHubCommentProjection, GitHubCommentProjectionKind, NormalizedRunnerTask, ResultSummary, RunnerBudgetEvidence, RunnerConfig, RunnerContainedSubagentRole, RunnerContinuationEvidence, RunnerDiffHygieneEvidence, RunnerEvidenceHints, RunnerPostPatchVerificationEvidence, RunnerReceiptTrace, RunnerReproducibilityMetadata, RunnerResult, RunnerSubagentReport, RunnerTask, SourcePublicApprovalDecision, SourcePublicApprovalPacket, SourcePublicApprovalRehearsal, SourcePublicExecutionPreflight } from "./types.js";
+
+export interface StructuredSubagentReportOptions {
+  maxCount: number;
+  maxOutputBytes: number;
+  allowedRoles: RunnerContainedSubagentRole[];
+}
+
+function boundUtf8(value: string, maxBytes: number): string {
+  const limit = Math.max(0, Math.floor(maxBytes));
+  let output = "";
+  let used = 0;
+  for (const codePoint of value) {
+    const bytes = Buffer.byteLength(codePoint, "utf8");
+    if (used + bytes > limit) break;
+    output += codePoint;
+    used += bytes;
+  }
+  return output;
+}
+
+/**
+ * Extract the bridge's structured helper report from the raw container stream
+ * before the generic 8KB stdout view is truncated. The additive RunnerResult
+ * field is already redacted and byte-bounded; the broker still performs the
+ * authoritative task/worker/plan binding and final redaction/assembly gate.
+ */
+export function extractStructuredSubagentReport(
+  stdout: string,
+  options: StructuredSubagentReportOptions,
+): RunnerSubagentReport | undefined {
+  try {
+    const envelope = JSON.parse(stdout.trim()) as Record<string, unknown>;
+    const payloads = Array.isArray(envelope.payloads) ? envelope.payloads : [];
+    const first = payloads[0];
+    if (!first || typeof first !== "object" || Array.isArray(first)) return undefined;
+    const text = (first as Record<string, unknown>).text;
+    if (typeof text !== "string") return undefined;
+    const payload = JSON.parse(text) as Record<string, unknown>;
+    const report = payload.subagentReport;
+    if (!report || typeof report !== "object" || Array.isArray(report)) return undefined;
+    const record = report as Record<string, unknown>;
+    const count = Number(record.count);
+    const entriesRaw = record.entries;
+    if (!Number.isInteger(count) || count < 0 || count > options.maxCount) return undefined;
+    if (!Array.isArray(entriesRaw) || entriesRaw.length !== count) return undefined;
+    const allowedRoles = new Set(options.allowedRoles);
+    const seenIds = new Set<string>();
+    const entries: RunnerSubagentReport["entries"] = [];
+    for (const candidate of entriesRaw) {
+      if (!candidate || typeof candidate !== "object" || Array.isArray(candidate)) return undefined;
+      const item = candidate as Record<string, unknown>;
+      const role = typeof item.role === "string" ? item.role.trim() as RunnerContainedSubagentRole : undefined;
+      const id = typeof item.id === "string" ? item.id.trim() : "";
+      const status = typeof item.status === "string" ? item.status.trim().toLowerCase() : "complete";
+      const output = typeof item.output === "string" ? item.output : undefined;
+      const rawWriteSet = Array.isArray(item.writeSet)
+        && item.writeSet.every((path) => typeof path === "string" && path.trim().length > 0)
+        ? item.writeSet.map((path) => String(path).trim())
+        : item.writeSet === undefined
+          ? []
+          : undefined;
+      if (!role || !allowedRoles.has(role)) return undefined;
+      if (!/^[A-Za-z0-9._:-]{1,128}$/.test(id) || seenIds.has(id)) return undefined;
+      if (!rawWriteSet || !new Set(["complete", "blocked", "failed", "skipped"]).has(status) || output === undefined) return undefined;
+      const writeSet = rawWriteSet.map((path) => redactSecrets(path));
+      const redactedOutput = redactSecrets(output);
+      const redacted = redactedOutput !== output || writeSet.some((path, index) => path !== rawWriteSet[index]);
+      const boundedOutput = boundUtf8(redactedOutput, options.maxOutputBytes);
+      const truncated = Buffer.byteLength(redactedOutput, "utf8") > Buffer.byteLength(boundedOutput, "utf8");
+      seenIds.add(id);
+      entries.push({
+        role,
+        id,
+        writeSet,
+        status: status as RunnerSubagentReport["entries"][number]["status"],
+        output: boundedOutput,
+        redacted,
+        truncated,
+      });
+    }
+    return { count, entries };
+  } catch {
+    return undefined;
+  }
+}
 
 export async function runTask(config: RunnerConfig, task: RunnerTask): Promise<RunnerResult> {
   validateTask(task);
@@ -82,6 +167,13 @@ export async function runTask(config: RunnerConfig, task: RunnerTask): Promise<R
   // Use retry harness for transient container failures.
   // runContainerWithRetry handles backoff, jitter, and retry evidence tracking.
   const { result: completed, retryEvidence } = await runContainerWithRetry(engine, args, timeoutMs);
+  const subagentReport = config.containedSubagents?.enabled
+    ? extractStructuredSubagentReport(completed.stdout, {
+        maxCount: config.containedSubagents.maxCount,
+        maxOutputBytes: config.containedSubagents.outputBytes,
+        allowedRoles: config.containedSubagents.roles,
+      })
+    : undefined;
   await writeSanitizedTaskArtifact(workDir, normalizedTask);
   const artifacts = await listArtifacts(workDir);
   const stdout = redactAndBound(completed.stdout);
@@ -133,6 +225,7 @@ export async function runTask(config: RunnerConfig, task: RunnerTask): Promise<R
     signal: completed.signal,
     stdout,
     stderr,
+    ...(subagentReport ? { subagentReport } : {}),
     artifacts,
     artifactManifest: manifest,
     resultSummary,

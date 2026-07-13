@@ -17,6 +17,12 @@ const ENTRIES: A2AWorkerSubagentEvidenceEntryInput[] = [
   { role: "explorer", id: "ev-explore", status: "complete", summary: "mapped module" },
 ];
 
+test("source carrier contains no raw NUL bytes", () => {
+  const source = readFileSync("src/core/worker-subagent-evidence-assembly.ts", "utf8");
+  assert.equal(source.includes("\u0000"), false);
+  assert.match(source, /join\("\\u0000"\)/);
+});
+
 test("stable ordering: different input order yields identical digest and order", () => {
   const forward = buildA2AWorkerSubagentEvidenceAssembly({ now: NOW, workerId: "workergamma", taskId: "task-1", entries: ENTRIES });
   const reversed = buildA2AWorkerSubagentEvidenceAssembly({ now: NOW, workerId: "workergamma", taskId: "task-1", entries: [...ENTRIES].reverse() });

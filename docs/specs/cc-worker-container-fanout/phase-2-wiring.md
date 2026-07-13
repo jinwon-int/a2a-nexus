@@ -1,6 +1,6 @@
 # Phase-2 wiring design: claude-code container-lane sub-agent fanout
 
-Concrete wiring design for **Phase 2** of `spec.md` (epic #1543). Turns the Phase-2 checklist into implementable changes against current code. Status: **WS1/WS3/WS4 implemented; WS5 slice 1 implemented; WS2 and WS5 slice 2 pending.** Everything stays opt-in and default-off; `single-shot` remains the default with a one-flag rollback.
+Concrete wiring design for **Phase 2** of `spec.md` (epic #1543). Turns the Phase-2 checklist into implementable changes against current code. Status: **WS1/WS3/WS4/WS5 implemented; WS2 pending.** Everything stays opt-in and default-off; `single-shot` remains the default with a one-flag rollback.
 
 ## Where each concern lives (the key split)
 
@@ -50,15 +50,15 @@ The container never re-derives the gate/brief; it consumes what the broker compu
 - Raise fanout `--max-turns` (configurable env, default e.g. 40) vs single-shot's 6.
 - **Acceptance:** fanout worker receives budget+roles+instruction and orchestrates within the raised turn budget.
 
-### WS5 — runtime consumption of the Phase-1 packets (**slice 1 implemented; slice 2 pending**)
+### WS5 — runtime consumption of the Phase-1 packets (**implemented**)
 - **Slice 1 — broker handler before dispatch (implemented):** require broker-recorded `task.approval` by an operator/hub; a requester-supplied draft packet alone never authorizes fanout. Then compute `budget-counter` → `spawn-gate-decision`; missing, exhausted, mismatched, or refused packets keep fanout disabled / budget 0 for this task. Dynamic max/roles can only shrink the static host policy. Brief assignments are regenerated from the final authorized roster; requester-supplied assignments cannot expand it. The broker builds a bounded/redacted context brief and applies a final whole-document redaction pass. The adapter preserves that exact field; the runner rejects any brief its defense redactor would still change and otherwise writes the identical bytes to `/work/artifacts/context-brief.md`. Plan evidence therefore records the approval/task/budget/gate/authorized count/reduction plus the digest of the actual mounted bytes.
-- **Slice 2 — broker handler after return (pending):** run each bounded sub-agent report entry through `redaction-gate` (reject mode ⇒ drop leaking output), then `evidence-assembly` for the canonical, ordered, digest-anchored bundle → terminal evidence.
-- **Full WS5 acceptance (after slice 2):** a `refused` verdict blocks the spawn at runtime; a secret in output is masked/excluded before evidence; the terminal bundle is the assembled canonical one.
+- **Slice 2 — broker handler after return (implemented):** fanout-mode Claude output must include a bounded `subagentReport.entries[]`. Docker runner extracts and redacts this structured report before its generic 8KB stdout view is truncated; task-handler preserves it for the broker. The broker binds count, unique IDs, roles, write sets, task, worker, and budget to its trusted plan; unauthorized/malformed reports fail closed. Raw entries are removed from the returned `TaskResult`, then `redaction-gate` feeds only cleaned entries to deterministic `evidence-assembly` before completion/provenance signing. The runner and broker both bound UTF-8 bytes without splitting code points, and private host paths/provider target IDs are redacted.
+- **Full WS5 acceptance:** a `refused` verdict blocks the spawn at runtime; a secret/private target in output is masked or excluded before evidence; the terminal bundle is the assembled canonical one. Redaction mode defaults to `redact`; trusted operators may use `A2A_WORKER_SUBAGENT_REDACTION_MODE=reject` for stricter fail-closed behavior.
 
 ## Flag & rollback summary
 
 - `A2A_DOCKER_RUNNER_CLAUDE_CODE_FANOUT_ENABLED=0` (default) ⇒ single-shot, unchanged behavior.
-- `=1` ⇒ opt-in fanout path with WS1/WS3/WS4 and WS5 slice 1. WS2 harness validation and WS5 slice 2 remain required before production enable. One flag flips back to single-shot (rollback). The 0-subagent Escape Hatch is always valid regardless of flag.
+- `=1` ⇒ opt-in fanout path with WS1/WS3/WS4/WS5. WS2 harness validation remains required before broad production enable. One flag flips back to single-shot (rollback). The 0-subagent Escape Hatch is always valid regardless of flag.
 
 ## Resolved decisions
 
