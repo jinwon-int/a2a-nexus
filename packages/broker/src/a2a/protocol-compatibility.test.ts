@@ -143,7 +143,7 @@ test("list projection keeps result details summarized and artifacts stable", () 
 // AgentCard trust model — signed metadata evaluation (#952)
 // ---------------------------------------------------------------------------
 
-test("AgentCard trust model: broker card is intentionally unsigned (signing deferred)", () => {
+test("AgentCard trust model: unsigned is the default; opt-in signing is documented from one code-backed source (#1501)", () => {
   const card = createBrokerAgentCard({
     serviceName: "trust-model-broker",
     publicBaseUrl: "https://broker.example.com/",
@@ -151,23 +151,43 @@ test("AgentCard trust model: broker card is intentionally unsigned (signing defe
     supportsPushNotifications: false,
   });
 
-  // The current implementation does not sign agent cards and no longer exposes
-  // placeholder signature fields in the public AgentCard TypeScript shape.
+  // The default served card (no signing key configured) does not carry a
+  // signature and does not expose placeholder signature fields in the public
+  // AgentCard TypeScript shape.
   const cardRecord = card as unknown as Record<string, unknown>;
-  assert.equal("signature" in cardRecord, false, "AgentCard must not expose a placeholder signature key");
-  assert.equal("signedExtensions" in cardRecord, false, "AgentCard must not expose placeholder signedExtensions");
+  assert.equal("signature" in cardRecord, false, "default AgentCard must not expose a placeholder signature key");
+  assert.equal("signedExtensions" in cardRecord, false, "default AgentCard must not expose placeholder signedExtensions");
 
-  // The trust model fixture records the intentional unsigned state.
+  // The trust model fixture records that signing is opt-in, not required.
   assert.equal(A2A_AGENT_CARD_TRUST_GOLDEN.signatureRequired, false);
   assert.equal(A2A_AGENT_CARD_TRUST_GOLDEN.signedExtensionsRequired, false);
   assert.equal(A2A_AGENT_CARD_TRUST_GOLDEN.trustModel, "transport-auth-only");
 
-  // Verify the trust model is documented.
+  // Single code-backed source of the signing capability.
+  const signing = A2A_COMPATIBILITY_PROFILE.signedAgentCards;
+  assert.equal(signing.optIn, true);
+  assert.deepEqual(signing.algs, ["EdDSA", "ES256"]);
+  assert.equal(signing.canonicalization, "RFC 8785");
+
+  // The trust-model doc must reflect the current state (opt-in implemented,
+  // superseding the historical defer decision) — not stale "deferred" framing —
+  // and still record the unsigned default + transport-auth trust.
   const trustDoc = readFileSync("docs/agent-card-trust-model.md", "utf8");
-  assert.match(trustDoc, /Explicitly deferred/);
+  assert.match(trustDoc, /SUPERSEDED/);
+  assert.match(trustDoc, /implemented as an opt-in capability/i);
+  assert.doesNotMatch(trustDoc, /\*\*Status: design reviewed, implementation deferred\.\*\*/);
   assert.match(trustDoc, /Edge-secret/);
   assert.match(trustDoc, /requester-id/);
   assert.match(trustDoc, /unsigned.*Current default/);
+
+  // Criterion 3: docs/protocol-compatibility.md projects the capability from the
+  // single code-backed source (optIn + algs + the opt-in env), and no longer
+  // lists AgentCard signing as a current non-goal.
+  const compatDoc = readFileSync("docs/protocol-compatibility.md", "utf8");
+  assert.match(compatDoc, /implemented opt-in/i);
+  assert.match(compatDoc, /AGENT_CARD_SIGNING_KEY_FILE/);
+  for (const alg of signing.algs) assert.match(compatDoc, new RegExp(alg));
+  assert.doesNotMatch(compatDoc, /AgentCard signing \(JWS\)[^\n]*deferred until key infrastructure exists/);
 });
 
 test("AgentCard trust model: no secret values in signature fields or serialized card output", () => {
@@ -221,9 +241,12 @@ test("AgentCard trust model: optional signature fields are backward-compatible",
 test("AgentCard trust model: design doc covers all four decision questions", () => {
   const doc = readFileSync("docs/agent-card-trust-model.md", "utf8");
 
-  // Decision 1: broker AgentCard signing is deferred.
+  // Decision 1: broker AgentCard signing — originally deferred, later reversed
+  // (now implemented opt-in). The doc retains the historical decision + records
+  // the supersession.
   assert.match(doc, /Decision 1/);
-  assert.match(doc, /Explicitly deferred/);
+  assert.match(doc, /Originally deferred; later reversed/);
+  assert.match(doc, /SUPERSEDED/);
 
   // Decision 2: worker capability cards can carry a signature envelope, also deferred.
   assert.match(doc, /Decision 2/);
