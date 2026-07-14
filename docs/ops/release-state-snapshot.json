@@ -1,5 +1,5 @@
 {
-  "$comment": "Committed, read-only snapshot of release/changelog state consumed by scripts/lib/check-changelog-release-drift.mjs (a2a-nexus#1501). The checker is OFFLINE (no network, no git introspection): it reads only this file plus CHANGELOG.md. This slice lands the checker MECHANISM and its RED/GREEN tests. Enforcement is gated by `enforcement.armed`: it is intentionally `false` for now so this first PR is behavior-neutral. Arming it to `true` AND backfilling the CHANGELOG `## Unreleased` section with the real post-alpha public-safe changes is the explicit follow-up content slice of #1501 (drift 1c). `armed:false` asserts only that enforcement is not yet turned on — it makes no claim that no post-release change exists.",
+  "$comment": "Committed, read-only snapshot of release/changelog state consumed by scripts/lib/check-changelog-release-drift.mjs (a2a-nexus#1501). The checker is OFFLINE (no network, no git introspection): it reads only this file plus CHANGELOG.md. Enforcement is now ARMED (a2a-nexus#1501 item 1c): the CHANGELOG `## Unreleased` section has been backfilled with the real post-alpha public-safe changes, so the gate is live and green together. With `armed:true` the gate fails closed if `## Unreleased` is ever reset to an empty placeholder while a released version exists — keeping the changelog honest as new public changes land before the next tag.",
   "checkedAt": "2026-07-14",
   "source": "CHANGELOG.md headings (manual, committed)",
   "latestRelease": {
@@ -7,7 +7,7 @@
     "date": "2026-07-05"
   },
   "enforcement": {
-    "armed": false,
-    "armedRationale": "Known drift exists (a2a-nexus#1501 item 1c): CHANGELOG.md ## Unreleased currently understates real post-alpha public-safe changes. This slice lands only the offline checker mechanism + RED/GREEN tests. Arming (flip to true) MUST happen in the same follow-up #1501 content slice that backfills ## Unreleased, so the gate goes green and honest together. armed:false documents that enforcement is not yet turned on; it is not a claim that no post-release change exists."
+    "armed": true,
+    "armedRationale": "Armed in a2a-nexus#1501 item 1c together with the CHANGELOG ## Unreleased backfill. The gate now fails closed if ## Unreleased is reset to an empty placeholder ('No unreleased changes yet.') while a released version section exists; record post-alpha public/API/contract changes under ## Unreleased to keep it green."
   }
 }
