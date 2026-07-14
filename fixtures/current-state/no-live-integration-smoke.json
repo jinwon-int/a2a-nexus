@@ -11,7 +11,7 @@
     "defaultMode": "solo",
     "escalationMode": "a2a-crosscheck",
     "riskTrigger": "cross-repo no-live integration proof",
-    "finalizer": "brokerAlpha",
+    "finalizer": "broker-alpha",
     "workerMutationAllowed": false
   },
   "phases": [
