@@ -160,7 +160,8 @@
     "worker:echo": "BROKER_URL=${LOCAL_A2A_BROKER_URL:-http://127.0.0.1:8787} WORKER_ID=${LOCAL_A2A_WORKER_ID:-local-echo-worker} WORKER_DISPLAY_NAME=${LOCAL_A2A_WORKER_DISPLAY_NAME:-Local Echo Worker} WORKER_HANDLER_BUILTIN=echo WORKER_POLL_INTERVAL_MS=1000 WORKER_HEARTBEAT_INTERVAL_MS=5000 npm run start:worker",
     "a2ad_evidence_classifier": "node scripts/a2ad-evidence-classifier.mjs",
     "worker_compatibility_audit": "node scripts/worker-compatibility-audit.mjs",
-    "clean:dist": "node -e \"require('node:fs').rmSync('dist',{recursive:true,force:true})\""
+    "clean:dist": "node -e \"require('node:fs').rmSync('dist',{recursive:true,force:true})\"",
+    "coverage:baseline": "npm run build && node --test scripts/coverage-baseline-report.test.mjs && node scripts/coverage-baseline-report.mjs"
   },
   "engines": {
     "node": ">=22.5"

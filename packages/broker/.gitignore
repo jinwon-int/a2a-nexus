@@ -4,6 +4,7 @@ dist-runtime/
 .tmp-targeted/
 .codex-backup/
 coverage/
+tmp/
 
 .env
 .env.bak_*

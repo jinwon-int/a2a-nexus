@@ -20,15 +20,17 @@ const surfaces = {
     packageDir: 'packages/broker',
     commands: [
       ['npm', ['test', '-w', 'packages/broker']],
+      ['npm', ['run', 'coverage:baseline', '-w', 'packages/broker']],
     ],
     metadata: {
       private: true,
-      requiredScripts: ['build', 'check', 'test', 'scan:public-readiness'],
+      requiredScripts: ['build', 'check', 'test', 'scan:public-readiness', 'coverage:baseline'],
       requiredFiles: [
         'scripts/generate-build-info.mjs',
         'scripts/team1-dispatch-wrapper.mjs',
         'scripts/a2a-dispatch-helper.mjs',
         'scripts/cross-broker-terminal-brief-receiver.mjs',
+        'scripts/coverage-baseline-report.mjs',
       ],
     },
   },
