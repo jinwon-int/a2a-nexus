@@ -29,7 +29,6 @@
  */
 
 import type {
-  A2ACloseoutCandidateState,
   A2ACloseoutCandidateEvaluation,
 } from "./operator-closeout-trigger.js";
 

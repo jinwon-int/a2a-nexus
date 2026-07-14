@@ -4,7 +4,58 @@ All notable public-safe changes for **A2A Nexus** are collected here. This file 
 
 ## Unreleased
 
-No unreleased changes yet.
+Public-safe changes accrued since `v0.1.0-alpha`, grouped by theme (running
+summary with representative PR anchors; not every internal change is listed).
+This section is release-preparation documentation only — it does not publish,
+tag, deploy, or mutate any live state.
+
+### Added — signed finalizer verdicts and merge-gate enforcement
+
+- Signed finalizer verdict contract + enforcement gate, with in-broker and
+  offline verdict-signature verification and a `finalizer-verdict-gate` CI job
+  bound to the PR head SHA (`#1383`, `#1384`, `#1430`, `#1435`).
+- Finalizer keyring lifecycle: a single keyring format serves both the broker
+  and the repo merge gate, with immediate revocation and `producedAt` validity
+  windows (`#1432`, `#1436`). Structural finalizer independence via a disjoint
+  role-registry validator and provenance-derived producing-worker keys
+  (`#1429`, `#1433`).
+
+### Added — verifiable analysis reports and provenance binding
+
+- Verifiable analysis report v0 contract with an independent offline verifier,
+  fail-closed exporter, and result↔source binding (`#1378`, `#1379`, `#1396`,
+  `#1398`). Signed retrieval snapshots bound to analysis results (`#1399`).
+- Verifiable delegation contract v0 with a spec↔broker conformance gate
+  (`#1304`, `#1425`).
+- Per-task attestation bundles with embedded cryptographic provenance and an
+  independent verifier, plus a round-replay CLI for deterministic reruns
+  (`#1301`, `#1423`, `#1448`, `#1302`, `#1449`).
+
+### Added — policy engine, durable wave plans, and sub-agent fanout
+
+- Declarative worker-class policy engine (warn→enforce) (`#1355`, `#1404`).
+- Durable wave-plan state machine with persistence, restart resume, HTTP
+  lifecycle routes, and a stale-plan reaper (`#1357`).
+- Source-only sub-agent fanout controls: token-budget counter, spawn-gate
+  decision, deterministic evidence assembly, shared context brief, and a
+  redaction gate (`#1537`), plus the Phase-2 container-lane fanout wiring
+  (`#1543`).
+- First-class Codex runner profile and analysis bridge (`#1549`, `#1551`).
+
+### Changed — live-task admission and runtime hardening
+
+- Live-task approvals bound to scoped HMACs with atomic admission and persisted
+  approval-consumption keys (`#1510`). Result-provenance countersign posture
+  flag with a startup preflight (`#1389`, `#1403`).
+- Graceful broker drain on redeploy with jittered worker reconnect (`#1405`),
+  and tolerance for small clock skew on A2A signature timestamps (`#1402`).
+
+### Added — source-only quality and doc-consistency gates
+
+- Measure-only coverage baselines across the broker, runner, and plugin
+  packages (`#1506`). Semantic current-state, package-matrix, and
+  CHANGELOG-release-drift doc gates (`#1501`). Executable quickstart onboarding
+  (`#1505`) and a gated author-independent review policy (`#1507`).
 
 ## v0.1.0-alpha — 2026-07-05
 

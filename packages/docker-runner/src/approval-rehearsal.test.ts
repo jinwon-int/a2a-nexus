@@ -8,11 +8,10 @@
 import { describe, it } from "node:test";
 import assert from "node:assert/strict";
 import { mkdtemp, rm } from "node:fs/promises";
-import { join, resolve } from "node:path";
+import { join } from "node:path";
 import { tmpdir } from "node:os";
 import { readFile, stat } from "node:fs/promises";
 import { runApprovalRehearsal } from "./approval-rehearsal.js";
-import type { ApprovalRehearsalPacket } from "./types.js";
 
 async function tempDir(): Promise<string> {
   return mkdtemp(join(tmpdir(), "a2a-approval-rehearsal-test-"));

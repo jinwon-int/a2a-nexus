@@ -1,5 +1,4 @@
 import { z } from "zod";
-import { A2A_BROKER_ADAPTER_PLUGIN_ID } from "./plugin-id.js";
 
 export { A2A_BROKER_ADAPTER_PLUGIN_ID } from "./plugin-id.js";
 

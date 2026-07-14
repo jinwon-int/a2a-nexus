@@ -4,9 +4,12 @@
 > **Active coordination:** [a2a-nexus#1498](https://github.com/jinwon-int/a2a-nexus/issues/1498) (repository hardening umbrella; the monorepo canonical flip is complete — recorded below)
 > **Status:** public alpha, actual source-state canonical flip executed for `a2a-nexus` packages at source level; external/live execution-sensitive actions remain separated.
 
-This page is the current public source-of-truth index for the A2A split-repo
-surface. It separates current work from historical public-readiness and
-topology gates.
+This page is the current public source-of-truth index for the A2A monorepo
+surface. The staged canonical flip is complete — `a2a-nexus` packages are
+`MONOREPO_PACKAGES_CANONICAL` (recorded below); the former split repositories
+remain active provenance mirrors (unchanged, not archived), while
+archive/read-only/redirect stay separate HOLD surfaces. It separates current
+work from historical public-readiness and topology gates.
 
 ## Current validation entrypoints
 
@@ -18,7 +21,7 @@ The operator-facing script surface is intentionally large, so the current entryp
 | PR check | `npm run check` | [`docs/release-gate.md`](release-gate.md) |
 | Public candidate check | `npm run scan:public-readiness`, `npm run scan:external-secrets`, and relevant package/readiness audit | [`docs/ops/script-surface-tier-manifest.json`](ops/script-surface-tier-manifest.json) |
 
-The manifest baseline remains root `package.json` at `100` scripts and `packages/broker/package.json` at `150` scripts. Verify the baseline with `node scripts/lib/script-surface-manifest.mjs`.
+The per-package script-surface counts are not restated here (they drift as scripts land); the committed source of truth is the script-surface manifest and the ratcheting budget. Read the current counts with `node scripts/lib/script-surface-manifest.mjs`, and see the enforced budgets in `scripts/check-script-budget.mjs` (`node scripts/check-script-budget.mjs`).
 
 ## Current Active Work
 

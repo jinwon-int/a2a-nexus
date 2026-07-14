@@ -10,7 +10,6 @@ import type {
   TaskTemplate,
   TaskTemplateVars,
   TemplateExpansionEvidence,
-  NormalizedRunnerTask,
 } from "./types.js";
 
 // ─── Built-in Template Registry ─────────────────────────────────────────

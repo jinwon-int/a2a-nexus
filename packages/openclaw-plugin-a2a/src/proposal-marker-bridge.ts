@@ -25,11 +25,9 @@ import {
   WorkerStatusMarker,
 } from "./worker-status-marker.js";
 import {
-  type GitHubCommentSource,
   type DeduplicationStore,
 } from "./worker-marker-ingestion.js";
 import {
-  ConferenceDeduplicationStore,
   deriveConferenceId,
 } from "./conference-marker-bridge.js";
 
