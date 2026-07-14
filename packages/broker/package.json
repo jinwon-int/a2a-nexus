@@ -170,7 +170,7 @@
     "zod": "^4.3.6"
   },
   "devDependencies": {
-    "@types/node": "^22.20.0",
+    "@types/node": "^22.20.1",
     "typescript": "^6.0.3"
   },
   "repository": {
