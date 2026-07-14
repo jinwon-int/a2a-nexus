@@ -29,7 +29,7 @@ import { createDocCheckContext } from './lib/doc-check.mjs';
 export const BUDGETS = {
   scriptsMjs: 168, // +1 from 167: #1505 executable quickstart doctest CLI (scripts/check-quickstart-doctest.mjs) boots a loopback broker + echo worker to exercise the documented quickstart end-to-end
   rootNpmScripts: 101, // +1 from 100: #1505 check:quickstart-doctest wrapper wiring the executable doctest into smoke:quickstart (CI)
-  brokerNpmScripts: 150, // includes broker clean:dist stale-build guard from #997/#999 closeout
+  brokerNpmScripts: 155, // +5 from 150: #1537 Phase-1 sub-agent fanout scripts (#1538 token-budget-counter, #1539 spawn-gate-decision, #1540 evidence-assembly, #1541 shared-context-brief, #1542 redaction-gate) each added one broker package script
 };
 
 /** Count top-level *.mjs files in a directory (non-recursive; excludes subdirs like lib/). */
