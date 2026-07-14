@@ -17,7 +17,7 @@
     "prepack": "npm run scan:public-readiness && npm run build"
   },
   "dependencies": {
-    "@sinclair/typebox": "0.34.49",
+    "@sinclair/typebox": "0.34.52",
     "ajv": "^8.18.0",
     "zod": "^4.3.6"
   },
@@ -25,7 +25,7 @@
     "openclaw": "*"
   },
   "devDependencies": {
-    "@types/node": "^22.20.0",
+    "@types/node": "^22.20.1",
     "openclaw": "file:test/fixtures/openclaw",
     "typescript": "^6.0.3"
   },

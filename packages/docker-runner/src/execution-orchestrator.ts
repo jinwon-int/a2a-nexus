@@ -36,7 +36,7 @@ import type {
   ScannerHistoryBinding,
 } from "./types.js";
 import type { ScanProfile } from "./scanner.js";
-import { redactSecrets, redactAndBound } from "./runner.js";
+import { redactAndBound } from "./runner.js";
 
 // ─── Retry Guard Constants ─────────────────────────────────────────────────
 

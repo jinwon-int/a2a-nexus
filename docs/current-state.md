@@ -4,9 +4,12 @@
 > **Active coordination:** [a2a-nexus#1498](https://github.com/jinwon-int/a2a-nexus/issues/1498) (repository hardening umbrella; the monorepo canonical flip is complete — recorded below)
 > **Status:** public alpha, actual source-state canonical flip executed for `a2a-nexus` packages at source level; external/live execution-sensitive actions remain separated.
 
-This page is the current public source-of-truth index for the A2A split-repo
-surface. It separates current work from historical public-readiness and
-topology gates.
+This page is the current public source-of-truth index for the A2A monorepo
+surface. The staged canonical flip is complete — `a2a-nexus` packages are
+`MONOREPO_PACKAGES_CANONICAL` (recorded below); the former split repositories
+remain active provenance mirrors (unchanged, not archived), while
+archive/read-only/redirect stay separate HOLD surfaces. It separates current
+work from historical public-readiness and topology gates.
 
 ## Current validation entrypoints
 

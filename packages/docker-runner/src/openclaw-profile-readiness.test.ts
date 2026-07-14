@@ -23,7 +23,6 @@ import {
 } from "./openclaw-profile-readiness.js";
 import type {
   OpenClawProfileReadinessInput,
-  OpenClawProfileReadinessOutcome,
   OpenClawReadinessFailureCategory,
 } from "./openclaw-profile-readiness.js";
 

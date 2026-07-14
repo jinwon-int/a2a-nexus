@@ -29,7 +29,6 @@ const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
 
 const EXAMPLES_DIR = join(__dirname, "..", "examples");
-const RUN_ID = "a2a-r26-team1-no-live-terminal-brief-integration-rehearsal-20260515T1832Z";
 const TARGET_NODE = "workerAlpha";
 
 // ─── Fixture interfaces ─────────────────────────────────────────────────
