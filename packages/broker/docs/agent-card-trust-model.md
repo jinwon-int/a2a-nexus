@@ -35,7 +35,11 @@ Our broker already exposes two card-like surfaces:
    worker abilities without exposing broker URLs, workspace IDs, secrets, raw
    metadata, or mobile node internals.
 
-Neither surface carries signed metadata today. Trust is enforced through:
+The two surfaces differ in signing posture. The **public broker AgentCard** can
+carry a `signatures` block when opt-in JWS signing is enabled
+(`AGENT_CARD_SIGNING_KEY_FILE`); it is served unsigned by default when no key is
+configured. **Worker capability cards remain unsigned** on every path. Regardless
+of signing, trust is enforced through:
 
 - **Edge-secret** authentication at the transport layer (proves the caller can
   reach the broker).

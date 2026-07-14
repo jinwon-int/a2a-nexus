@@ -179,6 +179,12 @@ test("AgentCard trust model: unsigned is the default; opt-in signing is document
   assert.match(trustDoc, /Edge-secret/);
   assert.match(trustDoc, /requester-id/);
   assert.match(trustDoc, /unsigned.*Current default/);
+  // The Background must not carry the stale present-tense claim that neither
+  // surface is signed — that contradicts the implemented opt-in broker signing.
+  assert.doesNotMatch(trustDoc, /Neither surface carries signed metadata today/);
+  // It must instead distinguish the two surfaces: the broker card can carry a
+  // signatures block opt-in, while worker capability cards remain unsigned.
+  assert.match(trustDoc, /Worker capability cards remain unsigned/);
 
   // Criterion 3: docs/protocol-compatibility.md projects the capability from the
   // single code-backed source (optIn + algs + the opt-in env), and no longer
