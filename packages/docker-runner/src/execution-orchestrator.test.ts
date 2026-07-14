@@ -15,8 +15,6 @@ import { buildPlan, runPreflight, simulate, bindScannerHistory } from "./executi
 import { runApprovalRehearsal } from "./approval-rehearsal.js";
 import type {
   ApprovalRehearsalPacket,
-  ExecutionPlan,
-  ExecutionPreflightCheck,
   PlannedAction,
   ScannerHistoryBinding,
 } from "./types.js";

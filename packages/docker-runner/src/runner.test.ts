@@ -445,7 +445,7 @@ test("generates default commands for single repo task", async () => {
   const config = { ...baseConfig, defaultTimeoutMs: 3000 };
 
   try {
-    const result = await runTask(config, task);
+    await runTask(config, task);
     // Should have generated npm ci + npm test commands
     // The stdout should contain evidence of command execution
   } catch {
@@ -470,7 +470,7 @@ test("handles multi-repo configuration", async () => {
   const config = { ...baseConfig, defaultTimeoutMs: 5000 };
 
   try {
-    const result = await runTask(config, task);
+    await runTask(config, task);
     // Should attempt checkout of both repos
   } catch {
     // Docker not available; skip.
@@ -490,7 +490,7 @@ test("expands openclaw-plugin-a2a-dev preset correctly", async () => {
   const config = { ...baseConfig, defaultTimeoutMs: 5000 };
 
   try {
-    const result = await runTask(config, task);
+    await runTask(config, task);
     // The preset expands to checkout + npm ci + npm test
   } catch {
     // Docker not available; skip.

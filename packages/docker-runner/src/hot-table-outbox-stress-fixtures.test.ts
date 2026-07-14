@@ -539,7 +539,7 @@ test("each case provides terminalOutboxId linked to the stress task", () => {
   const { fixture } = loadFixture();
 
   for (const entry of fixture.cases) {
-    const event = buildTerminalEvidenceEvent(
+    buildTerminalEvidenceEvent(
       parseRunnerOutput(JSON.stringify(entry.runnerOutput)),
       entry.handlerTask,
       fixture.worker,
@@ -567,12 +567,6 @@ test("stress fixture events never contain raw stdout/stderr or private paths", (
   const { fixture } = loadFixture();
   // Only check the serialized output — a subset of these forbidden tokens
   // pass through buildTerminalEvidenceEvent's own redaction already.
-  const mustNotAppear = [
-    "/synthetic/hot-table/outbox/workerAlpha/",
-    "stdout omitted from terminal alert",
-    "stdout omitted from stress terminal evidence",
-  ];
-
   for (const entry of fixture.cases) {
     const event = buildTerminalEvidenceEvent(
       parseRunnerOutput(JSON.stringify(entry.runnerOutput)),
