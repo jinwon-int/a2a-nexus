@@ -13,6 +13,8 @@
   },
   "coarseBaseline": {
     "category": "jsonrpc",
+    "level": "must",
+    "transport": "jsonrpc",
     "pass": 12,
     "total": 75,
     "date": "2026-06-11"

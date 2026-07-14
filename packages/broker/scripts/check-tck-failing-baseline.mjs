@@ -37,15 +37,25 @@ const REQUIRED_SUBCATEGORY_IDS = [
 const VALID_READINESS = new Set(['blocked-pending-fresh-run', 'candidate-pending-fresh-run', 'promoted']);
 const VALID_SOURCE_KIND = new Set(['official-tck', 'code-derived', 'prose-derived']);
 
-function latestJsonrpc(history) {
+function isPassTotal(v) {
+  return v != null && typeof v === 'object' && Number.isInteger(v.pass) && Number.isInteger(v.total);
+}
+
+/**
+ * Anchor the classification to the EXACT committed measurement it claims to
+ * decompose: same date + level + transport, with a jsonrpc category. Binding on
+ * all three (not "the last measurement with a jsonrpc bucket") keeps the guard
+ * stable as the multi-level/transport history grows — a `should`/`jsonrpc` or a
+ * different-date row can no longer silently re-anchor the MUST baseline.
+ */
+function findAnchorMeasurement(history, coarseBaseline) {
   const measurements = Array.isArray(history?.measurements) ? history.measurements : [];
-  for (let i = measurements.length - 1; i >= 0; i -= 1) {
-    const jr = measurements[i]?.categories?.jsonrpc;
-    if (jr && Number.isInteger(jr.pass) && Number.isInteger(jr.total)) {
-      return { pass: jr.pass, total: jr.total, date: measurements[i].date };
-    }
-  }
-  return null;
+  const { date, level, transport } = coarseBaseline ?? {};
+  return (
+    measurements.find(
+      (m) => m && m.date === date && m.level === level && m.transport === transport && isPassTotal(m.categories?.jsonrpc),
+    ) ?? null
+  );
 }
 
 /**
@@ -64,15 +74,30 @@ export function evaluateFailingBaseline(baseline, history) {
     failures.push('tck-failing-categories: provenance.NOT_a_per_test_run must be true (honesty marker: numbers are not from a per-test TCK run)');
   }
 
-  // Invariant 1 — coarse baseline consistency with committed history.
-  const jr = latestJsonrpc(history);
+  // Invariant 1 — the coarse baseline must pin, and match, an EXACT committed
+  // measurement (date + level + transport), not just "some jsonrpc row".
   const cb = baseline.coarseBaseline;
-  if (!jr) {
-    failures.push('tck-history.json has no jsonrpc measurement to anchor the classification');
-  } else if (!cb || cb.pass !== jr.pass || cb.total !== jr.total) {
+  if (
+    !cb || cb.category !== 'jsonrpc' || cb.level !== 'must' || cb.transport !== 'jsonrpc'
+    || typeof cb.date !== 'string' || cb.date.length === 0
+  ) {
     failures.push(
-      `tck-failing-categories.coarseBaseline (${cb?.pass}/${cb?.total}) must match tck-history jsonrpc ${jr.pass}/${jr.total} (${jr.date})`,
+      'tck-failing-categories.coarseBaseline must pin { category:"jsonrpc", level:"must", transport:"jsonrpc", date, pass, total }',
     );
+  } else {
+    const anchor = findAnchorMeasurement(history, cb);
+    if (!anchor) {
+      failures.push(
+        `tck-failing-categories.coarseBaseline finds no tck-history measurement at date ${cb.date} level must transport jsonrpc (mis-anchored or stale date)`,
+      );
+    } else {
+      const jr = anchor.categories.jsonrpc;
+      if (cb.pass !== jr.pass || cb.total !== jr.total) {
+        failures.push(
+          `tck-failing-categories.coarseBaseline (${cb.pass}/${cb.total}) must match the anchored must/jsonrpc measurement ${jr.pass}/${jr.total} (${cb.date})`,
+        );
+      }
+    }
   }
 
   // Sub-category shape + honesty invariant 2.
@@ -85,26 +110,46 @@ export function evaluateFailingBaseline(baseline, history) {
     }
     if (ids.has(sub.id)) failures.push(`tck-failing-categories: duplicate subCategory id ${sub.id}`);
     ids.add(sub.id);
-    if (sub.measuredPassTotal !== null) {
-      failures.push(
-        `tck-failing-categories: subCategory ${sub.id} measuredPassTotal must be null until the harness emits per-sub-category granularity (do not claim unmeasured conformance)`,
-      );
-    }
     if (!VALID_READINESS.has(sub.promotionReadiness)) {
       failures.push(`tck-failing-categories: subCategory ${sub.id} invalid promotionReadiness ${sub.promotionReadiness}`);
     }
-    // Provenance honesty: every sub-category must declare how its status was
-    // derived, and stay flagged pending real per-test emission until the harness
-    // emits sub-category granularity. A `code-derived`/`prose-derived` entry may
-    // NOT be promoted (only an `official-tck`, emission-complete entry can).
     if (!VALID_SOURCE_KIND.has(sub.sourceKind)) {
       failures.push(`tck-failing-categories: subCategory ${sub.id} sourceKind must be one of ${[...VALID_SOURCE_KIND].join('/')}`);
     }
-    if (sub.pendingEmission !== true && sub.sourceKind !== 'official-tck') {
-      failures.push(`tck-failing-categories: subCategory ${sub.id} pendingEmission must stay true until sourceKind is official-tck (no unmeasured promotion)`);
+
+    // Coherent emission-state transition (honesty invariant). Every sub-category
+    // must carry an EXPLICIT boolean `pendingEmission`:
+    //   pendingEmission=true  → not yet measured by an official per-test run:
+    //     measuredPassTotal MUST be null, sourceKind MUST NOT be official-tck,
+    //     and it cannot be `promoted`.
+    //   pendingEmission=false → emission-complete: sourceKind MUST be official-tck
+    //     and measuredPassTotal MUST be a {pass,total} record (the supported
+    //     representation of a real measured sub-category).
+    // `promoted` is only reachable from the emission-complete state.
+    const pe = sub.pendingEmission;
+    if (typeof pe !== 'boolean') {
+      failures.push(`tck-failing-categories: subCategory ${sub.id} pendingEmission must be an explicit boolean`);
+    } else if (pe === true) {
+      if (sub.measuredPassTotal !== null) {
+        failures.push(`tck-failing-categories: subCategory ${sub.id} pendingEmission=true requires measuredPassTotal=null (no unmeasured conformance)`);
+      }
+      if (sub.sourceKind === 'official-tck') {
+        failures.push(`tck-failing-categories: subCategory ${sub.id} pendingEmission=true is inconsistent with sourceKind=official-tck (that asserts a real measurement)`);
+      }
+      if (sub.promotionReadiness === 'promoted') {
+        failures.push(`tck-failing-categories: subCategory ${sub.id} cannot be 'promoted' while pendingEmission=true`);
+      }
+    } else {
+      // pendingEmission === false — emission-complete
+      if (sub.sourceKind !== 'official-tck') {
+        failures.push(`tck-failing-categories: subCategory ${sub.id} pendingEmission=false requires sourceKind=official-tck`);
+      }
+      if (!isPassTotal(sub.measuredPassTotal)) {
+        failures.push(`tck-failing-categories: subCategory ${sub.id} pendingEmission=false requires a measuredPassTotal {pass,total} (emission-complete representation)`);
+      }
     }
-    if (sub.promotionReadiness === 'promoted' && (sub.sourceKind !== 'official-tck' || sub.pendingEmission === true)) {
-      failures.push(`tck-failing-categories: subCategory ${sub.id} cannot be 'promoted' without official-tck sourceKind and pendingEmission=false`);
+    if (sub.promotionReadiness === 'promoted' && !(sub.sourceKind === 'official-tck' && pe === false && isPassTotal(sub.measuredPassTotal))) {
+      failures.push(`tck-failing-categories: subCategory ${sub.id} 'promoted' requires sourceKind=official-tck, pendingEmission=false, and a measuredPassTotal`);
     }
   }
   for (const required of REQUIRED_SUBCATEGORY_IDS) {
