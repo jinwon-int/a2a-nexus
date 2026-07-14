@@ -24,11 +24,8 @@ import { createHash } from "node:crypto";
 import type {
   SourcePublicApprovalRehearsalReport,
   SourcePublicApprovalPacket,
-  SourcePublicEvidenceBundle,
   SourcePublicDecision,
   SourcePublicGateName,
-  SourcePublicGateResult,
-  SourcePublicTerminalBrief,
 } from "./source-public-approval-rehearsal.js";
 import type { A2ABrokerAdapterPluginRuntimeConfig } from "../config.js";
 import { resolveA2ABrokerAdapterPluginConfig } from "../config.js";

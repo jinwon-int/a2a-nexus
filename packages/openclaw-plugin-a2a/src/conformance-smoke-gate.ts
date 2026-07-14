@@ -16,7 +16,6 @@ import {
 } from "../config.js";
 import {
   createA2AGatewayHandlers,
-  type GatewayTaskMethod,
 } from "./gateway-handlers.js";
 import {
   validateA2ATaskRequestParams,

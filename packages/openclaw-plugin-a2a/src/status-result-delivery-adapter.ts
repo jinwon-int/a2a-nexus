@@ -330,7 +330,7 @@ export class StatusResultDeliveryAdapter {
    * Idempotent: same deliveryId + status + timestamp → suppressed duplicate.
    */
   ingestStatus(envelope: SessionStatusEnvelope): BrokerDeliveryEvent {
-    const { deliveryId, taskId, wakeId, rawStatus, timestamp, sourceNodeId, sessionKey } = envelope;
+    const { deliveryId, taskId, wakeId, rawStatus, timestamp, sourceNodeId } = envelope;
 
     const brokerStatus = normalizeRawStatus(rawStatus);
     const ts = timestamp || this.now().toISOString();
