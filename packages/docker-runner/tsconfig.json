@@ -4,7 +4,8 @@
     "incremental": true,
     "tsBuildInfoFile": "dist/.tsbuildinfo",
     "outDir": "dist",
-    "rootDir": "src"
+    "rootDir": "src",
+    "noUnusedLocals": true
   },
   "include": ["src/**/*.ts"]
 }

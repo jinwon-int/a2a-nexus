@@ -29,7 +29,6 @@ import {
   buildCleanupDryRunPlan,
   type ReadinessReport,
   type CleanupDryRunPlan,
-  type CleanupDryRunEntry,
 } from "./scanner.js";
 import type { CleanupRiskClass, ReadinessRunStatus } from "./scanner.js";
 

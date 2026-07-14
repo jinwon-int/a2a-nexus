@@ -14,12 +14,12 @@
 
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
-import { dirname, join, resolve } from "node:path";
+import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import test from "node:test";
 
 import { buildHandlerResult, buildRunnerTaskFromHandlerPayload } from "./integration.js";
-import type { HandlerTask, HandlerResult, RawRunnerOutput, TerminalEvidenceKind, TerminalEvidenceStatus } from "./integration.js";
+import type { HandlerTask, RawRunnerOutput, TerminalEvidenceKind, TerminalEvidenceStatus } from "./integration.js";
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);

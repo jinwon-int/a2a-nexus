@@ -263,7 +263,6 @@ test("extractStructuredSubagentReport preserves a report beyond the 8KB stream v
   });
 
   assert.equal(extracted?.count, 1);
-  const output = extracted?.entries[0]?.output ?? "";
   assert.ok(Buffer.byteLength(extracted.entries[0].output, "utf8") <= 96);
   assert.equal(extracted.entries[0].redacted, true);
   assert.equal(extracted.entries[0].truncated, true);
