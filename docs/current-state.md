@@ -6,9 +6,10 @@
 
 This page is the current public source-of-truth index for the A2A monorepo
 surface. The staged canonical flip is complete — `a2a-nexus` packages are
-`MONOREPO_PACKAGES_CANONICAL` (recorded below); the historical split-repo
-topology is retained only as a HOLD/archive surface. It separates current work
-from historical public-readiness and topology gates.
+`MONOREPO_PACKAGES_CANONICAL` (recorded below); the former split repositories
+remain active provenance mirrors (unchanged, not archived), while
+archive/read-only/redirect stay separate HOLD surfaces. It separates current
+work from historical public-readiness and topology gates.
 
 ## Current validation entrypoints
 
