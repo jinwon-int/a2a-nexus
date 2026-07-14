@@ -4,7 +4,18 @@ This document answers the design questions raised in #952: whether the broker
 should sign its public AgentCard, how the A2A secure-passport extension maps
 to our auth model, and how we keep private data out of public card output.
 
-**Status: design reviewed, implementation deferred.**
+**Status: SUPERSEDED in part — opt-in AgentCard signing has since been implemented.**
+
+> **Update.** The "defer signing" decision recorded below (Decision 1) was later
+> reversed: JWS AgentCard signing is now **implemented as an opt-in capability**
+> (`src/a2a/agent-card-signing.ts`; EdDSA/ES256 over the RFC 8785 canonicalization,
+> enabled via `AGENT_CARD_SIGNING_KEY_FILE`). **Unsigned serving remains the
+> current default** when no signing key is configured. The single code-backed
+> source of the capability is `A2A_COMPATIBILITY_PROFILE.signedAgentCards` in
+> `src/fixtures/a2a-protocol-compatibility.ts`, projected into
+> `docs/protocol-compatibility.md`. The design reasoning below is retained as
+> **historical context** for how the original defer decision was made; the
+> secure-passport `CallerContext` portions remain deferred.
 
 ## Background
 
@@ -24,7 +35,11 @@ Our broker already exposes two card-like surfaces:
    worker abilities without exposing broker URLs, workspace IDs, secrets, raw
    metadata, or mobile node internals.
 
-Neither surface carries signed metadata today. Trust is enforced through:
+The two surfaces differ in signing posture. The **public broker AgentCard** can
+carry a `signatures` block when opt-in JWS signing is enabled
+(`AGENT_CARD_SIGNING_KEY_FILE`); it is served unsigned by default when no key is
+configured. **Worker capability cards remain unsigned** on every path. Regardless
+of signing, trust is enforced through:
 
 - **Edge-secret** authentication at the transport layer (proves the caller can
   reach the broker).
@@ -34,9 +49,10 @@ Neither surface carries signed metadata today. Trust is enforced through:
   enforces `visibility` controls (`exposeBrokerUrl`, `exposeWorkspaceIds`,
   `exposesSecrets`, `safeForDiscovery`).
 
-## Decision 1: Should the broker sign its public AgentCard now?
+## Decision 1 (historical): Should the broker sign its public AgentCard now?
 
-**Explicitly deferred.**
+**Originally deferred; later reversed — signing is now implemented opt-in (see the
+Status update at the top). The original reasoning is retained below as history.**
 
 Reasoning:
 
@@ -160,7 +176,10 @@ These states would be exposed through:
 - Worker capability card validation results for worker cards.
 - Broker operator dashboard for at-a-glance trust status.
 
-Until implementation, all cards are **unsigned** and safe.
+By default (no `AGENT_CARD_SIGNING_KEY_FILE` configured), all cards are served
+**unsigned** and safe; opt-in signing binds the card to the issuer when a key is
+configured. The operator visibility states above describe the target model for
+surfacing signed/trusted/expired states as adoption proceeds.
 
 ## Secret exposure guard
 
