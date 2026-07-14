@@ -12,6 +12,9 @@ import path from 'node:path';
 import { createDocCheckContext } from './lib/doc-check.mjs';
 import {
   DEFAULT_TIERS,
+  TIER_CONSUMER,
+  VALID_CONSUMER,
+  VALID_OWNER,
   loadReleaseGateInventory,
   selectReleaseGateEntries,
   summarizeReleaseGateEntries,
@@ -52,6 +55,14 @@ export function compareInventory({ inventory }) {
     if (!validTiers.has(entry.tier)) failures.push(`${entry.name}: invalid tier ${entry.tier}`);
     if (!validRetirement.has(entry.retirement)) failures.push(`${entry.name}: invalid retirement ${entry.retirement}`);
     if (typeof entry.note !== 'string' || entry.note.length < 20) failures.push(`${entry.name}: note must explain classification`);
+    if (!VALID_OWNER.has(entry.owner)) failures.push(`${entry.name}: invalid owner ${entry.owner}`);
+    if (!VALID_CONSUMER.has(entry.consumer)) failures.push(`${entry.name}: invalid consumer ${entry.consumer}`);
+    if (TIER_CONSUMER[entry.tier] !== entry.consumer) {
+      failures.push(`${entry.name}: consumer ${entry.consumer} is inconsistent with tier ${entry.tier}`);
+    }
+    if (typeof entry.retirementCondition !== 'string' || entry.retirementCondition.length < 20) {
+      failures.push(`${entry.name}: retirementCondition must state the retirement trigger`);
+    }
     summary[entry.tier] = (summary[entry.tier] ?? 0) + 1;
   }
 

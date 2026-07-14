@@ -110,7 +110,11 @@ test('release gate inventory keeps public-readiness and package checks', async (
     command: 'npm',
     args: ['run', 'scan:public-readiness'],
     tier: 'public-readiness',
+    owner: 'public-readiness',
+    consumer: 'pr-gate',
     retirement: 'keep',
+    retirementCondition:
+      'Retire only when a narrower owner-scoped gate demonstrably covers the same invariant; no removal while it runs on the default release-gate path.',
     note: 'Public-readiness or visibility hygiene; do not retire as generic cleanup.',
   });
   assert.equal(byName.get('layout')?.tier, 'core');
