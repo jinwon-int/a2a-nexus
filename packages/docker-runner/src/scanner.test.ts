@@ -3,8 +3,8 @@ import test from "node:test";
 import { existsSync, mkdirSync, readdirSync, readFileSync, writeFileSync, rmSync, mkdtempSync } from "node:fs";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
-import { scanHistory, createArtifactBundle, readinessScan, buildCleanupDryRunPlan, type ScanProfile, type ScanRunEntry, type ReadinessReport, type CleanupDryRunPlan } from "./scanner.js";
-import { buildSourcePublicApprovalRehearsal, buildArtifactManifest } from "./runner.js";
+import { scanHistory, createArtifactBundle, readinessScan, buildCleanupDryRunPlan, type ScanProfile, type ReadinessReport } from "./scanner.js";
+import { buildSourcePublicApprovalRehearsal } from "./runner.js";
 import { buildSourcePublicExecutionPreflight } from "./source-public-preflight.js";
 
 // ---------------------------------------------------------------------------
@@ -357,7 +357,7 @@ test("createArtifactBundle preserves benign content through redaction", async ()
       summary: "All tests passed. No secrets here.",
     });
 
-    const manifest = await createArtifactBundle({ workDir: runDir, outputPath: outputDir });
+    await createArtifactBundle({ workDir: runDir, outputPath: outputDir });
 
     const content = readFileSync(join(outputDir, "summary.txt"), "utf8");
     assert.ok(content.includes("All tests passed"));
@@ -1978,7 +1978,7 @@ test("artifact hygiene: bundle redacts known secret patterns in artifact content
       `API: ${apiKey}\n` +
       `${accessTokenUrl}\n`);
 
-    const bundle = await createArtifactBundle({ workDir: runDir, outputPath: outputDir });
+    await createArtifactBundle({ workDir: runDir, outputPath: outputDir });
     const content = readFileSync(join(outputDir, "leaky.log"), "utf8");
 
     // All known secret patterns must be redacted.

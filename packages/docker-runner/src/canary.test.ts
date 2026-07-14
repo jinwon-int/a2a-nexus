@@ -13,7 +13,7 @@
 
 import assert from "node:assert/strict";
 import { spawn } from "node:child_process";
-import { mkdir, writeFile, rm } from "node:fs/promises";
+import { mkdir, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
 import { randomUUID } from "node:crypto";
@@ -22,8 +22,6 @@ import { fileURLToPath } from "node:url";
 import { dirname, resolve } from "node:path";
 
 import {
-  isGithubProposePatchTask,
-  isEnvTruthy,
   shouldUseDockerRunnerForGithub,
   buildRunnerTaskFromHandlerPayload,
   parseRunnerOutput,

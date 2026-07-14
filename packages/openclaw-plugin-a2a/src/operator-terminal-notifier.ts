@@ -1492,7 +1492,6 @@ function readRoundNum(...records: Array<UnknownRecord | undefined>): number | un
   for (const record of records) {
     if (!record) continue;
     const metadata = asRecord(record.metadata);
-    const terminalBrief = asRecord(record.terminalBrief);
     const payload = asRecord(record.payload);
     const payloadTerminalBrief = asRecord(payload?.terminalBrief);
     const crossBroker = asRecord(record.crossBrokerHandoff) ?? asRecord(record.crossBroker) ?? asRecord(record.handoff);

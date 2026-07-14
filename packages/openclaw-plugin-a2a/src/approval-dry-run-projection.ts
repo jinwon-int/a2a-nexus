@@ -26,10 +26,6 @@ import {
   validateA2ATaskRejectApprovalParams,
 } from "./gateway-validators.js";
 import { normalizeOptionalString } from "./value-guards.js";
-import type {
-  A2ATaskApproveParams,
-  A2ATaskRejectApprovalParams,
-} from "./gateway-schema.js";
 
 // ── Public types ────────────────────────────────────────────────────
 

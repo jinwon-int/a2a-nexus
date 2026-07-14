@@ -17,8 +17,6 @@
 
 import { createHash } from "node:crypto";
 
-import type { DurableWakeEntry } from "./durable-session-wake-adapter.js";
-
 // ── Types ──────────────────────────────────────────────────────
 
 export type PayloadDeliveryState =
@@ -130,7 +128,6 @@ export interface DeliveryTransition {
 
 const MAX_DELIVERIES = 256;
 const MAX_AUDIT_HISTORY = 1000;
-const DEFAULT_TIMEOUT_MS = 30_000;
 
 // ── Stable ID derivation ───────────────────────────────────────
 
@@ -179,12 +176,10 @@ export class PayloadDeliveryAdapter {
   private auditLog: PayloadDeliveryAuditEvent[] = [];
   private readonly now: () => Date;
   private readonly maxDeliveries: number;
-  private readonly defaultTimeoutMs: number;
 
   constructor(options: PayloadDeliveryAdapterOptions = {}) {
     this.now = options.now ?? (() => new Date());
     this.maxDeliveries = options.maxDeliveries ?? MAX_DELIVERIES;
-    this.defaultTimeoutMs = options.defaultTimeoutMs ?? DEFAULT_TIMEOUT_MS;
   }
 
   /**

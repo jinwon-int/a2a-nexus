@@ -26,7 +26,6 @@ import {
   ingestGitHubComment,
   deriveEventId,
   type DeduplicationStore,
-  InMemoryDeduplicationStore,
 } from "./worker-marker-ingestion.js";
 
 // ── Conference event types ─────────────────────────────────────

@@ -21,8 +21,6 @@ import { createHash } from "node:crypto";
 import type {
   A2AWakeRequest,
   A2AWakeDispatch,
-  A2AWakeFailureRecord,
-  A2AWakeFailureReason,
   A2ARuntimeWakeAdapter,
 } from "./runtime-wake-adapter.js";
 
