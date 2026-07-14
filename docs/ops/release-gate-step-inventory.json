@@ -670,6 +670,27 @@
       "note": "Unit test for the #1501 package matrix gate (RED missing/stale package + visibility drift, GREEN consistent projection); local/read-only, budget-neutral scripts/lib placement."
     },
     {
+      "name": "changelog-release-drift",
+      "command": "node",
+      "args": [
+        "scripts/lib/check-changelog-release-drift.mjs"
+      ],
+      "tier": "core",
+      "retirement": "keep",
+      "note": "Source-only CHANGELOG release-drift gate (#1501, criterion 4): when docs/ops/release-state-snapshot.json arms enforcement, CHANGELOG.md \"## Unreleased\" must not stay an empty placeholder beneath a released version; offline, no network."
+    },
+    {
+      "name": "changelog-release-drift-test",
+      "command": "node",
+      "args": [
+        "--test",
+        "scripts/lib/check-changelog-release-drift.test.mjs"
+      ],
+      "tier": "core",
+      "retirement": "keep",
+      "note": "Unit test for the #1501 changelog release-drift gate (RED armed+empty placeholder, GREEN unarmed/populated/pre-release); local/read-only, budget-neutral scripts/lib placement."
+    },
+    {
       "name": "review-policy",
       "command": "node",
       "args": [
