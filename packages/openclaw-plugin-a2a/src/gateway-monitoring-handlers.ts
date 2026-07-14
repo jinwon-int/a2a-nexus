@@ -26,7 +26,6 @@ import {
   preflightA2AOperatorNotificationRuntime,
 } from "./operator-notification-adapter.js";
 import type {
-  A2AAlertsListParams,
   A2AMonitorStatusParams,
 } from "./gateway-schema.js";
 import {
@@ -509,7 +508,7 @@ export function createA2AMonitoringHandlers(
   }
 
   function shutdownCrossBridges(): void {
-    for (const [key, bridge] of crossBridges) {
+    for (const [, bridge] of crossBridges) {
       try { bridge.shutdown(); } catch { /* best-effort */ }
     }
     crossBridges.clear();

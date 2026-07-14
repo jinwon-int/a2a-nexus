@@ -301,7 +301,6 @@ export function normalizeRecoveryAction(input: unknown): RecoveryAdapterResult {
  * Adapt a Round 13 NormalizedA2APayload into a recovery action (inspect mode).
  */
 function normalizeRound13AsRecovery(input: Record<string, unknown>): RecoveryAdapterResult {
-  const metadata = readRecord(input, "metadata") ?? {};
   const target = input.target as Record<string, unknown> | undefined;
   const requester = input.requester as Record<string, unknown> | undefined;
 

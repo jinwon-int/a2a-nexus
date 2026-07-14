@@ -765,15 +765,6 @@ export function validateOperatorEventsLiveConfigShape(
 
 // ── Internal helpers ─────────────────────────────────────────────────
 
-type DeepCloneable =
-  | string
-  | number
-  | boolean
-  | null
-  | undefined
-  | DeepCloneable[]
-  | { [key: string]: DeepCloneable };
-
 function deepClonePluginEntryConfig(
   value: unknown,
 ): A2ABrokerAdapterEntryConfig | undefined {

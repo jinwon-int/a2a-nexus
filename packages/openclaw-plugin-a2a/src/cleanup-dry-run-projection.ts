@@ -208,10 +208,6 @@ export type CleanupDryRunProjectionOptions = {
 
 // ── Constants ───────────────────────────────────────────────────────
 
-/** Receipt statuses that are NOT terminal ACK — always fail-closed. */
-const NON_TERMINAL_RECEIPT_STATUSES: ReadonlySet<CleanupReceiptStatus> =
-  new Set(["provider_accepted_send", "notification_delivered"]);
-
 /** Receipt statuses that allow mutation path consideration. */
 const TERMINAL_RECEIPT_STATUSES: ReadonlySet<CleanupReceiptStatus> =
   new Set(["operator_acknowledged", "operator_approved"]);
