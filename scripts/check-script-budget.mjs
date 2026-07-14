@@ -27,8 +27,8 @@ import { createDocCheckContext } from './lib/doc-check.mjs';
 // its regression test were added. Raising any budget is allowed but must be
 // deliberate — see a2a-nexus#882.
 export const BUDGETS = {
-  scriptsMjs: 168, // +1 from 167: #1505 executable quickstart doctest CLI (scripts/check-quickstart-doctest.mjs) boots a loopback broker + echo worker to exercise the documented quickstart end-to-end
-  rootNpmScripts: 101, // +1 from 100: #1505 check:quickstart-doctest wrapper wiring the executable doctest into smoke:quickstart (CI)
+  scriptsMjs: 170, // +2 from 168: #1506 enforced source-quality floor — scripts/check-source-quality-floors.mjs (guard) + scripts/check-source-quality-floors.test.mjs (its tests). 168 itself was #1505 executable quickstart doctest CLI.
+  rootNpmScripts: 102, // +1 from 101: #1506 check:source-quality-floors wrapper wiring the enforced suppression floor into the core release-gate tier. 101 itself was #1505 check:quickstart-doctest.
   brokerNpmScripts: 156, // +1 from 155: #1506 broker coverage:baseline parity script (measure-only coverage baseline, matching docker-runner/openclaw). 155 itself was #1537 Phase-1 sub-agent fanout scripts (#1538-1542).
 };
 

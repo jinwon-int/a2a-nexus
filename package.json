@@ -56,6 +56,7 @@
     "test:doc-check-lib": "node --test scripts/lib/doc-check.test.mjs scripts/lib/doc-spec-check.test.mjs scripts/lib/runtime-reliability-evidence-lane.test.mjs scripts/build-release-candidate-evidence.test.mjs",
     "check:script-budget": "node scripts/check-script-budget.mjs",
     "check:script-budget:test": "node --test scripts/check-script-budget.test.mjs",
+    "check:source-quality-floors": "node scripts/check-source-quality-floors.mjs",
     "scan:public-readiness": "node scripts/public-readiness-scan.mjs --strict-internal",
     "scan:readiness-gates": "node scanner/readiness/fail-closed-gates.mjs --spec docs/readiness/fail-closed-gates.json",
     "a2a:source-dryrun": "node scripts/a2a-source-dryrun-aggregator.mjs --spec docs/dry-run/source-public-dryrun-schema.json",

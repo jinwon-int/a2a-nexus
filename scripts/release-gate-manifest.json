@@ -511,6 +511,12 @@
       "class": "gate",
       "round": null,
       "note": "Tests for #1383 V-c disjoint role-registry validator: role prefix, global keyId uniqueness, and normalized public-key uniqueness (same keypair cannot be dual-role) all fail closed."
+    },
+    {
+      "file": "scripts/check-source-quality-floors.test.mjs",
+      "class": "gate",
+      "round": null,
+      "note": "Tests for #1506 source-quality floor guard: bucket classifier, unsafe-suppression counter (@ts-ignore/@ts-nocheck/bare @ts-expect-error/eslint-disable), and fail-closed floor evaluation."
     }
   ]
 }
