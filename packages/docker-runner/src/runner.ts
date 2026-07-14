@@ -2,7 +2,7 @@ import { createHash } from "node:crypto";
 import { readFileSync } from "node:fs";
 import { chmod, chown, mkdir, writeFile, readdir, readFile, stat } from "node:fs/promises";
 import { basename, join, relative, resolve } from "node:path";
-import { runContainerWithRetry, type ContainerRetryEvidence } from "./container-retry.js";
+import { runContainerWithRetry } from "./container-retry.js";
 import { buildContainerScript, jsonArgvToScript } from "./script-generators.js";
 // Re-exported to preserve the public surface (runner.test.ts / engine-contract.test.ts
 // import these from ./runner.js); the implementations now live in script-generators.ts.

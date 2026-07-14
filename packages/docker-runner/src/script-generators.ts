@@ -3,7 +3,6 @@
 // guards, command execution) plus the shellQuote / jsonArgvToScript helpers.
 // Pure string builders over a normalized task; no runner state.
 import { createHash } from "node:crypto";
-import { join } from "node:path";
 import type { NormalizedRunnerTask } from "./types.js";
 
 export function buildContainerScript(task: NormalizedRunnerTask): string {
