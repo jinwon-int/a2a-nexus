@@ -1,0 +1,87 @@
+{
+  "schemaVersion": 1,
+  "issue": "a2a-nexus#1500",
+  "description": "Machine-readable classification of the coarse `jsonrpc` TCK failing bucket (docs/tck-history.json: jsonrpc 12/75 as of 2026-06-11) into the five stable sub-categories named in a2a-nexus#1500. This is the structural layer the promotion protocol consumes: a category can only be promoted to a blocking gate once it is tracked here AND confirmed green across a stable measurement window (see docs/a2a-tck-runbook.md).",
+  "provenance": {
+    "sourceMeasurement": "docs/tck-history.json measurement 2026-06-11 (must/jsonrpc, jsonrpc 12/75)",
+    "derivedFrom": [
+      "docs/a2a-tck-runbook.md failing-blocker prose (root-cause narrative)",
+      "packages/broker/src/a2a/json-rpc.ts (current code status of the A2A error family)"
+    ],
+    "NOT_a_per_test_run": true,
+    "limits": "Sub-category pass/total counts are NOT independently measured: the harness (scripts/append-tck-history.mjs) only emits coarse directory buckets (agent_card, jsonrpc, http_json, grpc), so per-sub-category numbers require a per-test node-id -> sub-category emission that does not exist yet. Fields below record ROOT CAUSE and CURRENT CODE STATUS only; `measuredPassTotal` is null until the harness emits sub-category granularity. Nothing here asserts conformance beyond the committed coarse baseline."
+  },
+  "coarseBaseline": {
+    "category": "jsonrpc",
+    "level": "must",
+    "transport": "jsonrpc",
+    "pass": 12,
+    "total": 75,
+    "date": "2026-06-11"
+  },
+  "subCategories": [
+    {
+      "id": "jsonrpc-error-codes-and-errorinfo",
+      "issueCategory": "1. 표준 A2A JSON-RPC error code와 ErrorInfo.domain",
+      "rootCause": "error-code-family",
+      "codeStatus": "implemented",
+      "codeEvidence": "packages/broker/src/a2a/json-rpc.ts: A2A reserved family bound (-32001 TASK_NOT_FOUND, -32002 TASK_NOT_CANCELABLE), google.rpc.ErrorInfo with domain a2a-protocol.org in error.data",
+      "measuredPassTotal": null,
+      "promotionReadiness": "candidate-pending-fresh-run",
+      "note": "The 2026-06-11 baseline predates/does not reflect this binding; a fresh official-TCK run is required to confirm the sub-category is green before it can enter the 2-window stability protocol for promotion.",
+      "sourceKind": "code-derived",
+      "pendingEmission": true
+    },
+    {
+      "id": "jsonrpc-task-not-found-and-invalid-task",
+      "issueCategory": "2. TaskNotFoundError / invalid task semantics",
+      "rootCause": "error-code-family",
+      "codeStatus": "implemented",
+      "codeEvidence": "packages/broker/src/a2a/json-rpc.ts isA2ATaskNotFound -> -32001 TASK_NOT_FOUND; unrelated broker resources deliberately NOT mapped to TASK_NOT_FOUND",
+      "measuredPassTotal": null,
+      "promotionReadiness": "candidate-pending-fresh-run",
+      "note": "Partially entangled with the SendMessage worker-registration cascade (invalid-task paths reached via task creation).",
+      "sourceKind": "code-derived",
+      "pendingEmission": true
+    },
+    {
+      "id": "jsonrpc-artifact-message-projection",
+      "issueCategory": "3. Artifact·Message projection shape",
+      "rootCause": "projection-shape",
+      "codeStatus": "golden-backed",
+      "codeEvidence": "packages/broker/src/fixtures/a2a-protocol-compatibility.ts A2A_TASK_PROJECTION_GOLDEN, exercised by src/a2a/protocol-compatibility.test.ts",
+      "measuredPassTotal": null,
+      "promotionReadiness": "candidate-pending-fresh-run",
+      "sourceKind": "code-derived",
+      "pendingEmission": true
+    },
+    {
+      "id": "jsonrpc-streaming-subscribe-ordering",
+      "issueCategory": "4. streaming / subscribe state transition과 terminal ordering",
+      "rootCause": "streaming-ordering",
+      "codeStatus": "unknown-pending-run",
+      "measuredPassTotal": null,
+      "promotionReadiness": "blocked-pending-fresh-run",
+      "sourceKind": "prose-derived",
+      "pendingEmission": true
+    },
+    {
+      "id": "jsonrpc-version-negotiation",
+      "issueCategory": "5. version negotiation supported/deviation contract",
+      "rootCause": "version-negotiation",
+      "codeStatus": "partial",
+      "codeEvidence": "supportedInterfaces wiring drove the agent_card 6/6 pass; explicit supported/deviation contract for JSON-RPC not independently measured",
+      "measuredPassTotal": null,
+      "promotionReadiness": "blocked-pending-fresh-run",
+      "sourceKind": "prose-derived",
+      "pendingEmission": true
+    }
+  ],
+  "architecturalBlockers": [
+    {
+      "id": "sendmessage-worker-registration",
+      "rootCause": "worker-registration-cascade",
+      "note": "The TCK single-agent client cannot pre-register a broker worker, so SendMessage-gated CORE task-creating tests fail/skip. Recorded in docs/a2a-tck-runbook.md as an architectural decision for follow-up, NOT an error-code correctness gap. This cascade inflates the jsonrpc failing count independent of the five sub-categories above."
+    }
+  ]
+}
