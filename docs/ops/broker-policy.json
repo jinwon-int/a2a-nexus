@@ -17,14 +17,15 @@
       "maxTasksPerDay": 20
     },
     {
-      "id": "source-only-analyze-only",
+      "id": "source-only-safe-intents",
       "workerClass": "source-only",
       "allowIntents": [
-        "analyze"
+        "analyze",
+        "verify",
+        "propose_patch"
       ],
       "denyModes": [
         "github-propose-patch",
-        "propose-patch",
         "patch"
       ]
     }

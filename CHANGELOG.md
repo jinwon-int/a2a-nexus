@@ -33,7 +33,9 @@ tag, deploy, or mutate any live state.
 
 ### Added — policy engine, durable wave plans, and sub-agent fanout
 
-- Declarative worker-class policy engine (warn→enforce) (`#1355`, `#1404`).
+- Declarative worker-class policy engine (warn→enforce) (`#1355`, `#1404`),
+  including observation-driven source-only safe-intent refinement and dispatch
+  rejection for source-only GitHub write lanes.
 - Durable wave-plan state machine with persistence, restart resume, HTTP
   lifecycle routes, and a stale-plan reaper (`#1357`).
 - Source-only sub-agent fanout controls: token-budget counter, spawn-gate
