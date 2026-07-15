@@ -43,7 +43,11 @@ Within the matched rule, checks run deny-first: `denyModes`, `allowIntents`,
    in particular a concrete worker name — is rejected fail-closed, so the
    committed document can never leak fleet identity. The class derivation is
    shared with the `/stats/tasks` read path (single deriver), so budgets and
-   stats always count the same classes.
+   stats always count the same classes. `source-only` is the task-derived safety
+   class selected by `payload.sourceOnly=true` or `payload.mode="source-only"`;
+   it is not a named worker identity. The operator rule therefore permits
+   read-only verification and local no-GitHub-write proposals, while
+   `github-propose-patch` remains incompatible with the class.
 2. **Fail-closed validation.** Unknown fields anywhere are an error — a typo
    like `denyIntents` must never silently no-op a safety rule. Rule ids are
    unique. A configured-but-invalid document **fails broker startup loudly**.
@@ -107,14 +111,34 @@ The warn-mode observation report MUST distinguish two counts:
 A valid G1-d promotion packet SHOULD include both tables, for example:
 
 ```text
-ruleId                    taskDedupWarns  rawWarnEvents  intendedCanaryTasks  falsePositiveTasks
-source-only-analyze-only  1               2              1                    0
+ruleId                   taskDedupWarns  rawWarnEvents  intendedCanaryTasks  falsePositiveTasks
+source-only-safe-intents 1               2              1                    0
 ```
 
 The report must also name the broker population covered by the window. If one
 broker has `A2A_BROKER_POLICY_FILE` wired and another does not, the packet must
 say so; an `enforce` flip should not be treated as fleet-wide until every broker
 that will enforce has loaded the same operator-committed policy document.
+
+### 5.2 Observation-driven source-only correction
+
+The first warn window produced 30 raw warnings across 15 task-deduplicated hits:
+one intentional canary and 14 non-canary tasks. Six local no-GitHub-write
+`propose_patch` tasks succeeded, while two read-only verification tasks also hit
+the analyze-only rule. Those eight tasks demonstrated that
+`source-only-analyze-only` would block legitimate workflows under `enforce`.
+
+The operator policy therefore uses `source-only-safe-intents`: `analyze`,
+`verify`, and local `propose_patch` are allowed; write-capable
+`github-propose-patch` and generic `patch` modes remain denied. The dispatcher
+also rejects `sourceOnly=true` with `github-propose-patch` before `POST /tasks`,
+even when explicit write flags are present.
+
+This correction does **not** promote the policy. The document remains in
+`warn`, and promotion requires a fresh observation window and a replacement
+canary after the corrected policy is deliberately rolled out. The old canary's
+`intent=analyze` plus `mode=propose-patch` is now an allowed case and must not be
+reused as proof that the corrected deny path fires.
 
 ## 6. Boundaries / non-goals (v1)
 
