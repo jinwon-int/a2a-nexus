@@ -98,6 +98,8 @@ test("unsupported workerModel fails closed before a patch attempt", () => {
     "gpt-5.6-sol",
     "openai-codex/gpt-5.5",
     "gpt-5.5",
+    "claude-fable-5",
+    "claude-sonnet-5",
     "grok-4.20",
     "minimax-m3",
   ]);
@@ -118,6 +120,8 @@ const FLEET_BASELINE_WORKER_MODELS = [
   "gpt-5.6-sol",
   "openai-codex/gpt-5.5",
   "gpt-5.5",
+  "claude-fable-5",
+  "claude-sonnet-5",
   "grok-4.20",
   "deepseek-v4-pro",
   "deepseek/deepseek-v4-pro",
@@ -164,6 +168,16 @@ test("A2A_CODEX_MODEL env selects the first-class Codex fleet model", () => {
   assert.equal(viaCodexEnv.fromPayload, false);
 });
 
+test("A2A_CLAUDE_MODEL env selects an allowlisted Claude ccc-node model", () => {
+  const result = handleTask(task(), {
+    A2A_CLAUDE_MODEL: "claude-fable-5",
+  });
+
+  assert.equal(result.error, undefined);
+  assert.equal(result.result.output.effectiveModel, "claude-fable-5");
+  assert.equal(result.result.output.modelFromPayload, undefined);
+});
+
 test("worker model policy module exposes auditable allowlist and fallbacks (#799)", () => {
   assert.deepEqual(ALLOWED_WORKER_MODELS, [
     "deepseek/deepseek-v4-flash",
@@ -173,6 +187,8 @@ test("worker model policy module exposes auditable allowlist and fallbacks (#799
     "gpt-5.6-sol",
     "openai-codex/gpt-5.5",
     "gpt-5.5",
+    "claude-fable-5",
+    "claude-sonnet-5",
     "grok-4.20",
     "minimax-m3",
   ]);

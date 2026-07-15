@@ -364,6 +364,7 @@ const GITHUB_READ_ONLY_VALIDATION_MODES = new Set([
 function workerModelEnvCandidates(env = process.env) {
   return [
     env.A2A_CODEX_MODEL,
+    env.A2A_CLAUDE_MODEL,
     env.A2A_OPENCLAW_MODEL,
     env.A2A_HERMES_DEFAULT_MODEL,
     // Legacy worker/runner environments can still inject the model under the
