@@ -15,6 +15,13 @@ import { fileURLToPath } from "node:url";
 const BRIDGE_CONTRACT_VERSION = "codex-a2a-analysis.v1";
 const SELF_PATH = fileURLToPath(import.meta.url);
 const CLAUDE_BRIDGE_PATH = join(dirname(SELF_PATH), "claude-a2a-analysis-bridge.mjs");
+const TERMUX_CHILD_ENV_KEYS = [
+  "LD_PRELOAD",
+  "LD_LIBRARY_PATH",
+  "PREFIX",
+  "TERMUX_EXEC__PROC_SELF_EXE",
+  "TERMUX_VERSION",
+];
 
 function safeText(value, fallback = "") {
   if (value === undefined || value === null) return fallback;
@@ -65,6 +72,14 @@ function normalizedModel(value) {
 function normalizedReasoning(value) {
   const level = safeText(value, "high").toLowerCase();
   return ["minimal", "low", "medium", "high", "xhigh"].includes(level) ? level : "high";
+}
+
+function termuxChildEnv(env = process.env) {
+  return Object.fromEntries(
+    TERMUX_CHILD_ENV_KEYS
+      .filter((key) => safeText(env[key], ""))
+      .map((key) => [key, env[key]]),
+  );
 }
 
 function extractCodexMessage(stdout) {
@@ -132,6 +147,7 @@ function runCodexAdapter() {
         HOME: safeText(process.env.HOME, "/root"),
         PATH: safeText(process.env.PATH, "/usr/local/bin:/usr/bin:/bin"),
         LANG: safeText(process.env.LANG, "C.UTF-8"),
+        ...termuxChildEnv(process.env),
         CODEX_HOME: codexHome,
         ...(process.env.CAPTURE_ARGS_PATH ? { CAPTURE_ARGS_PATH: process.env.CAPTURE_ARGS_PATH } : {}),
         ...(process.env.CAPTURE_ENV_PATH ? { CAPTURE_ENV_PATH: process.env.CAPTURE_ENV_PATH } : {}),
