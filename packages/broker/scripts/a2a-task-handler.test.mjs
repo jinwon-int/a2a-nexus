@@ -470,6 +470,31 @@ test("normal source-only task uses the Codex fleet baseline model and high reaso
   assert.equal(runnerTask.workerThinking, "high");
 });
 
+test("worker reasoning follows A2A_WORKER_THINKING when the task has no override", () => {
+  const runnerTask = __test.buildRunnerTask(task({
+    intent: "propose_patch",
+    payload: {
+      mode: "github-propose-patch",
+      repo: "jinwon-int/a2a-nexus",
+    },
+  }), { A2A_WORKER_THINKING: "xhigh" });
+
+  assert.equal(runnerTask.workerThinking, "xhigh");
+});
+
+test("task workerThinking override takes precedence over A2A_WORKER_THINKING", () => {
+  const runnerTask = __test.buildRunnerTask(task({
+    intent: "propose_patch",
+    payload: {
+      mode: "github-propose-patch",
+      repo: "jinwon-int/a2a-nexus",
+      workerThinking: "medium",
+    },
+  }), { A2A_WORKER_THINKING: "xhigh" });
+
+  assert.equal(runnerTask.workerThinking, "medium");
+});
+
 test("github runner task defaults to 60 minutes", () => {
   const runnerTask = __test.buildRunnerTask(task({
     intent: "propose_patch",

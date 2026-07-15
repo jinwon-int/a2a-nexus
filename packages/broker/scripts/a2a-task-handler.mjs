@@ -328,7 +328,7 @@ function buildRunnerTask(task, env = process.env) {
 
   // Carry workerModel/workerThinking overrides from task payload to runner task
   const { model: effectiveModel } = resolveWorkerModel(task, env);
-  const { thinking: effectiveThinking } = resolveWorkerThinking(task);
+  const { thinking: effectiveThinking } = resolveWorkerThinking(task, env);
   runnerTask.workerModel = effectiveModel;
   runnerTask.workerThinking = effectiveThinking;
 
@@ -399,9 +399,13 @@ function resolveWorkerModel(task, env = process.env) {
 /**
  * Resolve the effective thinking level from task payload or default.
  */
-function resolveWorkerThinking(task) {
+function resolveWorkerThinking(task, env = process.env) {
   const payload = taskPayload(task);
-  return resolveWorkerThinkingInput(payload.workerThinking);
+  const payloadThinking = safeText(payload.workerThinking, "");
+  if (payloadThinking) return resolveWorkerThinkingInput(payloadThinking);
+  const configuredThinking = safeText(env.A2A_WORKER_THINKING, "");
+  const resolution = resolveWorkerThinkingInput(configuredThinking);
+  return { ...resolution, fromPayload: false };
 }
 
 function normalizedPatchCommandProfile(env = process.env) {
@@ -971,7 +975,7 @@ function runOpenClawAnalysisBridge(task, env = process.env) {
   }
   // Resolve effective worker model/thinking from task payload overrides
   const { model: effectiveModel, fromPayload: modelFromPayload } = resolveWorkerModel(task, env);
-  const { thinking: effectiveThinking, fromPayload: thinkingFromPayload } = resolveWorkerThinking(task);
+  const { thinking: effectiveThinking, fromPayload: thinkingFromPayload } = resolveWorkerThinking(task, env);
   const nodeId = safeText(env.A2A_NODE_ID || env.NODE_ID || env.WORKER_ID, "unknown-node");
   const timeoutSec = String(Math.max(1, Number(env.A2A_OPENCLAW_ANALYSIS_TIMEOUT_SEC || env.A2A_OPENCLAW_TIMEOUT_SEC || DEFAULT_OPENCLAW_TIMEOUT_SEC)));
   const sessionId = safeText(
@@ -1364,7 +1368,7 @@ function runDecisionDialecticBridge(task, env = process.env) {
   const promptSpec = decisionDialecticPromptSpec(task);
   const execution = decisionDialecticExecution(task);
   const { model: effectiveModel, fromPayload: modelFromPayload } = resolveWorkerModel(task, env);
-  const { thinking: effectiveThinking, fromPayload: thinkingFromPayload } = resolveWorkerThinking(task);
+  const { thinking: effectiveThinking, fromPayload: thinkingFromPayload } = resolveWorkerThinking(task, env);
   const nodeId = safeText(env.A2A_NODE_ID || env.NODE_ID || env.WORKER_ID, "unknown-node");
   const timeoutSec = String(Math.max(1, Number(env.A2A_DECISION_DIALECTIC_TIMEOUT_SEC || env.A2A_OPENCLAW_ANALYSIS_TIMEOUT_SEC || env.A2A_OPENCLAW_TIMEOUT_SEC || DEFAULT_OPENCLAW_TIMEOUT_SEC)));
   const sessionId = safeText(
@@ -1694,7 +1698,7 @@ function runOpenClawBridge(task, env = process.env) {
 
   // Resolve effective worker model/thinking from task payload overrides
   const { model: effectiveModel, fromPayload: modelFromPayload } = resolveWorkerModel(task, env);
-  const { thinking: effectiveThinking, fromPayload: thinkingFromPayload } = resolveWorkerThinking(task);
+  const { thinking: effectiveThinking, fromPayload: thinkingFromPayload } = resolveWorkerThinking(task, env);
 
   const nodeId = safeText(env.A2A_NODE_ID || env.NODE_ID || env.WORKER_ID, "unknown-node");
   const timeoutSec = String(Math.max(1, Number(env.A2A_OPENCLAW_TIMEOUT_SEC || DEFAULT_OPENCLAW_TIMEOUT_SEC)));
@@ -2014,7 +2018,7 @@ function runDockerRunner(task, env = process.env) {
 
     // Record effective model/thinking for evidence
     const { model: effectiveModel, fromPayload: modelFromPayload } = resolveWorkerModel(task, env);
-    const { thinking: effectiveThinking, fromPayload: thinkingFromPayload } = resolveWorkerThinking(task);
+    const { thinking: effectiveThinking, fromPayload: thinkingFromPayload } = resolveWorkerThinking(task, env);
     output.effectiveModel = effectiveModel;
     output.effectiveThinking = effectiveThinking;
     if (modelFromPayload) output.modelFromPayload = true;
@@ -2166,7 +2170,7 @@ function githubReadOnlyExecutorBlockEvidence(task, env = process.env) {
   const payload = taskPayload(task);
   const mode = taskMode(task);
   const { model: effectiveModel, fromPayload: modelFromPayload } = resolveWorkerModel(task, env);
-  const { thinking: effectiveThinking, fromPayload: thinkingFromPayload } = resolveWorkerThinking(task);
+  const { thinking: effectiveThinking, fromPayload: thinkingFromPayload } = resolveWorkerThinking(task, env);
   return {
     result: {
       summary: "github read-only verification blocked: evidence executor is not configured",
@@ -2214,7 +2218,7 @@ function handleBuiltinTask(task, env = process.env) {
   const mode = taskMode(task);
   const payload = taskPayload(task);
   const { model: effectiveModel, fromPayload: modelFromPayload } = resolveWorkerModel(task, env);
-  const { thinking: effectiveThinking, fromPayload: thinkingFromPayload } = resolveWorkerThinking(task);
+  const { thinking: effectiveThinking, fromPayload: thinkingFromPayload } = resolveWorkerThinking(task, env);
 
   if (isDockerBrokerNoopSmokeTask(task)) {
     return {

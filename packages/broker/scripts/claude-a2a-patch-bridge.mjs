@@ -131,6 +131,7 @@ const SAFE_CHILD_ENV_KEYS = new Set([
   "HOME", "PATH", "LANG", "LC_ALL", "LC_CTYPE", "TERM", "TMPDIR", "TEMP", "TMP",
   "USER", "LOGNAME", "SHELL", "SSH_AUTH_SOCK", "XDG_CONFIG_HOME", "XDG_CACHE_HOME", "XDG_DATA_HOME",
   "CLAUDE_CONFIG_DIR", "CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC", "DISABLE_AUTOUPDATER",
+  "CLAUDE_CODE_EFFORT_LEVEL",
   // Termux/Android native workers: Claude Code subprocess shebangs resolve
   // `/usr/bin/env` only through termux-exec (injected via LD_PRELOAD). Dropping
   // these from the session-isolation env (#1129) breaks the child with
