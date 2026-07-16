@@ -1,7 +1,7 @@
 {
   "$schema": "https://example.invalid/a2a-nexus/release-gate-step-inventory.schema.json",
   "generatedFrom": "scripts/release-gate.mjs",
-  "purpose": "Executable tier classification for #880/#882. scripts/release-gate.mjs uses this inventory to run core/public-readiness gates by default while keeping historical transition, approval, and package-publication checks as explicit opt-in tiers.",
+  "purpose": "Executable tier classification for #880/#882. scripts/release-gate.mjs uses this inventory to run core/public-readiness gates by default while keeping historical transition, approval, and package-publication checks as explicit opt-in tiers. Each entry additionally declares owner (owning surface), consumer (who runs it: pr-gate/transition-audit/operator-approval/release-publication, consistent with tier), and retirementCondition (explicit trigger for the retirement disposition) for #1503 script-surface ownership.",
   "tiers": [
     "core",
     "public-readiness",
@@ -18,7 +18,10 @@
         "check:layout"
       ],
       "tier": "core",
+      "owner": "release-gate-tooling",
+      "consumer": "pr-gate",
       "retirement": "keep",
+      "retirementCondition": "Retire only when a narrower owner-scoped gate demonstrably covers the same invariant; no removal while it runs on the default release-gate path.",
       "note": "Runs on ordinary release-gate path; keep until a narrower owner gate replaces it."
     },
     {
@@ -29,7 +32,10 @@
         "test:conformance"
       ],
       "tier": "core",
+      "owner": "broker",
+      "consumer": "pr-gate",
       "retirement": "keep",
+      "retirementCondition": "Retire only when a narrower owner-scoped gate demonstrably covers the same invariant; no removal while it runs on the default release-gate path.",
       "note": "Runs on ordinary release-gate path; keep until a narrower owner gate replaces it."
     },
     {
@@ -39,7 +45,10 @@
         "scripts/check-runtime-hardening-docs.mjs"
       ],
       "tier": "core",
+      "owner": "docs-provenance",
+      "consumer": "pr-gate",
       "retirement": "keep",
+      "retirementCondition": "Retire only when a narrower owner-scoped gate demonstrably covers the same invariant; no removal while it runs on the default release-gate path.",
       "note": "Absence-detection gate for #1204/#1209 runtime-hardening docs (CHANGELOG trusted-default entry, process-local security limits, hardening escape hatches). Keep while the documented defaults exist."
     },
     {
@@ -49,7 +58,10 @@
         "scripts/check-round-quality-scorecard.mjs"
       ],
       "tier": "core",
+      "owner": "docs-provenance",
+      "consumer": "pr-gate",
       "retirement": "keep",
+      "retirementCondition": "Retire only when a narrower owner-scoped gate demonstrably covers the same invariant; no removal while it runs on the default release-gate path.",
       "note": "Fail-closed validation of docs/ops/round-quality-scorecard.json (#1220 PR 3) — the round-quality feedback loop must stay machine-readable."
     },
     {
@@ -59,7 +71,10 @@
         "scripts/check-workflow-permissions.mjs"
       ],
       "tier": "core",
+      "owner": "supply-chain-security",
+      "consumer": "pr-gate",
       "retirement": "keep",
+      "retirementCondition": "Retire only when a narrower owner-scoped gate demonstrably covers the same invariant; no removal while it runs on the default release-gate path.",
       "note": "Every GitHub Actions workflow must declare a minimal top-level permissions block (#1228 L1, OpenSSF Scorecard Token-Permissions). Absence-detection: a new workflow without one turns this red."
     },
     {
@@ -69,7 +84,10 @@
         "scripts/check-workflow-action-pinning.mjs"
       ],
       "tier": "core",
+      "owner": "supply-chain-security",
+      "consumer": "pr-gate",
       "retirement": "keep",
+      "retirementCondition": "Retire only when a narrower owner-scoped gate demonstrably covers the same invariant; no removal while it runs on the default release-gate path.",
       "note": "Every external GitHub Actions workflow reference must be pinned to a full commit SHA while retaining a source tag comment (#1228 L3, OpenSSF Scorecard Pinned-Dependencies)."
     },
     {
@@ -80,7 +98,10 @@
         "check:packages"
       ],
       "tier": "core",
+      "owner": "release-gate-tooling",
+      "consumer": "pr-gate",
       "retirement": "keep",
+      "retirementCondition": "Retire only when a narrower owner-scoped gate demonstrably covers the same invariant; no removal while it runs on the default release-gate path.",
       "note": "Runs on ordinary release-gate path; keep until a narrower owner gate replaces it."
     },
     {
@@ -91,7 +112,10 @@
         "check:runner-import-smoke"
       ],
       "tier": "core",
+      "owner": "broker",
+      "consumer": "pr-gate",
       "retirement": "keep",
+      "retirementCondition": "Retire only when a narrower owner-scoped gate demonstrably covers the same invariant; no removal while it runs on the default release-gate path.",
       "note": "Runs on ordinary release-gate path; keep until a narrower owner gate replaces it."
     },
     {
@@ -102,7 +126,10 @@
         "check:terminal-brief-routing"
       ],
       "tier": "core",
+      "owner": "broker",
+      "consumer": "pr-gate",
       "retirement": "keep",
+      "retirementCondition": "Retire only when a narrower owner-scoped gate demonstrably covers the same invariant; no removal while it runs on the default release-gate path.",
       "note": "Runs on ordinary release-gate path; keep until a narrower owner gate replaces it."
     },
     {
@@ -113,7 +140,10 @@
         "check:message-id-ack-boundary"
       ],
       "tier": "core",
+      "owner": "broker",
+      "consumer": "pr-gate",
       "retirement": "keep",
+      "retirementCondition": "Retire only when a narrower owner-scoped gate demonstrably covers the same invariant; no removal while it runs on the default release-gate path.",
       "note": "Runs on ordinary release-gate path; keep until a narrower owner gate replaces it."
     },
     {
@@ -124,7 +154,10 @@
         "check:external-harness-conformance"
       ],
       "tier": "core",
+      "owner": "broker",
+      "consumer": "pr-gate",
       "retirement": "keep",
+      "retirementCondition": "Retire only when a narrower owner-scoped gate demonstrably covers the same invariant; no removal while it runs on the default release-gate path.",
       "note": "Runs on ordinary release-gate path; keep until a narrower owner gate replaces it."
     },
     {
@@ -135,7 +168,10 @@
         "scripts/lib/a2a-nexus-profile-p0.test.mjs"
       ],
       "tier": "core",
+      "owner": "broker",
+      "consumer": "pr-gate",
       "retirement": "keep",
+      "retirementCondition": "Retire only when a narrower owner-scoped gate demonstrably covers the same invariant; no removal while it runs on the default release-gate path.",
       "note": "Protocol profile v0.1 worker-card and terminal-evidence contract for #957/#958; local/read-only."
     },
     {
@@ -146,7 +182,10 @@
         "a2a:skill-guard:test"
       ],
       "tier": "core",
+      "owner": "broker",
+      "consumer": "pr-gate",
       "retirement": "keep",
+      "retirementCondition": "Retire only when a narrower owner-scoped gate demonstrably covers the same invariant; no removal while it runs on the default release-gate path.",
       "note": "broker-alpha A2A/A2AD skill guardpack executable checks for #1035; read-only/no-live."
     },
     {
@@ -157,7 +196,10 @@
         "scripts/lib/a2ad-preset-ux-contract.test.mjs"
       ],
       "tier": "core",
+      "owner": "broker",
+      "consumer": "pr-gate",
       "retirement": "keep",
+      "retirementCondition": "Retire only when a narrower owner-scoped gate demonstrably covers the same invariant; no removal while it runs on the default release-gate path.",
       "note": "A2AD preset UX execution-mode, finalizer-only, evidence, downgrade, and fixture contract for issue #1045; local/read-only without adding package-script budget."
     },
     {
@@ -168,7 +210,10 @@
         "scan:public-readiness"
       ],
       "tier": "public-readiness",
+      "owner": "public-readiness",
+      "consumer": "pr-gate",
       "retirement": "keep",
+      "retirementCondition": "Retire only when a narrower owner-scoped gate demonstrably covers the same invariant; no removal while it runs on the default release-gate path.",
       "note": "Public-readiness or visibility hygiene; do not retire as generic cleanup."
     },
     {
@@ -179,7 +224,10 @@
         "scan:readiness-gates"
       ],
       "tier": "public-readiness",
+      "owner": "public-readiness",
+      "consumer": "pr-gate",
       "retirement": "keep",
+      "retirementCondition": "Retire only when a narrower owner-scoped gate demonstrably covers the same invariant; no removal while it runs on the default release-gate path.",
       "note": "Public-readiness or visibility hygiene; do not retire as generic cleanup."
     },
     {
@@ -190,7 +238,10 @@
         "check:approval-records"
       ],
       "tier": "public-readiness",
+      "owner": "governance-approval",
+      "consumer": "pr-gate",
       "retirement": "keep",
+      "retirementCondition": "Retire only when a narrower owner-scoped gate demonstrably covers the same invariant; no removal while it runs on the default release-gate path.",
       "note": "Structured approval-record gate for approval-sensitive actions; keeps role-based evidence machine-checkable."
     },
     {
@@ -201,7 +252,10 @@
         "test/conformance/public-readiness-go-nogo.test.mjs"
       ],
       "tier": "public-readiness",
+      "owner": "public-readiness",
+      "consumer": "pr-gate",
       "retirement": "keep",
+      "retirementCondition": "Retire only when a narrower owner-scoped gate demonstrably covers the same invariant; no removal while it runs on the default release-gate path.",
       "note": "Public-readiness GO/NO-GO closeout note for #919/#922; keeps approval-gated promotion separate from technical readiness evidence."
     },
     {
@@ -212,7 +266,10 @@
         "scan:external-secrets"
       ],
       "tier": "public-readiness",
+      "owner": "supply-chain-security",
+      "consumer": "pr-gate",
       "retirement": "keep",
+      "retirementCondition": "Retire only when a narrower owner-scoped gate demonstrably covers the same invariant; no removal while it runs on the default release-gate path.",
       "note": "Public-readiness or visibility hygiene; do not retire as generic cleanup."
     },
     {
@@ -222,7 +279,10 @@
         "scripts/check-dependency-advisories.mjs"
       ],
       "tier": "public-readiness",
+      "owner": "supply-chain-security",
+      "consumer": "pr-gate",
       "retirement": "keep",
+      "retirementCondition": "Retire only when a narrower owner-scoped gate demonstrably covers the same invariant; no removal while it runs on the default release-gate path.",
       "note": "Warn-only npm production dependency advisory signal for #1287; skips with reason when registry audit access is unavailable and does not mutate dependencies."
     },
     {
@@ -233,7 +293,10 @@
         "check:markdown-links"
       ],
       "tier": "public-readiness",
+      "owner": "docs-provenance",
+      "consumer": "pr-gate",
       "retirement": "keep",
+      "retirementCondition": "Retire only when a narrower owner-scoped gate demonstrably covers the same invariant; no removal while it runs on the default release-gate path.",
       "note": "Tracked Markdown relative-link validation for docs/root-doc public-readiness; keeps docs-only CI from accepting broken internal links."
     },
     {
@@ -244,7 +307,10 @@
         "check:ci-docs-safety"
       ],
       "tier": "public-readiness",
+      "owner": "supply-chain-security",
+      "consumer": "pr-gate",
       "retirement": "keep",
+      "retirementCondition": "Retire only when a narrower owner-scoped gate demonstrably covers the same invariant; no removal while it runs on the default release-gate path.",
       "note": "Regression tests for docs-only CI secret/link gates and root-document path routing; keep with public-readiness gates."
     },
     {
@@ -255,7 +321,10 @@
         "scripts/lib/public-alpha-hardening.test.mjs"
       ],
       "tier": "public-readiness",
+      "owner": "public-readiness",
+      "consumer": "pr-gate",
       "retirement": "keep",
+      "retirementCondition": "Retire only when a narrower owner-scoped gate demonstrably covers the same invariant; no removal while it runs on the default release-gate path.",
       "note": "Public alpha hardening guard for #1163: fresh-clone evidence docs, now-public wording, issue-template coverage, and approval-boundary separation."
     },
     {
@@ -266,7 +335,10 @@
         "safety:body"
       ],
       "tier": "core",
+      "owner": "supply-chain-security",
+      "consumer": "pr-gate",
       "retirement": "keep",
+      "retirementCondition": "Retire only when a narrower owner-scoped gate demonstrably covers the same invariant; no removal while it runs on the default release-gate path.",
       "note": "Runs on ordinary release-gate path; keep until a narrower owner gate replaces it."
     },
     {
@@ -277,7 +349,10 @@
         "safety:body:test"
       ],
       "tier": "core",
+      "owner": "supply-chain-security",
+      "consumer": "pr-gate",
       "retirement": "keep",
+      "retirementCondition": "Retire only when a narrower owner-scoped gate demonstrably covers the same invariant; no removal while it runs on the default release-gate path.",
       "note": "Runs on ordinary release-gate path; keep until a narrower owner gate replaces it."
     },
     {
@@ -287,7 +362,10 @@
         "scripts/check-compatibility-baselines.mjs"
       ],
       "tier": "core",
+      "owner": "broker",
+      "consumer": "pr-gate",
       "retirement": "keep",
+      "retirementCondition": "Retire only when a narrower owner-scoped gate demonstrably covers the same invariant; no removal while it runs on the default release-gate path.",
       "note": "Runs on ordinary release-gate path; keep until a narrower owner gate replaces it."
     },
     {
@@ -297,7 +375,10 @@
         "scripts/check-repo-protection-baseline.mjs"
       ],
       "tier": "core",
+      "owner": "governance-approval",
+      "consumer": "pr-gate",
       "retirement": "keep",
+      "retirementCondition": "Retire only when a narrower owner-scoped gate demonstrably covers the same invariant; no removal while it runs on the default release-gate path.",
       "note": "Runs on ordinary release-gate path; keep until a narrower owner gate replaces it."
     },
     {
@@ -308,7 +389,10 @@
         "check:split-repo-local-demo"
       ],
       "tier": "historical-transition",
+      "owner": "monorepo-transition",
+      "consumer": "transition-audit",
       "retirement": "candidate-after-review",
+      "retirementCondition": "Archive after the canonical monorepo transition it documents is finalized and no active release gate imports it; requires explicit inventory review.",
       "note": "Canonical/split-repo transition evidence; candidate for archive only after explicit source-backed review."
     },
     {
@@ -319,7 +403,10 @@
         "check:current-state-no-live-smoke"
       ],
       "tier": "historical-transition",
+      "owner": "monorepo-transition",
+      "consumer": "transition-audit",
       "retirement": "candidate-after-review",
+      "retirementCondition": "Archive after the canonical monorepo transition it documents is finalized and no active release gate imports it; requires explicit inventory review.",
       "note": "Canonical/split-repo transition evidence; candidate for archive only after explicit source-backed review."
     },
     {
@@ -330,7 +417,10 @@
         "check:monorepo-reentry"
       ],
       "tier": "historical-transition",
+      "owner": "monorepo-transition",
+      "consumer": "transition-audit",
       "retirement": "candidate-after-review",
+      "retirementCondition": "Archive after the canonical monorepo transition it documents is finalized and no active release gate imports it; requires explicit inventory review.",
       "note": "Canonical/split-repo transition evidence; candidate for archive only after explicit source-backed review."
     },
     {
@@ -341,7 +431,10 @@
         "check:monorepo-import-rehearsal"
       ],
       "tier": "historical-transition",
+      "owner": "monorepo-transition",
+      "consumer": "transition-audit",
       "retirement": "candidate-after-review",
+      "retirementCondition": "Archive after the canonical monorepo transition it documents is finalized and no active release gate imports it; requires explicit inventory review.",
       "note": "Canonical/split-repo transition evidence; candidate for archive only after explicit source-backed review."
     },
     {
@@ -352,7 +445,10 @@
         "check:monorepo-ci-parity"
       ],
       "tier": "historical-transition",
+      "owner": "monorepo-transition",
+      "consumer": "transition-audit",
       "retirement": "candidate-after-review",
+      "retirementCondition": "Archive after the canonical monorepo transition it documents is finalized and no active release gate imports it; requires explicit inventory review.",
       "note": "Canonical/split-repo transition evidence; candidate for archive only after explicit source-backed review."
     },
     {
@@ -363,7 +459,10 @@
         "check:monorepo-phase3-package-ci-gate"
       ],
       "tier": "historical-transition",
+      "owner": "monorepo-transition",
+      "consumer": "transition-audit",
       "retirement": "candidate-after-review",
+      "retirementCondition": "Archive after the canonical monorepo transition it documents is finalized and no active release gate imports it; requires explicit inventory review.",
       "note": "Canonical/split-repo transition evidence; candidate for archive only after explicit source-backed review."
     },
     {
@@ -374,7 +473,10 @@
         "check:monorepo-package-ci-parity-jobs"
       ],
       "tier": "historical-transition",
+      "owner": "monorepo-transition",
+      "consumer": "transition-audit",
       "retirement": "candidate-after-review",
+      "retirementCondition": "Archive after the canonical monorepo transition it documents is finalized and no active release gate imports it; requires explicit inventory review.",
       "note": "Canonical/split-repo transition evidence; candidate for archive only after explicit source-backed review."
     },
     {
@@ -385,7 +487,10 @@
         "check:monorepo-canonical-flip-readiness"
       ],
       "tier": "historical-transition",
+      "owner": "monorepo-transition",
+      "consumer": "transition-audit",
       "retirement": "candidate-after-review",
+      "retirementCondition": "Archive after the canonical monorepo transition it documents is finalized and no active release gate imports it; requires explicit inventory review.",
       "note": "Canonical/split-repo transition evidence; candidate for archive only after explicit source-backed review."
     },
     {
@@ -396,7 +501,10 @@
         "check:monorepo-branch-protection-approval-packet"
       ],
       "tier": "approval-gated",
+      "owner": "governance-approval",
+      "consumer": "operator-approval",
       "retirement": "manual-approval-required",
+      "retirementCondition": "Retire only via explicit operator approval once the governance/approval workflow it evidences is formally decommissioned.",
       "note": "Operator approval/signoff evidence; preserve until the approval boundary is retired explicitly."
     },
     {
@@ -407,7 +515,10 @@
         "check:monorepo-split-repo-disposition-rollback"
       ],
       "tier": "historical-transition",
+      "owner": "monorepo-transition",
+      "consumer": "transition-audit",
       "retirement": "candidate-after-review",
+      "retirementCondition": "Archive after the canonical monorepo transition it documents is finalized and no active release gate imports it; requires explicit inventory review.",
       "note": "Canonical/split-repo transition evidence; candidate for archive only after explicit source-backed review."
     },
     {
@@ -418,7 +529,10 @@
         "check:monorepo-split-repo-disposition-preflight"
       ],
       "tier": "historical-transition",
+      "owner": "monorepo-transition",
+      "consumer": "transition-audit",
       "retirement": "candidate-after-review",
+      "retirementCondition": "Archive after the canonical monorepo transition it documents is finalized and no active release gate imports it; requires explicit inventory review.",
       "note": "Canonical/split-repo transition evidence; candidate for archive only after explicit source-backed review."
     },
     {
@@ -429,7 +543,10 @@
         "check:monorepo-active-provenance-mirror-execution-result"
       ],
       "tier": "historical-transition",
+      "owner": "monorepo-transition",
+      "consumer": "transition-audit",
       "retirement": "candidate-after-review",
+      "retirementCondition": "Archive after the canonical monorepo transition it documents is finalized and no active release gate imports it; requires explicit inventory review.",
       "note": "Canonical/split-repo transition evidence; candidate for archive only after explicit source-backed review."
     },
     {
@@ -440,7 +557,10 @@
         "check:monorepo-release-package-tag-approval"
       ],
       "tier": "package-publication",
+      "owner": "governance-approval",
+      "consumer": "release-publication",
       "retirement": "manual-approval-required",
+      "retirementCondition": "Retire only after the release/package publication policy it guards is formally superseded, with operator approval.",
       "note": "Release/package publication approval evidence; not equivalent to source visibility."
     },
     {
@@ -451,7 +571,10 @@
         "check:monorepo-final-operator-signoff"
       ],
       "tier": "approval-gated",
+      "owner": "governance-approval",
+      "consumer": "operator-approval",
       "retirement": "manual-approval-required",
+      "retirementCondition": "Retire only via explicit operator approval once the governance/approval workflow it evidences is formally decommissioned.",
       "note": "Operator approval/signoff evidence; preserve until the approval boundary is retired explicitly."
     },
     {
@@ -462,7 +585,10 @@
         "check:monorepo-canonical-source-flip-execution-handoff"
       ],
       "tier": "historical-transition",
+      "owner": "monorepo-transition",
+      "consumer": "transition-audit",
       "retirement": "candidate-after-review",
+      "retirementCondition": "Archive after the canonical monorepo transition it documents is finalized and no active release gate imports it; requires explicit inventory review.",
       "note": "Canonical/split-repo transition evidence; candidate for archive only after explicit source-backed review."
     },
     {
@@ -473,7 +599,10 @@
         "check:monorepo-actual-canonical-flip-execution-preflight"
       ],
       "tier": "historical-transition",
+      "owner": "monorepo-transition",
+      "consumer": "transition-audit",
       "retirement": "candidate-after-review",
+      "retirementCondition": "Archive after the canonical monorepo transition it documents is finalized and no active release gate imports it; requires explicit inventory review.",
       "note": "Canonical/split-repo transition evidence; candidate for archive only after explicit source-backed review."
     },
     {
@@ -484,7 +613,10 @@
         "check:monorepo-actual-canonical-flip-execution-result"
       ],
       "tier": "historical-transition",
+      "owner": "monorepo-transition",
+      "consumer": "transition-audit",
       "retirement": "candidate-after-review",
+      "retirementCondition": "Archive after the canonical monorepo transition it documents is finalized and no active release gate imports it; requires explicit inventory review.",
       "note": "Canonical/split-repo transition evidence; candidate for archive only after explicit source-backed review."
     },
     {
@@ -495,7 +627,10 @@
         "check:monorepo-operator-approval-handoff"
       ],
       "tier": "approval-gated",
+      "owner": "governance-approval",
+      "consumer": "operator-approval",
       "retirement": "manual-approval-required",
+      "retirementCondition": "Retire only via explicit operator approval once the governance/approval workflow it evidences is formally decommissioned.",
       "note": "Operator approval/signoff evidence; preserve until the approval boundary is retired explicitly."
     },
     {
@@ -506,7 +641,10 @@
         "check:monorepo-docs-routing"
       ],
       "tier": "public-readiness",
+      "owner": "docs-provenance",
+      "consumer": "pr-gate",
       "retirement": "keep",
+      "retirementCondition": "Retire only when a narrower owner-scoped gate demonstrably covers the same invariant; no removal while it runs on the default release-gate path.",
       "note": "Public-readiness or visibility hygiene; do not retire as generic cleanup."
     },
     {
@@ -517,7 +655,10 @@
         "check:readme-canonical-surface"
       ],
       "tier": "public-readiness",
+      "owner": "docs-provenance",
+      "consumer": "pr-gate",
       "retirement": "keep",
+      "retirementCondition": "Retire only when a narrower owner-scoped gate demonstrably covers the same invariant; no removal while it runs on the default release-gate path.",
       "note": "Public-readiness or visibility hygiene; do not retire as generic cleanup."
     },
     {
@@ -528,7 +669,10 @@
         "check:broker-core-dependency-isolation"
       ],
       "tier": "core",
+      "owner": "broker",
+      "consumer": "pr-gate",
       "retirement": "keep",
+      "retirementCondition": "Retire only when a narrower owner-scoped gate demonstrably covers the same invariant; no removal while it runs on the default release-gate path.",
       "note": "Runs on ordinary release-gate path; keep until a narrower owner gate replaces it."
     },
     {
@@ -539,7 +683,10 @@
         "check:broker-docker-hardening"
       ],
       "tier": "core",
+      "owner": "broker",
+      "consumer": "pr-gate",
       "retirement": "keep",
+      "retirementCondition": "Retire only when a narrower owner-scoped gate demonstrably covers the same invariant; no removal while it runs on the default release-gate path.",
       "note": "Runs on ordinary release-gate path; keep until a narrower owner gate replaces it."
     },
     {
@@ -550,7 +697,10 @@
         "check:monorepo-branch-release-policy"
       ],
       "tier": "package-publication",
+      "owner": "monorepo-transition",
+      "consumer": "release-publication",
       "retirement": "manual-approval-required",
+      "retirementCondition": "Retire only after the release/package publication policy it guards is formally superseded, with operator approval.",
       "note": "Release/package publication approval evidence; not equivalent to source visibility."
     },
     {
@@ -561,7 +711,10 @@
         "test:doc-check-lib"
       ],
       "tier": "core",
+      "owner": "release-gate-tooling",
+      "consumer": "pr-gate",
       "retirement": "keep",
+      "retirementCondition": "Retire only when a narrower owner-scoped gate demonstrably covers the same invariant; no removal while it runs on the default release-gate path.",
       "note": "Runs on ordinary release-gate path; keep until a narrower owner gate replaces it."
     },
     {
@@ -572,7 +725,10 @@
         "check:script-budget"
       ],
       "tier": "core",
+      "owner": "release-gate-tooling",
+      "consumer": "pr-gate",
       "retirement": "keep",
+      "retirementCondition": "Retire only when a narrower owner-scoped gate demonstrably covers the same invariant; no removal while it runs on the default release-gate path.",
       "note": "Runs on ordinary release-gate path; keep until a narrower owner gate replaces it."
     },
     {
@@ -583,7 +739,10 @@
         "check:script-budget:test"
       ],
       "tier": "core",
+      "owner": "release-gate-tooling",
+      "consumer": "pr-gate",
       "retirement": "keep",
+      "retirementCondition": "Retire only when a narrower owner-scoped gate demonstrably covers the same invariant; no removal while it runs on the default release-gate path.",
       "note": "Runs on ordinary release-gate path; keep until a narrower owner gate replaces it."
     },
     {
@@ -594,7 +753,10 @@
         "check:source-quality-floors"
       ],
       "tier": "core",
+      "owner": "release-gate-tooling",
+      "consumer": "pr-gate",
       "retirement": "keep",
+      "retirementCondition": "Retire only when a narrower owner-scoped gate demonstrably covers the same invariant; no removal while it runs on the default release-gate path.",
       "note": "#1506 enforced source-quality floor: unsafe TypeScript suppressions in the source bucket may only ratchet down. Deterministic and behavior-neutral; keep on the ordinary release-gate path."
     },
     {
@@ -605,7 +767,10 @@
         "check:release-gate-inventory"
       ],
       "tier": "core",
+      "owner": "release-gate-tooling",
+      "consumer": "pr-gate",
       "retirement": "keep",
+      "retirementCondition": "Retire only when a narrower owner-scoped gate demonstrably covers the same invariant; no removal while it runs on the default release-gate path.",
       "note": "Keeps this report-only inventory in lockstep with scripts/release-gate.mjs so future gate tiering stays source-backed."
     },
     {
@@ -615,7 +780,10 @@
         "scripts/check-release-gate-manifest-coverage.mjs"
       ],
       "tier": "core",
+      "owner": "release-gate-tooling",
+      "consumer": "pr-gate",
       "retirement": "keep",
+      "retirementCondition": "Retire only when a narrower owner-scoped gate demonstrably covers the same invariant; no removal while it runs on the default release-gate path.",
       "note": "Absence-sweep gate for #1261 L1/#1270 L2: scripts/*.test.mjs and scripts/lib/*.test.mjs must be registered in the release-gate manifest, tier inventory, or an implementation command; no root npm script added so root script budget stays 100/100."
     },
     {
@@ -625,7 +793,10 @@
         "scripts/lib/script-surface-manifest.mjs"
       ],
       "tier": "core",
+      "owner": "release-gate-tooling",
+      "consumer": "pr-gate",
       "retirement": "keep",
+      "retirementCondition": "Retire only when a narrower owner-scoped gate demonstrably covers the same invariant; no removal while it runs on the default release-gate path.",
       "note": "#1150 operating-cost refactor guard: validates root/broker script tiers without deleting gates."
     },
     {
@@ -635,7 +806,10 @@
         "scripts/check-spec-broker-conformance.mjs"
       ],
       "tier": "core",
+      "owner": "broker",
+      "consumer": "pr-gate",
       "retirement": "keep",
+      "retirementCondition": "Retire only when a narrower owner-scoped gate demonstrably covers the same invariant; no removal while it runs on the default release-gate path.",
       "note": "Spec<->broker conformance for docs/spec/verifiable-delegation-contract-v0.md (#1304 M6-b) — the delegation-contract spec must not drift from the broker source in either direction."
     },
     {
@@ -645,7 +819,10 @@
         "scripts/lib/check-current-state-drift.mjs"
       ],
       "tier": "core",
+      "owner": "docs-provenance",
+      "consumer": "pr-gate",
       "retirement": "keep",
+      "retirementCondition": "Retire only when a narrower owner-scoped gate demonstrably covers the same invariant; no removal while it runs on the default release-gate path.",
       "note": "Source-only current-state drift gate (#1501): docs/current-state.md must not frame an issue recorded closed in docs/ops/github-state-snapshot.json as active coordination; offline, no network."
     },
     {
@@ -656,7 +833,10 @@
         "scripts/lib/check-current-state-drift.test.mjs"
       ],
       "tier": "core",
+      "owner": "docs-provenance",
+      "consumer": "pr-gate",
       "retirement": "keep",
+      "retirementCondition": "Retire only when a narrower owner-scoped gate demonstrably covers the same invariant; no removal while it runs on the default release-gate path.",
       "note": "Unit test for the #1501 current-state drift gate (RED closed-as-active, GREEN historical framing); local/read-only, budget-neutral scripts/lib placement."
     },
     {
@@ -666,7 +846,10 @@
         "scripts/lib/check-package-matrix.mjs"
       ],
       "tier": "core",
+      "owner": "docs-provenance",
+      "consumer": "pr-gate",
       "retirement": "keep",
+      "retirementCondition": "Retire only when a narrower owner-scoped gate demonstrably covers the same invariant; no removal while it runs on the default release-gate path.",
       "note": "Source-only package matrix gate (#1501): README Package/Repository Map and the all-private/unpublished claim must stay a single-source projection of the actual packages/*/package.json manifests; offline, no network."
     },
     {
@@ -677,7 +860,10 @@
         "scripts/lib/check-package-matrix.test.mjs"
       ],
       "tier": "core",
+      "owner": "docs-provenance",
+      "consumer": "pr-gate",
       "retirement": "keep",
+      "retirementCondition": "Retire only when a narrower owner-scoped gate demonstrably covers the same invariant; no removal while it runs on the default release-gate path.",
       "note": "Unit test for the #1501 package matrix gate (RED missing/stale package + visibility drift, GREEN consistent projection); local/read-only, budget-neutral scripts/lib placement."
     },
     {
@@ -687,7 +873,10 @@
         "scripts/lib/check-changelog-release-drift.mjs"
       ],
       "tier": "core",
+      "owner": "docs-provenance",
+      "consumer": "pr-gate",
       "retirement": "keep",
+      "retirementCondition": "Retire only when a narrower owner-scoped gate demonstrably covers the same invariant; no removal while it runs on the default release-gate path.",
       "note": "Source-only CHANGELOG release-drift gate (#1501, criterion 4): when docs/ops/release-state-snapshot.json arms enforcement, CHANGELOG.md \"## Unreleased\" must not stay an empty placeholder beneath a released version; offline, no network."
     },
     {
@@ -698,7 +887,10 @@
         "scripts/lib/check-changelog-release-drift.test.mjs"
       ],
       "tier": "core",
+      "owner": "docs-provenance",
+      "consumer": "pr-gate",
       "retirement": "keep",
+      "retirementCondition": "Retire only when a narrower owner-scoped gate demonstrably covers the same invariant; no removal while it runs on the default release-gate path.",
       "note": "Unit test for the #1501 changelog release-drift gate (RED armed+empty placeholder, GREEN unarmed/populated/pre-release); local/read-only, budget-neutral scripts/lib placement."
     },
     {
@@ -708,7 +900,10 @@
         "scripts/lib/check-review-policy.mjs"
       ],
       "tier": "core",
+      "owner": "governance-approval",
+      "consumer": "pr-gate",
       "retirement": "keep",
+      "retirementCondition": "Retire only when a narrower owner-scoped gate demonstrably covers the same invariant; no removal while it runs on the default release-gate path.",
       "note": "Source-only review-policy gate (#1507): GOVERNANCE.md must document author-independent review, a backup reviewer path, and review-evidence over pull-request velocity; offline, no network, no settings mutation."
     },
     {
@@ -719,7 +914,10 @@
         "scripts/lib/check-review-policy.test.mjs"
       ],
       "tier": "core",
+      "owner": "governance-approval",
+      "consumer": "pr-gate",
       "retirement": "keep",
+      "retirementCondition": "Retire only when a narrower owner-scoped gate demonstrably covers the same invariant; no removal while it runs on the default release-gate path.",
       "note": "Unit test for the #1507 review-policy gate (RED missing section/commitment, GREEN complete policy); local/read-only, budget-neutral scripts/lib placement."
     }
   ]

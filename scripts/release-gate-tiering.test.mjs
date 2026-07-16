@@ -7,11 +7,15 @@ import { fileURLToPath } from 'node:url';
 
 import {
   DEFAULT_TIERS,
+  TIER_CONSUMER,
+  VALID_CONSUMER,
+  VALID_OWNER,
   loadReleaseGateInventory,
   parseReleaseGateArgs,
   selectReleaseGateEntries,
   summarizeReleaseGateEntries,
 } from './lib/release-gate-steps.mjs';
+import { compareInventory } from './check-release-gate-step-inventory.mjs';
 import { validateScriptSurfaceManifest } from './lib/script-surface-manifest.mjs';
 
 const HERE = dirname(fileURLToPath(import.meta.url));
@@ -109,6 +113,71 @@ test('release-gate --all --list prints every tier including approval-only paths'
   assert.match(lines.at(-1), /release gate selected 66\/66 step\(s\)/);
   assert.ok(lines.some((line) => line.startsWith('monorepo-final-operator-signoff\tapproval-gated\t')));
   assert.ok(lines.some((line) => line.startsWith('monorepo-release-package-tag-approval\tpackage-publication\t')));
+});
+
+test('#1503: every inventory entry declares owner, tier-consistent consumer, and a retirement condition', () => {
+  const inventory = loadReleaseGateInventory(INVENTORY);
+  for (const entry of inventory.entries) {
+    assert.ok(VALID_OWNER.has(entry.owner), `${entry.name}: unexpected owner ${entry.owner}`);
+    assert.ok(VALID_CONSUMER.has(entry.consumer), `${entry.name}: unexpected consumer ${entry.consumer}`);
+    assert.equal(
+      entry.consumer,
+      TIER_CONSUMER[entry.tier],
+      `${entry.name}: consumer must follow tier ${entry.tier}`,
+    );
+    assert.equal(typeof entry.retirementCondition, 'string');
+    assert.ok(entry.retirementCondition.length >= 20, `${entry.name}: retirementCondition too short`);
+  }
+});
+
+test('#1503: inventory guard fails closed on missing or inconsistent ownership metadata', () => {
+  const base = {
+    generatedFrom: 'scripts/release-gate.mjs',
+    tiers: ['core', 'public-readiness'],
+    entries: [
+      {
+        name: 'release-gate-inventory',
+        command: 'npm',
+        args: ['run', 'check:release-gate-inventory'],
+        tier: 'core',
+        owner: 'release-gate-tooling',
+        consumer: 'pr-gate',
+        retirement: 'keep',
+        retirementCondition: 'Retire only when a narrower owner-scoped gate covers the same invariant.',
+        note: 'Self-check keeping the inventory in lockstep with release-gate.mjs.',
+      },
+      {
+        name: 'external-secrets',
+        command: 'npm',
+        args: ['run', 'scan:external-secrets'],
+        tier: 'public-readiness',
+        owner: 'supply-chain-security',
+        consumer: 'pr-gate',
+        retirement: 'keep',
+        retirementCondition: 'Retire only when a narrower owner-scoped gate covers the same invariant.',
+        note: 'Public-readiness secret hygiene gate; do not retire as generic.',
+      },
+    ],
+  };
+  assert.equal(compareInventory({ inventory: base }).ok, true);
+
+  const missingOwner = structuredClone(base);
+  delete missingOwner.entries[0].owner;
+  const r1 = compareInventory({ inventory: missingOwner });
+  assert.equal(r1.ok, false);
+  assert.ok(r1.failures.some((f) => f.includes('invalid owner')));
+
+  const badConsumer = structuredClone(base);
+  badConsumer.entries[0].consumer = 'operator-approval';
+  const r2 = compareInventory({ inventory: badConsumer });
+  assert.equal(r2.ok, false);
+  assert.ok(r2.failures.some((f) => f.includes('inconsistent with tier')));
+
+  const missingRetirementCondition = structuredClone(base);
+  delete missingRetirementCondition.entries[0].retirementCondition;
+  const r3 = compareInventory({ inventory: missingRetirementCondition });
+  assert.equal(r3.ok, false);
+  assert.ok(r3.failures.some((f) => f.includes('retirementCondition')));
 });
 
 test('script surface manifest validates current root and broker package scripts', () => {

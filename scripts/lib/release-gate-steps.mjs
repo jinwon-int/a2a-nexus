@@ -8,6 +8,33 @@ export const DEFAULT_INVENTORY_PATH = join(REPO_ROOT, 'docs/ops/release-gate-ste
 export const DEFAULT_TIERS = ['core', 'public-readiness'];
 export const VALID_RETIREMENT = new Set(['keep', 'candidate-after-review', 'manual-approval-required']);
 
+// #1503 script-surface ownership axes. `owner` names the surface that owns the
+// entrypoint; `consumer` names who runs it and is a coarser axis than `tier`
+// (core and public-readiness both collapse to pr-gate). TIER_CONSUMER pins the
+// consumer to the tier so the two axes cannot drift.
+export const VALID_OWNER = new Set([
+  'broker',
+  'release-gate-tooling',
+  'supply-chain-security',
+  'docs-provenance',
+  'governance-approval',
+  'monorepo-transition',
+  'public-readiness',
+]);
+export const VALID_CONSUMER = new Set([
+  'pr-gate',
+  'transition-audit',
+  'operator-approval',
+  'release-publication',
+]);
+export const TIER_CONSUMER = {
+  core: 'pr-gate',
+  'public-readiness': 'pr-gate',
+  'historical-transition': 'transition-audit',
+  'approval-gated': 'operator-approval',
+  'package-publication': 'release-publication',
+};
+
 function fail(message) {
   throw new Error(message);
 }
@@ -59,6 +86,14 @@ export function loadReleaseGateInventory(inventoryPath = DEFAULT_INVENTORY_PATH)
     }
     if (typeof entry.note !== 'string' || entry.note.length < 20) {
       fail(`${entry.name}: note must explain classification`);
+    }
+    if (!VALID_OWNER.has(entry.owner)) fail(`${entry.name}: invalid owner ${entry.owner}`);
+    if (!VALID_CONSUMER.has(entry.consumer)) fail(`${entry.name}: invalid consumer ${entry.consumer}`);
+    if (TIER_CONSUMER[entry.tier] !== entry.consumer) {
+      fail(`${entry.name}: consumer ${entry.consumer} is inconsistent with tier ${entry.tier}`);
+    }
+    if (typeof entry.retirementCondition !== 'string' || entry.retirementCondition.length < 20) {
+      fail(`${entry.name}: retirementCondition must state the retirement trigger`);
     }
   }
 
