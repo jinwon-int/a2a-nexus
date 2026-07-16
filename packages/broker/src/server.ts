@@ -1826,6 +1826,14 @@ export function createBrokerServer(options: BrokerServerOptions = {}): BrokerSer
 
       throw new BrokerError("not_found", "not found");
     } catch (error) {
+      if (!(error instanceof BrokerError)) {
+        // Unexpected (non-BrokerError) exceptions are otherwise mapped to a fixed
+        // internal_error 500 with no server-side trace, which made a fleet-wide
+        // intermittent worker-heartbeat 500 undiagnosable from broker container
+        // logs alone. Log the route and stack so future occurrences are visible
+        // in `docker logs`; response body/status are unchanged.
+        console.error(`[a2a-broker] unhandled error on ${req.method} ${path}:`, error);
+      }
       return sendError(res, error);
     }
   };
