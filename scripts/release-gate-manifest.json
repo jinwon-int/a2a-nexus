@@ -411,6 +411,12 @@
       "note": "Unit tests for #1261 L1 release-gate manifest absence-sweep; keeps new scripts/*.test.mjs and scripts/lib/*.test.mjs registered."
     },
     {
+      "file": "scripts/run-release-gate.test.mjs",
+      "class": "gate",
+      "round": null,
+      "note": "Unit tests for the manifest-driven release-gate runner; registered by #1570 so runner and archived-entry regressions cannot remain outside the gated path."
+    },
+    {
       "file": "scripts/check-broker-policy.test.mjs",
       "class": "gate",
       "round": null,
