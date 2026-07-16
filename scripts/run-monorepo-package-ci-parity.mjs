@@ -10,15 +10,17 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { spawnSync } from 'node:child_process';
+import { fileURLToPath } from 'node:url';
 
 const root = process.cwd();
 const surface = process.argv[2];
 const tmpDir = path.join(root, 'tmp', 'monorepo-package-ci-parity');
 
-const surfaces = {
+export const PACKAGE_CI_SURFACES = {
   broker: {
     packageDir: 'packages/broker',
     commands: [
+      ['npm', ['run', 'check:source-quality-floors']],
       ['npm', ['test', '-w', 'packages/broker']],
       ['npm', ['run', 'coverage:baseline', '-w', 'packages/broker']],
     ],
@@ -37,6 +39,7 @@ const surfaces = {
   'docker-runner': {
     packageDir: 'packages/docker-runner',
     commands: [
+      ['npm', ['run', 'check:source-quality-floors']],
       ['npm', ['run', 'check', '-w', 'packages/docker-runner']],
       ['npm', ['run', 'build', '-w', 'packages/docker-runner']],
       ['npm', ['run', 'lint', '-w', 'packages/docker-runner']],
@@ -61,6 +64,7 @@ const surfaces = {
   'openclaw-plugin-a2a': {
     packageDir: 'packages/openclaw-plugin-a2a',
     commands: [
+      ['npm', ['run', 'check:source-quality-floors']],
       ['npm', ['run', 'scan:public-readiness', '-w', 'packages/openclaw-plugin-a2a']],
       ['npm', ['run', 'smoke:a2a-conformance', '-w', 'packages/openclaw-plugin-a2a']],
       ['npm', ['test', '-w', 'packages/openclaw-plugin-a2a']],
@@ -126,15 +130,21 @@ function assertPackageMetadata(config) {
   }
 }
 
-if (!surface || !surfaces[surface]) {
-  fail(`usage: node scripts/run-monorepo-package-ci-parity.mjs <${Object.keys(surfaces).join('|')}>`);
+function main() {
+  if (!surface || !PACKAGE_CI_SURFACES[surface]) {
+    fail(`usage: node scripts/run-monorepo-package-ci-parity.mjs <${Object.keys(PACKAGE_CI_SURFACES).join('|')}>`);
+  }
+
+  fs.mkdirSync(tmpDir, { recursive: true });
+
+  const config = PACKAGE_CI_SURFACES[surface];
+  assertPackageMetadata(config);
+  for (const [command, args] of config.commands) run(command, args);
+  run('npm', ['pack', '--workspace', config.packageDir, '--dry-run', '--json']);
+
+  console.log(`monorepo package CI parity ok: ${surface}`);
 }
 
-fs.mkdirSync(tmpDir, { recursive: true });
-
-const config = surfaces[surface];
-assertPackageMetadata(config);
-for (const [command, args] of config.commands) run(command, args);
-run('npm', ['pack', '--workspace', config.packageDir, '--dry-run', '--json']);
-
-console.log(`monorepo package CI parity ok: ${surface}`);
+if (process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
+  main();
+}

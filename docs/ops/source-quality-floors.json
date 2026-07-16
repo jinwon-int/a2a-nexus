@@ -1,0 +1,23 @@
+{
+  "$schema": "a2a-nexus.source-quality-floor.v1",
+  "issue": "a2a-nexus#1506",
+  "purpose": "Enforced, deterministic source-quality floors layered on top of the measure-only coverage baseline. This first floor bounds unsafe TypeScript suppressions in the source bucket. It is behavior-neutral at introduction (the codebase currently ships zero unsafe suppressions in source) and blocks future regressions.",
+  "scope": "source bucket only — files classified 'source' by the coverage-baseline classifier (**/src/**/*.{ts,mts,cts}); test, generated (dist/build-info), archive, and non-src 'other' files are excluded.",
+  "ratchetContract": "Floors only ever ratchet downward. The guard requires measured == max: raising max is allowed only when a new suppression is genuinely unavoidable and must carry a one-line justification; removing suppressions requires lowering max in the same PR so the surface cannot silently regrow.",
+  "floors": {
+    "unsafeSuppressions": {
+      "max": 0,
+      "measured": 0,
+      "measuredAt": "2026-07-14",
+      "counts": {
+        "@ts-ignore": 0,
+        "@ts-nocheck": 0,
+        "bare @ts-expect-error": 0,
+        "eslint-disable*": 0
+      },
+      "definition": "A suppression that silences a diagnostic without proof it is still needed: @ts-ignore, @ts-nocheck, a bare @ts-expect-error (no inline explanation), or any eslint-disable* directive (dead — the repo ships no ESLint config). @ts-expect-error WITH an inline explanation is the safe form and is intentionally allowed.",
+      "checker": "scripts/check-source-quality-floors.mjs",
+      "note": "First enforced source-quality floor for #1506. Coverage floors for lifecycle/policy/evidence/provenance modules land in a later wave on top of the existing coverage baseline; live coverage is measured but not yet a gate because it is non-deterministic under the broker manifest test runner."
+    }
+  }
+}

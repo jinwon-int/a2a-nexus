@@ -587,6 +587,17 @@
       "note": "Runs on ordinary release-gate path; keep until a narrower owner gate replaces it."
     },
     {
+      "name": "source-quality-floors",
+      "command": "npm",
+      "args": [
+        "run",
+        "check:source-quality-floors"
+      ],
+      "tier": "core",
+      "retirement": "keep",
+      "note": "#1506 enforced source-quality floor: unsafe TypeScript suppressions in the source bucket may only ratchet down. Deterministic and behavior-neutral; keep on the ordinary release-gate path."
+    },
+    {
       "name": "release-gate-inventory",
       "command": "npm",
       "args": [
