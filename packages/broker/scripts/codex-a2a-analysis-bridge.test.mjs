@@ -40,7 +40,7 @@ test("Codex A2A analysis bridge applies model/reasoning and returns the shared e
       "const args = process.argv.slice(2);",
       "const prompt = readFileSync(0, 'utf8');",
       "writeFileSync(process.env.CAPTURE_ARGS_PATH, JSON.stringify(args));",
-      "writeFileSync(process.env.CAPTURE_ENV_PATH, JSON.stringify({ codexHome: process.env.CODEX_HOME, brokerSecret: process.env.BROKER_EDGE_SECRET }));",
+      "writeFileSync(process.env.CAPTURE_ENV_PATH, JSON.stringify({ codexHome: process.env.CODEX_HOME, brokerSecret: process.env.BROKER_EDGE_SECRET, prefix: process.env.PREFIX, termuxVersion: process.env.TERMUX_VERSION, termuxExec: process.env.TERMUX_EXEC__PROC_SELF_EXE }));",
       "if (!prompt.includes('Do not modify files')) throw new Error('read-only prompt missing');",
       "if (!readFileSync(process.env.CODEX_HOME + '/auth.json', 'utf8').includes('test')) throw new Error('ephemeral auth missing');",
       "const analysis = { status: 'done', summary: 'Codex bridge returned strict JSON', findings: ['Codex executed the source-only prompt'], risks: [], recommendations: ['keep the read-only sandbox'], evidenceRefs: ['embedded:codex-adapter-test'] };",
@@ -58,6 +58,9 @@ test("Codex A2A analysis bridge applies model/reasoning and returns the shared e
         CAPTURE_ARGS_PATH: argsPath,
         CAPTURE_ENV_PATH: envPath,
         BROKER_EDGE_SECRET: "must-not-reach-codex",
+        PREFIX: "/data/data/com.termux/files/usr",
+        TERMUX_VERSION: "unit-test",
+        TERMUX_EXEC__PROC_SELF_EXE: "/data/data/com.termux/files/usr/bin/node",
       },
     });
 
@@ -80,6 +83,9 @@ test("Codex A2A analysis bridge applies model/reasoning and returns the shared e
 
     const childEnv = JSON.parse(readFileSync(envPath, "utf8"));
     assert.equal(childEnv.brokerSecret, undefined);
+    assert.equal(childEnv.prefix, "/data/data/com.termux/files/usr");
+    assert.equal(childEnv.termuxVersion, "unit-test");
+    assert.equal(childEnv.termuxExec, "/data/data/com.termux/files/usr/bin/node");
     assert.notEqual(childEnv.codexHome, configDir);
     assert.equal(existsSync(childEnv.codexHome), false, "ephemeral CODEX_HOME should be removed after execution");
   } finally {

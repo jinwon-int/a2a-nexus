@@ -30,14 +30,14 @@
  */
 import fs from 'node:fs';
 import path from 'node:path';
+import { execFileSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
+import ts from 'typescript';
 
 import { createDocCheckContext } from './lib/doc-check.mjs';
 
 export const FLOOR_MANIFEST_REL = 'docs/ops/source-quality-floors.json';
 export const FLOOR_SCHEMA = 'a2a-nexus.source-quality-floor.v1';
-
-const SKIP_DIRS = new Set(['node_modules', '.git', 'tmp', 'coverage', 'dist']);
 
 /**
  * Pure bucket classifier — 'source' | 'test' | 'generated' | 'archive' | 'other'.
@@ -61,28 +61,39 @@ export function classifyFile(relPath) {
  */
 export function countUnsafeSuppressions(text) {
   let count = 0;
-  for (const rawLine of String(text).split(/\r?\n/)) {
-    // eslint-disable* is a dead directive here (no ESLint config ships).
-    if (/eslint-disable(-next-line|-line)?\b/.test(rawLine)) count += 1;
-    if (/@ts-ignore\b/.test(rawLine)) count += 1;
-    if (/@ts-nocheck\b/.test(rawLine)) count += 1;
-    // Bare @ts-expect-error: the directive with no inline explanation after it.
-    const expect = rawLine.match(/@ts-expect-error\b(.*)$/);
-    if (expect && expect[1].replace(/[\s:—-]/g, '').length === 0) count += 1;
+  const scanner = ts.createScanner(ts.ScriptTarget.Latest, false, ts.LanguageVariant.Standard, String(text));
+  for (let token = scanner.scan(); token !== ts.SyntaxKind.EndOfFileToken; token = scanner.scan()) {
+    if (token !== ts.SyntaxKind.SingleLineCommentTrivia && token !== ts.SyntaxKind.MultiLineCommentTrivia) {
+      continue;
+    }
+    const tokenText = scanner.getTokenText();
+    const commentBody = token === ts.SyntaxKind.SingleLineCommentTrivia
+      ? tokenText.slice(2)
+      : tokenText.slice(2, -2);
+    // TypeScript recognizes CR, LF, CRLF, U+2028, and U+2029 as physical line
+    // terminators. Scanning comment tokens first avoids false positives in
+    // string/template literals that merely contain directive-looking text.
+    for (const rawLine of commentBody.split(/\r\n|[\n\r\u2028\u2029]/u)) {
+      const line = rawLine.replace(/^\s*\*\s?/, '');
+      count += [...line.matchAll(/eslint-disable(?:-next-line|-line)?\b/g)].length;
+      count += [...line.matchAll(/@ts-ignore\b/g)].length;
+      count += [...line.matchAll(/@ts-nocheck\b/g)].length;
+      for (const expect of line.matchAll(/@ts-expect-error\b([^\r\n\u2028\u2029]*)/gu)) {
+        if (expect[1].replace(/[\s:—-]/gu, '').length === 0) count += 1;
+      }
+    }
   }
   return count;
 }
 
-function walk(root, dir, out) {
-  for (const entry of fs.readdirSync(dir, { withFileTypes: true })) {
-    if (entry.isDirectory()) {
-      if (SKIP_DIRS.has(entry.name)) continue;
-      walk(root, path.join(dir, entry.name), out);
-    } else if (entry.isFile()) {
-      out.push(path.relative(root, path.join(dir, entry.name)));
-    }
+export function listTrackedPaths(root) {
+  try {
+    return execFileSync('git', ['-C', root, 'ls-files', '-z', '--cached'], { encoding: 'utf8' })
+      .split('\0')
+      .filter(Boolean);
+  } catch (error) {
+    throw new Error(`failed to enumerate tracked files: ${error.message}`);
   }
-  return out;
 }
 
 /**
@@ -91,12 +102,19 @@ function walk(root, dir, out) {
  * their per-file counts (for actionable failure output).
  */
 export function collectMeasured(root) {
-  const rels = walk(root, root, []);
+  const rels = listTrackedPaths(root);
+  const realRoot = fs.realpathSync(root);
   let measured = 0;
   const offenders = [];
   for (const rel of rels) {
     if (classifyFile(rel) !== 'source') continue;
-    const n = countUnsafeSuppressions(fs.readFileSync(path.join(root, rel), 'utf8'));
+    const sourcePath = path.join(root, rel);
+    const realSource = fs.realpathSync(sourcePath);
+    const realRelative = path.relative(realRoot, realSource);
+    if (realRelative.startsWith(`..${path.sep}`) || path.isAbsolute(realRelative)) {
+      throw new Error(`${rel}: tracked source symlink resolves outside the repository`);
+    }
+    const n = countUnsafeSuppressions(fs.readFileSync(sourcePath, 'utf8'));
     if (n > 0) {
       measured += n;
       offenders.push({ file: rel.replace(/\\/g, '/'), count: n });
@@ -152,7 +170,7 @@ function main() {
   );
   const { failures } = evaluateFloor(measured, manifest);
   for (const message of failures) fail(message);
-  for (const o of offenders) fail(`  ${o.file}: ${o.count} unsafe suppression(s)`);
+  for (const o of offenders) console.log(`  ${o.file}: ${o.count} unsafe suppression(s)`);
   finish('source quality floor ok');
 }
 

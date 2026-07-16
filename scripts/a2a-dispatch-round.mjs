@@ -147,6 +147,11 @@ function validateGitHubPatchWriteCapability(errors, tag, payload) {
 
   if (hasNoWriteSignal) {
     errors.push(`${tag}.payload.mode=github-propose-patch is write-capable (#889); use read-only-analysis/github-read-only-validation for no-write evidence lanes or remove no-write flags for an explicit PR-first patch lane`);
+    return;
+  }
+
+  if (payload.sourceOnly === true) {
+    errors.push(`${tag}.payload.sourceOnly=true cannot be combined with write-capable github-propose-patch (#1355; #889)`);
   }
 }
 

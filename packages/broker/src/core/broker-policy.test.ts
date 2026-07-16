@@ -1,5 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
 
 import {
   BROKER_POLICY_SCHEMA,
@@ -17,6 +18,11 @@ function doc(overrides: Partial<BrokerPolicyDocument> = {}): BrokerPolicyDocumen
     rules: [],
     ...overrides,
   });
+}
+
+function operatorPolicyDoc(): BrokerPolicyDocument {
+  const path = new URL("../../../../docs/ops/broker-policy.json", import.meta.url);
+  return validateBrokerPolicyDocument(JSON.parse(readFileSync(path, "utf8")), path.pathname);
 }
 
 // --- validation gate (G1-a): fail-closed ---
@@ -146,4 +152,31 @@ test("budget counter is only consulted when the rule declares a budget", () => {
   let called = 0;
   evaluateTaskPolicy({ intent: "analyze", workerClass: "mobile", countTasksToday: () => { called += 1; return 0; } }, d);
   assert.equal(called, 0, "no maxTasksPerDay -> counter thunk must not run");
+});
+
+test("operator source-only rule allows observed read-only and local proposal workflows (#1355)", () => {
+  const policy = operatorPolicyDoc();
+
+  assert.deepEqual(
+    evaluateTaskPolicy({ intent: "verify", mode: "github-read-only-validation", workerClass: "source-only" }, policy),
+    { action: "allow", ruleId: "source-only-safe-intents" },
+  );
+  assert.deepEqual(
+    evaluateTaskPolicy({ intent: "propose_patch", mode: "propose-patch", workerClass: "source-only" }, policy),
+    { action: "allow", ruleId: "source-only-safe-intents" },
+  );
+  assert.deepEqual(
+    evaluateTaskPolicy({ intent: "analyze", mode: "analysis-only", workerClass: "source-only" }, policy),
+    { action: "allow", ruleId: "source-only-safe-intents" },
+  );
+});
+
+test("operator source-only rule still denies GitHub-write and generic patch modes (#1355)", () => {
+  const policy = operatorPolicyDoc();
+
+  for (const mode of ["github-propose-patch", "patch"]) {
+    const decision = evaluateTaskPolicy({ intent: "propose_patch", mode, workerClass: "source-only" }, policy);
+    assert.equal(decision.action, "deny", mode);
+    assert.equal(decision.ruleId, "source-only-safe-intents", mode);
+  }
 });
