@@ -512,6 +512,21 @@ test('dry-run rejects github-propose-patch lanes declared read-only/no-write (#8
   assert.ok(out.errors.some((e) => /github-propose-patch.*write-capable.*#889/.test(e)));
 });
 
+test('dry-run rejects sourceOnly github-propose-patch even with explicit write flags (#1355)', async () => {
+  const manifest = addPatchReadyWorker(makeGitHubPatchManifest('http://unused'));
+  manifest.defaults.payload = {
+    ...manifest.defaults.payload,
+    sourceOnly: true,
+    allowGitHubWrites: true,
+    patchIntent: true,
+  };
+
+  const out = await runDispatch(manifest, { dryRun: true });
+
+  assert.equal(out.exitCode, 1);
+  assert.ok(out.errors.some((e) => /sourceOnly=true.*github-propose-patch.*#1355/.test(e)), out.errors.join('\n'));
+});
+
 test('dry-run derives GitHub workspace nodeId from target worker when defaults use orchestrator node (#884)', async () => {
   const manifest = makeGitHubVerifyManifest('http://unused');
   manifest.defaults.workspace = { nodeId: 'brokerAlpha', workspaceId: 'workspace-shared' };

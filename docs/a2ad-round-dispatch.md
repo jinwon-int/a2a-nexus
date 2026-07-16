@@ -223,12 +223,14 @@ requests even if the free-text worker prompt says "proposal only" or "do not
 mutate GitHub". Prompt text is not a safety boundary.
 
 Dry-run therefore fails closed before `POST /tasks` when
-`github-propose-patch` is paired with no-write/read-only signals such as
-`payload.readOnlyValidation: true`, `payload.noGitHubWrites: true`,
-`payload.noMutation: true`, `payload.allowGitHubWrites: false`, or
-`payload.patchIntent: false` (#889). Use `read-only-analysis` /
-`github-read-only-validation` for analysis-only evidence, and reserve
-`github-propose-patch` for an explicit PR-first patch lane.
+`github-propose-patch` is paired with `payload.sourceOnly: true` or no-write /
+read-only signals such as `payload.readOnlyValidation: true`,
+`payload.noGitHubWrites: true`, `payload.noMutation: true`,
+`payload.allowGitHubWrites: false`, or `payload.patchIntent: false` (#889,
+#1355). Explicit write flags cannot override `sourceOnly: true`; remove the
+source-only declaration for an intentional PR-first write lane. Use
+`read-only-analysis` / `github-read-only-validation` for analysis-only evidence,
+and reserve `github-propose-patch` for an explicit PR-first patch lane.
 
 ### Designated antithesis lanes (#1297)
 
