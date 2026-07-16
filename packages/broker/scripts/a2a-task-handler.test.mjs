@@ -98,6 +98,8 @@ test("unsupported workerModel fails closed before a patch attempt", () => {
     "gpt-5.6-sol",
     "openai-codex/gpt-5.5",
     "gpt-5.5",
+    "claude-fable-5",
+    "claude-sonnet-5",
     "grok-4.20",
     "minimax-m3",
   ]);
@@ -118,6 +120,8 @@ const FLEET_BASELINE_WORKER_MODELS = [
   "gpt-5.6-sol",
   "openai-codex/gpt-5.5",
   "gpt-5.5",
+  "claude-fable-5",
+  "claude-sonnet-5",
   "grok-4.20",
   "deepseek-v4-pro",
   "deepseek/deepseek-v4-pro",
@@ -164,6 +168,16 @@ test("A2A_CODEX_MODEL env selects the first-class Codex fleet model", () => {
   assert.equal(viaCodexEnv.fromPayload, false);
 });
 
+test("A2A_CLAUDE_MODEL env selects an allowlisted Claude ccc-node model", () => {
+  const result = handleTask(task(), {
+    A2A_CLAUDE_MODEL: "claude-fable-5",
+  });
+
+  assert.equal(result.error, undefined);
+  assert.equal(result.result.output.effectiveModel, "claude-fable-5");
+  assert.equal(result.result.output.modelFromPayload, undefined);
+});
+
 test("worker model policy module exposes auditable allowlist and fallbacks (#799)", () => {
   assert.deepEqual(ALLOWED_WORKER_MODELS, [
     "deepseek/deepseek-v4-flash",
@@ -173,6 +187,8 @@ test("worker model policy module exposes auditable allowlist and fallbacks (#799
     "gpt-5.6-sol",
     "openai-codex/gpt-5.5",
     "gpt-5.5",
+    "claude-fable-5",
+    "claude-sonnet-5",
     "grok-4.20",
     "minimax-m3",
   ]);
@@ -468,6 +484,31 @@ test("normal source-only task uses the Codex fleet baseline model and high reaso
 
   assert.equal(runnerTask.workerModel, "openai-codex/gpt-5.6-sol");
   assert.equal(runnerTask.workerThinking, "high");
+});
+
+test("worker reasoning follows A2A_WORKER_THINKING when the task has no override", () => {
+  const runnerTask = __test.buildRunnerTask(task({
+    intent: "propose_patch",
+    payload: {
+      mode: "github-propose-patch",
+      repo: "jinwon-int/a2a-nexus",
+    },
+  }), { A2A_WORKER_THINKING: "xhigh" });
+
+  assert.equal(runnerTask.workerThinking, "xhigh");
+});
+
+test("task workerThinking override takes precedence over A2A_WORKER_THINKING", () => {
+  const runnerTask = __test.buildRunnerTask(task({
+    intent: "propose_patch",
+    payload: {
+      mode: "github-propose-patch",
+      repo: "jinwon-int/a2a-nexus",
+      workerThinking: "medium",
+    },
+  }), { A2A_WORKER_THINKING: "xhigh" });
+
+  assert.equal(runnerTask.workerThinking, "medium");
 });
 
 test("github runner task defaults to 60 minutes", () => {

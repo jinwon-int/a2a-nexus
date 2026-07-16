@@ -970,6 +970,33 @@ test("ANALYSIS: A2A_CLAUDE_MODEL=sonnet alias -> spawned claude argv includes --
   }
 });
 
+test("ANALYSIS: CLAUDE_CODE_EFFORT_LEVEL reaches the isolated Claude child", () => {
+  const tempDir = mkdtempSync(join(tmpdir(), "claude-analysis-effort-env-"));
+  const fakeClaudePath = join(tempDir, "fake-claude.mjs");
+  const effortCapturePath = join(tempDir, "claude-effort.txt");
+  try {
+    writeStubClaude(fakeClaudePath, [
+      "import { writeFileSync } from 'node:fs';",
+      "writeFileSync(process.env.CAPTURE_EFFORT_PATH, process.env.CLAUDE_CODE_EFFORT_LEVEL || '');",
+      "const analysis = { status: 'done', summary: 'effort passthrough', findings: [], risks: [], recommendations: [], evidenceRefs: [] };",
+      "console.log(JSON.stringify({ type: 'result', subtype: 'success', result: JSON.stringify(analysis) }));",
+    ]);
+    const result = spawnSync(bridgePath, bridgeArgs(analysisMessage()), {
+      encoding: "utf8",
+      env: {
+        ...process.env,
+        A2A_CLAUDE_CODE_BIN: fakeClaudePath,
+        CLAUDE_CODE_EFFORT_LEVEL: "xhigh",
+        CAPTURE_EFFORT_PATH: effortCapturePath,
+      },
+    });
+    assert.equal(result.status, 0, result.stderr);
+    assert.equal(readFileSync(effortCapturePath, "utf8"), "xhigh");
+  } finally {
+    rmSync(tempDir, { recursive: true, force: true });
+  }
+});
+
 test("SINGLE-SHOT: A2A_CLAUDE_MODEL=claude-sonnet-5 -> claude argv includes --model (docker runner path) (#1508)", () => {
   const tempDir = mkdtempSync(join(tmpdir(), "claude-singleshot-model-"));
   const { workSeed } = setupLocalFakeOrigin(tempDir);

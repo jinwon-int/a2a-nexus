@@ -11,6 +11,9 @@ export const ALLOWED_WORKER_MODELS = Object.freeze([
   "gpt-5.6-sol",
   "openai-codex/gpt-5.5",
   "gpt-5.5",
+  // Current Claude Code ccc-node worker defaults.
+  "claude-fable-5",
+  "claude-sonnet-5",
   "grok-4.20",
   // M3 fleet workers run minimax-m3 via the custom:minimax provider (#673).
   "minimax-m3",
