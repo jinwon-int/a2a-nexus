@@ -1,0 +1,111 @@
+{
+  "fixtureId": "a2a-nexus.contract.bounded-pr-review-lifecycle.v1",
+  "description": "Example bounded PR review lineage (#1518 Phase 1) modeled on the jinwon-int/a2a-nexus#1582 trusted-author slice. Public-safe: SHAs reference the public repo; no secrets, endpoints, or runtime files.",
+  "intentContract": {
+    "kind": "IntentContractV1",
+    "lineageId": "pr-lineage-a2a-nexus-1582",
+    "goal": "Carry a dispatcher-declared trusted author identity into review-independence validation so self-contained review tasks no longer fail review_not_independent (#1548).",
+    "nonGoals": [
+      "No change to finalizer verdict, CodeQL, or required-check gates",
+      "No reviewer auto-assignment",
+      "No automatic acceptance of reviewer-authored changes"
+    ],
+    "invariants": [
+      "Reviewer independence remains fail-closed",
+      "Absent authorWorkerId keeps the legacy claimedBy/assignedWorkerId/targetNodeId fallback byte-identical",
+      "Malformed review payload fails closed as review_evidence_missing"
+    ],
+    "acceptanceCriteria": [
+      {
+        "id": "AC-1",
+        "text": "Self-contained review task with declared different author passes independence validation"
+      },
+      {
+        "id": "AC-2",
+        "text": "Declared author equal to the reviewer is rejected as review_not_independent"
+      },
+      {
+        "id": "AC-3",
+        "text": "Absent authorWorkerId preserves legacy fallback behavior"
+      },
+      {
+        "id": "AC-4",
+        "text": "Malformed or blank authorWorkerId fails closed as review_evidence_missing"
+      }
+    ],
+    "declaredPaths": {
+      "allowed": [
+        "packages/broker/src/worker-review.ts",
+        "packages/broker/src/worker-review.test.ts",
+        "packages/broker/src/core/broker-task-terminal.ts"
+      ],
+      "forbidden": [
+        ".github/**"
+      ]
+    },
+    "baseSha": "53c1a40354a9c6b98d5efc4bbf39740217061d8d",
+    "headSha": "1358fb51dcfd8ed7685c0ad335c66f1b5347fdaf",
+    "createdAt": "2026-07-20T08:00:00Z",
+    "intentHash": "sha256:dcdffdcbea590c817f2a4891b19c6dc4b2eacb7456a65dc17e9426e6365b4d62"
+  },
+  "budget": {
+    "kind": "ReviewLineageBudgetV1",
+    "maxWallClockSeconds": 21600,
+    "maxCorrectionGenerations": 1,
+    "maxReviewerRuns": 2,
+    "maxReviewerReplacements": 1,
+    "repeatedFindingThreshold": 2,
+    "onExhaustion": "blocked_needs_operator"
+  },
+  "findingLedger": {
+    "kind": "FindingLedgerV1",
+    "ledgerId": "ledger-pr-lineage-a2a-nexus-1582",
+    "lineageId": "pr-lineage-a2a-nexus-1582",
+    "findings": [
+      {
+        "findingId": "F-1",
+        "criterionRef": "AC-1",
+        "evidenceRefs": [
+          "packages/broker/src/core/broker-task-terminal.ts:106",
+          "packages/broker/src/worker-review.test.ts"
+        ],
+        "severity": "major",
+        "category": "correctness",
+        "blocking": true,
+        "introducedAtHead": "1358fb51dcfd8ed7685c0ad335c66f1b5347fdaf",
+        "firstSeenAtHead": "1358fb51dcfd8ed7685c0ad335c66f1b5347fdaf",
+        "resolvedAtHead": "662bf4f5c9066173049d83f6267cefed2e0e980b",
+        "disposition": "resolved",
+        "signature": "sha256:af50dd8fcf8c1241c95383f81252c43e52f0d909d8c07366f4df2ae94fd95035"
+      },
+      {
+        "findingId": "F-2",
+        "criterionRef": "AC-3",
+        "evidenceRefs": [
+          "packages/broker/src/worker-review.ts:14"
+        ],
+        "severity": "minor",
+        "category": "style",
+        "blocking": false,
+        "introducedAtHead": "1358fb51dcfd8ed7685c0ad335c66f1b5347fdaf",
+        "firstSeenAtHead": "1358fb51dcfd8ed7685c0ad335c66f1b5347fdaf",
+        "resolvedAtHead": null,
+        "disposition": "open",
+        "signature": "sha256:c6906fc5e7d59113f8b62e3885c1196c8a07d5164a3f6d1d2055cabefd0860f1"
+      }
+    ]
+  },
+  "reviewReceipt": {
+    "kind": "ReviewReceiptV1",
+    "reviewerNodeId": "nosuk-worker-runtime",
+    "verdict": "pass",
+    "note": "Independent review of the trusted-author slice: fail-closed parsing, preserved fallback, broker-terminal gate no longer shadows the payload declaration.",
+    "headSha": "1358fb51dcfd8ed7685c0ad335c66f1b5347fdaf",
+    "diffHash": "sha256:2c97b18a6367929e75dce6a55f3ec759d4112e9c7fee9dd1adc9c1066e3121ec",
+    "intentHash": "sha256:dcdffdcbea590c817f2a4891b19c6dc4b2eacb7456a65dc17e9426e6365b4d62",
+    "findingLedgerRef": "ledger-pr-lineage-a2a-nexus-1582",
+    "authorWorkerId": "soonwook-claude-code-worker",
+    "submittedAt": "2026-07-20T08:30:00Z"
+  },
+  "samplePatch": "diff --git a/packages/broker/src/worker-review.ts b/packages/broker/src/worker-review.ts\nindex 4d64a54..90f9ee2 100644\n--- a/packages/broker/src/worker-review.ts\n+++ b/packages/broker/src/worker-review.ts\n@@ -69,7 +69,7 @@\n-  const authorId = (authorWorkerId ?? task.claimedBy ?? task.assignedWorkerId ?? task.targetNodeId ?? \"\").trim();\n+  const authorId = (authorWorkerId ?? parsed.spec.authorWorkerId ?? task.claimedBy ?? task.assignedWorkerId ?? task.targetNodeId ?? \"\").trim();\n"
+}

@@ -1,0 +1,113 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "FindingLedgerV1",
+  "description": "Stable blocking-finding ledger for one PR review lineage (#1518). Findings are stable objects: a new reviewer cannot restart the issue list from scratch. See docs/specs/bounded-pr-review-lifecycle/spec.md.",
+  "type": "object",
+  "required": ["kind", "ledgerId", "lineageId", "findings"],
+  "additionalProperties": false,
+  "properties": {
+    "kind": {
+      "type": "string",
+      "const": "FindingLedgerV1"
+    },
+    "ledgerId": {
+      "type": "string",
+      "minLength": 1,
+      "description": "Stable ledger identifier. Review receipts reference it via findingLedgerRef."
+    },
+    "lineageId": {
+      "type": "string",
+      "minLength": 1,
+      "description": "Must match the IntentContractV1 lineageId of this lineage."
+    },
+    "findings": {
+      "type": "array",
+      "items": { "$ref": "#/definitions/FindingV1" }
+    }
+  },
+  "definitions": {
+    "FindingV1": {
+      "type": "object",
+      "required": [
+        "findingId",
+        "criterionRef",
+        "evidenceRefs",
+        "severity",
+        "category",
+        "blocking",
+        "introducedAtHead",
+        "firstSeenAtHead",
+        "resolvedAtHead",
+        "disposition",
+        "signature"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "findingId": {
+          "type": "string",
+          "pattern": "^F-[0-9]+$",
+          "description": "Stable per-lineage id (F-1, F-2, ...); never reused."
+        },
+        "criterionRef": {
+          "type": "string",
+          "minLength": 1,
+          "description": "Acceptance-criterion or invariant id the finding maps to."
+        },
+        "evidenceRefs": {
+          "type": "array",
+          "minItems": 1,
+          "items": { "type": "string", "minLength": 1 },
+          "description": "Concrete repository/test evidence."
+        },
+        "severity": {
+          "type": "string",
+          "enum": ["critical", "major", "minor"]
+        },
+        "category": {
+          "type": "string",
+          "enum": ["correctness", "security", "regression", "spec_ambiguity", "scope_drift", "style", "preference", "design", "other"],
+          "description": "Machine-visible form of the docs/operators.md failure-mode guidance."
+        },
+        "blocking": {
+          "type": "boolean",
+          "description": "Style, preference, scope expansion, and optional design improvements are false."
+        },
+        "introducedAtHead": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{40}$"
+        },
+        "firstSeenAtHead": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{40}$"
+        },
+        "resolvedAtHead": {
+          "type": ["string", "null"],
+          "pattern": "^[0-9a-f]{40}$"
+        },
+        "disposition": {
+          "type": "string",
+          "enum": ["open", "resolved", "reopened", "overruled_by_finalizer"]
+        },
+        "signature": {
+          "type": "string",
+          "pattern": "^sha256:[0-9a-f]{64}$",
+          "description": "Stable hash of (criterionRef, category, normalized evidence) for repeated-finding detection."
+        }
+      },
+      "allOf": [
+        {
+          "if": {
+            "properties": {
+              "category": { "enum": ["style", "preference", "design"] }
+            }
+          },
+          "then": {
+            "properties": {
+              "blocking": { "const": false }
+            }
+          }
+        }
+      ]
+    }
+  }
+}

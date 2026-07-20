@@ -1,0 +1,66 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "ReviewReceiptV1",
+  "description": "Extended independent-review receipt bound to the reviewed tree and frozen intent (#1518). Additive over the basic receipt (reviewer nodeId, kind=review, verdict, note): when a lineage opts in, headSha/diffHash/intentHash mismatches fail closed. authorWorkerId echoes the dispatcher-declared trusted author (#1548) for audit. See docs/specs/bounded-pr-review-lifecycle/spec.md.",
+  "type": "object",
+  "required": [
+    "kind",
+    "reviewerNodeId",
+    "verdict",
+    "note",
+    "headSha",
+    "diffHash",
+    "intentHash",
+    "findingLedgerRef"
+  ],
+  "additionalProperties": false,
+  "properties": {
+    "kind": {
+      "type": "string",
+      "const": "ReviewReceiptV1"
+    },
+    "reviewerNodeId": {
+      "type": "string",
+      "minLength": 1,
+      "description": "Reviewer identity; must differ from the trusted author identity."
+    },
+    "verdict": {
+      "type": "string",
+      "enum": ["pass", "fail"]
+    },
+    "note": {
+      "type": "string",
+      "minLength": 1,
+      "description": "Human reason for the verdict."
+    },
+    "headSha": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{40}$",
+      "description": "Exact reviewed head; recorded for audit. Freshness is judged on diffHash + intentHash."
+    },
+    "diffHash": {
+      "type": "string",
+      "pattern": "^sha256:[0-9a-f]{64}$",
+      "description": "SHA-256 over the canonical patch bytes (git diff --no-color --no-ext-diff --no-renames --unified=3 baseSha headSha). Metadata-only commit changes leave diffHash unchanged."
+    },
+    "intentHash": {
+      "type": "string",
+      "pattern": "^sha256:[0-9a-f]{64}$",
+      "description": "Must equal the frozen IntentContractV1 intentHash; mismatch fails closed."
+    },
+    "findingLedgerRef": {
+      "type": "string",
+      "minLength": 1,
+      "description": "ledgerId of the FindingLedgerV1 the findings were recorded against."
+    },
+    "authorWorkerId": {
+      "type": "string",
+      "minLength": 1,
+      "description": "Optional echo of the dispatcher-declared trusted author identity (#1548)."
+    },
+    "submittedAt": {
+      "type": "string",
+      "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}(\\.[0-9]+)?(Z|[+-][0-9]{2}:[0-9]{2})$"
+    }
+  }
+}
