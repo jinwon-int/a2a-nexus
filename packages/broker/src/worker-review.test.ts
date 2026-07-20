@@ -6,6 +6,7 @@ import { InMemoryA2ABroker } from "./core/broker.js";
 import { emptySnapshot, type BrokerStateStore } from "./core/store.js";
 import { createBrokerServer } from "./server.js";
 import { validateTaskCompletionEvidence } from "./worker.js";
+import { validateReviewEvidence } from "./worker-review.js";
 import { normalizeTaskResult } from "./core/broker-task-record-normalizers.js";
 import type { TaskRecord } from "./core/types.js";
 
@@ -103,6 +104,60 @@ test("review evidence: reviewer must be independent from author worker", () => {
   assert.equal(error?.code, "review_not_independent");
 });
 
+test("review evidence: declared trusted author allows self-contained analysis-only review task (#1518/#1548)", () => {
+  // Self-contained review task: claimed by the review worker itself. Without a
+  // trusted author identity the validator compares the reviewer against
+  // claimedBy and always fails independence; analysis-only review tasks also
+  // carry no acceptance.command, so review validation alone must suffice.
+  const error = validateTaskCompletionEvidence(
+    taskWith({ review: { required: true, authorWorkerId: "author-a" } }, "reviewer-b"),
+    { validation: { nodeId: "reviewer-b", kind: "review", verdict: "pass", note: "independent review of author-a work" } },
+  );
+  assert.equal(error, null);
+});
+
+test("review evidence: declared author equal to reviewer is still rejected (#1518/#1548)", () => {
+  const error = validateTaskCompletionEvidence(
+    taskWith({ review: { required: true, authorWorkerId: "author-a" } }, "reviewer-b"),
+    { validation: { nodeId: "author-a", kind: "review", verdict: "pass", note: "author reviewing own work" } },
+  );
+  assert.equal(error?.code, "review_not_independent");
+});
+
+test("review evidence: malformed authorWorkerId fails closed (#1518/#1548)", () => {
+  const error = validateTaskCompletionEvidence(
+    taskWith({ review: { required: true, authorWorkerId: 42 } }, "reviewer-b"),
+    { validation: { nodeId: "reviewer-b", kind: "review", verdict: "pass", note: "independent review" } },
+  );
+  assert.equal(error?.code, "review_evidence_missing");
+  assert.match(error?.message ?? "", /authorWorkerId/);
+});
+
+test("review evidence: blank authorWorkerId fails closed (#1518/#1548)", () => {
+  const error = validateTaskCompletionEvidence(
+    taskWith({ review: { required: true, authorWorkerId: "   " } }, "reviewer-b"),
+    { validation: { nodeId: "reviewer-b", kind: "review", verdict: "pass", note: "independent review" } },
+  );
+  assert.equal(error?.code, "review_evidence_missing");
+});
+
+test("review evidence: absent authorWorkerId keeps claimedBy fallback (#1518/#1548)", () => {
+  const error = validateTaskCompletionEvidence(
+    taskWith({ review: { required: true } }, "reviewer-b"),
+    { validation: { nodeId: "reviewer-b", kind: "review", verdict: "pass", note: "fallback compares against claimer" } },
+  );
+  assert.equal(error?.code, "review_not_independent");
+});
+
+test("review evidence: explicit authorWorkerId argument takes precedence over payload declaration (#1518/#1548)", () => {
+  const task = taskWith({ review: { required: true, authorWorkerId: "author-a" } }, "reviewer-b");
+  const result = { validation: { nodeId: "reviewer-b", kind: "review" as const, verdict: "pass" as const, note: "independent review" } };
+  // Explicit argument names reviewer-b as the author, so the same evidence must fail.
+  assert.equal(validateReviewEvidence(task, result, "reviewer-b")?.code, "review_not_independent");
+  // Without the argument, the payload-declared author-a is used and the evidence passes.
+  assert.equal(validateReviewEvidence(task, result), null);
+});
+
 test("review evidence: failed verdict rejects completion", () => {
   const error = validateTaskCompletionEvidence(taskWith({ review: { required: true } }), {
     validation: { nodeId: "reviewer-b", kind: "review", verdict: "fail", note: "scope mismatch" },
@@ -191,6 +246,56 @@ test("broker completeTask accepts independent passing review evidence", () => {
   });
   assert.equal(completed.status, "succeeded");
   assert.equal(completed.result?.validation?.nodeId, "reviewer-b");
+});
+
+function createSelfContainedReviewTask(payload: Record<string, unknown>) {
+  const broker = new InMemoryA2ABroker();
+  broker.registerWorker({
+    nodeId: "reviewer-b",
+    role: "analyst",
+    capabilities: {
+      canAnalyze: true,
+      canBackfill: false,
+      canPatchWorkspace: false,
+      canPromoteLive: false,
+      workspaceIds: ["test"],
+      environments: ["research"],
+    },
+  });
+  const task = broker.createTask({
+    intent: "analyze",
+    message: "self-contained review task",
+    requester: { id: "hub-a", kind: "node", role: "hub" },
+    target: { id: "reviewer-b", kind: "node", role: "analyst" },
+    assignedWorkerId: "reviewer-b",
+    payload,
+  });
+  broker.claimTask(task.id, "reviewer-b");
+  broker.startTask(task.id, "reviewer-b");
+  return { broker, task };
+}
+
+test("broker completeTask accepts self-contained review task with declared trusted author (#1518/#1548)", () => {
+  const { broker, task } = createSelfContainedReviewTask({ review: { required: true, authorWorkerId: "author-a" } });
+  const completed = broker.completeTask(task.id, "reviewer-b", {
+    summary: "review complete",
+    validation: { nodeId: "reviewer-b", kind: "review", verdict: "pass", note: "independent review of author-a work" },
+  });
+  assert.equal(completed.status, "succeeded");
+  assert.equal(completed.result?.validation?.nodeId, "reviewer-b");
+});
+
+test("broker completeTask rejects self review via declared trusted author (#1518/#1548)", () => {
+  const { broker, task } = createSelfContainedReviewTask({ review: { required: true, authorWorkerId: "reviewer-b" } });
+  assert.throws(
+    () =>
+      broker.completeTask(task.id, "reviewer-b", {
+        summary: "self review",
+        validation: { nodeId: "reviewer-b", kind: "review", verdict: "pass", note: "author reviewing own work" },
+      }),
+    (error) => typeof error === "object" && error !== null && "code" in error && error.code === "review_not_independent",
+  );
+  assert.equal(broker.getTask(task.id)?.status, "running");
 });
 
 test("server complete route rejects review.required missing evidence", async () => {

@@ -8,11 +8,24 @@
  * The reviewer must not be the worker/author completing the task. This is an
  * advisory/manual assignment layer for now; reviewer auto-assignment is out of
  * scope for the first P5 slice.
+ *
+ * Trusted author identity (#1518/#1548): self-contained review tasks (the
+ * completing worker IS the reviewer) declare the author under review via
+ * `task.payload.review.authorWorkerId` at dispatch time. The payload is
+ * dispatcher-controlled, so the completing worker cannot forge it. When
+ * declared, independence compares the reviewer against that author; when
+ * absent, the legacy fallback (claimedBy → assignedWorkerId → targetNodeId)
+ * applies unchanged. Analysis-only review tasks must NOT attach
+ * `payload.acceptance.command`: review validation is independent from smoke
+ * acceptance, and an unexecuted acceptance command fails closed as
+ * `acceptance_evidence_missing`.
  */
 import type { TaskError, TaskRecord, TaskResult, TaskValidationPayload } from "./core/types.js";
 
 export interface TaskReviewSpec {
   required: boolean;
+  /** Dispatcher-declared trusted author identity for self-contained review tasks (#1518/#1548). */
+  authorWorkerId?: string;
 }
 
 export type ParsedTaskReview =
@@ -33,7 +46,14 @@ export function parseTaskReview(task: TaskRecord): ParsedTaskReview {
 
   if (typeof raw !== "object" || Array.isArray(raw)) return malformed("expected an object");
   const record = raw as Record<string, unknown>;
-  if (record.required === true) return { spec: { required: true } };
+  if (record.required === true) {
+    const rawAuthor = record.authorWorkerId;
+    if (rawAuthor === undefined || rawAuthor === null) return { spec: { required: true } };
+    if (typeof rawAuthor !== "string" || rawAuthor.trim() === "") {
+      return malformed("authorWorkerId must be a non-empty string when present");
+    }
+    return { spec: { required: true, authorWorkerId: rawAuthor.trim() } };
+  }
   if (record.required === false || record.required === undefined) return { spec: { required: false } };
   return malformed("required must be a boolean when present");
 }
@@ -66,7 +86,7 @@ export function validateReviewEvidence(task: TaskRecord, result?: TaskResult, au
     };
   }
 
-  const authorId = (authorWorkerId ?? task.claimedBy ?? task.assignedWorkerId ?? task.targetNodeId ?? "").trim();
+  const authorId = (authorWorkerId ?? parsed.spec.authorWorkerId ?? task.claimedBy ?? task.assignedWorkerId ?? task.targetNodeId ?? "").trim();
   if (authorId && reviewerNodeId === authorId) {
     return {
       code: "review_not_independent",
