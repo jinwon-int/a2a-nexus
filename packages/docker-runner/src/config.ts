@@ -56,6 +56,7 @@ const DEFAULT_OPENCLAW_TIMEOUT_SEC = "3600";
 const DEFAULT_HERMES_TIMEOUT_SEC = "3600";
 const DEFAULT_CLAUDE_CODE_TIMEOUT_SEC = "3600";
 const DEFAULT_CLAUDE_CODE_MAX_TURNS = "6";
+const DEFAULT_CLAUDE_CODE_PATCH_MAX_TURNS = "6";
 const DEFAULT_CODEX_TIMEOUT_SEC = "3600";
 const DEFAULT_CODEX_CONFIG_DIR = "/var/lib/a2a-runner/codex-dir";
 export const DEFAULT_SERVICE_ENV_FILE = "/etc/default/openclaw-a2a-worker";
@@ -774,6 +775,9 @@ export function buildClaudeCodePatchCommandScript(env: NodeJS.ProcessEnv): strin
   const defaultModel = shellSingleQuote(env.A2A_CLAUDE_MODEL || env.A2A_OPENCLAW_MODEL || "sonnet");
   const defaultTimeout = shellSingleQuote(env.A2A_CLAUDE_TIMEOUT_SEC || env.A2A_OPENCLAW_TIMEOUT_SEC || DEFAULT_CLAUDE_CODE_TIMEOUT_SEC);
   const maxTurns = shellSingleQuote(env.A2A_CLAUDE_CODE_MAX_TURNS || DEFAULT_CLAUDE_CODE_MAX_TURNS);
+  const patchMaxTurns = shellSingleQuote(
+    env.A2A_CLAUDE_CODE_PATCH_MAX_TURNS || DEFAULT_CLAUDE_CODE_PATCH_MAX_TURNS,
+  );
   const bridgePath = shellSingleQuote(env.A2A_CLAUDE_PATCH_BRIDGE || "/opt/a2a-broker/scripts/claude-a2a-patch-bridge.mjs");
   // Phase-2 WS1: opt-in fanout mode. Default (flag unset/!=1) stays single-shot,
   // so behavior is unchanged; rollback = unset A2A_DOCKER_RUNNER_CLAUDE_CODE_FANOUT_ENABLED.
@@ -821,6 +825,7 @@ fi
 chmod -R u+rwX "$CLAUDE_CONFIG_DIR"
 export A2A_CLAUDE_CODE_PATCH_MODE=${patchMode}
 export A2A_CLAUDE_CODE_MAX_TURNS=${maxTurns}
+export A2A_CLAUDE_CODE_PATCH_MAX_TURNS=${patchMaxTurns}
 export A2A_CLAUDE_CODE_MAX_OUTPUT_BYTES="\${A2A_CLAUDE_CODE_MAX_OUTPUT_BYTES:-16777216}"
 printf 'claude_cli=%s\\n' "$(claude --version 2>/dev/null | head -n 1 || printf unknown)" | tee -a /work/artifacts/summary.txt
 printf 'model_source=env profile=claude-code\\n' | tee -a /work/artifacts/summary.txt

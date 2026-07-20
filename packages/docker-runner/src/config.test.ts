@@ -1487,11 +1487,16 @@ test("claude-code patch mode: single-shot by default, fanout only when the flag 
   const defaultScript = buildClaudeCodePatchCommandScript({});
   assert.match(defaultScript, /export A2A_CLAUDE_CODE_PATCH_MODE=single-shot\b/);
   assert.match(defaultScript, /export A2A_CLAUDE_CODE_MAX_TURNS='6'/);
+  assert.match(defaultScript, /export A2A_CLAUDE_CODE_PATCH_MAX_TURNS='6'/);
   assert.match(defaultScript, /\/work\/artifacts\/task\.json/);
   assert.match(defaultScript, /GitHub development assignment\\nRepository: %s\\nIssue: %s\\nIssue URL: %s/);
   assert.match(
     buildClaudeCodePatchCommandScript({ A2A_CLAUDE_CODE_MAX_TURNS: "20" }),
     /export A2A_CLAUDE_CODE_MAX_TURNS='20'/,
+  );
+  assert.match(
+    buildClaudeCodePatchCommandScript({ A2A_CLAUDE_CODE_PATCH_MAX_TURNS: "20" }),
+    /export A2A_CLAUDE_CODE_PATCH_MAX_TURNS='20'/,
   );
   // A non-"1" value stays single-shot (fail-safe).
   assert.match(
