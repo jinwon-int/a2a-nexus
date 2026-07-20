@@ -1,0 +1,99 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "IntentContractV1",
+  "description": "Frozen intent oracle for one PR review lineage (#1518). Reviewers evaluate this contract; any change to goal, non-goals, invariants, acceptance criteria, declared paths, or original base/head MUST change intentHash. See docs/specs/bounded-pr-review-lifecycle/spec.md.",
+  "type": "object",
+  "required": [
+    "kind",
+    "lineageId",
+    "goal",
+    "nonGoals",
+    "invariants",
+    "acceptanceCriteria",
+    "declaredPaths",
+    "baseSha",
+    "headSha",
+    "createdAt",
+    "intentHash"
+  ],
+  "additionalProperties": false,
+  "properties": {
+    "kind": {
+      "type": "string",
+      "const": "IntentContractV1"
+    },
+    "lineageId": {
+      "type": "string",
+      "minLength": 1,
+      "description": "Stable PR-lineage identifier shared by the budget, finding ledger, and receipts of this lineage."
+    },
+    "goal": {
+      "type": "string",
+      "minLength": 1
+    },
+    "nonGoals": {
+      "type": "array",
+      "items": { "type": "string", "minLength": 1 },
+      "description": "Explicit non-goals. An empty array is allowed only when recorded deliberately."
+    },
+    "invariants": {
+      "type": "array",
+      "items": { "type": "string", "minLength": 1 }
+    },
+    "acceptanceCriteria": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "type": "object",
+        "required": ["id", "text"],
+        "additionalProperties": false,
+        "properties": {
+          "id": {
+            "type": "string",
+            "pattern": "^[A-Z][A-Z0-9]*-[0-9]+$",
+            "description": "Stable criterion id (e.g. AC-1). Findings reference these ids."
+          },
+          "text": { "type": "string", "minLength": 1 }
+        }
+      }
+    },
+    "declaredPaths": {
+      "type": "object",
+      "required": ["allowed"],
+      "additionalProperties": false,
+      "properties": {
+        "allowed": {
+          "type": "array",
+          "minItems": 1,
+          "items": { "type": "string", "minLength": 1 },
+          "description": "Declared/allowed path globs for this lineage."
+        },
+        "forbidden": {
+          "type": "array",
+          "items": { "type": "string", "minLength": 1 },
+          "description": "Forbidden paths remain the security boundary (#1234/#1235)."
+        }
+      }
+    },
+    "baseSha": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{40}$",
+      "description": "Original PR base SHA at lineage freeze."
+    },
+    "headSha": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{40}$",
+      "description": "Original author head SHA at lineage freeze."
+    },
+    "createdAt": {
+      "type": "string",
+      "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}(\\.[0-9]+)?(Z|[+-][0-9]{2}:[0-9]{2})$",
+      "description": "Freeze time. Excluded from intentHash."
+    },
+    "intentHash": {
+      "type": "string",
+      "pattern": "^sha256:[0-9a-f]{64}$",
+      "description": "SHA-256 over the canonical JSON serialization (sorted keys, UTF-8, no insignificant whitespace) of every field except createdAt and intentHash."
+    }
+  }
+}

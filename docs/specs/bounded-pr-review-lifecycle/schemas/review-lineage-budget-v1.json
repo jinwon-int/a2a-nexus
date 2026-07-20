@@ -1,0 +1,58 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "ReviewLineageBudgetV1",
+  "description": "One global review budget per PR lineage (#1518). Preflight, implementation verifier, A2AD, finalizer correction, and GitHub review MUST NOT each reset independent correction counters. Exhaustion is terminal and visible. See docs/specs/bounded-pr-review-lifecycle/spec.md.",
+  "type": "object",
+  "required": [
+    "kind",
+    "maxWallClockSeconds",
+    "maxCorrectionGenerations",
+    "maxReviewerRuns",
+    "maxReviewerReplacements",
+    "repeatedFindingThreshold",
+    "onExhaustion"
+  ],
+  "additionalProperties": false,
+  "properties": {
+    "kind": {
+      "type": "string",
+      "const": "ReviewLineageBudgetV1"
+    },
+    "maxWallClockSeconds": {
+      "type": "integer",
+      "exclusiveMinimum": 0,
+      "default": 21600,
+      "description": "Total lineage wall clock from freeze to terminal state. Default 6h."
+    },
+    "maxCorrectionGenerations": {
+      "type": "integer",
+      "minimum": 0,
+      "default": 1,
+      "description": "Bounded correction generations after the original head."
+    },
+    "maxReviewerRuns": {
+      "type": "integer",
+      "minimum": 1,
+      "default": 2,
+      "description": "Initial review run plus resolution review run."
+    },
+    "maxReviewerReplacements": {
+      "type": "integer",
+      "minimum": 0,
+      "default": 1,
+      "description": "Classified infrastructure failure only; never resets the budget."
+    },
+    "repeatedFindingThreshold": {
+      "type": "integer",
+      "minimum": 1,
+      "default": 2,
+      "description": "Identical unresolved finding signatures that trigger early stop."
+    },
+    "onExhaustion": {
+      "type": "string",
+      "enum": ["blocked_needs_operator"],
+      "default": "blocked_needs_operator",
+      "description": "Terminal behavior on budget exhaustion; never auto-retry, never stay running. Intent drift transitions to intent_conflict via the drift guard, not via budget exhaustion."
+    }
+  }
+}
