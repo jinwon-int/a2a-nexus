@@ -341,9 +341,12 @@ test("mergeRunnerEnvFile supports Claude Code cccb patch profile", async () => {
     assert.equal(config.image, "a2a-docker-runner-cccb:latest");
     assert.equal(config.network, "bridge");
   assert.equal(config.readOnlyRootFilesystem, true);
-  assert.equal(config.user, "1000:1000");
+    assert.equal(config.user, "1000:1000");
     assert.match(config.commandScript ?? "", /claude-a2a-patch-bridge\.mjs/);
     assert.match(config.commandScript ?? "", /A2A_CLAUDE_MODEL/);
+    assert.match(config.commandScript ?? "", /export HOME=\/tmp\/claude-home/);
+    assert.match(config.commandScript ?? "", /export CLAUDE_CONFIG_DIR="\$HOME\/\.claude"/);
+    assert.doesNotMatch(config.commandScript ?? "", /\/root\/\.claude/);
     assert.deepEqual(config.claudeCodeProfile, { configDir: "/srv/claude-profile" });
     assert.deepEqual(config.extraMounts, [
       { source: "/srv/claude-profile", target: "/run/secrets/claude-dir", readOnly: true },
@@ -364,6 +367,7 @@ test("mergeRunnerEnvFile supports first-class Codex patch profile", async () => 
       "A2A_DOCKER_RUNNER_IMAGE=a2a-docker-runner-codex:latest",
       "A2A_CODEX_MODEL=gpt-5.6-sol",
       "A2A_CODEX_REASONING_EFFORT=high",
+      "A2A_CODEX_TIMEOUT_SEC=3600",
     ].join("\n"));
 
     const config = await loadConfig(mergeRunnerEnvFile(baseEnv, file));
@@ -374,6 +378,9 @@ test("mergeRunnerEnvFile supports first-class Codex patch profile", async () => 
     assert.match(config.commandScript ?? "", /codex exec/);
     assert.match(config.commandScript ?? "", /gpt-5\.6-sol/);
     assert.match(config.commandScript ?? "", /model_reasoning_effort="\$A2A_CODEX_REASONING_EFFORT"/);
+    assert.match(config.commandScript ?? "", /A2A_CODEX_DEFAULT_TIMEOUT_SEC='3600'/);
+    assert.match(config.commandScript ?? "", /A2A_CODEX_TIMEOUT_SEC="\$\{A2A_CODEX_TIMEOUT_SEC:-\$A2A_CODEX_DEFAULT_TIMEOUT_SEC\}"/);
+    assert.doesNotMatch(config.commandScript ?? "", /A2A_CODEX_TIMEOUT_SEC="\$\{A2A_CODEX_TIMEOUT_SEC:-'3600'\}"/);
     assert.match(config.commandScript ?? "", /--sandbox danger-full-access/);
     assert.deepEqual(config.codexProfile, { configDir: "/srv/codex-profile" });
     assert.deepEqual(config.extraMounts, [
