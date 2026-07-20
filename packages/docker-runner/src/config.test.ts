@@ -364,6 +364,7 @@ test("mergeRunnerEnvFile supports first-class Codex patch profile", async () => 
       "A2A_DOCKER_RUNNER_IMAGE=a2a-docker-runner-codex:latest",
       "A2A_CODEX_MODEL=gpt-5.6-sol",
       "A2A_CODEX_REASONING_EFFORT=high",
+      "A2A_CODEX_TIMEOUT_SEC=3600",
     ].join("\n"));
 
     const config = await loadConfig(mergeRunnerEnvFile(baseEnv, file));
@@ -374,6 +375,9 @@ test("mergeRunnerEnvFile supports first-class Codex patch profile", async () => 
     assert.match(config.commandScript ?? "", /codex exec/);
     assert.match(config.commandScript ?? "", /gpt-5\.6-sol/);
     assert.match(config.commandScript ?? "", /model_reasoning_effort="\$A2A_CODEX_REASONING_EFFORT"/);
+    assert.match(config.commandScript ?? "", /A2A_CODEX_DEFAULT_TIMEOUT_SEC='3600'/);
+    assert.match(config.commandScript ?? "", /A2A_CODEX_TIMEOUT_SEC="\$\{A2A_CODEX_TIMEOUT_SEC:-\$A2A_CODEX_DEFAULT_TIMEOUT_SEC\}"/);
+    assert.doesNotMatch(config.commandScript ?? "", /A2A_CODEX_TIMEOUT_SEC="\$\{A2A_CODEX_TIMEOUT_SEC:-'3600'\}"/);
     assert.match(config.commandScript ?? "", /--sandbox danger-full-access/);
     assert.deepEqual(config.codexProfile, { configDir: "/srv/codex-profile" });
     assert.deepEqual(config.extraMounts, [
