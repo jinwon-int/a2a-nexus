@@ -774,6 +774,12 @@ timeout "$A2A_CODEX_TIMEOUT_SEC" codex exec \
 export function buildClaudeCodePatchCommandScript(env: NodeJS.ProcessEnv): string {
   const defaultModel = shellSingleQuote(env.A2A_CLAUDE_MODEL || env.A2A_OPENCLAW_MODEL || "sonnet");
   const defaultTimeout = shellSingleQuote(env.A2A_CLAUDE_TIMEOUT_SEC || env.A2A_OPENCLAW_TIMEOUT_SEC || DEFAULT_CLAUDE_CODE_TIMEOUT_SEC);
+  const codeTimeout = shellSingleQuote(
+    env.A2A_CLAUDE_CODE_TIMEOUT_SEC
+      || env.A2A_CLAUDE_TIMEOUT_SEC
+      || env.A2A_OPENCLAW_TIMEOUT_SEC
+      || DEFAULT_CLAUDE_CODE_TIMEOUT_SEC,
+  );
   const maxTurns = shellSingleQuote(env.A2A_CLAUDE_CODE_MAX_TURNS || DEFAULT_CLAUDE_CODE_MAX_TURNS);
   const patchMaxTurns = shellSingleQuote(
     env.A2A_CLAUDE_CODE_PATCH_MAX_TURNS || DEFAULT_CLAUDE_CODE_PATCH_MAX_TURNS,
@@ -797,6 +803,11 @@ if [ -z "\${A2A_CLAUDE_TIMEOUT_SEC:-}" ]; then
   export A2A_CLAUDE_TIMEOUT_SEC=${defaultTimeout}
 else
   export A2A_CLAUDE_TIMEOUT_SEC
+fi
+if [ -z "\${A2A_CLAUDE_CODE_TIMEOUT_SEC:-}" ]; then
+  export A2A_CLAUDE_CODE_TIMEOUT_SEC=${codeTimeout}
+else
+  export A2A_CLAUDE_CODE_TIMEOUT_SEC
 fi
 if [ ! -d /run/secrets/claude-dir ]; then
   printf 'error=claude_config_mount_missing\\n' | tee -a /work/artifacts/summary.txt
