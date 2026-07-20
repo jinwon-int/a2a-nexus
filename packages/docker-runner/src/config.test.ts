@@ -341,9 +341,12 @@ test("mergeRunnerEnvFile supports Claude Code cccb patch profile", async () => {
     assert.equal(config.image, "a2a-docker-runner-cccb:latest");
     assert.equal(config.network, "bridge");
   assert.equal(config.readOnlyRootFilesystem, true);
-  assert.equal(config.user, "1000:1000");
+    assert.equal(config.user, "1000:1000");
     assert.match(config.commandScript ?? "", /claude-a2a-patch-bridge\.mjs/);
     assert.match(config.commandScript ?? "", /A2A_CLAUDE_MODEL/);
+    assert.match(config.commandScript ?? "", /export HOME=\/tmp\/claude-home/);
+    assert.match(config.commandScript ?? "", /export CLAUDE_CONFIG_DIR="\$HOME\/\.claude"/);
+    assert.doesNotMatch(config.commandScript ?? "", /\/root\/\.claude/);
     assert.deepEqual(config.claudeCodeProfile, { configDir: "/srv/claude-profile" });
     assert.deepEqual(config.extraMounts, [
       { source: "/srv/claude-profile", target: "/run/secrets/claude-dir", readOnly: true },

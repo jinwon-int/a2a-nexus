@@ -809,18 +809,19 @@ if [ ! -f "$A2A_CLAUDE_PATCH_BRIDGE" ]; then
   printf 'Claude Code patch bridge is missing from the runner image: %s\\n' "$A2A_CLAUDE_PATCH_BRIDGE" | tee /work/artifacts/patch-command.log
   exit 2
 fi
-rm -rf /root/.claude
-mkdir -p /root/.claude
+export HOME=/tmp/claude-home
+export CLAUDE_CONFIG_DIR="$HOME/.claude"
+rm -rf "$HOME"
+install -d -m 0700 "$CLAUDE_CONFIG_DIR"
 if [ -d /run/secrets/claude-dir ]; then
-  cp -a /run/secrets/claude-dir/. /root/.claude/ 2>/dev/null || true
+  cp -a /run/secrets/claude-dir/. "$CLAUDE_CONFIG_DIR/" 2>/dev/null || true
 fi
-chmod -R u+rwX /root/.claude
-export HOME=/root
+chmod -R u+rwX "$CLAUDE_CONFIG_DIR"
 export A2A_CLAUDE_CODE_PATCH_MODE=${patchMode}
 export A2A_CLAUDE_CODE_MAX_OUTPUT_BYTES="\${A2A_CLAUDE_CODE_MAX_OUTPUT_BYTES:-16777216}"
 printf 'claude_cli=%s\\n' "$(claude --version 2>/dev/null | head -n 1 || printf unknown)" | tee -a /work/artifacts/summary.txt
 printf 'model_source=env profile=claude-code\\n' | tee -a /work/artifacts/summary.txt
-printf 'claude_config_bytes=%s\\n' "$(du -sb /root/.claude | awk '{print $1}')" | tee -a /work/artifacts/summary.txt
+printf 'claude_config_bytes=%s\\n' "$(du -sb "$CLAUDE_CONFIG_DIR" | awk '{print $1}')" | tee -a /work/artifacts/summary.txt
 ASSIGNMENT="$(cat /work/artifacts/prompt.md)"
 exec node "$A2A_CLAUDE_PATCH_BRIDGE" agent --json --message "$ASSIGNMENT"
 `;
