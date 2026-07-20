@@ -1481,8 +1481,13 @@ test("loadConfig runs pre-deploy validation on invalid memory", async () => {
 });
 
 test("claude-code patch mode: single-shot by default, fanout only when the flag is 1 (Phase-2 WS1)", () => {
-  // Default (flag unset) — behavior unchanged.
-  assert.match(buildClaudeCodePatchCommandScript({}), /export A2A_CLAUDE_CODE_PATCH_MODE=single-shot\b/);
+  // Default (flag unset) — behavior unchanged. The runner must also carry the
+  // normalized task metadata into the bridge message so single-shot mode can
+  // detect patch intent and parse its repository/issue context.
+  const defaultScript = buildClaudeCodePatchCommandScript({});
+  assert.match(defaultScript, /export A2A_CLAUDE_CODE_PATCH_MODE=single-shot\b/);
+  assert.match(defaultScript, /\/work\/artifacts\/task\.json/);
+  assert.match(defaultScript, /GitHub development assignment\\nRepository: %s\\nIssue: %s\\nIssue URL: %s/);
   // A non-"1" value stays single-shot (fail-safe).
   assert.match(
     buildClaudeCodePatchCommandScript({ A2A_DOCKER_RUNNER_CLAUDE_CODE_FANOUT_ENABLED: "true" }),
