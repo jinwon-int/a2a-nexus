@@ -102,8 +102,13 @@ export function completeTask(
   }
 
   const normalizedResult = normalizeTaskResult(result);
+  // Do not pass workerId as the explicit author here: assertTaskWorker already
+  // guarantees claimedBy === workerId, so the fallback inside
+  // validateReviewEvidence reproduces the legacy comparison, and a
+  // dispatcher-declared payload.review.authorWorkerId (#1518/#1548) must win
+  // for self-contained review tasks.
   const completionEvidenceError =
-    validateReviewEvidence(task, normalizedResult, workerId) ?? validateGithubTaskCompletionEvidence(task, normalizedResult);
+    validateReviewEvidence(task, normalizedResult) ?? validateGithubTaskCompletionEvidence(task, normalizedResult);
   if (completionEvidenceError) {
     const brokerErrorCode =
       completionEvidenceError.code === "review_evidence_missing" ||
