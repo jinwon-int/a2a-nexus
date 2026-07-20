@@ -186,6 +186,8 @@ export interface HotDiagnosticsReadContext {
     lastPersistAt: string | undefined;
     lastPersistSkippedFullSnapshot: boolean;
     lastHotHintCounts: BrokerHotHintCounts | undefined;
+    lastPersistError: { kind: string; message: string; at: string } | undefined;
+    lastFullSnapshotShedTerminal: number | undefined;
   };
   readTableIds(tableName: "broker_audit_events"): string[];
   readTableCount(tableName: SqliteHotEntityTable): number;
@@ -258,17 +260,22 @@ export function readHotEntityMirrorStatus(context: HotDiagnosticsReadContext): B
   const tableCounts = readHotEntityTableCounts(context);
   const snapshot = context.readSnapshotRow();
   const persistDiag = context.readLastPersistDiagnostics();
-  if (snapshot && persistDiag.lastPersistSkippedFullSnapshot) {
-    // In incremental hot-table mode, the canonical snapshot row is intentionally
-    // left at the last full checkpoint. Treat the hot tables as authoritative
-    // for mirror health until the next full snapshot/checkpoint is written.
-    // Drift against an older snapshot would be expected and should not surface
-    // as corruption. Manual drift after a full persist is still detected when
-    // this flag is false.
+  const canonicalDegraded =
+    persistDiag.lastPersistSkippedFullSnapshot ||
+    persistDiag.lastPersistError?.kind === "full_snapshot_overflow" ||
+    (persistDiag.lastFullSnapshotShedTerminal ?? 0) > 0;
+  if (canonicalDegraded) {
+    // Whenever the canonical row is intentionally behind the hot tables —
+    // incremental hint-only mode, overflow-degraded write, or budget shedding
+    // (#1578) — treat the hot tables as authoritative for mirror health until
+    // the next clean full snapshot/checkpoint. The canonical row may be stale
+    // or absent entirely in this state; drift or absence is expected and must
+    // not surface as corruption. Manual drift after a clean full persist is
+    // still detected when none of these hold.
     return {
       ok: true,
       tableCounts,
-      snapshotCounts: countSnapshotEntities(snapshot),
+      ...(snapshot ? { snapshotCounts: countSnapshotEntities(snapshot) } : {}),
       mismatches: [],
     };
   }

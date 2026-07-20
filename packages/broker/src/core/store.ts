@@ -123,6 +123,7 @@ import {
   parseSnapshotPayload,
   serializeBrokerSnapshot,
 } from "./store-snapshot-io.js";
+import { fitSnapshotToBudget, SnapshotOverflowError } from "./store-snapshot-fit.js";
 
 export {
   JsonFileBrokerStateStore,
@@ -1147,9 +1148,9 @@ export class SqliteBrokerStateStore implements BrokerStateStore {
         (snapshot.wavePlans?.length ?? 0) > 0 ||
         (snapshot.crossBrokerTerminalBriefs?.length ?? 0) > 0;
       const skipFullSnapshot = hasHotHints && !hasSnapshotOnlySidecarState;
-      this.writeSnapshotRow(snapshot, updatedAt, hints, { skipFullSnapshot });
+      const fit = this.writeSnapshotRow(snapshot, updatedAt, hints, { skipFullSnapshot });
       this.writeMetadata("state_version", String(CURRENT_BROKER_STATE_VERSION_VALUE));
-      this.writePersistDiagnostics(updatedAt, hints, { skipFullSnapshot });
+      this.writePersistDiagnostics(updatedAt, hints, { skipFullSnapshot }, fit);
     });
   }
 
@@ -1167,15 +1168,29 @@ export class SqliteBrokerStateStore implements BrokerStateStore {
     updatedAt: string,
     hints?: BrokerStateSaveHints,
     options?: { skipFullSnapshot?: boolean },
-  ): void {
+  ): { shedTerminalTasks: number; overflowError: string | undefined } {
+    let shedTerminalTasks = 0;
+    let overflowError: string | undefined;
     if (!options?.skipFullSnapshot) {
-      this.writeCanonicalSnapshotPayloadRow(snapshot, updatedAt);
+      try {
+        shedTerminalTasks = this.writeCanonicalSnapshotPayloadRow(snapshot, updatedAt);
+      } catch (error) {
+        // Only the canonical-size overflow degrades (#1578): the hot entity
+        // tables must still be written — before this, one throw rolled back
+        // the whole transaction and two production brokers silently stopped
+        // persisting anything for days/weeks. Any other error still aborts.
+        if (!(error instanceof SnapshotOverflowError)) {
+          throw error;
+        }
+        overflowError = error.message;
+      }
     }
     this.writeHotEntityTables(snapshot, hints);
+    return { shedTerminalTasks, overflowError };
   }
 
-  private writeCanonicalSnapshotPayloadRow(snapshot: BrokerSnapshot, updatedAt: string): void {
-    const payload = serializeBrokerSnapshot(snapshot, this.maxBytes);
+  private writeCanonicalSnapshotPayloadRow(snapshot: BrokerSnapshot, updatedAt: string): number {
+    const fit = fitSnapshotToBudget(snapshot, this.maxBytes);
     this.db
       .prepare(
         `INSERT INTO broker_snapshots (id, version, payload, updated_at)
@@ -1185,13 +1200,15 @@ export class SqliteBrokerStateStore implements BrokerStateStore {
            payload = excluded.payload,
            updated_at = excluded.updated_at`,
       )
-      .run(CURRENT_BROKER_STATE_VERSION_VALUE, payload, updatedAt);
+      .run(CURRENT_BROKER_STATE_VERSION_VALUE, fit.payload, updatedAt);
+    return fit.shedTerminalTasks;
   }
 
   private writePersistDiagnostics(
     updatedAt: string,
     hints: BrokerStateSaveHints | undefined,
     options: { skipFullSnapshot: boolean },
+    fit?: { shedTerminalTasks: number; overflowError: string | undefined },
   ): void {
     this.writeMetadata("last_persist_at", updatedAt);
     this.writeMetadata("last_persist_skipped_full_snapshot", options.skipFullSnapshot ? "true" : "false");
@@ -1201,9 +1218,40 @@ export class SqliteBrokerStateStore implements BrokerStateStore {
     } else {
       this.deleteMetadata("last_hot_hint_counts");
     }
+    // Fail-visible degradation markers (#1578): sticky until the next
+    // successful canonical write so operators and mirror health can see that
+    // the canonical row is intentionally behind the hot tables.
+    const previousOverflow = this.readMetadata("last_persist_error");
+    if (fit?.overflowError) {
+      this.writeMetadata(
+        "last_persist_error",
+        JSON.stringify({ kind: "full_snapshot_overflow", message: fit.overflowError.slice(0, 200), at: updatedAt }),
+      );
+      if (!previousOverflow) {
+        console.error(
+          `broker persist: canonical snapshot overflow degraded (${fit.overflowError}); hot entity tables persisted, canonical row left stale`,
+        );
+      }
+    } else if (fit !== undefined) {
+      if (previousOverflow) {
+        console.log("broker persist: canonical snapshot write recovered; clearing overflow marker");
+      }
+      this.deleteMetadata("last_persist_error");
+    }
+    const previousShed = this.readMetadata("last_full_snapshot_shed_terminal");
+    if (fit !== undefined && fit.shedTerminalTasks > 0) {
+      this.writeMetadata("last_full_snapshot_shed_terminal", String(fit.shedTerminalTasks));
+      if (!previousShed) {
+        console.error(
+          `broker persist: canonical snapshot exceeded budget; shed ${fit.shedTerminalTasks} oldest terminal task(s) from the canonical mirror (hot tables authoritative)`,
+        );
+      }
+    } else if (fit !== undefined) {
+      this.deleteMetadata("last_full_snapshot_shed_terminal");
+    }
   }
 
-  readLastPersistDiagnostics(): { lastPersistAt: string | undefined; lastPersistSkippedFullSnapshot: boolean; lastHotHintCounts: BrokerHotHintCounts | undefined } {
+  readLastPersistDiagnostics(): { lastPersistAt: string | undefined; lastPersistSkippedFullSnapshot: boolean; lastHotHintCounts: BrokerHotHintCounts | undefined; lastPersistError: { kind: string; message: string; at: string } | undefined; lastFullSnapshotShedTerminal: number | undefined } {
     const lastPersistAt = this.readMetadata("last_persist_at") ?? undefined;
     const skippedRaw = this.readMetadata("last_persist_skipped_full_snapshot");
     const countsRaw = this.readMetadata("last_hot_hint_counts");
@@ -1218,10 +1266,32 @@ export class SqliteBrokerStateStore implements BrokerStateStore {
         // ignore parse failures
       }
     }
+    let lastPersistError: { kind: string; message: string; at: string } | undefined;
+    const errorRaw = this.readMetadata("last_persist_error");
+    if (errorRaw) {
+      try {
+        const parsed = JSON.parse(errorRaw);
+        if (
+          typeof parsed === "object" &&
+          parsed !== null &&
+          typeof parsed.kind === "string" &&
+          typeof parsed.message === "string" &&
+          typeof parsed.at === "string"
+        ) {
+          lastPersistError = { kind: parsed.kind, message: parsed.message, at: parsed.at };
+        }
+      } catch {
+        // ignore parse failures
+      }
+    }
+    const shedRaw = this.readMetadata("last_full_snapshot_shed_terminal");
+    const shedParsed = shedRaw === undefined ? Number.NaN : Number.parseInt(shedRaw, 10);
     return {
       lastPersistAt,
       lastPersistSkippedFullSnapshot: skippedRaw === "true",
       lastHotHintCounts: lastHotHintCounts,
+      lastPersistError,
+      lastFullSnapshotShedTerminal: Number.isNaN(shedParsed) ? undefined : shedParsed,
     };
   }
 

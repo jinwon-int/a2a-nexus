@@ -4,7 +4,7 @@ import { mkdtempSync, readFileSync, rmSync, writeFileSync, existsSync } from "no
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { DatabaseSync } from "node:sqlite";
-import test from "node:test";
+import test, { mock } from "node:test";
 
 import {
   CURRENT_BROKER_STATE_VERSION,
@@ -1757,6 +1757,112 @@ test("SqliteBrokerStateStore hint-carrying full save still writes snapshot-only 
     assert.deepEqual(snapshot.wavePlans, [wavePlan], "hint-carrying save must persist wave plans to the canonical blob");
     reloaded.close();
   } finally {
+    temp.cleanup();
+  }
+});
+
+const WAVE_PLAN_FIXTURE = {
+  plan: {
+    wavePlanId: "wave-persist-overflow",
+    stages: [{ id: "design", gate: { type: "quorum" as const, minSubstantive: 2 }, onGateFail: "retry-once" as const }],
+    state: "running" as const,
+    currentStage: 0,
+    retriedStages: [0],
+  },
+  updatedAt: "2026-07-07T15:00:00.000Z",
+};
+
+test("save persists hot hint rows and records fail-visible diagnostics when the canonical snapshot overflows (#1578)", () => {
+  const temp = withTempFile("state.sqlite");
+  const errorSpy = mock.method(console, "error", () => {});
+  const logSpy = mock.method(console, "log", () => {});
+  try {
+    const store = new SqliteBrokerStateStore(temp.filePath, { maxBytes: 4 * 1024 });
+    const hugeActiveTask = {
+      ...makeTask("task-active", "queued", "worker-a"),
+      payload: { blob: "x".repeat(16 * 1024) },
+    };
+    // Sidecar state vetoes the canonical-write skip, so the hinted save must
+    // attempt the canonical write; with nothing sheddable it overflows — and
+    // the hot hint rows must still persist.
+    const snapshot: BrokerSnapshot = {
+      ...emptySnapshot(),
+      tasks: [hugeActiveTask],
+      wavePlans: [WAVE_PLAN_FIXTURE as unknown as NonNullable<BrokerSnapshot["wavePlans"]>[number]],
+    };
+    store.save(snapshot, { hotTasks: [hugeActiveTask] });
+
+    const diag = store.readLastPersistDiagnostics();
+    assert.equal(diag.lastPersistError?.kind, "full_snapshot_overflow");
+    assert.equal(diag.lastPersistSkippedFullSnapshot, false);
+    assert.equal(errorSpy.mock.calls.length, 1);
+    assert.match(String(errorSpy.mock.calls[0].arguments[0]), /overflow degraded/);
+
+    // The hot hint row survived even though the canonical row did not.
+    const reloaded = new SqliteBrokerStateStore(temp.filePath, { maxBytes: 4 * 1024, loadSource: "hot-tables" });
+    const loaded = reloaded.load();
+    assert.deepEqual(loaded.tasks.map((task) => task.id), ["task-active"]);
+    assert.equal(reloaded.readHotEntityMirrorStatus().ok, true);
+
+    // A later clean full save clears the marker and logs recovery.
+    reloaded.save({ ...emptySnapshot(), tasks: [makeTask("task-small", "queued", "worker-a")] });
+    const cleared = reloaded.readLastPersistDiagnostics();
+    assert.equal(cleared.lastPersistError, undefined);
+    assert.ok(logSpy.mock.calls.some((call) => /recovered/.test(String(call.arguments[0]))));
+    reloaded.close();
+  } finally {
+    errorSpy.mock.restore();
+    logSpy.mock.restore();
+    temp.cleanup();
+  }
+});
+
+test("save sheds oldest terminal tasks into the canonical mirror within budget and keeps hot hint rows (#1579)", () => {
+  const temp = withTempFile("state.sqlite");
+  const errorSpy = mock.method(console, "error", () => {});
+  try {
+    const store = new SqliteBrokerStateStore(temp.filePath, { maxBytes: 24 * 1024 });
+    const activeTask = makeTask("task-active", "queued", "worker-a");
+    const terminal = Array.from({ length: 10 }, (_, index) => ({
+      ...makeTask(`term-${index}`, "succeeded" as const, "worker-a"),
+      payload: { blob: "x".repeat(2 * 1024) },
+      completedAt: `2026-07-0${Math.floor(index / 10) + 1}T0${index % 10}:00:00.000Z`,
+    }));
+    const snapshot: BrokerSnapshot = {
+      ...emptySnapshot(),
+      tasks: [activeTask, ...terminal],
+      wavePlans: [WAVE_PLAN_FIXTURE as unknown as NonNullable<BrokerSnapshot["wavePlans"]>[number]],
+    };
+    store.save(snapshot, { hotTasks: [activeTask] });
+
+    const diag = store.readLastPersistDiagnostics();
+    assert.ok((diag.lastFullSnapshotShedTerminal ?? 0) > 0, "shed count recorded");
+    assert.equal(diag.lastPersistError, undefined);
+    assert.equal(errorSpy.mock.calls.length, 1);
+    assert.match(String(errorSpy.mock.calls[0].arguments[0]), /shed/);
+
+    // Canonical mirror fits the budget, keeps non-terminal state and sidecars.
+    const db = new DatabaseSync(temp.filePath, { readOnly: true });
+    const row = db.prepare("SELECT payload FROM broker_snapshots WHERE id = 1").get() as { payload: string };
+    db.close();
+    assert.ok(Buffer.byteLength(row.payload, "utf8") <= 24 * 1024);
+    const canonical = JSON.parse(row.payload) as BrokerSnapshot;
+    const canonicalIds = canonical.tasks.map((task) => task.id);
+    assert.ok(canonicalIds.includes("task-active"), "non-terminal tasks are never shed");
+    assert.ok(canonicalIds.length < 11, "oldest terminal tasks were shed from the mirror");
+    assert.equal(canonical.wavePlans?.length, 1, "sidecars are never shed");
+
+    // Hot hint rows remain readable after reload; mirror stays healthy.
+    const reloaded = new SqliteBrokerStateStore(temp.filePath, { maxBytes: 24 * 1024, loadSource: "hot-tables" });
+    assert.deepEqual(reloaded.load().tasks.map((task) => task.id), ["task-active"]);
+    assert.equal(reloaded.readHotEntityMirrorStatus().ok, true);
+
+    // A later clean save clears the shed marker.
+    reloaded.save({ ...emptySnapshot(), tasks: [makeTask("task-small", "queued", "worker-a")] });
+    assert.equal(reloaded.readLastPersistDiagnostics().lastFullSnapshotShedTerminal, undefined);
+    reloaded.close();
+  } finally {
+    errorSpy.mock.restore();
     temp.cleanup();
   }
 });
