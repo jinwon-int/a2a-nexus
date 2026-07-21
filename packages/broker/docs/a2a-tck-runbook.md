@@ -101,9 +101,17 @@ node scripts/append-tck-history.mjs --log /tmp/tck-run.log \
 node scripts/check-tck-regressions.mjs        # flags a drop, lists promotion candidates
 ```
 
-`append-tck-history.mjs` parses the same summary lines the workflow greps and
-upserts the entry (one per `date`+`level`+`transport`). Commit the updated
-`tck-history.json` in a follow-up docs PR.
+`append-tck-history.mjs` preserves those coarse summary fields and also parses
+verbose pytest `PASSED`/`FAILED`/`SKIPPED` node outcomes. The deterministic,
+mutually exclusive selectors in `docs/tck-failing-categories.json` map nodes to
+the five JSON-RPC sub-categories. A sub-category `pass`/`total` is emitted only
+when the unique verbose node counts reconcile exactly with pytest's terminal
+summary and no node matches multiple selectors. Failure-summary duplicates are
+deduplicated; unmatched node IDs remain listed under `pytestOutcomeAccounting`
+as `unclassified`, and truncated/failure-only logs retain incomplete accounting
+without emitting a measured pass/total. The entry is then upserted (one per
+`date`+`level`+`transport`). Commit the updated `tck-history.json` from a fresh
+official-TCK run in a follow-up docs PR.
 
 ### Stability ledger and gate promotion
 
@@ -167,7 +175,9 @@ manual dispatch) against a freshly built, locally-booted broker, uploads
 the official TCK compliance report as a 90-day artifact plus a job summary,
 appends the measurement to `docs/tck-history.json` (uploaded as an artifact
 to commit in a follow-up), and runs the regression check as a loud,
-non-gating step.
+non-gating step. It passes pytest `-v` through the existing harness separator
+and captures stderr with stdout so every selected test's node outcome is
+available to the history parser.
 
 It is an **opt-in measurement lane, never a release gate** (`continue-on-error`,
 no PR trigger): the documented profile deviations mean some MUST tests are

@@ -32,7 +32,14 @@ function baseWith(overrides = {}) {
       'jsonrpc-artifact-message-projection',
       'jsonrpc-streaming-subscribe-ordering',
       'jsonrpc-version-negotiation',
-    ].map((id) => ({ id, measuredPassTotal: null, promotionReadiness: 'blocked-pending-fresh-run', sourceKind: 'prose-derived', pendingEmission: true })),
+    ].map((id, index) => ({
+      id,
+      pytestNodeIdSelectors: [`tests/compatibility/jsonrpc/test_synthetic.py::test_category_${index}`],
+      measuredPassTotal: null,
+      promotionReadiness: 'blocked-pending-fresh-run',
+      sourceKind: 'prose-derived',
+      pendingEmission: true,
+    })),
     ...overrides,
   };
 }
@@ -166,6 +173,19 @@ test('RED: an invalid sourceKind fails', () => {
   const b = baseWith();
   b.subCategories[0].sourceKind = 'vibes';
   assert.match(evaluateFailingBaseline(b, HISTORY).join('\n'), /sourceKind must be one of/);
+});
+
+test('RED: missing pytest node-id selectors fails', () => {
+  const b = baseWith();
+  delete b.subCategories[0].pytestNodeIdSelectors;
+  assert.match(evaluateFailingBaseline(b, HISTORY).join('\n'), /needs non-empty pytestNodeIdSelectors/);
+});
+
+test('RED: selectors that can classify one node into two categories fail', () => {
+  const b = baseWith();
+  b.subCategories[0].pytestNodeIdSelectors = ['tests/compatibility/jsonrpc/test_overlap.py::TestErrors::test_task'];
+  b.subCategories[1].pytestNodeIdSelectors = ['tests/compatibility/jsonrpc/test_overlap.py::TestErrors::test_task'];
+  assert.match(evaluateFailingBaseline(b, HISTORY).join('\n'), /selectors overlap across/);
 });
 
 test('edge: missing inputs are reported, not thrown', () => {

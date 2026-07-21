@@ -1,5 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
 
 import { buildRunTckArgs, parseHarnessArgs } from "./a2a-tck-harness-args.mjs";
 
@@ -37,5 +38,13 @@ test("buildRunTckArgs inserts -- before pytest passthrough", () => {
       "--",
       "tests/compatibility/agent_card",
     ],
+  );
+});
+
+test("scheduled measurement captures verbose pytest node outcomes", () => {
+  const workflow = readFileSync(new URL("../../../.github/workflows/tck-measurement.yml", import.meta.url), "utf8");
+  assert.match(
+    workflow,
+    /a2a-tck-harness\.mjs --level "\$TCK_LEVEL" --transport "\$TCK_TRANSPORT" -- -v 2>&1 \| tee \/tmp\/tck-run\.log/,
   );
 });

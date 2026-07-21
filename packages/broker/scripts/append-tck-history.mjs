@@ -20,7 +20,9 @@ import { fileURLToPath, pathToFileURL } from "node:url";
 
 const scriptDir = path.dirname(fileURLToPath(import.meta.url));
 const DEFAULT_HISTORY = path.resolve(scriptDir, "..", "docs", "tck-history.json");
+const DEFAULT_CLASSIFICATION = path.resolve(scriptDir, "..", "docs", "tck-failing-categories.json");
 const CATEGORY_KEYS = ["agent_card", "jsonrpc", "http_json", "grpc"];
+const OUTCOMES = ["PASSED", "FAILED", "SKIPPED"];
 
 function ratioFrom(line) {
   if (!line) return null;
@@ -38,12 +40,148 @@ function firstLine(lines, labelRe) {
   return lines.find((line) => labelRe.test(line)) ?? null;
 }
 
-export function parseTckLog(text) {
-  const lines = String(text).split(/\r?\n/);
+function stripAnsi(line) {
+  return line.replace(/\u001b\[[0-?]*[ -/]*[@-~]/g, "");
+}
+
+function increment(counts, outcome) {
+  counts[outcome.toLowerCase()] += 1;
+}
+
+function parsePytestSummary(lines) {
+  for (const line of [...lines].reverse()) {
+    if (!/\bin\s+\d+(?:\.\d+)?s\b/i.test(line)) continue;
+    const counts = { passed: 0, failed: 0, skipped: 0, errors: 0, xfailed: 0, xpassed: 0 };
+    let found = false;
+    for (const match of line.matchAll(/\b(\d+)\s+(passed|failed|skipped|errors?|xfailed|xpassed)\b/gi)) {
+      found = true;
+      const rawKey = match[2].toLowerCase();
+      const key = rawKey.startsWith("error") ? "errors" : rawKey;
+      counts[key] += Number(match[1]);
+    }
+    if (found) return counts;
+  }
+  return null;
+}
+
+function selectorMatches(selector, nodeId) {
+  return nodeId === selector || nodeId.startsWith(`${selector}[`) || (selector.endsWith("::") && nodeId.startsWith(selector));
+}
+
+function parsePytestOutcomes(lines, classification) {
+  const nodes = new Map();
+  const duplicateSummaryNodeIds = new Set();
+  const conflictingNodeIds = new Set();
+
+  function record(nodeId, outcome, source) {
+    const previous = nodes.get(nodeId);
+    if (!previous) {
+      nodes.set(nodeId, { nodeId, outcome, verbose: source === "verbose", failureSummary: source === "summary" });
+      return;
+    }
+    if (previous.outcome !== outcome) conflictingNodeIds.add(nodeId);
+    if (source === "verbose") previous.verbose = true;
+    if (source === "summary") {
+      previous.failureSummary = true;
+      duplicateSummaryNodeIds.add(nodeId);
+    }
+  }
+
+  for (const line of lines) {
+    const verbose = line.match(/^\s*(.+?::.+?)\s+(PASSED|FAILED|SKIPPED)(?:\s|$)/);
+    if (verbose) {
+      record(verbose[1].trim(), verbose[2], "verbose");
+      continue;
+    }
+    const summary = line.match(/^\s*(FAILED|SKIPPED)\s+(.+?::\S+?)(?:\s+-\s|\s*$)/);
+    if (summary) record(summary[2].trim(), summary[1], "summary");
+  }
+
+  const pytestSummary = parsePytestSummary(lines);
+  const verboseCounts = { passed: 0, failed: 0, skipped: 0 };
+  for (const node of nodes.values()) {
+    if (node.verbose && OUTCOMES.includes(node.outcome)) increment(verboseCounts, node.outcome);
+  }
+
+  const configured = Array.isArray(classification?.subCategories) ? classification.subCategories : [];
+  const classified = new Map(configured.map((sub) => [sub.id, []]));
+  const unclassified = [];
+  const ambiguous = [];
+  for (const node of nodes.values()) {
+    const matches = configured.filter((sub) =>
+      Array.isArray(sub.pytestNodeIdSelectors) && sub.pytestNodeIdSelectors.some((selector) => selectorMatches(selector, node.nodeId)),
+    );
+    if (matches.length === 1) classified.get(matches[0].id).push(node);
+    else if (matches.length === 0) unclassified.push({ nodeId: node.nodeId, outcome: node.outcome });
+    else ambiguous.push({ nodeId: node.nodeId, outcome: node.outcome, subCategoryIds: matches.map((sub) => sub.id) });
+  }
+
+  const incompleteReasons = [];
+  const missingSelectors = {};
+  for (const sub of configured) {
+    const categoryNodes = classified.get(sub.id) ?? [];
+    const missing = sub.pytestNodeIdSelectors.filter((selector) =>
+      !categoryNodes.some((node) => selectorMatches(selector, node.nodeId)),
+    );
+    if (missing.length > 0) missingSelectors[sub.id] = missing;
+  }
+  if (!pytestSummary) incompleteReasons.push("missing pytest terminal outcome summary");
+  if (pytestSummary?.errors) incompleteReasons.push(`pytest summary includes ${pytestSummary.errors} error outcome(s)`);
+  if (pytestSummary?.xfailed || pytestSummary?.xpassed) {
+    incompleteReasons.push("pytest summary includes unsupported xfailed/xpassed outcome(s)");
+  }
+  if (pytestSummary && OUTCOMES.some((outcome) => verboseCounts[outcome.toLowerCase()] !== pytestSummary[outcome.toLowerCase()])) {
+    incompleteReasons.push("verbose node outcomes do not reconcile with pytest summary counts");
+  }
+  if (conflictingNodeIds.size > 0) incompleteReasons.push("the same node id has conflicting outcomes");
+  if (ambiguous.length > 0) incompleteReasons.push("one or more node ids match multiple sub-categories");
+  if (Object.keys(missingSelectors).length > 0) incompleteReasons.push("one or more configured node-id selectors are absent from the verbose outcomes");
+
+  const subCategories = {};
+  if (incompleteReasons.length === 0) {
+    for (const [id, categoryNodes] of classified) {
+      if (categoryNodes.length === 0) continue;
+      const outcomes = { passed: 0, failed: 0, skipped: 0 };
+      for (const node of categoryNodes) increment(outcomes, node.outcome);
+      subCategories[id] = {
+        pass: outcomes.passed,
+        total: outcomes.passed + outcomes.failed + outcomes.skipped,
+        outcomes,
+      };
+    }
+  }
+
+  return {
+    subCategories,
+    accounting: {
+      sufficientForMeasurement: incompleteReasons.length === 0,
+      incompleteReasons,
+      pytestSummary,
+      verboseOutcomes: verboseCounts,
+      observedNodeCount: nodes.size,
+      classifiedNodeCount: [...classified.values()].reduce((sum, categoryNodes) => sum + categoryNodes.length, 0),
+      unclassified,
+      ambiguous,
+      missingSelectors,
+      conflictingNodeIds: [...conflictingNodeIds].sort(),
+      duplicateFailureSummaryNodeIds: [...duplicateSummaryNodeIds].sort(),
+    },
+  };
+}
+
+function readDefaultClassification() {
+  return JSON.parse(fs.readFileSync(DEFAULT_CLASSIFICATION, "utf8"));
+}
+
+export function parseTckLog(text, classification = readDefaultClassification()) {
+  const lines = String(text).split(/\r?\n/).map(stripAnsi);
+  const pytest = parsePytestOutcomes(lines, classification);
   const result = {
     overallPercent: percentFrom(firstLine(lines, /OVERALL COMPATIBILITY/i)),
     must: ratioFrom(firstLine(lines, /\bMUST\b/)),
     categories: {},
+    subCategories: pytest.subCategories,
+    pytestOutcomeAccounting: pytest.accounting,
   };
   for (const cat of CATEGORY_KEYS) {
     const r = ratioFrom(firstLine(lines, new RegExp(`\\b${cat}\\s*:`, "i")));
@@ -79,6 +217,8 @@ export function buildMeasurement({ date, level, transport, parsed, source }) {
     must: parsed.must ?? null,
     categories: parsed.categories ?? {},
   };
+  if (parsed.subCategories && Object.keys(parsed.subCategories).length > 0) entry.subCategories = parsed.subCategories;
+  if (parsed.pytestOutcomeAccounting) entry.pytestOutcomeAccounting = parsed.pytestOutcomeAccounting;
   if (source) entry.source = source;
   return entry;
 }
@@ -114,7 +254,12 @@ function main() {
   }
 
   const parsed = parseTckLog(logText);
-  if (!parsed.must && parsed.overallPercent === null && Object.keys(parsed.categories).length === 0) {
+  if (
+    !parsed.must
+    && parsed.overallPercent === null
+    && Object.keys(parsed.categories).length === 0
+    && Object.keys(parsed.subCategories).length === 0
+  ) {
     console.error(`append-tck-history: no compliance numbers found in ${logPath}; refusing to append an empty measurement`);
     process.exit(1);
   }
