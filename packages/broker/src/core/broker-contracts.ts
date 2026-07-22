@@ -19,9 +19,25 @@ import type { TaskRecord, TaskStatus } from "./types.js";
 // broker.ts; this module only hosts exported contracts/constants whose existing
 // public import path is preserved by broker.ts re-exports.
 export interface BrokerRetentionPolicy {
+  /**
+   * Age cutoff after which terminal records become *candidates* for pruning.
+   * This is not a TTL: candidates past the cutoff are still retained up to
+   * the maxTerminal* count caps, so count-based eviction only starts once
+   * more than a cap's worth of records are older than the window.
+   */
   terminalRetentionMs: number;
   maxTerminalExchanges: number;
   maxTerminalTasks: number;
+  /**
+   * Cumulative serialized-byte budget for retained terminal task records, the
+   * dominant contributor to snapshot size. Bounds terminal-task retention by
+   * bytes so the persisted state file cannot outgrow the snapshot byte cap
+   * (STATE_FILE_MAX_BYTES) on the count cap alone (#1579). Unlike
+   * terminalRetentionMs, this applies to terminal tasks even inside the age
+   * window; active and protected tasks are never evicted by it.
+   * Env: BROKER_MAX_TERMINAL_TASK_BYTES; defaults to half the snapshot cap.
+   */
+  maxTerminalTaskBytes: number;
   maxTerminalProposals: number;
   inactiveWorkerRetentionMs: number;
   maxInactiveWorkers: number;
