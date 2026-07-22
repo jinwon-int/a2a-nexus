@@ -82,13 +82,15 @@ The named `promotion-capstone` CI lane runs a source-only consistency check over
 | --- | --- | --- | --- |
 | `packages/broker` | #1506 Enforced per-module line floors | Pending | `coverage:baseline`, reporter + reporter test, package-CI command/metadata |
 | `packages/docker-runner` | #1576 Enforced per-module line floors | Enabled | `coverage:baseline`, reporter + reporter test, package-CI command/metadata |
-| `packages/openclaw-plugin-a2a` | measure-only (`floor: null`) | Enabled | `coverage:baseline`, reporter + reporter test, package-CI command/metadata |
+| `packages/openclaw-plugin-a2a` | #1506 Enforced per-module line floors | Enabled | `coverage:baseline`, reporter + reporter test, package-CI command/metadata |
 
 The docker-runner floors merged in #1576 are `config.js` 94%, `execution-orchestrator.js` 96%, `execution-proof.js` 95%, `execution-proof-signing.js` 90%, `redaction.js` 95%, and `runner.js` 85%.
 
 The broker reporter enforces the runtime #1506 floor while the promotion capstone independently pins the approved ratchet values, so coupled reporter/documentation lowering or module removal fails conformance. Against exact main `9ef9b26c8b04b659983dadb01c2777f4f8bd1a59` on Node 22, the deterministic built tests `dist/core/broker-policy.test.js`, `dist/core/provenance.test.js`, and `dist/core/release-evidence.test.js` measured `dist/core/broker-policy.js` 85.06%, `dist/core/provenance.js` 99.00%, and `dist/core/release-evidence.js` 98.66% line coverage. The enforced conservative floors are `dist/core/broker-policy.js` 84% (measured 85.06%), `dist/core/provenance.js` 98% (measured 99.00%), and `dist/core/release-evidence.js` 97% (measured 98.66%). Canonical `dist/core/...` paths prevent a same-basename module elsewhere in the coverage tree from satisfying the contract. A missing module measurement, malformed report, lower measurement, or failed underlying coverage test process fails closed.
 
-Remaining #1506 work is explicit: the plugin coverage floor, broker `noUnusedLocals`, and async-safety approval. This capstone consistency slice references #1506 and does not close it.
+The plugin reporter now enforces the same fail-closed contract over deterministic checked-in TypeScript tests that import built plugin modules. Against exact main `54d1b78c5812df36797dfd64bf8c507d02d8ec8d` on Node 22, `dist/src/handoff-visibility-policy.js` measured 81.61%, `dist/src/recovery-guard.js` measured 96.85%, and `dist/src/wake-envelope.js` measured 94.95% line coverage. The conservative floors are `dist/src/handoff-visibility-policy.js` 80% (measured 81.61%), `dist/src/recovery-guard.js` 95% (measured 96.85%), and `dist/src/wake-envelope.js` 93% (measured 94.95%). The capstone independently pins these values so a coupled reporter-floor lowering, module removal, malformed report, missing measurement, or failed test process is blocking.
+
+Remaining #1506 work is explicit: broker `noUnusedLocals` and async-safety approval. This capstone consistency slice references #1506 and does not close it.
 
 ## Named CI lane
 
