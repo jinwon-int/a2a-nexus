@@ -1,15 +1,23 @@
 FROM node:22-alpine AS deps
-WORKDIR /app/packages/broker
-COPY packages/broker/package.json packages/broker/package-lock.json* ./
-RUN if [ -f package-lock.json ]; then npm ci; else npm install; fi
+WORKDIR /app
+# Workspace-aware install: the broker depends on the in-repo
+# a2a-policy-referee package (#1601 P1), so installs must run at the
+# monorepo root with the root lockfile.
+COPY package.json package-lock.json ./
+COPY packages/broker/package.json packages/broker/
+COPY packages/policy-referee/package.json packages/policy-referee/
+RUN npm ci --include=dev -w packages/broker -w packages/policy-referee
 
 FROM deps AS build
-WORKDIR /app/packages/broker
-COPY tsconfig.base.json /app/tsconfig.base.json
-COPY packages/broker/tsconfig.json ./
-COPY packages/broker/src ./src
-COPY packages/broker/scripts/generate-build-info.mjs ./scripts/generate-build-info.mjs
-RUN npm run build
+WORKDIR /app
+COPY tsconfig.base.json ./tsconfig.base.json
+COPY packages/policy-referee/tsconfig.json packages/policy-referee/
+COPY packages/policy-referee/src packages/policy-referee/src
+COPY packages/broker/tsconfig.json packages/broker/
+COPY packages/broker/src packages/broker/src
+COPY packages/broker/scripts/generate-build-info.mjs packages/broker/scripts/generate-build-info.mjs
+# tsc -b builds the policy-referee reference first (composite project refs).
+RUN npm run build -w packages/broker
 
 FROM node:22-alpine AS runtime
 ARG A2A_BROKER_VERSION=0.1.0
@@ -33,24 +41,27 @@ ENV NODE_ENV=production \
     A2A_BROKER_BUILT_AT=$A2A_BROKER_CREATED \
     A2A_BROKER_SOURCE=github.com/jinwon-int/a2a-nexus \
     A2A_BROKER_RUNTIME=docker
-COPY packages/broker/package.json packages/broker/package-lock.json* ./
-RUN if [ -f package-lock.json ]; then npm ci --omit=dev; else npm install --omit=dev; fi
-COPY --from=build /app/packages/broker/dist ./dist
-COPY packages/broker/scripts/generate-build-info.mjs ./scripts/generate-build-info.mjs
-COPY packages/broker/scripts/export-sqlite-state.mjs ./scripts/export-sqlite-state.mjs
-COPY packages/broker/scripts/lib ./scripts/lib
+COPY package.json package-lock.json ./
+COPY packages/broker/package.json packages/broker/
+COPY packages/policy-referee/package.json packages/policy-referee/
+RUN npm ci --omit=dev -w packages/broker -w packages/policy-referee
+COPY --from=build /app/packages/broker/dist ./packages/broker/dist
+COPY --from=build /app/packages/policy-referee/dist ./packages/policy-referee/dist
+COPY packages/broker/scripts/generate-build-info.mjs ./packages/broker/scripts/generate-build-info.mjs
+COPY packages/broker/scripts/export-sqlite-state.mjs ./packages/broker/scripts/export-sqlite-state.mjs
+COPY packages/broker/scripts/lib ./packages/broker/scripts/lib
 # Generate dist/build-info.json from Docker build ARGs so /health.build.revision
 # and org.opencontainers.image.revision use the actual build-time values.
-RUN node scripts/generate-build-info.mjs --runtime docker
-COPY packages/broker/scripts/a2a-task-handler.mjs ./scripts/a2a-task-handler.mjs
-COPY packages/broker/scripts/worker-model-policy.mjs ./scripts/worker-model-policy.mjs
-COPY packages/broker/scripts/hermes-a2a-analysis-bridge.mjs ./scripts/hermes-a2a-analysis-bridge.mjs
+RUN cd packages/broker && node scripts/generate-build-info.mjs --runtime docker
+COPY packages/broker/scripts/a2a-task-handler.mjs ./packages/broker/scripts/a2a-task-handler.mjs
+COPY packages/broker/scripts/worker-model-policy.mjs ./packages/broker/scripts/worker-model-policy.mjs
+COPY packages/broker/scripts/hermes-a2a-analysis-bridge.mjs ./packages/broker/scripts/hermes-a2a-analysis-bridge.mjs
 RUN mkdir -p /var/lib/a2a-broker ./handlers ./handlers/lib \
-  && cp scripts/a2a-task-handler.mjs ./handlers/a2a-task-handler.mjs \
-  && cp scripts/worker-model-policy.mjs ./handlers/worker-model-policy.mjs \
-  && cp scripts/lib/source-carriers.mjs ./handlers/lib/source-carriers.mjs \
-  && cp scripts/hermes-a2a-analysis-bridge.mjs ./handlers/hermes-a2a-analysis-bridge.mjs \
+  && cp packages/broker/scripts/a2a-task-handler.mjs ./handlers/a2a-task-handler.mjs \
+  && cp packages/broker/scripts/worker-model-policy.mjs ./handlers/worker-model-policy.mjs \
+  && cp packages/broker/scripts/lib/source-carriers.mjs ./handlers/lib/source-carriers.mjs \
+  && cp packages/broker/scripts/hermes-a2a-analysis-bridge.mjs ./handlers/hermes-a2a-analysis-bridge.mjs \
   && chown -R node:node /app /var/lib/a2a-broker
 USER node
 EXPOSE 8787
-CMD ["node", "dist/server.js"]
+CMD ["node", "packages/broker/dist/server.js"]
