@@ -16,6 +16,7 @@
   },
   "files": [
     "dist",
+    "scripts",
     "README.md",
     "LICENSE",
     "package.json"
@@ -30,7 +31,8 @@
     "build": "tsc -p tsconfig.json",
     "check": "tsc -p tsconfig.json --noEmit",
     "pretest": "npm run build",
-    "test": "node --test dist/**/*.test.js"
+    "test": "node --test dist/**/*.test.js",
+    "coverage:baseline": "npm run build && node scripts/coverage-baseline-report.mjs"
   },
   "devDependencies": {
     "@types/node": "^22.20.1",

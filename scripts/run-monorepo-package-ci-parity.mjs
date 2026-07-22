@@ -68,12 +68,13 @@ export const PACKAGE_CI_SURFACES = {
       ['npm', ['run', 'check', '-w', 'packages/policy-referee']],
       ['npm', ['run', 'build', '-w', 'packages/policy-referee']],
       ['npm', ['test', '-w', 'packages/policy-referee']],
+      ['npm', ['run', 'coverage:baseline', '-w', 'packages/policy-referee']],
     ],
     metadata: {
       private: true,
       license: 'MIT',
-      requiredScripts: ['build', 'check', 'test'],
-      requiredFiles: ['README.md'],
+      requiredScripts: ['build', 'check', 'test', 'coverage:baseline'],
+      requiredFiles: ['README.md', 'scripts/coverage-baseline-report.mjs'],
     },
   },
   'openclaw-plugin-a2a': {
