@@ -33,7 +33,7 @@ When skipping it for a non-trivial change, write a one-line reason in the PR bod
 |---|---:|---|---|
 | `explorer` | low-cost | Map the seam, affected files, call sites, tests, and risk points. Do not implement. | Short exploration note with source refs and proposed work boundary. |
 | `implementer` | upper | Implement from the exploration note plus issue/round constraints. Prefer RED first for gates; for refactors, prove behavior preservation. | Branch/commit/PR candidate and test evidence. |
-| `verifier` | upper | Separate session/context from the implementer. Review adversarially before PR publication or before merge if the PR already exists. | `PASS` or a bounded fix list with source refs. |
+| `verifier` | upper | Separate session/context from the implementer. Re-derive the failure mode and checks from clean-slate inputs, then review adversarially before PR publication or before merge if the PR already exists. | `PASS` or a bounded fix list with source refs. |
 | optional `test-evidence` | upper or inherited | Run focused checks when the verifier needs an independent test-only pass. | Test command, exit code, and relevant output summary. |
 
 Pipeline cap: **at most four subagents/sessions per implementation pipeline** unless the operator explicitly approves a larger wave. The `explorer` role stays low-cost by default; `implementer` and `verifier` use the tier needed to reason over the change safely.
@@ -50,12 +50,14 @@ Pipeline cap: **at most four subagents/sessions per implementation pipeline** un
    - Use the explorer note as input, not as authority. Re-check the source before editing.
    - For new gates/contracts: add the failing test or documented RED evidence first, then implement GREEN.
    - For behavior-preserving refactors: keep public surfaces stable, prefer delegators/free functions over semantic rewrites, and run the existing focused tests unchanged.
+   - In a headless session, run every declared mandatory gate to a terminal exit in the foreground before reporting completion.
    - Keep the PR scope narrow and record explicit boundaries.
 
 3. **Verifier pass**
    - Run in a separate context from the implementer.
-   - Challenge the change against the original issue, explorer note, and diff.
+   - Receive only the original issue/acceptance criteria, the exact diff or head, and repository access. Derive the review checklist independently.
    - Look specifically for missed call sites, changed dispatch semantics, source-projection/readback drift, hidden write-capable modes, and accidental live/runtime authority expansion.
+   - Run required verification gates to terminal exits before returning a verdict; do not leave them for a later resume.
    - Return either `PASS` or a bounded fix list. A fix list sends the work back to the implementer before normal A2A review.
 
 4. **PR evidence**
@@ -67,6 +69,42 @@ Pipeline cap: **at most four subagents/sessions per implementation pipeline** un
 5. **Normal A2A review/finalizer**
    - The verifier does **not** replace A2A review lanes or the finalizer.
    - Treat it as a pre-filter: if it catches an issue, it saves a review round; if it misses one, the existing A2A review/finalizer path remains the safety net.
+
+## Verifier clean-slate input boundary
+
+The verifier briefing **MUST** be independent of the explorer, implementer, and
+orchestrator narrative. Its allowed starting inputs are:
+
+- the original issue text and acceptance criteria;
+- the exact diff or immutable head under review; and
+- repository access needed to inspect source and run tests.
+
+The briefing **MUST NOT** include an explorer note, implementation rationale,
+pre-derived checklist, expected verdict, confirm-the-answer wording, or an
+assertion about what already exists in the tree. In particular, it must not ask
+the verifier to confirm a numeric comparison or architectural claim supplied by
+the orchestrator. The verifier re-derives the failure mode, relevant call sites,
+checks, and verdict from the allowed inputs. If evidence is missing, it returns
+a bounded question or fix request instead of accepting the supplied frame.
+
+The explorer note remains valid input to the implementer. It is deliberately
+excluded from verifier input so the verifier is an independent error-finding
+pass rather than a confirmation pass.
+
+## Headless gate completion boundary
+
+A headless implementation-pipeline session **MUST** run every declared
+mandatory build, test, lint, or conformance gate in the foreground and wait for
+its terminal exit code before the session terminates. A process may start work
+concurrently inside the session only when the same session joins it, consumes
+its final result, and records the result before returning.
+
+The session **MUST NOT** report `PASS`, `Done`, `PR-ready`, or equivalent
+completion while a mandatory gate is backgrounded, detached, pending, or known
+only from interim output. If the gate exceeds the bounded session budget or its
+terminal result cannot be collected, the pipeline result is `BLOCKED` or
+`incomplete` and names the unfinished gate. Resuming later may produce new gate
+evidence, but it does not retroactively make the earlier terminal claim valid.
 
 ## Relationship to A2A review rounds
 

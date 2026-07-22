@@ -8,6 +8,8 @@ import test from 'node:test';
 const repoRoot = resolve(new URL('..', import.meta.url).pathname);
 const ciText = () => readFileSync(join(repoRoot, '.github/workflows/ci.yml'), 'utf8');
 const packageJson = () => JSON.parse(readFileSync(join(repoRoot, 'package.json'), 'utf8'));
+const implementationPipelineText = () => readFileSync(join(repoRoot, 'docs/implementation-pipeline.md'), 'utf8');
+const externalSecretScanText = () => readFileSync(join(repoRoot, 'scripts/external-secret-scan.mjs'), 'utf8');
 
 test('docs/root-doc CI path runs markdown links and external secret scan', () => {
   const ci = ciText();
@@ -22,6 +24,27 @@ test('docs/root-doc CI path runs markdown links and external secret scan', () =>
 test('package exposes tracked markdown link validation script', () => {
   const scripts = packageJson().scripts ?? {};
   assert.equal(scripts['check:markdown-links'], 'node scripts/check-markdown-links.mjs');
+});
+
+test('implementation verifier receives clean-slate inputs and re-derives its checks (#1596)', () => {
+  const contract = implementationPipelineText();
+  assert.match(contract, /Verifier clean-slate input boundary/);
+  assert.match(contract, /original issue text and acceptance criteria/);
+  assert.match(contract, /exact diff or immutable head under review/);
+  assert.match(contract, /MUST NOT.*explorer note, implementation rationale/);
+  assert.match(contract, /pre-derived checklist, expected verdict, confirm-the-answer wording/);
+  assert.match(contract, /re-derives the failure mode, relevant call sites,\s+checks, and verdict/);
+  assert.match(contract, /excluded from verifier input/);
+});
+
+test('headless pipeline waits for terminal gate results before completion (#1596)', () => {
+  const contract = implementationPipelineText();
+  assert.match(contract, /Headless gate completion boundary/);
+  assert.match(contract, /run every declared\s+mandatory build, test, lint, or conformance gate in the foreground/);
+  assert.match(contract, /wait for\s+its terminal exit code before the session terminates/);
+  assert.match(contract, /MUST NOT.*report `PASS`, `Done`, `PR-ready`/);
+  assert.match(contract, /backgrounded, detached, pending/);
+  assert.match(contract, /pipeline result is `BLOCKED` or\s+`incomplete` and names the unfinished gate/);
 });
 
 test('external secret scan fails arbitrary test/dist findings instead of broad path allowlisting', () => {
@@ -51,6 +74,18 @@ process.exit(0);
     assert.match(result.stderr, /gitleaks found 2 non-allowlisted finding/);
   } finally {
     rmSync(temp, { recursive: true, force: true });
+  }
+});
+
+test('external secret scan mirrors the exact live-task fixture paths from gitleaks config', () => {
+  const config = readFileSync(join(repoRoot, '.gitleaks.toml'), 'utf8');
+  const scanner = externalSecretScanText();
+  for (const fixture of [
+    'packages/broker/src/server-live-task-admission.test.ts',
+    'packages/broker/dist/server-live-task-admission.test.js',
+  ]) {
+    assert.ok(config.includes(fixture.replaceAll('.', '\\.')), `${fixture} missing from gitleaks config`);
+    assert.ok(scanner.includes(`'${fixture}'`), `${fixture} missing from exact scanner allowlist`);
   }
 });
 
