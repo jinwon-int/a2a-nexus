@@ -78,7 +78,7 @@ satisfies a `requireApproval` rule at claim.
 
 ## 4. Enforcement points and evidence
 
-- Runtime validator + engine: `packages/broker/src/core/broker-policy.ts`
+- Runtime validator + engine: `packages/policy-referee/src/broker-policy.ts` (broker consumes via `@openclaw/a2a-policy-referee`)
   (`validateBrokerPolicyDocument`, `evaluateTaskPolicy`, `deriveTaskWorkerClass`).
 - Broker wiring: create-time hook in `createTask` (post-readiness, pre-record),
   claim-time hook in `claimTask` (`packages/broker/src/core/broker.ts`).

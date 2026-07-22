@@ -99,7 +99,7 @@ import {
 import type { RoundStatusSummary } from "./round-status.js";
 
 import { normalizeTaskPolicyContext } from "./policy.js";
-import type { BrokerPolicyDocument } from "./broker-policy.js";
+import type { BrokerPolicyDocument } from "a2a-policy-referee";
 import {
   resolveInjectedKnowledgeTaskClass,
   selectInjectedKnowledge,

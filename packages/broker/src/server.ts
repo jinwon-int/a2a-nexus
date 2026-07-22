@@ -111,7 +111,7 @@ import { readRuntimeMemoryUsage, readEventLoopDelayMs, readGcDiagnostics, readCp
 import { computeReusedSocketGate } from "./diagnostics/reused-socket-gate.js";
 import { resolveBrokerBuildInfo } from "./broker-build-info.js";
 import { normalizeTaskReadinessMode, type TaskReadinessMode } from "./task-readiness.js";
-import { loadBrokerPolicyFile } from "./core/broker-policy.js";
+import { loadBrokerPolicyFile } from "a2a-policy-referee";
 import { loadInjectedKnowledgeFile } from "./core/broker-knowledge-injection.js";
 import { resolveFinalizerVerdictEnforcement } from "./core/finalizer-verdict-admission.js";
 import { loadFinalizerKeyringFile } from "./core/finalizer-verdict-signature.js";

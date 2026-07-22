@@ -25,7 +25,6 @@ export const EXPECTED_COVERAGE_BASELINE_COMMAND =
 // Independent approved ratchet: deliberately separate from the runtime
 // reporter so a coupled reporter-floor lowering or module removal fails here.
 export const EXPECTED_BROKER_FLOORS = Object.freeze({
-  'dist/core/broker-policy.js': 84,
   'dist/core/provenance.js': 98,
   'dist/core/release-evidence.js': 97,
 });

@@ -9,7 +9,7 @@
  * concrete worker name can never appear in the committed policy document.
  *
  * The broker runtime performs the same validation at startup
- * (packages/broker/src/core/broker-policy.ts — the canonical TS validator);
+ * (packages/policy-referee/src/broker-policy.ts — the canonical TS validator);
  * this standalone gate lets CI and operators check a document without
  * building the broker. Keep the two rule sets in lockstep via the contract:
  * contracts/a2a/broker-policy.md

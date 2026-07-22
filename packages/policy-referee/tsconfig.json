@@ -4,14 +4,12 @@
     "incremental": true,
     "tsBuildInfoFile": "dist/.tsbuildinfo",
     "outDir": "dist",
-    "rootDir": "src"
+    "rootDir": "src",
+    "declaration": true,
+    "noUnusedLocals": true,
+    "composite": true
   },
   "include": [
     "src/**/*.ts"
-  ],
-  "references": [
-    {
-      "path": "../policy-referee"
-    }
   ]
 }

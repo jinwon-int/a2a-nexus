@@ -11,7 +11,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 
 import { createBrokerServer } from "./server.js";
-import { BROKER_POLICY_SCHEMA, type BrokerPolicyDocument } from "./core/broker-policy.js";
+import { BROKER_POLICY_SCHEMA, type BrokerPolicyDocument } from "a2a-policy-referee";
 import { createInMemoryStateStore, startTestServer, jsonHeaders, workerPayload } from "./server-test-helpers.js";
 
 function policyFile(doc: Partial<BrokerPolicyDocument> & Record<string, unknown>): string {

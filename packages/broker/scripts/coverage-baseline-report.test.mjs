@@ -80,12 +80,10 @@ const validReport = [
 
 test('coverage contract uses the deterministic built tests and conservative measured floors', () => {
   assert.deepEqual(COVERAGE_TEST_FILES, [
-    'dist/core/broker-policy.test.js',
     'dist/core/provenance.test.js',
     'dist/core/release-evidence.test.js',
   ]);
   assert.deepEqual(CORE_SOURCE_FLOORS, {
-    'dist/core/broker-policy.js': 84,
     'dist/core/provenance.js': 98,
     'dist/core/release-evidence.js': 97,
   });
@@ -131,32 +129,31 @@ test('canonical coverage paths prevent a same-basename module from satisfying a 
   const collisionReport = validReport.replace(
     '#  core                   |        |          |         |',
     '#  other                  |        |          |         |\n' +
-      '#   broker-policy.js      | 100.00 |   100.00 |  100.00 |\n' +
+      '#   provenance.js         | 100.00 |   100.00 |  100.00 |\n' +
       '#  core                   |        |          |         |',
   );
   const parsed = parseCoverageReport(collisionReport);
   assert.equal(parsed.ok, true);
-  assert.equal(parsed.fileLineCoverage['dist/other/broker-policy.js'], 100);
-  assert.equal(parsed.fileLineCoverage['dist/core/broker-policy.js'], 85.06);
+  assert.equal(parsed.fileLineCoverage['dist/other/provenance.js'], 100);
+  assert.equal(parsed.fileLineCoverage['dist/core/provenance.js'], 99.0);
 
   const substitution = parseCoverageReport(
-    collisionReport.replace('#   broker-policy.js      |  85.06', '#   unrelated.js          |  85.06'),
+    collisionReport.replace('#   provenance.js         |  99.00', '#   unrelated.js          |  99.00'),
   );
   assert.equal(substitution.ok, true);
   assert.deepEqual(evaluateCoverageFloors(substitution.fileLineCoverage).failures, [
-    'dist/core/broker-policy.js: coverage missing',
+    'dist/core/provenance.js: coverage missing',
   ]);
 });
 
 test('evaluateCoverageFloors fails closed on a missing or regressed module', () => {
   const measured = {
-    'dist/core/broker-policy.js': 83.99,
-    'dist/core/provenance.js': 99,
+    'dist/core/provenance.js': 97.99,
   };
   const result = evaluateCoverageFloors(measured);
   assert.equal(result.ok, false);
   assert.deepEqual(result.failures, [
-    'dist/core/broker-policy.js: line coverage below floor',
+    'dist/core/provenance.js: line coverage below floor',
     'dist/core/release-evidence.js: coverage missing',
   ]);
 });
