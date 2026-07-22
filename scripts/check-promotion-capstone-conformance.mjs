@@ -7,10 +7,7 @@
  */
 import { createDocCheckContext } from './lib/doc-check.mjs';
 import { PACKAGE_CI_SURFACES } from './run-monorepo-package-ci-parity.mjs';
-import {
-  buildBaseline as buildBrokerBaseline,
-  CORE_SOURCE_FLOORS as BROKER_CORE_SOURCE_FLOORS,
-} from '../packages/broker/scripts/coverage-baseline-report.mjs';
+import { buildBaseline as buildBrokerBaseline } from '../packages/broker/scripts/coverage-baseline-report.mjs';
 import {
   buildBaseline as buildRunnerBaseline,
   CORE_SOURCE_FLOORS,
@@ -22,9 +19,13 @@ import { fileURLToPath } from 'node:url';
 export const EXPECTED_COVERAGE_BASELINE_COMMAND =
   'npm run build && node --test scripts/coverage-baseline-report.test.mjs && node scripts/coverage-baseline-report.mjs';
 
-// The reporter owns the broker floor values; the capstone imports that exact
-// object so tests, documentation checks, and runtime enforcement cannot drift.
-export const EXPECTED_BROKER_FLOORS = BROKER_CORE_SOURCE_FLOORS;
+// Independent approved ratchet: deliberately separate from the runtime
+// reporter so a coupled reporter-floor lowering or module removal fails here.
+export const EXPECTED_BROKER_FLOORS = Object.freeze({
+  'dist/core/broker-policy.js': 84,
+  'dist/core/provenance.js': 98,
+  'dist/core/release-evidence.js': 97,
+});
 
 export const EXPECTED_RUNNER_FLOORS = Object.freeze({
   'config.js': 94,
@@ -198,9 +199,9 @@ if (capstone) {
     /execution-proof-signing\.js[^\n]*90%/,
     /redaction\.js[^\n]*95%/,
     /runner\.js[^\n]*85%/,
-    /broker-policy\.js[^\n]*84%[^\n]*85\.06%/,
-    /provenance\.js[^\n]*98%[^\n]*99\.00%/,
-    /release-evidence\.js[^\n]*97%[^\n]*98\.66%/,
+    /dist\/core\/broker-policy\.js[^\n]*84%[^\n]*85\.06%/,
+    /dist\/core\/provenance\.js[^\n]*98%[^\n]*99\.00%/,
+    /dist\/core\/release-evidence\.js[^\n]*97%[^\n]*98\.66%/,
     /plugin coverage floor/i,
     /broker `noUnusedLocals`/i,
     /async-safety approval/i,

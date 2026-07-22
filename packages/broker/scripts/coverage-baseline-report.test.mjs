@@ -69,9 +69,11 @@ test('countBrokerScriptModules counts only top-level non-test scripts/*.mjs', ()
 const validReport = [
   '# start of coverage report',
   '# file                    | line % | branch % | funcs % | uncovered lines',
-  '#  broker-policy.js       |  85.06 |    88.41 |   87.50 | 35-36',
-  '#  provenance.js          |  99.00 |    69.23 |  100.00 | 28-29',
-  '#  release-evidence.js    |  98.66 |    85.95 |  100.00 | 122-123',
+  '# dist                    |        |          |         |',
+  '#  core                   |        |          |         |',
+  '#   broker-policy.js      |  85.06 |    88.41 |   87.50 | 35-36',
+  '#   provenance.js         |  99.00 |    69.23 |  100.00 | 28-29',
+  '#   release-evidence.js   |  98.66 |    85.95 |  100.00 | 122-123',
   '# all files               |  89.02 |    82.37 |   93.75 |',
   '# end of coverage report',
 ].join('\n');
@@ -83,9 +85,9 @@ test('coverage contract uses the deterministic built tests and conservative meas
     'dist/core/release-evidence.test.js',
   ]);
   assert.deepEqual(CORE_SOURCE_FLOORS, {
-    'broker-policy.js': 84,
-    'provenance.js': 98,
-    'release-evidence.js': 97,
+    'dist/core/broker-policy.js': 84,
+    'dist/core/provenance.js': 98,
+    'dist/core/release-evidence.js': 97,
   });
 });
 
@@ -94,17 +96,17 @@ test('parseCoverageReport extracts the aggregate and per-module line coverage', 
     ok: true,
     coveragePercent: 89.02,
     fileLineCoverage: {
-      'broker-policy.js': 85.06,
-      'provenance.js': 99,
-      'release-evidence.js': 98.66,
+      'dist/core/broker-policy.js': 85.06,
+      'dist/core/provenance.js': 99,
+      'dist/core/release-evidence.js': 98.66,
     },
     failures: [],
   });
   assert.equal(parseAllFilesCoverage(validReport), 89.02);
   assert.deepEqual(parseFileLineCoverage(validReport), {
-    'broker-policy.js': 85.06,
-    'provenance.js': 99,
-    'release-evidence.js': 98.66,
+    'dist/core/broker-policy.js': 85.06,
+    'dist/core/provenance.js': 99,
+    'dist/core/release-evidence.js': 98.66,
   });
 });
 
@@ -114,7 +116,7 @@ test('parseCoverageReport rejects missing boundaries, malformed rows, and duplic
     validReport.replace('85.06', 'not-a-number'),
     validReport.replace(
       '# all files',
-      '#  provenance.js          |  99.00 |    69.23 |  100.00 |\n# all files',
+      '#   provenance.js         |  99.00 |    69.23 |  100.00 |\n# all files',
     ),
   ]) {
     const parsed = parseCoverageReport(report);
@@ -125,16 +127,37 @@ test('parseCoverageReport rejects missing boundaries, malformed rows, and duplic
   }
 });
 
+test('canonical coverage paths prevent a same-basename module from satisfying a core floor', () => {
+  const collisionReport = validReport.replace(
+    '#  core                   |        |          |         |',
+    '#  other                  |        |          |         |\n' +
+      '#   broker-policy.js      | 100.00 |   100.00 |  100.00 |\n' +
+      '#  core                   |        |          |         |',
+  );
+  const parsed = parseCoverageReport(collisionReport);
+  assert.equal(parsed.ok, true);
+  assert.equal(parsed.fileLineCoverage['dist/other/broker-policy.js'], 100);
+  assert.equal(parsed.fileLineCoverage['dist/core/broker-policy.js'], 85.06);
+
+  const substitution = parseCoverageReport(
+    collisionReport.replace('#   broker-policy.js      |  85.06', '#   unrelated.js          |  85.06'),
+  );
+  assert.equal(substitution.ok, true);
+  assert.deepEqual(evaluateCoverageFloors(substitution.fileLineCoverage).failures, [
+    'dist/core/broker-policy.js: coverage missing',
+  ]);
+});
+
 test('evaluateCoverageFloors fails closed on a missing or regressed module', () => {
   const measured = {
-    'broker-policy.js': 83.99,
-    'provenance.js': 99,
+    'dist/core/broker-policy.js': 83.99,
+    'dist/core/provenance.js': 99,
   };
   const result = evaluateCoverageFloors(measured);
   assert.equal(result.ok, false);
   assert.deepEqual(result.failures, [
-    'broker-policy.js: line coverage below floor',
-    'release-evidence.js: coverage missing',
+    'dist/core/broker-policy.js: line coverage below floor',
+    'dist/core/release-evidence.js: coverage missing',
   ]);
 });
 
@@ -142,9 +165,9 @@ test('buildBaseline records and passes the enforced per-module line floor', () =
   const baseline = buildBaseline('broker', ['src/a.ts', 'scripts/x.mjs', 'src/a.test.ts'], {
     coveragePercent: 89.02,
     fileLineCoverage: {
-      'broker-policy.js': 85.06,
-      'provenance.js': 99,
-      'release-evidence.js': 98.66,
+      'dist/core/broker-policy.js': 85.06,
+      'dist/core/provenance.js': 99,
+      'dist/core/release-evidence.js': 98.66,
     },
     testExitCode: 0,
     reportValid: true,

@@ -13,6 +13,9 @@ import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { PACKAGE_CI_SURFACES } from './run-monorepo-package-ci-parity.mjs';
 import {
+  CORE_SOURCE_FLOORS as BROKER_CORE_SOURCE_FLOORS,
+} from '../packages/broker/scripts/coverage-baseline-report.mjs';
+import {
   evaluateQualityFloorContract,
   EXPECTED_COVERAGE_BASELINE_COMMAND,
   EXPECTED_BROKER_FLOORS,
@@ -152,9 +155,9 @@ test('promotion capstone records the live-main quality-floor consistency contrac
     assert.match(section, new RegExp(`${module.replace('.', '\\.')}[^\\n]*${floor}%`));
   }
   for (const [module, values] of Object.entries({
-    'broker-policy.js': [84, '85\\.06'],
-    'provenance.js': [98, '99\\.00'],
-    'release-evidence.js': [97, '98\\.66'],
+    'dist/core/broker-policy.js': [84, '85\\.06'],
+    'dist/core/provenance.js': [98, '99\\.00'],
+    'dist/core/release-evidence.js': [97, '98\\.66'],
   })) {
     assert.match(
       section,
@@ -185,6 +188,8 @@ test('package coverage commands, reporter files, and parity metadata stay aligne
 });
 
 test('quality-floor evaluator accepts exact contracts and ignores floor key order', () => {
+  assert.notStrictEqual(EXPECTED_BROKER_FLOORS, BROKER_CORE_SOURCE_FLOORS);
+  assert.deepEqual(EXPECTED_BROKER_FLOORS, BROKER_CORE_SOURCE_FLOORS);
   for (const name of ['broker', 'docker-runner', 'openclaw-plugin-a2a']) {
     assert.deepEqual(evaluateQualityFloorContract(validQualityContract(name)), []);
   }
@@ -240,8 +245,8 @@ test('quality-floor evaluator rejects missing, lowered, or additional runner flo
 
 test('quality-floor evaluator rejects missing, lowered, or additional broker floors', () => {
   for (const mutate of [
-    (floors) => { delete floors['release-evidence.js']; },
-    (floors) => { floors['broker-policy.js'] = 83; },
+    (floors) => { delete floors['dist/core/release-evidence.js']; },
+    (floors) => { floors['dist/core/broker-policy.js'] = 83; },
     (floors) => { floors['extra.js'] = 100; },
   ]) {
     const contract = validQualityContract('broker');

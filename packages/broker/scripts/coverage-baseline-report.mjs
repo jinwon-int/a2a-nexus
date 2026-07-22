@@ -32,9 +32,9 @@ const packageName = path.basename(pkgRoot);
 // broker-policy.js 85.06%, provenance.js 99.00%, release-evidence.js 98.66%.
 // These conservative floors leave margin while making regressions blocking.
 export const CORE_SOURCE_FLOORS = Object.freeze({
-  'broker-policy.js': 84,
-  'provenance.js': 98,
-  'release-evidence.js': 97,
+  'dist/core/broker-policy.js': 84,
+  'dist/core/provenance.js': 98,
+  'dist/core/release-evidence.js': 97,
 });
 
 // Deliberately avoid the broad broker test aggregate: these direct built tests
@@ -95,6 +95,7 @@ function walk(dir, base, out = []) {
 
 // ── Enforced source coverage via built-in test coverage ─────────────────────
 const PERCENT = '([0-9]+(?:\\.[0-9]+)?)';
+const EXACT_PERCENT = new RegExp(`^${PERCENT}$`);
 
 export function parseCoverageReport(reportText) {
   const lines = String(reportText).split(/\r?\n/);
@@ -113,26 +114,50 @@ export function parseCoverageReport(reportText) {
   const fileLineCoverage = {};
   let coveragePercent = null;
   let aggregateRows = 0;
-  const fileRow = new RegExp(`^\\s*#\\s+(.+?\\.(?:c|m)?js)\\s+\\|\\s*${PERCENT}\\s*\\|`);
-  const aggregateRow = new RegExp(`^\\s*#\\s+all files\\s+\\|\\s*${PERCENT}\\s*\\|`, 'i');
+  const directoryByIndent = new Map();
 
   for (const line of table) {
-    const aggregate = line.match(aggregateRow);
-    if (aggregate) {
+    const comment = line.match(/^\s*#(.*)$/);
+    if (!comment) continue;
+    const columns = comment[1].split('|');
+    const labelColumn = columns[0] ?? '';
+    const label = labelColumn.trim();
+    if (!label || /^-+$/.test(label) || label.toLowerCase() === 'file') continue;
+
+    const linePercent = (columns[1] ?? '').trim();
+    if (label.toLowerCase() === 'all files') {
       aggregateRows += 1;
-      coveragePercent = Number(aggregate[1]);
+      const aggregate = linePercent.match(EXACT_PERCENT);
+      if (aggregate) coveragePercent = Number(aggregate[1]);
+      else failures.push(`malformed coverage aggregate row: ${line.trim()}`);
       continue;
     }
-    const file = line.match(fileRow);
-    if (file) {
-      const name = file[1].trim();
-      const measured = Number(file[2]);
-      if (Object.hasOwn(fileLineCoverage, name)) failures.push(`${name}: duplicate coverage row`);
-      else fileLineCoverage[name] = measured;
+
+    const indent = labelColumn.length - labelColumn.trimStart().length;
+    if (!/\.(?:c|m)?js$/i.test(label)) {
+      if (!linePercent) {
+        directoryByIndent.set(indent, label);
+        for (const depth of [...directoryByIndent.keys()]) {
+          if (depth > indent) directoryByIndent.delete(depth);
+        }
+      }
       continue;
     }
-    if (/^\s*#\s+.+\.(?:c|m)?js\s+\|/.test(line)) {
+    const measuredMatch = linePercent.match(EXACT_PERCENT);
+    if (!measuredMatch) {
       failures.push(`malformed coverage row: ${line.trim()}`);
+      continue;
+    }
+    const ancestors = [...directoryByIndent.entries()]
+      .filter(([depth]) => depth < indent)
+      .sort(([left], [right]) => left - right)
+      .map(([, directory]) => directory);
+    const canonicalPath = [...ancestors, label].join('/');
+    const measured = Number(measuredMatch[1]);
+    if (Object.hasOwn(fileLineCoverage, canonicalPath)) {
+      failures.push(`${canonicalPath}: duplicate coverage row`);
+    } else {
+      fileLineCoverage[canonicalPath] = measured;
     }
   }
   if (aggregateRows !== 1 || !Number.isFinite(coveragePercent)) {
