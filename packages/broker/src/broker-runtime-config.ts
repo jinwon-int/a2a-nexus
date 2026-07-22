@@ -92,6 +92,15 @@ export function resolveHotRuntimeLimits(
 
 export function resolveBrokerRetentionPolicy(
   overrides?: Partial<BrokerRetentionPolicy>,
+  fallbacks?: {
+    /**
+     * Deployment-derived default for the terminal-task byte budget (#1579).
+     * The server passes half the resolved snapshot byte cap so retention and
+     * STATE_FILE_MAX_BYTES stay consistent whatever the operator configures;
+     * explicit overrides and BROKER_MAX_TERMINAL_TASK_BYTES still win.
+     */
+    maxTerminalTaskBytes?: number;
+  },
 ): BrokerRetentionPolicy {
   const maxAuditEvents = resolvePolicyNumber(
     overrides?.maxAuditEvents,
@@ -113,6 +122,11 @@ export function resolveBrokerRetentionPolicy(
       overrides?.maxTerminalTasks,
       process.env.BROKER_MAX_TERMINAL_TASKS,
       DEFAULT_BROKER_RETENTION_POLICY.maxTerminalTasks,
+    ),
+    maxTerminalTaskBytes: resolvePolicyNumber(
+      overrides?.maxTerminalTaskBytes,
+      process.env.BROKER_MAX_TERMINAL_TASK_BYTES,
+      fallbacks?.maxTerminalTaskBytes ?? DEFAULT_BROKER_RETENTION_POLICY.maxTerminalTaskBytes,
     ),
     maxTerminalProposals: resolvePolicyNumber(
       overrides?.maxTerminalProposals,

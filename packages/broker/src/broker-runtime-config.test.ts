@@ -89,6 +89,30 @@ test("resolveBrokerRetentionPolicy keeps heartbeat cap default bounded by max au
   );
 });
 
+test("resolveBrokerRetentionPolicy derives the terminal-task byte budget from the snapshot cap (#1579)", () => {
+  withEnv({ BROKER_MAX_TERMINAL_TASK_BYTES: undefined }, () => {
+    // Deployment-derived fallback (half the resolved snapshot byte cap).
+    const derived = resolveBrokerRetentionPolicy(undefined, { maxTerminalTaskBytes: 21 * 1024 * 1024 });
+    assert.equal(derived.maxTerminalTaskBytes, 21 * 1024 * 1024);
+    // Explicit override wins over the derived fallback.
+    const explicit = resolveBrokerRetentionPolicy(
+      { maxTerminalTaskBytes: 1024 },
+      { maxTerminalTaskBytes: 21 * 1024 * 1024 },
+    );
+    assert.equal(explicit.maxTerminalTaskBytes, 1024);
+  });
+  withEnv({ BROKER_MAX_TERMINAL_TASK_BYTES: "2048" }, () => {
+    // Env override wins over the derived fallback but not an explicit override.
+    const fromEnv = resolveBrokerRetentionPolicy(undefined, { maxTerminalTaskBytes: 21 * 1024 * 1024 });
+    assert.equal(fromEnv.maxTerminalTaskBytes, 2048);
+    const explicit = resolveBrokerRetentionPolicy(
+      { maxTerminalTaskBytes: 1024 },
+      { maxTerminalTaskBytes: 21 * 1024 * 1024 },
+    );
+    assert.equal(explicit.maxTerminalTaskBytes, 1024);
+  });
+});
+
 test("primitive runtime config resolvers preserve server.ts behavior", () => {
   assert.equal(resolveStringOption(" explicit ", "env", "fallback"), "explicit");
   assert.equal(resolveStringOption("", " env ", "fallback"), "env");

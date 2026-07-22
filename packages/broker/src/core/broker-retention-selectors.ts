@@ -21,10 +21,31 @@ export function selectRetainedTerminalRecordIds<T>(params: {
   nowMs: number;
   retentionMs: number;
   maxTerminalRecords: number;
+  /**
+   * Optional cumulative serialized-byte budget across evictable terminal
+   * records (#1579). When set together with getRecordBytes, terminal records
+   * are retained newest-first only while the running byte total stays within
+   * the budget — including records still inside the retentionMs window — so a
+   * byte-capped snapshot cannot be outgrown on the count cap alone. A record
+   * whose size exceeds the remaining budget is evicted without starving
+   * smaller, older records. Protected and non-terminal records are always
+   * retained and never consume budget.
+   */
+  maxTerminalRecordBytes?: number;
+  getRecordBytes?: (record: T) => number;
   protectedIds?: Set<string>;
 }): Set<string> {
   const retainedIds = new Set<string>(params.protectedIds ?? []);
-  const terminalCandidates: Array<{ id: string; timestampMs: number }> = [];
+  const byteBudget =
+    params.maxTerminalRecordBytes !== undefined && params.getRecordBytes !== undefined
+      ? { maxBytes: Math.max(0, params.maxTerminalRecordBytes), getBytes: params.getRecordBytes }
+      : undefined;
+  const terminalCandidates: Array<{
+    id: string;
+    timestampMs: number;
+    withinWindow: boolean;
+    bytes: number;
+  }> = [];
   const cutoffMs = params.nowMs - params.retentionMs;
 
   for (const record of params.records) {
@@ -35,20 +56,43 @@ export function selectRetainedTerminalRecordIds<T>(params: {
     }
 
     const timestampMs = parseRetentionTimestamp(params.getTimestamp(record));
-    if (timestampMs === null || timestampMs >= cutoffMs) {
+    if (timestampMs === null) {
       retainedIds.add(id);
       continue;
     }
 
-    terminalCandidates.push({ id, timestampMs });
+    const withinWindow = timestampMs >= cutoffMs;
+    if (withinWindow && byteBudget === undefined) {
+      retainedIds.add(id);
+      continue;
+    }
+
+    terminalCandidates.push({
+      id,
+      timestampMs,
+      withinWindow,
+      bytes: byteBudget === undefined ? 0 : byteBudget.getBytes(record),
+    });
   }
 
-  sortedCopy(
+  let retainedBytes = 0;
+  let retainedExpiredCount = 0;
+  for (const entry of sortedCopy(
     terminalCandidates,
     (a, b) => b.timestampMs - a.timestampMs || a.id.localeCompare(b.id),
-  )
-    .slice(0, params.maxTerminalRecords)
-    .forEach((entry) => retainedIds.add(entry.id));
+  )) {
+    if (!entry.withinWindow && retainedExpiredCount >= params.maxTerminalRecords) {
+      continue;
+    }
+    if (byteBudget !== undefined && retainedBytes + entry.bytes > byteBudget.maxBytes) {
+      continue;
+    }
+    retainedBytes += entry.bytes;
+    if (!entry.withinWindow) {
+      retainedExpiredCount += 1;
+    }
+    retainedIds.add(entry.id);
+  }
 
   return retainedIds;
 }

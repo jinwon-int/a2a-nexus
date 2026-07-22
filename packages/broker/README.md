@@ -245,7 +245,9 @@ not grow without bound.
 Default retention policy:
 
 - terminal exchanges: newest `1000` plus anything newer than `7d`
-- terminal tasks: newest `2000` plus anything newer than `7d`
+- terminal tasks: newest `2000` plus anything newer than `7d`, bounded by a
+  cumulative serialized-byte budget (default: half the snapshot byte cap) so
+  the state file cannot outgrow `STATE_FILE_MAX_BYTES` on the count cap alone
 - terminal proposals: newest `1000` plus anything newer than `7d`
 - audit events: newest `5000` plus anything newer than `7d`
 - inactive workers: newest `500` plus anything seen within `14d`
@@ -259,6 +261,7 @@ Retention / snapshot env vars:
 BROKER_TERMINAL_RETENTION_MS=
 BROKER_MAX_TERMINAL_EXCHANGES=
 BROKER_MAX_TERMINAL_TASKS=
+BROKER_MAX_TERMINAL_TASK_BYTES=
 BROKER_MAX_TERMINAL_PROPOSALS=
 BROKER_INACTIVE_WORKER_RETENTION_MS=
 BROKER_MAX_INACTIVE_WORKERS=
