@@ -1,6 +1,10 @@
 import test from "node:test";
 import assert from "node:assert/strict";
+import { mkdtempSync, rmSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 
+import { SqliteBrokerStateStore } from "./core/store.js";
 import { startTestServer, jsonHeaders, registerTestWorker } from "./server-test-helpers.js";
 
 function headers(extra: Record<string, string> = {}): Record<string, string> {
@@ -30,6 +34,7 @@ test("GET /stats/tasks returns read-only aggregate counts and omits worker ident
       payload: {},
     });
     server.runtime.broker.claimTask("stats-failed-handler", "secret-mobile-worker");
+    server.runtime.broker.startTask("stats-failed-handler", "secret-mobile-worker");
     server.runtime.broker.failTask("stats-failed-handler", "secret-mobile-worker", {
       code: "handler_exit_nonzero",
       message: "handler failed",
@@ -48,6 +53,7 @@ test("GET /stats/tasks returns read-only aggregate counts and omits worker ident
       payload: { sourceOnly: true },
     });
     server.runtime.broker.claimTask("stats-succeeded-source-only", "secret-source-worker");
+    server.runtime.broker.startTask("stats-succeeded-source-only", "secret-source-worker");
     server.runtime.broker.completeTask("stats-succeeded-source-only", "secret-source-worker", { summary: "ok" });
 
     const before = server.runtime.broker.listTasks().map((task) => ({ ...task }));
@@ -75,6 +81,11 @@ test("GET /stats/tasks returns read-only aggregate counts and omits worker ident
       byStage: Record<string, number>;
       byWorkerClass: Record<string, number>;
       byRound: { top: Array<{ parentRoundId: string; failed: number; total: number }> };
+      latency: {
+        schemaVersion: string;
+        coverage: { terminalTasks: number; completeChains: number; invalidChains: number };
+        segments: Record<string, { count: number; p50Ms: number | null; p95Ms: number | null }>;
+      };
     };
     assert.equal(body.total, 2);
     assert.deepEqual(body.byStatus, { failed: 1, succeeded: 1 });
@@ -83,10 +94,67 @@ test("GET /stats/tasks returns read-only aggregate counts and omits worker ident
     assert.deepEqual(body.byStage, { handler: 1 });
     assert.deepEqual(body.byWorkerClass, { "source-only": 1, vps: 1 });
     assert.deepEqual(body.byRound.top, [{ parentRoundId: "env1-round-a", failed: 1, total: 2 }]);
+    assert.equal(body.latency.schemaVersion, "a2a.task-lifecycle-latency.v1");
+    assert.equal(body.latency.coverage.terminalTasks, 2);
+    assert.equal(body.latency.coverage.completeChains, 2);
+    assert.equal(body.latency.coverage.invalidChains, 0);
+    assert.equal(body.latency.segments.createToClaim.count, 2);
+    assert.equal(body.latency.segments.claimToStart.count, 2);
+    assert.equal(body.latency.segments.startToComplete.count, 2);
+    assert.equal(body.latency.segments.createToComplete.count, 2);
     assert.equal(JSON.stringify(body).includes("secret-"), false);
     assert.deepEqual(server.runtime.broker.listTasks().map((task) => ({ ...task })), before);
   } finally {
     await server.close();
+  }
+});
+
+test("GET /stats/tasks reads lifecycle latency from SQLite hot audit tables", async () => {
+  const dir = mkdtempSync(join(tmpdir(), "a2a-task-stats-latency-"));
+  const store = new SqliteBrokerStateStore(join(dir, "state.sqlite"), { loadSource: "hot-tables" });
+  const server = await startTestServer({
+    stateStore: store,
+    edgeSecret: "test-edge-secret",
+    enforceRequesterIdentity: true,
+  });
+  try {
+    await registerTestWorker(server.baseUrl, "secret-sqlite-worker", "analyst", "test-edge-secret");
+    server.runtime.broker.createTask({
+      id: "stats-sqlite-latency",
+      intent: "analyze",
+      requester: { id: "operator-1", kind: "node", role: "operator" },
+      target: { id: "secret-sqlite-worker", kind: "node", role: "analyst" },
+      assignedWorkerId: "secret-sqlite-worker",
+      message: "sqlite latency",
+      payload: {},
+    });
+    server.runtime.broker.claimTask("stats-sqlite-latency", "secret-sqlite-worker");
+    server.runtime.broker.startTask("stats-sqlite-latency", "secret-sqlite-worker");
+    server.runtime.broker.completeTask("stats-sqlite-latency", "secret-sqlite-worker", { summary: "ok" });
+
+    const until = new Date(Date.now() + 60_000).toISOString();
+    const since = new Date(Date.now() - 60_000).toISOString();
+    const res = await fetch(
+      `${server.baseUrl}/stats/tasks?since=${encodeURIComponent(since)}&until=${encodeURIComponent(until)}`,
+      { headers: headers() },
+    );
+    assert.equal(res.status, 200);
+    const body = await res.json() as {
+      total: number;
+      latency: {
+        coverage: { terminalTasks: number; completeChains: number };
+        segments: Record<string, { count: number }>;
+      };
+    };
+    assert.equal(body.total, 1);
+    assert.equal(body.latency.coverage.terminalTasks, 1);
+    assert.equal(body.latency.coverage.completeChains, 1);
+    assert.equal(body.latency.segments.claimToStart.count, 1);
+    assert.equal(JSON.stringify(body).includes("secret-sqlite-worker"), false);
+  } finally {
+    await server.close();
+    store.close();
+    rmSync(dir, { recursive: true, force: true });
   }
 });
 
