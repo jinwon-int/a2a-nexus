@@ -12,6 +12,8 @@ const EXACT_SYNTHETIC_FIXTURE_FILES = new Set([
   'packages/broker/scripts/round-coordinator-closeout-dry-run.test.mjs',
   'packages/broker/src/core/orchestration-intelligence-worker-subagent-spawn-bridge.test.ts',
   'packages/broker/src/github/handoff-receiver.test.ts',
+  'packages/broker/src/server-live-task-admission.test.ts',
+  'packages/broker/dist/server-live-task-admission.test.js',
   'packages/docker-runner/dist/engine-contract.test.js',
   'packages/docker-runner/src/engine-contract.test.ts',
   'packages/docker-runner/dist/github-evidence.test.js',
