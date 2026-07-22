@@ -74,6 +74,20 @@ Use this after the 5-minute path when validating that the repository layout demo
 5. Docker runner boundary: treat `packages/docker-runner` as experimental until #649 promotes it. Package CI parity can be run locally, but this capstone does not start production containers or publish images.
 6. Repository gates: run `npm run check:promotion-capstone`, `npm run check:quickstart-conformance`, and `npm run check` before opening a PR.
 
+## Quality-floor consistency
+
+The named `promotion-capstone` CI lane runs a source-only consistency check over the three package coverage-baseline contracts. Each package must keep its `coverage:baseline` command, reporter, reporter test, package-CI command/metadata entries, and `a2a-nexus.coverage-baseline.v1` schema aligned. Package manifests and TypeScript configs are parsed as JSON; reporter assertions are limited to the exported baseline builder and floor declaration markers.
+
+| Package | Coverage floor on live main | `noUnusedLocals` | Consistency evidence |
+| --- | --- | --- | --- |
+| `packages/broker` | measure-only (`floor: null`) | Pending | `coverage:baseline`, reporter + reporter test, package-CI command/metadata |
+| `packages/docker-runner` | #1576 Enforced per-module line floors | Enabled | `coverage:baseline`, reporter + reporter test, package-CI command/metadata |
+| `packages/openclaw-plugin-a2a` | measure-only (`floor: null`) | Enabled | `coverage:baseline`, reporter + reporter test, package-CI command/metadata |
+
+The docker-runner floors merged in #1576 are `config.js` 94%, `execution-orchestrator.js` 96%, `execution-proof.js` 95%, `execution-proof-signing.js` 90%, `redaction.js` 95%, and `runner.js` 85%. A missing measurement, a lower value, or a failed underlying coverage run fails closed there; broker and plugin remain non-blocking measurements.
+
+Remaining #1506 work is explicit: broker and plugin coverage floors, broker `noUnusedLocals`, and async-safety approval. This capstone consistency slice references #1506 and does not close it.
+
 ## Named CI lane
 
 The GitHub Actions workflow has a named `promotion-capstone` lane. It runs the capstone conformance check and the 5-minute smoke path for docs, scripts, root workflow/package changes, and main branch pushes. The lane is intentionally no-live and does not require production secrets.
