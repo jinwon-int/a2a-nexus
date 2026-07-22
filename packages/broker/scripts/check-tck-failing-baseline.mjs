@@ -14,10 +14,9 @@
  *   1. Consistency — the classification's `coarseBaseline` must match the
  *      committed `jsonrpc` measurement in tck-history.json (no drift between
  *      the lump total and its decomposition).
- *   2. Honesty — because the harness only emits coarse directory buckets, no
- *      sub-category may claim an independently-measured pass/total; every
- *      `measuredPassTotal` must stay null until per-test emission exists. This
- *      prevents the file from overstating conformance.
+ *   2. Honesty — selectors must be present and mutually exclusive, while the
+ *      committed pre-verbose baseline must not claim independently measured
+ *      pass/total values. This prevents ambiguous or invented conformance.
  */
 import { readFileSync } from 'node:fs';
 import { dirname, resolve } from 'node:path';
@@ -39,6 +38,14 @@ const VALID_SOURCE_KIND = new Set(['official-tck', 'code-derived', 'prose-derive
 
 function isPassTotal(v) {
   return v != null && typeof v === 'object' && Number.isInteger(v.pass) && Number.isInteger(v.total);
+}
+
+function selectorMatches(selector, nodeId) {
+  return nodeId === selector || nodeId.startsWith(`${selector}[`) || (selector.endsWith('::') && nodeId.startsWith(selector));
+}
+
+function selectorsOverlap(a, b) {
+  return selectorMatches(a, b) || selectorMatches(b, a);
 }
 
 /**
@@ -103,6 +110,7 @@ export function evaluateFailingBaseline(baseline, history) {
   // Sub-category shape + honesty invariant 2.
   const subs = Array.isArray(baseline.subCategories) ? baseline.subCategories : [];
   const ids = new Set();
+  const selectorOwners = [];
   for (const sub of subs) {
     if (!sub || typeof sub.id !== 'string') {
       failures.push('tck-failing-categories: each subCategory needs a string id');
@@ -115,6 +123,27 @@ export function evaluateFailingBaseline(baseline, history) {
     }
     if (!VALID_SOURCE_KIND.has(sub.sourceKind)) {
       failures.push(`tck-failing-categories: subCategory ${sub.id} sourceKind must be one of ${[...VALID_SOURCE_KIND].join('/')}`);
+    }
+    if (!Array.isArray(sub.pytestNodeIdSelectors) || sub.pytestNodeIdSelectors.length === 0) {
+      failures.push(`tck-failing-categories: subCategory ${sub.id} needs non-empty pytestNodeIdSelectors`);
+    } else {
+      const ownSelectors = new Set();
+      for (const selector of sub.pytestNodeIdSelectors) {
+        if (
+          typeof selector !== 'string'
+          || !selector.startsWith('tests/compatibility/')
+          || !selector.split('::').at(-1)?.startsWith('test_')
+        ) {
+          failures.push(`tck-failing-categories: subCategory ${sub.id} has invalid pytest node-id selector ${String(selector)}`);
+          continue;
+        }
+        if (ownSelectors.has(selector)) {
+          failures.push(`tck-failing-categories: subCategory ${sub.id} repeats pytest node-id selector ${selector}`);
+          continue;
+        }
+        ownSelectors.add(selector);
+        selectorOwners.push({ id: sub.id, selector });
+      }
     }
 
     // Coherent emission-state transition (honesty invariant). Every sub-category
@@ -154,6 +183,17 @@ export function evaluateFailingBaseline(baseline, history) {
   }
   for (const required of REQUIRED_SUBCATEGORY_IDS) {
     if (!ids.has(required)) failures.push(`tck-failing-categories: missing required subCategory ${required} (the five #1500 categories must all be classified)`);
+  }
+  for (let i = 0; i < selectorOwners.length; i++) {
+    for (let j = i + 1; j < selectorOwners.length; j++) {
+      const left = selectorOwners[i];
+      const right = selectorOwners[j];
+      if (left.id !== right.id && selectorsOverlap(left.selector, right.selector)) {
+        failures.push(
+          `tck-failing-categories: selectors overlap across ${left.id} and ${right.id}: ${left.selector} <> ${right.selector}`,
+        );
+      }
+    }
   }
 
   return failures;

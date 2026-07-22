@@ -75,7 +75,7 @@ jobs:
         run: |
           set -euo pipefail
           export PATH="/tmp/a2a-tck/.venv/bin:$PATH"
-          node scripts/a2a-tck-harness.mjs --level "$TCK_LEVEL" --transport "$TCK_TRANSPORT" | tee /tmp/tck-run.log
+          node scripts/a2a-tck-harness.mjs --level "$TCK_LEVEL" --transport "$TCK_TRANSPORT" --verbose 2>&1 | tee /tmp/tck-run.log
 
       # Run the regression check BEFORE appending the current run, so it always
       # compares against the previous historical baseline rather than the entry

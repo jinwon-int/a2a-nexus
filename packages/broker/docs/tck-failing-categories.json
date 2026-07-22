@@ -1,7 +1,7 @@
 {
   "schemaVersion": 1,
   "issue": "a2a-nexus#1500",
-  "description": "Machine-readable classification of the coarse `jsonrpc` TCK failing bucket (docs/tck-history.json: jsonrpc 12/75 as of 2026-06-11) into the five stable sub-categories named in a2a-nexus#1500. This is the structural layer the promotion protocol consumes: a category can only be promoted to a blocking gate once it is tracked here AND confirmed green across a stable measurement window (see docs/a2a-tck-runbook.md).",
+  "description": "Machine-readable classification of the coarse `jsonrpc` TCK failing bucket (docs/tck-history.json: jsonrpc 12/75 as of 2026-06-11) into the five stable sub-categories named in a2a-nexus#1500. pytestNodeIdSelectors are deterministic, mutually exclusive node IDs from the pinned official TCK. A category can only be promoted once a complete verbose run measures it green across the stability window (see docs/a2a-tck-runbook.md).",
   "provenance": {
     "sourceMeasurement": "docs/tck-history.json measurement 2026-06-11 (must/jsonrpc, jsonrpc 12/75)",
     "derivedFrom": [
@@ -9,7 +9,7 @@
       "packages/broker/src/a2a/json-rpc.ts (current code status of the A2A error family)"
     ],
     "NOT_a_per_test_run": true,
-    "limits": "Sub-category pass/total counts are NOT independently measured: the harness (scripts/append-tck-history.mjs) only emits coarse directory buckets (agent_card, jsonrpc, http_json, grpc), so per-sub-category numbers require a per-test node-id -> sub-category emission that does not exist yet. Fields below record ROOT CAUSE and CURRENT CODE STATUS only; `measuredPassTotal` is null until the harness emits sub-category granularity. Nothing here asserts conformance beyond the committed coarse baseline."
+    "limits": "The committed 2026-06-11 log was not verbose and cannot be retroactively decomposed. The parser now measures selectors only when verbose PASSED/FAILED/SKIPPED node outcomes reconcile with pytest's terminal summary; incomplete or ambiguous evidence emits no sub-category pass/total, and unknown nodes remain explicitly unclassified. `measuredPassTotal` stays null until a fresh official-TCK run."
   },
   "coarseBaseline": {
     "category": "jsonrpc",
@@ -26,6 +26,21 @@
       "rootCause": "error-code-family",
       "codeStatus": "implemented",
       "codeEvidence": "packages/broker/src/a2a/json-rpc.ts: A2A reserved family bound (-32001 TASK_NOT_FOUND, -32002 TASK_NOT_CANCELABLE), google.rpc.ErrorInfo with domain a2a-protocol.org in error.data",
+      "pytestNodeIdSelectors": [
+        "tests/compatibility/core_operations/test_error_handling.py::TestCoreErrorStructure::test_error_has_code_and_message_jsonrpc",
+        "tests/compatibility/core_operations/test_error_handling.py::TestJsonRpcErrorStructure::test_error_object_structure",
+        "tests/compatibility/core_operations/test_error_handling.py::TestJsonRpcErrorStructure::test_a2a_error_codes_in_range",
+        "tests/compatibility/core_operations/test_error_handling.py::TestJsonRpcErrorStructure::test_error_data_contains_error_info",
+        "tests/compatibility/jsonrpc/test_error_codes.py::TestJsonRpcErrorCodeMappings::test_task_not_cancelable_error",
+        "tests/compatibility/jsonrpc/test_error_codes.py::TestJsonRpcErrorCodeMappings::test_push_notification_not_supported_error",
+        "tests/compatibility/jsonrpc/test_error_codes.py::TestJsonRpcErrorCodeMappings::test_unsupported_operation_error",
+        "tests/compatibility/jsonrpc/test_error_codes.py::TestJsonRpcErrorCodeMappings::test_content_type_not_supported_error",
+        "tests/compatibility/jsonrpc/test_error_codes.py::TestJsonRpcErrorCodeRange::test_error_code_in_valid_range[CancelTask-nonexistent]",
+        "tests/compatibility/jsonrpc/test_error_info.py::TestJsonRpcErrorInfo::test_error_data_is_array",
+        "tests/compatibility/jsonrpc/test_error_info.py::TestJsonRpcErrorInfo::test_data_contains_error_info",
+        "tests/compatibility/jsonrpc/test_error_info.py::TestJsonRpcErrorInfo::test_error_info_valid",
+        "tests/compatibility/jsonrpc/test_error_info.py::TestJsonRpcErrorInfo::test_error_info_reason_matches_condition"
+      ],
       "measuredPassTotal": null,
       "promotionReadiness": "candidate-pending-fresh-run",
       "note": "The 2026-06-11 baseline predates/does not reflect this binding; a fresh official-TCK run is required to confirm the sub-category is green before it can enter the 2-window stability protocol for promotion.",
@@ -38,6 +53,15 @@
       "rootCause": "error-code-family",
       "codeStatus": "implemented",
       "codeEvidence": "packages/broker/src/a2a/json-rpc.ts isA2ATaskNotFound -> -32001 TASK_NOT_FOUND; unrelated broker resources deliberately NOT mapped to TASK_NOT_FOUND",
+      "pytestNodeIdSelectors": [
+        "tests/compatibility/core_operations/test_error_handling.py::TestJsonRpcErrorStructure::test_a2a_error_type_mappings",
+        "tests/compatibility/core_operations/test_task_lifecycle.py::TestCancelTask::test_cancel_terminal_task_returns_error[jsonrpc]",
+        "tests/compatibility/core_operations/test_task_lifecycle.py::TestMultiTurn::test_send_message_to_terminal_task[jsonrpc]",
+        "tests/compatibility/core_operations/test_task_lifecycle.py::TestMultiTurn::test_reject_mismatching_context[jsonrpc]",
+        "tests/compatibility/jsonrpc/test_error_codes.py::TestJsonRpcErrorCodeMappings::test_task_not_found_error",
+        "tests/compatibility/jsonrpc/test_error_codes.py::TestJsonRpcErrorCodeRange::test_error_code_in_valid_range[GetTask-nonexistent]",
+        "tests/compatibility/jsonrpc/test_sse_streaming.py::TestSseSubscribeToTask::test_subscribe_nonexistent_task_returns_error"
+      ],
       "measuredPassTotal": null,
       "promotionReadiness": "candidate-pending-fresh-run",
       "note": "Partially entangled with the SendMessage worker-registration cascade (invalid-task paths reached via task creation).",
@@ -50,6 +74,17 @@
       "rootCause": "projection-shape",
       "codeStatus": "golden-backed",
       "codeEvidence": "packages/broker/src/fixtures/a2a-protocol-compatibility.ts A2A_TASK_PROJECTION_GOLDEN, exercised by src/a2a/protocol-compatibility.test.ts",
+      "pytestNodeIdSelectors": [
+        "tests/compatibility/core_operations/test_artifacts.py::TestTextArtifact::test_task_has_text_artifact[jsonrpc]",
+        "tests/compatibility/core_operations/test_artifacts.py::TestFileArtifact::test_task_has_file_artifact[jsonrpc]",
+        "tests/compatibility/core_operations/test_artifacts.py::TestFileUrlArtifact::test_task_has_file_url_artifact[jsonrpc]",
+        "tests/compatibility/core_operations/test_artifacts.py::TestDataArtifact::test_task_has_data_artifact[jsonrpc]",
+        "tests/compatibility/core_operations/test_artifacts.py::TestMessageResponse::test_returns_message_with_text_part[jsonrpc]",
+        "tests/compatibility/core_operations/test_data_model.py::TestSendMessageResponseSchema::test_response_validates_against_schema",
+        "tests/compatibility/core_operations/test_data_model.py::TestCamelCaseFieldNames::test_no_snake_case_keys",
+        "tests/compatibility/core_operations/test_data_model.py::TestEnumSerialization::test_enum_values_are_strings",
+        "tests/compatibility/core_operations/test_data_model.py::TestTimestampFormat::test_timestamps_are_iso8601_utc"
+      ],
       "measuredPassTotal": null,
       "promotionReadiness": "candidate-pending-fresh-run",
       "sourceKind": "code-derived",
@@ -60,6 +95,17 @@
       "issueCategory": "4. streaming / subscribe state transition과 terminal ordering",
       "rootCause": "streaming-ordering",
       "codeStatus": "unknown-pending-run",
+      "pytestNodeIdSelectors": [
+        "tests/compatibility/core_operations/test_multi_stream.py::TestMultiStreamOrdering::test_events_broadcast_to_all_streams[jsonrpc]",
+        "tests/compatibility/core_operations/test_multi_stream.py::TestMultiStreamOrdering::test_streams_receive_same_events_in_order[jsonrpc]",
+        "tests/compatibility/core_operations/test_multi_stream.py::TestMultiStreamOrdering::test_closing_one_stream_does_not_affect_others[jsonrpc]",
+        "tests/compatibility/core_operations/test_stream_ordering.py::TestStreamEventOrdering::test_streaming_event_ordering[jsonrpc]",
+        "tests/compatibility/core_operations/test_task_lifecycle.py::TestSubscribeLifecycle::test_subscribe_terminates_at_terminal_state[jsonrpc]",
+        "tests/compatibility/core_operations/test_task_lifecycle.py::TestSubscribeLifecycle::test_subscribe_rejects_terminal_task[jsonrpc]",
+        "tests/compatibility/jsonrpc/test_sse_streaming.py::TestSseStreamingFormat::test_streaming_events_have_jsonrpc_envelope",
+        "tests/compatibility/jsonrpc/test_sse_streaming.py::TestSseStreamingFormat::test_streaming_events_contain_stream_response",
+        "tests/compatibility/jsonrpc/test_sse_streaming.py::TestSseSubscribeToTask::test_subscribe_first_event_is_task"
+      ],
       "measuredPassTotal": null,
       "promotionReadiness": "blocked-pending-fresh-run",
       "sourceKind": "prose-derived",
@@ -71,6 +117,12 @@
       "rootCause": "version-negotiation",
       "codeStatus": "partial",
       "codeEvidence": "supportedInterfaces wiring drove the agent_card 6/6 pass; explicit supported/deviation contract for JSON-RPC not independently measured",
+      "pytestNodeIdSelectors": [
+        "tests/compatibility/core_operations/test_error_handling.py::TestVersionErrors::test_unsupported_version_returns_error_jsonrpc",
+        "tests/compatibility/core_operations/test_error_handling.py::TestVersionErrors::test_empty_version_treated_as_default_jsonrpc",
+        "tests/compatibility/jsonrpc/test_error_codes.py::TestJsonRpcErrorCodeMappings::test_version_not_supported_error",
+        "tests/compatibility/jsonrpc/test_error_codes.py::TestJsonRpcErrorCodeRange::test_error_code_in_valid_range[SendMessage-bad-version]"
+      ],
       "measuredPassTotal": null,
       "promotionReadiness": "blocked-pending-fresh-run",
       "sourceKind": "prose-derived",
