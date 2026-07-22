@@ -330,8 +330,13 @@ test("A2A-Version negotiation on /a2a/jsonrpc (A2A 1.0)", async () => {
     assert.equal(v03.status, 400);
     assert.equal(v03.headers.get("a2a-version"), "1.0");
     const errorBody = await v03.json();
-    assert.equal(errorBody.error.code, -32600);
+    assert.equal(errorBody.error.code, -32009);
     assert.match(errorBody.error.message, /unsupported A2A-Version "0\.3"/);
+    assert.ok(Array.isArray(errorBody.error.data));
+    assert.equal(errorBody.error.data[0]["@type"], "type.googleapis.com/google.rpc.ErrorInfo");
+    assert.equal(errorBody.error.data[0].domain, "a2a-protocol.org");
+    assert.equal(errorBody.error.data[0].reason, "VERSION_NOT_SUPPORTED");
+    assert.deepEqual(errorBody.error.data[0].metadata, {});
   } finally {
     await server.close();
   }

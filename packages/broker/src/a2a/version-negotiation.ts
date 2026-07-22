@@ -10,8 +10,8 @@
  * header is served with 1.0 semantics instead of the spec's 0.3 fallback —
  * rejecting every header-less request would break existing 1.0-era clients
  * for no safety gain. An explicit version we cannot honor (e.g. `0.3`, `2.0`)
- * is rejected fail-closed rather than silently served with the wrong
- * semantics.
+ * is rejected fail-closed with A2A `VersionNotSupportedError` (`-32009`)
+ * rather than silently served with the wrong semantics.
  */
 
 export const A2A_VERSION_HEADER = "a2a-version";
