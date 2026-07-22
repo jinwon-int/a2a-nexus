@@ -12,7 +12,10 @@ import {
   buildBaseline as buildRunnerBaseline,
   CORE_SOURCE_FLOORS,
 } from '../packages/docker-runner/scripts/coverage-baseline-report.mjs';
-import { buildBaseline as buildPluginBaseline } from '../packages/openclaw-plugin-a2a/scripts/coverage-baseline-report.mjs';
+import {
+  buildBaseline as buildPluginBaseline,
+  CORE_SOURCE_FLOORS as PLUGIN_CORE_SOURCE_FLOORS,
+} from '../packages/openclaw-plugin-a2a/scripts/coverage-baseline-report.mjs';
 import { resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
@@ -34,6 +37,12 @@ export const EXPECTED_RUNNER_FLOORS = Object.freeze({
   'execution-proof-signing.js': 90,
   'redaction.js': 95,
   'runner.js': 85,
+});
+
+export const EXPECTED_PLUGIN_FLOORS = Object.freeze({
+  'dist/src/handoff-visibility-policy.js': 80,
+  'dist/src/recovery-guard.js': 95,
+  'dist/src/wake-envelope.js': 93,
 });
 
 function sortedRecord(record) {
@@ -66,8 +75,14 @@ export function evaluateQualityFloorContract(contract) {
       JSON.stringify(sortedRecord(baseline?.floor?.modules)) === JSON.stringify(sortedRecord(EXPECTED_RUNNER_FLOORS)),
       `${name}: #1576 per-module floors drifted: ${JSON.stringify(sortedRecord(baseline?.floor?.modules))}`,
     );
+  } else if (name === 'openclaw-plugin-a2a') {
+    add(baseline?.floor?.metric === 'line', `${name}: reporter line-floor mode drifted`);
+    add(
+      JSON.stringify(sortedRecord(baseline?.floor?.modules)) === JSON.stringify(sortedRecord(EXPECTED_PLUGIN_FLOORS)),
+      `${name}: #1506 per-module floors drifted: ${JSON.stringify(sortedRecord(baseline?.floor?.modules))}`,
+    );
   } else {
-    add(baseline?.floor === null, `${name}: reporter must remain measure-only`);
+    add(false, `${name}: unsupported package contract`);
   }
 
   add(Boolean(surface), `${name}: missing PACKAGE_CI_SURFACES entry`);
@@ -192,7 +207,7 @@ if (capstone) {
     /a2a-nexus\.coverage-baseline\.v1/,
     /broker[^\n]*#1506[^\n]*Enforced[^\n]*Pending/i,
     /docker-runner[^\n]*#1576[^\n]*Enforced[^\n]*Enabled/i,
-    /openclaw-plugin-a2a[^\n]*measure-only[^\n]*Enabled/i,
+    /openclaw-plugin-a2a[^\n]*#1506[^\n]*Enforced[^\n]*Enabled/i,
     /config\.js[^\n]*94%/,
     /execution-orchestrator\.js[^\n]*96%/,
     /execution-proof\.js[^\n]*95%/,
@@ -202,7 +217,9 @@ if (capstone) {
     /dist\/core\/broker-policy\.js[^\n]*84%[^\n]*85\.06%/,
     /dist\/core\/provenance\.js[^\n]*98%[^\n]*99\.00%/,
     /dist\/core\/release-evidence\.js[^\n]*97%[^\n]*98\.66%/,
-    /plugin coverage floor/i,
+    /dist\/src\/handoff-visibility-policy\.js[^\n]*80%[^\n]*81\.61%/,
+    /dist\/src\/recovery-guard\.js[^\n]*95%[^\n]*96\.85%/,
+    /dist\/src\/wake-envelope\.js[^\n]*93%[^\n]*94\.95%/,
     /broker `noUnusedLocals`/i,
     /async-safety approval/i,
     /#1506/,
@@ -237,7 +254,14 @@ for (const packageContract of packages) {
         reportFailures: [],
         note: 'promotion-capstone contract probe',
       })
-      : buildBaseline(name, [], { coveragePercent: null, note: 'promotion-capstone contract probe' });
+      : buildBaseline(name, [], {
+        coveragePercent: 100,
+        fileLineCoverage: { ...PLUGIN_CORE_SOURCE_FLOORS },
+        testExitCode: 0,
+        reportValid: true,
+        reportFailures: [],
+        note: 'promotion-capstone contract probe',
+      });
   for (const message of evaluateQualityFloorContract({
     name,
     dir,

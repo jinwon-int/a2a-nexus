@@ -2,11 +2,11 @@
 /**
  * Source quality floor guard (a2a-nexus#1506).
  *
- * The measure-only coverage baseline (packages/-star-/scripts/coverage-baseline-report.mjs)
- * classifies source vs test/generated/archive but never enforces a floor. This
- * gate adds the first *enforced*, deterministic source-quality floor on top of
- * it: the count of unsafe TypeScript suppressions in the source bucket may only
- * ratchet downward.
+ * Package coverage reporters (packages/-star-/scripts/coverage-baseline-report.mjs)
+ * classify source vs test/generated/archive and enforce bounded module floors.
+ * This separate gate applies a repository-wide source-quality ratchet: the
+ * count of unsafe TypeScript suppressions in the source bucket may only move
+ * downward.
  *
  * "Unsafe suppression" = a directive that silences a diagnostic without proof it
  * is still needed:
