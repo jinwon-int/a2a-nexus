@@ -18,7 +18,7 @@ if (run.status !== 0) {
   process.exit(run.status ?? 1);
 }
 const line = output.split('\n').find((entry) => entry.includes('broker-policy.js |'));
-const match = line?.match(/broker-policy\.js \|\s+([\d.]+)/);
+const match = line?.match(/broker-policy\.js\s+\|\s+([\d.]+)/);
 const pct = Number(match?.[1]);
 if (!line || !Number.isFinite(pct)) {
   console.error('coverage floor: broker-policy.js row missing from coverage report');
