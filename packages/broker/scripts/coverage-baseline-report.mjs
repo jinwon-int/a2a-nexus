@@ -29,19 +29,18 @@ const pkgRoot = path.resolve(here, '..'); // the package directory (scripts/..)
 const packageName = path.basename(pkgRoot);
 
 // Exact Node 22 baseline at main 9ef9b26c8b04b659983dadb01c2777f4f8bd1a59:
-// provenance.js 99.00%, release-evidence.js 98.66%.
+// release-evidence.js 98.66%.
 // These conservative floors leave margin while making regressions blocking.
-// NOTE: broker-policy.js moved to packages/policy-referee (#1601 P1); its 84%
-// line floor is preserved by that package's own coverage:baseline gate.
+// NOTE: broker-policy.js moved to packages/policy-referee (#1601 P1, floor 84)
+// and provenance.js to packages/attestation (#1601 P2, floor 98) — each keeps
+// its floor in that package's own coverage:baseline gate.
 export const CORE_SOURCE_FLOORS = Object.freeze({
-  'dist/core/provenance.js': 98,
   'dist/core/release-evidence.js': 97,
 });
 
 // Deliberately avoid the broad broker test aggregate: these direct built tests
 // are deterministic and exercise exactly the bounded modules above.
 export const COVERAGE_TEST_FILES = Object.freeze([
-  'dist/core/provenance.test.js',
   'dist/core/release-evidence.test.js',
 ]);
 

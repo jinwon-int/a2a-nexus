@@ -245,7 +245,7 @@ test("agent card is served signed when a signing key is configured (A2A 1.0)", a
   const { writeFileSync, mkdtempSync } = await import("node:fs");
   const { tmpdir } = await import("node:os");
   const { join } = await import("node:path");
-  const { verifyAgentCardSignature } = await import("./a2a/agent-card-signing.js");
+  const { verifyAgentCardSignature } = await import("a2a-attestation");
 
   const { privateKey, publicKey } = generateKeyPairSync("ed25519");
   const keyDir = mkdtempSync(join(tmpdir(), "a2a-card-key-"));

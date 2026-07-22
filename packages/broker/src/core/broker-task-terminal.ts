@@ -23,7 +23,7 @@ import {
   evaluateFinalizerVerdictAdmission,
   type FinalizerVerdictEnforcement,
 } from "./finalizer-verdict-admission.js";
-import type { FinalizerKeyring } from "./finalizer-verdict-signature.js";
+import type { FinalizerKeyring } from "a2a-attestation";
 import type { TaskUpdateReason } from "./broker-contracts.js";
 import type {
   A2AExchangeState,

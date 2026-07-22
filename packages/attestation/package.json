@@ -1,0 +1,41 @@
+{
+  "name": "a2a-attestation",
+  "version": "0.1.0",
+  "private": true,
+  "license": "MIT",
+  "type": "module",
+  "description": "Agent work attestation toolkit: verdict signing, deterministic evidence assembly, redaction/spawn gates, provenance",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/jinwon-int/a2a-nexus.git",
+    "directory": "packages/attestation"
+  },
+  "homepage": "https://github.com/jinwon-int/a2a-nexus/tree/main/packages/attestation",
+  "bugs": {
+    "url": "https://github.com/jinwon-int/a2a-nexus/issues"
+  },
+  "files": [
+    "dist",
+    "scripts",
+    "README.md",
+    "LICENSE",
+    "package.json"
+  ],
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    }
+  },
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "check": "tsc -p tsconfig.json --noEmit",
+    "pretest": "npm run build",
+    "test": "node --test dist/**/*.test.js",
+    "coverage:baseline": "npm run build && node scripts/coverage-baseline-report.mjs"
+  },
+  "devDependencies": {
+    "@types/node": "^22.20.1",
+    "typescript": "^6.0.3"
+  }
+}

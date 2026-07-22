@@ -17,6 +17,7 @@ const DEFAULT_SCAN_ROOTS = [
   'packages/broker/scripts',
   'packages/docker-runner/src',
   'packages/policy-referee/src',
+  'packages/attestation/src',
   'packages/openclaw-plugin-a2a/src',
 ];
 

@@ -80,11 +80,9 @@ const validReport = [
 
 test('coverage contract uses the deterministic built tests and conservative measured floors', () => {
   assert.deepEqual(COVERAGE_TEST_FILES, [
-    'dist/core/provenance.test.js',
     'dist/core/release-evidence.test.js',
   ]);
   assert.deepEqual(CORE_SOURCE_FLOORS, {
-    'dist/core/provenance.js': 98,
     'dist/core/release-evidence.js': 97,
   });
 });
@@ -129,32 +127,31 @@ test('canonical coverage paths prevent a same-basename module from satisfying a 
   const collisionReport = validReport.replace(
     '#  core                   |        |          |         |',
     '#  other                  |        |          |         |\n' +
-      '#   provenance.js         | 100.00 |   100.00 |  100.00 |\n' +
+      '#   release-evidence.js   | 100.00 |   100.00 |  100.00 |\n' +
       '#  core                   |        |          |         |',
   );
   const parsed = parseCoverageReport(collisionReport);
   assert.equal(parsed.ok, true);
-  assert.equal(parsed.fileLineCoverage['dist/other/provenance.js'], 100);
-  assert.equal(parsed.fileLineCoverage['dist/core/provenance.js'], 99.0);
+  assert.equal(parsed.fileLineCoverage['dist/other/release-evidence.js'], 100);
+  assert.equal(parsed.fileLineCoverage['dist/core/release-evidence.js'], 98.66);
 
   const substitution = parseCoverageReport(
-    collisionReport.replace('#   provenance.js         |  99.00', '#   unrelated.js          |  99.00'),
+    collisionReport.replace('#   release-evidence.js   |  98.66', '#   unrelated.js          |  98.66'),
   );
   assert.equal(substitution.ok, true);
   assert.deepEqual(evaluateCoverageFloors(substitution.fileLineCoverage).failures, [
-    'dist/core/provenance.js: coverage missing',
+    'dist/core/release-evidence.js: coverage missing',
   ]);
 });
 
 test('evaluateCoverageFloors fails closed on a missing or regressed module', () => {
   const measured = {
-    'dist/core/provenance.js': 97.99,
+    'dist/core/release-evidence.js': 96.99,
   };
   const result = evaluateCoverageFloors(measured);
   assert.equal(result.ok, false);
   assert.deepEqual(result.failures, [
-    'dist/core/provenance.js: line coverage below floor',
-    'dist/core/release-evidence.js: coverage missing',
+    'dist/core/release-evidence.js: line coverage below floor',
   ]);
 });
 

@@ -6,7 +6,7 @@ import {
   buildA2AWorkerSubagentSpawnGateDecision,
   extractA2AWorkerSubagentSpawnGateDecisionInput,
   renderA2AWorkerSubagentSpawnGateDecisionMarkdown,
-} from "../dist/core/worker-subagent-spawn-gate-decision.js";
+} from "a2a-attestation";
 
 function readOption(argv, name) {
   const inline = argv.find((arg) => arg.startsWith(name + "="));

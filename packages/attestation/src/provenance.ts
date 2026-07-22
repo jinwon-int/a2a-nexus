@@ -18,7 +18,7 @@ import {
   canonicalizeJson,
   signAgentCard,
   verifyAgentCardSignature,
-} from "../a2a/agent-card-signing.js";
+} from "./agent-card-signing.js";
 
 export const PROVENANCE_CANONICALIZATION = "rfc8785-jcs-v1" as const;
 export const RESULT_PROVENANCE_SCHEMA = "a2a.result.provenance.v1" as const;

@@ -24,7 +24,7 @@
  */
 import { readFileSync } from "node:fs";
 import { createHash, createPrivateKey, createPublicKey, sign as cryptoSign, verify as cryptoVerify, type KeyObject } from "node:crypto";
-import { canonicalizeJson } from "./agent-card-signing.js";
+import { canonicalizeJson } from "a2a-attestation";
 
 export type CrossBrokerTrustAnchors = Map<string, string>;
 

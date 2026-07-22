@@ -18,7 +18,7 @@ const ENTRIES: A2AWorkerSubagentEvidenceEntryInput[] = [
 ];
 
 test("source carrier contains no raw NUL bytes", () => {
-  const source = readFileSync("src/core/worker-subagent-evidence-assembly.ts", "utf8");
+  const source = readFileSync("src/worker-subagent-evidence-assembly.ts", "utf8");
   assert.equal(source.includes("\u0000"), false);
   assert.match(source, /join\("\\u0000"\)/);
 });

@@ -3,7 +3,7 @@ import { createHash } from "node:crypto";
 import type {
   A2ASubagentRole,
   A2AWorkerSubagentPolicyPacket,
-} from "./worker-subagent-orchestration-policy.js";
+} from "a2a-attestation";
 
 export type A2AWorkerSubagentEvidenceStatus = "done" | "blocked";
 export type A2AWorkerSubagentDryRunState = "recommendation_recorded" | "blocked";

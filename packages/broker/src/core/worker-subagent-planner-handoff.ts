@@ -2,7 +2,7 @@ import { isRecord } from "./value-guards.js";
 import { createHash } from "node:crypto";
 
 import type { A2AWorkerSelfAssessmentCapacityPacket } from "./worker-self-assessment-capacity.js";
-import type { A2AWorkerSubagentPolicyPacket } from "./worker-subagent-orchestration-policy.js";
+import type { A2AWorkerSubagentPolicyPacket } from "a2a-attestation";
 import { optionalString } from "./value-text.js";
 
 export interface A2AWorkerSubagentPlannerHandoffInput {

@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
-import { buildA2AWorkerSubagentOrchestrationPolicy } from "./worker-subagent-orchestration-policy.js";
+import { buildA2AWorkerSubagentOrchestrationPolicy } from "a2a-attestation";
 import {
   buildA2AWorkerSubagentDryRunPlan,
   buildA2AWorkerSubagentEvidencePacket,

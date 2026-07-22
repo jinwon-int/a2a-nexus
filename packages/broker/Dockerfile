@@ -6,13 +6,16 @@ WORKDIR /app
 COPY package.json package-lock.json ./
 COPY packages/broker/package.json packages/broker/
 COPY packages/policy-referee/package.json packages/policy-referee/
-RUN npm ci --include=dev -w packages/broker -w packages/policy-referee
+COPY packages/attestation/package.json packages/attestation/
+RUN npm ci --include=dev -w packages/broker -w packages/policy-referee -w packages/attestation
 
 FROM deps AS build
 WORKDIR /app
 COPY tsconfig.base.json ./tsconfig.base.json
 COPY packages/policy-referee/tsconfig.json packages/policy-referee/
 COPY packages/policy-referee/src packages/policy-referee/src
+COPY packages/attestation/tsconfig.json packages/attestation/
+COPY packages/attestation/src packages/attestation/src
 COPY packages/broker/tsconfig.json packages/broker/
 COPY packages/broker/src packages/broker/src
 COPY packages/broker/scripts/generate-build-info.mjs packages/broker/scripts/generate-build-info.mjs
@@ -44,9 +47,11 @@ ENV NODE_ENV=production \
 COPY package.json package-lock.json ./
 COPY packages/broker/package.json packages/broker/
 COPY packages/policy-referee/package.json packages/policy-referee/
-RUN npm ci --omit=dev -w packages/broker -w packages/policy-referee
+COPY packages/attestation/package.json packages/attestation/
+RUN npm ci --omit=dev -w packages/broker -w packages/policy-referee -w packages/attestation
 COPY --from=build /app/packages/broker/dist ./packages/broker/dist
 COPY --from=build /app/packages/policy-referee/dist ./packages/policy-referee/dist
+COPY --from=build /app/packages/attestation/dist ./packages/attestation/dist
 COPY packages/broker/scripts/generate-build-info.mjs ./packages/broker/scripts/generate-build-info.mjs
 COPY packages/broker/scripts/export-sqlite-state.mjs ./packages/broker/scripts/export-sqlite-state.mjs
 COPY packages/broker/scripts/lib ./packages/broker/scripts/lib

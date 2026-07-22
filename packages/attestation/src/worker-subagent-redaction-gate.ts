@@ -2,7 +2,7 @@ import { isRecord } from "./value-guards.js";
 import { createHash } from "node:crypto";
 
 import { numberValue, optionalString } from "./value-text.js";
-import { canonicalizeJson } from "../a2a/agent-card-signing.js";
+import { canonicalizeJson } from "./agent-card-signing.js";
 import { redactAndBoundReport } from "./worker-subagent-redaction.js";
 
 // Source-only REDACTION GATE for sub-agent output.

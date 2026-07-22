@@ -2,16 +2,16 @@ import assert from "node:assert/strict";
 import test from "node:test";
 
 import { buildA2AWorkerSelfAssessmentCapacity } from "./worker-self-assessment-capacity.js";
-import { buildA2AWorkerSubagentOrchestrationPolicy } from "./worker-subagent-orchestration-policy.js";
+import { buildA2AWorkerSubagentOrchestrationPolicy } from "a2a-attestation";
 import { buildA2AWorkerSubagentPlannerHandoff } from "./worker-subagent-planner-handoff.js";
 import { buildA2AWorkerSubagentSpawnAuthorizationRequest } from "./worker-subagent-spawn-authorization-request.js";
-import { buildA2AWorkerSubagentBudgetCounter } from "./worker-subagent-budget-counter.js";
+import { buildA2AWorkerSubagentBudgetCounter } from "a2a-attestation";
 import {
   buildA2AWorkerSubagentSpawnGateDecision,
   extractA2AWorkerSubagentSpawnGateDecisionInput,
   renderA2AWorkerSubagentSpawnGateDecisionMarkdown,
   type SpawnGateAuthorizationView,
-} from "./worker-subagent-spawn-gate-decision.js";
+} from "a2a-attestation";
 
 const NOW = "2026-05-19T02:20:00.000Z";
 

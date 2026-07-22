@@ -15,7 +15,7 @@ import {
   loadFinalizerKeyring,
   type FinalizerKeyring,
 } from "./finalizer-verdict-signature.js";
-import { canonicalizeJson } from "../a2a/agent-card-signing.js";
+import { canonicalizeJson } from "./agent-card-signing.js";
 
 function ed25519() {
   const { publicKey, privateKey } = generateKeyPairSync("ed25519");

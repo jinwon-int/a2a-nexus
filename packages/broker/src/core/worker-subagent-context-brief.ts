@@ -2,8 +2,8 @@ import { isRecord } from "./value-guards.js";
 import { createHash } from "node:crypto";
 
 import { numberValue, optionalString } from "./value-text.js";
-import { canonicalizeJson } from "../a2a/agent-card-signing.js";
-import { redactAndBound } from "./worker-subagent-redaction.js";
+import { canonicalizeJson } from "a2a-attestation";
+import { redactAndBound } from "a2a-attestation";
 
 // Re-exported for backward compatibility; the mechanism now lives in the shared
 // worker-subagent-redaction module (also used by the redaction gate).

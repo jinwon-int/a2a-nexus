@@ -133,7 +133,7 @@ test("with a keyring the bundle carries a cryptographic provenance verification 
   // verification the exporter embeds must accept dist-signed provenance).
   let prov;
   try {
-    prov = await import("../dist/core/provenance.js");
+    prov = await import("a2a-attestation");
   } catch {
     return t.skip("broker dist not built — run `npm run build` for the G2-d verification round-trip");
   }

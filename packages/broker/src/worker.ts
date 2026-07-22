@@ -3,11 +3,11 @@ import { createHash, createPrivateKey, randomUUID, sign } from "node:crypto";
 import {
   buildA2AWorkerSubagentOrchestrationPolicy,
   type A2AWorkerSubagentTaskProfile,
-} from "./core/worker-subagent-orchestration-policy.js";
+} from "a2a-attestation";
 import {
   buildA2AWorkerSubagentBudgetCounter,
   extractA2AWorkerSubagentBudgetCounterInput,
-} from "./core/worker-subagent-budget-counter.js";
+} from "a2a-attestation";
 import {
   buildA2AWorkerSubagentContextBrief,
   extractA2AWorkerSubagentContextBriefInput,
@@ -16,20 +16,20 @@ import {
 import {
   buildA2AWorkerSubagentSpawnGateDecision,
   extractA2AWorkerSubagentSpawnGateDecisionInput,
-} from "./core/worker-subagent-spawn-gate-decision.js";
-import { redactSecretsText } from "./core/worker-subagent-redaction.js";
+} from "a2a-attestation";
+import { redactSecretsText } from "a2a-attestation";
 import {
   buildA2AWorkerSubagentRedactionGate,
   type A2AWorkerSubagentRedactionMode,
-} from "./core/worker-subagent-redaction-gate.js";
-import { buildA2AWorkerSubagentEvidenceAssembly } from "./core/worker-subagent-evidence-assembly.js";
+} from "a2a-attestation";
+import { buildA2AWorkerSubagentEvidenceAssembly } from "a2a-attestation";
 import { mkdir, readFile, writeFile } from "node:fs/promises";
 import { dirname } from "node:path";
 import { setTimeout as delay } from "node:timers/promises";
 
 import { validateGithubTaskCompletionEvidence } from "./core/github-task-completion.js";
 import { normalizeTaskResult } from "./core/broker-task-record-normalizers.js";
-import { signTaskResultProvenance } from "./core/provenance.js";
+import { signTaskResultProvenance } from "a2a-attestation";
 import { parseTaskAcceptance, runTaskAcceptance, validateAcceptanceEvidence } from "./worker-acceptance.js";
 import { validateReviewEvidence } from "./worker-review.js";
 import { buildA2AHttpSignatureBase } from "./core/request-security.js";
