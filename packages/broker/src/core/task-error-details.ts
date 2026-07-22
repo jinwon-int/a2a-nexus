@@ -56,14 +56,26 @@ export function redactAndBoundFailureExcerpt(value: string, options?: { maxLines
   const maxChars = options?.maxChars ?? FAILURE_EXCERPT_MAX_CHARS;
   const redacted = redactSecrets(value);
   const lines = redacted.split(/\r?\n/);
-  const lineBounded = lines.slice(0, maxLines).join("\n");
-  const omittedLines = Math.max(0, lines.length - maxLines);
-  const charBounded = lineBounded.length <= maxChars ? lineBounded : lineBounded.slice(0, maxChars);
-  const omittedChars = Math.max(0, lineBounded.length - charBounded.length);
-  const suffixes: string[] = [];
-  if (omittedLines > 0) suffixes.push(`${omittedLines} line${omittedLines === 1 ? "" : "s"}`);
-  if (omittedChars > 0) suffixes.push(`${omittedChars} char${omittedChars === 1 ? "" : "s"}`);
-  return suffixes.length ? `${charBounded}\n<truncated ${suffixes.join(", ")}>` : charBounded;
+  if (lines.length <= maxLines && redacted.length <= maxChars) {
+    return redacted;
+  }
+
+  // Keep the head for context AND the tail for the failure itself (#1610):
+  // handler errors are almost always at the end of the output, so head-only
+  // truncation lost the actual cause in production.
+  const headLines = Math.max(1, Math.floor(maxLines / 4));
+  const tailLines = Math.max(1, maxLines - headLines);
+  const head = lines.slice(0, headLines);
+  const tail = lines.slice(Math.max(headLines, lines.length - tailLines));
+  const omittedLines = Math.max(0, lines.length - head.length - tail.length);
+  const joined = [...head, `<truncated ${omittedLines} line${omittedLines === 1 ? "" : "s"}>`, ...tail].join("\n");
+  if (joined.length <= maxChars) {
+    return joined;
+  }
+  const headChars = Math.max(64, Math.floor(maxChars / 4));
+  const tailChars = Math.max(64, maxChars - headChars);
+  const omittedChars = Math.max(0, joined.length - headChars - tailChars);
+  return `${joined.slice(0, headChars)}\n<truncated ${omittedChars} char${omittedChars === 1 ? "" : "s"}>\n${joined.slice(joined.length - tailChars)}`;
 }
 
 export function normalizeFailureReadbackStage(value: unknown): FailureReadbackStage | undefined {

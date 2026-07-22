@@ -1983,7 +1983,12 @@ function boundedDiagnosticExcerpt(value: unknown, maxLength = 500): string | und
   if (typeof value !== "string") return undefined;
   const normalized = value.replace(/\s+/g, " ").trim();
   if (!normalized) return undefined;
-  return normalized.length > maxLength ? `${normalized.slice(0, maxLength)}…` : normalized;
+  if (normalized.length <= maxLength) return normalized;
+  // Head + tail (#1610): the actionable error is almost always at the end of
+  // the output, not the beginning.
+  const headLength = Math.floor(maxLength / 3);
+  const tailLength = maxLength - headLength - 1;
+  return `${normalized.slice(0, headLength)}…${normalized.slice(normalized.length - tailLength)}`;
 }
 
 function parseHandlerStdoutError(stdout: string): TaskError | undefined {
@@ -2014,7 +2019,14 @@ function handlerExitNonzeroError(options: {
   const nestedExcerpt = typeof nestedDetails?.excerpt === "string" ? nestedDetails.excerpt : undefined;
   const stderrExcerpt = boundedDiagnosticExcerpt(options.stderr);
   const stdoutExcerpt = boundedDiagnosticExcerpt(options.stdout);
-  const fallbackExcerpt = stderrExcerpt ?? stdoutExcerpt ?? `handler exited with code ${options.code}${options.signal ? ` (${options.signal})` : ""}`;
+  // Prefer the nested runner/handler error message over the raw JSON wrapper:
+  // the wrapper's head is preamble noise while the message carries the
+  // runner's own head+tail of the failing output (#1610).
+  const fallbackExcerpt =
+    boundedDiagnosticExcerpt(nested?.message)
+    ?? stderrExcerpt
+    ?? stdoutExcerpt
+    ?? `handler exited with code ${options.code}${options.signal ? ` (${options.signal})` : ""}`;
 
   return {
     code: "handler_exit_nonzero",
