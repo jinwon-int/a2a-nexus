@@ -17,7 +17,7 @@ import {
   evaluateTaskPolicy,
   type BrokerPolicyDecision,
   type BrokerPolicyDocument,
-} from "@openclaw/a2a-policy-referee";
+} from "a2a-policy-referee";
 import { assertTransition, assertTaskOwnership } from "./broker-transition-guards.js";
 import { evaluateTaskReadiness, type TaskReadinessMode } from "../task-readiness.js";
 import type {
