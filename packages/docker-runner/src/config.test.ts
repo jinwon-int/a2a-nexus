@@ -1529,3 +1529,16 @@ test("contained sub-agents: claude-code enabled only when the fanout flag is 1 (
   assert.equal(loadContainedSubagentsConfig({}, "hermes").enabled, true);
   assert.equal(loadContainedSubagentsConfig({}, "openclaw").enabled, true);
 });
+
+test("failure log knobs default and parse from env (#1610)", async () => {
+  const defaults = await loadConfig({});
+  assert.equal(defaults.failureLogMaxBytes, 262144);
+  assert.equal(defaults.failureLogKeep, 20);
+
+  const tuned = await loadConfig({
+    A2A_DOCKER_RUNNER_FAILURE_LOG_MAX_BYTES: "65536",
+    A2A_DOCKER_RUNNER_FAILURE_LOG_KEEP: "5",
+  });
+  assert.equal(tuned.failureLogMaxBytes, 65536);
+  assert.equal(tuned.failureLogKeep, 5);
+});
