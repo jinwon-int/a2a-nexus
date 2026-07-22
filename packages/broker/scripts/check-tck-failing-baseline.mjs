@@ -14,9 +14,9 @@
  *   1. Consistency — the classification's `coarseBaseline` must match the
  *      committed `jsonrpc` measurement in tck-history.json (no drift between
  *      the lump total and its decomposition).
- *   2. Honesty — selectors must be present and mutually exclusive, while the
- *      committed pre-verbose baseline must not claim independently measured
- *      pass/total values. This prevents ambiguous or invented conformance.
+ *   2. Honesty — selectors must be present and mutually exclusive. A
+ *      pre-verbose baseline cannot claim independently measured values, while
+ *      a per-test baseline must match a sufficient history measurement exactly.
  */
 import { readFileSync } from 'node:fs';
 import { dirname, resolve } from 'node:path';
@@ -77,13 +77,15 @@ export function evaluateFailingBaseline(baseline, history) {
   if (history == null) return ['missing docs/tck-history.json'];
 
   if (baseline.schemaVersion !== 1) failures.push('tck-failing-categories: schemaVersion must be 1');
-  if (baseline.provenance?.NOT_a_per_test_run !== true) {
-    failures.push('tck-failing-categories: provenance.NOT_a_per_test_run must be true (honesty marker: numbers are not from a per-test TCK run)');
+  const isPreVerboseBaseline = baseline.provenance?.NOT_a_per_test_run;
+  if (typeof isPreVerboseBaseline !== 'boolean') {
+    failures.push('tck-failing-categories: provenance.NOT_a_per_test_run must be an explicit boolean');
   }
 
   // Invariant 1 — the coarse baseline must pin, and match, an EXACT committed
   // measurement (date + level + transport), not just "some jsonrpc row".
   const cb = baseline.coarseBaseline;
+  let anchor = null;
   if (
     !cb || cb.category !== 'jsonrpc' || cb.level !== 'must' || cb.transport !== 'jsonrpc'
     || typeof cb.date !== 'string' || cb.date.length === 0
@@ -92,7 +94,7 @@ export function evaluateFailingBaseline(baseline, history) {
       'tck-failing-categories.coarseBaseline must pin { category:"jsonrpc", level:"must", transport:"jsonrpc", date, pass, total }',
     );
   } else {
-    const anchor = findAnchorMeasurement(history, cb);
+    anchor = findAnchorMeasurement(history, cb);
     if (!anchor) {
       failures.push(
         `tck-failing-categories.coarseBaseline finds no tck-history measurement at date ${cb.date} level must transport jsonrpc (mis-anchored or stale date)`,
@@ -175,6 +177,15 @@ export function evaluateFailingBaseline(baseline, history) {
       }
       if (!isPassTotal(sub.measuredPassTotal)) {
         failures.push(`tck-failing-categories: subCategory ${sub.id} pendingEmission=false requires a measuredPassTotal {pass,total} (emission-complete representation)`);
+      } else if (isPreVerboseBaseline === false) {
+        const measured = anchor?.subCategories?.[sub.id];
+        if (!isPassTotal(measured)) {
+          failures.push(`tck-failing-categories: subCategory ${sub.id} has no matching measured sub-category in the anchored tck-history row`);
+        } else if (sub.measuredPassTotal.pass !== measured.pass || sub.measuredPassTotal.total !== measured.total) {
+          failures.push(
+            `tck-failing-categories: subCategory ${sub.id} measuredPassTotal (${sub.measuredPassTotal.pass}/${sub.measuredPassTotal.total}) must match anchored history ${measured.pass}/${measured.total}`,
+          );
+        }
       }
     }
     if (sub.promotionReadiness === 'promoted' && !(sub.sourceKind === 'official-tck' && pe === false && isPassTotal(sub.measuredPassTotal))) {
@@ -183,6 +194,15 @@ export function evaluateFailingBaseline(baseline, history) {
   }
   for (const required of REQUIRED_SUBCATEGORY_IDS) {
     if (!ids.has(required)) failures.push(`tck-failing-categories: missing required subCategory ${required} (the five #1500 categories must all be classified)`);
+  }
+  if (isPreVerboseBaseline === false) {
+    if (anchor?.pytestOutcomeAccounting?.sufficientForMeasurement !== true) {
+      failures.push('tck-failing-categories: a per-test baseline requires sufficientForMeasurement=true in the anchored tck-history row');
+    }
+    const pendingIds = subs.filter((sub) => sub?.pendingEmission !== false).map((sub) => sub?.id ?? '<unknown>');
+    if (pendingIds.length > 0) {
+      failures.push(`tck-failing-categories: a per-test baseline requires every subCategory to be emission-complete; pending: ${pendingIds.join(', ')}`);
+    }
   }
   for (let i = 0; i < selectorOwners.length; i++) {
     for (let j = i + 1; j < selectorOwners.length; j++) {
@@ -219,7 +239,7 @@ function main() {
     console.error(`tck failing-category baseline guard failed:\n- ${failures.join('\n- ')}`);
     process.exit(1);
   }
-  console.log('tck failing-category baseline ok: classification consistent with tck-history.json and claims no unmeasured conformance');
+  console.log('tck failing-category baseline ok: classification and measured values are consistent with tck-history.json');
 }
 
 if (import.meta.url === `file://${process.argv[1]}`) {

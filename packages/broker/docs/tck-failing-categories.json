@@ -1,23 +1,24 @@
 {
   "schemaVersion": 1,
   "issue": "a2a-nexus#1500",
-  "description": "Machine-readable classification of the coarse `jsonrpc` TCK failing bucket (docs/tck-history.json: jsonrpc 12/75 as of 2026-06-11) into the five stable sub-categories named in a2a-nexus#1500. pytestNodeIdSelectors are deterministic, mutually exclusive node IDs from the pinned official TCK. A category can only be promoted once a complete verbose run measures it green across the stability window (see docs/a2a-tck-runbook.md).",
+  "description": "Machine-readable classification of the `jsonrpc` TCK bucket into the five stable sub-categories named in a2a-nexus#1500. pytestNodeIdSelectors are deterministic, mutually exclusive node IDs from the pinned official TCK. The measured values come from the fresh complete run anchored below; a category can only be promoted once it remains green across the stability window (see docs/a2a-tck-runbook.md).",
   "provenance": {
-    "sourceMeasurement": "docs/tck-history.json measurement 2026-06-11 (must/jsonrpc, jsonrpc 12/75)",
+    "sourceMeasurement": "docs/tck-history.json measurement 2026-07-22 (must/jsonrpc, jsonrpc 46/94)",
+    "workflowRun": "https://github.com/jinwon-int/a2a-nexus/actions/runs/29915210798",
     "derivedFrom": [
-      "docs/a2a-tck-runbook.md failing-blocker prose (root-cause narrative)",
-      "packages/broker/src/a2a/json-rpc.ts (current code status of the A2A error family)"
+      "official A2A TCK verbose PASSED/FAILED/SKIPPED node outcomes",
+      "docs/tck-history.json pytestOutcomeAccounting and subCategories"
     ],
-    "NOT_a_per_test_run": true,
-    "limits": "The committed 2026-06-11 log was not verbose and cannot be retroactively decomposed. The parser now measures selectors only when verbose PASSED/FAILED/SKIPPED node outcomes reconcile with pytest's terminal summary; incomplete or ambiguous evidence emits no sub-category pass/total, and unknown nodes remain explicitly unclassified. `measuredPassTotal` stays null until a fresh official-TCK run."
+    "NOT_a_per_test_run": false,
+    "limits": "The values cover only the five deterministic selector sets, not full conformance. Unknown node IDs remain explicitly unclassified in tck-history.json. Version negotiation has one green window and is not promotion-eligible until a second independent green measurement."
   },
   "coarseBaseline": {
     "category": "jsonrpc",
     "level": "must",
     "transport": "jsonrpc",
-    "pass": 12,
-    "total": 75,
-    "date": "2026-06-11"
+    "pass": 46,
+    "total": 94,
+    "date": "2026-07-22"
   },
   "subCategories": [
     {
@@ -41,11 +42,11 @@
         "tests/compatibility/jsonrpc/test_error_info.py::TestJsonRpcErrorInfo::test_error_info_valid",
         "tests/compatibility/jsonrpc/test_error_info.py::TestJsonRpcErrorInfo::test_error_info_reason_matches_condition"
       ],
-      "measuredPassTotal": null,
-      "promotionReadiness": "candidate-pending-fresh-run",
-      "note": "The 2026-06-11 baseline predates/does not reflect this binding; a fresh official-TCK run is required to confirm the sub-category is green before it can enter the 2-window stability protocol for promotion.",
-      "sourceKind": "code-derived",
-      "pendingEmission": true
+      "measuredPassTotal": { "pass": 6, "total": 13 },
+      "promotionReadiness": "blocked-pending-fresh-run",
+      "note": "Fresh official-TCK measurement is complete but the category is not green.",
+      "sourceKind": "official-tck",
+      "pendingEmission": false
     },
     {
       "id": "jsonrpc-task-not-found-and-invalid-task",
@@ -62,11 +63,11 @@
         "tests/compatibility/jsonrpc/test_error_codes.py::TestJsonRpcErrorCodeRange::test_error_code_in_valid_range[GetTask-nonexistent]",
         "tests/compatibility/jsonrpc/test_sse_streaming.py::TestSseSubscribeToTask::test_subscribe_nonexistent_task_returns_error"
       ],
-      "measuredPassTotal": null,
-      "promotionReadiness": "candidate-pending-fresh-run",
-      "note": "Partially entangled with the SendMessage worker-registration cascade (invalid-task paths reached via task creation).",
-      "sourceKind": "code-derived",
-      "pendingEmission": true
+      "measuredPassTotal": { "pass": 1, "total": 7 },
+      "promotionReadiness": "blocked-pending-fresh-run",
+      "note": "Fresh official-TCK measurement is complete; failures remain partly entangled with the SendMessage worker-registration cascade.",
+      "sourceKind": "official-tck",
+      "pendingEmission": false
     },
     {
       "id": "jsonrpc-artifact-message-projection",
@@ -85,10 +86,10 @@
         "tests/compatibility/core_operations/test_data_model.py::TestEnumSerialization::test_enum_values_are_strings",
         "tests/compatibility/core_operations/test_data_model.py::TestTimestampFormat::test_timestamps_are_iso8601_utc"
       ],
-      "measuredPassTotal": null,
-      "promotionReadiness": "candidate-pending-fresh-run",
-      "sourceKind": "code-derived",
-      "pendingEmission": true
+      "measuredPassTotal": { "pass": 4, "total": 9 },
+      "promotionReadiness": "blocked-pending-fresh-run",
+      "sourceKind": "official-tck",
+      "pendingEmission": false
     },
     {
       "id": "jsonrpc-streaming-subscribe-ordering",
@@ -106,27 +107,28 @@
         "tests/compatibility/jsonrpc/test_sse_streaming.py::TestSseStreamingFormat::test_streaming_events_contain_stream_response",
         "tests/compatibility/jsonrpc/test_sse_streaming.py::TestSseSubscribeToTask::test_subscribe_first_event_is_task"
       ],
-      "measuredPassTotal": null,
+      "measuredPassTotal": { "pass": 3, "total": 9 },
       "promotionReadiness": "blocked-pending-fresh-run",
-      "sourceKind": "prose-derived",
-      "pendingEmission": true
+      "sourceKind": "official-tck",
+      "pendingEmission": false
     },
     {
       "id": "jsonrpc-version-negotiation",
       "issueCategory": "5. version negotiation supported/deviation contract",
       "rootCause": "version-negotiation",
-      "codeStatus": "partial",
-      "codeEvidence": "supportedInterfaces wiring drove the agent_card 6/6 pass; explicit supported/deviation contract for JSON-RPC not independently measured",
+      "codeStatus": "implemented",
+      "codeEvidence": "packages/broker/src/http/a2a-jsonrpc-route.ts returns VersionNotSupportedError (-32009) with a2a-protocol.org ErrorInfo; packages/broker/src/server-a2a-jsonrpc.test.ts covers the response contract",
       "pytestNodeIdSelectors": [
         "tests/compatibility/core_operations/test_error_handling.py::TestVersionErrors::test_unsupported_version_returns_error_jsonrpc",
         "tests/compatibility/core_operations/test_error_handling.py::TestVersionErrors::test_empty_version_treated_as_default_jsonrpc",
         "tests/compatibility/jsonrpc/test_error_codes.py::TestJsonRpcErrorCodeMappings::test_version_not_supported_error",
         "tests/compatibility/jsonrpc/test_error_codes.py::TestJsonRpcErrorCodeRange::test_error_code_in_valid_range[SendMessage-bad-version]"
       ],
-      "measuredPassTotal": null,
-      "promotionReadiness": "blocked-pending-fresh-run",
-      "sourceKind": "prose-derived",
-      "pendingEmission": true
+      "measuredPassTotal": { "pass": 4, "total": 4 },
+      "promotionReadiness": "candidate-pending-fresh-run",
+      "note": "First green window from workflow run 29915210798; requires a second independent 4/4 measurement before gate promotion.",
+      "sourceKind": "official-tck",
+      "pendingEmission": false
     }
   ],
   "architecturalBlockers": [
