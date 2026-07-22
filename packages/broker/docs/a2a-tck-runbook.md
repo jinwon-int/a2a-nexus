@@ -62,7 +62,7 @@ Requirement levels and transports (per the TCK):
 Reports are written by the TCK into its own output directory; attach the
 JSON/HTML report to the round evidence when citing compliance numbers.
 
-## Measured baseline (2026-06-11, `--level must --transport jsonrpc`)
+## Historical baseline (2026-06-11, `--level must --transport jsonrpc`)
 
 First official-TCK run after wiring `supportedInterfaces` and relaxing the
 harness rate limits:
@@ -80,17 +80,40 @@ Track this number down as alignment PRs land. The error-code/`ErrorInfo`
 alignment is in-scope correctness work; the worker-registration model is an
 architectural decision recorded for follow-up.
 
+## Latest official measurement (2026-07-22)
+
+[Workflow run 29915210798](https://github.com/jinwon-int/a2a-nexus/actions/runs/29915210798)
+measured the pinned official TCK against commit `c64ae2e` on a disposable
+loopback broker. Outcome accounting was complete (`48 passed`, `20 failed`,
+`167 skipped`; 235 observed node IDs), so the five selector-based JSON-RPC
+sub-categories were emitted into the committed history:
+
+| JSON-RPC sub-category | Result | Promotion state |
+| --- | --- | --- |
+| error codes and ErrorInfo | 6/13 | blocked; failures remain |
+| task-not-found and invalid-task | 1/7 | blocked; failures remain |
+| artifact/message projection | 4/9 | blocked; failures remain |
+| streaming/subscribe ordering | 3/9 | blocked; six selected tests skipped |
+| version negotiation | 4/4 | first green window; one more independent green run required |
+
+The version-negotiation result is a real RED-to-GREEN change from the same-day
+[main measurement](https://github.com/jinwon-int/a2a-nexus/actions/runs/29914841795)
+(`3/4`) to the branch measurement (`4/4`). It is not yet a blocking gate: the
+normal two-window stability rule still applies.
+
 ## Compliance trend (committed, in-repo)
 
 The measured numbers are recorded in
 [`docs/tck-history.json`](tck-history.json) so the trend is readable without
 opening Actions artifacts. Each entry is one measurement (`date`, `level`,
-`transport`, `overallPercent`, `must` pass/total, and per-category
-pass/total).
+`transport`, `overallPercent`, optional `must` pass/total, per-category
+pass/total, and (for complete verbose runs) selector-based sub-category
+pass/total plus outcome accounting).
 
-| Date | Level / transport | MUST | agent_card | jsonrpc |
-| --- | --- | --- | --- | --- |
-| 2026-06-11 | must / jsonrpc | 12/75 | 6/6 | 12/75 |
+| Date | Level / transport | Overall | MUST | agent_card | jsonrpc | version negotiation |
+| --- | --- | --- | --- | --- | --- | --- |
+| 2026-06-11 | must / jsonrpc | — | 12/75 | 6/6 | 12/75 | not measured |
+| 2026-07-22 | must / jsonrpc | 65.7% | — | 6/6 | 46/94 | 4/4 (window 1/2) |
 
 Update the trend after a run:
 
@@ -110,8 +133,8 @@ summary and no node matches multiple selectors. Failure-summary duplicates are
 deduplicated; unmatched node IDs remain listed under `pytestOutcomeAccounting`
 as `unclassified`, and truncated/failure-only logs retain incomplete accounting
 without emitting a measured pass/total. The entry is then upserted (one per
-`date`+`level`+`transport`). Commit the updated `tck-history.json` from a fresh
-official-TCK run in a follow-up docs PR.
+`date`+`level`+`transport`). Commit the updated `tck-history.json` from the
+fresh official-TCK artifact together with its baseline/readiness projection.
 
 ### Stability ledger and gate promotion
 

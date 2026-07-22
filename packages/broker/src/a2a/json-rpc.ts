@@ -932,6 +932,18 @@ export function jsonRpcErrorFromUnknown(error: unknown): { code: number; message
 const A2A_ERROR_DOMAIN = "a2a-protocol.org";
 const A2A_ERROR_INFO_TYPE = "type.googleapis.com/google.rpc.ErrorInfo";
 
+/** Build the standard A2A google.rpc.ErrorInfo payload for protocol errors. */
+export function a2aProtocolErrorData(reason: string): unknown[] {
+  return [
+    {
+      "@type": A2A_ERROR_INFO_TYPE,
+      domain: A2A_ERROR_DOMAIN,
+      reason,
+      metadata: {},
+    },
+  ];
+}
+
 interface BrokerErrorMapping {
   code: number;
   /** A2A google.rpc.ErrorInfo domain + reason when the condition is an A2A-bound error. */

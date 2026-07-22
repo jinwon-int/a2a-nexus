@@ -154,7 +154,39 @@ test('RED: promoted + official-tck but pendingEmission missing fails (issue 1 by
 // ── shape / provenance guards ───────────────────────────────────────────────
 
 test('RED: missing the honesty provenance marker fails', () => {
-  assert.match(evaluateFailingBaseline(baseWith({ provenance: {} }), HISTORY).join('\n'), /provenance\.NOT_a_per_test_run must be true/);
+  assert.match(evaluateFailingBaseline(baseWith({ provenance: {} }), HISTORY).join('\n'), /provenance\.NOT_a_per_test_run must be an explicit boolean/);
+});
+
+test('RED: a per-test measuredPassTotal must match the anchored history row', () => {
+  const baseline = readJson('docs/tck-failing-categories.json');
+  const history = readJson('docs/tck-history.json');
+  baseline.subCategories[0].measuredPassTotal.pass += 1;
+  assert.match(
+    evaluateFailingBaseline(baseline, history).join('\n'),
+    /measuredPassTotal \(7\/13\) must match anchored history 6\/13/,
+  );
+});
+
+test('RED: a per-test baseline requires sufficient outcome accounting', () => {
+  const baseline = readJson('docs/tck-failing-categories.json');
+  const history = readJson('docs/tck-history.json');
+  history.measurements.at(-1).pytestOutcomeAccounting.sufficientForMeasurement = false;
+  assert.match(
+    evaluateFailingBaseline(baseline, history).join('\n'),
+    /per-test baseline requires sufficientForMeasurement=true/,
+  );
+});
+
+test('RED: a per-test baseline cannot leave a sub-category pending emission', () => {
+  const baseline = readJson('docs/tck-failing-categories.json');
+  const history = readJson('docs/tck-history.json');
+  baseline.subCategories[0].pendingEmission = true;
+  baseline.subCategories[0].sourceKind = 'code-derived';
+  baseline.subCategories[0].measuredPassTotal = null;
+  assert.match(
+    evaluateFailingBaseline(baseline, history).join('\n'),
+    /per-test baseline requires every subCategory to be emission-complete/,
+  );
 });
 
 test('RED: a missing required sub-category fails', () => {

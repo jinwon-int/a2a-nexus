@@ -13,6 +13,7 @@ import type { AgentCard } from "../a2a/agent-card.js";
 import { PushNotificationConfigStore } from "../a2a/push-notification-config.js";
 import { PeerStatusService } from "../a2a/peer-status.js";
 import {
+  a2aProtocolErrorData,
   executeA2AJsonRpcBody,
   executeSendMessage,
   jsonRpcErrorFromUnknown,
@@ -67,7 +68,15 @@ export async function handleA2AJsonRpcRequest(ctx: A2AJsonRpcRouteContext): Prom
     sendJson(
       res,
       400,
-      { jsonrpc: "2.0", id: null, error: { code: -32600, message: negotiated.message } },
+      {
+        jsonrpc: "2.0",
+        id: null,
+        error: {
+          code: -32009,
+          message: negotiated.message,
+          data: a2aProtocolErrorData("VERSION_NOT_SUPPORTED"),
+        },
+      },
       { "a2a-version": SUPPORTED_A2A_VERSIONS.join(", ") },
     );
     return;
