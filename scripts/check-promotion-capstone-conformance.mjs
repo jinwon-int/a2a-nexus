@@ -7,8 +7,82 @@
  */
 import { createDocCheckContext } from './lib/doc-check.mjs';
 import { PACKAGE_CI_SURFACES } from './run-monorepo-package-ci-parity.mjs';
+import { buildBaseline as buildBrokerBaseline } from '../packages/broker/scripts/coverage-baseline-report.mjs';
+import {
+  buildBaseline as buildRunnerBaseline,
+  CORE_SOURCE_FLOORS,
+} from '../packages/docker-runner/scripts/coverage-baseline-report.mjs';
+import { buildBaseline as buildPluginBaseline } from '../packages/openclaw-plugin-a2a/scripts/coverage-baseline-report.mjs';
+import { resolve } from 'node:path';
+import { fileURLToPath } from 'node:url';
 
-const { root, failures, fail, expect, readRel } = createDocCheckContext();
+export const EXPECTED_COVERAGE_BASELINE_COMMAND =
+  'npm run build && node --test scripts/coverage-baseline-report.test.mjs && node scripts/coverage-baseline-report.mjs';
+
+export const EXPECTED_RUNNER_FLOORS = Object.freeze({
+  'config.js': 94,
+  'execution-orchestrator.js': 96,
+  'execution-proof.js': 95,
+  'execution-proof-signing.js': 90,
+  'redaction.js': 95,
+  'runner.js': 85,
+});
+
+function sortedRecord(record) {
+  if (!record || typeof record !== 'object' || Array.isArray(record)) return null;
+  return Object.fromEntries(Object.entries(record).sort(([left], [right]) => left.localeCompare(right)));
+}
+
+export function evaluateQualityFloorContract(contract) {
+  const failures = [];
+  const add = (condition, message) => {
+    if (!condition) failures.push(message);
+  };
+  const { name, dir, coverageCommand, reporterTestPresent, baseline, surface, noUnusedLocals, expectedNoUnusedLocals } = contract;
+
+  add(
+    coverageCommand === EXPECTED_COVERAGE_BASELINE_COMMAND,
+    `${name}: coverage:baseline command drifted`,
+  );
+  add(reporterTestPresent === true, `${name}: missing coverage baseline reporter test`);
+  add(baseline?.schema === 'a2a-nexus.coverage-baseline.v1', `${name}: reporter schema drifted`);
+  if (name === 'docker-runner') {
+    add(baseline?.floor?.metric === 'line', `${name}: reporter line-floor mode drifted`);
+    add(
+      JSON.stringify(sortedRecord(baseline?.floor?.modules)) === JSON.stringify(sortedRecord(EXPECTED_RUNNER_FLOORS)),
+      `${name}: #1576 per-module floors drifted: ${JSON.stringify(sortedRecord(baseline?.floor?.modules))}`,
+    );
+  } else {
+    add(baseline?.floor === null, `${name}: reporter must remain measure-only`);
+  }
+
+  add(Boolean(surface), `${name}: missing PACKAGE_CI_SURFACES entry`);
+  if (surface) {
+    add(
+      surface.commands.some(
+        ([command, args]) => command === 'npm' && args.join(' ') === `run coverage:baseline -w ${dir}`,
+      ),
+      `${name}: PACKAGE_CI_SURFACES missing coverage:baseline command`,
+    );
+    add(
+      surface.metadata?.requiredScripts?.includes('coverage:baseline'),
+      `${name}: PACKAGE_CI_SURFACES metadata missing coverage:baseline`,
+    );
+    add(
+      surface.metadata?.requiredFiles?.includes('scripts/coverage-baseline-report.mjs'),
+      `${name}: PACKAGE_CI_SURFACES metadata missing coverage reporter`,
+    );
+  }
+  add(
+    noUnusedLocals === expectedNoUnusedLocals,
+    `${name}: noUnusedLocals must be ${expectedNoUnusedLocals === true ? 'enabled' : 'pending'}`,
+  );
+  return failures;
+}
+
+if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
+
+const { failures, fail, expect, readRel } = createDocCheckContext();
 
 function parseJson(rel) {
   const text = readRel(rel);
@@ -45,19 +119,10 @@ function boundedSource(rel, startMarker, endMarker) {
 }
 
 const packages = [
-  { name: 'broker', dir: 'packages/broker', noUnusedLocals: undefined, floor: 'measure-only' },
-  { name: 'docker-runner', dir: 'packages/docker-runner', noUnusedLocals: true, floor: 'enforced' },
-  { name: 'openclaw-plugin-a2a', dir: 'packages/openclaw-plugin-a2a', noUnusedLocals: true, floor: 'measure-only' },
+  { name: 'broker', dir: 'packages/broker', noUnusedLocals: undefined, buildBaseline: buildBrokerBaseline },
+  { name: 'docker-runner', dir: 'packages/docker-runner', noUnusedLocals: true, buildBaseline: buildRunnerBaseline },
+  { name: 'openclaw-plugin-a2a', dir: 'packages/openclaw-plugin-a2a', noUnusedLocals: true, buildBaseline: buildPluginBaseline },
 ];
-
-const expectedRunnerFloors = {
-  'config.js': 94,
-  'execution-orchestrator.js': 96,
-  'execution-proof.js': 95,
-  'execution-proof-signing.js': 90,
-  'redaction.js': 95,
-  'runner.js': 85,
-};
 
 const capstonePath = 'docs/promotion-capstone.md';
 const capstone = readRel(capstonePath);
@@ -134,65 +199,32 @@ if (capstone) {
 }
 
 for (const packageContract of packages) {
-  const { name, dir, noUnusedLocals, floor } = packageContract;
+  const { name, dir, noUnusedLocals, buildBaseline } = packageContract;
   const manifest = parseJson(`${dir}/package.json`);
-  const baselineCommand = manifest.scripts?.['coverage:baseline'] ?? '';
-  expectMatch(baselineCommand, /coverage-baseline-report\.test\.mjs/, `${name}: coverage:baseline must run reporter tests`);
-  expectMatch(baselineCommand, /coverage-baseline-report\.mjs/, `${name}: coverage:baseline must run reporter`);
-
-  const reporterRel = `${dir}/scripts/coverage-baseline-report.mjs`;
   const reporterTestRel = `${dir}/scripts/coverage-baseline-report.test.mjs`;
-  expect(readRel(reporterTestRel) !== null, `${name}: missing coverage baseline reporter test`);
-  const baselineBuilder = boundedSource(reporterRel, 'export function buildBaseline', '\nfunction main()');
-  expectMatch(
-    baselineBuilder,
-    /schema:\s*'a2a-nexus\.coverage-baseline\.v1'/,
-    `${name}: reporter must expose a2a-nexus.coverage-baseline.v1`,
-  );
-  expectMatch(
-    baselineBuilder,
-    floor === 'enforced' ? /floor:\s*\{\s*metric:\s*'line',\s*modules:\s*floors\s*\}/ : /floor:\s*null/,
-    `${name}: reporter floor mode drifted from ${floor}`,
-  );
-
   const surface = PACKAGE_CI_SURFACES[name];
-  expect(Boolean(surface), `${name}: missing PACKAGE_CI_SURFACES entry`);
-  if (surface) {
-    expect(
-      surface.commands.some(
-        ([command, args]) => command === 'npm' && args.join(' ') === `run coverage:baseline -w ${dir}`,
-      ),
-      `${name}: PACKAGE_CI_SURFACES missing coverage:baseline command`,
-    );
-    expect(
-      surface.metadata?.requiredScripts?.includes('coverage:baseline'),
-      `${name}: PACKAGE_CI_SURFACES metadata missing coverage:baseline`,
-    );
-    expect(
-      surface.metadata?.requiredFiles?.includes('scripts/coverage-baseline-report.mjs'),
-      `${name}: PACKAGE_CI_SURFACES metadata missing coverage reporter`,
-    );
-  }
-
   const tsconfig = parseJson(`${dir}/tsconfig.json`);
-  expect(
-    tsconfig.compilerOptions?.noUnusedLocals === noUnusedLocals,
-    `${name}: noUnusedLocals must be ${noUnusedLocals === true ? 'enabled' : 'pending'}`,
-  );
+  const baseline = name === 'docker-runner'
+    ? buildBaseline([], {
+      coveragePercent: null,
+      fileLineCoverage: { ...CORE_SOURCE_FLOORS },
+      testExitCode: 0,
+      note: 'promotion-capstone contract probe',
+    })
+    : buildBaseline(name, [], { coveragePercent: null, note: 'promotion-capstone contract probe' });
+  for (const message of evaluateQualityFloorContract({
+    name,
+    dir,
+    coverageCommand: manifest.scripts?.['coverage:baseline'] ?? '',
+    reporterTestPresent: readRel(reporterTestRel) !== null,
+    baseline,
+    surface,
+    noUnusedLocals: tsconfig.compilerOptions?.noUnusedLocals,
+    expectedNoUnusedLocals: noUnusedLocals,
+  })) {
+    fail(message);
+  }
 }
-
-const runnerFloorSource = boundedSource(
-  'packages/docker-runner/scripts/coverage-baseline-report.mjs',
-  'export const CORE_SOURCE_FLOORS = Object.freeze({',
-  '\n});',
-);
-const actualRunnerFloors = Object.fromEntries(
-  [...runnerFloorSource.matchAll(/^\s*'([^']+\.js)':\s*(\d+),?\s*$/gm)].map((match) => [match[1], Number(match[2])]),
-);
-expect(
-  JSON.stringify(actualRunnerFloors) === JSON.stringify(expectedRunnerFloors),
-  `docker-runner: #1576 per-module floors drifted: ${JSON.stringify(actualRunnerFloors)}`,
-);
 
 const pkg = parseJson('package.json');
 expectMatch(pkg.scripts?.['check:promotion-capstone'] ?? '', /check-promotion-capstone-conformance\.mjs/, 'package.json: missing check:promotion-capstone script');
@@ -217,3 +249,4 @@ if (failures.length) {
 }
 
 console.log('promotion capstone conformance ok: docs, no-live boundaries, quality floors, package scripts, and named CI lane validated');
+}
