@@ -54,13 +54,29 @@ test("broker registration stores provider/model capabilities and list filters ca
           credentialPath: "/root/.xai/oauth.json",
         } as unknown as NonNullable<WorkerRecord["capabilities"]["providerCapabilities"]>[number],
       ],
+      implementationCapability: {
+        capable: true,
+        runtime: "codex_cli",
+        providerId: "OpenAI",
+        modelTier: "CODEX-STANDARD",
+        availability: "configured",
+        evidenceId: "sk-abcdefghijklmnop",
+      } as unknown as NonNullable<WorkerRecord["capabilities"]["implementationCapability"]>,
     },
   });
 
   const workereta = broker.getWorker("workereta");
   assert.equal(workereta?.capabilities.providerCapabilities?.[0]?.providerId, "xai");
   assert.equal(workereta?.capabilities.providerCapabilities?.[0]?.modelId, "grok-4.2");
+  assert.deepEqual(workereta?.capabilities.implementationCapability, {
+    capable: true,
+    runtime: "codex-native",
+    providerId: "openai",
+    modelTier: "codex-standard",
+    availability: "configured",
+  });
   assert.equal(JSON.stringify(workereta).includes("oauth.json"), false);
+  assert.equal(JSON.stringify(workereta).includes("sk-abcdefghijklmnop"), false);
 
   broker.heartbeatWorker("workereta", {
     capabilities: {
@@ -76,8 +92,19 @@ test("broker registration stores provider/model capabilities and list filters ca
           evidenceId: "brokerbeta-workereta-grok-canary-20260615",
         },
       ],
+      implementationCapability: {
+        capable: true,
+        runtime: "codex-native",
+        providerId: "openai",
+        modelTier: "codex-standard",
+        availability: "canary_passed",
+        lastVerifiedAt: "2026-06-15T01:00:00.000Z",
+        evidenceId: "brokerbeta-workereta-codex-canary-20260615",
+      },
     },
   });
+
+  assert.equal(broker.getWorker("workereta")?.capabilities.implementationCapability?.availability, "canary_passed");
 
   assert.deepEqual(
     broker.listWorkers({ providerId: "XAI", modelFamily: "GROK", providerAvailability: "canary_passed" })
@@ -2229,4 +2256,3 @@ test("broker audit and tombstone diagnostics can use SQLite runtime repositories
     rmSync(dir, { recursive: true, force: true });
   }
 });
-

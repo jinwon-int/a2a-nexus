@@ -2,7 +2,7 @@
 // broker.ts. Pure functions over untrusted input that sanitize and canonicalize
 // worker capability fields (runtime flavor, provider capabilities, environment
 // lists). They hold no broker state and depend only on capability types.
-import type { WorkerCapabilities, A2AWorkerEnvironment } from "./types.js";
+import type { WorkerCapabilities, A2AWorkerEnvironment, WorkerImplementationRuntime } from "./types.js";
 
 export function normalizeWorkerRuntimeFlavor(value: unknown): WorkerCapabilities["runtimeFlavor"] | undefined {
   if (typeof value !== "string") return undefined;
@@ -55,6 +55,42 @@ export function normalizeProviderCapabilities(values: unknown): NonNullable<Work
     }
   }
   return normalized;
+}
+
+export function normalizeImplementationRuntime(value: unknown): WorkerImplementationRuntime {
+  const normalized = typeof value === "string" ? value.trim().toLowerCase().replace(/_/g, "-") : "";
+  if (normalized === "claude" || normalized === "claude-code" || normalized === "claude-native") {
+    return "claude-native";
+  }
+  if (normalized === "codex" || normalized === "codex-cli" || normalized === "codex-native") {
+    return "codex-native";
+  }
+  if (normalized === "provider" || normalized === "provider-native") {
+    return "provider-native";
+  }
+  return "unknown";
+}
+
+export function normalizeImplementationCapability(
+  value: unknown,
+): WorkerCapabilities["implementationCapability"] | undefined {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return undefined;
+  const record = value as Record<string, unknown>;
+  const capable = normalizeOptionalBoolean(record.capable);
+  if (capable === undefined) return undefined;
+  const providerId = normalizeProviderCapabilityId(record.providerId);
+  const modelTier = normalizeProviderCapabilityId(record.modelTier);
+  const lastVerifiedAt = normalizeProviderEvidenceString(record.lastVerifiedAt);
+  const evidenceId = normalizeProviderEvidenceString(record.evidenceId);
+  return {
+    capable,
+    runtime: normalizeImplementationRuntime(record.runtime),
+    ...(providerId ? { providerId } : {}),
+    ...(modelTier ? { modelTier } : {}),
+    availability: normalizeProviderAvailability(record.availability),
+    ...(lastVerifiedAt ? { lastVerifiedAt } : {}),
+    ...(evidenceId ? { evidenceId } : {}),
+  };
 }
 
 export function normalizeProviderCapabilityId(value: unknown): string | undefined {
@@ -127,6 +163,7 @@ export function normalizeCapabilities(capabilities: unknown): WorkerCapabilities
   const runtimeFlavor = normalizeWorkerRuntimeFlavor(capabilityRecord.runtimeFlavor);
   const gatewayRequired = normalizeOptionalBoolean(capabilityRecord.gatewayRequired);
   const providerCapabilities = normalizeProviderCapabilities(capabilityRecord.providerCapabilities);
+  const implementationCapability = normalizeImplementationCapability(capabilityRecord.implementationCapability);
 
   return {
     canAnalyze: capabilityRecord.canAnalyze === true,
@@ -136,6 +173,7 @@ export function normalizeCapabilities(capabilities: unknown): WorkerCapabilities
     workspaceIds: uniqueStringList(capabilityRecord.workspaceIds),
     environments: uniqueEnvironmentList(capabilityRecord.environments),
     ...(providerCapabilities.length > 0 ? { providerCapabilities } : {}),
+    ...(implementationCapability ? { implementationCapability } : {}),
     ...(runtimeFlavor ? { runtimeFlavor } : {}),
     ...(gatewayRequired !== undefined ? { gatewayRequired } : {}),
   };

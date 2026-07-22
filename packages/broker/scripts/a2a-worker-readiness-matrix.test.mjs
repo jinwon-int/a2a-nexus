@@ -4,12 +4,25 @@ import { execFileSync } from 'node:child_process';
 import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
+import { buildA2AWorkerReadinessMatrix } from './a2a-worker-readiness-matrix.mjs';
 
 function runReadiness(args) {
   return execFileSync(process.execPath, ['scripts/a2a-worker-readiness-matrix.mjs', ...args], {
     cwd: process.cwd(),
     encoding: 'utf8',
   });
+}
+
+const CLAUDE_IMPLEMENTATION = {
+  capable: true,
+  runtime: 'claude-native',
+  providerId: 'anthropic',
+  modelTier: 'claude-implementation',
+  availability: 'canary_passed',
+};
+
+function implementationCapabilities(profile = CLAUDE_IMPLEMENTATION) {
+  return { capabilities: { implementationCapability: profile } };
 }
 
 describe('a2a worker readiness matrix', () => {
@@ -20,9 +33,9 @@ describe('a2a worker readiness matrix', () => {
       const auditPath = join(tmp, 'audit.json');
       writeFileSync(capacityPath, JSON.stringify({
         workers: [
-          { id: 'workergamma', online: true, active: 0, metadata: { platform: 'linux' } },
-          { id: 'workerepsilon', online: true, active: 0, metadata: { platform: 'linux' } },
-          { id: 'mobilealpha', online: true, active: 0, metadata: { platform: 'termux' } },
+          { id: 'workergamma', online: true, active: 0, metadata: { platform: 'linux' }, ...implementationCapabilities() },
+          { id: 'workerepsilon', online: true, active: 0, metadata: { platform: 'linux' }, ...implementationCapabilities() },
+          { id: 'mobilealpha', online: true, active: 0, metadata: { platform: 'termux' }, ...implementationCapabilities() },
         ],
       }), 'utf8');
       writeFileSync(auditPath, JSON.stringify({
@@ -34,21 +47,23 @@ describe('a2a worker readiness matrix', () => {
       }), 'utf8');
 
       const report = JSON.parse(runReadiness(['--capacity', capacityPath, '--audit', auditPath, '--json']));
-      assert.equal(report.ok, false);
+      assert.equal(report.ok, true);
       assert.deepEqual(report.counts, {
         total: 3,
         online: 3,
         analysisCapable: 3,
         patchCapable: 1,
         blockedPatch: 2,
+        implementationReady: 1,
+        blockedImplementation: 2,
       });
       assert.deepEqual(report.workers.map((worker) => ({ id: worker.id, patchCapable: worker.patchCapable, blockers: worker.blockers })), [
         { id: 'mobilealpha', patchCapable: false, blockers: ['missing patch bridge script'] },
-        { id: 'workerepsilon', patchCapable: false, blockers: ['missing Claude config'] },
+        { id: 'workerepsilon', patchCapable: false, blockers: ['missing implementation runtime config'] },
         { id: 'workergamma', patchCapable: true, blockers: [] },
       ]);
       assert.match(report.summary, /online=3/);
-      assert.match(report.summary, /patch-capable=1/);
+      assert.match(report.summary, /implementation-ready=1/);
     } finally {
       rmSync(tmp, { recursive: true, force: true });
     }
@@ -61,7 +76,7 @@ describe('a2a worker readiness matrix', () => {
       const auditPath = join(tmp, 'audit.json');
       writeFileSync(capacityPath, JSON.stringify({
         items: [
-          { nodeId: 'workergamma', status: 'online', counts: { active: 0 } },
+          { nodeId: 'workergamma', status: 'online', counts: { active: 0 }, ...implementationCapabilities() },
           { nodeId: 'brokeralpha-terminal-smoke-worker-071830', status: 'stale', counts: { active: 0 } },
         ],
       }), 'utf8');
@@ -82,8 +97,8 @@ describe('a2a worker readiness matrix', () => {
       const auditPath = join(tmp, 'audit.json');
       writeFileSync(capacityPath, JSON.stringify({
         items: [
-          { nodeId: 'workereta', status: 'stale', counts: { active: 1 } },
-          { nodeId: 'workereta', status: 'online', counts: { active: 0 } },
+          { nodeId: 'workereta', status: 'stale', counts: { active: 1 }, ...implementationCapabilities() },
+          { nodeId: 'workereta', status: 'online', counts: { active: 0 }, ...implementationCapabilities() },
         ],
       }), 'utf8');
       writeFileSync(auditPath, JSON.stringify([{ id: 'workereta', hasClaudeConfig: true, hasTrustedOperator: true, hasPatchBridge: true, hasGitHubAuth: true }]), 'utf8');
@@ -103,7 +118,7 @@ describe('a2a worker readiness matrix', () => {
     try {
       const capacityPath = join(tmp, 'capacity.json');
       const auditPath = join(tmp, 'audit.json');
-      writeFileSync(capacityPath, JSON.stringify([{ id: 'workerdelta', online: true, active: 0 }]), 'utf8');
+      writeFileSync(capacityPath, JSON.stringify([{ id: 'workerdelta', online: true, active: 0, ...implementationCapabilities() }]), 'utf8');
       writeFileSync(auditPath, JSON.stringify([{ id: 'workerdelta', hasClaudeConfig: true, hasTrustedOperator: false, hasPatchBridge: true, hasGitHubAuth: true }]), 'utf8');
 
       const report = JSON.parse(runReadiness(['--capacity', capacityPath, '--audit', auditPath, '--json']));
@@ -113,5 +128,55 @@ describe('a2a worker readiness matrix', () => {
     } finally {
       rmSync(tmp, { recursive: true, force: true });
     }
+  });
+
+  it('pins implementation runtime, provider, and model tier instead of conflating heterogeneous workers', () => {
+    const tmp = mkdtempSync(join(tmpdir(), 'a2a-worker-readiness-'));
+    try {
+      const capacityPath = join(tmp, 'capacity.json');
+      const auditPath = join(tmp, 'audit.json');
+      writeFileSync(capacityPath, JSON.stringify({ workers: [
+        { id: 'workerclaude', online: true, ...implementationCapabilities() },
+        { id: 'workercodex', online: true, ...implementationCapabilities({
+          capable: true,
+          runtime: 'codex-native',
+          providerId: 'openai',
+          modelTier: 'codex-standard',
+          availability: 'canary_passed',
+        }) },
+      ] }), 'utf8');
+      writeFileSync(auditPath, JSON.stringify({ workers: [
+        { id: 'workerclaude', runtimeConfigured: true, hasTrustedOperator: true, hasPatchBridge: true, hasGitHubAuth: true },
+        { id: 'workercodex', runtimeConfigured: true, hasTrustedOperator: true, hasPatchBridge: true, hasGitHubAuth: true },
+      ] }), 'utf8');
+
+      const report = JSON.parse(runReadiness([
+        '--capacity', capacityPath,
+        '--audit', auditPath,
+        '--required-runtime', 'claude-native',
+        '--required-provider', 'anthropic',
+        '--required-model-tier', 'claude-implementation',
+        '--json',
+      ]));
+      assert.equal(report.ok, true);
+      assert.equal(report.counts.implementationReady, 1);
+      assert.equal(report.workers.find((worker) => worker.id === 'workerclaude').implementationCapable, true);
+      assert.match(report.workers.find((worker) => worker.id === 'workercodex').blockers.join('\n'), /runtime does not match/);
+    } finally {
+      rmSync(tmp, { recursive: true, force: true });
+    }
+  });
+
+  it('blocks a single-worker lane when two ready implementation workers are required', () => {
+    const report = buildA2AWorkerReadinessMatrix(
+      [{ id: 'workerclaude', online: true, ...implementationCapabilities() }],
+      [{ id: 'workerclaude', runtimeConfigured: true, hasTrustedOperator: true, hasPatchBridge: true, hasGitHubAuth: true }],
+      { minimumReadyWorkers: 2, nowMs: 0 },
+    );
+
+    assert.equal(report.counts.implementationReady, 1);
+    assert.equal(report.policy.minimumReadyWorkers, 2);
+    assert.equal(report.singlePointOfFailure, true);
+    assert.equal(report.ok, false);
   });
 });
