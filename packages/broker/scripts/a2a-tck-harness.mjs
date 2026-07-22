@@ -34,7 +34,7 @@ import { join } from "node:path";
 import { buildRunTckArgs, parseHarnessArgs } from "./a2a-tck-harness-args.mjs";
 
 const parsedArgs = parseHarnessArgs(process.argv.slice(2));
-const { selfCheck, level, transport, pytestArgs } = parsedArgs;
+const { selfCheck, verbose, level, transport, pytestArgs } = parsedArgs;
 
 const { createBrokerServer } = await import("../dist/server.js");
 const { mkdtempSync } = await import("node:fs");
@@ -138,7 +138,7 @@ console.log(`[tck-harness] running TCK level "${level}" transport "${transport}"
 if (pytestArgs.length > 0) {
   console.log(`[tck-harness] pytest passthrough: ${pytestArgs.join(" ")}`);
 }
-const tck = spawn("python3", buildRunTckArgs({ runTckPath: runTck, baseUrl, level, transport, pytestArgs }), {
+const tck = spawn("python3", buildRunTckArgs({ runTckPath: runTck, baseUrl, level, transport, verbose, pytestArgs }), {
   cwd: tckDir,
   stdio: "inherit",
 });
