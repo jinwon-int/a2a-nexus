@@ -10,12 +10,28 @@ import { existsSync } from 'node:fs';
 import { readFile } from 'node:fs/promises';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { PACKAGE_CI_SURFACES } from './run-monorepo-package-ci-parity.mjs';
 
 const repoRoot = dirname(dirname(fileURLToPath(import.meta.url)));
 const capstonePath = join(repoRoot, 'docs', 'promotion-capstone.md');
 
 async function capstone() {
   return readFile(capstonePath, 'utf8');
+}
+
+const packageContracts = [
+  { name: 'broker', dir: 'packages/broker', floor: 'measure-only', noUnusedLocals: undefined },
+  { name: 'docker-runner', dir: 'packages/docker-runner', floor: 'enforced', noUnusedLocals: true },
+  { name: 'openclaw-plugin-a2a', dir: 'packages/openclaw-plugin-a2a', floor: 'measure-only', noUnusedLocals: true },
+];
+
+function boundedSource(content, startMarker, endMarker) {
+  const start = content.indexOf(startMarker);
+  assert.notStrictEqual(start, -1, `missing start marker: ${startMarker}`);
+  assert.strictEqual(content.indexOf(startMarker, start + startMarker.length), -1, `ambiguous start marker: ${startMarker}`);
+  const end = content.indexOf(endMarker, start + startMarker.length);
+  assert.notStrictEqual(end, -1, `missing end marker: ${endMarker}`);
+  return content.slice(start, end);
 }
 
 test('promotion capstone doc exists', () => {
@@ -80,6 +96,91 @@ test('promotion capstone has required troubleshooting topics', async () => {
     /no-live evidence-only tasks/i,
   ]) {
     assert.match(content, topic);
+  }
+});
+
+test('promotion capstone records the live-main quality-floor consistency contract', async () => {
+  const content = await capstone();
+  const section = boundedSource(content, '## Quality-floor consistency', '\n## Named CI lane');
+  assert.match(section, /a2a-nexus\.coverage-baseline\.v1/);
+  assert.match(section, /broker[^\n]*measure-only[^\n]*Pending/i);
+  assert.match(section, /docker-runner[^\n]*#1576[^\n]*Enforced[^\n]*Enabled/i);
+  assert.match(section, /openclaw-plugin-a2a[^\n]*measure-only[^\n]*Enabled/i);
+  for (const [module, floor] of Object.entries({
+    'config.js': 94,
+    'execution-orchestrator.js': 96,
+    'execution-proof.js': 95,
+    'execution-proof-signing.js': 90,
+    'redaction.js': 95,
+    'runner.js': 85,
+  })) {
+    assert.match(section, new RegExp(`${module.replace('.', '\\.')}[^\\n]*${floor}%`));
+  }
+  assert.match(section, /broker and plugin coverage floors/i);
+  assert.match(section, /broker `noUnusedLocals`/i);
+  assert.match(section, /async-safety approval/i);
+  assert.match(section, /#1506/);
+});
+
+test('package coverage commands, reporter files, and parity metadata stay aligned', async () => {
+  for (const { name, dir } of packageContracts) {
+    const manifest = JSON.parse(await readFile(join(repoRoot, dir, 'package.json'), 'utf8'));
+    assert.match(manifest.scripts?.['coverage:baseline'] ?? '', /coverage-baseline-report\.test\.mjs/);
+    assert.match(manifest.scripts?.['coverage:baseline'] ?? '', /coverage-baseline-report\.mjs/);
+    assert.ok(existsSync(join(repoRoot, dir, 'scripts', 'coverage-baseline-report.mjs')));
+    assert.ok(existsSync(join(repoRoot, dir, 'scripts', 'coverage-baseline-report.test.mjs')));
+
+    const surface = PACKAGE_CI_SURFACES[name];
+    assert.ok(surface, `${name}: missing PACKAGE_CI_SURFACES entry`);
+    assert.ok(surface.commands.some(
+      ([command, args]) => command === 'npm' && args.join(' ') === `run coverage:baseline -w ${dir}`,
+    ));
+    assert.ok(surface.metadata.requiredScripts.includes('coverage:baseline'));
+    assert.ok(surface.metadata.requiredFiles.includes('scripts/coverage-baseline-report.mjs'));
+  }
+});
+
+test('reporters expose one schema with live-main floor modes and #1576 module floors', async () => {
+  for (const { dir, floor } of packageContracts) {
+    const reporter = await readFile(join(repoRoot, dir, 'scripts', 'coverage-baseline-report.mjs'), 'utf8');
+    const builder = boundedSource(reporter, 'export function buildBaseline', '\nfunction main()');
+    assert.match(builder, /schema:\s*'a2a-nexus\.coverage-baseline\.v1'/);
+    assert.match(
+      builder,
+      floor === 'enforced' ? /floor:\s*\{\s*metric:\s*'line',\s*modules:\s*floors\s*\}/ : /floor:\s*null/,
+    );
+  }
+
+  const runnerReporter = await readFile(
+    join(repoRoot, 'packages/docker-runner/scripts/coverage-baseline-report.mjs'),
+    'utf8',
+  );
+  const floorSource = boundedSource(
+    runnerReporter,
+    'export const CORE_SOURCE_FLOORS = Object.freeze({',
+    '\n});',
+  );
+  const floors = Object.fromEntries(
+    [...floorSource.matchAll(/^\s*'([^']+\.js)':\s*(\d+),?\s*$/gm)].map((match) => [match[1], Number(match[2])]),
+  );
+  assert.deepEqual(floors, {
+    'config.js': 94,
+    'execution-orchestrator.js': 96,
+    'execution-proof.js': 95,
+    'execution-proof-signing.js': 90,
+    'redaction.js': 95,
+    'runner.js': 85,
+  });
+});
+
+test('parsed tsconfigs keep noUnusedLocals enabled for runner/plugin and pending for broker', async () => {
+  for (const { name, dir, noUnusedLocals } of packageContracts) {
+    const tsconfig = JSON.parse(await readFile(join(repoRoot, dir, 'tsconfig.json'), 'utf8'));
+    assert.strictEqual(
+      tsconfig.compilerOptions?.noUnusedLocals,
+      noUnusedLocals,
+      `${name}: noUnusedLocals contract drift`,
+    );
   }
 });
 
