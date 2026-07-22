@@ -93,6 +93,7 @@ jobs:
           set +e
           node scripts/check-tck-regressions.mjs \
             --level "$TCK_LEVEL" --transport "$TCK_TRANSPORT" \
+            --source "tck-measurement workflow run ${{ github.run_id }}" \
             --against-log /tmp/tck-run.log 2>&1 | tee /tmp/tck-regressions.json
           status=${PIPESTATUS[0]}
           set -e

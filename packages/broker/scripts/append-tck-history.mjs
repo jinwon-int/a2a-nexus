@@ -190,8 +190,9 @@ export function parseTckLog(text, classification = readDefaultClassification()) 
   return result;
 }
 
-function measurementKey(m) {
-  return `${m.date}|${m.level}|${m.transport}`;
+export function measurementKey(m) {
+  const source = typeof m.source === "string" ? m.source.trim() : "";
+  return `${m.date}|${m.level}|${m.transport}${source ? `|${source}` : ""}`;
 }
 
 export function upsertMeasurement(history, entry) {
