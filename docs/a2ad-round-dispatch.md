@@ -467,6 +467,12 @@ exit 1  if ANY lane is failed (or the manifest is invalid)
 No all-clear banner is printed when anything failed. The literal string
 `ALL DISPATCHED` is never emitted.
 
+Failed lane records preserve the broker's structured HTTP status and
+`error.code`. When the broker also returns `error.message`, the CLI exposes it
+as a bounded `detail` in both human failure output and `--json` results so
+schema/role/ownership errors remain actionable. Detail text is normalized and
+the edge secret is redacted before output.
+
 ## Usage
 
 ```bash
@@ -497,7 +503,8 @@ secret is never written to stdout or stderr.
 
 `scripts/a2a-dispatch-round.test.mjs` (node:test) exercises the full contract
 against a local `node:http` mock broker, including: all-201 → exit 0; one-500 →
-exit 1 with the other lanes still attempted; `503 queue_drain_timeout` with and
+exit 1 with the other lanes still attempted; actionable broker `400 bad_request`
+detail propagation with secret redaction; `503 queue_drain_timeout` with and
 without a confirming `GET`; the `202 {durable:false}` shape; duplicate →
 `already-exists`; dry-run rejection of duplicate lane ids, empty messages, invalid
 source bundles, and incomplete GitHub verify manifests; POST passthrough of

@@ -6,8 +6,9 @@
  * frozen while the child blocks on HTTP), so child-process CLI tests run the
  * broker as its own process. It prints `{"port":N}` on stdout once listening.
  *
- * Behavior is selected via argv[2]: "ok" (all 201) or "fail-first" (first POST
- * returns 500, the rest 201). Test-only; never used in production.
+ * Behavior is selected via argv[2]: "ok" (all 201), "fail-first" (first POST
+ * returns 500), or "bad-request-first" (first POST returns an actionable 400).
+ * Test-only; never used in production.
  */
 import http from 'node:http';
 
@@ -29,6 +30,14 @@ const server = http.createServer((req, res) => {
       const call = postCalls++;
       if (mode === 'fail-first' && call === 0) {
         return send(500, { error: { code: 'internal' } });
+      }
+      if (mode === 'bad-request-first' && call === 0) {
+        return send(400, {
+          error: {
+            code: 'bad_request',
+            message: 'x-a2a-requester-role must be one of: orchestrator, worker',
+          },
+        });
       }
       store.set(body.id, { id: body.id, status: 'queued' });
       return send(201, { task: { id: body.id, status: 'queued' } });

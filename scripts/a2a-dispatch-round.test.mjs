@@ -640,6 +640,48 @@ test('one lane 500 -> exit 1, that lane failed, others still attempted', async (
   }
 });
 
+test('broker 400 error.message is surfaced as a redacted bounded lane detail (#1593)', async () => {
+  const broker = await startMockBroker({
+    post: () => ({
+      status: 400,
+      json: {
+        error: {
+          code: 'bad_request',
+          message: `x-a2a-requester-role must be one of:\n orchestrator, worker\t${SECRET}`,
+        },
+      },
+    }),
+  });
+  try {
+    const out = await runDispatch(makeManifest(broker.url, 1), { fetchImpl: fetch, secret: SECRET });
+    assert.equal(out.exitCode, 1);
+    assert.equal(out.results[0].errorCode, 'bad_request');
+    assert.equal(
+      out.results[0].detail,
+      'x-a2a-requester-role must be one of: orchestrator, worker [REDACTED]',
+    );
+    assert.ok(!out.results[0].detail.includes(SECRET));
+  } finally {
+    await broker.close();
+  }
+});
+
+test('broker error detail is capped before it reaches lane output (#1593)', async () => {
+  const broker = await startMockBroker({
+    post: () => ({
+      status: 400,
+      json: { error: { code: 'bad_request', message: `invalid request: ${'x'.repeat(600)}` } },
+    }),
+  });
+  try {
+    const out = await runDispatch(makeManifest(broker.url, 1), { fetchImpl: fetch, secret: SECRET });
+    assert.equal(out.results[0].detail.length, 500);
+    assert.match(out.results[0].detail, /\.\.\.$/);
+  } finally {
+    await broker.close();
+  }
+});
+
 test('503 queue_drain_timeout + task found on GET -> accepted-unconfirmed, exit 0', async () => {
   const store = new Map();
   const broker = await startMockBroker({
@@ -837,6 +879,27 @@ test('CLI exits 1 when a lane fails and prints no all-clear', async () => {
     assert.equal(proc.status, 1, combined);
     assert.ok(!combined.includes('ALL DISPATCHED'));
     assert.ok(/INCOMPLETE/.test(combined));
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+    await broker.close();
+  }
+});
+
+test('CLI failure output includes the broker bad_request message (#1593)', async () => {
+  const broker = await startBrokerProcess('bad-request-first');
+  const dir = mkdtempSync(join(tmpdir(), 'a2a-dispatch-round-'));
+  const manifestPath = join(dir, 'manifest.json');
+  writeFileSync(manifestPath, JSON.stringify(makeManifest(broker.url, 1)));
+  try {
+    const proc = spawnSync(process.execPath, [SCRIPT, '--manifest', manifestPath], {
+      encoding: 'utf8',
+      env: { ...process.env, A2A_EDGE_SECRET: SECRET },
+    });
+    const combined = `${proc.stdout}\n${proc.stderr}`;
+    assert.equal(proc.status, 1, combined);
+    assert.match(combined, /code=bad_request/);
+    assert.match(combined, /detail=x-a2a-requester-role must be one of: orchestrator, worker/);
+    assert.ok(!combined.includes(SECRET), 'secret must not appear in failure detail');
   } finally {
     rmSync(dir, { recursive: true, force: true });
     await broker.close();
