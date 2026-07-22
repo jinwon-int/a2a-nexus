@@ -61,6 +61,21 @@ export const PACKAGE_CI_SURFACES = {
       requiredBin: ['a2a-docker-runner'],
     },
   },
+  'policy-referee': {
+    packageDir: 'packages/policy-referee',
+    commands: [
+      ['npm', ['run', 'check:source-quality-floors']],
+      ['npm', ['run', 'check', '-w', 'packages/policy-referee']],
+      ['npm', ['run', 'build', '-w', 'packages/policy-referee']],
+      ['npm', ['test', '-w', 'packages/policy-referee']],
+    ],
+    metadata: {
+      private: true,
+      license: 'MIT',
+      requiredScripts: ['build', 'check', 'test'],
+      requiredFiles: ['README.md'],
+    },
+  },
   'openclaw-plugin-a2a': {
     packageDir: 'packages/openclaw-plugin-a2a',
     commands: [

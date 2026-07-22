@@ -1,0 +1,39 @@
+{
+  "name": "@openclaw/a2a-policy-referee",
+  "version": "0.1.0",
+  "private": true,
+  "license": "MIT",
+  "type": "module",
+  "description": "Declarative worker-class policy engine for A2A brokers (warn/enforce)",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/jinwon-int/a2a-nexus.git",
+    "directory": "packages/policy-referee"
+  },
+  "homepage": "https://github.com/jinwon-int/a2a-nexus/tree/main/packages/policy-referee",
+  "bugs": {
+    "url": "https://github.com/jinwon-int/a2a-nexus/issues"
+  },
+  "files": [
+    "dist",
+    "README.md",
+    "LICENSE",
+    "package.json"
+  ],
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    }
+  },
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "check": "tsc -p tsconfig.json --noEmit",
+    "pretest": "npm run build",
+    "test": "node --test dist/**/*.test.js"
+  },
+  "devDependencies": {
+    "@types/node": "^22.20.1",
+    "typescript": "^6.0.3"
+  }
+}

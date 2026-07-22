@@ -167,7 +167,8 @@
     "node": ">=22.5"
   },
   "dependencies": {
-    "zod": "^4.3.6"
+    "zod": "^4.3.6",
+    "@openclaw/a2a-policy-referee": "0.1.0"
   },
   "devDependencies": {
     "@types/node": "^22.20.1",

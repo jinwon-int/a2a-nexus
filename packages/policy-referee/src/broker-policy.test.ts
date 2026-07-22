@@ -21,7 +21,7 @@ function doc(overrides: Partial<BrokerPolicyDocument> = {}): BrokerPolicyDocumen
 }
 
 function operatorPolicyDoc(): BrokerPolicyDocument {
-  const path = new URL("../../../../docs/ops/broker-policy.json", import.meta.url);
+  const path = new URL("../../../docs/ops/broker-policy.json", import.meta.url);
   return validateBrokerPolicyDocument(JSON.parse(readFileSync(path, "utf8")), path.pathname);
 }
 
