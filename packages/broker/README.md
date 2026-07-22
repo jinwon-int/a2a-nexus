@@ -244,11 +244,19 @@ not grow without bound.
 
 Default retention policy:
 
-- terminal exchanges: newest `1000` plus anything newer than `7d`
-- terminal tasks: newest `2000` plus anything newer than `7d`
-- terminal proposals: newest `1000` plus anything newer than `7d`
+- terminal exchanges: anything newer than `7d`, plus the newest `1000` older candidates
+- terminal tasks: anything newer than `7d`, plus the newest `2000` older candidates
+- terminal proposals: anything newer than `7d`, plus the newest `1000` older candidates
 - audit events: newest `5000` plus anything newer than `7d`
 - inactive workers: newest `500` plus anything seen within `14d`
+
+`terminalRetentionMs` is a candidacy cutoff, not a strict TTL. All terminal
+records at or newer than the cutoff remain, even when their count exceeds the
+corresponding `maxTerminal*` value. Among older candidates, at most that cap is
+retained, newest-first; only the remaining older candidates are prunable.
+Canonical snapshot byte fitting from [#1580](https://github.com/jinwon-int/a2a-nexus/pull/1580)
+is a separate compatibility-mirror safeguard and does not turn this cutoff into
+a TTL.
 
 Snapshot loads now reject malformed JSON and files larger than `50 MiB` by
 default instead of accepting partial or poisoned state.

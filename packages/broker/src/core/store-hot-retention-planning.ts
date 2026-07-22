@@ -12,6 +12,11 @@ import type {
   SqliteWorkerHotRetentionPlanOptions,
 } from "./store.js";
 
+/**
+ * Treats retentionMs as a candidacy cutoff, not a strict TTL. Recent terminal
+ * records remain regardless of maxTerminalRecords; the cap retains only the
+ * newest older candidates. Non-terminal and protected task rows always remain.
+ */
 export function planTaskRetentionFromRecords(
   records: TaskRecord[],
   options: SqliteTaskHotRetentionPlanOptions,

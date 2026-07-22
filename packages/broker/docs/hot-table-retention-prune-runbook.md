@@ -36,7 +36,16 @@ export interface BrokerRetentionPolicy {
 ```
 
 The **in-memory broker** (`InMemoryA2ABroker`) applies these during `save()` and startup –
-terminal task/audit rows beyond the cap are evicted before snapshotting.
+eligible terminal task/audit rows beyond the applicable cap are evicted before
+snapshotting.
+
+For terminal records, `terminalRetentionMs` is a **candidacy cutoff**, not a
+strict TTL. Every terminal record at or newer than the cutoff remains. The
+broker then retains at most `maxTerminalTasks` of the older task candidates,
+newest-first, and only older candidates beyond that tail cap are prunable.
+Canonical snapshot byte fitting from
+[#1580](https://github.com/jinwon-int/a2a-nexus/pull/1580) is a separate
+compatibility-mirror safeguard; it does not make the retention cutoff a TTL.
 
 The **SQLite hot-table store** (`SqliteBrokerStateStore`) does _not_ auto-prune on save.
 Retention is an explicit operator action through the cleanup pipeline.
@@ -48,8 +57,10 @@ Retention is an explicit operator action through the cleanup pipeline.
 Pure-function discovery of prune candidates. **No rows are mutated.** The planner:
 
 1. Reads a bounded set (max 2000) of current task records to discover active worker IDs.
-2. Calls `store.planHotTaskRetention()` — identifies terminal tasks past
-   `terminalRetentionMs` or exceeding `maxTerminalTasks`.
+2. Calls `store.planHotTaskRetention()` — retains every terminal task at or
+   newer than the `terminalRetentionMs` cutoff, then retains the newest
+   `maxTerminalTasks` older candidates and identifies only the remaining older
+   candidates as prunable.
 3. Calls `store.planHotWorkerRetention()` — identifies workers inactive past
    `inactiveWorkerRetentionMs` and exceeding `maxInactiveWorkers`, protected by
    active/assigned tasks.

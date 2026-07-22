@@ -13,6 +13,11 @@ export function parseRetentionTimestamp(value: string | undefined): number | nul
   return Number.isFinite(parsed) ? parsed : null;
 }
 
+/**
+ * Treats retentionMs as a candidacy cutoff, not expiry: terminal records at or
+ * newer than the cutoff all remain. The cap applies only to older candidates,
+ * retaining that tail newest-first; non-terminal and protected records remain.
+ */
 export function selectRetainedTerminalRecordIds<T>(params: {
   records: T[];
   isTerminal: (record: T) => boolean;

@@ -19,6 +19,11 @@ import type { TaskRecord, TaskStatus } from "./types.js";
 // broker.ts; this module only hosts exported contracts/constants whose existing
 // public import path is preserved by broker.ts re-exports.
 export interface BrokerRetentionPolicy {
+  /**
+   * Candidacy cutoff for terminal-record pruning, not a strict TTL. Every
+   * terminal record at or newer than the cutoff remains; maxTerminal* caps
+   * apply only to older candidates.
+   */
   terminalRetentionMs: number;
   maxTerminalExchanges: number;
   maxTerminalTasks: number;

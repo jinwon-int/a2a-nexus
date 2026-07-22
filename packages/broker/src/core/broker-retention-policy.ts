@@ -13,6 +13,11 @@ export const DEFAULT_MAX_REQUEUE_ATTEMPTS = 5;
 
 export const DEFAULT_HEARTBEAT_AUDIT_SAMPLE_INTERVAL_MS = 60_000;
 
+/**
+ * Terminal retention uses terminalRetentionMs as a candidacy cutoff, not a
+ * strict TTL: all records at or newer than the cutoff remain, and each
+ * maxTerminal* value retains at most that many older candidates newest-first.
+ */
 export const DEFAULT_BROKER_RETENTION_POLICY: BrokerRetentionPolicy = {
   terminalRetentionMs: 7 * 24 * 60 * 60 * 1000,
   maxTerminalExchanges: 1_000,
