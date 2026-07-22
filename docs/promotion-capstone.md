@@ -80,13 +80,15 @@ The named `promotion-capstone` CI lane runs a source-only consistency check over
 
 | Package | Coverage floor on live main | `noUnusedLocals` | Consistency evidence |
 | --- | --- | --- | --- |
-| `packages/broker` | measure-only (`floor: null`) | Pending | `coverage:baseline`, reporter + reporter test, package-CI command/metadata |
+| `packages/broker` | #1506 Enforced per-module line floors | Pending | `coverage:baseline`, reporter + reporter test, package-CI command/metadata |
 | `packages/docker-runner` | #1576 Enforced per-module line floors | Enabled | `coverage:baseline`, reporter + reporter test, package-CI command/metadata |
 | `packages/openclaw-plugin-a2a` | measure-only (`floor: null`) | Enabled | `coverage:baseline`, reporter + reporter test, package-CI command/metadata |
 
-The docker-runner floors merged in #1576 are `config.js` 94%, `execution-orchestrator.js` 96%, `execution-proof.js` 95%, `execution-proof-signing.js` 90%, `redaction.js` 95%, and `runner.js` 85%. A missing measurement, a lower value, or a failed underlying coverage run fails closed there; broker and plugin remain non-blocking measurements.
+The docker-runner floors merged in #1576 are `config.js` 94%, `execution-orchestrator.js` 96%, `execution-proof.js` 95%, `execution-proof-signing.js` 90%, `redaction.js` 95%, and `runner.js` 85%.
 
-Remaining #1506 work is explicit: broker and plugin coverage floors, broker `noUnusedLocals`, and async-safety approval. This capstone consistency slice references #1506 and does not close it.
+The broker reporter enforces the runtime #1506 floor while the promotion capstone independently pins the approved ratchet values, so coupled reporter/documentation lowering or module removal fails conformance. Against exact main `9ef9b26c8b04b659983dadb01c2777f4f8bd1a59` on Node 22, the deterministic built tests `dist/core/broker-policy.test.js`, `dist/core/provenance.test.js`, and `dist/core/release-evidence.test.js` measured `dist/core/broker-policy.js` 85.06%, `dist/core/provenance.js` 99.00%, and `dist/core/release-evidence.js` 98.66% line coverage. The enforced conservative floors are `dist/core/broker-policy.js` 84% (measured 85.06%), `dist/core/provenance.js` 98% (measured 99.00%), and `dist/core/release-evidence.js` 97% (measured 98.66%). Canonical `dist/core/...` paths prevent a same-basename module elsewhere in the coverage tree from satisfying the contract. A missing module measurement, malformed report, lower measurement, or failed underlying coverage test process fails closed.
+
+Remaining #1506 work is explicit: the plugin coverage floor, broker `noUnusedLocals`, and async-safety approval. This capstone consistency slice references #1506 and does not close it.
 
 ## Named CI lane
 

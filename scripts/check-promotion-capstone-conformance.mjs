@@ -19,6 +19,14 @@ import { fileURLToPath } from 'node:url';
 export const EXPECTED_COVERAGE_BASELINE_COMMAND =
   'npm run build && node --test scripts/coverage-baseline-report.test.mjs && node scripts/coverage-baseline-report.mjs';
 
+// Independent approved ratchet: deliberately separate from the runtime
+// reporter so a coupled reporter-floor lowering or module removal fails here.
+export const EXPECTED_BROKER_FLOORS = Object.freeze({
+  'dist/core/broker-policy.js': 84,
+  'dist/core/provenance.js': 98,
+  'dist/core/release-evidence.js': 97,
+});
+
 export const EXPECTED_RUNNER_FLOORS = Object.freeze({
   'config.js': 94,
   'execution-orchestrator.js': 96,
@@ -46,7 +54,13 @@ export function evaluateQualityFloorContract(contract) {
   );
   add(reporterTestPresent === true, `${name}: missing coverage baseline reporter test`);
   add(baseline?.schema === 'a2a-nexus.coverage-baseline.v1', `${name}: reporter schema drifted`);
-  if (name === 'docker-runner') {
+  if (name === 'broker') {
+    add(baseline?.floor?.metric === 'line', `${name}: reporter line-floor mode drifted`);
+    add(
+      JSON.stringify(sortedRecord(baseline?.floor?.modules)) === JSON.stringify(sortedRecord(EXPECTED_BROKER_FLOORS)),
+      `${name}: #1506 per-module floors drifted: ${JSON.stringify(sortedRecord(baseline?.floor?.modules))}`,
+    );
+  } else if (name === 'docker-runner') {
     add(baseline?.floor?.metric === 'line', `${name}: reporter line-floor mode drifted`);
     add(
       JSON.stringify(sortedRecord(baseline?.floor?.modules)) === JSON.stringify(sortedRecord(EXPECTED_RUNNER_FLOORS)),
@@ -176,7 +190,7 @@ if (capstone) {
   );
   for (const marker of [
     /a2a-nexus\.coverage-baseline\.v1/,
-    /broker[^\n]*measure-only[^\n]*Pending/i,
+    /broker[^\n]*#1506[^\n]*Enforced[^\n]*Pending/i,
     /docker-runner[^\n]*#1576[^\n]*Enforced[^\n]*Enabled/i,
     /openclaw-plugin-a2a[^\n]*measure-only[^\n]*Enabled/i,
     /config\.js[^\n]*94%/,
@@ -185,7 +199,10 @@ if (capstone) {
     /execution-proof-signing\.js[^\n]*90%/,
     /redaction\.js[^\n]*95%/,
     /runner\.js[^\n]*85%/,
-    /broker and plugin coverage floors/i,
+    /dist\/core\/broker-policy\.js[^\n]*84%[^\n]*85\.06%/,
+    /dist\/core\/provenance\.js[^\n]*98%[^\n]*99\.00%/,
+    /dist\/core\/release-evidence\.js[^\n]*97%[^\n]*98\.66%/,
+    /plugin coverage floor/i,
     /broker `noUnusedLocals`/i,
     /async-safety approval/i,
     /#1506/,
@@ -211,7 +228,16 @@ for (const packageContract of packages) {
       testExitCode: 0,
       note: 'promotion-capstone contract probe',
     })
-    : buildBaseline(name, [], { coveragePercent: null, note: 'promotion-capstone contract probe' });
+    : name === 'broker'
+      ? buildBaseline(name, [], {
+        coveragePercent: 100,
+        fileLineCoverage: { ...EXPECTED_BROKER_FLOORS },
+        testExitCode: 0,
+        reportValid: true,
+        reportFailures: [],
+        note: 'promotion-capstone contract probe',
+      })
+      : buildBaseline(name, [], { coveragePercent: null, note: 'promotion-capstone contract probe' });
   for (const message of evaluateQualityFloorContract({
     name,
     dir,
