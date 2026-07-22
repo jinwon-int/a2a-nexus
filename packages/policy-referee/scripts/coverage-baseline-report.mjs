@@ -17,7 +17,7 @@ if (run.status !== 0) {
   console.error(output);
   process.exit(run.status ?? 1);
 }
-const line = output.split('\n').find((entry) => entry.includes('broker-policy.js |'));
+const line = output.split('\n').find((entry) => /broker-policy\.js\s+\|/.test(entry));
 const match = line?.match(/broker-policy\.js\s+\|\s+([\d.]+)/);
 const pct = Number(match?.[1]);
 if (!line || !Number.isFinite(pct)) {
