@@ -13,10 +13,22 @@ export const DEFAULT_MAX_REQUEUE_ATTEMPTS = 5;
 
 export const DEFAULT_HEARTBEAT_AUDIT_SAMPLE_INTERVAL_MS = 60_000;
 
+/**
+ * Default cumulative serialized-byte budget for retained terminal tasks: half
+ * of the default snapshot cap (DEFAULT_BROKER_STATE_MAX_BYTES, 50 MB), leaving
+ * the other half for exchanges, audit events, tombstones, and the terminal
+ * outbox. Keeps the shipped defaults self-consistent: the count cap alone
+ * allowed maxTerminalTasks (2,000) x ~50 KB observed payloads = ~100 MB of
+ * terminal tasks, guaranteed to exceed the 50 MB snapshot cap and wedge
+ * persistence (#1579).
+ */
+export const DEFAULT_MAX_TERMINAL_TASK_BYTES = 25 * 1024 * 1024;
+
 export const DEFAULT_BROKER_RETENTION_POLICY: BrokerRetentionPolicy = {
   terminalRetentionMs: 7 * 24 * 60 * 60 * 1000,
   maxTerminalExchanges: 1_000,
   maxTerminalTasks: 2_000,
+  maxTerminalTaskBytes: DEFAULT_MAX_TERMINAL_TASK_BYTES,
   maxTerminalProposals: 1_000,
   inactiveWorkerRetentionMs: 14 * 24 * 60 * 60 * 1000,
   maxInactiveWorkers: 500,
@@ -60,6 +72,10 @@ export function normalizeBrokerRetentionPolicy(
     maxTerminalTasks: normalizeNonNegativeInteger(
       overrides?.maxTerminalTasks,
       DEFAULT_BROKER_RETENTION_POLICY.maxTerminalTasks,
+    ),
+    maxTerminalTaskBytes: normalizeNonNegativeInteger(
+      overrides?.maxTerminalTaskBytes,
+      DEFAULT_BROKER_RETENTION_POLICY.maxTerminalTaskBytes,
     ),
     maxTerminalProposals: normalizeNonNegativeInteger(
       overrides?.maxTerminalProposals,

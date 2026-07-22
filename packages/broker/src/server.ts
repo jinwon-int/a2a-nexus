@@ -397,7 +397,16 @@ export function createBrokerServer(options: BrokerServerOptions = {}): BrokerSer
     process.env.A2A_GITHUB_WEBHOOK_SECRET,
   );
   const trustedProxy = options.trustedProxy ?? process.env.TRUSTED_PROXY === "1";
-  const retentionPolicy = resolveBrokerRetentionPolicy(options.retentionPolicy);
+  const maxSnapshotBytes = Math.max(
+    1,
+    options.maxSnapshotBytes ?? Number(process.env.STATE_FILE_MAX_BYTES ?? DEFAULT_BROKER_STATE_MAX_BYTES),
+  );
+  // Default the terminal-task byte budget to half the snapshot cap so terminal
+  // retention can never outgrow STATE_FILE_MAX_BYTES and wedge persistence,
+  // whatever count caps or payload sizes are in play (#1579).
+  const retentionPolicy = resolveBrokerRetentionPolicy(options.retentionPolicy, {
+    maxTerminalTaskBytes: Math.floor(maxSnapshotBytes / 2),
+  });
   const taskReadinessMode = normalizeTaskReadinessMode(
     options.taskReadinessMode ?? process.env.A2A_TASK_READINESS_MODE ?? process.env.BROKER_TASK_READINESS_MODE,
   );
@@ -422,10 +431,6 @@ export function createBrokerServer(options: BrokerServerOptions = {}): BrokerSer
   const finalizerKeyringFile = options.finalizerKeyringFile ?? process.env.A2A_FINALIZER_KEYRING_FILE;
   const finalizerKeyring = finalizerKeyringFile ? loadFinalizerKeyringFile(finalizerKeyringFile) : undefined;
   const hotRuntimeLimits = resolveHotRuntimeLimits(options);
-  const maxSnapshotBytes = Math.max(
-    1,
-    options.maxSnapshotBytes ?? Number(process.env.STATE_FILE_MAX_BYTES ?? DEFAULT_BROKER_STATE_MAX_BYTES),
-  );
   const maxHotRuntimeNonTerminalTasks = hotRuntimeLimits.maxNonTerminalTasks;
   const maxHotRuntimeTerminalTasks = hotRuntimeLimits.maxTerminalTasks;
   const maxHotRuntimeAuditEvents = hotRuntimeLimits.maxAuditEvents;
