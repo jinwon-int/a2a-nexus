@@ -2,6 +2,7 @@ import type {
   A2AExchangeIntent,
   A2APartyRole,
   A2AWorkerEnvironment,
+  WorkerImplementationRuntime,
   WorkerView,
 } from "./types.js";
 import {
@@ -30,6 +31,14 @@ export interface SchedulerDryRunTaskProfile {
   assignedWorkerId?: string;
   /** When true, the scheduler should prefer validation workers (libero). */
   preferValidationWorker?: boolean;
+  /** Optional implementation-lane pin and redundancy policy. */
+  implementationPolicy?: {
+    requiredRuntime?: WorkerImplementationRuntime;
+    requiredProviderId?: string;
+    requiredModelTier?: string;
+    /** Defaults to one. Set to two to reject a single-worker implementation lane. */
+    minimumReadyWorkers?: number;
+  };
 }
 
 // ── Constraint evaluation ──────────────────────────────────────────────────
@@ -86,6 +95,28 @@ export interface SchedulerDryRunResult {
     /** When the recommendation is provisional due to warnings. */
     provisional: boolean;
   };
+  /** Present for patch/parameter implementation intents only. */
+  implementationLaneReadiness?: {
+    required: true;
+    requiredRuntime?: WorkerImplementationRuntime;
+    requiredProviderId?: string;
+    requiredModelTier?: string;
+    minimumReadyWorkers: number;
+    readyWorkerCount: number;
+    eligibleWorkerCount: number;
+    singlePointOfFailure: boolean;
+    meetsMinimum: boolean;
+    workers: Array<{
+      workerId: string;
+      capable: boolean;
+      runtime: WorkerImplementationRuntime | "missing";
+      providerId?: string;
+      modelTier?: string;
+      availability: string;
+      ready: boolean;
+      eligible: boolean;
+    }>;
+  };
   /** Safety boundaries: this is a read-only dry-run, never mutates state. */
   safety: {
     noMutation: true;
@@ -135,6 +166,67 @@ export function intentToPreferredRole(intent: A2AExchangeIntent): WorkerAssignme
     default:
       return undefined;
   }
+}
+
+export function isImplementationTaskType(intent: A2AExchangeIntent): boolean {
+  return intent === "propose_patch" || intent === "propose_params" || intent === "apply_local_change";
+}
+
+function normalizedPolicyId(value: string | undefined): string | undefined {
+  const normalized = value?.trim().toLowerCase();
+  return normalized || undefined;
+}
+
+function minimumImplementationWorkers(taskProfile: SchedulerDryRunTaskProfile): number {
+  const configured = taskProfile.implementationPolicy?.minimumReadyWorkers;
+  return typeof configured === "number" && Number.isFinite(configured)
+    ? Math.max(1, Math.floor(configured))
+    : 1;
+}
+
+export function evaluateImplementationReadiness(
+  worker: WorkerView,
+  taskProfile: SchedulerDryRunTaskProfile,
+): ConstraintEvaluation {
+  const profile = worker.capabilities.implementationCapability;
+  const blockers: string[] = [];
+
+  if (worker.workerPlane !== "online") {
+    blockers.push(`worker plane is '${worker.workerPlane}', not 'online'`);
+  }
+  if (!profile) {
+    blockers.push("implementation capability is not declared in registration/heartbeat");
+  } else {
+    if (!profile.capable) blockers.push("worker declares implementation capability disabled");
+    if (profile.runtime === "unknown") blockers.push("implementation runtime is unknown");
+    if (!profile.providerId) blockers.push("implementation provider is not recorded");
+    if (!profile.modelTier) blockers.push("implementation model tier is not recorded");
+    if (profile.availability !== "canary_passed") {
+      blockers.push(`implementation availability is '${profile.availability}', not 'canary_passed'`);
+    }
+
+    const policy = taskProfile.implementationPolicy;
+    if (policy?.requiredRuntime && profile.runtime !== policy.requiredRuntime) {
+      blockers.push(`runtime '${profile.runtime}' does not match required '${policy.requiredRuntime}'`);
+    }
+    const requiredProviderId = normalizedPolicyId(policy?.requiredProviderId);
+    if (requiredProviderId && profile.providerId !== requiredProviderId) {
+      blockers.push(`provider '${profile.providerId ?? "missing"}' does not match required '${requiredProviderId}'`);
+    }
+    const requiredModelTier = normalizedPolicyId(policy?.requiredModelTier);
+    if (requiredModelTier && profile.modelTier !== requiredModelTier) {
+      blockers.push(`model tier '${profile.modelTier ?? "missing"}' does not match required '${requiredModelTier}'`);
+    }
+  }
+
+  return {
+    constraint: "implementation_readiness",
+    label: "Implementation readiness",
+    verdict: blockers.length === 0 ? "pass" : "fail",
+    reason: blockers.length === 0
+      ? `Verified ${profile!.runtime} implementation route '${profile!.providerId}/${profile!.modelTier}' is canary-passed`
+      : blockers.join("; "),
+  };
 }
 
 /**
@@ -288,7 +380,13 @@ export function evaluateWorkerForTask(
       : `Worker does not support '${taskProfile.taskType}' in capabilities or capability card`,
   });
 
-  // 3. Workspace/repo access
+  // 3. Implementation runtime/provider/model proof. Filesystem patch access
+  // alone must never make a worker eligible for an implementation lane.
+  if (isImplementationTaskType(taskProfile.taskType)) {
+    constraints.push(evaluateImplementationReadiness(worker, taskProfile));
+  }
+
+  // 4. Workspace/repo access
   const hasAccess = workerHasWorkspaceAccess(worker, taskProfile.workspaceId);
   constraints.push({
     constraint: "workspace_access",
@@ -301,7 +399,7 @@ export function evaluateWorkerForTask(
       : `Worker workspace IDs [${worker.capabilities.workspaceIds.join(", ")}] do not include required '${taskProfile.workspaceId}'`,
   });
 
-  // 4. Capacity
+  // 5. Capacity
   const capacity = cardHasCapacity(card);
   constraints.push({
     constraint: "capacity_available",
@@ -314,7 +412,7 @@ export function evaluateWorkerForTask(
       : `Worker is at capacity (${capacity.current}/${capacity.max} assigned)`,
   });
 
-  // 5. Target environment
+  // 6. Target environment
   if (taskProfile.targetEnvironment) {
     const envs = card?.assignment.environments ?? worker.capabilities.environments;
     const hasEnv = envs.length === 0 || envs.includes(taskProfile.targetEnvironment);
@@ -328,7 +426,7 @@ export function evaluateWorkerForTask(
     });
   }
 
-  // 6. Validation-worker preference
+  // 7. Validation-worker preference
   if (taskProfile.preferValidationWorker) {
     const isLibero = card?.assignment.roles.includes("libero") ?? false;
     const isLiberoByTeam = cardTeam !== undefined && cardTeam === "team2";
@@ -437,12 +535,57 @@ export function runSchedulerDryRun(
 
   const ranked = rankWorkersForTask(evaluations, taskProfile);
   const recommendedPassing = ranked.filter((e) => e.recommended);
+  const implementationTask = isImplementationTaskType(taskProfile.taskType);
+  const minimumReadyWorkers = minimumImplementationWorkers(taskProfile);
+  const workerById = new Map(candidates.map((worker) => [worker.nodeId, worker]));
+  const implementationLaneReadiness = implementationTask
+    ? {
+        required: true as const,
+        ...(taskProfile.implementationPolicy?.requiredRuntime
+          ? { requiredRuntime: taskProfile.implementationPolicy.requiredRuntime }
+          : {}),
+        ...(normalizedPolicyId(taskProfile.implementationPolicy?.requiredProviderId)
+          ? { requiredProviderId: normalizedPolicyId(taskProfile.implementationPolicy?.requiredProviderId) }
+          : {}),
+        ...(normalizedPolicyId(taskProfile.implementationPolicy?.requiredModelTier)
+          ? { requiredModelTier: normalizedPolicyId(taskProfile.implementationPolicy?.requiredModelTier) }
+          : {}),
+        minimumReadyWorkers,
+        readyWorkerCount: ranked.filter((evaluation) => evaluation.constraints.some(
+          (constraint) => constraint.constraint === "implementation_readiness" && constraint.verdict === "pass",
+        )).length,
+        eligibleWorkerCount: recommendedPassing.length,
+        singlePointOfFailure: recommendedPassing.length === 1,
+        meetsMinimum: recommendedPassing.length >= minimumReadyWorkers,
+        workers: ranked.map((evaluation) => {
+          const profile = workerById.get(evaluation.workerId)?.capabilities.implementationCapability;
+          return {
+            workerId: evaluation.workerId,
+            capable: profile?.capable === true,
+            runtime: profile?.runtime ?? "missing" as const,
+            ...(profile?.providerId ? { providerId: profile.providerId } : {}),
+            ...(profile?.modelTier ? { modelTier: profile.modelTier } : {}),
+            availability: profile?.availability ?? "missing",
+            ready: evaluation.constraints.some(
+              (constraint) => constraint.constraint === "implementation_readiness" && constraint.verdict === "pass",
+            ),
+            eligible: evaluation.recommended,
+          };
+        }),
+      }
+    : undefined;
 
   let selectedWorkerId: string | null = null;
   let explanation: string;
   let provisional = false;
 
-  if (recommendedPassing.length > 0) {
+  if (ranked.length === 0) {
+    explanation = "No workers available for scheduling.";
+  } else if (implementationLaneReadiness && !implementationLaneReadiness.meetsMinimum) {
+    explanation =
+      `Implementation dispatch rejected: ${implementationLaneReadiness.eligibleWorkerCount} eligible worker(s), ` +
+      `minimum ${implementationLaneReadiness.minimumReadyWorkers} required by lane policy.`;
+  } else if (recommendedPassing.length > 0) {
     selectedWorkerId = recommendedPassing[0].workerId;
     const warningCount = recommendedPassing[0].constraints.filter((c) => c.verdict === "warn").length;
     provisional = warningCount > 0;
@@ -456,7 +599,7 @@ export function runSchedulerDryRun(
     if (provisional) {
       explanation += " Recommendation is provisional due to constraint warnings.";
     }
-  } else if (ranked.length > 0) {
+  } else if (ranked.length > 0 && !implementationTask) {
     // No recommended workers — pick the best of the non-recommended
     const bestNonRecommended = ranked[0];
     selectedWorkerId = bestNonRecommended.workerId;
@@ -464,7 +607,7 @@ export function runSchedulerDryRun(
     explanation =
       `No worker passes all constraints. Best candidate '${selectedWorkerId}' has ${bestNonRecommended.constraints.filter((c) => c.verdict === "fail").length} failure(s). Manual operator review required.`;
   } else {
-    explanation = "No workers available for scheduling.";
+    explanation = "No verified implementation worker is eligible; dispatch rejected.";
   }
 
   const result: SchedulerDryRunResult = {
@@ -479,6 +622,7 @@ export function runSchedulerDryRun(
       explanation,
       provisional,
     },
+    ...(implementationLaneReadiness ? { implementationLaneReadiness } : {}),
     safety: {
       noMutation: true,
       noDispatch: true,
@@ -507,6 +651,14 @@ export function renderSchedulerDryRunMarkdown(result: SchedulerDryRunResult): st
   lines.push(`- **Target environment:** ${result.taskProfile.targetEnvironment ?? "—"}`);
   lines.push(`- **Prefer validation worker:** ${result.taskProfile.preferValidationWorker ?? "—"}`);
   lines.push(`- **Candidates evaluated:** ${result.workerCount}`);
+  if (result.implementationLaneReadiness) {
+    const readiness = result.implementationLaneReadiness;
+    lines.push(`- **Implementation runtime pin:** ${readiness.requiredRuntime ?? "any verified runtime"}`);
+    lines.push(`- **Implementation provider pin:** ${readiness.requiredProviderId ?? "any recorded provider"}`);
+    lines.push(`- **Implementation model tier pin:** ${readiness.requiredModelTier ?? "any recorded tier"}`);
+    lines.push(`- **Implementation redundancy:** ${readiness.eligibleWorkerCount}/${readiness.minimumReadyWorkers} eligible`);
+    lines.push(`- **Implementation single point of failure:** ${readiness.singlePointOfFailure}`);
+  }
   lines.push("");
   lines.push("## Recommendation");
   lines.push("");
@@ -530,6 +682,17 @@ export function renderSchedulerDryRunMarkdown(result: SchedulerDryRunResult): st
     for (const con of eval_.constraints) {
       const verdictIcon = con.verdict === "pass" ? "✅" : con.verdict === "fail" ? "❌" : con.verdict === "warn" ? "⚠️" : "⏭️";
       lines.push(`| ${con.label} | ${verdictIcon} ${con.verdict} | ${con.reason} |`);
+    }
+    lines.push("");
+  }
+
+  if (result.implementationLaneReadiness) {
+    lines.push("## Implementation Readiness Matrix");
+    lines.push("");
+    lines.push("| Worker | Capable | Runtime | Provider | Model tier | Availability | Ready | Eligible |");
+    lines.push("|---|---:|---|---|---|---|---:|---:|");
+    for (const worker of result.implementationLaneReadiness.workers) {
+      lines.push(`| ${worker.workerId} | ${worker.capable} | ${worker.runtime} | ${worker.providerId ?? "—"} | ${worker.modelTier ?? "—"} | ${worker.availability} | ${worker.ready} | ${worker.eligible} |`);
     }
     lines.push("");
   }

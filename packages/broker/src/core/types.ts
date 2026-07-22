@@ -237,6 +237,7 @@ export type WorkerRuntimeFlavor =
 
 export type WorkerProviderRouteKind = "subscription" | "oauth" | "api-key" | "unknown";
 export type WorkerProviderAvailability = "configured" | "canary_passed" | "entitlement_failed" | "disabled";
+export type WorkerImplementationRuntime = "claude-native" | "codex-native" | "provider-native" | "unknown";
 
 /**
  * Secret-safe model/provider entitlement hint for broker-local assignment.
@@ -250,6 +251,21 @@ export interface WorkerProviderCapability {
   modelFamily?: string;
   modelId?: string;
   routeKind: WorkerProviderRouteKind;
+  availability: WorkerProviderAvailability;
+  lastVerifiedAt?: string;
+  evidenceId?: string;
+}
+
+/**
+ * Secret-safe, heartbeat-refreshable proof that a worker can execute an
+ * implementation lane. `canPatchWorkspace` only describes filesystem
+ * permission; schedulers must use this profile before assigning patch work.
+ */
+export interface WorkerImplementationCapability {
+  capable: boolean;
+  runtime: WorkerImplementationRuntime;
+  providerId?: string;
+  modelTier?: string;
   availability: WorkerProviderAvailability;
   lastVerifiedAt?: string;
   evidenceId?: string;
@@ -825,6 +841,8 @@ export interface WorkerCapabilities {
   workspaceIds: string[];
   environments: A2AWorkerEnvironment[];
   providerCapabilities?: WorkerProviderCapability[];
+  /** Broker-local implementation runtime/model readiness reported at registration or heartbeat. */
+  implementationCapability?: WorkerImplementationCapability;
   /**
    * Runtime flavor reported by native/external workers; absent keeps legacy
    * gateway semantics. Canonical Hermes value: "termux-hermes"; canonical

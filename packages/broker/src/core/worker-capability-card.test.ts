@@ -223,6 +223,15 @@ test("worker capability card keeps provider/model capabilities team-private and 
           evidenceId: "brokerbeta-workereta-grok-canary-20260615",
         },
       ],
+      implementationCapability: {
+        capable: true,
+        runtime: "provider-native",
+        providerId: "xai",
+        modelTier: "grok-implementation",
+        availability: "canary_passed",
+        lastVerifiedAt: "2026-06-15T01:00:00.000Z",
+        evidenceId: "brokerbeta-workereta-grok-canary-20260615",
+      },
     },
   };
 
@@ -244,7 +253,9 @@ test("worker capability card keeps provider/model capabilities team-private and 
   });
 
   assert.deepEqual(privateCard.capabilities.providerCapabilities?.map((capability) => capability.providerId), ["xai"]);
+  assert.equal(privateCard.capabilities.implementationCapability?.modelTier, "grok-implementation");
   assert.equal(publicCard.capabilities.providerCapabilities, undefined);
+  assert.equal(publicCard.capabilities.implementationCapability, undefined);
   assert.equal(JSON.stringify(publicCard.agentCard).includes("xai"), false);
   assert.equal(JSON.stringify(publicCard.agentCard).includes("grok"), false);
 
@@ -290,6 +301,28 @@ test("worker capability card validation rejects public provider capability expos
 
   assert.equal(result.ok, false);
   assert.match(result.errors.join("\n"), /public cards must not expose providerCapabilities/);
+});
+
+test("worker capability card validation rejects public implementation capability exposure", () => {
+  const card = createWorkerCapabilityCard(BASE_WORKER, {
+    teamId: "team2",
+    brokerOfRecord: "brokerbeta",
+    assignmentRoles: ["implementation"],
+    supportedTaskTypes: ["propose_patch"],
+    skills: [],
+    visibility: { scope: "public", safeForDiscovery: true },
+  });
+  card.capabilities.implementationCapability = {
+    capable: true,
+    runtime: "claude-native",
+    providerId: "anthropic",
+    modelTier: "claude-implementation",
+    availability: "canary_passed",
+  };
+
+  const result = validateWorkerCapabilityCard(card);
+  assert.equal(result.ok, false);
+  assert.match(result.errors.join("\n"), /public cards must not expose implementationCapability/);
 });
 
 test("worker capability card validation rejects secret-like provider capability fields", () => {

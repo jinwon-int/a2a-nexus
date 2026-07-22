@@ -359,6 +359,9 @@ export function validateWorkerCapabilityCard(card: WorkerCapabilityCard): Worker
     if (card.visibility.exposeProviderCapabilities || (card.capabilities.providerCapabilities?.length ?? 0) > 0) {
       errors.push("public cards must not expose providerCapabilities");
     }
+    if (card.capabilities.implementationCapability) {
+      errors.push("public cards must not expose implementationCapability");
+    }
   }
   if (!card.safety?.requiresApprovalForLive) {
     errors.push("safety.requiresApprovalForLive must stay true");
@@ -403,6 +406,23 @@ function projectCapabilities(capabilities: WorkerCapabilities, visibility: Worke
     ...(visibility.scope !== "public" && visibility.exposeProviderCapabilities && capabilities.providerCapabilities?.length
       ? { providerCapabilities: capabilities.providerCapabilities.map(copyProviderCapability) }
       : {}),
+    ...(visibility.scope !== "public" && visibility.exposeProviderCapabilities && capabilities.implementationCapability
+      ? { implementationCapability: copyImplementationCapability(capabilities.implementationCapability) }
+      : {}),
+  };
+}
+
+function copyImplementationCapability(
+  capability: NonNullable<WorkerCapabilities["implementationCapability"]>,
+): NonNullable<WorkerCapabilities["implementationCapability"]> {
+  return {
+    capable: capability.capable,
+    runtime: capability.runtime,
+    providerId: capability.providerId,
+    modelTier: capability.modelTier,
+    availability: capability.availability,
+    lastVerifiedAt: capability.lastVerifiedAt,
+    evidenceId: capability.evidenceId,
   };
 }
 

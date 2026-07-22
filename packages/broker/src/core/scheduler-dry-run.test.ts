@@ -6,6 +6,8 @@ import {
   rankWorkersForTask,
   runSchedulerDryRun,
   renderSchedulerDryRunMarkdown,
+  evaluateImplementationReadiness,
+  isImplementationTaskType,
   intentToPreferredRole,
   workerSupportsTaskType,
   workerHasWorkspaceAccess,
@@ -24,31 +26,15 @@ import type { WorkerView } from "./types.js";
 
 // ── Helpers ─────────────────────────────────────────────────────────────────
 
-function makeWorkerView(overrides: Partial<WorkerView> & { nodeId: string }): WorkerView {
-  return {
-    role: "analyst",
-    displayName: undefined,
-    brokerUrl: undefined,
-    capabilities: {
-      canAnalyze: true,
-      canBackfill: true,
-      canPatchWorkspace: true,
-      canPromoteLive: false,
-      workspaceIds: [],
-      environments: ["research", "staging"],
-    },
-    workerMode: "persistent",
-    metadata: undefined,
-    createdAt: "2026-01-01T00:00:00.000Z",
-    updatedAt: "2026-01-01T00:00:00.000Z",
-    lastSeenAt: "2026-01-01T00:00:00.000Z",
-    status: "online",
-    workerPlane: "online",
-    managementPlane: "unknown",
-    updateEligible: true,
-    ...overrides,
-  };
-}
+const READY_IMPLEMENTATION: NonNullable<import("./types.js").WorkerCapabilities["implementationCapability"]> = {
+  capable: true,
+  runtime: "claude-native",
+  providerId: "anthropic",
+  modelTier: "claude-implementation",
+  availability: "canary_passed",
+  lastVerifiedAt: "2026-01-01T00:00:00.000Z",
+  evidenceId: "test-canary",
+};
 
 /** Shared default capabilities to avoid inline makeWorkerView nesting. */
 const BASE_CAP: import("./types.js").WorkerCapabilities = {
@@ -58,7 +44,28 @@ const BASE_CAP: import("./types.js").WorkerCapabilities = {
   canPromoteLive: false,
   workspaceIds: [],
   environments: ["research", "staging"],
+  implementationCapability: READY_IMPLEMENTATION,
 };
+
+function makeWorkerView(overrides: Partial<WorkerView> & { nodeId: string }): WorkerView {
+  const { capabilities, ...workerOverrides } = overrides;
+  return {
+    role: "analyst",
+    displayName: undefined,
+    brokerUrl: undefined,
+    capabilities: { ...BASE_CAP, ...capabilities },
+    workerMode: "persistent",
+    metadata: undefined,
+    createdAt: "2026-01-01T00:00:00.000Z",
+    updatedAt: "2026-01-01T00:00:00.000Z",
+    lastSeenAt: "2026-01-01T00:00:00.000Z",
+    status: "online",
+    workerPlane: "online",
+    managementPlane: "unknown",
+    updateEligible: true,
+    ...workerOverrides,
+  };
+}
 
 function makeCapabilityCard(
   workerId: string,
@@ -91,6 +98,59 @@ test("intentToPreferredRole maps validate_change to libero", () => {
 
 test("intentToPreferredRole returns undefined for unknown intents", () => {
   assert.equal(intentToPreferredRole("chat"), undefined);
+});
+
+test("isImplementationTaskType covers every patch-producing intent", () => {
+  assert.equal(isImplementationTaskType("propose_patch"), true);
+  assert.equal(isImplementationTaskType("propose_params"), true);
+  assert.equal(isImplementationTaskType("apply_local_change"), true);
+  assert.equal(isImplementationTaskType("analyze"), false);
+});
+
+test("evaluateImplementationReadiness fails closed without a heartbeat profile", () => {
+  const worker = makeWorkerView({
+    nodeId: "workerlegacy",
+    capabilities: { ...BASE_CAP, implementationCapability: undefined },
+  });
+  const result = evaluateImplementationReadiness(worker, { taskType: "propose_patch" });
+  assert.equal(result.verdict, "fail");
+  assert.match(result.reason, /not declared/);
+});
+
+test("evaluateImplementationReadiness rejects a stale worker with a valid model profile", () => {
+  const worker = makeWorkerView({ nodeId: "workerstale", workerPlane: "unknown", status: "stale" });
+  const result = evaluateImplementationReadiness(worker, { taskType: "propose_patch" });
+  assert.equal(result.verdict, "fail");
+  assert.match(result.reason, /worker plane is 'unknown'/);
+});
+
+test("evaluateImplementationReadiness enforces runtime, provider, tier, and canary pins", () => {
+  const worker = makeWorkerView({
+    nodeId: "workercodex",
+    capabilities: {
+      ...BASE_CAP,
+      implementationCapability: {
+        capable: true,
+        runtime: "codex-native",
+        providerId: "openai",
+        modelTier: "codex-standard",
+        availability: "configured",
+      },
+    },
+  });
+  const result = evaluateImplementationReadiness(worker, {
+    taskType: "propose_patch",
+    implementationPolicy: {
+      requiredRuntime: "claude-native",
+      requiredProviderId: "anthropic",
+      requiredModelTier: "claude-implementation",
+    },
+  });
+  assert.equal(result.verdict, "fail");
+  assert.match(result.reason, /not 'canary_passed'/);
+  assert.match(result.reason, /runtime 'codex-native'/);
+  assert.match(result.reason, /provider 'openai'/);
+  assert.match(result.reason, /model tier 'codex-standard'/);
 });
 
 // ── workerSupportsTaskType ─────────────────────────────────────────────────
@@ -411,6 +471,63 @@ test("runSchedulerDryRun returns null when no workers available", () => {
   assert.match(result.recommendation.explanation, /No workers available/);
 });
 
+test("runSchedulerDryRun rejects implementation dispatch when no verified profile is eligible", () => {
+  const worker = makeWorkerView({
+    nodeId: "workerlegacy",
+    capabilities: { ...BASE_CAP, canPatchWorkspace: true, implementationCapability: undefined },
+  });
+  const result = runSchedulerDryRun({ taskType: "propose_patch" }, [worker]);
+
+  assert.equal(result.recommendation.selectedWorkerId, null);
+  assert.equal(result.recommendation.provisional, false);
+  assert.match(result.recommendation.explanation, /dispatch rejected/i);
+  assert.equal(result.implementationLaneReadiness?.readyWorkerCount, 0);
+  assert.equal(result.implementationLaneReadiness?.eligibleWorkerCount, 0);
+});
+
+test("runSchedulerDryRun applies model-tier pin and reports the readiness matrix", () => {
+  const claudeWorker = makeWorkerView({ nodeId: "workerclaude" });
+  const codexWorker = makeWorkerView({
+    nodeId: "workercodex",
+    capabilities: {
+      ...BASE_CAP,
+      implementationCapability: {
+        capable: true,
+        runtime: "codex-native",
+        providerId: "openai",
+        modelTier: "codex-standard",
+        availability: "canary_passed",
+      },
+    },
+  });
+  const result = runSchedulerDryRun({
+    taskType: "propose_patch",
+    implementationPolicy: {
+      requiredRuntime: "claude-native",
+      requiredProviderId: "ANTHROPIC",
+      requiredModelTier: "CLAUDE-IMPLEMENTATION",
+    },
+  }, [codexWorker, claudeWorker]);
+
+  assert.equal(result.recommendation.selectedWorkerId, "workerclaude");
+  assert.equal(result.implementationLaneReadiness?.readyWorkerCount, 1);
+  assert.equal(result.implementationLaneReadiness?.workers.find((row) => row.workerId === "workercodex")?.ready, false);
+  assert.equal(result.implementationLaneReadiness?.workers.find((row) => row.workerId === "workerclaude")?.ready, true);
+});
+
+test("runSchedulerDryRun can require a second ready implementation worker", () => {
+  const result = runSchedulerDryRun({
+    taskType: "propose_patch",
+    implementationPolicy: { minimumReadyWorkers: 2 },
+  }, [makeWorkerView({ nodeId: "workerclaude" })]);
+
+  assert.equal(result.recommendation.selectedWorkerId, null);
+  assert.equal(result.implementationLaneReadiness?.minimumReadyWorkers, 2);
+  assert.equal(result.implementationLaneReadiness?.meetsMinimum, false);
+  assert.equal(result.implementationLaneReadiness?.singlePointOfFailure, true);
+  assert.match(result.recommendation.explanation, /minimum 2 required/);
+});
+
 test("runSchedulerDryRun selects libero when preferValidationWorker is set", () => {
   const task: SchedulerDryRunTaskProfile = {
     taskType: "validate_change",
@@ -580,6 +697,9 @@ test("renderSchedulerDryRunMarkdown produces readable output", () => {
   assert.match(markdown, /Task type/);
   assert.match(markdown, /Recommendation/);
   assert.match(markdown, /Worker Evaluations/);
+  assert.match(markdown, /Implementation Readiness Matrix/);
+  assert.match(markdown, /anthropic/);
+  assert.match(markdown, /claude-implementation/);
   assert.match(markdown, /workerdelta/);
   assert.match(markdown, /No mutation/);
   assert.match(markdown, /No dispatch/);
