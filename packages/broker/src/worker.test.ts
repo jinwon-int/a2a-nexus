@@ -2307,3 +2307,141 @@ test("dynamic subagent runtime is default-off and fails closed on absent, insuff
   assert.deepEqual(off.env, {});
   assert.equal(off.subagentContextBrief, undefined);
 });
+
+test("external handler failure excerpt preserves head AND tail of the nested runner message (#1610)", async () => {
+  const server = await startTestServer();
+  const tempDir = await mkdtemp(join(tmpdir(), "a2a-worker-test-"));
+  const scriptPath = join(tempDir, "handler.mjs");
+
+  await writeFile(
+    scriptPath,
+    [
+      'const filler = "x".repeat(4000);',
+      "const failure = { error: { code: 'docker_runner_failed', message: `HEAD-MARKER clone start ${filler} TAIL-MARKER the actual error`, details: {} } };",
+      "process.stdout.write(JSON.stringify(failure));",
+      "process.exitCode = 1;",
+    ].join("\n"),
+    "utf8",
+  );
+
+  const worker = new A2ABrokerWorker({
+    brokerUrl: server.baseUrl,
+    requesterKind: "node",
+    pollIntervalMs: 25,
+    heartbeatIntervalMs: 25,
+    handlerTimeoutMs: 1_000,
+    userAgent: "a2a-broker-worker-test",
+    handler: createExternalWorkerHandler({
+      command: process.execPath,
+      args: [scriptPath],
+      timeoutMs: 1_000,
+    }),
+    worker: {
+      nodeId: "worker-a",
+      role: "analyst",
+      capabilities: {
+        canAnalyze: true,
+        canBackfill: false,
+        canPatchWorkspace: false,
+        canPromoteLive: false,
+        workspaceIds: ["test"],
+        environments: ["research"],
+      },
+    },
+  });
+
+  try {
+    await worker.register();
+    const task = await createTask(server.baseUrl, {
+      intent: "analyze",
+      requester: { id: "hub-a", kind: "node", role: "hub" },
+      target: { id: "worker-a", kind: "node", role: "analyst" },
+      assignedWorkerId: "worker-a",
+      message: "run external",
+    });
+
+    const processed = await worker.runOnce();
+    assert.equal(processed, 1);
+
+    const taskResponse = await fetch(`${server.baseUrl}/tasks/${task.id}`);
+    assert.equal(taskResponse.status, 200);
+    const failedTask = await taskResponse.json();
+
+    assert.equal(failedTask.status, "failed");
+    const excerpt = String(failedTask.error.details.excerpt ?? "");
+    assert.match(excerpt, /HEAD-MARKER/);
+    assert.match(excerpt, /TAIL-MARKER the actual error/);
+  } finally {
+    await worker.stop();
+    await server.close();
+    await rm(tempDir, { recursive: true, force: true });
+  }
+});
+
+test("external handler non-JSON stderr failure excerpt keeps head AND tail (#1610)", async () => {
+  const server = await startTestServer();
+  const tempDir = await mkdtemp(join(tmpdir(), "a2a-worker-test-"));
+  const scriptPath = join(tempDir, "handler.mjs");
+
+  await writeFile(
+    scriptPath,
+    [
+      "console.error('STDERR-HEAD ' + 'y'.repeat(4000) + ' STDERR-TAIL final failure line');",
+      "process.exitCode = 1;",
+    ].join("\n"),
+    "utf8",
+  );
+
+  const worker = new A2ABrokerWorker({
+    brokerUrl: server.baseUrl,
+    requesterKind: "node",
+    pollIntervalMs: 25,
+    heartbeatIntervalMs: 25,
+    handlerTimeoutMs: 1_000,
+    userAgent: "a2a-broker-worker-test",
+    handler: createExternalWorkerHandler({
+      command: process.execPath,
+      args: [scriptPath],
+      timeoutMs: 1_000,
+    }),
+    worker: {
+      nodeId: "worker-a",
+      role: "analyst",
+      capabilities: {
+        canAnalyze: true,
+        canBackfill: false,
+        canPatchWorkspace: false,
+        canPromoteLive: false,
+        workspaceIds: ["test"],
+        environments: ["research"],
+      },
+    },
+  });
+
+  try {
+    await worker.register();
+    const task = await createTask(server.baseUrl, {
+      intent: "analyze",
+      requester: { id: "hub-a", kind: "node", role: "hub" },
+      target: { id: "worker-a", kind: "node", role: "analyst" },
+      assignedWorkerId: "worker-a",
+      message: "run external",
+    });
+
+    const processed = await worker.runOnce();
+    assert.equal(processed, 1);
+
+    const taskResponse = await fetch(`${server.baseUrl}/tasks/${task.id}`);
+    assert.equal(taskResponse.status, 200);
+    const failedTask = await taskResponse.json();
+
+    assert.equal(failedTask.status, "failed");
+    const excerpt = String(failedTask.error.details.excerpt ?? "");
+    assert.match(excerpt, /STDERR-HEAD/);
+    assert.match(excerpt, /STDERR-TAIL final failure line/);
+  } finally {
+    await worker.stop();
+    await server.close();
+    await rm(tempDir, { recursive: true, force: true });
+  }
+});
