@@ -15,6 +15,7 @@ import { PACKAGE_CI_SURFACES } from './run-monorepo-package-ci-parity.mjs';
 import {
   evaluateQualityFloorContract,
   EXPECTED_COVERAGE_BASELINE_COMMAND,
+  EXPECTED_BROKER_FLOORS,
   EXPECTED_RUNNER_FLOORS,
 } from './check-promotion-capstone-conformance.mjs';
 
@@ -26,14 +27,18 @@ async function capstone() {
 }
 
 const packageContracts = [
-  { name: 'broker', dir: 'packages/broker', floor: 'measure-only', noUnusedLocals: undefined },
+  { name: 'broker', dir: 'packages/broker', floor: 'enforced', noUnusedLocals: undefined },
   { name: 'docker-runner', dir: 'packages/docker-runner', floor: 'enforced', noUnusedLocals: true },
   { name: 'openclaw-plugin-a2a', dir: 'packages/openclaw-plugin-a2a', floor: 'measure-only', noUnusedLocals: true },
 ];
 
 function validQualityContract(name = 'docker-runner') {
   const dir = name === 'openclaw-plugin-a2a' ? 'packages/openclaw-plugin-a2a' : `packages/${name}`;
-  const enforced = name === 'docker-runner';
+  const expectedFloors = name === 'broker'
+    ? EXPECTED_BROKER_FLOORS
+    : name === 'docker-runner'
+      ? EXPECTED_RUNNER_FLOORS
+      : null;
   return {
     name,
     dir,
@@ -41,7 +46,7 @@ function validQualityContract(name = 'docker-runner') {
     reporterTestPresent: true,
     baseline: {
       schema: 'a2a-nexus.coverage-baseline.v1',
-      floor: enforced ? { metric: 'line', modules: { ...EXPECTED_RUNNER_FLOORS } } : null,
+      floor: expectedFloors ? { metric: 'line', modules: { ...expectedFloors } } : null,
     },
     surface: {
       commands: [['npm', ['run', 'coverage:baseline', '-w', dir]]],
@@ -133,7 +138,7 @@ test('promotion capstone records the live-main quality-floor consistency contrac
   const content = await capstone();
   const section = boundedSource(content, '## Quality-floor consistency', '\n## Named CI lane');
   assert.match(section, /a2a-nexus\.coverage-baseline\.v1/);
-  assert.match(section, /broker[^\n]*measure-only[^\n]*Pending/i);
+  assert.match(section, /broker[^\n]*#1506[^\n]*Enforced[^\n]*Pending/i);
   assert.match(section, /docker-runner[^\n]*#1576[^\n]*Enforced[^\n]*Enabled/i);
   assert.match(section, /openclaw-plugin-a2a[^\n]*measure-only[^\n]*Enabled/i);
   for (const [module, floor] of Object.entries({
@@ -146,7 +151,17 @@ test('promotion capstone records the live-main quality-floor consistency contrac
   })) {
     assert.match(section, new RegExp(`${module.replace('.', '\\.')}[^\\n]*${floor}%`));
   }
-  assert.match(section, /broker and plugin coverage floors/i);
+  for (const [module, values] of Object.entries({
+    'broker-policy.js': [84, '85\\.06'],
+    'provenance.js': [98, '99\\.00'],
+    'release-evidence.js': [97, '98\\.66'],
+  })) {
+    assert.match(
+      section,
+      new RegExp(`${module.replace('.', '\\.')}[^\\n]*${values[0]}%[^\\n]*${values[1]}%`),
+    );
+  }
+  assert.match(section, /plugin coverage floor/i);
   assert.match(section, /broker `noUnusedLocals`/i);
   assert.match(section, /async-safety approval/i);
   assert.match(section, /#1506/);
@@ -219,6 +234,21 @@ test('quality-floor evaluator rejects missing, lowered, or additional runner flo
     assert.match(
       evaluateQualityFloorContract(contract).join('\n'),
       /docker-runner: #1576 per-module floors drifted/,
+    );
+  }
+});
+
+test('quality-floor evaluator rejects missing, lowered, or additional broker floors', () => {
+  for (const mutate of [
+    (floors) => { delete floors['release-evidence.js']; },
+    (floors) => { floors['broker-policy.js'] = 83; },
+    (floors) => { floors['extra.js'] = 100; },
+  ]) {
+    const contract = validQualityContract('broker');
+    mutate(contract.baseline.floor.modules);
+    assert.match(
+      evaluateQualityFloorContract(contract).join('\n'),
+      /broker: #1506 per-module floors drifted/,
     );
   }
 });

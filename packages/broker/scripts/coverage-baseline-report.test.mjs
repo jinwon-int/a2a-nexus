@@ -2,9 +2,14 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 
 import {
+  CORE_SOURCE_FLOORS,
+  COVERAGE_TEST_FILES,
   classifyFile,
   classifyAll,
+  parseCoverageReport,
   parseAllFilesCoverage,
+  parseFileLineCoverage,
+  evaluateCoverageFloors,
   buildBaseline,
   countBrokerScriptModules,
 } from './coverage-baseline-report.mjs';
@@ -61,22 +66,129 @@ test('countBrokerScriptModules counts only top-level non-test scripts/*.mjs', ()
   assert.equal(countBrokerScriptModules(rel), 3); // a, b, c
 });
 
-test('parseAllFilesCoverage extracts the all-files line percent, else null', () => {
-  assert.equal(parseAllFilesCoverage('# all files | 87.5 | ...'), 87.5);
-  assert.equal(parseAllFilesCoverage('nothing parseable here'), null);
+const validReport = [
+  '# start of coverage report',
+  '# file                    | line % | branch % | funcs % | uncovered lines',
+  '#  broker-policy.js       |  85.06 |    88.41 |   87.50 | 35-36',
+  '#  provenance.js          |  99.00 |    69.23 |  100.00 | 28-29',
+  '#  release-evidence.js    |  98.66 |    85.95 |  100.00 | 122-123',
+  '# all files               |  89.02 |    82.37 |   93.75 |',
+  '# end of coverage report',
+].join('\n');
+
+test('coverage contract uses the deterministic built tests and conservative measured floors', () => {
+  assert.deepEqual(COVERAGE_TEST_FILES, [
+    'dist/core/broker-policy.test.js',
+    'dist/core/provenance.test.js',
+    'dist/core/release-evidence.test.js',
+  ]);
+  assert.deepEqual(CORE_SOURCE_FLOORS, {
+    'broker-policy.js': 84,
+    'provenance.js': 98,
+    'release-evidence.js': 97,
+  });
 });
 
-test('buildBaseline is measure-only (floor null) with additive broker notes', () => {
+test('parseCoverageReport extracts the aggregate and per-module line coverage', () => {
+  assert.deepEqual(parseCoverageReport(validReport), {
+    ok: true,
+    coveragePercent: 89.02,
+    fileLineCoverage: {
+      'broker-policy.js': 85.06,
+      'provenance.js': 99,
+      'release-evidence.js': 98.66,
+    },
+    failures: [],
+  });
+  assert.equal(parseAllFilesCoverage(validReport), 89.02);
+  assert.deepEqual(parseFileLineCoverage(validReport), {
+    'broker-policy.js': 85.06,
+    'provenance.js': 99,
+    'release-evidence.js': 98.66,
+  });
+});
+
+test('parseCoverageReport rejects missing boundaries, malformed rows, and duplicates', () => {
+  for (const report of [
+    '# all files | 87.5 | 80 | 90 |',
+    validReport.replace('85.06', 'not-a-number'),
+    validReport.replace(
+      '# all files',
+      '#  provenance.js          |  99.00 |    69.23 |  100.00 |\n# all files',
+    ),
+  ]) {
+    const parsed = parseCoverageReport(report);
+    assert.equal(parsed.ok, false);
+    assert.ok(parsed.failures.length > 0);
+    assert.equal(parseAllFilesCoverage(report), null);
+    assert.deepEqual(parseFileLineCoverage(report), {});
+  }
+});
+
+test('evaluateCoverageFloors fails closed on a missing or regressed module', () => {
+  const measured = {
+    'broker-policy.js': 83.99,
+    'provenance.js': 99,
+  };
+  const result = evaluateCoverageFloors(measured);
+  assert.equal(result.ok, false);
+  assert.deepEqual(result.failures, [
+    'broker-policy.js: line coverage below floor',
+    'release-evidence.js: coverage missing',
+  ]);
+});
+
+test('buildBaseline records and passes the enforced per-module line floor', () => {
   const baseline = buildBaseline('broker', ['src/a.ts', 'scripts/x.mjs', 'src/a.test.ts'], {
-    coveragePercent: null,
-    note: 'n/a',
+    coveragePercent: 89.02,
+    fileLineCoverage: {
+      'broker-policy.js': 85.06,
+      'provenance.js': 99,
+      'release-evidence.js': 98.66,
+    },
+    testExitCode: 0,
+    reportValid: true,
+    reportFailures: [],
+    note: 'aggregate over deterministic built core tests',
   });
   assert.equal(baseline.schema, 'a2a-nexus.coverage-baseline.v1');
   assert.equal(baseline.package, 'broker');
-  assert.equal(baseline.floor, null); // never a floor in this slice
+  assert.deepEqual(baseline.floor, { metric: 'line', modules: CORE_SOURCE_FLOORS });
+  assert.equal(baseline.floorEvaluation.ok, true);
   assert.equal(baseline.counts.source, 1);
   assert.equal(baseline.counts.test, 1);
   assert.equal(baseline.counts.other, 1);
   assert.deepEqual(baseline.sourceFiles, ['src/a.ts']);
   assert.equal(baseline.notes.scriptModulesInOther, 1);
+});
+
+test('buildBaseline fails on a nonzero test process or malformed report', () => {
+  const measured = Object.fromEntries(
+    Object.entries(CORE_SOURCE_FLOORS).map(([file, floor]) => [file, floor + 1]),
+  );
+  const failedProcess = buildBaseline('broker', [], {
+    coveragePercent: 100,
+    fileLineCoverage: measured,
+    testExitCode: 1,
+    reportValid: true,
+    reportFailures: [],
+    note: 'test failure',
+  });
+  assert.equal(failedProcess.floorEvaluation.ok, false);
+  assert.deepEqual(failedProcess.floorEvaluation.failures, [
+    'coverage test run failed (exit 1)',
+  ]);
+
+  const malformed = buildBaseline('broker', [], {
+    coveragePercent: null,
+    fileLineCoverage: measured,
+    testExitCode: 0,
+    reportValid: false,
+    reportFailures: ['coverage aggregate row missing or ambiguous'],
+    note: 'malformed',
+  });
+  assert.equal(malformed.floorEvaluation.ok, false);
+  assert.deepEqual(malformed.floorEvaluation.failures, [
+    'coverage report malformed: coverage aggregate row missing or ambiguous',
+  ]);
 });
