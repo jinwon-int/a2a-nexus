@@ -95,7 +95,7 @@ This repository is the canonical A2A Nexus source and coordination workspace for
 
 | Repository | Public role | Canonical source |
 | --- | --- | --- |
-| [`a2a-nexus`](https://github.com/jinwon-int/a2a-nexus) | Canonical monorepo: broker, adapter plugin, Docker runner, contracts, docs, examples, readiness/release gates | **Canonical** — `packages/broker`, `packages/openclaw-plugin-a2a`, `packages/docker-runner`, `packages/policy-referee`, project docs, contracts, compatibility/readiness policy, issue routing |
+| [`a2a-nexus`](https://github.com/jinwon-int/a2a-nexus) | Canonical monorepo: broker, adapter plugin, Docker runner, contracts, docs, examples, readiness/release gates | **Canonical** — `packages/broker`, `packages/openclaw-plugin-a2a`, `packages/docker-runner`, `packages/policy-referee`, `packages/attestation`, project docs, contracts, compatibility/readiness policy, issue routing |
 | [`a2a-broker`](https://github.com/jinwon-int/a2a-broker) | Broker service provenance mirror | Active provenance mirror of `packages/broker` (canonical source is `a2a-nexus`) |
 | [`openclaw-plugin-a2a`](https://github.com/jinwon-int/openclaw-plugin-a2a) | Reference OpenClaw integration provenance mirror | Active provenance mirror of `packages/openclaw-plugin-a2a` (canonical source is `a2a-nexus`) |
 | [`a2a-docker-runner`](https://github.com/jinwon-int/a2a-docker-runner) | Isolated worker provenance mirror | Active provenance mirror of `packages/docker-runner` (canonical source is `a2a-nexus`) |
@@ -109,6 +109,7 @@ packages/broker/                 # A2A Nexus broker HTTP/JSON-RPC APIs, worker r
 packages/openclaw-plugin-a2a/    # first/reference OpenClaw integration for broker-backed task request/status/cancel
 packages/docker-runner/          # isolated GitHub patch runner for worker tasks
 packages/policy-referee/         # declarative worker-class policy engine (warn/enforce), consumed by the broker
+packages/attestation/           # agent work attestation toolkit (verdict signing, evidence assembly, gates, provenance)
 contracts/a2a/                   # shared A2A Nexus task lifecycle and terminal semantics contracts
 contracts/compatibility/         # compatibility matrix and supported baselines
 examples/                        # public-safe demos and fixtures only

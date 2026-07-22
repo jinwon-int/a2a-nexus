@@ -6,7 +6,7 @@ import {
   buildA2AWorkerSubagentBudgetCounter,
   extractA2AWorkerSubagentBudgetCounterInput,
   renderA2AWorkerSubagentBudgetCounterMarkdown,
-} from "../dist/core/worker-subagent-budget-counter.js";
+} from "a2a-attestation";
 
 function readOption(argv, name) {
   const inline = argv.find((arg) => arg.startsWith(name + "="));

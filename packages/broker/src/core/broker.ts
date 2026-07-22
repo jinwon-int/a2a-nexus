@@ -106,7 +106,7 @@ import {
   type InjectedKnowledgeSnapshot,
 } from "./broker-knowledge-injection.js";
 import type { FinalizerVerdictEnforcement } from "./finalizer-verdict-admission.js";
-import type { FinalizerKeyring } from "./finalizer-verdict-signature.js";
+import type { FinalizerKeyring } from "a2a-attestation";
 import * as taskAdmission from "./broker-task-admission.js";
 import type { TaskAdmissionContext } from "./broker-task-admission.js";
 import * as staleTaskRequeue from "./broker-stale-task-requeue.js";

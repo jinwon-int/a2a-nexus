@@ -28,7 +28,7 @@ import {
   countersignTaskResultProvenance,
   verifyTaskResultProvenance,
   type ResultWithProvenance,
-} from "../core/provenance.js";
+} from "a2a-attestation";
 import { awaitDurablePersistenceAck } from "./error-mapping.js";
 import { readJson } from "./body.js";
 import { sendJson } from "./response.js";

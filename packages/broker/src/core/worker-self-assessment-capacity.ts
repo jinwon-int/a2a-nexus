@@ -5,7 +5,7 @@ import type {
   A2AWorkerSubagentHostSnapshot,
   A2AWorkerSubagentTaskProfile,
   A2AWorkerSubagentPolicyInput,
-} from "./worker-subagent-orchestration-policy.js";
+} from "a2a-attestation";
 import { numberValue, optionalBoolean, optionalString } from "./value-text.js";
 
 export interface A2AWorkerSelfAssessmentCapacityInput {

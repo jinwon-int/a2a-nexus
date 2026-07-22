@@ -61,6 +61,22 @@ export const PACKAGE_CI_SURFACES = {
       requiredBin: ['a2a-docker-runner'],
     },
   },
+  'attestation': {
+    packageDir: 'packages/attestation',
+    commands: [
+      ['npm', ['run', 'check:source-quality-floors']],
+      ['npm', ['run', 'check', '-w', 'packages/attestation']],
+      ['npm', ['run', 'build', '-w', 'packages/attestation']],
+      ['npm', ['test', '-w', 'packages/attestation']],
+      ['npm', ['run', 'coverage:baseline', '-w', 'packages/attestation']],
+    ],
+    metadata: {
+      private: true,
+      license: 'MIT',
+      requiredScripts: ['build', 'check', 'test', 'coverage:baseline'],
+      requiredFiles: ['README.md', 'scripts/coverage-baseline-report.mjs'],
+    },
+  },
   'policy-referee': {
     packageDir: 'packages/policy-referee',
     commands: [

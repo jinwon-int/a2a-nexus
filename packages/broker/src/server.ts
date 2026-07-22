@@ -114,7 +114,7 @@ import { normalizeTaskReadinessMode, type TaskReadinessMode } from "./task-readi
 import { loadBrokerPolicyFile } from "a2a-policy-referee";
 import { loadInjectedKnowledgeFile } from "./core/broker-knowledge-injection.js";
 import { resolveFinalizerVerdictEnforcement } from "./core/finalizer-verdict-admission.js";
-import { loadFinalizerKeyringFile } from "./core/finalizer-verdict-signature.js";
+import { loadFinalizerKeyringFile } from "a2a-attestation";
 import { normalizePersistenceBackend, normalizeSqliteLoadSource } from "./persistence-options.js";
 import {
   resolveBrokerId,
@@ -129,7 +129,7 @@ import {
 
 import { createBrokerAgentCard, type AgentCard } from "./a2a/agent-card.js";
 import { PushNotificationConfigStore } from "./a2a/push-notification-config.js";
-import { signAgentCard } from "./a2a/agent-card-signing.js";
+import { signAgentCard } from "a2a-attestation";
 import { loadCrossBrokerTrustAnchors, CrossBrokerNonceCache } from "./a2a/cross-broker-sender-proof.js";
 import { startDefaultAgent, DEFAULT_AGENT_NODE_ID, type DefaultAgentHandle } from "./a2a/default-agent.js";
 import { PeerStatusService } from "./a2a/peer-status.js";

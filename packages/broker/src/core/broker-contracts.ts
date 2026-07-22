@@ -4,7 +4,7 @@ import type { AuditRuntimeRepository } from "./audit-repository.js";
 import type { BrokerPolicyDocument } from "a2a-policy-referee";
 import type { InjectedKnowledgeSnapshot } from "./broker-knowledge-injection.js";
 import type { FinalizerVerdictEnforcement } from "./finalizer-verdict-admission.js";
-import type { FinalizerKeyring } from "./finalizer-verdict-signature.js";
+import type { FinalizerKeyring } from "a2a-attestation";
 import type { ExchangeMessageRuntimeRepository, ExchangeRuntimeRepository } from "./exchange-repository.js";
 import type { ProposalRuntimeRepository } from "./proposal-repository.js";
 import type { TaskRuntimeRepository } from "./task-repository.js";

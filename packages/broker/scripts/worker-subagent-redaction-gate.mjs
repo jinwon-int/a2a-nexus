@@ -6,7 +6,7 @@ import {
   buildA2AWorkerSubagentRedactionGate,
   extractA2AWorkerSubagentRedactionGateInput,
   renderA2AWorkerSubagentRedactionGateMarkdown,
-} from "../dist/core/worker-subagent-redaction-gate.js";
+} from "a2a-attestation";
 
 function readOption(argv, name) {
   const inline = argv.find((arg) => arg.startsWith(name + "="));

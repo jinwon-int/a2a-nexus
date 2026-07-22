@@ -33,8 +33,12 @@ function check() {
   ok("compose builds broker image from repo-root context so shared tsconfig is available", () => {
     assert.match(compose, /context:\s+\.\.\/\.\./);
     assert.match(compose, /dockerfile:\s+packages\/broker\/Dockerfile/);
-    assert.match(dockerfile, /COPY\s+tsconfig\.base\.json\s+\/app\/tsconfig\.base\.json/);
-    assert.match(dockerfile, /COPY\s+packages\/broker\/tsconfig\.json\s+\.\//);
+    assert.match(dockerfile, /COPY\s+tsconfig\.base\.json\s+\.\/tsconfig\.base\.json/);
+    assert.match(dockerfile, /COPY\s+packages\/broker\/tsconfig\.json\s+packages\/broker\//);
+    // #1601 P1/P2: the broker image is workspace-aware — in-repo package
+    // dependencies must be installed and built alongside the broker.
+    assert.match(dockerfile, /COPY\s+packages\/policy-referee\/src\s+packages\/policy-referee\/src/);
+    assert.match(dockerfile, /COPY\s+packages\/attestation\/src\s+packages\/attestation\/src/);
   });
   ok("compose build args require revision and created timestamp", () => {
     assert.match(compose, /A2A_BROKER_REVISION:\s+\$\{A2A_BROKER_REVISION:\?[^}]+\}/);

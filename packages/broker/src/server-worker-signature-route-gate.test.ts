@@ -6,7 +6,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { createBrokerServer } from "./server.js";
 import { buildA2AHttpSignatureBase } from "./core/request-security.js";
-import { signTaskResultProvenance, verifyTaskResultProvenance } from "./core/provenance.js";
+import { signTaskResultProvenance, verifyTaskResultProvenance } from "a2a-attestation";
 import { createInMemoryStateStore, startTestServer, jsonHeaders, withEnv, workerPayload } from "./server-test-helpers.js";
 
 const routeGatePrivateJwk = {

@@ -1,0 +1,17 @@
+{
+  "workerId": "workergamma",
+  "taskId": "task-large-independent",
+  "finalizer": "brokeralpha",
+  "entries": [
+    { "role": "verifier", "id": "ev-verify", "status": "complete", "summary": "tests and CI pass; no risk findings" },
+    { "role": "implementer", "id": "ev-impl-a", "writeSet": ["src/b.ts", "src/a.ts"], "status": "complete", "summary": "implemented a.ts and b.ts in a disjoint write set" },
+    { "role": "explorer", "id": "ev-explore", "status": "complete", "summary": "mapped the module and reported file pointers" }
+  ],
+  "execution": {
+    "gateDecisionIdempotencyKey": "a2a-worker-subagent-spawn-gate-decision:example",
+    "budgetCounterIdempotencyKey": "a2a-worker-subagent-budget-counter:example",
+    "authorizedSubagentCount": 3,
+    "parallelismUsed": 3,
+    "hostSnapshot": { "cpuLoadPct": 42, "memoryUsedPct": 55, "workerSubagentCap": 3, "brokerSubagentCap": 12 }
+  }
+}

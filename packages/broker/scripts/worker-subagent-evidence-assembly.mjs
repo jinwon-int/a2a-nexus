@@ -6,7 +6,7 @@ import {
   buildA2AWorkerSubagentEvidenceAssembly,
   extractA2AWorkerSubagentEvidenceAssemblyInput,
   renderA2AWorkerSubagentEvidenceAssemblyMarkdown,
-} from "../dist/core/worker-subagent-evidence-assembly.js";
+} from "a2a-attestation";
 
 function readOption(argv, name) {
   const inline = argv.find((arg) => arg.startsWith(name + "="));
