@@ -511,7 +511,14 @@ async function dispatchLane(fetchImpl, manifest, secret, lane) {
     if (existing) {
       return { ...base, classification: CLASS_ALREADY_EXISTS, taskId: existing.id ?? lane.id, status: res.status };
     }
-    return { ...base, classification: CLASS_FAILED, taskId: null, status: res.status, errorCode: errorCodeOf(body) ?? 'conflict' };
+    return {
+      ...base,
+      classification: CLASS_FAILED,
+      taskId: null,
+      status: res.status,
+      errorCode: errorCodeOf(body) ?? 'conflict',
+      detail: errorDetailOf(body, secret),
+    };
   }
 
   // 503 queue_drain_timeout / queue_saturated — the task may still exist.
@@ -529,16 +536,42 @@ async function dispatchLane(fetchImpl, manifest, secret, lane) {
         verifyHint: `GET ${joinUrl(manifest.brokerUrl, `/tasks/${lane.id}`)} confirmed task exists; durable ack was not received`,
       };
     }
-    return { ...base, classification: CLASS_FAILED, taskId: null, status: res.status, errorCode: code ?? 'queue_drain_unconfirmed' };
+    return {
+      ...base,
+      classification: CLASS_FAILED,
+      taskId: null,
+      status: res.status,
+      errorCode: code ?? 'queue_drain_unconfirmed',
+      detail: errorDetailOf(body, secret),
+    };
   }
 
   // Anything else — failed.
-  return { ...base, classification: CLASS_FAILED, taskId: null, status: res.status, errorCode: errorCodeOf(body) ?? `http_${res.status}` };
+  return {
+    ...base,
+    classification: CLASS_FAILED,
+    taskId: null,
+    status: res.status,
+    errorCode: errorCodeOf(body) ?? `http_${res.status}`,
+    detail: errorDetailOf(body, secret),
+  };
 }
 
 function errorCodeOf(body) {
   if (isPlainObject(body) && isPlainObject(body.error) && hasText(body.error.code)) return body.error.code;
   return null;
+}
+
+function errorDetailOf(body, secret) {
+  if (!isPlainObject(body) || !isPlainObject(body.error) || !hasText(body.error.message)) return undefined;
+  let detail = body.error.message
+    .trim()
+    .replace(/[\r\n\t]+/g, ' ')
+    .replace(/[\u0000-\u001f\u007f]/g, ' ')
+    .replace(/ {2,}/g, ' ');
+  if (hasText(secret)) detail = detail.replaceAll(secret, '[REDACTED]');
+  const limit = 500;
+  return detail.length > limit ? `${detail.slice(0, limit - 3)}...` : detail;
 }
 
 function workerReadinessRows(manifest) {
