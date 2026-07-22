@@ -19,7 +19,7 @@ import { payloadWithRetrievalSnapshotSourceCarriers } from "./lib/retrieval-snap
 import { evaluateDeclaredWriteSetGate } from "../dist/core/runtime-safety-gates.js";
 import { runLiveOperationTask } from "./lib/live-operation-adapter.mjs";
 
-const HANDLER_VERSION = "0.2.15";
+const HANDLER_VERSION = "0.2.16";
 const SOURCE_PATH = fileURLToPath(import.meta.url);
 const sourceSha256 = createHash("sha256").update(readFileSync(SOURCE_PATH)).digest("hex");
 
@@ -2344,6 +2344,20 @@ function handleBuiltinTask(task, env = process.env) {
     };
   }
 
+  if (safeText(task.intent, "").toLowerCase() === "implementation") {
+    return {
+      error: {
+        code: "unsupported_intent",
+        message: "implementation intent requires a configured executor; refusing generic success because no executor ran",
+        details: {
+          intent: safeText(task.intent, "unknown"),
+          mode,
+          buildInfo: BUILD_INFO,
+        },
+      },
+    };
+  }
+
   const summary = `generic ${mode} task accepted by versioned A2A task handler`;
 
   return {
@@ -2358,6 +2372,7 @@ function handleBuiltinTask(task, env = process.env) {
         exchangeId: safeText(task.exchangeId, undefined),
       },
       output: {
+        evidenceClass: "generic_ack",
         message: safeText(task.message, ""),
         payloadKeys: task.payload && typeof task.payload === "object" && !Array.isArray(task.payload)
           ? Object.keys(task.payload).sort()
