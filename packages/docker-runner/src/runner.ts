@@ -3,6 +3,7 @@ import { readFileSync } from "node:fs";
 import { chmod, chown, mkdir, writeFile, readdir, readFile, stat } from "node:fs/promises";
 import { basename, join, relative, resolve } from "node:path";
 import { runContainerWithRetry } from "./container-retry.js";
+import { pruneFailureOutputLogs, writeFailureOutputLog } from "./failure-output-log.js";
 import { buildContainerScript, jsonArgvToScript } from "./script-generators.js";
 // Re-exported to preserve the public surface (runner.test.ts / engine-contract.test.ts
 // import these from ./runner.js); the implementations now live in script-generators.ts.
@@ -233,6 +234,19 @@ export async function runTask(config: RunnerConfig, task: RunnerTask): Promise<R
     prUrl,
     error: (completed.code === 0 && !completed.timedOut) || prUrlRecoveredAfterNonzero ? undefined : buildActionableError(engine, config.image, completed),
   };
+
+  if (!result.ok) {
+    // #1610 item 2: containers are --rm, so persist the failed run's output
+    // on the worker host (redacted, tail-bounded) and keep the volume capped.
+    await writeFailureOutputLog(workDir, {
+      // raw captured streams: the helper redacts and TAIL-bounds, so the
+      // actual error at the end of the output survives (#1610)
+      stdout: completed.stdout,
+      stderr: completed.stderr,
+      maxBytes: config.failureLogMaxBytes,
+    });
+    await pruneFailureOutputLogs(root, config.failureLogKeep);
+  }
 
   if (prUrlRecoveredAfterNonzero) {
     result.resultSummary = {

@@ -19,6 +19,7 @@ import {
   isDeniedInternalHostname,
   isDeniedInternalIp,
 } from "./egress-allowlist-proxy.js";
+import { DEFAULT_FAILURE_LOG_KEEP, DEFAULT_FAILURE_LOG_MAX_BYTES } from "./failure-output-log.js";
 
 /**
  * Stable classification codes for extra-mount / profile-mount configuration
@@ -148,6 +149,8 @@ export async function loadConfig(env = process.env): Promise<RunnerConfig> {
     egressAllowlistHosts: parseCommaList(env.A2A_DOCKER_RUNNER_EGRESS_ALLOWLIST_HOSTS),
     egressMaxBytes: parseOptionalPositiveInteger(env.A2A_DOCKER_RUNNER_EGRESS_MAX_BYTES, DEFAULT_EGRESS_MAX_BYTES, "A2A_DOCKER_RUNNER_EGRESS_MAX_BYTES"),
     egressTimeoutMs: parseOptionalPositiveInteger(env.A2A_DOCKER_RUNNER_EGRESS_TIMEOUT_MS, DEFAULT_EGRESS_TIMEOUT_MS, "A2A_DOCKER_RUNNER_EGRESS_TIMEOUT_MS"),
+    failureLogMaxBytes: parseOptionalPositiveInteger(env.A2A_DOCKER_RUNNER_FAILURE_LOG_MAX_BYTES, DEFAULT_FAILURE_LOG_MAX_BYTES, "A2A_DOCKER_RUNNER_FAILURE_LOG_MAX_BYTES") ?? DEFAULT_FAILURE_LOG_MAX_BYTES,
+    failureLogKeep: parseOptionalPositiveInteger(env.A2A_DOCKER_RUNNER_FAILURE_LOG_KEEP, DEFAULT_FAILURE_LOG_KEEP, "A2A_DOCKER_RUNNER_FAILURE_LOG_KEEP") ?? DEFAULT_FAILURE_LOG_KEEP,
     ...patchCommand,
   };
 

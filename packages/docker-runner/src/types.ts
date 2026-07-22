@@ -212,6 +212,10 @@ export interface RunnerConfig {
   egressAllowlistHosts?: string[];
   /** Maximum bytes a controlled source-retrieval egress fetch may read. */
   egressMaxBytes?: number;
+  /** Bounded failed-run output log (#1610): byte cap per failure-output.log. */
+  failureLogMaxBytes?: number;
+  /** Bounded failed-run output log (#1610): how many newest logs to keep. */
+  failureLogKeep?: number;
   /** Per-request timeout for controlled source-retrieval egress fetches. */
   egressTimeoutMs?: number;
   /**
