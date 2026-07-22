@@ -61,6 +61,62 @@ function signedSnapshotFixture(overrides = {}) {
   };
 }
 
+test("implementation intent fails closed when no executor ran (#1593)", () => {
+  const outcome = handleTask({
+    id: "task-implementation-fallback",
+    intent: "implementation",
+    message: "Implement the requested source patch",
+    payload: {},
+  }, {
+    A2A_EXECUTOR_MODE: "builtin",
+  });
+
+  assert.equal(outcome.error?.code, "unsupported_intent");
+  assert.match(outcome.error?.message ?? "", /no executor ran/);
+  assert.equal(outcome.error?.details?.intent, "implementation");
+  assert.equal(outcome.error?.details?.mode, "implementation");
+  assert.equal(outcome.result, undefined);
+  assert.equal(Object.hasOwn(outcome, "artifactIds"), false);
+});
+
+test("permitted generic fallback is explicitly classified as generic_ack (#1593)", () => {
+  const outcome = handleTask({
+    id: "task-generic-probe",
+    intent: "probe",
+    message: "Record receipt of this non-substantive probe",
+    payload: { mode: "probe" },
+  }, {
+    A2A_EXECUTOR_MODE: "builtin",
+  });
+
+  assert.equal(outcome.error, undefined);
+  assert.equal(outcome.result?.summary, "generic probe task accepted by versioned A2A task handler");
+  assert.equal(outcome.result?.output?.evidenceClass, "generic_ack");
+});
+
+test("dedicated smoke and structured analysis handlers remain non-generic (#1593)", () => {
+  const smokeOutcome = handleTask(task(), { A2A_EXECUTOR_MODE: "builtin" });
+  const analysisOutcome = handleTask({
+    id: "task-structured-analysis",
+    intent: "analyze",
+    message: "Inspect supplied source evidence",
+    payload: {
+      mode: "analysis-only",
+      summary: "source evidence inspected",
+      sourceOnly: true,
+    },
+  }, {
+    A2A_EXECUTOR_MODE: "builtin",
+  });
+
+  assert.equal(smokeOutcome.error, undefined);
+  assert.equal(smokeOutcome.result?.output?.smoke?.ok, true);
+  assert.equal(smokeOutcome.result?.output?.evidenceClass, undefined);
+  assert.equal(analysisOutcome.error, undefined);
+  assert.equal(analysisOutcome.result?.output?.analysisKind, "builtin_structured");
+  assert.equal(analysisOutcome.result?.output?.evidenceClass, undefined);
+});
+
 test("direct task payload with allowlisted workerModel and workerThinking is accepted", () => {
   const result = handleTask(task({
     payload: {
