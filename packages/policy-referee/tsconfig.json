@@ -6,7 +6,10 @@
     "outDir": "dist",
     "rootDir": "src",
     "declaration": true,
-    "noUnusedLocals": true
+    "noUnusedLocals": true,
+    "composite": true
   },
-  "include": ["src/**/*.ts"]
+  "include": [
+    "src/**/*.ts"
+  ]
 }

@@ -6,8 +6,8 @@
   "type": "module",
   "description": "Minimal standalone A2A broker scaffold",
   "scripts": {
-    "build": "tsc -p tsconfig.json && node scripts/generate-build-info.mjs",
-    "check": "npm run build",
+    "build": "tsc -b tsconfig.json && node scripts/generate-build-info.mjs",
+    "check": "tsc -b tsconfig.json",
     "test": "node scripts/run-test-manifest.mjs",
     "test:drift-watch": "npx tsx --test src/a2a/protocol-compatibility.test.ts src/a2a/drift-watch.test.ts",
     "refresh:drift-refs": "node scripts/refresh-drift-refs.mjs",
