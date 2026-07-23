@@ -11,6 +11,9 @@ import { parentPort, workerData } from "node:worker_threads";
 import { SqliteBrokerStateStore } from "./store.js";
 import type { BrokerSnapshot, BrokerStateSaveHints, SqliteBrokerLoadSource } from "./store.js";
 import type { ProjectedReviewLineageObservation } from "../review-lifecycle/observation.js";
+import type {
+  AuthorizedReviewLineageSourceAdmissionV1,
+} from "./review-lineage-observation-store.js";
 
 type WorkerRequest = { id: number; method: string; args: unknown[] };
 type InitOptions = {
@@ -65,6 +68,13 @@ parentPort.on("message", (req: WorkerRequest) => {
           command: ProjectedReviewLineageObservation;
         };
         result = store.applyReviewLineageObservation(command);
+        break;
+      }
+      case "applyAuthorizedReviewLineageSource": {
+        const { admission } = req.args[0] as {
+          admission: AuthorizedReviewLineageSourceAdmissionV1;
+        };
+        result = store.applyAuthorizedReviewLineageSource(admission);
         break;
       }
       case "readHotRuntimeSnapshot":

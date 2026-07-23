@@ -158,8 +158,8 @@
 - [x] No route, outbox, schema, source subscription, or live collection
 - [x] Automatic observation coverage is reported as `0/5`
 - [x] Per-kind authority/source carrier contract reviewed
-- [ ] Actual authenticated source owner and durable coupling reviewed before
-      automatic attachment
+- [x] Actual authenticated source owner and durable coupling reviewed before
+      the first automatic attachment
 
 ## L. Authoritative source-carrier contract (Phase 13)
 
@@ -175,5 +175,28 @@
 - [x] Phase 11 fact builder and Phase 8 parser remain canonical
 - [x] No runtime owner, hook, route, store, outbox, schema, or live action
 - [x] Automatic source coverage remains `0/5`
-- [ ] First actual kind proves authenticated ownership and atomic/ACK-replayed
+- [x] First actual kind proves authenticated ownership and atomic/ACK-replayed
       durable coupling
+
+## M. First authenticated owner — operator cancel (Phase 14)
+
+- [x] Mutation route requires the exact operator role
+- [x] Request cannot select source kind, authority, namespace, issuer, or
+      producer/source-event identity
+- [x] Trusted context is created only after the operator gate
+- [x] Phase 13 carrier authorization and Phase 12/8 admission chain remain
+      canonical
+- [x] Source event, lineage transition, and ledger share one transaction
+- [x] Worker-thread mode sends one composite command and returns one ACK
+- [x] Projection refresh happens only after the composite durable ACK
+- [x] Restart replay returns the stored outcome without another transition
+- [x] Changed payload under one decision reference conflicts without overwrite
+- [x] Forced source and ledger failures roll back all coupled writes
+- [x] Source table excludes raw request, decision reference, detail, prompts,
+      credentials, provider output, and production payloads
+- [x] Generic task cancel/completion/retry/finalizer paths remain unchanged
+- [x] Default mode remains `off`; `enforce` remains unsupported
+- [x] Automatic source coverage is exactly `1/5`
+- [ ] Live schema execution, record-mode activation, deploy/restart/canary, and
+      real-lineage collection receive separate explicit approval
+- [ ] Remaining four source kinds receive separate owner/durability reviews

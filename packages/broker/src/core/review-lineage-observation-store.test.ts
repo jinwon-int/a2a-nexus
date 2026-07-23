@@ -11,13 +11,21 @@ import {
   parseReviewLineageObservation,
   type ProjectedReviewLineageObservation,
 } from "../review-lifecycle/observation.js";
+import {
+  authorizeOperatorReviewLineageCancel,
+} from "../review-lifecycle/operator-cancel-source.js";
+import {
+  projectReviewLineageProducerFact,
+} from "../review-lifecycle/producer-contract.js";
 import type {
   IntentContractV1,
   ReviewLineageBudgetV1,
 } from "../review-lifecycle/types.js";
 import {
+  REVIEW_LINEAGE_AUTHORIZED_SOURCE_EVENT_TABLE,
   REVIEW_LINEAGE_OBSERVATION_LEDGER_TABLE,
   SqliteReviewLineageObservationStore,
+  type AuthorizedReviewLineageSourceAdmissionV1,
 } from "./review-lineage-observation-store.js";
 
 const BASE_SHA = "0".repeat(40);
@@ -106,6 +114,31 @@ function cancelCommand(
   });
 }
 
+function authorizedCancelAdmission(
+  lineageId = "pr-1518-phase9",
+  decisionRef = "operator-decision:phase14:cancel:1",
+  detail = "Explicit bounded review-lineage cancellation.",
+): AuthorizedReviewLineageSourceAdmissionV1 {
+  const authorized = authorizeOperatorReviewLineageCancel(
+    lineageId,
+    {
+      decisionRef,
+      observedAt: "2026-07-23T13:11:00Z",
+      binding: binding(lineageId),
+      detail,
+    },
+    "operator-seoseo",
+  );
+  const command = projectReviewLineageProducerFact(authorized.fact);
+  return {
+    source: {
+      ...authorized.source,
+      payloadFingerprint: command.payloadFingerprint,
+    },
+    command,
+  };
+}
+
 function tempDatabase(): { dir: string; dbFile: string } {
   const dir = mkdtempSync(join(tmpdir(), "a2a-review-observation-"));
   return { dir, dbFile: join(dir, "state.sqlite") };
@@ -137,6 +170,147 @@ test("observation store replays an applied create after process restart", () => 
     });
     assert.equal(restored.countLedgerEntries(), 1);
     restored.close();
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test("authenticated operator cancel commits source, lineage, and ledger and replays after restart", () => {
+  const { dir, dbFile } = tempDatabase();
+  try {
+    const admission = authorizedCancelAdmission();
+    const first = new SqliteReviewLineageObservationStore(dbFile);
+    assert.equal(first.apply(createCommand()).status, "applied");
+    assert.deepEqual(first.applyAuthorizedSource(admission), {
+      status: "applied",
+      lineageId: admission.command.lineageId,
+      outcome: "applied",
+      state: "canceled",
+      recordVersion: 2,
+      effects: ["operator_canceled"],
+    });
+    assert.equal(first.countLedgerEntries(), 2);
+    assert.equal(first.countAuthorizedSourceEvents(), 1);
+    first.close();
+
+    const restored = new SqliteReviewLineageObservationStore(dbFile);
+    assert.deepEqual(restored.applyAuthorizedSource(admission), {
+      status: "replayed",
+      lineageId: admission.command.lineageId,
+      originalOutcome: "applied",
+      state: "canceled",
+      recordVersion: 2,
+      effects: ["operator_canceled"],
+    });
+    assert.equal(restored.countLedgerEntries(), 2);
+    assert.equal(restored.countAuthorizedSourceEvents(), 1);
+    restored.close();
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test("same operator decision with changed payload conflicts without overwrite", () => {
+  const { dir, dbFile } = tempDatabase();
+  try {
+    const store = new SqliteReviewLineageObservationStore(dbFile);
+    assert.equal(store.apply(createCommand()).status, "applied");
+    const first = authorizedCancelAdmission();
+    const changed = authorizedCancelAdmission(
+      first.command.lineageId,
+      "operator-decision:phase14:cancel:1",
+      "Changed meaning under one immutable decision.",
+    );
+    assert.equal(
+      first.source.sourceEventId,
+      changed.source.sourceEventId,
+    );
+    assert.notEqual(
+      first.command.payloadFingerprint,
+      changed.command.payloadFingerprint,
+    );
+    assert.equal(store.applyAuthorizedSource(first).status, "applied");
+    assert.deepEqual(store.applyAuthorizedSource(changed), {
+      status: "idempotency_conflict",
+      lineageId: first.command.lineageId,
+    });
+    assert.equal(store.getLineage(first.command.lineageId)?.state, "canceled");
+    assert.equal(store.countLedgerEntries(), 2);
+    assert.equal(store.countAuthorizedSourceEvents(), 1);
+    store.close();
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test("source insert failure rolls back lineage and observation ledger together", () => {
+  const { dir, dbFile } = tempDatabase();
+  try {
+    const store = new SqliteReviewLineageObservationStore(dbFile);
+    assert.equal(store.apply(createCommand()).status, "applied");
+    const admission = authorizedCancelAdmission();
+    const faultDb = new DatabaseSync(dbFile);
+    faultDb.exec(`
+      CREATE TRIGGER reject_test_authorized_source
+      BEFORE INSERT ON ${REVIEW_LINEAGE_AUTHORIZED_SOURCE_EVENT_TABLE}
+      WHEN NEW.source_event_id = '${admission.source.sourceEventId}'
+      BEGIN
+        SELECT RAISE(ABORT, 'forced_source_failure');
+      END
+    `);
+    assert.throws(
+      () => store.applyAuthorizedSource(admission),
+      /forced_source_failure/,
+    );
+    assert.equal(
+      store.getLineage(admission.command.lineageId)?.state,
+      "reviewing_initial",
+    );
+    assert.equal(store.countLedgerEntries(), 1);
+    assert.equal(store.countAuthorizedSourceEvents(), 0);
+    faultDb.exec("DROP TRIGGER reject_test_authorized_source");
+    faultDb.close();
+
+    assert.equal(store.applyAuthorizedSource(admission).status, "applied");
+    assert.equal(
+      store.getLineage(admission.command.lineageId)?.state,
+      "canceled",
+    );
+    assert.equal(store.countLedgerEntries(), 2);
+    assert.equal(store.countAuthorizedSourceEvents(), 1);
+    store.close();
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test("authorized source table stores hashes and outcomes without raw operator detail", () => {
+  const { dir, dbFile } = tempDatabase();
+  try {
+    const privateDetail = "private-cancel-detail-must-not-persist";
+    const decisionRef = "operator-decision:private-ref-must-not-persist";
+    const store = new SqliteReviewLineageObservationStore(dbFile);
+    assert.equal(store.apply(createCommand()).status, "applied");
+    assert.equal(
+      store.applyAuthorizedSource(
+        authorizedCancelAdmission(
+          "pr-1518-phase9",
+          decisionRef,
+          privateDetail,
+        ),
+      ).status,
+      "applied",
+    );
+    const reader = new DatabaseSync(dbFile);
+    const row = reader.prepare(
+      `SELECT * FROM ${REVIEW_LINEAGE_AUTHORIZED_SOURCE_EVENT_TABLE}`,
+    ).get();
+    const serialized = JSON.stringify(row);
+    assert.doesNotMatch(serialized, new RegExp(privateDetail));
+    assert.doesNotMatch(serialized, new RegExp(decisionRef));
+    assert.doesNotMatch(serialized, /operator-seoseo/);
+    reader.close();
+    store.close();
   } finally {
     rmSync(dir, { recursive: true, force: true });
   }

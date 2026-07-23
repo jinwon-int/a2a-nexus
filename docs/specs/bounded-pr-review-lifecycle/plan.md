@@ -192,6 +192,27 @@ actor and has no runtime caller. Actual attachment requires a separately
 approved authenticated owner plus an atomic source-and-lineage transaction or
 an ACK-replayed transactional outbox/inbox.
 
+## Phase 14 — First authenticated owner: operator cancel
+
+- Add one exact operator-only review-lineage cancellation request.
+- Fix source kind, authority, namespace, and issuer in trusted broker code;
+  reject caller-selected authority or derived identity.
+- Reuse the Phase 13 authorization, Phase 12 admission, and Phase 8 parser
+  without a validation fork.
+- Commit the authoritative source event, canonical lineage transition, and
+  idempotency ledger in one SQLite `BEGIN IMMEDIATE`.
+- Send the composite command through one worker-thread queue entry and refresh
+  the broker projection only after its ACK.
+- Prove role rejection, off-mode inertness, exact subject failure, source and
+  ledger rollback, restart replay, changed-payload conflict, privacy, and
+  unchanged task semantics.
+- Report automatic coverage as exactly `1/5`.
+
+Phase 14 attaches only the explicit `operator_cancel` source. Generic task
+cancellation and task completion remain detached. The default stays `off`,
+`enforce` remains unsupported, and no live schema execution, migration,
+deployment, restart, canary, or real collection is approved.
+
 ## Rollback strategy per phase
 
 | Phase | Rollback |
@@ -208,6 +229,7 @@ an ACK-replayed transactional outbox/inbox.
 | 11 | Pure producer/retention modules have no call site; delete PR revert |
 | 12 | Admission API has no automatic caller; delete PR revert |
 | 13 | Pure carrier contract has no runtime caller; delete PR revert |
+| 14 | Return mode to `off`, stop using the mutation route, and revert code; preserve additive source rows/tables for audit |
 
 ## Safety boundaries (all phases)
 

@@ -5,8 +5,15 @@ import { Readable } from "node:stream";
 import test from "node:test";
 
 import { intentHash } from "../review-lifecycle/canonical-json.js";
-import type { IntentContractV1 } from "../review-lifecycle/types.js";
+import {
+  parseReviewLineageObservation,
+} from "../review-lifecycle/observation.js";
+import type {
+  IntentContractV1,
+  ReviewLineageBudgetV1,
+} from "../review-lifecycle/types.js";
 import { BrokerError, InMemoryA2ABroker } from "../core/broker.js";
+import { SqliteBrokerStateStore } from "../core/store.js";
 import { handleReviewLineageRoutesIfMatched } from "./review-lineage-routes.js";
 
 class CapturingResponse extends EventEmitter {
@@ -47,6 +54,18 @@ function contract(): IntentContractV1 {
   return value;
 }
 
+function budget(): ReviewLineageBudgetV1 {
+  return {
+    kind: "ReviewLineageBudgetV1",
+    maxWallClockSeconds: 21_600,
+    maxCorrectionGenerations: 1,
+    maxReviewerRuns: 2,
+    maxReviewerReplacements: 1,
+    repeatedFindingThreshold: 2,
+    onExhaustion: "blocked_needs_operator",
+  };
+}
+
 function makeRouter() {
   const broker = new InMemoryA2ABroker(
     undefined,
@@ -59,17 +78,21 @@ function makeRouter() {
     diffHash: "c".repeat(64),
   });
 
-  function route(
+  async function route(
     method: string,
     path: string,
     enforce = false,
     identity: unknown = null,
+    body?: unknown,
   ) {
     const res = new CapturingResponse();
-    const handled = handleReviewLineageRoutesIfMatched({
+    const req = body === undefined
+      ? Readable.from([])
+      : Readable.from([JSON.stringify(body)]);
+    const handled = await handleReviewLineageRoutesIfMatched({
       method,
       path,
-      req: Readable.from([]) as IncomingMessage,
+      req: req as IncomingMessage,
       res: res as unknown as ServerResponse,
       broker,
       enforceRequesterIdentity: enforce,
@@ -84,15 +107,15 @@ function makeRouter() {
   return { broker, route };
 }
 
-test("GET review lineage routes expose only projected operator fields", () => {
+test("GET review lineage routes expose only projected operator fields", async () => {
   const { route } = makeRouter();
 
-  const list = route("GET", "/review-lineages");
+  const list = await route("GET", "/review-lineages");
   assert.equal(list.handled, true);
   assert.equal(list.res.statusCode, 200);
   assert.equal(list.json.count, 1);
 
-  const item = route("GET", "/review-lineages/lineage-http-1");
+  const item = await route("GET", "/review-lineages/lineage-http-1");
   assert.equal(item.json.lineage.lineageId, "lineage-http-1");
   assert.equal(item.json.lineage.mode, "record");
   assert.equal(item.json.lineage.state, "reviewing_initial");
@@ -101,23 +124,123 @@ test("GET review lineage routes expose only projected operator fields", () => {
   assert.equal(item.json.lineage.currentDiffHash, undefined);
 });
 
-test("GET review lineage routes fail closed for unknown ids and missing roles", () => {
+test("GET review lineage routes fail closed for unknown ids and missing roles", async () => {
   const { route } = makeRouter();
 
-  assert.throws(
-    () => route("GET", "/review-lineages/missing"),
+  await assert.rejects(
+    route("GET", "/review-lineages/missing"),
     (error) => error instanceof BrokerError && error.code === "not_found",
   );
-  assert.throws(
-    () => route("GET", "/review-lineages", true, null),
+  await assert.rejects(
+    route("GET", "/review-lineages", true, null),
     (error) => error instanceof BrokerError,
   );
 });
 
-test("review lineage routes are read-only and match exact path boundaries", () => {
+test("review lineage routes match exact path boundaries", async () => {
   const { route } = makeRouter();
 
-  assert.equal(route("POST", "/review-lineages").handled, false);
-  assert.equal(route("GET", "/review-lineages/one/events").handled, false);
-  assert.equal(route("GET", "/review-lineagesX").handled, false);
+  assert.equal((await route("POST", "/review-lineages")).handled, false);
+  assert.equal(
+    (await route("GET", "/review-lineages/one/events")).handled,
+    false,
+  );
+  assert.equal((await route("GET", "/review-lineagesX")).handled, false);
+});
+
+test("operator-cancel route requires operator identity and returns durable replay", async () => {
+  const store = new SqliteBrokerStateStore(":memory:");
+  try {
+    const broker = new InMemoryA2ABroker(
+      store,
+      store.load(),
+      { reviewLineageMode: "record" },
+    );
+    const frozen = contract();
+    const diffHash = `sha256:${"c".repeat(64)}`;
+    await broker.applyReviewLineageObservation(
+      parseReviewLineageObservation({
+        kind: "a2a.review-lineage-observation.v1",
+        producerId: "test-dispatcher",
+        sourceEventId: "route:create:1",
+        lineageId: frozen.lineageId,
+        observedAt: frozen.createdAt,
+        binding: {
+          intentHash: frozen.intentHash,
+          headSha: frozen.headSha,
+          diffHash,
+        },
+        observation: {
+          kind: "lineage_create",
+          mode: "record",
+          contract: frozen,
+          budget: budget(),
+        },
+      }),
+    );
+
+    async function route(identity: unknown, body: unknown) {
+      const res = new CapturingResponse();
+      const handled = await handleReviewLineageRoutesIfMatched({
+        method: "POST",
+        path: `/review-lineages/${frozen.lineageId}/operator-cancel`,
+        req: Readable.from([JSON.stringify(body)]) as IncomingMessage,
+        res: res as unknown as ServerResponse,
+        broker,
+        enforceRequesterIdentity: false,
+        requesterIdentity: identity as never,
+      });
+      return {
+        handled,
+        res,
+        json: res.body ? JSON.parse(res.body) : undefined,
+      };
+    }
+    const request = {
+      decisionRef: "operator-decision:route:1",
+      observedAt: "2026-07-23T00:01:00.000Z",
+      binding: {
+        intentHash: frozen.intentHash,
+        headSha: frozen.headSha,
+        diffHash,
+      },
+      detail: "Explicit operator cancellation.",
+    };
+
+    await assert.rejects(
+      route({ id: "analyst-a", role: "analyst" }, request),
+      (error) =>
+        error instanceof BrokerError
+        && error.code === "unauthorized",
+    );
+    const applied = await route(
+      { id: "operator-a", role: "operator" },
+      request,
+    );
+    assert.equal(applied.handled, true);
+    assert.equal(applied.res.statusCode, 201);
+    assert.equal(applied.json.result.status, "applied");
+    assert.equal(
+      broker.getReviewLineage(frozen.lineageId)?.state,
+      "canceled",
+    );
+
+    const replay = await route(
+      { id: "operator-a", role: "operator" },
+      request,
+    );
+    assert.equal(replay.res.statusCode, 200);
+    assert.equal(replay.json.result.status, "replayed");
+    await assert.rejects(
+      route(
+        { id: "operator-a", role: "operator" },
+        { ...request, authorityKind: "operator" },
+      ),
+      (error) =>
+        error instanceof BrokerError
+        && error.code === "bad_request",
+    );
+  } finally {
+    store.close();
+  }
 });

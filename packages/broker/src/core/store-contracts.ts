@@ -14,7 +14,10 @@ import type { CrossBrokerTerminalBriefProjection } from "./cross-broker-terminal
 import type { PersistedWavePlan } from "./wave-plan-store.js";
 import type { ReviewLineageRecord } from "../review-lifecycle/types.js";
 import type { ProjectedReviewLineageObservation } from "../review-lifecycle/observation.js";
-import type { ReviewLineageObservationApplicationResult } from "./review-lineage-observation-store.js";
+import type {
+  AuthorizedReviewLineageSourceAdmissionV1,
+  ReviewLineageObservationApplicationResult,
+} from "./review-lineage-observation-store.js";
 import type { TerminalTaskOutboxEvent } from "./terminal-event-outbox.js";
 import type { TaskPushNotificationConfig } from "../a2a/push-notification-config.js";
 import type {
@@ -56,6 +59,15 @@ export interface BrokerStateStore {
    */
   applyReviewLineageObservation?(
     command: ProjectedReviewLineageObservation,
+  ):
+    | ReviewLineageObservationApplicationResult
+    | Promise<ReviewLineageObservationApplicationResult>;
+  /**
+   * Commit one authenticated source event and its canonical lineage/ledger
+   * outcome in the same durable transaction.
+   */
+  applyAuthorizedReviewLineageSource?(
+    admission: AuthorizedReviewLineageSourceAdmissionV1,
   ):
     | ReviewLineageObservationApplicationResult
     | Promise<ReviewLineageObservationApplicationResult>;

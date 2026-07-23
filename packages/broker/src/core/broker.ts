@@ -147,12 +147,18 @@ import {
 import {
   admitReviewLineageProducerFact as admitProducerFact,
 } from "./review-lineage-producer-admission.js";
+import {
+  authorizeOperatorReviewLineageCancel,
+} from "../review-lifecycle/operator-cancel-source.js";
 import type {
   ReviewLineageEvent,
   ReviewLineageRecord,
 } from "../review-lifecycle/types.js";
 import type { ProjectedReviewLineageObservation } from "../review-lifecycle/observation.js";
-import type { ReviewLineageObservationApplicationResult } from "./review-lineage-observation-store.js";
+import type {
+  AuthorizedReviewLineageSourceAdmissionV1,
+  ReviewLineageObservationApplicationResult,
+} from "./review-lineage-observation-store.js";
 import type { AppliedEvent } from "../review-lifecycle/lifecycle.js";
 import {
   projectLineageReadModel,
@@ -514,10 +520,10 @@ export class InMemoryA2ABroker {
     return this.wavePlans.list();
   }
 
-  // --- Bounded PR review lineage telemetry (#1518 Phases 3b/10/12) ----------
-  // This remains detached from completeTask/retry/finalizer paths. Phase 12
-  // admits only an already-complete producer fact through the Phase 11
-  // projector and awaits the normalized Phase 8 compound command.
+  // --- Bounded PR review lineage telemetry (#1518 Phases 3b/10/12/14) -------
+  // Generic task completion/retry/finalizer paths remain detached. Phase 14
+  // adds only an explicit authenticated operator-cancel source whose durable
+  // source row and normalized Phase 8 command share one store transaction.
 
   createReviewLineage(
     input: CreateRecordedReviewLineageInput,
@@ -573,6 +579,49 @@ export class InMemoryA2ABroker {
         if (!result) {
           throw new Error("review_lineage_record_admission_inert");
         }
+        return result;
+      },
+    });
+  }
+
+  async recordOperatorReviewLineageCancel(
+    lineageId: string,
+    input: unknown,
+    authenticatedOperatorId: string,
+  ): Promise<ReviewLineageObservationApplicationResult | undefined> {
+    // Default off mode remains inert before request validation, trusted
+    // context construction, or store access.
+    if (this.reviewLineageMode === "off") return undefined;
+    if (
+      !this.stateStore?.applyAuthorizedReviewLineageSource
+      || !this.stateStore.listCanonicalReviewLineages
+    ) {
+      throw new Error("review_lineage_authorized_source_store_unavailable");
+    }
+    const authorized = authorizeOperatorReviewLineageCancel(
+      lineageId,
+      input,
+      authenticatedOperatorId,
+    );
+    return admitProducerFact(authorized.fact, {
+      mode: this.reviewLineageMode,
+      apply: async (command) => {
+        const admission: AuthorizedReviewLineageSourceAdmissionV1 = {
+          source: {
+            ...authorized.source,
+            payloadFingerprint: command.payloadFingerprint,
+          },
+          command,
+        };
+        const result =
+          await this.stateStore!.applyAuthorizedReviewLineageSource!(
+            admission,
+          );
+        // Durable commit is authoritative. Refresh the read projection only
+        // after the composite source+lineage ACK.
+        this.reviewLineages.restore(
+          this.stateStore!.listCanonicalReviewLineages!(),
+        );
         return result;
       },
     });

@@ -108,6 +108,15 @@ function cancelCommand(
   });
 }
 
+function operatorCancelRequest(lineageId = "pr-1518-phase10") {
+  return {
+    decisionRef: `operator-decision:${lineageId}:1`,
+    observedAt: "2026-07-23T14:21:00Z",
+    binding: binding(lineageId),
+    detail: "Explicit authenticated operator cancellation.",
+  };
+}
+
 function tempDatabase(prefix: string): {
   dir: string;
   dbFile: string;
@@ -173,6 +182,81 @@ test("production SQLite authority applies observations before refreshing broker 
   } finally {
     rmSync(dir, { recursive: true, force: true });
   }
+});
+
+test("broker operator-cancel source awaits the composite store ACK before projection refresh", async () => {
+  const { dir, dbFile } = tempDatabase("a2a-review-operator-source-");
+  try {
+    const store = new SqliteBrokerStateStore(dbFile);
+    const broker = new InMemoryA2ABroker(
+      store,
+      store.load(),
+      { reviewLineageMode: "record" },
+    );
+    assert.equal(
+      (await broker.applyReviewLineageObservation(createCommand()))?.status,
+      "applied",
+    );
+    assert.equal(
+      (await broker.recordOperatorReviewLineageCancel(
+        "pr-1518-phase10",
+        operatorCancelRequest(),
+        "operator-seoseo",
+      ))?.status,
+      "applied",
+    );
+    assert.equal(
+      broker.getReviewLineage("pr-1518-phase10", T0)?.state,
+      "canceled",
+    );
+    store.close();
+
+    const restoredStore = new SqliteBrokerStateStore(dbFile);
+    const restoredBroker = new InMemoryA2ABroker(
+      restoredStore,
+      restoredStore.load(),
+      { reviewLineageMode: "record" },
+    );
+    assert.equal(
+      (await restoredBroker.recordOperatorReviewLineageCancel(
+        "pr-1518-phase10",
+        operatorCancelRequest(),
+        "operator-seoseo",
+      ))?.status,
+      "replayed",
+    );
+    restoredStore.close();
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test("off mode returns before operator source validation or store access", async () => {
+  let calls = 0;
+  const snapshot = emptySnapshot();
+  const stateStore = {
+    load: () => snapshot,
+    save: () => undefined,
+    applyAuthorizedReviewLineageSource: () => {
+      calls += 1;
+      throw new Error("must not be called");
+    },
+    listCanonicalReviewLineages: () => [],
+  };
+  const broker = new InMemoryA2ABroker(
+    stateStore,
+    snapshot,
+    { reviewLineageMode: "off" },
+  );
+  assert.equal(
+    await broker.recordOperatorReviewLineageCancel(
+      "invalid lineage id",
+      null,
+      "invalid operator id",
+    ),
+    undefined,
+  );
+  assert.equal(calls, 0);
 });
 
 test("legacy snapshot imports once and cannot overwrite canonical SQLite rows", () => {
@@ -283,7 +367,11 @@ test("worker-thread proxy applies one compound observation and ACKs before readb
       "applied",
     );
     assert.equal(
-      (await broker.applyReviewLineageObservation(cancelCommand()))?.status,
+      (await broker.recordOperatorReviewLineageCancel(
+        "pr-1518-phase10",
+        operatorCancelRequest(),
+        "operator-seoseo",
+      ))?.status,
       "applied",
     );
     assert.deepEqual(handle.queue.stats(), {
