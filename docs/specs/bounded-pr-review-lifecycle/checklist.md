@@ -18,10 +18,10 @@
 
 ## B. Deterministic contract tests (Phases 1–2)
 
-- [ ] `IntentContractV1` canonicalization: stable `intentHash`; any
+- [x] `IntentContractV1` canonicalization: stable `intentHash`; any
       goal/non-goal/invariant/acceptance/scope/base/head change changes the hash
-- [ ] Review receipt with mismatched `headSha`, `diffHash`, or `intentHash` fails closed
-- [ ] Reviewer identity equal to author remains rejected (declared author and fallback paths)
+- [x] Review receipt with mismatched `headSha`, `diffHash`, or `intentHash` fails closed
+- [x] Reviewer identity equal to author remains rejected (declared author and fallback paths)
 - [x] Review/finalizer/fixer contracts cannot carry write-capable execution authority
 - [x] Failed initial review permits at most the configured correction generation count
 - [x] Wall-clock / reviewer-run / correction-generation / no-progress exhaustion →
@@ -37,9 +37,9 @@
 - [x] Repeated identical unresolved finding signatures trigger early stop before outer budget
 - [x] Reviewer replacement only for classified infrastructure failure; never resets lineage
       budget
-- [ ] Metadata/evidence-only HEAD changes follow the documented freshness path without weakening
+- [x] Metadata/evidence-only HEAD changes follow the documented freshness path without weakening
       exact finalizer subject binding
-- [ ] Existing task retry hard-deny and finalizer-verdict verification remain green
+- [x] Existing task retry hard-deny and finalizer-verdict verification remain green
 
 ## C. Integration / simulation (Phases 3–6)
 
@@ -53,14 +53,17 @@
 ## D. Broker / gate integration
 
 - [x] Record mode: lineage state + metrics with zero completion-path behavior change
-- [ ] `scripts/a2ad-finalizer-gate.mjs` consumes lineage evidence additively
-- [ ] Focused broker tests, finalizer gate tests, conformance tests green
-- [ ] `npm run check` green
-- [ ] `npm run scan:public-readiness` green
+- [x] `scripts/a2ad-finalizer-gate.mjs` consumes strict, round-bound lineage evidence
+      additively; omitted input preserves the legacy result shape
+- [x] Focused broker tests, finalizer gate tests, conformance tests green
+- [x] `npm run check` green
+- [x] `npm run scan:public-readiness` green
 - [ ] CI green on every phase PR
 
 ## E. Docs
 
+- [x] A2AD finalizer runbook: optional `--lineage` envelope, mode semantics,
+      fail-closed composition, and explicit no-runtime/no-ruleset boundary
 - [ ] Operator runbook: lineage metrics, terminal dispositions, new-lineage procedure
 - [ ] Dispatcher runbook: `payload.review.authorWorkerId` declaration; acceptance-command
       pitfall on analysis-only review tasks (#1548)

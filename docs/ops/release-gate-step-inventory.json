@@ -203,6 +203,20 @@
       "note": "A2AD preset UX execution-mode, finalizer-only, evidence, downgrade, and fixture contract for issue #1045; local/read-only without adding package-script budget."
     },
     {
+      "name": "a2ad-finalizer-lineage-evidence",
+      "command": "npm",
+      "args": [
+        "run",
+        "finalizer:gate:test"
+      ],
+      "tier": "core",
+      "owner": "broker",
+      "consumer": "pr-gate",
+      "retirement": "keep",
+      "retirementCondition": "Retire only when another default PR gate verifies both legacy A2AD quorum behavior and the additive bounded-lineage fail-closed contract.",
+      "note": "#1518 Phase 6 offline finalizer tests: legacy quorum/draft behavior plus strict optional lineage evidence composition; source-only and no-live."
+    },
+    {
       "name": "public-readiness",
       "command": "npm",
       "args": [
