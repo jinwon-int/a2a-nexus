@@ -15,10 +15,13 @@ on:
       - "packages/broker/scripts/a2a-tck-harness*.mjs"
       - "packages/broker/scripts/append-tck-history.mjs"
       - "packages/broker/scripts/check-tck-regressions.mjs"
+      - "packages/broker/scripts/project-tck-readiness.mjs"
+      - "packages/broker/scripts/project-tck-readiness.test.mjs"
       - "packages/broker/docs/a2a-tck-runbook.md"
       - "packages/broker/docs/tck-failing-categories.json"
       - "packages/broker/docs/tck-history.json"
       - "packages/broker/package.json"
+      - "docs/release-readiness.md"
       - ".github/workflows/tck-promoted-gate.yml"
 
 permissions:
@@ -29,6 +32,22 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
+  readiness-projection:
+    name: TCK readiness projection is current
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v6
+        with:
+          node-version: "22"
+
+      - name: Reject stale release-readiness TCK results
+        run: node packages/broker/scripts/project-tck-readiness.mjs --check
+
+      - name: Test the deterministic projection and stale-output guard
+        run: node --test packages/broker/scripts/project-tck-readiness.test.mjs
+
   agent-card:
     name: promoted TCK category — agent_card
     runs-on: ubuntu-latest

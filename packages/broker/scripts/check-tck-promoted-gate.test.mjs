@@ -51,10 +51,26 @@ test("promoted TCK gate is documented separately from the non-gating measurement
   assert.match(runbook, /future promoted categories must appear as stable promotion candidates/i);
 });
 
+test("promoted TCK gate rejects stale release-readiness projections", () => {
+  const workflow = readRepo(".github/workflows/tck-promoted-gate.yml");
+  const readiness = readRepo("docs/release-readiness.md");
+
+  assert.match(workflow, /packages\/broker\/scripts\/project-tck-readiness\.mjs/);
+  assert.match(workflow, /packages\/broker\/scripts\/project-tck-readiness\.test\.mjs/);
+  assert.match(workflow, /packages\/broker\/docs\/tck-history\.json/);
+  assert.match(workflow, /packages\/broker\/docs\/tck-failing-categories\.json/);
+  assert.match(workflow, /docs\/release-readiness\.md/);
+  assert.match(workflow, /project-tck-readiness\.mjs --check/);
+  assert.match(readiness, /<!-- TCK-READINESS:START -->/);
+  assert.match(readiness, /A2A 1\.0-compatible broker alpha profile/);
+  assert.match(readiness, /<!-- TCK-READINESS:END -->/);
+});
+
 test("broker test suite covers TCK harness passthrough and promoted gate guards", () => {
   const manifest = JSON.parse(readRepo("packages/broker/scripts/test-manifest.json"));
   const testScript = manifest.legacyEquivalent;
 
   assert.match(testScript, /a2a-tck-harness-args\.test\.mjs/);
   assert.match(testScript, /check-tck-promoted-gate\.test\.mjs/);
+  assert.match(testScript, /project-tck-readiness\.test\.mjs/);
 });

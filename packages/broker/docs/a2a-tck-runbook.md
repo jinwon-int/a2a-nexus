@@ -206,6 +206,26 @@ broker A2A-surface changes (`src/a2a`, protocol compatibility fixtures,
 It is fail-closed for that promoted category, while the scheduled
 `tck-measurement` workflow remains the broader non-gating measurement lane.
 
+The current overall, Agent Card, JSON-RPC, and promoted-sub-category results
+are also projected into the repository-level
+[`docs/release-readiness.md`](../../../docs/release-readiness.md). Do not edit
+those numbers by hand. `scripts/project-tck-readiness.mjs` reads the latest
+sufficient `must / jsonrpc` entry from `docs/tck-history.json`, combines it
+with only the promotion state in `docs/tck-failing-categories.json`, and
+renders the marked block deterministically:
+
+```bash
+cd packages/broker
+node scripts/project-tck-readiness.mjs --check
+# After committing a fresh official-TCK measurement:
+node scripts/project-tck-readiness.mjs --write
+```
+
+The promoted-gate workflow runs the check and its synthetic stale-output
+regression test. Missing markers, stale results, incomplete measurement
+accounting, or a disagreement between the latest promoted result and its
+classification baseline fail closed.
+
 Do **not** broaden `tck-promoted-gate.yml` to the full TCK suite until the
 additional categories appear in the stability ledger; add promoted categories
 one at a time with their evidence and keep the measurement lane non-gating.
