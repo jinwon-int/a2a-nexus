@@ -270,6 +270,31 @@ Phase 12 source boundary: admission is an explicitly awaited API only. It adds
 no fact source, task/result/cancel inference, lifecycle subscription, route,
 outbox/schema, live collection, deploy, or runtime-default change.
 
+## Phase 13: Authoritative source-carrier contract
+
+- [x] Define one exact-field untrusted source carrier without authority,
+      `producerId`, or `sourceEventId`.
+- [x] Define a process-local trusted context issued separately from carrier
+      data.
+- [x] Map all five observation kinds to one immutable source event and one
+      authority class at compile time.
+- [x] Derive producer and source-event identity from trusted issuer,
+      namespace, source kind, and immutable event reference.
+- [x] Preserve same-event replay and changed-payload conflict semantics.
+- [x] Require the trusted review issuer to match
+      `ReviewReceiptV1.reviewerNodeId`.
+- [x] Delegate complete fact/subject/transition validation to the Phase 11
+      builder and Phase 8 parser.
+- [x] Reject caller-selected identity/authority and generic task/result/cancel
+      conversion.
+- [x] Keep automatic observation coverage at `0/5`.
+- [ ] Approve an actual authenticated owner and atomic transaction or
+      ACK-replayed transactional outbox/inbox for at least one kind.
+
+Phase 13 source boundary: the trusted-context factory authenticates nobody by
+itself and has no runtime caller. This phase adds no lifecycle hook, route,
+store, queue, schema, outbox, migration, or live action.
+
 ## Validation commands (all phases as applicable)
 
 ```bash

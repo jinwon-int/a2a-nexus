@@ -173,6 +173,25 @@ Phase 12 is a prerequisite, not an automatic producer. It adds no task/result
 carrier, lifecycle call site, HTTP route, outbox/schema, live collection,
 deployment, restart, or default change.
 
+## Phase 13 — Authoritative source-carrier contract
+
+- Define one exact-field untrusted carrier without authority or caller-selected
+  producer/source-event identity.
+- Issue authority separately as an immutable process-local trusted context.
+- Assign all five observation kinds to an immutable source event and authority
+  class with a compile-time exhaustive matrix.
+- Derive identities deterministically from trusted issuer/namespace and the
+  immutable event reference.
+- Require review issuer identity to match the complete review receipt.
+- Reuse the Phase 11 fact builder and Phase 8 parser as the complete validation
+  boundary.
+- Keep automatic source coverage at `0/5`.
+
+Phase 13 is a source-only authorization contract. Its factory authenticates no
+actor and has no runtime caller. Actual attachment requires a separately
+approved authenticated owner plus an atomic source-and-lineage transaction or
+an ACK-replayed transactional outbox/inbox.
+
 ## Rollback strategy per phase
 
 | Phase | Rollback |
@@ -188,6 +207,7 @@ deployment, restart, or default change.
 | 10 | Atomic API is unused without a producer; preserve additive tables during rollback |
 | 11 | Pure producer/retention modules have no call site; delete PR revert |
 | 12 | Admission API has no automatic caller; delete PR revert |
+| 13 | Pure carrier contract has no runtime caller; delete PR revert |
 
 ## Safety boundaries (all phases)
 
