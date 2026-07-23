@@ -16,6 +16,7 @@ import {
   buildBaseline as buildPluginBaseline,
   CORE_SOURCE_FLOORS as PLUGIN_CORE_SOURCE_FLOORS,
 } from '../packages/openclaw-plugin-a2a/scripts/coverage-baseline-report.mjs';
+import { ASYNC_SAFETY_PACKAGES } from './check-source-quality-floors.mjs';
 import { resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
@@ -220,6 +221,7 @@ if (capstone) {
     /dist\/src\/wake-envelope\.js[^\n]*93%[^\n]*94\.95%/,
     /broker `noUnusedLocals`/i,
     /async-safety approval/i,
+    /floating-promises=0/i,
     /#1506/,
   ]) {
     expectMatch(qualityFloorSection, marker, `capstone quality-floor section: missing marker ${marker}`);
@@ -229,6 +231,17 @@ if (capstone) {
   const suspicious = urls.filter((url) => !url.startsWith('http://127.0.0.1') && !url.startsWith('http://localhost') && !url.startsWith('https://github.com/jinwon-int/a2a-nexus'));
   expect(suspicious.length === 0, `capstone: live/external URLs not allowed: ${suspicious.join(', ')}`);
 }
+
+const sourceQualityFloors = parseJson('docs/ops/source-quality-floors.json');
+expect(
+  sourceQualityFloors.floors?.floatingPromises?.max === 0,
+  'source quality floors: floatingPromises.max must stay at zero',
+);
+expect(
+  JSON.stringify(sourceQualityFloors.floors?.floatingPromises?.packages) ===
+    JSON.stringify(ASYNC_SAFETY_PACKAGES),
+  'source quality floors: floatingPromises package scope drifted',
+);
 
 for (const packageContract of packages) {
   const { name, dir, noUnusedLocals, buildBaseline } = packageContract;

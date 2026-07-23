@@ -8,12 +8,17 @@ import { fileURLToPath } from 'node:url';
 import ts from 'typescript';
 
 import {
+  ASYNC_SAFETY_PACKAGES,
   FLOOR_SCHEMA,
   classifyFile,
+  collectFloatingPromises,
   collectMeasured,
   countUnsafeSuppressions,
+  evaluateFloatingPromiseFloor,
   evaluateFloor,
+  parseAsyncSafetyScope,
 } from './check-source-quality-floors.mjs';
+import { analyzeProject, isProductionSource } from './lib/async-safety.mjs';
 import { PACKAGE_CI_SURFACES } from './run-monorepo-package-ci-parity.mjs';
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
@@ -28,6 +33,105 @@ test('classifyFile buckets source vs test/generated/archive/other', () => {
   assert.equal(classifyFile('scripts/check-source-quality-floors.mjs'), 'other');
   // Non-src .ts is not source (suppressions only enforced in the src bundle).
   assert.equal(classifyFile('packages/broker/tools/gen.ts'), 'other');
+});
+
+function asyncSafetyFixture(t, source, extra = {}) {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'a2a-async-safety-'));
+  t.after(() => fs.rmSync(root, { recursive: true, force: true }));
+  const src = path.join(root, 'src');
+  fs.mkdirSync(src);
+  fs.writeFileSync(
+    path.join(root, 'tsconfig.json'),
+    JSON.stringify({
+      compilerOptions: {
+        strict: true,
+        target: 'ES2022',
+        module: 'NodeNext',
+        moduleResolution: 'NodeNext',
+        skipLibCheck: true,
+      },
+      include: ['src/**/*.ts'],
+    }),
+  );
+  fs.writeFileSync(path.join(src, 'main.ts'), source);
+  for (const [relative, contents] of Object.entries(extra)) {
+    fs.writeFileSync(path.join(root, relative), contents);
+  }
+  return {
+    packageRoot: root,
+    configPath: path.join(root, 'tsconfig.json'),
+  };
+}
+
+test('async-safety source bucket excludes tests, declarations, and non-source paths', () => {
+  const root = '/tmp/example-package';
+  assert.equal(isProductionSource(`${root}/src/main.ts`, root), true);
+  assert.equal(isProductionSource(`${root}/src/main.mts`, root), true);
+  assert.equal(isProductionSource(`${root}/src/main.cts`, root), true);
+  assert.equal(isProductionSource(`${root}/src/main.test.ts`, root), false);
+  assert.equal(isProductionSource(`${root}/src/types.d.ts`, root), false);
+  assert.equal(isProductionSource(`${root}/src/types.d.mts`, root), false);
+  assert.equal(isProductionSource(`${root}/scripts/check.ts`, root), false);
+});
+
+test('async-safety finds bare Promise calls, conditionals, and logical branches', (t) => {
+  const project = asyncSafetyFixture(t, `
+    declare function work(): Promise<void>;
+    declare const enabled: boolean;
+    work();
+    enabled ? work() : Promise.resolve();
+    enabled && work();
+  `);
+  const findings = analyzeProject(project);
+  assert.equal(findings.length, 3);
+  assert.deepEqual(findings.map((finding) => finding.line), [4, 5, 6]);
+});
+
+test('async-safety allows awaited, handled, assigned, returned, and explicit-void Promises', (t) => {
+  const project = asyncSafetyFixture(t, `
+    declare function work(): Promise<void>;
+    declare function onError(error: unknown): void;
+    async function safe(): Promise<void> {
+      await work();
+      void work();
+      work().catch(onError);
+      work().then(undefined, onError);
+      const pending = work();
+      await pending;
+      return work();
+    }
+    void safe();
+  `);
+  assert.deepEqual(analyzeProject(project), []);
+});
+
+test('async-safety does not accept missing rejection handlers or finally as handled', (t) => {
+  const project = asyncSafetyFixture(t, `
+    declare function work(): Promise<void>;
+    work().catch(undefined);
+    work().then(() => {});
+    work().catch(() => {}).finally(() => {});
+  `);
+  assert.equal(analyzeProject(project).length, 3);
+});
+
+test('async-safety fails closed when a TypeScript config cannot be read', () => {
+  assert.throws(
+    () => analyzeProject({ configPath: '/definitely/missing/tsconfig.json' }),
+    /cannot read TypeScript config/,
+  );
+});
+
+test('async-safety rejects source symlinks that resolve outside the package', (t) => {
+  const project = asyncSafetyFixture(t, 'export const safe = true;\n');
+  const outside = fs.mkdtempSync(path.join(os.tmpdir(), 'a2a-async-outside-'));
+  t.after(() => fs.rmSync(outside, { recursive: true, force: true }));
+  fs.writeFileSync(path.join(outside, 'outside.ts'), 'Promise.resolve();\n');
+  fs.symlinkSync(path.join(outside, 'outside.ts'), path.join(project.packageRoot, 'src', 'linked.ts'));
+  assert.throws(
+    () => analyzeProject(project),
+    /source symlink resolves outside the package/,
+  );
 });
 
 test('countUnsafeSuppressions counts @ts-ignore / @ts-nocheck / eslint-disable', () => {
@@ -90,7 +194,10 @@ test('scanner covers every TypeScript physical line terminator recognized by the
 
 const MANIFEST_AT_ZERO = {
   $schema: FLOOR_SCHEMA,
-  floors: { unsafeSuppressions: { max: 0 } },
+  floors: {
+    unsafeSuppressions: { max: 0 },
+    floatingPromises: { max: 0, packages: [...ASYNC_SAFETY_PACKAGES] },
+  },
 };
 
 test('evaluateFloor passes when measured equals the floor', () => {
@@ -124,6 +231,59 @@ test('evaluateFloor fails closed on a malformed or wrong-schema manifest', () =>
   );
 });
 
+test('floating-Promise floor passes only at the exact measured zero ratchet', () => {
+  assert.deepEqual(evaluateFloatingPromiseFloor(0, MANIFEST_AT_ZERO), {
+    ok: true,
+    failures: [],
+  });
+  assert.match(
+    evaluateFloatingPromiseFloor(1, MANIFEST_AT_ZERO).failures[0],
+    /exceeds floor 0/,
+  );
+  const stale = {
+    ...MANIFEST_AT_ZERO,
+    floors: {
+      ...MANIFEST_AT_ZERO.floors,
+      floatingPromises: {
+        max: 1,
+        packages: [...ASYNC_SAFETY_PACKAGES],
+      },
+    },
+  };
+  assert.match(evaluateFloatingPromiseFloor(0, stale).failures[0], /Ratchet/);
+});
+
+test('floating-Promise floor fails closed on package-scope drift', () => {
+  const drifted = {
+    ...MANIFEST_AT_ZERO,
+    floors: {
+      ...MANIFEST_AT_ZERO.floors,
+      floatingPromises: { max: 0, packages: ['packages/broker'] },
+    },
+  };
+  assert.match(
+    evaluateFloatingPromiseFloor(0, drifted).failures[0],
+    /packages must equal/,
+  );
+});
+
+test('async-safety scope accepts the full gate or one canonical package only', () => {
+  assert.deepEqual(parseAsyncSafetyScope([]), [...ASYNC_SAFETY_PACKAGES]);
+  assert.deepEqual(
+    parseAsyncSafetyScope(['--package', 'packages/broker']),
+    ['packages/broker'],
+  );
+  assert.throws(
+    () => parseAsyncSafetyScope(['--package', 'packages/unknown']),
+    /usage:/,
+  );
+  assert.throws(() => parseAsyncSafetyScope(['--all']), /usage:/);
+});
+
+test('live production packages stay at the zero floating-Promise floor', () => {
+  assert.deepEqual(collectFloatingPromises(process.cwd()), []);
+});
+
 function runGit(root, args) {
   const result = spawnSync('git', ['-C', root, ...args], { encoding: 'utf8' });
   assert.equal(result.status, 0, result.stderr);
@@ -138,11 +298,33 @@ test('tracked src/tmp and symlinked source are counted and a matching nonzero fl
     fs.writeFileSync(path.join(sourceDir, 'tmp/probe.ts'), '// @ts-ignore\nconst first: string = 1;\n');
     fs.writeFileSync(path.join(sourceDir, 'hermes-symlink-target.txt'), '// @ts-ignore\nconst second: string = 2;\n');
     fs.symlinkSync('hermes-symlink-target.txt', path.join(sourceDir, 'hermes-symlink-probe.ts'));
+    for (const packageRel of ASYNC_SAFETY_PACKAGES) {
+      const packageRoot = path.join(root, packageRel);
+      const packageSource = path.join(packageRoot, 'src');
+      fs.mkdirSync(packageSource, { recursive: true });
+      fs.writeFileSync(
+        path.join(packageRoot, 'tsconfig.json'),
+        JSON.stringify({
+          compilerOptions: {
+            target: 'ES2022',
+            module: 'NodeNext',
+            moduleResolution: 'NodeNext',
+            skipLibCheck: true,
+          },
+          include: ['src/**/*.ts'],
+        }),
+      );
+      const probe = path.join(packageSource, 'async-safety-probe.ts');
+      if (!fs.existsSync(probe)) fs.writeFileSync(probe, 'export const safe = true;\n');
+    }
     fs.writeFileSync(
       path.join(root, 'docs/ops/source-quality-floors.json'),
       JSON.stringify({
         $schema: FLOOR_SCHEMA,
-        floors: { unsafeSuppressions: { max: 2 } },
+        floors: {
+          unsafeSuppressions: { max: 2 },
+          floatingPromises: { max: 0, packages: [...ASYNC_SAFETY_PACKAGES] },
+        },
       }),
     );
     runGit(root, ['init', '-q']);
@@ -165,12 +347,14 @@ test('tracked src/tmp and symlinked source are counted and a matching nonzero fl
   }
 });
 
-test('every package-only CI parity route runs the root source-quality floor', () => {
+test('every package-only CI parity route scopes async analysis to that package', () => {
   for (const [surface, config] of Object.entries(PACKAGE_CI_SURFACES)) {
     assert.ok(
       config.commands.some(([command, args]) =>
-        command === 'npm' && args.join(' ') === 'run check:source-quality-floors'),
-      `${surface}: package CI parity must run check:source-quality-floors`,
+        command === 'npm' &&
+        args.join(' ') ===
+          `run check:source-quality-floors -- --package ${config.packageDir}`),
+      `${surface}: package CI parity must scope check:source-quality-floors`,
     );
   }
 });

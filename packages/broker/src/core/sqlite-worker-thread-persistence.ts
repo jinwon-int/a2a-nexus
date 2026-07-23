@@ -289,7 +289,7 @@ export class SqliteWorkerThread {
     this.terminating = true;
     const timeout = setTimeout(() => {
       if (!this.closed) {
-        this.worker?.terminate();
+        void this.worker?.terminate();
         this.closed = true;
       }
     }, 5000).unref();
@@ -308,7 +308,7 @@ export class SqliteWorkerThread {
       try {
         this.worker.postMessage({ id: -1, method: "__close__" });
       } catch {
-        this.worker.terminate();
+        void this.worker.terminate();
         this.closed = true;
         resolve();
       }
