@@ -1,0 +1,179 @@
+{
+  "kind": "ReviewLineageSimulationFixtureV1",
+  "scenarioId": "non-converging",
+  "description": "An identical unresolved finding repeats during resolution review and stops the lineage within budget.",
+  "create": {
+    "contract": {
+      "kind": "IntentContractV1",
+      "lineageId": "fixture-non-converging",
+      "goal": "Exercise the non-converging bounded review lineage scenario.",
+      "nonGoals": [
+        "Do not alter task completion."
+      ],
+      "invariants": [
+        "Frozen intent remains authoritative."
+      ],
+      "acceptanceCriteria": [
+        {
+          "id": "AC-1",
+          "text": "Review lineage terminates within its declared budget."
+        },
+        {
+          "id": "AC-2",
+          "text": "Resolution review cannot expand the approved scope."
+        }
+      ],
+      "declaredPaths": {
+        "allowed": [
+          "packages/broker/src/**"
+        ],
+        "forbidden": [
+          ".github/**"
+        ]
+      },
+      "baseSha": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "headSha": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+      "createdAt": "2026-07-23T00:00:00.000Z",
+      "intentHash": "sha256:0d954d5e527efbf4a616b87245390171e95f3b7447aded2835a8fff17a25132a"
+    },
+    "at": "2026-07-23T00:00:00.000Z",
+    "diffHash": "sha256:a1b0902b8532d8077a80b2d2ae89f58212ae03a644b2c5144819fdc91b69fb7e"
+  },
+  "steps": [
+    {
+      "stepId": "initial-review",
+      "event": {
+        "type": "review_report",
+        "at": "2026-07-23T01:00:00.000Z",
+        "receipt": {
+          "kind": "ReviewReceiptV1",
+          "reviewerNodeId": "reviewer-b",
+          "verdict": "fail",
+          "note": "One blocking finding.",
+          "headSha": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+          "diffHash": "sha256:a1b0902b8532d8077a80b2d2ae89f58212ae03a644b2c5144819fdc91b69fb7e",
+          "intentHash": "sha256:0d954d5e527efbf4a616b87245390171e95f3b7447aded2835a8fff17a25132a",
+          "findingLedgerRef": "ledger-fixture-non-converging"
+        },
+        "newFindings": [
+          {
+            "findingId": "F-1",
+            "criterionRef": "AC-1",
+            "evidenceRefs": [
+              "packages/broker/src/worker-review.ts:69"
+            ],
+            "severity": "major",
+            "category": "correctness",
+            "blocking": true,
+            "introducedAtHead": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+            "firstSeenAtHead": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+            "resolvedAtHead": null,
+            "disposition": "open",
+            "signature": "sha256:96c953da44c2f6b60d7d20235cf9694e0becb75944c02c1cf35261a03a19ea40"
+          }
+        ]
+      },
+      "expect": {
+        "state": "correction_pending",
+        "openBlockingFindings": 1,
+        "effectsContain": [
+          "correction_pending"
+        ]
+      }
+    },
+    {
+      "stepId": "correction",
+      "event": {
+        "type": "correction_generation",
+        "at": "2026-07-23T02:00:00.000Z",
+        "headSha": "cccccccccccccccccccccccccccccccccccccccc",
+        "diffHash": "sha256:fb1c1188a01ca8c17c7279809e2f00d18f2afb16e3ee1c6885c7a3f7f65d2bdb",
+        "intentHash": "sha256:0d954d5e527efbf4a616b87245390171e95f3b7447aded2835a8fff17a25132a",
+        "pathsChanged": [
+          "packages/broker/src/worker-review.ts"
+        ]
+      },
+      "expect": {
+        "state": "reviewing_resolution",
+        "counters": {
+          "correctionGenerations": 1
+        },
+        "effectsContain": [
+          "generation_accepted"
+        ]
+      }
+    },
+    {
+      "stepId": "repeated-resolution-review",
+      "event": {
+        "type": "review_report",
+        "at": "2026-07-23T03:00:00.000Z",
+        "receipt": {
+          "kind": "ReviewReceiptV1",
+          "reviewerNodeId": "reviewer-c",
+          "verdict": "fail",
+          "note": "The same finding remains unresolved.",
+          "headSha": "cccccccccccccccccccccccccccccccccccccccc",
+          "diffHash": "sha256:fb1c1188a01ca8c17c7279809e2f00d18f2afb16e3ee1c6885c7a3f7f65d2bdb",
+          "intentHash": "sha256:0d954d5e527efbf4a616b87245390171e95f3b7447aded2835a8fff17a25132a",
+          "findingLedgerRef": "ledger-fixture-non-converging"
+        }
+      },
+      "expect": {
+        "state": "blocked_needs_operator",
+        "terminalReason": "repeated_findings",
+        "counters": {
+          "reviewerRuns": 2,
+          "repeatedSignatureHits": 1
+        },
+        "openBlockingFindings": 1,
+        "effectsContain": [
+          "repeated_signature_stop:F-1"
+        ]
+      }
+    },
+    {
+      "stepId": "terminal-replay",
+      "event": {
+        "type": "review_report",
+        "at": "2026-07-23T03:01:00.000Z",
+        "receipt": {
+          "kind": "ReviewReceiptV1",
+          "reviewerNodeId": "reviewer-c",
+          "verdict": "pass",
+          "note": "A terminal lineage cannot be reopened by another report.",
+          "headSha": "cccccccccccccccccccccccccccccccccccccccc",
+          "diffHash": "sha256:fb1c1188a01ca8c17c7279809e2f00d18f2afb16e3ee1c6885c7a3f7f65d2bdb",
+          "intentHash": "sha256:0d954d5e527efbf4a616b87245390171e95f3b7447aded2835a8fff17a25132a",
+          "findingLedgerRef": "ledger-fixture-non-converging"
+        }
+      },
+      "expect": {
+        "state": "blocked_needs_operator",
+        "terminalReason": "repeated_findings",
+        "counters": {
+          "reviewerRuns": 2,
+          "repeatedSignatureHits": 1
+        },
+        "effectsContain": [
+          "ignored_terminal:blocked_needs_operator"
+        ]
+      }
+    }
+  ],
+  "expect": {
+    "state": "blocked_needs_operator",
+    "terminalReason": "repeated_findings",
+    "currentHeadSha": "cccccccccccccccccccccccccccccccccccccccc",
+    "counters": {
+      "correctionGenerations": 1,
+      "reviewerRuns": 2,
+      "repeatedSignatureHits": 1
+    },
+    "openBlockingFindings": 1,
+    "effectsContain": [
+      "repeated_signature_stop:F-1",
+      "ignored_terminal:blocked_needs_operator"
+    ]
+  }
+}

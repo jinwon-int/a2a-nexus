@@ -79,6 +79,12 @@ zero effect on completion validation.
 - Moving-goalpost: second reviewer cannot add unrelated design blocker.
 - Scope-drift: patch outside declared paths rejected; original head recoverable.
 
+Implementation boundary: promote these scenarios into strict, reusable JSON
+fixtures backed by the pure lifecycle engine. Actual task-completion observation
+remains a later contract-first slice because the current review payload does not
+declare the full intent contract, diff binding, stable finding ledger, or
+idempotency key needed to construct lossless lineage events.
+
 ## Phase 4: Early stop + terminal exhaustion
 
 - Repeated-identical-signature early stop before outer budget consumption.
