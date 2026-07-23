@@ -27,6 +27,10 @@
 
 import fs from 'node:fs';
 import { parseArgs } from 'node:util';
+import {
+  evaluateReviewLineageFinalizerEvidence,
+  readReviewLineageFinalizerEvidence,
+} from './lib/review-lineage-finalizer-evidence.mjs';
 
 // ─── Lane status taxonomy ───────────────────────────────────────────────────
 
@@ -397,7 +401,13 @@ function targetKey(task) {
 // ─── Verdict computation ────────────────────────────────────────────────────
 
 function computeVerdict(tasks, options) {
-  const { round, quorum, perTarget, draft } = options;
+  const {
+    round,
+    quorum,
+    perTarget,
+    draft,
+    lineageEvidence = null,
+  } = options;
 
   if (!hasText(round)) {
     throw new Error('--round <parentRoundId> is required');
@@ -506,6 +516,17 @@ function computeVerdict(tasks, options) {
     reasons.push('draft cites no succeeded-lane evidence id (fail-closed, evidence-first)');
   }
 
+  // 5) Bounded review-lineage evidence is an optional, additive input (#1518
+  //    Phase 6). It may add a blocking reason but can never erase quorum,
+  //    dispatch-completeness, or evidence-first failures above. Off/record
+  //    inputs are observable only; enforce requires a terminal passed lineage.
+  const lineageEvaluation = lineageEvidence == null
+    ? null
+    : evaluateReviewLineageFinalizerEvidence(lineageEvidence, round);
+  if (lineageEvaluation?.blocksFinality) {
+    reasons.push(`lineage:${lineageEvaluation.reasonCode}`);
+  }
+
   const missingLanes = [...failedLanes, ...pendingLanes, ...nonSubstantiveLanes].map((l) => ({
     taskId: l.id,
     status: String(l.status || '').trim().toLowerCase() || 'unknown',
@@ -524,7 +545,7 @@ function computeVerdict(tasks, options) {
 
   const verdict = reasons.length === 0 ? 'FINAL' : 'BLOCKED';
 
-  return {
+  const result = {
     verdict,
     round,
     expectedTotal,
@@ -541,6 +562,8 @@ function computeVerdict(tasks, options) {
     evidenceIdsCitedInDraft,
     reasons,
   };
+  if (lineageEvaluation != null) result.lineageEvidence = lineageEvaluation;
+  return result;
 }
 
 // Find which succeeded-lane ids are actually referenced in the draft body.
@@ -584,6 +607,12 @@ function renderMissing(result) {
   if (result.expectedTotal != null && result.laneCount < result.expectedTotal) {
     lines.push(`  ! dispatch gap: ${result.laneCount}/${result.expectedTotal} expected lanes present`);
   }
+  if (result.lineageEvidence) {
+    const lineage = result.lineageEvidence;
+    lines.push(
+      `Review lineage: ${lineage.lineageId} mode=${lineage.mode} state=${lineage.state} outcome=${lineage.outcome} reason=${lineage.reasonCode}`,
+    );
+  }
   return lines.join('\n');
 }
 
@@ -598,6 +627,11 @@ live broker, never deploys/restarts/sends/mutates.
 Required:
   --tasks <file>         JSON array of task records or { items: [...] }
   --round <id>           parentRoundId to evaluate
+
+Bounded review lineage (#1518 Phase 6):
+  --lineage <file>       optional a2a.finalizer-lineage-evidence.v1 JSON input;
+                         malformed/mismatched/active/blocked enforce evidence
+                         fails closed and never weakens existing gate reasons
 
 Quorum policy:
   --quorum <N>           min succeeded lanes (default: parentRoundTotal, else lane count)
@@ -626,6 +660,7 @@ function main(argv) {
       options: {
         tasks: { type: 'string' },
         round: { type: 'string' },
+        lineage: { type: 'string' },
         quorum: { type: 'string' },
         'per-target': { type: 'string' },
         draft: { type: 'string' },
@@ -660,8 +695,12 @@ function main(argv) {
 
   let tasks;
   let draft = '';
+  let lineageEvidence = null;
   try {
     tasks = readTasks(values.tasks);
+    if (hasText(values.lineage)) {
+      lineageEvidence = readReviewLineageFinalizerEvidence(values.lineage);
+    }
     if (hasText(values.draft)) {
       draft = fs.readFileSync(values.draft, 'utf8');
     }
@@ -672,7 +711,13 @@ function main(argv) {
 
   let result;
   try {
-    result = computeVerdict(tasks, { round: values.round, quorum, perTarget, draft });
+    result = computeVerdict(tasks, {
+      round: values.round,
+      quorum,
+      perTarget,
+      draft,
+      lineageEvidence,
+    });
   } catch (error) {
     process.stderr.write(`error: ${error.message}\n`);
     return 2;
@@ -742,7 +787,7 @@ function writeBody(body, outFile) {
 }
 
 function toJson(result) {
-  return {
+  const json = {
     verdict: result.verdict,
     round: result.round,
     expectedTotal: result.expectedTotal,
@@ -754,6 +799,8 @@ function toJson(result) {
     supersededLanes: result.supersededLanes,
     evidenceIdsCitedInDraft: result.evidenceIdsCitedInDraft,
   };
+  if (result.lineageEvidence != null) json.lineageEvidence = result.lineageEvidence;
+  return json;
 }
 
 // Direct invocation guard (so the test can import without running main).

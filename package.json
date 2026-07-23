@@ -103,7 +103,7 @@
     "dispatch:round:coordinator": "node scripts/round-coordinator-dispatch.mjs",
     "dispatch:round:coordinator:test": "node --test scripts/round-coordinator-dispatch.test.mjs",
     "finalizer:gate": "node scripts/a2ad-finalizer-gate.mjs",
-    "finalizer:gate:test": "node --test scripts/a2ad-finalizer-gate.test.mjs",
+    "finalizer:gate:test": "node --test scripts/a2ad-finalizer-gate.test.mjs test/review-lineage-finalizer-evidence.test.mjs",
     "check:markdown-links": "node scripts/check-markdown-links.mjs",
     "check:ci-docs-safety": "node --test scripts/ci-docs-safety.test.mjs",
     "a2a:skill-guard": "node scripts/a2a-skill-guard.mjs",

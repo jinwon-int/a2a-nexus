@@ -122,11 +122,16 @@ gate remain Phase 6+ work.
 
 ## Phase 6: Enforce-mode conformance + #1499 integration
 
-- `scripts/a2ad-finalizer-gate.mjs` consumes lineage evidence as additive input; signed-verdict
-  verification untouched.
+- [x] `scripts/a2ad-finalizer-gate.mjs` consumes a strict, round-bound lineage evidence
+  envelope as optional additive input; signed-verdict verification is untouched.
 - Full checklist (checklist.md) green; `npm run check`, public-readiness scan, CI green.
 - Detached independent review (evidence-only) confirms intent preservation and no new auto-fix
   loop.
+
+Phase 6 source boundary: `off`/`record` remain observational, `enforce` evidence
+fails closed unless the durable record is consistently `passed`, and no broker
+runtime acceptance, completion/retry hook, fixer apply path, deploy/restart, or
+#1499 ruleset mutation is added.
 
 ## Phase 7: Scorecard readback
 

@@ -620,3 +620,43 @@ contract is enforced in reverse: a conformance test in
 (`WAVE_LANE_EVIDENCE_CLASSES`) to the gate's `EVIDENCE_CLASSES` exactly and
 asserts both sides count exactly `substantive` toward quorum — any drift fails
 CI.
+
+### Bounded review-lineage evidence (#1518 Phase 6)
+
+The offline finalizer gate optionally accepts `--lineage <file>`. The file is a
+strict, versioned envelope around the full durable `ReviewLineageRecord`:
+
+```jsonc
+{
+  "kind": "a2a.finalizer-lineage-evidence.v1",
+  "parentRoundId": "the-same-value-passed-to---round",
+  "record": {
+    "kind": "a2a.review-lineage.v1",
+    // full durable record: frozen contract, budget, finding/appeal ledgers,
+    // counters, exact current subject, timestamps, state, and terminal reason
+  }
+}
+```
+
+This input is additive:
+
+- omitting `--lineage` preserves the existing CLI and verdict result shape;
+- valid `off` / `record` evidence is reported but cannot change the verdict;
+- `enforce` permits finality only for a consistent `passed` record with an exact
+  current diff hash and no open blocking findings or unresolved signatures;
+- an active, exhausted, conflicted, canceled, round-mismatched, malformed, or
+  internally inconsistent lineage fails closed;
+- lineage evidence can add a blocking reason but can never erase a quorum,
+  dispatch-completeness, substantive-evidence, or draft-citation failure.
+
+The envelope is bounded to 1 MiB and outputs only stable state/reason codes and
+counts. It does not carry private prompts or runtime configuration. The
+independent signed-verdict path (`check-finalizer-verdict.mjs` /
+`verify-finalizer-verdict.mjs`) remains separate and unchanged: lineage evidence
+never substitutes for a signature, exact-HEAD binding, reviewer independence,
+CodeQL, or operator approval.
+
+Phase 6 is source-only here. It does not enable broker runtime `enforce`, wire
+task completion/retry hooks, apply fixer candidates, mutate the #1499 GitHub
+ruleset, deploy, restart, send provider messages, mutate DB/outbox/ACK state, or
+publish a release.
