@@ -17,6 +17,12 @@ test('broker npm test manifest removes ignored dist artifacts before incremental
   ]);
 });
 
+test('broker npm test manifest includes bounded review lifecycle conformance', () => {
+  const manifest = JSON.parse(readFileSync(brokerTestManifestPath, 'utf8'));
+  const commands = manifest.entries.map((entry) => entry.command).join('\n');
+  assert.match(commands, /dist\/review-lifecycle\/\*\.test\.js/);
+});
+
 test('npm scripts inventory emits caller audit refs without reading package files as callers', () => {
   const tempDir = mkdtempSync(join(tmpdir(), 'npm-scripts-inventory-'));
   try {
