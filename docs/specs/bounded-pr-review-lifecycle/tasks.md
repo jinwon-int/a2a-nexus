@@ -169,7 +169,7 @@ is `insufficient_evidence` and `DEFAULT_LINEAGE_BUDGET` remains unchanged.
 - [x] Errors expose stable code/path only and do not echo rejected values.
 - [x] Durable idempotency ledger + exact-subject reference store adapter
       implemented and reviewed separately in Phase 9.
-- [ ] Approved producer completeness and privacy/retention proof before a live
+- [x] Approved producer completeness and privacy/retention proof before a live
       task-completion observer is attached.
 
 Phase 8 source boundary: `observation.ts` is a pure validator/projector. It does
@@ -215,12 +215,37 @@ live tables, or attaching an observation producer is not authorized.
 - [x] Production store restart/replay, forced rollback, legacy precedence, and
       worker-thread ACK/readback pass on temporary databases.
 - [x] Broker schema version 12 is published after lineage tables initialize.
-- [ ] Complete automatic producer contract and privacy/retention proof.
+- [x] Complete automatic producer contract and privacy/retention proof.
 - [ ] Separate approval for live schema execution, migration, deploy/restart,
       canary, or real-lineage collection.
 
 Phase 10 source boundary: an explicit broker/store API exists, but there is no
 automatic caller, HTTP mutation route, or task-completion/retry/finalizer hook.
+
+## Phase 11: Producer completeness and privacy/retention planning
+
+- [x] `ReviewLineageProducerFactV1` carries structured source evidence without
+      task/result/log/prose inference.
+- [x] A compile-time matrix exhaustively covers create, review, correction,
+      replacement, and cancel observations.
+- [x] Every fact reuses the Phase 8 parser as the sole validation,
+      idempotency-key, and fingerprint boundary.
+- [x] Canonical lineage, minimized ledger, and redacted scorecard projection
+      have explicit privacy classes.
+- [x] Retention planning requires an explicit approved cutoff and has no
+      default duration.
+- [x] Only terminal records strictly before the cutoff can become candidates.
+- [x] Every candidate couples canonical lineage and all expected ledger rows;
+      a one-sided delete target cannot be represented.
+- [x] The existing validated scorecard export proof and fingerprint are built
+      before prune aggregates.
+- [ ] Approve and implement an automatic producer call site.
+- [ ] Approve export delivery semantics, duration, worker-owned atomic
+      execution, live schema/deploy/canary, and real cohort collection.
+
+Phase 11 source boundary: the new modules are pure contracts and planning
+functions. They do not import the broker/store, add a worker queue or HTTP
+mutation, execute SQL, attach a producer, or export/prune live data.
 
 ## Validation commands (all phases as applicable)
 

@@ -94,7 +94,7 @@
 - [x] No broker/store/HTTP/task-completion/retry/finalizer call site exists
 - [x] Durable reference adapter receives a separate Phase 9 review before any
       live collection
-- [ ] Producer completeness proof and privacy retention gate receive a
+- [x] Producer completeness proof and privacy retention gate receive a
       separate review before any live collection
 
 ## H. Atomic durable reference adapter (Phase 9)
@@ -125,4 +125,21 @@
 - [x] Forced ledger failure rolls back the lineage transition
 - [x] Schema version 12 is recorded only after new tables initialize
 - [x] No producer, HTTP mutation, completion/retry/finalizer hook, or live action
-- [ ] Producer completeness plus privacy/retention gate reviewed before live collection
+- [x] Producer completeness plus privacy/retention gate reviewed before live collection
+
+## J. Producer completeness and privacy/retention plan (Phase 11)
+
+- [x] All five observation kinds are exhaustive at compile time
+- [x] Structured facts preserve stable source identity and exact subject
+- [x] Missing, multiple, unknown, prose-only, and sensitive fields fail closed
+- [x] Same fact is deterministic; changed payload under the same event identity
+      preserves the key and changes the fingerprint
+- [x] Canonical lineage and ledger are never approved export formats
+- [x] Existing scorecard projection is the only redacted export proof
+- [x] No retention plan exists without an explicit approved cutoff
+- [x] Active and at-or-after-cutoff lineages cannot enter prune candidates
+- [x] Candidate type couples canonical lineage and ledger rows
+- [x] Export proof is validated and fingerprinted before candidate creation
+- [x] No producer hook, SQL deletion, queue command, HTTP mutation, or live action
+- [ ] Automatic producer and worker-owned atomic export/prune executor receive
+      separate approvals
