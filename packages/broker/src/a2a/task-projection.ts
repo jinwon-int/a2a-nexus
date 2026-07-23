@@ -1,4 +1,4 @@
-import type { TaskRecord, TaskStatus } from "../core/types.js";
+import type { TaskRecord } from "../core/types.js";
 
 export type A2ATaskState =
   | "submitted"

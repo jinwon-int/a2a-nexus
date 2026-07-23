@@ -31,7 +31,6 @@ import type {
 // ---------------------------------------------------------------------------
 
 const HUB: A2APartyRef = { id: "hub-regression", kind: "node", role: "hub" };
-const OPERATOR: A2APartyRef = { id: "ops-regression", kind: "node", role: "operator" };
 
 function worker(
   nodeId: string,

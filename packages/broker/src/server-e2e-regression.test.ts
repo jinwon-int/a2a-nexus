@@ -16,14 +16,6 @@ import assert from "node:assert/strict";
 import { createBrokerServer, type BrokerServerOptions } from "./server.js";
 import { emptySnapshot, type BrokerStateStore } from "./core/store.js";
 import {
-  buildWaitingState,
-  buildResumedState,
-  buildCompletedState,
-  buildFailedState,
-  buildCanceledState,
-  buildTimedOutState,
-  buildStaleState,
-  buildTombstonedState,
   ALL_RUNTIME_STATES,
 } from "./fixtures/delegated-runtime.js";
 
@@ -834,7 +826,7 @@ test("E2E: cancel running task via HTTP produces canceled state and SSE terminal
       try { return JSON.parse(e.data).reason === "canceled"; } catch { return false; }
     });
     assert.ok(terminalEvent);
-    const terminal = JSON.parse(terminalEvent.data);
+    JSON.parse(terminalEvent.data);
     // Note: SSE event data includes { task, reason, final, seq }
 
     // Dashboard should not count canceled as completed or failed

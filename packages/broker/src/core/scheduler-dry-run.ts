@@ -6,11 +6,8 @@ import type {
   WorkerView,
 } from "./types.js";
 import {
-  queryWorkerCapabilityCards,
   type WorkerAssignmentRole,
   type WorkerCapabilityCard,
-  type WorkerCapabilityCardQuery,
-  type WorkerRegistryTeamId,
 } from "./worker-capability-card.js";
 
 // ── Scheduling intent ───────────────────────────────────────────────────────
@@ -313,22 +310,6 @@ export function cardHasCapacity(
 }
 
 // ── Core evaluation ─────────────────────────────────────────────────────────
-
-const TASK_TYPE_CAPABILITY_MAP: Record<
-  A2AExchangeIntent,
-  keyof import("./types.js").WorkerCapabilities
-> = {
-  analyze: "canAnalyze",
-  backfill: "canBackfill",
-  propose_patch: "canPatchWorkspace",
-  propose_params: "canPatchWorkspace",
-  validate_change: "canAnalyze",
-  apply_local_change: "canPatchWorkspace",
-  promote_to_live: "canPromoteLive",
-  rollback_live: "canPromoteLive",
-  chat: "canAnalyze",
-  verify: "canAnalyze",
-};
 
 /**
  * Evaluate a single worker against the task profile.

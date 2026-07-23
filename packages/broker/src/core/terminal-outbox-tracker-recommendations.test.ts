@@ -12,7 +12,6 @@ import assert from "node:assert/strict";
 import {
   evaluateTrackerCloseoutRecommendations,
   KNOWN_TRACKERS,
-  type OutboxTrackerCloseoutMap,
 } from "./terminal-outbox-tracker-recommendations.js";
 import type {
   OutboxLegacyResidueReport,
@@ -22,10 +21,6 @@ import type {
 // ---------------------------------------------------------------------------
 // Fixture helpers
 // ---------------------------------------------------------------------------
-
-const CUTOFF_MS = Date.parse("2026-05-04T07:10:00.000Z");
-const AFTER_CUTOFF = "2026-05-06T00:00:00.000Z";
-const BEFORE_CUTOFF = "2026-05-02T00:00:00.000Z";
 
 function healthyCurrentWindowClassification(
   id: string,

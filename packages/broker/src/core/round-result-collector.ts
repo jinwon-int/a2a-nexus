@@ -14,7 +14,7 @@
  * merges, deploys, live sends, ACKs, or DB mutations are performed.
  */
 
-import type { TaskRecord, TaskResult, TaskStatus, BrokerExitCondition } from "./types.js";
+import type { TaskRecord, TaskStatus, BrokerExitCondition } from "./types.js";
 
 // ---------------------------------------------------------------------------
 // Round Manifest (lane definitions)

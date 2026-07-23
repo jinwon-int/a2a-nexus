@@ -2,11 +2,8 @@ import { createHash } from "node:crypto";
 import {
   buildRoundManifest as buildCoreRoundManifest,
   projectRoundManifest,
-  renderRoundManifestMarkdown,
   ROUND_MANIFEST_KIND,
   ROUND_MANIFEST_VERSION,
-  DEFAULT_ROUND_STALE_AFTER_MS,
-  DEFAULT_ROUND_TIMEOUT_AFTER_MS,
   type RoundManifest,
   type RoundManifestProjection,
   type RoundManifestOptions,
@@ -558,7 +555,6 @@ export function resolveTeam1WorkerModelPolicy(roundSpec: Team1RoundSpec): Team1W
 
   // Determine escalation reasons for explicit model override
   const isProExplicitlyRequested = explicitModel === TEAM1_PRO_ESCALATION_MODEL;
-  const isProByEscalation = !explicitModel && escalatedToPro;
   const finalEscalatedToPro = explicitModel === TEAM1_PRO_ESCALATION_MODEL || (!explicitModel && escalatedToPro);
   const finalReasons = isProExplicitlyRequested && reasons.size === 0
     ? []

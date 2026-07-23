@@ -14,11 +14,9 @@ import test from "node:test";
 import assert from "node:assert/strict";
 
 import { InMemoryA2ABroker } from "./broker.js";
-import { CURRENT_BROKER_STATE_VERSION } from "./store.js";
 import {
   buildWaitingState,
   buildResumedState,
-  buildCompletedState,
   buildFailedState,
   buildCanceledState,
   buildTimedOutState,

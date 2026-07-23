@@ -5,15 +5,12 @@ import { DatabaseSync } from "node:sqlite";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
-import { InMemoryA2ABroker, type BrokerProfilingSample, type TaskUpdate, type BufferedTaskEvent } from "./broker.js";
+import { InMemoryA2ABroker, type BrokerProfilingSample } from "./broker.js";
 import type { WorkerRuntimeRepository } from "./worker-repository.js";
 import {
-  CURRENT_BROKER_STATE_VERSION,
   SqliteArtifactRuntimeRepository,
   SqliteAuditRuntimeRepository,
   SqliteBrokerStateStore,
-  SqliteExchangeMessageRuntimeRepository,
-  SqliteExchangeRuntimeRepository,
   SqliteProposalRuntimeRepository,
   SqliteTaskRuntimeRepository,
   SqliteTombstoneRuntimeRepository,
@@ -24,7 +21,7 @@ import {
   type BrokerStateSaveHints,
   type BrokerStateStore,
 } from "./store.js";
-import type { ArtifactRecord, AuditEvent, ChangeProposal, CreateTaskRequest, TaskTombstone, ValidationResult, WorkerMobileHealth, WorkerMode, WorkerRecord } from "./types.js";
+import type { ArtifactRecord, AuditEvent, ChangeProposal, TaskTombstone, ValidationResult, WorkerRecord } from "./types.js";
 import { registerWorker, createWorkerTask, createGithubPatchTask, createOwnedTask } from "./broker-test-helpers.js";
 
 test("broker registration stores provider/model capabilities and list filters can target them without secret fields", () => {

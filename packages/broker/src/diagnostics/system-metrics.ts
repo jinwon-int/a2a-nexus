@@ -66,10 +66,10 @@ let _gcCount = 0;
 let _gcLastGcMs = 0;
 let _gcRecentMaxMs = 0;
 let _gcRecentWindowStart = Date.now();
-let _gcObserver: unknown = null;
+let _gcObserver: PerformanceObserver | null = null;
 
 function _initGcObserver(): void {
-  if (_gcObserverInitialized) return;
+  if (_gcObserverInitialized || _gcObserver) return;
   _gcObserverInitialized = true;
   try {
     const observer = new PerformanceObserver((list) => {

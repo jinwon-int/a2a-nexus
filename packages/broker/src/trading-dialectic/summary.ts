@@ -1,16 +1,7 @@
 import type {
   TradingDialecticDecisionV1,
   TradingDialecticTaskV1,
-  TradingDialecticVerdict,
 } from "./types.js";
-
-const VerdictPhrases: Record<TradingDialecticVerdict, string> = {
-  EXECUTE_FULL: "execute full",
-  EXECUTE_PROBE: "execute probe",
-  WAIT_TRIGGER: "wait for trigger",
-  ABSTAIN: "abstain",
-  VETO: "veto",
-};
 
 function formatPrefix(task: TradingDialecticTaskV1): string {
   return `[${task.meta.symbol} ${task.meta.side} ${task.state} r${task.revision}]`;

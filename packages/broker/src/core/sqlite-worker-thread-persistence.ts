@@ -26,7 +26,7 @@
  */
 
 import { Worker } from "node:worker_threads";
-import { join, dirname, extname } from "node:path";
+import { join, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
 import { existsSync } from "node:fs";
 import { SqliteBrokerStateStore } from "./store.js";
@@ -34,7 +34,6 @@ import type { BrokerPersistenceQueueDiagnostics, BrokerPersistenceQueueState } f
 import type {
   BrokerSnapshot,
   BrokerStateSaveHints,
-  BrokerPersistenceInfo,
   SqliteBrokerLoadSource,
 } from "./store.js";
 
@@ -226,8 +225,8 @@ export class SqliteWorkerThread {
 
   /** Create a worker thread at the worker script path. */
   constructor(
-    private readonly dbFile: string,
-    private readonly initOptions?: {
+    dbFile: string,
+    initOptions?: {
       loadSource?: SqliteBrokerLoadSource;
       maxBytes?: number;
       maxHotRuntimeNonTerminalTasks?: number;

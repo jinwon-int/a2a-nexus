@@ -113,7 +113,6 @@ export function projectAlerts(
   const now = new Date(nowMs).toISOString();
   const staleWarningMs = options?.staleWarningMs ?? 120_000;
   const staleCriticalMs = options?.staleCriticalMs ?? 600_000;
-  const longRunningWarningMs = options?.longRunningWarningMs ?? 3_600_000;
   const longRunningCriticalMs = options?.longRunningCriticalMs ?? 14_400_000;
   const workerHeartbeatMissedAfterMs = options?.workerHeartbeatMissedAfterMs ?? staleWarningMs;
 
@@ -222,12 +221,6 @@ function projectTerminalAlert(
   tombstone: TaskTombstone,
   now: string,
 ): Alert | null {
-  const base = {
-    taskId: report.taskId,
-    detectedAt: now,
-    durationMs: tombstone.durationMs,
-  };
-
   switch (tombstone.tombstoneReason) {
     case "dead_lettered":
       return makeAlert("task_dead_lettered", "critical", report, now, {

@@ -7,7 +7,6 @@ import {
   type WakeAuditManagerOptions,
 } from "./wake-audit.js";
 import {
-  type WakeFailureCode,
   WAKE_TRANSITIONS,
 } from "./wake-audit-types.js";
 
@@ -208,12 +207,6 @@ describe("duplicate wake suppression", () => {
     mgr.requestWake(input);
     const original = mgr.getSession(input.sessionKey)!;
 
-    // Advance clock
-    const mgr2 = new WakeAuditManager({
-      idFactory: () => `run-${Math.random().toString(36).slice(2)}`,
-      now: () => new Date("2026-04-26T11:00:00Z"),
-    });
-    // Can't share state across managers, so test inline
     mgr.failWake(input.sessionKey, "timeout");
     const retried = mgr.requestWake(input);
     expect(retried.requestedAt).toBe(original.requestedAt);

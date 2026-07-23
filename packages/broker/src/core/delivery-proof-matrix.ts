@@ -556,7 +556,7 @@ async function runS5(
   const now = new Date().toISOString();
 
   const payload = { resultId: "result-" + randomUUID(), summary: "[redacted]" };
-  const attempt = await executor.deliver({
+  await executor.deliver({
     deliveryId,
     targetNodeId: fixture.targetNodeId,
     channel: fixture.deliveryChannel ?? "a2a-webhook",

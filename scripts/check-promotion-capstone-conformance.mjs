@@ -147,7 +147,7 @@ function boundedSource(rel, startMarker, endMarker) {
 }
 
 const packages = [
-  { name: 'broker', dir: 'packages/broker', noUnusedLocals: undefined, buildBaseline: buildBrokerBaseline },
+  { name: 'broker', dir: 'packages/broker', noUnusedLocals: true, buildBaseline: buildBrokerBaseline },
   { name: 'docker-runner', dir: 'packages/docker-runner', noUnusedLocals: true, buildBaseline: buildRunnerBaseline },
   { name: 'openclaw-plugin-a2a', dir: 'packages/openclaw-plugin-a2a', noUnusedLocals: true, buildBaseline: buildPluginBaseline },
 ];
@@ -204,7 +204,7 @@ if (capstone) {
   );
   for (const marker of [
     /a2a-nexus\.coverage-baseline\.v1/,
-    /broker[^\n]*#1506[^\n]*Enforced[^\n]*Pending/i,
+    /broker[^\n]*#1506[^\n]*Enforced[^\n]*Enabled/i,
     /docker-runner[^\n]*#1576[^\n]*Enforced[^\n]*Enabled/i,
     /openclaw-plugin-a2a[^\n]*#1506[^\n]*Enforced[^\n]*Enabled/i,
     /config\.js[^\n]*94%/,

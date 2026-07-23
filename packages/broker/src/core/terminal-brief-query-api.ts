@@ -14,9 +14,7 @@
 
 import type {
   TerminalTaskEventOutbox,
-  TerminalTaskEventPayload,
   TerminalTaskOutboxEvent,
-  TerminalTaskOutboxAckState,
 } from "./terminal-event-outbox.js";
 
 // ---------------------------------------------------------------------------

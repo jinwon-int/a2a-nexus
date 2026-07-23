@@ -189,7 +189,6 @@ test("validateSessionIsolation rejects handler with mismatched session id", () =
 
 test("validateSessionIsolation rejects handler using another task's session", () => {
   const taskA = makeTask({ id: "task-alpha" });
-  const taskB = makeTask({ id: "task-beta" });
 
   // Handler args derive session from task B, but we validate against task A
   const argsForB = ["--session-id", deriveTaskSessionId("workerepsilon", "task-beta")];

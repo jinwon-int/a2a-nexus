@@ -16,10 +16,8 @@ import {
   DEFAULT_STALE_PHASE_THRESHOLDS,
   DEFAULT_PHASE_RETRY_CAPS,
   DEFAULT_REPEATED_ERROR_THRESHOLD,
-  DEFAULT_SCHEDULER_CONTROL_TOWER_CONFIG,
   type StuckTaskDiagnosis,
   type StuckPhase,
-  type SchedulerControlTowerConfig,
   type OperatorBlocker,
 } from "./task-stuck-detection.js";
 

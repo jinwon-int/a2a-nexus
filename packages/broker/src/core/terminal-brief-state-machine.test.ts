@@ -8,7 +8,6 @@ import {
   TERMINAL_BRIEF_TRANSITIONS,
   TERMINAL_BRIEF_ACTIVE_STATES,
   TERMINAL_BRIEF_TERMINAL_STATES,
-  TERMINAL_BRIEF_ACK_ELIGIBLE_EVIDENCE,
   canTransitionTerminalBriefEvent,
   canAckTerminalBriefEvent,
   isTerminalBriefEventTerminal,

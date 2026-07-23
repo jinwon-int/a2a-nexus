@@ -15,8 +15,6 @@ import {
   hasUnsafeEvidenceUrl,
   DEFAULT_LEGACY_RESIDUE_CUTOFF,
   type OutboxRowCandidate,
-  type OutboxRowClassification,
-  type OutboxLegacyResidueReport,
 } from "./terminal-outbox-legacy-classifier.js";
 
 // ---------------------------------------------------------------------------

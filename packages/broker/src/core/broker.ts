@@ -49,7 +49,6 @@ import {
 } from "./broker-task-request-normalizers.js";
 import {
   isTerminalTaskStatus,
-  computeTaskDiagnosticStatus,
 } from "./broker-status-predicates.js";
 import {
   normalizeWakeString,
@@ -57,7 +56,6 @@ import {
   defaultWakeDecisionMessage,
   wakeDecisionAuditAction,
   wakeDecisionUpdateReason,
-  normalizeTaskWakeState,
 } from "./broker-wake-normalizers.js";
 import {
   getHeartbeatAuditEventId,
@@ -124,7 +122,6 @@ import type { ProposalWriteContext } from "./broker-proposal-write.js";
 import {
   CURRENT_BROKER_STATE_VERSION,
   type BrokerSnapshot,
-  type BrokerStateSaveHints,
   type BrokerStateStore,
 } from "./store.js";
 import {
@@ -154,7 +151,6 @@ import {
   assertWorkerRegistrationPayload,
 } from "./broker-payload-validators.js";
 import {
-  assertTransition,
   assertTaskStatus,
   assertTaskCreationOwnership,
 } from "./broker-transition-guards.js";
@@ -162,7 +158,6 @@ import { readExchange, readExchanges } from "./broker-exchange-read.js";
 import {
   resolveTerminalBriefParentOriginRoute,
   normalizeTerminalBriefTeamScope,
-  type TerminalBriefParentOriginRoute,
 } from "./terminal-brief-routing.js";
 import type { ArtifactRuntimeRepository } from "./artifact-repository.js";
 import type { AuditRuntimeRepository } from "./audit-repository.js";
@@ -195,7 +190,6 @@ import type {
   AuditListFilters,
   A2AExchangeIntent,
   A2APartyRef,
-  A2AWorkerEnvironment,
   A2AExchangeMessageRecord,
   A2AExchangeMessageRequest,
   A2AExchangeRequest,
@@ -214,7 +208,6 @@ import type {
   TaskError,
   TaskApprovalRequest,
   TaskApprovalTerminalRequest,
-  TaskApprovalOutcomeStatus,
   TaskListFilters,
   TaskCheckpointState,
   TaskRecord,
@@ -227,11 +220,9 @@ import type {
   TaskWakeState,
   ValidationResult,
   WorkerCapacitySummary,
-  WorkerCapabilities,
   WorkerHeartbeatRequest,
   WorkerIdentityWarning,
   TaskDiagnosticReport,
-  TaskDiagnosticStatus,
   TaskTombstone,
   TombstoneListFilters,
   TombstoneReason,

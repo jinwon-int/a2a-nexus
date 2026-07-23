@@ -7,12 +7,7 @@ import { createDefaultStateStore, resolvePublicBaseUrl, firstNonEmpty } from "./
 export { firstNonEmpty };
 import type {
   A2AHttpSignatureVerifiedWorker,
-  A2AHttpSignatureWorkerAuthMode,
   A2AHttpSignatureWorkerKeySource,
-  BrokerBuildInfo,
-  BrokerPersistenceQueueDiagnostics,
-  BrokerPersistenceQueueDiagnosticsProvider,
-  BrokerPersistenceQueueState,
   BrokerServerOptions,
   BrokerServerRuntime,
   BrokerStaleReaperStatus,
@@ -44,12 +39,6 @@ import {
   resolveA2AHttpSignatureWorkerAuthMode,
   validateBrokerStartupSecurity,
 } from "./startup-security.js";
-import {
-  boundedLimitQueryParam,
-  stringListQueryParam,
-  nonNegativeNumberBodyField,
-  stringListBodyField,
-} from "./http/request-params.js";
 import { createServer, type IncomingMessage, type RequestListener, type Server, type ServerResponse } from "node:http";
 import {
   DEFAULT_KEEPALIVE_TIMEOUT_MS,
@@ -110,7 +99,7 @@ import {
 import { readRuntimeMemoryUsage, readEventLoopDelayMs, readGcDiagnostics, readCpuDiagnostics } from "./diagnostics/system-metrics.js";
 import { computeReusedSocketGate } from "./diagnostics/reused-socket-gate.js";
 import { resolveBrokerBuildInfo } from "./broker-build-info.js";
-import { normalizeTaskReadinessMode, type TaskReadinessMode } from "./task-readiness.js";
+import { normalizeTaskReadinessMode } from "./task-readiness.js";
 import { loadBrokerPolicyFile } from "a2a-policy-referee";
 import { loadInjectedKnowledgeFile } from "./core/broker-knowledge-injection.js";
 import { resolveFinalizerVerdictEnforcement } from "./core/finalizer-verdict-admission.js";
@@ -123,23 +112,19 @@ import {
   resolveIntegerOption,
   resolveStringOption,
   resolveBooleanEnv,
-  type BrokerHotRuntimeLimits,
-  type BrokerRuntimeHotLimitOptions,
 } from "./broker-runtime-config.js";
 
-import { createBrokerAgentCard, type AgentCard } from "./a2a/agent-card.js";
+import { createBrokerAgentCard } from "./a2a/agent-card.js";
 import { PushNotificationConfigStore } from "./a2a/push-notification-config.js";
 import { signAgentCard } from "a2a-attestation";
 import { loadCrossBrokerTrustAnchors, CrossBrokerNonceCache } from "./a2a/cross-broker-sender-proof.js";
-import { startDefaultAgent, DEFAULT_AGENT_NODE_ID, type DefaultAgentHandle } from "./a2a/default-agent.js";
+import { startDefaultAgent, type DefaultAgentHandle } from "./a2a/default-agent.js";
 import { PeerStatusService } from "./a2a/peer-status.js";
 import {
   BrokerError,
   DEFAULT_MAX_REQUEUE_ATTEMPTS,
   DEFAULT_WORKER_HEARTBEAT_PERSIST_INTERVAL_MS,
   InMemoryA2ABroker,
-  type BrokerRetentionPolicy,
-  type TaskDiagnosticsOptions,
 } from "./core/broker.js";
 import {
   applyRateLimitHeaders,
@@ -153,14 +138,11 @@ import {
   loadA2AHttpSignatureKeyRegistryFile,
   verifyA2AHttpSignature,
   rateLimitKey,
-  type A2AHttpSignatureKeyRegistry,
   type A2AWorkerRouteScope,
-  type RateLimitPressureSnapshot,
   type RequesterIdentity,
 } from "./core/request-security.js";
 import {
   DEFAULT_BROKER_STATE_MAX_BYTES,
-  JsonFileBrokerStateStore,
   SqliteArtifactRuntimeRepository,
   SqliteAuditRuntimeRepository,
   SqliteBrokerStateStore,
@@ -171,11 +153,7 @@ import {
   SqliteTombstoneRuntimeRepository,
   SqliteValidationRuntimeRepository,
   SqliteWorkerRuntimeRepository,
-  type BrokerHotEntityDiagnostics,
   type BrokerStateStore,
-  type SqliteBrokerLoadSource,
-  type BrokerHotTableRuntimeLoadLimits,
-  type SqliteTaskListItemProjection,
 } from "./core/store.js";
 import {
   projectHotTableGrowth,
@@ -193,27 +171,6 @@ import {
   createWorkerThreadPersistence,
 } from "./core/sqlite-worker-thread-persistence.js";
 import type { WorkerThreadPersistenceHandle } from "./core/sqlite-worker-thread-persistence.js";
-import type {
-  A2AExchangeMessageRequest,
-  A2AExchangeRequest,
-  AuditAction,
-  AuditEvent,
-  AuditListFilters,
-  BrokerDashboard,
-  CreateTaskRequest,
-  ProposalKind,
-  ProposalStatus,
-  TaskDiagnosticReport,
-  TaskKind,
-  TaskListFilters,
-  TaskOrigin,
-  TaskStatus,
-  TaskTombstone,
-  WorkerRecord,
-  WorkerView,
-  A2AWorkerEnvironment,
-  A2APartyRole,
-} from "./core/types.js";
 import type { DecisionDialecticPatchV1, DecisionDialecticPhase } from "./decision-dialectic/types.js";
 import {
   applyDecisionDialecticPatch,
@@ -230,16 +187,8 @@ import {
   projectTradingDialecticReadModel,
   TradingDialecticReadModelError,
 } from "./trading-dialectic/read-model.js";
-import type { Alert, AlertScanResult } from "./core/alert-projection.js";
+import type { AlertScanResult } from "./core/alert-projection.js";
 import { TERMINAL_BRIEF_SIDECAR_ROUTES } from "./terminal-brief-sidecar-routes.js";
-import {
-  isTerminalTaskOutboxAckInputEvidence,
-  isTerminalTaskReceiptStatus,
-  type TerminalTaskEventOutbox,
-  type TerminalTaskOutboxEvent,
-  type TerminalTaskOutboxAckInput,
-  type TerminalTaskOutboxReceiptUpdateInput,
-} from "./core/terminal-event-outbox.js";
 import { GitHubIngestionService } from "./github/ingestion.js";
 import { BoundedPoller } from "./github/bounded-poller.js";
 import { readJson, readRawBody } from "./http/body.js";
@@ -277,7 +226,7 @@ import {
   classifyRequestRoute,
 } from "./http/route-classification.js";
 import { readCgroupCpuSnapshot, readCgroupPsiSnapshot } from "./diagnostics/cgroup-metrics.js";
-import { buildAlertScan, buildDashboardResponse, type OperatorSummary } from "./http/dashboard-response.js";
+import { buildAlertScan, buildDashboardResponse } from "./http/dashboard-response.js";
 import {
   assertA2AContentDigestMatches,
   hasA2AHttpSignatureHeaders,
@@ -844,26 +793,8 @@ export function createBrokerServer(options: BrokerServerOptions = {}): BrokerSer
     requesterId: "github-ingestion",
   });
 
-  // Bounded poller for periodic GitHub event fetch. Not started by default; the operator
-  // may call `startPoller()` with a `fetchEvents` callback or start it externally.
+  // Bounded poller for periodic GitHub event fetch. Not started by default.
   let boundedPoller: BoundedPoller | undefined;
-  let pollerStarted = false;
-
-  /**
-   * Start the bounded poller with the given fetch function.
-   * No-op if already started. Returns the poller instance.
-   */
-  function startPoller(fetchEvents: BoundedPoller["fetchEvents"]): BoundedPoller {
-    if (pollerStarted && boundedPoller) return boundedPoller;
-    boundedPoller = new BoundedPoller({
-      ingestionService: githubIngestion,
-      fetchEvents,
-      label: "github-bounded-poller",
-    });
-    boundedPoller.start();
-    pollerStarted = true;
-    return boundedPoller;
-  }
 
   /** Stop the bounded poller. Safe to call multiple times. */
   function stopPoller(): void {
@@ -871,7 +802,6 @@ export function createBrokerServer(options: BrokerServerOptions = {}): BrokerSer
       boundedPoller.stop();
       boundedPoller = undefined;
     }
-    pollerStarted = false;
   }
 
   let httpServerForDiagnostics: Server | null = null;

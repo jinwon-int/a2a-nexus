@@ -613,8 +613,6 @@ export function buildComplexityExecutionPlanPreflightSeal(
 
   // Categorize check results
   const fails = checks.filter((c) => c.status === "fail");
-  const warns = checks.filter((c) => c.status === "warn");
-  const passes = checks.filter((c) => c.status === "pass");
 
   // Determine state and blockers
   const isSafetyBlocked = plan.decision === "plan_safety_blocked";

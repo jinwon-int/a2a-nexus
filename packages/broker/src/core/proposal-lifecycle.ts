@@ -200,7 +200,6 @@ export class ProposalManager {
    * Increments applyAttempts for audit.
    */
   failApply(proposalId: string, reason: string): Proposal {
-    const proposal = this.requireProposal(proposalId);
     const p = this.transition(proposalId, "failed", resolveBlockReason(reason));
     p.applyCompletedAt = p.updatedAt;
     p.applyAttempts += 1;

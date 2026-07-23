@@ -158,9 +158,6 @@ export function evaluateTrackerCloseoutRecommendations(
   const currentWindowRows = report.classifications.filter(
     (c) => c.origin === "current-window",
   );
-  const legacyResidueRows = report.classifications.filter(
-    (c) => c.origin === "legacy-residue",
-  );
 
   // Evidence: do any current-window rows have legacy vocabulary?
   const currentWindowHasLegacyReceipt = currentWindowRows.some(
@@ -177,11 +174,6 @@ export function evaluateTrackerCloseoutRecommendations(
 
   // Evidence: are there unsafe evidence URLs?
   const hasUnsafeUrls = report.currentWindowBlockers.unsafeEvidenceIds.length > 0;
-
-  // Evidence: legacy residue — is it exclusively pre-cutoff?
-  const allLegacyArePreCutoff = legacyResidueRows.length === 0
-    ? true
-    : legacyResidueRows.every((c) => c.signals.preCutoff === true);
 
   // ── #863: Live all-hands ownership canary ─────────────────────────────
 

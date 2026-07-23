@@ -2,7 +2,6 @@ import test from "node:test";
 import assert from "node:assert/strict";
 
 import { InMemoryA2ABroker } from "../core/broker.js";
-import type { WorkerRecord } from "../core/types.js";
 import { executeA2AJsonRpc, type ExecuteJsonRpcOptions, type JsonRpcSuccess, type JsonRpcFailure } from "./json-rpc.js";
 import {
   PEER_STATUS_VERBOSE_SCOPE,

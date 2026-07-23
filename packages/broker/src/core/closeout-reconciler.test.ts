@@ -11,7 +11,7 @@ import {
   CloseoutReconciler,
   formatCloseoutComment,
 } from "./closeout-reconciler.js";
-import type { CloseoutVerdict, CloseoutDecision } from "./closeout-reconciler.js";
+import type { CloseoutDecision } from "./closeout-reconciler.js";
 import type { ChildTaskEvent } from "./closeout-reconciler.js";
 
 // ---------------------------------------------------------------------------

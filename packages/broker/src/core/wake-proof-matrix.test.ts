@@ -5,7 +5,7 @@
  * structured error codes, and deterministic artifact production.
  */
 
-import { describe, it, beforeEach } from "node:test";
+import { describe, it } from "node:test";
 import assert from "node:assert/strict";
 import {
   runWakeProofMatrix,
@@ -13,7 +13,6 @@ import {
   WAKE_SCENARIOS,
   type WakeScenarioFixture,
   type WakeDispatcher,
-  type WakeProofMatrixResult,
   type WakeAuditEvent,
 } from "./wake-proof-matrix.js";
 
@@ -250,7 +249,6 @@ describe("S5 unreachable degraded", () => {
 
 describe("Full S1–S5 proof matrix", () => {
   it("all scenarios pass with default fixtures", async () => {
-    const dispatcher = createMockDispatcher();
     // S4 and S5 need failure simulation
     const fixtures = defaultWakeFixtures();
     const result = await runWakeProofMatrix(fixtures, {

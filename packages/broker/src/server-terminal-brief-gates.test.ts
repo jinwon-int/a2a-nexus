@@ -1,7 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
-import { join } from "node:path";
 import { startTestServer, jsonHeaders } from "./server-test-helpers.js";
 
 test("POST /terminal-brief/closeout/gate returns approval-gated dry-run plan", async () => {

@@ -17,15 +17,12 @@ import {
   renderRoundManifestMarkdown,
   projectRoundManifest,
   ROUND_EVIDENCE_TYPE_LABELS,
-  ROUND_MANIFEST_MIN_WORKERS,
   ROUND_MANIFEST_MAX_WORKERS,
   DEFAULT_ROUND_STALE_AFTER_MS,
   DEFAULT_ROUND_TIMEOUT_AFTER_MS,
   type RoundManifest,
   type RoundManifestOptions,
   type WorkerRoundAssignment,
-  type WorkerEvidencePolicy,
-  type RoundCloseoutPolicy,
 } from "./round-manifest.js";
 
 // ---------------------------------------------------------------------------

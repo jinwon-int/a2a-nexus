@@ -12,9 +12,7 @@ import type { CreateTaskRequest } from "./core/types.js";
 import type { RequesterIdentity } from "./core/request-security.js";
 import type {
   TerminalTaskOutboxAckInput,
-  TerminalTaskOutboxAckInputEvidence,
   TerminalTaskOutboxReceiptUpdateInput,
-  TerminalTaskReceiptStatus,
 } from "./core/terminal-event-outbox.js";
 
 export function optionalString(value: unknown): string | undefined {

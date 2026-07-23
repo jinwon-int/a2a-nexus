@@ -281,7 +281,7 @@ describe("idempotency", () => {
     });
     mgr.approve(p.id);
     mgr.startApply(p.id);
-    const first = mgr.completeApply(p.id);
+    mgr.completeApply(p.id);
     const second = mgr.completeApply(p.id);
     expect(second.status).toBe("applied");
     const events = mgr.subscribe();

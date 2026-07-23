@@ -7,7 +7,7 @@
  *
  * Refs: a2a-plane#434, a2a-broker#905
  */
-import type { A2AExchangeIntent, TaskRecord, TaskStatus, WorkerView } from "./types.js";
+import type { TaskRecord, TaskStatus, WorkerView } from "./types.js";
 
 // ---------------------------------------------------------------------------
 // Types

@@ -12,7 +12,6 @@ import type {
 } from "./terminal-event-outbox.js";
 
 const NOW = "2026-05-18T08:30:00.000Z";
-const LEGACY_CUTOFF_MS = Date.parse("2026-05-04T07:10:00.000Z");
 const LEGACY_PRE_CUTOFF_TIMESTAMP = "2026-04-15T00:00:00.000Z";
 const RECENT_CUTOFF_MS = Date.parse("2026-05-10T00:00:00.000Z");
 

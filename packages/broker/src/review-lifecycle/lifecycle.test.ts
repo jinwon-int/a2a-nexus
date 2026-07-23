@@ -9,7 +9,6 @@ import {
   type FindingV1,
   type IntentContractV1,
   type ReviewLineageBudgetV1,
-  type ReviewLineageRecord,
   type ReviewReceiptV1,
 } from "./types.js";
 

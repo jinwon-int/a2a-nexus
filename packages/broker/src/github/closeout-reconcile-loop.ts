@@ -10,7 +10,6 @@
 import {
   parseGitHubUrl,
   classifyDriftState,
-  buildDriftReport,
   type PrObservation,
   type IssueObservation,
 } from "./closeout-drift.js";

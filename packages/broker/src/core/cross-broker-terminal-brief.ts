@@ -3,11 +3,6 @@ import { createHash } from "node:crypto";
 import type { TaskStatus } from "./types.js";
 import {
   validateTerminalBriefMetadata as canonicalValidateTerminalBriefMetadata,
-  extractDispatchMetadata,
-  type TerminalBriefDispatchMetadata,
-  type TerminalBriefHandoffMetadata,
-  type TerminalBriefProjectionMetadata,
-  type TerminalBriefNotificationOwnership,
 } from "./terminal-brief-metadata.js";
 
 const TERMINAL_STATUSES = new Set<TaskStatus>(["succeeded", "failed", "canceled", "blocked"]);

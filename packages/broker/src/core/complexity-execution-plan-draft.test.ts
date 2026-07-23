@@ -35,8 +35,6 @@ import {
   renderComplexityExecutionPlanDraftMarkdown,
   extractEnvelopeFromExecutionPlan,
   type ComplexityExecutionPlanDraftPacket,
-  type ExecutionPlanStep,
-  type ExecutionPlanStepKind,
 } from "./complexity-execution-plan-draft.js";
 
 // ---------------------------------------------------------------------------

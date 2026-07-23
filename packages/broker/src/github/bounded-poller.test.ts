@@ -8,7 +8,6 @@ import test from "node:test";
 import assert from "node:assert/strict";
 
 import { BoundedPoller, type PollerFetchResult } from "./bounded-poller.js";
-import type { GitHubWebhookEvent } from "./types.js";
 
 /** Placeholder ingestion service that just counts (never used when fetchEvents returns []). */
 const NULL_SERVICE = null as never;

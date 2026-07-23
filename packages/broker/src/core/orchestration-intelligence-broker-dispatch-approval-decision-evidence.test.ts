@@ -18,7 +18,6 @@ import { buildOIValidationOperatorReviewRequestPacket } from "./orchestration-in
 import { buildOIValidationScorePacket } from "./orchestration-intelligence-validation-scorer.js";
 
 const NOW = "2026-05-31T08:00:00.000Z";
-const PHRASE = "APPROVE OI V2 BROKER DISPATCH APPROVAL REQUEST FOR SOURCE-ONLY EVIDENCE REVIEW";
 const REPO = "jinwon-int/a2a-broker";
 const ISSUE = 968;
 
