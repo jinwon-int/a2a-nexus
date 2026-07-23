@@ -247,6 +247,29 @@ Phase 11 source boundary: the new modules are pure contracts and planning
 functions. They do not import the broker/store, add a worker queue or HTTP
 mutation, execute SQL, attach a producer, or export/prune live data.
 
+## Phase 12: Explicit producer-fact admission prerequisite
+
+- [x] Add one unknown-input admission boundary for a complete
+      `ReviewLineageProducerFactV1`.
+- [x] Keep the Phase 8 parser as the sole validation, exact-subject,
+      idempotency-key, and fingerprint boundary.
+- [x] Make default `off` mode return before validation or store access.
+- [x] Make `record` mode await exactly one canonical compound command.
+- [x] Propagate direct-store and worker-thread queue/database failures to the
+      caller.
+- [x] Refresh broker projection only through the existing post-ACK atomic API.
+- [x] Preserve duplicate source-event replay and conflict behavior.
+- [x] Keep `completeTask`, `failTask`, `cancelTask`, and worker HTTP routes
+      detached from admission.
+- [x] State honestly that authoritative automatic source coverage remains
+      `0/5`.
+- [ ] Define authoritative structured source carriers and durable coupling for
+      each observation kind before attaching any automatic producer.
+
+Phase 12 source boundary: admission is an explicitly awaited API only. It adds
+no fact source, task/result/cancel inference, lifecycle subscription, route,
+outbox/schema, live collection, deploy, or runtime-default change.
+
 ## Validation commands (all phases as applicable)
 
 ```bash

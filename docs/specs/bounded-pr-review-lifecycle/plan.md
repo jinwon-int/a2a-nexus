@@ -158,6 +158,21 @@ Phase 11 remains pure and source-only. It adds no automatic/disabled producer
 plumbing, broker/store/worker/HTTP mutation, SQL deletion, live export,
 deployment, restart, canary, real cohort, or runtime-default change.
 
+## Phase 12 — Explicit producer-fact admission prerequisite
+
+- Add one asynchronous unknown-input admission API.
+- Return before parsing in default `off` mode.
+- In `record` mode, reuse the Phase 11 projector and await one existing
+  Phase 10 compound store command.
+- Preserve post-ACK projection refresh and propagate every queue/store failure.
+- Keep synchronous terminal and cancellation paths detached.
+- Report automatic source coverage as `0/5` until authoritative structured
+  carriers exist.
+
+Phase 12 is a prerequisite, not an automatic producer. It adds no task/result
+carrier, lifecycle call site, HTTP route, outbox/schema, live collection,
+deployment, restart, or default change.
+
 ## Rollback strategy per phase
 
 | Phase | Rollback |
@@ -172,6 +187,7 @@ deployment, restart, canary, real cohort, or runtime-default change.
 | 9 | Detached reference tables have no runtime constructor; delete PR revert |
 | 10 | Atomic API is unused without a producer; preserve additive tables during rollback |
 | 11 | Pure producer/retention modules have no call site; delete PR revert |
+| 12 | Admission API has no automatic caller; delete PR revert |
 
 ## Safety boundaries (all phases)
 
