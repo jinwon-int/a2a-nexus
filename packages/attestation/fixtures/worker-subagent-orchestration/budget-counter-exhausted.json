@@ -1,0 +1,15 @@
+{
+  "workerId": "workergamma",
+  "usage": {
+    "taskId": "task-large-independent",
+    "taskTokensSpent": 20000,
+    "taskTokenCeiling": 20000,
+    "brokerTokensSpent": 300000,
+    "brokerTokenCeiling": 500000
+  },
+  "source": {
+    "collector": "worker-runtime-supplied",
+    "observedAt": "2026-05-19T01:55:00.000Z",
+    "note": "fixture only; task ceiling reached; normalized token-units; no enforcement"
+  }
+}

@@ -20,7 +20,7 @@ export const PACKAGE_CI_SURFACES = {
   broker: {
     packageDir: 'packages/broker',
     commands: [
-      ['npm', ['run', 'check:source-quality-floors']],
+      ['npm', ['run', 'check:source-quality-floors', '--', '--package', 'packages/broker']],
       ['npm', ['test', '-w', 'packages/broker']],
       ['npm', ['run', 'coverage:baseline', '-w', 'packages/broker']],
     ],
@@ -39,7 +39,7 @@ export const PACKAGE_CI_SURFACES = {
   'docker-runner': {
     packageDir: 'packages/docker-runner',
     commands: [
-      ['npm', ['run', 'check:source-quality-floors']],
+      ['npm', ['run', 'check:source-quality-floors', '--', '--package', 'packages/docker-runner']],
       ['npm', ['run', 'check', '-w', 'packages/docker-runner']],
       ['npm', ['run', 'build', '-w', 'packages/docker-runner']],
       ['npm', ['run', 'lint', '-w', 'packages/docker-runner']],
@@ -61,10 +61,42 @@ export const PACKAGE_CI_SURFACES = {
       requiredBin: ['a2a-docker-runner'],
     },
   },
+  'attestation': {
+    packageDir: 'packages/attestation',
+    commands: [
+      ['npm', ['run', 'check:source-quality-floors', '--', '--package', 'packages/attestation']],
+      ['npm', ['run', 'check', '-w', 'packages/attestation']],
+      ['npm', ['run', 'build', '-w', 'packages/attestation']],
+      ['npm', ['test', '-w', 'packages/attestation']],
+      ['npm', ['run', 'coverage:baseline', '-w', 'packages/attestation']],
+    ],
+    metadata: {
+      private: true,
+      license: 'MIT',
+      requiredScripts: ['build', 'check', 'test', 'coverage:baseline'],
+      requiredFiles: ['README.md', 'scripts/coverage-baseline-report.mjs'],
+    },
+  },
+  'policy-referee': {
+    packageDir: 'packages/policy-referee',
+    commands: [
+      ['npm', ['run', 'check:source-quality-floors', '--', '--package', 'packages/policy-referee']],
+      ['npm', ['run', 'check', '-w', 'packages/policy-referee']],
+      ['npm', ['run', 'build', '-w', 'packages/policy-referee']],
+      ['npm', ['test', '-w', 'packages/policy-referee']],
+      ['npm', ['run', 'coverage:baseline', '-w', 'packages/policy-referee']],
+    ],
+    metadata: {
+      private: true,
+      license: 'MIT',
+      requiredScripts: ['build', 'check', 'test', 'coverage:baseline'],
+      requiredFiles: ['README.md', 'scripts/coverage-baseline-report.mjs'],
+    },
+  },
   'openclaw-plugin-a2a': {
     packageDir: 'packages/openclaw-plugin-a2a',
     commands: [
-      ['npm', ['run', 'check:source-quality-floors']],
+      ['npm', ['run', 'check:source-quality-floors', '--', '--package', 'packages/openclaw-plugin-a2a']],
       ['npm', ['run', 'scan:public-readiness', '-w', 'packages/openclaw-plugin-a2a']],
       ['npm', ['run', 'smoke:a2a-conformance', '-w', 'packages/openclaw-plugin-a2a']],
       ['npm', ['test', '-w', 'packages/openclaw-plugin-a2a']],

@@ -19,7 +19,7 @@
 import { createPublicKey, verify as cryptoVerify } from "node:crypto";
 import { readFileSync } from "node:fs";
 
-import { canonicalizeJson } from "../a2a/agent-card-signing.js";
+import { canonicalizeJson } from "./agent-card-signing.js";
 
 const FINALIZER_ROLE_PREFIX = "finalizer:";
 

@@ -1,6 +1,6 @@
 import { createHash } from "node:crypto";
 
-import { retrievalSnapshotToSourceCarrier } from "../../dist/core/provenance.js";
+import { retrievalSnapshotToSourceCarrier } from "a2a-attestation";
 
 export const DEFAULT_RETRIEVAL_SNAPSHOT_MAX_BYTES = 1_000_000;
 

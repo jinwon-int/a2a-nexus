@@ -6,7 +6,7 @@ import type { A2AExchangeIntent } from "../core/types.js";
 import {
   buildA2AWorkerSubagentOrchestrationPolicy,
   extractA2AWorkerSubagentPolicyInput,
-} from "../core/worker-subagent-orchestration-policy.js";
+} from "a2a-attestation";
 import {
   classifyTaskComplexity,
   type TaskComplexityInput as ComplexityOrchestrationTaskComplexityInput,

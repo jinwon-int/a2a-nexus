@@ -24,7 +24,7 @@
 // check when broker enforcement is on. This hook is defense-in-depth that
 // blocks missing / wrong-decision / unbound / non-independent verdicts at the
 // accept moment, before side-effects, without faking the crypto it cannot do.
-import { verifyFinalizerVerdictSignature, type FinalizerKeyring } from "./finalizer-verdict-signature.js";
+import { verifyFinalizerVerdictSignature, type FinalizerKeyring } from "a2a-attestation";
 import type { TaskRecord, TaskResult } from "./types.js";
 
 export const FINALIZER_VERDICT_SCHEMA = "a2a.finalizer.verdict.v1";

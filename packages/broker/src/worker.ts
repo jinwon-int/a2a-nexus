@@ -3,11 +3,11 @@ import { createHash, createPrivateKey, randomUUID, sign } from "node:crypto";
 import {
   buildA2AWorkerSubagentOrchestrationPolicy,
   type A2AWorkerSubagentTaskProfile,
-} from "./core/worker-subagent-orchestration-policy.js";
+} from "a2a-attestation";
 import {
   buildA2AWorkerSubagentBudgetCounter,
   extractA2AWorkerSubagentBudgetCounterInput,
-} from "./core/worker-subagent-budget-counter.js";
+} from "a2a-attestation";
 import {
   buildA2AWorkerSubagentContextBrief,
   extractA2AWorkerSubagentContextBriefInput,
@@ -16,20 +16,20 @@ import {
 import {
   buildA2AWorkerSubagentSpawnGateDecision,
   extractA2AWorkerSubagentSpawnGateDecisionInput,
-} from "./core/worker-subagent-spawn-gate-decision.js";
-import { redactSecretsText } from "./core/worker-subagent-redaction.js";
+} from "a2a-attestation";
+import { redactSecretsText } from "a2a-attestation";
 import {
   buildA2AWorkerSubagentRedactionGate,
   type A2AWorkerSubagentRedactionMode,
-} from "./core/worker-subagent-redaction-gate.js";
-import { buildA2AWorkerSubagentEvidenceAssembly } from "./core/worker-subagent-evidence-assembly.js";
+} from "a2a-attestation";
+import { buildA2AWorkerSubagentEvidenceAssembly } from "a2a-attestation";
 import { mkdir, readFile, writeFile } from "node:fs/promises";
 import { dirname } from "node:path";
 import { setTimeout as delay } from "node:timers/promises";
 
 import { validateGithubTaskCompletionEvidence } from "./core/github-task-completion.js";
 import { normalizeTaskResult } from "./core/broker-task-record-normalizers.js";
-import { signTaskResultProvenance } from "./core/provenance.js";
+import { signTaskResultProvenance } from "a2a-attestation";
 import { parseTaskAcceptance, runTaskAcceptance, validateAcceptanceEvidence } from "./worker-acceptance.js";
 import { validateReviewEvidence } from "./worker-review.js";
 import { buildA2AHttpSignatureBase } from "./core/request-security.js";
@@ -1983,7 +1983,12 @@ function boundedDiagnosticExcerpt(value: unknown, maxLength = 500): string | und
   if (typeof value !== "string") return undefined;
   const normalized = value.replace(/\s+/g, " ").trim();
   if (!normalized) return undefined;
-  return normalized.length > maxLength ? `${normalized.slice(0, maxLength)}…` : normalized;
+  if (normalized.length <= maxLength) return normalized;
+  // Head + tail (#1610): the actionable error is almost always at the end of
+  // the output, not the beginning.
+  const headLength = Math.floor(maxLength / 3);
+  const tailLength = maxLength - headLength - 1;
+  return `${normalized.slice(0, headLength)}…${normalized.slice(normalized.length - tailLength)}`;
 }
 
 function parseHandlerStdoutError(stdout: string): TaskError | undefined {
@@ -2014,7 +2019,14 @@ function handlerExitNonzeroError(options: {
   const nestedExcerpt = typeof nestedDetails?.excerpt === "string" ? nestedDetails.excerpt : undefined;
   const stderrExcerpt = boundedDiagnosticExcerpt(options.stderr);
   const stdoutExcerpt = boundedDiagnosticExcerpt(options.stdout);
-  const fallbackExcerpt = stderrExcerpt ?? stdoutExcerpt ?? `handler exited with code ${options.code}${options.signal ? ` (${options.signal})` : ""}`;
+  // Prefer the nested runner/handler error message over the raw JSON wrapper:
+  // the wrapper's head is preamble noise while the message carries the
+  // runner's own head+tail of the failing output (#1610).
+  const fallbackExcerpt =
+    boundedDiagnosticExcerpt(nested?.message)
+    ?? stderrExcerpt
+    ?? stdoutExcerpt
+    ?? `handler exited with code ${options.code}${options.signal ? ` (${options.signal})` : ""}`;
 
   return {
     code: "handler_exit_nonzero",

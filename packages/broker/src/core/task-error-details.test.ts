@@ -10,13 +10,13 @@ const API_KEY = `sk-${"b".repeat(40)}`;
 test("failure readback excerpt is bounded and redacted", () => {
   const raw = [
     `GH_TOKEN=${GITHUB_TOKEN}`,
+    ...Array.from({ length: 30 }, (_, i) => `line-${i}`),
     `OPENAI_API_KEY=${API_KEY}`,
     "/root/.openclaw/private/session.json",
     `telegram:-1001234567890 user@example.com +1 (555) 123-4567`,
-    ...Array.from({ length: 30 }, (_, i) => `line-${i}`),
   ].join("\n");
 
-  const excerpt = redactAndBoundFailureExcerpt(raw, { maxLines: 6, maxChars: 260 });
+  const excerpt = redactAndBoundFailureExcerpt(raw, { maxLines: 6, maxChars: 400 });
 
   assert.match(excerpt, /GH_TOKEN=<redacted/);
   assert.match(excerpt, /OPENAI_API_KEY=<redacted/);
@@ -59,4 +59,34 @@ test("unknown readback stage is dropped instead of becoming a fake category", ()
     details: { stage: "not-a-stage", excerpt: "safe line" },
   });
   assert.deepEqual(normalized.details, { excerpt: "safe line" });
+});
+
+test("failure excerpt keeps head AND tail so the actual error survives (#1610)", () => {
+  const lines = [
+    "clone: start of run",
+    ...Array.from({ length: 40 }, (_, i) => `setup-step-${i}`),
+    "Error: the real failure is at the end",
+    "stack: final-frame",
+  ];
+  const excerpt = redactAndBoundFailureExcerpt(lines.join("\n"), { maxLines: 8, maxChars: 10_000 });
+
+  assert.match(excerpt, /clone: start of run/);
+  assert.match(excerpt, /Error: the real failure is at the end/);
+  assert.match(excerpt, /stack: final-frame/);
+  assert.match(excerpt, /<truncated \d+ lines>/);
+  assert.doesNotMatch(excerpt, /setup-step-10\b/);
+});
+
+test("failure excerpt keeps tail chars when a single line exceeds the char budget (#1610)", () => {
+  const head = `prefix-${"x".repeat(300)}`;
+  const tail = `tail-error-${"z".repeat(100)}`;
+  const excerpt = redactAndBoundFailureExcerpt(`${head}\n${tail}`, { maxLines: 20, maxChars: 200 });
+
+  assert.match(excerpt, /tail-error-/);
+  assert.match(excerpt, /<truncated /);
+});
+
+test("failure excerpt is unchanged when within budget", () => {
+  const raw = "line-a\nline-b";
+  assert.equal(redactAndBoundFailureExcerpt(raw, { maxLines: 5, maxChars: 100 }), raw);
 });

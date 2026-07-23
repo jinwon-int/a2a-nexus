@@ -69,7 +69,7 @@ export function startBrokerServerWithFactory<Options, Runtime extends BrokerLife
     runtime.stopStaleReaper();
     runtime.stopPoller();
     runtime.server.close(() => {
-      runtime.closeWorkerPersistence()
+      void runtime.closeWorkerPersistence()
         .catch((error) => {
           console.error("[a2a-broker] worker-thread persistence shutdown failed:", error);
           process.exitCode = 1;

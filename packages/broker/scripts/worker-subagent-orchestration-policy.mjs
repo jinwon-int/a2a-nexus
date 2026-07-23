@@ -5,7 +5,7 @@ import process from "node:process";
 import {
   buildA2AWorkerSubagentOrchestrationPolicy,
   renderA2AWorkerSubagentOrchestrationPolicyMarkdown,
-} from "../dist/core/worker-subagent-orchestration-policy.js";
+} from "a2a-attestation";
 
 function readOption(argv, name) {
   const inline = argv.find((arg) => arg.startsWith(name + "="));

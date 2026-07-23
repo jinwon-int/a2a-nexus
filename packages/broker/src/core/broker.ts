@@ -99,14 +99,14 @@ import {
 import type { RoundStatusSummary } from "./round-status.js";
 
 import { normalizeTaskPolicyContext } from "./policy.js";
-import type { BrokerPolicyDocument } from "./broker-policy.js";
+import type { BrokerPolicyDocument } from "a2a-policy-referee";
 import {
   resolveInjectedKnowledgeTaskClass,
   selectInjectedKnowledge,
   type InjectedKnowledgeSnapshot,
 } from "./broker-knowledge-injection.js";
 import type { FinalizerVerdictEnforcement } from "./finalizer-verdict-admission.js";
-import type { FinalizerKeyring } from "./finalizer-verdict-signature.js";
+import type { FinalizerKeyring } from "a2a-attestation";
 import * as taskAdmission from "./broker-task-admission.js";
 import type { TaskAdmissionContext } from "./broker-task-admission.js";
 import * as staleTaskRequeue from "./broker-stale-task-requeue.js";

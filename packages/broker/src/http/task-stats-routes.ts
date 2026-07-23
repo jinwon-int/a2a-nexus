@@ -1,7 +1,7 @@
 import type { ServerResponse } from "node:http";
 
 import { BrokerError, InMemoryA2ABroker } from "../core/broker.js";
-import { deriveTaskWorkerClass } from "../core/broker-policy.js";
+import { deriveTaskWorkerClass } from "a2a-policy-referee";
 import { aggregateTaskStats } from "../core/task-stats.js";
 import type { BrokerStateStore } from "../core/store.js";
 import type { TaskRecord } from "../core/types.js";
