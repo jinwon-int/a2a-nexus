@@ -144,6 +144,9 @@ import {
   type CreateRecordedReviewLineageInput,
   type ReviewLineageRolloutMode,
 } from "./review-lineage-store.js";
+import {
+  admitReviewLineageProducerFact as admitProducerFact,
+} from "./review-lineage-producer-admission.js";
 import type {
   ReviewLineageEvent,
   ReviewLineageRecord,
@@ -511,10 +514,10 @@ export class InMemoryA2ABroker {
     return this.wavePlans.list();
   }
 
-  // --- Bounded PR review lineage telemetry (#1518 Phases 3b/10) -------------
-  // This remains detached from completeTask/retry/finalizer paths. SQLite
-  // production stores accept only the normalized Phase 8 compound command so
-  // lineage state and its idempotency outcome share one commit boundary.
+  // --- Bounded PR review lineage telemetry (#1518 Phases 3b/10/12) ----------
+  // This remains detached from completeTask/retry/finalizer paths. Phase 12
+  // admits only an already-complete producer fact through the Phase 11
+  // projector and awaits the normalized Phase 8 compound command.
 
   createReviewLineage(
     input: CreateRecordedReviewLineageInput,
@@ -558,6 +561,21 @@ export class InMemoryA2ABroker {
       this.stateStore.listCanonicalReviewLineages(),
     );
     return result;
+  }
+
+  async admitReviewLineageProducerFact(
+    input: unknown,
+  ): Promise<ReviewLineageObservationApplicationResult | undefined> {
+    return admitProducerFact(input, {
+      mode: this.reviewLineageMode,
+      apply: async (command) => {
+        const result = await this.applyReviewLineageObservation(command);
+        if (!result) {
+          throw new Error("review_lineage_record_admission_inert");
+        }
+        return result;
+      },
+    });
   }
 
   getReviewLineage(

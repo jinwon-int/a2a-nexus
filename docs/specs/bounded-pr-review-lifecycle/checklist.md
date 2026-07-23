@@ -143,3 +143,19 @@
 - [x] No producer hook, SQL deletion, queue command, HTTP mutation, or live action
 - [ ] Automatic producer and worker-owned atomic export/prune executor receive
       separate approvals
+
+## K. Explicit producer-fact admission prerequisite (Phase 12)
+
+- [x] Record-mode admission accepts only a complete Phase 11 producer fact
+- [x] Off mode is inert before parser or store access
+- [x] Record mode uses one parser projection and one compound command
+- [x] The caller observes durable ACK before admission resolves
+- [x] Queue saturation/abort/crash and store errors reject the caller Promise
+- [x] Same fact replays through the existing durable idempotency ledger
+- [x] Broker projection refresh remains post-ACK
+- [x] Generic task completion/failure/cancellation never synthesize facts
+- [x] No terminal API async conversion or fire-and-forget Promise
+- [x] No route, outbox, schema, source subscription, or live collection
+- [x] Automatic observation coverage is reported as `0/5`
+- [ ] Per-kind authoritative source carrier and durable coupling reviewed
+      before automatic attachment
