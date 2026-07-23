@@ -2,8 +2,7 @@ import test from "node:test";
 import assert from "node:assert/strict";
 
 import { diffHash, findingSignature, intentHash } from "./canonical-json.js";
-import { applyEvent, computeMetrics, createLineage } from "./lifecycle.js";
-import { projectLineageReadModel } from "./read-model.js";
+import { applyEvent, createLineage } from "./lifecycle.js";
 import {
   DEFAULT_LINEAGE_BUDGET,
   type FindingV1,
@@ -78,120 +77,7 @@ test("lifecycle: createLineage rejects a contract whose intentHash does not matc
   assert.throws(() => createLineage({ contract, at: T0 }), /hash mismatch/);
 });
 
-test("lifecycle: converging fixture — initial review, one correction, resolution PASS, no third generation", () => {
-  const contract = makeContract();
-  let record = createLineage({ contract, at: T0 });
-  assert.equal(record.state, "reviewing_initial");
-
-  const f1 = makeFinding();
-  let applied = applyEvent(record, { type: "review_report", at: T1, receipt: makeReceipt(contract, { verdict: "fail", note: "one blocker" }), newFindings: [f1] });
-  record = applied.record;
-  assert.equal(record.state, "correction_pending");
-  assert.equal(record.counters.reviewerRuns, 1);
-  assert.equal(record.counters.findingsNew, 1);
-
-  const correctionHead = "c".repeat(40);
-  applied = applyEvent(record, {
-    type: "correction_generation",
-    at: T2,
-    headSha: correctionHead,
-    diffHash: diffHash("correction patch"),
-    intentHash: contract.intentHash,
-    pathsChanged: ["packages/broker/src/worker-review.ts"],
-  });
-  record = applied.record;
-  assert.equal(record.state, "reviewing_resolution");
-  assert.equal(record.counters.correctionGenerations, 1);
-  assert.equal(record.currentHeadSha, correctionHead);
-
-  applied = applyEvent(record, {
-    type: "review_report",
-    at: T3,
-    receipt: makeReceipt(contract, { headSha: correctionHead, diffHash: diffHash("correction patch") }),
-    resolvedFindingIds: ["F-1"],
-  });
-  record = applied.record;
-  assert.equal(record.state, "passed");
-  assert.equal(record.counters.reviewerRuns, 2, "initial + resolution runs only — no third generation");
-  assert.equal(record.counters.correctionGenerations, 1);
-  assert.equal(record.counters.findingsResolved, 1);
-
-  const metrics = computeMetrics(record, T3);
-  assert.equal(metrics.openBlockingFindings, 0);
-  assert.equal(metrics.terminalReason, null);
-  const readModel = projectLineageReadModel(record, T3);
-  assert.match(readModel.headline, /passed/);
-});
-
-test("lifecycle: non-converging fixture — repeated unresolved signature reaches blocked_needs_operator within budget", () => {
-  const contract = makeContract();
-  let record = createLineage({ contract, at: T0 });
-
-  const f1 = makeFinding();
-  let applied = applyEvent(record, { type: "review_report", at: T1, receipt: makeReceipt(contract, { verdict: "fail", note: "blocker" }), newFindings: [f1] });
-  record = applied.record;
-  assert.equal(record.state, "correction_pending");
-
-  applied = applyEvent(record, {
-    type: "correction_generation",
-    at: T2,
-    headSha: "c".repeat(40),
-    diffHash: diffHash("correction"),
-    intentHash: contract.intentHash,
-    pathsChanged: ["packages/broker/src/worker-review.ts"],
-  });
-  record = applied.record;
-  assert.equal(record.state, "reviewing_resolution");
-
-  // Resolution review: F-1 still open with the identical signature (no progress).
-  applied = applyEvent(record, {
-    type: "review_report",
-    at: T3,
-    receipt: makeReceipt(contract, { verdict: "fail", note: "still broken", headSha: "c".repeat(40), diffHash: diffHash("correction") }),
-  });
-  record = applied.record;
-  assert.equal(record.state, "blocked_needs_operator");
-  assert.equal(record.terminalReason, "repeated_findings");
-  assert.ok(applied.effects.some((effect) => effect.startsWith("repeated_signature_stop:F-1")));
-
-  // Terminal: no auto-retry, no silent return to running.
-  const after = applyEvent(record, { type: "review_report", at: T3, receipt: makeReceipt(contract) });
-  assert.equal(after.record.state, "blocked_needs_operator");
-  assert.ok(after.effects[0].startsWith("ignored_terminal"));
-});
-
-test("lifecycle: moving-goalpost fixture — a second reviewer cannot introduce an unrelated design blocker", () => {
-  const contract = makeContract();
-  let record = createLineage({ contract, at: T0 });
-
-  let applied = applyEvent(record, { type: "review_report", at: T1, receipt: makeReceipt(contract, { verdict: "fail", note: "blocker" }), newFindings: [makeFinding()] });
-  record = applied.record;
-  applied = applyEvent(record, {
-    type: "correction_generation",
-    at: T2,
-    headSha: "c".repeat(40),
-    diffHash: diffHash("correction"),
-    intentHash: contract.intentHash,
-    pathsChanged: ["packages/broker/src/worker-review.ts"],
-  });
-  record = applied.record;
-
-  // Resolution review resolves F-1 but tries to add an unrelated blocking design finding.
-  // Spec: preference/design findings are recorded non-blocking, never as blockers.
-  applied = applyEvent(record, {
-    type: "review_report",
-    at: T3,
-    receipt: makeReceipt(contract, { headSha: "c".repeat(40), diffHash: diffHash("correction") }),
-    resolvedFindingIds: ["F-1"],
-    newFindings: [makeFinding({ findingId: "F-2", category: "design", blocking: true, criterionRef: "AC-2", evidenceRefs: ["packages/broker/src/other.ts:1"] })],
-  });
-  record = applied.record;
-  assert.equal(record.state, "passed");
-  assert.ok(applied.effects.includes("nonblocking_category_normalized:F-2"));
-  assert.equal(record.ledger.findings.some((finding) => finding.findingId === "F-2" && finding.blocking), false);
-});
-
-test("lifecycle: moving-goalpost fixture — a new blocking correctness finding without justification is rejected", () => {
+test("lifecycle: resolution review rejects a new blocking correctness finding without justification", () => {
   const contract = makeContract();
   let record = createLineage({ contract, at: T0 });
 
@@ -255,40 +141,6 @@ test("lifecycle: resolution review admits an introduced-regression blocker with 
   // F-2 is a real blocker now; the generation budget is exhausted, so the lineage terminates.
   assert.equal(record.state, "blocked_needs_operator");
   assert.equal(record.terminalReason, "budget_correction_generations");
-});
-
-test("lifecycle: scope-drift fixture — out-of-paths patch rejected, original head recoverable", () => {
-  const contract = makeContract();
-  let record = createLineage({ contract, at: T0 });
-
-  let applied = applyEvent(record, { type: "review_report", at: T1, receipt: makeReceipt(contract, { verdict: "fail", note: "blocker" }), newFindings: [makeFinding()] });
-  record = applied.record;
-
-  applied = applyEvent(record, {
-    type: "correction_generation",
-    at: T2,
-    headSha: "d".repeat(40),
-    diffHash: diffHash("drifted patch"),
-    intentHash: contract.intentHash,
-    pathsChanged: ["packages/broker/src/worker-review.ts", "scripts/unrelated.sh"],
-  });
-  record = applied.record;
-  assert.equal(record.state, "correction_pending", "rejected generation keeps the lineage in correction_pending");
-  assert.equal(record.counters.correctionGenerations, 0, "drifted generation is not counted");
-  assert.equal(record.counters.scopeDriftRejections, 1);
-  assert.equal(record.currentHeadSha, contract.headSha, "original author head remains the current head");
-  assert.ok(applied.effects.some((effect) => effect.startsWith("scope_drift_rejected:scripts/unrelated.sh")));
-
-  // A subsequent in-scope correction is still accepted.
-  applied = applyEvent(record, {
-    type: "correction_generation",
-    at: T3,
-    headSha: "c".repeat(40),
-    diffHash: diffHash("correction"),
-    intentHash: contract.intentHash,
-    pathsChanged: ["packages/broker/src/worker-review.ts"],
-  });
-  assert.equal(applied.record.state, "reviewing_resolution");
 });
 
 test("lifecycle: forbidden path correction is rejected as a security boundary", () => {

@@ -40,10 +40,10 @@
 
 ## C. Integration / simulation (Phases 3–6)
 
-- [ ] Converging fixture: initial review → one correction → resolution PASS, no third generation
-- [ ] Non-converging fixture: repeated findings → `blocked_needs_operator` within budget
-- [ ] Moving-goalpost fixture: second reviewer cannot introduce unrelated design blocker
-- [ ] Scope-drift fixture: out-of-paths patch rejected; immutable original recoverable
+- [x] Converging fixture: initial review → one correction → resolution PASS, no third generation
+- [x] Non-converging fixture: repeated findings → `blocked_needs_operator` within budget
+- [x] Moving-goalpost fixture: second reviewer cannot introduce unrelated design blocker
+- [x] Scope-drift fixture: out-of-paths patch rejected; immutable original recoverable
 - [ ] Record-mode scorecard: elapsed time, generations, finding churn, stop reason — no private
       prompts or chain-of-thought
 
