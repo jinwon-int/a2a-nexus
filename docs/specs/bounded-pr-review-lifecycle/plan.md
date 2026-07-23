@@ -103,6 +103,24 @@ broker/store/HTTP mutation call site, persistent dedupe ledger, deploy, or
 runtime-mode change. A separately reviewed adapter is required before real
 record-mode collection can begin.
 
+## Phase 9 — Atomic durable observation reference adapter
+
+- Add a persistence-neutral atomic apply/result contract for normalized Phase
+  8 commands.
+- Add a detached SQLite reference implementation whose lineage state and
+  idempotency ledger share one `BEGIN IMMEDIATE` transaction.
+- Persist stable applied/missing/subject/transition outcomes so replay cannot
+  change after later lineage mutations.
+- Prove restart replay, concurrent duplicate serialization, payload conflict,
+  exact intent/head/diff CAS, rollback after a lineage write, and ledger
+  privacy with temporary-file databases.
+
+Phase 9 remains source-only. Its versioned tables are not attached to the
+production broker database or snapshot, and there is no broker, persistence
+queue, HTTP, task-completion, retry, finalizer, or producer call site. A later
+integration must prove the canonical production lineage state and ledger share
+one commit boundary; independent snapshot and ledger writes are forbidden.
+
 ## Rollback strategy per phase
 
 | Phase | Rollback |
@@ -114,6 +132,7 @@ record-mode collection can begin.
 | 6 | Gate input removed; signed-verdict path untouched |
 | 7 | Defaults stay `record` |
 | 8 | Observation schema/projector are additive files; delete PR revert |
+| 9 | Detached reference tables have no runtime constructor; delete PR revert |
 
 ## Safety boundaries (all phases)
 

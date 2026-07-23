@@ -167,14 +167,39 @@ is `insufficient_evidence` and `DEFAULT_LINEAGE_BUDGET` remains unchanged.
 - [x] Unknown fields/version/mode, malformed or mismatched hashes, incomplete
       finding transitions, and non-independent declared reviewer fail closed.
 - [x] Errors expose stable code/path only and do not echo rejected values.
-- [ ] Durable idempotency ledger + exact-subject store adapter (separate phase
-      and review; not authorized by this source-only contract).
+- [x] Durable idempotency ledger + exact-subject reference store adapter
+      implemented and reviewed separately in Phase 9.
 - [ ] Approved producer completeness and privacy/retention proof before a live
       task-completion observer is attached.
 
 Phase 8 source boundary: `observation.ts` is a pure validator/projector. It does
 not import or call the broker/store, add an HTTP mutation route, observe task
 completion/retry/finalizer output, or change runtime `off` / `record` defaults.
+
+## Phase 9: Atomic durable observation reference adapter
+
+- [x] Persistence-neutral apply/result interface consumes only the normalized
+      Phase 8 command.
+- [x] SQLite reference lineage and idempotency tables commit in one immediate
+      transaction.
+- [x] Same key/same fingerprint replays the stored outcome without an engine
+      call; a different fingerprint conflicts without mutation.
+- [x] `missing_lineage`, `subject_conflict`, and `transition_rejected` are
+      stable recorded outcomes.
+- [x] Create uses absence-CAS; events compare exact intent/head/diff and update
+      a monotonic record version conditionally.
+- [x] Restart, two-connection race, per-field subject mismatch, forced rollback,
+      and ledger privacy tests pass on temporary databases.
+- [x] No production broker DB/snapshot, HTTP, task completion/retry/finalizer,
+      persistence queue, or producer integration exists.
+- [ ] Production integration proves canonical lineage state and ledger share
+      one SQLite commit boundary.
+- [ ] Producer completeness, retention/pruning/export policy, and real
+      terminal-lineage collection receive separate approval and review.
+
+Phase 9 source boundary: the SQLite class is a detached reference constructor
+used only by tests. Instantiating it against the live broker database, migrating
+live tables, or attaching an observation producer is not authorized.
 
 ## Validation commands (all phases as applicable)
 
