@@ -2,6 +2,23 @@
 
 This page is a PR-safe readiness plan for [#1180](https://github.com/jinwon-int/a2a-nexus/issues/1180). It prepares an eventual release/package decision without creating a GitHub Release, tag, npm package, Docker image, GHCR image, deployment, or homepage metadata change.
 
+<!-- TCK-READINESS:START -->
+## Official A2A TCK compatibility snapshot
+
+Compatibility posture: **A2A 1.0-compatible broker alpha profile**. This is a measured alpha snapshot, not a certification or full-conformance claim.
+
+| Official TCK measurement | Result |
+| --- | ---: |
+| Overall compatibility | 65.7% |
+| Agent Card | 6/6 |
+| JSON-RPC | 46/94 |
+| Promoted sub-category: `jsonrpc-version-negotiation` | 4/4 |
+
+Source: [tck-measurement workflow run 29917128590](https://github.com/jinwon-int/a2a-nexus/actions/runs/29917128590), measured `2026-07-22`. Canonical ledgers: `packages/broker/docs/tck-history.json` and `packages/broker/docs/tck-failing-categories.json`.
+
+The full official TCK remains a non-gating measurement lane. Only sub-categories marked `promoted` in the classification ledger are represented as blocking PR gates.
+<!-- TCK-READINESS:END -->
+
 ## Readiness vs publication
 
 | Area | Design/readiness work allowed here | Actual publication action |
