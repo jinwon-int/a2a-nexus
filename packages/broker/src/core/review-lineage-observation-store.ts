@@ -24,7 +24,7 @@ import {
 } from "../review-lifecycle/observation.js";
 import type {
   AuthorizedReviewLineageSourceEventV1,
-} from "../review-lifecycle/operator-cancel-source.js";
+} from "../review-lifecycle/authorized-source.js";
 import type {
   ReviewLineageRecord,
   ReviewLineageState,
@@ -154,14 +154,30 @@ const DERIVED_SOURCE_EVENT_PATTERN =
   /^review-lineage-event:v1:[0-9a-f]{64}$/;
 const HASH_PATTERN = /^sha256:[0-9a-f]{64}$/;
 
+function sourceMatchesCommand(
+  source: AuthorizedReviewLineageSourceEventV1,
+  command: ProjectedReviewLineageObservation,
+): boolean {
+  if (source.sourceKind === "lineage_contract_frozen") {
+    return source.authorityKind === "lineage_dispatcher"
+      && command.command.kind === "create_lineage"
+      && command.command.input.at === source.observedAt;
+  }
+  if (source.sourceKind === "lineage_cancel_decided") {
+    return source.authorityKind === "operator"
+      && command.command.kind === "record_event"
+      && command.command.event.type === "operator_cancel"
+      && command.command.event.at === source.observedAt;
+  }
+  return false;
+}
+
 function assertAuthorizedSourceAdmission(
   admission: AuthorizedReviewLineageSourceAdmissionV1,
 ): void {
   const { source, command } = admission;
   if (
-    source.sourceKind !== "lineage_cancel_decided"
-    || source.authorityKind !== "operator"
-    || !DERIVED_SOURCE_EVENT_PATTERN.test(source.sourceEventId)
+    !DERIVED_SOURCE_EVENT_PATTERN.test(source.sourceEventId)
     || !DERIVED_PRODUCER_PATTERN.test(source.producerId)
     || !HASH_PATTERN.test(source.sourceEventRefHash)
     || source.payloadFingerprint !== command.payloadFingerprint
@@ -170,9 +186,7 @@ function assertAuthorizedSourceAdmission(
       source.producerId,
       source.sourceEventId,
     )
-    || command.command.kind !== "record_event"
-    || command.command.event.type !== "operator_cancel"
-    || command.command.event.at !== source.observedAt
+    || !sourceMatchesCommand(source, command)
   ) {
     throw new ReviewLineageObservationStoreError(
       "invalid_authorized_source",

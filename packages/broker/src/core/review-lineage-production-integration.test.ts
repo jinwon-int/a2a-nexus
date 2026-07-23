@@ -117,6 +117,16 @@ function operatorCancelRequest(lineageId = "pr-1518-phase10") {
   };
 }
 
+function operatorCreateRequest(lineageId = "pr-1518-phase10") {
+  return {
+    dispatchRef: `lineage-dispatch:${lineageId}:1`,
+    observedAt: T0,
+    binding: binding(lineageId),
+    contract: contract(lineageId),
+    budget: budget(),
+  };
+}
+
 function tempDatabase(prefix: string): {
   dir: string;
   dbFile: string;
@@ -231,6 +241,51 @@ test("broker operator-cancel source awaits the composite store ACK before projec
   }
 });
 
+test("broker operator-owned lineage create commits before projection and replays after restart", async () => {
+  const { dir, dbFile } = tempDatabase("a2a-review-create-source-");
+  try {
+    const store = new SqliteBrokerStateStore(dbFile);
+    const broker = new InMemoryA2ABroker(
+      store,
+      store.load(),
+      { reviewLineageMode: "record" },
+    );
+    assert.equal(
+      (await broker.recordOperatorReviewLineageCreate(
+        operatorCreateRequest(),
+        "operator-seoseo",
+      ))?.status,
+      "applied",
+    );
+    assert.equal(
+      broker.getReviewLineage("pr-1518-phase10", T0)?.state,
+      "reviewing_initial",
+    );
+    store.close();
+
+    const restoredStore = new SqliteBrokerStateStore(dbFile);
+    const restoredBroker = new InMemoryA2ABroker(
+      restoredStore,
+      restoredStore.load(),
+      { reviewLineageMode: "record" },
+    );
+    assert.equal(
+      (await restoredBroker.recordOperatorReviewLineageCreate(
+        operatorCreateRequest(),
+        "operator-seoseo",
+      ))?.status,
+      "replayed",
+    );
+    assert.equal(
+      restoredBroker.getReviewLineage("pr-1518-phase10", T0)?.state,
+      "reviewing_initial",
+    );
+    restoredStore.close();
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
 test("off mode returns before operator source validation or store access", async () => {
   let calls = 0;
   const snapshot = emptySnapshot();
@@ -247,6 +302,13 @@ test("off mode returns before operator source validation or store access", async
     stateStore,
     snapshot,
     { reviewLineageMode: "off" },
+  );
+  assert.equal(
+    await broker.recordOperatorReviewLineageCreate(
+      null,
+      "invalid operator id",
+    ),
+    undefined,
   );
   assert.equal(
     await broker.recordOperatorReviewLineageCancel(
@@ -363,7 +425,10 @@ test("worker-thread proxy applies one compound observation and ACKs before readb
       { reviewLineageMode: "record" },
     );
     assert.equal(
-      (await broker.applyReviewLineageObservation(createCommand()))?.status,
+      (await broker.recordOperatorReviewLineageCreate(
+        operatorCreateRequest(),
+        "operator-seoseo",
+      ))?.status,
       "applied",
     );
     assert.equal(

@@ -213,6 +213,30 @@ cancellation and task completion remain detached. The default stays `off`,
 `enforce` remains unsupported, and no live schema execution, migration,
 deployment, restart, canary, or real collection is approved.
 
+## Phase 15 — Second authenticated owner: lineage create
+
+- Ground lineage start in the normative operator authority: only an
+  edge-authenticated requester with exact role `operator` may freeze a new
+  contract through `POST /review-lineages`.
+- Accept only an immutable dispatch reference, observation time, exact
+  intent/head/diff binding, full `IntentContractV1`, and full
+  `ReviewLineageBudgetV1`.
+- Fix `lineage_contract_frozen`, semantic `lineage_dispatcher` authority,
+  source namespace, and authenticated issuer in trusted broker code.
+- Generalize attached-source metadata into a neutral shared type while keeping
+  a closed tuple matrix for only create and cancel.
+- Reuse the existing schema 13 source table and one SQLite transaction for
+  source event, canonical lineage creation, and idempotency outcome.
+- Prove role/field rejection, canonical-parser delegation, cross-kind
+  rejection, off-mode inertness, restart replay, changed-evidence conflict,
+  duplicate-lineage conflict, rollback, one worker ACK, privacy, and
+  operator-cancel compatibility.
+- Report automatic coverage as exactly `2/5`.
+
+Phase 15 adds no task-creation observer or completion/retry/finalizer hook. It
+does not change schema version or runtime defaults and approves no live
+record-mode activation, deployment, restart, canary, or data collection.
+
 ## Rollback strategy per phase
 
 | Phase | Rollback |
@@ -230,6 +254,7 @@ deployment, restart, canary, or real collection is approved.
 | 12 | Admission API has no automatic caller; delete PR revert |
 | 13 | Pure carrier contract has no runtime caller; delete PR revert |
 | 14 | Return mode to `off`, stop using the mutation route, and revert code; preserve additive source rows/tables for audit |
+| 15 | Return mode to `off`, stop using the create route, and revert code; preserve canonical/source rows for audit |
 
 ## Safety boundaries (all phases)
 
