@@ -14,6 +14,7 @@ import {
   ReviewLineageStoreError,
   resolveReviewLineageRolloutMode,
 } from "./review-lineage-store.js";
+import { reviewLineageRecordSchema } from "./store-schemas.js";
 import { InMemoryA2ABroker } from "./broker.js";
 import type {
   BrokerSnapshot,
@@ -91,6 +92,22 @@ test("review lineage store persists applied events across a snapshot round trip"
   const restored = new ReviewLineageStore(first.snapshot());
   assert.deepEqual(restored.snapshot(), first.snapshot());
   assert.equal(restored.get("lineage-1")?.terminalReason, "operator_cancel");
+});
+
+test("legacy review-lineage snapshots gain an empty durable appeal ledger", () => {
+  const created = new ReviewLineageStore().create({
+    contract: contract(),
+    at: T0,
+  });
+  const { appeal: _appeal, ...legacyRecord } = created;
+  const restored = reviewLineageRecordSchema.parse(legacyRecord);
+  assert.deepEqual(restored.appeal, {
+    kind: "AppealDispositionStateV1",
+    lineageId: created.lineageId,
+    finalizerOwnerId: null,
+    requests: [],
+    dispositions: [],
+  });
 });
 
 class CapturingStore implements BrokerStateStore {

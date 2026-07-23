@@ -146,6 +146,43 @@ export interface ReviewLineageCounters {
   scopeDriftRejections: number;
 }
 
+export interface AppealRequestV1 {
+  kind: "AppealRequestV1";
+  appealId: string;
+  lineageId: string;
+  findingId: string;
+  requestedBy: string;
+  requesterRole: "author" | "operator";
+  reason: string;
+  requestedAt: string;
+}
+
+export interface FinalizerDispositionV1 {
+  kind: "FinalizerDispositionV1";
+  dispositionId: string;
+  appealId: string;
+  lineageId: string;
+  findingId: string;
+  finalizerId: string;
+  disposition: "upheld" | "overruled_by_finalizer";
+  justification: string;
+  decidedAt: string;
+}
+
+/**
+ * Durable appeal ledger embedded in the lineage record.
+ *
+ * Keeping this state inside ReviewLineageRecord prevents a caller from
+ * recreating an empty side ledger after an upheld disposition.
+ */
+export interface AppealDispositionStateV1 {
+  kind: "AppealDispositionStateV1";
+  lineageId: string;
+  finalizerOwnerId: string | null;
+  requests: AppealRequestV1[];
+  dispositions: FinalizerDispositionV1[];
+}
+
 export type ReviewLineageMode = "off" | "record" | "enforce";
 
 export interface ReviewLineageRecord {
@@ -156,6 +193,7 @@ export interface ReviewLineageRecord {
   contract: IntentContractV1;
   budget: ReviewLineageBudgetV1;
   ledger: FindingLedgerV1;
+  appeal: AppealDispositionStateV1;
   counters: ReviewLineageCounters;
   /** Head of the latest accepted correction generation; equals contract.headSha initially. */
   currentHeadSha: string;

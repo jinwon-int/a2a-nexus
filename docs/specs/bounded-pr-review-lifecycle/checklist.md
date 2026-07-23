@@ -22,15 +22,18 @@
       goal/non-goal/invariant/acceptance/scope/base/head change changes the hash
 - [ ] Review receipt with mismatched `headSha`, `diffHash`, or `intentHash` fails closed
 - [ ] Reviewer identity equal to author remains rejected (declared author and fallback paths)
-- [ ] Review/finalizer lanes cannot carry write-capable execution authority
+- [x] Review/finalizer/fixer contracts cannot carry write-capable execution authority
 - [x] Failed initial review permits at most the configured correction generation count
 - [x] Wall-clock / reviewer-run / correction-generation / no-progress exhaustion →
       `blocked_needs_operator`, not `running`, not auto-retry
 - [x] Correction changing frozen intent → `intent_conflict`, explicit operator disposition
-- [ ] Resolution review resolves/reopens prior IDs but rejects new preference/scope-expansion
+- [x] Resolution review resolves/reopens prior IDs but rejects new preference/scope-expansion
       blockers
-- [ ] Resolution review adds introduced-regression / critical-security blocker only with exact
+- [x] Resolution review adds introduced-regression / critical-security blocker only with exact
       evidence and justification
+- [x] Appeal disposition binds one finalizer owner and records exactly one decision per finding
+- [x] Fixer candidate is proposal-only; validation/acceptance preserve the original author HEAD
+      and expose no apply/push path
 - [x] Repeated identical unresolved finding signatures trigger early stop before outer budget
 - [x] Reviewer replacement only for classified infrastructure failure; never resets lineage
       budget
