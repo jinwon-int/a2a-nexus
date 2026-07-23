@@ -138,6 +138,26 @@ Phase 10 remains source-only. It does not add an automatic producer, HTTP
 mutation route, task-completion/retry/finalizer hook, deploy/restart, live
 schema execution, retention/pruning/export, or real cohort collection.
 
+## Phase 11 — Producer completeness and privacy/retention plan
+
+- Define one structured producer-fact contract whose five observation kinds
+  are exhaustive at compile time.
+- Reuse `parseReviewLineageObservation` as the only validation and projection
+  boundary; do not infer from task status, result prose, logs, or providers.
+- Classify canonical lineage as restricted sensitive, the minimized ledger as
+  internal metadata, and only the existing scorecard projection as an
+  approval-bound redacted export.
+- Require an explicit approved cutoff with no default duration.
+- Plan only terminal lineages strictly before that cutoff.
+- Represent each candidate as one canonical-lineage-plus-ledger aggregate with
+  expected version/state/count metadata.
+- Build and fingerprint the validated scorecard export proof before creating
+  any prune aggregate.
+
+Phase 11 remains pure and source-only. It adds no automatic/disabled producer
+plumbing, broker/store/worker/HTTP mutation, SQL deletion, live export,
+deployment, restart, canary, real cohort, or runtime-default change.
+
 ## Rollback strategy per phase
 
 | Phase | Rollback |
@@ -151,6 +171,7 @@ schema execution, retention/pruning/export, or real cohort collection.
 | 8 | Observation schema/projector are additive files; delete PR revert |
 | 9 | Detached reference tables have no runtime constructor; delete PR revert |
 | 10 | Atomic API is unused without a producer; preserve additive tables during rollback |
+| 11 | Pure producer/retention modules have no call site; delete PR revert |
 
 ## Safety boundaries (all phases)
 
