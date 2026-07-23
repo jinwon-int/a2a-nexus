@@ -50,17 +50,22 @@ function selectorsOverlap(a, b) {
 
 /**
  * Anchor the classification to the EXACT committed measurement it claims to
- * decompose: same date + level + transport, with a jsonrpc category. Binding on
- * all three (not "the last measurement with a jsonrpc bucket") keeps the guard
- * stable as the multi-level/transport history grows — a `should`/`jsonrpc` or a
- * different-date row can no longer silently re-anchor the MUST baseline.
+ * decompose: same date + level + transport + optional source identity, with a
+ * jsonrpc category. Binding the workflow source for per-test baselines keeps
+ * independent same-day runs unambiguous; legacy pre-verbose rows remain
+ * compatible without a source pin.
  */
 function findAnchorMeasurement(history, coarseBaseline) {
   const measurements = Array.isArray(history?.measurements) ? history.measurements : [];
-  const { date, level, transport } = coarseBaseline ?? {};
+  const { date, level, transport, source } = coarseBaseline ?? {};
   return (
     measurements.find(
-      (m) => m && m.date === date && m.level === level && m.transport === transport && isPassTotal(m.categories?.jsonrpc),
+      (m) => m
+        && m.date === date
+        && m.level === level
+        && m.transport === transport
+        && (!source || m.source === source)
+        && isPassTotal(m.categories?.jsonrpc),
     ) ?? null
   );
 }
@@ -93,11 +98,13 @@ export function evaluateFailingBaseline(baseline, history) {
     failures.push(
       'tck-failing-categories.coarseBaseline must pin { category:"jsonrpc", level:"must", transport:"jsonrpc", date, pass, total }',
     );
+  } else if (isPreVerboseBaseline === false && (typeof cb.source !== 'string' || cb.source.length === 0)) {
+    failures.push('tck-failing-categories.coarseBaseline.source must pin the exact workflow run for a per-test baseline');
   } else {
     anchor = findAnchorMeasurement(history, cb);
     if (!anchor) {
       failures.push(
-        `tck-failing-categories.coarseBaseline finds no tck-history measurement at date ${cb.date} level must transport jsonrpc (mis-anchored or stale date)`,
+        `tck-failing-categories.coarseBaseline finds no tck-history measurement at date ${cb.date} level must transport jsonrpc${cb.source ? ` source ${cb.source}` : ''} (mis-anchored or stale identity)`,
       );
     } else {
       const jr = anchor.categories.jsonrpc;

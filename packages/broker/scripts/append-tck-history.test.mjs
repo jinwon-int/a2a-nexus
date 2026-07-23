@@ -153,6 +153,30 @@ test("upsertMeasurement replaces an entry with the same date+level+transport", (
   assert.deepEqual(out.measurements[0].must, { pass: 18, total: 75 });
 });
 
+test("upsertMeasurement preserves independent same-day workflow runs", () => {
+  const history = { schemaVersion: 1, measurements: [] };
+  const first = buildMeasurement({
+    date: "2026-07-22",
+    level: "must",
+    transport: "jsonrpc",
+    parsed: { must: null, overallPercent: 65.7, categories: {} },
+    source: "tck-measurement workflow run 100",
+  });
+  const second = buildMeasurement({
+    date: "2026-07-22",
+    level: "must",
+    transport: "jsonrpc",
+    parsed: { must: null, overallPercent: 65.7, categories: {} },
+    source: "tck-measurement workflow run 101",
+  });
+  const out = upsertMeasurement(upsertMeasurement(history, first), second);
+  assert.equal(out.measurements.length, 2);
+  assert.deepEqual(out.measurements.map((m) => m.source), [
+    "tck-measurement workflow run 100",
+    "tck-measurement workflow run 101",
+  ]);
+});
+
 test("buildMeasurement normalizes missing fields", () => {
   const entry = buildMeasurement({ date: "2026-06-11", level: "should", transport: "grpc", parsed: { categories: {} } });
   assert.equal(entry.overallPercent, null);

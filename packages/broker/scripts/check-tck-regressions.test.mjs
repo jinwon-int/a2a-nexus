@@ -5,7 +5,11 @@ import os from "node:os";
 import path from "node:path";
 import { spawnSync } from "node:child_process";
 import { fileURLToPath } from "node:url";
-import { findRegressions, stablyGreenCategories } from "./check-tck-regressions.mjs";
+import {
+  findRegressions,
+  stablyGreenCategories,
+  stablyGreenSubCategories,
+} from "./check-tck-regressions.mjs";
 
 function history(measurements) {
   return { schemaVersion: 1, measurements };
@@ -66,6 +70,32 @@ test("findRegressions skips the appended current measurement before selecting a 
   assert.equal(notes.some((note) => note.kind === "baseline-skipped-current" && note.count === 1), true);
 });
 
+test("findRegressions compares independent same-day runs by source identity", () => {
+  const h = history([
+    {
+      date: "2026-07-22",
+      level: "must",
+      transport: "jsonrpc",
+      overallPercent: 65.7,
+      categories: {},
+      source: "tck-measurement workflow run 100",
+    },
+  ]);
+  const current = {
+    date: "2026-07-22",
+    level: "must",
+    transport: "jsonrpc",
+    overallPercent: 60,
+    categories: {},
+    source: "tck-measurement workflow run 101",
+  };
+  const { regressions, notes } = findRegressions(h, { level: "must", transport: "jsonrpc", current });
+  assert.equal(regressions.length, 1);
+  assert.equal(regressions[0].from, 65.7);
+  assert.equal(regressions[0].to, 60);
+  assert.equal(notes.some((note) => note.kind === "baseline-skipped-current"), false);
+});
+
 test("CLI emits regression JSON to stdout even when exiting non-zero", () => {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), "tck-regression-"));
   try {
@@ -113,4 +143,33 @@ test("stablyGreenCategories needs a full window before promoting", () => {
     { date: "2026-06-11", level: "must", transport: "jsonrpc", categories: { agent_card: { pass: 6, total: 6 } } },
   ]);
   assert.deepEqual(stablyGreenCategories(h, 2, { level: "must", transport: "jsonrpc" }), []);
+});
+
+test("stablyGreenSubCategories promotes only two-window green selector groups", () => {
+  const h = history([
+    {
+      date: "2026-07-22",
+      level: "must",
+      transport: "jsonrpc",
+      source: "tck-measurement workflow run 100",
+      subCategories: {
+        "jsonrpc-version-negotiation": { pass: 4, total: 4 },
+        "jsonrpc-error-codes-and-errorinfo": { pass: 6, total: 13 },
+      },
+    },
+    {
+      date: "2026-07-22",
+      level: "must",
+      transport: "jsonrpc",
+      source: "tck-measurement workflow run 101",
+      subCategories: {
+        "jsonrpc-version-negotiation": { pass: 4, total: 4 },
+        "jsonrpc-error-codes-and-errorinfo": { pass: 7, total: 13 },
+      },
+    },
+  ]);
+  assert.deepEqual(
+    stablyGreenSubCategories(h, 2, { level: "must", transport: "jsonrpc" }),
+    ["jsonrpc-version-negotiation"],
+  );
 });
