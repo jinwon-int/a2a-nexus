@@ -264,8 +264,33 @@ requester identity enforcement is enabled.
 
 Phase 3b does not connect task/review execution to lineage events and exposes
 no HTTP mutation route. The broker-internal record API is intentionally a
-dead path until a later Phase 3c names and reviews the event source. Setting
-record mode alone therefore does not create records.
+dead path until a separately reviewed adapter names and verifies the event
+source. Setting record mode alone therefore does not create records.
+
+### Lossless review-lineage observation contract (#1518 Phase 8)
+
+Phase 8 defines the input boundary needed before a record-mode adapter can be
+considered. `ReviewLineageObservationEnvelopeV1` requires an explicit,
+producer-stable event id, UTC observation time, complete lineage/event input,
+and exact current `intentHash` / HEAD / canonical diff binding.
+
+The pure parser returns:
+
+- a domain-separated idempotency key;
+- a canonical complete-payload fingerprint;
+- the expected current subject for a future compare-and-set;
+- one existing engine command (`create_lineage` or `record_event`).
+
+It never fills gaps from task status, result prose, GitHub state, provider
+output, prompts, or local time. Unknown fields and versions, binding drift,
+incomplete finding transitions, and same-key/different-payload replay fail
+closed. Errors contain a stable code and JSON path only.
+
+This phase still does not attach to task completion, call the store, expose an
+HTTP mutation, or provide process-restart exactly-once effects. Before any live
+producer is connected, separately review persistent idempotency conflict
+detection, compare-and-set application, producer completeness, and retention/
+redaction of the frozen intent and finding evidence.
 
 ### Review-lineage scorecard readback (#1518 Phase 7)
 

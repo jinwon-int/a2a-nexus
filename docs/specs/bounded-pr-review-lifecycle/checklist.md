@@ -79,3 +79,18 @@
 - [ ] Finalizer records the closeout disposition; exactly one finalizer owns it
 - [ ] All evidence redacted: no secrets, private endpoints, provider IDs, Telegram IDs,
       production data, raw session dumps, or runtime/bootstrap files
+
+## G. Lossless observation contract (Phase 8)
+
+- [x] Versioned strict envelope requires producer/source identity, lineage,
+      UTC time, exact intent/head/diff binding, and one complete engine input
+- [x] Create accepts only `record`; runtime `enforce` remains unsupported
+- [x] Review receipts and correction intent remain exact-subject/frozen-intent
+      bound
+- [x] Finding transitions are explicit, unique, and non-overlapping
+- [x] Canonical idempotency key/fingerprint replay and conflict behavior tested
+- [x] Unknown fields and sensitive prose/provider payload fields fail closed
+- [x] Errors expose only stable code/path metadata
+- [x] No broker/store/HTTP/task-completion/retry/finalizer call site exists
+- [ ] Durable adapter, producer completeness proof, and privacy retention gate
+      receive a separate review before any live collection

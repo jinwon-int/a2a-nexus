@@ -1,6 +1,6 @@
 // Conformance check for the bounded PR review lifecycle contracts (#1518 Phase 1).
 //
-// Validates the fixture against the four JSON schemas, pins the canonicalization
+// Validates the fixtures against the versioned JSON schemas, pins the canonicalization
 // golden vectors (intentHash stability/sensitivity, diffHash definition), checks
 // receipt/ledger/contract binding consistency, and scans for forbidden content.
 // Public-safe: no broker URL, secrets, deploy, restart, DB mutation, or live send.
@@ -21,9 +21,14 @@ import {
 const root = process.cwd();
 const specDir = path.join(root, 'docs', 'specs', 'bounded-pr-review-lifecycle');
 const fixturePath = path.join(root, 'fixtures', 'contract', 'bounded-pr-review-lifecycle.json');
+const observationFixturePath = path.join(root, 'fixtures', 'contract', 'review-lineage-observation-v1.json');
 
 const fixture = JSON.parse(fs.readFileSync(fixturePath, 'utf8'));
-const fixtureText = fs.readFileSync(fixturePath, 'utf8');
+const observationFixture = JSON.parse(fs.readFileSync(observationFixturePath, 'utf8'));
+const fixtureText = [
+  fs.readFileSync(fixturePath, 'utf8'),
+  fs.readFileSync(observationFixturePath, 'utf8'),
+].join('\n');
 
 const ajv = new Ajv({ allErrors: true });
 function loadSchema(name) {
@@ -34,7 +39,12 @@ const schemas = {
   budget: loadSchema('review-lineage-budget-v1.json'),
   findingLedger: loadSchema('finding-ledger-v1.json'),
   reviewReceipt: loadSchema('review-receipt-v1.json'),
+  observation: loadSchema('review-lineage-observation-v1.json'),
 };
+ajv.addSchema(schemas.intentContract, 'intent-contract-v1.json');
+ajv.addSchema(schemas.budget, 'review-lineage-budget-v1.json');
+ajv.addSchema(schemas.findingLedger, 'finding-ledger-v1.json');
+ajv.addSchema(schemas.reviewReceipt, 'review-receipt-v1.json');
 
 function assertValid(schemaKey, value, label) {
   const validate = ajv.compile(schemas[schemaKey]);
@@ -52,6 +62,7 @@ assertValid('intentContract', fixture.intentContract, 'fixture.intentContract');
 assertValid('budget', fixture.budget, 'fixture.budget');
 assertValid('findingLedger', fixture.findingLedger, 'fixture.findingLedger');
 assertValid('reviewReceipt', fixture.reviewReceipt, 'fixture.reviewReceipt');
+assertValid('observation', observationFixture, 'observationFixture');
 
 // ---- 2. intentHash golden vectors ----
 
@@ -187,6 +198,14 @@ assertInvalid('findingLedger', {
 assertInvalid('reviewReceipt', { ...fixture.reviewReceipt, sneaky: true }, 'reviewReceipt extra property');
 const { note: _noNote, ...receiptMissingNote } = fixture.reviewReceipt;
 assertInvalid('reviewReceipt', receiptMissingNote, 'reviewReceipt missing required note');
+assertInvalid('observation', { ...observationFixture, sneaky: true }, 'observation extra property');
+assertInvalid('observation', { ...observationFixture, kind: 'a2a.review-lineage-observation.v2' }, 'unknown observation version');
+assertInvalid('observation', {
+  ...observationFixture,
+  observation: { ...observationFixture.observation, mode: 'enforce' },
+}, 'observation enforce mode');
+const { sourceEventId: _noSourceEventId, ...observationMissingSourceEventId } = observationFixture;
+assertInvalid('observation', observationMissingSourceEventId, 'observation missing sourceEventId');
 
 // ---- 6. Forbidden content scan ----
 const forbiddenRuntimePaths = ['AGENTS.md', 'SOUL.md', 'USER.md', 'TOOLS.md', 'HEARTBEAT.md', 'IDENTITY.md', '.openclaw/'];
@@ -205,4 +224,4 @@ for (const pattern of secretLikePatterns) {
   assert.ok(!pattern.test(fixtureText), `fixture must not contain secret-like content ${pattern}`);
 }
 
-console.log('bounded-pr-review-lifecycle conformance ok: schemas, intentHash/diffHash vectors, binding consistency, negative cases, forbidden content');
+console.log('bounded-pr-review-lifecycle conformance ok: schemas, observation v1, intentHash/diffHash vectors, binding consistency, negative cases, forbidden content');

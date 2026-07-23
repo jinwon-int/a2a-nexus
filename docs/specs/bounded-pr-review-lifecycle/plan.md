@@ -86,6 +86,23 @@ thresholds are implemented. Cohorts below 30 real terminal lineages report
 first evidence-qualified real cohort remains open, and runtime `enforce`
 continues to require a separate operator decision.
 
+## Phase 8 — Lossless observation contract before live collection
+
+- Add strict `ReviewLineageObservationEnvelopeV1` schema/types for complete
+  record-mode create and lifecycle-event inputs.
+- Derive a domain-separated idempotency key and canonical payload fingerprint;
+  same-key/same-payload replay deduplicates, while same-key/different-payload
+  fails closed.
+- Preserve an exact compare-and-set subject (`intentHash`, current `headSha`,
+  canonical `diffHash`) beside the projected existing engine command.
+- Reject missing/unknown/inferred fields and return only redacted error
+  code/path metadata.
+
+Phase 8 is source-only and pure. It adds no task-completion observer,
+broker/store/HTTP mutation call site, persistent dedupe ledger, deploy, or
+runtime-mode change. A separately reviewed adapter is required before real
+record-mode collection can begin.
+
 ## Rollback strategy per phase
 
 | Phase | Rollback |
@@ -96,6 +113,7 @@ continues to require a separate operator decision.
 | 4–5 | Per-lineage mode flag back to `record` |
 | 6 | Gate input removed; signed-verdict path untouched |
 | 7 | Defaults stay `record` |
+| 8 | Observation schema/projector are additive files; delete PR revert |
 
 ## Safety boundaries (all phases)
 
