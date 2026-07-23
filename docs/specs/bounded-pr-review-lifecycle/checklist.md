@@ -92,5 +92,24 @@
 - [x] Unknown fields and sensitive prose/provider payload fields fail closed
 - [x] Errors expose only stable code/path metadata
 - [x] No broker/store/HTTP/task-completion/retry/finalizer call site exists
-- [ ] Durable adapter, producer completeness proof, and privacy retention gate
-      receive a separate review before any live collection
+- [x] Durable reference adapter receives a separate Phase 9 review before any
+      live collection
+- [ ] Producer completeness proof and privacy retention gate receive a
+      separate review before any live collection
+
+## H. Atomic durable reference adapter (Phase 9)
+
+- [x] Lineage update and idempotency outcome share one SQLite transaction
+- [x] Same-key replay never invokes a second lifecycle transition
+- [x] Different fingerprint conflicts without overwriting the first outcome
+- [x] Missing lineage and exact intent/head/diff subject conflicts replay
+      stably
+- [x] Version-guarded conditional update fails closed
+- [x] Forced ledger-insert failure rolls back the preceding lineage write
+- [x] Two independent SQLite connections produce one apply and one replay
+- [x] Ledger excludes raw envelope, producer/source ids, free text, prompts,
+      provider output, and rejected values
+- [x] Reference tables have no production broker/snapshot/HTTP/producer call
+      site
+- [ ] Production canonical lineage state and ledger atomicity proven in a
+      separately reviewed integration
