@@ -157,5 +157,23 @@
 - [x] No terminal API async conversion or fire-and-forget Promise
 - [x] No route, outbox, schema, source subscription, or live collection
 - [x] Automatic observation coverage is reported as `0/5`
-- [ ] Per-kind authoritative source carrier and durable coupling reviewed
-      before automatic attachment
+- [x] Per-kind authority/source carrier contract reviewed
+- [ ] Actual authenticated source owner and durable coupling reviewed before
+      automatic attachment
+
+## L. Authoritative source-carrier contract (Phase 13)
+
+- [x] Serializable carrier cannot assert authority or derived identity
+- [x] Exact carrier fields reject task/result/cancel and sensitive additions
+- [x] Trusted context is separately factory-issued, immutable, and process-local
+- [x] Cloned/reconstructed context fields do not recreate the capability
+- [x] Five-kind source/authority matrix is compile-time exhaustive
+- [x] Review issuer equals the complete receipt reviewer
+- [x] Producer identity derives from authority, issuer, and namespace
+- [x] Event identity derives from producer, source kind, and immutable reference
+- [x] Payload changes preserve event identity and change the fingerprint
+- [x] Phase 11 fact builder and Phase 8 parser remain canonical
+- [x] No runtime owner, hook, route, store, outbox, schema, or live action
+- [x] Automatic source coverage remains `0/5`
+- [ ] First actual kind proves authenticated ownership and atomic/ACK-replayed
+      durable coupling
