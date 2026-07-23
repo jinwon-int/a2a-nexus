@@ -47,7 +47,7 @@
 - [x] Non-converging fixture: repeated findings → `blocked_needs_operator` within budget
 - [x] Moving-goalpost fixture: second reviewer cannot introduce unrelated design blocker
 - [x] Scope-drift fixture: out-of-paths patch rejected; immutable original recoverable
-- [ ] Record-mode scorecard: elapsed time, generations, finding churn, stop reason — no private
+- [x] Record-mode scorecard: elapsed time, generations, finding churn, stop reason — no private
       prompts or chain-of-thought
 
 ## D. Broker / gate integration
@@ -64,11 +64,13 @@
 
 - [x] A2AD finalizer runbook: optional `--lineage` envelope, mode semantics,
       fail-closed composition, and explicit no-runtime/no-ruleset boundary
-- [ ] Operator runbook: lineage metrics, terminal dispositions, new-lineage procedure
-- [ ] Dispatcher runbook: `payload.review.authorWorkerId` declaration; acceptance-command
+- [x] Operator runbook: lineage metrics, terminal dispositions, new-lineage procedure
+- [x] Dispatcher runbook: `payload.review.authorWorkerId` declaration; acceptance-command
       pitfall on analysis-only review tasks (#1548)
-- [ ] `docs/operators.md`: machine-visible `spec_ambiguity` / `scope_drift` dispositions
-- [ ] Rollout-mode defaults and scorecard readback recorded before any `enforce` default
+- [x] `docs/operators.md`: machine-visible `spec_ambiguity` / `scope_drift` dispositions
+- [x] Rollout-mode defaults and scorecard readback recorded before any `enforce` default;
+      fewer than 30 real terminal samples is explicitly `insufficient_evidence`, so defaults
+      remain unchanged
 
 ## F. Detached-review closeout
 

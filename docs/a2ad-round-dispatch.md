@@ -621,6 +621,33 @@ contract is enforced in reverse: a conformance test in
 asserts both sides count exactly `substantive` toward quorum — any drift fails
 CI.
 
+### Independent review author binding (#1518 / #1548)
+
+For a self-contained independent-review lane, declare the trusted author in the
+task payload:
+
+```json
+{
+  "review": {
+    "required": true,
+    "authorWorkerId": "author-worker-id"
+  }
+}
+```
+
+The dispatcher owns this value. It must identify the author of the reviewed
+change and must not equal the assigned reviewer. The completion validator binds
+review independence to this declared author. If it is omitted, compatibility
+fallback uses the task's assigned/claiming worker; a self-contained review task
+can then reject itself as `review_not_independent`.
+
+Keep review and smoke acceptance as separate evidence contracts. An
+analysis-only review lane should omit `payload.acceptance.command` unless its
+handler actually executes the command and returns matching acceptance
+evidence. Adding an unexecuted command activates the acceptance requirement and
+fails completion as `acceptance_evidence_missing`, even when the independent
+review itself is valid.
+
 ### Bounded review-lineage evidence (#1518 Phase 6)
 
 The offline finalizer gate optionally accepts `--lineage <file>`. The file is a

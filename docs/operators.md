@@ -211,7 +211,34 @@ The review entry requires:
 
 The legacy singleton `result.validation` shape remains accepted for review-only or backward-compatible submissions. When `result.validations[]` is present, the broker matches review evidence by `kind: "review"`; when it is absent, it falls back to the singleton field.
 
-The reviewer node must differ from the author/completing worker. Missing reviewer evidence rejects completion as `review_evidence_missing`; same-node review rejects as `review_not_independent`; failing review rejects as `review_verdict_failed`. If `payload.review` is absent or `required` is false, existing task completion behavior is unchanged.
+The reviewer node must differ from the author/completing worker. For a
+self-contained review task, the dispatcher should bind the trusted author
+explicitly:
+
+```json
+{
+  "review": {
+    "required": true,
+    "authorWorkerId": "the-author-worker-id"
+  }
+}
+```
+
+`authorWorkerId` is dispatcher-declared evidence, not reviewer input, and must
+differ from the reviewer. Without it, the compatibility fallback uses the
+task's assigned/claiming worker; a self-contained reviewer task can therefore
+correctly fail independence rather than silently approve itself.
+
+Missing reviewer evidence rejects completion as `review_evidence_missing`;
+same-node review rejects as `review_not_independent`; failing review rejects as
+`review_verdict_failed`. If `payload.review` is absent or `required` is false,
+existing task completion behavior is unchanged.
+
+Do not add `payload.acceptance.command` to an analysis-only review lane unless
+that lane actually executes the command and returns separate smoke acceptance
+evidence. Merely adding a harmless command such as `/usr/bin/true` activates
+the acceptance contract and an otherwise valid review will fail with
+`acceptance_evidence_missing`.
 
 Reviewer input should be limited to the diff, the original task specification, and the acceptance result. Do not feed the reviewer the author's self-narrative as the primary evidence; that preserves oracle independence.
 
@@ -239,6 +266,76 @@ Phase 3b does not connect task/review execution to lineage events and exposes
 no HTTP mutation route. The broker-internal record API is intentionally a
 dead path until a later Phase 3c names and reviews the event source. Setting
 record mode alone therefore does not create records.
+
+### Review-lineage scorecard readback (#1518 Phase 7)
+
+Phase 7 adds a manual, offline scorecard over redacted record-mode exports. It
+does not read the broker, change `DEFAULT_LINEAGE_BUDGET`, enable `enforce`, or
+apply a recommendation.
+
+Build the broker once, then pass the strict
+`a2a.review-lineage-scorecard-input.v1` envelope to the compiled CLI:
+
+```bash
+npm --workspace packages/broker run build
+node packages/broker/dist/review-lifecycle/scorecard-cli.js \
+  --input /path/to/redacted-lineages.json \
+  --output /path/to/scorecard.json
+```
+
+The source fixture at
+`packages/broker/fixtures/review-lineage-scorecard/sample-input.json` is
+synthetic contract documentation, not rollout evidence.
+
+The TypeScript projection
+`projectReviewLineageScorecardSample(record, { sourceRoundId, asOf })` is the
+only supported way to turn a full record into a scorecard sample. It reuses
+`computeMetrics`, replaces the durable lineage ID with an envelope-local
+reference, and omits the frozen goal, acceptance text, paths, HEAD/diff hashes,
+receipts, ledgers, prompts, and chain-of-thought. The CLI accepts only that
+redacted envelope and refuses malformed fields, mixed record versions,
+duplicate lineages, non-`record` samples, bad timestamp ordering, and a
+same-round replay with a different canonical input digest.
+
+Read the output as follows:
+
+- cohorts are separated by the exact global-budget signature;
+- p50/p95 are deterministic nearest-rank values;
+- `intentHash` false-positive rate counts only mismatch signals with an
+  explicit final offline adjudication and evidence references; terminal state,
+  appeal presence, or later hash equality is never treated as an implicit
+  false positive;
+- fewer than 30 terminal samples yields `insufficient_evidence`;
+- an increase is only `investigate_increase` at 30+ terminal samples, at least
+  five matching exhaustion stops, and a 10%+ exhaustion rate;
+- a decrease is only `investigate_decrease` at 100+ terminal samples, zero
+  exhaustion, and observed p95 no greater than half the current limit;
+- every result is `advisory: true`; there is no apply field or runtime consumer.
+
+`maxReviewerReplacements` remains `not_observable` because the current terminal
+reason does not distinguish reviewer-run exhaustion from replacement
+exhaustion. Do not tune that limit from this scorecard.
+
+Start a new lineage only when the approved frozen intent changes. A metadata or
+evidence-only HEAD refresh that preserves the frozen contract and canonical
+diff remains the same lineage and does not reset its budget. A new goal,
+non-goal, invariant, acceptance criterion, declared path, base, or original
+HEAD requires a new `IntentContractV1`/`intentHash`; preserve the prior lineage
+as immutable evidence.
+
+Machine-visible dispositions remain distinct:
+
+- `spec_ambiguity` is a `FindingV1.category` and must cite a criterion and
+  concrete evidence; it is not permission for a resolution reviewer to add a
+  new preference blocker;
+- `scope_drift` is both a finding category and an engine rejection surfaced by
+  `scopeDriftRejections` / terminal reason `scope_drift`;
+- `intent_conflict` is reserved for a correction whose frozen `intentHash`
+  changed and requires explicit operator disposition.
+
+Until real terminal record-mode exports meet the evidence threshold, budget
+defaults remain unchanged and broad runtime `enforce` remains a separate
+operator decision.
 
 ## Approval records
 

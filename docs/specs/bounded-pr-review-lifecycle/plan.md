@@ -79,6 +79,13 @@
 - Budget defaults tuned from evidence; broad `enforce` default is a separate operator decision,
   documented like the rollout of previous gates.
 
+Implementation status: the versioned redacted projection, deterministic offline
+scorecard, explicit `intentHash` adjudication contract, and advisory-only budget
+thresholds are implemented. Cohorts below 30 real terminal lineages report
+`insufficient_evidence`; no default changes at that state. Collection of the
+first evidence-qualified real cohort remains open, and runtime `enforce`
+continues to require a separate operator decision.
+
 ## Rollback strategy per phase
 
 | Phase | Rollback |
