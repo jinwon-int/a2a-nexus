@@ -1,0 +1,45 @@
+{
+  "kind": "a2a.review-lineage-scorecard-input.v1",
+  "sourceRoundId": "fixture-1518-phase7",
+  "recordSchemaVersion": "a2a.review-lineage.v1",
+  "redactionProfileVersion": "a2a.review-lineage-scorecard-redacted.v1",
+  "asOf": "2026-07-23T03:00:00Z",
+  "samples": [
+    {
+      "kind": "a2a.review-lineage-scorecard-sample.v1",
+      "recordSchemaVersion": "a2a.review-lineage.v1",
+      "lineageRef": "lr-0000000000000001",
+      "mode": "record",
+      "state": "passed",
+      "budget": {
+        "kind": "ReviewLineageBudgetV1",
+        "maxWallClockSeconds": 21600,
+        "maxCorrectionGenerations": 1,
+        "maxReviewerRuns": 2,
+        "maxReviewerReplacements": 1,
+        "repeatedFindingThreshold": 2,
+        "onExhaustion": "blocked_needs_operator"
+      },
+      "metrics": {
+        "elapsedSeconds": 3600,
+        "correctionGenerations": 1,
+        "reviewerRuns": 2,
+        "reviewerReplacements": 0,
+        "findingsNew": 1,
+        "findingsReopened": 0,
+        "findingsResolved": 1,
+        "repeatedSignatureHits": 0,
+        "goalpostRejections": 0,
+        "scopeDriftRejections": 0,
+        "openBlockingFindings": 0,
+        "terminalReason": null
+      },
+      "startedAt": "2026-07-23T00:00:00Z",
+      "observedAt": "2026-07-23T01:00:00Z",
+      "terminalReason": null,
+      "unresolvedSignatureCount": 0,
+      "intentHashSignalRefs": []
+    }
+  ],
+  "intentHashAssessments": []
+}

@@ -135,8 +135,25 @@ runtime acceptance, completion/retry hook, fixer apply path, deploy/restart, or
 
 ## Phase 7: Scorecard readback
 
-- Record-mode scorecard over real lineages; budget defaults tuned from evidence.
-- Broad `enforce` default: separate operator decision, documented.
+- [x] Strict `a2a.review-lineage-scorecard-input.v1` redacted envelope and
+  deterministic offline aggregation.
+- [x] Scorecard reports elapsed time, generations, reviewer runs/replacements,
+  finding churn, repeated-signature hits, drift/goalpost rejections, open
+  blockers, terminal reasons, and explicitly adjudicated `intentHash`
+  false-positive behavior.
+- [x] Budget cohorts are separated by exact budget signature; recommendations
+  are advisory-only with 30/100 terminal-sample floors and no apply/runtime
+  consumer.
+- [ ] Record-mode scorecard over at least 30 real terminal lineages; tune budget
+  defaults only if the committed evidence crosses an advisory threshold.
+- [x] Broad `enforce` default remains a separate operator decision; runtime
+  continues to accept only `off` / `record`.
+
+Phase 7 source boundary: the CLI consumes only an offline redacted export,
+validates before writing, and rejects a same-round/different-digest replay.
+The synthetic fixture documents the contract and is not rollout evidence. Until
+real terminal samples reach the minimum cohort size, the recorded disposition
+is `insufficient_evidence` and `DEFAULT_LINEAGE_BUDGET` remains unchanged.
 
 ## Validation commands (all phases as applicable)
 
