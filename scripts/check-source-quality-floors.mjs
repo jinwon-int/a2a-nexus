@@ -4,9 +4,10 @@
  *
  * Package coverage reporters (packages/-star-/scripts/coverage-baseline-report.mjs)
  * classify source vs test/generated/archive and enforce bounded module floors.
- * This separate gate applies a repository-wide source-quality ratchet: the
- * count of unsafe TypeScript suppressions in the source bucket may only move
- * downward.
+ * This separate gate applies repository-wide source-quality ratchets: unsafe
+ * TypeScript suppressions may only move downward, and production TypeScript
+ * source may not discard a Promise without awaiting, handling, returning,
+ * assigning, or explicitly marking reviewed fire-and-forget work with `void`.
  *
  * "Unsafe suppression" = a directive that silences a diagnostic without proof it
  * is still needed:
@@ -34,10 +35,18 @@ import { execFileSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 import ts from 'typescript';
 
+import { analyzeProject } from './lib/async-safety.mjs';
 import { createDocCheckContext } from './lib/doc-check.mjs';
 
 export const FLOOR_MANIFEST_REL = 'docs/ops/source-quality-floors.json';
 export const FLOOR_SCHEMA = 'a2a-nexus.source-quality-floor.v1';
+export const ASYNC_SAFETY_PACKAGES = Object.freeze([
+  'packages/attestation',
+  'packages/broker',
+  'packages/docker-runner',
+  'packages/openclaw-plugin-a2a',
+  'packages/policy-referee',
+]);
 
 /**
  * Pure bucket classifier — 'source' | 'test' | 'generated' | 'archive' | 'other'.
@@ -124,6 +133,40 @@ export function collectMeasured(root) {
   return { measured, offenders };
 }
 
+export function collectFloatingPromises(root, packageRels = ASYNC_SAFETY_PACKAGES) {
+  const findings = [];
+  for (const packageRel of packageRels) {
+    const packageRoot = path.join(root, packageRel);
+    const configPath = path.join(packageRoot, 'tsconfig.json');
+    for (const finding of analyzeProject({ configPath, packageRoot })) {
+      findings.push({
+        ...finding,
+        file: `${packageRel}/${finding.file}`,
+      });
+    }
+  }
+  return findings.sort(
+    (left, right) =>
+      left.file.localeCompare(right.file) ||
+      left.line - right.line ||
+      left.column - right.column,
+  );
+}
+
+export function parseAsyncSafetyScope(args) {
+  if (args.length === 0) return [...ASYNC_SAFETY_PACKAGES];
+  if (
+    args.length === 2 &&
+    args[0] === '--package' &&
+    ASYNC_SAFETY_PACKAGES.includes(args[1])
+  ) {
+    return [args[1]];
+  }
+  throw new Error(
+    `usage: check-source-quality-floors.mjs [--package <${ASYNC_SAFETY_PACKAGES.join('|')}>]`,
+  );
+}
+
 /**
  * Pure floor evaluation. Fails closed on a malformed manifest so a corrupted or
  * absent floor can never silently pass the gate.
@@ -159,6 +202,39 @@ export function evaluateFloor(measured, manifest) {
   return { ok: failures.length === 0, failures };
 }
 
+export function evaluateFloatingPromiseFloor(measured, manifest) {
+  const failures = [];
+  const floor = manifest?.floors?.floatingPromises;
+  if (!floor || typeof floor.max !== 'number' || !Number.isInteger(floor.max) || floor.max < 0) {
+    return {
+      ok: false,
+      failures: ['floors.floatingPromises.max must be a non-negative integer'],
+    };
+  }
+  if (
+    !Array.isArray(floor.packages) ||
+    JSON.stringify(floor.packages) !== JSON.stringify(ASYNC_SAFETY_PACKAGES)
+  ) {
+    failures.push(
+      `floors.floatingPromises.packages must equal ${JSON.stringify(ASYNC_SAFETY_PACKAGES)}`,
+    );
+  }
+  if (measured > floor.max) {
+    failures.push(
+      `floating Promises in production source: ${measured} exceeds floor ${floor.max}. ` +
+        'Await, handle, return, or assign each Promise; use explicit void only for ' +
+        'reviewed fire-and-forget work (a2a-nexus#1506).',
+    );
+  } else if (measured < floor.max) {
+    failures.push(
+      `floating Promises dropped to ${measured}, below floor ${floor.max}. ` +
+        `Ratchet floors.floatingPromises.max down to ${measured} in ` +
+        `${FLOOR_MANIFEST_REL} (a2a-nexus#1506).`,
+    );
+  }
+  return { ok: failures.length === 0, failures };
+}
+
 function main() {
   const { parseJson, fail, finish } = createDocCheckContext({ name: 'source quality floor guard' });
   const manifest = parseJson(FLOOR_MANIFEST_REL);
@@ -171,6 +247,34 @@ function main() {
   const { failures } = evaluateFloor(measured, manifest);
   for (const message of failures) fail(message);
   for (const o of offenders) console.log(`  ${o.file}: ${o.count} unsafe suppression(s)`);
+
+  let floatingPromises = [];
+  let asyncSafetyScope = [];
+  try {
+    asyncSafetyScope = parseAsyncSafetyScope(process.argv.slice(2));
+    floatingPromises = collectFloatingPromises(process.cwd(), asyncSafetyScope);
+  } catch (error) {
+    fail(
+      `floating-Promise analysis failed closed: ${
+        error instanceof Error ? error.message : String(error)
+      }`,
+    );
+  }
+  const floatingFloor = manifest?.floors?.floatingPromises?.max;
+  console.log(
+    `source quality floor: floating-promises=${floatingPromises.length}/${floatingFloor ?? '?'} ` +
+      `(${asyncSafetyScope.join(', ') || 'invalid scope'})`,
+  );
+  const floatingEvaluation = evaluateFloatingPromiseFloor(
+    floatingPromises.length,
+    manifest,
+  );
+  for (const message of floatingEvaluation.failures) fail(message);
+  for (const finding of floatingPromises) {
+    console.log(
+      `  ${finding.file}:${finding.line}:${finding.column} ${finding.expression}`,
+    );
+  }
   finish('source quality floor ok');
 }
 

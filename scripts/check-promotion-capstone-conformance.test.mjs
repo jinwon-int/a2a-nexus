@@ -25,6 +25,7 @@ import {
   EXPECTED_PLUGIN_FLOORS,
   EXPECTED_RUNNER_FLOORS,
 } from './check-promotion-capstone-conformance.mjs';
+import { ASYNC_SAFETY_PACKAGES } from './check-source-quality-floors.mjs';
 
 const repoRoot = dirname(dirname(fileURLToPath(import.meta.url)));
 const capstonePath = join(repoRoot, 'docs', 'promotion-capstone.md');
@@ -180,7 +181,21 @@ test('promotion capstone records the live-main quality-floor consistency contrac
   }
   assert.match(section, /broker `noUnusedLocals`/i);
   assert.match(section, /async-safety approval/i);
+  assert.match(section, /floating-promises=0/i);
+  assert.match(section, /all five TypeScript workspace packages/i);
+  assert.match(section, /Package-CI parity analyzes only its selected package/i);
   assert.match(section, /#1506/);
+});
+
+test('promotion capstone pins the repository async-safety zero floor and package scope', async () => {
+  const manifest = JSON.parse(
+    await readFile(join(repoRoot, 'docs', 'ops', 'source-quality-floors.json'), 'utf8'),
+  );
+  assert.equal(manifest.floors?.floatingPromises?.max, 0);
+  assert.deepEqual(
+    manifest.floors?.floatingPromises?.packages,
+    [...ASYNC_SAFETY_PACKAGES],
+  );
 });
 
 test('package coverage commands, reporter files, and parity metadata stay aligned', async () => {

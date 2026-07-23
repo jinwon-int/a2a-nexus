@@ -90,7 +90,9 @@ The broker reporter enforces the runtime #1506 floor while the promotion capston
 
 The plugin reporter now enforces the same fail-closed contract over deterministic checked-in TypeScript tests that import built plugin modules. Against exact main `54d1b78c5812df36797dfd64bf8c507d02d8ec8d` on Node 22, `dist/src/handoff-visibility-policy.js` measured 81.61%, `dist/src/recovery-guard.js` measured 96.85%, and `dist/src/wake-envelope.js` measured 94.95% line coverage. The conservative floors are `dist/src/handoff-visibility-policy.js` 80% (measured 81.61%), `dist/src/recovery-guard.js` 95% (measured 96.85%), and `dist/src/wake-envelope.js` 93% (measured 94.95%). The capstone independently pins these values so a coupled reporter-floor lowering, module removal, malformed report, missing measurement, or failed test process is blocking.
 
-Remaining #1506 work is explicit: broker `noUnusedLocals` and async-safety approval. This capstone consistency slice references #1506 and does not close it.
+The #1506 async-safety approval is now executable in `check:source-quality-floors`: a type-aware zero floor (`floating-promises=0`) covers production source in all five TypeScript workspace packages (`attestation`, `broker`, `docker-runner`, `openclaw-plugin-a2a`, and `policy-referee`). Tests, declarations, generated output, and archives are excluded. Promise-valued expression statements must be awaited, returned, assigned, or rejection-handled; an explicit `void` is reserved for reviewed fire-and-forget work. The manifest pins both the zero floor and the exact package scope so either count or scope drift fails closed. Package-CI parity analyzes only its selected package while the root gate checks the full workspace.
+
+Remaining #1506 work is explicit: broker `noUnusedLocals`. This capstone consistency slice references #1506 and does not close it.
 
 ## Named CI lane
 
