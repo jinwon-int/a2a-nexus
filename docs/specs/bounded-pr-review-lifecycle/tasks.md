@@ -104,11 +104,21 @@ event inputs and idempotency are available.
 
 ## Phase 5: Resolution restrictions + isolated patch candidate
 
-- Resolution pass: resolve/reopen existing IDs; new blockers restricted to introduced-regression
+- [x] Resolution pass: resolve/reopen existing IDs; new blockers restricted to introduced-regression
   / critical-security / unavailable-evidence with justification.
-- Fixer lane: isolated additive patch candidate; original author head immutable (test); no
+- [x] Fixer lane: isolated additive patch candidate; original author head immutable (test); no
   auto-push path.
-- Appeal: exactly one finalizer disposition per finding.
+- [x] Appeal: exactly one finalizer disposition per finding.
+
+Phase 5 boundary: `appeal.ts` and `patch-candidate.ts` are independent,
+pure-contract modules. Appeal requests and finalizer dispositions are embedded
+in the durable lineage record, with one lineage owner and one disposition per
+finding. Fixer candidates are `propose_only`, bind the frozen HEAD/diff/intent
+and allowed paths, and require a separate operator acceptance contract. Neither
+validation nor acceptance applies a correction event, writes Git, pushes a
+branch, or adds a runtime call site. Authenticated operator/finalizer identity,
+patch-byte digest/path recomputation, runtime effects, and the signed finalizer
+gate remain Phase 6+ work.
 
 ## Phase 6: Enforce-mode conformance + #1499 integration
 

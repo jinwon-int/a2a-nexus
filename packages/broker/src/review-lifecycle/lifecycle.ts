@@ -114,6 +114,13 @@ export function createLineage(input: CreateLineageInput): ReviewLineageRecord {
       lineageId: contract.lineageId,
       findings: [],
     },
+    appeal: {
+      kind: "AppealDispositionStateV1",
+      lineageId: contract.lineageId,
+      finalizerOwnerId: null,
+      requests: [],
+      dispositions: [],
+    },
     counters: {
       correctionGenerations: 0,
       reviewerRuns: 0,

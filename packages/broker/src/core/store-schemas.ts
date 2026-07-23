@@ -493,6 +493,43 @@ const reviewFindingSchema = z
   })
   .passthrough();
 
+const appealRequestSchema = z
+  .object({
+    kind: z.literal("AppealRequestV1"),
+    appealId: z.string().min(1),
+    lineageId: z.string().min(1),
+    findingId: z.string().min(1),
+    requestedBy: z.string().min(1),
+    requesterRole: z.enum(["author", "operator"]),
+    reason: z.string().min(1),
+    requestedAt: z.string().min(1),
+  })
+  .passthrough();
+
+const finalizerDispositionSchema = z
+  .object({
+    kind: z.literal("FinalizerDispositionV1"),
+    dispositionId: z.string().min(1),
+    appealId: z.string().min(1),
+    lineageId: z.string().min(1),
+    findingId: z.string().min(1),
+    finalizerId: z.string().min(1),
+    disposition: z.enum(["upheld", "overruled_by_finalizer"]),
+    justification: z.string().min(1),
+    decidedAt: z.string().min(1),
+  })
+  .passthrough();
+
+const appealDispositionStateSchema = z
+  .object({
+    kind: z.literal("AppealDispositionStateV1"),
+    lineageId: z.string().min(1),
+    finalizerOwnerId: z.string().min(1).nullable(),
+    requests: z.array(appealRequestSchema),
+    dispositions: z.array(finalizerDispositionSchema),
+  })
+  .passthrough();
+
 export const reviewLineageRecordSchema = z
   .object({
     kind: z.literal("a2a.review-lineage.v1"),
@@ -539,6 +576,7 @@ export const reviewLineageRecordSchema = z
         findings: z.array(reviewFindingSchema),
       })
       .passthrough(),
+    appeal: appealDispositionStateSchema.optional(),
     counters: z.object({
       correctionGenerations: z.number().int().nonnegative(),
       reviewerRuns: z.number().int().nonnegative(),
@@ -570,7 +608,20 @@ export const reviewLineageRecordSchema = z
       z.number().int().nonnegative(),
     ),
   })
-  .passthrough();
+  .passthrough()
+  .transform((record) => ({
+    ...record,
+    // Phase 5 adds the durable appeal ledger. Older snapshots cannot contain
+    // dispositions because the appeal API did not exist, so an empty ledger is
+    // the only lossless backward-compatible projection.
+    appeal: record.appeal ?? {
+      kind: "AppealDispositionStateV1" as const,
+      lineageId: record.lineageId,
+      finalizerOwnerId: null,
+      requests: [],
+      dispositions: [],
+    },
+  }));
 
 export const brokerSnapshotSchema = z
   .object({
