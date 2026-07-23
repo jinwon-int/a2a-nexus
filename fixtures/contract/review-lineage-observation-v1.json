@@ -1,0 +1,45 @@
+{
+  "kind": "a2a.review-lineage-observation.v1",
+  "producerId": "fixture-dispatcher",
+  "sourceEventId": "fixture:lineage-create:1",
+  "lineageId": "golden-1",
+  "observedAt": "2026-07-23T12:00:01Z",
+  "binding": {
+    "intentHash": "sha256:48eff27dde6b85ef2f531f23a13709eaf1fcd9b52a4e2e8567045bb6368bcf5e",
+    "headSha": "1111111111111111111111111111111111111111",
+    "diffHash": "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+  },
+  "observation": {
+    "kind": "lineage_create",
+    "mode": "record",
+    "contract": {
+      "kind": "IntentContractV1",
+      "lineageId": "golden-1",
+      "goal": "g",
+      "nonGoals": [],
+      "invariants": ["i"],
+      "acceptanceCriteria": [
+        {
+          "id": "AC-1",
+          "text": "t"
+        }
+      ],
+      "declaredPaths": {
+        "allowed": ["a/**"]
+      },
+      "baseSha": "0000000000000000000000000000000000000000",
+      "headSha": "1111111111111111111111111111111111111111",
+      "createdAt": "2026-07-23T12:00:00Z",
+      "intentHash": "sha256:48eff27dde6b85ef2f531f23a13709eaf1fcd9b52a4e2e8567045bb6368bcf5e"
+    },
+    "budget": {
+      "kind": "ReviewLineageBudgetV1",
+      "maxWallClockSeconds": 21600,
+      "maxCorrectionGenerations": 1,
+      "maxReviewerRuns": 2,
+      "maxReviewerReplacements": 1,
+      "repeatedFindingThreshold": 2,
+      "onExhaustion": "blocked_needs_operator"
+    }
+  }
+}

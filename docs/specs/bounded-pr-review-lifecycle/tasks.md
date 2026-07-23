@@ -155,6 +155,27 @@ The synthetic fixture documents the contract and is not rollout evidence. Until
 real terminal samples reach the minimum cohort size, the recorded disposition
 is `insufficient_evidence` and `DEFAULT_LINEAGE_BUDGET` remains unchanged.
 
+## Phase 8: Lossless record-mode observation input
+
+- [x] Strict `ReviewLineageObservationEnvelopeV1` schema and TypeScript types.
+- [x] Complete explicit mapping to existing lineage create/review/correction/
+      replacement/cancel inputs; no prose or task-status inference.
+- [x] Exact expected-subject binding for future compare-and-set application.
+- [x] Domain-separated idempotency key and canonical payload fingerprint.
+- [x] Same-key/same-payload batch replay dedupe and same-key/different-payload
+      conflict rejection.
+- [x] Unknown fields/version/mode, malformed or mismatched hashes, incomplete
+      finding transitions, and non-independent declared reviewer fail closed.
+- [x] Errors expose stable code/path only and do not echo rejected values.
+- [ ] Durable idempotency ledger + exact-subject store adapter (separate phase
+      and review; not authorized by this source-only contract).
+- [ ] Approved producer completeness and privacy/retention proof before a live
+      task-completion observer is attached.
+
+Phase 8 source boundary: `observation.ts` is a pure validator/projector. It does
+not import or call the broker/store, add an HTTP mutation route, observe task
+completion/retry/finalizer output, or change runtime `off` / `record` defaults.
+
 ## Validation commands (all phases as applicable)
 
 ```bash
