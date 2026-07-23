@@ -1,0 +1,182 @@
+{
+  "fixtureId": "a2a-nexus.review-lineage.enforcement-decisions.v1",
+  "description": "Source-only Phase 4 decision matrix. Enforce remains unavailable in broker runtime configuration; these cases exercise the pure decision contract only.",
+  "cases": [
+    {
+      "caseId": "off-keeps-current-behavior",
+      "input": {
+        "mode": "off",
+        "state": "blocked_needs_operator",
+        "terminalReason": "budget_wall_clock"
+      },
+      "expected": {
+        "outcome": "not_enforced",
+        "completionDisposition": "unchanged",
+        "retryDisposition": "unchanged",
+        "terminal": true,
+        "requiresOperator": null,
+        "reason": "mode_not_enforced"
+      }
+    },
+    {
+      "caseId": "record-keeps-current-behavior",
+      "input": {
+        "mode": "record",
+        "state": "blocked_needs_operator",
+        "terminalReason": "repeated_findings"
+      },
+      "expected": {
+        "outcome": "not_enforced",
+        "completionDisposition": "unchanged",
+        "retryDisposition": "unchanged",
+        "terminal": true,
+        "requiresOperator": null,
+        "reason": "mode_not_enforced"
+      }
+    },
+    {
+      "caseId": "enforce-review-remains-pending",
+      "input": {
+        "mode": "enforce",
+        "state": "reviewing_resolution",
+        "terminalReason": null
+      },
+      "expected": {
+        "outcome": "review_pending",
+        "completionDisposition": "pending",
+        "retryDisposition": "not_applicable",
+        "terminal": false,
+        "requiresOperator": false,
+        "reason": "lineage_active"
+      }
+    },
+    {
+      "caseId": "enforce-pass-allows-completion",
+      "input": {
+        "mode": "enforce",
+        "state": "passed",
+        "terminalReason": null
+      },
+      "expected": {
+        "outcome": "completion_allowed",
+        "completionDisposition": "allow",
+        "retryDisposition": "not_applicable",
+        "terminal": true,
+        "requiresOperator": false,
+        "reason": "lineage_passed"
+      }
+    },
+    {
+      "caseId": "enforce-wall-clock-exhaustion-blocks",
+      "input": {
+        "mode": "enforce",
+        "state": "blocked_needs_operator",
+        "terminalReason": "budget_wall_clock"
+      },
+      "expected": {
+        "outcome": "blocked_needs_operator",
+        "completionDisposition": "block",
+        "retryDisposition": "forbidden",
+        "terminal": true,
+        "requiresOperator": true,
+        "reason": "budget_wall_clock"
+      }
+    },
+    {
+      "caseId": "enforce-correction-budget-exhaustion-blocks",
+      "input": {
+        "mode": "enforce",
+        "state": "blocked_needs_operator",
+        "terminalReason": "budget_correction_generations"
+      },
+      "expected": {
+        "outcome": "blocked_needs_operator",
+        "completionDisposition": "block",
+        "retryDisposition": "forbidden",
+        "terminal": true,
+        "requiresOperator": true,
+        "reason": "budget_correction_generations"
+      }
+    },
+    {
+      "caseId": "enforce-reviewer-budget-exhaustion-blocks",
+      "input": {
+        "mode": "enforce",
+        "state": "blocked_needs_operator",
+        "terminalReason": "budget_reviewer_runs"
+      },
+      "expected": {
+        "outcome": "blocked_needs_operator",
+        "completionDisposition": "block",
+        "retryDisposition": "forbidden",
+        "terminal": true,
+        "requiresOperator": true,
+        "reason": "budget_reviewer_runs"
+      }
+    },
+    {
+      "caseId": "enforce-repeated-finding-stops-early",
+      "input": {
+        "mode": "enforce",
+        "state": "blocked_needs_operator",
+        "terminalReason": "repeated_findings"
+      },
+      "expected": {
+        "outcome": "blocked_needs_operator",
+        "completionDisposition": "block",
+        "retryDisposition": "forbidden",
+        "terminal": true,
+        "requiresOperator": true,
+        "reason": "repeated_findings"
+      }
+    },
+    {
+      "caseId": "enforce-intent-drift-conflicts",
+      "input": {
+        "mode": "enforce",
+        "state": "intent_conflict",
+        "terminalReason": "intent_drift"
+      },
+      "expected": {
+        "outcome": "intent_conflict",
+        "completionDisposition": "block",
+        "retryDisposition": "forbidden",
+        "terminal": true,
+        "requiresOperator": true,
+        "reason": "intent_drift"
+      }
+    },
+    {
+      "caseId": "enforce-cancel-stays-terminal",
+      "input": {
+        "mode": "enforce",
+        "state": "canceled",
+        "terminalReason": "operator_cancel"
+      },
+      "expected": {
+        "outcome": "canceled",
+        "completionDisposition": "block",
+        "retryDisposition": "forbidden",
+        "terminal": true,
+        "requiresOperator": false,
+        "reason": "operator_cancel"
+      }
+    },
+    {
+      "caseId": "enforce-inconsistent-terminal-reason-fails-closed",
+      "input": {
+        "mode": "enforce",
+        "state": "passed",
+        "terminalReason": "budget_wall_clock"
+      },
+      "expected": {
+        "outcome": "invalid_state",
+        "completionDisposition": "block",
+        "retryDisposition": "forbidden",
+        "terminal": true,
+        "requiresOperator": true,
+        "reason": "invalid_state"
+      }
+    }
+  ]
+}

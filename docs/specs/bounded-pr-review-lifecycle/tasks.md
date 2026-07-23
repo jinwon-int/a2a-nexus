@@ -87,12 +87,20 @@ idempotency key needed to construct lossless lineage events.
 
 ## Phase 4: Early stop + terminal exhaustion
 
-- Repeated-identical-signature early stop before outer budget consumption.
-- Wall-clock / generation / reviewer-run exhaustion → `blocked_needs_operator` (never
-  `running`, never auto-retry).
-- Frozen-intent change in a correction → `intent_conflict`.
+- [x] Repeated-identical-signature early stop before outer budget consumption.
+- [x] Wall-clock / generation / reviewer-run exhaustion → `blocked_needs_operator` (never
+      `running`, never auto-retry).
+- [x] Frozen-intent change in a correction → `intent_conflict`.
 
 Acceptance: per-lineage mode flag; `enforce` only for conformance fixtures in this phase.
+
+Phase 4 boundary: the lifecycle engine's existing terminal transitions feed a
+pure enforcement-decision contract exercised by strict conformance fixtures.
+`off` and `record` decisions leave completion/retry behavior unchanged. Runtime
+broker configuration continues to reject `enforce`; no task-completion, retry,
+finalizer, persistence-observer, or HTTP mutation call site is added. Runtime
+enforcement remains contract-first work for a later phase after lossless review
+event inputs and idempotency are available.
 
 ## Phase 5: Resolution restrictions + isolated patch candidate
 
