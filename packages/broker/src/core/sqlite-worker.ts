@@ -10,6 +10,7 @@
 import { parentPort, workerData } from "node:worker_threads";
 import { SqliteBrokerStateStore } from "./store.js";
 import type { BrokerSnapshot, BrokerStateSaveHints, SqliteBrokerLoadSource } from "./store.js";
+import type { ProjectedReviewLineageObservation } from "../review-lifecycle/observation.js";
 
 type WorkerRequest = { id: number; method: string; args: unknown[] };
 type InitOptions = {
@@ -59,7 +60,13 @@ parentPort.on("message", (req: WorkerRequest) => {
         result = store.saveHotEntities(hints);
         break;
       }
+      case "applyReviewLineageObservation": {
+        const { command } = req.args[0] as {
+          command: ProjectedReviewLineageObservation;
+        };
+        result = store.applyReviewLineageObservation(command);
         break;
+      }
       case "readHotRuntimeSnapshot":
         result = store.readHotRuntimeSnapshot();
         break;

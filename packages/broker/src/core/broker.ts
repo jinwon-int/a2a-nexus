@@ -148,6 +148,8 @@ import type {
   ReviewLineageEvent,
   ReviewLineageRecord,
 } from "../review-lifecycle/types.js";
+import type { ProjectedReviewLineageObservation } from "../review-lifecycle/observation.js";
+import type { ReviewLineageObservationApplicationResult } from "./review-lineage-observation-store.js";
 import type { AppliedEvent } from "../review-lifecycle/lifecycle.js";
 import {
   projectLineageReadModel,
@@ -509,15 +511,18 @@ export class InMemoryA2ABroker {
     return this.wavePlans.list();
   }
 
-  // --- Bounded PR review lineage telemetry (#1518 Phase 3b) -----------------
-  // This is deliberately detached from completeTask/retry/finalizer paths.
-  // Phase 3b supplies durable record-mode storage and operator projections;
-  // actual review-event call sites remain a later, separately reviewed slice.
+  // --- Bounded PR review lineage telemetry (#1518 Phases 3b/10) -------------
+  // This remains detached from completeTask/retry/finalizer paths. SQLite
+  // production stores accept only the normalized Phase 8 compound command so
+  // lineage state and its idempotency outcome share one commit boundary.
 
   createReviewLineage(
     input: CreateRecordedReviewLineageInput,
   ): ReviewLineageRecord | undefined {
     if (this.reviewLineageMode === "off") return undefined;
+    if (this.stateStore?.applyReviewLineageObservation) {
+      throw new Error("review_lineage_atomic_observation_required");
+    }
     const record = this.reviewLineages.create(input);
     this.persistState(undefined, { forceFull: true });
     return record;
@@ -528,9 +533,31 @@ export class InMemoryA2ABroker {
     event: ReviewLineageEvent,
   ): AppliedEvent | undefined {
     if (this.reviewLineageMode === "off") return undefined;
+    if (this.stateStore?.applyReviewLineageObservation) {
+      throw new Error("review_lineage_atomic_observation_required");
+    }
     const applied = this.reviewLineages.apply(lineageId, event);
     this.persistState(undefined, { forceFull: true });
     return applied;
+  }
+
+  async applyReviewLineageObservation(
+    command: ProjectedReviewLineageObservation,
+  ): Promise<ReviewLineageObservationApplicationResult | undefined> {
+    if (this.reviewLineageMode === "off") return undefined;
+    if (
+      !this.stateStore?.applyReviewLineageObservation
+      || !this.stateStore.listCanonicalReviewLineages
+    ) {
+      throw new Error("review_lineage_atomic_store_unavailable");
+    }
+    const result = await this.stateStore.applyReviewLineageObservation(command);
+    // The durable commit is the authority. Refresh the read-only in-memory
+    // projection only after its ACK; never mutate the Map optimistically.
+    this.reviewLineages.restore(
+      this.stateStore.listCanonicalReviewLineages(),
+    );
+    return result;
   }
 
   getReviewLineage(
@@ -2188,4 +2215,3 @@ export class InMemoryA2ABroker {
   }
 
 }
-

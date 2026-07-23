@@ -31,6 +31,10 @@ export const REVIEW_LINEAGE_OBSERVATION_LINEAGE_TABLE =
   "broker_review_lineage_observation_lineages_v1";
 export const REVIEW_LINEAGE_OBSERVATION_LEDGER_TABLE =
   "broker_review_lineage_observation_ledger_v1";
+export const REVIEW_LINEAGE_OBSERVATION_META_TABLE =
+  "broker_review_lineage_observation_meta_v1";
+
+const LEGACY_SNAPSHOT_IMPORT_KEY = "legacy_snapshot_import_v1";
 
 export type StableObservationOutcome =
   | "applied"
@@ -98,7 +102,7 @@ interface LineageRow {
   record_version: number;
   intent_hash: string;
   head_sha: string;
-  diff_hash: string;
+  diff_hash: string | null;
 }
 
 interface LedgerRow {
@@ -233,11 +237,17 @@ function replayResult(
 export class SqliteReviewLineageObservationStore
 implements DurableReviewLineageObservationStore {
   private readonly db: DatabaseSync;
+  private readonly ownsDatabase: boolean;
 
-  constructor(dbFile: string) {
-    this.db = new DatabaseSync(dbFile);
-    this.db.exec("PRAGMA busy_timeout = 5000");
-    if (dbFile !== ":memory:") this.db.exec("PRAGMA journal_mode = WAL");
+  constructor(database: string | DatabaseSync) {
+    this.ownsDatabase = typeof database === "string";
+    this.db = typeof database === "string"
+      ? new DatabaseSync(database)
+      : database;
+    if (this.ownsDatabase) {
+      this.db.exec("PRAGMA busy_timeout = 5000");
+      if (database !== ":memory:") this.db.exec("PRAGMA journal_mode = WAL");
+    }
     this.initialize();
   }
 
@@ -268,6 +278,81 @@ implements DurableReviewLineageObservationStore {
     return row ? this.parseRecord(row.record_json) : undefined;
   }
 
+  listLineages(): ReviewLineageRecord[] {
+    return (this.db.prepare(
+      `SELECT record_json
+       FROM ${REVIEW_LINEAGE_OBSERVATION_LINEAGE_TABLE}
+       ORDER BY lineage_id ASC`,
+    ).all() as Array<{ record_json: string }>)
+      .map((row) => this.parseRecord(row.record_json));
+  }
+
+  importLegacySnapshot(
+    records: ReviewLineageRecord[],
+  ): { imported: number; skipped: number; alreadyImported: boolean } {
+    const parsed = records.map((record) =>
+      reviewLineageRecordSchema.parse(structuredClone(record))
+    );
+    return this.immediateTransaction(() => {
+      const marker = this.db.prepare(
+        `SELECT value
+         FROM ${REVIEW_LINEAGE_OBSERVATION_META_TABLE}
+         WHERE key = ?`,
+      ).get(LEGACY_SNAPSHOT_IMPORT_KEY) as { value?: string } | undefined;
+      if (marker) {
+        return {
+          imported: 0,
+          skipped: parsed.length,
+          alreadyImported: true,
+        };
+      }
+
+      let imported = 0;
+      for (const record of parsed) {
+        const insert = this.db.prepare(
+          `INSERT OR IGNORE INTO ${REVIEW_LINEAGE_OBSERVATION_LINEAGE_TABLE} (
+            lineage_id,
+            record_json,
+            record_version,
+            intent_hash,
+            head_sha,
+            diff_hash,
+            updated_at
+          ) VALUES (?, ?, 1, ?, ?, ?, ?)`,
+        ).run(
+          record.lineageId,
+          JSON.stringify(record),
+          record.contract.intentHash,
+          record.currentHeadSha,
+          record.currentDiffHash,
+          record.updatedAt,
+        );
+        imported += Number(insert.changes);
+      }
+      this.db.prepare(
+        `INSERT INTO ${REVIEW_LINEAGE_OBSERVATION_META_TABLE} (key, value)
+         VALUES (?, ?)`,
+      ).run(
+        LEGACY_SNAPSHOT_IMPORT_KEY,
+        JSON.stringify({ imported }),
+      );
+      return {
+        imported,
+        skipped: parsed.length - imported,
+        alreadyImported: false,
+      };
+    });
+  }
+
+  legacySnapshotImported(): boolean {
+    const marker = this.db.prepare(
+      `SELECT 1 AS found
+       FROM ${REVIEW_LINEAGE_OBSERVATION_META_TABLE}
+       WHERE key = ?`,
+    ).get(LEGACY_SNAPSHOT_IMPORT_KEY) as { found?: number } | undefined;
+    return marker?.found === 1;
+  }
+
   countLedgerEntries(): number {
     const row = this.db
       .prepare(
@@ -279,7 +364,7 @@ implements DurableReviewLineageObservationStore {
   }
 
   close(): void {
-    this.db.close();
+    if (this.ownsDatabase) this.db.close();
   }
 
   private initialize(): void {
@@ -290,7 +375,7 @@ implements DurableReviewLineageObservationStore {
         record_version INTEGER NOT NULL CHECK (record_version > 0),
         intent_hash TEXT NOT NULL,
         head_sha TEXT NOT NULL,
-        diff_hash TEXT NOT NULL,
+        diff_hash TEXT,
         updated_at TEXT NOT NULL
       ) STRICT;
 
@@ -316,6 +401,11 @@ implements DurableReviewLineageObservationStore {
       CREATE INDEX IF NOT EXISTS
         broker_review_lineage_observation_ledger_lineage_v1
       ON ${REVIEW_LINEAGE_OBSERVATION_LEDGER_TABLE} (lineage_id);
+
+      CREATE TABLE IF NOT EXISTS ${REVIEW_LINEAGE_OBSERVATION_META_TABLE} (
+        key TEXT PRIMARY KEY,
+        value TEXT NOT NULL
+      ) STRICT;
     `);
   }
 

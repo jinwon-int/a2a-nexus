@@ -13,6 +13,8 @@ import type {
 import type { CrossBrokerTerminalBriefProjection } from "./cross-broker-terminal-brief.js";
 import type { PersistedWavePlan } from "./wave-plan-store.js";
 import type { ReviewLineageRecord } from "../review-lifecycle/types.js";
+import type { ProjectedReviewLineageObservation } from "../review-lifecycle/observation.js";
+import type { ReviewLineageObservationApplicationResult } from "./review-lineage-observation-store.js";
 import type { TerminalTaskOutboxEvent } from "./terminal-event-outbox.js";
 import type { TaskPushNotificationConfig } from "../a2a/push-notification-config.js";
 import type {
@@ -47,6 +49,18 @@ export interface BrokerSnapshot {
 export interface BrokerStateStore {
   load(): BrokerSnapshot;
   save(snapshot: BrokerSnapshot, hints?: BrokerStateSaveHints): void;
+  /**
+   * Apply one normalized record-mode observation through the store's canonical
+   * lineage authority. SQLite implementations must commit the lineage and
+   * idempotency outcome in one transaction.
+   */
+  applyReviewLineageObservation?(
+    command: ProjectedReviewLineageObservation,
+  ):
+    | ReviewLineageObservationApplicationResult
+    | Promise<ReviewLineageObservationApplicationResult>;
+  /** Read the canonical lineage projection after a durable observation ACK. */
+  listCanonicalReviewLineages?(): ReviewLineageRecord[];
   /**
    * Persist dirty hot-table rows without requiring the caller to build a full
    * BrokerSnapshot first. Stores that cannot support granular writes should
@@ -147,6 +161,11 @@ export interface SqliteBrokerStateStoreOptions {
   maxBytes?: number;
   importJsonFile?: string;
   loadSource?: SqliteBrokerLoadSource;
+  /**
+   * Internal worker-thread proxy mode: main-thread loads may project a legacy
+   * sidecar but must leave its one-time canonical import to the worker owner.
+   */
+  deferReviewLineageImport?: boolean;
   /**
    * Maximum non-terminal (queued/claimed/running/blocked) task rows to hydrate into live
    * memory when using loadSource=hot-tables. Non-terminal tasks are always loaded up to this

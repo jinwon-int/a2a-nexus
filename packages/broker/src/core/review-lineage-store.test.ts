@@ -175,21 +175,25 @@ test("review lineage rollout config accepts only off or record", () => {
   );
 });
 
-test("SQLite hot-table restart preserves review lineages from the canonical sidecar", () => {
+test("SQLite hot-table restart imports a legacy review-lineage sidecar once", () => {
   const dir = mkdtempSync(join(tmpdir(), "a2a-review-lineage-"));
   const dbFile = join(dir, "state.sqlite");
   try {
+    const legacy = new ReviewLineageStore();
+    legacy.create({
+      contract: contract(),
+      at: T0,
+      diffHash: `sha256:${"d".repeat(64)}`,
+    });
+    legacy.apply("lineage-1", cancelEvent());
     const store = new SqliteBrokerStateStore(
       dbFile,
       { loadSource: "hot-tables" },
     );
-    const broker = new InMemoryA2ABroker(
-      store,
-      store.load(),
-      { reviewLineageMode: "record" },
-    );
-    broker.createReviewLineage({ contract: contract(), at: T0 });
-    broker.recordReviewLineageEvent("lineage-1", cancelEvent());
+    store.save({
+      ...store.load(),
+      reviewLineages: legacy.snapshot(),
+    });
     store.close();
 
     const reloadedStore = new SqliteBrokerStateStore(

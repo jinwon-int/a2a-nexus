@@ -36,6 +36,8 @@ import type {
   BrokerStateSaveHints,
   SqliteBrokerLoadSource,
 } from "./store.js";
+import type { ProjectedReviewLineageObservation } from "../review-lifecycle/observation.js";
+import type { ReviewLineageObservationApplicationResult } from "./review-lineage-observation-store.js";
 
 // ---------------------------------------------------------------------------
 // Types
@@ -373,7 +375,10 @@ export class WorkerThreadProxyStore extends SqliteBrokerStateStore {
     // (load, readHot*, getPersistenceInfo, upsertHot*, etc.)
     // operate on the main thread against the same physical DB.
     // This also makes instanceof SqliteBrokerStateStore pass.
-    super(sqliteFile, initOptions);
+    super(sqliteFile, {
+      ...initOptions,
+      deferReviewLineageImport: true,
+    });
     this.queue = queue;
     this.workerThread = workerThread;
   }
@@ -394,6 +399,20 @@ export class WorkerThreadProxyStore extends SqliteBrokerStateStore {
       this.workerThread.request<boolean>("saveHotEntities", { hints }),
     );
     this.trackWrite(promise);
+  }
+
+  override applyReviewLineageObservation(
+    command: ProjectedReviewLineageObservation,
+  ): Promise<ReviewLineageObservationApplicationResult> {
+    const promise = this.queue.enqueue(
+      "applyReviewLineageObservation",
+      () => this.workerThread.request<ReviewLineageObservationApplicationResult>(
+        "applyReviewLineageObservation",
+        { command },
+      ),
+    );
+    this.trackWrite(promise);
+    return promise;
   }
 
   async awaitDurablePersistenceAck(): Promise<void> {

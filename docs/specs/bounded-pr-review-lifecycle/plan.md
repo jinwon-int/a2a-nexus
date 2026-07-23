@@ -121,6 +121,23 @@ queue, HTTP, task-completion, retry, finalizer, or producer call site. A later
 integration must prove the canonical production lineage state and ledger share
 one commit boundary; independent snapshot and ledger writes are forbidden.
 
+## Phase 10 — Production SQLite atomic integration
+
+- Reuse the Phase 9 repository on the `SqliteBrokerStateStore` connection so
+  lineage and ledger have one production SQLite authority.
+- Make `BrokerSnapshot.reviewLineages` legacy import / derived compatibility
+  data; a versioned marker prevents stale snapshot re-import.
+- Add one explicit async broker observation method that refreshes the in-memory
+  read projection only after the durable commit.
+- Route the complete compound command through one worker-thread persistence
+  queue entry and one worker request.
+- Prove production-store restart/replay, rollback, legacy import precedence, and
+  worker-thread ACK/readback with temporary databases.
+
+Phase 10 remains source-only. It does not add an automatic producer, HTTP
+mutation route, task-completion/retry/finalizer hook, deploy/restart, live
+schema execution, retention/pruning/export, or real cohort collection.
+
 ## Rollback strategy per phase
 
 | Phase | Rollback |
@@ -133,6 +150,7 @@ one commit boundary; independent snapshot and ledger writes are forbidden.
 | 7 | Defaults stay `record` |
 | 8 | Observation schema/projector are additive files; delete PR revert |
 | 9 | Detached reference tables have no runtime constructor; delete PR revert |
+| 10 | Atomic API is unused without a producer; preserve additive tables during rollback |
 
 ## Safety boundaries (all phases)
 
