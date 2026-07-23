@@ -65,6 +65,7 @@ export function emptySnapshot(): BrokerSnapshot {
     terminalOutbox: [],
     crossBrokerTerminalBriefs: [],
     wavePlans: [],
+    reviewLineages: [],
   };
 }
 

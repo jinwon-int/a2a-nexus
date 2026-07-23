@@ -12,6 +12,7 @@ import type { Alert, AlertScanResult } from "./core/alert-projection.js";
 import type { BrokerError, BrokerRetentionPolicy, InMemoryA2ABroker } from "./core/broker.js";
 import type { A2AHttpSignatureKeyRegistry } from "./core/request-security.js";
 import type { BrokerStateStore, SqliteBrokerLoadSource } from "./core/store.js";
+import type { ReviewLineageRolloutMode } from "./core/review-lineage-store.js";
 import type { OperatorSummary } from "./http/dashboard-response.js";
 import type { TaskReadinessMode } from "./task-readiness.js";
 
@@ -252,6 +253,11 @@ export interface BrokerServerOptions extends BrokerRuntimeHotLimitOptions {
   teamId?: string;
   /** Definition-of-Ready lint rollout mode for patch/implementation task creation. Env: `A2A_TASK_READINESS_MODE` or `BROKER_TASK_READINESS_MODE` (`warn` default, `enforce` fail-closed). */
   taskReadinessMode?: TaskReadinessMode;
+  /**
+   * Bounded PR review lineage telemetry mode. Env:
+   * `A2A_REVIEW_LINEAGE_MODE` (`off` default; `record` is observational).
+   */
+  reviewLineageMode?: ReviewLineageRolloutMode;
   /**
    * SSE heartbeat interval for `/a2a/tasks/:id/events`. Comments (`: heartbeat ...`) keep
    * intermediaries from timing out idle subscriptions. `0` disables heartbeats. Env:

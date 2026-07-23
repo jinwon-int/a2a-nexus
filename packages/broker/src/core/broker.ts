@@ -140,6 +140,20 @@ import { WavePlanStore, type StalledWavePlan } from "./wave-plan-store.js";
 import type { WavePlan, WaveStageEvidence } from "./wave-plan.js";
 import { summarizeWaveStageEvidence, type WaveLaneEvidence } from "./wave-evidence.js";
 import {
+  ReviewLineageStore,
+  type CreateRecordedReviewLineageInput,
+  type ReviewLineageRolloutMode,
+} from "./review-lineage-store.js";
+import type {
+  ReviewLineageEvent,
+  ReviewLineageRecord,
+} from "../review-lifecycle/types.js";
+import type { AppliedEvent } from "../review-lifecycle/lifecycle.js";
+import {
+  projectLineageReadModel,
+  type ReviewLineageReadModel,
+} from "../review-lifecycle/read-model.js";
+import {
   CrossBrokerTerminalBriefProjectionStore,
   type CrossBrokerTerminalBriefProjection,
   type CrossBrokerTerminalBriefProjectionFilters,
@@ -297,6 +311,7 @@ export class InMemoryA2ABroker {
   private readonly terminalTaskEventOutbox: TerminalTaskEventOutbox;
   private readonly crossBrokerTerminalBriefs: CrossBrokerTerminalBriefProjectionStore;
   private readonly wavePlans = new WavePlanStore();
+  private readonly reviewLineages = new ReviewLineageStore();
   private readonly conferenceManager: ConferenceRoomManager;
   private readonly taskRepository?: TaskRuntimeRepository;
   private readonly auditRepository?: AuditRuntimeRepository;
@@ -312,6 +327,7 @@ export class InMemoryA2ABroker {
   private readonly brokerId?: string;
   private readonly teamId?: string;
   private readonly taskReadinessMode: TaskReadinessMode;
+  private readonly reviewLineageMode: ReviewLineageRolloutMode;
   private readonly policyDocument?: BrokerPolicyDocument;
   private readonly injectedKnowledge?: InjectedKnowledgeSnapshot;
   private readonly finalizerVerdictEnforcement: FinalizerVerdictEnforcement;
@@ -339,6 +355,12 @@ export class InMemoryA2ABroker {
     this.brokerId = normalizeOwnershipString(options.brokerId);
     this.teamId = normalizeOwnershipString(options.teamId);
     this.taskReadinessMode = normalizeTaskReadinessMode(options.taskReadinessMode);
+    this.reviewLineageMode = options.reviewLineageMode ?? "off";
+    if (this.reviewLineageMode !== "off" && this.reviewLineageMode !== "record") {
+      throw new Error(
+        `invalid reviewLineageMode '${String(this.reviewLineageMode)}' (expected off | record)`,
+      );
+    }
     this.policyDocument = options.policyDocument;
     this.injectedKnowledge = options.injectedKnowledge;
     this.finalizerVerdictEnforcement = options.finalizerVerdictEnforcement ?? "off";
@@ -485,6 +507,44 @@ export class InMemoryA2ABroker {
 
   listWavePlans(): WavePlan[] {
     return this.wavePlans.list();
+  }
+
+  // --- Bounded PR review lineage telemetry (#1518 Phase 3b) -----------------
+  // This is deliberately detached from completeTask/retry/finalizer paths.
+  // Phase 3b supplies durable record-mode storage and operator projections;
+  // actual review-event call sites remain a later, separately reviewed slice.
+
+  createReviewLineage(
+    input: CreateRecordedReviewLineageInput,
+  ): ReviewLineageRecord | undefined {
+    if (this.reviewLineageMode === "off") return undefined;
+    const record = this.reviewLineages.create(input);
+    this.persistState(undefined, { forceFull: true });
+    return record;
+  }
+
+  recordReviewLineageEvent(
+    lineageId: string,
+    event: ReviewLineageEvent,
+  ): AppliedEvent | undefined {
+    if (this.reviewLineageMode === "off") return undefined;
+    const applied = this.reviewLineages.apply(lineageId, event);
+    this.persistState(undefined, { forceFull: true });
+    return applied;
+  }
+
+  getReviewLineage(
+    lineageId: string,
+    now = isoNow(),
+  ): ReviewLineageReadModel | undefined {
+    const record = this.reviewLineages.get(lineageId);
+    return record ? projectLineageReadModel(record, now) : undefined;
+  }
+
+  listReviewLineages(now = isoNow()): ReviewLineageReadModel[] {
+    return this.reviewLineages
+      .list()
+      .map((record) => projectLineageReadModel(record, now));
   }
 
   /**
@@ -1463,6 +1523,7 @@ export class InMemoryA2ABroker {
       terminalOutbox: this.terminalTaskEventOutbox.snapshot(),
       crossBrokerTerminalBriefs: this.crossBrokerTerminalBriefs.snapshot(),
       wavePlans: this.wavePlans.snapshot(),
+      reviewLineages: this.reviewLineages.snapshot(),
       ...this.snapshotExtensions.collectFields(),
     };
   }
@@ -1557,6 +1618,7 @@ export class InMemoryA2ABroker {
     this.terminalTaskEventOutbox.restoreSnapshot(snapshot.terminalOutbox ?? []);
     this.crossBrokerTerminalBriefs.restore(snapshot.crossBrokerTerminalBriefs ?? []);
     this.wavePlans.restore(snapshot.wavePlans ?? []);
+    this.reviewLineages.restore(snapshot.reviewLineages ?? []);
 
     this.applyRetentionPolicy();
   }
@@ -1566,9 +1628,10 @@ export class InMemoryA2ABroker {
     options?: {
       /**
        * Skip the hot-entities fast path and write the full canonical snapshot.
-       * Required for state that has no hot table (wave plans): a hot-only save
-       * would ACK the mutation while leaving it out of the canonical blob, so a
-       * restart inside the throttle window would silently lose it.
+       * Required for state that has no hot table (wave plans and review
+       * lineages): a hot-only save would ACK the mutation while leaving it out
+       * of the canonical blob, so a restart inside the throttle window would
+       * silently lose it.
        */
       forceFull?: boolean;
     },
@@ -2125,5 +2188,4 @@ export class InMemoryA2ABroker {
   }
 
 }
-
 

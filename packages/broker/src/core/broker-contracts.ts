@@ -14,6 +14,7 @@ import type { WorkerRuntimeRepository } from "./worker-repository.js";
 import type { WorkerCapabilityCardRepository } from "./worker-capability-card.js";
 import type { BrokerSnapshot } from "./store.js";
 import type { TaskRecord, TaskStatus } from "./types.js";
+import type { ReviewLineageRolloutMode } from "./review-lineage-store.js";
 
 // Type-only contract bundle for InMemoryA2ABroker. Keep runtime broker logic in
 // broker.ts; this module only hosts exported contracts/constants whose existing
@@ -129,6 +130,12 @@ export interface InMemoryA2ABrokerOptions {
    * Definition-of-Ready lint mode for patch/implementation task creation. Default warn keeps rollout non-breaking; enforce fails underspecified new tasks closed.
    */
   taskReadinessMode?: TaskReadinessMode;
+  /**
+   * Bounded PR review lifecycle telemetry posture (#1518 Phase 3b).
+   * "off" (default) makes record calls no-ops; "record" persists and projects
+   * explicit lineage events without affecting task completion or finalizers.
+   */
+  reviewLineageMode?: ReviewLineageRolloutMode;
   /**
    * Declarative worker-class policy document (#1355 G1), pre-validated by
    * validateBrokerPolicyDocument. Evaluated at task create-time and claim-time;

@@ -217,6 +217,29 @@ Reviewer input should be limited to the diff, the original task specification, a
 
 Use this contract as guidance for medium+ tasks when declared scope spans multiple broker packages, touches a completion gate or validator, or changes safety-sensitive lifecycle behavior. Hard auto-enforcement of the medium+ threshold is deferred.
 
+### Bounded review lineage record mode (#1518 Phase 3b)
+
+The broker can persist bounded PR review lineage telemetry when
+`A2A_REVIEW_LINEAGE_MODE=record`. The default is `off`; `enforce` is rejected
+at startup. Record mode is observational and does not change task completion,
+retry, approval, or finalizer decisions.
+
+Operator-safe projections are read-only:
+
+- `GET /review-lineages` lists projected state and metrics.
+- `GET /review-lineages/{lineageId}` returns one projection.
+
+The projection includes lifecycle state, counters, terminal reason, current
+and original head SHAs, and open blocking findings. It omits the frozen
+contract, full ledger, raw receipts, and diff hashes. Only authenticated
+`hub`, `operator`, `analyst`, and `researcher` roles may read these routes when
+requester identity enforcement is enabled.
+
+Phase 3b does not connect task/review execution to lineage events and exposes
+no HTTP mutation route. The broker-internal record API is intentionally a
+dead path until a later Phase 3c names and reviews the event source. Setting
+record mode alone therefore does not create records.
+
 ## Approval records
 
 Approval-sensitive execution records live under `fixtures/approvals/` and are validated by `npm run check:approval-records`. New approval records must use `approverRole: "operator"` and must not include personal-channel or raw-secret fields.
