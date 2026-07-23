@@ -1,10 +1,11 @@
 /**
  * Operator projection and explicit authenticated cancel source for bounded PR
- * review lineages (#1518 Phases 3b/14).
+ * review lineages (#1518 Phases 3b/14/15).
  *
  * This surface never exposes the frozen contract, raw receipts, diff hashes,
- * or the full finding ledger. The only mutation is the operator-owned,
- * exact-field cancellation decision; generic task cancellation is unrelated.
+ * or the full finding ledger. Mutations are limited to operator-owned,
+ * exact-field contract freeze and cancellation decisions; generic task
+ * creation/cancellation is unrelated.
  */
 
 import type { IncomingMessage, ServerResponse } from "node:http";
@@ -62,6 +63,59 @@ export async function handleReviewLineageRoutesIfMatched(
       ctx.res,
       200,
       { kind: "review-lineages", count: lineages.length, lineages },
+      { "cache-control": "no-store" },
+    );
+    return true;
+  }
+  if (ctx.method === "POST" && ctx.path === "/review-lineages") {
+    // The normative lifecycle contract permits only an operator to start a
+    // fresh lineage. This gate is unconditional even for legacy/test configs
+    // that relax requester enforcement on older routes.
+    assertRequesterHasRole(
+      ctx.requesterIdentity,
+      ["operator"],
+      "review-lineage.create",
+    );
+    const body = await readJson(ctx.req);
+    if (!body) {
+      throw new BrokerError("bad_request", "request body is required");
+    }
+    let result;
+    try {
+      result = await ctx.broker.recordOperatorReviewLineageCreate(
+        body,
+        ctx.requesterIdentity!.id,
+      );
+    } catch (error) {
+      if (
+        error instanceof SourceCarrierValidationError
+        || error instanceof ObservationValidationError
+      ) {
+        throw new BrokerError("bad_request", error.message);
+      }
+      throw error;
+    }
+    if (!result) {
+      throw new BrokerError(
+        "invalid_transition",
+        "review lineage recording is disabled",
+      );
+    }
+    if (
+      result.status === "missing_lineage"
+      || result.status === "subject_conflict"
+      || result.status === "transition_rejected"
+      || result.status === "idempotency_conflict"
+    ) {
+      throw new BrokerError(
+        "invalid_transition",
+        `review lineage create rejected: ${result.status}`,
+      );
+    }
+    sendJson(
+      ctx.res,
+      result.status === "replayed" ? 200 : 201,
+      { result },
       { "cache-control": "no-store" },
     );
     return true;

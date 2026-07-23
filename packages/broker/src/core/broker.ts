@@ -147,6 +147,12 @@ import {
 import {
   admitReviewLineageProducerFact as admitProducerFact,
 } from "./review-lineage-producer-admission.js";
+import type {
+  AuthorizedReviewLineageSourceV1,
+} from "../review-lifecycle/authorized-source.js";
+import {
+  authorizeOperatorReviewLineageCreate,
+} from "../review-lifecycle/lineage-create-source.js";
 import {
   authorizeOperatorReviewLineageCancel,
 } from "../review-lifecycle/operator-cancel-source.js";
@@ -520,10 +526,10 @@ export class InMemoryA2ABroker {
     return this.wavePlans.list();
   }
 
-  // --- Bounded PR review lineage telemetry (#1518 Phases 3b/10/12/14) -------
-  // Generic task completion/retry/finalizer paths remain detached. Phase 14
-  // adds only an explicit authenticated operator-cancel source whose durable
-  // source row and normalized Phase 8 command share one store transaction.
+  // --- Bounded PR review lineage telemetry (#1518 Phases 3b/10/12/14/15) ----
+  // Generic task completion/retry/finalizer paths remain detached. Phases
+  // 14-15 attach only explicit operator-owned cancel and create sources whose
+  // durable source row and normalized Phase 8 command share one transaction.
 
   createReviewLineage(
     input: CreateRecordedReviewLineageInput,
@@ -584,25 +590,18 @@ export class InMemoryA2ABroker {
     });
   }
 
-  async recordOperatorReviewLineageCancel(
-    lineageId: string,
-    input: unknown,
-    authenticatedOperatorId: string,
-  ): Promise<ReviewLineageObservationApplicationResult | undefined> {
-    // Default off mode remains inert before request validation, trusted
-    // context construction, or store access.
-    if (this.reviewLineageMode === "off") return undefined;
+  private assertAuthorizedReviewLineageSourceStore(): void {
     if (
       !this.stateStore?.applyAuthorizedReviewLineageSource
       || !this.stateStore.listCanonicalReviewLineages
     ) {
       throw new Error("review_lineage_authorized_source_store_unavailable");
     }
-    const authorized = authorizeOperatorReviewLineageCancel(
-      lineageId,
-      input,
-      authenticatedOperatorId,
-    );
+  }
+
+  private async commitAuthorizedReviewLineageSource(
+    authorized: AuthorizedReviewLineageSourceV1,
+  ): Promise<ReviewLineageObservationApplicationResult | undefined> {
     return admitProducerFact(authorized.fact, {
       mode: this.reviewLineageMode,
       apply: async (command) => {
@@ -625,6 +624,40 @@ export class InMemoryA2ABroker {
         return result;
       },
     });
+  }
+
+  async recordOperatorReviewLineageCreate(
+    input: unknown,
+    authenticatedOperatorId: string,
+  ): Promise<ReviewLineageObservationApplicationResult | undefined> {
+    // Default off mode remains inert before request validation, trusted
+    // context construction, or store access.
+    if (this.reviewLineageMode === "off") return undefined;
+    this.assertAuthorizedReviewLineageSourceStore();
+    return this.commitAuthorizedReviewLineageSource(
+      authorizeOperatorReviewLineageCreate(
+        input,
+        authenticatedOperatorId,
+      ),
+    );
+  }
+
+  async recordOperatorReviewLineageCancel(
+    lineageId: string,
+    input: unknown,
+    authenticatedOperatorId: string,
+  ): Promise<ReviewLineageObservationApplicationResult | undefined> {
+    // Default off mode remains inert before request validation, trusted
+    // context construction, or store access.
+    if (this.reviewLineageMode === "off") return undefined;
+    this.assertAuthorizedReviewLineageSourceStore();
+    return this.commitAuthorizedReviewLineageSource(
+      authorizeOperatorReviewLineageCancel(
+        lineageId,
+        input,
+        authenticatedOperatorId,
+      ),
+    );
   }
 
   getReviewLineage(

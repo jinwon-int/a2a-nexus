@@ -263,20 +263,24 @@ contract, full ledger, raw receipts, and diff hashes. Only authenticated
 requester identity enforcement is enabled.
 
 Phase 3b itself did not connect task/review execution to lineage events.
-Phase 14 later adds one separately reviewed mutation source only:
+Phases 14–15 later add two separately reviewed mutation sources:
 
+- `POST /review-lineages`
 - `POST /review-lineages/{lineageId}/operator-cancel`
 
-It requires the exact `operator` role and an immutable decision reference,
+Both require the exact `operator` role even when legacy requester enforcement
+is relaxed. Creation accepts an immutable dispatch reference, observation
+time, exact subject binding, complete frozen intent contract, and bounded
+lineage budget. Cancellation accepts an immutable decision reference,
 observation time, exact subject binding, and bounded detail. The server fixes
-the source authority and derives identities; the body cannot assert them.
-The authoritative source event, lineage transition, and idempotency outcome
-commit in one SQLite transaction. Generic task cancellation remains unrelated.
-The other four observation kinds still have no automatic owner, so current
-coverage is `1/5`.
+each source authority and derives identities; neither body can assert them.
+The authoritative source event, canonical lineage command, and idempotency
+outcome commit in one SQLite transaction. Generic task creation/cancellation
+remains unrelated. Review report, correction generation, and reviewer
+replacement still have no automatic owner, so current coverage is `2/5`.
 
-The default remains `off`, and `enforce` is still rejected. Adding the route to
-source does not approve live schema execution, record-mode activation,
+The default remains `off`, and `enforce` is still rejected. Adding these routes
+to source does not approve live schema execution, record-mode activation,
 deployment, restart, canary, or real-lineage collection.
 
 ### Lossless review-lineage observation contract (#1518 Phase 8)

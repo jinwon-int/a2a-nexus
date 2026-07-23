@@ -199,4 +199,28 @@
 - [x] Automatic source coverage is exactly `1/5`
 - [ ] Live schema execution, record-mode activation, deploy/restart/canary, and
       real-lineage collection receive separate explicit approval
-- [ ] Remaining four source kinds receive separate owner/durability reviews
+- [x] Second source kind receives a separate owner/durability review
+- [ ] Remaining three source kinds receive separate owner/durability reviews
+
+## N. Second authenticated owner — lineage create (Phase 15)
+
+- [x] Normative new-lineage owner is an exact-role operator
+- [x] `POST /review-lineages` rejects non-operators before authorization
+- [x] Request cannot select source/authority/namespace/issuer/derived identity
+- [x] Contract, budget, lineage ID, and exact binding use the canonical parser
+- [x] Shared attached-source metadata admits only closed create/cancel tuples
+- [x] Cross-kind source/authority/command swaps fail closed
+- [x] Schema 13 and the existing source table are reused unchanged
+- [x] Source event, canonical lineage creation, and ledger share one transaction
+- [x] Worker-thread mode uses one composite command and post-ACK projection
+- [x] Restart replay creates no duplicate lineage
+- [x] Changed evidence under one dispatch reference conflicts without overwrite
+- [x] A different source for one lineage records/replays subject conflict
+- [x] Forced source and ledger failures roll back every coupled write
+- [x] Source table excludes raw dispatch reference, request, contract, operator
+      identity, prompts, credentials, provider output, and production payloads
+- [x] Existing operator-cancel and task lifecycle semantics remain unchanged
+- [x] Default mode remains `off`; `enforce` remains unsupported
+- [x] Automatic source coverage is exactly `2/5`
+- [ ] Record-mode activation, deploy/restart/canary, and real-lineage collection
+      receive separate explicit approval

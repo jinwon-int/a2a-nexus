@@ -140,12 +140,102 @@ test("GET review lineage routes fail closed for unknown ids and missing roles", 
 test("review lineage routes match exact path boundaries", async () => {
   const { route } = makeRouter();
 
-  assert.equal((await route("POST", "/review-lineages")).handled, false);
+  assert.equal(
+    (await route("POST", "/review-lineages/one/events")).handled,
+    false,
+  );
   assert.equal(
     (await route("GET", "/review-lineages/one/events")).handled,
     false,
   );
   assert.equal((await route("GET", "/review-lineagesX")).handled, false);
+});
+
+test("lineage-create route requires operator identity and returns durable replay", async () => {
+  const store = new SqliteBrokerStateStore(":memory:");
+  try {
+    const broker = new InMemoryA2ABroker(
+      store,
+      store.load(),
+      { reviewLineageMode: "record" },
+    );
+    const frozen = contract();
+    const diffHash = `sha256:${"c".repeat(64)}`;
+
+    async function route(identity: unknown, body: unknown) {
+      const res = new CapturingResponse();
+      const handled = await handleReviewLineageRoutesIfMatched({
+        method: "POST",
+        path: "/review-lineages",
+        req: Readable.from([JSON.stringify(body)]) as IncomingMessage,
+        res: res as unknown as ServerResponse,
+        broker,
+        enforceRequesterIdentity: false,
+        requesterIdentity: identity as never,
+      });
+      return {
+        handled,
+        res,
+        json: res.body ? JSON.parse(res.body) : undefined,
+      };
+    }
+    const request = {
+      dispatchRef: "lineage-dispatch:route:1",
+      observedAt: frozen.createdAt,
+      binding: {
+        intentHash: frozen.intentHash,
+        headSha: frozen.headSha,
+        diffHash,
+      },
+      contract: frozen,
+      budget: budget(),
+    };
+
+    await assert.rejects(
+      route({ id: "hub-a", role: "hub" }, request),
+      (error) =>
+        error instanceof BrokerError
+        && error.code === "unauthorized",
+    );
+    const applied = await route(
+      { id: "operator-a", role: "operator" },
+      request,
+    );
+    assert.equal(applied.handled, true);
+    assert.equal(applied.res.statusCode, 201);
+    assert.equal(applied.json.result.status, "applied");
+    assert.equal(
+      broker.getReviewLineage(frozen.lineageId)?.state,
+      "reviewing_initial",
+    );
+
+    const replay = await route(
+      { id: "operator-a", role: "operator" },
+      request,
+    );
+    assert.equal(replay.res.statusCode, 200);
+    assert.equal(replay.json.result.status, "replayed");
+    await assert.rejects(
+      route(
+        { id: "operator-a", role: "operator" },
+        { ...request, authorityKind: "lineage_dispatcher" },
+      ),
+      (error) =>
+        error instanceof BrokerError
+        && error.code === "bad_request",
+    );
+    await assert.rejects(
+      route(
+        { id: "operator-a", role: "operator" },
+        { ...request, dispatchRef: "lineage-dispatch:route:2" },
+      ),
+      (error) =>
+        error instanceof BrokerError
+        && error.code === "invalid_transition",
+    );
+  } finally {
+    store.close();
+  }
 });
 
 test("operator-cancel route requires operator identity and returns durable replay", async () => {

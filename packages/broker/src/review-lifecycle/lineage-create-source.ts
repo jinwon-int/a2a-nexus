@@ -1,10 +1,10 @@
 /**
- * Authenticated operator-cancel source adapter for bounded review lineages
- * (#1518 Phase 14).
+ * Authenticated lineage-create source adapter for bounded review lineages
+ * (#1518 Phase 15).
  *
- * This is the first runtime-owned observation kind. The request remains
- * untrusted data; only the operator-gated broker call site may supply the
- * issuer identity and create the process-local trusted context.
+ * The normative lifecycle contract permits only an operator to start a new
+ * lineage. The request remains untrusted data; trusted broker code assigns the
+ * semantic lineage-dispatcher authority after the route's exact-role gate.
  */
 
 import {
@@ -18,26 +18,32 @@ import {
   createReviewLineageTrustedSourceContext,
   type ReviewLineageSourceCarrierV1,
 } from "./source-carrier.js";
+import type {
+  IntentContractV1,
+  ReviewLineageBudgetV1,
+} from "./types.js";
 
-export const REVIEW_LINEAGE_OPERATOR_CANCEL_SOURCE_NAMESPACE =
-  "broker-http:review-lineage-operator-cancel:v1" as const;
+export const REVIEW_LINEAGE_CREATE_SOURCE_NAMESPACE =
+  "broker-http:review-lineage-create:v1" as const;
 
-export interface OperatorReviewLineageCancelRequestV1 {
-  decisionRef: string;
+export interface OperatorReviewLineageCreateRequestV1 {
+  dispatchRef: string;
   observedAt: string;
   binding: {
     intentHash: string;
     headSha: string;
     diffHash: string;
   };
-  detail: string;
+  contract: IntentContractV1;
+  budget: ReviewLineageBudgetV1;
 }
 
 const REQUEST_FIELDS = new Set([
-  "decisionRef",
+  "dispatchRef",
   "observedAt",
   "binding",
-  "detail",
+  "contract",
+  "budget",
 ]);
 
 function requestObject(input: unknown): Record<string, unknown> {
@@ -65,41 +71,42 @@ function requestObject(input: unknown): Record<string, unknown> {
 }
 
 /**
- * Bind one exact operator request to the Phase 13 carrier/context contract.
- *
- * The source namespace, source kind, and authority are server constants.
- * Neither producer/source-event identity nor authority can be supplied by the
- * request body.
+ * Bind one operator-owned contract freeze to the existing carrier/fact/parser
+ * chain. No authority or derived identity comes from request JSON.
  */
-export function authorizeOperatorReviewLineageCancel(
-  lineageId: string,
+export function authorizeOperatorReviewLineageCreate(
   input: unknown,
   authenticatedOperatorId: string,
 ): AuthorizedReviewLineageSourceV1 {
   const request = requestObject(input);
+  const contract =
+    request.contract as OperatorReviewLineageCreateRequestV1["contract"];
   const carrier: ReviewLineageSourceCarrierV1 = {
     kind: REVIEW_LINEAGE_SOURCE_CARRIER_KIND,
-    sourceKind: "lineage_cancel_decided",
-    sourceEventRef: request.decisionRef as string,
-    lineageId,
+    sourceKind: "lineage_contract_frozen",
+    sourceEventRef: request.dispatchRef as string,
+    lineageId: contract?.lineageId,
     observedAt: request.observedAt as string,
-    binding: request.binding as OperatorReviewLineageCancelRequestV1["binding"],
+    binding: request.binding as OperatorReviewLineageCreateRequestV1["binding"],
     observation: {
-      kind: "operator_cancel",
-      detail: request.detail as string,
+      kind: "lineage_create",
+      mode: "record",
+      contract,
+      budget:
+        request.budget as OperatorReviewLineageCreateRequestV1["budget"],
     },
   };
   const context = createReviewLineageTrustedSourceContext({
-    authorityKind: "operator",
+    authorityKind: "lineage_dispatcher",
     issuerId: authenticatedOperatorId,
-    sourceNamespace: REVIEW_LINEAGE_OPERATOR_CANCEL_SOURCE_NAMESPACE,
+    sourceNamespace: REVIEW_LINEAGE_CREATE_SOURCE_NAMESPACE,
   });
   const fact = authorizeReviewLineageSourceCarrier(carrier, context);
   return projectAuthorizedReviewLineageSource(
     fact,
     {
-      sourceKind: "lineage_cancel_decided",
-      authorityKind: "operator",
+      sourceKind: "lineage_contract_frozen",
+      authorityKind: "lineage_dispatcher",
     },
     carrier.sourceEventRef,
   );

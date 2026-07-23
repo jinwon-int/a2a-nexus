@@ -317,11 +317,42 @@ store, queue, schema, outbox, migration, or live action.
 - [x] Report automatic source coverage as exactly `1/5`.
 - [ ] Approve live schema execution, record-mode activation, deployment,
       restart, canary, or real-lineage collection separately.
-- [ ] Attach the remaining four source kinds only after each proves an actual
+- [x] Attach the second source kind (`lineage_create`, Phase 15) after proving
+      an actual owner and the same atomic durability.
+- [ ] Attach the remaining three source kinds only after each proves an actual
       owner and the same atomic or ACK-replayed durability.
 
 Phase 14 is source and temporary-database validation only. It does not approve
 any live runtime or data action.
+
+## Phase 15: Second authenticated owner — lineage create
+
+- [x] Ground new-lineage ownership in the normative exact `operator` role.
+- [x] Add exact `POST /review-lineages` contract-freeze input without caller
+      authority or identity fields.
+- [x] Fix `lineage_contract_frozen`, `lineage_dispatcher`, namespace, and
+      authenticated issuer in trusted broker code.
+- [x] Reuse Phase 13 authorization, Phase 12 admission, and the Phase 8 parser.
+- [x] Move minimized attached-source metadata to a neutral shared module.
+- [x] Admit only two closed source/authority/command tuples; reject cross-kind
+      swaps and every still-unattached kind.
+- [x] Reuse schema 13 and its existing source-event table without a migration.
+- [x] Commit source event, canonical lineage creation, and observation ledger
+      in one `BEGIN IMMEDIATE`.
+- [x] Preserve one worker-thread command, one ACK, and post-ACK projection.
+- [x] Prove restart replay, changed-payload conflict, different-source
+      duplicate-lineage conflict, and source/ledger rollback.
+- [x] Prove off-mode inertness and non-operator rejection before authorization.
+- [x] Keep task creation/completion/cancel/retry/finalizer paths detached.
+- [x] Store no raw dispatch reference, request, contract, or operator identity
+      in the source-event table.
+- [x] Report automatic source coverage as exactly `2/5`.
+- [ ] Approve record-mode activation, deployment, restart, canary, or real
+      lineage collection separately.
+
+Phase 15 is source and temporary-database validation only. The canonical
+lineage table necessarily owns the frozen contract; the minimized source-event
+table does not duplicate it.
 
 ## Validation commands (all phases as applicable)
 
