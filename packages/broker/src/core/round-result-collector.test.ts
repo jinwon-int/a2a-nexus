@@ -10,12 +10,8 @@ import {
   renderCompactEvidenceSummary,
   buildRoundCompletePayload,
   type RoundManifest,
-  type RoundManifestLane,
-  type RoundLaneState,
-  type ResultLane,
-  type RoundResultCollectorOutput,
 } from "./round-result-collector.js";
-import type { TaskRecord, TaskStatus, TaskResult } from "./types.js";
+import type { TaskRecord, TaskResult } from "./types.js";
 
 // ---------------------------------------------------------------------------
 // Helpers

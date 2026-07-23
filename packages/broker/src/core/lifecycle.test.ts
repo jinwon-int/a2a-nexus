@@ -2,7 +2,6 @@ import { describe, it } from "node:test";
 import assert from "node:assert/strict";
 
 import { InMemoryA2ABroker } from "./broker.js";
-import type { TaskTombstone } from "./types.js";
 
 function makeBroker() {
   return new InMemoryA2ABroker();
@@ -193,15 +192,9 @@ describe("stale task detection", () => {
     const task = createTask(broker);
     broker.claimTask(task.id, "worker-1");
 
-    const nowMs = Date.now() + 300_000;
     // Heartbeat at "current" time
     broker.heartbeatTask(task.id, "worker-1");
 
-    const stale = broker.listStaleTasks({ staleAfterMs: 120_000, nowMs });
-    // The heartbeat was set before nowMs, but nowMs is 5 min in future
-    // heartbeat was just set, so staleness should be < 120s relative to nowMs
-    // Actually heartbeat was set at real now, which is 5 min before nowMs
-    // So it IS stale relative to nowMs. Let's use a closer nowMs.
     const recentMs = Date.now() + 10_000; // 10s later
     const notStale = broker.listStaleTasks({ staleAfterMs: 120_000, nowMs: recentMs });
     assert.equal(notStale.length, 0);

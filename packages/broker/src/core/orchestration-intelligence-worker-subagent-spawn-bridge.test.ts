@@ -5,7 +5,6 @@ import { buildA2AWorkerSelfAssessmentCapacity } from "./worker-self-assessment-c
 import { buildA2AWorkerSubagentOrchestrationPolicy } from "a2a-attestation";
 import {
   buildA2AWorkerSubagentPlannerHandoff,
-  type A2AWorkerSubagentPlannerHandoffPacket,
 } from "./worker-subagent-planner-handoff.js";
 import { buildA2AWorkerSubagentSpawnAuthorizationRequest } from "./worker-subagent-spawn-authorization-request.js";
 import {

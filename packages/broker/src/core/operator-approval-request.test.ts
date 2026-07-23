@@ -33,14 +33,12 @@ import {
 } from "./complexity-finalizer-approval-envelope-draft.js";
 import {
   buildComplexityExecutionPlanDraft,
-  type ComplexityExecutionPlanDraftPacket,
 } from "./complexity-execution-plan-draft.js";
 import { buildComplexityExecutionPlanPreflightSeal } from "./complexity-execution-plan-preflight-seal.js";
 import {
   buildOperatorApprovalRequestFromPreflightSeal,
   renderOperatorApprovalRequestMarkdown,
   type OperatorApprovalRequestPacket,
-  type OperatorApprovalRequestState,
 } from "./operator-approval-request.js";
 
 // ---------------------------------------------------------------------------

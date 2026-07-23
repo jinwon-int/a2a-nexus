@@ -9,7 +9,6 @@
  */
 
 import { randomUUID } from "node:crypto";
-import type { WakeFailureCode } from "./wake-audit-types.js";
 
 // ---------------------------------------------------------------------------
 // Scenario IDs

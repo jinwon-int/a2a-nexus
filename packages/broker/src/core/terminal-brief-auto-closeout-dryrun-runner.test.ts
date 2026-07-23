@@ -6,9 +6,8 @@ import {
   extractAutoCloseoutDryRunRunnerInput,
   renderAutoCloseoutDryRunRunnerMarkdown,
   type TerminalBriefAutoCloseoutDryRunRunnerInput,
-  type TerminalBriefAutoCloseoutDryRunRunnerOptions,
 } from "./terminal-brief-auto-closeout-dryrun-runner.js";
-import type { AutoCloseoutPolicyMode, TerminalBriefAutoCloseoutPlannerInput } from "./terminal-brief-auto-closeout-planner.js";
+import type { AutoCloseoutPolicyMode } from "./terminal-brief-auto-closeout-planner.js";
 import type { TerminalTaskOutboxEvent, TerminalTaskStatus } from "./terminal-event-outbox.js";
 
 // ---------------------------------------------------------------------------

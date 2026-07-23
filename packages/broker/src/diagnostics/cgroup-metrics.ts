@@ -131,7 +131,6 @@ const CGROUP_PSI_CACHE_TTL_MS = 3000;
 let _cachedCgroupCpu: CgroupCpuSnapshot | null = null;
 let _cachedCgroupCpuAt = 0;
 let _cachedCgroupLimit: CgroupCpuLimit | null = null;
-let _cachedCgroupLimitAt = 0;
 let _cachedPsi: PressureStallSnapshot | null = null;
 let _cachedPsiAt = 0;
 
@@ -167,7 +166,6 @@ export function readCgroupCpuSnapshot(): { stats: CgroupCpuSnapshot | null; limi
   _cachedCgroupCpu = stats;
   _cachedCgroupCpuAt = now;
   _cachedCgroupLimit = limit;
-  _cachedCgroupLimitAt = now;
   return { stats, limit, delta };
 }
 

@@ -505,8 +505,8 @@ describe("cursor replay", () => {
 
   it("filters by sessionKey", () => {
     const mgr = createManager();
-    const a = mgr.requestExecution(baseInput({ sessionKey: "s1" }));
-    const b = mgr.requestExecution(baseInput({ sessionKey: "s2" }));
+    mgr.requestExecution(baseInput({ sessionKey: "s1" }));
+    mgr.requestExecution(baseInput({ sessionKey: "s2" }));
     expect(mgr.subscribe({ sessionKey: "s1" })).toHaveLength(1);
     expect(mgr.subscribe({ sessionKey: "s2" })).toHaveLength(1);
   });
@@ -774,7 +774,7 @@ describe("multi-run scenarios", () => {
     const input = baseInput({ sessionKey: "s1" });
     const r1 = mgr.requestExecution(input);
     mgr.failExecution(r1.runId, "runtime_error");
-    const r2 = mgr.retryExecution(r1.runId);
+    mgr.retryExecution(r1.runId);
 
     expect(mgr.getRunsForSession("s1")).toHaveLength(2);
   });

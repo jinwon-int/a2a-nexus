@@ -11,7 +11,7 @@ import {
   ConferenceFanIn,
   formatConferenceComment,
 } from "./conference-fan-in.js";
-import type { Contribution, ConferenceConfig, ConferenceVerdict } from "./conference-fan-in.js";
+import type { Contribution, ConferenceConfig } from "./conference-fan-in.js";
 
 // ---------------------------------------------------------------------------
 // Helpers

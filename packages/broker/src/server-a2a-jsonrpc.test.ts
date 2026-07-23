@@ -1,11 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { mkdtempSync } from "node:fs";
-import { tmpdir } from "node:os";
-import { join } from "node:path";
 import { startTestServer, jsonHeaders, registerTestWorker, readSseEventsUntil, createInMemoryStateStore } from "./server-test-helpers.js";
 import { InMemoryA2ABroker } from "./core/broker.js";
-import { emptySnapshot } from "./core/store.js";
 
 test("server exposes a public agent card on the well-known path", async () => {
   const server = await startTestServer({

@@ -3,8 +3,6 @@ import test from "node:test";
 
 import {
   buildBrokerCleanupPlan,
-  type BrokerCleanupPlan,
-  type BrokerCleanupTablePlan,
 } from "./broker-cleanup.js";
 import type { AuditEvent } from "./types.js";
 import { SqliteBrokerStateStore, emptySnapshot } from "./store.js";

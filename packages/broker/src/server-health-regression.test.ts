@@ -467,7 +467,7 @@ test("/health p95/p99 regression with minimal DB (empty hot tables)", async (t) 
       assert.equal(body.auditDiagnostics.total, 0);
     }
 
-    const { p50, p95, p99 } = computePercentiles(durationsMs);
+    const { p50, p99 } = computePercentiles(durationsMs);
     const max = Math.max(...durationsMs);
     const avg = durationsMs.reduce((a, b) => a + b, 0) / durationsMs.length;
 
@@ -549,11 +549,12 @@ test("hot-table growth projection appears in health response", async () => {
     assert.equal(body2.hotTableGrowth.kind, "broker.hot-table-growth.projection");
     // With prior metrics, tables should include growth rate info.
     if (body2.hotTableGrowth.hasPrior) {
-      const hasGrowthRate = body2.hotTableGrowth.tables.some(
-        (t: { growthRate: number | null }) => t.growthRate !== null,
+      assert.ok(
+        body2.hotTableGrowth.tables.every(
+          (t: { growthRate?: number | null }) => "growthRate" in t,
+        ),
+        "prior metrics tables should expose growthRate",
       );
-      // Growth rate may be zero if the DB is static, but the field should exist.
-      assert.ok(true, "prior metrics available for growth rate computation");
     }
   } finally {
     runtime.stopStaleReaper();

@@ -5,7 +5,6 @@ import {
   type TerminalOutboxBacklogSignal,
   type TerminalOutboxBacklogSnapshot,
   type TerminalOutboxBacklogThresholds,
-  type TerminalOutboxBacklogRiskResult,
 } from "./terminal-outbox-backlog-risk.js";
 
 const TERMINAL_STATUSES = new Set<TaskStatus>(["succeeded", "failed", "canceled"]);

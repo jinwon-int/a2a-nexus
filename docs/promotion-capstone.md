@@ -80,7 +80,7 @@ The named `promotion-capstone` CI lane runs a source-only consistency check over
 
 | Package | Coverage floor on live main | `noUnusedLocals` | Consistency evidence |
 | --- | --- | --- | --- |
-| `packages/broker` | #1506 Enforced per-module line floors | Pending | `coverage:baseline`, reporter + reporter test, package-CI command/metadata |
+| `packages/broker` | #1506 Enforced per-module line floors | Enabled | `coverage:baseline`, reporter + reporter test, package-CI command/metadata |
 | `packages/docker-runner` | #1576 Enforced per-module line floors | Enabled | `coverage:baseline`, reporter + reporter test, package-CI command/metadata |
 | `packages/openclaw-plugin-a2a` | #1506 Enforced per-module line floors | Enabled | `coverage:baseline`, reporter + reporter test, package-CI command/metadata |
 
@@ -92,7 +92,7 @@ The plugin reporter now enforces the same fail-closed contract over deterministi
 
 The #1506 async-safety approval is now executable in `check:source-quality-floors`: a type-aware zero floor (`floating-promises=0`) covers production source in all five TypeScript workspace packages (`attestation`, `broker`, `docker-runner`, `openclaw-plugin-a2a`, and `policy-referee`). Tests, declarations, generated output, and archives are excluded. Promise-valued expression statements must be awaited, returned, assigned, or rejection-handled; an explicit `void` is reserved for reviewed fire-and-forget work. The manifest pins both the zero floor and the exact package scope so either count or scope drift fails closed. Package-CI parity analyzes only its selected package while the root gate checks the full workspace.
 
-Remaining #1506 work is explicit: broker `noUnusedLocals`. This capstone consistency slice references #1506 and does not close it.
+The final #1506 static-quality ratchet is now enabled: broker `noUnusedLocals` is enforced alongside the workspace async-safety zero floor. The capstone contract fails closed if any covered package disables that compiler check.
 
 ## Named CI lane
 

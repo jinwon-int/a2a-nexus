@@ -7,7 +7,6 @@ import {
   DEFAULT_SINGLE_TABLE_CRITICAL_ROWS,
   DEFAULT_AUDIT_RUNTIME_LIMIT_WARNING_RATIO,
   DEFAULT_HEAP_BUDGET_REDUCTION_FACTOR,
-  DEFAULT_HEAP_BUDGET_MINIMUM_FRACTION,
 } from "./hot-table-growth.js";
 import type { BrokerHotTableLoadMetrics, BrokerHotTableRuntimeLoadLimits } from "./store.js";
 

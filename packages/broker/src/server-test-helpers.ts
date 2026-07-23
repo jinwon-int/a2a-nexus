@@ -10,7 +10,6 @@
  * file. Add a new per-surface file when none fits; keep files under ~2,500
  * lines so parallel PRs stop colliding on a shared append point.
  */
-import test from "node:test";
 import assert from "node:assert/strict";
 import { once } from "node:events";
 import { createBrokerServer, type BrokerServerOptions } from "./server.js";

@@ -6,7 +6,7 @@ import { describe, it, beforeEach } from "node:test";
 import assert from "node:assert/strict";
 
 import { DeliveryManager, DeliveryError } from "./delivery-lifecycle.js";
-import type { DeliveryArtifact, DeliveryEvent } from "./delivery-lifecycle-types.js";
+import type { DeliveryArtifact } from "./delivery-lifecycle-types.js";
 
 // ---------------------------------------------------------------------------
 // Helpers

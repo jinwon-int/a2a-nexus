@@ -10,13 +10,11 @@ import type {
   A2AExchangeMessageRecord,
   A2AExchangeState,
   ChangeProposal,
-  GoalRecord,
   TaskRecord,
   TaskTombstone,
   ValidationResult,
   WorkerRecord,
 } from "./types.js";
-import type { CrossBrokerTerminalBriefProjection } from "./cross-broker-terminal-brief.js";
 import { isHeartbeatAuditEvent } from "./broker-retention-selectors.js";
 import {
   buildHotEntityHintCoverage,
@@ -47,7 +45,6 @@ import {
   DEFAULT_TERMINAL_TASK_OUTBOX_RETENTION,
   type TerminalTaskOutboxEvent,
 } from "./terminal-event-outbox.js";
-import type { TaskPushNotificationConfig } from "../a2a/push-notification-config.js";
 import {
   CURRENT_BROKER_STATE_VERSION as CURRENT_BROKER_STATE_VERSION_VALUE,
   DEFAULT_BROKER_STATE_MAX_BYTES as DEFAULT_BROKER_STATE_MAX_BYTES_VALUE,
@@ -59,7 +56,6 @@ import type {
   BrokerSnapshot,
   BrokerStateSaveHints,
   BrokerStateStore,
-  JsonFileBrokerStateStoreOptions,
   SqliteBrokerLoadSource,
   SqliteBrokerStateStoreOptions,
 } from "./store-contracts.js";
@@ -90,38 +86,21 @@ import type {
   BrokerHotTerminalOutboxDiagnostics,
 } from "./hot-diagnostics.js";
 import {
-  partyRefSchema,
-  workspaceRefSchema,
-  exchangeViaObjectSchema,
-  exchangeViaSchema,
   exchangeStateSchema,
   exchangeMessageSchema,
-  taskValidationPayloadSchema,
-  taskApplyPayloadSchema,
-  taskResultSchema,
-  taskErrorSchema,
-  taskCancellationSchema,
-  taskApprovalSchema,
-  taskApprovalOutcomeSchema,
-  taskPolicyContextSchema,
-  taskWakeSchema,
   taskSchema,
   proposalSchema,
   artifactSchema,
   validationSchema,
   auditEventSchema,
-  workerCapabilitiesSchema,
   workerSchema,
   tombstoneSchema,
   terminalOutboxEventSchema,
-  crossBrokerTerminalBriefProjectionSchema,
-  pushNotificationConfigSchema,
 } from "./store-schemas.js";
 import {
   JsonFileBrokerStateStore,
   emptySnapshot,
   parseSnapshotPayload,
-  serializeBrokerSnapshot,
 } from "./store-snapshot-io.js";
 import { fitSnapshotToBudget, SnapshotOverflowError } from "./store-snapshot-fit.js";
 

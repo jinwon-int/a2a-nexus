@@ -22,7 +22,6 @@ import { createHash } from "node:crypto";
 
 import type {
   CleanupCandidate,
-  CleanupCandidateActionability,
   CleanupCandidateClass,
   CleanupRiskClass,
 } from "./types.js";
@@ -117,21 +116,6 @@ export interface ResidueCleanupPlan {
 export interface ResidueCleanupPlannerOptions {
   now?: string;
 }
-
-// ---------------------------------------------------------------------------
-// Constants
-// ---------------------------------------------------------------------------
-
-const FORBIDDEN_LIVE_ACTIONS = [
-  "GitHub PR merge or issue close",
-  "live provider/Telegram/Hermes/OpenClaw send",
-  "terminal ACK/replay",
-  "Gateway/broker/worker/sidecar restart or deploy",
-  "broker DB mutation/prune/migration",
-  "historical replay",
-  "release/tag/npm publish",
-  "secret or credential movement",
-] as const;
 
 const POLICY_MODE_ACTION_KINDS: Record<ResidueCleanupPolicyMode, ResidueCleanupActionKind[]> = {
   off: ["noop"],

@@ -11,7 +11,6 @@ import {
   type ActionLedgerRowState,
   type ReconcilerLedgerState,
   type ReconcilerLedgerPlannerInput,
-  type ReconcilerLedgerPlannerOptions,
 } from "./terminal-brief-action-reconciler-ledger.js";
 import type { AutoCloseoutPolicyMode } from "./terminal-brief-auto-closeout-planner.js";
 import type { TerminalBriefAutoCloseoutDryRunRunnerInput } from "./terminal-brief-auto-closeout-dryrun-runner.js";

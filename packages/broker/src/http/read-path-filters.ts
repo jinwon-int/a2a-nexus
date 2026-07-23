@@ -1,4 +1,3 @@
-import { BrokerError } from "../core/broker.js";
 import { numberQueryParam, boundedLimitQueryParam } from "./request-params.js";
 // Re-exported so existing consumers (e.g. workers-read.ts) keep importing it
 // from here; the implementation now lives in the shared request-params module.

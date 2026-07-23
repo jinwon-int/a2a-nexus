@@ -15,7 +15,6 @@ import {
   cardSupportsTaskType,
   InMemorySchedulerCardLookup,
   type SchedulerDryRunTaskProfile,
-  type SchedulerDryRunResult,
 } from "./scheduler-dry-run.js";
 import {
   createWorkerCapabilityCard,

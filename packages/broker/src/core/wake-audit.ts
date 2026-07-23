@@ -9,8 +9,6 @@
  * - Retention-safe: domain state survives event eviction.
  */
 
-import { randomUUID } from "node:crypto";
-
 import { CursorEventBuffer } from "./event-buffer.js";
 import {
   type WakeEvent,
@@ -101,14 +99,12 @@ export class WakeAuditManager {
   private readonly sessions = new Map<string, WakeSessionState>();
   private readonly buffer: CursorEventBuffer<WakeEvent>;
   private readonly now: () => Date;
-  private readonly idFactory: () => string;
 
   constructor(options: WakeAuditManagerOptions = {}) {
     this.buffer = new CursorEventBuffer<WakeEvent>(
       options.maxEvents && options.maxEvents > 0 ? options.maxEvents : 500,
     );
     this.now = options.now ?? (() => new Date());
-    this.idFactory = options.idFactory ?? (() => randomUUID());
   }
 
   // -------------------------------------------------------------------------

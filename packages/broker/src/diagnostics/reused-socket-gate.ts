@@ -58,7 +58,6 @@ export function computeReusedSocketGate(inputs: {
     aggHttpReqEventToHandler,
     aggClientProbeToHttpReqEvent,
     aggSocketIdleBeforeHttpReqEvent,
-    aggSocketAgeBeforeHandler,
     freshSocketAge,
     reusedSocketAge,
     reusedSocketHttpReqEventToHandler,
@@ -67,14 +66,11 @@ export function computeReusedSocketGate(inputs: {
   } = inputs;
 
   const reusedIdleP99 = reusedSocketIdle?.p99Ms ?? null;
-  const reusedIdleP95 = reusedSocketIdle?.p95Ms ?? null;
   const eventToHandlerP99 = aggHttpReqEventToHandler?.p99Ms ?? null;
-  const eventToHandlerP95 = aggHttpReqEventToHandler?.p95Ms ?? null;
   const freshReqToHandlerP99 = freshHttpReqEventToHandler?.p99Ms ?? null;
   const freshConnectedToDataP99 = freshSocketConnectedToFirstData?.p99Ms ?? null;
   const freshDataToReqP99 = freshSocketFirstDataToReq?.p99Ms ?? null;
   const clientProbeToReqP99 = aggClientProbeToHttpReqEvent?.p99Ms ?? null;
-  const clientProbeToReqP95 = aggClientProbeToHttpReqEvent?.p95Ms ?? null;
   const globalIdleP99 = aggSocketIdleBeforeHttpReqEvent?.p99Ms ?? null;
   const freshAgeP99 = freshSocketAge?.p99Ms ?? null;
   const reusedAgeP99 = reusedSocketAge?.p99Ms ?? null;

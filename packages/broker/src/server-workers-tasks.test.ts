@@ -1,11 +1,8 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { mkdtempSync, writeFileSync } from "node:fs";
-import { tmpdir } from "node:os";
-import { join } from "node:path";
 import { createBrokerServer } from "./server.js";
 import { WorkerRegistrationResponse } from "./core/types.js";
-import { createInMemoryStateStore, startTestServer, jsonHeaders, registerTestWorker, withEnv, workerPayload } from "./server-test-helpers.js";
+import { createInMemoryStateStore, startTestServer, jsonHeaders, registerTestWorker } from "./server-test-helpers.js";
 
 test("GET /rounds/:id/status reports round completion progress (#629)", async () => {
   const server = await startTestServer({ enforceRequesterIdentity: false });

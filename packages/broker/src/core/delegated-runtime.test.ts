@@ -5,7 +5,6 @@ import type { CreateTaskRequest, TaskRecord, TaskResult, TaskError } from "./typ
 import {
   DelegatedRunRuntime,
   type BrokerTaskBridge,
-  type DelegatedRunState,
 } from "./delegated-runtime.js";
 
 // ---------------------------------------------------------------------------

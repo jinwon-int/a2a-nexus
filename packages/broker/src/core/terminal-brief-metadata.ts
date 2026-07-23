@@ -524,11 +524,6 @@ export function validateTerminalBriefMetadata(
     });
   }
 
-  // ---- brokerOfRecordId ----
-  const brokerOfRecordId = normalizeToken(input["brokerOfRecordId"]);
-  // brokerOfRecordId is recommended but not strictly required for every
-  // context. When present, we validate it.
-
   // ---- parentRoundTotal ----
   const parentRoundTotal = normalizePositiveInt(input["parentRoundTotal"]);
   if (parentRoundTotal === undefined) {

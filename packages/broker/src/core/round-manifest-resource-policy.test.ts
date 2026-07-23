@@ -27,7 +27,6 @@ import { describe, it } from "node:test";
 import assert from "node:assert/strict";
 import { readFileSync, readdirSync } from "node:fs";
 import { join } from "node:path";
-import { fileURLToPath } from "node:url";
 
 import {
   evaluateWorkerOnboarding,
@@ -40,13 +39,11 @@ import {
   buildRoundManifest,
   type WorkerRoundAssignment,
   type RoundManifestOptions,
-  type RoundManifest,
 } from "./round-manifest.js";
 
 import {
   collectRoundResults,
   type RoundManifest as CollectorManifest,
-  type RoundResultCollectorOutput,
 } from "./round-result-collector.js";
 
 import type { TaskRecord, TaskResult, TaskStatus } from "./types.js";

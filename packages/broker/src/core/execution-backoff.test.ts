@@ -10,10 +10,7 @@ import {
   normalizeBackoffConfig,
   getBackoffEntry,
   serializeBackoffSchedule,
-  DEFAULT_BACKOFF_CONFIG,
   PHASE_BACKOFF_CONFIGS,
-  type BackoffConfig,
-  type BackoffSchedule,
 } from "./execution-backoff.js";
 
 // ---------------------------------------------------------------------------

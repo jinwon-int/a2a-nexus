@@ -35,7 +35,7 @@ async function capstone() {
 }
 
 const packageContracts = [
-  { name: 'broker', dir: 'packages/broker', floor: 'enforced', noUnusedLocals: undefined },
+  { name: 'broker', dir: 'packages/broker', floor: 'enforced', noUnusedLocals: true },
   { name: 'docker-runner', dir: 'packages/docker-runner', floor: 'enforced', noUnusedLocals: true },
   { name: 'openclaw-plugin-a2a', dir: 'packages/openclaw-plugin-a2a', floor: 'enforced', noUnusedLocals: true },
 ];
@@ -63,8 +63,8 @@ function validQualityContract(name = 'docker-runner') {
         requiredFiles: ['scripts/coverage-baseline-report.mjs'],
       },
     },
-    noUnusedLocals: name === 'broker' ? undefined : true,
-    expectedNoUnusedLocals: name === 'broker' ? undefined : true,
+    noUnusedLocals: true,
+    expectedNoUnusedLocals: true,
   };
 }
 
@@ -146,7 +146,7 @@ test('promotion capstone records the live-main quality-floor consistency contrac
   const content = await capstone();
   const section = boundedSource(content, '## Quality-floor consistency', '\n## Named CI lane');
   assert.match(section, /a2a-nexus\.coverage-baseline\.v1/);
-  assert.match(section, /broker[^\n]*#1506[^\n]*Enforced[^\n]*Pending/i);
+  assert.match(section, /broker[^\n]*#1506[^\n]*Enforced[^\n]*Enabled/i);
   assert.match(section, /docker-runner[^\n]*#1576[^\n]*Enforced[^\n]*Enabled/i);
   assert.match(section, /openclaw-plugin-a2a[^\n]*#1506[^\n]*Enforced[^\n]*Enabled/i);
   for (const [module, floor] of Object.entries({
@@ -313,7 +313,7 @@ test('integrated checker evaluates the live reporter exports without side effect
   assert.match(result.stdout, /quality floors/);
 });
 
-test('parsed tsconfigs keep noUnusedLocals enabled for runner/plugin and pending for broker', async () => {
+test('parsed tsconfigs keep noUnusedLocals enabled for all covered packages', async () => {
   for (const { name, dir, noUnusedLocals } of packageContracts) {
     const tsconfig = JSON.parse(await readFile(join(repoRoot, dir, 'tsconfig.json'), 'utf8'));
     assert.strictEqual(

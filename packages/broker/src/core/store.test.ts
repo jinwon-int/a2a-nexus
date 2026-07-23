@@ -1,7 +1,6 @@
 import assert from "node:assert/strict";
 import { execFileSync } from "node:child_process";
-import { mkdtempSync, readFileSync, rmSync, writeFileSync, existsSync } from "node:fs";
-import { tmpdir } from "node:os";
+import { readFileSync, writeFileSync, existsSync } from "node:fs";
 import { join } from "node:path";
 import { DatabaseSync } from "node:sqlite";
 import test, { mock } from "node:test";
@@ -26,16 +25,9 @@ import {
   type BrokerSnapshot,
 } from "./store.js";
 import {
-  BROKER_CLEANUP_CONFIRMATION,
-  buildBrokerCleanupPlan,
-  executeBrokerCleanupPlan,
-  validateCleanupExecution,
-} from "./broker-cleanup.js";
-import type { TerminalTaskOutboxEvent } from "./terminal-event-outbox.js";
-import {
   withTempFile, readSqliteCount, makeWorker, makeExchange, makeExchangeMessage,
   makeProposal, makeArtifact, makeValidation, makeTask, makeTombstone,
-  makeAuditEvent, makeTerminalOutboxEvent, makeOutboxEvent,
+  makeAuditEvent, makeTerminalOutboxEvent,
 } from "./store-test-helpers.js";
 
 test("JsonFileBrokerStateStore loads backward-compatible empty objects", () => {

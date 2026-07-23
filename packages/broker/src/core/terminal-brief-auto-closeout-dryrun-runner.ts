@@ -614,8 +614,3 @@ function stringValue(value: unknown): string | undefined {
 function stringArrayValue(value: unknown): string[] {
   return Array.isArray(value) ? value.filter((v): v is string => typeof v === "string") : [];
 }
-
-function arrayValue(value: unknown): unknown[] {
-  return Array.isArray(value) ? value : [];
-}
-

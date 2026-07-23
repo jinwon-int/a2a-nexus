@@ -24,7 +24,6 @@ import {
   buildComplexityOrchestrationRecommendation,
   renderComplexityOrchestrationRecommendationMarkdown,
   type ComplexityOrchestrationRecommendationPacket,
-  type OrchestrationAction,
 } from "./complexity-orchestration-recommendation.js";
 
 // ---------------------------------------------------------------------------
@@ -32,16 +31,6 @@ import {
 // ---------------------------------------------------------------------------
 
 const NOW = "2026-05-28T12:00:00.000Z";
-
-function classify(intent: string, level: string) {
-  // Build the classification object that matches the expected shape
-  const input = {
-    intent: "chat" as const,
-    targetEnvironment: "research" as const,
-    policyContext: {},
-  };
-  return classifyTaskComplexity(input);
-}
 
 // Convenience: classify a preset input and produce a recommendation packet
 function produce(input: Parameters<typeof classifyTaskComplexity>[0],

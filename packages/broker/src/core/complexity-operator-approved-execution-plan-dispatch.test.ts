@@ -31,7 +31,6 @@ import {
 } from "./complexity-orchestration-recommendation.js";
 import {
   buildFinalizerApprovalEnvelopeDraft,
-  type FinalizerApprovalEnvelopeDraftPacket,
   type FinalizerApprovalEnvelopeCategory,
 } from "./complexity-finalizer-approval-envelope-draft.js";
 import {
@@ -49,7 +48,6 @@ import {
   extractOperatorApprovalRequestFromInput,
   extractOperatorApprovalFromInput,
   extractDispatchOptionsFromInput,
-  type OperatorApprovedExecutionPlanDispatchPacket,
   type OperatorApprovalInput,
   type StepApprovalDecision,
 } from "./complexity-operator-approved-execution-plan-dispatch.js";

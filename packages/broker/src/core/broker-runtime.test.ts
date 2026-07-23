@@ -1,31 +1,22 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { mkdtempSync, rmSync } from "node:fs";
-import { DatabaseSync } from "node:sqlite";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
-import { InMemoryA2ABroker, type BrokerProfilingSample, type TaskUpdate, type BufferedTaskEvent } from "./broker.js";
-import type { WorkerRuntimeRepository } from "./worker-repository.js";
+import { InMemoryA2ABroker, type TaskUpdate } from "./broker.js";
 import {
   CURRENT_BROKER_STATE_VERSION,
-  SqliteArtifactRuntimeRepository,
-  SqliteAuditRuntimeRepository,
   SqliteBrokerStateStore,
   SqliteExchangeMessageRuntimeRepository,
   SqliteExchangeRuntimeRepository,
-  SqliteProposalRuntimeRepository,
-  SqliteTaskRuntimeRepository,
-  SqliteTombstoneRuntimeRepository,
-  SqliteValidationRuntimeRepository,
-  SqliteWorkerRuntimeRepository,
   emptySnapshot,
   type BrokerSnapshot,
   type BrokerStateSaveHints,
   type BrokerStateStore,
 } from "./store.js";
-import type { ArtifactRecord, AuditEvent, ChangeProposal, CreateTaskRequest, TaskTombstone, ValidationResult, WorkerMobileHealth, WorkerMode, WorkerRecord } from "./types.js";
-import { registerWorker, createWorkerTask, createGithubPatchTask, createOwnedTask } from "./broker-test-helpers.js";
+import type { WorkerRecord } from "./types.js";
+import { registerWorker, createWorkerTask } from "./broker-test-helpers.js";
 
 test("broker exchange threads can use SQLite runtime repositories without JSON hot hints", () => {
   const dir = mkdtempSync(join(tmpdir(), "a2a-broker-exchange-repo-"));

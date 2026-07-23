@@ -8,7 +8,7 @@
 import { describe, it } from "node:test";
 import assert from "node:assert/strict";
 import { TEAM_ASSIGNMENT_FIXTURES } from "../fixtures/team-assignment.js";
-import type { AssignmentFixture, BrokerSnapshot } from "../fixtures/team-assignment.js";
+import type { AssignmentFixture } from "../fixtures/team-assignment.js";
 import {
   runProofMatrix,
   extractParentChildren,
@@ -27,7 +27,6 @@ import {
   checkTimeoutChildHasError,
   ROUND16_OPERATOR_CHECKLIST,
 } from "./proof-matrix.js";
-import type { ProofMatrixResult, ProofCheckResult } from "./proof-matrix.js";
 
 // ---------------------------------------------------------------------------
 // Helpers
