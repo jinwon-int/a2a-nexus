@@ -384,6 +384,7 @@ export class SqliteBrokerStateStore implements BrokerStateStore {
       terminalOutbox: this.readHotTerminalOutbox({ limit: this.maxHotRuntimeTerminalOutboxEvents }),
       crossBrokerTerminalBriefs: sidecars.crossBrokerTerminalBriefs ?? [],
       wavePlans: sidecars.wavePlans ?? [],
+      reviewLineages: sidecars.reviewLineages ?? [],
     };
     if (sidecars.pushNotificationConfigs !== undefined) {
       snapshot.pushNotificationConfigs = sidecars.pushNotificationConfigs;
@@ -1063,12 +1064,16 @@ export class SqliteBrokerStateStore implements BrokerStateStore {
 
   /**
    * Snapshot-only sidecar fields that have no hot table (push-notification
-   * configs, wave plans, cross-broker Terminal Brief projections) live in the
-   * canonical blob and must be carried into the hot-table runtime snapshot, or
-   * a hot-tables restart silently drops them (#1357 G3-d canary: a running
-   * wave plan vanished across a redeploy; #1446: same gap for projections).
+   * configs, wave plans, review lineages, cross-broker Terminal Brief
+   * projections) live in the canonical blob and must be carried into the
+   * hot-table runtime snapshot, or a hot-tables restart silently drops them
+   * (#1357 G3-d canary: a running wave plan vanished across a redeploy; #1446:
+   * same gap for projections).
    */
-  private readCanonicalSnapshotSidecars(): Pick<BrokerSnapshot, "pushNotificationConfigs" | "wavePlans" | "crossBrokerTerminalBriefs"> {
+  private readCanonicalSnapshotSidecars(): Pick<
+    BrokerSnapshot,
+    "pushNotificationConfigs" | "wavePlans" | "reviewLineages" | "crossBrokerTerminalBriefs"
+  > {
     const row = this.db
       .prepare("SELECT payload FROM broker_snapshots WHERE id = 1")
       .get() as { payload?: string } | undefined;
@@ -1080,6 +1085,7 @@ export class SqliteBrokerStateStore implements BrokerStateStore {
       return {
         pushNotificationConfigs: canonical.pushNotificationConfigs,
         wavePlans: canonical.wavePlans,
+        reviewLineages: canonical.reviewLineages,
         crossBrokerTerminalBriefs: canonical.crossBrokerTerminalBriefs,
       };
     } catch {
@@ -1125,6 +1131,7 @@ export class SqliteBrokerStateStore implements BrokerStateStore {
       const hasSnapshotOnlySidecarState =
         snapshot.pushNotificationConfigs !== undefined ||
         (snapshot.wavePlans?.length ?? 0) > 0 ||
+        (snapshot.reviewLineages?.length ?? 0) > 0 ||
         (snapshot.crossBrokerTerminalBriefs?.length ?? 0) > 0;
       const skipFullSnapshot = hasHotHints && !hasSnapshotOnlySidecarState;
       const fit = this.writeSnapshotRow(snapshot, updatedAt, hints, { skipFullSnapshot });

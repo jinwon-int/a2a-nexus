@@ -450,6 +450,128 @@ export const persistedWavePlanSchema = z
   })
   .passthrough();
 
+const reviewLineageBudgetSchema = z
+  .object({
+    kind: z.literal("ReviewLineageBudgetV1"),
+    maxWallClockSeconds: z.number().int().nonnegative(),
+    maxCorrectionGenerations: z.number().int().nonnegative(),
+    maxReviewerRuns: z.number().int().nonnegative(),
+    maxReviewerReplacements: z.number().int().nonnegative(),
+    repeatedFindingThreshold: z.number().int().positive(),
+    onExhaustion: z.literal("blocked_needs_operator"),
+  })
+  .passthrough();
+
+const reviewFindingSchema = z
+  .object({
+    findingId: z.string().min(1),
+    criterionRef: z.string().min(1),
+    evidenceRefs: z.array(z.string()),
+    severity: z.enum(["critical", "major", "minor"]),
+    category: z.enum([
+      "correctness",
+      "security",
+      "regression",
+      "spec_ambiguity",
+      "scope_drift",
+      "style",
+      "preference",
+      "design",
+      "other",
+    ]),
+    blocking: z.boolean(),
+    introducedAtHead: z.string().min(1),
+    firstSeenAtHead: z.string().min(1),
+    resolvedAtHead: z.string().nullable(),
+    disposition: z.enum([
+      "open",
+      "resolved",
+      "reopened",
+      "overruled_by_finalizer",
+    ]),
+    signature: z.string().min(1),
+  })
+  .passthrough();
+
+export const reviewLineageRecordSchema = z
+  .object({
+    kind: z.literal("a2a.review-lineage.v1"),
+    lineageId: z.string().min(1),
+    mode: z.enum(["off", "record", "enforce"]),
+    state: z.enum([
+      "reviewing_initial",
+      "correction_pending",
+      "reviewing_resolution",
+      "passed",
+      "blocked_needs_operator",
+      "intent_conflict",
+      "canceled",
+    ]),
+    contract: z
+      .object({
+        kind: z.literal("IntentContractV1"),
+        lineageId: z.string().min(1),
+        goal: z.string(),
+        nonGoals: z.array(z.string()),
+        invariants: z.array(z.string()),
+        acceptanceCriteria: z.array(
+          z.object({
+            id: z.string().min(1),
+            text: z.string(),
+          }),
+        ),
+        declaredPaths: z.object({
+          allowed: z.array(z.string()),
+          forbidden: z.array(z.string()).optional(),
+        }),
+        baseSha: z.string().min(1),
+        headSha: z.string().min(1),
+        createdAt: z.string().min(1),
+        intentHash: z.string().min(1),
+      })
+      .passthrough(),
+    budget: reviewLineageBudgetSchema,
+    ledger: z
+      .object({
+        kind: z.literal("FindingLedgerV1"),
+        ledgerId: z.string().min(1),
+        lineageId: z.string().min(1),
+        findings: z.array(reviewFindingSchema),
+      })
+      .passthrough(),
+    counters: z.object({
+      correctionGenerations: z.number().int().nonnegative(),
+      reviewerRuns: z.number().int().nonnegative(),
+      reviewerReplacements: z.number().int().nonnegative(),
+      findingsNew: z.number().int().nonnegative(),
+      findingsReopened: z.number().int().nonnegative(),
+      findingsResolved: z.number().int().nonnegative(),
+      repeatedSignatureHits: z.number().int().nonnegative(),
+      goalpostRejections: z.number().int().nonnegative(),
+      scopeDriftRejections: z.number().int().nonnegative(),
+    }),
+    currentHeadSha: z.string().min(1),
+    currentDiffHash: z.string().nullable(),
+    startedAt: z.string().min(1),
+    updatedAt: z.string().min(1),
+    terminalReason: z
+      .enum([
+        "budget_wall_clock",
+        "budget_correction_generations",
+        "budget_reviewer_runs",
+        "repeated_findings",
+        "intent_drift",
+        "scope_drift",
+        "operator_cancel",
+      ])
+      .nullable(),
+    unresolvedSignatures: z.record(
+      z.string(),
+      z.number().int().nonnegative(),
+    ),
+  })
+  .passthrough();
+
 export const brokerSnapshotSchema = z
   .object({
     version: z.number().int().nonnegative().optional().default(CURRENT_BROKER_STATE_VERSION),
@@ -465,6 +587,7 @@ export const brokerSnapshotSchema = z
     terminalOutbox: z.array(terminalOutboxEventSchema).optional().default([]),
     crossBrokerTerminalBriefs: z.array(crossBrokerTerminalBriefProjectionSchema).optional().default([]),
     wavePlans: z.array(persistedWavePlanSchema).optional().default([]),
+    reviewLineages: z.array(reviewLineageRecordSchema).optional().default([]),
     pushNotificationConfigs: z.array(pushNotificationConfigSchema).optional(),
   })
   .passthrough();

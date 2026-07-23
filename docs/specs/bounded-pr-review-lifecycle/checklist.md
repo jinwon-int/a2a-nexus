@@ -49,7 +49,7 @@
 
 ## D. Broker / gate integration
 
-- [ ] Record mode: lineage state + metrics with zero completion-path behavior change
+- [x] Record mode: lineage state + metrics with zero completion-path behavior change
 - [ ] `scripts/a2ad-finalizer-gate.mjs` consumes lineage evidence additively
 - [ ] Focused broker tests, finalizer gate tests, conformance tests green
 - [ ] `npm run check` green

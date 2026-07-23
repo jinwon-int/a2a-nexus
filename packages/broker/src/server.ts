@@ -104,6 +104,7 @@ import { loadBrokerPolicyFile } from "a2a-policy-referee";
 import { loadInjectedKnowledgeFile } from "./core/broker-knowledge-injection.js";
 import { resolveFinalizerVerdictEnforcement } from "./core/finalizer-verdict-admission.js";
 import { loadFinalizerKeyringFile } from "a2a-attestation";
+import { resolveReviewLineageRolloutMode } from "./core/review-lineage-store.js";
 import { normalizePersistenceBackend, normalizeSqliteLoadSource } from "./persistence-options.js";
 import {
   resolveBrokerId,
@@ -200,6 +201,7 @@ import { handleProposalsReadRouteIfMatched } from "./http/proposals-read.js";
 import { handleExchangeRoutesIfMatched } from "./http/exchanges-read.js";
 import { handleComplexityOrchestrationRoutesIfMatched } from "./http/complexity-orchestration-routes.js";
 import { handleWavePlanRoutesIfMatched } from "./http/wave-plan-routes.js";
+import { handleReviewLineageRoutesIfMatched } from "./http/review-lineage-routes.js";
 import { handleTerminalBriefCloseoutRoutesIfMatched } from "./http/terminal-brief-routes.js";
 import {
   handleWorkersReadRouteIfMatched,
@@ -358,6 +360,9 @@ export function createBrokerServer(options: BrokerServerOptions = {}): BrokerSer
   });
   const taskReadinessMode = normalizeTaskReadinessMode(
     options.taskReadinessMode ?? process.env.A2A_TASK_READINESS_MODE ?? process.env.BROKER_TASK_READINESS_MODE,
+  );
+  const reviewLineageMode = resolveReviewLineageRolloutMode(
+    options.reviewLineageMode ?? process.env.A2A_REVIEW_LINEAGE_MODE,
   );
   // Declarative worker-class policy (#1355 G1). A configured-but-invalid or
   // unreadable document fails startup loudly (loadBrokerPolicyFile throws);
@@ -528,6 +533,7 @@ export function createBrokerServer(options: BrokerServerOptions = {}): BrokerSer
       brokerId,
       teamId,
       taskReadinessMode,
+      reviewLineageMode,
       policyDocument: brokerPolicyDocument,
       injectedKnowledge,
       finalizerVerdictEnforcement,
@@ -1142,6 +1148,18 @@ export function createBrokerServer(options: BrokerServerOptions = {}): BrokerSer
         res,
         broker,
         stateStore,
+        enforceRequesterIdentity,
+        requesterIdentity,
+      })) {
+        return;
+      }
+
+      if (handleReviewLineageRoutesIfMatched({
+        method: req.method,
+        path,
+        req,
+        res,
+        broker,
         enforceRequesterIdentity,
         requesterIdentity,
       })) {
