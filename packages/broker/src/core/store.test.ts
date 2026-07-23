@@ -271,7 +271,7 @@ test("SqliteBrokerStateStore saves and reloads snapshots with WAL metadata", () 
       dbFile: temp.filePath,
       stateVersion: CURRENT_BROKER_STATE_VERSION,
       loadSource: "snapshot",
-      schemaVersion: 11,
+      schemaVersion: 12,
       journalMode: "wal",
       hotEntityTables: [
         "broker_exchanges",

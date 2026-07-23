@@ -97,6 +97,12 @@ import {
   tombstoneSchema,
   terminalOutboxEventSchema,
 } from "./store-schemas.js";
+import type { ProjectedReviewLineageObservation } from "../review-lifecycle/observation.js";
+import type { ReviewLineageRecord } from "../review-lifecycle/types.js";
+import {
+  SqliteReviewLineageObservationStore,
+  type ReviewLineageObservationApplicationResult,
+} from "./review-lineage-observation-store.js";
 import {
   JsonFileBrokerStateStore,
   emptySnapshot,
@@ -291,7 +297,7 @@ export interface SqliteTerminalOutboxHotRetentionPlanOptions {
   maxAcknowledgedRecords: number;
 }
 
-const SQLITE_SCHEMA_VERSION = 11;
+const SQLITE_SCHEMA_VERSION = 12;
 export const DEFAULT_HOT_RUNTIME_MAX_NON_TERMINAL_TASKS = 500;
 export const DEFAULT_HOT_RUNTIME_MAX_TERMINAL_TASKS = 2_000;
 export const DEFAULT_HOT_RUNTIME_MAX_AUDIT_EVENTS = 5_000;
@@ -310,8 +316,10 @@ export class SqliteBrokerStateStore implements BrokerStateStore {
   private readonly maxHotRuntimeAuditEvents: number;
   private readonly maxHotRuntimeHeartbeatAuditEvents: number;
   private readonly maxHotRuntimeTerminalOutboxEvents: number;
+  private readonly deferReviewLineageImport: boolean;
   private readonly db: DatabaseSync;
   private readonly journalMode: string;
+  private readonly reviewLineageObservations: SqliteReviewLineageObservationStore;
 
   constructor(
     private readonly dbFile: string,
@@ -320,6 +328,8 @@ export class SqliteBrokerStateStore implements BrokerStateStore {
     this.maxBytes = Math.max(1, options.maxBytes ?? DEFAULT_BROKER_STATE_MAX_BYTES_VALUE);
     this.importJsonFile = options.importJsonFile;
     this.loadSource = options.loadSource ?? "snapshot";
+    this.deferReviewLineageImport =
+      options.deferReviewLineageImport ?? false;
     this.maxHotRuntimeNonTerminalTasks = normalizeNonNegativeSqliteLimit(
       options.maxHotRuntimeNonTerminalTasks,
       DEFAULT_HOT_RUNTIME_MAX_NON_TERMINAL_TASKS,
@@ -351,21 +361,47 @@ export class SqliteBrokerStateStore implements BrokerStateStore {
     // contend; busy_timeout makes that wait rather than error.
     this.db.exec("PRAGMA busy_timeout = 5000");
     this.journalMode = this.initializeDatabase();
+    this.reviewLineageObservations =
+      new SqliteReviewLineageObservationStore(this.db);
+    // Publish schema 12 only after the Phase 10 canonical lineage/ledger
+    // tables have initialized successfully on the same connection.
+    this.writeMetadata("schema_version", String(SQLITE_SCHEMA_VERSION));
   }
 
   load(): BrokerSnapshot {
     if (this.loadSource === "hot-tables") {
       return this.loadHotRuntimeSnapshot();
     }
-    return this.loadCanonicalSnapshot();
+    const snapshot = this.loadCanonicalSnapshot();
+    return this.withCanonicalReviewLineages(
+      snapshot,
+      this.hasCanonicalSnapshot() ? snapshot.reviewLineages : undefined,
+    );
   }
 
   save(snapshot: BrokerSnapshot, hints?: BrokerStateSaveHints): void {
-    this.saveSnapshot(snapshot, hints);
+    this.saveSnapshot(
+      this.withCanonicalReviewLineages(snapshot, snapshot.reviewLineages),
+      hints,
+    );
   }
 
   saveHotEntities(hints: BrokerStateSaveHints): void {
     this.saveHotEntityHints(hints);
+  }
+
+  applyReviewLineageObservation(
+    command: ProjectedReviewLineageObservation,
+  ):
+    | ReviewLineageObservationApplicationResult
+    | Promise<ReviewLineageObservationApplicationResult> {
+    const legacy = this.readCanonicalSnapshotSidecars().reviewLineages ?? [];
+    this.reviewLineageObservations.importLegacySnapshot(legacy);
+    return this.reviewLineageObservations.apply(command);
+  }
+
+  listCanonicalReviewLineages(): ReviewLineageRecord[] {
+    return this.reviewLineageObservations.listLineages();
   }
 
   readHotRuntimeSnapshot(): BrokerSnapshot {
@@ -384,12 +420,12 @@ export class SqliteBrokerStateStore implements BrokerStateStore {
       terminalOutbox: this.readHotTerminalOutbox({ limit: this.maxHotRuntimeTerminalOutboxEvents }),
       crossBrokerTerminalBriefs: sidecars.crossBrokerTerminalBriefs ?? [],
       wavePlans: sidecars.wavePlans ?? [],
-      reviewLineages: sidecars.reviewLineages ?? [],
+      reviewLineages: [],
     };
     if (sidecars.pushNotificationConfigs !== undefined) {
       snapshot.pushNotificationConfigs = sidecars.pushNotificationConfigs;
     }
-    return snapshot;
+    return this.withCanonicalReviewLineages(snapshot, sidecars.reviewLineages);
   }
 
   readHotTasks(filters: SqliteTaskHotTableFilters = {}): TaskRecord[] {
@@ -1029,7 +1065,6 @@ export class SqliteBrokerStateStore implements BrokerStateStore {
       CREATE INDEX IF NOT EXISTS broker_tasks_origin_status_idx
         ON broker_tasks(task_origin, status);
     `);
-    this.writeMetadata("schema_version", String(SQLITE_SCHEMA_VERSION));
     this.writeMetadata("state_version", String(CURRENT_BROKER_STATE_VERSION_VALUE));
     return journal?.journal_mode ?? "unknown";
   }
@@ -1062,10 +1097,33 @@ export class SqliteBrokerStateStore implements BrokerStateStore {
     return emptySnapshot();
   }
 
+  private withCanonicalReviewLineages(
+    snapshot: BrokerSnapshot,
+    legacyRecords: ReviewLineageRecord[] | undefined,
+  ): BrokerSnapshot {
+    // A snapshot is compatibility input only. Once the import marker exists,
+    // dedicated SQLite rows always win and a later stale blob cannot overwrite
+    // them. Avoid marking an absent pre-import snapshot as imported because a
+    // configured JSON import may still be loaded by loadHotRuntimeSnapshot().
+    if (!this.deferReviewLineageImport && legacyRecords !== undefined) {
+      this.reviewLineageObservations.importLegacySnapshot(legacyRecords);
+    }
+    const canonical = this.reviewLineageObservations.listLineages();
+    const canonicalAuthorityReady =
+      canonical.length > 0
+      || this.reviewLineageObservations.legacySnapshotImported();
+    return {
+      ...snapshot,
+      reviewLineages: canonicalAuthorityReady
+        ? canonical
+        : legacyRecords ?? [],
+    };
+  }
+
   /**
    * Snapshot-only sidecar fields that have no hot table (push-notification
-   * configs, wave plans, review lineages, cross-broker Terminal Brief
-   * projections) live in the canonical blob and must be carried into the
+   * configs, wave plans, and cross-broker Terminal Brief projections) live in
+   * the canonical blob and must be carried into the
    * hot-table runtime snapshot, or a hot-tables restart silently drops them
    * (#1357 G3-d canary: a running wave plan vanished across a redeploy; #1446:
    * same gap for projections).
@@ -1131,7 +1189,6 @@ export class SqliteBrokerStateStore implements BrokerStateStore {
       const hasSnapshotOnlySidecarState =
         snapshot.pushNotificationConfigs !== undefined ||
         (snapshot.wavePlans?.length ?? 0) > 0 ||
-        (snapshot.reviewLineages?.length ?? 0) > 0 ||
         (snapshot.crossBrokerTerminalBriefs?.length ?? 0) > 0;
       const skipFullSnapshot = hasHotHints && !hasSnapshotOnlySidecarState;
       const fit = this.writeSnapshotRow(snapshot, updatedAt, hints, { skipFullSnapshot });

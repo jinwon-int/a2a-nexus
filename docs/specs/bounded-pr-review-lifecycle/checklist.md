@@ -111,5 +111,18 @@
       provider output, and rejected values
 - [x] Reference tables have no production broker/snapshot/HTTP/producer call
       site
-- [ ] Production canonical lineage state and ledger atomicity proven in a
+- [x] Production canonical lineage state and ledger atomicity proven in a
       separately reviewed integration
+
+## I. Production SQLite atomic integration (Phase 10)
+
+- [x] `SqliteBrokerStateStore` is the sole canonical lineage/ledger authority
+- [x] Shared connection executes one `BEGIN IMMEDIATE` compound command
+- [x] Broker Map refresh happens only after durable ACK
+- [x] Worker-thread mode uses one queue entry and one worker request
+- [x] Legacy snapshot import marker and canonical-wins precedence tested
+- [x] Restart replay and same-key conflict remain stable
+- [x] Forced ledger failure rolls back the lineage transition
+- [x] Schema version 12 is recorded only after new tables initialize
+- [x] No producer, HTTP mutation, completion/retry/finalizer hook, or live action
+- [ ] Producer completeness plus privacy/retention gate reviewed before live collection

@@ -192,7 +192,7 @@ completion/retry/finalizer output, or change runtime `off` / `record` defaults.
       and ledger privacy tests pass on temporary databases.
 - [x] No production broker DB/snapshot, HTTP, task completion/retry/finalizer,
       persistence queue, or producer integration exists.
-- [ ] Production integration proves canonical lineage state and ledger share
+- [x] Production integration proves canonical lineage state and ledger share
       one SQLite commit boundary.
 - [ ] Producer completeness, retention/pruning/export policy, and real
       terminal-lineage collection receive separate approval and review.
@@ -200,6 +200,27 @@ completion/retry/finalizer output, or change runtime `off` / `record` defaults.
 Phase 9 source boundary: the SQLite class is a detached reference constructor
 used only by tests. Instantiating it against the live broker database, migrating
 live tables, or attaching an observation producer is not authorized.
+
+## Phase 10: Production SQLite atomic integration
+
+- [x] `SqliteBrokerStateStore` owns the Phase 9 repository on its existing
+      SQLite connection.
+- [x] The dedicated lineage table is canonical; snapshot lineages import once
+      under a durable marker and cannot overwrite canonical rows.
+- [x] Broker projection refresh occurs only after a durable compound-command
+      result.
+- [x] Direct Map-first mutation is rejected for atomic SQLite stores.
+- [x] Worker-thread mode sends one queue entry and one worker request for the
+      complete transaction.
+- [x] Production store restart/replay, forced rollback, legacy precedence, and
+      worker-thread ACK/readback pass on temporary databases.
+- [x] Broker schema version 12 is published after lineage tables initialize.
+- [ ] Complete automatic producer contract and privacy/retention proof.
+- [ ] Separate approval for live schema execution, migration, deploy/restart,
+      canary, or real-lineage collection.
+
+Phase 10 source boundary: an explicit broker/store API exists, but there is no
+automatic caller, HTTP mutation route, or task-completion/retry/finalizer hook.
 
 ## Validation commands (all phases as applicable)
 
