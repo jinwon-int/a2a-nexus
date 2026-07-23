@@ -1154,7 +1154,7 @@ export function createBrokerServer(options: BrokerServerOptions = {}): BrokerSer
         return;
       }
 
-      if (handleReviewLineageRoutesIfMatched({
+      if (await handleReviewLineageRoutesIfMatched({
         method: req.method,
         path,
         req,

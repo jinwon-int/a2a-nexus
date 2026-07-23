@@ -17,10 +17,14 @@ import {
   applyEvent,
   createLineage,
 } from "../review-lifecycle/lifecycle.js";
-import type {
-  ProjectedReviewLineageObservation,
-  ReviewLineageSubjectBindingV1,
+import {
+  deriveObservationIdempotencyKey,
+  type ProjectedReviewLineageObservation,
+  type ReviewLineageSubjectBindingV1,
 } from "../review-lifecycle/observation.js";
+import type {
+  AuthorizedReviewLineageSourceEventV1,
+} from "../review-lifecycle/operator-cancel-source.js";
 import type {
   ReviewLineageRecord,
   ReviewLineageState,
@@ -33,6 +37,8 @@ export const REVIEW_LINEAGE_OBSERVATION_LEDGER_TABLE =
   "broker_review_lineage_observation_ledger_v1";
 export const REVIEW_LINEAGE_OBSERVATION_META_TABLE =
   "broker_review_lineage_observation_meta_v1";
+export const REVIEW_LINEAGE_AUTHORIZED_SOURCE_EVENT_TABLE =
+  "broker_review_lineage_authorized_source_events_v1";
 
 const LEGACY_SNAPSHOT_IMPORT_KEY = "legacy_snapshot_import_v1";
 
@@ -83,13 +89,28 @@ export interface DurableReviewLineageObservationStore {
   apply(
     command: ProjectedReviewLineageObservation,
   ): ReviewLineageObservationApplicationResult;
+  applyAuthorizedSource(
+    admission: AuthorizedReviewLineageSourceAdmissionV1,
+  ): ReviewLineageObservationApplicationResult;
   getLineage(lineageId: string): ReviewLineageRecord | undefined;
   countLedgerEntries(): number;
+  countAuthorizedSourceEvents(): number;
+}
+
+export interface AuthorizedReviewLineageSourceAdmissionV1 {
+  source: AuthorizedReviewLineageSourceEventV1 & {
+    payloadFingerprint: string;
+  };
+  command: ProjectedReviewLineageObservation;
 }
 
 export class ReviewLineageObservationStoreError extends Error {
   constructor(
-    readonly code: "stored_record_invalid" | "stored_ledger_invalid",
+    readonly code:
+      | "invalid_authorized_source"
+      | "stored_record_invalid"
+      | "stored_ledger_invalid"
+      | "stored_source_invalid",
   ) {
     super(code);
     this.name = "ReviewLineageObservationStoreError";
@@ -113,6 +134,50 @@ interface LedgerRow {
   state: ReviewLineageState | null;
   record_version: number | null;
   effects_json: string;
+}
+
+interface AuthorizedSourceRow {
+  source_event_id: string;
+  producer_id: string;
+  idempotency_key: string;
+  payload_fingerprint: string;
+  source_kind: string;
+  authority_kind: string;
+  source_event_ref_hash: string;
+  observed_at: string;
+  outcome_code: StableObservationOutcome;
+}
+
+const DERIVED_PRODUCER_PATTERN =
+  /^review-lineage-source:v1:[0-9a-f]{64}$/;
+const DERIVED_SOURCE_EVENT_PATTERN =
+  /^review-lineage-event:v1:[0-9a-f]{64}$/;
+const HASH_PATTERN = /^sha256:[0-9a-f]{64}$/;
+
+function assertAuthorizedSourceAdmission(
+  admission: AuthorizedReviewLineageSourceAdmissionV1,
+): void {
+  const { source, command } = admission;
+  if (
+    source.sourceKind !== "lineage_cancel_decided"
+    || source.authorityKind !== "operator"
+    || !DERIVED_SOURCE_EVENT_PATTERN.test(source.sourceEventId)
+    || !DERIVED_PRODUCER_PATTERN.test(source.producerId)
+    || !HASH_PATTERN.test(source.sourceEventRefHash)
+    || source.payloadFingerprint !== command.payloadFingerprint
+    || source.observedAt !== command.observedAt
+    || command.idempotencyKey !== deriveObservationIdempotencyKey(
+      source.producerId,
+      source.sourceEventId,
+    )
+    || command.command.kind !== "record_event"
+    || command.command.event.type !== "operator_cancel"
+    || command.command.event.at !== source.observedAt
+  ) {
+    throw new ReviewLineageObservationStoreError(
+      "invalid_authorized_source",
+    );
+  }
 }
 
 function subjectFingerprint(subject: ReviewLineageSubjectBindingV1): string {
@@ -254,22 +319,81 @@ implements DurableReviewLineageObservationStore {
   apply(
     command: ProjectedReviewLineageObservation,
   ): ReviewLineageObservationApplicationResult {
+    return this.immediateTransaction(() =>
+      this.applyWithinTransaction(command));
+  }
+
+  applyAuthorizedSource(
+    admission: AuthorizedReviewLineageSourceAdmissionV1,
+  ): ReviewLineageObservationApplicationResult {
+    assertAuthorizedSourceAdmission(admission);
     return this.immediateTransaction(() => {
-      const prior = this.readLedger(command.idempotencyKey);
-      if (prior) {
-        if (prior.payload_fingerprint !== command.payloadFingerprint) {
+      const { source, command } = admission;
+      const priorSource = this.readAuthorizedSource(source.sourceEventId);
+      if (priorSource) {
+        if (
+          priorSource.producer_id !== source.producerId
+          || priorSource.idempotency_key !== command.idempotencyKey
+          || priorSource.payload_fingerprint !== source.payloadFingerprint
+          || priorSource.source_kind !== source.sourceKind
+          || priorSource.authority_kind !== source.authorityKind
+          || priorSource.source_event_ref_hash !== source.sourceEventRefHash
+          || priorSource.observed_at !== source.observedAt
+        ) {
           return {
             status: "idempotency_conflict",
             lineageId: command.lineageId,
           };
         }
-        return replayResult(prior);
+        const ledger = this.readLedger(command.idempotencyKey);
+        if (
+          !ledger
+          || ledger.payload_fingerprint !== command.payloadFingerprint
+          || ledger.outcome_code !== priorSource.outcome_code
+        ) {
+          throw new ReviewLineageObservationStoreError(
+            "stored_source_invalid",
+          );
+        }
+        return replayResult(ledger);
       }
 
-      if (command.command.kind === "create_lineage") {
-        return this.applyCreate(command);
+      const result = this.applyWithinTransaction(command);
+      // A legacy/generic ledger row cannot be retroactively upgraded into an
+      // authenticated source event merely by replaying it through this API.
+      if (
+        result.status === "idempotency_conflict"
+        || result.status === "replayed"
+      ) {
+        return {
+          status: "idempotency_conflict",
+          lineageId: command.lineageId,
+        };
       }
-      return this.applyEvent(command);
+      this.db.prepare(
+        `INSERT INTO ${REVIEW_LINEAGE_AUTHORIZED_SOURCE_EVENT_TABLE} (
+          source_event_id,
+          producer_id,
+          idempotency_key,
+          payload_fingerprint,
+          source_kind,
+          authority_kind,
+          source_event_ref_hash,
+          observed_at,
+          outcome_code
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      ).run(
+        source.sourceEventId,
+        source.producerId,
+        command.idempotencyKey,
+        source.payloadFingerprint,
+        source.sourceKind,
+        source.authorityKind,
+        source.sourceEventRefHash,
+        source.observedAt,
+        result.outcome,
+      );
+      return result;
     });
   }
 
@@ -363,6 +487,16 @@ implements DurableReviewLineageObservationStore {
     return Number(row?.count ?? 0);
   }
 
+  countAuthorizedSourceEvents(): number {
+    const row = this.db
+      .prepare(
+        `SELECT COUNT(*) AS count
+         FROM ${REVIEW_LINEAGE_AUTHORIZED_SOURCE_EVENT_TABLE}`,
+      )
+      .get() as { count?: number | bigint } | undefined;
+    return Number(row?.count ?? 0);
+  }
+
   close(): void {
     if (this.ownsDatabase) this.db.close();
   }
@@ -406,7 +540,50 @@ implements DurableReviewLineageObservationStore {
         key TEXT PRIMARY KEY,
         value TEXT NOT NULL
       ) STRICT;
+
+      CREATE TABLE IF NOT EXISTS ${REVIEW_LINEAGE_AUTHORIZED_SOURCE_EVENT_TABLE} (
+        source_event_id TEXT PRIMARY KEY,
+        producer_id TEXT NOT NULL,
+        idempotency_key TEXT NOT NULL UNIQUE,
+        payload_fingerprint TEXT NOT NULL,
+        source_kind TEXT NOT NULL,
+        authority_kind TEXT NOT NULL,
+        source_event_ref_hash TEXT NOT NULL,
+        observed_at TEXT NOT NULL,
+        outcome_code TEXT NOT NULL CHECK (
+          outcome_code IN (
+            'applied',
+            'missing_lineage',
+            'subject_conflict',
+            'transition_rejected'
+          )
+        )
+      ) STRICT;
+
+      CREATE INDEX IF NOT EXISTS
+        broker_review_lineage_authorized_source_ledger_v1
+      ON ${REVIEW_LINEAGE_AUTHORIZED_SOURCE_EVENT_TABLE} (idempotency_key);
     `);
+  }
+
+  private applyWithinTransaction(
+    command: ProjectedReviewLineageObservation,
+  ): ReviewLineageObservationApplicationResult {
+    const prior = this.readLedger(command.idempotencyKey);
+    if (prior) {
+      if (prior.payload_fingerprint !== command.payloadFingerprint) {
+        return {
+          status: "idempotency_conflict",
+          lineageId: command.lineageId,
+        };
+      }
+      return replayResult(prior);
+    }
+
+    if (command.command.kind === "create_lineage") {
+      return this.applyCreate(command);
+    }
+    return this.applyEvent(command);
   }
 
   private applyCreate(
@@ -595,6 +772,25 @@ implements DurableReviewLineageObservationStore {
        FROM ${REVIEW_LINEAGE_OBSERVATION_LEDGER_TABLE}
        WHERE idempotency_key = ?`,
     ).get(idempotencyKey) as LedgerRow | undefined;
+  }
+
+  private readAuthorizedSource(
+    sourceEventId: string,
+  ): AuthorizedSourceRow | undefined {
+    return this.db.prepare(
+      `SELECT
+         source_event_id,
+         producer_id,
+         idempotency_key,
+         payload_fingerprint,
+         source_kind,
+         authority_kind,
+         source_event_ref_hash,
+         observed_at,
+         outcome_code
+       FROM ${REVIEW_LINEAGE_AUTHORIZED_SOURCE_EVENT_TABLE}
+       WHERE source_event_id = ?`,
+    ).get(sourceEventId) as AuthorizedSourceRow | undefined;
   }
 
   private parseRecord(payload: string): ReviewLineageRecord {

@@ -101,6 +101,7 @@ import type { ProjectedReviewLineageObservation } from "../review-lifecycle/obse
 import type { ReviewLineageRecord } from "../review-lifecycle/types.js";
 import {
   SqliteReviewLineageObservationStore,
+  type AuthorizedReviewLineageSourceAdmissionV1,
   type ReviewLineageObservationApplicationResult,
 } from "./review-lineage-observation-store.js";
 import {
@@ -297,7 +298,7 @@ export interface SqliteTerminalOutboxHotRetentionPlanOptions {
   maxAcknowledgedRecords: number;
 }
 
-const SQLITE_SCHEMA_VERSION = 12;
+const SQLITE_SCHEMA_VERSION = 13;
 export const DEFAULT_HOT_RUNTIME_MAX_NON_TERMINAL_TASKS = 500;
 export const DEFAULT_HOT_RUNTIME_MAX_TERMINAL_TASKS = 2_000;
 export const DEFAULT_HOT_RUNTIME_MAX_AUDIT_EVENTS = 5_000;
@@ -363,8 +364,8 @@ export class SqliteBrokerStateStore implements BrokerStateStore {
     this.journalMode = this.initializeDatabase();
     this.reviewLineageObservations =
       new SqliteReviewLineageObservationStore(this.db);
-    // Publish schema 12 only after the Phase 10 canonical lineage/ledger
-    // tables have initialized successfully on the same connection.
+    // Publish schema 13 only after the canonical lineage/ledger and Phase 14
+    // authenticated source-event tables initialize on the same connection.
     this.writeMetadata("schema_version", String(SQLITE_SCHEMA_VERSION));
   }
 
@@ -398,6 +399,16 @@ export class SqliteBrokerStateStore implements BrokerStateStore {
     const legacy = this.readCanonicalSnapshotSidecars().reviewLineages ?? [];
     this.reviewLineageObservations.importLegacySnapshot(legacy);
     return this.reviewLineageObservations.apply(command);
+  }
+
+  applyAuthorizedReviewLineageSource(
+    admission: AuthorizedReviewLineageSourceAdmissionV1,
+  ):
+    | ReviewLineageObservationApplicationResult
+    | Promise<ReviewLineageObservationApplicationResult> {
+    const legacy = this.readCanonicalSnapshotSidecars().reviewLineages ?? [];
+    this.reviewLineageObservations.importLegacySnapshot(legacy);
+    return this.reviewLineageObservations.applyAuthorizedSource(admission);
   }
 
   listCanonicalReviewLineages(): ReviewLineageRecord[] {

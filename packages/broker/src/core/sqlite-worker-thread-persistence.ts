@@ -37,7 +37,10 @@ import type {
   SqliteBrokerLoadSource,
 } from "./store.js";
 import type { ProjectedReviewLineageObservation } from "../review-lifecycle/observation.js";
-import type { ReviewLineageObservationApplicationResult } from "./review-lineage-observation-store.js";
+import type {
+  AuthorizedReviewLineageSourceAdmissionV1,
+  ReviewLineageObservationApplicationResult,
+} from "./review-lineage-observation-store.js";
 
 // ---------------------------------------------------------------------------
 // Types
@@ -409,6 +412,20 @@ export class WorkerThreadProxyStore extends SqliteBrokerStateStore {
       () => this.workerThread.request<ReviewLineageObservationApplicationResult>(
         "applyReviewLineageObservation",
         { command },
+      ),
+    );
+    this.trackWrite(promise);
+    return promise;
+  }
+
+  override applyAuthorizedReviewLineageSource(
+    admission: AuthorizedReviewLineageSourceAdmissionV1,
+  ): Promise<ReviewLineageObservationApplicationResult> {
+    const promise = this.queue.enqueue(
+      "applyAuthorizedReviewLineageSource",
+      () => this.workerThread.request<ReviewLineageObservationApplicationResult>(
+        "applyAuthorizedReviewLineageSource",
+        { admission },
       ),
     );
     this.trackWrite(promise);

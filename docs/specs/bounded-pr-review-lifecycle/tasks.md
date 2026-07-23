@@ -239,7 +239,8 @@ automatic caller, HTTP mutation route, or task-completion/retry/finalizer hook.
       a one-sided delete target cannot be represented.
 - [x] The existing validated scorecard export proof and fingerprint are built
       before prune aggregates.
-- [ ] Approve and implement an automatic producer call site.
+- [x] Approve and implement the first automatic producer call site
+      (`operator_cancel`, Phase 14).
 - [ ] Approve export delivery semantics, duration, worker-owned atomic
       execution, live schema/deploy/canary, and real cohort collection.
 
@@ -263,8 +264,8 @@ mutation, execute SQL, attach a producer, or export/prune live data.
       detached from admission.
 - [x] State honestly that authoritative automatic source coverage remains
       `0/5`.
-- [ ] Define authoritative structured source carriers and durable coupling for
-      each observation kind before attaching any automatic producer.
+- [x] Define authoritative structured source carriers and the durability gate
+      before attaching the first automatic producer.
 
 Phase 12 source boundary: admission is an explicitly awaited API only. It adds
 no fact source, task/result/cancel inference, lifecycle subscription, route,
@@ -288,12 +289,39 @@ outbox/schema, live collection, deploy, or runtime-default change.
 - [x] Reject caller-selected identity/authority and generic task/result/cancel
       conversion.
 - [x] Keep automatic observation coverage at `0/5`.
-- [ ] Approve an actual authenticated owner and atomic transaction or
-      ACK-replayed transactional outbox/inbox for at least one kind.
+- [x] Approve an actual authenticated owner and atomic transaction for the
+      first kind (`operator_cancel`, Phase 14).
 
 Phase 13 source boundary: the trusted-context factory authenticates nobody by
 itself and has no runtime caller. This phase adds no lifecycle hook, route,
 store, queue, schema, outbox, migration, or live action.
+
+## Phase 14: First authenticated owner — operator cancel
+
+- [x] Require an authenticated requester with the exact `operator` role.
+- [x] Accept one exact-field operator-cancel request without authority or
+      derived identity fields.
+- [x] Fix source kind, authority, namespace, and issuer in trusted broker code.
+- [x] Reuse Phase 13 authorization, Phase 12 admission, and the Phase 8 parser.
+- [x] Add a minimized authoritative source-event table.
+- [x] Commit source event, canonical lineage transition, and observation ledger
+      in one `BEGIN IMMEDIATE`.
+- [x] Send one composite worker-thread command and await one ACK.
+- [x] Refresh broker projection only after the composite durable ACK.
+- [x] Prove restart replay and changed-payload conflict without overwrite.
+- [x] Prove source-insert and ledger-insert failures roll back all writes.
+- [x] Prove off-mode inertness and non-operator rejection before authorization.
+- [x] Keep generic task cancellation/completion/retry/finalizer paths detached.
+- [x] Store no raw decision reference, detail, prompt, credential, or provider
+      payload in the source-event table.
+- [x] Report automatic source coverage as exactly `1/5`.
+- [ ] Approve live schema execution, record-mode activation, deployment,
+      restart, canary, or real-lineage collection separately.
+- [ ] Attach the remaining four source kinds only after each proves an actual
+      owner and the same atomic or ACK-replayed durability.
+
+Phase 14 is source and temporary-database validation only. It does not approve
+any live runtime or data action.
 
 ## Validation commands (all phases as applicable)
 
