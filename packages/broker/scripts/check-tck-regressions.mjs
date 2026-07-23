@@ -21,7 +21,7 @@
 import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
-import { parseTckLog, buildMeasurement } from "./append-tck-history.mjs";
+import { buildMeasurement, measurementKey, parseTckLog, upsertMeasurement } from "./append-tck-history.mjs";
 
 const scriptDir = path.dirname(fileURLToPath(import.meta.url));
 const DEFAULT_HISTORY = path.resolve(scriptDir, "..", "docs", "tck-history.json");
@@ -39,7 +39,7 @@ function comparableMetric(m) {
 function scoped(history, level, transport) {
   return (history.measurements || [])
     .filter((m) => (!level || m.level === level) && (!transport || m.transport === transport))
-    .sort((a, b) => (a.date < b.date ? -1 : a.date > b.date ? 1 : 0));
+    .sort((a, b) => (a.date < b.date ? -1 : a.date > b.date ? 1 : measurementKey(a).localeCompare(measurementKey(b))));
 }
 
 function diff(prev, cur) {
@@ -62,10 +62,6 @@ function diff(prev, cur) {
     };
   }
   return null;
-}
-
-function measurementKey(m) {
-  return `${m.date}|${m.level}|${m.transport}`;
 }
 
 export function findRegressions(history, { level, transport, current } = {}) {
@@ -102,21 +98,29 @@ export function findRegressions(history, { level, transport, current } = {}) {
   return { regressions, notes };
 }
 
-export function stablyGreenCategories(history, window = 2, { level, transport } = {}) {
+function stablyGreenCollection(history, collectionName, window = 2, { level, transport } = {}) {
   const sorted = scoped(history, level, transport);
   const recent = sorted.slice(-window);
   if (recent.length < window) return [];
   const names = new Set();
-  for (const m of recent) for (const k of Object.keys(m.categories || {})) names.add(k);
+  for (const m of recent) for (const k of Object.keys(m[collectionName] || {})) names.add(k);
   const green = [];
   for (const name of names) {
     const allGreen = recent.every((m) => {
-      const c = m.categories?.[name];
+      const c = m[collectionName]?.[name];
       return c && typeof c.total === "number" && c.total > 0 && c.pass === c.total;
     });
     if (allGreen) green.push(name);
   }
   return green.sort();
+}
+
+export function stablyGreenCategories(history, window = 2, options = {}) {
+  return stablyGreenCollection(history, "categories", window, options);
+}
+
+export function stablyGreenSubCategories(history, window = 2, options = {}) {
+  return stablyGreenCollection(history, "subCategories", window, options);
 }
 
 function parseArgs(argv) {
@@ -129,6 +133,7 @@ function parseArgs(argv) {
     else if (a === "--stable-window") args.window = Number(argv[++i]);
     else if (a === "--against-log") args.againstLog = argv[++i];
     else if (a === "--date") args.date = argv[++i];
+    else if (a === "--source") args.source = argv[++i];
   }
   return args;
 }
@@ -156,12 +161,23 @@ function main() {
       level,
       transport,
       parsed,
+      source: cli.source,
     });
   }
 
   const { regressions, notes } = findRegressions(history, { level, transport, current });
-  const promotionCandidates = stablyGreenCategories(history, window, { level, transport });
-  const report = { ok: regressions.length === 0, level, transport, regressions, notes, promotionCandidates };
+  const promotionHistory = current ? upsertMeasurement(history, current) : history;
+  const promotionCandidates = stablyGreenCategories(promotionHistory, window, { level, transport });
+  const subCategoryPromotionCandidates = stablyGreenSubCategories(promotionHistory, window, { level, transport });
+  const report = {
+    ok: regressions.length === 0,
+    level,
+    transport,
+    regressions,
+    notes,
+    promotionCandidates,
+    subCategoryPromotionCandidates,
+  };
 
   // Always emit the structured report on stdout so a `... | tee summary` step
   // captures the evidence on the failure path too (#682); the exit code still

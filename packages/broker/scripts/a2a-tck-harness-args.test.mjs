@@ -84,3 +84,9 @@ test("scheduled measurement asks the pinned official runner for node-level verbo
     /a2a-tck-harness\.mjs --level "\$TCK_LEVEL" --transport "\$TCK_TRANSPORT" --verbose 2>&1 \| tee \/tmp\/tck-run\.log/,
   );
 });
+
+test("scheduled measurement gives regression and history steps the same run identity", () => {
+  const workflow = readFileSync(new URL("../../../.github/workflows/tck-measurement.yml", import.meta.url), "utf8");
+  const identity = /--source "tck-measurement workflow run \$\{\{ github\.run_id \}\}"/g;
+  assert.equal(workflow.match(identity)?.length, 2);
+});

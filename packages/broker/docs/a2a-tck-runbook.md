@@ -80,7 +80,7 @@ Track this number down as alignment PRs land. The error-code/`ErrorInfo`
 alignment is in-scope correctness work; the worker-registration model is an
 architectural decision recorded for follow-up.
 
-## Latest official measurement (2026-07-22)
+## Latest official measurements (2026-07-22)
 
 [Workflow run 29915210798](https://github.com/jinwon-int/a2a-nexus/actions/runs/29915210798)
 measured the pinned official TCK against commit `c64ae2e` on a disposable
@@ -94,12 +94,15 @@ sub-categories were emitted into the committed history:
 | task-not-found and invalid-task | 1/7 | blocked; failures remain |
 | artifact/message projection | 4/9 | blocked; failures remain |
 | streaming/subscribe ordering | 3/9 | blocked; six selected tests skipped |
-| version negotiation | 4/4 | first green window; one more independent green run required |
+| version negotiation | 4/4 | first green window |
 
 The version-negotiation result is a real RED-to-GREEN change from the same-day
 [main measurement](https://github.com/jinwon-int/a2a-nexus/actions/runs/29914841795)
-(`3/4`) to the branch measurement (`4/4`). It is not yet a blocking gate: the
-normal two-window stability rule still applies.
+(`3/4`) to the branch measurement (`4/4`). A second independent
+[main measurement](https://github.com/jinwon-int/a2a-nexus/actions/runs/29917128590)
+at merge commit `a078564` also measured `4/4` with sufficient outcome
+accounting. This satisfies the normal two-window stability rule, so version
+negotiation is now a blocking promoted sub-category.
 
 ## Compliance trend (committed, in-repo)
 
@@ -110,10 +113,11 @@ opening Actions artifacts. Each entry is one measurement (`date`, `level`,
 pass/total, and (for complete verbose runs) selector-based sub-category
 pass/total plus outcome accounting).
 
-| Date | Level / transport | Overall | MUST | agent_card | jsonrpc | version negotiation |
+| Date / run | Level / transport | Overall | MUST | agent_card | jsonrpc | version negotiation |
 | --- | --- | --- | --- | --- | --- | --- |
 | 2026-06-11 | must / jsonrpc | — | 12/75 | 6/6 | 12/75 | not measured |
-| 2026-07-22 | must / jsonrpc | 65.7% | — | 6/6 | 46/94 | 4/4 (window 1/2) |
+| 2026-07-22 / 29915210798 | must / jsonrpc | 65.7% | — | 6/6 | 46/94 | 4/4 (window 1/2) |
+| 2026-07-22 / 29917128590 | must / jsonrpc | 65.7% | — | 6/6 | 46/94 | 4/4 (window 2/2) |
 
 Update the trend after a run:
 
@@ -132,9 +136,12 @@ when the unique verbose node counts reconcile exactly with pytest's terminal
 summary and no node matches multiple selectors. Failure-summary duplicates are
 deduplicated; unmatched node IDs remain listed under `pytestOutcomeAccounting`
 as `unclassified`, and truncated/failure-only logs retain incomplete accounting
-without emitting a measured pass/total. The entry is then upserted (one per
-`date`+`level`+`transport`). Commit the updated `tck-history.json` from the
-fresh official-TCK artifact together with its baseline/readiness projection.
+without emitting a measured pass/total. The entry is then upserted by
+`date`+`level`+`transport`+`source` when a source identity is present, so
+independent same-day workflow runs remain separate stability windows. Legacy
+source-less entries retain daily replacement behavior. Commit the updated
+`tck-history.json` from the fresh official-TCK artifact together with its
+baseline/readiness projection.
 
 ### Stability ledger and gate promotion
 
@@ -145,17 +152,18 @@ fresh official-TCK artifact together with its baseline/readiness projection.
   size is unchanged, else OVERALL percent). It exits non-zero. A suite-size
   change is reported as a note, not a regression, so a larger TCK does not
   raise a false alarm.
-- **Promotion candidates** — categories that are fully green
-  (`pass == total`) across the last N measurements (default 2). These are the
-  categories the next sentence's rule applies to.
+- **Promotion candidates** — categories and selector-based sub-categories that
+  are fully green (`pass == total`) across the last N independent measurements
+  (default 2). These are the categories the next sentence's rule applies to.
 
 Promote a category to a CI gate only once it appears as a stable promotion
 candidate.
 
 ### Promoted-category PR gate
 
-`.github/workflows/tck-promoted-gate.yml` is the first promoted-category PR
-gate. It runs only the official TCK `agent_card` category:
+`.github/workflows/tck-promoted-gate.yml` contains fail-closed jobs for the
+official TCK `agent_card` category and the promoted version-negotiation
+sub-category. The agent-card job runs:
 
 ```bash
 cd packages/broker
@@ -172,6 +180,11 @@ A2A_TCK_DIR=/tmp/a2a-tck npm run tck:run -- \
 uses explicit `--ignore` entries for the non-promoted compatibility directories
 instead of appending `tests/compatibility/agent_card` as a positional path.
 
+The version-negotiation job uses a pytest `-k` expression for the three unique
+test functions and explicitly deselects the two unrelated parameter cases from
+`test_error_code_in_valid_range`. That leaves exactly four official-TCK tests;
+the job fails on any failure and uploads its log independently.
+
 Promotion evidence: the committed baseline records `agent_card: 6/6` green for
 `must / jsonrpc` on 2026-06-11. This first `agent_card` PR gate is a documented
 one-time promotion exception to the default stability-window rule: the category
@@ -180,6 +193,12 @@ protocol-binding fields that are already part of every broker A2A surface
 change. `check-tck-regressions.mjs` still keeps the default stable window at 2,
 so future promoted categories must appear as stable promotion candidates across
 the configured window before they are added as CI gates.
+
+Version-negotiation promotion evidence is the pair of sufficient official-TCK
+runs `29915210798` and `29917128590`, each at `4/4`. The committed regression
+checker reports `jsonrpc-version-negotiation` under
+`subCategoryPromotionCandidates`; the blocking job reproduces the same four
+selectors against every matching PR.
 
 The promoted gate is deliberately scoped to
 broker A2A-surface changes (`src/a2a`, protocol compatibility fixtures,

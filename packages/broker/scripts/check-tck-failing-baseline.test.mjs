@@ -177,6 +177,16 @@ test('RED: a per-test baseline requires sufficient outcome accounting', () => {
   );
 });
 
+test('RED: a per-test baseline must pin an exact workflow source', () => {
+  const baseline = readJson('docs/tck-failing-categories.json');
+  const history = readJson('docs/tck-history.json');
+  delete baseline.coarseBaseline.source;
+  assert.match(
+    evaluateFailingBaseline(baseline, history).join('\n'),
+    /coarseBaseline\.source must pin the exact workflow run/,
+  );
+});
+
 test('RED: a per-test baseline cannot leave a sub-category pending emission', () => {
   const baseline = readJson('docs/tck-failing-categories.json');
   const history = readJson('docs/tck-history.json');

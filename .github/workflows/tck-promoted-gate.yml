@@ -13,7 +13,10 @@ on:
       - "packages/broker/src/fixtures/a2a-protocol-compatibility.ts"
       - "packages/broker/src/server.ts"
       - "packages/broker/scripts/a2a-tck-harness*.mjs"
+      - "packages/broker/scripts/append-tck-history.mjs"
+      - "packages/broker/scripts/check-tck-regressions.mjs"
       - "packages/broker/docs/a2a-tck-runbook.md"
+      - "packages/broker/docs/tck-failing-categories.json"
       - "packages/broker/docs/tck-history.json"
       - "packages/broker/package.json"
       - ".github/workflows/tck-promoted-gate.yml"
@@ -73,5 +76,53 @@ jobs:
         with:
           name: tck-promoted-agent-card-log
           path: /tmp/tck-promoted-agent-card.log
+          if-no-files-found: warn
+          retention-days: 30
+
+  version-negotiation:
+    name: promoted TCK sub-category — version negotiation
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v6
+        with:
+          node-version: "22"
+          cache: npm
+      - run: npm ci --include=dev
+
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        with:
+          python-version: "3.11"
+
+      - name: Clone and install the pinned official A2A TCK
+        env:
+          TCK_REF: "29063fe95e903cddac5d8ff811ab94df1ad6ef86"
+        run: |
+          set -euo pipefail
+          git clone --filter=blob:none https://github.com/a2aproject/a2a-tck /tmp/a2a-tck
+          git -C /tmp/a2a-tck checkout --detach "$TCK_REF"
+          python3 -m venv /tmp/a2a-tck/.venv
+          /tmp/a2a-tck/.venv/bin/pip install -q -e /tmp/a2a-tck
+
+      - name: Run promoted version-negotiation TCK sub-category
+        working-directory: packages/broker
+        env:
+          A2A_TCK_DIR: /tmp/a2a-tck
+        run: |
+          set -euo pipefail
+          export PATH="/tmp/a2a-tck/.venv/bin:$PATH"
+          npm run tck:run -- --level must --transport jsonrpc -- \
+            -k 'test_unsupported_version_returns_error_jsonrpc or test_empty_version_treated_as_default_jsonrpc or test_version_not_supported_error or test_error_code_in_valid_range' \
+            --deselect='tests/compatibility/jsonrpc/test_error_codes.py::TestJsonRpcErrorCodeRange::test_error_code_in_valid_range[GetTask-nonexistent]' \
+            --deselect='tests/compatibility/jsonrpc/test_error_codes.py::TestJsonRpcErrorCodeRange::test_error_code_in_valid_range[CancelTask-nonexistent]' \
+            -q | tee /tmp/tck-promoted-version-negotiation.log
+
+      - name: Upload promoted-gate log
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        with:
+          name: tck-promoted-version-negotiation-log
+          path: /tmp/tck-promoted-version-negotiation.log
           if-no-files-found: warn
           retention-days: 30

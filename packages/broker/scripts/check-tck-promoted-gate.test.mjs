@@ -11,7 +11,7 @@ function readRepo(path) {
   return readFileSync(resolve(repoRoot, path), "utf8");
 }
 
-test("promoted TCK gate runs only the documented agent_card category", () => {
+test("promoted TCK gate keeps the documented agent_card category", () => {
   const workflow = readRepo(".github/workflows/tck-promoted-gate.yml");
 
   assert.match(workflow, /name:\s*tck-promoted-gate/);
@@ -24,6 +24,20 @@ test("promoted TCK gate runs only the documented agent_card category", () => {
   assert.match(workflow, /--ignore=tests\/compatibility\/http_json/);
   assert.match(workflow, /--ignore=tests\/compatibility\/jsonrpc/);
   assert.doesNotMatch(workflow, /tests\/compatibility\/agent_card -q/);
+});
+
+test("promoted TCK gate blocks on exactly the version-negotiation selector set", () => {
+  const workflow = readRepo(".github/workflows/tck-promoted-gate.yml");
+
+  assert.match(workflow, /name:\s*promoted TCK sub-category — version negotiation/);
+  assert.match(workflow, /test_unsupported_version_returns_error_jsonrpc/);
+  assert.match(workflow, /test_empty_version_treated_as_default_jsonrpc/);
+  assert.match(workflow, /test_version_not_supported_error/);
+  assert.match(workflow, /test_error_code_in_valid_range/);
+  assert.match(workflow, /--deselect='tests\/compatibility\/jsonrpc\/test_error_codes\.py::TestJsonRpcErrorCodeRange::test_error_code_in_valid_range\[GetTask-nonexistent\]'/);
+  assert.match(workflow, /--deselect='tests\/compatibility\/jsonrpc\/test_error_codes\.py::TestJsonRpcErrorCodeRange::test_error_code_in_valid_range\[CancelTask-nonexistent\]'/);
+  assert.match(workflow, /tck-promoted-version-negotiation\.log/);
+  assert.doesNotMatch(workflow, /continue-on-error/);
 });
 
 test("promoted TCK gate is documented separately from the non-gating measurement lane", () => {
