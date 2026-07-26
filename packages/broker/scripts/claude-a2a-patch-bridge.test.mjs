@@ -547,6 +547,146 @@ test("SINGLE-SHOT: a diff that patches a markdown file containing code fences st
   }
 });
 
+
+function writeRecordingGitStub(path) {
+  const script = [
+    "#!/usr/bin/env node",
+    "import { spawnSync } from 'node:child_process';",
+    "import { appendFileSync, cpSync, rmSync } from 'node:fs';",
+    "const args = process.argv.slice(2);",
+    "if (process.env.CAPTURE_GIT_ARGS_PATH) appendFileSync(process.env.CAPTURE_GIT_ARGS_PATH, JSON.stringify(args) + '\\n');",
+    "const sub = args[0];",
+    "if (sub === 'clone') {",
+    "  const dir = args[args.length - 1];",
+    "  const seed = process.env.FAKE_GIT_SEED_PATH;",
+    "  if (!seed) { console.error('FAKE_GIT_SEED_PATH not set'); process.exit(2); }",
+    "  rmSync(dir, { recursive: true, force: true });",
+    "  cpSync(seed, dir, { recursive: true });",
+    "  process.exit(0);",
+    "}",
+    "const realGit = process.env.REAL_GIT_BIN || 'git';",
+    "const res = spawnSync(realGit, args, { cwd: process.cwd(), encoding: 'utf8', stdio: 'inherit' });",
+    "process.exit(res.status ?? 1);",
+    "",
+  ].join("\n");
+  writeFileSync(path, script);
+  chmodSync(path, 0o755);
+}
+
+test("SINGLE-SHOT: the bridge configures a commit identity in its own workspace", () => {
+  // Regression: the bridge commits inside its own clone. The docker runner
+  // configures /work/repo, not that workspace, and the container has neither a
+  // global git config nor the host's GIT_AUTHOR_* variables, so git fell back to
+  // auto-detection and died with "Author identity unknown" after the patch had
+  // already applied. Assert the identity is set explicitly rather than relying on
+  // ambient config, which happens to exist on developer hosts but not in the
+  // container.
+  const tempDir = mkdtempSync(join(tmpdir(), "claude-singleshot-identity-"));
+  const { workSeed } = setupLocalFakeOrigin(tempDir);
+  const fakeGitPath = join(tempDir, "fake-git.mjs");
+  const fakeGhPath = join(tempDir, "fake-gh.mjs");
+  const fakeClaudePath = join(tempDir, "fake-claude.mjs");
+  const gitArgsPath = join(tempDir, "git-args.jsonl");
+  try {
+    writeRecordingGitStub(fakeGitPath);
+    writeFakeGhStub(fakeGhPath);
+    writeDiffClaudeStub(fakeClaudePath, [
+      "diff --git a/hello.txt b/hello.txt",
+      "--- a/hello.txt",
+      "+++ b/hello.txt",
+      "@@ -1 +1 @@",
+      "-hello world",
+      "+hello world (identity test)",
+    ].join("\n"));
+
+    const result = spawnSync(bridgePath, bridgeArgs(singleShotMessage()), {
+      encoding: "utf8",
+      env: {
+        ...process.env,
+        A2A_CLAUDE_CODE_BIN: fakeClaudePath,
+        A2A_CLAUDE_CODE_GIT_BIN: fakeGitPath,
+        A2A_CLAUDE_CODE_GH_BIN: fakeGhPath,
+        A2A_CLAUDE_CODE_PATCH_MODE: "single-shot",
+        FAKE_GIT_SEED_PATH: workSeed,
+        FAKE_GH_PR_URL: "https://github.com/jinwon-int/a2a-nexus/pull/1644",
+        CAPTURE_GIT_ARGS_PATH: gitArgsPath,
+        REAL_GIT_BIN: "git",
+        REAL_GH_BIN: "gh",
+        GIT_COMMITTER_NAME: "seoseo-ai",
+        GIT_COMMITTER_EMAIL: "seoseo-ai@users.noreply.github.com",
+      },
+    });
+
+    assert.equal(result.status, 0, result.stderr);
+    const invocations = readFileSync(gitArgsPath, "utf8").trim().split("\n").map((l) => JSON.parse(l));
+    const configs = invocations.filter((a) => a[0] === "config");
+    const commitIdx = invocations.findIndex((a) => a[0] === "commit");
+
+    assert.deepEqual(
+      configs.find((a) => a[1] === "user.email"),
+      ["config", "user.email", "seoseo-ai@users.noreply.github.com"],
+    );
+    assert.deepEqual(configs.find((a) => a[1] === "user.name"), ["config", "user.name", "seoseo-ai"]);
+    const lastConfigIdx = invocations.map((a) => a[0]).lastIndexOf("config");
+    assert.ok(lastConfigIdx < commitIdx, "identity must be configured before the commit");
+  } finally {
+    rmSync(tempDir, { recursive: true, force: true });
+  }
+});
+
+test("SINGLE-SHOT: commit identity falls back to the docker runner identity", () => {
+  const tempDir = mkdtempSync(join(tmpdir(), "claude-singleshot-identity-default-"));
+  const { workSeed } = setupLocalFakeOrigin(tempDir);
+  const fakeGitPath = join(tempDir, "fake-git.mjs");
+  const fakeGhPath = join(tempDir, "fake-gh.mjs");
+  const fakeClaudePath = join(tempDir, "fake-claude.mjs");
+  const gitArgsPath = join(tempDir, "git-args.jsonl");
+  try {
+    writeRecordingGitStub(fakeGitPath);
+    writeFakeGhStub(fakeGhPath);
+    writeDiffClaudeStub(fakeClaudePath, [
+      "diff --git a/hello.txt b/hello.txt",
+      "--- a/hello.txt",
+      "+++ b/hello.txt",
+      "@@ -1 +1 @@",
+      "-hello world",
+      "+hello world (default identity)",
+    ].join("\n"));
+
+    const env = {
+      ...process.env,
+      A2A_CLAUDE_CODE_BIN: fakeClaudePath,
+      A2A_CLAUDE_CODE_GIT_BIN: fakeGitPath,
+      A2A_CLAUDE_CODE_GH_BIN: fakeGhPath,
+      A2A_CLAUDE_CODE_PATCH_MODE: "single-shot",
+      FAKE_GIT_SEED_PATH: workSeed,
+      FAKE_GH_PR_URL: "https://github.com/jinwon-int/a2a-nexus/pull/1645",
+      CAPTURE_GIT_ARGS_PATH: gitArgsPath,
+      REAL_GIT_BIN: "git",
+      REAL_GH_BIN: "gh",
+    };
+    delete env.GIT_AUTHOR_NAME;
+    delete env.GIT_AUTHOR_EMAIL;
+    delete env.GIT_COMMITTER_NAME;
+    delete env.GIT_COMMITTER_EMAIL;
+
+    const result = spawnSync(bridgePath, bridgeArgs(singleShotMessage()), { encoding: "utf8", env });
+    assert.equal(result.status, 0, result.stderr);
+
+    const invocations = readFileSync(gitArgsPath, "utf8").trim().split("\n").map((l) => JSON.parse(l));
+    const configs = invocations.filter((a) => a[0] === "config");
+    // Matches the identity the docker runner sets for /work/repo, so a commit
+    // through either path is attributable to the same actor.
+    assert.deepEqual(
+      configs.find((a) => a[1] === "user.email"),
+      ["config", "user.email", "a2a-runner@openclaw.ai"],
+    );
+    assert.deepEqual(configs.find((a) => a[1] === "user.name"), ["config", "user.name", "A2A Docker Runner"]);
+  } finally {
+    rmSync(tempDir, { recursive: true, force: true });
+  }
+});
+
 test("SINGLE-SHOT corrective retry: first diff fails git apply --check, second diff applies -> prUrl with 2 calls", () => {
   const tempDir = mkdtempSync(join(tmpdir(), "claude-singleshot-retry-"));
   const { workSeed } = setupLocalFakeOrigin(tempDir);

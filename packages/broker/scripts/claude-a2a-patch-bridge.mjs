@@ -1069,12 +1069,52 @@ async function listWorkingTreeChanges(workspace, env) {
 
 // Deterministic commit + push + PR plumbing. Each step is a separate process so a
 // failure points at the failing step instead of returning a generic non-zero.
+/**
+ * Commit identity for the bridge's workspace.
+ *
+ * Prefers the committer/author variables an operator may already set on the
+ * node, then falls back to the same identity the docker runner configures for
+ * /work/repo (task-normalizer), so a commit made through either path is
+ * attributable to the same actor.
+ */
+function resolveCommitIdentity(env) {
+  const pick = (...values) => {
+    for (const value of values) {
+      const trimmed = safeText(value, "").trim();
+      if (trimmed) return trimmed;
+    }
+    return "";
+  };
+  return {
+    name: pick(env.GIT_COMMITTER_NAME, env.GIT_AUTHOR_NAME, "A2A Docker Runner"),
+    email: pick(env.GIT_COMMITTER_EMAIL, env.GIT_AUTHOR_EMAIL, "a2a-runner@openclaw.ai"),
+  };
+}
+
 async function commitPushAndCreatePr(workspace, { branch, commitMessage, title, body, env }) {
   const git = resolveTool(env, "A2A_CLAUDE_CODE_GIT_BIN", "git");
   const gh = resolveTool(env, "A2A_CLAUDE_CODE_GH_BIN", "gh");
 
   if (!branch || branch === "main" || branch === "master") {
     return { ok: false, error: "refusing to push or open a PR from a default branch" };
+  }
+
+  // The bridge commits inside its own clone, which has no identity: the docker
+  // runner configures /work/repo, not this workspace, and the container has no
+  // global git config and does not inherit the host's GIT_AUTHOR_* variables.
+  // Without this, git apply succeeds and the task then dies at commit time with
+  // "Author identity unknown" — observed on a live propose_patch task.
+  const identity = resolveCommitIdentity(env);
+  for (const [key, value] of [["user.name", identity.name], ["user.email", identity.email]]) {
+    const configured = await runTool(git, ["config", key, value], {
+      cwd: workspace,
+      env,
+      timeoutMs: 15_000,
+      maxBufferBytes: 256 * 1024,
+    });
+    if (configured.status !== 0) {
+      return { ok: false, error: toolError(`git config ${key}`, value, configured).message };
+    }
   }
 
   const add = await runTool(git, ["add", "-A"], { cwd: workspace, env, timeoutMs: 30_000, maxBufferBytes: 4 * 1024 * 1024 });
