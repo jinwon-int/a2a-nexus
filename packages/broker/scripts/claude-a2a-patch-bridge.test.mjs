@@ -439,6 +439,114 @@ test("SINGLE-SHOT happy path: 1 claude call, valid diff, deterministic plumbing 
   }
 });
 
+
+function writeDiffClaudeStubWithTrailingProse(path, diffText, trailingProse) {
+  const diffJson = JSON.stringify(diffText);
+  const proseJson = JSON.stringify(trailingProse);
+  const script = [
+    "#!/usr/bin/env node",
+    "import { writeFileSync } from 'node:fs';",
+    "const args = process.argv.slice(2);",
+    "const idx = args.indexOf('-p');",
+    "const prompt = args[idx + 1];",
+    "if (process.env.CAPTURE_PROMPT_PATH) writeFileSync(process.env.CAPTURE_PROMPT_PATH, prompt);",
+    "const diff = " + diffJson + ";",
+    "const wrapped = '```diff\\n' + diff + '\\n```\\n\\n' + " + proseJson + ";",
+    "const envelope = { type: 'result', subtype: 'success', result: wrapped };",
+    "process.stdout.write(JSON.stringify(envelope));",
+    "",
+  ].join("\n");
+  writeFileSync(path, script);
+  chmodSync(path, 0o755);
+}
+
+test("SINGLE-SHOT: a diff that patches a markdown file containing code fences still applies", () => {
+  // Regression: the fence pattern was not anchored to line starts, so the code
+  // fences the patched markdown file carries as unified-diff context/added lines
+  // (" ```bash", "+```") terminated the lazy match. "latest wins" then picked a
+  // fragment with no diff header and the raw-text fallback swallowed the closing
+  // fence, which git apply rejected as `corrupt patch at line N`. Observed live
+  // on a documentation propose_patch task.
+  const tempDir = mkdtempSync(join(tmpdir(), "claude-singleshot-fenced-"));
+  const { workSeed } = setupLocalFakeOrigin(tempDir);
+  const fakeGitPath = join(tempDir, "fake-git.mjs");
+  const fakeGhPath = join(tempDir, "fake-gh.mjs");
+  const fakeClaudePath = join(tempDir, "fake-claude.mjs");
+  try {
+    // Seed a markdown file whose body contains fenced code blocks.
+    writeFileSync(join(workSeed, "guide.md"), [
+      "# Guide",
+      "",
+      "Set it via:",
+      "",
+      "```bash",
+      "EXISTING=1",
+      "```",
+      "",
+    ].join("\n"));
+    execFileSync("git", ["-C", workSeed, "add", "-A"]);
+    execFileSync("git", ["-C", workSeed, "commit", "-m", "add guide"], { stdio: "ignore" });
+    execFileSync("git", ["-C", workSeed, "push", "origin", "main"], { stdio: "ignore" });
+
+    writeFakeGitStub(fakeGitPath);
+    writeFakeGhStub(fakeGhPath);
+
+    // The diff keeps the file's own fences as context and adds new fenced lines.
+    const fencedDiff = [
+      "diff --git a/guide.md b/guide.md",
+      "--- a/guide.md",
+      "+++ b/guide.md",
+      "@@ -3,5 +3,11 @@",
+      " Set it via:",
+      " ",
+      " ```bash",
+      " EXISTING=1",
+      " ```",
+      "+",
+      "+Also:",
+      "+",
+      "+```bash",
+      "+ADDED=1",
+      "+```",
+    ].join("\n");
+    // Real model output continues past the closing fence. That trailing prose is
+    // what the raw-text fallback swallowed into the patch body once the fence
+    // match had failed, which is the observed `corrupt patch` failure.
+    writeDiffClaudeStubWithTrailingProse(
+      fakeClaudePath,
+      fencedDiff,
+      "Applied the documentation update as requested.",
+    );
+
+    const message = singleShotMessage().replace(
+      'Declared write-set: ["hello.txt"]',
+      'Declared write-set: ["guide.md"]',
+    );
+    const result = spawnSync(bridgePath, bridgeArgs(message), {
+      encoding: "utf8",
+      env: {
+        ...process.env,
+        A2A_CLAUDE_CODE_BIN: fakeClaudePath,
+        A2A_CLAUDE_CODE_GIT_BIN: fakeGitPath,
+        A2A_CLAUDE_CODE_GH_BIN: fakeGhPath,
+        A2A_CLAUDE_CODE_PATCH_MODE: "single-shot",
+        FAKE_GIT_SEED_PATH: workSeed,
+        FAKE_GH_PR_URL: "https://github.com/jinwon-int/a2a-nexus/pull/1643",
+        REAL_GIT_BIN: "git",
+        REAL_GH_BIN: "gh",
+      },
+    });
+
+    assert.equal(result.status, 0, result.stderr);
+    const payload = JSON.parse(JSON.parse(result.stdout).payloads[0].text);
+    assert.equal(payload.status, "pr_opened", JSON.stringify(payload).slice(0, 400));
+    assert.equal(payload.claudeCalls, 1, "a well-formed diff must not need a corrective retry");
+    assert.ok(payload.filesChanged.some((f) => f.endsWith("guide.md")));
+  } finally {
+    rmSync(tempDir, { recursive: true, force: true });
+  }
+});
+
 test("SINGLE-SHOT corrective retry: first diff fails git apply --check, second diff applies -> prUrl with 2 calls", () => {
   const tempDir = mkdtempSync(join(tmpdir(), "claude-singleshot-retry-"));
   const { workSeed } = setupLocalFakeOrigin(tempDir);
