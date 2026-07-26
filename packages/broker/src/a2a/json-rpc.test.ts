@@ -480,7 +480,7 @@ test("id: null is a normal request and still gets a response", () => {
   const broker = createBroker();
   registerWorker(broker, "worker-a");
   const result = executeA2AJsonRpcBody(
-    JSON.stringify({ jsonrpc: "2.0", id: null, method: "GetExtendedAgentCard" }),
+    JSON.stringify({ jsonrpc: "2.0", id: null, method: "ListTasks", params: {} }),
     createJsonRpcOptions(broker),
   );
   assert.ok(result && !Array.isArray(result) && "result" in result);
@@ -511,6 +511,65 @@ test("GetTask on a missing task returns A2A TaskNotFoundError (-32001) with Erro
   assert.equal(data[0].domain, "a2a-protocol.org");
   assert.equal(data[0].reason, "TASK_NOT_FOUND");
   assert.equal((data[0].metadata as Record<string, unknown>).brokerCode, "not_found");
+});
+
+test("task lookup methods accept the TCK wire forms of the task id", () => {
+  // The official TCK JSON-RPC client sends proto field `id` (and snake_case
+  // `task_id`); proto resource form is `name: "tasks/<id>"`. All must reach
+  // the task lookup, so a miss is A2A TaskNotFoundError (-32001), not a
+  // params error (-32602).
+  const cases: Array<{ method: string; params: Record<string, unknown> }> = [
+    { method: "GetTask", params: { id: "nope" } },
+    { method: "GetTask", params: { task_id: "nope" } },
+    { method: "GetTask", params: { name: "tasks/nope" } },
+    { method: "CancelTask", params: { id: "nope" } },
+    { method: "SubscribeToTask", params: { id: "nope" } },
+  ];
+  for (const { method, params } of cases) {
+    const broker = new InMemoryA2ABroker();
+    const result = executeA2AJsonRpc(
+      { jsonrpc: "2.0", id: "alias", method, params },
+      createJsonRpcOptions(broker, { enforceRequesterIdentity: false }),
+    );
+    assert.ok("error" in result, `${method} ${JSON.stringify(params)} must error on a missing task`);
+    if (!("error" in result)) continue;
+    assert.equal(
+      result.error.code,
+      -32001,
+      `${method} ${JSON.stringify(params)}: expected TaskNotFoundError (-32001), got ${result.error.code}`,
+    );
+    const data = result.error.data as Array<Record<string, unknown>>;
+    assert.equal(data[0].reason, "TASK_NOT_FOUND");
+    assert.equal(data[0].domain, "a2a-protocol.org");
+  }
+});
+
+test("CancelTask on a missing task is TaskNotFoundError even without actor identity", () => {
+  // The TCK's anonymous CancelTask must surface -32001, not the actor.id
+  // bad_request (-32602) — task existence is evaluated first.
+  const broker = new InMemoryA2ABroker();
+  const result = executeA2AJsonRpc(
+    { jsonrpc: "2.0", id: "cx", method: "CancelTask", params: { id: "nope" } },
+    createJsonRpcOptions(broker, { requesterIdentity: null, enforceRequesterIdentity: false }),
+  );
+  assert.ok("error" in result);
+  if (!("error" in result)) return;
+  assert.equal(result.error.code, -32001);
+});
+
+test("GetExtendedAgentCard without the capability fails with -32007", () => {
+  const broker = new InMemoryA2ABroker();
+  const result = executeA2AJsonRpc(
+    { jsonrpc: "2.0", id: "cap", method: "GetExtendedAgentCard" },
+    createJsonRpcOptions(broker, { enforceRequesterIdentity: false }),
+  );
+  assert.ok("error" in result);
+  if (!("error" in result)) return;
+
+  assert.equal(result.error.code, -32007);
+  const data = result.error.data as Array<Record<string, unknown>>;
+  assert.equal(data[0].domain, "a2a-protocol.org");
+  assert.equal(data[0].reason, "AUTHENTICATED_EXTENDED_CARD_NOT_CONFIGURED");
 });
 
 test("broker resource not_found errors do not masquerade as A2A TaskNotFoundError", () => {

@@ -85,6 +85,22 @@ export async function handleA2AJsonRpcRequest(ctx: A2AJsonRpcRouteContext): Prom
   // Explicit version negotiation opts the client into A2A 1.0 result
   // shapes; header-less legacy clients keep the historical envelopes.
   const responseShape = negotiated.requested !== null ? "spec" as const : "legacy" as const;
+  // A2A 1.0 ContentTypeNotSupportedError (-32005): the JSON-RPC endpoint
+  // requires an application/json Content-Type. A wrong content type is a
+  // content-type error, not a JSON parse error (-32700).
+  const contentType = (req.headers["content-type"] ?? "").toLowerCase();
+  if (!contentType.startsWith("application/json")) {
+    sendJson(res, 200, {
+      jsonrpc: "2.0",
+      id: null,
+      error: {
+        code: -32005,
+        message: `unsupported content type: ${contentType || "(none)"}`,
+        data: a2aProtocolErrorData("CONTENT_TYPE_NOT_SUPPORTED"),
+      },
+    });
+    return;
+  }
   // Read the raw body so malformed JSON yields a JSON-RPC -32700 rather
   // than the broker's HTTP error envelope, and so batch arrays /
   // notifications are handled by the JSON-RPC transport layer.
