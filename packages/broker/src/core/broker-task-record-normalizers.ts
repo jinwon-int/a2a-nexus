@@ -140,6 +140,14 @@ export function normalizeTaskResult(result: TaskResult | undefined): TaskResult 
     summary: result.summary,
     note: result.note,
     artifactIds: uniqueIds(result.artifactIds ?? []),
+    a2aArtifacts: Array.isArray(result.a2aArtifacts)
+      ? result.a2aArtifacts.map((artifact) => ({
+          artifactId: artifact.artifactId,
+          name: artifact.name,
+          description: artifact.description,
+          parts: Array.isArray(artifact.parts) ? artifact.parts.map((part) => ({ ...part })) : [],
+        }))
+      : undefined,
     output: result.output ? { ...result.output } : undefined,
     validation: result.validation ? normalizeValidationPayload(result.validation) : undefined,
     validations: Array.isArray(result.validations)

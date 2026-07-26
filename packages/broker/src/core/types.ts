@@ -453,6 +453,19 @@ export interface TaskResult {
   summary?: string;
   note?: string;
   artifactIds?: string[];
+  /**
+   * Optional A2A-shaped artifacts produced by an embedded agent (additive).
+   * Parts are proto-JSON Part objects (oneof text | raw | url | data). The A2A
+   * projection layer emits these verbatim on the wire; broker core treats them
+   * as opaque payloads. Absent for ordinary worker results — those continue to
+   * surface through artifactIds.
+   */
+  a2aArtifacts?: Array<{
+    artifactId: string;
+    name?: string;
+    description?: string;
+    parts: Array<Record<string, unknown>>;
+  }>;
   output?: Record<string, unknown>;
   /** Legacy single validation payload. Preserved for backward compatibility. */
   validation?: TaskValidationPayload;
