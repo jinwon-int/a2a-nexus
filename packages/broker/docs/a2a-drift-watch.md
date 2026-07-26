@@ -36,7 +36,7 @@ These surfaces are production-covered and pinned by the drift-watch test.
 | `GetTask` / `ListTasks` | `src/a2a/json-rpc.ts` — task detail and filtered list | JSON-RPC 2.0 POST | Projection keys, list metadata summary behavior, state mapping |
 | `CancelTask` | `src/a2a/json-rpc.ts` — idempotent task-scoped cancel with fan-out | JSON-RPC 2.0 POST | Cancel state mapping, terminal immutability, fan-out lineage |
 | `SubscribeToTask` (SSE) | `src/a2a/json-rpc.ts` advisory + `GET /a2a/tasks/:id/events` | JSON-RPC advisory + SSE event stream | Snapshot, status-update, terminal close, heartbeat, Last-Event-ID replay |
-| `GetExtendedAgentCard` | Returns broker agent card over JSON-RPC | JSON-RPC 2.0 POST | Agent card golden fixture |
+| `GetExtendedAgentCard` | Returns broker agent card when `extendedAgentCard` capability is set; otherwise `-32007` | JSON-RPC 2.0 POST | Agent card golden fixture + capability gate |
 | `a2a.peer.status` / `PeerStatus` | `src/a2a/peer-status.ts` — broker extension | JSON-RPC 2.0 POST | Extension-gated; not part of A2A 1.0 compatibility claim |
 | Task projection | `src/a2a/task-projection.ts` — `A2ATaskProjection`, `A2ATaskListProjection` | Internal | Projection keys, metadata keys, state mapping, artifact ids |
 

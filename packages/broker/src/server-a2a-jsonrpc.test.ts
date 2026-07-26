@@ -1238,7 +1238,7 @@ test("push notification configs survive broker restart for retained tasks (a2a-n
   }
 });
 
-test("push notification methods are absent when the feature is disabled", async () => {
+test("push notification methods answer -32003 when the feature is disabled", async () => {
   const server = await startTestServer();
   try {
     const card = await (await fetch(`${server.baseUrl}/.well-known/agent-card.json`)).json();
@@ -1250,10 +1250,32 @@ test("push notification methods are absent when the feature is disabled", async 
     });
     const body = await resp.json();
     assert.ok(body.error, "disabled broker must not accept push config methods");
-    // Disabled mode means the methods are absent from the surface entirely:
-    // JSON-RPC method-not-found, exactly like other extension-gated methods.
-    assert.equal(body.error.code, -32601);
-    assert.match(body.error.message, /method not found/);
+    // Disabled mode means the capability is absent, not the method:
+    // A2A 1.0 PushNotificationNotSupportedError (-32003) with spec ErrorInfo.
+    assert.equal(body.error.code, -32003);
+    assert.match(body.error.message, /push notifications are not supported/);
+    const info = Array.isArray(body.error.data) ? body.error.data[0] : undefined;
+    assert.equal(info?.domain, "a2a-protocol.org");
+    assert.equal(info?.reason, "PUSH_NOTIFICATION_NOT_SUPPORTED");
+  } finally {
+    await server.close();
+  }
+});
+
+test("wrong Content-Type is ContentTypeNotSupportedError (-32005), not a parse error", async () => {
+  const server = await startTestServer();
+  try {
+    const resp = await fetch(`${server.baseUrl}/a2a/jsonrpc`, {
+      method: "POST",
+      headers: { "content-type": "text/plain", "a2a-version": "1.0" },
+      body: JSON.stringify({ jsonrpc: "2.0", id: 1, method: "SendMessage", params: {} }),
+    });
+    const body = await resp.json();
+    assert.ok(body.error, "wrong content type must produce a JSON-RPC error");
+    assert.equal(body.error.code, -32005);
+    const info = Array.isArray(body.error.data) ? body.error.data[0] : undefined;
+    assert.equal(info?.domain, "a2a-protocol.org");
+    assert.equal(info?.reason, "CONTENT_TYPE_NOT_SUPPORTED");
   } finally {
     await server.close();
   }

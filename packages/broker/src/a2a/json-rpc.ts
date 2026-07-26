@@ -2,7 +2,7 @@ import { BrokerError, type InMemoryA2ABroker } from "../core/broker.js";
 import { PushNotificationConfigStore, PushConfigError, redactPushConfigSecrets } from "./push-notification-config.js";
 import { assertRequesterCanSubscribeToTask, type RequesterIdentity } from "../core/request-security.js";
 import type { A2AExchangeVia, TaskListFilters, TaskRecord } from "../core/types.js";
-import type { AgentCard } from "./agent-card.js";
+import type { AgentCard, AgentCapabilities } from "./agent-card.js";
 import { PEER_STATUS_VERBOSE_SCOPE, PeerStatusService, type PeerStatusRequest } from "./peer-status.js";
 import { projectBrokerTask, projectBrokerTaskForList } from "./task-projection.js";
 
@@ -215,7 +215,7 @@ export function executeA2AJsonRpc(
       }
 
       case "GetTask": {
-        const taskId = requireString(params, "taskId");
+        const taskId = requireTaskIdParam(params);
         if (options.enforceRequesterIdentity) {
           requireRequesterIdentityForTaskRead(options, "GetTask");
         }
@@ -256,7 +256,14 @@ export function executeA2AJsonRpc(
       }
 
       case "CancelTask": {
-        const taskId = requireString(params, "taskId");
+        const taskId = requireTaskIdParam(params);
+        // A2A task-identifier semantics: an unknown task id is
+        // TaskNotFoundError regardless of actor identity, so the task lookup
+        // must happen before actor derivation (which can legitimately demand
+        // actor.id on identity-less calls).
+        if (!options.broker.getTask(taskId)) {
+          throw new BrokerError("not_found", "task not found");
+        }
         const actor = deriveActor(params, options.requesterIdentity, options.enforceRequesterIdentity);
         const reason = optionalStringField(params, "reason");
         const task = options.broker.cancelTask(taskId, { actor, reason });
@@ -270,7 +277,7 @@ export function executeA2AJsonRpc(
         // Returns the current task snapshot plus the SSE URL clients should connect to for
         // live updates. Actual streaming happens over HTTP SSE at `/a2a/tasks/:id/events`
         // because JSON-RPC over a single POST cannot carry a multi-event stream.
-        const taskId = requireString(params, "taskId");
+        const taskId = requireTaskIdParam(params);
         if (options.enforceRequesterIdentity) {
           requireRequesterIdentityForTaskRead(options, "SubscribeToTask");
         }
@@ -295,14 +302,21 @@ export function executeA2AJsonRpc(
       // A2A 1.0 push-notification config CRUD. Method names are the proto
       // rpc names (the official TCK's JSON-RPC binding sends these exact
       // strings); params accept both proto-JSON camelCase (taskId) and the
-      // TCK's snake_case wire form (task_id). Disabled mode: the methods are
-      // absent from the surface entirely (-32601, like other extension-gated
-      // methods), so a probing client sees "method not found", not a task
-      // error.
+      // TCK's snake_case wire form (task_id). Disabled mode: the methods
+      // answer PushNotificationNotSupportedError (-32003) per the A2A 1.0
+      // error-code mapping — the capability is absent, not the method.
       case "CreateTaskPushNotificationConfig": {
         const store = options.pushNotificationConfigStore;
         if (!store) {
-          return failure(id, -32601, `method not found: ${method}`);
+          // A2A 1.0 error-code mappings: an agent that does not support push
+          // notifications answers PushNotificationNotSupportedError (-32003),
+          // not method-not-found — the method exists, the capability does not.
+          return failure(
+            id,
+            -32003,
+            "push notifications are not supported",
+            a2aProtocolErrorData("PUSH_NOTIFICATION_NOT_SUPPORTED"),
+          );
         }
         const p = isRecord(params) ? params : {};
         const createTaskId = requirePushTaskId(params);
@@ -323,7 +337,15 @@ export function executeA2AJsonRpc(
       case "GetTaskPushNotificationConfig": {
         const store = options.pushNotificationConfigStore;
         if (!store) {
-          return failure(id, -32601, `method not found: ${method}`);
+          // A2A 1.0 error-code mappings: an agent that does not support push
+          // notifications answers PushNotificationNotSupportedError (-32003),
+          // not method-not-found — the method exists, the capability does not.
+          return failure(
+            id,
+            -32003,
+            "push notifications are not supported",
+            a2aProtocolErrorData("PUSH_NOTIFICATION_NOT_SUPPORTED"),
+          );
         }
         const getTaskId = requirePushTaskId(params);
         requireAuthorizedTask(options, getTaskId);
@@ -333,7 +355,15 @@ export function executeA2AJsonRpc(
       case "ListTaskPushNotificationConfigs": {
         const store = options.pushNotificationConfigStore;
         if (!store) {
-          return failure(id, -32601, `method not found: ${method}`);
+          // A2A 1.0 error-code mappings: an agent that does not support push
+          // notifications answers PushNotificationNotSupportedError (-32003),
+          // not method-not-found — the method exists, the capability does not.
+          return failure(
+            id,
+            -32003,
+            "push notifications are not supported",
+            a2aProtocolErrorData("PUSH_NOTIFICATION_NOT_SUPPORTED"),
+          );
         }
         const listTaskId = requirePushTaskId(params);
         requireAuthorizedTask(options, listTaskId);
@@ -348,7 +378,15 @@ export function executeA2AJsonRpc(
       case "DeleteTaskPushNotificationConfig": {
         const store = options.pushNotificationConfigStore;
         if (!store) {
-          return failure(id, -32601, `method not found: ${method}`);
+          // A2A 1.0 error-code mappings: an agent that does not support push
+          // notifications answers PushNotificationNotSupportedError (-32003),
+          // not method-not-found — the method exists, the capability does not.
+          return failure(
+            id,
+            -32003,
+            "push notifications are not supported",
+            a2aProtocolErrorData("PUSH_NOTIFICATION_NOT_SUPPORTED"),
+          );
         }
         const delTaskId = requirePushTaskId(params);
         requireAuthorizedTask(options, delTaskId);
@@ -358,6 +396,20 @@ export function executeA2AJsonRpc(
       }
 
       case "GetExtendedAgentCard": {
+        // A2A 1.0: without the extendedAgentCard capability the method must
+        // fail — AuthenticatedExtendedCardNotConfiguredError (-32007) — not
+        // silently serve the public card.
+        const supportsExtendedCard =
+          (options.agentCard.capabilities as AgentCapabilities & { extendedAgentCard?: boolean })
+            .extendedAgentCard === true;
+        if (!supportsExtendedCard) {
+          return failure(
+            id,
+            -32007,
+            "authenticated extended agent card is not configured",
+            a2aProtocolErrorData("AUTHENTICATED_EXTENDED_CARD_NOT_CONFIGURED"),
+          );
+        }
         return success(id, options.agentCard);
       }
 
@@ -884,6 +936,32 @@ function failure(id: JsonRpcId, code: number, message: string, data?: unknown): 
 function requirePushTaskId(params: unknown): string {
   if (isRecord(params) && typeof params.taskId !== "string" && typeof params.task_id === "string") {
     return requireString(params, "task_id");
+  }
+  return requireString(params, "taskId");
+}
+
+/**
+ * Task lookup methods (GetTask/CancelTask/SubscribeToTask) accept the task id
+ * as proto-JSON `taskId`, the official TCK's snake_case wire form `task_id`,
+ * the TCK JSON-RPC client's bare `id`, or the proto resource `name`
+ * ("tasks/<id>", prefix stripped). Without a usable alias the canonical
+ * `taskId` requirement throws, keeping the -32602 bad_request behaviour.
+ */
+function requireTaskIdParam(params: unknown): string {
+  if (isRecord(params)) {
+    if (typeof params.taskId === "string") {
+      return requireString(params, "taskId");
+    }
+    if (typeof params.task_id === "string") {
+      return requireString(params, "task_id");
+    }
+    if (typeof params.id === "string") {
+      return requireString(params, "id");
+    }
+    if (typeof params.name === "string") {
+      const name = requireString(params, "name");
+      return name.startsWith("tasks/") ? name.slice("tasks/".length) : name;
+    }
   }
   return requireString(params, "taskId");
 }
