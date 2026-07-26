@@ -6,6 +6,7 @@
 export type BrokerErrorCode =
   | "bad_request"
   | "not_found"
+  | "content_type_not_supported"
   | "policy_denied"
   | "invalid_transition"
   | "spec_underspecified"

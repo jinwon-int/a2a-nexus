@@ -5,6 +5,7 @@ import type { A2AExchangeVia, TaskListFilters, TaskRecord } from "../core/types.
 import type { AgentCard, AgentCapabilities } from "./agent-card.js";
 import { PEER_STATUS_VERBOSE_SCOPE, PeerStatusService, type PeerStatusRequest } from "./peer-status.js";
 import { projectBrokerTask, projectBrokerTaskForList } from "./task-projection.js";
+import { matchDefaultAgentConvention } from "./default-agent-conventions.js";
 
 export type JsonRpcId = string | number | null;
 
@@ -107,6 +108,18 @@ function specTaskStatus(task: TaskRecord): Record<string, unknown> {
  * the reference so the REQUIRED parts constraint still holds.
  */
 function specTaskArtifacts(task: TaskRecord, broker: InMemoryA2ABroker): Array<Record<string, unknown>> {
+  // Embedded-agent results carry fully-shaped A2A artifacts (default-agent
+  // conformance mode); emit them verbatim. Ordinary worker results continue
+  // through the artifactIds resolution path below.
+  const embedded = task.result?.a2aArtifacts;
+  if (embedded && embedded.length > 0) {
+    return embedded.map((artifact) => ({
+      artifactId: artifact.artifactId,
+      ...(artifact.name ? { name: artifact.name } : {}),
+      ...(artifact.description ? { description: artifact.description } : {}),
+      parts: artifact.parts,
+    }));
+  }
   const ids = task.result?.artifactIds ?? task.artifactIds ?? [];
   return ids.map((id) => {
     const record = broker.getArtifact(id);
@@ -165,9 +178,19 @@ export function specStreamStatusUpdate(task: TaskRecord, final: boolean): Record
 
 /** A2A 1.0 SendMessageResponse: a oneof wrapper of { task } or { message }. */
 export function specSendResult(
-  send: { contextId: string; messageId: string; task?: ReturnType<typeof projectBrokerTask> },
+  send: { contextId: string; messageId: string; task?: ReturnType<typeof projectBrokerTask>; message?: { role: "agent"; parts: Array<{ text: string }> } },
   broker: InMemoryA2ABroker,
 ): Record<string, unknown> {
+  if (send.message) {
+    return {
+      message: {
+        messageId: send.messageId,
+        contextId: send.contextId,
+        role: "ROLE_AGENT",
+        parts: send.message.parts,
+      },
+    };
+  }
   if (send.task) {
     const record = broker.getTask(send.task.id);
     if (record) {
@@ -643,6 +666,7 @@ export function executeSendMessage(
   contextId: string;
   task?: ReturnType<typeof projectBrokerTask>;
   messageId: string;
+  message?: { role: "agent"; parts: Array<{ text: string }> };
 } {
   if (!isRecord(params)) {
     throw new BrokerError("bad_request", "params must be an object");
@@ -658,9 +682,38 @@ export function executeSendMessage(
       ? { id: "a2a-anonymous-client", kind: "service", role: "hub" }
       : null);
   const actor = deriveActor(params, effectiveIdentity, options.enforceRequesterIdentity);
+
+  // A2A message-level fields (messageId / taskId / contextId) live on the
+  // message object itself, not in broker metadata.
+  const a2aMessage = isRecord(params.message) ? params.message : undefined;
+  const a2aMessageId = optionalString(a2aMessage?.messageId);
+  const a2aTaskId = optionalString(a2aMessage?.taskId);
+  const a2aContextId = optionalString(a2aMessage?.contextId);
+
+  // The embedded default agent declares text-only input on its agent card.
+  // A file part with a non-text media type is A2A ContentTypeNotSupportedError
+  // (checked before text extraction so a file-only message reports the real
+  // reason). Router mode leaves media support to the target worker.
+  if (options.defaultAgentNodeId) {
+    assertEmbeddedAgentSupportedParts(a2aMessage);
+  }
+
   const text = extractMessageText(params.message);
   const metadata = isRecord(params.metadata) ? params.metadata : {};
-  const exchangeId = optionalString(metadata.exchangeId) ?? optionalString(metadata.contextId);
+  let exchangeId = optionalString(metadata.exchangeId) ?? optionalString(metadata.contextId) ?? a2aContextId;
+
+  // A2A task identifier semantics: a message carrying taskId binds to that
+  // task's context; an unknown taskId is TaskNotFoundError.
+  if (a2aTaskId) {
+    const referenced = options.broker.getTask(a2aTaskId);
+    if (!referenced) {
+      throw new BrokerError("not_found", `task not found: ${a2aTaskId}`);
+    }
+    if (exchangeId && exchangeId !== referenced.exchangeId) {
+      throw new BrokerError("bad_request", "message.contextId does not match the context of message.taskId");
+    }
+    exchangeId = referenced.exchangeId;
+  }
   const intent = optionalEnum(metadata.intent, [
     "chat",
     "analyze",
@@ -751,6 +804,30 @@ export function executeSendMessage(
     intent,
     via,
   });
+
+  // Embedded single-agent conformance conventions (default-agent mode only):
+  // the official A2A TCK drives SUT behavior via messageId prefixes. A
+  // direct-message convention is answered without creating a task; an
+  // artifact convention is completed inline so the SendMessage response
+  // carries the terminal task with its artifacts. Production routing never
+  // interprets messageId prefixes.
+  const convention =
+    options.defaultAgentNodeId && targetWorker.nodeId === options.defaultAgentNodeId
+      ? matchDefaultAgentConvention(a2aMessageId)
+      : null;
+
+  if (convention?.kind === "direct-message") {
+    const reply = options.broker.addExchangeMessage(exchange.id, {
+      actor: { id: targetWorker.nodeId, kind: "node", role: targetWorker.role },
+      message: convention.text,
+    });
+    return {
+      contextId: exchange.id,
+      messageId: reply.id,
+      message: { role: "agent", parts: [{ text: convention.text }] },
+    };
+  }
+
   const task = options.broker.createTask({
     exchangeId: exchange.id,
     intent,
@@ -765,11 +842,52 @@ export function executeSendMessage(
     via,
   });
 
+  if (convention?.kind === "complete-with-artifacts") {
+    // The default agent's async drive loop may already have claimed/started
+    // the task from the creation state event; only advance the states that
+    // have not happened yet, then complete with the convention artifacts.
+    const inFlight = options.broker.getTask(task.id) ?? task;
+    if (inFlight.status === "queued") {
+      options.broker.claimTask(task.id, assignedWorker.nodeId);
+    }
+    if ((options.broker.getTask(task.id) ?? inFlight).status === "claimed") {
+      options.broker.startTask(task.id, assignedWorker.nodeId);
+    }
+    options.broker.completeTask(task.id, assignedWorker.nodeId, {
+      summary: convention.summary,
+      a2aArtifacts: convention.artifacts,
+    });
+  }
+
+  // Re-read after the inline drive so the response reflects the terminal
+  // task (convention path) rather than the creation-time snapshot.
+  const current = options.broker.getTask(task.id) ?? task;
   return {
     contextId: exchange.id,
     messageId: exchange.rootMessageId,
-    task: projectBrokerTask(task),
+    task: projectBrokerTask(current),
   };
+}
+
+/**
+ * Embedded-agent input support is text-only (agent card defaultInputModes).
+ * File parts (raw/url) with a non-text media type are rejected as A2A
+ * ContentTypeNotSupportedError; text and data parts pass through.
+ */
+function assertEmbeddedAgentSupportedParts(message: Record<string, unknown> | undefined): void {
+  if (!message || !Array.isArray(message.parts)) return;
+  for (const part of message.parts) {
+    if (!isRecord(part)) continue;
+    if (part.raw !== undefined || part.url !== undefined) {
+      const mediaType = optionalString(part.mediaType) ?? "";
+      if (!mediaType.startsWith("text/")) {
+        throw new BrokerError(
+          "content_type_not_supported",
+          `unsupported media type: ${mediaType || "unspecified"}`,
+        );
+      }
+    }
+  }
 }
 
 function assertConsistentAssignmentMetadata(metadata: Record<string, unknown>): void {
@@ -1005,8 +1123,8 @@ export function jsonRpcErrorFromUnknown(error: unknown): { code: number; message
 
 // A2A 1.0 reserved JSON-RPC error family (a2a-protocol.org). Only the codes
 // the broker can actually produce are bound here; the rest of the -3200x
-// space (push/content-type/agent-response/extended-card/extension) is for
-// conditions this broker does not raise.
+// space (push/agent-response/extended-card/extension) is for conditions this
+// broker does not raise.
 const A2A_ERROR_DOMAIN = "a2a-protocol.org";
 const A2A_ERROR_INFO_TYPE = "type.googleapis.com/google.rpc.ErrorInfo";
 
@@ -1041,6 +1159,10 @@ function brokerErrorMapping(code: BrokerError["code"], message?: string): Broker
         return { code: -32001, a2a: { reason: "TASK_NOT_FOUND" } };
       }
       return { code: -32014 };
+    case "content_type_not_supported":
+      // A message part whose media type the agent does not support is A2A
+      // ContentTypeNotSupportedError.
+      return { code: -32005, a2a: { reason: "CONTENT_TYPE_NOT_SUPPORTED" } };
     case "invalid_transition":
       // A lifecycle transition the task can no longer make (e.g. cancel on a
       // terminal task) is A2A TaskNotCancelableError for JSON-RPC task ops.
