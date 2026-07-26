@@ -20,7 +20,7 @@
  *   node scripts/ratchet-harness/measure.mjs --record-baseline  # (operator only) pin new baseline
  */
 import { createHash } from "node:crypto";
-import { readFileSync, readdirSync, writeFileSync, existsSync } from "node:fs";
+import { readFileSync, readdirSync, writeFileSync, existsSync, mkdirSync } from "node:fs";
 import { spawnSync } from "node:child_process";
 import { join, dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -30,10 +30,11 @@ const REPO_ROOT = resolve(HERE, "..", "..");
 const BROKER = join(REPO_ROOT, "packages", "broker");
 const BASELINE_PATH = join(HERE, "baseline.json");
 const TARGET_PATH = join(HERE, "ratchet-target.json");
+const RUNS_DIR = join(HERE, "runs");
 
 // Pinned after baseline recording (operator step). Empty = enforcement off
 // only until first pin; measure mode REFUSES to run unpinned.
-const EXPECTED_BASELINE_SHA256 = "4f982b6b9d7c6981f13431a63da5c8475907ca3da4328826322cbec3e84061e9";
+const EXPECTED_BASELINE_SHA256 = "91d44eab82ff9188e6f03d0b7bd81181da96ea164f076e903fadb69c515a039f";
 
 function sha256File(path) {
   return createHash("sha256").update(readFileSync(path)).digest("hex");
@@ -99,6 +100,35 @@ function parseTapSummary(tap) {
   return counts;
 }
 
+// Failing test IDs from either reporter shape: spec ("✖ name (12.3ms)") or
+// TAP ("not ok 7 - name"). Deduplicated, order of first appearance.
+function extractFailingTests(tap) {
+  const failing = [];
+  const seen = new Set();
+  for (const line of tap.split("\n")) {
+    const trimmed = line.trim();
+    let name = null;
+    let match = trimmed.match(/^✖ (.+?)(?: \(\d+(?:\.\d+)?ms\))?$/);
+    if (match) name = match[1];
+    if (!name) {
+      match = trimmed.match(/^not ok \d+ - (.+?)(?: \(\d+(?:\.\d+)?ms\))?$/);
+      if (match) name = match[1];
+    }
+    if (name && !seen.has(name)) {
+      seen.add(name);
+      failing.push(name);
+    }
+  }
+  return failing;
+}
+
+function preserveRunTap(stamp, index, tap) {
+  mkdirSync(RUNS_DIR, { recursive: true });
+  const path = join(RUNS_DIR, `${stamp}-run${index + 1}.log`);
+  writeFileSync(path, tap);
+  return path;
+}
+
 function median(values) {
   const sorted = [...values].sort((a, b) => a - b);
   const mid = Math.floor(sorted.length / 2);
@@ -130,7 +160,7 @@ function measureOnce(target) {
   const tap = (test.result.stdout || "").toString();
   const counts = parseTapSummary(tap);
   if (!counts) {
-    return { crash: true, phase: "test", reason: "TAP summary not found", stderrTail: (test.result.stderr || "").toString().slice(-2000) };
+    return { crash: true, phase: "test", reason: "TAP summary not found", tap, stderrTail: (test.result.stderr || "").toString().slice(-2000) };
   }
   return {
     crash: false,
@@ -138,6 +168,8 @@ function measureOnce(target) {
     testMs: Math.round(test.elapsedMs),
     totalMs: Math.round(build.elapsedMs + test.elapsedMs),
     counts,
+    failingTests: extractFailingTests(tap),
+    tap,
     exitStatus: test.result.status ?? 1,
   };
 }
@@ -145,15 +177,27 @@ function measureOnce(target) {
 function main() {
   const recordBaseline = process.argv.includes("--record-baseline");
   const target = loadTarget();
+  const stamp = new Date().toISOString().replace(/[:.]/g, "-");
 
-  if (recordBaseline) {
+  // Persist per-run raw test output so a flaky/non-green run is diagnosable
+  // after the fact (PoC attempt 11 lost the failing test ID without this).
+  // Returns run views safe for JSON output (raw tap stripped).
+  function collectRuns() {
     const runs = [];
     for (let i = 0; i < 3; i += 1) {
       const run = measureOnce(target);
-      if (run.crash || run.counts.fail !== 0 || run.exitStatus !== 0) {
-        failClosed("baseline run is not green — refusing to pin", { run });
-      }
-      runs.push(run);
+      const { tap, ...view } = run;
+      if (typeof tap === "string") view.tapFile = preserveRunTap(stamp, i, tap);
+      runs.push(view);
+    }
+    return runs;
+  }
+
+  if (recordBaseline) {
+    const runs = collectRuns();
+    const bad = runs.find((r) => r.crash || r.counts.fail !== 0 || r.exitStatus !== 0);
+    if (bad) {
+      failClosed("baseline run is not green — refusing to pin", { run: bad });
     }
     const baseline = {
       kind: "ratchet-baseline-v1",
@@ -185,10 +229,7 @@ function main() {
   }
   const baseline = JSON.parse(readFileSync(BASELINE_PATH, "utf8"));
 
-  const runs = [];
-  for (let i = 0; i < 3; i += 1) {
-    runs.push(measureOnce(target));
-  }
+  const runs = collectRuns();
   const crashed = runs.find((r) => r.crash);
   if (crashed) {
     process.stdout.write(JSON.stringify({ ok: false, crash: true, phase: crashed.phase, detail: crashed, runs }) + "\n");
@@ -213,8 +254,9 @@ function main() {
     pass_count: counts.pass,
     fail_count: counts.fail,
     invariant_ok: invariantOk,
+    failing_tests: [...new Set(runs.flatMap((r) => r.failingTests || []))],
     target,
-    runs: runs.map((r) => ({ buildMs: r.buildMs, testMs: r.testMs, totalMs: r.totalMs, exitStatus: r.exitStatus })),
+    runs: runs.map((r) => ({ buildMs: r.buildMs, testMs: r.testMs, totalMs: r.totalMs, exitStatus: r.exitStatus, failingTests: r.failingTests, tapFile: r.tapFile })),
   }) + "\n");
 }
 

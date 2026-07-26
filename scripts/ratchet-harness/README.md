@@ -37,3 +37,10 @@ fail-closed로 거부한다.
 매 시도는 루프 드라이버가 `attempts.jsonl`에 1행 기록한다:
 `{attempt, parent_commit, patch_ref, median_ms, delta_pct, test_count,
 pass_count, invariant_ok, status: keep|discard|crash, description}`.
+
+측정기는 추가로 **런별 원본 출력을 자동 보존**한다: `runs/<UTC-stamp>-run<N>.log`
+(측정 1회 = 3런 = 3파일, gitignore 처리된 증거 아티팩트). non-green/flaky 런이
+나오면 JSON 출력의 `failing_tests`(spec `✖`/TAP `not ok` 양형식 추출)와
+런별 `tapFile` 경로로 실패 테스트를 즉시 특정할 수 있다 — attempt 11처럼
+"1/3 non-green인데 대상 테스트 미상"으로 끝나는 경우를 방지. non-green
+시도는 attempts.jsonl `description`에 failing test ID를 함께 적는다.

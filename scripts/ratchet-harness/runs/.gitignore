@@ -1,0 +1,3 @@
+# per-run preserved test output (evidence artifacts, not source)
+*
+!.gitignore
