@@ -844,6 +844,26 @@ function buildSingleShotPrompt({ message, taskContext }) {
 // fields first (since `claude --output-format json` wraps the result in a JSON
 // envelope), then falls back to scanning the raw text for fenced blocks or
 // raw unified-diff anchors.
+/**
+ * Render a numbered, redacted excerpt of a diff git refused, for the error text.
+ *
+ * `git apply` reports failures as "corrupt patch at line N", but the patch file
+ * lives in the disposable workspace the bridge removes on exit, so N refers to
+ * content nobody can read afterwards. Numbering the excerpt makes the reported
+ * line directly resolvable from the Block evidence alone.
+ */
+function describeRejectedDiff(body, maxLines = 60) {
+  const lines = safeText(body, "").split(/\r?\n/);
+  const shown = lines.slice(0, maxLines);
+  const numbered = shown.map((line, index) => `${String(index + 1).padStart(4, " ")}| ${line}`).join("\n");
+  const omitted = lines.length - shown.length;
+  return [
+    `rejected diff (${lines.length} lines${omitted > 0 ? `, first ${maxLines} shown` : ""}):`,
+    redactSecrets(numbered),
+    omitted > 0 ? `... ${omitted} more line(s) omitted` : "",
+  ].filter(Boolean).join("\n");
+}
+
 function extractUnifiedDiff(stdout) {
   const text = safeText(stdout);
 
@@ -874,10 +894,18 @@ function extractUnifiedDiff(stdout) {
 
 // Walks a parsed JSON value looking for the first string that contains a
 // parseable diff block. Searches likely-named fields first (result, text, ...).
+// Only a real diff propagates. extractDiffFromRawText returns a truthy
+// {kind:"no_diff"} for any non-empty string, so returning it here made the first
+// string field in the envelope abort the walk and mask a diff carried by a later
+// field. A NO_DIFF marker is still honoured, since that is an explicit answer
+// rather than an absence.
 function findDiffInObject(value, depth = 0) {
   if (depth > 8 || value === undefined || value === null) return null;
   if (typeof value === "string") {
-    return extractDiffFromRawText(value);
+    const found = extractDiffFromRawText(value);
+    if (!found) return null;
+    if (found.kind === "diff") return found;
+    return /^\s*NO_DIFF:/.test(found.body ?? "") ? found : null;
   }
   if (Array.isArray(value)) {
     for (const entry of value) {
@@ -897,17 +925,30 @@ function findDiffInObject(value, depth = 0) {
 
 // Scans a single string for a fenced diff block (latest wins) or raw unified-diff
 // anchors. Returns { kind, body } or null.
-function extractDiffFromRawText(text) {
+function extractDiffFromRawText(text, allowUnescapeRetry = true) {
   if (!text) return null;
-  // Fenced diff/patch blocks (latest wins, matches a single-fenced-prompt contract).
-  // We accept an optional newline OR literal `\n` (some emiters JSON-encape newlines).
-  const fenceRegex = /```(?:diff|patch|unified)?[ \t]*(?:\r?\n|\\n)([\s\S]+?)(?:\r?\n|\\n)?```/g;
+  // Fenced diff/patch blocks (latest valid one wins, matching the single-fenced
+  // prompt contract).
+  //
+  // Both fences MUST be anchored to the start of a line. A diff that patches a
+  // markdown file carries that file's own code fences as context/added lines,
+  // where they appear indented by the unified-diff prefix (" ```bash", "+```").
+  // An unanchored pattern matches those too, so the lazy body terminated at the
+  // first inner fence, "latest wins" then selected a fragment with no diff
+  // header, and the raw-text fallback swallowed the closing fence — producing
+  // `git apply: corrupt patch`. Inside a unified diff every line carries a
+  // ' ', '+', '-' or '@' prefix, so a bare ``` at column 0 is unambiguously the
+  // outer terminator.
+  const fenceRegex = /^```(?:diff|patch|unified)?[ \t]*\r?$\r?\n([\s\S]*?)\r?\n^```[ \t]*\r?$/gm;
   let match;
-  let fenced = null;
+  const fencedCandidates = [];
   while ((match = fenceRegex.exec(text)) !== null) {
-    fenced = match[1];
+    fencedCandidates.push(match[1]);
   }
-  if (fenced) {
+  // Prefer the last candidate that actually parses as a diff rather than the
+  // last candidate overall, so trailing prose fences cannot mask a real diff.
+  for (let i = fencedCandidates.length - 1; i >= 0; i -= 1) {
+    const fenced = fencedCandidates[i];
     const trimmedFence = fenced.trim();
     if (/^(?:NO_DIFF:|\s*NO_DIFF:)/.test(trimmedFence)) {
       return { kind: "no_diff", body: trimmedFence };
@@ -916,6 +957,17 @@ function extractDiffFromRawText(text) {
       return { kind: "diff", body: fenced };
     }
   }
+  // Some emitters JSON-escape newlines without the envelope being parseable as
+  // JSON. Retry once on the unescaped text so the anchored fence match above can
+  // still see line boundaries.
+  if (allowUnescapeRetry && !text.includes("\n") && text.includes("\\n")) {
+    const unescaped = text.replace(/\\r\\n|\\n/g, "\n");
+    if (unescaped !== text) {
+      const retried = extractDiffFromRawText(unescaped, false);
+      if (retried && retried.kind === "diff") return retried;
+    }
+  }
+
   // Raw diff scan in case the model emits plain unified-diff lines.
   const lines = text.split(/\r?\n/);
   const startIdx = lines.findIndex(
@@ -924,7 +976,13 @@ function extractDiffFromRawText(text) {
   if (startIdx < 0) return { kind: "no_diff", body: "no diff block found in claude output" };
   let endIdx = lines.length;
   for (let i = startIdx + 1; i < lines.length; i += 1) {
+    // Stop at the next file's diff header, and at a bare closing fence — an
+    // unterminated scan otherwise appends the fence and any trailing prose to
+    // the patch body, which git apply reports as a corrupt patch. A fence that
+    // belongs to the patched file's own content is never bare: it carries a
+    // unified-diff prefix.
     if (lines[i].startsWith("diff --git ")) { endIdx = i; break; }
+    if (/^```[ \t]*\r?$/.test(lines[i])) { endIdx = i; break; }
   }
   const body = lines.slice(startIdx, endIdx).join("\n");
   if (!/^(--- |\+\+\+ |@@ )/m.test(body)) {
@@ -1011,12 +1069,52 @@ async function listWorkingTreeChanges(workspace, env) {
 
 // Deterministic commit + push + PR plumbing. Each step is a separate process so a
 // failure points at the failing step instead of returning a generic non-zero.
+/**
+ * Commit identity for the bridge's workspace.
+ *
+ * Prefers the committer/author variables an operator may already set on the
+ * node, then falls back to the same identity the docker runner configures for
+ * /work/repo (task-normalizer), so a commit made through either path is
+ * attributable to the same actor.
+ */
+function resolveCommitIdentity(env) {
+  const pick = (...values) => {
+    for (const value of values) {
+      const trimmed = safeText(value, "").trim();
+      if (trimmed) return trimmed;
+    }
+    return "";
+  };
+  return {
+    name: pick(env.GIT_COMMITTER_NAME, env.GIT_AUTHOR_NAME, "A2A Docker Runner"),
+    email: pick(env.GIT_COMMITTER_EMAIL, env.GIT_AUTHOR_EMAIL, "a2a-runner@openclaw.ai"),
+  };
+}
+
 async function commitPushAndCreatePr(workspace, { branch, commitMessage, title, body, env }) {
   const git = resolveTool(env, "A2A_CLAUDE_CODE_GIT_BIN", "git");
   const gh = resolveTool(env, "A2A_CLAUDE_CODE_GH_BIN", "gh");
 
   if (!branch || branch === "main" || branch === "master") {
     return { ok: false, error: "refusing to push or open a PR from a default branch" };
+  }
+
+  // The bridge commits inside its own clone, which has no identity: the docker
+  // runner configures /work/repo, not this workspace, and the container has no
+  // global git config and does not inherit the host's GIT_AUTHOR_* variables.
+  // Without this, git apply succeeds and the task then dies at commit time with
+  // "Author identity unknown" — observed on a live propose_patch task.
+  const identity = resolveCommitIdentity(env);
+  for (const [key, value] of [["user.name", identity.name], ["user.email", identity.email]]) {
+    const configured = await runTool(git, ["config", key, value], {
+      cwd: workspace,
+      env,
+      timeoutMs: 15_000,
+      maxBufferBytes: 256 * 1024,
+    });
+    if (configured.status !== 0) {
+      return { ok: false, error: toolError(`git config ${key}`, value, configured).message };
+    }
   }
 
   const add = await runTool(git, ["add", "-A"], { cwd: workspace, env, timeoutMs: 30_000, maxBufferBytes: 4 * 1024 * 1024 });
@@ -1211,7 +1309,14 @@ async function runSingleShotPatchMode(message, flags) {
       writeFileSync(diffPath, extracted.body.endsWith("\n") ? extracted.body : `${extracted.body}\n`);
       checked = await checkDiff(cloneDir, diffPath, env);
       if (!checked.ok) {
-        throw new Error(`git apply --check failed after corrective retry: ${redactSecrets(safeText(checked.error, "<empty>")).slice(0, 1000)}`);
+        // The workspace (and with it patch.diff) is deleted in the finally block,
+        // so without this excerpt the rejected patch is unrecoverable and the
+        // failure cannot be triaged after the fact — git's "corrupt patch at
+        // line N" is meaningless without the line it refers to.
+        throw new Error(
+          `git apply --check failed after corrective retry: ${redactSecrets(safeText(checked.error, "<empty>")).slice(0, 1000)}`
+          + `\n${describeRejectedDiff(extracted.body)}`,
+        );
       }
     }
 
@@ -1375,3 +1480,11 @@ async function main() {
 if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
   main();
 }
+
+// Test surface for the diff-extraction path. Importing the bridge is
+// side-effect-free (main() only runs when invoked as the entrypoint above), so
+// these can be exercised directly instead of only through a spawned process.
+export const __test = Object.freeze({
+  extractUnifiedDiff,
+  describeRejectedDiff,
+});

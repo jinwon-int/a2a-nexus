@@ -26,6 +26,29 @@ Workers refresh the profile through the existing registration and heartbeat
 }
 ```
 
+Workers declare the profile through either the `WORKER_CAPABILITIES_JSON` blob
+or discrete environment variables, whichever the node already uses:
+
+```bash
+WORKER_IMPLEMENTATION_CAPABLE=true
+WORKER_IMPLEMENTATION_RUNTIME=claude-native
+WORKER_IMPLEMENTATION_PROVIDER_ID=anthropic
+WORKER_IMPLEMENTATION_MODEL_TIER=claude-sonnet-5
+WORKER_IMPLEMENTATION_AVAILABILITY=canary_passed
+WORKER_IMPLEMENTATION_LAST_VERIFIED_AT=2026-07-26T00:00:00.000Z
+WORKER_IMPLEMENTATION_EVIDENCE_ID=worker-canary-20260726
+```
+
+The discrete variables take precedence, so readiness can be granted or revoked
+without rewriting a capabilities document. Each accepts an `A2A_`-prefixed
+alias. Declaring nothing leaves the profile absent, which is the legacy path:
+the worker keeps registering and stays ineligible for implementation work.
+
+Values are published verbatim; the broker owns the single normalization
+boundary. Set `availability` to `canary_passed` only after a real canary — a
+worker that merely has the runtime installed should publish `configured`, which
+the readiness rule correctly rejects.
+
 Allowed runtimes are `claude-native`, `codex-native`, `provider-native`, and
 `unknown`. Provider and model-tier identifiers are normalized as secret-safe
 lowercase IDs. Tokens, credential paths, OAuth payloads, and raw provider
@@ -87,6 +110,57 @@ node scripts/a2a-worker-readiness-matrix.mjs \
 The command is source-only and read-only. It performs no SSH, registration,
 heartbeat, dispatch, claim, GitHub write, deploy, restart, send, ACK/replay, or
 secret movement.
+
+## Enforcement at claim time
+
+The readiness rule is also enforced on the live claim path, not only in the
+scheduler dry run. Set `requireImplementationCapability: true` on a broker
+policy rule (see [broker-policy](../contracts/a2a/broker-policy.md)) and
+`claimTask` re-evaluates the claiming worker with the same
+`evaluateImplementationReadiness` function the dry run uses.
+
+Claim-time enforcement covers **clauses 1 to 3 only** — `capable`, a recorded
+runtime/provider/model tier, and `canary_passed`. It deliberately does not
+evaluate the rest:
+
+- **Clause 4** (runtime/provider/model-tier pins) is a scheduler concern. Pins
+  live on the dry-run task profile, not on the task record, so a claim has
+  nothing to match against. A worker the dry run reports as ineligible under a
+  pin can therefore still claim the task. Use the dry run, not the claim gate,
+  to enforce a pin.
+- **Clause 5** (role, task type, workspace, capacity, environment) is already
+  covered by the existing admission gates on the claim path.
+- **Worker plane / heartbeat recency** is excluded on purpose. A claim is proof
+  of liveness — the worker just made an authenticated request — while
+  `workerPlane` is derived only from heartbeat recency. Judging it here would
+  deny a healthy worker that missed a few heartbeats for a reason unrelated to
+  capability. Liveness gating belongs to the scheduler, which chooses among
+  workers that are not currently talking to the broker.
+
+The gate is opt-in and follows the standard `warn` → `enforce` promotion:
+
+| Mode | Unready worker claims an implementation task |
+|---|---|
+| no policy document | claim proceeds (legacy behaviour) |
+| rule omits the field | claim proceeds |
+| `warn` | claim proceeds; `task.policy_warned` audit records the blockers |
+| `enforce` | claim rejected `policy_denied`; `task.policy_denied` audit |
+
+Enforcement is claim-time rather than create-time because a task may be created
+before a capable worker exists, and because the claiming worker's anonymous
+class can differ from the create-time target's.
+
+**A denied task is not automatically rescued.** The task stays `queued`, but
+`assertTaskWorker` requires the claimer to be the assigned worker, and the
+broker exposes no reassignment, so no other worker can pick it up. Recovery is
+an operator action: either bring the assigned worker to verified readiness and
+let it re-claim, or cancel the task and recreate it against a ready worker.
+
+Because a denied claim maps to HTTP 403, the worker treats it as skip-and-retry
+and re-claims every poll interval. The claim-time policy audit is therefore
+de-duplicated per `(task, rule, action)`, so a stuck task records one
+`task.policy_denied` event rather than one per retry. This matches the
+task-deduplicated hit count the warn-mode observation report already uses.
 
 ## Visibility
 
