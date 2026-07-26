@@ -2407,6 +2407,58 @@ function parseBuiltinWorkerHandlerKind(value: string): BuiltinWorkerHandlerKind 
   throw new Error(`invalid built-in worker handler: ${value}`);
 }
 
+/**
+ * Read the implementation-lane readiness profile (#1597) from discrete env vars.
+ *
+ * Values are passed through verbatim: the broker owns the single normalization
+ * boundary (normalizeImplementationCapability), which coerces unknown runtimes
+ * to "unknown", constrains provider/model ids to secret-safe lowercase ids, and
+ * strips credential-shaped evidence. Normalizing here as well would create a
+ * second place for those rules to drift.
+ *
+ * Returns undefined when nothing is declared, which keeps legacy workers
+ * registering exactly as before and simply ineligible for implementation work.
+ */
+type DeclaredImplementationCapability = NonNullable<
+  RegisterWorkerRequest["capabilities"]["implementationCapability"]
+>;
+
+/**
+ * Cast a declared-but-unnormalized profile onto the wire type. The broker
+ * rejects or coerces every field on arrival, so the worker deliberately does not
+ * pre-fill `runtime` or `availability` here — inventing a default would publish
+ * a readiness claim the operator never made.
+ */
+function asDeclaredImplementationCapability(
+  value: Record<string, unknown>,
+): DeclaredImplementationCapability {
+  return value as unknown as DeclaredImplementationCapability;
+}
+
+function parseImplementationCapabilityEnv(env: NodeJS.ProcessEnv): Record<string, unknown> | undefined {
+  const capable = parseOptionalBoolean(
+    env.WORKER_IMPLEMENTATION_CAPABLE ?? env.A2A_WORKER_IMPLEMENTATION_CAPABLE,
+  );
+  if (capable === undefined) return undefined;
+
+  const runtime = optionalTrimmed(env.WORKER_IMPLEMENTATION_RUNTIME ?? env.A2A_WORKER_IMPLEMENTATION_RUNTIME);
+  const providerId = optionalTrimmed(env.WORKER_IMPLEMENTATION_PROVIDER_ID ?? env.A2A_WORKER_IMPLEMENTATION_PROVIDER_ID);
+  const modelTier = optionalTrimmed(env.WORKER_IMPLEMENTATION_MODEL_TIER ?? env.A2A_WORKER_IMPLEMENTATION_MODEL_TIER);
+  const availability = optionalTrimmed(env.WORKER_IMPLEMENTATION_AVAILABILITY ?? env.A2A_WORKER_IMPLEMENTATION_AVAILABILITY);
+  const lastVerifiedAt = optionalTrimmed(env.WORKER_IMPLEMENTATION_LAST_VERIFIED_AT ?? env.A2A_WORKER_IMPLEMENTATION_LAST_VERIFIED_AT);
+  const evidenceId = optionalTrimmed(env.WORKER_IMPLEMENTATION_EVIDENCE_ID ?? env.A2A_WORKER_IMPLEMENTATION_EVIDENCE_ID);
+
+  return {
+    capable,
+    ...(runtime ? { runtime } : {}),
+    ...(providerId ? { providerId } : {}),
+    ...(modelTier ? { modelTier } : {}),
+    ...(availability ? { availability } : {}),
+    ...(lastVerifiedAt ? { lastVerifiedAt } : {}),
+    ...(evidenceId ? { evidenceId } : {}),
+  };
+}
+
 function parseWorkerCapabilities(
   env: NodeJS.ProcessEnv,
   role: A2APartyRole,
@@ -2430,6 +2482,13 @@ function parseWorkerCapabilities(
     const record = parsed as Record<string, unknown>;
     const runtimeFlavor = parseWorkerRuntimeFlavor(record.runtimeFlavor);
     const gatewayRequired = parseOptionalBoolean(record.gatewayRequired);
+    // Discrete env vars win over the JSON blob so an operator can add or revoke
+    // readiness without rewriting a whole capabilities document.
+    const implementationCapability = parseImplementationCapabilityEnv(env)
+      ?? (record.implementationCapability && typeof record.implementationCapability === "object" &&
+          !Array.isArray(record.implementationCapability)
+        ? record.implementationCapability as Record<string, unknown>
+        : undefined);
     return {
       canAnalyze: Boolean(record.canAnalyze),
       canBackfill: Boolean(record.canBackfill),
@@ -2445,9 +2504,13 @@ function parseWorkerCapabilities(
         : [],
       ...(runtimeFlavor ? { runtimeFlavor } : {}),
       ...(gatewayRequired !== undefined ? { gatewayRequired } : {}),
+      ...(implementationCapability
+        ? { implementationCapability: asDeclaredImplementationCapability(implementationCapability) }
+        : {}),
     };
   }
 
+  const declaredImplementationCapability = parseImplementationCapabilityEnv(env);
   return {
     canAnalyze: parseBooleanEnv(env.WORKER_CAN_ANALYZE ?? env.A2A_WORKER_CAN_ANALYZE, role === "analyst" || role === "researcher"),
     canBackfill: parseBooleanEnv(env.WORKER_CAN_BACKFILL ?? env.A2A_WORKER_CAN_BACKFILL, false),
@@ -2457,6 +2520,9 @@ function parseWorkerCapabilities(
     environments: parseCsvEnv(env.WORKER_ENVIRONMENTS ?? env.A2A_WORKER_ENVIRONMENTS).filter(isWorkerEnvironment),
     ...(parseWorkerRuntimeFlavor(env.WORKER_RUNTIME_FLAVOR ?? env.A2A_WORKER_RUNTIME_FLAVOR) ? { runtimeFlavor: parseWorkerRuntimeFlavor(env.WORKER_RUNTIME_FLAVOR ?? env.A2A_WORKER_RUNTIME_FLAVOR) } : {}),
     ...(parseOptionalBoolean(env.WORKER_GATEWAY_REQUIRED ?? env.A2A_WORKER_GATEWAY_REQUIRED) !== undefined ? { gatewayRequired: parseOptionalBoolean(env.WORKER_GATEWAY_REQUIRED ?? env.A2A_WORKER_GATEWAY_REQUIRED) } : {}),
+    ...(declaredImplementationCapability
+      ? { implementationCapability: asDeclaredImplementationCapability(declaredImplementationCapability) }
+      : {}),
   };
 }
 
