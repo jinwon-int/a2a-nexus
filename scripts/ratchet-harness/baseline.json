@@ -1,0 +1,37 @@
+{
+  "kind": "ratchet-baseline-v1",
+  "recordedAt": "2026-07-25T18:21:09.515Z",
+  "host": {
+    "cpus": 8,
+    "note": "8-core VPS"
+  },
+  "node": "v24.15.0",
+  "phases": [
+    "npx tsc -b tsconfig.json",
+    "node --test dist/core/*.test.js"
+  ],
+  "target": {},
+  "tests": 2849,
+  "pass": 2849,
+  "fail": 0,
+  "median_ms": 8460,
+  "median_build_ms": 668,
+  "median_test_ms": 7799,
+  "runs": [
+    {
+      "buildMs": 668,
+      "testMs": 7648,
+      "totalMs": 8316
+    },
+    {
+      "buildMs": 661,
+      "testMs": 7799,
+      "totalMs": 8460
+    },
+    {
+      "buildMs": 675,
+      "testMs": 7909,
+      "totalMs": 8584
+    }
+  ]
+}
