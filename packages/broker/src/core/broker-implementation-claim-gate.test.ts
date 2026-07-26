@@ -174,3 +174,76 @@ test("a broker with no policy document keeps legacy claim behaviour (#1597)", ()
 
   assert.equal(broker.claimTask("task-legacy", "worker-nocap").status, "claimed");
 });
+
+test("a stale heartbeat does not deny a worker that is claiming right now (#1597)", () => {
+  // workerPlane is derived only from heartbeat recency. A worker that missed a
+  // few heartbeats but is making an authenticated claim is provably alive, so
+  // liveness must not be confused with capability.
+  const broker = brokerWith("enforce");
+  addWorker(broker, "worker-ready", READY_PROFILE);
+
+  const worker = broker.getWorker("worker-ready");
+  assert.ok(worker);
+  // Age the heartbeat well past every offline-after threshold.
+  worker.lastSeenAt = new Date(Date.parse(worker.lastSeenAt) - 3_600_000).toISOString();
+
+  addTask(broker, "task-stale-heartbeat", "worker-ready", "propose_patch");
+
+  assert.equal(broker.claimTask("task-stale-heartbeat", "worker-ready").status, "claimed");
+});
+
+test("a denied claim is audited once, not once per retry (#1597)", () => {
+  // policy_denied maps to HTTP 403, which the worker treats as skip-and-retry,
+  // so it re-claims every poll interval for as long as the task exists.
+  const broker = brokerWith("enforce");
+  addWorker(broker, "worker-nocap");
+  addTask(broker, "task-retry", "worker-nocap", "propose_patch");
+
+  for (let attempt = 0; attempt < 25; attempt += 1) {
+    assert.throws(() => broker.claimTask("task-retry", "worker-nocap"), /policy_denied|implementation capability/);
+  }
+
+  const denied = broker.listAuditEvents().filter((event) => event.action === "task.policy_denied");
+  assert.equal(denied.length, 1, "25 retries must not write 25 audit events");
+});
+
+test("a warn-mode violation is audited once across retries (#1597)", () => {
+  const broker = brokerWith("warn");
+  addWorker(broker, "worker-nocap");
+  addTask(broker, "task-warn-retry", "worker-nocap", "propose_patch");
+
+  broker.claimTask("task-warn-retry", "worker-nocap");
+  // Claiming again is rejected by the lifecycle, not the policy, but the policy
+  // hook still runs first on every attempt.
+  for (let attempt = 0; attempt < 5; attempt += 1) {
+    try {
+      broker.claimTask("task-warn-retry", "worker-nocap");
+    } catch {
+      // status transition guard — irrelevant here
+    }
+  }
+
+  const warned = broker.listAuditEvents().filter((event) => event.action === "task.policy_warned");
+  assert.equal(warned.length, 1);
+});
+
+test("the deny reason and audit note carry no worker identity (#1597)", () => {
+  // The referee package must never receive a worker identity; the broker only
+  // passes a boolean and a secret-safe reason string.
+  const broker = brokerWith("enforce");
+  addWorker(broker, "worker-secretname", { ...READY_PROFILE, availability: "configured" });
+  addTask(broker, "task-identity", "worker-secretname", "propose_patch");
+
+  let message = "";
+  try {
+    broker.claimTask("task-identity", "worker-secretname");
+  } catch (err) {
+    message = (err as Error).message;
+  }
+
+  assert.ok(message.length > 0);
+  assert.equal(message.includes("worker-secretname"), false, message);
+
+  const denied = broker.listAuditEvents().filter((event) => event.action === "task.policy_denied");
+  assert.equal(denied[0]?.note?.includes("worker-secretname"), false);
+});

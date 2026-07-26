@@ -34,8 +34,8 @@ in docs/skill discipline (unenforced) and scattered per-gate modules.
 Matching is **first-match-wins on workerClass in document order** (a `*` rule
 listed first shadows later class-specific rules — order rules deliberately).
 Within the matched rule, checks run deny-first: `denyModes`, `allowIntents`,
-`requireImplementationCapability`, `maxTasksPerDay`, then `requireApproval`. No matching rule falls through to
-`defaultAction`.
+`requireImplementationCapability`, `maxTasksPerDay`, then `requireApproval`. No
+matching rule falls through to `defaultAction`.
 
 ## 2. Invariants
 
@@ -70,17 +70,28 @@ Within the matched rule, checks run deny-first: `denyModes`, `allowIntents`,
 and only for the implementation-lane intents `propose_patch`, `propose_params`
 and `apply_local_change`. When set, the claiming worker must publish a verified
 `implementationCapability` profile — see
-[implementation-lane readiness](../../docs/implementation-lane-readiness.md) for
-the five-clause rule. `canPatchWorkspace` alone is deliberately not sufficient:
-it says the worker may edit a workspace, not that it has a usable runtime,
-provider route, model tier and current canary.
+[implementation-lane readiness](../../docs/implementation-lane-readiness.md).
+Claim-time enforcement covers clauses 1 to 3 of that rule (`capable`, recorded
+runtime/provider/model tier, `canary_passed`); pins and heartbeat recency are
+scheduler concerns and are documented there. `canPatchWorkspace` alone is
+deliberately not sufficient: it says the worker may edit a workspace, not that
+it has a usable runtime, provider route, model tier and current canary.
 
-The rule fails closed. A worker that is unknown to the broker, offline, or that
-never declared a profile is denied. The referee package never receives a worker
-identity — the broker computes readiness and passes only a boolean plus a
-secret-safe reason string, so the deny reason carries normalized capability ids
-and never a worker name, hostname or credential material. Rules that omit the
-field are unaffected, so the gate is opt-in per committed policy document.
+The rule fails closed. A worker that never declared a profile is denied, and so
+is a claim where the readiness input is missing entirely — only an explicit
+create-time evaluation opts out, so dropping the plumbing denies rather than
+silently disabling the gate. (A worker unknown to the broker never reaches this
+rule; `claimTask` rejects it earlier with `not_found`.)
+
+The referee package never receives a worker identity — the broker computes
+readiness and passes only a boolean plus a secret-safe reason string, so the
+deny reason carries normalized capability ids and never a worker name, hostname
+or credential material. Rules that omit the field are unaffected, so the gate is
+opt-in per committed policy document.
+
+Claim-time policy audits are de-duplicated per `(task, rule, action)`: a denied
+claim returns HTTP 403, which the worker treats as skip-and-retry, so an
+un-deduplicated event would be written on every poll.
 
 `requireApproval` routes to the existing blocked → operator-approve → queued
 flow **in both modes** deliberately: blocking is recoverable (one operator
@@ -103,7 +114,15 @@ satisfies a `requireApproval` rule at claim.
   document; the document's own `mode` field decides warn vs enforce.
 - Standalone CI/operator gate (no broker build needed):
   `scripts/check-broker-policy.mjs` — keep its rules in lockstep with the TS
-  validator via this contract.
+  validator via this contract. Both sets are fail-closed on unknown fields, so a
+  field added to only one of them makes the other reject every document that
+  uses it. `scripts/check-broker-policy.test.mjs` asserts the two `RULE_FIELDS`
+  sets are equal; add a field to both in the same commit.
+- **Rollout ordering for a new rule field.** Because validation is fail-closed
+  and a configured-but-invalid document fails broker startup loudly, deploy
+  brokers that understand the field *before* committing a document that uses it,
+  and remove the field from the document *before* rolling brokers back. The
+  reverse order prevents affected brokers from starting.
 - Audit evidence: `task.policy_warned` / `task.policy_denied` events carry the
   ruleId and reason; a denied create still records evidence.
 

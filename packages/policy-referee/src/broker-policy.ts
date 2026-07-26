@@ -67,23 +67,29 @@ export interface BrokerPolicyEvaluationInput {
    */
   countTasksToday?: () => number;
   /**
-   * True when the intent belongs to the implementation lane (propose_patch,
-   * propose_params, apply_local_change). Supplied by the broker so the closed
-   * intent enum stays in the broker package.
+   * Which enforcement point is evaluating. `requireImplementationCapability` is
+   * a claim-time rule, so create-time callers must opt out explicitly. The
+   * default is deliberately NOT "create": an omitted value is treated as a
+   * claim, which fails closed if the readiness input is also missing. A refactor
+   * that drops these fields therefore denies rather than silently disabling the
+   * gate.
    */
-  isImplementationIntent?: boolean;
+  evaluationPoint?: "create" | "claim";
   /**
-   * Whether the claiming worker satisfies the implementation readiness rule.
-   * Only consulted when the matched rule sets requireImplementationCapability.
-   * Undefined means "not evaluated", which fails closed.
+   * Implementation readiness of the claiming worker, computed by the broker.
+   * Passed as a single object so "not an implementation intent" and "readiness
+   * was never evaluated" cannot be confused: the former is a present object with
+   * isImplementationIntent false, the latter is an absent object, which denies.
+   *
+   * `blockers` is secret-safe. Capability ids are normalized lowercase
+   * identifiers, so no worker name, hostname, path or credential material can
+   * reach this package — the referee never receives a worker identity.
    */
-  implementationReady?: boolean;
-  /**
-   * Secret-safe reason text explaining why readiness failed, surfaced in the
-   * deny reason. Capability ids are normalized lowercase identifiers and carry
-   * no worker name, hostname, or credential material.
-   */
-  implementationBlockers?: string;
+  implementation?: {
+    isImplementationIntent: boolean;
+    ready: boolean;
+    blockers?: string;
+  };
 }
 
 const RULE_ID_PATTERN = /^[a-z0-9][a-z0-9-]{0,63}$/;
@@ -235,15 +241,25 @@ export function evaluateTaskPolicy(
   if (rule.allowIntents && !rule.allowIntents.includes(input.intent)) {
     return { action: "deny", ruleId: rule.id, reason: `intent '${input.intent}' is not allowed for worker class '${input.workerClass}'` };
   }
-  if (rule.requireImplementationCapability === true && input.isImplementationIntent === true &&
-      input.implementationReady !== true) {
-    const detail = input.implementationBlockers?.trim();
-    return {
-      action: "deny",
-      ruleId: rule.id,
-      reason: `intent '${input.intent}' requires a verified implementation capability for worker class ` +
-        `'${input.workerClass}'${detail ? `: ${detail}` : " (readiness was not evaluated)"}`,
-    };
+  if (rule.requireImplementationCapability === true && input.evaluationPoint !== "create") {
+    const implementation = input.implementation;
+    if (!implementation) {
+      return {
+        action: "deny",
+        ruleId: rule.id,
+        reason: `intent '${input.intent}' requires a verified implementation capability for worker class ` +
+          `'${input.workerClass}': readiness was not evaluated`,
+      };
+    }
+    if (implementation.isImplementationIntent && !implementation.ready) {
+      const detail = implementation.blockers?.trim();
+      return {
+        action: "deny",
+        ruleId: rule.id,
+        reason: `intent '${input.intent}' requires a verified implementation capability for worker class ` +
+          `'${input.workerClass}'${detail ? `: ${detail}` : ""}`,
+      };
+    }
   }
   if (rule.maxTasksPerDay !== undefined) {
     const used = input.countTasksToday ? input.countTasksToday() : 0;
