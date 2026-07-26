@@ -83,7 +83,6 @@
     "check:a2a-nexus-831-advisory-sidecar-boundary-cross-check": "node --test scripts/check-a2a-nexus-831-advisory-sidecar-boundary-cross-check.test.mjs",
     "check:a2a-nexus-842-advisory-sidecar-closeout-readiness-matrix": "node --test scripts/check-a2a-nexus-842-advisory-sidecar-closeout-readiness-matrix.test.mjs",
     "check:team1-dispatch-wrapper-runbook": "node --test scripts/check-team1-dispatch-wrapper-runbook.test.mjs",
-    "check:mobileAlpha-hermes-worker-profile": "node --test scripts/check-mobileAlpha-hermes-worker-profile.test.mjs",
     "check:team1-dispatch-guard": "node --test scripts/a2a-team1-dispatch-guard.test.mjs",
     "a2a:team1-dispatch-guard": "node scripts/a2a-team1-dispatch-guard.mjs --input",
     "fleet:routing-guard": "node scripts/a2a-fleet-routing-guard.mjs",
