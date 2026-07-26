@@ -26,6 +26,29 @@ Workers refresh the profile through the existing registration and heartbeat
 }
 ```
 
+Workers declare the profile through either the `WORKER_CAPABILITIES_JSON` blob
+or discrete environment variables, whichever the node already uses:
+
+```bash
+WORKER_IMPLEMENTATION_CAPABLE=true
+WORKER_IMPLEMENTATION_RUNTIME=claude-native
+WORKER_IMPLEMENTATION_PROVIDER_ID=anthropic
+WORKER_IMPLEMENTATION_MODEL_TIER=claude-sonnet-5
+WORKER_IMPLEMENTATION_AVAILABILITY=canary_passed
+WORKER_IMPLEMENTATION_LAST_VERIFIED_AT=2026-07-26T00:00:00.000Z
+WORKER_IMPLEMENTATION_EVIDENCE_ID=worker-canary-20260726
+```
+
+The discrete variables take precedence, so readiness can be granted or revoked
+without rewriting a capabilities document. Each accepts an `A2A_`-prefixed
+alias. Declaring nothing leaves the profile absent, which is the legacy path:
+the worker keeps registering and stays ineligible for implementation work.
+
+Values are published verbatim; the broker owns the single normalization
+boundary. Set `availability` to `canary_passed` only after a real canary — a
+worker that merely has the runtime installed should publish `configured`, which
+the readiness rule correctly rejects.
+
 Allowed runtimes are `claude-native`, `codex-native`, `provider-native`, and
 `unknown`. Provider and model-tier identifiers are normalized as secret-safe
 lowercase IDs. Tokens, credential paths, OAuth payloads, and raw provider
