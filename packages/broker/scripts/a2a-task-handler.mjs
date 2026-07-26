@@ -56,6 +56,11 @@ function isTruthyEnv(value) {
 
 function isDockerBrokerNoopSmokeTask(task) {
   const payload = taskPayload(task);
+  // Both conditions below are caller-supplied, so an executor-required intent
+  // must not be able to buy a success result by declaring the smoke mode. The
+  // real smoke lane (scripts/docker-broker-live-smoke.mjs) dispatches
+  // intent "analyze", so excluding mutating intents costs it nothing.
+  if (requiresConfiguredExecutor(task)) return false;
   return taskMode(task) === "docker-broker-noop-smoke" && payload.noOp === true;
 }
 
@@ -340,6 +345,32 @@ function buildRunnerTask(task, env = process.env) {
   }
 
   return runnerTask;
+}
+
+// Intents that mutate something and therefore require a real executor: the
+// implementation lane (see A2AExchangeIntent and docs/implementation-lane-readiness.md)
+// plus the live-operation lane. Reaching the builtin fallback with one of these
+// means no executor ran, so the handler must fail closed instead of returning a
+// generic success ack (#1593, #1597).
+//
+// The live intents matter most: handleTask only routes to runLiveOperationTask
+// when taskMode() is "promote-to-live-v1", and taskMode() falls back to the
+// intent when payload.mode is absent, so a mode-less promote_to_live would
+// otherwise be recorded as a successful promotion that never ran.
+//
+// "implementation" is not a member of A2AExchangeIntent; it is retained only as a
+// defensive alias for malformed callers that send the lane name as the intent.
+const EXECUTOR_REQUIRED_INTENTS = new Set([
+  "propose_patch",
+  "propose_params",
+  "apply_local_change",
+  "promote_to_live",
+  "rollback_live",
+  "implementation",
+]);
+
+function requiresConfiguredExecutor(task) {
+  return EXECUTOR_REQUIRED_INTENTS.has(safeText(task?.intent, "").toLowerCase());
 }
 
 const GITHUB_PATCH_TASK_MODES = new Set(["github-propose-patch", "github-issue-instruction"]);
@@ -2344,7 +2375,7 @@ function handleBuiltinTask(task, env = process.env) {
     };
   }
 
-  if (safeText(task.intent, "").toLowerCase() === "implementation") {
+  if (requiresConfiguredExecutor(task)) {
     return {
       error: {
         code: "unsupported_intent",
