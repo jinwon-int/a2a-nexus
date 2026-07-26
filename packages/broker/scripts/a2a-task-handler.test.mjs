@@ -79,6 +79,59 @@ test("implementation intent fails closed when no executor ran (#1593)", () => {
   assert.equal(Object.hasOwn(outcome, "artifactIds"), false);
 });
 
+// Regression for #1597: the original #1593 guard only matched the literal string
+// "implementation", which is not a member of A2AExchangeIntent. The real
+// implementation-lane intents therefore fell through to the generic_ack success
+// path, so a worker with no executor reported false success for patch work.
+for (const intent of ["propose_patch", "propose_params", "apply_local_change"]) {
+  test(`real implementation intent ${intent} fails closed in builtin fallback (#1597)`, () => {
+    const outcome = handleTask({
+      id: `task-${intent}-fallback`,
+      intent,
+      message: "Implement the requested source patch",
+      payload: {},
+    }, {
+      A2A_EXECUTOR_MODE: "builtin",
+    });
+
+    assert.equal(outcome.error?.code, "unsupported_intent");
+    assert.match(outcome.error?.message ?? "", /no executor ran/);
+    assert.equal(outcome.error?.details?.intent, intent);
+    assert.equal(outcome.result, undefined);
+    assert.equal(Object.hasOwn(outcome, "artifactIds"), false);
+  });
+}
+
+test("implementation intents never yield generic_ack evidence (#1597)", () => {
+  for (const intent of ["propose_patch", "propose_params", "apply_local_change", "implementation"]) {
+    const outcome = handleTask({
+      id: `task-${intent}-evidence`,
+      intent,
+      message: "Implement the requested source patch",
+      payload: {},
+    }, {
+      A2A_EXECUTOR_MODE: "builtin",
+    });
+
+    assert.notEqual(outcome.result?.output?.evidenceClass, "generic_ack");
+  }
+});
+
+test("non-implementation intents keep the generic fallback (#1597)", () => {
+  for (const intent of ["chat", "analyze", "verify", "backfill", "validate_change"]) {
+    const outcome = handleTask({
+      id: `task-${intent}-generic`,
+      intent,
+      message: "Record receipt of this non-substantive task",
+      payload: {},
+    }, {
+      A2A_EXECUTOR_MODE: "builtin",
+    });
+
+    assert.equal(outcome.error, undefined, `${intent} must not fail closed`);
+  }
+});
+
 test("permitted generic fallback is explicitly classified as generic_ack (#1593)", () => {
   const outcome = handleTask({
     id: "task-generic-probe",
