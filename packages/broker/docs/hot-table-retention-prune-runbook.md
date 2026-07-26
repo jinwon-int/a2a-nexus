@@ -81,10 +81,10 @@ Each table plan includes two new advisory fields:
 
 ```bash
 # Dry-run: view prune candidates
-npm run broker_cleanup_safe_prune -- --base-url http://broker:8787
+npm run rollout -- broker_cleanup_safe_prune --base-url http://broker:8787
 
 # Execute with safety gates
-npm run broker_cleanup_safe_prune -- \
+npm run rollout -- broker_cleanup_safe_prune \
   --base-url http://broker:8787 \
   --approve \
   --backup-proof s3://backups/broker-20260514T120000Z.sqlite

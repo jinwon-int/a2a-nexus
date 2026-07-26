@@ -1,20 +1,20 @@
 # Complexity orchestration recommendation dry-run
 
-`npm run complexity_orchestration_recommendation` builds a no-live
+`npm run orchestration -- complexity_orchestration_recommendation` builds a no-live
 orchestration recommendation packet from source-visible task complexity input.
 It is a finalizer/operator surface for #970 and #971, not an executor.
 
 Example:
 
 ```bash
-npm run complexity_orchestration_recommendation -- \
+npm run orchestration -- complexity_orchestration_recommendation \
   --input fixtures/complexity-orchestration-recommendation/complex-source-only.json
 ```
 
 JSON output:
 
 ```bash
-npm run complexity_orchestration_recommendation -- \
+npm run orchestration -- complexity_orchestration_recommendation \
   --input fixtures/complexity-orchestration-recommendation/critical-approval-gated.json \
   --json
 ```

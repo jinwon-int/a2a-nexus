@@ -48,7 +48,7 @@ approval before any runtime enablement can be considered.
 ## CLI
 
 ```bash
-npm run orchestration_intelligence_runtime_approval_decision_evidence -- \
+npm run orchestration -- orchestration_intelligence_runtime_approval_decision_evidence \
   --input fixtures/orchestration-intelligence/runtime-approval-decision-evidence.accepted.json
 ```
 

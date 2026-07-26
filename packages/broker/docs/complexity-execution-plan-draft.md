@@ -1,6 +1,6 @@
 # Complexity execution plan draft
 
-`npm run complexity_execution_plan_draft` converts a finalizer approval envelope
+`npm run orchestration -- complexity_execution_plan_draft` converts a finalizer approval envelope
 draft into a deterministic, source-only execution plan draft. It sits after the
 complexity classifier, orchestration recommendation, and finalizer approval
 envelope stages:
@@ -19,14 +19,14 @@ publishes a release.
 Markdown output:
 
 ```bash
-npm run complexity_execution_plan_draft -- \
+npm run orchestration -- complexity_execution_plan_draft \
   --input fixtures/complexity-execution-plan-draft/complex-parallel-envelope.json
 ```
 
 JSON output:
 
 ```bash
-npm run complexity_execution_plan_draft -- \
+npm run orchestration -- complexity_execution_plan_draft \
   --input fixtures/complexity-execution-plan-draft/critical-blocked-envelope.json \
   --json \
   --now 2026-06-01T12:00:00.000Z

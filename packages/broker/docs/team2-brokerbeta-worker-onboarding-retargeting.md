@@ -61,7 +61,7 @@ cat > /tmp/a2a-two-broker-safety-evidence.json <<'JSON'
 }
 JSON
 
-npm run two_broker_worker_preflight -- \
+npm run rollout -- two_broker_worker_preflight \
   --brokeralpha-url "${OLD_BROKER_URL}" \
   --brokerbeta-url "${NEW_BROKER_URL}" \
   --safety-evidence /tmp/a2a-two-broker-safety-evidence.json \

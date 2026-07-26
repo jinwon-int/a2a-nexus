@@ -53,7 +53,7 @@ DB, or ACK terminal outbox rows.
   `npm run build` plus a focused docs/link inspection. Record exact commands and
   summarized output.
 - [ ] **Smoke/release gate:** run the appropriate broker gate from
-  `docs/release-gate.md` (`npm run release_gate`, `npm run docker_runtime_preflight
+  `docs/release-gate.md` (`npm run release_gate`, `npm run rollout -- docker_runtime_preflight
   -- --dry-run`, and/or approved no-live closeout report inputs). Any live-impact
   lane requires separate approval.
 - [ ] **Rollback plan:** identify the owner and exact rollback path for docs,

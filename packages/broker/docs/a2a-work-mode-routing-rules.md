@@ -100,7 +100,7 @@ For repeatable records, render a source-only pre-dispatch decision packet before
 the round:
 
 ```bash
-npm run work_mode_pre_dispatch_decision -- \
+npm run orchestration -- work_mode_pre_dispatch_decision \
   --input fixtures/work-mode-pre-dispatch/team1-candidate-review.json
 ```
 

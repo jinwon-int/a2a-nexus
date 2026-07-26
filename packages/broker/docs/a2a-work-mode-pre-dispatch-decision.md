@@ -10,7 +10,7 @@ publish releases, move credentials, or change repository visibility.
 ## Usage
 
 ```bash
-npm run work_mode_pre_dispatch_decision -- \
+npm run orchestration -- work_mode_pre_dispatch_decision \
   --input fixtures/work-mode-pre-dispatch/team1-candidate-review.json
 ```
 

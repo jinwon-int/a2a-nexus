@@ -61,12 +61,12 @@ map.
 - `docs/hot-table-memory-warning-policy.md` for interpreting hot-table warnings as observe, investigate, or approval-required operator actions
 - `docs/terminal-brief-sidecar-operator-runbook.md` for the Terminal Brief sidecar supervised dry-run/default-on operator approval, observation, and rollback checklist
 - `docs/a2a-work-mode-routing-rules.md` for choosing brokeralpha `solo`, Team1, or `hybrid` work modes from the 2026-06-06 benchmark evidence
-- `docs/a2a-work-mode-pre-dispatch-decision.md` plus `npm run work_mode_pre_dispatch_decision` for a source-only packet that records the selected work mode before any worker dispatch
-- `docs/a2a-adaptive-work-mode-selector.md` plus `npm run adaptive_work_mode_selector` for a source-only record that selects `solo`, `a2a_direct`, `a2a_hybrid`, `a2a_team`, or `a2ad` after planning and output estimation
+- `docs/a2a-work-mode-pre-dispatch-decision.md` plus `npm run orchestration -- work_mode_pre_dispatch_decision` for a source-only packet that records the selected work mode before any worker dispatch
+- `docs/a2a-adaptive-work-mode-selector.md` plus `npm run orchestration -- adaptive_work_mode_selector` for a source-only record that selects `solo`, `a2a_direct`, `a2a_hybrid`, `a2a_team`, or `a2ad` after planning and output estimation
 - `docs/a2a-hybrid-worker-mode-design.md` plus `npm run a2a_hybrid_worker_mode_benchmark` for `a2a_hybrid` worker-internal role semantics, evidence format, finalizer ownership, and no-live benchmark gates
 - `docs/team2-brokerbeta-worker-onboarding-retargeting.md` plus `examples/team2-brokerbeta.worker.env.example` for the Team2/brokerbeta worker onboarding and brokeralpha→brokerbeta retarget safety runbook
 - `docs/brokerbeta-brokeralpha-handoff-receiver-ops.md` plus `examples/brokerbeta-brokeralpha.receiver.env.example` and the `scripts/two-broker-worker-preflight.mjs` / `scripts/broker-terminal-receipt-parity.mjs` operator tools (npm aliases retired in #1503 Wave 0) for default-off brokerbeta→brokeralpha handoff receiver operations
-- `docs/complexity-execution-plan-draft.md` plus `npm run complexity_execution_plan_draft` for source-only complexity orchestration execution-plan draft artifacts
+- `docs/complexity-execution-plan-draft.md` plus `npm run orchestration -- complexity_execution_plan_draft` for source-only complexity orchestration execution-plan draft artifacts
 - `docs/docker-broker-live-smoke.md` for the repeatable live Docker broker no-op smoke script and <broker-host> run command
 - `docs/edge-secret-rotation-runbook.md` for the no-secret-values rotation checklist after an edge secret exposure
 - `docs/durable-persistence-path.md` for the recommended next persistence step beyond the phase-1 JSON snapshot backend
@@ -171,7 +171,7 @@ Before a brokeralpha → brokerbeta broker cutover, run the read-only two-broker
 ```bash
 brokeralpha_BROKER_URL=http://127.0.0.1:8787 \
 brokerbeta_BROKER_URL=http://127.0.0.1:8788 \
-npm run two_broker_worker_preflight
+npm run rollout -- two_broker_worker_preflight
 ```
 
 The guard only calls `GET /workers` on each broker. It exits `0` when no duplicate online worker ids are found, `1` when duplicates are found, and `2` for setup/fetch errors.
@@ -189,7 +189,7 @@ For Termux/mobile workers such as mobilebeta, use the source-only mobile preflig
 packet before active lane assignment:
 
 ```bash
-npm run mobile_worker_preflight -- \
+npm run rollout -- mobile_worker_preflight \
   --input fixtures/mobile-worker-preflight/slow-polling.json
 ```
 

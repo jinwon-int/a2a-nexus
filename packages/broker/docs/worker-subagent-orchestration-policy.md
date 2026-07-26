@@ -79,7 +79,7 @@ The request draft does not spawn subagents, dispatch broker work, claim tasks, i
 
 CLI:
 
-`npm run worker_subagent_spawn_authorization_request -- --input fixtures/worker-subagent-orchestration/spawn-authorization-request-ready.json --json`
+`npm run rollout -- worker_subagent_spawn_authorization_request --input fixtures/worker-subagent-orchestration/spawn-authorization-request-ready.json --json`
 
 Example input:
 
@@ -117,7 +117,7 @@ The packet DECIDES only. It produces `producesBindingVerdict: true` but `enforce
 
 CLI:
 
-`npm run worker_subagent_spawn_gate_decision -- --input fixtures/worker-subagent-orchestration/spawn-gate-decision-authorized.json --json`
+`npm run rollout -- worker_subagent_spawn_gate_decision --input fixtures/worker-subagent-orchestration/spawn-gate-decision-authorized.json --json`
 
 ## Deterministic Evidence Assembly
 
@@ -131,7 +131,7 @@ It assembles and canonicalizes only: `signsEvidence: false` with all boundaries 
 
 CLI:
 
-`npm run worker_subagent_evidence_assembly -- --input fixtures/worker-subagent-orchestration/evidence-assembly-basic.json --json`
+`npm run rollout -- worker_subagent_evidence_assembly --input fixtures/worker-subagent-orchestration/evidence-assembly-basic.json --json`
 
 ## Context Brief
 
@@ -148,7 +148,7 @@ Source-only, all boundaries false: it builds a brief and does not spawn, dispatc
 
 CLI:
 
-`npm run worker_subagent_context_brief -- --input fixtures/worker-subagent-orchestration/context-brief-basic.json --json`
+`npm run rollout -- worker_subagent_context_brief --input fixtures/worker-subagent-orchestration/context-brief-basic.json --json`
 
 ## Redaction Gate
 
@@ -164,4 +164,4 @@ The `cleanedEntries` output feeds directly into the **evidence-assembly** packet
 
 CLI:
 
-`npm run worker_subagent_redaction_gate -- --input fixtures/worker-subagent-orchestration/redaction-gate-basic.json --json`
+`npm run rollout -- worker_subagent_redaction_gate --input fixtures/worker-subagent-orchestration/redaction-gate-basic.json --json`

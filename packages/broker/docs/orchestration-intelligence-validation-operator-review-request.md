@@ -23,7 +23,7 @@ or restart services, publish releases, or move credentials.
 ## CLI
 
 ```bash
-npm run orchestration_intelligence_validation_operator_review_request -- \
+npm run orchestration -- orchestration_intelligence_validation_operator_review_request \
   --input fixtures/orchestration-intelligence/validation-operator-review-request.ready.json
 ```
 

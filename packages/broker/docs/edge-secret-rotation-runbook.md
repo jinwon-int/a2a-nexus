@@ -57,11 +57,11 @@ file contents, or screenshots containing secret material.
 
 ```bash
 # Safe sample / shape check; does not read production files.
-npm run edge_secret_rotation_diagnostics -- --sample --markdown
+npm run rollout -- edge_secret_rotation_diagnostics --sample --markdown
 
 # If an operator has already captured local redacted snapshots, inspect those
 # files by path. Values are still not emitted by the diagnostic.
-npm run edge_secret_rotation_diagnostics -- \
+npm run rollout -- edge_secret_rotation_diagnostics \
   --broker-systemd-cat /tmp/redacted-a2a-broker-systemctl-cat.txt \
   --worker-systemd-cat /tmp/redacted-openclaw-a2a-worker-systemctl-cat.txt \
   --broker-env-file /tmp/redacted-broker.env \

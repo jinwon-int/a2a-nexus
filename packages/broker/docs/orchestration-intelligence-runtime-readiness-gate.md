@@ -28,7 +28,7 @@ live boundary planning, and validation freshness evidence are all supplied.
 ## CLI
 
 ```bash
-npm run orchestration_intelligence_runtime_readiness_gate -- \
+npm run orchestration -- orchestration_intelligence_runtime_readiness_gate \
   --input fixtures/orchestration-intelligence/runtime-readiness-gate.no-go.json
 ```
 

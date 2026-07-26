@@ -34,7 +34,7 @@ authority-mismatched, or unsafe upstream evidence fails closed.
 ## CLI
 
 ```bash
-npm run orchestration_intelligence_worker_subagent_spawn_authorization_bridge -- \
+npm run orchestration -- orchestration_intelligence_worker_subagent_spawn_authorization_bridge \
   --input fixtures/orchestration-intelligence/worker-subagent-spawn-authorization-bridge.ready.json
 ```
 

@@ -47,7 +47,7 @@ the request.
 ## CLI
 
 ```bash
-npm run orchestration_intelligence_broker_dispatch_approval_request -- \
+npm run orchestration -- orchestration_intelligence_broker_dispatch_approval_request \
   --input fixtures/orchestration-intelligence/broker-dispatch-approval-request.ready.json
 ```
 

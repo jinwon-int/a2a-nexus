@@ -62,7 +62,7 @@ npm ci
 npm run build
 npm run terminal_brief -- terminal_receipt_gap_matrix
 npm run live_readiness_canary -- --no-live --json
-npm run terminal_outbox_preflight -- --no-live --json
+npm run rollout -- terminal_outbox_preflight --no-live --json
 npm test
 ```
 
@@ -72,7 +72,7 @@ Observed no-live safety signals:
 - Final `npm run build`: pass.
 - Final `npm run terminal_brief -- terminal_receipt_gap_matrix`: pass; post-cutoff receipt gaps remain operator-visible, replayable, and unacknowledged in the synthetic matrix.
 - Final `npm run live_readiness_canary -- --no-live --json`: pass with `brokerHttpRequested=false`, `providerCalled=false`, `dbMutationAttempted=false`, and `terminalAckAttempted=false`.
-- Final `npm run terminal_outbox_preflight -- --no-live --json`: pass with `providerCalled=false`, `productionAckAttempted=false`, `brokerHttpRequested=false`, and the synthetic event `ackStatus=unacknowledged`.
+- Final `npm run rollout -- terminal_outbox_preflight --no-live --json`: pass with `providerCalled=false`, `productionAckAttempted=false`, `brokerHttpRequested=false`, and the synthetic event `ackStatus=unacknowledged`.
 - Final `npm test`: pass; 998 tests passed, 0 failed.
 
 ## Finalization rule

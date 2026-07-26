@@ -13,7 +13,7 @@ No Team1-only or Team2-only code path is required for the R8 dashboard/capacity 
 
 - `GET /dashboard` for the bounded operator dashboard/read model.
 - `GET /workers/capacity` for compact per-worker dispatch capacity.
-- `npm run two_broker_worker_preflight` for duplicate online worker-id detection before retargeting.
+- `npm run rollout -- two_broker_worker_preflight` for duplicate online worker-id detection before retargeting.
 - `npm run terminal_brief -- broker_terminal_receipt_parity` when receipt/outbox shape parity is part of the gate.
 
 The semantics are broker-local and safe to compare across brokeralpha and brokerbeta by running the same read-only commands against each broker URL.
@@ -49,7 +49,7 @@ Use redacted broker URLs and local secret handling. Do not paste secrets, raw `.
 # Duplicate online worker guard: GET /workers only.
 brokeralpha_BROKER_URL="${brokeralpha_BROKER_URL}" \
 brokerbeta_BROKER_URL="${brokerbeta_BROKER_URL}" \
-npm run two_broker_worker_preflight
+npm run rollout -- two_broker_worker_preflight
 
 # Compact dashboard snapshots: GET only.
 curl -fsS -H "x-a2a-edge-secret: ${BROKER_EDGE_SECRET}" \

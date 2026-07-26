@@ -25,8 +25,8 @@ proves no active node still references them.
    wrapper/profile:
 
    ```bash
-   npm run worker_compatibility_audit -- --input /path/to/fleet-workers.json
-   npm run worker_compatibility_audit -- --input /path/to/fleet-workers.json --json
+   npm run rollout -- worker_compatibility_audit --input /path/to/fleet-workers.json
+   npm run rollout -- worker_compatibility_audit --input /path/to/fleet-workers.json --json
    ```
 
    Input shape:

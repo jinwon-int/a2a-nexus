@@ -1,6 +1,6 @@
 # Mobile worker preflight
 
-`npm run mobile_worker_preflight` builds a source-only/no-live preflight packet
+`npm run rollout -- mobile_worker_preflight` builds a source-only/no-live preflight packet
 for Termux/mobile A2A workers such as mobilebeta.
 
 It is designed for the case where mobile transport is recoverable but broker
@@ -11,14 +11,14 @@ broker stale/disconnected thresholds.
 Example:
 
 ```bash
-npm run mobile_worker_preflight -- \
+npm run rollout -- mobile_worker_preflight \
   --input fixtures/mobile-worker-preflight/slow-polling.json
 ```
 
 JSON output:
 
 ```bash
-npm run mobile_worker_preflight -- \
+npm run rollout -- mobile_worker_preflight \
   --input fixtures/mobile-worker-preflight/healthy-mobile.json \
   --json
 ```
@@ -176,7 +176,7 @@ closed as `workspace_isolation_missing` with the
 All fixtures live in `fixtures/mobile-worker-preflight/` and can be run with:
 
 ```bash
-npm run mobile_worker_preflight -- \
+npm run rollout -- mobile_worker_preflight \
   --input fixtures/mobile-worker-preflight/<fixture-name>.json [--json]
 ```
 

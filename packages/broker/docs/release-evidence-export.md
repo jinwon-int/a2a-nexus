@@ -32,7 +32,7 @@ When terminal-outbox health is `high` or `critical`, operators should inspect th
 A local CLI wrapper is also available after build:
 
 ```bash
-npm run release_evidence_export -- --input sanitized-tasks.json --markdown
+npm run rollout -- release_evidence_export --input sanitized-tasks.json --markdown
 ```
 
 The CLI accepts either an array of `TaskRecord` objects or `{ "tasks": [...], "options": { ... } }` and prints JSON by default. Inputs and outputs should remain sanitized; do not include secrets, raw runner logs, or host-local paths in evidence artifacts.
