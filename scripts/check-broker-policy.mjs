@@ -28,7 +28,19 @@ export const WORKER_CLASSES = ['mobile', 'vps', 'source-only', 'unclassified'];
 
 const RULE_ID_PATTERN = /^[a-z0-9][a-z0-9-]{0,63}$/;
 const DOCUMENT_FIELDS = new Set(['schemaVersion', 'mode', 'defaultAction', 'rules']);
-const RULE_FIELDS = new Set(['id', 'workerClass', 'allowIntents', 'denyModes', 'requireApproval', 'maxTasksPerDay']);
+// Keep in lockstep with RULE_FIELDS in packages/policy-referee/src/broker-policy.ts.
+// Both sets are fail-closed on unknown fields, so a field added to only one of
+// them makes the other reject every document that uses it. The parity is
+// asserted by scripts/check-broker-policy.test.mjs.
+export const RULE_FIELDS = new Set([
+  'id',
+  'workerClass',
+  'allowIntents',
+  'denyModes',
+  'requireApproval',
+  'maxTasksPerDay',
+  'requireImplementationCapability',
+]);
 
 function isStringArray(value) {
   return Array.isArray(value) && value.every((item) => typeof item === 'string' && item.trim().length > 0);
@@ -81,6 +93,9 @@ export function validatePolicyDocument(doc) {
     }
     if (rule.maxTasksPerDay !== undefined && (!Number.isInteger(rule.maxTasksPerDay) || rule.maxTasksPerDay < 1)) {
       errors.push(`${where}.maxTasksPerDay must be a positive integer`);
+    }
+    if (rule.requireImplementationCapability !== undefined && typeof rule.requireImplementationCapability !== 'boolean') {
+      errors.push(`${where}.requireImplementationCapability must be a boolean`);
     }
   }
   return errors;

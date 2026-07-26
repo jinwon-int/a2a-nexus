@@ -18,6 +18,8 @@ import {
   type BrokerPolicyDecision,
   type BrokerPolicyDocument,
 } from "a2a-policy-referee";
+import { evaluateImplementationReadiness, isImplementationTaskType } from "./scheduler-dry-run.js";
+import { effectiveOfflineAfterMs } from "./broker-worker-status.js";
 import { assertTransition, assertTaskOwnership } from "./broker-transition-guards.js";
 import { evaluateTaskReadiness, type TaskReadinessMode } from "../task-readiness.js";
 import type {
@@ -170,6 +172,9 @@ export function evaluateCreateTaskPolicy(
     intent: request.intent,
     mode: typeof request.payload?.mode === "string" ? request.payload.mode : undefined,
     workerClass,
+    // requireImplementationCapability is a claim-time rule; opt out explicitly
+    // so the referee does not fail closed on the missing readiness input here.
+    evaluationPoint: "create",
     countTasksToday: () => countTasksCreatedTodayInClass(workerClass, context),
   }, doc);
   if (decision.action === "deny") {
@@ -194,34 +199,123 @@ export function evaluateCreateTaskPolicy(
 }
 
 /**
+ * Claim-time implementation readiness (#1597). `canPatchWorkspace` only says a
+ * worker may edit a workspace; it is not proof of a usable implementation
+ * runtime, provider route, model tier, or current canary. The readiness rule
+ * itself lives in scheduler-dry-run and is reused verbatim here so the live
+ * claim path and the dry-run report can never disagree.
+ *
+ * Fails closed: an unknown worker is not ready. Non-implementation intents are
+ * reported as such and the policy rule ignores them.
+ */
+export type ClaimImplementationReadiness =
+  | { kind: "not_implementation" }
+  | { kind: "implementation"; ready: boolean; blockers?: string };
+
+export function evaluateClaimImplementationReadiness(
+  task: TaskRecord,
+  workerId: string,
+  context: TaskAdmissionContext,
+): ClaimImplementationReadiness {
+  if (!isImplementationTaskType(task.intent)) {
+    return { kind: "not_implementation" };
+  }
+  const worker = context.getWorker(workerId);
+  if (!worker) {
+    // Unreachable through claimTask, which calls assertTaskWorker (and therefore
+    // requireWorker) first, but this function is exported and must not fail open.
+    return { kind: "implementation", ready: false, blockers: "worker is not registered with this broker" };
+  }
+  const view = context.getWorkerView(
+    workerId,
+    effectiveOfflineAfterMs(worker.workerMode, DEFAULT_A2A_ROUND_WORKER_OFFLINE_AFTER_MS),
+  );
+  if (!view) {
+    return { kind: "implementation", ready: false, blockers: "worker is not registered with this broker" };
+  }
+  // A claim is itself proof of liveness: the worker just made an authenticated
+  // request. `workerPlane` is derived only from heartbeat recency, so judging it
+  // here would deny a healthy worker that missed a few heartbeats (a network
+  // blip, a GC pause, a longer configured interval) for a reason that has
+  // nothing to do with capability. Liveness gating belongs to the scheduler,
+  // which chooses among workers that are NOT currently talking to the broker.
+  const evaluation = evaluateImplementationReadiness(
+    { ...view, workerPlane: "online" },
+    { taskType: task.intent },
+  );
+  return evaluation.verdict === "pass"
+    ? { kind: "implementation", ready: true }
+    : { kind: "implementation", ready: false, blockers: evaluation.reason };
+}
+
+/**
  * Claim-time policy re-evaluation (#1355 G1-b): the CLAIMING worker's class
  * may differ from the create-time target's, so class-match rules are checked
  * again. Budgets are create-time only, and an operator approval already on
  * the task satisfies a require_approval rule.
  */
+/**
+ * Claim-time policy audit de-duplication, keyed per broker instance by the
+ * identity of its live task map.
+ *
+ * A claim-time deny maps to HTTP 403, which the worker treats as "skip and keep
+ * polling", so it re-claims every poll interval (5s by default) for as long as
+ * the task exists. Without de-duplication each retry appends an audit event and
+ * calls persistState(), which is thousands of rows and state writes per day for
+ * a single stuck task. The contract's own observation report (§5.1) counts
+ * task-deduplicated policy hits, so one event per (task, rule, action) is also
+ * the number the rollout actually wants.
+ */
+const claimPolicyAuditSeen = new WeakMap<ReadonlyMap<string, TaskRecord>, Set<string>>();
+
+function shouldRecordClaimPolicyAudit(
+  context: TaskAdmissionContext,
+  taskId: string,
+  ruleId: string,
+  action: string,
+): boolean {
+  let seen = claimPolicyAuditSeen.get(context.tasks);
+  if (!seen) {
+    seen = new Set<string>();
+    claimPolicyAuditSeen.set(context.tasks, seen);
+  }
+  const key = `${taskId}|${ruleId}|${action}`;
+  if (seen.has(key)) return false;
+  seen.add(key);
+  return true;
+}
+
 export function assertClaimTaskPolicy(task: TaskRecord, workerId: string, context: TaskAdmissionContext): void {
   const doc = context.policyDocument;
   if (!doc) return;
   const workerClass = workerClassForPolicy(task.payload, workerId, context);
+  const readiness = evaluateClaimImplementationReadiness(task, workerId, context);
   const decision = evaluateTaskPolicy({
     intent: task.intent,
     mode: typeof task.payload?.mode === "string" ? task.payload.mode : undefined,
     workerClass,
+    evaluationPoint: "claim",
+    implementation: readiness.kind === "not_implementation"
+      ? { isImplementationIntent: false, ready: false }
+      : { isImplementationIntent: true, ready: readiness.ready, blockers: readiness.blockers },
   }, doc);
   if (decision.action === "allow") return;
   if (decision.action === "require_approval" && task.approval) return;
   const note = `rule ${decision.ruleId}: ${decision.reason}`;
   if (doc.mode === "enforce") {
-    context.appendAuditEvent({
-      actorId: workerId,
-      action: "task.policy_denied",
-      targetType: "task",
-      targetId: task.id,
-      note,
-    });
-    context.persistState();
+    if (shouldRecordClaimPolicyAudit(context, task.id, decision.ruleId, "denied")) {
+      context.appendAuditEvent({
+        actorId: workerId,
+        action: "task.policy_denied",
+        targetType: "task",
+        targetId: task.id,
+        note,
+      });
+      context.persistState();
+    }
     throw new BrokerError("policy_denied", decision.reason, { ruleId: decision.ruleId, workerClass });
   }
+  if (!shouldRecordClaimPolicyAudit(context, task.id, decision.ruleId, "warned")) return;
   console.warn(`[a2a-broker] task policy claim violation (warn mode)`, { note, taskId: task.id, workerClass });
   context.appendAuditEvent({
     actorId: workerId,
