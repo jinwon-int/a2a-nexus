@@ -200,6 +200,28 @@ checker reports `jsonrpc-version-negotiation` under
 `subCategoryPromotionCandidates`; the blocking job reproduces the same four
 selectors against every matching PR.
 
+Artifact/message-projection promotion evidence is the pair of sufficient
+official-TCK runs `30225853781` and `30225919582`, each at `9/9`; the blocking
+job reproduces the same nine selectors (five artifact/message tests plus the
+four data-model shape tests). Error-codes/ErrorInfo promotion evidence is the
+same run pair, each at `12 passed / 0 failed / 1 capability-skip` of 13: the
+skipped selector (`test_unsupported_operation_error`) is capability-unreachable
+by design — the TCK skips it whenever the agent card declares
+`capabilities.streaming`, and its only `-32004` trigger is
+`SendStreamingMessage` against a non-streaming agent. It is recorded under
+`capabilityExcludedSelectors` in `docs/tck-failing-categories.json`, the gate
+job runs the twelve runnable selectors, and
+`scripts/project-tck-readiness.mjs` only projects such a category when the
+latest sufficient measurement shows zero failures and exactly the documented
+number of skips.
+
+Two `test_requirements.py` runner tests (`CORE-SEND-003`, `CORE-MULTI-002a`)
+are unwinnable by construction at the pinned TCK ref
+(`29063fe95e903cddac5d8ff811ab94df1ad6ef86`): their requirement definitions
+lack `expected_error` bindings, so the parametrized runner demands
+`response.success` for tests whose purpose is an error response. They belong
+to no promoted selector set; revisit when the TCK pin is bumped.
+
 The promoted gate is deliberately scoped to
 broker A2A-surface changes (`src/a2a`, protocol compatibility fixtures,
 `server.ts`, the TCK harness, this runbook/history, and the workflow itself).

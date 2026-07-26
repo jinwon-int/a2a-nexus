@@ -93,6 +93,56 @@ test("rejects promoted classification drift from the latest measurement", () => 
   );
 });
 
+test("capability-excluded promoted sub-category projects when skips match the documented exclusions exactly", () => {
+  const excluded = {
+    id: "jsonrpc-error-codes-and-errorinfo",
+    measuredPassTotal: { pass: 12, total: 13 },
+    promotionReadiness: "promoted",
+    capabilityExcludedSelectors: [
+      { selector: "tests/compatibility/jsonrpc/test_error_codes.py::TestJsonRpcErrorCodeMappings::test_unsupported_operation_error", reason: "streaming declared" },
+    ],
+  };
+  const withExclusion = classification();
+  withExclusion.subCategories[1] = excluded;
+  const measurement = sufficientMeasurement({
+    subCategories: {
+      "jsonrpc-version-negotiation": { pass: 4, total: 4 },
+      "jsonrpc-error-codes-and-errorinfo": { pass: 12, total: 13, outcomes: { passed: 12, failed: 0, skipped: 1 } },
+    },
+  });
+  const projection = buildTckReadinessProjection({ measurements: [measurement] }, withExclusion);
+  assert.deepEqual(
+    projection.promoted.find((row) => row.id === "jsonrpc-error-codes-and-errorinfo").result,
+    { pass: 12, total: 13 },
+  );
+
+  // A real failure behind the same ratio still blocks.
+  const withFailure = sufficientMeasurement({
+    subCategories: {
+      "jsonrpc-version-negotiation": { pass: 4, total: 4 },
+      "jsonrpc-error-codes-and-errorinfo": { pass: 12, total: 13, outcomes: { passed: 12, failed: 1, skipped: 0 } },
+    },
+  });
+  assert.throws(
+    () => buildTckReadinessProjection({ measurements: [withFailure] }, withExclusion),
+    /not fully green/,
+  );
+
+  // Extra undocumented skips also block.
+  const withExtraSkip = sufficientMeasurement({
+    subCategories: {
+      "jsonrpc-version-negotiation": { pass: 4, total: 4 },
+      "jsonrpc-error-codes-and-errorinfo": { pass: 11, total: 13, outcomes: { passed: 11, failed: 0, skipped: 2 } },
+    },
+  });
+  const drifted = classification();
+  drifted.subCategories[1] = { ...excluded, measuredPassTotal: { pass: 11, total: 13 } };
+  assert.throws(
+    () => buildTckReadinessProjection({ measurements: [withExtraSkip] }, drifted),
+    /not fully green/,
+  );
+});
+
 test("rejects a promoted sub-category that is duplicated or no longer fully green", () => {
   const regressed = sufficientMeasurement({
     subCategories: {

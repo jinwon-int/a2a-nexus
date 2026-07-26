@@ -9,12 +9,14 @@ Compatibility posture: **A2A 1.0-compatible broker alpha profile**. This is a me
 
 | Official TCK measurement | Result |
 | --- | ---: |
-| Overall compatibility | 65.7% |
+| Overall compatibility | 77.6% |
 | Agent Card | 6/6 |
-| JSON-RPC | 46/94 |
+| JSON-RPC | 64/94 |
+| Promoted sub-category: `jsonrpc-error-codes-and-errorinfo` | 12/13 |
+| Promoted sub-category: `jsonrpc-artifact-message-projection` | 9/9 |
 | Promoted sub-category: `jsonrpc-version-negotiation` | 4/4 |
 
-Source: [tck-measurement workflow run 29917128590](https://github.com/jinwon-int/a2a-nexus/actions/runs/29917128590), measured `2026-07-22`. Canonical ledgers: `packages/broker/docs/tck-history.json` and `packages/broker/docs/tck-failing-categories.json`.
+Source: [tck-measurement workflow run 30225919582](https://github.com/jinwon-int/a2a-nexus/actions/runs/30225919582), measured `2026-07-26`. Canonical ledgers: `packages/broker/docs/tck-history.json` and `packages/broker/docs/tck-failing-categories.json`.
 
 The full official TCK remains a non-gating measurement lane. Only sub-categories marked `promoted` in the classification ledger are represented as blocking PR gates.
 <!-- TCK-READINESS:END -->

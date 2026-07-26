@@ -115,7 +115,25 @@ export function buildTckReadinessProjection(history, classification) {
         fail(`promoted sub-category ${entry.id} disagrees with its classified measuredPassTotal`);
       }
       if (measured.pass !== measured.total) {
-        fail(`promoted sub-category ${entry.id} is not fully green in the latest sufficient measurement`);
+        // Capability-excluded green: a promoted sub-category may carry
+        // documented capabilityExcludedSelectors (tests the TCK itself skips
+        // because the agent declares a capability, e.g. streaming). The
+        // latest measurement must then show ZERO failures and exactly the
+        // documented number of skips — any real failure or extra skip still
+        // blocks the projection.
+        const excluded = Array.isArray(entry.capabilityExcludedSelectors)
+          ? entry.capabilityExcludedSelectors.length
+          : 0;
+        const outcomes = subCategories[entry.id]?.outcomes;
+        if (
+          excluded === 0
+          || !outcomes
+          || outcomes.failed !== 0
+          || outcomes.skipped !== excluded
+          || measured.pass + excluded !== measured.total
+        ) {
+          fail(`promoted sub-category ${entry.id} is not fully green in the latest sufficient measurement`);
+        }
       }
       return { id: entry.id, result: measured };
     });

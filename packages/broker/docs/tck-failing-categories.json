@@ -3,27 +3,27 @@
   "issue": "a2a-nexus#1500",
   "description": "Machine-readable classification of the `jsonrpc` TCK bucket into the five stable sub-categories named in a2a-nexus#1500. pytestNodeIdSelectors are deterministic, mutually exclusive node IDs from the pinned official TCK. The measured values come from the fresh complete run anchored below; a category can only be promoted once it remains green across the stability window (see docs/a2a-tck-runbook.md).",
   "provenance": {
-    "sourceMeasurement": "docs/tck-history.json measurement 2026-07-22 (must/jsonrpc, jsonrpc 46/94)",
+    "sourceMeasurement": "docs/tck-history.json measurements 2026-07-26 (must/jsonrpc, jsonrpc 64/94) — workflow runs 30225853781 + 30225919582",
     "workflowRun": "https://github.com/jinwon-int/a2a-nexus/actions/runs/29917128590",
     "stabilityWindowRuns": [
-      "https://github.com/jinwon-int/a2a-nexus/actions/runs/29915210798",
-      "https://github.com/jinwon-int/a2a-nexus/actions/runs/29917128590"
+      "https://github.com/jinwon-int/a2a-nexus/actions/runs/30225853781",
+      "https://github.com/jinwon-int/a2a-nexus/actions/runs/30225919582"
     ],
     "derivedFrom": [
       "official A2A TCK verbose PASSED/FAILED/SKIPPED node outcomes",
       "docs/tck-history.json pytestOutcomeAccounting and subCategories"
     ],
     "NOT_a_per_test_run": false,
-    "limits": "The values cover only the five deterministic selector sets, not full conformance. Unknown node IDs remain explicitly unclassified in tck-history.json. Version negotiation alone is promoted after two independent 4/4 measurements; the other sub-categories remain non-gating."
+    "limits": "The values cover only the five deterministic selector sets, not full conformance. Unknown node IDs remain explicitly unclassified in tck-history.json. Version negotiation, artifact/message projection, and error-codes/ErrorInfo are promoted (error-codes with one capability-unreachable selector documented in capabilityExcludedSelectors). Task-not-found and streaming remain non-gating. Two requirement-runner tests (CORE-SEND-003, CORE-MULTI-002a) are unwinnable by construction at the pinned TCK ref: their requirement definitions lack expected_error bindings so the runner demands response.success for error-path tests."
   },
   "coarseBaseline": {
     "category": "jsonrpc",
     "level": "must",
     "transport": "jsonrpc",
-    "source": "tck-measurement workflow run 29917128590",
-    "pass": 46,
+    "source": "tck-measurement workflow run 30225919582",
+    "pass": 64,
     "total": 94,
-    "date": "2026-07-22"
+    "date": "2026-07-26"
   },
   "subCategories": [
     {
@@ -47,11 +47,20 @@
         "tests/compatibility/jsonrpc/test_error_info.py::TestJsonRpcErrorInfo::test_error_info_valid",
         "tests/compatibility/jsonrpc/test_error_info.py::TestJsonRpcErrorInfo::test_error_info_reason_matches_condition"
       ],
-      "measuredPassTotal": { "pass": 6, "total": 13 },
-      "promotionReadiness": "blocked-pending-fresh-run",
-      "note": "Fresh official-TCK measurement is complete but the category is not green.",
+      "measuredPassTotal": {
+        "pass": 12,
+        "total": 13
+      },
+      "promotionReadiness": "promoted",
+      "note": "Promoted after independent official-TCK workflow runs 30225853781 and 30225919582 both measured 12 passed / 0 failed / 1 capability-skip; the PR gate runs the 12 runnable selectors (the capability-unreachable selector is documented in capabilityExcludedSelectors).",
       "sourceKind": "official-tck",
-      "pendingEmission": false
+      "pendingEmission": false,
+      "capabilityExcludedSelectors": [
+        {
+          "selector": "tests/compatibility/jsonrpc/test_error_codes.py::TestJsonRpcErrorCodeMappings::test_unsupported_operation_error",
+          "reason": "Capability-unreachable by design: the TCK skips this test whenever the agent card declares capabilities.streaming=true (its only -32004 trigger is SendStreamingMessage on a non-streaming agent). The broker declares streaming and the TCK requires it for the streaming suite, so no broker change can make this selector run. Same skip class as the push-notification selectors."
+        }
+      ]
     },
     {
       "id": "jsonrpc-task-not-found-and-invalid-task",
@@ -68,9 +77,12 @@
         "tests/compatibility/jsonrpc/test_error_codes.py::TestJsonRpcErrorCodeRange::test_error_code_in_valid_range[GetTask-nonexistent]",
         "tests/compatibility/jsonrpc/test_sse_streaming.py::TestSseSubscribeToTask::test_subscribe_nonexistent_task_returns_error"
       ],
-      "measuredPassTotal": { "pass": 1, "total": 7 },
+      "measuredPassTotal": {
+        "pass": 4,
+        "total": 7
+      },
       "promotionReadiness": "blocked-pending-fresh-run",
-      "note": "Fresh official-TCK measurement is complete; failures remain partly entangled with the SendMessage worker-registration cascade.",
+      "note": "Runs 30225853781/30225919582: 4 passed / 0 failed / 3 skipped. The 3 skips are tck-complete-task convention setup races (task still WORKING when the test expects terminal); convention support is follow-up work.",
       "sourceKind": "official-tck",
       "pendingEmission": false
     },
@@ -78,8 +90,8 @@
       "id": "jsonrpc-artifact-message-projection",
       "issueCategory": "3. Artifact·Message projection shape",
       "rootCause": "projection-shape",
-      "codeStatus": "golden-backed",
-      "codeEvidence": "packages/broker/src/fixtures/a2a-protocol-compatibility.ts A2A_TASK_PROJECTION_GOLDEN, exercised by src/a2a/protocol-compatibility.test.ts",
+      "codeStatus": "implemented",
+      "codeEvidence": "packages/broker/src/a2a/default-agent-conventions.ts + json-rpc.ts specSendResult/specTaskArtifacts (#1500 PR #1650): embedded default agent implements the TCK messageId-prefix conventions; TaskResult.a2aArtifacts projects fully-shaped artifacts",
       "pytestNodeIdSelectors": [
         "tests/compatibility/core_operations/test_artifacts.py::TestTextArtifact::test_task_has_text_artifact[jsonrpc]",
         "tests/compatibility/core_operations/test_artifacts.py::TestFileArtifact::test_task_has_file_artifact[jsonrpc]",
@@ -91,10 +103,14 @@
         "tests/compatibility/core_operations/test_data_model.py::TestEnumSerialization::test_enum_values_are_strings",
         "tests/compatibility/core_operations/test_data_model.py::TestTimestampFormat::test_timestamps_are_iso8601_utc"
       ],
-      "measuredPassTotal": { "pass": 4, "total": 9 },
-      "promotionReadiness": "blocked-pending-fresh-run",
+      "measuredPassTotal": {
+        "pass": 9,
+        "total": 9
+      },
+      "promotionReadiness": "promoted",
       "sourceKind": "official-tck",
-      "pendingEmission": false
+      "pendingEmission": false,
+      "note": "Promoted after independent official-TCK workflow runs 30225853781 and 30225919582 both measured 9/9; the PR gate runs exactly these nine selectors."
     },
     {
       "id": "jsonrpc-streaming-subscribe-ordering",
@@ -112,10 +128,14 @@
         "tests/compatibility/jsonrpc/test_sse_streaming.py::TestSseStreamingFormat::test_streaming_events_contain_stream_response",
         "tests/compatibility/jsonrpc/test_sse_streaming.py::TestSseSubscribeToTask::test_subscribe_first_event_is_task"
       ],
-      "measuredPassTotal": { "pass": 3, "total": 9 },
+      "measuredPassTotal": {
+        "pass": 3,
+        "total": 9
+      },
       "promotionReadiness": "blocked-pending-fresh-run",
       "sourceKind": "official-tck",
-      "pendingEmission": false
+      "pendingEmission": false,
+      "note": "Runs 30225853781/30225919582: 3 passed / 0 failed / 6 skipped (input-required convention + streaming ordering root cause; separate category scope)."
     },
     {
       "id": "jsonrpc-version-negotiation",
@@ -129,7 +149,10 @@
         "tests/compatibility/jsonrpc/test_error_codes.py::TestJsonRpcErrorCodeMappings::test_version_not_supported_error",
         "tests/compatibility/jsonrpc/test_error_codes.py::TestJsonRpcErrorCodeRange::test_error_code_in_valid_range[SendMessage-bad-version]"
       ],
-      "measuredPassTotal": { "pass": 4, "total": 4 },
+      "measuredPassTotal": {
+        "pass": 4,
+        "total": 4
+      },
       "promotionReadiness": "promoted",
       "note": "Promoted after independent official-TCK workflow runs 29915210798 and 29917128590 both measured 4/4; the PR gate runs exactly these four selectors.",
       "sourceKind": "official-tck",
