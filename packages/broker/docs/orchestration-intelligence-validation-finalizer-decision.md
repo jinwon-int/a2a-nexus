@@ -29,7 +29,7 @@ services, publish releases, or move credentials.
 ## CLI
 
 ```bash
-npm run orchestration_intelligence_validation_finalizer_decision -- \
+npm run orchestration -- orchestration_intelligence_validation_finalizer_decision \
   --input fixtures/orchestration-intelligence/validation-finalizer-decision.ready.json
 ```
 

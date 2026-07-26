@@ -55,15 +55,15 @@ not authorize dispatch by itself.
 ## Representative No-Live Fixtures
 
 ```bash
-npm run adaptive_work_mode_selector -- \
+npm run orchestration -- adaptive_work_mode_selector \
   --input fixtures/adaptive-work-mode-selector/short-answer.json
-npm run adaptive_work_mode_selector -- \
+npm run orchestration -- adaptive_work_mode_selector \
   --input fixtures/adaptive-work-mode-selector/single-repo-code-patch.json
-npm run adaptive_work_mode_selector -- \
+npm run orchestration -- adaptive_work_mode_selector \
   --input fixtures/adaptive-work-mode-selector/pr-tests-validation.json
-npm run adaptive_work_mode_selector -- \
+npm run orchestration -- adaptive_work_mode_selector \
   --input fixtures/adaptive-work-mode-selector/multi-node-evidence.json
-npm run adaptive_work_mode_selector -- \
+npm run orchestration -- adaptive_work_mode_selector \
   --input fixtures/adaptive-work-mode-selector/decision-debate.json
 ```
 

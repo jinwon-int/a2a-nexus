@@ -72,7 +72,7 @@
   {
    "id": "broker",
    "packageJson": "packages/broker/package.json",
-   "minScripts": 95,
+   "minScripts": 54,
    "requiredScripts": [
     "build",
     "check",
@@ -101,10 +101,10 @@
     },
     {
      "id": "broker-rollout-preflight",
-     "pattern": "^(docker_|rollout_|worker_|mobile_|two_broker_|gwakga_|edge_secret_|terminal_outbox_|migration_|lifecycle_|receipt_|release_evidence|broker_cleanup|scan:).*$",
+     "pattern": "^(rollout|scan:public-readiness|rollout_guard|worker_signature_rollout_preflight)$",
      "tier": "broker-rollout-and-preflight",
      "kind": "standard-gate",
-     "note": "Rollout, worker, migration, receipt, and preflight scripts are safety gates or guarded operational checks."
+     "note": "#1503 Wave 2: 24 rollout/preflight aliases collapsed into the rollout dispatcher (scripts/rollout-preflight-manifest.json). scan:public-readiness stays direct (package CI parity requiredScript)."
     },
     {
      "id": "broker-terminal-brief-approval",
@@ -115,10 +115,10 @@
     },
     {
      "id": "broker-orchestration-intelligence",
-     "pattern": "^(orchestration_intelligence|worker_subagent|complexity_|adaptive_|work_mode_|operator_|test:work_mode|test:adaptive|test:execution|test:operator).*$",
+     "pattern": "^orchestration$",
      "tier": "orchestration-intelligence",
      "kind": "manual-ops",
-     "note": "Orchestration-intelligence scripts are high-churn manual/analysis entrypoints that need caller-aware cleanup."
+     "note": "#1503 Wave 2: the 21 orchestration-intelligence aliases collapsed into the orchestration dispatcher (scripts/orchestration-manifest.json). Wrappers remain approval boundaries and must not be bulk-deleted."
     },
     {
      "id": "broker-a2a-rounds",

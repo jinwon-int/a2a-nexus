@@ -7,8 +7,8 @@ Use this before any production deploy, Gateway restart, live Telegram send, or r
 ```sh
 npm ci
 npm run build
-npm run receipt_gate_canary
-npm run receipt_gate_canary -- --json
+npm run rollout -- receipt_gate_canary
+npm run rollout -- receipt_gate_canary --json
 ```
 
 For a full pre-deploy check, run the focused test plus the normal CI command:

@@ -62,7 +62,7 @@ runtime readiness evidence patch:
 ## CLI
 
 ```bash
-npm run orchestration_intelligence_broker_dispatch_approval_decision_evidence -- \
+npm run orchestration -- orchestration_intelligence_broker_dispatch_approval_decision_evidence \
   --input fixtures/orchestration-intelligence/broker-dispatch-approval-decision-evidence.accepted.json
 ```
 

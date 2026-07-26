@@ -36,7 +36,7 @@ Those remaining gates require separate source packets and explicit approval.
 ## CLI
 
 ```bash
-npm run orchestration_intelligence_runtime_design_review -- \
+npm run orchestration -- orchestration_intelligence_runtime_design_review \
   --input fixtures/orchestration-intelligence/runtime-design-review.ready.json
 ```
 

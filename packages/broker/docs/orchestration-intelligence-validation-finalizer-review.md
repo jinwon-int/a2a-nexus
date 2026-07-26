@@ -22,7 +22,7 @@ changes, releases, and credential movement still require separate approval.
 ## CLI
 
 ```bash
-npm run orchestration_intelligence_validation_finalizer_review -- \
+npm run orchestration -- orchestration_intelligence_validation_finalizer_review \
   --input fixtures/orchestration-intelligence/validation-finalizer-review.ready.json
 ```
 

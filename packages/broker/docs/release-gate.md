@@ -14,10 +14,10 @@ explicit approval gates that this script cannot prove by itself.
 cd a2a-broker
 
 # CI-safe check of production Docker Compose runtime invariants (no Docker daemon required)
-npm run docker_runtime_preflight -- --dry-run
+npm run rollout -- docker_runtime_preflight --dry-run
 
 # Live host preflight for the Compose-managed broker runtime
-npm run docker_runtime_preflight
+npm run rollout -- docker_runtime_preflight
 
 # Run the default gate (compose smoke; recovery is marked non-blocking unless BROKER_URL is set)
 npm run release_gate
@@ -58,11 +58,11 @@ The evidence bundle should contain:
 3. worker capacity matrix with all expected workers online:
    `workergamma,workerepsilon,workerbeta,workeralpha,workerdelta`
 4. queue/stale closeout counts: `queued=0`, `claimed=0`, `running=0`, `stale=0`
-5. migration health gate output (`npm run migration_health_gate -- --json`)
+5. migration health gate output (`npm run rollout -- migration_health_gate --json`)
 6. live-readiness canary output (`npm run live_readiness_canary -- --no-live --json`
    for this release-dryrun lane, or read-only GET output when approved)
 7. canonical PR/Done/Block terminal evidence using HTTPS URLs only
-8. receipt no-live matrix output (`npm run receipt_gate_canary -- --json`)
+8. receipt no-live matrix output (`npm run rollout -- receipt_gate_canary --json`)
 
 Focused fail-closed coverage lives in `scripts/closeout-release-report.test.mjs`
 and proves missing edge-secret proof, non-zero queue/stale counts, and receipt
@@ -73,7 +73,7 @@ evidence gaps all render Block evidence.
 For the May 2026 stabilization gate, run the read-only migration gate with:
 
 ```bash
-npm run migration_health_gate -- \
+npm run rollout -- migration_health_gate \
   --db <sqlite-state-file> \
   --legacy-residue-cutoff 2026-05-04T07:10:00.000Z \
   --json
@@ -95,7 +95,7 @@ The cutoff is a bounded quarantine, not a greenwash:
 
 ### Docker Runtime Preflight
 
-`npm run docker_runtime_preflight -- --dry-run` validates the repo-local Compose file before a release. It fails if the production service no longer defines:
+`npm run rollout -- docker_runtime_preflight --dry-run` validates the repo-local Compose file before a release. It fails if the production service no longer defines:
 
 1. `services.a2a-broker`
 2. a default container name that resolves to `a2a-broker`
@@ -103,7 +103,7 @@ The cutoff is a bounded quarantine, not a greenwash:
 4. container `HOST=0.0.0.0`
 5. bind mount `/var/lib/a2a-broker:/var/lib/a2a-broker`
 
-On a live VPS, run `npm run docker_runtime_preflight` from the Compose project directory. The live check also verifies the `a2a-broker` container is healthy with the expected env, port binding, and state bind mount, and confirms the legacy `a2a-broker.service` is inactive/disabled or absent. The check prints only invariant names and sanitized states; it does not dump environment secrets or session data.
+On a live VPS, run `npm run rollout -- docker_runtime_preflight` from the Compose project directory. The live check also verifies the `a2a-broker` container is healthy with the expected env, port binding, and state bind mount, and confirms the legacy `a2a-broker.service` is inactive/disabled or absent. The check prints only invariant names and sanitized states; it does not dump environment secrets or session data.
 
 ### Phase 1 — Compose Smoke (happy path)
 

@@ -52,7 +52,7 @@ the request.
 ## CLI
 
 ```bash
-npm run orchestration_intelligence_worker_spawn_approval_request -- \
+npm run orchestration -- orchestration_intelligence_worker_spawn_approval_request \
   --input fixtures/orchestration-intelligence/worker-spawn-approval-request.ready.json
 ```
 

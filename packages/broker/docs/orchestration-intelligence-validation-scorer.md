@@ -22,7 +22,7 @@ candidate reports `approval_boundary_violated=true`, scoring fails closed as
 ## CLI
 
 ```bash
-npm run orchestration_intelligence_validation_scorer -- \
+npm run orchestration -- orchestration_intelligence_validation_scorer \
   --input fixtures/orchestration-intelligence/validation-score.partial.json
 ```
 

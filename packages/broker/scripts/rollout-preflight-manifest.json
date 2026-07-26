@@ -1,0 +1,94 @@
+{
+  "$comment": "#1503 Wave 2: data-driven operator surface for the rollout/preflight tool family. One npm entry (rollout) dispatches via scripts/rollout.mjs; build=true runs `npm run build` first unless --no-build. scan:public-readiness intentionally stays a direct npm script (package CI parity requiredScript).",
+  "schemaVersion": 1,
+  "tools": {
+    "broker_cleanup_safe_prune": {
+      "script": "broker-cleanup-safe-prune.mjs",
+      "build": true
+    },
+    "docker_runtime_preflight": {
+      "script": "docker-runtime-preflight.mjs",
+      "build": false
+    },
+    "edge_secret_rotation_diagnostics": {
+      "script": "edge-secret-rotation-diagnostics.mjs",
+      "build": false
+    },
+    "lifecycle_proof_evidence": {
+      "script": "broker-lifecycle-proof-evidence.mjs",
+      "build": false
+    },
+    "migration_health_gate": {
+      "script": "broker-migration-health-gate.mjs",
+      "build": false
+    },
+    "mobile_worker_preflight": {
+      "script": "mobile-worker-preflight.mjs",
+      "build": true
+    },
+    "receipt_gate_canary": {
+      "script": "receipt-gate-canary.mjs",
+      "build": false
+    },
+    "release_evidence_export": {
+      "script": "dist/release-evidence-export.js",
+      "build": true
+    },
+    "terminal_outbox_backlog_classifier": {
+      "script": "terminal-receipt-closeout-report.mjs",
+      "build": false
+    },
+    "terminal_outbox_cleanup_dryrun": {
+      "script": "terminal-receipt-closeout-report.mjs",
+      "build": false
+    },
+    "terminal_outbox_preflight": {
+      "script": "terminal-outbox-preflight.mjs",
+      "build": false
+    },
+    "two_broker_worker_preflight": {
+      "script": "two-broker-worker-preflight.mjs",
+      "build": false
+    },
+    "worker_compatibility_audit": {
+      "script": "worker-compatibility-audit.mjs",
+      "build": false
+    },
+    "worker_self_assessment_capacity": {
+      "script": "worker-self-assessment-capacity.mjs",
+      "build": true
+    },
+    "worker_subagent_budget_counter": {
+      "script": "worker-subagent-budget-counter.mjs",
+      "build": true
+    },
+    "worker_subagent_context_brief": {
+      "script": "worker-subagent-context-brief.mjs",
+      "build": true
+    },
+    "worker_subagent_evidence_assembly": {
+      "script": "worker-subagent-evidence-assembly.mjs",
+      "build": true
+    },
+    "worker_subagent_orchestration_policy": {
+      "script": "worker-subagent-orchestration-policy.mjs",
+      "build": true
+    },
+    "worker_subagent_planner_handoff": {
+      "script": "worker-subagent-planner-handoff.mjs",
+      "build": true
+    },
+    "worker_subagent_redaction_gate": {
+      "script": "worker-subagent-redaction-gate.mjs",
+      "build": true
+    },
+    "worker_subagent_spawn_authorization_request": {
+      "script": "worker-subagent-spawn-authorization-request.mjs",
+      "build": true
+    },
+    "worker_subagent_spawn_gate_decision": {
+      "script": "worker-subagent-spawn-gate-decision.mjs",
+      "build": true
+    }
+  }
+}

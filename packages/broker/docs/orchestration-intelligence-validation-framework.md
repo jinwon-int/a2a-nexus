@@ -30,8 +30,8 @@ packet reports `framework_ready`.
 ## CLI
 
 ```bash
-npm run orchestration_intelligence_validation_framework -- --input fixtures/orchestration-intelligence/validation-framework.partial.json
-npm run orchestration_intelligence_validation_framework -- --input fixtures/orchestration-intelligence/validation-framework.partial.json --json
+npm run orchestration -- orchestration_intelligence_validation_framework --input fixtures/orchestration-intelligence/validation-framework.partial.json
+npm run orchestration -- orchestration_intelligence_validation_framework --input fixtures/orchestration-intelligence/validation-framework.partial.json --json
 ```
 
 The CLI renders either Markdown or the deterministic packet JSON after the

@@ -60,7 +60,7 @@ ACK records:
 ```bash
 BROKER_URL="${BROKER_URL:-http://127.0.0.1:8787}" \
   BROKER_EDGE_SECRET="${BROKER_EDGE_SECRET:-}" \
-  npm run terminal_outbox_preflight -- --json
+  npm run rollout -- terminal_outbox_preflight --json
 ```
 
 Treat any need for a production restart, live Telegram send, DB write, or real

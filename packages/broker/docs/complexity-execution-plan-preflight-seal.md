@@ -159,7 +159,7 @@ Located in `fixtures/complexity-execution-plan-preflight-seal/`:
 ## CLI
 
 ```sh
-npm run complexity_execution_plan_preflight_seal -- \
+npm run orchestration -- complexity_execution_plan_preflight_seal \
   --input fixtures/complexity-execution-plan-preflight-seal/simple-autonomous-preflight-input.json \
   [--json|--markdown] [--now <iso>]
 ```

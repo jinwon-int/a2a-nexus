@@ -23,7 +23,7 @@ Run from the broker checkout.
    deterministic no-live terminal payload proof:
 
    ```sh
-   npm run terminal_outbox_preflight -- --no-live --json
+   npm run rollout -- terminal_outbox_preflight --no-live --json
    ```
 
    Pass evidence must include `mode: "no-live"`, `providerCalled: false`,
@@ -35,7 +35,7 @@ Run from the broker checkout.
 3. Run the standard release gate in CI-safe mode:
 
    ```sh
-   npm run docker_runtime_preflight -- --dry-run
+   npm run rollout -- docker_runtime_preflight --dry-run
    npm run release_gate
    ```
 
@@ -47,7 +47,7 @@ Run from the broker checkout.
    ```sh
    BROKER_URL="${BROKER_URL:-http://127.0.0.1:8787}" \
      BROKER_EDGE_SECRET="${BROKER_EDGE_SECRET:-}" \
-     npm run terminal_outbox_preflight -- --json
+     npm run rollout -- terminal_outbox_preflight --json
    ```
 
    Pass evidence should show `broker health`, `terminal-outbox poll`,

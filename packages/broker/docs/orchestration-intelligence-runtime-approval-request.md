@@ -39,7 +39,7 @@ a separate approval decision evidence packet. This packet is only the request.
 ## CLI
 
 ```bash
-npm run orchestration_intelligence_runtime_approval_request -- \
+npm run orchestration -- orchestration_intelligence_runtime_approval_request \
   --input fixtures/orchestration-intelligence/runtime-approval-request.ready.json
 ```
 

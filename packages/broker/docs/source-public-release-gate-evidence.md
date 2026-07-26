@@ -66,7 +66,7 @@ These files are not tracked in git and will not enter any branch or PR.
 The release gate is documented in `docs/release-gate.md` and the public/stable
 readiness checklist in `docs/public-stable-readiness.md`. Both documents cover:
 
-- Docker runtime preflight (`npm run docker_runtime_preflight -- --dry-run`)
+- Docker runtime preflight (`npm run rollout -- docker_runtime_preflight --dry-run`)
 - Compose smoke gate (`npm run release_gate`)
 - Restart recovery gate
 - Live-impact approval lifecycle proof

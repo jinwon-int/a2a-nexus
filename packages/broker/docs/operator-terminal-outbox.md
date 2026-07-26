@@ -61,7 +61,7 @@ Safe pre-deploy commands:
 
 ```sh
 npm run build
-npm run terminal_outbox_preflight -- --no-live --json
+npm run rollout -- terminal_outbox_preflight --no-live --json
 npm run smoke:docker-broker -- --dry-run
 ```
 

@@ -1,0 +1,90 @@
+{
+  "$comment": "#1503 Wave 2: data-driven operator surface for the orchestration-intelligence tool family. One npm entry (orchestration) dispatches via scripts/orchestration.mjs; build=true runs `npm run build` first unless --no-build. Wrappers remain separate files over src/core engines.",
+  "schemaVersion": 1,
+  "tools": {
+    "adaptive_work_mode_selector": {
+      "script": "adaptive-work-mode-selector.mjs",
+      "build": true
+    },
+    "complexity_execution_plan_draft": {
+      "script": "complexity-execution-plan-draft.mjs",
+      "build": true
+    },
+    "complexity_execution_plan_preflight_seal": {
+      "script": "complexity-execution-plan-preflight-seal.mjs",
+      "build": true
+    },
+    "complexity_orchestration_recommendation": {
+      "script": "complexity-orchestration-recommendation.mjs",
+      "build": true
+    },
+    "operator_approval_request": {
+      "script": "operator-approval-request.mjs",
+      "build": true
+    },
+    "orchestration_intelligence_broker_dispatch_approval_decision_evidence": {
+      "script": "orchestration-intelligence-broker-dispatch-approval-decision-evidence.mjs",
+      "build": true
+    },
+    "orchestration_intelligence_broker_dispatch_approval_request": {
+      "script": "orchestration-intelligence-broker-dispatch-approval-request.mjs",
+      "build": true
+    },
+    "orchestration_intelligence_runtime_approval_decision_evidence": {
+      "script": "orchestration-intelligence-runtime-approval-decision-evidence.mjs",
+      "build": true
+    },
+    "orchestration_intelligence_runtime_approval_request": {
+      "script": "orchestration-intelligence-runtime-approval-request.mjs",
+      "build": true
+    },
+    "orchestration_intelligence_runtime_design_review": {
+      "script": "orchestration-intelligence-runtime-design-review.mjs",
+      "build": true
+    },
+    "orchestration_intelligence_runtime_readiness_gate": {
+      "script": "orchestration-intelligence-runtime-readiness-gate.mjs",
+      "build": true
+    },
+    "orchestration_intelligence_validation_finalizer_decision": {
+      "script": "orchestration-intelligence-validation-finalizer-decision.mjs",
+      "build": true
+    },
+    "orchestration_intelligence_validation_finalizer_review": {
+      "script": "orchestration-intelligence-validation-finalizer-review.mjs",
+      "build": true
+    },
+    "orchestration_intelligence_validation_framework": {
+      "script": "orchestration-intelligence-validation-framework.mjs",
+      "build": true
+    },
+    "orchestration_intelligence_validation_operator_decision_evidence": {
+      "script": "orchestration-intelligence-validation-operator-decision-evidence.mjs",
+      "build": true
+    },
+    "orchestration_intelligence_validation_operator_review_request": {
+      "script": "orchestration-intelligence-validation-operator-review-request.mjs",
+      "build": true
+    },
+    "orchestration_intelligence_validation_scorer": {
+      "script": "orchestration-intelligence-validation-scorer.mjs",
+      "build": true
+    },
+    "orchestration_intelligence_worker_spawn_approval_decision_evidence": {
+      "script": "orchestration-intelligence-worker-spawn-approval-decision-evidence.mjs",
+      "build": true
+    },
+    "orchestration_intelligence_worker_spawn_approval_request": {
+      "script": "orchestration-intelligence-worker-spawn-approval-request.mjs",
+      "build": true
+    },
+    "orchestration_intelligence_worker_subagent_spawn_authorization_bridge": {
+      "script": "orchestration-intelligence-worker-subagent-spawn-authorization-bridge.mjs",
+      "build": true
+    },
+    "work_mode_pre_dispatch_decision": {
+      "script": "work-mode-pre-dispatch-decision.mjs",
+      "build": true
+    }
+  }
+}

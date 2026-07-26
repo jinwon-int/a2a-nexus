@@ -25,7 +25,7 @@ or restart services, publish releases, or move credentials.
 ## CLI
 
 ```bash
-npm run orchestration_intelligence_validation_operator_decision_evidence -- \
+npm run orchestration -- orchestration_intelligence_validation_operator_decision_evidence \
   --input fixtures/orchestration-intelligence/validation-operator-decision-evidence.accepted.json
 ```
 
