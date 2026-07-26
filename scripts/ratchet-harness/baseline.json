@@ -3,7 +3,7 @@
   "recordedAt": "2026-07-25T18:21:09.515Z",
   "host": {
     "cpus": 8,
-    "note": "vps6 soonwook"
+    "note": "8-core VPS"
   },
   "node": "v24.15.0",
   "phases": [

@@ -158,7 +158,7 @@ function main() {
     const baseline = {
       kind: "ratchet-baseline-v1",
       recordedAt: new Date().toISOString(),
-      host: { cpus: 8, note: "vps6 soonwook" },
+      host: { cpus: 8, note: "8-core VPS" },
       node: process.version,
       phases: ["npx tsc -b tsconfig.json", "node --test dist/core/*.test.js"],
       target,

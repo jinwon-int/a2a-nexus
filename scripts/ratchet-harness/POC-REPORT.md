@@ -1,4 +1,4 @@
-# Ratchet lane PoC report — #1636 (2026-07-26, soonwook)
+# Ratchet lane PoC report — #1636 (2026-07-26)
 
 ## Result
 
