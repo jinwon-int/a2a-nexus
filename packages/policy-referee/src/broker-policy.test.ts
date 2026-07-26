@@ -180,3 +180,166 @@ test("operator source-only rule still denies GitHub-write and generic patch mode
     assert.equal(decision.ruleId, "source-only-safe-intents", mode);
   }
 });
+
+test("requireImplementationCapability must be a boolean (#1597)", () => {
+  assert.throws(
+    () => doc({ rules: [{ id: "r-1", workerClass: "*", requireImplementationCapability: "yes" as never }] }),
+    /requireImplementationCapability must be a boolean/,
+  );
+});
+
+test("requireImplementationCapability is an accepted rule field (#1597)", () => {
+  const policy = doc({ rules: [{ id: "impl-gate", workerClass: "*", requireImplementationCapability: true }] });
+  assert.equal(policy.rules[0]?.requireImplementationCapability, true);
+});
+
+test("implementation intent is denied when the worker is not implementation-ready (#1597)", () => {
+  const policy = doc({ rules: [{ id: "impl-gate", workerClass: "*", requireImplementationCapability: true }] });
+
+  const decision = evaluateTaskPolicy({
+    intent: "propose_patch",
+    workerClass: "mobile",
+    evaluationPoint: "claim",
+    implementation: {
+      isImplementationIntent: true,
+      ready: false,
+      blockers: "implementation availability is \'configured\', not \'canary_passed\'",
+    },
+  }, policy);
+
+  assert.equal(decision.action, "deny");
+  assert.equal(decision.ruleId, "impl-gate");
+  assert.match(decision.reason ?? "", /requires a verified implementation capability/);
+  assert.match(decision.reason ?? "", /not \'canary_passed\'/);
+});
+
+test("omitting the readiness input at claim time fails closed (#1597)", () => {
+  const policy = doc({ rules: [{ id: "impl-gate", workerClass: "*", requireImplementationCapability: true }] });
+
+  const decision = evaluateTaskPolicy({
+    intent: "apply_local_change",
+    workerClass: "vps",
+    evaluationPoint: "claim",
+  }, policy);
+
+  assert.equal(decision.action, "deny");
+  assert.match(decision.reason ?? "", /readiness was not evaluated/);
+});
+
+test("omitting evaluationPoint entirely still fails closed (#1597)", () => {
+  // A refactor that drops the readiness plumbing must deny, never silently
+  // disable the gate. Only an explicit evaluationPoint "create" opts out.
+  const policy = doc({ rules: [{ id: "impl-gate", workerClass: "*", requireImplementationCapability: true }] });
+
+  const decision = evaluateTaskPolicy({ intent: "propose_patch", workerClass: "vps" }, policy);
+
+  assert.equal(decision.action, "deny");
+  assert.match(decision.reason ?? "", /readiness was not evaluated/);
+});
+
+test("create-time evaluation opts out of the claim-time gate (#1597)", () => {
+  const policy = doc({ rules: [{ id: "impl-gate", workerClass: "*", requireImplementationCapability: true }] });
+
+  assert.deepEqual(
+    evaluateTaskPolicy({ intent: "propose_patch", workerClass: "vps", evaluationPoint: "create" }, policy),
+    { action: "allow", ruleId: "impl-gate" },
+  );
+});
+
+test("implementation gate allows a ready worker and ignores other intents (#1597)", () => {
+  const policy = doc({ rules: [{ id: "impl-gate", workerClass: "*", requireImplementationCapability: true }] });
+
+  assert.deepEqual(
+    evaluateTaskPolicy({
+      intent: "propose_patch",
+      workerClass: "vps",
+      evaluationPoint: "claim",
+      implementation: { isImplementationIntent: true, ready: true },
+    }, policy),
+    { action: "allow", ruleId: "impl-gate" },
+  );
+
+  assert.deepEqual(
+    evaluateTaskPolicy({
+      intent: "analyze",
+      workerClass: "mobile",
+      evaluationPoint: "claim",
+      implementation: { isImplementationIntent: false, ready: false },
+    }, policy),
+    { action: "allow", ruleId: "impl-gate" },
+  );
+});
+
+test("implementation gate is opt-in: rules without it are unchanged (#1597)", () => {
+  const policy = doc({ rules: [{ id: "legacy", workerClass: "*" }] });
+
+  assert.deepEqual(
+    evaluateTaskPolicy({
+      intent: "propose_patch",
+      workerClass: "mobile",
+      evaluationPoint: "claim",
+      implementation: { isImplementationIntent: true, ready: false, blockers: "not declared" },
+    }, policy),
+    { action: "allow", ruleId: "legacy" },
+  );
+
+  assert.deepEqual(
+    evaluateTaskPolicy({
+      intent: "propose_patch",
+      workerClass: "mobile",
+      evaluationPoint: "claim",
+      implementation: { isImplementationIntent: true, ready: false },
+    }, doc({ rules: [{ id: "explicit-false", workerClass: "*", requireImplementationCapability: false }] })),
+    { action: "allow", ruleId: "explicit-false" },
+  );
+});
+
+test("denyModes and allowIntents still win over the implementation gate (#1597)", () => {
+  const policy = doc({
+    rules: [{
+      id: "impl-gate",
+      workerClass: "*",
+      denyModes: ["apply"],
+      allowIntents: ["propose_patch"],
+      requireImplementationCapability: true,
+    }],
+  });
+
+  const byMode = evaluateTaskPolicy({
+    intent: "propose_patch",
+    mode: "apply",
+    workerClass: "vps",
+    evaluationPoint: "claim",
+    implementation: { isImplementationIntent: true, ready: true },
+  }, policy);
+  assert.equal(byMode.action, "deny");
+  assert.match(byMode.reason ?? "", /mode \'apply\' is denied/);
+
+  const byIntent = evaluateTaskPolicy({
+    intent: "analyze",
+    workerClass: "vps",
+    evaluationPoint: "claim",
+    implementation: { isImplementationIntent: false, ready: false },
+  }, policy);
+  assert.equal(byIntent.action, "deny");
+  assert.match(byIntent.reason ?? "", /is not allowed/);
+});
+
+test("a class-specific rule listed first shadows a later wildcard gate (#1597)", () => {
+  const policy = doc({
+    rules: [
+      { id: "mobile-open", workerClass: "mobile" },
+      { id: "impl-gate", workerClass: "*", requireImplementationCapability: true },
+    ],
+  });
+
+  assert.deepEqual(
+    evaluateTaskPolicy({
+      intent: "propose_patch",
+      workerClass: "mobile",
+      evaluationPoint: "claim",
+      implementation: { isImplementationIntent: true, ready: false },
+    }, policy),
+    { action: "allow", ruleId: "mobile-open" },
+  );
+});

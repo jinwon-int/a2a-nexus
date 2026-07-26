@@ -32,6 +32,13 @@ export interface BrokerPolicyRule {
   requireApproval?: boolean;
   /** Max tasks created per UTC day for this class; exceeding is denied. */
   maxTasksPerDay?: number;
+  /**
+   * Deny implementation-lane intents unless the claiming worker publishes a
+   * verified implementation capability (#1597). Readiness itself is computed by
+   * the broker and supplied as `implementationReady`; this package stays free of
+   * worker/runtime types and never sees a worker identity.
+   */
+  requireImplementationCapability?: boolean;
 }
 
 export interface BrokerPolicyDocument {
@@ -59,10 +66,42 @@ export interface BrokerPolicyEvaluationInput {
    * scan is not paid on the common path.
    */
   countTasksToday?: () => number;
+  /**
+   * Which enforcement point is evaluating. `requireImplementationCapability` is
+   * a claim-time rule, so create-time callers must opt out explicitly. The
+   * default is deliberately NOT "create": an omitted value is treated as a
+   * claim, which fails closed if the readiness input is also missing. A refactor
+   * that drops these fields therefore denies rather than silently disabling the
+   * gate.
+   */
+  evaluationPoint?: "create" | "claim";
+  /**
+   * Implementation readiness of the claiming worker, computed by the broker.
+   * Passed as a single object so "not an implementation intent" and "readiness
+   * was never evaluated" cannot be confused: the former is a present object with
+   * isImplementationIntent false, the latter is an absent object, which denies.
+   *
+   * `blockers` is secret-safe. Capability ids are normalized lowercase
+   * identifiers, so no worker name, hostname, path or credential material can
+   * reach this package — the referee never receives a worker identity.
+   */
+  implementation?: {
+    isImplementationIntent: boolean;
+    ready: boolean;
+    blockers?: string;
+  };
 }
 
 const RULE_ID_PATTERN = /^[a-z0-9][a-z0-9-]{0,63}$/;
-const RULE_FIELDS = new Set(["id", "workerClass", "allowIntents", "denyModes", "requireApproval", "maxTasksPerDay"]);
+const RULE_FIELDS = new Set([
+  "id",
+  "workerClass",
+  "allowIntents",
+  "denyModes",
+  "requireApproval",
+  "maxTasksPerDay",
+  "requireImplementationCapability",
+]);
 const DOCUMENT_FIELDS = new Set(["schemaVersion", "mode", "defaultAction", "rules"]);
 
 function policyError(source: string, message: string): Error {
@@ -142,6 +181,10 @@ export function validateBrokerPolicyDocument(value: unknown, source = "inline"):
         (!Number.isInteger(rule.maxTasksPerDay) || (rule.maxTasksPerDay as number) < 1)) {
       throw policyError(source, `${where}.maxTasksPerDay must be a positive integer`);
     }
+    if (rule.requireImplementationCapability !== undefined &&
+        typeof rule.requireImplementationCapability !== "boolean") {
+      throw policyError(source, `${where}.requireImplementationCapability must be a boolean`);
+    }
   }
   return doc as unknown as BrokerPolicyDocument;
 }
@@ -178,8 +221,9 @@ export function deriveTaskWorkerClass(input: {
  *
  * Matching is FIRST-MATCH-WINS on workerClass (exact class before "*" only by
  * document order — order rules deliberately). Within the matched rule, checks
- * run deny-first: denyModes, then allowIntents, then maxTasksPerDay, then
- * requireApproval. No matched rule falls through to defaultAction.
+ * run deny-first: denyModes, then allowIntents, then
+ * requireImplementationCapability, then maxTasksPerDay, then requireApproval.
+ * No matched rule falls through to defaultAction.
  */
 export function evaluateTaskPolicy(
   input: BrokerPolicyEvaluationInput,
@@ -196,6 +240,26 @@ export function evaluateTaskPolicy(
   }
   if (rule.allowIntents && !rule.allowIntents.includes(input.intent)) {
     return { action: "deny", ruleId: rule.id, reason: `intent '${input.intent}' is not allowed for worker class '${input.workerClass}'` };
+  }
+  if (rule.requireImplementationCapability === true && input.evaluationPoint !== "create") {
+    const implementation = input.implementation;
+    if (!implementation) {
+      return {
+        action: "deny",
+        ruleId: rule.id,
+        reason: `intent '${input.intent}' requires a verified implementation capability for worker class ` +
+          `'${input.workerClass}': readiness was not evaluated`,
+      };
+    }
+    if (implementation.isImplementationIntent && !implementation.ready) {
+      const detail = implementation.blockers?.trim();
+      return {
+        action: "deny",
+        ruleId: rule.id,
+        reason: `intent '${input.intent}' requires a verified implementation capability for worker class ` +
+          `'${input.workerClass}'${detail ? `: ${detail}` : ""}`,
+      };
+    }
   }
   if (rule.maxTasksPerDay !== undefined) {
     const used = input.countTasksToday ? input.countTasksToday() : 0;
