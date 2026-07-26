@@ -20,14 +20,22 @@ gate, execution, and review-closeout, and can scan repository files for direct
 
 ## Current baseline
 
-Current baseline from `npm run scripts_inventory -- --caller-audit --json`:
+**Superseded by the #1503 ratchet waves.** As of Wave 2 the broker package is
+at 54 direct npm scripts; the terminal-brief (59 tools), orchestration (21),
+and rollout (22) families now run through dispatcher entrypoints. The current
+per-entrypoint tier/consumer/retirement mapping lives in
+[`docs/operator-entrypoints.md`](./operator-entrypoints.md) — treat that
+document as the baseline going forward.
+
+Historical baseline from `npm run scripts_inventory -- --caller-audit --json`
+(pre-ratchet, kept for audit provenance):
 
 - Total scripts: `138`
 - Searched caller files: `845`
 - Scripts with caller references: `109`
 - Total caller references: `359`
 
-High-churn families:
+High-churn families (pre-ratchet):
 
 - `terminal_brief_sidecar`: `38` scripts, all `38` are build+node wrappers; `74` caller refs across `38` scripts.
 - `orchestration_intelligence`: `15` scripts, all `15` are build+node wrappers; `15` caller refs across `14` scripts.

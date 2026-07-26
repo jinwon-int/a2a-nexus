@@ -42,6 +42,7 @@ map.
 - `docs/public-stable-readiness.md` for the public/stable release decision checklist, license/secret/history gates, and broker/plugin/runner responsibility boundaries
 - `docs/worker-poll-profile-migration.md` for the neutral `broker-poll-only` worker profile and OpenClaw-era compatibility migration guardrails
 - `docs/a2a-http-signature-profile-v1.md` for the transport-independent per-worker signed request authentication proposal, including security goals, scoped authorization, replay protection, and migration from shared edge-secret worker auth
+- `docs/operator-entrypoints.md` for the single discovery point for all broker operator/public script entrypoints: dispatcher surfaces, per-entrypoint tier/consumer/retirement mapping, surface regrowth guard, and the core hotspot report
 - `docs/npm-scripts-inventory.md` for auditing and consolidating the large npm script surface without bypassing operator gates
 - `docs/test-placement.md` for placing new broker route tests in per-surface files instead of recreating an append-only `server.test.ts` monolith
 - `docs/source-public-risk-audit-20260510.md` for the Team2 independent broker source-public risk audit and parity evidence for the 2026-05-10 gate
