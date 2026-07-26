@@ -16,7 +16,7 @@ This is the second lane (lane 2/4) of the Team1 auto-closeout design run (parent
 
 Run:
 
-    npm run terminal_brief_auto_closeout_planner -- \
+    npm run terminal_brief -- terminal_brief_auto_closeout_planner \
       --input fixtures/terminal-brief/auto-closeout-planner.candidate.no-live.json \
       --policy-mode draft \
       --markdown
@@ -100,7 +100,7 @@ and renders JSON or markdown. It never performs:
 ## CLI
 
 ```text
-npm run terminal_brief_auto_closeout_planner -- \
+npm run terminal_brief -- terminal_brief_auto_closeout_planner \
   --input <fixture.json> \
   --policy-mode <off|draft|comment_only|comment_and_close> \
   --parent-round-id <id> \

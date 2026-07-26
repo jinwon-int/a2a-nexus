@@ -13,7 +13,7 @@ The workflow packet does not post comments, merge PRs, close issues, send provid
 
 ## Output
 
-`npm run terminal_brief_finalizer_workflow -- --input fixtures/terminal-brief/finalizer-workflow.no-live.json --issue-url https://github.com/owner/repo/issues/698 --markdown`
+`npm run terminal_brief -- terminal_brief_finalizer_workflow --input fixtures/terminal-brief/finalizer-workflow.no-live.json --issue-url https://github.com/owner/repo/issues/698 --markdown`
 
 The output includes:
 

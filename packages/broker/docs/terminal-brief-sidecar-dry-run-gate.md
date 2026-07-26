@@ -62,7 +62,7 @@ The packet always keeps:
 
 ## CLI
 
-    npm run terminal_brief_sidecar_dry_run_gate -- \
+    npm run terminal_brief -- terminal_brief_sidecar_dry_run_gate \
       --input fixtures/terminal-brief/sidecar-dry-run-gate.no-live.json \
       --json
 

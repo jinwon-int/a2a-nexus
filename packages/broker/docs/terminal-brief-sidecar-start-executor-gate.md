@@ -52,7 +52,7 @@ shape, but it must not contain secret values and it never executes that command.
 
 ## CLI
 
-    npm run terminal_brief_sidecar_start_executor_gate -- \
+    npm run terminal_brief -- terminal_brief_sidecar_start_executor_gate \
       --input fixtures/terminal-brief/sidecar-start-executor-gate.no-live.json \
       --json
 

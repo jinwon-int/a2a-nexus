@@ -76,7 +76,7 @@ Run from the broker repository after lane PRs are available and merged into the 
 ```sh
 npm run build
 npm test
-npm run command_center_closeout_checklist -- --input <sanitized-evidence.json> --markdown
+npm run terminal_brief -- command_center_closeout_checklist --input <sanitized-evidence.json> --markdown
 ```
 
 Add any lane-specific targeted commands from #367/#368/#369 PR descriptions. For docs-only matrix updates, `npm run build` is sufficient to prove the repository still type-checks.

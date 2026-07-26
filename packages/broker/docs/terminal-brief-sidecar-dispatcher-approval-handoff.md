@@ -29,7 +29,7 @@ Provider accepted/send evidence remains non-ACK evidence. Current-session-visibl
 
 ## CLI
 
-`npm run terminal_brief_sidecar_dispatcher_approval_handoff -- --input fixtures/terminal-brief/sidecar-dispatcher-approval-handoff.no-live.json --json`
+`npm run terminal_brief -- terminal_brief_sidecar_dispatcher_approval_handoff --input fixtures/terminal-brief/sidecar-dispatcher-approval-handoff.no-live.json --json`
 
 ## Route
 

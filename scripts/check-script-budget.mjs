@@ -29,7 +29,7 @@ import { createDocCheckContext } from './lib/doc-check.mjs';
 export const BUDGETS = {
   scriptsMjs: 170, // +2 from 168: #1506 enforced source-quality floor — scripts/check-source-quality-floors.mjs (guard) + scripts/check-source-quality-floors.test.mjs (its tests). 168 itself was #1505 executable quickstart doctest CLI.
   rootNpmScripts: 101, // -1 from 102: #1503 Wave 0 retires the check:mobileAlpha-hermes-worker-profile alias (check:hermes already runs the same test file directly).
-  brokerNpmScripts: 153, // -3 from 156: #1503 Wave 0 retires cross_broker_terminal_brief_receiver (npm alias unused; the file stays CI-parity-wired) and the brokerbeta_brokeralpha_receiver pair (handoff complete; files remain as node-direct operator tools).
+  brokerNpmScripts: 95, // -58 from 153: #1503 Wave 1 collapses the 59 terminal-brief approval npm aliases into the single terminal_brief dispatcher (scripts/terminal-brief.mjs + manifest); wrappers remain as files and passthrough semantics are regression-tested.
 };
 
 /** Count top-level *.mjs files in a directory (non-recursive; excludes subdirs like lib/). */

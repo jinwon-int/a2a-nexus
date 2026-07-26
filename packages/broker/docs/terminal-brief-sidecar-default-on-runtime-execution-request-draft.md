@@ -57,7 +57,7 @@ the request to the operator. It is still not the runtime executor.
 ## CLI
 
 ```bash
-npm run terminal_brief_sidecar_default_on_runtime_execution_request_draft -- \
+npm run terminal_brief -- terminal_brief_sidecar_default_on_runtime_execution_request_draft \
   --input fixtures/terminal-brief/sidecar-default-on-runtime-execution-request-draft.no-live.json \
   --json
 ```

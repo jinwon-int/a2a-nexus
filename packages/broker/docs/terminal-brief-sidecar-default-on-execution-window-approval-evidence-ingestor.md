@@ -47,7 +47,7 @@ approval grant.
 
 ## CLI
 
-    npm run terminal_brief_sidecar_default_on_execution_window_approval_evidence_ingestor -- \
+    npm run terminal_brief -- terminal_brief_sidecar_default_on_execution_window_approval_evidence_ingestor \
       --input fixtures/terminal-brief/sidecar-default-on-execution-window-approval-evidence-ingestor.no-live.json \
       --json
 

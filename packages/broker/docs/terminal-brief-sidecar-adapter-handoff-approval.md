@@ -64,7 +64,7 @@ terminal ACK/replay evidence.
 
 ## CLI
 
-    npm run terminal_brief_sidecar_adapter_handoff_approval -- \
+    npm run terminal_brief -- terminal_brief_sidecar_adapter_handoff_approval \
       --input fixtures/terminal-brief/sidecar-adapter-handoff-approval.no-live.json \
       --json
 

@@ -52,7 +52,7 @@ still be separate from this ingestor and must perform its own final checks.
 
 Command:
 
-npm run terminal_brief_sidecar_default_on_execution_approval_evidence_ingestor -- --input fixtures/terminal-brief/sidecar-default-on-execution-approval-evidence-ingestor.no-live.json --json
+npm run terminal_brief -- terminal_brief_sidecar_default_on_execution_approval_evidence_ingestor --input fixtures/terminal-brief/sidecar-default-on-execution-approval-evidence-ingestor.no-live.json --json
 
 The command exits 0 only for state=accepted; insufficient, stale, conflicting,
 rejected, or blocked packets exit non-zero.

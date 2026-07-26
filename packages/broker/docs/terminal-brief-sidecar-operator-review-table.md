@@ -75,7 +75,7 @@ produce terminal ACK/replay evidence.
 
 ## CLI
 
-    npm run terminal_brief_sidecar_operator_review_table -- \
+    npm run terminal_brief -- terminal_brief_sidecar_operator_review_table \
       --input fixtures/terminal-brief/sidecar-operator-review-table.no-live.json \
       --json
 

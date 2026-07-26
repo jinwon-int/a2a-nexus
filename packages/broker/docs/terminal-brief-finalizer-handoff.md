@@ -15,7 +15,7 @@ The packet is meant for the single broker finalizer. It is not a merge, issue cl
 
 ## Output
 
-`npm run terminal_brief_finalizer_handoff -- --input fixtures/terminal-brief/finalizer-handoff.no-live.json --broker broker-of-record --finalizer broker-of-record --markdown`
+`npm run terminal_brief -- terminal_brief_finalizer_handoff --input fixtures/terminal-brief/finalizer-handoff.no-live.json --broker broker-of-record --finalizer broker-of-record --markdown`
 
 The output includes:
 

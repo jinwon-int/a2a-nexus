@@ -47,7 +47,7 @@ by a separate path before any supervised sidecar dry-run executor can run.
 
 ## CLI
 
-    npm run terminal_brief_sidecar_activation_approval -- \
+    npm run terminal_brief -- terminal_brief_sidecar_activation_approval \
       --input fixtures/terminal-brief/sidecar-activation-approval.no-live.json \
       --json
 

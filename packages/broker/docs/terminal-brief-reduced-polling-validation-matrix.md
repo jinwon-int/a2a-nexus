@@ -48,7 +48,7 @@ Commands run from this broker checkout after `npm ci`:
 
 ```sh
 npm run build
-npm run terminal_receipt_gap_matrix
+npm run terminal_brief -- terminal_receipt_gap_matrix
 npm run live_readiness_canary -- --no-live --json
 npm run terminal_outbox_preflight -- --no-live --json
 npm test

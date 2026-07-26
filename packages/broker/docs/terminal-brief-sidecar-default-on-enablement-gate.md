@@ -39,7 +39,7 @@ requires explicit operator approval before any config or service change.
 ## CLI
 
 ```bash
-npm run terminal_brief_sidecar_default_on_enablement_gate -- \
+npm run terminal_brief -- terminal_brief_sidecar_default_on_enablement_gate \
   --input fixtures/terminal-brief/sidecar-default-on-enablement-gate.no-live.json \
   --json
 ```

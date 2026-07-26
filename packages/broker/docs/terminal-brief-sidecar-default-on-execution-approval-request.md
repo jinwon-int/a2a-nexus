@@ -43,7 +43,7 @@ later step still only asks for approval; it is not the runtime executor.
 ## CLI
 
 ```bash
-npm run terminal_brief_sidecar_default_on_execution_approval_request -- \
+npm run terminal_brief -- terminal_brief_sidecar_default_on_execution_approval_request \
   --input fixtures/terminal-brief/sidecar-default-on-execution-approval-request.no-live.json \
   --json
 ```

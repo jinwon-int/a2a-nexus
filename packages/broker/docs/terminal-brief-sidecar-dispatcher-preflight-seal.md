@@ -27,7 +27,7 @@ The following remain fixed false: approval request dispatch, approval grant, app
 
 ## CLI
 
-`npm run terminal_brief_sidecar_dispatcher_preflight_seal -- --input fixtures/terminal-brief/sidecar-dispatcher-preflight-seal.no-live.json --json`
+`npm run terminal_brief -- terminal_brief_sidecar_dispatcher_preflight_seal --input fixtures/terminal-brief/sidecar-dispatcher-preflight-seal.no-live.json --json`
 
 ## Route
 

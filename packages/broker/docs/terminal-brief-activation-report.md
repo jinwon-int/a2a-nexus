@@ -18,7 +18,7 @@ Safety contract:
 Run:
 
 ```bash
-npm run terminal_brief_activation_report -- --markdown \
+npm run terminal_brief -- terminal_brief_activation_report --markdown \
   --code-merged-evidence=https://github.com/jinwon-int/a2a-broker/issues/392#code-merged
 ```
 
@@ -83,5 +83,5 @@ Validation:
 
 ```bash
 npm run test:terminal_brief_activation_report
-npm run terminal_brief_activation_report -- --markdown
+npm run terminal_brief -- terminal_brief_activation_report --markdown
 ```

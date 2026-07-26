@@ -60,7 +60,7 @@ is still not the runtime executor.
 ## CLI
 
 ```bash
-npm run terminal_brief_sidecar_default_on_runtime_execution_approval_evidence_ingestor -- \
+npm run terminal_brief -- terminal_brief_sidecar_default_on_runtime_execution_approval_evidence_ingestor \
   --input fixtures/terminal-brief/sidecar-default-on-runtime-execution-approval-evidence-ingestor.no-live.json \
   --json
 ```

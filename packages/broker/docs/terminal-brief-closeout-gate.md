@@ -6,7 +6,7 @@ The gate is the last dry-run planning layer before a broker finalizer performs a
 
 ## Usage
 
-    npm run terminal_brief_closeout_gate -- \\
+    npm run terminal_brief -- terminal_brief_closeout_gate \\
       --input fixtures/terminal-brief/finalizer-workflow.no-live.json \\
       --issue-url https://github.com/owner/repo/issues/700 \\
       --pr-url https://github.com/owner/repo/pull/701 \\

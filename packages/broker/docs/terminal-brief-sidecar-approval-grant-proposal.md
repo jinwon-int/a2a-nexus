@@ -61,7 +61,7 @@ separate explicit operator action in a later path.
 
 ## CLI
 
-    npm run terminal_brief_sidecar_approval_grant_proposal -- \
+    npm run terminal_brief -- terminal_brief_sidecar_approval_grant_proposal \
       --input fixtures/terminal-brief/sidecar-approval-grant-proposal.no-live.json \
       --json
 

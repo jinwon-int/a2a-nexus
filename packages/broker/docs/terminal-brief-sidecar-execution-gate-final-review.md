@@ -36,7 +36,7 @@ execution, and DB mutation as false.
 
 ## CLI
 
-    npm run terminal_brief_sidecar_execution_gate_final_review -- \
+    npm run terminal_brief -- terminal_brief_sidecar_execution_gate_final_review \
       --input fixtures/terminal-brief/sidecar-execution-gate-final-review.no-live.json \
       --json
 

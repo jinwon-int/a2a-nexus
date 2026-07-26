@@ -72,7 +72,7 @@
   {
    "id": "broker",
    "packageJson": "packages/broker/package.json",
-   "minScripts": 150,
+   "minScripts": 95,
    "requiredScripts": [
     "build",
     "check",
@@ -108,10 +108,10 @@
     },
     {
      "id": "broker-terminal-brief-approval",
-     "pattern": "^(terminal_brief|command_center|terminal_receipt|broker_terminal_receipt|source_public|closeout|rehearsal).*$",
+     "pattern": "^terminal_brief$",
      "tier": "terminal-brief-approval",
      "kind": "approval-gated",
-     "note": "Terminal Brief and source-public scripts often encode approval boundaries and must not be bulk-deleted."
+     "note": "#1503 Wave 1: the 59 terminal-brief approval aliases collapsed into the terminal_brief dispatcher (scripts/terminal-brief-manifest.json). The dispatcher stays approval-gated; per-tool wrappers remain approval boundaries and must not be bulk-deleted."
     },
     {
      "id": "broker-orchestration-intelligence",

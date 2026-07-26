@@ -42,7 +42,7 @@ by itself.
 ## CLI
 
 ```bash
-npm run terminal_brief_sidecar_default_on_execution_window_request_draft -- \
+npm run terminal_brief -- terminal_brief_sidecar_default_on_execution_window_request_draft \
   --input fixtures/terminal-brief/sidecar-default-on-execution-window-request-draft.no-live.json \
   --json
 ```

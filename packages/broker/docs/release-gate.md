@@ -23,7 +23,7 @@ npm run docker_runtime_preflight
 npm run release_gate
 
 # Render the consolidated read-only closeout report from sanitized evidence
-npm run closeout_release_report -- --input closeout-evidence.json --markdown
+npm run terminal_brief -- closeout_release_report --input closeout-evidence.json --markdown
 
 # Run only compose smoke
 node scripts/release-gate.mjs --skip-recovery
@@ -43,7 +43,7 @@ BROKER_PERSISTENCE_BACKEND=sqlite npm run release_gate -- --skip-recovery
 
 ### Consolidated Read-only Closeout Report
 
-`npm run closeout_release_report -- --input closeout-evidence.json --markdown`
+`npm run terminal_brief -- closeout_release_report --input closeout-evidence.json --markdown`
 renders the operator-facing closeout for #342/#294 from a sanitized evidence
 bundle. The renderer is intentionally read-only: it does not query production by
 itself, deploy, restart Gateway, send Telegram, mutate SQLite, or ACK terminal

@@ -53,7 +53,7 @@ as evidence only and does not grant approval or execute sidecar start.
 
 ## CLI
 
-    npm run terminal_brief_sidecar_activation_receipt_ingestor -- \
+    npm run terminal_brief -- terminal_brief_sidecar_activation_receipt_ingestor \
       --input fixtures/terminal-brief/sidecar-activation-receipt-ingestor.no-live.json \
       --json
 

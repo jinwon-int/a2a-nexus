@@ -14,7 +14,7 @@ production database, or ACK a Terminal Brief.
 ## Local command
 
 ```bash
-npm run source_public_approval_rehearsal -- --json \
+npm run terminal_brief -- source_public_approval_rehearsal --json \
   --run-id a2a-source-public-approval-rehearsal-20260511T014240Z \
   --worker workerepsilon \
   --repo jinwon-int/a2a-broker \

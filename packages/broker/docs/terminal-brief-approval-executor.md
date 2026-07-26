@@ -19,7 +19,7 @@ This shell is not a live executor. It is the shape that future OpenClaw, Hermes,
 
 Build first, then run:
 
-    npm run terminal_brief_approval_executor -- --input fixtures/terminal-brief/finalizer-workflow.no-live.json --issue-url https://github.com/jinwon-int/a2a-broker/issues/704 --pr-url https://github.com/jinwon-int/a2a-broker/pull/705 --selected-action merge_pull_request --attempt-execute --json
+    npm run terminal_brief -- terminal_brief_approval_executor --input fixtures/terminal-brief/finalizer-workflow.no-live.json --issue-url https://github.com/jinwon-int/a2a-broker/issues/704 --pr-url https://github.com/jinwon-int/a2a-broker/pull/705 --selected-action merge_pull_request --attempt-execute --json
 
 Inputs may be:
 

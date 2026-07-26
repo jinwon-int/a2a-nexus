@@ -109,7 +109,7 @@ Fail closed if any old-broker task is `claimed` or `running`, if the target brok
 Before considering terminal receipt behavior equivalent across brokeralpha and brokerbeta, run the read-only parity helper. It polls each broker terminal outbox with `GET` only and combines that shape check with the deterministic no-live receipt-gate canary; it never sends providers, mutates the broker DB, or ACKs terminal rows.
 
 ```bash
-npm run broker_terminal_receipt_parity -- \
+npm run terminal_brief -- broker_terminal_receipt_parity \
   --brokeralpha-url "${OLD_BROKER_URL}" \
   --brokerbeta-url "${NEW_BROKER_URL}" \
   --edge-secret "${BROKER_EDGE_SECRET}" \
