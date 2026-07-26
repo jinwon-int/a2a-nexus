@@ -88,6 +88,29 @@ The command is source-only and read-only. It performs no SSH, registration,
 heartbeat, dispatch, claim, GitHub write, deploy, restart, send, ACK/replay, or
 secret movement.
 
+## Enforcement at claim time
+
+The readiness rule is also enforced on the live claim path, not only in the
+scheduler dry run. Set `requireImplementationCapability: true` on a broker
+policy rule (see [broker-policy](../contracts/a2a/broker-policy.md)) and
+`claimTask` re-evaluates the claiming worker with the same
+`evaluateImplementationReadiness` function the dry run uses, so the report and
+the live decision can never disagree.
+
+The gate is opt-in and follows the standard `warn` → `enforce` promotion:
+
+| Mode | Unready worker claims an implementation task |
+|---|---|
+| no policy document | claim proceeds (legacy behaviour) |
+| rule omits the field | claim proceeds |
+| `warn` | claim proceeds; `task.policy_warned` audit records the blockers |
+| `enforce` | claim rejected `policy_denied`; `task.policy_denied` audit |
+
+Enforcement is claim-time rather than create-time because a task may be created
+before a capable worker exists, and because the claiming worker can differ from
+the create-time target. Denying the claim keeps the task `queued` and available
+to a worker that is actually ready, instead of failing the work outright.
+
 ## Visibility
 
 Implementation provider/model readiness is broker-local. Team/private worker

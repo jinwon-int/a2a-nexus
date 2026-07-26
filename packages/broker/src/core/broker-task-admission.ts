@@ -18,6 +18,7 @@ import {
   type BrokerPolicyDecision,
   type BrokerPolicyDocument,
 } from "a2a-policy-referee";
+import { evaluateImplementationReadiness, isImplementationTaskType } from "./scheduler-dry-run.js";
 import { assertTransition, assertTaskOwnership } from "./broker-transition-guards.js";
 import { evaluateTaskReadiness, type TaskReadinessMode } from "../task-readiness.js";
 import type {
@@ -194,6 +195,34 @@ export function evaluateCreateTaskPolicy(
 }
 
 /**
+ * Claim-time implementation readiness (#1597). `canPatchWorkspace` only says a
+ * worker may edit a workspace; it is not proof of a usable implementation
+ * runtime, provider route, model tier, or current canary. The readiness rule
+ * itself lives in scheduler-dry-run and is reused verbatim here so the live
+ * claim path and the dry-run report can never disagree.
+ *
+ * Fails closed: an unknown worker is not ready. Non-implementation intents are
+ * reported as such and the policy rule ignores them.
+ */
+export function evaluateClaimImplementationReadiness(
+  task: TaskRecord,
+  workerId: string,
+  context: TaskAdmissionContext,
+): { isImplementationIntent: boolean; ready: boolean; blockers?: string } {
+  if (!isImplementationTaskType(task.intent)) {
+    return { isImplementationIntent: false, ready: false };
+  }
+  const view = context.getWorkerView(workerId, DEFAULT_A2A_ROUND_WORKER_OFFLINE_AFTER_MS);
+  if (!view) {
+    return { isImplementationIntent: true, ready: false, blockers: "worker is not registered with this broker" };
+  }
+  const evaluation = evaluateImplementationReadiness(view, { taskType: task.intent });
+  return evaluation.verdict === "pass"
+    ? { isImplementationIntent: true, ready: true }
+    : { isImplementationIntent: true, ready: false, blockers: evaluation.reason };
+}
+
+/**
  * Claim-time policy re-evaluation (#1355 G1-b): the CLAIMING worker's class
  * may differ from the create-time target's, so class-match rules are checked
  * again. Budgets are create-time only, and an operator approval already on
@@ -203,10 +232,14 @@ export function assertClaimTaskPolicy(task: TaskRecord, workerId: string, contex
   const doc = context.policyDocument;
   if (!doc) return;
   const workerClass = workerClassForPolicy(task.payload, workerId, context);
+  const readiness = evaluateClaimImplementationReadiness(task, workerId, context);
   const decision = evaluateTaskPolicy({
     intent: task.intent,
     mode: typeof task.payload?.mode === "string" ? task.payload.mode : undefined,
     workerClass,
+    isImplementationIntent: readiness.isImplementationIntent,
+    implementationReady: readiness.ready,
+    implementationBlockers: readiness.blockers,
   }, doc);
   if (decision.action === "allow") return;
   if (decision.action === "require_approval" && task.approval) return;

@@ -24,7 +24,8 @@ in docs/skill discipline (unenforced) and scattered per-gate modules.
       "allowIntents": ["analyze"],   // optional: intent NOT in list -> deny
       "denyModes": ["apply"],        // optional: payload.mode in list -> deny
       "requireApproval": true,        // optional: route to blocked -> operator approve
-      "maxTasksPerDay": 20            // optional: tasks created per UTC day per class
+      "maxTasksPerDay": 20,           // optional: tasks created per UTC day per class
+      "requireImplementationCapability": true // optional: implementation lane needs a verified profile
     }
   ]
 }
@@ -33,7 +34,7 @@ in docs/skill discipline (unenforced) and scattered per-gate modules.
 Matching is **first-match-wins on workerClass in document order** (a `*` rule
 listed first shadows later class-specific rules — order rules deliberately).
 Within the matched rule, checks run deny-first: `denyModes`, `allowIntents`,
-`maxTasksPerDay`, then `requireApproval`. No matching rule falls through to
+`requireImplementationCapability`, `maxTasksPerDay`, then `requireApproval`. No matching rule falls through to
 `defaultAction`.
 
 ## 2. Invariants
@@ -64,6 +65,22 @@ Within the matched rule, checks run deny-first: `denyModes`, `allowIntents`,
 | deny (claim) | claim proceeds; `task.policy_warned` audit | claim rejected `policy_denied`; `task.policy_denied` audit |
 | requireApproval | task enters **blocked** (both modes) | same |
 | allow | no effect | no effect |
+
+`requireImplementationCapability` (#1597) is evaluated **at claim-time only**,
+and only for the implementation-lane intents `propose_patch`, `propose_params`
+and `apply_local_change`. When set, the claiming worker must publish a verified
+`implementationCapability` profile — see
+[implementation-lane readiness](../../docs/implementation-lane-readiness.md) for
+the five-clause rule. `canPatchWorkspace` alone is deliberately not sufficient:
+it says the worker may edit a workspace, not that it has a usable runtime,
+provider route, model tier and current canary.
+
+The rule fails closed. A worker that is unknown to the broker, offline, or that
+never declared a profile is denied. The referee package never receives a worker
+identity — the broker computes readiness and passes only a boolean plus a
+secret-safe reason string, so the deny reason carries normalized capability ids
+and never a worker name, hostname or credential material. Rules that omit the
+field are unaffected, so the gate is opt-in per committed policy document.
 
 `requireApproval` routes to the existing blocked → operator-approve → queued
 flow **in both modes** deliberately: blocking is recoverable (one operator

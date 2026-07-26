@@ -32,6 +32,13 @@ export interface BrokerPolicyRule {
   requireApproval?: boolean;
   /** Max tasks created per UTC day for this class; exceeding is denied. */
   maxTasksPerDay?: number;
+  /**
+   * Deny implementation-lane intents unless the claiming worker publishes a
+   * verified implementation capability (#1597). Readiness itself is computed by
+   * the broker and supplied as `implementationReady`; this package stays free of
+   * worker/runtime types and never sees a worker identity.
+   */
+  requireImplementationCapability?: boolean;
 }
 
 export interface BrokerPolicyDocument {
@@ -59,10 +66,36 @@ export interface BrokerPolicyEvaluationInput {
    * scan is not paid on the common path.
    */
   countTasksToday?: () => number;
+  /**
+   * True when the intent belongs to the implementation lane (propose_patch,
+   * propose_params, apply_local_change). Supplied by the broker so the closed
+   * intent enum stays in the broker package.
+   */
+  isImplementationIntent?: boolean;
+  /**
+   * Whether the claiming worker satisfies the implementation readiness rule.
+   * Only consulted when the matched rule sets requireImplementationCapability.
+   * Undefined means "not evaluated", which fails closed.
+   */
+  implementationReady?: boolean;
+  /**
+   * Secret-safe reason text explaining why readiness failed, surfaced in the
+   * deny reason. Capability ids are normalized lowercase identifiers and carry
+   * no worker name, hostname, or credential material.
+   */
+  implementationBlockers?: string;
 }
 
 const RULE_ID_PATTERN = /^[a-z0-9][a-z0-9-]{0,63}$/;
-const RULE_FIELDS = new Set(["id", "workerClass", "allowIntents", "denyModes", "requireApproval", "maxTasksPerDay"]);
+const RULE_FIELDS = new Set([
+  "id",
+  "workerClass",
+  "allowIntents",
+  "denyModes",
+  "requireApproval",
+  "maxTasksPerDay",
+  "requireImplementationCapability",
+]);
 const DOCUMENT_FIELDS = new Set(["schemaVersion", "mode", "defaultAction", "rules"]);
 
 function policyError(source: string, message: string): Error {
@@ -142,6 +175,10 @@ export function validateBrokerPolicyDocument(value: unknown, source = "inline"):
         (!Number.isInteger(rule.maxTasksPerDay) || (rule.maxTasksPerDay as number) < 1)) {
       throw policyError(source, `${where}.maxTasksPerDay must be a positive integer`);
     }
+    if (rule.requireImplementationCapability !== undefined &&
+        typeof rule.requireImplementationCapability !== "boolean") {
+      throw policyError(source, `${where}.requireImplementationCapability must be a boolean`);
+    }
   }
   return doc as unknown as BrokerPolicyDocument;
 }
@@ -178,8 +215,9 @@ export function deriveTaskWorkerClass(input: {
  *
  * Matching is FIRST-MATCH-WINS on workerClass (exact class before "*" only by
  * document order — order rules deliberately). Within the matched rule, checks
- * run deny-first: denyModes, then allowIntents, then maxTasksPerDay, then
- * requireApproval. No matched rule falls through to defaultAction.
+ * run deny-first: denyModes, then allowIntents, then
+ * requireImplementationCapability, then maxTasksPerDay, then requireApproval.
+ * No matched rule falls through to defaultAction.
  */
 export function evaluateTaskPolicy(
   input: BrokerPolicyEvaluationInput,
@@ -196,6 +234,16 @@ export function evaluateTaskPolicy(
   }
   if (rule.allowIntents && !rule.allowIntents.includes(input.intent)) {
     return { action: "deny", ruleId: rule.id, reason: `intent '${input.intent}' is not allowed for worker class '${input.workerClass}'` };
+  }
+  if (rule.requireImplementationCapability === true && input.isImplementationIntent === true &&
+      input.implementationReady !== true) {
+    const detail = input.implementationBlockers?.trim();
+    return {
+      action: "deny",
+      ruleId: rule.id,
+      reason: `intent '${input.intent}' requires a verified implementation capability for worker class ` +
+        `'${input.workerClass}'${detail ? `: ${detail}` : " (readiness was not evaluated)"}`,
+    };
   }
   if (rule.maxTasksPerDay !== undefined) {
     const used = input.countTasksToday ? input.countTasksToday() : 0;

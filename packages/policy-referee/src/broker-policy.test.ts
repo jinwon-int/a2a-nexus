@@ -180,3 +180,84 @@ test("operator source-only rule still denies GitHub-write and generic patch mode
     assert.equal(decision.ruleId, "source-only-safe-intents", mode);
   }
 });
+
+test("requireImplementationCapability must be a boolean (#1597)", () => {
+  assert.throws(
+    () => doc({ rules: [{ id: "r-1", workerClass: "*", requireImplementationCapability: "yes" as never }] }),
+    /requireImplementationCapability must be a boolean/,
+  );
+});
+
+test("requireImplementationCapability is an accepted rule field (#1597)", () => {
+  const policy = doc({ rules: [{ id: "impl-gate", workerClass: "*", requireImplementationCapability: true }] });
+  assert.equal(policy.rules[0]?.requireImplementationCapability, true);
+});
+
+test("implementation intent is denied when the worker is not implementation-ready (#1597)", () => {
+  const policy = doc({ rules: [{ id: "impl-gate", workerClass: "*", requireImplementationCapability: true }] });
+
+  const decision = evaluateTaskPolicy({
+    intent: "propose_patch",
+    workerClass: "mobile",
+    isImplementationIntent: true,
+    implementationReady: false,
+    implementationBlockers: "implementation availability is 'configured', not 'canary_passed'",
+  }, policy);
+
+  assert.equal(decision.action, "deny");
+  assert.equal(decision.ruleId, "impl-gate");
+  assert.match(decision.reason ?? "", /requires a verified implementation capability/);
+  assert.match(decision.reason ?? "", /not 'canary_passed'/);
+});
+
+test("implementation readiness that was never evaluated fails closed (#1597)", () => {
+  const policy = doc({ rules: [{ id: "impl-gate", workerClass: "*", requireImplementationCapability: true }] });
+
+  const decision = evaluateTaskPolicy({
+    intent: "apply_local_change",
+    workerClass: "vps",
+    isImplementationIntent: true,
+  }, policy);
+
+  assert.equal(decision.action, "deny");
+  assert.match(decision.reason ?? "", /readiness was not evaluated/);
+});
+
+test("implementation gate allows a ready worker and ignores other intents (#1597)", () => {
+  const policy = doc({ rules: [{ id: "impl-gate", workerClass: "*", requireImplementationCapability: true }] });
+
+  assert.deepEqual(
+    evaluateTaskPolicy({
+      intent: "propose_patch",
+      workerClass: "vps",
+      isImplementationIntent: true,
+      implementationReady: true,
+    }, policy),
+    { action: "allow", ruleId: "impl-gate" },
+  );
+
+  assert.deepEqual(
+    evaluateTaskPolicy({
+      intent: "analyze",
+      workerClass: "mobile",
+      isImplementationIntent: false,
+      implementationReady: false,
+    }, policy),
+    { action: "allow", ruleId: "impl-gate" },
+  );
+});
+
+test("implementation gate is opt-in: rules without it are unchanged (#1597)", () => {
+  const policy = doc({ rules: [{ id: "legacy", workerClass: "*" }] });
+
+  assert.deepEqual(
+    evaluateTaskPolicy({
+      intent: "propose_patch",
+      workerClass: "mobile",
+      isImplementationIntent: true,
+      implementationReady: false,
+      implementationBlockers: "implementation capability is not declared in registration/heartbeat",
+    }, policy),
+    { action: "allow", ruleId: "legacy" },
+  );
+});
