@@ -17,7 +17,7 @@ history, or force-pushes.
 ## Local command
 
 ```bash
-npm run source_public_execution_orchestrator -- --json \
+npm run terminal_brief -- source_public_execution_orchestrator --json \
   --mode simulate \
   --run-id a2a-source-public-execution-orchestrator-20260511T023207Z \
   --worker workerepsilon \

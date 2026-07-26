@@ -14,7 +14,7 @@ It then derives final-count signals from the sidecar envelope title/text and ren
 
 Run:
 
-    npm run terminal_brief_sidecar_integration_rehearsal -- --input fixtures/terminal-brief/sidecar-integration.no-live.json --markdown
+    npm run terminal_brief -- terminal_brief_sidecar_integration_rehearsal --input fixtures/terminal-brief/sidecar-integration.no-live.json --markdown
 
 The fixture models a three-worker round:
 

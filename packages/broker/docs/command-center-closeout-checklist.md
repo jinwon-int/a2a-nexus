@@ -5,7 +5,7 @@ Issue #355 adds a compact, read-only checklist for A2A round closeout. It is mea
 ## Quick run from sanitized evidence
 
 ```sh
-npm run command_center_closeout_checklist -- \
+npm run terminal_brief -- command_center_closeout_checklist \
   --input closeout-evidence.json \
   --markdown
 ```
@@ -45,7 +45,7 @@ The renderer accepts compact evidence such as:
 The same script can read current GitHub state with `gh` and broker dashboard state with a GET request:
 
 ```sh
-npm run command_center_closeout_checklist -- \
+npm run terminal_brief -- command_center_closeout_checklist \
   --repo jinwon-int/a2a-broker \
   --issue 355 \
   --pr 356 \
@@ -77,7 +77,7 @@ The script exits `0` only when required evidence is present, checks pass, active
 Task-report JSON can be rendered directly into per-worker lane closeout markdown:
 
 ```sh
-npm run command_center_closeout_checklist -- \
+npm run terminal_brief -- command_center_closeout_checklist \
   --input task-report.json \
   --round-closeout \
   --parent '#364' \

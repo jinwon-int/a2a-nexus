@@ -8,7 +8,7 @@ The watcher is intentionally not a closeout actor. It does not merge PRs, close 
 
 Run:
 
-    npm run terminal_brief_completion_watcher -- --input fixtures/terminal-brief/completion-watcher.no-live.json --markdown
+    npm run terminal_brief -- terminal_brief_completion_watcher --input fixtures/terminal-brief/completion-watcher.no-live.json --markdown
 
 The fixture models a completed three-worker round where all workers have PR or Done evidence and the last event carries 3/3 progress. Receipt status is still provider-only, so the output marks the closeout as a broker-finalizer candidate while preserving receipt gaps:
 

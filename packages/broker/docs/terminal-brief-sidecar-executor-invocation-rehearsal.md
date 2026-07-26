@@ -84,7 +84,7 @@ ACK/replay evidence.
 
 ## CLI
 
-    npm run terminal_brief_sidecar_executor_invocation_rehearsal -- \
+    npm run terminal_brief -- terminal_brief_sidecar_executor_invocation_rehearsal \
       --input fixtures/terminal-brief/sidecar-executor-invocation-rehearsal.no-live.json \
       --json
 

@@ -66,7 +66,7 @@ evidence.
 
 ## CLI
 
-    npm run terminal_brief_sidecar_runtime_preflight_approval -- \
+    npm run terminal_brief -- terminal_brief_sidecar_runtime_preflight_approval \
       --input fixtures/terminal-brief/sidecar-runtime-preflight-approval.no-live.json \
       --json
 

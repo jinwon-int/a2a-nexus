@@ -30,7 +30,7 @@ approval before any executor dispatch or sidecar dry-run start.
 ## CLI
 
 ```bash
-npm run terminal_brief_sidecar_preflight_chain_review -- \
+npm run terminal_brief -- terminal_brief_sidecar_preflight_chain_review \
   --input fixtures/terminal-brief/sidecar-preflight-chain-review.no-live.json \
   --markdown
 ```

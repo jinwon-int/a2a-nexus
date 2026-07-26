@@ -36,7 +36,7 @@ Read-only live checks may inspect health, queue, worker fleet, and terminal-outb
 
 | ID | Surface | No-live proof | Required commands/evidence | Expected result | Blocker condition |
 | --- | --- | --- | --- | --- | --- |
-| S1 | Broker terminal-outbox receipt vocabulary | Synthetic/unit fixtures plus #354 PR evidence | `npm test`; `npm run receipt_gate_canary`; `npm run terminal_receipt_gap_matrix`; #354 PR/Done link | `accepted`, `sent`/provider-send-only, `timed_out`, `stale`, and `failed` remain distinct from operator-visible/receipt-confirmed ACK; current gaps stay visible/replayable/unacked. | Any provider-send-only path is accepted as ACK evidence, or #354 lacks PR/Done/Block evidence. |
+| S1 | Broker terminal-outbox receipt vocabulary | Synthetic/unit fixtures plus #354 PR evidence | `npm test`; `npm run receipt_gate_canary`; `npm run terminal_brief -- terminal_receipt_gap_matrix`; #354 PR/Done link | `accepted`, `sent`/provider-send-only, `timed_out`, `stale`, and `failed` remain distinct from operator-visible/receipt-confirmed ACK; current gaps stay visible/replayable/unacked. | Any provider-send-only path is accepted as ACK evidence, or #354 lacks PR/Done/Block evidence. |
 | S2 | Plugin operator bridge status | #213 PR/Done evidence only; no live Telegram send | Plugin lane evidence must show stream/bridge state, disabled notification target state, stale target handling, and receipt-gated ACK eligibility. | Operator can tell what is connected, disabled, pending, stale, and ACK-eligible; notification disabled is safe/fail-closed. | #213 is blocked/missing, or evidence depends on a live Telegram send. |
 | S3 | Runner task-report evidence | #135 PR/Done evidence only; no per-worker live notifications | Runner lane evidence must include repo, issue/URL, node/task id, PR/Done/Block marker, compact test summary, and secret-safe diagnostics. | Broker/operator summaries can consume runner evidence without raw logs or live worker Telegram notifications. | #135 is blocked/missing, evidence lacks canonical PR/Done/Block URL, or raw logs/secrets are required. |
 | S4 | Queue hygiene and closeout | Read-only summary plus #355 PR/Done evidence | #355 evidence; optional read-only broker queue/fleet snapshot before and after validation. | queued/claimed/running/stale counts are reported before and after; stale/retry/closeout output is compact and secret-safe. | Queue/fleet cannot be read, counts are non-zero without owner/action, or #355 lacks PR/Done/Block evidence. |
@@ -50,7 +50,7 @@ Run from the broker repository after applying candidate changes:
 ```sh
 npm test
 npm run receipt_gate_canary
-npm run terminal_receipt_gap_matrix
+npm run terminal_brief -- terminal_receipt_gap_matrix
 npm run live_readiness_canary -- --no-live --json
 npm run terminal_outbox_preflight -- --no-live --json
 ```

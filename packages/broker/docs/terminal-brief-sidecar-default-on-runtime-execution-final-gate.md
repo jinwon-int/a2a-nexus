@@ -50,6 +50,6 @@ authorization and is not a runtime mutation.
 
 Command:
 
-npm run terminal_brief_sidecar_default_on_runtime_execution_final_gate -- --input fixtures/terminal-brief/sidecar-default-on-runtime-execution-final-gate.no-live.json --json
+npm run terminal_brief -- terminal_brief_sidecar_default_on_runtime_execution_final_gate --input fixtures/terminal-brief/sidecar-default-on-runtime-execution-final-gate.no-live.json --json
 
 The command exits 0 only for `state=ready_for_runtime_execution_final_review`.

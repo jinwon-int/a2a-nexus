@@ -84,7 +84,7 @@ For the R4 move from manual ACK to automatic current-session-visible receipt ACK
 For release-gate closeout comments or pre-remediation evidence, generate the read-only terminal receipt report directly from the SQLite hot table:
 
 ```sh
-npm run terminal_receipt_closeout_report -- --db "$BROKER_SQLITE_FILE" --legacy-residue-cutoff 2026-05-04T07:10:00.000Z
+npm run terminal_brief -- terminal_receipt_closeout_report --db "$BROKER_SQLITE_FILE" --legacy-residue-cutoff 2026-05-04T07:10:00.000Z
 ```
 
 The report groups current post-cutoff gaps separately from cutoff-quarantined legacy residue and maps each gap to terminal event id, task event id, task id, terminal status, age, receipt state, and remediation hint. It intentionally excludes raw payloads, secrets, local paths, and evidence bodies; it never sends notifications, mutates SQLite, or writes terminal ACKs.

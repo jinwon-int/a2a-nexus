@@ -23,7 +23,7 @@ OpenClaw message send is not required. Hermes or another external harness can re
 
 Build first, then run:
 
-    npm run terminal_brief_approval_request -- --input fixtures/terminal-brief/finalizer-workflow.no-live.json --issue-url https://github.com/jinwon-int/a2a-broker/issues/702 --pr-url https://github.com/jinwon-int/a2a-broker/pull/703 --json
+    npm run terminal_brief -- terminal_brief_approval_request --input fixtures/terminal-brief/finalizer-workflow.no-live.json --issue-url https://github.com/jinwon-int/a2a-broker/issues/702 --pr-url https://github.com/jinwon-int/a2a-broker/pull/703 --json
 
 Inputs may be:
 

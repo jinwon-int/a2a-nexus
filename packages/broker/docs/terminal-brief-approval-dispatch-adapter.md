@@ -7,7 +7,7 @@ The adapter consumes an `a2a-broker.terminal-brief-approval-executor.packet` and
 ## CLI
 
 ```bash
-npm run terminal_brief_approval_dispatch -- --input approval-executor.json --adapter mobilealpha --target hermes://mobilealpha/approval --channel operator --requested-by broker-finalizer --json
+npm run terminal_brief -- terminal_brief_approval_dispatch --input approval-executor.json --adapter mobilealpha --target hermes://mobilealpha/approval --channel operator --requested-by broker-finalizer --json
 ```
 
 The CLI also accepts lower-level Terminal Brief packets for convenience:

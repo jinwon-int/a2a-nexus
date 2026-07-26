@@ -30,7 +30,7 @@ The accepted source criteria are:
 
 ## CLI
 
-    npm run terminal_brief_sidecar_default_on_final_runtime_mutation_executor_gate -- \
+    npm run terminal_brief -- terminal_brief_sidecar_default_on_final_runtime_mutation_executor_gate \
       --input fixtures/terminal-brief/sidecar-default-on-execution-window-approval-evidence-ingestor.no-live.json \
       --json
 

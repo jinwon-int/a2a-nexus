@@ -1,0 +1,242 @@
+{
+  "$comment": "#1503 Wave 1: data-driven operator surface for the terminal-brief approval tool family. One npm entry (terminal_brief) dispatches to the wrapper scripts below via scripts/terminal-brief.mjs; build=true entries run `npm run build` before dispatch unless --no-build is given. Logic lives in src/core terminal-brief engines — this manifest only maps names to wrappers.",
+  "schemaVersion": 1,
+  "tools": {
+    "broker_terminal_receipt_parity": {
+      "script": "broker-terminal-receipt-parity.mjs",
+      "build": true
+    },
+    "closeout_release_report": {
+      "script": "closeout-release-report.mjs",
+      "build": false
+    },
+    "command_center_closeout_checklist": {
+      "script": "command-center-closeout-checklist.mjs",
+      "build": false
+    },
+    "rehearsal_manifest": {
+      "script": "broker-rehearsal-manifest.mjs",
+      "build": false
+    },
+    "source_public_approval_rehearsal": {
+      "script": "source-public-approval-rehearsal.mjs",
+      "build": true
+    },
+    "source_public_execution_orchestrator": {
+      "script": "source-public-execution-orchestrator.mjs",
+      "build": true
+    },
+    "terminal_brief_activation_report": {
+      "script": "terminal-brief-activation-report.mjs",
+      "build": false
+    },
+    "terminal_brief_approval_dispatch": {
+      "script": "terminal-brief-approval-dispatch.mjs",
+      "build": true
+    },
+    "terminal_brief_approval_executor": {
+      "script": "terminal-brief-approval-executor.mjs",
+      "build": true
+    },
+    "terminal_brief_approval_receipt_ingestor": {
+      "script": "terminal-brief-approval-receipt-ingestor.mjs",
+      "build": true
+    },
+    "terminal_brief_approval_request": {
+      "script": "terminal-brief-approval-request.mjs",
+      "build": true
+    },
+    "terminal_brief_auto_closeout_dryrun_runner": {
+      "script": "terminal-brief-auto-closeout-dryrun-runner.mjs",
+      "build": true
+    },
+    "terminal_brief_auto_closeout_planner": {
+      "script": "terminal-brief-auto-closeout-planner.mjs",
+      "build": true
+    },
+    "terminal_brief_closeout_gate": {
+      "script": "terminal-brief-closeout-gate.mjs",
+      "build": true
+    },
+    "terminal_brief_completion_watcher": {
+      "script": "terminal-brief-completion-watcher.mjs",
+      "build": true
+    },
+    "terminal_brief_final_count_closeout": {
+      "script": "terminal-brief-final-count-closeout.mjs",
+      "build": true
+    },
+    "terminal_brief_finalizer_approval_status": {
+      "script": "terminal-brief-finalizer-approval-status.mjs",
+      "build": true
+    },
+    "terminal_brief_finalizer_handoff": {
+      "script": "terminal-brief-finalizer-handoff.mjs",
+      "build": true
+    },
+    "terminal_brief_finalizer_workflow": {
+      "script": "terminal-brief-finalizer-workflow.mjs",
+      "build": true
+    },
+    "terminal_brief_sidecar_activation_approval": {
+      "script": "terminal-brief-sidecar-activation-approval.mjs",
+      "build": true
+    },
+    "terminal_brief_sidecar_activation_receipt_ingestor": {
+      "script": "terminal-brief-sidecar-activation-receipt-ingestor.mjs",
+      "build": true
+    },
+    "terminal_brief_sidecar_adapter_handoff_approval": {
+      "script": "terminal-brief-sidecar-adapter-handoff-approval.mjs",
+      "build": true
+    },
+    "terminal_brief_sidecar_approval_grant_evidence_ingestor": {
+      "script": "terminal-brief-sidecar-approval-grant-evidence-ingestor.mjs",
+      "build": true
+    },
+    "terminal_brief_sidecar_approval_grant_proposal": {
+      "script": "terminal-brief-sidecar-approval-grant-proposal.mjs",
+      "build": true
+    },
+    "terminal_brief_sidecar_default_on_approval_evidence_ingestor": {
+      "script": "terminal-brief-sidecar-default-on-approval-evidence-ingestor.mjs",
+      "build": true
+    },
+    "terminal_brief_sidecar_default_on_approval_request": {
+      "script": "terminal-brief-sidecar-default-on-approval-request.mjs",
+      "build": true
+    },
+    "terminal_brief_sidecar_default_on_candidate_final_gate": {
+      "script": "terminal-brief-sidecar-default-on-candidate-final-gate.mjs",
+      "build": true
+    },
+    "terminal_brief_sidecar_default_on_enablement_gate": {
+      "script": "terminal-brief-sidecar-default-on-enablement-gate.mjs",
+      "build": true
+    },
+    "terminal_brief_sidecar_default_on_execution_approval_evidence_ingestor": {
+      "script": "terminal-brief-sidecar-default-on-execution-approval-evidence-ingestor.mjs",
+      "build": true
+    },
+    "terminal_brief_sidecar_default_on_execution_approval_request": {
+      "script": "terminal-brief-sidecar-default-on-execution-approval-request.mjs",
+      "build": true
+    },
+    "terminal_brief_sidecar_default_on_execution_rollback_envelope": {
+      "script": "terminal-brief-sidecar-default-on-execution-rollback-envelope.mjs",
+      "build": true
+    },
+    "terminal_brief_sidecar_default_on_execution_window_approval_evidence_ingestor": {
+      "script": "terminal-brief-sidecar-default-on-execution-window-approval-evidence-ingestor.mjs",
+      "build": true
+    },
+    "terminal_brief_sidecar_default_on_execution_window_request_draft": {
+      "script": "terminal-brief-sidecar-default-on-execution-window-request-draft.mjs",
+      "build": true
+    },
+    "terminal_brief_sidecar_default_on_final_live_execution": {
+      "script": "terminal-brief-sidecar-default-on-final-live-execution.mjs",
+      "build": true
+    },
+    "terminal_brief_sidecar_default_on_final_runtime_mutation_executor_gate": {
+      "script": "terminal-brief-sidecar-default-on-final-runtime-mutation-executor-gate.mjs",
+      "build": true
+    },
+    "terminal_brief_sidecar_default_on_live_executor": {
+      "script": "terminal-brief-sidecar-default-on-live-executor.mjs",
+      "build": true
+    },
+    "terminal_brief_sidecar_default_on_runtime_execution_approval_evidence_ingestor": {
+      "script": "terminal-brief-sidecar-default-on-runtime-execution-approval-evidence-ingestor.mjs",
+      "build": true
+    },
+    "terminal_brief_sidecar_default_on_runtime_execution_final_gate": {
+      "script": "terminal-brief-sidecar-default-on-runtime-execution-final-gate.mjs",
+      "build": true
+    },
+    "terminal_brief_sidecar_default_on_runtime_execution_request_draft": {
+      "script": "terminal-brief-sidecar-default-on-runtime-execution-request-draft.mjs",
+      "build": true
+    },
+    "terminal_brief_sidecar_default_on_runtime_executor_gate": {
+      "script": "terminal-brief-sidecar-default-on-runtime-executor-gate.mjs",
+      "build": true
+    },
+    "terminal_brief_sidecar_default_on_runtime_mutation_plan": {
+      "script": "terminal-brief-sidecar-default-on-runtime-mutation-plan.mjs",
+      "build": true
+    },
+    "terminal_brief_sidecar_dispatcher_approval_handoff": {
+      "script": "terminal-brief-sidecar-dispatcher-approval-handoff.mjs",
+      "build": true
+    },
+    "terminal_brief_sidecar_dispatcher_preflight_seal": {
+      "script": "terminal-brief-sidecar-dispatcher-preflight-seal.mjs",
+      "build": true
+    },
+    "terminal_brief_sidecar_dry_run_gate": {
+      "script": "terminal-brief-sidecar-dry-run-gate.mjs",
+      "build": true
+    },
+    "terminal_brief_sidecar_dry_run_start_approval_receipt_ingestor": {
+      "script": "terminal-brief-sidecar-dry-run-start-approval-receipt-ingestor.mjs",
+      "build": true
+    },
+    "terminal_brief_sidecar_dry_run_start_approval_request": {
+      "script": "terminal-brief-sidecar-dry-run-start-approval-request.mjs",
+      "build": true
+    },
+    "terminal_brief_sidecar_dry_run_start_canary_plan": {
+      "script": "terminal-brief-sidecar-dry-run-start-canary-plan.mjs",
+      "build": true
+    },
+    "terminal_brief_sidecar_execution_gate_final_review": {
+      "script": "terminal-brief-sidecar-execution-gate-final-review.mjs",
+      "build": true
+    },
+    "terminal_brief_sidecar_executor_dispatch_request_draft": {
+      "script": "terminal-brief-sidecar-executor-dispatch-request-draft.mjs",
+      "build": true
+    },
+    "terminal_brief_sidecar_executor_invocation_rehearsal": {
+      "script": "terminal-brief-sidecar-executor-invocation-rehearsal.mjs",
+      "build": true
+    },
+    "terminal_brief_sidecar_integration_rehearsal": {
+      "script": "terminal-brief-sidecar-integration-rehearsal.mjs",
+      "build": true
+    },
+    "terminal_brief_sidecar_operator_review_table": {
+      "script": "terminal-brief-sidecar-operator-review-table.mjs",
+      "build": true
+    },
+    "terminal_brief_sidecar_preflight_chain_review": {
+      "script": "terminal-brief-sidecar-preflight-chain-review.mjs",
+      "build": true
+    },
+    "terminal_brief_sidecar_preflight_evidence_collector": {
+      "script": "terminal-brief-sidecar-preflight-evidence-collector.mjs",
+      "build": true
+    },
+    "terminal_brief_sidecar_review_decision_ingestor": {
+      "script": "terminal-brief-sidecar-review-decision-ingestor.mjs",
+      "build": true
+    },
+    "terminal_brief_sidecar_runtime_preflight_approval": {
+      "script": "terminal-brief-sidecar-runtime-preflight-approval.mjs",
+      "build": true
+    },
+    "terminal_brief_sidecar_start_executor_gate": {
+      "script": "terminal-brief-sidecar-start-executor-gate.mjs",
+      "build": true
+    },
+    "terminal_receipt_closeout_report": {
+      "script": "terminal-receipt-closeout-report.mjs",
+      "build": false
+    },
+    "terminal_receipt_gap_matrix": {
+      "script": "terminal-receipt-gap-matrix.mjs",
+      "build": false
+    }
+  }
+}

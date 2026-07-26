@@ -50,7 +50,7 @@ permitted=false, performed=false, and requiresFinalApproval=true.
 
 ## CLI
 
-    npm run terminal_brief_sidecar_default_on_live_executor -- \
+    npm run terminal_brief -- terminal_brief_sidecar_default_on_live_executor \
       --input fixtures/terminal-brief/sidecar-default-on-execution-window-approval-evidence-ingestor.no-live.json \
       --json
 

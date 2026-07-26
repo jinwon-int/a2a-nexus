@@ -45,7 +45,7 @@ service change.
 ## CLI
 
 ```bash
-npm run terminal_brief_sidecar_default_on_runtime_mutation_plan -- \
+npm run terminal_brief -- terminal_brief_sidecar_default_on_runtime_mutation_plan \
   --input fixtures/terminal-brief/sidecar-default-on-runtime-mutation-plan.no-live.json \
   --json
 ```

@@ -60,7 +60,7 @@ approvalGrantAccepted=true remains evidence. It does not grant approval.
 
 ## CLI
 
-    npm run terminal_brief_finalizer_approval_status -- \
+    npm run terminal_brief -- terminal_brief_finalizer_approval_status \
       --input fixtures/terminal-brief/approval-dispatch.no-live.json \
       --receipt-file fixtures/terminal-brief/approval-receipt-ingestor.visible-approval.no-live.json \
       --json

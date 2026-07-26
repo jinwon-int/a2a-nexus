@@ -48,7 +48,7 @@ authorize runtime execution.
 
 ## CLI
 
-    npm run terminal_brief_sidecar_approval_grant_evidence_ingestor -- \
+    npm run terminal_brief -- terminal_brief_sidecar_approval_grant_evidence_ingestor \
       --input fixtures/terminal-brief/sidecar-approval-grant-evidence-ingestor.no-live.json \
       --json
 

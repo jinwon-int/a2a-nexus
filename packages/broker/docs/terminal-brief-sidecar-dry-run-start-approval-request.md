@@ -36,7 +36,7 @@ The packet is JSON-only and harness-neutral:
 ## CLI
 
 ~~~bash
-npm run terminal_brief_sidecar_dry_run_start_approval_request -- \
+npm run terminal_brief -- terminal_brief_sidecar_dry_run_start_approval_request \
   --input fixtures/terminal-brief/sidecar-dry-run-start-approval-request.no-live.json \
   --markdown
 ~~~

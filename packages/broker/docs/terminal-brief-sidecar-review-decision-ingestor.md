@@ -65,7 +65,7 @@ authorize runtime execution.
 
 ## CLI
 
-    npm run terminal_brief_sidecar_review_decision_ingestor -- \
+    npm run terminal_brief -- terminal_brief_sidecar_review_decision_ingestor \
       --input fixtures/terminal-brief/sidecar-review-decision-ingestor.no-live.json \
       --json
 

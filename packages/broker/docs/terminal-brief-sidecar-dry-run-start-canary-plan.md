@@ -67,7 +67,7 @@ reviewed.
 
 ## CLI
 
-    npm run terminal_brief_sidecar_dry_run_start_canary_plan -- \
+    npm run terminal_brief -- terminal_brief_sidecar_dry_run_start_canary_plan \
       --input fixtures/terminal-brief/sidecar-dry-run-start-canary-plan.no-live.json \
       --json
 

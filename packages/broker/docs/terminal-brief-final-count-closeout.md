@@ -8,7 +8,7 @@ This is not an autonomous closeout actor. It does not merge pull requests, close
 
 Run:
 
-    npm run terminal_brief_final_count_closeout -- --input fixtures/terminal-brief/final-count-closeout.no-live.json --markdown
+    npm run terminal_brief -- terminal_brief_final_count_closeout --input fixtures/terminal-brief/final-count-closeout.no-live.json --markdown
 
 The fixture models a completed three-worker round:
 

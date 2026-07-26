@@ -49,13 +49,13 @@ Provider accepted evidence is intentionally not visibility proof. It can explain
 ## CLI
 
 ```bash
-npm run terminal_brief_approval_receipt_ingestor -- --input approval-dispatch.json --evidence-kind current_session_visible --observed-at 2026-05-18T21:29:30.000Z --receipt-id receipt-1 --json
+npm run terminal_brief -- terminal_brief_approval_receipt_ingestor --input approval-dispatch.json --evidence-kind current_session_visible --observed-at 2026-05-18T21:29:30.000Z --receipt-id receipt-1 --json
 ```
 
 You can also provide an evidence file:
 
 ```bash
-npm run terminal_brief_approval_receipt_ingestor -- --input approval-dispatch.json --evidence-file receipt-evidence.json --max-age-ms 300000 --json
+npm run terminal_brief -- terminal_brief_approval_receipt_ingestor --input approval-dispatch.json --evidence-file receipt-evidence.json --max-age-ms 300000 --json
 ```
 
 Exit codes:

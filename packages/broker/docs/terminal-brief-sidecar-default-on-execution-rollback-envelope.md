@@ -43,7 +43,7 @@ change.
 ## CLI
 
 ```bash
-npm run terminal_brief_sidecar_default_on_execution_rollback_envelope -- \
+npm run terminal_brief -- terminal_brief_sidecar_default_on_execution_rollback_envelope \
   --input fixtures/terminal-brief/sidecar-default-on-execution-rollback-envelope.no-live.json \
   --json
 ```

@@ -66,7 +66,7 @@ Commands run from this broker checkout for this lane:
 
 ```sh
 npm run test:terminal_brief_activation_report
-npm run terminal_brief_activation_report -- --markdown
+npm run terminal_brief -- terminal_brief_activation_report --markdown
 ```
 
 Expected no-live safety signals:

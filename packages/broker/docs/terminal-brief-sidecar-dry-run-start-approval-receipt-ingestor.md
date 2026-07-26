@@ -58,7 +58,7 @@ The packet always keeps:
 ## CLI
 
 ~~~bash
-npm run terminal_brief_sidecar_dry_run_start_approval_receipt_ingestor -- \
+npm run terminal_brief -- terminal_brief_sidecar_dry_run_start_approval_receipt_ingestor \
   --input fixtures/terminal-brief/sidecar-dry-run-start-approval-receipt-ingestor.no-live.json \
   --json
 ~~~

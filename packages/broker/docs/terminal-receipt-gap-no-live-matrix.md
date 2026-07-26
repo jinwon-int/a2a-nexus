@@ -17,7 +17,7 @@ Run:
 
 ```bash
 npm test
-npm run terminal_receipt_gap_matrix
+npm run terminal_brief -- terminal_receipt_gap_matrix
 ```
 
 Expected proof shape:

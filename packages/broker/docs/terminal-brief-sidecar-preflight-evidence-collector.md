@@ -54,7 +54,7 @@ record creation, historical replay, release/publish, or secret movement.
 ## CLI
 
 ```bash
-npm run terminal_brief_sidecar_preflight_evidence_collector -- \
+npm run terminal_brief -- terminal_brief_sidecar_preflight_evidence_collector \
   --input fixtures/terminal-brief/sidecar-preflight-evidence-collector.no-live.json \
   --markdown
 ```

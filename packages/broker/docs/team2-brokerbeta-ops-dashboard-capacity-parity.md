@@ -14,7 +14,7 @@ No Team1-only or Team2-only code path is required for the R8 dashboard/capacity 
 - `GET /dashboard` for the bounded operator dashboard/read model.
 - `GET /workers/capacity` for compact per-worker dispatch capacity.
 - `npm run two_broker_worker_preflight` for duplicate online worker-id detection before retargeting.
-- `npm run broker_terminal_receipt_parity` when receipt/outbox shape parity is part of the gate.
+- `npm run terminal_brief -- broker_terminal_receipt_parity` when receipt/outbox shape parity is part of the gate.
 
 The semantics are broker-local and safe to compare across brokeralpha and brokerbeta by running the same read-only commands against each broker URL.
 

@@ -30,7 +30,7 @@ Accepted final review evidence is input for a draft only. It is not runtime auth
 
 ## CLI
 
-`npm run terminal_brief_sidecar_executor_dispatch_request_draft -- --input fixtures/terminal-brief/sidecar-executor-dispatch-request-draft.no-live.json --json`
+`npm run terminal_brief -- terminal_brief_sidecar_executor_dispatch_request_draft --input fixtures/terminal-brief/sidecar-executor-dispatch-request-draft.no-live.json --json`
 
 ## Route
 
