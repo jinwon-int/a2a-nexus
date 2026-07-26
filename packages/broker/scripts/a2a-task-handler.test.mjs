@@ -83,7 +83,19 @@ test("implementation intent fails closed when no executor ran (#1593)", () => {
 // "implementation", which is not a member of A2AExchangeIntent. The real
 // implementation-lane intents therefore fell through to the generic_ack success
 // path, so a worker with no executor reported false success for patch work.
-for (const intent of ["propose_patch", "propose_params", "apply_local_change"]) {
+// The live-operation intents had the same hole with a larger blast radius:
+// handleTask only routes to runLiveOperationTask when taskMode() is
+// "promote-to-live-v1", and taskMode() falls back to the intent when
+// payload.mode is absent, so a mode-less promote_to_live was acked as success.
+const EXECUTOR_REQUIRED_INTENTS = [
+  "propose_patch",
+  "propose_params",
+  "apply_local_change",
+  "promote_to_live",
+  "rollback_live",
+];
+
+for (const intent of EXECUTOR_REQUIRED_INTENTS) {
   test(`real implementation intent ${intent} fails closed in builtin fallback (#1597)`, () => {
     const outcome = handleTask({
       id: `task-${intent}-fallback`,
@@ -102,8 +114,8 @@ for (const intent of ["propose_patch", "propose_params", "apply_local_change"]) 
   });
 }
 
-test("implementation intents never yield generic_ack evidence (#1597)", () => {
-  for (const intent of ["propose_patch", "propose_params", "apply_local_change", "implementation"]) {
+test("executor-required intents never yield any success result (#1597)", () => {
+  for (const intent of [...EXECUTOR_REQUIRED_INTENTS, "implementation"]) {
     const outcome = handleTask({
       id: `task-${intent}-evidence`,
       intent,
@@ -113,8 +125,41 @@ test("implementation intents never yield generic_ack evidence (#1597)", () => {
       A2A_EXECUTOR_MODE: "builtin",
     });
 
-    assert.notEqual(outcome.result?.output?.evidenceClass, "generic_ack");
+    // Asserting the error code rather than "not generic_ack" — a different
+    // bogus evidence class would still be a false success.
+    assert.equal(outcome.error?.code, "unsupported_intent", intent);
+    assert.equal(outcome.result, undefined, intent);
   }
+});
+
+test("caller-declared smoke mode cannot buy success for a mutating intent (#1597)", () => {
+  // mode and noOp are both caller-supplied, so the smoke fast-path must not be
+  // usable to bypass the executor requirement. The real smoke lane dispatches
+  // intent "analyze" and is asserted below to still work.
+  for (const intent of EXECUTOR_REQUIRED_INTENTS) {
+    const outcome = handleTask({
+      id: `task-${intent}-smoke-bypass`,
+      intent,
+      message: "smoke bypass attempt",
+      payload: { mode: "docker-broker-noop-smoke", noOp: true },
+    }, {
+      A2A_EXECUTOR_MODE: "builtin",
+    });
+
+    assert.equal(outcome.error?.code, "unsupported_intent", intent);
+    assert.equal(outcome.result, undefined, intent);
+  }
+
+  const legitimateSmoke = handleTask({
+    id: "task-smoke-analyze",
+    intent: "analyze",
+    message: "docker broker noop smoke",
+    payload: { schemaVersion: 1, mode: "docker-broker-noop-smoke", noOp: true },
+  }, {
+    A2A_EXECUTOR_MODE: "builtin",
+  });
+
+  assert.equal(legitimateSmoke.error, undefined);
 });
 
 test("non-implementation intents keep the generic fallback (#1597)", () => {
