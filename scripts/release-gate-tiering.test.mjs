@@ -184,8 +184,11 @@ test('script surface manifest validates current root and broker package scripts'
   const result = validateScriptSurfaceManifest();
   assert.equal(result.ok, true, result.failures.join('\n'));
   const byId = new Map(result.packages.map((pkg) => [pkg.id, pkg]));
-  assert.equal(byId.get('root')?.scriptCount, 102);
-  assert.equal(byId.get('broker')?.scriptCount, 156);
+  // #1503 Wave 0: counts ratchet down as aliases/manual wrappers retire
+  // (root 102→101 mobileAlpha alias, broker 156→153 cross-broker +
+  // brokerbeta receiver pair). Update with each retirement wave.
+  assert.equal(byId.get('root')?.scriptCount, 101);
+  assert.equal(byId.get('broker')?.scriptCount, 153);
   assert.ok((byId.get('root')?.kindCounts['required-gate'] ?? 0) >= 7);
   assert.ok((byId.get('broker')?.kindCounts['required-gate'] ?? 0) >= 7);
 });

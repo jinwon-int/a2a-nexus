@@ -69,17 +69,17 @@ On retry or duplicate comment, look up `idempotencyKey` first. If a record alrea
 
 ## Packaged read-only checks
 
-These npm scripts make the operations discoverable without adding a live receiver side effect:
+These node-direct commands make the operations discoverable without adding a live receiver side effect (the npm aliases were retired in #1503 Wave 0; the scripts remain in `scripts/`):
 
 ```bash
 # Confirm the same online worker ID is not active on both brokers.
-npm run brokerbeta_brokeralpha_receiver_preflight -- \
+node scripts/two-broker-worker-preflight.mjs \
   --brokeralpha-url "${brokeralpha_BROKER_URL}" \
   --brokerbeta-url "${brokerbeta_BROKER_URL}" \
   --json
 
 # Confirm terminal receipt projections remain shape-compatible; GET only.
-npm run brokerbeta_brokeralpha_receiver_receipt_parity -- \
+node scripts/broker-terminal-receipt-parity.mjs \
   --brokeralpha-url "${brokeralpha_BROKER_URL}" \
   --brokerbeta-url "${brokerbeta_BROKER_URL}" \
   --brokeralpha-edge-secret "${brokeralpha_BROKER_EDGE_SECRET}" \
@@ -116,8 +116,8 @@ evidence: <url>
 
 1. Load `examples/brokerbeta-brokeralpha.receiver.env.example` into a local ignored env file and fill only approved placeholder values.
 2. Run `npm run build` from this repository.
-3. Run `npm run brokerbeta_brokeralpha_receiver_preflight` with brokeralpha and brokerbeta broker URLs.
-4. Run `npm run brokerbeta_brokeralpha_receiver_receipt_parity` if terminal receipt evidence will be mirrored in parent comments.
+3. Run `node scripts/two-broker-worker-preflight.mjs` with brokeralpha and brokerbeta broker URLs.
+4. Run `node scripts/broker-terminal-receipt-parity.mjs` if terminal receipt evidence will be mirrored in parent comments.
 5. Confirm the receiver remains disabled until an operator approves the specific enablement window.
 6. Enable only the receiver process/path; do not restart unrelated Gateway/broker services, rotate secrets, force-push, or ACK terminal outbox rows as part of receiver enablement.
 7. Post sanitized `accepted` or `blocked` evidence to the parent issue.
