@@ -269,6 +269,79 @@ test("SubscribeToTask on a non-terminal task still returns the snapshot", () => 
   }
 });
 
+test("tck-input-required: response shows input-required, follow-up resumes to completion", async () => {
+  const broker = new InMemoryA2ABroker();
+  startDefaultAgent(broker);
+  const result = successResult(sendMessage(broker, {
+    role: "ROLE_USER",
+    parts: [{ text: "TCK prerequisite task creation" }],
+    messageId: "tck-input-required-session1",
+  }));
+  const task = result.task as { id: string; contextId: string; status: { state: string } };
+  assert.equal(task.status.state, "TASK_STATE_INPUT_REQUIRED");
+
+  // The embedded agent must not complete a checkpointed task behind the
+  // client's back — give the async drive loop a chance to misbehave.
+  await new Promise((resolve) => setTimeout(resolve, 50));
+  assert.equal(broker.getTask(task.id)?.status, "running");
+  assert.equal(broker.getTask(task.id)?.checkpoint?.state, "awaiting_operator");
+
+  // A follow-up context message IS the requested input: checkpoint clears
+  // and the agent drives the task to terminal.
+  const followup = successResult(sendMessage(broker, {
+    role: "ROLE_USER",
+    parts: [{ text: "requested input" }],
+    messageId: "m-resume",
+    contextId: task.contextId,
+  }, 2));
+  assert.ok(followup.task, "resume path returns the task");
+  for (let i = 0; i < 50; i++) {
+    const current = broker.getTask(task.id);
+    if (current?.status === "succeeded") break;
+    await new Promise((resolve) => setTimeout(resolve, 20));
+  }
+  assert.equal(broker.getTask(task.id)?.status, "succeeded");
+});
+
+test("anonymous CancelTask works in default-agent mode (input-required task)", () => {
+  const broker = new InMemoryA2ABroker();
+  startDefaultAgent(broker);
+  const first = successResult(sendMessage(broker, {
+    role: "ROLE_USER",
+    parts: [{ text: "TCK prerequisite task creation" }],
+    messageId: "tck-input-required-cancel",
+  }));
+  const taskId = (first.task as { id: string }).id;
+
+  const response = executeA2AJsonRpc(
+    { jsonrpc: "2.0", id: 5, method: "CancelTask", params: { id: taskId } },
+    createConformanceOptions(broker),
+  );
+  const result = successResult(response);
+  // Spec shape returns the bare Task object.
+  assert.equal((result as { status: { state: string } }).status.state, "TASK_STATE_CANCELED");
+});
+
+test("CancelTask on a terminal task is TaskNotCancelableError (-32002)", () => {
+  const broker = new InMemoryA2ABroker();
+  startDefaultAgent(broker);
+  const first = successResult(sendMessage(broker, {
+    role: "ROLE_USER",
+    parts: [{ text: "TCK prerequisite task creation" }],
+    messageId: "tck-complete-task-cancel",
+  }));
+  const taskId = (first.task as { id: string }).id;
+
+  const response = executeA2AJsonRpc(
+    { jsonrpc: "2.0", id: 6, method: "CancelTask", params: { id: taskId } },
+    createConformanceOptions(broker),
+  );
+  assert.ok("error" in response, "cancel of a terminal task must fail");
+  assert.equal(response.error.code, -32002);
+  const info = Array.isArray(response.error.data) ? response.error.data[0] : undefined;
+  assert.equal(info?.reason, "TASK_NOT_CANCELABLE");
+});
+
 test("conventions do not fire without default-agent mode (router unchanged)", () => {
   const broker = new InMemoryA2ABroker();
   broker.registerWorker({

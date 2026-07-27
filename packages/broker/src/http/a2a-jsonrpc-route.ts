@@ -17,6 +17,7 @@ import {
   executeA2AJsonRpcBody,
   executeSendMessage,
   jsonRpcErrorFromUnknown,
+  resolveSubscribeToTaskTarget,
   specSendResult,
 } from "../a2a/json-rpc.js";
 import {
@@ -25,7 +26,12 @@ import {
   negotiateA2AVersion,
 } from "../a2a/version-negotiation.js";
 import { readRawBody } from "./body.js";
-import { handleStreamingMessageResponse, parseSingleStreamingMessageRequest } from "./streaming-message.js";
+import {
+  handleStreamingMessageResponse,
+  handleSubscribeToTaskStreamResponse,
+  parseSingleJsonRpcMethodRequest,
+  parseSingleStreamingMessageRequest,
+} from "./streaming-message.js";
 import { sendJson } from "./response.js";
 
 export interface A2AJsonRpcRouteContext {
@@ -140,6 +146,39 @@ export async function handleA2AJsonRpcRequest(ctx: A2AJsonRpcRouteContext): Prom
       responseShape,
     });
     return;
+  }
+
+  // A2A 1.0 SubscribeToTask: clients that accept text/event-stream get a
+  // real SSE stream (snapshot + status updates until terminal) instead of
+  // the unary snapshot + subscription-URL answer. Validation/auth/terminal
+  // semantics are shared with the unary method via
+  // resolveSubscribeToTaskTarget; failures answer as a plain JSON-RPC
+  // error envelope, which streaming clients parse as an immediate error.
+  const acceptHeader = String(req.headers.accept ?? "");
+  if (acceptHeader.includes("text/event-stream")) {
+    const subscribeRequest = parseSingleJsonRpcMethodRequest(rawBody, "SubscribeToTask");
+    if (subscribeRequest) {
+      let subscribeTarget;
+      try {
+        subscribeTarget = resolveSubscribeToTaskTarget(subscribeRequest.params, executeOptions);
+      } catch (error) {
+        const rpcError = jsonRpcErrorFromUnknown(error);
+        sendJson(res, 200, {
+          jsonrpc: "2.0",
+          id: subscribeRequest.id,
+          error: rpcError,
+        });
+        return;
+      }
+      handleSubscribeToTaskStreamResponse(req, res, {
+        broker,
+        rpcId: subscribeRequest.id,
+        task: subscribeTarget,
+        heartbeatMs: ctx.taskSubscribeHeartbeatSec * 1000,
+        responseShape,
+      });
+      return;
+    }
   }
 
   const response = executeA2AJsonRpcBody(rawBody, {

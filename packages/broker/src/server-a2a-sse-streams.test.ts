@@ -1421,3 +1421,99 @@ test("JSON-RPC SubscribeToTask returns current task plus SSE subscription URL", 
     await server.close();
   }
 });
+
+test("SubscribeToTask with event-stream Accept upgrades to SSE: spec snapshot, updates, terminal close", async () => {
+  const server = await startTestServer({ defaultAgentMode: true, enforceRequesterIdentity: false });
+  try {
+    const rpc = (method: string, params: unknown, extraHeaders: Record<string, string> = {}) =>
+      fetch(`${server.baseUrl}/a2a/jsonrpc`, {
+        method: "POST",
+        headers: { "content-type": "application/json", "a2a-version": "1.0", ...extraHeaders },
+        body: JSON.stringify({ jsonrpc: "2.0", id: "sub-1", method, params }),
+      });
+
+    // Create an input-required (non-terminal) task via the embedded agent.
+    const send = await rpc("SendMessage", {
+      message: {
+        role: "ROLE_USER",
+        parts: [{ text: "TCK prerequisite task creation" }],
+        messageId: "tck-input-required-sse-test",
+      },
+    });
+    const sendBody = await send.json();
+    const taskId = sendBody.result?.task?.id;
+    assert.ok(taskId);
+    assert.equal(sendBody.result.task.status.state, "TASK_STATE_INPUT_REQUIRED");
+    const contextId = sendBody.result.task.contextId;
+
+    // Subscribe with a streaming Accept: the response must be a real SSE
+    // stream, not the unary snapshot+URL envelope.
+    const sseRes = await rpc("SubscribeToTask", { id: taskId }, { accept: "text/event-stream" });
+    assert.equal(sseRes.status, 200);
+    assert.match(sseRes.headers.get("content-type") ?? "", /text\/event-stream/);
+
+    // Resume the task with the requested input; the embedded agent then
+    // drives it to terminal.
+    const followup = await rpc("SendMessage", {
+      message: {
+        role: "ROLE_USER",
+        parts: [{ text: "requested input" }],
+        messageId: "m-resume-sse",
+        contextId,
+      },
+    }, );
+    assert.equal(followup.status, 200);
+
+    const events = await readAllSseEvents(sseRes);
+    assert.ok(events.length >= 2, `expected snapshot + updates, got ${events.length}`);
+    const snapshot = JSON.parse(events[0].data);
+    assert.equal(snapshot.jsonrpc, "2.0");
+    assert.equal(snapshot.id, "sub-1");
+    assert.equal(snapshot.result.task.id, taskId);
+    assert.equal(snapshot.result.task.status.state, "TASK_STATE_INPUT_REQUIRED");
+
+    const last = JSON.parse(events[events.length - 1].data);
+    const lastUpdate = last.result.statusUpdate ?? last.result;
+    assert.equal(lastUpdate.taskId ?? lastUpdate.task?.id, lastUpdate.taskId ?? taskId);
+    assert.equal(lastUpdate.status?.state ?? lastUpdate.task?.status?.state, "TASK_STATE_COMPLETED");
+  } finally {
+    await server.close();
+  }
+});
+
+test("SubscribeToTask without event-stream Accept keeps the unary snapshot + subscription URL", async () => {
+  const server = await startTestServer({ defaultAgentMode: true, enforceRequesterIdentity: false });
+  try {
+    const send = await fetch(`${server.baseUrl}/a2a/jsonrpc`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({
+        jsonrpc: "2.0",
+        id: "m-1",
+        method: "SendMessage",
+        params: { message: { role: "ROLE_USER", parts: [{ text: "plain echo" }], messageId: "m-plain-sub" } },
+      }),
+    });
+    const sendBody = await send.json();
+    const taskId = sendBody.result?.task?.id;
+    assert.ok(taskId);
+
+    const sub = await fetch(`${server.baseUrl}/a2a/jsonrpc`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ jsonrpc: "2.0", id: "sub-2", method: "SubscribeToTask", params: { id: taskId } }),
+    });
+    // The task may complete asynchronously; both the unary success envelope
+    // and the terminal-task -32004 error are JSON, never an SSE stream.
+    assert.match(sub.headers.get("content-type") ?? "", /application\/json/);
+    const body = await sub.json();
+    if (body.error) {
+      assert.equal(body.error.code, -32004);
+    } else {
+      assert.equal(body.result.task.id, taskId);
+      assert.ok(body.result.subscription.url);
+    }
+  } finally {
+    await server.close();
+  }
+});
