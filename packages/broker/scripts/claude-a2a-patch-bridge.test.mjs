@@ -1424,7 +1424,7 @@ test("normalizeUnifiedDiffHunkHeaders leaves a correct header untouched", () => 
   assert.equal(result.repairs.length, 0);
 });
 
-test("normalizeUnifiedDiffHunkHeaders counts deletions and repairs every hunk", () => {
+test("normalizeUnifiedDiffHunkHeaders grows counts across deletions and multiple hunks", () => {
   const body = [
     "--- a/a.txt",
     "+++ b/a.txt",
@@ -1432,17 +1432,17 @@ test("normalizeUnifiedDiffHunkHeaders counts deletions and repairs every hunk", 
     " keep",
     "-drop",
     "+add",
-    "@@ -20,9 +20,9 @@ section",
+    "@@ -20,1 +20,1 @@ section",
     " ctx",
     "-gone",
+    "+back",
     "",
   ].join("\n");
 
   const result = normalizeUnifiedDiffHunkHeaders(body);
 
   assert.match(result.body, /^@@ -1,2 \+1,2 @@$/m);
-  // Hunk 2 body is " ctx" + "-gone"; the final "" is the trailing EOL, not a line.
-  assert.match(result.body, /^@@ -20,2 \+20,1 @@ section$/m);
+  assert.match(result.body, /^@@ -20,2 \+20,2 @@ section$/m);
   assert.equal(result.repairs.length, 2);
 });
 
@@ -1452,7 +1452,7 @@ test("normalizeUnifiedDiffHunkHeaders counts an unprefixed blank context line", 
   const body = [
     "--- a/a.txt",
     "+++ b/a.txt",
-    "@@ -1,9 +1,9 @@",
+    "@@ -1,1 +1,1 @@",
     " one",
     "",
     "+two",
@@ -1465,11 +1465,11 @@ test("normalizeUnifiedDiffHunkHeaders counts an unprefixed blank context line", 
   assert.match(result.body, /^@@ -1,3 \+1,4 @@$/m);
 });
 
-test("normalizeUnifiedDiffHunkHeaders ignores the no-newline marker and trailing EOL", () => {
+test("normalizeUnifiedDiffHunkHeaders ignores the no-newline marker and preserves the trailing EOL", () => {
   const body = [
     "--- a/a.txt",
     "+++ b/a.txt",
-    "@@ -1,9 +1,9 @@",
+    "@@ -1,1 +1,1 @@",
     " one",
     "+two",
     "\\ No newline at end of file",
@@ -1487,21 +1487,21 @@ test("normalizeUnifiedDiffHunkHeaders repairs each file section independently", 
     "diff --git a/a.txt b/a.txt",
     "--- a/a.txt",
     "+++ b/a.txt",
-    "@@ -1,5 +1,5 @@",
+    "@@ -1,1 +1,1 @@",
     " one",
     "+two",
     "diff --git a/b.txt b/b.txt",
-    "--- a/b.txt",
+    "--- b/b.txt",
     "+++ b/b.txt",
-    "@@ -7,5 +7,5 @@",
+    "@@ -7,1 +7,1 @@",
     " three",
-    "-four",
+    "+four",
   ].join("\n");
 
   const result = normalizeUnifiedDiffHunkHeaders(body);
 
   assert.match(result.body, /^@@ -1,1 \+1,2 @@$/m);
-  assert.match(result.body, /^@@ -7,2 \+7,1 @@$/m);
+  assert.match(result.body, /^@@ -7,1 \+7,2 @@$/m);
   assert.equal(result.repairs.length, 2);
 });
 
@@ -1533,22 +1533,105 @@ test("normalizeUnifiedDiffHunkHeaders treats an omitted count as 1 and does not 
   assert.equal(result.repairs.length, 0);
 });
 
-test("normalizeUnifiedDiffHunkHeaders still repairs a hunk that omits only one count", () => {
-  // Mixed form: old count omitted (means 1, and is correct), new count present
-  // but wrong. Only the wrong side may trigger the repair.
+// --- the header is an integrity check, not just bookkeeping -----------------
+//
+// Shrinking a count to match a short body launders exactly the structural damage
+// that the count exists to expose. Each case below was reproduced against real
+// `git apply`: verbatim it is REJECTED, and a shrinking "repair" makes it APPLY.
+
+test("normalizeUnifiedDiffHunkHeaders refuses to shrink a truncated hunk", () => {
+  // Model output cut off mid-hunk (turn/token limit). Shrinking would make a
+  // half-written patch apply, commit, and open a PR reported as success.
+  const body = [
+    "--- a/f.txt",
+    "+++ b/f.txt",
+    "@@ -1,10 +1,10 @@",
+    "-line1",
+    "+LINE1",
+    " line2",
+  ].join("\n");
+
+  const result = normalizeUnifiedDiffHunkHeaders(body);
+
+  assert.equal(result.repairs.length, 0);
+  assert.equal(result.body, body);
+});
+
+test("normalizeUnifiedDiffHunkHeaders refuses to shrink a wrong-offset hunk", () => {
+  // Offset points at the first of two identical blocks while the model meant the
+  // second. Shrinking makes it apply silently at the WRONG location.
+  const body = [
+    "--- a/b.txt",
+    "+++ b/b.txt",
+    "@@ -1,9 +1,9 @@",
+    " BLOCK",
+    "-x = 1",
+    "+x = 2",
+    " END",
+  ].join("\n");
+
+  const result = normalizeUnifiedDiffHunkHeaders(body);
+
+  assert.equal(result.repairs.length, 0);
+  assert.equal(result.body, body);
+});
+
+test("normalizeUnifiedDiffHunkHeaders refuses a mixed grow/shrink header", () => {
+  // old grows (1 -> 2) but new shrinks (9 -> 2): still structural damage.
   const body = [
     "--- a/a.txt",
     "+++ b/a.txt",
-    "@@ -3 +3,9 @@",
+    "@@ -3,1 +3,9 @@",
     "-gone",
+    "-also",
     "+one",
     "+two",
   ].join("\n");
 
   const result = normalizeUnifiedDiffHunkHeaders(body);
 
-  assert.match(result.body, /^@@ -3,1 \+3,2 @@$/m);
-  assert.equal(result.repairs.length, 1);
+  assert.equal(result.repairs.length, 0);
+  assert.equal(result.body, body);
+});
+
+test("normalizeUnifiedDiffHunkHeaders does not mistake a deleted comment line for a file header", () => {
+  // Deleting a line whose content starts with "-- " emits `--- <content>`, which
+  // is textually a file header. "-- " is the line-comment token in SQL, Lua,
+  // Haskell and Ada, and this bridge patches whatever repository the task names.
+  // Truncating the body there rewrote a CORRECT header and broke a patch that
+  // real `git apply` accepted verbatim.
+  const body = [
+    "diff --git a/m.sql b/m.sql",
+    "index 7c1077c..954c691 100644",
+    "--- a/m.sql",
+    "+++ b/m.sql",
+    "@@ -1,3 +1,3 @@",
+    " SELECT 1;",
+    "--- old comment",
+    "+-- new comment",
+    " SELECT 2;",
+  ].join("\n");
+
+  const result = normalizeUnifiedDiffHunkHeaders(body);
+
+  assert.equal(result.repairs.length, 0, "a correct header must not be rewritten");
+  assert.equal(result.body, body);
+});
+
+test("normalizeUnifiedDiffHunkHeaders does not mistake an added '++ ' line for a file header", () => {
+  const body = [
+    "--- a/n.txt",
+    "+++ b/n.txt",
+    "@@ -1,1 +1,3 @@",
+    " keep",
+    "+++ added marker",
+    "+tail",
+  ].join("\n");
+
+  const result = normalizeUnifiedDiffHunkHeaders(body);
+
+  assert.equal(result.repairs.length, 0);
+  assert.equal(result.body, body);
 });
 
 // End-to-end proof for a2a-nexus#1642: the bridge must now survive the exact
@@ -1565,17 +1648,31 @@ test("SINGLE-SHOT: a miscounted hunk header is repaired in-line -> prUrl with 1 
   try {
     writeFakeGitStub(fakeGitPath);
     writeFakeGhStub(fakeGhPath);
-    // Body is correct; the header claims -1,7 +1,9 instead of -1,1 +1,2.
-    // Verbatim, `git apply --check` rejects this with "patch does not apply".
+    // The seed's files are single-line, and `git apply` is lenient about counts
+    // when a hunk runs to EOF with no trailing context. Add a multi-line file so
+    // the hunk has trailing context and git enforces the header, as it did on the
+    // real canary.
+    writeFileSync(join(workSeed, "hello.txt"), "hello world\nb\nc\nd\ne\n");
+    execFileSync("git", ["-C", workSeed, "add", "-A"]);
+    execFileSync("git", ["-C", workSeed, "commit", "-m", "multi-line seed"], { stdio: "ignore" });
+    execFileSync("git", ["-C", workSeed, "push", "origin", "main"], { stdio: "ignore" });
+
+    // Body is correct and complete; the header UNDERCOUNTS it (canary5's shape:
+    // declared 6/44 for a body of 9/55). Verbatim, `git apply --check` rejects
+    // this because the body carries more lines than the header admits.
     const miscountedDiff = [
       "diff --git a/hello.txt b/hello.txt",
-      "index ce01362..6b0f5f6 100644",
+      "index 1111111..2222222 100644",
       "--- a/hello.txt",
       "+++ b/hello.txt",
-      "@@ -1,7 +1,9 @@",
-      "-hello world",
-      "+hello world (patched)",
-      "+second added line",
+      "@@ -1,3 +1,3 @@",
+      " hello world",
+      "-b",
+      "+B",
+      "+B2",
+      " c",
+      " d",
+      " e",
     ].join("\n");
     writeDiffClaudeStub(fakeClaudePath, miscountedDiff);
 
@@ -1602,7 +1699,67 @@ test("SINGLE-SHOT: a miscounted hunk header is repaired in-line -> prUrl with 1 
     // Repaired in-line, so the corrective retry (2nd claude call) never ran.
     assert.equal(payload.claudeCalls, 1, "the repair must not cost a corrective retry");
     // The repair is reported on stderr, never on stdout (stdout is the envelope).
-    assert.match(result.stderr, /hunk_header_repairs=1 \[@@ -1,7 \+1,9 @@ -> @@ -1,1 \+1,2 @@\]/);
+    assert.match(result.stderr, /hunk_header_repairs=1 \[@@ -1,3 \+1,3 @@ -> @@ -1,5 \+1,6 @@\]/);
+  } finally {
+    rmSync(tempDir, { recursive: true, force: true });
+  }
+});
+
+// The repair must be a rescue, never a rewrite. A diff git already accepts is
+// applied verbatim — the normalizer is not even consulted. This pins the fix for
+// the CRITICAL regression found in review: `--- <content>` produced by deleting a
+// line that starts with "-- " (SQL/Lua/Haskell comments) was mistaken for a file
+// header, truncating the count and breaking a patch that applied.
+test("SINGLE-SHOT: a valid diff whose body contains diff-like lines is applied verbatim", () => {
+  const tempDir = mkdtempSync(join(tmpdir(), "claude-singleshot-verbatim-"));
+  const { workSeed } = setupLocalFakeOrigin(tempDir);
+  const fakeGitPath = join(tempDir, "fake-git.mjs");
+  const fakeGhPath = join(tempDir, "fake-gh.mjs");
+  const fakeClaudePath = join(tempDir, "fake-claude.mjs");
+  try {
+    writeFakeGitStub(fakeGitPath);
+    writeFakeGhStub(fakeGhPath);
+    writeFileSync(join(workSeed, "hello.txt"), "SELECT 1;\n-- old comment\nSELECT 2;\n");
+    execFileSync("git", ["-C", workSeed, "add", "-A"]);
+    execFileSync("git", ["-C", workSeed, "commit", "-m", "sql seed"], { stdio: "ignore" });
+    execFileSync("git", ["-C", workSeed, "push", "origin", "main"], { stdio: "ignore" });
+
+    // Deleting `-- old comment` emits `--- old comment`, textually a file header.
+    // The header below is CORRECT; real `git apply` accepts this verbatim.
+    const validDiff = [
+      "diff --git a/hello.txt b/hello.txt",
+      "index 7c1077c..954c691 100644",
+      "--- a/hello.txt",
+      "+++ b/hello.txt",
+      "@@ -1,3 +1,3 @@",
+      " SELECT 1;",
+      "--- old comment",
+      "+-- new comment",
+      " SELECT 2;",
+    ].join("\n");
+    writeDiffClaudeStub(fakeClaudePath, validDiff);
+
+    const result = spawnSync(bridgePath, bridgeArgs(singleShotMessage()), {
+      encoding: "utf8",
+      env: {
+        ...process.env,
+        A2A_CLAUDE_CODE_BIN: fakeClaudePath,
+        A2A_CLAUDE_CODE_GIT_BIN: fakeGitPath,
+        A2A_CLAUDE_CODE_GH_BIN: fakeGhPath,
+        A2A_CLAUDE_CODE_PATCH_MODE: "single-shot",
+        FAKE_GIT_SEED_PATH: workSeed,
+        FAKE_GH_PR_URL: "https://github.com/jinwon-int/a2a-nexus/pull/1655",
+        REAL_GIT_BIN: "git",
+        REAL_GH_BIN: "gh",
+      },
+    });
+
+    assert.equal(result.status, 0, result.stderr);
+    const payload = JSON.parse(JSON.parse(result.stdout).payloads[0].text);
+    assert.equal(payload.status, "pr_opened");
+    assert.equal(payload.claudeCalls, 1);
+    // No repair: git accepted the model's diff, so we never touched it.
+    assert.doesNotMatch(result.stderr, /hunk_header_repairs=/);
   } finally {
     rmSync(tempDir, { recursive: true, force: true });
   }
