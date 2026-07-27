@@ -1,18 +1,32 @@
 #!/usr/bin/env node
 /**
- * Regrowth guard for the development-orchestration surface (a2a-nexus#882 §3).
+ * Regrowth guard for the development-orchestration surface (a2a-nexus#882 §3,
+ * extended for broker core modules in #1601).
  *
  * The repo accumulated one-off scripts and per-round npm wrappers faster than
- * it consolidated them. This gate freezes three counts at a budget:
+ * it consolidated them. This gate freezes five counts at a budget:
  *   - top-level scripts/*.mjs validators (excludes scripts/lib/)
  *   - root package.json "scripts"
  *   - packages/broker/package.json "scripts"
+ *   - packages/broker/src/core non-test modules
+ *   - the ceremony-named subset of those core modules
  *
  * Adding a new one-off fails the gate. The intended responses are, in order of
  * preference: (1) consolidate onto an existing engine/helper so the count stays
  * flat, or (2) deliberately raise the relevant budget below with a one-line
  * justification in the PR. The budget only ever ratchets — lower it as cleanup
  * lands so the surface cannot silently regrow.
+ *
+ * On the ceremony budget specifically (#1601): the broker accumulated ~45
+ * modules — `*-approval-request`, `*-receipt-ingestor`, `*-preflight-*`,
+ * `*-rehearsal`, `*-dry-run-start-*` — that are not features. They are the
+ * steps of one operator approval procedure, each rendered as a separate
+ * TypeScript module by a separate A2A round. The cost is not the lines; it is
+ * that changing the procedure then requires a compile, a test, a review, and a
+ * merge. Approval steps belong in the policy document the broker already
+ * enforces (`a2a.broker.policy.v1`), as data. This budget does not forbid the
+ * existing modules — it freezes them, so the next round has to consolidate
+ * rather than append.
  *
  * Safety: read-only counting. No repo import, release, publish, visibility,
  * live dispatch, restart, credential, DB, or Terminal ACK action is performed.
@@ -30,13 +44,71 @@ export const BUDGETS = {
   scriptsMjs: 170, // +2 from 168: #1506 enforced source-quality floor — scripts/check-source-quality-floors.mjs (guard) + scripts/check-source-quality-floors.test.mjs (its tests). 168 itself was #1505 executable quickstart doctest CLI.
   rootNpmScripts: 101, // -1 from 102: #1503 Wave 0 retires the check:mobileAlpha-hermes-worker-profile alias (check:hermes already runs the same test file directly).
   brokerNpmScripts: 54, // -43 from 95: #1503 Wave 2 collapses the orchestration-intelligence (21) and rollout-preflight (24→22; rollout_guard and worker_signature_rollout_preflight stay direct as manifest-required gates) aliases into the orchestration/rollout dispatchers sharing scripts/lib/operator-dispatch.mjs; scan:public-readiness stays direct (CI parity requiredScript).
+  brokerCoreModules: 224, // #1601: non-test .ts under packages/broker/src/core, recursive. Frozen after PR #1657 removed 24 unreferenced modules (248 → 224). core/ is nearly flat, so file count is the honest proxy for how much surface a new contributor has to hold.
+  brokerCoreCeremonyModules: 44, // #1601: the approval/rehearsal/preflight/dry-run/ingestor subset of the above. Frozen, never raised — a new approval step belongs in the broker policy document as data, not as a module. Lower this as ceremony modules are consolidated or removed.
 };
+
+/**
+ * Filename markers for modules that encode a step of an operator approval
+ * procedure rather than a broker capability.
+ *
+ * Deliberately narrow: `gate` and `closeout` are excluded because they also
+ * name genuine lifecycle behaviour (`terminal-brief-closeout-gate` decides
+ * whether a round is complete). Every marker here names a stage of a
+ * human-approval workflow, which is the thing that should be declared as
+ * policy data instead of authored as code.
+ */
+export const CEREMONY_MODULE_MARKERS = [
+  'approval',
+  'rehearsal',
+  'preflight',
+  'dry-run',
+  'receipt-ingestor',
+  'evidence-collector',
+  'review-decision',
+  'canary-plan',
+  'grant-proposal',
+];
+
+const CEREMONY_MODULE_PATTERN = new RegExp(CEREMONY_MODULE_MARKERS.join('|'));
+
+/** True when a core module filename encodes an approval-ceremony stage. */
+export function isCeremonyModule(relativePath) {
+  return CEREMONY_MODULE_PATTERN.test(relativePath);
+}
 
 /** Count top-level *.mjs files in a directory (non-recursive; excludes subdirs like lib/). */
 export function countTopLevelMjs(dir) {
   return fs
     .readdirSync(dir, { withFileTypes: true })
     .filter((entry) => entry.isFile() && entry.name.endsWith('.mjs')).length;
+}
+
+/**
+ * List non-test *.ts files under a directory, recursively, as paths relative
+ * to that directory. Returns [] when the directory is absent so the guard can
+ * run from a checkout that does not contain the broker package.
+ */
+export function listCoreModules(dir) {
+  const out = [];
+  const walk = (current, prefix) => {
+    let entries;
+    try {
+      entries = fs.readdirSync(current, { withFileTypes: true });
+    } catch {
+      return;
+    }
+    for (const entry of entries) {
+      const rel = prefix ? `${prefix}/${entry.name}` : entry.name;
+      if (entry.isDirectory()) {
+        walk(path.join(current, entry.name), rel);
+      } else if (entry.name.endsWith('.ts') && !entry.name.endsWith('.test.ts')) {
+        out.push(rel);
+      }
+    }
+  };
+  walk(dir, '');
+  return out;
 }
 
 function countPackageScripts(rel, readJson) {
@@ -76,6 +148,19 @@ export function evaluateBudgets(counts, budgets = BUDGETS) {
     budgets.brokerNpmScripts,
     'Reuse an existing script or call the .mjs directly',
   );
+  over(
+    'broker core modules',
+    counts.brokerCoreModules,
+    budgets.brokerCoreModules,
+    'Fold the new behaviour into a cohesive existing core module',
+  );
+  over(
+    'broker core ceremony modules',
+    counts.brokerCoreCeremonyModules,
+    budgets.brokerCoreCeremonyModules,
+    'Declare the approval/rehearsal/preflight step in the broker policy document ' +
+      '(a2a.broker.policy.v1) as data instead of adding a module',
+  );
   return { ok: failures.length === 0, failures };
 }
 
@@ -87,10 +172,13 @@ export function collectCounts(root) {
       return null;
     }
   };
+  const coreModules = listCoreModules(path.join(root, 'packages/broker/src/core'));
   return {
     scriptsMjs: countTopLevelMjs(path.join(root, 'scripts')),
     rootNpmScripts: countPackageScripts('package.json', readJson),
     brokerNpmScripts: countPackageScripts('packages/broker/package.json', readJson),
+    brokerCoreModules: coreModules.length,
+    brokerCoreCeremonyModules: coreModules.filter(isCeremonyModule).length,
   };
 }
 
@@ -100,7 +188,9 @@ function main() {
   console.log(
     `script budget: scripts/*.mjs=${counts.scriptsMjs}/${BUDGETS.scriptsMjs} ` +
       `root=${counts.rootNpmScripts}/${BUDGETS.rootNpmScripts} ` +
-      `broker=${counts.brokerNpmScripts}/${BUDGETS.brokerNpmScripts}`,
+      `broker=${counts.brokerNpmScripts}/${BUDGETS.brokerNpmScripts} ` +
+      `core=${counts.brokerCoreModules}/${BUDGETS.brokerCoreModules} ` +
+      `core-ceremony=${counts.brokerCoreCeremonyModules}/${BUDGETS.brokerCoreCeremonyModules}`,
   );
   const { failures } = evaluateBudgets(counts);
   for (const message of failures) fail(message);
