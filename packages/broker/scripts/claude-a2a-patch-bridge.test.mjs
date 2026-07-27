@@ -1512,3 +1512,41 @@ test("normalizeUnifiedDiffHunkHeaders is inert on non-diff input", () => {
     assert.equal(result.repairs.length, 0);
   }
 });
+
+test("normalizeUnifiedDiffHunkHeaders treats an omitted count as 1 and does not rewrite it", () => {
+  // `@@ -1 +1 @@` is the canonical git form for a single-line hunk. Rewriting it
+  // to `@@ -1,1 +1,1 @@` is a false repair: it reports a defect that is not there
+  // and churns a diff that already applies.
+  const body = [
+    "diff --git a/hello.txt b/hello.txt",
+    "index ce01362..6b0f5f6 100644",
+    "--- a/hello.txt",
+    "+++ b/hello.txt",
+    "@@ -1 +1 @@",
+    "-hello world",
+    "+hello world (patched)",
+  ].join("\n");
+
+  const result = normalizeUnifiedDiffHunkHeaders(body);
+
+  assert.equal(result.body, body);
+  assert.equal(result.repairs.length, 0);
+});
+
+test("normalizeUnifiedDiffHunkHeaders still repairs a hunk that omits only one count", () => {
+  // Mixed form: old count omitted (means 1, and is correct), new count present
+  // but wrong. Only the wrong side may trigger the repair.
+  const body = [
+    "--- a/a.txt",
+    "+++ b/a.txt",
+    "@@ -3 +3,9 @@",
+    "-gone",
+    "+one",
+    "+two",
+  ].join("\n");
+
+  const result = normalizeUnifiedDiffHunkHeaders(body);
+
+  assert.match(result.body, /^@@ -3,1 \+3,2 @@$/m);
+  assert.equal(result.repairs.length, 1);
+});

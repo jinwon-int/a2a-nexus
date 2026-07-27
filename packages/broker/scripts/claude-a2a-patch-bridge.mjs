@@ -925,7 +925,8 @@ function findDiffInObject(value, depth = 0) {
 
 // Scans a single string for a fenced diff block (latest wins) or raw unified-diff
 // anchors. Returns { kind, body } or null.
-const HUNK_HEADER_RE = /^@@ -(\d+)(?:,\d+)? \+(\d+)(?:,\d+)? @@(.*)$/;
+// Counts are optional in a unified-diff header; an omitted count means 1.
+const HUNK_HEADER_RE = /^@@ -(\d+)(?:,(\d+))? \+(\d+)(?:,(\d+))? @@(.*)$/;
 
 // A line that begins a new file section, so it terminates the current hunk body.
 // Inside a hunk every real body line carries a ' ', '+', '-' or '\' prefix, so an
@@ -975,7 +976,7 @@ export function normalizeUnifiedDiffHunkHeaders(body) {
     const headerIdx = hunkStarts[h];
     const parsed = HUNK_HEADER_RE.exec(lines[headerIdx]);
     if (!parsed) continue;
-    const [, oldStart, newStart, trailer] = parsed;
+    const [, oldStart, oldDeclared, newStart, newDeclared, trailer] = parsed;
 
     const bodyEnd = h + 1 < hunkStarts.length ? hunkStarts[h + 1] : lines.length;
     let oldCount = 0;
@@ -1001,6 +1002,15 @@ export function normalizeUnifiedDiffHunkHeaders(body) {
 
     // An empty body carries no evidence; leave the header exactly as emitted.
     if (bodyLines === 0) continue;
+
+    // Compare semantically, not textually: `@@ -1 +1 @@` and `@@ -1,1 +1,1 @@`
+    // are the same header, and rewriting a correct one would be a false repair.
+    if (
+      oldCount === Number(oldDeclared ?? 1)
+      && newCount === Number(newDeclared ?? 1)
+    ) {
+      continue;
+    }
 
     const repaired = `@@ -${oldStart},${oldCount} +${newStart},${newCount} @@${trailer}`;
     if (repaired !== lines[headerIdx]) {
@@ -1391,7 +1401,8 @@ async function runSingleShotPatchMode(message, flags) {
     const stageDiff = (rawBody) => {
       const normalized = normalizeUnifiedDiffHunkHeaders(rawBody);
       if (normalized.repairs.length > 0) {
-        process.stdout.write(
+        // stdout carries ONLY the JSON envelope; diagnostics must go to stderr.
+        process.stderr.write(
           `hunk_header_repairs=${normalized.repairs.length} `
           + normalized.repairs.map((r) => `[${r.from} -> ${r.to}]`).join(" ")
           + "\n",
