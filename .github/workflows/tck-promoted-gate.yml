@@ -243,3 +243,51 @@ jobs:
           path: /tmp/tck-promoted-error-codes.log
           if-no-files-found: warn
           retention-days: 30
+
+  task-not-found:
+    name: promoted TCK sub-category — task not found / invalid task
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v6
+        with:
+          node-version: "22"
+          cache: npm
+      - run: npm ci --include=dev
+
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        with:
+          python-version: "3.11"
+
+      - name: Clone and install the pinned official A2A TCK
+        env:
+          TCK_REF: "29063fe95e903cddac5d8ff811ab94df1ad6ef86"
+        run: |
+          set -euo pipefail
+          git clone --filter=blob:none https://github.com/a2aproject/a2a-tck /tmp/a2a-tck
+          git -C /tmp/a2a-tck checkout --detach "$TCK_REF"
+          python3 -m venv /tmp/a2a-tck/.venv
+          /tmp/a2a-tck/.venv/bin/pip install -q -e /tmp/a2a-tck
+
+      - name: Run promoted task-not-found TCK sub-category
+        working-directory: packages/broker
+        env:
+          A2A_TCK_DIR: /tmp/a2a-tck
+        run: |
+          set -euo pipefail
+          export PATH="/tmp/a2a-tck/.venv/bin:$PATH"
+          npm run tck:run -- --level must --transport jsonrpc -- \
+            -k 'test_a2a_error_type_mappings or test_cancel_terminal_task_returns_error or test_send_message_to_terminal_task or test_reject_mismatching_context or test_task_not_found_error or test_error_code_in_valid_range or test_subscribe_nonexistent_task_returns_error' \
+            --deselect='tests/compatibility/jsonrpc/test_error_codes.py::TestJsonRpcErrorCodeRange::test_error_code_in_valid_range[CancelTask-nonexistent]' \
+            --deselect='tests/compatibility/jsonrpc/test_error_codes.py::TestJsonRpcErrorCodeRange::test_error_code_in_valid_range[SendMessage-bad-version]' \
+            -q | tee /tmp/tck-promoted-task-not-found.log
+
+      - name: Upload promoted-gate log
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        with:
+          name: tck-promoted-task-not-found-log
+          path: /tmp/tck-promoted-task-not-found.log
+          if-no-files-found: warn
+          retention-days: 30

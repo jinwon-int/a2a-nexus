@@ -89,6 +89,24 @@ test("promoted TCK gate blocks on the runnable error-codes/ErrorInfo selector se
   );
 });
 
+test("promoted TCK gate blocks on exactly the task-not-found selector set", () => {
+  const workflow = readRepo(".github/workflows/tck-promoted-gate.yml");
+
+  assert.match(workflow, /name:\s*promoted TCK sub-category — task not found \/ invalid task/);
+  assert.match(workflow, /test_a2a_error_type_mappings/);
+  assert.match(workflow, /test_cancel_terminal_task_returns_error/);
+  assert.match(workflow, /test_send_message_to_terminal_task/);
+  assert.match(workflow, /test_reject_mismatching_context/);
+  assert.match(workflow, /test_task_not_found_error/);
+  assert.match(workflow, /test_subscribe_nonexistent_task_returns_error/);
+  // Owns only the GetTask variant of the shared range test; the CancelTask
+  // (error-codes) and SendMessage-bad-version (version-negotiation) variants
+  // stay with their own categories.
+  assert.match(workflow, /--deselect='tests\/compatibility\/jsonrpc\/test_error_codes\.py::TestJsonRpcErrorCodeRange::test_error_code_in_valid_range\[CancelTask-nonexistent\]'/);
+  assert.match(workflow, /--deselect='tests\/compatibility\/jsonrpc\/test_error_codes\.py::TestJsonRpcErrorCodeRange::test_error_code_in_valid_range\[SendMessage-bad-version\]'/);
+  assert.match(workflow, /tck-promoted-task-not-found\.log/);
+});
+
 test("promoted sub-categories in the baseline all have a gate job", () => {
   const workflow = readRepo(".github/workflows/tck-promoted-gate.yml");
   const baseline = JSON.parse(readRepo("packages/broker/docs/tck-failing-categories.json"));
@@ -97,6 +115,7 @@ test("promoted sub-categories in the baseline all have a gate job", () => {
     "jsonrpc-version-negotiation": /promoted TCK sub-category — version negotiation/,
     "jsonrpc-artifact-message-projection": /promoted TCK sub-category — artifact\/message projection/,
     "jsonrpc-error-codes-and-errorinfo": /promoted TCK sub-category — error codes and ErrorInfo/,
+    "jsonrpc-task-not-found-and-invalid-task": /promoted TCK sub-category — task not found \/ invalid task/,
   };
   for (const sub of baseline.subCategories) {
     if (sub.promotionReadiness !== "promoted") continue;
