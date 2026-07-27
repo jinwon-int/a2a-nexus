@@ -66,11 +66,11 @@ jobs:
 
       - name: Clone and install the pinned official A2A TCK
         env:
-          # Same reviewed pin as tck-measurement.yml. Bump deliberately.
-          TCK_REF: "29063fe95e903cddac5d8ff811ab94df1ad6ef86"
+          # Same reviewed pin as tck-measurement.yml (org fork; bump deliberately).
+          TCK_REF: "1154216630fb79b7d83bc4dc8a4428eec27e7a41"
         run: |
           set -euo pipefail
-          git clone --filter=blob:none https://github.com/a2aproject/a2a-tck /tmp/a2a-tck
+          git clone --filter=blob:none https://github.com/jinwon-int/a2a-tck /tmp/a2a-tck
           git -C /tmp/a2a-tck checkout --detach "$TCK_REF"
           python3 -m venv /tmp/a2a-tck/.venv
           /tmp/a2a-tck/.venv/bin/pip install -q -e /tmp/a2a-tck
@@ -116,10 +116,10 @@ jobs:
 
       - name: Clone and install the pinned official A2A TCK
         env:
-          TCK_REF: "29063fe95e903cddac5d8ff811ab94df1ad6ef86"
+          TCK_REF: "1154216630fb79b7d83bc4dc8a4428eec27e7a41"
         run: |
           set -euo pipefail
-          git clone --filter=blob:none https://github.com/a2aproject/a2a-tck /tmp/a2a-tck
+          git clone --filter=blob:none https://github.com/jinwon-int/a2a-tck /tmp/a2a-tck
           git -C /tmp/a2a-tck checkout --detach "$TCK_REF"
           python3 -m venv /tmp/a2a-tck/.venv
           /tmp/a2a-tck/.venv/bin/pip install -q -e /tmp/a2a-tck
@@ -164,10 +164,10 @@ jobs:
 
       - name: Clone and install the pinned official A2A TCK
         env:
-          TCK_REF: "29063fe95e903cddac5d8ff811ab94df1ad6ef86"
+          TCK_REF: "1154216630fb79b7d83bc4dc8a4428eec27e7a41"
         run: |
           set -euo pipefail
-          git clone --filter=blob:none https://github.com/a2aproject/a2a-tck /tmp/a2a-tck
+          git clone --filter=blob:none https://github.com/jinwon-int/a2a-tck /tmp/a2a-tck
           git -C /tmp/a2a-tck checkout --detach "$TCK_REF"
           python3 -m venv /tmp/a2a-tck/.venv
           /tmp/a2a-tck/.venv/bin/pip install -q -e /tmp/a2a-tck
@@ -210,10 +210,10 @@ jobs:
 
       - name: Clone and install the pinned official A2A TCK
         env:
-          TCK_REF: "29063fe95e903cddac5d8ff811ab94df1ad6ef86"
+          TCK_REF: "1154216630fb79b7d83bc4dc8a4428eec27e7a41"
         run: |
           set -euo pipefail
-          git clone --filter=blob:none https://github.com/a2aproject/a2a-tck /tmp/a2a-tck
+          git clone --filter=blob:none https://github.com/jinwon-int/a2a-tck /tmp/a2a-tck
           git -C /tmp/a2a-tck checkout --detach "$TCK_REF"
           python3 -m venv /tmp/a2a-tck/.venv
           /tmp/a2a-tck/.venv/bin/pip install -q -e /tmp/a2a-tck
@@ -262,10 +262,10 @@ jobs:
 
       - name: Clone and install the pinned official A2A TCK
         env:
-          TCK_REF: "29063fe95e903cddac5d8ff811ab94df1ad6ef86"
+          TCK_REF: "1154216630fb79b7d83bc4dc8a4428eec27e7a41"
         run: |
           set -euo pipefail
-          git clone --filter=blob:none https://github.com/a2aproject/a2a-tck /tmp/a2a-tck
+          git clone --filter=blob:none https://github.com/jinwon-int/a2a-tck /tmp/a2a-tck
           git -C /tmp/a2a-tck checkout --detach "$TCK_REF"
           python3 -m venv /tmp/a2a-tck/.venv
           /tmp/a2a-tck/.venv/bin/pip install -q -e /tmp/a2a-tck
@@ -310,10 +310,10 @@ jobs:
 
       - name: Clone and install the pinned official A2A TCK
         env:
-          TCK_REF: "29063fe95e903cddac5d8ff811ab94df1ad6ef86"
+          TCK_REF: "1154216630fb79b7d83bc4dc8a4428eec27e7a41"
         run: |
           set -euo pipefail
-          git clone --filter=blob:none https://github.com/a2aproject/a2a-tck /tmp/a2a-tck
+          git clone --filter=blob:none https://github.com/jinwon-int/a2a-tck /tmp/a2a-tck
           git -C /tmp/a2a-tck checkout --detach "$TCK_REF"
           python3 -m venv /tmp/a2a-tck/.venv
           /tmp/a2a-tck/.venv/bin/pip install -q -e /tmp/a2a-tck

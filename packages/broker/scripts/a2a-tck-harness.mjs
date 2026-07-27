@@ -3,7 +3,8 @@
  * Official A2A TCK harness (opt-in measurement lane).
  *
  * Boots a local broker on an ephemeral loopback port and runs the official
- * A2A Technology Compatibility Kit (https://github.com/a2aproject/a2a-tck)
+ * A2A Technology Compatibility Kit (org fork jinwon-int/a2a-tck of
+ * a2aproject/a2a-tck; see docs/a2a-tck-runbook.md for the pin policy)
  * against it, producing a compliance report.
  *
  * This is NOT a release gate: the broker's documented deviations from the
@@ -19,7 +20,7 @@
  *
  *   A2A_TCK_DIR=/path/to/a2a-tck node scripts/a2a-tck-harness.mjs [--level must] [--transport jsonrpc]
  *     Boot the broker and invoke the TCK from a local clone:
- *       git clone https://github.com/a2aproject/a2a-tck
+ *       git clone https://github.com/jinwon-int/a2a-tck
  *       cd a2a-tck && uv venv && . .venv/bin/activate && uv pip install -e .
  *     The TCK's run_tck.py is executed with --sut-host pointed at the local
  *     broker. Reports land in the TCK's report output directory.
@@ -122,7 +123,7 @@ const tckDir = process.env.A2A_TCK_DIR;
 if (!tckDir) {
   console.error(
     "[tck-harness] A2A_TCK_DIR is not set.\n" +
-      "  git clone https://github.com/a2aproject/a2a-tck\n" +
+      "  git clone https://github.com/jinwon-int/a2a-tck\n" +
       "  cd a2a-tck && uv venv && . .venv/bin/activate && uv pip install -e .\n" +
       "  A2A_TCK_DIR=$(pwd) node scripts/a2a-tck-harness.mjs --level must --transport jsonrpc",
   );

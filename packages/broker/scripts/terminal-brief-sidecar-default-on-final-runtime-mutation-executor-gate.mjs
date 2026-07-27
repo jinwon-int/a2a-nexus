@@ -14,7 +14,7 @@ import {
   extractTerminalBriefSidecarDefaultOnFinalRuntimeMutationExecutorGateEvidence,
   extractTerminalBriefSidecarDefaultOnFinalRuntimeMutationExecutorGateOptions,
   renderTerminalBriefSidecarDefaultOnFinalRuntimeMutationExecutorGateMarkdown,
-} from "../dist/core/terminal-brief-sidecar-default-on-final-runtime-mutation-executor-gate.js";
+} from "../dist/core/terminal-brief-sidecar-default-on/final-runtime-mutation-executor-gate.js";
 
 function parseArgs(argv) {
   const readOption = (name) => {
