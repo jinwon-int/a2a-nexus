@@ -342,6 +342,20 @@ test("CancelTask on a terminal task is TaskNotCancelableError (-32002)", () => {
   assert.equal(info?.reason, "TASK_NOT_CANCELABLE");
 });
 
+test("unknown client-provided contextId is Invalid params (-32602), not a resource miss", () => {
+  const broker = new InMemoryA2ABroker();
+  startDefaultAgent(broker);
+  const response = sendMessage(broker, {
+    role: "ROLE_USER",
+    parts: [{ text: "Message with client contextId" }],
+    messageId: "tck-multi-002a-s",
+    contextId: "tck-client-context-rejected-s",
+  });
+  assert.ok("error" in response, "unknown contextId must be rejected");
+  assert.equal(response.error.code, -32602);
+  assert.match(response.error.message, /unknown contextId/);
+});
+
 test("conventions do not fire without default-agent mode (router unchanged)", () => {
   const broker = new InMemoryA2ABroker();
   broker.registerWorker({
