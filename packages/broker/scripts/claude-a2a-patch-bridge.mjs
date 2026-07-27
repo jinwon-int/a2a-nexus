@@ -954,7 +954,22 @@ function endsHunkBody(lines, i) {
 // The conventional `a/` and `b/` prefixes are stripped only when BOTH sides carry
 // them, so a `--no-prefix` diff of a directory literally called `b/` survives.
 function resolveDiffTargetPath(oldLine, newLine) {
-  const parse = (line) => (typeof line === "string" ? line.slice(4).split("\t")[0].trim() : "");
+  // git emits `--- a/f.txt`, GNU diff adds a tab + timestamp, and git's default
+  // core.quotePath wraps non-ASCII paths in double quotes with octal escapes.
+  const parse = (line) => {
+    if (typeof line !== "string") return "";
+    let value = line.slice(4).split("\t")[0].trim();
+    if (value.startsWith('"') && value.endsWith('"') && value.length > 1) {
+      value = value.slice(1, -1).replace(/\\([0-7]{3})/g, (_, oct) =>
+        String.fromCharCode(parseInt(oct, 8)));
+      try {
+        value = Buffer.from(value, "binary").toString("utf8");
+      } catch {
+        // keep the unescaped form if it is not valid UTF-8
+      }
+    }
+    return value;
+  };
   const oldPath = parse(oldLine);
   const newPath = parse(newLine);
   // `/dev/null` stands in for a creation or a deletion and carries no prefix, so
@@ -1035,13 +1050,20 @@ export function diagnoseHunkHeaderCounts(body) {
     let evidenceLost = false;
     for (let i = headerIdx + 1; i < bodyEnd; i += 1) {
       const line = lines[i];
-      if (endsHunkBody(lines, i)) break;
+      if (endsHunkBody(lines, i)) {
+        // A header inside what we thought was a body means the scan stopped early.
+        // The tally so far is a partial count, not a smaller truth, so refuse it —
+        // a deleted "-- " line followed by an added "++ " line and the next `@@`
+        // forms a textually valid triple and would otherwise truncate the count.
+        evidenceLost = true;
+        break;
+      }
       if (line.startsWith("\\")) continue; // "\ No newline at end of file"
       if (line.startsWith("+")) {
         actualNew += 1;
       } else if (line.startsWith("-")) {
         actualOld += 1;
-      } else if (line === "" || line === "\r") {
+      } else if (line === "" || line === "\r" || line === "\t") {
         // Only a TRULY bare line is ambiguous. Emitters drop the leading space on
         // a blank context line, but a bare blank is also the usual separator
         // between file sections in a multi-file diff — git accepts both. A
@@ -1049,12 +1071,16 @@ export function diagnoseHunkHeaderCounts(body) {
         // (a separator is empty, never space-padded) and falls through to the
         // context branch below, so it must not be tested first.
         //
-        // Ambiguity is resolved by what FOLLOWS: only a real file header proves a
-        // separator. End-of-input and the next `@@` of the same file both mean the
-        // blank was the hunk's last context line, since a separator by definition
-        // has a file section after it.
+        // Ambiguity is resolved by what FOLLOWS:
+        //   - a real file header  -> separator, so the count is unusable;
+        //   - end of input        -> also unusable: extraction does not guarantee
+        //     a body free of trailing formatting slop, and counting a stray final
+        //     blank inflates both sides by one, which would hand the corrective
+        //     retry a confident wrong number for a header that is in fact right;
+        //   - the next `@@` of the SAME file -> a real context line, because a
+        //     separator by definition has a file section after it.
         const next = i + 1;
-        if (next < lines.length && endsHunkBody(lines, next)) {
+        if (next >= lines.length || endsHunkBody(lines, next)) {
           evidenceLost = true;
           break;
         }

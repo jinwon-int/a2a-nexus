@@ -1824,9 +1824,28 @@ test("diagnoseHunkHeaderCounts still reports when the last body line is whitespa
   assert.equal(mismatches[0].actualOld, 3);
 });
 
-test("diagnoseHunkHeaderCounts still reports when the last body line is a bare blank", () => {
-  // End of input cannot be a file separator — a separator has a file section after
-  // it — so the trailing blank is the hunk's last context line.
+test("diagnoseHunkHeaderCounts stays silent on a correct header with a trailing blank line", () => {
+  // Extraction does not guarantee a body free of trailing formatting slop. Counting
+  // a stray final blank inflates both sides by one and would hand the corrective
+  // retry a confident wrong number for a header that is in fact correct.
+  const body = [
+    "--- a/a.txt",
+    "+++ b/a.txt",
+    "@@ -1,4 +1,4 @@",
+    " one",
+    "-two",
+    "+TWO",
+    " three",
+    " four",
+    "",
+  ].join("\n");
+
+  assert.deepEqual(diagnoseHunkHeaderCounts(body), []);
+});
+
+test("diagnoseHunkHeaderCounts counts a blank before the same file's next hunk", () => {
+  // A separator by definition has a file section after it, so a blank followed by
+  // another `@@` of the same file is an ordinary context line — not ambiguous.
   const body = [
     "--- a/a.txt",
     "+++ b/a.txt",
@@ -1835,13 +1854,30 @@ test("diagnoseHunkHeaderCounts still reports when the last body line is a bare b
     "-two",
     "+TWO",
     "",
-    "",
+    "@@ -50,9 +50,9 @@",
+    " x",
+    "-y",
+    "+Y",
   ].join("\n");
 
   const mismatches = diagnoseHunkHeaderCounts(body);
 
-  assert.equal(mismatches.length, 1);
+  assert.ok(mismatches.length > 0, "the blank must be counted, not treated as a separator");
   assert.equal(mismatches[0].actualOld, 3);
+});
+
+test("diagnoseHunkHeaderCounts unquotes a core.quotePath filename", () => {
+  // git's default core.quotePath wraps non-ASCII paths in quotes with octal escapes.
+  const body = [
+    '--- "a/\\355\\225\\234\\352\\270\\200.txt"',
+    '+++ "b/\\355\\225\\234\\352\\270\\200.txt"',
+    "@@ -1,9 +1,9 @@",
+    " a",
+    "-b",
+    "+B",
+  ].join("\n");
+
+  assert.equal(diagnoseHunkHeaderCounts(body)[0].file, "한글.txt");
 });
 
 test("diagnoseHunkHeaderCounts attributes a deletion hunk to the deleted file", () => {
@@ -1892,7 +1928,10 @@ test("diagnoseHunkHeaderCounts does not let a '+++ ' body line rename later hunk
     "-y",
   ].join("\n");
 
-  for (const m of diagnoseHunkHeaderCounts(body)) {
+  const mismatches = diagnoseHunkHeaderCounts(body);
+
+  assert.ok(mismatches.length > 0, "the loop below is vacuous if nothing is reported");
+  for (const m of mismatches) {
     assert.equal(m.file, "f1", "attribution must not follow a body line");
   }
 });
