@@ -14,7 +14,7 @@ import {
   extractTerminalBriefSidecarDefaultOnExecutionApprovalEvidenceIngestorOptions,
   extractTerminalBriefSidecarDefaultOnExecutionApprovalRequestPacket,
   renderTerminalBriefSidecarDefaultOnExecutionApprovalEvidenceIngestorMarkdown,
-} from "../dist/core/terminal-brief-sidecar-default-on-execution-approval-evidence-ingestor.js";
+} from "../dist/core/terminal-brief-sidecar-default-on/execution-approval-evidence-ingestor.js";
 
 function parseArgs(argv) {
   const readOption = (name) => {

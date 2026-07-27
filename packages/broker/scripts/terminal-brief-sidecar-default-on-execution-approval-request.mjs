@@ -13,7 +13,7 @@ import {
   extractTerminalBriefSidecarDefaultOnExecutionApprovalRequestEnvelope,
   extractTerminalBriefSidecarDefaultOnExecutionApprovalRequestOptions,
   renderTerminalBriefSidecarDefaultOnExecutionApprovalRequestMarkdown,
-} from "../dist/core/terminal-brief-sidecar-default-on-execution-approval-request.js";
+} from "../dist/core/terminal-brief-sidecar-default-on/execution-approval-request.js";
 
 function parseArgs(argv) {
   const readOption = (name) => {

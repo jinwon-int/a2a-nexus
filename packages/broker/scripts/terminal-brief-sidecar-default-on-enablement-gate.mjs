@@ -13,7 +13,7 @@ import {
   extractTerminalBriefSidecarDefaultOnEnablementGateApprovalEvidence,
   extractTerminalBriefSidecarDefaultOnEnablementGateOptions,
   renderTerminalBriefSidecarDefaultOnEnablementGateMarkdown,
-} from "../dist/core/terminal-brief-sidecar-default-on-enablement-gate.js";
+} from "../dist/core/terminal-brief-sidecar-default-on/enablement-gate.js";
 
 function parseArgs(argv) {
   const readOption = (name) => {

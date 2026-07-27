@@ -13,7 +13,7 @@ import {
   extractTerminalBriefSidecarDefaultOnLiveExecutorGate,
   extractTerminalBriefSidecarDefaultOnLiveExecutorOptions,
   renderTerminalBriefSidecarDefaultOnLiveExecutorMarkdown,
-} from "../dist/core/terminal-brief-sidecar-default-on-live-executor.js";
+} from "../dist/core/terminal-brief-sidecar-default-on/live-executor.js";
 
 function parseArgs(argv) {
   const readOption = (name) => {
