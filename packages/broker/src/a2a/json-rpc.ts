@@ -308,6 +308,11 @@ export function executeA2AJsonRpc(
         if (!task) {
           throw new BrokerError("not_found", "task not found");
         }
+        // A2A 1.0 STREAM-SUB-003: subscribing to a terminal task is
+        // UnsupportedOperationError — there is no stream to follow.
+        if (task.status === "succeeded" || task.status === "failed" || task.status === "canceled") {
+          throw new BrokerError("unsupported_operation", `task ${taskId} is terminal (${task.status})`);
+        }
         if (options.enforceRequesterIdentity) {
           assertRequesterCanSubscribeToTask(options.requesterIdentity, task);
         }
@@ -703,11 +708,15 @@ export function executeSendMessage(
   let exchangeId = optionalString(metadata.exchangeId) ?? optionalString(metadata.contextId) ?? a2aContextId;
 
   // A2A task identifier semantics: a message carrying taskId binds to that
-  // task's context; an unknown taskId is TaskNotFoundError.
+  // task's context; an unknown taskId is TaskNotFoundError, and a message to
+  // a terminal task is UnsupportedOperationError.
   if (a2aTaskId) {
     const referenced = options.broker.getTask(a2aTaskId);
     if (!referenced) {
       throw new BrokerError("not_found", `task not found: ${a2aTaskId}`);
+    }
+    if (referenced.status === "succeeded" || referenced.status === "failed" || referenced.status === "canceled") {
+      throw new BrokerError("unsupported_operation", `task ${a2aTaskId} is terminal (${referenced.status})`);
     }
     if (exchangeId && exchangeId !== referenced.exchangeId) {
       throw new BrokerError("bad_request", "message.contextId does not match the context of message.taskId");
@@ -842,10 +851,10 @@ export function executeSendMessage(
     via,
   });
 
-  if (convention?.kind === "complete-with-artifacts") {
+  if (convention?.kind === "complete-with-artifacts" || convention?.kind === "complete-with-message") {
     // The default agent's async drive loop may already have claimed/started
     // the task from the creation state event; only advance the states that
-    // have not happened yet, then complete with the convention artifacts.
+    // have not happened yet, then complete with the convention result.
     const inFlight = options.broker.getTask(task.id) ?? task;
     if (inFlight.status === "queued") {
       options.broker.claimTask(task.id, assignedWorker.nodeId);
@@ -853,10 +862,9 @@ export function executeSendMessage(
     if ((options.broker.getTask(task.id) ?? inFlight).status === "claimed") {
       options.broker.startTask(task.id, assignedWorker.nodeId);
     }
-    options.broker.completeTask(task.id, assignedWorker.nodeId, {
-      summary: convention.summary,
-      a2aArtifacts: convention.artifacts,
-    });
+    options.broker.completeTask(task.id, assignedWorker.nodeId, convention.kind === "complete-with-artifacts"
+      ? { summary: convention.summary, a2aArtifacts: convention.artifacts }
+      : { summary: convention.summary });
   }
 
   // Re-read after the inline drive so the response reflects the terminal
@@ -1123,7 +1131,7 @@ export function jsonRpcErrorFromUnknown(error: unknown): { code: number; message
 
 // A2A 1.0 reserved JSON-RPC error family (a2a-protocol.org). Only the codes
 // the broker can actually produce are bound here; the rest of the -3200x
-// space (push/agent-response/extended-card/extension) is for conditions this
+// space (agent-response/extended-card/extension) is for conditions this
 // broker does not raise.
 const A2A_ERROR_DOMAIN = "a2a-protocol.org";
 const A2A_ERROR_INFO_TYPE = "type.googleapis.com/google.rpc.ErrorInfo";
@@ -1163,6 +1171,10 @@ function brokerErrorMapping(code: BrokerError["code"], message?: string): Broker
       // A message part whose media type the agent does not support is A2A
       // ContentTypeNotSupportedError.
       return { code: -32005, a2a: { reason: "CONTENT_TYPE_NOT_SUPPORTED" } };
+    case "unsupported_operation":
+      // An operation the task's current state cannot accept (e.g. a message
+      // to a terminal task) is A2A UnsupportedOperationError.
+      return { code: -32004, a2a: { reason: "UNSUPPORTED_OPERATION" } };
     case "invalid_transition":
       // A lifecycle transition the task can no longer make (e.g. cancel on a
       // terminal task) is A2A TaskNotCancelableError for JSON-RPC task ops.

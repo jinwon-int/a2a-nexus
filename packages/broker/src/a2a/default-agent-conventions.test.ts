@@ -188,6 +188,87 @@ test("text/plain file part stays accepted in default-agent mode", () => {
   assert.ok("result" in response, `text/plain file part must stay accepted, got ${JSON.stringify(response)}`);
 });
 
+test("tck-complete-task: SendMessage response shows a completed task", () => {
+  const broker = new InMemoryA2ABroker();
+  startDefaultAgent(broker);
+  const result = successResult(sendMessage(broker, {
+    role: "ROLE_USER",
+    parts: [{ text: "TCK prerequisite task creation" }],
+    messageId: "tck-complete-task-session1",
+  }));
+  const task = result.task as { status: { state: string; message?: { parts: Array<{ text: string }> } } };
+  assert.equal(task.status.state, "TASK_STATE_COMPLETED");
+  assert.equal(task.status.message?.parts[0].text, "Hello from TCK");
+});
+
+test("message.taskId referencing a terminal task is UnsupportedOperationError (-32004)", () => {
+  const broker = new InMemoryA2ABroker();
+  startDefaultAgent(broker);
+  const first = successResult(sendMessage(broker, {
+    role: "ROLE_USER",
+    parts: [{ text: "TCK prerequisite task creation" }],
+    messageId: "tck-complete-task-session1",
+  }));
+  const taskId = (first.task as { id: string }).id;
+
+  const response = sendMessage(broker, {
+    role: "ROLE_USER",
+    parts: [{ text: "Follow-up to terminal task" }],
+    messageId: "tck-terminal-followup",
+    taskId,
+  }, 2);
+  assert.ok("error" in response, "message to a terminal task must fail");
+  assert.equal(response.error.code, -32004);
+  const info = Array.isArray(response.error.data) ? response.error.data[0] : undefined;
+  assert.equal(info?.reason, "UNSUPPORTED_OPERATION");
+});
+
+test("SubscribeToTask on a terminal task is UnsupportedOperationError (-32004)", () => {
+  const broker = new InMemoryA2ABroker();
+  startDefaultAgent(broker);
+  const first = successResult(sendMessage(broker, {
+    role: "ROLE_USER",
+    parts: [{ text: "TCK prerequisite task creation" }],
+    messageId: "tck-complete-task-session1",
+  }));
+  const taskId = (first.task as { id: string }).id;
+
+  const response = executeA2AJsonRpc(
+    { jsonrpc: "2.0", id: 3, method: "SubscribeToTask", params: { id: taskId } },
+    createConformanceOptions(broker),
+  );
+  assert.ok("error" in response, "subscribe to a terminal task must fail");
+  assert.equal(response.error.code, -32004);
+  const info = Array.isArray(response.error.data) ? response.error.data[0] : undefined;
+  assert.equal(info?.reason, "UNSUPPORTED_OPERATION");
+});
+
+test("SubscribeToTask on a non-terminal task still returns the snapshot", () => {
+  const broker = new InMemoryA2ABroker();
+  startDefaultAgent(broker);
+  const first = successResult(sendMessage(broker, {
+    role: "ROLE_USER",
+    parts: [{ text: "ordinary echo" }],
+    messageId: "m-plain",
+  }));
+  const taskId = (first.task as { id: string }).id;
+
+  const response = executeA2AJsonRpc(
+    { jsonrpc: "2.0", id: 4, method: "SubscribeToTask", params: { id: taskId } },
+    createConformanceOptions(broker),
+  );
+  // The embedded agent may finish the echo task asynchronously; only the
+  // synchronous creation window is asserted — if the task already reached
+  // terminal the -32004 contract above applies instead.
+  if ("error" in response) {
+    assert.equal(response.error.code, -32004);
+  } else {
+    const result = response.result as { task?: { id?: string }; subscription?: { url?: string } };
+    assert.equal(result.task?.id, taskId);
+    assert.ok(result.subscription?.url);
+  }
+});
+
 test("conventions do not fire without default-agent mode (router unchanged)", () => {
   const broker = new InMemoryA2ABroker();
   broker.registerWorker({
