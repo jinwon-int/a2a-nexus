@@ -5,7 +5,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { test } from "node:test";
 
-import { buildFanoutSubagentPrompt } from "./claude-a2a-patch-bridge.mjs";
+import { buildFanoutSubagentPrompt, normalizeUnifiedDiffHunkHeaders } from "./claude-a2a-patch-bridge.mjs";
 
 const bridgePath = new URL("./claude-a2a-patch-bridge.mjs", import.meta.url).pathname;
 
@@ -1365,5 +1365,150 @@ test("fanout mode runs the agentic patch with Task tool + spawn prompt + fanout 
     assert.ok(args.includes("--append-system-prompt"));
   } finally {
     rmSync(tempDir, { recursive: true, force: true });
+  }
+});
+
+// --- hunk header count repair (a2a-nexus#1642 canary5) ---------------------
+//
+// Canary evidence: the model emitted a structurally correct hunk body but a
+// header of `@@ -78,6 +78,44 @@` for a body holding 9 context lines and 46
+// additions. `git apply` rejected the whole patch with a bare
+// "patch does not apply". The counts are fully derivable from the body, so the
+// bridge must repair them deterministically before spending its one corrective
+// retry on another probabilistic model call.
+
+function hunkBody({ pre, adds, post }) {
+  return [
+    ...pre.map((l) => ` ${l}`),
+    ...adds.map((l) => `+${l}`),
+    ...post.map((l) => ` ${l}`),
+  ];
+}
+
+test("normalizeUnifiedDiffHunkHeaders repairs the canary5 miscount", () => {
+  const pre = ["Or via `X` (takes precedence):", "", "```", "X='{\"a\":1}'", "```", ""];
+  const adds = Array.from({ length: 46 }, (_, i) => `added ${i + 1}`);
+  const post = ["## Enrollment Health", "", "Enrollment health tracks whether a worker is online."];
+  const body = [
+    "--- a/packages/broker/docs/hermes-native-worker-contract.md",
+    "+++ b/packages/broker/docs/hermes-native-worker-contract.md",
+    "@@ -78,6 +78,44 @@ WORKER_MODE=mobile",
+    ...hunkBody({ pre, adds, post }),
+  ].join("\n");
+
+  const result = normalizeUnifiedDiffHunkHeaders(body);
+
+  assert.match(result.body, /^@@ -78,9 \+78,55 @@ WORKER_MODE=mobile$/m);
+  assert.equal(result.repairs.length, 1);
+  assert.deepEqual(result.repairs[0], {
+    index: 0,
+    from: "@@ -78,6 +78,44 @@",
+    to: "@@ -78,9 +78,55 @@",
+  });
+});
+
+test("normalizeUnifiedDiffHunkHeaders leaves a correct header untouched", () => {
+  const body = [
+    "--- a/a.txt",
+    "+++ b/a.txt",
+    "@@ -1,3 +1,4 @@",
+    " one",
+    "+two",
+    " three",
+    " four",
+  ].join("\n");
+
+  const result = normalizeUnifiedDiffHunkHeaders(body);
+
+  assert.equal(result.body, body);
+  assert.equal(result.repairs.length, 0);
+});
+
+test("normalizeUnifiedDiffHunkHeaders counts deletions and repairs every hunk", () => {
+  const body = [
+    "--- a/a.txt",
+    "+++ b/a.txt",
+    "@@ -1,1 +1,1 @@",
+    " keep",
+    "-drop",
+    "+add",
+    "@@ -20,9 +20,9 @@ section",
+    " ctx",
+    "-gone",
+    "",
+  ].join("\n");
+
+  const result = normalizeUnifiedDiffHunkHeaders(body);
+
+  assert.match(result.body, /^@@ -1,2 \+1,2 @@$/m);
+  // Hunk 2 body is " ctx" + "-gone"; the final "" is the trailing EOL, not a line.
+  assert.match(result.body, /^@@ -20,2 \+20,1 @@ section$/m);
+  assert.equal(result.repairs.length, 2);
+});
+
+test("normalizeUnifiedDiffHunkHeaders counts an unprefixed blank context line", () => {
+  // Emitters routinely drop the leading space on a blank context line, so a bare
+  // "" inside a hunk body is a real context line — only the final one is the EOL.
+  const body = [
+    "--- a/a.txt",
+    "+++ b/a.txt",
+    "@@ -1,9 +1,9 @@",
+    " one",
+    "",
+    "+two",
+    " three",
+    "",
+  ].join("\n");
+
+  const result = normalizeUnifiedDiffHunkHeaders(body);
+
+  assert.match(result.body, /^@@ -1,3 \+1,4 @@$/m);
+});
+
+test("normalizeUnifiedDiffHunkHeaders ignores the no-newline marker and trailing EOL", () => {
+  const body = [
+    "--- a/a.txt",
+    "+++ b/a.txt",
+    "@@ -1,9 +1,9 @@",
+    " one",
+    "+two",
+    "\\ No newline at end of file",
+    "",
+  ].join("\n");
+
+  const result = normalizeUnifiedDiffHunkHeaders(body);
+
+  assert.match(result.body, /^@@ -1,1 \+1,2 @@$/m);
+  assert.ok(result.body.endsWith("\n"), "trailing newline is preserved");
+});
+
+test("normalizeUnifiedDiffHunkHeaders repairs each file section independently", () => {
+  const body = [
+    "diff --git a/a.txt b/a.txt",
+    "--- a/a.txt",
+    "+++ b/a.txt",
+    "@@ -1,5 +1,5 @@",
+    " one",
+    "+two",
+    "diff --git a/b.txt b/b.txt",
+    "--- a/b.txt",
+    "+++ b/b.txt",
+    "@@ -7,5 +7,5 @@",
+    " three",
+    "-four",
+  ].join("\n");
+
+  const result = normalizeUnifiedDiffHunkHeaders(body);
+
+  assert.match(result.body, /^@@ -1,1 \+1,2 @@$/m);
+  assert.match(result.body, /^@@ -7,2 \+7,1 @@$/m);
+  assert.equal(result.repairs.length, 2);
+});
+
+test("normalizeUnifiedDiffHunkHeaders is inert on non-diff input", () => {
+  for (const input of ["", null, undefined, "no hunks here"]) {
+    const result = normalizeUnifiedDiffHunkHeaders(input);
+    assert.equal(result.body, input);
+    assert.equal(result.repairs.length, 0);
   }
 });

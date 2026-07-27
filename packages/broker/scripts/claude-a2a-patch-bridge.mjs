@@ -925,6 +925,98 @@ function findDiffInObject(value, depth = 0) {
 
 // Scans a single string for a fenced diff block (latest wins) or raw unified-diff
 // anchors. Returns { kind, body } or null.
+const HUNK_HEADER_RE = /^@@ -(\d+)(?:,\d+)? \+(\d+)(?:,\d+)? @@(.*)$/;
+
+// A line that begins a new file section, so it terminates the current hunk body.
+// Inside a hunk every real body line carries a ' ', '+', '-' or '\' prefix, so an
+// unprefixed "diff --git"/"---"/"+++"/"index " at column 0 is unambiguously a header.
+function endsHunkBody(line) {
+  return (
+    line.startsWith("diff --git ") ||
+    line.startsWith("--- ") ||
+    line.startsWith("+++ ") ||
+    line.startsWith("index ")
+  );
+}
+
+/**
+ * Recomputes the `@@ -a,b +c,d @@` line counts from each hunk's actual body.
+ *
+ * A model routinely emits a structurally correct hunk body under a miscounted
+ * header; `git apply` then rejects the entire patch with a bare "patch does not
+ * apply" that names only the hunk's start line. a2a-nexus#1642 canary5 emitted
+ * `@@ -78,6 +78,44 @@` for a body of 9 context lines and 46 additions — the
+ * correct header was `@@ -78,9 +78,55 @@`, and with it the same patch applied
+ * cleanly.
+ *
+ * The counts are fully derivable from the body, so repair them deterministically
+ * rather than spending the single corrective retry on another model call. Start
+ * offsets are deliberately NOT touched: they cannot be recomputed without reading
+ * the target file, and a wrong offset fails loudly rather than corrupting content.
+ *
+ * @returns {{ body: string, repairs: Array<{index: number, from: string, to: string}> }}
+ */
+export function normalizeUnifiedDiffHunkHeaders(body) {
+  const repairs = [];
+  if (typeof body !== "string" || body.length === 0) return { body, repairs };
+
+  const hadTrailingNewline = body.endsWith("\n");
+  const lines = body.split("\n");
+  // split() leaves a phantom "" for a trailing EOL; it is not a context line.
+  if (hadTrailingNewline) lines.pop();
+
+  const hunkStarts = [];
+  for (let i = 0; i < lines.length; i += 1) {
+    if (HUNK_HEADER_RE.test(lines[i])) hunkStarts.push(i);
+  }
+  if (hunkStarts.length === 0) return { body, repairs };
+
+  for (let h = 0; h < hunkStarts.length; h += 1) {
+    const headerIdx = hunkStarts[h];
+    const parsed = HUNK_HEADER_RE.exec(lines[headerIdx]);
+    if (!parsed) continue;
+    const [, oldStart, newStart, trailer] = parsed;
+
+    const bodyEnd = h + 1 < hunkStarts.length ? hunkStarts[h + 1] : lines.length;
+    let oldCount = 0;
+    let newCount = 0;
+    let bodyLines = 0;
+    for (let i = headerIdx + 1; i < bodyEnd; i += 1) {
+      const line = lines[i];
+      if (endsHunkBody(line)) break;
+      if (line.startsWith("\\")) continue; // "\ No newline at end of file"
+      if (line.startsWith("+")) {
+        newCount += 1;
+      } else if (line.startsWith("-")) {
+        oldCount += 1;
+      } else if (line.startsWith(" ") || line === "") {
+        // Emitters commonly drop the leading space on a blank context line.
+        oldCount += 1;
+        newCount += 1;
+      } else {
+        break; // Not part of this hunk body.
+      }
+      bodyLines += 1;
+    }
+
+    // An empty body carries no evidence; leave the header exactly as emitted.
+    if (bodyLines === 0) continue;
+
+    const repaired = `@@ -${oldStart},${oldCount} +${newStart},${newCount} @@${trailer}`;
+    if (repaired !== lines[headerIdx]) {
+      repairs.push({
+        index: h,
+        from: lines[headerIdx].replace(/ @@.*$/, " @@"),
+        to: repaired.replace(/ @@.*$/, " @@"),
+      });
+      lines[headerIdx] = repaired;
+    }
+  }
+
+  if (repairs.length === 0) return { body, repairs };
+  return { body: lines.join("\n") + (hadTrailingNewline ? "\n" : ""), repairs };
+}
+
 function extractDiffFromRawText(text, allowUnescapeRetry = true) {
   if (!text) return null;
   // Fenced diff/patch blocks (latest valid one wins, matching the single-fenced
@@ -1293,8 +1385,24 @@ async function runSingleShotPatchMode(message, flags) {
     // Write the diff to a file inside the workspace and try `git apply --check`.
     // We append a trailing newline because some emitters drop the final EOL and
     // `git apply` rejects patches whose last hunk line is not newline-terminated.
+    // Hunk header counts are recomputed first: they are fully derivable from the
+    // body, so a miscount must not burn the single corrective retry (#1642).
     const diffPath = join(workspace, "patch.diff");
-    writeFileSync(diffPath, extracted.body.endsWith("\n") ? extracted.body : `${extracted.body}\n`);
+    const stageDiff = (rawBody) => {
+      const normalized = normalizeUnifiedDiffHunkHeaders(rawBody);
+      if (normalized.repairs.length > 0) {
+        process.stdout.write(
+          `hunk_header_repairs=${normalized.repairs.length} `
+          + normalized.repairs.map((r) => `[${r.from} -> ${r.to}]`).join(" ")
+          + "\n",
+        );
+      }
+      const body = normalized.body;
+      writeFileSync(diffPath, body.endsWith("\n") ? body : `${body}\n`);
+      return body;
+    };
+
+    extracted = { ...extracted, body: stageDiff(extracted.body) };
 
     let checked = await checkDiff(cloneDir, diffPath, env);
     if (!checked.ok) {
@@ -1306,7 +1414,7 @@ async function runSingleShotPatchMode(message, flags) {
       if (extracted.kind === "no_diff") {
         throw new Error(`claude corrective retry returned no diff: ${redactSecrets(safeText(extracted.body, "<empty>")).slice(0, 1000)}`);
       }
-      writeFileSync(diffPath, extracted.body.endsWith("\n") ? extracted.body : `${extracted.body}\n`);
+      extracted = { ...extracted, body: stageDiff(extracted.body) };
       checked = await checkDiff(cloneDir, diffPath, env);
       if (!checked.ok) {
         // The workspace (and with it patch.diff) is deleted in the finally block,
