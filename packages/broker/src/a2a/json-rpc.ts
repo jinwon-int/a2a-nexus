@@ -746,7 +746,11 @@ export function executeSendMessage(
   if (exchangeId) {
     const existingExchange = options.broker.getExchange(exchangeId);
     if (!existingExchange) {
-      throw new BrokerError("not_found", "exchange not found");
+      // A2A §3.4.1: an agent that cannot accept a client-provided contextId
+      // rejects the request with an error. The context id is a client
+      // parameter, so the rejection is JSON-RPC Invalid params (-32602),
+      // not a broker resource lookup miss (-32014).
+      throw new BrokerError("bad_request", `unknown contextId: ${exchangeId}`);
     }
     assertConsistentExistingContextAssignmentMetadata(metadata, existingExchange.target.id);
     // Clearing an awaiting_operator checkpoint resumes the task, so a
