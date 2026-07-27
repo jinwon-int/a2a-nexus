@@ -933,13 +933,10 @@ const HUNK_HEADER_RE = /^@@ -(\d+)(?:,(\d+))? \+(\d+)(?:,(\d+))? @@(.*)$/;
 // `--- ` and `+++ ` are NOT self-identifying. Deleting a line whose content starts
 // with "-- " emits `--- <content>`, and adding one that starts with "++ " emits
 // `+++ <content>` — textually identical to a file header. "-- " is the line-comment
-// token in SQL, Lua, Haskell and Ada, and this bridge patches whatever repository
-// the task names, so treating them as headers on sight truncates real hunk bodies.
-//
-// A genuine old/new file header only ever appears as the ordered triple
-// `--- <old>` / `+++ <new>` / `@@ ...`, so require that shape. `diff --git ` and
-// `index ` carry no such ambiguity: the corresponding body lines would be
-// `-diff --git ...` / ` index ...`, which do not match at column 0.
+// token in SQL, Lua, Haskell and Ada. A genuine old/new file header only ever
+// appears as the ordered triple `--- <old>` / `+++ <new>` / `@@ ...`, so require
+// that shape. `diff --git ` and `index ` carry no such ambiguity: the corresponding
+// body lines would be `-diff --git ...` / ` index ...`.
 function endsHunkBody(lines, i) {
   const line = lines[i];
   if (line.startsWith("diff --git ") || line.startsWith("index ")) return true;
@@ -953,103 +950,107 @@ function endsHunkBody(lines, i) {
 }
 
 /**
- * Recomputes the `@@ -a,b +c,d @@` line counts from each hunk's actual body.
+ * Reports hunk headers whose declared `@@ -a,b +c,d @@` line counts disagree with
+ * the lines the hunk actually carries.
  *
- * A model routinely emits a structurally correct hunk body under a miscounted
- * header; `git apply` then rejects the entire patch with a bare "patch does not
- * apply" that names only the hunk's start line. a2a-nexus#1642 canary5 emitted
- * `@@ -78,6 +78,44 @@` for a body of 9 context lines and 46 additions — the
- * correct header was `@@ -78,9 +78,55 @@`, and with it the same patch applied
- * cleanly.
+ * This DIAGNOSES ONLY — it never rewrites the diff, and callers must not use it to.
+ * That restraint is the whole point. A recomputed count is derived *from* the body,
+ * so it can never disagree with the body: it certifies the body against itself. The
+ * declared count is the only signal about the body that does not come from the body,
+ * which makes it the patch's integrity check — the thing that turns a truncated hunk
+ * or a wrong start offset into a loud `git apply` failure instead of a silent partial
+ * or misplaced commit. Rewriting the header to match the body destroys that check no
+ * matter which direction the edit goes.
  *
- * The counts are fully derivable from the body, so repair them deterministically
- * rather than spending the single corrective retry on another model call. Start
- * offsets are deliberately NOT touched: they cannot be recomputed without reading
- * the target file, and a wrong offset fails loudly rather than corrupting content.
+ * a2a-nexus#1642 canary5 emitted `@@ -78,6 +78,44 @@` for a body of 9 old / 55 new
+ * lines. git rejected the whole patch with `patch does not apply`, which says nothing
+ * about counts, so the corrective retry was flying blind and reproduced the same
+ * defect. Handing the model this diagnosis closes that loop without anyone touching
+ * the bytes.
  *
- * @returns {{ body: string, repairs: Array<{index: number, from: string, to: string}> }}
+ * @returns {Array<{index: number, header: string, declaredOld: number,
+ *   actualOld: number, declaredNew: number, actualNew: number}>} one entry per
+ *   mismatched hunk, in file order; empty when every header agrees with its body.
  */
-export function normalizeUnifiedDiffHunkHeaders(body) {
-  const repairs = [];
-  if (typeof body !== "string" || body.length === 0) return { body, repairs };
+export function diagnoseHunkHeaderCounts(body) {
+  if (typeof body !== "string" || body.length === 0) return [];
 
-  const hadTrailingNewline = body.endsWith("\n");
   const lines = body.split("\n");
   // split() leaves a phantom "" for a trailing EOL; it is not a context line.
-  if (hadTrailingNewline) lines.pop();
+  if (body.endsWith("\n")) lines.pop();
 
   const hunkStarts = [];
   for (let i = 0; i < lines.length; i += 1) {
     if (HUNK_HEADER_RE.test(lines[i])) hunkStarts.push(i);
   }
-  if (hunkStarts.length === 0) return { body, repairs };
 
+  const mismatches = [];
   for (let h = 0; h < hunkStarts.length; h += 1) {
     const headerIdx = hunkStarts[h];
     const parsed = HUNK_HEADER_RE.exec(lines[headerIdx]);
     if (!parsed) continue;
-    const [, oldStart, oldDeclared, newStart, newDeclared, trailer] = parsed;
+    const [, , oldDeclared, , newDeclared] = parsed;
 
     const bodyEnd = h + 1 < hunkStarts.length ? hunkStarts[h + 1] : lines.length;
-    let oldCount = 0;
-    let newCount = 0;
+    let actualOld = 0;
+    let actualNew = 0;
     let bodyLines = 0;
     for (let i = headerIdx + 1; i < bodyEnd; i += 1) {
       const line = lines[i];
       if (endsHunkBody(lines, i)) break;
       if (line.startsWith("\\")) continue; // "\ No newline at end of file"
       if (line.startsWith("+")) {
-        newCount += 1;
+        actualNew += 1;
       } else if (line.startsWith("-")) {
-        oldCount += 1;
+        actualOld += 1;
       } else if (line.startsWith(" ") || line === "") {
         // Emitters commonly drop the leading space on a blank context line.
-        oldCount += 1;
-        newCount += 1;
+        actualOld += 1;
+        actualNew += 1;
       } else {
         break; // Not part of this hunk body.
       }
       bodyLines += 1;
     }
 
-    // An empty body carries no evidence; leave the header exactly as emitted.
+    // An empty body carries no evidence either way.
     if (bodyLines === 0) continue;
 
-    // Compare semantically, not textually: `@@ -1 +1 @@` and `@@ -1,1 +1,1 @@`
-    // are the same header, and rewriting a correct one would be a false repair.
+    // An omitted count means 1.
     const declaredOld = Number(oldDeclared ?? 1);
     const declaredNew = Number(newDeclared ?? 1);
-    if (oldCount === declaredOld && newCount === declaredNew) continue;
+    if (actualOld === declaredOld && actualNew === declaredNew) continue;
 
-    // Only ever GROW a count. The header is not just redundant bookkeeping — it is
-    // the patch's integrity check, and it is what makes structural damage fail
-    // loudly. Shrinking a count to match a short body would launder exactly the
-    // damage worth catching:
-    //
-    //   - model output truncated mid-hunk (turn/token limit): the declared count
-    //     exceeds the body, and shrinking makes a half-written patch apply, commit
-    //     and open a PR reported as success;
-    //   - a start offset that is wrong but lands on matching context (duplicated
-    //     boilerplate): shrinking makes it apply silently at the WRONG location.
-    //
-    // The miscount this function exists to fix is the opposite shape — a complete
-    // body under an undercounted header (a2a-nexus#1642 canary5 declared 6/44 for
-    // 9/55) — so requiring growth keeps the fix and drops the hazard.
-    if (oldCount < declaredOld || newCount < declaredNew) continue;
-
-    const repaired = `@@ -${oldStart},${oldCount} +${newStart},${newCount} @@${trailer}`;
-    if (repaired !== lines[headerIdx]) {
-      repairs.push({
-        index: h,
-        from: lines[headerIdx].replace(/ @@.*$/, " @@"),
-        to: repaired.replace(/ @@.*$/, " @@"),
-      });
-      lines[headerIdx] = repaired;
-    }
+    mismatches.push({
+      index: h,
+      header: lines[headerIdx].replace(/ @@.*$/, " @@"),
+      declaredOld,
+      actualOld,
+      declaredNew,
+      actualNew,
+    });
   }
 
-  if (repairs.length === 0) return { body, repairs };
-  return { body: lines.join("\n") + (hadTrailingNewline ? "\n" : ""), repairs };
+  return mismatches;
+}
+
+/**
+ * Renders `diagnoseHunkHeaderCounts` output as a hint for the corrective retry, or
+ * "" when every header agrees with its body.
+ */
+export function describeHunkHeaderMismatches(body) {
+  const mismatches = diagnoseHunkHeaderCounts(body);
+  if (mismatches.length === 0) return "";
+  const lines = mismatches.map((m) =>
+    `  hunk ${m.index + 1} \`${m.header}\` declares ${m.declaredOld} old / ${m.declaredNew} new`
+    + ` but the hunk body carries ${m.actualOld} old / ${m.actualNew} new lines`);
+  return [
+    `Hunk header line counts do not match the hunk bodies (${mismatches.length} hunk(s)):`,
+    ...lines,
+    "A unified-diff header `@@ -a,b +c,d @@` must declare b = context + deleted lines"
+    + " and d = context + added lines. Recount them, and make sure each hunk body is"
+    + " complete — a hunk cut short mid-edit will also produce this mismatch.",
+  ].join("\n");
 }
 
 function extractDiffFromRawText(text, allowUnescapeRetry = true) {
@@ -1425,56 +1426,44 @@ async function runSingleShotPatchMode(message, flags) {
       writeFileSync(diffPath, body.endsWith("\n") ? body : `${body}\n`);
     };
 
-    // The model's diff is always tried VERBATIM first, so a patch that git would
-    // have accepted can never be altered by us. Only once git has rejected it do
-    // we attempt the hunk-header repair — a rescue, never a rewrite of a working
-    // patch (#1642).
-    const checkWithHeaderRepair = async (rawBody) => {
-      writeDiff(rawBody);
-      const first = await checkDiff(cloneDir, diffPath, env);
-      if (first.ok) return { checked: first, staged: rawBody };
-
-      const normalized = normalizeUnifiedDiffHunkHeaders(rawBody);
-      if (normalized.repairs.length === 0) return { checked: first, staged: rawBody };
-
-      writeDiff(normalized.body);
-      const second = await checkDiff(cloneDir, diffPath, env);
-      if (!second.ok) {
-        // The repair did not rescue it. Restore the model's own diff so the error
-        // excerpt and the corrective prompt describe what the model actually
-        // wrote, not something we synthesized.
-        writeDiff(rawBody);
-        return { checked: first, staged: rawBody };
-      }
-      // stdout carries ONLY the JSON envelope; diagnostics must go to stderr.
-      process.stderr.write(
-        `hunk_header_repairs=${normalized.repairs.length} `
-        + normalized.repairs.map((r) => `[${r.from} -> ${r.to}]`).join(" ")
-        + "\n",
-      );
-      return { checked: second, staged: normalized.body };
-    };
-
-    let attempt = await checkWithHeaderRepair(extracted.body);
-    let checked = attempt.checked;
+    // The model's diff is applied byte-for-byte. We never rewrite it — see
+    // diagnoseHunkHeaderCounts for why repairing a hunk header destroys the only
+    // integrity check the patch has. When git rejects it we instead hand the model
+    // a precise diagnosis, so the one corrective retry is informed rather than
+    // blind (#1642: git's "patch does not apply" never mentions the counts).
+    writeDiff(extracted.body);
+    let checked = await checkDiff(cloneDir, diffPath, env);
     if (!checked.ok) {
+      const hint = describeHunkHeaderMismatches(extracted.body);
+      if (hint) {
+        // stdout carries ONLY the JSON envelope; diagnostics must go to stderr.
+        process.stderr.write(`hunk_header_mismatch=${diagnoseHunkHeaderCounts(extracted.body).length}\n`);
+      }
       // One corrective retry (2nd and final claude call). The original prompt goes
       // back in so the model has full context for the fix.
-      const correctiveStdout = await callClaudeCorrective(prompt, checked.error, flags, env, cloneDir);
+      const correctiveStdout = await callClaudeCorrective(
+        prompt,
+        hint ? `${checked.error}\n\n${hint}` : checked.error,
+        flags,
+        env,
+        cloneDir,
+      );
       claudeCalls = 2;
       extracted = extractUnifiedDiff(correctiveStdout);
       if (extracted.kind === "no_diff") {
         throw new Error(`claude corrective retry returned no diff: ${redactSecrets(safeText(extracted.body, "<empty>")).slice(0, 1000)}`);
       }
-      attempt = await checkWithHeaderRepair(extracted.body);
-      checked = attempt.checked;
+      writeDiff(extracted.body);
+      checked = await checkDiff(cloneDir, diffPath, env);
       if (!checked.ok) {
         // The workspace (and with it patch.diff) is deleted in the finally block,
         // so without this excerpt the rejected patch is unrecoverable and the
         // failure cannot be triaged after the fact — git's "corrupt patch at
         // line N" is meaningless without the line it refers to.
+        const retryHint = describeHunkHeaderMismatches(extracted.body);
         throw new Error(
           `git apply --check failed after corrective retry: ${redactSecrets(safeText(checked.error, "<empty>")).slice(0, 1000)}`
+          + (retryHint ? `\n${retryHint}` : "")
           + `\n${describeRejectedDiff(extracted.body)}`,
         );
       }

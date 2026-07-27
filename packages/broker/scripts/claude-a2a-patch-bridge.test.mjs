@@ -5,7 +5,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { test } from "node:test";
 
-import { buildFanoutSubagentPrompt, normalizeUnifiedDiffHunkHeaders } from "./claude-a2a-patch-bridge.mjs";
+import { buildFanoutSubagentPrompt, describeHunkHeaderMismatches, diagnoseHunkHeaderCounts } from "./claude-a2a-patch-bridge.mjs";
 
 const bridgePath = new URL("./claude-a2a-patch-bridge.mjs", import.meta.url).pathname;
 
@@ -1368,46 +1368,45 @@ test("fanout mode runs the agentic patch with Task tool + spawn prompt + fanout 
   }
 });
 
-// --- hunk header count repair (a2a-nexus#1642 canary5) ---------------------
+// --- hunk header count diagnosis (a2a-nexus#1642 canary5) ------------------
 //
-// Canary evidence: the model emitted a structurally correct hunk body but a
-// header of `@@ -78,6 +78,44 @@` for a body holding 9 context lines and 46
-// additions. `git apply` rejected the whole patch with a bare
-// "patch does not apply". The counts are fully derivable from the body, so the
-// bridge must repair them deterministically before spending its one corrective
-// retry on another probabilistic model call.
+// canary5 emitted a hunk body of 9 old / 55 new lines under `@@ -78,6 +78,44 @@`.
+// git rejected the whole patch with "patch does not apply", which says nothing
+// about counts, so the corrective retry flew blind and reproduced the defect.
+//
+// The bridge DIAGNOSES this and hands the model the numbers. It deliberately does
+// NOT rewrite the header: a recomputed count is derived from the body, so it can
+// only certify the body against itself. The declared count is the sole signal that
+// does not come from the body, which is what turns a truncated hunk or a wrong
+// start offset into a loud failure instead of a silent partial or misplaced commit.
 
-function hunkBody({ pre, adds, post }) {
-  return [
+test("diagnoseHunkHeaderCounts reports the canary5 miscount with both sides", () => {
+  const pre = ["Or via `X`:", "", "```", "X='{\"a\":1}'", "```", ""];
+  const adds = Array.from({ length: 46 }, (_, i) => `added ${i + 1}`);
+  const post = ["## Enrollment Health", "", "Enrollment health tracks workers."];
+  const body = [
+    "--- a/doc.md",
+    "+++ b/doc.md",
+    "@@ -78,6 +78,44 @@ WORKER_MODE=mobile",
     ...pre.map((l) => ` ${l}`),
     ...adds.map((l) => `+${l}`),
     ...post.map((l) => ` ${l}`),
-  ];
-}
-
-test("normalizeUnifiedDiffHunkHeaders repairs the canary5 miscount", () => {
-  const pre = ["Or via `X` (takes precedence):", "", "```", "X='{\"a\":1}'", "```", ""];
-  const adds = Array.from({ length: 46 }, (_, i) => `added ${i + 1}`);
-  const post = ["## Enrollment Health", "", "Enrollment health tracks whether a worker is online."];
-  const body = [
-    "--- a/packages/broker/docs/hermes-native-worker-contract.md",
-    "+++ b/packages/broker/docs/hermes-native-worker-contract.md",
-    "@@ -78,6 +78,44 @@ WORKER_MODE=mobile",
-    ...hunkBody({ pre, adds, post }),
   ].join("\n");
 
-  const result = normalizeUnifiedDiffHunkHeaders(body);
+  const mismatches = diagnoseHunkHeaderCounts(body);
 
-  assert.match(result.body, /^@@ -78,9 \+78,55 @@ WORKER_MODE=mobile$/m);
-  assert.equal(result.repairs.length, 1);
-  assert.deepEqual(result.repairs[0], {
+  assert.equal(mismatches.length, 1);
+  assert.deepEqual(mismatches[0], {
     index: 0,
-    from: "@@ -78,6 +78,44 @@",
-    to: "@@ -78,9 +78,55 @@",
+    header: "@@ -78,6 +78,44 @@",
+    declaredOld: 6,
+    actualOld: 9,
+    declaredNew: 44,
+    actualNew: 55,
   });
 });
 
-test("normalizeUnifiedDiffHunkHeaders leaves a correct header untouched", () => {
+test("diagnoseHunkHeaderCounts reports nothing for a correct header", () => {
   const body = [
     "--- a/a.txt",
     "+++ b/a.txt",
@@ -1418,105 +1417,11 @@ test("normalizeUnifiedDiffHunkHeaders leaves a correct header untouched", () => 
     " four",
   ].join("\n");
 
-  const result = normalizeUnifiedDiffHunkHeaders(body);
-
-  assert.equal(result.body, body);
-  assert.equal(result.repairs.length, 0);
+  assert.deepEqual(diagnoseHunkHeaderCounts(body), []);
 });
 
-test("normalizeUnifiedDiffHunkHeaders grows counts across deletions and multiple hunks", () => {
-  const body = [
-    "--- a/a.txt",
-    "+++ b/a.txt",
-    "@@ -1,1 +1,1 @@",
-    " keep",
-    "-drop",
-    "+add",
-    "@@ -20,1 +20,1 @@ section",
-    " ctx",
-    "-gone",
-    "+back",
-    "",
-  ].join("\n");
-
-  const result = normalizeUnifiedDiffHunkHeaders(body);
-
-  assert.match(result.body, /^@@ -1,2 \+1,2 @@$/m);
-  assert.match(result.body, /^@@ -20,2 \+20,2 @@ section$/m);
-  assert.equal(result.repairs.length, 2);
-});
-
-test("normalizeUnifiedDiffHunkHeaders counts an unprefixed blank context line", () => {
-  // Emitters routinely drop the leading space on a blank context line, so a bare
-  // "" inside a hunk body is a real context line — only the final one is the EOL.
-  const body = [
-    "--- a/a.txt",
-    "+++ b/a.txt",
-    "@@ -1,1 +1,1 @@",
-    " one",
-    "",
-    "+two",
-    " three",
-    "",
-  ].join("\n");
-
-  const result = normalizeUnifiedDiffHunkHeaders(body);
-
-  assert.match(result.body, /^@@ -1,3 \+1,4 @@$/m);
-});
-
-test("normalizeUnifiedDiffHunkHeaders ignores the no-newline marker and preserves the trailing EOL", () => {
-  const body = [
-    "--- a/a.txt",
-    "+++ b/a.txt",
-    "@@ -1,1 +1,1 @@",
-    " one",
-    "+two",
-    "\\ No newline at end of file",
-    "",
-  ].join("\n");
-
-  const result = normalizeUnifiedDiffHunkHeaders(body);
-
-  assert.match(result.body, /^@@ -1,1 \+1,2 @@$/m);
-  assert.ok(result.body.endsWith("\n"), "trailing newline is preserved");
-});
-
-test("normalizeUnifiedDiffHunkHeaders repairs each file section independently", () => {
-  const body = [
-    "diff --git a/a.txt b/a.txt",
-    "--- a/a.txt",
-    "+++ b/a.txt",
-    "@@ -1,1 +1,1 @@",
-    " one",
-    "+two",
-    "diff --git a/b.txt b/b.txt",
-    "--- b/b.txt",
-    "+++ b/b.txt",
-    "@@ -7,1 +7,1 @@",
-    " three",
-    "+four",
-  ].join("\n");
-
-  const result = normalizeUnifiedDiffHunkHeaders(body);
-
-  assert.match(result.body, /^@@ -1,1 \+1,2 @@$/m);
-  assert.match(result.body, /^@@ -7,1 \+7,2 @@$/m);
-  assert.equal(result.repairs.length, 2);
-});
-
-test("normalizeUnifiedDiffHunkHeaders is inert on non-diff input", () => {
-  for (const input of ["", null, undefined, "no hunks here"]) {
-    const result = normalizeUnifiedDiffHunkHeaders(input);
-    assert.equal(result.body, input);
-    assert.equal(result.repairs.length, 0);
-  }
-});
-
-test("normalizeUnifiedDiffHunkHeaders treats an omitted count as 1 and does not rewrite it", () => {
-  // `@@ -1 +1 @@` is the canonical git form for a single-line hunk. Rewriting it
-  // to `@@ -1,1 +1,1 @@` is a false repair: it reports a defect that is not there
-  // and churns a diff that already applies.
+test("diagnoseHunkHeaderCounts treats an omitted count as 1", () => {
+  // `@@ -1 +1 @@` is the canonical git form for a single-line hunk.
   const body = [
     "diff --git a/hello.txt b/hello.txt",
     "index ce01362..6b0f5f6 100644",
@@ -1527,79 +1432,60 @@ test("normalizeUnifiedDiffHunkHeaders treats an omitted count as 1 and does not 
     "+hello world (patched)",
   ].join("\n");
 
-  const result = normalizeUnifiedDiffHunkHeaders(body);
-
-  assert.equal(result.body, body);
-  assert.equal(result.repairs.length, 0);
+  assert.deepEqual(diagnoseHunkHeaderCounts(body), []);
 });
 
-// --- the header is an integrity check, not just bookkeeping -----------------
-//
-// Shrinking a count to match a short body launders exactly the structural damage
-// that the count exists to expose. Each case below was reproduced against real
-// `git apply`: verbatim it is REJECTED, and a shrinking "repair" makes it APPLY.
-
-test("normalizeUnifiedDiffHunkHeaders refuses to shrink a truncated hunk", () => {
-  // Model output cut off mid-hunk (turn/token limit). Shrinking would make a
-  // half-written patch apply, commit, and open a PR reported as success.
-  const body = [
-    "--- a/f.txt",
-    "+++ b/f.txt",
-    "@@ -1,10 +1,10 @@",
-    "-line1",
-    "+LINE1",
-    " line2",
-  ].join("\n");
-
-  const result = normalizeUnifiedDiffHunkHeaders(body);
-
-  assert.equal(result.repairs.length, 0);
-  assert.equal(result.body, body);
-});
-
-test("normalizeUnifiedDiffHunkHeaders refuses to shrink a wrong-offset hunk", () => {
-  // Offset points at the first of two identical blocks while the model meant the
-  // second. Shrinking makes it apply silently at the WRONG location.
-  const body = [
-    "--- a/b.txt",
-    "+++ b/b.txt",
-    "@@ -1,9 +1,9 @@",
-    " BLOCK",
-    "-x = 1",
-    "+x = 2",
-    " END",
-  ].join("\n");
-
-  const result = normalizeUnifiedDiffHunkHeaders(body);
-
-  assert.equal(result.repairs.length, 0);
-  assert.equal(result.body, body);
-});
-
-test("normalizeUnifiedDiffHunkHeaders refuses a mixed grow/shrink header", () => {
-  // old grows (1 -> 2) but new shrinks (9 -> 2): still structural damage.
+test("diagnoseHunkHeaderCounts counts deletions, blank context and every hunk", () => {
   const body = [
     "--- a/a.txt",
     "+++ b/a.txt",
-    "@@ -3,1 +3,9 @@",
+    "@@ -1,1 +1,1 @@",
+    " keep",
+    "",
+    "-drop",
+    "+add",
+    "@@ -20,9 +20,9 @@ section",
+    " ctx",
     "-gone",
-    "-also",
-    "+one",
-    "+two",
+    "",
   ].join("\n");
 
-  const result = normalizeUnifiedDiffHunkHeaders(body);
+  const mismatches = diagnoseHunkHeaderCounts(body);
 
-  assert.equal(result.repairs.length, 0);
-  assert.equal(result.body, body);
+  assert.equal(mismatches.length, 2);
+  // hunk 1: context "keep" + blank context + 1 deletion / + 1 addition
+  assert.equal(mismatches[0].actualOld, 3);
+  assert.equal(mismatches[0].actualNew, 3);
+  // hunk 2 body is " ctx" + "-gone"; the final "" is the trailing EOL.
+  assert.equal(mismatches[1].actualOld, 2);
+  assert.equal(mismatches[1].actualNew, 1);
 });
 
-test("normalizeUnifiedDiffHunkHeaders does not mistake a deleted comment line for a file header", () => {
-  // Deleting a line whose content starts with "-- " emits `--- <content>`, which
-  // is textually a file header. "-- " is the line-comment token in SQL, Lua,
-  // Haskell and Ada, and this bridge patches whatever repository the task names.
-  // Truncating the body there rewrote a CORRECT header and broke a patch that
-  // real `git apply` accepted verbatim.
+test("diagnoseHunkHeaderCounts ignores the no-newline marker", () => {
+  const body = [
+    "--- a/a.txt",
+    "+++ b/a.txt",
+    "@@ -1,1 +1,2 @@",
+    " one",
+    "+two",
+    "\\ No newline at end of file",
+    "",
+  ].join("\n");
+
+  assert.deepEqual(diagnoseHunkHeaderCounts(body), []);
+});
+
+test("diagnoseHunkHeaderCounts is inert on non-diff input", () => {
+  for (const input of ["", null, undefined, "no hunks here"]) {
+    assert.deepEqual(diagnoseHunkHeaderCounts(input), []);
+  }
+});
+
+test("diagnoseHunkHeaderCounts does not mistake a deleted '-- ' line for a file header", () => {
+  // Deleting a line whose content starts with "-- " emits `--- <content>`, which is
+  // textually a file header. "-- " is the line-comment token in SQL, Lua, Haskell
+  // and Ada, and this bridge patches whatever repository the task names. Truncating
+  // the body there would report a mismatch on a header that is in fact correct.
   const body = [
     "diff --git a/m.sql b/m.sql",
     "index 7c1077c..954c691 100644",
@@ -1612,13 +1498,10 @@ test("normalizeUnifiedDiffHunkHeaders does not mistake a deleted comment line fo
     " SELECT 2;",
   ].join("\n");
 
-  const result = normalizeUnifiedDiffHunkHeaders(body);
-
-  assert.equal(result.repairs.length, 0, "a correct header must not be rewritten");
-  assert.equal(result.body, body);
+  assert.deepEqual(diagnoseHunkHeaderCounts(body), [], "a correct header must not be flagged");
 });
 
-test("normalizeUnifiedDiffHunkHeaders does not mistake an added '++ ' line for a file header", () => {
+test("diagnoseHunkHeaderCounts does not mistake an added '++ ' line for a file header", () => {
   const body = [
     "--- a/n.txt",
     "+++ b/n.txt",
@@ -1628,53 +1511,87 @@ test("normalizeUnifiedDiffHunkHeaders does not mistake an added '++ ' line for a
     "+tail",
   ].join("\n");
 
-  const result = normalizeUnifiedDiffHunkHeaders(body);
-
-  assert.equal(result.repairs.length, 0);
-  assert.equal(result.body, body);
+  assert.deepEqual(diagnoseHunkHeaderCounts(body), []);
 });
 
-// End-to-end proof for a2a-nexus#1642: the bridge must now survive the exact
-// failure that killed canaries 1, 4 and 5 — a correct hunk body under a
-// miscounted header — WITHOUT spending the corrective retry. Asserting on the
-// normalizer alone would not prove the wiring, and the wiring is what broke.
-test("SINGLE-SHOT: a miscounted hunk header is repaired in-line -> prUrl with 1 claude call", () => {
-  const tempDir = mkdtempSync(join(tmpdir(), "claude-singleshot-hunkfix-"));
+test("describeHunkHeaderMismatches renders both sides and warns about truncation", () => {
+  const body = [
+    "--- a/a.txt",
+    "+++ b/a.txt",
+    "@@ -1,2 +1,2 @@",
+    "-l1",
+    "+L1",
+    " l2",
+    " l3",
+  ].join("\n");
+
+  const hint = describeHunkHeaderMismatches(body);
+
+  assert.match(hint, /hunk 1 `@@ -1,2 \+1,2 @@` declares 2 old \/ 2 new but the hunk body carries 3 old \/ 3 new/);
+  assert.match(hint, /cut short mid-edit/);
+});
+
+test("describeHunkHeaderMismatches is empty when every header agrees", () => {
+  const body = ["--- a/a.txt", "+++ b/a.txt", "@@ -1,1 +1,2 @@", " one", "+two"].join("\n");
+  assert.equal(describeHunkHeaderMismatches(body), "");
+});
+
+// A claude stub that captures the SECOND (corrective) prompt so a test can assert
+// what diagnosis the retry was actually given.
+function writeRetryPromptCapturingClaudeStub(path, firstDiff, secondDiff, promptCapturePath) {
+  const script = [
+    "#!/usr/bin/env node",
+    "import { existsSync, readFileSync, writeFileSync } from 'node:fs';",
+    "const capture = " + JSON.stringify(promptCapturePath) + ";",
+    "const args = process.argv.slice(2);",
+    "const prompt = args[args.indexOf('-p') + 1];",
+    "let count = existsSync(capture + '.count') ? Number(readFileSync(capture + '.count', 'utf8')) : 0;",
+    "count += 1;",
+    "writeFileSync(capture + '.count', String(count));",
+    "if (count === 2) writeFileSync(capture, prompt);",
+    "const diff = count === 1 ? " + JSON.stringify(firstDiff) + " : " + JSON.stringify(secondDiff) + ";",
+    "const wrapped = '```diff\\n' + diff + '\\n```';",
+    "process.stdout.write(JSON.stringify({ type: 'result', subtype: 'success', result: wrapped }));",
+    "",
+  ].join("\n");
+  writeFileSync(path, script);
+  chmodSync(path, 0o755);
+}
+
+// End-to-end proof for a2a-nexus#1642. The bridge must NOT rewrite the model's
+// header — it must tell the model exactly what is wrong so the one corrective
+// retry is informed instead of blind. git's own error never mentions counts,
+// which is why canaries 1, 4 and 5 all died here.
+test("SINGLE-SHOT: a miscounted hunk header is diagnosed into the corrective prompt -> prUrl", () => {
+  const tempDir = mkdtempSync(join(tmpdir(), "claude-singleshot-hunkdiag-"));
   const { workSeed } = setupLocalFakeOrigin(tempDir);
   const fakeGitPath = join(tempDir, "fake-git.mjs");
   const fakeGhPath = join(tempDir, "fake-gh.mjs");
   const fakeClaudePath = join(tempDir, "fake-claude.mjs");
-  const argsCapturePath = join(tempDir, "captured-args.json");
+  const retryPromptPath = join(tempDir, "retry-prompt.txt");
   try {
     writeFakeGitStub(fakeGitPath);
     writeFakeGhStub(fakeGhPath);
     // The seed's files are single-line, and `git apply` is lenient about counts
-    // when a hunk runs to EOF with no trailing context. Add a multi-line file so
-    // the hunk has trailing context and git enforces the header, as it did on the
-    // real canary.
+    // when a hunk runs to EOF with no trailing context. Give the hunk trailing
+    // context so git enforces the header, as it did on the real canary.
     writeFileSync(join(workSeed, "hello.txt"), "hello world\nb\nc\nd\ne\n");
     execFileSync("git", ["-C", workSeed, "add", "-A"]);
     execFileSync("git", ["-C", workSeed, "commit", "-m", "multi-line seed"], { stdio: "ignore" });
     execFileSync("git", ["-C", workSeed, "push", "origin", "main"], { stdio: "ignore" });
 
-    // Body is correct and complete; the header UNDERCOUNTS it (canary5's shape:
-    // declared 6/44 for a body of 9/55). Verbatim, `git apply --check` rejects
-    // this because the body carries more lines than the header admits.
-    const miscountedDiff = [
+    const header = (old, nw) => `@@ -1,${old} +1,${nw} @@`;
+    const hunkBody = [" hello world", "-b", "+B", "+B2", " c", " d", " e"];
+    const fileHeader = [
       "diff --git a/hello.txt b/hello.txt",
       "index 1111111..2222222 100644",
       "--- a/hello.txt",
       "+++ b/hello.txt",
-      "@@ -1,3 +1,3 @@",
-      " hello world",
-      "-b",
-      "+B",
-      "+B2",
-      " c",
-      " d",
-      " e",
-    ].join("\n");
-    writeDiffClaudeStub(fakeClaudePath, miscountedDiff);
+    ];
+    // Body is complete; the header undercounts it (canary5's shape).
+    const miscounted = [...fileHeader, header(3, 3), ...hunkBody].join("\n");
+    const corrected = [...fileHeader, header(5, 6), ...hunkBody].join("\n");
+    writeRetryPromptCapturingClaudeStub(fakeClaudePath, miscounted, corrected, retryPromptPath);
 
     const result = spawnSync(bridgePath, bridgeArgs(singleShotMessage()), {
       encoding: "utf8",
@@ -1686,7 +1603,6 @@ test("SINGLE-SHOT: a miscounted hunk header is repaired in-line -> prUrl with 1 
         A2A_CLAUDE_CODE_PATCH_MODE: "single-shot",
         FAKE_GIT_SEED_PATH: workSeed,
         FAKE_GH_PR_URL: "https://github.com/jinwon-int/a2a-nexus/pull/1642",
-        CAPTURE_ARGS_PATH: argsCapturePath,
         REAL_GIT_BIN: "git",
         REAL_GH_BIN: "gh",
       },
@@ -1696,20 +1612,22 @@ test("SINGLE-SHOT: a miscounted hunk header is repaired in-line -> prUrl with 1 
     const payload = JSON.parse(JSON.parse(result.stdout).payloads[0].text);
     assert.equal(payload.status, "pr_opened");
     assert.equal(payload.prUrl, "https://github.com/jinwon-int/a2a-nexus/pull/1642");
-    // Repaired in-line, so the corrective retry (2nd claude call) never ran.
-    assert.equal(payload.claudeCalls, 1, "the repair must not cost a corrective retry");
-    // The repair is reported on stderr, never on stdout (stdout is the envelope).
-    assert.match(result.stderr, /hunk_header_repairs=1 \[@@ -1,3 \+1,3 @@ -> @@ -1,5 \+1,6 @@\]/);
+    assert.equal(payload.claudeCalls, 2, "the retry is used — informed, not skipped");
+
+    // The whole point: the retry was told the counts, which git never reports.
+    const retryPrompt = readFileSync(retryPromptPath, "utf8");
+    assert.match(retryPrompt, /Hunk header line counts do not match/);
+    assert.match(retryPrompt, /declares 3 old \/ 3 new but the hunk body carries 5 old \/ 6 new/);
+    assert.match(result.stderr, /hunk_header_mismatch=1/);
   } finally {
     rmSync(tempDir, { recursive: true, force: true });
   }
 });
 
-// The repair must be a rescue, never a rewrite. A diff git already accepts is
-// applied verbatim — the normalizer is not even consulted. This pins the fix for
-// the CRITICAL regression found in review: `--- <content>` produced by deleting a
-// line that starts with "-- " (SQL/Lua/Haskell comments) was mistaken for a file
-// header, truncating the count and breaking a patch that applied.
+// The bridge must never alter the model's bytes. This pins the CRITICAL regression
+// found in review: `--- <content>` produced by deleting a line that starts with
+// "-- " (SQL/Lua/Haskell comments) was mistaken for a file header, and an earlier
+// design rewrote the header and broke a patch that git accepted verbatim.
 test("SINGLE-SHOT: a valid diff whose body contains diff-like lines is applied verbatim", () => {
   const tempDir = mkdtempSync(join(tmpdir(), "claude-singleshot-verbatim-"));
   const { workSeed } = setupLocalFakeOrigin(tempDir);
@@ -1758,8 +1676,7 @@ test("SINGLE-SHOT: a valid diff whose body contains diff-like lines is applied v
     const payload = JSON.parse(JSON.parse(result.stdout).payloads[0].text);
     assert.equal(payload.status, "pr_opened");
     assert.equal(payload.claudeCalls, 1);
-    // No repair: git accepted the model's diff, so we never touched it.
-    assert.doesNotMatch(result.stderr, /hunk_header_repairs=/);
+    assert.doesNotMatch(result.stderr, /hunk_header_mismatch=/);
   } finally {
     rmSync(tempDir, { recursive: true, force: true });
   }
