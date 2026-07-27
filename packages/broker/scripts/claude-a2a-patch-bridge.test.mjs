@@ -1997,3 +1997,76 @@ test("diagnoseHunkHeaderCounts leaves --no-prefix paths intact", () => {
 
   assert.equal(diagnoseHunkHeaderCounts(body)[0].file, "b/build/x.js");
 });
+
+// --- shapes the differential matrix flagged --------------------------------
+
+test("diagnoseHunkHeaderCounts finds a non-final file in plain diff -u output", () => {
+  // No `diff --git` lines: sections are separated only by the ordered
+  // `--- `/`+++ `/`@@ ` triple. The boundary must still end the previous hunk's
+  // body cleanly rather than abandoning it, or every file but the last is lost.
+  const body = [
+    "--- a/f1.txt",
+    "+++ b/f1.txt",
+    "@@ -1,9 +1,9 @@",
+    " keep",
+    "-a",
+    "+A",
+    "--- a/f2.txt",
+    "+++ b/f2.txt",
+    "@@ -1,2 +1,2 @@",
+    " keep",
+    "-b",
+    "+B",
+  ].join("\n");
+
+  const mismatches = diagnoseHunkHeaderCounts(body);
+
+  assert.equal(mismatches.length, 1, "the first file's miscount must not be swallowed");
+  assert.equal(mismatches[0].file, "f1.txt");
+});
+
+test("diagnoseHunkHeaderCounts: documented -U0 forged-triple limitation", () => {
+  // Byte-for-byte `git diff -U0` output. With zero context a deleted "-- " line
+  // and an added "++ " line sit directly before the next `@@`, forming a triple
+  // that is textually a file header. The body truncates there and the hint is
+  // wrong. This is the known cost of not silencing multi-file diffs (see the
+  // comment in diagnoseHunkHeaderCounts); -U1 and wider are unaffected because
+  // trailing context always separates the pair from the next `@@`.
+  const body = [
+    "diff --git a/q.sql b/q.sql",
+    "index 3338770..0dd8c69 100644",
+    "--- a/q.sql",
+    "+++ b/q.sql",
+    "@@ -5,2 +5 @@ line4",
+    "-stale",
+    "--- old sql comment",
+    "+++ new sql comment",
+    "@@ -25 +24 @@ line24",
+    "-line25",
+    "+CHANGED24",
+  ].join("\n");
+
+  const mismatches = diagnoseHunkHeaderCounts(body);
+
+  // Pinned so a future change that alters this is a deliberate decision, not a
+  // silent drift: the first hunk is mis-reported, the second is correct.
+  assert.equal(mismatches.length, 1);
+  assert.equal(mismatches[0].index, 0);
+  assert.equal(mismatches[0].actualOld, 1, "body truncated at the forged triple");
+});
+
+test("diagnoseHunkHeaderCounts stays silent on unmodified diff -U0 without the forged shape", () => {
+  const body = [
+    "diff --git a/f.txt b/f.txt",
+    "--- a/f.txt",
+    "+++ b/f.txt",
+    "@@ -5 +5 @@ line4",
+    "-old",
+    "+new",
+    "@@ -25 +25 @@ line24",
+    "-x",
+    "+y",
+  ].join("\n");
+
+  assert.deepEqual(diagnoseHunkHeaderCounts(body), []);
+});

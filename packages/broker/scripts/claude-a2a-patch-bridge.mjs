@@ -964,7 +964,7 @@ function resolveDiffTargetPath(oldLine, newLine) {
       let sawOctal = false;
       value = value.slice(1, -1).replace(
         /\\(?:([0-7]{3})|([abfnrtv"\\]))/g,
-        (whole, oct, ch) => {
+        (_match, oct, ch) => {
           if (oct) {
             sawOctal = true;
             return String.fromCharCode(parseInt(oct, 8));
@@ -1069,9 +1069,11 @@ export function diagnoseHunkHeaderCounts(body) {
       //
       // Known limitation: a deleted "-- " line followed by an added "++ " line and
       // the next `@@` is textually identical to a header triple, so such a body
-      // truncates here and can yield a low count. That shape is adversarial and
-      // pre-existing; silencing all multi-file diffs to cover it is a far worse
-      // trade.
+      // truncates here and can yield a low count. `git diff -U0` reaches this with
+      // no adversarial input at all, since zero context leaves nothing between the
+      // pair and the next `@@`; -U1 and wider always separate them. The result is
+      // one wrong hint on that narrow shape, which is the price of not silencing
+      // every multi-file diff — the far more common case.
       if (endsHunkBody(lines, i)) break;
       if (line.startsWith("\\")) continue; // "\ No newline at end of file"
       if (line.startsWith("+")) {
