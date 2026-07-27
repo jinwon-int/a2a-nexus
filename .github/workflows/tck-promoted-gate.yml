@@ -145,3 +145,101 @@ jobs:
           path: /tmp/tck-promoted-version-negotiation.log
           if-no-files-found: warn
           retention-days: 30
+
+  artifact-message-projection:
+    name: promoted TCK sub-category — artifact/message projection
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v6
+        with:
+          node-version: "22"
+          cache: npm
+      - run: npm ci --include=dev
+
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        with:
+          python-version: "3.11"
+
+      - name: Clone and install the pinned official A2A TCK
+        env:
+          TCK_REF: "29063fe95e903cddac5d8ff811ab94df1ad6ef86"
+        run: |
+          set -euo pipefail
+          git clone --filter=blob:none https://github.com/a2aproject/a2a-tck /tmp/a2a-tck
+          git -C /tmp/a2a-tck checkout --detach "$TCK_REF"
+          python3 -m venv /tmp/a2a-tck/.venv
+          /tmp/a2a-tck/.venv/bin/pip install -q -e /tmp/a2a-tck
+
+      - name: Run promoted artifact/message-projection TCK sub-category
+        working-directory: packages/broker
+        env:
+          A2A_TCK_DIR: /tmp/a2a-tck
+        run: |
+          set -euo pipefail
+          export PATH="/tmp/a2a-tck/.venv/bin:$PATH"
+          npm run tck:run -- --level must --transport jsonrpc -- \
+            -k 'test_task_has_text_artifact or test_task_has_file_artifact or test_task_has_file_url_artifact or test_task_has_data_artifact or test_returns_message_with_text_part or test_response_validates_against_schema or test_no_snake_case_keys or test_enum_values_are_strings or test_timestamps_are_iso8601_utc' \
+            -q | tee /tmp/tck-promoted-artifact-message-projection.log
+
+      - name: Upload promoted-gate log
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        with:
+          name: tck-promoted-artifact-message-projection-log
+          path: /tmp/tck-promoted-artifact-message-projection.log
+          if-no-files-found: warn
+          retention-days: 30
+
+  error-codes-and-errorinfo:
+    name: promoted TCK sub-category — error codes and ErrorInfo
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v6
+        with:
+          node-version: "22"
+          cache: npm
+      - run: npm ci --include=dev
+
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        with:
+          python-version: "3.11"
+
+      - name: Clone and install the pinned official A2A TCK
+        env:
+          TCK_REF: "29063fe95e903cddac5d8ff811ab94df1ad6ef86"
+        run: |
+          set -euo pipefail
+          git clone --filter=blob:none https://github.com/a2aproject/a2a-tck /tmp/a2a-tck
+          git -C /tmp/a2a-tck checkout --detach "$TCK_REF"
+          python3 -m venv /tmp/a2a-tck/.venv
+          /tmp/a2a-tck/.venv/bin/pip install -q -e /tmp/a2a-tck
+
+      - name: Run promoted error-codes/ErrorInfo TCK sub-category
+        working-directory: packages/broker
+        env:
+          A2A_TCK_DIR: /tmp/a2a-tck
+        run: |
+          set -euo pipefail
+          export PATH="/tmp/a2a-tck/.venv/bin:$PATH"
+          # 12 runnable selectors of 13: test_unsupported_operation_error is
+          # capability-unreachable (TCK skips it whenever the agent declares
+          # streaming — see capabilityExcludedSelectors in
+          # packages/broker/docs/tck-failing-categories.json).
+          npm run tck:run -- --level must --transport jsonrpc -- \
+            -k 'test_error_has_code_and_message_jsonrpc or test_error_object_structure or test_a2a_error_codes_in_range or test_error_data_contains_error_info or test_task_not_cancelable_error or test_push_notification_not_supported_error or test_content_type_not_supported_error or test_error_code_in_valid_range or test_error_data_is_array or test_data_contains_error_info or test_error_info_valid or test_error_info_reason_matches_condition' \
+            --deselect='tests/compatibility/jsonrpc/test_error_codes.py::TestJsonRpcErrorCodeRange::test_error_code_in_valid_range[GetTask-nonexistent]' \
+            --deselect='tests/compatibility/jsonrpc/test_error_codes.py::TestJsonRpcErrorCodeRange::test_error_code_in_valid_range[SendMessage-bad-version]' \
+            -q | tee /tmp/tck-promoted-error-codes.log
+
+      - name: Upload promoted-gate log
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        with:
+          name: tck-promoted-error-codes-log
+          path: /tmp/tck-promoted-error-codes.log
+          if-no-files-found: warn
+          retention-days: 30

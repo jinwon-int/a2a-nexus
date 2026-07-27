@@ -160,10 +160,14 @@ test('RED: missing the honesty provenance marker fails', () => {
 test('RED: a per-test measuredPassTotal must match the anchored history row', () => {
   const baseline = readJson('docs/tck-failing-categories.json');
   const history = readJson('docs/tck-history.json');
+  const before = { ...baseline.subCategories[0].measuredPassTotal };
   baseline.subCategories[0].measuredPassTotal.pass += 1;
+  const expected = new RegExp(
+    `measuredPassTotal \\(${before.pass + 1}\\/${before.total}\\) must match anchored history ${before.pass}\\/${before.total}`,
+  );
   assert.match(
     evaluateFailingBaseline(baseline, history).join('\n'),
-    /measuredPassTotal \(7\/13\) must match anchored history 6\/13/,
+    expected,
   );
 });
 
