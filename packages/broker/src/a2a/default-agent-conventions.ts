@@ -29,6 +29,7 @@ export interface A2ASpecArtifact {
 
 export type DefaultAgentConvention =
   | { kind: "complete-with-artifacts"; summary: string; artifacts: A2ASpecArtifact[] }
+  | { kind: "complete-with-message"; summary: string }
   | { kind: "direct-message"; text: string };
 
 /** base64("tck") — the raw bytes payload the TCK's file-artifact test expects. */
@@ -100,6 +101,12 @@ const CONVENTIONS: Array<{ prefix: string; plan: DefaultAgentConvention }> = [
   {
     prefix: "tck-message-response",
     plan: { kind: "direct-message", text: "Direct message response" },
+  },
+  {
+    // Terminal-task prerequisite: the TCK's create_completed_task helper
+    // expects the SendMessage response itself to show a completed task.
+    prefix: "tck-complete-task",
+    plan: { kind: "complete-with-message", summary: "Hello from TCK" },
   },
 ];
 
