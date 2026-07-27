@@ -230,6 +230,14 @@ parameter test). The category became measurable once the embedded default
 agent learned the `tck-complete-task` convention and terminal-task operations
 returned `-32004` (#1500 PRs #1650/#1652).
 
+Streaming/subscribe-ordering promotion evidence is the pair of sufficient
+official-TCK runs `30229217224` and `30229296963`, each at `9/9` with zero
+skips; the blocking job reproduces the same nine selectors. The category
+became measurable once `SubscribeToTask` upgraded to a real SSE stream for
+`Accept: text/event-stream` clients and the embedded default agent learned
+the `tck-input-required` convention (#1500 PR #1655). With this promotion all
+five #1500 sub-categories gate PRs.
+
 The promoted gate is deliberately scoped to
 broker A2A-surface changes (`src/a2a`, protocol compatibility fixtures,
 `server.ts`, the TCK harness, this runbook/history, and the workflow itself).

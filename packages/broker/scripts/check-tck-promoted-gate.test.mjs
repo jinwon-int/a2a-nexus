@@ -107,6 +107,22 @@ test("promoted TCK gate blocks on exactly the task-not-found selector set", () =
   assert.match(workflow, /tck-promoted-task-not-found\.log/);
 });
 
+test("promoted TCK gate blocks on exactly the streaming/subscribe selector set", () => {
+  const workflow = readRepo(".github/workflows/tck-promoted-gate.yml");
+
+  assert.match(workflow, /name:\s*promoted TCK sub-category — streaming \/ subscribe ordering/);
+  assert.match(workflow, /test_events_broadcast_to_all_streams/);
+  assert.match(workflow, /test_streams_receive_same_events_in_order/);
+  assert.match(workflow, /test_closing_one_stream_does_not_affect_others/);
+  assert.match(workflow, /test_streaming_event_ordering/);
+  assert.match(workflow, /test_subscribe_terminates_at_terminal_state/);
+  assert.match(workflow, /test_subscribe_rejects_terminal_task/);
+  assert.match(workflow, /test_streaming_events_have_jsonrpc_envelope/);
+  assert.match(workflow, /test_streaming_events_contain_stream_response/);
+  assert.match(workflow, /test_subscribe_first_event_is_task/);
+  assert.match(workflow, /tck-promoted-streaming\.log/);
+});
+
 test("promoted sub-categories in the baseline all have a gate job", () => {
   const workflow = readRepo(".github/workflows/tck-promoted-gate.yml");
   const baseline = JSON.parse(readRepo("packages/broker/docs/tck-failing-categories.json"));
@@ -116,6 +132,7 @@ test("promoted sub-categories in the baseline all have a gate job", () => {
     "jsonrpc-artifact-message-projection": /promoted TCK sub-category — artifact\/message projection/,
     "jsonrpc-error-codes-and-errorinfo": /promoted TCK sub-category — error codes and ErrorInfo/,
     "jsonrpc-task-not-found-and-invalid-task": /promoted TCK sub-category — task not found \/ invalid task/,
+    "jsonrpc-streaming-subscribe-ordering": /promoted TCK sub-category — streaming \/ subscribe ordering/,
   };
   for (const sub of baseline.subCategories) {
     if (sub.promotionReadiness !== "promoted") continue;
