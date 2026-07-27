@@ -1261,13 +1261,20 @@ export function createBrokerServer(options: BrokerServerOptions = {}): BrokerSer
       }
 
       if (req.method === "POST" && path.startsWith("/terminal-brief/sidecar/")) {
-        const sidecarRoute = TERMINAL_BRIEF_SIDECAR_ROUTES.get(
-          path.slice("/terminal-brief/sidecar/".length),
-        );
+        const sidecarRouteName = path.slice("/terminal-brief/sidecar/".length);
+        const sidecarRoute = TERMINAL_BRIEF_SIDECAR_ROUTES.get(sidecarRouteName);
         if (sidecarRoute) {
           if (enforceRequesterIdentity) {
             assertRequesterHasRole(requesterIdentity, ["hub", "operator"], sidecarRoute.scope);
           }
+          // #1601 usage probe: these routes are pure projections returned
+          // no-store, so without this they leave no durable trace at all.
+          // Recorded after the role gate so unauthorized probes are not
+          // counted as usage. Route name and requester id only — never the body.
+          broker.recordTerminalBriefSidecarInvocation(
+            sidecarRouteName,
+            requesterIdentity?.id ?? "anonymous",
+          );
           const body = await readJson<Record<string, unknown>>(req);
           const report = sidecarRoute.project(body);
           return sendJson(res, 200, report, {
