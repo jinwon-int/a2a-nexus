@@ -3,25 +3,25 @@
   "issue": "a2a-nexus#1500",
   "description": "Machine-readable classification of the `jsonrpc` TCK bucket into the five stable sub-categories named in a2a-nexus#1500. pytestNodeIdSelectors are deterministic, mutually exclusive node IDs from the pinned official TCK. The measured values come from the fresh complete run anchored below; a category can only be promoted once it remains green across the stability window (see docs/a2a-tck-runbook.md).",
   "provenance": {
-    "sourceMeasurement": "docs/tck-history.json measurements 2026-07-27 (must/jsonrpc, jsonrpc 76/94) — workflow runs 30229217224 + 30229296963",
+    "sourceMeasurement": "docs/tck-history.json measurements 2026-07-27 (must/jsonrpc, jsonrpc 78/94) — workflow runs 30234477738 + 30234563387 (org fork pin 1154216)",
     "workflowRun": "https://github.com/jinwon-int/a2a-nexus/actions/runs/29917128590",
     "stabilityWindowRuns": [
-      "https://github.com/jinwon-int/a2a-nexus/actions/runs/30229217224",
-      "https://github.com/jinwon-int/a2a-nexus/actions/runs/30229296963"
+      "https://github.com/jinwon-int/a2a-nexus/actions/runs/30234477738",
+      "https://github.com/jinwon-int/a2a-nexus/actions/runs/30234563387"
     ],
     "derivedFrom": [
       "official A2A TCK verbose PASSED/FAILED/SKIPPED node outcomes",
       "docs/tck-history.json pytestOutcomeAccounting and subCategories"
     ],
     "NOT_a_per_test_run": false,
-    "limits": "The values cover only the five deterministic selector sets, not full conformance. Unknown node IDs remain explicitly unclassified in tck-history.json. All five sub-categories are promoted (error-codes with one capability-unreachable selector in capabilityExcludedSelectors). Two requirement-runner tests (CORE-SEND-003, CORE-MULTI-002a) are unwinnable by construction at the pinned TCK ref: their requirement definitions lack expected_error bindings so the runner demands response.success for error-path tests."
+    "limits": "The values cover only the five deterministic selector sets, not full conformance. Unknown node IDs remain explicitly unclassified in tck-history.json. All five sub-categories are promoted (error-codes with one capability-unreachable selector in capabilityExcludedSelectors). The pin now tracks org fork jinwon-int/a2a-tck (upstream main + the #202 expected_error bindings), so the two requirement-runner tests (CORE-SEND-003, CORE-MULTI-002a) run and pass; return to upstream once the bindings land there."
   },
   "coarseBaseline": {
     "category": "jsonrpc",
     "level": "must",
     "transport": "jsonrpc",
-    "source": "tck-measurement workflow run 30229296963",
-    "pass": 76,
+    "source": "tck-measurement workflow run 30234563387",
+    "pass": 78,
     "total": 94,
     "date": "2026-07-27"
   },
