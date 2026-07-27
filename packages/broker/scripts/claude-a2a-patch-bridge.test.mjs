@@ -1769,6 +1769,53 @@ test("diagnoseHunkHeaderCounts still reports a real miscount in a multi-file dif
   assert.equal(mismatches[0].actualOld, 2);
 });
 
+test("diagnoseHunkHeaderCounts reports a miscount in a NON-final file of a multi-file diff", () => {
+  // `bodyEnd` is the next `@@` anywhere in the input, so the last hunk of file N is
+  // scanned across file N+1's header lines. Treating that boundary as lost evidence
+  // silenced every file but the last — most of an ordinary multi-file diff.
+  const body = [
+    "diff --git a/f1 b/f1",
+    "--- a/f1",
+    "+++ b/f1",
+    "@@ -1,9 +1,9 @@",
+    " keep",
+    "-a",
+    "+A",
+    "diff --git a/f2 b/f2",
+    "--- a/f2",
+    "+++ b/f2",
+    "@@ -1,2 +1,2 @@",
+    " keep",
+    "-b",
+    "+B",
+  ].join("\n");
+
+  const mismatches = diagnoseHunkHeaderCounts(body);
+
+  assert.equal(mismatches.length, 1, "the first file's miscount must not be swallowed");
+  assert.equal(mismatches[0].file, "f1");
+  assert.equal(mismatches[0].actualOld, 2);
+});
+
+test("diagnoseHunkHeaderCounts decodes git's quoted-path escapes", () => {
+  const mk = (name) => [
+    `--- "a/${name}"`,
+    `+++ "b/${name}"`,
+    "@@ -1,9 +1,9 @@",
+    " a",
+    "-b",
+    "+B",
+  ].join("\n");
+
+  // core.quotePath=true octal bytes -> UTF-8
+  assert.equal(diagnoseHunkHeaderCounts(mk("\\355\\225\\234\\352\\270\\200.txt"))[0].file, "한글.txt");
+  // C escapes
+  assert.equal(diagnoseHunkHeaderCounts(mk('we\\"ird.txt'))[0].file, 'we"ird.txt');
+  assert.equal(diagnoseHunkHeaderCounts(mk("we\\\\ird.txt"))[0].file, "we\\ird.txt");
+  // core.quotePath=false still quotes for `"`, and the literal UTF-8 must survive
+  assert.equal(diagnoseHunkHeaderCounts(mk('한글 \\"x\\".txt'))[0].file, '한글 "x".txt');
+});
+
 test("describeHunkHeaderMismatches names the file so the retry is not left counting hunks", () => {
   const body = [
     "--- a/docs/x.md",
@@ -1794,6 +1841,231 @@ test("diagnoseHunkHeaderCounts handles CRLF bodies without inventing a mismatch"
     "-two\r",
     "+TWO\r",
     " three\r",
+  ].join("\n");
+
+  assert.deepEqual(diagnoseHunkHeaderCounts(body), []);
+});
+
+// --- the silence guard must not swallow real miscounts ----------------------
+//
+// Abandoning a hunk's diagnosis is right when the evidence is genuinely ambiguous
+// and wrong otherwise: it hands the corrective retry nothing on a diff git just
+// rejected, which is the blind retry #1642 exists to fix.
+
+test("diagnoseHunkHeaderCounts still reports when the last body line is whitespace-only context", () => {
+  // " " prefix + "   " content. A file separator is empty, never space-padded, so
+  // this is not ambiguous and must count as ordinary context.
+  const body = [
+    "--- a/a.txt",
+    "+++ b/a.txt",
+    "@@ -1,9 +1,9 @@",
+    " one",
+    "-two",
+    "+TWO",
+    "    ",
+  ].join("\n");
+
+  const mismatches = diagnoseHunkHeaderCounts(body);
+
+  assert.equal(mismatches.length, 1);
+  assert.equal(mismatches[0].actualOld, 3);
+});
+
+test("diagnoseHunkHeaderCounts stays silent on a correct header with a trailing blank line", () => {
+  // Extraction does not guarantee a body free of trailing formatting slop. Counting
+  // a stray final blank inflates both sides by one and would hand the corrective
+  // retry a confident wrong number for a header that is in fact correct.
+  const body = [
+    "--- a/a.txt",
+    "+++ b/a.txt",
+    "@@ -1,4 +1,4 @@",
+    " one",
+    "-two",
+    "+TWO",
+    " three",
+    " four",
+    "",
+  ].join("\n");
+
+  assert.deepEqual(diagnoseHunkHeaderCounts(body), []);
+});
+
+test("diagnoseHunkHeaderCounts counts a blank before the same file's next hunk", () => {
+  // A separator by definition has a file section after it, so a blank followed by
+  // another `@@` of the same file is an ordinary context line — not ambiguous.
+  const body = [
+    "--- a/a.txt",
+    "+++ b/a.txt",
+    "@@ -1,9 +1,9 @@",
+    " one",
+    "-two",
+    "+TWO",
+    "",
+    "@@ -50,9 +50,9 @@",
+    " x",
+    "-y",
+    "+Y",
+  ].join("\n");
+
+  const mismatches = diagnoseHunkHeaderCounts(body);
+
+  assert.ok(mismatches.length > 0, "the blank must be counted, not treated as a separator");
+  assert.equal(mismatches[0].actualOld, 3);
+});
+
+test("diagnoseHunkHeaderCounts unquotes a core.quotePath filename", () => {
+  // git's default core.quotePath wraps non-ASCII paths in quotes with octal escapes.
+  const body = [
+    '--- "a/\\355\\225\\234\\352\\270\\200.txt"',
+    '+++ "b/\\355\\225\\234\\352\\270\\200.txt"',
+    "@@ -1,9 +1,9 @@",
+    " a",
+    "-b",
+    "+B",
+  ].join("\n");
+
+  assert.equal(diagnoseHunkHeaderCounts(body)[0].file, "한글.txt");
+});
+
+test("diagnoseHunkHeaderCounts attributes a deletion hunk to the deleted file", () => {
+  // `+++ /dev/null` names no file, so only the old side identifies it. Carrying the
+  // previous section's name over would put a confidently wrong path in the hint.
+  const body = [
+    "--- a/f1",
+    "+++ b/f1",
+    "@@ -1,1 +1,1 @@",
+    "-a",
+    "+A",
+    "--- a/f2",
+    "+++ /dev/null",
+    "@@ -1,5 +0,0 @@",
+    "-b",
+  ].join("\n");
+
+  const mismatches = diagnoseHunkHeaderCounts(body);
+
+  assert.equal(mismatches.length, 1);
+  assert.equal(mismatches[0].file, "f2");
+});
+
+test("diagnoseHunkHeaderCounts attributes a creation hunk to the created file", () => {
+  const body = [
+    "--- /dev/null",
+    "+++ b/n.txt",
+    "@@ -0,0 +1,9 @@",
+    "+a",
+    "+b",
+  ].join("\n");
+
+  const mismatches = diagnoseHunkHeaderCounts(body);
+
+  assert.equal(mismatches.length, 1);
+  assert.equal(mismatches[0].file, "n.txt");
+});
+
+test("diagnoseHunkHeaderCounts does not let a '+++ ' body line rename later hunks", () => {
+  const body = [
+    "--- a/f1",
+    "+++ b/f1",
+    "@@ -1,1 +1,2 @@",
+    " k",
+    "+++ marker",
+    "@@ -20,9 +20,9 @@",
+    " z",
+    "-y",
+  ].join("\n");
+
+  const mismatches = diagnoseHunkHeaderCounts(body);
+
+  assert.ok(mismatches.length > 0, "the loop below is vacuous if nothing is reported");
+  for (const m of mismatches) {
+    assert.equal(m.file, "f1", "attribution must not follow a body line");
+  }
+});
+
+test("diagnoseHunkHeaderCounts leaves --no-prefix paths intact", () => {
+  // Only strip a//b/ when BOTH sides carry them, so a directory literally named
+  // "b/" in a --no-prefix diff is not truncated to "uild/x.js".
+  const body = [
+    "--- b/build/x.js",
+    "+++ b/build/x.js",
+    "@@ -1,9 +1,9 @@",
+    " k",
+    "-y",
+    "+Y",
+  ].join("\n");
+
+  assert.equal(diagnoseHunkHeaderCounts(body)[0].file, "b/build/x.js");
+});
+
+// --- shapes the differential matrix flagged --------------------------------
+
+test("diagnoseHunkHeaderCounts finds a non-final file in plain diff -u output", () => {
+  // No `diff --git` lines: sections are separated only by the ordered
+  // `--- `/`+++ `/`@@ ` triple. The boundary must still end the previous hunk's
+  // body cleanly rather than abandoning it, or every file but the last is lost.
+  const body = [
+    "--- a/f1.txt",
+    "+++ b/f1.txt",
+    "@@ -1,9 +1,9 @@",
+    " keep",
+    "-a",
+    "+A",
+    "--- a/f2.txt",
+    "+++ b/f2.txt",
+    "@@ -1,2 +1,2 @@",
+    " keep",
+    "-b",
+    "+B",
+  ].join("\n");
+
+  const mismatches = diagnoseHunkHeaderCounts(body);
+
+  assert.equal(mismatches.length, 1, "the first file's miscount must not be swallowed");
+  assert.equal(mismatches[0].file, "f1.txt");
+});
+
+test("diagnoseHunkHeaderCounts: documented -U0 forged-triple limitation", () => {
+  // Byte-for-byte `git diff -U0` output. With zero context a deleted "-- " line
+  // and an added "++ " line sit directly before the next `@@`, forming a triple
+  // that is textually a file header. The body truncates there and the hint is
+  // wrong. This is the known cost of not silencing multi-file diffs (see the
+  // comment in diagnoseHunkHeaderCounts); -U1 and wider are unaffected because
+  // trailing context always separates the pair from the next `@@`.
+  const body = [
+    "diff --git a/q.sql b/q.sql",
+    "index 3338770..0dd8c69 100644",
+    "--- a/q.sql",
+    "+++ b/q.sql",
+    "@@ -5,2 +5 @@ line4",
+    "-stale",
+    "--- old sql comment",
+    "+++ new sql comment",
+    "@@ -25 +24 @@ line24",
+    "-line25",
+    "+CHANGED24",
+  ].join("\n");
+
+  const mismatches = diagnoseHunkHeaderCounts(body);
+
+  // Pinned so a future change that alters this is a deliberate decision, not a
+  // silent drift: the first hunk is mis-reported, the second is correct.
+  assert.equal(mismatches.length, 1);
+  assert.equal(mismatches[0].index, 0);
+  assert.equal(mismatches[0].actualOld, 1, "body truncated at the forged triple");
+});
+
+test("diagnoseHunkHeaderCounts stays silent on unmodified diff -U0 without the forged shape", () => {
+  const body = [
+    "diff --git a/f.txt b/f.txt",
+    "--- a/f.txt",
+    "+++ b/f.txt",
+    "@@ -5 +5 @@ line4",
+    "-old",
+    "+new",
+    "@@ -25 +25 @@ line24",
+    "-x",
+    "+y",
   ].join("\n");
 
   assert.deepEqual(diagnoseHunkHeaderCounts(body), []);

@@ -949,6 +949,49 @@ function endsHunkBody(lines, i) {
   return false;
 }
 
+// Names the file a `--- old` / `+++ new` header pair refers to. The new side wins,
+// except for a deletion (`+++ /dev/null`), where only the old side names the file.
+// The conventional `a/` and `b/` prefixes are stripped only when BOTH sides carry
+// them, so a `--no-prefix` diff of a directory literally called `b/` survives.
+function resolveDiffTargetPath(oldLine, newLine) {
+  // git emits `--- a/f.txt`, GNU diff adds a tab + timestamp, and git's default
+  // core.quotePath wraps non-ASCII paths in double quotes with octal escapes.
+  const parse = (line) => {
+    if (typeof line !== "string") return "";
+    let value = line.slice(4).split("\t")[0].trim();
+    if (value.startsWith('"') && value.endsWith('"') && value.length > 1) {
+      // git's unquote_c_style: \NNN octal bytes plus the usual C escapes.
+      let sawOctal = false;
+      value = value.slice(1, -1).replace(
+        /\\(?:([0-7]{3})|([abfnrtv"\\]))/g,
+        (_match, oct, ch) => {
+          if (oct) {
+            sawOctal = true;
+            return String.fromCharCode(parseInt(oct, 8));
+          }
+          return { a: "\x07", b: "\b", f: "\f", n: "\n", r: "\r", t: "\t", v: "\v" }[ch] ?? ch;
+        },
+      );
+      // Only round-trip through latin1 when the escapes actually produced bytes.
+      // With core.quotePath=false git still quotes names containing `"` or `\`,
+      // and those keep literal UTF-8 that a latin1 decode would destroy.
+      if (sawOctal && [...value].every((c) => c.codePointAt(0) <= 0xff)) {
+        value = Buffer.from(value, "latin1").toString("utf8");
+      }
+    }
+    return value;
+  };
+  const oldPath = parse(oldLine);
+  const newPath = parse(newLine);
+  // `/dev/null` stands in for a creation or a deletion and carries no prefix, so
+  // it does not count as evidence against the conventional a//b/ pair.
+  const prefixed = (oldPath.startsWith("a/") || oldPath === "/dev/null")
+    && (newPath.startsWith("b/") || newPath === "/dev/null");
+  if (newPath && newPath !== "/dev/null") return prefixed ? newPath.slice(2) : newPath;
+  if (oldPath && oldPath !== "/dev/null") return prefixed ? oldPath.slice(2) : oldPath;
+  return "";
+}
+
 /**
  * Reports hunk headers whose declared `@@ -a,b +c,d @@` line counts disagree with
  * the lines the hunk actually carries.
@@ -981,17 +1024,19 @@ export function diagnoseHunkHeaderCounts(body) {
 
   // Track which file each hunk belongs to. git's own errors name a file; a hint
   // that says only "hunk 3" makes the model count hunks across file boundaries.
+  //
+  // A header is only recognised through the same ordered `--- ` / `+++ ` / `@@ `
+  // triple `endsHunkBody` requires. Trusting a bare `+++ ` here would let an added
+  // line whose content starts with "++ " rename the following hunks.
   const hunkStarts = [];
   const hunkFiles = [];
   let currentFile = "";
   for (let i = 0; i < lines.length; i += 1) {
     const line = lines[i];
-    if (line.startsWith("+++ ")) {
-      const path = line.slice(4).split("\t")[0].trim();
-      if (path && path !== "/dev/null") currentFile = path.replace(/^b\//, "");
-    } else if (line.startsWith("--- ") && !currentFile) {
-      const path = line.slice(4).split("\t")[0].trim();
-      if (path && path !== "/dev/null") currentFile = path.replace(/^a\//, "");
+    if (line.startsWith("diff --git ")) {
+      currentFile = ""; // A new file section; do not carry the previous name over.
+    } else if (line.startsWith("--- ") && endsHunkBody(lines, i)) {
+      currentFile = resolveDiffTargetPath(line, lines[i + 1]);
     } else if (HUNK_HEADER_RE.test(line)) {
       hunkStarts.push(i);
       hunkFiles.push(currentFile);
@@ -1016,20 +1061,43 @@ export function diagnoseHunkHeaderCounts(body) {
     let evidenceLost = false;
     for (let i = headerIdx + 1; i < bodyEnd; i += 1) {
       const line = lines[i];
+      // A file header ends this hunk's body, and the tally so far IS the complete
+      // count — `bodyEnd` is the next `@@` anywhere in the input, so for the last
+      // hunk of file N it sits past file N+1's header lines. Treating that as lost
+      // evidence would abandon the last hunk of every file but the last, i.e. most
+      // of an ordinary multi-file diff.
+      //
+      // Known limitation: a deleted "-- " line followed by an added "++ " line and
+      // the next `@@` is textually identical to a header triple, so such a body
+      // truncates here and can yield a low count. `git diff -U0` reaches this with
+      // no adversarial input at all, since zero context leaves nothing between the
+      // pair and the next `@@`; -U1 and wider always separate them. The result is
+      // one wrong hint on that narrow shape, which is the price of not silencing
+      // every multi-file diff — the far more common case.
       if (endsHunkBody(lines, i)) break;
       if (line.startsWith("\\")) continue; // "\ No newline at end of file"
       if (line.startsWith("+")) {
         actualNew += 1;
       } else if (line.startsWith("-")) {
         actualOld += 1;
-      } else if (line === "" || line.trim() === "") {
-        // A bare blank line is ambiguous. Emitters drop the leading space on a
-        // blank context line, but a blank is also the usual separator between
-        // file sections in a multi-file diff — git accepts both. Only count it as
-        // context when a body line demonstrably follows; otherwise the hunk's
-        // evidence is unusable.
+      } else if (line === "" || line === "\r" || line === "\t") {
+        // Only a TRULY bare line is ambiguous. Emitters drop the leading space on
+        // a blank context line, but a bare blank is also the usual separator
+        // between file sections in a multi-file diff — git accepts both. A
+        // whitespace-only line that still carries its ' ' prefix is not ambiguous
+        // (a separator is empty, never space-padded) and falls through to the
+        // context branch below, so it must not be tested first.
+        //
+        // Ambiguity is resolved by what FOLLOWS:
+        //   - a real file header  -> separator, so the count is unusable;
+        //   - end of input        -> also unusable: extraction does not guarantee
+        //     a body free of trailing formatting slop, and counting a stray final
+        //     blank inflates both sides by one, which would hand the corrective
+        //     retry a confident wrong number for a header that is in fact right;
+        //   - the next `@@` of the SAME file -> a real context line, because a
+        //     separator by definition has a file section after it.
         const next = i + 1;
-        if (next >= bodyEnd || endsHunkBody(lines, next)) {
+        if (next >= lines.length || endsHunkBody(lines, next)) {
           evidenceLost = true;
           break;
         }
