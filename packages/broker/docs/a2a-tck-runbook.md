@@ -222,6 +222,14 @@ lack `expected_error` bindings, so the parametrized runner demands
 `response.success` for tests whose purpose is an error response. They belong
 to no promoted selector set; revisit when the TCK pin is bumped.
 
+Task-not-found/invalid-task promotion evidence is the pair of sufficient
+official-TCK runs `30227144905` and `30227192223`, each at `7/7` with zero
+skips; the blocking job reproduces the same seven selectors (owning only the
+`GetTask-nonexistent` variant of the shared `test_error_code_in_valid_range`
+parameter test). The category became measurable once the embedded default
+agent learned the `tck-complete-task` convention and terminal-task operations
+returned `-32004` (#1500 PRs #1650/#1652).
+
 The promoted gate is deliberately scoped to
 broker A2A-surface changes (`src/a2a`, protocol compatibility fixtures,
 `server.ts`, the TCK harness, this runbook/history, and the workflow itself).

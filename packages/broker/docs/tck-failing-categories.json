@@ -3,27 +3,27 @@
   "issue": "a2a-nexus#1500",
   "description": "Machine-readable classification of the `jsonrpc` TCK bucket into the five stable sub-categories named in a2a-nexus#1500. pytestNodeIdSelectors are deterministic, mutually exclusive node IDs from the pinned official TCK. The measured values come from the fresh complete run anchored below; a category can only be promoted once it remains green across the stability window (see docs/a2a-tck-runbook.md).",
   "provenance": {
-    "sourceMeasurement": "docs/tck-history.json measurements 2026-07-26 (must/jsonrpc, jsonrpc 64/94) — workflow runs 30225853781 + 30225919582",
+    "sourceMeasurement": "docs/tck-history.json measurements 2026-07-27 (must/jsonrpc, jsonrpc 69/94) — workflow runs 30227144905 + 30227192223",
     "workflowRun": "https://github.com/jinwon-int/a2a-nexus/actions/runs/29917128590",
     "stabilityWindowRuns": [
-      "https://github.com/jinwon-int/a2a-nexus/actions/runs/30225853781",
-      "https://github.com/jinwon-int/a2a-nexus/actions/runs/30225919582"
+      "https://github.com/jinwon-int/a2a-nexus/actions/runs/30227144905",
+      "https://github.com/jinwon-int/a2a-nexus/actions/runs/30227192223"
     ],
     "derivedFrom": [
       "official A2A TCK verbose PASSED/FAILED/SKIPPED node outcomes",
       "docs/tck-history.json pytestOutcomeAccounting and subCategories"
     ],
     "NOT_a_per_test_run": false,
-    "limits": "The values cover only the five deterministic selector sets, not full conformance. Unknown node IDs remain explicitly unclassified in tck-history.json. Version negotiation, artifact/message projection, and error-codes/ErrorInfo are promoted (error-codes with one capability-unreachable selector documented in capabilityExcludedSelectors). Task-not-found and streaming remain non-gating. Two requirement-runner tests (CORE-SEND-003, CORE-MULTI-002a) are unwinnable by construction at the pinned TCK ref: their requirement definitions lack expected_error bindings so the runner demands response.success for error-path tests."
+    "limits": "The values cover only the five deterministic selector sets, not full conformance. Unknown node IDs remain explicitly unclassified in tck-history.json. Version negotiation, artifact/message projection, error-codes/ErrorInfo (one capability-unreachable selector in capabilityExcludedSelectors), and task-not-found are promoted. Streaming remains non-gating. Two requirement-runner tests (CORE-SEND-003, CORE-MULTI-002a) are unwinnable by construction at the pinned TCK ref: their requirement definitions lack expected_error bindings so the runner demands response.success for error-path tests."
   },
   "coarseBaseline": {
     "category": "jsonrpc",
     "level": "must",
     "transport": "jsonrpc",
-    "source": "tck-measurement workflow run 30225919582",
-    "pass": 64,
+    "source": "tck-measurement workflow run 30227192223",
+    "pass": 69,
     "total": 94,
-    "date": "2026-07-26"
+    "date": "2026-07-27"
   },
   "subCategories": [
     {
@@ -67,7 +67,7 @@
       "issueCategory": "2. TaskNotFoundError / invalid task semantics",
       "rootCause": "error-code-family",
       "codeStatus": "implemented",
-      "codeEvidence": "packages/broker/src/a2a/json-rpc.ts isA2ATaskNotFound -> -32001 TASK_NOT_FOUND; unrelated broker resources deliberately NOT mapped to TASK_NOT_FOUND",
+      "codeEvidence": "packages/broker/src/a2a/json-rpc.ts: message.taskId binding (-32001 unknown, -32004 terminal), tck-complete-task convention in default-agent-conventions.ts, SubscribeToTask terminal -32004 (#1500 PRs #1650/#1652)",
       "pytestNodeIdSelectors": [
         "tests/compatibility/core_operations/test_error_handling.py::TestJsonRpcErrorStructure::test_a2a_error_type_mappings",
         "tests/compatibility/core_operations/test_task_lifecycle.py::TestCancelTask::test_cancel_terminal_task_returns_error[jsonrpc]",
@@ -78,11 +78,11 @@
         "tests/compatibility/jsonrpc/test_sse_streaming.py::TestSseSubscribeToTask::test_subscribe_nonexistent_task_returns_error"
       ],
       "measuredPassTotal": {
-        "pass": 4,
+        "pass": 7,
         "total": 7
       },
-      "promotionReadiness": "blocked-pending-fresh-run",
-      "note": "Runs 30225853781/30225919582: 4 passed / 0 failed / 3 skipped. The 3 skips are tck-complete-task convention setup races (task still WORKING when the test expects terminal); convention support is follow-up work.",
+      "promotionReadiness": "promoted",
+      "note": "Promoted after independent official-TCK workflow runs 30227144905 and 30227192223 both measured 7/7 with zero skips; the PR gate runs exactly these seven selectors.",
       "sourceKind": "official-tck",
       "pendingEmission": false
     },
@@ -129,13 +129,13 @@
         "tests/compatibility/jsonrpc/test_sse_streaming.py::TestSseSubscribeToTask::test_subscribe_first_event_is_task"
       ],
       "measuredPassTotal": {
-        "pass": 3,
+        "pass": 4,
         "total": 9
       },
       "promotionReadiness": "blocked-pending-fresh-run",
       "sourceKind": "official-tck",
       "pendingEmission": false,
-      "note": "Runs 30225853781/30225919582: 3 passed / 0 failed / 6 skipped (input-required convention + streaming ordering root cause; separate category scope)."
+      "note": "Runs 30227144905/30227192223: 4 passed / 0 failed / 5 skipped (input-required convention + streaming ordering root cause; separate category scope)."
     },
     {
       "id": "jsonrpc-version-negotiation",
