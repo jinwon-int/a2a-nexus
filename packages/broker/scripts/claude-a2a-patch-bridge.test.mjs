@@ -1398,6 +1398,7 @@ test("diagnoseHunkHeaderCounts reports the canary5 miscount with both sides", ()
   assert.equal(mismatches.length, 1);
   assert.deepEqual(mismatches[0], {
     index: 0,
+    file: "doc.md",
     header: "@@ -78,6 +78,44 @@",
     declaredOld: 6,
     actualOld: 9,
@@ -1527,7 +1528,7 @@ test("describeHunkHeaderMismatches renders both sides and warns about truncation
 
   const hint = describeHunkHeaderMismatches(body);
 
-  assert.match(hint, /hunk 1 `@@ -1,2 \+1,2 @@` declares 2 old \/ 2 new but the hunk body carries 3 old \/ 3 new/);
+  assert.match(hint, /a\.txt `@@ -1,2 \+1,2 @@` declares 2 old \/ 2 new but the hunk body carries 3 old \/ 3 new/);
   assert.match(hint, /cut short mid-edit/);
 });
 
@@ -1680,4 +1681,120 @@ test("SINGLE-SHOT: a valid diff whose body contains diff-like lines is applied v
   } finally {
     rmSync(tempDir, { recursive: true, force: true });
   }
+});
+
+// --- the diagnosis must never be confidently wrong ---------------------------
+//
+// The hint goes straight into the corrective prompt. A wrong number is worse than
+// no number: it tells the model to "recount" a header that is already correct and
+// points the retry away from the real failure. These cases were found by review —
+// each is a diff real `git apply` ACCEPTS, or a header that is genuinely correct.
+
+test("diagnoseHunkHeaderCounts stays silent on a blank line between file sections", () => {
+  // The standard multi-file shape an LLM emits. git accepts it; counting the
+  // separator as context inflated hunk 1 and flagged a correct header.
+  const body = [
+    "--- a/f1",
+    "+++ b/f1",
+    "@@ -1,1 +1,1 @@",
+    "-a",
+    "+A",
+    "",
+    "--- a/f2",
+    "+++ b/f2",
+    "@@ -1,1 +1,1 @@",
+    "-b",
+    "+B",
+  ].join("\n");
+
+  assert.deepEqual(diagnoseHunkHeaderCounts(body), []);
+});
+
+test("diagnoseHunkHeaderCounts stays silent on a blank line before a diff --git section", () => {
+  const body = [
+    "diff --git a/f1 b/f1",
+    "--- a/f1",
+    "+++ b/f1",
+    "@@ -1,1 +1,1 @@",
+    "-a",
+    "+A",
+    "",
+    "diff --git a/f2 b/f2",
+    "--- a/f2",
+    "+++ b/f2",
+    "@@ -1,1 +1,1 @@",
+    "-b",
+    "+B",
+  ].join("\n");
+
+  assert.deepEqual(diagnoseHunkHeaderCounts(body), []);
+});
+
+test("diagnoseHunkHeaderCounts stays silent when a body line is unclassifiable", () => {
+  // A line with no valid prefix means the scan is no longer a count. Reporting
+  // the partial tally would contradict a header that may well be correct.
+  const body = [
+    "--- a/a.txt",
+    "+++ b/a.txt",
+    "@@ -1,5 +1,5 @@",
+    " one",
+    "garbage with no diff prefix",
+    "-two",
+    "+TWO",
+  ].join("\n");
+
+  assert.deepEqual(diagnoseHunkHeaderCounts(body), []);
+});
+
+test("diagnoseHunkHeaderCounts still reports a real miscount in a multi-file diff", () => {
+  const body = [
+    "--- a/f1",
+    "+++ b/f1",
+    "@@ -1,1 +1,1 @@",
+    "-a",
+    "+A",
+    "--- a/f2",
+    "+++ b/f2",
+    "@@ -1,9 +1,9 @@",
+    " k",
+    "-b",
+    "+B",
+  ].join("\n");
+
+  const mismatches = diagnoseHunkHeaderCounts(body);
+
+  assert.equal(mismatches.length, 1, "only the genuinely wrong hunk is reported");
+  assert.equal(mismatches[0].file, "f2");
+  assert.equal(mismatches[0].declaredOld, 9);
+  assert.equal(mismatches[0].actualOld, 2);
+});
+
+test("describeHunkHeaderMismatches names the file so the retry is not left counting hunks", () => {
+  const body = [
+    "--- a/docs/x.md",
+    "+++ b/docs/x.md",
+    "@@ -78,6 +78,44 @@",
+    " c1",
+    " c2",
+    "+a1",
+    "+a2",
+  ].join("\n");
+
+  const hint = describeHunkHeaderMismatches(body);
+
+  assert.match(hint, /docs\/x\.md `@@ -78,6 \+78,44 @@` declares 6 old \/ 44 new/);
+});
+
+test("diagnoseHunkHeaderCounts handles CRLF bodies without inventing a mismatch", () => {
+  const body = [
+    "--- a/a.txt\r",
+    "+++ b/a.txt\r",
+    "@@ -1,3 +1,3 @@\r",
+    " one\r",
+    "-two\r",
+    "+TWO\r",
+    " three\r",
+  ].join("\n");
+
+  assert.deepEqual(diagnoseHunkHeaderCounts(body), []);
 });

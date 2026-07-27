@@ -968,7 +968,7 @@ function endsHunkBody(lines, i) {
  * defect. Handing the model this diagnosis closes that loop without anyone touching
  * the bytes.
  *
- * @returns {Array<{index: number, header: string, declaredOld: number,
+ * @returns {Array<{index: number, file: string, header: string, declaredOld: number,
  *   actualOld: number, declaredNew: number, actualNew: number}>} one entry per
  *   mismatched hunk, in file order; empty when every header agrees with its body.
  */
@@ -979,9 +979,23 @@ export function diagnoseHunkHeaderCounts(body) {
   // split() leaves a phantom "" for a trailing EOL; it is not a context line.
   if (body.endsWith("\n")) lines.pop();
 
+  // Track which file each hunk belongs to. git's own errors name a file; a hint
+  // that says only "hunk 3" makes the model count hunks across file boundaries.
   const hunkStarts = [];
+  const hunkFiles = [];
+  let currentFile = "";
   for (let i = 0; i < lines.length; i += 1) {
-    if (HUNK_HEADER_RE.test(lines[i])) hunkStarts.push(i);
+    const line = lines[i];
+    if (line.startsWith("+++ ")) {
+      const path = line.slice(4).split("\t")[0].trim();
+      if (path && path !== "/dev/null") currentFile = path.replace(/^b\//, "");
+    } else if (line.startsWith("--- ") && !currentFile) {
+      const path = line.slice(4).split("\t")[0].trim();
+      if (path && path !== "/dev/null") currentFile = path.replace(/^a\//, "");
+    } else if (HUNK_HEADER_RE.test(line)) {
+      hunkStarts.push(i);
+      hunkFiles.push(currentFile);
+    }
   }
 
   const mismatches = [];
@@ -995,6 +1009,11 @@ export function diagnoseHunkHeaderCounts(body) {
     let actualOld = 0;
     let actualNew = 0;
     let bodyLines = 0;
+    // Set when the scan runs into something it cannot account for. A count taken
+    // from a partial scan is not a smaller truth, it is a wrong number, and a
+    // confident wrong number sent to the corrective retry is worse than silence:
+    // it tells the model to "recount" a header that is already right.
+    let evidenceLost = false;
     for (let i = headerIdx + 1; i < bodyEnd; i += 1) {
       const line = lines[i];
       if (endsHunkBody(lines, i)) break;
@@ -1003,18 +1022,31 @@ export function diagnoseHunkHeaderCounts(body) {
         actualNew += 1;
       } else if (line.startsWith("-")) {
         actualOld += 1;
-      } else if (line.startsWith(" ") || line === "") {
-        // Emitters commonly drop the leading space on a blank context line.
+      } else if (line === "" || line.trim() === "") {
+        // A bare blank line is ambiguous. Emitters drop the leading space on a
+        // blank context line, but a blank is also the usual separator between
+        // file sections in a multi-file diff — git accepts both. Only count it as
+        // context when a body line demonstrably follows; otherwise the hunk's
+        // evidence is unusable.
+        const next = i + 1;
+        if (next >= bodyEnd || endsHunkBody(lines, next)) {
+          evidenceLost = true;
+          break;
+        }
+        actualOld += 1;
+        actualNew += 1;
+      } else if (line.startsWith(" ")) {
         actualOld += 1;
         actualNew += 1;
       } else {
-        break; // Not part of this hunk body.
+        evidenceLost = true; // Unclassifiable — the scan is no longer a count.
+        break;
       }
       bodyLines += 1;
     }
 
-    // An empty body carries no evidence either way.
-    if (bodyLines === 0) continue;
+    // No usable evidence either way.
+    if (evidenceLost || bodyLines === 0) continue;
 
     // An omitted count means 1.
     const declaredOld = Number(oldDeclared ?? 1);
@@ -1023,6 +1055,7 @@ export function diagnoseHunkHeaderCounts(body) {
 
     mismatches.push({
       index: h,
+      file: hunkFiles[h] ?? "",
       header: lines[headerIdx].replace(/ @@.*$/, " @@"),
       declaredOld,
       actualOld,
@@ -1042,7 +1075,7 @@ export function describeHunkHeaderMismatches(body) {
   const mismatches = diagnoseHunkHeaderCounts(body);
   if (mismatches.length === 0) return "";
   const lines = mismatches.map((m) =>
-    `  hunk ${m.index + 1} \`${m.header}\` declares ${m.declaredOld} old / ${m.declaredNew} new`
+    `  ${m.file ? `${m.file} ` : ""}\`${m.header}\` declares ${m.declaredOld} old / ${m.declaredNew} new`
     + ` but the hunk body carries ${m.actualOld} old / ${m.actualNew} new lines`);
   return [
     `Hunk header line counts do not match the hunk bodies (${mismatches.length} hunk(s)):`,
