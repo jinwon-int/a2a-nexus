@@ -220,7 +220,10 @@ are unwinnable by construction at the pinned TCK ref
 (`29063fe95e903cddac5d8ff811ab94df1ad6ef86`): their requirement definitions
 lack `expected_error` bindings, so the parametrized runner demands
 `response.success` for tests whose purpose is an error response. They belong
-to no promoted selector set; revisit when the TCK pin is bumped.
+to no promoted selector set. Tracked upstream as
+[a2aproject/a2a-tck#202](https://github.com/a2aproject/a2a-tck/issues/202)
+(state as of 2026-07-27: open, bindings still absent at `main`); bump the pin
+once it lands — a watch fires on state change.
 
 Task-not-found/invalid-task promotion evidence is the pair of sufficient
 official-TCK runs `30227144905` and `30227192223`, each at `7/7` with zero
