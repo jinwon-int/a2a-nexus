@@ -5,7 +5,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { test } from "node:test";
 
-import { buildFanoutSubagentPrompt } from "./claude-a2a-patch-bridge.mjs";
+import { buildFanoutSubagentPrompt, describeHunkHeaderMismatches, diagnoseHunkHeaderCounts } from "./claude-a2a-patch-bridge.mjs";
 
 const bridgePath = new URL("./claude-a2a-patch-bridge.mjs", import.meta.url).pathname;
 
@@ -1366,4 +1366,435 @@ test("fanout mode runs the agentic patch with Task tool + spawn prompt + fanout 
   } finally {
     rmSync(tempDir, { recursive: true, force: true });
   }
+});
+
+// --- hunk header count diagnosis (a2a-nexus#1642 canary5) ------------------
+//
+// canary5 emitted a hunk body of 9 old / 55 new lines under `@@ -78,6 +78,44 @@`.
+// git rejected the whole patch with "patch does not apply", which says nothing
+// about counts, so the corrective retry flew blind and reproduced the defect.
+//
+// The bridge DIAGNOSES this and hands the model the numbers. It deliberately does
+// NOT rewrite the header: a recomputed count is derived from the body, so it can
+// only certify the body against itself. The declared count is the sole signal that
+// does not come from the body, which is what turns a truncated hunk or a wrong
+// start offset into a loud failure instead of a silent partial or misplaced commit.
+
+test("diagnoseHunkHeaderCounts reports the canary5 miscount with both sides", () => {
+  const pre = ["Or via `X`:", "", "```", "X='{\"a\":1}'", "```", ""];
+  const adds = Array.from({ length: 46 }, (_, i) => `added ${i + 1}`);
+  const post = ["## Enrollment Health", "", "Enrollment health tracks workers."];
+  const body = [
+    "--- a/doc.md",
+    "+++ b/doc.md",
+    "@@ -78,6 +78,44 @@ WORKER_MODE=mobile",
+    ...pre.map((l) => ` ${l}`),
+    ...adds.map((l) => `+${l}`),
+    ...post.map((l) => ` ${l}`),
+  ].join("\n");
+
+  const mismatches = diagnoseHunkHeaderCounts(body);
+
+  assert.equal(mismatches.length, 1);
+  assert.deepEqual(mismatches[0], {
+    index: 0,
+    file: "doc.md",
+    header: "@@ -78,6 +78,44 @@",
+    declaredOld: 6,
+    actualOld: 9,
+    declaredNew: 44,
+    actualNew: 55,
+  });
+});
+
+test("diagnoseHunkHeaderCounts reports nothing for a correct header", () => {
+  const body = [
+    "--- a/a.txt",
+    "+++ b/a.txt",
+    "@@ -1,3 +1,4 @@",
+    " one",
+    "+two",
+    " three",
+    " four",
+  ].join("\n");
+
+  assert.deepEqual(diagnoseHunkHeaderCounts(body), []);
+});
+
+test("diagnoseHunkHeaderCounts treats an omitted count as 1", () => {
+  // `@@ -1 +1 @@` is the canonical git form for a single-line hunk.
+  const body = [
+    "diff --git a/hello.txt b/hello.txt",
+    "index ce01362..6b0f5f6 100644",
+    "--- a/hello.txt",
+    "+++ b/hello.txt",
+    "@@ -1 +1 @@",
+    "-hello world",
+    "+hello world (patched)",
+  ].join("\n");
+
+  assert.deepEqual(diagnoseHunkHeaderCounts(body), []);
+});
+
+test("diagnoseHunkHeaderCounts counts deletions, blank context and every hunk", () => {
+  const body = [
+    "--- a/a.txt",
+    "+++ b/a.txt",
+    "@@ -1,1 +1,1 @@",
+    " keep",
+    "",
+    "-drop",
+    "+add",
+    "@@ -20,9 +20,9 @@ section",
+    " ctx",
+    "-gone",
+    "",
+  ].join("\n");
+
+  const mismatches = diagnoseHunkHeaderCounts(body);
+
+  assert.equal(mismatches.length, 2);
+  // hunk 1: context "keep" + blank context + 1 deletion / + 1 addition
+  assert.equal(mismatches[0].actualOld, 3);
+  assert.equal(mismatches[0].actualNew, 3);
+  // hunk 2 body is " ctx" + "-gone"; the final "" is the trailing EOL.
+  assert.equal(mismatches[1].actualOld, 2);
+  assert.equal(mismatches[1].actualNew, 1);
+});
+
+test("diagnoseHunkHeaderCounts ignores the no-newline marker", () => {
+  const body = [
+    "--- a/a.txt",
+    "+++ b/a.txt",
+    "@@ -1,1 +1,2 @@",
+    " one",
+    "+two",
+    "\\ No newline at end of file",
+    "",
+  ].join("\n");
+
+  assert.deepEqual(diagnoseHunkHeaderCounts(body), []);
+});
+
+test("diagnoseHunkHeaderCounts is inert on non-diff input", () => {
+  for (const input of ["", null, undefined, "no hunks here"]) {
+    assert.deepEqual(diagnoseHunkHeaderCounts(input), []);
+  }
+});
+
+test("diagnoseHunkHeaderCounts does not mistake a deleted '-- ' line for a file header", () => {
+  // Deleting a line whose content starts with "-- " emits `--- <content>`, which is
+  // textually a file header. "-- " is the line-comment token in SQL, Lua, Haskell
+  // and Ada, and this bridge patches whatever repository the task names. Truncating
+  // the body there would report a mismatch on a header that is in fact correct.
+  const body = [
+    "diff --git a/m.sql b/m.sql",
+    "index 7c1077c..954c691 100644",
+    "--- a/m.sql",
+    "+++ b/m.sql",
+    "@@ -1,3 +1,3 @@",
+    " SELECT 1;",
+    "--- old comment",
+    "+-- new comment",
+    " SELECT 2;",
+  ].join("\n");
+
+  assert.deepEqual(diagnoseHunkHeaderCounts(body), [], "a correct header must not be flagged");
+});
+
+test("diagnoseHunkHeaderCounts does not mistake an added '++ ' line for a file header", () => {
+  const body = [
+    "--- a/n.txt",
+    "+++ b/n.txt",
+    "@@ -1,1 +1,3 @@",
+    " keep",
+    "+++ added marker",
+    "+tail",
+  ].join("\n");
+
+  assert.deepEqual(diagnoseHunkHeaderCounts(body), []);
+});
+
+test("describeHunkHeaderMismatches renders both sides and warns about truncation", () => {
+  const body = [
+    "--- a/a.txt",
+    "+++ b/a.txt",
+    "@@ -1,2 +1,2 @@",
+    "-l1",
+    "+L1",
+    " l2",
+    " l3",
+  ].join("\n");
+
+  const hint = describeHunkHeaderMismatches(body);
+
+  assert.match(hint, /a\.txt `@@ -1,2 \+1,2 @@` declares 2 old \/ 2 new but the hunk body carries 3 old \/ 3 new/);
+  assert.match(hint, /cut short mid-edit/);
+});
+
+test("describeHunkHeaderMismatches is empty when every header agrees", () => {
+  const body = ["--- a/a.txt", "+++ b/a.txt", "@@ -1,1 +1,2 @@", " one", "+two"].join("\n");
+  assert.equal(describeHunkHeaderMismatches(body), "");
+});
+
+// A claude stub that captures the SECOND (corrective) prompt so a test can assert
+// what diagnosis the retry was actually given.
+function writeRetryPromptCapturingClaudeStub(path, firstDiff, secondDiff, promptCapturePath) {
+  const script = [
+    "#!/usr/bin/env node",
+    "import { existsSync, readFileSync, writeFileSync } from 'node:fs';",
+    "const capture = " + JSON.stringify(promptCapturePath) + ";",
+    "const args = process.argv.slice(2);",
+    "const prompt = args[args.indexOf('-p') + 1];",
+    "let count = existsSync(capture + '.count') ? Number(readFileSync(capture + '.count', 'utf8')) : 0;",
+    "count += 1;",
+    "writeFileSync(capture + '.count', String(count));",
+    "if (count === 2) writeFileSync(capture, prompt);",
+    "const diff = count === 1 ? " + JSON.stringify(firstDiff) + " : " + JSON.stringify(secondDiff) + ";",
+    "const wrapped = '```diff\\n' + diff + '\\n```';",
+    "process.stdout.write(JSON.stringify({ type: 'result', subtype: 'success', result: wrapped }));",
+    "",
+  ].join("\n");
+  writeFileSync(path, script);
+  chmodSync(path, 0o755);
+}
+
+// End-to-end proof for a2a-nexus#1642. The bridge must NOT rewrite the model's
+// header — it must tell the model exactly what is wrong so the one corrective
+// retry is informed instead of blind. git's own error never mentions counts,
+// which is why canaries 1, 4 and 5 all died here.
+test("SINGLE-SHOT: a miscounted hunk header is diagnosed into the corrective prompt -> prUrl", () => {
+  const tempDir = mkdtempSync(join(tmpdir(), "claude-singleshot-hunkdiag-"));
+  const { workSeed } = setupLocalFakeOrigin(tempDir);
+  const fakeGitPath = join(tempDir, "fake-git.mjs");
+  const fakeGhPath = join(tempDir, "fake-gh.mjs");
+  const fakeClaudePath = join(tempDir, "fake-claude.mjs");
+  const retryPromptPath = join(tempDir, "retry-prompt.txt");
+  try {
+    writeFakeGitStub(fakeGitPath);
+    writeFakeGhStub(fakeGhPath);
+    // The seed's files are single-line, and `git apply` is lenient about counts
+    // when a hunk runs to EOF with no trailing context. Give the hunk trailing
+    // context so git enforces the header, as it did on the real canary.
+    writeFileSync(join(workSeed, "hello.txt"), "hello world\nb\nc\nd\ne\n");
+    execFileSync("git", ["-C", workSeed, "add", "-A"]);
+    execFileSync("git", ["-C", workSeed, "commit", "-m", "multi-line seed"], { stdio: "ignore" });
+    execFileSync("git", ["-C", workSeed, "push", "origin", "main"], { stdio: "ignore" });
+
+    const header = (old, nw) => `@@ -1,${old} +1,${nw} @@`;
+    const hunkBody = [" hello world", "-b", "+B", "+B2", " c", " d", " e"];
+    const fileHeader = [
+      "diff --git a/hello.txt b/hello.txt",
+      "index 1111111..2222222 100644",
+      "--- a/hello.txt",
+      "+++ b/hello.txt",
+    ];
+    // Body is complete; the header undercounts it (canary5's shape).
+    const miscounted = [...fileHeader, header(3, 3), ...hunkBody].join("\n");
+    const corrected = [...fileHeader, header(5, 6), ...hunkBody].join("\n");
+    writeRetryPromptCapturingClaudeStub(fakeClaudePath, miscounted, corrected, retryPromptPath);
+
+    const result = spawnSync(bridgePath, bridgeArgs(singleShotMessage()), {
+      encoding: "utf8",
+      env: {
+        ...process.env,
+        A2A_CLAUDE_CODE_BIN: fakeClaudePath,
+        A2A_CLAUDE_CODE_GIT_BIN: fakeGitPath,
+        A2A_CLAUDE_CODE_GH_BIN: fakeGhPath,
+        A2A_CLAUDE_CODE_PATCH_MODE: "single-shot",
+        FAKE_GIT_SEED_PATH: workSeed,
+        FAKE_GH_PR_URL: "https://github.com/jinwon-int/a2a-nexus/pull/1642",
+        REAL_GIT_BIN: "git",
+        REAL_GH_BIN: "gh",
+      },
+    });
+
+    assert.equal(result.status, 0, result.stderr);
+    const payload = JSON.parse(JSON.parse(result.stdout).payloads[0].text);
+    assert.equal(payload.status, "pr_opened");
+    assert.equal(payload.prUrl, "https://github.com/jinwon-int/a2a-nexus/pull/1642");
+    assert.equal(payload.claudeCalls, 2, "the retry is used — informed, not skipped");
+
+    // The whole point: the retry was told the counts, which git never reports.
+    const retryPrompt = readFileSync(retryPromptPath, "utf8");
+    assert.match(retryPrompt, /Hunk header line counts do not match/);
+    assert.match(retryPrompt, /declares 3 old \/ 3 new but the hunk body carries 5 old \/ 6 new/);
+    assert.match(result.stderr, /hunk_header_mismatch=1/);
+  } finally {
+    rmSync(tempDir, { recursive: true, force: true });
+  }
+});
+
+// The bridge must never alter the model's bytes. This pins the CRITICAL regression
+// found in review: `--- <content>` produced by deleting a line that starts with
+// "-- " (SQL/Lua/Haskell comments) was mistaken for a file header, and an earlier
+// design rewrote the header and broke a patch that git accepted verbatim.
+test("SINGLE-SHOT: a valid diff whose body contains diff-like lines is applied verbatim", () => {
+  const tempDir = mkdtempSync(join(tmpdir(), "claude-singleshot-verbatim-"));
+  const { workSeed } = setupLocalFakeOrigin(tempDir);
+  const fakeGitPath = join(tempDir, "fake-git.mjs");
+  const fakeGhPath = join(tempDir, "fake-gh.mjs");
+  const fakeClaudePath = join(tempDir, "fake-claude.mjs");
+  try {
+    writeFakeGitStub(fakeGitPath);
+    writeFakeGhStub(fakeGhPath);
+    writeFileSync(join(workSeed, "hello.txt"), "SELECT 1;\n-- old comment\nSELECT 2;\n");
+    execFileSync("git", ["-C", workSeed, "add", "-A"]);
+    execFileSync("git", ["-C", workSeed, "commit", "-m", "sql seed"], { stdio: "ignore" });
+    execFileSync("git", ["-C", workSeed, "push", "origin", "main"], { stdio: "ignore" });
+
+    // Deleting `-- old comment` emits `--- old comment`, textually a file header.
+    // The header below is CORRECT; real `git apply` accepts this verbatim.
+    const validDiff = [
+      "diff --git a/hello.txt b/hello.txt",
+      "index 7c1077c..954c691 100644",
+      "--- a/hello.txt",
+      "+++ b/hello.txt",
+      "@@ -1,3 +1,3 @@",
+      " SELECT 1;",
+      "--- old comment",
+      "+-- new comment",
+      " SELECT 2;",
+    ].join("\n");
+    writeDiffClaudeStub(fakeClaudePath, validDiff);
+
+    const result = spawnSync(bridgePath, bridgeArgs(singleShotMessage()), {
+      encoding: "utf8",
+      env: {
+        ...process.env,
+        A2A_CLAUDE_CODE_BIN: fakeClaudePath,
+        A2A_CLAUDE_CODE_GIT_BIN: fakeGitPath,
+        A2A_CLAUDE_CODE_GH_BIN: fakeGhPath,
+        A2A_CLAUDE_CODE_PATCH_MODE: "single-shot",
+        FAKE_GIT_SEED_PATH: workSeed,
+        FAKE_GH_PR_URL: "https://github.com/jinwon-int/a2a-nexus/pull/1655",
+        REAL_GIT_BIN: "git",
+        REAL_GH_BIN: "gh",
+      },
+    });
+
+    assert.equal(result.status, 0, result.stderr);
+    const payload = JSON.parse(JSON.parse(result.stdout).payloads[0].text);
+    assert.equal(payload.status, "pr_opened");
+    assert.equal(payload.claudeCalls, 1);
+    assert.doesNotMatch(result.stderr, /hunk_header_mismatch=/);
+  } finally {
+    rmSync(tempDir, { recursive: true, force: true });
+  }
+});
+
+// --- the diagnosis must never be confidently wrong ---------------------------
+//
+// The hint goes straight into the corrective prompt. A wrong number is worse than
+// no number: it tells the model to "recount" a header that is already correct and
+// points the retry away from the real failure. These cases were found by review —
+// each is a diff real `git apply` ACCEPTS, or a header that is genuinely correct.
+
+test("diagnoseHunkHeaderCounts stays silent on a blank line between file sections", () => {
+  // The standard multi-file shape an LLM emits. git accepts it; counting the
+  // separator as context inflated hunk 1 and flagged a correct header.
+  const body = [
+    "--- a/f1",
+    "+++ b/f1",
+    "@@ -1,1 +1,1 @@",
+    "-a",
+    "+A",
+    "",
+    "--- a/f2",
+    "+++ b/f2",
+    "@@ -1,1 +1,1 @@",
+    "-b",
+    "+B",
+  ].join("\n");
+
+  assert.deepEqual(diagnoseHunkHeaderCounts(body), []);
+});
+
+test("diagnoseHunkHeaderCounts stays silent on a blank line before a diff --git section", () => {
+  const body = [
+    "diff --git a/f1 b/f1",
+    "--- a/f1",
+    "+++ b/f1",
+    "@@ -1,1 +1,1 @@",
+    "-a",
+    "+A",
+    "",
+    "diff --git a/f2 b/f2",
+    "--- a/f2",
+    "+++ b/f2",
+    "@@ -1,1 +1,1 @@",
+    "-b",
+    "+B",
+  ].join("\n");
+
+  assert.deepEqual(diagnoseHunkHeaderCounts(body), []);
+});
+
+test("diagnoseHunkHeaderCounts stays silent when a body line is unclassifiable", () => {
+  // A line with no valid prefix means the scan is no longer a count. Reporting
+  // the partial tally would contradict a header that may well be correct.
+  const body = [
+    "--- a/a.txt",
+    "+++ b/a.txt",
+    "@@ -1,5 +1,5 @@",
+    " one",
+    "garbage with no diff prefix",
+    "-two",
+    "+TWO",
+  ].join("\n");
+
+  assert.deepEqual(diagnoseHunkHeaderCounts(body), []);
+});
+
+test("diagnoseHunkHeaderCounts still reports a real miscount in a multi-file diff", () => {
+  const body = [
+    "--- a/f1",
+    "+++ b/f1",
+    "@@ -1,1 +1,1 @@",
+    "-a",
+    "+A",
+    "--- a/f2",
+    "+++ b/f2",
+    "@@ -1,9 +1,9 @@",
+    " k",
+    "-b",
+    "+B",
+  ].join("\n");
+
+  const mismatches = diagnoseHunkHeaderCounts(body);
+
+  assert.equal(mismatches.length, 1, "only the genuinely wrong hunk is reported");
+  assert.equal(mismatches[0].file, "f2");
+  assert.equal(mismatches[0].declaredOld, 9);
+  assert.equal(mismatches[0].actualOld, 2);
+});
+
+test("describeHunkHeaderMismatches names the file so the retry is not left counting hunks", () => {
+  const body = [
+    "--- a/docs/x.md",
+    "+++ b/docs/x.md",
+    "@@ -78,6 +78,44 @@",
+    " c1",
+    " c2",
+    "+a1",
+    "+a2",
+  ].join("\n");
+
+  const hint = describeHunkHeaderMismatches(body);
+
+  assert.match(hint, /docs\/x\.md `@@ -78,6 \+78,44 @@` declares 6 old \/ 44 new/);
+});
+
+test("diagnoseHunkHeaderCounts handles CRLF bodies without inventing a mismatch", () => {
+  const body = [
+    "--- a/a.txt\r",
+    "+++ b/a.txt\r",
+    "@@ -1,3 +1,3 @@\r",
+    " one\r",
+    "-two\r",
+    "+TWO\r",
+    " three\r",
+  ].join("\n");
+
+  assert.deepEqual(diagnoseHunkHeaderCounts(body), []);
 });
