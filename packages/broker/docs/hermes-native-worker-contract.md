@@ -75,11 +75,34 @@ WORKER_MODE=mobile
 A2A_WORKER_MODE=mobile
 ```
 
-Or via `WORKER_CAPABILITIES_JSON` (takes precedence when set):
+Or via `WORKER_CAPABILITIES_JSON`:
 
 ```
 WORKER_CAPABILITIES_JSON='{"canAnalyze":true,"canPatchWorkspace":true,"workspaceIds":["public-safe"],"environments":["research"],"runtimeFlavor":"termux-hermes","gatewayRequired":false}'
 ```
+
+When set, `WORKER_CAPABILITIES_JSON` takes precedence for the capability fields
+above. The exception is `implementationCapability`: the following discrete
+variables override any `implementationCapability` object in the JSON blob, so
+an operator can grant or revoke implementation readiness without rewriting the
+whole capabilities document. Every variable also accepts the corresponding
+`A2A_`-prefixed alias.
+
+| Variable | Allowed value / meaning |
+|----------|-------------------------|
+| `WORKER_IMPLEMENTATION_CAPABLE` (`A2A_WORKER_IMPLEMENTATION_CAPABLE`) | `true` or `false`. This variable must be set to declare the implementation capability profile. |
+| `WORKER_IMPLEMENTATION_RUNTIME` (`A2A_WORKER_IMPLEMENTATION_RUNTIME`) | `claude-native`, `codex-native`, or `provider-native`. |
+| `WORKER_IMPLEMENTATION_PROVIDER_ID` (`A2A_WORKER_IMPLEMENTATION_PROVIDER_ID`) | Secret-safe provider identifier, normalized to lowercase (for example, `anthropic` or `openai`). |
+| `WORKER_IMPLEMENTATION_MODEL_TIER` (`A2A_WORKER_IMPLEMENTATION_MODEL_TIER`) | Secret-safe model-tier identifier, normalized to lowercase (for example, `claude-sonnet-5`). |
+| `WORKER_IMPLEMENTATION_AVAILABILITY` (`A2A_WORKER_IMPLEMENTATION_AVAILABILITY`) | `configured`, `canary_passed`, `entitlement_failed`, or `disabled`. |
+| `WORKER_IMPLEMENTATION_LAST_VERIFIED_AT` (`A2A_WORKER_IMPLEMENTATION_LAST_VERIFIED_AT`) | Timestamp for the most recent verification (for example, `2026-07-26T00:00:00.000Z`). |
+| `WORKER_IMPLEMENTATION_EVIDENCE_ID` (`A2A_WORKER_IMPLEMENTATION_EVIDENCE_ID`) | Secret-safe identifier for the verification evidence (for example, `worker-canary-20260726`); never put credentials or provider payloads here. |
+
+Set availability to `configured` until a real implementation canary has run.
+`canary_passed` is an attestation that the implementation route completed
+end-to-end, not merely a description of an installed runtime. See
+[`docs/implementation-lane-readiness.md`](../../../docs/implementation-lane-readiness.md)
+for the readiness policy.
 
 ## Enrollment Health
 
