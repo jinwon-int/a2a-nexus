@@ -209,7 +209,19 @@ export type AuditAction =
   | "worker.heartbeat"
   | "worker.identity_churn_detected"
   | "wave.stalled"
-  | "broker.cleanup.applied";
+  | "broker.cleanup.applied"
+  /**
+   * A `POST /terminal-brief/sidecar/<route>` gate endpoint was invoked (#1601).
+   *
+   * The 37 sidecar routes are pure projections that return their report
+   * `no-store`: they persist nothing, so before this action there was no
+   * durable record that any of them had ever been called. The action answers
+   * exactly one question — is the sidecar activation ceremony surface still
+   * used? — so a removal decision can rest on observation rather than
+   * inference. It records the route name and the requester id only; request
+   * bodies are never captured.
+   */
+  | "terminal_brief.sidecar.invoked";
 export type A2AWorkerEnvironment = "research" | "staging" | "live";
 export type WorkerStatus = "online" | "stale";
 export type WorkerPlaneStatus = "online" | "unknown";

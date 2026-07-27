@@ -1861,6 +1861,26 @@ export class InMemoryA2ABroker {
     this.persistState();
   }
 
+  /**
+   * Record that a terminal-brief sidecar gate route was invoked (#1601).
+   *
+   * The sidecar routes are pure projections returned `no-store`, so they leave
+   * no other durable trace. This is deliberately the smallest possible probe:
+   * it captures the route name and the requester id, never the request body,
+   * and it does not change what any route returns. It exists so the question
+   * "is this 31k-LOC ceremony surface still used?" can be settled by
+   * observation before anything is removed.
+   */
+  recordTerminalBriefSidecarInvocation(routeName: string, actorId: string): AuditEvent {
+    return this.appendAuditEvent({
+      actorId,
+      action: "terminal_brief.sidecar.invoked",
+      targetType: "broker",
+      targetId: `terminal-brief-sidecar:${routeName}`,
+      note: `terminal-brief sidecar route '${routeName}' invoked`,
+    });
+  }
+
   private appendAuditEvent(input: {
     actorId: string;
     action: AuditAction;
