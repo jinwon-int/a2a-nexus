@@ -1769,6 +1769,53 @@ test("diagnoseHunkHeaderCounts still reports a real miscount in a multi-file dif
   assert.equal(mismatches[0].actualOld, 2);
 });
 
+test("diagnoseHunkHeaderCounts reports a miscount in a NON-final file of a multi-file diff", () => {
+  // `bodyEnd` is the next `@@` anywhere in the input, so the last hunk of file N is
+  // scanned across file N+1's header lines. Treating that boundary as lost evidence
+  // silenced every file but the last — most of an ordinary multi-file diff.
+  const body = [
+    "diff --git a/f1 b/f1",
+    "--- a/f1",
+    "+++ b/f1",
+    "@@ -1,9 +1,9 @@",
+    " keep",
+    "-a",
+    "+A",
+    "diff --git a/f2 b/f2",
+    "--- a/f2",
+    "+++ b/f2",
+    "@@ -1,2 +1,2 @@",
+    " keep",
+    "-b",
+    "+B",
+  ].join("\n");
+
+  const mismatches = diagnoseHunkHeaderCounts(body);
+
+  assert.equal(mismatches.length, 1, "the first file's miscount must not be swallowed");
+  assert.equal(mismatches[0].file, "f1");
+  assert.equal(mismatches[0].actualOld, 2);
+});
+
+test("diagnoseHunkHeaderCounts decodes git's quoted-path escapes", () => {
+  const mk = (name) => [
+    `--- "a/${name}"`,
+    `+++ "b/${name}"`,
+    "@@ -1,9 +1,9 @@",
+    " a",
+    "-b",
+    "+B",
+  ].join("\n");
+
+  // core.quotePath=true octal bytes -> UTF-8
+  assert.equal(diagnoseHunkHeaderCounts(mk("\\355\\225\\234\\352\\270\\200.txt"))[0].file, "한글.txt");
+  // C escapes
+  assert.equal(diagnoseHunkHeaderCounts(mk('we\\"ird.txt'))[0].file, 'we"ird.txt');
+  assert.equal(diagnoseHunkHeaderCounts(mk("we\\\\ird.txt"))[0].file, "we\\ird.txt");
+  // core.quotePath=false still quotes for `"`, and the literal UTF-8 must survive
+  assert.equal(diagnoseHunkHeaderCounts(mk('한글 \\"x\\".txt'))[0].file, '한글 "x".txt');
+});
+
 test("describeHunkHeaderMismatches names the file so the retry is not left counting hunks", () => {
   const body = [
     "--- a/docs/x.md",

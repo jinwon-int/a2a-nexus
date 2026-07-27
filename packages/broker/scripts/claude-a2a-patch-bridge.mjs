@@ -960,12 +960,23 @@ function resolveDiffTargetPath(oldLine, newLine) {
     if (typeof line !== "string") return "";
     let value = line.slice(4).split("\t")[0].trim();
     if (value.startsWith('"') && value.endsWith('"') && value.length > 1) {
-      value = value.slice(1, -1).replace(/\\([0-7]{3})/g, (_, oct) =>
-        String.fromCharCode(parseInt(oct, 8)));
-      try {
-        value = Buffer.from(value, "binary").toString("utf8");
-      } catch {
-        // keep the unescaped form if it is not valid UTF-8
+      // git's unquote_c_style: \NNN octal bytes plus the usual C escapes.
+      let sawOctal = false;
+      value = value.slice(1, -1).replace(
+        /\\(?:([0-7]{3})|([abfnrtv"\\]))/g,
+        (whole, oct, ch) => {
+          if (oct) {
+            sawOctal = true;
+            return String.fromCharCode(parseInt(oct, 8));
+          }
+          return { a: "\x07", b: "\b", f: "\f", n: "\n", r: "\r", t: "\t", v: "\v" }[ch] ?? ch;
+        },
+      );
+      // Only round-trip through latin1 when the escapes actually produced bytes.
+      // With core.quotePath=false git still quotes names containing `"` or `\`,
+      // and those keep literal UTF-8 that a latin1 decode would destroy.
+      if (sawOctal && [...value].every((c) => c.codePointAt(0) <= 0xff)) {
+        value = Buffer.from(value, "latin1").toString("utf8");
       }
     }
     return value;
@@ -1050,14 +1061,18 @@ export function diagnoseHunkHeaderCounts(body) {
     let evidenceLost = false;
     for (let i = headerIdx + 1; i < bodyEnd; i += 1) {
       const line = lines[i];
-      if (endsHunkBody(lines, i)) {
-        // A header inside what we thought was a body means the scan stopped early.
-        // The tally so far is a partial count, not a smaller truth, so refuse it —
-        // a deleted "-- " line followed by an added "++ " line and the next `@@`
-        // forms a textually valid triple and would otherwise truncate the count.
-        evidenceLost = true;
-        break;
-      }
+      // A file header ends this hunk's body, and the tally so far IS the complete
+      // count — `bodyEnd` is the next `@@` anywhere in the input, so for the last
+      // hunk of file N it sits past file N+1's header lines. Treating that as lost
+      // evidence would abandon the last hunk of every file but the last, i.e. most
+      // of an ordinary multi-file diff.
+      //
+      // Known limitation: a deleted "-- " line followed by an added "++ " line and
+      // the next `@@` is textually identical to a header triple, so such a body
+      // truncates here and can yield a low count. That shape is adversarial and
+      // pre-existing; silencing all multi-file diffs to cover it is a far worse
+      // trade.
+      if (endsHunkBody(lines, i)) break;
       if (line.startsWith("\\")) continue; // "\ No newline at end of file"
       if (line.startsWith("+")) {
         actualNew += 1;
