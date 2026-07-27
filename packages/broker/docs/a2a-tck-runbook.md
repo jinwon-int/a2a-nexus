@@ -40,7 +40,7 @@ anywhere.
 
 ```bash
 # one-time setup
-git clone https://github.com/a2aproject/a2a-tck
+git clone https://github.com/jinwon-int/a2a-tck
 cd a2a-tck
 uv venv
 . .venv/bin/activate
@@ -216,14 +216,20 @@ latest sufficient measurement shows zero failures and exactly the documented
 number of skips.
 
 Two `test_requirements.py` runner tests (`CORE-SEND-003`, `CORE-MULTI-002a`)
-are unwinnable by construction at the pinned TCK ref
+were unwinnable by construction at the previous pin
 (`29063fe95e903cddac5d8ff811ab94df1ad6ef86`): their requirement definitions
-lack `expected_error` bindings, so the parametrized runner demands
-`response.success` for tests whose purpose is an error response. They belong
-to no promoted selector set. Tracked upstream as
-[a2aproject/a2a-tck#202](https://github.com/a2aproject/a2a-tck/issues/202)
-(state as of 2026-07-27: open, bindings still absent at `main`); bump the pin
-once it lands — a watch fires on state change.
+lacked `expected_error` bindings, so the parametrized runner demanded
+`response.success` for tests whose purpose is an error response. Tracked
+upstream as
+[a2aproject/a2a-tck#202](https://github.com/a2aproject/a2a-tck/issues/202).
+**Since 2026-07-27 the pin tracks the org fork
+[jinwon-int/a2a-tck](https://github.com/jinwon-int/a2a-tck)** — upstream main
+plus exactly one reviewed commit (the #202 bindings,
+[a2aproject/a2a-tck#213](https://github.com/a2aproject/a2a-tck/pull/213)) —
+so both tests now run and pass. The fork also fixes the supply-chain note
+below: the TCK source is org-controlled. Return to the upstream remote (and
+drop the single fork delta) once the bindings land in `a2aproject/a2a-tck`
+(watch on #202 fires on state change).
 
 Task-not-found/invalid-task promotion evidence is the pair of sufficient
 official-TCK runs `30227144905` and `30227192223`, each at `7/7` with zero
