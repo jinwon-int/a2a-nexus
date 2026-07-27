@@ -75,11 +75,43 @@ WORKER_MODE=mobile
 A2A_WORKER_MODE=mobile
 ```
 
-Or via `WORKER_CAPABILITIES_JSON` (takes precedence when set):
+Implementation-lane readiness can be declared with the following variables.
+Each `WORKER_` variable also accepts the listed `A2A_WORKER_` alias; when both
+forms are defined, the `WORKER_` form wins.
+
+| Variable | `A2A_` alias | Allowed values | Meaning |
+|----------|---------------|----------------|---------|
+| `WORKER_IMPLEMENTATION_CAPABLE` | `A2A_WORKER_IMPLEMENTATION_CAPABLE` | `true` or `false` | Declares whether the worker can perform implementation work. This variable must be set to declare the discrete profile. |
+| `WORKER_IMPLEMENTATION_RUNTIME` | `A2A_WORKER_IMPLEMENTATION_RUNTIME` | `claude-native`, `codex-native`, or `provider-native` | Native implementation runtime available to the worker. |
+| `WORKER_IMPLEMENTATION_PROVIDER_ID` | `A2A_WORKER_IMPLEMENTATION_PROVIDER_ID` | Secret-safe provider ID, such as `anthropic` or `openai` | Provider route used by the runtime. IDs are normalized to lowercase and must be 1–64 characters matching `[a-z0-9][a-z0-9._:/+-]*`. |
+| `WORKER_IMPLEMENTATION_MODEL_TIER` | `A2A_WORKER_IMPLEMENTATION_MODEL_TIER` | Secret-safe model-tier ID, such as `claude-sonnet-5` | Model tier used for implementation work. It follows the same normalization and character rules as the provider ID. |
+| `WORKER_IMPLEMENTATION_AVAILABILITY` | `A2A_WORKER_IMPLEMENTATION_AVAILABILITY` | `configured`, `canary_passed`, `entitlement_failed`, or `disabled` | Current readiness state of the provider/runtime route. |
+| `WORKER_IMPLEMENTATION_LAST_VERIFIED_AT` | `A2A_WORKER_IMPLEMENTATION_LAST_VERIFIED_AT` | ISO 8601 timestamp, such as `2026-07-26T00:00:00.000Z` | Time of the most recent verification. The value must be non-empty, secret-safe, and at most 128 characters. |
+| `WORKER_IMPLEMENTATION_EVIDENCE_ID` | `A2A_WORKER_IMPLEMENTATION_EVIDENCE_ID` | Secret-safe evidence ID, such as `worker-canary-20260726` | Reference to the verification evidence. The value must be non-empty and at most 128 characters; never put a token, credential, credential path, or raw provider response here. |
+
+Set `WORKER_IMPLEMENTATION_AVAILABILITY=configured` when the runtime is
+installed but has not completed a real implementation canary.
+`canary_passed` is an attestation that the canary succeeded, not merely a
+description of an installed runtime. See the
+[implementation-lane readiness policy](../../../docs/implementation-lane-readiness.md)
+for the complete readiness rules.
+
+Capabilities can instead be declared through `WORKER_CAPABILITIES_JSON` (or
+`A2A_WORKER_CAPABILITIES_JSON`):
 
 ```
 WORKER_CAPABILITIES_JSON='{"canAnalyze":true,"canPatchWorkspace":true,"workspaceIds":["public-safe"],"environments":["research"],"runtimeFlavor":"termux-hermes","gatewayRequired":false}'
 ```
+
+The JSON blob takes precedence for the existing capability flags, but
+`implementationCapability` is the exception. When
+`WORKER_IMPLEMENTATION_CAPABLE` (or its `A2A_` alias) is set to `true` or
+`false`, the discrete `WORKER_IMPLEMENTATION_*` profile replaces the entire
+`implementationCapability` object from the JSON blob; the two profiles are not
+merged. This lets an operator grant or revoke implementation readiness without
+rewriting the capabilities document. If neither the discrete profile nor a
+JSON `implementationCapability` is declared, the worker remains eligible for
+its legacy lanes but is ineligible for implementation work.
 
 ## Enrollment Health
 
