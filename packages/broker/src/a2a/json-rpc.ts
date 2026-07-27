@@ -284,10 +284,18 @@ export function executeA2AJsonRpc(
         // TaskNotFoundError regardless of actor identity, so the task lookup
         // must happen before actor derivation (which can legitimately demand
         // actor.id on identity-less calls).
-        if (!options.broker.getTask(taskId)) {
+        const cancelTarget = options.broker.getTask(taskId);
+        if (!cancelTarget) {
           throw new BrokerError("not_found", "task not found");
         }
-        const actor = deriveActor(params, options.requesterIdentity, options.enforceRequesterIdentity);
+        // A2A CORE-CANCEL-002: CancelTask on a terminal task is
+        // TaskNotCancelableError. The broker core keeps terminal cancels
+        // idempotent for internal multi-worker flows (superseded sibling
+        // lanes); the A2A adapter enforces the spec error at the boundary.
+        if (cancelTarget.status === "succeeded" || cancelTarget.status === "failed" || cancelTarget.status === "canceled") {
+          throw new BrokerError("invalid_transition", `task ${taskId} is terminal (${cancelTarget.status})`);
+        }
+        const actor = deriveActor(params, effectiveDefaultAgentIdentity(options), options.enforceRequesterIdentity);
         const reason = optionalStringField(params, "reason");
         const task = options.broker.cancelTask(taskId, { actor, reason });
         if (options.responseShape === "spec") {
@@ -301,21 +309,7 @@ export function executeA2AJsonRpc(
         // live updates. Actual streaming happens over HTTP SSE at `/a2a/tasks/:id/events`
         // because JSON-RPC over a single POST cannot carry a multi-event stream.
         const taskId = requireTaskIdParam(params);
-        if (options.enforceRequesterIdentity) {
-          requireRequesterIdentityForTaskRead(options, "SubscribeToTask");
-        }
-        const task = options.broker.getTask(taskId);
-        if (!task) {
-          throw new BrokerError("not_found", "task not found");
-        }
-        // A2A 1.0 STREAM-SUB-003: subscribing to a terminal task is
-        // UnsupportedOperationError — there is no stream to follow.
-        if (task.status === "succeeded" || task.status === "failed" || task.status === "canceled") {
-          throw new BrokerError("unsupported_operation", `task ${taskId} is terminal (${task.status})`);
-        }
-        if (options.enforceRequesterIdentity) {
-          assertRequesterCanSubscribeToTask(options.requesterIdentity, task);
-        }
+        const task = resolveSubscribeToTaskTarget(params, options);
         const subscribeUrl = buildSubscribeUrl(options.publicBaseUrl, taskId);
         return success(id, {
           task: projectBrokerTask(task),
@@ -654,6 +648,21 @@ function canReadTaskSnapshot(options: ExecuteJsonRpcOptions, task: TaskRecord): 
   }
 }
 
+/**
+ * In default-agent mode an anonymous A2A client (no broker requester
+ * identity, no params.actor) is accepted as a synthetic service requester so
+ * bare task operations work like any standalone agent. Production (no
+ * default agent) keeps requiring an actor.
+ */
+function effectiveDefaultAgentIdentity(options: ExecuteJsonRpcOptions): RequesterIdentity | null {
+  return (
+    options.requesterIdentity ??
+    (options.defaultAgentNodeId && !options.enforceRequesterIdentity
+      ? { id: "a2a-anonymous-client", kind: "service", role: "hub" }
+      : null)
+  );
+}
+
 function requireTaskListRequester(options: ExecuteJsonRpcOptions): void {
   requireRequesterIdentityForTaskRead(options, "ListTasks");
 }
@@ -681,11 +690,7 @@ export function executeSendMessage(
   // identity, no params.actor) is accepted as a synthetic service requester
   // so a bare message/send works like any standalone agent. Production
   // (no default agent) keeps requiring an actor.
-  const effectiveIdentity: RequesterIdentity | null =
-    options.requesterIdentity ??
-    (options.defaultAgentNodeId && !options.enforceRequesterIdentity
-      ? { id: "a2a-anonymous-client", kind: "service", role: "hub" }
-      : null);
+  const effectiveIdentity: RequesterIdentity | null = effectiveDefaultAgentIdentity(options);
   const actor = deriveActor(params, effectiveIdentity, options.enforceRequesterIdentity);
 
   // A2A message-level fields (messageId / taskId / contextId) live on the
@@ -865,6 +870,24 @@ export function executeSendMessage(
     options.broker.completeTask(task.id, assignedWorker.nodeId, convention.kind === "complete-with-artifacts"
       ? { summary: convention.summary, a2aArtifacts: convention.artifacts }
       : { summary: convention.summary });
+  }
+
+  if (convention?.kind === "input-required") {
+    // Same inline advance, then pause on a human-interrupt checkpoint so the
+    // response projects A2A input-required. The default agent's drive loop
+    // never completes a checkpointed task; a follow-up context message
+    // resumes it (existing resume path) and the agent then completes.
+    const inFlight = options.broker.getTask(task.id) ?? task;
+    if (inFlight.status === "queued") {
+      options.broker.claimTask(task.id, assignedWorker.nodeId);
+    }
+    if ((options.broker.getTask(task.id) ?? inFlight).status === "claimed") {
+      options.broker.startTask(task.id, assignedWorker.nodeId);
+    }
+    options.broker.checkpointTask(task.id, assignedWorker.nodeId, {
+      state: "awaiting_operator",
+      reason: convention.reason,
+    });
   }
 
   // Re-read after the inline drive so the response reflects the terminal
@@ -1090,6 +1113,34 @@ function requireTaskIdParam(params: unknown): string {
     }
   }
   return requireString(params, "taskId");
+}
+
+/**
+ * Resolve and authorize the SubscribeToTask target: the task must exist,
+ * must be readable by the caller (under identity enforcement), and must be
+ * non-terminal — A2A 1.0 STREAM-SUB-003 makes subscribing to a terminal
+ * task an UnsupportedOperationError. Shared by the unary JSON-RPC method
+ * and the HTTP-layer SSE upgrade.
+ */
+export function resolveSubscribeToTaskTarget(
+  params: unknown,
+  options: ExecuteJsonRpcOptions,
+): TaskRecord {
+  const taskId = requireTaskIdParam(params);
+  if (options.enforceRequesterIdentity) {
+    requireRequesterIdentityForTaskRead(options, "SubscribeToTask");
+  }
+  const task = options.broker.getTask(taskId);
+  if (!task) {
+    throw new BrokerError("not_found", "task not found");
+  }
+  if (task.status === "succeeded" || task.status === "failed" || task.status === "canceled") {
+    throw new BrokerError("unsupported_operation", `task ${taskId} is terminal (${task.status})`);
+  }
+  if (options.enforceRequesterIdentity) {
+    assertRequesterCanSubscribeToTask(options.requesterIdentity, task);
+  }
+  return task;
 }
 
 /**

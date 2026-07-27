@@ -63,7 +63,13 @@ export function startDefaultAgent(
   const drive = (): void => {
     if (stopped) return;
     const queued = broker.listTasks({ assignedWorkerId: nodeId, status: "queued" });
-    for (const task of queued) {
+    // Resumed tasks (checkpoint cleared by a follow-up message) stay in
+    // "running" — pick them up too so the agent finishes them. Tasks still
+    // holding a checkpoint (awaiting operator input) are never driven.
+    const resumed = broker
+      .listTasks({ assignedWorkerId: nodeId, status: "running" })
+      .filter((task) => !task.checkpoint);
+    for (const task of [...queued, ...resumed]) {
       if (inFlight.has(task.id)) continue;
       inFlight.add(task.id);
       void processTask(task).finally(() => inFlight.delete(task.id));
@@ -72,10 +78,16 @@ export function startDefaultAgent(
 
   const processTask = async (task: TaskRecord): Promise<void> => {
     try {
-      broker.claimTask(task.id, nodeId);
-      broker.startTask(task.id, nodeId);
+      const current0 = broker.getTask(task.id) ?? task;
+      if (current0.status === "queued") broker.claimTask(task.id, nodeId);
+      if ((broker.getTask(task.id) ?? current0).status === "claimed") broker.startTask(task.id, nodeId);
       const current = broker.getTask(task.id) ?? task;
       const outcome = await handler(current);
+      // Human-interrupt semantics: a task that gained a checkpoint while the
+      // handler ran waits for operator input instead of completing. The
+      // resume path clears the checkpoint and re-triggers the drive.
+      const latest = broker.getTask(task.id);
+      if (latest?.checkpoint) return;
       const result: TaskResult | undefined =
         outcome && typeof outcome === "object" && "result" in outcome
           ? (outcome.result as TaskResult)

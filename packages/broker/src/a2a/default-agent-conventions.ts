@@ -30,6 +30,7 @@ export interface A2ASpecArtifact {
 export type DefaultAgentConvention =
   | { kind: "complete-with-artifacts"; summary: string; artifacts: A2ASpecArtifact[] }
   | { kind: "complete-with-message"; summary: string }
+  | { kind: "input-required"; reason: string }
   | { kind: "direct-message"; text: string };
 
 /** base64("tck") — the raw bytes payload the TCK's file-artifact test expects. */
@@ -107,6 +108,13 @@ const CONVENTIONS: Array<{ prefix: string; plan: DefaultAgentConvention }> = [
     // expects the SendMessage response itself to show a completed task.
     prefix: "tck-complete-task",
     plan: { kind: "complete-with-message", summary: "Hello from TCK" },
+  },
+  {
+    // Working-task prerequisite: the TCK's create_working_task helper
+    // expects the SendMessage response itself to show an input-required
+    // task (a human-interrupt checkpoint pause, per the A2A state model).
+    prefix: "tck-input-required",
+    plan: { kind: "input-required", reason: "TCK input-required convention" },
   },
 ];
 

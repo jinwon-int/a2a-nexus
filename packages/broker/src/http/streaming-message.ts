@@ -23,6 +23,18 @@ import { writeSseEvent, writeSseResponseHeaders } from "./sse.js";
 export function parseSingleStreamingMessageRequest(
   rawBody: string,
 ): { id: string | number | null; params: unknown } | null {
+  return parseSingleJsonRpcMethodRequest(rawBody, "SendStreamingMessage");
+}
+
+/**
+ * Generalized single-request parser (same acceptance rules as
+ * parseSingleStreamingMessageRequest) for any unary method that can be
+ * upgraded to an SSE response at the HTTP layer.
+ */
+export function parseSingleJsonRpcMethodRequest(
+  rawBody: string,
+  method: string,
+): { id: string | number | null; params: unknown } | null {
   let parsed: unknown;
   try {
     parsed = JSON.parse(rawBody);
@@ -33,7 +45,7 @@ export function parseSingleStreamingMessageRequest(
     return null;
   }
   const request = parsed as Record<string, unknown>;
-  if (request.method !== "SendStreamingMessage") {
+  if (request.method !== method) {
     return null;
   }
   if (request.jsonrpc !== "2.0") {
@@ -96,6 +108,97 @@ export function handleStreamingMessageResponse(
         ? specStreamTaskSnapshot(task, broker)
         : {
             ...sendResult,
+            task: projectBrokerTask(task),
+            final: isTerminalSnapshotStatus(task.status),
+          },
+    ),
+    broker.formatSseEventId(task.id, snapshotSeq > 0 ? snapshotSeq : 0),
+  );
+
+  if (isTerminalSnapshotStatus(task.status)) {
+    res.end();
+    return;
+  }
+
+  let stopHeartbeat: () => void = () => undefined;
+  let unsubscribe: (() => void) | null = null;
+
+  const cleanup = (): void => {
+    stopHeartbeat();
+    if (unsubscribe) {
+      unsubscribe();
+      unsubscribe = null;
+    }
+  };
+
+  unsubscribe = broker.subscribeToTask(task.id, (update) => {
+    writeSseEvent(
+      res,
+      "task-status-update",
+      envelope(
+        spec
+          ? specStreamStatusUpdate(update.task, update.final)
+          : {
+              task: projectBrokerTask(update.task),
+              reason: update.reason,
+              final: update.final,
+            },
+      ),
+      broker.formatSseEventId(task.id, update.seq),
+    );
+    if (update.final) {
+      cleanup();
+      if (!res.writableEnded) {
+        res.end();
+      }
+    }
+  });
+
+  attachSseConnectionCleanup(req, res, cleanup);
+
+  if (heartbeatMs > 0) {
+    stopHeartbeat = startSseHeartbeat(res, heartbeatMs, cleanup);
+  }
+}
+
+/**
+ * A2A 1.0 SubscribeToTask response for clients that accept
+ * `text/event-stream`: the JSON-RPC POST upgrades to an SSE stream whose
+ * opening event carries the task snapshot and subsequent
+ * task-status-update events stream until the task is terminal, then the
+ * stream closes. Legacy clients (no event-stream Accept) keep the unary
+ * snapshot + subscription-URL response from the JSON-RPC layer.
+ */
+export function handleSubscribeToTaskStreamResponse(
+  req: IncomingMessage,
+  res: ServerResponse<IncomingMessage>,
+  params: {
+    broker: InMemoryA2ABroker;
+    rpcId: string | number | null;
+    task: TaskRecord;
+    heartbeatMs: number;
+    responseShape?: "spec" | "legacy";
+  },
+): void {
+  const { broker, rpcId, task, heartbeatMs } = params;
+  const spec = params.responseShape === "spec";
+
+  writeSseResponseHeaders(res);
+
+  const envelope = (result: Record<string, unknown>): Record<string, unknown> => ({
+    jsonrpc: "2.0",
+    id: rpcId,
+    result,
+  });
+
+  const snapshotSeq = broker.replayTaskEvents(task.id, -1).length;
+  writeSseEvent(
+    res,
+    "task-snapshot",
+    envelope(
+      spec
+        ? specStreamTaskSnapshot(task, broker)
+        : {
             task: projectBrokerTask(task),
             final: isTerminalSnapshotStatus(task.status),
           },
