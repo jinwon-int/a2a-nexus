@@ -949,6 +949,23 @@ function endsHunkBody(lines, i) {
   return false;
 }
 
+// Names the file a `--- old` / `+++ new` header pair refers to. The new side wins,
+// except for a deletion (`+++ /dev/null`), where only the old side names the file.
+// The conventional `a/` and `b/` prefixes are stripped only when BOTH sides carry
+// them, so a `--no-prefix` diff of a directory literally called `b/` survives.
+function resolveDiffTargetPath(oldLine, newLine) {
+  const parse = (line) => (typeof line === "string" ? line.slice(4).split("\t")[0].trim() : "");
+  const oldPath = parse(oldLine);
+  const newPath = parse(newLine);
+  // `/dev/null` stands in for a creation or a deletion and carries no prefix, so
+  // it does not count as evidence against the conventional a//b/ pair.
+  const prefixed = (oldPath.startsWith("a/") || oldPath === "/dev/null")
+    && (newPath.startsWith("b/") || newPath === "/dev/null");
+  if (newPath && newPath !== "/dev/null") return prefixed ? newPath.slice(2) : newPath;
+  if (oldPath && oldPath !== "/dev/null") return prefixed ? oldPath.slice(2) : oldPath;
+  return "";
+}
+
 /**
  * Reports hunk headers whose declared `@@ -a,b +c,d @@` line counts disagree with
  * the lines the hunk actually carries.
@@ -981,17 +998,19 @@ export function diagnoseHunkHeaderCounts(body) {
 
   // Track which file each hunk belongs to. git's own errors name a file; a hint
   // that says only "hunk 3" makes the model count hunks across file boundaries.
+  //
+  // A header is only recognised through the same ordered `--- ` / `+++ ` / `@@ `
+  // triple `endsHunkBody` requires. Trusting a bare `+++ ` here would let an added
+  // line whose content starts with "++ " rename the following hunks.
   const hunkStarts = [];
   const hunkFiles = [];
   let currentFile = "";
   for (let i = 0; i < lines.length; i += 1) {
     const line = lines[i];
-    if (line.startsWith("+++ ")) {
-      const path = line.slice(4).split("\t")[0].trim();
-      if (path && path !== "/dev/null") currentFile = path.replace(/^b\//, "");
-    } else if (line.startsWith("--- ") && !currentFile) {
-      const path = line.slice(4).split("\t")[0].trim();
-      if (path && path !== "/dev/null") currentFile = path.replace(/^a\//, "");
+    if (line.startsWith("diff --git ")) {
+      currentFile = ""; // A new file section; do not carry the previous name over.
+    } else if (line.startsWith("--- ") && endsHunkBody(lines, i)) {
+      currentFile = resolveDiffTargetPath(line, lines[i + 1]);
     } else if (HUNK_HEADER_RE.test(line)) {
       hunkStarts.push(i);
       hunkFiles.push(currentFile);
@@ -1022,14 +1041,20 @@ export function diagnoseHunkHeaderCounts(body) {
         actualNew += 1;
       } else if (line.startsWith("-")) {
         actualOld += 1;
-      } else if (line === "" || line.trim() === "") {
-        // A bare blank line is ambiguous. Emitters drop the leading space on a
-        // blank context line, but a blank is also the usual separator between
-        // file sections in a multi-file diff — git accepts both. Only count it as
-        // context when a body line demonstrably follows; otherwise the hunk's
-        // evidence is unusable.
+      } else if (line === "" || line === "\r") {
+        // Only a TRULY bare line is ambiguous. Emitters drop the leading space on
+        // a blank context line, but a bare blank is also the usual separator
+        // between file sections in a multi-file diff — git accepts both. A
+        // whitespace-only line that still carries its ' ' prefix is not ambiguous
+        // (a separator is empty, never space-padded) and falls through to the
+        // context branch below, so it must not be tested first.
+        //
+        // Ambiguity is resolved by what FOLLOWS: only a real file header proves a
+        // separator. End-of-input and the next `@@` of the same file both mean the
+        // blank was the hunk's last context line, since a separator by definition
+        // has a file section after it.
         const next = i + 1;
-        if (next >= bodyEnd || endsHunkBody(lines, next)) {
+        if (next < lines.length && endsHunkBody(lines, next)) {
           evidenceLost = true;
           break;
         }

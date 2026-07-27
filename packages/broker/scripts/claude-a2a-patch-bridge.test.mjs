@@ -1798,3 +1798,116 @@ test("diagnoseHunkHeaderCounts handles CRLF bodies without inventing a mismatch"
 
   assert.deepEqual(diagnoseHunkHeaderCounts(body), []);
 });
+
+// --- the silence guard must not swallow real miscounts ----------------------
+//
+// Abandoning a hunk's diagnosis is right when the evidence is genuinely ambiguous
+// and wrong otherwise: it hands the corrective retry nothing on a diff git just
+// rejected, which is the blind retry #1642 exists to fix.
+
+test("diagnoseHunkHeaderCounts still reports when the last body line is whitespace-only context", () => {
+  // " " prefix + "   " content. A file separator is empty, never space-padded, so
+  // this is not ambiguous and must count as ordinary context.
+  const body = [
+    "--- a/a.txt",
+    "+++ b/a.txt",
+    "@@ -1,9 +1,9 @@",
+    " one",
+    "-two",
+    "+TWO",
+    "    ",
+  ].join("\n");
+
+  const mismatches = diagnoseHunkHeaderCounts(body);
+
+  assert.equal(mismatches.length, 1);
+  assert.equal(mismatches[0].actualOld, 3);
+});
+
+test("diagnoseHunkHeaderCounts still reports when the last body line is a bare blank", () => {
+  // End of input cannot be a file separator — a separator has a file section after
+  // it — so the trailing blank is the hunk's last context line.
+  const body = [
+    "--- a/a.txt",
+    "+++ b/a.txt",
+    "@@ -1,9 +1,9 @@",
+    " one",
+    "-two",
+    "+TWO",
+    "",
+    "",
+  ].join("\n");
+
+  const mismatches = diagnoseHunkHeaderCounts(body);
+
+  assert.equal(mismatches.length, 1);
+  assert.equal(mismatches[0].actualOld, 3);
+});
+
+test("diagnoseHunkHeaderCounts attributes a deletion hunk to the deleted file", () => {
+  // `+++ /dev/null` names no file, so only the old side identifies it. Carrying the
+  // previous section's name over would put a confidently wrong path in the hint.
+  const body = [
+    "--- a/f1",
+    "+++ b/f1",
+    "@@ -1,1 +1,1 @@",
+    "-a",
+    "+A",
+    "--- a/f2",
+    "+++ /dev/null",
+    "@@ -1,5 +0,0 @@",
+    "-b",
+  ].join("\n");
+
+  const mismatches = diagnoseHunkHeaderCounts(body);
+
+  assert.equal(mismatches.length, 1);
+  assert.equal(mismatches[0].file, "f2");
+});
+
+test("diagnoseHunkHeaderCounts attributes a creation hunk to the created file", () => {
+  const body = [
+    "--- /dev/null",
+    "+++ b/n.txt",
+    "@@ -0,0 +1,9 @@",
+    "+a",
+    "+b",
+  ].join("\n");
+
+  const mismatches = diagnoseHunkHeaderCounts(body);
+
+  assert.equal(mismatches.length, 1);
+  assert.equal(mismatches[0].file, "n.txt");
+});
+
+test("diagnoseHunkHeaderCounts does not let a '+++ ' body line rename later hunks", () => {
+  const body = [
+    "--- a/f1",
+    "+++ b/f1",
+    "@@ -1,1 +1,2 @@",
+    " k",
+    "+++ marker",
+    "@@ -20,9 +20,9 @@",
+    " z",
+    "-y",
+  ].join("\n");
+
+  for (const m of diagnoseHunkHeaderCounts(body)) {
+    assert.equal(m.file, "f1", "attribution must not follow a body line");
+  }
+});
+
+test("diagnoseHunkHeaderCounts leaves --no-prefix paths intact", () => {
+  // Only strip a//b/ when BOTH sides carry them, so a directory literally named
+  // "b/" in a --no-prefix diff is not truncated to "uild/x.js".
+  const body = [
+    "--- b/build/x.js",
+    "+++ b/build/x.js",
+    "@@ -1,9 +1,9 @@",
+    " k",
+    "-y",
+    "+Y",
+  ].join("\n");
+
+  assert.equal(diagnoseHunkHeaderCounts(body)[0].file, "b/build/x.js");
+});
