@@ -14,7 +14,7 @@ import {
   extractTerminalBriefSidecarDefaultOnExecutionWindowRequestDraftFinalLiveExecution,
   extractTerminalBriefSidecarDefaultOnExecutionWindowRequestDraftOptions,
   renderTerminalBriefSidecarDefaultOnExecutionWindowRequestDraftMarkdown,
-} from "../dist/core/terminal-brief-sidecar-default-on-execution-window-request-draft.js";
+} from "../dist/core/terminal-brief-sidecar-default-on/execution-window-request-draft.js";
 
 function parseArgs(argv) {
   const readOption = (name) => {

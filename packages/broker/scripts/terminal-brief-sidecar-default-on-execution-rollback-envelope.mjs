@@ -13,7 +13,7 @@ import {
   extractTerminalBriefSidecarDefaultOnExecutionRollbackEnvelopeOptions,
   extractTerminalBriefSidecarDefaultOnExecutionRollbackEnvelopePlan,
   renderTerminalBriefSidecarDefaultOnExecutionRollbackEnvelopeMarkdown,
-} from "../dist/core/terminal-brief-sidecar-default-on-execution-rollback-envelope.js";
+} from "../dist/core/terminal-brief-sidecar-default-on/execution-rollback-envelope.js";
 
 function parseArgs(argv) {
   const readOption = (name) => {

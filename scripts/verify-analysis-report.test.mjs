@@ -277,16 +277,22 @@ test("malformed bundle is a fail-closed result, not a crash", () => {
   }
 });
 
-// Conformance guard: round-trip the REAL #1380 broker signers through this
-// standalone verifier. Runs when the broker dist is built (the normal CI case
-// after the release-gate build barrier); skips loudly otherwise so a divergence
+// Conformance guard: round-trip the REAL #1380 signers through this standalone
+// verifier. Runs when the attestation dist is built (the normal CI case after
+// the release-gate build barrier); skips loudly otherwise so a divergence
 // between #1380's emit side and this verifier surfaces rather than hiding.
+//
+// The signers moved to the attestation package in #1615; this specifier still
+// pointed at packages/broker/dist/core/provenance.js, so the catch below turned
+// a permanent resolution failure into a permanent skip and the round-trip
+// stopped running entirely. Resolved through the package specifier now, so a
+// future move cannot silently re-mute it.
 test("conformance: real #1380 provenance signers verify offline", async (t) => {
   let mod;
   try {
-    mod = await import("../packages/broker/dist/core/provenance.js");
+    mod = await import("a2a-attestation");
   } catch {
-    return t.skip("broker dist not built — run `npm --workspace packages/broker run build` for the conformance round-trip");
+    return t.skip("attestation dist not built — run `npm --workspace packages/attestation run build` for the conformance round-trip");
   }
   const keys = () => {
     const { privateKey, publicKey } = generateKeyPairSync("ed25519");

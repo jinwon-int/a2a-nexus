@@ -732,6 +732,33 @@
       "note": "Runs on ordinary release-gate path; keep until a narrower owner gate replaces it."
     },
     {
+      "name": "dist-import-resolution",
+      "command": "node",
+      "args": [
+        "scripts/check-dist-import-resolution.mjs"
+      ],
+      "tier": "core",
+      "owner": "release-gate-tooling",
+      "consumer": "pr-gate",
+      "retirement": "keep",
+      "retirementCondition": "Retire only when a narrower owner-scoped gate demonstrably covers the same invariant; no removal while it runs on the default release-gate path.",
+      "note": "Resolves every relative compiled-output import specifier in scripts/ and packages/broker/scripts/ back to its source (#1601). `node --check` parses without resolving, so a stale ../dist/... specifier is invisible to every other gate; 17 operator scripts were dead with ERR_MODULE_NOT_FOUND when this was added."
+    },
+    {
+      "name": "dist-import-resolution-tests",
+      "command": "node",
+      "args": [
+        "--test",
+        "scripts/check-dist-import-resolution.test.mjs"
+      ],
+      "tier": "core",
+      "owner": "release-gate-tooling",
+      "consumer": "pr-gate",
+      "retirement": "keep",
+      "retirementCondition": "Retire only when a narrower owner-scoped gate demonstrably covers the same invariant; no removal while it runs on the default release-gate path.",
+      "note": "Regression tests for the dist import resolution guard (#1601)."
+    },
+    {
       "name": "script-budget",
       "command": "npm",
       "args": [

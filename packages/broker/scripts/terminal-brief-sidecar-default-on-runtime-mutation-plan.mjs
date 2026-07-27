@@ -13,7 +13,7 @@ import {
   extractTerminalBriefSidecarDefaultOnRuntimeMutationPlanEnablementGate,
   extractTerminalBriefSidecarDefaultOnRuntimeMutationPlanOptions,
   renderTerminalBriefSidecarDefaultOnRuntimeMutationPlanMarkdown,
-} from "../dist/core/terminal-brief-sidecar-default-on-runtime-mutation-plan.js";
+} from "../dist/core/terminal-brief-sidecar-default-on/runtime-mutation-plan.js";
 
 function parseArgs(argv) {
   const readOption = (name) => {
