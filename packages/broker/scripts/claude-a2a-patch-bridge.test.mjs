@@ -1550,3 +1550,60 @@ test("normalizeUnifiedDiffHunkHeaders still repairs a hunk that omits only one c
   assert.match(result.body, /^@@ -3,1 \+3,2 @@$/m);
   assert.equal(result.repairs.length, 1);
 });
+
+// End-to-end proof for a2a-nexus#1642: the bridge must now survive the exact
+// failure that killed canaries 1, 4 and 5 — a correct hunk body under a
+// miscounted header — WITHOUT spending the corrective retry. Asserting on the
+// normalizer alone would not prove the wiring, and the wiring is what broke.
+test("SINGLE-SHOT: a miscounted hunk header is repaired in-line -> prUrl with 1 claude call", () => {
+  const tempDir = mkdtempSync(join(tmpdir(), "claude-singleshot-hunkfix-"));
+  const { workSeed } = setupLocalFakeOrigin(tempDir);
+  const fakeGitPath = join(tempDir, "fake-git.mjs");
+  const fakeGhPath = join(tempDir, "fake-gh.mjs");
+  const fakeClaudePath = join(tempDir, "fake-claude.mjs");
+  const argsCapturePath = join(tempDir, "captured-args.json");
+  try {
+    writeFakeGitStub(fakeGitPath);
+    writeFakeGhStub(fakeGhPath);
+    // Body is correct; the header claims -1,7 +1,9 instead of -1,1 +1,2.
+    // Verbatim, `git apply --check` rejects this with "patch does not apply".
+    const miscountedDiff = [
+      "diff --git a/hello.txt b/hello.txt",
+      "index ce01362..6b0f5f6 100644",
+      "--- a/hello.txt",
+      "+++ b/hello.txt",
+      "@@ -1,7 +1,9 @@",
+      "-hello world",
+      "+hello world (patched)",
+      "+second added line",
+    ].join("\n");
+    writeDiffClaudeStub(fakeClaudePath, miscountedDiff);
+
+    const result = spawnSync(bridgePath, bridgeArgs(singleShotMessage()), {
+      encoding: "utf8",
+      env: {
+        ...process.env,
+        A2A_CLAUDE_CODE_BIN: fakeClaudePath,
+        A2A_CLAUDE_CODE_GIT_BIN: fakeGitPath,
+        A2A_CLAUDE_CODE_GH_BIN: fakeGhPath,
+        A2A_CLAUDE_CODE_PATCH_MODE: "single-shot",
+        FAKE_GIT_SEED_PATH: workSeed,
+        FAKE_GH_PR_URL: "https://github.com/jinwon-int/a2a-nexus/pull/1642",
+        CAPTURE_ARGS_PATH: argsCapturePath,
+        REAL_GIT_BIN: "git",
+        REAL_GH_BIN: "gh",
+      },
+    });
+
+    assert.equal(result.status, 0, result.stderr);
+    const payload = JSON.parse(JSON.parse(result.stdout).payloads[0].text);
+    assert.equal(payload.status, "pr_opened");
+    assert.equal(payload.prUrl, "https://github.com/jinwon-int/a2a-nexus/pull/1642");
+    // Repaired in-line, so the corrective retry (2nd claude call) never ran.
+    assert.equal(payload.claudeCalls, 1, "the repair must not cost a corrective retry");
+    // The repair is reported on stderr, never on stdout (stdout is the envelope).
+    assert.match(result.stderr, /hunk_header_repairs=1 \[@@ -1,7 \+1,9 @@ -> @@ -1,1 \+1,2 @@\]/);
+  } finally {
+    rmSync(tempDir, { recursive: true, force: true });
+  }
+});
