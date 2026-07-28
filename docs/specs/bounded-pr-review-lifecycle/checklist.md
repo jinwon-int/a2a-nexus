@@ -289,3 +289,47 @@
 - [ ] Live schema execution, record-mode activation, deploy/restart/canary,
       provider send, ACK/replay/prune/migration, and real-lineage collection
       receive separate approval
+
+## Q. Fifth authenticated owner — reviewer replacement (Phase 18)
+
+- [x] Exact reviewer-replacement route is the only new mutation path
+- [x] Exact-role operator gate runs before trusted context construction
+- [x] Request contains only decision reference, observed time, and exact
+      current intent/head/diff binding
+- [x] Request cannot select reason, source, authority, namespace, issuer,
+      operator/reviewer, producer ID, source-event ID, task, or assignment
+- [x] Trusted code assigns `reviewer_replacement_decided`,
+      `reviewer_allocator`, observation kind, and infrastructure-failure reason
+- [x] Phase 13 authorization and Phase 12/8 admission remain canonical
+- [x] Schema 13 and the existing source table are reused unchanged
+- [x] Closed attached-source set is exactly all five source/authority/command/
+      observation tuples
+- [x] Exact-subject CAS and same-event changed-payload conflict fail closed
+- [x] Already-terminal lineage admission is a stable rejection, not an applied
+      no-op
+- [x] Only the reviewer-replacement counter increments on a valid replacement
+- [x] Shared budget, start time, head, diff, intent, reviewer-run count,
+      correction-generation count, findings, and other counters are preserved
+- [x] Replacement-budget exhaustion remains terminal and visible
+- [x] Source event, canonical lineage transition/outcome, and ledger share one
+      transaction
+- [x] Direct and worker-thread paths preserve replay/conflict and rollback
+- [x] Worker-thread path uses one composite command and post-ACK projection
+- [x] Off mode is inert before request parsing or store access
+- [x] Minimized source metadata excludes decision reference, operator/reviewer,
+      task/assignment data, logs, prose, prompts, provider payloads, and
+      credentials
+- [x] Existing lineage-create, review-report, correction-generation, and
+      operator-cancel paths remain compatible
+- [x] No worker selection, task assignment, dispatch, inference, or automatic
+      replacement loop is added
+- [x] Generic task/result/error/log/prose, completion, retry, finalizer,
+      approval, and fixer paths remain detached
+- [x] Default mode remains `off`; `enforce` remains unsupported
+- [x] Authoritative source attachment coverage is exactly `5/5`
+- [ ] GitHub CI evidence, detached independent review, and finalizer closeout
+      are recorded only after completion
+- [ ] Live schema execution, record-mode activation, deploy/restart/canary,
+      provider send, ACK/replay/prune/migration, and real-lineage collection
+      receive separate approval
+- [ ] Issue #1518 closeout receives separate evidence and authorization

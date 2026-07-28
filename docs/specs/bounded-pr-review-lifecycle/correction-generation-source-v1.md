@@ -140,3 +140,8 @@ Lineage create, signed review report, and operator cancel retain their existing
 owners and routes. Generic task creation, completion, result, evidence,
 failure, cancellation, retry, approval, finalizer, and fixer paths remain
 detached. The route records already committed generation evidence only.
+
+Phase 18 later attaches the separately authenticated reviewer-replacement
+source, making authoritative-source attachment coverage exactly `5/5`. That
+later attachment does not change this route or its Phase 17 boundary. See
+[reviewer-replacement-source-v1.md](reviewer-replacement-source-v1.md).

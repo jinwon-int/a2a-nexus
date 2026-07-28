@@ -171,7 +171,7 @@ function cancelAdmission(
   };
 }
 
-function detachedReplacementAdmission():
+function replacementCompatibilityAdmission():
   AuthorizedReviewLineageSourceAdmissionV1 {
   const sourceEventRef = "detached:reviewer_replacement:1";
   const observedAt = "2026-07-28T10:12:00Z";
@@ -324,15 +324,26 @@ test("review source and ledger insert failures roll back the lineage transition"
   }
 });
 
-test("closed source admission keeps replacement detached and preserves create/cancel", () => {
+test("replacement admission applies and preserves create/cancel compatibility", () => {
   const { dir, dbFile } = tempDatabase();
   try {
     const store = new SqliteReviewLineageObservationStore(dbFile);
     assert.equal(store.applyAuthorizedSource(createAdmission()).status, "applied");
-    assert.throws(
-      () => store.applyAuthorizedSource(detachedReplacementAdmission()),
-      /invalid_authorized_source/,
+    assert.deepEqual(
+      store.applyAuthorizedSource(replacementCompatibilityAdmission()),
+      {
+        status: "applied",
+        lineageId: "phase16-atomic",
+        outcome: "applied",
+        state: "reviewing_initial",
+        recordVersion: 2,
+        effects: ["reviewer_replaced:infrastructure_failure"],
+      },
     );
+    const replacementLineage = store.getLineage("phase16-atomic");
+    assert.ok(replacementLineage);
+    assert.equal(replacementLineage.counters.reviewerReplacements, 1);
+    assert.equal(replacementLineage.state, "reviewing_initial");
 
     const cancelLineage = "phase16-cancel-compat";
     assert.equal(
@@ -344,8 +355,8 @@ test("closed source admission keeps replacement detached and preserves create/ca
       "applied",
     );
     assert.equal(store.getLineage(cancelLineage)?.state, "canceled");
-    assert.equal(store.countLedgerEntries(), 3);
-    assert.equal(store.countAuthorizedSourceEvents(), 3);
+    assert.equal(store.countLedgerEntries(), 4);
+    assert.equal(store.countAuthorizedSourceEvents(), 4);
     store.close();
   } finally {
     rmSync(dir, { recursive: true, force: true });

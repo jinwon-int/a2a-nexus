@@ -225,9 +225,43 @@ to `reviewing_resolution` and records the supplied already-committed head; the
 route itself never applies a patch or invokes a fixer.
 
 No generic task, result, validation summary, log, prose, retry, completion, or
-finalizer output can create this event. `reviewer_replacement` remains
-detached, so authoritative-source coverage is exactly `4/5`. See
+finalizer output can create this event. At the Phase 17 boundary,
+`reviewer_replacement` remained detached, so authoritative-source coverage was
+exactly `4/5`. See
 [correction-generation-source-v1.md](correction-generation-source-v1.md).
+
+### Authenticated reviewer-replacement source (Phase 18)
+
+Record mode accepts an already classified infrastructure-failure replacement
+decision only through
+`POST /review-lineages/{lineageId}/reviewer-replacement`. An authenticated
+requester must have the exact `operator` role. Trusted broker code treats that
+operator as issuer of semantic `reviewer_allocator` authority and fixes
+`reviewer_replacement_decided`, the source namespace, observation kind, and
+reason `infrastructure_failure`.
+
+The exact-field body carries only an immutable decision reference,
+observation time, and the complete current intent/head/diff binding. It cannot
+select reason, authority, namespace, issuer, producer ID, source-event ID,
+reviewer identity, replacement worker, task, or assignment. The Phase 8 parser,
+Phase 13 authorization, Phase 12 awaited admission, schema 13, composite
+transaction, worker-thread durable ACK, and post-ACK projection remain
+canonical.
+
+An admitted replacement increments only the existing replacement counter. It
+never resets the shared budget, start time, intent, head, diff, reviewer-run or
+correction-generation counters, or finding ledger. Replacement-budget
+exhaustion remains terminal and visible. Already-terminal lineages record a
+stable rejection instead of an applied no-op.
+
+The route records a decision only. It does not classify generic failures,
+choose a worker, mutate assignment, infer from task/result/error/log/prose,
+retry/completion/finalizer state, or create an automatic loop. The closed
+source/authority/command/observation set is exactly all five tuples, so
+authoritative-source attachment coverage is exactly `5/5`. This is source
+attachment, not record-mode activation, independent review, finalizer
+closeout, or issue closeout. See
+[reviewer-replacement-source-v1.md](reviewer-replacement-source-v1.md).
 
 ### Blocking-finding ledger (FindingLedgerV1)
 

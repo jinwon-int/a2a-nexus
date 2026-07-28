@@ -111,6 +111,8 @@ disabled. `record` remains the only active mode; `enforce` remains unsupported.
 Generic task creation, completion, result, evidence, failure, cancellation,
 retry, approval, finalizer, and fixer paths remain detached. Phase 16 coverage
 was exactly `3/5`. Phase 17 later attaches only correction generation, making
-current coverage `4/5`; reviewer replacement still has no runtime source
-owner. See
-[correction-generation-source-v1.md](correction-generation-source-v1.md).
+coverage `4/5` at that phase boundary. Phase 18 later attaches reviewer
+replacement, making authoritative-source attachment coverage exactly `5/5`.
+See [correction-generation-source-v1.md](correction-generation-source-v1.md)
+and
+[reviewer-replacement-source-v1.md](reviewer-replacement-source-v1.md).

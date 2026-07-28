@@ -160,6 +160,9 @@ import {
   authorizeOperatorReviewLineageCorrectionGeneration,
 } from "../review-lifecycle/correction-generation-source.js";
 import {
+  authorizeOperatorReviewLineageReviewerReplacement,
+} from "../review-lifecycle/reviewer-replacement-source.js";
+import {
   authorizeReviewerReviewLineageReport,
 } from "../review-lifecycle/review-report-source.js";
 import type {
@@ -532,11 +535,11 @@ export class InMemoryA2ABroker {
     return this.wavePlans.list();
   }
 
-  // --- Bounded PR review lineage telemetry (#1518 Phases 3b/10/12/14-17) ----
+  // --- Bounded PR review lineage telemetry (#1518 Phases 3b/10/12/14-18) ----
   // Generic task completion/retry/finalizer paths remain detached. Phases
-  // 14-17 attach only explicit operator create/cancel/correction-generation
-  // and signed reviewer-report sources whose durable source row and normalized
-  // Phase 8 command share one transaction.
+  // 14-18 attach only explicit operator create/cancel/correction-generation/
+  // reviewer-replacement and signed reviewer-report sources whose durable
+  // source row and normalized Phase 8 command share one transaction.
 
   createReviewLineage(
     input: CreateRecordedReviewLineageInput,
@@ -696,6 +699,24 @@ export class InMemoryA2ABroker {
     this.assertAuthorizedReviewLineageSourceStore();
     return this.commitAuthorizedReviewLineageSource(
       authorizeOperatorReviewLineageCorrectionGeneration(
+        lineageId,
+        input,
+        authenticatedOperatorId,
+      ),
+    );
+  }
+
+  async recordOperatorReviewLineageReviewerReplacement(
+    lineageId: string,
+    input: unknown,
+    authenticatedOperatorId: string,
+  ): Promise<ReviewLineageObservationApplicationResult | undefined> {
+    // Default off mode remains inert before request validation, trusted
+    // context construction, or store access.
+    if (this.reviewLineageMode === "off") return undefined;
+    this.assertAuthorizedReviewLineageSourceStore();
+    return this.commitAuthorizedReviewLineageSource(
+      authorizeOperatorReviewLineageReviewerReplacement(
         lineageId,
         input,
         authenticatedOperatorId,

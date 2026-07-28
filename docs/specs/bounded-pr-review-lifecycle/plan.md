@@ -293,6 +293,41 @@ task/result/log/prose, or connect completion, retry, approval, or finalizer
 paths. The default remains `off`, `enforce` remains unsupported, and no live
 action is approved.
 
+## Phase 18 — Fifth authenticated owner: reviewer replacement
+
+- Add only
+  `POST /review-lineages/{lineageId}/reviewer-replacement`.
+- Require an authenticated requester with the exact `operator` role, then
+  assign semantic `reviewer_allocator` authority in trusted broker code.
+- Accept only an immutable decision reference, observation time, and exact
+  current intent/head/diff binding.
+- Fix `reviewer_replacement_decided`, `reviewer_allocator`, source namespace,
+  authenticated issuer, observation kind, and
+  `reason=infrastructure_failure`; derive producer and source-event identities.
+- Reuse the Phase 8 parser, Phase 13 authorization, Phase 12 awaited admission,
+  schema 13, and existing composite transaction/worker command.
+- Reject stale subjects and already-terminal lineages without canonical
+  mutation; never persist a terminal applied no-op.
+- Preserve the shared budget, start time, subject, intent, reviewer-run and
+  correction-generation counters, and findings; increment only the existing
+  reviewer-replacement counter.
+- Keep replacement-budget exhaustion terminal and visible through the existing
+  projection and shared terminal-reason vocabulary.
+- Prove exact route/fields/role, parser delegation, direct and worker-thread
+  durability, post-ACK projection, off-mode inertness, restart replay,
+  same-event conflict, stale-subject and terminal rejection, exhaustion,
+  rollback, privacy, closed tuples, and four-source compatibility.
+- Close the attached tuple set at exactly all five and report authoritative
+  source attachment coverage as exactly `5/5`.
+
+Phase 18 records an already classified infrastructure-failure decision only.
+It does not select a reviewer, mutate task assignment, infer from generic
+task/result/error/log/prose/retry/completion/finalizer state, or create an
+automatic replacement loop. `5/5` is source attachment, not record-mode
+activation, independent review, finalizer closeout, or issue closeout. The
+default remains `off`, `enforce` remains unsupported, and no live action is
+approved.
+
 ## Rollback strategy per phase
 
 | Phase | Rollback |
@@ -313,6 +348,7 @@ action is approved.
 | 15 | Return mode to `off`, stop using the create route, and revert code; preserve canonical/source rows for audit |
 | 16 | Return mode to `off`, stop using the signed review-report route, and revert code; preserve canonical/source rows for audit |
 | 17 | Return mode to `off`, stop using the correction-generation route, and revert code; preserve canonical/source rows for audit |
+| 18 | Return mode to `off`, stop using the reviewer-replacement route, and revert code; preserve canonical/source rows for audit |
 
 ## Safety boundaries (all phases)
 

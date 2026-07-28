@@ -89,4 +89,6 @@ finalizer paths remain detached. At the end of Phase 15, `review_report`,
 `correction_generation`, and `reviewer_replacement` had no runtime source
 owner. Phase 16 later attaches only `review_report`; the other two remain
 detached at that phase boundary. Phase 17 later attaches only
-`correction_generation`; `reviewer_replacement` remains detached.
+`correction_generation`; `reviewer_replacement` remains detached at that phase
+boundary. Phase 18 later attaches `reviewer_replacement`, completing
+authoritative-source attachment coverage at exactly `5/5`.

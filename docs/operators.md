@@ -263,18 +263,21 @@ contract, full ledger, raw receipts, and diff hashes. Only authenticated
 requester identity enforcement is enabled.
 
 Phase 3b itself did not connect task/review execution to lineage events.
-Phases 14–17 later add four separately reviewed mutation sources:
+Phases 14–18 later add five separately reviewed mutation sources:
 
 - `POST /review-lineages`
 - `POST /review-lineages/{lineageId}/operator-cancel`
 - `POST /review-lineages/{lineageId}/review-report`
 - `POST /review-lineages/{lineageId}/correction-generation`
+- `POST /review-lineages/{lineageId}/reviewer-replacement`
 
-Creation, cancellation, and correction-generation recording require the exact
-`operator` role even when legacy requester enforcement is relaxed. Trusted
-broker code assigns the correction request semantic `correction_controller`
-authority. The review-report route instead always requires the existing
-Ed25519 worker HTTP-signature registry and its dedicated
+Creation, cancellation, correction-generation, and reviewer-replacement
+recording require the exact `operator` role even when legacy requester
+enforcement is relaxed. Trusted broker code assigns the correction request
+semantic `correction_controller` authority and the replacement request
+semantic `reviewer_allocator` authority. The review-report route instead
+always requires the existing Ed25519 worker HTTP-signature registry and its
+dedicated
 `review-lineage.report` key scope. The verified signing-key owner is the
 reviewer issuer; the canonical receipt parser proves that it equals
 `receipt.reviewerNodeId`.
@@ -289,20 +292,38 @@ generation reference, observation time, exact pre-correction binding, next
 head/diff, unchanged intent hash, and changed paths. It is accepted only from
 `correction_pending`; stale subjects, intent drift, forbidden paths, and
 out-of-scope paths fail closed without replacing the pending head.
+Replacement recording accepts only an immutable decision reference,
+observation time, and exact current intent/head/diff binding. Trusted code
+fixes the observation as an already classified `infrastructure_failure`;
+request JSON cannot select a reason, reviewer, replacement worker, task, or
+assignment.
 
 The correction route records an already committed generation only. It does not
 accept patch bytes, run or apply a fixer, auto-push output, or infer a
 generation from task/result/log/prose, completion, retry, or finalizer state.
+The replacement route records an already classified decision only. It never
+chooses or dispatches a worker, mutates assignment, infers from generic
+task/result/error/log/prose/retry/completion/finalizer state, or creates an
+automatic replacement loop.
+
+A valid replacement increments only the existing reviewer-replacement counter.
+It does not reset the shared lineage budget, start time, current subject,
+intent, reviewer-run or correction-generation counters, or findings.
+Replacement-budget exhaustion remains terminal and visible. Already-terminal
+lineages reject replacement admission instead of recording an applied no-op.
+
 The server fixes every source authority and derives identities; no body can
 assert them. The authoritative source event, canonical lineage
 transition/outcome, and idempotency result commit in one SQLite transaction.
-Generic task creation/completion/cancellation remains unrelated.
-`reviewer_replacement` still has no automatic owner, so current coverage is
-exactly `4/5`.
+Generic task creation/completion/cancellation remains unrelated. The closed
+attached set contains exactly the five defined source/authority/command/
+observation tuples, so authoritative source attachment coverage is exactly
+`5/5`.
 
 The default remains `off`, and `enforce` is still rejected. Adding these routes
 to source does not approve live schema execution, record-mode activation,
-deployment, restart, canary, or real-lineage collection.
+deployment, restart, canary, real-lineage collection, independent review,
+finalizer closeout, or issue closeout.
 
 ### Lossless review-lineage observation contract (#1518 Phase 8)
 
