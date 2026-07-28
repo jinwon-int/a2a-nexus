@@ -21,6 +21,21 @@ test("broker Docker runtime runs non-root with writable state path prepared", ()
   assert.match(dockerfile, /^USER\s+node$/m);
 });
 
+test("broker Dockerfile installs every handler transitive support module", () => {
+  assert.match(
+    dockerfile,
+    /cp packages\/broker\/scripts\/lib\/source-carriers\.mjs \.\/handlers\/lib\/source-carriers\.mjs/,
+  );
+  assert.match(
+    dockerfile,
+    /cp packages\/broker\/scripts\/lib\/retrieval-snapshot-carriers\.mjs \.\/handlers\/lib\/retrieval-snapshot-carriers\.mjs/,
+  );
+  assert.match(
+    dockerfile,
+    /cp packages\/broker\/scripts\/lib\/live-operation-adapter\.mjs \.\/handlers\/lib\/live-operation-adapter\.mjs/,
+  );
+});
+
 test("broker compose build args fail closed instead of falling back to unknown or empty provenance", () => {
   assert.match(compose, /A2A_BROKER_REVISION:\s+\$\{A2A_BROKER_REVISION:\?[^}]+\}/);
   assert.match(compose, /A2A_BROKER_CREATED:\s+\$\{A2A_BROKER_CREATED:\?[^}]+\}/);
