@@ -17,9 +17,11 @@ import {
 import { payloadWithRetrievalSnapshotSourceCarriers } from "./lib/retrieval-snapshot-carriers.mjs";
 import {
   buildClaudeRuntimeArgs,
-  resolveExplicitClaudeEffort,
-  resolveExplicitClaudeModel,
 } from "./lib/claude-runtime-flags.mjs";
+import {
+  attachClaudeModelTelemetry,
+  claudeInvocationModelTelemetry,
+} from "./lib/claude-model-telemetry.mjs";
 
 // ---------------------------------------------------------------------------
 // Process-tree timeout / session-isolation hardening (issue #1129)
@@ -416,42 +418,6 @@ function normalizeResponse(parsed) {
   };
 }
 
-function attachClaudeModelTelemetry(response, flags, env = process.env) {
-  const requestedModel = safeText(flags.model, "");
-  const requestedThinking = safeText(flags.thinking, "");
-  const configuredRuntimeModel = safeText(
-    env.A2A_CLAUDE_CODE_RUNTIME_MODEL || env.CLAUDE_CODE_MODEL || env.ANTHROPIC_MODEL,
-    "",
-  );
-  // What actually reached the child process, not what the node merely declared.
-  // These two can disagree (e.g. A2A_CLAUDE_CODE_RUNTIME_MODEL is set for
-  // telemetry but A2A_CLAUDE_MODEL - which drives the argument - is not), and a
-  // disagreement is exactly the evidence-integrity failure this reports.
-  const appliedModel = resolveExplicitClaudeModel(flags, env);
-  const appliedEffort = resolveExplicitClaudeEffort(env);
-  const modelArgumentApplied = Boolean(appliedModel);
-  const declaredMatchesApplied = !configuredRuntimeModel || !appliedModel
-    ? undefined
-    : configuredRuntimeModel === appliedModel;
-
-  return {
-    ...response,
-    bridgeAdapter: "claude_code",
-    bridgeContractVersion: ANALYSIS_BRIDGE_CONTRACT_VERSION,
-    requestedModel: requestedModel || undefined,
-    requestedThinking: requestedThinking || undefined,
-    actualRuntimeModel: configuredRuntimeModel || undefined,
-    appliedModel: appliedModel || undefined,
-    appliedEffort: appliedEffort || undefined,
-    declaredRuntimeModelMatchesApplied: declaredMatchesApplied,
-    modelInheritanceMode: modelArgumentApplied ? "cli_argument" : "metadata_only",
-    claudeModelArgumentApplied: modelArgumentApplied,
-    modelInheritanceNote: modelArgumentApplied
-      ? `Claude Code bridge pinned the operator-configured model as a Claude CLI --model argument (${appliedModel}).`
-      : "Claude Code bridge preserves the A2A requested/effective worker model in prompt/result telemetry but does not pass it as a Claude CLI --model argument.",
-  };
-}
-
 function payloadFromStructuredEnv(env = process.env) {
   const payloadPath = safeText(env.A2A_ANALYSIS_PAYLOAD_FILE, "");
   if (!payloadPath) return {};
@@ -535,7 +501,10 @@ async function runClaude(prompt, flags, env = process.env) {
       const signal = child.signal ? ` signal=${child.signal}` : "";
       throw new Error(`Claude Code exited with ${child.status}${signal}: ${childOutputExcerpt(child)}`);
     }
-    return child.stdout;
+    return {
+      stdout: child.stdout,
+      invocation: claudeInvocationModelTelemetry(args),
+    };
   } finally {
     rmSync(sessionWorkspace, { recursive: true, force: true });
   }
@@ -561,16 +530,24 @@ async function main() {
   }
 
   const prompt = buildClaudePrompt({ message, flags, payload });
-  let stdout;
+  let claudeRun;
   try {
-    stdout = await runClaude(prompt, flags, process.env);
+    claudeRun = await runClaude(prompt, flags, process.env);
   } catch (error) {
     die(error.message);
   }
 
   let response;
   try {
-    response = attachClaudeModelTelemetry(normalizeResponse(extractAnalysisJsonFromClaudeOutput(stdout)), flags, process.env);
+    response = attachClaudeModelTelemetry(
+      normalizeResponse(extractAnalysisJsonFromClaudeOutput(claudeRun.stdout)),
+      {
+        bridgeContractVersion: ANALYSIS_BRIDGE_CONTRACT_VERSION,
+        flags,
+        env: process.env,
+        invocation: claudeRun.invocation,
+      },
+    );
   } catch (error) {
     die(error.message);
   }

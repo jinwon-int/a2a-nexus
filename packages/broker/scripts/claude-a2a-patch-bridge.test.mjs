@@ -82,6 +82,8 @@ test("PATCH intent + stub claude returning a PR url -> envelope contains patch J
       encoding: "utf8",
       env: {
         ...process.env,
+        A2A_CLAUDE_MODEL: "",
+        A2A_CLAUDE_EFFORT: "",
         A2A_CLAUDE_CODE_BIN: fakeClaudePath,
         A2A_CLAUDE_CODE_MAX_TURNS: "5",
         CAPTURE_CWD_PATH: cwdCapturePath,
@@ -95,6 +97,13 @@ test("PATCH intent + stub claude returning a PR url -> envelope contains patch J
     const payload = JSON.parse(envelope.payloads[0]?.text);
     assert.equal(payload.status, "pr_opened");
     assert.equal(payload.bridgeContractVersion, "claude-a2a-patch.v1");
+    assert.equal(payload.bridgeAdapter, "claude_code");
+    assert.equal(payload.requestedModel, "claude-code/default");
+    assert.equal(payload.requestedThinking, "low");
+    assert.equal(payload.actualRuntimeModel, undefined);
+    assert.equal(payload.modelInheritanceMode, "metadata_only");
+    assert.equal(payload.claudeModelArgumentApplied, false);
+    assert.match(payload.modelInheritanceNote, /actual runtime model is unknown/);
     assert.equal(payload.prUrl, "https://github.com/jinwon-int/example/pull/7");
     assert.equal(payload.branch, "feat/x");
     assert.deepEqual(payload.tests, ["node --test -> pass"]);
@@ -177,6 +186,8 @@ test("ANALYSIS intent -> bridge behaves like the analysis bridge (no regression)
       encoding: "utf8",
       env: {
         ...process.env,
+        A2A_CLAUDE_MODEL: "",
+        A2A_CLAUDE_EFFORT: "",
         A2A_CLAUDE_CODE_BIN: fakeClaudePath,
         CAPTURE_ARGS_PATH: argsPath,
         CAPTURE_PROMPT_PATH: promptPath,
@@ -187,6 +198,14 @@ test("ANALYSIS intent -> bridge behaves like the analysis bridge (no regression)
     const envelope = JSON.parse(result.stdout);
     const payload = JSON.parse(envelope.payloads[0]?.text);
     assert.equal(payload.status, "done");
+    assert.equal(payload.bridgeContractVersion, "claude-a2a-patch.v1");
+    assert.equal(payload.bridgeAdapter, "claude_code");
+    assert.equal(payload.requestedModel, "claude-code/default");
+    assert.equal(payload.requestedThinking, "low");
+    assert.equal(payload.actualRuntimeModel, undefined);
+    assert.equal(payload.modelInheritanceMode, "metadata_only");
+    assert.equal(payload.claudeModelArgumentApplied, false);
+    assert.match(payload.modelInheritanceNote, /actual runtime model is unknown/);
     assert.equal(payload.summary, "analysis complete via patch bridge analysis mode");
     assert.deepEqual(payload.evidenceRefs, ["embedded:analysis-mode-test"]);
     const args = JSON.parse(readFileSync(argsPath, "utf8"));
@@ -727,6 +746,7 @@ test("SINGLE-SHOT corrective retry: first diff fails git apply --check, second d
         A2A_CLAUDE_CODE_GIT_BIN: fakeGitPath,
         A2A_CLAUDE_CODE_GH_BIN: fakeGhPath,
         A2A_CLAUDE_CODE_PATCH_MODE: "single-shot",
+        A2A_CLAUDE_MODEL: "claude-sonnet-5",
         FAKE_GIT_SEED_PATH: workSeed,
         FAKE_GH_PR_URL: "https://github.com/jinwon-int/a2a-nexus/pull/1021",
         REAL_GIT_BIN: "git",
@@ -742,6 +762,10 @@ test("SINGLE-SHOT corrective retry: first diff fails git apply --check, second d
     assert.equal(payload.status, "pr_opened");
     assert.equal(payload.claudeCalls, 2, "payload must reflect 2 claude calls");
     assert.equal(payload.prUrl, "https://github.com/jinwon-int/a2a-nexus/pull/1021");
+    assert.equal(payload.actualRuntimeModel, undefined);
+    assert.equal(payload.claudeModelArgumentApplied, false);
+    assert.equal(payload.modelInheritanceMode, "metadata_only");
+    assert.match(payload.modelInheritanceNote, /output-producing invocation.*actual runtime model is unknown/);
   } finally {
     rmSync(tempDir, { recursive: true, force: true });
   }
@@ -1127,6 +1151,14 @@ test("PATCH: A2A_CLAUDE_MODEL=claude-sonnet-5 -> spawned claude argv includes --
     const modelIndex = args.indexOf("--model");
     assert.notEqual(modelIndex, -1, "claude argv must include --model when A2A_CLAUDE_MODEL is claude-shaped");
     assert.equal(args[modelIndex + 1], "claude-sonnet-5");
+    const payload = JSON.parse(JSON.parse(result.stdout).payloads[0].text);
+    assert.equal(payload.bridgeAdapter, "claude_code");
+    assert.equal(payload.requestedModel, "claude-code/default");
+    assert.equal(payload.requestedThinking, "low");
+    assert.equal(payload.actualRuntimeModel, "claude-sonnet-5");
+    assert.equal(payload.modelInheritanceMode, "cli_argument");
+    assert.equal(payload.claudeModelArgumentApplied, true);
+    assert.match(payload.modelInheritanceNote, /passed an explicit --model argument/);
   } finally {
     rmSync(tempDir, { recursive: true, force: true });
   }
@@ -1151,6 +1183,11 @@ test("PATCH: non-Claude A2A_CLAUDE_MODEL (legacy leftover) is ignored -> no --mo
     const args = JSON.parse(readFileSync(argsCapturePath, "utf8"));
     assert.equal(args.indexOf("--model"), -1,
       "legacy non-Claude identifiers must NOT reach claude argv (mounted config default keeps deciding)");
+    const payload = JSON.parse(JSON.parse(result.stdout).payloads[0].text);
+    assert.equal(payload.actualRuntimeModel, undefined);
+    assert.equal(payload.modelInheritanceMode, "metadata_only");
+    assert.equal(payload.claudeModelArgumentApplied, false);
+    assert.match(payload.modelInheritanceNote, /actual runtime model is unknown/);
   } finally {
     rmSync(tempDir, { recursive: true, force: true });
   }
@@ -1213,6 +1250,12 @@ test("ANALYSIS: A2A_CLAUDE_MODEL=sonnet alias -> spawned claude argv includes --
     const modelIndex = args.indexOf("--model");
     assert.notEqual(modelIndex, -1, "analysis claude argv must include --model for alias values");
     assert.equal(args[modelIndex + 1], "sonnet");
+    const payload = JSON.parse(JSON.parse(result.stdout).payloads[0].text);
+    assert.equal(payload.bridgeAdapter, "claude_code");
+    assert.equal(payload.bridgeContractVersion, "claude-a2a-patch.v1");
+    assert.equal(payload.actualRuntimeModel, "sonnet");
+    assert.equal(payload.modelInheritanceMode, "cli_argument");
+    assert.equal(payload.claudeModelArgumentApplied, true);
   } finally {
     rmSync(tempDir, { recursive: true, force: true });
   }
@@ -1291,6 +1334,11 @@ test("SINGLE-SHOT: A2A_CLAUDE_MODEL=claude-sonnet-5 -> claude argv includes --mo
     const modelIndex = args.indexOf("--model");
     assert.notEqual(modelIndex, -1, "single-shot claude argv must include --model when A2A_CLAUDE_MODEL is claude-shaped");
     assert.equal(args[modelIndex + 1], "claude-sonnet-5");
+    assert.equal(payload.bridgeAdapter, "claude_code");
+    assert.equal(payload.bridgeContractVersion, "claude-a2a-patch.v1");
+    assert.equal(payload.actualRuntimeModel, "claude-sonnet-5");
+    assert.equal(payload.modelInheritanceMode, "cli_argument");
+    assert.equal(payload.claudeModelArgumentApplied, true);
   } finally {
     rmSync(tempDir, { recursive: true, force: true });
   }
@@ -1347,6 +1395,7 @@ test("fanout mode runs the agentic patch with Task tool + spawn prompt + fanout 
         A2A_CONTAINED_SUBAGENTS_MAX: "3",
         A2A_CONTAINED_SUBAGENTS_ROLES: "explorer,implementer,verifier",
         A2A_CLAUDE_CODE_FANOUT_MAX_TURNS: "50",
+        A2A_CLAUDE_MODEL: "claude-sonnet-5",
         A2A_CLAUDE_CODE_BIN: fakeClaudePath,
         CAPTURE_ARGS_PATH: argsCapturePath,
       },
@@ -1356,6 +1405,10 @@ test("fanout mode runs the agentic patch with Task tool + spawn prompt + fanout 
     assert.equal(result.status, 0, result.stderr);
     const payload = JSON.parse(JSON.parse(result.stdout).payloads[0].text);
     assert.equal(payload.prUrl, "https://github.com/jinwon-int/example/pull/42");
+    assert.equal(payload.bridgeAdapter, "claude_code");
+    assert.equal(payload.actualRuntimeModel, "claude-sonnet-5");
+    assert.equal(payload.modelInheritanceMode, "cli_argument");
+    assert.equal(payload.claudeModelArgumentApplied, true);
     assert.equal(payload.subagentReport.count, 1);
     assert.equal(payload.subagentReport.entries[0].id, "helper-1");
     assert.match(payload.subagentReport.entries[0].output, /TOKEN=runtime-synthetic/);
