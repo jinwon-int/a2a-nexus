@@ -15,7 +15,9 @@ import {
   CLASS_ALREADY_EXISTS,
   CLASS_FAILED,
   CLASS_PREFLIGHT_EXCLUDED,
+  A2A_REQUESTER_ROLES,
 } from './a2a-dispatch-round.mjs';
+import { A2A_REQUESTER_ROLES as BROKER_REQUESTER_ROLES } from '../packages/broker/src/core/requester-role-contract.mjs';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const SCRIPT = join(__dirname, 'a2a-dispatch-round.mjs');
@@ -94,10 +96,10 @@ function makeManifest(brokerUrl, laneCount = 3) {
   return {
     roundId: 'pr-review-r2-20260612-195514',
     brokerUrl,
-    requester: { id: 'libero', role: 'orchestrator' },
+    requester: { id: 'libero', role: 'operator' },
     defaults: { intent: 'pr-review' },
     lanes: Array.from({ length: laneCount }, (_, i) => ({
-      target: { id: `worker-${i + 1}`, role: 'reviewer' },
+      target: { id: `worker-${i + 1}`, role: 'analyst' },
       message: `Please review lane ${i + 1}`,
     })),
   };
@@ -129,6 +131,78 @@ test('validateManifest honors explicit parentRoundOrder in lane payload', () => 
 });
 
 // ─── runDispatch: dry-run ────────────────────────────────────────────────────
+
+test('dispatcher consumes the broker requester-role contract without drift', () => {
+  assert.strictEqual(A2A_REQUESTER_ROLES, BROKER_REQUESTER_ROLES);
+  assert.deepEqual(A2A_REQUESTER_ROLES, [
+    'hub',
+    'live-trader',
+    'researcher',
+    'analyst',
+    'operator',
+  ]);
+});
+
+test('dry-run accepts every broker requester role for requester and target', async () => {
+  for (const role of A2A_REQUESTER_ROLES) {
+    const manifest = makeManifest('http://unused', 1);
+    manifest.requester.role = role;
+    manifest.lanes[0].target.role = role;
+
+    const out = await runDispatch(manifest, { dryRun: true });
+    assert.equal(out.exitCode, 0, `${role} should pass`);
+  }
+});
+
+test('invalid requester role fails locally with the broker allowed set and no POST', async () => {
+  const manifest = makeManifest('http://unused', 1);
+  manifest.requester.role = 'orchestrator';
+  const expectedErrors = [
+    'requester.role must be one of: hub, live-trader, researcher, analyst, operator',
+  ];
+  let fetchCalls = 0;
+
+  const dryRunOut = await runDispatch(manifest, { dryRun: true });
+  assert.equal(dryRunOut.exitCode, 1);
+  assert.deepEqual(dryRunOut.errors, expectedErrors);
+
+  const out = await runDispatch(manifest, {
+    fetchImpl: async () => {
+      fetchCalls += 1;
+      throw new Error('validation must prevent network access');
+    },
+    secret: SECRET,
+  });
+
+  assert.equal(out.exitCode, 1);
+  assert.deepEqual(out.errors, expectedErrors);
+  assert.equal(fetchCalls, 0);
+});
+
+test('invalid target role fails locally with the broker allowed set and no POST', async () => {
+  const manifest = makeManifest('http://unused', 1);
+  manifest.lanes[0].target.role = 'reviewer';
+  const expectedErrors = [
+    'lanes[0].target.role must be one of: hub, live-trader, researcher, analyst, operator',
+  ];
+  let fetchCalls = 0;
+
+  const dryRunOut = await runDispatch(manifest, { dryRun: true });
+  assert.equal(dryRunOut.exitCode, 1);
+  assert.deepEqual(dryRunOut.errors, expectedErrors);
+
+  const out = await runDispatch(manifest, {
+    fetchImpl: async () => {
+      fetchCalls += 1;
+      throw new Error('validation must prevent network access');
+    },
+    secret: SECRET,
+  });
+
+  assert.equal(out.exitCode, 1);
+  assert.deepEqual(out.errors, expectedErrors);
+  assert.equal(fetchCalls, 0);
+});
 
 test('dry-run validates and plans without network', async () => {
   const out = await runDispatch(makeManifest('http://unused', 2), { dryRun: true });

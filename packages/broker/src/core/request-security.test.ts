@@ -7,6 +7,7 @@ import { createHmac, createPrivateKey, sign } from "node:crypto";
 import type { IncomingMessage } from "node:http";
 
 import {
+  A2A_REQUESTER_ROLES,
   A2A_WORKER_ROUTE_SCOPES,
   assertA2AWorkerScopeAllowed,
   assertGitHubWebhookSignature,
@@ -19,6 +20,7 @@ import {
   rateLimitKey,
   verifyA2AHttpSignature,
 } from "./request-security.js";
+import { A2A_REQUESTER_ROLES as SHARED_REQUESTER_ROLES } from "./requester-role-contract.mjs";
 
 function createRequest(params: {
   headers?: Record<string, string>;
@@ -88,6 +90,33 @@ test("extractRequesterIdentity rejects scopes headers without requester id", () 
   assert.throws(
     () => extractRequesterIdentity(request),
     /x-a2a-requester-id is required/,
+  );
+});
+
+test("request-security consumes the shared requester-role contract and accepts every role", () => {
+  assert.strictEqual(A2A_REQUESTER_ROLES, SHARED_REQUESTER_ROLES);
+  for (const role of A2A_REQUESTER_ROLES) {
+    const request = createRequest({
+      headers: {
+        "x-a2a-requester-id": "requester-a",
+        "x-a2a-requester-role": role,
+      },
+    });
+    assert.equal(extractRequesterIdentity(request)?.role, role);
+  }
+});
+
+test("request-security rejects roles outside the shared requester-role contract", () => {
+  const request = createRequest({
+    headers: {
+      "x-a2a-requester-id": "requester-a",
+      "x-a2a-requester-role": "orchestrator",
+    },
+  });
+
+  assert.throws(
+    () => extractRequesterIdentity(request),
+    /x-a2a-requester-role must be one of: hub, live-trader, researcher, analyst, operator/,
   );
 });
 
