@@ -40,9 +40,10 @@ RUN npm install -g "${CODEX_PACKAGE}" \
   && gh --version \
   && gitleaks version
 
-# Codex credentials are mounted at runtime under /run/secrets/codex-dir and are
-# copied only into the container's ephemeral /tmp filesystem. They are never
-# baked into image layers or persisted in runner artifacts.
+# A task-scoped credential clone is mounted read-write at runtime under
+# /run/secrets/codex-dir. The host runner validates and atomically writes back
+# only a compatible refreshed auth.json; credentials never enter image layers
+# or task artifacts.
 LABEL org.openclaw.a2a-docker-runner.harness="codex" \
   org.openclaw.a2a-docker-runner.codex.package="${CODEX_PACKAGE}"
 

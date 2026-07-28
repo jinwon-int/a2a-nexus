@@ -1,16 +1,22 @@
 #!/usr/bin/env node
 import { spawnSync } from "node:child_process";
+import { randomUUID } from "node:crypto";
 import {
   chmodSync,
+  chownSync,
   copyFileSync,
   existsSync,
+  lstatSync,
   mkdtempSync,
   readFileSync,
+  renameSync,
   rmSync,
+  writeFileSync,
 } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
+import { isDeepStrictEqual } from "node:util";
 
 const BRIDGE_CONTRACT_VERSION = "codex-a2a-analysis.v1";
 const SELF_PATH = fileURLToPath(import.meta.url);
@@ -22,6 +28,8 @@ const TERMUX_CHILD_ENV_KEYS = [
   "TERMUX_EXEC__PROC_SELF_EXE",
   "TERMUX_VERSION",
 ];
+const MAX_AUTH_BYTES = 1024 * 1024;
+const REFRESHABLE_TOKEN_FIELDS = new Set(["access_token", "id_token", "refresh_token"]);
 
 function safeText(value, fallback = "") {
   if (value === undefined || value === null) return fallback;
@@ -105,18 +113,126 @@ function extractCodexMessage(stdout) {
   return lastMessage.trim();
 }
 
+function authRecord(value, label) {
+  if (!Buffer.isBuffer(value) || value.byteLength === 0 || value.byteLength > MAX_AUTH_BYTES) {
+    throw new Error(`${label} must be between 1 byte and ${MAX_AUTH_BYTES} bytes`);
+  }
+  let parsed;
+  try {
+    parsed = JSON.parse(value.toString("utf8"));
+  } catch {
+    throw new Error(`${label} must contain valid JSON`);
+  }
+  if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) {
+    throw new Error(`${label} must contain a JSON object`);
+  }
+  return parsed;
+}
+
+function assertSameKeys(original, candidate, label) {
+  if (!isDeepStrictEqual(Object.keys(original).sort(), Object.keys(candidate).sort())) {
+    throw new Error(`${label} changed credential schema`);
+  }
+}
+
+function validateCodexAuthRefreshCandidate(originalBytes, candidateBytes) {
+  const original = authRecord(originalBytes, "source Codex auth.json");
+  const candidate = authRecord(candidateBytes, "refreshed Codex auth.json");
+  assertSameKeys(original, candidate, "refreshed Codex auth.json");
+
+  for (const key of Object.keys(original)) {
+    if (key === "last_refresh" || key === "tokens") continue;
+    if (!isDeepStrictEqual(candidate[key], original[key])) {
+      throw new Error(`refreshed Codex auth.json changed protected field ${key}`);
+    }
+  }
+
+  if (original.tokens === undefined) return;
+  if (
+    !original.tokens ||
+    typeof original.tokens !== "object" ||
+    Array.isArray(original.tokens) ||
+    !candidate.tokens ||
+    typeof candidate.tokens !== "object" ||
+    Array.isArray(candidate.tokens)
+  ) {
+    throw new Error("refreshed Codex auth.json changed tokens schema");
+  }
+
+  assertSameKeys(original.tokens, candidate.tokens, "refreshed Codex auth.json tokens");
+  for (const key of Object.keys(original.tokens)) {
+    if (REFRESHABLE_TOKEN_FIELDS.has(key)) {
+      if (
+        typeof original.tokens[key] === "string" &&
+        original.tokens[key] &&
+        (typeof candidate.tokens[key] !== "string" || !candidate.tokens[key])
+      ) {
+        throw new Error(`refreshed Codex auth.json emptied required token field ${key}`);
+      }
+      continue;
+    }
+    if (!isDeepStrictEqual(candidate.tokens[key], original.tokens[key])) {
+      throw new Error(`refreshed Codex auth.json changed protected token field ${key}`);
+    }
+  }
+}
+
+function requireRegularFile(path, label) {
+  const info = lstatSync(path);
+  if (!info.isFile() || info.isSymbolicLink()) {
+    throw new Error(`${label} must be a regular file`);
+  }
+  return info;
+}
+
 function buildCodexHome(configDir) {
   const authPath = join(configDir, "auth.json");
   if (!existsSync(authPath)) throw new Error("Codex analysis credential directory is missing auth.json");
+  const authInfo = requireRegularFile(authPath, "Codex analysis auth.json");
+  const originalAuth = readFileSync(authPath);
+  authRecord(originalAuth, "source Codex auth.json");
   const home = mkdtempSync(join(tmpdir(), "a2a-codex-home-"));
   copyFileSync(authPath, join(home, "auth.json"));
   chmodSync(join(home, "auth.json"), 0o600);
   const configPath = join(configDir, "config.toml");
   if (existsSync(configPath)) {
+    requireRegularFile(configPath, "Codex analysis config.toml");
     copyFileSync(configPath, join(home, "config.toml"));
     chmodSync(join(home, "config.toml"), 0o600);
   }
-  return home;
+  return {
+    authPath,
+    configDir,
+    home,
+    originalAuth,
+    originalIdentity: { uid: authInfo.uid, gid: authInfo.gid },
+  };
+}
+
+function commitCodexCredentialRefresh(runtime) {
+  const candidatePath = join(runtime.home, "auth.json");
+  requireRegularFile(candidatePath, "refreshed Codex analysis auth.json");
+  const candidateAuth = readFileSync(candidatePath);
+  validateCodexAuthRefreshCandidate(runtime.originalAuth, candidateAuth);
+  if (candidateAuth.equals(runtime.originalAuth)) return false;
+
+  const atomicPath = join(runtime.configDir, `.auth.json.a2a-${randomUUID()}`);
+  try {
+    writeFileSync(atomicPath, candidateAuth, { flag: "wx", mode: 0o600 });
+    const atomicInfo = lstatSync(atomicPath);
+    if (
+      Number(atomicInfo.uid) !== runtime.originalIdentity.uid ||
+      Number(atomicInfo.gid) !== runtime.originalIdentity.gid
+    ) {
+      chownSync(atomicPath, runtime.originalIdentity.uid, runtime.originalIdentity.gid);
+    }
+    chmodSync(atomicPath, 0o600);
+    renameSync(atomicPath, runtime.authPath);
+  } catch (error) {
+    rmSync(atomicPath, { force: true });
+    throw error;
+  }
+  return true;
 }
 
 function runCodexAdapter() {
@@ -148,7 +264,7 @@ function runCodexAdapter() {
         PATH: safeText(process.env.PATH, "/usr/local/bin:/usr/bin:/bin"),
         LANG: safeText(process.env.LANG, "C.UTF-8"),
         ...termuxChildEnv(process.env),
-        CODEX_HOME: codexHome,
+        CODEX_HOME: codexHome.home,
         ...(process.env.CAPTURE_ARGS_PATH ? { CAPTURE_ARGS_PATH: process.env.CAPTURE_ARGS_PATH } : {}),
         ...(process.env.CAPTURE_ENV_PATH ? { CAPTURE_ENV_PATH: process.env.CAPTURE_ENV_PATH } : {}),
       },
@@ -163,7 +279,13 @@ function runCodexAdapter() {
     const result = extractCodexMessage(child.stdout);
     process.stdout.write(JSON.stringify({ type: "result", subtype: "success", result }));
   } finally {
-    if (codexHome) rmSync(codexHome, { recursive: true, force: true });
+    if (codexHome) {
+      try {
+        commitCodexCredentialRefresh(codexHome);
+      } finally {
+        rmSync(codexHome.home, { recursive: true, force: true });
+      }
+    }
   }
 }
 
