@@ -177,6 +177,29 @@ Dispatchers MUST NOT attach `payload.acceptance.command` to analysis-only review
 validation is independent from smoke acceptance, and an unexecuted acceptance command fails as
 `acceptance_evidence_missing` by design.
 
+### Authenticated review-report source (Phase 16)
+
+Record mode accepts a complete review report only through
+`POST /review-lineages/{lineageId}/review-report`. The requester must be
+authenticated by the broker's A2A Ed25519 worker-signature registry. The
+verified signing-key owner is the reviewer issuer, and the canonical Phase 8
+`ReviewReceiptV1` parser requires that issuer to equal
+`receipt.reviewerNodeId`. Request JSON cannot select issuer, authority,
+producer ID, source-event ID, source kind, or namespace.
+
+The exact-field body carries an immutable report reference, observation time,
+subject binding, complete receipt, and resolved/reopened/new-finding arrays.
+Phase 13 authorization, Phase 12 awaited admission, and Phase 8 parsing remain
+canonical. The minimized source event, canonical lineage transition, and
+observation-ledger result commit atomically in one direct transaction or one
+worker-thread command and durable ACK. Projection changes only after the ACK.
+
+No generic task, result, validation summary, log, provider response, or prose
+inference can create this event. `correction_generation` and
+`reviewer_replacement` remain detached, so authoritative-source coverage is
+exactly `3/5`. See
+[review-report-source-v1.md](review-report-source-v1.md).
+
 ### Blocking-finding ledger (FindingLedgerV1)
 
 Findings are stable objects. A new reviewer cannot restart the issue list from scratch.

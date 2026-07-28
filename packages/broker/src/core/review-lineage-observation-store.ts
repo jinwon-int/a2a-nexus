@@ -1,10 +1,10 @@
 /**
- * Atomic observation store for bounded PR review lineages (#1518 Phase 9).
+ * Atomic observation store for bounded PR review lineages (#1518 Phases 9-16).
  *
- * This is a source-only reference adapter. It proves that one normalized
- * Phase 8 observation can update a lineage and its durable idempotency ledger
- * in the same SQLite transaction. It is intentionally not connected to the
- * broker snapshot, HTTP routes, task completion, retries, or finalizer output.
+ * One normalized Phase 8 observation updates its authoritative source event,
+ * canonical lineage, and durable idempotency ledger in the same SQLite
+ * transaction. Only the closed runtime-owned source tuples are admitted;
+ * generic task completion, retries, and finalizer output remain detached.
  */
 
 import { DatabaseSync } from "node:sqlite";
@@ -167,6 +167,12 @@ function sourceMatchesCommand(
     return source.authorityKind === "operator"
       && command.command.kind === "record_event"
       && command.command.event.type === "operator_cancel"
+      && command.command.event.at === source.observedAt;
+  }
+  if (source.sourceKind === "review_report_submitted") {
+    return source.authorityKind === "reviewer"
+      && command.command.kind === "record_event"
+      && command.command.event.type === "review_report"
       && command.command.event.at === source.observedAt;
   }
   return false;

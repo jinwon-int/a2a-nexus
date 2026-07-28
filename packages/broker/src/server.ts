@@ -1159,9 +1159,12 @@ export function createBrokerServer(options: BrokerServerOptions = {}): BrokerSer
         path,
         req,
         res,
+        url,
         broker,
         enforceRequesterIdentity,
         requesterIdentity,
+        assertWorkerHttpSignatureRoute,
+        assertVerifiedWorkerMatches,
       })) {
         return;
       }

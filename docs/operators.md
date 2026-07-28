@@ -263,21 +263,30 @@ contract, full ledger, raw receipts, and diff hashes. Only authenticated
 requester identity enforcement is enabled.
 
 Phase 3b itself did not connect task/review execution to lineage events.
-Phases 14–15 later add two separately reviewed mutation sources:
+Phases 14–16 later add three separately reviewed mutation sources:
 
 - `POST /review-lineages`
 - `POST /review-lineages/{lineageId}/operator-cancel`
+- `POST /review-lineages/{lineageId}/review-report`
 
-Both require the exact `operator` role even when legacy requester enforcement
-is relaxed. Creation accepts an immutable dispatch reference, observation
-time, exact subject binding, complete frozen intent contract, and bounded
-lineage budget. Cancellation accepts an immutable decision reference,
-observation time, exact subject binding, and bounded detail. The server fixes
-each source authority and derives identities; neither body can assert them.
-The authoritative source event, canonical lineage command, and idempotency
-outcome commit in one SQLite transaction. Generic task creation/cancellation
-remains unrelated. Review report, correction generation, and reviewer
-replacement still have no automatic owner, so current coverage is `2/5`.
+Creation and cancellation require the exact `operator` role even when legacy
+requester enforcement is relaxed. The review-report route instead always
+requires the existing Ed25519 worker HTTP-signature registry and its dedicated
+`review-lineage.report` key scope. The verified signing-key owner is the
+reviewer issuer; the canonical receipt parser proves that it equals
+`receipt.reviewerNodeId`.
+
+Creation accepts an immutable dispatch reference, observation time, exact
+subject binding, complete frozen intent contract, and bounded lineage budget.
+Cancellation accepts an immutable decision reference, observation time, exact
+subject binding, and bounded detail. Review submission accepts an immutable
+report reference, observation time, exact binding, complete receipt, and
+complete finding transitions. The server fixes every source authority and
+derives identities; no body can assert them. The authoritative source event,
+canonical lineage command, and idempotency outcome commit in one SQLite
+transaction. Generic task creation/completion/cancellation remains unrelated.
+Correction generation and reviewer replacement still have no automatic owner,
+so current coverage is `3/5`.
 
 The default remains `off`, and `enforce` is still rejected. Adding these routes
 to source does not approve live schema execution, record-mode activation,

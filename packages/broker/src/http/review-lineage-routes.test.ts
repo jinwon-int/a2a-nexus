@@ -94,9 +94,12 @@ function makeRouter() {
       path,
       req: req as IncomingMessage,
       res: res as unknown as ServerResponse,
+      url: new URL(path, "http://broker.test"),
       broker,
       enforceRequesterIdentity: enforce,
       requesterIdentity: identity as never,
+      assertWorkerHttpSignatureRoute: async () => null,
+      assertVerifiedWorkerMatches: () => undefined,
     });
     return {
       handled,
@@ -148,6 +151,13 @@ test("review lineage routes match exact path boundaries", async () => {
     (await route("GET", "/review-lineages/one/events")).handled,
     false,
   );
+  assert.equal(
+    (await route(
+      "POST",
+      "/review-lineages/one/review-report/extra",
+    )).handled,
+    false,
+  );
   assert.equal((await route("GET", "/review-lineagesX")).handled, false);
 });
 
@@ -169,9 +179,12 @@ test("lineage-create route requires operator identity and returns durable replay
         path: "/review-lineages",
         req: Readable.from([JSON.stringify(body)]) as IncomingMessage,
         res: res as unknown as ServerResponse,
+        url: new URL("/review-lineages", "http://broker.test"),
         broker,
         enforceRequesterIdentity: false,
         requesterIdentity: identity as never,
+        assertWorkerHttpSignatureRoute: async () => null,
+        assertVerifiedWorkerMatches: () => undefined,
       });
       return {
         handled,
@@ -276,9 +289,15 @@ test("operator-cancel route requires operator identity and returns durable repla
         path: `/review-lineages/${frozen.lineageId}/operator-cancel`,
         req: Readable.from([JSON.stringify(body)]) as IncomingMessage,
         res: res as unknown as ServerResponse,
+        url: new URL(
+          `/review-lineages/${frozen.lineageId}/operator-cancel`,
+          "http://broker.test",
+        ),
         broker,
         enforceRequesterIdentity: false,
         requesterIdentity: identity as never,
+        assertWorkerHttpSignatureRoute: async () => null,
+        assertVerifiedWorkerMatches: () => undefined,
       });
       return {
         handled,
@@ -330,6 +349,138 @@ test("operator-cancel route requires operator identity and returns durable repla
         error instanceof BrokerError
         && error.code === "bad_request",
     );
+  } finally {
+    store.close();
+  }
+});
+
+test("review-report route requires verified key ownership, exact fields, and route scope", async () => {
+  const store = new SqliteBrokerStateStore(":memory:");
+  try {
+    const broker = new InMemoryA2ABroker(
+      store,
+      store.load(),
+      { reviewLineageMode: "record" },
+    );
+    const frozen = contract();
+    const diffHash = `sha256:${"c".repeat(64)}`;
+    await broker.recordOperatorReviewLineageCreate(
+      {
+        dispatchRef: "lineage-dispatch:review-route:1",
+        observedAt: frozen.createdAt,
+        binding: {
+          intentHash: frozen.intentHash,
+          headSha: frozen.headSha,
+          diffHash,
+        },
+        contract: frozen,
+        budget: budget(),
+      },
+      "operator-a",
+    );
+    const request = {
+      reportRef: "review-report:route:1",
+      observedAt: "2026-07-23T00:01:00.000Z",
+      binding: {
+        intentHash: frozen.intentHash,
+        headSha: frozen.headSha,
+        diffHash,
+      },
+      receipt: {
+        kind: "ReviewReceiptV1",
+        reviewerNodeId: "reviewer-a",
+        verdict: "pass",
+        note: "Authenticated review report.",
+        headSha: frozen.headSha,
+        diffHash,
+        intentHash: frozen.intentHash,
+        findingLedgerRef: `ledger-${frozen.lineageId}`,
+        authorWorkerId: "author-a",
+      },
+      resolvedFindingIds: [],
+      reopenedFindingIds: [],
+      newFindings: [],
+    };
+    const scopes: string[] = [];
+
+    async function route(
+      body: unknown,
+      verified: { keyid: string; requesterId: string } | null,
+    ) {
+      const path = `/review-lineages/${frozen.lineageId}/review-report`;
+      const res = new CapturingResponse();
+      const handled = await handleReviewLineageRoutesIfMatched({
+        method: "POST",
+        path,
+        req: Readable.from([JSON.stringify(body)]) as IncomingMessage,
+        res: res as unknown as ServerResponse,
+        url: new URL(path, "http://broker.test"),
+        broker,
+        enforceRequesterIdentity: false,
+        requesterIdentity: null,
+        assertWorkerHttpSignatureRoute: async () => verified,
+        assertVerifiedWorkerMatches: (_verified, expected, operation) => {
+          assert.equal(expected, undefined);
+          scopes.push(operation);
+        },
+      });
+      return {
+        handled,
+        res,
+        json: res.body ? JSON.parse(res.body) : undefined,
+      };
+    }
+
+    await assert.rejects(
+      route(request, null),
+      (error) =>
+        error instanceof BrokerError
+        && error.code === "unauthorized",
+    );
+    await assert.rejects(
+      route(
+        request,
+        { keyid: "worker:different:v1", requesterId: "different-reviewer" },
+      ),
+      (error) =>
+        error instanceof BrokerError
+        && error.code === "bad_request"
+        && /issuer_mismatch/.test(error.message),
+    );
+    await assert.rejects(
+      route(
+        { ...request, reviewerIssuerId: "reviewer-a" },
+        { keyid: "worker:reviewer-a:v1", requesterId: "reviewer-a" },
+      ),
+      (error) =>
+        error instanceof BrokerError
+        && error.code === "bad_request"
+        && /unexpected_field/.test(error.message),
+    );
+
+    const applied = await route(
+      request,
+      { keyid: "worker:reviewer-a:v1", requesterId: "reviewer-a" },
+    );
+    assert.equal(applied.handled, true);
+    assert.equal(applied.res.statusCode, 201);
+    assert.equal(applied.json.result.status, "applied");
+    assert.equal(
+      broker.getReviewLineage(frozen.lineageId)?.state,
+      "passed",
+    );
+    const replay = await route(
+      request,
+      { keyid: "worker:reviewer-a:v1", requesterId: "reviewer-a" },
+    );
+    assert.equal(replay.res.statusCode, 200);
+    assert.equal(replay.json.result.status, "replayed");
+    assert.deepEqual(scopes, [
+      "review-lineage.report",
+      "review-lineage.report",
+      "review-lineage.report",
+      "review-lineage.report",
+    ]);
   } finally {
     store.close();
   }

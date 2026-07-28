@@ -319,7 +319,9 @@ store, queue, schema, outbox, migration, or live action.
       restart, canary, or real-lineage collection separately.
 - [x] Attach the second source kind (`lineage_create`, Phase 15) after proving
       an actual owner and the same atomic durability.
-- [ ] Attach the remaining three source kinds only after each proves an actual
+- [x] Attach the third source kind (`review_report`, Phase 16) after proving
+      signing-key ownership and the same atomic durability.
+- [ ] Attach the remaining two source kinds only after each proves an actual
       owner and the same atomic or ACK-replayed durability.
 
 Phase 14 is source and temporary-database validation only. It does not approve
@@ -353,6 +355,38 @@ any live runtime or data action.
 Phase 15 is source and temporary-database validation only. The canonical
 lineage table necessarily owns the frozen contract; the minimized source-event
 table does not duplicate it.
+
+## Phase 16: Third authenticated owner — review report
+
+- [x] Add exact `POST /review-lineages/{lineageId}/review-report` input.
+- [x] Require an Ed25519 worker HTTP signature even when legacy identity
+      enforcement is relaxed.
+- [x] Add and enforce the dedicated `review-lineage.report` key scope.
+- [x] Derive reviewer issuer only from the verified signing-key owner.
+- [x] Make the canonical Phase 8 receipt parser reject issuer/reviewer mismatch.
+- [x] Fix `review_report_submitted`, `reviewer`, and namespace in trusted code.
+- [x] Reuse Phase 13 authorization and Phase 12 awaited admission.
+- [x] Extend the closed source tuple set to exactly create, review, and cancel.
+- [x] Keep correction generation and reviewer replacement source tuples
+      detached.
+- [x] Reuse schema 13 and commit source event, lineage transition, and ledger in
+      one `BEGIN IMMEDIATE`.
+- [x] Preserve one worker-thread command, one durable ACK, and post-ACK
+      projection.
+- [x] Prove restart replay and changed-payload conflict without overwrite.
+- [x] Prove forced source and ledger failures roll back the lineage transition.
+- [x] Prove off-mode inertness before request parsing or store access.
+- [x] Store no report reference, reviewer ID, receipt/finding prose, prompt,
+      provider payload, or credential in minimized source metadata.
+- [x] Preserve lineage-create and operator-cancel compatibility.
+- [x] Keep generic task completion/result/log/prose, retry, finalizer, approval,
+      and fixer paths detached.
+- [x] Report automatic source coverage as exactly `3/5`.
+- [ ] Approve record-mode activation, live schema execution, deployment,
+      restart, canary, provider send, or real-lineage collection separately.
+
+Phase 16 is source and temporary-database validation only. It does not weaken
+finalizer, CodeQL, reviewer independence, required checks, or approval gates.
 
 ## Validation commands (all phases as applicable)
 
