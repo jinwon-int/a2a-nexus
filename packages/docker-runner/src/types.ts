@@ -335,6 +335,8 @@ export type GitHubEvidenceOutcome =
   | "budget_limited"
   | "timed_out"
   | "missing_evidence"
+  /** A reported PR URL could not be bound to the declared repo and explicitly pushed branch. */
+  | "evidence_url_unverified"
   /** Evidence-only / allowNoChanges task completed with Done evidence and no code diff. */
   | "succeeded_no_changes_with_done_evidence"
   /** Evidence-only / allowNoChanges task blocked with Block evidence and no code diff. */
@@ -1332,6 +1334,10 @@ export interface RunnerResult {
   runnerBuild?: RunnerBuildMetadata;
   /** @deprecated Prefer github.prUrl for structured evidence. */
   prUrl?: string;
+  /** Candidate PR URLs observed in raw runner/bridge output; never canonical until GitHub metadata is verified. */
+  prUrlCandidates?: string[];
+  /** Explicit branch reported as pushed by the active runner/bridge. Never inferred from task or issue names. */
+  pushedBranch?: string;
   error?: string;
   /** Effective Claude max-turn telemetry from the contained bridge. */
   claudeTurnBudget?: RunnerClaudeTurnBudgetDiagnostic;
