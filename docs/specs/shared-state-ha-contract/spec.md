@@ -1,0 +1,416 @@
+# Shared-State and HA Contract
+
+> **Status:** proposed spec-first packet; documentation only. Approval of this
+> packet is required before runtime implementation. Nothing in this packet
+> claims that a shared backend, HA mode, adapter implementation, migration, or
+> rollout exists.
+>
+> **Reference:** Refs #1504.
+
+## 1. Normative language and status
+
+`MUST`, `MUST NOT`, `SHOULD`, `SHOULD NOT`, and `MAY` are normative
+requirements for a later implementation. Text labeled **Current** describes
+the repository at `f293738c865ececc66e31f7b031ce1ad725d4b85`. Text labeled
+**Planned** or **Future** is not implemented and must not be advertised as a
+runtime capability.
+
+This phase defines contracts and test/migration plans only. It does not:
+
+- implement `SharedStateStorageAdapterV1`;
+- change startup, health, readiness, persistence, or request handling;
+- add or run adapter conformance tests;
+- migrate a database, provision a backend, deploy/restart a broker, or move
+  traffic;
+- replay, acknowledge, or prune an outbox; or
+- authorize a provider send, release, tag, GitHub setting change, merge, or
+  issue close.
+
+## 2. Problem and goals
+
+The current broker is safe only inside an explicitly bounded topology. Replay
+nonces and rate-limit counters are held in process memory. SQLite provides a
+durable single-file broker store and an optional single FIFO writer thread,
+but it does not turn independently running broker processes into one
+linearizable service. Task claims, idempotency outcomes, and terminal-outbox
+ordering therefore cannot be assumed to compose across processes.
+
+This contract has five goals:
+
+1. give every deployment an exact, honest grade;
+2. define the state and failure semantics of every shared-state primitive;
+3. define one versioned adapter contract that a later SQLite single-writer
+   adapter and a later shared backend can both satisfy;
+4. make an unsupported topology non-serving rather than silently unsafe; and
+5. fold the #1504 claim-graph scenario into the same source-of-truth,
+   projection, rollback, and observability rules.
+
+## 3. Deployment-grade catalog
+
+The grade name describes the topology and minimum supported behavior. The
+per-primitive sections remain authoritative; a durable business-state backend
+does not imply durable replay or rate-limit state.
+
+| Exact grade | Current support | Topology and minimum contract |
+| --- | --- | --- |
+| `single-process` | Supported alpha posture | Exactly one broker process owns all mutable state. JSON-file, SQLite, and process-local state MAY be used. Replay/rate-limit state is volatile and restart reset risk MUST be exposed. This grade is not HA or multi-tenant isolation. |
+| `single-writer-durable` | Supported alpha posture for durable broker lifecycle state | Exactly one serving broker process and one logical SQLite writer. SQLite WAL and the optional FIFO writer thread remain single-writer mechanisms, not clustering. Current replay/rate-limit state is still process-local; the grade MUST NOT be described as durable security continuity until a conforming adapter exists. |
+| `multi-process-unsupported` | Explicitly unsupported and non-serving | Requested or detected concurrent broker processes without a conforming shared adapter. Startup MUST fail before accepting traffic where possible. If detected after listen, readiness MUST fail and all non-liveness routes MUST return a retryable unavailable response. |
+| `shared-state-ha` | **Future; unavailable** | Multiple serving processes using a backend that has passed every `SharedStateStorageAdapterV1` conformance and failure test, topology fencing, migration gate, and separate operational approval. No such backend is present in this repository. Configuration MUST fail closed until one exists and is approved. |
+
+The planned configuration vocabulary is
+`BROKER_DEPLOYMENT_GRADE=single-process|single-writer-durable|shared-state-ha`.
+`multi-process-unsupported` is an effective health/readiness grade, not a
+configuration that enables service. The exact configuration surface is
+planned work and does not exist in this phase.
+
+### 3.1 Grade invariants
+
+- A process MUST advertise exactly one configured grade and exactly one
+  effective grade.
+- An omitted grade MAY default to `single-process` for backward compatibility,
+  but health MUST report `gradeDefaulted=true`.
+- `single-process` and `single-writer-durable` MUST acquire exclusive serving
+  ownership. A live ownership conflict changes the effective grade to
+  `multi-process-unsupported`.
+- An expected replica/process count greater than one MUST NOT start under
+  either single-process grade.
+- SQLite file locking or WAL support alone MUST NOT be treated as broker
+  ownership or distributed claim fencing.
+- `shared-state-ha` MUST NOT be advertised merely because a network database
+  can be reached. The adapter version, required capabilities, topology fence,
+  conformance evidence, migration state, and operator cutover approval must
+  all be present.
+
+## 4. Cross-cutting state rules
+
+### 4.1 Keys, identities, and privacy
+
+Storage keys MUST be namespace-scoped and collision-resistant. Security and
+health projections MUST use digests or opaque internal keys at rest and MUST
+NOT expose raw nonces, credentials, requester/worker identities, IP
+addresses, lease owners, task payloads, provider IDs, database paths/DSNs, or
+graph content.
+
+Digesting an identity makes it pseudonymous, not public-safe. Health and
+readiness MUST expose only bounded aggregates and enumerated reason codes, not
+digests or top-key lists.
+
+### 4.2 Time and expiry
+
+- Production expiry decisions MUST use an adapter-controlled clock, never an
+  untrusted request timestamp.
+- The SQLite adapter MAY use a process clock only if it persists a
+  last-observed time floor and fails readiness on unsafe backward movement.
+- A future shared adapter MUST use one documented backend/server clock domain.
+- Tests MUST inject a fake clock.
+- Expiry is logical: an item is invalid at `now >= expiresAt` even if physical
+  cleanup has not run.
+- Cleanup MAY be asynchronous, but it MUST NOT make an item expire early.
+- Clock uncertainty beyond the adapter's declared tolerance MUST fail closed
+  for writes and readiness.
+
+### 4.3 Errors and retries
+
+- A known duplicate/replay, conflicting idempotency fingerprint, stale fencing
+  token, or invalid state transition MUST return a stable domain rejection.
+- Store unavailability, lock timeout, lost ownership, uncertain commit, or
+  partition MUST return a retryable unavailable result, not a false
+  authorization or false rate-limit decision.
+- An ambiguous write result MUST be resolved by reading the idempotency outcome
+  before retrying the mutation.
+- Liveness MAY remain healthy while readiness is false. Liveness MUST never be
+  used as evidence that shared-state guarantees hold.
+
+## 5. State primitive contracts
+
+### 5.1 Nonce and replay
+
+| Property | Contract |
+| --- | --- |
+| Source of truth | **Current:** one `A2AHttpSignatureReplayCache` map per broker process. **V1 adapter:** `(namespace, keyDigest, nonceDigest)` consumption record. Raw key IDs and nonces MUST NOT be stored in observability output. |
+| Atomicity boundary | Check-unexpired and insert-if-absent MUST be one atomic operation. Two concurrent consumes of the same tuple MUST yield exactly one `accepted` and all others `replay`. |
+| Consistency model | Linearizable per replay tuple. Cluster-wide wording is forbidden unless every serving process uses the same conforming adapter authority. |
+| TTL / expiry | Record remains rejecting through the signed request expiry. It becomes logically absent at `now >= expiresAt`; early eviction is forbidden. Capacity pressure MUST deny or shed new requests rather than evict an unexpired nonce silently. |
+| Restart behavior | Current single-process grades reset the cache and MUST report reset risk. A conforming durable adapter MUST preserve unexpired records and its clock floor across restart. |
+| Partition behavior | A process that cannot reach the authoritative replay state MUST reject the protected request with retryable unavailable; it MUST NOT accept on a local fallback. |
+| Fail-closed behavior | Replay is rejected. Unknown/ambiguous state is unavailable. Only confirmed first consumption is accepted. |
+| Observability | Report `source=process|adapter`, `durability=volatile|durable`, `continuity=reset|preserved|unknown`, `resetRisk`, epoch age, capacity pressure band, and enumerated reset/error reason. Never report nonce/key/identity values or digests. |
+| Adapter lifecycle invariant | Consumption is unavailable before adapter `ready`, while `draining`, or after `closed/failed`. Reopen MUST preserve every unexpired accepted tuple and the same result for its retry. |
+
+### 5.2 Rate limit
+
+| Property | Contract |
+| --- | --- |
+| Source of truth | **Current:** per-process `InMemoryRateLimiter` buckets. **V1 adapter:** namespace/bucket-key digest plus timestamped cost entries or an equivalent representation that produces the exact configured sliding-window decision. |
+| Atomicity boundary | Prune logically expired cost, calculate in-window cost, conditionally reserve the new cost, and return limit/remaining/reset MUST be one atomic operation per bucket. |
+| Consistency model | Linearizable per bucket. No global order between unrelated buckets is required. Limits MUST be enforced against total traffic reaching all processes that claim the same HA grade. |
+| TTL / expiry | An accepted cost counts while `timestamp > now - window`. It stops counting exactly at the boundary. Physical rows MAY outlive the window for bounded cleanup only. |
+| Restart behavior | Current counters reset and reset risk MUST be visible. A conforming durable adapter MUST retain in-window cost and decision continuity through restart. |
+| Partition behavior | Security-sensitive routes MUST return retryable unavailable when the authoritative bucket cannot be evaluated. A local permissive bucket is forbidden. An explicitly classified low-risk route MAY use a separately specified fail-open policy, but V1 defines none. |
+| Fail-closed behavior | Confirmed exhaustion returns rate-limited. Unknown state returns unavailable, not a fabricated `remaining` value. |
+| Observability | Report window/limit configuration, volatile/durable source, reset risk, allowed/denied totals, coarse pressure band, and store error counts. Do not expose bucket keys, identities, IPs, digests, or a “busiest” list. |
+| Adapter lifecycle invariant | Reservations are accepted only in `ready`. Reopen MUST reproduce the same in-window count from durable state. Adapter replacement MUST not create an empty overlapping window. |
+
+### 5.3 Lease and task claim
+
+`claimed` is currently a durable task status plus heartbeat/stale-requeue
+policy; it is not a distributed lease. V1 makes the missing fencing explicit.
+
+| Property | Contract |
+| --- | --- |
+| Source of truth | Durable task row containing claim state, opaque owner reference, `attemptId`, monotonically increasing `fencingToken`, `leaseExpiresAt`, and version. |
+| Atomicity boundary | Verify claimable status/version, allocate the next fencing token, set owner/attempt/expiry, and append the claim audit/outbox effect MUST commit in one transaction. Renewal or terminal mutation MUST compare owner, attempt, and fencing token in that transaction. |
+| Consistency model | Linearizable per task/resource. At most one unexpired claim is authoritative. Stale workers may execute locally but MUST be unable to commit with an old fence. |
+| TTL / expiry | Lease expires logically at `now >= leaseExpiresAt`. Expiry alone does not transfer ownership; one atomic reap/requeue or new-claim transition must do so and advance the fence. |
+| Restart behavior | Claim, expiry, attempt, and fence survive durable restart. On volatile `single-process`, startup recovery MUST explicitly reclassify incomplete claims; it MUST NOT invent continuity. |
+| Partition behavior | A worker unable to renew becomes stale. The old fence remains unable to commit after a new claim. A broker unable to reach the authority MUST not grant, renew, requeue, or complete a claim. |
+| Fail-closed behavior | Claim conflict, stale fence, owner mismatch, or unknown commit state rejects mutation. Unsupported multi-process topology cannot serve claim routes. |
+| Observability | Report aggregate active/expiring/stale claims, renewal failures, fencing rejections, and oldest-age bands. Never expose owner/worker/task identities in public health. Operator-only task APIs may retain their existing authorization. |
+| Adapter lifecycle invariant | A claim token is scoped to one adapter authority and lifecycle epoch. Draining stops new claims before close; close waits for committed writes or reports failure. Reopen never decreases a resource's fencing token. |
+
+### 5.4 Idempotency
+
+| Property | Contract |
+| --- | --- |
+| Source of truth | Durable `(namespace, keyDigest)` record with payload fingerprint, stable outcome code, safe result reference/digest, creation time, and retention boundary. |
+| Atomicity boundary | Compare/reserve key, apply the domain mutation, append its outbox/audit effects, and persist the stable outcome MUST be one transaction. A durable “pending” reservation without the corresponding mutation/outcome is forbidden. |
+| Consistency model | Linearizable per idempotency key. Same key + same fingerprint returns the original outcome; same key + different fingerprint fails `idempotency_conflict`. |
+| TTL / expiry | Keys protecting externally visible or irreversible effects MUST NOT expire while a retry or retained effect can recur. Other namespaces require an explicit, versioned retention value. No implicit default TTL is allowed. |
+| Restart behavior | Durable grades return the same outcome after restart. Volatile idempotency is allowed only for explicitly local, non-effecting operations and MUST be labeled volatile. |
+| Partition behavior | A process unable to read/commit the authoritative record MUST not perform the protected mutation. On timeout, retry first resolves the prior outcome using the same key/fingerprint. |
+| Fail-closed behavior | Changed fingerprint, unknown outcome, or split atomic boundary blocks the mutation. “Best effort” dedupe is not V1 conformance. |
+| Observability | Report aggregate new/replayed/conflict/unknown counts and retention-policy version. Do not expose keys, fingerprints, result references, payloads, or identities. |
+| Adapter lifecycle invariant | Outcomes remain stable across drain, close, and reopen until their explicit retention boundary. Backend migration MUST preserve both key and fingerprint semantics before cutover. |
+
+### 5.5 Terminal outbox ordering
+
+| Property | Contract |
+| --- | --- |
+| Source of truth | Durable outbox row with stable event ID, `streamKey`, monotonically increasing `streamSequence`, payload, receipt/ACK state, and retention metadata. |
+| Atomicity boundary | The domain transition and its outbox append MUST commit together. Idempotent retry MUST return the original event ID and sequence. ACK/receipt mutation is a separate atomic compare-and-set on that event. |
+| Consistency model | Total order is required within one `streamKey`; sequences are unique and strictly increasing. Gaps are allowed and MUST NOT be interpreted as data loss. No global total order between streams is promised. Consumption is at-least-once until receipt-confirmed ACK. |
+| TTL / expiry | Unacknowledged events do not expire. Receipt-confirmed events may be pruned only under a separately approved retention policy and checkpoint safety proof. ACK is not deletion. |
+| Restart behavior | Event IDs, sequence, cursor reconciliation, receipt/ACK state, and idempotency outcomes survive restart. A restart MUST not reorder retained rows or reset a stream sequence. |
+| Partition behavior | Producers fail the entire domain transaction if append is unavailable. Consumers may receive duplicates after reconnect but not an order reversal within a stream. ACK unavailable means the event remains replayable; provider acceptance is still not ACK. |
+| Fail-closed behavior | If atomic domain+append cannot be proved, the domain mutation fails. Unknown ACK status never permits prune or suppresses replay. |
+| Observability | Report per-state aggregate backlog, oldest age, sequence high-water/lag, duplicate replays, and order violations. Health MUST omit payloads, event IDs, stream keys, task/worker/provider identities, and receipt IDs. |
+| Adapter lifecycle invariant | Draining stops new appends, completes or rolls back in-flight transactions, and keeps reads/reconciliation available until close. Migration preserves stable IDs, per-stream order, and ACK state exactly. |
+
+### 5.6 Claim-graph read model
+
+The claim graph is the #1504 scenario folded in from the #1635 follow-up. It is
+a projection over existing artifact/audit/task facts, not a second writable
+truth and not a new infrastructure claim.
+
+Typed nodes are `Entity`, `Claim`, `Source`, `Artifact`, `AgentRun`, and
+`Evaluation`. Edges carry provenance and the exact immutable source fact(s)
+that justify the edge.
+
+| Property | Contract |
+| --- | --- |
+| Source of truth | Authenticated, immutable artifact/audit/task source facts. Graph nodes/edges and evaluation paths are a derived read model with source references, projection version, and checkpoint. |
+| Atomicity boundary | Appending a source fact and its monotonic source sequence is atomic. Applying one projection batch, all its nodes/edges, its batch provenance, and checkpoint advance is a second atomic transaction. The two boundaries MUST NOT be represented as one transaction when projection is asynchronous. |
+| Consistency model | Source facts are strongly consistent per source stream. Graph queries are monotonic/eventually consistent and return `asOfSourceSequence`, projection version, lag, and completeness. `no_evidence_path` is valid only at a complete checkpoint; unavailable/incomplete MUST be distinct results. |
+| TTL / expiry | Claims and provenance have no implicit TTL. Retention requires an approved policy and durable tombstone/source marker. Expired leases or transient evaluations do not erase historical provenance. |
+| Restart behavior | Projection resumes from its durable checkpoint or rebuilds deterministically from source facts. It MUST NOT advance the checkpoint past an unapplied batch. |
+| Partition behavior | Source append fails if its authority is unavailable. A partitioned projection may serve an explicitly stale result with checkpoint/lag, but finalization that requires a proof path MUST fail closed on incomplete or unavailable projection. |
+| Fail-closed behavior | The evaluator distinguishes `path_found`, `no_evidence_path`, `projection_incomplete`, and `projection_unavailable`. Only the first two are evidence judgments. A false merge remains reversible by exact projection batch without deleting source truth. |
+| Observability | Report projection version, source/checkpoint high-water marks, lag/age bands, failed batches, rollback count, and completeness. Never expose claim text, node/edge IDs, source content, artifact paths, agent identities, or provenance payloads in health. |
+| Adapter lifecycle invariant | Projection writes are idempotent by `(projectionVersion, batchId)`. Reopen resumes at the same checkpoint. Rollback applies the recorded inverse/tombstone set for exactly one batch and leaves immutable source facts intact. |
+
+Cross-task acceptance for this scenario is: a query equivalent to “what is the
+evidence path for this claim?” can be answered from typed graph state and
+source references alone, with an explicit completeness result, and an injected
+false projection batch can be reversed deterministically.
+
+## 6. `SharedStateStorageAdapterV1`
+
+### 6.1 Contract identity
+
+The planned adapter contract identifier is
+`a2a.shared-state.storage/v1`. No current class or backend may claim this
+identifier until it passes the full checklist.
+
+A conforming adapter exposes:
+
+```text
+metadata() -> {
+  contractVersion: "a2a.shared-state.storage/v1",
+  implementationVersion,
+  backendClass: "sqlite-single-writer" | "shared",
+  durability: "durable",
+  writerModel: "single" | "multi",
+  schemaVersion,
+  capabilities
+}
+
+open(expected) -> lifecycle "ready" | error
+withTransaction(callback(tx)) -> committed result | rolled-back error
+query(request) -> versioned result with consistency/completeness metadata
+health() -> secret-safe AdapterHealthV1
+drain(deadline) -> "draining" then quiescent | error
+close() -> "closed" | error
+```
+
+`capabilities` MUST affirm all of:
+
+- atomic compare-and-set;
+- linearizable per-key operations;
+- durable logical expiry and clock-floor protection;
+- monotonic fencing tokens;
+- atomic idempotency + domain mutation + outbox append;
+- stable per-stream outbox ordering and ACK state;
+- durable projection batches/checkpoints and exact batch rollback; and
+- exclusive singleton ownership when `writerModel=single`.
+
+The callback transaction exposes only versioned, namespace-scoped operations:
+
+```text
+consumeReplayNonce(...)
+reserveRateLimitCost(...)
+claimLease(...) / renewLease(...) / mutateWithFence(...) / releaseLease(...)
+executeIdempotent(...)
+appendOutbox(...) / updateOutboxReceipt(...) / acknowledgeOutbox(...)
+appendGraphSource(...)
+applyGraphProjectionBatch(...) / rollbackGraphProjectionBatch(...)
+```
+
+Operation inputs and outputs MUST be closed, validated unions. Unknown fields,
+unknown operation versions, and capability downgrades fail closed. Arbitrary
+SQL, backend commands, credentials, or caller-selected clock values are not
+part of the contract.
+
+### 6.2 Transaction and lifecycle invariants
+
+- `withTransaction` commits all declared effects or none.
+- Nested or cross-adapter transactions are forbidden in V1.
+- Reads that make an authorization, claim, finalization, ACK, prune, or
+  cutover decision MUST declare the required consistency; an adapter unable to
+  meet it returns unavailable.
+- `open` validates contract/schema version, clock safety, topology ownership,
+  migration state, and capabilities before `ready`.
+- All state-changing calls reject outside `ready`.
+- `drain` stops new writes and reports whether every accepted write reached a
+  known committed or rolled-back result.
+- `close` releases ownership only after drain. Crash expiry never permits a
+  stale session to write because every mutating command is fenced.
+- Adapter replacement preserves keys, fingerprints, fences, sequence numbers,
+  expiry instants, projection checkpoints, and stable outcomes.
+
+### 6.3 Backend applicability
+
+A later SQLite adapter can satisfy V1 with one exclusive serving owner,
+`BEGIN IMMEDIATE` transactions, persisted clock/fence/sequence metadata, and
+the existing optional FIFO worker writer. It remains
+`writerModel=single`.
+
+A future shared adapter can satisfy V1 only if its backend provides equivalent
+atomicity and consistency to all serving processes. The implementation may use
+transactions, compare-and-set, or scripts internally, but weaker observable
+semantics are not allowed.
+
+This common contract does not imply that either adapter has been implemented,
+that a generic existing SQLite store already conforms, or that a future shared
+backend has been selected or provisioned.
+
+## 7. Startup, readiness, and health
+
+### 7.1 Startup/topology behavior
+
+Before binding a serving socket, a later implementation MUST:
+
+1. parse the configured grade and expected process/replica intent;
+2. open the adapter and validate version/capabilities/schema/clock;
+3. acquire a fenced singleton ownership record for single-process grades;
+4. reject expected replicas greater than one for single-process grades;
+5. reject `shared-state-ha` if no approved conforming shared adapter is
+   configured; and
+6. publish the effective grade only after these checks.
+
+Where a platform cannot reveal replica intent, the operator MUST provide it
+explicitly and the singleton fence remains mandatory. If a second process or
+lost fence is detected after startup, the process MUST stop admitting
+non-liveness traffic immediately and begin drain/shutdown.
+
+### 7.2 Endpoint contract
+
+- `GET /livez` indicates only that the process/event loop can respond. It MAY
+  remain `200` during a state partition and MUST contain no state guarantees.
+- Planned `GET /readyz` returns `200` only when the configured supported grade
+  is serviceable. It returns `503` with bounded reason codes for ownership
+  conflict, unsupported topology, adapter unavailable, schema/version
+  mismatch, unsafe clock, incomplete migration, or lost fence.
+- `GET /health` exposes diagnostic detail but is not an authorization or
+  cutover gate by itself.
+- While readiness is false, every non-liveness route MUST return `503
+  state_authority_unavailable` (or the more specific bounded code) without
+  applying a state mutation.
+
+The supported `single-process` and current `single-writer-durable` postures may
+be ready while explicitly reporting volatile replay/rate-limit reset risk.
+Any policy requiring durable security continuity MUST treat that risk as
+not-ready until a V1 adapter supplies it.
+
+### 7.3 Secret-safe signal shape
+
+The planned `stateContract` health/readiness projection is:
+
+```json
+{
+  "specVersion": 1,
+  "configuredGrade": "single-process",
+  "effectiveGrade": "single-process",
+  "gradeDefaulted": false,
+  "serving": true,
+  "reasonCodes": [],
+  "adapter": {
+    "contractVersion": null,
+    "backendClass": "legacy-process",
+    "lifecycle": "ready",
+    "durability": "volatile",
+    "writerModel": "single"
+  },
+  "topology": {
+    "expectedProcessCount": 1,
+    "ownership": "held"
+  },
+  "primitives": {
+    "replay": {
+      "source": "process",
+      "durability": "volatile",
+      "continuity": "reset",
+      "resetRisk": true,
+      "epochAgeSec": 120,
+      "lastResetReason": "process_start"
+    },
+    "rateLimit": {
+      "source": "process",
+      "durability": "volatile",
+      "continuity": "reset",
+      "resetRisk": true,
+      "epochAgeSec": 120,
+      "lastResetReason": "process_start"
+    }
+  }
+}
+```
+
+Allowed reset reasons are `process_start`, `adapter_reopen`,
+`operator_reset`, `migration`, and `unknown`. The real output may add
+versioned aggregate fields, but it MUST NOT contain raw or hashed nonces,
+bucket keys, requester/worker/task/lease identities, event/receipt IDs,
+payloads, claim text, artifact paths, credentials, database locations, or
+provider identifiers. Small-cardinality aggregates SHOULD be coarsened where
+they could reveal one actor.
+
+## 8. Acceptance boundaries
+
+The packet is ready for approval when the six documents exist, directly
+affected public docs link here without overstating support, and documentation
+checks pass. Approval of this packet authorizes only a later source
+implementation proposal.
+
+Runtime implementation is not complete until every unchecked conformance item
+in [checklist.md](checklist.md) passes. Migration and operational rollout are
+separate stages in [plan.md](plan.md), each with separate authorization.
