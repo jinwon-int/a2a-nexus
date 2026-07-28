@@ -128,6 +128,7 @@ import {
   normalizeTaskReadinessMode,
   type TaskReadinessMode,
 } from "../task-readiness.js";
+import { classifyTaskLane } from "../task-lane-classifier.js";
 import { TaskEventStream } from "./task-event-stream.js";
 import {
   TerminalTaskEventOutbox,
@@ -1187,6 +1188,12 @@ export class InMemoryA2ABroker {
     // exists; require_approval merges into the existing blocked -> operator
     // approve -> queued flow regardless of mode (blocking is recoverable).
     const policyDecision = this.evaluateCreateTaskPolicy(normalizedRequest);
+    const assignedWorkerId = normalizedRequest.assignedWorkerId ?? normalizedRequest.target.id;
+    const laneAssignment = classifyTaskLane({
+      request: normalizedRequest,
+      worker: this.getWorker(assignedWorkerId),
+      policyDecision,
+    });
 
     const now = isoNow();
     const basePolicyContext = normalizeTaskPolicyContext(normalizedRequest);
@@ -1236,6 +1243,7 @@ export class InMemoryA2ABroker {
       via: normalizedRequest.via,
       policyContext,
       payload: normalizedRequest.payload,
+      laneAssignment,
       status: initialStatus,
       createdAt: normalizedRequest.createdAt ?? now,
       updatedAt: now,
@@ -1255,6 +1263,13 @@ export class InMemoryA2ABroker {
       targetId: task.id,
       proposalId: task.proposalId,
       note: task.status === "blocked" ? `approval required: ${task.message ?? task.intent}` : task.message ?? task.intent,
+    });
+    this.appendAuditEvent({
+      actorId: task.requester.id,
+      action: "task.lane_assigned",
+      targetType: "task",
+      targetId: task.id,
+      note: JSON.stringify(task.laneAssignment),
     });
     if (policyDecision?.action === "deny") {
       // warn mode (an enforce deny threw before creation): structural evidence

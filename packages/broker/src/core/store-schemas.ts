@@ -186,6 +186,38 @@ export const taskWakeSchema = z
   })
   .passthrough();
 
+export const taskLaneAssignmentSchema = z
+  .object({
+    version: z.literal("fast-lane.v1"),
+    mode: z.literal("shadow"),
+    decision: z.enum(["fast", "full"]),
+    reasonCodes: z.array(z.enum([
+      "all_fast_conditions_met",
+      "requester_lane_facts_present",
+      "intent_not_analyze",
+      "mode_missing",
+      "mode_not_read_only_analysis",
+      "write_or_implementation_marker_present",
+      "worker_assignment_conflict",
+      "round_marker_present",
+      "fanout_marker_present",
+      "multi_worker_marker_present",
+      "delegated_workflow_marker_present",
+      "worker_mode_missing",
+      "worker_not_persistent",
+      "policy_decision_missing",
+      "policy_decision_unknown",
+      "policy_requires_approval",
+      "policy_denied",
+      "approval_marker_present",
+      "sensitive_marker_present",
+      "live_marker_present",
+      "external_send_marker_present",
+      "credential_access_marker_present",
+    ])).min(1),
+  })
+  .strict();
+
 export const taskSchema = z
   .object({
     id: z.string().min(1),
@@ -205,6 +237,7 @@ export const taskSchema = z
     status: z.string().min(1),
     targetNodeId: z.string().min(1),
     payload: z.record(z.string(), z.unknown()),
+    laneAssignment: taskLaneAssignmentSchema.optional(),
     updatedAt: z.string(),
     claimedAt: z.string().optional(),
     completedAt: z.string().optional(),
