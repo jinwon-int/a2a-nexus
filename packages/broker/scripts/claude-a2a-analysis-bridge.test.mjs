@@ -94,6 +94,11 @@ test("Claude Code A2A analysis bridge calls claude -p and returns OpenClaw envel
       encoding: "utf8",
       env: {
         ...process.env,
+        // Hermetic: a worker host sets these for real, and this case asserts the
+        // *unpinned* default (no --model). Inheriting them made the assertion
+        // depend on where the suite happened to run.
+        A2A_CLAUDE_MODEL: "",
+        A2A_CLAUDE_EFFORT: "",
         A2A_CLAUDE_CODE_BIN: fakeClaudePath,
         A2A_CLAUDE_CODE_MAX_TURNS: "3",
         CAPTURE_ARGS_PATH: argsPath,
@@ -501,4 +506,122 @@ test("Claude Code A2A analysis bridge closes stdin and keeps stdout in failure e
   } finally {
     rmSync(tempDir, { recursive: true, force: true });
   }
+});
+
+// ---------------------------------------------------------------------------
+// Operator-configured runtime model / effort (#1671 follow-up)
+//
+// The bridge must never let the broker-supplied namespace string ("claude-code/
+// default") choose the Claude model, but it must apply a model the *operator*
+// pinned on the node. Before this, the pinned value survived only as telemetry,
+// so submitted evidence could name a model the run never used while the real
+// model silently followed the node's global Claude Code default.
+// ---------------------------------------------------------------------------
+
+function runAnalysisBridgeCapturingArgs({ env = {}, taskModel = "claude-code/default" } = {}) {
+  const tempDir = mkdtempSync(join(tmpdir(), "claude-a2a-bridge-runtime-flags-"));
+  const fakeClaudePath = join(tempDir, "fake-claude.mjs");
+  const argsPath = join(tempDir, "claude-args.json");
+  try {
+    writeFileSync(fakeClaudePath, [
+      "#!/usr/bin/env node",
+      "import { writeFileSync } from 'node:fs';",
+      "writeFileSync(process.env.CAPTURE_ARGS_PATH, JSON.stringify(process.argv.slice(2)));",
+      "const analysis = { status: 'done', summary: 'runtime flags captured', findings: [], risks: [], recommendations: [], evidenceRefs: [] };",
+      "console.log(JSON.stringify({ type: 'result', subtype: 'success', result: JSON.stringify(analysis) }));",
+      "",
+    ].join("\n"));
+    chmodSync(fakeClaudePath, 0o755);
+
+    const args = bridgeArgs("Analyse the packaged task.\n\nPayload JSON:\n{\"mode\":\"analysis-only\"}");
+    args[args.indexOf("--model") + 1] = taskModel;
+
+    const result = spawnSync(bridgePath, args, {
+      encoding: "utf8",
+      env: {
+        ...process.env,
+        // Hermetic: the worker host itself sets these, so never inherit them.
+        A2A_CLAUDE_MODEL: "",
+        A2A_CLAUDE_EFFORT: "",
+        A2A_CLAUDE_CODE_RUNTIME_MODEL: "",
+        CLAUDE_CODE_EFFORT_LEVEL: "",
+        A2A_CLAUDE_CODE_BIN: fakeClaudePath,
+        CAPTURE_ARGS_PATH: argsPath,
+        ...env,
+      },
+    });
+    assert.equal(result.status, 0, result.stderr);
+    return {
+      childArgs: JSON.parse(readFileSync(argsPath, "utf8")),
+      payload: JSON.parse(JSON.parse(result.stdout).payloads[0].text),
+    };
+  } finally {
+    rmSync(tempDir, { recursive: true, force: true });
+  }
+}
+
+test("operator-pinned A2A_CLAUDE_MODEL is applied as a Claude --model argument and reported truthfully", () => {
+  const { childArgs, payload } = runAnalysisBridgeCapturingArgs({
+    env: { A2A_CLAUDE_MODEL: "claude-sonnet-5" },
+  });
+
+  assert.equal(childArgs[childArgs.indexOf("--model") + 1], "claude-sonnet-5");
+  assert.equal(payload.appliedModel, "claude-sonnet-5");
+  assert.equal(payload.claudeModelArgumentApplied, true);
+  assert.equal(payload.modelInheritanceMode, "cli_argument");
+  assert.match(payload.modelInheritanceNote, /pinned the operator-configured model/);
+});
+
+test("broker-namespace task model still cannot choose the Claude model", () => {
+  const { childArgs, payload } = runAnalysisBridgeCapturingArgs({ taskModel: "claude-code/default" });
+
+  assert.equal(childArgs.includes("--model"), false);
+  assert.equal(payload.claudeModelArgumentApplied, false);
+  assert.equal(payload.modelInheritanceMode, "metadata_only");
+  assert.equal(payload.appliedModel, undefined);
+});
+
+test("a non-Claude task model does not suppress the operator-pinned model", () => {
+  const { childArgs } = runAnalysisBridgeCapturingArgs({
+    taskModel: "minimax-m3",
+    env: { A2A_CLAUDE_MODEL: "claude-sonnet-5" },
+  });
+
+  assert.equal(childArgs[childArgs.indexOf("--model") + 1], "claude-sonnet-5");
+});
+
+test("A2A_CLAUDE_EFFORT is applied as --effort only for known levels", () => {
+  const applied = runAnalysisBridgeCapturingArgs({ env: { A2A_CLAUDE_EFFORT: "xhigh" } });
+  assert.equal(applied.childArgs[applied.childArgs.indexOf("--effort") + 1], "xhigh");
+  assert.equal(applied.payload.appliedEffort, "xhigh");
+
+  const rejected = runAnalysisBridgeCapturingArgs({ env: { A2A_CLAUDE_EFFORT: "turbo" } });
+  assert.equal(rejected.childArgs.includes("--effort"), false);
+  assert.equal(rejected.payload.appliedEffort, undefined);
+});
+
+test("CLAUDE_CODE_EFFORT_LEVEL alone never emits --effort (opt-in guard for older Claude CLIs)", () => {
+  const { childArgs } = runAnalysisBridgeCapturingArgs({
+    env: { CLAUDE_CODE_EFFORT_LEVEL: "xhigh" },
+  });
+
+  assert.equal(
+    childArgs.includes("--effort"),
+    false,
+    "emitting --effort must stay an explicit A2A_CLAUDE_EFFORT opt-in so a worker on an older Claude CLI cannot break on upgrade",
+  );
+});
+
+test("telemetry flags a declared runtime model that disagrees with the applied one", () => {
+  const mismatched = runAnalysisBridgeCapturingArgs({
+    env: { A2A_CLAUDE_CODE_RUNTIME_MODEL: "claude-sonnet-5", A2A_CLAUDE_MODEL: "claude-opus-4-8" },
+  });
+  assert.equal(mismatched.payload.actualRuntimeModel, "claude-sonnet-5");
+  assert.equal(mismatched.payload.appliedModel, "claude-opus-4-8");
+  assert.equal(mismatched.payload.declaredRuntimeModelMatchesApplied, false);
+
+  const aligned = runAnalysisBridgeCapturingArgs({
+    env: { A2A_CLAUDE_CODE_RUNTIME_MODEL: "claude-sonnet-5", A2A_CLAUDE_MODEL: "claude-sonnet-5" },
+  });
+  assert.equal(aligned.payload.declaredRuntimeModelMatchesApplied, true);
 });

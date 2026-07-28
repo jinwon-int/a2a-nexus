@@ -15,6 +15,11 @@ import {
   sourceCarrierRepo,
 } from "./lib/source-carriers.mjs";
 import { payloadWithRetrievalSnapshotSourceCarriers } from "./lib/retrieval-snapshot-carriers.mjs";
+import {
+  buildClaudeRuntimeArgs,
+  resolveExplicitClaudeEffort,
+  resolveExplicitClaudeModel,
+} from "./lib/claude-runtime-flags.mjs";
 
 // ---------------------------------------------------------------------------
 // Process-tree timeout / session-isolation hardening (issue #1129)
@@ -175,9 +180,10 @@ const ANALYSIS_ALLOWED_TOOLS = CLAUDE_FINALIZER_ALLOWED_TOOLS;
 const ANALYSIS_DISALLOWED_TOOLS = CLAUDE_FINALIZER_DISALLOWED_TOOLS;
 const ANALYSIS_BRIDGE_CONTRACT_VERSION = "claude-a2a-analysis.v1";
 
-function buildReadOnlyClaudeArgs(prompt, maxTurns) {
+function buildReadOnlyClaudeArgs(prompt, maxTurns, flags = {}, env = process.env) {
   return [
     "-p", prompt,
+    ...buildClaudeRuntimeArgs(flags, env),
     "--output-format", "json",
     "--max-turns", String(maxTurns),
     ...buildClaudeFinalizerToolArgs(),
@@ -417,6 +423,17 @@ function attachClaudeModelTelemetry(response, flags, env = process.env) {
     env.A2A_CLAUDE_CODE_RUNTIME_MODEL || env.CLAUDE_CODE_MODEL || env.ANTHROPIC_MODEL,
     "",
   );
+  // What actually reached the child process, not what the node merely declared.
+  // These two can disagree (e.g. A2A_CLAUDE_CODE_RUNTIME_MODEL is set for
+  // telemetry but A2A_CLAUDE_MODEL - which drives the argument - is not), and a
+  // disagreement is exactly the evidence-integrity failure this reports.
+  const appliedModel = resolveExplicitClaudeModel(flags, env);
+  const appliedEffort = resolveExplicitClaudeEffort(env);
+  const modelArgumentApplied = Boolean(appliedModel);
+  const declaredMatchesApplied = !configuredRuntimeModel || !appliedModel
+    ? undefined
+    : configuredRuntimeModel === appliedModel;
+
   return {
     ...response,
     bridgeAdapter: "claude_code",
@@ -424,10 +441,14 @@ function attachClaudeModelTelemetry(response, flags, env = process.env) {
     requestedModel: requestedModel || undefined,
     requestedThinking: requestedThinking || undefined,
     actualRuntimeModel: configuredRuntimeModel || undefined,
-    modelInheritanceMode: "metadata_only",
-    claudeModelArgumentApplied: false,
-    modelInheritanceNote:
-      "Claude Code bridge preserves the A2A requested/effective worker model in prompt/result telemetry but does not pass it as a Claude CLI --model argument.",
+    appliedModel: appliedModel || undefined,
+    appliedEffort: appliedEffort || undefined,
+    declaredRuntimeModelMatchesApplied: declaredMatchesApplied,
+    modelInheritanceMode: modelArgumentApplied ? "cli_argument" : "metadata_only",
+    claudeModelArgumentApplied: modelArgumentApplied,
+    modelInheritanceNote: modelArgumentApplied
+      ? `Claude Code bridge pinned the operator-configured model as a Claude CLI --model argument (${appliedModel}).`
+      : "Claude Code bridge preserves the A2A requested/effective worker model in prompt/result telemetry but does not pass it as a Claude CLI --model argument.",
   };
 }
 
@@ -501,7 +522,7 @@ async function runClaude(prompt, flags, env = process.env) {
   const sessionWorkspace = mkdtempSync(join(tmpdir(), `a2a-analysis-${sanitizeSessionSegment(sessionId)}-`));
 
   try {
-    const args = buildReadOnlyClaudeArgs(prompt, maxTurns);
+    const args = buildReadOnlyClaudeArgs(prompt, maxTurns, flags, env);
     const child = await spawnWithProcessGroupKill(claudeBin, args, {
       env: buildClaudeChildEnv(env),
       cwd: sessionWorkspace,
