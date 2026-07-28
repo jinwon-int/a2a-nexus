@@ -153,4 +153,3 @@ Only starting separately reviewed source implementation work against the
 approved contract. It does not authorize a migration, deploy/restart, live
 traffic, HA promotion, replay/ACK/prune, provider send, release, ruleset or
 secret change, merge, or issue close.
-
