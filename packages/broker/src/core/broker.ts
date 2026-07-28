@@ -156,6 +156,9 @@ import {
 import {
   authorizeOperatorReviewLineageCancel,
 } from "../review-lifecycle/operator-cancel-source.js";
+import {
+  authorizeReviewerReviewLineageReport,
+} from "../review-lifecycle/review-report-source.js";
 import type {
   ReviewLineageEvent,
   ReviewLineageRecord,
@@ -526,10 +529,11 @@ export class InMemoryA2ABroker {
     return this.wavePlans.list();
   }
 
-  // --- Bounded PR review lineage telemetry (#1518 Phases 3b/10/12/14/15) ----
+  // --- Bounded PR review lineage telemetry (#1518 Phases 3b/10/12/14-16) ----
   // Generic task completion/retry/finalizer paths remain detached. Phases
-  // 14-15 attach only explicit operator-owned cancel and create sources whose
-  // durable source row and normalized Phase 8 command share one transaction.
+  // 14-16 attach only explicit operator create/cancel and signed reviewer
+  // report sources whose durable source row and normalized Phase 8 command
+  // share one transaction.
 
   createReviewLineage(
     input: CreateRecordedReviewLineageInput,
@@ -656,6 +660,24 @@ export class InMemoryA2ABroker {
         lineageId,
         input,
         authenticatedOperatorId,
+      ),
+    );
+  }
+
+  async recordReviewerReviewLineageReport(
+    lineageId: string,
+    input: unknown,
+    authenticatedReviewerId: string,
+  ): Promise<ReviewLineageObservationApplicationResult | undefined> {
+    // Default off mode remains inert before request/receipt validation,
+    // trusted context construction, or store access.
+    if (this.reviewLineageMode === "off") return undefined;
+    this.assertAuthorizedReviewLineageSourceStore();
+    return this.commitAuthorizedReviewLineageSource(
+      authorizeReviewerReviewLineageReport(
+        lineageId,
+        input,
+        authenticatedReviewerId,
       ),
     );
   }

@@ -345,6 +345,7 @@ in `request-security.ts` as `A2A_WORKER_ROUTE_SCOPES`:
 workers.assignment-events  worker.register  worker.heartbeat
 tasks.list  task.claim  task.start  task.heartbeat
 task.checkpoint  task.complete  task.evidence  task.fail
+review-lineage.report
 ```
 
 #### Current behavior (dual-auth transition)

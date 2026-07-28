@@ -90,6 +90,7 @@ export type ObservationValidationCode =
   | "intent_hash_mismatch"
   | "finding_signature_mismatch"
   | "binding_mismatch"
+  | "issuer_mismatch"
   | "review_not_independent"
   | "subject_not_changed"
   | "idempotency_conflict";
@@ -592,6 +593,30 @@ function receiptAt(
     ...(authorWorkerId === undefined ? {} : { authorWorkerId }),
     ...(submittedAt === undefined ? {} : { submittedAt }),
   };
+}
+
+/**
+ * Parse one canonical Phase 8 ReviewReceiptV1 and bind its reviewer identity
+ * to a trusted issuer supplied by an authenticated source boundary.
+ *
+ * The issuer is deliberately not read from the receipt or any sibling request
+ * field. Source adapters must pass the verified signing-key owner here before
+ * constructing a review_report carrier.
+ */
+export function parseReviewReceiptV1(
+  input: unknown,
+  trustedReviewerIssuerId: string,
+): ReviewReceiptV1 {
+  const receipt = receiptAt(input, "$receipt");
+  const issuerId = stringAt(
+    trustedReviewerIssuerId,
+    "$trustedReviewerIssuerId",
+    { max: 200, pattern: IDENTIFIER_PATTERN },
+  );
+  if (receipt.reviewerNodeId !== issuerId) {
+    fail("issuer_mismatch", "$receipt.reviewerNodeId");
+  }
+  return receipt;
 }
 
 function justificationAt(

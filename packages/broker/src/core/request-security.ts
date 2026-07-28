@@ -98,6 +98,7 @@ export const A2A_WORKER_ROUTE_SCOPES = [
   "task.complete",
   "task.evidence",
   "task.fail",
+  "review-lineage.report",
 ] as const;
 
 export type A2AWorkerRouteScope = (typeof A2A_WORKER_ROUTE_SCOPES)[number];

@@ -200,7 +200,8 @@
 - [ ] Live schema execution, record-mode activation, deploy/restart/canary, and
       real-lineage collection receive separate explicit approval
 - [x] Second source kind receives a separate owner/durability review
-- [ ] Remaining three source kinds receive separate owner/durability reviews
+- [x] Third source kind receives a separate owner/durability review
+- [ ] Remaining two source kinds receive separate owner/durability reviews
 
 ## N. Second authenticated owner — lineage create (Phase 15)
 
@@ -224,3 +225,30 @@
 - [x] Automatic source coverage is exactly `2/5`
 - [ ] Record-mode activation, deploy/restart/canary, and real-lineage collection
       receive separate explicit approval
+
+## O. Third authenticated owner — review report (Phase 16)
+
+- [x] Exact review-report route is the only new mutation path
+- [x] Ed25519 worker registry authenticates every review-report submission
+- [x] Dedicated review-report key scope fails closed when absent
+- [x] Verified key owner, never JSON, supplies reviewer issuer
+- [x] Canonical Phase 8 receipt parser proves issuer/reviewer equality
+- [x] Request rejects missing, extra, authority, namespace, issuer, and derived
+      identity fields
+- [x] Phase 13 carrier authorization and Phase 12/8 admission remain canonical
+- [x] Closed attached-source set is exactly create, review, and cancel
+- [x] Correction generation and reviewer replacement remain detached
+- [x] Source event, canonical lineage transition, and ledger share one
+      transaction
+- [x] Direct and worker-thread paths preserve replay/conflict and rollback
+- [x] Worker-thread path uses one composite command and post-ACK projection
+- [x] Off mode is inert before receipt parsing or store access
+- [x] Minimized source metadata excludes report reference, reviewer, private
+      prose, prompts, provider payloads, and credentials
+- [x] Existing lineage-create and operator-cancel paths remain compatible
+- [x] Generic task completion/result/log/prose and finalizer paths remain
+      detached
+- [x] Default mode remains `off`; `enforce` remains unsupported
+- [x] Automatic source coverage is exactly `3/5`
+- [ ] Live schema execution, record-mode activation, deploy/restart/canary,
+      provider send, and real-lineage collection receive separate approval
