@@ -23,6 +23,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { pathToFileURL } from "node:url";
 import { buildClaudeFinalizerToolArgs } from "./finalizer-tool-policy.mjs";
+import { buildClaudeRuntimeArgs } from "./lib/claude-runtime-flags.mjs";
 
 // ---------------------------------------------------------------------------
 // Process-tree timeout / session-isolation hardening (issue #1129)
@@ -171,18 +172,8 @@ function die(message) {
 // non-Claude names (e.g. "minimax-m3") are ignored so the mounted Claude
 // config default keeps deciding — preserving pre-#1508 behavior on hosts that
 // still carry stale model env values.
-const CLAUDE_MODEL_ALIASES = new Set(["sonnet", "opus", "haiku", "fable"]);
-
-function resolveExplicitClaudeModel(flags, env = process.env) {
-  const candidates = [safeText(flags?.model, ""), safeText(env.A2A_CLAUDE_MODEL, "")];
-  for (const candidate of candidates) {
-    const value = candidate.trim();
-    if (!value || value.includes("/")) continue;
-    const normalized = value.toLowerCase();
-    if (normalized.startsWith("claude-") || CLAUDE_MODEL_ALIASES.has(normalized)) return value;
-  }
-  return "";
-}
+// Moved to ./lib/claude-runtime-flags.mjs so the analysis bridge applies the
+// exact same resolution instead of carrying a second copy that can drift.
 
 function parseArgs(argv) {
   const flags = { subcommand: argv[2] };
@@ -443,12 +434,12 @@ async function runClaudeAnalysis(prompt, flags, env = process.env) {
   // Session-scoped isolation (#1129): each task session gets its own temp dir.
   const sessionWorkspace = mkdtempSync(join(tmpdir(), `a2a-analysis-${sanitizeSessionSegment(sessionId)}-`));
 
-  const explicitModel = resolveExplicitClaudeModel(flags, env);
+  const claudeRuntimeArgs = buildClaudeRuntimeArgs(flags, env);
 
   try {
     const args = [
       "-p", prompt,
-      ...(explicitModel ? ["--model", explicitModel] : []),
+      ...claudeRuntimeArgs,
       "--output-format", "json",
       "--max-turns", String(maxTurns),
       ...buildClaudeFinalizerToolArgs(),
@@ -576,7 +567,7 @@ async function runClaudePatch(prompt, flags, env, cwd, opts = {}) {
     ? Math.min(positiveInteger(env.A2A_CLAUDE_CODE_FANOUT_MAX_TURNS, 40), 200)
     : positiveInteger(env.A2A_CLAUDE_CODE_MAX_TURNS, 40);
   const maxBuffer = positiveInteger(env.A2A_CLAUDE_CODE_MAX_OUTPUT_BYTES, 64 * 1024 * 1024);
-  const explicitModel = resolveExplicitClaudeModel(flags, env);
+  const claudeRuntimeArgs = buildClaudeRuntimeArgs(flags, env);
   // Fanout adds the Task tool so the worker can spawn the roster (WS3). The mounted
   // ~/.claude/agents/ roster is auto-discovered by Claude Code.
   const allowedTools = fanout ? "Task Bash Edit Write Read Glob Grep" : "Bash Edit Write Read Glob Grep";
@@ -584,7 +575,7 @@ async function runClaudePatch(prompt, flags, env, cwd, opts = {}) {
   // NOTE: no --dangerously-skip-permissions: it is refused when running as root (the proot case).
   const args = [
     "-p", prompt,
-    ...(explicitModel ? ["--model", explicitModel] : []),
+    ...claudeRuntimeArgs,
     "--output-format", "json",
     "--allowedTools", allowedTools,
     "--max-turns", String(maxTurns),
@@ -1417,10 +1408,10 @@ async function callClaudeOnce(prompt, flags, env, cwd) {
   const timeoutSec = positiveInteger(flags.timeout, positiveInteger(env.A2A_CLAUDE_CODE_TIMEOUT_SEC, 300));
   const maxTurns = positiveInteger(env.A2A_CLAUDE_CODE_PATCH_MAX_TURNS, 6);
   const maxBuffer = positiveInteger(env.A2A_CLAUDE_CODE_MAX_OUTPUT_BYTES, 16 * 1024 * 1024);
-  const explicitModel = resolveExplicitClaudeModel(flags, env);
+  const claudeRuntimeArgs = buildClaudeRuntimeArgs(flags, env);
   const args = [
     "-p", prompt,
-    ...(explicitModel ? ["--model", explicitModel] : []),
+    ...claudeRuntimeArgs,
     "--output-format", "json",
     "--max-turns", String(maxTurns),
     "--tools", "Read Grep Glob",
