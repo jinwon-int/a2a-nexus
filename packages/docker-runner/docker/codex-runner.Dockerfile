@@ -40,7 +40,7 @@ RUN npm install -g "${CODEX_PACKAGE}" \
   && gh --version \
   && gitleaks version
 
-# A task-scoped credential clone is mounted read-write at runtime under
+# Codex credentials are mounted at runtime as a task-scoped read-write clone under
 # /run/secrets/codex-dir. The host runner validates and atomically writes back
 # only a compatible refreshed auth.json; credentials never enter image layers
 # or task artifacts.
