@@ -9,11 +9,24 @@ Spec: [`spec.md`](./spec.md) (a2a-nexus#1635 P1-B)
   spec의 계약이 실데이터 분포와 맞는지 먼저 검증한다 (측정 없이 스키마 확정 금지).
 - 산출: 측정 노트 + 골든 픽스처 후보 라운드 2개 선정.
 
+측정 노트 (2026-07-28): 최근 500개 list-projected task를 read-only로
+표본 조사한 결과 Team1은 `parentTaskId=4`, `parentRoundId=0`,
+`referenceTaskIds=0`; Team2는 `parentTaskId=1`, `parentRoundId=0`,
+`referenceTaskIds=0`이었다. list projection이 lineage 필드를 생략할 수
+있으므로 이 수치는 해당 read surface만 설명하며 durable record에 필드가
+없음을 증명하지 않는다. 기존 `round-coordinator-closeout`의
+`all-complete.json`, `mixed-states.json`을 두 recorded round-shaped golden
+fixture 입력으로 사용한다.
+
 ## Phase 1 — 읽기 모델 코어 (순수 함수)
 
 - `packages/broker/src/core/task-lineage-read.ts` (신규):
   태스크 레코드 컬렉션 → 부모 인덱스 → `childrenOf`, `ancestorsOf`(cycle 감지),
   `leavesOf`(필터 AND 결합). 엔진은 순수 함수, I/O 없음.
+- `tasks/children` anchor 불일치 해소: closed request는 `taskId` 또는
+  `parentRoundId` 중 정확히 하나만 허용한다.
+- canonical ancestry는 `parentTaskId`만 사용한다. `referenceTaskIds`는
+  typed child/leaf/rejoin edge이며 canonical parent를 대체하지 않는다.
 - 사이클 가드: 방문 집합 기반, 감지 시 `task_lineage_cycle` 구조화 오류.
 - 단위 테스트: 분기/재합류(`referenceTaskIds`)/고아/사이클 픽스처 (spec Success criteria #2).
 
