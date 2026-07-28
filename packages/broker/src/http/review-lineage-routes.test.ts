@@ -4,7 +4,10 @@ import type { IncomingMessage, ServerResponse } from "node:http";
 import { Readable } from "node:stream";
 import test from "node:test";
 
-import { intentHash } from "../review-lifecycle/canonical-json.js";
+import {
+  findingSignature,
+  intentHash,
+} from "../review-lifecycle/canonical-json.js";
 import {
   parseReviewLineageObservation,
 } from "../review-lifecycle/observation.js";
@@ -155,6 +158,27 @@ test("review lineage routes match exact path boundaries", async () => {
     (await route(
       "POST",
       "/review-lineages/one/review-report/extra",
+    )).handled,
+    false,
+  );
+  assert.equal(
+    (await route(
+      "POST",
+      "/review-lineages/one/correction-generation/extra",
+    )).handled,
+    false,
+  );
+  assert.equal(
+    (await route(
+      "POST",
+      "/review-lineages/one/correction-generation/",
+    )).handled,
+    false,
+  );
+  assert.equal(
+    (await route(
+      "POST",
+      "/review-lineages/one//correction-generation",
     )).handled,
     false,
   );
@@ -481,6 +505,172 @@ test("review-report route requires verified key ownership, exact fields, and rou
       "review-lineage.report",
       "review-lineage.report",
     ]);
+  } finally {
+    store.close();
+  }
+});
+
+test("correction-generation route requires exact operator role, pending state, and exact fields", async () => {
+  const store = new SqliteBrokerStateStore(":memory:");
+  try {
+    const broker = new InMemoryA2ABroker(
+      store,
+      store.load(),
+      { reviewLineageMode: "record" },
+    );
+    const frozen = contract();
+    const diffHash = `sha256:${"c".repeat(64)}`;
+    const binding = {
+      intentHash: frozen.intentHash,
+      headSha: frozen.headSha,
+      diffHash,
+    };
+    await broker.recordOperatorReviewLineageCreate(
+      {
+        dispatchRef: "lineage-dispatch:correction-route:1",
+        observedAt: frozen.createdAt,
+        binding,
+        contract: frozen,
+        budget: budget(),
+      },
+      "operator-a",
+    );
+    const request = {
+      generationRef: "correction-generation:route:1",
+      observedAt: "2026-07-23T00:02:00.000Z",
+      binding,
+      headSha: "d".repeat(40),
+      diffHash: `sha256:${"e".repeat(64)}`,
+      intentHash: frozen.intentHash,
+      pathsChanged: ["packages/broker/src/core/broker.ts"],
+    };
+
+    async function route(identity: unknown, body: unknown) {
+      const path =
+        `/review-lineages/${frozen.lineageId}/correction-generation`;
+      const res = new CapturingResponse();
+      const handled = await handleReviewLineageRoutesIfMatched({
+        method: "POST",
+        path,
+        req: Readable.from([JSON.stringify(body)]) as IncomingMessage,
+        res: res as unknown as ServerResponse,
+        url: new URL(path, "http://broker.test"),
+        broker,
+        enforceRequesterIdentity: false,
+        requesterIdentity: identity as never,
+        assertWorkerHttpSignatureRoute: async () => null,
+        assertVerifiedWorkerMatches: () => undefined,
+      });
+      return {
+        handled,
+        res,
+        json: res.body ? JSON.parse(res.body) : undefined,
+      };
+    }
+
+    for (const identity of [
+      null,
+      { id: "hub-a", role: "hub" },
+      { id: "analyst-a", role: "analyst" },
+      { id: "operator-a" },
+    ]) {
+      await assert.rejects(
+        route(identity, request),
+        (error) =>
+          error instanceof BrokerError
+          && error.code === "unauthorized",
+      );
+    }
+    await assert.rejects(
+      route(
+        { id: "operator-a", role: "operator" },
+        { ...request, authorityKind: "correction_controller" },
+      ),
+      (error) =>
+        error instanceof BrokerError
+        && error.code === "bad_request"
+        && /unexpected_field/.test(error.message),
+    );
+    await assert.rejects(
+      route(
+        { id: "operator-a", role: "operator" },
+        {
+          ...request,
+          generationRef: "correction-generation:out-of-state:1",
+        },
+      ),
+      (error) =>
+        error instanceof BrokerError
+        && error.code === "invalid_transition"
+        && /transition_rejected/.test(error.message),
+    );
+    assert.equal(
+      broker.getReviewLineage(frozen.lineageId)?.state,
+      "reviewing_initial",
+    );
+
+    const signable = {
+      criterionRef: "AC-1",
+      category: "correctness" as const,
+      evidenceRefs: ["packages/broker/src/core/broker.ts:700"],
+    };
+    await broker.recordReviewerReviewLineageReport(
+      frozen.lineageId,
+      {
+        reportRef: "review-report:correction-route:initial",
+        observedAt: "2026-07-23T00:01:00.000Z",
+        binding,
+        receipt: {
+          kind: "ReviewReceiptV1",
+          reviewerNodeId: "reviewer-a",
+          verdict: "fail",
+          note: "One bounded correction is required.",
+          headSha: frozen.headSha,
+          diffHash,
+          intentHash: frozen.intentHash,
+          findingLedgerRef: `ledger-${frozen.lineageId}`,
+          authorWorkerId: "author-a",
+        },
+        resolvedFindingIds: [],
+        reopenedFindingIds: [],
+        newFindings: [{
+          findingId: "F-1",
+          ...signable,
+          severity: "major",
+          blocking: true,
+          introducedAtHead: frozen.headSha,
+          firstSeenAtHead: frozen.headSha,
+          resolvedAtHead: null,
+          disposition: "open",
+          signature: findingSignature(signable),
+        }],
+      },
+      "reviewer-a",
+    );
+    assert.equal(
+      broker.getReviewLineage(frozen.lineageId)?.state,
+      "correction_pending",
+    );
+
+    const applied = await route(
+      { id: "operator-a", role: "operator" },
+      request,
+    );
+    assert.equal(applied.handled, true);
+    assert.equal(applied.res.statusCode, 201);
+    assert.equal(applied.json.result.status, "applied");
+    assert.equal(applied.json.result.state, "reviewing_resolution");
+    assert.equal(
+      broker.getReviewLineage(frozen.lineageId)?.state,
+      "reviewing_resolution",
+    );
+
+    const replay = await route(
+      { id: "operator-a", role: "operator" },
+      request,
+    );
+    assert.equal(replay.res.statusCode, 200);
+    assert.equal(replay.json.result.status, "replayed");
   } finally {
     store.close();
   }

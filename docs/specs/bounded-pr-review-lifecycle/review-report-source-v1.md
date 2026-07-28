@@ -1,7 +1,8 @@
 # Authenticated review-lineage report source v1
 
 Phase 16 attaches the third authoritative observation kind:
-`review_report`. Automatic source coverage becomes exactly `3/5`.
+`review_report`. At that phase boundary, automatic source coverage became
+exactly `3/5`.
 
 This is a source implementation and temporary-database test boundary. It does
 not enable record mode by default or approve live schema execution, migration,
@@ -108,6 +109,8 @@ HTTP route still authenticates the caller and then reports that recording is
 disabled. `record` remains the only active mode; `enforce` remains unsupported.
 
 Generic task creation, completion, result, evidence, failure, cancellation,
-retry, approval, finalizer, and fixer paths remain detached. Current automatic
-coverage is exactly `3/5`; correction generation and reviewer replacement have
-no runtime source owner.
+retry, approval, finalizer, and fixer paths remain detached. Phase 16 coverage
+was exactly `3/5`. Phase 17 later attaches only correction generation, making
+current coverage `4/5`; reviewer replacement still has no runtime source
+owner. See
+[correction-generation-source-v1.md](correction-generation-source-v1.md).

@@ -201,7 +201,8 @@
       real-lineage collection receive separate explicit approval
 - [x] Second source kind receives a separate owner/durability review
 - [x] Third source kind receives a separate owner/durability review
-- [ ] Remaining two source kinds receive separate owner/durability reviews
+- [x] Fourth source kind receives a separate owner/durability review
+- [ ] Remaining source kind receives a separate owner/durability review
 
 ## N. Second authenticated owner — lineage create (Phase 15)
 
@@ -252,3 +253,39 @@
 - [x] Automatic source coverage is exactly `3/5`
 - [ ] Live schema execution, record-mode activation, deploy/restart/canary,
       provider send, and real-lineage collection receive separate approval
+
+## P. Fourth authenticated owner — correction generation (Phase 17)
+
+- [x] Exact correction-generation route is the only new mutation path
+- [x] Exact-role operator gate runs before trusted context construction
+- [x] Request contains only generation reference, observed time,
+      pre-correction binding, next head/diff, frozen intent, and changed paths
+- [x] Request cannot select source, authority, namespace, issuer, operator,
+      producer ID, or source-event ID
+- [x] Trusted code assigns `correction_generation_committed` and semantic
+      `correction_controller`
+- [x] Phase 13 authorization and Phase 12/8 admission remain canonical
+- [x] Schema 13 and the existing source table are reused unchanged
+- [x] Closed attached-source set is exactly create, review, correction, cancel
+- [x] Reviewer replacement remains detached
+- [x] Admission outside `correction_pending` records a stable rejection without
+      changing canonical lineage state or head
+- [x] Exact-subject and frozen-intent mismatches fail closed
+- [x] Forbidden and out-of-scope paths preserve the pending head
+- [x] Source event, canonical lineage transition/outcome, and ledger share one
+      transaction
+- [x] Direct and worker-thread paths preserve replay/conflict and rollback
+- [x] Worker-thread path uses one composite command and post-ACK projection
+- [x] Off mode is inert before request parsing or store access
+- [x] Minimized source metadata excludes generation reference, operator,
+      changed paths, patch/fixer output, prompts, provider payloads, and
+      credentials
+- [x] Existing lineage-create, review-report, and operator-cancel paths remain
+      compatible
+- [x] Generic task/result/log/prose, completion, retry, finalizer, approval,
+      and fixer paths remain detached
+- [x] Default mode remains `off`; `enforce` remains unsupported
+- [x] Automatic source coverage is exactly `4/5`
+- [ ] Live schema execution, record-mode activation, deploy/restart/canary,
+      provider send, ACK/replay/prune/migration, and real-lineage collection
+      receive separate approval

@@ -264,6 +264,35 @@ no finalizer, CodeQL, reviewer-independence, approval, retry, or task outcome.
 The default remains `off`, `enforce` remains unsupported, and no live action is
 approved.
 
+## Phase 17 — Fourth authenticated owner: correction generation
+
+- Add only
+  `POST /review-lineages/{lineageId}/correction-generation`.
+- Require an authenticated requester with the exact `operator` role, then
+  assign semantic `correction_controller` authority in trusted broker code.
+- Accept only an immutable generation reference, observation time, exact
+  pre-correction intent/head/diff binding, next head and diff, frozen intent,
+  and complete changed-path list.
+- Fix `correction_generation_committed`, `correction_controller`, source
+  namespace, and authenticated issuer in trusted code; derive producer and
+  source-event identities without caller input.
+- Reuse the Phase 8 parser, Phase 13 authorization, Phase 12 awaited admission,
+  schema 13, and the existing composite transaction/worker command.
+- Admit the event only while canonical state is `correction_pending`; preserve
+  exact-subject, frozen-intent, forbidden-path, and allowed-path rejection.
+- Prove exact route/fields/role, direct and worker-thread atomicity, post-ACK
+  projection, off-mode inertness, restart replay, changed-payload conflict,
+  rollback, minimized metadata, closed tuples, and create/review/cancel
+  compatibility.
+- Keep `reviewer_replacement` detached and report automatic coverage as exactly
+  `4/5`.
+
+Phase 17 records evidence for an already committed correction generation. It
+does not apply a patch, invoke or auto-push fixer output, infer from generic
+task/result/log/prose, or connect completion, retry, approval, or finalizer
+paths. The default remains `off`, `enforce` remains unsupported, and no live
+action is approved.
+
 ## Rollback strategy per phase
 
 | Phase | Rollback |
@@ -283,6 +312,7 @@ approved.
 | 14 | Return mode to `off`, stop using the mutation route, and revert code; preserve additive source rows/tables for audit |
 | 15 | Return mode to `off`, stop using the create route, and revert code; preserve canonical/source rows for audit |
 | 16 | Return mode to `off`, stop using the signed review-report route, and revert code; preserve canonical/source rows for audit |
+| 17 | Return mode to `off`, stop using the correction-generation route, and revert code; preserve canonical/source rows for audit |
 
 ## Safety boundaries (all phases)
 

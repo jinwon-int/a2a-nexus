@@ -195,10 +195,39 @@ observation-ledger result commit atomically in one direct transaction or one
 worker-thread command and durable ACK. Projection changes only after the ACK.
 
 No generic task, result, validation summary, log, provider response, or prose
-inference can create this event. `correction_generation` and
-`reviewer_replacement` remain detached, so authoritative-source coverage is
-exactly `3/5`. See
+inference can create this event. At the end of Phase 16,
+`correction_generation` and `reviewer_replacement` remained detached and
+authoritative-source coverage was exactly `3/5`. See
 [review-report-source-v1.md](review-report-source-v1.md).
+
+### Authenticated correction-generation source (Phase 17)
+
+Record mode accepts committed-generation evidence only through
+`POST /review-lineages/{lineageId}/correction-generation`. An authenticated
+requester must have the exact `operator` role. Trusted broker code treats that
+operator as the issuer of semantic `correction_controller` authority; request
+JSON cannot select authority, namespace, source kind, issuer, producer ID, or
+source-event ID.
+
+The exact-field body carries only an immutable generation reference,
+observation time, the complete pre-correction intent/head/diff binding, next
+head and diff, the unchanged frozen intent hash, and all changed paths. The
+Phase 8 parser remains the only complete field/subject/event parser. Phase 13
+authorizes the carrier, Phase 12 awaits admission, and schema 13 stores the
+minimized source event, canonical lineage result, and ledger result in one
+transaction or one worker-thread command and durable ACK.
+
+The canonical store admits a correction command only from
+`correction_pending`. Exact-subject or frozen-intent drift fails closed.
+Forbidden or out-of-scope paths leave the pre-correction head in place and
+record only redacted rejection effects. A successful allowed-path event moves
+to `reviewing_resolution` and records the supplied already-committed head; the
+route itself never applies a patch or invokes a fixer.
+
+No generic task, result, validation summary, log, prose, retry, completion, or
+finalizer output can create this event. `reviewer_replacement` remains
+detached, so authoritative-source coverage is exactly `4/5`. See
+[correction-generation-source-v1.md](correction-generation-source-v1.md).
 
 ### Blocking-finding ledger (FindingLedgerV1)
 
