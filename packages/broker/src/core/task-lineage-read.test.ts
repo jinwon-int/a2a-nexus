@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import test from "node:test";
 
+import { BrokerError } from "./broker-error.js";
 import {
   TASK_LINEAGE_ANOMALY_KIND,
   TASK_LINEAGE_CHILD_KIND,
@@ -141,6 +142,48 @@ test("task-lineage children type canonical/reference edges, deduplicate dual mat
   assert.equal(referenceChildren.children[0]?.rejoin, true);
 });
 
+test("task-lineage children fail closed for an unknown round anchor", () => {
+  const projection = buildTaskLineageReadProjection([task("visible")]);
+  const failureFor = (
+    anchor: { taskId: string } | { parentRoundId: string },
+  ): BrokerError => {
+    try {
+      projection.children(childrenRequest(anchor));
+    } catch (error) {
+      assert.ok(error instanceof BrokerError);
+      return error;
+    }
+    assert.fail("expected missing anchor to fail closed");
+  };
+
+  const missingTask = failureFor({ taskId: "missing-task" });
+  const missingRound = failureFor({ parentRoundId: "missing-round" });
+  assert.deepEqual(
+    {
+      code: missingRound.code,
+      message: missingRound.message,
+      details: missingRound.details,
+    },
+    {
+      code: missingTask.code,
+      message: missingTask.message,
+      details: missingTask.details,
+    },
+  );
+  assert.deepEqual(
+    {
+      code: missingRound.code,
+      message: missingRound.message,
+      details: missingRound.details,
+    },
+    {
+      code: "not_found",
+      message: "task not found",
+      details: undefined,
+    },
+  );
+});
+
 test("task-lineage canonical lineage ignores reference parents and preserves orphan semantics", () => {
   const projection = buildTaskLineageReadProjection([
     task("root"),
@@ -275,7 +318,10 @@ test("task-lineage leaves use canonical and reference children and AND-combine a
 
 test("task-lineage pagination is stable for equal createdAt, opaque, deterministic, and query-bound", () => {
   const projection = buildTaskLineageReadProjection([
-    task("task-c", { payload: { secret: "must-not-enter-cursor" } }),
+    task("task-c", {
+      parentRoundId: "round-1",
+      payload: { secret: "must-not-enter-cursor" },
+    }),
     task("task-a"),
     task("task-b"),
   ]);
@@ -405,6 +451,19 @@ test("task-lineage request parsers fail closed on anchors, fields, dates, status
   for (const [action, expected] of invalid) {
     assert.equal(validationCode(action), expected);
   }
+});
+
+test("task-lineage pagination parser rejects malformed cursor encodings", () => {
+  assert.equal(
+    validationCode(() =>
+      parseTaskLineagePaginationV1({
+        kind: TASK_LINEAGE_PAGINATION_KIND,
+        limit: TASK_LINEAGE_DEFAULT_LIMIT,
+        cursor: "bounded-but-not-a-task-lineage-cursor",
+      }),
+    ),
+    "invalid_cursor",
+  );
 });
 
 test("task-lineage closed response parsers reject undeclared fields across every v1 record", () => {

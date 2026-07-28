@@ -182,7 +182,7 @@ test("task-lineage JSON-RPC makes hidden and missing task anchors indistinguisha
   }
 });
 
-test("task-lineage JSON-RPC excludes hidden children from leaves, counts, cursors, anomalies, and round hints", () => {
+test("task-lineage JSON-RPC excludes hidden children and makes hidden and missing round anchors indistinguishable", () => {
   const broker = brokerWithTasks([
     task("visible-root", "worker-a"),
     task("hidden-child", "worker-b", {
@@ -198,19 +198,32 @@ test("task-lineage JSON-RPC excludes hidden children from leaves, counts, cursor
   assert.deepEqual(leaves.leaves.map((node) => node.taskId), ["visible-root"]);
   assert.equal(leaves.diagnostics.scannedVisibleTasks, 1);
 
-  const round = resultOf<{
-    children: unknown[];
-    round?: unknown;
-    page: { nextCursor: string | null };
-    diagnostics: { anomalies: unknown[] };
-  }>(
-    rpc(broker, "tasks/children", { parentRoundId: "hidden-round" }),
+  const hidden = rpc(
+    broker,
+    "tasks/children",
+    { parentRoundId: "hidden-round" },
   );
-  assert.deepEqual(round.children, []);
-  assert.equal(round.round, undefined);
-  assert.equal(round.page.nextCursor, null);
-  assert.deepEqual(round.diagnostics.anomalies, []);
-  assert.doesNotMatch(JSON.stringify(round), /hidden-child/);
+  const missing = rpc(
+    broker,
+    "tasks/children",
+    { parentRoundId: "missing-round" },
+  );
+  assert.ok("error" in hidden && "error" in missing);
+  if (!("error" in hidden) || !("error" in missing)) return;
+  assert.equal(hidden.error.code, -32001);
+  assert.equal(hidden.error.code, missing.error.code);
+  assert.equal(hidden.error.message, missing.error.message);
+  assert.deepEqual(hidden.error.data, missing.error.data);
+
+  const serialized = JSON.stringify(hidden).toLowerCase();
+  assert.doesNotMatch(serialized, /hidden-child|hidden-round/);
+  for (const disclosure of ["count", "cursor", "anomal", "round"]) {
+    assert.equal(
+      serialized.includes(disclosure),
+      false,
+      `${disclosure} must not enter the bounded anchor failure`,
+    );
+  }
 });
 
 test("task-lineage JSON-RPC reports only visible direct children and deduplicates typed edges", () => {

@@ -1551,9 +1551,14 @@ export function buildTaskLineageReadProjection(
           edges: TASK_LINEAGE_EDGE_TYPES.filter((edge) => edges.has(edge)),
         }));
       } else {
-        candidates = (
-          roundChildren.get(normalizedRequest.anchor.parentRoundId) ?? []
-        ).map((task) => ({ task, edges: ["round_stamp"] }));
+        const stamped = roundChildren.get(
+          normalizedRequest.anchor.parentRoundId,
+        );
+        if (!stamped) notFound();
+        candidates = stamped.map((task) => ({
+          task,
+          edges: ["round_stamp"],
+        }));
       }
       candidates.sort((left, right) =>
         compareIndexedTask(left.task, right.task),
