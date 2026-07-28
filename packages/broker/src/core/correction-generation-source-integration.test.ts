@@ -248,7 +248,7 @@ function cancelAdmission(
   ));
 }
 
-function detachedReplacementAdmission():
+function replacementCompatibilityAdmission():
   AuthorizedReviewLineageSourceAdmissionV1 {
   const observedAt = T2;
   const fact = authorizeReviewLineageSourceCarrier(
@@ -497,7 +497,7 @@ test("correction source and ledger insert failures roll back the lineage transit
   }
 });
 
-test("closed source admission attaches correction, keeps replacement detached, and preserves existing sources", () => {
+test("closed source admission preserves correction, replacement, review, and cancel compatibility", () => {
   const { dir, dbFile } = tempDatabase();
   try {
     const store = new SqliteReviewLineageObservationStore(dbFile);
@@ -519,9 +519,13 @@ test("closed source admission attaches correction, keeps replacement detached, a
       store.applyAuthorizedSource(correction).status,
       "applied",
     );
-    assert.throws(
-      () => store.applyAuthorizedSource(detachedReplacementAdmission()),
-      /invalid_authorized_source/,
+    assert.deepEqual(
+      store.applyAuthorizedSource(replacementCompatibilityAdmission()),
+      {
+        status: "subject_conflict",
+        lineageId: "phase17-atomic",
+        outcome: "subject_conflict",
+      },
     );
 
     const passLineage = "phase17-review-compat";

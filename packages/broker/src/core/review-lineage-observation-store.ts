@@ -1,5 +1,5 @@
 /**
- * Atomic observation store for bounded PR review lineages (#1518 Phases 9-17).
+ * Atomic observation store for bounded PR review lineages (#1518 Phases 9-18).
  *
  * One normalized Phase 8 observation updates its authoritative source event,
  * canonical lineage, and durable idempotency ledger in the same SQLite
@@ -25,9 +25,10 @@ import {
 import type {
   AuthorizedReviewLineageSourceEventV1,
 } from "../review-lifecycle/authorized-source.js";
-import type {
-  ReviewLineageRecord,
-  ReviewLineageState,
+import {
+  TERMINAL_LINEAGE_STATES,
+  type ReviewLineageRecord,
+  type ReviewLineageState,
 } from "../review-lifecycle/types.js";
 import { reviewLineageRecordSchema } from "./store-schemas.js";
 
@@ -179,6 +180,14 @@ function sourceMatchesCommand(
     return source.authorityKind === "correction_controller"
       && command.command.kind === "record_event"
       && command.command.event.type === "correction_generation"
+      && command.command.event.at === source.observedAt;
+  }
+  if (source.sourceKind === "reviewer_replacement_decided") {
+    return source.authorityKind === "reviewer_allocator"
+      && command.command.kind === "record_event"
+      && command.command.event.type === "reviewer_replacement"
+      && command.command.event.reason === "infrastructure_failure"
+      && command.command.event.detail === undefined
       && command.command.event.at === source.observedAt;
   }
   return false;
@@ -675,6 +684,12 @@ implements DurableReviewLineageObservationStore {
     if (
       command.command.event.type === "correction_generation"
       && current.state !== "correction_pending"
+    ) {
+      return this.recordStableOutcome(command, "transition_rejected");
+    }
+    if (
+      command.command.event.type === "reviewer_replacement"
+      && TERMINAL_LINEAGE_STATES.has(current.state)
     ) {
       return this.recordStableOutcome(command, "transition_rejected");
     }

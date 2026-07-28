@@ -1,12 +1,13 @@
 /**
  * Operator projection and explicit authenticated cancel source for bounded PR
- * review lineages (#1518 Phases 3b/14-17).
+ * review lineages (#1518 Phases 3b/14-18).
  *
  * This surface never exposes the frozen contract, raw receipts, diff hashes,
  * or the full finding ledger. Mutations are limited to operator-owned,
- * exact-field contract freeze/cancellation/correction-generation decisions
- * and an explicitly worker-signed review report; generic task creation,
- * completion, fixer, and cancellation behavior is unrelated.
+ * exact-field contract freeze/cancellation/correction-generation/reviewer-
+ * replacement decisions and an explicitly worker-signed review report;
+ * generic task creation, completion, fixer, and cancellation behavior is
+ * unrelated.
  */
 
 import type { IncomingMessage, ServerResponse } from "node:http";
@@ -136,6 +137,69 @@ export async function handleReviewLineageRoutesIfMatched(
 
   const rest = ctx.path.slice("/review-lineages/".length);
   const segments = rest.split("/").filter((segment) => segment.length > 0);
+  if (
+    ctx.method === "POST"
+    && segments.length === 2
+    && segments[1] === "reviewer-replacement"
+    && rest === `${segments[0]}/reviewer-replacement`
+  ) {
+    // Only an authenticated exact-role operator may record an already
+    // classified infrastructure-failure decision. Trusted broker code assigns
+    // semantic reviewer-allocator authority after this unconditional gate.
+    assertRequesterHasRole(
+      ctx.requesterIdentity,
+      ["operator"],
+      "review-lineage.reviewer-replacement",
+    );
+    const body = await readJson(ctx.req);
+    if (!body) {
+      throw new BrokerError("bad_request", "request body is required");
+    }
+    const lineageId = decodeURIComponent(segments[0]);
+    let result;
+    try {
+      result =
+        await ctx.broker.recordOperatorReviewLineageReviewerReplacement(
+          lineageId,
+          body,
+          ctx.requesterIdentity!.id,
+        );
+    } catch (error) {
+      if (
+        error instanceof SourceCarrierValidationError
+        || error instanceof ObservationValidationError
+      ) {
+        throw new BrokerError("bad_request", error.message);
+      }
+      throw error;
+    }
+    if (!result) {
+      throw new BrokerError(
+        "invalid_transition",
+        "review lineage recording is disabled",
+      );
+    }
+    if (result.status === "missing_lineage") {
+      throw new BrokerError("not_found", "review lineage not found");
+    }
+    if (
+      result.status === "subject_conflict"
+      || result.status === "transition_rejected"
+      || result.status === "idempotency_conflict"
+    ) {
+      throw new BrokerError(
+        "invalid_transition",
+        `review lineage reviewer replacement rejected: ${result.status}`,
+      );
+    }
+    sendJson(
+      ctx.res,
+      result.status === "replayed" ? 200 : 201,
+      { result },
+      { "cache-control": "no-store" },
+    );
+    return true;
+  }
   if (
     ctx.method === "POST"
     && segments.length === 2

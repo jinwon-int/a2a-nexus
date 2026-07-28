@@ -182,6 +182,27 @@ test("review lineage routes match exact path boundaries", async () => {
     )).handled,
     false,
   );
+  assert.equal(
+    (await route(
+      "POST",
+      "/review-lineages/one/reviewer-replacement/extra",
+    )).handled,
+    false,
+  );
+  assert.equal(
+    (await route(
+      "POST",
+      "/review-lineages/one/reviewer-replacement/",
+    )).handled,
+    false,
+  );
+  assert.equal(
+    (await route(
+      "POST",
+      "/review-lineages/one//reviewer-replacement",
+    )).handled,
+    false,
+  );
   assert.equal((await route("GET", "/review-lineagesX")).handled, false);
 });
 
@@ -671,6 +692,131 @@ test("correction-generation route requires exact operator role, pending state, a
     );
     assert.equal(replay.res.statusCode, 200);
     assert.equal(replay.json.result.status, "replayed");
+  } finally {
+    store.close();
+  }
+});
+
+test("reviewer-replacement route requires exact operator role and records only the fixed decision", async () => {
+  const store = new SqliteBrokerStateStore(":memory:");
+  try {
+    const broker = new InMemoryA2ABroker(
+      store,
+      store.load(),
+      { reviewLineageMode: "record" },
+    );
+    const frozen = contract();
+    const diffHash = `sha256:${"c".repeat(64)}`;
+    const binding = {
+      intentHash: frozen.intentHash,
+      headSha: frozen.headSha,
+      diffHash,
+    };
+    await broker.recordOperatorReviewLineageCreate(
+      {
+        dispatchRef: "lineage-dispatch:replacement-route:1",
+        observedAt: frozen.createdAt,
+        binding,
+        contract: frozen,
+        budget: budget(),
+      },
+      "operator-a",
+    );
+    const request = {
+      decisionRef: "reviewer-replacement:route:1",
+      observedAt: "2026-07-23T00:01:00.000Z",
+      binding,
+    };
+
+    async function route(identity: unknown, body: unknown) {
+      const path =
+        `/review-lineages/${frozen.lineageId}/reviewer-replacement`;
+      const res = new CapturingResponse();
+      const handled = await handleReviewLineageRoutesIfMatched({
+        method: "POST",
+        path,
+        req: Readable.from([JSON.stringify(body)]) as IncomingMessage,
+        res: res as unknown as ServerResponse,
+        url: new URL(path, "http://broker.test"),
+        broker,
+        enforceRequesterIdentity: false,
+        requesterIdentity: identity as never,
+        assertWorkerHttpSignatureRoute: async () => null,
+        assertVerifiedWorkerMatches: () => undefined,
+      });
+      return {
+        handled,
+        res,
+        json: res.body ? JSON.parse(res.body) : undefined,
+      };
+    }
+
+    for (const identity of [
+      null,
+      { id: "hub-a", role: "hub" },
+      { id: "analyst-a", role: "analyst" },
+      { id: "operator-a" },
+    ]) {
+      await assert.rejects(
+        route(identity, request),
+        (error) =>
+          error instanceof BrokerError
+          && error.code === "unauthorized",
+      );
+    }
+    for (const field of [
+      "reason",
+      "authorityKind",
+      "reviewerId",
+      "assignedWorkerId",
+    ]) {
+      await assert.rejects(
+        route(
+          { id: "operator-a", role: "operator" },
+          { ...request, [field]: "caller-controlled" },
+        ),
+        (error) =>
+          error instanceof BrokerError
+          && error.code === "bad_request"
+          && /unexpected_field/.test(error.message),
+      );
+    }
+
+    const applied = await route(
+      { id: "operator-a", role: "operator" },
+      request,
+    );
+    assert.equal(applied.handled, true);
+    assert.equal(applied.res.statusCode, 201);
+    assert.equal(applied.json.result.status, "applied");
+    assert.deepEqual(applied.json.result.effects, [
+      "reviewer_replaced:infrastructure_failure",
+    ]);
+    assert.equal(
+      broker.getReviewLineage(frozen.lineageId)?.metrics.reviewerReplacements,
+      1,
+    );
+
+    const replay = await route(
+      { id: "operator-a", role: "operator" },
+      request,
+    );
+    assert.equal(replay.res.statusCode, 200);
+    assert.equal(replay.json.result.status, "replayed");
+
+    await assert.rejects(
+      route(
+        { id: "operator-a", role: "operator" },
+        {
+          ...request,
+          observedAt: "2026-07-23T00:01:01.000Z",
+        },
+      ),
+      (error) =>
+        error instanceof BrokerError
+        && error.code === "invalid_transition"
+        && /idempotency_conflict/.test(error.message),
+    );
   } finally {
     store.close();
   }

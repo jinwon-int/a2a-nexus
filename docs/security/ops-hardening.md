@@ -95,6 +95,7 @@ node packages/broker/scripts/ops-hardening-audit.mjs --base-url http://127.0.0.1
 | `/review-lineages/:id/operator-cancel` | POST | Yes | Yes | No | Exact operator role |
 | `/review-lineages/:id/review-report` | POST | Yes | Yes | No | Ed25519 worker signature plus `review-lineage.report` scope |
 | `/review-lineages/:id/correction-generation` | POST | Yes | Yes | No | Exact operator role; records an already committed generation only |
+| `/review-lineages/:id/reviewer-replacement` | POST | Yes | Yes | No | Exact operator role; records a classified infrastructure-failure decision only |
 | `/dashboard` | GET | Yes | No | No | Read-only operator dashboard |
 | `/alerts` | GET | Yes | No | No | Read-only alert projection |
 | `/audit` | GET | Yes | No | No | Read-only audit log |
@@ -121,6 +122,26 @@ Keep `A2A_REVIEW_LINEAGE_MODE=off` unless record-mode activation has separate
 approval. Do not connect generic task/result/log/prose, retry, completion,
 finalizer, or fixer flows to this route. It records an already committed
 generation and must never apply or auto-push patch output.
+
+### Review-lineage reviewer-allocation authority
+
+The reviewer-replacement route requires the exact `operator` role. Trusted
+broker code assigns semantic `reviewer_allocator` authority and fixes the
+source kind, namespace, issuer, observation kind, and reason
+`infrastructure_failure`. The body carries only a decision reference,
+observation time, and exact current intent/head/diff binding; it cannot assert
+a reviewer, worker, task, assignment, authority, or source identity.
+
+This route records an already classified decision. It does not classify task
+errors, select a replacement, mutate assignment, dispatch work, inspect generic
+task/result/error/log/prose/retry/completion/finalizer state, or create an
+automatic loop. Exact-subject mismatch and terminal lineages fail closed.
+Replacement-budget exhaustion remains terminal and operator-visible, and a
+replacement never resets shared lineage state or budget.
+
+Keep `A2A_REVIEW_LINEAGE_MODE=off` unless record-mode activation has separate
+approval. Source attachment coverage `5/5` is not activation, deployment,
+independent review, finalizer closeout, or issue closeout.
 
 ### Secrets and edge security
 
