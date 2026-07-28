@@ -1,5 +1,5 @@
 /**
- * Atomic observation store for bounded PR review lineages (#1518 Phases 9-16).
+ * Atomic observation store for bounded PR review lineages (#1518 Phases 9-17).
  *
  * One normalized Phase 8 observation updates its authoritative source event,
  * canonical lineage, and durable idempotency ledger in the same SQLite
@@ -173,6 +173,12 @@ function sourceMatchesCommand(
     return source.authorityKind === "reviewer"
       && command.command.kind === "record_event"
       && command.command.event.type === "review_report"
+      && command.command.event.at === source.observedAt;
+  }
+  if (source.sourceKind === "correction_generation_committed") {
+    return source.authorityKind === "correction_controller"
+      && command.command.kind === "record_event"
+      && command.command.event.type === "correction_generation"
       && command.command.event.at === source.observedAt;
   }
   return false;
@@ -665,6 +671,12 @@ implements DurableReviewLineageObservationStore {
     const current = this.parseRecord(currentRow.record_json);
     if (!sameSubject(subjectFromRecord(current), command.expectedSubject)) {
       return this.recordStableOutcome(command, "subject_conflict");
+    }
+    if (
+      command.command.event.type === "correction_generation"
+      && current.state !== "correction_pending"
+    ) {
+      return this.recordStableOutcome(command, "transition_rejected");
     }
 
     let next: ReviewLineageRecord;

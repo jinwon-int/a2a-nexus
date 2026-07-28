@@ -36,9 +36,7 @@ import {
 
 const BASE_SHA = "0".repeat(40);
 const HEAD_SHA = "1".repeat(40);
-const NEXT_SHA = "2".repeat(40);
 const DIFF_HASH = `sha256:${"a".repeat(64)}`;
-const NEXT_DIFF_HASH = `sha256:${"b".repeat(64)}`;
 const T0 = "2026-07-28T10:10:00Z";
 const T1 = "2026-07-28T10:11:00Z";
 const REVIEWER_ID = "reviewer-beta";
@@ -173,31 +171,18 @@ function cancelAdmission(
   };
 }
 
-function detachedAdmission(
-  kind: "correction_generation" | "reviewer_replacement",
-): AuthorizedReviewLineageSourceAdmissionV1 {
-  const sourceEventRef = `detached:${kind}:1`;
+function detachedReplacementAdmission():
+  AuthorizedReviewLineageSourceAdmissionV1 {
+  const sourceEventRef = "detached:reviewer_replacement:1";
   const observedAt = "2026-07-28T10:12:00Z";
-  const descriptor = kind === "correction_generation"
-    ? {
-        sourceKind: "correction_generation_committed" as const,
-        authorityKind: "correction_controller" as const,
-        observation: {
-          kind,
-          headSha: NEXT_SHA,
-          diffHash: NEXT_DIFF_HASH,
-          intentHash: binding().intentHash,
-          pathsChanged: ["packages/broker/src/review-lifecycle/lifecycle.ts"],
-        },
-      }
-    : {
-        sourceKind: "reviewer_replacement_decided" as const,
-        authorityKind: "reviewer_allocator" as const,
-        observation: {
-          kind,
-          reason: "infrastructure_failure" as const,
-        },
-      };
+  const descriptor = {
+    sourceKind: "reviewer_replacement_decided" as const,
+    authorityKind: "reviewer_allocator" as const,
+    observation: {
+      kind: "reviewer_replacement" as const,
+      reason: "infrastructure_failure" as const,
+    },
+  };
   const fact = authorizeReviewLineageSourceCarrier(
     {
       kind: REVIEW_LINEAGE_SOURCE_CARRIER_KIND,
@@ -210,8 +195,8 @@ function detachedAdmission(
     },
     createReviewLineageTrustedSourceContext({
       authorityKind: descriptor.authorityKind,
-      issuerId: `owner-${kind}`,
-      sourceNamespace: `test:detached-${kind}:v1`,
+      issuerId: "owner-reviewer-replacement",
+      sourceNamespace: "test:detached-reviewer-replacement:v1",
     }),
   );
   const command = projectReviewLineageProducerFact(fact);
@@ -339,20 +324,15 @@ test("review source and ledger insert failures roll back the lineage transition"
   }
 });
 
-test("closed source admission keeps correction and replacement detached and preserves create/cancel", () => {
+test("closed source admission keeps replacement detached and preserves create/cancel", () => {
   const { dir, dbFile } = tempDatabase();
   try {
     const store = new SqliteReviewLineageObservationStore(dbFile);
     assert.equal(store.applyAuthorizedSource(createAdmission()).status, "applied");
-    for (const kind of [
-      "correction_generation",
-      "reviewer_replacement",
-    ] as const) {
-      assert.throws(
-        () => store.applyAuthorizedSource(detachedAdmission(kind)),
-        /invalid_authorized_source/,
-      );
-    }
+    assert.throws(
+      () => store.applyAuthorizedSource(detachedReplacementAdmission()),
+      /invalid_authorized_source/,
+    );
 
     const cancelLineage = "phase16-cancel-compat";
     assert.equal(

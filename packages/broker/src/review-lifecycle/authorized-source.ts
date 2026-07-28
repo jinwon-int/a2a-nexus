@@ -1,6 +1,6 @@
 /**
  * Minimized metadata shared by authenticated review-lineage source adapters
- * (#1518 Phases 14-16).
+ * (#1518 Phases 14-17).
  *
  * Only source kinds with an actual runtime owner belong in the closed
  * descriptor union. Adding a carrier contract alone must not expand automatic
@@ -27,6 +27,10 @@ export type AttachedReviewLineageSourceDescriptorV1 =
   | {
       sourceKind: "review_report_submitted";
       authorityKind: "reviewer";
+    }
+  | {
+      sourceKind: "correction_generation_committed";
+      authorityKind: "correction_controller";
     };
 
 export type AuthorizedReviewLineageSourceEventV1 =

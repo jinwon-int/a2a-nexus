@@ -88,4 +88,5 @@ Generic task creation, completion, failure, cancellation, retry, approval, and
 finalizer paths remain detached. At the end of Phase 15, `review_report`,
 `correction_generation`, and `reviewer_replacement` had no runtime source
 owner. Phase 16 later attaches only `review_report`; the other two remain
-detached.
+detached at that phase boundary. Phase 17 later attaches only
+`correction_generation`; `reviewer_replacement` remains detached.

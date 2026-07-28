@@ -321,7 +321,9 @@ store, queue, schema, outbox, migration, or live action.
       an actual owner and the same atomic durability.
 - [x] Attach the third source kind (`review_report`, Phase 16) after proving
       signing-key ownership and the same atomic durability.
-- [ ] Attach the remaining two source kinds only after each proves an actual
+- [x] Attach the fourth source kind (`correction_generation`, Phase 17) after
+      proving an operator owner and the same atomic durability.
+- [ ] Attach the remaining source kind only after it proves an actual
       owner and the same atomic or ACK-replayed durability.
 
 Phase 14 is source and temporary-database validation only. It does not approve
@@ -388,10 +390,53 @@ table does not duplicate it.
 Phase 16 is source and temporary-database validation only. It does not weaken
 finalizer, CodeQL, reviewer independence, required checks, or approval gates.
 
+## Phase 17: Fourth authenticated owner — correction generation
+
+- [x] Add exact
+      `POST /review-lineages/{lineageId}/correction-generation` input.
+- [x] Require an authenticated requester with the exact `operator` role.
+- [x] Accept only generation reference, observation time, exact pre-correction
+      binding, next head/diff, frozen intent, and changed paths.
+- [x] Reject caller-selected authority, namespace, issuer, source kind,
+      producer ID, source-event ID, and operator identity.
+- [x] Fix `correction_generation_committed`, semantic
+      `correction_controller`, namespace, and issuer in trusted broker code.
+- [x] Reuse Phase 13 authorization, Phase 12 awaited admission, the Phase 8
+      parser, and schema 13 without a migration.
+- [x] Extend the closed tuple set to exactly create, review, correction, and
+      cancel; keep reviewer replacement detached.
+- [x] Reject correction admission unless canonical state is
+      `correction_pending`.
+- [x] Preserve frozen-intent, exact-subject, forbidden-path, and allowed-path
+      fail-closed behavior without accepting a new head.
+- [x] Commit source event, canonical lineage transition/outcome, and ledger in
+      one `BEGIN IMMEDIATE`.
+- [x] Preserve one worker-thread command, one durable ACK, and post-ACK
+      projection.
+- [x] Prove direct-store and worker-thread behavior, restart replay,
+      changed-payload conflict, source/ledger rollback, and off-mode inertness.
+- [x] Store no raw generation reference, operator ID, path list, prompt,
+      provider payload, credential, patch, or fixer output in minimized source
+      metadata.
+- [x] Preserve lineage create, review report, and operator cancel compatibility.
+- [x] Keep generic task/result/log/prose, completion, retry, finalizer,
+      approval, and fixer paths detached.
+- [x] Report automatic source coverage as exactly `4/5`.
+- [ ] Approve record-mode activation, live schema execution, deployment,
+      restart, canary, provider send, ACK/replay/prune/migration, or
+      real-lineage collection separately.
+
+Phase 17 records an already committed generation only. It never applies a
+patch or auto-pushes fixer output and does not weaken finalizer, CodeQL,
+reviewer independence, required checks, or approval gates.
+
 ## Validation commands (all phases as applicable)
 
 ```bash
 npm run check
 npm run scan:public-readiness
-node --test packages/broker/src/worker-review.test.ts
+npm run scan:external-secrets
+npm run test:conformance
+npm run check:markdown-links
+git diff --check
 ```
