@@ -24,6 +24,10 @@ import { join } from "node:path";
 import { pathToFileURL } from "node:url";
 import { buildClaudeFinalizerToolArgs } from "./finalizer-tool-policy.mjs";
 import { buildClaudeRuntimeArgs } from "./lib/claude-runtime-flags.mjs";
+import {
+  attachClaudeModelTelemetry,
+  claudeInvocationModelTelemetry,
+} from "./lib/claude-model-telemetry.mjs";
 
 // ---------------------------------------------------------------------------
 // Process-tree timeout / session-isolation hardening (issue #1129)
@@ -456,7 +460,10 @@ async function runClaudeAnalysis(prompt, flags, env = process.env) {
       const signal = child.signal ? ` signal=${child.signal}` : "";
       throw new Error(`Claude Code exited with ${child.status}${signal}: ${childOutputExcerpt(child)}`);
     }
-    return child.stdout;
+    return {
+      stdout: child.stdout,
+      invocation: claudeInvocationModelTelemetry(args),
+    };
   } finally {
     rmSync(sessionWorkspace, { recursive: true, force: true });
   }
@@ -464,16 +471,24 @@ async function runClaudeAnalysis(prompt, flags, env = process.env) {
 
 async function runAnalysisMode(message, flags) {
   const prompt = buildAnalysisPrompt({ message, flags });
-  let stdout;
+  let claudeRun;
   try {
-    stdout = await runClaudeAnalysis(prompt, flags, process.env);
+    claudeRun = await runClaudeAnalysis(prompt, flags, process.env);
   } catch (error) {
     die(error.message);
   }
 
   let response;
   try {
-    response = normalizeAnalysisResponse(extractAnalysisJsonFromClaudeOutput(stdout));
+    response = attachClaudeModelTelemetry(
+      normalizeAnalysisResponse(extractAnalysisJsonFromClaudeOutput(claudeRun.stdout)),
+      {
+        bridgeContractVersion: PATCH_BRIDGE_CONTRACT_VERSION,
+        flags,
+        env: process.env,
+        invocation: claudeRun.invocation,
+      },
+    );
   } catch (error) {
     die(error.message);
   }
@@ -593,7 +608,10 @@ async function runClaudePatch(prompt, flags, env, cwd, opts = {}) {
     const signal = child.signal ? ` signal=${child.signal}` : "";
     throw new Error(`Claude Code exited with ${child.status}${signal}: ${childOutputExcerpt(child)}`);
   }
-  return child.stdout;
+  return {
+    stdout: child.stdout,
+    invocation: claudeInvocationModelTelemetry(args),
+  };
 }
 
 // Find the innermost object that carries at least one GitHub evidence URL.
@@ -1428,7 +1446,10 @@ async function callClaudeOnce(prompt, flags, env, cwd) {
     const signal = child.signal ? ` signal=${child.signal}` : "";
     throw new Error(`Claude Code exited with ${child.status}${signal}: ${childOutputExcerpt(child)}`);
   }
-  return child.stdout;
+  return {
+    stdout: child.stdout,
+    invocation: claudeInvocationModelTelemetry(args),
+  };
 }
 
 // Corrective retry: feed the previous error back into the model with a tight prompt.
@@ -1466,7 +1487,10 @@ async function callClaudeCorrective(prompt, previousError, flags, env, cwd) {
     const signal = child.signal ? ` signal=${child.signal}` : "";
     throw new Error(`Claude Code corrective exited with ${child.status}${signal}: ${safeText(child.stderr, child.stdout).slice(0, 4000)}`);
   }
-  return child.stdout;
+  return {
+    stdout: child.stdout,
+    invocation: claudeInvocationModelTelemetry(args),
+  };
 }
 
 async function runSingleShotPatchMode(message, flags) {
@@ -1502,8 +1526,9 @@ async function runSingleShotPatchMode(message, flags) {
 
     // First (and primary) claude call. Run inside the clone so the read-only
     // tools see the actual repo and the emitted diff has correct line context.
-    const firstStdout = await callClaudeOnce(prompt, flags, env, cloneDir);
-    let extracted = extractUnifiedDiff(firstStdout);
+    const firstRun = await callClaudeOnce(prompt, flags, env, cloneDir);
+    let outputInvocation = firstRun.invocation;
+    let extracted = extractUnifiedDiff(firstRun.stdout);
     let claudeCalls = 1;
 
     if (extracted.kind === "no_diff") {
@@ -1533,7 +1558,7 @@ async function runSingleShotPatchMode(message, flags) {
       }
       // One corrective retry (2nd and final claude call). The original prompt goes
       // back in so the model has full context for the fix.
-      const correctiveStdout = await callClaudeCorrective(
+      const correctiveRun = await callClaudeCorrective(
         prompt,
         hint ? `${checked.error}\n\n${hint}` : checked.error,
         flags,
@@ -1541,7 +1566,8 @@ async function runSingleShotPatchMode(message, flags) {
         cloneDir,
       );
       claudeCalls = 2;
-      extracted = extractUnifiedDiff(correctiveStdout);
+      outputInvocation = correctiveRun.invocation;
+      extracted = extractUnifiedDiff(correctiveRun.stdout);
       if (extracted.kind === "no_diff") {
         throw new Error(`claude corrective retry returned no diff: ${redactSecrets(safeText(extracted.body, "<empty>")).slice(0, 1000)}`);
       }
@@ -1609,17 +1635,24 @@ async function runSingleShotPatchMode(message, flags) {
       throw new Error("gh pr create succeeded but produced no parseable prUrl");
     }
 
-    const result = {
-      status: "pr_opened",
-      bridgeContractVersion: PATCH_BRIDGE_CONTRACT_VERSION,
-      summary: `single-shot patch opened ${pr.prUrl} (${claudeCalls} claude call${claudeCalls === 1 ? "" : "s"})`,
-      branch,
-      prUrl: pr.prUrl,
-      tests: [],
-      filesChanged,
-      risks: [],
-      claudeCalls,
-    };
+    const result = attachClaudeModelTelemetry(
+      {
+        status: "pr_opened",
+        summary: `single-shot patch opened ${pr.prUrl} (${claudeCalls} claude call${claudeCalls === 1 ? "" : "s"})`,
+        branch,
+        prUrl: pr.prUrl,
+        tests: [],
+        filesChanged,
+        risks: [],
+        claudeCalls,
+      },
+      {
+        bridgeContractVersion: PATCH_BRIDGE_CONTRACT_VERSION,
+        flags,
+        env,
+        invocation: outputInvocation,
+      },
+    );
     envelope = JSON.stringify({ payloads: [{ text: JSON.stringify(result) }] });
   } catch (error) {
     process.stderr.write(`${redactSecrets(safeText(error.message, "Claude Code patch bridge failed"))}\n`);
@@ -1656,13 +1689,13 @@ async function runPatchMode(message, flags) {
   let envelope = null;
   try {
     const prompt = buildPatchPrompt(message);
-    const stdout = await runClaudePatch(prompt, flags, process.env, workspace, { fanout });
+    const claudeRun = await runClaudePatch(prompt, flags, process.env, workspace, { fanout });
 
     let outer;
     try {
-      outer = parseJsonCandidate(stdout);
+      outer = parseJsonCandidate(claudeRun.stdout);
     } catch {
-      outer = stdout;
+      outer = claudeRun.stdout;
     }
     const evidenceObj = findGithubEvidenceObject(outer);
     if (!evidenceObj) {
@@ -1679,7 +1712,15 @@ async function runPatchMode(message, flags) {
       positiveInteger(process.env.A2A_CONTAINED_SUBAGENTS_OUTPUT_BYTES, 12000),
       64 * 1024,
     );
-    const result = normalizePatchResponse(evidenceObj, { fanout, maxSubagents, allowedRoles, maxOutputBytes });
+    const result = attachClaudeModelTelemetry(
+      normalizePatchResponse(evidenceObj, { fanout, maxSubagents, allowedRoles, maxOutputBytes }),
+      {
+        bridgeContractVersion: PATCH_BRIDGE_CONTRACT_VERSION,
+        flags,
+        env: process.env,
+        invocation: claudeRun.invocation,
+      },
+    );
     envelope = JSON.stringify({ payloads: [{ text: JSON.stringify(result) }] });
   } catch (error) {
     // Non-zero exit so the handler surfaces openclaw_bridge_evidence_missing / failure.

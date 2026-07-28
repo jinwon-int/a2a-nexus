@@ -6,7 +6,10 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { test } from "node:test";
 
+import { CLAUDE_MODEL_TELEMETRY_CONTRACT } from "./lib/claude-model-telemetry.mjs";
+
 const bridgePath = new URL("./claude-a2a-analysis-bridge.mjs", import.meta.url).pathname;
+const patchBridgePath = new URL("./claude-a2a-patch-bridge.mjs", import.meta.url).pathname;
 
 function bridgeArgs(message) {
   return [
@@ -49,6 +52,24 @@ test("Claude Code A2A analysis bridge exists and is executable JavaScript", () =
   assert.equal(existsSync(bridgePath), true, "bridge script should exist");
   const check = spawnSync(process.execPath, ["--check", bridgePath], { encoding: "utf8" });
   assert.equal(check.status, 0, check.stderr);
+});
+
+test("both Claude bridges consume one shared model-telemetry contract", () => {
+  for (const path of [bridgePath, patchBridgePath]) {
+    const source = readFileSync(path, "utf8");
+    assert.match(source, /from "\.\/lib\/claude-model-telemetry\.mjs"/);
+    assert.match(source, /\battachClaudeModelTelemetry\(/);
+    assert.match(source, /\bclaudeInvocationModelTelemetry\(/);
+  }
+  assert.deepEqual(CLAUDE_MODEL_TELEMETRY_CONTRACT.fields, [
+    "bridgeAdapter",
+    "requestedModel",
+    "requestedThinking",
+    "actualRuntimeModel",
+    "modelInheritanceMode",
+    "claudeModelArgumentApplied",
+    "modelInheritanceNote",
+  ]);
 });
 
 test("Claude Code A2A analysis bridge calls claude -p and returns OpenClaw envelope", () => {
@@ -117,9 +138,10 @@ test("Claude Code A2A analysis bridge calls claude -p and returns OpenClaw envel
     assert.equal(payload.bridgeContractVersion, "claude-a2a-analysis.v1");
     assert.equal(payload.requestedModel, "claude-code/default");
     assert.equal(payload.requestedThinking, "low");
+    assert.equal(payload.actualRuntimeModel, undefined);
     assert.equal(payload.modelInheritanceMode, "metadata_only");
     assert.equal(payload.claudeModelArgumentApplied, false);
-    assert.match(payload.modelInheritanceNote, /does not pass it as a Claude CLI --model argument/);
+    assert.match(payload.modelInheritanceNote, /did not pass --model.*actual runtime model is unknown/);
 
     const args = JSON.parse(readFileSync(argsPath, "utf8"));
     assert.deepEqual(args.slice(0, 2), ["-p", readFileSync(promptPath, "utf8")]);
@@ -567,9 +589,10 @@ test("operator-pinned A2A_CLAUDE_MODEL is applied as a Claude --model argument a
 
   assert.equal(childArgs[childArgs.indexOf("--model") + 1], "claude-sonnet-5");
   assert.equal(payload.appliedModel, "claude-sonnet-5");
+  assert.equal(payload.actualRuntimeModel, "claude-sonnet-5");
   assert.equal(payload.claudeModelArgumentApplied, true);
   assert.equal(payload.modelInheritanceMode, "cli_argument");
-  assert.match(payload.modelInheritanceNote, /pinned the operator-configured model/);
+  assert.match(payload.modelInheritanceNote, /passed an explicit --model argument/);
 });
 
 test("broker-namespace task model still cannot choose the Claude model", () => {
@@ -612,11 +635,11 @@ test("CLAUDE_CODE_EFFORT_LEVEL alone never emits --effort (opt-in guard for olde
   );
 });
 
-test("telemetry flags a declared runtime model that disagrees with the applied one", () => {
+test("telemetry reports only the applied model as actual and flags declaration mismatches", () => {
   const mismatched = runAnalysisBridgeCapturingArgs({
     env: { A2A_CLAUDE_CODE_RUNTIME_MODEL: "claude-sonnet-5", A2A_CLAUDE_MODEL: "claude-opus-4-8" },
   });
-  assert.equal(mismatched.payload.actualRuntimeModel, "claude-sonnet-5");
+  assert.equal(mismatched.payload.actualRuntimeModel, "claude-opus-4-8");
   assert.equal(mismatched.payload.appliedModel, "claude-opus-4-8");
   assert.equal(mismatched.payload.declaredRuntimeModelMatchesApplied, false);
 
@@ -624,4 +647,11 @@ test("telemetry flags a declared runtime model that disagrees with the applied o
     env: { A2A_CLAUDE_CODE_RUNTIME_MODEL: "claude-sonnet-5", A2A_CLAUDE_MODEL: "claude-sonnet-5" },
   });
   assert.equal(aligned.payload.declaredRuntimeModelMatchesApplied, true);
+
+  const declarationOnly = runAnalysisBridgeCapturingArgs({
+    env: { A2A_CLAUDE_CODE_RUNTIME_MODEL: "claude-sonnet-5" },
+  });
+  assert.equal(declarationOnly.payload.actualRuntimeModel, undefined);
+  assert.equal(declarationOnly.payload.claudeModelArgumentApplied, false);
+  assert.equal(declarationOnly.payload.modelInheritanceMode, "metadata_only");
 });
