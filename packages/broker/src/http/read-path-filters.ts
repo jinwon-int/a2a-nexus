@@ -119,6 +119,7 @@ export function auditFiltersFromUrl(url: URL): AuditReadPathFilters {
       "proposal.rejected",
       "proposal.applied",
       "task.created",
+      "task.lane_assigned",
       "task.approved",
       "task.claimed",
       "task.started",
