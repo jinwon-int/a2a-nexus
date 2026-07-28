@@ -364,8 +364,9 @@ export class SqliteBrokerStateStore implements BrokerStateStore {
     this.journalMode = this.initializeDatabase();
     this.reviewLineageObservations =
       new SqliteReviewLineageObservationStore(this.db);
-    // Publish schema 13 only after the canonical lineage/ledger and Phase 14
-    // authenticated source-event tables initialize on the same connection.
+    // Publish schema 13 only after the canonical lineage/ledger and Phases
+    // 14-16 authenticated source-event tables initialize on the same
+    // connection.
     this.writeMetadata("schema_version", String(SQLITE_SCHEMA_VERSION));
   }
 

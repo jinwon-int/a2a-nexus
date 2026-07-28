@@ -237,6 +237,33 @@ Phase 15 adds no task-creation observer or completion/retry/finalizer hook. It
 does not change schema version or runtime defaults and approves no live
 record-mode activation, deployment, restart, canary, or data collection.
 
+## Phase 16 — Third authenticated owner: review report
+
+- Add one exact-field
+  `POST /review-lineages/{lineageId}/review-report` request containing an
+  immutable report reference, observation time, exact subject binding, complete
+  `ReviewReceiptV1`, and complete finding-transition arrays.
+- Require a broker-verified A2A Ed25519 worker signature for every submission;
+  derive the issuer from the signing-key owner and require it to equal
+  `ReviewReceiptV1.reviewerNodeId`.
+- Fix `review_report_submitted`, `reviewer`, and the source namespace in trusted
+  broker code; reject caller-selected authority, identity, or source class.
+- Reuse Phase 13 authorization, Phase 12 awaited admission, the Phase 8 parser,
+  and the existing atomic source-event + lineage + observation-ledger
+  transaction.
+- Expand the closed attached-source tuple set to create, review report, and
+  cancel only.
+- Prove exact-field and authentication rejection, off-mode inertness, direct
+  SQLite and one-command worker-thread atomicity, post-ACK projection, restart
+  replay, changed-payload conflict, source/ledger rollback, privacy, and
+  closed-source admission.
+- Report automatic coverage as exactly `3/5`.
+
+Phase 16 adds no generic task/result/log/prose inference or completion,
+retry/finalizer hook. `correction_generation` and `reviewer_replacement` remain
+detached. It changes no schema version or runtime default and approves no live
+record-mode activation, deployment, restart, canary, or data collection.
+
 ## Rollback strategy per phase
 
 | Phase | Rollback |
@@ -255,6 +282,7 @@ record-mode activation, deployment, restart, canary, or data collection.
 | 13 | Pure carrier contract has no runtime caller; delete PR revert |
 | 14 | Return mode to `off`, stop using the mutation route, and revert code; preserve additive source rows/tables for audit |
 | 15 | Return mode to `off`, stop using the create route, and revert code; preserve canonical/source rows for audit |
+| 16 | Return mode to `off`, stop using the signed review-report route, and revert code; preserve canonical/source rows for audit |
 
 ## Safety boundaries (all phases)
 

@@ -94,9 +94,12 @@ function makeRouter() {
       path,
       req: req as IncomingMessage,
       res: res as unknown as ServerResponse,
+      url: new URL(path, "https://broker.test"),
       broker,
       enforceRequesterIdentity: enforce,
       requesterIdentity: identity as never,
+      assertWorkerHttpSignatureRoute: async () => null,
+      assertVerifiedWorkerMatches: () => undefined,
     });
     return {
       handled,
@@ -169,9 +172,12 @@ test("lineage-create route requires operator identity and returns durable replay
         path: "/review-lineages",
         req: Readable.from([JSON.stringify(body)]) as IncomingMessage,
         res: res as unknown as ServerResponse,
+        url: new URL("/review-lineages", "https://broker.test"),
         broker,
         enforceRequesterIdentity: false,
         requesterIdentity: identity as never,
+        assertWorkerHttpSignatureRoute: async () => null,
+        assertVerifiedWorkerMatches: () => undefined,
       });
       return {
         handled,
@@ -276,9 +282,15 @@ test("operator-cancel route requires operator identity and returns durable repla
         path: `/review-lineages/${frozen.lineageId}/operator-cancel`,
         req: Readable.from([JSON.stringify(body)]) as IncomingMessage,
         res: res as unknown as ServerResponse,
+        url: new URL(
+          `/review-lineages/${frozen.lineageId}/operator-cancel`,
+          "https://broker.test",
+        ),
         broker,
         enforceRequesterIdentity: false,
         requesterIdentity: identity as never,
+        assertWorkerHttpSignatureRoute: async () => null,
+        assertVerifiedWorkerMatches: () => undefined,
       });
       return {
         handled,
@@ -329,6 +341,169 @@ test("operator-cancel route requires operator identity and returns durable repla
       (error) =>
         error instanceof BrokerError
         && error.code === "bad_request",
+    );
+  } finally {
+    store.close();
+  }
+});
+
+test("review-report route requires a signed reviewer and binds it to the receipt", async () => {
+  const store = new SqliteBrokerStateStore(":memory:");
+  try {
+    const broker = new InMemoryA2ABroker(
+      store,
+      store.load(),
+      { reviewLineageMode: "record" },
+    );
+    const frozen = contract();
+    const diffHash = `sha256:${"c".repeat(64)}`;
+    await broker.applyReviewLineageObservation(
+      parseReviewLineageObservation({
+        kind: "a2a.review-lineage-observation.v1",
+        producerId: "test-dispatcher",
+        sourceEventId: "route:create:review-report",
+        lineageId: frozen.lineageId,
+        observedAt: frozen.createdAt,
+        binding: {
+          intentHash: frozen.intentHash,
+          headSha: frozen.headSha,
+          diffHash,
+        },
+        observation: {
+          kind: "lineage_create",
+          mode: "record",
+          contract: frozen,
+          budget: budget(),
+        },
+      }),
+    );
+
+    async function route(
+      reviewerId: string | null,
+      body: unknown,
+      scopeAllowed = true,
+    ) {
+      const path =
+        `/review-lineages/${frozen.lineageId}/review-report`;
+      const res = new CapturingResponse();
+      const handled = await handleReviewLineageRoutesIfMatched({
+        method: "POST",
+        path,
+        req: Readable.from([JSON.stringify(body)]) as IncomingMessage,
+        res: res as unknown as ServerResponse,
+        url: new URL(path, "https://broker.test"),
+        broker,
+        enforceRequesterIdentity: false,
+        requesterIdentity: reviewerId
+          ? { id: reviewerId, role: "analyst" }
+          : null,
+        assertWorkerHttpSignatureRoute: async () =>
+          reviewerId
+            ? {
+                keyid: `worker:${reviewerId}:v1`,
+                requesterId: reviewerId,
+                scopes: ["review-lineage.report"],
+              }
+            : null,
+        assertVerifiedWorkerMatches: (_verified, _expected, operation) => {
+          assert.equal(operation, "review-lineage.report");
+          if (!scopeAllowed) {
+            throw new BrokerError(
+              "policy_denied",
+              "review-lineage.report scope denied",
+            );
+          }
+        },
+      });
+      return {
+        handled,
+        res,
+        json: res.body ? JSON.parse(res.body) : undefined,
+      };
+    }
+    const reviewerId = "reviewer-yukson";
+    const request = {
+      reportRef: "review-report:route:1",
+      observedAt: "2026-07-23T00:01:00.000Z",
+      binding: {
+        intentHash: frozen.intentHash,
+        headSha: frozen.headSha,
+        diffHash,
+      },
+      receipt: {
+        kind: "ReviewReceiptV1",
+        reviewerNodeId: reviewerId,
+        verdict: "pass",
+        note: "Private review prose retained only in the canonical lineage.",
+        headSha: frozen.headSha,
+        diffHash,
+        intentHash: frozen.intentHash,
+        findingLedgerRef: `ledger-${frozen.lineageId}`,
+        authorWorkerId: "author-bangtong",
+      },
+      resolvedFindingIds: [],
+      reopenedFindingIds: [],
+      newFindings: [],
+    };
+
+    await assert.rejects(
+      route(null, request),
+      (error) =>
+        error instanceof BrokerError
+        && error.code === "unauthorized",
+    );
+    await assert.rejects(
+      route(reviewerId, request, false),
+      (error) =>
+        error instanceof BrokerError
+        && error.code === "policy_denied",
+    );
+    await assert.rejects(
+      route(
+        "different-signed-reviewer",
+        request,
+      ),
+      (error) =>
+        error instanceof BrokerError
+        && error.code === "bad_request"
+        && /issuer_mismatch/.test(error.message),
+    );
+
+    const applied = await route(reviewerId, request);
+    assert.equal(applied.handled, true);
+    assert.equal(applied.res.statusCode, 201);
+    assert.equal(applied.json.result.status, "applied");
+    assert.equal(
+      broker.getReviewLineage(frozen.lineageId)?.state,
+      "passed",
+    );
+
+    const replay = await route(reviewerId, request);
+    assert.equal(replay.res.statusCode, 200);
+    assert.equal(replay.json.result.status, "replayed");
+    await assert.rejects(
+      route(
+        reviewerId,
+        { ...request, sourceKind: "review_report_submitted" },
+      ),
+      (error) =>
+        error instanceof BrokerError
+        && error.code === "bad_request",
+    );
+    await assert.rejects(
+      route(
+        reviewerId,
+        {
+          ...request,
+          receipt: {
+            ...request.receipt,
+            note: "Changed payload under one immutable report.",
+          },
+        },
+      ),
+      (error) =>
+        error instanceof BrokerError
+        && error.code === "invalid_transition",
     );
   } finally {
     store.close();

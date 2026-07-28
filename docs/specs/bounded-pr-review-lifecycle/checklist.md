@@ -224,3 +224,36 @@
 - [x] Automatic source coverage is exactly `2/5`
 - [ ] Record-mode activation, deploy/restart/canary, and real-lineage collection
       receive separate explicit approval
+
+## O. Third authenticated owner — review report (Phase 16)
+
+- [x] Mutation route requires a broker-verified A2A Ed25519 worker signature
+- [x] Declared signing-key scope is exactly `review-lineage.report`
+- [x] Verified key owner equals `ReviewReceiptV1.reviewerNodeId`
+- [x] Request cannot select source/authority/namespace/issuer/derived identity
+- [x] Top-level and nested exact fields reject generic task/result/log/prose and
+      sensitive additions
+- [x] Phase 13 carrier authorization and Phase 12/8 admission chain remain
+      canonical
+- [x] Existing receipt subject, finding, and independence validation remains
+      fail closed
+- [x] Shared attached-source metadata admits only create/review-report/cancel
+      tuples
+- [x] Correction generation and reviewer replacement remain closed
+- [x] Source event, canonical lineage transition, and ledger share one
+      transaction
+- [x] Worker-thread mode sends one composite command and returns one ACK
+- [x] Projection refresh happens only after the composite durable ACK
+- [x] Restart replay returns the stored outcome without another transition
+- [x] Changed receipt/findings under one report reference conflict without
+      overwrite
+- [x] Forced source and ledger failures roll back every coupled write
+- [x] Source metadata excludes raw report reference, receipt, reviewer/author
+      identity, findings, private prose, prompts, credentials, provider output,
+      logs, and generic task/result data
+- [x] Generic task completion/failure/cancel/retry/finalizer paths remain
+      unchanged
+- [x] Default mode remains `off`; `enforce` remains unsupported
+- [x] Automatic source coverage is exactly `3/5`
+- [ ] Record-mode activation, deploy/restart/canary, and real-lineage collection
+      receive separate explicit approval

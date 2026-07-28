@@ -1,20 +1,22 @@
 /**
- * Operator projection and explicit authenticated cancel source for bounded PR
- * review lineages (#1518 Phases 3b/14/15).
+ * Operator projection plus explicit authenticated create, cancel, and reviewer
+ * report sources for bounded PR review lineages (#1518 Phases 3b/14-16).
  *
  * This surface never exposes the frozen contract, raw receipts, diff hashes,
- * or the full finding ledger. Mutations are limited to operator-owned,
- * exact-field contract freeze and cancellation decisions; generic task
- * creation/cancellation is unrelated.
+ * or the full finding ledger. Mutations are limited to exact-field
+ * operator-owned contract freeze/cancellation and signed-reviewer report
+ * submission; generic task/result lifecycle activity is unrelated.
  */
 
 import type { IncomingMessage, ServerResponse } from "node:http";
 
 import { BrokerError, InMemoryA2ABroker } from "../core/broker.js";
+import type { A2AHttpSignatureVerifiedWorker } from "../server.js";
 import { ObservationValidationError } from "../review-lifecycle/observation.js";
 import { SourceCarrierValidationError } from "../review-lifecycle/source-carrier.js";
 import {
   assertRequesterHasRole,
+  type A2AWorkerRouteScope,
   type RequesterIdentity,
 } from "../core/request-security.js";
 import { readJson } from "./body.js";
@@ -32,9 +34,19 @@ export interface ReviewLineageRouteContext {
   path: string;
   req: IncomingMessage;
   res: ServerResponse;
+  url: URL;
   broker: InMemoryA2ABroker;
   enforceRequesterIdentity: boolean;
   requesterIdentity: RequesterIdentity | null;
+  assertWorkerHttpSignatureRoute: (
+    req: IncomingMessage,
+    url: URL,
+  ) => Promise<A2AHttpSignatureVerifiedWorker | null>;
+  assertVerifiedWorkerMatches: (
+    verified: A2AHttpSignatureVerifiedWorker | null,
+    expectedWorkerId: string | undefined,
+    operation: A2AWorkerRouteScope,
+  ) => void;
 }
 
 function assertReadAccess(ctx: ReviewLineageRouteContext, action: string): void {
@@ -123,6 +135,75 @@ export async function handleReviewLineageRoutesIfMatched(
 
   const rest = ctx.path.slice("/review-lineages/".length);
   const segments = rest.split("/").filter((segment) => segment.length > 0);
+  if (
+    ctx.method === "POST"
+    && segments.length === 2
+    && segments[1] === "review-report"
+  ) {
+    // A review report has a narrower authentication boundary than the
+    // operator/read routes: a registered worker signing key must authenticate
+    // the reviewer even when worker-signature mode is otherwise optional/off.
+    const verifiedReviewer =
+      await ctx.assertWorkerHttpSignatureRoute(ctx.req, ctx.url);
+    if (!verifiedReviewer) {
+      throw new BrokerError(
+        "unauthorized",
+        "review-lineage.report requires an authenticated worker signature",
+      );
+    }
+    ctx.assertVerifiedWorkerMatches(
+      verifiedReviewer,
+      undefined,
+      "review-lineage.report",
+    );
+    const body = await readJson(ctx.req);
+    if (!body) {
+      throw new BrokerError("bad_request", "request body is required");
+    }
+    const lineageId = decodeURIComponent(segments[0]);
+    let result;
+    try {
+      result = await ctx.broker.recordReviewerReviewLineageReport(
+        lineageId,
+        body,
+        verifiedReviewer.requesterId,
+      );
+    } catch (error) {
+      if (
+        error instanceof SourceCarrierValidationError
+        || error instanceof ObservationValidationError
+      ) {
+        throw new BrokerError("bad_request", error.message);
+      }
+      throw error;
+    }
+    if (!result) {
+      throw new BrokerError(
+        "invalid_transition",
+        "review lineage recording is disabled",
+      );
+    }
+    if (result.status === "missing_lineage") {
+      throw new BrokerError("not_found", "review lineage not found");
+    }
+    if (
+      result.status === "subject_conflict"
+      || result.status === "transition_rejected"
+      || result.status === "idempotency_conflict"
+    ) {
+      throw new BrokerError(
+        "invalid_transition",
+        `review lineage report rejected: ${result.status}`,
+      );
+    }
+    sendJson(
+      ctx.res,
+      result.status === "replayed" ? 200 : 201,
+      { result },
+      { "cache-control": "no-store" },
+    );
+    return true;
+  }
   if (
     ctx.method === "POST"
     && segments.length === 2

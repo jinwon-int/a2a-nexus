@@ -19,6 +19,9 @@ import {
   authorizeOperatorReviewLineageCancel,
 } from "../review-lifecycle/operator-cancel-source.js";
 import {
+  authorizeReviewerReviewLineageReport,
+} from "../review-lifecycle/review-report-source.js";
+import {
   projectReviewLineageProducerFact,
 } from "../review-lifecycle/producer-contract.js";
 import type {
@@ -157,6 +160,45 @@ function authorizedCreateAdmission(
       budget: overrideBudget ?? budget(),
     },
     "operator-seoseo",
+  );
+  const command = projectReviewLineageProducerFact(authorized.fact);
+  return {
+    source: {
+      ...authorized.source,
+      payloadFingerprint: command.payloadFingerprint,
+    },
+    command,
+  };
+}
+
+function authorizedReviewAdmission(
+  lineageId = "pr-1518-phase9",
+  reportRef = "review-report:phase16:1",
+  note = "Private authenticated review reason.",
+): AuthorizedReviewLineageSourceAdmissionV1 {
+  const frozen = contract(lineageId);
+  const authorized = authorizeReviewerReviewLineageReport(
+    lineageId,
+    {
+      reportRef,
+      observedAt: "2026-07-23T13:11:00Z",
+      binding: binding(lineageId),
+      receipt: {
+        kind: "ReviewReceiptV1",
+        reviewerNodeId: "reviewer-yukson",
+        verdict: "pass",
+        note,
+        headSha: HEAD_SHA,
+        diffHash: DIFF_HASH,
+        intentHash: frozen.intentHash,
+        findingLedgerRef: `ledger-${lineageId}`,
+        authorWorkerId: "author-bangtong",
+      },
+      resolvedFindingIds: [],
+      reopenedFindingIds: [],
+      newFindings: [],
+    },
+    "reviewer-yukson",
   );
   const command = projectReviewLineageProducerFact(authorized.fact);
   return {
@@ -370,6 +412,7 @@ test("authorized source admission rejects cross-kind source and command pairs", 
     const store = new SqliteReviewLineageObservationStore(dbFile);
     const create = authorizedCreateAdmission();
     const cancel = authorizedCancelAdmission();
+    const review = authorizedReviewAdmission();
     const createWithCancelSource = {
       source: {
         ...cancel.source,
@@ -404,8 +447,203 @@ test("authorized source admission rejects cross-kind source and command pairs", 
       () => store.applyAuthorizedSource(cancelWithCreateSource),
       /invalid_authorized_source/,
     );
+    const reviewWithCancelSource = {
+      source: {
+        ...cancel.source,
+        payloadFingerprint: review.command.payloadFingerprint,
+      },
+      command: {
+        ...review.command,
+        idempotencyKey: deriveObservationIdempotencyKey(
+          cancel.source.producerId,
+          cancel.source.sourceEventId,
+        ),
+      },
+    } as AuthorizedReviewLineageSourceAdmissionV1;
+    assert.throws(
+      () => store.applyAuthorizedSource(reviewWithCancelSource),
+      /invalid_authorized_source/,
+    );
+    for (const detached of [
+      {
+        sourceKind: "correction_generation_committed",
+        authorityKind: "correction_controller",
+      },
+      {
+        sourceKind: "reviewer_replacement_decided",
+        authorityKind: "reviewer_allocator",
+      },
+    ]) {
+      const unattached = {
+        source: {
+          ...review.source,
+          ...detached,
+        },
+        command: review.command,
+      } as unknown as AuthorizedReviewLineageSourceAdmissionV1;
+      assert.throws(
+        () => store.applyAuthorizedSource(unattached),
+        /invalid_authorized_source/,
+      );
+    }
     assert.equal(store.countLedgerEntries(), 0);
     assert.equal(store.countAuthorizedSourceEvents(), 0);
+    store.close();
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test("authenticated reviewer report commits source, lineage, and ledger and replays after restart", () => {
+  const { dir, dbFile } = tempDatabase();
+  try {
+    const admission = authorizedReviewAdmission();
+    const first = new SqliteReviewLineageObservationStore(dbFile);
+    assert.equal(first.apply(createCommand()).status, "applied");
+    assert.deepEqual(first.applyAuthorizedSource(admission), {
+      status: "applied",
+      lineageId: admission.command.lineageId,
+      outcome: "applied",
+      state: "passed",
+      recordVersion: 2,
+      effects: ["lineage_passed"],
+    });
+    assert.equal(first.countLedgerEntries(), 2);
+    assert.equal(first.countAuthorizedSourceEvents(), 1);
+    first.close();
+
+    const restored = new SqliteReviewLineageObservationStore(dbFile);
+    assert.deepEqual(restored.applyAuthorizedSource(admission), {
+      status: "replayed",
+      lineageId: admission.command.lineageId,
+      originalOutcome: "applied",
+      state: "passed",
+      recordVersion: 2,
+      effects: ["lineage_passed"],
+    });
+    assert.equal(restored.countLedgerEntries(), 2);
+    assert.equal(restored.countAuthorizedSourceEvents(), 1);
+    restored.close();
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test("same reviewer report with changed receipt conflicts without overwrite", () => {
+  const { dir, dbFile } = tempDatabase();
+  try {
+    const first = authorizedReviewAdmission();
+    const changed = authorizedReviewAdmission(
+      first.command.lineageId,
+      "review-report:phase16:1",
+      "Changed private review evidence under one immutable report.",
+    );
+    assert.equal(first.source.sourceEventId, changed.source.sourceEventId);
+    assert.notEqual(
+      first.command.payloadFingerprint,
+      changed.command.payloadFingerprint,
+    );
+    const store = new SqliteReviewLineageObservationStore(dbFile);
+    assert.equal(store.apply(createCommand()).status, "applied");
+    assert.equal(store.applyAuthorizedSource(first).status, "applied");
+    assert.deepEqual(store.applyAuthorizedSource(changed), {
+      status: "idempotency_conflict",
+      lineageId: first.command.lineageId,
+    });
+    assert.equal(store.getLineage(first.command.lineageId)?.state, "passed");
+    assert.equal(
+      store.getLineage(first.command.lineageId)?.ledger.findings.length,
+      0,
+    );
+    assert.equal(store.countLedgerEntries(), 2);
+    assert.equal(store.countAuthorizedSourceEvents(), 1);
+    store.close();
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test("review report source or ledger failures roll back every coupled write", () => {
+  for (const fault of ["source", "ledger"] as const) {
+    const { dir, dbFile } = tempDatabase();
+    try {
+      const store = new SqliteReviewLineageObservationStore(dbFile);
+      assert.equal(store.apply(createCommand()).status, "applied");
+      const admission = authorizedReviewAdmission();
+      const faultDb = new DatabaseSync(dbFile);
+      if (fault === "source") {
+        faultDb.exec(`
+          CREATE TRIGGER reject_phase16_authorized_source
+          BEFORE INSERT ON ${REVIEW_LINEAGE_AUTHORIZED_SOURCE_EVENT_TABLE}
+          WHEN NEW.source_event_id = '${admission.source.sourceEventId}'
+          BEGIN
+            SELECT RAISE(ABORT, 'forced_phase16_source_failure');
+          END
+        `);
+      } else {
+        faultDb.exec(`
+          CREATE TRIGGER reject_phase16_observation_ledger
+          BEFORE INSERT ON ${REVIEW_LINEAGE_OBSERVATION_LEDGER_TABLE}
+          WHEN NEW.idempotency_key = '${admission.command.idempotencyKey}'
+          BEGIN
+            SELECT RAISE(ABORT, 'forced_phase16_ledger_failure');
+          END
+        `);
+      }
+      assert.throws(
+        () => store.applyAuthorizedSource(admission),
+        new RegExp(`forced_phase16_${fault}_failure`),
+      );
+      assert.equal(
+        store.getLineage(admission.command.lineageId)?.state,
+        "reviewing_initial",
+      );
+      assert.equal(
+        store.getLineage(admission.command.lineageId)?.counters.reviewerRuns,
+        0,
+      );
+      assert.equal(store.countLedgerEntries(), 1);
+      assert.equal(store.countAuthorizedSourceEvents(), 0);
+      faultDb.exec(
+        `DROP TRIGGER reject_phase16_${
+          fault === "source" ? "authorized_source" : "observation_ledger"
+        }`,
+      );
+      faultDb.close();
+      assert.equal(store.applyAuthorizedSource(admission).status, "applied");
+      store.close();
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  }
+});
+
+test("authorized source table omits raw review receipt and private submission data", () => {
+  const { dir, dbFile } = tempDatabase();
+  try {
+    const reportRef = "review-report:private-ref-must-not-persist";
+    const privateNote = "private-review-prose-must-not-enter-source-metadata";
+    const admission = authorizedReviewAdmission(
+      "pr-1518-phase9",
+      reportRef,
+      privateNote,
+    );
+    const store = new SqliteReviewLineageObservationStore(dbFile);
+    assert.equal(store.apply(createCommand()).status, "applied");
+    assert.equal(store.applyAuthorizedSource(admission).status, "applied");
+    const reader = new DatabaseSync(dbFile);
+    const row = reader.prepare(
+      `SELECT * FROM ${REVIEW_LINEAGE_AUTHORIZED_SOURCE_EVENT_TABLE}
+       WHERE source_kind = 'review_report_submitted'`,
+    ).get();
+    const serialized = JSON.stringify(row);
+    assert.doesNotMatch(serialized, new RegExp(reportRef));
+    assert.doesNotMatch(serialized, new RegExp(privateNote));
+    assert.doesNotMatch(serialized, /reviewer-yukson/);
+    assert.doesNotMatch(serialized, /author-bangtong/);
+    assert.doesNotMatch(serialized, /ReviewReceiptV1/);
+    assert.doesNotMatch(serialized, /providerPayload|credential|prompt/);
+    reader.close();
     store.close();
   } finally {
     rmSync(dir, { recursive: true, force: true });

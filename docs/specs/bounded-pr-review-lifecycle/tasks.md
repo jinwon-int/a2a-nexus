@@ -319,7 +319,9 @@ store, queue, schema, outbox, migration, or live action.
       restart, canary, or real-lineage collection separately.
 - [x] Attach the second source kind (`lineage_create`, Phase 15) after proving
       an actual owner and the same atomic durability.
-- [ ] Attach the remaining three source kinds only after each proves an actual
+- [x] Attach the third source kind (`review_report`, Phase 16) after proving
+      signed reviewer ownership and the same atomic durability.
+- [ ] Attach the remaining two source kinds only after each proves an actual
       owner and the same atomic or ACK-replayed durability.
 
 Phase 14 is source and temporary-database validation only. It does not approve
@@ -353,6 +355,47 @@ any live runtime or data action.
 Phase 15 is source and temporary-database validation only. The canonical
 lineage table necessarily owns the frozen contract; the minimized source-event
 table does not duplicate it.
+
+## Phase 16: Third authenticated owner — review report
+
+- [x] Add an exact-field
+      `POST /review-lineages/{lineageId}/review-report` request.
+- [x] Require a broker-verified A2A Ed25519 worker signature even when unsigned
+      compatibility is otherwise configured.
+- [x] Add and enforce the `review-lineage.report` signing-key scope.
+- [x] Derive reviewer issuer from the verified key owner and require it to
+      equal `ReviewReceiptV1.reviewerNodeId`.
+- [x] Reject caller-selected source kind, authority, namespace, issuer,
+      producer ID, and source-event ID.
+- [x] Reject generic task, result, log, prompt, provider payload, credential,
+      and prose-summary substitutes.
+- [x] Reuse Phase 13 authorization, Phase 12 admission, and the Phase 8 parser.
+- [x] Admit only the closed create/review-report/cancel source tuples; keep
+      correction generation and reviewer replacement closed.
+- [x] Reuse schema 13 and the existing minimized source-event table without a
+      migration.
+- [x] Commit source event, canonical lineage transition, and observation ledger
+      in one `BEGIN IMMEDIATE`.
+- [x] Preserve one worker-thread command, one ACK, and post-ACK projection.
+- [x] Prove off-mode inertness, direct-store atomicity, restart replay,
+      changed-payload conflict without overwrite, and source/ledger rollback.
+- [x] Prove current receipt exact-field, exact-subject, finding-transition, and
+      reviewer-independence validation remains canonical.
+- [x] Store no raw report reference, receipt, reviewer/author identity, finding,
+      private review prose, prompt, provider payload, credential, log, or
+      generic task/result data in minimized source-event metadata.
+- [x] Keep generic task completion/failure/cancel/retry/finalizer paths
+      detached.
+- [x] Report automatic source coverage as exactly `3/5`.
+- [ ] Attach `correction_generation` only after a separately reviewed
+      authenticated controller and atomic durability exist.
+- [ ] Attach `reviewer_replacement` only after a separately reviewed
+      authenticated allocator and atomic durability exist.
+- [ ] Approve record-mode activation, deployment, restart, canary, or real
+      lineage collection separately.
+
+Phase 16 is source and temporary-database validation only. It does not approve
+any live runtime or data action.
 
 ## Validation commands (all phases as applicable)
 

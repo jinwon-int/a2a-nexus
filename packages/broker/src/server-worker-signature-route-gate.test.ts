@@ -6,6 +6,12 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { createBrokerServer } from "./server.js";
 import { buildA2AHttpSignatureBase } from "./core/request-security.js";
+import { SqliteBrokerStateStore } from "./core/store.js";
+import { intentHash } from "./review-lifecycle/canonical-json.js";
+import type {
+  IntentContractV1,
+  ReviewLineageBudgetV1,
+} from "./review-lifecycle/types.js";
 import { signTaskResultProvenance, verifyTaskResultProvenance } from "a2a-attestation";
 import { createInMemoryStateStore, startTestServer, jsonHeaders, withEnv, workerPayload } from "./server-test-helpers.js";
 
@@ -99,6 +105,41 @@ function brokerSigningKeyFile(): string {
   return keyFile;
 }
 
+function reviewLineageContract(): IntentContractV1 {
+  const partial = {
+    kind: "IntentContractV1" as const,
+    lineageId: "signed-review-lineage",
+    goal: "Authenticate the authoritative review-report owner.",
+    nonGoals: ["Do not infer reports from generic worker results."],
+    invariants: ["The signed key owner must match the review receipt."],
+    acceptanceCriteria: [
+      { id: "AC-1", text: "One signed report commits atomically." },
+    ],
+    declaredPaths: {
+      allowed: ["packages/broker/src/**"],
+    },
+    baseSha: "a".repeat(40),
+    headSha: "b".repeat(40),
+    createdAt: "2026-07-28T10:00:00Z",
+  };
+  return {
+    ...partial,
+    intentHash: intentHash(partial as unknown as Record<string, unknown>),
+  };
+}
+
+function reviewLineageBudget(): ReviewLineageBudgetV1 {
+  return {
+    kind: "ReviewLineageBudgetV1",
+    maxWallClockSeconds: 21_600,
+    maxCorrectionGenerations: 1,
+    maxReviewerRuns: 2,
+    maxReviewerReplacements: 1,
+    repeatedFindingThreshold: 2,
+    onExhaustion: "blocked_needs_operator",
+  };
+}
+
 test("strict A2A HTTP Signature worker route gate rejects unsigned worker requests", async () => {
   const server = await startTestServer({
     brokerId: "brokeralpha",
@@ -122,6 +163,123 @@ test("strict A2A HTTP Signature worker route gate rejects unsigned worker reques
     assert.match(errorBody.error.message, /a2a_signature_required/);
   } finally {
     await server.close();
+  }
+});
+
+test("review-report route requires a scoped signature and binds the key owner to the receipt", async () => {
+  const stateStore = new SqliteBrokerStateStore(":memory:");
+  const scopedRegistry = {
+    "worker:workerbeta:v1": {
+      ...routeGateKeyRegistry["worker:workerbeta:v1"],
+      scopes: ["review-lineage.report"] as const,
+    },
+    "worker:workergamma:v1": {
+      ...routeGateKeyRegistry["worker:workergamma:v1"],
+      scopes: ["review-lineage.report"] as const,
+    },
+  };
+  const server = await startTestServer({
+    brokerId: "brokeralpha",
+    stateStore,
+    reviewLineageMode: "record",
+    a2aHttpSignatureWorkerAuth: "strict",
+    a2aHttpSignatureKeyRegistry: scopedRegistry,
+  });
+  try {
+    const frozen = reviewLineageContract();
+    const diffHash = `sha256:${"c".repeat(64)}`;
+    assert.equal(
+      (await server.runtime.broker.recordOperatorReviewLineageCreate(
+        {
+          dispatchRef: "lineage-dispatch:signed-review:1",
+          observedAt: frozen.createdAt,
+          binding: {
+            intentHash: frozen.intentHash,
+            headSha: frozen.headSha,
+            diffHash,
+          },
+          contract: frozen,
+          budget: reviewLineageBudget(),
+        },
+        "operator-seoseo",
+      ))?.status,
+      "applied",
+    );
+    const path = `/review-lineages/${frozen.lineageId}/review-report`;
+    const report = (reviewerNodeId: string) => ({
+      reportRef: "review-report:signed-route:1",
+      observedAt: "2026-07-28T10:01:00Z",
+      binding: {
+        intentHash: frozen.intentHash,
+        headSha: frozen.headSha,
+        diffHash,
+      },
+      receipt: {
+        kind: "ReviewReceiptV1",
+        reviewerNodeId,
+        verdict: "pass",
+        note: "Signed exact-subject review.",
+        headSha: frozen.headSha,
+        diffHash,
+        intentHash: frozen.intentHash,
+        findingLedgerRef: `ledger-${frozen.lineageId}`,
+        authorWorkerId: "author-bangtong",
+      },
+      resolvedFindingIds: [],
+      reopenedFindingIds: [],
+      newFindings: [],
+    });
+
+    const unsignedBody = JSON.stringify(report("workerbeta"));
+    const unsigned = await fetch(`${server.baseUrl}${path}`, {
+      method: "POST",
+      headers: jsonHeaders({
+        "x-a2a-requester-id": "workerbeta",
+        "x-a2a-requester-role": "analyst",
+      }),
+      body: unsignedBody,
+    });
+    assert.equal(unsigned.status, 401);
+
+    const mismatchBody = JSON.stringify(report("workerbeta"));
+    const mismatch = await fetch(`${server.baseUrl}${path}`, {
+      method: "POST",
+      headers: signedWorkerHeaders({
+        baseUrl: server.baseUrl,
+        method: "POST",
+        path,
+        workerId: "workergamma",
+        body: mismatchBody,
+        nonce: "review-report-signed-mismatch",
+      }),
+      body: mismatchBody,
+    });
+    assert.equal(mismatch.status, 400);
+    const mismatchError =
+      await mismatch.json() as { error: { message: string } };
+    assert.match(mismatchError.error.message, /issuer_mismatch/);
+
+    const acceptedBody = JSON.stringify(report("workerbeta"));
+    const accepted = await fetch(`${server.baseUrl}${path}`, {
+      method: "POST",
+      headers: signedWorkerHeaders({
+        baseUrl: server.baseUrl,
+        method: "POST",
+        path,
+        workerId: "workerbeta",
+        body: acceptedBody,
+        nonce: "review-report-signed-accepted",
+      }),
+      body: acceptedBody,
+    });
+    assert.equal(accepted.status, 201);
+    assert.equal(
+      server.runtime.broker.getReviewLineage(frozen.lineageId)?.state,
+      "passed",
+    );
+  } finally {
+    await server.close();
+    stateStore.close();
   }
 });
 

@@ -284,6 +284,10 @@ test("generic complete and cancel paths never synthesize producer facts", () => 
       applications += 1;
       throw new Error("unexpected automatic observation");
     },
+    applyAuthorizedReviewLineageSource: async () => {
+      applications += 1;
+      throw new Error("unexpected authenticated-source inference");
+    },
     listCanonicalReviewLineages: () => [],
   };
   const broker = new InMemoryA2ABroker(

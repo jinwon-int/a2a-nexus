@@ -127,6 +127,31 @@ function operatorCreateRequest(lineageId = "pr-1518-phase10") {
   };
 }
 
+function reviewerReportRequest(
+  lineageId = "pr-1518-phase10",
+  note = "Authenticated reviewer passed the exact subject.",
+) {
+  return {
+    reportRef: `review-report:${lineageId}:1`,
+    observedAt: "2026-07-23T14:21:00Z",
+    binding: binding(lineageId),
+    receipt: {
+      kind: "ReviewReceiptV1" as const,
+      reviewerNodeId: "reviewer-yukson",
+      verdict: "pass" as const,
+      note,
+      headSha: HEAD_SHA,
+      diffHash: DIFF_HASH,
+      intentHash: contract(lineageId).intentHash,
+      findingLedgerRef: `ledger-${lineageId}`,
+      authorWorkerId: "author-bangtong",
+    },
+    resolvedFindingIds: [],
+    reopenedFindingIds: [],
+    newFindings: [],
+  };
+}
+
 function tempDatabase(prefix: string): {
   dir: string;
   dbFile: string;
@@ -286,7 +311,137 @@ test("broker operator-owned lineage create commits before projection and replays
   }
 });
 
-test("off mode returns before operator source validation or store access", async () => {
+test("broker reviewer report commits before projection, replays after restart, and conflicts on changed payload", async () => {
+  const { dir, dbFile } = tempDatabase("a2a-review-report-source-");
+  try {
+    const store = new SqliteBrokerStateStore(dbFile);
+    const broker = new InMemoryA2ABroker(
+      store,
+      store.load(),
+      { reviewLineageMode: "record" },
+    );
+    assert.equal(
+      (await broker.recordOperatorReviewLineageCreate(
+        operatorCreateRequest(),
+        "operator-seoseo",
+      ))?.status,
+      "applied",
+    );
+    assert.equal(
+      (await broker.recordReviewerReviewLineageReport(
+        "pr-1518-phase10",
+        reviewerReportRequest(),
+        "reviewer-yukson",
+      ))?.status,
+      "applied",
+    );
+    assert.equal(
+      broker.getReviewLineage("pr-1518-phase10", T0)?.state,
+      "passed",
+    );
+    store.close();
+
+    const restoredStore = new SqliteBrokerStateStore(dbFile);
+    const restoredBroker = new InMemoryA2ABroker(
+      restoredStore,
+      restoredStore.load(),
+      { reviewLineageMode: "record" },
+    );
+    assert.equal(
+      (await restoredBroker.recordReviewerReviewLineageReport(
+        "pr-1518-phase10",
+        reviewerReportRequest(),
+        "reviewer-yukson",
+      ))?.status,
+      "replayed",
+    );
+    assert.equal(
+      (await restoredBroker.recordReviewerReviewLineageReport(
+        "pr-1518-phase10",
+        reviewerReportRequest(
+          "pr-1518-phase10",
+          "Changed evidence under the immutable report.",
+        ),
+        "reviewer-yukson",
+      ))?.status,
+      "idempotency_conflict",
+    );
+    assert.equal(
+      restoredBroker.getReviewLineage("pr-1518-phase10", T0)?.state,
+      "passed",
+    );
+    restoredStore.close();
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test("reviewer report projection remains unchanged until the composite durable ACK", async () => {
+  const store = new SqliteBrokerStateStore(":memory:");
+  try {
+    assert.equal(
+      (await store.applyReviewLineageObservation(createCommand())).status,
+      "applied",
+    );
+    let captured:
+      | Parameters<NonNullable<
+          typeof store.applyAuthorizedReviewLineageSource
+        >>[0]
+      | undefined;
+    let settle: (() => void) | undefined;
+    const delayed = new Promise<
+      Awaited<ReturnType<
+        NonNullable<typeof store.applyAuthorizedReviewLineageSource>
+      >>
+    >((resolve) => {
+      settle = () => {
+        if (!captured) throw new Error("missing captured admission");
+        resolve(store.applyAuthorizedReviewLineageSource(captured));
+      };
+    });
+    let projectionReads = 0;
+    const delayedStore = {
+      load: () => store.load(),
+      save: () => undefined,
+      applyAuthorizedReviewLineageSource: (admission: typeof captured) => {
+        if (!admission) throw new Error("missing admission");
+        captured = admission;
+        return delayed;
+      },
+      listCanonicalReviewLineages: () => {
+        projectionReads += 1;
+        return store.listCanonicalReviewLineages();
+      },
+    };
+    const broker = new InMemoryA2ABroker(
+      delayedStore,
+      delayedStore.load(),
+      { reviewLineageMode: "record" },
+    );
+    const pending = broker.recordReviewerReviewLineageReport(
+      "pr-1518-phase10",
+      reviewerReportRequest(),
+      "reviewer-yukson",
+    );
+    await new Promise<void>((resolve) => setImmediate(resolve));
+    assert.equal(
+      broker.getReviewLineage("pr-1518-phase10", T0)?.state,
+      "reviewing_initial",
+    );
+    assert.equal(projectionReads, 0);
+    settle?.();
+    assert.equal((await pending)?.status, "applied");
+    assert.equal(projectionReads, 1);
+    assert.equal(
+      broker.getReviewLineage("pr-1518-phase10", T0)?.state,
+      "passed",
+    );
+  } finally {
+    store.close();
+  }
+});
+
+test("off mode returns before attached source validation or store access", async () => {
   let calls = 0;
   const snapshot = emptySnapshot();
   const stateStore = {
@@ -315,6 +470,14 @@ test("off mode returns before operator source validation or store access", async
       "invalid lineage id",
       null,
       "invalid operator id",
+    ),
+    undefined,
+  );
+  assert.equal(
+    await broker.recordReviewerReviewLineageReport(
+      "invalid lineage id",
+      null,
+      "invalid reviewer id",
     ),
     undefined,
   );
@@ -454,6 +617,69 @@ test("worker-thread proxy applies one compound observation and ACKs before readb
       assert.equal(
         reader.load().reviewLineages?.[0]?.state,
         "canceled",
+      );
+    } finally {
+      reader.close();
+    }
+  } finally {
+    await handle.close();
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test("worker-thread reviewer report uses one composite command and ACK before projection", async () => {
+  const { dir, dbFile } = tempDatabase("a2a-review-worker-report-");
+  const handle = createWorkerThreadPersistence({
+    dbFile,
+    queueCapacity: 4,
+  });
+  try {
+    const broker = new InMemoryA2ABroker(
+      handle.stateStore,
+      handle.stateStore.load(),
+      { reviewLineageMode: "record" },
+    );
+    assert.equal(
+      (await broker.recordOperatorReviewLineageCreate(
+        operatorCreateRequest(),
+        "operator-seoseo",
+      ))?.status,
+      "applied",
+    );
+
+    let compositeCommands = 0;
+    const originalRequest =
+      handle.workerThread.request.bind(handle.workerThread);
+    handle.workerThread.request = ((
+      method: string,
+      ...args: unknown[]
+    ) => {
+      if (method === "applyAuthorizedReviewLineageSource") {
+        compositeCommands += 1;
+      }
+      return originalRequest(method, ...args);
+    }) as typeof handle.workerThread.request;
+
+    assert.equal(
+      (await broker.recordReviewerReviewLineageReport(
+        "pr-1518-phase10",
+        reviewerReportRequest(),
+        "reviewer-yukson",
+      ))?.status,
+      "applied",
+    );
+    assert.equal(compositeCommands, 1);
+    assert.equal(
+      broker.getReviewLineage("pr-1518-phase10", T0)?.state,
+      "passed",
+    );
+    assert.equal(handle.queue.stats().inFlight, 0);
+
+    const reader = new SqliteBrokerStateStore(dbFile);
+    try {
+      assert.equal(
+        reader.load().reviewLineages?.[0]?.state,
+        "passed",
       );
     } finally {
       reader.close();

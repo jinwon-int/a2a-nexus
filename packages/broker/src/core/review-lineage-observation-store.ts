@@ -169,6 +169,12 @@ function sourceMatchesCommand(
       && command.command.event.type === "operator_cancel"
       && command.command.event.at === source.observedAt;
   }
+  if (source.sourceKind === "review_report_submitted") {
+    return source.authorityKind === "reviewer"
+      && command.command.kind === "record_event"
+      && command.command.event.type === "review_report"
+      && command.command.event.at === source.observedAt;
+  }
   return false;
 }
 

@@ -85,5 +85,7 @@ context construction, or store access. Worker-thread persistence sends one
 composite command and returns one ACK; projection refresh happens afterward.
 
 Generic task creation, completion, failure, cancellation, retry, approval, and
-finalizer paths remain detached. `review_report`, `correction_generation`, and
-`reviewer_replacement` still have no runtime source owner.
+finalizer paths remain detached. Phase 15 left `review_report`,
+`correction_generation`, and `reviewer_replacement` without runtime owners;
+Phase 16 later attaches only `review_report`. Correction generation and reviewer
+replacement remain detached.
