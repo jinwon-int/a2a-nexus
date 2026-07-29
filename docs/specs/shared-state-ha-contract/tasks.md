@@ -2,7 +2,7 @@
 
 > **Status:** implementation backlog. Checked items include the completed
 > documentation packet and the completed bounded Phase 1 contract/parser and
-> keyspace/digest/time-evaluator slices.
+> keyspace/digest/time-evaluator/idempotency-registry slices.
 > Adapter implementations, the conformance harness, runtime integration,
 > migration, and operational rollout remain unchecked. Refs #1504.
 
@@ -26,7 +26,7 @@
 - [x] Pin namespace/key canonicalization and domain-separated digest vectors.
 - [x] Pin adapter-controlled clock, stored time floor, skew tolerance, and
   exact expiry boundaries.
-- [ ] Register every idempotency namespace and retention version.
+- [x] Register every idempotency namespace and retention version.
 - [ ] Register every outbox stream key and ordering scope.
 - [ ] Define bounded public/operator observability schemas and negative leak
   fixtures.

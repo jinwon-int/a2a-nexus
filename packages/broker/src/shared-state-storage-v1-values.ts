@@ -21,6 +21,7 @@ export const SHARED_STATE_STORAGE_V1_VALUES = deepFreeze({
   versions: {
     contract: "a2a.shared-state.storage/v1",
     keyspace: "a2a.shared-state.keyspace/v1",
+    idempotency: "a2a.shared-state.idempotency/v1",
     metadata: 1,
     capabilities: 1,
     lifecycle: 1,
@@ -723,6 +724,12 @@ export const SHARED_STATE_STORAGE_V1_VALUES = deepFreeze({
     "invalid_digest",
     "digest_domain_mismatch",
     "digest_namespace_mismatch",
+    "invalid_idempotency_namespace",
+    "unknown_idempotency_namespace",
+    "invalid_idempotency_retention_policy_version",
+    "unknown_idempotency_retention_policy_version",
+    "idempotency_retention_policy_mismatch",
+    "idempotency_effect_policy_mismatch",
   ],
   limits: {
     implementationVersionLength: 128,

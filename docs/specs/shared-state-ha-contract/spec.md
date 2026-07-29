@@ -12,7 +12,7 @@
 
 `MUST`, `MUST NOT`, `SHOULD`, `SHOULD NOT`, and `MAY` are normative
 requirements for a later implementation. Text labeled **Current** describes
-the repository at `333a9a727bd73294cf7cba880bf0547880c0077c`. Text labeled
+the repository at `3d7f975698f0fb9a3dd1ecf1ba9a2f48058c9906`. Text labeled
 **Planned** or **Future** is not implemented and must not be advertised as a
 runtime capability.
 
@@ -372,6 +372,97 @@ policy; it is not a distributed lease. V1 makes the missing fencing explicit.
 | Observability | Report aggregate new/replayed/conflict/unknown counts and retention-policy version. Do not expose keys, fingerprints, result references, payloads, or identities. |
 | Adapter lifecycle invariant | Outcomes remain stable across drain, close, and reopen until their explicit retention boundary. Backend migration MUST preserve both key and fingerprint semantics before cutover. |
 
+#### 5.4.1 Closed V1 namespace and retention registry
+
+The backend-neutral registry identifier is
+`a2a.shared-state.idempotency/v1`. Its closed vocabulary, canonical catalog,
+parser, and evaluator are in
+`packages/broker/src/shared-state-idempotency-v1-values.ts` and
+`packages/broker/src/shared-state-idempotency-v1.ts`; the public, non-secret
+golden catalog is
+`packages/broker/fixtures/shared-state-storage/idempotency-v1-golden.json`.
+These artifacts are contract/parser-only. Every catalog authority is labeled
+`current-durable-partial`, the catalog says
+`runtimeIntegration=not-implemented`, and no current source is claimed to
+implement or call `SharedStateStorageAdapterV1`.
+
+The complete source inventory intended to be upgraded through the planned
+`executeIdempotent` boundary is:
+
+| Current durable-but-partial authority | Source evidence | Planned V1 namespace | Exact retention-policy version |
+| --- | --- | --- | --- |
+| Task create replay by caller-selected task ID | `InMemoryA2ABroker.createTask`; durable `broker_tasks` table | `broker.task.create` | `task-create-effects.v1` |
+| Accepted-task wake key and stable wake decision stored on the task | `InMemoryA2ABroker.planAcceptedTaskWake`; `taskWakeSchema` | `broker.task.wake` | `task-wake-effects.v1` |
+| Terminal task status mutation plus terminal outbox projection | `completeTask`/terminal mutation source; `terminalTaskEventOutbox.enqueue`; durable `broker_terminal_outbox` table | `broker.task.terminal` | `task-terminal-effects.v1` |
+| One-shot live-approval consumption key | `SqliteBrokerStateStore.consumeLiveApprovalKey`; durable `broker_live_approval_consumptions` table | `broker.live-approval.consume` | `live-approval-effects.v1` |
+| Review-lineage source/ledger key, fingerprint, outcome, and mutation | `ReviewLineageObservationStore` payload fingerprint and `idempotency_key` ledger | `broker.review-lineage.source` | `review-lineage-effects.v1` |
+| Cross-broker Terminal Brief projection key/fingerprint plus operator outbox rows | `CrossBrokerTerminalBriefProjectionStore.ingest`; broker enqueue and snapshot restore | `broker.terminal-brief.cross-broker-ingest` | `cross-broker-terminal-brief-effects.v1` |
+
+The existing authorities prove why each namespace is required; they do not
+prove V1 conformance. For example, current task-create replay does not compare a
+V1 payload fingerprint, and several current effects are not committed through
+the V1 domain-mutation/outbox transaction. A later integration MUST upgrade the
+whole authority atomically and MUST NOT layer a second independent
+idempotency decision over the current one.
+
+Every registered entry pins:
+
+- `effectKind=domain-mutation-with-outbox`;
+- an exact `effectClass` of `externally-visible` or `irreversible`;
+- `durability=durable` and
+  `expiryPosture=non-expiring-until-prune-proof`;
+- one closed retry-horizon token and one closed retained-effect-horizon token
+  specific to the source authority;
+- `requiredEffectDependency=outbox-and-retained-effect`;
+- all four prune preconditions:
+  `retry-sources-provably-gone`, `outbox-effects-provably-gone`,
+  `retained-effects-provably-gone`, and
+  `migration-and-rollback-preservation-proved`; and
+- `migrationRollbackPreservationRule=preserve-key-fingerprint-outcome-retention-and-effect-links`.
+
+There is no wildcard, caller extension, default retention version, free-form
+policy value, or time-bounded entry in V1. An externally visible or irreversible
+entry is invalid unless it is durable, non-expiring, depends on both outbox and
+retained effects, and carries every retry/effect/migration prune proof. The
+catalog parser permits a future `time-bounded` registration only when its
+effect class is exactly `reversible` or `non-effecting` and its boundary kind is
+exactly `idempotency-explicit-retention`. Evaluating such a registration
+requires a valid `a2a.shared-state.time/v1` logical boundary; absence, another
+boundary kind, another time version, or supplying a boundary to a non-expiring
+entry fails closed.
+
+The planned Section 6.1 `executeIdempotent` command parser alone evaluates this
+catalog before digest binding. It returns these exact storage-contract codes
+and paths:
+
+| Condition | Stable code | Stable path |
+| --- | --- | --- |
+| Non-canonical case, Unicode, wildcard, or malformed namespace | `invalid_idempotency_namespace` | `input.namespace` |
+| Canonical but unregistered namespace | `unknown_idempotency_namespace` | `input.namespace` |
+| Non-canonical retention-policy version | `invalid_idempotency_retention_policy_version` | `input.retentionPolicyVersion` |
+| Canonical but unregistered retention-policy version | `unknown_idempotency_retention_policy_version` | `input.retentionPolicyVersion` |
+| Registered namespace paired with another namespace's retention version | `idempotency_retention_policy_mismatch` | `input.retentionPolicyVersion` |
+| Effect kind not registered for the exact pair | `idempotency_effect_policy_mismatch` | `input.effect.kind` |
+
+The catalog parser/evaluator's complete error vocabulary is `invalid_type`,
+`unknown_field`, `invalid_value`, `unknown_catalog_version`,
+`duplicate_namespace`, `duplicate_retention_policy_version`,
+`duplicate_authority`, `unknown_authority`, `authority_mapping_mismatch`,
+`unsafe_expiry_policy`, `expiry_boundary_requirement_mismatch`,
+`invalid_namespace`, `unknown_namespace`,
+`invalid_retention_policy_version`, `unknown_retention_policy_version`,
+`retention_policy_mismatch`, `effect_policy_mismatch`,
+`expiry_boundary_required`, `expiry_boundary_forbidden`, and
+`invalid_expiry_boundary`. Its successful reason codes are
+`registered_policy`, `non_expiring_until_prune_proof`, and
+`explicit_time_v1_boundary_accepted`.
+
+Replay, rate, and lease commands continue to use their existing generic
+namespace grammar. Outbox append/receipt/ACK and claim-graph source/projection
+idempotency remain separate Section 6.1 operations with generic namespaces.
+They are not aliases for `executeIdempotent`. In particular, this registry does
+not define the separately open outbox stream-key and ordering-scope registry.
+
 ### 5.5 Terminal outbox ordering
 
 | Property | Contract |
@@ -473,6 +564,10 @@ rejects absolute `now`, timestamp, expiry, event-time, trusted-observation,
 persisted-floor, effective-time, and skew-tolerance field spellings at any
 nested path with `caller_clock_forbidden`. Relative operation durations such
 as `ttlMs`, `windowMs`, and `leaseDurationMs` are not transaction timestamps.
+Only `executeIdempotent` additionally requires an exact registered
+`a2a.shared-state.idempotency/v1` namespace, retention-policy version, and
+effect-kind combination. That restriction does not change generic namespace
+handling for replay, rate, lease, outbox, or graph operations.
 
 ### 6.2 Transaction and lifecycle invariants
 

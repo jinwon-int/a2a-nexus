@@ -13,9 +13,36 @@ import {
   parseSharedStateDigestV1,
   type SharedStateDigestDomainV1,
 } from "./shared-state-storage-keyspace-v1.js";
+import {
+  evaluateSharedStateIdempotencyPolicyV1,
+  type SharedStateIdempotencyErrorCodeV1,
+} from "./shared-state-idempotency-v1.js";
 import { SHARED_STATE_STORAGE_V1_VALUES as V } from "./shared-state-storage-v1-values.js";
 
 export { SHARED_STATE_STORAGE_V1_VALUES } from "./shared-state-storage-v1-values.js";
+export {
+  evaluateSharedStateIdempotencyExpiryV1,
+  evaluateSharedStateIdempotencyPolicyV1,
+  parseSharedStateIdempotencyCatalogV1,
+  sharedStateIdempotencyCatalogV1,
+  SHARED_STATE_IDEMPOTENCY_V1_VALUES,
+} from "./shared-state-idempotency-v1.js";
+export type {
+  SharedStateIdempotencyAuthorityV1,
+  SharedStateIdempotencyCatalogV1,
+  SharedStateIdempotencyDurabilityV1,
+  SharedStateIdempotencyEffectClassV1,
+  SharedStateIdempotencyEffectKindV1,
+  SharedStateIdempotencyErrorCodeV1,
+  SharedStateIdempotencyErrorV1,
+  SharedStateIdempotencyEvaluationReasonCodeV1,
+  SharedStateIdempotencyExpiryEvaluationV1,
+  SharedStateIdempotencyExpiryPostureV1,
+  SharedStateIdempotencyPolicyEvaluationV1,
+  SharedStateIdempotencyPolicyInputV1,
+  SharedStateIdempotencyRegistrationV1,
+  SharedStateIdempotencyResultV1,
+} from "./shared-state-idempotency-v1.js";
 export {
   canonicalizeSharedStateKeyV1,
   digestSharedStateKeyV1,
@@ -1783,6 +1810,56 @@ function validateTransactionDigestBindings<T>(
   return null;
 }
 
+function storageIdempotencyErrorCode(
+  code: SharedStateIdempotencyErrorCodeV1,
+): SharedStateContractErrorCodeV1 {
+  switch (code) {
+    case "invalid_namespace":
+      return "invalid_idempotency_namespace";
+    case "unknown_namespace":
+      return "unknown_idempotency_namespace";
+    case "invalid_retention_policy_version":
+      return "invalid_idempotency_retention_policy_version";
+    case "unknown_retention_policy_version":
+      return "unknown_idempotency_retention_policy_version";
+    case "retention_policy_mismatch":
+      return "idempotency_retention_policy_mismatch";
+    case "effect_policy_mismatch":
+      return "idempotency_effect_policy_mismatch";
+    default:
+      return code === "invalid_type" ? "invalid_type" : "invalid_value";
+  }
+}
+
+function validateExecuteIdempotentPolicyBinding<T>(
+  input: RecordValue,
+): SharedStateParseResultV1<T> | null {
+  if (
+    input.kind !== V.kinds.transactionCommand ||
+    input.operation !== "executeIdempotent" ||
+    !isRecord(input.input) ||
+    typeof input.input.namespace !== "string" ||
+    typeof input.input.retentionPolicyVersion !== "string" ||
+    !isRecord(input.input.effect) ||
+    typeof input.input.effect.kind !== "string"
+  ) {
+    return null;
+  }
+  const evaluated = evaluateSharedStateIdempotencyPolicyV1({
+    namespace: input.input.namespace,
+    retentionPolicyVersion: input.input.retentionPolicyVersion,
+    effectKind: input.input.effect.kind,
+  });
+  if (evaluated.ok) return null;
+  const mappedPath = evaluated.error.path[0] === "effectKind"
+    ? ["input", "effect", "kind"]
+    : ["input", ...evaluated.error.path];
+  return errorResult(
+    storageIdempotencyErrorCode(evaluated.error.code),
+    mappedPath,
+  );
+}
+
 function preflightTransactionEnvelope<T>(
   input: unknown,
 ): SharedStateParseResultV1<T> | null {
@@ -1814,6 +1891,8 @@ function preflightTransactionEnvelope<T>(
     return errorResult("invalid_discriminant", ["operation"]);
   }
   if (isRecord(input)) {
+    const idempotencyError = validateExecuteIdempotentPolicyBinding<T>(input);
+    if (idempotencyError) return idempotencyError;
     const digestError = validateTransactionDigestBindings<T>(input);
     if (digestError) return digestError;
   }
