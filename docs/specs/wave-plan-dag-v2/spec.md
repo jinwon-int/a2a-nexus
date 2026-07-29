@@ -157,14 +157,15 @@ set. It visits stages in the canonical topological order:
    edge matches. With no match it is `waiting/join_unresolved` while any edge
    is unresolved, then `not_selected/no_matching_edge`.
 4. `all_matching` waits as `waiting/join_unresolved` until every incoming
-   edge is resolved. It is then `ready/all_matching_satisfied` if at least one
-   edge matches, otherwise `not_selected/no_matching_edge`.
+   edge is resolved. It is then `ready/all_matching_satisfied` only if every
+   edge matches; any nonmatching edge makes it
+   `not_selected/all_matching_unsatisfied`.
 5. An admitted outcome changes only a currently ready stage to its terminal
    state. It never changes another stage directly.
 
 A partial outcome snapshot is valid, but every missing fact stays unresolved.
 Thus partial input fails closed to `waiting`, never to inferred readiness.
-When all inbound alternatives resolve without a match, an unsatisfiable join
+When all inbound edges resolve without satisfying the join policy, the join
 fails closed to `not_selected`. Neither state authorizes action.
 
 The receipt has exactly:
@@ -183,9 +184,9 @@ The receipt has exactly:
 The state enum is `ready`, `waiting`, `not_selected`, or `terminal`. The
 reason enum is `root_stage`, `all_matching_satisfied`,
 `any_matching_satisfied`, `join_unresolved`, `no_matching_edge`,
-`gate_passed`, or `gate_failed`, with only the combinations defined above.
-No prompt, payload, free-form outcome detail, command, identity, or free-form
-reason is returned.
+`all_matching_unsatisfied`, `gate_passed`, or `gate_failed`, with only the
+combinations defined above. No prompt, payload, free-form outcome detail,
+command, identity, or free-form reason is returned.
 
 Malformed or partial facts never receive optimistic interpretation. Stable
 rejection reasons are `manifest_malformed`, `duplicate_stage`,

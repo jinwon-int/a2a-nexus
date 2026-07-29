@@ -90,10 +90,10 @@ const EXPECTED_TOPOLOGY = Object.freeze([
 ]);
 
 const PINNED_MANIFEST_DIGEST =
-  'sha256:6ba74c6885d4b47edf4aaa57b3b1525903508583e47ed61333704c82de5b3999';
+  'sha256:65aeff14e59e01f976433a1f82d7ca0c398de06ec0d0aca6db56715aeb03006a';
 const PINNED_RECEIPT_DIGESTS = Object.freeze([
-  'sha256:b275a5bcf57038965171be8708d004773b8b94e997666a83f4818352a79e20c9',
-  'sha256:85102e14f419825fef7d755549b59dc4f9a4a695cc7d6e1e5b9804cd3e3ff71b',
+  'sha256:c5542b9852ca8fc3e0d990d8f5ed848d6c50192331d9bafeb3b0cf695185b48b',
+  'sha256:67a0ce8a80825f40819cc796c2d421e296e858d32bb9ca6ea377620dc94b5631',
 ]);
 
 class ContractError extends Error {
@@ -447,9 +447,10 @@ function edgeMatches(edge, sourceReason) {
 function baseStageSignal(stageId, graph, signals) {
   if (stageId === graph.root) return { stageId, state: 'ready', reason: 'root_stage' };
 
+  const incoming = graph.incoming.get(stageId);
   let matching = 0;
   let unresolved = 0;
-  for (const edge of graph.incoming.get(stageId)) {
+  for (const edge of incoming) {
     const source = signals.get(edge.fromStageId);
     if (source.state === 'terminal') {
       if (edgeMatches(edge, source.reason)) matching += 1;
@@ -465,10 +466,12 @@ function baseStageSignal(stageId, graph, signals) {
   if (unresolved > 0) {
     return { stageId, state: 'waiting', reason: 'join_unresolved' };
   }
-  if (matching === 0) {
-    return { stageId, state: 'not_selected', reason: 'no_matching_edge' };
+  if (policy === 'all_matching') {
+    return matching === incoming.length
+      ? { stageId, state: 'ready', reason: 'all_matching_satisfied' }
+      : { stageId, state: 'not_selected', reason: 'all_matching_unsatisfied' };
   }
-  return { stageId, state: 'ready', reason: 'all_matching_satisfied' };
+  return { stageId, state: 'not_selected', reason: 'no_matching_edge' };
 }
 
 function buildDryRunReceipt(manifest, request) {
@@ -544,6 +547,7 @@ function validateReceipt(receipt, manifest, request) {
     'ready\0any_matching_satisfied',
     'waiting\0join_unresolved',
     'not_selected\0no_matching_edge',
+    'not_selected\0all_matching_unsatisfied',
     'terminal\0gate_passed',
     'terminal\0gate_failed',
   ]);
@@ -755,6 +759,10 @@ assert.equal(fixture.manifest.proposalSource, 'model');
 assertAuthorityBoundary(fixture.manifest, 'model-proposed manifest');
 assert.deepEqual(graph.topology, EXPECTED_TOPOLOGY);
 assert.equal(fixture.manifest.manifestDigest, PINNED_MANIFEST_DIGEST);
+assert.deepEqual(
+  graph.incoming.get('stg_00000030').map((edge) => edge.when),
+  ['gate_passed', 'gate_passed'],
+);
 
 // The fixture is intentionally unordered. Reversing both input arrays keeps
 // the semantic digest and ASCII-tie-broken topological order exact.
@@ -776,8 +784,8 @@ fixture.dryRuns.forEach((vector, index) => {
   );
 });
 
-// A partial outcome set derived from the exact pass vector waits at the
-// all-matching diamond, while any-matching is ready from one terminal source.
+// The conditional diamond waits on a partial snapshot. Its any-matching peer
+// is ready as soon as one terminal source matches.
 const partialRequest = clone(fixture.dryRuns[0].request);
 partialRequest.outcomes = partialRequest.outcomes.filter((outcome) =>
   ['stg_00000000', 'stg_00000010'].includes(outcome.stageId));
@@ -792,13 +800,51 @@ assert.deepEqual(
   { stageId: 'stg_00000035', state: 'ready', reason: 'any_matching_satisfied' },
 );
 
-// Passed and failed gate vectors select exactly one branch.
-const passSignals = new Map(fixture.dryRuns[0].receipt.stages.map((item) => [item.stageId, item]));
-const failSignals = new Map(fixture.dryRuns[1].receipt.stages.map((item) => [item.stageId, item]));
-assert.equal(passSignals.get('stg_00000050').state, 'ready');
-assert.equal(passSignals.get('stg_00000060').state, 'not_selected');
-assert.equal(failSignals.get('stg_00000050').state, 'not_selected');
-assert.equal(failSignals.get('stg_00000060').state, 'ready');
+const conditionalAnyGraph = { ...graph, incoming: new Map(graph.incoming) };
+conditionalAnyGraph.incoming.set(
+  'stg_00000035',
+  graph.incoming.get('stg_00000035').map((edge) => ({ ...edge, when: 'gate_passed' })),
+);
+assert.deepEqual(
+  baseStageSignal('stg_00000035', conditionalAnyGraph, new Map([
+    ['stg_00000010', { state: 'terminal', reason: 'gate_failed' }],
+    ['stg_00000020', { state: 'waiting' }],
+  ])),
+  { stageId: 'stg_00000035', state: 'waiting', reason: 'join_unresolved' },
+);
+assert.deepEqual(
+  baseStageSignal('stg_00000035', conditionalAnyGraph, new Map([
+    ['stg_00000010', { state: 'terminal', reason: 'gate_failed' }],
+    ['stg_00000020', { state: 'terminal', reason: 'gate_failed' }],
+  ])),
+  { stageId: 'stg_00000035', state: 'not_selected', reason: 'no_matching_edge' },
+);
+
+// Both gate-passed predicates satisfy all-matching. One gate failure resolves
+// the same join as not selected, even though the other edge matched.
+const bothPassedRequest = clone(fixture.dryRuns[0].request);
+bothPassedRequest.outcomes = bothPassedRequest.outcomes.filter((outcome) =>
+  !['stg_00000030', 'stg_00000040'].includes(outcome.stageId));
+const bothPassedSignals = new Map(
+  buildDryRunReceipt(fixture.manifest, bothPassedRequest).stages
+    .map((item) => [item.stageId, item]),
+);
+assert.deepEqual(
+  bothPassedSignals.get('stg_00000030'),
+  { stageId: 'stg_00000030', state: 'ready', reason: 'all_matching_satisfied' },
+);
+
+const mixedSignals = new Map(
+  fixture.dryRuns[1].receipt.stages.map((item) => [item.stageId, item]),
+);
+assert.deepEqual(
+  mixedSignals.get('stg_00000030'),
+  { stageId: 'stg_00000030', state: 'not_selected', reason: 'all_matching_unsatisfied' },
+);
+assert.deepEqual(
+  mixedSignals.get('stg_00000035'),
+  { stageId: 'stg_00000035', state: 'ready', reason: 'any_matching_satisfied' },
+);
 
 // Structural rejection table keeps the checker focused without repeating
 // fixture-sized literals.
@@ -909,6 +955,19 @@ expectReason(
   () => buildDryRunReceipt(fixture.manifest, mismatchRequest),
   'outcome_join_mismatch',
   'outcome cannot skip unresolved all-matching join',
+);
+
+const nonselectedOutcomeRequest = clone(fixture.dryRuns[1].request);
+nonselectedOutcomeRequest.outcomes.push({
+  kind: 'WavePlanDagStageOutcomeV2',
+  version: 2,
+  stageId: 'stg_00000030',
+  outcome: 'gate_passed',
+});
+expectReason(
+  () => buildDryRunReceipt(fixture.manifest, nonselectedOutcomeRequest),
+  'outcome_join_mismatch',
+  'outcome cannot open unsatisfied all-matching join',
 );
 
 const malformedOutcomeCases = [

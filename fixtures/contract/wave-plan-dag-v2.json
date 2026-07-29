@@ -70,7 +70,7 @@
       {
         "fromStageId": "stg_00000010",
         "toStageId": "stg_00000030",
-        "when": "any_terminal"
+        "when": "gate_passed"
       },
       {
         "fromStageId": "stg_00000000",
@@ -95,7 +95,7 @@
       {
         "fromStageId": "stg_00000020",
         "toStageId": "stg_00000030",
-        "when": "any_terminal"
+        "when": "gate_passed"
       },
       {
         "fromStageId": "stg_00000000",
@@ -120,7 +120,7 @@
     "successAuthority": "none",
     "liveAuthority": "none",
     "manifestDigestDomain": "a2a.wave-plan-dag-v2.manifest.v2",
-    "manifestDigest": "sha256:6ba74c6885d4b47edf4aaa57b3b1525903508583e47ed61333704c82de5b3999"
+    "manifestDigest": "sha256:65aeff14e59e01f976433a1f82d7ca0c398de06ec0d0aca6db56715aeb03006a"
   },
   "dryRuns": [
     {
@@ -128,7 +128,7 @@
         "kind": "WavePlanDagDryRunRequestV2",
         "version": 2,
         "manifestAlias": "wpm_0123456789abcdef",
-        "manifestDigest": "sha256:6ba74c6885d4b47edf4aaa57b3b1525903508583e47ed61333704c82de5b3999",
+        "manifestDigest": "sha256:65aeff14e59e01f976433a1f82d7ca0c398de06ec0d0aca6db56715aeb03006a",
         "outcomes": [
           {
             "kind": "WavePlanDagStageOutcomeV2",
@@ -140,7 +140,7 @@
             "kind": "WavePlanDagStageOutcomeV2",
             "version": 2,
             "stageId": "stg_00000020",
-            "outcome": "gate_failed"
+            "outcome": "gate_passed"
           },
           {
             "kind": "WavePlanDagStageOutcomeV2",
@@ -166,7 +166,7 @@
         "kind": "WavePlanDagDryRunReceiptV2",
         "version": 2,
         "manifestAlias": "wpm_0123456789abcdef",
-        "manifestDigest": "sha256:6ba74c6885d4b47edf4aaa57b3b1525903508583e47ed61333704c82de5b3999",
+        "manifestDigest": "sha256:65aeff14e59e01f976433a1f82d7ca0c398de06ec0d0aca6db56715aeb03006a",
         "mode": "read_only_rehearsal",
         "topologicalOrder": [
           "stg_00000000",
@@ -192,7 +192,7 @@
           {
             "stageId": "stg_00000020",
             "state": "terminal",
-            "reason": "gate_failed"
+            "reason": "gate_passed"
           },
           {
             "stageId": "stg_00000030",
@@ -217,7 +217,7 @@
           {
             "stageId": "stg_00000060",
             "state": "not_selected",
-            "reason": "no_matching_edge"
+            "reason": "all_matching_unsatisfied"
           }
         ],
         "autoDispatch": false,
@@ -230,7 +230,7 @@
         "successAuthority": "none",
         "liveAuthority": "none",
         "receiptDigestDomain": "a2a.wave-plan-dag-v2.dry-run-receipt.v2",
-        "receiptDigest": "sha256:b275a5bcf57038965171be8708d004773b8b94e997666a83f4818352a79e20c9"
+        "receiptDigest": "sha256:c5542b9852ca8fc3e0d990d8f5ed848d6c50192331d9bafeb3b0cf695185b48b"
       }
     },
     {
@@ -238,14 +238,8 @@
         "kind": "WavePlanDagDryRunRequestV2",
         "version": 2,
         "manifestAlias": "wpm_0123456789abcdef",
-        "manifestDigest": "sha256:6ba74c6885d4b47edf4aaa57b3b1525903508583e47ed61333704c82de5b3999",
+        "manifestDigest": "sha256:65aeff14e59e01f976433a1f82d7ca0c398de06ec0d0aca6db56715aeb03006a",
         "outcomes": [
-          {
-            "kind": "WavePlanDagStageOutcomeV2",
-            "version": 2,
-            "stageId": "stg_00000040",
-            "outcome": "gate_failed"
-          },
           {
             "kind": "WavePlanDagStageOutcomeV2",
             "version": 2,
@@ -261,12 +255,6 @@
           {
             "kind": "WavePlanDagStageOutcomeV2",
             "version": 2,
-            "stageId": "stg_00000030",
-            "outcome": "gate_passed"
-          },
-          {
-            "kind": "WavePlanDagStageOutcomeV2",
-            "version": 2,
             "stageId": "stg_00000010",
             "outcome": "gate_passed"
           }
@@ -276,7 +264,7 @@
         "kind": "WavePlanDagDryRunReceiptV2",
         "version": 2,
         "manifestAlias": "wpm_0123456789abcdef",
-        "manifestDigest": "sha256:6ba74c6885d4b47edf4aaa57b3b1525903508583e47ed61333704c82de5b3999",
+        "manifestDigest": "sha256:65aeff14e59e01f976433a1f82d7ca0c398de06ec0d0aca6db56715aeb03006a",
         "mode": "read_only_rehearsal",
         "topologicalOrder": [
           "stg_00000000",
@@ -306,8 +294,8 @@
           },
           {
             "stageId": "stg_00000030",
-            "state": "terminal",
-            "reason": "gate_passed"
+            "state": "not_selected",
+            "reason": "all_matching_unsatisfied"
           },
           {
             "stageId": "stg_00000035",
@@ -316,18 +304,18 @@
           },
           {
             "stageId": "stg_00000040",
-            "state": "terminal",
-            "reason": "gate_failed"
+            "state": "not_selected",
+            "reason": "all_matching_unsatisfied"
           },
           {
             "stageId": "stg_00000050",
             "state": "not_selected",
-            "reason": "no_matching_edge"
+            "reason": "all_matching_unsatisfied"
           },
           {
             "stageId": "stg_00000060",
-            "state": "ready",
-            "reason": "all_matching_satisfied"
+            "state": "not_selected",
+            "reason": "all_matching_unsatisfied"
           }
         ],
         "autoDispatch": false,
@@ -340,7 +328,7 @@
         "successAuthority": "none",
         "liveAuthority": "none",
         "receiptDigestDomain": "a2a.wave-plan-dag-v2.dry-run-receipt.v2",
-        "receiptDigest": "sha256:85102e14f419825fef7d755549b59dc4f9a4a695cc7d6e1e5b9804cd3e3ff71b"
+        "receiptDigest": "sha256:67a0ce8a80825f40819cc796c2d421e296e858d32bb9ca6ea377620dc94b5631"
       }
     }
   ]
