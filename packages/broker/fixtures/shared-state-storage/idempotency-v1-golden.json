@@ -1,0 +1,320 @@
+{
+  "kind": "SharedStateIdempotencyCatalogV1",
+  "catalogVersion": "a2a.shared-state.idempotency/v1",
+  "storageContractVersion": "a2a.shared-state.storage/v1",
+  "timeVersion": "a2a.shared-state.time/v1",
+  "runtimeIntegration": "not-implemented",
+  "extensionPolicy": "forbidden",
+  "defaultRetentionPolicyVersion": null,
+  "authorities": [
+    {
+      "authorityId": "task-create-by-id",
+      "status": "current-durable-partial",
+      "plannedNamespace": "broker.task.create",
+      "sourceRefs": [
+        {
+          "path": "packages/broker/src/core/broker.ts",
+          "symbol": "createTask(request: CreateTaskRequest): TaskRecord",
+          "proves": [
+            "durable-key-or-state",
+            "domain-mutation",
+            "retry-suppression"
+          ]
+        },
+        {
+          "path": "packages/broker/src/core/store.ts",
+          "symbol": "CREATE TABLE IF NOT EXISTS broker_tasks",
+          "proves": [
+            "restart-continuity"
+          ]
+        }
+      ]
+    },
+    {
+      "authorityId": "accepted-task-wake",
+      "status": "current-durable-partial",
+      "plannedNamespace": "broker.task.wake",
+      "sourceRefs": [
+        {
+          "path": "packages/broker/src/core/broker.ts",
+          "symbol": "planAcceptedTaskWake(taskId: string, request: TaskWakePlanRequest): TaskWakePlanResult",
+          "proves": [
+            "durable-key-or-state",
+            "stable-outcome",
+            "domain-mutation",
+            "retry-suppression"
+          ]
+        },
+        {
+          "path": "packages/broker/src/core/store-schemas.ts",
+          "symbol": "export const taskWakeSchema",
+          "proves": [
+            "restart-continuity"
+          ]
+        },
+        {
+          "path": "packages/broker/src/core/store.ts",
+          "symbol": "CREATE TABLE IF NOT EXISTS broker_tasks",
+          "proves": [
+            "durable-key-or-state"
+          ]
+        }
+      ]
+    },
+    {
+      "authorityId": "task-terminal-mutation",
+      "status": "current-durable-partial",
+      "plannedNamespace": "broker.task.terminal",
+      "sourceRefs": [
+        {
+          "path": "packages/broker/src/core/broker-task-terminal.ts",
+          "symbol": "export function completeTask(",
+          "proves": [
+            "durable-key-or-state",
+            "domain-mutation",
+            "retry-suppression"
+          ]
+        },
+        {
+          "path": "packages/broker/src/core/broker-task-terminal.ts",
+          "symbol": "export function failTask(",
+          "proves": [
+            "domain-mutation",
+            "retry-suppression"
+          ]
+        },
+        {
+          "path": "packages/broker/src/core/broker-task-cancellation.ts",
+          "symbol": "export function cancelTask(",
+          "proves": [
+            "domain-mutation",
+            "retry-suppression"
+          ]
+        },
+        {
+          "path": "packages/broker/src/core/broker.ts",
+          "symbol": "this.terminalTaskEventOutbox.enqueue(taskEvent, task)",
+          "proves": [
+            "outbox-effect"
+          ]
+        },
+        {
+          "path": "packages/broker/src/core/store.ts",
+          "symbol": "CREATE TABLE IF NOT EXISTS broker_terminal_outbox",
+          "proves": [
+            "restart-continuity"
+          ]
+        }
+      ]
+    },
+    {
+      "authorityId": "live-approval-consumption",
+      "status": "current-durable-partial",
+      "plannedNamespace": "broker.live-approval.consume",
+      "sourceRefs": [
+        {
+          "path": "packages/broker/src/core/store.ts",
+          "symbol": "consumeLiveApprovalKey(key: string, consumedAt: string): boolean",
+          "proves": [
+            "durable-key-or-state",
+            "stable-outcome",
+            "retry-suppression",
+            "restart-continuity"
+          ]
+        },
+        {
+          "path": "packages/broker/src/core/store.ts",
+          "symbol": "CREATE TABLE IF NOT EXISTS broker_live_approval_consumptions",
+          "proves": [
+            "domain-mutation"
+          ]
+        }
+      ]
+    },
+    {
+      "authorityId": "review-lineage-source-ledger",
+      "status": "current-durable-partial",
+      "plannedNamespace": "broker.review-lineage.source",
+      "sourceRefs": [
+        {
+          "path": "packages/broker/src/core/review-lineage-observation-store.ts",
+          "symbol": "payloadFingerprint: string",
+          "proves": [
+            "payload-fingerprint"
+          ]
+        },
+        {
+          "path": "packages/broker/src/core/review-lineage-observation-store.ts",
+          "symbol": "idempotency_key TEXT PRIMARY KEY",
+          "proves": [
+            "durable-key-or-state",
+            "stable-outcome",
+            "domain-mutation",
+            "retry-suppression",
+            "restart-continuity"
+          ]
+        }
+      ]
+    },
+    {
+      "authorityId": "cross-broker-terminal-brief-ingest",
+      "status": "current-durable-partial",
+      "plannedNamespace": "broker.terminal-brief.cross-broker-ingest",
+      "sourceRefs": [
+        {
+          "path": "packages/broker/src/core/cross-broker-terminal-brief.ts",
+          "symbol": "const sourceDigest = digestProjection(normalized)",
+          "proves": [
+            "payload-fingerprint",
+            "stable-outcome",
+            "domain-mutation",
+            "retry-suppression"
+          ]
+        },
+        {
+          "path": "packages/broker/src/core/broker.ts",
+          "symbol": "this.terminalTaskEventOutbox.enqueueCrossBrokerProjection(result.record)",
+          "proves": [
+            "outbox-effect"
+          ]
+        },
+        {
+          "path": "packages/broker/src/core/broker.ts",
+          "symbol": "this.crossBrokerTerminalBriefs.restore(snapshot.crossBrokerTerminalBriefs ?? [])",
+          "proves": [
+            "durable-key-or-state",
+            "restart-continuity"
+          ]
+        }
+      ]
+    }
+  ],
+  "entries": [
+    {
+      "namespace": "broker.task.create",
+      "status": "planned-adapter-namespace",
+      "retentionPolicyVersion": "task-create-effects.v1",
+      "authorityId": "task-create-by-id",
+      "effectKind": "domain-mutation-with-outbox",
+      "effectClass": "externally-visible",
+      "durability": "durable",
+      "expiryPosture": "non-expiring-until-prune-proof",
+      "retryHorizonDependency": "task-create-request-retries",
+      "effectHorizonDependency": "task-record-audit-and-descendant-effects",
+      "requiredEffectDependency": "outbox-and-retained-effect",
+      "pruneEligibilityPreconditions": [
+        "retry-sources-provably-gone",
+        "outbox-effects-provably-gone",
+        "retained-effects-provably-gone",
+        "migration-and-rollback-preservation-proved"
+      ],
+      "migrationRollbackPreservationRule": "preserve-key-fingerprint-outcome-retention-and-effect-links",
+      "logicalExpiryBoundaryKind": null
+    },
+    {
+      "namespace": "broker.task.wake",
+      "status": "planned-adapter-namespace",
+      "retentionPolicyVersion": "task-wake-effects.v1",
+      "authorityId": "accepted-task-wake",
+      "effectKind": "domain-mutation-with-outbox",
+      "effectClass": "externally-visible",
+      "durability": "durable",
+      "expiryPosture": "non-expiring-until-prune-proof",
+      "retryHorizonDependency": "wake-dispatch-retries",
+      "effectHorizonDependency": "wake-decision-and-runtime-effect",
+      "requiredEffectDependency": "outbox-and-retained-effect",
+      "pruneEligibilityPreconditions": [
+        "retry-sources-provably-gone",
+        "outbox-effects-provably-gone",
+        "retained-effects-provably-gone",
+        "migration-and-rollback-preservation-proved"
+      ],
+      "migrationRollbackPreservationRule": "preserve-key-fingerprint-outcome-retention-and-effect-links",
+      "logicalExpiryBoundaryKind": null
+    },
+    {
+      "namespace": "broker.task.terminal",
+      "status": "planned-adapter-namespace",
+      "retentionPolicyVersion": "task-terminal-effects.v1",
+      "authorityId": "task-terminal-mutation",
+      "effectKind": "domain-mutation-with-outbox",
+      "effectClass": "externally-visible",
+      "durability": "durable",
+      "expiryPosture": "non-expiring-until-prune-proof",
+      "retryHorizonDependency": "worker-terminal-and-recovery-retries",
+      "effectHorizonDependency": "task-terminal-outbox-and-retry-lineage",
+      "requiredEffectDependency": "outbox-and-retained-effect",
+      "pruneEligibilityPreconditions": [
+        "retry-sources-provably-gone",
+        "outbox-effects-provably-gone",
+        "retained-effects-provably-gone",
+        "migration-and-rollback-preservation-proved"
+      ],
+      "migrationRollbackPreservationRule": "preserve-key-fingerprint-outcome-retention-and-effect-links",
+      "logicalExpiryBoundaryKind": null
+    },
+    {
+      "namespace": "broker.live-approval.consume",
+      "status": "planned-adapter-namespace",
+      "retentionPolicyVersion": "live-approval-effects.v1",
+      "authorityId": "live-approval-consumption",
+      "effectKind": "domain-mutation-with-outbox",
+      "effectClass": "irreversible",
+      "durability": "durable",
+      "expiryPosture": "non-expiring-until-prune-proof",
+      "retryHorizonDependency": "live-approval-action-retries",
+      "effectHorizonDependency": "approval-consumption-and-authorized-effect",
+      "requiredEffectDependency": "outbox-and-retained-effect",
+      "pruneEligibilityPreconditions": [
+        "retry-sources-provably-gone",
+        "outbox-effects-provably-gone",
+        "retained-effects-provably-gone",
+        "migration-and-rollback-preservation-proved"
+      ],
+      "migrationRollbackPreservationRule": "preserve-key-fingerprint-outcome-retention-and-effect-links",
+      "logicalExpiryBoundaryKind": null
+    },
+    {
+      "namespace": "broker.review-lineage.source",
+      "status": "planned-adapter-namespace",
+      "retentionPolicyVersion": "review-lineage-effects.v1",
+      "authorityId": "review-lineage-source-ledger",
+      "effectKind": "domain-mutation-with-outbox",
+      "effectClass": "externally-visible",
+      "durability": "durable",
+      "expiryPosture": "non-expiring-until-prune-proof",
+      "retryHorizonDependency": "authorized-source-delivery-retries",
+      "effectHorizonDependency": "source-lineage-and-ledger",
+      "requiredEffectDependency": "outbox-and-retained-effect",
+      "pruneEligibilityPreconditions": [
+        "retry-sources-provably-gone",
+        "outbox-effects-provably-gone",
+        "retained-effects-provably-gone",
+        "migration-and-rollback-preservation-proved"
+      ],
+      "migrationRollbackPreservationRule": "preserve-key-fingerprint-outcome-retention-and-effect-links",
+      "logicalExpiryBoundaryKind": null
+    },
+    {
+      "namespace": "broker.terminal-brief.cross-broker-ingest",
+      "status": "planned-adapter-namespace",
+      "retentionPolicyVersion": "cross-broker-terminal-brief-effects.v1",
+      "authorityId": "cross-broker-terminal-brief-ingest",
+      "effectKind": "domain-mutation-with-outbox",
+      "effectClass": "externally-visible",
+      "durability": "durable",
+      "expiryPosture": "non-expiring-until-prune-proof",
+      "retryHorizonDependency": "projection-delivery-retries",
+      "effectHorizonDependency": "projection-and-terminal-outbox",
+      "requiredEffectDependency": "outbox-and-retained-effect",
+      "pruneEligibilityPreconditions": [
+        "retry-sources-provably-gone",
+        "outbox-effects-provably-gone",
+        "retained-effects-provably-gone",
+        "migration-and-rollback-preservation-proved"
+      ],
+      "migrationRollbackPreservationRule": "preserve-key-fingerprint-outcome-retention-and-effect-links",
+      "logicalExpiryBoundaryKind": null
+    }
+  ]
+}

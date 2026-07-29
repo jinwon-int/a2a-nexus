@@ -18,11 +18,25 @@
 // schema and recovery behavior are preserved with no regression.
 
 import { spawn } from "node:child_process";
-import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { createHash } from "node:crypto";
+import {
+  chmodSync,
+  lstatSync,
+  mkdtempSync,
+  readdirSync,
+  realpathSync,
+  rmSync,
+  writeFileSync,
+} from "node:fs";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { isAbsolute, join, relative, resolve, sep } from "node:path";
 import { pathToFileURL } from "node:url";
 import { buildClaudeFinalizerToolArgs } from "./finalizer-tool-policy.mjs";
+import { buildClaudeRuntimeArgs } from "./lib/claude-runtime-flags.mjs";
+import {
+  attachClaudeModelTelemetry,
+  claudeInvocationModelTelemetry,
+} from "./lib/claude-model-telemetry.mjs";
 
 // ---------------------------------------------------------------------------
 // Process-tree timeout / session-isolation hardening (issue #1129)
@@ -171,18 +185,8 @@ function die(message) {
 // non-Claude names (e.g. "minimax-m3") are ignored so the mounted Claude
 // config default keeps deciding — preserving pre-#1508 behavior on hosts that
 // still carry stale model env values.
-const CLAUDE_MODEL_ALIASES = new Set(["sonnet", "opus", "haiku", "fable"]);
-
-function resolveExplicitClaudeModel(flags, env = process.env) {
-  const candidates = [safeText(flags?.model, ""), safeText(env.A2A_CLAUDE_MODEL, "")];
-  for (const candidate of candidates) {
-    const value = candidate.trim();
-    if (!value || value.includes("/")) continue;
-    const normalized = value.toLowerCase();
-    if (normalized.startsWith("claude-") || CLAUDE_MODEL_ALIASES.has(normalized)) return value;
-  }
-  return "";
-}
+// Moved to ./lib/claude-runtime-flags.mjs so the analysis bridge applies the
+// exact same resolution instead of carrying a second copy that can drift.
 
 function parseArgs(argv) {
   const flags = { subcommand: argv[2] };
@@ -204,6 +208,228 @@ function positiveInteger(value, fallback) {
   const n = Number(value);
   if (Number.isInteger(n) && n > 0) return n;
   return fallback;
+}
+
+const CLAUDE_TURN_BUDGET_DEFAULTS = Object.freeze({
+  analysis: 10,
+  "agentic-patch": 40,
+  "deterministic-single-shot": 6,
+  "fanout-patch": 40,
+});
+const CLAUDE_FANOUT_MAX_TURNS_HARD_CAP = 200;
+const CLAUDE_TURN_BUDGET_DIAGNOSTIC_SCHEMA = "a2a.claude.turn-budget.v1";
+const CLAUDE_MAX_TURN_CHECKPOINT_SCHEMA = "a2a.claude.max-turn-checkpoint.v1";
+const CLAUDE_MAX_TURN_CHECKPOINT_REF = "artifacts/claude-max-turn-checkpoint.json";
+const CLAUDE_TURN_BUDGET_ARTIFACT = "claude-turn-budget.json";
+const CLAUDE_CHECKPOINT_DEFAULT_MAX_BYTES = 512 * 1024;
+const CLAUDE_CHECKPOINT_HARD_MAX_BYTES = 1024 * 1024;
+
+function explicitPositiveInteger(env, keys) {
+  for (const key of keys) {
+    if (!Object.hasOwn(env, key) || safeText(env[key], "").trim() === "") continue;
+    const parsed = Number(env[key]);
+    if (Number.isInteger(parsed) && parsed > 0) {
+      return { value: parsed, key };
+    }
+  }
+  return null;
+}
+
+/**
+ * Canonical Claude turn-budget resolution.
+ *
+ * Resolution is deliberately mode-specific:
+ * - analysis: A2A_CLAUDE_CODE_ANALYSIS_MAX_TURNS, then the legacy shared key;
+ * - agentic patch: A2A_CLAUDE_CODE_MAX_TURNS;
+ * - deterministic helper: A2A_CLAUDE_CODE_DETERMINISTIC_MAX_TURNS, then the
+ *   backward-compatible A2A_CLAUDE_CODE_PATCH_MAX_TURNS alias;
+ * - fanout patch: A2A_CLAUDE_CODE_FANOUT_MAX_TURNS, then a hard cap of 200.
+ *
+ * When no valid explicit value is present, the bridge-owned canonical default
+ * is used. The Docker runner must not inject another default over this result.
+ */
+export function resolveClaudeTurnBudget(mode, env = process.env) {
+  if (!Object.hasOwn(CLAUDE_TURN_BUDGET_DEFAULTS, mode)) {
+    throw new Error(`unsupported Claude turn-budget mode: ${safeText(mode, "<missing>")}`);
+  }
+
+  const keys = mode === "analysis"
+    ? ["A2A_CLAUDE_CODE_ANALYSIS_MAX_TURNS", "A2A_CLAUDE_CODE_MAX_TURNS"]
+    : mode === "agentic-patch"
+      ? ["A2A_CLAUDE_CODE_MAX_TURNS"]
+      : mode === "deterministic-single-shot"
+        ? ["A2A_CLAUDE_CODE_DETERMINISTIC_MAX_TURNS", "A2A_CLAUDE_CODE_PATCH_MAX_TURNS"]
+        : ["A2A_CLAUDE_CODE_FANOUT_MAX_TURNS"];
+  const explicit = explicitPositiveInteger(env, keys);
+  const canonicalDefault = CLAUDE_TURN_BUDGET_DEFAULTS[mode];
+  const requested = explicit?.value ?? canonicalDefault;
+  const effectiveMaxTurns = mode === "fanout-patch"
+    ? Math.min(requested, CLAUDE_FANOUT_MAX_TURNS_HARD_CAP)
+    : requested;
+
+  return {
+    mode,
+    effectiveMaxTurns,
+    source: explicit ? "explicit_override" : "canonical_default",
+    ...(explicit ? { overrideKey: explicit.key } : {}),
+    ...(mode === "fanout-patch"
+      ? {
+          hardCap: CLAUDE_FANOUT_MAX_TURNS_HARD_CAP,
+          hardCapApplied: requested > CLAUDE_FANOUT_MAX_TURNS_HARD_CAP,
+        }
+      : {}),
+  };
+}
+
+function parseClaudeCliResult(stdout) {
+  const candidates = [safeText(stdout, "").trim(), ...extractBalancedJsonObjects(safeText(stdout, "")).reverse()]
+    .filter(Boolean);
+  for (const candidate of candidates) {
+    try {
+      const parsed = JSON.parse(candidate);
+      if (parsed && typeof parsed === "object" && !Array.isArray(parsed) && parsed.type === "result") {
+        return parsed;
+      }
+    } catch {
+      // Try the next CLI-owned JSON envelope.
+    }
+  }
+  return null;
+}
+
+function trustworthyClaudeTurnCount(stdout) {
+  const result = parseClaudeCliResult(stdout);
+  const count = result?.num_turns;
+  return Number.isSafeInteger(count) && count >= 0 ? count : undefined;
+}
+
+function isClaudeMaxTurnResult(child) {
+  const result = parseClaudeCliResult(child.stdout);
+  if (result?.subtype === "error_max_turns") return true;
+  // A plain-text provider error is trusted only on stderr from a non-zero CLI
+  // exit. Never let model-controlled result text self-classify the task.
+  return child.status !== 0
+    && /\berror_max_turns\b|Reached maximum number of turns/i.test(safeText(child.stderr, ""));
+}
+
+function buildTurnBudgetDiagnostic(resolution, options) {
+  const turnsUsed = options.turnsUsed ?? trustworthyClaudeTurnCount(options.stdout);
+  return {
+    schemaVersion: CLAUDE_TURN_BUDGET_DIAGNOSTIC_SCHEMA,
+    mode: resolution.mode,
+    effectiveMaxTurns: resolution.effectiveMaxTurns,
+    source: resolution.source,
+    ...(resolution.overrideKey ? { overrideKey: resolution.overrideKey } : {}),
+    ...(resolution.hardCap ? { hardCap: resolution.hardCap, hardCapApplied: resolution.hardCapApplied } : {}),
+    outcome: options.outcome,
+    ...(Number.isSafeInteger(turnsUsed) && turnsUsed >= 0 ? { turnsUsed } : {}),
+    ...(Number.isSafeInteger(options.invocationCount) && options.invocationCount > 0
+      ? { invocationCount: options.invocationCount }
+      : {}),
+    ...(options.failureReason ? { failureReason: options.failureReason } : {}),
+    ...(options.checkpointRef ? { checkpointRef: options.checkpointRef } : {}),
+    ...(options.checkpointStatus ? { checkpointStatus: options.checkpointStatus } : {}),
+  };
+}
+
+function asFailureTurnBudgetDiagnostic(diagnostic, failureReason, extra = {}) {
+  if (!diagnostic) return undefined;
+  return {
+    ...diagnostic,
+    outcome: "failure",
+    failureReason,
+    ...extra,
+  };
+}
+
+class ClaudeInvocationError extends Error {
+  constructor(message, options) {
+    super(message);
+    this.name = options.maxTurnsExhausted ? "ClaudeMaxTurnsExhaustedError" : "ClaudeInvocationError";
+    this.maxTurnsExhausted = options.maxTurnsExhausted === true;
+    this.turnBudget = options.turnBudget;
+  }
+}
+
+function safeArtifactBoundaryFile(name) {
+  const artifactDir = "/work/artifacts";
+  try {
+    const info = lstatSync(artifactDir);
+    if (!info.isDirectory() || info.isSymbolicLink()) return null;
+    if (realpathSync(artifactDir) !== artifactDir) return null;
+    const target = join(artifactDir, name);
+    try {
+      const targetInfo = lstatSync(target);
+      if (!targetInfo.isFile() || targetInfo.isSymbolicLink() || targetInfo.nlink !== 1) return null;
+    } catch {
+      // A missing fixed-name target is expected on the first write.
+    }
+    return target;
+  } catch {
+    return null;
+  }
+}
+
+function emitTurnBudgetDiagnostic(diagnostic) {
+  if (!diagnostic) return;
+  const serialized = `${JSON.stringify(diagnostic, null, 2)}\n`;
+  const artifactPath = safeArtifactBoundaryFile(CLAUDE_TURN_BUDGET_ARTIFACT);
+  if (artifactPath) {
+    try {
+      writeFileSync(artifactPath, serialized, { mode: 0o600 });
+      chmodSync(artifactPath, 0o600);
+    } catch {
+      // Structured stderr remains available when the runner artifact boundary
+      // is unavailable (for example a direct/native bridge invocation).
+    }
+  }
+  process.stderr.write(`claude_turn_budget=${JSON.stringify(diagnostic)}\n`);
+}
+
+function aggregateDeterministicTurnBudget(diagnostics, outcome, failureReason) {
+  const present = diagnostics.filter(Boolean);
+  if (present.length === 0) return undefined;
+  const base = present[0];
+  const counts = present.map((entry) => entry.turnsUsed);
+  const allCountsTrustworthy = counts.every((count) => Number.isSafeInteger(count) && count >= 0);
+  const turnsUsed = allCountsTrustworthy
+    ? counts.reduce((sum, count) => sum + count, 0)
+    : undefined;
+  return {
+    ...base,
+    outcome,
+    invocationCount: present.length,
+    ...(Number.isSafeInteger(turnsUsed) ? { turnsUsed } : {}),
+    ...(failureReason ? { failureReason } : {}),
+  };
+}
+
+function emitMaxTurnFailure(diagnostic, checkpoint) {
+  const finalDiagnostic = {
+    ...diagnostic,
+    outcome: "failure",
+    failureReason: "max_turns",
+    checkpointStatus: checkpoint?.status ?? "unavailable",
+    ...(checkpoint?.ok ? { checkpointRef: checkpoint.checkpointRef } : {}),
+  };
+  emitTurnBudgetDiagnostic(finalDiagnostic);
+  process.stderr.write("status=budget_limited\n");
+  process.stderr.write("terminal_reason=max_turns\n");
+  process.stderr.write("failure_reason=max_turns_exhausted\n");
+  process.stderr.write("budget.limitKind=turn\n");
+  process.stderr.write(`budget.limit=${finalDiagnostic.effectiveMaxTurns}\n`);
+  if (Number.isSafeInteger(finalDiagnostic.turnsUsed) && finalDiagnostic.turnsUsed >= 0) {
+    process.stderr.write(`budget.used=${finalDiagnostic.turnsUsed}\n`);
+  }
+  process.stderr.write("budget.reason=max_turns\n");
+  if (checkpoint?.ok) {
+    process.stderr.write(`checkpoint_ref=${checkpoint.checkpointRef}\n`);
+    process.stderr.write(`continuation.nextPrompt=Deliberately verify and apply ${checkpoint.checkpointRef} against its exact base commit before retrying; never auto-push it.\n`);
+  }
+  if (Array.isArray(checkpoint?.offendingPaths) && checkpoint.offendingPaths.length > 0) {
+    process.stderr.write(`checkpoint_rejected_paths=${JSON.stringify(checkpoint.offendingPaths)}\n`);
+  }
+  return finalDiagnostic;
 }
 
 function normalizeStringArray(value) {
@@ -436,21 +662,21 @@ function buildAnalysisPrompt({ message, flags }) {
 async function runClaudeAnalysis(prompt, flags, env = process.env) {
   const claudeBin = safeText(env.A2A_CLAUDE_CODE_BIN, safeText(env.CLAUDE_BIN, "claude"));
   const timeoutSec = positiveInteger(flags.timeout, positiveInteger(env.A2A_CLAUDE_CODE_TIMEOUT_SEC, 600));
-  const maxTurns = positiveInteger(env.A2A_CLAUDE_CODE_MAX_TURNS, 10);
+  const turnBudget = resolveClaudeTurnBudget("analysis", env);
   const maxBuffer = positiveInteger(env.A2A_CLAUDE_CODE_MAX_OUTPUT_BYTES, 8 * 1024 * 1024);
   const sessionId = safeText(flags["session-id"], "default");
 
   // Session-scoped isolation (#1129): each task session gets its own temp dir.
   const sessionWorkspace = mkdtempSync(join(tmpdir(), `a2a-analysis-${sanitizeSessionSegment(sessionId)}-`));
 
-  const explicitModel = resolveExplicitClaudeModel(flags, env);
+  const claudeRuntimeArgs = buildClaudeRuntimeArgs(flags, env);
 
   try {
     const args = [
       "-p", prompt,
-      ...(explicitModel ? ["--model", explicitModel] : []),
+      ...claudeRuntimeArgs,
       "--output-format", "json",
-      "--max-turns", String(maxTurns),
+      "--max-turns", String(turnBudget.effectiveMaxTurns),
       ...buildClaudeFinalizerToolArgs(),
     ];
     const child = await spawnWithProcessGroupKill(claudeBin, args, {
@@ -460,12 +686,36 @@ async function runClaudeAnalysis(prompt, flags, env = process.env) {
       maxBuffer,
       timeout: timeoutSec * 1000,
     });
-    if (child.error) throw new Error(`Claude Code spawn failed: ${child.error.message}`);
+    const diagnostic = buildTurnBudgetDiagnostic(turnBudget, {
+      outcome: "success",
+      stdout: child.stdout,
+      invocationCount: 1,
+    });
+    if (child.error) {
+      throw new ClaudeInvocationError(`Claude Code spawn failed: ${child.error.message}`, {
+        turnBudget: asFailureTurnBudgetDiagnostic(diagnostic, "claude_error"),
+      });
+    }
+    if (isClaudeMaxTurnResult(child)) {
+      throw new ClaudeInvocationError("Claude Code exhausted its max-turn budget", {
+        maxTurnsExhausted: true,
+        turnBudget: asFailureTurnBudgetDiagnostic(diagnostic, "max_turns"),
+      });
+    }
     if (child.status !== 0) {
       const signal = child.signal ? ` signal=${child.signal}` : "";
-      throw new Error(`Claude Code exited with ${child.status}${signal}: ${childOutputExcerpt(child)}`);
+      throw new ClaudeInvocationError(
+        `Claude Code exited with ${child.status}${signal}: ${childOutputExcerpt(child)}`,
+        {
+          turnBudget: asFailureTurnBudgetDiagnostic(diagnostic, "claude_error"),
+        },
+      );
     }
-    return child.stdout;
+    return {
+      stdout: child.stdout,
+      invocation: claudeInvocationModelTelemetry(args),
+      turnBudget: diagnostic,
+    };
   } finally {
     rmSync(sessionWorkspace, { recursive: true, force: true });
   }
@@ -473,20 +723,38 @@ async function runClaudeAnalysis(prompt, flags, env = process.env) {
 
 async function runAnalysisMode(message, flags) {
   const prompt = buildAnalysisPrompt({ message, flags });
-  let stdout;
+  let claudeRun;
   try {
-    stdout = await runClaudeAnalysis(prompt, flags, process.env);
+    claudeRun = await runClaudeAnalysis(prompt, flags, process.env);
   } catch (error) {
+    if (error.maxTurnsExhausted) {
+      emitMaxTurnFailure(error.turnBudget, { ok: false, status: "not_applicable" });
+    } else {
+      emitTurnBudgetDiagnostic(error.turnBudget);
+    }
     die(error.message);
   }
 
   let response;
   try {
-    response = normalizeAnalysisResponse(extractAnalysisJsonFromClaudeOutput(stdout));
+    response = attachClaudeModelTelemetry(
+      {
+        ...normalizeAnalysisResponse(extractAnalysisJsonFromClaudeOutput(claudeRun.stdout)),
+        turnBudget: claudeRun.turnBudget,
+      },
+      {
+        bridgeContractVersion: PATCH_BRIDGE_CONTRACT_VERSION,
+        flags,
+        env: process.env,
+        invocation: claudeRun.invocation,
+      },
+    );
   } catch (error) {
+    emitTurnBudgetDiagnostic(asFailureTurnBudgetDiagnostic(claudeRun.turnBudget, "bridge_error"));
     die(error.message);
   }
 
+  emitTurnBudgetDiagnostic(claudeRun.turnBudget);
   process.stdout.write(JSON.stringify({ payloads: [{ text: JSON.stringify(response) }] }));
 }
 
@@ -532,6 +800,7 @@ function buildPatchPrompt(message) {
     "- Use the already-authenticated `gh` and `git` CLIs to fetch/clone the repo and to open the pull request and post comments.",
     "- Do NOT touch, stage, or commit any file outside the cloned target repository.",
     "- Never print, stage, or commit secrets, tokens, `.env` files, or bootstrap/agent-context files (`.openclaw/`, `AGENTS.md`, `SOUL.md`).",
+    "- Do not push a branch or open a pull request until implementation and required evidence gates are complete. A max-turn checkpoint is local-only recovery evidence, never partial success.",
     "- If you cannot finish safely, post a Block comment on the issue and return its URL.",
     "At least one of prUrl, doneCommentUrl, or blockCommentUrl MUST be present in the returned JSON.",
     "",
@@ -571,12 +840,9 @@ async function runClaudePatch(prompt, flags, env, cwd, opts = {}) {
   const fanout = opts.fanout === true;
   const claudeBin = safeText(env.A2A_CLAUDE_CODE_BIN, safeText(env.CLAUDE_BIN, "claude"));
   const timeoutSec = positiveInteger(flags.timeout, positiveInteger(env.A2A_CLAUDE_CODE_TIMEOUT_SEC, 1800));
-  // Fanout needs a larger turn budget to orchestrate; env-configurable, hard-capped at 200.
-  const maxTurns = fanout
-    ? Math.min(positiveInteger(env.A2A_CLAUDE_CODE_FANOUT_MAX_TURNS, 40), 200)
-    : positiveInteger(env.A2A_CLAUDE_CODE_MAX_TURNS, 40);
+  const turnBudget = resolveClaudeTurnBudget(fanout ? "fanout-patch" : "agentic-patch", env);
   const maxBuffer = positiveInteger(env.A2A_CLAUDE_CODE_MAX_OUTPUT_BYTES, 64 * 1024 * 1024);
-  const explicitModel = resolveExplicitClaudeModel(flags, env);
+  const claudeRuntimeArgs = buildClaudeRuntimeArgs(flags, env);
   // Fanout adds the Task tool so the worker can spawn the roster (WS3). The mounted
   // ~/.claude/agents/ roster is auto-discovered by Claude Code.
   const allowedTools = fanout ? "Task Bash Edit Write Read Glob Grep" : "Bash Edit Write Read Glob Grep";
@@ -584,10 +850,10 @@ async function runClaudePatch(prompt, flags, env, cwd, opts = {}) {
   // NOTE: no --dangerously-skip-permissions: it is refused when running as root (the proot case).
   const args = [
     "-p", prompt,
-    ...(explicitModel ? ["--model", explicitModel] : []),
+    ...claudeRuntimeArgs,
     "--output-format", "json",
     "--allowedTools", allowedTools,
-    "--max-turns", String(maxTurns),
+    "--max-turns", String(turnBudget.effectiveMaxTurns),
     ...(fanoutPrompt ? ["--append-system-prompt", fanoutPrompt] : []),
   ];
   const child = await spawnWithProcessGroupKill(claudeBin, args, {
@@ -597,12 +863,36 @@ async function runClaudePatch(prompt, flags, env, cwd, opts = {}) {
     maxBuffer,
     timeout: timeoutSec * 1000,
   });
-  if (child.error) throw new Error(`Claude Code spawn failed: ${child.error.message}`);
+  const diagnostic = buildTurnBudgetDiagnostic(turnBudget, {
+    outcome: "success",
+    stdout: child.stdout,
+    invocationCount: 1,
+  });
+  if (child.error) {
+    throw new ClaudeInvocationError(`Claude Code spawn failed: ${child.error.message}`, {
+      turnBudget: asFailureTurnBudgetDiagnostic(diagnostic, "claude_error"),
+    });
+  }
+  if (isClaudeMaxTurnResult(child)) {
+    throw new ClaudeInvocationError("Claude Code exhausted its max-turn budget", {
+      maxTurnsExhausted: true,
+      turnBudget: asFailureTurnBudgetDiagnostic(diagnostic, "max_turns"),
+    });
+  }
   if (child.status !== 0) {
     const signal = child.signal ? ` signal=${child.signal}` : "";
-    throw new Error(`Claude Code exited with ${child.status}${signal}: ${childOutputExcerpt(child)}`);
+    throw new ClaudeInvocationError(
+      `Claude Code exited with ${child.status}${signal}: ${childOutputExcerpt(child)}`,
+      {
+        turnBudget: asFailureTurnBudgetDiagnostic(diagnostic, "claude_error"),
+      },
+    );
   }
-  return child.stdout;
+  return {
+    stdout: child.stdout,
+    invocation: claudeInvocationModelTelemetry(args),
+    turnBudget: diagnostic,
+  };
 }
 
 // Find the innermost object that carries at least one GitHub evidence URL.
@@ -1236,6 +1526,304 @@ async function runTool(bin, args, { cwd, env, timeoutMs, maxBufferBytes }) {
   });
 }
 
+function isInsidePath(root, candidate) {
+  const rel = relative(root, candidate);
+  return rel === "" || (!rel.startsWith(`..${sep}`) && rel !== ".." && !isAbsolute(rel));
+}
+
+function discoverCheckpointRepositories(workspace) {
+  let root;
+  try {
+    root = realpathSync(resolve(workspace));
+  } catch {
+    return [];
+  }
+  const queue = [{ path: root, depth: 0 }];
+  const repositories = [];
+  let visited = 0;
+  while (queue.length > 0 && visited < 128) {
+    const current = queue.shift();
+    visited += 1;
+    let entries;
+    try {
+      entries = readdirSync(current.path, { withFileTypes: true })
+        .sort((a, b) => a.name.localeCompare(b.name));
+    } catch {
+      continue;
+    }
+    const gitEntry = entries.find((entry) => entry.name === ".git");
+    if (gitEntry && !gitEntry.isSymbolicLink()) {
+      repositories.push(current.path);
+      continue;
+    }
+    if (current.depth >= 4) continue;
+    for (const entry of entries) {
+      if (!entry.isDirectory() || entry.isSymbolicLink() || entry.name === ".git") continue;
+      const child = join(current.path, entry.name);
+      try {
+        const realChild = realpathSync(child);
+        if (isInsidePath(root, realChild)) queue.push({ path: realChild, depth: current.depth + 1 });
+      } catch {
+        // Ignore disappearing or unreadable directories in the disposable tree.
+      }
+    }
+  }
+  return [...new Set(repositories)].sort();
+}
+
+export function isSafeCheckpointRepoPath(value) {
+  const path = safeText(value, "").replace(/\\/g, "/");
+  if (!path || path.length > 1024 || path.startsWith("/") || /^[A-Za-z]:\//.test(path)) return false;
+  if (/[\u0000-\u001f\u007f]/.test(path)) return false;
+  const parts = path.split("/");
+  return parts.every((part) => part !== "" && part !== "." && part !== "..");
+}
+
+function checkpointContentRisk(text) {
+  const value = safeText(text, "");
+  const risks = [
+    ["control_character", /[\u0000-\u0008\u000b\u000c\u000e-\u001f\u007f]/],
+    ["private_key", /-----BEGIN (?:RSA |EC |OPENSSH |DSA )?PRIVATE KEY-----/],
+    ["github_token", /\b(?:gh[pousr]_[A-Za-z0-9_]{20,}|github_pat_[A-Za-z0-9_]{20,})\b/],
+    ["api_key", /\b(?:sk-[A-Za-z0-9_-]{32,}|xai-[A-Za-z0-9_-]{40,}|sm_[A-Za-z0-9_-]{40,})\b/],
+    ["authorization", /\bAuthorization\s*:\s*(?:Bearer|token)\s+\S+/i],
+    [
+      "secret_assignment",
+      /\b(?:[A-Z0-9]+[_-])*(?:TOKEN|SECRET|PASSWORD|API[_-]?KEY|APIKEY|ACCESS[_-]?TOKEN|EDGE[_-]?SECRET)\s*[:=]\s*["']?[^\s"',}<][^\s"',}]*/i,
+    ],
+    ["node_private_path", /(?:^|[\s"'`=(])(?:\/root\/|\/home\/[^/\s]+\/|\/Users\/[^/\s]+\/|[A-Za-z]:\\Users\\)/],
+  ];
+  return risks.find(([, pattern]) => pattern.test(value))?.[0];
+}
+
+async function checkpointGit(repoDir, args, env, maxBufferBytes = 2 * 1024 * 1024) {
+  const git = resolveTool(env, "A2A_CLAUDE_CODE_GIT_BIN", "git");
+  return runTool(git, args, {
+    cwd: repoDir,
+    env: buildClaudeChildEnv(env),
+    timeoutMs: 30_000,
+    maxBufferBytes,
+  });
+}
+
+function safeGitRef(value, fallback) {
+  const ref = safeText(value, "").trim();
+  if (
+    ref
+    && ref.length <= 240
+    && /^[A-Za-z0-9._/-]+$/.test(ref)
+    && !ref.startsWith("/")
+    && !ref.split("/").includes("..")
+  ) {
+    return ref;
+  }
+  return fallback;
+}
+
+async function resolveCheckpointBase(repoDir, headCommit, env) {
+  const candidates = [
+    "refs/remotes/origin/main",
+    "refs/remotes/origin/master",
+    "refs/heads/main",
+    "refs/heads/master",
+  ];
+  for (const ref of candidates) {
+    const resolved = await checkpointGit(repoDir, ["rev-parse", "--verify", `${ref}^{commit}`], env, 256 * 1024);
+    const commit = safeText(resolved.stdout, "").trim();
+    if (resolved.status !== 0 || !/^[a-f0-9]{40,64}$/i.test(commit)) continue;
+    const ancestor = await checkpointGit(repoDir, ["merge-base", "--is-ancestor", commit, headCommit], env, 256 * 1024);
+    if (ancestor.status === 0) return { ref, commit: commit.toLowerCase() };
+  }
+  return { ref: "HEAD", commit: headCommit };
+}
+
+function safeCheckpointArtifactDirectory(outputDir) {
+  try {
+    const resolved = resolve(outputDir);
+    const info = lstatSync(resolved);
+    if (!info.isDirectory() || info.isSymbolicLink()) return null;
+    return realpathSync(resolved) === resolved ? resolved : null;
+  } catch {
+    return null;
+  }
+}
+
+function fixedCheckpointTarget(outputDir, name) {
+  const target = join(outputDir, name);
+  try {
+    const info = lstatSync(target);
+    if (!info.isFile() || info.isSymbolicLink() || info.nlink !== 1) return null;
+  } catch {
+    // Missing fixed-name files are expected.
+  }
+  return target;
+}
+
+/**
+ * Preserve tracked source progress after max-turn exhaustion.
+ *
+ * The checkpoint is local-only and never invokes git add/commit/push or gh. It
+ * excludes untracked files by construction, rejects bootstrap/.env paths,
+ * binary diffs, secret-shaped content, unsafe paths, and oversized payloads,
+ * and writes only fixed filenames inside the supplied artifact directory.
+ */
+export async function captureMaxTurnCheckpoint(workspace, options = {}) {
+  const env = options.env ?? process.env;
+  const outputDir = safeCheckpointArtifactDirectory(options.outputDir ?? "/work/artifacts");
+  if (!outputDir) return { ok: false, status: "rejected_artifact_boundary" };
+
+  const configuredLimit = positiveInteger(
+    options.maxBytes ?? env.A2A_CLAUDE_CODE_CHECKPOINT_MAX_BYTES,
+    CLAUDE_CHECKPOINT_DEFAULT_MAX_BYTES,
+  );
+  const maxBytes = Math.min(configuredLimit, CLAUDE_CHECKPOINT_HARD_MAX_BYTES);
+  const repositories = discoverCheckpointRepositories(workspace);
+  if (repositories.length === 0) return { ok: false, status: "no_repository" };
+
+  for (const repoDir of repositories) {
+    const rootResult = await checkpointGit(repoDir, ["rev-parse", "--show-toplevel"], env, 256 * 1024);
+    let repoRoot;
+    try {
+      repoRoot = realpathSync(safeText(rootResult.stdout, "").trim());
+    } catch {
+      continue;
+    }
+    let workspaceRoot;
+    try {
+      workspaceRoot = realpathSync(resolve(workspace));
+    } catch {
+      return { ok: false, status: "rejected_workspace_path" };
+    }
+    if (rootResult.status !== 0 || !isInsidePath(workspaceRoot, repoRoot) || repoRoot !== repoDir) {
+      continue;
+    }
+
+    const headResult = await checkpointGit(repoRoot, ["rev-parse", "--verify", "HEAD^{commit}"], env, 256 * 1024);
+    const headCommit = safeText(headResult.stdout, "").trim().toLowerCase();
+    if (headResult.status !== 0 || !/^[a-f0-9]{40,64}$/.test(headCommit)) continue;
+    const headRefResult = await checkpointGit(repoRoot, ["symbolic-ref", "--quiet", "HEAD"], env, 256 * 1024);
+    const headRef = safeGitRef(headRefResult.stdout, "HEAD");
+    const base = await resolveCheckpointBase(repoRoot, headCommit, env);
+
+    const namesResult = await checkpointGit(
+      repoRoot,
+      ["diff", "--name-only", "-z", base.commit, "--"],
+      env,
+      maxBytes + 256 * 1024,
+    );
+    if (namesResult.status !== 0) continue;
+    const changedPaths = safeText(namesResult.stdout, "").split("\0").filter(Boolean).sort();
+    if (changedPaths.length === 0) continue;
+    const unsafePaths = changedPaths.filter((path) => !isSafeCheckpointRepoPath(path));
+    if (unsafePaths.length > 0) {
+      return { ok: false, status: "rejected_unsafe_path", offendingPaths: unsafePaths };
+    }
+    const deniedPaths = changedPaths.filter(isBootstrapLeakPath);
+    if (deniedPaths.length > 0) {
+      return { ok: false, status: "rejected_bootstrap_path", offendingPaths: deniedPaths };
+    }
+    const symlinkPaths = changedPaths.filter((path) => {
+      try {
+        return lstatSync(join(repoRoot, path)).isSymbolicLink();
+      } catch {
+        return false;
+      }
+    });
+    if (symlinkPaths.length > 0) {
+      return { ok: false, status: "rejected_symlink_diff", offendingPaths: symlinkPaths };
+    }
+
+    const diffResult = await checkpointGit(
+      repoRoot,
+      ["diff", "--binary", "--full-index", "--no-ext-diff", base.commit, "--"],
+      env,
+      maxBytes + 256 * 1024,
+    );
+    const statusResult = await checkpointGit(
+      repoRoot,
+      ["status", "--porcelain=v1", "--untracked-files=no"],
+      env,
+      Math.min(maxBytes, 256 * 1024),
+    );
+    if (diffResult.status !== 0 || statusResult.status !== 0) continue;
+    const diff = safeText(diffResult.stdout, "");
+    const status = safeText(statusResult.stdout, "");
+    if (/^GIT binary patch$|^Binary files /m.test(diff)) {
+      return { ok: false, status: "rejected_binary_diff" };
+    }
+    if (/^(?:index .* 120000|(?:old|new|deleted file) mode 120000)$/m.test(diff)) {
+      return { ok: false, status: "rejected_symlink_diff" };
+    }
+    const contentRisk = checkpointContentRisk(`${diff}\n${status}`);
+    if (contentRisk) return { ok: false, status: "rejected_secret_scan", risk: contentRisk };
+
+    const diffBytes = Buffer.byteLength(diff, "utf8");
+    const statusBytes = Buffer.byteLength(status, "utf8");
+    const repository = /^[A-Za-z0-9_.-]+\/[A-Za-z0-9_.-]+$/.test(safeText(options.repository, ""))
+      ? safeText(options.repository)
+      : undefined;
+    const checkpointCore = {
+      schemaVersion: CLAUDE_MAX_TURN_CHECKPOINT_SCHEMA,
+      createdAt: "1970-01-01T00:00:00.000Z",
+      reason: "max_turns",
+      resumable: true,
+      repository,
+      base,
+      head: { ref: headRef, commit: headCommit },
+      changedPaths,
+      diffPath: "artifacts/claude-max-turn-checkpoint.diff",
+      statusPath: "artifacts/claude-max-turn-checkpoint.status",
+      includesUntracked: false,
+      pushPerformed: false,
+      pullRequestOpened: false,
+      taskSucceeded: false,
+      evidenceGatesBypassed: false,
+      secretScan: { status: "passed", scanner: "a2a-checkpoint-pattern-v1" },
+      limits: {
+        maxBytes,
+        diffBytes,
+        statusBytes,
+      },
+    };
+    const metadataRisk = checkpointContentRisk(JSON.stringify(checkpointCore));
+    if (metadataRisk) return { ok: false, status: "rejected_secret_scan", risk: metadataRisk };
+    const checkpointId = `sha256:${createHash("sha256")
+      .update(JSON.stringify(checkpointCore))
+      .update("\0")
+      .update(diff)
+      .update("\0")
+      .update(status)
+      .digest("hex")}`;
+    const manifest = { ...checkpointCore, checkpointId };
+    const manifestText = `${JSON.stringify(manifest, null, 2)}\n`;
+    const totalBytes = Buffer.byteLength(manifestText, "utf8") + diffBytes + statusBytes;
+    if (totalBytes > maxBytes) {
+      return { ok: false, status: "rejected_size_limit", maxBytes, totalBytes };
+    }
+
+    const diffTarget = fixedCheckpointTarget(outputDir, "claude-max-turn-checkpoint.diff");
+    const statusTarget = fixedCheckpointTarget(outputDir, "claude-max-turn-checkpoint.status");
+    const manifestTarget = fixedCheckpointTarget(outputDir, "claude-max-turn-checkpoint.json");
+    if (!diffTarget || !statusTarget || !manifestTarget) {
+      return { ok: false, status: "rejected_artifact_path" };
+    }
+    writeFileSync(diffTarget, diff, { mode: 0o600 });
+    writeFileSync(statusTarget, status, { mode: 0o600 });
+    writeFileSync(manifestTarget, manifestText, { mode: 0o600 });
+    chmodSync(diffTarget, 0o600);
+    chmodSync(statusTarget, 0o600);
+    chmodSync(manifestTarget, 0o600);
+    return {
+      ok: true,
+      status: "preserved",
+      checkpointRef: CLAUDE_MAX_TURN_CHECKPOINT_REF,
+      checkpointId,
+      manifest,
+    };
+  }
+  return { ok: false, status: "no_safe_repository" };
+}
+
 function toolError(tool, label, result) {
   if (result.error) {
     return new Error(`${tool} ${label} spawn failed: ${result.error.message}`);
@@ -1415,14 +2003,14 @@ async function createBranch({ cloneDir, branch, env }) {
 async function callClaudeOnce(prompt, flags, env, cwd) {
   const claudeBin = safeText(env.A2A_CLAUDE_CODE_BIN, safeText(env.CLAUDE_BIN, "claude"));
   const timeoutSec = positiveInteger(flags.timeout, positiveInteger(env.A2A_CLAUDE_CODE_TIMEOUT_SEC, 300));
-  const maxTurns = positiveInteger(env.A2A_CLAUDE_CODE_PATCH_MAX_TURNS, 6);
+  const turnBudget = resolveClaudeTurnBudget("deterministic-single-shot", env);
   const maxBuffer = positiveInteger(env.A2A_CLAUDE_CODE_MAX_OUTPUT_BYTES, 16 * 1024 * 1024);
-  const explicitModel = resolveExplicitClaudeModel(flags, env);
+  const claudeRuntimeArgs = buildClaudeRuntimeArgs(flags, env);
   const args = [
     "-p", prompt,
-    ...(explicitModel ? ["--model", explicitModel] : []),
+    ...claudeRuntimeArgs,
     "--output-format", "json",
-    "--max-turns", String(maxTurns),
+    "--max-turns", String(turnBudget.effectiveMaxTurns),
     "--tools", "Read Grep Glob",
   ];
   const child = await spawnWithProcessGroupKill(claudeBin, args, {
@@ -1432,12 +2020,34 @@ async function callClaudeOnce(prompt, flags, env, cwd) {
     maxBuffer,
     timeout: timeoutSec * 1000,
   });
-  if (child.error) throw new Error(`Claude Code spawn failed: ${child.error.message}`);
+  const diagnostic = buildTurnBudgetDiagnostic(turnBudget, {
+    outcome: "success",
+    stdout: child.stdout,
+    invocationCount: 1,
+  });
+  if (child.error) {
+    throw new ClaudeInvocationError(`Claude Code spawn failed: ${child.error.message}`, {
+      turnBudget: asFailureTurnBudgetDiagnostic(diagnostic, "claude_error"),
+    });
+  }
+  if (isClaudeMaxTurnResult(child)) {
+    throw new ClaudeInvocationError("Claude Code exhausted its deterministic helper max-turn budget", {
+      maxTurnsExhausted: true,
+      turnBudget: asFailureTurnBudgetDiagnostic(diagnostic, "max_turns"),
+    });
+  }
   if (child.status !== 0) {
     const signal = child.signal ? ` signal=${child.signal}` : "";
-    throw new Error(`Claude Code exited with ${child.status}${signal}: ${childOutputExcerpt(child)}`);
+    throw new ClaudeInvocationError(
+      `Claude Code exited with ${child.status}${signal}: ${childOutputExcerpt(child)}`,
+      { turnBudget: asFailureTurnBudgetDiagnostic(diagnostic, "claude_error") },
+    );
   }
-  return child.stdout;
+  return {
+    stdout: child.stdout,
+    invocation: claudeInvocationModelTelemetry(args),
+    turnBudget: diagnostic,
+  };
 }
 
 // Corrective retry: feed the previous error back into the model with a tight prompt.
@@ -1455,12 +2065,12 @@ async function callClaudeCorrective(prompt, previousError, flags, env, cwd) {
     "Original task:",
     safeText(prompt),
   ].join("\n");
-  const maxTurns = positiveInteger(env.A2A_CLAUDE_CODE_PATCH_MAX_TURNS, 6);
+  const turnBudget = resolveClaudeTurnBudget("deterministic-single-shot", env);
   const maxBuffer = positiveInteger(env.A2A_CLAUDE_CODE_MAX_OUTPUT_BYTES, 16 * 1024 * 1024);
   const args = [
     "-p", retryPrompt,
     "--output-format", "json",
-    "--max-turns", String(maxTurns),
+    "--max-turns", String(turnBudget.effectiveMaxTurns),
     "--tools", "Read Grep Glob",
   ];
   const child = await spawnWithProcessGroupKill(claudeBin, args, {
@@ -1470,20 +2080,46 @@ async function callClaudeCorrective(prompt, previousError, flags, env, cwd) {
     maxBuffer,
     timeout: timeoutSec * 1000,
   });
-  if (child.error) throw new Error(`Claude Code corrective spawn failed: ${child.error.message}`);
+  const diagnostic = buildTurnBudgetDiagnostic(turnBudget, {
+    outcome: "success",
+    stdout: child.stdout,
+    invocationCount: 1,
+  });
+  if (child.error) {
+    throw new ClaudeInvocationError(`Claude Code corrective spawn failed: ${child.error.message}`, {
+      turnBudget: asFailureTurnBudgetDiagnostic(diagnostic, "claude_error"),
+    });
+  }
+  if (isClaudeMaxTurnResult(child)) {
+    throw new ClaudeInvocationError("Claude Code exhausted its deterministic corrective max-turn budget", {
+      maxTurnsExhausted: true,
+      turnBudget: asFailureTurnBudgetDiagnostic(diagnostic, "max_turns"),
+    });
+  }
   if (child.status !== 0) {
     const signal = child.signal ? ` signal=${child.signal}` : "";
-    throw new Error(`Claude Code corrective exited with ${child.status}${signal}: ${safeText(child.stderr, child.stdout).slice(0, 4000)}`);
+    throw new ClaudeInvocationError(
+      `Claude Code corrective exited with ${child.status}${signal}: ${safeText(child.stderr, child.stdout).slice(0, 4000)}`,
+      { turnBudget: asFailureTurnBudgetDiagnostic(diagnostic, "claude_error") },
+    );
   }
-  return child.stdout;
+  return {
+    stdout: child.stdout,
+    invocation: claudeInvocationModelTelemetry(args),
+    turnBudget: diagnostic,
+  };
 }
 
 async function runSingleShotPatchMode(message, flags) {
   const env = process.env;
   const taskContext = parseTaskContext(message);
+  const deterministicTurnResolution = resolveClaudeTurnBudget("deterministic-single-shot", env);
   if (!taskContext.repo) {
-    process.stderr.write("single-shot patch mode requires Repository: <owner/repo> in the task message\n");
-    process.exit(1);
+    emitTurnBudgetDiagnostic(buildTurnBudgetDiagnostic(deterministicTurnResolution, {
+      outcome: "failure",
+      failureReason: "bridge_error",
+    }));
+    die("single-shot patch mode requires Repository: <owner/repo> in the task message");
   }
 
   // Session-scoped isolation (#1129): prefix the workspace with the session id
@@ -1495,6 +2131,7 @@ async function runSingleShotPatchMode(message, flags) {
 
   let exitCode = 0;
   let envelope = null;
+  const turnDiagnostics = [];
 
   try {
     const cloned = await cloneTargetRepo({ repo: taskContext.repo, cloneDir, branch, env });
@@ -1511,8 +2148,16 @@ async function runSingleShotPatchMode(message, flags) {
 
     // First (and primary) claude call. Run inside the clone so the read-only
     // tools see the actual repo and the emitted diff has correct line context.
-    const firstStdout = await callClaudeOnce(prompt, flags, env, cloneDir);
-    let extracted = extractUnifiedDiff(firstStdout);
+    let firstRun;
+    try {
+      firstRun = await callClaudeOnce(prompt, flags, env, cloneDir);
+      turnDiagnostics.push(firstRun.turnBudget);
+    } catch (error) {
+      if (error.turnBudget) turnDiagnostics.push(error.turnBudget);
+      throw error;
+    }
+    let outputInvocation = firstRun.invocation;
+    let extracted = extractUnifiedDiff(firstRun.stdout);
     let claudeCalls = 1;
 
     if (extracted.kind === "no_diff") {
@@ -1542,15 +2187,23 @@ async function runSingleShotPatchMode(message, flags) {
       }
       // One corrective retry (2nd and final claude call). The original prompt goes
       // back in so the model has full context for the fix.
-      const correctiveStdout = await callClaudeCorrective(
-        prompt,
-        hint ? `${checked.error}\n\n${hint}` : checked.error,
-        flags,
-        env,
-        cloneDir,
-      );
+      let correctiveRun;
+      try {
+        correctiveRun = await callClaudeCorrective(
+          prompt,
+          hint ? `${checked.error}\n\n${hint}` : checked.error,
+          flags,
+          env,
+          cloneDir,
+        );
+        turnDiagnostics.push(correctiveRun.turnBudget);
+      } catch (error) {
+        if (error.turnBudget) turnDiagnostics.push(error.turnBudget);
+        throw error;
+      }
       claudeCalls = 2;
-      extracted = extractUnifiedDiff(correctiveStdout);
+      outputInvocation = correctiveRun.invocation;
+      extracted = extractUnifiedDiff(correctiveRun.stdout);
       if (extracted.kind === "no_diff") {
         throw new Error(`claude corrective retry returned no diff: ${redactSecrets(safeText(extracted.body, "<empty>")).slice(0, 1000)}`);
       }
@@ -1618,19 +2271,48 @@ async function runSingleShotPatchMode(message, flags) {
       throw new Error("gh pr create succeeded but produced no parseable prUrl");
     }
 
-    const result = {
-      status: "pr_opened",
-      bridgeContractVersion: PATCH_BRIDGE_CONTRACT_VERSION,
-      summary: `single-shot patch opened ${pr.prUrl} (${claudeCalls} claude call${claudeCalls === 1 ? "" : "s"})`,
-      branch,
-      prUrl: pr.prUrl,
-      tests: [],
-      filesChanged,
-      risks: [],
-      claudeCalls,
-    };
+    const turnBudget = aggregateDeterministicTurnBudget(turnDiagnostics, "success");
+    const result = attachClaudeModelTelemetry(
+      {
+        status: "pr_opened",
+        summary: `single-shot patch opened ${pr.prUrl} (${claudeCalls} claude call${claudeCalls === 1 ? "" : "s"})`,
+        branch,
+        prUrl: pr.prUrl,
+        tests: [],
+        filesChanged,
+        risks: [],
+        claudeCalls,
+        turnBudget,
+      },
+      {
+        bridgeContractVersion: PATCH_BRIDGE_CONTRACT_VERSION,
+        flags,
+        env,
+        invocation: outputInvocation,
+      },
+    );
+    emitTurnBudgetDiagnostic(turnBudget);
     envelope = JSON.stringify({ payloads: [{ text: JSON.stringify(result) }] });
   } catch (error) {
+    const failureReason = error.maxTurnsExhausted
+      ? "max_turns"
+      : error.turnBudget?.failureReason ?? "bridge_error";
+    let turnBudget = aggregateDeterministicTurnBudget(turnDiagnostics, "failure", failureReason);
+    if (!turnBudget) {
+      turnBudget = buildTurnBudgetDiagnostic(deterministicTurnResolution, {
+        outcome: "failure",
+        failureReason,
+      });
+    }
+    if (error.maxTurnsExhausted && turnBudget) {
+      const checkpoint = await captureMaxTurnCheckpoint(workspace, {
+        env,
+        repository: taskContext.repo,
+      });
+      turnBudget = emitMaxTurnFailure(turnBudget, checkpoint);
+    } else {
+      emitTurnBudgetDiagnostic(turnBudget);
+    }
     process.stderr.write(`${redactSecrets(safeText(error.message, "Claude Code patch bridge failed"))}\n`);
     exitCode = 1;
   } finally {
@@ -1663,15 +2345,17 @@ async function runPatchMode(message, flags) {
   const workspace = mkdtempSync(join(tmpdir(), `a2a-patch-${sanitizeSessionSegment(sessionId)}-`));
   let exitCode = 0;
   let envelope = null;
+  let turnBudget = null;
   try {
     const prompt = buildPatchPrompt(message);
-    const stdout = await runClaudePatch(prompt, flags, process.env, workspace, { fanout });
+    const claudeRun = await runClaudePatch(prompt, flags, process.env, workspace, { fanout });
+    turnBudget = claudeRun.turnBudget;
 
     let outer;
     try {
-      outer = parseJsonCandidate(stdout);
+      outer = parseJsonCandidate(claudeRun.stdout);
     } catch {
-      outer = stdout;
+      outer = claudeRun.stdout;
     }
     const evidenceObj = findGithubEvidenceObject(outer);
     if (!evidenceObj) {
@@ -1688,9 +2372,34 @@ async function runPatchMode(message, flags) {
       positiveInteger(process.env.A2A_CONTAINED_SUBAGENTS_OUTPUT_BYTES, 12000),
       64 * 1024,
     );
-    const result = normalizePatchResponse(evidenceObj, { fanout, maxSubagents, allowedRoles, maxOutputBytes });
+    const result = attachClaudeModelTelemetry(
+      {
+        ...normalizePatchResponse(evidenceObj, { fanout, maxSubagents, allowedRoles, maxOutputBytes }),
+        turnBudget,
+      },
+      {
+        bridgeContractVersion: PATCH_BRIDGE_CONTRACT_VERSION,
+        flags,
+        env: process.env,
+        invocation: claudeRun.invocation,
+      },
+    );
+    emitTurnBudgetDiagnostic(turnBudget);
     envelope = JSON.stringify({ payloads: [{ text: JSON.stringify(result) }] });
   } catch (error) {
+    if (error.turnBudget) turnBudget = error.turnBudget;
+    if (error.maxTurnsExhausted && turnBudget) {
+      const taskContext = parseTaskContext(message);
+      const checkpoint = await captureMaxTurnCheckpoint(workspace, {
+        env: process.env,
+        repository: taskContext.repo,
+      });
+      turnBudget = emitMaxTurnFailure(turnBudget, checkpoint);
+    } else {
+      emitTurnBudgetDiagnostic(
+        error.turnBudget ?? asFailureTurnBudgetDiagnostic(turnBudget, "bridge_error"),
+      );
+    }
     // Non-zero exit so the handler surfaces openclaw_bridge_evidence_missing / failure.
     process.stderr.write(`${redactSecrets(safeText(error.message, "Claude Code patch bridge failed"))}\n`);
     exitCode = 1;

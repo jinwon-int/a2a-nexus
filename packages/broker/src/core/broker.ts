@@ -128,6 +128,7 @@ import {
   normalizeTaskReadinessMode,
   type TaskReadinessMode,
 } from "../task-readiness.js";
+import { classifyTaskLane } from "../task-lane-classifier.js";
 import { TaskEventStream } from "./task-event-stream.js";
 import {
   TerminalTaskEventOutbox,
@@ -156,6 +157,15 @@ import {
 import {
   authorizeOperatorReviewLineageCancel,
 } from "../review-lifecycle/operator-cancel-source.js";
+import {
+  authorizeOperatorReviewLineageCorrectionGeneration,
+} from "../review-lifecycle/correction-generation-source.js";
+import {
+  authorizeOperatorReviewLineageReviewerReplacement,
+} from "../review-lifecycle/reviewer-replacement-source.js";
+import {
+  authorizeReviewerReviewLineageReport,
+} from "../review-lifecycle/review-report-source.js";
 import type {
   ReviewLineageEvent,
   ReviewLineageRecord,
@@ -526,10 +536,11 @@ export class InMemoryA2ABroker {
     return this.wavePlans.list();
   }
 
-  // --- Bounded PR review lineage telemetry (#1518 Phases 3b/10/12/14/15) ----
+  // --- Bounded PR review lineage telemetry (#1518 Phases 3b/10/12/14-18) ----
   // Generic task completion/retry/finalizer paths remain detached. Phases
-  // 14-15 attach only explicit operator-owned cancel and create sources whose
-  // durable source row and normalized Phase 8 command share one transaction.
+  // 14-18 attach only explicit operator create/cancel/correction-generation/
+  // reviewer-replacement and signed reviewer-report sources whose durable
+  // source row and normalized Phase 8 command share one transaction.
 
   createReviewLineage(
     input: CreateRecordedReviewLineageInput,
@@ -653,6 +664,60 @@ export class InMemoryA2ABroker {
     this.assertAuthorizedReviewLineageSourceStore();
     return this.commitAuthorizedReviewLineageSource(
       authorizeOperatorReviewLineageCancel(
+        lineageId,
+        input,
+        authenticatedOperatorId,
+      ),
+    );
+  }
+
+  async recordReviewerReviewLineageReport(
+    lineageId: string,
+    input: unknown,
+    authenticatedReviewerId: string,
+  ): Promise<ReviewLineageObservationApplicationResult | undefined> {
+    // Default off mode remains inert before request/receipt validation,
+    // trusted context construction, or store access.
+    if (this.reviewLineageMode === "off") return undefined;
+    this.assertAuthorizedReviewLineageSourceStore();
+    return this.commitAuthorizedReviewLineageSource(
+      authorizeReviewerReviewLineageReport(
+        lineageId,
+        input,
+        authenticatedReviewerId,
+      ),
+    );
+  }
+
+  async recordOperatorReviewLineageCorrectionGeneration(
+    lineageId: string,
+    input: unknown,
+    authenticatedOperatorId: string,
+  ): Promise<ReviewLineageObservationApplicationResult | undefined> {
+    // Default off mode remains inert before request validation, trusted
+    // context construction, or store access.
+    if (this.reviewLineageMode === "off") return undefined;
+    this.assertAuthorizedReviewLineageSourceStore();
+    return this.commitAuthorizedReviewLineageSource(
+      authorizeOperatorReviewLineageCorrectionGeneration(
+        lineageId,
+        input,
+        authenticatedOperatorId,
+      ),
+    );
+  }
+
+  async recordOperatorReviewLineageReviewerReplacement(
+    lineageId: string,
+    input: unknown,
+    authenticatedOperatorId: string,
+  ): Promise<ReviewLineageObservationApplicationResult | undefined> {
+    // Default off mode remains inert before request validation, trusted
+    // context construction, or store access.
+    if (this.reviewLineageMode === "off") return undefined;
+    this.assertAuthorizedReviewLineageSourceStore();
+    return this.commitAuthorizedReviewLineageSource(
+      authorizeOperatorReviewLineageReviewerReplacement(
         lineageId,
         input,
         authenticatedOperatorId,
@@ -1123,6 +1188,12 @@ export class InMemoryA2ABroker {
     // exists; require_approval merges into the existing blocked -> operator
     // approve -> queued flow regardless of mode (blocking is recoverable).
     const policyDecision = this.evaluateCreateTaskPolicy(normalizedRequest);
+    const assignedWorkerId = normalizedRequest.assignedWorkerId ?? normalizedRequest.target.id;
+    const laneAssignment = classifyTaskLane({
+      request: normalizedRequest,
+      worker: this.getWorker(assignedWorkerId),
+      policyDecision,
+    });
 
     const now = isoNow();
     const basePolicyContext = normalizeTaskPolicyContext(normalizedRequest);
@@ -1172,6 +1243,7 @@ export class InMemoryA2ABroker {
       via: normalizedRequest.via,
       policyContext,
       payload: normalizedRequest.payload,
+      laneAssignment,
       status: initialStatus,
       createdAt: normalizedRequest.createdAt ?? now,
       updatedAt: now,
@@ -1191,6 +1263,13 @@ export class InMemoryA2ABroker {
       targetId: task.id,
       proposalId: task.proposalId,
       note: task.status === "blocked" ? `approval required: ${task.message ?? task.intent}` : task.message ?? task.intent,
+    });
+    this.appendAuditEvent({
+      actorId: task.requester.id,
+      action: "task.lane_assigned",
+      targetType: "task",
+      targetId: task.id,
+      note: JSON.stringify(task.laneAssignment),
     });
     if (policyDecision?.action === "deny") {
       // warn mode (an enforce deny threw before creation): structural evidence

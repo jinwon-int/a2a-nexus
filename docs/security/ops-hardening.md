@@ -90,6 +90,12 @@ node packages/broker/scripts/ops-hardening-audit.mjs --base-url http://127.0.0.1
 | `/tasks/terminal-outbox/ack` | POST | Yes | Yes | No | Restricted to hub/operator role |
 | `/a2a/tasks/:id/events` | GET | Yes | Yes | No | SSE stream; identity-bound |
 | `/a2a/operator/events` | GET | Yes | Yes | No | SSE stream; hub/operator role required |
+| `/review-lineages` | GET/POST | Yes | Yes | No | Read roles for GET; exact operator role for POST contract freeze |
+| `/review-lineages/:id` | GET | Yes | Yes | No | Redacted lineage projection |
+| `/review-lineages/:id/operator-cancel` | POST | Yes | Yes | No | Exact operator role |
+| `/review-lineages/:id/review-report` | POST | Yes | Yes | No | Ed25519 worker signature plus `review-lineage.report` scope |
+| `/review-lineages/:id/correction-generation` | POST | Yes | Yes | No | Exact operator role; records an already committed generation only |
+| `/review-lineages/:id/reviewer-replacement` | POST | Yes | Yes | No | Exact operator role; records a classified infrastructure-failure decision only |
 | `/dashboard` | GET | Yes | No | No | Read-only operator dashboard |
 | `/alerts` | GET | Yes | No | No | Read-only alert projection |
 | `/audit` | GET | Yes | No | No | Read-only audit log |
@@ -101,6 +107,41 @@ node packages/broker/scripts/ops-hardening-audit.mjs --base-url http://127.0.0.1
 - **`EDGE_SECRET` / `A2A_EDGE_SECRET`**: Shared secret required by non-public endpoints. If unset, the broker will still start but public-discoverable endpoints and authenticated routes issue 401 without it.
 - **`ENFORCE_REQUESTER_IDENTITY`** (default `1`): When enabled, write endpoints validate `x-a2a-requester-id` / `x-a2a-requester-role` / `x-a2a-requester-kind` headers against the actor making the request. Operators running in trusted networks can disable, but this weakens the identity audit trail.
 - **`TRUSTED_PROXY`**: Set to `1` when the broker sits behind a reverse proxy that strips external `x-a2a-*` headers. Without this, rate-limiting key computation may produce incorrect results.
+
+### Review-lineage correction authority
+
+The correction-generation route is not a fixer or patch-application endpoint.
+After the exact operator-role gate, trusted broker code assigns semantic
+`correction_controller` authority and derives source identities. The body
+cannot assert them. Admission requires canonical state
+`correction_pending`, the exact pre-correction intent/head/diff tuple, the
+unchanged frozen intent, and a complete changed-path list. Forbidden or
+out-of-scope paths preserve the pending head.
+
+Keep `A2A_REVIEW_LINEAGE_MODE=off` unless record-mode activation has separate
+approval. Do not connect generic task/result/log/prose, retry, completion,
+finalizer, or fixer flows to this route. It records an already committed
+generation and must never apply or auto-push patch output.
+
+### Review-lineage reviewer-allocation authority
+
+The reviewer-replacement route requires the exact `operator` role. Trusted
+broker code assigns semantic `reviewer_allocator` authority and fixes the
+source kind, namespace, issuer, observation kind, and reason
+`infrastructure_failure`. The body carries only a decision reference,
+observation time, and exact current intent/head/diff binding; it cannot assert
+a reviewer, worker, task, assignment, authority, or source identity.
+
+This route records an already classified decision. It does not classify task
+errors, select a replacement, mutate assignment, dispatch work, inspect generic
+task/result/error/log/prose/retry/completion/finalizer state, or create an
+automatic loop. Exact-subject mismatch and terminal lineages fail closed.
+Replacement-budget exhaustion remains terminal and operator-visible, and a
+replacement never resets shared lineage state or budget.
+
+Keep `A2A_REVIEW_LINEAGE_MODE=off` unless record-mode activation has separate
+approval. Source attachment coverage `5/5` is not activation, deployment,
+independent review, finalizer closeout, or issue closeout.
 
 ### Secrets and edge security
 
@@ -345,6 +386,7 @@ in `request-security.ts` as `A2A_WORKER_ROUTE_SCOPES`:
 workers.assignment-events  worker.register  worker.heartbeat
 tasks.list  task.claim  task.start  task.heartbeat
 task.checkpoint  task.complete  task.evidence  task.fail
+review-lineage.report
 ```
 
 #### Current behavior (dual-auth transition)

@@ -85,6 +85,12 @@ test("task projection shape is pinned for A2A compatibility", () => {
     makeTask("succeeded", {
       claimedBy: "worker-a",
       completedAt: COMPLETED_TIME,
+      laneAssignment: {
+        version: "fast-lane.v1",
+        mode: "shadow",
+        decision: "fast",
+        reasonCodes: ["all_fast_conditions_met"],
+      },
       result: {
         summary: "completed golden result",
         artifactIds: ["artifact-1"],

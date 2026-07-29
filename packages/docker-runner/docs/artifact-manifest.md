@@ -20,6 +20,8 @@ Sample: [`examples/artifact-manifest.dummy-task.json`](../examples/artifact-mani
 
 - `taskId`, `repo`, `branch`, `prUrl`, `issueUrl`.
 - `budget`: bounded, redacted budget-stop metadata (`limitKind`, optional `limit`/`used`/`reason`) when `status=budget_limited`.
+- `claudeTurnBudget`: secret-free Claude invocation telemetry with the effective max-turn value, its `canonical_default` or `explicit_override` source, mode, and outcome. `turnsUsed` is omitted unless the Claude CLI result envelope exposes a trustworthy count.
+- `checkpointRef`: fixed `artifacts/claude-max-turn-checkpoint.json` reference when a max-turn failure preserved a safe local checkpoint. Its presence never changes the task to Done.
 - `receiptTrace`: optional bounded notification/receipt correlation metadata for broker/plugin receipt-gap reports. It may carry safe identifiers such as `outboxId`, `notificationId`, `dedupeKey`, `channel`, `status`, `evidence`, `receiptId`, `attemptCount`, `staleAfterMs`, and bounded `reason`; it must not contain raw prompts, raw command output, message bodies, tokens, or private host paths.
 - `continuation`: optional approval-gated follow-up recommendation; `requiresApproval` must be `true`.
 - `postPatchVerification`: optional post-patch verification evidence. When `postPatchVerification.baseline` is present, the same command also ran before patch application to prove whether the acceptance was non-vacuous. `baseline.mode=record` records only; `baseline.mode=require-red` blocks when the pre-patch command already met the expected exit code and marks `verdict=vacuous`. A configured policy value of `off` is represented by omitting the baseline evidence object entirely.
@@ -51,6 +53,25 @@ GitHub evidence remains fail-closed: `github-propose-patch` tasks still fail whe
 ## Artifact retention & boundaries
 
 The runner writes all task artifacts under `A2A_DOCKER_RUNNER_ROOT` (default: `/var/lib/openclaw-a2a/tasks`) in the layout `rootDir/<safeTaskId>/<runToken>/`. Each run produces 10-30 KB of artifacts (task JSON, summary, command logs, optional diff files, manifest). The `scanner` module (`src/scanner.ts`) can enumerate runs and produce redacted bundles.
+
+On Claude max-turn exhaustion only, the bridge may add a deterministic,
+local-only checkpoint inside this same boundary:
+`claude-max-turn-checkpoint.json`, `.diff`, and `.status`. The manifest binds
+the exact base/head commits, changed tracked paths, sizes, and checkpoint digest.
+Untracked files are never captured. Bootstrap/runtime files (`AGENTS.md`,
+`SOUL.md`, `USER.md`, `TOOLS.md`, `HEARTBEAT.md`, `IDENTITY.md`,
+`.openclaw/**`), `.env` files, binary diffs, unsafe paths, secret-shaped
+content, and payloads over the configured bound are rejected before any
+checkpoint file is written. The default total bound is 512 KiB and the hard
+ceiling is 1 MiB.
+
+Checkpoint preservation performs no staging, commit, push, PR creation, or
+evidence-gate bypass. The task remains failed with
+`terminalReason=max_turns`. A later retry may use the retained diff only after
+an operator or retry workflow deliberately verifies the checkpoint digest,
+exact base/head, allowlisted paths, and passed secret scan, then runs
+`git apply --check` on a fresh checkout at the exact base. Checkpoints must not
+be injected into retries automatically.
 
 ### Retention policy
 
@@ -100,6 +121,8 @@ Operators should implement the desired retention strategy for their deployment:
 | Summary | `artifacts/summary.txt` | ≤ 10 KB | Key=value metadata written during container execution |
 | Command logs | `artifacts/command-*.log` | ≤ 8 KB each | Redacted command output; each command produces one log file |
 | Patch command log | `artifacts/patch-command.log` | ≤ 8 KB | When a patch command script is configured |
+| Claude turn telemetry | `artifacts/claude-turn-budget.json` | < 4 KB | Effective value/source/mode/outcome; trustworthy count only |
+| Claude max-turn checkpoint | `artifacts/claude-max-turn-checkpoint.{json,diff,status}` | 512 KiB default total, 1 MiB hard cap | Failed-task, tracked-only, secret-scanned local recovery evidence |
 | Execution proof | `artifacts/execution-proof.json` | ≤ 5 KB | Deterministic execution proof (EPv2) |
 
 ### Cleanup safety

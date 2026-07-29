@@ -1,6 +1,6 @@
 import { createHash } from "node:crypto";
 import { readFileSync } from "node:fs";
-import { chmod, chown, mkdir, writeFile, readdir, readFile, stat } from "node:fs/promises";
+import { chmod, chown, lstat, mkdir, writeFile, readdir, readFile, stat } from "node:fs/promises";
 import { basename, join, relative, resolve } from "node:path";
 import { runContainerWithRetry } from "./container-retry.js";
 import { pruneFailureOutputLogs, writeFailureOutputLog } from "./failure-output-log.js";
@@ -16,7 +16,7 @@ import { buildExecutionProof } from "./execution-proof.js";
 import { detectEmbeddedModelTimeoutNoFallback } from "./failure-classification.js";
 import { redactAndBound, redactSecrets } from "./redaction.js";
 export { RESULT_STREAM_LIMIT, redactAndBound, redactSecrets } from "./redaction.js";
-import type { ArtifactEvidencePart, ArtifactManifest, ArtifactManifestEntry, ArtifactManifestStatus, CleanupRehearsalEvidence, GitHubCommentProjection, GitHubCommentProjectionKind, NormalizedRunnerTask, ResultSummary, RunnerBudgetEvidence, RunnerConfig, RunnerContainedSubagentRole, RunnerContinuationEvidence, RunnerDiffHygieneEvidence, RunnerEvidenceHints, RunnerPostPatchVerificationEvidence, RunnerReceiptTrace, RunnerReproducibilityMetadata, RunnerResult, RunnerSubagentReport, RunnerTask, SourcePublicApprovalDecision, SourcePublicApprovalPacket, SourcePublicApprovalRehearsal, SourcePublicExecutionPreflight } from "./types.js";
+import type { ArtifactEvidencePart, ArtifactManifest, ArtifactManifestEntry, ArtifactManifestStatus, CleanupRehearsalEvidence, GitHubCommentProjection, GitHubCommentProjectionKind, NormalizedRunnerTask, ResultSummary, RunnerBudgetEvidence, RunnerClaudeTurnBudgetDiagnostic, RunnerConfig, RunnerContainedSubagentRole, RunnerContinuationEvidence, RunnerDiffHygieneEvidence, RunnerEvidenceHints, RunnerPostPatchVerificationEvidence, RunnerReceiptTrace, RunnerReproducibilityMetadata, RunnerResult, RunnerSubagentReport, RunnerTask, SourcePublicApprovalDecision, SourcePublicApprovalPacket, SourcePublicApprovalRehearsal, SourcePublicExecutionPreflight } from "./types.js";
 
 export interface StructuredSubagentReportOptions {
   maxCount: number;
@@ -176,11 +176,29 @@ export async function runTask(config: RunnerConfig, task: RunnerTask): Promise<R
       })
     : undefined;
   await writeSanitizedTaskArtifact(workDir, normalizedTask);
+  const claudeTurnBudgetArtifact = await readArtifactJson<RunnerClaudeTurnBudgetDiagnostic>(
+    workDir,
+    "claude-turn-budget.json",
+    isClaudeTurnBudgetDiagnostic,
+  );
+  const claudeTurnBudget = claudeTurnBudgetArtifact
+    ?? extractClaudeTurnBudgetDiagnostic(completed.stderr);
+  const maxTurnsStopped = (
+    claudeTurnBudget?.outcome === "failure"
+    && claudeTurnBudget.failureReason === "max_turns"
+  ) || /(?:^|\n)terminal_reason=max_turns(?:\n|$)/.test(completed.stderr);
+  const safeCheckpointAvailable = maxTurnsStopped
+    && claudeTurnBudget?.checkpointRef === "artifacts/claude-max-turn-checkpoint.json"
+    && await hasSafeClaudeMaxTurnCheckpoint(workDir);
+  const checkpointRef = maxTurnsStopped
+    && safeCheckpointAvailable
+    ? "artifacts/claude-max-turn-checkpoint.json" as const
+    : undefined;
   const artifacts = await listArtifacts(workDir);
   const stdout = redactAndBound(completed.stdout);
   const stderr = redactAndBound(completed.stderr);
   const detectedPrUrl = extractPrUrl(completed.stdout);
-  const prUrl = shouldTreatDetectedPrUrlAsCanonical(
+  const prUrl = !maxTurnsStopped && shouldTreatDetectedPrUrlAsCanonical(
     normalizedTask,
     completed.stdout,
     completed.stderr,
@@ -188,7 +206,24 @@ export async function runTask(config: RunnerConfig, task: RunnerTask): Promise<R
   )
     ? detectedPrUrl
     : undefined;
-  const budgetStop = inferBudgetStopEvidence(stdout, stderr);
+  const budgetStop = inferBudgetStopEvidence(stdout, stderr)
+    ?? (maxTurnsStopped && claudeTurnBudget
+      ? {
+          budget: {
+            limitKind: "turn" as const,
+            limit: String(claudeTurnBudget.effectiveMaxTurns),
+            ...(claudeTurnBudget.turnsUsed !== undefined ? { used: String(claudeTurnBudget.turnsUsed) } : {}),
+            reason: "max_turns",
+          },
+          continuation: {
+            recommended: true,
+            requiresApproval: true,
+            ...(checkpointRef
+              ? { nextPrompt: `Deliberately verify ${checkpointRef} against its exact base commit before retrying.` }
+              : {}),
+          },
+        }
+      : undefined);
   const receiptTrace = sanitizeReceiptTrace(normalizedTask.receiptTrace ?? parseReceiptTraceEnv(normalizedTask.env));
   const postPatchVerification = await readArtifactJson<RunnerPostPatchVerificationEvidence>(workDir, "post-patch-verification.json", isPostPatchVerificationEvidence);
   const diffHygiene = await readArtifactJson<RunnerDiffHygieneEvidence>(workDir, "diff-hygiene.json", isDiffHygieneEvidence);
@@ -203,6 +238,8 @@ export async function runTask(config: RunnerConfig, task: RunnerTask): Promise<R
     postPatchVerification,
     diffHygiene,
     reproducibility,
+    claudeTurnBudget,
+    checkpointRef,
     ...(budgetStop ? budgetStop : {}),
   });
   await writeArtifactManifest(workDir, manifest);
@@ -216,11 +253,17 @@ export async function runTask(config: RunnerConfig, task: RunnerTask): Promise<R
   // treat it as success — the PR was created.  Post-PR cleanup / no-change
   // checks that fail non-zero after PR creation are not patch failures.
   // Parent: a2a-docker-runner#199
-  const prUrlRecoveredAfterNonzero = Boolean(prUrl && !completed.timedOut && completed.code !== 0);
+  const prUrlRecoveredAfterNonzero = Boolean(
+    !maxTurnsStopped && prUrl && !completed.timedOut && completed.code !== 0,
+  );
   const result: RunnerResult = {
-    ok: (completed.code === 0 && !completed.timedOut) || prUrlRecoveredAfterNonzero,
+    ok: !maxTurnsStopped && ((completed.code === 0 && !completed.timedOut) || prUrlRecoveredAfterNonzero),
     taskId: task.id,
-    status: completed.timedOut ? "timeout" : (completed.code === 0 || prUrlRecoveredAfterNonzero) ? "completed" : "failed",
+    status: completed.timedOut
+      ? "timeout"
+      : !maxTurnsStopped && (completed.code === 0 || prUrlRecoveredAfterNonzero)
+        ? "completed"
+        : "failed",
     workDir,
     exitCode: completed.code,
     signal: completed.signal,
@@ -232,7 +275,14 @@ export async function runTask(config: RunnerConfig, task: RunnerTask): Promise<R
     resultSummary,
     runnerBuild: config.buildMetadata,
     prUrl,
-    error: (completed.code === 0 && !completed.timedOut) || prUrlRecoveredAfterNonzero ? undefined : buildActionableError(engine, config.image, completed),
+    ...(claudeTurnBudget ? { claudeTurnBudget } : {}),
+    ...(maxTurnsStopped ? { terminalReason: "max_turns" as const } : {}),
+    ...(checkpointRef ? { checkpointRef } : {}),
+    error: maxTurnsStopped
+      ? `Claude Code max-turn budget exhausted; task remains failed (terminal_reason=max_turns).${checkpointRef ? ` Safe checkpoint: ${checkpointRef}.` : ""}`
+      : (completed.code === 0 && !completed.timedOut) || prUrlRecoveredAfterNonzero
+        ? undefined
+        : buildActionableError(engine, config.image, completed),
   };
 
   if (!result.ok) {
@@ -277,7 +327,9 @@ export async function runTask(config: RunnerConfig, task: RunnerTask): Promise<R
     if (github.outcome === "missing_evidence") {
       result.ok = false;
       result.status = "failed";
-      result.error = "GitHub patch task completed without PR/Done/Block evidence. Treating as failed closed until canonical evidence is available.";
+      if (!maxTurnsStopped) {
+        result.error = "GitHub patch task completed without PR/Done/Block evidence. Treating as failed closed until canonical evidence is available.";
+      }
       if (result.github.validation) {
         result.github.validation.status = result.status;
       }
@@ -836,6 +888,9 @@ export function buildResultSummary(
     manifestPath: manifest.manifestPath,
     status: manifest.status,
     ...(manifest.budget ? { budget: manifest.budget } : {}),
+    ...(manifest.claudeTurnBudget ? { claudeTurnBudget: manifest.claudeTurnBudget } : {}),
+    ...(manifest.claudeTurnBudget?.failureReason === "max_turns" ? { terminalReason: "max_turns" as const } : {}),
+    ...(manifest.checkpointRef ? { checkpointRef: manifest.checkpointRef } : {}),
     ...(manifest.receiptTrace ? { receiptTrace: manifest.receiptTrace } : {}),
     ...(manifest.continuation ? { continuation: manifest.continuation } : {}),
     ...(manifest.cleanupRehearsal ? { cleanupRehearsal: manifest.cleanupRehearsal } : {}),
@@ -850,12 +905,195 @@ export function buildResultSummary(
   };
 }
 
-async function readArtifactJson<T>(workDir: string, artifactName: string, guard: (value: unknown) => value is T): Promise<T | undefined> {
+async function readArtifactJson<T>(
+  workDir: string,
+  artifactName: string,
+  guard: (value: unknown) => value is T,
+  maxBytes = 1024 * 1024,
+): Promise<T | undefined> {
   try {
-    const parsed = JSON.parse(await readFile(join(workDir, "artifacts", artifactName), "utf8"));
+    const artifactPath = join(workDir, "artifacts", artifactName);
+    const info = await lstat(artifactPath);
+    if (!info.isFile() || info.isSymbolicLink() || info.nlink !== 1 || info.size > maxBytes) return undefined;
+    const parsed = JSON.parse(await readFile(artifactPath, "utf8"));
     return guard(parsed) ? parsed : undefined;
   } catch {
     return undefined;
+  }
+}
+
+function isClaudeTurnBudgetDiagnostic(value: unknown): value is RunnerClaudeTurnBudgetDiagnostic {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return false;
+  const entry = value as Record<string, unknown>;
+  const knownModes = new Set(["analysis", "agentic-patch", "deterministic-single-shot", "fanout-patch"]);
+  const knownSources = new Set(["canonical_default", "explicit_override"]);
+  const knownFailures = new Set(["max_turns", "claude_error", "bridge_error"]);
+  const knownOverrideKeys = new Set([
+    "A2A_CLAUDE_CODE_ANALYSIS_MAX_TURNS",
+    "A2A_CLAUDE_CODE_MAX_TURNS",
+    "A2A_CLAUDE_CODE_DETERMINISTIC_MAX_TURNS",
+    "A2A_CLAUDE_CODE_PATCH_MAX_TURNS",
+    "A2A_CLAUDE_CODE_FANOUT_MAX_TURNS",
+  ]);
+  if (entry.schemaVersion !== "a2a.claude.turn-budget.v1") return false;
+  if (!knownModes.has(String(entry.mode)) || !knownSources.has(String(entry.source))) return false;
+  if (!Number.isSafeInteger(entry.effectiveMaxTurns) || (entry.effectiveMaxTurns as number) <= 0) return false;
+  if (entry.outcome !== "success" && entry.outcome !== "failure") return false;
+  if (entry.turnsUsed !== undefined && (!Number.isSafeInteger(entry.turnsUsed) || (entry.turnsUsed as number) < 0)) return false;
+  if (entry.invocationCount !== undefined && (!Number.isSafeInteger(entry.invocationCount) || (entry.invocationCount as number) <= 0)) return false;
+  if (entry.overrideKey !== undefined && !knownOverrideKeys.has(String(entry.overrideKey))) return false;
+  if (entry.failureReason !== undefined && !knownFailures.has(String(entry.failureReason))) return false;
+  if (entry.checkpointRef !== undefined && entry.checkpointRef !== "artifacts/claude-max-turn-checkpoint.json") return false;
+  if (entry.hardCap !== undefined && (!Number.isSafeInteger(entry.hardCap) || (entry.hardCap as number) <= 0)) return false;
+  if (entry.hardCapApplied !== undefined && typeof entry.hardCapApplied !== "boolean") return false;
+  if (entry.checkpointStatus !== undefined && (
+    typeof entry.checkpointStatus !== "string"
+    || !/^[a-z][a-z0-9_]{0,63}$/.test(entry.checkpointStatus)
+  )) return false;
+  return true;
+}
+
+export function extractClaudeTurnBudgetDiagnostic(...streams: string[]): RunnerClaudeTurnBudgetDiagnostic | undefined {
+  const prefix = "claude_turn_budget=";
+  for (const stream of [...streams].reverse()) {
+    const lines = stream.split(/\r?\n/);
+    for (let index = lines.length - 1; index >= 0; index -= 1) {
+      const line = lines[index];
+      if (!line.startsWith(prefix)) continue;
+      try {
+        const parsed: unknown = JSON.parse(line.slice(prefix.length));
+        if (isClaudeTurnBudgetDiagnostic(parsed)) return parsed;
+      } catch {
+        // Ignore malformed or model-controlled lookalikes.
+      }
+    }
+  }
+  return undefined;
+}
+
+interface ClaudeMaxTurnCheckpoint {
+  schemaVersion: "a2a.claude.max-turn-checkpoint.v1";
+  createdAt: "1970-01-01T00:00:00.000Z";
+  checkpointId: string;
+  reason: "max_turns";
+  resumable: true;
+  repository?: string;
+  base: { ref: string; commit: string };
+  head: { ref: string; commit: string };
+  changedPaths: string[];
+  diffPath: "artifacts/claude-max-turn-checkpoint.diff";
+  statusPath: "artifacts/claude-max-turn-checkpoint.status";
+  includesUntracked: false;
+  pushPerformed: false;
+  pullRequestOpened: false;
+  taskSucceeded: false;
+  evidenceGatesBypassed: false;
+  secretScan: { status: "passed"; scanner: "a2a-checkpoint-pattern-v1" };
+  limits: { maxBytes: number; diffBytes: number; statusBytes: number };
+}
+
+function isSafeCheckpointPath(value: unknown): value is string {
+  if (typeof value !== "string" || value.length === 0 || value.length > 1024) return false;
+  const path = value.replace(/\\/g, "/");
+  if (path.startsWith("/") || /^[A-Za-z]:\//.test(path) || /[\u0000-\u001f\u007f]/.test(path)) return false;
+  return path.split("/").every((part) => part !== "" && part !== "." && part !== "..");
+}
+
+function isClaudeMaxTurnCheckpoint(value: unknown): value is ClaudeMaxTurnCheckpoint {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return false;
+  const entry = value as Record<string, unknown>;
+  const base = entry.base as Record<string, unknown> | undefined;
+  const head = entry.head as Record<string, unknown> | undefined;
+  const secretScan = entry.secretScan as Record<string, unknown> | undefined;
+  const limits = entry.limits as Record<string, unknown> | undefined;
+  const changedPaths = entry.changedPaths;
+  const safeRef = (ref: unknown) => typeof ref === "string"
+    && ref.length > 0
+    && ref.length <= 240
+    && /^[A-Za-z0-9._/-]+$/.test(ref)
+    && !ref.startsWith("/")
+    && !ref.split("/").includes("..");
+  const safeCommit = (commit: unknown) => typeof commit === "string" && /^[a-f0-9]{40,64}$/.test(commit);
+  const safeSize = (size: unknown) => Number.isSafeInteger(size) && (size as number) >= 0;
+  const knownKeys = new Set([
+    "schemaVersion", "createdAt", "checkpointId", "reason", "resumable", "repository",
+    "base", "head", "changedPaths", "diffPath", "statusPath", "includesUntracked",
+    "pushPerformed", "pullRequestOpened", "taskSucceeded", "evidenceGatesBypassed",
+    "secretScan", "limits",
+  ]);
+  const deniedCheckpointPath = /(^|\/)(?:AGENTS\.md|SOUL\.md|USER\.md|TOOLS\.md|HEARTBEAT\.md|IDENTITY\.md)$/i;
+  const deniedCheckpointTree = /(^|\/)\.openclaw(\/|$)|(^|\/)\.env(?:\.|$)/i;
+  return entry.schemaVersion === "a2a.claude.max-turn-checkpoint.v1"
+    && Object.keys(entry).every((key) => knownKeys.has(key))
+    && entry.createdAt === "1970-01-01T00:00:00.000Z"
+    && typeof entry.checkpointId === "string"
+    && /^sha256:[a-f0-9]{64}$/.test(entry.checkpointId)
+    && entry.reason === "max_turns"
+    && entry.resumable === true
+    && (entry.repository === undefined
+      || (typeof entry.repository === "string" && /^[A-Za-z0-9_.-]+\/[A-Za-z0-9_.-]+$/.test(entry.repository)))
+    && Boolean(base)
+    && Object.keys(base!).length === 2
+    && Object.keys(base!).every((key) => key === "ref" || key === "commit")
+    && safeRef(base?.ref)
+    && safeCommit(base?.commit)
+    && Boolean(head)
+    && Object.keys(head!).length === 2
+    && Object.keys(head!).every((key) => key === "ref" || key === "commit")
+    && safeRef(head?.ref)
+    && safeCommit(head?.commit)
+    && Array.isArray(changedPaths)
+    && changedPaths.length > 0
+    && changedPaths.length <= 2048
+    && changedPaths.every(isSafeCheckpointPath)
+    && changedPaths.every((path, index) => index === 0 || changedPaths[index - 1] < path)
+    && changedPaths.every((path) => !deniedCheckpointPath.test(path) && !deniedCheckpointTree.test(path))
+    && entry.diffPath === "artifacts/claude-max-turn-checkpoint.diff"
+    && entry.statusPath === "artifacts/claude-max-turn-checkpoint.status"
+    && entry.includesUntracked === false
+    && entry.pushPerformed === false
+    && entry.pullRequestOpened === false
+    && entry.taskSucceeded === false
+    && entry.evidenceGatesBypassed === false
+    && Boolean(secretScan)
+    && Object.keys(secretScan!).length === 2
+    && Object.keys(secretScan!).every((key) => key === "status" || key === "scanner")
+    && secretScan?.status === "passed"
+    && secretScan.scanner === "a2a-checkpoint-pattern-v1"
+    && Boolean(limits)
+    && Object.keys(limits!).length === 3
+    && Object.keys(limits!).every((key) => key === "maxBytes" || key === "diffBytes" || key === "statusBytes")
+    && safeSize(limits?.maxBytes)
+    && (limits?.maxBytes as number) > 0
+    && (limits?.maxBytes as number) <= 1024 * 1024
+    && safeSize(limits?.diffBytes)
+    && safeSize(limits?.statusBytes);
+}
+
+async function hasSafeClaudeMaxTurnCheckpoint(workDir: string): Promise<boolean> {
+  const checkpoint = await readArtifactJson<ClaudeMaxTurnCheckpoint>(
+    workDir,
+    "claude-max-turn-checkpoint.json",
+    isClaudeMaxTurnCheckpoint,
+  );
+  if (!checkpoint) return false;
+  try {
+    const [manifestInfo, diffInfo, statusInfo] = await Promise.all([
+      lstat(join(workDir, "artifacts", "claude-max-turn-checkpoint.json")),
+      lstat(join(workDir, "artifacts", "claude-max-turn-checkpoint.diff")),
+      lstat(join(workDir, "artifacts", "claude-max-turn-checkpoint.status")),
+    ]);
+    const safeFile = (info: Awaited<ReturnType<typeof lstat>>) => (
+      info.isFile() && !info.isSymbolicLink() && info.nlink === 1
+    );
+    return safeFile(manifestInfo)
+      && safeFile(diffInfo)
+      && safeFile(statusInfo)
+      && diffInfo.size === checkpoint.limits.diffBytes
+      && statusInfo.size === checkpoint.limits.statusBytes
+      && manifestInfo.size + diffInfo.size + statusInfo.size <= checkpoint.limits.maxBytes;
+  } catch {
+    return false;
   }
 }
 
@@ -961,6 +1199,8 @@ export interface ArtifactManifestContext {
   stderr?: string;
   prUrl?: string;
   budget?: RunnerBudgetEvidence;
+  claudeTurnBudget?: RunnerClaudeTurnBudgetDiagnostic;
+  checkpointRef?: "artifacts/claude-max-turn-checkpoint.json";
   receiptTrace?: RunnerReceiptTrace;
   continuation?: RunnerContinuationEvidence;
   postPatchVerification?: RunnerPostPatchVerificationEvidence;
@@ -1006,6 +1246,8 @@ export async function buildArtifactManifest(workDir: string, artifacts: string[]
     evidence,
     artifacts: entries,
     ...(context.budget ? { budget: context.budget } : {}),
+    ...(context.claudeTurnBudget ? { claudeTurnBudget: context.claudeTurnBudget } : {}),
+    ...(context.checkpointRef ? { checkpointRef: context.checkpointRef } : {}),
     ...(context.receiptTrace ? { receiptTrace: context.receiptTrace } : {}),
     ...(context.continuation ? { continuation: context.continuation } : {}),
     ...(context.postPatchVerification ? { postPatchVerification: context.postPatchVerification } : {}),
@@ -1403,7 +1645,7 @@ function extractBudgetField(text: string, field: "limitKind" | "limit" | "used" 
 }
 
 function isRunnerBudgetLimitKind(value: string | undefined): value is RunnerBudgetEvidence["limitKind"] {
-  return value === "time" || value === "token" || value === "attempt" || value === "command" || value === "safety";
+  return value === "time" || value === "token" || value === "turn" || value === "attempt" || value === "command" || value === "safety";
 }
 
 function safeBudgetText(value: string | undefined, limit = 160): string | undefined {
