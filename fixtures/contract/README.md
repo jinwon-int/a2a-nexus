@@ -17,5 +17,6 @@ Fixture set:
 - `a2a-spec-first-taskflow-runtime-dryrun.json` — dry-run runtime rehearsal packet that validates the managed flow draft without creating live TaskFlow jobs.
 - `adapter-receipt-capability.json` — six-level adapter receipt capability contract fixture (C1–C6) for non-OpenClaw/Hermes/spool Terminal Brief adapters, mapping adapter states to the four frozen receipt levels and enforcing the produced/spooled/provider-only non-ACK boundary.
 - `bounded-pr-review-lifecycle.json` — bounded PR review lifecycle lineage (#1518 Phase 1): frozen IntentContractV1 with canonical intentHash, global ReviewLineageBudgetV1, FindingLedgerV1 with stable finding dispositions, and an extended ReviewReceiptV1 bound to headSha/diffHash/intentHash plus a dispatcher-declared trusted author.
+- `task-attempt-failure-sharing.json` — source-only P2-B golden vectors for closed public-safe broker execution outcomes and explicit bounded-experiment dispositions, deterministic identity/fingerprint framing, replay/conflict behavior, and non-authoritative failure-history projections.
 
 Do not add secrets, host-specific paths, OpenClaw runtime/bootstrap files, raw session dumps, live provider payloads, or terminal ACK mutation records to these fixtures.
