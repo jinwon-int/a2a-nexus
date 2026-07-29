@@ -224,6 +224,49 @@ test("task parser rejects negative, fractional, over-bound, and unsafe counts", 
   }
 });
 
+test("built bin emits one stable non-reflecting error for CLI-profile policy budget bounds", () => {
+  const fixtures = negativeManifest.cases.filter((fixture) =>
+    fixture.id === "unsafe-policy-max-tasks-per-day" ||
+    fixture.id === "over-profile-policy-max-tasks-per-day"
+  );
+  assert.equal(fixtures.length, 2);
+
+  const work = mkdtempSync(join(tmpdir(), "policy-referee-budget-bound-"));
+  try {
+    const taskPath = join(work, "task.json");
+    const workerPath = join(work, "worker.json");
+    writeJson(taskPath, {
+      schemaVersion: "a2a.policy-referee.task.v1",
+      intent: "analyze",
+      evaluationPoint: "create",
+    });
+    writeJson(workerPath, {
+      schemaVersion: "a2a.policy-referee.worker.v1",
+      workerClass: "mobile",
+    });
+
+    for (const fixture of fixtures) {
+      const policyPath = join(work, `${fixture.id}.policy.json`);
+      writeJson(policyPath, fixture.value);
+      const result = spawnSync(
+        process.execPath,
+        [cliPath, "check", policyPath, taskPath, workerPath],
+        { encoding: "utf8" },
+      );
+      assert.equal(result.status, POLICY_REFEREE_EXIT.invalidInput, fixture.id);
+      assert.equal(result.stdout, "", fixture.id);
+      assert.equal(result.stderr, `${JSON.stringify({
+        schemaVersion: POLICY_REFEREE_ERROR_SCHEMA,
+        code: "invalid_integer",
+        input: "policy",
+        path: "$.rules[].maxTasksPerDay",
+      })}\n`, fixture.id);
+    }
+  } finally {
+    rmSync(work, { recursive: true, force: true });
+  }
+});
+
 test("decision projection classifies evaluator precedence without reflecting reasons", () => {
   const marker = "do-not-reflect-marker";
   const projected = projectPolicyRefereeDecision("warn", {

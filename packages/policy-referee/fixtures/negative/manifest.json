@@ -88,6 +88,48 @@
       }
     },
     {
+      "id": "unsafe-policy-max-tasks-per-day",
+      "input": "policy",
+      "value": {
+        "schemaVersion": "a2a.broker.policy.v1",
+        "mode": "warn",
+        "defaultAction": "allow",
+        "rules": [
+          {
+            "id": "daily-budget",
+            "workerClass": "mobile",
+            "maxTasksPerDay": 9007199254740992
+          }
+        ]
+      },
+      "expected": {
+        "code": "invalid_integer",
+        "input": "policy",
+        "path": "$.rules[].maxTasksPerDay"
+      }
+    },
+    {
+      "id": "over-profile-policy-max-tasks-per-day",
+      "input": "policy",
+      "value": {
+        "schemaVersion": "a2a.broker.policy.v1",
+        "mode": "warn",
+        "defaultAction": "allow",
+        "rules": [
+          {
+            "id": "daily-budget",
+            "workerClass": "mobile",
+            "maxTasksPerDay": 1000001
+          }
+        ]
+      },
+      "expected": {
+        "code": "invalid_integer",
+        "input": "policy",
+        "path": "$.rules[].maxTasksPerDay"
+      }
+    },
+    {
       "id": "arbitrary-implementation-blocker",
       "input": "worker",
       "value": {

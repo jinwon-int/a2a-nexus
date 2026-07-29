@@ -271,6 +271,15 @@ export function parsePolicyRefereePolicyDocument(value: unknown): BrokerPolicyDo
     inputError("invalid_policy", "policy", "$");
   }
   for (const rule of policy.rules) {
+    if (
+      rule.maxTasksPerDay !== undefined &&
+      (
+        !Number.isSafeInteger(rule.maxTasksPerDay) ||
+        rule.maxTasksPerDay > POLICY_REFEREE_MAX_TASKS_TODAY
+      )
+    ) {
+      inputError("invalid_integer", "policy", "$.rules[].maxTasksPerDay");
+    }
     for (const intent of rule.allowIntents ?? []) {
       canonicalToken(intent, "policy", "$.rules[].allowIntents[]");
     }

@@ -62,6 +62,11 @@ This permits established values such as `propose_patch`,
 paths, hostnames, URLs, header values, payloads, or credential-shaped
 transport data.
 
+The offline CLI profile also bounds each `maxTasksPerDay` to a safe integer
+from `1` through `1000000`, consistent with the `tasksToday` upper bound. This
+wrapper-only restriction does not change the shared broker policy validator or
+evaluator semantics.
+
 ### Task envelope
 
 `TASK.json` has the closed versioned shape:
