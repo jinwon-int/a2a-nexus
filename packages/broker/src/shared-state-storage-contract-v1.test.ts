@@ -12,6 +12,7 @@ import {
   parseSharedStateTransactionResultV1,
   validateSharedStateStorageOpenCompatibilityV1,
   type SharedStateContractErrorCodeV1,
+  type SharedStateDigestDomainV1,
   type SharedStateOperationV1,
   type SharedStateParseResultV1,
   type SharedStateTransactionCommandV1,
@@ -19,7 +20,12 @@ import {
   type SharedStateWriterModelV1,
 } from "./shared-state-storage-contract-v1.js";
 
-const digest = (digit: string): string => `sha256:${digit.repeat(64)}`;
+const digest = (
+  domain: SharedStateDigestDomainV1,
+  namespace: string,
+  digit: string,
+): string =>
+  `${V.versions.keyspace}|${domain}|${namespace}|sha256:${digit.repeat(64)}`;
 
 const consistency = {
   kind: V.kinds.consistency,
@@ -196,9 +202,9 @@ const sharedHealth = {
 
 const leaseAuthority = {
   namespace: "broker.lease",
-  resourceKeyDigest: digest("1"),
-  ownerKeyDigest: digest("2"),
-  attemptKeyDigest: digest("3"),
+  resourceKeyDigest: digest("broker.lease.resource-key", "broker.lease", "1"),
+  ownerKeyDigest: digest("broker.lease.owner-key", "broker.lease", "2"),
+  attemptKeyDigest: digest("broker.lease.attempt-key", "broker.lease", "3"),
   fencingToken: "7",
   expectedResourceVersion: "6",
 };
@@ -206,21 +212,29 @@ const leaseAuthority = {
 const commandInputs = {
   consumeReplayNonce: {
     namespace: "security.replay",
-    keyDigest: digest("1"),
-    nonceDigest: digest("2"),
+    keyDigest: digest(
+      "security.replay.requester-key",
+      "security.replay",
+      "1",
+    ),
+    nonceDigest: digest("security.replay.nonce", "security.replay", "2"),
     ttlMs: 60_000,
   },
   reserveRateLimitCost: {
     namespace: "security.rate-limit",
-    bucketKeyDigest: digest("3"),
+    bucketKeyDigest: digest(
+      "security.rate-limit.bucket-key",
+      "security.rate-limit",
+      "3",
+    ),
     cost: 1,
     limit: 100,
     windowMs: 60_000,
   },
   claimLease: {
     namespace: "broker.lease",
-    resourceKeyDigest: digest("1"),
-    ownerKeyDigest: digest("2"),
+    resourceKeyDigest: digest("broker.lease.resource-key", "broker.lease", "1"),
+    ownerKeyDigest: digest("broker.lease.owner-key", "broker.lease", "2"),
     leaseDurationMs: 30_000,
     expectedResourceVersion: "0",
   },
@@ -231,7 +245,7 @@ const commandInputs = {
   mutateWithFence: {
     ...leaseAuthority,
     mutationKind: "checkpoint",
-    mutationDigest: digest("4"),
+    mutationDigest: digest("broker.lease.mutation", "broker.lease", "4"),
   },
   releaseLease: {
     ...leaseAuthority,
@@ -239,54 +253,110 @@ const commandInputs = {
   },
   executeIdempotent: {
     namespace: "broker.idempotency",
-    keyDigest: digest("4"),
-    payloadFingerprint: digest("5"),
+    keyDigest: digest(
+      "broker.idempotency.key",
+      "broker.idempotency",
+      "4",
+    ),
+    payloadFingerprint: digest(
+      "broker.idempotency.payload-fingerprint",
+      "broker.idempotency",
+      "5",
+    ),
     retentionPolicyVersion: "terminal-effects.v1",
     effect: {
       kind: "domain-mutation-with-outbox",
-      domainMutationDigest: digest("6"),
+      domainMutationDigest: digest(
+        "broker.idempotency.domain-mutation",
+        "broker.idempotency",
+        "6",
+      ),
       outbox: {
-        streamKeyDigest: digest("7"),
-        eventKeyDigest: digest("8"),
-        payloadDigest: digest("9"),
+        streamKeyDigest: digest(
+          "broker.outbox.stream-key",
+          "broker.idempotency",
+          "7",
+        ),
+        eventKeyDigest: digest(
+          "broker.outbox.event-key",
+          "broker.idempotency",
+          "8",
+        ),
+        payloadDigest: digest(
+          "broker.outbox.payload",
+          "broker.idempotency",
+          "9",
+        ),
         retentionPolicyVersion: "terminal-outbox.v1",
       },
     },
   },
   appendOutbox: {
     namespace: "broker.outbox",
-    streamKeyDigest: digest("7"),
-    idempotencyKeyDigest: digest("4"),
-    eventKeyDigest: digest("8"),
-    payloadDigest: digest("9"),
+    streamKeyDigest: digest("broker.outbox.stream-key", "broker.outbox", "7"),
+    idempotencyKeyDigest: digest(
+      "broker.outbox.idempotency-key",
+      "broker.outbox",
+      "4",
+    ),
+    eventKeyDigest: digest("broker.outbox.event-key", "broker.outbox", "8"),
+    payloadDigest: digest("broker.outbox.payload", "broker.outbox", "9"),
     retentionPolicyVersion: "terminal-outbox.v1",
   },
   updateOutboxReceipt: {
     namespace: "broker.outbox",
-    eventKeyDigest: digest("8"),
-    receiptEvidenceDigest: digest("a"),
+    eventKeyDigest: digest("broker.outbox.event-key", "broker.outbox", "8"),
+    receiptEvidenceDigest: digest(
+      "broker.outbox.receipt-evidence",
+      "broker.outbox",
+      "a",
+    ),
     expectedReceiptState: "pending",
     newReceiptState: "confirmed",
   },
   acknowledgeOutbox: {
     namespace: "broker.outbox",
-    eventKeyDigest: digest("8"),
-    receiptEvidenceDigest: digest("a"),
+    eventKeyDigest: digest("broker.outbox.event-key", "broker.outbox", "8"),
+    receiptEvidenceDigest: digest(
+      "broker.outbox.receipt-evidence",
+      "broker.outbox",
+      "a",
+    ),
     expectedAcknowledgmentState: "unacknowledged",
   },
   appendGraphSource: {
     namespace: "broker.claim-graph",
-    sourceStreamKeyDigest: digest("b"),
-    sourceFactDigest: digest("c"),
+    sourceStreamKeyDigest: digest(
+      "broker.claim-graph.source-stream-key",
+      "broker.claim-graph",
+      "b",
+    ),
+    sourceFactDigest: digest(
+      "broker.claim-graph.source-fact",
+      "broker.claim-graph",
+      "c",
+    ),
     nodeType: "Claim",
     expectedSourceSequence: "0",
   },
   applyGraphProjectionBatch: {
     namespace: "broker.claim-graph",
     projectionVersion: "claim-graph.v1",
-    batchKeyDigest: digest("d"),
-    batchDigest: digest("e"),
-    inverseDigest: digest("f"),
+    batchKeyDigest: digest(
+      "broker.claim-graph.projection-batch-key",
+      "broker.claim-graph",
+      "d",
+    ),
+    batchDigest: digest(
+      "broker.claim-graph.projection-batch",
+      "broker.claim-graph",
+      "e",
+    ),
+    inverseDigest: digest(
+      "broker.claim-graph.projection-inverse",
+      "broker.claim-graph",
+      "f",
+    ),
     sourceSequenceFrom: "1",
     sourceSequenceThrough: "4",
     expectedCheckpointSequence: "0",
@@ -294,9 +364,21 @@ const commandInputs = {
   rollbackGraphProjectionBatch: {
     namespace: "broker.claim-graph",
     projectionVersion: "claim-graph.v1",
-    batchKeyDigest: digest("d"),
-    rollbackBatchKeyDigest: digest("e"),
-    inverseDigest: digest("f"),
+    batchKeyDigest: digest(
+      "broker.claim-graph.projection-batch-key",
+      "broker.claim-graph",
+      "d",
+    ),
+    rollbackBatchKeyDigest: digest(
+      "broker.claim-graph.rollback-batch-key",
+      "broker.claim-graph",
+      "e",
+    ),
+    inverseDigest: digest(
+      "broker.claim-graph.projection-inverse",
+      "broker.claim-graph",
+      "f",
+    ),
     expectedCheckpointSequence: "4",
   },
 } as const satisfies Record<SharedStateOperationV1, unknown>;
@@ -313,7 +395,7 @@ const committedResults = {
   },
   claimLease: {
     decision: "claimed",
-    attemptKeyDigest: digest("3"),
+    attemptKeyDigest: digest("broker.lease.attempt-key", "broker.lease", "3"),
     fencingToken: "1",
     resourceVersion: "1",
     leaseExpiresInMs: 30_000,
@@ -333,11 +415,15 @@ const committedResults = {
   },
   executeIdempotent: {
     decision: "executed",
-    outcomeDigest: digest("6"),
+    outcomeDigest: digest(
+      "broker.idempotency.outcome",
+      "broker.idempotency",
+      "6",
+    ),
   },
   appendOutbox: {
     decision: "appended",
-    eventKeyDigest: digest("8"),
+    eventKeyDigest: digest("broker.outbox.event-key", "broker.outbox", "8"),
     streamSequence: "1",
   },
   updateOutboxReceipt: {
@@ -610,11 +696,19 @@ test("parses every alternate committed decision variant", () => {
     },
     executeIdempotent: {
       decision: "replayed",
-      outcomeDigest: digest("6"),
+      outcomeDigest: digest(
+        "broker.idempotency.outcome",
+        "broker.idempotency",
+        "6",
+      ),
     },
     appendOutbox: {
       decision: "replayed",
-      eventKeyDigest: digest("8"),
+      eventKeyDigest: digest(
+        "broker.outbox.event-key",
+        "broker.outbox",
+        "8",
+      ),
       streamSequence: "1",
     },
     acknowledgeOutbox: {
@@ -754,6 +848,132 @@ test("fails closed on unknown fields and invalid discriminants", () => {
     "operation_result_mismatch",
     ["result"],
   );
+});
+
+test("transaction fields enforce keyspace version, purpose domain, and namespace", () => {
+  const validCommand = command("consumeReplayNonce") as Record<string, unknown>;
+  const validInput = validCommand.input as Record<string, unknown>;
+  const keyDigest = validInput.keyDigest as string;
+
+  expectError(
+    parseSharedStateTransactionCommandV1({
+      ...validCommand,
+      input: {
+        ...validInput,
+        keyDigest: keyDigest.replace(
+          "security.replay.requester-key",
+          "security.replay.nonce",
+        ),
+      },
+    }),
+    "digest_domain_mismatch",
+    ["input", "keyDigest"],
+  );
+  expectError(
+    parseSharedStateTransactionCommandV1({
+      ...validCommand,
+      input: {
+        ...validInput,
+        keyDigest: keyDigest.replace(
+          "|security.replay|sha256:",
+          "|security.other|sha256:",
+        ),
+      },
+    }),
+    "digest_namespace_mismatch",
+    ["input", "keyDigest"],
+  );
+  expectError(
+    parseSharedStateTransactionCommandV1({
+      ...validCommand,
+      input: {
+        ...validInput,
+        keyDigest: keyDigest.replace(
+          V.versions.keyspace,
+          "a2a.shared-state.keyspace/v2",
+        ),
+      },
+    }),
+    "unknown_keyspace_version",
+    ["input", "keyDigest"],
+  );
+  expectError(
+    parseSharedStateTransactionCommandV1({
+      ...validCommand,
+      input: {
+        ...validInput,
+        keyDigest: keyDigest.replace(
+          "security.replay.requester-key",
+          "security.replay.unknown",
+        ),
+      },
+    }),
+    "unknown_digest_domain",
+    ["input", "keyDigest"],
+  );
+  expectError(
+    parseSharedStateTransactionCommandV1({
+      ...validCommand,
+      input: {
+        ...validInput,
+        keyDigest: `sha256:${"0".repeat(64)}`,
+      },
+    }),
+    "invalid_digest",
+    ["input", "keyDigest"],
+  );
+});
+
+test("every registered operation digest field rejects a cross-domain token", () => {
+  const domains = Object.keys(V.digestDomains) as SharedStateDigestDomainV1[];
+  for (const [domain, specification] of Object.entries(V.digestDomains)) {
+    const wrongDomain = domains.find((candidate) => candidate !== domain);
+    assert.ok(wrongDomain);
+    for (const location of specification.operationFields) {
+      const [rawOperation, section, ...relativePath] = location.split(".");
+      const operation = rawOperation as SharedStateOperationV1;
+      const envelope =
+        section === "input"
+          ? structuredClone(command(operation))
+          : structuredClone(
+              transactionResult(operation, {
+                status: "committed",
+                completeness: "complete",
+                result: committedResults[operation],
+              }),
+            );
+      assert.equal(typeof envelope, "object");
+      assert.notEqual(envelope, null);
+      let parent = envelope as Record<string, unknown>;
+      const path = [section, ...relativePath];
+      for (const segment of path.slice(0, -1)) {
+        const nested = parent[segment];
+        assert.equal(typeof nested, "object", location);
+        assert.notEqual(nested, null, location);
+        parent = nested as Record<string, unknown>;
+      }
+      const field = path[path.length - 1] as string;
+      const current = parent[field];
+      if (typeof current !== "string") {
+        assert.fail(`${location} must resolve to a digest string`);
+      }
+      parent[field] = current.replace(`|${domain}|`, `|${wrongDomain}|`);
+
+      if (section === "input") {
+        expectError(
+          parseSharedStateTransactionCommandV1(envelope),
+          "digest_domain_mismatch",
+          path,
+        );
+      } else {
+        expectError(
+          parseSharedStateTransactionResultV1(envelope),
+          "digest_domain_mismatch",
+          path,
+        );
+      }
+    }
+  }
 });
 
 test("fails closed on capability downgrades and invalid backend combinations", () => {
@@ -898,7 +1118,11 @@ test("health/readiness projection rejects identities, digests, paths, and incons
         ...legacyHealth.primitives,
         replay: {
           ...legacyHealth.primitives.replay,
-          nonceDigest: digest("1"),
+          nonceDigest: digest(
+            "security.replay.nonce",
+            "security.replay",
+            "1",
+          ),
         },
       },
     }),

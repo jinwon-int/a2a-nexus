@@ -1,0 +1,387 @@
+{
+  "$schema": "https://example.invalid/a2a/shared-state-keyspace-v1-golden.schema.json",
+  "fixtureVersion": 1,
+  "keyspaceVersion": "a2a.shared-state.keyspace/v1",
+  "algorithm": "sha256",
+  "description": "Public non-secret golden vectors. Every raw value is synthetic test material.",
+  "vectors": [
+    {
+      "id": "synthetic-01",
+      "domain": "security.replay.requester-key",
+      "namespace": "fixture.synthetic",
+      "components": [
+        {
+          "field": "requesterId",
+          "type": "utf8",
+          "value": "synthetic-café|requester"
+        }
+      ],
+      "canonicalHex": "4132412d53534b01001c6132612e7368617265642d73746174652e6b657973706163652f7631001d73656375726974792e7265706c61792e7265717565737465722d6b65790011666978747572652e73796e7468657469630001000b7265717565737465724964010000001973796e7468657469632d636166c3a97c726571756573746572",
+      "digest": "a2a.shared-state.keyspace/v1|security.replay.requester-key|fixture.synthetic|sha256:302c32d2001a9f219b744debdef7cbbadfe019f9aa93719d541eaba44f41de4f"
+    },
+    {
+      "id": "synthetic-02",
+      "domain": "security.replay.nonce",
+      "namespace": "fixture.synthetic",
+      "components": [
+        {
+          "field": "nonce",
+          "type": "utf8",
+          "value": "synthetic:nonce|001"
+        }
+      ],
+      "canonicalHex": "4132412d53534b01001c6132612e7368617265642d73746174652e6b657973706163652f7631001573656375726974792e7265706c61792e6e6f6e63650011666978747572652e73796e746865746963000100056e6f6e6365010000001373796e7468657469633a6e6f6e63657c303031",
+      "digest": "a2a.shared-state.keyspace/v1|security.replay.nonce|fixture.synthetic|sha256:71ec06369be8f0869231c85e561970aef19c1b029134c3398991e27701cf022f"
+    },
+    {
+      "id": "synthetic-03",
+      "domain": "security.rate-limit.bucket-key",
+      "namespace": "fixture.synthetic",
+      "components": [
+        {
+          "field": "principal",
+          "type": "utf8",
+          "value": "synthetic|principal"
+        },
+        {
+          "field": "route",
+          "type": "utf8",
+          "value": "route|alpha"
+        }
+      ],
+      "canonicalHex": "4132412d53534b01001c6132612e7368617265642d73746174652e6b657973706163652f7631001e73656375726974792e726174652d6c696d69742e6275636b65742d6b65790011666978747572652e73796e746865746963000200097072696e636970616c010000001373796e7468657469637c7072696e636970616c0005726f757465010000000b726f7574657c616c706861",
+      "digest": "a2a.shared-state.keyspace/v1|security.rate-limit.bucket-key|fixture.synthetic|sha256:d9cc3eb9715af6eaea571a9d440fcfd7b7684bbc386bc7f3874aba64e89200e3"
+    },
+    {
+      "id": "synthetic-04",
+      "domain": "broker.lease.resource-key",
+      "namespace": "fixture.synthetic",
+      "components": [
+        {
+          "field": "resourceType",
+          "type": "utf8",
+          "value": "task|queue"
+        },
+        {
+          "field": "resourceId",
+          "type": "utf8",
+          "value": "synthetic:task:001"
+        }
+      ],
+      "canonicalHex": "4132412d53534b01001c6132612e7368617265642d73746174652e6b657973706163652f7631001962726f6b65722e6c656173652e7265736f757263652d6b65790011666978747572652e73796e7468657469630002000c7265736f7572636554797065010000000a7461736b7c7175657565000a7265736f757263654964010000001273796e7468657469633a7461736b3a303031",
+      "digest": "a2a.shared-state.keyspace/v1|broker.lease.resource-key|fixture.synthetic|sha256:e0bced962b8c929759cb2fffbbe0f57905d5be1a8fcab004b16d08629690ab52"
+    },
+    {
+      "id": "synthetic-05",
+      "domain": "broker.lease.owner-key",
+      "namespace": "fixture.synthetic",
+      "components": [
+        {
+          "field": "ownerId",
+          "type": "utf8",
+          "value": "synthetic-worker-001"
+        }
+      ],
+      "canonicalHex": "4132412d53534b01001c6132612e7368617265642d73746174652e6b657973706163652f7631001662726f6b65722e6c656173652e6f776e65722d6b65790011666978747572652e73796e746865746963000100076f776e65724964010000001473796e7468657469632d776f726b65722d303031",
+      "digest": "a2a.shared-state.keyspace/v1|broker.lease.owner-key|fixture.synthetic|sha256:04a095a46d1c906d3c68ab4bb1dbd3fbbfc5935c708afb91e1f4618b1595716a"
+    },
+    {
+      "id": "synthetic-06",
+      "domain": "broker.lease.attempt-key",
+      "namespace": "fixture.synthetic",
+      "components": [
+        {
+          "field": "resourceId",
+          "type": "utf8",
+          "value": "synthetic:task:001"
+        },
+        {
+          "field": "attemptNumber",
+          "type": "uint",
+          "value": 7
+        }
+      ],
+      "canonicalHex": "4132412d53534b01001c6132612e7368617265642d73746174652e6b657973706163652f7631001862726f6b65722e6c656173652e617474656d70742d6b65790011666978747572652e73796e7468657469630002000a7265736f757263654964010000001273796e7468657469633a7461736b3a303031000d617474656d70744e756d626572020000001000000000000000000000000000000007",
+      "digest": "a2a.shared-state.keyspace/v1|broker.lease.attempt-key|fixture.synthetic|sha256:60b6627f61f92325571974943f8346fbc8b985c085cbf64453794eb6a32a64f5"
+    },
+    {
+      "id": "synthetic-07",
+      "domain": "broker.lease.mutation",
+      "namespace": "fixture.synthetic",
+      "components": [
+        {
+          "field": "mutationKind",
+          "type": "utf8",
+          "value": "checkpoint"
+        },
+        {
+          "field": "mutationBody",
+          "type": "bytes",
+          "value": "53594E5448455449432D4D55544154494F4E"
+        }
+      ],
+      "canonicalHex": "4132412d53534b01001c6132612e7368617265642d73746174652e6b657973706163652f7631001562726f6b65722e6c656173652e6d75746174696f6e0011666978747572652e73796e7468657469630002000c6d75746174696f6e4b696e64010000000a636865636b706f696e74000c6d75746174696f6e426f6479030000001253594e5448455449432d4d55544154494f4e",
+      "digest": "a2a.shared-state.keyspace/v1|broker.lease.mutation|fixture.synthetic|sha256:640846dd730d8c708d138084900f9a1e8d3c28d2e293fb8301eabbaca7e6c4c4"
+    },
+    {
+      "id": "synthetic-08",
+      "domain": "broker.idempotency.key",
+      "namespace": "fixture.synthetic",
+      "components": [
+        {
+          "field": "operationName",
+          "type": "utf8",
+          "value": "synthetic.complete"
+        },
+        {
+          "field": "clientKey",
+          "type": "utf8",
+          "value": "client|001"
+        }
+      ],
+      "canonicalHex": "4132412d53534b01001c6132612e7368617265642d73746174652e6b657973706163652f7631001662726f6b65722e6964656d706f74656e63792e6b65790011666978747572652e73796e7468657469630002000d6f7065726174696f6e4e616d65010000001273796e7468657469632e636f6d706c6574650009636c69656e744b6579010000000a636c69656e747c303031",
+      "digest": "a2a.shared-state.keyspace/v1|broker.idempotency.key|fixture.synthetic|sha256:9374ef4a04abdd01e03e3c60f76d680ee8a3539a6a2e872c0e4d0b4bbde16963"
+    },
+    {
+      "id": "synthetic-09",
+      "domain": "broker.idempotency.payload-fingerprint",
+      "namespace": "fixture.synthetic",
+      "components": [
+        {
+          "field": "payload",
+          "type": "bytes",
+          "value": "53594E5448455449432D5041594C4F41442D46494E4745525052494E54"
+        }
+      ],
+      "canonicalHex": "4132412d53534b01001c6132612e7368617265642d73746174652e6b657973706163652f7631002662726f6b65722e6964656d706f74656e63792e7061796c6f61642d66696e6765727072696e740011666978747572652e73796e746865746963000100077061796c6f6164030000001d53594e5448455449432d5041594c4f41442d46494e4745525052494e54",
+      "digest": "a2a.shared-state.keyspace/v1|broker.idempotency.payload-fingerprint|fixture.synthetic|sha256:c9147eabcb6d82f9787f1ae4f87f3cc07479aa37fec62362d914a82cbe1702d6"
+    },
+    {
+      "id": "synthetic-10",
+      "domain": "broker.idempotency.domain-mutation",
+      "namespace": "fixture.synthetic",
+      "components": [
+        {
+          "field": "mutationType",
+          "type": "utf8",
+          "value": "synthetic-status"
+        },
+        {
+          "field": "mutationBody",
+          "type": "bytes",
+          "value": "53594E5448455449432D444F4D41494E2D4D55544154494F4E"
+        }
+      ],
+      "canonicalHex": "4132412d53534b01001c6132612e7368617265642d73746174652e6b657973706163652f7631002262726f6b65722e6964656d706f74656e63792e646f6d61696e2d6d75746174696f6e0011666978747572652e73796e7468657469630002000c6d75746174696f6e54797065010000001073796e7468657469632d737461747573000c6d75746174696f6e426f6479030000001953594e5448455449432d444f4d41494e2d4d55544154494f4e",
+      "digest": "a2a.shared-state.keyspace/v1|broker.idempotency.domain-mutation|fixture.synthetic|sha256:074756cce304608f8a3202096fc78b912030b10037fe6de818d513b2f812f5b6"
+    },
+    {
+      "id": "synthetic-11",
+      "domain": "broker.idempotency.outcome",
+      "namespace": "fixture.synthetic",
+      "components": [
+        {
+          "field": "outcomeType",
+          "type": "utf8",
+          "value": "synthetic-result"
+        },
+        {
+          "field": "outcomeBody",
+          "type": "bytes",
+          "value": "53594E5448455449432D4F5554434F4D45"
+        }
+      ],
+      "canonicalHex": "4132412d53534b01001c6132612e7368617265642d73746174652e6b657973706163652f7631001a62726f6b65722e6964656d706f74656e63792e6f7574636f6d650011666978747572652e73796e7468657469630002000b6f7574636f6d6554797065010000001073796e7468657469632d726573756c74000b6f7574636f6d65426f6479030000001153594e5448455449432d4f5554434f4d45",
+      "digest": "a2a.shared-state.keyspace/v1|broker.idempotency.outcome|fixture.synthetic|sha256:63cfe5c454c8adfe04747c32ff75de075d0ea537115879772608f27f557d5efd"
+    },
+    {
+      "id": "synthetic-12",
+      "domain": "broker.outbox.stream-key",
+      "namespace": "fixture.synthetic",
+      "components": [
+        {
+          "field": "streamType",
+          "type": "utf8",
+          "value": "terminal|event"
+        },
+        {
+          "field": "streamId",
+          "type": "utf8",
+          "value": "synthetic-stream-001"
+        }
+      ],
+      "canonicalHex": "4132412d53534b01001c6132612e7368617265642d73746174652e6b657973706163652f7631001862726f6b65722e6f7574626f782e73747265616d2d6b65790011666978747572652e73796e7468657469630002000a73747265616d54797065010000000e7465726d696e616c7c6576656e74000873747265616d4964010000001473796e7468657469632d73747265616d2d303031",
+      "digest": "a2a.shared-state.keyspace/v1|broker.outbox.stream-key|fixture.synthetic|sha256:a7f4fa2686316dc252c8a701a50c3b005304dfdf8c3dfdfc4c843d3bf2458409"
+    },
+    {
+      "id": "synthetic-13",
+      "domain": "broker.outbox.idempotency-key",
+      "namespace": "fixture.synthetic",
+      "components": [
+        {
+          "field": "producerId",
+          "type": "utf8",
+          "value": "synthetic-producer-001"
+        },
+        {
+          "field": "clientKey",
+          "type": "utf8",
+          "value": "client|outbox|001"
+        }
+      ],
+      "canonicalHex": "4132412d53534b01001c6132612e7368617265642d73746174652e6b657973706163652f7631001d62726f6b65722e6f7574626f782e6964656d706f74656e63792d6b65790011666978747572652e73796e7468657469630002000a70726f64756365724964010000001673796e7468657469632d70726f64756365722d3030310009636c69656e744b65790100000011636c69656e747c6f7574626f787c303031",
+      "digest": "a2a.shared-state.keyspace/v1|broker.outbox.idempotency-key|fixture.synthetic|sha256:e62db95f1f62d805f7d5f7107b3d90a49aca343ed55ed4905359b2565428729f"
+    },
+    {
+      "id": "synthetic-14",
+      "domain": "broker.outbox.event-key",
+      "namespace": "fixture.synthetic",
+      "components": [
+        {
+          "field": "eventId",
+          "type": "utf8",
+          "value": "synthetic:event:001"
+        }
+      ],
+      "canonicalHex": "4132412d53534b01001c6132612e7368617265642d73746174652e6b657973706163652f7631001762726f6b65722e6f7574626f782e6576656e742d6b65790011666978747572652e73796e746865746963000100076576656e744964010000001373796e7468657469633a6576656e743a303031",
+      "digest": "a2a.shared-state.keyspace/v1|broker.outbox.event-key|fixture.synthetic|sha256:c4b77a917f285f12c6f2087a12ec963b84ed608d48e33fc3b217057a39dd6317"
+    },
+    {
+      "id": "synthetic-15",
+      "domain": "broker.outbox.payload",
+      "namespace": "fixture.synthetic",
+      "components": [
+        {
+          "field": "payload",
+          "type": "bytes",
+          "value": "53594E5448455449432D4F5554424F582D5041594C4F4144"
+        }
+      ],
+      "canonicalHex": "4132412d53534b01001c6132612e7368617265642d73746174652e6b657973706163652f7631001562726f6b65722e6f7574626f782e7061796c6f61640011666978747572652e73796e746865746963000100077061796c6f6164030000001853594e5448455449432d4f5554424f582d5041594c4f4144",
+      "digest": "a2a.shared-state.keyspace/v1|broker.outbox.payload|fixture.synthetic|sha256:262adfeafb52f34cc11304c203a88f7007e9653feb5d121b95fcdf246d0fbd71"
+    },
+    {
+      "id": "synthetic-16",
+      "domain": "broker.outbox.receipt-evidence",
+      "namespace": "fixture.synthetic",
+      "components": [
+        {
+          "field": "provider",
+          "type": "utf8",
+          "value": "synthetic-provider"
+        },
+        {
+          "field": "evidence",
+          "type": "bytes",
+          "value": "53594E5448455449432D524543454950542D45564944454E4345"
+        }
+      ],
+      "canonicalHex": "4132412d53534b01001c6132612e7368617265642d73746174652e6b657973706163652f7631001e62726f6b65722e6f7574626f782e726563656970742d65766964656e63650011666978747572652e73796e7468657469630002000870726f7669646572010000001273796e7468657469632d70726f7669646572000865766964656e6365030000001a53594e5448455449432d524543454950542d45564944454e4345",
+      "digest": "a2a.shared-state.keyspace/v1|broker.outbox.receipt-evidence|fixture.synthetic|sha256:57c48139886bbb98627c60437489f8beb97f54571a7355ed2db0bbdf35cf800e"
+    },
+    {
+      "id": "synthetic-17",
+      "domain": "broker.claim-graph.source-stream-key",
+      "namespace": "fixture.synthetic",
+      "components": [
+        {
+          "field": "sourceType",
+          "type": "utf8",
+          "value": "artifact|source"
+        },
+        {
+          "field": "sourceId",
+          "type": "utf8",
+          "value": "synthetic-source-001"
+        }
+      ],
+      "canonicalHex": "4132412d53534b01001c6132612e7368617265642d73746174652e6b657973706163652f7631002462726f6b65722e636c61696d2d67726170682e736f757263652d73747265616d2d6b65790011666978747572652e73796e7468657469630002000a736f7572636554797065010000000f61727469666163747c736f757263650008736f757263654964010000001473796e7468657469632d736f757263652d303031",
+      "digest": "a2a.shared-state.keyspace/v1|broker.claim-graph.source-stream-key|fixture.synthetic|sha256:47fb28faba5169adf1cddc8d1d13e9e46a2075ce588dc75f3f0934bebbfafaa1"
+    },
+    {
+      "id": "synthetic-18",
+      "domain": "broker.claim-graph.source-fact",
+      "namespace": "fixture.synthetic",
+      "components": [
+        {
+          "field": "nodeType",
+          "type": "utf8",
+          "value": "Claim"
+        },
+        {
+          "field": "fact",
+          "type": "bytes",
+          "value": "53594E5448455449432D434C41494D2D46414354"
+        }
+      ],
+      "canonicalHex": "4132412d53534b01001c6132612e7368617265642d73746174652e6b657973706163652f7631001e62726f6b65722e636c61696d2d67726170682e736f757263652d666163740011666978747572652e73796e746865746963000200086e6f6465547970650100000005436c61696d000466616374030000001453594e5448455449432d434c41494d2d46414354",
+      "digest": "a2a.shared-state.keyspace/v1|broker.claim-graph.source-fact|fixture.synthetic|sha256:8ac83f36fd972c5c6bb4d104fb2646918e0bbf2f5464326b60adee9786fb913e"
+    },
+    {
+      "id": "synthetic-19",
+      "domain": "broker.claim-graph.projection-batch-key",
+      "namespace": "fixture.synthetic",
+      "components": [
+        {
+          "field": "projectionVersion",
+          "type": "utf8",
+          "value": "claim-graph.v1"
+        },
+        {
+          "field": "batchId",
+          "type": "utf8",
+          "value": "synthetic-batch-001"
+        }
+      ],
+      "canonicalHex": "4132412d53534b01001c6132612e7368617265642d73746174652e6b657973706163652f7631002762726f6b65722e636c61696d2d67726170682e70726f6a656374696f6e2d62617463682d6b65790011666978747572652e73796e7468657469630002001170726f6a656374696f6e56657273696f6e010000000e636c61696d2d67726170682e7631000762617463684964010000001373796e7468657469632d62617463682d303031",
+      "digest": "a2a.shared-state.keyspace/v1|broker.claim-graph.projection-batch-key|fixture.synthetic|sha256:3fdb9b2e5bc6f5a33516f7b147f49aa404a268df7a25a3402787288f9d71e0c5"
+    },
+    {
+      "id": "synthetic-20",
+      "domain": "broker.claim-graph.projection-batch",
+      "namespace": "fixture.synthetic",
+      "components": [
+        {
+          "field": "batch",
+          "type": "bytes",
+          "value": "53594E5448455449432D50524F4A454354494F4E2D4241544348"
+        }
+      ],
+      "canonicalHex": "4132412d53534b01001c6132612e7368617265642d73746174652e6b657973706163652f7631002362726f6b65722e636c61696d2d67726170682e70726f6a656374696f6e2d62617463680011666978747572652e73796e746865746963000100056261746368030000001a53594e5448455449432d50524f4a454354494f4e2d4241544348",
+      "digest": "a2a.shared-state.keyspace/v1|broker.claim-graph.projection-batch|fixture.synthetic|sha256:e4cdaf570578ad12cd46904200cb2860df11c017eb3ae3a4ba62158669d900d0"
+    },
+    {
+      "id": "synthetic-21",
+      "domain": "broker.claim-graph.projection-inverse",
+      "namespace": "fixture.synthetic",
+      "components": [
+        {
+          "field": "inverse",
+          "type": "bytes",
+          "value": "53594E5448455449432D50524F4A454354494F4E2D494E5645525345"
+        }
+      ],
+      "canonicalHex": "4132412d53534b01001c6132612e7368617265642d73746174652e6b657973706163652f7631002562726f6b65722e636c61696d2d67726170682e70726f6a656374696f6e2d696e76657273650011666978747572652e73796e74686574696300010007696e7665727365030000001c53594e5448455449432d50524f4a454354494f4e2d494e5645525345",
+      "digest": "a2a.shared-state.keyspace/v1|broker.claim-graph.projection-inverse|fixture.synthetic|sha256:e0154a6ad8c65882f282a47267e431bed9bdb8d3e40ba1777d894db5a035f76d"
+    },
+    {
+      "id": "synthetic-22",
+      "domain": "broker.claim-graph.rollback-batch-key",
+      "namespace": "fixture.synthetic",
+      "components": [
+        {
+          "field": "projectionVersion",
+          "type": "utf8",
+          "value": "claim-graph.v1"
+        },
+        {
+          "field": "rollbackId",
+          "type": "utf8",
+          "value": "synthetic-rollback-001"
+        }
+      ],
+      "canonicalHex": "4132412d53534b01001c6132612e7368617265642d73746174652e6b657973706163652f7631002562726f6b65722e636c61696d2d67726170682e726f6c6c6261636b2d62617463682d6b65790011666978747572652e73796e7468657469630002001170726f6a656374696f6e56657273696f6e010000000e636c61696d2d67726170682e7631000a726f6c6c6261636b4964010000001673796e7468657469632d726f6c6c6261636b2d303031",
+      "digest": "a2a.shared-state.keyspace/v1|broker.claim-graph.rollback-batch-key|fixture.synthetic|sha256:abf852b9356b79656b6a6d243075b29faabbaa025042c1f088629a07d8f60e4e"
+    }
+  ]
+}
