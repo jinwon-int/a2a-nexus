@@ -1,8 +1,9 @@
 # Shared-State and HA Contract
 
-> **Status:** proposed spec-first packet; documentation only. Approval of this
-> packet is required before runtime implementation. Nothing in this packet
-> claims that a shared backend, HA mode, adapter implementation, migration, or
+> **Status:** proposed spec-first packet with bounded Phase 1
+> contract/parser/evaluator source slices. Approval of this packet is required
+> before runtime implementation. Nothing in this packet claims that a shared
+> backend, HA mode, adapter implementation, conformance harness, migration, or
 > rollout exists.
 >
 > **Reference:** Refs #1504.
@@ -11,11 +12,12 @@
 
 `MUST`, `MUST NOT`, `SHOULD`, `SHOULD NOT`, and `MAY` are normative
 requirements for a later implementation. Text labeled **Current** describes
-the repository at `f293738c865ececc66e31f7b031ce1ad725d4b85`. Text labeled
+the repository at `333a9a727bd73294cf7cba880bf0547880c0077c`. Text labeled
 **Planned** or **Future** is not implemented and must not be advertised as a
 runtime capability.
 
-This phase defines contracts and test/migration plans only. It does not:
+The completed Phase 1 slices define closed source contracts and deterministic
+parser/evaluator tables only. They do not:
 
 - implement `SharedStateStorageAdapterV1`;
 - change startup, health, readiness, persistence, or request handling;
@@ -209,17 +211,93 @@ schema errors.
 
 ### 4.2 Time and expiry
 
-- Production expiry decisions MUST use an adapter-controlled clock, never an
-  untrusted request timestamp.
-- The SQLite adapter MAY use a process clock only if it persists a
-  last-observed time floor and fails readiness on unsafe backward movement.
-- A future shared adapter MUST use one documented backend/server clock domain.
-- Tests MUST inject a fake clock.
-- Expiry is logical: an item is invalid at `now >= expiresAt` even if physical
-  cleanup has not run.
-- Cleanup MAY be asynchronous, but it MUST NOT make an item expire early.
-- Clock uncertainty beyond the adapter's declared tolerance MUST fail closed
-  for writes and readiness.
+The backend-neutral contract is `a2a.shared-state.time/v1`. Its closed
+vocabulary is `SHARED_STATE_TIME_V1_VALUES`; its parsers and pure evaluators
+are in `packages/broker/src/shared-state-time-v1.ts`; and its public synthetic
+golden tables are
+`packages/broker/fixtures/shared-state-storage/time-v1-golden.json`. These
+artifacts read no clock and implement no adapter, scheduler, storage, timer,
+health middleware, or runtime callsite.
+
+All absolute instants, persisted floors, tolerances, windows, and derived
+durations in this time contract use the exact unit
+`unix-epoch-millisecond` and the exact encoding
+`canonical-unsigned-decimal-string`. The only valid text grammar is
+`0|[1-9][0-9]*`: signs, leading zeroes, fractions, exponents, and JavaScript
+numbers are not canonical inputs. An unsafe JavaScript number has the stable
+error `unsafe_integer`; other numeric inputs have `invalid_integer`.
+Absolute instants and floors range from `0` through
+`9223372036854775807` (signed-int64 maximum). Durations range from `1` through
+`31536000000` milliseconds. A declared backward-skew tolerance ranges from
+`0` through `300000` milliseconds and has no implicit default. Parsing or
+addition outside these limits fails closed; deriving an expiry above the
+timestamp maximum returns `time_arithmetic_overflow`.
+
+V1 supports exactly two profiles:
+
+| Clock profile | Trusted observation | Persisted floor authority |
+| --- | --- | --- |
+| `sqlite-single-writer` | `clockAuthority=adapter-controlled`, `observationSource=adapter-clock` | The exclusive adapter owner persists the floor durably. |
+| `shared-backend-server` | `clockAuthority=backend-server`, `observationSource=backend-server-clock` | The same shared backend updates the floor with linearizable authority. |
+
+`TrustedSharedStateTimeObservationV1` is an adapter-internal provenance
+envelope, not a transaction input. Its `trustBoundary` MUST be
+`adapter-internal`, and its authority/source MUST exactly match its profile.
+A literal claim of trust does not convert caller data into a trusted
+observation. Section 6.1 command parsers continue to reject caller-selected
+absolute time, observation, floor, tolerance, and expiry fields with
+`caller_clock_forbidden`. Callers may supply only the already bounded relative
+durations defined by an operation; the adapter derives the absolute expiry
+from a successful trusted evaluation.
+
+Each observation carries `observedAtUnixMs`, the durable
+`persistedFloorUnixMs`, and `minimumExpectedFloorUnixMs`. The last field is
+the greatest floor already observed in the current adapter lifecycle and is
+`null` only for the first evaluation after open/reopen. Exact evaluation is:
+
+| Condition, in precedence order | Effective result |
+| --- | --- |
+| `persistedFloor < minimumExpectedFloor` | `stored_floor_regression`; diagnostic clamp is `minimumExpectedFloor`; readiness is `not-ready`; writes and all logical time decisions are `forbidden`. |
+| `observedAt > persistedFloor` | `observation_advanced`; `effectiveNow=observedAt`; `nextPersistedFloor=observedAt`; `floorWriteRequired=true`; ready and writes/logical decisions allowed only under the floor-persistence rule below. |
+| `observedAt == persistedFloor` | `observation_at_floor`; hold the floor; ready and writes/logical decisions allowed. |
+| `0 < persistedFloor-observedAt <= tolerance` | `backward_within_tolerance_clamped`; `effectiveNow=persistedFloor`; the floor never moves backward; ready and writes/logical decisions allowed. Equality with the declared tolerance is safe. |
+| `persistedFloor-observedAt > tolerance` | `backward_beyond_tolerance`; diagnostic clamp is the persisted floor; readiness is `not-ready`; writes and all logical time decisions are `forbidden`. |
+
+A forward result MUST durably persist `nextPersistedFloor` before or in the
+same authoritative transaction as any dependent decision. It MUST NOT expose
+the dependent write as committed if the floor did not commit. Every later
+evaluation in that lifecycle supplies the prior result as its minimum
+expected floor. Reopen supplies the durably stored floor with
+`minimumExpectedFloorUnixMs=null`; therefore restart cannot reset time to
+zero or to a fresh process observation. Missing, ambiguous, regressed, or
+unavailable floor state is unsafe and never permits a local permissive
+fallback.
+
+Logical expiry is independent of physical cleanup:
+
+- replay TTL, lease, and explicitly allowed idempotency-retention records are
+  active if and only if `now < expiresAt`; at equality they are expired;
+- a rate-window entry counts if and only if
+  `eventAt > now - window`; at equality it is excluded. If `window > now`,
+  the conceptual threshold is before Unix epoch and every valid non-negative
+  `eventAt` counts;
+- idempotency expiry is available only as
+  `idempotency-explicit-retention`. This boundary evaluator does not create an
+  implicit retention policy or authorize expiry for irreversible effects;
+- delayed cleanup cannot extend logical validity, and cleanup MUST NOT remove
+  a logically active record. Presence or cleanup state is intentionally not
+  an input to the logical evaluator, so cleanup cannot change its answer.
+
+The five stable evaluation reasons are `observation_advanced`,
+`observation_at_floor`, `backward_within_tolerance_clamped`,
+`backward_beyond_tolerance`, and `stored_floor_regression`. The closed parser
+and evaluator error vocabulary is `invalid_type`, `unknown_field`,
+`unknown_time_version`, `invalid_discriminant`, `unknown_clock_profile`,
+`profile_mismatch`, `clock_authority_mismatch`,
+`observation_source_mismatch`, `unit_mismatch`,
+`integer_encoding_mismatch`, `invalid_integer`, `unsafe_integer`,
+`integer_overflow`, `tolerance_out_of_range`, `duration_out_of_range`,
+`time_not_ready`, and `time_arithmetic_overflow`.
 
 ### 4.3 Errors and retries
 
@@ -390,7 +468,11 @@ applyGraphProjectionBatch(...) / rollbackGraphProjectionBatch(...)
 Operation inputs and outputs MUST be closed, validated unions. Unknown fields,
 unknown operation versions, and capability downgrades fail closed. Arbitrary
 SQL, backend commands, credentials, or caller-selected clock values are not
-part of the contract.
+part of the contract. In particular, the section 6.1 transaction parser
+rejects absolute `now`, timestamp, expiry, event-time, trusted-observation,
+persisted-floor, effective-time, and skew-tolerance field spellings at any
+nested path with `caller_clock_forbidden`. Relative operation durations such
+as `ttlMs`, `windowMs`, and `leaseDurationMs` are not transaction timestamps.
 
 ### 6.2 Transaction and lifecycle invariants
 

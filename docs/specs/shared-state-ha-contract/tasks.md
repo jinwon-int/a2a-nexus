@@ -2,7 +2,7 @@
 
 > **Status:** implementation backlog. Checked items include the completed
 > documentation packet and the completed bounded Phase 1 contract/parser and
-> keyspace/digest slices.
+> keyspace/digest/time-evaluator slices.
 > Adapter implementations, the conformance harness, runtime integration,
 > migration, and operational rollout remain unchecked. Refs #1504.
 
@@ -24,7 +24,7 @@
 - [x] Add closed schemas/types for adapter metadata, capabilities, lifecycle,
   transaction commands/results, health, and readiness.
 - [x] Pin namespace/key canonicalization and domain-separated digest vectors.
-- [ ] Pin adapter-controlled clock, stored time floor, skew tolerance, and
+- [x] Pin adapter-controlled clock, stored time floor, skew tolerance, and
   exact expiry boundaries.
 - [ ] Register every idempotency namespace and retention version.
 - [ ] Register every outbox stream key and ordering scope.
