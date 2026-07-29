@@ -20,7 +20,7 @@ A split candidate is ready only when it has a narrow proof/product boundary, a s
 | Surface | Nexus core responsibility | Feature repository candidate | Dependency direction |
 |---|---|---|---|
 | Broker task lifecycle | Task creation, queueing, claiming, status transitions, terminal evidence, worker registry, persistence, and compatibility gates. | None by default. A future SDK may wrap public APIs, but it must not own lifecycle semantics. | SDK/product -> Nexus API contract; Nexus -> SDK forbidden. |
-| Policy evaluation primitive | Broker policy document, create/claim policy checks, approval-required semantics, audit shape, and observation/enforcement transition rules. | `a2a-policy-referee` packaged CLI/service, after policy semantics are stable and separately approved. | Product -> `contracts/a2a/broker-policy.md` and policy fixtures; Nexus -> product forbidden. |
+| Policy evaluation primitive | Broker policy document, create/claim policy checks, approval-required semantics, audit shape, and observation/enforcement transition rules. | The private monorepo `a2a-policy-referee` package now has an offline CLI and public-safe decision fixtures. A separate repository, service mode, or published package remains future work requiring separate approval. | Current broker -> monorepo package; any future extracted product -> pinned `contracts/a2a/broker-policy.md` and policy fixtures. Nexus -> future extracted product runtime remains forbidden. |
 | Signed verdict schema | Finalizer verdict subject binding, signer/keyring expectations, and judgment/battery semantics. | Reusable verdict-verifier helper can be packaged only after compatibility and release gates. | Product -> `contracts/a2a/finalizer-verdict.md`; Nexus -> product forbidden. |
 | Provenance/evidence schema | Attestation bundle, terminal evidence semantics, source grounding, result hashes, and public-safe evidence policy. | Evidence viewers/report renderers may be productized when they preserve redaction and missing-vs-empty semantics. | Product -> Nexus evidence contracts; Nexus -> product forbidden. |
 | Offline verification primitive | Source-only verification commands and conformance fixtures for proof objects. | Proof-specific verifier/SDK packages, such as agent-work-proof or escrow-proof. | Product -> contract + fixture + verifier semantics; Nexus keeps canonical tests. |
@@ -53,17 +53,42 @@ Every feature repository candidate must satisfy this contract before repository 
 
 ## Feature repository candidate matrix
 
-Candidate package names and CLIs below are **target shapes**, not existing packages and not publication approval.
+Candidate package names and CLIs below are **target shapes**, except where a
+row explicitly identifies an existing private monorepo source slice. No row is
+package-publication approval.
 
 | Candidate | Proposed package name | Proposed CLI | Artifact type | Upstream Nexus source | Verification command | Extraction boundary |
 |---|---|---|---|---|---|---|
-| Policy referee CLI/service | `@jinwon-int/a2a-policy-referee` | `a2a-policy-referee` | Policy bundle, decision transcript, audit summary. | `contracts/a2a/broker-policy.md`, policy fixtures, broker create/claim policy tests. | `node scripts/check-broker-policy.mjs docs/ops/broker-policy.json && node --test scripts/check-broker-policy.test.mjs`; future extraction must add a product-specific source-only policy replay before publication. | Must not change live broker policy mode/config, task admission/claim evaluation, workerClass derivation, or audit schema during #1355 observation. |
+| Policy referee CLI; service remains only a future candidate | Existing private monorepo package `a2a-policy-referee`; no scoped rename or publication is approved | Existing offline `a2a-policy-referee check POLICY.json TASK.json WORKER.json`; no service mode | Versioned closed decision envelope and bounded public-safe golden/negative fixtures; no audit artifact | Pinned source base `487b1d0315e4b891c22d373908de83aabdf95872`; `packages/policy-referee/src/broker-policy.ts`, `contracts/a2a/broker-policy.md`, and package-owned fixtures/tests | `npm run check -w packages/policy-referee && npm run build -w packages/policy-referee && npm test -w packages/policy-referee && npm run fixtures:replay -w packages/policy-referee`; package-CI parity also proves package contents | Offline evaluation only. Must not change live broker policy/config, create/claim call sites, worker-class derivation, audits, runtime enforcement, or broker imports. Separate-repository extraction, service mode, and publication remain unproven and unapproved. |
 | Agent work proof verifier/SDK | `@jinwon-int/a2a-agent-work-proof` | `a2a-agent-work-proof-verify` | Work-proof bundle, artifact manifest, signed work-proof verdict. | `contracts/a2a/agent-work-proof.md`, `fixtures/contract/agent-work-proof-bundle.json`, `scripts/verify-agent-work-proof.mjs`, `test/conformance/check-agent-work-proof.mjs`. | `node scripts/verify-agent-work-proof.mjs fixtures/contract/agent-work-proof-bundle.json --keyring fixtures/contract/agent-work-proof-keyring.json` | Proves evidence integrity and composition only; no payment/release authorization or correctness guarantee. |
 | Escrow release proof adapter | `@jinwon-int/a2a-escrow-proof` | `a2a-escrow-proof-verify` | Release-condition proof, signed release verdict, no-live adapter transcript. | `contracts/a2a/escrow-release-proof.md`, `fixtures/contract/escrow-release-proof.json`, `scripts/verify-escrow-release-proof.mjs`, `test/conformance/check-escrow-release-proof.mjs`. | `node scripts/verify-escrow-release-proof.mjs fixtures/contract/escrow-release-proof.json --keyring fixtures/contract/escrow-release-proof-keyring.json` | Proof-of-condition only; no custody, funds movement, rail call, or release execution. |
 | Agent payment dispute packet | `@jinwon-int/a2a-payment-dispute-packet` | `a2a-payment-dispute-verify` | User-delegation/scope/completion/release evidence packet. | `contracts/a2a/agent-payment-dispute-packet.md`, `fixtures/contract/agent-payment-dispute-packet.json`, `scripts/verify-agent-payment-dispute-packet.mjs`, `test/conformance/check-agent-payment-dispute-packet.mjs`. | `node scripts/verify-agent-payment-dispute-packet.mjs fixtures/contract/agent-payment-dispute-packet.json --keyring fixtures/contract/agent-payment-dispute-packet-keyring.json` | Dispute evidence only; no PCI/card data handling, payment execution, or final chargeback/legal-liability decision. |
 | Verifiable analysis report generator/viewer | `@jinwon-int/a2a-verifiable-analysis-report` | `a2a-analysis-report-verify` | Report package, source manifest, signed finalizer verdict. | `contracts/a2a/verifiable-analysis-report.md`, `fixtures/contract/verifiable-analysis-report-product.json`, `scripts/verify-analysis-report.mjs`, `test/conformance/check-verifiable-analysis-report-product.mjs`. | `node scripts/verify-analysis-report.mjs fixtures/contract/verifiable-analysis-report-product.json --keyring fixtures/contract/verifiable-analysis-report-product-keyring.json` for the product fixture, plus `node test/conformance/check-verifiable-analysis-report-product.mjs` as the G0 gate. | Proves report grounding/integrity only; not analytical correctness or publication approval. |
 | Certification battery packs | `@jinwon-int/a2a-certification-battery` | `a2a-certification-battery-verify` | Battery pack, result, signed verdict, finite artifact certificate. | `contracts/a2a/certification-battery.md`, `fixtures/contract/certification-battery.json`, `test/conformance/check-certification-battery.mjs`. | `node test/conformance/check-certification-battery.mjs` | Finite deterministic checks only; no registry badge, quality marketing, or package publication claim. |
 | Docker runner package | `@openclaw/a2a-docker-runner` or a renamed Nexus package after approval | `a2a-docker-runner` | Runner CLI package and isolated execution evidence. | `packages/docker-runner/`, runner hardening checks, public demo safety audit. | `npm -w packages/docker-runner run verify:package` plus package contents audit in a disposable candidate environment. | Runner packaging only; no production runner deploy, credential movement, or live broker enrollment. |
+
+### Current #1480 policy-referee source slice
+
+On the pinned source base
+`487b1d0315e4b891c22d373908de83aabdf95872`, the existing private
+`packages/policy-referee` boundary now proves only these additional claims:
+
+- the package exposes a deterministic built CLI with the documented
+  `a2a-policy-referee check POLICY.json TASK.json WORKER.json` shape;
+- task and worker inputs are versioned, closed, anonymous, and public-safe;
+- the CLI calls the package's existing `validateBrokerPolicyDocument` and
+  `evaluateTaskPolicy` functions instead of importing or duplicating broker
+  runtime semantics;
+- stdout is a versioned closed decision envelope, stderr is bounded
+  non-reflecting metadata, and process exits distinguish allow,
+  require-approval, deny, invalid input, and internal failure;
+- package-owned golden and negative fixtures are replayed by pure and
+  child-process tests.
+
+This evidence does not prove or authorize issue completion, a separate
+repository, publication, service mode, live broker integration, a live policy
+change, task creation/claiming, audit emission, deployment, provider traffic,
+or any operator approval.
 
 ## Split readiness checklist
 

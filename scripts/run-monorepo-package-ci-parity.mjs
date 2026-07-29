@@ -84,13 +84,21 @@ export const PACKAGE_CI_SURFACES = {
       ['npm', ['run', 'check', '-w', 'packages/policy-referee']],
       ['npm', ['run', 'build', '-w', 'packages/policy-referee']],
       ['npm', ['test', '-w', 'packages/policy-referee']],
+      ['npm', ['run', 'fixtures:replay', '-w', 'packages/policy-referee']],
       ['npm', ['run', 'coverage:baseline', '-w', 'packages/policy-referee']],
     ],
     metadata: {
       private: true,
       license: 'MIT',
-      requiredScripts: ['build', 'check', 'test', 'coverage:baseline'],
-      requiredFiles: ['README.md', 'scripts/coverage-baseline-report.mjs'],
+      requiredScripts: ['build', 'check', 'test', 'fixtures:replay', 'coverage:baseline'],
+      requiredFiles: [
+        'README.md',
+        'fixtures/golden/manifest.json',
+        'fixtures/negative/manifest.json',
+        'scripts/coverage-baseline-report.mjs',
+        'scripts/replay-golden-fixtures.mjs',
+      ],
+      requiredBin: ['a2a-policy-referee'],
     },
   },
   'openclaw-plugin-a2a': {
