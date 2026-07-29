@@ -35,6 +35,7 @@ test('--list prints the public-safe conformance check allowlist', () => {
   assert.ok(lines.includes('check-contract-fixtures.mjs'));
   assert.ok(lines.includes('check-terminal-evidence-ack-boundary.mjs'));
   assert.ok(lines.includes('check-task-attempt-failure-sharing.mjs'));
+  assert.ok(lines.includes('check-wave-plan-dag-v2.mjs'));
   assert.equal(lines.includes('check-a2a-tck-plan.mjs'), false, 'planning-only TCK checker stays excluded');
   assert.equal(lines.includes('public-readiness-go-nogo.test.mjs'), false, 'release go/no-go checker stays excluded');
 });
