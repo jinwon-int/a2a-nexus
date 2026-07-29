@@ -748,19 +748,19 @@ if [ ! -d /run/secrets/codex-dir ] || [ ! -f /run/secrets/codex-dir/auth.json ];
   printf 'Mount a minimal Codex config directory containing auth.json at /run/secrets/codex-dir.\n' | tee /work/artifacts/patch-command.log
   exit 2
 fi
+if [ ! -w /run/secrets/codex-dir/auth.json ]; then
+  printf 'error=codex_config_mount_not_writable\n' | tee -a /work/artifacts/summary.txt
+  printf 'failure_category=codex_credential_writeback_unavailable\n' | tee -a /work/artifacts/summary.txt
+  printf 'The runner must provide a task-scoped writable credential clone for refresh write-back.\n' | tee /work/artifacts/patch-command.log
+  exit 2
+fi
 if ! command -v codex >/dev/null 2>&1; then
   printf 'error=codex_cli_missing\n' | tee -a /work/artifacts/summary.txt
   printf 'failure_category=codex_cli_unavailable\n' | tee -a /work/artifacts/summary.txt
   printf 'Use an a2a-docker-runner-codex image with Codex CLI preinstalled.\n' | tee /work/artifacts/patch-command.log
   exit 2
 fi
-rm -rf /tmp/codex-home
-install -d -m 0700 /tmp/codex-home
-install -m 0600 /run/secrets/codex-dir/auth.json /tmp/codex-home/auth.json
-if [ -f /run/secrets/codex-dir/config.toml ]; then
-  install -m 0600 /run/secrets/codex-dir/config.toml /tmp/codex-home/config.toml
-fi
-export CODEX_HOME=/tmp/codex-home
+export CODEX_HOME=/run/secrets/codex-dir
 printf 'codex_cli=%s\n' "$(codex --version 2>/dev/null | head -n 1 || printf unknown)" | tee -a /work/artifacts/summary.txt
 printf 'model=%s reasoning=%s profile=codex\n' "$A2A_CODEX_MODEL" "$A2A_CODEX_REASONING_EFFORT" | tee -a /work/artifacts/summary.txt
 

@@ -384,6 +384,9 @@ test("mergeRunnerEnvFile supports first-class Codex patch profile", async () => 
     assert.match(config.commandScript ?? "", /A2A_CODEX_DEFAULT_TIMEOUT_SEC='3600'/);
     assert.match(config.commandScript ?? "", /A2A_CODEX_TIMEOUT_SEC="\$\{A2A_CODEX_TIMEOUT_SEC:-\$A2A_CODEX_DEFAULT_TIMEOUT_SEC\}"/);
     assert.doesNotMatch(config.commandScript ?? "", /A2A_CODEX_TIMEOUT_SEC="\$\{A2A_CODEX_TIMEOUT_SEC:-'3600'\}"/);
+    assert.match(config.commandScript ?? "", /export CODEX_HOME=\/run\/secrets\/codex-dir/);
+    assert.match(config.commandScript ?? "", /codex_config_mount_not_writable/);
+    assert.doesNotMatch(config.commandScript ?? "", /\/tmp\/codex-home/);
     assert.match(config.commandScript ?? "", /--sandbox danger-full-access/);
     assert.deepEqual(config.codexProfile, { configDir: "/srv/codex-profile" });
     assert.deepEqual(config.extraMounts, [
