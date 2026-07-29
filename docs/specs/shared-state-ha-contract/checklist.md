@@ -1,8 +1,9 @@
 # Checklist: Shared-State and HA Contract
 
-> **Status:** closeout checklist. Only documentation items completed in this
-> phase are checked. Runtime implementation, conformance tests, migration, and
-> operations remain open. Refs #1504.
+> **Status:** closeout checklist. Checked items include the completed
+> documentation packet and narrowly proven Phase 1 contract/parser work.
+> Runtime implementation, adapter conformance, migration, and operations
+> remain open. Refs #1504.
 
 ## A. Spec packet
 
@@ -48,6 +49,9 @@ specified in `spec.md`.
 - [x] A later SQLite single-writer and later shared implementation can satisfy
   the same observable semantics.
 - [x] Current generic SQLite store is not labeled conforming.
+- [x] The first bounded TypeScript slice provides closed metadata,
+  capabilities, lifecycle, expected-open, health/readiness, declaration, and
+  section 6.1 transaction envelope schemas with stable parser errors.
 - [ ] Machine-readable V1 types/schemas implemented.
 - [ ] SQLite V1 adapter implemented.
 - [ ] Shared V1 adapter implemented.
@@ -76,6 +80,9 @@ specified in `spec.md`.
 - [x] Claim-graph query/incomplete/false-merge rollback plan exists.
 - [x] Migration/cutover/rollback rehearsal plan exists.
 - [x] Bounded local performance-characterization plan exists.
+- [x] Narrow parser fixtures exhaust every section 6.1 transaction union and
+  reject unknown versions/fields, unsafe capabilities, caller clocks, backend
+  commands, sensitive connection fields, and identity-bearing health fields.
 - [ ] Test harness implemented.
 - [ ] Claim tests implemented/passing.
 - [ ] Idempotency tests implemented/passing.

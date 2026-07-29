@@ -1,8 +1,9 @@
 # Tasks: Shared-State and HA Contract
 
-> **Status:** implementation backlog. Checked items are documentation completed
-> in this phase only. Runtime code, tests, migration, and operational rollout
-> remain unchecked. Refs #1504.
+> **Status:** implementation backlog. Checked items include the completed
+> documentation packet and the first bounded Phase 1 contract/parser slice.
+> Adapter implementations, the conformance harness, runtime integration,
+> migration, and operational rollout remain unchecked. Refs #1504.
 
 ## 0. Spec-first packet
 
@@ -19,7 +20,7 @@
 
 ## 1. Contract/schema work
 
-- [ ] Add closed schemas/types for adapter metadata, capabilities, lifecycle,
+- [x] Add closed schemas/types for adapter metadata, capabilities, lifecycle,
   transaction commands/results, health, and readiness.
 - [ ] Pin namespace/key canonicalization and domain-separated digest vectors.
 - [ ] Pin adapter-controlled clock, stored time floor, skew tolerance, and
@@ -28,7 +29,7 @@
 - [ ] Register every outbox stream key and ordering scope.
 - [ ] Define bounded public/operator observability schemas and negative leak
   fixtures.
-- [ ] Add unknown-version/unknown-field/capability-downgrade rejection tests.
+- [x] Add unknown-version/unknown-field/capability-downgrade rejection tests.
 
 ## 2. Deterministic conformance harness
 
