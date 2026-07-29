@@ -1,0 +1,357 @@
+{
+  "schemaVersion": "a2a.policy-referee.golden-fixtures.v1",
+  "cases": [
+    {
+      "id": "matched-allow",
+      "policy": {
+        "schemaVersion": "a2a.broker.policy.v1",
+        "mode": "warn",
+        "defaultAction": "deny",
+        "rules": [
+          {
+            "id": "mobile-analysis",
+            "workerClass": "mobile",
+            "allowIntents": [
+              "analyze"
+            ]
+          }
+        ]
+      },
+      "task": {
+        "schemaVersion": "a2a.policy-referee.task.v1",
+        "intent": "analyze",
+        "evaluationPoint": "create"
+      },
+      "worker": {
+        "schemaVersion": "a2a.policy-referee.worker.v1",
+        "workerClass": "mobile"
+      },
+      "expected": {
+        "decision": {
+          "schemaVersion": "a2a.policy-referee.decision.v1",
+          "policyMode": "warn",
+          "action": "allow",
+          "ruleId": "mobile-analysis",
+          "reasonCode": "rule_allow",
+          "enforceMode": {
+            "deny": false,
+            "requireApproval": false
+          }
+        },
+        "exitCode": 0
+      }
+    },
+    {
+      "id": "allow-intent-deny",
+      "policy": {
+        "schemaVersion": "a2a.broker.policy.v1",
+        "mode": "warn",
+        "defaultAction": "allow",
+        "rules": [
+          {
+            "id": "source-analysis",
+            "workerClass": "source-only",
+            "allowIntents": [
+              "analyze"
+            ]
+          }
+        ]
+      },
+      "task": {
+        "schemaVersion": "a2a.policy-referee.task.v1",
+        "intent": "propose_patch",
+        "evaluationPoint": "create"
+      },
+      "worker": {
+        "schemaVersion": "a2a.policy-referee.worker.v1",
+        "workerClass": "source-only"
+      },
+      "expected": {
+        "decision": {
+          "schemaVersion": "a2a.policy-referee.decision.v1",
+          "policyMode": "warn",
+          "action": "deny",
+          "ruleId": "source-analysis",
+          "reasonCode": "intent_not_allowed",
+          "enforceMode": {
+            "deny": true,
+            "requireApproval": false
+          }
+        },
+        "exitCode": 20
+      }
+    },
+    {
+      "id": "deny-mode-precedence",
+      "policy": {
+        "schemaVersion": "a2a.broker.policy.v1",
+        "mode": "enforce",
+        "defaultAction": "allow",
+        "rules": [
+          {
+            "id": "vps-guard",
+            "workerClass": "vps",
+            "allowIntents": [
+              "analyze"
+            ],
+            "denyModes": [
+              "apply"
+            ],
+            "requireApproval": true
+          }
+        ]
+      },
+      "task": {
+        "schemaVersion": "a2a.policy-referee.task.v1",
+        "intent": "propose_patch",
+        "mode": "apply",
+        "evaluationPoint": "claim"
+      },
+      "worker": {
+        "schemaVersion": "a2a.policy-referee.worker.v1",
+        "workerClass": "vps"
+      },
+      "expected": {
+        "decision": {
+          "schemaVersion": "a2a.policy-referee.decision.v1",
+          "policyMode": "enforce",
+          "action": "deny",
+          "ruleId": "vps-guard",
+          "reasonCode": "mode_denied",
+          "enforceMode": {
+            "deny": true,
+            "requireApproval": false
+          }
+        },
+        "exitCode": 20
+      }
+    },
+    {
+      "id": "require-approval",
+      "policy": {
+        "schemaVersion": "a2a.broker.policy.v1",
+        "mode": "enforce",
+        "defaultAction": "allow",
+        "rules": [
+          {
+            "id": "vps-approval",
+            "workerClass": "vps",
+            "requireApproval": true
+          }
+        ]
+      },
+      "task": {
+        "schemaVersion": "a2a.policy-referee.task.v1",
+        "intent": "analyze",
+        "evaluationPoint": "claim"
+      },
+      "worker": {
+        "schemaVersion": "a2a.policy-referee.worker.v1",
+        "workerClass": "vps"
+      },
+      "expected": {
+        "decision": {
+          "schemaVersion": "a2a.policy-referee.decision.v1",
+          "policyMode": "enforce",
+          "action": "require_approval",
+          "ruleId": "vps-approval",
+          "reasonCode": "approval_required",
+          "enforceMode": {
+            "deny": false,
+            "requireApproval": true
+          }
+        },
+        "exitCode": 10
+      }
+    },
+    {
+      "id": "daily-budget-boundary",
+      "policy": {
+        "schemaVersion": "a2a.broker.policy.v1",
+        "mode": "warn",
+        "defaultAction": "allow",
+        "rules": [
+          {
+            "id": "mobile-budget",
+            "workerClass": "mobile",
+            "maxTasksPerDay": 2
+          }
+        ]
+      },
+      "task": {
+        "schemaVersion": "a2a.policy-referee.task.v1",
+        "intent": "analyze",
+        "evaluationPoint": "create",
+        "tasksToday": 2
+      },
+      "worker": {
+        "schemaVersion": "a2a.policy-referee.worker.v1",
+        "workerClass": "mobile"
+      },
+      "expected": {
+        "decision": {
+          "schemaVersion": "a2a.policy-referee.decision.v1",
+          "policyMode": "warn",
+          "action": "deny",
+          "ruleId": "mobile-budget",
+          "reasonCode": "daily_budget_exhausted",
+          "enforceMode": {
+            "deny": true,
+            "requireApproval": false
+          }
+        },
+        "exitCode": 20
+      }
+    },
+    {
+      "id": "claim-readiness-missing",
+      "policy": {
+        "schemaVersion": "a2a.broker.policy.v1",
+        "mode": "enforce",
+        "defaultAction": "allow",
+        "rules": [
+          {
+            "id": "implementation-gate",
+            "workerClass": "*",
+            "requireImplementationCapability": true
+          }
+        ]
+      },
+      "task": {
+        "schemaVersion": "a2a.policy-referee.task.v1",
+        "intent": "propose_patch",
+        "evaluationPoint": "claim"
+      },
+      "worker": {
+        "schemaVersion": "a2a.policy-referee.worker.v1",
+        "workerClass": "unclassified"
+      },
+      "expected": {
+        "decision": {
+          "schemaVersion": "a2a.policy-referee.decision.v1",
+          "policyMode": "enforce",
+          "action": "deny",
+          "ruleId": "implementation-gate",
+          "reasonCode": "implementation_readiness_missing",
+          "enforceMode": {
+            "deny": true,
+            "requireApproval": false
+          }
+        },
+        "exitCode": 20
+      }
+    },
+    {
+      "id": "claim-capability-unready",
+      "policy": {
+        "schemaVersion": "a2a.broker.policy.v1",
+        "mode": "enforce",
+        "defaultAction": "allow",
+        "rules": [
+          {
+            "id": "implementation-gate",
+            "workerClass": "*",
+            "requireImplementationCapability": true
+          }
+        ]
+      },
+      "task": {
+        "schemaVersion": "a2a.policy-referee.task.v1",
+        "intent": "apply_local_change",
+        "evaluationPoint": "claim"
+      },
+      "worker": {
+        "schemaVersion": "a2a.policy-referee.worker.v1",
+        "workerClass": "source-only",
+        "implementation": {
+          "isImplementationIntent": true,
+          "ready": false
+        }
+      },
+      "expected": {
+        "decision": {
+          "schemaVersion": "a2a.policy-referee.decision.v1",
+          "policyMode": "enforce",
+          "action": "deny",
+          "ruleId": "implementation-gate",
+          "reasonCode": "implementation_capability_unready",
+          "enforceMode": {
+            "deny": true,
+            "requireApproval": false
+          }
+        },
+        "exitCode": 20
+      }
+    },
+    {
+      "id": "create-time-capability-opt-out",
+      "policy": {
+        "schemaVersion": "a2a.broker.policy.v1",
+        "mode": "enforce",
+        "defaultAction": "deny",
+        "rules": [
+          {
+            "id": "implementation-gate",
+            "workerClass": "*",
+            "requireImplementationCapability": true
+          }
+        ]
+      },
+      "task": {
+        "schemaVersion": "a2a.policy-referee.task.v1",
+        "intent": "propose_patch",
+        "evaluationPoint": "create"
+      },
+      "worker": {
+        "schemaVersion": "a2a.policy-referee.worker.v1",
+        "workerClass": "vps"
+      },
+      "expected": {
+        "decision": {
+          "schemaVersion": "a2a.policy-referee.decision.v1",
+          "policyMode": "enforce",
+          "action": "allow",
+          "ruleId": "implementation-gate",
+          "reasonCode": "rule_allow",
+          "enforceMode": {
+            "deny": false,
+            "requireApproval": false
+          }
+        },
+        "exitCode": 0
+      }
+    },
+    {
+      "id": "default-deny",
+      "policy": {
+        "schemaVersion": "a2a.broker.policy.v1",
+        "mode": "warn",
+        "defaultAction": "deny",
+        "rules": []
+      },
+      "task": {
+        "schemaVersion": "a2a.policy-referee.task.v1",
+        "intent": "verify",
+        "evaluationPoint": "claim"
+      },
+      "worker": {
+        "schemaVersion": "a2a.policy-referee.worker.v1",
+        "workerClass": "unclassified"
+      },
+      "expected": {
+        "decision": {
+          "schemaVersion": "a2a.policy-referee.decision.v1",
+          "policyMode": "warn",
+          "action": "deny",
+          "ruleId": "default",
+          "reasonCode": "default_deny",
+          "enforceMode": {
+            "deny": true,
+            "requireApproval": false
+          }
+        },
+        "exitCode": 20
+      }
+    }
+  ]
+}
