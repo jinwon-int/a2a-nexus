@@ -1,6 +1,6 @@
 # Phase-2 wiring design: claude-code container-lane sub-agent fanout
 
-Concrete wiring design for **Phase 2** of `spec.md` (epic #1543). Turns the Phase-2 checklist into implementable changes against current code. Status: **WS1/WS3/WS4/WS5 implemented; WS2 pending.** Everything stays opt-in and default-off; `single-shot` remains the default with a one-flag rollback.
+Concrete wiring design for **Phase 2** of `spec.md` (epic #1543). Turns the Phase-2 checklist into implementable changes against current code. Status: **WS1/WS3/WS4/WS5 implemented; WS2 pending.** Fanout stays opt-in and default-off. Since #1700, agentic is the normal non-fanout implementation mode; deterministic `single-shot` remains an explicit bounded fallback.
 
 ## Where each concern lives (the key split)
 
@@ -16,7 +16,7 @@ The container never re-derives the gate/brief; it consumes what the broker compu
 
 | Concern | Location | Current state |
 |---|---|---|
-| Patch mode | bridge `isFanoutPatchMode` beside `isSingleShotPatchMode` | `fanout` exists behind the opt-in flag; default remains `single-shot` |
+| Patch mode | bridge `isFanoutPatchMode` beside `isSingleShotPatchMode` | `fanout` exists behind the opt-in flag; normal mode is agentic and `single-shot` remains explicit |
 | Mode selection | claude-code command script in `config.ts` | emits `fanout` only for `A2A_DOCKER_RUNNER_CLAUDE_CODE_FANOUT_ENABLED=1` |
 | Tools | bridge fanout path | adds `Task`; single-shot tool budget remains unchanged |
 | max-turns | bridge fanout path | bounded `A2A_CLAUDE_CODE_FANOUT_MAX_TURNS`; single-shot remains 6 |
@@ -29,9 +29,9 @@ The container never re-derives the gate/brief; it consumes what the broker compu
 ## Workstream designs
 
 ### WS1 — opt-in fanout mode + rollback (**implemented**)
-- Add flag `A2A_DOCKER_RUNNER_CLAUDE_CODE_FANOUT_ENABLED` (default `0`). In `config.ts` claude-code script (near L723), emit `A2A_CLAUDE_CODE_PATCH_MODE=fanout` **only when the flag is `1`**, else keep `single-shot`.
+- Add flag `A2A_DOCKER_RUNNER_CLAUDE_CODE_FANOUT_ENABLED` (default `0`). In `config.ts` claude-code script (near L723), emit `A2A_CLAUDE_CODE_PATCH_MODE=fanout` **only when the flag is `1`**. #1700 later made agentic the normal non-fanout mode while preserving explicit `single-shot`.
 - In the bridge, add `FANOUT_PATCH_MARKER = "fanout"` + `isFanoutPatchMode(env)` beside `isSingleShotPatchMode`; `main()` selects: fanout (flag on) → new orchestration path; else the existing single-shot/agentic path unchanged.
-- **Rollback** = set the flag to `0` (or unset) ⇒ `single-shot`. **Acceptance:** flag off ⇒ byte-identical to today; on ⇒ fanout path; toggling back restores single-shot.
+- **Rollback** = set the flag to `0` (or unset) ⇒ normal non-fanout agentic mode; set patch mode to `single-shot` for the deterministic fallback. **Acceptance:** flag off ⇒ non-fanout; on ⇒ fanout; explicit `single-shot` ⇒ deterministic fallback.
 
 ### WS2 — tier → Sonnet-5 model mapping (**pending ccc-node harness**)
 - **Mechanism = the roster agent md `model:` frontmatter (host harness), not a runner env** (see resolved decision D3). Claude Code resolves a sub-agent's model from its agent md `model:` field; the current roster md carries a custom `model_tier: low-cost` that Claude Code ignores. Set `model: sonnet` (alias → the node's Sonnet-5-grade) on each `~/.claude/agents/a2a-*.md`. The parent/finalizer keeps `A2A_CLAUDE_MODEL` (e.g. opus). An `A2A_CONTAINED_SUBAGENTS_MODEL` env would be inert for model selection.
@@ -57,8 +57,8 @@ The container never re-derives the gate/brief; it consumes what the broker compu
 
 ## Flag & rollback summary
 
-- `A2A_DOCKER_RUNNER_CLAUDE_CODE_FANOUT_ENABLED=0` (default) ⇒ single-shot, unchanged behavior.
-- `=1` ⇒ opt-in fanout path with WS1/WS3/WS4/WS5. WS2 harness validation remains required before broad production enable. One flag flips back to single-shot (rollback). The 0-subagent Escape Hatch is always valid regardless of flag.
+- `A2A_DOCKER_RUNNER_CLAUDE_CODE_FANOUT_ENABLED=0` (default) ⇒ normal non-fanout agentic behavior; select `single-shot` explicitly for the deterministic fallback.
+- `=1` ⇒ opt-in fanout path with WS1/WS3/WS4/WS5. WS2 harness validation remains required before broad production enable. One flag flips back to non-fanout. The 0-subagent Escape Hatch is always valid regardless of flag.
 
 ## Resolved decisions
 
@@ -77,5 +77,5 @@ Resolved against current code (anchors below). Confirmed each with a grep/read o
 ## Non-goals (Phase-2)
 
 - No Phase-3 canary here (that follows once the go/no-go gate holds).
-- `single-shot` stays the default; fanout never becomes mandatory (`mandatoryProductionSpawn` stays false).
+- Fanout never becomes mandatory (`mandatoryProductionSpawn` stays false); #1700 moved the normal lane to agentic while retaining explicit `single-shot`.
 - No new broker dispatch/admission semantics beyond consuming the existing packets.

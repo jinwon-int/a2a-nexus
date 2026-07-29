@@ -116,7 +116,7 @@ export interface CreateReviewLineageTrustedSourceContextInput {
 }
 
 /**
- * Process-local capability issued only after a future caller has authenticated
+ * Process-local capability issued only after a caller has authenticated
  * the source. It is deliberately not serializable evidence.
  */
 export interface ReviewLineageTrustedSourceContextV1 {

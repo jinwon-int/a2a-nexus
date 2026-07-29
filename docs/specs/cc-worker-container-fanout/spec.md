@@ -6,7 +6,7 @@ Status: **planning / not yet implemented.** Tracks the "option A" direction from
 
 The worker sub-agent model is fully specified as policy (`packages/broker/docs/worker-subagent-orchestration-policy.md`) and roster (`docs/specs/cc-worker-subagent-roster/spec.md`), and is realized in the **host / native CC-harness lane** (roster in `~/.claude/agents/`, `a2a-claim`). But the **containerized `claude-code` runner lane** — the image the broker dispatches to in production — does **not** wire fanout:
 
-- the runner forces `A2A_CLAUDE_CODE_PATCH_MODE=single-shot` and runs a deterministic bridge (`packages/broker/scripts/claude-a2a-patch-bridge.mjs`);
+- the runner selects agentic mode for the normal non-fanout lane and retains an explicit deterministic `single-shot` bridge (`packages/broker/scripts/claude-a2a-patch-bridge.mjs`);
 - the worker's tool budget has **no `Task`/Agent tool** (patch: `Read Grep Glob`; analysis: read-only, Bash/Edit/Write/Web disallowed);
 - the mounted `~/.claude/agents/` roster is **inert** (never invoked);
 - `A2A_CONTAINED_SUBAGENTS_*` is stripped before the claude child (`SAFE_CHILD_ENV_KEYS`) and default-off for claude-code.
@@ -16,7 +16,7 @@ This is policy-compliant today (`mandatoryProductionSpawn: false`, Escape Hatch)
 ## Goals
 
 - Adaptive sub-agent fanout (explorer/researcher/implementer/verifier) available to the containerized `claude-code` worker, selected by the existing 0–3 budget / hard-cap-4 policy.
-- Single-shot remains the **default**; fanout is opt-in and adaptive (0 is always valid).
+- Agentic remains the normal non-fanout path; deterministic single-shot remains explicitly selectable; fanout is opt-in and adaptive (0 is always valid).
 - All existing invariants preserved: Single-Finalizer Rule, Write-Set Rule, redaction-mandatory + byte-bounded per sub-agent, host-pressure-only shrink.
 
 ## Non-goals
@@ -38,7 +38,7 @@ This is policy-compliant today (`mandatoryProductionSpawn: false`, Escape Hatch)
 2. Write-Set Rule — implementer sub-agents require disjoint file/module ownership; overlap ⇒ one implementer + a verifier.
 3. Redaction-mandatory + byte-bounded output per sub-agent; only the finalizer assembles terminal evidence.
 4. Adaptive budget 0–3, hard cap 4, host-pressure-only shrink; zero-subagent Escape Hatch always valid.
-5. Single-shot stays the **default** path; fanout is a distinct opt-in mode with a one-flag rollback.
+5. Agentic stays the normal non-fanout path; single-shot is an explicit deterministic fallback; fanout is a distinct opt-in mode with a one-flag rollback.
 
 ## What model choice does / does not solve (scoping honesty)
 
@@ -73,12 +73,12 @@ Realized as the source-only `a2a-broker.worker-subagent-context-brief.packet` (f
 - [ ] **Redaction gate** — enforce redaction + byte-bounds on each sub-agent output programmatically (post-process), not only via prompt.
 - [ ] **Determinism controls** — deterministic evidence assembly (stable ordering + canonicalization before signing); record the execution graph (roles spawned, budget, host snapshot) in the evidence bundle for replay.
 
-### Phase 2 — Wire the claude-code lane (new mode; single-shot stays default)
+### Phase 2 — Wire the claude-code lane (new mode; fanout stays opt-in)
 
 > Concrete wiring design (anchors, per-workstream changes, data flow, flag/rollback, open decisions): [`phase-2-wiring.md`](./phase-2-wiring.md). Tracked in epic #1543.
 
 - [ ] **Tier→model mapping** in the runner: `low-cost` → concrete Sonnet-5 id for sub-agents; finalizer keeps parent.
-- [ ] Add **`Task`/Agent tool** to allowedTools for a NEW fanout mode (distinct from `single-shot`; leave the default path untouched).
+- [ ] Add **`Task`/Agent tool** to allowedTools for a NEW fanout mode (distinct from agentic and `single-shot`; leave non-fanout paths untouched).
 - [ ] **Expose the roster** — make the mounted `~/.claude/agents/` discoverable to the session (or `--agents` / bake).
 - [ ] **Stop stripping** `A2A_CONTAINED_SUBAGENTS_*` for claude-code (allowlist) or pass the budget via a dedicated channel.
 - [ ] **Inject the spawn-instructing prompt** for the claude-code script (adapt `buildContainedSubagentPrompt`, currently OpenClaw/Hermes-only).
@@ -89,20 +89,20 @@ Realized as the source-only `a2a-broker.worker-subagent-context-brief.packet` (f
 - [ ] **Canary** on one worker/lane for a bounded task class (large / independent / low-coupling) with the cost counter enforcing a hard ceiling.
 - [ ] **Observability** — sub-agent count, token cost/task, wall-clock, rework/verifier-reject rate, redaction violations, determinism diff.
 - [ ] **Expand** by task class; keep the 0-subagent Escape Hatch always valid.
-- [ ] **Rollback** — a single flag forces `single-shot` (the current default).
+- [ ] **Rollback** — clearing the fanout flag returns to non-fanout; explicit `single-shot` remains the deterministic fallback.
 
 ## Go / no-go gate (all must hold before Phase-3 canary)
 
-#1532/#1534/#1535 merged (done) · cost counter live with a hard ceiling · redaction gate enforced · runtime spawn gate wired · Sonnet-5 tier mapping done · single-shot remains default · rollback flag present.
+#1532/#1534/#1535 merged (done) · cost counter live with a hard ceiling · redaction gate enforced · runtime spawn gate wired · Sonnet-5 tier mapping done · #1700 makes agentic the normal lane while preserving explicit single-shot · rollback flag present.
 
 ## Success criteria
 
-- [ ] Container `claude-code` worker can spawn the roster adaptively (0–3, cap 4) in a distinct fanout mode, with single-shot still the default.
+- [ ] Container `claude-code` worker can spawn the roster adaptively (0–3, cap 4) in a distinct fanout mode, with normal agentic and explicit single-shot alternatives.
 - [ ] Sub-agents run at Sonnet-5 grade via runner tier mapping; finalizer stays on the parent model.
 - [ ] Every invariant above holds and is enforced by code (not only prompt): single-finalizer, disjoint write-sets, redaction/byte-bounds, host-pressure shrink.
 - [ ] A hard cost ceiling is enforced; exceeding it blocks further spawns.
 - [ ] Evidence bundles are reproducible/replayable (execution graph recorded; deterministic assembly).
-- [ ] One-flag rollback to single-shot is verified.
+- [ ] One-flag rollback to non-fanout is verified; explicit single-shot fallback is verified.
 
 ## References
 

@@ -200,7 +200,9 @@
 - [ ] Live schema execution, record-mode activation, deploy/restart/canary, and
       real-lineage collection receive separate explicit approval
 - [x] Second source kind receives a separate owner/durability review
-- [ ] Remaining three source kinds receive separate owner/durability reviews
+- [x] Third source kind receives a separate owner/durability review
+- [x] Fourth source kind receives a separate owner/durability review
+- [ ] Remaining source kind receives a separate owner/durability review
 
 ## N. Second authenticated owner — lineage create (Phase 15)
 
@@ -224,3 +226,110 @@
 - [x] Automatic source coverage is exactly `2/5`
 - [ ] Record-mode activation, deploy/restart/canary, and real-lineage collection
       receive separate explicit approval
+
+## O. Third authenticated owner — review report (Phase 16)
+
+- [x] Exact review-report route is the only new mutation path
+- [x] Ed25519 worker registry authenticates every review-report submission
+- [x] Dedicated review-report key scope fails closed when absent
+- [x] Verified key owner, never JSON, supplies reviewer issuer
+- [x] Canonical Phase 8 receipt parser proves issuer/reviewer equality
+- [x] Request rejects missing, extra, authority, namespace, issuer, and derived
+      identity fields
+- [x] Phase 13 carrier authorization and Phase 12/8 admission remain canonical
+- [x] Closed attached-source set is exactly create, review, and cancel
+- [x] Correction generation and reviewer replacement remain detached
+- [x] Source event, canonical lineage transition, and ledger share one
+      transaction
+- [x] Direct and worker-thread paths preserve replay/conflict and rollback
+- [x] Worker-thread path uses one composite command and post-ACK projection
+- [x] Off mode is inert before receipt parsing or store access
+- [x] Minimized source metadata excludes report reference, reviewer, private
+      prose, prompts, provider payloads, and credentials
+- [x] Existing lineage-create and operator-cancel paths remain compatible
+- [x] Generic task completion/result/log/prose and finalizer paths remain
+      detached
+- [x] Default mode remains `off`; `enforce` remains unsupported
+- [x] Automatic source coverage is exactly `3/5`
+- [ ] Live schema execution, record-mode activation, deploy/restart/canary,
+      provider send, and real-lineage collection receive separate approval
+
+## P. Fourth authenticated owner — correction generation (Phase 17)
+
+- [x] Exact correction-generation route is the only new mutation path
+- [x] Exact-role operator gate runs before trusted context construction
+- [x] Request contains only generation reference, observed time,
+      pre-correction binding, next head/diff, frozen intent, and changed paths
+- [x] Request cannot select source, authority, namespace, issuer, operator,
+      producer ID, or source-event ID
+- [x] Trusted code assigns `correction_generation_committed` and semantic
+      `correction_controller`
+- [x] Phase 13 authorization and Phase 12/8 admission remain canonical
+- [x] Schema 13 and the existing source table are reused unchanged
+- [x] Closed attached-source set is exactly create, review, correction, cancel
+- [x] Reviewer replacement remains detached
+- [x] Admission outside `correction_pending` records a stable rejection without
+      changing canonical lineage state or head
+- [x] Exact-subject and frozen-intent mismatches fail closed
+- [x] Forbidden and out-of-scope paths preserve the pending head
+- [x] Source event, canonical lineage transition/outcome, and ledger share one
+      transaction
+- [x] Direct and worker-thread paths preserve replay/conflict and rollback
+- [x] Worker-thread path uses one composite command and post-ACK projection
+- [x] Off mode is inert before request parsing or store access
+- [x] Minimized source metadata excludes generation reference, operator,
+      changed paths, patch/fixer output, prompts, provider payloads, and
+      credentials
+- [x] Existing lineage-create, review-report, and operator-cancel paths remain
+      compatible
+- [x] Generic task/result/log/prose, completion, retry, finalizer, approval,
+      and fixer paths remain detached
+- [x] Default mode remains `off`; `enforce` remains unsupported
+- [x] Automatic source coverage is exactly `4/5`
+- [ ] Live schema execution, record-mode activation, deploy/restart/canary,
+      provider send, ACK/replay/prune/migration, and real-lineage collection
+      receive separate approval
+
+## Q. Fifth authenticated owner — reviewer replacement (Phase 18)
+
+- [x] Exact reviewer-replacement route is the only new mutation path
+- [x] Exact-role operator gate runs before trusted context construction
+- [x] Request contains only decision reference, observed time, and exact
+      current intent/head/diff binding
+- [x] Request cannot select reason, source, authority, namespace, issuer,
+      operator/reviewer, producer ID, source-event ID, task, or assignment
+- [x] Trusted code assigns `reviewer_replacement_decided`,
+      `reviewer_allocator`, observation kind, and infrastructure-failure reason
+- [x] Phase 13 authorization and Phase 12/8 admission remain canonical
+- [x] Schema 13 and the existing source table are reused unchanged
+- [x] Closed attached-source set is exactly all five source/authority/command/
+      observation tuples
+- [x] Exact-subject CAS and same-event changed-payload conflict fail closed
+- [x] Already-terminal lineage admission is a stable rejection, not an applied
+      no-op
+- [x] Only the reviewer-replacement counter increments on a valid replacement
+- [x] Shared budget, start time, head, diff, intent, reviewer-run count,
+      correction-generation count, findings, and other counters are preserved
+- [x] Replacement-budget exhaustion remains terminal and visible
+- [x] Source event, canonical lineage transition/outcome, and ledger share one
+      transaction
+- [x] Direct and worker-thread paths preserve replay/conflict and rollback
+- [x] Worker-thread path uses one composite command and post-ACK projection
+- [x] Off mode is inert before request parsing or store access
+- [x] Minimized source metadata excludes decision reference, operator/reviewer,
+      task/assignment data, logs, prose, prompts, provider payloads, and
+      credentials
+- [x] Existing lineage-create, review-report, correction-generation, and
+      operator-cancel paths remain compatible
+- [x] No worker selection, task assignment, dispatch, inference, or automatic
+      replacement loop is added
+- [x] Generic task/result/error/log/prose, completion, retry, finalizer,
+      approval, and fixer paths remain detached
+- [x] Default mode remains `off`; `enforce` remains unsupported
+- [x] Authoritative source attachment coverage is exactly `5/5`
+- [ ] GitHub CI evidence, detached independent review, and finalizer closeout
+      are recorded only after completion
+- [ ] Live schema execution, record-mode activation, deploy/restart/canary,
+      provider send, ACK/replay/prune/migration, and real-lineage collection
+      receive separate approval
+- [ ] Issue #1518 closeout receives separate evidence and authorization

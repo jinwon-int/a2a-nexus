@@ -184,6 +184,7 @@ fuller target design. The broker currently enforces a v1 subset:
   | `POST /tasks/:id/complete` | `task.complete` |
   | `POST /tasks/:id/evidence` | `task.evidence` |
   | `POST /tasks/:id/fail` | `task.fail` |
+  | `POST /review-lineages/:id/review-report` | `review-lineage.report` |
 
 - **Self-binding** (requester id must equal the signing key owner / assigned
   worker) is enforced separately from the scope grant, so scope tokens encode

@@ -1,10 +1,10 @@
 /**
  * Minimized metadata shared by authenticated review-lineage source adapters
- * (#1518 Phases 14-15).
+ * (#1518 Phases 14-18).
  *
  * Only source kinds with an actual runtime owner belong in the closed
- * descriptor union. Adding a carrier contract alone must not expand automatic
- * source coverage.
+ * descriptor union. Adding a carrier contract alone must not expand runtime
+ * source-attachment coverage.
  */
 
 import {
@@ -23,7 +23,67 @@ export type AttachedReviewLineageSourceDescriptorV1 =
   | {
       sourceKind: "lineage_cancel_decided";
       authorityKind: "operator";
+    }
+  | {
+      sourceKind: "review_report_submitted";
+      authorityKind: "reviewer";
+    }
+  | {
+      sourceKind: "correction_generation_committed";
+      authorityKind: "correction_controller";
+    }
+  | {
+      sourceKind: "reviewer_replacement_decided";
+      authorityKind: "reviewer_allocator";
     };
+
+/**
+ * The complete runtime-attached set. Source, authority, command, and
+ * observation classes are intentionally closed and independently checked
+ * again at the durable store boundary.
+ */
+export const REVIEW_LINEAGE_ATTACHED_SOURCE_TUPLES = [
+  {
+    sourceKind: "lineage_contract_frozen",
+    authorityKind: "lineage_dispatcher",
+    commandKind: "create_lineage",
+    observationKind: "lineage_create",
+  },
+  {
+    sourceKind: "review_report_submitted",
+    authorityKind: "reviewer",
+    commandKind: "record_event",
+    observationKind: "review_report",
+  },
+  {
+    sourceKind: "correction_generation_committed",
+    authorityKind: "correction_controller",
+    commandKind: "record_event",
+    observationKind: "correction_generation",
+  },
+  {
+    sourceKind: "reviewer_replacement_decided",
+    authorityKind: "reviewer_allocator",
+    commandKind: "record_event",
+    observationKind: "reviewer_replacement",
+  },
+  {
+    sourceKind: "lineage_cancel_decided",
+    authorityKind: "operator",
+    commandKind: "record_event",
+    observationKind: "operator_cancel",
+  },
+] as const satisfies ReadonlyArray<
+  AttachedReviewLineageSourceDescriptorV1 & {
+    commandKind: "create_lineage" | "record_event";
+    observationKind:
+      | "lineage_create"
+      | "review_report"
+      | "correction_generation"
+      | "reviewer_replacement"
+      | "operator_cancel";
+  }
+>;
 
 export type AuthorizedReviewLineageSourceEventV1 =
   AttachedReviewLineageSourceDescriptorV1 & {

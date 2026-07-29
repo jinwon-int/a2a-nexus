@@ -208,6 +208,29 @@ describe("standalone-broker-client legacy envelope parsing", () => {
     assert.deepEqual(result.result, { summary: "done" });
   });
 
+  it("parses the optional broker-owned shadow lane assignment without adding it to create requests", async () => {
+    const record = legacyTaskRecord({
+      laneAssignment: {
+        version: "fast-lane.v1",
+        mode: "shadow",
+        decision: "full",
+        reasonCodes: ["mode_missing"],
+      },
+    });
+    const { fetchImpl, calls } = makeFetchStub(() => jsonResponse(record));
+    const client = createA2ABrokerClient({ baseUrl: BASE, fetchImpl });
+
+    const result = await client.createTask({
+      intent: "analyze",
+      requester: { id: "hub-session", kind: "session", role: "hub" },
+      target: { id: "worker-a", kind: "node" },
+      message: "analyze",
+    });
+
+    assert.deepEqual(result.laneAssignment, record.laneAssignment);
+    assert.equal(Object.hasOwn(calls[0]!.body as object, "laneAssignment"), false);
+  });
+
   it("rejects a malformed (non-JSON) broker body with A2ABrokerMalformedResponseError", async () => {
     const { fetchImpl } = makeFetchStub(
       () => new Response("<html>oops</html>", { status: 200 }),

@@ -28,13 +28,18 @@ What is **not** guaranteed:
 
 ## SQLite backend
 
-SQLite is available as a higher-durability backend and initializes with WAL mode. It requires Node.js `>=22.5` because it uses `node:sqlite`.
+SQLite is available as a higher-durability, single-writer backend and initializes with WAL mode. It requires Node.js `>=22.5` because it uses `node:sqlite`.
+
+The optional worker-thread persistence queue serializes writes through one FIFO writer while reads remain synchronous on the main thread. Neither WAL nor the worker thread makes independently running broker processes a supported cluster. Task decisions and projections still assume one serving broker process, and HTTP-signature replay/rate-limit state remains process-local.
+
+The proposed [shared-state and HA contract](../../../docs/specs/shared-state-ha-contract/spec.md) defines the exact `single-process`, `single-writer-durable`, `multi-process-unsupported`, and future `shared-state-ha` grades. That packet is documentation only: the current SQLite store does not claim `SharedStateStorageAdapterV1` conformance, current startup/readiness does not yet enforce its topology fence, and no shared/HA backend exists.
 
 Migration guidance:
 
 - Use the existing SQLite export/import tooling on a copied local state file first.
 - Do not run a production migration without operator approval.
 - Keep the `json-file` backup until the SQLite broker has completed at least one clean startup and state inspection.
+- Treat any adapter shadow/dual-read, schema change, cutover, rollback, broker restart, or replica change as a separately authorized live action under the new contract's [staged plan](../../../docs/specs/shared-state-ha-contract/plan.md).
 
 ## Verification
 

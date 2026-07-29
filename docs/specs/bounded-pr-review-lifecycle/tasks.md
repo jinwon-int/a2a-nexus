@@ -319,8 +319,13 @@ store, queue, schema, outbox, migration, or live action.
       restart, canary, or real-lineage collection separately.
 - [x] Attach the second source kind (`lineage_create`, Phase 15) after proving
       an actual owner and the same atomic durability.
-- [ ] Attach the remaining three source kinds only after each proves an actual
-      owner and the same atomic or ACK-replayed durability.
+- [x] Attach the third source kind (`review_report`, Phase 16) after proving
+      signing-key ownership and the same atomic durability.
+- [x] Attach the fourth source kind (`correction_generation`, Phase 17) after
+      proving an operator owner and the same atomic durability.
+- [x] Attach the fifth source kind (`reviewer_replacement`, Phase 18) after
+      proving an exact-role operator issuer, semantic allocator authority, and
+      the same atomic or ACK-replayed durability.
 
 Phase 14 is source and temporary-database validation only. It does not approve
 any live runtime or data action.
@@ -354,10 +359,133 @@ Phase 15 is source and temporary-database validation only. The canonical
 lineage table necessarily owns the frozen contract; the minimized source-event
 table does not duplicate it.
 
+## Phase 16: Third authenticated owner — review report
+
+- [x] Add exact `POST /review-lineages/{lineageId}/review-report` input.
+- [x] Require an Ed25519 worker HTTP signature even when legacy identity
+      enforcement is relaxed.
+- [x] Add and enforce the dedicated `review-lineage.report` key scope.
+- [x] Derive reviewer issuer only from the verified signing-key owner.
+- [x] Make the canonical Phase 8 receipt parser reject issuer/reviewer mismatch.
+- [x] Fix `review_report_submitted`, `reviewer`, and namespace in trusted code.
+- [x] Reuse Phase 13 authorization and Phase 12 awaited admission.
+- [x] Extend the closed source tuple set to exactly create, review, and cancel.
+- [x] Keep correction generation and reviewer replacement source tuples
+      detached.
+- [x] Reuse schema 13 and commit source event, lineage transition, and ledger in
+      one `BEGIN IMMEDIATE`.
+- [x] Preserve one worker-thread command, one durable ACK, and post-ACK
+      projection.
+- [x] Prove restart replay and changed-payload conflict without overwrite.
+- [x] Prove forced source and ledger failures roll back the lineage transition.
+- [x] Prove off-mode inertness before request parsing or store access.
+- [x] Store no report reference, reviewer ID, receipt/finding prose, prompt,
+      provider payload, or credential in minimized source metadata.
+- [x] Preserve lineage-create and operator-cancel compatibility.
+- [x] Keep generic task completion/result/log/prose, retry, finalizer, approval,
+      and fixer paths detached.
+- [x] Report automatic source coverage as exactly `3/5`.
+- [ ] Approve record-mode activation, live schema execution, deployment,
+      restart, canary, provider send, or real-lineage collection separately.
+
+Phase 16 is source and temporary-database validation only. It does not weaken
+finalizer, CodeQL, reviewer independence, required checks, or approval gates.
+
+## Phase 17: Fourth authenticated owner — correction generation
+
+- [x] Add exact
+      `POST /review-lineages/{lineageId}/correction-generation` input.
+- [x] Require an authenticated requester with the exact `operator` role.
+- [x] Accept only generation reference, observation time, exact pre-correction
+      binding, next head/diff, frozen intent, and changed paths.
+- [x] Reject caller-selected authority, namespace, issuer, source kind,
+      producer ID, source-event ID, and operator identity.
+- [x] Fix `correction_generation_committed`, semantic
+      `correction_controller`, namespace, and issuer in trusted broker code.
+- [x] Reuse Phase 13 authorization, Phase 12 awaited admission, the Phase 8
+      parser, and schema 13 without a migration.
+- [x] Extend the closed tuple set to exactly create, review, correction, and
+      cancel; keep reviewer replacement detached.
+- [x] Reject correction admission unless canonical state is
+      `correction_pending`.
+- [x] Preserve frozen-intent, exact-subject, forbidden-path, and allowed-path
+      fail-closed behavior without accepting a new head.
+- [x] Commit source event, canonical lineage transition/outcome, and ledger in
+      one `BEGIN IMMEDIATE`.
+- [x] Preserve one worker-thread command, one durable ACK, and post-ACK
+      projection.
+- [x] Prove direct-store and worker-thread behavior, restart replay,
+      changed-payload conflict, source/ledger rollback, and off-mode inertness.
+- [x] Store no raw generation reference, operator ID, path list, prompt,
+      provider payload, credential, patch, or fixer output in minimized source
+      metadata.
+- [x] Preserve lineage create, review report, and operator cancel compatibility.
+- [x] Keep generic task/result/log/prose, completion, retry, finalizer,
+      approval, and fixer paths detached.
+- [x] Report automatic source coverage as exactly `4/5`.
+- [ ] Approve record-mode activation, live schema execution, deployment,
+      restart, canary, provider send, ACK/replay/prune/migration, or
+      real-lineage collection separately.
+
+Phase 17 records an already committed generation only. It never applies a
+patch or auto-pushes fixer output and does not weaken finalizer, CodeQL,
+reviewer independence, required checks, or approval gates.
+
+## Phase 18: Fifth authenticated owner — reviewer replacement
+
+- [x] Add exact
+      `POST /review-lineages/{lineageId}/reviewer-replacement` input.
+- [x] Require an authenticated requester with the exact `operator` role.
+- [x] Accept only decision reference, observation time, and exact current
+      intent/head/diff binding.
+- [x] Reject caller-selected reason, authority, namespace, issuer, source kind,
+      producer ID, source-event ID, operator/reviewer identity, task, or
+      assignment.
+- [x] Fix `reviewer_replacement_decided`, semantic `reviewer_allocator`,
+      namespace, issuer, observation kind, and
+      `reason=infrastructure_failure` in trusted broker code.
+- [x] Reuse Phase 13 authorization, Phase 12 awaited admission, the Phase 8
+      parser, and schema 13 without a migration.
+- [x] Extend the closed tuple set to exactly all five source/authority/command/
+      observation tuples.
+- [x] Preserve exact-subject CAS, replay, same-event changed-payload conflict,
+      restart behavior, source/ledger rollback, and post-ACK projection.
+- [x] Reject already-terminal lineages without persisting an applied no-op.
+- [x] Increment only the existing reviewer-replacement counter without
+      resetting shared budget, start time, subject, intent, reviewer-run or
+      correction-generation counters, or findings.
+- [x] Preserve terminal, visible replacement-budget exhaustion.
+- [x] Prove direct-store and worker-thread behavior, exact route/fields/role,
+      parser delegation, stale-subject and terminal rejection, off-mode
+      inertness, rollback, privacy, closed tuples, and compatibility.
+- [x] Store no raw decision reference, operator/reviewer identity, task or
+      assignment data, prompt, provider payload, credential, log, or prose in
+      minimized source metadata.
+- [x] Preserve lineage create, signed review report, correction generation, and
+      operator cancel compatibility.
+- [x] Keep generic task/result/error/log/prose, completion, retry, finalizer,
+      approval, assignment, and dispatch paths detached.
+- [x] Report authoritative source attachment coverage as exactly `5/5`.
+- [ ] Approve record-mode activation, live schema execution, deployment,
+      restart, canary, provider send, ACK/replay/prune/migration, or
+      real-lineage collection separately.
+- [ ] Record GitHub CI evidence, detached independent review, and finalizer
+      closeout only after those external gates complete.
+- [ ] Close issue #1518 only through separately authorized closeout.
+
+Phase 18 records an already classified infrastructure-failure decision only.
+It never selects or dispatches a replacement worker and creates no automatic
+replacement loop. `5/5` is source attachment, not live activation or issue
+closeout, and no finalizer, CodeQL, reviewer-independence, required-check, or
+approval gate is weakened.
+
 ## Validation commands (all phases as applicable)
 
 ```bash
 npm run check
 npm run scan:public-readiness
-node --test packages/broker/src/worker-review.test.ts
+npm run scan:external-secrets
+npm run test:conformance
+npm run check:markdown-links
+git diff --check
 ```

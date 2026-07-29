@@ -21,3 +21,27 @@ export type {
   BrokerPolicyMode,
   BrokerPolicyRule,
 } from "./broker-policy.js";
+export {
+  POLICY_REFEREE_DECISION_SCHEMA,
+  POLICY_REFEREE_ERROR_SCHEMA,
+  POLICY_REFEREE_EXIT,
+  POLICY_REFEREE_MAX_TASKS_TODAY,
+  POLICY_REFEREE_TASK_SCHEMA,
+  POLICY_REFEREE_WORKER_SCHEMA,
+  PolicyRefereeInputError,
+  evaluatePolicyRefereeCli,
+  parsePolicyRefereePolicyDocument,
+  parsePolicyRefereeTaskEnvelope,
+  parsePolicyRefereeWorkerEnvelope,
+  projectPolicyRefereeDecision,
+} from "./cli-contract.js";
+export type {
+  PolicyRefereeDecisionEnvelope,
+  PolicyRefereeErrorCode,
+  PolicyRefereeEvaluationResult,
+  PolicyRefereeImplementationReadiness,
+  PolicyRefereeInputKind,
+  PolicyRefereeReasonCode,
+  PolicyRefereeTaskEnvelope,
+  PolicyRefereeWorkerEnvelope,
+} from "./cli-contract.js";

@@ -183,6 +183,7 @@ export type AuditAction =
   | "proposal.applied"
   | "exchange.message.added"
   | "task.created"
+  | "task.lane_assigned"
   | "task.approved"
   | "task.approval_rejected"
   | "task.policy_warned"
@@ -621,11 +622,53 @@ export interface TaskWakePlanResult {
   replayed: boolean;
 }
 
+export type TaskLaneDecision = "fast" | "full";
+
+export type TaskLaneReasonCode =
+  | "all_fast_conditions_met"
+  | "requester_lane_facts_present"
+  | "intent_not_analyze"
+  | "mode_missing"
+  | "mode_not_read_only_analysis"
+  | "write_or_implementation_marker_present"
+  | "worker_assignment_conflict"
+  | "round_marker_present"
+  | "fanout_marker_present"
+  | "multi_worker_marker_present"
+  | "delegated_workflow_marker_present"
+  | "worker_mode_missing"
+  | "worker_not_persistent"
+  | "policy_decision_missing"
+  | "policy_decision_unknown"
+  | "policy_requires_approval"
+  | "policy_denied"
+  | "approval_marker_present"
+  | "sensitive_marker_present"
+  | "live_marker_present"
+  | "external_send_marker_present"
+  | "credential_access_marker_present";
+
+/**
+ * Broker-owned fast-lane classification recorded at create time.
+ *
+ * The v1 mode is observation-only: it cannot change lifecycle, scheduling,
+ * execution, evidence, provenance, acceptance, or finalizer behavior.
+ * CreateTaskRequest deliberately has no corresponding authoritative field.
+ */
+export interface TaskLaneAssignment {
+  version: "fast-lane.v1";
+  mode: "shadow";
+  decision: TaskLaneDecision;
+  reasonCodes: TaskLaneReasonCode[];
+}
+
 export interface TaskRecord extends A2ATaskRequest {
   intent: TaskKind;
   status: TaskStatus;
   targetNodeId: string;
   payload: Record<string, unknown>;
+  /** Broker-owned shadow classification; absent on records created before fast-lane v1. */
+  laneAssignment?: TaskLaneAssignment;
   /** Canonical parent round identifier for A2A discussion/round child tasks. */
   parentRoundId?: string;
   /** Total expected child tasks/workers in the parent round. */

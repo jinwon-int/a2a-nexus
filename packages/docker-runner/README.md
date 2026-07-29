@@ -602,9 +602,56 @@ Precedence is `commandScript > commandJson > commandProfile > commandTemplate`:
 | `A2A_DOCKER_RUNNER_PATCH_COMMAND_JSON` | `commandJson` | `/work/patch-command.sh` | JSON `{ "argv": [...], "env": {...} }` is converted into a quoted argv script. |
 | `A2A_DOCKER_RUNNER_PATCH_COMMAND_PROFILE=hermes` | generated `commandScript` | `/work/patch-command.sh` | Operator-only trusted-worker profile. Mounts `A2A_DOCKER_RUNNER_HERMES_CONFIG_DIR` (or `/root/.hermes`) read-only at `/run/secrets/hermes-dir`, then runs `hermes chat --query ... --quiet --yolo` in the checked-out repo. Explicit `A2A_HERMES_MODEL` / legacy `A2A_OPENCLAW_MODEL` overrides still win. When `A2A_DOCKER_RUNNER_MODEL_SOURCE=native`, the runner reads the copied Hermes profile `.env` / `config.yaml` for the model and fails closed if no safe model is found. |
 | `A2A_DOCKER_RUNNER_PATCH_COMMAND_PROFILE=openclaw` | generated `commandScript` | `/work/patch-command.sh` | Legacy operator-only trusted-worker profile. Mounts `A2A_DOCKER_RUNNER_OPENCLAW_CONFIG_DIR` (or the profile default when unset) read-only at `/run/secrets/openclaw-dir`, then runs `openclaw agent` in the checked-out repo. Explicit `A2A_OPENCLAW_MODEL` overrides still win. Default legacy behavior remains `openai-codex/gpt-5.5` so OAuth-backed Codex auth is used instead of same-name OpenAI API-key models. When `A2A_DOCKER_RUNNER_MODEL_SOURCE=native`, the runner reads the copied OpenClaw profile agent/default model and fails closed if no safe model is found. Do not present this profile or host-network mode as a public sandbox default. |
-| `A2A_DOCKER_RUNNER_PATCH_COMMAND_PROFILE=claude-code` (`cccb`) | generated `commandScript` | `/work/patch-command.sh` | Operator-only trusted-worker profile. Mounts `A2A_DOCKER_RUNNER_CLAUDE_CONFIG_DIR` (or `/root/.claude`) read-only at `/run/secrets/claude-dir`, then runs the bundled `claude-a2a-patch-bridge.mjs` through the `claude` CLI in single-shot mode. Use the `a2a-docker-runner-cccb:<runner-sha>` image; credentials are mounted at runtime only and are not baked into image layers. |
+| `A2A_DOCKER_RUNNER_PATCH_COMMAND_PROFILE=claude-code` (`cccb`) | generated `commandScript` | `/work/patch-command.sh` | Operator-only trusted-worker profile. Mounts `A2A_DOCKER_RUNNER_CLAUDE_CONFIG_DIR` (or `/root/.claude`) read-only at `/run/secrets/claude-dir`, then runs the bundled `claude-a2a-patch-bridge.mjs` through the `claude` CLI. The normal non-fanout implementation mode is agentic; deterministic single-shot and fanout modes are explicit alternatives. Use the `a2a-docker-runner-cccb:<runner-sha>` image; credentials are mounted at runtime only and are not baked into image layers. |
 | `A2A_DOCKER_RUNNER_PATCH_COMMAND_PROFILE=codex` | generated `commandScript` | `/work/patch-command.sh` | Operator-only trusted-worker profile. Mounts `A2A_DOCKER_RUNNER_CODEX_CONFIG_DIR` (default `/var/lib/a2a-runner/codex-dir`) read-only at `/run/secrets/codex-dir`, copies only `auth.json` and optional `config.toml` into ephemeral `/tmp`, then runs `codex exec --ephemeral --json` with `gpt-5.6-sol`, reasoning `high`, approval `never`, and `danger-full-access` inside the external container boundary. Use `a2a-docker-runner-codex:<runner-sha>`; credentials are never baked into image layers or runner artifacts. |
 | `A2A_DOCKER_RUNNER_PATCH_COMMAND_TEMPLATE` | `commandTemplate` | `/work/patch-command.sh` | Legacy eval path; rejected for GitHub patch execution. |
+
+#### Claude turn-budget resolution and recovery
+
+The Claude bridge is the canonical owner of max-turn defaults. The Docker
+runner exports a turn-budget variable only when the operator supplied a valid
+positive integer; it never writes a second default into the generated command.
+`doctor.githubPatch.detail.turnBudgets` projects the active mode, all expected
+effective values, whether each value is a canonical default or explicit
+override, and fanout cap application before a task is claimed. It contains
+variable names and numeric values only, never raw environment contents or
+node-private paths.
+
+Mode selection is: fanout when
+`A2A_DOCKER_RUNNER_CLAUDE_CODE_FANOUT_ENABLED=1`; otherwise an explicit
+`A2A_DOCKER_RUNNER_CLAUDE_CODE_PATCH_MODE` or
+`A2A_CLAUDE_CODE_PATCH_MODE` of `single-shot` selects the deterministic
+diff/apply helper; absent an explicit alternative, the normal implementation
+lane is agentic. The budget resolution order is mode-specific:
+
+| Mode | Resolution order | Canonical default |
+|---|---|---:|
+| Analysis | `A2A_CLAUDE_CODE_ANALYSIS_MAX_TURNS`, legacy shared `A2A_CLAUDE_CODE_MAX_TURNS`, default | 10 |
+| Agentic patch | `A2A_CLAUDE_CODE_MAX_TURNS`, default | 40 |
+| Deterministic single-shot diff/apply | `A2A_CLAUDE_CODE_DETERMINISTIC_MAX_TURNS`, backward-compatible `A2A_CLAUDE_CODE_PATCH_MAX_TURNS`, default | 6 per Claude invocation |
+| Fanout patch | `A2A_CLAUDE_CODE_FANOUT_MAX_TURNS`, default, hard cap | 40, capped at 200 |
+
+Each completed Claude invocation writes secret-free
+`artifacts/claude-turn-budget.json` telemetry with the mode, effective value,
+source, and outcome. `turnsUsed` is present only when the Claude CLI result
+envelope supplies a trustworthy non-negative integer; the bridge never derives
+it from prose.
+
+A max-turn stop remains a failed `budget_limited` task with
+`terminalReason=max_turns`; it is never recovered as success from a partial PR
+URL. When safe tracked changes exist, the bridge may retain the fixed
+`artifacts/claude-max-turn-checkpoint.{json,diff,status}` set. The checkpoint
+contains exact base/head metadata and tracked Git diff/status only. It excludes
+untracked files, binary diffs, `.env` files, bootstrap/runtime context files,
+unsafe paths, secret-shaped content, and oversized payloads. Its default total
+bound is 512 KiB with a 1 MiB hard ceiling. Checkpoint creation performs no
+stage, commit, push, PR, or evidence-gate action.
+
+A retry must consume a checkpoint deliberately: locate the retained task run,
+verify the manifest ID and exact base/head commits, inspect the changed-path
+allowlist and passed secret scan, then run `git apply --check` against a fresh
+checkout of that exact base before applying the diff. Do not feed checkpoints
+automatically into a new task or treat their presence as PR/Done/Block evidence.
 
 For the OpenClaw profile, prefer a runner image that already contains the
 `openclaw` CLI, or an explicitly approved trusted read-only CLI/package mount.

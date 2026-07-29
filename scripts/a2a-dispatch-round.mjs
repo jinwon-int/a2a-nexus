@@ -30,6 +30,8 @@
 import fs from 'node:fs';
 import { parseArgs } from 'node:util';
 
+import { A2A_REQUESTER_ROLES } from '../packages/broker/src/core/requester-role-contract.mjs';
+
 // ─── Classifications ────────────────────────────────────────────────────────
 
 const CLASS_CREATED = 'created';
@@ -42,6 +44,8 @@ const CLASS_PREFLIGHT_EXCLUDED = 'preflight-excluded';
 // accounted for because no broker task should be created for an ineligible
 // worker; it is reported separately from created/failed lanes (#659).
 const OK_CLASSES = new Set([CLASS_CREATED, CLASS_ALREADY_EXISTS, CLASS_ACCEPTED_UNCONFIRMED, CLASS_PREFLIGHT_EXCLUDED]);
+const A2A_REQUESTER_ROLE_SET = new Set(A2A_REQUESTER_ROLES);
+const A2A_REQUESTER_ROLE_LIST = A2A_REQUESTER_ROLES.join(', ');
 
 // ─── Helpers ────────────────────────────────────────────────────────────────
 
@@ -298,6 +302,8 @@ function validateManifest(manifest) {
   }
   if (!isPlainObject(manifest.requester) || !hasText(manifest.requester.id) || !hasText(manifest.requester.role)) {
     errors.push('requester.id and requester.role are required non-empty strings');
+  } else if (!A2A_REQUESTER_ROLE_SET.has(manifest.requester.role)) {
+    errors.push(`requester.role must be one of: ${A2A_REQUESTER_ROLE_LIST}`);
   }
   if (manifest.defaults != null && !isPlainObject(manifest.defaults)) {
     errors.push('defaults, when present, must be an object');
@@ -327,6 +333,8 @@ function validateManifest(manifest) {
 
     if (!isPlainObject(lane.target) || !hasText(lane.target.id) || !hasText(lane.target.role)) {
       errors.push(`${tag}.target.id and ${tag}.target.role are required non-empty strings`);
+    } else if (!A2A_REQUESTER_ROLE_SET.has(lane.target.role)) {
+      errors.push(`${tag}.target.role must be one of: ${A2A_REQUESTER_ROLE_LIST}`);
     }
     if (!hasText(lane.message)) {
       errors.push(`${tag}.message is required and must be a non-empty string`);
@@ -930,4 +938,5 @@ export {
   CLASS_ALREADY_EXISTS,
   CLASS_FAILED,
   CLASS_PREFLIGHT_EXCLUDED,
+  A2A_REQUESTER_ROLES,
 };

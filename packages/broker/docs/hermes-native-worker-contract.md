@@ -258,6 +258,17 @@ Hermes workers must comply with the `mobilealpha-hermes` preset policy:
 See [resource-aware-worker-policy.md](resource-aware-worker-policy.md) and
 `src/core/resource-aware-worker-policy.ts` for full details.
 
+## Credential Rotation
+
+Codex runner credentials for Hermes/native workers live in the directory
+referenced by `A2A_DOCKER_RUNNER_CODEX_CONFIG_DIR`. Rotate the credentials in
+that directory rather than embedding tokens elsewhere.
+
+Do **not** rely on `codex login status` as a health check — it can report a
+logged-in state even when the credentials are stale or unable to complete real
+work. To verify that rotated credentials are healthy, run an actual `codex exec`
+call and confirm it succeeds.
+
 ## Test Coverage
 
 Hermes/native worker contract tests are in:

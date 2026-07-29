@@ -340,6 +340,14 @@ the queue-drain stampede) with:
 
 Confirmation reads use `GET /tasks/:id` with the same auth headers.
 
+The returned full `TaskRecord` may include broker-owned
+`laneAssignment: { version:"fast-lane.v1", mode:"shadow",
+decision:"fast"|"full", reasonCodes:[...] }`. It is not a
+`CreateTaskRequest` authority: requester top-level or payload lane/shadow fields
+cannot force fast. Round-dispatch metadata itself makes the shadow decision
+full, and shadow recording changes no dispatch or lifecycle behavior. See
+[`specs/fast-lane.md`](./specs/fast-lane.md).
+
 ### Pre-dispatch risk hints (#1300 M2-b/c — recommended, not enforced)
 
 Before dispatching a round, look up the accumulated memory for the round's

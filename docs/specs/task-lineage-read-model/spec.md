@@ -26,6 +26,18 @@ queries — `children <hash>`, `leaves`, `lineage <hash>` — over a commit DAG
 and they were sufficient to coordinate swarms without a merge model. The
 broker already owns a superset of the underlying data.
 
+### Phase 0 measurement note (2026-07-28)
+
+A read-only live sample of the most recent 500 list-projected tasks showed:
+Team1 `parentTaskId=4`, `parentRoundId=0`, `referenceTaskIds=0`; Team2
+`parentTaskId=1`, `parentRoundId=0`, `referenceTaskIds=0`. The list projection
+may omit lineage fields, so these counts describe that read surface rather
+than proving the durable task records lack those fields. The two existing
+round-coordinator closeout datasets (`all-complete.json` and
+`mixed-states.json`) are the recorded round-shaped golden-fixture inputs for
+v1; tests stamp their manifest round label onto projected `TaskRecord` values
+without changing the recorded fixtures.
+
 ### Naming boundary (required to avoid collision)
 
 `review-lifecycle` already ships a **ReviewLineage** concept
@@ -67,7 +79,8 @@ review-lifecycle domain.
   (`parentTaskId`, `parentRoundId`, `referenceTaskIds`, status, timestamps).
   No new write path; the projection is rebuildable from the task store.
 - Three query surfaces (JSON-RPC first; HTTP read routes optional phase 2):
-  - `tasks/children` — direct children of a task id.
+  - `tasks/children` — direct canonical/reference children of a task id, or
+    stamped children of a parent round id.
   - `tasks/lineage` — ancestor chain to the root, depth-bounded.
   - `tasks/leaves` — tasks with no recorded children, filterable by
     `parentRoundId`, `intent`, `status`, and time range.
@@ -89,23 +102,31 @@ review-lifecycle domain.
 - Semantic duplicate detection (AgentHub explicitly left this out; so do we).
 - Cross-broker lineage aggregation (cross-broker references stay payload
   metadata; v1 answers within the broker of record only).
+- Treating `referenceTaskIds` as canonical ancestry or silently constructing a
+  multi-parent lineage chain. The canonical ancestry chain is
+  `parentTaskId`-only.
 - Using lineage as a finalizer/verdict input. Lineage is a
   dispatch/audit aid; it MUST NOT become an evidence source for terminal
   verdicts in v1 (mirrors the #1373 K3 boundary for injected knowledge).
 
 ## Contracts
 
-### TaskLineageNodeV1
+All v1 task-lineage request and response records are closed, versioned
+contracts. Unknown keys, unknown discriminants, malformed dates, and values
+outside the documented bounds fail closed.
+
+### `TaskLineageNodeV1`
 
 ```jsonc
 {
+  "kind": "TaskLineageNodeV1",
   "taskId": "task-123",
-  "parentTaskId": "task-100",        // null for roots
-  "parentMissing": false,            // true when parentTaskId is set but no record exists
+  "parentTaskId": "task-100",        // null for roots or an unavailable parent
+  "parentMissing": false,            // true when a recorded canonical parent is unavailable
   "parentRoundId": "pr-review-r2-20260612-195514", // optional, as recorded
-  "referenceTaskIds": ["task-099"],  // optional, as recorded (identifiers only)
-  "intent": "pr-review",
-  "status": "completed",
+  "referenceTaskIds": ["task-099"],  // visible reference targets only
+  "intent": "analyze",
+  "status": "succeeded",
   "requesterId": "libero",
   "assignedWorkerId": "worker-1",
   "createdAt": "2026-07-26T00:00:00Z",
@@ -113,19 +134,38 @@ review-lifecycle domain.
 }
 ```
 
-Unknown fields fail closed (canonical parser rule, consistent with
-review-lifecycle parsers).
+`parentTaskId` is the sole canonical ancestry relation. `referenceTaskIds`
+are typed reference edges used by children/leaves and rejoin detection; they
+never replace the canonical parent. A child matching an anchor through both
+relations is emitted once with both edge types. An unavailable canonical
+parent is projected as `parentTaskId: null`, `parentMissing: true` so an
+inaccessible identifier is not disclosed.
 
-### tasks/children
+### `tasks/children`
 
-Request: `{ "taskId": "task-100", "limit": 200, "cursor": "…" }`.
-Response: ordered children (createdAt, then taskId) of `TaskLineageNodeV1`
-with `depth: 1`, plus `nextCursor`. `parentRoundTotal`-consistency hint:
-when every child shares one `parentRoundId`, the response includes
-`round: { parentRoundId, stampedTotal, observedChildren }` so callers can
-see incomplete rounds without a second query.
+The request MUST contain exactly one closed anchor:
 
-### tasks/lineage
+- `{ "taskId": "task-100", "limit": 200, "cursor": "…" }` returns direct
+  canonical-parent and reference children.
+- `{ "parentRoundId": "round-100", "limit": 200, "cursor": "…" }` returns
+  stamped round children.
+
+Unknown anchors, both anchors, or neither anchor fail closed. The response is
+ordered by `createdAt`, then `taskId`; every item has a
+`TaskLineageChildV1` typed edge list (`canonical_parent`, `reference`, or
+`round_stamp`) and a `TaskLineageNodeV1` at `depth: 1`. A child matching both
+canonical and reference edges is deduplicated. Reference edges whose
+canonical parent differs are reported as rejoins, but do not create a
+multi-parent ancestry chain.
+
+When the visible matching children have one consistent round stamp and
+consistent positive `parentRoundTotal`, the response includes a closed
+`TaskLineageRoundCompletenessHintV1` with `parentRoundId`, `stampedTotal`,
+`observedChildren`, and `complete`. Inconsistent or unavailable totals are
+reported only as bounded, identifier-free anomalies; hints and counts are
+computed from readable tasks only.
+
+### `tasks/lineage`
 
 Request: `{ "taskId": "task-123", "maxDepth": 32 }`.
 Response: ordered ancestor chain from the anchor up to the root (or
@@ -134,14 +174,48 @@ Response: ordered ancestor chain from the anchor up to the root (or
 `maxDepth` never throws an opaque error: cycle → `task_lineage_cycle`;
 depth → `truncated: true, rootReached: false`.
 
-### tasks/leaves
+The default `maxDepth` is 32 canonical-parent hops and the hard maximum is
+128. A recorded canonical parent that is missing or inaccessible ends the
+visible chain with `parentMissing: true`, `rootReached: false`; it never
+silently re-roots. Canonical parent cycles fail with the structured
+`task_lineage_cycle` error and never disclose cycle member identifiers.
 
-Request: `{ "parentRoundId": "…", "intent": "…", "status": ["completed"],
+### `tasks/leaves`
+
+Request: `{ "parentRoundId": "…", "intent": "…", "status": ["succeeded"],
 "since": "…", "until": "…", "limit": 200, "cursor": "…" }` (all filters
 optional, AND-combined).
-Response: tasks with no recorded children matching the filters. Leaves are
-the claimable frontier candidates; the response is a candidate list, not a
-claim decision — claim policy remains with the existing dispatcher gates.
+Response: tasks with no visible canonical-parent or reference children
+matching the filters. A task referenced by any visible child is not a leaf.
+Filters are AND-combined; the status list is an OR only within that field.
+Leaves are frontier candidates, not a claim decision — claim policy remains
+with the existing dispatcher gates.
+
+### Pagination and diagnostics
+
+Children and leaves default to `limit=200` and reject limits above 1000.
+Cursors are opaque, deterministic, length-bounded, query-bound tokens over a
+stable `(createdAt, taskId)` position. Malformed tokens, tokens from another
+method/anchor/filter/limit, and tokens whose position is unavailable fail
+closed. Cursor material contains no task payload, message, result, error, or
+artifact content.
+
+Every successful response carries closed, bounded
+`TaskLineageDiagnosticsV1`. Diagnostics contain aggregate safe anomaly codes
+and counts only; they never carry task ids, parent/reference ids, messages,
+payloads, results, errors, artifacts, or unbounded samples. Metrics use the
+`task_lineage.*` namespace, never the review-lineage namespace.
+
+### Visibility boundary
+
+The projection is built once per query from the broker's canonical task read
+source/repository snapshot, then reduced to tasks the requester may read under
+the existing task-read authorization boundary. Inaccessible tasks are absent
+before indexes, counts, cursors, anomalies, and round hints are built.
+Unavailable parents and references do not disclose identifiers or distinguish
+missing records from inaccessible records. Missing and inaccessible anchors
+produce the same bounded task-not-found result. No per-item store scan is
+permitted.
 
 ## Safety and approval boundaries
 
@@ -149,9 +223,10 @@ claim decision — claim policy remains with the existing dispatcher gates.
 - No new durable state in v1; the projection is derived and rebuildable.
 - Lineage output is dispatch/audit aid only — not evidence, not a verdict
   input, not a finalizer input.
-- Cycle/orphan anomalies fail closed with structured errors and are counted
-  in operator-visible metrics (`task_lineage.cycle_detected`,
-  `task_lineage.parent_missing`).
+- Cycle anomalies fail closed with a structured error. Cycle and unavailable
+  parent observations use operator-safe metrics
+  (`task_lineage.cycle_detected`, `task_lineage.parent_missing`) without
+  identifier labels.
 - Human approval required for: any later promotion to a durable projection
   table, any cross-broker aggregation, any use in finalizer/verdict paths.
 
