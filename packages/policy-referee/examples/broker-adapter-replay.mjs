@@ -85,8 +85,8 @@ function parseBrokerInput(value) {
 
 function callerActionFor(decision) {
   if (decision.action === "allow") return "proceed";
-  if (decision.policyMode === "warn") return "observe_proceed";
   if (decision.action === "require_approval") return "route_approval";
+  if (decision.policyMode === "warn") return "observe_proceed";
   return "reject";
 }
 

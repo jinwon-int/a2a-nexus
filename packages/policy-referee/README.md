@@ -209,7 +209,7 @@ create/claim mapping, lazy `tasksToday` contract, anonymous worker-class
 boundary, warn/enforce caller behavior, caller-owned approval routing and
 audits, stable failures, and exact version pinning.
 
-Replay the closed four-case external-consumer manifest after building:
+Replay the closed five-case external-consumer manifest after building:
 
 ```sh
 npm run build -w packages/policy-referee
@@ -221,8 +221,10 @@ resolves only the built public root export. It passes fresh policy, task, and
 worker objects through the existing strict parsers and
 `evaluatePolicyRefereeCli`, then maps the returned decision to a closed
 caller-owned action token. The cases cover anonymous class and intent allow,
-warn-mode deny as `observe_proceed`, enforce-mode `require_approval` as
-`route_approval`, and an enforce-mode daily-budget deny as `reject`.
+warn-mode deny as `observe_proceed`, `require_approval` as `route_approval` in
+both warn and enforce modes, and an enforce-mode daily-budget deny as
+`reject`. Warn relaxes deny only; it never relaxes `require_approval`, grants
+approval, or makes an approval-blocked task runnable.
 
 Replay stdout is byte-stable and contains only a version, public-safe case id,
 decision token, and caller-action token. Invalid examples emit no stdout, one

@@ -22,6 +22,7 @@ const expectedStdout = [
   '{"schemaVersion":"a2a.policy-referee.broker-example-result.v1","caseId":"warn-deny-observe-proceed","decision":"deny","callerAction":"observe_proceed"}',
   '{"schemaVersion":"a2a.policy-referee.broker-example-result.v1","caseId":"enforce-require-approval","decision":"require_approval","callerAction":"route_approval"}',
   '{"schemaVersion":"a2a.policy-referee.broker-example-result.v1","caseId":"daily-budget-deny","decision":"deny","callerAction":"reject"}',
+  '{"schemaVersion":"a2a.policy-referee.broker-example-result.v1","caseId":"warn-require-approval","decision":"require_approval","callerAction":"route_approval"}',
   "",
 ].join("\n");
 
