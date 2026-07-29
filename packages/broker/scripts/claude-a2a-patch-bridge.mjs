@@ -1195,6 +1195,8 @@ function findDiffInObject(value, depth = 0) {
     const found = extractDiffFromRawText(value);
     if (!found) return null;
     if (found.kind === "diff") return found;
+    // A truncation refusal is a finding, not an absence — see extractDiffFromRawText.
+    if (found.truncated) return found;
     return /^\s*NO_DIFF:/.test(found.body ?? "") ? found : null;
   }
   if (Array.isArray(value)) {
@@ -1458,7 +1460,12 @@ function extractDiffFromRawText(text, allowUnescapeRetry = true) {
   // `git apply: corrupt patch`. Inside a unified diff every line carries a
   // ' ', '+', '-' or '@' prefix, so a bare ``` at column 0 is unambiguously the
   // outer terminator.
-  const fenceRegex = /^```(?:diff|patch|unified)?[ \t]*\r?$\r?\n([\s\S]*?)\r?\n^```[ \t]*\r?$/gm;
+  // The closing terminator consumes only the "\n" that ends the last diff line.
+  // A `\r?` there would instead eat that line's own CR, so a CRLF file came out
+  // with its final line silently converted to LF — and since the rest of the
+  // patch still applied, the run reported success for content the model never
+  // emitted. `^` already guarantees the fence starts a line.
+  const fenceRegex = /^```(?:diff|patch|unified)?[ \t]*\r?$\r?\n([\s\S]*?)\n^```[ \t]*\r?$/gm;
   let match;
   const fencedCandidates = [];
   while ((match = fenceRegex.exec(text)) !== null) {
@@ -1488,26 +1495,114 @@ function extractDiffFromRawText(text, allowUnescapeRetry = true) {
   }
 
   // Raw diff scan in case the model emits plain unified-diff lines.
-  const lines = text.split(/\r?\n/);
+  //
+  // Split on "\n" ONLY. Splitting on /\r?\n/ drops the CR of every CRLF line, and
+  // rejoining with "\n" then hands git a patch whose bytes are not the model's.
+  // For a patch that only adds lines — a new file — there is no context left to
+  // mismatch, so git applies it happily and commits a CRLF file rewritten as LF:
+  // success is reported for content nobody asked for. Every classifier below is
+  // written to tolerate the trailing CR that survives this split.
+  const lines = text.split("\n");
   const startIdx = lines.findIndex(
     (l) => l.startsWith("diff --git ") || l.startsWith("--- a/"),
   );
   if (startIdx < 0) return { kind: "no_diff", body: "no diff block found in claude output" };
-  let endIdx = lines.length;
-  for (let i = startIdx + 1; i < lines.length; i += 1) {
-    // Stop at the next file's diff header, and at a bare closing fence — an
-    // unterminated scan otherwise appends the fence and any trailing prose to
-    // the patch body, which git apply reports as a corrupt patch. A fence that
-    // belongs to the patched file's own content is never bare: it carries a
-    // unified-diff prefix.
-    if (lines[i].startsWith("diff --git ")) { endIdx = i; break; }
-    if (/^```[ \t]*\r?$/.test(lines[i])) { endIdx = i; break; }
-  }
+  const endIdx = findRawDiffEnd(lines, startIdx);
   const body = lines.slice(startIdx, endIdx).join("\n");
   if (!/^(--- |\+\+\+ |@@ )/m.test(body)) {
     return { kind: "no_diff", body: "diff-like text present but no parseable unified-diff hunks" };
   }
+  // Fail closed when the scan stopped with another file section still ahead of
+  // it. A patch cut at a file boundary stays syntactically valid, so
+  // `git apply --check` accepts it and the run reports `pr_opened` for a commit
+  // that carries only part of the change — a partial success indistinguishable
+  // from a complete one. Refusing the body converts that into a visible failure.
+  for (let i = endIdx; i < lines.length; i += 1) {
+    if (!startsNewFileSection(lines, i)) continue;
+    return {
+      kind: "no_diff",
+      // `truncated` separates "a diff was found and rejected" from "no diff in
+      // this string". findDiffInObject must not treat the former as an absence
+      // and keep walking, or a refused partial patch in `result` would be
+      // silently replaced by whatever a later envelope field happens to carry.
+      truncated: true,
+      body: `diff extraction stopped at line ${endIdx - startIdx + 1} of the patch but another file`
+        + ` section follows at output line ${i + 1} (${lines[i].slice(0, 120)}); refusing a partial patch.`
+        + " Re-emit the whole diff as one block, with no prose between file sections.",
+    };
+  }
   return { kind: "diff", body };
+}
+
+// A hunk header, matched loosely: the strict HUNK_HEADER_RE is the parser used
+// for counting, but for deciding "does the diff continue here" a combined-diff
+// header (`@@@ -a,b -c,d +e,f @@@`) or a slightly off header must not end the scan.
+const LOOSE_HUNK_HEADER_RE = /^@@+ /;
+
+// git's extended header lines, which sit between `diff --git` and the `--- `/`+++ `
+// pair. Inside a hunk body every line carries a ' ', '+', '-' or '\' prefix, so
+// one of these at column 0 is as unambiguous a section boundary as `diff --git `.
+const GIT_EXTENDED_HEADER_RE = /^(?:index |old mode |new mode |new file mode |deleted file mode |similarity index |dissimilarity index |rename from |rename to |copy from |copy to |Binary files )/;
+
+// Does `lines[i]` begin a new file's diff, as opposed to continuing the current
+// one? Deliberately narrower than `startsDiffHeaderLine`: only the two shapes
+// that cannot be confused with prose, since this also decides whether discarded
+// trailing text was a dropped file section.
+function startsNewFileSection(lines, i) {
+  const line = lines[i];
+  if (line.startsWith("diff --git ")) return true;
+  return line.startsWith("--- ") && endsHunkBody(lines, i);
+}
+
+// Is `lines[i]` part of a file's header block (rather than a hunk body)?
+function startsDiffHeaderLine(lines, i) {
+  const line = lines[i];
+  if (startsNewFileSection(lines, i)) return true;
+  // GNU diff announces each file with the command line it was given
+  // (`diff -ur a/x b/x`), not with `diff --git`. Requiring the leading dash of an
+  // option keeps prose that merely begins with the word "diff" out.
+  if (/^diff -/.test(line)) return true;
+  if (GIT_EXTENDED_HEADER_RE.test(line)) return true;
+  // `+++ ` is only a header when it is the second line of a real `--- `/`+++ `/`@@ `
+  // triple. A bare `+++ ` is an added line whose content starts with "++ ".
+  return line.startsWith("+++ ") && i > 0 && startsNewFileSection(lines, i - 1);
+}
+
+/**
+ * Finds where a raw (unfenced) unified diff stops, returning the exclusive end index.
+ *
+ * The previous scan stopped at the next `diff --git `, which silently discarded
+ * every file after the first in a multi-file patch (a2a-nexus#1673). Terminating
+ * on a file header is exactly backwards: a file header is the one line that
+ * proves the diff is still going. What actually has to be excluded is trailing
+ * prose, so this tracks whether it is inside a hunk body and stops at the first
+ * line that cannot belong to a diff at that position.
+ */
+function findRawDiffEnd(lines, startIdx) {
+  let inHunkBody = false;
+  let inBinaryPatch = false;
+  for (let i = startIdx; i < lines.length; i += 1) {
+    const line = lines[i];
+    // A bare fence at column 0 is unambiguously an outer terminator: a fence
+    // belonging to the patched file's own content carries a diff prefix.
+    if (i > startIdx && /^```[ \t]*\r?$/.test(line)) return i;
+    if (i === startIdx) continue; // the anchor itself; state stays "in header"
+    // Base85 payload lines of a `GIT binary patch` follow no diff grammar, so
+    // once one starts, only a new file section or a fence can end it.
+    if (inBinaryPatch) {
+      if (startsNewFileSection(lines, i)) { inBinaryPatch = false; inHunkBody = false; }
+      continue;
+    }
+    if (/^GIT binary patch\r?$/.test(line)) { inBinaryPatch = true; continue; }
+    if (LOOSE_HUNK_HEADER_RE.test(line)) { inHunkBody = true; continue; }
+    if (startsDiffHeaderLine(lines, i)) { inHunkBody = false; continue; }
+    // A bare blank is both a stripped blank context line and the separator some
+    // emitters put between file sections; it is legal in either state.
+    if (line === "" || line === "\r") continue;
+    if (inHunkBody && /^[ +\-\\]/.test(line)) continue;
+    return i;
+  }
+  return lines.length;
 }
 
 // Resolves a CLI binary path. Env override > default; lets tests stub git/gh.
