@@ -2,7 +2,7 @@
 
 > **Status:** closeout checklist. Checked items include the completed
 > documentation packet and narrowly proven Phase 1 contract/parser and
-> keyspace/digest work.
+> keyspace/digest/time-evaluator work.
 > Runtime implementation, adapter conformance, migration, and operations
 > remain open. Refs #1504.
 
@@ -57,6 +57,11 @@ specified in `spec.md`.
   namespace/component bounds, 22 purpose domains, purpose-bound digest tokens,
   and stable canonicalization errors for every digest-bearing section 6.1
   field.
+- [x] Time V1 pins trusted profile-bound clock observations, canonical
+  signed-int64-range Unix-millisecond strings, durable non-decreasing floors,
+  declared skew tolerance, safe clamping/fail-closed outcomes, and exact
+  replay/lease/idempotency/rate boundaries without adding a clock or runtime
+  callsite.
 - [ ] Machine-readable V1 types/schemas implemented.
 - [ ] SQLite V1 adapter implemented.
 - [ ] Shared V1 adapter implemented.
@@ -92,6 +97,10 @@ specified in `spec.md`.
   digest domain and reject delimiter ambiguity, wrong domains/namespaces,
   component reordering, Unicode ambiguity, bad bounds/types/bytes, and unsafe
   integers.
+- [x] Public synthetic time fixtures and pure table tests cover floor and skew
+  boundaries, restart floor preservation, logical expiry/rate boundaries,
+  cleanup independence, large/overflow values, both clock profiles, every
+  stable time reason/error code, and section 6.1 caller-clock rejection.
 - [ ] Test harness implemented.
 - [ ] Claim tests implemented/passing.
 - [ ] Idempotency tests implemented/passing.
