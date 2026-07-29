@@ -5,7 +5,7 @@ import { execFileSync } from "node:child_process";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
 import { fileURLToPath } from "node:url";
-import { buildActionableError, buildContainerScript, buildRunArgs, extractClaudeTurnBudgetDiagnostic, extractPrUrl, jsonArgvToScript, prepareWorkDirForContainerUser, redactAndBound, redactSecrets, runTask, shouldTreatDetectedPrUrlAsCanonical } from "./runner.js";
+import { buildActionableError, buildContainerScript, buildRunArgs, extractClaudeTurnBudgetDiagnostic, extractPrUrl, extractPrUrls, extractPushedBranch, jsonArgvToScript, prepareWorkDirForContainerUser, redactAndBound, redactSecrets, runTask, shouldTreatDetectedPrUrlAsCanonical } from "./runner.js";
 import type { NormalizedRunnerTask, RunnerConfig, RunnerTask } from "./types.js";
 
 const baseConfig: RunnerConfig = {
@@ -655,10 +655,7 @@ test("keeps runner-created PR URL even when post-PR output contains no-change ma
 // prUrlRecoveredAfterNonzero — a2a-docker-runner#199
 // ---------------------------------------------------------------------------
 
-test("treats non-zero exit after PR creation as success (false-failure fix)", async () => {
-  // If a PR URL is detected but the container exits non-zero with a
-  // post-PR error (not a timeout), the runner must still report ok=true.
-  // Parent: a2a-docker-runner#199
+test("does not treat an arbitrary PR URL plus non-zero exit as success", async () => {
   const task: RunnerTask = {
     id: "pr-recovery-test",
     intent: "propose_patch",
@@ -672,8 +669,9 @@ test("treats non-zero exit after PR creation as success (false-failure fix)", as
 
   try {
     const result = await runTask(config, task);
-    assert.equal(result.ok, true, `Expected ok=true after PR URL + non-zero exit, got ok=${result.ok} status=${result.status}`);
-    assert.equal(result.prUrl, "https://github.com/jinwon-int/a2a-docker-runner/pull/199");
+    assert.equal(result.ok, false);
+    assert.equal(result.status, "failed");
+    assert.equal(result.prUrl, undefined);
   } catch {
     // Docker not available; skip.
   }
@@ -1472,6 +1470,30 @@ test("extractPrUrl captures one PR URL and does not span adjacent URLs", () => {
   assert.equal(extractPrUrl(adjacent), "https://github.com/o/r1/pull/5");
 
   assert.equal(extractPrUrl("no url here"), undefined);
+});
+
+test("extractPrUrls preserves duplicate/self-PR candidates for metadata binding", () => {
+  const selfPr = "https://github.com/jinwon-int/a2a-nexus-archive/pull/7";
+  const runnerPr = "https://github.com/jinwon-int/a2a-nexus/pull/1670";
+  assert.deepEqual(
+    extractPrUrls(`agent: ${selfPr}\nbridge: ${runnerPr}\nrepeat: ${selfPr}`),
+    [selfPr, runnerPr],
+  );
+});
+
+test("extractPushedBranch reads the randomized branch from the bridge envelope without inference", () => {
+  const branch = "a2a/single-shot-mk9z7q-r4nd0m";
+  const stdout = JSON.stringify({
+    payloads: [{
+      text: JSON.stringify({
+        status: "pr_opened",
+        branch,
+        prUrl: "https://github.com/jinwon-int/a2a-nexus/pull/1670",
+      }),
+    }],
+  });
+  assert.equal(extractPushedBranch(stdout), branch);
+  assert.equal(extractPushedBranch("PR created on likely-branch-for-1670"), undefined);
 });
 
 // ── jsonArgvToScript: parse-error path quoting (a2a-nexus#574 item 19) ──────

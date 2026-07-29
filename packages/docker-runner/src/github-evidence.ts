@@ -160,11 +160,16 @@ export async function collectGitHubEvidence(
   if (!isGitHubEvidenceMode(task.mode)) return undefined;
 
   const evidence: GitHubEvidence = buildBaseEvidence(task, result);
-
-  // On success: extract PR URL from stdout (also check artifacts).
-  if (result.prUrl) {
+  const pullEvidence = isPatchProposalMode(task.mode)
+    ? await verifyPullRequestEvidence(config, task, result)
+    : { status: "not_required" as const };
+  if (pullEvidence.status === "verified") {
+    evidence.prUrl = pullEvidence.prUrl;
+    evidence.branch = pullEvidence.headRefName;
+  } else if (pullEvidence.status === "not_required" && result.prUrl) {
     evidence.prUrl = result.prUrl;
   }
+  const evidenceUrlUnverified = pullEvidence.status === "unverified";
 
   const missingPatchCommand = isMissingPatchCommand(result);
   const missingExecutableWork = task.commands.length === 0;
@@ -173,7 +178,7 @@ export async function collectGitHubEvidence(
   // command configured, or normalization produced no commands at all, post a
   // Block comment. Missing executable work is an operator/runtime readiness
   // failure, not a successful no-op.
-  if ((!result.ok || missingPatchCommand || missingExecutableWork) && task.issueUrl) {
+  if (((!result.ok && !evidence.prUrl) || missingPatchCommand || missingExecutableWork) && task.issueUrl) {
     try {
       evidence.blockCommentUrl = await postBlockComment(config, task, result);
       evidence.blockUrl = evidence.blockCommentUrl;
@@ -187,7 +192,7 @@ export async function collectGitHubEvidence(
   // If ok but no PR URL and issueUrl provided: post a Done comment.
   // Missing executable work/readiness is handled as Block above, so it never
   // becomes a misleading Done comment.
-  if (result.ok && !missingExecutableWork && !evidence.prUrl && !evidence.blockCommentUrl && task.issueUrl) {
+  if (result.ok && !evidenceUrlUnverified && !missingExecutableWork && !evidence.prUrl && !evidence.blockCommentUrl && task.issueUrl) {
     try {
       evidence.doneCommentUrl = await postDoneComment(config, task, result);
       evidence.doneUrl = evidence.doneCommentUrl;
@@ -205,7 +210,9 @@ export async function collectGitHubEvidence(
   // Parent: a2a-docker-runner#284
   evidence.commentLedger = buildCommentLedger(evidence, task);
 
-  evidence.outcome = classifyGitHubEvidenceOutcome(result, evidence);
+  evidence.outcome = evidenceUrlUnverified
+    ? "evidence_url_unverified"
+    : classifyGitHubEvidenceOutcome(result, evidence);
   const validationErrors = validateReleaseGateEvidence(evidence);
   if (validationErrors.length > 0) {
     evidence.validationErrors = validationErrors;
@@ -215,6 +222,122 @@ export async function collectGitHubEvidence(
   }
 
   return evidence;
+}
+
+type PullRequestEvidenceVerification =
+  | { status: "verified"; prUrl: string; headRefName: string }
+  | { status: "unverified" }
+  | { status: "not_required" };
+
+interface PullRequestMetadata {
+  url?: string;
+  headRefName?: string;
+  baseRepository?: {
+    nameWithOwner?: string;
+  } | null;
+}
+
+/**
+ * Bind reported PR evidence to the declared repository and the exact branch
+ * explicitly emitted by the runner/bridge after its push. Agent prose and URL
+ * order are not authority: every candidate is checked against GitHub metadata.
+ */
+export async function verifyPullRequestEvidence(
+  config: RunnerConfig,
+  task: NormalizedRunnerTask,
+  result: RunnerResult,
+): Promise<PullRequestEvidenceVerification> {
+  if (!isPatchProposalMode(task.mode)) return { status: "not_required" };
+  if (
+    task.commands.length === 0
+    || isMissingPatchCommand(result)
+    || isNoChangeAllowedResult(result)
+    || result.status === "timeout"
+    || result.resultSummary?.status === "budget_limited"
+    || result.artifactManifest?.status === "budget_limited"
+  ) {
+    return { status: "not_required" };
+  }
+
+  const expectedRepo = normalizeRepo(task);
+  const pushedBranch = result.pushedBranch ?? extractBranch(result);
+  const candidates = collectPullRequestCandidates(result);
+  if (!expectedRepo || !pushedBranch || candidates.length === 0) {
+    return { status: "unverified" };
+  }
+
+  const token = await readGitHubToken(config);
+  if (!token) return { status: "unverified" };
+
+  for (const candidate of candidates) {
+    const parsed = parsePullRequestUrl(candidate);
+    if (!parsed) continue;
+    const metadata = await queryPullRequestMetadata(token, parsed.owner, parsed.repo, parsed.number);
+    if (
+      metadata?.baseRepository?.nameWithOwner === expectedRepo
+      && metadata.headRefName === pushedBranch
+      && isSafeGitHubEvidenceUrl(metadata.url ?? candidate)
+    ) {
+      return {
+        status: "verified",
+        prUrl: metadata.url ?? candidate,
+        headRefName: pushedBranch,
+      };
+    }
+  }
+
+  return { status: "unverified" };
+}
+
+function collectPullRequestCandidates(result: RunnerResult): string[] {
+  const candidates = [
+    ...(result.prUrlCandidates ?? []),
+    ...(result.prUrl ? [result.prUrl] : []),
+    ...Array.from(
+      `${result.stdout}\n${result.stderr}`.matchAll(
+        /https:\/\/github\.com\/[A-Za-z0-9_.-]+\/[A-Za-z0-9_.-]+\/pull\/\d+/g,
+      ),
+      (match) => match[0],
+    ),
+  ];
+  return [...new Set(candidates)];
+}
+
+function parsePullRequestUrl(value: string): { owner: string; repo: string; number: number } | undefined {
+  const match = value.match(/^https:\/\/github\.com\/([A-Za-z0-9_.-]+)\/([A-Za-z0-9_.-]+)\/pull\/(\d+)$/);
+  if (!match) return undefined;
+  return { owner: match[1], repo: match[2], number: Number(match[3]) };
+}
+
+async function queryPullRequestMetadata(
+  token: string,
+  owner: string,
+  repo: string,
+  number: number,
+): Promise<PullRequestMetadata | undefined> {
+  try {
+    const response = await fetch("https://api.github.com/graphql", {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${token}`,
+        Accept: "application/vnd.github+json",
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({
+        query: "query($owner:String!,$repo:String!,$number:Int!){repository(owner:$owner,name:$repo){pullRequest(number:$number){url headRefName baseRepository{nameWithOwner}}}}",
+        variables: { owner, repo, number },
+      }),
+    });
+    if (!response.ok) return undefined;
+    const payload = await response.json() as {
+      data?: { repository?: { pullRequest?: PullRequestMetadata | null } | null };
+      errors?: unknown[];
+    };
+    if (payload.errors?.length) return undefined;
+    return payload.data?.repository?.pullRequest ?? undefined;
+  } catch {
+    return undefined;
+  }
 }
 
 function classifyGitHubEvidenceOutcome(result: RunnerResult, evidence: GitHubEvidence): GitHubEvidence["outcome"] {
@@ -395,10 +518,51 @@ function normalizeIssueUrl(task: NormalizedRunnerTask): string | undefined {
 }
 
 function extractBranch(result: RunnerResult): string | undefined {
+  const structuredBranch = extractStructuredBridgeBranch(result.stdout);
+  if (structuredBranch) return structuredBranch;
   return extractFirstMatch(result, [
-    /(?:^|\n)branch=([^\s]+)/,
-    /Switched to a new branch ['"]([^'"]+)['"]/,
+    /(?:^|\n)(?:pushed_branch|branch)=([^\s]+)/,
   ]);
+}
+
+function extractStructuredBridgeBranch(stdout: string): string | undefined {
+  try {
+    return findStructuredBranch(JSON.parse(stdout));
+  } catch {
+    return undefined;
+  }
+}
+
+function findStructuredBranch(value: unknown, depth = 0): string | undefined {
+  if (depth > 8 || value == null) return undefined;
+  if (typeof value === "string") {
+    try {
+      return findStructuredBranch(JSON.parse(value), depth + 1);
+    } catch {
+      return undefined;
+    }
+  }
+  if (Array.isArray(value)) {
+    for (const entry of value) {
+      const branch = findStructuredBranch(entry, depth + 1);
+      if (branch) return branch;
+    }
+    return undefined;
+  }
+  if (typeof value !== "object") return undefined;
+  const record = value as Record<string, unknown>;
+  if (
+    typeof record.branch === "string"
+    && record.branch.trim()
+    && (typeof record.prUrl === "string" || record.status === "pr_opened")
+  ) {
+    return safeOptionalText(record.branch, 200);
+  }
+  for (const key of ["payloads", "text", "result", "content", "response", "output", "value"]) {
+    const branch = findStructuredBranch(record[key], depth + 1);
+    if (branch) return branch;
+  }
+  return undefined;
 }
 
 function extractCommit(result: RunnerResult): string | undefined {
@@ -482,6 +646,10 @@ function isGitHubEvidenceMode(mode?: string): boolean {
     "libero-validation",
     "family-wiki-readonly-audit",
   ].includes(mode));
+}
+
+function isPatchProposalMode(mode?: string): boolean {
+  return mode === "github-propose-patch" || mode === "propose_patch";
 }
 
 /**

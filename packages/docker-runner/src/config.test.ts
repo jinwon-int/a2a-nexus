@@ -5,7 +5,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
 import { Script } from "node:vm";
-import { buildClaudeCodePatchCommandScript, loadContainedSubagentsConfig, loadConfig, loadEnvFile, mergeRunnerEnvFile, projectClaudeCodeTurnBudgets, validateRunnerConfig } from "./config.js";
+import { buildClaudeCodePatchCommandScript, buildCodexPatchCommandScript, loadContainedSubagentsConfig, loadConfig, loadEnvFile, mergeRunnerEnvFile, projectClaudeCodeTurnBudgets, validateRunnerConfig } from "./config.js";
 import type { RunnerConfig } from "./types.js";
 
 const baseEnv = {
@@ -413,6 +413,23 @@ test("Codex patch profile defaults to the dedicated minimal credential directory
       readOnly: true,
     },
   ]);
+});
+
+test("Codex patch profile reserves git and GitHub lifecycle work for the outer runner", () => {
+  const script = buildCodexPatchCommandScript({});
+
+  assert.match(script, /A2A_LIFECYCLE_GUARD_BIN=\/work\/a2a-codex-lifecycle-guard-bin/);
+  assert.match(script, /error=a2a_runner_contract_violation command=git_\$\{1:-\}/);
+  assert.match(script, /add\|commit\|push\|checkout\|switch\|reset\|merge\|rebase\|tag/);
+  assert.match(script, /error=a2a_runner_contract_violation command=git_branch_mutation/);
+  assert.match(script, /"pr create"\|"pr merge"\|"issue close"\|"issue comment"/);
+  assert.match(script, /lifecycle_guard=enabled profile=codex/);
+  assert.match(script, /The outer runner owns[\s\S]*git and GitHub lifecycle/);
+  assert.match(script, /Do not run git add, git commit, git push/);
+  assert.match(script, /Do not run gh pr create/);
+  assert.match(script, /cat \/work\/artifacts\/prompt\.md >> \/work\/artifacts\/codex-prompt\.md/);
+  assert.match(script, /- < \/work\/artifacts\/codex-prompt\.md/);
+  assert.doesNotMatch(script, /- < \/work\/artifacts\/prompt\.md/);
 });
 
 test("loadConfig treats A2A_DOCKER_RUNNER_SKIP_ENGINE_DETECT truthily, not by mere presence", async () => {
