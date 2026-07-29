@@ -4,7 +4,7 @@ import { mkdirSync, writeFileSync, rmSync, mkdtempSync, statSync } from "node:fs
 import { execFileSync } from "node:child_process";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
-import { buildActionableError, buildContainerScript, buildRunArgs, extractPrUrl, jsonArgvToScript, prepareWorkDirForContainerUser, redactAndBound, redactSecrets, runTask, shouldTreatDetectedPrUrlAsCanonical } from "./runner.js";
+import { buildActionableError, buildContainerScript, buildRunArgs, extractClaudeTurnBudgetDiagnostic, extractPrUrl, jsonArgvToScript, prepareWorkDirForContainerUser, redactAndBound, redactSecrets, runTask, shouldTreatDetectedPrUrlAsCanonical } from "./runner.js";
 import type { NormalizedRunnerTask, RunnerConfig, RunnerTask } from "./types.js";
 
 const baseConfig: RunnerConfig = {
@@ -79,6 +79,34 @@ test("redactAndBound enforces UTF-8 bytes without splitting code points", () => 
   const bounded = redactAndBound("😀".repeat(10), 13);
   assert.ok(Buffer.byteLength(bounded, "utf8") <= 13);
   assert.doesNotMatch(bounded, /�/);
+});
+
+test("extractClaudeTurnBudgetDiagnostic accepts only a strict secret-free structured line", () => {
+  const diagnostic = extractClaudeTurnBudgetDiagnostic(
+    [
+      "ordinary stderr",
+      `claude_turn_budget=${JSON.stringify({
+        schemaVersion: "a2a.claude.turn-budget.v1",
+        mode: "agentic-patch",
+        effectiveMaxTurns: 40,
+        source: "canonical_default",
+        outcome: "failure",
+        failureReason: "max_turns",
+        checkpointStatus: "preserved",
+        checkpointRef: "artifacts/claude-max-turn-checkpoint.json",
+      })}`,
+      "terminal_reason=max_turns",
+    ].join("\n"),
+  );
+  assert.equal(diagnostic?.effectiveMaxTurns, 40);
+  assert.equal(diagnostic?.turnsUsed, undefined);
+
+  assert.equal(
+    extractClaudeTurnBudgetDiagnostic(
+      'claude_turn_budget={"schemaVersion":"a2a.claude.turn-budget.v1","mode":"agentic-patch","effectiveMaxTurns":40,"source":"canonical_default","outcome":"failure","failureReason":"max_turns","checkpointRef":"../../escape"}',
+    ),
+    undefined,
+  );
 });
 
 test("prepares trusted non-root container workdir ownership before launch", async () => {

@@ -1,11 +1,18 @@
 import assert from "node:assert/strict";
 import { spawnSync, execFileSync } from "node:child_process";
-import { chmodSync, existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { test } from "node:test";
 
-import { buildFanoutSubagentPrompt, describeHunkHeaderMismatches, diagnoseHunkHeaderCounts } from "./claude-a2a-patch-bridge.mjs";
+import {
+  buildFanoutSubagentPrompt,
+  captureMaxTurnCheckpoint,
+  describeHunkHeaderMismatches,
+  diagnoseHunkHeaderCounts,
+  isSafeCheckpointRepoPath,
+  resolveClaudeTurnBudget,
+} from "./claude-a2a-patch-bridge.mjs";
 
 const bridgePath = new URL("./claude-a2a-patch-bridge.mjs", import.meta.url).pathname;
 
@@ -44,10 +51,94 @@ function writeStubClaude(path, bodyLines) {
   chmodSync(path, 0o755);
 }
 
+function setupCheckpointRepo(tempDir, files = { "tracked.txt": "before\n" }) {
+  const workspace = join(tempDir, "workspace");
+  const repo = join(workspace, "repo");
+  const artifacts = join(tempDir, "artifacts");
+  mkdirSync(repo, { recursive: true });
+  mkdirSync(artifacts, { recursive: true });
+  execFileSync("git", ["init", "-q", "-b", "main"], { cwd: repo });
+  execFileSync("git", ["config", "user.name", "A2A Test"], { cwd: repo });
+  execFileSync("git", ["config", "user.email", "a2a-test@example.invalid"], { cwd: repo });
+  for (const [path, content] of Object.entries(files)) {
+    const target = join(repo, path);
+    mkdirSync(join(target, ".."), { recursive: true });
+    writeFileSync(target, content);
+  }
+  execFileSync("git", ["add", "-A"], { cwd: repo });
+  execFileSync("git", ["commit", "-q", "-m", "base"], { cwd: repo });
+  return { workspace, repo, artifacts };
+}
+
 test("patch bridge is executable JavaScript", () => {
   assert.equal(existsSync(bridgePath), true, "bridge script should exist");
   const check = spawnSync(process.execPath, ["--check", bridgePath], { encoding: "utf8" });
   assert.equal(check.status, 0, check.stderr);
+});
+
+test("Claude turn budgets resolve by distinct mode with agentic default=40 and backward-compatible overrides", () => {
+  assert.deepEqual(resolveClaudeTurnBudget("agentic-patch", {}), {
+    mode: "agentic-patch",
+    effectiveMaxTurns: 40,
+    source: "canonical_default",
+  });
+  assert.deepEqual(resolveClaudeTurnBudget("analysis", {}), {
+    mode: "analysis",
+    effectiveMaxTurns: 10,
+    source: "canonical_default",
+  });
+  assert.deepEqual(resolveClaudeTurnBudget("analysis", {
+    A2A_CLAUDE_CODE_ANALYSIS_MAX_TURNS: "12",
+    A2A_CLAUDE_CODE_MAX_TURNS: "99",
+  }), {
+    mode: "analysis",
+    effectiveMaxTurns: 12,
+    source: "explicit_override",
+    overrideKey: "A2A_CLAUDE_CODE_ANALYSIS_MAX_TURNS",
+  });
+  assert.deepEqual(resolveClaudeTurnBudget("analysis", {
+    A2A_CLAUDE_CODE_MAX_TURNS: "13",
+  }), {
+    mode: "analysis",
+    effectiveMaxTurns: 13,
+    source: "explicit_override",
+    overrideKey: "A2A_CLAUDE_CODE_MAX_TURNS",
+  });
+  assert.deepEqual(resolveClaudeTurnBudget("deterministic-single-shot", {}), {
+    mode: "deterministic-single-shot",
+    effectiveMaxTurns: 6,
+    source: "canonical_default",
+  });
+  assert.deepEqual(
+    resolveClaudeTurnBudget("deterministic-single-shot", {
+      A2A_CLAUDE_CODE_PATCH_MAX_TURNS: "8",
+      A2A_CLAUDE_CODE_DETERMINISTIC_MAX_TURNS: "9",
+    }),
+    {
+      mode: "deterministic-single-shot",
+      effectiveMaxTurns: 9,
+      source: "explicit_override",
+      overrideKey: "A2A_CLAUDE_CODE_DETERMINISTIC_MAX_TURNS",
+    },
+  );
+  assert.deepEqual(resolveClaudeTurnBudget("deterministic-single-shot", {
+    A2A_CLAUDE_CODE_PATCH_MAX_TURNS: "8",
+  }), {
+    mode: "deterministic-single-shot",
+    effectiveMaxTurns: 8,
+    source: "explicit_override",
+    overrideKey: "A2A_CLAUDE_CODE_PATCH_MAX_TURNS",
+  });
+  assert.deepEqual(resolveClaudeTurnBudget("fanout-patch", {
+    A2A_CLAUDE_CODE_FANOUT_MAX_TURNS: "500",
+  }), {
+    mode: "fanout-patch",
+    effectiveMaxTurns: 200,
+    source: "explicit_override",
+    overrideKey: "A2A_CLAUDE_CODE_FANOUT_MAX_TURNS",
+    hardCap: 200,
+    hardCapApplied: true,
+  });
 });
 
 test("PATCH intent + stub claude returning a PR url -> envelope contains patch JSON with prUrl, exit 0", () => {
@@ -75,7 +166,7 @@ test("PATCH intent + stub claude returning a PR url -> envelope contains patch J
       "  filesChanged: ['src/x.mjs'],",
       "  risks: []",
       "};",
-      "console.log(JSON.stringify({ type: 'result', subtype: 'success', result: JSON.stringify(result) }));",
+      "console.log(JSON.stringify({ type: 'result', subtype: 'success', num_turns: 4, result: JSON.stringify(result) }));",
     ]);
 
     const result = spawnSync(bridgePath, bridgeArgs(patchMessage()), {
@@ -107,6 +198,17 @@ test("PATCH intent + stub claude returning a PR url -> envelope contains patch J
     assert.equal(payload.prUrl, "https://github.com/jinwon-int/example/pull/7");
     assert.equal(payload.branch, "feat/x");
     assert.deepEqual(payload.tests, ["node --test -> pass"]);
+    assert.deepEqual(payload.turnBudget, {
+      schemaVersion: "a2a.claude.turn-budget.v1",
+      mode: "agentic-patch",
+      effectiveMaxTurns: 5,
+      source: "explicit_override",
+      overrideKey: "A2A_CLAUDE_CODE_MAX_TURNS",
+      outcome: "success",
+      turnsUsed: 4,
+      invocationCount: 1,
+    });
+    assert.match(result.stderr, /"turnsUsed":4/);
     // max-turns env override threaded through
     const args = JSON.parse(readFileSync(argsCapturePath, "utf8"));
     assert.equal(args[args.indexOf("--max-turns") + 1], "5");
@@ -129,6 +231,75 @@ test("PATCH intent + stub claude returning NO evidence url -> bridge exits non-z
     });
     assert.notEqual(result.status, 0);
     assert.match(result.stderr, /evidence|prUrl|doneCommentUrl|blockCommentUrl/i);
+  } finally {
+    rmSync(tempDir, { recursive: true, force: true });
+  }
+});
+
+test("PATCH telemetry omits turnsUsed when only model-controlled result text claims a count", () => {
+  const tempDir = mkdtempSync(join(tmpdir(), "claude-patch-untrusted-turns-"));
+  const fakeClaudePath = join(tempDir, "fake-claude.mjs");
+  try {
+    writeStubClaude(fakeClaudePath, [
+      "const result = { status: 'pr_opened', summary: 'model text says Reached maximum number of turns, but the CLI succeeded', prUrl: 'https://github.com/jinwon-int/example/pull/8', num_turns: 99 };",
+      "console.log(JSON.stringify({ type: 'result', subtype: 'success', result: JSON.stringify(result) }));",
+    ]);
+    const result = spawnSync(bridgePath, bridgeArgs(patchMessage()), {
+      encoding: "utf8",
+      env: { ...process.env, A2A_CLAUDE_CODE_BIN: fakeClaudePath },
+    });
+    assert.equal(result.status, 0, result.stderr);
+    const payload = JSON.parse(JSON.parse(result.stdout).payloads[0].text);
+    assert.equal(payload.turnBudget.effectiveMaxTurns, 40);
+    assert.equal(payload.turnBudget.source, "canonical_default");
+    assert.equal(payload.turnBudget.turnsUsed, undefined);
+    assert.doesNotMatch(result.stderr, /"turnsUsed"/);
+  } finally {
+    rmSync(tempDir, { recursive: true, force: true });
+  }
+});
+
+test("PATCH max-turn exhaustion has a stable failed classification and never fabricates turnsUsed", () => {
+  const tempDir = mkdtempSync(join(tmpdir(), "claude-patch-max-turns-"));
+  const fakeClaudePath = join(tempDir, "fake-claude.mjs");
+  try {
+    writeStubClaude(fakeClaudePath, [
+      "console.log(JSON.stringify({ type: 'result', subtype: 'error_max_turns', is_error: true, result: 'Reached maximum number of turns' }));",
+      "process.exitCode = 1;",
+    ]);
+    const result = spawnSync(bridgePath, bridgeArgs(patchMessage()), {
+      encoding: "utf8",
+      env: { ...process.env, A2A_CLAUDE_CODE_BIN: fakeClaudePath },
+    });
+    assert.notEqual(result.status, 0);
+    assert.equal(result.stdout, "");
+    assert.match(result.stderr, /terminal_reason=max_turns/);
+    assert.match(result.stderr, /failure_reason=max_turns_exhausted/);
+    assert.match(result.stderr, /budget\.limit=40/);
+    assert.match(result.stderr, /"failureReason":"max_turns"/);
+    assert.doesNotMatch(result.stderr, /"turnsUsed"/);
+    assert.doesNotMatch(result.stderr, /\/pull\/\d+/);
+  } finally {
+    rmSync(tempDir, { recursive: true, force: true });
+  }
+});
+
+test("PATCH max-turn failure reports turnsUsed only when the CLI result owns a trustworthy count", () => {
+  const tempDir = mkdtempSync(join(tmpdir(), "claude-patch-max-turns-count-"));
+  const fakeClaudePath = join(tempDir, "fake-claude.mjs");
+  try {
+    writeStubClaude(fakeClaudePath, [
+      "console.log(JSON.stringify({ type: 'result', subtype: 'error_max_turns', is_error: true, num_turns: 40, result: 'stopped' }));",
+      "process.exitCode = 1;",
+    ]);
+    const result = spawnSync(bridgePath, bridgeArgs(patchMessage()), {
+      encoding: "utf8",
+      env: { ...process.env, A2A_CLAUDE_CODE_BIN: fakeClaudePath },
+    });
+    assert.notEqual(result.status, 0);
+    assert.match(result.stderr, /terminal_reason=max_turns/);
+    assert.match(result.stderr, /"turnsUsed":40/);
+    assert.match(result.stderr, /budget\.used=40/);
   } finally {
     rmSync(tempDir, { recursive: true, force: true });
   }
@@ -247,6 +418,114 @@ test("PATCH mode runs claude in a fresh temp dir and removes it afterward (isola
     rmSync(bridgeCwd, { recursive: true, force: true });
   } finally {
     rmSync(tempDir, { recursive: true, force: true });
+  }
+});
+
+test("max-turn checkpoint preserves only tracked diff/status with deterministic exact metadata", async () => {
+  const tempDir = mkdtempSync(join(tmpdir(), "claude-checkpoint-allow-"));
+  try {
+    const { workspace, repo, artifacts } = setupCheckpointRepo(tempDir);
+    writeFileSync(join(repo, "tracked.txt"), "after\n");
+    writeFileSync(join(repo, "untracked-secret.txt"), "GH_TOKEN=not-in-checkpoint\n");
+
+    const first = await captureMaxTurnCheckpoint(workspace, {
+      outputDir: artifacts,
+      repository: "jinwon-int/example",
+    });
+    assert.equal(first.ok, true, JSON.stringify(first));
+    assert.equal(first.checkpointRef, "artifacts/claude-max-turn-checkpoint.json");
+    const manifestText = readFileSync(join(artifacts, "claude-max-turn-checkpoint.json"), "utf8");
+    const diff = readFileSync(join(artifacts, "claude-max-turn-checkpoint.diff"), "utf8");
+    const status = readFileSync(join(artifacts, "claude-max-turn-checkpoint.status"), "utf8");
+    const manifest = JSON.parse(manifestText);
+    assert.equal(manifest.schemaVersion, "a2a.claude.max-turn-checkpoint.v1");
+    assert.equal(manifest.base.commit, execFileSync("git", ["rev-parse", "HEAD"], { cwd: repo, encoding: "utf8" }).trim());
+    assert.equal(manifest.head.commit, manifest.base.commit);
+    assert.deepEqual(manifest.changedPaths, ["tracked.txt"]);
+    assert.equal(manifest.includesUntracked, false);
+    assert.equal(manifest.pushPerformed, false);
+    assert.equal(manifest.pullRequestOpened, false);
+    assert.equal(manifest.taskSucceeded, false);
+    assert.equal(manifest.evidenceGatesBypassed, false);
+    assert.match(diff, /tracked\.txt/);
+    assert.doesNotMatch(diff, /untracked-secret/);
+    assert.match(status, /tracked\.txt/);
+    assert.doesNotMatch(status, /untracked-secret/);
+
+    const second = await captureMaxTurnCheckpoint(workspace, {
+      outputDir: artifacts,
+      repository: "jinwon-int/example",
+    });
+    assert.equal(second.ok, true);
+    assert.equal(readFileSync(join(artifacts, "claude-max-turn-checkpoint.json"), "utf8"), manifestText);
+  } finally {
+    rmSync(tempDir, { recursive: true, force: true });
+  }
+});
+
+test("max-turn checkpoint rejects bootstrap paths and reports exact repo-relative offenders", async () => {
+  const tempDir = mkdtempSync(join(tmpdir(), "claude-checkpoint-bootstrap-"));
+  try {
+    const { workspace, repo, artifacts } = setupCheckpointRepo(tempDir, {
+      "tracked.txt": "before\n",
+      "AGENTS.md": "base context\n",
+    });
+    writeFileSync(join(repo, "AGENTS.md"), "changed context\n");
+    const result = await captureMaxTurnCheckpoint(workspace, { outputDir: artifacts });
+    assert.equal(result.ok, false);
+    assert.equal(result.status, "rejected_bootstrap_path");
+    assert.deepEqual(result.offendingPaths, ["AGENTS.md"]);
+    assert.equal(existsSync(join(artifacts, "claude-max-turn-checkpoint.json")), false);
+  } finally {
+    rmSync(tempDir, { recursive: true, force: true });
+  }
+});
+
+test("max-turn checkpoint rejects secret-shaped tracked content and oversized payloads", async () => {
+  const secretDir = mkdtempSync(join(tmpdir(), "claude-checkpoint-secret-"));
+  const sizeDir = mkdtempSync(join(tmpdir(), "claude-checkpoint-size-"));
+  try {
+    const secretRepo = setupCheckpointRepo(secretDir);
+    writeFileSync(join(secretRepo.repo, "tracked.txt"), `GH_TOKEN=${"ghp_" + "A".repeat(40)}\n`);
+    const secret = await captureMaxTurnCheckpoint(secretRepo.workspace, { outputDir: secretRepo.artifacts });
+    assert.equal(secret.ok, false);
+    assert.equal(secret.status, "rejected_secret_scan");
+    assert.equal(secret.risk, "github_token");
+
+    const largeRepo = setupCheckpointRepo(sizeDir);
+    writeFileSync(join(largeRepo.repo, "tracked.txt"), "source line\n".repeat(200));
+    const oversized = await captureMaxTurnCheckpoint(largeRepo.workspace, {
+      outputDir: largeRepo.artifacts,
+      maxBytes: 256,
+    });
+    assert.equal(oversized.ok, false);
+    assert.equal(oversized.status, "rejected_size_limit");
+    assert.equal(existsSync(join(largeRepo.artifacts, "claude-max-turn-checkpoint.json")), false);
+  } finally {
+    rmSync(secretDir, { recursive: true, force: true });
+    rmSync(sizeDir, { recursive: true, force: true });
+  }
+});
+
+test("max-turn checkpoint rejects tracked symlink diffs instead of preserving an unsafe apply target", async () => {
+  const tempDir = mkdtempSync(join(tmpdir(), "claude-checkpoint-symlink-"));
+  try {
+    const { workspace, repo, artifacts } = setupCheckpointRepo(tempDir);
+    rmSync(join(repo, "tracked.txt"));
+    symlinkSync("../outside", join(repo, "tracked.txt"));
+    const result = await captureMaxTurnCheckpoint(workspace, { outputDir: artifacts });
+    assert.equal(result.ok, false);
+    assert.equal(result.status, "rejected_symlink_diff");
+    assert.equal(existsSync(join(artifacts, "claude-max-turn-checkpoint.json")), false);
+  } finally {
+    rmSync(tempDir, { recursive: true, force: true });
+  }
+});
+
+test("max-turn checkpoint path guard rejects traversal, absolute, control, and empty paths", () => {
+  assert.equal(isSafeCheckpointRepoPath("packages/broker/src/worker.ts"), true);
+  for (const path of ["", "../secret", "a/../../secret", "/etc/passwd", "C:\\Users\\private", "bad\u0000path"]) {
+    assert.equal(isSafeCheckpointRepoPath(path), false, path);
   }
 });
 
@@ -1394,7 +1673,7 @@ test("fanout mode runs the agentic patch with Task tool + spawn prompt + fanout 
         A2A_CONTAINED_SUBAGENTS_ENABLED: "1",
         A2A_CONTAINED_SUBAGENTS_MAX: "3",
         A2A_CONTAINED_SUBAGENTS_ROLES: "explorer,implementer,verifier",
-        A2A_CLAUDE_CODE_FANOUT_MAX_TURNS: "50",
+        A2A_CLAUDE_CODE_FANOUT_MAX_TURNS: "500",
         A2A_CLAUDE_MODEL: "claude-sonnet-5",
         A2A_CLAUDE_CODE_BIN: fakeClaudePath,
         CAPTURE_ARGS_PATH: argsCapturePath,
@@ -1414,8 +1693,12 @@ test("fanout mode runs the agentic patch with Task tool + spawn prompt + fanout 
     assert.match(payload.subagentReport.entries[0].output, /TOKEN=runtime-synthetic/);
     const args = JSON.parse(readFileSync(argsCapturePath, "utf8"));
     assert.equal(args[args.indexOf("--allowedTools") + 1], "Task Bash Edit Write Read Glob Grep");
-    assert.equal(args[args.indexOf("--max-turns") + 1], "50");
+    assert.equal(args[args.indexOf("--max-turns") + 1], "200");
     assert.ok(args.includes("--append-system-prompt"));
+    assert.equal(payload.turnBudget.effectiveMaxTurns, 200);
+    assert.equal(payload.turnBudget.source, "explicit_override");
+    assert.equal(payload.turnBudget.hardCap, 200);
+    assert.equal(payload.turnBudget.hardCapApplied, true);
   } finally {
     rmSync(tempDir, { recursive: true, force: true });
   }
