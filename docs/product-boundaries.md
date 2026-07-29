@@ -87,7 +87,7 @@ On the pinned source base
 - a package-owned broker adapter guide fixes create/claim mapping, the lazy
   daily-count contract, the anonymous worker-class boundary, caller-owned
   warn/enforce behavior, approval routing, audits, failures, and version pins;
-- a closed four-case, no-network external-consumer example imports only the
+- a closed five-case, no-network external-consumer example imports only the
   built package public root, reuses the strict parsers and evaluator, and emits
   only byte-stable public-safe decision/action tokens;
 - child-process and package-content tests prove stable success/failure bytes,

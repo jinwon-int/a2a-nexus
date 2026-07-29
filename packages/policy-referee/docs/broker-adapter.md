@@ -26,7 +26,7 @@ npm run build -w packages/policy-referee
 npm run examples:replay -w packages/policy-referee
 ```
 
-The input cases are closed in
+The five input cases are closed in
 [`../examples/broker-adapter-cases.json`](../examples/broker-adapter-cases.json),
 and the executable mapping is
 [`../examples/broker-adapter-replay.mjs`](../examples/broker-adapter-replay.mjs).
@@ -91,15 +91,16 @@ mapping:
 | Valid returned decision | Example caller action |
 |---|---|
 | any mode + `allow` | `proceed` |
-| warn + `deny` or `require_approval` | `observe_proceed` |
+| any mode + `require_approval` | `route_approval` |
+| warn + `deny` | `observe_proceed` |
 | enforce + `deny` | `reject` |
-| enforce + `require_approval` | `route_approval` |
 
-Warn mode therefore observes a non-allow decision but proceeds. Enforce mode
-rejects a deny. `require_approval` does not grant approval and the package does
-not know how to block or route a task; the caller owns its existing approval
-queue/state transition and must keep the task non-runnable until that separate
-flow succeeds.
+Warn mode relaxes `deny` only: it observes that decision but proceeds. Enforce
+mode rejects a deny. In both modes, a `requireApproval` rule's
+`require_approval` decision remains caller-routed and blocking: the caller must
+enter its existing blocked/approval flow and keep the task non-runnable until
+that separate flow succeeds. The `route_approval` token never grants approval,
+and the package does not know how to block, route, or approve a task.
 
 ## Audit and failure ownership
 
@@ -122,6 +123,7 @@ credentials, or arbitrary diagnostic prose.
 Pin the exact package version (`a2a-policy-referee@0.1.0`) and lockfile or
 artifact integrity. Do not use a range, `latest`, or an unpinned branch. Pin
 the task, worker, policy, example-manifest, and expected-output schema versions
-as well. Review and replay the closed examples before accepting a new package
-or schema version. The package remains private; this guide is extraction
-evidence, not publication, repository-creation, or live-enforcement approval.
+as well. Review and replay the closed five-case examples before accepting a
+new package or schema version. The package remains private; this guide is
+extraction evidence, not publication, repository-creation, or live-enforcement
+approval.

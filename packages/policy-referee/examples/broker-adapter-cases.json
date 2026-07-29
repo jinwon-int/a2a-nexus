@@ -101,6 +101,30 @@
         "decision": "deny",
         "callerAction": "reject"
       }
+    },
+    {
+      "id": "warn-require-approval",
+      "policy": {
+        "schemaVersion": "a2a.broker.policy.v1",
+        "mode": "warn",
+        "defaultAction": "allow",
+        "rules": [
+          {
+            "id": "vps-warn-approval",
+            "workerClass": "vps",
+            "requireApproval": true
+          }
+        ]
+      },
+      "brokerInput": {
+        "operation": "claim",
+        "intent": "execute",
+        "workerClass": "vps"
+      },
+      "expected": {
+        "decision": "require_approval",
+        "callerAction": "route_approval"
+      }
     }
   ]
 }
