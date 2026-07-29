@@ -16,6 +16,8 @@
   },
   "files": [
     "dist",
+    "docs",
+    "examples",
     "fixtures",
     "scripts",
     "README.md",
@@ -36,6 +38,7 @@
     "check": "tsc -p tsconfig.json --noEmit",
     "pretest": "npm run build",
     "test": "node --test dist/**/*.test.js",
+    "examples:replay": "node examples/broker-adapter-replay.mjs",
     "fixtures:replay": "node scripts/replay-golden-fixtures.mjs",
     "coverage:baseline": "npm run build && node scripts/coverage-baseline-report.mjs"
   },

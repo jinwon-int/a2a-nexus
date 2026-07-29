@@ -1,0 +1,130 @@
+{
+  "schemaVersion": "a2a.policy-referee.broker-example-manifest.v1",
+  "cases": [
+    {
+      "id": "anonymous-class-intent-allow",
+      "policy": {
+        "schemaVersion": "a2a.broker.policy.v1",
+        "mode": "enforce",
+        "defaultAction": "deny",
+        "rules": [
+          {
+            "id": "source-analysis",
+            "workerClass": "source-only",
+            "allowIntents": [
+              "analyze"
+            ]
+          }
+        ]
+      },
+      "brokerInput": {
+        "operation": "create",
+        "intent": "analyze",
+        "workerClass": "source-only"
+      },
+      "expected": {
+        "decision": "allow",
+        "callerAction": "proceed"
+      }
+    },
+    {
+      "id": "warn-deny-observe-proceed",
+      "policy": {
+        "schemaVersion": "a2a.broker.policy.v1",
+        "mode": "warn",
+        "defaultAction": "allow",
+        "rules": [
+          {
+            "id": "mobile-analysis",
+            "workerClass": "mobile",
+            "allowIntents": [
+              "analyze"
+            ]
+          }
+        ]
+      },
+      "brokerInput": {
+        "operation": "create",
+        "intent": "execute",
+        "workerClass": "mobile"
+      },
+      "expected": {
+        "decision": "deny",
+        "callerAction": "observe_proceed"
+      }
+    },
+    {
+      "id": "enforce-require-approval",
+      "policy": {
+        "schemaVersion": "a2a.broker.policy.v1",
+        "mode": "enforce",
+        "defaultAction": "allow",
+        "rules": [
+          {
+            "id": "vps-approval",
+            "workerClass": "vps",
+            "requireApproval": true
+          }
+        ]
+      },
+      "brokerInput": {
+        "operation": "claim",
+        "intent": "execute",
+        "workerClass": "vps"
+      },
+      "expected": {
+        "decision": "require_approval",
+        "callerAction": "route_approval"
+      }
+    },
+    {
+      "id": "daily-budget-deny",
+      "policy": {
+        "schemaVersion": "a2a.broker.policy.v1",
+        "mode": "enforce",
+        "defaultAction": "allow",
+        "rules": [
+          {
+            "id": "mobile-budget",
+            "workerClass": "mobile",
+            "maxTasksPerDay": 2
+          }
+        ]
+      },
+      "brokerInput": {
+        "operation": "create",
+        "intent": "analyze",
+        "workerClass": "mobile",
+        "tasksToday": 2
+      },
+      "expected": {
+        "decision": "deny",
+        "callerAction": "reject"
+      }
+    },
+    {
+      "id": "warn-require-approval",
+      "policy": {
+        "schemaVersion": "a2a.broker.policy.v1",
+        "mode": "warn",
+        "defaultAction": "allow",
+        "rules": [
+          {
+            "id": "vps-warn-approval",
+            "workerClass": "vps",
+            "requireApproval": true
+          }
+        ]
+      },
+      "brokerInput": {
+        "operation": "claim",
+        "intent": "execute",
+        "workerClass": "vps"
+      },
+      "expected": {
+        "decision": "require_approval",
+        "callerAction": "route_approval"
+      }
+    }
+  ]
+}
