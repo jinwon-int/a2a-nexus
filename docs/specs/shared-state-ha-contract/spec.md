@@ -96,6 +96,117 @@ Digesting an identity makes it pseudonymous, not public-safe. Health and
 readiness MUST expose only bounded aggregates and enumerated reason codes, not
 digests or top-key lists.
 
+#### 4.1.1 Keyspace V1 canonical bytes
+
+Every digest-bearing field in the section 6.1 operations uses exactly
+`a2a.shared-state.keyspace/v1`. The machine-readable registry is
+`SHARED_STATE_STORAGE_V1_VALUES.digestDomains`; the public golden vectors are
+`packages/broker/fixtures/shared-state-storage/keyspace-v1-golden.json`.
+Neither artifact authorizes a storage or runtime callsite.
+
+The closed canonicalization input is
+`{keyspaceVersion, domain, namespace, components}`:
+
+- `keyspaceVersion` MUST equal `a2a.shared-state.keyspace/v1`.
+- `domain` MUST be one registered ASCII purpose token. Domain tokens are at
+  most 96 bytes and are not caller-extensible in V1.
+- `namespace` MUST match
+  `[a-z][a-z0-9]*(?:[.-][a-z0-9]+)*`, MUST be non-empty, and MUST be at most
+  96 ASCII/UTF-8 bytes. Case folding and Unicode normalization are forbidden
+  for namespaces; a non-canonical namespace is rejected.
+- `components` MUST contain the exact registered field names, types, count,
+  and order for the domain. A V1 domain has at most eight components. Field
+  names are exact, case-sensitive ASCII registry values.
+- An `utf8` value MUST be a Unicode scalar-value sequence. Lone UTF-16
+  surrogates are invalid. Both the input and normalized value MUST be from 1
+  through 1024 UTF-8 bytes. The canonical value is Unicode Normalization Form
+  C (NFC) encoded as UTF-8. No trimming, case folding, locale transform, or
+  delimiter escaping occurs.
+- A `bytes` value MUST be a non-empty, even-length hexadecimal string
+  representing at most 1024 octets. Upper- or lowercase input is accepted;
+  the normalized machine value is lowercase hex and the canonical value is
+  the represented octets. Odd-length, non-hex, and implicit text-to-byte
+  conversions are invalid.
+- A `uint` value MUST be either a non-negative JavaScript safe integer or a
+  canonical decimal string matching `0|[1-9][0-9]*`. Negative, fractional,
+  exponential, signed, padded, and unsafe numeric inputs are invalid. Its
+  range is `0` through `2^128-1`; the canonical value is exactly 16-byte
+  unsigned big-endian. A safe numeric value and its canonical decimal string
+  therefore produce identical bytes.
+
+The complete byte grammar is below. `u16be` and `u32be` are unsigned
+big-endian integers. `short(x)` is `u16be(byteLength(x)) || x`.
+`component-value` is the canonical value described above.
+
+```text
+canonical-key-v1 =
+  hex("4132412d53534b")                   ; ASCII "A2A-SSK"
+  || hex("01")                              ; framing version
+  || short(ASCII("a2a.shared-state.keyspace/v1"))
+  || short(ASCII(domain))
+  || short(ASCII(namespace))
+  || u16be(component-count)
+  || component[0] || ... || component[n-1]
+
+component =
+  short(ASCII(field-name))
+  || type-tag                                ; utf8=01, uint=02, bytes=03
+  || u32be(byteLength(component-value))
+  || component-value
+```
+
+Length prefixes, explicit type tags, and registered ordering are normative.
+Concatenation with separators, JSON serialization, platform-native integer
+width or endianness, and object-property iteration order MUST NOT be used as
+substitutes.
+
+#### 4.1.2 Digest purposes and tokens
+
+The digest is SHA-256 over `canonical-key-v1`. Its external token is exactly:
+
+```text
+a2a.shared-state.keyspace/v1 "|" domain "|" namespace "|" "sha256:" 64-lowercase-hex
+```
+
+The separator cannot occur in version, domain, or namespace tokens; raw
+component values never participate in this display syntax. Every field parser
+MUST validate the token's version and registered domain. Command parsers also
+MUST match the token namespace to the command's input namespace; a result
+consumer MUST make the same comparison when binding a committed result back
+to its originating command. The version and domain are also inside the
+hashed, length-framed preimage. A digest token for another version, namespace,
+or purpose MUST NOT be accepted even if its hexadecimal suffix has valid
+length.
+
+The 22 V1 purposes are:
+
+| Primitive | Registered digest domains |
+| --- | --- |
+| Replay | `security.replay.requester-key`, `security.replay.nonce` |
+| Rate limit | `security.rate-limit.bucket-key` |
+| Lease/claim | `broker.lease.resource-key`, `broker.lease.owner-key`, `broker.lease.attempt-key`, `broker.lease.mutation` |
+| Idempotency | `broker.idempotency.key`, `broker.idempotency.payload-fingerprint`, `broker.idempotency.domain-mutation`, `broker.idempotency.outcome` |
+| Outbox | `broker.outbox.stream-key`, `broker.outbox.idempotency-key`, `broker.outbox.event-key`, `broker.outbox.payload`, `broker.outbox.receipt-evidence` |
+| Claim graph | `broker.claim-graph.source-stream-key`, `broker.claim-graph.source-fact`, `broker.claim-graph.projection-batch-key`, `broker.claim-graph.projection-batch`, `broker.claim-graph.projection-inverse`, `broker.claim-graph.rollback-batch-key` |
+
+A purpose is deliberately shared only where the same key is transferred or
+reused across operation fields, for example lease attempt keys, outbox event
+keys, projection batch keys, and projection inverses. The registry maps every
+digest-bearing input and committed-result field of all 13 operations to one
+and only one purpose.
+
+Canonicalization and token parsing return a closed error consisting of `code`
+and `path`. The stable V1 keyspace codes are `invalid_type`, `unknown_field`,
+`unknown_keyspace_version`, `unknown_digest_domain`, `invalid_namespace`,
+`invalid_component_count`, `unknown_component_field`,
+`unknown_component_type`, `component_order_mismatch`,
+`component_type_mismatch`, `empty_component`, `component_too_large`,
+`invalid_unicode`, `invalid_bytes`, `invalid_integer`, `unsafe_integer`,
+`invalid_digest`, `digest_domain_mismatch`, and
+`digest_namespace_mismatch`. Section 6.1 envelope parsing preserves the five
+version/domain/token mismatch codes and otherwise reports its existing closed
+schema errors.
+
 ### 4.2 Time and expiry
 
 - Production expiry decisions MUST use an adapter-controlled clock, never an

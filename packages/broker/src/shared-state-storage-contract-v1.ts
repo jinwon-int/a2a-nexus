@@ -9,9 +9,31 @@
 
 import { z } from "zod";
 
+import {
+  parseSharedStateDigestV1,
+  type SharedStateDigestDomainV1,
+} from "./shared-state-storage-keyspace-v1.js";
 import { SHARED_STATE_STORAGE_V1_VALUES as V } from "./shared-state-storage-v1-values.js";
 
 export { SHARED_STATE_STORAGE_V1_VALUES } from "./shared-state-storage-v1-values.js";
+export {
+  canonicalizeSharedStateKeyV1,
+  digestSharedStateKeyV1,
+  parseSharedStateDigestV1,
+} from "./shared-state-storage-keyspace-v1.js";
+export type {
+  ParsedSharedStateDigestV1,
+  SharedStateCanonicalKeyV1,
+  SharedStateDigestDomainV1,
+  SharedStateDigestV1,
+  SharedStateKeyComponentInputV1,
+  SharedStateKeyComponentTypeV1,
+  SharedStateKeyMaterialInputV1,
+  SharedStateKeyspaceErrorCodeV1,
+  SharedStateKeyspaceErrorV1,
+  SharedStateKeyspaceResultV1,
+  SharedStateNormalizedKeyComponentV1,
+} from "./shared-state-storage-keyspace-v1.js";
 
 export type SharedStateBackendClassV1 = (typeof V.backendClasses)[number];
 export type SharedStateHealthBackendClassV1 =
@@ -59,7 +81,11 @@ const retentionVersionSchema = z
   .min(1)
   .max(V.limits.retentionVersionLength)
   .regex(/^[a-z0-9][a-z0-9._-]*$/);
-const sha256DigestSchema = z.string().regex(/^sha256:[0-9a-f]{64}$/);
+function purposeDigestSchema(domain: SharedStateDigestDomainV1) {
+  return z.string().refine(
+    (value) => parseSharedStateDigestV1(value, { domain }).ok,
+  );
+}
 const positiveDurationSchema = z
   .number()
   .int()
@@ -293,9 +319,9 @@ export type SharedStateHealthProjectionV1 = z.infer<
 const leaseAuthoritySchema = z
   .object({
     namespace: namespaceSchema,
-    resourceKeyDigest: sha256DigestSchema,
-    ownerKeyDigest: sha256DigestSchema,
-    attemptKeyDigest: sha256DigestSchema,
+    resourceKeyDigest: purposeDigestSchema("broker.lease.resource-key"),
+    ownerKeyDigest: purposeDigestSchema("broker.lease.owner-key"),
+    attemptKeyDigest: purposeDigestSchema("broker.lease.attempt-key"),
     fencingToken: positiveDecimalSchema,
     expectedResourceVersion: nonNegativeDecimalSchema,
   })
@@ -303,9 +329,9 @@ const leaseAuthoritySchema = z
 
 const outboxEffectSchema = z
   .object({
-    streamKeyDigest: sha256DigestSchema,
-    eventKeyDigest: sha256DigestSchema,
-    payloadDigest: sha256DigestSchema,
+    streamKeyDigest: purposeDigestSchema("broker.outbox.stream-key"),
+    eventKeyDigest: purposeDigestSchema("broker.outbox.event-key"),
+    payloadDigest: purposeDigestSchema("broker.outbox.payload"),
     retentionPolicyVersion: retentionVersionSchema,
   })
   .strict();
@@ -314,15 +340,15 @@ export const sharedStateTransactionCommandInputV1Schemas = {
   consumeReplayNonce: z
     .object({
       namespace: namespaceSchema,
-      keyDigest: sha256DigestSchema,
-      nonceDigest: sha256DigestSchema,
+      keyDigest: purposeDigestSchema("security.replay.requester-key"),
+      nonceDigest: purposeDigestSchema("security.replay.nonce"),
       ttlMs: positiveDurationSchema,
     })
     .strict(),
   reserveRateLimitCost: z
     .object({
       namespace: namespaceSchema,
-      bucketKeyDigest: sha256DigestSchema,
+      bucketKeyDigest: purposeDigestSchema("security.rate-limit.bucket-key"),
       cost: z.number().int().positive().max(V.limits.maxRateCost),
       limit: z.number().int().positive().max(V.limits.maxRateLimit),
       windowMs: positiveDurationSchema,
@@ -331,8 +357,8 @@ export const sharedStateTransactionCommandInputV1Schemas = {
   claimLease: z
     .object({
       namespace: namespaceSchema,
-      resourceKeyDigest: sha256DigestSchema,
-      ownerKeyDigest: sha256DigestSchema,
+      resourceKeyDigest: purposeDigestSchema("broker.lease.resource-key"),
+      ownerKeyDigest: purposeDigestSchema("broker.lease.owner-key"),
       leaseDurationMs: positiveDurationSchema,
       expectedResourceVersion: nonNegativeDecimalSchema,
     })
@@ -345,7 +371,7 @@ export const sharedStateTransactionCommandInputV1Schemas = {
   mutateWithFence: leaseAuthoritySchema
     .extend({
       mutationKind: z.enum(V.leaseMutationKinds),
-      mutationDigest: sha256DigestSchema,
+      mutationDigest: purposeDigestSchema("broker.lease.mutation"),
     })
     .strict(),
   releaseLease: leaseAuthoritySchema
@@ -356,13 +382,17 @@ export const sharedStateTransactionCommandInputV1Schemas = {
   executeIdempotent: z
     .object({
       namespace: namespaceSchema,
-      keyDigest: sha256DigestSchema,
-      payloadFingerprint: sha256DigestSchema,
+      keyDigest: purposeDigestSchema("broker.idempotency.key"),
+      payloadFingerprint: purposeDigestSchema(
+        "broker.idempotency.payload-fingerprint",
+      ),
       retentionPolicyVersion: retentionVersionSchema,
       effect: z
         .object({
           kind: z.enum(V.idempotentEffectKinds),
-          domainMutationDigest: sha256DigestSchema,
+          domainMutationDigest: purposeDigestSchema(
+            "broker.idempotency.domain-mutation",
+          ),
           outbox: outboxEffectSchema,
         })
         .strict(),
@@ -371,18 +401,22 @@ export const sharedStateTransactionCommandInputV1Schemas = {
   appendOutbox: z
     .object({
       namespace: namespaceSchema,
-      streamKeyDigest: sha256DigestSchema,
-      idempotencyKeyDigest: sha256DigestSchema,
-      eventKeyDigest: sha256DigestSchema,
-      payloadDigest: sha256DigestSchema,
+      streamKeyDigest: purposeDigestSchema("broker.outbox.stream-key"),
+      idempotencyKeyDigest: purposeDigestSchema(
+        "broker.outbox.idempotency-key",
+      ),
+      eventKeyDigest: purposeDigestSchema("broker.outbox.event-key"),
+      payloadDigest: purposeDigestSchema("broker.outbox.payload"),
       retentionPolicyVersion: retentionVersionSchema,
     })
     .strict(),
   updateOutboxReceipt: z
     .object({
       namespace: namespaceSchema,
-      eventKeyDigest: sha256DigestSchema,
-      receiptEvidenceDigest: sha256DigestSchema,
+      eventKeyDigest: purposeDigestSchema("broker.outbox.event-key"),
+      receiptEvidenceDigest: purposeDigestSchema(
+        "broker.outbox.receipt-evidence",
+      ),
       expectedReceiptState: z.enum(V.receiptStates),
       newReceiptState: z.enum(V.receiptStates),
     })
@@ -390,16 +424,22 @@ export const sharedStateTransactionCommandInputV1Schemas = {
   acknowledgeOutbox: z
     .object({
       namespace: namespaceSchema,
-      eventKeyDigest: sha256DigestSchema,
-      receiptEvidenceDigest: sha256DigestSchema,
+      eventKeyDigest: purposeDigestSchema("broker.outbox.event-key"),
+      receiptEvidenceDigest: purposeDigestSchema(
+        "broker.outbox.receipt-evidence",
+      ),
       expectedAcknowledgmentState: z.enum(V.acknowledgmentStates),
     })
     .strict(),
   appendGraphSource: z
     .object({
       namespace: namespaceSchema,
-      sourceStreamKeyDigest: sha256DigestSchema,
-      sourceFactDigest: sha256DigestSchema,
+      sourceStreamKeyDigest: purposeDigestSchema(
+        "broker.claim-graph.source-stream-key",
+      ),
+      sourceFactDigest: purposeDigestSchema(
+        "broker.claim-graph.source-fact",
+      ),
       nodeType: z.enum(V.graphNodeTypes),
       expectedSourceSequence: nonNegativeDecimalSchema,
     })
@@ -408,9 +448,15 @@ export const sharedStateTransactionCommandInputV1Schemas = {
     .object({
       namespace: namespaceSchema,
       projectionVersion: opaqueTokenSchema,
-      batchKeyDigest: sha256DigestSchema,
-      batchDigest: sha256DigestSchema,
-      inverseDigest: sha256DigestSchema,
+      batchKeyDigest: purposeDigestSchema(
+        "broker.claim-graph.projection-batch-key",
+      ),
+      batchDigest: purposeDigestSchema(
+        "broker.claim-graph.projection-batch",
+      ),
+      inverseDigest: purposeDigestSchema(
+        "broker.claim-graph.projection-inverse",
+      ),
       sourceSequenceFrom: positiveDecimalSchema,
       sourceSequenceThrough: positiveDecimalSchema,
       expectedCheckpointSequence: nonNegativeDecimalSchema,
@@ -420,9 +466,15 @@ export const sharedStateTransactionCommandInputV1Schemas = {
     .object({
       namespace: namespaceSchema,
       projectionVersion: opaqueTokenSchema,
-      batchKeyDigest: sha256DigestSchema,
-      rollbackBatchKeyDigest: sha256DigestSchema,
-      inverseDigest: sha256DigestSchema,
+      batchKeyDigest: purposeDigestSchema(
+        "broker.claim-graph.projection-batch-key",
+      ),
+      rollbackBatchKeyDigest: purposeDigestSchema(
+        "broker.claim-graph.rollback-batch-key",
+      ),
+      inverseDigest: purposeDigestSchema(
+        "broker.claim-graph.projection-inverse",
+      ),
       expectedCheckpointSequence: nonNegativeDecimalSchema,
     })
     .strict(),
@@ -558,7 +610,7 @@ const rateLimitResultSchema = z.discriminatedUnion("decision", [
 const leaseClaimResultSchema = z
   .object({
     decision: z.literal(V.operationDecisions.claimLease[0]),
-    attemptKeyDigest: sha256DigestSchema,
+    attemptKeyDigest: purposeDigestSchema("broker.lease.attempt-key"),
     fencingToken: positiveDecimalSchema,
     resourceVersion: positiveDecimalSchema,
     leaseExpiresInMs: positiveDurationSchema,
@@ -591,13 +643,13 @@ const idempotentResultSchema = z.discriminatedUnion("decision", [
   z
     .object({
       decision: z.literal(V.operationDecisions.executeIdempotent[0]),
-      outcomeDigest: sha256DigestSchema,
+      outcomeDigest: purposeDigestSchema("broker.idempotency.outcome"),
     })
     .strict(),
   z
     .object({
       decision: z.literal(V.operationDecisions.executeIdempotent[1]),
-      outcomeDigest: sha256DigestSchema,
+      outcomeDigest: purposeDigestSchema("broker.idempotency.outcome"),
     })
     .strict(),
 ]);
@@ -606,14 +658,14 @@ const appendOutboxResultSchema = z.discriminatedUnion("decision", [
   z
     .object({
       decision: z.literal(V.operationDecisions.appendOutbox[0]),
-      eventKeyDigest: sha256DigestSchema,
+      eventKeyDigest: purposeDigestSchema("broker.outbox.event-key"),
       streamSequence: positiveDecimalSchema,
     })
     .strict(),
   z
     .object({
       decision: z.literal(V.operationDecisions.appendOutbox[1]),
-      eventKeyDigest: sha256DigestSchema,
+      eventKeyDigest: purposeDigestSchema("broker.outbox.event-key"),
       streamSequence: positiveDecimalSchema,
     })
     .strict(),
@@ -1645,6 +1697,80 @@ export function parseSharedStateHealthProjectionV1(
   return parsed;
 }
 
+function nestedValue(
+  input: RecordValue,
+  path: readonly string[],
+): unknown {
+  let current: unknown = input;
+  for (const segment of path) {
+    if (!isRecord(current) || !Object.hasOwn(current, segment)) {
+      return undefined;
+    }
+    current = current[segment];
+  }
+  return current;
+}
+
+function contractDigestErrorCode(
+  code: (typeof V.keyspaceErrorCodes)[number],
+): SharedStateContractErrorCodeV1 {
+  switch (code) {
+    case "unknown_keyspace_version":
+    case "unknown_digest_domain":
+    case "digest_domain_mismatch":
+    case "digest_namespace_mismatch":
+      return code;
+    default:
+      return "invalid_digest";
+  }
+}
+
+function validateTransactionDigestBindings<T>(
+  input: RecordValue,
+): SharedStateParseResultV1<T> | null {
+  if (!V.operations.includes(input.operation as SharedStateOperationV1)) {
+    return null;
+  }
+  const operation = input.operation as SharedStateOperationV1;
+  const section =
+    input.kind === V.kinds.transactionCommand
+      ? "input"
+      : input.kind === V.kinds.transactionResult &&
+          input.status === V.transactionStatuses[0]
+        ? "result"
+        : null;
+  if (section === null) return null;
+
+  const namespace =
+    section === "input" &&
+    isRecord(input.input) &&
+    typeof input.input.namespace === "string"
+      ? input.input.namespace
+      : undefined;
+  const locationPrefix = `${operation}.${section}.`;
+
+  for (const [rawDomain, specification] of Object.entries(V.digestDomains)) {
+    for (const location of specification.operationFields) {
+      if (!location.startsWith(locationPrefix)) continue;
+      const relativePath = location.slice(locationPrefix.length).split(".");
+      const envelopePath = [section, ...relativePath];
+      const digest = nestedValue(input, envelopePath);
+      if (digest === undefined) continue;
+      const parsed = parseSharedStateDigestV1(digest, {
+        domain: rawDomain as SharedStateDigestDomainV1,
+        namespace,
+      });
+      if (!parsed.ok) {
+        return errorResult(
+          contractDigestErrorCode(parsed.error.code),
+          envelopePath,
+        );
+      }
+    }
+  }
+  return null;
+}
+
 function preflightTransactionEnvelope<T>(
   input: unknown,
 ): SharedStateParseResultV1<T> | null {
@@ -1674,6 +1800,10 @@ function preflightTransactionEnvelope<T>(
     !V.operations.includes(input.operation as SharedStateOperationV1)
   ) {
     return errorResult("invalid_discriminant", ["operation"]);
+  }
+  if (isRecord(input)) {
+    const digestError = validateTransactionDigestBindings<T>(input);
+    if (digestError) return digestError;
   }
   return null;
 }

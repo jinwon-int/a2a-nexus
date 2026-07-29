@@ -20,6 +20,7 @@ function deepFreeze<T>(value: T): Readonly<T> {
 export const SHARED_STATE_STORAGE_V1_VALUES = deepFreeze({
   versions: {
     contract: "a2a.shared-state.storage/v1",
+    keyspace: "a2a.shared-state.keyspace/v1",
     metadata: 1,
     capabilities: 1,
     lifecycle: 1,
@@ -212,6 +213,258 @@ export const SHARED_STATE_STORAGE_V1_VALUES = deepFreeze({
     "durableProjectionCheckpoints",
     "exactProjectionBatchRollback",
     "exclusiveSingletonOwnership",
+  ],
+  keyspace: {
+    algorithm: "sha256",
+    digestSeparator: "|",
+    framingMagicHex: "4132412d53534b",
+    framingVersion: 1,
+    unicodeNormalization: "NFC",
+    integerEncoding: "uint128-be",
+    integerInput: "safe-number-or-canonical-decimal-string",
+    byteInput: "even-length-hex-case-insensitive",
+    byteCanonicalForm: "lowercase-hex",
+  },
+  keyComponentTypes: [
+    "utf8",
+    "uint",
+    "bytes",
+  ],
+  keyComponentTypeTags: {
+    utf8: 1,
+    uint: 2,
+    bytes: 3,
+  },
+  digestDomains: {
+    "security.replay.requester-key": {
+      components: [
+        { field: "requesterId", type: "utf8" },
+      ],
+      operationFields: [
+        "consumeReplayNonce.input.keyDigest",
+      ],
+    },
+    "security.replay.nonce": {
+      components: [
+        { field: "nonce", type: "utf8" },
+      ],
+      operationFields: [
+        "consumeReplayNonce.input.nonceDigest",
+      ],
+    },
+    "security.rate-limit.bucket-key": {
+      components: [
+        { field: "principal", type: "utf8" },
+        { field: "route", type: "utf8" },
+      ],
+      operationFields: [
+        "reserveRateLimitCost.input.bucketKeyDigest",
+      ],
+    },
+    "broker.lease.resource-key": {
+      components: [
+        { field: "resourceType", type: "utf8" },
+        { field: "resourceId", type: "utf8" },
+      ],
+      operationFields: [
+        "claimLease.input.resourceKeyDigest",
+        "renewLease.input.resourceKeyDigest",
+        "mutateWithFence.input.resourceKeyDigest",
+        "releaseLease.input.resourceKeyDigest",
+      ],
+    },
+    "broker.lease.owner-key": {
+      components: [
+        { field: "ownerId", type: "utf8" },
+      ],
+      operationFields: [
+        "claimLease.input.ownerKeyDigest",
+        "renewLease.input.ownerKeyDigest",
+        "mutateWithFence.input.ownerKeyDigest",
+        "releaseLease.input.ownerKeyDigest",
+      ],
+    },
+    "broker.lease.attempt-key": {
+      components: [
+        { field: "resourceId", type: "utf8" },
+        { field: "attemptNumber", type: "uint" },
+      ],
+      operationFields: [
+        "claimLease.result.attemptKeyDigest",
+        "renewLease.input.attemptKeyDigest",
+        "mutateWithFence.input.attemptKeyDigest",
+        "releaseLease.input.attemptKeyDigest",
+      ],
+    },
+    "broker.lease.mutation": {
+      components: [
+        { field: "mutationKind", type: "utf8" },
+        { field: "mutationBody", type: "bytes" },
+      ],
+      operationFields: [
+        "mutateWithFence.input.mutationDigest",
+      ],
+    },
+    "broker.idempotency.key": {
+      components: [
+        { field: "operationName", type: "utf8" },
+        { field: "clientKey", type: "utf8" },
+      ],
+      operationFields: [
+        "executeIdempotent.input.keyDigest",
+      ],
+    },
+    "broker.idempotency.payload-fingerprint": {
+      components: [
+        { field: "payload", type: "bytes" },
+      ],
+      operationFields: [
+        "executeIdempotent.input.payloadFingerprint",
+      ],
+    },
+    "broker.idempotency.domain-mutation": {
+      components: [
+        { field: "mutationType", type: "utf8" },
+        { field: "mutationBody", type: "bytes" },
+      ],
+      operationFields: [
+        "executeIdempotent.input.effect.domainMutationDigest",
+      ],
+    },
+    "broker.idempotency.outcome": {
+      components: [
+        { field: "outcomeType", type: "utf8" },
+        { field: "outcomeBody", type: "bytes" },
+      ],
+      operationFields: [
+        "executeIdempotent.result.outcomeDigest",
+      ],
+    },
+    "broker.outbox.stream-key": {
+      components: [
+        { field: "streamType", type: "utf8" },
+        { field: "streamId", type: "utf8" },
+      ],
+      operationFields: [
+        "executeIdempotent.input.effect.outbox.streamKeyDigest",
+        "appendOutbox.input.streamKeyDigest",
+      ],
+    },
+    "broker.outbox.idempotency-key": {
+      components: [
+        { field: "producerId", type: "utf8" },
+        { field: "clientKey", type: "utf8" },
+      ],
+      operationFields: [
+        "appendOutbox.input.idempotencyKeyDigest",
+      ],
+    },
+    "broker.outbox.event-key": {
+      components: [
+        { field: "eventId", type: "utf8" },
+      ],
+      operationFields: [
+        "executeIdempotent.input.effect.outbox.eventKeyDigest",
+        "appendOutbox.input.eventKeyDigest",
+        "appendOutbox.result.eventKeyDigest",
+        "updateOutboxReceipt.input.eventKeyDigest",
+        "acknowledgeOutbox.input.eventKeyDigest",
+      ],
+    },
+    "broker.outbox.payload": {
+      components: [
+        { field: "payload", type: "bytes" },
+      ],
+      operationFields: [
+        "executeIdempotent.input.effect.outbox.payloadDigest",
+        "appendOutbox.input.payloadDigest",
+      ],
+    },
+    "broker.outbox.receipt-evidence": {
+      components: [
+        { field: "provider", type: "utf8" },
+        { field: "evidence", type: "bytes" },
+      ],
+      operationFields: [
+        "updateOutboxReceipt.input.receiptEvidenceDigest",
+        "acknowledgeOutbox.input.receiptEvidenceDigest",
+      ],
+    },
+    "broker.claim-graph.source-stream-key": {
+      components: [
+        { field: "sourceType", type: "utf8" },
+        { field: "sourceId", type: "utf8" },
+      ],
+      operationFields: [
+        "appendGraphSource.input.sourceStreamKeyDigest",
+      ],
+    },
+    "broker.claim-graph.source-fact": {
+      components: [
+        { field: "nodeType", type: "utf8" },
+        { field: "fact", type: "bytes" },
+      ],
+      operationFields: [
+        "appendGraphSource.input.sourceFactDigest",
+      ],
+    },
+    "broker.claim-graph.projection-batch-key": {
+      components: [
+        { field: "projectionVersion", type: "utf8" },
+        { field: "batchId", type: "utf8" },
+      ],
+      operationFields: [
+        "applyGraphProjectionBatch.input.batchKeyDigest",
+        "rollbackGraphProjectionBatch.input.batchKeyDigest",
+      ],
+    },
+    "broker.claim-graph.projection-batch": {
+      components: [
+        { field: "batch", type: "bytes" },
+      ],
+      operationFields: [
+        "applyGraphProjectionBatch.input.batchDigest",
+      ],
+    },
+    "broker.claim-graph.projection-inverse": {
+      components: [
+        { field: "inverse", type: "bytes" },
+      ],
+      operationFields: [
+        "applyGraphProjectionBatch.input.inverseDigest",
+        "rollbackGraphProjectionBatch.input.inverseDigest",
+      ],
+    },
+    "broker.claim-graph.rollback-batch-key": {
+      components: [
+        { field: "projectionVersion", type: "utf8" },
+        { field: "rollbackId", type: "utf8" },
+      ],
+      operationFields: [
+        "rollbackGraphProjectionBatch.input.rollbackBatchKeyDigest",
+      ],
+    },
+  },
+  keyspaceErrorCodes: [
+    "invalid_type",
+    "unknown_field",
+    "unknown_keyspace_version",
+    "unknown_digest_domain",
+    "invalid_namespace",
+    "invalid_component_count",
+    "unknown_component_field",
+    "unknown_component_type",
+    "component_order_mismatch",
+    "component_type_mismatch",
+    "empty_component",
+    "component_too_large",
+    "invalid_unicode",
+    "invalid_bytes",
+    "invalid_integer",
+    "unsafe_integer",
+    "invalid_digest",
+    "digest_domain_mismatch",
+    "digest_namespace_mismatch",
   ],
   operations: [
     "consumeReplayNonce",
@@ -465,6 +718,11 @@ export const SHARED_STATE_STORAGE_V1_VALUES = deepFreeze({
     "schema_version_mismatch",
     "clock_authority_mismatch",
     "migration_state_mismatch",
+    "unknown_keyspace_version",
+    "unknown_digest_domain",
+    "invalid_digest",
+    "digest_domain_mismatch",
+    "digest_namespace_mismatch",
   ],
   limits: {
     implementationVersionLength: 128,
@@ -478,6 +736,9 @@ export const SHARED_STATE_STORAGE_V1_VALUES = deepFreeze({
     maxHealthReasonCodes: 12,
     maxTransactionResultReasonCodes: 1,
     maxDecimalDigits: 40,
+    maxKeyComponentBytes: 1024,
+    maxKeyComponents: 8,
+    maxDigestDomainLength: 96,
   },
 } as const);
 

@@ -1,7 +1,8 @@
 # Checklist: Shared-State and HA Contract
 
 > **Status:** closeout checklist. Checked items include the completed
-> documentation packet and narrowly proven Phase 1 contract/parser work.
+> documentation packet and narrowly proven Phase 1 contract/parser and
+> keyspace/digest work.
 > Runtime implementation, adapter conformance, migration, and operations
 > remain open. Refs #1504.
 
@@ -52,6 +53,10 @@ specified in `spec.md`.
 - [x] The first bounded TypeScript slice provides closed metadata,
   capabilities, lifecycle, expected-open, health/readiness, declaration, and
   section 6.1 transaction envelope schemas with stable parser errors.
+- [x] Keyspace V1 pins NFC/UTF-8, typed length framing, uint128 encoding,
+  namespace/component bounds, 22 purpose domains, purpose-bound digest tokens,
+  and stable canonicalization errors for every digest-bearing section 6.1
+  field.
 - [ ] Machine-readable V1 types/schemas implemented.
 - [ ] SQLite V1 adapter implemented.
 - [ ] Shared V1 adapter implemented.
@@ -83,6 +88,10 @@ specified in `spec.md`.
 - [x] Narrow parser fixtures exhaust every section 6.1 transaction union and
   reject unknown versions/fields, unsafe capabilities, caller clocks, backend
   commands, sensitive connection fields, and identity-bearing health fields.
+- [x] Public synthetic golden fixtures independently recompute every registered
+  digest domain and reject delimiter ambiguity, wrong domains/namespaces,
+  component reordering, Unicode ambiguity, bad bounds/types/bytes, and unsafe
+  integers.
 - [ ] Test harness implemented.
 - [ ] Claim tests implemented/passing.
 - [ ] Idempotency tests implemented/passing.
