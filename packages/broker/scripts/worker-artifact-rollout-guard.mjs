@@ -46,7 +46,12 @@ const DEPLOYED_CHECK = process.argv.includes('--deployed') || process.argv.inclu
 
 const CANONICAL_HANDLER_FILENAME = 'a2a-task-handler.mjs';
 const LEGACY_HANDLER_FILENAME = '';
-const HANDLER_SUPPORT_FILENAMES = ['worker-model-policy.mjs', 'lib/source-carriers.mjs'];
+const HANDLER_SUPPORT_FILENAMES = [
+  'worker-model-policy.mjs',
+  'lib/source-carriers.mjs',
+  'lib/retrieval-snapshot-carriers.mjs',
+  'lib/live-operation-adapter.mjs',
+];
 const ANALYSIS_BRIDGE_BIN_VARS = ['A2A_HERMES_ANALYSIS_BIN', 'A2A_OPENCLAW_ANALYSIS_BIN', 'OPENCLAW_BIN'];
 const UNSET_ENV_TOKENS = new Set(['', 'none', 'null', 'undefined']);
 const workerRoot = process.env.A2A_WORKER_ROOT || process.env.WORKER_ROOT;

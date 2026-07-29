@@ -65,6 +65,8 @@ RUN mkdir -p /var/lib/a2a-broker ./handlers ./handlers/lib \
   && cp packages/broker/scripts/a2a-task-handler.mjs ./handlers/a2a-task-handler.mjs \
   && cp packages/broker/scripts/worker-model-policy.mjs ./handlers/worker-model-policy.mjs \
   && cp packages/broker/scripts/lib/source-carriers.mjs ./handlers/lib/source-carriers.mjs \
+  && cp packages/broker/scripts/lib/retrieval-snapshot-carriers.mjs ./handlers/lib/retrieval-snapshot-carriers.mjs \
+  && cp packages/broker/scripts/lib/live-operation-adapter.mjs ./handlers/lib/live-operation-adapter.mjs \
   && cp packages/broker/scripts/hermes-a2a-analysis-bridge.mjs ./handlers/hermes-a2a-analysis-bridge.mjs \
   && chown -R node:node /app /var/lib/a2a-broker
 USER node
