@@ -1,0 +1,245 @@
+{
+  "catalogVersion": "a2a.shared-state.observability/v1",
+  "safeCandidates": [
+    {
+      "kind": "SharedStateObservabilityCandidateV1",
+      "catalogVersion": "a2a.shared-state.observability/v1",
+      "health": {
+        "kind": "SharedStateHealthProjectionV1",
+        "specVersion": 1,
+        "configuredGrade": "single-process",
+        "effectiveGrade": "single-process",
+        "gradeDefaulted": true,
+        "serving": true,
+        "reasonCodes": [],
+        "adapter": {
+          "contractVersion": null,
+          "backendClass": "legacy-process",
+          "lifecycle": "ready",
+          "durability": "volatile",
+          "writerModel": "single",
+          "schemaVersion": null,
+          "clockAuthority": null,
+          "migrationState": null
+        },
+        "topology": {
+          "expectedProcessCount": 1,
+          "ownership": "held"
+        },
+        "clock": {
+          "safety": "safe"
+        },
+        "consistency": {
+          "replay": "linearizable-per-key",
+          "rateLimit": "linearizable-per-key",
+          "lease": "linearizable-per-key",
+          "idempotency": "linearizable-per-key",
+          "outbox": "serializable-per-stream",
+          "graphSource": "strong-per-source-stream",
+          "graphProjection": "monotonic-eventual"
+        },
+        "completeness": {
+          "graphProjection": "incomplete",
+          "negativeEvidenceAllowed": false
+        },
+        "primitives": {
+          "replay": {
+            "source": "process",
+            "durability": "volatile",
+            "continuity": "reset",
+            "resetRisk": true,
+            "epochAgeBand": "under-5m",
+            "pressureBand": "low",
+            "lastResetReason": "process_start"
+          },
+          "rateLimit": {
+            "source": "process",
+            "durability": "volatile",
+            "continuity": "reset",
+            "resetRisk": true,
+            "epochAgeBand": "under-5m",
+            "pressureBand": "medium",
+            "lastResetReason": "process_start"
+          }
+        }
+      },
+      "clockContinuity": "reset",
+      "observations": {
+        "replay": {
+          "availability": "available",
+          "counts": {
+            "accepted": 120,
+            "replayed": 4,
+            "unavailable": 0,
+            "storeErrors": 0
+          }
+        },
+        "rateLimit": {
+          "availability": "available",
+          "windowBand": "1m-to-under-5m",
+          "limitBand": "100-to-under-1000",
+          "counts": {
+            "allowed": 1000,
+            "denied": 2,
+            "storeErrors": 0
+          }
+        },
+        "leaseClaim": {
+          "availability": "available",
+          "pressureBand": "low",
+          "oldestAgeBand": "under-5m",
+          "counts": {
+            "active": 8,
+            "expiring": 0,
+            "stale": 1,
+            "renewalFailures": 0,
+            "fencingRejections": 0
+          }
+        },
+        "idempotency": {
+          "availability": "available",
+          "retentionPolicyClass": "registered-v1-mixed",
+          "counts": {
+            "new": 20,
+            "replayed": 7,
+            "conflict": 0,
+            "unknown": 0
+          }
+        },
+        "outbox": {
+          "availability": "available",
+          "pressureBand": "low",
+          "oldestAgeBand": "under-1h",
+          "highWaterClass": "active-medium",
+          "lagBand": "under-10",
+          "counts": {
+            "pending": 10,
+            "receiptConfirmed": 6,
+            "failed": 0,
+            "duplicateReplays": 2,
+            "orderViolations": 0
+          }
+        },
+        "claimGraphProjection": {
+          "availability": "available",
+          "projectionVersion": "claim-graph-projection-v1",
+          "sourceHighWaterClass": "active-medium",
+          "checkpointHighWaterClass": "active-medium",
+          "lagBand": "under-10",
+          "oldestAgeBand": "under-5m",
+          "completeness": "incomplete",
+          "counts": {
+            "failedBatches": 3,
+            "rollbackBatches": 0
+          }
+        }
+      }
+    },
+    {
+      "kind": "SharedStateObservabilityCandidateV1",
+      "catalogVersion": "a2a.shared-state.observability/v1",
+      "health": {
+        "kind": "SharedStateHealthProjectionV1",
+        "specVersion": 1,
+        "configuredGrade": "shared-state-ha",
+        "effectiveGrade": "shared-state-ha",
+        "gradeDefaulted": false,
+        "serving": true,
+        "reasonCodes": [],
+        "adapter": {
+          "contractVersion": "a2a.shared-state.storage/v1",
+          "backendClass": "shared",
+          "lifecycle": "ready",
+          "durability": "durable",
+          "writerModel": "multi",
+          "schemaVersion": 1,
+          "clockAuthority": "backend-server",
+          "migrationState": "complete"
+        },
+        "topology": {
+          "expectedProcessCount": 3,
+          "ownership": "not-required"
+        },
+        "clock": {
+          "safety": "safe"
+        },
+        "consistency": {
+          "replay": "linearizable-per-key",
+          "rateLimit": "linearizable-per-key",
+          "lease": "linearizable-per-key",
+          "idempotency": "linearizable-per-key",
+          "outbox": "serializable-per-stream",
+          "graphSource": "strong-per-source-stream",
+          "graphProjection": "monotonic-eventual"
+        },
+        "completeness": {
+          "graphProjection": "unavailable",
+          "negativeEvidenceAllowed": false
+        },
+        "primitives": {
+          "replay": {
+            "source": "adapter",
+            "durability": "durable",
+            "continuity": "preserved",
+            "resetRisk": false,
+            "epochAgeBand": "one-day-or-more",
+            "pressureBand": "none",
+            "lastResetReason": null
+          },
+          "rateLimit": {
+            "source": "adapter",
+            "durability": "durable",
+            "continuity": "preserved",
+            "resetRisk": false,
+            "epochAgeBand": "one-day-or-more",
+            "pressureBand": "low",
+            "lastResetReason": null
+          }
+        }
+      },
+      "clockContinuity": "preserved",
+      "observations": {
+        "replay": {
+          "availability": "unavailable",
+          "reasonCode": "collection-failed"
+        },
+        "rateLimit": {
+          "availability": "available",
+          "windowBand": "5m-to-under-1h",
+          "limitBand": "1000-or-more",
+          "counts": {
+            "allowed": 5000,
+            "denied": 10,
+            "storeErrors": 0
+          }
+        },
+        "leaseClaim": {
+          "availability": "unavailable",
+          "reasonCode": "adapter-unavailable"
+        },
+        "idempotency": {
+          "availability": "not-applicable",
+          "reasonCode": "primitive-not-implemented"
+        },
+        "outbox": {
+          "availability": "available",
+          "pressureBand": "none",
+          "oldestAgeBand": "unknown",
+          "highWaterClass": "active-high",
+          "lagBand": "caught-up",
+          "counts": {
+            "pending": 0,
+            "receiptConfirmed": 300,
+            "failed": 0,
+            "duplicateReplays": 0,
+            "orderViolations": 0
+          }
+        },
+        "claimGraphProjection": {
+          "availability": "unavailable",
+          "reasonCode": "adapter-unavailable"
+        }
+      }
+    }
+  ]
+}

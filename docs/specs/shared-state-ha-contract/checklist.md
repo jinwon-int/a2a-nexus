@@ -2,9 +2,9 @@
 
 > **Status:** closeout checklist. Checked items include the completed
 > documentation packet and narrowly proven Phase 1 contract/parser and
-> keyspace/digest/time-evaluator/idempotency-registry/outbox-registry work.
-> Runtime implementation, adapter conformance, migration, and operations
-> remain open. Refs #1504.
+> keyspace/digest/time-evaluator/idempotency-registry/outbox-registry and
+> observability-catalog/parser/projector work. Runtime implementation,
+> adapter conformance, migration, and operations remain open. Refs #1504.
 
 ## A. Spec packet
 
@@ -72,6 +72,11 @@ specified in `spec.md`.
   adapter-owned sequence, event/idempotency, receipt/ACK, retention/prune, and
   migration rules, and binds only the three Section 6.1 outbox command parsers
   without claiming runtime integration.
+- [x] Observability V1 inventories every pinned public readiness, public
+  health aggregate, and separately authorized operator aggregate requirement;
+  pins closed visibility/availability/reason/band/count vocabularies and
+  whole-group aggregation floors; and binds only to the existing pure health
+  declaration parser without adding a route or runtime collector.
 - [ ] Machine-readable V1 types/schemas implemented.
 - [ ] SQLite V1 adapter implemented.
 - [ ] Shared V1 adapter implemented.
@@ -123,6 +128,12 @@ specified in `spec.md`.
   global-order claim, original idempotent event/sequence binding,
   provider-acceptance/non-ACK separation, retention/prune safety, the three
   Section 6.1 parser integrations, and every new stable error/reason code.
+- [x] Public synthetic observability fixtures and recursive negative leak
+  corpus cover all three projection boundaries, every stable code/path,
+  unknown version/field/type/range/enum rejection, closed bands/reasons,
+  absent/unavailable shapes, public/operator floor separation, whole-group
+  suppression, hashed/pseudonymous identity rejection, Unicode/case and
+  prototype-key rejection, and sentinel absence from successful serialization.
 - [ ] Test harness implemented.
 - [ ] Claim tests implemented/passing.
 - [ ] Idempotency tests implemented/passing.
