@@ -2,7 +2,7 @@
 
 > **Status:** closeout checklist. Checked items include the completed
 > documentation packet and narrowly proven Phase 1 contract/parser and
-> keyspace/digest/time-evaluator work.
+> keyspace/digest/time-evaluator/idempotency-registry work.
 > Runtime implementation, adapter conformance, migration, and operations
 > remain open. Refs #1504.
 
@@ -62,6 +62,10 @@ specified in `spec.md`.
   declared skew tolerance, safe clamping/fail-closed outcomes, and exact
   replay/lease/idempotency/rate boundaries without adding a clock or runtime
   callsite.
+- [x] Idempotency V1 inventories six current durable-but-partial authorities,
+  registers six exact planned namespace/retention pairs with closed
+  effect/horizon/dependency/prune/migration rules, and binds only the Section
+  6.1 `executeIdempotent` command parser without claiming runtime integration.
 - [ ] Machine-readable V1 types/schemas implemented.
 - [ ] SQLite V1 adapter implemented.
 - [ ] Shared V1 adapter implemented.
@@ -101,6 +105,11 @@ specified in `spec.md`.
   boundaries, restart floor preservation, logical expiry/rate boundaries,
   cleanup independence, large/overflow values, both clock profiles, every
   stable time reason/error code, and section 6.1 caller-clock rejection.
+- [x] Public synthetic idempotency registry fixtures and deterministic parser
+  tests cover source-evidence completeness, unique exact pairs, all entries,
+  unknown/mismatched/non-canonical/extended inputs, non-expiring safety,
+  time-v1-only future expiry, generic unrelated namespaces, and every new
+  stable error/reason code.
 - [ ] Test harness implemented.
 - [ ] Claim tests implemented/passing.
 - [ ] Idempotency tests implemented/passing.

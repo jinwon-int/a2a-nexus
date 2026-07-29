@@ -252,39 +252,39 @@ const commandInputs = {
     releaseKind: "release",
   },
   executeIdempotent: {
-    namespace: "broker.idempotency",
+    namespace: "broker.task.terminal",
     keyDigest: digest(
       "broker.idempotency.key",
-      "broker.idempotency",
+      "broker.task.terminal",
       "4",
     ),
     payloadFingerprint: digest(
       "broker.idempotency.payload-fingerprint",
-      "broker.idempotency",
+      "broker.task.terminal",
       "5",
     ),
-    retentionPolicyVersion: "terminal-effects.v1",
+    retentionPolicyVersion: "task-terminal-effects.v1",
     effect: {
       kind: "domain-mutation-with-outbox",
       domainMutationDigest: digest(
         "broker.idempotency.domain-mutation",
-        "broker.idempotency",
+        "broker.task.terminal",
         "6",
       ),
       outbox: {
         streamKeyDigest: digest(
           "broker.outbox.stream-key",
-          "broker.idempotency",
+          "broker.task.terminal",
           "7",
         ),
         eventKeyDigest: digest(
           "broker.outbox.event-key",
-          "broker.idempotency",
+          "broker.task.terminal",
           "8",
         ),
         payloadDigest: digest(
           "broker.outbox.payload",
-          "broker.idempotency",
+          "broker.task.terminal",
           "9",
         ),
         retentionPolicyVersion: "terminal-outbox.v1",
