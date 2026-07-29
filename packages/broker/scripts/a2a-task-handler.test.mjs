@@ -902,6 +902,57 @@ process.stdout.write(JSON.stringify({
   }
 });
 
+test("docker runner max-turn failure stays failed with stable reason and checkpoint reference", () => {
+  const dir = mkdtempSync(join(tmpdir(), "a2a-max-turn-runner-failure-"));
+  const runner = join(dir, "fake-runner.mjs");
+  writeHybridRunnerStub(runner, `
+process.stdout.write(JSON.stringify({
+  ok: false,
+  status: "failed",
+  terminalReason: "max_turns",
+  checkpointRef: "artifacts/claude-max-turn-checkpoint.json",
+  error: "Claude Code max-turn budget exhausted; task remains failed (terminal_reason=max_turns).",
+  claudeTurnBudget: {
+    schemaVersion: "a2a.claude.turn-budget.v1",
+    mode: "agentic-patch",
+    effectiveMaxTurns: 40,
+    source: "canonical_default",
+    outcome: "failure",
+    failureReason: "max_turns",
+    checkpointStatus: "preserved",
+    checkpointRef: "artifacts/claude-max-turn-checkpoint.json"
+  },
+  artifacts: ["artifacts/claude-max-turn-checkpoint.json"]
+}) + "\\n");
+process.exitCode = 1;
+`);
+
+  try {
+    const result = handleTask(patchTask({
+      id: "task-max-turn-failure",
+      payload: {
+        repo: "jinwon-int/a2a-nexus",
+        issue: "#1700",
+        issueUrl: "https://github.com/jinwon-int/a2a-nexus/issues/1700",
+      },
+    }), {
+      PATH: process.env.PATH,
+      A2A_EXECUTOR_MODE: "docker",
+      A2A_DOCKER_RUNNER_BIN: runner,
+    });
+
+    assert.equal(result.result, undefined);
+    assert.equal(result.error?.code, "docker_runner_max_turns");
+    assert.equal(result.error?.details?.terminalReason, "max_turns");
+    assert.equal(result.error?.details?.checkpointRef, "artifacts/claude-max-turn-checkpoint.json");
+    assert.equal(result.error?.details?.runnerResult?.ok, false);
+    assert.equal(result.error?.details?.runnerResult?.status, "failed");
+    assert.equal(result.error?.details?.runnerResult?.prUrl, undefined);
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
 test("WS5: docker runner bridge envelope preserves bounded subagentReport for broker redaction", () => {
   const dir = mkdtempSync(join(tmpdir(), "a2a-ws5-report-"));
   const runner = join(dir, "fake-runner.mjs");

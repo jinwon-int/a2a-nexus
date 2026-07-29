@@ -5,7 +5,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
 import { Script } from "node:vm";
-import { buildClaudeCodePatchCommandScript, loadContainedSubagentsConfig, loadConfig, loadEnvFile, mergeRunnerEnvFile, validateRunnerConfig } from "./config.js";
+import { buildClaudeCodePatchCommandScript, loadContainedSubagentsConfig, loadConfig, loadEnvFile, mergeRunnerEnvFile, projectClaudeCodeTurnBudgets, validateRunnerConfig } from "./config.js";
 import type { RunnerConfig } from "./types.js";
 
 const baseEnv = {
@@ -347,7 +347,10 @@ test("mergeRunnerEnvFile supports Claude Code cccb patch profile", async () => {
     assert.match(config.commandScript ?? "", /export HOME=\/tmp\/claude-home/);
     assert.match(config.commandScript ?? "", /export CLAUDE_CONFIG_DIR="\$HOME\/\.claude"/);
     assert.doesNotMatch(config.commandScript ?? "", /\/root\/\.claude/);
-    assert.deepEqual(config.claudeCodeProfile, { configDir: "/srv/claude-profile" });
+    assert.deepEqual(config.claudeCodeProfile, {
+      configDir: "/srv/claude-profile",
+      turnBudgets: projectClaudeCodeTurnBudgets(env),
+    });
     assert.deepEqual(config.extraMounts, [
       { source: "/srv/claude-profile", target: "/run/secrets/claude-dir", readOnly: true },
     ]);
@@ -1480,15 +1483,16 @@ test("loadConfig runs pre-deploy validation on invalid memory", async () => {
   );
 });
 
-test("claude-code patch mode: single-shot by default, fanout only when the flag is 1 (Phase-2 WS1)", () => {
-  // Default (flag unset) — behavior unchanged. The runner must also carry the
-  // normalized task metadata into the bridge message so single-shot mode can
-  // detect patch intent and parse its repository/issue context.
+test("claude-code patch mode: normal non-fanout lane is agentic; deterministic and fanout stay explicit", () => {
+  // The runner must carry normalized task metadata into the bridge message so
+  // every implementation mode can parse repository and issue context.
   const defaultScript = buildClaudeCodePatchCommandScript({});
-  assert.match(defaultScript, /export A2A_CLAUDE_CODE_PATCH_MODE=single-shot\b/);
+  assert.match(defaultScript, /export A2A_CLAUDE_CODE_PATCH_MODE=agentic\b/);
   assert.match(defaultScript, /export A2A_CLAUDE_CODE_TIMEOUT_SEC='3600'/);
-  assert.match(defaultScript, /export A2A_CLAUDE_CODE_MAX_TURNS='6'/);
-  assert.match(defaultScript, /export A2A_CLAUDE_CODE_PATCH_MAX_TURNS='6'/);
+  assert.doesNotMatch(defaultScript, /export A2A_CLAUDE_CODE_MAX_TURNS=/);
+  assert.doesNotMatch(defaultScript, /export A2A_CLAUDE_CODE_PATCH_MAX_TURNS=/);
+  assert.doesNotMatch(defaultScript, /export A2A_CLAUDE_CODE_DETERMINISTIC_MAX_TURNS=/);
+  assert.doesNotMatch(defaultScript, /export A2A_CLAUDE_CODE_FANOUT_MAX_TURNS=/);
   assert.match(defaultScript, /\/work\/artifacts\/task\.json/);
   assert.match(defaultScript, /GitHub development assignment\\nRepository: %s\\nIssue: %s\\nIssue URL: %s/);
   assert.match(
@@ -1503,16 +1507,60 @@ test("claude-code patch mode: single-shot by default, fanout only when the flag 
     buildClaudeCodePatchCommandScript({ A2A_CLAUDE_CODE_PATCH_MAX_TURNS: "20" }),
     /export A2A_CLAUDE_CODE_PATCH_MAX_TURNS='20'/,
   );
-  // A non-"1" value stays single-shot (fail-safe).
+  assert.match(
+    buildClaudeCodePatchCommandScript({ A2A_CLAUDE_CODE_DETERMINISTIC_MAX_TURNS: "7" }),
+    /export A2A_CLAUDE_CODE_DETERMINISTIC_MAX_TURNS='7'/,
+  );
+  assert.doesNotMatch(
+    buildClaudeCodePatchCommandScript({ A2A_CLAUDE_CODE_MAX_TURNS: "not-a-number-with-secret-material" }),
+    /not-a-number-with-secret-material|A2A_CLAUDE_CODE_MAX_TURNS=/,
+  );
+  // A non-"1" fanout flag stays on the normal agentic implementation lane.
   assert.match(
     buildClaudeCodePatchCommandScript({ A2A_DOCKER_RUNNER_CLAUDE_CODE_FANOUT_ENABLED: "true" }),
+    /export A2A_CLAUDE_CODE_PATCH_MODE=agentic\b/,
+  );
+  // Deterministic diff/apply and fanout are both explicit modes.
+  assert.match(
+    buildClaudeCodePatchCommandScript({ A2A_DOCKER_RUNNER_CLAUDE_CODE_PATCH_MODE: "single-shot" }),
     /export A2A_CLAUDE_CODE_PATCH_MODE=single-shot\b/,
   );
-  // Opt-in.
   assert.match(
     buildClaudeCodePatchCommandScript({ A2A_DOCKER_RUNNER_CLAUDE_CODE_FANOUT_ENABLED: "1" }),
     /export A2A_CLAUDE_CODE_PATCH_MODE=fanout\b/,
   );
+});
+
+test("claude-code preflight projection exposes canonical defaults, explicit sources, and fanout cap without env contents", () => {
+  const defaults = projectClaudeCodeTurnBudgets({});
+  assert.equal(defaults.activePatchMode, "agentic");
+  assert.deepEqual(defaults.analysis, { effectiveMaxTurns: 10, source: "canonical_default" });
+  assert.deepEqual(defaults.agenticPatch, { effectiveMaxTurns: 40, source: "canonical_default" });
+  assert.deepEqual(defaults.deterministicSingleShot, { effectiveMaxTurns: 6, source: "canonical_default" });
+  assert.deepEqual(defaults.fanoutPatch, {
+    effectiveMaxTurns: 40,
+    source: "canonical_default",
+    hardCap: 200,
+    hardCapApplied: false,
+  });
+
+  const overridden = projectClaudeCodeTurnBudgets({
+    A2A_CLAUDE_CODE_MAX_TURNS: "44",
+    A2A_CLAUDE_CODE_DETERMINISTIC_MAX_TURNS: "8",
+    A2A_CLAUDE_CODE_FANOUT_MAX_TURNS: "500",
+    A2A_DOCKER_RUNNER_CLAUDE_CODE_FANOUT_ENABLED: "1",
+    GH_TOKEN: "must-not-be-projected",
+  });
+  assert.equal(overridden.activePatchMode, "fanout");
+  assert.deepEqual(overridden.agenticPatch, {
+    effectiveMaxTurns: 44,
+    source: "explicit_override",
+    overrideKey: "A2A_CLAUDE_CODE_MAX_TURNS",
+  });
+  assert.equal(overridden.deterministicSingleShot.effectiveMaxTurns, 8);
+  assert.equal(overridden.fanoutPatch.effectiveMaxTurns, 200);
+  assert.equal(overridden.fanoutPatch.hardCapApplied, true);
+  assert.doesNotMatch(JSON.stringify(overridden), /must-not-be-projected|GH_TOKEN/);
 });
 
 test("contained sub-agents: claude-code enabled only when the fanout flag is 1 (Phase-2 WS4)", () => {

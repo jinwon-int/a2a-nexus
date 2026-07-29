@@ -6,6 +6,9 @@ import type {
   RunnerBuildMetadata,
   RunnerCommandProfile,
   RunnerConfig,
+  RunnerClaudePatchMode,
+  RunnerClaudeTurnBudgetProjection,
+  RunnerClaudeTurnBudgetValue,
   RunnerContainedSubagentReason,
   RunnerContainedSubagentRole,
   RunnerContainedSubagentsConfig,
@@ -56,8 +59,6 @@ const DEFAULT_TIMEOUT_MS = 60 * 60 * 1000;
 const DEFAULT_OPENCLAW_TIMEOUT_SEC = "3600";
 const DEFAULT_HERMES_TIMEOUT_SEC = "3600";
 const DEFAULT_CLAUDE_CODE_TIMEOUT_SEC = "3600";
-const DEFAULT_CLAUDE_CODE_MAX_TURNS = "6";
-const DEFAULT_CLAUDE_CODE_PATCH_MAX_TURNS = "6";
 const DEFAULT_CODEX_TIMEOUT_SEC = "3600";
 const DEFAULT_CODEX_CONFIG_DIR = "/var/lib/a2a-runner/codex-dir";
 export const DEFAULT_SERVICE_ENV_FILE = "/etc/default/openclaw-a2a-worker";
@@ -506,6 +507,7 @@ function loadPatchCommandConfig(
       commandScript: buildClaudeCodePatchCommandScript(env),
       claudeCodeProfile: {
         configDir: env.A2A_DOCKER_RUNNER_CLAUDE_CONFIG_DIR || "/root/.claude",
+        turnBudgets: projectClaudeCodeTurnBudgets(env),
       },
     };
   }
@@ -774,6 +776,118 @@ timeout "$A2A_CODEX_TIMEOUT_SEC" codex exec \
 `;
 }
 
+const CLAUDE_TURN_BUDGET_DEFAULTS = {
+  analysis: 10,
+  agenticPatch: 40,
+  deterministicSingleShot: 6,
+  fanoutPatch: 40,
+} as const;
+const CLAUDE_FANOUT_MAX_TURNS_HARD_CAP = 200;
+const CLAUDE_TURN_BUDGET_ENV_KEYS = [
+  "A2A_CLAUDE_CODE_ANALYSIS_MAX_TURNS",
+  "A2A_CLAUDE_CODE_MAX_TURNS",
+  "A2A_CLAUDE_CODE_DETERMINISTIC_MAX_TURNS",
+  "A2A_CLAUDE_CODE_PATCH_MAX_TURNS",
+  "A2A_CLAUDE_CODE_FANOUT_MAX_TURNS",
+] as const;
+
+function explicitClaudeTurnBudget(
+  env: NodeJS.ProcessEnv,
+  keys: readonly string[],
+): { value: number; key: string } | undefined {
+  for (const key of keys) {
+    const raw = env[key]?.trim();
+    if (!raw) continue;
+    const value = Number(raw);
+    if (Number.isInteger(value) && value > 0) return { value, key };
+  }
+  return undefined;
+}
+
+function projectedClaudeTurnBudget(
+  env: NodeJS.ProcessEnv,
+  keys: readonly string[],
+  canonicalDefault: number,
+  hardCap?: number,
+): RunnerClaudeTurnBudgetValue {
+  const explicit = explicitClaudeTurnBudget(env, keys);
+  const requested = explicit?.value ?? canonicalDefault;
+  const effectiveMaxTurns = hardCap ? Math.min(requested, hardCap) : requested;
+  return {
+    effectiveMaxTurns,
+    source: explicit ? "explicit_override" : "canonical_default",
+    ...(explicit ? { overrideKey: explicit.key } : {}),
+    ...(hardCap ? { hardCap, hardCapApplied: requested > hardCap } : {}),
+  };
+}
+
+function resolveClaudePatchMode(env: NodeJS.ProcessEnv): RunnerClaudePatchMode {
+  if (env.A2A_DOCKER_RUNNER_CLAUDE_CODE_FANOUT_ENABLED === "1") return "fanout";
+  const requested = (
+    env.A2A_DOCKER_RUNNER_CLAUDE_CODE_PATCH_MODE
+    || env.A2A_CLAUDE_CODE_PATCH_MODE
+    || ""
+  ).trim().toLowerCase().replace(/_/g, "-");
+  if (requested === "single-shot" || requested === "deterministic-single-shot") {
+    return "deterministic-single-shot";
+  }
+  if (requested === "agentic" || requested === "agentic-patch") return "agentic";
+  return "agentic";
+}
+
+/**
+ * Secret-free doctor projection of the bridge-owned policy.
+ *
+ * These values do not inject defaults into the container. They make the
+ * expected effective values visible before claim, including explicit numeric
+ * overrides and the fanout hard cap.
+ */
+export function projectClaudeCodeTurnBudgets(env: NodeJS.ProcessEnv): RunnerClaudeTurnBudgetProjection {
+  return {
+    schemaVersion: "a2a.runner.claude-turn-budget-projection.v1",
+    activePatchMode: resolveClaudePatchMode(env),
+    resolutionOrder: [
+      "mode_specific_explicit_override",
+      "backward_compatible_mode_alias",
+      "canonical_bridge_default",
+      "fanout_hard_cap",
+    ],
+    analysis: projectedClaudeTurnBudget(
+      env,
+      ["A2A_CLAUDE_CODE_ANALYSIS_MAX_TURNS", "A2A_CLAUDE_CODE_MAX_TURNS"],
+      CLAUDE_TURN_BUDGET_DEFAULTS.analysis,
+    ),
+    agenticPatch: projectedClaudeTurnBudget(
+      env,
+      ["A2A_CLAUDE_CODE_MAX_TURNS"],
+      CLAUDE_TURN_BUDGET_DEFAULTS.agenticPatch,
+    ),
+    deterministicSingleShot: projectedClaudeTurnBudget(
+      env,
+      ["A2A_CLAUDE_CODE_DETERMINISTIC_MAX_TURNS", "A2A_CLAUDE_CODE_PATCH_MAX_TURNS"],
+      CLAUDE_TURN_BUDGET_DEFAULTS.deterministicSingleShot,
+    ),
+    fanoutPatch: projectedClaudeTurnBudget(
+      env,
+      ["A2A_CLAUDE_CODE_FANOUT_MAX_TURNS"],
+      CLAUDE_TURN_BUDGET_DEFAULTS.fanoutPatch,
+      CLAUDE_FANOUT_MAX_TURNS_HARD_CAP,
+    ),
+  };
+}
+
+function explicitClaudeTurnBudgetExports(env: NodeJS.ProcessEnv): string {
+  return CLAUDE_TURN_BUDGET_ENV_KEYS
+    .flatMap((key) => {
+      const raw = env[key]?.trim();
+      const value = raw ? Number(raw) : Number.NaN;
+      return Number.isInteger(value) && value > 0
+        ? [`export ${key}=${shellSingleQuote(String(value))}`]
+        : [];
+    })
+    .join("\n");
+}
+
 export function buildClaudeCodePatchCommandScript(env: NodeJS.ProcessEnv): string {
   const defaultModel = shellSingleQuote(env.A2A_CLAUDE_MODEL || env.A2A_OPENCLAW_MODEL || "sonnet");
   const defaultTimeout = shellSingleQuote(env.A2A_CLAUDE_TIMEOUT_SEC || env.A2A_OPENCLAW_TIMEOUT_SEC || DEFAULT_CLAUDE_CODE_TIMEOUT_SEC);
@@ -783,14 +897,16 @@ export function buildClaudeCodePatchCommandScript(env: NodeJS.ProcessEnv): strin
       || env.A2A_OPENCLAW_TIMEOUT_SEC
       || DEFAULT_CLAUDE_CODE_TIMEOUT_SEC,
   );
-  const maxTurns = shellSingleQuote(env.A2A_CLAUDE_CODE_MAX_TURNS || DEFAULT_CLAUDE_CODE_MAX_TURNS);
-  const patchMaxTurns = shellSingleQuote(
-    env.A2A_CLAUDE_CODE_PATCH_MAX_TURNS || DEFAULT_CLAUDE_CODE_PATCH_MAX_TURNS,
-  );
   const bridgePath = shellSingleQuote(env.A2A_CLAUDE_PATCH_BRIDGE || "/opt/a2a-broker/scripts/claude-a2a-patch-bridge.mjs");
-  // Phase-2 WS1: opt-in fanout mode. Default (flag unset/!=1) stays single-shot,
-  // so behavior is unchanged; rollback = unset A2A_DOCKER_RUNNER_CLAUDE_CODE_FANOUT_ENABLED.
-  const patchMode = env.A2A_DOCKER_RUNNER_CLAUDE_CODE_FANOUT_ENABLED === "1" ? "fanout" : "single-shot";
+  // Agentic is the normal implementation lane. Fanout remains opt-in and the
+  // deterministic diff/apply helper remains available through an explicit mode.
+  const projectedBudgets = projectClaudeCodeTurnBudgets(env);
+  const patchMode = projectedBudgets.activePatchMode === "fanout"
+    ? "fanout"
+    : projectedBudgets.activePatchMode === "agentic"
+      ? "agentic"
+      : "single-shot";
+  const turnBudgetExports = explicitClaudeTurnBudgetExports(env);
   return `#!/usr/bin/env bash
 set -euo pipefail
 export DEBIAN_FRONTEND=noninteractive
@@ -838,8 +954,7 @@ if [ -d /run/secrets/claude-dir ]; then
 fi
 chmod -R u+rwX "$CLAUDE_CONFIG_DIR"
 export A2A_CLAUDE_CODE_PATCH_MODE=${patchMode}
-export A2A_CLAUDE_CODE_MAX_TURNS=${maxTurns}
-export A2A_CLAUDE_CODE_PATCH_MAX_TURNS=${patchMaxTurns}
+${turnBudgetExports}
 export A2A_CLAUDE_CODE_MAX_OUTPUT_BYTES="\${A2A_CLAUDE_CODE_MAX_OUTPUT_BYTES:-16777216}"
 printf 'claude_cli=%s\\n' "$(claude --version 2>/dev/null | head -n 1 || printf unknown)" | tee -a /work/artifacts/summary.txt
 printf 'model_source=env profile=claude-code\\n' | tee -a /work/artifacts/summary.txt

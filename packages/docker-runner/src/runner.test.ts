@@ -1,10 +1,11 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { mkdirSync, writeFileSync, rmSync, mkdtempSync, statSync } from "node:fs";
+import { chmodSync, mkdirSync, writeFileSync, rmSync, mkdtempSync, statSync } from "node:fs";
 import { execFileSync } from "node:child_process";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
-import { buildActionableError, buildContainerScript, buildRunArgs, extractPrUrl, jsonArgvToScript, prepareWorkDirForContainerUser, redactAndBound, redactSecrets, runTask, shouldTreatDetectedPrUrlAsCanonical } from "./runner.js";
+import { fileURLToPath } from "node:url";
+import { buildActionableError, buildContainerScript, buildRunArgs, extractClaudeTurnBudgetDiagnostic, extractPrUrl, jsonArgvToScript, prepareWorkDirForContainerUser, redactAndBound, redactSecrets, runTask, shouldTreatDetectedPrUrlAsCanonical } from "./runner.js";
 import type { NormalizedRunnerTask, RunnerConfig, RunnerTask } from "./types.js";
 
 const baseConfig: RunnerConfig = {
@@ -14,6 +15,136 @@ const baseConfig: RunnerConfig = {
   memory: "512m",
   cpus: "1",
 };
+
+const validMaxTurnDiagnostic = {
+  schemaVersion: "a2a.claude.turn-budget.v1",
+  mode: "agentic-patch",
+  effectiveMaxTurns: 40,
+  source: "explicit_override",
+  overrideKey: "A2A_CLAUDE_CODE_PATCH_MAX_TURNS",
+  hardCap: 64,
+  hardCapApplied: false,
+  outcome: "failure",
+  turnsUsed: 40,
+  invocationCount: 1,
+  failureReason: "max_turns",
+  checkpointStatus: "preserved",
+  checkpointRef: "artifacts/claude-max-turn-checkpoint.json",
+} as const;
+
+type MaxTurnCheckpointFixture = Record<string, unknown> & {
+  changedPaths: string[];
+  limits: { maxBytes: number; diffBytes: number; statusBytes: number };
+};
+
+interface MaxTurnRunFixture {
+  diagnostic?: Record<string, unknown>;
+  diagnosticArtifact?: boolean;
+  stderrLines?: string[];
+  checkpoint?: boolean;
+  mutateCheckpoint?: (checkpoint: MaxTurnCheckpointFixture) => void;
+  fileMutation?: "hardlink-diff" | "symlink-status" | "missing-status";
+}
+
+async function runMaxTurnFixture(options: MaxTurnRunFixture = {}) {
+  const executableTmpDir = fileURLToPath(new URL("../tmp/", import.meta.url));
+  mkdirSync(executableTmpDir, { recursive: true });
+  const fixtureDir = mkdtempSync(join(executableTmpDir, "max-turn-fixture-"));
+  const artifactsDir = join(fixtureDir, "seed-artifacts");
+  const runsDir = join(fixtureDir, "runs");
+  const enginePath = join(fixtureDir, "docker");
+  const stderrPath = join(fixtureDir, "stderr.txt");
+  const originalPath = process.env.PATH;
+  mkdirSync(artifactsDir, { recursive: true });
+
+  const diagnostic = options.diagnostic ?? validMaxTurnDiagnostic;
+  const stderrLines = options.stderrLines ?? [
+    `claude_turn_budget=${JSON.stringify(diagnostic)}`,
+    "terminal_reason=max_turns",
+  ];
+  writeFileSync(stderrPath, `${stderrLines.join("\n")}\n`);
+  if (options.diagnosticArtifact !== false) {
+    writeFileSync(join(artifactsDir, "claude-turn-budget.json"), JSON.stringify(diagnostic));
+  }
+
+  if (options.checkpoint) {
+    const diff = "diff --git a/src/runner.ts b/src/runner.ts\n";
+    const status = " M src/runner.ts\n";
+    const checkpoint: MaxTurnCheckpointFixture = {
+      schemaVersion: "a2a.claude.max-turn-checkpoint.v1",
+      createdAt: "1970-01-01T00:00:00.000Z",
+      checkpointId: `sha256:${"a".repeat(64)}`,
+      reason: "max_turns",
+      resumable: true,
+      repository: "jinwon-int/a2a-nexus",
+      base: { ref: "refs/heads/parent", commit: "1".repeat(40) },
+      head: { ref: "refs/heads/child", commit: "2".repeat(40) },
+      changedPaths: ["src/runner.ts"],
+      diffPath: "artifacts/claude-max-turn-checkpoint.diff",
+      statusPath: "artifacts/claude-max-turn-checkpoint.status",
+      includesUntracked: false,
+      pushPerformed: false,
+      pullRequestOpened: false,
+      taskSucceeded: false,
+      evidenceGatesBypassed: false,
+      secretScan: { status: "passed", scanner: "a2a-checkpoint-pattern-v1" },
+      limits: {
+        maxBytes: 1024 * 1024,
+        diffBytes: Buffer.byteLength(diff),
+        statusBytes: Buffer.byteLength(status),
+      },
+    };
+    options.mutateCheckpoint?.(checkpoint);
+    writeFileSync(join(artifactsDir, "claude-max-turn-checkpoint.json"), JSON.stringify(checkpoint));
+    writeFileSync(join(artifactsDir, "claude-max-turn-checkpoint.diff"), diff);
+    writeFileSync(join(artifactsDir, "claude-max-turn-checkpoint.status"), status);
+    if (options.fileMutation) {
+      writeFileSync(join(artifactsDir, `.${options.fileMutation}`), "");
+    }
+  }
+
+  writeFileSync(enginePath, `#!/usr/bin/env bash
+set -euo pipefail
+work_dir=
+for arg in "$@"; do
+  case "$arg" in
+    *:/work) work_dir="\${arg%:/work}" ;;
+  esac
+done
+test -n "$work_dir"
+mkdir -p "$work_dir/artifacts"
+cp -R "${artifactsDir}/." "$work_dir/artifacts/"
+if test -f "$work_dir/artifacts/.hardlink-diff"; then
+  rm "$work_dir/artifacts/.hardlink-diff"
+  ln "$work_dir/artifacts/claude-max-turn-checkpoint.diff" "$work_dir/artifacts/checkpoint-diff-hardlink"
+fi
+if test -f "$work_dir/artifacts/.symlink-status"; then
+  rm "$work_dir/artifacts/.symlink-status" "$work_dir/artifacts/claude-max-turn-checkpoint.status"
+  ln -s "claude-max-turn-checkpoint.diff" "$work_dir/artifacts/claude-max-turn-checkpoint.status"
+fi
+if test -f "$work_dir/artifacts/.missing-status"; then
+  rm "$work_dir/artifacts/.missing-status" "$work_dir/artifacts/claude-max-turn-checkpoint.status"
+fi
+cat "${stderrPath}" >&2
+exit 1
+`);
+  chmodSync(enginePath, 0o700);
+
+  try {
+    process.env.PATH = `${fixtureDir}:${originalPath ?? ""}`;
+    return await runTask(
+      { ...baseConfig, rootDir: runsDir, engine: "docker" },
+      { id: `max-turn-${Math.random().toString(36).slice(2)}`, intent: "verify", commands: ["true"] },
+    );
+  } finally {
+    process.env.PATH = originalPath;
+    try {
+      rmSync(fixtureDir, { recursive: true, force: true });
+    } catch {
+      execFileSync("rm", ["-rf", fixtureDir]);
+    }
+  }
+}
 
 // ---------------------------------------------------------------------------
 // safeId (via runTask validation / workDir creation)
@@ -79,6 +210,208 @@ test("redactAndBound enforces UTF-8 bytes without splitting code points", () => 
   const bounded = redactAndBound("😀".repeat(10), 13);
   assert.ok(Buffer.byteLength(bounded, "utf8") <= 13);
   assert.doesNotMatch(bounded, /�/);
+});
+
+test("extractClaudeTurnBudgetDiagnostic accepts a complete strict diagnostic", () => {
+  const diagnostic = extractClaudeTurnBudgetDiagnostic(
+    [
+      "ordinary stderr",
+      `claude_turn_budget=${JSON.stringify(validMaxTurnDiagnostic)}`,
+      "terminal_reason=max_turns",
+    ].join("\n"),
+  );
+  assert.equal(diagnostic?.effectiveMaxTurns, 40);
+  assert.equal(diagnostic?.turnsUsed, 40);
+  assert.equal(diagnostic?.overrideKey, "A2A_CLAUDE_CODE_PATCH_MAX_TURNS");
+  assert.equal(diagnostic?.hardCap, 64);
+  assert.equal(diagnostic?.hardCapApplied, false);
+});
+
+test("extractClaudeTurnBudgetDiagnostic ignores malformed and model-controlled lookalikes", () => {
+  const malformed = [
+    `model said claude_turn_budget=${JSON.stringify(validMaxTurnDiagnostic)}`,
+    ` claude_turn_budget=${JSON.stringify(validMaxTurnDiagnostic)}`,
+    "claude_turn_budget={not-json",
+    "claude_turn_budget=null",
+  ].join("\n");
+  assert.equal(extractClaudeTurnBudgetDiagnostic(malformed), undefined);
+});
+
+test("extractClaudeTurnBudgetDiagnostic uses the last trustworthy line across streams", () => {
+  const earlier = { ...validMaxTurnDiagnostic, effectiveMaxTurns: 20, turnsUsed: 19 };
+  const later = { ...validMaxTurnDiagnostic, effectiveMaxTurns: 60, turnsUsed: 60 };
+  const diagnostic = extractClaudeTurnBudgetDiagnostic(
+    `claude_turn_budget=${JSON.stringify(earlier)}`,
+    [
+      `claude_turn_budget=${JSON.stringify(later)}`,
+      "claude_turn_budget={malformed",
+    ].join("\n"),
+  );
+  assert.equal(diagnostic?.effectiveMaxTurns, 60);
+  assert.equal(diagnostic?.turnsUsed, 60);
+});
+
+test("extractClaudeTurnBudgetDiagnostic rejects invalid schema and constrained fields", () => {
+  const invalidDiagnostics: Record<string, unknown>[] = [
+    { ...validMaxTurnDiagnostic, schemaVersion: "a2a.claude.turn-budget.v2" },
+    { ...validMaxTurnDiagnostic, mode: "model-controlled" },
+    { ...validMaxTurnDiagnostic, source: "stderr_claim" },
+    { ...validMaxTurnDiagnostic, effectiveMaxTurns: 0 },
+    { ...validMaxTurnDiagnostic, effectiveMaxTurns: 1.5 },
+    { ...validMaxTurnDiagnostic, outcome: "stopped" },
+    { ...validMaxTurnDiagnostic, turnsUsed: -1 },
+    { ...validMaxTurnDiagnostic, invocationCount: 0 },
+    { ...validMaxTurnDiagnostic, overrideKey: "MODEL_MAX_TURNS" },
+    { ...validMaxTurnDiagnostic, failureReason: "claimed_max_turns" },
+    { ...validMaxTurnDiagnostic, checkpointRef: "../../escape" },
+    { ...validMaxTurnDiagnostic, hardCap: 0 },
+    { ...validMaxTurnDiagnostic, hardCapApplied: "false" },
+    { ...validMaxTurnDiagnostic, checkpointStatus: "Preserved by model" },
+  ];
+  for (const invalid of invalidDiagnostics) {
+    assert.equal(
+      extractClaudeTurnBudgetDiagnostic(`claude_turn_budget=${JSON.stringify(invalid)}`),
+      undefined,
+    );
+  }
+});
+
+test("runTask classifies max-turn exhaustion with trustworthy usage and a safe checkpoint", async () => {
+  const result = await runMaxTurnFixture({ checkpoint: true });
+
+  assert.equal(result.ok, false);
+  assert.equal(result.status, "failed");
+  assert.equal(result.terminalReason, "max_turns");
+  assert.equal(result.claudeTurnBudget?.turnsUsed, 40);
+  assert.equal(result.artifactManifest?.status, "budget_limited");
+  assert.deepEqual(result.artifactManifest?.budget, {
+    limitKind: "turn",
+    limit: "40",
+    used: "40",
+    reason: "max_turns",
+  });
+  assert.equal(result.checkpointRef, "artifacts/claude-max-turn-checkpoint.json");
+  assert.equal(result.artifactManifest?.checkpointRef, result.checkpointRef);
+  assert.equal(result.resultSummary?.checkpointRef, result.checkpointRef);
+  assert.equal(result.resultSummary?.terminalReason, "max_turns");
+  assert.match(result.artifactManifest?.continuation?.nextPrompt ?? "", /exact base commit/);
+  assert.match(result.error ?? "", /Safe checkpoint/);
+});
+
+test("runTask classifies a trustworthy max-turn diagnostic without invented usage", async () => {
+  const diagnostic: Record<string, unknown> = { ...validMaxTurnDiagnostic };
+  delete diagnostic.turnsUsed;
+  delete diagnostic.checkpointStatus;
+  delete diagnostic.checkpointRef;
+
+  const result = await runMaxTurnFixture({ diagnostic });
+
+  assert.equal(result.ok, false);
+  assert.equal(result.status, "failed");
+  assert.equal(result.terminalReason, "max_turns");
+  assert.equal(result.claudeTurnBudget?.turnsUsed, undefined);
+  assert.equal(result.artifactManifest?.status, "budget_limited");
+  assert.equal(result.artifactManifest?.budget?.limit, "40");
+  assert.equal(result.artifactManifest?.budget?.used, undefined);
+  assert.equal(result.checkpointRef, undefined);
+  assert.equal(result.artifactManifest?.continuation?.nextPrompt, undefined);
+});
+
+test("runTask honors the canonical max-turn terminal marker without trusting a lookalike diagnostic", async () => {
+  const result = await runMaxTurnFixture({
+    diagnosticArtifact: false,
+    stderrLines: [
+      `model output: claude_turn_budget=${JSON.stringify(validMaxTurnDiagnostic)}`,
+      "terminal_reason=max_turns",
+    ],
+  });
+
+  assert.equal(result.ok, false);
+  assert.equal(result.status, "failed");
+  assert.equal(result.terminalReason, "max_turns");
+  assert.equal(result.claudeTurnBudget, undefined);
+  assert.equal(result.artifactManifest?.status, "failed");
+  assert.equal(result.artifactManifest?.budget, undefined);
+  assert.equal(result.checkpointRef, undefined);
+});
+
+test("runTask rejects unsafe or inconsistent checkpoint evidence while preserving max-turn failure", async (t) => {
+  const rejectionCases: Array<{
+    name: string;
+    mutateCheckpoint?: (checkpoint: MaxTurnCheckpointFixture) => void;
+    fileMutation?: MaxTurnRunFixture["fileMutation"];
+  }> = [
+    {
+      name: "malformed schema",
+      mutateCheckpoint: (checkpoint) => {
+        checkpoint.schemaVersion = "a2a.claude.max-turn-checkpoint.v2";
+      },
+    },
+    {
+      name: "relative traversal path",
+      mutateCheckpoint: (checkpoint) => {
+        checkpoint.changedPaths = ["../outside.txt"];
+      },
+    },
+    {
+      name: "OpenClaw bootstrap file",
+      mutateCheckpoint: (checkpoint) => {
+        checkpoint.changedPaths = ["AGENTS.md"];
+      },
+    },
+    {
+      name: "OpenClaw runtime tree",
+      mutateCheckpoint: (checkpoint) => {
+        checkpoint.changedPaths = [".openclaw/agents/main/session.jsonl"];
+      },
+    },
+    {
+      name: "unsorted path list",
+      mutateCheckpoint: (checkpoint) => {
+        checkpoint.changedPaths = ["src/z.ts", "src/a.ts"];
+      },
+    },
+    {
+      name: "unexpected manifest field",
+      mutateCheckpoint: (checkpoint) => {
+        checkpoint.modelClaim = "safe";
+      },
+    },
+    { name: "hard-linked diff file", fileMutation: "hardlink-diff" },
+    { name: "symbolic-link status file", fileMutation: "symlink-status" },
+    { name: "missing status file", fileMutation: "missing-status" },
+    {
+      name: "declared diff size mismatch",
+      mutateCheckpoint: (checkpoint) => {
+        checkpoint.limits.diffBytes += 1;
+      },
+    },
+    {
+      name: "total checkpoint size mismatch",
+      mutateCheckpoint: (checkpoint) => {
+        checkpoint.limits.maxBytes = 1;
+      },
+    },
+  ];
+
+  for (const rejectionCase of rejectionCases) {
+    await t.test(rejectionCase.name, async () => {
+      const result = await runMaxTurnFixture({
+        checkpoint: true,
+        mutateCheckpoint: rejectionCase.mutateCheckpoint,
+        fileMutation: rejectionCase.fileMutation,
+      });
+
+      assert.equal(result.ok, false);
+      assert.equal(result.terminalReason, "max_turns");
+      assert.equal(result.artifactManifest?.status, "budget_limited");
+      assert.equal(result.checkpointRef, undefined);
+      assert.equal(result.artifactManifest?.checkpointRef, undefined);
+      assert.equal(result.resultSummary?.checkpointRef, undefined);
+      assert.equal(result.artifactManifest?.continuation?.nextPrompt, undefined);
+      assert.doesNotMatch(result.error ?? "", /Safe checkpoint/);
+    });
+  }
 });
 
 test("prepares trusted non-root container workdir ownership before launch", async () => {

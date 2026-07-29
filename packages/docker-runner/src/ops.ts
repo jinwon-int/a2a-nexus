@@ -660,6 +660,7 @@ function checkClaudeCodeProfilePatchReadiness(config: RunnerConfig, options: Git
     safe: true,
     eval: false,
     containedSubagents: describeContainedSubagents(config),
+    turnBudgets: config.claudeCodeProfile?.turnBudgets,
     failureCategory,
     summary: buildClaudeCodeProfileSummary(probeInput, failureCategory),
     checks,
