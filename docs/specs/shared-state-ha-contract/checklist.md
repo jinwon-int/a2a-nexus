@@ -2,7 +2,7 @@
 
 > **Status:** closeout checklist. Checked items include the completed
 > documentation packet and narrowly proven Phase 1 contract/parser and
-> keyspace/digest/time-evaluator/idempotency-registry work.
+> keyspace/digest/time-evaluator/idempotency-registry/outbox-registry work.
 > Runtime implementation, adapter conformance, migration, and operations
 > remain open. Refs #1504.
 
@@ -66,6 +66,12 @@ specified in `spec.md`.
   registers six exact planned namespace/retention pairs with closed
   effect/horizon/dependency/prune/migration rules, and binds only the Section
   6.1 `executeIdempotent` command parser without claiming runtime integration.
+- [x] Outbox V1 inventories the one current durable-but-partial terminal
+  outbox authority and all three current producer purposes, registers their
+  exact planned namespace/purpose, typed stream key, per-key order,
+  adapter-owned sequence, event/idempotency, receipt/ACK, retention/prune, and
+  migration rules, and binds only the three Section 6.1 outbox command parsers
+  without claiming runtime integration.
 - [ ] Machine-readable V1 types/schemas implemented.
 - [ ] SQLite V1 adapter implemented.
 - [ ] Shared V1 adapter implemented.
@@ -110,6 +116,13 @@ specified in `spec.md`.
   unknown/mismatched/non-canonical/extended inputs, non-expiring safety,
   time-v1-only future expiry, generic unrelated namespaces, and every new
   stable error/reason code.
+- [x] Public synthetic outbox registry fixtures and deterministic parser tests
+  cover current-source inventory completeness, unique exact registrations,
+  every valid purpose, exact component framing/order, case/Unicode/wildcard/
+  unknown/extra rejection, same-stream order, cross-stream isolation, no
+  global-order claim, original idempotent event/sequence binding,
+  provider-acceptance/non-ACK separation, retention/prune safety, the three
+  Section 6.1 parser integrations, and every new stable error/reason code.
 - [ ] Test harness implemented.
 - [ ] Claim tests implemented/passing.
 - [ ] Idempotency tests implemented/passing.

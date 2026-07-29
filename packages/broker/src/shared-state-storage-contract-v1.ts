@@ -17,6 +17,14 @@ import {
   evaluateSharedStateIdempotencyPolicyV1,
   type SharedStateIdempotencyErrorCodeV1,
 } from "./shared-state-idempotency-v1.js";
+import {
+  evaluateSharedStateOutboxPolicyV1,
+  sharedStateOutboxStreamKeyInputV1Schema,
+  type SharedStateOutboxErrorCodeV1,
+} from "./shared-state-outbox-v1.js";
+import {
+  SHARED_STATE_OUTBOX_V1_VALUES as OUTBOX_V,
+} from "./shared-state-outbox-v1-values.js";
 import { SHARED_STATE_STORAGE_V1_VALUES as V } from "./shared-state-storage-v1-values.js";
 
 export { SHARED_STATE_STORAGE_V1_VALUES } from "./shared-state-storage-v1-values.js";
@@ -43,6 +51,37 @@ export type {
   SharedStateIdempotencyRegistrationV1,
   SharedStateIdempotencyResultV1,
 } from "./shared-state-idempotency-v1.js";
+export {
+  compareSharedStateOutboxOrderingV1,
+  evaluateSharedStateOutboxPolicyV1,
+  evaluateSharedStateOutboxRetentionV1,
+  evaluateSharedStateOutboxRetryBindingV1,
+  parseSharedStateOutboxCatalogV1,
+  sharedStateOutboxCatalogV1,
+  SHARED_STATE_OUTBOX_V1_VALUES,
+} from "./shared-state-outbox-v1.js";
+export type {
+  SharedStateOutboxAuthorityV1,
+  SharedStateOutboxCatalogV1,
+  SharedStateOutboxCommittedBindingV1,
+  SharedStateOutboxErrorCodeV1,
+  SharedStateOutboxErrorV1,
+  SharedStateOutboxEvaluationReasonCodeV1,
+  SharedStateOutboxEventPurposeV1,
+  SharedStateOutboxOperationV1,
+  SharedStateOutboxOrderingEvaluationV1,
+  SharedStateOutboxPolicyEvaluationV1,
+  SharedStateOutboxPolicyInputV1,
+  SharedStateOutboxProducerV1,
+  SharedStateOutboxReceiptEvidenceKindV1,
+  SharedStateOutboxRegistrationV1,
+  SharedStateOutboxResultV1,
+  SharedStateOutboxRetentionEvaluationV1,
+  SharedStateOutboxRetentionInputV1,
+  SharedStateOutboxRetryBindingEvaluationV1,
+  SharedStateOutboxRetryBindingInputV1,
+  SharedStateOutboxStreamKeyInputV1,
+} from "./shared-state-outbox-v1.js";
 export {
   canonicalizeSharedStateKeyV1,
   digestSharedStateKeyV1,
@@ -428,22 +467,35 @@ export const sharedStateTransactionCommandInputV1Schemas = {
   appendOutbox: z
     .object({
       namespace: namespaceSchema,
+      eventPurpose: z.enum(OUTBOX_V.eventPurposes),
+      streamKey: sharedStateOutboxStreamKeyInputV1Schema,
       streamKeyDigest: purposeDigestSchema("broker.outbox.stream-key"),
+      orderingScope: z.enum(OUTBOX_V.orderingScopes),
       idempotencyKeyDigest: purposeDigestSchema(
         "broker.outbox.idempotency-key",
       ),
       eventKeyDigest: purposeDigestSchema("broker.outbox.event-key"),
       payloadDigest: purposeDigestSchema("broker.outbox.payload"),
       retentionPolicyVersion: retentionVersionSchema,
+      receiptPolicyVersion: retentionVersionSchema,
+      acknowledgmentPolicyVersion: retentionVersionSchema,
     })
     .strict(),
   updateOutboxReceipt: z
     .object({
       namespace: namespaceSchema,
+      eventPurpose: z.enum(OUTBOX_V.eventPurposes),
+      streamKey: sharedStateOutboxStreamKeyInputV1Schema,
+      streamKeyDigest: purposeDigestSchema("broker.outbox.stream-key"),
+      orderingScope: z.enum(OUTBOX_V.orderingScopes),
       eventKeyDigest: purposeDigestSchema("broker.outbox.event-key"),
       receiptEvidenceDigest: purposeDigestSchema(
         "broker.outbox.receipt-evidence",
       ),
+      retentionPolicyVersion: retentionVersionSchema,
+      receiptPolicyVersion: retentionVersionSchema,
+      acknowledgmentPolicyVersion: retentionVersionSchema,
+      receiptEvidenceKind: z.enum(OUTBOX_V.receiptEvidenceKinds),
       expectedReceiptState: z.enum(V.receiptStates),
       newReceiptState: z.enum(V.receiptStates),
     })
@@ -451,10 +503,19 @@ export const sharedStateTransactionCommandInputV1Schemas = {
   acknowledgeOutbox: z
     .object({
       namespace: namespaceSchema,
+      eventPurpose: z.enum(OUTBOX_V.eventPurposes),
+      streamKey: sharedStateOutboxStreamKeyInputV1Schema,
+      streamKeyDigest: purposeDigestSchema("broker.outbox.stream-key"),
+      orderingScope: z.enum(OUTBOX_V.orderingScopes),
       eventKeyDigest: purposeDigestSchema("broker.outbox.event-key"),
       receiptEvidenceDigest: purposeDigestSchema(
         "broker.outbox.receipt-evidence",
       ),
+      retentionPolicyVersion: retentionVersionSchema,
+      receiptPolicyVersion: retentionVersionSchema,
+      acknowledgmentPolicyVersion: retentionVersionSchema,
+      receiptEvidenceKind: z.enum(OUTBOX_V.receiptEvidenceKinds),
+      expectedReceiptState: z.literal("confirmed"),
       expectedAcknowledgmentState: z.enum(V.acknowledgmentStates),
     })
     .strict(),
@@ -1860,6 +1921,123 @@ function validateExecuteIdempotentPolicyBinding<T>(
   );
 }
 
+function storageOutboxErrorCode(
+  code: SharedStateOutboxErrorCodeV1,
+): SharedStateContractErrorCodeV1 {
+  switch (code) {
+    case "invalid_namespace":
+      return "invalid_outbox_stream_namespace";
+    case "unknown_namespace":
+      return "unknown_outbox_stream_namespace";
+    case "unknown_event_purpose":
+      return "unknown_outbox_event_purpose";
+    case "invalid_stream_key":
+      return "invalid_outbox_stream_key";
+    case "stream_key_shape_mismatch":
+      return "outbox_stream_key_shape_mismatch";
+    case "stream_key_component_mismatch":
+      return "outbox_stream_key_component_mismatch";
+    case "invalid_stream_key_component":
+      return "invalid_outbox_stream_key_component";
+    case "stream_key_digest_mismatch":
+      return "outbox_stream_key_digest_mismatch";
+    case "ordering_scope_mismatch":
+      return "outbox_ordering_scope_mismatch";
+    case "caller_sequence_forbidden":
+      return "caller_outbox_sequence_forbidden";
+    case "invalid_retention_policy_version":
+      return "invalid_outbox_retention_policy_version";
+    case "unknown_retention_policy_version":
+      return "unknown_outbox_retention_policy_version";
+    case "retention_policy_mismatch":
+      return "outbox_retention_policy_mismatch";
+    case "invalid_receipt_policy_version":
+      return "invalid_outbox_receipt_policy_version";
+    case "unknown_receipt_policy_version":
+      return "unknown_outbox_receipt_policy_version";
+    case "receipt_policy_mismatch":
+      return "outbox_receipt_policy_mismatch";
+    case "invalid_acknowledgment_policy_version":
+      return "invalid_outbox_acknowledgment_policy_version";
+    case "unknown_acknowledgment_policy_version":
+      return "unknown_outbox_acknowledgment_policy_version";
+    case "acknowledgment_policy_mismatch":
+      return "outbox_acknowledgment_policy_mismatch";
+    case "receipt_transition_mismatch":
+      return "outbox_receipt_transition_mismatch";
+    case "acknowledgment_forbidden":
+      return "outbox_acknowledgment_forbidden";
+    case "provider_acceptance_not_ack":
+      return "outbox_provider_acceptance_not_ack";
+    case "acknowledgment_evidence_mismatch":
+      return "outbox_acknowledgment_evidence_mismatch";
+    default:
+      return code === "invalid_type"
+        ? "invalid_type"
+        : code === "unknown_field"
+          ? "unknown_field"
+          : "invalid_value";
+  }
+}
+
+function validateOutboxPolicyBinding<T>(
+  input: RecordValue,
+): SharedStateParseResultV1<T> | null {
+  if (
+    input.kind !== V.kinds.transactionCommand ||
+    !OUTBOX_V.operations.includes(
+      input.operation as (typeof OUTBOX_V.operations)[number],
+    ) ||
+    !isRecord(input.input)
+  ) {
+    return null;
+  }
+  const policyInput: Record<string, unknown> = {
+    operation: input.operation,
+    namespace: input.input.namespace,
+    eventPurpose: input.input.eventPurpose,
+    streamKey: input.input.streamKey,
+    streamKeyDigest: input.input.streamKeyDigest,
+    orderingScope: input.input.orderingScope,
+    retentionPolicyVersion: input.input.retentionPolicyVersion,
+    receiptPolicyVersion: input.input.receiptPolicyVersion,
+    acknowledgmentPolicyVersion:
+      input.input.acknowledgmentPolicyVersion,
+  };
+  if (input.operation === "updateOutboxReceipt") {
+    Object.assign(policyInput, {
+      receiptEvidenceKind: input.input.receiptEvidenceKind,
+      expectedReceiptState: input.input.expectedReceiptState,
+      newReceiptState: input.input.newReceiptState,
+    });
+  } else if (input.operation === "acknowledgeOutbox") {
+    Object.assign(policyInput, {
+      receiptEvidenceKind: input.input.receiptEvidenceKind,
+      expectedReceiptState: input.input.expectedReceiptState,
+      expectedAcknowledgmentState:
+        input.input.expectedAcknowledgmentState,
+    });
+  }
+  for (const field of Object.keys(input.input)) {
+    if (
+      [
+        "sequence",
+        "streamsequence",
+        "expectedstreamsequence",
+        "nextstreamsequence",
+      ].includes(normalizedFieldName(field))
+    ) {
+      policyInput[field] = input.input[field];
+    }
+  }
+  const evaluated = evaluateSharedStateOutboxPolicyV1(policyInput);
+  if (evaluated.ok) return null;
+  return errorResult(
+    storageOutboxErrorCode(evaluated.error.code),
+    ["input", ...evaluated.error.path],
+  );
+}
+
 function preflightTransactionEnvelope<T>(
   input: unknown,
 ): SharedStateParseResultV1<T> | null {
@@ -1893,6 +2071,8 @@ function preflightTransactionEnvelope<T>(
   if (isRecord(input)) {
     const idempotencyError = validateExecuteIdempotentPolicyBinding<T>(input);
     if (idempotencyError) return idempotencyError;
+    const outboxError = validateOutboxPolicyBinding<T>(input);
+    if (outboxError) return outboxError;
     const digestError = validateTransactionDigestBindings<T>(input);
     if (digestError) return digestError;
   }

@@ -180,10 +180,12 @@ const EXPECTED_OPERATION_DIGEST_FIELDS = {
     "result.eventKeyDigest",
   ],
   updateOutboxReceipt: [
+    "input.streamKeyDigest",
     "input.eventKeyDigest",
     "input.receiptEvidenceDigest",
   ],
   acknowledgeOutbox: [
+    "input.streamKeyDigest",
     "input.eventKeyDigest",
     "input.receiptEvidenceDigest",
   ],
