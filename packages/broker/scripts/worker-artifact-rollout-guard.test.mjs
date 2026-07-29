@@ -12,6 +12,8 @@ const guardPath = join(testDir, 'worker-artifact-rollout-guard.mjs');
 const handlerSource = `
 import { resolveWorkerModelInputs } from './worker-model-policy.mjs';
 import { sourceCarrierStats } from './lib/source-carriers.mjs';
+import { payloadWithRetrievalSnapshotSourceCarriers } from './lib/retrieval-snapshot-carriers.mjs';
+import { runLiveOperationTask } from './lib/live-operation-adapter.mjs';
 const HANDLER_VERSION = '0.2.12';
 const sourceSha256 = 'computed';
 export const BUILD_INFO = {
@@ -33,6 +35,14 @@ const sourceCarriersSource = `
 export function sourceCarrierStats() { return { totalFiles: 0, totalBytes: 0 }; }
 `;
 
+const retrievalSnapshotCarriersSource = `
+export function payloadWithRetrievalSnapshotSourceCarriers(payload) { return payload; }
+`;
+
+const liveOperationAdapterSource = `
+export function runLiveOperationTask() { return { handled: false }; }
+`;
+
 function makeWorkerRoot({ bridgeHandlersContent = 'bridge-ok\n', handlersExecutable = true } = {}) {
   const root = mkdtempSync(join(tmpdir(), 'worker-artifact-'));
   const scripts = join(root, 'scripts');
@@ -49,6 +59,10 @@ function makeWorkerRoot({ bridgeHandlersContent = 'bridge-ok\n', handlersExecuta
     compatWorkerModelPolicy: join(handlers, 'worker-model-policy.mjs'),
     sourceCarriers: join(scripts, 'lib', 'source-carriers.mjs'),
     compatSourceCarriers: join(handlers, 'lib', 'source-carriers.mjs'),
+    sourceRetrievalSnapshotCarriers: join(scripts, 'lib', 'retrieval-snapshot-carriers.mjs'),
+    compatRetrievalSnapshotCarriers: join(handlers, 'lib', 'retrieval-snapshot-carriers.mjs'),
+    sourceLiveOperationAdapter: join(scripts, 'lib', 'live-operation-adapter.mjs'),
+    compatLiveOperationAdapter: join(handlers, 'lib', 'live-operation-adapter.mjs'),
     sourceBridge: join(scripts, 'hermes-a2a-analysis-bridge.mjs'),
     compatBridge: join(handlers, 'hermes-a2a-analysis-bridge.mjs'),
     sourceOnlyBridge: join(scripts, 'source-only-local-analysis-bridge.mjs'),
@@ -60,6 +74,10 @@ function makeWorkerRoot({ bridgeHandlersContent = 'bridge-ok\n', handlersExecuta
   writeFileSync(files.compatWorkerModelPolicy, workerModelPolicySource);
   writeFileSync(files.sourceCarriers, sourceCarriersSource);
   writeFileSync(files.compatSourceCarriers, sourceCarriersSource);
+  writeFileSync(files.sourceRetrievalSnapshotCarriers, retrievalSnapshotCarriersSource);
+  writeFileSync(files.compatRetrievalSnapshotCarriers, retrievalSnapshotCarriersSource);
+  writeFileSync(files.sourceLiveOperationAdapter, liveOperationAdapterSource);
+  writeFileSync(files.compatLiveOperationAdapter, liveOperationAdapterSource);
   writeFileSync(files.sourceBridge, 'bridge-ok\n');
   writeFileSync(files.compatBridge, bridgeHandlersContent);
   writeFileSync(files.sourceOnlyBridge, 'source-only-bridge-ok\n');
@@ -123,6 +141,28 @@ test('deployed guard fails closed when source carrier support module is missing 
   const output = JSON.parse(result.stdout);
   assert.equal(output.ok, false);
   assert.match(JSON.stringify(output.results), /lib\/source-carriers\.mjs/);
+  assert.equal(output.results.some((r) => r.guard === 'handler-support-compat-path' && r.ok === false), true);
+});
+
+test('deployed guard fails closed when retrieval snapshot support module is missing from handlers compat path', () => {
+  const { root, files } = makeWorkerRoot();
+  rmSync(files.compatRetrievalSnapshotCarriers);
+  const result = runGuard(root);
+  assert.notEqual(result.status, 0);
+  const output = JSON.parse(result.stdout);
+  assert.equal(output.ok, false);
+  assert.match(JSON.stringify(output.results), /lib\/retrieval-snapshot-carriers\.mjs/);
+  assert.equal(output.results.some((r) => r.guard === 'handler-support-compat-path' && r.ok === false), true);
+});
+
+test('deployed guard fails closed when live operation support module is missing from handlers compat path', () => {
+  const { root, files } = makeWorkerRoot();
+  rmSync(files.compatLiveOperationAdapter);
+  const result = runGuard(root);
+  assert.notEqual(result.status, 0);
+  const output = JSON.parse(result.stdout);
+  assert.equal(output.ok, false);
+  assert.match(JSON.stringify(output.results), /lib\/live-operation-adapter\.mjs/);
   assert.equal(output.results.some((r) => r.guard === 'handler-support-compat-path' && r.ok === false), true);
 });
 
