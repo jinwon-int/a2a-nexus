@@ -12,7 +12,7 @@
 
 `MUST`, `MUST NOT`, `SHOULD`, `SHOULD NOT`, and `MAY` are normative
 requirements for a later implementation. Text labeled **Current** describes
-the repository at `3d7f975698f0fb9a3dd1ecf1ba9a2f48058c9906`. Text labeled
+the repository at `f6e7bdb5a7e05591dd7b56621ae60b81c2048087`. Text labeled
 **Planned** or **Future** is not implemented and must not be advertised as a
 runtime capability.
 
@@ -459,9 +459,9 @@ The catalog parser/evaluator's complete error vocabulary is `invalid_type`,
 
 Replay, rate, and lease commands continue to use their existing generic
 namespace grammar. Outbox append/receipt/ACK and claim-graph source/projection
-idempotency remain separate Section 6.1 operations with generic namespaces.
-They are not aliases for `executeIdempotent`. In particular, this registry does
-not define the separately open outbox stream-key and ordering-scope registry.
+idempotency remain separate Section 6.1 operations and are not aliases for
+`executeIdempotent`. The outbox operations use the separate closed registry in
+section 5.5.1; claim-graph operations retain their generic namespace grammar.
 
 ### 5.5 Terminal outbox ordering
 
@@ -476,6 +476,111 @@ not define the separately open outbox stream-key and ordering-scope registry.
 | Fail-closed behavior | If atomic domain+append cannot be proved, the domain mutation fails. Unknown ACK status never permits prune or suppresses replay. |
 | Observability | Report per-state aggregate backlog, oldest age, sequence high-water/lag, duplicate replays, and order violations. Health MUST omit payloads, event IDs, stream keys, task/worker/provider identities, and receipt IDs. |
 | Adapter lifecycle invariant | Draining stops new appends, completes or rolls back in-flight transactions, and keeps reads/reconciliation available until close. Migration preserves stable IDs, per-stream order, and ACK state exactly. |
+
+#### 5.5.1 Closed V1 stream and policy registry
+
+The backend-neutral registry identifier is
+`a2a.shared-state.outbox/v1`. Its closed vocabulary, source inventory,
+canonical catalog, parser, and pure evaluators are in
+`packages/broker/src/shared-state-outbox-v1-values.ts` and
+`packages/broker/src/shared-state-outbox-v1.ts`. The public, non-secret golden
+fixture is
+`packages/broker/fixtures/shared-state-storage/outbox-v1-golden.json`.
+These artifacts are contract/parser-only: the catalog says
+`runtimeIntegration=not-implemented`, and no current class, table, producer,
+receipt route, or cleanup path implements or calls the planned adapter
+boundary.
+
+The complete current durable-but-partial inventory intended to be represented
+by this boundary has one authority:
+
+| Current authority | Producers and current event-key derivation | Current order/sequence authority | Current receipt/ACK authority | Current retention dependency |
+| --- | --- | --- | --- | --- |
+| `TerminalTaskEventOutbox` plus `broker_terminal_outbox` | Local terminal task event: `taskId + status + completedAt`; cross-broker projection evidence: `parentRoundId + originBrokerId + child-key + status + notification-owner`; separate parent-broker operator row: the projection stable ID with the `cross-broker-operator` prefix | Broker-local array insertion order, restored from SQLite `created_at, id` order. Local task rows carry a process-local task-event ID; both cross-broker rows carry `0`. Neither is a durable per-stream sequence. | The outbox object and hot row preserve receipt/ACK state. Current-session-visible, operator-visible, or operator-confirmed evidence can ACK an operator-facing row; projection evidence rows cannot ACK. Provider sent/accepted state is not receipt-confirmed ACK. | SQLite planning retains every unacknowledged row. The in-memory outbox remains partial because its `2 * maxEvents` hard ceiling can drop the oldest unacknowledged row. This is explicitly not V1 retention conformance. |
+
+The current authority proves the inventory, producer, stable-ID,
+receipt/ACK, restart, and partial-retention facts above. It does not prove
+domain+append atomicity, adapter sequence allocation, multi-process order,
+non-expiring unacknowledged retention, or V1 conformance.
+
+The planned catalog has no default namespace, default ordering scope,
+wildcard, or extension entry. All three exact registrations use:
+
+- namespace `broker.terminal-outbox`;
+- stream-key digest domain `broker.outbox.stream-key`;
+- component 0 exactly
+  `{field: "streamType", type: "utf8", value:
+  "broker-terminal-outbox"}`;
+- component 1 exactly
+  `{field: "streamId", type: "utf8", value: <broker-authority-id>}`, where
+  the value is a non-empty lowercase ASCII identifier matching
+  `[a-z][a-z0-9]*(?:[._-][a-z0-9]+)*`;
+- ordering scope `total-within-exact-stream-key`;
+- sequence authority `adapter-allocated-per-exact-stream-key`;
+- monotonicity `unique-strictly-increasing-gaps-allowed`;
+- cross-stream posture `no-global-cross-stream-order`; and
+- caller sequence policy `forbidden`.
+
+Thus different producer purposes on the same exact broker stream share one
+total order. A different `streamId` is a different stream; no comparison or
+global order is promised. The canonical typed components are independently
+length-framed through `a2a.shared-state.keyspace/v1`, and the supplied
+`streamKeyDigest` must equal the derived digest.
+
+| Planned event purpose | Stable event-ID authority | Retention policy | Receipt policy | ACK policy |
+| --- | --- | --- | --- | --- |
+| `task-terminal-notification` | `task-id-status-completed-at` | `task-terminal-outbox-retention.v1` | `terminal-notification-receipt.v1` | `terminal-notification-ack.v1` |
+| `cross-broker-projection-evidence` | `cross-broker-projection-stable-id` | `cross-broker-projection-evidence-retention.v1` | `cross-broker-projection-evidence-receipt.v1` | `cross-broker-projection-evidence-ack-forbidden.v1` |
+| `cross-broker-operator-notification` | `cross-broker-operator-row-stable-id` | `cross-broker-operator-outbox-retention.v1` | `terminal-notification-receipt.v1` | `terminal-notification-ack.v1` |
+
+Every entry pins
+`same-key-and-payload-return-original-event-id-and-sequence`. A retry with the
+same append idempotency key and payload returns the originally committed event
+ID and stream sequence; it does not allocate either again. Callers never
+select, predict, or compare-and-set a stream sequence.
+
+For the two operator-facing purposes, provider-sent or provider-accepted
+evidence may only preserve `pending -> pending`; it cannot produce
+`confirmed` or ACK. Current-session-visible, operator-visible, or
+operator-confirmed evidence may perform `pending -> confirmed`, and only a
+confirmed receipt with that evidence may ACK. Delivery failure may perform
+`pending -> failed` without ACK. The projection-evidence purpose permits only
+its evidence-only pending state and rejects every ACK attempt.
+
+All entries are
+`unacknowledged-non-expiring-until-prune-proof`. Provider acceptance is not an
+expiry or prune proof, and ACK is not deletion. The projection-evidence entry
+is not pruneable in V1. An operator-facing acknowledged row is only
+prune-eligible after all of these are proved: receipt-confirmed ACK, consumer
+checkpoint safety, absence of idempotency retry sources, migration/rollback
+preservation, and a separate recorded retention approval. The evaluator only
+classifies retention; it does not read time, ACK, or prune.
+
+Migration and rollback must preserve the exact namespace/key, per-stream
+high-water, stable event ID, append idempotency binding, receipt/ACK state, and
+every unacknowledged row. A target unable to represent any of those fields
+cannot become authoritative.
+
+Only the Section 6.1 `appendOutbox`, `updateOutboxReceipt`, and
+`acknowledgeOutbox` command parsers evaluate this catalog. They reject
+non-canonical or unknown namespace, unknown purpose, malformed/reordered/
+non-canonical key components, a digest not derived from those components,
+ordering-scope mismatch, caller sequence fields, unknown or cross-paired
+retention/receipt/ACK policies, forbidden receipt transitions, provider
+acceptance as ACK, and projection-evidence ACK. Stable parser codes retain the
+exact failing path under `input`:
+
+| Condition | Stable code |
+| --- | --- |
+| Non-canonical / unknown stream namespace | `invalid_outbox_stream_namespace` / `unknown_outbox_stream_namespace` |
+| Unknown event purpose | `unknown_outbox_event_purpose` |
+| Invalid key envelope / component count / component order or literal / component value | `invalid_outbox_stream_key` / `outbox_stream_key_shape_mismatch` / `outbox_stream_key_component_mismatch` / `invalid_outbox_stream_key_component` |
+| Derived digest mismatch | `outbox_stream_key_digest_mismatch` |
+| Ordering scope or caller sequence | `outbox_ordering_scope_mismatch` / `caller_outbox_sequence_forbidden` |
+| Invalid / unknown / cross-paired retention policy | `invalid_outbox_retention_policy_version` / `unknown_outbox_retention_policy_version` / `outbox_retention_policy_mismatch` |
+| Invalid / unknown / cross-paired receipt policy | `invalid_outbox_receipt_policy_version` / `unknown_outbox_receipt_policy_version` / `outbox_receipt_policy_mismatch` |
+| Invalid / unknown / cross-paired ACK policy | `invalid_outbox_acknowledgment_policy_version` / `unknown_outbox_acknowledgment_policy_version` / `outbox_acknowledgment_policy_mismatch` |
+| Receipt transition, forbidden ACK, provider acceptance as ACK, or other non-confirming ACK evidence | `outbox_receipt_transition_mismatch` / `outbox_acknowledgment_forbidden` / `outbox_provider_acceptance_not_ack` / `outbox_acknowledgment_evidence_mismatch` |
 
 ### 5.6 Claim-graph read model
 
@@ -564,10 +669,13 @@ rejects absolute `now`, timestamp, expiry, event-time, trusted-observation,
 persisted-floor, effective-time, and skew-tolerance field spellings at any
 nested path with `caller_clock_forbidden`. Relative operation durations such
 as `ttlMs`, `windowMs`, and `leaseDurationMs` are not transaction timestamps.
-Only `executeIdempotent` additionally requires an exact registered
+`executeIdempotent` additionally requires an exact registered
 `a2a.shared-state.idempotency/v1` namespace, retention-policy version, and
-effect-kind combination. That restriction does not change generic namespace
-handling for replay, rate, lease, outbox, or graph operations.
+effect-kind combination. The three outbox commands separately require an
+exact registered `a2a.shared-state.outbox/v1` namespace, event purpose, typed
+stream key, ordering scope, and retention/receipt/ACK policy combination.
+Neither restriction changes generic namespace handling for replay, rate,
+lease, or graph operations, and neither registry is an alias for the other.
 
 ### 6.2 Transaction and lifecycle invariants
 

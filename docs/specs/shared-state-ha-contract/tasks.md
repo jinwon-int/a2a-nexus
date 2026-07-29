@@ -2,7 +2,7 @@
 
 > **Status:** implementation backlog. Checked items include the completed
 > documentation packet and the completed bounded Phase 1 contract/parser and
-> keyspace/digest/time-evaluator/idempotency-registry slices.
+> keyspace/digest/time-evaluator/idempotency-registry/outbox-registry slices.
 > Adapter implementations, the conformance harness, runtime integration,
 > migration, and operational rollout remain unchecked. Refs #1504.
 
@@ -27,7 +27,7 @@
 - [x] Pin adapter-controlled clock, stored time floor, skew tolerance, and
   exact expiry boundaries.
 - [x] Register every idempotency namespace and retention version.
-- [ ] Register every outbox stream key and ordering scope.
+- [x] Register every outbox stream key and ordering scope.
 - [ ] Define bounded public/operator observability schemas and negative leak
   fixtures.
 - [x] Add unknown-version/unknown-field/capability-downgrade rejection tests.

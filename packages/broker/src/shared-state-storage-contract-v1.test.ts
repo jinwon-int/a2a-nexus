@@ -3,6 +3,7 @@ import test from "node:test";
 
 import {
   SHARED_STATE_STORAGE_V1_VALUES as V,
+  digestSharedStateKeyV1,
   parseSharedStateDrainRequestV1,
   parseSharedStateHealthProjectionV1,
   parseSharedStateStorageLifecycleV1,
@@ -209,6 +210,41 @@ const leaseAuthority = {
   expectedResourceVersion: "6",
 };
 
+const outboxNamespace = "broker.terminal-outbox";
+const outboxStreamKey = {
+  keyspaceVersion: V.versions.keyspace,
+  components: [
+    {
+      field: "streamType",
+      type: "utf8",
+      value: "broker-terminal-outbox",
+    },
+    {
+      field: "streamId",
+      type: "utf8",
+      value: "synthetic-broker-alpha",
+    },
+  ],
+} as const;
+const outboxStreamKeyResult = digestSharedStateKeyV1({
+  ...outboxStreamKey,
+  domain: "broker.outbox.stream-key",
+  namespace: outboxNamespace,
+});
+if (!outboxStreamKeyResult.ok) {
+  throw new Error("synthetic outbox stream key must be valid");
+}
+const outboxStreamKeyDigest = outboxStreamKeyResult.value.digest;
+const outboxPolicy = {
+  eventPurpose: "task-terminal-notification",
+  streamKey: outboxStreamKey,
+  streamKeyDigest: outboxStreamKeyDigest,
+  orderingScope: "total-within-exact-stream-key",
+  retentionPolicyVersion: "task-terminal-outbox-retention.v1",
+  receiptPolicyVersion: "terminal-notification-receipt.v1",
+  acknowledgmentPolicyVersion: "terminal-notification-ack.v1",
+} as const;
+
 const commandInputs = {
   consumeReplayNonce: {
     namespace: "security.replay",
@@ -292,36 +328,52 @@ const commandInputs = {
     },
   },
   appendOutbox: {
-    namespace: "broker.outbox",
-    streamKeyDigest: digest("broker.outbox.stream-key", "broker.outbox", "7"),
+    namespace: outboxNamespace,
+    ...outboxPolicy,
     idempotencyKeyDigest: digest(
       "broker.outbox.idempotency-key",
-      "broker.outbox",
+      outboxNamespace,
       "4",
     ),
-    eventKeyDigest: digest("broker.outbox.event-key", "broker.outbox", "8"),
-    payloadDigest: digest("broker.outbox.payload", "broker.outbox", "9"),
-    retentionPolicyVersion: "terminal-outbox.v1",
+    eventKeyDigest: digest(
+      "broker.outbox.event-key",
+      outboxNamespace,
+      "8",
+    ),
+    payloadDigest: digest("broker.outbox.payload", outboxNamespace, "9"),
   },
   updateOutboxReceipt: {
-    namespace: "broker.outbox",
-    eventKeyDigest: digest("broker.outbox.event-key", "broker.outbox", "8"),
+    namespace: outboxNamespace,
+    ...outboxPolicy,
+    eventKeyDigest: digest(
+      "broker.outbox.event-key",
+      outboxNamespace,
+      "8",
+    ),
     receiptEvidenceDigest: digest(
       "broker.outbox.receipt-evidence",
-      "broker.outbox",
+      outboxNamespace,
       "a",
     ),
+    receiptEvidenceKind: "operator-visible",
     expectedReceiptState: "pending",
     newReceiptState: "confirmed",
   },
   acknowledgeOutbox: {
-    namespace: "broker.outbox",
-    eventKeyDigest: digest("broker.outbox.event-key", "broker.outbox", "8"),
+    namespace: outboxNamespace,
+    ...outboxPolicy,
+    eventKeyDigest: digest(
+      "broker.outbox.event-key",
+      outboxNamespace,
+      "8",
+    ),
     receiptEvidenceDigest: digest(
       "broker.outbox.receipt-evidence",
-      "broker.outbox",
+      outboxNamespace,
       "a",
     ),
+    receiptEvidenceKind: "operator-visible",
+    expectedReceiptState: "confirmed",
     expectedAcknowledgmentState: "unacknowledged",
   },
   appendGraphSource: {
@@ -960,9 +1012,18 @@ test("every registered operation digest field rejects a cross-domain token", () 
       parent[field] = current.replace(`|${domain}|`, `|${wrongDomain}|`);
 
       if (section === "input") {
+        const outboxPolicyBoundStreamKey =
+          field === "streamKeyDigest" &&
+          (
+            operation === "appendOutbox" ||
+            operation === "updateOutboxReceipt" ||
+            operation === "acknowledgeOutbox"
+          );
         expectError(
           parseSharedStateTransactionCommandV1(envelope),
-          "digest_domain_mismatch",
+          outboxPolicyBoundStreamKey
+            ? "outbox_stream_key_digest_mismatch"
+            : "digest_domain_mismatch",
           path,
         );
       } else {

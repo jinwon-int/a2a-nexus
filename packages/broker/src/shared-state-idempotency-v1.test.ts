@@ -575,7 +575,7 @@ test("section 6.1 executeIdempotent integration returns stable catalog codes and
   }
 });
 
-test("unrelated replay, rate, lease, outbox, and graph operations retain generic namespace behavior", () => {
+test("unrelated replay, rate, lease, and graph operations retain generic namespace behavior", () => {
   const namespace = "caller.unregistered";
   const inputs = {
     consumeReplayNonce: {
@@ -605,18 +605,6 @@ test("unrelated replay, rate, lease, outbox, and graph operations retain generic
       ownerKeyDigest: digest("broker.lease.owner-key", namespace, "5"),
       leaseDurationMs: 1000,
       expectedResourceVersion: "0",
-    },
-    appendOutbox: {
-      namespace,
-      streamKeyDigest: digest("broker.outbox.stream-key", namespace, "6"),
-      idempotencyKeyDigest: digest(
-        "broker.outbox.idempotency-key",
-        namespace,
-        "7",
-      ),
-      eventKeyDigest: digest("broker.outbox.event-key", namespace, "8"),
-      payloadDigest: digest("broker.outbox.payload", namespace, "9"),
-      retentionPolicyVersion: "caller-outbox.v1",
     },
     appendGraphSource: {
       namespace,
