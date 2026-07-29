@@ -59,7 +59,7 @@ package-publication approval.
 
 | Candidate | Proposed package name | Proposed CLI | Artifact type | Upstream Nexus source | Verification command | Extraction boundary |
 |---|---|---|---|---|---|---|
-| Policy referee CLI; service remains only a future candidate | Existing private monorepo package `a2a-policy-referee`; no scoped rename or publication is approved | Existing offline `a2a-policy-referee check POLICY.json TASK.json WORKER.json`; no service mode | Versioned closed decision envelope and bounded public-safe golden/negative fixtures; no audit artifact | Pinned source base `487b1d0315e4b891c22d373908de83aabdf95872`; `packages/policy-referee/src/broker-policy.ts`, `contracts/a2a/broker-policy.md`, and package-owned fixtures/tests | `npm run check -w packages/policy-referee && npm run build -w packages/policy-referee && npm test -w packages/policy-referee && npm run fixtures:replay -w packages/policy-referee`; package-CI parity also proves package contents | Offline evaluation only. Must not change live broker policy/config, create/claim call sites, worker-class derivation, audits, runtime enforcement, or broker imports. Separate-repository extraction, service mode, and publication remain unproven and unapproved. |
+| Policy referee CLI; service remains only a future candidate | Existing private monorepo package `a2a-policy-referee`; no scoped rename or publication is approved | Existing offline `a2a-policy-referee check POLICY.json TASK.json WORKER.json`; no service mode | Versioned closed decision envelope, bounded public-safe golden/negative fixtures, and a closed no-network broker-adapter replay; no audit artifact | Pinned source base `fef50194702f85194ae5c93a88fa94950b6a0a16`; `packages/policy-referee/src/broker-policy.ts`, `contracts/a2a/broker-policy.md`, and package-owned fixtures/examples/tests | `npm run check -w packages/policy-referee && npm run build -w packages/policy-referee && npm test -w packages/policy-referee && npm run fixtures:replay -w packages/policy-referee && npm run examples:replay -w packages/policy-referee`; package-CI parity and `npm pack --workspace packages/policy-referee --dry-run --json` prove package contents | Offline evaluation only. The package evaluates but never applies policy. It must not change live broker policy/config, create/claim call sites, worker-class derivation, audits, runtime enforcement, or broker imports. Separate-repository extraction, service mode, and publication remain unproven and unapproved. |
 | Agent work proof verifier/SDK | `@jinwon-int/a2a-agent-work-proof` | `a2a-agent-work-proof-verify` | Work-proof bundle, artifact manifest, signed work-proof verdict. | `contracts/a2a/agent-work-proof.md`, `fixtures/contract/agent-work-proof-bundle.json`, `scripts/verify-agent-work-proof.mjs`, `test/conformance/check-agent-work-proof.mjs`. | `node scripts/verify-agent-work-proof.mjs fixtures/contract/agent-work-proof-bundle.json --keyring fixtures/contract/agent-work-proof-keyring.json` | Proves evidence integrity and composition only; no payment/release authorization or correctness guarantee. |
 | Escrow release proof adapter | `@jinwon-int/a2a-escrow-proof` | `a2a-escrow-proof-verify` | Release-condition proof, signed release verdict, no-live adapter transcript. | `contracts/a2a/escrow-release-proof.md`, `fixtures/contract/escrow-release-proof.json`, `scripts/verify-escrow-release-proof.mjs`, `test/conformance/check-escrow-release-proof.mjs`. | `node scripts/verify-escrow-release-proof.mjs fixtures/contract/escrow-release-proof.json --keyring fixtures/contract/escrow-release-proof-keyring.json` | Proof-of-condition only; no custody, funds movement, rail call, or release execution. |
 | Agent payment dispute packet | `@jinwon-int/a2a-payment-dispute-packet` | `a2a-payment-dispute-verify` | User-delegation/scope/completion/release evidence packet. | `contracts/a2a/agent-payment-dispute-packet.md`, `fixtures/contract/agent-payment-dispute-packet.json`, `scripts/verify-agent-payment-dispute-packet.mjs`, `test/conformance/check-agent-payment-dispute-packet.mjs`. | `node scripts/verify-agent-payment-dispute-packet.mjs fixtures/contract/agent-payment-dispute-packet.json --keyring fixtures/contract/agent-payment-dispute-packet-keyring.json` | Dispute evidence only; no PCI/card data handling, payment execution, or final chargeback/legal-liability decision. |
@@ -70,7 +70,7 @@ package-publication approval.
 ### Current #1480 policy-referee source slice
 
 On the pinned source base
-`487b1d0315e4b891c22d373908de83aabdf95872`, the existing private
+`fef50194702f85194ae5c93a88fa94950b6a0a16`, the existing private
 `packages/policy-referee` boundary now proves only these additional claims:
 
 - the package exposes a deterministic built CLI with the documented
@@ -84,6 +84,15 @@ On the pinned source base
   require-approval, deny, invalid input, and internal failure;
 - package-owned golden and negative fixtures are replayed by pure and
   child-process tests.
+- a package-owned broker adapter guide fixes create/claim mapping, the lazy
+  daily-count contract, the anonymous worker-class boundary, caller-owned
+  warn/enforce behavior, approval routing, audits, failures, and version pins;
+- a closed four-case, no-network external-consumer example imports only the
+  built package public root, reuses the strict parsers and evaluator, and emits
+  only byte-stable public-safe decision/action tokens;
+- child-process and package-content tests prove stable success/failure bytes,
+  non-reflection, no broker/runtime imports, and inclusion of the guide and
+  examples in `npm pack --dry-run`.
 
 This evidence does not prove or authorize issue completion, a separate
 repository, publication, service mode, live broker integration, a live policy

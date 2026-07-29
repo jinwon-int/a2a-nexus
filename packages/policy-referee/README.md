@@ -11,6 +11,8 @@ public-input validation and a non-reflecting decision projection. It does not
 import broker runtime modules or maintain a second evaluator.
 
 - Policy contract: [`contracts/a2a/broker-policy.md`](../../contracts/a2a/broker-policy.md)
+- Broker adapter guide: [`docs/broker-adapter.md`](docs/broker-adapter.md)
+- External-consumer example: [`examples/broker-adapter-replay.mjs`](examples/broker-adapter-replay.mjs)
 - Golden cases: [`fixtures/golden/manifest.json`](fixtures/golden/manifest.json)
 - Negative cases: [`fixtures/negative/manifest.json`](fixtures/negative/manifest.json)
 
@@ -199,6 +201,32 @@ implementation blocker prose, URL-shaped tokens, policy rejection,
 prototype-key input, and malformed JSON. Package tests also cover non-plain
 in-memory objects, missing files/arguments, exact stdout bytes, distinct exits,
 evaluator precedence, and source-path/secret-sentinel non-reflection.
+
+## Broker adapter example
+
+The package-owned [broker adapter guide](docs/broker-adapter.md) specifies the
+create/claim mapping, lazy `tasksToday` contract, anonymous worker-class
+boundary, warn/enforce caller behavior, caller-owned approval routing and
+audits, stable failures, and exact version pinning.
+
+Replay the closed four-case external-consumer manifest after building:
+
+```sh
+npm run build -w packages/policy-referee
+npm run examples:replay -w packages/policy-referee
+```
+
+The no-network example imports `a2a-policy-referee` by package name, so Node
+resolves only the built public root export. It passes fresh policy, task, and
+worker objects through the existing strict parsers and
+`evaluatePolicyRefereeCli`, then maps the returned decision to a closed
+caller-owned action token. The cases cover anonymous class and intent allow,
+warn-mode deny as `observe_proceed`, enforce-mode `require_approval` as
+`route_approval`, and an enforce-mode daily-budget deny as `reject`.
+
+Replay stdout is byte-stable and contains only a version, public-safe case id,
+decision token, and caller-action token. Invalid examples emit no stdout, one
+fixed non-reflecting stderr token, and exit `64`.
 
 ## Offline-only safety boundary
 
