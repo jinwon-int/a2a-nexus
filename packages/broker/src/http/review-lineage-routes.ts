@@ -1,11 +1,13 @@
 /**
  * Operator projection and explicit authenticated cancel source for bounded PR
- * review lineages (#1518 Phases 3b/14/15).
+ * review lineages (#1518 Phases 3b/14-18).
  *
  * This surface never exposes the frozen contract, raw receipts, diff hashes,
  * or the full finding ledger. Mutations are limited to operator-owned,
- * exact-field contract freeze and cancellation decisions; generic task
- * creation/cancellation is unrelated.
+ * exact-field contract freeze/cancellation/correction-generation/reviewer-
+ * replacement decisions and an explicitly worker-signed review report;
+ * generic task creation, completion, fixer, and cancellation behavior is
+ * unrelated.
  */
 
 import type { IncomingMessage, ServerResponse } from "node:http";
@@ -15,8 +17,10 @@ import { ObservationValidationError } from "../review-lifecycle/observation.js";
 import { SourceCarrierValidationError } from "../review-lifecycle/source-carrier.js";
 import {
   assertRequesterHasRole,
+  type A2AWorkerRouteScope,
   type RequesterIdentity,
 } from "../core/request-security.js";
+import type { A2AHttpSignatureVerifiedWorker } from "../server.js";
 import { readJson } from "./body.js";
 import { sendJson } from "./response.js";
 
@@ -32,9 +36,19 @@ export interface ReviewLineageRouteContext {
   path: string;
   req: IncomingMessage;
   res: ServerResponse;
+  url: URL;
   broker: InMemoryA2ABroker;
   enforceRequesterIdentity: boolean;
   requesterIdentity: RequesterIdentity | null;
+  assertWorkerHttpSignatureRoute: (
+    req: IncomingMessage,
+    url: URL,
+  ) => Promise<A2AHttpSignatureVerifiedWorker | null>;
+  assertVerifiedWorkerMatches: (
+    verified: A2AHttpSignatureVerifiedWorker | null,
+    expectedWorkerId: string | undefined,
+    operation: A2AWorkerRouteScope,
+  ) => void;
 }
 
 function assertReadAccess(ctx: ReviewLineageRouteContext, action: string): void {
@@ -123,6 +137,201 @@ export async function handleReviewLineageRoutesIfMatched(
 
   const rest = ctx.path.slice("/review-lineages/".length);
   const segments = rest.split("/").filter((segment) => segment.length > 0);
+  if (
+    ctx.method === "POST"
+    && segments.length === 2
+    && segments[1] === "reviewer-replacement"
+    && rest === `${segments[0]}/reviewer-replacement`
+  ) {
+    // Only an authenticated exact-role operator may record an already
+    // classified infrastructure-failure decision. Trusted broker code assigns
+    // semantic reviewer-allocator authority after this unconditional gate.
+    assertRequesterHasRole(
+      ctx.requesterIdentity,
+      ["operator"],
+      "review-lineage.reviewer-replacement",
+    );
+    const body = await readJson(ctx.req);
+    if (!body) {
+      throw new BrokerError("bad_request", "request body is required");
+    }
+    const lineageId = decodeURIComponent(segments[0]);
+    let result;
+    try {
+      result =
+        await ctx.broker.recordOperatorReviewLineageReviewerReplacement(
+          lineageId,
+          body,
+          ctx.requesterIdentity!.id,
+        );
+    } catch (error) {
+      if (
+        error instanceof SourceCarrierValidationError
+        || error instanceof ObservationValidationError
+      ) {
+        throw new BrokerError("bad_request", error.message);
+      }
+      throw error;
+    }
+    if (!result) {
+      throw new BrokerError(
+        "invalid_transition",
+        "review lineage recording is disabled",
+      );
+    }
+    if (result.status === "missing_lineage") {
+      throw new BrokerError("not_found", "review lineage not found");
+    }
+    if (
+      result.status === "subject_conflict"
+      || result.status === "transition_rejected"
+      || result.status === "idempotency_conflict"
+    ) {
+      throw new BrokerError(
+        "invalid_transition",
+        `review lineage reviewer replacement rejected: ${result.status}`,
+      );
+    }
+    sendJson(
+      ctx.res,
+      result.status === "replayed" ? 200 : 201,
+      { result },
+      { "cache-control": "no-store" },
+    );
+    return true;
+  }
+  if (
+    ctx.method === "POST"
+    && segments.length === 2
+    && segments[1] === "correction-generation"
+    && rest === `${segments[0]}/correction-generation`
+  ) {
+    // Only an authenticated exact-role operator may record an already
+    // committed generation. The broker assigns semantic correction-controller
+    // authority after this unconditional gate.
+    assertRequesterHasRole(
+      ctx.requesterIdentity,
+      ["operator"],
+      "review-lineage.correction-generation",
+    );
+    const body = await readJson(ctx.req);
+    if (!body) {
+      throw new BrokerError("bad_request", "request body is required");
+    }
+    const lineageId = decodeURIComponent(segments[0]);
+    let result;
+    try {
+      result =
+        await ctx.broker.recordOperatorReviewLineageCorrectionGeneration(
+          lineageId,
+          body,
+          ctx.requesterIdentity!.id,
+        );
+    } catch (error) {
+      if (
+        error instanceof SourceCarrierValidationError
+        || error instanceof ObservationValidationError
+      ) {
+        throw new BrokerError("bad_request", error.message);
+      }
+      throw error;
+    }
+    if (!result) {
+      throw new BrokerError(
+        "invalid_transition",
+        "review lineage recording is disabled",
+      );
+    }
+    if (result.status === "missing_lineage") {
+      throw new BrokerError("not_found", "review lineage not found");
+    }
+    if (
+      result.status === "subject_conflict"
+      || result.status === "transition_rejected"
+      || result.status === "idempotency_conflict"
+    ) {
+      throw new BrokerError(
+        "invalid_transition",
+        `review lineage correction generation rejected: ${result.status}`,
+      );
+    }
+    sendJson(
+      ctx.res,
+      result.status === "replayed" ? 200 : 201,
+      { result },
+      { "cache-control": "no-store" },
+    );
+    return true;
+  }
+  if (
+    ctx.method === "POST"
+    && segments.length === 2
+    && segments[1] === "review-report"
+  ) {
+    // This source always requires an Ed25519 worker-registry result. Relaxed
+    // requester identity cannot bypass it; a disabled signature verifier makes
+    // the route unavailable rather than accepting an unsigned issuer.
+    const verifiedReviewer =
+      await ctx.assertWorkerHttpSignatureRoute(ctx.req, ctx.url);
+    if (!verifiedReviewer) {
+      throw new BrokerError(
+        "unauthorized",
+        "a2a_signature_required: review report requires A2A HTTP Signature",
+      );
+    }
+    ctx.assertVerifiedWorkerMatches(
+      verifiedReviewer,
+      undefined,
+      "review-lineage.report",
+    );
+    const body = await readJson(ctx.req);
+    if (!body) {
+      throw new BrokerError("bad_request", "request body is required");
+    }
+    const lineageId = decodeURIComponent(segments[0]);
+    let result;
+    try {
+      result = await ctx.broker.recordReviewerReviewLineageReport(
+        lineageId,
+        body,
+        verifiedReviewer.requesterId,
+      );
+    } catch (error) {
+      if (
+        error instanceof SourceCarrierValidationError
+        || error instanceof ObservationValidationError
+      ) {
+        throw new BrokerError("bad_request", error.message);
+      }
+      throw error;
+    }
+    if (!result) {
+      throw new BrokerError(
+        "invalid_transition",
+        "review lineage recording is disabled",
+      );
+    }
+    if (result.status === "missing_lineage") {
+      throw new BrokerError("not_found", "review lineage not found");
+    }
+    if (
+      result.status === "subject_conflict"
+      || result.status === "transition_rejected"
+      || result.status === "idempotency_conflict"
+    ) {
+      throw new BrokerError(
+        "invalid_transition",
+        `review lineage review report rejected: ${result.status}`,
+      );
+    }
+    sendJson(
+      ctx.res,
+      result.status === "replayed" ? 200 : 201,
+      { result },
+      { "cache-control": "no-store" },
+    );
+    return true;
+  }
   if (
     ctx.method === "POST"
     && segments.length === 2

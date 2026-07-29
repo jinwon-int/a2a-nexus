@@ -1,0 +1,241 @@
+{
+  "schemaVersion": "a2a.policy-referee.negative-fixtures.v1",
+  "cases": [
+    {
+      "id": "unknown-task-field",
+      "input": "task",
+      "value": {
+        "schemaVersion": "a2a.policy-referee.task.v1",
+        "intent": "analyze",
+        "evaluationPoint": "create",
+        "payload": "marker"
+      },
+      "expected": {
+        "code": "unknown_field",
+        "input": "task",
+        "path": "$"
+      }
+    },
+    {
+      "id": "unknown-task-version",
+      "input": "task",
+      "value": {
+        "schemaVersion": "a2a.policy-referee.task.v2",
+        "intent": "analyze",
+        "evaluationPoint": "create"
+      },
+      "expected": {
+        "code": "invalid_version",
+        "input": "task",
+        "path": "$.schemaVersion"
+      }
+    },
+    {
+      "id": "unknown-worker-version",
+      "input": "worker",
+      "value": {
+        "schemaVersion": "a2a.policy-referee.worker.v2",
+        "workerClass": "mobile"
+      },
+      "expected": {
+        "code": "invalid_version",
+        "input": "worker",
+        "path": "$.schemaVersion"
+      }
+    },
+    {
+      "id": "identity-bearing-worker-fields",
+      "input": "worker",
+      "value": {
+        "schemaVersion": "a2a.policy-referee.worker.v1",
+        "workerClass": "mobile",
+        "workerId": "marker",
+        "providerId": "marker",
+        "accountId": "marker"
+      },
+      "expected": {
+        "code": "unknown_field",
+        "input": "worker",
+        "path": "$"
+      }
+    },
+    {
+      "id": "worker-name-shaped-class",
+      "input": "worker",
+      "value": {
+        "schemaVersion": "a2a.policy-referee.worker.v1",
+        "workerClass": "worker-alpha"
+      },
+      "expected": {
+        "code": "invalid_enum",
+        "input": "worker",
+        "path": "$.workerClass"
+      }
+    },
+    {
+      "id": "unsafe-task-count",
+      "input": "task",
+      "value": {
+        "schemaVersion": "a2a.policy-referee.task.v1",
+        "intent": "analyze",
+        "evaluationPoint": "create",
+        "tasksToday": 9007199254740992
+      },
+      "expected": {
+        "code": "invalid_integer",
+        "input": "task",
+        "path": "$.tasksToday"
+      }
+    },
+    {
+      "id": "unsafe-policy-max-tasks-per-day",
+      "input": "policy",
+      "value": {
+        "schemaVersion": "a2a.broker.policy.v1",
+        "mode": "warn",
+        "defaultAction": "allow",
+        "rules": [
+          {
+            "id": "daily-budget",
+            "workerClass": "mobile",
+            "maxTasksPerDay": 9007199254740992
+          }
+        ]
+      },
+      "expected": {
+        "code": "invalid_integer",
+        "input": "policy",
+        "path": "$.rules[].maxTasksPerDay"
+      }
+    },
+    {
+      "id": "over-profile-policy-max-tasks-per-day",
+      "input": "policy",
+      "value": {
+        "schemaVersion": "a2a.broker.policy.v1",
+        "mode": "warn",
+        "defaultAction": "allow",
+        "rules": [
+          {
+            "id": "daily-budget",
+            "workerClass": "mobile",
+            "maxTasksPerDay": 1000001
+          }
+        ]
+      },
+      "expected": {
+        "code": "invalid_integer",
+        "input": "policy",
+        "path": "$.rules[].maxTasksPerDay"
+      }
+    },
+    {
+      "id": "arbitrary-implementation-blocker",
+      "input": "worker",
+      "value": {
+        "schemaVersion": "a2a.policy-referee.worker.v1",
+        "workerClass": "vps",
+        "implementation": {
+          "isImplementationIntent": true,
+          "ready": false,
+          "blockers": "arbitrary diagnostic prose"
+        }
+      },
+      "expected": {
+        "code": "unknown_field",
+        "input": "worker",
+        "path": "$.implementation"
+      }
+    },
+    {
+      "id": "transport-and-credential-fields",
+      "input": "task",
+      "value": {
+        "schemaVersion": "a2a.policy-referee.task.v1",
+        "intent": "analyze",
+        "evaluationPoint": "create",
+        "hostname": "public.invalid",
+        "path": "/private/input",
+        "url": "https://public.invalid/input",
+        "headers": {},
+        "credential": "marker"
+      },
+      "expected": {
+        "code": "unknown_field",
+        "input": "task",
+        "path": "$"
+      }
+    },
+    {
+      "id": "url-shaped-intent",
+      "input": "task",
+      "value": {
+        "schemaVersion": "a2a.policy-referee.task.v1",
+        "intent": "https://public.invalid/input",
+        "evaluationPoint": "create"
+      },
+      "expected": {
+        "code": "invalid_token",
+        "input": "task",
+        "path": "$.intent"
+      }
+    },
+    {
+      "id": "unknown-policy-field",
+      "input": "policy",
+      "value": {
+        "schemaVersion": "a2a.broker.policy.v1",
+        "mode": "warn",
+        "defaultAction": "allow",
+        "rules": [],
+        "workerName": "marker"
+      },
+      "expected": {
+        "code": "invalid_policy",
+        "input": "policy",
+        "path": "$"
+      }
+    },
+    {
+      "id": "unknown-policy-version",
+      "input": "policy",
+      "value": {
+        "schemaVersion": "a2a.broker.policy.v2",
+        "mode": "warn",
+        "defaultAction": "allow",
+        "rules": []
+      },
+      "expected": {
+        "code": "invalid_policy",
+        "input": "policy",
+        "path": "$"
+      }
+    },
+    {
+      "id": "prototype-key",
+      "input": "worker",
+      "value": {
+        "schemaVersion": "a2a.policy-referee.worker.v1",
+        "workerClass": "mobile",
+        "__proto__": {
+          "workerClass": "vps"
+        }
+      },
+      "expected": {
+        "code": "unknown_field",
+        "input": "worker",
+        "path": "$"
+      }
+    },
+    {
+      "id": "malformed-json",
+      "input": "task",
+      "raw": "{\"schemaVersion\":\"a2a.policy-referee.task.v1\"",
+      "expected": {
+        "code": "invalid_json",
+        "input": "task",
+        "path": "$"
+      }
+    }
+  ]
+}

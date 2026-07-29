@@ -44,10 +44,13 @@ import type { IncomingMessage, ServerResponse } from "node:http";
 import { z } from "zod";
 
 import { BrokerError } from "./broker.js";
+import { A2A_REQUESTER_ROLES } from "./requester-role-contract.mjs";
 import type { A2APartyKind, A2APartyRole, ChangeProposal, TaskRecord } from "./types.js";
 
 const requesterKindSchema = z.enum(["session", "node", "user", "service"]);
-const requesterRoleSchema = z.enum(["hub", "live-trader", "researcher", "analyst", "operator"]);
+const requesterRoleSchema = z.enum(A2A_REQUESTER_ROLES);
+
+export { A2A_REQUESTER_ROLES };
 
 export interface RequesterIdentity {
   id: string;
@@ -98,6 +101,7 @@ export const A2A_WORKER_ROUTE_SCOPES = [
   "task.complete",
   "task.evidence",
   "task.fail",
+  "review-lineage.report",
 ] as const;
 
 export type A2AWorkerRouteScope = (typeof A2A_WORKER_ROUTE_SCOPES)[number];

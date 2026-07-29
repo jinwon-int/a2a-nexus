@@ -52,6 +52,46 @@ test("buildArtifactManifest supports executions with no task artifacts", async (
   }
 });
 
+test("artifact manifest persists failed max-turn telemetry and safe checkpoint reference without success", async () => {
+  const dir = await mkdtemp(join(tmpdir(), "a2a-max-turn-manifest-"));
+  try {
+    const turnBudget = {
+      schemaVersion: "a2a.claude.turn-budget.v1" as const,
+      mode: "agentic-patch" as const,
+      effectiveMaxTurns: 40,
+      source: "canonical_default" as const,
+      outcome: "failure" as const,
+      failureReason: "max_turns" as const,
+      checkpointStatus: "preserved",
+      checkpointRef: "artifacts/claude-max-turn-checkpoint.json" as const,
+    };
+    const manifest = await buildArtifactManifest(dir, [], {
+      status: "budget_limited",
+      budget: { limitKind: "turn", limit: "40", reason: "max_turns" },
+      claudeTurnBudget: turnBudget,
+      checkpointRef: "artifacts/claude-max-turn-checkpoint.json",
+    });
+    assert.equal(manifest.status, "budget_limited");
+    assert.equal(manifest.prUrl, undefined);
+    assert.deepEqual(manifest.claudeTurnBudget, turnBudget);
+    assert.equal(manifest.checkpointRef, "artifacts/claude-max-turn-checkpoint.json");
+
+    const summary = buildResultSummary(
+      { code: 1, signal: null, stdout: "", stderr: "terminal_reason=max_turns", timedOut: false },
+      "",
+      "terminal_reason=max_turns",
+      [],
+      manifest,
+    );
+    assert.equal(summary.status, "budget_limited");
+    assert.equal(summary.terminalReason, "max_turns");
+    assert.equal(summary.checkpointRef, "artifacts/claude-max-turn-checkpoint.json");
+    assert.equal(summary.claudeTurnBudget?.effectiveMaxTurns, 40);
+  } finally {
+    await rm(dir, { recursive: true, force: true });
+  }
+});
+
 test("buildArtifactManifest projects #1219 verification, hygiene, and reproducibility evidence", async () => {
   const dir = await mkdtemp(join(tmpdir(), "a2a-1219-evidence-"));
   try {

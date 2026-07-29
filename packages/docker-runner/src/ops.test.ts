@@ -7,6 +7,7 @@ import { join } from "node:path";
 import { checkDeployedRevision, checkDeployMarker, checkExtraMounts, checkGitHubPatchReadiness, cleanup, install, parseProbeKeyValues } from "./ops.js";
 import type { RunnerConfig } from "./types.js";
 import { buildExampleReadinessInput } from "./openclaw-profile-readiness.js";
+import { projectClaudeCodeTurnBudgets } from "./config.js";
 
 function runGit(cwd: string, args: string[]): void {
   const result = spawnSync("git", args, {
@@ -295,7 +296,10 @@ test("GitHub patch readiness Claude Code profile reports bridge and credential m
     defaultTimeoutMs: 1000,
     commandProfile: "claude-code",
     commandScript: "#!/usr/bin/env bash\nclaude --version\nnode /opt/a2a-broker/scripts/claude-a2a-patch-bridge.mjs\n",
-    claudeCodeProfile: { configDir: "/srv/claude-profile" },
+    claudeCodeProfile: {
+      configDir: "/srv/claude-profile",
+      turnBudgets: projectClaudeCodeTurnBudgets({}),
+    },
     containedSubagents: {
       enabled: false,
       maxCount: 0,
@@ -328,6 +332,10 @@ test("GitHub patch readiness Claude Code profile reports bridge and credential m
     { kind: "claude_profile_mount_present", passed: true },
     { kind: "claude_patch_bridge_present", passed: true },
   ]);
+  const turnBudgets = detail.turnBudgets as ReturnType<typeof projectClaudeCodeTurnBudgets>;
+  assert.equal(turnBudgets.activePatchMode, "agentic");
+  assert.equal(turnBudgets.agenticPatch.effectiveMaxTurns, 40);
+  assert.equal(turnBudgets.agenticPatch.source, "canonical_default");
 });
 
 test("GitHub patch readiness Claude Code profile failure includes cccb provisioning guidance", () => {

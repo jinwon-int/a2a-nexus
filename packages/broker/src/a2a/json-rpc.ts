@@ -6,6 +6,12 @@ import type { AgentCard, AgentCapabilities } from "./agent-card.js";
 import { PEER_STATUS_VERBOSE_SCOPE, PeerStatusService, type PeerStatusRequest } from "./peer-status.js";
 import { projectBrokerTask, projectBrokerTaskForList } from "./task-projection.js";
 import { matchDefaultAgentConvention } from "./default-agent-conventions.js";
+import {
+  buildTaskLineageReadProjection,
+  parseTaskLineageChildrenRequestV1,
+  parseTaskLineageLeavesRequestV1,
+  parseTaskLineageLineageRequestV1,
+} from "../core/task-lineage-read.js";
 
 export type JsonRpcId = string | number | null;
 
@@ -276,6 +282,33 @@ export function executeA2AJsonRpc(
           });
         }
         return success(id, { tasks: visible.map(projectBrokerTaskForList) });
+      }
+
+      case "tasks/children": {
+        const request = parseTaskLineageChildrenRequestV1(params);
+        const projection = taskLineageProjectionForRead(
+          options,
+          "tasks/children",
+        );
+        return success(id, projection.children(request));
+      }
+
+      case "tasks/lineage": {
+        const request = parseTaskLineageLineageRequestV1(params);
+        const projection = taskLineageProjectionForRead(
+          options,
+          "tasks/lineage",
+        );
+        return success(id, projection.lineage(request));
+      }
+
+      case "tasks/leaves": {
+        const request = parseTaskLineageLeavesRequestV1(params);
+        const projection = taskLineageProjectionForRead(
+          options,
+          "tasks/leaves",
+        );
+        return success(id, projection.leaves(request));
       }
 
       case "CancelTask": {
@@ -646,6 +679,25 @@ function canReadTaskSnapshot(options: ExecuteJsonRpcOptions, task: TaskRecord): 
     }
     throw error;
   }
+}
+
+/**
+ * Build exactly one ephemeral task-lineage index from the broker's canonical
+ * list/repository read path. Authorization reduction happens before indexing,
+ * so hidden tasks cannot affect graph edges, counts, cursors, anomalies, or
+ * round hints.
+ */
+function taskLineageProjectionForRead(
+  options: ExecuteJsonRpcOptions,
+  method: "tasks/children" | "tasks/lineage" | "tasks/leaves",
+) {
+  if (options.enforceRequesterIdentity) {
+    requireRequesterIdentityForTaskRead(options, method);
+  }
+  const visible = options.broker
+    .listTasks()
+    .filter((task) => canReadTaskSnapshot(options, task));
+  return buildTaskLineageReadProjection(visible);
 }
 
 /**
@@ -1242,6 +1294,8 @@ function brokerErrorMapping(code: BrokerError["code"], message?: string): Broker
       return { code: -32012 };
     case "rate_limited":
       return { code: -32013 };
+    case "task_lineage_cycle":
+      return { code: -32015 };
     default:
       // Never throw from inside the catch handler that calls this — an
       // unmapped broker code becomes a generic internal error.

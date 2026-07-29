@@ -34,6 +34,38 @@ const A2ABrokerTaskStatusSchema = z.enum([
   "canceled",
 ]);
 const A2ABrokerTaskOriginSchema = z.enum(["github", "api", "sessions_send", "operator", "unknown"]);
+const A2ABrokerTaskLaneReasonCodeSchema = z.enum([
+  "all_fast_conditions_met",
+  "requester_lane_facts_present",
+  "intent_not_analyze",
+  "mode_missing",
+  "mode_not_read_only_analysis",
+  "write_or_implementation_marker_present",
+  "worker_assignment_conflict",
+  "round_marker_present",
+  "fanout_marker_present",
+  "multi_worker_marker_present",
+  "delegated_workflow_marker_present",
+  "worker_mode_missing",
+  "worker_not_persistent",
+  "policy_decision_missing",
+  "policy_decision_unknown",
+  "policy_requires_approval",
+  "policy_denied",
+  "approval_marker_present",
+  "sensitive_marker_present",
+  "live_marker_present",
+  "external_send_marker_present",
+  "credential_access_marker_present",
+]);
+const A2ABrokerTaskLaneAssignmentSchema = z
+  .object({
+    version: z.literal("fast-lane.v1"),
+    mode: z.literal("shadow"),
+    decision: z.enum(["fast", "full"]),
+    reasonCodes: z.array(A2ABrokerTaskLaneReasonCodeSchema).min(1),
+  })
+  .strict();
 
 const A2ABrokerPartyRefSchema = z
   .object({
@@ -212,6 +244,7 @@ const A2ABrokerTaskRecordSchema = A2ABrokerTaskCreateRequestSchema.extend({
   cancellation: A2ABrokerTaskCancellationInfoSchema.optional(),
   approval: A2ABrokerTaskApprovalInfoSchema.optional(),
   approvalOutcome: A2ABrokerTaskApprovalOutcomeSchema.optional(),
+  laneAssignment: A2ABrokerTaskLaneAssignmentSchema.optional(),
 });
 
 const A2ABrokerHealthSchema = z
@@ -374,6 +407,7 @@ export type A2ABrokerTaskApprovalTerminalRequest = z.infer<
   typeof A2ABrokerTaskApprovalTerminalRequestSchema
 >;
 export type A2ABrokerTaskCreateRequest = z.infer<typeof A2ABrokerTaskCreateRequestSchema>;
+export type A2ABrokerTaskLaneAssignment = z.infer<typeof A2ABrokerTaskLaneAssignmentSchema>;
 export type A2ABrokerTaskRecord = z.infer<typeof A2ABrokerTaskRecordSchema>;
 export type A2ABrokerHealth = z.infer<typeof A2ABrokerHealthSchema>;
 export type A2ABrokerTaskSseEventName = z.infer<typeof A2ABrokerTaskSseEventNameSchema>;

@@ -26,6 +26,7 @@ export type BrokerErrorCode =
   | "queue_closed"
   | "worker_crashed"
   | "worker_unavailable"
+  | "task_lineage_cycle"
   | "unauthorized"
   | "rate_limited";
 

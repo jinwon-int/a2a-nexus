@@ -1,0 +1,703 @@
+{
+  "$schema": "https://example.invalid/a2a/shared-state-time-v1-golden.schema.json",
+  "fixtureVersion": 1,
+  "timeVersion": "a2a.shared-state.time/v1",
+  "description": "Public non-secret golden vectors. Values are synthetic Unix-epoch millisecond test integers; no clock is read.",
+  "policies": {
+    "sqlite-tolerance-10": {
+      "kind": "SharedStateTimePolicyV1",
+      "timeVersion": "a2a.shared-state.time/v1",
+      "clockProfile": "sqlite-single-writer",
+      "clockAuthority": "adapter-controlled",
+      "observationSource": "adapter-clock",
+      "timestampUnit": "unix-epoch-millisecond",
+      "integerEncoding": "canonical-unsigned-decimal-string",
+      "backwardSkewToleranceMs": "10"
+    },
+    "shared-tolerance-0": {
+      "kind": "SharedStateTimePolicyV1",
+      "timeVersion": "a2a.shared-state.time/v1",
+      "clockProfile": "shared-backend-server",
+      "clockAuthority": "backend-server",
+      "observationSource": "backend-server-clock",
+      "timestampUnit": "unix-epoch-millisecond",
+      "integerEncoding": "canonical-unsigned-decimal-string",
+      "backwardSkewToleranceMs": "0"
+    }
+  },
+  "evaluations": [
+    {
+      "id": "floor-minus-1",
+      "policy": "sqlite-tolerance-10",
+      "observation": {
+        "kind": "TrustedSharedStateTimeObservationV1",
+        "timeVersion": "a2a.shared-state.time/v1",
+        "trustBoundary": "adapter-internal",
+        "clockProfile": "sqlite-single-writer",
+        "clockAuthority": "adapter-controlled",
+        "observationSource": "adapter-clock",
+        "observedAtUnixMs": "999",
+        "persistedFloorUnixMs": "1000",
+        "minimumExpectedFloorUnixMs": "1000"
+      },
+      "expected": {
+        "safe": true,
+        "reasonCode": "backward_within_tolerance_clamped",
+        "effectiveNowUnixMs": "1000",
+        "nextPersistedFloorUnixMs": "1000",
+        "floorWriteRequired": false,
+        "readiness": "ready",
+        "writes": "allowed",
+        "logicalDecisions": "allowed"
+      }
+    },
+    {
+      "id": "floor",
+      "policy": "sqlite-tolerance-10",
+      "observation": {
+        "kind": "TrustedSharedStateTimeObservationV1",
+        "timeVersion": "a2a.shared-state.time/v1",
+        "trustBoundary": "adapter-internal",
+        "clockProfile": "sqlite-single-writer",
+        "clockAuthority": "adapter-controlled",
+        "observationSource": "adapter-clock",
+        "observedAtUnixMs": "1000",
+        "persistedFloorUnixMs": "1000",
+        "minimumExpectedFloorUnixMs": "1000"
+      },
+      "expected": {
+        "safe": true,
+        "reasonCode": "observation_at_floor",
+        "effectiveNowUnixMs": "1000",
+        "nextPersistedFloorUnixMs": "1000",
+        "floorWriteRequired": false,
+        "readiness": "ready",
+        "writes": "allowed",
+        "logicalDecisions": "allowed"
+      }
+    },
+    {
+      "id": "floor-plus-1",
+      "policy": "sqlite-tolerance-10",
+      "observation": {
+        "kind": "TrustedSharedStateTimeObservationV1",
+        "timeVersion": "a2a.shared-state.time/v1",
+        "trustBoundary": "adapter-internal",
+        "clockProfile": "sqlite-single-writer",
+        "clockAuthority": "adapter-controlled",
+        "observationSource": "adapter-clock",
+        "observedAtUnixMs": "1001",
+        "persistedFloorUnixMs": "1000",
+        "minimumExpectedFloorUnixMs": "1000"
+      },
+      "expected": {
+        "safe": true,
+        "reasonCode": "observation_advanced",
+        "effectiveNowUnixMs": "1001",
+        "nextPersistedFloorUnixMs": "1001",
+        "floorWriteRequired": true,
+        "readiness": "ready",
+        "writes": "allowed",
+        "logicalDecisions": "allowed"
+      }
+    },
+    {
+      "id": "tolerance-minus-1",
+      "policy": "sqlite-tolerance-10",
+      "observation": {
+        "kind": "TrustedSharedStateTimeObservationV1",
+        "timeVersion": "a2a.shared-state.time/v1",
+        "trustBoundary": "adapter-internal",
+        "clockProfile": "sqlite-single-writer",
+        "clockAuthority": "adapter-controlled",
+        "observationSource": "adapter-clock",
+        "observedAtUnixMs": "991",
+        "persistedFloorUnixMs": "1000",
+        "minimumExpectedFloorUnixMs": "1000"
+      },
+      "expected": {
+        "safe": true,
+        "reasonCode": "backward_within_tolerance_clamped",
+        "effectiveNowUnixMs": "1000",
+        "nextPersistedFloorUnixMs": "1000",
+        "floorWriteRequired": false,
+        "readiness": "ready",
+        "writes": "allowed",
+        "logicalDecisions": "allowed"
+      }
+    },
+    {
+      "id": "tolerance",
+      "policy": "sqlite-tolerance-10",
+      "observation": {
+        "kind": "TrustedSharedStateTimeObservationV1",
+        "timeVersion": "a2a.shared-state.time/v1",
+        "trustBoundary": "adapter-internal",
+        "clockProfile": "sqlite-single-writer",
+        "clockAuthority": "adapter-controlled",
+        "observationSource": "adapter-clock",
+        "observedAtUnixMs": "990",
+        "persistedFloorUnixMs": "1000",
+        "minimumExpectedFloorUnixMs": "1000"
+      },
+      "expected": {
+        "safe": true,
+        "reasonCode": "backward_within_tolerance_clamped",
+        "effectiveNowUnixMs": "1000",
+        "nextPersistedFloorUnixMs": "1000",
+        "floorWriteRequired": false,
+        "readiness": "ready",
+        "writes": "allowed",
+        "logicalDecisions": "allowed"
+      }
+    },
+    {
+      "id": "tolerance-plus-1",
+      "policy": "sqlite-tolerance-10",
+      "observation": {
+        "kind": "TrustedSharedStateTimeObservationV1",
+        "timeVersion": "a2a.shared-state.time/v1",
+        "trustBoundary": "adapter-internal",
+        "clockProfile": "sqlite-single-writer",
+        "clockAuthority": "adapter-controlled",
+        "observationSource": "adapter-clock",
+        "observedAtUnixMs": "989",
+        "persistedFloorUnixMs": "1000",
+        "minimumExpectedFloorUnixMs": "1000"
+      },
+      "expected": {
+        "safe": false,
+        "reasonCode": "backward_beyond_tolerance",
+        "safeClampUnixMs": "1000",
+        "nextPersistedFloorUnixMs": "1000",
+        "floorWriteRequired": false,
+        "readiness": "not-ready",
+        "writes": "forbidden",
+        "logicalDecisions": "forbidden"
+      }
+    },
+    {
+      "id": "stored-floor-regression",
+      "policy": "sqlite-tolerance-10",
+      "observation": {
+        "kind": "TrustedSharedStateTimeObservationV1",
+        "timeVersion": "a2a.shared-state.time/v1",
+        "trustBoundary": "adapter-internal",
+        "clockProfile": "sqlite-single-writer",
+        "clockAuthority": "adapter-controlled",
+        "observationSource": "adapter-clock",
+        "observedAtUnixMs": "1001",
+        "persistedFloorUnixMs": "999",
+        "minimumExpectedFloorUnixMs": "1000"
+      },
+      "expected": {
+        "safe": false,
+        "reasonCode": "stored_floor_regression",
+        "safeClampUnixMs": "1000",
+        "nextPersistedFloorUnixMs": "1000",
+        "floorWriteRequired": false,
+        "readiness": "not-ready",
+        "writes": "forbidden",
+        "logicalDecisions": "forbidden"
+      }
+    },
+    {
+      "id": "restart-before-close",
+      "policy": "sqlite-tolerance-10",
+      "observation": {
+        "kind": "TrustedSharedStateTimeObservationV1",
+        "timeVersion": "a2a.shared-state.time/v1",
+        "trustBoundary": "adapter-internal",
+        "clockProfile": "sqlite-single-writer",
+        "clockAuthority": "adapter-controlled",
+        "observationSource": "adapter-clock",
+        "observedAtUnixMs": "2000",
+        "persistedFloorUnixMs": "1000",
+        "minimumExpectedFloorUnixMs": "1000"
+      },
+      "expected": {
+        "safe": true,
+        "reasonCode": "observation_advanced",
+        "effectiveNowUnixMs": "2000",
+        "nextPersistedFloorUnixMs": "2000",
+        "floorWriteRequired": true,
+        "readiness": "ready",
+        "writes": "allowed",
+        "logicalDecisions": "allowed"
+      }
+    },
+    {
+      "id": "restart-after-reopen",
+      "policy": "sqlite-tolerance-10",
+      "observation": {
+        "kind": "TrustedSharedStateTimeObservationV1",
+        "timeVersion": "a2a.shared-state.time/v1",
+        "trustBoundary": "adapter-internal",
+        "clockProfile": "sqlite-single-writer",
+        "clockAuthority": "adapter-controlled",
+        "observationSource": "adapter-clock",
+        "observedAtUnixMs": "1999",
+        "persistedFloorUnixMs": "2000",
+        "minimumExpectedFloorUnixMs": null
+      },
+      "expected": {
+        "safe": true,
+        "reasonCode": "backward_within_tolerance_clamped",
+        "effectiveNowUnixMs": "2000",
+        "nextPersistedFloorUnixMs": "2000",
+        "floorWriteRequired": false,
+        "readiness": "ready",
+        "writes": "allowed",
+        "logicalDecisions": "allowed"
+      }
+    },
+    {
+      "id": "signed-int64-maximum",
+      "policy": "sqlite-tolerance-10",
+      "observation": {
+        "kind": "TrustedSharedStateTimeObservationV1",
+        "timeVersion": "a2a.shared-state.time/v1",
+        "trustBoundary": "adapter-internal",
+        "clockProfile": "sqlite-single-writer",
+        "clockAuthority": "adapter-controlled",
+        "observationSource": "adapter-clock",
+        "observedAtUnixMs": "9223372036854775807",
+        "persistedFloorUnixMs": "9223372036854775806",
+        "minimumExpectedFloorUnixMs": "9223372036854775806"
+      },
+      "expected": {
+        "safe": true,
+        "reasonCode": "observation_advanced",
+        "effectiveNowUnixMs": "9223372036854775807",
+        "nextPersistedFloorUnixMs": "9223372036854775807",
+        "floorWriteRequired": true,
+        "readiness": "ready",
+        "writes": "allowed",
+        "logicalDecisions": "allowed"
+      }
+    },
+    {
+      "id": "shared-server-authority",
+      "policy": "shared-tolerance-0",
+      "observation": {
+        "kind": "TrustedSharedStateTimeObservationV1",
+        "timeVersion": "a2a.shared-state.time/v1",
+        "trustBoundary": "adapter-internal",
+        "clockProfile": "shared-backend-server",
+        "clockAuthority": "backend-server",
+        "observationSource": "backend-server-clock",
+        "observedAtUnixMs": "5000",
+        "persistedFloorUnixMs": "4999",
+        "minimumExpectedFloorUnixMs": "4999"
+      },
+      "expected": {
+        "safe": true,
+        "reasonCode": "observation_advanced",
+        "effectiveNowUnixMs": "5000",
+        "nextPersistedFloorUnixMs": "5000",
+        "floorWriteRequired": true,
+        "readiness": "ready",
+        "writes": "allowed",
+        "logicalDecisions": "allowed"
+      }
+    }
+  ],
+  "boundaries": [
+    {
+      "id": "replay-expiry-minus-1-present",
+      "nowUnixMs": "999",
+      "physicalCleanupState": "record-present",
+      "boundary": {
+        "timeVersion": "a2a.shared-state.time/v1",
+        "kind": "replay-ttl",
+        "expiresAtUnixMs": "1000"
+      },
+      "expectedDecision": "active"
+    },
+    {
+      "id": "replay-expiry-minus-1-removed",
+      "nowUnixMs": "999",
+      "physicalCleanupState": "record-removed",
+      "boundary": {
+        "timeVersion": "a2a.shared-state.time/v1",
+        "kind": "replay-ttl",
+        "expiresAtUnixMs": "1000"
+      },
+      "expectedDecision": "active"
+    },
+    {
+      "id": "replay-expiry-present",
+      "nowUnixMs": "1000",
+      "physicalCleanupState": "record-present",
+      "boundary": {
+        "timeVersion": "a2a.shared-state.time/v1",
+        "kind": "replay-ttl",
+        "expiresAtUnixMs": "1000"
+      },
+      "expectedDecision": "expired"
+    },
+    {
+      "id": "replay-expiry-cleaned",
+      "nowUnixMs": "1000",
+      "physicalCleanupState": "record-removed",
+      "boundary": {
+        "timeVersion": "a2a.shared-state.time/v1",
+        "kind": "replay-ttl",
+        "expiresAtUnixMs": "1000"
+      },
+      "expectedDecision": "expired"
+    },
+    {
+      "id": "replay-expiry-plus-1",
+      "nowUnixMs": "1001",
+      "physicalCleanupState": "record-removed",
+      "boundary": {
+        "timeVersion": "a2a.shared-state.time/v1",
+        "kind": "replay-ttl",
+        "expiresAtUnixMs": "1000"
+      },
+      "expectedDecision": "expired"
+    },
+    {
+      "id": "lease-before-expiry",
+      "nowUnixMs": "999",
+      "physicalCleanupState": "record-present",
+      "boundary": {
+        "timeVersion": "a2a.shared-state.time/v1",
+        "kind": "lease",
+        "expiresAtUnixMs": "1000"
+      },
+      "expectedDecision": "active"
+    },
+    {
+      "id": "lease-at-expiry",
+      "nowUnixMs": "1000",
+      "physicalCleanupState": "record-present",
+      "boundary": {
+        "timeVersion": "a2a.shared-state.time/v1",
+        "kind": "lease",
+        "expiresAtUnixMs": "1000"
+      },
+      "expectedDecision": "expired"
+    },
+    {
+      "id": "idempotency-before-explicit-retention",
+      "nowUnixMs": "999",
+      "physicalCleanupState": "record-present",
+      "boundary": {
+        "timeVersion": "a2a.shared-state.time/v1",
+        "kind": "idempotency-explicit-retention",
+        "expiresAtUnixMs": "1000"
+      },
+      "expectedDecision": "active"
+    },
+    {
+      "id": "idempotency-at-explicit-retention",
+      "nowUnixMs": "1000",
+      "physicalCleanupState": "record-present",
+      "boundary": {
+        "timeVersion": "a2a.shared-state.time/v1",
+        "kind": "idempotency-explicit-retention",
+        "expiresAtUnixMs": "1000"
+      },
+      "expectedDecision": "expired"
+    },
+    {
+      "id": "rate-boundary-plus-1",
+      "nowUnixMs": "1000",
+      "physicalCleanupState": "record-present",
+      "boundary": {
+        "timeVersion": "a2a.shared-state.time/v1",
+        "kind": "rate-window-entry",
+        "eventAtUnixMs": "901",
+        "windowMs": "100"
+      },
+      "expectedDecision": "counted"
+    },
+    {
+      "id": "rate-boundary",
+      "nowUnixMs": "1000",
+      "physicalCleanupState": "record-present",
+      "boundary": {
+        "timeVersion": "a2a.shared-state.time/v1",
+        "kind": "rate-window-entry",
+        "eventAtUnixMs": "900",
+        "windowMs": "100"
+      },
+      "expectedDecision": "excluded"
+    },
+    {
+      "id": "rate-boundary-minus-1-cleaned",
+      "nowUnixMs": "1000",
+      "physicalCleanupState": "record-removed",
+      "boundary": {
+        "timeVersion": "a2a.shared-state.time/v1",
+        "kind": "rate-window-entry",
+        "eventAtUnixMs": "899",
+        "windowMs": "100"
+      },
+      "expectedDecision": "excluded"
+    },
+    {
+      "id": "rate-window-before-epoch",
+      "nowUnixMs": "50",
+      "physicalCleanupState": "record-present",
+      "boundary": {
+        "timeVersion": "a2a.shared-state.time/v1",
+        "kind": "rate-window-entry",
+        "eventAtUnixMs": "0",
+        "windowMs": "100"
+      },
+      "expectedDecision": "counted"
+    }
+  ],
+  "invalid": [
+    {
+      "id": "invalid-type",
+      "entrypoint": "policy",
+      "input": null,
+      "expectedError": "invalid_type"
+    },
+    {
+      "id": "unknown-field",
+      "entrypoint": "policy",
+      "input": {
+        "kind": "SharedStateTimePolicyV1",
+        "timeVersion": "a2a.shared-state.time/v1",
+        "clockProfile": "sqlite-single-writer",
+        "clockAuthority": "adapter-controlled",
+        "observationSource": "adapter-clock",
+        "timestampUnit": "unix-epoch-millisecond",
+        "integerEncoding": "canonical-unsigned-decimal-string",
+        "backwardSkewToleranceMs": "10",
+        "syntheticExtra": true
+      },
+      "expectedError": "unknown_field"
+    },
+    {
+      "id": "unknown-version",
+      "entrypoint": "policy",
+      "input": {
+        "kind": "SharedStateTimePolicyV1",
+        "timeVersion": "a2a.shared-state.time/v2",
+        "clockProfile": "sqlite-single-writer",
+        "clockAuthority": "adapter-controlled",
+        "observationSource": "adapter-clock",
+        "timestampUnit": "unix-epoch-millisecond",
+        "integerEncoding": "canonical-unsigned-decimal-string",
+        "backwardSkewToleranceMs": "10"
+      },
+      "expectedError": "unknown_time_version"
+    },
+    {
+      "id": "invalid-kind",
+      "entrypoint": "policy",
+      "input": {
+        "kind": "SyntheticPolicy",
+        "timeVersion": "a2a.shared-state.time/v1",
+        "clockProfile": "sqlite-single-writer",
+        "clockAuthority": "adapter-controlled",
+        "observationSource": "adapter-clock",
+        "timestampUnit": "unix-epoch-millisecond",
+        "integerEncoding": "canonical-unsigned-decimal-string",
+        "backwardSkewToleranceMs": "10"
+      },
+      "expectedError": "invalid_discriminant"
+    },
+    {
+      "id": "unknown-profile",
+      "entrypoint": "policy",
+      "input": {
+        "kind": "SharedStateTimePolicyV1",
+        "timeVersion": "a2a.shared-state.time/v1",
+        "clockProfile": "synthetic-clock",
+        "clockAuthority": "adapter-controlled",
+        "observationSource": "adapter-clock",
+        "timestampUnit": "unix-epoch-millisecond",
+        "integerEncoding": "canonical-unsigned-decimal-string",
+        "backwardSkewToleranceMs": "10"
+      },
+      "expectedError": "unknown_clock_profile"
+    },
+    {
+      "id": "profile-mismatch",
+      "entrypoint": "evaluate",
+      "policy": "sqlite-tolerance-10",
+      "observation": {
+        "kind": "TrustedSharedStateTimeObservationV1",
+        "timeVersion": "a2a.shared-state.time/v1",
+        "trustBoundary": "adapter-internal",
+        "clockProfile": "shared-backend-server",
+        "clockAuthority": "backend-server",
+        "observationSource": "backend-server-clock",
+        "observedAtUnixMs": "10",
+        "persistedFloorUnixMs": "10",
+        "minimumExpectedFloorUnixMs": null
+      },
+      "expectedError": "profile_mismatch"
+    },
+    {
+      "id": "authority-mismatch",
+      "entrypoint": "policy",
+      "input": {
+        "kind": "SharedStateTimePolicyV1",
+        "timeVersion": "a2a.shared-state.time/v1",
+        "clockProfile": "sqlite-single-writer",
+        "clockAuthority": "backend-server",
+        "observationSource": "adapter-clock",
+        "timestampUnit": "unix-epoch-millisecond",
+        "integerEncoding": "canonical-unsigned-decimal-string",
+        "backwardSkewToleranceMs": "10"
+      },
+      "expectedError": "clock_authority_mismatch"
+    },
+    {
+      "id": "source-mismatch",
+      "entrypoint": "policy",
+      "input": {
+        "kind": "SharedStateTimePolicyV1",
+        "timeVersion": "a2a.shared-state.time/v1",
+        "clockProfile": "sqlite-single-writer",
+        "clockAuthority": "adapter-controlled",
+        "observationSource": "backend-server-clock",
+        "timestampUnit": "unix-epoch-millisecond",
+        "integerEncoding": "canonical-unsigned-decimal-string",
+        "backwardSkewToleranceMs": "10"
+      },
+      "expectedError": "observation_source_mismatch"
+    },
+    {
+      "id": "unit-mismatch",
+      "entrypoint": "policy",
+      "input": {
+        "kind": "SharedStateTimePolicyV1",
+        "timeVersion": "a2a.shared-state.time/v1",
+        "clockProfile": "sqlite-single-writer",
+        "clockAuthority": "adapter-controlled",
+        "observationSource": "adapter-clock",
+        "timestampUnit": "second",
+        "integerEncoding": "canonical-unsigned-decimal-string",
+        "backwardSkewToleranceMs": "10"
+      },
+      "expectedError": "unit_mismatch"
+    },
+    {
+      "id": "integer-encoding-mismatch",
+      "entrypoint": "policy",
+      "input": {
+        "kind": "SharedStateTimePolicyV1",
+        "timeVersion": "a2a.shared-state.time/v1",
+        "clockProfile": "sqlite-single-writer",
+        "clockAuthority": "adapter-controlled",
+        "observationSource": "adapter-clock",
+        "timestampUnit": "unix-epoch-millisecond",
+        "integerEncoding": "number",
+        "backwardSkewToleranceMs": "10"
+      },
+      "expectedError": "integer_encoding_mismatch"
+    },
+    {
+      "id": "noncanonical-integer",
+      "entrypoint": "observation",
+      "input": {
+        "kind": "TrustedSharedStateTimeObservationV1",
+        "timeVersion": "a2a.shared-state.time/v1",
+        "trustBoundary": "adapter-internal",
+        "clockProfile": "sqlite-single-writer",
+        "clockAuthority": "adapter-controlled",
+        "observationSource": "adapter-clock",
+        "observedAtUnixMs": "01",
+        "persistedFloorUnixMs": "0",
+        "minimumExpectedFloorUnixMs": null
+      },
+      "expectedError": "invalid_integer"
+    },
+    {
+      "id": "unsafe-number",
+      "entrypoint": "observation",
+      "input": {
+        "kind": "TrustedSharedStateTimeObservationV1",
+        "timeVersion": "a2a.shared-state.time/v1",
+        "trustBoundary": "adapter-internal",
+        "clockProfile": "sqlite-single-writer",
+        "clockAuthority": "adapter-controlled",
+        "observationSource": "adapter-clock",
+        "observedAtUnixMs": 9007199254740992,
+        "persistedFloorUnixMs": "0",
+        "minimumExpectedFloorUnixMs": null
+      },
+      "expectedError": "unsafe_integer"
+    },
+    {
+      "id": "timestamp-overflow",
+      "entrypoint": "observation",
+      "input": {
+        "kind": "TrustedSharedStateTimeObservationV1",
+        "timeVersion": "a2a.shared-state.time/v1",
+        "trustBoundary": "adapter-internal",
+        "clockProfile": "sqlite-single-writer",
+        "clockAuthority": "adapter-controlled",
+        "observationSource": "adapter-clock",
+        "observedAtUnixMs": "9223372036854775808",
+        "persistedFloorUnixMs": "0",
+        "minimumExpectedFloorUnixMs": null
+      },
+      "expectedError": "integer_overflow"
+    },
+    {
+      "id": "tolerance-out-of-range",
+      "entrypoint": "policy",
+      "input": {
+        "kind": "SharedStateTimePolicyV1",
+        "timeVersion": "a2a.shared-state.time/v1",
+        "clockProfile": "sqlite-single-writer",
+        "clockAuthority": "adapter-controlled",
+        "observationSource": "adapter-clock",
+        "timestampUnit": "unix-epoch-millisecond",
+        "integerEncoding": "canonical-unsigned-decimal-string",
+        "backwardSkewToleranceMs": "300001"
+      },
+      "expectedError": "tolerance_out_of_range"
+    },
+    {
+      "id": "duration-out-of-range",
+      "entrypoint": "boundary",
+      "input": {
+        "timeVersion": "a2a.shared-state.time/v1",
+        "kind": "rate-window-entry",
+        "eventAtUnixMs": "1",
+        "windowMs": "0"
+      },
+      "expectedError": "duration_out_of_range"
+    },
+    {
+      "id": "time-not-ready",
+      "entrypoint": "boundary-evaluation",
+      "policy": "sqlite-tolerance-10",
+      "observation": {
+        "kind": "TrustedSharedStateTimeObservationV1",
+        "timeVersion": "a2a.shared-state.time/v1",
+        "trustBoundary": "adapter-internal",
+        "clockProfile": "sqlite-single-writer",
+        "clockAuthority": "adapter-controlled",
+        "observationSource": "adapter-clock",
+        "observedAtUnixMs": "989",
+        "persistedFloorUnixMs": "1000",
+        "minimumExpectedFloorUnixMs": "1000"
+      },
+      "input": {
+        "timeVersion": "a2a.shared-state.time/v1",
+        "kind": "lease",
+        "expiresAtUnixMs": "1001"
+      },
+      "expectedError": "time_not_ready"
+    },
+    {
+      "id": "expiry-arithmetic-overflow",
+      "entrypoint": "derive-expiry",
+      "evaluation": "signed-int64-maximum",
+      "input": "1",
+      "expectedError": "time_arithmetic_overflow"
+    }
+  ]
+}

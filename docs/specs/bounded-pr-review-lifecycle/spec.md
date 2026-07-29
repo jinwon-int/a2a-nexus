@@ -177,6 +177,92 @@ Dispatchers MUST NOT attach `payload.acceptance.command` to analysis-only review
 validation is independent from smoke acceptance, and an unexecuted acceptance command fails as
 `acceptance_evidence_missing` by design.
 
+### Authenticated review-report source (Phase 16)
+
+Record mode accepts a complete review report only through
+`POST /review-lineages/{lineageId}/review-report`. The requester must be
+authenticated by the broker's A2A Ed25519 worker-signature registry. The
+verified signing-key owner is the reviewer issuer, and the canonical Phase 8
+`ReviewReceiptV1` parser requires that issuer to equal
+`receipt.reviewerNodeId`. Request JSON cannot select issuer, authority,
+producer ID, source-event ID, source kind, or namespace.
+
+The exact-field body carries an immutable report reference, observation time,
+subject binding, complete receipt, and resolved/reopened/new-finding arrays.
+Phase 13 authorization, Phase 12 awaited admission, and Phase 8 parsing remain
+canonical. The minimized source event, canonical lineage transition, and
+observation-ledger result commit atomically in one direct transaction or one
+worker-thread command and durable ACK. Projection changes only after the ACK.
+
+No generic task, result, validation summary, log, provider response, or prose
+inference can create this event. At the end of Phase 16,
+`correction_generation` and `reviewer_replacement` remained detached and
+authoritative-source coverage was exactly `3/5`. See
+[review-report-source-v1.md](review-report-source-v1.md).
+
+### Authenticated correction-generation source (Phase 17)
+
+Record mode accepts committed-generation evidence only through
+`POST /review-lineages/{lineageId}/correction-generation`. An authenticated
+requester must have the exact `operator` role. Trusted broker code treats that
+operator as the issuer of semantic `correction_controller` authority; request
+JSON cannot select authority, namespace, source kind, issuer, producer ID, or
+source-event ID.
+
+The exact-field body carries only an immutable generation reference,
+observation time, the complete pre-correction intent/head/diff binding, next
+head and diff, the unchanged frozen intent hash, and all changed paths. The
+Phase 8 parser remains the only complete field/subject/event parser. Phase 13
+authorizes the carrier, Phase 12 awaits admission, and schema 13 stores the
+minimized source event, canonical lineage result, and ledger result in one
+transaction or one worker-thread command and durable ACK.
+
+The canonical store admits a correction command only from
+`correction_pending`. Exact-subject or frozen-intent drift fails closed.
+Forbidden or out-of-scope paths leave the pre-correction head in place and
+record only redacted rejection effects. A successful allowed-path event moves
+to `reviewing_resolution` and records the supplied already-committed head; the
+route itself never applies a patch or invokes a fixer.
+
+No generic task, result, validation summary, log, prose, retry, completion, or
+finalizer output can create this event. At the Phase 17 boundary,
+`reviewer_replacement` remained detached, so authoritative-source coverage was
+exactly `4/5`. See
+[correction-generation-source-v1.md](correction-generation-source-v1.md).
+
+### Authenticated reviewer-replacement source (Phase 18)
+
+Record mode accepts an already classified infrastructure-failure replacement
+decision only through
+`POST /review-lineages/{lineageId}/reviewer-replacement`. An authenticated
+requester must have the exact `operator` role. Trusted broker code treats that
+operator as issuer of semantic `reviewer_allocator` authority and fixes
+`reviewer_replacement_decided`, the source namespace, observation kind, and
+reason `infrastructure_failure`.
+
+The exact-field body carries only an immutable decision reference,
+observation time, and the complete current intent/head/diff binding. It cannot
+select reason, authority, namespace, issuer, producer ID, source-event ID,
+reviewer identity, replacement worker, task, or assignment. The Phase 8 parser,
+Phase 13 authorization, Phase 12 awaited admission, schema 13, composite
+transaction, worker-thread durable ACK, and post-ACK projection remain
+canonical.
+
+An admitted replacement increments only the existing replacement counter. It
+never resets the shared budget, start time, intent, head, diff, reviewer-run or
+correction-generation counters, or finding ledger. Replacement-budget
+exhaustion remains terminal and visible. Already-terminal lineages record a
+stable rejection instead of an applied no-op.
+
+The route records a decision only. It does not classify generic failures,
+choose a worker, mutate assignment, infer from task/result/error/log/prose,
+retry/completion/finalizer state, or create an automatic loop. The closed
+source/authority/command/observation set is exactly all five tuples, so
+authoritative-source attachment coverage is exactly `5/5`. This is source
+attachment, not record-mode activation, independent review, finalizer
+closeout, or issue closeout. See
+[reviewer-replacement-source-v1.md](reviewer-replacement-source-v1.md).
+
 ### Blocking-finding ledger (FindingLedgerV1)
 
 Findings are stable objects. A new reviewer cannot restart the issue list from scratch.

@@ -1797,11 +1797,17 @@ function runOpenClawBridge(task, env = process.env) {
     };
   }
   if (child.status !== 0) {
+    const maxTurns = maxTurnFailureEvidence(undefined, child.stdout, child.stderr);
     return {
       error: {
-        code: child.signal ? "openclaw_bridge_timeout" : "openclaw_bridge_failed",
+        code: child.signal ? "openclaw_bridge_timeout" : maxTurns ? "openclaw_bridge_max_turns" : "openclaw_bridge_failed",
         message: safeText(child.stderr, safeText(child.stdout, `openclaw exited with ${child.status ?? "unknown"}`)),
-        details: { exitCode: child.status, signal: child.signal ?? undefined, buildInfo: BUILD_INFO },
+        details: {
+          exitCode: child.status,
+          signal: child.signal ?? undefined,
+          buildInfo: BUILD_INFO,
+          ...(maxTurns ?? {}),
+        },
       },
     };
   }
@@ -1960,6 +1966,30 @@ function extractRunnerSubagentReport(parsed) {
   }
 }
 
+function maxTurnFailureEvidence(parsed, ...streams) {
+  const turnBudget = parsed?.claudeTurnBudget
+    && typeof parsed.claudeTurnBudget === "object"
+    && !Array.isArray(parsed.claudeTurnBudget)
+    && parsed.claudeTurnBudget.schemaVersion === "a2a.claude.turn-budget.v1"
+    && parsed.claudeTurnBudget.failureReason === "max_turns"
+      ? parsed.claudeTurnBudget
+      : undefined;
+  const text = streams.map((value) => safeText(value, "")).join("\n");
+  const classified = parsed?.terminalReason === "max_turns"
+    || turnBudget
+    || /(?:^|\n)terminal_reason=max_turns(?:\n|$)/.test(text);
+  if (!classified) return undefined;
+  const checkpointRef = parsed?.checkpointRef === "artifacts/claude-max-turn-checkpoint.json"
+    || turnBudget?.checkpointRef === "artifacts/claude-max-turn-checkpoint.json"
+      ? "artifacts/claude-max-turn-checkpoint.json"
+      : undefined;
+  return {
+    terminalReason: "max_turns",
+    ...(turnBudget ? { turnBudget } : {}),
+    ...(checkpointRef ? { checkpointRef } : {}),
+  };
+}
+
 function runDockerRunner(task, env = process.env) {
   // docker-first readiness guard: explicit docker mode or all-github scope requires
   // A2A_DOCKER_RUNNER_BIN to be set so the operator has consciously chosen a runner path.
@@ -2012,15 +2042,17 @@ function runDockerRunner(task, env = process.env) {
 
     if (child.status !== 0 || !parsed?.ok) {
       const openclawBootstrapLeakPaths = extractOpenClawBootstrapLeakPaths(parsed, stdout, stderr);
+      const maxTurns = maxTurnFailureEvidence(parsed, stdout, stderr);
       return {
         error: {
-          code: isTimeout ? "docker_runner_timeout" : "docker_runner_failed",
+          code: isTimeout ? "docker_runner_timeout" : maxTurns ? "docker_runner_max_turns" : "docker_runner_failed",
           message: parsed?.error || stderr || `a2a-docker-runner exited with code ${child.status}`,
           details: {
             runnerTask,
             exitCode: child.status,
             signal: child.signal ?? undefined,
             runnerResult: parsed,
+            ...(maxTurns ?? {}),
             ...(openclawBootstrapLeakPaths.length ? { openclawBootstrapLeakPaths } : {}),
           },
         },

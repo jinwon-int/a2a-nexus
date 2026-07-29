@@ -79,6 +79,54 @@ test("enforce mode denies a task whose intent is not allowed for its worker clas
   }
 });
 
+test("HTTP create returns the broker-owned fast-lane shadow record without changing queued lifecycle", async () => {
+  const server = await startTestServer({
+    enforceRequesterIdentity: false,
+    brokerPolicyFile: policyFile({
+      mode: "enforce",
+      rules: [{ id: "vps-analyze-only", workerClass: "vps", allowIntents: ["analyze"] }],
+    }),
+  });
+  try {
+    await registerWorker(server.baseUrl, "persistent");
+    const body = {
+      ...JSON.parse(taskBody("g1-fast-lane-shadow", "analyze")) as Record<string, unknown>,
+      payload: { mode: "analysis-only" },
+    };
+    const response = await fetch(`${server.baseUrl}/tasks`, {
+      method: "POST",
+      headers: jsonHeaders(),
+      body: JSON.stringify(body),
+    });
+    assert.equal(response.status, 201);
+    const created = await response.json() as {
+      status: string;
+      laneAssignment?: {
+        version: string;
+        mode: string;
+        decision: string;
+        reasonCodes: string[];
+      };
+    };
+    assert.equal(created.status, "queued");
+    assert.deepEqual(created.laneAssignment, {
+      version: "fast-lane.v1",
+      mode: "shadow",
+      decision: "fast",
+      reasonCodes: ["all_fast_conditions_met"],
+    });
+    assert.equal(
+      server.runtime.broker.listAuditEvents({
+        targetId: "g1-fast-lane-shadow",
+        action: "task.lane_assigned",
+      }).length,
+      1,
+    );
+  } finally {
+    await server.close();
+  }
+});
+
 test("warn mode logs a structural policy_warned audit and lets the task proceed (#1355)", async () => {
   const server = await startTestServer({
     enforceRequesterIdentity: false,

@@ -15,6 +15,13 @@ import {
   sourceCarrierRepo,
 } from "./lib/source-carriers.mjs";
 import { payloadWithRetrievalSnapshotSourceCarriers } from "./lib/retrieval-snapshot-carriers.mjs";
+import {
+  buildClaudeRuntimeArgs,
+} from "./lib/claude-runtime-flags.mjs";
+import {
+  attachClaudeModelTelemetry,
+  claudeInvocationModelTelemetry,
+} from "./lib/claude-model-telemetry.mjs";
 
 // ---------------------------------------------------------------------------
 // Process-tree timeout / session-isolation hardening (issue #1129)
@@ -175,9 +182,10 @@ const ANALYSIS_ALLOWED_TOOLS = CLAUDE_FINALIZER_ALLOWED_TOOLS;
 const ANALYSIS_DISALLOWED_TOOLS = CLAUDE_FINALIZER_DISALLOWED_TOOLS;
 const ANALYSIS_BRIDGE_CONTRACT_VERSION = "claude-a2a-analysis.v1";
 
-function buildReadOnlyClaudeArgs(prompt, maxTurns) {
+function buildReadOnlyClaudeArgs(prompt, maxTurns, flags = {}, env = process.env) {
   return [
     "-p", prompt,
+    ...buildClaudeRuntimeArgs(flags, env),
     "--output-format", "json",
     "--max-turns", String(maxTurns),
     ...buildClaudeFinalizerToolArgs(),
@@ -410,27 +418,6 @@ function normalizeResponse(parsed) {
   };
 }
 
-function attachClaudeModelTelemetry(response, flags, env = process.env) {
-  const requestedModel = safeText(flags.model, "");
-  const requestedThinking = safeText(flags.thinking, "");
-  const configuredRuntimeModel = safeText(
-    env.A2A_CLAUDE_CODE_RUNTIME_MODEL || env.CLAUDE_CODE_MODEL || env.ANTHROPIC_MODEL,
-    "",
-  );
-  return {
-    ...response,
-    bridgeAdapter: "claude_code",
-    bridgeContractVersion: ANALYSIS_BRIDGE_CONTRACT_VERSION,
-    requestedModel: requestedModel || undefined,
-    requestedThinking: requestedThinking || undefined,
-    actualRuntimeModel: configuredRuntimeModel || undefined,
-    modelInheritanceMode: "metadata_only",
-    claudeModelArgumentApplied: false,
-    modelInheritanceNote:
-      "Claude Code bridge preserves the A2A requested/effective worker model in prompt/result telemetry but does not pass it as a Claude CLI --model argument.",
-  };
-}
-
 function payloadFromStructuredEnv(env = process.env) {
   const payloadPath = safeText(env.A2A_ANALYSIS_PAYLOAD_FILE, "");
   if (!payloadPath) return {};
@@ -501,7 +488,7 @@ async function runClaude(prompt, flags, env = process.env) {
   const sessionWorkspace = mkdtempSync(join(tmpdir(), `a2a-analysis-${sanitizeSessionSegment(sessionId)}-`));
 
   try {
-    const args = buildReadOnlyClaudeArgs(prompt, maxTurns);
+    const args = buildReadOnlyClaudeArgs(prompt, maxTurns, flags, env);
     const child = await spawnWithProcessGroupKill(claudeBin, args, {
       env: buildClaudeChildEnv(env),
       cwd: sessionWorkspace,
@@ -514,7 +501,10 @@ async function runClaude(prompt, flags, env = process.env) {
       const signal = child.signal ? ` signal=${child.signal}` : "";
       throw new Error(`Claude Code exited with ${child.status}${signal}: ${childOutputExcerpt(child)}`);
     }
-    return child.stdout;
+    return {
+      stdout: child.stdout,
+      invocation: claudeInvocationModelTelemetry(args),
+    };
   } finally {
     rmSync(sessionWorkspace, { recursive: true, force: true });
   }
@@ -540,16 +530,24 @@ async function main() {
   }
 
   const prompt = buildClaudePrompt({ message, flags, payload });
-  let stdout;
+  let claudeRun;
   try {
-    stdout = await runClaude(prompt, flags, process.env);
+    claudeRun = await runClaude(prompt, flags, process.env);
   } catch (error) {
     die(error.message);
   }
 
   let response;
   try {
-    response = attachClaudeModelTelemetry(normalizeResponse(extractAnalysisJsonFromClaudeOutput(stdout)), flags, process.env);
+    response = attachClaudeModelTelemetry(
+      normalizeResponse(extractAnalysisJsonFromClaudeOutput(claudeRun.stdout)),
+      {
+        bridgeContractVersion: ANALYSIS_BRIDGE_CONTRACT_VERSION,
+        flags,
+        env: process.env,
+        invocation: claudeRun.invocation,
+      },
+    );
   } catch (error) {
     die(error.message);
   }

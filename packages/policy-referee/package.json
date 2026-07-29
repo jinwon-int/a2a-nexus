@@ -16,11 +16,15 @@
   },
   "files": [
     "dist",
+    "fixtures",
     "scripts",
     "README.md",
     "LICENSE",
     "package.json"
   ],
+  "bin": {
+    "a2a-policy-referee": "./dist/cli.js"
+  },
   "exports": {
     ".": {
       "types": "./dist/index.d.ts",
@@ -32,7 +36,11 @@
     "check": "tsc -p tsconfig.json --noEmit",
     "pretest": "npm run build",
     "test": "node --test dist/**/*.test.js",
+    "fixtures:replay": "node scripts/replay-golden-fixtures.mjs",
     "coverage:baseline": "npm run build && node scripts/coverage-baseline-report.mjs"
+  },
+  "engines": {
+    "node": ">=22.5"
   },
   "devDependencies": {
     "@types/node": "^22.20.1",
