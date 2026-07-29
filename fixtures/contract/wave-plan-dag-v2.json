@@ -1,0 +1,335 @@
+{
+  "fixtureKind": "WavePlanDagV2Fixture",
+  "fixtureVersion": 2,
+  "manifest": {
+    "kind": "WavePlanDagManifestV2",
+    "version": 2,
+    "proposalSource": "model",
+    "manifestAlias": "wpm_0123456789abcdef",
+    "stages": [
+      {
+        "stageId": "stg_00000050",
+        "manifestAlias": "mft_0000000000000050",
+        "reviewedManifestDigest": "sha256:7777777777777777777777777777777777777777777777777777777777777777",
+        "joinPolicy": "all_matching"
+      },
+      {
+        "stageId": "stg_00000030",
+        "manifestAlias": "mft_0000000000000030",
+        "reviewedManifestDigest": "sha256:4444444444444444444444444444444444444444444444444444444444444444",
+        "joinPolicy": "all_matching"
+      },
+      {
+        "stageId": "stg_00000010",
+        "manifestAlias": "mft_0000000000000010",
+        "reviewedManifestDigest": "sha256:2222222222222222222222222222222222222222222222222222222222222222",
+        "joinPolicy": "all_matching"
+      },
+      {
+        "stageId": "stg_00000060",
+        "manifestAlias": "mft_0000000000000060",
+        "reviewedManifestDigest": "sha256:8888888888888888888888888888888888888888888888888888888888888888",
+        "joinPolicy": "all_matching"
+      },
+      {
+        "stageId": "stg_00000020",
+        "manifestAlias": "mft_0000000000000020",
+        "reviewedManifestDigest": "sha256:3333333333333333333333333333333333333333333333333333333333333333",
+        "joinPolicy": "all_matching"
+      },
+      {
+        "stageId": "stg_00000040",
+        "manifestAlias": "mft_0000000000000040",
+        "reviewedManifestDigest": "sha256:6666666666666666666666666666666666666666666666666666666666666666",
+        "joinPolicy": "all_matching"
+      },
+      {
+        "stageId": "stg_00000035",
+        "manifestAlias": "mft_0000000000000035",
+        "reviewedManifestDigest": "sha256:5555555555555555555555555555555555555555555555555555555555555555",
+        "joinPolicy": "any_matching"
+      },
+      {
+        "stageId": "stg_00000000",
+        "manifestAlias": "mft_0000000000000000",
+        "reviewedManifestDigest": "sha256:1111111111111111111111111111111111111111111111111111111111111111",
+        "joinPolicy": "root"
+      }
+    ],
+    "edges": [
+      {
+        "fromStageId": "stg_00000040",
+        "toStageId": "stg_00000060",
+        "when": "gate_failed"
+      },
+      {
+        "fromStageId": "stg_00000020",
+        "toStageId": "stg_00000035",
+        "when": "any_terminal"
+      },
+      {
+        "fromStageId": "stg_00000010",
+        "toStageId": "stg_00000030",
+        "when": "gate_passed"
+      },
+      {
+        "fromStageId": "stg_00000000",
+        "toStageId": "stg_00000020",
+        "when": "any_terminal"
+      },
+      {
+        "fromStageId": "stg_00000030",
+        "toStageId": "stg_00000040",
+        "when": "any_terminal"
+      },
+      {
+        "fromStageId": "stg_00000010",
+        "toStageId": "stg_00000035",
+        "when": "any_terminal"
+      },
+      {
+        "fromStageId": "stg_00000040",
+        "toStageId": "stg_00000050",
+        "when": "gate_passed"
+      },
+      {
+        "fromStageId": "stg_00000020",
+        "toStageId": "stg_00000030",
+        "when": "gate_passed"
+      },
+      {
+        "fromStageId": "stg_00000000",
+        "toStageId": "stg_00000010",
+        "when": "any_terminal"
+      }
+    ],
+    "limits": {
+      "maxStages": 32,
+      "maxEdges": 64,
+      "maxDepth": 8,
+      "maxFanIn": 8,
+      "maxFanOut": 8
+    },
+    "autoDispatch": false,
+    "operatorAdvanceRequired": true,
+    "dryRunRequired": true,
+    "executionAuthority": "none",
+    "claimAuthority": "none",
+    "retryAuthority": "none",
+    "finalizerAuthority": "none",
+    "successAuthority": "none",
+    "liveAuthority": "none",
+    "manifestDigestDomain": "a2a.wave-plan-dag-v2.manifest.v2",
+    "manifestDigest": "sha256:65aeff14e59e01f976433a1f82d7ca0c398de06ec0d0aca6db56715aeb03006a"
+  },
+  "dryRuns": [
+    {
+      "request": {
+        "kind": "WavePlanDagDryRunRequestV2",
+        "version": 2,
+        "manifestAlias": "wpm_0123456789abcdef",
+        "manifestDigest": "sha256:65aeff14e59e01f976433a1f82d7ca0c398de06ec0d0aca6db56715aeb03006a",
+        "outcomes": [
+          {
+            "kind": "WavePlanDagStageOutcomeV2",
+            "version": 2,
+            "stageId": "stg_00000040",
+            "outcome": "gate_passed"
+          },
+          {
+            "kind": "WavePlanDagStageOutcomeV2",
+            "version": 2,
+            "stageId": "stg_00000020",
+            "outcome": "gate_passed"
+          },
+          {
+            "kind": "WavePlanDagStageOutcomeV2",
+            "version": 2,
+            "stageId": "stg_00000000",
+            "outcome": "gate_passed"
+          },
+          {
+            "kind": "WavePlanDagStageOutcomeV2",
+            "version": 2,
+            "stageId": "stg_00000030",
+            "outcome": "gate_passed"
+          },
+          {
+            "kind": "WavePlanDagStageOutcomeV2",
+            "version": 2,
+            "stageId": "stg_00000010",
+            "outcome": "gate_passed"
+          }
+        ]
+      },
+      "receipt": {
+        "kind": "WavePlanDagDryRunReceiptV2",
+        "version": 2,
+        "manifestAlias": "wpm_0123456789abcdef",
+        "manifestDigest": "sha256:65aeff14e59e01f976433a1f82d7ca0c398de06ec0d0aca6db56715aeb03006a",
+        "mode": "read_only_rehearsal",
+        "topologicalOrder": [
+          "stg_00000000",
+          "stg_00000010",
+          "stg_00000020",
+          "stg_00000030",
+          "stg_00000035",
+          "stg_00000040",
+          "stg_00000050",
+          "stg_00000060"
+        ],
+        "stages": [
+          {
+            "stageId": "stg_00000000",
+            "state": "terminal",
+            "reason": "gate_passed"
+          },
+          {
+            "stageId": "stg_00000010",
+            "state": "terminal",
+            "reason": "gate_passed"
+          },
+          {
+            "stageId": "stg_00000020",
+            "state": "terminal",
+            "reason": "gate_passed"
+          },
+          {
+            "stageId": "stg_00000030",
+            "state": "terminal",
+            "reason": "gate_passed"
+          },
+          {
+            "stageId": "stg_00000035",
+            "state": "ready",
+            "reason": "any_matching_satisfied"
+          },
+          {
+            "stageId": "stg_00000040",
+            "state": "terminal",
+            "reason": "gate_passed"
+          },
+          {
+            "stageId": "stg_00000050",
+            "state": "ready",
+            "reason": "all_matching_satisfied"
+          },
+          {
+            "stageId": "stg_00000060",
+            "state": "not_selected",
+            "reason": "all_matching_unsatisfied"
+          }
+        ],
+        "autoDispatch": false,
+        "operatorAdvanceRequired": true,
+        "dryRunRequired": true,
+        "executionAuthority": "none",
+        "claimAuthority": "none",
+        "retryAuthority": "none",
+        "finalizerAuthority": "none",
+        "successAuthority": "none",
+        "liveAuthority": "none",
+        "receiptDigestDomain": "a2a.wave-plan-dag-v2.dry-run-receipt.v2",
+        "receiptDigest": "sha256:c5542b9852ca8fc3e0d990d8f5ed848d6c50192331d9bafeb3b0cf695185b48b"
+      }
+    },
+    {
+      "request": {
+        "kind": "WavePlanDagDryRunRequestV2",
+        "version": 2,
+        "manifestAlias": "wpm_0123456789abcdef",
+        "manifestDigest": "sha256:65aeff14e59e01f976433a1f82d7ca0c398de06ec0d0aca6db56715aeb03006a",
+        "outcomes": [
+          {
+            "kind": "WavePlanDagStageOutcomeV2",
+            "version": 2,
+            "stageId": "stg_00000020",
+            "outcome": "gate_failed"
+          },
+          {
+            "kind": "WavePlanDagStageOutcomeV2",
+            "version": 2,
+            "stageId": "stg_00000000",
+            "outcome": "gate_passed"
+          },
+          {
+            "kind": "WavePlanDagStageOutcomeV2",
+            "version": 2,
+            "stageId": "stg_00000010",
+            "outcome": "gate_passed"
+          }
+        ]
+      },
+      "receipt": {
+        "kind": "WavePlanDagDryRunReceiptV2",
+        "version": 2,
+        "manifestAlias": "wpm_0123456789abcdef",
+        "manifestDigest": "sha256:65aeff14e59e01f976433a1f82d7ca0c398de06ec0d0aca6db56715aeb03006a",
+        "mode": "read_only_rehearsal",
+        "topologicalOrder": [
+          "stg_00000000",
+          "stg_00000010",
+          "stg_00000020",
+          "stg_00000030",
+          "stg_00000035",
+          "stg_00000040",
+          "stg_00000050",
+          "stg_00000060"
+        ],
+        "stages": [
+          {
+            "stageId": "stg_00000000",
+            "state": "terminal",
+            "reason": "gate_passed"
+          },
+          {
+            "stageId": "stg_00000010",
+            "state": "terminal",
+            "reason": "gate_passed"
+          },
+          {
+            "stageId": "stg_00000020",
+            "state": "terminal",
+            "reason": "gate_failed"
+          },
+          {
+            "stageId": "stg_00000030",
+            "state": "not_selected",
+            "reason": "all_matching_unsatisfied"
+          },
+          {
+            "stageId": "stg_00000035",
+            "state": "ready",
+            "reason": "any_matching_satisfied"
+          },
+          {
+            "stageId": "stg_00000040",
+            "state": "not_selected",
+            "reason": "all_matching_unsatisfied"
+          },
+          {
+            "stageId": "stg_00000050",
+            "state": "not_selected",
+            "reason": "all_matching_unsatisfied"
+          },
+          {
+            "stageId": "stg_00000060",
+            "state": "not_selected",
+            "reason": "all_matching_unsatisfied"
+          }
+        ],
+        "autoDispatch": false,
+        "operatorAdvanceRequired": true,
+        "dryRunRequired": true,
+        "executionAuthority": "none",
+        "claimAuthority": "none",
+        "retryAuthority": "none",
+        "finalizerAuthority": "none",
+        "successAuthority": "none",
+        "liveAuthority": "none",
+        "receiptDigestDomain": "a2a.wave-plan-dag-v2.dry-run-receipt.v2",
+        "receiptDigest": "sha256:67a0ce8a80825f40819cc796c2d421e296e858d32bb9ca6ea377620dc94b5631"
+      }
+    }
+  ]
+}
