@@ -763,6 +763,60 @@ fi
 export CODEX_HOME=/tmp/codex-home
 printf 'codex_cli=%s\n' "$(codex --version 2>/dev/null | head -n 1 || printf unknown)" | tee -a /work/artifacts/summary.txt
 printf 'model=%s reasoning=%s profile=codex\n' "$A2A_CODEX_MODEL" "$A2A_CODEX_REASONING_EFFORT" | tee -a /work/artifacts/summary.txt
+
+A2A_LIFECYCLE_GUARD_BIN=/work/a2a-codex-lifecycle-guard-bin
+mkdir -p "$A2A_LIFECYCLE_GUARD_BIN"
+cat > "$A2A_LIFECYCLE_GUARD_BIN/git" <<'A2A_CODEX_GIT_LIFECYCLE_GUARD'
+#!/usr/bin/env bash
+case "\${1:-}" in
+  add|commit|push|checkout|switch|reset|merge|rebase|tag)
+    printf "error=a2a_runner_contract_violation command=git_\${1:-}\n" >&2
+    exit 90
+    ;;
+  branch)
+    case "\${2:-}" in
+      ""|--show-current|-v|-vv|--list)
+        ;;
+      *)
+        printf "error=a2a_runner_contract_violation command=git_branch_mutation\n" >&2
+        exit 90
+        ;;
+    esac
+    ;;
+esac
+exec /usr/bin/git "$@"
+A2A_CODEX_GIT_LIFECYCLE_GUARD
+cat > "$A2A_LIFECYCLE_GUARD_BIN/gh" <<'A2A_CODEX_GH_LIFECYCLE_GUARD'
+#!/usr/bin/env bash
+case "\${1:-} \${2:-}" in
+  "pr create"|"pr merge"|"issue close"|"issue comment")
+    printf "error=a2a_runner_contract_violation command=gh_\${1:-}_\${2:-}\n" >&2
+    exit 90
+    ;;
+esac
+exec /usr/bin/gh "$@"
+A2A_CODEX_GH_LIFECYCLE_GUARD
+chmod 755 "$A2A_LIFECYCLE_GUARD_BIN/git" "$A2A_LIFECYCLE_GUARD_BIN/gh"
+export PATH="$A2A_LIFECYCLE_GUARD_BIN:$PATH"
+printf 'lifecycle_guard=enabled profile=codex\n' | tee -a /work/artifacts/summary.txt
+
+cat > /work/artifacts/codex-prompt.md <<'A2A_CODEX_PROMPT_EOF'
+You are running inside the A2A Docker Runner on a checked-out GitHub repository.
+
+Your only job is to edit files in the repository checkout. The outer runner owns
+the git and GitHub lifecycle after you exit.
+
+Rules:
+- Edit files only. Do not manage the GitHub or git lifecycle yourself.
+- Do not create or switch branches.
+- Do not run git add, git commit, git push, git reset, git merge, git rebase, or git tag.
+- Do not run gh pr create, gh pr merge, gh issue comment, or gh issue close.
+- The runner posts Start/PR/Done/Block evidence and creates or reuses the PR after you exit.
+- Prefer small focused changes and tests.
+
+The assignment follows:
+A2A_CODEX_PROMPT_EOF
+cat /work/artifacts/prompt.md >> /work/artifacts/codex-prompt.md
 timeout "$A2A_CODEX_TIMEOUT_SEC" codex exec \
   --skip-git-repo-check \
   --ephemeral \
@@ -772,7 +826,7 @@ timeout "$A2A_CODEX_TIMEOUT_SEC" codex exec \
   -c 'approval_policy="never"' \
   -c "model_reasoning_effort=\"$A2A_CODEX_REASONING_EFFORT\"" \
   -C "$PWD" \
-  - < /work/artifacts/prompt.md
+  - < /work/artifacts/codex-prompt.md
 `;
 }
 

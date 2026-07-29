@@ -598,8 +598,10 @@ function writeFakeGhStub(path) {
   const script = [
     "#!/usr/bin/env node",
     "import { spawnSync } from 'node:child_process';",
+    "import { readFileSync, writeFileSync } from 'node:fs';",
     "const args = process.argv.slice(2);",
     "const sub = args[0];",
+    "const statePath = new URL(import.meta.url).pathname + '.state.json';",
     "if (sub === 'repo' && args[1] === 'clone') {",
     "  const sep = args.indexOf('--');",
     "  const before = sep >= 0 ? args.slice(2, sep) : args.slice(2);",
@@ -609,9 +611,30 @@ function writeFakeGhStub(path) {
     "  const res = spawnSync(realGit, ['clone', '--depth=1', '--branch', 'main', `https://github.com/${repo}.git`, dir], { encoding: 'utf8' });",
     "  process.exit(res.status ?? 1);",
     "}",
+    "if (sub === 'pr' && args[1] === 'list') {",
+    "  const branch = args[args.indexOf('--head') + 1];",
+    "  const repo = args[args.indexOf('--repo') + 1];",
+    "  writeFileSync(statePath, JSON.stringify({ branch, repo }));",
+    "  const existing = process.env.FAKE_GH_EXISTING_PR_URL",
+    "    ? [{ url: process.env.FAKE_GH_EXISTING_PR_URL, headRefName: branch, baseRepository: { nameWithOwner: repo } }]",
+    "    : JSON.parse(process.env.FAKE_GH_EXISTING_PRS || '[]');",
+    "  process.stdout.write(JSON.stringify(existing));",
+    "  process.exit(0);",
+    "}",
     "if (sub === 'pr' && args[1] === 'create') {",
     "  const url = process.env.FAKE_GH_PR_URL || 'https://github.com/jinwon-int/a2a-nexus/pull/42';",
+    "  if (process.env.FAKE_GH_CREATE_COUNT_PATH) {",
+    "    let count = 0;",
+    "    try { count = Number(readFileSync(process.env.FAKE_GH_CREATE_COUNT_PATH, 'utf8')); } catch {}",
+    "    writeFileSync(process.env.FAKE_GH_CREATE_COUNT_PATH, String(count + 1));",
+    "  }",
     "  process.stdout.write(url + '\\n');",
+    "  process.exit(0);",
+    "}",
+    "if (sub === 'pr' && args[1] === 'view') {",
+    "  const url = args[2];",
+    "  const state = JSON.parse(readFileSync(statePath, 'utf8'));",
+    "  process.stdout.write(JSON.stringify({ url, headRefName: state.branch, baseRepository: { nameWithOwner: state.repo } }));",
     "  process.exit(0);",
     "}",
     "const realGh = process.env.REAL_GH_BIN || 'gh';",
@@ -680,6 +703,7 @@ test("SINGLE-SHOT happy path: 1 claude call, valid diff, deterministic plumbing 
   const fakeClaudePath = join(tempDir, "fake-claude.mjs");
   const promptCapturePath = join(tempDir, "captured-prompt.txt");
   const argsCapturePath = join(tempDir, "captured-args.json");
+  const createCountPath = join(tempDir, "gh-create-count.txt");
   try {
     writeFakeGitStub(fakeGitPath);
     writeFakeGhStub(fakeGhPath);
@@ -704,6 +728,8 @@ test("SINGLE-SHOT happy path: 1 claude call, valid diff, deterministic plumbing 
         A2A_CLAUDE_CODE_PATCH_MODE: "single-shot",
         FAKE_GIT_SEED_PATH: workSeed,
         FAKE_GH_PR_URL: "https://github.com/jinwon-int/a2a-nexus/pull/1020",
+        FAKE_GH_EXISTING_PR_URL: "https://github.com/jinwon-int/a2a-nexus/pull/1020",
+        FAKE_GH_CREATE_COUNT_PATH: createCountPath,
         CAPTURE_PROMPT_PATH: promptCapturePath,
         CAPTURE_ARGS_PATH: argsCapturePath,
         REAL_GIT_BIN: "git",
@@ -718,6 +744,7 @@ test("SINGLE-SHOT happy path: 1 claude call, valid diff, deterministic plumbing 
     assert.equal(payload.prUrl, "https://github.com/jinwon-int/a2a-nexus/pull/1020");
     assert.equal(payload.claudeCalls, 1, "happy path should only call claude once");
     assert.ok(payload.branch && payload.branch.startsWith("a2a/single-shot-"));
+    assert.equal(existsSync(createCountPath), false, "matching existing PR must be reused instead of creating a duplicate");
     assert.ok(Array.isArray(payload.filesChanged));
     assert.ok(payload.filesChanged.some((f) => f.endsWith("hello.txt")));
 

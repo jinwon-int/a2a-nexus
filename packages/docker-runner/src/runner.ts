@@ -197,15 +197,16 @@ export async function runTask(config: RunnerConfig, task: RunnerTask): Promise<R
   const artifacts = await listArtifacts(workDir);
   const stdout = redactAndBound(completed.stdout);
   const stderr = redactAndBound(completed.stderr);
-  const detectedPrUrl = extractPrUrl(completed.stdout);
-  const prUrl = !maxTurnsStopped && shouldTreatDetectedPrUrlAsCanonical(
+  const detectedPrUrls = extractPrUrls(completed.stdout);
+  const prUrlCandidates = !maxTurnsStopped && shouldTreatDetectedPrUrlAsCanonical(
     normalizedTask,
     completed.stdout,
     completed.stderr,
-    detectedPrUrl,
+    detectedPrUrls[0],
   )
-    ? detectedPrUrl
-    : undefined;
+    ? detectedPrUrls
+    : [];
+  const pushedBranch = extractPushedBranch(completed.stdout);
   const budgetStop = inferBudgetStopEvidence(stdout, stderr)
     ?? (maxTurnsStopped && claudeTurnBudget
       ? {
@@ -233,7 +234,6 @@ export async function runTask(config: RunnerConfig, task: RunnerTask): Promise<R
     status: budgetStop ? "budget_limited" : completed.timedOut ? "failed" : completed.code === 0 ? "done" : "failed",
     stdout,
     stderr,
-    prUrl,
     receiptTrace,
     postPatchVerification,
     diffHygiene,
@@ -249,19 +249,12 @@ export async function runTask(config: RunnerConfig, task: RunnerTask): Promise<R
     resultSummary.containerRetryEvidence = retryEvidence;
   }
 
-  // When a PR URL is detected in stdout but the container exited non-zero,
-  // treat it as success — the PR was created.  Post-PR cleanup / no-change
-  // checks that fail non-zero after PR creation are not patch failures.
-  // Parent: a2a-docker-runner#199
-  const prUrlRecoveredAfterNonzero = Boolean(
-    !maxTurnsStopped && prUrl && !completed.timedOut && completed.code !== 0,
-  );
   const result: RunnerResult = {
-    ok: !maxTurnsStopped && ((completed.code === 0 && !completed.timedOut) || prUrlRecoveredAfterNonzero),
+    ok: !maxTurnsStopped && completed.code === 0 && !completed.timedOut,
     taskId: task.id,
     status: completed.timedOut
       ? "timeout"
-      : !maxTurnsStopped && (completed.code === 0 || prUrlRecoveredAfterNonzero)
+      : !maxTurnsStopped && completed.code === 0
         ? "completed"
         : "failed",
     workDir,
@@ -274,13 +267,14 @@ export async function runTask(config: RunnerConfig, task: RunnerTask): Promise<R
     artifactManifest: manifest,
     resultSummary,
     runnerBuild: config.buildMetadata,
-    prUrl,
+    ...(prUrlCandidates.length > 0 ? { prUrlCandidates } : {}),
+    ...(pushedBranch ? { pushedBranch } : {}),
     ...(claudeTurnBudget ? { claudeTurnBudget } : {}),
     ...(maxTurnsStopped ? { terminalReason: "max_turns" as const } : {}),
     ...(checkpointRef ? { checkpointRef } : {}),
     error: maxTurnsStopped
       ? `Claude Code max-turn budget exhausted; task remains failed (terminal_reason=max_turns).${checkpointRef ? ` Safe checkpoint: ${checkpointRef}.` : ""}`
-      : (completed.code === 0 && !completed.timedOut) || prUrlRecoveredAfterNonzero
+      : completed.code === 0 && !completed.timedOut
         ? undefined
         : buildActionableError(engine, config.image, completed),
   };
@@ -298,19 +292,6 @@ export async function runTask(config: RunnerConfig, task: RunnerTask): Promise<R
     await pruneFailureOutputLogs(root, config.failureLogKeep);
   }
 
-  if (prUrlRecoveredAfterNonzero) {
-    result.resultSummary = {
-      ...result.resultSummary!,
-      status: "done",
-    };
-    result.artifactManifest = {
-      ...result.artifactManifest!,
-      status: "done",
-      summary: `Runner recovered PR evidence after post-PR no-change failure: ${prUrl}`,
-    };
-    await writeArtifactManifest(workDir, result.artifactManifest);
-  }
-
   if (isMissingPatchCommand(stdout, stderr)) {
     result.ok = false;
     result.status = "failed";
@@ -321,14 +302,47 @@ export async function runTask(config: RunnerConfig, task: RunnerTask): Promise<R
   const github = await collectGitHubEvidence(config, normalizedTask, result);
   if (github) {
     result.github = github;
-    // Backward-compatible: promote to top-level prUrl if github.prUrl is set.
-    if (github.prUrl && !result.prUrl) result.prUrl = github.prUrl;
+    // Only metadata-verified PR evidence becomes canonical at the top level.
+    if (github.prUrl) {
+      result.prUrl = github.prUrl;
+      result.artifactManifest = {
+        ...result.artifactManifest!,
+        prUrl: github.prUrl,
+        ...(github.branch ? { branch: github.branch } : {}),
+      };
+    }
+    // Non-zero recovery is allowed only after GitHub confirms that the PR
+    // targets the declared repo and uses the exact explicitly pushed branch.
+    const prUrlRecoveredAfterNonzero = Boolean(
+      !maxTurnsStopped
+      && github.outcome === "pr"
+      && github.prUrl
+      && !completed.timedOut
+      && completed.code !== 0,
+    );
+    if (prUrlRecoveredAfterNonzero) {
+      result.ok = true;
+      result.status = "completed";
+      result.error = undefined;
+      result.resultSummary = {
+        ...result.resultSummary!,
+        status: "done",
+      };
+      result.artifactManifest = {
+        ...result.artifactManifest!,
+        status: "done",
+        summary: `Runner recovered verified PR evidence after post-PR failure: ${github.prUrl}`,
+      };
+      if (result.github.validation) result.github.validation.status = "completed";
+    }
     // Fail closed: GitHub patch tasks must end with PR/Done/Block evidence.
-    if (github.outcome === "missing_evidence") {
+    if (github.outcome === "missing_evidence" || github.outcome === "evidence_url_unverified") {
       result.ok = false;
       result.status = "failed";
       if (!maxTurnsStopped) {
-        result.error = "GitHub patch task completed without PR/Done/Block evidence. Treating as failed closed until canonical evidence is available.";
+        result.error = github.outcome === "evidence_url_unverified"
+          ? "evidence_url_unverified: reported PR evidence did not match the declared repository and explicitly pushed branch."
+          : "GitHub patch task completed without PR/Done/Block evidence. Treating as failed closed until canonical evidence is available.";
       }
       if (result.github.validation) {
         result.github.validation.status = result.status;
@@ -551,7 +565,7 @@ function inferEvidenceFailureCategory(result: RunnerResult): RunnerEvidenceHints
   if (outcome === "succeeded_no_changes_with_done_evidence") return "no_changes_allowed";
   if (outcome === "blocked_no_changes_with_evidence") return outcome;
   if (outcome === "failed_infrastructure") return outcome;
-  if (outcome === "block" || outcome === "budget_limited" || outcome === "timed_out" || outcome === "missing_evidence" || outcome === "worker_profile_blocked") return outcome;
+  if (outcome === "block" || outcome === "budget_limited" || outcome === "timed_out" || outcome === "missing_evidence" || outcome === "evidence_url_unverified" || outcome === "worker_profile_blocked") return outcome;
   if (result.status === "timeout") return "timed_out";
   if (result.resultSummary?.status === "budget_limited" || result.artifactManifest?.status === "budget_limited") return "budget_limited";
   if (isResourceLimitedFailure(result)) return "resource_limited";
@@ -1789,8 +1803,56 @@ export function shouldTreatDetectedPrUrlAsCanonical(
 }
 
 export function extractPrUrl(stdout: string): string | undefined {
-  // owner/repo are single path segments — using [^\s]+ for them let the match
-  // greedily span two adjacent URLs and capture a wrong PR, which drives the
-  // non-zero-exit -> success recovery and can flip a failed run to "completed".
-  return stdout.match(/https:\/\/github\.com\/[A-Za-z0-9_.-]+\/[A-Za-z0-9_.-]+\/pull\/\d+/)?.[0];
+  return extractPrUrls(stdout)[0];
+}
+
+export function extractPrUrls(stdout: string): string[] {
+  // Candidate order is not authority. collectGitHubEvidence checks every
+  // distinct URL against GitHub metadata and the explicitly pushed branch.
+  return [...new Set(Array.from(
+    stdout.matchAll(/https:\/\/github\.com\/[A-Za-z0-9_.-]+\/[A-Za-z0-9_.-]+\/pull\/\d+/g),
+    (match) => match[0],
+  ))];
+}
+
+export function extractPushedBranch(stdout: string): string | undefined {
+  try {
+    return findPushedBranch(JSON.parse(stdout));
+  } catch {
+    return undefined;
+  }
+}
+
+function findPushedBranch(value: unknown, depth = 0): string | undefined {
+  if (depth > 8 || value == null) return undefined;
+  if (typeof value === "string") {
+    try {
+      return findPushedBranch(JSON.parse(value), depth + 1);
+    } catch {
+      return undefined;
+    }
+  }
+  if (Array.isArray(value)) {
+    for (const entry of value) {
+      const branch = findPushedBranch(entry, depth + 1);
+      if (branch) return branch;
+    }
+    return undefined;
+  }
+  if (typeof value !== "object") return undefined;
+  const record = value as Record<string, unknown>;
+  if (
+    typeof record.branch === "string"
+    && record.branch.trim().length > 0
+    && record.branch.length <= 200
+    && !/[\r\n]/.test(record.branch)
+    && (typeof record.prUrl === "string" || record.status === "pr_opened")
+  ) {
+    return record.branch.trim();
+  }
+  for (const key of ["payloads", "text", "result", "content", "response", "output", "value"]) {
+    const branch = findPushedBranch(record[key], depth + 1);
+    if (branch) return branch;
+  }
+  return undefined;
 }

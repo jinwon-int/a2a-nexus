@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { mkdtempSync, writeFileSync } from "node:fs";
+import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { buildBlockCommentBody, buildCommentLedger, buildDoneCommentBody, buildStartCommentBody, collectGitHubEvidence, postStartComment } from "./github-evidence.js";
@@ -26,13 +26,55 @@ const baseTask: NormalizedRunnerTask = {
   taskBrief: "Produce compact terminal notice evidence without leaking raw logs.",
 };
 
+async function collectWithPullMetadata(
+  task: NormalizedRunnerTask,
+  result: Parameters<typeof collectGitHubEvidence>[2],
+  metadataByUrl?: Record<string, { baseRepository: { nameWithOwner: string }; headRefName: string; url?: string }>,
+  preserveMissingPushedBranch = false,
+) {
+  const dir = mkdtempSync(join(tmpdir(), "a2a-pr-evidence-"));
+  const tokenFile = join(dir, "hosts.yml");
+  writeFileSync(tokenFile, "oauth_token: test-token\n");
+  const realFetch = globalThis.fetch;
+  const candidates = result.prUrlCandidates ?? (result.prUrl ? [result.prUrl] : []);
+  const expectedRepo = task.repo ?? "jinwon-int/test-repo";
+  const expectedBranch = result.pushedBranch ?? "a2a/test-branch";
+  globalThis.fetch = (async (_url: string | URL | Request, init?: RequestInit) => {
+    const body = JSON.parse(String(init?.body ?? "{}")) as { variables?: { owner?: string; repo?: string; number?: number } };
+    const candidateUrl = `https://github.com/${body.variables?.owner}/${body.variables?.repo}/pull/${body.variables?.number}`;
+    const configured = metadataByUrl?.[candidateUrl];
+    const pullRequest = configured
+      ? { ...configured, url: configured.url ?? candidateUrl }
+      : candidates.includes(candidateUrl)
+        ? {
+            url: candidateUrl,
+            headRefName: expectedBranch,
+            baseRepository: { nameWithOwner: expectedRepo },
+          }
+        : null;
+    return new Response(JSON.stringify({ data: { repository: { pullRequest } } }), { status: 200 });
+  }) as typeof globalThis.fetch;
+  try {
+    return await collectGitHubEvidence(
+      { ...baseConfig, githubTokenFile: tokenFile },
+      task,
+      preserveMissingPushedBranch
+        ? result
+        : { ...result, pushedBranch: result.pushedBranch ?? expectedBranch },
+    );
+  } finally {
+    globalThis.fetch = realFetch;
+    rmSync(dir, { recursive: true, force: true });
+  }
+}
+
 test("returns undefined when mode is not github-evidence mode", async () => {
   const task: NormalizedRunnerTask = { ...baseTask, mode: "chat" };
   const result = {
     ok: true, taskId: "t1", status: "completed" as const, workDir: "/tmp",
     exitCode: 0, signal: null, stdout: "", stderr: "", artifacts: [],
   };
-  const evidence = await collectGitHubEvidence(baseConfig, task, result);
+  const evidence = await collectWithPullMetadata(task, result);
   assert.equal(evidence, undefined);
 });
 
@@ -42,7 +84,7 @@ test("returns undefined when mode is absent", async () => {
     ok: true, taskId: "t1", status: "completed" as const, workDir: "/tmp",
     exitCode: 0, signal: null, stdout: "", stderr: "", artifacts: [],
   };
-  const evidence = await collectGitHubEvidence(baseConfig, task, result);
+  const evidence = await collectWithPullMetadata(task, result);
   assert.equal(evidence, undefined);
 });
 
@@ -53,7 +95,7 @@ test("recognizes propose_patch mode as evidence mode", async () => {
     exitCode: 0, signal: null, stdout: "PR created: https://github.com/jinwon-int/test-repo/pull/42", stderr: "", artifacts: [],
     prUrl: "https://github.com/jinwon-int/test-repo/pull/42",
   };
-  const evidence = await collectGitHubEvidence(baseConfig, task, result);
+  const evidence = await collectWithPullMetadata(task, result);
   assert.ok(evidence);
   assert.equal(evidence?.prUrl, "https://github.com/jinwon-int/test-repo/pull/42");
 });
@@ -96,7 +138,7 @@ test("extracts prUrl into release-gate evidence on success", async () => {
     artifacts: [],
     prUrl: "https://github.com/jinwon-int/test-repo/pull/99",
   };
-  const evidence = await collectGitHubEvidence(baseConfig, task, result);
+  const evidence = await collectWithPullMetadata(task, result);
   assert.ok(evidence);
   assert.equal(evidence?.schemaVersion, "a2a.runner.github-evidence.v1");
   assert.equal(evidence?.repo, "jinwon-int/test-repo");
@@ -130,7 +172,7 @@ test("fails closed when terminal evidence lacks required release-gate fields", a
     prUrl: "https://github.com/jinwon-int/test-repo/pull/99",
   };
 
-  const evidence = await collectGitHubEvidence(baseConfig, task, result);
+  const evidence = await collectWithPullMetadata(task, result);
   assert.equal(evidence?.outcome, "missing_evidence");
   assert.deepEqual(evidence?.validationErrors, ["missing_or_unsafe_worker"]);
 });
@@ -146,8 +188,117 @@ test("fails closed when terminal evidence URL is unsafe", async () => {
   };
 
   const evidence = await collectGitHubEvidence(baseConfig, task, result);
-  assert.equal(evidence?.outcome, "missing_evidence");
-  assert.deepEqual(evidence?.validationErrors, ["missing_or_unsafe_terminal_url"]);
+  assert.equal(evidence?.outcome, "evidence_url_unverified");
+  assert.equal(evidence?.validationErrors, undefined);
+});
+
+const nexusTask: NormalizedRunnerTask = {
+  ...baseTask,
+  repo: "jinwon-int/a2a-nexus",
+  issueUrl: "https://github.com/jinwon-int/a2a-nexus/issues/1670",
+};
+
+test("rejects archived wrong-repo PR evidence", async () => {
+  const url = "https://github.com/jinwon-int/a2a-nexus-archive/pull/44";
+  const evidence = await collectWithPullMetadata(nexusTask, {
+    ok: false, taskId: "t1", status: "failed", workDir: "/tmp",
+    exitCode: 2, signal: null, stdout: url, stderr: "", artifacts: [],
+    prUrlCandidates: [url],
+    pushedBranch: "a2a/single-shot-archive-check",
+  }, {
+    [url]: {
+      baseRepository: { nameWithOwner: "jinwon-int/a2a-nexus-archive" },
+      headRefName: "a2a/single-shot-archive-check",
+    },
+  });
+
+  assert.equal(evidence?.outcome, "evidence_url_unverified");
+  assert.equal(evidence?.prUrl, undefined);
+});
+
+test("rejects right-repo PR evidence with the wrong head", async () => {
+  const url = "https://github.com/jinwon-int/a2a-nexus/pull/1671";
+  const evidence = await collectWithPullMetadata(nexusTask, {
+    ok: false, taskId: "t1", status: "failed", workDir: "/tmp",
+    exitCode: 3, signal: null, stdout: url, stderr: "", artifacts: [],
+    prUrlCandidates: [url],
+    pushedBranch: "a2a/single-shot-active-head",
+  }, {
+    [url]: {
+      baseRepository: { nameWithOwner: "jinwon-int/a2a-nexus" },
+      headRefName: "a2a/single-shot-other-head",
+    },
+  });
+
+  assert.equal(evidence?.outcome, "evidence_url_unverified");
+  assert.equal(evidence?.prUrl, undefined);
+});
+
+test("binds a randomized cccb single-shot head from the structured bridge envelope", async () => {
+  const url = "https://github.com/jinwon-int/a2a-nexus/pull/1672";
+  const branch = "a2a/single-shot-mk9z7q-r4nd0m";
+  const stdout = JSON.stringify({
+    payloads: [{ text: JSON.stringify({ status: "pr_opened", branch, prUrl: url }) }],
+  });
+  const evidence = await collectWithPullMetadata(nexusTask, {
+    ok: true, taskId: "t1", status: "completed", workDir: "/tmp",
+    exitCode: 0, signal: null, stdout, stderr: "", artifacts: [],
+    prUrlCandidates: [url],
+  }, {
+    [url]: {
+      baseRepository: { nameWithOwner: "jinwon-int/a2a-nexus" },
+      headRefName: branch,
+    },
+  }, true);
+
+  assert.equal(evidence?.outcome, "pr");
+  assert.equal(evidence?.branch, branch);
+  assert.equal(evidence?.prUrl, url);
+});
+
+test("ignores duplicate self-PR output and selects the PR matching the bridge-pushed branch", async () => {
+  const selfPr = "https://github.com/jinwon-int/a2a-nexus-archive/pull/88";
+  const runnerPr = "https://github.com/jinwon-int/a2a-nexus/pull/1673";
+  const branch = "a2a/single-shot-owned-by-bridge";
+  const evidence = await collectWithPullMetadata(nexusTask, {
+    ok: false, taskId: "t1", status: "failed", workDir: "/tmp",
+    exitCode: 2, signal: null,
+    stdout: `agent claimed ${selfPr}\nbridge result ${runnerPr}`,
+    stderr: "", artifacts: [],
+    prUrlCandidates: [selfPr, runnerPr],
+    pushedBranch: branch,
+  }, {
+    [selfPr]: {
+      baseRepository: { nameWithOwner: "jinwon-int/a2a-nexus-archive" },
+      headRefName: "agent/self-pr",
+    },
+    [runnerPr]: {
+      baseRepository: { nameWithOwner: "jinwon-int/a2a-nexus" },
+      headRefName: branch,
+    },
+  });
+
+  assert.equal(evidence?.outcome, "pr");
+  assert.equal(evidence?.prUrl, runnerPr);
+});
+
+test("accepts a valid PR match for the declared repo and explicit pushed branch", async () => {
+  const url = "https://github.com/jinwon-int/a2a-nexus/pull/1674";
+  const branch = "fix/evidence-binding";
+  const evidence = await collectWithPullMetadata(nexusTask, {
+    ok: true, taskId: "t1", status: "completed", workDir: "/tmp",
+    exitCode: 0, signal: null, stdout: url, stderr: "", artifacts: [],
+    prUrlCandidates: [url],
+    pushedBranch: branch,
+  }, {
+    [url]: {
+      baseRepository: { nameWithOwner: "jinwon-int/a2a-nexus" },
+      headRefName: branch,
+    },
+  });
+
+  assert.equal(evidence?.outcome, "pr");
+  assert.equal(evidence?.prUrl, url);
 });
 
 test("keeps long multiline github-verify prompt safe for release-gate metadata", async () => {
@@ -468,7 +619,7 @@ test("done comment includes manifest summary and bounded command log summary", (
 // ---------------------------------------------------------------------------
 
 test("classifies no-change-allowed marker without Done/Block URL as missing evidence", async () => {
-  const evidence = await collectGitHubEvidence(baseConfig, baseTask, {
+  const evidence = await collectWithPullMetadata(baseTask, {
     ok: true,
     taskId: "t1",
     status: "completed",
@@ -487,7 +638,7 @@ test("classifies no-change-allowed marker without Done/Block URL as missing evid
 });
 
 test("classifies openclaw_no_changes=allowed marker without Done/Block URL as missing evidence", async () => {
-  const evidence = await collectGitHubEvidence(baseConfig, baseTask, {
+  const evidence = await collectWithPullMetadata(baseTask, {
     ok: true,
     taskId: "t1",
     status: "completed",
@@ -583,7 +734,7 @@ test("no-changes-allowed marker without terminal evidence stays missing evidence
 test("no-changes-allowed marker absent does not affect normal classification", async () => {
   // A normal successful PR task without the no-changes marker should still
   // classify as "pr" not as a no-change outcome.
-  const evidence = await collectGitHubEvidence(baseConfig, baseTask, {
+  const evidence = await collectWithPullMetadata(baseTask, {
     ok: true,
     taskId: "t1",
     status: "completed",
@@ -776,7 +927,7 @@ test("buildCommentLedger empty when no comments", () => {
 
 test("collectGitHubEvidence includes commentLedger in evidence", async () => {
   const startUrl = "https://github.com/jinwon-int/test-repo/issues/1#issuecomment-111";
-  const evidence = await collectGitHubEvidence(baseConfig, baseTask, {
+  const evidence = await collectWithPullMetadata(baseTask, {
     ok: true,
     taskId: "t1",
     status: "completed",
