@@ -1,7 +1,7 @@
 # Analyze: Shared-State and HA Contract
 
-> **Status:** repository analysis for the proposed documentation-only packet.
-> Refs #1504.
+> **Status:** repository analysis for the proposed packet and its completed
+> bounded Phase 1 contract/parser/evaluator/projector slices. Refs #1504.
 
 ## Inputs
 
@@ -18,6 +18,8 @@
 - `packages/broker/docs/process-local-security-limits.md`.
 - `packages/broker/docs/persistence-durability.md`.
 - `docs/known-limitations.md`.
+- `packages/broker/src/shared-state-storage-contract-v1.ts` and the completed
+  keyspace/time/idempotency/outbox pure contract slices.
 
 ## Current-state findings
 
@@ -31,6 +33,7 @@
 | Outbox | Stable event IDs, in-memory insertion order, snapshot/hot-table persistence, cursor reconciliation, and receipt-confirmed ACK semantics exist. | Restart durability exists in bounded single-writer mode; cross-process sequence allocation and domain+outbox conformance still need proof. |
 | Artifact/audit | Runtime repository seams exist for artifact metadata and append-only audit events; SQLite hot tables can back them. | These are suitable source candidates for a claim-graph projection, but no typed claim graph exists. |
 | Startup/readiness | Startup validates security configuration. `/livez` and `/health` exist; there is no shared-state grade/fence contract or `/readyz` topology gate. | Runtime implementation must add a non-serving unsupported-topology path before HA claims. |
+| Observability contract | The existing closed storage contract has a pure `SharedStateHealthProjectionV1` declaration parser, but no runtime collector or route binding. | The bounded observability slice may validate that declaration and project synthetic aggregates without changing runtime health or readiness. |
 
 ## Requirement coverage
 
@@ -44,6 +47,9 @@
 - [x] Replay/rate-limit reset risk has a secret-safe signal contract.
 - [x] Claim-graph source/projection/completeness/rollback semantics are folded
   into #1504.
+- [x] Public readiness, public health aggregates, and separately authorized
+  operator aggregates have one closed V1 catalog, pure parser/projectors,
+  aggregation floors, suppression rules, and recursive negative leak fixtures.
 - [x] Deterministic local tests, migration stages, cutover, and rollback are
   planned.
 - [x] Live and approval-sensitive actions remain separate.

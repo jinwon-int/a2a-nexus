@@ -1,10 +1,11 @@
 # Shared-State and HA Contract
 
 > **Status:** proposed spec-first packet with bounded Phase 1
-> contract/parser/evaluator source slices. Approval of this packet is required
-> before runtime implementation. Nothing in this packet claims that a shared
-> backend, HA mode, adapter implementation, conformance harness, migration, or
-> rollout exists.
+> contract/parser/evaluator/projector source slices, including the closed
+> observability catalog. Approval of this packet is required before runtime
+> implementation. Nothing in this packet claims that a shared backend, HA
+> mode, adapter implementation, conformance harness, runtime health signal,
+> endpoint binding, migration, or rollout exists.
 >
 > **Reference:** Refs #1504.
 
@@ -777,7 +778,8 @@ The planned `stateContract` health/readiness projection is:
       "durability": "volatile",
       "continuity": "reset",
       "resetRisk": true,
-      "epochAgeSec": 120,
+      "epochAgeBand": "under-5m",
+      "pressureBand": "low",
       "lastResetReason": "process_start"
     },
     "rateLimit": {
@@ -785,7 +787,8 @@ The planned `stateContract` health/readiness projection is:
       "durability": "volatile",
       "continuity": "reset",
       "resetRisk": true,
-      "epochAgeSec": 120,
+      "epochAgeBand": "under-5m",
+      "pressureBand": "low",
       "lastResetReason": "process_start"
     }
   }
@@ -799,6 +802,89 @@ bucket keys, requester/worker/task/lease identities, event/receipt IDs,
 payloads, claim text, artifact paths, credentials, database locations, or
 provider identifiers. Small-cardinality aggregates SHOULD be coarsened where
 they could reveal one actor.
+
+### 7.4 Closed observability catalog and projection boundaries
+
+The backend-neutral catalog identifier is
+`a2a.shared-state.observability/v1`. Its closed vocabulary and canonical
+machine-readable catalog are in
+`packages/broker/src/shared-state-observability-v1-values.ts`; its parsers and
+pure projectors are in
+`packages/broker/src/shared-state-observability-v1.ts`; and its public
+synthetic fixtures are
+`packages/broker/fixtures/shared-state-storage/observability-v1-golden.json`
+and
+`packages/broker/fixtures/shared-state-storage/observability-v1-negative-leaks.json`.
+
+These artifacts consume synthetic candidate objects only. They do not read a
+clock, store, process, route, configuration, migration, or runtime state. They
+do not authorize an operator. The candidate parser invokes only the existing
+pure `SharedStateHealthProjectionV1` declaration parser and requires matching
+claim-graph completeness. No `/health` or `/readyz` route or current runtime
+callsite imports this catalog.
+
+The planned boundaries are separate:
+
+| Boundary | Closed visibility | Exact aggregate content |
+| --- | --- | --- |
+| Planned public `/readyz` state-contract member | `public-readiness-aggregate` | `ready`, effective grade, and at most 12 existing closed readiness reason codes. It contains no diagnostic counts. |
+| Planned public `/health` `stateContract` member | `public-aggregate` | Configured/effective grade, default/serving booleans, readiness reasons, generic adapter class/lifecycle/durability/writer model/migration state, `one|multiple` expected-process band, ownership, clock safety/continuity, replay/rate reset risk, age/pressure bands, graph completeness, and public-floor aggregate domain summaries. |
+| Separately authorized operator aggregate | `authorized-operator-aggregate` | The same non-identifying state-contract summary plus operator-floor aggregate counts, coarse rate policy bands, retention policy class, non-identifying outbox and projection high-water classes, lag/age bands, failed-batch/rollback aggregates, and other pinned aggregate diagnostics. Authorization is required outside the pure projector before a future runtime may expose it. |
+
+The catalog inventories deployment/topology, readiness, adapter
+lifecycle/ownership, clock continuity/migration, replay, rate limit,
+lease/claim, idempotency, outbox, and claim-graph projection. V1 has no caller
+extension, wildcard, arbitrary label, or free-form reason field.
+
+All aggregate counts are integers from `0` through `1_000_000_000`. Zero is
+safe to report. A public count is exact only when its aggregate value is at
+least five; an authorized operator count is exact only when its aggregate
+value is at least three. A nonzero value below the applicable floor becomes
+`{"state":"suppressed","value":null}`. If one member of a count group is
+suppressed, every nonzero member of that group is suppressed, so totals and
+subtotals cannot reconstruct the small value by subtraction. Unavailable and
+not-applicable domains carry exactly one enumerated reason and no metric
+fields:
+
+- unavailable reasons are `adapter-unavailable`, `unsupported-topology`,
+  `unsafe-clock`, `incomplete-migration`, `lost-fence`, and
+  `collection-failed`;
+- not-applicable reasons are `primitive-not-implemented` and
+  `grade-not-applicable`; and
+- an `unknown` band means the domain was observed but could not be safely
+  classified. It is not an alias for absent or unavailable.
+
+The closed coarse vocabularies are:
+
+- pressure: `none|low|medium|high|critical|unknown`;
+- age: `under-1m|under-5m|under-1h|under-1d|one-day-or-more|unknown`;
+- lag: `caught-up|under-10|under-100|under-1000|1000-or-more|unknown`;
+- non-identifying high-water class:
+  `empty|active-low|active-medium|active-high|unknown`;
+- rate window:
+  `under-1m|1m-to-under-5m|5m-to-under-1h|1h-or-more|unknown`; and
+- rate limit:
+  `under-10|10-to-under-100|100-to-under-1000|1000-or-more|unknown`.
+
+Exact process count, schema version, ages, timestamps, stream sequence,
+source/checkpoint high-water, and every small-cardinality grouping are absent
+from successful public/operator serialization. Raw and hashed/pseudonymous
+identities are equally forbidden. The recursive preflight rejects raw IDs,
+digests, nonces, requester/IP/bucket data, task/worker/provider/owner data,
+stream/event/receipt data, claim/graph/source/provenance content,
+artifact/worktree/database paths or DSNs, credentials/tokens/cookies/headers,
+payloads, free-form messages/reasons, arbitrary maps/labels/extensions,
+top-key/task/worker lists, exact time/high-water fields, prototype keys, and
+case/Unicode confusables of those field names.
+
+The stable parser codes are `invalid_type`, `invalid_value`, `invalid_enum`,
+`invalid_discriminant`, `unknown_field`, `unknown_catalog_version`,
+`out_of_range`, `duplicate_value`, `forbidden_observability_field`,
+`health_declaration_invalid`, `health_observation_mismatch`, and
+`unsafe_aggregate_combination`. Each error carries the exact failing path.
+Unknown versions, fields, types, ranges, enum values, availability shapes,
+health declarations, graph completeness combinations, or reconstructive
+count combinations fail closed.
 
 ## 8. Acceptance boundaries
 
