@@ -44,7 +44,7 @@ export const BUDGETS = {
   scriptsMjs: 172, // +2 from 170: #1601 dist import resolution — scripts/check-dist-import-resolution.mjs (guard) + its tests. Deliberate: `node --check` parses without resolving, so 17 operator scripts were dead with ERR_MODULE_NOT_FOUND and every gate stayed green; no existing engine resolves specifiers, so this could not be folded in.
   rootNpmScripts: 101, // -1 from 102: #1503 Wave 0 retires the check:mobileAlpha-hermes-worker-profile alias (check:hermes already runs the same test file directly).
   brokerNpmScripts: 54, // -43 from 95: #1503 Wave 2 collapses the orchestration-intelligence (21) and rollout-preflight (24→22; rollout_guard and worker_signature_rollout_preflight stay direct as manifest-required gates) aliases into the orchestration/rollout dispatchers sharing scripts/lib/operator-dispatch.mjs; scan:public-readiness stays direct (CI parity requiredScript).
-  brokerCoreModules: 224, // #1601: non-test .ts under packages/broker/src/core, recursive. Frozen after PR #1657 removed 24 unreferenced modules (248 → 224). core/ is nearly flat, so file count is the honest proxy for how much surface a new contributor has to hold.
+  brokerCoreModules: 225, // +1 from 224: #1635 adds the explicitly task-lineage-qualified, rebuildable read projection; keeping this boundary in its own core module avoids coupling read-only graph traversal to task mutation or ReviewLineage code.
   brokerCoreCeremonyModules: 44, // #1601: the approval/rehearsal/preflight/dry-run/ingestor subset of the above. Frozen, never raised — a new approval step belongs in the broker policy document as data, not as a module. Lower this as ceremony modules are consolidated or removed.
 };
 

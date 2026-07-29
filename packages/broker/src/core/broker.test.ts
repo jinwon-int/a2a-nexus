@@ -906,7 +906,7 @@ test("broker exposes compact diagnostics without task payload expansion", () => 
   assert.equal(diagnostics.tasks.stale, 1);
   assert.equal(diagnostics.workers.total, 1);
   assert.equal(diagnostics.workers.stale, 1);
-  assert.equal(diagnostics.audit.total, 3);
+  assert.equal(diagnostics.audit.total, 4);
   assert.equal(diagnostics.runtimeRepositories.tasks, false);
   assert.equal(Object.hasOwn(diagnostics, "task"), false);
   assert.equal(Object.hasOwn(diagnostics, "tasksById"), false);
@@ -1089,7 +1089,7 @@ test("broker profiling hooks receive compact persistence samples", () => {
       hotValidations: 0,
       hotTasks: 1,
       hotTombstones: 0,
-      hotAuditEvents: 1,
+      hotAuditEvents: 2,
       hotWorkers: 0,
       hotTerminalOutboxEvents: 0,
     });
@@ -1636,7 +1636,7 @@ test("broker passes dirty task, audit, and worker hints to state store saves", (
 
   const createHints = saveHints.at(-1);
   assert.deepEqual(createHints?.hotTasks?.map((item) => item.id), [task.id]);
-  assert.deepEqual(createHints?.hotAuditEvents?.map((item) => item.action), ["task.created"]);
+  assert.deepEqual(createHints?.hotAuditEvents?.map((item) => item.action), ["task.created", "task.lane_assigned"]);
 
   broker.claimTask(task.id, "worker-a");
   const claimHints = saveHints.at(-1);

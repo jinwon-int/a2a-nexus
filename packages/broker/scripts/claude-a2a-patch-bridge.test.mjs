@@ -1,11 +1,18 @@
 import assert from "node:assert/strict";
 import { spawnSync, execFileSync } from "node:child_process";
-import { chmodSync, existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { test } from "node:test";
 
-import { buildFanoutSubagentPrompt, describeHunkHeaderMismatches, diagnoseHunkHeaderCounts } from "./claude-a2a-patch-bridge.mjs";
+import {
+  buildFanoutSubagentPrompt,
+  captureMaxTurnCheckpoint,
+  describeHunkHeaderMismatches,
+  diagnoseHunkHeaderCounts,
+  isSafeCheckpointRepoPath,
+  resolveClaudeTurnBudget,
+} from "./claude-a2a-patch-bridge.mjs";
 
 const bridgePath = new URL("./claude-a2a-patch-bridge.mjs", import.meta.url).pathname;
 
@@ -44,10 +51,94 @@ function writeStubClaude(path, bodyLines) {
   chmodSync(path, 0o755);
 }
 
+function setupCheckpointRepo(tempDir, files = { "tracked.txt": "before\n" }) {
+  const workspace = join(tempDir, "workspace");
+  const repo = join(workspace, "repo");
+  const artifacts = join(tempDir, "artifacts");
+  mkdirSync(repo, { recursive: true });
+  mkdirSync(artifacts, { recursive: true });
+  execFileSync("git", ["init", "-q", "-b", "main"], { cwd: repo });
+  execFileSync("git", ["config", "user.name", "A2A Test"], { cwd: repo });
+  execFileSync("git", ["config", "user.email", "a2a-test@example.invalid"], { cwd: repo });
+  for (const [path, content] of Object.entries(files)) {
+    const target = join(repo, path);
+    mkdirSync(join(target, ".."), { recursive: true });
+    writeFileSync(target, content);
+  }
+  execFileSync("git", ["add", "-A"], { cwd: repo });
+  execFileSync("git", ["commit", "-q", "-m", "base"], { cwd: repo });
+  return { workspace, repo, artifacts };
+}
+
 test("patch bridge is executable JavaScript", () => {
   assert.equal(existsSync(bridgePath), true, "bridge script should exist");
   const check = spawnSync(process.execPath, ["--check", bridgePath], { encoding: "utf8" });
   assert.equal(check.status, 0, check.stderr);
+});
+
+test("Claude turn budgets resolve by distinct mode with agentic default=40 and backward-compatible overrides", () => {
+  assert.deepEqual(resolveClaudeTurnBudget("agentic-patch", {}), {
+    mode: "agentic-patch",
+    effectiveMaxTurns: 40,
+    source: "canonical_default",
+  });
+  assert.deepEqual(resolveClaudeTurnBudget("analysis", {}), {
+    mode: "analysis",
+    effectiveMaxTurns: 10,
+    source: "canonical_default",
+  });
+  assert.deepEqual(resolveClaudeTurnBudget("analysis", {
+    A2A_CLAUDE_CODE_ANALYSIS_MAX_TURNS: "12",
+    A2A_CLAUDE_CODE_MAX_TURNS: "99",
+  }), {
+    mode: "analysis",
+    effectiveMaxTurns: 12,
+    source: "explicit_override",
+    overrideKey: "A2A_CLAUDE_CODE_ANALYSIS_MAX_TURNS",
+  });
+  assert.deepEqual(resolveClaudeTurnBudget("analysis", {
+    A2A_CLAUDE_CODE_MAX_TURNS: "13",
+  }), {
+    mode: "analysis",
+    effectiveMaxTurns: 13,
+    source: "explicit_override",
+    overrideKey: "A2A_CLAUDE_CODE_MAX_TURNS",
+  });
+  assert.deepEqual(resolveClaudeTurnBudget("deterministic-single-shot", {}), {
+    mode: "deterministic-single-shot",
+    effectiveMaxTurns: 6,
+    source: "canonical_default",
+  });
+  assert.deepEqual(
+    resolveClaudeTurnBudget("deterministic-single-shot", {
+      A2A_CLAUDE_CODE_PATCH_MAX_TURNS: "8",
+      A2A_CLAUDE_CODE_DETERMINISTIC_MAX_TURNS: "9",
+    }),
+    {
+      mode: "deterministic-single-shot",
+      effectiveMaxTurns: 9,
+      source: "explicit_override",
+      overrideKey: "A2A_CLAUDE_CODE_DETERMINISTIC_MAX_TURNS",
+    },
+  );
+  assert.deepEqual(resolveClaudeTurnBudget("deterministic-single-shot", {
+    A2A_CLAUDE_CODE_PATCH_MAX_TURNS: "8",
+  }), {
+    mode: "deterministic-single-shot",
+    effectiveMaxTurns: 8,
+    source: "explicit_override",
+    overrideKey: "A2A_CLAUDE_CODE_PATCH_MAX_TURNS",
+  });
+  assert.deepEqual(resolveClaudeTurnBudget("fanout-patch", {
+    A2A_CLAUDE_CODE_FANOUT_MAX_TURNS: "500",
+  }), {
+    mode: "fanout-patch",
+    effectiveMaxTurns: 200,
+    source: "explicit_override",
+    overrideKey: "A2A_CLAUDE_CODE_FANOUT_MAX_TURNS",
+    hardCap: 200,
+    hardCapApplied: true,
+  });
 });
 
 test("PATCH intent + stub claude returning a PR url -> envelope contains patch JSON with prUrl, exit 0", () => {
@@ -75,13 +166,15 @@ test("PATCH intent + stub claude returning a PR url -> envelope contains patch J
       "  filesChanged: ['src/x.mjs'],",
       "  risks: []",
       "};",
-      "console.log(JSON.stringify({ type: 'result', subtype: 'success', result: JSON.stringify(result) }));",
+      "console.log(JSON.stringify({ type: 'result', subtype: 'success', num_turns: 4, result: JSON.stringify(result) }));",
     ]);
 
     const result = spawnSync(bridgePath, bridgeArgs(patchMessage()), {
       encoding: "utf8",
       env: {
         ...process.env,
+        A2A_CLAUDE_MODEL: "",
+        A2A_CLAUDE_EFFORT: "",
         A2A_CLAUDE_CODE_BIN: fakeClaudePath,
         A2A_CLAUDE_CODE_MAX_TURNS: "5",
         CAPTURE_CWD_PATH: cwdCapturePath,
@@ -95,9 +188,27 @@ test("PATCH intent + stub claude returning a PR url -> envelope contains patch J
     const payload = JSON.parse(envelope.payloads[0]?.text);
     assert.equal(payload.status, "pr_opened");
     assert.equal(payload.bridgeContractVersion, "claude-a2a-patch.v1");
+    assert.equal(payload.bridgeAdapter, "claude_code");
+    assert.equal(payload.requestedModel, "claude-code/default");
+    assert.equal(payload.requestedThinking, "low");
+    assert.equal(payload.actualRuntimeModel, undefined);
+    assert.equal(payload.modelInheritanceMode, "metadata_only");
+    assert.equal(payload.claudeModelArgumentApplied, false);
+    assert.match(payload.modelInheritanceNote, /actual runtime model is unknown/);
     assert.equal(payload.prUrl, "https://github.com/jinwon-int/example/pull/7");
     assert.equal(payload.branch, "feat/x");
     assert.deepEqual(payload.tests, ["node --test -> pass"]);
+    assert.deepEqual(payload.turnBudget, {
+      schemaVersion: "a2a.claude.turn-budget.v1",
+      mode: "agentic-patch",
+      effectiveMaxTurns: 5,
+      source: "explicit_override",
+      overrideKey: "A2A_CLAUDE_CODE_MAX_TURNS",
+      outcome: "success",
+      turnsUsed: 4,
+      invocationCount: 1,
+    });
+    assert.match(result.stderr, /"turnsUsed":4/);
     // max-turns env override threaded through
     const args = JSON.parse(readFileSync(argsCapturePath, "utf8"));
     assert.equal(args[args.indexOf("--max-turns") + 1], "5");
@@ -120,6 +231,75 @@ test("PATCH intent + stub claude returning NO evidence url -> bridge exits non-z
     });
     assert.notEqual(result.status, 0);
     assert.match(result.stderr, /evidence|prUrl|doneCommentUrl|blockCommentUrl/i);
+  } finally {
+    rmSync(tempDir, { recursive: true, force: true });
+  }
+});
+
+test("PATCH telemetry omits turnsUsed when only model-controlled result text claims a count", () => {
+  const tempDir = mkdtempSync(join(tmpdir(), "claude-patch-untrusted-turns-"));
+  const fakeClaudePath = join(tempDir, "fake-claude.mjs");
+  try {
+    writeStubClaude(fakeClaudePath, [
+      "const result = { status: 'pr_opened', summary: 'model text says Reached maximum number of turns, but the CLI succeeded', prUrl: 'https://github.com/jinwon-int/example/pull/8', num_turns: 99 };",
+      "console.log(JSON.stringify({ type: 'result', subtype: 'success', result: JSON.stringify(result) }));",
+    ]);
+    const result = spawnSync(bridgePath, bridgeArgs(patchMessage()), {
+      encoding: "utf8",
+      env: { ...process.env, A2A_CLAUDE_CODE_BIN: fakeClaudePath },
+    });
+    assert.equal(result.status, 0, result.stderr);
+    const payload = JSON.parse(JSON.parse(result.stdout).payloads[0].text);
+    assert.equal(payload.turnBudget.effectiveMaxTurns, 40);
+    assert.equal(payload.turnBudget.source, "canonical_default");
+    assert.equal(payload.turnBudget.turnsUsed, undefined);
+    assert.doesNotMatch(result.stderr, /"turnsUsed"/);
+  } finally {
+    rmSync(tempDir, { recursive: true, force: true });
+  }
+});
+
+test("PATCH max-turn exhaustion has a stable failed classification and never fabricates turnsUsed", () => {
+  const tempDir = mkdtempSync(join(tmpdir(), "claude-patch-max-turns-"));
+  const fakeClaudePath = join(tempDir, "fake-claude.mjs");
+  try {
+    writeStubClaude(fakeClaudePath, [
+      "console.log(JSON.stringify({ type: 'result', subtype: 'error_max_turns', is_error: true, result: 'Reached maximum number of turns' }));",
+      "process.exitCode = 1;",
+    ]);
+    const result = spawnSync(bridgePath, bridgeArgs(patchMessage()), {
+      encoding: "utf8",
+      env: { ...process.env, A2A_CLAUDE_CODE_BIN: fakeClaudePath },
+    });
+    assert.notEqual(result.status, 0);
+    assert.equal(result.stdout, "");
+    assert.match(result.stderr, /terminal_reason=max_turns/);
+    assert.match(result.stderr, /failure_reason=max_turns_exhausted/);
+    assert.match(result.stderr, /budget\.limit=40/);
+    assert.match(result.stderr, /"failureReason":"max_turns"/);
+    assert.doesNotMatch(result.stderr, /"turnsUsed"/);
+    assert.doesNotMatch(result.stderr, /\/pull\/\d+/);
+  } finally {
+    rmSync(tempDir, { recursive: true, force: true });
+  }
+});
+
+test("PATCH max-turn failure reports turnsUsed only when the CLI result owns a trustworthy count", () => {
+  const tempDir = mkdtempSync(join(tmpdir(), "claude-patch-max-turns-count-"));
+  const fakeClaudePath = join(tempDir, "fake-claude.mjs");
+  try {
+    writeStubClaude(fakeClaudePath, [
+      "console.log(JSON.stringify({ type: 'result', subtype: 'error_max_turns', is_error: true, num_turns: 40, result: 'stopped' }));",
+      "process.exitCode = 1;",
+    ]);
+    const result = spawnSync(bridgePath, bridgeArgs(patchMessage()), {
+      encoding: "utf8",
+      env: { ...process.env, A2A_CLAUDE_CODE_BIN: fakeClaudePath },
+    });
+    assert.notEqual(result.status, 0);
+    assert.match(result.stderr, /terminal_reason=max_turns/);
+    assert.match(result.stderr, /"turnsUsed":40/);
+    assert.match(result.stderr, /budget\.used=40/);
   } finally {
     rmSync(tempDir, { recursive: true, force: true });
   }
@@ -177,6 +357,8 @@ test("ANALYSIS intent -> bridge behaves like the analysis bridge (no regression)
       encoding: "utf8",
       env: {
         ...process.env,
+        A2A_CLAUDE_MODEL: "",
+        A2A_CLAUDE_EFFORT: "",
         A2A_CLAUDE_CODE_BIN: fakeClaudePath,
         CAPTURE_ARGS_PATH: argsPath,
         CAPTURE_PROMPT_PATH: promptPath,
@@ -187,6 +369,14 @@ test("ANALYSIS intent -> bridge behaves like the analysis bridge (no regression)
     const envelope = JSON.parse(result.stdout);
     const payload = JSON.parse(envelope.payloads[0]?.text);
     assert.equal(payload.status, "done");
+    assert.equal(payload.bridgeContractVersion, "claude-a2a-patch.v1");
+    assert.equal(payload.bridgeAdapter, "claude_code");
+    assert.equal(payload.requestedModel, "claude-code/default");
+    assert.equal(payload.requestedThinking, "low");
+    assert.equal(payload.actualRuntimeModel, undefined);
+    assert.equal(payload.modelInheritanceMode, "metadata_only");
+    assert.equal(payload.claudeModelArgumentApplied, false);
+    assert.match(payload.modelInheritanceNote, /actual runtime model is unknown/);
     assert.equal(payload.summary, "analysis complete via patch bridge analysis mode");
     assert.deepEqual(payload.evidenceRefs, ["embedded:analysis-mode-test"]);
     const args = JSON.parse(readFileSync(argsPath, "utf8"));
@@ -228,6 +418,114 @@ test("PATCH mode runs claude in a fresh temp dir and removes it afterward (isola
     rmSync(bridgeCwd, { recursive: true, force: true });
   } finally {
     rmSync(tempDir, { recursive: true, force: true });
+  }
+});
+
+test("max-turn checkpoint preserves only tracked diff/status with deterministic exact metadata", async () => {
+  const tempDir = mkdtempSync(join(tmpdir(), "claude-checkpoint-allow-"));
+  try {
+    const { workspace, repo, artifacts } = setupCheckpointRepo(tempDir);
+    writeFileSync(join(repo, "tracked.txt"), "after\n");
+    writeFileSync(join(repo, "untracked-secret.txt"), "GH_TOKEN=not-in-checkpoint\n");
+
+    const first = await captureMaxTurnCheckpoint(workspace, {
+      outputDir: artifacts,
+      repository: "jinwon-int/example",
+    });
+    assert.equal(first.ok, true, JSON.stringify(first));
+    assert.equal(first.checkpointRef, "artifacts/claude-max-turn-checkpoint.json");
+    const manifestText = readFileSync(join(artifacts, "claude-max-turn-checkpoint.json"), "utf8");
+    const diff = readFileSync(join(artifacts, "claude-max-turn-checkpoint.diff"), "utf8");
+    const status = readFileSync(join(artifacts, "claude-max-turn-checkpoint.status"), "utf8");
+    const manifest = JSON.parse(manifestText);
+    assert.equal(manifest.schemaVersion, "a2a.claude.max-turn-checkpoint.v1");
+    assert.equal(manifest.base.commit, execFileSync("git", ["rev-parse", "HEAD"], { cwd: repo, encoding: "utf8" }).trim());
+    assert.equal(manifest.head.commit, manifest.base.commit);
+    assert.deepEqual(manifest.changedPaths, ["tracked.txt"]);
+    assert.equal(manifest.includesUntracked, false);
+    assert.equal(manifest.pushPerformed, false);
+    assert.equal(manifest.pullRequestOpened, false);
+    assert.equal(manifest.taskSucceeded, false);
+    assert.equal(manifest.evidenceGatesBypassed, false);
+    assert.match(diff, /tracked\.txt/);
+    assert.doesNotMatch(diff, /untracked-secret/);
+    assert.match(status, /tracked\.txt/);
+    assert.doesNotMatch(status, /untracked-secret/);
+
+    const second = await captureMaxTurnCheckpoint(workspace, {
+      outputDir: artifacts,
+      repository: "jinwon-int/example",
+    });
+    assert.equal(second.ok, true);
+    assert.equal(readFileSync(join(artifacts, "claude-max-turn-checkpoint.json"), "utf8"), manifestText);
+  } finally {
+    rmSync(tempDir, { recursive: true, force: true });
+  }
+});
+
+test("max-turn checkpoint rejects bootstrap paths and reports exact repo-relative offenders", async () => {
+  const tempDir = mkdtempSync(join(tmpdir(), "claude-checkpoint-bootstrap-"));
+  try {
+    const { workspace, repo, artifacts } = setupCheckpointRepo(tempDir, {
+      "tracked.txt": "before\n",
+      "AGENTS.md": "base context\n",
+    });
+    writeFileSync(join(repo, "AGENTS.md"), "changed context\n");
+    const result = await captureMaxTurnCheckpoint(workspace, { outputDir: artifacts });
+    assert.equal(result.ok, false);
+    assert.equal(result.status, "rejected_bootstrap_path");
+    assert.deepEqual(result.offendingPaths, ["AGENTS.md"]);
+    assert.equal(existsSync(join(artifacts, "claude-max-turn-checkpoint.json")), false);
+  } finally {
+    rmSync(tempDir, { recursive: true, force: true });
+  }
+});
+
+test("max-turn checkpoint rejects secret-shaped tracked content and oversized payloads", async () => {
+  const secretDir = mkdtempSync(join(tmpdir(), "claude-checkpoint-secret-"));
+  const sizeDir = mkdtempSync(join(tmpdir(), "claude-checkpoint-size-"));
+  try {
+    const secretRepo = setupCheckpointRepo(secretDir);
+    writeFileSync(join(secretRepo.repo, "tracked.txt"), `GH_TOKEN=${"ghp_" + "A".repeat(40)}\n`);
+    const secret = await captureMaxTurnCheckpoint(secretRepo.workspace, { outputDir: secretRepo.artifacts });
+    assert.equal(secret.ok, false);
+    assert.equal(secret.status, "rejected_secret_scan");
+    assert.equal(secret.risk, "github_token");
+
+    const largeRepo = setupCheckpointRepo(sizeDir);
+    writeFileSync(join(largeRepo.repo, "tracked.txt"), "source line\n".repeat(200));
+    const oversized = await captureMaxTurnCheckpoint(largeRepo.workspace, {
+      outputDir: largeRepo.artifacts,
+      maxBytes: 256,
+    });
+    assert.equal(oversized.ok, false);
+    assert.equal(oversized.status, "rejected_size_limit");
+    assert.equal(existsSync(join(largeRepo.artifacts, "claude-max-turn-checkpoint.json")), false);
+  } finally {
+    rmSync(secretDir, { recursive: true, force: true });
+    rmSync(sizeDir, { recursive: true, force: true });
+  }
+});
+
+test("max-turn checkpoint rejects tracked symlink diffs instead of preserving an unsafe apply target", async () => {
+  const tempDir = mkdtempSync(join(tmpdir(), "claude-checkpoint-symlink-"));
+  try {
+    const { workspace, repo, artifacts } = setupCheckpointRepo(tempDir);
+    rmSync(join(repo, "tracked.txt"));
+    symlinkSync("../outside", join(repo, "tracked.txt"));
+    const result = await captureMaxTurnCheckpoint(workspace, { outputDir: artifacts });
+    assert.equal(result.ok, false);
+    assert.equal(result.status, "rejected_symlink_diff");
+    assert.equal(existsSync(join(artifacts, "claude-max-turn-checkpoint.json")), false);
+  } finally {
+    rmSync(tempDir, { recursive: true, force: true });
+  }
+});
+
+test("max-turn checkpoint path guard rejects traversal, absolute, control, and empty paths", () => {
+  assert.equal(isSafeCheckpointRepoPath("packages/broker/src/worker.ts"), true);
+  for (const path of ["", "../secret", "a/../../secret", "/etc/passwd", "C:\\Users\\private", "bad\u0000path"]) {
+    assert.equal(isSafeCheckpointRepoPath(path), false, path);
   }
 });
 
@@ -727,6 +1025,7 @@ test("SINGLE-SHOT corrective retry: first diff fails git apply --check, second d
         A2A_CLAUDE_CODE_GIT_BIN: fakeGitPath,
         A2A_CLAUDE_CODE_GH_BIN: fakeGhPath,
         A2A_CLAUDE_CODE_PATCH_MODE: "single-shot",
+        A2A_CLAUDE_MODEL: "claude-sonnet-5",
         FAKE_GIT_SEED_PATH: workSeed,
         FAKE_GH_PR_URL: "https://github.com/jinwon-int/a2a-nexus/pull/1021",
         REAL_GIT_BIN: "git",
@@ -742,6 +1041,10 @@ test("SINGLE-SHOT corrective retry: first diff fails git apply --check, second d
     assert.equal(payload.status, "pr_opened");
     assert.equal(payload.claudeCalls, 2, "payload must reflect 2 claude calls");
     assert.equal(payload.prUrl, "https://github.com/jinwon-int/a2a-nexus/pull/1021");
+    assert.equal(payload.actualRuntimeModel, undefined);
+    assert.equal(payload.claudeModelArgumentApplied, false);
+    assert.equal(payload.modelInheritanceMode, "metadata_only");
+    assert.match(payload.modelInheritanceNote, /output-producing invocation.*actual runtime model is unknown/);
   } finally {
     rmSync(tempDir, { recursive: true, force: true });
   }
@@ -1127,6 +1430,14 @@ test("PATCH: A2A_CLAUDE_MODEL=claude-sonnet-5 -> spawned claude argv includes --
     const modelIndex = args.indexOf("--model");
     assert.notEqual(modelIndex, -1, "claude argv must include --model when A2A_CLAUDE_MODEL is claude-shaped");
     assert.equal(args[modelIndex + 1], "claude-sonnet-5");
+    const payload = JSON.parse(JSON.parse(result.stdout).payloads[0].text);
+    assert.equal(payload.bridgeAdapter, "claude_code");
+    assert.equal(payload.requestedModel, "claude-code/default");
+    assert.equal(payload.requestedThinking, "low");
+    assert.equal(payload.actualRuntimeModel, "claude-sonnet-5");
+    assert.equal(payload.modelInheritanceMode, "cli_argument");
+    assert.equal(payload.claudeModelArgumentApplied, true);
+    assert.match(payload.modelInheritanceNote, /passed an explicit --model argument/);
   } finally {
     rmSync(tempDir, { recursive: true, force: true });
   }
@@ -1151,6 +1462,11 @@ test("PATCH: non-Claude A2A_CLAUDE_MODEL (legacy leftover) is ignored -> no --mo
     const args = JSON.parse(readFileSync(argsCapturePath, "utf8"));
     assert.equal(args.indexOf("--model"), -1,
       "legacy non-Claude identifiers must NOT reach claude argv (mounted config default keeps deciding)");
+    const payload = JSON.parse(JSON.parse(result.stdout).payloads[0].text);
+    assert.equal(payload.actualRuntimeModel, undefined);
+    assert.equal(payload.modelInheritanceMode, "metadata_only");
+    assert.equal(payload.claudeModelArgumentApplied, false);
+    assert.match(payload.modelInheritanceNote, /actual runtime model is unknown/);
   } finally {
     rmSync(tempDir, { recursive: true, force: true });
   }
@@ -1213,6 +1529,12 @@ test("ANALYSIS: A2A_CLAUDE_MODEL=sonnet alias -> spawned claude argv includes --
     const modelIndex = args.indexOf("--model");
     assert.notEqual(modelIndex, -1, "analysis claude argv must include --model for alias values");
     assert.equal(args[modelIndex + 1], "sonnet");
+    const payload = JSON.parse(JSON.parse(result.stdout).payloads[0].text);
+    assert.equal(payload.bridgeAdapter, "claude_code");
+    assert.equal(payload.bridgeContractVersion, "claude-a2a-patch.v1");
+    assert.equal(payload.actualRuntimeModel, "sonnet");
+    assert.equal(payload.modelInheritanceMode, "cli_argument");
+    assert.equal(payload.claudeModelArgumentApplied, true);
   } finally {
     rmSync(tempDir, { recursive: true, force: true });
   }
@@ -1291,6 +1613,11 @@ test("SINGLE-SHOT: A2A_CLAUDE_MODEL=claude-sonnet-5 -> claude argv includes --mo
     const modelIndex = args.indexOf("--model");
     assert.notEqual(modelIndex, -1, "single-shot claude argv must include --model when A2A_CLAUDE_MODEL is claude-shaped");
     assert.equal(args[modelIndex + 1], "claude-sonnet-5");
+    assert.equal(payload.bridgeAdapter, "claude_code");
+    assert.equal(payload.bridgeContractVersion, "claude-a2a-patch.v1");
+    assert.equal(payload.actualRuntimeModel, "claude-sonnet-5");
+    assert.equal(payload.modelInheritanceMode, "cli_argument");
+    assert.equal(payload.claudeModelArgumentApplied, true);
   } finally {
     rmSync(tempDir, { recursive: true, force: true });
   }
@@ -1346,7 +1673,8 @@ test("fanout mode runs the agentic patch with Task tool + spawn prompt + fanout 
         A2A_CONTAINED_SUBAGENTS_ENABLED: "1",
         A2A_CONTAINED_SUBAGENTS_MAX: "3",
         A2A_CONTAINED_SUBAGENTS_ROLES: "explorer,implementer,verifier",
-        A2A_CLAUDE_CODE_FANOUT_MAX_TURNS: "50",
+        A2A_CLAUDE_CODE_FANOUT_MAX_TURNS: "500",
+        A2A_CLAUDE_MODEL: "claude-sonnet-5",
         A2A_CLAUDE_CODE_BIN: fakeClaudePath,
         CAPTURE_ARGS_PATH: argsCapturePath,
       },
@@ -1356,13 +1684,21 @@ test("fanout mode runs the agentic patch with Task tool + spawn prompt + fanout 
     assert.equal(result.status, 0, result.stderr);
     const payload = JSON.parse(JSON.parse(result.stdout).payloads[0].text);
     assert.equal(payload.prUrl, "https://github.com/jinwon-int/example/pull/42");
+    assert.equal(payload.bridgeAdapter, "claude_code");
+    assert.equal(payload.actualRuntimeModel, "claude-sonnet-5");
+    assert.equal(payload.modelInheritanceMode, "cli_argument");
+    assert.equal(payload.claudeModelArgumentApplied, true);
     assert.equal(payload.subagentReport.count, 1);
     assert.equal(payload.subagentReport.entries[0].id, "helper-1");
     assert.match(payload.subagentReport.entries[0].output, /TOKEN=runtime-synthetic/);
     const args = JSON.parse(readFileSync(argsCapturePath, "utf8"));
     assert.equal(args[args.indexOf("--allowedTools") + 1], "Task Bash Edit Write Read Glob Grep");
-    assert.equal(args[args.indexOf("--max-turns") + 1], "50");
+    assert.equal(args[args.indexOf("--max-turns") + 1], "200");
     assert.ok(args.includes("--append-system-prompt"));
+    assert.equal(payload.turnBudget.effectiveMaxTurns, 200);
+    assert.equal(payload.turnBudget.source, "explicit_override");
+    assert.equal(payload.turnBudget.hardCap, 200);
+    assert.equal(payload.turnBudget.hardCapApplied, true);
   } finally {
     rmSync(tempDir, { recursive: true, force: true });
   }
@@ -1769,6 +2105,53 @@ test("diagnoseHunkHeaderCounts still reports a real miscount in a multi-file dif
   assert.equal(mismatches[0].actualOld, 2);
 });
 
+test("diagnoseHunkHeaderCounts reports a miscount in a NON-final file of a multi-file diff", () => {
+  // `bodyEnd` is the next `@@` anywhere in the input, so the last hunk of file N is
+  // scanned across file N+1's header lines. Treating that boundary as lost evidence
+  // silenced every file but the last — most of an ordinary multi-file diff.
+  const body = [
+    "diff --git a/f1 b/f1",
+    "--- a/f1",
+    "+++ b/f1",
+    "@@ -1,9 +1,9 @@",
+    " keep",
+    "-a",
+    "+A",
+    "diff --git a/f2 b/f2",
+    "--- a/f2",
+    "+++ b/f2",
+    "@@ -1,2 +1,2 @@",
+    " keep",
+    "-b",
+    "+B",
+  ].join("\n");
+
+  const mismatches = diagnoseHunkHeaderCounts(body);
+
+  assert.equal(mismatches.length, 1, "the first file's miscount must not be swallowed");
+  assert.equal(mismatches[0].file, "f1");
+  assert.equal(mismatches[0].actualOld, 2);
+});
+
+test("diagnoseHunkHeaderCounts decodes git's quoted-path escapes", () => {
+  const mk = (name) => [
+    `--- "a/${name}"`,
+    `+++ "b/${name}"`,
+    "@@ -1,9 +1,9 @@",
+    " a",
+    "-b",
+    "+B",
+  ].join("\n");
+
+  // core.quotePath=true octal bytes -> UTF-8
+  assert.equal(diagnoseHunkHeaderCounts(mk("\\355\\225\\234\\352\\270\\200.txt"))[0].file, "한글.txt");
+  // C escapes
+  assert.equal(diagnoseHunkHeaderCounts(mk('we\\"ird.txt'))[0].file, 'we"ird.txt');
+  assert.equal(diagnoseHunkHeaderCounts(mk("we\\\\ird.txt"))[0].file, "we\\ird.txt");
+  // core.quotePath=false still quotes for `"`, and the literal UTF-8 must survive
+  assert.equal(diagnoseHunkHeaderCounts(mk('한글 \\"x\\".txt'))[0].file, '한글 "x".txt');
+});
+
 test("describeHunkHeaderMismatches names the file so the retry is not left counting hunks", () => {
   const body = [
     "--- a/docs/x.md",
@@ -1794,6 +2177,231 @@ test("diagnoseHunkHeaderCounts handles CRLF bodies without inventing a mismatch"
     "-two\r",
     "+TWO\r",
     " three\r",
+  ].join("\n");
+
+  assert.deepEqual(diagnoseHunkHeaderCounts(body), []);
+});
+
+// --- the silence guard must not swallow real miscounts ----------------------
+//
+// Abandoning a hunk's diagnosis is right when the evidence is genuinely ambiguous
+// and wrong otherwise: it hands the corrective retry nothing on a diff git just
+// rejected, which is the blind retry #1642 exists to fix.
+
+test("diagnoseHunkHeaderCounts still reports when the last body line is whitespace-only context", () => {
+  // " " prefix + "   " content. A file separator is empty, never space-padded, so
+  // this is not ambiguous and must count as ordinary context.
+  const body = [
+    "--- a/a.txt",
+    "+++ b/a.txt",
+    "@@ -1,9 +1,9 @@",
+    " one",
+    "-two",
+    "+TWO",
+    "    ",
+  ].join("\n");
+
+  const mismatches = diagnoseHunkHeaderCounts(body);
+
+  assert.equal(mismatches.length, 1);
+  assert.equal(mismatches[0].actualOld, 3);
+});
+
+test("diagnoseHunkHeaderCounts stays silent on a correct header with a trailing blank line", () => {
+  // Extraction does not guarantee a body free of trailing formatting slop. Counting
+  // a stray final blank inflates both sides by one and would hand the corrective
+  // retry a confident wrong number for a header that is in fact correct.
+  const body = [
+    "--- a/a.txt",
+    "+++ b/a.txt",
+    "@@ -1,4 +1,4 @@",
+    " one",
+    "-two",
+    "+TWO",
+    " three",
+    " four",
+    "",
+  ].join("\n");
+
+  assert.deepEqual(diagnoseHunkHeaderCounts(body), []);
+});
+
+test("diagnoseHunkHeaderCounts counts a blank before the same file's next hunk", () => {
+  // A separator by definition has a file section after it, so a blank followed by
+  // another `@@` of the same file is an ordinary context line — not ambiguous.
+  const body = [
+    "--- a/a.txt",
+    "+++ b/a.txt",
+    "@@ -1,9 +1,9 @@",
+    " one",
+    "-two",
+    "+TWO",
+    "",
+    "@@ -50,9 +50,9 @@",
+    " x",
+    "-y",
+    "+Y",
+  ].join("\n");
+
+  const mismatches = diagnoseHunkHeaderCounts(body);
+
+  assert.ok(mismatches.length > 0, "the blank must be counted, not treated as a separator");
+  assert.equal(mismatches[0].actualOld, 3);
+});
+
+test("diagnoseHunkHeaderCounts unquotes a core.quotePath filename", () => {
+  // git's default core.quotePath wraps non-ASCII paths in quotes with octal escapes.
+  const body = [
+    '--- "a/\\355\\225\\234\\352\\270\\200.txt"',
+    '+++ "b/\\355\\225\\234\\352\\270\\200.txt"',
+    "@@ -1,9 +1,9 @@",
+    " a",
+    "-b",
+    "+B",
+  ].join("\n");
+
+  assert.equal(diagnoseHunkHeaderCounts(body)[0].file, "한글.txt");
+});
+
+test("diagnoseHunkHeaderCounts attributes a deletion hunk to the deleted file", () => {
+  // `+++ /dev/null` names no file, so only the old side identifies it. Carrying the
+  // previous section's name over would put a confidently wrong path in the hint.
+  const body = [
+    "--- a/f1",
+    "+++ b/f1",
+    "@@ -1,1 +1,1 @@",
+    "-a",
+    "+A",
+    "--- a/f2",
+    "+++ /dev/null",
+    "@@ -1,5 +0,0 @@",
+    "-b",
+  ].join("\n");
+
+  const mismatches = diagnoseHunkHeaderCounts(body);
+
+  assert.equal(mismatches.length, 1);
+  assert.equal(mismatches[0].file, "f2");
+});
+
+test("diagnoseHunkHeaderCounts attributes a creation hunk to the created file", () => {
+  const body = [
+    "--- /dev/null",
+    "+++ b/n.txt",
+    "@@ -0,0 +1,9 @@",
+    "+a",
+    "+b",
+  ].join("\n");
+
+  const mismatches = diagnoseHunkHeaderCounts(body);
+
+  assert.equal(mismatches.length, 1);
+  assert.equal(mismatches[0].file, "n.txt");
+});
+
+test("diagnoseHunkHeaderCounts does not let a '+++ ' body line rename later hunks", () => {
+  const body = [
+    "--- a/f1",
+    "+++ b/f1",
+    "@@ -1,1 +1,2 @@",
+    " k",
+    "+++ marker",
+    "@@ -20,9 +20,9 @@",
+    " z",
+    "-y",
+  ].join("\n");
+
+  const mismatches = diagnoseHunkHeaderCounts(body);
+
+  assert.ok(mismatches.length > 0, "the loop below is vacuous if nothing is reported");
+  for (const m of mismatches) {
+    assert.equal(m.file, "f1", "attribution must not follow a body line");
+  }
+});
+
+test("diagnoseHunkHeaderCounts leaves --no-prefix paths intact", () => {
+  // Only strip a//b/ when BOTH sides carry them, so a directory literally named
+  // "b/" in a --no-prefix diff is not truncated to "uild/x.js".
+  const body = [
+    "--- b/build/x.js",
+    "+++ b/build/x.js",
+    "@@ -1,9 +1,9 @@",
+    " k",
+    "-y",
+    "+Y",
+  ].join("\n");
+
+  assert.equal(diagnoseHunkHeaderCounts(body)[0].file, "b/build/x.js");
+});
+
+// --- shapes the differential matrix flagged --------------------------------
+
+test("diagnoseHunkHeaderCounts finds a non-final file in plain diff -u output", () => {
+  // No `diff --git` lines: sections are separated only by the ordered
+  // `--- `/`+++ `/`@@ ` triple. The boundary must still end the previous hunk's
+  // body cleanly rather than abandoning it, or every file but the last is lost.
+  const body = [
+    "--- a/f1.txt",
+    "+++ b/f1.txt",
+    "@@ -1,9 +1,9 @@",
+    " keep",
+    "-a",
+    "+A",
+    "--- a/f2.txt",
+    "+++ b/f2.txt",
+    "@@ -1,2 +1,2 @@",
+    " keep",
+    "-b",
+    "+B",
+  ].join("\n");
+
+  const mismatches = diagnoseHunkHeaderCounts(body);
+
+  assert.equal(mismatches.length, 1, "the first file's miscount must not be swallowed");
+  assert.equal(mismatches[0].file, "f1.txt");
+});
+
+test("diagnoseHunkHeaderCounts: documented -U0 forged-triple limitation", () => {
+  // Byte-for-byte `git diff -U0` output. With zero context a deleted "-- " line
+  // and an added "++ " line sit directly before the next `@@`, forming a triple
+  // that is textually a file header. The body truncates there and the hint is
+  // wrong. This is the known cost of not silencing multi-file diffs (see the
+  // comment in diagnoseHunkHeaderCounts); -U1 and wider are unaffected because
+  // trailing context always separates the pair from the next `@@`.
+  const body = [
+    "diff --git a/q.sql b/q.sql",
+    "index 3338770..0dd8c69 100644",
+    "--- a/q.sql",
+    "+++ b/q.sql",
+    "@@ -5,2 +5 @@ line4",
+    "-stale",
+    "--- old sql comment",
+    "+++ new sql comment",
+    "@@ -25 +24 @@ line24",
+    "-line25",
+    "+CHANGED24",
+  ].join("\n");
+
+  const mismatches = diagnoseHunkHeaderCounts(body);
+
+  // Pinned so a future change that alters this is a deliberate decision, not a
+  // silent drift: the first hunk is mis-reported, the second is correct.
+  assert.equal(mismatches.length, 1);
+  assert.equal(mismatches[0].index, 0);
+  assert.equal(mismatches[0].actualOld, 1, "body truncated at the forged triple");
+});
+
+test("diagnoseHunkHeaderCounts stays silent on unmodified diff -U0 without the forged shape", () => {
+  const body = [
+    "diff --git a/f.txt b/f.txt",
+    "--- a/f.txt",
+    "+++ b/f.txt",
+    "@@ -5 +5 @@ line4",
+    "-old",
+    "+new",
+    "@@ -25 +25 @@ line24",
+    "-x",
+    "+y",
   ].join("\n");
 
   assert.deepEqual(diagnoseHunkHeaderCounts(body), []);

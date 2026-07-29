@@ -45,9 +45,9 @@ carrier authorization, Phase 12 producer-fact admission, and Phase 8 parser.
 No second contract, budget, subject, transition, idempotency, or fingerprint
 parser is introduced.
 
-## Closed attached-source pairing
+## Closed attached-source pairing at Phase 15
 
-Only two runtime source tuples are admitted:
+At the Phase 15 boundary, only two runtime source tuples were admitted:
 
 | Source kind | Authority | Command | Observation |
 | --- | --- | --- | --- |
@@ -85,5 +85,10 @@ context construction, or store access. Worker-thread persistence sends one
 composite command and returns one ACK; projection refresh happens afterward.
 
 Generic task creation, completion, failure, cancellation, retry, approval, and
-finalizer paths remain detached. `review_report`, `correction_generation`, and
-`reviewer_replacement` still have no runtime source owner.
+finalizer paths remain detached. At the end of Phase 15, `review_report`,
+`correction_generation`, and `reviewer_replacement` had no runtime source
+owner. Phase 16 later attaches only `review_report`; the other two remain
+detached at that phase boundary. Phase 17 later attaches only
+`correction_generation`; `reviewer_replacement` remains detached at that phase
+boundary. Phase 18 later attaches `reviewer_replacement`, completing
+authoritative-source attachment coverage at exactly `5/5`.

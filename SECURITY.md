@@ -51,6 +51,29 @@ Use redacted evidence only. Before opening a PR or posting task evidence, verify
 
 If any of those files would enter a branch or artifact bundle, fail closed and report the exact repo-relative paths.
 
+## Bounded review-lineage source boundary
+
+`A2A_REVIEW_LINEAGE_MODE` remains `off` by default, and `enforce` is
+unsupported. When separately activated in record mode, authoritative
+review-lineage mutations are closed to exact routes and trusted identities.
+Lineage create, operator cancel, and committed correction-generation recording
+require an authenticated requester with the exact `operator` role. Review
+reports require the Ed25519 worker registry and the dedicated
+`review-lineage.report` scope.
+
+For correction generation, request JSON cannot select authority, namespace,
+issuer, producer ID, or source-event ID. Trusted code assigns semantic
+`correction_controller` authority, and the canonical parser/store require the
+exact pre-correction subject and `correction_pending` state. This route records
+an already committed head only; it does not accept patch bytes, run a fixer,
+auto-push output, or infer evidence from task results, logs, prose, retries,
+completion, or finalizer state.
+
+The source event, canonical lineage result, and idempotency ledger share one
+transaction. Minimized source metadata must not contain raw generation/report
+references, actor identities, changed paths, receipt/finding prose, patch or
+fixer output, prompts, provider payloads, or credentials.
+
 
 ## Dependency update monitoring
 

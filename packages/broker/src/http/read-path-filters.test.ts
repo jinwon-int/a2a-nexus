@@ -45,6 +45,14 @@ test("read-path filters ignore invalid enum values and trim optional strings", (
   });
 });
 
+test("audit filters expose the broker-owned lane assignment action", () => {
+  const audit = auditFiltersFromUrl(
+    new URL("http://broker.local/audit?action=task.lane_assigned&targetId=task-1"),
+  );
+  assert.equal(audit.action, "task.lane_assigned");
+  assert.equal(audit.targetId, "task-1");
+});
+
 test("read-path filters reject invalid explicit task limits", () => {
   assert.throws(
     () => taskFiltersFromUrl(new URL("http://broker.local/tasks?limit=1.5")),

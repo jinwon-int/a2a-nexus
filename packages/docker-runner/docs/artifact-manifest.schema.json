@@ -50,12 +50,33 @@
       "additionalProperties": false,
       "required": ["limitKind"],
       "properties": {
-        "limitKind": { "enum": ["time", "token", "attempt", "command", "safety"] },
+        "limitKind": { "enum": ["time", "token", "turn", "attempt", "command", "safety"] },
         "limit": { "type": "string", "minLength": 1, "maxLength": 300 },
         "used": { "type": "string", "minLength": 1, "maxLength": 300 },
         "reason": { "type": "string", "minLength": 1, "maxLength": 500 }
       }
     },
+    "claudeTurnBudget": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["schemaVersion", "mode", "effectiveMaxTurns", "source", "outcome"],
+      "properties": {
+        "schemaVersion": { "const": "a2a.claude.turn-budget.v1" },
+        "mode": { "enum": ["analysis", "agentic-patch", "deterministic-single-shot", "fanout-patch"] },
+        "effectiveMaxTurns": { "type": "integer", "minimum": 1 },
+        "source": { "enum": ["canonical_default", "explicit_override"] },
+        "overrideKey": { "enum": ["A2A_CLAUDE_CODE_ANALYSIS_MAX_TURNS", "A2A_CLAUDE_CODE_MAX_TURNS", "A2A_CLAUDE_CODE_DETERMINISTIC_MAX_TURNS", "A2A_CLAUDE_CODE_PATCH_MAX_TURNS", "A2A_CLAUDE_CODE_FANOUT_MAX_TURNS"] },
+        "hardCap": { "type": "integer", "minimum": 1 },
+        "hardCapApplied": { "type": "boolean" },
+        "outcome": { "enum": ["success", "failure"] },
+        "turnsUsed": { "type": "integer", "minimum": 0 },
+        "invocationCount": { "type": "integer", "minimum": 1 },
+        "failureReason": { "enum": ["max_turns", "claude_error", "bridge_error"] },
+        "checkpointStatus": { "type": "string", "pattern": "^[a-z][a-z0-9_]{0,63}$" },
+        "checkpointRef": { "const": "artifacts/claude-max-turn-checkpoint.json" }
+      }
+    },
+    "checkpointRef": { "const": "artifacts/claude-max-turn-checkpoint.json" },
     "receiptTrace": {
       "type": "object",
       "additionalProperties": false,

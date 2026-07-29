@@ -1,0 +1,412 @@
+{
+  "catalogVersion": "a2a.shared-state.observability/v1",
+  "cases": [
+    {
+      "caseId": "raw-task-id",
+      "mutations": [
+        {
+          "path": ["observations", "leaseClaim", "taskId"],
+          "value": "task-SENTINEL-ID-0001"
+        }
+      ],
+      "expectedCode": "forbidden_observability_field",
+      "expectedPath": ["observations", "leaseClaim", "taskId"]
+    },
+    {
+      "caseId": "hashed-requester-identity",
+      "mutations": [
+        {
+          "path": ["requesterHash"],
+          "value": "sha256:SENTINEL-PSEUDONYMOUS-IDENTITY"
+        }
+      ],
+      "expectedCode": "forbidden_observability_field",
+      "expectedPath": ["requesterHash"]
+    },
+    {
+      "caseId": "raw-digest",
+      "mutations": [
+        {
+          "path": ["observations", "replay", "digest"],
+          "value": "sha256:SENTINEL-DIGEST-0001"
+        }
+      ],
+      "expectedCode": "forbidden_observability_field",
+      "expectedPath": ["observations", "replay", "digest"]
+    },
+    {
+      "caseId": "sentinel-credential",
+      "mutations": [
+        {
+          "path": ["credential"],
+          "value": "SENTINEL_CREDENTIAL_DO_NOT_ACCEPT"
+        }
+      ],
+      "expectedCode": "forbidden_observability_field",
+      "expectedPath": ["credential"]
+    },
+    {
+      "caseId": "fullwidth-token-key",
+      "mutations": [
+        {
+          "path": ["ＴＯＫＥＮ"],
+          "value": "SENTINEL_TOKEN_DO_NOT_ACCEPT"
+        }
+      ],
+      "expectedCode": "forbidden_observability_field",
+      "expectedPath": ["ＴＯＫＥＮ"]
+    },
+    {
+      "caseId": "cyrillic-token-confusable",
+      "mutations": [
+        {
+          "path": ["tоken"],
+          "value": "SENTINEL_TOKEN_CONFUSABLE_DO_NOT_ACCEPT"
+        }
+      ],
+      "expectedCode": "forbidden_observability_field",
+      "expectedPath": ["tоken"]
+    },
+    {
+      "caseId": "mixed-case-authorization",
+      "mutations": [
+        {
+          "path": ["AuThOrIzAtIoN"],
+          "value": "Bearer SENTINEL_AUTHORIZATION_DO_NOT_ACCEPT"
+        }
+      ],
+      "expectedCode": "forbidden_observability_field",
+      "expectedPath": ["AuThOrIzAtIoN"]
+    },
+    {
+      "caseId": "nested-header",
+      "mutations": [
+        {
+          "path": ["observations", "outbox", "headers"],
+          "value": {
+            "X-Sentinel-Credential": "SENTINEL_HEADER_DO_NOT_ACCEPT"
+          }
+        }
+      ],
+      "expectedCode": "forbidden_observability_field",
+      "expectedPath": ["observations", "outbox", "headers"]
+    },
+    {
+      "caseId": "artifact-path",
+      "mutations": [
+        {
+          "path": ["artifactPath"],
+          "value": "/srv/SENTINEL/secret-artifact.json"
+        }
+      ],
+      "expectedCode": "forbidden_observability_field",
+      "expectedPath": ["artifactPath"]
+    },
+    {
+      "caseId": "worktree-path",
+      "mutations": [
+        {
+          "path": ["worktreePath"],
+          "value": "/worktrees/SENTINEL/private-branch"
+        }
+      ],
+      "expectedCode": "forbidden_observability_field",
+      "expectedPath": ["worktreePath"]
+    },
+    {
+      "caseId": "database-dsn",
+      "mutations": [
+        {
+          "path": ["dsn"],
+          "value": "postgresql://sentinel:SENTINEL_PASSWORD@db.invalid/private"
+        }
+      ],
+      "expectedCode": "forbidden_observability_field",
+      "expectedPath": ["dsn"]
+    },
+    {
+      "caseId": "payload-content",
+      "mutations": [
+        {
+          "path": ["observations", "outbox", "payload"],
+          "value": "SENTINEL_PRIVATE_PAYLOAD_DO_NOT_ACCEPT"
+        }
+      ],
+      "expectedCode": "forbidden_observability_field",
+      "expectedPath": ["observations", "outbox", "payload"]
+    },
+    {
+      "caseId": "claim-text",
+      "mutations": [
+        {
+          "path": ["observations", "claimGraphProjection", "claimText"],
+          "value": "SENTINEL_PRIVATE_CLAIM_DO_NOT_ACCEPT"
+        }
+      ],
+      "expectedCode": "forbidden_observability_field",
+      "expectedPath": ["observations", "claimGraphProjection", "claimText"]
+    },
+    {
+      "caseId": "event-id",
+      "mutations": [
+        {
+          "path": ["observations", "outbox", "eventId"],
+          "value": "event-SENTINEL-ID-0001"
+        }
+      ],
+      "expectedCode": "forbidden_observability_field",
+      "expectedPath": ["observations", "outbox", "eventId"]
+    },
+    {
+      "caseId": "stream-key",
+      "mutations": [
+        {
+          "path": ["observations", "outbox", "streamKey"],
+          "value": "stream-SENTINEL-PRIVATE"
+        }
+      ],
+      "expectedCode": "forbidden_observability_field",
+      "expectedPath": ["observations", "outbox", "streamKey"]
+    },
+    {
+      "caseId": "exact-timestamp",
+      "mutations": [
+        {
+          "path": ["observedAt"],
+          "value": "1970-01-01T00:00:01.234Z"
+        }
+      ],
+      "expectedCode": "forbidden_observability_field",
+      "expectedPath": ["observedAt"]
+    },
+    {
+      "caseId": "exact-age",
+      "mutations": [
+        {
+          "path": ["observations", "leaseClaim", "ageSec"],
+          "value": 37
+        }
+      ],
+      "expectedCode": "forbidden_observability_field",
+      "expectedPath": ["observations", "leaseClaim", "ageSec"]
+    },
+    {
+      "caseId": "exact-high-water",
+      "mutations": [
+        {
+          "path": ["observations", "claimGraphProjection", "sourceHighWater"],
+          "value": 123456
+        }
+      ],
+      "expectedCode": "forbidden_observability_field",
+      "expectedPath": [
+        "observations",
+        "claimGraphProjection",
+        "sourceHighWater"
+      ]
+    },
+    {
+      "caseId": "free-form-reason",
+      "mutations": [
+        {
+          "path": ["observations", "replay", "reason"],
+          "value": "SENTINEL free-form reason with private detail"
+        }
+      ],
+      "expectedCode": "forbidden_observability_field",
+      "expectedPath": ["observations", "replay", "reason"]
+    },
+    {
+      "caseId": "arbitrary-label-map",
+      "mutations": [
+        {
+          "path": ["observations", "rateLimit", "labels"],
+          "value": {
+            "tenant": "SENTINEL_PRIVATE_TENANT"
+          }
+        }
+      ],
+      "expectedCode": "forbidden_observability_field",
+      "expectedPath": ["observations", "rateLimit", "labels"]
+    },
+    {
+      "caseId": "top-task-list",
+      "mutations": [
+        {
+          "path": ["observations", "leaseClaim", "topTasks"],
+          "value": ["task-SENTINEL-TOP-0001"]
+        }
+      ],
+      "expectedCode": "forbidden_observability_field",
+      "expectedPath": ["observations", "leaseClaim", "topTasks"]
+    },
+    {
+      "caseId": "tiny-cardinality-by-task",
+      "mutations": [
+        {
+          "path": ["observations", "outbox", "byTask"],
+          "value": {
+            "task-SENTINEL-ONLY": 1
+          }
+        }
+      ],
+      "expectedCode": "forbidden_observability_field",
+      "expectedPath": ["observations", "outbox", "byTask"]
+    },
+    {
+      "caseId": "cross-field-identity-reconstruction",
+      "mutations": [
+        {
+          "path": ["observations", "idempotency", "breakdown"],
+          "value": {
+            "total": 5,
+            "byWorker": {
+              "worker-SENTINEL-ONLY": 1
+            },
+            "remaining": 4
+          }
+        }
+      ],
+      "expectedCode": "forbidden_observability_field",
+      "expectedPath": [
+        "observations",
+        "idempotency",
+        "breakdown",
+        "byWorker"
+      ]
+    },
+    {
+      "caseId": "caller-extension",
+      "mutations": [
+        {
+          "path": ["extensions"],
+          "value": {
+            "sentinel": "SENTINEL_EXTENSION_DO_NOT_ACCEPT"
+          }
+        }
+      ],
+      "expectedCode": "forbidden_observability_field",
+      "expectedPath": ["extensions"]
+    },
+    {
+      "caseId": "prototype-key",
+      "mutations": [
+        {
+          "path": ["__proto__"],
+          "value": {
+            "token": "SENTINEL_PROTOTYPE_TOKEN"
+          }
+        }
+      ],
+      "expectedCode": "forbidden_observability_field",
+      "expectedPath": ["__proto__"]
+    },
+    {
+      "caseId": "constructor-key",
+      "mutations": [
+        {
+          "path": ["observations", "constructor"],
+          "value": "SENTINEL_CONSTRUCTOR_DO_NOT_ACCEPT"
+        }
+      ],
+      "expectedCode": "forbidden_observability_field",
+      "expectedPath": ["observations", "constructor"]
+    },
+    {
+      "caseId": "nested-unknown-field",
+      "mutations": [
+        {
+          "path": ["observations", "outbox", "diagnostic"],
+          "value": "closed-but-not-sensitive"
+        }
+      ],
+      "expectedCode": "unknown_field",
+      "expectedPath": ["observations", "outbox", "diagnostic"]
+    },
+    {
+      "caseId": "unknown-version",
+      "mutations": [
+        {
+          "path": ["catalogVersion"],
+          "value": "a2a.shared-state.observability/v2"
+        }
+      ],
+      "expectedCode": "unknown_catalog_version",
+      "expectedPath": ["catalogVersion"]
+    },
+    {
+      "caseId": "wrong-count-type",
+      "mutations": [
+        {
+          "path": ["observations", "replay", "counts", "accepted"],
+          "value": "120"
+        }
+      ],
+      "expectedCode": "invalid_type",
+      "expectedPath": ["observations", "replay", "counts", "accepted"]
+    },
+    {
+      "caseId": "count-out-of-range",
+      "mutations": [
+        {
+          "path": ["observations", "replay", "counts", "accepted"],
+          "value": 1000000001
+        }
+      ],
+      "expectedCode": "out_of_range",
+      "expectedPath": ["observations", "replay", "counts", "accepted"]
+    },
+    {
+      "caseId": "free-form-enum-value",
+      "mutations": [
+        {
+          "path": ["observations", "rateLimit", "windowBand"],
+          "value": "SENTINEL custom window because tenant is private"
+        }
+      ],
+      "expectedCode": "invalid_enum",
+      "expectedPath": ["observations", "rateLimit", "windowBand"]
+    },
+    {
+      "caseId": "unknown-availability-discriminant",
+      "mutations": [
+        {
+          "path": ["observations", "leaseClaim", "availability"],
+          "value": "partially-available"
+        }
+      ],
+      "expectedCode": "invalid_discriminant",
+      "expectedPath": ["observations", "leaseClaim", "availability"]
+    },
+    {
+      "caseId": "health-declaration-invalid",
+      "mutations": [
+        {
+          "path": ["health", "serving"],
+          "value": false
+        }
+      ],
+      "expectedCode": "health_declaration_invalid",
+      "expectedPath": ["health", "serving"]
+    },
+    {
+      "caseId": "health-observation-completeness-mismatch",
+      "mutations": [
+        {
+          "path": [
+            "observations",
+            "claimGraphProjection",
+            "completeness"
+          ],
+          "value": "complete"
+        }
+      ],
+      "expectedCode": "health_observation_mismatch",
+      "expectedPath": [
+        "observations",
+        "claimGraphProjection",
+        "completeness"
+      ]
+    }
+  ]
+}

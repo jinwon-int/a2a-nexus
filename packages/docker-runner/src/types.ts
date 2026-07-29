@@ -130,6 +130,45 @@ export interface RunnerHermesProfileConfig {
 
 export interface RunnerClaudeCodeProfileConfig {
   configDir: string;
+  /** Effective, secret-free bridge budget projection shown by runner doctor. */
+  turnBudgets?: RunnerClaudeTurnBudgetProjection;
+}
+
+export type RunnerClaudePatchMode = "agentic" | "deterministic-single-shot" | "fanout";
+export type RunnerClaudeTurnBudgetSource = "canonical_default" | "explicit_override";
+
+export interface RunnerClaudeTurnBudgetValue {
+  effectiveMaxTurns: number;
+  source: RunnerClaudeTurnBudgetSource;
+  overrideKey?: string;
+  hardCap?: number;
+  hardCapApplied?: boolean;
+}
+
+export interface RunnerClaudeTurnBudgetProjection {
+  schemaVersion: "a2a.runner.claude-turn-budget-projection.v1";
+  activePatchMode: RunnerClaudePatchMode;
+  resolutionOrder: [
+    "mode_specific_explicit_override",
+    "backward_compatible_mode_alias",
+    "canonical_bridge_default",
+    "fanout_hard_cap",
+  ];
+  analysis: RunnerClaudeTurnBudgetValue;
+  agenticPatch: RunnerClaudeTurnBudgetValue;
+  deterministicSingleShot: RunnerClaudeTurnBudgetValue;
+  fanoutPatch: RunnerClaudeTurnBudgetValue;
+}
+
+export interface RunnerClaudeTurnBudgetDiagnostic extends RunnerClaudeTurnBudgetValue {
+  schemaVersion: "a2a.claude.turn-budget.v1";
+  mode: "analysis" | "agentic-patch" | "deterministic-single-shot" | "fanout-patch";
+  outcome: "success" | "failure";
+  turnsUsed?: number;
+  invocationCount?: number;
+  failureReason?: "max_turns" | "claude_error" | "bridge_error";
+  checkpointStatus?: string;
+  checkpointRef?: "artifacts/claude-max-turn-checkpoint.json";
 }
 
 export interface RunnerCodexProfileConfig {
@@ -947,7 +986,7 @@ export interface ArtifactManifestEntry {
 
 export type ArtifactManifestStatus = "done" | "blocked" | "failed" | "budget_limited";
 export type RunnerArtifactContractStatus = ArtifactManifestStatus;
-export type RunnerBudgetLimitKind = "time" | "token" | "attempt" | "command" | "safety";
+export type RunnerBudgetLimitKind = "time" | "token" | "turn" | "attempt" | "command" | "safety";
 export type ArtifactEvidenceKind = "log" | "test" | "diff" | "file";
 export type ArtifactEvidenceStatus = "passed" | "failed" | "blocked" | "unknown";
 export type RunnerReceiptTraceStatus =
@@ -1188,6 +1227,10 @@ export interface ArtifactManifest {
   artifacts: ArtifactManifestEntry[];
   /** Optional sanitized evidence describing which budget stopped the task. */
   budget?: RunnerBudgetEvidence;
+  /** Effective Claude max-turn telemetry from the contained bridge. */
+  claudeTurnBudget?: RunnerClaudeTurnBudgetDiagnostic;
+  /** Safe local-only recovery checkpoint reference for max-turn failures. */
+  checkpointRef?: "artifacts/claude-max-turn-checkpoint.json";
   /** Optional sanitized notification/receipt correlation metadata for receipt-gap reports. */
   receiptTrace?: RunnerReceiptTrace;
   /** Optional sanitized recommendation for a bounded, approval-gated continuation. */
@@ -1223,6 +1266,12 @@ export interface ResultSummary {
   stdoutTruncated: boolean;
   stderrTruncated: boolean;
   artifactCount: number;
+  /** Effective Claude max-turn telemetry from the contained bridge. */
+  claudeTurnBudget?: RunnerClaudeTurnBudgetDiagnostic;
+  /** Stable max-turn stop reason; never marks the task successful. */
+  terminalReason?: "max_turns";
+  /** Safe local-only recovery checkpoint reference. */
+  checkpointRef?: "artifacts/claude-max-turn-checkpoint.json";
   manifestPath: string;
   /** Bounded, secret-free runner build metadata suitable for broker/operator evidence. */
   runnerBuild?: RunnerBuildMetadata;
@@ -1284,6 +1333,12 @@ export interface RunnerResult {
   /** @deprecated Prefer github.prUrl for structured evidence. */
   prUrl?: string;
   error?: string;
+  /** Effective Claude max-turn telemetry from the contained bridge. */
+  claudeTurnBudget?: RunnerClaudeTurnBudgetDiagnostic;
+  /** Stable failure classification for max-turn exhaustion. */
+  terminalReason?: "max_turns";
+  /** Safe local-only recovery checkpoint reference. */
+  checkpointRef?: "artifacts/claude-max-turn-checkpoint.json";
   /** Structured GitHub evidence for propose_patch / github-propose-patch mode. */
   github?: GitHubEvidence;
   /** Execution proof for this task. */

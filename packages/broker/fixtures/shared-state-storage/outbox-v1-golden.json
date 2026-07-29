@@ -1,0 +1,82 @@
+{
+  "$schema": "https://example.invalid/a2a/shared-state-outbox-v1-golden.schema.json",
+  "fixtureVersion": 1,
+  "catalogVersion": "a2a.shared-state.outbox/v1",
+  "keyspaceVersion": "a2a.shared-state.keyspace/v1",
+  "description": "Public non-secret golden fixture for the closed planned outbox registry. Values are synthetic and no runtime integration is implied.",
+  "currentAuthorityIds": [
+    "terminal-task-event-outbox"
+  ],
+  "currentProducerIds": [
+    "task-terminal-event",
+    "cross-broker-projection-evidence",
+    "cross-broker-operator-row"
+  ],
+  "registrations": [
+    {
+      "registrationId": "broker.terminal-outbox/task-terminal-notification",
+      "namespace": "broker.terminal-outbox",
+      "eventPurpose": "task-terminal-notification",
+      "retentionPolicyVersion": "task-terminal-outbox-retention.v1",
+      "receiptPolicyVersion": "terminal-notification-receipt.v1",
+      "acknowledgmentPolicyVersion": "terminal-notification-ack.v1",
+      "orderingScope": "total-within-exact-stream-key"
+    },
+    {
+      "registrationId": "broker.terminal-outbox/cross-broker-projection-evidence",
+      "namespace": "broker.terminal-outbox",
+      "eventPurpose": "cross-broker-projection-evidence",
+      "retentionPolicyVersion": "cross-broker-projection-evidence-retention.v1",
+      "receiptPolicyVersion": "cross-broker-projection-evidence-receipt.v1",
+      "acknowledgmentPolicyVersion": "cross-broker-projection-evidence-ack-forbidden.v1",
+      "orderingScope": "total-within-exact-stream-key"
+    },
+    {
+      "registrationId": "broker.terminal-outbox/cross-broker-operator-notification",
+      "namespace": "broker.terminal-outbox",
+      "eventPurpose": "cross-broker-operator-notification",
+      "retentionPolicyVersion": "cross-broker-operator-outbox-retention.v1",
+      "receiptPolicyVersion": "terminal-notification-receipt.v1",
+      "acknowledgmentPolicyVersion": "terminal-notification-ack.v1",
+      "orderingScope": "total-within-exact-stream-key"
+    }
+  ],
+  "streamKeys": [
+    {
+      "id": "synthetic-broker-alpha",
+      "namespace": "broker.terminal-outbox",
+      "components": [
+        {
+          "field": "streamType",
+          "type": "utf8",
+          "value": "broker-terminal-outbox"
+        },
+        {
+          "field": "streamId",
+          "type": "utf8",
+          "value": "synthetic-broker-alpha"
+        }
+      ],
+      "canonicalHex": "4132412d53534b01001c6132612e7368617265642d73746174652e6b657973706163652f7631001862726f6b65722e6f7574626f782e73747265616d2d6b6579001662726f6b65722e7465726d696e616c2d6f7574626f780002000a73747265616d54797065010000001662726f6b65722d7465726d696e616c2d6f7574626f78000873747265616d4964010000001673796e7468657469632d62726f6b65722d616c706861",
+      "digest": "a2a.shared-state.keyspace/v1|broker.outbox.stream-key|broker.terminal-outbox|sha256:306adac39aae9a5ee8a329eff55dafe59315d80294c6326ec48343e5b5f1e298"
+    },
+    {
+      "id": "synthetic-broker-beta",
+      "namespace": "broker.terminal-outbox",
+      "components": [
+        {
+          "field": "streamType",
+          "type": "utf8",
+          "value": "broker-terminal-outbox"
+        },
+        {
+          "field": "streamId",
+          "type": "utf8",
+          "value": "synthetic-broker-beta"
+        }
+      ],
+      "canonicalHex": "4132412d53534b01001c6132612e7368617265642d73746174652e6b657973706163652f7631001862726f6b65722e6f7574626f782e73747265616d2d6b6579001662726f6b65722e7465726d696e616c2d6f7574626f780002000a73747265616d54797065010000001662726f6b65722d7465726d696e616c2d6f7574626f78000873747265616d4964010000001573796e7468657469632d62726f6b65722d62657461",
+      "digest": "a2a.shared-state.keyspace/v1|broker.outbox.stream-key|broker.terminal-outbox|sha256:2f8574392306c4576a2b2a397eaca4e7d2242cdb724e22f85616cd25a1b08f16"
+    }
+  ]
+}
