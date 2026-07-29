@@ -2003,11 +2003,73 @@ function resolveCommitIdentity(env) {
   };
 }
 
-async function commitPushAndCreatePr(workspace, { branch, commitMessage, title, body, env }) {
+async function readMatchingPullRequest(gh, workspace, { repo, branch, env }) {
+  const list = await runTool(gh, [
+    "pr", "list",
+    "--repo", repo,
+    "--head", branch,
+    "--state", "open",
+    "--limit", "100",
+    "--json", "url,headRefName,baseRepository",
+  ], {
+    cwd: workspace,
+    env,
+    timeoutMs: 60_000,
+    maxBufferBytes: 4 * 1024 * 1024,
+  });
+  if (list.status !== 0) {
+    return { ok: false, error: toolError("gh pr list", `<repo=${repo} branch=${branch}>`, list).message };
+  }
+  let pulls;
+  try {
+    pulls = JSON.parse(safeText(list.stdout, "[]"));
+  } catch {
+    return { ok: false, error: "gh pr list returned unverifiable JSON metadata" };
+  }
+  const match = Array.isArray(pulls)
+    ? pulls.find((pull) => (
+        safeText(pull?.url, "")
+        && safeText(pull?.headRefName, "") === branch
+        && safeText(pull?.baseRepository?.nameWithOwner, "") === repo
+      ))
+    : undefined;
+  return { ok: true, prUrl: match ? safeText(match.url) : "" };
+}
+
+async function validatePullRequestMetadata(gh, workspace, { repo, branch, prUrl, env }) {
+  const view = await runTool(gh, [
+    "pr", "view", prUrl,
+    "--repo", repo,
+    "--json", "url,headRefName,baseRepository",
+  ], {
+    cwd: workspace,
+    env,
+    timeoutMs: 60_000,
+    maxBufferBytes: 4 * 1024 * 1024,
+  });
+  if (view.status !== 0) {
+    return { ok: false, error: toolError("gh pr view", prUrl, view).message };
+  }
+  try {
+    const pull = JSON.parse(safeText(view.stdout, "{}"));
+    if (
+      safeText(pull?.url, "") === prUrl
+      && safeText(pull?.headRefName, "") === branch
+      && safeText(pull?.baseRepository?.nameWithOwner, "") === repo
+    ) {
+      return { ok: true, prUrl };
+    }
+  } catch {
+    // Fall through to the fail-closed metadata error.
+  }
+  return { ok: false, error: "evidence_url_unverified: PR metadata does not match the declared repository and pushed branch" };
+}
+
+async function commitPushAndCreatePr(workspace, { repo, branch, commitMessage, title, body, env }) {
   const git = resolveTool(env, "A2A_CLAUDE_CODE_GIT_BIN", "git");
   const gh = resolveTool(env, "A2A_CLAUDE_CODE_GH_BIN", "gh");
 
-  if (!branch || branch === "main" || branch === "master") {
+  if (!repo || !branch || branch === "main" || branch === "master") {
     return { ok: false, error: "refusing to push or open a PR from a default branch" };
   }
 
@@ -2038,16 +2100,22 @@ async function commitPushAndCreatePr(workspace, { branch, commitMessage, title, 
   const push = await runTool(git, ["push", "origin", `HEAD:${branch}`], { cwd: workspace, env, timeoutMs: 120_000, maxBufferBytes: 8 * 1024 * 1024 });
   if (push.status !== 0) return { ok: false, error: toolError("git push", `<branch=${branch}>`, push).message };
 
-  const pr = await runTool(gh, ["pr", "create", "--base", "main", "--head", branch, "--title", title, "--body", body], {
-    cwd: workspace,
-    env,
-    timeoutMs: 120_000,
-    maxBufferBytes: 8 * 1024 * 1024,
-  });
-  if (pr.status !== 0) return { ok: false, error: toolError("gh pr create", "", pr).message };
-
-  const prUrlMatch = /https:\/\/github\.com\/[^/\s]+\/[^/\s]+\/pull\/\d+/.exec(safeText(pr.stdout));
-  return { ok: true, prUrl: prUrlMatch ? prUrlMatch[0] : "" };
+  const existing = await readMatchingPullRequest(gh, workspace, { repo, branch, env });
+  if (!existing.ok) return existing;
+  let prUrl = existing.prUrl;
+  if (!prUrl) {
+    const pr = await runTool(gh, ["pr", "create", "--repo", repo, "--base", "main", "--head", branch, "--title", title, "--body", body], {
+      cwd: workspace,
+      env,
+      timeoutMs: 120_000,
+      maxBufferBytes: 8 * 1024 * 1024,
+    });
+    if (pr.status !== 0) return { ok: false, error: toolError("gh pr create", "", pr).message };
+    const prUrlMatch = /https:\/\/github\.com\/[^/\s]+\/[^/\s]+\/pull\/\d+/.exec(safeText(pr.stdout));
+    prUrl = prUrlMatch ? prUrlMatch[0] : "";
+  }
+  if (!prUrl) return { ok: false, error: "gh PR ownership step produced no parseable prUrl" };
+  return validatePullRequestMetadata(gh, workspace, { repo, branch, prUrl, env });
 }
 
 // Clones the target repo into `cloneDir` using the env-overridable git binary.
@@ -2353,6 +2421,7 @@ async function runSingleShotPatchMode(message, flags) {
     ].join("\n");
 
     const pr = await commitPushAndCreatePr(cloneDir, {
+      repo: taskContext.repo,
       branch,
       commitMessage,
       title: prTitle,
