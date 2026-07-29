@@ -15,6 +15,12 @@ import { expandTask, resolveTemplate, buildTemplateExpansionEvidence } from "./t
 import { buildExecutionProof } from "./execution-proof.js";
 import { detectEmbeddedModelTimeoutNoFallback } from "./failure-classification.js";
 import { redactAndBound, redactSecrets } from "./redaction.js";
+import {
+  cleanupCodexCredentialRuntime,
+  commitCodexCredentialRefresh,
+  prepareCodexCredentialRuntime,
+  withCodexCredentialRuntime,
+} from "./codex-credential-refresh.js";
 export { RESULT_STREAM_LIMIT, redactAndBound, redactSecrets } from "./redaction.js";
 import type { ArtifactEvidencePart, ArtifactManifest, ArtifactManifestEntry, ArtifactManifestStatus, CleanupRehearsalEvidence, GitHubCommentProjection, GitHubCommentProjectionKind, NormalizedRunnerTask, ResultSummary, RunnerBudgetEvidence, RunnerClaudeTurnBudgetDiagnostic, RunnerConfig, RunnerContainedSubagentRole, RunnerContinuationEvidence, RunnerDiffHygieneEvidence, RunnerEvidenceHints, RunnerPostPatchVerificationEvidence, RunnerReceiptTrace, RunnerReproducibilityMetadata, RunnerResult, RunnerSubagentReport, RunnerTask, SourcePublicApprovalDecision, SourcePublicApprovalPacket, SourcePublicApprovalRehearsal, SourcePublicExecutionPreflight } from "./types.js";
 
@@ -162,12 +168,29 @@ export async function runTask(config: RunnerConfig, task: RunnerTask): Promise<R
   await writeFile(join(workDir, "run.sh"), script, { mode: 0o700 });
   await prepareWorkDirForContainerUser(workDir, config.user);
 
-  const args = buildRunArgs(config, normalizedTask, workDir, runToken);
+  const codexCredentialRuntime = config.commandProfile === "codex" && config.codexProfile?.configDir
+    ? await prepareCodexCredentialRuntime(config.codexProfile.configDir, config.user)
+    : undefined;
+  const executionConfig = codexCredentialRuntime
+    ? withCodexCredentialRuntime(config, codexCredentialRuntime)
+    : config;
+  const args = buildRunArgs(executionConfig, normalizedTask, workDir, runToken);
   const timeoutMs = normalizedTask.timeoutMs ?? config.defaultTimeoutMs;
   const engine = config.engine ?? "docker";
   // Use retry harness for transient container failures.
   // runContainerWithRetry handles backoff, jitter, and retry evidence tracking.
-  const { result: completed, retryEvidence } = await runContainerWithRetry(engine, args, timeoutMs);
+  let execution: Awaited<ReturnType<typeof runContainerWithRetry>>;
+  try {
+    execution = await runContainerWithRetry(engine, args, timeoutMs);
+    if (codexCredentialRuntime) {
+      await commitCodexCredentialRefresh(codexCredentialRuntime);
+    }
+  } finally {
+    if (codexCredentialRuntime) {
+      await cleanupCodexCredentialRuntime(codexCredentialRuntime);
+    }
+  }
+  const { result: completed, retryEvidence } = execution;
   const subagentReport = config.containedSubagents?.enabled
     ? extractStructuredSubagentReport(completed.stdout, {
         maxCount: config.containedSubagents.maxCount,
