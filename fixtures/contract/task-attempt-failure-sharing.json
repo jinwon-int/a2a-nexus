@@ -1,0 +1,269 @@
+{
+  "fixtureKind": "TaskAttemptFailureSharingFixtureV1",
+  "fixtureVersion": 1,
+  "records": [
+    {
+      "kind": "TaskAttemptRecordV1",
+      "version": 1,
+      "producerKind": "broker_execution",
+      "producerContract": "a2a.broker-execution.v1",
+      "brokerOfRecord": "brk_a1b2c3d4e5f60718",
+      "taskId": "tsk_11111111111111111111111111111111",
+      "retryRootTaskId": "tsk_11111111111111111111111111111111",
+      "attemptOrdinal": 1,
+      "brokerOutcome": "failed",
+      "reasonClass": "dependency_failure",
+      "reasonCode": "dependency_unavailable",
+      "identityDigestDomain": "a2a.task-attempt-record.v1.identity.broker-execution",
+      "fingerprintDigestDomain": "a2a.task-attempt-record.v1.fingerprint.broker-execution",
+      "recordKey": "sha256:48e482d003d6f47b2a3e903f956a1785887ce089217b4bcaab105543f9a80342",
+      "fingerprint": "sha256:48df7c9ce869849c8474bd59942b7a2120f502fe3438642f6755fe251ab2a64b"
+    },
+    {
+      "kind": "TaskAttemptRecordV1",
+      "version": 1,
+      "producerKind": "broker_execution",
+      "producerContract": "a2a.broker-execution.v1",
+      "brokerOfRecord": "brk_a1b2c3d4e5f60718",
+      "taskId": "tsk_22222222222222222222222222222222",
+      "retryRootTaskId": "tsk_11111111111111111111111111111111",
+      "attemptOrdinal": 2,
+      "brokerOutcome": "succeeded",
+      "identityDigestDomain": "a2a.task-attempt-record.v1.identity.broker-execution",
+      "fingerprintDigestDomain": "a2a.task-attempt-record.v1.fingerprint.broker-execution",
+      "recordKey": "sha256:85d022f8c8202e226ed3cacdef217ca99af1dbe212872251249065576b187fed",
+      "fingerprint": "sha256:3722d0eedc7e6b145ff947c098cdd3cbbd0b33cfa2f1f8c626580499ef1eb0df"
+    },
+    {
+      "kind": "TaskAttemptRecordV1",
+      "version": 1,
+      "producerKind": "bounded_experiment",
+      "producerContract": "a2a.bounded-experiment.v1",
+      "brokerOfRecord": "brk_a1b2c3d4e5f60718",
+      "taskId": "tsk_33333333333333333333333333333333",
+      "retryRootTaskId": "tsk_33333333333333333333333333333333",
+      "attemptOrdinal": 1,
+      "experimentId": "exp_abcdef0123456789abcdef0123456789",
+      "hypothesisId": "hyp_0123456789abcdef0123456789abcdef",
+      "experimentDisposition": "discard",
+      "reasonClass": "measurement_result",
+      "reasonCode": "no_improvement",
+      "identityDigestDomain": "a2a.task-attempt-record.v1.identity.bounded-experiment",
+      "fingerprintDigestDomain": "a2a.task-attempt-record.v1.fingerprint.bounded-experiment",
+      "recordKey": "sha256:646c0549036f876dc2acfad38898657ac99f76b916f473bf8378dc2d09f5ac65",
+      "fingerprint": "sha256:499498e091d51f515789ad4f15308e136eb5be7febd93a4c40c81a2d3d767420"
+    },
+    {
+      "kind": "TaskAttemptRecordV1",
+      "version": 1,
+      "producerKind": "bounded_experiment",
+      "producerContract": "a2a.bounded-experiment.v1",
+      "brokerOfRecord": "brk_a1b2c3d4e5f60718",
+      "taskId": "tsk_44444444444444444444444444444444",
+      "retryRootTaskId": "tsk_33333333333333333333333333333333",
+      "attemptOrdinal": 2,
+      "experimentId": "exp_abcdef0123456789abcdef0123456789",
+      "hypothesisId": "hyp_0123456789abcdef0123456789abcdef",
+      "experimentDisposition": "keep",
+      "identityDigestDomain": "a2a.task-attempt-record.v1.identity.bounded-experiment",
+      "fingerprintDigestDomain": "a2a.task-attempt-record.v1.fingerprint.bounded-experiment",
+      "recordKey": "sha256:4e48269d22211fb8ef8db2dd0694d511a793e3c56e27557777255d96c0e55430",
+      "fingerprint": "sha256:42363092e624685a15c91a510b8c3fc30cdebb1dce01552649e72587b4a05972"
+    },
+    {
+      "kind": "TaskAttemptRecordV1",
+      "version": 1,
+      "producerKind": "bounded_experiment",
+      "producerContract": "a2a.bounded-experiment.v1",
+      "brokerOfRecord": "brk_a1b2c3d4e5f60718",
+      "taskId": "tsk_55555555555555555555555555555555",
+      "retryRootTaskId": "tsk_55555555555555555555555555555555",
+      "attemptOrdinal": 1,
+      "experimentId": "exp_fedcba9876543210fedcba9876543210",
+      "hypothesisId": "hyp_9876543210fedcba9876543210fedcba",
+      "experimentDisposition": "crash",
+      "reasonClass": "resource_exhaustion",
+      "identityDigestDomain": "a2a.task-attempt-record.v1.identity.bounded-experiment",
+      "fingerprintDigestDomain": "a2a.task-attempt-record.v1.fingerprint.bounded-experiment",
+      "recordKey": "sha256:eda62d79860862f46a033bd1589d0f4b4024d34de2d8e2e97323c1171a0d86ad",
+      "fingerprint": "sha256:e08817cdbe01ad924ec72193f5c7a8641c8eea93b9b05a8b6a6e59eacc51c83f"
+    }
+  ],
+  "failureChannelProjection": {
+    "kind": "TaskAttemptFailureChannelProjectionV1",
+    "version": 1,
+    "viewMode": "read_only_advisory",
+    "entries": [
+      {
+        "kind": "TaskAttemptFailureProjectionEntryV1",
+        "version": 1,
+        "producerKind": "bounded_experiment",
+        "producerContract": "a2a.bounded-experiment.v1",
+        "brokerOfRecord": "brk_a1b2c3d4e5f60718",
+        "taskId": "tsk_33333333333333333333333333333333",
+        "retryRootTaskId": "tsk_33333333333333333333333333333333",
+        "attemptOrdinal": 1,
+        "recordKey": "sha256:646c0549036f876dc2acfad38898657ac99f76b916f473bf8378dc2d09f5ac65",
+        "fingerprint": "sha256:499498e091d51f515789ad4f15308e136eb5be7febd93a4c40c81a2d3d767420",
+        "experimentId": "exp_abcdef0123456789abcdef0123456789",
+        "hypothesisId": "hyp_0123456789abcdef0123456789abcdef",
+        "experimentDisposition": "discard",
+        "reasonClass": "measurement_result",
+        "reasonCode": "no_improvement"
+      },
+      {
+        "kind": "TaskAttemptFailureProjectionEntryV1",
+        "version": 1,
+        "producerKind": "bounded_experiment",
+        "producerContract": "a2a.bounded-experiment.v1",
+        "brokerOfRecord": "brk_a1b2c3d4e5f60718",
+        "taskId": "tsk_55555555555555555555555555555555",
+        "retryRootTaskId": "tsk_55555555555555555555555555555555",
+        "attemptOrdinal": 1,
+        "recordKey": "sha256:eda62d79860862f46a033bd1589d0f4b4024d34de2d8e2e97323c1171a0d86ad",
+        "fingerprint": "sha256:e08817cdbe01ad924ec72193f5c7a8641c8eea93b9b05a8b6a6e59eacc51c83f",
+        "experimentId": "exp_fedcba9876543210fedcba9876543210",
+        "hypothesisId": "hyp_9876543210fedcba9876543210fedcba",
+        "experimentDisposition": "crash",
+        "reasonClass": "resource_exhaustion"
+      },
+      {
+        "kind": "TaskAttemptFailureProjectionEntryV1",
+        "version": 1,
+        "producerKind": "broker_execution",
+        "producerContract": "a2a.broker-execution.v1",
+        "brokerOfRecord": "brk_a1b2c3d4e5f60718",
+        "taskId": "tsk_11111111111111111111111111111111",
+        "retryRootTaskId": "tsk_11111111111111111111111111111111",
+        "attemptOrdinal": 1,
+        "recordKey": "sha256:48e482d003d6f47b2a3e903f956a1785887ce089217b4bcaab105543f9a80342",
+        "fingerprint": "sha256:48df7c9ce869849c8474bd59942b7a2120f502fe3438642f6755fe251ab2a64b",
+        "brokerOutcome": "failed",
+        "reasonClass": "dependency_failure",
+        "reasonCode": "dependency_unavailable"
+      }
+    ]
+  },
+  "dispatcherPreflight": {
+    "kind": "TaskAttemptHistoryPreflightResponseV1",
+    "version": 1,
+    "viewMode": "read_only_advisory",
+    "query": {
+      "kind": "TaskAttemptHistoryQueryV1",
+      "version": 1,
+      "producerKind": "bounded_experiment",
+      "producerContract": "a2a.bounded-experiment.v1",
+      "brokerOfRecord": "brk_a1b2c3d4e5f60718",
+      "retryRootTaskId": "tsk_33333333333333333333333333333333",
+      "experimentId": "exp_abcdef0123456789abcdef0123456789",
+      "hypothesisId": "hyp_0123456789abcdef0123456789abcdef",
+      "candidateAttemptOrdinal": 2
+    },
+    "priorFailures": [
+      {
+        "kind": "TaskAttemptFailureProjectionEntryV1",
+        "version": 1,
+        "producerKind": "bounded_experiment",
+        "producerContract": "a2a.bounded-experiment.v1",
+        "brokerOfRecord": "brk_a1b2c3d4e5f60718",
+        "taskId": "tsk_33333333333333333333333333333333",
+        "retryRootTaskId": "tsk_33333333333333333333333333333333",
+        "attemptOrdinal": 1,
+        "recordKey": "sha256:646c0549036f876dc2acfad38898657ac99f76b916f473bf8378dc2d09f5ac65",
+        "fingerprint": "sha256:499498e091d51f515789ad4f15308e136eb5be7febd93a4c40c81a2d3d767420",
+        "experimentId": "exp_abcdef0123456789abcdef0123456789",
+        "hypothesisId": "hyp_0123456789abcdef0123456789abcdef",
+        "experimentDisposition": "discard",
+        "reasonClass": "measurement_result",
+        "reasonCode": "no_improvement"
+      }
+    ],
+    "automaticDeny": false,
+    "retryAuthority": "not_provided",
+    "finalizerVerdict": "not_provided",
+    "successEvidence": false,
+    "automaticDispatchPolicy": "none"
+  },
+  "cases": [
+    {
+      "caseId": "broker_failure_then_retry_success",
+      "operation": "validate_sequence",
+      "recordIndexes": [0, 1],
+      "mutations": [],
+      "expected": "accepted_sequence"
+    },
+    {
+      "caseId": "experiment_discard_then_keep",
+      "operation": "validate_sequence",
+      "recordIndexes": [2, 3],
+      "mutations": [],
+      "expected": "accepted_sequence"
+    },
+    {
+      "caseId": "experiment_crash_stable_class_only",
+      "operation": "validate_record",
+      "recordIndexes": [4],
+      "mutations": [],
+      "expected": "crash_class_only"
+    },
+    {
+      "caseId": "exact_idempotent_replay",
+      "operation": "ingest_sequence",
+      "recordIndexes": [0, 0],
+      "mutations": [],
+      "expected": "idempotent_replay"
+    },
+    {
+      "caseId": "same_key_changed_payload_conflict",
+      "operation": "ingest_mutation",
+      "recordIndexes": [0],
+      "mutations": ["changed_payload"],
+      "expected": "same_key_payload_conflict"
+    },
+    {
+      "caseId": "malformed_free_form_identity_rejection",
+      "operation": "reject_mutations",
+      "recordIndexes": [0],
+      "mutations": ["malformed_identity"],
+      "expected": "contract_rejected"
+    },
+    {
+      "caseId": "domain_outcome_vocabulary_mismatch_rejection",
+      "operation": "reject_mutations",
+      "recordIndexes": [0, 2],
+      "mutations": [
+        "wrong_identity_domain",
+        "wrong_fingerprint_domain",
+        "cross_vocabulary"
+      ],
+      "expected": "contract_rejected"
+    },
+    {
+      "caseId": "unknown_extra_private_field_rejection",
+      "operation": "reject_mutations",
+      "recordIndexes": [0],
+      "mutations": [
+        "missing_required",
+        "malformed_type",
+        "unknown_version",
+        "extra_field",
+        "private_field"
+      ],
+      "expected": "contract_rejected"
+    },
+    {
+      "caseId": "deterministic_canonical_fingerprint_verification",
+      "operation": "verify_digests",
+      "recordIndexes": [0, 1, 2, 3, 4],
+      "mutations": [],
+      "expected": "fingerprints_verified"
+    },
+    {
+      "caseId": "advisory_preflight_prior_failures_no_automatic_deny",
+      "operation": "verify_advisory_preflight",
+      "recordIndexes": [2],
+      "mutations": [],
+      "expected": "advisory_without_deny"
+    }
+  ]
+}

@@ -34,6 +34,7 @@ test('--list prints the public-safe conformance check allowlist', () => {
   const lines = res.stdout.trim().split('\n');
   assert.ok(lines.includes('check-contract-fixtures.mjs'));
   assert.ok(lines.includes('check-terminal-evidence-ack-boundary.mjs'));
+  assert.ok(lines.includes('check-task-attempt-failure-sharing.mjs'));
   assert.equal(lines.includes('check-a2a-tck-plan.mjs'), false, 'planning-only TCK checker stays excluded');
   assert.equal(lines.includes('public-readiness-go-nogo.test.mjs'), false, 'release go/no-go checker stays excluded');
 });

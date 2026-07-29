@@ -26,6 +26,7 @@ export const CHECKS = [
   'check-adapter-conformance-matrix.mjs',
   'check-a2ad-review-mode.mjs',
   'check-bounded-pr-review-lifecycle.mjs',
+  'check-task-attempt-failure-sharing.mjs',
   'check-canonical-progress-validation-matrix.mjs',
   'check-github-evidence-projection.mjs',
   'check-terminal-brief-canary-acceptance.mjs',
