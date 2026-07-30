@@ -4,10 +4,12 @@
 > documentation packet and the completed bounded Phase 1 contract/parser and
 > keyspace/digest/time-evaluator/idempotency-registry/outbox-registry and
 > observability-catalog/parser/projector slices, plus the first bounded Phase
-> 2.1 backend-neutral lease/claim harness exercised against a clearly labeled
-> test-only deterministic reference model. SQLite/shared adapter
-> implementations and their conformance, runtime health/endpoint integration,
-> migration, and operational rollout remain unchecked. Refs #1504.
+> 2.1 lease/claim and Phase 2.2 `executeIdempotent` backend-neutral
+> conformance harnesses exercised against clearly labeled test-only
+> deterministic reference models. SQLite/shared adapter implementations and
+> their conformance, retention/prune execution, runtime health/endpoint
+> integration, migration, and operational rollout remain unchecked.
+> Refs #1504.
 
 ## 0. Spec-first packet
 
@@ -64,16 +66,33 @@ runtime, and does not complete adapter conformance.
 
 ### 2.2 Idempotency concurrency
 
-- [ ] Release 64 same-key/same-fingerprint operations concurrently; assert one
-  domain mutation/outbox append and 64 identical stable outcomes.
-- [ ] Race same-key/different-fingerprint operations; assert one winner and
-  deterministic `idempotency_conflict` for the other without side effect.
-- [ ] Inject timeout after commit; resolve by lookup/retry and assert no second
-  mutation.
-- [ ] Inject rollback between idempotency reservation, domain mutation, outbox,
-  and outcome; assert no durable pending reservation or partial effect.
-- [ ] Reopen the adapter and assert identical outcomes until explicit
-  retention.
+- [x] Release exactly 64 same-key/same-fingerprint commands at one explicit
+  barrier; assert one executed result, 63 replayed results, 64 identical
+  original outcome digests, and exactly one reservation/domain
+  mutation/outbox append/stable outcome in the test-only snapshot.
+- [x] Race two same-key/different-fingerprint commands at one explicit
+  barrier; accept either bounded seeded winner rank, assert one executed
+  result and one `idempotency_conflict`, and assert one winner effect with no
+  loser effect.
+- [x] Inject `after_commit_before_response`; assert
+  unavailable/`ambiguous_commit` after the full commit, then replay the
+  original outcome through the same `executeIdempotent` command without a
+  second mutation or outbox append.
+- [x] Inject rollback after reservation, domain mutation, outbox staging, and
+  outcome staging before commit; assert the exact empty baseline with no
+  pending reservation, then assert the next clean command executes once.
+- [x] Execute once, close/reopen the same detached test target after an exact
+  fake-clock advance, and assert the identical replayed outcome and snapshot
+  continuity under `non_expiring_until_prune_proof` without executing
+  retention or prune.
+- [ ] Repeat the Phase 2.2 harness through SQLite/shared adapters and
+  separately prove authorized retention/prune behavior.
+
+The checked Phase 2.2 facts above are proved only by the backend-neutral
+harness against its isolated, in-memory, test-only deterministic reference
+model. The model is explicitly non-production, non-SQLite, non-shared,
+non-conforming, detached from broker runtime, and makes no durable adapter
+claim. Retention/prune execution remains unimplemented and untested.
 
 ### 2.3 Outbox ordering
 
@@ -249,3 +268,21 @@ git diff --check
 The focused command proves the harness/reference-model slice only. It is not
 an adapter, migration, runtime integration, deployment, or full-conformance
 gate.
+
+Phase 2.2 source slice:
+
+```bash
+npm run build --workspace=a2a-broker
+node --test packages/broker/dist/shared-state-idempotency-conformance-v1.test.js
+npm test --workspace=a2a-broker
+npm run check
+npm run scan:public-readiness
+npm run scan:external-secrets
+npm run check:markdown-links
+git diff --check
+```
+
+The focused Phase 2.2 command proves only the backend-neutral harness against
+the detached test-only reference model. SQLite/shared adapter conformance,
+runtime integration, retention/prune execution, migration, deployment, live
+rollout, and overall issue completion remain open.
