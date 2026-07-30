@@ -7,6 +7,9 @@
  * can detect the required lease/claim invariants deterministically.
  */
 
+import assert from "node:assert/strict";
+import test from "node:test";
+
 import {
   SHARED_STATE_STORAGE_V1_VALUES as V,
   digestSharedStateKeyV1,
@@ -16,8 +19,12 @@ import {
   type SharedStateStorageLifecycleV1,
 } from "./shared-state-storage-contract-v1.js";
 import {
+  SHARED_STATE_LEASE_CONFORMANCE_V1,
   SHARED_STATE_LEASE_FAULT_POINTS_V1,
   SharedStateLeaseConformanceErrorV1,
+  runSharedStateLeaseConformanceV1,
+  seededDeterministicContenderOrderV1,
+  sharedStateLeaseConformanceReportV1Schema,
   sharedStateLeaseConformanceSnapshotV1Schema,
   type SharedStateLeaseConformanceClockV1,
   type SharedStateLeaseConformanceOwnerSlotV1,
@@ -28,9 +35,9 @@ import {
   type SharedStateLeaseOperationV1,
   type SharedStateLeaseTransactionCommandV1,
   type SharedStateLeaseTransactionResultV1,
-} from "./shared-state-lease-conformance-harness-v1.js";
+} from "./shared-state-lease-conformance-v1.js";
 
-export const TEST_ONLY_DETERMINISTIC_LEASE_REFERENCE_MODEL_V1 = Object.freeze({
+const TEST_ONLY_DETERMINISTIC_LEASE_REFERENCE_MODEL_V1 = Object.freeze({
   role: "test-only-deterministic-reference-model",
   productionAdapter: false,
   conformingAdapterClaim: false,
@@ -201,7 +208,7 @@ function attemptDigest(
  * test. Close/reopen retains this model state so the harness can exercise the
  * continuity requirement without representing a real durable backend.
  */
-export class TestOnlyDeterministicLeaseReferenceModelV1
+class TestOnlyDeterministicLeaseReferenceModelV1
 implements SharedStateLeaseConformanceTargetV1 {
   readonly #clock: SharedStateLeaseConformanceClockV1;
   #state = initialState();
@@ -585,7 +592,7 @@ implements SharedStateLeaseConformanceTargetV1 {
   }
 }
 
-export function createTestOnlyDeterministicLeaseReferenceModelFactoryV1():
+function createTestOnlyDeterministicLeaseReferenceModelFactoryV1():
 SharedStateLeaseConformanceTargetFactoryV1 {
   return Object.freeze({
     async create({
@@ -597,3 +604,341 @@ SharedStateLeaseConformanceTargetFactoryV1 {
     },
   });
 }
+
+interface TestOnlyDeferredRaceEntryV1 {
+  readonly ownerSlot: SharedStateLeaseConformanceOwnerSlotV1;
+  readonly command: SharedStateLeaseTransactionCommandV1;
+  readonly resolve: (value: unknown) => void;
+  readonly reject: (reason: unknown) => void;
+}
+
+function testOnlyOwnerKeyDigestV1(contenderIndex: number): string {
+  const result = digestSharedStateKeyV1({
+    keyspaceVersion: V.versions.keyspace,
+    domain: "broker.lease.owner-key",
+    namespace: "broker.lease.conformance",
+    components: [
+      {
+        field: "ownerId",
+        type: "utf8",
+        value: `synthetic-${contenderIndex}`,
+      },
+    ],
+  });
+  if (!result.ok) return invariant();
+  return result.value.digest;
+}
+
+/**
+ * Test-only scheduling seam that makes one selected seeded rank reach the
+ * deterministic model first. Only the initial 32-way race is reordered; later
+ * lifecycle, fault, and recovery operations delegate unchanged.
+ */
+function createTestOnlyScheduledWinnerReferenceModelFactoryV1(
+  winnerSeededRank: number,
+): SharedStateLeaseConformanceTargetFactoryV1 {
+  const contenderIndex =
+    seededDeterministicContenderOrderV1()[winnerSeededRank - 1];
+  if (contenderIndex === undefined) return invariant();
+  const winnerOwnerKeyDigest = testOnlyOwnerKeyDigestV1(contenderIndex);
+  const delegateFactory =
+    createTestOnlyDeterministicLeaseReferenceModelFactoryV1();
+  let createdTargets = 0;
+
+  return Object.freeze({
+    async create(input: {
+      readonly clock: SharedStateLeaseConformanceClockV1;
+    }) {
+      const target = await delegateFactory.create(input);
+      createdTargets += 1;
+      if (createdTargets !== 1) return target;
+
+      const raceEntries: TestOnlyDeferredRaceEntryV1[] = [];
+      let raceReleased = false;
+      const scheduledTarget: SharedStateLeaseConformanceTargetV1 = {
+        openSingleton(ownerSlot) {
+          return target.openSingleton(ownerSlot);
+        },
+        transact(ownerSlot, command) {
+          if (
+            raceReleased
+            || command.operation !== "claimLease"
+            || command.input.expectedResourceVersion !== "0"
+          ) {
+            return target.transact(ownerSlot, command);
+          }
+
+          return new Promise<unknown>((resolve, reject) => {
+            raceEntries.push({
+              ownerSlot,
+              command,
+              resolve,
+              reject,
+            });
+            if (
+              raceEntries.length
+              !== SHARED_STATE_LEASE_CONFORMANCE_V1.contenderCount
+            ) {
+              return;
+            }
+
+            raceReleased = true;
+            const selected = raceEntries.find(
+              ({ command: entryCommand }) => (
+                entryCommand.operation === "claimLease"
+                && entryCommand.input.ownerKeyDigest === winnerOwnerKeyDigest
+              ),
+            );
+            if (selected === undefined) {
+              const error = new SharedStateLeaseConformanceErrorV1(
+                "reference_model_invariant",
+              );
+              for (const entry of raceEntries) entry.reject(error);
+              return;
+            }
+
+            const scheduledEntries = [
+              selected,
+              ...raceEntries.filter((entry) => entry !== selected),
+            ];
+            void (async () => {
+              for (const entry of scheduledEntries) {
+                try {
+                  entry.resolve(
+                    await target.transact(entry.ownerSlot, entry.command),
+                  );
+                } catch (error: unknown) {
+                  entry.reject(error);
+                }
+              }
+            })();
+          });
+        },
+        snapshot() {
+          return target.snapshot();
+        },
+        armTransactionFault(faultPoint) {
+          target.armTransactionFault(faultPoint);
+        },
+        closeSingleton(ownerSlot) {
+          return target.closeSingleton(ownerSlot);
+        },
+      };
+      return scheduledTarget;
+    },
+  });
+}
+
+const EXPECTED_REPORT = {
+  kind: "SharedStateLeaseConformanceReportV1",
+  harnessVersion: 1,
+  contractVersion: "a2a.shared-state.storage/v1",
+  scope: "lease-claim",
+  status: "passed",
+  scheduler: {
+    kind: "seeded-deterministic",
+    seed: 1504,
+    contenderCount: 32,
+    barrier: "explicit-promise",
+    transactionLimit: 64,
+    transactionCount: 48,
+  },
+  claims: {
+    committedAtBarrier: 1,
+    deterministicConflictsAtBarrier: 31,
+    conflictReasonCode: "claim_conflict",
+    winnerSeededRank: 1,
+    winnerAttemptCount: 1,
+    winnerAuthorityCheck: "renewed",
+    successfulClaimFencingTokens: ["1", "2", "3"],
+    laterFencesStrictlyGreater: true,
+  },
+  expiry: {
+    clock: "injected-fake",
+    advance: "exactly-through-expiry",
+    reclaim: "committed",
+  },
+  staleFence: {
+    reasonCode: "stale_fence",
+    renewRejections: 1,
+    completeMutationRejections: 1,
+    checkpointMutationRejections: 1,
+    releaseRejections: 1,
+    stateUnchanged: true,
+  },
+  transactionFaults: [
+    {
+      faultPoint: "before_mutation",
+      failedReasonCode: "authority_unavailable",
+      rollback: "all-or-none",
+      nextCleanClaim: "committed",
+    },
+    {
+      faultPoint: "after_resource_mutation",
+      failedReasonCode: "authority_unavailable",
+      rollback: "all-or-none",
+      nextCleanClaim: "committed",
+    },
+    {
+      faultPoint: "after_audit_outbox_staging",
+      failedReasonCode: "authority_unavailable",
+      rollback: "all-or-none",
+      nextCleanClaim: "committed",
+    },
+    {
+      faultPoint: "before_commit",
+      failedReasonCode: "authority_unavailable",
+      rollback: "all-or-none",
+      nextCleanClaim: "committed",
+    },
+  ],
+  closeReopen: {
+    snapshot: "preserved",
+    laterFence: "strictly-greater",
+  },
+  singleton: {
+    secondSimultaneousOwner: "failed-closed",
+    reasonCode: "ownership_conflict",
+  },
+} as const;
+
+function assertDeepFrozen(value: unknown): void {
+  if (value === null || typeof value !== "object") return;
+  assert.equal(Object.isFrozen(value), true);
+  for (const nested of Object.values(value)) assertDeepFrozen(nested);
+}
+
+function collectKeys(value: unknown, keys: string[] = []): string[] {
+  if (value === null || typeof value !== "object") return keys;
+  for (const [key, nested] of Object.entries(value)) {
+    keys.push(key);
+    collectKeys(nested, keys);
+  }
+  return keys;
+}
+
+test("labels the deterministic lease reference model as test-only and detached", () => {
+  assert.deepEqual(TEST_ONLY_DETERMINISTIC_LEASE_REFERENCE_MODEL_V1, {
+    role: "test-only-deterministic-reference-model",
+    productionAdapter: false,
+    conformingAdapterClaim: false,
+    backendClassClaim: "none",
+    runtimeIntegration: "not-attached",
+  });
+  assert.equal(Object.isFrozen(
+    TEST_ONLY_DETERMINISTIC_LEASE_REFERENCE_MODEL_V1,
+  ), true);
+});
+
+test("proves the exact bounded Phase 2.1 lease/claim report", async () => {
+  const report = await runSharedStateLeaseConformanceV1(
+    createTestOnlyDeterministicLeaseReferenceModelFactoryV1(),
+  );
+
+  assert.deepEqual(report, EXPECTED_REPORT);
+  assert.equal(
+    report.scheduler.contenderCount,
+    SHARED_STATE_LEASE_CONFORMANCE_V1.contenderCount,
+  );
+  assert.equal(
+    report.claims.committedAtBarrier
+      + report.claims.deterministicConflictsAtBarrier,
+    32,
+  );
+  assert.deepEqual(
+    report.transactionFaults.map(({ faultPoint }) => faultPoint),
+    SHARED_STATE_LEASE_FAULT_POINTS_V1,
+  );
+  assertDeepFrozen(report);
+});
+
+test("accepts each seeded rank as the unique committed winner", async () => {
+  for (
+    let winnerSeededRank = 1;
+    winnerSeededRank <= SHARED_STATE_LEASE_CONFORMANCE_V1.contenderCount;
+    winnerSeededRank += 1
+  ) {
+    const report = await runSharedStateLeaseConformanceV1(
+      createTestOnlyScheduledWinnerReferenceModelFactoryV1(winnerSeededRank),
+    );
+    assert.equal(report.claims.winnerSeededRank, winnerSeededRank);
+    assert.equal(report.claims.committedAtBarrier, 1);
+    assert.equal(report.claims.deterministicConflictsAtBarrier, 31);
+  }
+});
+
+test("uses a repeatable seeded contender order and explicit bounded output", () => {
+  const firstOrder = seededDeterministicContenderOrderV1();
+  const secondOrder = seededDeterministicContenderOrderV1();
+  assert.deepEqual(firstOrder, secondOrder);
+  assert.equal(firstOrder.length, 32);
+  assert.equal(new Set(firstOrder).size, 32);
+  assert.equal(
+    EXPECTED_REPORT.scheduler.transactionCount
+      <= EXPECTED_REPORT.scheduler.transactionLimit,
+    true,
+  );
+});
+
+test("keeps reports, snapshots, fault labels, and errors closed and non-reflecting", async () => {
+  assert.equal(
+    sharedStateLeaseConformanceReportV1Schema.safeParse({
+      ...EXPECTED_REPORT,
+      reflectedValue: "forbidden",
+    }).success,
+    false,
+  );
+  for (const winnerSeededRank of [0, 33]) {
+    assert.equal(
+      sharedStateLeaseConformanceReportV1Schema.safeParse({
+        ...EXPECTED_REPORT,
+        claims: {
+          ...EXPECTED_REPORT.claims,
+          winnerSeededRank,
+        },
+      }).success,
+      false,
+    );
+  }
+  assert.equal(
+    sharedStateLeaseConformanceSnapshotV1Schema.safeParse({
+      kind: "SharedStateLeaseConformanceSnapshotV1",
+      snapshotVersion: 1,
+      resourceBinding: "unbound",
+      resourceState: "queued",
+      resourceVersion: "0",
+      maximumFencingToken: "0",
+      activeClaim: false,
+      attemptCount: 0,
+      mutationCount: 0,
+      auditCount: 0,
+      outboxCount: 0,
+      hostPath: "forbidden",
+    }).success,
+    false,
+  );
+  assert.equal(
+    collectKeys(EXPECTED_REPORT).some((key) => (
+      /(?:path|identity|prompt|payload|secret|timestamp|network|host|random)/iu
+        .test(key)
+    )),
+    false,
+  );
+
+  const sentinel = "sensitive-target-value";
+  await assert.rejects(
+    runSharedStateLeaseConformanceV1({
+      async create() {
+        throw new Error(sentinel);
+      },
+    }),
+    (error: unknown) => {
+      assert.equal(error instanceof SharedStateLeaseConformanceErrorV1, true);
+      if (!(error instanceof SharedStateLeaseConformanceErrorV1)) return false;
+      assert.equal(error.code, "target_lifecycle_failed");
+      assert.equal(error.message.includes(sentinel), false);
+      assert.equal(error.stack?.includes(sentinel) ?? false, false);
+      return true;
+    },
+  );
+});
