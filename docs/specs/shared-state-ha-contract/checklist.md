@@ -168,7 +168,9 @@ specified in `spec.md`.
   public-safe reports, snapshots, cursors, controls, faults, and errors.
 - [x] Adjacent test-only deterministic outbox reference-model tests implement
   and pass exactly two registered stream keys/four producers each with
-  per-stream unique increasing sequences and no global-order assertion;
+  per-stream unique increasing sequences in adapter serialization/sequence
+  order, seeded producer attribution with no caller-fairness assertion, and
+  no global-order assertion;
   original-binding append retry without duplicate effects; the two exact
   empty-baseline append transaction faults; confirmed-but-unacknowledged
   ACK-before-commit recovery through `acknowledged` and

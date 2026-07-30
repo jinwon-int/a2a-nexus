@@ -287,6 +287,16 @@ implements SharedStateOutboxConformanceTargetV1 {
   #open = false;
   #armedFault: SharedStateOutboxConformanceFaultPointV1 | null = null;
   #transactionTail: Promise<void> = Promise.resolve();
+  #reverseInitialAppendBatchSize: number;
+  #pendingInitialAppends: Array<{
+    readonly command: SharedStateAppendOutboxCommandV1;
+    readonly resolve: (value: unknown) => void;
+    readonly reject: (reason?: unknown) => void;
+  }> = [];
+
+  constructor(reverseInitialAppendBatchSize = 0) {
+    this.#reverseInitialAppendBatchSize = reverseInitialAppendBatchSize;
+  }
 
   async open(): Promise<unknown> {
     if (this.#open) return lifecycle("failed", ["ownership_conflict"]);
@@ -352,6 +362,23 @@ implements SharedStateOutboxConformanceTargetV1 {
   async appendOutbox(
     command: SharedStateAppendOutboxCommandV1,
   ): Promise<unknown> {
+    if (this.#reverseInitialAppendBatchSize > 0) {
+      return new Promise((resolve, reject) => {
+        this.#pendingInitialAppends.push({ command, resolve, reject });
+        if (
+          this.#pendingInitialAppends.length
+          === this.#reverseInitialAppendBatchSize
+        ) {
+          const pending = this.#pendingInitialAppends.splice(0).reverse();
+          this.#reverseInitialAppendBatchSize = 0;
+          for (const entry of pending) {
+            void this.#serialize(
+              () => this.#appendNow(entry.command),
+            ).then(entry.resolve, entry.reject);
+          }
+        }
+      });
+    }
     return this.#serialize(() => this.#appendNow(command));
   }
 
@@ -661,14 +688,19 @@ implements SharedStateOutboxConformanceTargetV1 {
 
 function createTestOnlyDeterministicOutboxReferenceModelFactoryV1():
 SharedStateOutboxConformanceTargetFactoryV1 {
+  let targetOrdinal = 0;
   return Object.freeze({
     async create() {
-      return new TestOnlyDeterministicOutboxReferenceModelV1();
+      targetOrdinal += 1;
+      return new TestOnlyDeterministicOutboxReferenceModelV1(
+        targetOrdinal === 1
+          ? SHARED_STATE_OUTBOX_CONFORMANCE_V1.producerCount
+          : 0,
+      );
     },
   });
 }
 
-const seededOrder = seededDeterministicOutboxOrderV1(8);
 const EXPECTED_REPORT = {
   kind: "SharedStateOutboxConformanceReportV1",
   harnessVersion: 1,
@@ -698,23 +730,37 @@ const EXPECTED_REPORT = {
     streamCount: 2,
     producersPerStream: 4,
     committedAppends: 8,
-    perStream: [0, 1].map((streamIndex) => ({
-      streamOrdinal: streamIndex + 1,
-      producerReleaseRanks: seededOrder.flatMap(
-        (producerIndex, releaseIndex) => {
-          const matches = streamIndex === 0
-            ? producerIndex < 4
-            : producerIndex >= 4;
-          return matches ? [releaseIndex + 1] : [];
-        },
-      ),
-      allocatedSequences: ["1", "2", "3", "4"],
-      unique: true,
-      strictlyIncreasing: true,
-      appendOrder: "seeded-release-order",
-    })),
+    perStream: [
+      {
+        streamOrdinal: 1,
+        committedDistinctProducers: 4,
+        adapterSequenceOrder: [
+          { allocatedSequence: "1", producerScheduleRank: 5 },
+          { allocatedSequence: "2", producerScheduleRank: 4 },
+          { allocatedSequence: "3", producerScheduleRank: 2 },
+          { allocatedSequence: "4", producerScheduleRank: 1 },
+        ],
+        uniquePositiveAllocatedSequences: true,
+        strictlyIncreasingInAdapterSequenceOrder: true,
+        projectionOrder: "adapter-sequence-order",
+      },
+      {
+        streamOrdinal: 2,
+        committedDistinctProducers: 4,
+        adapterSequenceOrder: [
+          { allocatedSequence: "1", producerScheduleRank: 8 },
+          { allocatedSequence: "2", producerScheduleRank: 7 },
+          { allocatedSequence: "3", producerScheduleRank: 6 },
+          { allocatedSequence: "4", producerScheduleRank: 3 },
+        ],
+        uniquePositiveAllocatedSequences: true,
+        strictlyIncreasingInAdapterSequenceOrder: true,
+        projectionOrder: "adapter-sequence-order",
+      },
+    ],
     sameStreamEvaluator: "same_stream_total_order",
     crossStreamEvaluator: "cross_stream_no_order",
+    callerFairnessAssertion: "none",
     globalCrossStreamOrderingAssertion: "none",
   },
   retry: {
@@ -856,6 +902,26 @@ test("proves the exact bounded Phase 2.3 outbox report", async () => {
     report.producerOrdering.globalCrossStreamOrderingAssertion,
     "none",
   );
+  assert.equal(report.producerOrdering.callerFairnessAssertion, "none");
+  assert.equal(
+    collectKeys(report).includes("producerReleaseRanks"),
+    false,
+  );
+  assert.equal(
+    JSON.stringify(report).includes("seeded-release-order"),
+    false,
+  );
+  for (const stream of report.producerOrdering.perStream) {
+    const ranks = stream.adapterSequenceOrder.map(
+      ({ producerScheduleRank }) => producerScheduleRank,
+    );
+    assert.equal(
+      ranks.some((rank, index) => (
+        index > 0 && rank < ranks[index - 1]!
+      )),
+      true,
+    );
+  }
   assert.equal(
     report.reconciliation.globalCrossStreamCursorOrderAssertion,
     "none",
@@ -901,6 +967,16 @@ test("keeps report, snapshot, cursor, control, fault, and error schemas closed",
     sharedStateOutboxConformanceReportV1Schema.safeParse({
       ...EXPECTED_REPORT,
       reflectedValue: "forbidden",
+    }).success,
+    false,
+  );
+  assert.equal(
+    sharedStateOutboxConformanceReportV1Schema.safeParse({
+      ...EXPECTED_REPORT,
+      producerOrdering: {
+        ...EXPECTED_REPORT.producerOrdering,
+        callerFairnessAssertion: "first-caller",
+      },
     }).success,
     false,
   );
