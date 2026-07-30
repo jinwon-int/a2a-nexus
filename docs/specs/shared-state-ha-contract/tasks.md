@@ -4,11 +4,12 @@
 > documentation packet and the completed bounded Phase 1 contract/parser and
 > keyspace/digest/time-evaluator/idempotency-registry/outbox-registry and
 > observability-catalog/parser/projector slices, plus the first bounded Phase
-> 2.1 lease/claim and Phase 2.2 `executeIdempotent` backend-neutral
-> conformance harnesses exercised against clearly labeled test-only
-> deterministic reference models. SQLite/shared adapter implementations and
-> their conformance, retention/prune execution, runtime health/endpoint
-> integration, migration, and operational rollout remain unchecked.
+> 2.1 lease/claim, Phase 2.2 `executeIdempotent`, and Phase 2.3 outbox-ordering
+> backend-neutral conformance harnesses exercised against clearly labeled
+> test-only deterministic reference models. SQLite/shared adapter
+> implementations and their conformance, retention/prune execution, runtime
+> health/endpoint and query integration, migration, and operational rollout
+> remain unchecked.
 > Refs #1504.
 
 ## 0. Spec-first packet
@@ -39,9 +40,10 @@
 
 ## 2. Deterministic conformance harness
 
-All tests use an injected fake clock, seeded deterministic scheduler, explicit
-barriers, bounded operation counts, temporary local stores, and no external
-network or production data.
+Tests use seeded deterministic schedules, explicit barriers where concurrency
+is exercised, isolated factory-created targets, bounded operation counts, and
+no external network or production data. An injected fake clock is used only
+where the scenario has time semantics; the Phase 2.3 slice has none.
 
 ### 2.1 Claim/lease concurrency
 
@@ -96,16 +98,48 @@ claim. Retention/prune execution remains unimplemented and untested.
 
 ### 2.3 Outbox ordering
 
-- [ ] Run eight deterministic producers across at least two streams.
-- [ ] Assert unique, strictly increasing sequences and append order within
-  each stream; do not require global cross-stream order.
-- [ ] Assert same idempotency retry returns the original event ID/sequence.
-- [ ] Crash/fail at domain-before-append, append-before-commit, and
-  ACK-before-commit boundaries; assert domain+append atomicity and ACK
-  replayability.
-- [ ] Reopen and reconcile from each cursor; assert no reversal, no duplicate
-  ID in one response, unacknowledged replay, and preserved receipt/ACK state.
-- [ ] Assert provider-accepted evidence cannot become receipt-confirmed ACK.
+- [x] Release exactly eight deterministic producers at an explicit promise
+  barrier across exactly two distinct registered `broker.terminal-outbox`
+  stream keys, four producers per stream.
+- [x] Assert adapter-allocated sequences are unique and strictly increasing
+  in adapter serialization/sequence order within each exact stream, report
+  seeded producer schedule rank only for attribution with no caller-fairness
+  assertion, use the existing same/different-stream ordering evaluator
+  decisions, and make no global cross-stream ordering assertion.
+- [x] Retry one committed same-idempotency-key/same-payload append; assert the
+  `replayed` decision returns the original event-key digest and stream
+  sequence, creates no second domain/event effect, and receives the existing
+  retry evaluator's `original-binding` decision.
+- [x] Inject exact `domain-before-append` and `append-before-commit` faults;
+  assert unavailable/`authority_unavailable`, the exact empty baseline, and
+  then one domain effect plus one outbox event on a clean retry.
+- [x] Confirm one receipt with `current-session-visible` evidence, inject
+  `ack-before-commit`, assert the confirmed event remains unacknowledged, then
+  assert `acknowledged` and `already_acknowledged` on two clean retries
+  without a duplicate effect.
+- [x] Close/reopen one detached target and use only the explicitly labeled
+  test-only reconciliation control with start, intermediate per-stream, and
+  end cursors; assert no per-stream reversal, no duplicate event ID in one
+  response, unacknowledged replay, no acknowledged replay beyond the model's
+  acknowledged-through cursor, and preserved receipt/ACK state without a
+  global cursor-order assertion.
+- [x] Preserve `pending`/`unacknowledged` after provider-accepted receipt
+  evidence, and assert the existing pure policy evaluator and storage V1
+  parser reject a provider-accepted ACK attempt as
+  `provider_acceptance_not_ack` /
+  `outbox_provider_acceptance_not_ack`.
+- [ ] Repeat the Phase 2.3 harness through SQLite/shared adapters and
+  separately implement/prove any authorized query/reconciliation and
+  retention/prune behavior.
+
+The checked Phase 2.3 facts above are proved with 30 existing storage V1
+commands, three bounded test-only reconciliation controls, one parser/policy
+negative attempt, seven isolated targets, and a 40-operation ceiling. The
+reference model is in-memory, test-only, non-production, non-SQLite,
+non-shared, non-conforming, detached from broker runtime, and makes no durable
+adapter claim. Its reconciliation seam is not a V1 storage query or runtime
+API. Runtime/query integration, real ACK/replay/prune, and retention execution
+remain unimplemented and untested.
 
 ### 2.4 Restart continuity
 
@@ -286,3 +320,21 @@ The focused Phase 2.2 command proves only the backend-neutral harness against
 the detached test-only reference model. SQLite/shared adapter conformance,
 runtime integration, retention/prune execution, migration, deployment, live
 rollout, and overall issue completion remain open.
+
+Phase 2.3 source slice:
+
+```bash
+npm run build --workspace=a2a-broker
+node --test packages/broker/dist/shared-state-outbox-conformance-v1.test.js
+npm test --workspace=a2a-broker
+npm run check
+npm run scan:public-readiness
+npm run scan:external-secrets
+npm run check:markdown-links
+git diff --check
+```
+
+The focused Phase 2.3 command proves only the backend-neutral harness against
+the adjacent detached test-only reference model. SQLite/shared adapter
+conformance, runtime/query integration, retention/prune execution, migration,
+deployment, live rollout, and overall issue completion remain open.
