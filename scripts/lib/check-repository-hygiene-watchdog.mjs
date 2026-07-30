@@ -4,8 +4,8 @@
  *
  * The GitHub reader below is intentionally GET-only. It inventories branches
  * and closed pull requests, then reports same-repository PR head branches that
- * still exist after merge. It never deletes a branch or changes repository
- * settings.
+ * still point to the exact commit that was merged. It never deletes a branch
+ * or changes repository settings.
  */
 import process from 'node:process';
 
@@ -36,7 +36,8 @@ function repositoryPath(repository) {
 
 /**
  * Return deterministic findings for merged, same-repository PR heads whose
- * branch still exists. Default, `main`, and protected branches are preserved.
+ * branch still points to that PR's head commit. Default, `main`, and protected
+ * branches are preserved.
  */
 export function findMergedBranchResidue({
   repository,
@@ -67,10 +68,18 @@ export function findMergedBranchResidue({
 
     const finding = candidates.get(pullRequest.head?.ref);
     if (!finding) continue;
+    const pullRequestHeadSha = pullRequest.head?.sha;
+    if (
+      typeof finding.headSha !== 'string'
+      || finding.headSha.length === 0
+      || typeof pullRequestHeadSha !== 'string'
+      || pullRequestHeadSha.length === 0
+      || finding.headSha !== pullRequestHeadSha
+    ) continue;
     finding.pullRequests.push({
       number: pullRequest.number,
       mergedAt: pullRequest.merged_at,
-      headSha: pullRequest.head?.sha ?? null,
+      headSha: pullRequestHeadSha,
       url: pullRequest.html_url ?? null,
     });
   }

@@ -34,14 +34,14 @@ test('finds an existing branch attached to a merged same-repository PR', () => {
   const findings = findMergedBranchResidue({
     repository,
     defaultBranch: 'trunk',
-    branches: [branch('feature/merged')],
+    branches: [branch('feature/merged', { commit: { sha: 'pr-42' } })],
     pullRequests: [mergedPull(42, 'feature/merged')],
   });
 
   assert.deepEqual(findings, [
     {
       branch: 'feature/merged',
-      headSha: 'branch-feature/merged',
+      headSha: 'pr-42',
       pullRequests: [
         {
           number: 42,
@@ -52,6 +52,25 @@ test('finds an existing branch attached to a merged same-repository PR', () => {
       ],
     },
   ]);
+});
+
+test('ignores an advanced or reused branch whose commit differs from the merged PR head', () => {
+  const findings = findMergedBranchResidue({
+    repository,
+    defaultBranch: 'main',
+    branches: [branch('feature/reused', { commit: { sha: 'current-active-work' } })],
+    pullRequests: [
+      mergedPull(21, 'feature/reused', {
+        head: {
+          ref: 'feature/reused',
+          sha: 'previously-merged-head',
+          repo: { full_name: repository },
+        },
+      }),
+    ],
+  });
+
+  assert.deepEqual(findings, []);
 });
 
 test('ignores unmerged and deleted PR head branches', () => {
@@ -102,14 +121,20 @@ test('ignores main, the repository default branch, and protected branches', () =
 });
 
 test('sorts branches and associated PR numbers deterministically', () => {
+  const sameHead = (number, ref, sha) => mergedPull(number, ref, {
+    head: { ref, sha, repo: { full_name: repository } },
+  });
   const findings = findMergedBranchResidue({
     repository,
     defaultBranch: 'main',
-    branches: [branch('z-last'), branch('a-first')],
+    branches: [
+      branch('z-last', { commit: { sha: 'z-head' } }),
+      branch('a-first', { commit: { sha: 'a-head' } }),
+    ],
     pullRequests: [
-      mergedPull(9, 'a-first'),
-      mergedPull(12, 'z-last'),
-      mergedPull(4, 'a-first'),
+      sameHead(9, 'a-first', 'a-head'),
+      sameHead(12, 'z-last', 'z-head'),
+      sameHead(4, 'a-first', 'a-head'),
     ],
   });
 
