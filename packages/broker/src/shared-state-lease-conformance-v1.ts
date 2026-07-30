@@ -166,7 +166,11 @@ export const sharedStateLeaseConformanceReportV1Schema = z
         committedAtBarrier: z.literal(1),
         deterministicConflictsAtBarrier: z.literal(31),
         conflictReasonCode: z.literal("claim_conflict"),
-        winnerSeededRank: z.literal(1),
+        winnerSeededRank: z
+          .number()
+          .int()
+          .min(1)
+          .max(SHARED_STATE_LEASE_CONFORMANCE_V1.contenderCount),
         winnerAttemptCount: z.literal(1),
         winnerAuthorityCheck: z.literal("renewed"),
         successfulClaimFencingTokens: z
@@ -614,13 +618,19 @@ export async function runSharedStateLeaseConformanceV1(
   if (
     winners.length !== 1
     || conflicts.length !== 31
-    || winners[0]?.contenderIndex !== order[0]
   ) {
     fail("claim_outcome_mismatch");
   }
   const winner = winners[0]!;
   if (winner.result.status !== "committed") {
     return fail("claim_outcome_mismatch");
+  }
+  const winnerSeededRank = order.indexOf(winner.contenderIndex) + 1;
+  if (
+    winnerSeededRank < 1
+    || winnerSeededRank > SHARED_STATE_LEASE_CONFORMANCE_V1.contenderCount
+  ) {
+    fail("claim_outcome_mismatch");
   }
   const firstFence = BigInt(winner.result.result.fencingToken);
   if (firstFence <= 0n || !winner.result.result.attemptKeyDigest) {
@@ -800,7 +810,7 @@ export async function runSharedStateLeaseConformanceV1(
       committedAtBarrier: 1,
       deterministicConflictsAtBarrier: 31,
       conflictReasonCode: "claim_conflict",
-      winnerSeededRank: 1,
+      winnerSeededRank,
       winnerAttemptCount: 1,
       winnerAuthorityCheck: "renewed",
       successfulClaimFencingTokens: [

@@ -237,7 +237,7 @@ Phase 2.1 source slice:
 
 ```bash
 npm run build --workspace=a2a-broker
-node --test packages/broker/dist/shared-state-lease-conformance-harness-v1.test.js
+node --test packages/broker/dist/shared-state-lease-conformance-v1.test.js
 npm test --workspace=a2a-broker
 npm run check
 npm run scan:public-readiness
