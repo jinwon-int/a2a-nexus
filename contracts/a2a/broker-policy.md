@@ -117,12 +117,7 @@ satisfies a `requireApproval` rule at claim.
   validator via this contract. Both sets are fail-closed on unknown fields, so a
   field added to only one of them makes the other reject every document that
   uses it. `scripts/check-broker-policy.test.mjs` asserts the two `RULE_FIELDS`
-  sets are equal; add a field to both in the same commit. This gate also runs on
-  the default release-gate path as the `broker-policy-document` core step
-  (`docs/ops/release-gate-step-inventory.json`), which executes the checker
-  against the committed `docs/ops/broker-policy.json` so the release gate proves
-  the operator-committed document itself is accepted, not merely that the
-  validator unit test is green.
+  sets are equal; add a field to both in the same commit.
 - **Rollout ordering for a new rule field.** Because validation is fail-closed
   and a configured-but-invalid document fails broker startup loudly, deploy
   brokers that understand the field *before* committing a document that uses it,
