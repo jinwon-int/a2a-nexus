@@ -4,9 +4,11 @@
 > documentation packet and narrowly proven Phase 1 contract/parser and
 > keyspace/digest/time-evaluator/idempotency-registry/outbox-registry and
 > observability-catalog/parser/projector work, plus the bounded Phase 2.1
-> backend-neutral lease/claim harness and its clearly labeled test-only
-> deterministic reference-model proof. Runtime implementation, SQLite/shared
-> adapter conformance, migration, and operations remain open. Refs #1504.
+> lease/claim and Phase 2.2 `executeIdempotent` backend-neutral conformance
+> harnesses and their clearly labeled test-only deterministic reference-model
+> proofs. Runtime implementation, SQLite/shared adapter conformance,
+> retention/prune execution, migration, and operations remain open.
+> Refs #1504.
 
 ## A. Spec packet
 
@@ -144,8 +146,21 @@ specified in `spec.md`.
   unchanged-state stale-fence rejections, four all-or-none transaction fault
   points, close/reopen snapshot preservation, and simultaneous singleton
   ownership rejection.
+- [x] Backend-neutral `executeIdempotent` conformance harness interface
+  implemented with the existing storage V1 parser, closed idempotency
+  registry, stable decision/reason vocabulary, digest keyspace, injected fake
+  clock, seeded schedules, explicit promise barriers, eight isolated
+  factory-created targets, a 96-operation ceiling/78-operation exact count,
+  and strict public-safe aggregate reports, snapshots, faults, and errors.
+- [x] Test-only deterministic idempotency reference-model tests implement and
+  pass the exact 64-way same-fingerprint race, either bounded winner rank for
+  the two-way different-fingerprint conflict, exact post-commit ambiguous
+  recovery, four exact empty-baseline pre-commit rollbacks followed by one
+  clean execution, and close/reopen outcome/snapshot continuity under the
+  registered non-expiring policy without retention/prune execution.
 - [ ] Claim tests pass against a SQLite or shared adapter.
-- [ ] Idempotency tests implemented/passing.
+- [ ] Idempotency tests pass against a SQLite or shared adapter.
+- [ ] Idempotency retention/prune execution is implemented and proven.
 - [ ] Outbox tests implemented/passing.
 - [ ] Restart/partition/expiry tests implemented/passing.
 - [ ] Claim-graph/rollback tests implemented/passing.
