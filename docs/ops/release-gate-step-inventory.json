@@ -217,6 +217,20 @@
       "note": "#1518 Phase 6 offline finalizer tests: legacy quorum/draft behavior plus strict optional lineage evidence composition; source-only and no-live."
     },
     {
+      "name": "broker-policy-document",
+      "command": "node",
+      "args": [
+        "scripts/check-broker-policy.mjs",
+        "docs/ops/broker-policy.json"
+      ],
+      "tier": "core",
+      "owner": "broker",
+      "consumer": "pr-gate",
+      "retirement": "keep",
+      "retirementCondition": "Retire only when a narrower owner-scoped gate demonstrably covers the same invariant; no removal while it runs on the default release-gate path.",
+      "note": "#1480 default-gate execution of the committed broker policy document: runs scripts/check-broker-policy.mjs against docs/ops/broker-policy.json so a green validator unit test is not mistaken for proof the operator-committed policy file is accepted fail-closed."
+    },
+    {
       "name": "public-readiness",
       "command": "npm",
       "args": [
