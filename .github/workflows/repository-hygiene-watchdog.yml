@@ -1,0 +1,32 @@
+# Read-only merged-branch residue watchdog (#1507).
+#
+# This workflow only inventories repository metadata, branches, and pull
+# requests. Findings fail the check and emit warnings. Branch deletion and
+# repository-setting changes require a separate, explicitly approved process.
+name: repository-hygiene-watchdog
+
+on:
+  schedule:
+    - cron: '43 2 * * 1' # Mondays 02:43 UTC
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pull-requests: read
+
+jobs:
+  merged-branch-residue:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          fetch-depth: 1
+          persist-credentials: false
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v6
+        with:
+          node-version: '22'
+      - name: Detect merged PR head branches that still exist
+        run: node scripts/lib/check-repository-hygiene-watchdog.mjs
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

@@ -399,6 +399,12 @@
       "note": "Unit tests for the #1228 workflow action SHA-pinning gate (OpenSSF Scorecard Pinned-Dependencies)."
     },
     {
+      "file": "scripts/lib/check-repository-hygiene-watchdog.test.mjs",
+      "class": "gate",
+      "round": null,
+      "note": "Dependency-free unit tests for the #1507 read-only weekly merged-branch residue watchdog."
+    },
+    {
       "file": "scripts/a2a-warn-log-aggregate.test.mjs",
       "class": "gate",
       "round": null,
