@@ -5,10 +5,10 @@
 > keyspace/digest/time-evaluator/idempotency-registry/outbox-registry and
 > observability-catalog/parser/projector work, plus the bounded Phase 2.1
 > lease/claim, Phase 2.2 `executeIdempotent`, and Phase 2.3 outbox-ordering
-> backend-neutral conformance harnesses and their clearly labeled test-only
-> deterministic reference-model proofs. Runtime/query integration, SQLite/
-> shared adapter conformance, retention/prune execution, migration, and
-> operations remain open.
+> and Phase 2.4 restart-continuity backend-neutral conformance harnesses and
+> their clearly labeled test-only deterministic reference-model proofs.
+> Runtime/query integration, SQLite/shared adapter conformance,
+> retention/prune execution, migration, and operations remain open.
 > Refs #1504.
 
 ## A. Spec packet
@@ -178,13 +178,38 @@ specified in `spec.md`.
   reconciliation with per-stream order, duplicate, replay, and state
   preservation checks; and provider-accepted pending/non-ACK parser-policy
   rejection.
+- [x] Backend-neutral restart-continuity conformance harness interface
+  implemented with the existing storage V1 command/result/lifecycle parsers,
+  keyspace digests, closed idempotency/outbox registries, time V1 evaluator,
+  stable decision/rejection/unavailable vocabulary, one injected exact-integer
+  fake clock, deterministic serial seeded crash schedule, six isolated
+  factory-created targets, a 64-command ceiling/45-command exact count, and
+  strict aggregate-only non-reflecting reports, snapshots, controls, and
+  errors.
+- [x] Adjacent test-only deterministic restart reference-model tests implement
+  and pass the exact pre-boundary continuity baseline for replay, rate, lease
+  authority/fence, idempotency domain/outbox effect, two-stream outbox
+  sequence/receipt/ACK/cursor reconciliation, and graph source/checkpoint;
+  exact before/after command and ACK crash recovery through existing
+  unavailable/ambiguous outcomes; exact one-millisecond-beyond-tolerance
+  unsafe-clock fail-closed/recovery behavior; and nondecreasing fence, lease
+  resource version, every retained stream high-water, graph source sequence,
+  and projection checkpoint.
+- [x] Phase 2.4 test-only snapshot, crash, cursor, reconciliation, and fake
+  clock seams are explicitly conformance controls, not competing storage,
+  clock, health, readiness, query, adapter, or runtime APIs; the reference
+  model is in-memory, non-production, non-SQLite, non-shared, non-conforming,
+  detached, and makes no durability claim for close/reopen state retention.
 - [ ] Claim tests pass against a SQLite or shared adapter.
 - [ ] Idempotency tests pass against a SQLite or shared adapter.
 - [ ] Idempotency retention/prune execution is implemented and proven.
 - [ ] Outbox tests pass against a SQLite or shared adapter.
 - [ ] Outbox runtime/query reconciliation and retention/prune execution are
   implemented and proven.
-- [ ] Restart/partition/expiry tests implemented/passing.
+- [ ] Restart-continuity tests repeat and pass through a SQLite/shared adapter
+  with actual durability and adapter clock-floor persistence.
+- [ ] Partition/unavailable and exact expiry-boundary tests are
+  implemented/passing.
 - [ ] Claim-graph/rollback tests implemented/passing.
 - [ ] Performance thresholds measured/approved.
 
