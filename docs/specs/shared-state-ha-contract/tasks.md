@@ -102,9 +102,10 @@ claim. Retention/prune execution remains unimplemented and untested.
   barrier across exactly two distinct registered `broker.terminal-outbox`
   stream keys, four producers per stream.
 - [x] Assert adapter-allocated sequences are unique and strictly increasing
-  in deterministic append order within each exact stream, use the existing
-  same/different-stream ordering evaluator decisions, and make no global
-  cross-stream ordering assertion.
+  in adapter serialization/sequence order within each exact stream, report
+  seeded producer schedule rank only for attribution with no caller-fairness
+  assertion, use the existing same/different-stream ordering evaluator
+  decisions, and make no global cross-stream ordering assertion.
 - [x] Retry one committed same-idempotency-key/same-payload append; assert the
   `replayed` decision returns the original event-key digest and stream
   sequence, creates no second domain/event effect, and receives the existing

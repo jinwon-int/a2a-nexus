@@ -275,15 +275,22 @@ export type SharedStateOutboxConformanceFaultReportV1 = Readonly<
 const perStreamOrderingReportSchema = z
   .object({
     streamOrdinal: z.number().int().min(1).max(2),
-    producerReleaseRanks: z
-      .array(z.number().int().min(1).max(8))
+    committedDistinctProducers: z.literal(
+      SHARED_STATE_OUTBOX_CONFORMANCE_V1.producersPerStream,
+    ),
+    adapterSequenceOrder: z
+      .array(
+        z
+          .object({
+            allocatedSequence: positiveDecimalSchema,
+            producerScheduleRank: z.number().int().min(1).max(8),
+          })
+          .strict(),
+      )
       .length(SHARED_STATE_OUTBOX_CONFORMANCE_V1.producersPerStream),
-    allocatedSequences: z
-      .array(positiveDecimalSchema)
-      .length(SHARED_STATE_OUTBOX_CONFORMANCE_V1.producersPerStream),
-    unique: z.literal(true),
-    strictlyIncreasing: z.literal(true),
-    appendOrder: z.literal("seeded-release-order"),
+    uniquePositiveAllocatedSequences: z.literal(true),
+    strictlyIncreasingInAdapterSequenceOrder: z.literal(true),
+    projectionOrder: z.literal("adapter-sequence-order"),
   })
   .strict();
 
@@ -347,6 +354,7 @@ export const sharedStateOutboxConformanceReportV1Schema = z
         perStream: z.array(perStreamOrderingReportSchema).length(2),
         sameStreamEvaluator: z.literal("same_stream_total_order"),
         crossStreamEvaluator: z.literal("cross_stream_no_order"),
+        callerFairnessAssertion: z.literal("none"),
         globalCrossStreamOrderingAssertion: z.literal("none"),
       })
       .strict(),
@@ -1142,7 +1150,9 @@ export async function runSharedStateOutboxConformanceV1(
     return deepFreeze(parsed.data);
   }
 
-  // Scenario 1: eight explicitly released producers, four per exact stream.
+  // Scenario 1: eight seeded producers released together at one barrier,
+  // four per exact stream. Seeded schedule rank is attribution only; adapter
+  // sequence order, not caller order, defines the per-stream projection.
   const orderingTarget = await openedTarget();
   const producerCommands = Array.from(
     { length: SHARED_STATE_OUTBOX_CONFORMANCE_V1.producerCount },
@@ -1161,22 +1171,24 @@ export async function runSharedStateOutboxConformanceV1(
   const orderingBarrier = new ExplicitOutboxPromiseBarrierV1(
     SHARED_STATE_OUTBOX_CONFORMANCE_V1.producerCount,
   );
-  const released = seededOrder.map((producerIndex, releaseIndex) => {
-    const producer = producerCommands[producerIndex];
-    if (producer === undefined) return fail("append_order_mismatch");
-    return {
-      ...producer,
-      releaseRank: releaseIndex + 1,
-      promise: (async () => {
-        await orderingBarrier.arriveAndWait();
-        return append(orderingTarget, producer.command);
-      })(),
-    };
-  });
+  const scheduledProducers = seededOrder.map(
+    (producerIndex, scheduleIndex) => {
+      const producer = producerCommands[producerIndex];
+      if (producer === undefined) return fail("append_order_mismatch");
+      return {
+        ...producer,
+        producerScheduleRank: scheduleIndex + 1,
+        promise: (async () => {
+          await orderingBarrier.arriveAndWait();
+          return append(orderingTarget, producer.command);
+        })(),
+      };
+    },
+  );
   await orderingBarrier.waitUntilAllArrived();
   orderingBarrier.release();
   const orderingResults = await Promise.all(
-    released.map(async (entry) => ({
+    scheduledProducers.map(async (entry) => ({
       ...entry,
       result: await entry.promise,
     })),
@@ -1196,25 +1208,50 @@ export async function runSharedStateOutboxConformanceV1(
     ) {
       return fail("append_order_mismatch");
     }
-    const allocatedSequences = entries.map((entry) => {
+    const committedEntries = entries.map((entry) => {
       if (!committedAppend(entry.result, "appended")) {
         return fail("append_order_mismatch");
       }
-      return entry.result.result.streamSequence;
+      return {
+        producerIndex: entry.producerIndex,
+        producerScheduleRank: entry.producerScheduleRank,
+        allocatedSequence: entry.result.result.streamSequence,
+      };
     });
+    const adapterSequenceOrder = [...committedEntries].sort(
+      (left, right) => (
+        BigInt(left.allocatedSequence) < BigInt(right.allocatedSequence)
+          ? -1
+          : BigInt(left.allocatedSequence)
+              > BigInt(right.allocatedSequence)
+            ? 1
+            : 0
+      ),
+    );
+    const allocatedSequences = adapterSequenceOrder.map(
+      (entry) => entry.allocatedSequence,
+    );
     if (
-      new Set(allocatedSequences).size !== allocatedSequences.length
+      new Set(
+        committedEntries.map((entry) => entry.producerIndex),
+      ).size !== SHARED_STATE_OUTBOX_CONFORMANCE_V1.producersPerStream
+      || allocatedSequences.some((sequence) => BigInt(sequence) <= 0n)
+      || new Set(allocatedSequences).size !== allocatedSequences.length
       || !strictlyIncreasing(allocatedSequences)
     ) {
       return fail("append_order_mismatch");
     }
     return {
       streamOrdinal: stream.ordinal,
-      producerReleaseRanks: entries.map((entry) => entry.releaseRank),
-      allocatedSequences,
-      unique: true,
-      strictlyIncreasing: true,
-      appendOrder: "seeded-release-order",
+      committedDistinctProducers:
+        SHARED_STATE_OUTBOX_CONFORMANCE_V1.producersPerStream,
+      adapterSequenceOrder: adapterSequenceOrder.map((entry) => ({
+        allocatedSequence: entry.allocatedSequence,
+        producerScheduleRank: entry.producerScheduleRank,
+      })),
+      uniquePositiveAllocatedSequences: true,
+      strictlyIncreasingInAdapterSequenceOrder: true,
+      projectionOrder: "adapter-sequence-order",
     } as const;
   });
   const firstPolicy = evaluatePolicy(producerCommands[0]!.command);
@@ -1619,6 +1656,7 @@ export async function runSharedStateOutboxConformanceV1(
       perStream,
       sameStreamEvaluator: "same_stream_total_order",
       crossStreamEvaluator: "cross_stream_no_order",
+      callerFairnessAssertion: "none",
       globalCrossStreamOrderingAssertion: "none",
     },
     retry: {
