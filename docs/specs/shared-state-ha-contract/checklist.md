@@ -3,7 +3,9 @@
 > **Status:** closeout checklist. Checked items include the completed
 > documentation packet and narrowly proven Phase 1 contract/parser and
 > keyspace/digest/time-evaluator/idempotency-registry/outbox-registry and
-> observability-catalog/parser/projector work. Runtime implementation,
+> observability-catalog/parser/projector work, plus the bounded Phase 2.1
+> backend-neutral lease/claim harness and its clearly labeled test-only
+> deterministic reference-model proof. Runtime implementation, SQLite/shared
 > adapter conformance, migration, and operations remain open. Refs #1504.
 
 ## A. Spec packet
@@ -134,8 +136,15 @@ specified in `spec.md`.
   absent/unavailable shapes, public/operator floor separation, whole-group
   suppression, hashed/pseudonymous identity rejection, Unicode/case and
   prototype-key rejection, and sentinel absence from successful serialization.
-- [ ] Test harness implemented.
-- [ ] Claim tests implemented/passing.
+- [x] Backend-neutral lease/claim conformance harness interface implemented
+  with an injected fake clock, seeded contender order, explicit promise
+  barrier, bounded operation count, and closed public-safe reports/errors.
+- [x] Test-only deterministic reference-model claim tests implement and pass
+  the exact 32-way claim race, monotonic fencing, exact-expiry reclaim,
+  unchanged-state stale-fence rejections, four all-or-none transaction fault
+  points, close/reopen snapshot preservation, and simultaneous singleton
+  ownership rejection.
+- [ ] Claim tests pass against a SQLite or shared adapter.
 - [ ] Idempotency tests implemented/passing.
 - [ ] Outbox tests implemented/passing.
 - [ ] Restart/partition/expiry tests implemented/passing.

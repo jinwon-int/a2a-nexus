@@ -3,9 +3,11 @@
 > **Status:** implementation backlog. Checked items include the completed
 > documentation packet and the completed bounded Phase 1 contract/parser and
 > keyspace/digest/time-evaluator/idempotency-registry/outbox-registry and
-> observability-catalog/parser/projector slices. Adapter implementations, the
-> conformance harness, runtime health/endpoint integration, migration, and
-> operational rollout remain unchecked. Refs #1504.
+> observability-catalog/parser/projector slices, plus the first bounded Phase
+> 2.1 backend-neutral lease/claim harness exercised against a clearly labeled
+> test-only deterministic reference model. SQLite/shared adapter
+> implementations and their conformance, runtime health/endpoint integration,
+> migration, and operational rollout remain unchecked. Refs #1504.
 
 ## 0. Spec-first packet
 
@@ -41,16 +43,24 @@ network or production data.
 
 ### 2.1 Claim/lease concurrency
 
-- [ ] Release 32 contenders at one barrier against one queued resource; assert
+- [x] Release 32 contenders at one barrier against one queued resource; assert
   exactly one claim and 31 conflicts.
-- [ ] Assert the winner receives one attempt and fence, and every later
+- [x] Assert the winner receives one attempt and fence, and every later
   successful claim has a strictly greater fence.
-- [ ] Pause the old claimant, advance to expiry, requeue/reclaim, then assert
-  old renew/complete/checkpoint writes fail with `stale_fence`.
-- [ ] Inject failure before mutation, after task mutation, after audit/outbox
+- [x] Pause the old claimant, advance exactly through expiry, reclaim, then
+  assert
+  old renew/complete/checkpoint/release writes fail with `stale_fence`.
+- [x] Inject failure before mutation, after task mutation, after audit/outbox
   append, and before commit; assert all-or-none state.
-- [ ] Repeat through adapter close/reopen and local child-process singleton
-  ownership conflict.
+- [x] Preserve the test-only reference-model snapshot through close/reopen and
+  assert a second simultaneous singleton owner fails closed.
+- [ ] Repeat through a SQLite/shared adapter close/reopen and local
+  child-process singleton ownership conflict.
+
+The checked Phase 2.1 facts above are proved only by the backend-neutral
+harness against its test-only deterministic reference model. The model is not
+a production or conforming SQLite/shared backend, is not connected to broker
+runtime, and does not complete adapter conformance.
 
 ### 2.2 Idempotency concurrency
 
@@ -223,6 +233,19 @@ npm run scan:external-secrets
 git diff --check
 ```
 
-Later source phases MUST add the targeted adapter test command and broker
-package gates once test files exist. This packet does not mark those tests
-implemented or passed.
+Phase 2.1 source slice:
+
+```bash
+npm run build --workspace=a2a-broker
+node --test packages/broker/dist/shared-state-lease-conformance-v1.test.js
+npm test --workspace=a2a-broker
+npm run check
+npm run scan:public-readiness
+npm run scan:external-secrets
+npm run check:markdown-links
+git diff --check
+```
+
+The focused command proves the harness/reference-model slice only. It is not
+an adapter, migration, runtime integration, deployment, or full-conformance
+gate.
