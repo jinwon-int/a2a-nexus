@@ -560,6 +560,112 @@ function deepFreeze<T>(value: T): T {
   return value;
 }
 
+const EMPTY_CRASH_BASELINE_SNAPSHOT_V1 = deepFreeze({
+  kind: "SharedStateRestartContinuityConformanceSnapshotV1",
+  snapshotVersion: 1,
+  replayRecordCount: 0,
+  rateWindowEntryCount: 0,
+  accumulatedRateCost: 0,
+  activeLeaseCount: 0,
+  maximumFencingToken: "0",
+  leaseResourceVersionHighWater: "0",
+  leaseMutationCount: 0,
+  idempotencyOutcomeCount: 0,
+  domainEffectCount: 0,
+  idempotentOutboxEffectCount: 0,
+  outboxEventCount: 0,
+  receiptPendingCount: 0,
+  receiptConfirmedCount: 0,
+  unacknowledgedCount: 0,
+  acknowledgedCount: 0,
+  streamHighWaters: [],
+  graphSourceFactCount: 0,
+  graphSourceSequenceHighWater: "0",
+  graphProjectionBatchCount: 0,
+  graphProjectionCheckpointHighWater: "0",
+} satisfies SharedStateRestartContinuityConformanceSnapshotV1);
+
+const CONFIRMED_UNACKNOWLEDGED_CRASH_BASELINE_SNAPSHOT_V1 =
+deepFreeze({
+  ...EMPTY_CRASH_BASELINE_SNAPSHOT_V1,
+  outboxEventCount: 1,
+  receiptConfirmedCount: 1,
+  unacknowledgedCount: 1,
+  streamHighWaters: [
+    {
+      streamOrdinal: 1,
+      sequenceHighWater: "1",
+    },
+  ],
+} satisfies SharedStateRestartContinuityConformanceSnapshotV1);
+
+const EXACT_SNAPSHOT_DELTA_FIELDS_V1 = Object.freeze([
+  "idempotencyOutcomeCount",
+  "domainEffectCount",
+  "idempotentOutboxEffectCount",
+  "unacknowledgedCount",
+  "acknowledgedCount",
+] as const);
+
+type ExactSnapshotDeltaFieldV1 =
+  (typeof EXACT_SNAPSHOT_DELTA_FIELDS_V1)[number];
+type ExactSnapshotDeltaV1 = Readonly<
+  Partial<Record<ExactSnapshotDeltaFieldV1, number>>
+>;
+
+const COMMAND_COMMIT_SNAPSHOT_DELTA_V1 = deepFreeze({
+  idempotencyOutcomeCount: 1,
+  domainEffectCount: 1,
+  idempotentOutboxEffectCount: 1,
+} satisfies ExactSnapshotDeltaV1);
+
+const ACK_COMMIT_SNAPSHOT_DELTA_V1 = deepFreeze({
+  unacknowledgedCount: -1,
+  acknowledgedCount: 1,
+} satisfies ExactSnapshotDeltaV1);
+
+/**
+ * Derives one complete expected aggregate snapshot without mutating the
+ * baseline. Only the explicitly closed atomic-delta fields may differ; every
+ * other field, including every high-water, is preserved exactly.
+ */
+function deriveExactSnapshotWithAtomicDelta(
+  baseline: SharedStateRestartContinuityConformanceSnapshotV1,
+  delta: ExactSnapshotDeltaV1,
+): SharedStateRestartContinuityConformanceSnapshotV1 {
+  for (const [field, value] of Object.entries(delta)) {
+    if (
+      !(EXACT_SNAPSHOT_DELTA_FIELDS_V1 as readonly string[])
+        .includes(field)
+      || !Number.isSafeInteger(value)
+      || (value !== -1 && value !== 1)
+    ) {
+      fail("crash_recovery_mismatch");
+    }
+  }
+  const parsed =
+    sharedStateRestartContinuityConformanceSnapshotV1Schema.safeParse({
+      ...baseline,
+      idempotencyOutcomeCount:
+        baseline.idempotencyOutcomeCount
+        + (delta.idempotencyOutcomeCount ?? 0),
+      domainEffectCount:
+        baseline.domainEffectCount
+        + (delta.domainEffectCount ?? 0),
+      idempotentOutboxEffectCount:
+        baseline.idempotentOutboxEffectCount
+        + (delta.idempotentOutboxEffectCount ?? 0),
+      unacknowledgedCount:
+        baseline.unacknowledgedCount
+        + (delta.unacknowledgedCount ?? 0),
+      acknowledgedCount:
+        baseline.acknowledgedCount
+        + (delta.acknowledgedCount ?? 0),
+    });
+  if (!parsed.success) return fail("crash_recovery_mismatch");
+  return deepFreeze(parsed.data);
+}
+
 function sameSnapshot(
   left: SharedStateRestartContinuityConformanceSnapshotV1,
   right: SharedStateRestartContinuityConformanceSnapshotV1,
@@ -1729,6 +1835,8 @@ export async function runSharedStateRestartContinuityConformanceV1(
     const target = await openedTarget();
     let failed: SharedStateTransactionResultV1;
     let baseline: SharedStateRestartContinuityConformanceSnapshotV1;
+    let expectedCommitted:
+      SharedStateRestartContinuityConformanceSnapshotV1;
     let recoveredState:
       | "exact-empty-baseline"
       | "committed-single-effect"
@@ -1745,6 +1853,18 @@ export async function runSharedStateRestartContinuityConformanceV1(
       || faultPoint === "after-command-commit-before-response"
     ) {
       baseline = await snapshot(target);
+      if (
+        !sameSnapshot(
+          baseline,
+          EMPTY_CRASH_BASELINE_SNAPSHOT_V1,
+        )
+      ) {
+        fail("crash_recovery_mismatch");
+      }
+      expectedCommitted = deriveExactSnapshotWithAtomicDelta(
+        baseline,
+        COMMAND_COMMIT_SNAPSHOT_DELTA_V1,
+      );
       armFault(target, faultPoint);
       failed = await transact(target, IDEMPOTENCY_COMMAND);
     } else {
@@ -1765,6 +1885,18 @@ export async function runSharedStateRestartContinuityConformanceV1(
         fail("crash_recovery_mismatch");
       }
       baseline = await snapshot(target);
+      if (
+        !sameSnapshot(
+          baseline,
+          CONFIRMED_UNACKNOWLEDGED_CRASH_BASELINE_SNAPSHOT_V1,
+        )
+      ) {
+        fail("crash_recovery_mismatch");
+      }
+      expectedCommitted = deriveExactSnapshotWithAtomicDelta(
+        baseline,
+        ACK_COMMIT_SNAPSHOT_DELTA_V1,
+      );
       armFault(target, faultPoint);
       failed = await transact(
         target,
@@ -1785,11 +1917,14 @@ export async function runSharedStateRestartContinuityConformanceV1(
     requireReady(await lifecycle(() => target.open()));
     const recovered = await snapshot(target);
     requireNoHighWaterRegression(baseline, recovered);
+    const expectedRecovered = faultPoint.startsWith("before-")
+      ? baseline
+      : expectedCommitted;
+    if (!sameSnapshot(recovered, expectedRecovered)) {
+      fail("crash_recovery_mismatch");
+    }
 
     if (faultPoint === "before-command-commit") {
-      if (!sameSnapshot(baseline, recovered)) {
-        fail("crash_recovery_mismatch");
-      }
       const retry = await transact(target, IDEMPOTENCY_COMMAND);
       if (
         retry.status !== "committed"
@@ -1802,13 +1937,6 @@ export async function runSharedStateRestartContinuityConformanceV1(
     } else if (
       faultPoint === "after-command-commit-before-response"
     ) {
-      if (
-        recovered.idempotencyOutcomeCount !== 1
-        || recovered.domainEffectCount !== 1
-        || recovered.idempotentOutboxEffectCount !== 1
-      ) {
-        fail("crash_recovery_mismatch");
-      }
       const retry = await transact(target, IDEMPOTENCY_COMMAND);
       if (
         retry.status !== "committed"
@@ -1819,13 +1947,6 @@ export async function runSharedStateRestartContinuityConformanceV1(
       recoveredState = "committed-single-effect";
       retryDecision = "replayed";
     } else if (faultPoint === "before-ack-commit") {
-      if (
-        !sameSnapshot(baseline, recovered)
-        || recovered.receiptConfirmedCount !== 1
-        || recovered.unacknowledgedCount !== 1
-      ) {
-        fail("crash_recovery_mismatch");
-      }
       const retry = await transact(
         target,
         acknowledgeCommand(OUTBOX_COMMANDS.firstAcknowledged, 1),
@@ -1839,12 +1960,6 @@ export async function runSharedStateRestartContinuityConformanceV1(
       recoveredState = "confirmed-unacknowledged";
       retryDecision = "acknowledged";
     } else {
-      if (
-        recovered.receiptConfirmedCount !== 1
-        || recovered.acknowledgedCount !== 1
-      ) {
-        fail("crash_recovery_mismatch");
-      }
       const retry = await transact(
         target,
         acknowledgeCommand(OUTBOX_COMMANDS.firstAcknowledged, 1),
@@ -1860,38 +1975,7 @@ export async function runSharedStateRestartContinuityConformanceV1(
     }
     const final = await snapshot(target);
     requireNoHighWaterRegression(recovered, final);
-    if (
-      final.domainEffectCount > 1
-      || final.idempotentOutboxEffectCount > 1
-      || final.outboxEventCount > 1
-    ) {
-      fail("crash_recovery_mismatch");
-    }
-    if (
-      (
-        faultPoint === "before-command-commit"
-        && (
-          final.idempotencyOutcomeCount !== 1
-          || final.domainEffectCount !== 1
-          || final.idempotentOutboxEffectCount !== 1
-        )
-      )
-      || (
-        faultPoint === "after-command-commit-before-response"
-        && !sameSnapshot(recovered, final)
-      )
-      || (
-        faultPoint === "before-ack-commit"
-        && (
-          final.receiptConfirmedCount !== 1
-          || final.acknowledgedCount !== 1
-        )
-      )
-      || (
-        faultPoint === "after-ack-commit-before-response"
-        && !sameSnapshot(recovered, final)
-      )
-    ) {
+    if (!sameSnapshot(final, expectedCommitted)) {
       fail("crash_recovery_mismatch");
     }
     await closeTarget(target);
