@@ -5,11 +5,11 @@
 > keyspace/digest/time-evaluator/idempotency-registry/outbox-registry and
 > observability-catalog/parser/projector slices, plus the first bounded Phase
 > 2.1 lease/claim, Phase 2.2 `executeIdempotent`, and Phase 2.3 outbox-ordering
-> backend-neutral conformance harnesses exercised against clearly labeled
-> test-only deterministic reference models. SQLite/shared adapter
-> implementations and their conformance, retention/prune execution, runtime
-> health/endpoint and query integration, migration, and operational rollout
-> remain unchecked.
+> and Phase 2.4 restart-continuity backend-neutral conformance harnesses
+> exercised against clearly labeled test-only deterministic reference models.
+> SQLite/shared adapter implementations and their conformance,
+> retention/prune execution, runtime health/endpoint and query integration,
+> migration, and operational rollout remain unchecked.
 > Refs #1504.
 
 ## 0. Spec-first packet
@@ -43,7 +43,8 @@
 Tests use seeded deterministic schedules, explicit barriers where concurrency
 is exercised, isolated factory-created targets, bounded operation counts, and
 no external network or production data. An injected fake clock is used only
-where the scenario has time semantics; the Phase 2.3 slice has none.
+where the scenario has time semantics; the Phase 2.3 slice has none and the
+Phase 2.4 slice uses one fake clock for exact integer observations.
 
 ### 2.1 Claim/lease concurrency
 
@@ -143,16 +144,60 @@ remain unimplemented and untested.
 
 ### 2.4 Restart continuity
 
-- [ ] Persist unexpired replay nonce, in-window rate cost, active claim/fence,
-  idempotency outcome, outbox/cursor/ACK, and graph checkpoint.
-- [ ] Close/reopen at deterministic clock instants and assert all values and
-  decisions continue.
-- [ ] Simulate crash before and after commit/ACK; assert recovery has one
-  known outcome.
-- [ ] Move the wall clock backward beyond tolerance and assert readiness
-  failure without early expiry.
-- [ ] Assert no fencing token, stream sequence, or projection checkpoint
-  decreases after restart.
+- [x] On one fresh detached target at one exact fake-clock instant, commit an
+  unexpired replay nonce, in-window rate cost, active lease/attempt/fence, one
+  registered `executeIdempotent` domain/outbox outcome, three retained outbox
+  events across two streams with sequences `1,2` and `1`, two
+  receipt-confirmed/acknowledged events, one pending/unacknowledged replay
+  event, one test-only cursor, two graph source facts, and projection
+  checkpoint `2`.
+- [x] Close, advance the one injected fake clock by exactly 100 milliseconds
+  against 1,000-millisecond replay/rate/lease boundaries, reopen the same
+  detached target, and assert replay, `rate_limited`, original
+  owner/attempt/fence renew and fenced mutation, original idempotency outcome
+  without duplicate effects, original append bindings, exactly one
+  test-control reconciliation replay with preserved receipt/ACK state, and
+  original graph source sequences/checkpoint.
+- [x] On four isolated factory-created targets, inject exact
+  `before-command-commit`, `after-command-commit-before-response`,
+  `before-ack-commit`, and `after-ack-commit-before-response` crash points.
+  Assert the existing unavailable vocabulary reports
+  `authority_unavailable` before commit and `ambiguous_commit` after commit;
+  reopen to the exact empty/pre-ACK or committed state; then assert clean
+  retry resolves once as `executed`, `replayed`, `acknowledged`, or
+  `already_acknowledged` with no second effect.
+- [x] On one isolated prepared target, retain the test-model clock floor,
+  reopen with the observed fake-clock value exactly one millisecond beyond
+  the declared backward-skew tolerance, and assert the existing time V1
+  evaluator returns `backward_beyond_tolerance`, not-ready, writes/logical
+  decisions forbidden, lifecycle `failed` with only `unsafe_clock`, an
+  unavailable/`unsafe_clock` attempted write, and an unchanged aggregate
+  snapshot. Restore observation at the retained floor and reopen ready with
+  the same state.
+- [x] Across every close/reopen and crash-recovery comparison, assert the
+  maximum fencing token, lease resource-version high-water, every retained
+  per-stream sequence high-water, graph source sequence, and graph projection
+  checkpoint never decrease.
+- [x] Keep all snapshot, crash, cursor, and reconciliation seams explicitly
+  labeled bounded test-only conformance controls; keep strict reports,
+  snapshots, controls, and errors closed, aggregate-only, and non-reflecting.
+- [ ] Repeat the exact Phase 2.4 harness through SQLite/shared adapters and
+  separately prove real durability, adapter clock-floor persistence, and any
+  separately authorized runtime/query reconciliation or retention/prune
+  behavior.
+
+The checked Phase 2.4 facts above use 45 existing storage V1 commands, 21
+existing lifecycle transitions, 19 bounded aggregate snapshot controls, four
+crash-fault controls, two cursor/reconciliation controls, three exact
+fake-clock controls, six isolated targets, and a 64-command ceiling. The
+adjacent reference model is in-memory, test-only, non-production, non-SQLite,
+non-shared, non-conforming, and detached from broker runtime. Its
+close/reopen object-state retention is a conformance control, not a durability
+claim. Its snapshot/cursor/reconciliation/crash seams are not V1 adapter,
+query, clock, health, readiness, storage, or runtime APIs. Actual adapter
+persistence and conformance, runtime/query integration, real ACK/replay/prune,
+retention execution, migration, deployment, live rollout, and overall issue
+completion remain unimplemented and unchecked.
 
 ### 2.5 Partition/unavailable injection
 
@@ -338,3 +383,23 @@ The focused Phase 2.3 command proves only the backend-neutral harness against
 the adjacent detached test-only reference model. SQLite/shared adapter
 conformance, runtime/query integration, retention/prune execution, migration,
 deployment, live rollout, and overall issue completion remain open.
+
+Phase 2.4 source slice:
+
+```bash
+npm run build --workspace=a2a-broker
+node --test packages/broker/dist/shared-state-restart-continuity-conformance-v1.test.js
+npm test --workspace=a2a-broker
+npm run check
+npm run scan:public-readiness
+npm run scan:external-secrets
+npm run check:markdown-links
+git diff --check
+```
+
+The focused Phase 2.4 command proves only the backend-neutral
+restart-continuity harness against the adjacent detached test-only reference
+model. Test-object close/reopen retention is not a durability claim.
+SQLite/shared adapter persistence or conformance, runtime/query integration,
+retention/prune execution, migration, deployment, live rollout, and overall
+issue completion remain open.
