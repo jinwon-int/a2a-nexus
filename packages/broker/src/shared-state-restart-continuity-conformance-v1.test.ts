@@ -304,6 +304,15 @@ function decimalDifference(later: bigint, earlier: bigint): number {
   return Number(value);
 }
 
+type TestOnlyExtraneousPostCommitMutationV1 =
+  | "lease-mutation-after-command-commit"
+  | "graph-high-water-after-ack-commit";
+
+interface TestOnlyAdversarialCrashControlV1 {
+  readonly mutation: TestOnlyExtraneousPostCommitMutationV1;
+  appliedCount: number;
+}
+
 /**
  * Bounded in-memory target used only by this test file. Its persisted state
  * object survives close/reopen and simulated crash solely so the harness can
@@ -313,13 +322,20 @@ function decimalDifference(later: bigint, earlier: bigint): number {
 class TestOnlyDeterministicRestartContinuityReferenceModelV1
 implements SharedStateRestartContinuityConformanceTargetV1 {
   readonly #clock: SharedStateRestartContinuityConformanceClockV1;
+  readonly #adversarialCrashControl:
+    TestOnlyAdversarialCrashControlV1 | null;
   readonly #state = initialState();
   #open = false;
   #unsafeClock = false;
   #armedFault: SharedStateRestartContinuityFaultPointV1 | null = null;
 
-  constructor(clock: SharedStateRestartContinuityConformanceClockV1) {
+  constructor(
+    clock: SharedStateRestartContinuityConformanceClockV1,
+    adversarialCrashControl:
+      TestOnlyAdversarialCrashControlV1 | null = null,
+  ) {
     this.#clock = clock;
+    this.#adversarialCrashControl = adversarialCrashControl;
   }
 
   #evaluateTime(): SharedStateTimeEvaluationV1 {
@@ -401,6 +417,20 @@ implements SharedStateRestartContinuityConformanceTargetV1 {
   #crash(): void {
     this.#open = false;
     this.#armedFault = null;
+  }
+
+  #applyBoundedExtraneousPostCommitMutation(
+    mutation: TestOnlyExtraneousPostCommitMutationV1,
+  ): void {
+    const control = this.#adversarialCrashControl;
+    if (control === null || control.mutation !== mutation) return;
+    if (control.appliedCount !== 0) return invariant();
+    control.appliedCount += 1;
+    if (mutation === "lease-mutation-after-command-commit") {
+      this.#state.leaseMutationCount += 1;
+    } else {
+      this.#state.graphSourceSequenceHighWater += 1n;
+    }
   }
 
   async open(): Promise<unknown> {
@@ -728,6 +758,9 @@ implements SharedStateRestartContinuityConformanceTargetV1 {
     this.#state.domainEffectCount += 1;
     this.#state.idempotentOutboxEffectCount += 1;
     if (fault === "after-command-commit-before-response") {
+      this.#applyBoundedExtraneousPostCommitMutation(
+        "lease-mutation-after-command-commit",
+      );
       this.#crash();
       return unavailable("executeIdempotent", "ambiguous_commit");
     }
@@ -867,6 +900,9 @@ implements SharedStateRestartContinuityConformanceTargetV1 {
     }
     event.acknowledgmentState = "acknowledged";
     if (fault === "after-ack-commit-before-response") {
+      this.#applyBoundedExtraneousPostCommitMutation(
+        "graph-high-water-after-ack-commit",
+      );
       this.#crash();
       return unavailable("acknowledgeOutbox", "ambiguous_commit");
     }
@@ -1115,8 +1151,10 @@ implements SharedStateRestartContinuityConformanceTargetV1 {
   }
 }
 
-function createTestOnlyDeterministicRestartContinuityFactoryV1():
-SharedStateRestartContinuityConformanceTargetFactoryV1 {
+function createTestOnlyDeterministicRestartContinuityFactoryV1(
+  adversarialCrashControl:
+    TestOnlyAdversarialCrashControlV1 | null = null,
+): SharedStateRestartContinuityConformanceTargetFactoryV1 {
   return Object.freeze({
     async create({
       clock,
@@ -1125,6 +1163,7 @@ SharedStateRestartContinuityConformanceTargetFactoryV1 {
     }) {
       return new TestOnlyDeterministicRestartContinuityReferenceModelV1(
         clock,
+        adversarialCrashControl,
       );
     },
   });
@@ -1244,6 +1283,41 @@ test("uses a stable seeded serial crash schedule with no barrier", () => {
     new Set(first),
     new Set(SHARED_STATE_RESTART_CONTINUITY_FAULT_POINTS_V1),
   );
+});
+
+test("rejects bounded extraneous post-commit crash state", async () => {
+  const mutations = [
+    "lease-mutation-after-command-commit",
+    "graph-high-water-after-ack-commit",
+  ] as const satisfies readonly TestOnlyExtraneousPostCommitMutationV1[];
+
+  for (const mutation of mutations) {
+    const control: TestOnlyAdversarialCrashControlV1 = {
+      mutation,
+      appliedCount: 0,
+    };
+    await assert.rejects(
+      runSharedStateRestartContinuityConformanceV1(
+        createTestOnlyDeterministicRestartContinuityFactoryV1(control),
+      ),
+      (error: unknown) => {
+        assert.equal(
+          error instanceof
+            SharedStateRestartContinuityConformanceErrorV1,
+          true,
+        );
+        if (
+          !(error instanceof
+            SharedStateRestartContinuityConformanceErrorV1)
+        ) {
+          return false;
+        }
+        assert.equal(error.code, "crash_recovery_mismatch");
+        return true;
+      },
+    );
+    assert.equal(control.appliedCount, 1);
+  }
 });
 
 test("keeps reports, snapshots, controls, and errors strict and non-reflecting", async () => {
