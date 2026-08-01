@@ -49,12 +49,34 @@ Fanout stays **opt-in**: with the flag off (default) no
 `A2A_CONTAINED_SUBAGENTS_*` env is injected and the harness must not spawn
 helpers.
 
+The `codex` profile consumes this opt-in by generating only the custom-agent
+profiles allowed by `A2A_CONTAINED_SUBAGENTS_ROLES` in its task-scoped,
+disposable `CODEX_HOME`. Its tier mapping is intentionally asymmetric:
+
+| Codex realization | Model | Reasoning | Boundary |
+| --- | --- | --- | --- |
+| `a2a_explorer`, `a2a_researcher` | `gpt-5.6-luna` | `max` | declared read-only, evidence-only |
+| `a2a_implementer` | `gpt-5.6-sol` | `high` | one assigned disjoint write set |
+| `a2a_verifier` | `gpt-5.6-sol` | `xhigh` | clean-slate, declared read-only verification |
+
+The parent Codex process still uses `A2A_CODEX_MODEL` and
+`A2A_CODEX_REASONING_EFFORT` and remains the single finalizer. With the opt-in
+off, the runner explicitly passes `agents.enabled=false`; no custom profiles
+are generated.
+
+Codex's `agents.max_concurrent_threads_per_session` enforces the concurrent-open
+thread ceiling; the task prompt and broker gate still own the total spawn
+budget. Per-agent `sandbox_mode` is defense in depth, not a separate container:
+the parent `codex exec` permission override can be inherited by children. The
+Docker boundary, lifecycle-command guard, role instructions, disjoint write-set
+rule, and single finalizer therefore remain the operative safety controls.
+
 > **The `claude-code` runner image is single-shot by design.** It runs the
 > deterministic patch/analysis bridge (`claude-a2a-patch-bridge.mjs`,
 > `A2A_CLAUDE_CODE_PATCH_MODE=single-shot`) with **no `Task`/Agent tool** and
 > does **not** consume `A2A_CONTAINED_SUBAGENTS_*` — so it never spawns helpers,
-> even with the flag on. Contained fanout here applies to the OpenClaw / Hermes
-> in-container harness only. Sub-agent fanout for Claude Code is realized in the
+> even with the flag on. Contained fanout here applies to the OpenClaw, Hermes,
+> and explicitly opted-in Codex in-container harnesses. Sub-agent fanout for Claude Code is realized in the
 > host / native CC-harness lane — see the *Execution lanes (applicability)*
 > section of `packages/broker/docs/worker-subagent-orchestration-policy.md`.
 

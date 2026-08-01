@@ -223,7 +223,7 @@ export function validateRunnerConfig(config: RunnerConfig): void {
       errors.push(`invalid containedSubagents.outputBytes: ${config.containedSubagents.outputBytes} (expected integer 1024..60000)`);
     }
     if (config.containedSubagents.enabled && !config.commandProfile) {
-      errors.push("contained subagents require A2A_DOCKER_RUNNER_PATCH_COMMAND_PROFILE=openclaw or hermes");
+      errors.push("contained subagents require a first-class A2A_DOCKER_RUNNER_PATCH_COMMAND_PROFILE");
     }
   }
 
@@ -728,10 +728,147 @@ function inferRunnerImageProfileFamily(image: string): RunnerCommandProfile | un
   return undefined;
 }
 
+interface CodexSubagentProfileSpec {
+  fileName: string;
+  role: RunnerContainedSubagentRole;
+  contents: string;
+}
+
+const CODEX_SUBAGENT_PROFILE_SPECS: readonly CodexSubagentProfileSpec[] = [
+  {
+    fileName: "a2a-explorer.toml",
+    role: "explorer",
+    contents: `name = "a2a_explorer"
+description = "A2A explorer for bounded code, issue, log, and test-surface investigation. Returns evidence only and never edits or finalizes."
+model = "gpt-5.6-luna"
+model_reasoning_effort = "max"
+sandbox_mode = "read-only"
+developer_instructions = """
+Act as the A2A explorer role. Inspect only the specific seam assigned by the parent.
+Do not edit or create repository files. Do not manage git, GitHub, releases, deployment,
+credentials, or runtime state. Return concise evidence with exact file and symbol references,
+open questions, and a recommendation. Redact secrets, private paths, and raw session data.
+You are evidence-only; the parent worker is the single finalizer.
+"""`,
+  },
+  {
+    fileName: "a2a-researcher.toml",
+    role: "explorer",
+    contents: `name = "a2a_researcher"
+description = "A2A explorer variant for narrow external documentation and API research with citations. Returns evidence only and never edits or finalizes."
+model = "gpt-5.6-luna"
+model_reasoning_effort = "max"
+sandbox_mode = "read-only"
+developer_instructions = """
+Act as the A2A research variant of the explorer role. Answer one narrow external research
+question using only the web or documentation tools available in the parent session. Cite the
+sources you actually consulted. Do not edit repository files or manage git, GitHub, releases,
+deployment, credentials, or runtime state. Redact secrets and private data. You are
+evidence-only; the parent worker is the single finalizer.
+"""`,
+  },
+  {
+    fileName: "a2a-implementer.toml",
+    role: "implementer",
+    contents: `name = "a2a_implementer"
+description = "A2A implementer for one explicitly assigned disjoint write set. Returns a patch and test evidence but never finalizes."
+model = "gpt-5.6-sol"
+model_reasoning_effort = "high"
+sandbox_mode = "workspace-write"
+developer_instructions = """
+Act as the A2A implementer role. Edit only the explicit disjoint write set assigned by the
+parent. Stop and report if the change needs any file outside that boundary or would overlap
+another implementer. Run focused tests for your lane. Do not manage git, GitHub, releases,
+deployment, credentials, or runtime state. Return changed paths, a concise diff summary,
+tests and results, and remaining risks. You are evidence-only; the parent worker finalizes.
+"""`,
+  },
+  {
+    fileName: "a2a-verifier.toml",
+    role: "verifier",
+    contents: `name = "a2a_verifier"
+description = "A2A clean-slate verifier for correctness, regression, test, and evidence risks. Never edits or finalizes."
+model = "gpt-5.6-sol"
+model_reasoning_effort = "xhigh"
+sandbox_mode = "read-only"
+developer_instructions = """
+Act as the A2A verifier role from clean-slate inputs: the original assignment, exact diff or
+head, and repository access. Independently derive the failure mode and checks. Do not edit
+files or manage git, GitHub, releases, deployment, credentials, or runtime state. Return PASS
+or a bounded fix list with exact source references and test evidence. Redact secrets and
+private data. You are evidence-only; the parent worker is the single finalizer.
+"""`,
+  },
+];
+
+function buildCodexSubagentProfileInstallShell(config: RunnerContainedSubagentsConfig): string {
+  if (!config.enabled) return "";
+  const allowedRoles = new Set(config.roles);
+  const profiles = CODEX_SUBAGENT_PROFILE_SPECS.filter((profile) => allowedRoles.has(profile.role));
+  return [
+    'install -d -m 0700 "$CODEX_HOME/agents"',
+    ...profiles.flatMap((profile) => [
+      `cat > "$CODEX_HOME/agents/${profile.fileName}" <<'A2A_CODEX_AGENT_PROFILE_EOF'`,
+      profile.contents,
+      "A2A_CODEX_AGENT_PROFILE_EOF",
+      `chmod 0600 "$CODEX_HOME/agents/${profile.fileName}"`,
+    ]),
+  ].join("\n");
+}
+
+function buildCodexSubagentCliOverrides(config: RunnerContainedSubagentsConfig): string {
+  const shellContinuation = "\\";
+  if (!config.enabled) return `  -c 'agents.enabled=false' ${shellContinuation}`;
+  return [
+    `  -c 'agents.enabled=true' ${shellContinuation}`,
+    `  -c 'agents.max_concurrent_threads_per_session=${config.maxCount}' ${shellContinuation}`,
+  ].join("\n");
+}
+
+function buildCodexSubagentRosterPrompt(config: RunnerContainedSubagentsConfig): string {
+  if (!config.enabled) return "";
+  const lines = [
+    "- Use only the custom A2A agent profiles installed for the allowed helper roles.",
+  ];
+  if (config.roles.includes("explorer")) {
+    lines.push("- Use a2a_explorer for repository inspection and a2a_researcher only for narrow external documentation research. Both use GPT-5.6 Luna with max reasoning and remain read-only evidence helpers.");
+  }
+  if (config.roles.includes("implementer")) {
+    lines.push("- Use a2a_implementer only after assigning one explicit disjoint write set. It stays on GPT-5.6 Sol with high reasoning.");
+  }
+  if (config.roles.includes("verifier")) {
+    lines.push("- Use a2a_verifier from clean-slate inputs for an independent check. It stays on GPT-5.6 Sol with xhigh reasoning.");
+  }
+  lines.push("- The parent Codex worker keeps its configured model and remains the only finalizer; subagents never own the terminal result or GitHub lifecycle.");
+  return lines.join("\n");
+}
+
+function buildCodexSubagentModelSummaryShell(config: RunnerContainedSubagentsConfig): string {
+  if (!config.enabled) return "";
+  const lines: string[] = [];
+  if (config.roles.includes("explorer")) {
+    lines.push("printf 'contained_subagents_explorer_model=gpt-5.6-luna reasoning=max\\n' | tee -a /work/artifacts/summary.txt");
+  }
+  if (config.roles.includes("implementer")) {
+    lines.push("printf 'contained_subagents_implementer_model=gpt-5.6-sol reasoning=high\\n' | tee -a /work/artifacts/summary.txt");
+  }
+  if (config.roles.includes("verifier")) {
+    lines.push("printf 'contained_subagents_verifier_model=gpt-5.6-sol reasoning=xhigh\\n' | tee -a /work/artifacts/summary.txt");
+  }
+  return lines.join("\n");
+}
+
 export function buildCodexPatchCommandScript(env: NodeJS.ProcessEnv): string {
   const defaultModel = shellSingleQuote(env.A2A_CODEX_MODEL || "gpt-5.6-sol");
   const defaultReasoning = shellSingleQuote(env.A2A_CODEX_REASONING_EFFORT || "high");
   const defaultTimeout = shellSingleQuote(env.A2A_CODEX_TIMEOUT_SEC || DEFAULT_CODEX_TIMEOUT_SEC);
+  const subagents = loadContainedSubagentsConfig(env, "codex");
+  const subagentInstruction = buildContainedSubagentPrompt("Codex", subagents);
+  const subagentRosterInstruction = buildCodexSubagentRosterPrompt(subagents);
+  const subagentProfileInstall = buildCodexSubagentProfileInstallShell(subagents);
+  const subagentCliOverrides = buildCodexSubagentCliOverrides(subagents);
+  const subagentSummary = buildContainedSubagentSummaryShell(subagents);
+  const subagentModelSummary = buildCodexSubagentModelSummaryShell(subagents);
   return `#!/usr/bin/env bash
 set -euo pipefail
 export DEBIAN_FRONTEND=noninteractive
@@ -761,8 +898,11 @@ if ! command -v codex >/dev/null 2>&1; then
   exit 2
 fi
 export CODEX_HOME=/run/secrets/codex-dir
+${subagentProfileInstall}
 printf 'codex_cli=%s\n' "$(codex --version 2>/dev/null | head -n 1 || printf unknown)" | tee -a /work/artifacts/summary.txt
 printf 'model=%s reasoning=%s profile=codex\n' "$A2A_CODEX_MODEL" "$A2A_CODEX_REASONING_EFFORT" | tee -a /work/artifacts/summary.txt
+${subagentSummary}
+${subagentModelSummary}
 
 A2A_LIFECYCLE_GUARD_BIN=/work/a2a-codex-lifecycle-guard-bin
 mkdir -p "$A2A_LIFECYCLE_GUARD_BIN"
@@ -813,6 +953,8 @@ Rules:
 - Do not run gh pr create, gh pr merge, gh issue comment, or gh issue close.
 - The runner posts Start/PR/Done/Block evidence and creates or reuses the PR after you exit.
 - Prefer small focused changes and tests.
+${subagentInstruction}
+${subagentRosterInstruction}
 
 The assignment follows:
 A2A_CODEX_PROMPT_EOF
@@ -825,6 +967,7 @@ timeout "$A2A_CODEX_TIMEOUT_SEC" codex exec \
   --sandbox danger-full-access \
   -c 'approval_policy="never"' \
   -c "model_reasoning_effort=\"$A2A_CODEX_REASONING_EFFORT\"" \
+${subagentCliOverrides}
   -C "$PWD" \
   - < /work/artifacts/codex-prompt.md
 `;
@@ -1831,7 +1974,7 @@ function shellSingleQuote(value: string): string {
   return `'${value.replace(/'/g, `'"'"'`)}'`;
 }
 
-function buildContainedSubagentPrompt(label: "OpenClaw" | "Hermes", config: RunnerContainedSubagentsConfig): string {
+function buildContainedSubagentPrompt(label: "OpenClaw" | "Hermes" | "Codex", config: RunnerContainedSubagentsConfig): string {
   if (!config.enabled) {
     return [
       "",

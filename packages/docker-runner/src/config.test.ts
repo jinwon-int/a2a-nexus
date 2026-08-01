@@ -33,6 +33,17 @@ function assertNodeScriptParses(source: string): void {
   }
 }
 
+function assertBashScriptParses(source: string): void {
+  const dir = mkdtempSync(join(tmpdir(), "a2a-runner-bash-check-"));
+  try {
+    const file = join(dir, "script.sh");
+    writeFileSync(file, source);
+    execFileSync("bash", ["-n", file], { stdio: "pipe" });
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+}
+
 type ResolverFiles = Record<string, string>;
 
 function runResolverScript(source: string, files: ResolverFiles, env: Record<string, string> = {}): string {
@@ -430,6 +441,64 @@ test("Codex patch profile reserves git and GitHub lifecycle work for the outer r
   assert.match(script, /cat \/work\/artifacts\/prompt\.md >> \/work\/artifacts\/codex-prompt\.md/);
   assert.match(script, /- < \/work\/artifacts\/codex-prompt\.md/);
   assert.doesNotMatch(script, /- < \/work\/artifacts\/prompt\.md/);
+  assert.match(script, /agents\.enabled=false/);
+  assert.doesNotMatch(script, /name = "a2a_explorer"/);
+  assert.doesNotMatch(script, /model = "gpt-5\.6-luna"/);
+  assertBashScriptParses(script);
+});
+
+test("Codex contained subagents route low-cost roles to Luna max and preserve upper Sol profiles", async () => {
+  const config = await loadConfig({
+    ...baseEnv,
+    A2A_DOCKER_RUNNER_PATCH_COMMAND_PROFILE: "codex",
+    A2A_DOCKER_RUNNER_TRUSTED_OPERATOR: "1",
+    A2A_DOCKER_RUNNER_IMAGE: "a2a-docker-runner-codex:test",
+    A2A_DOCKER_RUNNER_CONTAINED_SUBAGENTS_ENABLED: "1",
+    A2A_DOCKER_RUNNER_CONTAINED_SUBAGENTS_MAX: "3",
+    A2A_DOCKER_RUNNER_CONTAINED_SUBAGENTS_ROLES: "explorer,implementer,verifier",
+  });
+
+  assert.deepEqual(config.containedSubagents, {
+    enabled: true,
+    maxCount: 3,
+    outputBytes: 12000,
+    reasons: ["context_heavy", "broad_source_inspection", "validation_split"],
+    roles: ["explorer", "implementer", "verifier"],
+  });
+  const script = config.commandScript ?? "";
+  assert.match(script, /A2A_CODEX_DEFAULT_MODEL='gpt-5\.6-sol'/);
+  assert.match(script, /--model "\$A2A_CODEX_MODEL"/);
+  assert.match(script, /agents\.enabled=true/);
+  assert.match(script, /agents\.max_concurrent_threads_per_session=3/);
+  assert.match(script, /name = "a2a_explorer"[\s\S]*model = "gpt-5\.6-luna"[\s\S]*model_reasoning_effort = "max"/);
+  assert.match(script, /name = "a2a_researcher"[\s\S]*model = "gpt-5\.6-luna"[\s\S]*model_reasoning_effort = "max"/);
+  assert.match(script, /name = "a2a_implementer"[\s\S]*model = "gpt-5\.6-sol"[\s\S]*model_reasoning_effort = "high"/);
+  assert.match(script, /name = "a2a_verifier"[\s\S]*model = "gpt-5\.6-sol"[\s\S]*model_reasoning_effort = "xhigh"/);
+  assert.match(script, /parent Codex worker keeps its configured model and remains the only finalizer/);
+  assert.match(script, /contained_subagents_explorer_model=gpt-5\.6-luna reasoning=max/);
+  assert.match(script, /contained_subagents_implementer_model=gpt-5\.6-sol reasoning=high/);
+  assert.match(script, /contained_subagents_verifier_model=gpt-5\.6-sol reasoning=xhigh/);
+  assertBashScriptParses(script);
+});
+
+test("Codex contained subagent role allowlist controls which custom profiles are installed", async () => {
+  const config = await loadConfig({
+    ...baseEnv,
+    A2A_DOCKER_RUNNER_PATCH_COMMAND_PROFILE: "codex",
+    A2A_DOCKER_RUNNER_TRUSTED_OPERATOR: "1",
+    A2A_DOCKER_RUNNER_IMAGE: "a2a-docker-runner-codex:test",
+    A2A_DOCKER_RUNNER_CONTAINED_SUBAGENTS_ENABLED: "1",
+    A2A_DOCKER_RUNNER_CONTAINED_SUBAGENTS_ROLES: "explorer,verifier",
+  });
+
+  const script = config.commandScript ?? "";
+  assert.match(script, /name = "a2a_explorer"/);
+  assert.match(script, /name = "a2a_researcher"/);
+  assert.match(script, /name = "a2a_verifier"/);
+  assert.doesNotMatch(script, /name = "a2a_implementer"/);
+  assert.doesNotMatch(script, /Use a2a_implementer/);
+  assert.doesNotMatch(script, /contained_subagents_implementer_model=/);
+  assertBashScriptParses(script);
 });
 
 test("loadConfig treats A2A_DOCKER_RUNNER_SKIP_ENGINE_DETECT truthily, not by mere presence", async () => {
@@ -865,14 +934,14 @@ test("loadConfig enables bounded contained Hermes subagents with safe enum input
   assert.match(config.commandScript ?? "", /broad_source_inspection, context_overflow_retry/);
 });
 
-test("loadConfig rejects contained subagent opt-in without OpenClaw or Hermes profile", async () => {
+test("loadConfig rejects contained subagent opt-in without a first-class patch profile", async () => {
   await assert.rejects(
     () => loadConfig({
       ...baseEnv,
       A2A_DOCKER_RUNNER_CONTAINED_SUBAGENTS_ENABLED: "1",
       A2A_DOCKER_RUNNER_PATCH_COMMAND_SCRIPT: "#!/usr/bin/env bash\ncodex exec hi\n",
     }),
-    /contained subagents require A2A_DOCKER_RUNNER_PATCH_COMMAND_PROFILE=openclaw or hermes/,
+    /contained subagents require a first-class A2A_DOCKER_RUNNER_PATCH_COMMAND_PROFILE/,
   );
 });
 
