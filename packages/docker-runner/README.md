@@ -59,11 +59,11 @@ bootstrap files from entering PR branches or evidence.
 
 ### Contained subagent opt-in
 
-Docker-contained OpenClaw/Hermes patch profiles default to **no subagent
-fanout**. This keeps the normal worker path single-owner and avoids surprising
-context, output, or credential spread. For broad or context-heavy A2A work, a
-trusted worker host may opt in to bounded helper use inside the same task
-container:
+The Codex patch profile defaults to **no subagent fanout**. This keeps the normal
+worker path single-owner and avoids surprising context, output, or credential
+spread. For broad or context-heavy A2A work, a trusted Codex worker host may opt
+in to bounded helper use inside the same task container with the shared
+contained-subagent controls (existing OpenClaw/Hermes behavior is unchanged):
 
 ```bash
 export A2A_DOCKER_RUNNER_CONTAINED_SUBAGENTS_ENABLED=1
@@ -75,7 +75,8 @@ export A2A_DOCKER_RUNNER_CONTAINED_SUBAGENTS_ROLES=explorer,implementer,verifier
 
 Rules for this mode:
 
-- only `openclaw` and `hermes` patch profiles can enable contained subagents;
+- only first-class profiles with a wired fanout path can enable contained
+  subagents; the Codex path is explicit opt-in;
 - helper work must stay inside the checked-out repo and disposable container
   workspace;
 - helper output is evidence only, bounded by
@@ -89,6 +90,18 @@ Use contained subagents for broad source inspection, context-overflow retry, or
 validation split work. Use model escalation instead when the work is still one
 coherent lane and only needs stronger reasoning. The two mechanisms should not
 be combined casually; explicit task metadata should justify the extra fanout.
+
+For the Codex profile, the runner creates task-scoped custom agents under the
+disposable `CODEX_HOME`: `a2a_explorer` and `a2a_researcher` use
+`gpt-5.6-luna` with `max` reasoning, while `a2a_implementer` stays on
+`gpt-5.6-sol`/`high` and `a2a_verifier` stays on
+`gpt-5.6-sol`/`xhigh`. The parent/finalizer continues to use
+`A2A_CODEX_MODEL` and `A2A_CODEX_REASONING_EFFORT`; enabling helpers never
+changes the parent model. The role allowlist controls which custom profiles are
+materialized, and disabling the flag passes `agents.enabled=false` to Codex.
+The Codex thread setting caps concurrently open helpers; the broker/task budget
+still governs total spawns. Read-only role declarations are defense in depth
+inside the parent container permission boundary, not separate containers.
 
 ## MVP Scope
 
@@ -603,7 +616,7 @@ Precedence is `commandScript > commandJson > commandProfile > commandTemplate`:
 | `A2A_DOCKER_RUNNER_PATCH_COMMAND_PROFILE=hermes` | generated `commandScript` | `/work/patch-command.sh` | Operator-only trusted-worker profile. Mounts `A2A_DOCKER_RUNNER_HERMES_CONFIG_DIR` (or `/root/.hermes`) read-only at `/run/secrets/hermes-dir`, then runs `hermes chat --query ... --quiet --yolo` in the checked-out repo. Explicit `A2A_HERMES_MODEL` / legacy `A2A_OPENCLAW_MODEL` overrides still win. When `A2A_DOCKER_RUNNER_MODEL_SOURCE=native`, the runner reads the copied Hermes profile `.env` / `config.yaml` for the model and fails closed if no safe model is found. |
 | `A2A_DOCKER_RUNNER_PATCH_COMMAND_PROFILE=openclaw` | generated `commandScript` | `/work/patch-command.sh` | Legacy operator-only trusted-worker profile. Mounts `A2A_DOCKER_RUNNER_OPENCLAW_CONFIG_DIR` (or the profile default when unset) read-only at `/run/secrets/openclaw-dir`, then runs `openclaw agent` in the checked-out repo. Explicit `A2A_OPENCLAW_MODEL` overrides still win. Default legacy behavior remains `openai-codex/gpt-5.5` so OAuth-backed Codex auth is used instead of same-name OpenAI API-key models. When `A2A_DOCKER_RUNNER_MODEL_SOURCE=native`, the runner reads the copied OpenClaw profile agent/default model and fails closed if no safe model is found. Do not present this profile or host-network mode as a public sandbox default. |
 | `A2A_DOCKER_RUNNER_PATCH_COMMAND_PROFILE=claude-code` (`cccb`) | generated `commandScript` | `/work/patch-command.sh` | Operator-only trusted-worker profile. Mounts `A2A_DOCKER_RUNNER_CLAUDE_CONFIG_DIR` (or `/root/.claude`) read-only at `/run/secrets/claude-dir`, then runs the bundled `claude-a2a-patch-bridge.mjs` through the `claude` CLI. The normal non-fanout implementation mode is agentic; deterministic single-shot and fanout modes are explicit alternatives. Use the `a2a-docker-runner-cccb:<runner-sha>` image; credentials are mounted at runtime only and are not baked into image layers. |
-| `A2A_DOCKER_RUNNER_PATCH_COMMAND_PROFILE=codex` | generated `commandScript` | `/work/patch-command.sh` | Operator-only trusted-worker profile. The host source at `A2A_DOCKER_RUNNER_CODEX_CONFIG_DIR` (default `/var/lib/a2a-runner/codex-dir`) is copied to a task-scoped host temp directory, and only that clone is mounted read-write at `/run/secrets/codex-dir`. After `codex exec --ephemeral --json`, the host runner validates that only refreshable token fields/`last_refresh` changed and atomically writes back `auth.json` with the original owner and mode. `config.toml` changes are discarded. Uses `gpt-5.6-sol`, reasoning `high`, approval `never`, and `danger-full-access` inside the external container boundary. Use `a2a-docker-runner-codex:<runner-sha>`; credentials are never baked into image layers or runner artifacts. |
+| `A2A_DOCKER_RUNNER_PATCH_COMMAND_PROFILE=codex` | generated `commandScript` | `/work/patch-command.sh` | Operator-only trusted-worker profile. The host source at `A2A_DOCKER_RUNNER_CODEX_CONFIG_DIR` (default `/var/lib/a2a-runner/codex-dir`) is copied to a task-scoped host temp directory, and only that clone is mounted read-write at `/run/secrets/codex-dir`. After `codex exec --ephemeral --json`, the host runner validates that only refreshable token fields/`last_refresh` changed and atomically writes back `auth.json` with the original owner and mode. `config.toml` and generated custom-agent files are discarded. The parent uses `gpt-5.6-sol`, reasoning `high`, approval `never`, and `danger-full-access` inside the external container boundary. Optional contained fanout keeps the parent unchanged, routes explorer/researcher to `gpt-5.6-luna`/`max`, and keeps implementer/verifier on Sol. Use `a2a-docker-runner-codex:<runner-sha>`; credentials are never baked into image layers or runner artifacts. |
 | `A2A_DOCKER_RUNNER_PATCH_COMMAND_TEMPLATE` | `commandTemplate` | `/work/patch-command.sh` | Legacy eval path; rejected for GitHub patch execution. |
 
 #### Claude turn-budget resolution and recovery
@@ -731,6 +744,10 @@ export A2A_DOCKER_RUNNER_CAP_DROP=ALL
 export A2A_CODEX_MODEL=gpt-5.6-sol
 export A2A_CODEX_REASONING_EFFORT=high
 export A2A_CODEX_TIMEOUT_SEC=3600
+# Optional bounded Codex custom-agent fanout; remains off when unset.
+export A2A_DOCKER_RUNNER_CONTAINED_SUBAGENTS_ENABLED=1
+export A2A_DOCKER_RUNNER_CONTAINED_SUBAGENTS_MAX=2
+export A2A_DOCKER_RUNNER_CONTAINED_SUBAGENTS_ROLES=explorer,verifier
 ```
 
 The persistent directory is never mounted directly into the task container.

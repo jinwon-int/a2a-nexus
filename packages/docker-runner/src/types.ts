@@ -184,9 +184,9 @@ export type RunnerContainedSubagentReason =
 export type RunnerContainedSubagentRole = "explorer" | "implementer" | "verifier";
 
 export interface RunnerContainedSubagentsConfig {
-  /** Enabled by default for trusted OpenClaw/Hermes Docker patch profiles; explicit env opt-out is preserved. */
+  /** Enabled by default for trusted OpenClaw/Hermes profiles; Claude Code/Codex stay explicit opt-in. */
   enabled: boolean;
-  /** Hard cap advertised to the in-container OpenClaw/Hermes harness. */
+  /** Hard cap advertised to the active in-container agent harness. */
   maxCount: number;
   /** Max bytes each helper evidence summary may contribute to artifacts/output. */
   outputBytes: number;
@@ -241,7 +241,7 @@ export interface RunnerConfig {
   claudeCodeProfile?: RunnerClaudeCodeProfileConfig;
   /** Codex patch profile readiness metadata. */
   codexProfile?: RunnerCodexProfileConfig;
-  /** Guarded OpenClaw/Hermes subagent policy for Docker-contained task work. */
+  /** Guarded in-container subagent policy for supported Docker patch profiles. */
   containedSubagents?: RunnerContainedSubagentsConfig;
   /** PEM private key file for opt-in execution-proof JWS signing. */
   proofSigningKeyFile?: string;
