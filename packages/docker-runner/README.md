@@ -98,7 +98,10 @@ disposable `CODEX_HOME`: `a2a_explorer` and `a2a_researcher` use
 `gpt-5.6-sol`/`xhigh`. The parent/finalizer continues to use
 `A2A_CODEX_MODEL` and `A2A_CODEX_REASONING_EFFORT`; enabling helpers never
 changes the parent model. The role allowlist controls which custom profiles are
-materialized, and disabling the flag passes `agents.enabled=false` to Codex.
+materialized, and disabling the flag simply installs no role profiles. The runner
+passes no scalar `agents.*` override: codex 0.144.1 reads `agents` as a table of
+role names, so `agents.enabled=<bool>` is rejected as an `AgentRoleToml` type error
+and codex refuses to start.
 The Codex thread setting caps concurrently open helpers; the broker/task budget
 still governs total spawns. Read-only role declarations are defense in depth
 inside the parent container permission boundary, not separate containers.

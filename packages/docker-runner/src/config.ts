@@ -816,13 +816,20 @@ function buildCodexSubagentProfileInstallShell(config: RunnerContainedSubagentsC
   ].join("\n");
 }
 
-function buildCodexSubagentCliOverrides(config: RunnerContainedSubagentsConfig): string {
-  const shellContinuation = "\\";
-  if (!config.enabled) return `  -c 'agents.enabled=false' ${shellContinuation}`;
-  return [
-    `  -c 'agents.enabled=true' ${shellContinuation}`,
-    `  -c 'agents.max_concurrent_threads_per_session=${config.maxCount}' ${shellContinuation}`,
-  ].join("\n");
+// codex 0.144.1 부터 `agents` 는 **역할 이름 → AgentRoleToml 의 테이블**이다.
+// 스칼라 키(`agents.enabled`, `agents.max_concurrent_threads_per_session`)를 주면
+// codex 는 그것을 "그 이름을 가진 역할"로 읽고 타입 오류로 기동 자체를 거부한다:
+//
+//   Error loading config.toml: invalid type: boolean `false`,
+//     expected struct AgentRoleToml in `agents`
+//
+// 러너 이미지 codex 0.144.1 에서 실측 재현했다 — disabled(`=false`) 와
+// enabled(`=true`) 경로가 **둘 다** 죽는다. 키를 생략하면 정상 파싱된다.
+// subagent 활성화는 `$CODEX_HOME/agents/` 에 설치하는 역할 프로파일이 이미
+// 담당하므로(buildCodexSubagentProfileInstallShell), 이 스칼라 오버라이드는
+// 기능적으로도 불필요하다. 비활성일 때는 프로파일을 설치하지 않는 것으로 족하다.
+function buildCodexSubagentCliOverrides(_config: RunnerContainedSubagentsConfig): string {
+  return "";
 }
 
 function buildCodexSubagentRosterPrompt(config: RunnerContainedSubagentsConfig): string {

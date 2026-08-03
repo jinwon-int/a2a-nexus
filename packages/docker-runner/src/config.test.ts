@@ -441,7 +441,9 @@ test("Codex patch profile reserves git and GitHub lifecycle work for the outer r
   assert.match(script, /cat \/work\/artifacts\/prompt\.md >> \/work\/artifacts\/codex-prompt\.md/);
   assert.match(script, /- < \/work\/artifacts\/codex-prompt\.md/);
   assert.doesNotMatch(script, /- < \/work\/artifacts\/prompt\.md/);
-  assert.match(script, /agents\.enabled=false/);
+  // codex 0.144.1 은 스칼라 `agents.*` 를 AgentRoleToml 로 읽어 기동을 거부한다.
+  // 비활성은 역할 프로파일을 설치하지 않는 것으로 표현한다.
+  assert.doesNotMatch(script, /agents\.enabled=false/);
   assert.doesNotMatch(script, /name = "a2a_explorer"/);
   assert.doesNotMatch(script, /model = "gpt-5\.6-luna"/);
   assertBashScriptParses(script);
@@ -468,8 +470,11 @@ test("Codex contained subagents route low-cost roles to Luna max and preserve up
   const script = config.commandScript ?? "";
   assert.match(script, /A2A_CODEX_DEFAULT_MODEL='gpt-5\.6-sol'/);
   assert.match(script, /--model "\$A2A_CODEX_MODEL"/);
-  assert.match(script, /agents\.enabled=true/);
-  assert.match(script, /agents\.max_concurrent_threads_per_session=3/);
+  // 활성 경로도 스칼라 `agents.*` 를 쓰면 안 된다 — codex 0.144.1 에서 `=true` 역시
+  // `invalid type: boolean true, expected struct AgentRoleToml` 로 죽는 것을 실측했다.
+  // 활성화는 아래 역할 프로파일 설치가 담당한다.
+  assert.doesNotMatch(script, /agents\.enabled=true/);
+  assert.doesNotMatch(script, /agents\.max_concurrent_threads_per_session=/);
   assert.match(script, /name = "a2a_explorer"[\s\S]*model = "gpt-5\.6-luna"[\s\S]*model_reasoning_effort = "max"/);
   assert.match(script, /name = "a2a_researcher"[\s\S]*model = "gpt-5\.6-luna"[\s\S]*model_reasoning_effort = "max"/);
   assert.match(script, /name = "a2a_implementer"[\s\S]*model = "gpt-5\.6-sol"[\s\S]*model_reasoning_effort = "high"/);
@@ -788,6 +793,34 @@ test("loadConfig allows OpenClaw contained subagents to opt out explicitly", asy
   assert.match(config.commandScript ?? "", /contained_subagents=disabled/);
   assert.match(config.commandScript ?? "", /Do not spawn OpenClaw subagents/);
 });
+
+// codex 0.144.1 의 `agents` 는 역할 이름 → AgentRoleToml 테이블이므로 스칼라 키를
+// 주면 기동 단계에서 죽는다. 러너 이미지에서 실측했다:
+//   Error loading config.toml: invalid type: boolean `false`,
+//     expected struct AgentRoleToml in `agents`
+// disabled/enabled 두 경로 모두 재현되므로 양쪽을 다 막는다.
+for (const [label, enabled, max] of [
+  ["disabled", "0", "0"],
+  ["enabled", "1", "2"],
+] as const) {
+  test(`codex command script never emits scalar agents.* overrides (${label})`, async () => {
+    const config = await loadConfig({
+      A2A_DOCKER_RUNNER_IMAGE: "a2a-docker-runner-codex:test",
+      A2A_DOCKER_RUNNER_PATCH_COMMAND_PROFILE: "codex",
+      A2A_DOCKER_RUNNER_TRUSTED_OPERATOR: "1",
+      A2A_DOCKER_RUNNER_CONTAINED_SUBAGENTS_ENABLED: enabled,
+      A2A_DOCKER_RUNNER_CONTAINED_SUBAGENTS_MAX: max,
+    });
+
+    const script = config.commandScript ?? "";
+    assert.doesNotMatch(script, /agents\.enabled=/, "agents.enabled 는 AgentRoleToml 로 해석돼 codex 기동을 깨뜨린다");
+    assert.doesNotMatch(
+      script,
+      /agents\.max_concurrent_threads_per_session=/,
+      "agents.max_concurrent_threads_per_session 도 같은 이유로 금지",
+    );
+  });
+}
 
 test("loadConfig enables bounded contained OpenClaw subagents with explicit overrides", async () => {
   const config = await loadConfig({
