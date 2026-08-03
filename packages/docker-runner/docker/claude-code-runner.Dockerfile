@@ -48,8 +48,11 @@ RUN set -eux; \
   cd /tmp/a2a-nexus; \
   git checkout "$A2A_NEXUS_REF"; \
   install -d -m 0755 /opt/a2a-broker/scripts; \
+  install -d -m 0755 /opt/a2a-broker/scripts/lib; \
   install -m 0755 packages/broker/scripts/claude-a2a-patch-bridge.mjs /opt/a2a-broker/scripts/claude-a2a-patch-bridge.mjs; \
   install -m 0755 packages/broker/scripts/finalizer-tool-policy.mjs /opt/a2a-broker/scripts/finalizer-tool-policy.mjs; \
+  install -m 0755 packages/broker/scripts/lib/claude-runtime-flags.mjs /opt/a2a-broker/scripts/lib/claude-runtime-flags.mjs; \
+  install -m 0755 packages/broker/scripts/lib/claude-model-telemetry.mjs /opt/a2a-broker/scripts/lib/claude-model-telemetry.mjs; \
   node --input-type=module -e "import('/opt/a2a-broker/scripts/claude-a2a-patch-bridge.mjs')"; \
   rm -rf /tmp/a2a-nexus
 
