@@ -61,12 +61,14 @@ disposable `CODEX_HOME`. Its tier mapping is intentionally asymmetric:
 
 The parent Codex process still uses `A2A_CODEX_MODEL` and
 `A2A_CODEX_REASONING_EFFORT` and remains the single finalizer. With the opt-in
-off, the runner explicitly passes `agents.enabled=false`; no custom profiles
+off, the runner installs no custom profiles and passes no `agents.*` override
+(codex 0.144.1 rejects scalar `agents.*` keys); no custom profiles
 are generated.
 
-Codex's `agents.max_concurrent_threads_per_session` enforces the concurrent-open
-thread ceiling; the task prompt and broker gate still own the total spawn
-budget. Per-agent `sandbox_mode` is defense in depth, not a separate container:
+The concurrent-open thread ceiling is expressed through the installed role
+profiles rather than a scalar `agents.max_concurrent_threads_per_session`
+override, which codex 0.144.1 also rejects as an `AgentRoleToml` type error; the
+task prompt and broker gate still own the total spawn budget. Per-agent `sandbox_mode` is defense in depth, not a separate container:
 the parent `codex exec` permission override can be inherited by children. The
 Docker boundary, lifecycle-command guard, role instructions, disjoint write-set
 rule, and single finalizer therefore remain the operative safety controls.
