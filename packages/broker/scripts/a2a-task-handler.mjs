@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 import { createHash } from "node:crypto";
-import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { basename, isAbsolute, join, resolve } from "node:path";
 import { spawnSync } from "node:child_process";
@@ -847,8 +847,32 @@ function analysisBridgeArtifactPreflight(command, env = process.env) {
   };
 }
 
-function writeAnalysisBridgeInputFiles(task, payload) {
-  const dir = mkdtempSync(join(tmpdir(), "a2a-analysis-bridge-"));
+// 페이로드 전문은 **핸들러 cwd 아래**에 쓴다. OS tmpdir 에 두면
+// `A2A_ANALYSIS_BRIDGE_ADAPTER=claude-code` 노드가 이 파일을 열지 못한다 —
+// claude-code 는 프로젝트 루트 밖 경로를 Read/Glob 하지 못하므로 평가자가
+// 16k 인라인 발췌만 보고 "근거 불충분"으로 BLOCK 을 낸다(#1726).
+//
+// 실제 사례: nclex PR #113 round nclex-pr113-t1-percase-20260803T0620Z 에서
+// 같은 51,099자 sourceBundle 을 두 레인에 보냈는데 codex 노드는 전문을 검토해
+// findings 12건을 냈고, claude-code 노드는 "전체 약 54,034자 중 38,034자
+// 미투영 … 파일시스템 전역 Glob 검색에서도 파일 0건" 으로 BLOCK 했다.
+// 즉 어댑터에 따라 같은 라운드의 평가자가 받는 증거량이 달랐다.
+//
+// tmpdir 폴백을 남기는 이유: cwd 가 읽기전용이거나 쓰기 불가한 배치에서도
+// 브리지 자체는 계속 동작해야 한다. 그 경우 접근성은 종전과 같아진다.
+function resolveAnalysisBridgeDir(env = process.env) {
+  const handlerCwd = safeText(env.A2A_HANDLER_CWD, process.cwd());
+  try {
+    const base = join(handlerCwd, ".a2a-bridge");
+    mkdirSync(base, { recursive: true, mode: 0o700 });
+    return { dir: mkdtempSync(join(base, "analysis-")), inWorkspace: true };
+  } catch {
+    return { dir: mkdtempSync(join(tmpdir(), "a2a-analysis-bridge-")), inWorkspace: false };
+  }
+}
+
+function writeAnalysisBridgeInputFiles(task, payload, env = process.env) {
+  const { dir, inWorkspace: payloadFileInWorkspace } = resolveAnalysisBridgeDir(env);
   const taskFile = join(dir, "task.json");
   const payloadFile = join(dir, "payload.json");
   const taskText = `${JSON.stringify(task, null, 2)}\n`;
@@ -867,7 +891,7 @@ function writeAnalysisBridgeInputFiles(task, payload) {
     payloadFileBytes: Buffer.byteLength(payloadText, "utf8"),
     lossyRecoveryUsed: false,
   };
-  return { dir, taskFile, payloadFile, sourceCarrierStats: carrierStats };
+  return { dir, taskFile, payloadFile, payloadFileInWorkspace, sourceCarrierStats: carrierStats };
 }
 
 function githubIssueTargetFromTask(task) {
@@ -1021,6 +1045,10 @@ function runOpenClawAnalysisBridge(task, env = process.env) {
   const promptPayloadLimit = Number.isSafeInteger(Number(env.A2A_ANALYSIS_PROMPT_PAYLOAD_LIMIT))
     ? Math.max(1000, Math.min(16000, Number(env.A2A_ANALYSIS_PROMPT_PAYLOAD_LIMIT)))
     : (strictJsonInstruction ? 8000 : 16000);
+  // 프롬프트가 payload 파일의 절대경로를 인라인하므로 프롬프트 구성보다 먼저 만든다.
+  const bridgeFiles = writeAnalysisBridgeInputFiles(task, payload, env);
+  // 브리지 실패 시 보존한 입력 디렉터리 경로 — 오류 details 에 실어 사후 진단에 쓴다.
+  let retainedAnalysisBridgeDir = "";
   const prompt = [
     `You are A2A worker ${nodeId}. Complete this read-only A2A analysis task.`,
     "Do not modify files, deploy, restart services, send providers, acknowledge terminal rows, mutate databases, or move credentials.",
@@ -1031,7 +1059,14 @@ function runOpenClawAnalysisBridge(task, env = process.env) {
     '{"status":"done|blocked","summary":"...","findings":["..."],"risks":["..."],"recommendations":["..."],"evidenceRefs":["..."],"verdict":"pass|fail optional for review.required tasks","doneCommentUrl":"optional","blockCommentUrl":"optional","startCommentUrl":"optional"}',
     strictJsonInstruction ? `Strict JSON retry discipline: ${strictJsonInstruction}` : "",
     expectedSchema ? `Expected JSON schema/key summary:\n${expectedSchema}` : "",
-    "Use A2A_ANALYSIS_PAYLOAD_FILE for the full payload; the prompt payload below is an intentionally bounded excerpt to avoid model-bridge oversized-payload failures.",
+    // 절대경로를 프롬프트에 박는다. 환경변수 이름만 주면 평가자가 Glob 으로
+    // 파일을 찾아야 하는데, 그 탐색이 실패하면 "파일 0건"으로 판단하고
+    // 발췌만으로 BLOCK 을 낸다(#1726). 경로를 직접 주면 바로 Read 하면 된다.
+    `Read the full payload from this exact path before judging: ${bridgeFiles.payloadFile}`,
+    "Use A2A_ANALYSIS_PAYLOAD_FILE (same path) for the full payload; the prompt payload below is an intentionally bounded excerpt to avoid model-bridge oversized-payload failures.",
+    bridgeFiles.payloadFileInWorkspace
+      ? ""
+      : "NOTE: the full-payload file is outside the handler workspace on this node. If your tooling cannot read it, say so explicitly and report the excerpt limit rather than blocking for insufficient evidence.",
     "All human-readable text should be Korean unless quoting code/test output.",
     `Task id: ${safeText(task.id, "unknown")}`,
     `Intent: ${safeText(task.intent, "unknown")}`,
@@ -1063,7 +1098,6 @@ function runOpenClawAnalysisBridge(task, env = process.env) {
     ? Number(env.A2A_OPENCLAW_ANALYSIS_WATCHDOG_MS)
     : (Number(timeoutSec) + 30) * 1000;
 
-  const bridgeFiles = writeAnalysisBridgeInputFiles(task, payload);
   let child;
   try {
     child = spawnSync(command, args, {
@@ -1080,7 +1114,15 @@ function runOpenClawAnalysisBridge(task, env = process.env) {
       killSignal: "SIGKILL",
     });
   } finally {
-    rmSync(bridgeFiles.dir, { recursive: true, force: true });
+    // 브리지가 정상 종료했을 때만 지운다. 실패 직후 삭제하면 "평가자가 무엇을
+    // 받았는가"를 사후에 확인할 수 없어 전달 실패와 콘텐츠 결함을 구분하지
+    // 못한다(#1726). 실패 시에는 보존하고 경로를 남겨 진단에 쓴다.
+    const bridgeFailed = Boolean(child?.error) || (child?.status ?? 1) !== 0;
+    if (bridgeFailed) {
+      retainedAnalysisBridgeDir = bridgeFiles.dir;
+    } else {
+      rmSync(bridgeFiles.dir, { recursive: true, force: true });
+    }
   }
 
   if (child.error) {
@@ -1089,7 +1131,7 @@ function runOpenClawAnalysisBridge(task, env = process.env) {
       error: {
         code: isTimeout ? "openclaw_analysis_timeout" : "openclaw_analysis_spawn_failed",
         message: child.error.message,
-        details: { signal: child.signal ?? undefined, buildInfo: BUILD_INFO },
+        details: { signal: child.signal ?? undefined, buildInfo: BUILD_INFO, retainedBridgeDir: retainedAnalysisBridgeDir || undefined },
       },
     };
   }
@@ -1098,7 +1140,7 @@ function runOpenClawAnalysisBridge(task, env = process.env) {
       error: {
         code: child.signal ? "openclaw_analysis_timeout" : "openclaw_analysis_failed",
         message: safeText(child.stderr, safeText(child.stdout, `openclaw exited with ${child.status ?? "unknown"}`)),
-        details: { exitCode: child.status, signal: child.signal ?? undefined, buildInfo: BUILD_INFO },
+        details: { exitCode: child.status, signal: child.signal ?? undefined, buildInfo: BUILD_INFO, retainedBridgeDir: retainedAnalysisBridgeDir || undefined },
       },
     };
   }
