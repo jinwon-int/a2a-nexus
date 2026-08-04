@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { createHash } from "node:crypto";
-import { chmodSync, existsSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { chmodSync, existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
@@ -2065,4 +2065,66 @@ test("github-verify read-only tasks with plugin-only scope return structured Blo
   assert.equal(result.result.output.blockReason, "github_readonly_executor_not_configured");
   assert.equal(result.result.output.noLive, true);
   assert.equal(result.result.output.sourceOnly, true);
+});
+
+// #1726 — 페이로드 전문 파일이 핸들러 cwd 밖(OS tmpdir)에 있으면
+// claude-code 어댑터가 열지 못해 평가자가 16k 발췌만 보고 BLOCK 을 낸다.
+// 실제로 nclex PR #113 라운드에서 codex 노드는 findings 12건, claude-code 노드는
+// "파일시스템 전역 Glob 에서도 파일 0건" 으로 BLOCK 이 갈렸다.
+test("analysis bridge writes the full payload under the handler cwd and pins its absolute path (#1726)", () => {
+  const workspace = mkdtempSync(join(tmpdir(), "a2a-handler-cwd-"));
+  const dir = mkdtempSync(join(tmpdir(), "a2a-payload-scope-"));
+  const bin = join(dir, "claude-a2a-analysis-bridge.mjs");
+  const capture = join(dir, "capture.json");
+  writeFileSync(bin, `#!/usr/bin/env node
+import fs from "node:fs";
+// 프롬프트는 stdin 이 아니라 --message 인자로 전달된다.
+const argv = process.argv.slice(2);
+const prompt = argv[argv.indexOf("--message") + 1] || "";
+fs.writeFileSync(${JSON.stringify(capture)}, JSON.stringify({
+  payloadFile: process.env.A2A_ANALYSIS_PAYLOAD_FILE || "",
+  payloadReadable: (() => {
+    try { return fs.readFileSync(process.env.A2A_ANALYSIS_PAYLOAD_FILE, "utf8").length > 0; }
+    catch { return false; }
+  })(),
+  prompt,
+}));
+const response = {
+  status: "done", summary: "ok", findings: [], risks: [], recommendations: [],
+  evidenceRefs: ["#1726"], bridgeAdapter: "claude_code",
+};
+process.stdout.write(JSON.stringify({ payloads: [{ text: JSON.stringify(response) }] }) + "\\n");
+`);
+  chmodSync(bin, 0o755);
+
+  const result = handleTask({
+    id: "task-payload-scope",
+    intent: "analyze",
+    assignedWorkerId: "workeralpha",
+    message: "Analyze payload scope",
+    payload: { mode: "analysis-only", sourceOnly: true, noLive: true, bulk: "x".repeat(40000) },
+  }, {
+    PATH: process.env.PATH,
+    A2A_EXECUTOR_MODE: "builtin",
+    A2A_OPENCLAW_ANALYSIS_ENABLED: "1",
+    A2A_OPENCLAW_ANALYSIS_BIN: bin,
+    A2A_CLAUDE_CODE_BIN: "/usr/bin/claude",
+    A2A_NODE_ID: "workeralpha",
+    A2A_HANDLER_CWD: workspace,
+  });
+
+  assert.equal(result.error, undefined);
+  const seen = JSON.parse(readFileSync(capture, "utf8"));
+
+  // 핸들러 cwd 하위여야 claude-code 가 읽을 수 있다.
+  assert.ok(
+    seen.payloadFile.startsWith(workspace),
+    `payload file must live under the handler cwd; got ${seen.payloadFile} (cwd ${workspace})`,
+  );
+  assert.equal(seen.payloadReadable, true, "bridge child must be able to read the full payload file");
+  // 환경변수 이름만 주면 평가자가 Glob 탐색에 실패해 "파일 0건"으로 본다.
+  assert.ok(
+    seen.prompt.includes(seen.payloadFile),
+    "prompt must pin the absolute payload path so the reviewer can Read it without globbing",
+  );
 });
