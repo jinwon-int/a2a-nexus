@@ -29,6 +29,9 @@ test("Claude Code cccb runner image bakes required patch bridge and tools (#1030
   assert.match(claudeCodeDockerfile, /gitleaks_\$\{GITLEAKS_VERSION\}_linux_\$\{gitleaks_arch\}\.tar\.gz/);
   assert.match(claudeCodeDockerfile, /claude-a2a-patch-bridge\.mjs/);
   assert.match(claudeCodeDockerfile, /\/opt\/a2a-broker\/scripts\/claude-a2a-patch-bridge\.mjs/);
+  assert.match(claudeCodeDockerfile, /\/opt\/a2a-broker\/scripts\/lib\//);
+  assert.match(claudeCodeDockerfile, /lib\/claude-runtime-flags\.mjs/);
+  assert.match(claudeCodeDockerfile, /lib\/claude-model-telemetry\.mjs/);
   assert.match(claudeCodeDockerfile, /org\.openclaw\.a2a-docker-runner\.harness="claude-code"/);
 });
 
