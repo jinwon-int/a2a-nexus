@@ -541,6 +541,12 @@
       "class": "gate",
       "round": null,
       "note": "Contract tests for #1724 signed evaluation receipt: JCS+JWS round-trip, exact-head tamper binding, key-ring failure modes, self-review rejection, preset staleness interplay."
+    },
+    {
+      "file": "scripts/analysis-bridge-failure-signature-report.test.mjs",
+      "class": "gate",
+      "round": null,
+      "note": "Tests for #1725 failure-signature measurement: structured/legacy invalid-JSON classification, per-adapter rates and wasted-cost counters, advisory thresholds (warning vs exclusion candidate)."
     }
   ]
 }

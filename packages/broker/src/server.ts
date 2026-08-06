@@ -202,6 +202,9 @@ import { handleExchangeRoutesIfMatched } from "./http/exchanges-read.js";
 import { handleComplexityOrchestrationRoutesIfMatched } from "./http/complexity-orchestration-routes.js";
 import { handleWavePlanRoutesIfMatched } from "./http/wave-plan-routes.js";
 import { handleReviewLineageRoutesIfMatched } from "./http/review-lineage-routes.js";
+import { handleNclexEvaluationRoutesIfMatched } from "./http/nclex-evaluation-routes.js";
+import { NclexEvaluationReceiptStore } from "./nclex-evaluation/receipt-store.js";
+import type { NclexEvaluationKeyring } from "./nclex-evaluation/receipt-contract.js";
 import { handleTerminalBriefCloseoutRoutesIfMatched } from "./http/terminal-brief-routes.js";
 import {
   handleWorkersReadRouteIfMatched,
@@ -364,6 +367,34 @@ export function createBrokerServer(options: BrokerServerOptions = {}): BrokerSer
   const reviewLineageMode = resolveReviewLineageRolloutMode(
     options.reviewLineageMode ?? process.env.A2A_REVIEW_LINEAGE_MODE,
   );
+  // NCLEX evaluation receipt surface (#1724): default-off; a configured
+  // keyring file that is unreadable or malformed fails startup loudly.
+  const nclexEvaluationKeyringFile = (
+    options.nclexEvaluationKeyringFile ?? process.env.A2A_NCLEX_EVALUATION_KEYRING_FILE ?? ""
+  ).trim() || undefined;
+  const nclexEvaluationKeyring = nclexEvaluationKeyringFile
+    ? loadNclexEvaluationKeyring(nclexEvaluationKeyringFile)
+    : undefined;
+
+  function loadNclexEvaluationKeyring(file: string): NclexEvaluationKeyring {
+    let parsed: unknown;
+    try {
+      parsed = JSON.parse(readFileSync(file, "utf8"));
+    } catch (error) {
+      throw new Error(
+        `nclex evaluation keyring file unreadable: ${file}: ${error instanceof Error ? error.message : String(error)}`,
+      );
+    }
+    const keys = (parsed as Record<string, unknown> | null)?.keys;
+    if (!keys || typeof keys !== "object" || Array.isArray(keys)) {
+      throw new Error(`nclex evaluation keyring file must be { "keys": { "<kid>": "<spki pem>" } }: ${file}`);
+    }
+    const entries = Object.entries(keys as Record<string, unknown>);
+    if (entries.length === 0 || !entries.every(([kid, pem]) => kid.trim() && typeof pem === "string" && pem.includes("BEGIN PUBLIC KEY"))) {
+      throw new Error(`nclex evaluation keyring must map non-empty kid values to SPKI PEM strings: ${file}`);
+    }
+    return Object.fromEntries(entries.map(([kid, pem]) => [kid.trim(), (pem as string).trim()]));
+  }
   // Declarative worker-class policy (#1355 G1). A configured-but-invalid or
   // unreadable document fails startup loudly (loadBrokerPolicyFile throws);
   // unset keeps legacy behavior (no policy evaluation).
@@ -475,9 +506,15 @@ export function createBrokerServer(options: BrokerServerOptions = {}): BrokerSer
 
   const pushNotificationsEnabled =
     options.pushNotificationsEnabled ?? resolveBooleanEnv(process.env.A2A_PUSH_NOTIFICATIONS_ENABLED, false);
-  const initialSnapshot = options.broker && !pushNotificationsEnabled ? undefined : stateStore.load();
+  const initialSnapshot = options.broker && !pushNotificationsEnabled && !nclexEvaluationKeyring ? undefined : stateStore.load();
   const pushNotificationConfigStore = pushNotificationsEnabled
     ? new PushNotificationConfigStore(initialSnapshot?.pushNotificationConfigs ?? [])
+    : undefined;
+  const nclexEvaluationStore = nclexEvaluationKeyring
+    ? new NclexEvaluationReceiptStore(initialSnapshot?.nclexEvaluationReceipts ?? [])
+    : undefined;
+  const nclexEvaluationSnapshotExtension = nclexEvaluationStore
+    ? () => ({ nclexEvaluationReceipts: nclexEvaluationStore.listAll() })
     : undefined;
   const pushNotificationSnapshotExtension = pushNotificationConfigStore
     ? () => ({ pushNotificationConfigs: pushNotificationConfigStore.snapshot() })
@@ -542,6 +579,9 @@ export function createBrokerServer(options: BrokerServerOptions = {}): BrokerSer
     });
   if (options.broker && pushNotificationSnapshotExtension) {
     unsubscribePushNotificationSnapshotExtension = broker.registerSnapshotExtension(pushNotificationSnapshotExtension);
+  }
+  if (nclexEvaluationSnapshotExtension) {
+    broker.registerSnapshotExtension(nclexEvaluationSnapshotExtension);
   }
   const rateLimiter = new InMemoryRateLimiter(
     Math.max(1, rateLimitMaxRequests),
@@ -1199,6 +1239,22 @@ export function createBrokerServer(options: BrokerServerOptions = {}): BrokerSer
         assertVerifiedWorkerMatches,
       })) {
         return;
+      }
+
+      if (nclexEvaluationStore && nclexEvaluationKeyring) {
+        if (await handleNclexEvaluationRoutesIfMatched({
+          method: req.method,
+          path,
+          req,
+          res,
+          url,
+          store: nclexEvaluationStore,
+          keyring: nclexEvaluationKeyring,
+          enforceRequesterIdentity,
+          requesterIdentity,
+        })) {
+          return;
+        }
       }
 
       if (await handleA2ATaskStreamRouteIfMatched({

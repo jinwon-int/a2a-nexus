@@ -63,6 +63,25 @@ prompt 원문·chain-of-thought·제한 자료 본문은 절대 포함하지 않
   페이지/절·검증할 주장·라이선스 분류만 담는다.
 - manifest mismatch(`refs_manifest_invalid`)와 허브/원문 접근 실패는 BLOCK.
 
+## Signed receipt와 broker 통합 (#1724 slice 2-3)
+
+- `scripts/nclex-content-pr-receipt.mjs`(offline 서명/검증)와 broker 측
+  `packages/broker/src/nclex-evaluation/`(TS 검증)은 **같은 JCS+JWS 경로**를
+  공유 — offline 모듈이 서명한 골든 receipt를 broker 검증기가 동일하게 수용함을
+  테스트가 고정한다.
+- Receipt는 repo/PR/base·head SHA/diffHash/intentHash/author·reviewer/team/
+  lane/findings/verdict/producedAt에 바인딩되며 receipt id = canonical core의
+  sha256. 바인딩 필드 변조·self-review·미등록 키는 fail-closed.
+- Broker 표면은 **default-off**: `A2A_NCLEX_EVALUATION_KEYRING_FILE` 설정 시에만
+  등록되고 무효 파일은 startup fail. 라우트:
+  - `POST /nclex-evaluations/receipts` — operator 전용, 서명 검증 후 idempotent 저장
+  - `GET /nclex-evaluations/receipts` — 목록(운영자 안전 투영만)
+  - `GET /nclex-evaluations/{owner}/{repo}/{pr}/merge-ready?headSha=…&risk=…&gateGreen=…&authorDistinctApproval=…&mergeConflict=…`
+    — 저장된 receipt + GitHub 사실 파라미터로 merge-ready 판정(ready/reasons)
+- 저장은 broker snapshot extension에 탑재되어 재시작 후에도 복원된다.
+- A2A reviewer는 branch를 수정·merge하지 않는다는 경계는 route에도 동일하게
+  적용 — merge 경로는 이 표면에 존재하지 않는다.
+
 ## Fail-closed fixtures
 
 `scripts/nclex-content-pr-preset.test.mjs`가 고정한다: self-review 불가,

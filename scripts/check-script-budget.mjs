@@ -41,7 +41,7 @@ import { createDocCheckContext } from './lib/doc-check.mjs';
 // its regression test were added. Raising any budget is allowed but must be
 // deliberate — see a2a-nexus#882.
 export const BUDGETS = {
-  scriptsMjs: 176, // +4 from 172: #1724 nclex_content_pr_v1 — nclex-content-pr-preset.mjs + nclex-content-pr-receipt.mjs and their tests. Deliberate: the preset (routing/recusal/quorum, exact-head receipt staleness, merge-ready read model, body-free comment projection) and the signed receipt (JCS+JWS exact-head binding) are new domain contracts with no existing engine to fold into; deterministic fixtures prove the fail-closed edges.
+  scriptsMjs: 178, // +6 from 172: #1724 nclex_content_pr_v1 (preset/receipt 모듈+테스트 4) + #1725 analysis-bridge-failure-signature-report.mjs + 테스트. Deliberate: 신규 도메인 계약(평가 라우팅/수신 receipt/실패 시그니처 측정)으로 기존 엔진 통합 불가, deterministic fixture로 fail-closed 경계 고정.
   rootNpmScripts: 101, // -1 from 102: #1503 Wave 0 retires the check:mobileAlpha-hermes-worker-profile alias (check:hermes already runs the same test file directly).
   brokerNpmScripts: 54, // -43 from 95: #1503 Wave 2 collapses the orchestration-intelligence (21) and rollout-preflight (24→22; rollout_guard and worker_signature_rollout_preflight stay direct as manifest-required gates) aliases into the orchestration/rollout dispatchers sharing scripts/lib/operator-dispatch.mjs; scan:public-readiness stays direct (CI parity requiredScript).
   brokerCoreModules: 225, // +1 from 224: #1635 adds the explicitly task-lineage-qualified, rebuildable read projection; keeping this boundary in its own core module avoids coupling read-only graph traversal to task mutation or ReviewLineage code.
