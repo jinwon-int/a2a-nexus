@@ -62,6 +62,7 @@ function makeWorkerView(overrides: Partial<WorkerView> & { nodeId: string }): Wo
     workerPlane: "online",
     managementPlane: "unknown",
     updateEligible: true,
+    substantiveAnalysisReady: true,
     ...workerOverrides,
   };
 }

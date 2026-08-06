@@ -83,9 +83,10 @@ function makeCapacitySummary(items: WorkerCapacitySummaryItem[]): WorkerCapacity
         acc.running += item.counts.running;
         acc.staleTasks += item.counts.stale;
         acc.active += item.counts.active;
+        if (item.status === "online" && item.substantiveAnalysisReady) acc.substantiveAnalysisReadyOnline += 1;
         return acc;
       },
-      { workers: 0, online: 0, staleWorkers: 0, queued: 0, claimed: 0, running: 0, staleTasks: 0, active: 0 },
+      { workers: 0, online: 0, staleWorkers: 0, queued: 0, claimed: 0, running: 0, staleTasks: 0, active: 0, substantiveAnalysisReadyOnline: 0 },
     ),
     items,
   };

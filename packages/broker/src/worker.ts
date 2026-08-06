@@ -1,5 +1,7 @@
 import { spawn } from "node:child_process";
 import { createHash, createPrivateKey, randomUUID, sign } from "node:crypto";
+import { accessSync, constants as fsConstants, existsSync } from "node:fs";
+import { delimiter as pathDelimiter, isAbsolute, join as joinPath, resolve as resolvePath } from "node:path";
 import {
   buildA2AWorkerSubagentOrchestrationPolicy,
   type A2AWorkerSubagentTaskProfile,
@@ -18,6 +20,7 @@ import {
   extractA2AWorkerSubagentSpawnGateDecisionInput,
 } from "a2a-attestation";
 import { redactSecretsText } from "a2a-attestation";
+import { readGeneratedBuildInfo } from "./broker-build-info.js";
 import {
   buildA2AWorkerSubagentRedactionGate,
   type A2AWorkerSubagentRedactionMode,
@@ -1818,14 +1821,24 @@ export function createWorkerConfigFromEnv(env: NodeJS.ProcessEnv = process.env):
     "WORKER_HANDLER_TIMEOUT_MS",
   );
 
+  const baseCapabilities = applyWorkerRuntimeProfile(parseWorkerCapabilities(env, role), runtimeProfile);
+  // Gate the advertisement: never publish canAnalyze=true before the selected
+  // handler artifact is verified (#1597). A failed probe flips the capability
+  // to false and the reason survives in metadata for the broker projection.
+  const analysisProbe = probeAnalysisArtifactReadiness(env, baseCapabilities.canAnalyze === true);
+  const capabilities =
+    baseCapabilities.canAnalyze && analysisProbe.probed && !analysisProbe.ready
+      ? { ...baseCapabilities, canAnalyze: false }
+      : baseCapabilities;
+
   const worker: RegisterWorkerRequest = {
     nodeId: workerId,
     role,
     displayName: optionalTrimmed(env.WORKER_DISPLAY_NAME ?? env.A2A_WORKER_DISPLAY_NAME),
     brokerUrl: optionalTrimmed(env.WORKER_PUBLIC_URL ?? env.A2A_WORKER_PUBLIC_URL),
-    capabilities: applyWorkerRuntimeProfile(parseWorkerCapabilities(env, role), runtimeProfile),
+    capabilities,
     workerMode: parseWorkerMode(env.WORKER_MODE ?? env.A2A_WORKER_MODE),
-    metadata: buildWorkerMetadata(env, runtimeProfile),
+    metadata: withAnalysisProbeMetadata(buildWorkerMetadata(env, runtimeProfile), analysisProbe, env),
   };
 
   return {
@@ -2294,6 +2307,167 @@ function buildWorkerMetadata(
     };
   }
   return Object.keys(metadata).length ? metadata : undefined;
+}
+
+// ---------------------------------------------------------------------------
+// Registration-time analysis handler artifact probe (#1597, routed from #1725
+// finding 2). The 2026-08-03 A2AD audit watched two workers advertise
+// `online` + `canAnalyze=true`, accept analysis tasks, and die in 3–5 s with
+// MODULE_NOT_FOUND because the declared handler artifact was absent. A worker
+// must therefore verify the selected handler path (exists + readable /
+// executable) BEFORE advertising `canAnalyze=true` at registration or
+// heartbeat. Adapter class and handler path are derived from the actual
+// wiring — the same env vars the execution handler resolves — never from
+// static self-report, so drift between declaration and wiring is impossible
+// by construction.
+// ---------------------------------------------------------------------------
+
+export interface AnalysisArtifactProbe {
+  /** False when the probe did not run (worker does not declare canAnalyze). */
+  probed: boolean;
+  ready: boolean;
+  reason?: "handler_artifact_missing";
+  adapterClass?: string;
+  handlerPath?: string;
+}
+
+const PROBE_ADAPTER_ALIASES: Record<string, string> = {
+  openclaw: "openclaw",
+  "claude-code": "claude_code",
+  claude_code: "claude_code",
+  claudecode: "claude_code",
+  codex: "codex",
+  hermes: "hermes",
+  builtin: "builtin",
+};
+
+function normalizeProbeAdapter(value: string | undefined): string | undefined {
+  const normalized = optionalTrimmed(value)?.toLowerCase();
+  if (!normalized) return undefined;
+  return PROBE_ADAPTER_ALIASES[normalized];
+}
+
+function analysisBridgeCommandForProbe(env: NodeJS.ProcessEnv): string {
+  return (
+    optionalTrimmed(env.A2A_HERMES_ANALYSIS_BIN) ??
+    optionalTrimmed(env.A2A_OPENCLAW_ANALYSIS_BIN) ??
+    optionalTrimmed(env.OPENCLAW_BIN) ??
+    "openclaw"
+  );
+}
+
+/** Mirror of the execution handler's adapter telemetry heuristic. */
+function deriveAnalysisAdapterClass(env: NodeJS.ProcessEnv, command: string): string {
+  const explicit = normalizeProbeAdapter(env.A2A_ANALYSIS_BRIDGE_ADAPTER ?? env.A2A_WORKER_BRIDGE_ADAPTER);
+  if (explicit) return explicit;
+  const combined = [
+    command,
+    optionalTrimmed(env.A2A_CLAUDE_CODE_BIN) ?? "",
+    optionalTrimmed(env.CLAUDE_BIN) ?? "",
+    optionalTrimmed(env.A2A_WORKER_RUNTIME_FLAVOR ?? env.WORKER_RUNTIME_FLAVOR) ?? "",
+    optionalTrimmed(env.WORKER_METADATA_JSON) ?? "",
+  ].join("\n").toLowerCase();
+  if (combined.includes("codex")) return "codex";
+  if (combined.includes("claude")) return "claude_code";
+  if (combined.includes("hermes")) return "hermes";
+  return "openclaw";
+}
+
+function isExecutableFile(candidate: string): boolean {
+  try {
+    accessSync(candidate, fsConstants.X_OK);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+function pathLookupExecutable(name: string, pathEnv: string | undefined): string | undefined {
+  for (const dir of (pathEnv ?? "").split(pathDelimiter)) {
+    if (!dir) continue;
+    const candidate = joinPath(dir, name);
+    if (existsSync(candidate) && isExecutableFile(candidate)) return candidate;
+  }
+  return undefined;
+}
+
+function probeWorkerBuildRevision(env: NodeJS.ProcessEnv): string | undefined {
+  const explicit = optionalTrimmed(env.A2A_WORKER_BUILD_SHA ?? env.A2A_WORKER_BUILD_REVISION ?? env.A2A_BROKER_REVISION);
+  if (explicit) return explicit;
+  try {
+    const revision = readGeneratedBuildInfo()?.revision;
+    return typeof revision === "string" && revision.trim() ? revision.trim() : undefined;
+  } catch {
+    return undefined;
+  }
+}
+
+export function probeAnalysisArtifactReadiness(
+  env: NodeJS.ProcessEnv,
+  canAnalyze: boolean,
+): AnalysisArtifactProbe {
+  if (!canAnalyze) return { probed: false, ready: false };
+  const bridgeEnabled =
+    parseBooleanEnv(env.A2A_HERMES_ANALYSIS_ENABLED) || parseBooleanEnv(env.A2A_OPENCLAW_ANALYSIS_ENABLED);
+  if (!bridgeEnabled) {
+    // Builtin structured analysis needs no external artifact: nothing to
+    // verify, no metadata to publish (legacy semantics preserved).
+    return { probed: false, ready: true, adapterClass: "builtin" };
+  }
+  const command = analysisBridgeCommandForProbe(env);
+  const adapterClass = deriveAnalysisAdapterClass(env, command);
+  const looksLikeScript = /\.(?:mjs|cjs|js)$/i.test(command);
+  const hasPathSeparator = command.includes("/") || command.includes("\\") || command.startsWith(".");
+
+  if (looksLikeScript && hasPathSeparator) {
+    const cwd = optionalTrimmed(env.A2A_HANDLER_CWD ?? env.WORKER_HANDLER_CWD) ?? process.cwd();
+    const resolved = isAbsolute(command) ? command : resolvePath(cwd, command);
+    const ready = existsSync(resolved) && (() => {
+      try {
+        accessSync(resolved, fsConstants.R_OK);
+        return true;
+      } catch {
+        return false;
+      }
+    })();
+    return ready
+      ? { probed: true, ready: true, adapterClass, handlerPath: resolved }
+      : { probed: true, ready: false, reason: "handler_artifact_missing", adapterClass, handlerPath: resolved };
+  }
+
+  if (hasPathSeparator) {
+    const ready = existsSync(command) && isExecutableFile(command);
+    return ready
+      ? { probed: true, ready: true, adapterClass, handlerPath: command }
+      : { probed: true, ready: false, reason: "handler_artifact_missing", adapterClass, handlerPath: command };
+  }
+
+  const onPath = pathLookupExecutable(command, env.PATH);
+  return onPath
+    ? { probed: true, ready: true, adapterClass, handlerPath: onPath }
+    : { probed: true, ready: false, reason: "handler_artifact_missing", adapterClass, handlerPath: command };
+}
+
+function withAnalysisProbeMetadata(
+  metadata: Record<string, string> | undefined,
+  probe: AnalysisArtifactProbe,
+  env: NodeJS.ProcessEnv,
+): Record<string, string> | undefined {
+  if (!probe.probed) return metadata;
+  const out: Record<string, string> = { ...(metadata ?? {}) };
+  out.analysisReady = probe.ready ? "true" : "false";
+  if (probe.adapterClass) out.analysisAdapterClass = probe.adapterClass;
+  if (probe.handlerPath) out.analysisHandlerPath = probe.handlerPath;
+  if (!probe.ready) {
+    out.analysisReadyReason = probe.reason ?? "handler_artifact_missing";
+    // The probe only runs when canAnalyze was declared; keep the declaration
+    // visible so operators can tell "declared but drifted" from "never
+    // declared" without diffing env.
+    out.analysisDeclaredCanAnalyze = "true";
+  }
+  const buildRevision = probeWorkerBuildRevision(env);
+  if (buildRevision) out.analysisBuildSha = buildRevision;
+  return out;
 }
 
 function buildWorkerHandlerEnv(

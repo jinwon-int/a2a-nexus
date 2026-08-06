@@ -878,6 +878,7 @@ test("broker worker capacity summary handles an empty fleet", () => {
     running: 0,
     staleTasks: 0,
     active: 0,
+    substantiveAnalysisReadyOnline: 0,
   });
   assert.deepEqual(summary.items, []);
 });

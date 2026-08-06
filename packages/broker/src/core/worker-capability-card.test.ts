@@ -39,6 +39,7 @@ const BASE_WORKER: WorkerView = {
   workerPlane: "online",
   managementPlane: "unknown",
   updateEligible: true,
+  substantiveAnalysisReady: true,
 };
 
 const LIBERO_SKILL = {
@@ -112,6 +113,7 @@ test("worker capability card maps Team2 workerepsilon discovery to public AgentC
     workerPlane: "online",
     managementPlane: "unknown",
     updateEligible: true,
+    substantiveAnalysisReady: true,
   };
 
   const card = createWorkerCapabilityCard(workerepsilonWorker, {

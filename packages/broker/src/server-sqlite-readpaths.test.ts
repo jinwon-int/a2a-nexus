@@ -1126,6 +1126,7 @@ test("server reads /workers from SQLite hot tables when SQLite store is active",
       workerPlane: "online",
       managementPlane: "unknown",
       updateEligible: true,
+      substantiveAnalysisReady: true,
     }]);
   } finally {
     runtime.stopStaleReaper();
@@ -1188,6 +1189,7 @@ test("server reads /workers/:id from SQLite hot tables when SQLite store is acti
       workerPlane: "online",
       managementPlane: "unknown",
       updateEligible: true,
+      substantiveAnalysisReady: true,
     });
   } finally {
     runtime.stopStaleReaper();
