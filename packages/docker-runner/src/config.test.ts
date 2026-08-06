@@ -441,6 +441,18 @@ test("Codex patch profile reserves git and GitHub lifecycle work for the outer r
   assert.match(script, /cat \/work\/artifacts\/prompt\.md >> \/work\/artifacts\/codex-prompt\.md/);
   assert.match(script, /- < \/work\/artifacts\/codex-prompt\.md/);
   assert.doesNotMatch(script, /- < \/work\/artifacts\/prompt\.md/);
+  // #1731 canary 회귀 고정: JS 템플릿 리터럴은 `\`+개행을 제거하므로, 셸
+  // 연속자를 출력에 남기려면 `\\`가 필요하다. 연속자가 사라지면 prompt 리다이렉트가
+  // codex exec 명령에서 분리돼 "No prompt provided via stdin"으로 죽는다.
+  // 셸 의미론으로 연속자를 해소한 뒤 exec 명령이 리다이렉트를 포함함을 증명한다.
+  const continuationResolved = script.replace(/\\\n/g, " ");
+  const execLine = continuationResolved.split("\n").find((line) => line.includes("codex exec"));
+  assert.ok(execLine, "codex exec command must exist");
+  assert.match(
+    execLine ?? "",
+    /- < \/work\/artifacts\/codex-prompt\.md/,
+    "the prompt redirect must stay attached to the codex exec command after shell continuation resolution",
+  );
   // codex 0.144.1 은 스칼라 `agents.*` 를 AgentRoleToml 로 읽어 기동을 거부한다.
   // 비활성은 역할 프로파일을 설치하지 않는 것으로 표현한다.
   assert.doesNotMatch(script, /agents\.enabled=false/);
