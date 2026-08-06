@@ -182,6 +182,89 @@ const ANALYSIS_ALLOWED_TOOLS = CLAUDE_FINALIZER_ALLOWED_TOOLS;
 const ANALYSIS_DISALLOWED_TOOLS = CLAUDE_FINALIZER_DISALLOWED_TOOLS;
 const ANALYSIS_BRIDGE_CONTRACT_VERSION = "claude-a2a-analysis.v1";
 
+// ---------------------------------------------------------------------------
+// Structured invalid-JSON failure contract (issue #1725, finding 1)
+//
+// The bridge previously ended malformed-output lanes with only the prose
+// message "Claude output did not contain valid analysis JSON" on stderr, so
+// the only way to classify the failure was to regex nested stdout text, and
+// no bounded telemetry (adapter class, bridge version, turns used, elapsed,
+// source counts, structured-output mode) survived into the failure record.
+// The bridge now emits ONE machine-readable line before dying:
+//
+//   A2A_BRIDGE_ERROR={"code":"analysis_bridge_invalid_json",...}
+//
+// The line is bounded (fixed key set, 500-char redacted excerpt) and the
+// human-readable message still follows, so existing text classifiers keep
+// working while handlers can classify structurally.
+// ---------------------------------------------------------------------------
+const ANALYSIS_BRIDGE_ERROR_PREFIX = "A2A_BRIDGE_ERROR=";
+
+class AnalysisBridgeFailure extends Error {
+  constructor(stage, failureShape, message, fields = {}) {
+    super(message);
+    this.code = "analysis_bridge_invalid_json";
+    this.stage = stage;
+    this.failureShape = failureShape;
+    this.fields = fields;
+  }
+}
+
+// Telemetry the Claude CLI's --output-format json envelope carries on every
+// result row. Best-effort: an unparseable envelope yields no telemetry.
+function claudeEnvelopeTelemetry(outer) {
+  if (!outer || typeof outer !== "object" || Array.isArray(outer)) return {};
+  const fields = {};
+  if (Number.isFinite(outer.num_turns)) fields.turnsUsed = outer.num_turns;
+  if (Number.isFinite(outer.duration_ms)) fields.elapsedMs = outer.duration_ms;
+  return fields;
+}
+
+// Name the observed malformed-output shape so postmortems do not need nested
+// stdout archaeology: no JSON at all, JSON that is not analysis-shaped, a
+// provider error carried as text, or prose that recovery had to reject.
+function classifyExtractionFailure(stdout, outer) {
+  const candidates = extractBalancedJsonObjects(safeText(stdout));
+  if (outer === null || outer === undefined) {
+    return candidates.length === 0 ? "no_json" : "schema_invalid";
+  }
+  const payloads = collectClaudeTextPayloads(outer);
+  if (payloads.some(({ text }) => isProbablyClaudeErrorText(text))) {
+    return "provider_error_text";
+  }
+  return candidates.length === 0 ? "no_json" : "schema_invalid";
+}
+
+function sourceCarrierStatsFromEnv(env = process.env) {
+  const raw = safeText(env.A2A_ANALYSIS_SOURCE_CARRIER_STATS, "");
+  if (!raw) return undefined;
+  try {
+    const parsed = JSON.parse(raw);
+    if (parsed && typeof parsed === "object" && !Array.isArray(parsed)) return parsed;
+  } catch {
+    // fall through: stats are diagnostic only, never fail the failure path
+  }
+  return undefined;
+}
+
+function dieStructured(failure, env = process.env) {
+  const record = {
+    code: failure.code,
+    stage: failure.stage,
+    failureShape: failure.failureShape,
+    adapterClass: "claude_code",
+    bridgeContractVersion: ANALYSIS_BRIDGE_CONTRACT_VERSION,
+    structuredOutputMode: "cli_json_output",
+    turnsUsed: failure.fields.turnsUsed,
+    elapsedMs: failure.fields.elapsedMs,
+    sourceCarrierStats: sourceCarrierStatsFromEnv(env),
+    excerpt: failure.fields.excerpt ? firstSentence(redactSecrets(failure.fields.excerpt), 500) : undefined,
+  };
+  const bounded = Object.fromEntries(Object.entries(record).filter(([, value]) => value !== undefined));
+  process.stderr.write(`${ANALYSIS_BRIDGE_ERROR_PREFIX}${JSON.stringify(bounded)}\n`);
+  die(failure.message);
+}
+
 function buildReadOnlyClaudeArgs(prompt, maxTurns, flags = {}, env = process.env) {
   return [
     "-p", prompt,
@@ -376,7 +459,12 @@ function proseAnalysisFromClaudeText(outer) {
 }
 
 function extractAnalysisJsonFromClaudeOutput(stdout) {
-  const outer = parseJsonCandidate(stdout);
+  let outer = null;
+  try {
+    outer = parseJsonCandidate(stdout);
+  } catch {
+    outer = null;
+  }
   const found = findAnalysisJson(outer);
   if (found) return found;
 
@@ -395,12 +483,21 @@ function extractAnalysisJsonFromClaudeOutput(stdout) {
   const proseRecovered = proseAnalysisFromClaudeText(outer);
   if (proseRecovered) return proseRecovered;
 
-  throw new Error("Claude output did not contain valid analysis JSON");
+  throw new AnalysisBridgeFailure(
+    "extract",
+    classifyExtractionFailure(stdout, outer),
+    "Claude output did not contain valid analysis JSON",
+    { ...claudeEnvelopeTelemetry(outer), excerpt: stdout },
+  );
 }
 
 function normalizeResponse(parsed) {
   if (!hasExplicitAnalysisJsonShape(parsed)) {
-    throw new Error("invalid Claude analysis JSON schema");
+    throw new AnalysisBridgeFailure(
+      "normalize",
+      "schema_invalid",
+      "invalid Claude analysis JSON schema",
+    );
   }
   const statusRaw = safeText(parsed.status, "done").toLowerCase();
   const status = ["blocked", "block", "source_blocked"].includes(statusRaw) ? "blocked" : "done";
@@ -549,6 +646,7 @@ async function main() {
       },
     );
   } catch (error) {
+    if (error instanceof AnalysisBridgeFailure) dieStructured(error, process.env);
     die(error.message);
   }
 

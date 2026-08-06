@@ -240,6 +240,47 @@ test('analysis bridge invalid JSON failure is classified separately from worker 
   assert.match(t2?.reason ?? '', /valid JSON|analysis bridge/i);
 });
 
+test('structured #1725 bridge failure record classifies as analysis_bridge_invalid_json without message parsing', () => {
+  const tasks = [
+    lane('t1', 'succeeded', { worker: 'workerAlpha' }),
+    lane('t2', 'failed', {
+      worker: 'workerZeta',
+      payload: { mode: 'analysis-only' },
+      top: {
+        error: {
+          code: 'handler_exit_nonzero',
+          message: 'handler exited with code 1',
+          details: {
+            stdout: JSON.stringify({
+              error: {
+                code: 'openclaw_analysis_failed',
+                bridgeFailure: {
+                  code: 'analysis_bridge_invalid_json',
+                  stage: 'extract',
+                  failureShape: 'provider_error_text',
+                  adapterClass: 'claude_code',
+                },
+              },
+            }),
+          },
+        },
+      },
+    }),
+    lane('t3', 'succeeded', { worker: 'workerBeta' }),
+  ];
+
+  const result = computeVerdict(tasks, {
+    round: ROUND,
+    quorum: null,
+    perTarget: null,
+    draft: 'Cites t1 and t3.',
+  });
+
+  const t2 = result.missingLanes.find((l) => l.taskId === 't2');
+  assert.equal(t2?.evidenceClass, 'analysis_bridge_invalid_json');
+  assert.match(t2?.reason ?? '', /transport\/contract|worker opinion/i);
+});
+
 test('queued mobileBeta lane is labeled mobile_limited and cannot satisfy quorum (#958)', () => {
   const tasks = [
     lane('t1', 'succeeded', { worker: 'workerEpsilon' }),

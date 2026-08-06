@@ -655,3 +655,211 @@ test("telemetry reports only the applied model as actual and flags declaration m
   assert.equal(declarationOnly.payload.claudeModelArgumentApplied, false);
   assert.equal(declarationOnly.payload.modelInheritanceMode, "metadata_only");
 });
+
+// ---------------------------------------------------------------------------
+// Issue #1725 finding 1 — structured invalid-JSON failure contract
+// ---------------------------------------------------------------------------
+
+function stubClaude(tempDir, lines) {
+  const fakeClaudePath = join(tempDir, "fake-claude.mjs");
+  writeFileSync(fakeClaudePath, ["#!/usr/bin/env node", ...lines, ""].join("\n"));
+  chmodSync(fakeClaudePath, 0o755);
+  return fakeClaudePath;
+}
+
+function bridgeFailureRecord(stderr) {
+  const line = stderr
+    .split("\n")
+    .map((entry) => entry.trim())
+    .filter((entry) => entry.startsWith("A2A_BRIDGE_ERROR="))
+    .pop();
+  assert.ok(line, `expected an A2A_BRIDGE_ERROR line in stderr: ${stderr}`);
+  return JSON.parse(line.slice("A2A_BRIDGE_ERROR=".length));
+}
+
+test("bridge extracts fenced analysis JSON (regression fixture: fenced output)", () => {
+  const tempDir = mkdtempSync(join(tmpdir(), "claude-a2a-bridge-fenced-"));
+  try {
+    const fakeClaudePath = stubClaude(tempDir, [
+      "const analysis = { status: 'done', summary: 'fenced JSON recovered', findings: ['fence stripped'], risks: [], recommendations: [], evidenceRefs: ['claude-code:fenced'] };",
+      "console.log(JSON.stringify({ type: 'result', result: '```json\\n' + JSON.stringify(analysis) + '\\n```' }));",
+    ]);
+    const result = spawnSync(bridgePath, bridgeArgs("Payload JSON:\n" + JSON.stringify({ sourceOnly: true })), {
+      encoding: "utf8",
+      env: { ...process.env, A2A_CLAUDE_CODE_BIN: fakeClaudePath },
+    });
+    assert.equal(result.status, 0, result.stderr);
+    const payload = JSON.parse(JSON.parse(result.stdout).payloads[0]?.text);
+    assert.equal(payload.status, "done");
+    assert.equal(payload.summary, "fenced JSON recovered");
+  } finally {
+    rmSync(tempDir, { recursive: true, force: true });
+  }
+});
+
+test("bridge extracts the envelope from noisy stdout (regression fixture: stdout noise)", () => {
+  const tempDir = mkdtempSync(join(tmpdir(), "claude-a2a-bridge-noise-"));
+  try {
+    const fakeClaudePath = stubClaude(tempDir, [
+      "const analysis = { status: 'done', summary: 'noisy stdout recovered', findings: ['noise skipped'], risks: [], recommendations: [], evidenceRefs: ['claude-code:noisy'] };",
+      "process.stdout.write('noise: warming up the model...\\n');",
+      "process.stdout.write(JSON.stringify({ type: 'result', result: JSON.stringify(analysis) }) + '\\n');",
+      "process.stdout.write('noise: shutting down\\n');",
+    ]);
+    const result = spawnSync(bridgePath, bridgeArgs("Payload JSON:\n" + JSON.stringify({ sourceOnly: true })), {
+      encoding: "utf8",
+      env: { ...process.env, A2A_CLAUDE_CODE_BIN: fakeClaudePath },
+    });
+    assert.equal(result.status, 0, result.stderr);
+    const payload = JSON.parse(JSON.parse(result.stdout).payloads[0]?.text);
+    assert.equal(payload.summary, "noisy stdout recovered");
+  } finally {
+    rmSync(tempDir, { recursive: true, force: true });
+  }
+});
+
+test("bridge contract: broad source bundle projects into the prompt (no provider)", () => {
+  const tempDir = mkdtempSync(join(tmpdir(), "claude-a2a-bridge-broad-bundle-"));
+  const payloadPath = join(tempDir, "payload.json");
+  try {
+    writeFileSync(payloadPath, JSON.stringify({
+      mode: "analysis-only",
+      sourceOnly: true,
+      sourceBundle: {
+        files: [1, 2, 3].map((n) => ({
+          repo: "jinwon-int/a2a-nexus",
+          path: `packages/broker/src/file-${n}.mjs`,
+          contentText: `<untrusted_external_data source="test">export const file${n} = ${n};</untrusted_external_data>`,
+        })),
+      },
+    }), "utf8");
+    const fakeClaudePath = stubClaude(tempDir, [
+      "const prompt = process.argv[process.argv.indexOf('-p') + 1];",
+      "for (const marker of ['file-1.mjs', 'file-2.mjs', 'file-3.mjs', 'end source 3']) {",
+      "  if (!prompt.includes(marker)) throw new Error('broad bundle marker missing: ' + marker);",
+      "}",
+      "const analysis = { status: 'done', summary: 'broad bundle consumed', findings: ['3 source carriers'], risks: [], recommendations: [], evidenceRefs: ['jinwon-int/a2a-nexus:packages/broker/src/file-1.mjs'] };",
+      "console.log(JSON.stringify({ type: 'result', result: JSON.stringify(analysis) }));",
+    ]);
+    const result = spawnSync(bridgePath, bridgeArgs("Payload JSON:\n" + JSON.stringify({ mode: "analysis-only" })), {
+      encoding: "utf8",
+      env: { ...process.env, A2A_CLAUDE_CODE_BIN: fakeClaudePath, A2A_ANALYSIS_PAYLOAD_FILE: payloadPath },
+    });
+    assert.equal(result.status, 0, result.stderr);
+    const payload = JSON.parse(JSON.parse(result.stdout).payloads[0]?.text);
+    assert.equal(payload.summary, "broad bundle consumed");
+  } finally {
+    rmSync(tempDir, { recursive: true, force: true });
+  }
+});
+
+test("bridge contract: compact source bundle projects into the prompt (no provider)", () => {
+  const tempDir = mkdtempSync(join(tmpdir(), "claude-a2a-bridge-compact-bundle-"));
+  const payloadPath = join(tempDir, "payload.json");
+  try {
+    writeFileSync(payloadPath, JSON.stringify({
+      mode: "analysis-only",
+      sourceOnly: true,
+      sourceBundle: {
+        files: [{
+          repo: "jinwon-int/a2a-nexus",
+          path: "packages/broker/README.md",
+          contentText: "<untrusted_external_data source=\"test\">compact fixture</untrusted_external_data>",
+        }],
+      },
+    }), "utf8");
+    const fakeClaudePath = stubClaude(tempDir, [
+      "const prompt = process.argv[process.argv.indexOf('-p') + 1];",
+      "if (!prompt.includes('compact fixture')) throw new Error('compact bundle content missing');",
+      "if (prompt.includes('end source 2')) throw new Error('compact bundle must carry exactly one source');",
+      "const analysis = { status: 'done', summary: 'compact bundle consumed', findings: ['1 source carrier'], risks: [], recommendations: [], evidenceRefs: ['jinwon-int/a2a-nexus:packages/broker/README.md'] };",
+      "console.log(JSON.stringify({ type: 'result', result: JSON.stringify(analysis) }));",
+    ]);
+    const result = spawnSync(bridgePath, bridgeArgs("Payload JSON:\n" + JSON.stringify({ mode: "analysis-only" })), {
+      encoding: "utf8",
+      env: { ...process.env, A2A_CLAUDE_CODE_BIN: fakeClaudePath, A2A_ANALYSIS_PAYLOAD_FILE: payloadPath },
+    });
+    assert.equal(result.status, 0, result.stderr);
+    const payload = JSON.parse(JSON.parse(result.stdout).payloads[0]?.text);
+    assert.equal(payload.summary, "compact bundle consumed");
+  } finally {
+    rmSync(tempDir, { recursive: true, force: true });
+  }
+});
+
+test("bridge fails closed on schema-invalid JSON with a bounded structured record", () => {
+  const tempDir = mkdtempSync(join(tmpdir(), "claude-a2a-bridge-schema-invalid-"));
+  try {
+    const fakeClaudePath = stubClaude(tempDir, [
+      "console.log(JSON.stringify({ type: 'result', num_turns: 26, duration_ms: 1234567, result: JSON.stringify({ not: 'analysis' }) }));",
+    ]);
+    const carrierStats = {
+      taskReceipt: { files: 2, bytes: 4096 },
+      payloadFile: { files: 2, bytes: 4096 },
+      payloadFileBytes: 4096,
+      lossyRecoveryUsed: false,
+    };
+    const result = spawnSync(bridgePath, bridgeArgs("Payload JSON:\n" + JSON.stringify({ sourceOnly: true })), {
+      encoding: "utf8",
+      env: {
+        ...process.env,
+        A2A_CLAUDE_CODE_BIN: fakeClaudePath,
+        A2A_ANALYSIS_SOURCE_CARRIER_STATS: JSON.stringify(carrierStats),
+      },
+    });
+    assert.notEqual(result.status, 0, "schema-invalid output must fail closed");
+    assert.match(result.stderr, /did not contain valid analysis JSON/, "human-readable message is preserved");
+    const record = bridgeFailureRecord(result.stderr);
+    assert.equal(record.code, "analysis_bridge_invalid_json");
+    assert.equal(record.stage, "extract");
+    assert.equal(record.failureShape, "schema_invalid");
+    assert.equal(record.adapterClass, "claude_code");
+    assert.equal(record.bridgeContractVersion, "claude-a2a-analysis.v1");
+    assert.equal(record.structuredOutputMode, "cli_json_output");
+    assert.equal(record.turnsUsed, 26, "Claude envelope telemetry must survive into the failure record");
+    assert.equal(record.elapsedMs, 1234567);
+    assert.deepEqual(record.sourceCarrierStats, carrierStats, "source counts must pass through bounded");
+    assert.ok(record.excerpt.length <= 500, "excerpt stays bounded");
+  } finally {
+    rmSync(tempDir, { recursive: true, force: true });
+  }
+});
+
+test("bridge classifies provider error text without accepting it as evidence", () => {
+  const tempDir = mkdtempSync(join(tmpdir(), "claude-a2a-bridge-error-text-"));
+  try {
+    const fakeClaudePath = stubClaude(tempDir, [
+      "console.log(JSON.stringify({ type: 'result', num_turns: 3, duration_ms: 42000, result: 'Error: rate limit exceeded while contacting provider, please retry later.' }));",
+    ]);
+    const result = spawnSync(bridgePath, bridgeArgs("Payload JSON:\n" + JSON.stringify({ sourceOnly: true })), {
+      encoding: "utf8",
+      env: { ...process.env, A2A_CLAUDE_CODE_BIN: fakeClaudePath },
+    });
+    assert.notEqual(result.status, 0, "provider error text must fail closed, not become prose evidence");
+    const record = bridgeFailureRecord(result.stderr);
+    assert.equal(record.code, "analysis_bridge_invalid_json");
+    assert.equal(record.failureShape, "provider_error_text");
+    assert.equal(record.turnsUsed, 3);
+  } finally {
+    rmSync(tempDir, { recursive: true, force: true });
+  }
+});
+
+test("bridge fails closed on array-only output with a structured record", () => {
+  const tempDir = mkdtempSync(join(tmpdir(), "claude-a2a-bridge-array-only-"));
+  try {
+    const fakeClaudePath = stubClaude(tempDir, [
+      "console.log(JSON.stringify([{ note: 'not an envelope' }]));",
+    ]);
+    const result = spawnSync(bridgePath, bridgeArgs("Payload JSON:\n" + JSON.stringify({ sourceOnly: true })), {
+      encoding: "utf8",
+      env: { ...process.env, A2A_CLAUDE_CODE_BIN: fakeClaudePath },
+    });
+    assert.notEqual(result.status, 0, "array-only output must fail closed");
+    const record = bridgeFailureRecord(result.stderr);
+    assert.equal(record.code, "analysis_bridge_invalid_json");
+    assert.equal(record.stage, "extract");
+  } finally {
+    rmSync(tempDir, { recursive: true, force: true });
+  }
+});

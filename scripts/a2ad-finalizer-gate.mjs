@@ -370,7 +370,7 @@ function classifyLaneEvidence(lane) {
       reason: wrapperReason,
     };
   }
-  if (/openclaw_analysis_failed|Hermes analysis bridge response did not contain valid JSON|invalid Hermes analysis JSON schema|Hermes response JSON must be an object|JSON must be an object|candidate was not valid JSON|not valid JSON/i.test(evidenceText)) {
+  if (/openclaw_analysis_failed|analysis_bridge_invalid_json|Hermes analysis bridge response did not contain valid JSON|invalid Hermes analysis JSON schema|Hermes response JSON must be an object|JSON must be an object|candidate was not valid JSON|not valid JSON/i.test(evidenceText)) {
     return {
       evidenceClass: 'analysis_bridge_invalid_json',
       countsTowardQuorum: false,

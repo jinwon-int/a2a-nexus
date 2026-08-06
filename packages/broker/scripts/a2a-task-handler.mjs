@@ -1013,6 +1013,32 @@ if (existing?.html_url) {
   }
 }
 
+// Structured invalid-JSON failure contract (issue #1725): analysis bridges
+// emit one machine-readable `A2A_BRIDGE_ERROR=<json>` line on stderr before
+// exiting nonzero, so the handler can classify the failure structurally —
+// without regexing nested stdout — and preserve bounded, already-redacted
+// telemetry (adapter class, bridge version, turns used, elapsed, source
+// counts, structured-output mode) in the failure record. The outer error code
+// stays `openclaw_analysis_failed` for existing classifiers.
+const ANALYSIS_BRIDGE_ERROR_PREFIX = "A2A_BRIDGE_ERROR=";
+
+function parseAnalysisBridgeFailure(stderrText) {
+  const lines = safeText(stderrText).split("\n");
+  for (let i = lines.length - 1; i >= 0; i -= 1) {
+    const line = lines[i].trim();
+    if (!line.startsWith(ANALYSIS_BRIDGE_ERROR_PREFIX)) continue;
+    try {
+      const parsed = JSON.parse(line.slice(ANALYSIS_BRIDGE_ERROR_PREFIX.length));
+      if (parsed && typeof parsed === "object" && !Array.isArray(parsed) && typeof parsed.code === "string") {
+        return parsed;
+      }
+    } catch {
+      // keep scanning older lines
+    }
+  }
+  return null;
+}
+
 function runOpenClawAnalysisBridge(task, env = process.env) {
   let payload = taskPayload(task);
   let suppliedSnapshotSources = [];
@@ -1136,11 +1162,18 @@ function runOpenClawAnalysisBridge(task, env = process.env) {
     };
   }
   if (child.status !== 0) {
+    const bridgeFailure = child.signal ? null : parseAnalysisBridgeFailure(child.stderr);
     return {
       error: {
         code: child.signal ? "openclaw_analysis_timeout" : "openclaw_analysis_failed",
         message: safeText(child.stderr, safeText(child.stdout, `openclaw exited with ${child.status ?? "unknown"}`)),
-        details: { exitCode: child.status, signal: child.signal ?? undefined, buildInfo: BUILD_INFO, retainedBridgeDir: retainedAnalysisBridgeDir || undefined },
+        details: {
+          exitCode: child.status,
+          signal: child.signal ?? undefined,
+          ...(bridgeFailure ? { bridgeFailure } : {}),
+          buildInfo: BUILD_INFO,
+          retainedBridgeDir: retainedAnalysisBridgeDir || undefined,
+        },
       },
     };
   }
