@@ -51,14 +51,14 @@ implementation:
 - Repository: `jinwon-int/a2a-nexus`, branch `main` @ `66110f8285bbe1e7e2458433110563d7c422429a`
 - Open PRs: 0
 - Mode default in code and `.env.example`: `off`
-- Broker fleet (Family Wiki 운영 기준; 실행 시점에 live 재확인):
-  - Team1 broker of record: **seoseo**
-  - Team2 broker of record: **gwakga**
+- Broker fleet (실행 시점에 Family Wiki로 live 재확인; 공개 문서에는 노드명을 싣지 않는다):
+  - Team1 broker of record 1대
+  - Team2 broker of record 1대
 - 모든 브로커는 현재 `A2A_REVIEW_LINEAGE_MODE` 미설정(=`off`)으로 간주 — 실행 전 단계에서 각 브로커의 unit/env를 live 확인해 확정한다.
 
 ## Requested approval scope (정확한 대상)
 
-1. **대상**: Team2 gwakga 브로커 1대 먼저(canary), 관측 기간 후 Team1 seoseo 브로커.
+1. **대상**: Team2 broker of record 1대 먼저(canary), 관측 기간 후 Team1 broker of record.
 2. **변경**: 브로커 서비스 env에 `A2A_REVIEW_LINEAGE_MODE=record` 추가. 코드/패키지/DB 스키마 변경 없음.
 3. **재시작**: 각 브로커 서비스 1회 재시작(env 적용). 그 외 서비스·게이트웨이·워커 무건드림.
 4. **기간**: 최소 30 real terminal lineage가 수집될 때까지(예상 수 주). 종료 후 scorecard readback 별도 보고.
@@ -68,9 +68,9 @@ implementation:
 ## Execution plan (승인 후, 단계별 확인 포함)
 
 1. Live 재확인: 양 브로커의 현재 env(모드 미설정 확인), 서비스 상태, 디스크 여유.
-2. **T2 gwakga**: env 파일 백업(타임스탬프 suffix) → `A2A_REVIEW_LINEAGE_MODE=record` 추가 → 브로커 재시작 → 부트 로그에 mode 파싱 에러 없음 확인 → `GET /review-lineages` 200 + 빈 목록 확인.
+2. **T2 broker**: env 파일 백업(타임스탬프 suffix) → `A2A_REVIEW_LINEAGE_MODE=record` 추가 → 브로커 재시작 → 부트 로그에 mode 파싱 에러 없음 확인 → `GET /review-lineages` 200 + 빈 목록 확인.
 3. Canary 관측(최소 24시간): 기존 지표 무변경(작업 완료/재시도/5xx 비율) + lineage projection 정상.
-4. **T1 seoseo**: 동일 절차.
+4. **T1 broker**: 동일 절차.
 5. 양쪽 활성 후 테스트 lineage 1건을 정상 라운드에서 자연 발생시켜 기록 경로 검증(합성 주입 아님).
 
 ## Observation plan
@@ -92,8 +92,8 @@ implementation:
 
 ## Approval record
 
-- Operator decision: **GO (T2 gwakga canary first)** — 2026-08-06 KST, 오너 승인("활성화 진행")
+- Operator decision: **GO (T2 broker canary first)** — 2026-08-06 KST, 오너 승인("활성화 진행")
 - Approved scope / date / approver: 패킷 §Requested approval scope 그대로 / 2026-08-06 / operator
 - Execution log:
-  - 2026-08-06 ~17:35 KST — **T2 gwakga 완료**: override 백업(`.bak-20260806-recordmode`) → `A2A_REVIEW_LINEAGE_MODE: record` 추가 → compose 재생성 → healthy, 부트 에러 0, `GET /review-lineages` 200(count 0), `/health` 200. 24시간 canary 관측 시작.
-  - T1 seoseo: _(canary 관측 후 진행 여부 결정 — 미실행)_
+  - 2026-08-06 ~17:35 KST — **T2 broker 완료**: override 백업(`.bak-20260806-recordmode`) → `A2A_REVIEW_LINEAGE_MODE: record` 추가 → compose 재생성 → healthy, 부트 에러 0, `GET /review-lineages` 200(count 0), `/health` 200. 24시간 canary 관측 시작.
+  - T1 broker: _(canary 관측 후 진행 여부 결정 — 미실행)_
