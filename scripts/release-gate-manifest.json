@@ -529,6 +529,12 @@
       "class": "gate",
       "round": null,
       "note": "Tests for #1506 source-quality floor guard: bucket classifier, unsafe-suppression counter (@ts-ignore/@ts-nocheck/bare @ts-expect-error/eslint-disable), and fail-closed floor evaluation."
+    },
+    {
+      "file": "scripts/nclex-content-pr-preset.test.mjs",
+      "class": "gate",
+      "round": null,
+      "note": "Contract tests for #1724 nclex_content_pr_v1: routing/recusal/quorum, exact-head receipt staleness, merge-ready read model, body-free comment projection, fail-closed fixtures."
     }
   ]
 }
