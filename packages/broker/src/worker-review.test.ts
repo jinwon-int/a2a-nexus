@@ -285,17 +285,35 @@ test("broker completeTask accepts self-contained review task with declared trust
   assert.equal(completed.result?.validation?.nodeId, "reviewer-b");
 });
 
-test("broker completeTask rejects self review via declared trusted author (#1518/#1548)", () => {
-  const { broker, task } = createSelfContainedReviewTask({ review: { required: true, authorWorkerId: "reviewer-b" } });
+test("broker createTask rejects self review via declared trusted author at admission (#1518/#1548/#1725)", () => {
+  // Admission-time rejection (provider 호출 전): the declared author equals
+  // the completing worker, so the lane can never satisfy independence —
+  // createTask now refuses it instead of letting it die at completion.
+  const broker = new InMemoryA2ABroker();
+  broker.registerWorker({
+    nodeId: "reviewer-b",
+    role: "analyst",
+    capabilities: {
+      canAnalyze: true,
+      canBackfill: false,
+      canPatchWorkspace: false,
+      canPromoteLive: false,
+      workspaceIds: ["test"],
+      environments: ["research"],
+    },
+  });
   assert.throws(
     () =>
-      broker.completeTask(task.id, "reviewer-b", {
-        summary: "self review",
-        validation: { nodeId: "reviewer-b", kind: "review", verdict: "pass", note: "author reviewing own work" },
+      broker.createTask({
+        intent: "analyze",
+        message: "self-contained review lane with conflicting author",
+        requester: { id: "hub-a", kind: "node", role: "hub" },
+        target: { id: "reviewer-b", kind: "node", role: "analyst" },
+        assignedWorkerId: "reviewer-b",
+        payload: { review: { required: true, authorWorkerId: "reviewer-b" } },
       }),
-    (error) => typeof error === "object" && error !== null && "code" in error && error.code === "review_not_independent",
+    (error) => typeof error === "object" && error !== null && "code" in error && error.code === "review_author_conflict",
   );
-  assert.equal(broker.getTask(task.id)?.status, "running");
 });
 
 test("server complete route rejects review.required missing evidence", async () => {
@@ -343,4 +361,129 @@ test("server complete route rejects review.required missing evidence", async () 
   } finally {
     await server.close();
   }
+});
+
+// ---------------------------------------------------------------------------
+// #1518 (routed from #1725 finding 3): antithesis vs acceptance review
+// contracts. A dialectic antithesis lane that finds defects returns
+// verdict=fail — that is successfully collected counter-evidence and must be
+// a terminal success preserved for the finalizer, not review_verdict_failed.
+// ---------------------------------------------------------------------------
+
+test("antithesis review: fail verdict is collected counter-evidence, not lifecycle failure (#1518/#1725)", () => {
+  const error = validateTaskCompletionEvidence(
+    taskWith(
+      { review: { required: true, kind: "antithesis", authorWorkerId: "author-a", targetLaneId: "thesis-1" } },
+      "reviewer-b",
+    ),
+    {
+      validation: { nodeId: "reviewer-b", kind: "review", verdict: "fail", note: "found two concrete defects with evidenceRefs" },
+    },
+  );
+  assert.equal(error, null);
+});
+
+test("antithesis review: pass verdict remains accepted (#1518/#1725)", () => {
+  const error = validateTaskCompletionEvidence(
+    taskWith({ review: { required: true, kind: "antithesis", authorWorkerId: "author-a" } }, "reviewer-b"),
+    { validation: { nodeId: "reviewer-b", kind: "review", verdict: "pass", note: "critique found no material defect" } },
+  );
+  assert.equal(error, null);
+});
+
+test("antithesis review: verdicts other than pass/fail fail closed (#1518/#1725)", () => {
+  const error = validateTaskCompletionEvidence(
+    taskWith({ review: { required: true, kind: "antithesis", authorWorkerId: "author-a" } }, "reviewer-b"),
+    { validation: { nodeId: "reviewer-b", kind: "review", verdict: "maybe" as "pass", note: "unclear" } },
+  );
+  assert.equal(error?.code, "review_evidence_missing");
+  assert.match(error?.message ?? "", /pass.*fail/);
+});
+
+test("antithesis review: independence and evidence checks still bind (#1518/#1725)", () => {
+  const selfReview = validateTaskCompletionEvidence(
+    taskWith({ review: { required: true, kind: "antithesis" } }, "reviewer-b"),
+    { validation: { nodeId: "reviewer-b", kind: "review", verdict: "fail", note: "self-critique is not independent" } },
+  );
+  assert.equal(selfReview?.code, "review_not_independent");
+
+  const noEvidence = validateTaskCompletionEvidence(
+    taskWith({ review: { required: true, kind: "antithesis" } }, "reviewer-b"),
+    { validation: { nodeId: "reviewer-c", kind: "review", verdict: "fail", note: "" } },
+  );
+  assert.equal(noEvidence?.code, "review_evidence_missing");
+});
+
+test("acceptance review keeps the pass-only gate with and without an explicit kind (#1518/#1725)", () => {
+  const explicit = validateTaskCompletionEvidence(
+    taskWith({ review: { required: true, kind: "acceptance" } }, "reviewer-b"),
+    { validation: { nodeId: "reviewer-c", kind: "review", verdict: "fail", note: "does not meet the bar" } },
+  );
+  assert.equal(explicit?.code, "review_verdict_failed");
+
+  const implicit = validateTaskCompletionEvidence(
+    taskWith({ review: { required: true } }, "reviewer-b"),
+    { validation: { nodeId: "reviewer-c", kind: "review", verdict: "fail", note: "does not meet the bar" } },
+  );
+  assert.equal(implicit?.code, "review_verdict_failed");
+});
+
+test("review kind must be acceptance or antithesis when present (#1518/#1725)", () => {
+  const error = validateTaskCompletionEvidence(
+    taskWith({ review: { required: true, kind: "rubber-stamp" } }, "reviewer-b"),
+    { validation: { nodeId: "reviewer-c", kind: "review", verdict: "pass", note: "unknown kind" } },
+  );
+  assert.equal(error?.code, "review_evidence_missing");
+  assert.match(error?.message ?? "", /kind/);
+});
+
+test("broker completeTask succeeds with a negative antithesis verdict (fail verdict round-trip) (#1518/#1725)", () => {
+  const broker = new InMemoryA2ABroker();
+  broker.registerWorker({
+    nodeId: "reviewer-b",
+    role: "analyst",
+    capabilities: {
+      canAnalyze: true,
+      canBackfill: false,
+      canPatchWorkspace: false,
+      canPromoteLive: false,
+      workspaceIds: ["test"],
+      environments: ["research"],
+    },
+  });
+  const task = broker.createTask({
+    intent: "analyze",
+    message: "antithesis lane",
+    requester: { id: "hub-a", kind: "node", role: "hub" },
+    target: { id: "reviewer-b", kind: "node", role: "analyst" },
+    assignedWorkerId: "reviewer-b",
+    payload: { review: { required: true, kind: "antithesis", authorWorkerId: "author-a", targetLaneId: "thesis-1" } },
+  });
+  broker.claimTask(task.id, "reviewer-b");
+  broker.startTask(task.id, "reviewer-b");
+  const completed = broker.completeTask(task.id, "reviewer-b", {
+    summary: "antithesis found material defects",
+    validation: { nodeId: "reviewer-b", kind: "review", verdict: "fail", note: "thesis has two unsupported claims" },
+  });
+  assert.equal(completed.status, "succeeded", "negative antithesis must reach terminal success");
+  assert.equal(completed.result?.validation?.verdict, "fail", "negative verdict is preserved as finalizer input");
+});
+
+test("createTask rejects review lanes whose declared author is the completing worker (#1518/#1725)", () => {
+  const broker = new InMemoryA2ABroker();
+  registerAuthorWorker(broker);
+  assert.throws(
+    () =>
+      broker.createTask({
+        intent: "analyze",
+        message: "conflicted review lane",
+        requester: { id: "hub-a", kind: "node", role: "hub" },
+        target: { id: "author-a", kind: "node", role: "analyst" },
+        assignedWorkerId: "author-a",
+        payload: { review: { required: true, authorWorkerId: "author-a" } },
+      }),
+    (error: unknown) =>
+      error instanceof Error && "code" in error && (error as { code?: string }).code === "review_author_conflict",
+    "admission must reject author==reviewer before any provider call",
+  );
 });

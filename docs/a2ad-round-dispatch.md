@@ -259,12 +259,22 @@ Copyable lane block:
     "review": {
       "required": true,
       "kind": "antithesis",
+      "authorWorkerId": "thesis-or-implementation-author-worker-id",
       "targetLaneId": "thesis-or-implementation-lane-id"
     }
   },
   "message": "Antithesis stance: assume the referenced plan or implementation is wrong or risky. Name at least one concrete rebuttal point, cite at least one evidenceRef, prefer at least one evidenceRef not used by the thesis, and return a pass/fail recommendation. Do not mutate GitHub or live systems."
 }
 ```
+
+`kind: "antithesis"` lanes are a **dialectic critique contract**, separate from
+merge/acceptance review (#1518): a `fail` verdict is successfully collected
+counter-evidence — the task reaches terminal success and the negative verdict
+is preserved in `result.validation` as finalizer input. Acceptance reviews
+(the default when `kind` is absent) still require `pass`. `authorWorkerId` is
+required on these self-contained lanes and is validated at dispatch dry-run
+and broker admission: a lane whose declared author equals the completing
+worker is rejected as `review_author_conflict` before any provider call.
 
 A substantive antithesis response should include at least one rebuttal point and
 at least one `evidenceRef`; a thesis-unused evidence reference is recommended and
