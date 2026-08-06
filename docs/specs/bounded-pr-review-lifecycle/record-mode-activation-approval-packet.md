@@ -92,6 +92,8 @@ implementation:
 
 ## Approval record
 
-- Operator decision: _(미기입 — 승인 대기)_
-- Approved scope / date / approver: _(미기입)_
-- Execution log: _(실행 후 기입 — 단계별 시각·대상·결과·재시작 확인)_
+- Operator decision: **GO (T2 gwakga canary first)** — 2026-08-06 KST, 오너 승인("활성화 진행")
+- Approved scope / date / approver: 패킷 §Requested approval scope 그대로 / 2026-08-06 / operator
+- Execution log:
+  - 2026-08-06 ~17:35 KST — **T2 gwakga 완료**: override 백업(`.bak-20260806-recordmode`) → `A2A_REVIEW_LINEAGE_MODE: record` 추가 → compose 재생성 → healthy, 부트 에러 0, `GET /review-lineages` 200(count 0), `/health` 200. 24시간 canary 관측 시작.
+  - T1 seoseo: _(canary 관측 후 진행 여부 결정 — 미실행)_
