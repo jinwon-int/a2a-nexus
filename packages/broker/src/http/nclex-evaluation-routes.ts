@@ -31,6 +31,8 @@ export interface NclexEvaluationRouteContext {
   keyring: NclexEvaluationKeyring;
   enforceRequesterIdentity: boolean;
   requesterIdentity: RequesterIdentity | null;
+  /** Called after a NEW receipt is stored — wires durable persistence (#1724). */
+  persistReceipts?: () => void;
 }
 
 function truthyParam(value: string | null, fallback: boolean): boolean {
@@ -57,7 +59,13 @@ export async function handleNclexEvaluationRoutesIfMatched(
     if (!verification.ok) {
       throw new BrokerError("bad_request", `receipt rejected: ${verification.reason}`);
     }
+    const countBefore = ctx.store.count();
     const record = ctx.store.add(verification.receipt);
+    if (ctx.store.count() > countBefore) {
+      // A receipt is evidence: persist it immediately instead of waiting for
+      // unrelated broker activity to carry it into the next snapshot.
+      ctx.persistReceipts?.();
+    }
     sendJson(ctx.res, 200, {
       kind: "nclex-evaluation-receipt",
       receiptId: record.receipt.receiptId,

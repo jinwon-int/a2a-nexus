@@ -217,6 +217,33 @@ test("merge-ready projection reflects stored fresh receipts and query facts (#17
   assert.ok(body2.reasons.includes("insufficient_fresh_signed_pass:1/3"));
 });
 
+test("POST persists a newly stored receipt through the persist hook (#1724)", async () => {
+  const store = new NclexEvaluationReceiptStore();
+  let persisted = 0;
+  const receipt = makeReceipt();
+  const call = async () => {
+    const req = Readable.from([JSON.stringify(receipt)]);
+    const res = new CapturingResponse();
+    const url = new URL("http://127.0.0.1/nclex-evaluations/receipts");
+    await handleNclexEvaluationRoutesIfMatched({
+      method: "POST",
+      path: url.pathname,
+      req: req as never,
+      res: res as never,
+      url,
+      store,
+      keyring: KEYRING,
+      enforceRequesterIdentity: true,
+      requesterIdentity: { id: "operator-1", kind: "node", role: "operator" } as never,
+      persistReceipts: () => { persisted += 1; },
+    });
+  };
+  await call();
+  assert.equal(persisted, 1, "new receipt triggers durable persistence");
+  await call();
+  assert.equal(persisted, 1, "idempotent re-submission does not re-persist");
+});
+
 test("store survives a snapshot restore round-trip (#1724)", () => {
   const store = new NclexEvaluationReceiptStore();
   const receipt = makeReceipt();
