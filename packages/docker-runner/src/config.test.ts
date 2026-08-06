@@ -5,7 +5,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
 import { Script } from "node:vm";
-import { buildClaudeCodePatchCommandScript, buildCodexPatchCommandScript, loadContainedSubagentsConfig, loadConfig, loadEnvFile, mergeRunnerEnvFile, projectClaudeCodeTurnBudgets, validateRunnerConfig } from "./config.js";
+import { buildClaudeCodePatchCommandScript, buildCodexPatchCommandScript, buildPiriPatchCommandScript, loadContainedSubagentsConfig, loadConfig, loadEnvFile, mergeRunnerEnvFile, normalizePatchCommandProfile, projectClaudeCodeTurnBudgets, validateRunnerConfig } from "./config.js";
 import type { RunnerConfig } from "./types.js";
 
 const baseEnv = {
@@ -424,6 +424,62 @@ test("Codex patch profile defaults to the dedicated minimal credential directory
       readOnly: true,
     },
   ]);
+});
+
+test("Piri patch profile defaults to the dedicated minimal credential directory", async () => {
+  const config = await loadConfig({
+    ...baseEnv,
+    A2A_DOCKER_RUNNER_PATCH_COMMAND_PROFILE: "piri",
+    A2A_DOCKER_RUNNER_TRUSTED_OPERATOR: "1",
+    A2A_DOCKER_RUNNER_IMAGE: "a2a-docker-runner-piri:latest",
+  });
+
+  assert.equal(config.commandProfile, "piri");
+  assert.equal(config.network, "bridge");
+  assert.deepEqual(config.piriProfile, { configDir: "/var/lib/a2a-runner/piri-dir" });
+  assert.deepEqual(config.extraMounts, [
+    {
+      source: "/var/lib/a2a-runner/piri-dir",
+      target: "/run/secrets/piri-dir",
+      readOnly: true,
+    },
+  ]);
+  assert.match(config.commandScript ?? "", /A2A_PIRI_DEFAULT_MODEL='kimi-coding\/k3'/);
+  assert.match(config.commandScript ?? "", /A2A_PIRI_DEFAULT_THINKING='high'/);
+  assert.match(config.commandScript ?? "", /--output-schema "\$A2A_PIRI_OUTPUT_SCHEMA"/);
+  assertBashScriptParses(config.commandScript ?? "");
+});
+
+test("Piri patch profile reserves git and GitHub lifecycle work for the outer runner", () => {
+  const script = buildPiriPatchCommandScript({});
+
+  assert.match(script, /error=a2a_runner_contract_violation command=git_/);
+  assert.match(script, /"pr create"\|"pr merge"\|"issue close"\|"issue comment"/);
+  assert.match(script, /lifecycle_guard=enabled profile=piri/);
+  assert.match(script, /piri -p /);
+  assert.match(script, /--approve/);
+  assert.match(script, /--no-session/);
+  // read-only mount → container-local copy keeps host credentials untouched
+  assert.match(script, /cp -a \/run\/secrets\/piri-dir \/work\/piri-home\/\.piri/);
+  assertBashScriptParses(script);
+});
+
+test("Piri profile name and image aliases normalize", () => {
+  assert.equal(normalizePatchCommandProfile("piri"), "piri");
+  assert.equal(normalizePatchCommandProfile("PI"), "piri");
+  assert.equal(normalizePatchCommandProfile("Piri_CLI"), "piri");
+  assert.throws(() => normalizePatchCommandProfile("unknown-harness"));
+});
+
+test("Piri patch profile honors model and thinking overrides", () => {
+  const script = buildPiriPatchCommandScript({
+    A2A_PIRI_MODEL: "zai/glm-5.2",
+    A2A_PIRI_THINKING: "xhigh",
+  });
+
+  assert.match(script, /A2A_PIRI_DEFAULT_MODEL='zai\/glm-5\.2'/);
+  assert.match(script, /A2A_PIRI_DEFAULT_THINKING='xhigh'/);
+  assertBashScriptParses(script);
 });
 
 test("Codex patch profile reserves git and GitHub lifecycle work for the outer runner", () => {
