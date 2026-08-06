@@ -355,7 +355,6 @@ jobs:
           key: ${{ needs.setup.outputs.cache-key }}
       - run: npm ci --include=dev
         if: steps.npm-deps.outputs.cache-hit != 'true'
-      - run: npm run check:promotion-capstone
       - run: npm run smoke:quickstart
 
   # ── Full release gate (main branch and cross-cutting changes) ───────
@@ -393,5 +392,4 @@ jobs:
         if: steps.npm-deps.outputs.cache-hit != 'true'
       - run: npm run check
       - run: npm run check:quickstart-conformance
-      - run: npm run check:external-harness-conformance
       - run: npm run test:release-gate

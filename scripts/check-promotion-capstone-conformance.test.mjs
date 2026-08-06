@@ -332,6 +332,9 @@ test('root package exposes named promotion capstone check', async () => {
 test('ci exposes named promotion-capstone lane for the five-minute path', async () => {
   const ci = await readFile(join(repoRoot, '.github', 'workflows', 'ci.yml'), 'utf8');
   assert.match(ci, /promotion-capstone:/);
-  assert.match(ci, /npm run check:promotion-capstone/);
+  // #1725 duplicate-command removal: the capstone check runs exactly once in
+  // the job — via smoke:quickstart (pinned to include it in package.json).
   assert.match(ci, /npm run smoke:quickstart/);
+  const directRuns = ci.match(/npm run check:promotion-capstone/g) ?? [];
+  assert.ok(directRuns.length === 0, 'the standalone capstone step was removed; smoke:quickstart covers it');
 });
