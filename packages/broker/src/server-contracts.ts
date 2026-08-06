@@ -259,6 +259,13 @@ export interface BrokerServerOptions extends BrokerRuntimeHotLimitOptions {
    */
   reviewLineageMode?: ReviewLineageRolloutMode;
   /**
+   * NCLEX evaluation receipt keyring file (JSON `{ "keys": { "<kid>": "<spki pem>" } }`).
+   * Env: `A2A_NCLEX_EVALUATION_KEYRING_FILE`. Unset disables the
+   * `/nclex-evaluations/*` surface entirely (default-off); configured-but-invalid
+   * fails startup loudly.
+   */
+  nclexEvaluationKeyringFile?: string;
+  /**
    * SSE heartbeat interval for `/a2a/tasks/:id/events`. Comments (`: heartbeat ...`) keep
    * intermediaries from timing out idle subscriptions. `0` disables heartbeats. Env:
    * `TASK_SUBSCRIBE_HEARTBEAT_SEC`.

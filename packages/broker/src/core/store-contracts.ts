@@ -47,6 +47,11 @@ export interface BrokerSnapshot {
   wavePlans?: PersistedWavePlan[];
   reviewLineages?: ReviewLineageRecord[];
   pushNotificationConfigs?: TaskPushNotificationConfig[];
+  /** NCLEX evaluation receipts (#1724); snapshot-extension field, passthrough schema. */
+  nclexEvaluationReceipts?: Array<{
+    receipt: import("../nclex-evaluation/receipt-contract.js").NclexSignedReceipt;
+    recordedAt: string;
+  }>;
 }
 
 export interface BrokerStateStore {
