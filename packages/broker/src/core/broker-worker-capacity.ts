@@ -13,6 +13,7 @@ import {
   computeWorkerMobileHealth,
   effectiveOfflineAfterMs,
   isWorkerStale,
+  isWorkerSubstantiveAnalysisReady,
 } from "./broker-worker-status.js";
 import type {
   TaskRecord,
@@ -64,15 +65,20 @@ export function buildWorkerCapacitySummary(
   let running = 0;
   let staleTasks = 0;
   let active = 0;
+  let substantiveAnalysisReadyOnline = 0;
 
   const items: WorkerCapacitySummaryItem[] = workers.map((worker) => {
     // Use mobile-aware stale threshold when the worker declares mobile mode
     const effectiveOffline = effectiveOfflineAfterMs(worker.workerMode, workerOfflineAfterMs);
     const workerIsStale = isWorkerStale(worker.lastSeenAt, effectiveOffline, nowMs);
+    const substantiveAnalysisReady = isWorkerSubstantiveAnalysisReady(worker);
     if (workerIsStale) {
       staleWorkers += 1;
     } else {
       online += 1;
+      if (substantiveAnalysisReady) {
+        substantiveAnalysisReadyOnline += 1;
+      }
     }
 
     const workerTasks = tasksByWorker.get(worker.nodeId) ?? [];
@@ -116,6 +122,7 @@ export function buildWorkerCapacitySummary(
       workerMode: worker.workerMode,
       runtimeFlavor: worker.capabilities.runtimeFlavor,
       gatewayRequired: worker.capabilities.gatewayRequired,
+      substantiveAnalysisReady,
       mobileHealth: computeWorkerMobileHealth(worker.workerMode, worker.lastSeenAt, nowMs),
       ...(identityWarning ? { identityWarning } : {}),
     };
@@ -134,6 +141,7 @@ export function buildWorkerCapacitySummary(
       running,
       staleTasks,
       active,
+      substantiveAnalysisReadyOnline,
     },
     items,
   };

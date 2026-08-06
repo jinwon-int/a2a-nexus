@@ -8,6 +8,7 @@
 import type { ServerResponse } from "node:http";
 
 import { BrokerError, InMemoryA2ABroker } from "../core/broker.js";
+import { isWorkerSubstantiveAnalysisReady } from "../core/broker-worker-status.js";
 import { SqliteBrokerStateStore, type BrokerStateStore } from "../core/store.js";
 import type { WorkerListFilters, WorkerRecord, WorkerView } from "../core/types.js";
 import { sendJson } from "./response.js";
@@ -27,6 +28,7 @@ export function toWorkerView(worker: WorkerRecord, offlineAfterMs: number): Work
     workerPlane,
     managementPlane,
     updateEligible,
+    substantiveAnalysisReady: isWorkerSubstantiveAnalysisReady(worker),
   };
 }
 

@@ -66,6 +66,7 @@ function worker(overrides: Partial<WorkerView> = {}): WorkerView {
     workerPlane: "online",
     managementPlane: "online",
     updateEligible: true,
+    substantiveAnalysisReady: true,
     createdAt: NOW,
     updatedAt: NOW,
     lastSeenAt: NOW,

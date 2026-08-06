@@ -44,7 +44,22 @@ export function toWorkerViewRecord(worker: WorkerRecord, offlineAfterMs: number)
     workerPlane,
     managementPlane,
     updateEligible,
+    substantiveAnalysisReady: isWorkerSubstantiveAnalysisReady(worker),
   };
+}
+
+/**
+ * Derived analysis readiness (#1597, routed from #1725 finding 2): a worker is
+ * substantively analysis-ready only when it advertises `canAnalyze` AND its
+ * registration-time handler-artifact probe did not fail. Workers that never
+ * published the probe metadata (`analysisReady` absent) keep their
+ * pre-existing readiness, so this projection never darkens an unprobed
+ * legacy worker — those are still guarded at execution time by the
+ * handler-side bridge-artifact preflight.
+ */
+export function isWorkerSubstantiveAnalysisReady(worker: WorkerRecord): boolean {
+  if (worker.capabilities?.canAnalyze !== true) return false;
+  return worker.metadata?.analysisReady !== "false";
 }
 
 export function isWorkerStale(lastSeenAt: string, offlineAfterMs: number, nowMs: number): boolean {

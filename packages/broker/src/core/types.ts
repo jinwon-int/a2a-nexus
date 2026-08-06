@@ -986,6 +986,12 @@ export interface WorkerView extends WorkerRecord {
   /** Management-plane (SSH/node-host/admin) reachability. */
   managementPlane: ManagementPlaneStatus;
   /**
+   * Derived (#1597): canAnalyze AND the registration-time handler-artifact
+   * probe did not report `analysisReady=false`. Distinct from `status`/
+   * `workerPlane` — a worker can be online yet not substantively ready.
+   */
+  substantiveAnalysisReady: boolean;
+  /**
    * True only when workerPlane is "online" and managementPlane is not
    * "disconnected". Operators may override this decision externally.
    */
@@ -1317,6 +1323,11 @@ export interface WorkerCapacitySummaryItem {
   mobileHealth?: WorkerMobileHealth;
   /** Warning surfaced when a nodeId appears to be shared by conflicting runtimes. */
   identityWarning?: WorkerIdentityWarning;
+  /**
+   * Derived (#1597): declared `canAnalyze` minus registration-time artifact
+   * probe failures; distinguishes `online` from substantively analysis-ready.
+   */
+  substantiveAnalysisReady?: boolean;
 }
 
 export interface WorkerCapacitySummary {
@@ -1332,6 +1343,8 @@ export interface WorkerCapacitySummary {
     running: number;
     staleTasks: number;
     active: number;
+    /** Workers both online and substantively analysis-ready (#1597). */
+    substantiveAnalysisReadyOnline: number;
   };
   items: WorkerCapacitySummaryItem[];
 }
