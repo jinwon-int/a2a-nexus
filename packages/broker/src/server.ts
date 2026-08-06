@@ -1252,6 +1252,7 @@ export function createBrokerServer(options: BrokerServerOptions = {}): BrokerSer
           keyring: nclexEvaluationKeyring,
           enforceRequesterIdentity,
           requesterIdentity,
+          persistReceipts: () => stateStore.save(broker.exportSnapshot()),
         })) {
           return;
         }
