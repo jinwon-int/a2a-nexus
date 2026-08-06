@@ -666,3 +666,160 @@ test("/health response shape is stable across repeated calls (no field drift)", 
     tmp.cleanup();
   }
 });
+
+// ---------------------------------------------------------------------------
+// #1504 (routed from #1725 finding 4): snapshot enum drift vs /health
+//
+// A snapshot persisted by an older broker carried a taskOrigin value outside
+// the current enum; the strict snapshot parse threw inside the /health
+// diagnostics refresh and the whole endpoint went 500 while /workers kept
+// serving from hot tables. These tests pin (a) the bounded compatibility
+// mapping for that field, and (b) the stable stage/reason/correlation-id 500
+// for genuinely unparsable snapshots, with no stack/topology in the public
+// body and no masking of independent routes.
+// ---------------------------------------------------------------------------
+
+function legacyOriginSnapshot(origin: string): BrokerSnapshot {
+  const base = smallAuditSnapshot(4);
+  return {
+    ...base,
+    tasks: [
+      {
+        ...base.tasks[0]!,
+        taskOrigin: origin as BrokerSnapshot["tasks"][number]["taskOrigin"],
+      },
+    ],
+  };
+}
+
+test("snapshot parse maps a legacy taskOrigin value onto the unknown sentinel (#1504)", () => {
+  const tmp = tempDir();
+  try {
+    const sqliteFile = join(tmp.dir, "state.sqlite");
+    const store = new SqliteBrokerStateStore(sqliteFile);
+    store.save(legacyOriginSnapshot("telegram_session"));
+
+    const loaded = store.load();
+    assert.equal(
+      loaded?.tasks[0]?.taskOrigin,
+      "unknown",
+      "out-of-set legacy origin must map to the bounded unknown sentinel",
+    );
+
+    // In-set values pass through untouched.
+    store.save(legacyOriginSnapshot("github"));
+    assert.equal(store.load()?.tasks[0]?.taskOrigin, "github");
+    store.close();
+  } finally {
+    tmp.cleanup();
+  }
+});
+
+test("/health stays 200 on a legacy-enum snapshot and /workers keeps serving (#1504)", async () => {
+  const tmp = tempDir();
+  const sqliteFile = join(tmp.dir, "state.sqlite");
+  const store = new SqliteBrokerStateStore(sqliteFile);
+  store.save(legacyOriginSnapshot("telegram_session"));
+  store.close();
+
+  const runtime = createBrokerServer({
+    host: "127.0.0.1",
+    port: 0,
+    publicBaseUrl: "https://broker.test/",
+    sqliteFile,
+    persistenceBackend: "sqlite",
+    stateFile: join(tmp.dir, "state.json"),
+    staleReaperEnabled: false,
+    enforceRequesterIdentity: false,
+    edgeSecret: "test-edge-secret",
+    rateLimitMaxRequests: 1000,
+    workerRateLimitMaxRequests: 1000,
+  });
+
+  try {
+    runtime.server.listen(0, "127.0.0.1");
+    await once(runtime.server, "listening");
+    const address = runtime.server.address();
+    if (!address || typeof address === "string") throw new Error("failed to bind test server");
+    const headers = { "x-a2a-edge-secret": "test-edge-secret" };
+
+    const health = await fetch(`http://127.0.0.1:${address.port}/health`, { headers });
+    assert.equal(health.status, 200, "legacy enum drift must not take /health down anymore");
+    const body = await health.json();
+    assert.equal(body.ok, true);
+
+    const workers = await fetch(`http://127.0.0.1:${address.port}/workers`, { headers });
+    assert.equal(workers.status, 200, "independent sub-state stays reachable");
+  } finally {
+    runtime.stopStaleReaper();
+    runtime.server.close();
+    runtime.server.closeAllConnections?.();
+    await once(runtime.server, "close");
+    tmp.cleanup();
+  }
+});
+
+test("/health 500 on an unparsable snapshot carries stable stage/reason/correlation id without stack (#1504)", async () => {
+  const tmp = tempDir();
+  const sqliteFile = join(tmp.dir, "state.sqlite");
+  const store = new SqliteBrokerStateStore(sqliteFile);
+  store.save(smallAuditSnapshot(4));
+  store.close();
+
+  // Corrupt the canonical snapshot row directly: structurally invalid tasks.
+  const db = new DatabaseSync(sqliteFile);
+  try {
+    const row = db.prepare("SELECT payload FROM broker_snapshots WHERE id = 1").get() as { payload: string };
+    const parsed = JSON.parse(row.payload);
+    parsed.tasks = "not-an-array";
+    db.prepare("UPDATE broker_snapshots SET payload = ? WHERE id = 1").run(JSON.stringify(parsed));
+  } finally {
+    db.close();
+  }
+
+  const runtime = createBrokerServer({
+    host: "127.0.0.1",
+    port: 0,
+    publicBaseUrl: "https://broker.test/",
+    sqliteFile,
+    persistenceBackend: "sqlite",
+    // Boot from hot tables like the production incident topology: the broker
+    // keeps serving worker/task state while only the canonical-snapshot
+    // diagnostics read is broken.
+    sqliteLoadSource: "hot-tables",
+    stateFile: join(tmp.dir, "state.json"),
+    staleReaperEnabled: false,
+    enforceRequesterIdentity: false,
+    edgeSecret: "test-edge-secret",
+    rateLimitMaxRequests: 1000,
+    workerRateLimitMaxRequests: 1000,
+  });
+
+  try {
+    runtime.server.listen(0, "127.0.0.1");
+    await once(runtime.server, "listening");
+    const address = runtime.server.address();
+    if (!address || typeof address === "string") throw new Error("failed to bind test server");
+    const headers = { "x-a2a-edge-secret": "test-edge-secret" };
+
+    const health = await fetch(`http://127.0.0.1:${address.port}/health`, { headers });
+    assert.equal(health.status, 500, "core diagnostics failure keeps 500");
+    const body = await health.json();
+    assert.equal(body.ok, false);
+    assert.equal(body.stage, "persistence_diagnostics");
+    assert.equal(body.reason, "snapshot_parse_failed");
+    assert.match(body.correlationId ?? "", /^[0-9a-f-]{36}$/);
+    const raw = JSON.stringify(body);
+    assert.equal(/\/root\/|node_modules|\bat\s+\S+\s+\(/.test(raw), false, "public body must not leak stack/topology");
+
+    // One diagnostics projection failure must not mask independent routes.
+    const workers = await fetch(`http://127.0.0.1:${address.port}/workers`, { headers });
+    assert.equal(workers.status, 200, "worker registry stays reachable while /health is degraded");
+  } finally {
+    runtime.stopStaleReaper();
+    runtime.server.close();
+    runtime.server.closeAllConnections?.();
+    await once(runtime.server, "close");
+    tmp.cleanup();
+  }
+});

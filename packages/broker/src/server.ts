@@ -1,5 +1,5 @@
 import { readFileSync } from "node:fs";
-import { createPublicKey } from "node:crypto";
+import { createPublicKey, randomUUID } from "node:crypto";
 import { readPersistenceQueueDiagnostics } from "./persistence-queue-diagnostics.js";
 import { summarizeTerminalOutboxForSchedz } from "./terminal-outbox-schedz.js";
 import { createDefaultStateStore, resolvePublicBaseUrl, firstNonEmpty } from "./server-config.js";
@@ -996,14 +996,46 @@ export function createBrokerServer(options: BrokerServerOptions = {}): BrokerSer
       if (req.method === "GET" && path === "/health") {
         const t0 = performance.now();
         const runtimeMemory = readRuntimeMemoryUsage();
-        const { persistence, auditDiagnostics, hotTableGrowth, fromCache } = healthDiagnosticsCache.get(stateStore, {
-          processMemory: {
-            rssBytes: runtimeMemory.rssBytes,
-            heapTotalBytes: runtimeMemory.heapTotalBytes,
-            heapUsedBytes: runtimeMemory.heapUsedBytes,
-            heapLimitBytes: runtimeMemory.heapLimitBytes,
-          },
-        });
+        // #1504 (routed from #1725 finding 4): a diagnostics-refresh failure
+        // (e.g. an unparsable persisted snapshot) must not surface as an
+        // opaque internal_error. The broker keeps serving worker/task state
+        // from hot tables, so report a stable stage/reason/correlation id in
+        // a bounded public body while the full stack stays in operator logs.
+        let diagnostics: ReturnType<HealthDiagnosticsCache["get"]>;
+        try {
+          diagnostics = healthDiagnosticsCache.get(stateStore, {
+            processMemory: {
+              rssBytes: runtimeMemory.rssBytes,
+              heapTotalBytes: runtimeMemory.heapTotalBytes,
+              heapUsedBytes: runtimeMemory.heapUsedBytes,
+              heapLimitBytes: runtimeMemory.heapLimitBytes,
+            },
+          });
+        } catch (error) {
+          const correlationId = randomUUID();
+          const message = error instanceof Error ? error.message : String(error);
+          const reason = /invalid broker snapshot/i.test(message)
+            ? "snapshot_parse_failed"
+            : /snapshot exceeds max size/i.test(message)
+              ? "snapshot_too_large"
+              : "diagnostics_refresh_failed";
+          console.error(
+            `[a2a-broker] /health persistence diagnostics failed (correlationId=${correlationId}, reason=${reason}):`,
+            error,
+          );
+          return sendJson(res, 500, {
+            ok: false,
+            service: serviceName,
+            brokerId,
+            error: "persistence diagnostics unavailable",
+            stage: "persistence_diagnostics",
+            reason,
+            correlationId,
+          }, {
+            "cache-control": "no-store",
+          });
+        }
+        const { persistence, auditDiagnostics, hotTableGrowth, fromCache } = diagnostics;
         const t1 = performance.now();
         const persistenceDurationMs = Math.round((t1 - t0) * 100) / 100;
 
