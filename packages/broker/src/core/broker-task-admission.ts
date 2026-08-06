@@ -86,6 +86,25 @@ export function assertTaskPayload(request: CreateTaskRequest, context: TaskAdmis
     throw new BrokerError("bad_request", "assignedWorkerId must not be empty");
   }
 
+  // Review-lane author conflict (#1518, routed from #1725 finding 3): a lane
+  // whose declared review author equals the completing worker would burn the
+  // provider call and die later as review_not_independent. Reject at
+  // admission, before any dispatch/provider work happens.
+  const review = (request.payload as Record<string, unknown> | undefined)?.review;
+  if (review && typeof review === "object" && !Array.isArray(review)) {
+    const reviewRecord = review as Record<string, unknown>;
+    if (reviewRecord.required === true) {
+      const declaredAuthor = typeof reviewRecord.authorWorkerId === "string" ? reviewRecord.authorWorkerId.trim() : "";
+      const completingWorker = (request.assignedWorkerId ?? request.target?.id ?? "").trim();
+      if (declaredAuthor && completingWorker && declaredAuthor === completingWorker) {
+        throw new BrokerError(
+          "review_author_conflict",
+          `review.authorWorkerId must differ from the completing worker: ${declaredAuthor}`,
+        );
+      }
+    }
+  }
+
   // Fail-closed Terminal Brief metadata validation (R15).
   // When the task payload carries parentRoundId (or a recognised alias), the
   // canonical dispatch metadata must be present and internally consistent.

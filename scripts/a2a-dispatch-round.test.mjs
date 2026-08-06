@@ -979,3 +979,43 @@ test('CLI failure output includes the broker bad_request message (#1593)', async
     await broker.close();
   }
 });
+
+// ─── #1518 (routed from #1725 finding 3): review lane dry-run contract ──────
+
+test('dry-run rejects self-contained A2AD review lanes without review.authorWorkerId (#1518)', async () => {
+  const m = makeA2adAnalysisManifest('http://unused');
+  m.lanes[0].payload = {
+    ...m.defaults.payload,
+    review: { required: true, kind: 'antithesis', targetLaneId: 'thesis-1' },
+  };
+
+  const out = await runDispatch(m, { dryRun: true });
+  assert.equal(out.exitCode, 1);
+  assert.ok(
+    out.errors.some((e) => /review\.authorWorkerId is required for self-contained A2AD review lanes/.test(e)),
+    out.errors.join('\n'),
+  );
+});
+
+test('dry-run rejects review lanes whose author equals the completing worker (#1518 review_author_conflict)', async () => {
+  const m = makeA2adAnalysisManifest('http://unused');
+  m.lanes[0].payload = {
+    ...m.defaults.payload,
+    review: { required: true, kind: 'antithesis', authorWorkerId: 'worker-1' },
+  };
+
+  const out = await runDispatch(m, { dryRun: true });
+  assert.equal(out.exitCode, 1);
+  assert.ok(out.errors.some((e) => /review_author_conflict/.test(e)), out.errors.join('\n'));
+});
+
+test('dry-run accepts a well-formed antithesis lane with a distinct declared author (#1518)', async () => {
+  const m = makeA2adAnalysisManifest('http://unused');
+  m.lanes[0].payload = {
+    ...m.defaults.payload,
+    review: { required: true, kind: 'antithesis', authorWorkerId: 'author-a', targetLaneId: 'thesis-1' },
+  };
+
+  const out = await runDispatch(m, { dryRun: true });
+  assert.equal(out.exitCode, 0, out.errors.join('\n'));
+});

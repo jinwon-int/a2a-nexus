@@ -19,13 +19,28 @@
  * `payload.acceptance.command`: review validation is independent from smoke
  * acceptance, and an unexecuted acceptance command fails closed as
  * `acceptance_evidence_missing`.
+ *
+ * Review kind (#1518, routed from #1725 finding 3): merge/acceptance review
+ * and dialectic antithesis are distinct contracts. `kind: "acceptance"`
+ * (default) keeps the pass-only merge gate. `kind: "antithesis"` marks an
+ * A2AD critique lane whose `fail` verdict is successfully collected
+ * counter-evidence — terminal success, never `review_verdict_failed` — so a
+ * lane that correctly finds defects is preserved as finalizer input instead
+ * of being dropped as a lifecycle failure. Wrapper-only/empty evidence stays
+ * excluded by the unchanged evidence check above it.
  */
 import type { TaskError, TaskRecord, TaskResult, TaskValidationPayload } from "./core/types.js";
+
+export type TaskReviewKind = "acceptance" | "antithesis";
 
 export interface TaskReviewSpec {
   required: boolean;
   /** Dispatcher-declared trusted author identity for self-contained review tasks (#1518/#1548). */
   authorWorkerId?: string;
+  /** Review contract kind; absent defaults to "acceptance" semantics. */
+  kind?: TaskReviewKind;
+  /** Antithesis lanes: the thesis/implementation lane under critique. */
+  targetLaneId?: string;
 }
 
 export type ParsedTaskReview =
@@ -48,11 +63,43 @@ export function parseTaskReview(task: TaskRecord): ParsedTaskReview {
   const record = raw as Record<string, unknown>;
   if (record.required === true) {
     const rawAuthor = record.authorWorkerId;
-    if (rawAuthor === undefined || rawAuthor === null) return { spec: { required: true } };
-    if (typeof rawAuthor !== "string" || rawAuthor.trim() === "") {
+    let authorWorkerId: string | undefined;
+    if (rawAuthor === undefined || rawAuthor === null) {
+      authorWorkerId = undefined;
+    } else if (typeof rawAuthor !== "string" || rawAuthor.trim() === "") {
       return malformed("authorWorkerId must be a non-empty string when present");
+    } else {
+      authorWorkerId = rawAuthor.trim();
     }
-    return { spec: { required: true, authorWorkerId: rawAuthor.trim() } };
+
+    const rawKind = record.kind;
+    let kind: TaskReviewKind | undefined;
+    if (rawKind === undefined || rawKind === null) {
+      kind = undefined;
+    } else if (rawKind === "acceptance" || rawKind === "antithesis") {
+      kind = rawKind;
+    } else {
+      return malformed('kind must be "acceptance" or "antithesis" when present');
+    }
+
+    const rawTargetLane = record.targetLaneId;
+    let targetLaneId: string | undefined;
+    if (rawTargetLane === undefined || rawTargetLane === null) {
+      targetLaneId = undefined;
+    } else if (typeof rawTargetLane !== "string" || rawTargetLane.trim() === "") {
+      return malformed("targetLaneId must be a non-empty string when present");
+    } else {
+      targetLaneId = rawTargetLane.trim();
+    }
+
+    return {
+      spec: {
+        required: true,
+        ...(authorWorkerId ? { authorWorkerId } : {}),
+        ...(kind ? { kind } : {}),
+        ...(targetLaneId ? { targetLaneId } : {}),
+      },
+    };
   }
   if (record.required === false || record.required === undefined) return { spec: { required: false } };
   return malformed("required must be a boolean when present");
@@ -93,6 +140,21 @@ export function validateReviewEvidence(task: TaskRecord, result?: TaskResult, au
       message: `reviewer nodeId ${reviewerNodeId} must differ from author worker ${authorId}`,
       details: { reviewerNodeId, authorWorkerId: authorId },
     };
+  }
+
+  const kind = parsed.spec.kind ?? "acceptance";
+  if (kind === "antithesis") {
+    // Dialectic critique lane: a fail verdict IS the successfully collected
+    // counter-evidence. Terminal success — the finalizer reads the negative
+    // verdict from result.validation; it must not become review_verdict_failed.
+    if (validation.verdict !== "pass" && validation.verdict !== "fail") {
+      return {
+        code: "review_evidence_missing",
+        message: `antithesis review verdict must be "pass" or "fail", got "${validation.verdict}"`,
+        details: { reviewerNodeId, verdict: validation.verdict, kind },
+      };
+    }
+    return null;
   }
 
   if (validation.verdict !== "pass") {

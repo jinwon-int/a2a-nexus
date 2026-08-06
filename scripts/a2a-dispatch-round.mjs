@@ -223,6 +223,24 @@ function validateBrokerOwnershipMetadata(errors, tag, payload, terminalBrief, la
   }
 }
 
+// #1518 (routed from #1725 finding 3): self-contained review lanes (the
+// completing worker IS the reviewer) must declare the author under review,
+// and the author must differ from the completing worker — validated at
+// manifest/dry-run time, before any provider call burns turns.
+function validateReviewLaneContract(errors, tag, lane, payload) {
+  const review = isPlainObject(payload.review) ? payload.review : null;
+  if (!review || review.required !== true) return;
+  const completingWorker = (hasText(lane.assignedWorkerId) ? lane.assignedWorkerId.trim() : '')
+    || (isPlainObject(lane.target) && hasText(lane.target.id) ? lane.target.id.trim() : '');
+  const author = hasText(review.authorWorkerId) ? review.authorWorkerId.trim() : '';
+  if (author && completingWorker && author === completingWorker) {
+    errors.push(`${tag}.payload.review.authorWorkerId must differ from the completing worker '${completingWorker}' (#1518 review_author_conflict)`);
+  }
+  if (isA2adSourceOnlyNoLiveLane(payload) && !author) {
+    errors.push(`${tag}.payload.review.authorWorkerId is required for self-contained A2AD review lanes (#1518): the completing worker is the reviewer, so the author under review must be declared explicitly`);
+  }
+}
+
 function validateA2adOpinionLane(errors, tag, intent, payload, derived) {
   if (!isA2adSourceOnlyNoLiveLane(payload)) return;
   const mode = hasText(payload.mode) ? payload.mode.trim() : '';
@@ -371,6 +389,7 @@ function validateManifest(manifest) {
 
     validateSourceOnlyBundle(errors, tag, payload);
     validateA2adOpinionLane(errors, tag, intent, payload, { terminalBrief });
+    validateReviewLaneContract(errors, tag, lane, payload);
     validateGitHubPatchWriteCapability(errors, tag, payload);
     validateGitHubPatchReadiness(errors, tag, manifest, lane, payload);
     validateGitHubVerifyLane(errors, tag, lane, defaults, payload, { taskOrigin, workspace, terminalBrief });
