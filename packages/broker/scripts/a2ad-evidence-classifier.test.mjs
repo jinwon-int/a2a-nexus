@@ -162,6 +162,30 @@ test('record classifier extracts nested invalid-JSON bridge failures without lea
   assert.equal(item.countsAsWorkerOpinion, false);
 });
 
+test('structured #1725 bridge failure record classifies without nested stdout parsing', () => {
+  const item = classifyEvidenceRecord({
+    workerId: 'workerzeta',
+    status: 'failed',
+    error: {
+      code: 'handler_exit_nonzero',
+      details: {
+        error: {
+          code: 'openclaw_analysis_failed',
+          bridgeFailure: {
+            code: 'analysis_bridge_invalid_json',
+            stage: 'extract',
+            failureShape: 'schema_invalid',
+            adapterClass: 'claude_code',
+          },
+        },
+      },
+    },
+  });
+  assert.equal(item.classification, 'analysis_bridge_invalid_json');
+  assert.equal(item.substantive, false);
+  assert.equal(item.countsAsWorkerOpinion, false);
+});
+
 
 test('record classifier marks empty successful analysis as non-substantive (#983)', () => {
   const item = classifyEvidenceRecord({

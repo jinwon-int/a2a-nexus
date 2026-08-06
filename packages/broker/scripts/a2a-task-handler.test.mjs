@@ -2128,3 +2128,89 @@ process.stdout.write(JSON.stringify({ payloads: [{ text: JSON.stringify(response
     "prompt must pin the absolute payload path so the reviewer can Read it without globbing",
   );
 });
+
+test("analysis handler preserves structured bridge failure details (#1725)", () => {
+  const dir = mkdtempSync(join(tmpdir(), "a2a-analysis-bridge-failure-"));
+  const bin = join(dir, "failing-bridge.mjs");
+  writeFileSync(bin, `#!/usr/bin/env node
+process.stderr.write('A2A_BRIDGE_ERROR={"code":"analysis_bridge_invalid_json","stage":"extract","failureShape":"schema_invalid","adapterClass":"claude_code","bridgeContractVersion":"claude-a2a-analysis.v1","structuredOutputMode":"cli_json_output","turnsUsed":20,"elapsedMs":920000}\\n');
+process.stderr.write('Claude output did not contain valid analysis JSON\\n');
+process.exit(1);
+`);
+  chmodSync(bin, 0o755);
+  try {
+    const result = handleTask({
+      id: "task-structured-bridge-failure",
+      intent: "analyze",
+      assignedWorkerId: "workerzeta",
+      message: "Analyze #1725 read-only evidence",
+      payload: {
+        mode: "github-read-only-validation",
+        repo: "jinwon-int/a2a-nexus",
+        issue: "#1725",
+        sourceOnly: true,
+        readOnlyValidation: true,
+        noLive: true,
+        noGitHubWrites: true,
+      },
+    }, {
+      PATH: process.env.PATH,
+      A2A_EXECUTOR_MODE: "builtin",
+      A2A_OPENCLAW_ANALYSIS_ENABLED: "1",
+      A2A_OPENCLAW_ANALYSIS_BIN: bin,
+      A2A_OPENCLAW_ANALYSIS_TIMEOUT_SEC: "5",
+      A2A_NODE_ID: "workerzeta",
+    });
+
+    assert.equal(result.error?.code, "openclaw_analysis_failed", "outer code stays compatible with existing classifiers");
+    const bridgeFailure = result.error?.details?.bridgeFailure;
+    assert.ok(bridgeFailure, "structured bridge failure must be preserved in error details");
+    assert.equal(bridgeFailure.code, "analysis_bridge_invalid_json");
+    assert.equal(bridgeFailure.stage, "extract");
+    assert.equal(bridgeFailure.failureShape, "schema_invalid");
+    assert.equal(bridgeFailure.adapterClass, "claude_code");
+    assert.equal(bridgeFailure.turnsUsed, 20);
+    assert.equal(bridgeFailure.elapsedMs, 920000);
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test("analysis handler tolerates bridges without the structured failure line", () => {
+  const dir = mkdtempSync(join(tmpdir(), "a2a-analysis-bridge-plain-failure-"));
+  const bin = join(dir, "plain-failing-bridge.mjs");
+  writeFileSync(bin, `#!/usr/bin/env node
+process.stderr.write('plain legacy failure with no structured line\\n');
+process.exit(1);
+`);
+  chmodSync(bin, 0o755);
+  try {
+    const result = handleTask({
+      id: "task-legacy-bridge-failure",
+      intent: "analyze",
+      assignedWorkerId: "workerzeta",
+      message: "Analyze legacy failure read-only",
+      payload: {
+        mode: "github-read-only-validation",
+        repo: "jinwon-int/a2a-nexus",
+        sourceOnly: true,
+        readOnlyValidation: true,
+        noLive: true,
+        noGitHubWrites: true,
+      },
+    }, {
+      PATH: process.env.PATH,
+      A2A_EXECUTOR_MODE: "builtin",
+      A2A_OPENCLAW_ANALYSIS_ENABLED: "1",
+      A2A_OPENCLAW_ANALYSIS_BIN: bin,
+      A2A_OPENCLAW_ANALYSIS_TIMEOUT_SEC: "5",
+      A2A_NODE_ID: "workerzeta",
+    });
+
+    assert.equal(result.error?.code, "openclaw_analysis_failed");
+    assert.equal(result.error?.details?.bridgeFailure, undefined, "legacy bridges keep the pre-#1725 failure shape");
+    assert.match(result.error?.message || "", /plain legacy failure/);
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});

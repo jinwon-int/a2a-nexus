@@ -54,6 +54,9 @@ const READ_ONLY_VALIDATION_CHANGED_REPO_PATTERNS = [
 
 const ANALYSIS_BRIDGE_INVALID_JSON_PATTERNS = [
   /openclaw_analysis_failed/i,
+  // Structured bridge failure contract (#1725): the emitted code itself
+  // classifies without nested stdout parsing.
+  /analysis_bridge_invalid_json/i,
   /Hermes analysis bridge response did not contain valid JSON/i,
   /invalid Hermes analysis JSON schema/i,
   /Hermes response JSON must be an object/i,
