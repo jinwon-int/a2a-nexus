@@ -535,6 +535,12 @@
       "class": "gate",
       "round": null,
       "note": "Contract tests for #1724 nclex_content_pr_v1: routing/recusal/quorum, exact-head receipt staleness, merge-ready read model, body-free comment projection, fail-closed fixtures."
+    },
+    {
+      "file": "scripts/nclex-content-pr-receipt.test.mjs",
+      "class": "gate",
+      "round": null,
+      "note": "Contract tests for #1724 signed evaluation receipt: JCS+JWS round-trip, exact-head tamper binding, key-ring failure modes, self-review rejection, preset staleness interplay."
     }
   ]
 }

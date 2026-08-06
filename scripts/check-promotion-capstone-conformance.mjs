@@ -295,7 +295,19 @@ const ci = readRel('.github/workflows/ci.yml');
 expect(ci !== null, 'missing .github/workflows/ci.yml');
 if (ci) {
   expectMatch(ci, /promotion-capstone:/, 'ci: missing promotion-capstone job');
-  expectMatch(ci, /npm run check:promotion-capstone/, 'ci: promotion-capstone job must run capstone check');
+  // Coverage, not duplication (#1725): the capstone check must run in the
+  // promotion-capstone job either directly or through smoke:quickstart
+  // (pinned above to include check:promotion-capstone). The job used to run
+  // both back-to-back — the same command twice with identical inputs.
+  const runsSmokeQuickstart = /npm run smoke:quickstart/.test(ci);
+  const runsDirectCapstone = /npm run check:promotion-capstone/.test(ci);
+  expect(
+    runsSmokeQuickstart || runsDirectCapstone,
+    'ci: promotion-capstone job must run the capstone check (directly or via smoke:quickstart)',
+  );
+  if (runsSmokeQuickstart && runsDirectCapstone) {
+    fail('ci: promotion-capstone job runs the capstone check twice (direct step and inside smoke:quickstart) — keep exactly one (#1725 duplicate-command removal)');
+  }
   expectMatch(ci, /npm run smoke:quickstart/, 'ci: promotion-capstone job must run five-minute smoke path');
 }
 
