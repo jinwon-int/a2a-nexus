@@ -2,6 +2,26 @@ import { z } from "zod";
 
 import { CURRENT_BROKER_STATE_VERSION } from "./store-contracts.js";
 
+const TASK_ORIGIN_VALUES = ["github", "api", "sessions_send", "operator", "unknown"] as const;
+
+/**
+ * Bounded compatibility mapping (#1504, routed from #1725 finding 4):
+ * snapshots persisted by older brokers can carry `taskOrigin` values outside
+ * the current enum, and one such row made the whole snapshot parse throw —
+ * which took `/health` down to 500 while `/workers` kept serving from hot
+ * tables. Map any present-but-unrecognized value onto the existing
+ * `"unknown"` sentinel instead of rejecting the snapshot. Bounded to this
+ * single field: unrecognized values are NOT blanket-allowed, and every
+ * other enum keeps failing closed.
+ */
+const taskOriginSchema = z.preprocess(
+  (value) =>
+    typeof value === "string" && !(TASK_ORIGIN_VALUES as readonly string[]).includes(value)
+      ? "unknown"
+      : value,
+  z.enum(TASK_ORIGIN_VALUES).optional(),
+);
+
 export const partyRefSchema = z
   .object({
     id: z.string().min(1),
@@ -251,7 +271,7 @@ export const taskSchema = z
     lastHeartbeatAt: z.string().optional(),
     attemptId: z.string().min(1).optional(),
     wake: taskWakeSchema.optional(),
-    taskOrigin: z.enum(["github", "api", "sessions_send", "operator", "unknown"]).optional(),
+    taskOrigin: taskOriginSchema,
   })
   .passthrough();
 
