@@ -6,9 +6,14 @@
 
 ## Prerequisites
 
-- [ ] Spec packet PR (`docs/specs/bounded-pr-review-lifecycle/`) is merged.
-- [ ] Open design questions assigned from `analyze.md` coverage gaps (`diffHash` definition,
+- [x] Spec packet PR (`docs/specs/bounded-pr-review-lifecycle/`) is merged.
+      (Spec/clarify/analyze/plan/tasks/checklist + schemas landed through the
+      Phase 0–18 PR series, closing with #1685/#1686 on 2026-07-28.)
+- [x] Open design questions assigned from `analyze.md` coverage gaps (`diffHash` definition,
       lineage-state placement).
+      (`diffHash` semantics — diff-content hashing where metadata-only HEAD changes keep the
+      hash — are pinned in `clarify.md`; lineage state lives in
+      `packages/broker/src/core/review-lineage-store.ts`, merged.)
 
 ## Phase 1: Machine-readable contracts + fixtures
 
