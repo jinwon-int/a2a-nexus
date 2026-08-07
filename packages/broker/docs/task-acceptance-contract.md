@@ -53,7 +53,10 @@ A `kind: "smoke"` validation with `verdict: "pass"` is the required broker evide
 
 ## Dispatcher guidance
 
-- Use repo-relative commands that the worker's working directory can execute (`npm run check`, a scoped gate script). The runner lane (#1219) covers containerized patch verification; this contract covers the worker process itself.
+- **Acceptance runs on the worker host, in the worker service's own working directory — not in the task workspace, and not in the container.** `runTaskAcceptance()` calls `spawnSync` with no `cwd` option, so the command inherits the worker process's cwd (for a deployed worker, something like `/opt/a2a-broker-worker`). A repo-relative file assertion such as `grep -qx '...' docs/canary/file.md` therefore fails structurally, however correct the patch is.
+- **Put workspace file verification in the container, not here.** The runner lane (#1219) runs its post-patch verification after `cd /work/<repoPath>`, so the *same* command can pass there and fail in acceptance. Write host acceptance against something the host can actually reach: a PR lookup (`gh api`, `gh pr list`), a service probe, or an absolute path.
+- **Do not use `gh pr list --search` for a PR the task just created.** GitHub's search index lags by seconds, so the lookup returns nothing and acceptance fails on a PR that exists. Use a listing that does not go through the search index, plus a short retry loop — e.g. `gh pr list --json headRefName | grep <round-id>`.
+- Use repo-relative commands only when the worker's own cwd is the relevant tree (`npm run check`, a scoped gate script, in workers that run inside the repo). This contract covers the worker process itself; containerized patch verification is the runner lane's job.
 - One acceptance command per task. If a task needs several checks, wrap them in one script or split the task — heterogeneous bundles are how deliverables get dropped (#1194).
 - Timeouts: pick roughly 2× the command's normal duration; the default 120s suits most gate scripts.
 
