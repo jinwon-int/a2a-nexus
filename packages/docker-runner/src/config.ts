@@ -1103,6 +1103,30 @@ printf 'lifecycle_guard=enabled profile=piri\n' | tee -a /work/artifacts/summary
 printf 'piri_cli=%s\n' "$(piri --version 2>/dev/null | head -n 1 || printf unknown)" | tee -a /work/artifacts/summary.txt
 printf 'model=%s thinking=%s profile=piri\n' "$A2A_PIRI_MODEL" "$A2A_PIRI_THINKING" | tee -a /work/artifacts/summary.txt
 
+A2A_PIRI_TASK_MODE="$(jq -r '.mode // ""' /work/task.json 2>/dev/null || true)"
+A2A_PIRI_READ_ONLY="$(jq -r 'if .readOnlyValidation == true then "1" else "" end' /work/task.json 2>/dev/null || true)"
+if [ -n "$A2A_PIRI_READ_ONLY" ] || printf '%s' "$A2A_PIRI_TASK_MODE" | grep -q 'read-only'; then
+  printf 'task_mode=%s read_only=1\n' "$A2A_PIRI_TASK_MODE" | tee -a /work/artifacts/summary.txt
+  cat > /work/artifacts/piri-prompt.md <<'A2A_PIRI_RO_PROMPT_EOF'
+You are running inside the A2A Docker Runner on a checked-out GitHub repository.
+
+This is a READ-ONLY validation/analysis task. Your only job is to inspect the
+repository and answer the assignment. The outer runner owns the git and GitHub
+lifecycle after you exit.
+
+Hard rules:
+- Do NOT create, modify, or delete any file in the repository checkout or
+  anywhere outside /work/artifacts. Findings travel only in your final answer.
+- Do not create or switch branches.
+- Do not run git add, git commit, git push, git reset, git merge, git rebase, or git tag.
+- Do not run gh pr create, gh pr merge, gh issue comment, or gh issue close.
+- Cite exact files/symbols as evidence. If the evidence is insufficient, say so
+  with status=blocked instead of guessing.
+- Your final answer must be the JSON value only; the runner schema-validates it.
+
+The assignment follows:
+A2A_PIRI_RO_PROMPT_EOF
+else
 cat > /work/artifacts/piri-prompt.md <<'A2A_PIRI_PROMPT_EOF'
 You are running inside the A2A Docker Runner on a checked-out GitHub repository.
 
@@ -1119,6 +1143,7 @@ Rules:
 
 The assignment follows:
 A2A_PIRI_PROMPT_EOF
+fi
 cat /work/artifacts/prompt.md >> /work/artifacts/piri-prompt.md
 
 PIRI_SCHEMA_ARGS=()
