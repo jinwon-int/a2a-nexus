@@ -511,11 +511,19 @@ export class A2ABrokerWorker {
     } catch {
       // root or task dir missing
     }
-    // piri bridge root: <root>/<name containing taskId>/artifacts/piri-progress.jsonl
+    // piri bridge root: the handler names analysis sessions
+    // `a2a-<workerId>-<taskId>-analysis` and the bridge sanitizes+truncates
+    // that to 48 chars (piri-a2a-analysis-bridge sanitizeName), so the
+    // directory is reconstructible exactly. Substring checks cover other
+    // session shapes (decision-dialectic, github suffixes).
+    const sessionDir = `a2a-${this.workerId}-${taskId}-analysis`
+      .replace(/[^A-Za-z0-9_.-]+/g, "-")
+      .replace(/^-+|-+$/g, "")
+      .slice(0, 48);
     try {
       for (const entry of readdirSync(piriRoot, { withFileTypes: true })) {
         if (!entry.isDirectory()) continue;
-        if (!entry.name.includes(taskId) && !taskId.includes(entry.name)) continue;
+        if (entry.name !== sessionDir && !entry.name.includes(taskId) && !taskId.includes(entry.name)) continue;
         consider(joinPath(piriRoot, entry.name, "artifacts", "piri-progress.jsonl"));
       }
     } catch {
