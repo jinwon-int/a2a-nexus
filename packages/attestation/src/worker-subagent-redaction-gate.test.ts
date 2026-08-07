@@ -218,3 +218,71 @@ test("markdown states source-only pre-assembly boundary", () => {
   assert.ok(md.includes("source-only redaction gate"));
   assert.ok(md.includes("before evidence assembly"));
 });
+
+// #1499 / CodeQL js/polynomial-redos alert #26.
+//
+// The marker probe used to be `<redacted(?:-[^>]+)?>`, unanchored, run against
+// raw untrusted subagent output. That is polynomial: 2x input gave 4x time,
+// reaching ~50s at 640,000 chars, and it stalls the broker worker's event loop
+// because the gate is called synchronously. The quantifier is now bounded.
+//
+// These two tests pin both halves of that fix. The first is the important one:
+// bounding a redaction probe must never make it miss a marker it used to catch,
+// because a missed marker scores already-redacted output as `clean`.
+
+const EMITTED_REDACTION_MARKERS = [
+  "<redacted-api-key>",
+  "<redacted-control>",
+  "<redacted-email>",
+  "<redacted-github-token>",
+  "<redacted-non-http-evidence>",
+  "<redacted-phone>",
+  "<redacted-private-path>",
+  "<redacted-secret-env>",
+  "<redacted-short>",
+  "<redacted-target>",
+  "<redacted-unsafe>",
+  "<redacted>",
+  "[redacted]",
+  "<private-dir>",
+  "<openclaw-dir>",
+  "<openclaw-workspace>",
+  "<REDACTED-TARGET>",
+];
+
+test("every marker this repo emits is still detected after the ReDoS bound", () => {
+  for (const marker of EMITTED_REDACTION_MARKERS) {
+    const packet = buildA2AWorkerSubagentRedactionGate({
+      now: NOW,
+      workerId: "worker-marker",
+      entries: [{ role: "explorer", id: "ev-marker", output: "prefix " + marker + " suffix" }],
+    });
+    assert.equal(
+      packet.results[0].verdict,
+      "redacted",
+      "marker " + marker + " must keep scoring as redacted; if this fails, the bound in "
+        + "MAX_REDACTION_MARKER_SUFFIX was tightened past a marker the tree actually emits",
+    );
+  }
+});
+
+test("adversarial marker-like output no longer scales quadratically", () => {
+  // Pre-fix this input took ~3s; the whole 640k variant took ~50s. The ceiling
+  // is deliberately loose (CI machines vary) — it only has to catch a return to
+  // quadratic behaviour, which overshoots it by orders of magnitude.
+  const hostile = "<redacted-".repeat(16000); // 160,000 chars, no closing ">"
+  const startedAt = Date.now();
+  const packet = buildA2AWorkerSubagentRedactionGate({
+    now: NOW,
+    workerId: "worker-redos",
+    entries: [{ role: "explorer", id: "ev-redos", output: hostile }],
+  });
+  const elapsedMs = Date.now() - startedAt;
+
+  assert.equal(packet.results.length, 1);
+  assert.ok(
+    elapsedMs < 2000,
+    "marker probe took " + elapsedMs + "ms on 160,000 hostile chars; pre-fix this path was ~3,000ms "
+      + "and grew 4x per doubling (CodeQL js/polynomial-redos alert #26)",
+  );
+});
