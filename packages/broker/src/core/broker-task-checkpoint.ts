@@ -172,7 +172,7 @@ export function resumeTask(
   return task;
 }
 
-export function heartbeatTask(taskId: string, workerId: string, context: TaskCheckpointContext): TaskRecord {
+export function heartbeatTask(taskId: string, workerId: string, context: TaskCheckpointContext, lastProgressAt?: string): TaskRecord {
   const task = context.requireTask(taskId);
   context.assertTaskWorker(task, workerId, "heartbeat");
   assertTaskStatus(task.status, ["claimed", "running"], "heartbeat");
@@ -180,6 +180,7 @@ export function heartbeatTask(taskId: string, workerId: string, context: TaskChe
   const now = isoNow();
   const nowMs = Date.parse(now);
   task.lastHeartbeatAt = now;
+  if (lastProgressAt) task.lastProgressAt = lastProgressAt;
   task.updatedAt = now;
   context.setTaskRecord(task);
   if (context.shouldPersistHeartbeatAudit(task.id, nowMs)) {

@@ -713,6 +713,13 @@ export interface TaskRecord extends A2ATaskRequest {
    */
   lastHeartbeatAt?: string;
   /**
+   * Newest mtime the worker observed on the harness's own progress surface
+   * (e.g. piri --progress-file, a2a-nexus#1745 item 2). Reported alongside
+   * task heartbeats so per-task staleness can distinguish "working" from
+   * "stuck" even while the worker process itself is alive.
+   */
+  lastProgressAt?: string;
+  /**
    * Broker-generated UUID assigned when a task transitions from queued to claimed.
    * Reset on requeue/reassign. Each attempt represents a discrete execution window.
    */

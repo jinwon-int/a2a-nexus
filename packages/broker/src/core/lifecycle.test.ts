@@ -134,6 +134,22 @@ describe("task heartbeat", () => {
     assert.equal(updated.status, "running");
   });
 
+  it("heartbeatTask stores an optional harness progress timestamp", () => {
+    const broker = makeBroker();
+    registerWorker(broker);
+    const task = createTask(broker);
+    broker.claimTask(task.id, "worker-1");
+    broker.startTask(task.id, "worker-1");
+
+    const progressAt = "2026-08-07T09:00:00.000Z";
+    const updated = broker.heartbeatTask(task.id, "worker-1", progressAt);
+    assert.equal(updated.lastProgressAt, progressAt);
+    assert.ok(updated.lastHeartbeatAt);
+
+    const plain = broker.heartbeatTask(task.id, "worker-1");
+    assert.equal(plain.lastProgressAt, progressAt, "omitting the field preserves the last observed value");
+  });
+
   it("heartbeatTask rejects for unclaimed task", () => {
     const broker = makeBroker();
     registerWorker(broker);
