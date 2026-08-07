@@ -65,6 +65,8 @@ const DEFAULT_PIRI_CONFIG_DIR = "/var/lib/a2a-runner/piri-dir";
 const DEFAULT_PIRI_MODEL = "kimi-coding/k3";
 const DEFAULT_PIRI_THINKING = "high";
 const DEFAULT_PIRI_TIMEOUT_SEC = "3600";
+/** Baked into piri-runner images; the command script uses it unless overridden. */
+const DEFAULT_PIRI_OUTPUT_SCHEMA = "/etc/a2a-runner/piri-analysis-output.schema.json";
 export const DEFAULT_SERVICE_ENV_FILE = "/etc/default/openclaw-a2a-worker";
 
 export function loadEnvFile(path: string): Record<string, string> {
@@ -1034,6 +1036,7 @@ export function buildPiriPatchCommandScript(env: NodeJS.ProcessEnv): string {
   const defaultModel = shellSingleQuote(env.A2A_PIRI_MODEL || DEFAULT_PIRI_MODEL);
   const defaultThinking = shellSingleQuote(env.A2A_PIRI_THINKING || DEFAULT_PIRI_THINKING);
   const defaultTimeout = shellSingleQuote(env.A2A_PIRI_TIMEOUT_SEC || DEFAULT_PIRI_TIMEOUT_SEC);
+  const defaultOutputSchema = shellSingleQuote(DEFAULT_PIRI_OUTPUT_SCHEMA);
   return `#!/usr/bin/env bash
 set -euo pipefail
 export DEBIAN_FRONTEND=noninteractive
@@ -1119,13 +1122,32 @@ A2A_PIRI_PROMPT_EOF
 cat /work/artifacts/prompt.md >> /work/artifacts/piri-prompt.md
 
 PIRI_SCHEMA_ARGS=()
-if [ -n "\${A2A_PIRI_OUTPUT_SCHEMA:-}" ]; then
-  if [ ! -f "$A2A_PIRI_OUTPUT_SCHEMA" ]; then
-    printf 'error=piri_output_schema_missing path=%s\n' "$A2A_PIRI_OUTPUT_SCHEMA" | tee -a /work/artifacts/summary.txt
-    exit 2
-  fi
-  PIRI_SCHEMA_ARGS=(--output-schema "$A2A_PIRI_OUTPUT_SCHEMA")
-fi
+A2A_PIRI_DEFAULT_OUTPUT_SCHEMA=${defaultOutputSchema}
+A2A_PIRI_OUTPUT_SCHEMA="\${A2A_PIRI_OUTPUT_SCHEMA:-$A2A_PIRI_DEFAULT_OUTPUT_SCHEMA}"
+case "$A2A_PIRI_OUTPUT_SCHEMA" in
+  off|none|disabled)
+    # Explicit opt-out for canary/ab comparisons against unlocked output.
+    printf 'output_schema=disabled\n' | tee -a /work/artifacts/summary.txt
+    ;;
+  "")
+    printf 'output_schema=absent\n' | tee -a /work/artifacts/summary.txt
+    ;;
+  *)
+    if [ ! -f "$A2A_PIRI_OUTPUT_SCHEMA" ]; then
+      if [ "$A2A_PIRI_OUTPUT_SCHEMA" = "$A2A_PIRI_DEFAULT_OUTPUT_SCHEMA" ]; then
+        # Older image without the baked schema: keep running, but make the
+        # missing contract visible in the evidence stream.
+        printf 'output_schema=missing_default path=%s\n' "$A2A_PIRI_OUTPUT_SCHEMA" | tee -a /work/artifacts/summary.txt
+      else
+        printf 'error=piri_output_schema_missing path=%s\n' "$A2A_PIRI_OUTPUT_SCHEMA" | tee -a /work/artifacts/summary.txt
+        exit 2
+      fi
+    else
+      PIRI_SCHEMA_ARGS=(--output-schema "$A2A_PIRI_OUTPUT_SCHEMA")
+      printf 'output_schema=%s\n' "$A2A_PIRI_OUTPUT_SCHEMA" | tee -a /work/artifacts/summary.txt
+    fi
+    ;;
+esac
 
 timeout "$A2A_PIRI_TIMEOUT_SEC" piri -p "$(cat /work/artifacts/piri-prompt.md)" \
   --model "$A2A_PIRI_MODEL" \

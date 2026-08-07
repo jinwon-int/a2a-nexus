@@ -450,6 +450,22 @@ test("Piri patch profile defaults to the dedicated minimal credential directory"
   assertBashScriptParses(config.commandScript ?? "");
 });
 
+test("Piri patch profile defaults --output-schema to the image-baked contract", () => {
+  const script = buildPiriPatchCommandScript({});
+
+  // default: baked contract path from the piri-runner image (a2a-nexus#1745 item 1)
+  assert.match(script, /A2A_PIRI_DEFAULT_OUTPUT_SCHEMA='\/etc\/a2a-runner\/piri-analysis-output\.schema\.json'/);
+  assert.match(script, /A2A_PIRI_OUTPUT_SCHEMA="\$\{A2A_PIRI_OUTPUT_SCHEMA:-\$A2A_PIRI_DEFAULT_OUTPUT_SCHEMA\}"/);
+  // explicit opt-out for canary/ab comparisons
+  assert.match(script, /off\|none\|disabled\)/);
+  assert.match(script, /output_schema=disabled/);
+  // old images without the baked file degrade visibly, not silently
+  assert.match(script, /output_schema=missing_default/);
+  // explicit env path stays fail-closed
+  assert.match(script, /error=piri_output_schema_missing/);
+  assertBashScriptParses(script);
+});
+
 test("Piri patch profile reserves git and GitHub lifecycle work for the outer runner", () => {
   const script = buildPiriPatchCommandScript({});
 

@@ -48,6 +48,12 @@ RUN git clone --depth 1 --branch "${PIRI_REF}" "${PIRI_REPO}" /opt/piri \
   && gh --version \
   && gitleaks version
 
+# A2A analysis output contract for `piri -p --output-schema` (Phase 0 item 1,
+# jinwon-int/a2a-nexus#1745; schema support landed in jinwon-int/piri#6).
+# Baked to a well-known path; the runner command script picks it up by default
+# (A2A_PIRI_OUTPUT_SCHEMA overrides, "off" disables for canary comparisons).
+COPY docker/piri-analysis-output.schema.json /etc/a2a-runner/piri-analysis-output.schema.json
+
 # Piri credentials are mounted at runtime as a read-only directory under
 # /run/secrets/piri-dir (agent/auth.json); the command script runs against a
 # container-local copy, so credentials never enter image layers or artifacts.

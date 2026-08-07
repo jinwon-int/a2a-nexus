@@ -1,0 +1,31 @@
+{
+	"$id": "a2a-nexus.analysis-bridge-output.v1",
+	"title": "A2A analysis bridge output (worker final answer contract)",
+	"description": "Operative contract consumed by packages/broker/scripts/a2a-task-handler.mjs from analysis bridge responses. Mirrors the inline instruction in claude-a2a-analysis-bridge.mjs. Used by the piri runner profile via `piri -p --output-schema` (jinwon-int/a2a-nexus#1745 Phase 0, jinwon-int/piri#6).",
+	"type": "object",
+	"additionalProperties": false,
+	"required": ["status", "summary", "findings", "risks", "recommendations", "evidenceRefs"],
+	"properties": {
+		"status": {
+			"type": "string",
+			"enum": ["done", "blocked"],
+			"description": "Terminal task status. blocked covers block/source_blocked aliases (normalized by the handler)."
+		},
+		"summary": { "type": "string", "minLength": 1 },
+		"findings": {
+			"type": "array",
+			"items": { "type": "string", "minLength": 1 },
+			"description": "Concrete findings as strings (the handler normalizes to string arrays)."
+		},
+		"risks": { "type": "array", "items": { "type": "string" } },
+		"recommendations": { "type": "array", "items": { "type": "string" } },
+		"evidenceRefs": {
+			"type": "array",
+			"items": { "type": "string" },
+			"description": "GitHub issue/PR numbers, file paths, task ids, or fixture ids used as evidence."
+		},
+		"doneCommentUrl": { "type": "string" },
+		"blockCommentUrl": { "type": "string" },
+		"startCommentUrl": { "type": "string" }
+	}
+}
