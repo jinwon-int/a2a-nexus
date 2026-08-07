@@ -1149,11 +1149,25 @@ case "$A2A_PIRI_OUTPUT_SCHEMA" in
     ;;
 esac
 
+PIRI_PROGRESS_ARGS=()
+A2A_PIRI_PROGRESS_FILE="\${A2A_PIRI_PROGRESS_FILE:-/work/artifacts/piri-progress.jsonl}"
+if [ -n "$A2A_PIRI_PROGRESS_FILE" ]; then
+  # Feature-detect: older piri builds treat unknown --flags as extension flags
+  # and would swallow the value as an extra prompt message.
+  if piri --help 2>/dev/null | grep -q -- '--progress-file'; then
+    PIRI_PROGRESS_ARGS=(--progress-file "$A2A_PIRI_PROGRESS_FILE")
+    printf 'progress_file=%s\n' "$A2A_PIRI_PROGRESS_FILE" | tee -a /work/artifacts/summary.txt
+  else
+    printf 'progress_file=unsupported_upgrade_piri\n' | tee -a /work/artifacts/summary.txt
+  fi
+fi
+
 timeout "$A2A_PIRI_TIMEOUT_SEC" piri -p "$(cat /work/artifacts/piri-prompt.md)" \
   --model "$A2A_PIRI_MODEL" \
   --thinking "$A2A_PIRI_THINKING" \
   --approve \
   --no-session \
+  \${PIRI_PROGRESS_ARGS[@]+\"\${PIRI_PROGRESS_ARGS[@]}\"} \
   \${PIRI_SCHEMA_ARGS[@]+\"\${PIRI_SCHEMA_ARGS[@]}\"}
 `;
 }

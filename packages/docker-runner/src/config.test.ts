@@ -466,6 +466,18 @@ test("Piri patch profile defaults --output-schema to the image-baked contract", 
   assertBashScriptParses(script);
 });
 
+test("Piri patch profile wires the progress file with feature detection", () => {
+  const script = buildPiriPatchCommandScript({});
+
+  // progress surface under the collected artifacts dir (a2a-nexus#1745 item 2)
+  assert.match(script, /A2A_PIRI_PROGRESS_FILE="\$\{A2A_PIRI_PROGRESS_FILE:-\/work\/artifacts\/piri-progress\.jsonl\}"/);
+  // unknown --flags are extension flags in older piri builds, so gate on --help
+  assert.match(script, /piri --help 2>\/dev\/null \| grep -q -- '--progress-file'/);
+  assert.match(script, /--progress-file "\$A2A_PIRI_PROGRESS_FILE"/);
+  assert.match(script, /progress_file=unsupported_upgrade_piri/);
+  assertBashScriptParses(script);
+});
+
 test("Piri patch profile reserves git and GitHub lifecycle work for the outer runner", () => {
   const script = buildPiriPatchCommandScript({});
 
