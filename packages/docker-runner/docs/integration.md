@@ -173,6 +173,7 @@ The handler continues to claim → execute → report using the same broker prot
 | Timeout | Runner returns `ok: false, status: "timeout"` |
 | No GitHub token | Runner can't post Block/Done comments; evidence.`blockCommentUrl` stays undefined |
 | No PR generated | Runner posts Done comment; handler returns `status: "done"` |
+| Container work succeeded but the task still failed acceptance | `payload.acceptance` did not run where you think. It runs on the **worker host**, in the worker service's cwd — not in `/work/<repoPath>`. A repo-relative file assertion passes in the container's post-patch verification and fails in acceptance. See [task acceptance contract → Dispatcher guidance](../../broker/docs/task-acceptance-contract.md#dispatcher-guidance) |
 
 ## Active Worker Nodes
 
