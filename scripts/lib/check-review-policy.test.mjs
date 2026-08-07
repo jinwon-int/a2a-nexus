@@ -11,6 +11,7 @@ const OK = [
   '- Author-independent review: the author cannot be the sole approver; the reviewer must be distinct from the author.',
   '- A backup reviewer covers reviewer unavailability.',
   '- Review-evidence cardinality and closeout completeness are preferred over pull-request velocity.',
+  '- Definitions: [metrics](docs/ops/repository-health-metrics.md).',
   '',
   '## Roles and authority',
   '',
@@ -47,6 +48,11 @@ test('RED: missing evidence-over-velocity fails', () => {
     '- Ship fast.',
   );
   assert.match(evaluateReviewPolicy(text).join('\n'), /review-evidence cardinality \/ closeout completeness is preferred over pull-request velocity/);
+});
+
+test('RED: stating the preference without linking the metric definition fails', () => {
+  const text = OK.replace('- Definitions: [metrics](docs/ops/repository-health-metrics.md).', '- Definitions: TBD.');
+  assert.match(evaluateReviewPolicy(text).join('\n'), /must link the measurable metric definition/);
 });
 
 test('edge: missing GOVERNANCE returns a single missing failure', () => {

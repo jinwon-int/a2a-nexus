@@ -89,7 +89,12 @@ jobs:
             root:
               - 'package.json'
               - 'package-lock.json'
-              - '.github/workflows/**'
+              # All of .github, not just workflows: the public-readiness scan in
+              # the check job scans .github file content (e.g. CODEOWNERS), so a
+              # .github-only change must not skip the job that scans it. PR
+              # #1759 changed only .github/CODEOWNERS, skipped check, and landed
+              # a strict-mode scan failure on main (found 2026-08-08).
+              - '.github/**'
               - '.gitleaks.toml'
 
   # ── Setup and dependency installation ───────────────────────────────
