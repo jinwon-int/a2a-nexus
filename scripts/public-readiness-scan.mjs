@@ -35,6 +35,13 @@ const allowWarningPaths = [
   // this only downgrades internal-node-identifier; secret-assignment stays fail
   // everywhere (see severity resolution below), so secret detection is intact.
   /^packages\/broker\/scripts\/live-runbooks\//,
+  // CODEOWNERS must name real GitHub accounts for review routing to work at
+  // all, and the backup reviewer's handle (@seoseo-ai, #1507 bus-factor fix)
+  // substring-matches an internal node name. The handle is already public on
+  // every PR this account has approved, so flagging it here blocks the gate
+  // without hiding anything. Downgrade is internal-node-identifier only —
+  // every other rule still fails on this file.
+  /^\.github\/CODEOWNERS$/,
 ];
 
 function walk(dir) {
