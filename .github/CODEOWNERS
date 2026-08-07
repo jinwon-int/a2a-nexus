@@ -4,22 +4,34 @@
 # authority to workers, is not a stable public maintainer roster, and does not
 # authorize releases, package publication, production deploys, repository
 # visibility changes, secret movement, history rewrites, or force pushes.
+#
+# Routing only. `main` has require_code_owner_review=false, so these entries
+# request review; they do not gate the merge. The merge gate is
+# required_approving_review_count=1 plus the required status checks.
+#
+# First handle on each line is the PRIMARY reviewer; @seoseo-ai is the designated
+# BACKUP so review does not degrade into self-approval or an unbounded wait when
+# the primary is unavailable (#1507 bus-factor bullet; GOVERNANCE.md "Backup
+# reviewer path"). The backup is listed on EVERY line on purpose: CODEOWNERS
+# resolves by last-matching-pattern, so naming it only on `*` would leave every
+# path listed below covered by a single reviewer — exactly the risk this is meant
+# to remove.
 
-* @jinon86
+* @jinon86 @seoseo-ai
 
 # Public umbrella, contracts, fixtures, readiness gates, and coordination docs.
-/README.md @jinon86
-/docs/ @jinon86
-/contracts/ @jinon86
-/fixtures/ @jinon86
-/scanner/ @jinon86
-/.github/ @jinon86
+/README.md @jinon86 @seoseo-ai
+/docs/ @jinon86 @seoseo-ai
+/contracts/ @jinon86 @seoseo-ai
+/fixtures/ @jinon86 @seoseo-ai
+/scanner/ @jinon86 @seoseo-ai
+/.github/ @jinon86 @seoseo-ai
 
 # A2A broker surface: task lifecycle, worker registry, evidence, broker API.
-/packages/broker/ @jinon86
+/packages/broker/ @jinon86 @seoseo-ai
 
 # Docker runner surface: isolated execution, checkout hygiene, PR/Done/Block evidence.
-/packages/docker-runner/ @jinon86
+/packages/docker-runner/ @jinon86 @seoseo-ai
 
 # OpenClaw plugin surface: Gateway adapter, request/status/cancel mapping, diagnostics.
-/packages/openclaw-plugin-a2a/ @jinon86
+/packages/openclaw-plugin-a2a/ @jinon86 @seoseo-ai
