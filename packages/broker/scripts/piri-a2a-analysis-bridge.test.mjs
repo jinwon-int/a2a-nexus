@@ -39,6 +39,20 @@ test("extractPayload parses the Payload JSON section", () => {
 	assert.deepEqual(__test.extractPayload("no payload here"), {});
 });
 
+test("payloadFromStructuredEnv prefers the full payload file (excerpt-mode dispatch)", () => {
+	const dir = mkdtempSync(join(tmpdir(), "piri-payload-file-"));
+	try {
+		const file = join(dir, "payload.json");
+		writeFileSync(file, JSON.stringify({ repo: "jinwon-int/a2a-nexus", paths: ["a.ts"] }));
+		const payload = __test.payloadFromStructuredEnv({ A2A_ANALYSIS_PAYLOAD_FILE: file });
+		assert.equal(payload.repo, "jinwon-int/a2a-nexus");
+		assert.equal(__test.payloadFromStructuredEnv({}), undefined);
+		assert.throws(() => __test.payloadFromStructuredEnv({ A2A_ANALYSIS_PAYLOAD_FILE: join(dir, "missing.json") }), /does not exist/);
+	} finally {
+		rmSync(dir, { recursive: true, force: true });
+	}
+});
+
 test("buildPiriPrompt embeds source bundle and schema instruction", () => {
 	const prompt = __test.buildPiriPrompt({
 		message: "msg",

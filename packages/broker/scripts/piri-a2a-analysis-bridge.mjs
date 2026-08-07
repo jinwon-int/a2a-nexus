@@ -131,6 +131,18 @@ function extractPayload(message) {
 	}
 }
 
+/**
+ * Full-payload carrier preferred by the current dispatcher: the prompt only
+ * embeds a bounded "Payload JSON excerpt" and the complete payload JSON lives
+ * in A2A_ANALYSIS_PAYLOAD_FILE (payload_file mode, hermes bridge parity).
+ */
+function payloadFromStructuredEnv(env = process.env) {
+	const path = safeText(env.A2A_ANALYSIS_PAYLOAD_FILE, "");
+	if (!path) return undefined;
+	if (!existsSync(path)) throw new Error(`A2A_ANALYSIS_PAYLOAD_FILE does not exist: ${path}`);
+	return parseJsonObject(readFileSync(path, "utf8"), "A2A_ANALYSIS_PAYLOAD_FILE");
+}
+
 function parseRepoMap(env) {
 	const raw = safeText(env.A2A_ANALYSIS_REPO_MAP_JSON || env.A2A_PIRI_ANALYSIS_REPO_MAP_JSON, "");
 	const map = new Map();
@@ -551,7 +563,7 @@ function main() {
 	const env = process.env;
 	let payload;
 	try {
-		payload = extractPayload(message);
+		payload = payloadFromStructuredEnv(env) ?? extractPayload(message);
 	} catch (error) {
 		die(error.message);
 	}
@@ -644,6 +656,7 @@ if (isDirectRun) main();
 
 export const __test = Object.freeze({
 	extractPayload,
+	payloadFromStructuredEnv,
 	collectSourceBundle,
 	buildPiriPrompt,
 	normalizeResponse,
