@@ -2127,8 +2127,8 @@ export class InMemoryA2ABroker {
     return taskCheckpoint.resumeTask(taskId, actorId, request, this.taskCheckpointContext());
   }
 
-  heartbeatTask(taskId: string, workerId: string): TaskRecord {
-    return taskCheckpoint.heartbeatTask(taskId, workerId, this.taskCheckpointContext());
+  heartbeatTask(taskId: string, workerId: string, lastProgressAt?: string): TaskRecord {
+    return taskCheckpoint.heartbeatTask(taskId, workerId, this.taskCheckpointContext(), lastProgressAt);
   }
 
   // --- Diagnostics ---

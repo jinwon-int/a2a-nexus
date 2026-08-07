@@ -1,6 +1,6 @@
 import { spawn } from "node:child_process";
 import { createHash, createPrivateKey, randomUUID, sign } from "node:crypto";
-import { accessSync, constants as fsConstants, existsSync } from "node:fs";
+import { accessSync, constants as fsConstants, existsSync, readdirSync, statSync } from "node:fs";
 import { delimiter as pathDelimiter, isAbsolute, join as joinPath, resolve as resolvePath } from "node:path";
 import {
   buildA2AWorkerSubagentOrchestrationPolicy,
@@ -476,10 +476,52 @@ export class A2ABrokerWorker {
   }
 
   private async heartbeatTask(taskId: string): Promise<TaskRecord> {
+    const lastProgressAt = this.resolveTaskProgressAt(taskId);
     return this.requestJson<TaskRecord>(`/tasks/${encodeURIComponent(taskId)}/heartbeat`, {
       method: "POST",
-      body: { workerId: this.workerId },
+      body: { workerId: this.workerId, ...(lastProgressAt ? { lastProgressAt } : {}) },
     });
+  }
+
+  /**
+   * Newest mtime on the harness's own progress surface for this task, when
+   * the runner/bridge writes one (piri --progress-file, a2a-nexus#1745 ②).
+   * Scan is worker-local and read-only: the docker-runner root indexes by
+   * exact task id, the piri analysis bridge root by task-id-containing dir.
+   */
+  private resolveTaskProgressAt(taskId: string): string | undefined {
+    const env = process.env;
+    const runnerRoot = optionalTrimmed(env.A2A_DOCKER_RUNNER_ROOT) ?? "/var/lib/openclaw-a2a/tasks";
+    const piriRoot = optionalTrimmed(env.A2A_PIRI_WORK_ROOT) ?? "/var/lib/a2a-runner/piri-tasks";
+    let latestMs = 0;
+    const consider = (progressPath: string): void => {
+      try {
+        const ms = statSync(progressPath).mtimeMs;
+        if (ms > latestMs) latestMs = ms;
+      } catch {
+        // not present
+      }
+    };
+    // docker-runner root: <root>/<taskId>/*/artifacts/piri-progress.jsonl
+    try {
+      for (const runDir of readdirSync(joinPath(runnerRoot, taskId), { withFileTypes: true })) {
+        if (!runDir.isDirectory()) continue;
+        consider(joinPath(runnerRoot, taskId, runDir.name, "artifacts", "piri-progress.jsonl"));
+      }
+    } catch {
+      // root or task dir missing
+    }
+    // piri bridge root: <root>/<name containing taskId>/artifacts/piri-progress.jsonl
+    try {
+      for (const entry of readdirSync(piriRoot, { withFileTypes: true })) {
+        if (!entry.isDirectory()) continue;
+        if (!entry.name.includes(taskId) && !taskId.includes(entry.name)) continue;
+        consider(joinPath(piriRoot, entry.name, "artifacts", "piri-progress.jsonl"));
+      }
+    } catch {
+      // root missing
+    }
+    return latestMs > 0 ? new Date(latestMs).toISOString() : undefined;
   }
 
   private startTaskHeartbeatTimer(taskId: string): () => void {

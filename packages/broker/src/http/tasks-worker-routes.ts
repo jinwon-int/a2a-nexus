@@ -181,10 +181,21 @@ export async function handleStartTaskRequest(ctx: TaskScopedContext): Promise<vo
 
 /** POST /tasks/:id/heartbeat — a worker reports liveness on a running task. */
 export async function handleHeartbeatTaskRequest(ctx: TaskScopedContext): Promise<void> {
-  const { workerId } = await authWorkerAction<TaskClaimRequest>(ctx, "task.heartbeat");
-  const task = ctx.broker.heartbeatTask(ctx.taskId, workerId);
+  const { body, workerId } = await authWorkerAction<TaskHeartbeatRequest>(ctx, "task.heartbeat");
+  const task = ctx.broker.heartbeatTask(ctx.taskId, workerId, normalizeLastProgressAt(body.lastProgressAt));
   await awaitDurablePersistenceAck(ctx.stateStore);
   sendTask(ctx, task);
+}
+
+interface TaskHeartbeatRequest extends WorkerScopedBody {
+  /** Optional harness progress-surface mtime (ISO 8601) observed by the worker. */
+  lastProgressAt?: string;
+}
+
+function normalizeLastProgressAt(value: unknown): string | undefined {
+  if (typeof value !== "string" || !value.trim()) return undefined;
+  const trimmed = value.trim();
+  return Number.isNaN(Date.parse(trimmed)) ? undefined : trimmed;
 }
 
 interface TaskCheckpointBody extends WorkerScopedBody {
