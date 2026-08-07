@@ -39,11 +39,16 @@ RUN set -eux; \
 # Piri is the fleet-owned harness (jinwon-int/piri), built from a pinned ref
 # instead of an npm artifact. The monorepo build produces dist/cli.js for every
 # workspace package in dependency order.
+# Piri is the fleet-owned harness (jinwon-int/piri), built from a pinned ref
+# instead of an npm artifact. The monorepo build produces dist/cli.js for every
+# workspace package in dependency order. cli.js imports sibling dist modules,
+# so expose it via a symlink (Node resolves the real path for relative imports)
+# rather than copying the file alone.
 RUN git clone --depth 1 --branch "${PIRI_REF}" "${PIRI_REPO}" /opt/piri \
   && cd /opt/piri \
   && npm ci --ignore-scripts \
   && npm run build \
-  && install -m 0755 packages/coding-agent/dist/cli.js /usr/local/bin/piri \
+  && ln -sf /opt/piri/packages/coding-agent/dist/cli.js /usr/local/bin/piri \
   && piri --version \
   && gh --version \
   && gitleaks version
@@ -52,7 +57,10 @@ RUN git clone --depth 1 --branch "${PIRI_REF}" "${PIRI_REPO}" /opt/piri \
 # jinwon-int/a2a-nexus#1745; schema support landed in jinwon-int/piri#6).
 # Baked to a well-known path; the runner command script picks it up by default
 # (A2A_PIRI_OUTPUT_SCHEMA overrides, "off" disables for canary comparisons).
-COPY docker/piri-analysis-output.schema.json /etc/a2a-runner/piri-analysis-output.schema.json
+COPY --chmod=0644 docker/piri-analysis-output.schema.json /etc/a2a-runner/piri-analysis-output.schema.json
+# BuildKit applies the COPY --chmod value to the auto-created parent directory
+# too; restore the traverse bit so non-root container users can read the file.
+RUN chmod 0755 /etc/a2a-runner
 
 # Piri credentials are mounted at runtime as a read-only directory under
 # /run/secrets/piri-dir (agent/auth.json); the command script runs against a

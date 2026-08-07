@@ -475,6 +475,11 @@ test("Piri patch profile wires the progress file with feature detection", () => 
   assert.match(script, /piri --help 2>\/dev\/null \| grep -q -- '--progress-file'/);
   assert.match(script, /--progress-file "\$A2A_PIRI_PROGRESS_FILE"/);
   assert.match(script, /progress_file=unsupported_upgrade_piri/);
+  // read-only validation tasks must not get the edit-files instruction
+  assert.match(script, /jq -r '.mode \/\/ ""' \/work\/task.json/);
+  assert.match(script, /read_only=1/);
+  assert.match(script, /This is a READ-ONLY validation\/analysis task/);
+  assert.match(script, /Do NOT create, modify, or delete any file/);
   assertBashScriptParses(script);
 });
 
