@@ -16,6 +16,38 @@ import { redactAndBoundReport } from "./worker-subagent-redaction.js";
 
 const DEFAULT_MAX_OUTPUT_BYTES = 4000;
 
+/**
+ * Longest marker suffix this gate will recognise inside `<redacted-...>`.
+ *
+ * The unbounded form `<redacted(?:-[^>]+)?>` is a polynomial ReDoS
+ * (CodeQL js/polynomial-redos, alert #26) because the test below is unanchored
+ * and runs against untrusted subagent output: for input like `"<redacted-"`
+ * repeated with no closing `>`, every start position rescans to end of string.
+ * Measured on the pre-fix expression — 2x input, 4x time, deterministically:
+ *
+ *   20,000 chars ->    46ms      160,000 chars ->  3,096ms
+ *   40,000 chars ->   193ms      320,000 chars -> 12,420ms
+ *   80,000 chars ->   773ms      640,000 chars -> 49,960ms
+ *
+ * That is an event-loop stall, not just a slow task: the gate is called
+ * synchronously from the broker worker (packages/broker/src/worker.ts), and
+ * `maxOutputBytes` does not protect this line — it bounds redactAndBoundReport,
+ * while this test reads the raw `entry.output`.
+ *
+ * The bound is deliberately generous rather than tight. Every marker this repo
+ * emits is a fixed string literal in a `.replace()` call; the longest suffix in
+ * the whole tree is `non-http-evidence` (17 chars). 64 leaves >3.7x headroom, so
+ * narrowing the quantifier cannot make the gate miss a marker it used to catch —
+ * which matters, because a missed marker would let already-redacted output be
+ * scored `clean` instead of `redacted`.
+ */
+const MAX_REDACTION_MARKER_SUFFIX = 64;
+
+const REDACTION_MARKER_PATTERN = new RegExp(
+  "(?:\\[redacted\\]|<redacted(?:-[^>]{1," + MAX_REDACTION_MARKER_SUFFIX + "})?>|<private-dir>|<openclaw-dir>|<openclaw-workspace>)",
+  "i",
+);
+
 export type A2AWorkerSubagentRedactionMode = "redact" | "reject";
 export type A2AWorkerSubagentRedactionVerdict =
   | "clean"
@@ -141,7 +173,7 @@ export function buildA2AWorkerSubagentRedactionGate(
 
   for (const entry of input.entries ?? []) {
     const report = redactAndBoundReport(entry.output ?? "", maxOutputBytes);
-    const markerDetected = /(?:\[redacted\]|<redacted(?:-[^>]+)?>|<private-dir>|<openclaw-dir>|<openclaw-workspace>)/i.test(entry.output ?? "");
+    const markerDetected = REDACTION_MARKER_PATTERN.test(entry.output ?? "");
     const redacted = report.redacted || entry.preRedacted === true || markerDetected;
     const truncated = report.truncated || entry.preTruncated === true;
     const rejected = mode === "reject" && redacted;
