@@ -1,0 +1,17 @@
+{
+  "_fixture": "DO NOT MERGE. Deliberately invalid finalizer verdict used to prove that finalizer-verdict-gate blocks a merge (#1499 acceptance criteria). Models the realistic attack: a hand-written verdict claiming GO, signed by a key that is not in docs/ops/finalizer-keyring.json.",
+  "schemaVersion": "1",
+  "canonicalization": "jcs",
+  "kind": "judgment",
+  "subject": { "kind": "pr", "prHeadSha": "0000000000000000000000000000000000000000" },
+  "decision": "go",
+  "evidenceRefs": [{ "kind": "suite", "ref": "fixture" }],
+  "assurance": {
+    "proves": ["independent-review-occurred"],
+    "doesNotProve": ["analytical-correctness", "reproducibility"],
+    "disclaimer": "Attests GO, not correctness."
+  },
+  "finalizerKeyId": "fixture-unregistered-key",
+  "producedAt": "2026-08-07T04:00:00.000Z",
+  "sig": "AAAA-not-a-real-signature"
+}
