@@ -2214,3 +2214,13 @@ process.exit(1);
     rmSync(dir, { recursive: true, force: true });
   }
 });
+
+test("normalizeAnalysisBridgeAdapter maps piri aliases (a2a-nexus#1745)", () => {
+  assert.equal(__test.normalizeAnalysisBridgeAdapter("piri"), "piri");
+  assert.equal(__test.normalizeAnalysisBridgeAdapter("pi"), "piri");
+  assert.equal(__test.normalizeAnalysisBridgeAdapter("Piri"), "piri");
+  // 기존 어댑터 회귀 방지
+  assert.equal(__test.normalizeAnalysisBridgeAdapter("claude-code"), "claude_code");
+  assert.equal(__test.normalizeAnalysisBridgeAdapter("codex"), "codex");
+  assert.equal(__test.normalizeAnalysisBridgeAdapter(""), "");
+});

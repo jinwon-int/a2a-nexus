@@ -114,7 +114,7 @@ export interface ExecutionProofSignature {
   signature: string;
 }
 
-export type RunnerCommandProfile = "openclaw" | "hermes" | "claude-code" | "codex";
+export type RunnerCommandProfile = "openclaw" | "hermes" | "claude-code" | "codex" | "piri";
 
 export interface RunnerOpenClawProfileConfig {
   /*
@@ -172,6 +172,10 @@ export interface RunnerClaudeTurnBudgetDiagnostic extends RunnerClaudeTurnBudget
 }
 
 export interface RunnerCodexProfileConfig {
+  configDir: string;
+}
+
+export interface RunnerPiriProfileConfig {
   configDir: string;
 }
 
@@ -241,6 +245,8 @@ export interface RunnerConfig {
   claudeCodeProfile?: RunnerClaudeCodeProfileConfig;
   /** Codex patch profile readiness metadata. */
   codexProfile?: RunnerCodexProfileConfig;
+  /** Piri patch profile readiness metadata (a2a-nexus#1745 Phase 0). */
+  piriProfile?: RunnerPiriProfileConfig;
   /** Guarded in-container subagent policy for supported Docker patch profiles. */
   containedSubagents?: RunnerContainedSubagentsConfig;
   /** PEM private key file for opt-in execution-proof JWS signing. */

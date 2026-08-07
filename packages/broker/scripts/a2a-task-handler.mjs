@@ -624,6 +624,7 @@ function normalizeAnalysisBridgeAdapter(value) {
   const adapter = safeText(value, "").toLowerCase().replace(/_/g, "-");
   if (["codex", "codex-cli", "codex-analysis"].includes(adapter)) return "codex";
   if (["claude", "claude-code", "claude_code"].includes(adapter)) return "claude_code";
+  if (["piri", "pi"].includes(adapter)) return "piri";
   if (["hermes", "hermes-agent", "hermes-agent-source-only", "termux-hermes"].includes(adapter)) return "hermes";
   if (["openclaw", "openclaw-analysis"].includes(adapter)) return "openclaw";
   return "";
@@ -791,6 +792,7 @@ function analysisBridgeTelemetry(command, env = process.env) {
   let bridgeAdapter = "openclaw";
   if (combined.includes("codex")) bridgeAdapter = "codex";
   else if (combined.includes("claude")) bridgeAdapter = "claude_code";
+  else if (combined.includes("piri")) bridgeAdapter = "piri";
   else if (combined.includes("hermes")) bridgeAdapter = "hermes";
   return {
     analysisKind: "analysis_bridge",
@@ -2527,6 +2529,7 @@ export const __test = Object.freeze({
   buildRunnerTask,
   DEFAULT_OPENCLAW_TIMEOUT_SEC,
   DEFAULT_RUNNER_TASK_TIMEOUT_MS,
+  normalizeAnalysisBridgeAdapter,
   resolveNodeScriptInvocation,
   resolveWorkerModel,
   resolveWorkerThinking,

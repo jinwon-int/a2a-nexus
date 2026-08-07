@@ -61,6 +61,10 @@ const DEFAULT_HERMES_TIMEOUT_SEC = "3600";
 const DEFAULT_CLAUDE_CODE_TIMEOUT_SEC = "3600";
 const DEFAULT_CODEX_TIMEOUT_SEC = "3600";
 const DEFAULT_CODEX_CONFIG_DIR = "/var/lib/a2a-runner/codex-dir";
+const DEFAULT_PIRI_CONFIG_DIR = "/var/lib/a2a-runner/piri-dir";
+const DEFAULT_PIRI_MODEL = "kimi-coding/k3";
+const DEFAULT_PIRI_THINKING = "high";
+const DEFAULT_PIRI_TIMEOUT_SEC = "3600";
 export const DEFAULT_SERVICE_ENV_FILE = "/etc/default/openclaw-a2a-worker";
 
 export function loadEnvFile(path: string): Record<string, string> {
@@ -135,7 +139,7 @@ export async function loadConfig(env = process.env): Promise<RunnerConfig> {
     defaultTimeoutMs: Number(env.A2A_DOCKER_RUNNER_TIMEOUT_MS || DEFAULT_TIMEOUT_MS),
     memory: env.A2A_DOCKER_RUNNER_MEMORY || "2g",
     cpus: env.A2A_DOCKER_RUNNER_CPUS || "2",
-    network: env.A2A_DOCKER_RUNNER_NETWORK || (trustedOperator && (profile === "openclaw" || profile === "hermes" || profile === "claude-code" || profile === "codex") ? "bridge" : "none"),
+    network: env.A2A_DOCKER_RUNNER_NETWORK || (trustedOperator && (profile === "openclaw" || profile === "hermes" || profile === "claude-code" || profile === "codex" || profile === "piri") ? "bridge" : "none"),
     readOnlyRootFilesystem: normalizeDefaultTrue(env.A2A_DOCKER_RUNNER_READ_ONLY_ROOTFS, trustedOperator),
     user: normalizeContainerUser(env.A2A_DOCKER_RUNNER_USER, trustedOperator),
     trustedOperator,
@@ -293,6 +297,13 @@ export function loadExtraMounts(env: NodeJS.ProcessEnv): RunnerExtraMount[] | un
         readOnly: true,
       }];
     }
+    if (profile === "piri") {
+      return [{
+        source: env.A2A_DOCKER_RUNNER_PIRI_CONFIG_DIR || DEFAULT_PIRI_CONFIG_DIR,
+        target: "/run/secrets/piri-dir",
+        readOnly: true,
+      }];
+    }
     return undefined;
   }
 
@@ -375,6 +386,16 @@ function validateProfileMountSelection(mounts: RunnerExtraMount[], env: NodeJS.P
       "codex",
       "Codex",
     );
+    return;
+  }
+  if (profile === "piri") {
+    validateNamedProfileMountSelection(
+      mounts,
+      "/run/secrets/piri-dir",
+      env.A2A_DOCKER_RUNNER_PIRI_CONFIG_DIR,
+      "piri",
+      "Piri",
+    );
   }
 }
 
@@ -419,8 +440,10 @@ function validateOpenClawRuntimeMount(mount: RunnerExtraMount, index: number): v
   const protectedClaudeTarget = isProtectedClaudeRuntimePath(target);
   const protectedCodexSource = isProtectedCodexRuntimePath(source);
   const protectedCodexTarget = isProtectedCodexRuntimePath(target);
+  const protectedPiriSource = isProtectedPiriRuntimePath(source);
+  const protectedPiriTarget = isProtectedPiriRuntimePath(target);
 
-  if (writable && (protectedSource || protectedTarget || protectedHermesSource || protectedHermesTarget || protectedClaudeSource || protectedClaudeTarget || protectedCodexSource || protectedCodexTarget)) {
+  if (writable && (protectedSource || protectedTarget || protectedHermesSource || protectedHermesTarget || protectedClaudeSource || protectedClaudeTarget || protectedCodexSource || protectedCodexTarget || protectedPiriSource || protectedPiriTarget)) {
     throw new ExtraMountsConfigError(
       "forbidden_writable_runtime_mount",
       `invalid extra mount at index ${index}: writable agent runtime/session paths are forbidden; ` +
@@ -473,9 +496,18 @@ function isProtectedCodexRuntimePath(value: string): boolean {
   ].some((pattern) => pattern.test(normalized));
 }
 
+function isProtectedPiriRuntimePath(value: string): boolean {
+  const normalized = value.replace(/\/+/g, "/").replace(/\/$/, "") || "/";
+  return [
+    /^\/root\/\.piri(?:\/|$)/,
+    /^\/home\/[^/]+\/\.piri(?:\/|$)/,
+    /^\/run\/secrets\/piri-dir(?:\/|$)/,
+  ].some((pattern) => pattern.test(normalized));
+}
+
 function loadPatchCommandConfig(
   env: NodeJS.ProcessEnv,
-): Pick<RunnerConfig, "commandScript" | "commandJson" | "commandTemplate" | "commandProfile" | "openclawProfile" | "hermesProfile" | "claudeCodeProfile" | "codexProfile"> {
+): Pick<RunnerConfig, "commandScript" | "commandJson" | "commandTemplate" | "commandProfile" | "openclawProfile" | "hermesProfile" | "claudeCodeProfile" | "codexProfile" | "piriProfile"> {
   const commandScript = env.A2A_DOCKER_RUNNER_PATCH_COMMAND_SCRIPT || undefined;
   if (commandScript) return { commandScript };
 
@@ -517,6 +549,15 @@ function loadPatchCommandConfig(
       commandScript: buildCodexPatchCommandScript(env),
       codexProfile: {
         configDir: env.A2A_DOCKER_RUNNER_CODEX_CONFIG_DIR || DEFAULT_CODEX_CONFIG_DIR,
+      },
+    };
+  }
+  if (profile === "piri") {
+    return {
+      commandProfile: "piri",
+      commandScript: buildPiriPatchCommandScript(env),
+      piriProfile: {
+        configDir: env.A2A_DOCKER_RUNNER_PIRI_CONFIG_DIR || DEFAULT_PIRI_CONFIG_DIR,
       },
     };
   }
@@ -685,6 +726,7 @@ export function normalizePatchCommandProfile(value?: string): RunnerCommandProfi
   if (normalized === "hermes") return "hermes";
   if (normalized === "claude-code" || normalized === "claude" || normalized === "cccb") return "claude-code";
   if (normalized === "codex") return "codex";
+  if (normalized === "piri" || normalized === "pi" || normalized === "piri-cli") return "piri";
   throw new Error(`unsupported A2A_DOCKER_RUNNER_PATCH_COMMAND_PROFILE: ${value}`);
 }
 
@@ -725,6 +767,7 @@ function inferRunnerImageProfileFamily(image: string): RunnerCommandProfile | un
   if (/(^|[/:])a2a-docker-runner-openclaw(?=[:@/]|$)/.test(normalized)) return "openclaw";
   if (/(^|[/:])a2a-docker-runner-(?:cccb|claude-code)(?=[:@/]|$)/.test(normalized)) return "claude-code";
   if (/(^|[/:])a2a-docker-runner-codex(?=[:@/]|$)/.test(normalized)) return "codex";
+  if (/(^|[/:])a2a-docker-runner-piri(?=[:@/]|$)/.test(normalized)) return "piri";
   return undefined;
 }
 
@@ -975,6 +1018,121 @@ timeout "$A2A_CODEX_TIMEOUT_SEC" codex exec \\
   -c "model_reasoning_effort=\"$A2A_CODEX_REASONING_EFFORT\"" \\
   -C "$PWD" \\
   - < /work/artifacts/codex-prompt.md
+`;
+}
+
+/**
+ * Piri patch-command script (a2a-nexus#1745 Phase 0).
+ *
+ * Piri is the fleet-owned, modifiable harness, so the output contract lives
+ * inside it instead of in an outer patch bridge: when the task provides
+ * A2A_PIRI_OUTPUT_SCHEMA, the CLI validates the final answer against the
+ * schema and re-prompts on violation (piri --output-schema), and nothing
+ * contract-breaking reaches the runner.
+ */
+export function buildPiriPatchCommandScript(env: NodeJS.ProcessEnv): string {
+  const defaultModel = shellSingleQuote(env.A2A_PIRI_MODEL || DEFAULT_PIRI_MODEL);
+  const defaultThinking = shellSingleQuote(env.A2A_PIRI_THINKING || DEFAULT_PIRI_THINKING);
+  const defaultTimeout = shellSingleQuote(env.A2A_PIRI_TIMEOUT_SEC || DEFAULT_PIRI_TIMEOUT_SEC);
+  return `#!/usr/bin/env bash
+set -euo pipefail
+export DEBIAN_FRONTEND=noninteractive
+A2A_PIRI_DEFAULT_MODEL=${defaultModel}
+A2A_PIRI_DEFAULT_THINKING=${defaultThinking}
+A2A_PIRI_DEFAULT_TIMEOUT_SEC=${defaultTimeout}
+A2A_PIRI_TIMEOUT_SEC="\${A2A_PIRI_TIMEOUT_SEC:-$A2A_PIRI_DEFAULT_TIMEOUT_SEC}"
+A2A_PIRI_MODEL="\${A2A_PIRI_MODEL:-$A2A_PIRI_DEFAULT_MODEL}"
+A2A_PIRI_THINKING="\${A2A_PIRI_THINKING:-$A2A_PIRI_DEFAULT_THINKING}"
+export A2A_PIRI_MODEL A2A_PIRI_THINKING A2A_PIRI_TIMEOUT_SEC
+if [ ! -d /run/secrets/piri-dir ] || [ ! -f /run/secrets/piri-dir/agent/auth.json ]; then
+  printf 'error=piri_config_mount_missing\n' | tee -a /work/artifacts/summary.txt
+  printf 'Mount a minimal Piri config directory containing agent/auth.json at /run/secrets/piri-dir.\n' | tee /work/artifacts/patch-command.log
+  exit 2
+fi
+if ! command -v piri >/dev/null 2>&1; then
+  printf 'error=piri_cli_missing\n' | tee -a /work/artifacts/summary.txt
+  printf 'failure_category=piri_cli_unavailable\n' | tee -a /work/artifacts/summary.txt
+  printf 'Use an a2a-docker-runner-piri image with the Piri CLI preinstalled.\n' | tee /work/artifacts/patch-command.log
+  exit 2
+fi
+# The mount is read-only while piri writes session/state beside its config, so
+# run against a container-local copy and keep the host credential dir intact.
+mkdir -p /work/piri-home
+cp -a /run/secrets/piri-dir /work/piri-home/.piri
+export HOME=/work/piri-home
+
+A2A_LIFECYCLE_GUARD_BIN=/work/a2a-piri-lifecycle-guard-bin
+mkdir -p "$A2A_LIFECYCLE_GUARD_BIN"
+cat > "$A2A_LIFECYCLE_GUARD_BIN/git" <<'A2A_PIRI_GIT_LIFECYCLE_GUARD'
+#!/usr/bin/env bash
+case "\${1:-}" in
+  add|commit|push|checkout|switch|reset|merge|rebase|tag)
+    printf "error=a2a_runner_contract_violation command=git_\${1:-}\n" >&2
+    exit 90
+    ;;
+  branch)
+    case "\${2:-}" in
+      ""|--show-current|-v|-vv|--list)
+        ;;
+      *)
+        printf "error=a2a_runner_contract_violation command=git_branch_mutation\n" >&2
+        exit 90
+        ;;
+    esac
+    ;;
+esac
+exec /usr/bin/git "$@"
+A2A_PIRI_GIT_LIFECYCLE_GUARD
+cat > "$A2A_LIFECYCLE_GUARD_BIN/gh" <<'A2A_PIRI_GH_LIFECYCLE_GUARD'
+#!/usr/bin/env bash
+case "\${1:-} \${2:-}" in
+  "pr create"|"pr merge"|"issue close"|"issue comment")
+    printf "error=a2a_runner_contract_violation command=gh_\${1:-}_\${2:-}\n" >&2
+    exit 90
+    ;;
+esac
+exec /usr/bin/gh "$@"
+A2A_PIRI_GH_LIFECYCLE_GUARD
+chmod 755 "$A2A_LIFECYCLE_GUARD_BIN/git" "$A2A_LIFECYCLE_GUARD_BIN/gh"
+export PATH="$A2A_LIFECYCLE_GUARD_BIN:$PATH"
+printf 'lifecycle_guard=enabled profile=piri\n' | tee -a /work/artifacts/summary.txt
+
+printf 'piri_cli=%s\n' "$(piri --version 2>/dev/null | head -n 1 || printf unknown)" | tee -a /work/artifacts/summary.txt
+printf 'model=%s thinking=%s profile=piri\n' "$A2A_PIRI_MODEL" "$A2A_PIRI_THINKING" | tee -a /work/artifacts/summary.txt
+
+cat > /work/artifacts/piri-prompt.md <<'A2A_PIRI_PROMPT_EOF'
+You are running inside the A2A Docker Runner on a checked-out GitHub repository.
+
+Your only job is to edit files in the repository checkout. The outer runner owns
+the git and GitHub lifecycle after you exit.
+
+Rules:
+- Edit files only. Do not manage the GitHub or git lifecycle yourself.
+- Do not create or switch branches.
+- Do not run git add, git commit, git push, git reset, git merge, git rebase, or git tag.
+- Do not run gh pr create, gh pr merge, gh issue comment, or gh issue close.
+- The runner posts Start/PR/Done/Block evidence and creates or reuses the PR after you exit.
+- Prefer small focused changes and tests.
+
+The assignment follows:
+A2A_PIRI_PROMPT_EOF
+cat /work/artifacts/prompt.md >> /work/artifacts/piri-prompt.md
+
+PIRI_SCHEMA_ARGS=()
+if [ -n "\${A2A_PIRI_OUTPUT_SCHEMA:-}" ]; then
+  if [ ! -f "$A2A_PIRI_OUTPUT_SCHEMA" ]; then
+    printf 'error=piri_output_schema_missing path=%s\n' "$A2A_PIRI_OUTPUT_SCHEMA" | tee -a /work/artifacts/summary.txt
+    exit 2
+  fi
+  PIRI_SCHEMA_ARGS=(--output-schema "$A2A_PIRI_OUTPUT_SCHEMA")
+fi
+
+timeout "$A2A_PIRI_TIMEOUT_SEC" piri -p "$(cat /work/artifacts/piri-prompt.md)" \
+  --model "$A2A_PIRI_MODEL" \
+  --thinking "$A2A_PIRI_THINKING" \
+  --approve \
+  --no-session \
+  \${PIRI_SCHEMA_ARGS[@]+\"\${PIRI_SCHEMA_ARGS[@]}\"}
 `;
 }
 
@@ -2083,6 +2241,7 @@ function referencesAllowedPatchExecutor(value: string, profile?: RunnerCommandPr
   return referencesOpenClawExecutor(value)
     || referencesHermesExecutor(value)
     || referencesCodexExecutor(value)
+    || referencesPiriExecutor(value)
     || (profile === "claude-code" && referencesClaudeExecutor(value));
 }
 
@@ -2107,6 +2266,13 @@ function referencesCodexExecutor(value: string): boolean {
     /(^|[\s;|&"'`/])codex([\s;|&"'`-]|$)/i,
     /@openai\/codex/i,
     /openai-codex/i,
+  ].some((pattern) => pattern.test(value));
+}
+
+function referencesPiriExecutor(value: string): boolean {
+  return [
+    /(^|[\s;|&"'`/])piri([\s;|&"'`-]|$)/i,
+    /jinwon-int\/piri/i,
   ].some((pattern) => pattern.test(value));
 }
 
