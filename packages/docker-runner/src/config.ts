@@ -828,10 +828,6 @@ function buildCodexSubagentProfileInstallShell(config: RunnerContainedSubagentsC
 // subagent 활성화는 `$CODEX_HOME/agents/` 에 설치하는 역할 프로파일이 이미
 // 담당하므로(buildCodexSubagentProfileInstallShell), 이 스칼라 오버라이드는
 // 기능적으로도 불필요하다. 비활성일 때는 프로파일을 설치하지 않는 것으로 족하다.
-function buildCodexSubagentCliOverrides(_config: RunnerContainedSubagentsConfig): string {
-  return "";
-}
-
 function buildCodexSubagentRosterPrompt(config: RunnerContainedSubagentsConfig): string {
   if (!config.enabled) return "";
   const lines = [
@@ -873,7 +869,10 @@ export function buildCodexPatchCommandScript(env: NodeJS.ProcessEnv): string {
   const subagentInstruction = buildContainedSubagentPrompt("Codex", subagents);
   const subagentRosterInstruction = buildCodexSubagentRosterPrompt(subagents);
   const subagentProfileInstall = buildCodexSubagentProfileInstallShell(subagents);
-  const subagentCliOverrides = buildCodexSubagentCliOverrides(subagents);
+  // #1729 note: codex 0.144.1 rejects scalar agents.* CLI overrides, so none
+  // are emitted. They must also never re-enter the exec template inline — an
+  // empty interpolation line breaks the shell line-continuation chain and
+  // detaches the prompt redirect from `codex exec` (#1731 canary evidence).
   const subagentSummary = buildContainedSubagentSummaryShell(subagents);
   const subagentModelSummary = buildCodexSubagentModelSummaryShell(subagents);
   return `#!/usr/bin/env bash
@@ -966,16 +965,15 @@ ${subagentRosterInstruction}
 The assignment follows:
 A2A_CODEX_PROMPT_EOF
 cat /work/artifacts/prompt.md >> /work/artifacts/codex-prompt.md
-timeout "$A2A_CODEX_TIMEOUT_SEC" codex exec \
-  --skip-git-repo-check \
-  --ephemeral \
-  --json \
-  --model "$A2A_CODEX_MODEL" \
-  --sandbox danger-full-access \
-  -c 'approval_policy="never"' \
-  -c "model_reasoning_effort=\"$A2A_CODEX_REASONING_EFFORT\"" \
-${subagentCliOverrides}
-  -C "$PWD" \
+timeout "$A2A_CODEX_TIMEOUT_SEC" codex exec \\
+  --skip-git-repo-check \\
+  --ephemeral \\
+  --json \\
+  --model "$A2A_CODEX_MODEL" \\
+  --sandbox danger-full-access \\
+  -c 'approval_policy="never"' \\
+  -c "model_reasoning_effort=\"$A2A_CODEX_REASONING_EFFORT\"" \\
+  -C "$PWD" \\
   - < /work/artifacts/codex-prompt.md
 `;
 }
