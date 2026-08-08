@@ -74,6 +74,26 @@ export const MIN_ABBREV = 7;
 const SHA_RE = /^[0-9a-f]{7,40}$/;
 const MAX_LISTED_DIRTY_PATHS = 5;
 
+/** A derived revision may carry the `-dirty` suffix; a claimed one may not. */
+const LOG_SAFE_REVISION_RE = /^[0-9a-f]{7,40}(-dirty)?$/;
+const UNLOGGABLE_REVISION = "<non-sha>";
+
+/**
+ * Gate every revision value on its way to a log sink or a child environment.
+ *
+ * A revision reaches this script from `process.env` / `--revision`, i.e. from
+ * outside. Echoing that back verbatim is how caller-controlled text ends up in
+ * operator logs, and the broker just spent #1764 establishing the opposite
+ * rule: only bounded, allowlisted values are emitted. Anything that is not
+ * SHA-shaped collapses to a fixed placeholder — the shape is the whole
+ * diagnostic here, so nothing useful is lost.
+ */
+export function sanitizeRevisionForLog(value) {
+  return typeof value === "string" && LOG_SAFE_REVISION_RE.test(value)
+    ? value
+    : UNLOGGABLE_REVISION;
+}
+
 export const FAILING_STATUSES = Object.freeze(["mismatch", "dirty", "malformed"]);
 
 export function normalizeRevision(value) {
@@ -134,6 +154,24 @@ function coreEvaluate({ claimed, head, dirty, dirtyPaths, gitAvailable }) {
   const claim = normalizeRevision(claimed);
   const sha = normalizeRevision(head);
 
+  // Shape is checkable without git, so check it first. Deferring this behind
+  // the git-availability branch let a malformed claim ride through the
+  // `unverifiable` path as ok:true, becoming the image label and the
+  // --print-revision output unexamined — exactly where no git context is
+  // available to catch it (the Docker build stage).
+  if (claim && !SHA_RE.test(claim)) {
+    return {
+      ok: false,
+      status: "malformed",
+      revision: claim,
+      verified: false,
+      reason:
+        `${CLAIM_ENV} is not a git commit SHA (${MIN_ABBREV}-40 lowercase hex): ` +
+        `${sanitizeRevisionForLog(claim)}. Provenance must be checkable against ` +
+        `the tree being built; use $(git rev-parse HEAD).`,
+    };
+  }
+
   if (!gitAvailable || !sha) {
     return {
       ok: true,
@@ -148,18 +186,6 @@ function coreEvaluate({ claimed, head, dirty, dirtyPaths, gitAvailable }) {
   }
 
   if (claim) {
-    if (!SHA_RE.test(claim)) {
-      return {
-        ok: false,
-        status: "malformed",
-        revision: claim,
-        verified: false,
-        reason:
-          `${CLAIM_ENV}=${JSON.stringify(claim)} is not a git commit SHA ` +
-          `(${MIN_ABBREV}-40 lowercase hex). Provenance must be checkable against ` +
-          `the tree being built; use $(git rev-parse HEAD).`,
-      };
-    }
     if (!revisionsMatch(claim, sha)) {
       return {
         ok: false,
@@ -306,7 +332,7 @@ export function formatReport(result) {
   if (result.status === "unverifiable" || result.status === "dirty-unclaimed") {
     return `build revision preflight: WARNING (${result.status}) — ${result.reason}`;
   }
-  return `build revision preflight: ok (${result.status}) revision=${result.revision}`;
+  return `build revision preflight: ok (${result.status}) revision=${sanitizeRevisionForLog(result.revision)}`;
 }
 
 function parseArgs(argv) {
@@ -361,6 +387,17 @@ function dockerBuild(result, passthrough, env) {
     );
     return 1;
   }
+  // Not merely a logging concern: this value becomes the image label. Under
+  // `override` a suppressed `malformed` verdict can still carry a non-SHA
+  // revision this far, and shipping that as provenance is the very thing #1766
+  // exists to stop.
+  if (sanitizeRevisionForLog(result.revision) !== result.revision) {
+    console.error(
+      "build revision preflight: refusing to build with a revision that is not a git SHA " +
+        `(status=${result.status}).`,
+    );
+    return 1;
+  }
   const childEnv = {
     ...env,
     [CLAIM_ENV]: result.revision,
@@ -370,7 +407,8 @@ function dockerBuild(result, passthrough, env) {
   const argv = ["compose", "build", ...passthrough];
   console.error(
     `build revision preflight: docker ${argv.join(" ")} ` +
-      `(${CLAIM_ENV}=${childEnv[CLAIM_ENV]}, ${VERIFIED_ENV}=${childEnv[VERIFIED_ENV]})`,
+      `(${CLAIM_ENV}=${sanitizeRevisionForLog(childEnv[CLAIM_ENV])}, ` +
+      `${VERIFIED_ENV}=${result.verified ? "true" : "false"})`,
   );
   const child = spawnSync("docker", argv, { cwd: packageRoot, stdio: "inherit", env: childEnv });
   if (child.error) {
@@ -395,7 +433,7 @@ export function main(argv = process.argv.slice(2), env = process.env) {
   const result = runPreflight({ env });
 
   if (args.json) process.stdout.write(`${JSON.stringify(result, null, 2)}\n`);
-  if (args.printRevision) process.stdout.write(`${result.revision}\n`);
+  if (args.printRevision) process.stdout.write(`${sanitizeRevisionForLog(result.revision)}\n`);
   // --quiet only silences the boring success lines; failures, the override
   // banner, and the two warning statuses always reach stderr.
   const boring = result.ok && (result.status === "verified" || result.status === "derived");

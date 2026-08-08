@@ -14,6 +14,7 @@ import {
   readGitContext,
   revisionsMatch,
   runPreflight,
+  sanitizeRevisionForLog,
   utcTimestamp,
 } from './check-build-revision.mjs';
 
@@ -295,5 +296,49 @@ describe('generate-build-info applies the same evaluator (#1766 decision: fail, 
 describe('build timestamp helper', () => {
   it('emits second-precision RFC3339 UTC, matching the compose docs', () => {
     assert.equal(utcTimestamp(new Date('2026-08-08T12:34:56.789Z')), '2026-08-08T12:34:56Z');
+  });
+});
+
+describe('caller-controlled revision text never reaches a log sink (#1766 / CodeQL js/clear-text-logging)', () => {
+  const HOSTILE = 'ghp_examplevalue; rm -rf /  \n injected line';
+
+  it('sanitizeRevisionForLog passes SHAs and the -dirty form, collapses everything else', () => {
+    assert.equal(sanitizeRevisionForLog('382da4242cbfa3381398903da723bd32b9f9be39'),
+      '382da4242cbfa3381398903da723bd32b9f9be39');
+    assert.equal(sanitizeRevisionForLog('382da42'), '382da42');
+    assert.equal(sanitizeRevisionForLog('382da42-dirty'), '382da42-dirty');
+    for (const bad of [HOSTILE, '', 'HEAD', '382DA42', 'nope', undefined, null, 42, {}]) {
+      assert.equal(sanitizeRevisionForLog(bad), '<non-sha>', `should collapse: ${String(bad)}`);
+    }
+  });
+
+  it('a malformed claim is rejected without echoing its text', () => {
+    const result = evaluateBuildRevision({ claimed: HOSTILE, ...gitContext({}) });
+    assert.equal(result.ok, false);
+    assert.equal(result.status, 'malformed');
+    assert.equal(result.reason.includes('ghp_examplevalue'), false, 'reason must not echo the claim');
+    assert.equal(result.reason.includes('rm -rf'), false);
+    assert.match(result.reason, /<non-sha>/);
+
+    const report = formatReport(result);
+    assert.equal(report.includes('ghp_examplevalue'), false, 'report must not echo the claim');
+  });
+
+  it('shape is judged without git, so no-git-context cannot launder a bad claim', () => {
+    // Previously the gitAvailable check came first, so a malformed claim rode
+    // through `unverifiable` as ok:true — and no-git is exactly the Docker
+    // build stage, where the value becomes the image label.
+    const result = evaluateBuildRevision({
+      claimed: HOSTILE,
+      ...gitContext({ gitAvailable: false, head: '' }),
+    });
+    assert.equal(result.status, 'malformed');
+    assert.equal(result.ok, false);
+  });
+
+  it('a well-formed claim is still reported in full', () => {
+    const result = evaluateBuildRevision({ claimed: STALE, ...gitContext({ head: STALE }) });
+    assert.equal(result.ok, true);
+    assert.match(formatReport(result), new RegExp(STALE));
   });
 });
