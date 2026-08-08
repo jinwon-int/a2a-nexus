@@ -13,6 +13,7 @@ import {
   isTerminalTaskStatus,
 } from "./broker-status-predicates.js";
 import {
+  estimateRetentionRecordBytes,
   selectRetainedAuditEventIds,
   selectRetainedTerminalRecordIds,
   selectRetainedWorkerIds,
@@ -92,7 +93,7 @@ export function computeRetainedRecordIds(
     retentionMs: retentionPolicy.terminalRetentionMs,
     maxTerminalRecords: retentionPolicy.maxTerminalTasks,
     maxTerminalRecordBytes: retentionPolicy.maxTerminalTaskBytes,
-    getRecordBytes: estimateSerializedRecordBytes,
+    getRecordBytes: estimateRetentionRecordBytes,
     protectedIds: protectedTaskIds,
   });
 
@@ -166,15 +167,6 @@ export function computeRetainedRecordIds(
     workerIds: retainedWorkerIds,
     auditEventIds: retainedAuditEventIds,
   };
-}
-
-/**
- * Estimate a record's contribution to the persisted snapshot. Uses the same
- * 2-space pretty-printed JSON as serializeBrokerSnapshot so the terminal-task
- * byte budget tracks the on-disk representation (#1579).
- */
-function estimateSerializedRecordBytes(record: unknown): number {
-  return Buffer.byteLength(JSON.stringify(record, null, 2), "utf8");
 }
 
 function collectRetainedExchangeMessageIds(

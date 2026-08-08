@@ -29,6 +29,13 @@ export interface BrokerCleanupPlanOptions {
   nowMs?: number;
   taskRetentionMs?: number;
   maxTerminalTasks?: number;
+  /**
+   * Cumulative serialized-byte budget for retained terminal task rows (#1768).
+   * Defaults to the retention policy's `maxTerminalTaskBytes`. Without it the
+   * plan is count-only and cannot see the budget that actually gates canonical
+   * snapshot writes.
+   */
+  maxTerminalTaskBytes?: number;
   auditRetentionMs?: number;
   maxAuditEvents?: number;
   workerRetentionMs?: number;
@@ -103,6 +110,7 @@ export const BROKER_CLEANUP_CONFIRMATION = "APPLY_BROKER_CLEANUP_PLAN";
 const DEFAULT_CLEANUP_OPTIONS: Required<Omit<BrokerCleanupPlanOptions, "nowMs" | "protectedTaskIds" | "protectedWorkerIds">> = {
   taskRetentionMs: DEFAULT_BROKER_RETENTION_POLICY.terminalRetentionMs,
   maxTerminalTasks: DEFAULT_BROKER_RETENTION_POLICY.maxTerminalTasks,
+  maxTerminalTaskBytes: DEFAULT_BROKER_RETENTION_POLICY.maxTerminalTaskBytes,
   auditRetentionMs: DEFAULT_BROKER_RETENTION_POLICY.auditRetentionMs,
   maxAuditEvents: DEFAULT_BROKER_RETENTION_POLICY.maxAuditEvents,
   workerRetentionMs: DEFAULT_BROKER_RETENTION_POLICY.inactiveWorkerRetentionMs,
@@ -135,6 +143,7 @@ export function buildBrokerCleanupPlan(
     nowMs,
     retentionMs: normalized.taskRetentionMs,
     maxTerminalRecords: normalized.maxTerminalTasks,
+    maxTerminalRecordBytes: normalized.maxTerminalTaskBytes,
     protectedTaskIds: normalized.protectedTaskIds,
   });
   const workerPlan = store.planHotWorkerRetention({
@@ -212,7 +221,14 @@ export function buildBrokerCleanupPlan(
     tables,
     notes: [
       "This is a dry-run discovery/plan only; no rows are mutated by buildBrokerCleanupPlan.",
-      `Tables with actionability "retention_not_due" have records past the retention window but within the max-records cap. These are not actionable cleanup candidates.`,
+      `Tables with actionability "retention_not_due" have records past the retention window but within BOTH the max-records cap and the byte budget. These are not actionable cleanup candidates.`,
+      `Terminal task pruning is bounded by maxTerminalTaskBytes as well as maxTerminalTasks (#1768). The byte budget only ever reaches rows already past the retention window; rows inside the window are never offered as prune candidates.`,
+      `Audit prune candidates are coupled to task retention: audit rows are protected while their target task is retained, so pruning tasks releases their audit rows in the same plan. Expect the audit count to move whenever the task count does — read both numbers together before approving.`,
+      ...(tables.some((plan) => plan.byteBudgetUnreachable)
+        ? [
+          `A table reports byteBudgetUnreachable: the byte budget is still exceeded after every past-retention row was offered for pruning. Pruning alone cannot fit this budget — either the retention window must shorten or the budget must rise. This plan will not delete rows inside the retention window to close the gap.`,
+        ]
+        : []),
       `Tables with actionability "advisory" have prune candidates that require operator review and explicit approval before execution.`,
       "Worker-row pruning is fail-closed by default because stale rows may still be valid home-broker records.",
       "Terminal outbox pruning is dry-run-only here; unacked rows remain protected until a separate operator ACK/prune approval path exists.",
@@ -296,6 +312,10 @@ function normalizeCleanupOptions(
     nowMs,
     taskRetentionMs: normalizeNonNegativeInteger(input.taskRetentionMs, DEFAULT_CLEANUP_OPTIONS.taskRetentionMs),
     maxTerminalTasks: normalizeNonNegativeInteger(input.maxTerminalTasks, DEFAULT_CLEANUP_OPTIONS.maxTerminalTasks),
+    maxTerminalTaskBytes: normalizeNonNegativeInteger(
+      input.maxTerminalTaskBytes,
+      DEFAULT_CLEANUP_OPTIONS.maxTerminalTaskBytes,
+    ),
     auditRetentionMs: normalizeNonNegativeInteger(input.auditRetentionMs, DEFAULT_CLEANUP_OPTIONS.auditRetentionMs),
     maxAuditEvents: normalizeNonNegativeInteger(input.maxAuditEvents, DEFAULT_CLEANUP_OPTIONS.maxAuditEvents),
     workerRetentionMs: normalizeNonNegativeInteger(input.workerRetentionMs, DEFAULT_CLEANUP_OPTIONS.workerRetentionMs),
@@ -339,7 +359,8 @@ function computeActionability(
   // actionability captures how the table's records should be treated:
   //
   // - retention_not_due: Records past the retention window are all
-  //   retained by the max-records cap, or there are no prune candidates.
+  //   retained by the max-records cap AND the byte budget (#1768), or there
+  //   are no prune candidates.
   //   Nothing is eligible for pruning. These are retention/advisory policy
   //   signals, not executable cleanup items.
   //

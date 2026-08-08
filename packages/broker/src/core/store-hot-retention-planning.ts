@@ -1,7 +1,11 @@
 import type { AuditEvent, TaskRecord, WorkerRecord } from "./types.js";
 import type { TerminalTaskOutboxEvent } from "./terminal-event-outbox.js";
 import type { BrokerHotEntityHintCoverage } from "./hot-diagnostics.js";
-import { parseRetentionTimestamp, isHeartbeatAuditEvent } from "./broker-retention-selectors.js";
+import {
+  estimateRetentionRecordBytes,
+  isHeartbeatAuditEvent,
+  parseRetentionTimestamp,
+} from "./broker-retention-selectors.js";
 import { isTerminalTaskStatus } from "./broker-status-predicates.js";
 import type {
   SqliteAuditHotRetentionPlanOptions,
@@ -19,28 +23,78 @@ export function planTaskRetentionFromRecords(
   const nowMs = options.nowMs ?? Date.now();
   const cutoffMs = nowMs - options.retentionMs;
   const retainedIds = new Set(options.protectedTaskIds ?? []);
-  const olderTerminalCandidates: Array<{ id: string; timestampMs: number }> = [];
+  const olderTerminalCandidates: Array<{ id: string; timestampMs: number; bytes: number }> = [];
+  const measureBytes = options.maxTerminalRecordBytes !== undefined;
+  let totalTerminalBytes = 0;
 
   for (const task of records) {
+    const bytes = measureBytes ? estimateRetentionRecordBytes(task) : 0;
     if (!isTerminalTaskStatus(task.status) || retainedIds.has(task.id)) {
       retainedIds.add(task.id);
+      totalTerminalBytes += bytes;
       continue;
     }
     const timestampMs = parseRetentionTimestamp(task.completedAt ?? task.updatedAt);
     if (timestampMs === null || timestampMs >= cutoffMs) {
       retainedIds.add(task.id);
+      totalTerminalBytes += bytes;
       continue;
     }
-    olderTerminalCandidates.push({ id: task.id, timestampMs });
+    totalTerminalBytes += bytes;
+    olderTerminalCandidates.push({ id: task.id, timestampMs, bytes });
   }
 
   const capSorted = [...olderTerminalCandidates]
     .sort((a, b) => b.timestampMs - a.timestampMs || a.id.localeCompare(b.id));
   const capRetained = capSorted.slice(0, options.maxTerminalRecords);
-  capRetained.forEach((entry) => retainedIds.add(entry.id));
+
+  // #1768: the record cap alone cannot enforce the byte budget that actually
+  // gates canonical snapshot writes. Retain newest-first while BOTH the cap and
+  // the byte budget hold. Rows inside the retention window were already
+  // retained above and are never revisited here — this path deletes SQLite
+  // rows, so the budget may only reach rows the retention window has already
+  // released. Compare with the in-memory reachability selector, which may evict
+  // in-window records from a projection precisely because that is not a delete.
+  const byteBudget = options.maxTerminalRecordBytes;
+  // Bytes held by rows this path may not touch: non-terminal rows, protected
+  // rows, and terminal rows still inside the retention window. They consume the
+  // budget FIRST — only what is left over can be spent on past-retention rows.
+  // Budgeting the candidates against the full budget instead would let the plan
+  // report a retained total above its own budget while claiming the budget was
+  // reachable.
+  const candidateBytes = capSorted.reduce((sum, entry) => sum + entry.bytes, 0);
+  const untouchableBytes = totalTerminalBytes - candidateBytes;
+  const candidateBudget = byteBudget === undefined
+    ? undefined
+    : Math.max(0, Math.max(0, byteBudget) - untouchableBytes);
+
+  let retainedCandidateBytes = 0;
+  let prunedByByteBudgetCount = 0;
+  const finalRetained: typeof capRetained = [];
+  for (const entry of capRetained) {
+    if (candidateBudget !== undefined) {
+      if (retainedCandidateBytes + entry.bytes > candidateBudget) {
+        // Skip this row but keep evaluating: a single oversized record must not
+        // starve smaller, older records that would still fit.
+        prunedByByteBudgetCount += 1;
+        continue;
+      }
+      retainedCandidateBytes += entry.bytes;
+    }
+    finalRetained.push(entry);
+  }
+  finalRetained.forEach((entry) => retainedIds.add(entry.id));
 
   const plan = buildRetentionPlan("broker_tasks", cutoffMs, records.map((record) => record.id), retainedIds);
-  plan.retainedByCapCount = capRetained.length;
+  plan.retainedByCapCount = finalRetained.length;
+  if (byteBudget !== undefined) {
+    plan.retainedBytes = retainedCandidateBytes + untouchableBytes;
+    plan.maxRetainedBytes = byteBudget;
+    plan.prunedByByteBudgetCount = prunedByByteBudgetCount;
+    // Pruning every past-retention row still leaves the untouchable rows, so
+    // the budget is only reachable if they alone fit inside it.
+    plan.byteBudgetUnreachable = untouchableBytes > Math.max(0, byteBudget);
+  }
   return plan;
 }
 

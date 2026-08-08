@@ -5,6 +5,19 @@
 import { sortedCopy } from "./broker-helpers.js";
 import type { AuditEvent, WorkerRecord } from "./types.js";
 
+/**
+ * Serialized size of a record for retention byte budgeting (#1579, #1768).
+ *
+ * Shared by the in-memory reachability path and the SQLite hot-retention
+ * planner so the two cannot drift apart on what a record "costs". The
+ * pretty-printed form is deliberate: the byte budget exists to bound the
+ * canonical snapshot, which is written pretty-printed, so measuring the
+ * compact form would systematically under-count.
+ */
+export function estimateRetentionRecordBytes(record: unknown): number {
+  return Buffer.byteLength(JSON.stringify(record, null, 2), "utf8");
+}
+
 export function parseRetentionTimestamp(value: string | undefined): number | null {
   if (!value) {
     return null;
