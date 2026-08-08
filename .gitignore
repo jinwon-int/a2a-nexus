@@ -16,3 +16,6 @@ IDENTITY.md
 .claude/
 .tmp/
 artifacts/release-candidate/
+
+# A2A bridge scratch directory created at the repo root at task time.
+.a2a-bridge/
