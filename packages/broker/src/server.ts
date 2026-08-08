@@ -230,6 +230,7 @@ import {
   classifyEndpointGroup,
   classifyRequestRoute,
 } from "./http/route-classification.js";
+import { authRejectionSnapshot, recordAuthRejection } from "./auth-rejection-metrics.js";
 import { readCgroupCpuSnapshot, readCgroupPsiSnapshot } from "./diagnostics/cgroup-metrics.js";
 import { buildAlertScan, buildDashboardResponse } from "./http/dashboard-response.js";
 import {
@@ -1127,6 +1128,10 @@ export function createBrokerServer(options: BrokerServerOptions = {}): BrokerSer
             workerRateLimitWindowSec,
             workerRateLimitMaxRequests,
             trustedProxy,
+            // #1764: rejections were previously observable only by the caller
+            // that was already failing. Bounded aggregate — closed-set route and
+            // reason keys, counts and timestamps, never credential material.
+            authRejections: authRejectionSnapshot(),
           },
           requestPressure,
           retentionPolicy,
@@ -1901,6 +1906,34 @@ export function createBrokerServer(options: BrokerServerOptions = {}): BrokerSer
         // logs alone. Log the route and stack so future occurrences are visible
         // in `docker logs`; response body/status are unchanged.
         console.error(`[a2a-broker] unhandled error on ${req.method} ${path}:`, error);
+      } else if (error.code === "unauthorized") {
+        // #1764: this guard is the single bottleneck every `unauthorized` throw
+        // in the broker passes through, and it used to be the reason none of
+        // them left a trace anywhere. Record a bounded classification and emit a
+        // rate-limited warning. Deliberately logged: method, normalized route
+        // group, reason enum, signature sub-code, counts. Deliberately NOT
+        // logged: the raw message, headers, secrets, signatures, tokens or
+        // identities. Response status and body are unchanged.
+        //
+        // `rawSegments` (not the decoded `segments`) is used because decoding
+        // failures throw `bad_request`, never `unauthorized`, and rawSegments is
+        // the only form in scope here.
+        const rejectedRoute = classifyRequestRoute(req.method, path, rawSegments);
+        const outcome = recordAuthRejection({
+          route: rejectedRoute,
+          method: req.method,
+          message: error.message,
+        });
+        if (outcome.shouldLog) {
+          console.warn(
+            `[a2a-broker] auth rejected: method=${req.method ?? "-"} `
+            + `route=${rejectedRoute} `
+            + `reason=${outcome.reason}`
+            + `${outcome.subCode ? ` code=${outcome.subCode}` : ""} `
+            + `count=${outcome.count}`
+            + `${outcome.suppressedSinceLastLog > 0 ? ` suppressedSinceLastLog=${outcome.suppressedSinceLastLog}` : ""}`,
+          );
+        }
       }
       return sendError(res, error);
     }

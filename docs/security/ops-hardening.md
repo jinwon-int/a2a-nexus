@@ -46,6 +46,7 @@ node packages/broker/scripts/ops-hardening-audit.mjs --base-url http://127.0.0.1
 | 2 | Agent card published | Exposure/Auth | `GET /.well-known/agent-card.json` | HTTP 200, public (no edge secret required) |
 | 3 | Auth enforcement | Exposure/Auth | Inspect `/health` `requestSecurity` | `edgeSecretRequired` and `enforceRequesterIdentity` match operator intent |
 | 4 | Rate limiting active | Exposure/Auth | Inspect `/health` `requestSecurity` | Non-zero window/limit values |
+| 4b | Auth rejections | Exposure/Auth | Inspect `/health` `requestSecurity.authRejections` | `total` steady in normal operation; a rising `edge_secret_missing_or_invalid` or `a2a_signature_failed` on worker routes means a credential problem, not a dead worker (#1764) |
 | 5 | Worker credential env vars | Credential mount | Inspect worker env | `BROKER_URL` or `A2A_BROKER_URL` set; `WORKER_ID` or `A2A_WORKER_ID` set |
 | 6 | Worker capabilities | Credential mount | Inspect worker env | Capabilities defined via JSON or individual env vars |
 | 7 | Home broker lease | Credential mount | Inspect lease file path | File exists with valid `brokerId` and `workerId` (content redacted) |
@@ -208,6 +209,47 @@ Detection points:
 | `GET /dashboard` | `staleWorkersWithActiveTasks` list | ~offlineAfterSec |
 | `GET /alerts` | Alert projection for missing heartbeats | ~offlineAfterSec |
 | SSE operator events | Real-time stale worker alerts | Seconds after threshold |
+
+### `stale` is a symptom, not a diagnosis (#1764)
+
+Every surface above derives `stale` from `lastSeenAt` alone. A worker whose
+credential was rotated away and a worker whose process died therefore decay on
+the **same timeline with the same wording** — the rejected worker is still
+sending requests, they are just all being refused at the door.
+
+Before treating a stale worker as a dead worker, check
+`/health` → `requestSecurity.authRejections`:
+
+```json
+"authRejections": {
+  "total": 418,
+  "since": "2026-08-08T04:10:11.020Z",
+  "trackedKeys": 2,
+  "droppedKeys": 0,
+  "byReason": { "edge_secret_missing_or_invalid": 402, "a2a_signature_failed": 16 },
+  "top": [
+    { "route": "workers.heartbeat", "reason": "edge_secret_missing_or_invalid",
+      "count": 402, "firstAt": "2026-08-08T04:10:11.020Z", "lastAt": "2026-08-08T09:52:44.881Z" }
+  ]
+}
+```
+
+A non-zero, still-growing count on a worker route means **credential**, not
+liveness. Correlate with the rate-limited `[a2a-broker] auth rejected:` warnings
+in the container log, which carry the same bounded fields per occurrence.
+
+Reasons are a closed set: `edge_secret_missing_or_invalid`,
+`requester_id_missing`, `requester_role_denied`,
+`github_webhook_signature_missing`, `github_webhook_signature_invalid`,
+`live_approval_invalid`, `live_approval_identity_denied`,
+`a2a_signature_failed` (with the specific verifier code in `subCodes`), and
+`unspecified`. Neither the log line nor the snapshot ever contains a secret,
+header value, signature, token, identity or raw error message — so this surface
+is safe to read and paste during an incident.
+
+Counters are process-local and reset on broker restart; `since` records the
+window start. See the rotation runbook for the propagation checklist that
+prevents the partial-rotation case in the first place.
 
 ### Stale worker lifecycle
 
