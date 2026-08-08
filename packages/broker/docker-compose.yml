@@ -7,12 +7,19 @@ services:
         # Pass git SHA and timestamp as build args so Docker labels
         # (org.opencontainers.image.revision) and runtime env vars
         # (A2A_BROKER_REVISION) reflect the deployed commit.
-        # Set these before building: export A2A_BROKER_REVISION=$(git rev-parse HEAD)
-        # export A2A_BROKER_CREATED=$(date -u +%Y-%m-%dT%H:%M:%SZ)
         # Compose expansion is intentionally fail-closed for production provenance.
-        A2A_BROKER_REVISION: ${A2A_BROKER_REVISION:?set A2A_BROKER_REVISION to the git SHA being built}
+        #
+        # #1766: prefer `npm run build:image -w packages/broker`, which runs
+        # scripts/check-build-revision.mjs first and only then invokes
+        # `docker compose build`. It sets all three args from verified git
+        # facts, so a stale `export A2A_BROKER_REVISION=...` left in the shell
+        # can no longer become the image label. Setting the vars by hand still
+        # works but is unverified: A2A_BROKER_REVISION_VERIFIED stays false and
+        # the image records that it was never checked against its own source.
+        A2A_BROKER_REVISION: ${A2A_BROKER_REVISION:?set A2A_BROKER_REVISION to the git SHA being built, or run npm run build:image -w packages/broker}
         A2A_BROKER_VERSION: ${A2A_BROKER_VERSION:-0.1.0}
         A2A_BROKER_CREATED: ${A2A_BROKER_CREATED:?set A2A_BROKER_CREATED to an RFC3339/UTC build timestamp}
+        A2A_BROKER_REVISION_VERIFIED: ${A2A_BROKER_REVISION_VERIFIED:-false}
     container_name: ${SERVICE_NAME:-a2a-broker}
     hostname: ${SERVICE_NAME:-a2a-broker}
     restart: unless-stopped

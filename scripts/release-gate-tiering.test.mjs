@@ -189,8 +189,11 @@ test('script surface manifest validates current root and broker package scripts'
   // (Wave 0: root 102→101, broker 156→153; Wave 1: broker 153→95;
   // Wave 2: broker 95→54 via orchestration/rollout dispatchers).
   // Update with each retirement wave.
+  // #1766: broker 54→55 for build:image, the verified image-build entrypoint
+  // (revision preflight -> docker compose build); mirrored in
+  // scripts/check-script-budget.mjs BUDGETS.brokerNpmScripts.
   assert.equal(byId.get('root')?.scriptCount, 101);
-  assert.equal(byId.get('broker')?.scriptCount, 54);
+  assert.equal(byId.get('broker')?.scriptCount, 55);
   assert.ok((byId.get('root')?.kindCounts['required-gate'] ?? 0) >= 7);
   assert.ok((byId.get('broker')?.kindCounts['required-gate'] ?? 0) >= 7);
 });

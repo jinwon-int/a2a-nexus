@@ -62,6 +62,24 @@ Docker label and the runtime `A2A_BROKER_REVISION` env, so
 `/health.build.revision` and `docker inspect` labels match the
 deployed commit.
 
+> **#1766 — do not trust an exported revision.** A `$A2A_BROKER_REVISION` left
+> over from an earlier shell used to become the image label unchallenged: the
+> value was only checked for being non-empty and not `unknown`, never against
+> the tree being copied into the image. Run the preflight instead of exporting
+> the value by hand:
+>
+> ```bash
+> node packages/broker/scripts/check-build-revision.mjs   # verify, exit 1 on mismatch/dirty
+> npm run build:image -w packages/broker                  # verify, then build
+> ```
+>
+> The preflight fails when the claim differs from `git rev-parse HEAD` or when
+> the working tree is dirty, warns (without failing) when there is no git
+> context to compare against, and can be overridden for local dev builds with
+> `A2A_BROKER_ALLOW_UNVERIFIED_REVISION=1` — which prints a loud banner and
+> stamps `dev.a2a.image.revision-verified=false` on the image. Images built
+> straight from this smoke compose file are always recorded as unverified.
+
 ## Start the stack
 
 ```bash
