@@ -235,6 +235,25 @@ export interface SqliteHotRetentionPlan {
    * rather than genuinely active/executable cleanup candidates.
    */
   retainedByCapCount?: number;
+  /**
+   * Bytes of the retained terminal rows, and the budget they were measured
+   * against (#1768). Present only when a byte budget was supplied.
+   */
+  retainedBytes?: number;
+  maxRetainedBytes?: number;
+  /**
+   * Count of rows selected for pruning specifically because the byte budget —
+   * not the record cap — evicted them (#1768).
+   */
+  prunedByByteBudgetCount?: number;
+  /**
+   * True when the byte budget is still exceeded after every past-retention row
+   * has been offered for pruning (#1768). Signals that the budget cannot be
+   * met without either deleting rows still inside the retention window or
+   * changing the policy — a decision this destructive path refuses to take on
+   * its own.
+   */
+  byteBudgetUnreachable?: boolean;
 }
 
 export interface SqliteHotRetentionApplyResult {
@@ -267,6 +286,25 @@ export interface SqliteTaskHotRetentionPlanOptions {
   retentionMs: number;
   maxTerminalRecords: number;
   protectedTaskIds?: string[];
+  /**
+   * Cumulative serialized-byte budget for retained terminal task rows (#1768).
+   *
+   * Without this, retention here is count-only, while the budget that actually
+   * gates canonical snapshot writes is a byte budget
+   * (`maxTerminalTaskBytes`, derived from `maxSnapshotBytes / 2`). For
+   * payload-heavy tasks the count cap is reached far later than the byte
+   * budget — a 2,000-row cap against a 25MB budget at ~65KB/task is roughly a
+   * 5x gap — so the count cap can never fire first and no prune path ever
+   * enforces the byte budget.
+   *
+   * Unlike the in-memory reachability selector, this is a DESTRUCTIVE path:
+   * pruning deletes SQLite rows. The byte budget therefore only ever reaches
+   * rows already past the retention window; rows inside the window are never
+   * offered as prune candidates no matter how far over budget the table is.
+   * When even pruning every past-retention row cannot fit the budget, the plan
+   * reports `byteBudgetUnreachable` rather than eating into the window.
+   */
+  maxTerminalRecordBytes?: number;
 }
 
 export interface SqliteAuditHotRetentionProtection {
