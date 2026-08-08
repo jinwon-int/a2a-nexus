@@ -12,6 +12,17 @@ tmp/
 *.pid
 *.tmp
 *.bak_*
+# Operators date their backups with a hyphen as often as an underscore
+# (.env.bak-pre-rotation-20260807, docker-compose.override.yml.bak-...-recordmode).
+# Only the underscore form was ignored, so the hyphen form made every live
+# deployment tree permanently dirty — which the #1766 build-revision preflight
+# then (correctly) refuses to call a verified build.
+*.bak-*
+# Compose local overrides are per-deployment by convention and are never
+# committed; on broker hosts they carry node-specific runtime settings.
+docker-compose.override.yml
+# A2A bridge scratch directory created next to the checkout at task time.
+.a2a-bridge/
 .DS_Store
 handlers/
 
