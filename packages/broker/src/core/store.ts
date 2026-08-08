@@ -38,6 +38,7 @@ import {
   SQLITE_HOT_ENTITY_HINT_TABLES,
   SQLITE_HOT_ENTITY_SNAPSHOT_KEYS,
   SQLITE_HOT_ENTITY_TABLES,
+  type CanonicalSnapshotRowRead,
   type HotDiagnosticsReadContext,
   type SqliteHotEntityTable,
 } from "./store-hot-diagnostics-read.js";
@@ -706,7 +707,8 @@ export class SqliteBrokerStateStore implements BrokerStateStore {
       maxHotRuntimeTerminalTasks: this.maxHotRuntimeTerminalTasks,
       maxHotRuntimeAuditEvents: this.maxHotRuntimeAuditEvents,
       maxHotRuntimeTerminalOutboxEvents: this.maxHotRuntimeTerminalOutboxEvents,
-      readSnapshotRow: () => this.readSnapshotRow(),
+      loadSource: this.loadSource,
+      readCanonicalSnapshotRow: () => this.readCanonicalSnapshotRow(),
       readLastPersistDiagnostics: () => this.readLastPersistDiagnostics(),
       readTableIds: (tableName) => this.readTableIds(tableName),
       readTableCount: (tableName) => this.readTableCount(tableName),
@@ -1357,6 +1359,38 @@ export class SqliteBrokerStateStore implements BrokerStateStore {
       return undefined;
     }
     return parseSnapshotPayload(row.payload, `SQLite broker snapshot at ${this.dbFile}`, this.maxBytes);
+  }
+
+  // #1763: diagnostics-only variant of readSnapshotRow(). It reports an
+  // unparsable canonical row as data (with the byte size and row mtime the
+  // operator needs) instead of throwing, and carries the original error so the
+  // caller can still fail closed when the row is on the serving path. The
+  // write path (syncCanonicalSnapshotWithHotRetentionPlans) keeps using the
+  // throwing readSnapshotRow().
+  private readCanonicalSnapshotRow(): CanonicalSnapshotRowRead {
+    const row = this.db
+      .prepare("SELECT payload, updated_at AS updatedAt FROM broker_snapshots WHERE id = 1")
+      .get() as { payload?: string; updatedAt?: string } | undefined;
+    if (typeof row?.payload !== "string") {
+      return { status: "absent" };
+    }
+    const updatedAt = typeof row.updatedAt === "string" ? row.updatedAt : undefined;
+    try {
+      return {
+        status: "ok",
+        snapshot: parseSnapshotPayload(row.payload, `SQLite broker snapshot at ${this.dbFile}`, this.maxBytes),
+      };
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      return {
+        status: "unreadable",
+        reason: /exceeds max size/i.test(message) ? "too_large" : "parse_failed",
+        bytes: Buffer.byteLength(row.payload, "utf8"),
+        maxBytes: this.maxBytes,
+        ...(updatedAt ? { updatedAt } : {}),
+        error,
+      };
+    }
   }
 
   private readTableCount(tableName: SqliteHotEntityTable): number {

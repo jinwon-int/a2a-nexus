@@ -759,6 +759,19 @@ test("/health stays 200 on a legacy-enum snapshot and /workers keeps serving (#1
   }
 });
 
+// Corrupts the canonical snapshot row in place. `mutate` receives the parsed
+// payload and returns the payload to re-store.
+function corruptCanonicalSnapshotRow(sqliteFile: string, mutate: (parsed: any) => unknown): void {
+  const db = new DatabaseSync(sqliteFile);
+  try {
+    const row = db.prepare("SELECT payload FROM broker_snapshots WHERE id = 1").get() as { payload: string };
+    const next = mutate(JSON.parse(row.payload));
+    db.prepare("UPDATE broker_snapshots SET payload = ? WHERE id = 1").run(JSON.stringify(next));
+  } finally {
+    db.close();
+  }
+}
+
 test("/health 500 on an unparsable snapshot carries stable stage/reason/correlation id without stack (#1504)", async () => {
   const tmp = tempDir();
   const sqliteFile = join(tmp.dir, "state.sqlite");
@@ -766,16 +779,66 @@ test("/health 500 on an unparsable snapshot carries stable stage/reason/correlat
   store.save(smallAuditSnapshot(4));
   store.close();
 
-  // Corrupt the canonical snapshot row directly: structurally invalid tasks.
-  const db = new DatabaseSync(sqliteFile);
+  // #1763 re-baseline: this case now pins the load source under which the
+  // canonical row IS load-bearing. Booting from a already-corrupt row is
+  // impossible in `snapshot` mode, so boot clean and corrupt afterwards — the
+  // diagnostics cache reads the row live on the first /health call.
+  const runtime = createBrokerServer({
+    host: "127.0.0.1",
+    port: 0,
+    publicBaseUrl: "https://broker.test/",
+    sqliteFile,
+    persistenceBackend: "sqlite",
+    sqliteLoadSource: "snapshot",
+    stateFile: join(tmp.dir, "state.json"),
+    staleReaperEnabled: false,
+    enforceRequesterIdentity: false,
+    edgeSecret: "test-edge-secret",
+    rateLimitMaxRequests: 1000,
+    workerRateLimitMaxRequests: 1000,
+  });
+
   try {
-    const row = db.prepare("SELECT payload FROM broker_snapshots WHERE id = 1").get() as { payload: string };
-    const parsed = JSON.parse(row.payload);
-    parsed.tasks = "not-an-array";
-    db.prepare("UPDATE broker_snapshots SET payload = ? WHERE id = 1").run(JSON.stringify(parsed));
+    runtime.server.listen(0, "127.0.0.1");
+    await once(runtime.server, "listening");
+    const address = runtime.server.address();
+    if (!address || typeof address === "string") throw new Error("failed to bind test server");
+    const headers = { "x-a2a-edge-secret": "test-edge-secret" };
+
+    corruptCanonicalSnapshotRow(sqliteFile, (parsed) => ({ ...parsed, tasks: "not-an-array" }));
+
+    const health = await fetch(`http://127.0.0.1:${address.port}/health`, { headers });
+    assert.equal(health.status, 500, "core diagnostics failure keeps 500 when the snapshot is the load source");
+    const body = await health.json();
+    assert.equal(body.ok, false);
+    assert.equal(body.stage, "persistence_diagnostics");
+    assert.equal(body.reason, "snapshot_parse_failed");
+    assert.match(body.correlationId ?? "", /^[0-9a-f-]{36}$/);
+    const raw = JSON.stringify(body);
+    assert.equal(/\/root\/|node_modules|\bat\s+\S+\s+\(/.test(raw), false, "public body must not leak stack/topology");
+
+    // One diagnostics projection failure must not mask independent routes.
+    const workers = await fetch(`http://127.0.0.1:${address.port}/workers`, { headers });
+    assert.equal(workers.status, 200, "worker registry stays reachable while /health is degraded");
   } finally {
-    db.close();
+    runtime.stopStaleReaper();
+    runtime.server.close();
+    runtime.server.closeAllConnections?.();
+    await once(runtime.server, "close");
+    tmp.cleanup();
   }
+});
+
+test("/health degrades instead of 500 when an unparsable canonical row is only a mirror (#1763)", async () => {
+  const tmp = tempDir();
+  const sqliteFile = join(tmp.dir, "state.sqlite");
+  const store = new SqliteBrokerStateStore(sqliteFile);
+  store.save(smallAuditSnapshot(4));
+  store.close();
+
+  // Production incident topology: hot tables are the load source and healthy,
+  // the canonical row is a mirror that cannot be parsed.
+  corruptCanonicalSnapshotRow(sqliteFile, (parsed) => ({ ...parsed, tasks: "not-an-array" }));
 
   const runtime = createBrokerServer({
     host: "127.0.0.1",
@@ -783,9 +846,6 @@ test("/health 500 on an unparsable snapshot carries stable stage/reason/correlat
     publicBaseUrl: "https://broker.test/",
     sqliteFile,
     persistenceBackend: "sqlite",
-    // Boot from hot tables like the production incident topology: the broker
-    // keeps serving worker/task state while only the canonical-snapshot
-    // diagnostics read is broken.
     sqliteLoadSource: "hot-tables",
     stateFile: join(tmp.dir, "state.json"),
     staleReaperEnabled: false,
@@ -803,18 +863,88 @@ test("/health 500 on an unparsable snapshot carries stable stage/reason/correlat
     const headers = { "x-a2a-edge-secret": "test-edge-secret" };
 
     const health = await fetch(`http://127.0.0.1:${address.port}/health`, { headers });
-    assert.equal(health.status, 500, "core diagnostics failure keeps 500");
+    assert.equal(health.status, 200, "a broken mirror must not take /health down");
     const body = await health.json();
-    assert.equal(body.ok, false);
-    assert.equal(body.stage, "persistence_diagnostics");
-    assert.equal(body.reason, "snapshot_parse_failed");
-    assert.match(body.correlationId ?? "", /^[0-9a-f-]{36}$/);
-    const raw = JSON.stringify(body);
-    assert.equal(/\/root\/|node_modules|\bat\s+\S+\s+\(/.test(raw), false, "public body must not leak stack/topology");
+    assert.equal(body.ok, true, "hot tables are authoritative and serving");
+    assert.equal(body.stage, undefined, "not a diagnostics-stage failure");
 
-    // One diagnostics projection failure must not mask independent routes.
+    const mirror = body.persistence?.hotEntityMirror;
+    assert.equal(mirror?.ok, true);
+    assert.equal(mirror?.canonicalSnapshot?.status, "unreadable");
+    assert.equal(mirror?.canonicalSnapshot?.reason, "parse_failed");
+    assert.equal(typeof mirror?.canonicalSnapshot?.bytes, "number");
+    assert.equal(typeof mirror?.canonicalSnapshot?.maxBytes, "number");
+    assert.match(String(body.warning ?? ""), /canonical snapshot mirror unreadable \(parse_failed\)/);
+
+    // Degradation must stay visible AND bounded — scalars only, no payload
+    // excerpt, no stack, no host paths.
+    const raw = JSON.stringify(body);
+    assert.equal(/\/root\/|node_modules|\bat\s+\S+\s+\(/.test(raw), false, "degraded body must not leak stack/topology");
+    assert.equal(raw.includes("not-an-array"), false, "degraded body must not echo the bad payload");
+
     const workers = await fetch(`http://127.0.0.1:${address.port}/workers`, { headers });
-    assert.equal(workers.status, 200, "worker registry stays reachable while /health is degraded");
+    assert.equal(workers.status, 200);
+  } finally {
+    runtime.stopStaleReaper();
+    runtime.server.close();
+    runtime.server.closeAllConnections?.();
+    await once(runtime.server, "close");
+    tmp.cleanup();
+  }
+});
+
+test("/health reports an oversized canonical mirror as bounded degradation, not 500 (#1763)", async () => {
+  const tmp = tempDir();
+  const sqliteFile = join(tmp.dir, "state.sqlite");
+  const store = new SqliteBrokerStateStore(sqliteFile);
+  store.save(smallAuditSnapshot(4));
+  store.close();
+
+  // The live incident was a 60.3MB row against a 50MB budget. Reproduce the
+  // same shape cheaply by shrinking the budget instead of growing the row to
+  // production size; the byte check fires before JSON.parse either way.
+  const maxSnapshotBytes = 4096;
+  corruptCanonicalSnapshotRow(sqliteFile, (parsed) => ({ ...parsed, padding: "x".repeat(8192) }));
+
+  const runtime = createBrokerServer({
+    host: "127.0.0.1",
+    port: 0,
+    publicBaseUrl: "https://broker.test/",
+    sqliteFile,
+    persistenceBackend: "sqlite",
+    sqliteLoadSource: "hot-tables",
+    maxSnapshotBytes,
+    stateFile: join(tmp.dir, "state.json"),
+    staleReaperEnabled: false,
+    enforceRequesterIdentity: false,
+    edgeSecret: "test-edge-secret",
+    rateLimitMaxRequests: 1000,
+    workerRateLimitMaxRequests: 1000,
+  });
+
+  try {
+    runtime.server.listen(0, "127.0.0.1");
+    await once(runtime.server, "listening");
+    const address = runtime.server.address();
+    if (!address || typeof address === "string") throw new Error("failed to bind test server");
+    const headers = { "x-a2a-edge-secret": "test-edge-secret" };
+
+    const health = await fetch(`http://127.0.0.1:${address.port}/health`, { headers });
+    assert.equal(health.status, 200, "oversized mirror must not produce a permanent 500");
+    const body = await health.json();
+    assert.equal(body.ok, true);
+
+    const canonical = body.persistence?.hotEntityMirror?.canonicalSnapshot;
+    assert.equal(canonical?.status, "unreadable");
+    assert.equal(canonical?.reason, "too_large");
+    assert.equal(canonical?.maxBytes, maxSnapshotBytes);
+    assert.ok(canonical.bytes > maxSnapshotBytes, "reported byte size exceeds the budget");
+    // The operator needs the row mtime to tell a stale mirror from a fresh one.
+    assert.match(String(canonical?.updatedAt ?? ""), /^\d{4}-\d{2}-\d{2}T/);
+    assert.match(String(body.warning ?? ""), /canonical snapshot mirror unreadable \(too_large\)/);
+
+    const raw = JSON.stringify(body);
+    assert.equal(/\/root\/|node_modules|\bat\s+\S+\s+\(/.test(raw), false, "degraded body must not leak stack/topology");
   } finally {
     runtime.stopStaleReaper();
     runtime.server.close();
