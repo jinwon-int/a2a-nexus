@@ -26,6 +26,7 @@ import type {
   BrokerHotTableLoadMetricEntry,
   BrokerHotTableLoadMetrics,
   BrokerSnapshot,
+  SqliteBrokerLoadSource,
 } from "./store-contracts.js";
 
 export const HOT_AUDIT_RECENT_WINDOW_MS = 10 * 60 * 1000;
@@ -175,13 +176,33 @@ function incrementDiagnosticsCounter(counter: Record<string, number>, value: unk
   counter[key] = (counter[key] ?? 0) + 1;
 }
 
+// #1763: the diagnostics path must be able to observe that the canonical
+// snapshot row exists but could not be parsed, instead of only ever seeing a
+// parsed snapshot or a thrown error. `error` carries the original throw so the
+// caller can rethrow it verbatim when the row IS on the serving path.
+export type CanonicalSnapshotRowRead =
+  | { status: "ok"; snapshot: BrokerSnapshot }
+  | { status: "absent" }
+  | {
+      status: "unreadable";
+      reason: "too_large" | "parse_failed";
+      bytes: number;
+      maxBytes: number;
+      updatedAt?: string;
+      error: unknown;
+    };
+
 export interface HotDiagnosticsReadContext {
   db: DatabaseSync;
   maxHotRuntimeNonTerminalTasks: number;
   maxHotRuntimeTerminalTasks: number;
   maxHotRuntimeAuditEvents: number;
   maxHotRuntimeTerminalOutboxEvents: number;
-  readSnapshotRow(): BrokerSnapshot | undefined;
+  // #1763: `hot-tables` means the canonical row is a mirror, not the load
+  // source, so an unreadable row degrades to a bounded field. Under `snapshot`
+  // the row IS load-bearing and diagnostics keep failing closed.
+  loadSource: SqliteBrokerLoadSource;
+  readCanonicalSnapshotRow(): CanonicalSnapshotRowRead;
   readLastPersistDiagnostics(): {
     lastPersistAt: string | undefined;
     lastPersistSkippedFullSnapshot: boolean;
@@ -258,8 +279,36 @@ function readInvalidHotWorkerRows(context: HotDiagnosticsReadContext): BrokerInv
 
 export function readHotEntityMirrorStatus(context: HotDiagnosticsReadContext): BrokerHotEntityMirrorStatus {
   const tableCounts = readHotEntityTableCounts(context);
-  const snapshot = context.readSnapshotRow();
+  // #1763: read the persist diagnostics BEFORE touching the canonical row.
+  // These two reads used to be in the opposite order, which made the
+  // `canonicalDegraded` tolerance below unreachable whenever the canonical row
+  // was itself unparsable — the throw happened first and took the whole
+  // /health response down with it.
   const persistDiag = context.readLastPersistDiagnostics();
+  const canonicalRead = context.readCanonicalSnapshotRow();
+  if (canonicalRead.status === "unreadable") {
+    if (context.loadSource !== "hot-tables") {
+      // The canonical row is the load source here, so an unreadable row is a
+      // real invariant failure. Keep failing closed (#1736): rethrow verbatim
+      // and let /health classify it into its bounded 500 body.
+      throw canonicalRead.error;
+    }
+    // Hot tables are authoritative and healthy; the canonical mirror being
+    // stale/oversized/corrupt is a degradation to report, not an outage.
+    return {
+      ok: true,
+      tableCounts,
+      mismatches: [],
+      canonicalSnapshot: {
+        status: "unreadable",
+        reason: canonicalRead.reason,
+        bytes: canonicalRead.bytes,
+        maxBytes: canonicalRead.maxBytes,
+        ...(canonicalRead.updatedAt ? { updatedAt: canonicalRead.updatedAt } : {}),
+      },
+    };
+  }
+  const snapshot = canonicalRead.status === "ok" ? canonicalRead.snapshot : undefined;
   const canonicalDegraded =
     persistDiag.lastPersistSkippedFullSnapshot ||
     persistDiag.lastPersistError?.kind === "full_snapshot_overflow" ||

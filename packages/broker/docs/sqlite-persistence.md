@@ -123,6 +123,39 @@ Operator check:
 
 If `hotEntityHintCoverage.ok=false`, at least one mirrored SQLite hot table is missing dirty hinted-write support. Treat that as a schema/write-path drift signal before relying on hot-table read performance for that deployment. If `hotEntityMirror.ok=false`, inspect `mismatches` and take a backup before repairing or rebuilding the live SQLite DB.
 
+### Unreadable canonical mirror under hot-tables load (#1763)
+
+When `BROKER_SQLITE_LOAD_SOURCE=hot-tables`, the canonical `broker_snapshots`
+row is a mirror, not the load source. If that row cannot be parsed — it exceeds
+`maxSnapshotBytes`, or its payload is structurally invalid — `/health` reports a
+bounded degradation instead of failing the whole endpoint:
+
+```json
+"hotEntityMirror": {
+  "ok": true,
+  "tableCounts": { "broker_tasks": 12 },
+  "mismatches": [],
+  "canonicalSnapshot": {
+    "status": "unreadable",
+    "reason": "too_large",
+    "bytes": 60318033,
+    "maxBytes": 52428800,
+    "updatedAt": "2026-08-07T08:31:34Z"
+  }
+}
+```
+
+The same condition also appends a `warning` to the `/health` body. `ok` stays
+`true` because the hot tables are the load source and are serving; the mirror
+being stale or oversized is the expected steady state of the #1580 degrade path
+(`lastPersistSkippedFullSnapshot=true`).
+
+Under `BROKER_SQLITE_LOAD_SOURCE=snapshot` the canonical row **is** load-bearing,
+so an unreadable row keeps failing closed: `/health` returns 500 with
+`stage: "persistence_diagnostics"` and a `snapshot_parse_failed` /
+`snapshot_too_large` reason. Read the load source before interpreting either
+outcome — the same broken row means different things in the two modes.
+
 ## Schema v8 and diagnostics hot reads
 
 SQLite schema version `8` is the Round 34 operator-read baseline. It keeps the

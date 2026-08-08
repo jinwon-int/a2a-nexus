@@ -1164,6 +1164,22 @@ export function createBrokerServer(options: BrokerServerOptions = {}): BrokerSer
           body.warning = `${existing}${workerHeartbeatPersistence.warning}`;
         }
 
+        // #1763: an unreadable canonical mirror under hot-tables load is a
+        // degradation, not an outage — the hot tables are the load source and
+        // are serving. Report it visibly here instead of returning a hard 500
+        // (which made "degraded but running" indistinguishable from "dead").
+        const canonicalMirror = persistence.hotEntityMirror?.canonicalSnapshot;
+        if (canonicalMirror) {
+          const existing = body.warning ? `${body.warning}; ` : "";
+          const sizeDetail = canonicalMirror.reason === "too_large"
+            ? `${canonicalMirror.bytes} > ${canonicalMirror.maxBytes} bytes`
+            : `${canonicalMirror.bytes} bytes`;
+          body.warning =
+            `${existing}canonical snapshot mirror unreadable (${canonicalMirror.reason}): ${sizeDetail}` +
+            `${canonicalMirror.updatedAt ? `, updatedAt=${canonicalMirror.updatedAt}` : ""}` +
+            `; hot tables are the load source and remain authoritative`;
+        }
+
         body.timing = {
           totalMs: totalDurationMs,
           persistenceMs: persistenceDurationMs,

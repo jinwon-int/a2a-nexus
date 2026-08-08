@@ -36,6 +36,19 @@ export interface BrokerHotEntityMirrorStatus {
   snapshotCounts?: Record<string, number>;
   mismatches: BrokerHotEntityMirrorMismatch[];
   retentionWindows?: BrokerHotEntityMirrorRetentionWindow[];
+  canonicalSnapshot?: BrokerCanonicalSnapshotMirrorStatus;
+}
+
+// #1763: bounded report for a canonical snapshot row that the diagnostics path
+// could not parse. Only populated when the row is unreadable AND the hot tables
+// are the load source, i.e. when the unreadable row is not on the serving path.
+// Fields are scalars only — no payload excerpt, no stack, no file path.
+export interface BrokerCanonicalSnapshotMirrorStatus {
+  status: "unreadable";
+  reason: "too_large" | "parse_failed";
+  bytes: number;
+  maxBytes: number;
+  updatedAt?: string;
 }
 
 export interface BrokerHotEntityMirrorMismatch {
