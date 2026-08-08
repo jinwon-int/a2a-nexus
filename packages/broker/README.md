@@ -580,13 +580,61 @@ Current: **51 tests, 0 failures**.
 ## Docker
 
 ```bash
-cd a2a-broker
-cp .env.example .env
+cp packages/broker/.env.example packages/broker/.env
 # set PUBLIC_BASE_URL to a masked placeholder or your reverse-proxy name
 # example: PUBLIC_BASE_URL=https://<masked-a2a-endpoint>
-docker compose up --build -d
+npm run build:image -w packages/broker   # revision preflight + docker compose build
+cd packages/broker
+docker compose up -d
 docker compose logs -f
 ```
+
+### Build provenance preflight (#1766)
+
+`org.opencontainers.image.revision` and the runtime `A2A_BROKER_REVISION` used
+to be asserted non-empty and not `unknown`, but never checked against the
+source actually copied into the image. A stale `export A2A_BROKER_REVISION=...`
+left in a build shell therefore shipped as production provenance — observed
+2026-08-08 on a live broker labelled 299 commits behind its own `dist`.
+
+`scripts/check-build-revision.mjs` closes that gap by comparing the claim to
+`git rev-parse HEAD` and to the cleanliness of the working tree:
+
+| situation | result |
+| --- | --- |
+| claim == HEAD, tree clean | pass, `revisionVerified=true` |
+| no claim, tree clean | pass, revision derived from HEAD |
+| no claim, tree dirty | pass with warning; revision becomes `<sha>-dirty` |
+| claim != HEAD | **fail** (the stale-export case) |
+| claim == HEAD, tree dirty | **fail** (a dirty tree is not that SHA) |
+| claim is not a git SHA | **fail** (unverifiable claims are not provenance) |
+| no git context at all | pass with warning, `unverifiable` |
+
+It is wired into two places, neither of which a normal build goes around:
+
+- `npm run build -w packages/broker` — every path that produces `dist/`, which
+  is the only thing the image actually ships, runs it first.
+- `npm run build:image -w packages/broker` — the image entrypoint. It resolves
+  the revision itself and passes it to `docker compose build`, so the value can
+  never come from leftover shell state.
+
+`generate-build-info.mjs` applies the same evaluator: an explicit claim still
+wins, but the generation now **fails** when git can prove the claim wrong, and
+only warns where there is no git context to contradict it (inside the Docker
+build, CI tarballs).
+
+Local/dev builds that genuinely need to skip verification:
+
+```bash
+A2A_BROKER_ALLOW_UNVERIFIED_REVISION=1 npm run build:image -w packages/broker
+```
+
+This prints an unmissable banner, and the resulting image records
+`dev.a2a.image.revision-verified=false` (also exposed as the container env
+`A2A_BROKER_REVISION_VERIFIED`) so the unverified state survives into
+`docker inspect` instead of being lost at build time. Setting the build args by
+hand and running `docker compose build` directly still works and is likewise
+recorded as unverified.
 
 ## Masking rule
 

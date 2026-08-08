@@ -8,6 +8,7 @@ const scriptDir = path.dirname(fileURLToPath(import.meta.url));
 const repoRoot = path.resolve(scriptDir, "..");
 const dockerfile = fs.readFileSync(path.join(repoRoot, "packages/broker/Dockerfile"), "utf8");
 const compose = fs.readFileSync(path.join(repoRoot, "packages/broker/docker-compose.yml"), "utf8");
+const brokerPkg = JSON.parse(fs.readFileSync(path.join(repoRoot, "packages/broker/package.json"), "utf8"));
 
 function check() {
   const checks = [];
@@ -48,6 +49,24 @@ function check() {
   });
   ok("compose state volume is overrideable for non-root writable host paths", () => {
     assert.match(compose, /\$\{A2A_BROKER_STATE_DIR:-\/var\/lib\/a2a-broker\}:\/var\/lib\/a2a-broker/);
+  });
+  // #1766: the revision label used to be asserted non-empty but never checked
+  // against the source being built, so a stale shell export shipped as
+  // production provenance. Freeze the wiring that closes that gap — removing
+  // any leg of it silently restores the original defect.
+  ok("build revision preflight stays wired into the build entrypoints", () => {
+    assert.match(brokerPkg.scripts?.build ?? "", /check-build-revision\.mjs/);
+    assert.match(brokerPkg.scripts?.["build:image"] ?? "", /check-build-revision\.mjs\s+--docker-build/);
+    // Once per stage: the build stage (generate-build-info imports it) and the
+    // runtime stage (which regenerates build-info from the ARGs).
+    assert.equal((dockerfile.match(/COPY packages\/broker\/scripts\/check-build-revision\.mjs/g) ?? []).length, 2);
+  });
+  ok("image records whether its revision was verified against the built tree", () => {
+    assert.match(dockerfile, /ARG\s+A2A_BROKER_REVISION_VERIFIED=false/);
+    assert.match(dockerfile, /dev\.a2a\.image\.revision-verified=\$A2A_BROKER_REVISION_VERIFIED/);
+    assert.match(compose, /A2A_BROKER_REVISION_VERIFIED:\s+\$\{A2A_BROKER_REVISION_VERIFIED:-false\}/);
+    // A revision that is not a git SHA cannot be checked against a tree.
+    assert.match(dockerfile, /grep\s+-Eq\s+'\^\[0-9a-f\]\{7,40\}\(-dirty\)\?\$'/);
   });
 
   return { ok: true, checked: checks.length, checks };
