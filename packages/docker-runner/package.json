@@ -36,9 +36,7 @@
   "engines": {
     "node": ">=22.5"
   },
-  "dependencies": {
-    "picomatch": "^4.0.5"
-  },
+  "dependencies": {},
   "devDependencies": {
     "@types/node": "^22.20.1",
     "typescript": "^6.0.3"
