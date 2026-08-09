@@ -362,9 +362,33 @@ jobs:
         if: steps.npm-deps.outputs.cache-hit != 'true'
       - run: npm run smoke:quickstart
 
-  # ── Full release gate (main branch and cross-cutting changes) ───────
+  # ── Full release gate (always; its inputs are the whole repo) ───────
+  #
+  # This job used to be path-filtered to scripts/**, scanner/**, package.json,
+  # .github/** and .gitleaks.toml. That filter was unsound, because the release
+  # gate it runs does not read only those paths:
+  #
+  #   - scripts/check-script-budget.mjs counts packages/broker/package.json
+  #     scripts and packages/broker/src/core modules;
+  #   - scripts/public-readiness-scan.mjs walks the entire tree, so docs/ and
+  #     packages/ content can trip it;
+  #   - scripts/check-markdown-links.mjs resolves links across all .md.
+  #
+  # So a PR touching only a non-filtered path skipped the one job that could
+  # catch its failure, merged clean, and turned main red on the push trigger.
+  # That happened twice in two days:
+  #
+  #   - #1759 (.github/CODEOWNERS only) landed a strict-mode public-readiness
+  #     failure. The fix was to add '.github/**' to the filter — patching the
+  #     symptom, leaving the filter unsound.
+  #   - #1773 (packages/broker/** only) then landed three failures the same
+  #     way: script-budget 56>55, release-gate-inventory 56!==55, and
+  #     public-readiness internal-node-identifier.
+  #
+  # Enumerating more paths cannot fix this; the gate's input set is the repo.
+  # The job costs ~1 minute, so it now always runs and the filter is gone.
+  # paths-filter stays a dependency only to keep job ordering stable.
   check:
-    if: ${{ github.ref == 'refs/heads/main' || needs.paths-filter.outputs.scripts == 'true' || needs.paths-filter.outputs.root == 'true' }}
     needs: [setup, paths-filter]
     runs-on: ubuntu-latest
     steps:
