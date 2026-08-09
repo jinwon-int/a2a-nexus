@@ -95,6 +95,49 @@ function getRuntime(env) {
   return "node";
 }
 
+/** A host naming label, not a git fact — kept to a safe, tag-legal token. */
+const TAG_PREFIX_PATTERN = /^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$/;
+
+/**
+ * Short form of a revision the evaluator already accepted, preserving the
+ * `-dirty` marker. Returns undefined for `unknown`/`redacted`/anything that is
+ * not a SHA, so a tag is never invented for a revision we could not establish.
+ */
+export function shortRevision(revision) {
+  const match = /^([0-9a-f]{7,40})(-dirty)?$/i.exec(String(revision ?? "").trim());
+  return match ? match[1].slice(0, 7).toLowerCase() + (match[2] ?? "") : undefined;
+}
+
+/**
+ * #1774: bake `image.tag` so it is a build fact rather than a host variable.
+ *
+ * `image.tag` was the one provenance field #1772 could not protect: nothing was
+ * baked, so `resolveBrokerBuildInfo` had no authoritative value to prefer and
+ * the deployment host's `A2A_BROKER_IMAGE_TAG` passed straight through. It
+ * drifted exactly like `revision` used to — T1 reported `github-03eba97a80c8`
+ * (07-31) while running `638e5a1` (08-04).
+ *
+ * The sha half is derived from the verified revision, so it cannot drift. The
+ * prefix half is a deployment naming choice (`vps7-github`, `github`), set once
+ * per host and stable across deploys — which is what removes the per-deploy
+ * manual step rather than merely guarding it.
+ */
+export function getImageTag(env, cli, revision) {
+  const prefix = String(cli?.imageTagPrefix ?? env.A2A_BROKER_IMAGE_TAG_PREFIX ?? "").trim();
+  if (prefix && !TAG_PREFIX_PATTERN.test(prefix)) {
+    console.error(
+      "build info: A2A_BROKER_IMAGE_TAG_PREFIX must be a tag-legal token " +
+        "(letters, digits, dot, underscore, hyphen; <=64 chars). Refusing to bake an unsafe image tag.",
+    );
+    process.exit(1);
+  }
+  const short = shortRevision(revision);
+  if (!short) {
+    return undefined;
+  }
+  return prefix ? `${prefix}-${short}` : short;
+}
+
 function parseArgs(argv) {
   const args = {};
   for (let i = 0; i < argv.length; i++) {
@@ -104,6 +147,7 @@ function parseArgs(argv) {
     else if (arg === "--built-at" && argv[i + 1]) args.builtAt = argv[++i];
     else if (arg === "--source" && argv[i + 1]) args.source = argv[++i];
     else if (arg === "--runtime" && argv[i + 1]) args.runtime = argv[++i];
+    else if (arg === "--image-tag-prefix" && argv[i + 1]) args.imageTagPrefix = argv[++i];
     else if (arg === "--out" && argv[i + 1]) args.out = argv[++i];
   }
   return args;
@@ -115,12 +159,15 @@ function main() {
 
   // `--revision` is a claim too, so it goes through the same verification
   // rather than around it.
+  const revision = getRevision(env, cli.revision ?? env[CLAIM_ENV]);
+  const imageTag = getImageTag(env, cli, revision);
   const info = {
     version: cli.version ?? getVersion(env),
-    revision: getRevision(env, cli.revision ?? env[CLAIM_ENV]),
+    revision,
     source: cli.source ?? getSource(),
     builtAt: cli.builtAt ?? getBuiltAt(env),
     runtime: cli.runtime ?? getRuntime(env),
+    ...(imageTag ? { image: { tag: imageTag } } : {}),
   };
 
   const outPath = cli.out ?? resolve(repoRoot, "dist", "build-info.json");
@@ -135,6 +182,10 @@ function main() {
   console.error(`  source:   ${info.source}`);
   console.error(`  builtAt:  ${info.builtAt}`);
   console.error(`  runtime:  ${info.runtime}`);
+  console.error(`  imageTag: ${info.image?.tag ?? "(none — revision is not a SHA, no tag invented)"}`);
 }
 
-main();
+const invokedDirectly = process.argv[1] && import.meta.url === new URL(`file://${process.argv[1]}`).href;
+if (invokedDirectly) {
+  main();
+}
