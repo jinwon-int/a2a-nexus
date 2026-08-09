@@ -1,8 +1,18 @@
+/**
+ * Typed HTTP client for the A2A Nexus broker API.
+ *
+ * This started life as `packages/openclaw-plugin-a2a/standalone-broker-client.ts`
+ * and was the only harness-independent thing in that package: it imports `zod`
+ * and nothing else, and speaks the broker's own HTTP surface. It moved here when
+ * the OpenClaw plugin package was retired, so the broker's typed client lives
+ * with the broker instead of inside one harness adapter.
+ *
+ * It is consumed by test/conformance/check-three-component-e2e.mjs as the
+ * requester in the broker + client + worker end-to-end path.
+ */
 import { z } from "zod";
 
-export { A2A_BROKER_ADAPTER_PLUGIN_ID } from "./plugin-id.js";
-
-const DEFAULT_USER_AGENT = "openclaw-a2a-standalone-broker/0.1";
+const DEFAULT_USER_AGENT = "a2a-nexus-broker-client/0.1";
 
 const UnknownRecordSchema = z.record(z.string(), z.unknown());
 const A2ABrokerPartyKindSchema = z.enum(["session", "node", "user", "service"]);
@@ -729,6 +739,10 @@ export function buildBrokerCreateTaskRequestFromOpenClaw(
       }
     : undefined;
   const caseContext = readCaseContext(taskInput);
+  // Wire values, not naming: `requesterId` and `via.transport` below are sent to
+  // the broker and land in stored task evidence. They are left as-is by the
+  // package retirement so existing records stay comparable; changing them is a
+  // behaviour change and belongs in its own PR.
   const requesterId = requesterNodeId ?? requesterSessionKey ?? "openclaw";
   const targetId = targetNodeId ?? request.targetSessionKey;
   const taskId =

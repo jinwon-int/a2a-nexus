@@ -410,20 +410,6 @@
       "note": "Runs on ordinary release-gate path; keep until a narrower owner gate replaces it."
     },
     {
-      "name": "split-repo-local-demo",
-      "command": "npm",
-      "args": [
-        "run",
-        "check:split-repo-local-demo"
-      ],
-      "tier": "core",
-      "owner": "monorepo-transition",
-      "consumer": "pr-gate",
-      "retirement": "keep",
-      "retirementCondition": "Retire only when the document it pins is itself removed; while the doc is reachable from docs/README.md the check stays on the default release-gate path.",
-      "note": "Promoted from historical-transition to core: it validates docs/demo/split-repo-local-demo.md, a live evaluator quickstart linked from docs/README.md that describes the current packages/* layout. Its assertions had silently rotted against the publicization redaction because no CI path selected it."
-    },
-    {
       "name": "current-state-no-live-smoke",
       "command": "npm",
       "args": [

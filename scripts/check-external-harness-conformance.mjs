@@ -25,7 +25,18 @@ const doc = readRel(docPath);
 expect(doc !== null, 'missing ' + docPath);
 if (doc) {
   expect(/External Harness Quickstart/i.test(doc), 'external harness doc: missing title');
-  expect(/non-OpenClaw agent harness/i.test(doc), 'external harness doc: must address non-OpenClaw harnesses');
+  // Was /non-OpenClaw agent harness/. That phrasing made OpenClaw the default and
+  // every other harness the exception, which is backwards: the broker meets all of
+  // them through the same adapter contract. Assert the guide is harness-agnostic by
+  // naming more than one, instead of defining them by what they are not.
+  expect(
+    /any agent harness/i.test(doc),
+    'external harness doc: must address harnesses generally, not as exceptions to one',
+  );
+  expect(
+    ['Claude Code', 'Codex', 'Hermes', 'piri'].filter((name) => doc.includes(name)).length >= 3,
+    'external harness doc: must name several concrete harnesses so none reads as the default',
+  );
   expect(/OpenClaw is the first\/reference integration, not a required dependency/i.test(doc), 'external harness doc: must avoid OpenClaw dependency');
   expect(/Safety Boundary/i.test(doc), 'external harness doc: missing safety boundary');
   expect(/no-live/i.test(doc), 'external harness doc: missing no-live language');

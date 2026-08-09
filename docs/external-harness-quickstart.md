@@ -1,6 +1,6 @@
 # External Harness Quickstart
 
-This guide is for a non-OpenClaw agent harness that wants to integrate with A2A Nexus safely. The path is no-live by default: it uses loopback broker URLs, checked-in fixtures, and local conformance checks only.
+This guide is for any agent harness that wants to integrate with A2A Nexus safely — Claude Code, Codex, Hermes, piri, OpenClaw, or one you write yourself. No harness is privileged; they all meet the broker through the same contract. The path is no-live by default: it uses loopback broker URLs, checked-in fixtures, and local conformance checks only.
 
 OpenClaw is the first/reference integration, not a required dependency. A Hermes-style agent, a local worker daemon, or another public harness can use the same A2A task lifecycle and Terminal Brief receipt boundaries without calling OpenClaw CLI commands.
 

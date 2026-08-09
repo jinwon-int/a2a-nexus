@@ -6,7 +6,7 @@
     {
       "id": "root",
       "packageJson": "package.json",
-      "minScripts": 82,
+      "minScripts": 81,
       "requiredScripts": [
         "build",
         "check",
@@ -68,7 +68,7 @@
           "note": "Catch-all keeps legacy/manual scripts classified so future PRs must explicitly justify retirement."
         }
       ],
-      "note": "Floor ratcheted 100 -> 84 (monorepo ceremony) -> 83 (orphan 831 alias) -> 82 (check:historical, which selected zero steps once every gate moved to a default tier). The floor guards against silent mass deletion; lower it only alongside a deliberate retirement."
+      "note": "Floor ratcheted 100 -> 84 (monorepo ceremony) -> 83 (orphan 831 alias) -> 82 (check:historical, zero steps) -> 81 (check:split-repo-local-demo, retired with the demo). The floor guards against silent mass deletion; lower it only alongside a deliberate retirement."
     },
     {
       "id": "broker",

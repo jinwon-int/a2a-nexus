@@ -484,7 +484,6 @@ node test/conformance/check-adapter-conformance-matrix.mjs
 | [Hermes Worker Integration Spec](../../docs/specs/hermes-worker-integration/spec.md) | Defines the Hermes HTTP-poll worker contract |
 | [A2A Task Lifecycle](./task-lifecycle.md) | Defines task states and transitions |
 | [Terminal Result Semantics](./terminal-semantics.md) | Defines receipt levels and ACK boundary |
-| [OpenClaw-Core Extraction Plan](../../packages/openclaw-plugin-a2a/docs/migration-plan.md) | Defines the OpenClaw plugin extraction path |
 | [A2A Constitution](../../docs/a2a-constitution.md) | Defines A2A Nexus principles |
 
 ---

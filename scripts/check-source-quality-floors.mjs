@@ -44,7 +44,6 @@ export const ASYNC_SAFETY_PACKAGES = Object.freeze([
   'packages/attestation',
   'packages/broker',
   'packages/docker-runner',
-  'packages/openclaw-plugin-a2a',
   'packages/policy-referee',
 ]);
 

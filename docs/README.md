@@ -15,7 +15,7 @@ and is unchanged; this index is the map of everything under `docs/`.
 - [conformance.md](conformance.md) — running the public conformance runner
 - [canonical-demo.md](canonical-demo.md) — public-safe no-live demo flow
 - [ecosystem-guide.md](ecosystem-guide.md) — ecosystem orientation
-- [external-harness-quickstart.md](external-harness-quickstart.md) — non-OpenClaw harness quickstart
+- [external-harness-quickstart.md](external-harness-quickstart.md) — harness integration quickstart (Claude Code, Codex, Hermes, piri, or your own)
 - [promotion-capstone.md](promotion-capstone.md) — external-user local capstone
 - [public-alpha-landing.md](public-alpha-landing.md) — landing-page content
 - [positioning.md](positioning.md) — landscape and positioning

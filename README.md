@@ -24,7 +24,7 @@ For external readers, start here first:
 
 > **Status:** public alpha — the repository is publicly readable, but public visibility is not a production deployment, stable release, tag, package publish, homepage/docs-site launch, broad promotion, or live-action authorization. See [Current public alpha state](#current-public-alpha-state) for the remaining approval-gated actions.
 
-`a2a-nexus` is now the canonical implementation source for the broker, adapter plugin, Docker runner, contracts, docs, examples, and readiness gates. Former split repositories remain active provenance mirrors; package publication, releases, deployment, and visibility-related actions stay separately approval-gated. See the [topology decision record](docs/topology-decision-record.md) and the [history index](docs/history/README.md) for completed migration records.
+`a2a-nexus` is now the canonical implementation source for the broker, harness adapters, Docker runner, contracts, docs, examples, and readiness gates. Former split repositories remain active provenance mirrors; package publication, releases, deployment, and visibility-related actions stay separately approval-gated. See the [topology decision record](docs/topology-decision-record.md) and the [history index](docs/history/README.md) for completed migration records.
 
 Additional project docs:
 
@@ -82,7 +82,7 @@ Historical coordination and completed migration records are summarized in [`docs
 A2A Nexus lets an operator-facing integration hand a task to a broker, route it to a worker, and collect terminal evidence such as `Done`, `Block`, or a pull request link. The stack is intentionally split so each component has a narrow safety boundary:
 
 - A2A Nexus is the independent broker/worker plane and contract set.
-- OpenClaw is the first/reference integration, not the project name or a required runtime for every future integration.
+- Harnesses are adapters, not the product. A2A Nexus targets any of them — Claude Code, Codex, Hermes, piri, OpenClaw — through the platform-independent [adapter contract](contracts/a2a/platform-adapter-interface.md); the per-harness bridges live under `packages/broker/scripts/`. No single harness is required, and none is the project name.
 - The A2A Nexus broker owns task lifecycle, worker registration, status, and terminal evidence.
 - Workers execute assigned tasks and report evidence back through the broker.
 - The Docker runner provides isolated GitHub patch execution for repository work.
@@ -95,9 +95,9 @@ This repository is the canonical A2A Nexus source and coordination workspace for
 
 | Repository | Public role | Canonical source |
 | --- | --- | --- |
-| [`a2a-nexus`](https://github.com/jinwon-int/a2a-nexus) | Canonical monorepo: broker, adapter plugin, Docker runner, contracts, docs, examples, readiness/release gates | **Canonical** — `packages/broker`, `packages/openclaw-plugin-a2a`, `packages/docker-runner`, `packages/policy-referee`, `packages/attestation`, project docs, contracts, compatibility/readiness policy, issue routing |
+| [`a2a-nexus`](https://github.com/jinwon-int/a2a-nexus) | Canonical monorepo: broker, harness adapters, Docker runner, contracts, docs, examples, readiness/release gates | **Canonical** — `packages/broker`, `packages/docker-runner`, `packages/policy-referee`, `packages/attestation`, project docs, contracts, compatibility/readiness policy, issue routing |
 | [`a2a-broker`](https://github.com/jinwon-int/a2a-broker) | Broker service provenance mirror | Active provenance mirror of `packages/broker` (canonical source is `a2a-nexus`) |
-| [`openclaw-plugin-a2a`](https://github.com/jinwon-int/openclaw-plugin-a2a) | Reference OpenClaw integration provenance mirror | Active provenance mirror of `packages/openclaw-plugin-a2a` (canonical source is `a2a-nexus`) |
+| [`openclaw-plugin-a2a`](https://github.com/jinwon-int/openclaw-plugin-a2a) | Historical OpenClaw integration mirror | **Retired** — the package was removed from `a2a-nexus`; harness integration is now the per-harness bridge surface under `packages/broker/scripts/`. The mirror is kept for issue/PR/tag provenance only. |
 | [`a2a-docker-runner`](https://github.com/jinwon-int/a2a-docker-runner) | Isolated worker provenance mirror | Active provenance mirror of `packages/docker-runner` (canonical source is `a2a-nexus`) |
 
 The mirror repositories are unchanged, not archived, and retain their own closed issue/PR history. See the [topology decision record](docs/topology-decision-record.md) for the historical split-repo topology that preceded the canonical flip, and the [history index](docs/history/README.md) for the records the migration left behind.
@@ -106,7 +106,9 @@ The mirror repositories are unchanged, not archived, and retain their own closed
 
 ```text
 packages/broker/                 # A2A Nexus broker HTTP/JSON-RPC APIs, worker registry, task lifecycle
-packages/openclaw-plugin-a2a/    # first/reference OpenClaw integration for broker-backed task request/status/cancel
+packages/broker/scripts/*-a2a-analysis-bridge.mjs
+                                 # per-harness adapters (claude, codex, hermes, piri) against the
+                                 # platform-independent contract in contracts/a2a/
 packages/docker-runner/          # isolated GitHub patch runner for worker tasks
 packages/policy-referee/         # declarative worker-class policy engine (warn/enforce), consumed by the broker
 packages/attestation/           # agent work attestation toolkit (verdict signing, evidence assembly, gates, provenance)
@@ -138,7 +140,7 @@ Use redacted evidence in issues, pull requests, logs, and artifacts.
 Open issues in `a2a-nexus`, the canonical source repository. Use the `source:*` labels (see [`docs/issue-routing.md`](docs/issue-routing.md)) to record which surface an issue belongs to:
 
 - Broker API, worker registry, task state, evidence storage, Agent Card/profile, and broker CI map to `packages/broker` (`source:a2a-broker`).
-- OpenClaw adapter configuration, diagnostics, Gateway plugin behavior, and request/status/cancel mapping map to `packages/openclaw-plugin-a2a` (`source:openclaw-plugin-a2a`).
+- Harness adapter behaviour — request/status/cancel mapping and per-harness bridging — maps to `packages/broker/scripts/*-a2a-analysis-bridge.mjs` and the adapter contract in `contracts/a2a/` (`source:a2a-broker`).
 - Container worker execution, repository patch workflow, artifact capture, and PR/Done/Block worker evidence map to `packages/docker-runner` (`source:a2a-docker-runner`).
 - Cross-repo compatibility, public docs, release/provenance gates, security/readiness policy, and topology decisions are project-level (`source:a2a-plane`).
 
@@ -206,7 +208,7 @@ Default import mode is **sanitized/squash import**, not full private history pre
 Canonical source now lives in this repository's `packages/*`. The former split implementation repositories remain active provenance mirrors (unchanged, not archived), not canonical sources:
 
 - `jinwon-int/a2a-broker` → mirror of `packages/broker`
-- `jinwon-int/openclaw-plugin-a2a` → mirror of `packages/openclaw-plugin-a2a`
+- `jinwon-int/openclaw-plugin-a2a` → historical mirror; the package it mirrored has been removed from this repository
 - `jinwon-int/a2a-docker-runner` → mirror of `packages/docker-runner`
 
 ## Verification

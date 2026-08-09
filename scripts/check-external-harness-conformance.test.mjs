@@ -21,11 +21,13 @@ test('external harness no-live fixture exists', () => {
   assert.ok(existsSync(join(repoRoot, 'fixtures', 'external-harness', 'no-live-conformance.json')));
 });
 
-test('external harness quickstart documents no-live and non-OpenClaw boundaries', async () => {
+test('external harness quickstart documents no-live boundaries and stays harness-agnostic', async () => {
   const content = await readFile(join(repoRoot, 'docs', 'external-harness-quickstart.md'), 'utf8');
 
   assert.match(content, /External Harness Quickstart/i);
-  assert.match(content, /non-OpenClaw agent harness/i);
+  // Harness-agnostic by naming several, not by defining them against OpenClaw.
+  assert.match(content, /any agent harness/i);
+  assert.ok(['Claude Code', 'Codex', 'Hermes', 'piri'].filter((n) => content.includes(n)).length >= 3);
   assert.match(content, /not a required dependency/i);
   assert.match(content, /no-live/i);
   assert.match(content, /Do not use this path with production brokers/i);
