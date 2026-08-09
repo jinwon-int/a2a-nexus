@@ -8,6 +8,7 @@
   "scripts": {
     "build": "node scripts/check-build-revision.mjs --quiet && tsc -b tsconfig.json && node scripts/generate-build-info.mjs",
     "build:image": "node scripts/check-build-revision.mjs --docker-build",
+    "check:deployed_provenance": "node scripts/check-deployed-provenance.mjs",
     "check": "tsc -b tsconfig.json",
     "test": "node scripts/run-test-manifest.mjs",
     "test:drift-watch": "npx tsx --test src/a2a/protocol-compatibility.test.ts src/a2a/drift-watch.test.ts",
