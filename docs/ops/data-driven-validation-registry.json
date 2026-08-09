@@ -397,8 +397,8 @@
         },
         {
           "source": "doc",
-          "matches": "active provenance mirror",
-          "message": "README active provenance mirror"
+          "matches": "archived and private",
+          "message": "README states the mirror repos are archived and private"
         },
         {
           "source": "doc",

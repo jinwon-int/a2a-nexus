@@ -42,8 +42,11 @@ live-behavior coverage**.
 Every migration-phase snapshot and validation packet is in exactly one state:
 
 1. **Active-invariant** — asserts a guardrail that is *still currently true and
-   load-bearing* (e.g. "packages are canonical", "split repos are
-   active-provenance mirrors, not archived"). Keep.
+   load-bearing* (e.g. "packages are canonical"). Keep. Re-verify before relying
+   on one: "split repos are active-provenance mirrors, not archived" was carried
+   as an active invariant here until 2026-08-09, when the GitHub API showed all
+   three archived and private. A claim about live state is only an invariant
+   while it is checked.
 2. **Superseded-milestone** — records a phase that a *later* snapshot now
    re-asserts at equal-or-stronger strength. Retirement candidate.
 3. **Retired** — removed from the tree and from `release-gate.mjs`.

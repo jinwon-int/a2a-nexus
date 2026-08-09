@@ -24,7 +24,7 @@ For external readers, start here first:
 
 > **Status:** public alpha — the repository is publicly readable, but public visibility is not a production deployment, stable release, tag, package publish, homepage/docs-site launch, broad promotion, or live-action authorization. See [Current public alpha state](#current-public-alpha-state) for the remaining approval-gated actions.
 
-`a2a-nexus` is now the canonical implementation source for the broker, harness adapters, Docker runner, contracts, docs, examples, and readiness gates. Former split repositories remain active provenance mirrors; package publication, releases, deployment, and visibility-related actions stay separately approval-gated. See the [topology decision record](docs/topology-decision-record.md) and the [history index](docs/history/README.md) for completed migration records.
+`a2a-nexus` is now the canonical implementation source for the broker, harness adapters, Docker runner, contracts, docs, examples, and readiness gates. The former split repositories are archived and private, kept for provenance only; package publication, releases, deployment, and visibility-related actions stay separately approval-gated. See the [topology decision record](docs/topology-decision-record.md) and the [history index](docs/history/README.md) for completed migration records.
 
 Additional project docs:
 
@@ -91,16 +91,16 @@ This repository is the canonical A2A Nexus source and coordination workspace for
 
 ## Repository Map
 
-`a2a-nexus` holds the canonical implementation source in `packages/*`. The former split repositories remain active provenance mirrors of their respective surfaces.
+`a2a-nexus` holds the canonical implementation source in `packages/*`. The former split repositories are archived and private; they hold provenance history only.
 
 | Repository | Public role | Canonical source |
 | --- | --- | --- |
 | [`a2a-nexus`](https://github.com/jinwon-int/a2a-nexus) | Canonical monorepo: broker, harness adapters, Docker runner, contracts, docs, examples, readiness/release gates | **Canonical** — `packages/broker`, `packages/docker-runner`, `packages/policy-referee`, `packages/attestation`, project docs, contracts, compatibility/readiness policy, issue routing |
-| [`a2a-broker`](https://github.com/jinwon-int/a2a-broker) | Broker service provenance mirror | Active provenance mirror of `packages/broker` (canonical source is `a2a-nexus`) |
-| [`openclaw-plugin-a2a`](https://github.com/jinwon-int/openclaw-plugin-a2a) | Historical OpenClaw integration mirror | **Retired** — the package was removed from `a2a-nexus`; harness integration is now the per-harness bridge surface under `packages/broker/scripts/`. The mirror is kept for issue/PR/tag provenance only. |
-| [`a2a-docker-runner`](https://github.com/jinwon-int/a2a-docker-runner) | Isolated worker provenance mirror | Active provenance mirror of `packages/docker-runner` (canonical source is `a2a-nexus`) |
+| `jinwon-int/a2a-broker` | Historical provenance mirror | **Archived and private.** Superseded by `packages/broker`; retained for issue/PR/tag provenance only and not reachable to outside readers. |
+| `jinwon-int/plugin-a2a` | Historical OpenClaw integration mirror | **Archived and private.** The package it mirrored was removed from `a2a-nexus`; harness integration is now the per-harness bridge surface under `packages/broker/scripts/`. |
+| `jinwon-int/a2a-docker-runner` | Historical provenance mirror | **Archived and private.** Superseded by `packages/docker-runner`; retained for issue/PR/tag provenance only and not reachable to outside readers. |
 
-The mirror repositories are unchanged, not archived, and retain their own closed issue/PR history. See the [topology decision record](docs/topology-decision-record.md) for the historical split-repo topology that preceded the canonical flip, and the [history index](docs/history/README.md) for the records the migration left behind.
+The mirror repositories are archived and private. They retain their own closed issue/PR history for provenance, but an outside reader cannot open them — they are named here as history, not as links to follow. See the [topology decision record](docs/topology-decision-record.md) for the historical split-repo topology that preceded the canonical flip, and the [history index](docs/history/README.md) for the records the migration left behind.
 
 ## Package Map
 
@@ -205,11 +205,11 @@ Keep production connection details in private operator configuration, not in rep
 
 Default import mode is **sanitized/squash import**, not full private history preservation.
 
-Canonical source now lives in this repository's `packages/*`. The former split implementation repositories remain active provenance mirrors (unchanged, not archived), not canonical sources:
+Canonical source now lives in this repository's `packages/*`. The former split implementation repositories are archived and private, kept for provenance only:
 
-- `jinwon-int/a2a-broker` → mirror of `packages/broker`
-- `jinwon-int/openclaw-plugin-a2a` → historical mirror; the package it mirrored has been removed from this repository
-- `jinwon-int/a2a-docker-runner` → mirror of `packages/docker-runner`
+- `jinwon-int/a2a-broker` → superseded by `packages/broker`
+- `jinwon-int/plugin-a2a` → the package it mirrored was removed from this repository
+- `jinwon-int/a2a-docker-runner` → superseded by `packages/docker-runner`
 
 ## Verification
 
