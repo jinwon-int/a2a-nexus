@@ -409,3 +409,72 @@ export const PRESET_POLICIES: Record<string, ResourceAwareWorkerPolicy> = {
 export function getPresetPolicy(kind: WorkerOnboardingKind): ResourceAwareWorkerPolicy | null {
   return PRESET_POLICIES[kind] ?? null;
 }
+
+/** Metadata key a worker sets to opt into resource-aware onboarding evaluation. */
+export const ONBOARDING_KIND_METADATA_KEY = "resourceAwareOnboardingKind";
+
+/** Metadata key carrying a JSON policy that overrides the preset for that kind. */
+export const ONBOARDING_POLICY_METADATA_KEY = "resourceAwarePolicy";
+
+const ONBOARDING_KINDS: readonly WorkerOnboardingKind[] = [
+  "mobilealpha-hermes",
+  "mobilebeta-style",
+  "standard-gateway",
+  "team1-scheduling-attribution",
+  "generic-terms",
+];
+
+export interface ResourceAwareOnboardingRequest {
+  kind: WorkerOnboardingKind;
+  policy: ResourceAwareWorkerPolicy;
+  /** Where the policy came from, for audit evidence. */
+  policySource: "preset" | "metadata";
+}
+
+/**
+ * Read a resource-aware onboarding request off worker registration metadata.
+ *
+ * Returns null when the worker did not opt in, which is the case for every
+ * worker that predates this: registration behaviour is unchanged unless the
+ * worker asks to be evaluated.
+ *
+ * Throws only on opt-in that cannot be honoured — an unknown kind, or a
+ * `resourceAwarePolicy` value that is not parseable JSON. A worker that asks
+ * for a gate and names it wrong should hear about it, not be silently skipped.
+ */
+export function resourceAwareOnboardingFromMetadata(
+  metadata?: Record<string, string>,
+): ResourceAwareOnboardingRequest | null {
+  const rawKind = metadata?.[ONBOARDING_KIND_METADATA_KEY]?.trim();
+  if (!rawKind) return null;
+
+  const kind = ONBOARDING_KINDS.find((candidate) => candidate === rawKind);
+  if (!kind) {
+    throw new Error(
+      `unknown ${ONBOARDING_KIND_METADATA_KEY} "${rawKind}"; expected one of ${ONBOARDING_KINDS.join(", ")}`,
+    );
+  }
+
+  const rawPolicy = metadata?.[ONBOARDING_POLICY_METADATA_KEY]?.trim();
+  if (rawPolicy) {
+    let parsed: unknown;
+    try {
+      parsed = JSON.parse(rawPolicy);
+    } catch (error) {
+      throw new Error(
+        `${ONBOARDING_POLICY_METADATA_KEY} is not valid JSON: ${
+          error instanceof Error ? error.message : String(error)
+        }`,
+      );
+    }
+    return { kind, policy: parsed as ResourceAwareWorkerPolicy, policySource: "metadata" };
+  }
+
+  const preset = getPresetPolicy(kind);
+  if (!preset) {
+    throw new Error(
+      `${ONBOARDING_KIND_METADATA_KEY} "${kind}" has no preset policy; supply ${ONBOARDING_POLICY_METADATA_KEY}`,
+    );
+  }
+  return { kind, policy: preset, policySource: "preset" };
+}

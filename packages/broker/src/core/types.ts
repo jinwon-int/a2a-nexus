@@ -209,6 +209,7 @@ export type AuditAction =
   | "worker.registered"
   | "worker.heartbeat"
   | "worker.identity_churn_detected"
+  | "worker.onboarding_evaluated"
   | "wave.stalled"
   | "broker.cleanup.applied"
   /**
