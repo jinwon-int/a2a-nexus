@@ -44,8 +44,8 @@ services:
     # Before that fix a single stale line here made /health advertise a commit
     # the image was never built from: a month on T2, and a three-way
     # label/revision/tag disagreement on the T1 production broker. Verify a
-    # deployment with `npm run check:deployed_provenance -- --container <name>`,
-    # which compares the image label, the container env and /health.
+    # deployment with `node scripts/check-deployed-provenance.mjs --container
+    # <name>`, which compares the image label, the container env and /health.
     env_file:
       - .env
     environment:

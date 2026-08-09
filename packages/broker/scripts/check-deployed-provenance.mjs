@@ -8,20 +8,20 @@
  * end. `docker-compose.yml` injects the deployment host's `.env` over the
  * image's own ENV via `env_file:`, so a stale line there could make
  * `/health.build.revision` advertise a commit the image was never built from
- * while the image label stayed correct. That is not hypothetical:
+ * while the image label stayed correct. That is not hypothetical — two live
+ * brokers were observed disagreeing at the same time:
  *
- *   - T2 (gwakga) reported `137da55…` (2026-07-06) for a month while running
- *     an image labelled `76d1433` (2026-08-08).
- *   - T1 (seoseo, production) disagreed three ways at once — label `638e5a1`
- *     (08-04), reported revision `e31f383` (08-02), image tag `03eba97`
- *     (07-31).
+ *   - one reported a revision a month older than the image it was running,
+ *     while that image's label was correct the whole time;
+ *   - the other disagreed three ways at once — label, reported revision and
+ *     image tag each named a different commit, spanning four days.
  *
  * Both were invisible to label-only verification, because the label was right.
  * This script compares all three surfaces on a live container and fails closed
  * when they disagree.
  *
  * Usage:
- *   node scripts/check-deployed-provenance.mjs --container a2a-broker-vps7
+ *   node scripts/check-deployed-provenance.mjs --container <container-name>
  *   node scripts/check-deployed-provenance.mjs --container a2a-broker --json
  *
  * The edge secret is read from the container's own environment and used only
