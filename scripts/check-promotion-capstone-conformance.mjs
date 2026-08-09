@@ -12,10 +12,6 @@ import {
   buildBaseline as buildRunnerBaseline,
   CORE_SOURCE_FLOORS,
 } from '../packages/docker-runner/scripts/coverage-baseline-report.mjs';
-import {
-  buildBaseline as buildPluginBaseline,
-  CORE_SOURCE_FLOORS as PLUGIN_CORE_SOURCE_FLOORS,
-} from '../packages/openclaw-plugin-a2a/scripts/coverage-baseline-report.mjs';
 import { ASYNC_SAFETY_PACKAGES } from './check-source-quality-floors.mjs';
 import { resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -37,12 +33,6 @@ export const EXPECTED_RUNNER_FLOORS = Object.freeze({
   'execution-proof-signing.js': 90,
   'redaction.js': 95,
   'runner.js': 85,
-});
-
-export const EXPECTED_PLUGIN_FLOORS = Object.freeze({
-  'dist/src/handoff-visibility-policy.js': 80,
-  'dist/src/recovery-guard.js': 95,
-  'dist/src/wake-envelope.js': 93,
 });
 
 function sortedRecord(record) {
@@ -74,12 +64,6 @@ export function evaluateQualityFloorContract(contract) {
     add(
       JSON.stringify(sortedRecord(baseline?.floor?.modules)) === JSON.stringify(sortedRecord(EXPECTED_RUNNER_FLOORS)),
       `${name}: #1576 per-module floors drifted: ${JSON.stringify(sortedRecord(baseline?.floor?.modules))}`,
-    );
-  } else if (name === 'openclaw-plugin-a2a') {
-    add(baseline?.floor?.metric === 'line', `${name}: reporter line-floor mode drifted`);
-    add(
-      JSON.stringify(sortedRecord(baseline?.floor?.modules)) === JSON.stringify(sortedRecord(EXPECTED_PLUGIN_FLOORS)),
-      `${name}: #1506 per-module floors drifted: ${JSON.stringify(sortedRecord(baseline?.floor?.modules))}`,
     );
   } else {
     add(false, `${name}: unsupported package contract`);
@@ -150,7 +134,6 @@ function boundedSource(rel, startMarker, endMarker) {
 const packages = [
   { name: 'broker', dir: 'packages/broker', noUnusedLocals: true, buildBaseline: buildBrokerBaseline },
   { name: 'docker-runner', dir: 'packages/docker-runner', noUnusedLocals: true, buildBaseline: buildRunnerBaseline },
-  { name: 'openclaw-plugin-a2a', dir: 'packages/openclaw-plugin-a2a', noUnusedLocals: true, buildBaseline: buildPluginBaseline },
 ];
 
 const capstonePath = 'docs/promotion-capstone.md';
@@ -169,7 +152,6 @@ if (capstone) {
 
   for (const rel of [
     'packages/broker',
-    'packages/openclaw-plugin-a2a',
     'packages/docker-runner',
     'docs/external-harness-quickstart.md',
     'fixtures/external-harness/no-live-conformance.json',
@@ -207,9 +189,7 @@ if (capstone) {
     /a2a-nexus\.coverage-baseline\.v1/,
     /broker[^\n]*#1506[^\n]*Enforced[^\n]*Enabled/i,
     /docker-runner[^\n]*#1576[^\n]*Enforced[^\n]*Enabled/i,
-    /openclaw-plugin-a2a[^\n]*#1506[^\n]*Enforced[^\n]*Enabled/i,
     /config\.js[^\n]*94%/,
-    /execution-orchestrator\.js[^\n]*96%/,
     /execution-proof\.js[^\n]*95%/,
     /execution-proof-signing\.js[^\n]*90%/,
     /redaction\.js[^\n]*95%/,

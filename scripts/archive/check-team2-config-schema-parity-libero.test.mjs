@@ -6,15 +6,11 @@ import test from 'node:test';
 
 const repoRoot = dirname(dirname(dirname(fileURLToPath(import.meta.url))));
 const docPath = join(repoRoot, 'docs', 'validation', 'team2-config-schema-parity-libero.md');
-const manifestPath = join(repoRoot, 'packages', 'openclaw-plugin-a2a', 'openclaw.plugin.json');
 
 async function doc() {
   return readFile(docPath, 'utf8');
 }
 
-async function manifest() {
-  return JSON.parse(await readFile(manifestPath, 'utf8'));
-}
 
 test('Team2 config schema parity libero documents incident and fail-closed restart gates', async () => {
   const content = await doc();
@@ -45,18 +41,7 @@ test('Team2 config schema parity libero keeps runtime/bootstrap deny paths expli
   assert.doesNotMatch(content, /OPENCLAW_CACHE_BOUNDARY|ghp_|github_pat_|Authorization:\s*Bearer/i);
 });
 
-test('plugin manifest registers incident-shaped operatorEvents.crossBrokers schema', async () => {
-  const plugin = await manifest();
-  const operatorEvents = plugin.configSchema?.properties?.operatorEvents;
-  const crossBrokers = operatorEvents?.properties?.crossBrokers;
-  const item = crossBrokers?.items;
-
-  assert.equal(operatorEvents?.additionalProperties, false);
-  assert.equal(crossBrokers?.type, 'array');
-  assert.equal(item?.additionalProperties, false);
-  assert.deepEqual(item?.required, ['baseUrl']);
-  assert.equal(item?.properties?.baseUrl?.pattern, '^[Hh][Tt][Tt][Pp][Ss]?://');
-  assert.equal(item?.properties?.edgeSecret?.type, 'string');
-  assert.equal(item?.properties?.label?.type, 'string');
-  assert.ok(plugin.uiHints?.['operatorEvents.crossBrokers']);
-});
+// The third test here asserted the shape of
+// packages/openclaw-plugin-a2a/openclaw.plugin.json. That package was retired, so
+// the assertion has no subject. The two document-level parity tests above are
+// unaffected and still run.

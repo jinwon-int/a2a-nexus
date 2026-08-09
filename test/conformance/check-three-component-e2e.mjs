@@ -4,7 +4,7 @@
  *
  * Boots the real broker HTTP server on a loopback port, runs a real
  * A2ABrokerWorker with the builtin echo handler against it, and drives the
- * whole task lifecycle through the openclaw-plugin-a2a standalone broker
+ * whole task lifecycle through the broker's typed HTTP client
  * client: create -> worker claim/start/complete -> terminal result readable
  * by the requester. Every hop crosses real HTTP; no in-process bypass and no
  * mock broker. This is the integration coverage that broker-only e2e tests
@@ -28,13 +28,13 @@ function ensureBuilt(pkg, distEntry) {
   }
 }
 ensureBuilt('broker', 'packages/broker/dist/server.js');
-ensureBuilt('openclaw-plugin-a2a', 'packages/openclaw-plugin-a2a/dist/standalone-broker-client.js');
+ensureBuilt('broker', 'packages/broker/dist/client/broker-client.js');
 
 const { createBrokerServer } = await import(path.join(root, 'packages/broker/dist/server.js'));
 const { emptySnapshot } = await import(path.join(root, 'packages/broker/dist/core/store.js'));
 const { A2ABrokerWorker, createBuiltinWorkerHandler } = await import(path.join(root, 'packages/broker/dist/worker.js'));
 const { createA2ABrokerClient } = await import(
-  path.join(root, 'packages/openclaw-plugin-a2a/dist/standalone-broker-client.js')
+  path.join(root, 'packages/broker/dist/client/broker-client.js')
 );
 
 const EDGE_SECRET = 'three-component-e2e-local-secret';
@@ -113,7 +113,7 @@ async function main() {
     await worker.register();
     await worker.verifyPollReadiness();
 
-    // 2. Requester creates a task through the plugin standalone client.
+    // 2. Requester creates a task through the broker's typed client.
     const created = await client.createTask({
       intent: 'analyze',
       message: 'three-component e2e round trip',

@@ -19,9 +19,8 @@ The older split repositories (`a2a-plane`, `a2a-broker`, `openclaw-plugin-a2a`, 
 2. Run the local-only [`five-minute quickstart`](../quickstart.md) when you want a disposable loopback broker plus echo worker path.
 3. Read the public-safe [`architecture overview`](../architecture.md) for the conceptual broker/worker/finalizer/evidence map.
 4. Use [`contribution entry points`](../contribution-entry-points.md) for safe first-task candidates.
-5. Use [`docs/demo/split-repo-local-demo.md`](../demo/split-repo-local-demo.md) when you want to inspect the three-package story inside this monorepo.
-6. Use [`docs/external-harness-quickstart.md`](../external-harness-quickstart.md) if you are integrating a non-OpenClaw harness.
-7. Check [`docs/compatibility/README.md`](../compatibility/README.md), [`docs/issue-routing.md`](../issue-routing.md), and [`docs/release-readiness.md`](../release-readiness.md) before making compatibility or release claims.
+5. Use [`docs/external-harness-quickstart.md`](../external-harness-quickstart.md) when you are integrating a harness — Claude Code, Codex, Hermes, piri, or your own — against the [adapter contract](../../contracts/a2a/platform-adapter-interface.md).
+6. Check [`docs/compatibility/README.md`](../compatibility/README.md), [`docs/issue-routing.md`](../issue-routing.md), and [`docs/release-readiness.md`](../release-readiness.md) before making compatibility or release claims.
 
 ## Issue Routing
 

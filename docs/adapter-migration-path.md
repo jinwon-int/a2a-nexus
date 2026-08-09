@@ -1,18 +1,31 @@
 # A2A Adapter Migration Path: OpenClaw-Only to Platform-Independent
 
-> **v0 Draft (2026-05-28):** This document defines the phased migration path from OpenClaw-only
-> A2A adapters to a platform-independent adapter model. It is a companion to the
-> [Platform-Independent A2A Adapter Interface Contract](../contracts/a2a/platform-adapter-interface.md).
+> **Status: outcome reached, by a different route than this plan describes.**
 >
-> **Status:** Migration plan only. No adapter implementation, provider send, Gateway restart,
-> terminal-outbox ACK, DB mutation, or any prohibited action is authorized by this document.
+> The goal — A2A works with any harness, not just OpenClaw — holds and is met. It was
+> not met by executing Phases 1–4 below. It was met by the broker growing a
+> per-harness bridge surface (`packages/broker/scripts/{claude,codex,hermes,piri}-a2a-analysis-bridge.mjs`)
+> alongside the abstract interface in
+> [the platform adapter contract](../contracts/a2a/platform-adapter-interface.md), whose
+> conformance check runs in CI via `test/conformance/check-platform-adapter-interface.mjs`.
+>
+> This document called that outcome early. Its own Current State section below notes that
+> "Hermes workers bypass this with poll-mode scripts, creating two parallel maintenance
+> surfaces." The bypass won, and generalised: four harnesses now use it.
+>
+> **Phase 4's deprecation step is therefore executed, not pending.** The
+> `packages/openclaw-plugin-a2a` package is removed — its runtime host (OpenClaw Gateway) is
+> inactive across the fleet, nothing in this repo imported it, and keeping one harness as a
+> first-class npm package while the others were scripts misrepresented the architecture.
+>
+> The phases below are preserved as the 2026-05-28 plan of record. Read them as history.
 >
 > **Lane issue:** a2a-plane#475 (a2a-plane#475, internal tracker private)
 > **Parent:** a2a-plane#500 (a2a-plane#500, internal tracker private)
 
 ---
 
-## Current State
+## Current State *(as of 2026-05-28; the package described here has since been removed)*
 
 All A2A broker-facing adapters are tightly coupled to the OpenClaw Gateway and plugin SDK:
 
@@ -273,7 +286,6 @@ Phases 2 and 3 can proceed in parallel after Phase 1 completes.
 ## Related Documents
 
 - [Platform-Independent A2A Adapter Interface Contract](../contracts/a2a/platform-adapter-interface.md) — the abstract interface contract
-- [OpenClaw-Core Extraction Plan](../packages/openclaw-plugin-a2a/docs/migration-plan.md) — OpenClaw plugin extraction from core
 - [Hermes Worker Integration Spec](specs/hermes-worker-integration/spec.md) — existing Hermes HTTP-poll worker contract
 - [Broker Handoff Protocol Contract](../contracts/a2a/broker-handoff-protocol.md) — broker-to-broker task handoff
 - [A2A Ecosystem Guide](ecosystem-guide.md) — A2A Nexus ecosystem documentation

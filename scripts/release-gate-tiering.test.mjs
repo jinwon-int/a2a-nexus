@@ -135,11 +135,10 @@ test('release-gate --list prints default tiered selection without running steps'
   assert.equal(res.status, 0, res.stderr);
   const lines = res.stdout.trim().split('\n');
   assert.equal(lines.length, expectedDefault.length + 1);
-  assert.match(lines.at(-1), /release gate selected 53\/53 step\(s\)/);
+  assert.match(lines.at(-1), /release gate selected 52\/52 step\(s\)/);
   assert.ok(lines.some((line) => line.startsWith('external-secrets\tpublic-readiness\t')));
   assert.ok(lines.some((line) => line.startsWith('dependency-advisories\tpublic-readiness\t')));
-  assert.ok(lines.some((line) => line.startsWith('split-repo-local-demo\tcore\t')));
-});
+  });
 
 test('release-gate --all --list prints every tier including approval-only paths', () => {
   const inventory = JSON.parse(readFileSync(INVENTORY, 'utf8'));
@@ -147,9 +146,8 @@ test('release-gate --all --list prints every tier including approval-only paths'
   assert.equal(res.status, 0, res.stderr);
   const lines = res.stdout.trim().split('\n');
   assert.equal(lines.length, inventory.entries.length + 1);
-  assert.match(lines.at(-1), /release gate selected 53\/53 step\(s\)/);
-  assert.ok(lines.some((line) => line.startsWith('split-repo-local-demo\tcore\t')));
-  assert.ok(lines.some((line) => line.startsWith('current-state-no-live-smoke\tcore\t')));
+  assert.match(lines.at(-1), /release gate selected 52\/52 step\(s\)/);
+    assert.ok(lines.some((line) => line.startsWith('current-state-no-live-smoke\tcore\t')));
 });
 
 test('#1503: every inventory entry declares owner, tier-consistent consumer, and a retirement condition', () => {
@@ -230,7 +228,7 @@ test('script surface manifest validates current root and broker package scripts'
   // scripts/check-script-budget.mjs BUDGETS.brokerNpmScripts.
   // Monorepo migration retirement: root 101→84 as the 17 check:monorepo-*
   // aliases retire with the migration ceremony they gated.
-  assert.equal(byId.get('root')?.scriptCount, 82);
+  assert.equal(byId.get('root')?.scriptCount, 81);
   assert.equal(byId.get('broker')?.scriptCount, 55);
   assert.ok((byId.get('root')?.kindCounts['required-gate'] ?? 0) >= 7);
   assert.ok((byId.get('broker')?.kindCounts['required-gate'] ?? 0) >= 7);

@@ -26,8 +26,22 @@ function walk(dir) {
   return out;
 }
 
+// Scan every surface that can route a Terminal Brief outward. The OpenClaw
+// plugin package used to be one of them; it was retired, and the per-harness
+// bridges under packages/broker/scripts took its place, so they are scanned now.
+const harnessBridges = fs
+  .readdirSync(path.join(root, 'packages/broker/scripts'), { withFileTypes: true })
+  .filter((ent) => ent.isFile() && /-a2a-analysis-bridge\.mjs$/.test(ent.name))
+  .map((ent) => path.join('packages/broker/scripts', ent.name));
+
+// Scope: surfaces that can route a Terminal Brief *outward*. Broker runtime, the
+// per-harness bridges that replaced the retired OpenClaw plugin, and the runner.
+// Deliberately not all of packages/broker/scripts: operator CLIs there call the
+// broker's own HTTP API with curl, which is not outward delivery and is not what
+// this guard is about.
 const routingFiles = [
-  ...walk(path.join(root, 'packages/openclaw-plugin-a2a/src')),
+  ...walk(path.join(root, 'packages/broker/src')),
+  ...harnessBridges,
   ...walk(path.join(root, 'packages/docker-runner/src')),
 ].filter((file) => !/\.test\.(?:ts|js|mjs)$/.test(file));
 
@@ -41,36 +55,17 @@ for (const file of routingFiles) {
   const text = read(file);
   for (const { name, re } of directDeliveryPatterns) {
     if (re.test(text)) {
-      fail(`${file}: production Terminal Brief routing must not use direct ${name}; use OpenClaw outbound adapter routing only`);
+      fail(`${file}: production Terminal Brief routing must not use direct ${name}; route through a harness adapter, never a transport primitive`);
     }
   }
 }
 
-const adapterPath = 'packages/openclaw-plugin-a2a/src/operator-notification-adapter.ts';
-const adapter = read(adapterPath);
-const requiredAdapterGuards = [
-  ['receiptRequired: "current_session_visible"', 'live Terminal Brief send requests current-session-visible receipt proof'],
-  ['userVisibleReceiptRequired: true', 'live Terminal Brief send requests user-visible receipt proof'],
-  ['receipt_confirmation_missing', 'provider acceptance without receipt is recorded as non-ACK failure'],
-  ['candidateIsAcceptedButNotAcknowledged(candidate)', 'provider accepted/sent candidates are filtered before receipt confirmation'],
-  ['providerAccepted', 'providerAccepted is explicitly handled as accepted-only, not an ACK'],
-  ['status === "sent"', 'sent status is explicitly handled as accepted-only, not an ACK'],
-];
-
-for (const [needle, description] of requiredAdapterGuards) {
-  if (!adapter.includes(needle)) {
-    fail(`${adapterPath}: missing guard for ${description}`);
-  }
-}
-
-const eventBridgePath = 'packages/openclaw-plugin-a2a/src/operator-event-bridge.ts';
-const eventBridge = read(eventBridgePath);
-if (!eventBridge.includes('ackRequires: ["current_session_visible", "manual_operator_receipt"]')) {
-  fail(`${eventBridgePath}: terminal outbox ACK metadata must require current-session-visible or manual operator receipt proof`);
-}
-if (!eventBridge.includes('provider send success')) {
-  fail(`${eventBridgePath}: terminal ACK decision must document provider send success as non-ACK evidence`);
-}
+// The per-file guards that used to assert receipt/ACK strings inside
+// packages/openclaw-plugin-a2a/src/{operator-notification-adapter,operator-event-bridge}.ts
+// retire with that package. The invariant they protected is not dropped: the
+// ACK boundary is enforced by test/conformance/check-terminal-evidence-ack-boundary.mjs
+// (wired into run-conformance.mjs, so it runs in CI) and by the core-tier
+// message-id-ack-boundary gate, neither of which is harness-specific.
 
 if (failures.length) {
   console.error(`terminal brief routing guard failed:\n- ${failures.join('\n- ')}`);
