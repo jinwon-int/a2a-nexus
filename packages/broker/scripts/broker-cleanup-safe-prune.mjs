@@ -52,8 +52,28 @@ try {
     process.exit(2);
   }
 
-  const result = executeBrokerCleanupPlan(store, plan, executionOptions);
-  process.stdout.write(`${JSON.stringify({ ok: true, plan, result }, null, 2)}\n`);
+  // #1776: emit the structured result even when a post-prune step failed. The
+  // destructive step runs first, so an uncaught throw here used to leave the
+  // operator with a stack trace, empty stdout, and no record of what had
+  // already been applied.
+  let result;
+  try {
+    result = executeBrokerCleanupPlan(store, plan, executionOptions);
+  } catch (error) {
+    process.stdout.write(`${JSON.stringify({
+      ok: false,
+      error: 'cleanup_execution_failed',
+      message: error instanceof Error ? error.message : String(error),
+      note: 'Rows may already have been pruned. Inspect the database before retrying; the plan is reproducible with the same --now-ms.',
+      plan,
+    }, null, 2)}\n`);
+    process.exit(1);
+  }
+  const syncFailed = result.canonicalSnapshotSync?.error !== undefined;
+  process.stdout.write(`${JSON.stringify({ ok: !syncFailed, plan, result }, null, 2)}\n`);
+  if (syncFailed) {
+    process.exit(1);
+  }
 } finally {
   store.close();
 }

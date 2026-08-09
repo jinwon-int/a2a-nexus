@@ -263,7 +263,22 @@ export function executeBrokerCleanupPlan(
     createdAt: appliedAt,
   };
   store.upsertHotAuditEvents([auditEvent]);
-  const canonicalSnapshotSync = store.syncCanonicalSnapshotWithHotRetentionPlans(plan.tables, auditEvent);
+  // #1776: the rows are already gone by the time we get here. Letting this
+  // step throw discarded the whole execution result, so a failure surfaced as
+  // a bare stack trace with empty stdout and no machine-readable record of the
+  // prune that had already been applied — indistinguishable from a crash
+  // before any mutation. Report the failure as part of the result instead; the
+  // caller decides the exit status.
+  let canonicalSnapshotSync: SqliteCanonicalSnapshotRetentionSyncResult;
+  try {
+    canonicalSnapshotSync = store.syncCanonicalSnapshotWithHotRetentionPlans(plan.tables, auditEvent);
+  } catch (error) {
+    canonicalSnapshotSync = {
+      synced: false,
+      reason: "canonical_snapshot_sync_failed",
+      error: error instanceof Error ? error.message : String(error),
+    };
+  }
   return {
     kind: "broker.cleanup.execution",
     planId: plan.planId,
