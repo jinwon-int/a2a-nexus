@@ -535,9 +535,8 @@ unless fed from synthetic fixture data.
 **Validation path (current):**
 
 Since `scripts/a2a-round-coordinator-collect.mjs` is not yet implemented, the
-dry-run closeout flow can be validated via the existing libero validation
-checklist at [`docs/validation/team1-worker-alpha-round-coordinator-libero.md`](../../validation/team1-worker-alpha-round-coordinator-libero.md)
-and via the parent-round closeout go/no-go matrix:
+dry-run closeout flow can be validated via the parent-round closeout go/no-go
+matrix:
 
 ```bash
 node scripts/check-parent-round-closeout-go-nogo-matrix.mjs \
@@ -579,5 +578,4 @@ produces informational artifacts only, never live side effects.
 - [Parent-round closeout go/no-go runbook](../a2a-parent-round-closeout-go-nogo/runbook.md)
 - [Dry-run tooling docs](../../dry-run/README.md)
 - [Team1 dispatch-wrapper runbook](../a2a-team1-dispatch-wrapper/runbook.md)
-- [Round coordinator libero validation checklist](../../validation/team1-worker-alpha-round-coordinator-libero.md)
 - [Docker runner README](../../../packages/docker-runner/README.md)

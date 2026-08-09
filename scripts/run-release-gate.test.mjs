@@ -74,25 +74,34 @@ test('--list output matches manifest order exactly (non-archived default path)',
 test('--include-archived --list output includes historical entries in manifest order', () => {
   const parsed = JSON.parse(readFileSync(MANIFEST, 'utf8'));
   const expected = parsed.entries.map((e) => e.file);
-  const archivedCount = parsed.entries.filter((e) => e.archived === true).length;
-  assert.ok(archivedCount > 0, 'manifest declares at least one archived entry');
   const res = runRunner(['--include-archived', '--list']);
   assert.equal(res.status, 0, res.stderr);
   const lines = res.stdout.split('\n').filter((l) => l.length > 0);
   assert.deepEqual(lines, expected);
 });
 
-test('default --list excludes the #1288 historical opt-in candidate set', () => {
-  // Assert the invariant (default path excludes the archived candidate set and
-  // the split is consistent) rather than absolute counts, which drift as the
-  // manifest grows — see #1570. The archived-exclusion behavior is verified
-  // against the runner in the '--list' / '--include-archived --list' tests above.
+test('the manifest split into active and archived stays consistent', () => {
+  // Assert the invariant (the split is total and the default path never runs an
+  // archived entry) rather than absolute counts, which drift as the manifest
+  // grows — see #1570.
+  //
+  // This no longer requires the live manifest to *contain* an archived entry.
+  // The #1288 candidate set completed step 2 of the docs/scripts-lifecycle.md
+  // retirement flow: every archived round file and its entry were removed, so
+  // the set is legitimately empty. The archived-exclusion *behaviour* is still
+  // covered against the runner by the synthetic-manifest test below
+  // ('archived entries are skipped with a loud warning and excluded from
+  // --list'), which is where it belongs — it is a property of the runner, not
+  // of whatever the manifest happens to hold today.
   const parsed = JSON.parse(readFileSync(MANIFEST, 'utf8'));
   const active = parsed.entries.filter((e) => e.archived !== true);
   const archived = parsed.entries.filter((e) => e.archived === true);
-  assert.ok(archived.length > 0, 'there is a historical opt-in candidate set to exclude');
-  assert.ok(active.length < parsed.entries.length, 'default path excludes the archived set');
   assert.equal(active.length + archived.length, parsed.entries.length, 'active + archived == total');
+  assert.equal(
+    active.length,
+    parsed.entries.length - archived.length,
+    'default path excludes exactly the archived set',
+  );
 });
 
 test('loadManifest accepts a well-formed temp manifest', async () => {
