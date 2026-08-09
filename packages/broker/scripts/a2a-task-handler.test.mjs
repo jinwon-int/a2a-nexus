@@ -1309,7 +1309,10 @@ process.stdout.write(JSON.stringify({ text: JSON.stringify(response) }) + "\\n")
 
     assert.equal(result.error, undefined);
     assert.equal(result.result.output.analysisKind, "analysis_bridge");
-    assert.equal(result.result.output.bridgeAdapter, "openclaw");
+    // Default adapter for a worker whose env names no harness. Was "openclaw";
+    // piri since the fleet runs CCC_AGENT_PROVIDER=piri and the openclaw default
+    // resolved to a binary installed nowhere.
+    assert.equal(result.result.output.bridgeAdapter, "piri");
     assert.equal(result.result.output.analysisStatus, "done");
     assert.equal(result.result.output.recoverySource, "state_db");
     assert.match(result.result.summary, /analysis bridge done/);
@@ -1466,7 +1469,10 @@ process.stdout.write(JSON.stringify({ payloads: [{ text: JSON.stringify(response
 
     assert.equal(result.error, undefined);
     assert.equal(result.result.output.analysisKind, "analysis_bridge");
-    assert.equal(result.result.output.bridgeAdapter, "openclaw");
+    // Default adapter for a worker whose env names no harness. Was "openclaw";
+    // piri since the fleet runs CCC_AGENT_PROVIDER=piri and the openclaw default
+    // resolved to a binary installed nowhere.
+    assert.equal(result.result.output.bridgeAdapter, "piri");
     assert.equal(result.result.output.analysisStatus, "done");
     assert.equal(result.result.output.findings[0], "analysis bridge invoked");
   } finally {

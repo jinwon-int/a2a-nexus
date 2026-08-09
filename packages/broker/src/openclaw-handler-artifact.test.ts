@@ -2037,7 +2037,11 @@ test("analysis-only task can use OpenClaw analysis bridge when explicitly enable
     const payload = JSON.parse(result.stdout);
     assert.match(payload.result.summary, /analysis bridge done/);
     assert.equal(payload.result.output.analysisKind, "analysis_bridge");
-    assert.equal(payload.result.output.bridgeAdapter, "openclaw");
+    // The worker env names no harness, so this is the default adapter label.
+    // Was "openclaw"; piri since the fleet runs CCC_AGENT_PROVIDER=piri and the
+    // openclaw default resolved to a binary installed nowhere. The bridge command
+    // below still comes from OPENCLAW_BIN, which explicit config still wins with.
+    assert.equal(payload.result.output.bridgeAdapter, "piri");
     assert.equal(payload.result.output.bridgeCommand, "fake-openclaw-analysis.mjs");
     assert.equal(payload.result.note, "read-only A2A analysis completed through analysis bridge");
     assert.equal(payload.result.output.analysisSummary, "bridge analysis complete");
