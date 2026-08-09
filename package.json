@@ -53,7 +53,6 @@
     "test": "npm run check",
     "test:release-gate": "node scripts/run-release-gate.mjs",
     "test:release-gate:list": "node scripts/run-release-gate.mjs --list",
-    "check:historical": "node scripts/release-gate.mjs --only-tier historical-transition --only-tier approval-gated --only-tier package-publication",
     "test:conformance": "node test/conformance/run-conformance.mjs",
     "round:merge-preflight": "node scripts/round-merge-preflight.mjs",
     "a2a:execution-orchestrator": "node scripts/a2a-source-public-execution-orchestrator.mjs --spec docs/execution-orchestrator/source-public-execution-orchestrator-schema.json",

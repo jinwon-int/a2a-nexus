@@ -416,12 +416,12 @@
         "run",
         "check:split-repo-local-demo"
       ],
-      "tier": "historical-transition",
+      "tier": "core",
       "owner": "monorepo-transition",
-      "consumer": "transition-audit",
-      "retirement": "candidate-after-review",
-      "retirementCondition": "Archive after the canonical monorepo transition it documents is finalized and no active release gate imports it; requires explicit inventory review.",
-      "note": "Canonical/split-repo transition evidence; candidate for archive only after explicit source-backed review."
+      "consumer": "pr-gate",
+      "retirement": "keep",
+      "retirementCondition": "Retire only when the document it pins is itself removed; while the doc is reachable from docs/README.md the check stays on the default release-gate path.",
+      "note": "Promoted from historical-transition to core: it validates docs/demo/split-repo-local-demo.md, a live evaluator quickstart linked from docs/README.md that describes the current packages/* layout. Its assertions had silently rotted against the publicization redaction because no CI path selected it."
     },
     {
       "name": "current-state-no-live-smoke",
@@ -430,12 +430,12 @@
         "run",
         "check:current-state-no-live-smoke"
       ],
-      "tier": "historical-transition",
+      "tier": "core",
       "owner": "monorepo-transition",
-      "consumer": "transition-audit",
-      "retirement": "candidate-after-review",
-      "retirementCondition": "Archive after the canonical monorepo transition it documents is finalized and no active release gate imports it; requires explicit inventory review.",
-      "note": "Canonical/split-repo transition evidence; candidate for archive only after explicit source-backed review."
+      "consumer": "pr-gate",
+      "retirement": "keep",
+      "retirementCondition": "Retire only when the document it pins is itself removed; while the doc is reachable from docs/README.md the check stays on the default release-gate path.",
+      "note": "Promoted from historical-transition to core: it validates docs/current-state-no-live-integration-smoke.md, which is linked from docs/README.md and pins the no-live boundary. A gate worth keeping is a gate worth running."
     },
     {
       "name": "monorepo-docs-routing",

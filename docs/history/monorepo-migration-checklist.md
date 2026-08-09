@@ -1,8 +1,13 @@
 # Monorepo Architecture and Cutover Proof (Historical Reference)
 
-> **Status:** 🟢 Preserved as historical reference. The current topology decision (#473 (a2a-plane#473, internal tracker private)) recommends holding full monorepo consolidation for now — see [`topology-decision-record.md`](../topology-decision-record.md) for the active recommendation and re-entry criteria.
+> **Status:** 🟢 Historical reference — the migration it plans **has since been
+> executed**. `packages/*` is the canonical source and the former split repos are
+> active provenance mirrors; see [`current-state.md`](../current-state.md).
 >
-> This document remains the canonical migration checklist if a future operator-initiated re-entry activates full monorepo consolidation. Until then, the split repos with `a2a-plane` as the public umbrella are the recommended topology.
+> The text below is preserved as written, from before the flip. It describes the
+> #473 recommendation to *hold* consolidation and treats the split repos as
+> canonical. Read it as a record of the plan, not as current guidance — the
+> re-entry it gates on already happened.
 >
 > **목적**: A2A 4개 저장소(`a2a-plane`, `a2a-broker`, `a2a-docker-runner`, `openclaw-plugin-a2a`)를 단일 모노레포로 통합할 때의 경계, CI, 마이그레이션, 호환성 리스크를 단기/중기/장기로 나눠 검토합니다.
 >

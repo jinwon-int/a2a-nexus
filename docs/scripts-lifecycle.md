@@ -105,8 +105,14 @@ This is intentionally a **two-step**, evidence-backed flow, and it happens in
 
 2. **Move to `scripts/archive/`.** Once the round is confirmed closed, a
    subsequent PR relocates the file under `scripts/archive/` and removes its
-   manifest entry, again linking the closeout evidence. `scripts/archive/` is
-   not run by the gate.
+   manifest entry, again linking the closeout evidence.
+
+> **The directory is not the boundary — the manifest entry is.**
+> `run-release-gate.mjs` skips on `archived: true`, never on the path, so a file
+> under `scripts/archive/` whose entry is still active runs on every release
+> gate. 18 do today (`node scripts/run-release-gate.mjs --list | grep
+> scripts/archive/`). Step 2 is only complete when the entry is gone; moving the
+> file alone is cosmetic.
 
 Each retiring PR carries **per-script justification**. We never bulk-delete
 round files.
