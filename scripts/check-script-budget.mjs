@@ -41,11 +41,11 @@ import { createDocCheckContext } from './lib/doc-check.mjs';
 // its regression test were added. Raising any budget is allowed but must be
 // deliberate — see a2a-nexus#882.
 export const BUDGETS = {
-  scriptsMjs: 162, // -16 from 178: the monorepo migration ceremony retirement removes 16 check-monorepo-*.mjs validators. The migration reached MONOREPO_PACKAGES_CANONICAL / ACTIVE_PROVENANCE_MIRROR, so the per-phase preflight/handoff/sign-off gates no longer describe a reachable state. Ratcheted, not left slack.
-  rootNpmScripts: 84, // -17 from 101: the same retirement drops 17 check:monorepo-* aliases (16 validators + the package-ci-parity-jobs alias, whose runner script stays because ci.yml invokes it directly for all five packages).
+  scriptsMjs: 161, // -1 from 162: the a2a-nexus#831 advisory-sidecar boundary cross-check retires with the three src/core modules it pinned (they had no source consumer).
+  rootNpmScripts: 83, // -1 from 84: the check:a2a-nexus-831-advisory-sidecar-boundary-cross-check alias goes with its script. It was referenced by nothing outside package.json — not the manifest, not the step inventory, not CI.
   brokerNpmScripts: 55, // +1 from 54: #1766 adds build:image, the verified image-build entrypoint (preflight -> docker compose build). Deliberate: it is a build entrypoint, not a per-round wrapper, and it cannot fold into `build` — `build` also runs inside the Docker build stage, where invoking docker again is impossible. -43 from 95: #1503 Wave 2 collapses the orchestration-intelligence (21) and rollout-preflight (24→22; rollout_guard and worker_signature_rollout_preflight stay direct as manifest-required gates) aliases into the orchestration/rollout dispatchers sharing scripts/lib/operator-dispatch.mjs; scan:public-readiness stays direct (CI parity requiredScript).
-  brokerCoreModules: 225, // +1 from 224: #1635 adds the explicitly task-lineage-qualified, rebuildable read projection; keeping this boundary in its own core module avoids coupling read-only graph traversal to task mutation or ReviewLineage code.
-  brokerCoreCeremonyModules: 44, // #1601: the approval/rehearsal/preflight/dry-run/ingestor subset of the above. Frozen, never raised — a new approval step belongs in the broker policy document as data, not as a module. Lower this as ceremony modules are consolidated or removed.
+  brokerCoreModules: 213, // -12 from 225: dead-code removal. 4 modules had zero importers, 2 were reachable only from their own test, and 5 formed two islands (handoff-scenarios -> handoff-types; advisory-sidecar operator-decision -> contract/resolver) whose only entry point was a test. Verified by import-graph reachability plus a clean rebuild. two-broker-safety-matrix.ts and review-lifecycle/scorecard-cli.ts were candidates but are kept: docs instruct operators to invoke them directly, which import-graph reachability cannot see.
+  brokerCoreCeremonyModules: 43, // -1 from 44: worker-subagent-dry-run.ts was test-only. Still never raised — a new approval step belongs in the broker policy document as data, not as a module.
 };
 
 /**

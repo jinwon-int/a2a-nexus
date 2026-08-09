@@ -31,7 +31,8 @@ export const EXPECTED_BROKER_FLOORS = Object.freeze({
 
 export const EXPECTED_RUNNER_FLOORS = Object.freeze({
   'config.js': 94,
-  'execution-orchestrator.js': 96,
+  // execution-orchestrator.js was dropped with the module: it had no importer
+  // outside its own test, so the floor measured code that never ran.
   'execution-proof.js': 95,
   'execution-proof-signing.js': 90,
   'redaction.js': 95,

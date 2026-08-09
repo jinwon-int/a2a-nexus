@@ -1,6 +1,11 @@
 # Handoff Scenario Matrix (S1–S5)
 
 > Round 15 · Issue #69 · a2a-broker
+>
+> **Status: design record.** The `core/handoff-scenarios.ts` reference
+> implementation was removed as unwired — nothing outside its own test ever
+> imported it. This document is kept as the scenario definition; anything
+> implementing it should be reachable from a runtime entrypoint.
 
 ## Overview
 

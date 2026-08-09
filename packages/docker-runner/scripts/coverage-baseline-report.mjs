@@ -25,7 +25,6 @@ const pkgRoot = path.resolve(here, '..'); // packages/docker-runner
 // regressions in the core lifecycle/evidence/provenance path blocking.
 export const CORE_SOURCE_FLOORS = Object.freeze({
   'config.js': 94,
-  'execution-orchestrator.js': 96,
   'execution-proof.js': 95,
   'execution-proof-signing.js': 90,
   'redaction.js': 95,
