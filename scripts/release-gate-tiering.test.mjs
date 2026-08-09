@@ -51,9 +51,7 @@ test('--all selects every inventory entry', () => {
   assert.deepEqual(summarizeReleaseGateEntries(entries), {
     core: 40,
     'public-readiness': 11,
-    'historical-transition': 14,
-    'approval-gated': 3,
-    'package-publication': 2,
+    'historical-transition': 2,
   });
 });
 
@@ -78,9 +76,7 @@ test('--only-tier replaces the default selection for explicit historical checks'
   const inventory = loadReleaseGateInventory(INVENTORY);
   const summary = summarizeReleaseGateEntries(selectReleaseGateEntries(inventory, parsed));
   assert.deepEqual(summary, {
-    'historical-transition': 14,
-    'approval-gated': 3,
-    'package-publication': 2,
+    'historical-transition': 2,
   });
 });
 
@@ -99,10 +95,10 @@ test('release-gate --list prints default tiered selection without running steps'
   assert.equal(res.status, 0, res.stderr);
   const lines = res.stdout.trim().split('\n');
   assert.equal(lines.length, expectedDefault.length + 1);
-  assert.match(lines.at(-1), /release gate selected 51\/70 step\(s\)/);
+  assert.match(lines.at(-1), /release gate selected 51\/53 step\(s\)/);
   assert.ok(lines.some((line) => line.startsWith('external-secrets\tpublic-readiness\t')));
   assert.ok(lines.some((line) => line.startsWith('dependency-advisories\tpublic-readiness\t')));
-  assert.equal(lines.some((line) => line.startsWith('monorepo-reentry\thistorical-transition\t')), false);
+  assert.equal(lines.some((line) => line.startsWith('split-repo-local-demo\thistorical-transition\t')), false);
 });
 
 test('release-gate --all --list prints every tier including approval-only paths', () => {
@@ -111,9 +107,9 @@ test('release-gate --all --list prints every tier including approval-only paths'
   assert.equal(res.status, 0, res.stderr);
   const lines = res.stdout.trim().split('\n');
   assert.equal(lines.length, inventory.entries.length + 1);
-  assert.match(lines.at(-1), /release gate selected 70\/70 step\(s\)/);
-  assert.ok(lines.some((line) => line.startsWith('monorepo-final-operator-signoff\tapproval-gated\t')));
-  assert.ok(lines.some((line) => line.startsWith('monorepo-release-package-tag-approval\tpackage-publication\t')));
+  assert.match(lines.at(-1), /release gate selected 53\/53 step\(s\)/);
+  assert.ok(lines.some((line) => line.startsWith('split-repo-local-demo\thistorical-transition\t')));
+  assert.ok(lines.some((line) => line.startsWith('current-state-no-live-smoke\thistorical-transition\t')));
 });
 
 test('#1503: every inventory entry declares owner, tier-consistent consumer, and a retirement condition', () => {
@@ -192,7 +188,9 @@ test('script surface manifest validates current root and broker package scripts'
   // #1766: broker 54→55 for build:image, the verified image-build entrypoint
   // (revision preflight -> docker compose build); mirrored in
   // scripts/check-script-budget.mjs BUDGETS.brokerNpmScripts.
-  assert.equal(byId.get('root')?.scriptCount, 101);
+  // Monorepo migration retirement: root 101→84 as the 17 check:monorepo-*
+  // aliases retire with the migration ceremony they gated.
+  assert.equal(byId.get('root')?.scriptCount, 84);
   assert.equal(byId.get('broker')?.scriptCount, 55);
   assert.ok((byId.get('root')?.kindCounts['required-gate'] ?? 0) >= 7);
   assert.ok((byId.get('broker')?.kindCounts['required-gate'] ?? 0) >= 7);

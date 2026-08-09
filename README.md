@@ -24,7 +24,7 @@ For external readers, start here first:
 
 > **Status:** public alpha — the repository is publicly readable, but public visibility is not a production deployment, stable release, tag, package publish, homepage/docs-site launch, broad promotion, or live-action authorization. See [Current public alpha state](#current-public-alpha-state) for the remaining approval-gated actions.
 
-`a2a-nexus` is now the canonical implementation source for the broker, adapter plugin, Docker runner, contracts, docs, examples, and readiness gates. Former split repositories remain active provenance mirrors; package publication, releases, deployment, and visibility-related actions stay separately approval-gated. See the [topology decision record](docs/topology-decision-record.md), [migration index](docs/history/monorepo-migration-index.md), and [history index](docs/history/README.md) for completed migration records.
+`a2a-nexus` is now the canonical implementation source for the broker, adapter plugin, Docker runner, contracts, docs, examples, and readiness gates. Former split repositories remain active provenance mirrors; package publication, releases, deployment, and visibility-related actions stay separately approval-gated. See the [topology decision record](docs/topology-decision-record.md) and the [history index](docs/history/README.md) for completed migration records.
 
 Additional project docs:
 
@@ -100,7 +100,7 @@ This repository is the canonical A2A Nexus source and coordination workspace for
 | [`openclaw-plugin-a2a`](https://github.com/jinwon-int/openclaw-plugin-a2a) | Reference OpenClaw integration provenance mirror | Active provenance mirror of `packages/openclaw-plugin-a2a` (canonical source is `a2a-nexus`) |
 | [`a2a-docker-runner`](https://github.com/jinwon-int/a2a-docker-runner) | Isolated worker provenance mirror | Active provenance mirror of `packages/docker-runner` (canonical source is `a2a-nexus`) |
 
-The mirror repositories are unchanged, not archived, and retain their own closed issue/PR history. See the [topology decision record](docs/topology-decision-record.md) for the historical split-repo topology that preceded the canonical flip, and the [monorepo migration document index](docs/history/monorepo-migration-index.md) for a single navigational entry point across the staged migration records.
+The mirror repositories are unchanged, not archived, and retain their own closed issue/PR history. See the [topology decision record](docs/topology-decision-record.md) for the historical split-repo topology that preceded the canonical flip, and the [history index](docs/history/README.md) for the records the migration left behind.
 
 ## Package Map
 

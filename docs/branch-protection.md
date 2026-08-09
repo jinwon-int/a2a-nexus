@@ -2,14 +2,13 @@
 
 This document records the branch protection / ruleset state that the
 [`auto-merge`](../.github/workflows/auto-merge.yml) workflow depends on to stay
-safe. It is the stable, ongoing reference for that invariant. The dated,
-approval-gated execution plan for *applying* the settings lives in
-[`history/monorepo-branch-protection-approval-packet.md`](history/monorepo-branch-protection-approval-packet.md);
-this file describes the steady-state requirement those settings must satisfy.
+safe. It is the stable, ongoing reference for that invariant. The settings it
+describes are applied; the one-off approval packet that planned their rollout
+was retired once they were.
 
 > **No-go boundary:** This document does not apply, change, or remove branch
 > protection or rulesets. GitHub settings mutation remains a separate,
-> operator-approved action (see the approval packet and [`GOVERNANCE.md`](../GOVERNANCE.md)).
+> operator-approved action (see [`GOVERNANCE.md`](../GOVERNANCE.md)).
 
 ## Why auto-merge needs this
 
@@ -94,10 +93,11 @@ This repo's ruleset has `bypass_actors: []` and `current_user_can_bypass: never`
 There is **no admin escape hatch** here: a ruleset that blocks everything can only
 be undone by another `PUT`. Keep a rollback payload before applying.
 
-The exact required-check list and its path-aware handling come from the
-["Required-check Candidate"](history/monorepo-branch-protection-approval-packet.md#required-check-candidate)
-and ["Proposed Settings Shape For Later Approval"](history/monorepo-branch-protection-approval-packet.md#proposed-settings-shape-for-later-approval)
-sections of the approval packet; keep the two in sync.
+The exact required-check list and its path-aware handling now live in the
+applied ruleset itself, not in a planning document. Read the live list with
+`gh api repos/<owner>/<repo>/branches/main/protection --jq
+.required_status_checks.contexts` and keep it in sync with the job names in
+[`ci.yml`](../.github/workflows/ci.yml).
 
 ## How to verify the invariant holds
 

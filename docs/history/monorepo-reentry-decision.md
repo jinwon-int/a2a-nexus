@@ -101,13 +101,15 @@ a2a-plane/
 - Add a fixture/validator that keeps the staged decision from drifting.
 - Open child issues for import rehearsal, CI parity, docs/CODEOWNERS, and
   branch protection/release policy.
-- Record the import rehearsal plan in
-  [`docs/monorepo-import-rehearsal.md`](monorepo-import-rehearsal.md) and keep it
-  validated by `npm run check:monorepo-import-rehearsal`.
-- Record the CI parity matrix in
-  [`docs/monorepo-ci-parity-matrix.md`](monorepo-ci-parity-matrix.md) and keep it
+- Record the import rehearsal plan in `docs/monorepo-import-rehearsal.md` and
+  keep it validated by `npm run check:monorepo-import-rehearsal`.
+- Record the CI parity matrix in `docs/monorepo-ci-parity-matrix.md` and keep it
   validated by `npm run check:monorepo-ci-parity`. Not green means split repo CI
   remains canonical.
+
+> Both documents and both checks were retired after the migration completed;
+> the names above are kept as the historical record of what this decision asked
+> for, not as live paths.
 - Record the docs, CODEOWNERS, and issue-routing draft in
   [`docs/migration.md`](./migration.md), [`docs/operators.md`](../operators.md),
   [`docs/developers.md`](../developers.md), and [`docs/issue-routing.md`](../issue-routing.md),

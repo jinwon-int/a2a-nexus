@@ -73,16 +73,16 @@ tag strategy, dry-run evidence, and rollback/disposition path.
 
 The phase-8 release/package/tag approval packet is tracked in
 `a2a-plane#547` (a2a-plane#547, internal tracker private) and
-documented in
-[`docs/history/monorepo-release-package-tag-approval-packet.md`](../history/monorepo-release-package-tag-approval-packet.md).
+documented in `docs/history/monorepo-release-package-tag-approval-packet.md`
+(retired with the migration).
 It records the package metadata and approval fields only; it does not create
 tags, GitHub Releases, npm packages, Docker images, or package ownership
 changes.
 
 The phase-9 final operator sign-off matrix is tracked in
 `a2a-plane#549` (a2a-plane#549, internal tracker private) and
-documented in
-[`docs/history/monorepo-final-operator-signoff-matrix.md`](../history/monorepo-final-operator-signoff-matrix.md).
+documented in `docs/history/monorepo-final-operator-signoff-matrix.md`
+(retired with the migration).
 It consolidates branch protection, split repo disposition, release/package/tag,
 package ownership transfer, rollback owner, and canonical flip GO/NO-GO fields
 without approving any execution action.
