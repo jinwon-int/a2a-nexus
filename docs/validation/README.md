@@ -7,18 +7,21 @@ produced while coordinating the broker/worker plane across teams.
 Most of these are point-in-time coordination artifacts for a specific team
 (`team1-*`, `team2-*`) and review round, not external-reader documentation.
 
-## Relocation recommendation
+## Relocation recommendation (partly executed)
 
 These per-team, per-round evidence files are **internal-runbook candidates**:
 they are operationally useful to the maintaining teams but add noise to the
-public repository surface. The intended end state is to relocate them to an
-internal operations runbook, leaving only durable, externally-relevant
-validation specs here.
+public repository surface. The intended end state is to leave only durable,
+externally-relevant validation specs here.
 
-This is recorded as a recommendation, not yet executed, because the files are
-**coupled to repository tooling** and cannot be moved as a simple `git mv`:
+The 38 files whose only remaining pin was a retired round validator have been
+removed; git history keeps them. What is left is either pinned by a validator
+that still runs or named below as durable.
 
-- **~43 of the `team1-*` / `team2-*` files are pinned by dedicated validators**
+The remaining files are still **coupled to repository tooling** and cannot be
+moved as a simple `git mv`:
+
+- The surviving `team1-*` / `team2-*` files are pinned by dedicated validators
   under `scripts/check-<name>.test.mjs` (and a few shared validators such as
   `scripts/round-merge-preflight.test.mjs`). These read the doc by its exact
   path, so moving a doc requires updating its validator in the same change.
