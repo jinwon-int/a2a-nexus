@@ -23,6 +23,18 @@ services:
     container_name: ${SERVICE_NAME:-a2a-broker}
     hostname: ${SERVICE_NAME:-a2a-broker}
     restart: unless-stopped
+    # NOTE (#1772): `env_file` injects this whole file over the image's own ENV.
+    # A2A_BROKER_REVISION / _BUILT_AT / _IMAGE_TAG / _CREATED in `.env` are
+    # therefore *build-time interpolation inputs only* — they no longer shape
+    # what the broker reports. The runtime reads provenance from the
+    # `dist/build-info.json` baked into the image, and a host value that
+    # contradicts it is ignored and surfaced as a /health warning.
+    #
+    # Before that fix a single stale line here made /health advertise a commit
+    # the image was never built from: a month on T2, and a three-way
+    # label/revision/tag disagreement on the T1 production broker. Verify a
+    # deployment with `npm run check:deployed_provenance -- --container <name>`,
+    # which compares the image label, the container env and /health.
     env_file:
       - .env
     environment:

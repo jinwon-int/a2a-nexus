@@ -28,6 +28,23 @@ export interface BrokerBuildInfo {
   };
 }
 
+/**
+ * #1772: a host environment variable that contradicts the provenance baked
+ * into the image at build time.
+ *
+ * The env value is ignored — the image-baked value is authoritative — but the
+ * disagreement is reported so the misconfiguration is visible instead of
+ * silently shaping `/health.build`. `ignored` is sanitized with the same rules
+ * as the surfaced value, and is `"redacted"` when the env value did not
+ * survive sanitization.
+ */
+export interface BrokerBuildProvenanceConflict {
+  field: "version" | "revision" | "builtAt" | "runtime" | "imageTag" | "imageDigest";
+  envVar: string;
+  ignored: string;
+  authoritative: string;
+}
+
 export type BrokerPersistenceQueueMode = "inline" | "worker_thread";
 export type BrokerPersistenceQueueState = "disabled" | "healthy" | "saturated" | "draining" | "aborted" | "unavailable";
 

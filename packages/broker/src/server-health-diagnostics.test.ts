@@ -681,6 +681,12 @@ test("server uses unknown build revision fallback instead of null", async () => 
   });
 });
 
+// `buildInfoFile: "/dev/null"` keeps this hermetic. Without it the assertion
+// depended on whether a generated `dist/build-info.json` happened to exist:
+// running from src (tsx) there is none, so the env value was consulted and
+// redacted, but running the compiled `dist/*.test.js` there is one, and since
+// #1772 the baked revision legitimately wins. Same test, two outcomes, decided
+// by build state. Pinning the file makes the env-fallback path explicit.
 test("server redacts unsafe build metadata from health", async () => {
   await withEnv({
     A2A_BROKER_REVISION: "https://credential.example.invalid/unsafe-revision",
@@ -688,7 +694,7 @@ test("server redacts unsafe build metadata from health", async () => {
     A2A_BROKER_IMAGE_TAG: "private.registry.local/team/image:tag with secret",
     A2A_BROKER_IMAGE_DIGEST: "not-a-valid-digest-with-secret-path",
   }, async () => {
-    const server = await startTestServer();
+    const server = await startTestServer({ buildInfoFile: "/dev/null" });
     try {
       const healthRes = await fetch(`${server.baseUrl}/health`, { headers: { "x-a2a-edge-secret": "s" } });
       assert.equal(healthRes.status, 200);

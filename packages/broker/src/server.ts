@@ -22,6 +22,7 @@ export type {
   A2AHttpSignatureWorkerAuthMode,
   A2AHttpSignatureWorkerKeySource,
   BrokerBuildInfo,
+  BrokerBuildProvenanceConflict,
   BrokerPersistenceQueueDiagnostics,
   BrokerPersistenceQueueDiagnosticsProvider,
   BrokerPersistenceQueueMode,
@@ -1183,6 +1184,20 @@ export function createBrokerServer(options: BrokerServerOptions = {}): BrokerSer
             `${existing}canonical snapshot mirror unreadable (${canonicalMirror.reason}): ${sizeDetail}` +
             `${canonicalMirror.updatedAt ? `, updatedAt=${canonicalMirror.updatedAt}` : ""}` +
             `; hot tables are the load source and remain authoritative`;
+        }
+
+        // #1772: the host env contradicted the provenance baked into the
+        // image. The baked value is what /health reports, but stay loud about
+        // the disagreement — a silently-ignored override is how a stale
+        // `.env` line went unnoticed on two brokers for weeks.
+        if (buildInfo.provenanceConflicts.length > 0) {
+          const existing = body.warning ? `${body.warning}; ` : "";
+          const detail = buildInfo.provenanceConflicts
+            .map((c) => `${c.envVar}=${c.ignored} (image: ${c.authoritative})`)
+            .join(", ");
+          body.warning =
+            `${existing}build provenance: host env contradicts the image and was ignored: ${truncateMessage(detail, 400)}` +
+            `; /health.build reports the image-baked values`;
         }
 
         body.timing = {
