@@ -24,6 +24,35 @@ const REPO_ROOT = resolve(HERE, '..');
 const RELEASE_GATE = join(HERE, 'release-gate.mjs');
 const INVENTORY = join(REPO_ROOT, 'docs/ops/release-gate-step-inventory.json');
 
+const VALID_TIERS = new Set(Object.keys(TIER_CONSUMER));
+
+/**
+ * A minimal inventory covering one default tier and two opt-in tiers, so the
+ * tier-selection mechanism can be exercised independently of what the live
+ * inventory happens to contain today.
+ */
+function syntheticInventory() {
+  const entry = (name, tier) => ({
+    name,
+    command: 'node',
+    args: ['--version'],
+    tier,
+    owner: 'release-gate-tooling',
+    consumer: TIER_CONSUMER[tier],
+    retirement: 'keep',
+    retirementCondition: 'synthetic fixture',
+    note: 'synthetic fixture',
+  });
+  return {
+    tiers: [...VALID_TIERS],
+    entries: [
+      entry('synthetic-core', 'core'),
+      entry('synthetic-historical', 'historical-transition'),
+      entry('synthetic-approval', 'approval-gated'),
+    ],
+  };
+}
+
 function runReleaseGate(args = []) {
   return spawnSync(process.execPath, [RELEASE_GATE, ...args], {
     cwd: REPO_ROOT,
@@ -48,24 +77,27 @@ test('--all selects every inventory entry', () => {
   const inventory = loadReleaseGateInventory(INVENTORY);
   const entries = selectReleaseGateEntries(inventory, { all: true });
   assert.equal(entries.length, inventory.entries.length);
-  assert.deepEqual(summarizeReleaseGateEntries(entries), {
-    core: 40,
-    'public-readiness': 11,
-    'historical-transition': 2,
-  });
+  // Assert the shape, not a census: hard-coded per-tier counts here have been
+  // the single most frequent source of unrelated test churn in this file.
+  const summary = summarizeReleaseGateEntries(entries);
+  assert.equal(
+    Object.values(summary).reduce((a, b) => a + b, 0),
+    inventory.entries.length,
+  );
+  for (const tier of Object.keys(summary)) assert.ok(VALID_TIERS.has(tier), `unknown tier ${tier}`);
 });
 
 test('--tier augments the default tier selection', () => {
   const parsed = parseReleaseGateArgs(['--tier', 'historical-transition']);
   assert.equal(parsed.all, false);
   assert.deepEqual(parsed.tiers, ['core', 'public-readiness', 'historical-transition']);
-  const inventory = loadReleaseGateInventory(INVENTORY);
-  const entries = selectReleaseGateEntries(inventory, parsed);
+  const entries = selectReleaseGateEntries(syntheticInventory(), parsed);
   assert.ok(entries.some((entry) => entry.tier === 'historical-transition'));
+  assert.ok(entries.some((entry) => entry.tier === 'core'));
   assert.equal(entries.some((entry) => entry.tier === 'approval-gated'), false);
 });
 
-test('--only-tier replaces the default selection for explicit historical checks', () => {
+test('--only-tier replaces the default selection', () => {
   const parsed = parseReleaseGateArgs([
     '--only-tier', 'historical-transition',
     '--only-tier', 'approval-gated',
@@ -73,11 +105,19 @@ test('--only-tier replaces the default selection for explicit historical checks'
   ]);
   assert.equal(parsed.all, false);
   assert.deepEqual(parsed.tiers, ['historical-transition', 'approval-gated', 'package-publication']);
+  const summary = summarizeReleaseGateEntries(
+    selectReleaseGateEntries(syntheticInventory(), parsed),
+  );
+  assert.deepEqual(summary, { 'historical-transition': 1, 'approval-gated': 1 });
+});
+
+test('the live inventory has no opt-in-only tier left', () => {
+  // Every gate the repo keeps now runs on the default path. A gate parked in an
+  // opt-in tier is a gate nobody runs, and this repo has already had that decay
+  // into 15 silently failing steps.
   const inventory = loadReleaseGateInventory(INVENTORY);
-  const summary = summarizeReleaseGateEntries(selectReleaseGateEntries(inventory, parsed));
-  assert.deepEqual(summary, {
-    'historical-transition': 2,
-  });
+  const optIn = inventory.entries.filter((e) => !DEFAULT_TIERS.includes(e.tier));
+  assert.deepEqual(optIn.map((e) => e.name), []);
 });
 
 test('unknown tier fails closed', () => {
@@ -95,10 +135,10 @@ test('release-gate --list prints default tiered selection without running steps'
   assert.equal(res.status, 0, res.stderr);
   const lines = res.stdout.trim().split('\n');
   assert.equal(lines.length, expectedDefault.length + 1);
-  assert.match(lines.at(-1), /release gate selected 51\/53 step\(s\)/);
+  assert.match(lines.at(-1), /release gate selected 53\/53 step\(s\)/);
   assert.ok(lines.some((line) => line.startsWith('external-secrets\tpublic-readiness\t')));
   assert.ok(lines.some((line) => line.startsWith('dependency-advisories\tpublic-readiness\t')));
-  assert.equal(lines.some((line) => line.startsWith('split-repo-local-demo\thistorical-transition\t')), false);
+  assert.ok(lines.some((line) => line.startsWith('split-repo-local-demo\tcore\t')));
 });
 
 test('release-gate --all --list prints every tier including approval-only paths', () => {
@@ -108,8 +148,8 @@ test('release-gate --all --list prints every tier including approval-only paths'
   const lines = res.stdout.trim().split('\n');
   assert.equal(lines.length, inventory.entries.length + 1);
   assert.match(lines.at(-1), /release gate selected 53\/53 step\(s\)/);
-  assert.ok(lines.some((line) => line.startsWith('split-repo-local-demo\thistorical-transition\t')));
-  assert.ok(lines.some((line) => line.startsWith('current-state-no-live-smoke\thistorical-transition\t')));
+  assert.ok(lines.some((line) => line.startsWith('split-repo-local-demo\tcore\t')));
+  assert.ok(lines.some((line) => line.startsWith('current-state-no-live-smoke\tcore\t')));
 });
 
 test('#1503: every inventory entry declares owner, tier-consistent consumer, and a retirement condition', () => {
@@ -190,7 +230,7 @@ test('script surface manifest validates current root and broker package scripts'
   // scripts/check-script-budget.mjs BUDGETS.brokerNpmScripts.
   // Monorepo migration retirement: root 101→84 as the 17 check:monorepo-*
   // aliases retire with the migration ceremony they gated.
-  assert.equal(byId.get('root')?.scriptCount, 83);
+  assert.equal(byId.get('root')?.scriptCount, 82);
   assert.equal(byId.get('broker')?.scriptCount, 55);
   assert.ok((byId.get('root')?.kindCounts['required-gate'] ?? 0) >= 7);
   assert.ok((byId.get('broker')?.kindCounts['required-gate'] ?? 0) >= 7);

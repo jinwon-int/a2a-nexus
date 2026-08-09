@@ -71,8 +71,8 @@ test('doc references all three completed upstream issues', async () => {
 test('doc links parent and tracking issues', async () => {
   const content = await readFile(join(repoRoot, 'docs', 'demo', 'split-repo-local-demo.md'), 'utf8');
 
-  assert.match(content, /a2a-plane\/issues\/473/);
-  assert.match(content, /a2a-plane\/issues\/480/);
+  assert.match(content, /a2a-plane#473/);
+  assert.match(content, /a2a-plane#480/);
 });
 
 test('doc contains safety constraints', async () => {

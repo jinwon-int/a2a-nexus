@@ -18,7 +18,7 @@
       },
       "releaseGateStep": {
         "name": "split-repo-local-demo",
-        "tier": "historical-transition",
+        "tier": "core",
         "args": [
           "run",
           "check:split-repo-local-demo"
@@ -47,12 +47,12 @@
         },
         {
           "source": "doc",
-          "matches": "a2a-plane\\/issues\\/473",
+          "matches": "a2a-plane#473",
           "message": "doc #473"
         },
         {
           "source": "doc",
-          "matches": "a2a-plane\\/issues\\/480",
+          "matches": "a2a-plane#480",
           "message": "doc #480"
         },
         {
@@ -348,7 +348,7 @@
       },
       "releaseGateStep": {
         "name": "current-state-no-live-smoke",
-        "tier": "historical-transition",
+        "tier": "core",
         "args": [
           "run",
           "check:current-state-no-live-smoke"

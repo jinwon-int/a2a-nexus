@@ -38,7 +38,17 @@ describe('repo-protection-baseline check', () => {
       result.includes('Settings-change requirements') || result.includes('settings-change'),
       'should list settings-change requirements'
     );
-    assert.ok(result.includes('NO-GO'), 'should state NO-GO for settings changes');
+    // The script used to print a blanket "NO-GO" for the settings-change
+    // section. It now reports each settings-only item as informational and
+    // says explicitly that a file check cannot assert it — which is the
+    // accurate contract, since branch protection lives in GitHub settings and
+    // not in the tree. Assert that boundary is still stated rather than the
+    // old verdict string, which went away when the script was rewritten and
+    // left this assertion failing unnoticed (nothing runs this file in CI).
+    assert.ok(
+      result.includes('not asserted by this file check'),
+      'should mark settings-only protections as outside what a file check can assert',
+    );
   });
 
   it('should exit 0 or 1 (not crash)', () => {

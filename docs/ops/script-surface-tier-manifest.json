@@ -6,7 +6,7 @@
     {
       "id": "root",
       "packageJson": "package.json",
-      "minScripts": 83,
+      "minScripts": 82,
       "requiredScripts": [
         "build",
         "check",
@@ -68,7 +68,7 @@
           "note": "Catch-all keeps legacy/manual scripts classified so future PRs must explicitly justify retirement."
         }
       ],
-      "note": "Floor ratcheted 100 -> 84 (monorepo migration ceremony retirement) -> 83 (the orphan check:a2a-nexus-831 alias retires with the dead modules it pinned). The floor guards against silent mass deletion; lower it only alongside a deliberate retirement, never to accommodate drift."
+      "note": "Floor ratcheted 100 -> 84 (monorepo ceremony) -> 83 (orphan 831 alias) -> 82 (check:historical, which selected zero steps once every gate moved to a default tier). The floor guards against silent mass deletion; lower it only alongside a deliberate retirement."
     },
     {
       "id": "broker",
