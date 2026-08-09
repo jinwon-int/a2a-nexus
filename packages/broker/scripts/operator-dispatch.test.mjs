@@ -23,9 +23,12 @@ const SURFACES = [
     runner: join(HERE, "terminal-brief.mjs"),
     manifest: join(HERE, "terminal-brief-manifest.json"),
     npmEntry: "terminal_brief",
-    expectedTools: 59,
-    spotTool: "terminal_brief_sidecar_dry_run_gate",
-    spotWrapper: "terminal-brief-sidecar-dry-run-gate.mjs",
+    // 59 -> 22 (#1665): the 37 terminal_brief_sidecar_* tools retired with the
+    // ceremony modules they wrapped. The spot check moved off a sidecar tool for
+    // the same reason — it now pins a surviving product-surface tool.
+    expectedTools: 22,
+    spotTool: "broker_terminal_receipt_parity",
+    spotWrapper: "broker-terminal-receipt-parity.mjs",
   },
   {
     name: "orchestration",

@@ -16,24 +16,11 @@ if (missing.length) {
   process.exit(1);
 }
 
-const defaultOnCore = 'packages/broker/src/core';
-const defaultOnTopLevel = fs
-  .readdirSync(defaultOnCore)
-  .filter((entry) => /^terminal-brief-sidecar-default-on-.*\.ts$/.test(entry))
-  .sort();
-if (defaultOnTopLevel.length > 5) {
-  console.error(
-    `Terminal-brief default-on top-level module count regressed: ${defaultOnTopLevel.length}/5. ` +
-      'Keep stage implementations under packages/broker/src/core/terminal-brief-sidecar-default-on/.',
-  );
-  process.exit(1);
-}
-const defaultOnBridge = path.join(defaultOnCore, 'terminal-brief-sidecar-default-on/index.ts');
-if (!fs.existsSync(defaultOnBridge)) {
-  console.error(`Missing terminal-brief default-on bridge: ${defaultOnBridge}`);
-  process.exit(1);
-}
+// The terminal-brief default-on layout checks retired with the ceremony they
+// guarded (#1665): they capped the top-level default-on module count at five and
+// required a terminal-brief-sidecar-default-on/index.ts barrel. Both modules and
+// barrel are gone, so the checks had nothing left to constrain.
 
 console.log(
-  `layout ok: ${required.length} paths; default-on top-level ${defaultOnTopLevel.length}/5`,
+  `layout ok: ${required.length} paths`,
 );
