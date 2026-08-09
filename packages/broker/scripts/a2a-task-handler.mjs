@@ -789,10 +789,13 @@ function analysisBridgeTelemetry(command, env = process.env) {
     safeText(env.WORKER_RUNTIME_FLAVOR, ""),
     safeText(env.WORKER_METADATA_JSON, ""),
   ].join("\n").toLowerCase();
-  let bridgeAdapter = "openclaw";
+  // Default adapter. This was "openclaw" from when OpenClaw was the only harness.
+  // It is piri now because that is what the fleet actually runs
+  // (CCC_AGENT_PROVIDER=piri on the worker nodes since 2026-08-05), and because
+  // the openclaw default could only fail: see analysisBridgeCommand below.
+  let bridgeAdapter = "piri";
   if (combined.includes("codex")) bridgeAdapter = "codex";
   else if (combined.includes("claude")) bridgeAdapter = "claude_code";
-  else if (combined.includes("piri")) bridgeAdapter = "piri";
   else if (combined.includes("hermes")) bridgeAdapter = "hermes";
   return {
     analysisKind: "analysis_bridge",
@@ -801,10 +804,29 @@ function analysisBridgeTelemetry(command, env = process.env) {
   };
 }
 
+/**
+ * Default analysis bridge, used only when no *_ANALYSIS_BIN is configured.
+ *
+ * This used to fall back to a bare `openclaw` binary. That binary is installed
+ * on no node in the fleet, and a bare command name skips
+ * analysisBridgeArtifactPreflight (it only inspects .mjs/.cjs/.js paths), so the
+ * failure surfaced late — at spawn, inside an already-claimed task — instead of
+ * at admission.
+ *
+ * The default is now the in-repo piri bridge, resolved next to this file so it
+ * works from a checkout regardless of cwd. Where the bridge is absent (the
+ * broker image ships only the hermes bridge), preflight now catches it and
+ * returns a structured missing_bridge_artifact error naming the resolved path.
+ * Explicit *_ANALYSIS_BIN configuration still wins over this.
+ */
+export const DEFAULT_ANALYSIS_BRIDGE = fileURLToPath(
+  new URL("./piri-a2a-analysis-bridge.mjs", import.meta.url),
+);
+
 function analysisBridgeCommand(env = process.env) {
   return safeText(
     env.A2A_HERMES_ANALYSIS_BIN,
-    safeText(env.A2A_OPENCLAW_ANALYSIS_BIN, safeText(env.OPENCLAW_BIN, "openclaw")),
+    safeText(env.A2A_OPENCLAW_ANALYSIS_BIN, safeText(env.OPENCLAW_BIN, DEFAULT_ANALYSIS_BRIDGE)),
   );
 }
 
