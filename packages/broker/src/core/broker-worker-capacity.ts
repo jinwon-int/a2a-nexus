@@ -120,6 +120,9 @@ export function buildWorkerCapacitySummary(
       counts,
       latestTaskUpdatedAt,
       workerMode: worker.workerMode,
+      ...(worker.capabilities.implementationCapability
+        ? { implementationCapability: worker.capabilities.implementationCapability }
+        : {}),
       runtimeFlavor: worker.capabilities.runtimeFlavor,
       gatewayRequired: worker.capabilities.gatewayRequired,
       substantiveAnalysisReady,
