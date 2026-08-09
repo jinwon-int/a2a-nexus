@@ -7,8 +7,7 @@
 This page is the current public source-of-truth index for the A2A monorepo
 surface. The staged canonical flip is complete — `a2a-nexus` packages are
 `MONOREPO_PACKAGES_CANONICAL` (recorded below); the former split repositories
-remain active provenance mirrors (unchanged, not archived), while
-archive/read-only/redirect stay separate HOLD surfaces. It separates current
+are archived and private, holding provenance history only. It separates current
 work from historical public-readiness and topology gates.
 
 ## Current validation entrypoints
@@ -83,10 +82,12 @@ release-gate step pinning it. The terminal states those phases reached are:
 
 - **`MONOREPO_PACKAGES_CANONICAL`** — `packages/broker`, `packages/docker-runner`
   and `packages/openclaw-plugin-a2a` are the canonical source.
-- **`ACTIVE_PROVENANCE_MIRROR`** — `jinwon-int/a2a-broker`,
-  `jinwon-int/a2a-docker-runner` and `jinwon-int/plugin-a2a` carry
-  README/MIRROR_NOTICE source-routing notices and remain active and public.
-  They were not archived, made read-only, redirected, renamed, or hidden.
+- **Mirrors archived** — `jinwon-int/a2a-broker`, `jinwon-int/a2a-docker-runner`
+  and `jinwon-int/plugin-a2a` carry README/MIRROR_NOTICE source-routing notices
+  and are now **archived and private**. They reached `ACTIVE_PROVENANCE_MIRROR`
+  during the migration and were archived afterwards; verified against the GitHub
+  API on 2026-08-09. An outside reader cannot open them, so do not cite them as
+  reachable references.
 
 Package ownership transfer, release/publish/deploy, DB, secret, provider send,
 Terminal ACK/replay, force-push, and history rewrite were never in scope of the
