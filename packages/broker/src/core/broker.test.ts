@@ -7,6 +7,7 @@ import { join } from "node:path";
 
 import { InMemoryA2ABroker, type BrokerProfilingSample } from "./broker.js";
 import type { WorkerRuntimeRepository } from "./worker-repository.js";
+import type { RegisterWorkerRequest } from "./types.js";
 import {
   SqliteArtifactRuntimeRepository,
   SqliteAuditRuntimeRepository,
@@ -2253,4 +2254,73 @@ test("broker audit and tombstone diagnostics can use SQLite runtime repositories
     sqliteStore.close();
     rmSync(dir, { recursive: true, force: true });
   }
+});
+
+test("#1786 registerWorker records an onboarding audit event for an opted-in worker", () => {
+  const broker = new InMemoryA2ABroker();
+  broker.registerWorker({
+    nodeId: "mobile-a",
+    role: "analyst",
+    capabilities: {
+      canAnalyze: true,
+      canBackfill: false,
+      canPatchWorkspace: false,
+      canPromoteLive: false,
+      workspaceIds: ["test"],
+      environments: ["research"],
+    },
+    metadata: { resourceAwareOnboardingKind: "mobilealpha-hermes" },
+  });
+
+  const events = broker.listAuditEvents().filter((e) => e.action === "worker.onboarding_evaluated");
+  assert.equal(events.length, 1);
+  assert.match(events[0].note ?? "", /mobilealpha-hermes go/);
+});
+
+test("#1786 registerWorker stays silent for a worker that did not opt in", () => {
+  const broker = new InMemoryA2ABroker();
+  registerWorker(broker, "plain-a");
+  assert.equal(
+    broker.listAuditEvents().filter((e) => e.action === "worker.onboarding_evaluated").length,
+    0,
+  );
+});
+
+test("#1786 enforce mode rejects a no-go registration; warn mode admits it", () => {
+  const badPolicy = JSON.stringify({
+    allowedTaskTypes: ["analyze"],
+    noLiveSend: false,
+    noMutation: true,
+    gatewayRequired: false,
+    mobileLowPower: true,
+    readOnly: true,
+  });
+  const request: RegisterWorkerRequest = {
+    nodeId: "mobile-b",
+    role: "analyst",
+    capabilities: {
+      canAnalyze: true,
+      canBackfill: false,
+      canPatchWorkspace: false,
+      canPromoteLive: false,
+      workspaceIds: ["test"],
+      environments: ["research"],
+    },
+    metadata: {
+      resourceAwareOnboardingKind: "mobilealpha-hermes",
+      resourceAwarePolicy: badPolicy,
+    },
+  };
+
+  const enforcing = new InMemoryA2ABroker(undefined, undefined, {
+    resourceAwareOnboardingMode: "enforce",
+  });
+  assert.throws(() => enforcing.registerWorker(request), /failed resource-aware onboarding/);
+
+  const warning = new InMemoryA2ABroker();
+  const worker = warning.registerWorker(request);
+  assert.equal(worker.nodeId, "mobile-b");
+  const events = warning.listAuditEvents().filter((e) => e.action === "worker.onboarding_evaluated");
+  assert.equal(events.length, 1);
+  assert.match(events[0].note ?? "", /no-go/);
 });

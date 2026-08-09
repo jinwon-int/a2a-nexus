@@ -76,6 +76,17 @@ export interface InMemoryA2ABrokerOptions {
   validationRepository?: ValidationRuntimeRepository;
   /** Optional repository for worker capability profile storage and retrieval. */
   capabilityCardRepository?: WorkerCapabilityCardRepository;
+  /**
+   * Resource-aware worker onboarding enforcement (#1786).
+   *
+   * Only workers that opt in via registration metadata are evaluated at all, so
+   * this setting has no effect on workers that do not ask for it.
+   *
+   * - "warn" (default): evaluate and record the decision as an audit event.
+   * - "enforce": additionally reject registration when the decision is no-go.
+   * - "off": skip evaluation entirely.
+   */
+  resourceAwareOnboardingMode?: "off" | "warn" | "enforce";
   retention?: Partial<BrokerRetentionPolicy>;
   /**
    * Maximum number of times the stale-task reaper (or manual requeue) is allowed to recycle a

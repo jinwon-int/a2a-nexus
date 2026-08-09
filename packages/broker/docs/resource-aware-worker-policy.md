@@ -7,6 +7,41 @@ registration. This is a **source-only, fail-closed** module — it does not
 inspect live host or gateway state, dispatch work, mutate state, or grant
 runtime permissions.
 
+## Wiring (#1786)
+
+Until 2026-08-09 nothing called this module: it had presets, fixtures, docs and
+44 passing tests, and no consumer. It is now evaluated by
+`InMemoryA2ABroker.registerWorker`.
+
+A worker opts in through registration metadata:
+
+```jsonc
+{
+  "nodeId": "mobile-a",
+  "metadata": {
+    "resourceAwareOnboardingKind": "mobilealpha-hermes",
+    // optional; omit to use the preset for that kind
+    "resourceAwarePolicy": "{\"readOnly\":true, ...}"
+  }
+}
+```
+
+Workers that do not set `resourceAwareOnboardingKind` are not evaluated, so
+registration is unchanged for every worker that predates this.
+
+Modes, via the `resourceAwareOnboardingMode` broker option:
+
+| mode | behaviour |
+|---|---|
+| `warn` *(default)* | evaluate, record `worker.onboarding_evaluated` audit event, admit either way |
+| `enforce` | as `warn`, and reject registration when the decision is `no-go` |
+| `off` | skip evaluation entirely |
+
+A malformed opt-in — unknown kind, or `resourceAwarePolicy` that is not valid
+JSON — throws in `warn` as well as `enforce`. Asking for a gate by the wrong
+name is a configuration error, and answering it with silence is how this module
+became unreachable in the first place.
+
 ## Policy flags
 
 | Flag | Type | Default | Description |

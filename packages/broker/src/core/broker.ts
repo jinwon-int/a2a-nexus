@@ -271,6 +271,10 @@ import type {
   WorkerRecord,
   WorkerView,
 } from "./types.js";
+import {
+  evaluateWorkerOnboarding,
+  resourceAwareOnboardingFromMetadata,
+} from "./resource-aware-worker-policy.js";
 
 import { BrokerError, REQUEUE_EXHAUSTED_ERROR_CODE, type BrokerErrorCode } from "./broker-error.js";
 import {
@@ -362,11 +366,14 @@ export class InMemoryA2ABroker {
   private readonly workerHeartbeatPersistIntervalMs: number;
   private lastFullRetentionPersistAtMs = Date.now();
 
+  private readonly resourceAwareOnboardingMode: "off" | "warn" | "enforce";
+
   constructor(
     private readonly stateStore?: BrokerStateStore,
     snapshot?: BrokerSnapshot,
     options: InMemoryA2ABrokerOptions = {},
   ) {
+    this.resourceAwareOnboardingMode = options.resourceAwareOnboardingMode ?? "warn";
     this.taskRepository = options.taskRepository;
     this.auditRepository = options.auditRepository;
     this.tombstoneRepository = options.tombstoneRepository;
@@ -924,8 +931,43 @@ export class InMemoryA2ABroker {
     });
   }
 
+  /**
+   * Evaluate resource-aware onboarding for a worker that opted in (#1786).
+   *
+   * Returns null when the worker did not opt in or the gate is off, in which
+   * case registration is byte-for-byte what it was before this existed.
+   *
+   * In "warn" the decision is returned so the caller can record it as audit
+   * evidence; in "enforce" a no-go additionally rejects the registration. A
+   * malformed opt-in throws in both modes: asking for a gate by the wrong name
+   * is a configuration error, and answering it with silence is how a validator
+   * ends up looking load-bearing without being reachable.
+   */
+  private evaluateResourceAwareOnboarding(
+    request: RegisterWorkerRequest,
+  ): { kind: string; decision: string; reasons: string[] } | null {
+    if (this.resourceAwareOnboardingMode === "off") return null;
+
+    const onboarding = resourceAwareOnboardingFromMetadata(request.metadata);
+    if (!onboarding) return null;
+
+    const evaluation = evaluateWorkerOnboarding(onboarding.kind, onboarding.policy);
+    if (this.resourceAwareOnboardingMode === "enforce" && evaluation.decision === "no-go") {
+      throw new Error(
+        `worker ${request.nodeId} failed resource-aware onboarding (${onboarding.kind}): ` +
+          evaluation.reasons.join("; "),
+      );
+    }
+    return {
+      kind: onboarding.kind,
+      decision: evaluation.decision,
+      reasons: evaluation.reasons,
+    };
+  }
+
   registerWorker(request: RegisterWorkerRequest): WorkerRecord {
     assertWorkerRegistrationPayload(request);
+    const onboarding = this.evaluateResourceAwareOnboarding(request);
 
     const now = isoNow();
     const existing = this.getWorkerCachedFirst(request.nodeId);
@@ -953,6 +995,16 @@ export class InMemoryA2ABroker {
       targetId: worker.nodeId,
       note: worker.displayName ?? worker.role,
     });
+    if (onboarding) {
+      this.appendAuditEvent({
+        actorId: worker.nodeId,
+        action: "worker.onboarding_evaluated",
+        targetType: "worker",
+        targetId: worker.nodeId,
+        note: `${onboarding.kind} ${onboarding.decision}` +
+          (onboarding.reasons.length ? `: ${onboarding.reasons.join("; ")}` : ""),
+      });
+    }
     if (identityWarning) {
       this.appendAuditEvent({
         actorId: worker.nodeId,

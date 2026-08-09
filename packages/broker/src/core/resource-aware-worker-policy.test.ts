@@ -10,6 +10,9 @@ import {
   diffResourceAwareWorkerPolicy,
   evaluateWorkerOnboarding,
   getPresetPolicy,
+  ONBOARDING_KIND_METADATA_KEY,
+  ONBOARDING_POLICY_METADATA_KEY,
+  resourceAwareOnboardingFromMetadata,
   validateResourceAwareWorkerPolicy,
   type ResourceAwareWorkerPolicy,
 } from "./resource-aware-worker-policy.js";
@@ -511,4 +514,54 @@ test("evaluateWorkerOnboarding returns NO-GO for invalid policy regardless of ki
 test("evaluateWorkerOnboarding handles unknown kind with NO-GO", () => {
   const ev = evaluateWorkerOnboarding("generic-terms" as never, mobilealpha_HERMES_POLICY);
   assert.equal(ev.decision, "go");
+});
+
+test("#1786 onboarding wiring: parses an opt-in off registration metadata and resolves the preset", () => {
+  const parsed = resourceAwareOnboardingFromMetadata({
+    [ONBOARDING_KIND_METADATA_KEY]: "mobilealpha-hermes",
+  });
+  assert.ok(parsed);
+  assert.equal(parsed.kind, "mobilealpha-hermes");
+  assert.equal(parsed.policySource, "preset");
+  assert.equal(evaluateWorkerOnboarding(parsed.kind, parsed.policy).decision, "go");
+});
+
+test("#1786 onboarding wiring: returns null when the worker did not opt in, so registration is unchanged", () => {
+  assert.equal(resourceAwareOnboardingFromMetadata(undefined), null);
+  assert.equal(resourceAwareOnboardingFromMetadata({}), null);
+  assert.equal(resourceAwareOnboardingFromMetadata({ other: "value" }), null);
+});
+
+test("#1786 onboarding wiring: throws on an opt-in it cannot honour rather than skipping silently", () => {
+  assert.throws(
+    () => resourceAwareOnboardingFromMetadata({ [ONBOARDING_KIND_METADATA_KEY]: "not-a-kind" }),
+    /unknown resourceAwareOnboardingKind/,
+  );
+  assert.throws(
+    () =>
+      resourceAwareOnboardingFromMetadata({
+        [ONBOARDING_KIND_METADATA_KEY]: "mobilealpha-hermes",
+        [ONBOARDING_POLICY_METADATA_KEY]: "{not json",
+      }),
+    /not valid JSON/,
+  );
+});
+
+test("#1786 onboarding wiring: lets metadata override the preset, and a bad override evaluates no-go", () => {
+  const parsed = resourceAwareOnboardingFromMetadata({
+    [ONBOARDING_KIND_METADATA_KEY]: "mobilealpha-hermes",
+    [ONBOARDING_POLICY_METADATA_KEY]: JSON.stringify({
+      allowedTaskTypes: ["analyze"],
+      noLiveSend: false,
+      noMutation: true,
+      gatewayRequired: false,
+      mobileLowPower: true,
+      readOnly: true,
+    }),
+  });
+  assert.ok(parsed);
+  assert.equal(parsed.policySource, "metadata");
+  const evaluation = evaluateWorkerOnboarding(parsed.kind, parsed.policy);
+  assert.equal(evaluation.decision, "no-go");
+  assert.ok(evaluation.reasons.some((r) => /noLiveSend/.test(r)));
 });
