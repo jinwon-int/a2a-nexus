@@ -267,6 +267,21 @@ export interface SqliteHotRetentionApplyResult {
 export interface SqliteCanonicalSnapshotRetentionSyncResult {
   synced: boolean;
   reason?: string;
+  /**
+   * #1776: the canonical row existed but could not be parsed (oversized or
+   * corrupt), so it was regenerated from the hot tables rather than filtered
+   * in place. `before` is absent in this case — the prior contents were never
+   * readable. Only ever set when the hot tables are the load source.
+   */
+  rebuiltFromHotTables?: boolean;
+  /** Size of the unparsable canonical payload that was replaced. */
+  unreadableBytes?: number;
+  /**
+   * #1776: set only when the sync threw. The hot-table prune has already been
+   * applied at that point, so this records the failure as data rather than
+   * discarding the execution result.
+   */
+  error?: string;
   before?: {
     tasks: number;
     auditEvents: number;
@@ -839,10 +854,45 @@ export class SqliteBrokerStateStore implements BrokerStateStore {
     plans: SqliteHotRetentionPlan[],
     auditEvent: AuditEvent,
   ): SqliteCanonicalSnapshotRetentionSyncResult {
-    const snapshot = this.readSnapshotRow();
-    if (!snapshot) {
+    // #1776: this used to call the throwing readSnapshotRow(). That made the
+    // one path able to repair an oversized canonical snapshot the one path
+    // blocked by it — `executeBrokerCleanupPlan` deleted the hot rows, then
+    // threw here on `broker snapshot exceeds max size`, leaving the prune
+    // half-applied. Read it as data instead, and when the row is present but
+    // unparsable there is nothing to read-modify-write: rebuild the canonical
+    // payload from the hot tables the caller has just pruned.
+    const read = this.readCanonicalSnapshotRow();
+    if (read.status === "absent") {
       return { synced: false, reason: "no_canonical_snapshot" };
     }
+    if (read.status === "unreadable") {
+      // Only safe when the hot tables are the source of truth. If the canonical
+      // row is the serving path, rebuilding from hot tables could drop records
+      // that only the canonical snapshot holds — fail closed and say why.
+      if (this.loadSource !== "hot-tables") {
+        return {
+          synced: false,
+          reason: `canonical_snapshot_unreadable_${read.reason}`,
+        };
+      }
+      const rebuilt = this.loadHotRuntimeSnapshot();
+      const withAudit: BrokerSnapshot = {
+        ...rebuilt,
+        auditEvents: [...rebuilt.auditEvents.filter((event) => event.id !== auditEvent.id), auditEvent],
+      };
+      const after = canonicalSnapshotCounts(withAudit);
+      this.runImmediateTransaction(() => {
+        this.writeCanonicalSnapshotPayloadRow(withAudit, new Date().toISOString());
+      });
+      return {
+        synced: true,
+        rebuiltFromHotTables: true,
+        reason: `canonical_snapshot_unreadable_${read.reason}`,
+        ...(read.bytes !== undefined ? { unreadableBytes: read.bytes } : {}),
+        after,
+      };
+    }
+    const snapshot = read.snapshot;
     const pruneIdsByTable = new Map(plans.map((plan) => [plan.table, new Set(plan.pruneIds)]));
     const taskPruneIds = pruneIdsByTable.get("broker_tasks") ?? new Set<string>();
     const auditPruneIds = pruneIdsByTable.get("broker_audit_events") ?? new Set<string>();
@@ -1389,22 +1439,14 @@ export class SqliteBrokerStateStore implements BrokerStateStore {
     };
   }
 
-  private readSnapshotRow(): BrokerSnapshot | undefined {
-    const row = this.db
-      .prepare("SELECT payload FROM broker_snapshots WHERE id = 1")
-      .get() as { payload?: string } | undefined;
-    if (typeof row?.payload !== "string") {
-      return undefined;
-    }
-    return parseSnapshotPayload(row.payload, `SQLite broker snapshot at ${this.dbFile}`, this.maxBytes);
-  }
-
-  // #1763: diagnostics-only variant of readSnapshotRow(). It reports an
-  // unparsable canonical row as data (with the byte size and row mtime the
-  // operator needs) instead of throwing, and carries the original error so the
-  // caller can still fail closed when the row is on the serving path. The
-  // write path (syncCanonicalSnapshotWithHotRetentionPlans) keeps using the
-  // throwing readSnapshotRow().
+  // #1763 introduced this as a diagnostics-only variant beside a throwing
+  // `readSnapshotRow()`, which the write path kept using. #1776 removed that
+  // throwing variant: it had no remaining caller, and its only caller had been
+  // the retention sync, where throwing on an oversized row is precisely the
+  // dead-end that left a prune half-applied. Reporting an unparsable canonical
+  // row as data — with the byte size and row mtime the operator needs, plus the
+  // original error so a caller on the serving path can still fail closed — is
+  // the behaviour every caller wants.
   private readCanonicalSnapshotRow(): CanonicalSnapshotRowRead {
     const row = this.db
       .prepare("SELECT payload, updated_at AS updatedAt FROM broker_snapshots WHERE id = 1")
