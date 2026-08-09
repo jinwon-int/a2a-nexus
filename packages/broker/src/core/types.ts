@@ -1307,6 +1307,14 @@ export interface WorkerCapacitySummaryItem {
   latestTaskUpdatedAt?: string;
   /** Declared operating mode; absent defaults to "persistent". */
   workerMode?: WorkerMode;
+  /**
+   * The implementation capability profile the claim gate already enforces
+   * (#1597). Projected here because choosing a worker for patch work is exactly
+   * the decision this answers, and until now an operator could only get it by
+   * reading a hand-maintained table. That table drifted and misrouted work
+   * twice. Absent means the worker never declared one.
+   */
+  implementationCapability?: WorkerImplementationCapability;
   /** Runtime flavor declared in capabilities for dispatch/ops visibility. */
   runtimeFlavor?: WorkerRuntimeFlavor;
   /** False when this worker does not require Gateway/plugin internals to execute tasks. */
