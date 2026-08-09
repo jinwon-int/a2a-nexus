@@ -46,8 +46,7 @@ The [`auto-merge`](.github/workflows/auto-merge.yml) workflow relies on `main`
 branch protection to keep merges gated on review and required checks. The
 steady-state requirement is documented in
 [`docs/branch-protection.md`](docs/branch-protection.md); applying or changing
-the GitHub ruleset itself is an approval-sensitive action (see the
-[branch protection approval packet](docs/history/monorepo-branch-protection-approval-packet.md)).
+the GitHub ruleset itself is an approval-sensitive action.
 
 ## Maintainer changes
 

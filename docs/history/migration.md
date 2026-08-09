@@ -12,9 +12,10 @@ canonical:
 - `jinwon-int/openclaw-plugin-a2a`
 
 `a2a-plane` is the public umbrella, contracts, fixtures, release/readiness gate,
-and coordination workspace. The current `packages/*` mirrors are not green for
-canonical ownership. See
-[`history/monorepo-ci-parity-matrix.md`](../history/monorepo-ci-parity-matrix.md).
+and coordination workspace. At the time of writing the `packages/*` mirrors were
+not yet green for canonical ownership; the CI parity matrix that tracked this
+was retired once the flip completed. See
+[`current-state.md`](../current-state.md) for the resulting topology.
 
 ## What This Migration Is
 

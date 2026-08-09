@@ -1,147 +1,148 @@
 {
- "$schema": "https://example.invalid/a2a-nexus/script-surface-tier-manifest.schema.json",
- "generatedFrom": "scripts/lib/script-surface-manifest.mjs",
- "purpose": "#1150 operating-cost refactor: classify the existing npm/script validation surface without deleting gates. The manifest is intentionally additive; future cleanup PRs must keep required gates classified before retiring wrappers.",
- "packages": [
-  {
-   "id": "root",
-   "packageJson": "package.json",
-   "minScripts": 100,
-   "requiredScripts": [
-    "build",
-    "check",
-    "release-gate",
-    "test",
-    "check:release-gate-inventory",
-    "scan:public-readiness"
-   ],
-   "requiredGateScripts": [
-    "check",
-    "release-gate",
-    "check:release-gate-inventory",
-    "scan:public-readiness",
-    "check:layout",
-    "check:packages",
-    "test:release-gate"
-   ],
-   "rules": [
+  "$schema": "https://example.invalid/a2a-nexus/script-surface-tier-manifest.schema.json",
+  "generatedFrom": "scripts/lib/script-surface-manifest.mjs",
+  "purpose": "#1150 operating-cost refactor: classify the existing npm/script validation surface without deleting gates. The manifest is intentionally additive; future cleanup PRs must keep required gates classified before retiring wrappers.",
+  "packages": [
     {
-     "id": "root-core-release-gates",
-     "pattern": "^(check|release-gate|test|build|check:release-gate-inventory|test:release-gate|test:release-gate:list|check:layout|check:packages|check:promotion-capstone|check:runner-import-smoke|check:terminal-brief-routing|check:message-id-ack-boundary|check:external-harness-conformance|check:quickstart-conformance|check:quickstart-doctest|check:script-budget|check:script-budget:test)$",
-     "tier": "core-release-gate",
-     "kind": "required-gate",
-     "note": "Default release/test/build gates and their direct self-check helpers must stay classified as required gates."
+      "id": "root",
+      "packageJson": "package.json",
+      "minScripts": 84,
+      "requiredScripts": [
+        "build",
+        "check",
+        "release-gate",
+        "test",
+        "check:release-gate-inventory",
+        "scan:public-readiness"
+      ],
+      "requiredGateScripts": [
+        "check",
+        "release-gate",
+        "check:release-gate-inventory",
+        "scan:public-readiness",
+        "check:layout",
+        "check:packages",
+        "test:release-gate"
+      ],
+      "rules": [
+        {
+          "id": "root-core-release-gates",
+          "pattern": "^(check|release-gate|test|build|check:release-gate-inventory|test:release-gate|test:release-gate:list|check:layout|check:packages|check:promotion-capstone|check:runner-import-smoke|check:terminal-brief-routing|check:message-id-ack-boundary|check:external-harness-conformance|check:quickstart-conformance|check:quickstart-doctest|check:script-budget|check:script-budget:test)$",
+          "tier": "core-release-gate",
+          "kind": "required-gate",
+          "note": "Default release/test/build gates and their direct self-check helpers must stay classified as required gates."
+        },
+        {
+          "id": "root-public-readiness",
+          "pattern": "^(scan:|a2a:source|a2a:approval|a2a:execution|a2a:final|source_public|libero:|check:readme|check:monorepo|check:compatibility|check:split|check:repo-protection|check:ci-docs-safety).*$",
+          "tier": "public-readiness",
+          "kind": "standard-gate",
+          "note": "Public-readiness, source-public, monorepo transition, and repo-protection checks are standard gated validation surfaces."
+        },
+        {
+          "id": "root-routing-dispatch-finalizer",
+          "pattern": "^(dispatch:|finalizer:|fleet:|routing:|safety:|pr-review:|round:|check:team|check:mobile-alpha|check:native|check:hermes|worker:|a2a:team|a2a:skill|a2a:taskflow|a2a:team1|a2a:team2).*$",
+          "tier": "a2a-routing-and-rounds",
+          "kind": "standard-gate",
+          "note": "A2A routing, dispatch, finalizer, worker readiness, and team-round scripts stay visible as standard validation surfaces."
+        },
+        {
+          "id": "root-tests-and-doc-checks",
+          "pattern": "^(test:|smoke:|check:no-diff|check:current|check:markdown|check:allhands|check:a2a|check:broker|review:).*$",
+          "tier": "tests-and-doc-checks",
+          "kind": "test-helper",
+          "note": "Test and documentation check helpers are not deletion candidates unless a replacement gate is documented."
+        },
+        {
+          "id": "root-required-ci-gates",
+          "pattern": "^(check:approval-records|check:source-quality-floors)$",
+          "tier": "core-release-gate",
+          "kind": "required-gate",
+          "note": "CI-consumed gates misclassified by the catch-all: check:approval-records runs in ci.yml and check:source-quality-floors is wired into the core release-gate tier and package CI parity. #1503 Wave 0 classification fix."
+        },
+        {
+          "id": "root-manual-catchall",
+          "pattern": ".*",
+          "tier": "manual-or-legacy-ops",
+          "kind": "manual-ops",
+          "note": "Catch-all keeps legacy/manual scripts classified so future PRs must explicitly justify retirement."
+        }
+      ],
+      "note": "Floor ratcheted 100 -> 84 when the monorepo migration ceremony retired its 17 check:monorepo-* aliases. The floor guards against silent mass deletion; lower it only alongside a deliberate retirement, never to accommodate drift."
     },
     {
-     "id": "root-public-readiness",
-     "pattern": "^(scan:|a2a:source|a2a:approval|a2a:execution|a2a:final|source_public|libero:|check:readme|check:monorepo|check:compatibility|check:split|check:repo-protection|check:ci-docs-safety).*$",
-     "tier": "public-readiness",
-     "kind": "standard-gate",
-     "note": "Public-readiness, source-public, monorepo transition, and repo-protection checks are standard gated validation surfaces."
-    },
-    {
-     "id": "root-routing-dispatch-finalizer",
-     "pattern": "^(dispatch:|finalizer:|fleet:|routing:|safety:|pr-review:|round:|check:team|check:mobile-alpha|check:native|check:hermes|worker:|a2a:team|a2a:skill|a2a:taskflow|a2a:team1|a2a:team2).*$",
-     "tier": "a2a-routing-and-rounds",
-     "kind": "standard-gate",
-     "note": "A2A routing, dispatch, finalizer, worker readiness, and team-round scripts stay visible as standard validation surfaces."
-    },
-    {
-     "id": "root-tests-and-doc-checks",
-     "pattern": "^(test:|smoke:|check:no-diff|check:current|check:markdown|check:allhands|check:a2a|check:broker|review:).*$",
-     "tier": "tests-and-doc-checks",
-     "kind": "test-helper",
-     "note": "Test and documentation check helpers are not deletion candidates unless a replacement gate is documented."
-    },
-    {
-     "id": "root-required-ci-gates",
-     "pattern": "^(check:approval-records|check:source-quality-floors)$",
-     "tier": "core-release-gate",
-     "kind": "required-gate",
-     "note": "CI-consumed gates misclassified by the catch-all: check:approval-records runs in ci.yml and check:source-quality-floors is wired into the core release-gate tier and package CI parity. #1503 Wave 0 classification fix."
-    },
-    {
-     "id": "root-manual-catchall",
-     "pattern": ".*",
-     "tier": "manual-or-legacy-ops",
-     "kind": "manual-ops",
-     "note": "Catch-all keeps legacy/manual scripts classified so future PRs must explicitly justify retirement."
+      "id": "broker",
+      "packageJson": "packages/broker/package.json",
+      "minScripts": 54,
+      "requiredScripts": [
+        "build",
+        "check",
+        "test",
+        "release_gate",
+        "scripts_inventory",
+        "rollout_guard",
+        "worker_signature_rollout_preflight"
+      ],
+      "requiredGateScripts": [
+        "build",
+        "check",
+        "test",
+        "release_gate",
+        "scripts_inventory",
+        "rollout_guard",
+        "worker_signature_rollout_preflight"
+      ],
+      "rules": [
+        {
+          "id": "broker-core-gates",
+          "pattern": "^(build|check|test|test:worker|release_gate|scripts_inventory|clean:dist|tck:|test:drift-watch|refresh:drift-refs).*$",
+          "tier": "broker-core-release-gate",
+          "kind": "required-gate",
+          "note": "Broker build/test/TCK/inventory scripts define the default package validation surface."
+        },
+        {
+          "id": "broker-rollout-preflight",
+          "pattern": "^(rollout|scan:public-readiness|rollout_guard|worker_signature_rollout_preflight)$",
+          "tier": "broker-rollout-and-preflight",
+          "kind": "standard-gate",
+          "note": "#1503 Wave 2: 24 rollout/preflight aliases collapsed into the rollout dispatcher (scripts/rollout-preflight-manifest.json). scan:public-readiness stays direct (package CI parity requiredScript)."
+        },
+        {
+          "id": "broker-terminal-brief-approval",
+          "pattern": "^terminal_brief$",
+          "tier": "terminal-brief-approval",
+          "kind": "approval-gated",
+          "note": "#1503 Wave 1: the 59 terminal-brief approval aliases collapsed into the terminal_brief dispatcher (scripts/terminal-brief-manifest.json). The dispatcher stays approval-gated; per-tool wrappers remain approval boundaries and must not be bulk-deleted."
+        },
+        {
+          "id": "broker-orchestration-intelligence",
+          "pattern": "^orchestration$",
+          "tier": "orchestration-intelligence",
+          "kind": "manual-ops",
+          "note": "#1503 Wave 2: the 21 orchestration-intelligence aliases collapsed into the orchestration dispatcher (scripts/orchestration-manifest.json). Wrappers remain approval boundaries and must not be bulk-deleted."
+        },
+        {
+          "id": "broker-a2a-rounds",
+          "pattern": "^(team1_|team2_|a2a_|round_|finalizer|a2ad_|test:round|routing|fleet).*$",
+          "tier": "a2a-rounds-and-finalizers",
+          "kind": "standard-gate",
+          "note": "A2A round, finalizer, classifier, routing, and parent-aggregate scripts remain explicit validation surfaces."
+        },
+        {
+          "id": "broker-diagnostics-live",
+          "pattern": "^(livez_|comprehensive_|smoke:|export:|dev|dev:worker|start|start:worker|start:local|worker:echo).*$",
+          "tier": "diagnostics-and-local-dev",
+          "kind": "diagnostic",
+          "note": "Diagnostics and local development scripts are manual surfaces and should not be mistaken for default release gates."
+        },
+        {
+          "id": "broker-manual-catchall",
+          "pattern": ".*",
+          "tier": "manual-or-legacy-ops",
+          "kind": "manual-ops",
+          "note": "Catch-all keeps uncategorized broker scripts visible for later caller-audit review rather than silent deletion."
+        }
+      ]
     }
-   ]
-  },
-  {
-   "id": "broker",
-   "packageJson": "packages/broker/package.json",
-   "minScripts": 54,
-   "requiredScripts": [
-    "build",
-    "check",
-    "test",
-    "release_gate",
-    "scripts_inventory",
-    "rollout_guard",
-    "worker_signature_rollout_preflight"
-   ],
-   "requiredGateScripts": [
-    "build",
-    "check",
-    "test",
-    "release_gate",
-    "scripts_inventory",
-    "rollout_guard",
-    "worker_signature_rollout_preflight"
-   ],
-   "rules": [
-    {
-     "id": "broker-core-gates",
-     "pattern": "^(build|check|test|test:worker|release_gate|scripts_inventory|clean:dist|tck:|test:drift-watch|refresh:drift-refs).*$",
-     "tier": "broker-core-release-gate",
-     "kind": "required-gate",
-     "note": "Broker build/test/TCK/inventory scripts define the default package validation surface."
-    },
-    {
-     "id": "broker-rollout-preflight",
-     "pattern": "^(rollout|scan:public-readiness|rollout_guard|worker_signature_rollout_preflight)$",
-     "tier": "broker-rollout-and-preflight",
-     "kind": "standard-gate",
-     "note": "#1503 Wave 2: 24 rollout/preflight aliases collapsed into the rollout dispatcher (scripts/rollout-preflight-manifest.json). scan:public-readiness stays direct (package CI parity requiredScript)."
-    },
-    {
-     "id": "broker-terminal-brief-approval",
-     "pattern": "^terminal_brief$",
-     "tier": "terminal-brief-approval",
-     "kind": "approval-gated",
-     "note": "#1503 Wave 1: the 59 terminal-brief approval aliases collapsed into the terminal_brief dispatcher (scripts/terminal-brief-manifest.json). The dispatcher stays approval-gated; per-tool wrappers remain approval boundaries and must not be bulk-deleted."
-    },
-    {
-     "id": "broker-orchestration-intelligence",
-     "pattern": "^orchestration$",
-     "tier": "orchestration-intelligence",
-     "kind": "manual-ops",
-     "note": "#1503 Wave 2: the 21 orchestration-intelligence aliases collapsed into the orchestration dispatcher (scripts/orchestration-manifest.json). Wrappers remain approval boundaries and must not be bulk-deleted."
-    },
-    {
-     "id": "broker-a2a-rounds",
-     "pattern": "^(team1_|team2_|a2a_|round_|finalizer|a2ad_|test:round|routing|fleet).*$",
-     "tier": "a2a-rounds-and-finalizers",
-     "kind": "standard-gate",
-     "note": "A2A round, finalizer, classifier, routing, and parent-aggregate scripts remain explicit validation surfaces."
-    },
-    {
-     "id": "broker-diagnostics-live",
-     "pattern": "^(livez_|comprehensive_|smoke:|export:|dev|dev:worker|start|start:worker|start:local|worker:echo).*$",
-     "tier": "diagnostics-and-local-dev",
-     "kind": "diagnostic",
-     "note": "Diagnostics and local development scripts are manual surfaces and should not be mistaken for default release gates."
-    },
-    {
-     "id": "broker-manual-catchall",
-     "pattern": ".*",
-     "tier": "manual-or-legacy-ops",
-     "kind": "manual-ops",
-     "note": "Catch-all keeps uncategorized broker scripts visible for later caller-audit review rather than silent deletion."
-    }
-   ]
-  }
- ]
+  ]
 }
