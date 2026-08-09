@@ -36,6 +36,11 @@ ARG A2A_BROKER_IMAGE_SOURCE=https://github.com/jinwon-int/a2a-nexus
 # git HEAD for this build? Defaults to false so an image can never claim
 # verification it did not get; `npm run build:image -w packages/broker` sets it.
 ARG A2A_BROKER_REVISION_VERIFIED=false
+# #1774: deployment naming label for image.tag (e.g. `vps7-github`, `github`).
+# The sha half of the tag is derived from the verified revision, so only this
+# stable per-host prefix is configurable and it never needs a per-deploy edit.
+# Empty means the baked tag is the short revision alone.
+ARG A2A_BROKER_IMAGE_TAG_PREFIX=
 # Production images must carry real provenance. Operators can still build local
 # dev images by passing an explicit non-production revision/created pair, but the
 # image no longer silently reports "unknown" or an empty build timestamp.
@@ -73,7 +78,8 @@ COPY packages/broker/scripts/export-sqlite-state.mjs ./packages/broker/scripts/e
 COPY packages/broker/scripts/lib ./packages/broker/scripts/lib
 # Generate dist/build-info.json from Docker build ARGs so /health.build.revision
 # and org.opencontainers.image.revision use the actual build-time values.
-RUN cd packages/broker && node scripts/generate-build-info.mjs --runtime docker
+RUN cd packages/broker && node scripts/generate-build-info.mjs --runtime docker \
+      --image-tag-prefix "$A2A_BROKER_IMAGE_TAG_PREFIX"
 COPY packages/broker/scripts/a2a-task-handler.mjs ./packages/broker/scripts/a2a-task-handler.mjs
 COPY packages/broker/scripts/worker-model-policy.mjs ./packages/broker/scripts/worker-model-policy.mjs
 COPY packages/broker/scripts/hermes-a2a-analysis-bridge.mjs ./packages/broker/scripts/hermes-a2a-analysis-bridge.mjs

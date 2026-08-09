@@ -20,6 +20,11 @@ services:
         A2A_BROKER_VERSION: ${A2A_BROKER_VERSION:-0.1.0}
         A2A_BROKER_CREATED: ${A2A_BROKER_CREATED:?set A2A_BROKER_CREATED to an RFC3339/UTC build timestamp}
         A2A_BROKER_REVISION_VERIFIED: ${A2A_BROKER_REVISION_VERIFIED:-false}
+        # #1774: stable per-host naming label for image.tag (`vps7-github`,
+        # `github`, …). Set it once in .env; the sha half is derived from the
+        # verified revision, so the tag tracks the build with no per-deploy
+        # edit. Leave unset to bake the short revision alone.
+        A2A_BROKER_IMAGE_TAG_PREFIX: ${A2A_BROKER_IMAGE_TAG_PREFIX:-}
     container_name: ${SERVICE_NAME:-a2a-broker}
     hostname: ${SERVICE_NAME:-a2a-broker}
     restart: unless-stopped
@@ -29,6 +34,12 @@ services:
     # what the broker reports. The runtime reads provenance from the
     # `dist/build-info.json` baked into the image, and a host value that
     # contradicts it is ignored and surfaced as a /health warning.
+    #
+    # MIGRATION (#1774): `image.tag` is now baked too. Replace the per-deploy
+    # `A2A_BROKER_IMAGE_TAG=<prefix>-<sha>` line in `.env` with a one-time
+    # `A2A_BROKER_IMAGE_TAG_PREFIX=<prefix>`. Until you do, the stale
+    # A2A_BROKER_IMAGE_TAG is ignored and reported as a provenance conflict on
+    # /health — the warning names the value to remove.
     #
     # Before that fix a single stale line here made /health advertise a commit
     # the image was never built from: a month on T2, and a three-way
