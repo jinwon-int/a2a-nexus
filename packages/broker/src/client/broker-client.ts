@@ -739,11 +739,15 @@ export function buildBrokerCreateTaskRequestFromOpenClaw(
       }
     : undefined;
   const caseContext = readCaseContext(taskInput);
-  // Wire values, not naming: `requesterId` and `via.transport` below are sent to
-  // the broker and land in stored task evidence. They are left as-is by the
-  // package retirement so existing records stay comparable; changing them is a
-  // behaviour change and belongs in its own PR.
-  const requesterId = requesterNodeId ?? requesterSessionKey ?? "openclaw";
+  // `requesterId` and `via.transport` are sent to the broker and land in stored
+  // task evidence. Both defaulted to "openclaw" because this file used to ship
+  // inside the OpenClaw plugin. It is now the broker's own generic client, so
+  // the label was simply wrong — a task submitted by this client did not come
+  // from OpenClaw. Safe to correct: both fields are free-form
+  // `z.string().min(1).optional()` in the client schema and in
+  // core/store-schemas.ts, with no enum and no branch on the value anywhere in
+  // the broker. Existing records keep whatever they were written with.
+  const requesterId = requesterNodeId ?? requesterSessionKey ?? "a2a-nexus-client";
   const targetId = targetNodeId ?? request.targetSessionKey;
   const taskId =
     normalizeOptionalString(request.taskId) ?? normalizeOptionalString(request.waitRunId);
@@ -767,7 +771,7 @@ export function buildBrokerCreateTaskRequestFromOpenClaw(
     ...(caseContext.policyContext ? { policyContext: caseContext.policyContext } : {}),
     message: request.originalMessage,
     via: {
-      transport: "openclaw",
+      transport: "a2a-nexus-client",
       ...(requesterChannel ? { channel: requesterChannel } : {}),
       ...(requesterSessionKey ? { sessionId: requesterSessionKey } : {}),
       ...((correlationId ?? request.waitRunId)

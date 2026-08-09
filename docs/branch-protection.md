@@ -99,6 +99,22 @@ applied ruleset itself, not in a planning document. Read the live list with
 .required_status_checks.contexts` and keep it in sync with the job names in
 [`ci.yml`](../.github/workflows/ci.yml).
 
+### Required checks as of 2026-08-09
+
+```
+paths-filter, setup, layout, broker, docker-runner, contracts, docs,
+promotion-capstone, check, finalizer-verdict-gate
+```
+
+`plugin` was removed from this list when `packages/openclaw-plugin-a2a` and its
+CI job were retired. A required check whose job no longer exists never reports,
+so it blocks every PR — deleting a job and leaving its context in the ruleset is
+a merge deadlock. Removing a job and removing its required check are one change,
+even though one lands in a PR and the other is a settings mutation.
+
+This list is a snapshot for orientation, not the source of truth. The ruleset is,
+and it is mutable — read it with the command above before relying on it.
+
 ## How to verify the invariant holds
 
 These are read-only checks; none of them mutate settings.
