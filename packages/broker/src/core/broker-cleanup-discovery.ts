@@ -18,6 +18,7 @@ import type {
   TaskTombstone,
   WorkerRecord,
 } from "./types.js";
+import { resolveTaskStalenessSignalMs } from "./broker-status-predicates.js";
 
 /** Read-only view of the broker collections cleanup discovery scans. */
 export interface CleanupDiscoveryState {
@@ -158,12 +159,8 @@ export function buildCleanupDryRunPlan(
       const workerId = task.claimedBy ?? task.assignedWorkerId;
       if (!workerId || !staleWorkerIds.has(workerId)) continue;
 
-      const lastActivityMs = task.lastHeartbeatAt
-        ? Date.parse(task.lastHeartbeatAt)
-        : task.claimedAt
-          ? Date.parse(task.claimedAt)
-          : Date.parse(task.createdAt);
-      const ageMs = nowMs - (Number.isFinite(lastActivityMs) ? lastActivityMs : nowMs);
+      const lastActivityMs = resolveTaskStalenessSignalMs(task, nowMs);
+      const ageMs = nowMs - lastActivityMs;
 
       const risk: CleanupCandidate["risk"] =
         task.status === "running" ? "high_risk" : "caution";
@@ -177,7 +174,7 @@ export function buildCleanupDryRunPlan(
         actionability,
         actionabilityReason: "blocked: claimed/running task on a stale worker must be requeued or failed before cleanup",
         entityId: task.id,
-        updatedAt: task.lastHeartbeatAt ?? task.claimedAt ?? task.updatedAt,
+        updatedAt: task.lastProgressAt ?? task.lastHeartbeatAt ?? task.claimedAt ?? task.updatedAt,
         ageMs,
         metadata: {
           taskId: task.id,
@@ -185,6 +182,7 @@ export function buildCleanupDryRunPlan(
           intent: task.intent,
           staleWorkerId: workerId,
           lastHeartbeatAt: task.lastHeartbeatAt,
+          lastProgressAt: task.lastProgressAt,
           claimedAt: task.claimedAt,
           requeueCount: task.requeueCount,
         },

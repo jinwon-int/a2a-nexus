@@ -2,7 +2,10 @@
 // signal projection, and exchange thread-message collection, extracted from
 // broker.ts. Pure functions over task/audit/worker records; they hold no broker
 // state.
-import { computeTaskDiagnosticStatus } from "./broker-status-predicates.js";
+import {
+  computeTaskDiagnosticStatus,
+  resolveTaskStalenessSignalMs,
+} from "./broker-status-predicates.js";
 import { isWorkerStale } from "./broker-worker-status.js";
 import type {
   A2AExchangeMessageRecord,
@@ -62,10 +65,7 @@ export function getTaskRequeueReason(
     return `worker ${task.claimedBy} is stale`;
   }
 
-  const lastActivityAt = Date.parse(task.updatedAt || task.claimedAt || task.createdAt);
-  if (!Number.isFinite(lastActivityAt)) {
-    return null;
-  }
+  const lastActivityAt = resolveTaskStalenessSignalMs(task, nowMs);
 
   if (nowMs - lastActivityAt >= olderThanMs) {
     return `task exceeded stale threshold ${olderThanMs}ms`;
@@ -326,9 +326,10 @@ export function buildTaskDiagnosticReport(
     task.claimedAt ? Date.parse(task.claimedAt) : 0,
     task.completedAt ? Date.parse(task.completedAt) : 0,
     task.lastHeartbeatAt ? Date.parse(task.lastHeartbeatAt) : 0,
+    task.lastProgressAt ? Date.parse(task.lastProgressAt) : 0,
   );
-  const stalenessMs = task.lastHeartbeatAt
-    ? nowMs - Date.parse(task.lastHeartbeatAt)
+  const stalenessMs = task.status === "claimed" || task.status === "running"
+    ? nowMs - resolveTaskStalenessSignalMs(task, nowMs)
     : undefined;
 
   return {
@@ -349,6 +350,7 @@ export function buildTaskDiagnosticReport(
         ? task.claimedAt
         : undefined,
       lastHeartbeatAt: task.lastHeartbeatAt,
+      lastProgressAt: task.lastProgressAt,
       completedAt: task.completedAt,
       tombstonedAt: tombstone?.tombstonedAt,
     },

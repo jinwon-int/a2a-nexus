@@ -696,9 +696,9 @@ export interface TaskRecord extends A2ATaskRequest {
    */
   requeueCount?: number;
   /**
-   * Last time a worker explicitly heartbeat this task, confirming active progress.
-   * Updated by `heartbeatTask()`. Enables per-task staleness detection independent
-   * of the worker-level `lastSeenAt`.
+   * Last time a worker explicitly heartbeat this task, confirming task-runner
+   * liveness. Updated by `heartbeatTask()`. Progress-aware tasks use
+   * `lastProgressAt` as the authoritative stale signal instead.
    */
   lastHeartbeatAt?: string;
   /**
@@ -1060,8 +1060,8 @@ export interface AuditListFilters {
 
 /** Diagnostic status for a delegated run, computed from lifecycle data. */
 export type TaskDiagnosticStatus =
-  | "active"      // claimed or running with recent heartbeat
-  | "stale"       // claimed or running but no recent heartbeat / exceeded expected duration
+  | "active"      // claimed or running with a recent progress/heartbeat signal
+  | "stale"       // claimed or running but no recent authoritative task signal
   | "long_running" // running beyond a configurable threshold
   | "terminal";    // succeeded, failed, or canceled
 
@@ -1159,6 +1159,7 @@ export interface TaskDiagnosticReport {
     claimedAt?: string;
     startedAt?: string;
     lastHeartbeatAt?: string;
+    lastProgressAt?: string;
     completedAt?: string;
     tombstonedAt?: string;
   };

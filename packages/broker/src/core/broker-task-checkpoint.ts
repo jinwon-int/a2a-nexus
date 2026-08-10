@@ -180,7 +180,17 @@ export function heartbeatTask(taskId: string, workerId: string, context: TaskChe
   const now = isoNow();
   const nowMs = Date.parse(now);
   task.lastHeartbeatAt = now;
-  if (lastProgressAt) task.lastProgressAt = lastProgressAt;
+  if (lastProgressAt) {
+    const reportedProgressMs = Date.parse(lastProgressAt);
+    if (Number.isFinite(reportedProgressMs)) {
+      const priorProgressMs = task.lastProgressAt ? Date.parse(task.lastProgressAt) : Number.NaN;
+      const boundedProgressMs = Math.min(reportedProgressMs, nowMs);
+      const monotonicProgressMs = Number.isFinite(priorProgressMs) && priorProgressMs <= nowMs
+        ? Math.max(priorProgressMs, boundedProgressMs)
+        : boundedProgressMs;
+      task.lastProgressAt = new Date(monotonicProgressMs).toISOString();
+    }
+  }
   task.updatedAt = now;
   context.setTaskRecord(task);
   if (context.shouldPersistHeartbeatAudit(task.id, nowMs)) {

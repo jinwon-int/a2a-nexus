@@ -6,6 +6,7 @@
  */
 
 import type { InMemoryA2ABroker } from "../core/broker.js";
+import { resolveTaskStalenessSignalMs } from "../core/broker-status-predicates.js";
 import type { TaskRecord } from "../core/types.js";
 
 // ---------------------------------------------------------------------------
@@ -245,12 +246,8 @@ export class PeerStatusService {
     );
     const staleTasks = allTasks.filter((t: TaskRecord) => {
       if (t.status !== "claimed" && t.status !== "running") return false;
-      const lastSignal = t.lastHeartbeatAt
-        ? Date.parse(t.lastHeartbeatAt)
-        : t.claimedAt
-          ? Date.parse(t.claimedAt)
-          : Date.parse(t.createdAt);
-      return nowMs - lastSignal > 120_000; // 2 min stale threshold
+      const lastSignal = resolveTaskStalenessSignalMs(t, nowMs);
+      return nowMs - lastSignal >= 120_000; // 2 min stale threshold
     });
 
     // Capacity: default 10 slots for persistent workers, 3 for mobile
