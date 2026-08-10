@@ -17,6 +17,13 @@ export const ALLOWED_WORKER_MODELS = Object.freeze([
   "grok-4.20",
   // M3 fleet workers run minimax-m3 via the custom:minimax provider (#673).
   "minimax-m3",
+  // Piri fleet worker models (#1802): Kimi K3 and GLM-5.2. The [1m] suffix
+  // is the 1M-context variant name used by node worker env (e.g.
+  // A2A_CLAUDE_MODEL=k3[1m]).
+  "kimi-coding/k3",
+  "k3[1m]",
+  "zai/glm-5.2",
+  "glm-5.2[1m]",
 ]);
 
 export const DEFAULT_WORKER_MODEL = "openai-codex/gpt-5.6-sol";
@@ -107,6 +114,10 @@ export function canonicalizeWorkerModel(model) {
   if (value === "gpt-5.6-sol") return "openai-codex/gpt-5.6-sol";
   if (value === "gpt-5.5") return "openai-codex/gpt-5.5";
   if (value === "custom:minimax/minimax-m3") return "minimax-m3";
+  // Piri registry ids arrive bare when nodes configure them without the
+  // provider prefix (#1802).
+  if (value === "k3") return "kimi-coding/k3";
+  if (value === "glm-5.2") return "zai/glm-5.2";
   return value;
 }
 

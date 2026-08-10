@@ -446,8 +446,10 @@ function normalizedPatchCommandProfile(env = process.env) {
   if (profile === "codex") return "codex";
   if (profile === "hermes") return "hermes";
   if (profile === "openclaw") return "openclaw";
+  if (profile === "piri") return "piri";
   const image = safeText(env.A2A_DOCKER_RUNNER_IMAGE, "").toLowerCase();
   if (image.includes("codex")) return "codex";
+  if (image.includes("piri")) return "piri";
   return image.includes("hermes") ? "hermes" : "";
 }
 
@@ -2554,6 +2556,7 @@ export const __test = Object.freeze({
   DEFAULT_OPENCLAW_TIMEOUT_SEC,
   DEFAULT_RUNNER_TASK_TIMEOUT_MS,
   normalizeAnalysisBridgeAdapter,
+  normalizedPatchCommandProfile,
   resolveNodeScriptInvocation,
   resolveWorkerModel,
   resolveWorkerThinking,

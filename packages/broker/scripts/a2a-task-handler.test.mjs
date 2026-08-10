@@ -256,6 +256,10 @@ test("unsupported workerModel fails closed before a patch attempt", () => {
     "claude-sonnet-5",
     "grok-4.20",
     "minimax-m3",
+    "kimi-coding/k3",
+    "k3[1m]",
+    "zai/glm-5.2",
+    "glm-5.2[1m]",
   ]);
 });
 
@@ -345,6 +349,10 @@ test("worker model policy module exposes auditable allowlist and fallbacks (#799
     "claude-sonnet-5",
     "grok-4.20",
     "minimax-m3",
+    "kimi-coding/k3",
+    "k3[1m]",
+    "zai/glm-5.2",
+    "glm-5.2[1m]",
   ]);
   assert.equal(DEFAULT_WORKER_MODEL, "openai-codex/gpt-5.6-sol");
   assert.deepEqual(HERMES_UNSUPPORTED_WORKER_MODELS, [
@@ -359,6 +367,32 @@ test("worker model policy module exposes auditable allowlist and fallbacks (#799
   assert.deepEqual(resolveWorkerModelInputs({ payloadModel: "custom:minimax/minimax-m3" }), {
     model: "minimax-m3",
     fromPayload: true,
+  });
+  // Piri fleet models (a2a-nexus#1802): provider-prefixed, node-env [1m]
+  // variants, and bare registry ids canonicalized to the prefixed form.
+  assert.deepEqual(resolveWorkerModelInputs({ payloadModel: "kimi-coding/k3" }), {
+    model: "kimi-coding/k3",
+    fromPayload: true,
+  });
+  assert.deepEqual(resolveWorkerModelInputs({ payloadModel: "k3[1m]" }), {
+    model: "k3[1m]",
+    fromPayload: true,
+  });
+  assert.deepEqual(resolveWorkerModelInputs({ payloadModel: "zai/glm-5.2" }), {
+    model: "zai/glm-5.2",
+    fromPayload: true,
+  });
+  assert.deepEqual(resolveWorkerModelInputs({ payloadModel: "glm-5.2[1m]" }), {
+    model: "glm-5.2[1m]",
+    fromPayload: true,
+  });
+  assert.deepEqual(resolveWorkerModelInputs({ payloadModel: "k3" }), {
+    model: "kimi-coding/k3",
+    fromPayload: true,
+  });
+  assert.deepEqual(resolveWorkerModelInputs({ envModel: "glm-5.2" }), {
+    model: "zai/glm-5.2",
+    fromPayload: false,
   });
   assert.match(
     resolveWorkerModelInputs({ payloadModel: "deepseek/not-allowed" }).error,
@@ -381,6 +415,8 @@ test("worker model policy prevents Hermes profile from accepting unsupported ali
   assert.equal(canonicalizeWorkerModel("gpt-5.6-sol"), "openai-codex/gpt-5.6-sol");
   assert.equal(canonicalizeWorkerModel("gpt-5.5"), "openai-codex/gpt-5.5");
   assert.equal(canonicalizeWorkerModel("custom:minimax/minimax-m3"), "minimax-m3");
+  assert.equal(canonicalizeWorkerModel("k3"), "kimi-coding/k3");
+  assert.equal(canonicalizeWorkerModel("glm-5.2"), "zai/glm-5.2");
 
   const rejected = isWorkerModelSupportedByPatchProfile("hermes", "deepseek-v4-flash");
   assert.equal(rejected.supported, false);
@@ -778,6 +814,43 @@ test("Hermes runner image rejects env default deepseek flash before docker runne
 
   assert.equal(result.error.code, "worker_model_not_supported_by_profile");
   assert.equal(result.error.details.canonicalModel, "deepseek/deepseek-v4-flash");
+});
+
+test("piri patch command profile is recognized from env and runner image (#1802)", () => {
+  assert.equal(__test.normalizedPatchCommandProfile({
+    A2A_DOCKER_RUNNER_PATCH_COMMAND_PROFILE: "piri",
+  }), "piri");
+  assert.equal(__test.normalizedPatchCommandProfile({
+    A2A_DOCKER_RUNNER_PATCH_COMMAND_PROFILE: "Piri",
+  }), "piri");
+  assert.equal(__test.normalizedPatchCommandProfile({
+    A2A_DOCKER_RUNNER_IMAGE: "a2a-docker-runner-piri:bd4f92c-fix2",
+  }), "piri");
+  // Explicit non-piri profiles and images keep their existing mapping.
+  assert.equal(__test.normalizedPatchCommandProfile({
+    A2A_DOCKER_RUNNER_PATCH_COMMAND_PROFILE: "hermes",
+    A2A_DOCKER_RUNNER_IMAGE: "a2a-docker-runner-piri:bd4f92c-fix2",
+  }), "hermes");
+  assert.equal(__test.normalizedPatchCommandProfile({
+    A2A_DOCKER_RUNNER_IMAGE: "a2a-docker-runner-hermes:5f0ff71",
+  }), "hermes");
+  assert.equal(__test.normalizedPatchCommandProfile({}), "");
+});
+
+test("piri patch profile accepts Kimi/GLM worker models before docker runner execution (#1802)", () => {
+  for (const workerModel of ["kimi-coding/k3", "k3[1m]", "zai/glm-5.2", "glm-5.2[1m]"]) {
+    const result = handleTask(patchTask({
+      payload: { workerModel },
+    }), {
+      A2A_EXECUTOR_MODE: "docker",
+      A2A_DOCKER_RUNNER_BIN: "this-must-not-run",
+      A2A_DOCKER_RUNNER_PATCH_COMMAND_PROFILE: "piri",
+      A2A_DOCKER_RUNNER_IMAGE: "a2a-docker-runner-piri:bd4f92c-fix2",
+    });
+
+    assert.notEqual(result.error?.code, "worker_model_not_allowed", `workerModel ${workerModel} must be allowlisted`);
+    assert.notEqual(result.error?.code, "worker_model_not_supported_by_profile", `workerModel ${workerModel} must be supported by the piri profile`);
+  }
 });
 
 test("github-propose-patch + allowNoChanges=true sets runnerTask.allowNoChanges", () => {
