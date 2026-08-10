@@ -487,3 +487,42 @@ test("createTask rejects review lanes whose declared author is the completing wo
     "admission must reject author==reviewer before any provider call",
   );
 });
+
+test("POST /tasks answers a review-author conflict with 400 instead of hanging (#1518/#1725)", async () => {
+  // The in-process test above calls broker.createTask directly and so never
+  // touches the HTTP error surface. `review_author_conflict` was missing from
+  // statusCodeFor, whose only caller runs inside the async handler's catch
+  // block: the resulting throw rejected the handler promise, no response was
+  // ever written, and the dispatcher hung until its own timeout while the
+  // broker stayed up and logged only an unhandledRejection. Assert the status
+  // AND that a body arrives within a bounded time.
+  const server = await startReviewServer();
+  try {
+    registerAuthorWorker(server.runtime.broker);
+
+    const response = await fetch(`${server.baseUrl}/tasks`, {
+      method: "POST",
+      headers: {
+        "content-type": "application/json",
+        "x-a2a-edge-secret": EDGE_SECRET,
+        "x-a2a-requester-id": "hub-a",
+        "x-a2a-requester-role": "hub",
+      },
+      body: JSON.stringify({
+        intent: "analyze",
+        message: "conflicted review lane over HTTP",
+        requester: { id: "hub-a", kind: "node", role: "hub" },
+        target: { id: "author-a", kind: "node", role: "analyst" },
+        assignedWorkerId: "author-a",
+        payload: { review: { required: true, authorWorkerId: "author-a" } },
+      }),
+      signal: AbortSignal.timeout(10_000),
+    });
+
+    assert.equal(response.status, 400, "admission rejection must surface as a client error, not a hung socket");
+    const body = await response.json();
+    assert.equal(body.error?.code, "review_author_conflict", "the caller must learn why the lane was refused");
+  } finally {
+    await server.close();
+  }
+});
