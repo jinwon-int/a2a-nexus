@@ -1141,6 +1141,14 @@ Rules:
 - The runner posts Start/PR/Done/Block evidence and creates or reuses the PR after you exit.
 - Prefer small focused changes and tests.
 
+Final answer contract:
+- After your edits, your final answer must be the JSON value only — no prose,
+  no markdown fences. The runner schema-validates it (piri --output-schema).
+- Required shape: {"status": "done"|"blocked", "summary": string,
+  "findings": string[], "risks": string[], "recommendations": string[],
+  "evidenceRefs": string[]}. Summarize what you changed in 'summary' and list
+  the files you edited in 'evidenceRefs'.
+
 The assignment follows:
 A2A_PIRI_PROMPT_EOF
 fi
