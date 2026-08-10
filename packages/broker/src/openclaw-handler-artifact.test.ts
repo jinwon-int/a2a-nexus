@@ -2000,7 +2000,8 @@ test("analysis-only task can use OpenClaw analysis bridge when explicitly enable
       "      findings: [\"worker produced substantive analysis\"],",
       "      risks: [\"requires bridge enablement\"],",
       "      recommendations: [\"keep generic fallback explicit\"],",
-      "      evidenceRefs: [\"gh:jinwon-int/a2a-broker#687\"]",
+      "      evidenceRefs: [\"gh:jinwon-int/a2a-broker#687\"],",
+      "      executionTelemetry: { schemaVersion: \"a2a.analysis-execution-telemetry.v1\", source: \"piri_progress_file\", elapsedMs: 1234, modelRequests: 2, progressEvents: 7, toolCalls: 1, autoRetries: 0, schemaRetries: 0 }",
       "    })",
       "  }]",
       "}));",
@@ -2051,6 +2052,16 @@ test("analysis-only task can use OpenClaw analysis bridge when explicitly enable
     assert.equal(payload.result.output.strictJsonInstructionApplied, true);
     assert.equal(payload.result.output.promptPayloadLimit, 8000);
     assert.equal(payload.result.output.bridgeInputMode, "payload_file");
+    assert.deepEqual(payload.result.output.executionTelemetry, {
+      schemaVersion: "a2a.analysis-execution-telemetry.v1",
+      source: "piri_progress_file",
+      elapsedMs: 1234,
+      modelRequests: 2,
+      progressEvents: 7,
+      toolCalls: 1,
+      autoRetries: 0,
+      schemaRetries: 0,
+    });
     const args = JSON.parse(readFileSync(argsPath, "utf8"));
     const promptText = args[args.indexOf("--message") + 1];
     assert.match(promptText, /Strict JSON retry discipline: First byte must be \{/);

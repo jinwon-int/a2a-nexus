@@ -101,7 +101,7 @@ test("Claude Code A2A analysis bridge calls claude -p and returns OpenClaw envel
       "  recommendations: ['use this bridge behind the existing A2A worker handler contract'],",
       "  evidenceRefs: ['embedded:claude-code-adapter-test']",
       "};",
-      "console.log(JSON.stringify({ type: 'result', subtype: 'success', result: JSON.stringify(analysis) }));",
+      "console.log(JSON.stringify({ type: 'result', subtype: 'success', result: JSON.stringify(analysis), num_turns: 2, duration_ms: 1234, total_cost_usd: 0.012, usage: { input_tokens: 100, output_tokens: 40, cache_read_input_tokens: 10 } }));",
       "",
     ].join("\n"));
     chmodSync(fakeClaudePath, 0o755);
@@ -142,6 +142,16 @@ test("Claude Code A2A analysis bridge calls claude -p and returns OpenClaw envel
     assert.equal(payload.modelInheritanceMode, "metadata_only");
     assert.equal(payload.claudeModelArgumentApplied, false);
     assert.match(payload.modelInheritanceNote, /did not pass --model.*actual runtime model is unknown/);
+    assert.deepEqual(payload.executionTelemetry, {
+      schemaVersion: "a2a.analysis-execution-telemetry.v1",
+      source: "claude_cli_envelope",
+      elapsedMs: 1234,
+      modelRequests: 2,
+      inputTokens: 100,
+      outputTokens: 40,
+      cacheReadInputTokens: 10,
+      costUsd: 0.012,
+    });
 
     const args = JSON.parse(readFileSync(argsPath, "utf8"));
     assert.deepEqual(args.slice(0, 2), ["-p", readFileSync(promptPath, "utf8")]);

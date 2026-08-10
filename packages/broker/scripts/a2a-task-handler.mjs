@@ -16,6 +16,7 @@ import {
 } from "./worker-model-policy.mjs";
 import { sourceCarrierStats } from "./lib/source-carriers.mjs";
 import { payloadWithRetrievalSnapshotSourceCarriers } from "./lib/retrieval-snapshot-carriers.mjs";
+import { normalizeAnalysisExecutionTelemetry } from "./lib/analysis-execution-telemetry.mjs";
 import { evaluateDeclaredWriteSetGate } from "../dist/core/runtime-safety-gates.js";
 import { runLiveOperationTask } from "./lib/live-operation-adapter.mjs";
 
@@ -1281,6 +1282,7 @@ function runOpenClawAnalysisBridge(task, env = process.env) {
     modelInheritanceMode: safeText(response.modelInheritanceMode, undefined),
     claudeModelArgumentApplied: typeof response.claudeModelArgumentApplied === "boolean" ? response.claudeModelArgumentApplied : undefined,
     modelInheritanceNote: safeText(response.modelInheritanceNote, undefined),
+    executionTelemetry: normalizeAnalysisExecutionTelemetry(response.executionTelemetry),
     doneCommentUrl: postGithubComment ? undefined : safeText(response.doneCommentUrl, undefined),
     blockCommentUrl: postGithubComment ? undefined : safeText(response.blockCommentUrl, undefined),
     startCommentUrl: postGithubComment ? undefined : safeText(response.startCommentUrl, undefined),

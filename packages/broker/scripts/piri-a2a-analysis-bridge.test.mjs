@@ -11,7 +11,14 @@ const BRIDGE = resolve(import.meta.dirname, "piri-a2a-analysis-bridge.mjs");
 function makeFakeDocker(dir, behavior) {
 	const bin = join(dir, "fake-docker.mjs");
 	writeFileSync(bin, `#!/usr/bin/env node
+import { mkdirSync, writeFileSync } from "node:fs";
 const behavior = ${JSON.stringify(behavior)};
+const workMount = process.argv.slice(2).find((arg) => arg.endsWith(":/work"));
+if (workMount && Array.isArray(behavior.progressLines)) {
+  const workDir = workMount.slice(0, -":/work".length);
+  mkdirSync(workDir + "/artifacts", { recursive: true });
+  writeFileSync(workDir + "/artifacts/piri-progress.jsonl", behavior.progressLines.join("\\n") + "\\n");
+}
 if (behavior.stdout) process.stdout.write(behavior.stdout);
 if (behavior.stderr) process.stderr.write(behavior.stderr);
 process.exit(behavior.exitCode ?? 0);
@@ -86,7 +93,15 @@ test("full flow emits the OpenClaw envelope around schema-valid piri output", ()
 	const dir = mkdtempSync(join(tmpdir(), "piri-bridge-"));
 	try {
 		const contract = { status: "done", summary: "분석 완료", findings: ["f1"], risks: [], recommendations: ["r1"], evidenceRefs: ["#1745"] };
-		const docker = makeFakeDocker(dir, { stdout: `${JSON.stringify(contract)}\n` });
+		const docker = makeFakeDocker(dir, {
+			stdout: `${JSON.stringify(contract)}\n`,
+			progressLines: [
+				JSON.stringify({ type: "turn_start" }),
+				JSON.stringify({ type: "tool_execution_start", tool: "read" }),
+				JSON.stringify({ type: "turn_start" }),
+				JSON.stringify({ type: "marker", marker: "output_schema_retry" }),
+			],
+		});
 		const workRoot = join(dir, "tasks");
 		const child = runBridge(
 			["agent", "--local", "--session-id", "sess-1", "--message", sampleMessage({ embeddedSourceEvidence: [{ path: "a.ts", content: "x" }] }), "--model", "m", "--thinking", "t", "--timeout", "30", "--json"],
@@ -95,7 +110,18 @@ test("full flow emits the OpenClaw envelope around schema-valid piri output", ()
 		assert.equal(child.status, 0, child.stderr);
 		const envelope = JSON.parse(child.stdout);
 		const response = JSON.parse(envelope.payloads[0].text);
-		assert.deepEqual(response, contract);
+		assert.deepEqual(
+			Object.fromEntries(Object.keys(contract).map((key) => [key, response[key]])),
+			contract,
+		);
+		assert.equal(response.bridgeAdapter, "piri");
+		assert.equal(response.requestedModel, "m");
+		assert.equal(response.actualRuntimeModel, "kimi-coding/k3");
+		assert.equal(response.modelInheritanceMode, "bridge_env_pin");
+		assert.equal(response.executionTelemetry.source, "piri_progress_file");
+		assert.equal(response.executionTelemetry.modelRequests, 2);
+		assert.equal(response.executionTelemetry.toolCalls, 1);
+		assert.equal(response.executionTelemetry.schemaRetries, 1);
 		// prompt file landed in the host workdir for the run
 		const promptFile = join(workRoot, "sess-1", "prompt.md");
 		assert.equal(existsSync(promptFile), true);

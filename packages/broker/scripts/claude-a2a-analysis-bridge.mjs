@@ -22,6 +22,7 @@ import {
   attachClaudeModelTelemetry,
   claudeInvocationModelTelemetry,
 } from "./lib/claude-model-telemetry.mjs";
+import { claudeExecutionTelemetry } from "./lib/analysis-execution-telemetry.mjs";
 
 // ---------------------------------------------------------------------------
 // Process-tree timeout / session-isolation hardening (issue #1129)
@@ -636,8 +637,17 @@ async function main() {
 
   let response;
   try {
+    let outer;
+    try {
+      outer = parseJsonCandidate(claudeRun.stdout);
+    } catch {
+      outer = undefined;
+    }
     response = attachClaudeModelTelemetry(
-      normalizeResponse(extractAnalysisJsonFromClaudeOutput(claudeRun.stdout)),
+      {
+        ...normalizeResponse(extractAnalysisJsonFromClaudeOutput(claudeRun.stdout)),
+        executionTelemetry: claudeExecutionTelemetry(outer),
+      },
       {
         bridgeContractVersion: ANALYSIS_BRIDGE_CONTRACT_VERSION,
         flags,
