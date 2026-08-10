@@ -773,6 +773,40 @@ test("bridge contract: broad source bundle projects into the prompt (no provider
   }
 });
 
+test("bridge bounds a broad source prompt below the Linux single-argument limit", () => {
+  const tempDir = mkdtempSync(join(tmpdir(), "claude-a2a-bridge-prompt-budget-"));
+  const payloadPath = join(tempDir, "payload.json");
+  try {
+    writeFileSync(payloadPath, JSON.stringify({
+      mode: "analysis-only",
+      sourceOnly: true,
+      sourceBundle: {
+        files: [{
+          repo: "jinwon-int/a2a-nexus",
+          path: "packages/broker/src/oversized-fixture.mjs",
+          contentText: "x".repeat(180 * 1024),
+        }],
+      },
+    }), "utf8");
+    const fakeClaudePath = stubClaude(tempDir, [
+      "const prompt = process.argv[process.argv.indexOf('-p') + 1];",
+      "if (Buffer.byteLength(prompt, 'utf8') > 96 * 1024) throw new Error('prompt budget exceeded');",
+      "if (!prompt.includes('truncated by claude-a2a-analysis-bridge prompt budget')) throw new Error('truncation marker missing');",
+      "const analysis = { status: 'done', summary: 'oversized prompt bounded', findings: [], risks: [], recommendations: [], evidenceRefs: ['prompt-budget:test'] };",
+      "console.log(JSON.stringify({ type: 'result', result: JSON.stringify(analysis) }));",
+    ]);
+    const result = spawnSync(bridgePath, bridgeArgs("Payload JSON:\n" + JSON.stringify({ mode: "analysis-only" })), {
+      encoding: "utf8",
+      env: { ...process.env, A2A_CLAUDE_CODE_BIN: fakeClaudePath, A2A_ANALYSIS_PAYLOAD_FILE: payloadPath },
+    });
+    assert.equal(result.status, 0, result.stderr);
+    const payload = JSON.parse(JSON.parse(result.stdout).payloads[0]?.text);
+    assert.equal(payload.summary, "oversized prompt bounded");
+  } finally {
+    rmSync(tempDir, { recursive: true, force: true });
+  }
+});
+
 test("bridge contract: compact source bundle projects into the prompt (no provider)", () => {
   const tempDir = mkdtempSync(join(tmpdir(), "claude-a2a-bridge-compact-bundle-"));
   const payloadPath = join(tempDir, "payload.json");

@@ -24,6 +24,12 @@ import {
 } from "./lib/claude-model-telemetry.mjs";
 import { claudeExecutionTelemetry } from "./lib/analysis-execution-telemetry.mjs";
 
+// Claude Code receives the prompt as one argv value (`-p <prompt>`). Linux
+// rejects an individual argument around 128 KiB even when ARG_MAX is larger,
+// so keep a hard ceiling below that boundary. The default matches the Piri
+// analysis bridge to keep broad-source comparisons symmetric.
+const DEFAULT_MAX_PROMPT_BYTES = 96 * 1024;
+
 // ---------------------------------------------------------------------------
 // Process-tree timeout / session-isolation hardening (issue #1129)
 // ---------------------------------------------------------------------------
@@ -554,6 +560,25 @@ function sourcePromptSection(payload) {
   return sections.join("\n\n");
 }
 
+function truncateUtf8ToBytes(text, maxBytes) {
+  const value = String(text || "");
+  if (Buffer.byteLength(value, "utf8") <= maxBytes) return value;
+  if (maxBytes <= 0) return "";
+  let truncated = Buffer.from(value, "utf8").subarray(0, maxBytes).toString("utf8");
+  while (Buffer.byteLength(truncated, "utf8") > maxBytes) truncated = truncated.slice(0, -1);
+  return truncated;
+}
+
+function applyClaudePromptBudget(prompt, env = process.env) {
+  const configured = positiveInteger(env.A2A_CLAUDE_CODE_MAX_PROMPT_BYTES, DEFAULT_MAX_PROMPT_BYTES);
+  const maxPromptBytes = Math.min(configured, DEFAULT_MAX_PROMPT_BYTES);
+  const promptBytes = Buffer.byteLength(prompt, "utf8");
+  if (promptBytes <= maxPromptBytes) return prompt;
+  const suffix = `\n\n[truncated by claude-a2a-analysis-bridge prompt budget: originalBytes=${promptBytes} maxBytes=${maxPromptBytes}.]`;
+  const prefixBudget = Math.max(0, maxPromptBytes - Buffer.byteLength(suffix, "utf8"));
+  return truncateUtf8ToBytes(`${truncateUtf8ToBytes(prompt, prefixBudget)}${suffix}`, maxPromptBytes);
+}
+
 function buildClaudePrompt({ message, flags, payload }) {
   const sourceSection = sourcePromptSection(payload);
   return [
@@ -627,7 +652,7 @@ async function main() {
     die(error.message);
   }
 
-  const prompt = buildClaudePrompt({ message, flags, payload });
+  const prompt = applyClaudePromptBudget(buildClaudePrompt({ message, flags, payload }), process.env);
   let claudeRun;
   try {
     claudeRun = await runClaude(prompt, flags, process.env);
