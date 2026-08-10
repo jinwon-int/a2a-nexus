@@ -1,4 +1,5 @@
 import type { TaskRecord, TaskStatus } from "./types.js";
+import { resolveTaskStalenessSignalMs } from "./broker-status-predicates.js";
 import {
   normalizeTerminalTaskReceiptStatus,
   type TerminalTaskOutboxEvent,
@@ -128,7 +129,7 @@ function buildOperatorTaskReportItem(
 ): OperatorTaskReportItem {
   const final = TERMINAL_STATUSES.has(task.status);
   const stage = final ? "terminal" : task.status === "running" ? "running" : task.status === "claimed" ? "claimed" : "queued";
-  const statusAgeMs = Math.max(0, options.nowMs - Date.parse(task.lastHeartbeatAt ?? task.updatedAt));
+  const statusAgeMs = Math.max(0, options.nowMs - resolveTaskStalenessSignalMs(task, options.nowMs));
   const stale = !final && statusAgeMs >= options.staleAfterMs;
   const kind: OperatorTaskReportKind = final ? "result" : stale ? "stale" : "progress";
   const updatedMs = Date.parse(task.updatedAt);

@@ -150,6 +150,27 @@ describe("task heartbeat", () => {
     assert.equal(plain.lastProgressAt, progressAt, "omitting the field preserves the last observed value");
   });
 
+  it("heartbeatTask keeps progress monotonic and clamps worker clock skew", () => {
+    const broker = makeBroker();
+    registerWorker(broker);
+    const task = createTask(broker);
+    broker.claimTask(task.id, "worker-1");
+    broker.startTask(task.id, "worker-1");
+
+    const firstProgressAt = new Date(Date.now() - 60_000).toISOString();
+    const first = broker.heartbeatTask(task.id, "worker-1", firstProgressAt);
+    assert.equal(first.lastProgressAt, firstProgressAt);
+
+    const olderProgressAt = new Date(Date.parse(firstProgressAt) - 60_000).toISOString();
+    const older = broker.heartbeatTask(task.id, "worker-1", olderProgressAt);
+    assert.equal(older.lastProgressAt, firstProgressAt, "a stale file mtime must not move progress backwards");
+
+    const futureProgressAt = new Date(Date.now() + 86_400_000).toISOString();
+    const future = broker.heartbeatTask(task.id, "worker-1", futureProgressAt);
+    assert.ok(future.lastProgressAt);
+    assert.ok(Date.parse(future.lastProgressAt) <= Date.parse(future.lastHeartbeatAt!), "future worker time is broker-bounded");
+  });
+
   it("heartbeatTask rejects for unclaimed task", () => {
     const broker = makeBroker();
     registerWorker(broker);
@@ -216,6 +237,64 @@ describe("stale task detection", () => {
     assert.equal(notStale.length, 0);
   });
 
+  it("treats progress as authoritative once observed so heartbeats cannot mask a stalled harness", () => {
+    const broker = makeBroker();
+    registerWorker(broker);
+    const task = createTask(broker);
+    broker.claimTask(task.id, "worker-1");
+    broker.startTask(task.id, "worker-1");
+
+    const nowMs = Date.now();
+    broker.heartbeatTask(task.id, "worker-1", new Date(nowMs - 300_000).toISOString());
+
+    const stale = broker.listStaleTasks({ staleAfterMs: 120_000, nowMs });
+    assert.deepEqual(stale.map((item) => item.id), [task.id]);
+
+    const sweep = broker.requeueStaleTasksDetailed(120_000, { nowMs });
+    assert.deepEqual(sweep.requeued.map((item) => item.id), [task.id]);
+  });
+
+  it("keeps a progress-aware task fresh when progress is newer than its heartbeat", () => {
+    const broker = makeBroker();
+    registerWorker(broker);
+    const task = createTask(broker);
+    broker.claimTask(task.id, "worker-1");
+    broker.startTask(task.id, "worker-1");
+
+    const nowMs = Date.now();
+    const stored = broker.getTask(task.id);
+    assert.ok(stored);
+    stored.lastHeartbeatAt = new Date(nowMs - 300_000).toISOString();
+    stored.updatedAt = stored.lastHeartbeatAt;
+    stored.lastProgressAt = new Date(nowMs - 10_000).toISOString();
+
+    assert.equal(broker.listStaleTasks({ staleAfterMs: 120_000, nowMs }).length, 0);
+    const sweep = broker.requeueStaleTasksDetailed(120_000, { nowMs });
+    assert.equal(sweep.requeued.length, 0);
+    assert.equal(sweep.deadLettered.length, 0);
+  });
+
+  it("marks progress-aware tasks stale exactly at the configured boundary", () => {
+    const broker = makeBroker();
+    registerWorker(broker);
+    const task = createTask(broker);
+    broker.claimTask(task.id, "worker-1");
+    broker.startTask(task.id, "worker-1");
+
+    const nowMs = Date.now();
+    const thresholdMs = 120_000;
+    broker.heartbeatTask(task.id, "worker-1", new Date(nowMs - thresholdMs).toISOString());
+
+    assert.deepEqual(
+      broker.listStaleTasks({ staleAfterMs: thresholdMs, nowMs }).map((item) => item.id),
+      [task.id],
+    );
+    assert.equal(
+      broker.getTaskDiagnostics(task.id, { staleAfterMs: thresholdMs, nowMs }).diagnosticStatus,
+      "stale",
+    );
+  });
+
   it("listStaleTasks excludes terminal tasks", () => {
     const broker = makeBroker();
     registerWorker(broker);
@@ -270,6 +349,27 @@ describe("task diagnostics", () => {
     assert.equal(diag.taskId, task.id);
     assert.ok(diag.stalenessMs !== undefined && diag.stalenessMs < 10_000);
     assert.ok(diag.lifecycle.lastHeartbeatAt);
+  });
+
+  it("getTaskDiagnostics reports progress-aware staleness and its source timestamp", () => {
+    const broker = makeBroker();
+    registerWorker(broker);
+    const task = createTask(broker);
+    broker.claimTask(task.id, "worker-1");
+    broker.startTask(task.id, "worker-1");
+
+    const nowMs = Date.now();
+    const lastProgressAt = new Date(nowMs - 300_000).toISOString();
+    broker.heartbeatTask(task.id, "worker-1", lastProgressAt);
+
+    const diag = broker.getTaskDiagnostics(task.id, {
+      staleAfterMs: 120_000,
+      workerOfflineAfterMs: 3_600_000,
+      nowMs,
+    });
+    assert.equal(diag.diagnosticStatus, "stale");
+    assert.equal(diag.stalenessMs, 300_000);
+    assert.equal(diag.lifecycle.lastProgressAt, lastProgressAt);
   });
 
   it("getTaskDiagnostics returns stale for task without heartbeat", () => {

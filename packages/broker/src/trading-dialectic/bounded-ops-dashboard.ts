@@ -15,6 +15,7 @@
  * Reference: #497/#539/#294 stability gates.
  */
 import type { TaskRecord, TaskStatus, WorkerCapacitySummary, WorkerCapacitySummaryItem } from "../core/types.js";
+import { resolveTaskStalenessSignalMs } from "../core/broker-status-predicates.js";
 
 // ---------------------------------------------------------------------------
 // Types
@@ -363,7 +364,7 @@ export function buildTeam1BoundedOpsDashboard(
 
     if (isStaleWorker) {
       staleWorkerAssignments += 1;
-      const ageSec = ageSecFromIso(task.lastHeartbeatAt ?? task.updatedAt, nowMs);
+      const ageSec = Math.max(0, Math.floor((nowMs - resolveTaskStalenessSignalMs(task, nowMs)) / 1000));
       if (
         !oldestStaleAssignment || ageSec > oldestStaleAssignment.ageSec
       ) {
@@ -375,11 +376,7 @@ export function buildTeam1BoundedOpsDashboard(
       }
     }
 
-    // For active tasks, check staleness using the most recent timestamp
-    // available: prefer lastHeartbeatAt (for claimed/running tasks),
-    // fall back to updatedAt, then createdAt.
-    const stalenessTimestamp = task.lastHeartbeatAt ?? task.updatedAt ?? task.createdAt;
-    const stalenessAgeMs = nowMs - Date.parse(stalenessTimestamp);
+    const stalenessAgeMs = nowMs - resolveTaskStalenessSignalMs(task, nowMs);
     const isStaleTask = Number.isFinite(stalenessAgeMs) && stalenessAgeMs >= staleAfterMs;
     if (isStaleTask) {
       staleTasks += 1;

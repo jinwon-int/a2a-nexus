@@ -49,6 +49,7 @@ import {
 } from "./broker-task-request-normalizers.js";
 import {
   isTerminalTaskStatus,
+  resolveTaskStalenessSignalMs,
 } from "./broker-status-predicates.js";
 import {
   normalizeWakeString,
@@ -2216,12 +2217,8 @@ export class InMemoryA2ABroker {
       if (task.status !== "claimed" && task.status !== "running") {
         return false;
       }
-      const lastSignal = task.lastHeartbeatAt
-        ? Date.parse(task.lastHeartbeatAt)
-        : task.claimedAt
-          ? Date.parse(task.claimedAt)
-          : Date.parse(task.createdAt);
-      return lastSignal < threshold;
+      const lastSignal = resolveTaskStalenessSignalMs(task, nowMs);
+      return lastSignal <= threshold;
     });
   }
 

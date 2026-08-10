@@ -269,6 +269,7 @@ export const taskSchema = z
     approvalOutcome: taskApprovalOutcomeSchema.optional(),
     requeueCount: z.number().int().nonnegative().optional(),
     lastHeartbeatAt: z.string().optional(),
+    lastProgressAt: z.string().optional(),
     attemptId: z.string().min(1).optional(),
     wake: taskWakeSchema.optional(),
     taskOrigin: taskOriginSchema,
