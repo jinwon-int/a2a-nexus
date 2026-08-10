@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
-import { mkdtempSync, readFileSync, rmSync, writeFileSync, chmodSync, existsSync } from "node:fs";
+import { mkdtempSync, readFileSync, rmSync, writeFileSync, chmodSync, existsSync, mkdirSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import test from "node:test";
@@ -8,11 +8,19 @@ import { __test } from "./piri-a2a-analysis-bridge.mjs";
 
 const BRIDGE = resolve(import.meta.dirname, "piri-a2a-analysis-bridge.mjs");
 
+function makeConfigDir(dir) {
+	const configDir = join(dir, "cfg");
+	mkdirSync(join(configDir, "agent"), { recursive: true });
+	writeFileSync(join(configDir, "agent", "auth.json"), "{}\n", { mode: 0o600 });
+	return configDir;
+}
+
 function makeFakeDocker(dir, behavior) {
 	const bin = join(dir, "fake-docker.mjs");
 	writeFileSync(bin, `#!/usr/bin/env node
 import { mkdirSync, writeFileSync } from "node:fs";
 const behavior = ${JSON.stringify(behavior)};
+if (behavior.argsFile) writeFileSync(behavior.argsFile, JSON.stringify(process.argv.slice(2)));
 const workMount = process.argv.slice(2).find((arg) => arg.endsWith(":/work"));
 if (workMount && Array.isArray(behavior.progressLines)) {
   const workDir = workMount.slice(0, -":/work".length);
@@ -94,6 +102,7 @@ test("full flow emits the OpenClaw envelope around schema-valid piri output", ()
 	try {
 		const contract = { status: "done", summary: "분석 완료", findings: ["f1"], risks: [], recommendations: ["r1"], evidenceRefs: ["#1745"] };
 		const docker = makeFakeDocker(dir, {
+			argsFile: join(dir, "docker-args.json"),
 			stdout: `${JSON.stringify(contract)}\n`,
 			progressLines: [
 				JSON.stringify({ type: "turn_start" }),
@@ -103,9 +112,10 @@ test("full flow emits the OpenClaw envelope around schema-valid piri output", ()
 			],
 		});
 		const workRoot = join(dir, "tasks");
+		const configDir = makeConfigDir(dir);
 		const child = runBridge(
 			["agent", "--local", "--session-id", "sess-1", "--message", sampleMessage({ embeddedSourceEvidence: [{ path: "a.ts", content: "x" }] }), "--model", "m", "--thinking", "t", "--timeout", "30", "--json"],
-			{ A2A_PIRI_DOCKER_BIN: docker, A2A_PIRI_WORK_ROOT: workRoot, A2A_PIRI_CONFIG_DIR: join(dir, "cfg") },
+			{ A2A_PIRI_DOCKER_BIN: docker, A2A_PIRI_WORK_ROOT: workRoot, A2A_PIRI_CONFIG_DIR: configDir },
 		);
 		assert.equal(child.status, 0, child.stderr);
 		const envelope = JSON.parse(child.stdout);
@@ -126,6 +136,10 @@ test("full flow emits the OpenClaw envelope around schema-valid piri output", ()
 		const promptFile = join(workRoot, "sess-1", "prompt.md");
 		assert.equal(existsSync(promptFile), true);
 		assert.match(readFileSync(promptFile, "utf8"), /output schema/);
+		const dockerArgs = JSON.parse(readFileSync(join(dir, "docker-args.json"), "utf8"));
+		assert.ok(dockerArgs.includes(`${join(configDir, "agent", "auth.json")}:/work/piri-home/.piri/agent/auth.json:ro`));
+		assert.doesNotMatch(dockerArgs.join(" "), /run\/secrets\/piri-dir|cp -a/);
+		assert.equal(existsSync(join(workRoot, "sess-1", "piri-home", ".piri", "agent", "auth.json")), false);
 	} finally {
 		rmSync(dir, { recursive: true, force: true });
 	}
@@ -135,9 +149,10 @@ test("schema exhaustion maps to a structured provider_or_model_failure", () => {
 	const dir = mkdtempSync(join(tmpdir(), "piri-bridge-"));
 	try {
 		const docker = makeFakeDocker(dir, { exitCode: 1, stderr: "--output-schema not satisfied after 3 attempt(s)\n" });
+		const configDir = makeConfigDir(dir);
 		const child = runBridge(
 			["agent", "--local", "--message", sampleMessage({}), "--timeout", "30", "--json"],
-			{ A2A_PIRI_DOCKER_BIN: docker, A2A_PIRI_WORK_ROOT: join(dir, "tasks"), A2A_PIRI_CONFIG_DIR: join(dir, "cfg") },
+			{ A2A_PIRI_DOCKER_BIN: docker, A2A_PIRI_WORK_ROOT: join(dir, "tasks"), A2A_PIRI_CONFIG_DIR: configDir },
 		);
 		assert.equal(child.status, 1);
 		const line = child.stderr.split("\n").find((l) => l.startsWith("A2A_BRIDGE_ERROR="));
@@ -155,13 +170,31 @@ test("piri usage error (exit 2) maps to handler_artifact_failure", () => {
 	const dir = mkdtempSync(join(tmpdir(), "piri-bridge-"));
 	try {
 		const docker = makeFakeDocker(dir, { exitCode: 2, stderr: "Invalid --output-schema\n" });
+		const configDir = makeConfigDir(dir);
 		const child = runBridge(
 			["agent", "--local", "--message", sampleMessage({}), "--timeout", "30", "--json"],
-			{ A2A_PIRI_DOCKER_BIN: docker, A2A_PIRI_WORK_ROOT: join(dir, "tasks"), A2A_PIRI_CONFIG_DIR: join(dir, "cfg") },
+			{ A2A_PIRI_DOCKER_BIN: docker, A2A_PIRI_WORK_ROOT: join(dir, "tasks"), A2A_PIRI_CONFIG_DIR: configDir },
 		);
 		assert.equal(child.status, 1);
 		const detail = JSON.parse(child.stderr.split("\n").find((l) => l.startsWith("A2A_BRIDGE_ERROR=")).slice(17));
 		assert.equal(detail.code, "analysis_bridge_invocation_invalid");
+		assert.equal(detail.failureShape, "handler_artifact_failure");
+	} finally {
+		rmSync(dir, { recursive: true, force: true });
+	}
+});
+
+test("missing piri credential fails closed before docker invocation", () => {
+	const dir = mkdtempSync(join(tmpdir(), "piri-bridge-"));
+	try {
+		const child = runBridge(
+			["agent", "--local", "--message", sampleMessage({}), "--timeout", "30", "--json"],
+			{ A2A_PIRI_DOCKER_BIN: "/nonexistent/docker", A2A_PIRI_WORK_ROOT: join(dir, "tasks"), A2A_PIRI_CONFIG_DIR: join(dir, "missing") },
+		);
+		assert.equal(child.status, 1);
+		const detail = JSON.parse(child.stderr.split("\n").find((line) => line.startsWith("A2A_BRIDGE_ERROR=")).slice(17));
+		assert.equal(detail.code, "analysis_bridge_credential_unavailable");
+		assert.equal(detail.stage, "preflight");
 		assert.equal(detail.failureShape, "handler_artifact_failure");
 	} finally {
 		rmSync(dir, { recursive: true, force: true });

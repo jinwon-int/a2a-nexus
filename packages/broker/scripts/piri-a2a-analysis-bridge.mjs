@@ -510,12 +510,19 @@ function normalizeStringArray(value) {
 function runPiri({ prompt, model, thinking, timeoutSec, sessionId, env }) {
 	const image = safeText(env.A2A_PIRI_RUNNER_IMAGE, DEFAULT_PIRI_IMAGE);
 	const configDir = safeText(env.A2A_PIRI_CONFIG_DIR || env.A2A_DOCKER_RUNNER_PIRI_CONFIG_DIR, DEFAULT_PIRI_CONFIG_DIR);
+	const authFile = join(configDir, "agent", "auth.json");
+	if (!existsSync(authFile)) {
+		throw new Error(`piri credential file does not exist: ${authFile}`);
+	}
 	const workRoot = safeText(env.A2A_PIRI_WORK_ROOT, DEFAULT_PIRI_WORK_ROOT);
 	const network = safeText(env.A2A_PIRI_NETWORK, "bridge");
 	const dockerBin = safeText(env.A2A_PIRI_DOCKER_BIN, "docker");
 	const taskName = sanitizeName(sessionId || `piri-${Date.now()}`);
 	const workDir = join(workRoot, taskName);
+	const authMountPoint = join(workDir, "piri-home", ".piri", "agent", "auth.json");
 	mkdirSync(join(workDir, "artifacts"), { recursive: true });
+	mkdirSync(join(workDir, "piri-home", ".piri", "agent"), { recursive: true });
+	writeFileSync(authMountPoint, "", { mode: 0o600 });
 	writeFileSync(join(workDir, "prompt.md"), prompt, "utf8");
 	// piri opens progress files in append mode. Reset this invocation's file so
 	// a retried/reused session id cannot inherit request counts from an older run.
@@ -523,8 +530,6 @@ function runPiri({ prompt, model, thinking, timeoutSec, sessionId, env }) {
 
 	const inner = [
 		"set -euo pipefail",
-		"mkdir -p /work/piri-home",
-		"cp -a /run/secrets/piri-dir /work/piri-home/.piri",
 		"export HOME=/work/piri-home",
 		`exec piri -p "$(cat /work/prompt.md)" --model ${shellQuote(model)} --thinking ${shellQuote(thinking)} --approve --no-session --output-schema ${IMAGE_SCHEMA_PATH} --progress-file /work/artifacts/piri-progress.jsonl`,
 	].join(" && ");
@@ -533,8 +538,8 @@ function runPiri({ prompt, model, thinking, timeoutSec, sessionId, env }) {
 	const args = [
 		"run", "--rm", "--name", containerName,
 		"--network", network,
-		"-v", `${configDir}:/run/secrets/piri-dir:ro`,
 		"-v", `${workDir}:/work`,
+		"-v", `${authFile}:/work/piri-home/.piri/agent/auth.json:ro`,
 		image,
 		"bash", "-c", inner,
 	];
@@ -546,6 +551,10 @@ function runPiri({ prompt, model, thinking, timeoutSec, sessionId, env }) {
 		timeout: (timeoutSec + 30) * 1000,
 		killSignal: "SIGKILL",
 	});
+	// Docker requires a target file for the nested bind mount. It remains empty
+	// on the host and is removed after the container exits; credential bytes are
+	// never copied into the task workdir.
+	rmSync(authMountPoint, { force: true });
 	const elapsedMs = Date.now() - startedAt;
 	if (child.error || child.signal) {
 		spawnSync(dockerBin, ["rm", "-f", containerName], { env, stdio: "ignore" });
@@ -587,7 +596,19 @@ function main() {
 		env,
 	);
 
-	const { child, elapsedMs, workDir } = runPiri({ prompt, model, thinking, timeoutSec, sessionId: safeText(flags["session-id"], ""), env });
+	let invocation;
+	try {
+		invocation = runPiri({ prompt, model, thinking, timeoutSec, sessionId: safeText(flags["session-id"], ""), env });
+	} catch (error) {
+		bridgeError({
+			code: "analysis_bridge_credential_unavailable",
+			stage: "preflight",
+			failureShape: "handler_artifact_failure",
+			message: error instanceof Error ? error.message : String(error),
+			elapsedMs: 0,
+		});
+	}
+	const { child, elapsedMs, workDir } = invocation;
 	const executionTelemetry = piriExecutionTelemetry(join(workDir, "artifacts", "piri-progress.jsonl"), elapsedMs);
 
 	if (child.error) {
