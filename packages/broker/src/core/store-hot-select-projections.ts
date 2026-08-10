@@ -1,3 +1,4 @@
+import { normalizeFailureClass } from "./task-error-details.js";
 import type { TaskRecord } from "./types.js";
 import type {
   SqliteTaskHotTableFilters,
@@ -99,6 +100,17 @@ export function buildHotTaskListItemSelect(filters: SqliteTaskHotTableFilters): 
   };
 }
 
+function projectListError(
+  error: NonNullable<TaskRecord["error"]>,
+): NonNullable<SqliteTaskListItemProjection["error"]> {
+  const failureClass = normalizeFailureClass(error.details?.failureClass);
+  return {
+    code: error.code,
+    message: error.message,
+    ...(failureClass ? { details: { failureClass } } : {}),
+  };
+}
+
 export function parseHotTaskListItemProjection(row: unknown): SqliteTaskListItemProjection[] {
   const record = row as Record<string, unknown>;
   const id = optionalStringValue(record.id);
@@ -128,7 +140,14 @@ export function parseHotTaskListItemProjection(row: unknown): SqliteTaskListItem
     taskOrigin: optionalStringValue(record.taskOrigin) as TaskRecord["taskOrigin"] | undefined,
     artifactIds: parseJsonColumn<string[]>(record.artifactIds),
     resultSummary: optionalStringValue(record.resultSummary),
-    error: error ? { code: error.code, message: error.message } : undefined,
+    // The hot-table list projection dropped `details` wholesale, so on a
+    // SQLite-backed broker — the production topology — every handler failure
+    // read back as a bare `handler_exit_nonzero` with no way to tell a
+    // seconds-long missing artifact from a minutes-long bridge failure
+    // (#1597, routed from #1725 finding 2). failureClass is a closed
+    // vocabulary, so projecting it costs nothing and leaks nothing; the rest
+    // of `details` stays behind ?detail=full / GET /tasks/:id as before.
+    error: error ? projectListError(error) : undefined,
     requeueCount: optionalNumberValue(record.requeueCount),
     createdAt,
     updatedAt,

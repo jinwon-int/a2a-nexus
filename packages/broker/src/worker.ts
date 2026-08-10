@@ -33,6 +33,7 @@ import { fileURLToPath } from "node:url";
 
 import { validateGithubTaskCompletionEvidence } from "./core/github-task-completion.js";
 import { normalizeTaskResult } from "./core/broker-task-record-normalizers.js";
+import type { FailureClass } from "./core/task-error-details.js";
 import { signTaskResultProvenance } from "a2a-attestation";
 import { parseTaskAcceptance, runTaskAcceptance, validateAcceptanceEvidence } from "./worker-acceptance.js";
 import { validateReviewEvidence } from "./worker-review.js";
@@ -2026,7 +2027,11 @@ async function runExternalHandler(options: {
       settled = true;
       clearTimeout(timeoutTimer);
       clearTimeout(hardKillTimer);
-      reject(error);
+      // Wrap at the boundary: a spawn failure here is unambiguously the handler
+      // command. Previously this rejected the bare Error, which toTaskError
+      // turned into a TaskError with NO `code` at all — the 2026-08-03 audit
+      // counted 10 such code-less failures (16%) with no traceable cause.
+      reject(new HandlerSpawnError(error as NodeJS.ErrnoException, options.command));
     });
 
     child.once("close", (code, signal) => {
@@ -2069,6 +2074,70 @@ function parseHandlerStdoutError(stdout: string): TaskError | undefined {
   }
 }
 
+/**
+ * Nested handler/bridge codes that mean the artifact was not there, so nothing
+ * ran. Kept as an explicit list rather than a prefix match: a new code should
+ * have to be classified deliberately.
+ */
+const HANDLER_MISSING_NESTED_CODES = new Set([
+  "openclaw_analysis_bridge_missing",
+  "openclaw_analysis_spawn_failed",
+]);
+
+/** Nested codes that mean the bridge ran and produced output we could not use. */
+const HANDLER_BRIDGE_ERROR_NESTED_CODES = new Set([
+  "analysis_bridge_invalid_json",
+  "openclaw_analysis_failed",
+  "openclaw_analysis_no_final_json",
+  "openclaw_bridge_failed",
+  "openclaw_bridge_no_final_json",
+  "openclaw_bridge_invalid_response",
+  "decision_dialectic_bridge_no_final_json",
+]);
+
+/**
+ * Node's own module-resolution failures. These are stable machine codes, not
+ * prose, so matching them is not brittle: a worker whose handler script is
+ * absent exits with MODULE_NOT_FOUND / ERR_MODULE_NOT_FOUND in seconds. This is
+ * the exact shape the 2026-08-03 audit saw twice at 3s and 5s.
+ */
+const MODULE_NOT_FOUND_PATTERN = /\b(?:ERR_)?MODULE_NOT_FOUND\b/;
+
+export function classifyHandlerFailure(input: {
+  nestedCode?: string;
+  diagnosticText?: string;
+}): FailureClass | undefined {
+  const nestedCode = input.nestedCode?.trim();
+  if (nestedCode) {
+    if (HANDLER_MISSING_NESTED_CODES.has(nestedCode)) return "handler_missing";
+    if (HANDLER_BRIDGE_ERROR_NESTED_CODES.has(nestedCode)) return "handler_bridge_error";
+  }
+  if (input.diagnosticText && MODULE_NOT_FOUND_PATTERN.test(input.diagnosticText)) {
+    return "handler_missing";
+  }
+  // Deliberately unclassified: an unrecognised failure keeps the legacy
+  // handler_exit_nonzero code with no class, rather than being guessed into a
+  // bucket a reader would then trust.
+  return undefined;
+}
+
+/**
+ * A handler process that could not be started at all (ENOENT/EACCES on spawn).
+ * Raised at the spawn boundary so the classification is only applied where we
+ * know the failure is the handler command itself — `toTaskError` sees every
+ * error in task processing and must not classify by errno alone.
+ */
+export class HandlerSpawnError extends Error {
+  constructor(readonly cause: NodeJS.ErrnoException, readonly command: string) {
+    super(cause.message);
+    this.name = "HandlerSpawnError";
+  }
+
+  get missingArtifact(): boolean {
+    return this.cause.code === "ENOENT" || this.cause.code === "EACCES";
+  }
+}
+
 function handlerExitNonzeroError(options: {
   command: string;
   args: string[];
@@ -2092,12 +2161,25 @@ function handlerExitNonzeroError(options: {
     ?? stdoutExcerpt
     ?? `handler exited with code ${options.code}${options.signal ? ` (${options.signal})` : ""}`;
 
+  // Classify from the nested code first, then from the raw streams — a worker
+  // whose handler module is absent never produces a nested error at all, it
+  // just gets MODULE_NOT_FOUND on stderr.
+  const failureClass = classifyHandlerFailure({
+    nestedCode: nested?.code,
+    diagnosticText: `${options.stderr}\n${options.stdout}`,
+  });
+
   return {
+    // The legacy code is preserved: every existing consumer (retry policy,
+    // evidence classifier, historical task records) still matches it. The split
+    // #1725 asked for is carried by failureClass, which is additive and, unlike
+    // nestedError, survives the list projections.
     code: "handler_exit_nonzero",
     message: options.stderr.trim() || `handler exited with code ${options.code}${options.signal ? ` (${options.signal})` : ""}`,
     details: {
       stage: nestedStage ?? "handler",
       excerpt: nestedExcerpt ?? fallbackExcerpt,
+      ...(failureClass ? { failureClass } : {}),
       command: options.command,
       args: options.args,
       code: options.code,
@@ -2171,6 +2253,23 @@ function toTaskError(error: unknown): TaskError {
       code: error.code,
       message: error.message,
       details: { status: error.status },
+    };
+  }
+
+  if (error instanceof HandlerSpawnError) {
+    return {
+      code: "handler_spawn_failed",
+      message: error.message,
+      details: {
+        // `stage` is deliberately NOT set to "handler" here. classifyTaskErrorForRetry
+        // treats stage==="handler" as the retryable "environment" class, so setting it
+        // would silently make spawn failures auto-retryable — they are not today, and
+        // flipping that is a retry-behaviour decision, not a diagnostics one. The
+        // failureClass below carries the diagnosis without touching retry.
+        excerpt: boundedDiagnosticExcerpt(error.message) ?? error.message,
+        ...(error.missingArtifact ? { failureClass: "handler_missing" as const } : {}),
+        errno: error.cause.code,
+      },
     };
   }
 
