@@ -497,6 +497,22 @@ test("Piri patch profile reserves git and GitHub lifecycle work for the outer ru
   assertBashScriptParses(script);
 });
 
+test("Piri patch mode prompt states the final-answer JSON contract (#1802)", () => {
+  const script = buildPiriPatchCommandScript({});
+
+  // The first piri patch-lane canary failed closed: the agent completed the
+  // edits but answered in prose, because only the read-only prompt stated the
+  // schema-validated final-answer contract. Both prompts live in the same
+  // script, so pin the assertion to the PATCH heredoc block specifically.
+  const patchPrompt = script.match(/<<'A2A_PIRI_PROMPT_EOF'([\s\S]*?)\nA2A_PIRI_PROMPT_EOF/);
+  assert.ok(patchPrompt, "patch-mode prompt heredoc must exist");
+  assert.match(patchPrompt[1], /final answer must be the JSON value only/);
+  assert.match(patchPrompt[1], /schema-validates/);
+  assert.match(patchPrompt[1], /"status": "done"\|"blocked"/);
+  assert.match(patchPrompt[1], /"evidenceRefs": string\[\]/);
+  assertBashScriptParses(script);
+});
+
 test("Piri profile name and image aliases normalize", () => {
   assert.equal(normalizePatchCommandProfile("piri"), "piri");
   assert.equal(normalizePatchCommandProfile("PI"), "piri");
