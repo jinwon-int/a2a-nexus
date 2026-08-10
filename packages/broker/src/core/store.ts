@@ -16,6 +16,7 @@ import type {
   WorkerRecord,
 } from "./types.js";
 import { isHeartbeatAuditEvent } from "./broker-retention-selectors.js";
+import type { FailureClass } from "./task-error-details.js";
 import {
   buildHotEntityHintCoverage,
   planAuditRetentionFromRecords,
@@ -161,7 +162,16 @@ export interface SqliteTaskListItemProjection {
   taskOrigin?: TaskRecord["taskOrigin"];
   artifactIds?: string[];
   resultSummary?: string;
-  error?: Pick<NonNullable<TaskRecord["error"]>, "code" | "message">;
+  /**
+   * List read paths carry the code and message, plus the closed-vocabulary
+   * failure class only (#1597, routed from #1725 finding 2) — enough to tell a
+   * missing artifact from a bridge failure without opening each record. The
+   * rest of `details` (stdout, command, nestedError, host paths) stays behind
+   * `?detail=full` and `GET /tasks/:id`.
+   */
+  error?: Pick<NonNullable<TaskRecord["error"]>, "code" | "message"> & {
+    details?: { failureClass: FailureClass };
+  };
   requeueCount?: number;
   createdAt: string;
   updatedAt: string;

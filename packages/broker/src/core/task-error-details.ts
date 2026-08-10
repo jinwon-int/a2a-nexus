@@ -10,6 +10,33 @@ export const FAILURE_READBACK_STAGES = [
 
 export type FailureReadbackStage = typeof FAILURE_READBACK_STAGES[number];
 
+/**
+ * Why a handler lane failed, split by the two clusters that share the
+ * `handler_exit_nonzero` exit code but have nothing else in common (#1597,
+ * routed from #1725 finding 2).
+ *
+ * The 2026-08-03 audit measured 29 `handler_exit_nonzero` failures in a clean
+ * bimodal distribution: 12 that died in <=10s totalling 54 seconds, and 17 that
+ * burned 87.3 lane-minutes averaging 308s. Same code, opposite causes and three
+ * orders of magnitude apart in cost — and the list API surfaced neither
+ * `nestedError` nor anything else that told them apart, so identifying the
+ * cause meant reading task records one at a time.
+ *
+ * - `handler_missing`: the artifact or command was absent, so nothing ran.
+ *   Fails in seconds. Re-running on the same worker cannot help; the worker
+ *   needs its artifact fixed.
+ * - `handler_bridge_error`: the bridge ran and produced output that could not
+ *   be used. Burns the full provider budget before failing.
+ *
+ * Unrecognised failures stay unclassified rather than being guessed into one
+ * of these buckets — a wrong label is worse than no label here.
+ */
+export const FAILURE_CLASSES = ["handler_missing", "handler_bridge_error"] as const;
+
+export type FailureClass = typeof FAILURE_CLASSES[number];
+
+const FAILURE_CLASS_SET = new Set<string>(FAILURE_CLASSES);
+
 export const FAILURE_EXCERPT_MAX_LINES = 20;
 export const FAILURE_EXCERPT_MAX_CHARS = 4_000;
 
@@ -20,6 +47,11 @@ export interface FailureReadbackDetails {
   stage?: FailureReadbackStage;
   /** Bounded, operator-safe excerpt. Raw logs/prompts/secrets must never be stored here. */
   excerpt?: string;
+  /**
+   * Which handler failure cluster this is. A closed vocabulary, so it is safe
+   * to project on list read paths where the free-form details are not.
+   */
+  failureClass?: FailureClass;
 }
 
 function redactSecrets(value: string): string {
@@ -84,6 +116,12 @@ export function normalizeFailureReadbackStage(value: unknown): FailureReadbackSt
   return FAILURE_READBACK_STAGE_SET.has(normalized) ? normalized as FailureReadbackStage : undefined;
 }
 
+export function normalizeFailureClass(value: unknown): FailureClass | undefined {
+  if (typeof value !== "string") return undefined;
+  const normalized = value.trim().toLowerCase();
+  return FAILURE_CLASS_SET.has(normalized) ? normalized as FailureClass : undefined;
+}
+
 export function normalizeFailureReadbackDetails(details: Record<string, unknown> | undefined): Record<string, unknown> | undefined {
   if (!details) return undefined;
   const normalized: Record<string, unknown> = { ...details };
@@ -95,6 +133,12 @@ export function normalizeFailureReadbackDetails(details: Record<string, unknown>
   } else if (details.excerpt !== undefined) {
     delete normalized.excerpt;
   }
+  // Fail closed on the class: a worker-supplied value outside the vocabulary is
+  // dropped, never stored. The field is projected on public list read paths, so
+  // it must not become a free-text channel.
+  const failureClass = normalizeFailureClass(details.failureClass);
+  if (failureClass) normalized.failureClass = failureClass;
+  else if (details.failureClass !== undefined) delete normalized.failureClass;
   return Object.keys(normalized).length ? normalized : undefined;
 }
 
@@ -103,6 +147,11 @@ export function failureReadbackFromError(error: TaskError | undefined): Record<s
   if (!details) return undefined;
   const stage = normalizeFailureReadbackStage(details.stage);
   const excerpt = typeof details.excerpt === "string" ? details.excerpt : undefined;
-  if (!stage && !excerpt) return undefined;
-  return { ...(stage ? { stage } : {}), ...(excerpt ? { excerpt } : {}) };
+  const failureClass = normalizeFailureClass(details.failureClass);
+  if (!stage && !excerpt && !failureClass) return undefined;
+  return {
+    ...(stage ? { stage } : {}),
+    ...(excerpt ? { excerpt } : {}),
+    ...(failureClass ? { failureClass } : {}),
+  };
 }
