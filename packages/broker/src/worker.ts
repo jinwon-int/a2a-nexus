@@ -29,6 +29,7 @@ import { buildA2AWorkerSubagentEvidenceAssembly } from "a2a-attestation";
 import { mkdir, readFile, writeFile } from "node:fs/promises";
 import { dirname } from "node:path";
 import { setTimeout as delay } from "node:timers/promises";
+import { fileURLToPath } from "node:url";
 
 import { validateGithubTaskCompletionEvidence } from "./core/github-task-completion.js";
 import { normalizeTaskResult } from "./core/broker-task-record-normalizers.js";
@@ -2368,8 +2369,14 @@ function buildWorkerMetadata(
 // executable) BEFORE advertising `canAnalyze=true` at registration or
 // heartbeat. Adapter class and handler path are derived from the actual
 // wiring — the same env vars the execution handler resolves — never from
-// static self-report, so drift between declaration and wiring is impossible
-// by construction.
+// static self-report.
+//
+// That derivation is a *mirror* of the handler's resolution, not a shared
+// implementation, so it is not drift-proof by construction: #1788 changed the
+// handler's fallback bridge and the probe's fallback silently disagreed until
+// it was caught. Anything resolved here must therefore be pinned against the
+// handler by test (`worker-analysis-readiness.test.ts`), and any future change
+// to one side must move the other.
 // ---------------------------------------------------------------------------
 
 export interface AnalysisArtifactProbe {
@@ -2397,12 +2404,30 @@ function normalizeProbeAdapter(value: string | undefined): string | undefined {
   return PROBE_ADAPTER_ALIASES[normalized];
 }
 
+/**
+ * The bridge the execution handler falls back to when no `*_ANALYSIS_BIN` is
+ * configured. Must stay identical to `DEFAULT_ANALYSIS_BRIDGE` in
+ * `scripts/a2a-task-handler.mjs`; `worker-analysis-readiness.test.ts` pins the
+ * two together.
+ *
+ * The probe used to default to the literal `"openclaw"` instead. After #1788
+ * moved the handler default to the in-repo piri bridge ("not a binary nobody
+ * has"), the probe kept looking for exactly that binary nobody has: a worker
+ * with the bridge enabled and no explicit `*_ANALYSIS_BIN` failed a PATH
+ * lookup for `openclaw`, was marked `handler_artifact_missing`, and had
+ * `canAnalyze` flipped to false — while the handler it was about to run would
+ * have resolved the piri bridge and worked. A healthy worker went dark.
+ */
+const PROBE_DEFAULT_ANALYSIS_BRIDGE = fileURLToPath(
+  new URL("../scripts/piri-a2a-analysis-bridge.mjs", import.meta.url),
+);
+
 function analysisBridgeCommandForProbe(env: NodeJS.ProcessEnv): string {
   return (
     optionalTrimmed(env.A2A_HERMES_ANALYSIS_BIN) ??
     optionalTrimmed(env.A2A_OPENCLAW_ANALYSIS_BIN) ??
     optionalTrimmed(env.OPENCLAW_BIN) ??
-    "openclaw"
+    PROBE_DEFAULT_ANALYSIS_BRIDGE
   );
 }
 
