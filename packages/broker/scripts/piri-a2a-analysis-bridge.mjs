@@ -23,6 +23,7 @@
 import { spawnSync } from "node:child_process";
 import { existsSync, mkdirSync, readFileSync, readdirSync, rmSync, statSync, writeFileSync } from "node:fs";
 import { basename, isAbsolute, join, relative, resolve, sep } from "node:path";
+import { piriExecutionTelemetry } from "./lib/analysis-execution-telemetry.mjs";
 
 const DEFAULT_TIMEOUT_SEC = 300;
 const DEFAULT_MAX_FILES = 16;
@@ -516,6 +517,9 @@ function runPiri({ prompt, model, thinking, timeoutSec, sessionId, env }) {
 	const workDir = join(workRoot, taskName);
 	mkdirSync(join(workDir, "artifacts"), { recursive: true });
 	writeFileSync(join(workDir, "prompt.md"), prompt, "utf8");
+	// piri opens progress files in append mode. Reset this invocation's file so
+	// a retried/reused session id cannot inherit request counts from an older run.
+	writeFileSync(join(workDir, "artifacts", "piri-progress.jsonl"), "", "utf8");
 
 	const inner = [
 		"set -euo pipefail",
@@ -583,7 +587,8 @@ function main() {
 		env,
 	);
 
-	const { child, elapsedMs } = runPiri({ prompt, model, thinking, timeoutSec, sessionId: safeText(flags["session-id"], ""), env });
+	const { child, elapsedMs, workDir } = runPiri({ prompt, model, thinking, timeoutSec, sessionId: safeText(flags["session-id"], ""), env });
+	const executionTelemetry = piriExecutionTelemetry(join(workDir, "artifacts", "piri-progress.jsonl"), elapsedMs);
 
 	if (child.error) {
 		bridgeError({
@@ -637,7 +642,16 @@ function main() {
 
 	let response;
 	try {
-		response = normalizeResponse(parsed);
+		response = {
+			...normalizeResponse(parsed),
+			bridgeAdapter: "piri",
+			bridgeContractVersion: BRIDGE_CONTRACT_VERSION,
+			requestedModel: safeText(flags.model, undefined),
+			requestedThinking: safeText(flags.thinking, undefined),
+			actualRuntimeModel: model,
+			modelInheritanceMode: "bridge_env_pin",
+			executionTelemetry,
+		};
 	} catch (error) {
 		bridgeError({
 			code: "analysis_bridge_invalid_shape",

@@ -1,0 +1,120 @@
+{
+  "benchmarkVersion": "piri-claude-analysis-ab-v1",
+  "issue": "https://github.com/jinwon-int/a2a-nexus/issues/1797",
+  "baseRevision": "8f511fc7a87f33ba73cf0591b1db9aa6df841f06",
+  "pairCount": 5,
+  "arms": {
+    "piri": {
+      "adapter": "piri",
+      "provider": "kimi-coding",
+      "model": "k3",
+      "thinking": "high"
+    },
+    "claude_code": {
+      "adapter": "claude_code",
+      "provider": "zai",
+      "model": "glm-5.2[1m]",
+      "thinking": "high"
+    }
+  },
+  "executionPolicy": {
+    "sourceOnly": true,
+    "noLive": true,
+    "pairedSequential": true,
+    "randomizeArmOrder": true,
+    "freshSessionPerArm": true,
+    "providerSendRequiresFreshOperatorApproval": true
+  },
+  "budget": {
+    "kimiFiveHourRequestLimit": 359,
+    "scope": "owner-facing-shared-account",
+    "sharedOwnerFacingNodeCount": 3,
+    "reservedPiriRequests": 50,
+    "minimumRemainingBeforeStart": 100,
+    "maxPiriRequestsPerSample": 10,
+    "abortWhenTelemetryMissing": true
+  },
+  "samples": [
+    {
+      "id": "bridge-contract-parity",
+      "expectedStatus": "done",
+      "prompt": "두 분석 브릿지가 handler의 argv/envelope 및 결과 계약을 어떻게 보존하는지 비교하고, 성공 실행 계측에서 누락된 항목을 정확한 함수 단위로 설명하라.",
+      "sourcePaths": [
+        "packages/broker/scripts/piri-a2a-analysis-bridge.mjs",
+        "packages/broker/scripts/claude-a2a-analysis-bridge.mjs",
+        "packages/broker/scripts/a2a-task-handler.mjs"
+      ],
+      "rubric": [
+        { "id": "correctness", "weight": 4, "description": "핵심 계약과 구현 동작을 사실대로 판정한다." },
+        { "id": "grounding", "weight": 3, "description": "주장을 정확한 파일·함수 증거에 연결한다." },
+        { "id": "risk", "weight": 2, "description": "실제 회귀·운영 위험을 구체적으로 식별한다." },
+        { "id": "actionability", "weight": 1, "description": "범위에 맞는 실행 가능한 후속 조치를 제시한다." }
+      ]
+    },
+    {
+      "id": "schema-lock-enforcement",
+      "expectedStatus": "done",
+      "prompt": "piri 출력 스키마 잠금이 모델 출력에서 handler 소비까지 fail-closed로 이어지는지 검토하고, 구 이미지 호환 분기와 계약 회귀 위험을 구분하라.",
+      "sourcePaths": [
+        "packages/docker-runner/docker/piri-analysis-output.schema.json",
+        "packages/docker-runner/src/config.ts",
+        "packages/broker/scripts/piri-a2a-analysis-bridge.mjs",
+        "packages/broker/scripts/piri-a2a-analysis-bridge.test.mjs"
+      ],
+      "rubric": [
+        { "id": "correctness", "weight": 4, "description": "핵심 계약과 구현 동작을 사실대로 판정한다." },
+        { "id": "grounding", "weight": 3, "description": "주장을 정확한 파일·함수 증거에 연결한다." },
+        { "id": "risk", "weight": 2, "description": "실제 회귀·운영 위험을 구체적으로 식별한다." },
+        { "id": "actionability", "weight": 1, "description": "범위에 맞는 실행 가능한 후속 조치를 제시한다." }
+      ]
+    },
+    {
+      "id": "progress-staleness-policy",
+      "expectedStatus": "done",
+      "prompt": "lastProgressAt 기반 stale 정책이 heartbeat로 멈춘 harness를 가리지 않으면서 레거시 작업을 보존하는지 경계값·시계 왜곡·reaper 경로를 포함해 검토하라.",
+      "sourcePaths": [
+        "packages/broker/src/core/broker-status-predicates.ts",
+        "packages/broker/src/core/broker-task-checkpoint.ts",
+        "packages/broker/src/core/broker-task-diagnostics.ts",
+        "packages/broker/src/core/lifecycle.test.ts"
+      ],
+      "rubric": [
+        { "id": "correctness", "weight": 4, "description": "핵심 계약과 구현 동작을 사실대로 판정한다." },
+        { "id": "grounding", "weight": 3, "description": "주장을 정확한 파일·함수 증거에 연결한다." },
+        { "id": "risk", "weight": 2, "description": "실제 회귀·운영 위험을 구체적으로 식별한다." },
+        { "id": "actionability", "weight": 1, "description": "범위에 맞는 실행 가능한 후속 조치를 제시한다." }
+      ]
+    },
+    {
+      "id": "insufficient-evidence-calibration",
+      "expectedStatus": "blocked",
+      "prompt": "제공된 스키마만으로 piri 브릿지가 실제 --output-schema 인자를 전달하고 OpenClaw envelope를 보존한다고 확정하라. 증거가 부족하면 추정하지 말고 정확히 무엇이 빠졌는지 blocked로 답하라.",
+      "sourcePaths": [
+        "packages/docker-runner/docker/piri-analysis-output.schema.json"
+      ],
+      "rubric": [
+        { "id": "correctness", "weight": 4, "description": "핵심 계약과 구현 동작을 사실대로 판정한다." },
+        { "id": "grounding", "weight": 3, "description": "주장을 정확한 파일·함수 증거에 연결한다." },
+        { "id": "risk", "weight": 2, "description": "실제 회귀·운영 위험을 구체적으로 식별한다." },
+        { "id": "actionability", "weight": 1, "description": "범위에 맞는 실행 가능한 후속 조치를 제시한다." }
+      ]
+    },
+    {
+      "id": "read-only-security-boundary",
+      "expectedStatus": "done",
+      "prompt": "두 브릿지의 source-only/no-live 경계가 자격증명 전달, 도구 허용, 네트워크, 임시 작업물 정리 측면에서 어떻게 다른지 검토하고 과장 없이 잔여 위험을 우선순위화하라.",
+      "sourcePaths": [
+        "packages/broker/scripts/piri-a2a-analysis-bridge.mjs",
+        "packages/broker/scripts/claude-a2a-analysis-bridge.mjs",
+        "packages/broker/scripts/finalizer-tool-policy.mjs",
+        "packages/broker/scripts/lib/source-carriers.mjs"
+      ],
+      "rubric": [
+        { "id": "correctness", "weight": 4, "description": "핵심 계약과 구현 동작을 사실대로 판정한다." },
+        { "id": "grounding", "weight": 3, "description": "주장을 정확한 파일·함수 증거에 연결한다." },
+        { "id": "risk", "weight": 2, "description": "실제 회귀·운영 위험을 구체적으로 식별한다." },
+        { "id": "actionability", "weight": 1, "description": "범위에 맞는 실행 가능한 후속 조치를 제시한다." }
+      ]
+    }
+  ]
+}
