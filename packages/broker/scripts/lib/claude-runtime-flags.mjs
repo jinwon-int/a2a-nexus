@@ -16,6 +16,11 @@
 // an operator-supplied value is now applied instead of merely reported.
 
 export const CLAUDE_MODEL_ALIASES = new Set(["sonnet", "opus", "haiku", "fable"]);
+// Provider-backed Claude Code gateways can expose model selectors that are
+// neither Anthropic ids nor aliases. Keep this list exact: broker namespace
+// ids containing "/" remain metadata-only, while a selector proven usable by
+// the node's Claude CLI may reach --model and become runtime evidence.
+export const CLAUDE_CODE_PROVIDER_MODEL_SELECTORS = new Set(["glm-5.2[1m]"]);
 export const CLAUDE_EFFORT_LEVELS = new Set(["low", "medium", "high", "xhigh", "max"]);
 
 function safeText(value, fallback = "") {
@@ -33,7 +38,11 @@ export function resolveExplicitClaudeModel(flags, env = process.env) {
     const value = candidate.trim();
     if (!value || value.includes("/")) continue;
     const normalized = value.toLowerCase();
-    if (normalized.startsWith("claude-") || CLAUDE_MODEL_ALIASES.has(normalized)) return value;
+    if (
+      normalized.startsWith("claude-")
+      || CLAUDE_MODEL_ALIASES.has(normalized)
+      || CLAUDE_CODE_PROVIDER_MODEL_SELECTORS.has(normalized)
+    ) return value;
   }
   return "";
 }

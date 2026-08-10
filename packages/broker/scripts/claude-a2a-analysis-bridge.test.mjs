@@ -614,6 +614,16 @@ test("broker-namespace task model still cannot choose the Claude model", () => {
   assert.equal(payload.appliedModel, undefined);
 });
 
+test("exact GLM provider selector reaches Claude --model and runtime telemetry", () => {
+  const { childArgs, payload } = runAnalysisBridgeCapturingArgs({ taskModel: "glm-5.2[1m]" });
+
+  assert.equal(childArgs[childArgs.indexOf("--model") + 1], "glm-5.2[1m]");
+  assert.equal(payload.appliedModel, "glm-5.2[1m]");
+  assert.equal(payload.actualRuntimeModel, "glm-5.2[1m]");
+  assert.equal(payload.claudeModelArgumentApplied, true);
+  assert.equal(payload.modelInheritanceMode, "cli_argument");
+});
+
 test("a non-Claude task model does not suppress the operator-pinned model", () => {
   const { childArgs } = runAnalysisBridgeCapturingArgs({
     taskModel: "minimax-m3",
