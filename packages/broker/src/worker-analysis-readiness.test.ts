@@ -179,3 +179,76 @@ test("broker projection: analysisReady=false darkens an online worker; absent me
   const driftedItem = summary.items.find((item) => item.nodeId === "worker-a");
   assert.equal(driftedItem?.substantiveAnalysisReady, false);
 });
+
+// ---------------------------------------------------------------------------
+// Probe/handler fallback parity. The probe mirrors the execution handler's
+// bridge resolution rather than sharing it, so the two can silently disagree.
+// #1788 moved the handler's fallback to the in-repo piri bridge ("not a binary
+// nobody has") while the probe kept defaulting to the literal "openclaw" — so
+// a worker with the bridge enabled and no explicit *_ANALYSIS_BIN failed a
+// PATH lookup for a binary that by definition nobody has, was marked
+// handler_artifact_missing, and had canAnalyze flipped to false, even though
+// the handler it was about to run would have resolved the piri bridge fine.
+// A healthy worker went dark. These tests pin the two defaults together.
+// ---------------------------------------------------------------------------
+
+test("probe fallback bridge is byte-identical to the execution handler's default (#1597/#1788)", async () => {
+  // Computed specifier: the handler is a plain .mjs script outside the TS
+  // program, so a literal import would pull scripts/ into the compilation.
+  const handlerUrl = new URL("../scripts/a2a-task-handler.mjs", import.meta.url).href;
+  const { DEFAULT_ANALYSIS_BRIDGE } = (await import(handlerUrl)) as { DEFAULT_ANALYSIS_BRIDGE: string };
+  const probe = probeAnalysisArtifactReadiness(
+    { PATH: process.env.PATH, A2A_OPENCLAW_ANALYSIS_ENABLED: "1" },
+    true,
+  );
+
+  assert.equal(
+    probe.handlerPath,
+    DEFAULT_ANALYSIS_BRIDGE,
+    "probe and handler must resolve the same bridge when no *_ANALYSIS_BIN is configured — "
+      + "otherwise the probe darkens workers the handler would have run",
+  );
+});
+
+test("bridge enabled with no *_ANALYSIS_BIN keeps a present default bridge ready (#1597/#1788)", () => {
+  const probe = probeAnalysisArtifactReadiness(
+    { PATH: process.env.PATH, A2A_OPENCLAW_ANALYSIS_ENABLED: "1" },
+    true,
+  );
+
+  assert.equal(probe.probed, true);
+  assert.equal(probe.ready, true, "the in-repo default bridge exists in a checkout, so the worker stays analysis-capable");
+  assert.equal(probe.reason, undefined);
+});
+
+test("explicit *_ANALYSIS_BIN still overrides the default fallback (#1597/#1788)", () => {
+  const dir = mkdtempSync(join(tmpdir(), "a2a-probe-override-"));
+  try {
+    const explicit = join(dir, "custom-bridge.mjs");
+    writeFileSync(explicit, "// custom bridge\n");
+    const probe = probeAnalysisArtifactReadiness(
+      { PATH: process.env.PATH, A2A_OPENCLAW_ANALYSIS_ENABLED: "1", A2A_OPENCLAW_ANALYSIS_BIN: explicit },
+      true,
+    );
+    assert.equal(probe.ready, true);
+    assert.equal(probe.handlerPath, explicit, "explicit configuration must win over the fallback");
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test("a missing default bridge is still reported, not silently passed (#1597/#1788)", () => {
+  // Parity must not become "always ready": where the bridge artifact is absent
+  // (the broker image ships only the hermes bridge), the probe must still fail
+  // closed — the handler would fail there too.
+  const probe = probeAnalysisArtifactReadiness(
+    {
+      PATH: process.env.PATH,
+      A2A_OPENCLAW_ANALYSIS_ENABLED: "1",
+      A2A_OPENCLAW_ANALYSIS_BIN: "/definitely/not/a/real/bridge.mjs",
+    },
+    true,
+  );
+  assert.equal(probe.ready, false);
+  assert.equal(probe.reason, "handler_artifact_missing");
+});
