@@ -1,4 +1,11 @@
+import { createHash } from "node:crypto";
+
 import type { InMemoryA2ABroker } from "../core/broker.js";
+import {
+  peerHasHandoffScope,
+  type PeerCredentialRegistry,
+  type PeerHandoffScopeMode,
+} from "../core/peer-credentials.js";
 import type {
   A2AExchangeIntent,
   CreateTaskRequest,
@@ -16,7 +23,9 @@ export type HandoffReceiverSkippedReason =
   | "unknown_worker"
   | "wrong_broker_of_record"
   | "wrong_target_team"
-  | "missing_idempotency_key";
+  | "missing_idempotency_key"
+  | "peer_scope_denied"
+  | "idempotency_conflict";
 
 export interface brokerbetabrokeralphaHandoffManifest {
   brokerOfRecord?: string;
@@ -35,6 +44,12 @@ export interface brokerbetabrokeralphaHandoffManifest {
   parentRoundId?: string;
   /** Total worker/task count expected for the parent round (denominator). */
   parentRoundTotal?: number | string;
+  /**
+   * Global order of this handoff within the parent round (1-based). Optional;
+   * defaults to the assignment index + 1 when the manifest carries
+   * parentRoundId + parentRoundTotal.
+   */
+  parentRoundOrder?: number | string;
 }
 
 export interface HandoffReceiverOptions {
@@ -49,6 +64,17 @@ export interface HandoffReceiverOptions {
   defaultIntent?: A2AExchangeIntent;
   /** Service requester id used when the manifest omits `requestingAgent`. */
   requesterId?: string;
+  /**
+   * Minimum-scope peer credential registry
+   * (contracts/a2a/broker-handoff-protocol.md peer scopes). When configured,
+   * the requesting peer broker must hold the `handoff:create` scope or the
+   * manifest fails closed before any task is created. Transport
+   * authentication for this lane is the GitHub webhook signature; the
+   * registry supplies the per-peer authorization grant.
+   */
+  peerCredentialRegistry?: PeerCredentialRegistry | null;
+  /** Peer scope gate mode; defaults to `auto` (assert when a registry is configured). */
+  peerHandoffScopeMode?: PeerHandoffScopeMode;
 }
 
 export interface HandoffReceiveInput {
@@ -94,6 +120,7 @@ const MANIFEST_KEYS = new Set([
   "worker",
   "parentRoundId",
   "parentRoundTotal",
+  "parentRoundOrder",
 ]);
 
 export class brokerbetabrokeralphaHandoffReceiver {
@@ -103,6 +130,8 @@ export class brokerbetabrokeralphaHandoffReceiver {
   private readonly requestedByBroker: string;
   private readonly defaultIntent: A2AExchangeIntent;
   private readonly requesterId: string;
+  private readonly peerCredentialRegistry: PeerCredentialRegistry | null;
+  private readonly peerHandoffScopeMode: PeerHandoffScopeMode;
 
   constructor(options: HandoffReceiverOptions) {
     this.broker = options.broker;
@@ -110,7 +139,9 @@ export class brokerbetabrokeralphaHandoffReceiver {
     this.targetTeam = options.targetTeam ?? "team1";
     this.requestedByBroker = options.requestedByBroker ?? "brokerbeta";
     this.defaultIntent = options.defaultIntent ?? "propose_patch";
-    this.requesterId = options.requesterId ?? "brokerbeta-brokeralpha-handoff-receiver";
+    this.requesterId = options.requesterId ?? `${this.requestedByBroker}-${this.brokerOfRecord}-handoff-receiver`;
+    this.peerCredentialRegistry = options.peerCredentialRegistry ?? null;
+    this.peerHandoffScopeMode = options.peerHandoffScopeMode ?? "auto";
   }
 
   receiveIssueComment(event: GitHubIssueCommentEvent, ctx: GitHubDeliveryContext): HandoffReceiveResult {
@@ -148,6 +179,18 @@ export class brokerbetabrokeralphaHandoffReceiver {
       return emptyResult("missing_idempotency_key", manifest);
     }
 
+    // Peer scope gate (contracts/a2a/broker-handoff-protocol.md): a peer
+    // missing the handoff:create scope fails closed before task creation.
+    // Mode `auto` asserts whenever a registry is provisioned; `enforce`
+    // asserts even without one (denying everything until provisioned).
+    if (this.peerHandoffScopeMode !== "off" &&
+        (this.peerHandoffScopeMode === "enforce" || this.peerCredentialRegistry)) {
+      const requestingPeer = requestedByBroker ?? this.requestedByBroker;
+      if (!peerHasHandoffScope(this.peerCredentialRegistry, requestingPeer, "handoff:create")) {
+        return emptyResult("peer_scope_denied", manifest);
+      }
+    }
+
     const intents = parseAssignmentIntents(input.body);
     const assignmentIntents = intents.length > 0 ? intents : manifest.targetWorker ? [intentFromManifest(manifest)] : [];
     if (assignmentIntents.length === 0) {
@@ -156,6 +199,7 @@ export class brokerbetabrokeralphaHandoffReceiver {
 
     const targetTaskIds: string[] = [];
     const evidence: HandoffEvidenceEntry[] = [];
+    const envelopeDigest = handoffEnvelopeDigest(manifest, assignmentIntents.map((entry) => entry.target));
     let replayed = false;
 
     for (let index = 0; index < assignmentIntents.length; index++) {
@@ -175,7 +219,17 @@ export class brokerbetabrokeralphaHandoffReceiver {
 
       const taskId = taskIdForHandoff(manifest, intent.target, index, assignmentIntents.length);
       const existing = this.broker.getTask(taskId);
-      const task = existing ?? this.createTask({ input, manifest, intent, taskId, index });
+      if (existing) {
+        // One idempotency key = one logical handoff: a replay of the same
+        // envelope returns the existing task, but the same key with a
+        // different envelope is a conflict, not a second dispatch
+        // (contracts/a2a/broker-handoff-protocol.md idempotency rules).
+        const existingDigest = existing.payload["handoffEnvelopeDigest"];
+        if (typeof existingDigest === "string" && existingDigest !== envelopeDigest) {
+          return emptyResult("idempotency_conflict", manifest);
+        }
+      }
+      const task = existing ?? this.createTask({ input, manifest, intent, taskId, index, envelopeDigest });
       if (existing) replayed = true;
       targetTaskIds.push(task.id);
       evidence.push({
@@ -205,10 +259,13 @@ export class brokerbetabrokeralphaHandoffReceiver {
     intent: AssignmentIntent;
     taskId: string;
     index: number;
+    envelopeDigest: string;
   }): TaskRecord {
-    const { input, manifest, intent, taskId, index } = args;
+    const { input, manifest, intent, taskId, index, envelopeDigest } = args;
     const message = redactHandoffText(intent.message ?? intent.raw);
     const requesterId = normalizeString(manifest.requestingAgent) ?? this.requesterId;
+    const parentRoundId = normalizeString(manifest.parentRoundId);
+    const parentBrokerId = normalizeString(manifest.requestedByBroker) ?? this.requestedByBroker;
     const request: CreateTaskRequest = {
       id: taskId,
       intent: intent.intent ?? this.defaultIntent,
@@ -220,7 +277,7 @@ export class brokerbetabrokeralphaHandoffReceiver {
       brokerOfRecord: this.brokerOfRecord,
       teamId: this.targetTeam,
       payload: {
-        handoffKind: "brokerbeta-brokeralpha",
+        handoffKind: `${this.requestedByBroker}-${this.brokerOfRecord}`,
         brokerOfRecord: this.brokerOfRecord,
         requestedByBroker: normalizeString(manifest.requestedByBroker),
         requestingAgent: requesterId,
@@ -230,6 +287,7 @@ export class brokerbetabrokeralphaHandoffReceiver {
         handoffReason: redactHandoffText(normalizeString(manifest.handoffReason) ?? ""),
         handoffStatus: normalizeString(manifest.status) ?? "requested",
         idempotencyKey: normalizeString(manifest.idempotencyKey),
+        handoffEnvelopeDigest: envelopeDigest,
         evidenceUrls: manifest.evidence.map(redactHandoffText),
         ...(intent.intent === "propose_patch" || (!intent.intent && this.defaultIntent === "propose_patch")
           ? { mode: "github-propose-patch", repo: input.repoFullName, issue: `#${input.issueNumber}`, issueNumber: input.issueNumber, issueUrl: input.issueUrl }
@@ -239,26 +297,58 @@ export class brokerbetabrokeralphaHandoffReceiver {
         githubRepo: input.repoFullName,
         githubIssueNumber: input.issueNumber,
         githubIssueUrl: input.issueUrl,
-        workMode: "team1",
-        workModeDecision: {
-          mode: "team1",
-          idempotencyKey: `brokerbeta-brokeralpha-handoff:${normalizeString(manifest.idempotencyKey) ?? taskId}`,
-          finalizerOwner: this.brokerOfRecord,
-          generatedAt: input.ctx.receivedAt,
-          capacityState: "unknown",
-          capacitySnapshotSource: "brokerbeta-brokeralpha-handoff-manifest",
-          capacitySnapshotAt: input.ctx.receivedAt,
-          sourceOnlyDecision: true,
-          workerDispatchAllowedByThisPacket: false,
-        },
+        workMode: this.targetTeam,
+        // A2AWorkMode has no team2 token; emit the packaged decision only for
+        // the team1 lane and let other lanes supply their own policy packet.
+        ...(this.targetTeam === "team1"
+          ? {
+              workModeDecision: {
+                mode: "team1",
+                idempotencyKey: `${this.requestedByBroker}-${this.brokerOfRecord}-handoff:${normalizeString(manifest.idempotencyKey) ?? taskId}`,
+                finalizerOwner: this.brokerOfRecord,
+                generatedAt: input.ctx.receivedAt,
+                capacityState: "unknown",
+                capacitySnapshotSource: `${this.requestedByBroker}-${this.brokerOfRecord}-handoff-manifest`,
+                capacitySnapshotAt: input.ctx.receivedAt,
+                sourceOnlyDecision: true,
+                workerDispatchAllowedByThisPacket: false,
+              },
+            }
+          : {}),
         githubWorkMode: intent.workMode,
         githubKind: "handoff",
         ...(input.commentId !== undefined ? { githubCommentId: input.commentId } : {}),
         ...(input.commentUrl ? { githubCommentUrl: input.commentUrl } : {}),
         githubCommandIndex: index,
-        ...(manifest.parentRoundId ? { parentRoundId: manifest.parentRoundId } : {}),
+        ...(parentRoundId ? { parentRoundId } : {}),
         ...(manifest.parentRoundTotal ? { parentRoundTotal: manifest.parentRoundTotal } : {}),
-        ...(manifest.parentRoundId && manifest.parentRoundTotal ? { parentRoundOrder: index + 1 } : {}),
+        ...(parentRoundId && manifest.parentRoundTotal
+          ? { parentRoundOrder: positiveIntFrom(manifest.parentRoundOrder) ?? index + 1 }
+          : {}),
+        // Parent Terminal Brief metadata (broker-handoff-protocol.md,
+        // "Parent Terminal Brief metadata"): when the envelope carries a
+        // parent round, mark the terminal brief parent-owned so the child
+        // terminal-outbox event emits notificationOwnership
+        // scope=parent-broker-only with the parent broker as owner, plus the
+        // crossBrokerHandoff attribution the parent-side receiver requires.
+        // Without these fields the child event is silently ignored by
+        // cross-broker receivers (aggregation gap G2/G3).
+        ...(parentRoundId
+          ? {
+              originBrokerId: parentBrokerId,
+              brokerOfRecordId: parentBrokerId,
+              operatorFacingOwner: "parent",
+              crossBrokerHandoff: {
+                parentRoundId,
+                originBrokerId: parentBrokerId,
+                handoffBrokerId: this.brokerOfRecord,
+                childWorkerId: intent.target,
+                ...(normalizeString(manifest.sourceTaskId)
+                  ? { originTaskId: redactHandoffText(normalizeString(manifest.sourceTaskId)!) }
+                  : {}),
+              },
+            }
+          : {}),
       },
     };
     return this.broker.createTask(request);
@@ -276,7 +366,11 @@ export function parsebrokerbetabrokeralphaHandoffManifest(text: string | null | 
 
 export function renderHandoffEvidenceComment(result: Pick<HandoffReceiveResult, "manifest" | "evidence">): string {
   const manifest = result.manifest;
-  const header = "[a2a:brokerbeta→brokeralpha handoff]";
+  const requestedByBroker = manifest?.requestedByBroker?.trim();
+  const brokerOfRecord = manifest?.brokerOfRecord?.trim();
+  const header = requestedByBroker && brokerOfRecord
+    ? `[a2a:${redactHandoffText(requestedByBroker)}→${redactHandoffText(brokerOfRecord)} handoff]`
+    : "[a2a:brokerbeta→brokeralpha handoff]";
   const lines = [header];
   if (manifest) {
     lines.push(`brokerOfRecord: ${redactHandoffText(manifest.brokerOfRecord ?? "")}`);
@@ -354,6 +448,7 @@ function parseManifestBlock(block: string): brokerbetabrokeralphaHandoffManifest
     ...(fields.targetWorker ? { targetWorker: fields.targetWorker } : {}),
     ...(fields.parentRoundId ? { parentRoundId: fields.parentRoundId } : {}),
     ...(fields.parentRoundTotal ? { parentRoundTotal: fields.parentRoundTotal } : {}),
+    ...(fields.parentRoundOrder ? { parentRoundOrder: fields.parentRoundOrder } : {}),
     evidence,
   };
 }
@@ -440,6 +535,38 @@ function firstString(source: unknown, keys: string[]): string | undefined {
 function normalizeString(value: string | undefined): string | undefined {
   const trimmed = value?.trim();
   return trimmed ? trimmed : undefined;
+}
+
+function positiveIntFrom(value: number | string | undefined): number | undefined {
+  if (typeof value === "number" && Number.isInteger(value) && value > 0) return value;
+  if (typeof value === "string" && /^\d+$/.test(value.trim())) {
+    const parsed = Number(value.trim());
+    if (Number.isSafeInteger(parsed) && parsed > 0) return parsed;
+  }
+  return undefined;
+}
+
+/**
+ * Stable digest over the identity-bearing envelope fields. Two manifests that
+ * reuse one idempotency key with a different source/destination/team/link or
+ * worker set must be treated as a conflict, not a replay.
+ */
+export function handoffEnvelopeDigest(
+  manifest: brokerbetabrokeralphaHandoffManifest,
+  targetWorkers: readonly string[],
+): string {
+  const canonical = JSON.stringify({
+    brokerOfRecord: manifest.brokerOfRecord?.trim() ?? null,
+    requestedByBroker: manifest.requestedByBroker?.trim() ?? null,
+    targetTeam: manifest.targetTeam?.trim() ?? null,
+    sourceTaskId: manifest.sourceTaskId?.trim() ?? null,
+    targetTaskId: manifest.targetTaskId?.trim() ?? null,
+    parentRoundId: manifest.parentRoundId?.trim() ?? null,
+    parentRoundTotal: manifest.parentRoundTotal !== undefined ? String(manifest.parentRoundTotal).trim() : null,
+    parentRoundOrder: manifest.parentRoundOrder !== undefined ? String(manifest.parentRoundOrder).trim() : null,
+    targetWorkers: [...targetWorkers],
+  });
+  return createHash("sha256").update(canonical, "utf8").digest("hex");
 }
 
 function slugForId(value: string): string {

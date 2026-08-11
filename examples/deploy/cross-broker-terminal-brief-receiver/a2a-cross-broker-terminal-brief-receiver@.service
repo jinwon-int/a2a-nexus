@@ -1,0 +1,30 @@
+# Cross-broker Terminal Brief receiver (one direction per instance).
+# Instance name = direction label, e.g.
+#   a2a-cross-broker-terminal-brief-receiver@brokerbeta-to-brokeralpha  (forward)
+#   a2a-cross-broker-terminal-brief-receiver@brokeralpha-to-brokerbeta  (reverse)
+# Copy receiver.env.example to /etc/a2a/cross-broker-receiver/%i.env (0600,
+# root-only) before enabling. The unit is deliberately default-off: the
+# runner exits immediately unless CROSS_BROKER_TERMINAL_BRIEF_RECEIVER_ENABLED=1.
+[Unit]
+Description=A2A cross-broker Terminal Brief receiver (%i)
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+# Adjust to the deployed a2a-nexus checkout/build root.
+WorkingDirectory=/opt/a2a-nexus/packages/broker
+EnvironmentFile=/etc/a2a/cross-broker-receiver/%i.env
+ExecStart=/usr/bin/node scripts/cross-broker-terminal-brief-receiver.mjs
+Restart=always
+RestartSec=10
+User=root
+Group=root
+NoNewPrivileges=true
+# Cursor state lives under /var/lib; one directory per direction instance.
+StateDirectory=a2a-cross-broker-terminal-brief-receiver
+ProtectSystem=full
+PrivateTmp=true
+
+[Install]
+WantedBy=multi-user.target
