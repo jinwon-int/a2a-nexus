@@ -75,7 +75,7 @@ const STATIC_MESSAGE_REASONS: ReadonlyArray<readonly [string, AuthRejectionReaso
   ["invalid live approval", "live_approval_invalid"],
   ["live task submission requires an authenticated operator or hub", "live_approval_identity_denied"],
   ["live task requester identity mismatch", "live_approval_identity_denied"],
-  // Cross-broker peer handoff credentials (core/peer-credentials.ts). All
+  // Cross-broker peer handoff credentials (core/request-security.ts). All
   // three throw sites collapse into one reason on purpose: the wire responses
   // are deliberately indistinguishable, and the metrics must not become the
   // oracle that leaks which part of the credential failed.

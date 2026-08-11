@@ -13,7 +13,7 @@ import {
   peerHasHandoffScope,
   resolvePeerFromRequest,
   sha256Hex,
-} from "./peer-credentials.js";
+} from "./request-security.js";
 
 function fakeRequest(headers: Record<string, string>): IncomingMessage {
   return { headers } as unknown as IncomingMessage;

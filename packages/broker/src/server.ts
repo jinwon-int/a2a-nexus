@@ -120,7 +120,7 @@ import { createBrokerAgentCard } from "./a2a/agent-card.js";
 import { PushNotificationConfigStore } from "./a2a/push-notification-config.js";
 import { signAgentCard } from "a2a-attestation";
 import { loadCrossBrokerTrustAnchors, CrossBrokerNonceCache } from "./a2a/cross-broker-sender-proof.js";
-import { loadPeerCredentialRegistryFile, parsePeerHandoffScopeMode } from "./core/peer-credentials.js";
+import { loadPeerCredentialRegistryFile, parsePeerHandoffScopeMode } from "./core/request-security.js";
 import { startDefaultAgent, type DefaultAgentHandle } from "./a2a/default-agent.js";
 import { PeerStatusService } from "./a2a/peer-status.js";
 import {
