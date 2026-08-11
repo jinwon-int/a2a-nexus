@@ -120,6 +120,7 @@ import { createBrokerAgentCard } from "./a2a/agent-card.js";
 import { PushNotificationConfigStore } from "./a2a/push-notification-config.js";
 import { signAgentCard } from "a2a-attestation";
 import { loadCrossBrokerTrustAnchors, CrossBrokerNonceCache } from "./a2a/cross-broker-sender-proof.js";
+import { loadPeerCredentialRegistryFile, parsePeerHandoffScopeMode } from "./core/request-security.js";
 import { startDefaultAgent, type DefaultAgentHandle } from "./a2a/default-agent.js";
 import { PeerStatusService } from "./a2a/peer-status.js";
 import {
@@ -650,6 +651,20 @@ export function createBrokerServer(options: BrokerServerOptions = {}): BrokerSer
     options.crossBrokerSenderProofKeysFile ?? process.env.CROSS_BROKER_SENDER_PROOF_KEYS_FILE,
   );
   const crossBrokerNonceCache = crossBrokerTrustAnchors ? new CrossBrokerNonceCache() : undefined;
+  const peerCredentialsFile = options.peerCredentialsFile ?? process.env.A2A_PEER_CREDENTIALS_FILE;
+  const peerCredentialRegistry = peerCredentialsFile
+    ? loadPeerCredentialRegistryFile(peerCredentialsFile)
+    : null;
+  const peerHandoffScopeMode = parsePeerHandoffScopeMode(
+    options.peerHandoffScopeMode ?? process.env.A2A_PEER_HANDOFF_SCOPE_MODE,
+    "A2A_PEER_HANDOFF_SCOPE_MODE",
+  );
+  if (peerHandoffScopeMode === "enforce" && !peerCredentialRegistry) {
+    throw new Error(
+      "A2A_PEER_HANDOFF_SCOPE_MODE=enforce requires a peer credential registry, but none is configured. " +
+        "Set A2A_PEER_CREDENTIALS_FILE to a root-only registry file, or use mode auto/off.",
+    );
+  }
   const agentCard = signingKeyPem
     ? signAgentCard(unsignedAgentCard as unknown as Record<string, unknown>, {
         privateKeyPem: signingKeyPem,
@@ -1321,6 +1336,8 @@ export function createBrokerServer(options: BrokerServerOptions = {}): BrokerSer
         requesterIdentity,
         crossBrokerTrustAnchors,
         crossBrokerNonceCache,
+        peerCredentialRegistry,
+        peerHandoffScopeMode,
       })) {
         return;
       }
