@@ -40,7 +40,7 @@ export const AUTH_REJECTION_REASONS = [
   "github_webhook_signature_invalid",
   "live_approval_invalid",
   "live_approval_identity_denied",
-  "peer_credential_denied",
+  "peer_handoff_denied",
   "a2a_signature_failed",
   "unspecified",
 ] as const;
@@ -79,9 +79,9 @@ const STATIC_MESSAGE_REASONS: ReadonlyArray<readonly [string, AuthRejectionReaso
   // three throw sites collapse into one reason on purpose: the wire responses
   // are deliberately indistinguishable, and the metrics must not become the
   // oracle that leaks which part of the credential failed.
-  ["peer credentials are not accepted by this broker", "peer_credential_denied"],
-  ["x-a2a-peer-broker-id and x-a2a-peer-secret must be presented together", "peer_credential_denied"],
-  ["peer credential rejected", "peer_credential_denied"],
+  ["peer credentials are not accepted by this broker", "peer_handoff_denied"],
+  ["x-a2a-peer-broker-id and x-a2a-peer-secret must be presented together", "peer_handoff_denied"],
+  ["peer credential rejected", "peer_handoff_denied"],
 ];
 
 export interface AuthRejectionClassification {

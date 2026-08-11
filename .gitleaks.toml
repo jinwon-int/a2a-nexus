@@ -37,9 +37,5 @@ description = "Known false positives: scenario/status string-literal constants f
 regexTarget = "secret"
 regexes = [
   '''^S[0-9]+_[A-Z0-9]+(?:_[A-Z0-9]+)*$''',
-  '''^grantEvidenceAccepted=$''',
-  # auth-rejection-metrics.ts reason enum value: the word "credential" plus a
-  # string literal trips generic-api-key, but this is a bounded metrics label,
-  # not a credential. Exact value only.
-  '''^peer_credential_denied$'''
+  '''^grantEvidenceAccepted=$'''
 ]
