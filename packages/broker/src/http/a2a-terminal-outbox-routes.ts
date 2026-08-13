@@ -13,6 +13,12 @@ import { BrokerError, InMemoryA2ABroker } from "../core/broker.js";
 import type { BrokerStateStore } from "../core/store.js";
 import { assertRequesterHasRole, type RequesterIdentity } from "../core/request-security.js";
 import {
+  assertPeerHandoffScope,
+  resolvePeerFromRequest,
+  type PeerCredentialRegistry,
+  type PeerHandoffScopeMode,
+} from "../core/request-security.js";
+import {
   verifyCrossBrokerSenderProof,
   type CrossBrokerNonceCache,
   type CrossBrokerTrustAnchors,
@@ -35,6 +41,32 @@ export interface A2ATerminalOutboxRouteContext {
   requesterIdentity: RequesterIdentity | null;
   crossBrokerTrustAnchors: CrossBrokerTrustAnchors | null;
   crossBrokerNonceCache: CrossBrokerNonceCache | undefined;
+  /** Minimum-scope peer credential registry (null = peer auth not provisioned). */
+  peerCredentialRegistry?: PeerCredentialRegistry | null;
+  /** Peer handoff scope gate mode; defaults to `auto` (verify when presented). */
+  peerHandoffScopeMode?: PeerHandoffScopeMode;
+}
+
+/**
+ * Resolve + scope-check the calling peer for a handoff route. In `enforce`
+ * mode a missing peer credential fails closed; in `auto` mode header-less
+ * callers fall through to the pre-existing role/edge-secret gates.
+ */
+function assertPeerScopeForRoute(
+  ctx: A2ATerminalOutboxRouteContext,
+  requiredScope: "handoff:status" | "handoff:evidence",
+  operation: string,
+  options: { softEnforce?: boolean } = {},
+): void {
+  const mode = ctx.peerHandoffScopeMode ?? "auto";
+  if (mode === "off") return;
+  const peer = resolvePeerFromRequest(ctx.peerCredentialRegistry ?? null, ctx.req);
+  // The terminal-outbox subscribe route is shared with local (same-broker)
+  // consumers, so `enforce` only hard-requires peer credentials on the
+  // cross-broker projection routes; the shared route keeps verify-if-present
+  // semantics (softEnforce).
+  const effectiveMode = options.softEnforce && mode === "enforce" ? "auto" : mode;
+  assertPeerHandoffScope(effectiveMode, peer, requiredScope, operation);
 }
 
 /** POST /a2a/cross-broker/terminal-briefs — ingest a cross-broker terminal-brief projection. */
@@ -45,6 +77,7 @@ export async function handleCrossBrokerTerminalBriefIngestRequest(
   if (ctx.enforceRequesterIdentity) {
     assertRequesterHasRole(ctx.requesterIdentity, ["hub", "operator"], "cross-broker-terminal-brief.ingest");
   }
+  assertPeerScopeForRoute(ctx, "handoff:evidence", "cross-broker-terminal-brief.ingest");
 
   const body = await readJson(ctx.req);
   if (ctx.crossBrokerTrustAnchors && ctx.crossBrokerNonceCache) {
@@ -72,6 +105,7 @@ export function handleCrossBrokerTerminalBriefQueryRequest(ctx: A2ATerminalOutbo
   if (ctx.enforceRequesterIdentity) {
     assertRequesterHasRole(ctx.requesterIdentity, ["hub", "operator"], "cross-broker-terminal-brief.query");
   }
+  assertPeerScopeForRoute(ctx, "handoff:status", "cross-broker-terminal-brief.query");
 
   const parentRoundId = ctx.url.searchParams.get("parent_round_id") ?? undefined;
   const originBrokerId = ctx.url.searchParams.get("origin_broker_id") ?? undefined;
@@ -88,6 +122,7 @@ export function handleTerminalOutboxSubscribeRequest(ctx: A2ATerminalOutboxRoute
   if (ctx.enforceRequesterIdentity) {
     assertRequesterHasRole(ctx.requesterIdentity, ["hub", "operator"], "task-terminal-outbox.subscribe");
   }
+  assertPeerScopeForRoute(ctx, "handoff:status", "task-terminal-outbox.subscribe", { softEnforce: true });
 
   const afterId = ctx.url.searchParams.get("after_id") ?? undefined;
   const limit = numberQueryParam(ctx.url, "limit");

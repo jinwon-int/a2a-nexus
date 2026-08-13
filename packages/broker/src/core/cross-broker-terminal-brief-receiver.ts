@@ -1,8 +1,31 @@
+import { randomUUID } from "node:crypto";
+
+import { buildCrossBrokerSenderProof } from "../a2a/cross-broker-sender-proof.js";
 import type { CrossBrokerTerminalBriefProjectionRequest } from "./cross-broker-terminal-brief.js";
 import type { TerminalTaskOutboxEvent, TerminalTaskEventPayload } from "./terminal-event-outbox.js";
 import type { TaskStatus } from "./types.js";
 
 const TERMINAL_STATUSES = new Set<TaskStatus>(["succeeded", "failed", "canceled", "blocked"]);
+
+/**
+ * Destination ack codes that are terminal for the individual event: retrying
+ * the same event can never succeed (parentless projections fail closed by
+ * contract, stale replays are already superseded, malformed/wrong-addressed
+ * events are permanently rejected). These events are reported as `skipped`
+ * and MUST NOT pin the lane cursor — an old unrelated terminal event or a
+ * missing_parent orphan must not block newer events from being processed.
+ * Everything else (transport errors, unauthorized/policy_denied, 5xx) stays
+ * `blocked` and freezes the cursor for at-least-once retry.
+ */
+const PERMANENT_DESTINATION_REJECT_CODES = new Set([
+  "bad_request",
+  "missing_dispatch_metadata",
+  "terminal_ack_forbidden",
+  "wrong_origin",
+  "missing_parent",
+  "routing_mismatch",
+  "stale_replay",
+]);
 
 export interface CrossBrokerTerminalBriefReceiverConfig {
   sourceBrokerId: string;
@@ -17,6 +40,23 @@ export interface CrossBrokerTerminalBriefReceiverConfig {
   sourceEdgeSecret?: string;
   destinationEdgeSecret?: string;
   edgeSecret?: string;
+  /** Minimum-scope peer credential presented to the source broker (handoff:status). */
+  sourcePeerBrokerId?: string;
+  sourcePeerSecret?: string;
+  /** Minimum-scope peer credential presented to the destination broker (handoff:evidence). */
+  destinationPeerBrokerId?: string;
+  destinationPeerSecret?: string;
+  /**
+   * PEM private key (Ed25519 or EC P-256) used to attach a request-bound
+   * `senderProof` to every projection POST. Required when the destination
+   * broker pins this sender's key via CROSS_BROKER_SENDER_PROOF_KEYS_FILE —
+   * without it every projection fails closed with policy_denied.
+   */
+  senderProofPrivateKeyPem?: string;
+  /** Broker id claimed in the sender proof binding; defaults to sourceBrokerId. */
+  senderProofBrokerId?: string;
+  /** Optional JWS kid header for the sender proof. */
+  senderProofKid?: string;
 }
 
 export interface CrossBrokerTerminalBriefReceiverFetchResponse {
@@ -43,7 +83,18 @@ export interface CrossBrokerTerminalBriefReceiverPollResult {
   posted: number;
   accepted: number;
   replayed: number;
+  /** Retryable failures; the cursor freezes before the first blocked event. */
   blocked: Array<{
+    eventId: string;
+    code: string;
+    reason: string;
+  }>;
+  /**
+   * Permanently rejected events (missing_parent, stale_replay, malformed,
+   * wrong-addressed). Logged for evidence but the cursor advances past them
+   * so they cannot wedge the lane.
+   */
+  skipped: Array<{
     eventId: string;
     code: string;
     reason: string;
@@ -120,6 +171,7 @@ export async function pollCrossBrokerTerminalBriefReceiver(
       accepted: 0,
       replayed: 0,
       blocked: [{ eventId: "source", code: `source_http_${sourceResponse.status}`, reason: "source terminal-outbox poll failed" }],
+      skipped: [],
     };
   }
 
@@ -130,19 +182,37 @@ export async function pollCrossBrokerTerminalBriefReceiver(
   let accepted = 0;
   let replayed = 0;
   const blocked: CrossBrokerTerminalBriefReceiverPollResult["blocked"] = [];
+  const skipped: CrossBrokerTerminalBriefReceiverPollResult["skipped"] = [];
+  // The cursor advances through accepted/ignored/permanently-skipped events
+  // and freezes at the first retryable failure, so a wedged unrelated event
+  // cannot starve newer events while retryable failures keep at-least-once
+  // delivery.
+  let cursorFrozen = false;
+  let lastSafeEventId: string | null = null;
 
   for (const event of events) {
     const projection = buildCrossBrokerTerminalBriefProjectionFromEvent(event, config);
     if (!projection) {
       ignored += 1;
+      if (!cursorFrozen) lastSafeEventId = event.id;
       continue;
     }
 
     posted += 1;
+    let body: Record<string, unknown> = projection as unknown as Record<string, unknown>;
+    if (config.senderProofPrivateKeyPem) {
+      const senderProof = buildCrossBrokerSenderProof(config.senderProofPrivateKeyPem, {
+        brokerId: config.senderProofBrokerId ?? config.sourceBrokerId,
+        body,
+        nonce: randomUUID(),
+        ...(config.senderProofKid ? { kid: config.senderProofKid } : {}),
+      });
+      body = { ...body, senderProof };
+    }
     const destinationResponse = await fetchImpl(crossBrokerProjectionUrl(config), {
       method: "POST",
       headers: receiverHeaders(config, "destination"),
-      body: JSON.stringify(projection),
+      body: JSON.stringify(body),
     });
     const destinationBody = await destinationResponse.json().catch(() => ({})) as {
       accepted?: boolean;
@@ -153,27 +223,33 @@ export async function pollCrossBrokerTerminalBriefReceiver(
     if (destinationResponse.ok && destinationBody.accepted === true) {
       accepted += 1;
       if (destinationBody.replayed) replayed += 1;
+      if (!cursorFrozen) lastSafeEventId = event.id;
       continue;
     }
 
-    blocked.push({
-      eventId: event.id,
-      code: destinationBody.ack?.code ?? `destination_http_${destinationResponse.status}`,
-      reason: destinationBody.ack?.reason ?? "destination projection ingest failed",
-    });
+    const code = destinationBody.ack?.code ?? `destination_http_${destinationResponse.status}`;
+    const reason = destinationBody.ack?.reason ?? "destination projection ingest failed";
+    if (PERMANENT_DESTINATION_REJECT_CODES.has(code)) {
+      skipped.push({ eventId: event.id, code, reason });
+      if (!cursorFrozen) lastSafeEventId = event.id;
+      continue;
+    }
+    blocked.push({ eventId: event.id, code, reason });
+    cursorFrozen = true;
   }
 
   const sourceCursor = sourceBody.cursor ?? events.at(-1)?.id ?? config.cursor ?? null;
   return {
     ok: blocked.length === 0,
     sourceCursor,
-    cursorToPersist: blocked.length === 0 ? sourceCursor : config.cursor ?? null,
+    cursorToPersist: blocked.length === 0 ? sourceCursor : lastSafeEventId ?? config.cursor ?? null,
     fetched: events.length,
     ignored,
     posted,
     accepted,
     replayed,
     blocked,
+    skipped,
   };
 }
 
@@ -193,11 +269,15 @@ function receiverHeaders(config: CrossBrokerTerminalBriefReceiverConfig, target:
   const edgeSecret = target === "source"
     ? config.sourceEdgeSecret ?? config.edgeSecret
     : config.destinationEdgeSecret ?? config.edgeSecret;
+  const peerBrokerId = target === "source" ? config.sourcePeerBrokerId : config.destinationPeerBrokerId;
+  const peerSecret = target === "source" ? config.sourcePeerSecret : config.destinationPeerSecret;
   return {
     "content-type": "application/json",
     "x-a2a-requester-id": config.requesterId ?? `${config.sourceBrokerId}-terminal-brief-receiver`,
     "x-a2a-requester-role": config.requesterRole ?? "hub",
     ...(edgeSecret ? { "x-a2a-edge-secret": edgeSecret } : {}),
+    ...(peerBrokerId ? { "x-a2a-peer-broker-id": peerBrokerId } : {}),
+    ...(peerSecret ? { "x-a2a-peer-secret": peerSecret } : {}),
   };
 }
 

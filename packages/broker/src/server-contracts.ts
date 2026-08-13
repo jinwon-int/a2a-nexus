@@ -229,6 +229,28 @@ export interface BrokerServerOptions extends BrokerRuntimeHotLimitOptions {
    */
   crossBrokerSenderProofKeysFile?: string;
   /**
+   * JSON peer credential registry file mapping a peer broker id →
+   * { secretSha256, scopes, status? } for minimum-scope cross-broker handoff
+   * authorization (contracts/a2a/broker-handoff-protocol.md peer scopes
+   * handoff:create / handoff:status / handoff:evidence / handoff:comment).
+   * The file must be root-only (0600-style permissions; loading fails closed
+   * otherwise) and stores sha256 digests, never raw secrets. Falls back to
+   * A2A_PEER_CREDENTIALS_FILE. Unset = peer credentials not provisioned
+   * (legacy role + edge-secret behavior is unchanged).
+   */
+  peerCredentialsFile?: string;
+  /**
+   * Peer handoff scope gate mode: off | auto (default) | enforce. Falls back
+   * to A2A_PEER_HANDOFF_SCOPE_MODE. `auto` verifies peer credentials whenever
+   * the caller presents x-a2a-peer-broker-id/x-a2a-peer-secret headers (bad or
+   * under-scoped credentials fail closed; header-less callers keep legacy
+   * behavior). `enforce` additionally fail-closes the cross-broker projection
+   * routes when no peer credential is presented — startup fails loudly if
+   * enforce is configured without a registry file, so a code-vs-env skew is
+   * caught at boot.
+   */
+  peerHandoffScopeMode?: "off" | "auto" | "enforce";
+  /**
    * Enable the embedded default A2A agent: register a built-in worker and
    * drive its tasks in-process so a worker-less SendMessage produces a task
    * (single-agent / conformance mode). Falls back to A2A_DEFAULT_AGENT_MODE.
