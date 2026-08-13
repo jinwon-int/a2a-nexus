@@ -5,7 +5,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
 
-import { __test, handleTask } from "./a2a-task-handler.mjs";
+import { __test, handleTask, validateWorkerModelEnvCandidatesForPatchProfile } from "./a2a-task-handler.mjs";
 import {
   ADVISORY_SIDECAR_ROUTING_POLICY,
   ALLOWED_WORKER_MODELS,
@@ -851,6 +851,61 @@ test("piri patch profile accepts Kimi/GLM worker models before docker runner exe
     assert.notEqual(result.error?.code, "worker_model_not_allowed", `workerModel ${workerModel} must be allowlisted`);
     assert.notEqual(result.error?.code, "worker_model_not_supported_by_profile", `workerModel ${workerModel} must be supported by the piri profile`);
   }
+});
+
+test("validateWorkerModelEnvCandidatesForPatchProfile is a public export for fleet-visibility tooling reuse (#1802 follow-up)", () => {
+  assert.equal(typeof validateWorkerModelEnvCandidatesForPatchProfile, "function");
+
+  // A caller outside the broker (e.g. a2a-worker-readiness-matrix.mjs, which
+  // is explicitly read-only/source-only fleet-visibility tooling) must be
+  // able to import this directly and get the exact same profile-support
+  // decision handleTask()'s preflight gate makes for the same task/env,
+  // without invoking handleTask or any broker/runner state.
+  const env = {
+    A2A_DOCKER_RUNNER_PATCH_COMMAND_PROFILE: "hermes",
+    A2A_CLAUDE_MODEL: "deepseek/deepseek-v4-flash",
+  };
+  const direct = validateWorkerModelEnvCandidatesForPatchProfile(patchTask({}), env);
+  assert.equal(direct?.error?.code, "worker_model_not_supported_by_profile");
+  assert.equal(direct.error.details.canonicalModel, "deepseek/deepseek-v4-flash");
+  assert.equal(direct.error.details.modelSource, "env");
+
+  const viaHandleTask = handleTask(patchTask({}), {
+    ...env,
+    A2A_EXECUTOR_MODE: "docker",
+    A2A_DOCKER_RUNNER_BIN: "this-must-not-run",
+  });
+  assert.equal(viaHandleTask.error?.code, direct.error.code);
+  assert.equal(viaHandleTask.error?.details?.canonicalModel, direct.error.details.canonicalModel);
+});
+
+test("validateWorkerModelEnvCandidatesForPatchProfile checks env candidates in priority order and skips non-allowlisted values", () => {
+  // Priority order is A2A_CODEX_MODEL > A2A_CLAUDE_MODEL > ... (see
+  // workerModelEnvCandidates). A profile-unsupported-but-allowlisted model
+  // earlier in that order must be reported even though a later candidate
+  // would have been fine.
+  const codexFirst = validateWorkerModelEnvCandidatesForPatchProfile(patchTask({}), {
+    A2A_DOCKER_RUNNER_PATCH_COMMAND_PROFILE: "hermes",
+    A2A_CODEX_MODEL: "deepseek/deepseek-v4-flash",
+    A2A_CLAUDE_MODEL: "claude-sonnet-5",
+  });
+  assert.equal(codexFirst?.error?.details?.requestedModel, "deepseek/deepseek-v4-flash");
+
+  // A non-allowlisted candidate ahead of an allowlisted-but-unsupported one
+  // must be skipped rather than short-circuiting the scan or throwing.
+  const skipsUnknown = validateWorkerModelEnvCandidatesForPatchProfile(patchTask({}), {
+    A2A_DOCKER_RUNNER_PATCH_COMMAND_PROFILE: "hermes",
+    A2A_CODEX_MODEL: "not-a-real-model",
+    A2A_CLAUDE_MODEL: "deepseek/deepseek-v4-flash",
+  });
+  assert.equal(skipsUnknown?.error?.details?.requestedModel, "deepseek/deepseek-v4-flash");
+
+  // All candidates supported by the profile -> no error.
+  assert.equal(validateWorkerModelEnvCandidatesForPatchProfile(patchTask({}), {
+    A2A_DOCKER_RUNNER_PATCH_COMMAND_PROFILE: "hermes",
+    A2A_CODEX_MODEL: "openai-codex/gpt-5.6-sol",
+    A2A_CLAUDE_MODEL: "claude-sonnet-5",
+  }), null);
 });
 
 test("github-propose-patch + allowNoChanges=true sets runnerTask.allowNoChanges", () => {

@@ -482,7 +482,18 @@ function validateWorkerModelForPatchProfile(task, model, env = process.env, sour
   return null;
 }
 
-function validateWorkerModelEnvCandidatesForPatchProfile(task, env = process.env) {
+/**
+ * Validate every configured env-var worker-model candidate (in
+ * workerModelEnvCandidates() priority order) against the active patch
+ * command profile. Returns null if every allowlisted candidate is
+ * supported, or the first profile-mismatch error found.
+ *
+ * Exported (not just exposed via __test) so read-only fleet-visibility
+ * tooling — e.g. a2a-worker-readiness-matrix.mjs — can reuse the same
+ * profile-support decision the live dispatch gate uses, without
+ * re-deriving it or invoking handleTask()/broker state.
+ */
+export function validateWorkerModelEnvCandidatesForPatchProfile(task, env = process.env) {
   for (const candidate of workerModelEnvCandidates(env)) {
     if (!isAllowedWorkerModelName(candidate)) continue;
     const support = isWorkerModelSupportedByPatchProfile(normalizedPatchCommandProfile(env), candidate);
