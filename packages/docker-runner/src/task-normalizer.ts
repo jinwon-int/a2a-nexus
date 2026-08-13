@@ -12,6 +12,10 @@ const READ_ONLY_VALIDATION_MODES = new Set([
   FAMILY_WIKI_READONLY_AUDIT_MODE,
 ]);
 const PATCH_PROPOSAL_MODES = new Set(["github-propose-patch", "propose_patch"]);
+const PIRI_MODEL_ALIASES = new Map([
+  ["k3[1m]", "kimi-coding/k3"],
+  ["glm-5.2[1m]", "zai/glm-5.2"],
+]);
 
 export function evaluateDeclaredScopeDrift(
   changedPaths: string[],
@@ -81,11 +85,16 @@ function normalizeTaskEnv(task: RunnerTask, allowNoChanges: boolean, primaryRepo
     // defaults such as legacy OPENCLAW_MODEL/deepseek-v4-flash (#860).
     env.A2A_HERMES_MODEL = model;
     env.A2A_CODEX_MODEL = model;
+    // Piri resolves canonical provider/model ids. The fleet's [1m] aliases
+    // describe the context variant but are not Piri catalog ids, so preserve
+    // the task-level selection while translating only those known aliases.
+    env.A2A_PIRI_MODEL = PIRI_MODEL_ALIASES.get(model) ?? model;
   }
   if (thinking) {
     env.A2A_OPENCLAW_THINKING = thinking;
     env.A2A_HERMES_THINKING = thinking;
     env.A2A_CODEX_REASONING_EFFORT = thinking;
+    env.A2A_PIRI_THINKING = thinking;
   }
   if (allowNoChanges) env.A2A_RUNNER_ALLOW_NO_CHANGES = "1";
   if (task.readOnlyValidation === true) env.A2A_RUNNER_READ_ONLY_VALIDATION = "1";

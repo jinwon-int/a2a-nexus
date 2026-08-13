@@ -70,7 +70,7 @@ test("passes through mode, issueUrl, reportLanguage, and requestedBy", () => {
   assert.ok(task.commands.length > 0);
 });
 
-test("normalizes per-task worker overrides into OpenClaw, Hermes, and Codex container env", () => {
+test("normalizes per-task worker overrides into every patch profile container env", () => {
   const task = normalizeTask({
     id: "libero-pro",
     intent: "propose_patch",
@@ -80,6 +80,8 @@ test("normalizes per-task worker overrides into OpenClaw, Hermes, and Codex cont
       KEEP_ME: "1",
       A2A_OPENCLAW_MODEL: "deepseek/deepseek-v4-flash",
       A2A_HERMES_MODEL: "deepseek/deepseek-v4-flash",
+      A2A_PIRI_MODEL: "kimi-coding/k3",
+      A2A_PIRI_THINKING: "low",
     },
     allowNoChanges: true,
     workerModel: "deepseek/deepseek-v4-pro",
@@ -90,11 +92,37 @@ test("normalizes per-task worker overrides into OpenClaw, Hermes, and Codex cont
   assert.equal(task.env?.A2A_OPENCLAW_MODEL, "deepseek/deepseek-v4-pro");
   assert.equal(task.env?.A2A_HERMES_MODEL, "deepseek/deepseek-v4-pro");
   assert.equal(task.env?.A2A_CODEX_MODEL, "deepseek/deepseek-v4-pro");
+  assert.equal(task.env?.A2A_PIRI_MODEL, "deepseek/deepseek-v4-pro");
   assert.equal(task.env?.A2A_OPENCLAW_THINKING, "high");
   assert.equal(task.env?.A2A_HERMES_THINKING, "high");
   assert.equal(task.env?.A2A_CODEX_REASONING_EFFORT, "high");
+  assert.equal(task.env?.A2A_PIRI_THINKING, "high");
   assert.equal(task.env?.A2A_RUNNER_ALLOW_NO_CHANGES, "1");
   assert.equal(task.env?.A2A_RUNNER_READ_ONLY_VALIDATION, "1");
+});
+
+test("normalizes fleet 1m model aliases into Piri catalog ids only", () => {
+  const cases = [
+    ["k3[1m]", "kimi-coding/k3"],
+    ["glm-5.2[1m]", "zai/glm-5.2"],
+    ["kimi-coding/k3", "kimi-coding/k3"],
+    ["zai/glm-5.2", "zai/glm-5.2"],
+  ] as const;
+
+  for (const [workerModel, piriModel] of cases) {
+    const task = normalizeTask({
+      id: `piri-model-${workerModel}`,
+      intent: "propose_patch",
+      mode: "github-propose-patch",
+      repo: "jinwon-int/test-repo",
+      workerModel,
+    });
+
+    assert.equal(task.env?.A2A_PIRI_MODEL, piriModel);
+    assert.equal(task.env?.A2A_OPENCLAW_MODEL, workerModel);
+    assert.equal(task.env?.A2A_HERMES_MODEL, workerModel);
+    assert.equal(task.env?.A2A_CODEX_MODEL, workerModel);
+  }
 });
 
 test("normalizes primary base branch into runner env for patch profile recovery", () => {
