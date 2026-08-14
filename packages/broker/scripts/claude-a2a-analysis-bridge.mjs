@@ -508,6 +508,12 @@ function normalizeResponse(parsed) {
   }
   const statusRaw = safeText(parsed.status, "done").toLowerCase();
   const status = ["blocked", "block", "source_blocked"].includes(statusRaw) ? "blocked" : "done";
+  const verdictRaw = safeText(parsed.verdict, "").toLowerCase();
+  const verdict = ["pass", "passed", "approve", "approved"].includes(verdictRaw)
+    ? "pass"
+    : ["fail", "failed", "block", "blocked", "reject", "rejected"].includes(verdictRaw)
+      ? "fail"
+      : "";
   return {
     status,
     summary: safeText(parsed.summary, status === "blocked" ? "analysis blocked" : "analysis complete"),
@@ -515,6 +521,7 @@ function normalizeResponse(parsed) {
     risks: normalizeStringArray(parsed.risks),
     recommendations: normalizeStringArray(parsed.recommendations),
     evidenceRefs: normalizeStringArray(parsed.evidenceRefs),
+    ...(verdict ? { verdict } : {}),
     recoverySource: safeText(parsed.recoverySource, "direct_stdout"),
     ...(safeText(parsed.doneCommentUrl, "") ? { doneCommentUrl: safeText(parsed.doneCommentUrl) } : {}),
     ...(safeText(parsed.blockCommentUrl, "") ? { blockCommentUrl: safeText(parsed.blockCommentUrl) } : {}),

@@ -24,6 +24,11 @@
 			"items": { "type": "string" },
 			"description": "GitHub issue/PR numbers, file paths, task ids, or fixture ids used as evidence."
 		},
+		"verdict": {
+			"type": "string",
+			"enum": ["pass", "fail", "PASS", "BLOCK"],
+			"description": "Independent review verdict. Required by the worker prompt when payload.review.required=true; omitted for non-review analysis tasks."
+		},
 		"doneCommentUrl": { "type": "string" },
 		"blockCommentUrl": { "type": "string" },
 		"startCommentUrl": { "type": "string" }

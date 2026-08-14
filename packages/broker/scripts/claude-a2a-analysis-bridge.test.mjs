@@ -99,7 +99,8 @@ test("Claude Code A2A analysis bridge calls claude -p and returns OpenClaw envel
       "  findings: ['claude -p received the broker-packaged task prompt'],",
       "  risks: ['non-interactive Claude auth must be verified before live switch'],",
       "  recommendations: ['use this bridge behind the existing A2A worker handler contract'],",
-      "  evidenceRefs: ['embedded:claude-code-adapter-test']",
+      "  evidenceRefs: ['embedded:claude-code-adapter-test'],",
+      "  verdict: 'PASS'",
       "};",
       "console.log(JSON.stringify({ type: 'result', subtype: 'success', result: JSON.stringify(analysis), num_turns: 2, duration_ms: 1234, total_cost_usd: 0.012, usage: { input_tokens: 100, output_tokens: 40, cache_read_input_tokens: 10 } }));",
       "",
@@ -134,6 +135,7 @@ test("Claude Code A2A analysis bridge calls claude -p and returns OpenClaw envel
     assert.equal(payload.status, "done");
     assert.equal(payload.summary, "Claude adapter returned strict analysis JSON");
     assert.deepEqual(payload.evidenceRefs, ["embedded:claude-code-adapter-test"]);
+    assert.equal(payload.verdict, "pass");
     assert.equal(payload.bridgeAdapter, "claude_code");
     assert.equal(payload.bridgeContractVersion, "claude-a2a-analysis.v1");
     assert.equal(payload.requestedModel, "claude-code/default");

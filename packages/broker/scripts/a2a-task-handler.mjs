@@ -1120,7 +1120,7 @@ function runOpenClawAnalysisBridge(task, env = process.env) {
     "If the task cannot be analyzed from the provided material, return status=blocked with the exact missing evidence.",
     reviewInstructionForPrompt(task),
     "Return JSON only, no markdown, with exactly this shape:",
-    '{"status":"done|blocked","summary":"...","findings":["..."],"risks":["..."],"recommendations":["..."],"evidenceRefs":["..."],"verdict":"pass|fail optional for review.required tasks","doneCommentUrl":"optional","blockCommentUrl":"optional","startCommentUrl":"optional"}',
+    '{"status":"done|blocked","summary":"...","findings":["..."],"risks":["..."],"recommendations":["..."],"evidenceRefs":["..."],"verdict":"pass|fail; required when payload.review.required=true","doneCommentUrl":"optional","blockCommentUrl":"optional","startCommentUrl":"optional"}',
     strictJsonInstruction ? `Strict JSON retry discipline: ${strictJsonInstruction}` : "",
     expectedSchema ? `Expected JSON schema/key summary:\n${expectedSchema}` : "",
     // 절대경로를 프롬프트에 박는다. 환경변수 이름만 주면 평가자가 Glob 으로

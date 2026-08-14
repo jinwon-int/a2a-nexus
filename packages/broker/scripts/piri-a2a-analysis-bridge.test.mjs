@@ -83,6 +83,18 @@ test("buildPiriPrompt embeds source bundle and schema instruction", () => {
 	assert.match(prompt, /- w1/);
 });
 
+test("buildPiriPrompt requires a top-level verdict for review tasks", () => {
+	const prompt = __test.buildPiriPrompt({
+		message: "review",
+		payload: { review: { required: true } },
+		sourceBundle: { files: [], warnings: [] },
+		flags: {},
+		model: "kimi-coding/k3",
+		thinking: "high",
+	});
+	assert.match(prompt, /top-level verdict field is REQUIRED/);
+});
+
 test("normalizeResponse enforces the operative contract shape", () => {
 	const ok = __test.normalizeResponse({
 		status: "done",
@@ -91,16 +103,22 @@ test("normalizeResponse enforces the operative contract shape", () => {
 		risks: [],
 		recommendations: ["r"],
 		evidenceRefs: ["#1"],
+		verdict: "BLOCK",
 		confidence: "high", // dropped
 	});
-	assert.deepEqual(ok, { status: "done", summary: "s", findings: ["f"], risks: [], recommendations: ["r"], evidenceRefs: ["#1"] });
+	assert.deepEqual(ok, { status: "done", summary: "s", findings: ["f"], risks: [], recommendations: ["r"], evidenceRefs: ["#1"], verdict: "fail" });
 	assert.throws(() => __test.normalizeResponse({ status: "maybe", summary: "s" }), /done\|blocked/);
+});
+
+test("piri output schema permits the independent review verdict carrier", () => {
+	const schema = JSON.parse(readFileSync(resolve(import.meta.dirname, "../../docker-runner/docker/piri-analysis-output.schema.json"), "utf8"));
+	assert.deepEqual(schema.properties.verdict.enum, ["pass", "fail", "PASS", "BLOCK"]);
 });
 
 test("full flow emits the OpenClaw envelope around schema-valid piri output", () => {
 	const dir = mkdtempSync(join(tmpdir(), "piri-bridge-"));
 	try {
-		const contract = { status: "done", summary: "분석 완료", findings: ["f1"], risks: [], recommendations: ["r1"], evidenceRefs: ["#1745"] };
+		const contract = { status: "done", summary: "분석 완료", findings: ["f1"], risks: [], recommendations: ["r1"], evidenceRefs: ["#1745"], verdict: "PASS" };
 		const docker = makeFakeDocker(dir, {
 			argsFile: join(dir, "docker-args.json"),
 			stdout: `${JSON.stringify(contract)}\n`,
@@ -120,10 +138,17 @@ test("full flow emits the OpenClaw envelope around schema-valid piri output", ()
 		assert.equal(child.status, 0, child.stderr);
 		const envelope = JSON.parse(child.stdout);
 		const response = JSON.parse(envelope.payloads[0].text);
-		assert.deepEqual(
-			Object.fromEntries(Object.keys(contract).map((key) => [key, response[key]])),
-			contract,
-		);
+		assert.deepEqual(response, {
+			...contract,
+			verdict: "pass",
+			bridgeAdapter: "piri",
+			bridgeContractVersion: "piri-a2a-analysis.v1",
+			requestedModel: "m",
+			requestedThinking: "t",
+			actualRuntimeModel: "kimi-coding/k3",
+			modelInheritanceMode: "bridge_env_pin",
+			executionTelemetry: response.executionTelemetry,
+		});
 		assert.equal(response.bridgeAdapter, "piri");
 		assert.equal(response.requestedModel, "m");
 		assert.equal(response.actualRuntimeModel, "kimi-coding/k3");
