@@ -426,12 +426,16 @@ function buildPiriPrompt({ message, payload, sourceBundle, flags, model, thinkin
 		? `\n\nRead-only source warnings:\n${sourceBundle.warnings.map((item) => `- ${item}`).join("\n")}`
 		: "";
 
+	const reviewRequired = payload?.review?.required === true;
 	return [
 		"You are a read-only A2A worker analysis bridge running under the piri harness.",
 		"Your job is to inspect the provided task and source bundle, then produce substantive design/code-analysis evidence.",
 		"Hard safety rules: do not write files, deploy, restart services, send external messages, acknowledge terminal rows, mutate databases, move secrets, create commits, or open PRs.",
 		"Use only the task text and the read-only source bundle below. If source evidence is insufficient, return status=blocked and explain the missing evidence.",
-		"Your final answer must satisfy the attached output schema: a JSON object with status (done|blocked), summary, findings, risks, recommendations, evidenceRefs (string arrays), and optional doneCommentUrl/blockCommentUrl/startCommentUrl. No markdown, no commentary outside the JSON value.",
+		"Your final answer must satisfy the attached output schema: a JSON object with status (done|blocked), summary, findings, risks, recommendations, evidenceRefs (string arrays), optional verdict (pass|fail), and optional doneCommentUrl/blockCommentUrl/startCommentUrl. No markdown, no commentary outside the JSON value.",
+		reviewRequired
+			? "This task has payload.review.required=true. The top-level verdict field is REQUIRED: use pass for PASS and fail for BLOCK. Do not rely on summary wording as the verdict carrier."
+			: "",
 		"Human-readable text should be Korean unless quoting code, paths, or test output.",
 		`OpenClaw-shaped session id: ${safeText(flags["session-id"], "")}`,
 		`Effective model requested by worker: ${model}`,
@@ -483,6 +487,12 @@ function normalizeResponse(parsed) {
 	}
 	const statusRaw = safeText(parsed.status, "").toLowerCase();
 	if (!["done", "blocked"].includes(statusRaw)) throw new Error(`piri response status must be done|blocked, got ${statusRaw || "<missing>"}`);
+	const verdictRaw = safeText(parsed.verdict, "").toLowerCase();
+	const verdict = ["pass", "passed", "approve", "approved"].includes(verdictRaw)
+		? "pass"
+		: ["fail", "failed", "block", "blocked", "reject", "rejected"].includes(verdictRaw)
+			? "fail"
+			: "";
 	return {
 		status: statusRaw,
 		summary: safeText(parsed.summary, statusRaw === "blocked" ? "analysis blocked" : "analysis complete"),
@@ -490,6 +500,7 @@ function normalizeResponse(parsed) {
 		risks: normalizeStringArray(parsed.risks),
 		recommendations: normalizeStringArray(parsed.recommendations),
 		evidenceRefs: normalizeStringArray(parsed.evidenceRefs),
+		...(verdict ? { verdict } : {}),
 		...(safeText(parsed.doneCommentUrl, "") ? { doneCommentUrl: safeText(parsed.doneCommentUrl) } : {}),
 		...(safeText(parsed.blockCommentUrl, "") ? { blockCommentUrl: safeText(parsed.blockCommentUrl) } : {}),
 		...(safeText(parsed.startCommentUrl, "") ? { startCommentUrl: safeText(parsed.startCommentUrl) } : {}),
