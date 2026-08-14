@@ -19,6 +19,13 @@
  *           --model <m> --thinking <t> --timeout <sec> --json
  *   stdout: {"payloads":[{"text": "<analysis contract JSON string>"}]}
  *   stderr: A2A_BRIDGE_ERROR={...} on failure (structured, #1725 shape)
+ *
+ * piri exit-code mapping (jinwon-int/piri#14 stable contract):
+ *   2 usage/config   → analysis_bridge_invocation_invalid (handler_artifact_failure)
+ *   3 provider/error → analysis_bridge_provider_failure (provider_or_model_failure)
+ *   4 schema budget  → analysis_bridge_schema_unsatisfied (provider_or_model_failure)
+ *   other non-zero   → analysis_bridge_internal_error — pre-contract piri builds
+ *                      returned 1 for provider and schema failures alike.
  */
 import { spawnSync } from "node:child_process";
 import { existsSync, mkdirSync, readFileSync, readdirSync, rmSync, statSync, writeFileSync } from "node:fs";
@@ -649,12 +656,34 @@ function main() {
 			elapsedMs,
 		});
 	}
-	if (child.status !== 0) {
+	// jinwon-int/piri#14 stable exit contract: 3 = provider/request failure,
+	// 4 = output schema unsatisfied within the attempt budget.
+	if (child.status === 3) {
+		bridgeError({
+			code: "analysis_bridge_provider_failure",
+			stage: "invoke",
+			failureShape: "provider_or_model_failure",
+			message: safeText(child.stderr, "piri exited 3 (provider/request failure)"),
+			elapsedMs,
+		});
+	}
+	if (child.status === 4) {
 		bridgeError({
 			code: "analysis_bridge_schema_unsatisfied",
 			stage: "validate",
 			failureShape: "provider_or_model_failure",
 			message: safeText(child.stderr, "piri could not satisfy the output schema within the attempt budget"),
+			elapsedMs,
+		});
+	}
+	if (child.status !== 0) {
+		// Pre-contract piri builds returned 1 for provider and schema failures
+		// alike; treat any other non-zero as an internal harness failure.
+		bridgeError({
+			code: "analysis_bridge_internal_error",
+			stage: "invoke",
+			failureShape: "provider_or_model_failure",
+			message: safeText(child.stderr, `piri exited ${child.status} (internal error)`),
 			elapsedMs,
 		});
 	}
