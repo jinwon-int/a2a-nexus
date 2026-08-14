@@ -127,6 +127,20 @@ test("full flow emits the OpenClaw envelope around schema-valid piri output", ()
 				JSON.stringify({ type: "tool_execution_start", tool: "read" }),
 				JSON.stringify({ type: "turn_start" }),
 				JSON.stringify({ type: "marker", marker: "output_schema_retry" }),
+				// jinwon-int/piri#14 terminal usage marker: its request count
+				// covers the schema-retry round-trip the turn count misses.
+				JSON.stringify({
+					type: "marker",
+					marker: "usage",
+					requests: 3,
+					inputTokens: 1200,
+					outputTokens: 340,
+					cacheReadTokens: 0,
+					cacheWriteTokens: 0,
+					totalTokens: 1540,
+					costUsd: 0.0042,
+					models: ["kimi-coding/k3"],
+				}),
 			],
 		});
 		const workRoot = join(dir, "tasks");
@@ -154,9 +168,12 @@ test("full flow emits the OpenClaw envelope around schema-valid piri output", ()
 		assert.equal(response.actualRuntimeModel, "kimi-coding/k3");
 		assert.equal(response.modelInheritanceMode, "bridge_env_pin");
 		assert.equal(response.executionTelemetry.source, "piri_progress_file");
-		assert.equal(response.executionTelemetry.modelRequests, 2);
+		assert.equal(response.executionTelemetry.modelRequests, 3);
 		assert.equal(response.executionTelemetry.toolCalls, 1);
 		assert.equal(response.executionTelemetry.schemaRetries, 1);
+		assert.equal(response.executionTelemetry.inputTokens, 1200);
+		assert.equal(response.executionTelemetry.outputTokens, 340);
+		assert.equal(response.executionTelemetry.costUsd, 0.0042);
 		// prompt file landed in the host workdir for the run
 		const promptFile = join(workRoot, "sess-1", "prompt.md");
 		assert.equal(existsSync(promptFile), true);
@@ -170,10 +187,10 @@ test("full flow emits the OpenClaw envelope around schema-valid piri output", ()
 	}
 });
 
-test("schema exhaustion maps to a structured provider_or_model_failure", () => {
+test("schema exhaustion (piri exit 4) maps to a structured provider_or_model_failure", () => {
 	const dir = mkdtempSync(join(tmpdir(), "piri-bridge-"));
 	try {
-		const docker = makeFakeDocker(dir, { exitCode: 1, stderr: "--output-schema not satisfied after 3 attempt(s)\n" });
+		const docker = makeFakeDocker(dir, { exitCode: 4, stderr: "--output-schema not satisfied after 3 attempt(s)\n" });
 		const configDir = makeConfigDir(dir);
 		const child = runBridge(
 			["agent", "--local", "--message", sampleMessage({}), "--timeout", "30", "--json"],
@@ -186,6 +203,45 @@ test("schema exhaustion maps to a structured provider_or_model_failure", () => {
 		assert.equal(detail.stage, "validate");
 		assert.equal(detail.failureShape, "provider_or_model_failure");
 		assert.equal(detail.adapterClass, "piri");
+	} finally {
+		rmSync(dir, { recursive: true, force: true });
+	}
+});
+
+test("provider failure (piri exit 3) maps to analysis_bridge_provider_failure", () => {
+	const dir = mkdtempSync(join(tmpdir(), "piri-bridge-"));
+	try {
+		const docker = makeFakeDocker(dir, { exitCode: 3, stderr: "Request error: 401 unauthorized\n" });
+		const configDir = makeConfigDir(dir);
+		const child = runBridge(
+			["agent", "--local", "--message", sampleMessage({}), "--timeout", "30", "--json"],
+			{ A2A_PIRI_DOCKER_BIN: docker, A2A_PIRI_WORK_ROOT: join(dir, "tasks"), A2A_PIRI_CONFIG_DIR: configDir },
+		);
+		assert.equal(child.status, 1);
+		const detail = JSON.parse(child.stderr.split("\n").find((l) => l.startsWith("A2A_BRIDGE_ERROR=")).slice(17));
+		assert.equal(detail.code, "analysis_bridge_provider_failure");
+		assert.equal(detail.stage, "invoke");
+		assert.equal(detail.failureShape, "provider_or_model_failure");
+		assert.equal(detail.adapterClass, "piri");
+	} finally {
+		rmSync(dir, { recursive: true, force: true });
+	}
+});
+
+test("other non-zero exits (pre-contract piri exit 1) map to analysis_bridge_internal_error", () => {
+	const dir = mkdtempSync(join(tmpdir(), "piri-bridge-"));
+	try {
+		const docker = makeFakeDocker(dir, { exitCode: 1, stderr: "unexpected failure\n" });
+		const configDir = makeConfigDir(dir);
+		const child = runBridge(
+			["agent", "--local", "--message", sampleMessage({}), "--timeout", "30", "--json"],
+			{ A2A_PIRI_DOCKER_BIN: docker, A2A_PIRI_WORK_ROOT: join(dir, "tasks"), A2A_PIRI_CONFIG_DIR: configDir },
+		);
+		assert.equal(child.status, 1);
+		const detail = JSON.parse(child.stderr.split("\n").find((l) => l.startsWith("A2A_BRIDGE_ERROR=")).slice(17));
+		assert.equal(detail.code, "analysis_bridge_internal_error");
+		assert.equal(detail.stage, "invoke");
+		assert.equal(detail.failureShape, "provider_or_model_failure");
 	} finally {
 		rmSync(dir, { recursive: true, force: true });
 	}

@@ -47,6 +47,7 @@ export function piriExecutionTelemetry(progressPath, elapsedMs) {
     schemaRetries: 0,
   };
   let truncated = false;
+  let usageMarker;
   try {
     const raw = readFileSync(progressPath);
     truncated = raw.byteLength > MAX_PROGRESS_BYTES;
@@ -68,16 +69,31 @@ export function piriExecutionTelemetry(progressPath, elapsedMs) {
       if (event.type === "tool_execution_start") counts.toolCalls += 1;
       if (event.type === "auto_retry_start") counts.autoRetries += 1;
       if (event.type === "marker" && event.marker === "output_schema_retry") counts.schemaRetries += 1;
+      if (event.type === "marker" && event.marker === "usage") usageMarker = event;
     }
   } catch {
     // A missing progress file remains visible as zero observed events. The
     // bridge still reports elapsed time and the source used for accounting.
   }
+  // jinwon-int/piri#14: the terminal usage marker carries the run's aggregate
+  // provider usage. Its request count covers every assistant response (tool
+  // loops and schema retries included), so prefer it over turn_start counting.
+  const markerUsage = usageMarker
+    ? compact({
+        modelRequests: nonNegativeInteger(usageMarker.requests),
+        inputTokens: nonNegativeInteger(usageMarker.inputTokens),
+        outputTokens: nonNegativeInteger(usageMarker.outputTokens),
+        cacheReadInputTokens: nonNegativeInteger(usageMarker.cacheReadTokens),
+        cacheCreationInputTokens: nonNegativeInteger(usageMarker.cacheWriteTokens),
+        costUsd: finiteNonNegative(usageMarker.costUsd),
+      })
+    : {};
   return {
     schemaVersion: ANALYSIS_EXECUTION_TELEMETRY_VERSION,
     source: "piri_progress_file",
     elapsedMs: nonNegativeInteger(elapsedMs) ?? 0,
     ...counts,
+    ...markerUsage,
     ...(truncated ? { truncated: true } : {}),
   };
 }
