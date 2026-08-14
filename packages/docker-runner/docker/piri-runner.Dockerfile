@@ -1,7 +1,10 @@
 FROM node:22-bookworm-slim
 
 ARG PIRI_REPO=https://github.com/jinwon-int/piri.git
-ARG PIRI_REF=main
+# Pinned distribution tag (jinwon-int/piri), not a moving branch: image
+# builds stay reproducible and the baked harness revision is auditable.
+# Bump deliberately via PR when piri ships a new distribution tag.
+ARG PIRI_REF=v0.83.0-piri.1
 ARG GH_VERSION=2.93.0
 ARG GITLEAKS_VERSION=8.30.1
 
@@ -61,6 +64,10 @@ COPY --chmod=0644 docker/piri-analysis-output.schema.json /etc/a2a-runner/piri-a
 # BuildKit applies the COPY --chmod value to the auto-created parent directory
 # too; restore the traverse bit so non-root container users can read the file.
 RUN chmod 0755 /etc/a2a-runner
+
+# Record the resolved piri commit so a built image is auditable even when
+# PIRI_REF names a tag or branch instead of a commit.
+RUN cd /opt/piri && git rev-parse HEAD > /etc/a2a-runner/piri-revision
 
 # Piri credentials are mounted at runtime as a read-only directory under
 # /run/secrets/piri-dir (agent/auth.json); the command script runs against a
