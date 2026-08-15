@@ -162,8 +162,15 @@ candidate.
 ### Promoted-category PR gate
 
 `.github/workflows/tck-promoted-gate.yml` contains fail-closed jobs for the
-official TCK `agent_card` category and the promoted version-negotiation
-sub-category. The agent-card job runs:
+official TCK `agent_card` category, the promoted version-negotiation,
+artifact/message-projection, error-codes/ErrorInfo, task-not-found, and
+streaming/subscribe sub-categories, plus the readiness-projection consistency
+job. Since 2026-08-15 these job names are **required status checks** in the
+main ruleset (a2a-nexus#1500 enforcement follow-up): the workflow triggers on
+every pull request and gates the TCK jobs with an intra-workflow `changes`
+filter, so a PR that touches none of the TCK-affecting paths reports the
+checks as `skipped` — which satisfies the required checks — while a PR that
+does touch them runs the promoted categories as merge-blocking. The agent-card job runs:
 
 ```bash
 cd packages/broker

@@ -99,12 +99,28 @@ applied ruleset itself, not in a planning document. Read the live list with
 .required_status_checks.contexts` and keep it in sync with the job names in
 [`ci.yml`](../.github/workflows/ci.yml).
 
-### Required checks as of 2026-08-09
+### Required checks as of 2026-08-15
 
 ```
 paths-filter, setup, layout, broker, docker-runner, contracts, docs,
-promotion-capstone, check, finalizer-verdict-gate
+promotion-capstone, check, finalizer-verdict-gate,
+TCK readiness projection is current,
+promoted TCK category — agent_card,
+promoted TCK sub-category — version negotiation,
+promoted TCK sub-category — artifact/message projection,
+promoted TCK sub-category — error codes and ErrorInfo,
+promoted TCK sub-category — task not found / invalid task,
+promoted TCK sub-category — streaming / subscribe ordering
 ```
+
+The seven `TCK …` contexts are the job names of the promoted-category gate
+(`.github/workflows/tck-promoted-gate.yml`, #1500 enforcement follow-up,
+2026-08-15). Requiring them is safe only because that workflow runs on every
+pull request and skips the TCK jobs through an intra-workflow `changes` filter
+when no TCK-affecting path is touched: skipped jobs satisfy required checks.
+It would **not** be safe to require checks from a workflow-level
+`paths:`-filtered workflow — non-matching PRs would never report and every
+unrelated PR would deadlock.
 
 `plugin` was removed from this list when `packages/openclaw-plugin-a2a` and its
 CI job were retired. A required check whose job no longer exists never reports,

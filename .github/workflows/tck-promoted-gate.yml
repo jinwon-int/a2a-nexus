@@ -3,26 +3,21 @@
 # This is intentionally narrower than tck-measurement.yml: it runs only TCK
 # categories that have documented stable-green evidence in the broker runbook.
 # The weekly measurement lane remains non-gating and tracks the full trend.
+#
+# Merge-blocking (a2a-nexus#1500 follow-up, 2026-08-15): the promoted
+# categories' job names are required status checks in the main ruleset. That
+# is why this workflow triggers on every pull request and gates the TCK jobs
+# with an intra-workflow `changes` filter instead of a workflow-level `paths`
+# filter: a paths-filtered workflow never reports on non-matching PRs, which
+# would deadlock every PR whose required checks can never run. Skipped jobs
+# report conclusion `skipped`, which satisfies required checks — the same
+# contract `ci.yml` already uses for its path-aware package jobs.
 
 name: tck-promoted-gate
 
 on:
   pull_request:
-    paths:
-      - "packages/broker/src/a2a/**"
-      - "packages/broker/src/fixtures/a2a-protocol-compatibility.ts"
-      - "packages/broker/src/server.ts"
-      - "packages/broker/scripts/a2a-tck-harness*.mjs"
-      - "packages/broker/scripts/append-tck-history.mjs"
-      - "packages/broker/scripts/check-tck-regressions.mjs"
-      - "packages/broker/scripts/project-tck-readiness.mjs"
-      - "packages/broker/scripts/project-tck-readiness.test.mjs"
-      - "packages/broker/docs/a2a-tck-runbook.md"
-      - "packages/broker/docs/tck-failing-categories.json"
-      - "packages/broker/docs/tck-history.json"
-      - "packages/broker/package.json"
-      - "docs/release-readiness.md"
-      - ".github/workflows/tck-promoted-gate.yml"
+  workflow_dispatch:
 
 permissions:
   contents: read
@@ -32,8 +27,39 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
+  changes:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      pull-requests: read
+    outputs:
+      tck: ${{ steps.filter.outputs.tck }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+      - uses: dorny/paths-filter@ceb8a2b8f2d89434be7ff52d3de7ec3738c5cc9d # v4.0.3
+        id: filter
+        with:
+          filters: |
+            tck:
+              - 'packages/broker/src/a2a/**'
+              - 'packages/broker/src/fixtures/a2a-protocol-compatibility.ts'
+              - 'packages/broker/src/server.ts'
+              - 'packages/broker/scripts/a2a-tck-harness*.mjs'
+              - 'packages/broker/scripts/append-tck-history.mjs'
+              - 'packages/broker/scripts/check-tck-regressions.mjs'
+              - 'packages/broker/scripts/project-tck-readiness.mjs'
+              - 'packages/broker/scripts/project-tck-readiness.test.mjs'
+              - 'packages/broker/docs/a2a-tck-runbook.md'
+              - 'packages/broker/docs/tck-failing-categories.json'
+              - 'packages/broker/docs/tck-history.json'
+              - 'packages/broker/package.json'
+              - 'docs/release-readiness.md'
+              - '.github/workflows/tck-promoted-gate.yml'
+
   readiness-projection:
     name: TCK readiness projection is current
+    needs: [changes]
+    if: ${{ needs.changes.outputs.tck == 'true' }}
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
@@ -50,6 +76,8 @@ jobs:
 
   agent-card:
     name: promoted TCK category — agent_card
+    needs: [changes]
+    if: ${{ needs.changes.outputs.tck == 'true' }}
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
@@ -100,6 +128,8 @@ jobs:
 
   version-negotiation:
     name: promoted TCK sub-category — version negotiation
+    needs: [changes]
+    if: ${{ needs.changes.outputs.tck == 'true' }}
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
@@ -148,6 +178,8 @@ jobs:
 
   artifact-message-projection:
     name: promoted TCK sub-category — artifact/message projection
+    needs: [changes]
+    if: ${{ needs.changes.outputs.tck == 'true' }}
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
@@ -194,6 +226,8 @@ jobs:
 
   error-codes-and-errorinfo:
     name: promoted TCK sub-category — error codes and ErrorInfo
+    needs: [changes]
+    if: ${{ needs.changes.outputs.tck == 'true' }}
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
@@ -246,6 +280,8 @@ jobs:
 
   task-not-found:
     name: promoted TCK sub-category — task not found / invalid task
+    needs: [changes]
+    if: ${{ needs.changes.outputs.tck == 'true' }}
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
@@ -294,6 +330,8 @@ jobs:
 
   streaming-subscribe-ordering:
     name: promoted TCK sub-category — streaming / subscribe ordering
+    needs: [changes]
+    if: ${{ needs.changes.outputs.tck == 'true' }}
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
