@@ -1,6 +1,6 @@
 # Feature Spec: reuse the fanout decider stack on the piri patch lane
 
-Parent: #1798 (alternative path), #1601. Status: proposal, spec-first — documentation only; no runtime change authorized by this document.
+Parent: #1798 (alternative path), #1601. Status: **Phase 0 complete (2026-08-15) — a delegation mechanism exists; see [`phase-0-findings.md`](phase-0-findings.md); Phase 1 mapping is next.** Documentation only; no runtime change authorized by this document.
 
 ## Problem
 
@@ -35,7 +35,7 @@ What is missing is the piri-side executor mechanism (the Claude Code `Task`-tool
 
 ## Success criteria
 
-- [ ] Phase 0 conclusion recorded with evidence: either "no delegation mechanism exists in the deployed piri runtime; fanout reuse is not viable" (spec closes) or a named mechanism with a concrete invocation example.
+- [x] Phase 0 conclusion recorded with evidence: either "no delegation mechanism exists in the deployed piri runtime; fanout reuse is not viable" (spec closes) or a named mechanism with a concrete invocation example. — **Recorded 2026-08-15 in [`phase-0-findings.md`](phase-0-findings.md): the mechanism exists** (official `subagent` example extension; `piri -e <ext> -t subagent,... -p` invocation shape; roster md with `model:` frontmatter as the WS2 equivalent), unwired in the deployed image.
 - [ ] If viable: decider-reuse mapping table names every claude-specific mechanism and its piri equivalent or explicit gap — no hand-waving.
 - [ ] Any proposed wiring keeps fanout default-off with single-flag rollback and identical budget/output ceilings.
 - [ ] The broker-side decider tests keep passing unchanged (reuse, not fork).
