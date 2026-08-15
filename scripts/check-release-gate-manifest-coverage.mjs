@@ -128,11 +128,6 @@ function collectPackageScriptFiles(repoRoot) {
   return files;
 }
 
-function isCovered(testPath, registeredFiles, peerOptIns) {
-  if (registeredFiles.has(testPath)) return true;
-  return registeredFiles.has(implementationPeer(testPath)) && peerOptIns.has(testPath);
-}
-
 function collectPeerOptIns(repoRoot) {
   const optInsPath = path.join(repoRoot, 'docs/ops/release-gate-peer-coverage-optins.json');
   if (!fs.existsSync(optInsPath)) return new Map();
