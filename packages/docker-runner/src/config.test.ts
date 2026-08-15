@@ -1817,6 +1817,27 @@ test("contained sub-agents: claude-code enabled only when the fanout flag is 1 (
   assert.equal(loadContainedSubagentsConfig({}, "openclaw").enabled, true);
 });
 
+test("contained sub-agents: piri enabled only when the piri fanout flag is 1 (piri reuse WS1)", () => {
+  // Default (flag off) — piri has no contained sub-agents.
+  const off = loadContainedSubagentsConfig({}, "piri");
+  assert.equal(off.enabled, false);
+  assert.equal(off.maxCount, 0);
+  // Opt-in via the mirrored piri flag.
+  const on = loadContainedSubagentsConfig({ A2A_DOCKER_RUNNER_PIRI_FANOUT_ENABLED: "1" }, "piri");
+  assert.equal(on.enabled, true);
+  assert.ok(on.maxCount >= 1 && on.maxCount <= 4);
+  assert.deepEqual(on.roles, ["explorer", "implementer", "verifier"]);
+  // Cross-lane isolation: one lane's flag never enables another lane.
+  assert.equal(
+    loadContainedSubagentsConfig({ A2A_DOCKER_RUNNER_CLAUDE_CODE_FANOUT_ENABLED: "1" }, "piri").enabled,
+    false,
+  );
+  assert.equal(
+    loadContainedSubagentsConfig({ A2A_DOCKER_RUNNER_PIRI_FANOUT_ENABLED: "1" }, "claude-code").enabled,
+    false,
+  );
+});
+
 test("failure log knobs default and parse from env (#1610)", async () => {
   const defaults = await loadConfig({});
   assert.equal(defaults.failureLogMaxBytes, 262144);
