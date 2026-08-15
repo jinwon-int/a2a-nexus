@@ -7,9 +7,16 @@
   "lane": "team1-bangtong",
   "failClosed": true,
   "defaultDecision": "NO_GO",
-  "decisionOutputs": ["GO", "NO_GO", "BLOCKED"],
+  "decisionOutputs": [
+    "GO",
+    "NO_GO",
+    "BLOCKED"
+  ],
   "sourcePublicExecution": "NO_GO",
-  "allowedModes": ["dry-run", "simulate"],
+  "allowedModes": [
+    "dry-run",
+    "simulate"
+  ],
   "goDecisionRequires": [
     "orchestratorPlanBinding",
     "aggregatedGateMatrix",
@@ -211,11 +218,6 @@
       "owner": "team1-bangtong",
       "issue": "a2a-plane#226 (internal tracker, private)",
       "role": "Final go/no-go gate schema and operator approval packet aggregator"
-    },
-    "openclaw-plugin-a2a": {
-      "owner": "team1-sogyo",
-      "issue": "a2a-plane#265 (internal tracker, private)",
-      "role": "Plugin final go/no-go operator-facing status projection"
     },
     "a2a-docker-runner": {
       "owner": "team1-nosuk",

@@ -25,6 +25,14 @@ Use the current `main` baselines for public promotion discussion and issue
 routing. Use the source-public marker column only when a reviewer needs to
 trace the earlier source-public snapshot.
 
+> **Archive status (2026-08-15):** the four split repositories above — including
+> `openclaw-plugin-a2a` — are archived, private provenance mirrors as of the
+> canonical flip to this monorepo (topology decision record; `docs/current-state.md`).
+> The rows are kept as the historical promotion snapshot and are not live
+> repositories: an outside reader cannot open them, the `openclaw-plugin-a2a`
+> package no longer exists in this tree, and new compatibility work happens in
+> `packages/*` here. Do not add new rows for the archived mirrors.
+
 ## Monorepo import baselines
 
 These rows identify the sanitized import baselines in this umbrella repository.

@@ -92,7 +92,6 @@ function allGo(overrides = {}) {
     crossLaneEvidence: ['a2a-plane#226 (internal tracker, private)#cross-lane-evidence'],
     laneStatuses: {
       'a2a-plane': { status: 'GO', evidence: 'a2a-plane#226 (internal tracker, private)', timestamp: new Date().toISOString() },
-      'openclaw-plugin-a2a': { status: 'GO', evidence: 'a2a-plane#265 (internal tracker, private)', timestamp: new Date().toISOString() },
       'a2a-docker-runner': { status: 'GO', evidence: 'a2a-plane#195 (internal tracker, private)', timestamp: new Date().toISOString() },
       'a2a-broker': { status: 'GO', evidence: 'a2a-plane#488 (internal tracker, private)', timestamp: new Date().toISOString() },
     },
@@ -184,13 +183,16 @@ test('GO output includes per-repo GO/NO-GO matrix', () => {
   const parsed = JSON.parse(result.stdout);
   const matrix = parsed.approvalPacket.gateMatrix;
   assert.ok(Array.isArray(matrix), 'gate matrix must be an array');
-  assert.ok(matrix.length >= 4, 'matrix must cover all round lanes');
+  assert.ok(matrix.length >= 3, 'matrix must cover all round lanes');
 
   const repos = matrix.map((l) => l.repo);
   assert.ok(repos.includes('a2a-plane'));
-  assert.ok(repos.includes('openclaw-plugin-a2a'));
   assert.ok(repos.includes('a2a-docker-runner'));
   assert.ok(repos.includes('a2a-broker'));
+  // The openclaw-plugin-a2a lane was removed with the package (#1822): a
+  // final gate must never demand a status from a surface that cannot
+  // produce one.
+  assert.ok(!repos.includes('openclaw-plugin-a2a'));
 
   for (const lane of matrix) {
     assert.ok(lane.owner, 'each lane must have an owner');

@@ -643,6 +643,20 @@
       "note": "Unit test for the #1501 current-state drift gate (RED closed-as-active, GREEN historical framing); local/read-only, budget-neutral scripts/lib placement."
     },
     {
+      "name": "promotion-capstone-conformance-test",
+      "command": "node",
+      "args": [
+        "--test",
+        "scripts/check-promotion-capstone-conformance.test.mjs"
+      ],
+      "tier": "core",
+      "owner": "docs-provenance",
+      "consumer": "pr-gate",
+      "retirement": "keep",
+      "retirementCondition": "Retire only when the promotion-capstone CI lane runs this suite itself or a narrower gate demonstrably covers the same contract; no removal while the suite is the only runner.",
+      "note": "Unit+doc conformance for the promotion capstone (a2a-nexus#1822): the suite previously imported the removed openclaw-plugin-a2a package and ran nowhere; this step keeps it on the default release-gate path."
+    },
+    {
       "name": "package-matrix",
       "command": "node",
       "args": [

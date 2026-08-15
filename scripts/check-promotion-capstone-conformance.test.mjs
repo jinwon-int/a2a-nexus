@@ -3,6 +3,11 @@
  *
  * Safety: read-only doc/CI validation. No deploy, no restart, no live provider
  * send, no Telegram send, and no production broker assumptions.
+ *
+ * Wired into the release gate as the `promotion-capstone-conformance-test`
+ * step (scripts/check-release-gate-step-inventory.mjs keeps it listed), so
+ * this suite cannot silently stop running again. It previously imported the
+ * removed openclaw-plugin-a2a package and ran nowhere (a2a-nexus#1822).
  */
 import assert from 'node:assert/strict';
 import test from 'node:test';
@@ -16,13 +21,12 @@ import {
   CORE_SOURCE_FLOORS as BROKER_CORE_SOURCE_FLOORS,
 } from '../packages/broker/scripts/coverage-baseline-report.mjs';
 import {
-  CORE_SOURCE_FLOORS as PLUGIN_CORE_SOURCE_FLOORS,
-} from '../packages/openclaw-plugin-a2a/scripts/coverage-baseline-report.mjs';
+  CORE_SOURCE_FLOORS as RUNNER_CORE_SOURCE_FLOORS,
+} from '../packages/docker-runner/scripts/coverage-baseline-report.mjs';
 import {
   evaluateQualityFloorContract,
   EXPECTED_COVERAGE_BASELINE_COMMAND,
   EXPECTED_BROKER_FLOORS,
-  EXPECTED_PLUGIN_FLOORS,
   EXPECTED_RUNNER_FLOORS,
 } from './check-promotion-capstone-conformance.mjs';
 import { ASYNC_SAFETY_PACKAGES } from './check-source-quality-floors.mjs';
@@ -37,16 +41,13 @@ async function capstone() {
 const packageContracts = [
   { name: 'broker', dir: 'packages/broker', floor: 'enforced', noUnusedLocals: true },
   { name: 'docker-runner', dir: 'packages/docker-runner', floor: 'enforced', noUnusedLocals: true },
-  { name: 'openclaw-plugin-a2a', dir: 'packages/openclaw-plugin-a2a', floor: 'enforced', noUnusedLocals: true },
 ];
 
 function validQualityContract(name = 'docker-runner') {
-  const dir = name === 'openclaw-plugin-a2a' ? 'packages/openclaw-plugin-a2a' : `packages/${name}`;
+  const dir = `packages/${name}`;
   const expectedFloors = name === 'broker'
     ? EXPECTED_BROKER_FLOORS
-    : name === 'docker-runner'
-      ? EXPECTED_RUNNER_FLOORS
-      : EXPECTED_PLUGIN_FLOORS;
+    : EXPECTED_RUNNER_FLOORS;
   return {
     name,
     dir,
@@ -96,7 +97,6 @@ test('promotion capstone defines twenty-minute package-boundary path', async () 
   const content = await capstone();
   assert.match(content, /20-minute path/i);
   assert.match(content, /packages\/broker/);
-  assert.match(content, /packages\/openclaw-plugin-a2a/);
   assert.match(content, /packages\/docker-runner/);
   assert.match(content, /docs\/external-harness-quickstart\.md/);
   assert.match(content, /fixtures\/external-harness\/no-live-conformance\.json/);
@@ -148,10 +148,8 @@ test('promotion capstone records the live-main quality-floor consistency contrac
   assert.match(section, /a2a-nexus\.coverage-baseline\.v1/);
   assert.match(section, /broker[^\n]*#1506[^\n]*Enforced[^\n]*Enabled/i);
   assert.match(section, /docker-runner[^\n]*#1576[^\n]*Enforced[^\n]*Enabled/i);
-  assert.match(section, /openclaw-plugin-a2a[^\n]*#1506[^\n]*Enforced[^\n]*Enabled/i);
   for (const [module, floor] of Object.entries({
     'config.js': 94,
-    'execution-orchestrator.js': 96,
     'execution-proof.js': 95,
     'execution-proof-signing.js': 90,
     'redaction.js': 95,
@@ -169,20 +167,13 @@ test('promotion capstone records the live-main quality-floor consistency contrac
       new RegExp(`${module.replace('.', '\\.')}[^\\n]*${values[0]}%[^\\n]*${values[1]}%`),
     );
   }
-  for (const [module, values] of Object.entries({
-    'dist/src/handoff-visibility-policy.js': [80, '81\\.61'],
-    'dist/src/recovery-guard.js': [95, '96\\.85'],
-    'dist/src/wake-envelope.js': [93, '94\\.95'],
-  })) {
-    assert.match(
-      section,
-      new RegExp(`${module.replace('.', '\\.')}[^\\n]*${values[0]}%[^\\n]*${values[1]}%`),
-    );
-  }
+  // The removed openclaw-plugin-a2a package must not be re-asserted here.
+  assert.doesNotMatch(section, /openclaw-plugin-a2a/);
+  assert.doesNotMatch(section, /dist\/src\//);
   assert.match(section, /broker `noUnusedLocals`/i);
   assert.match(section, /async-safety approval/i);
   assert.match(section, /floating-promises=0/i);
-  assert.match(section, /all five TypeScript workspace packages/i);
+  assert.match(section, /all four TypeScript workspace packages/i);
   assert.match(section, /Package-CI parity analyzes only its selected package/i);
   assert.match(section, /#1506/);
 });
@@ -218,9 +209,7 @@ test('package coverage commands, reporter files, and parity metadata stay aligne
 test('quality-floor evaluator accepts exact contracts and ignores floor key order', () => {
   assert.notStrictEqual(EXPECTED_BROKER_FLOORS, BROKER_CORE_SOURCE_FLOORS);
   assert.deepEqual(EXPECTED_BROKER_FLOORS, BROKER_CORE_SOURCE_FLOORS);
-  assert.notStrictEqual(EXPECTED_PLUGIN_FLOORS, PLUGIN_CORE_SOURCE_FLOORS);
-  assert.deepEqual(EXPECTED_PLUGIN_FLOORS, PLUGIN_CORE_SOURCE_FLOORS);
-  for (const name of ['broker', 'docker-runner', 'openclaw-plugin-a2a']) {
+  for (const name of ['broker', 'docker-runner']) {
     assert.deepEqual(evaluateQualityFloorContract(validQualityContract(name)), []);
   }
   const reordered = validQualityContract();
@@ -247,31 +236,16 @@ test('quality-floor evaluator rejects inert commands and missing parity evidence
 });
 
 test('quality-floor evaluator rejects schema, floor-mode, and noUnusedLocals drift', () => {
-  const contract = validQualityContract('openclaw-plugin-a2a');
+  const contract = validQualityContract('docker-runner');
   contract.baseline.schema = 'wrong.schema';
   contract.baseline.floor = {};
   contract.noUnusedLocals = false;
   assert.deepEqual(evaluateQualityFloorContract(contract), [
-    'openclaw-plugin-a2a: reporter schema drifted',
-    'openclaw-plugin-a2a: reporter line-floor mode drifted',
-    'openclaw-plugin-a2a: #1506 per-module floors drifted: null',
-    'openclaw-plugin-a2a: noUnusedLocals must be enabled',
+    'docker-runner: reporter schema drifted',
+    'docker-runner: reporter line-floor mode drifted',
+    'docker-runner: #1576 per-module floors drifted: null',
+    'docker-runner: noUnusedLocals must be enabled',
   ]);
-});
-
-test('quality-floor evaluator rejects missing, lowered, or additional plugin floors', () => {
-  for (const mutate of [
-    (floors) => { delete floors['dist/src/wake-envelope.js']; },
-    (floors) => { floors['dist/src/recovery-guard.js'] = 94; },
-    (floors) => { floors['extra.js'] = 100; },
-  ]) {
-    const contract = validQualityContract('openclaw-plugin-a2a');
-    mutate(contract.baseline.floor.modules);
-    assert.match(
-      evaluateQualityFloorContract(contract).join('\n'),
-      /openclaw-plugin-a2a: #1506 per-module floors drifted/,
-    );
-  }
 });
 
 test('quality-floor evaluator rejects missing, lowered, or additional runner floors', () => {
@@ -337,4 +311,16 @@ test('ci exposes named promotion-capstone lane for the five-minute path', async 
   assert.match(ci, /npm run smoke:quickstart/);
   const directRuns = ci.match(/npm run check:promotion-capstone/g) ?? [];
   assert.ok(directRuns.length === 0, 'the standalone capstone step was removed; smoke:quickstart covers it');
+});
+
+test('release-gate inventory wires this suite so it cannot orphan again', async () => {
+  const inventory = JSON.parse(
+    await readFile(join(repoRoot, 'docs', 'ops', 'release-gate-step-inventory.json'), 'utf8'),
+  );
+  const entry = inventory.entries.find((step) =>
+    step.args?.includes('scripts/check-promotion-capstone-conformance.test.mjs'),
+  );
+  assert.ok(entry, 'release-gate inventory must run scripts/check-promotion-capstone-conformance.test.mjs');
+  assert.equal(entry.command, 'node');
+  assert.ok(['core', 'public-readiness'].includes(entry.tier), 'the step must run on the default release-gate path');
 });

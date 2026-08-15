@@ -197,9 +197,6 @@ if (capstone) {
     /dist\/core\/broker-policy\.js[^\n]*84%[^\n]*85\.06%/,
     /dist\/core\/provenance\.js[^\n]*98%[^\n]*99\.00%/,
     /dist\/core\/release-evidence\.js[^\n]*97%[^\n]*98\.66%/,
-    /dist\/src\/handoff-visibility-policy\.js[^\n]*80%[^\n]*81\.61%/,
-    /dist\/src\/recovery-guard\.js[^\n]*95%[^\n]*96\.85%/,
-    /dist\/src\/wake-envelope\.js[^\n]*93%[^\n]*94\.95%/,
     /broker `noUnusedLocals`/i,
     /async-safety approval/i,
     /floating-promises=0/i,
@@ -231,29 +228,20 @@ for (const packageContract of packages) {
   const surface = PACKAGE_CI_SURFACES[name];
   const tsconfig = parseJson(`${dir}/tsconfig.json`);
   const baseline = name === 'docker-runner'
-    ? buildBaseline([], {
+    ? buildRunnerBaseline([], {
       coveragePercent: null,
       fileLineCoverage: { ...CORE_SOURCE_FLOORS },
       testExitCode: 0,
       note: 'promotion-capstone contract probe',
     })
-    : name === 'broker'
-      ? buildBaseline(name, [], {
-        coveragePercent: 100,
-        fileLineCoverage: { ...EXPECTED_BROKER_FLOORS },
-        testExitCode: 0,
-        reportValid: true,
-        reportFailures: [],
-        note: 'promotion-capstone contract probe',
-      })
-      : buildBaseline(name, [], {
-        coveragePercent: 100,
-        fileLineCoverage: { ...PLUGIN_CORE_SOURCE_FLOORS },
-        testExitCode: 0,
-        reportValid: true,
-        reportFailures: [],
-        note: 'promotion-capstone contract probe',
-      });
+    : buildBrokerBaseline(name, [], {
+      coveragePercent: 100,
+      fileLineCoverage: { ...EXPECTED_BROKER_FLOORS },
+      testExitCode: 0,
+      reportValid: true,
+      reportFailures: [],
+      note: 'promotion-capstone contract probe',
+    });
   for (const message of evaluateQualityFloorContract({
     name,
     dir,
