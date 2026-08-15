@@ -18,7 +18,6 @@ const DEFAULT_SCAN_ROOTS = [
   'packages/docker-runner/src',
   'packages/policy-referee/src',
   'packages/attestation/src',
-  'packages/openclaw-plugin-a2a/src',
 ];
 
 const SCANNED_EXTENSIONS = new Set(['.mjs', '.js', '.cjs', '.ts', '.tsx', '.sh', '.bash']);

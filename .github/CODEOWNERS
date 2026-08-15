@@ -33,5 +33,8 @@
 # Docker runner surface: isolated execution, checkout hygiene, PR/Done/Block evidence.
 /packages/docker-runner/ @jinon86 @seoseo-ai
 
-# OpenClaw plugin surface: Gateway adapter, request/status/cancel mapping, diagnostics.
-/packages/openclaw-plugin-a2a/ @jinon86 @seoseo-ai
+# The OpenClaw plugin package was removed; per-harness bridges now live under
+# packages/broker/scripts/ (see the topology decision record). These are the
+# packages added since the CODEOWNERS map was last updated.
+/packages/attestation/ @jinon86 @seoseo-ai
+/packages/policy-referee/ @jinon86 @seoseo-ai

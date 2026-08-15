@@ -80,7 +80,6 @@ body:
         - a2a-plane:
         - a2a-broker:
         - a2a-docker-runner:
-        - openclaw-plugin-a2a:
         - worker/node config:
         - Wiki/runbooks:
     validations:

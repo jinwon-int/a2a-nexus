@@ -22,8 +22,6 @@ const EXACT_SYNTHETIC_FIXTURE_FILES = new Set([
   'packages/docker-runner/src/runner-manifest.test.ts',
   'packages/docker-runner/dist/scanner.test.js',
   'packages/docker-runner/src/scanner.test.ts',
-  'packages/openclaw-plugin-a2a/tests/cross-broker-terminal-relay.test.ts',
-  'packages/openclaw-plugin-a2a/tests/proposal-marker-bridge.test.ts',
 ]);
 
 function isAllowedGitleaksFinding(finding) {

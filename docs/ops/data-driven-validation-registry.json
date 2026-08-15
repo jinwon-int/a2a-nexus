@@ -511,8 +511,7 @@
           "includesAll": [
             "source:a2a-plane",
             "source:a2a-broker",
-            "source:a2a-docker-runner",
-            "source:openclaw-plugin-a2a"
+            "source:a2a-docker-runner"
           ],
           "message": "source labels"
         },
@@ -630,11 +629,6 @@
         },
         {
           "source": "issueRouting",
-          "matches": "source:openclaw\\-plugin\\-a2a",
-          "message": "issueRouting phrase source:openclaw-plugin-a2a"
-        },
-        {
-          "source": "issueRouting",
           "matches": "Do not create or use `source:agent-olympics`",
           "message": "issue routing forbids agent olympics"
         },
@@ -650,8 +644,8 @@
         },
         {
           "source": "codeowners",
-          "matches": "/packages/openclaw\\-plugin\\-a2a/",
-          "message": "CODEOWNERS /packages/openclaw-plugin-a2a/"
+          "matches": "/packages/attestation/",
+          "message": "CODEOWNERS /packages/attestation/"
         },
         {
           "source": "codeowners",
@@ -712,6 +706,16 @@
           "source": "issueRouting",
           "matches": "keep\\ closed\\ issues\\ and\\ PRs\\ in\\ their\\ original\\ repos",
           "message": "issue routing closed history policy"
+        },
+        {
+          "source": "issueRouting",
+          "matches": "per\\-harness bridges live under `packages/broker/scripts/`",
+          "message": "issueRouting routes harness bridges to the broker surface"
+        },
+        {
+          "source": "codeowners",
+          "matches": "/packages/policy\\-referee/",
+          "message": "CODEOWNERS /packages/policy-referee/"
         }
       ],
       "successMessage": "monorepo docs/routing ok"
