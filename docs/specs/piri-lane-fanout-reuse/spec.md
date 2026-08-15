@@ -1,6 +1,6 @@
 # Feature Spec: reuse the fanout decider stack on the piri patch lane
 
-Parent: #1798 (alternative path), #1601. Status: **Phase 0 complete (2026-08-15) — a delegation mechanism exists; see [`phase-0-findings.md`](phase-0-findings.md); Phase 1 mapping is next.** Documentation only; no runtime change authorized by this document.
+Parent: #1798 (alternative path), #1601. Status: **Phase 1 complete (2026-08-15) — decider-reuse mapping recorded in [`phase-1-mapping.md`](phase-1-mapping.md) (Phase 0: [`phase-0-findings.md`](phase-0-findings.md)); Phase 2 wiring spec is next, default-off and gated.** Documentation only; no runtime change authorized by this document.
 
 ## Problem
 
@@ -36,10 +36,10 @@ What is missing is the piri-side executor mechanism (the Claude Code `Task`-tool
 ## Success criteria
 
 - [x] Phase 0 conclusion recorded with evidence: either "no delegation mechanism exists in the deployed piri runtime; fanout reuse is not viable" (spec closes) or a named mechanism with a concrete invocation example. — **Recorded 2026-08-15 in [`phase-0-findings.md`](phase-0-findings.md): the mechanism exists** (official `subagent` example extension; `piri -e <ext> -t subagent,... -p` invocation shape; roster md with `model:` frontmatter as the WS2 equivalent), unwired in the deployed image.
-- [ ] If viable: decider-reuse mapping table names every claude-specific mechanism and its piri equivalent or explicit gap — no hand-waving.
-- [ ] Any proposed wiring keeps fanout default-off with single-flag rollback and identical budget/output ceilings.
-- [ ] The broker-side decider tests keep passing unchanged (reuse, not fork).
-- [ ] The spec records which existing tests/fixtures would need a piri-lane variant and which are lane-agnostic already.
+- [x] If viable: decider-reuse mapping table names every claude-specific mechanism and its piri equivalent or explicit gap — no hand-waving. — **Done 2026-08-15: [`phase-1-mapping.md`](phase-1-mapping.md) §1 maps all seven deciders; §2 names all twelve claude-specific couplings with anchors; §4 carries the five named gaps.**
+- [ ] Any proposed wiring keeps fanout default-off with single-flag rollback and identical budget/output ceilings. *(to be checked when the Phase-2 wiring spec lands; the recorded proposal — Phase-2 scope above + mapping §3/§6 — keeps them)*
+- [x] The broker-side decider tests keep passing unchanged (reuse, not fork). — **Verified 2026-08-15 at `1d97ed1`: attestation decider suites 39/39, broker core subagent suites 28/28, `worker.test.ts` 51/51 — all green, zero modifications.**
+- [x] The spec records which existing tests/fixtures would need a piri-lane variant and which are lane-agnostic already. — **Done 2026-08-15: mapping §5 inventories both classes (lane-agnostic reuse oracle vs additive piri variants).**
 
 ## Safety and approval boundaries
 
