@@ -64,6 +64,7 @@ export const PACKAGE_CI_SURFACES = {
   'nclex-evaluation': {
     packageDir: 'packages/nclex-evaluation',
     commands: [
+      ['npm', ['run', 'check:source-quality-floors', '--', '--package', 'packages/nclex-evaluation']],
       ['npm', ['run', 'build', '-w', 'packages/nclex-evaluation']],
       ['npm', ['run', 'test', '-w', 'packages/nclex-evaluation']],
       ['npm', ['run', 'coverage:baseline', '-w', 'packages/nclex-evaluation']],
