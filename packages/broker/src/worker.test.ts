@@ -8,7 +8,7 @@ import { once } from "node:events";
 
 import { emptySnapshot, type BrokerStateStore } from "./core/store.js";
 import { createBrokerServer, type BrokerServerOptions } from "./server.js";
-import { A2ABrokerWorker, buildDynamicSubagentRuntime, createExternalWorkerHandler, createWorkerConfigFromEnv, type BrokerWorkerConfig } from "./worker.js";
+import { A2ABrokerWorker, buildDynamicSubagentRuntime, resolveActiveFanoutFlagKey, FANOUT_FLAG_ENV_KEYS, createExternalWorkerHandler, createWorkerConfigFromEnv, type BrokerWorkerConfig } from "./worker.js";
 import { verifyA2AHttpSignature, type A2AHttpSignatureKeyRegistry } from "./core/request-security.js";
 
 function createInMemoryStateStore(): BrokerStateStore {
@@ -2444,4 +2444,101 @@ test("external handler non-JSON stderr failure excerpt keeps head AND tail (#161
     await server.close();
     await rm(tempDir, { recursive: true, force: true });
   }
+});
+
+test("resolveActiveFanoutFlagKey picks the active lane flag deterministically (piri reuse WS1)", () => {
+  assert.equal(resolveActiveFanoutFlagKey({}), undefined);
+  assert.equal(resolveActiveFanoutFlagKey({ A2A_DOCKER_RUNNER_CLAUDE_CODE_FANOUT_ENABLED: "0" }), undefined);
+  assert.equal(resolveActiveFanoutFlagKey({ A2A_DOCKER_RUNNER_PIRI_FANOUT_ENABLED: "0" }), undefined);
+  assert.equal(
+    resolveActiveFanoutFlagKey({ A2A_DOCKER_RUNNER_CLAUDE_CODE_FANOUT_ENABLED: "1" }),
+    "claude-code",
+  );
+  assert.equal(resolveActiveFanoutFlagKey({ A2A_DOCKER_RUNNER_PIRI_FANOUT_ENABLED: "1" }), "piri");
+  // Both set: claude-code wins — deterministic, and the runner emits exactly one.
+  assert.equal(
+    resolveActiveFanoutFlagKey({
+      A2A_DOCKER_RUNNER_CLAUDE_CODE_FANOUT_ENABLED: "1",
+      A2A_DOCKER_RUNNER_PIRI_FANOUT_ENABLED: "1",
+    }),
+    "claude-code",
+  );
+});
+
+test("the piri lane flag key is emitted on authorized and refused paths (piri reuse WS1)", () => {
+  const task = {
+    id: "task-piri-ws1",
+    exchangeId: "exchange-piri-ws1",
+    intent: "propose_patch",
+    requester: { id: "hub", kind: "node", role: "hub" },
+    target: { id: "worker-piri", kind: "node", role: "analyst" },
+    message: "large independent patch",
+    status: "running",
+    targetNodeId: "worker-piri",
+    approval: {
+      approvalId: "approval-piri-ws1",
+      approvedAt: "2026-07-13T00:00:00Z",
+      approvedBy: "seoseo-a2a-finalizer",
+      actorRole: "operator",
+      requesterRole: "operator",
+    },
+    payload: {
+      subagentProfile: { size: "large", coupling: "low", hasIndependentSubtasks: true, writeSets: ["src/a.ts", "src/b.ts"] },
+      spawnAuthorization: {
+        state: "authorization_request_draft_ready",
+        workerId: "worker-piri",
+        taskId: "task-piri-ws1",
+        source: { plannerParallelismHint: 3 },
+        finalizerReview: { oneFinalizerRequired: true, writeSetIsolationRequired: true },
+      },
+      workerSubagentBudgetCounter: {
+        workerId: "worker-piri",
+        usage: { taskId: "task-piri-ws1", taskTokensSpent: 100, taskTokenCeiling: 1_000 },
+      },
+    },
+    createdAt: "2026-07-13T00:00:00Z",
+    updatedAt: "2026-07-13T00:00:00Z",
+  } as never;
+
+  // Authorized on the piri lane: the piri key is set and the claude key absent.
+  const authorized = buildDynamicSubagentRuntime(task, {
+    workerId: "worker-piri",
+    subagentCap: 4,
+    executionIsolation: "shared",
+    fanoutEnabled: true,
+    fanoutFlagKey: "piri",
+    staticRunnerMax: 2,
+    staticRunnerRoles: ["explorer", "verifier"],
+  });
+  assert.equal(authorized.env[FANOUT_FLAG_ENV_KEYS.piri], "1");
+  assert.equal(authorized.env[FANOUT_FLAG_ENV_KEYS["claude-code"]], undefined);
+  assert.equal(JSON.parse(authorized.env.A2A_SUBAGENT_PLAN ?? "{}").state, "authorized");
+
+  // Refused on the piri lane: the piri key closes to 0, claude key still absent.
+  const unapproved = { ...(task as Record<string, unknown>) };
+  delete unapproved.approval;
+  const refused = buildDynamicSubagentRuntime(unapproved as never, {
+    workerId: "worker-piri",
+    subagentCap: 4,
+    executionIsolation: "shared",
+    fanoutEnabled: true,
+    fanoutFlagKey: "piri",
+    staticRunnerMax: 2,
+    staticRunnerRoles: ["explorer", "verifier"],
+  });
+  assert.equal(refused.env[FANOUT_FLAG_ENV_KEYS.piri], "0");
+  assert.equal(refused.env[FANOUT_FLAG_ENV_KEYS["claude-code"]], undefined);
+  assert.equal(JSON.parse(refused.env.A2A_SUBAGENT_PLAN ?? "{}").reason, "broker_approval_missing_or_untrusted");
+
+  // Default (no key): the claude-code emission is unchanged (backward compat).
+  const claudeAuthorized = buildDynamicSubagentRuntime(task, {
+    workerId: "worker-piri",
+    subagentCap: 4,
+    executionIsolation: "shared",
+    fanoutEnabled: true,
+    staticRunnerMax: 2,
+    staticRunnerRoles: ["explorer", "verifier"],
+  });
+  assert.equal(claudeAuthorized.env[FANOUT_FLAG_ENV_KEYS["claude-code"]], "1");
+  assert.equal(claudeAuthorized.env[FANOUT_FLAG_ENV_KEYS.piri], undefined);
 });

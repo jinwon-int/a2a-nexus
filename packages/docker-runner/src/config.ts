@@ -575,8 +575,11 @@ export function loadContainedSubagentsConfig(
   // Phase-2 WS4: the claude-code fanout flag also enables contained sub-agents for
   // the claude-code lane, so runner.ts injects A2A_CONTAINED_SUBAGENTS_* for the
   // bridge's fanout path. Default (flag off / other profiles) is unchanged.
+  // piri reuse WS1 (#1836): the piri lane mirrors the same opt-in with its own
+  // flag; cross-lane flags never enable another lane's contained sub-agents.
   const enabled = containedSubagentsEnabledByDefault(env.A2A_DOCKER_RUNNER_CONTAINED_SUBAGENTS_ENABLED, effectiveProfile)
-    || (effectiveProfile === "claude-code" && env.A2A_DOCKER_RUNNER_CLAUDE_CODE_FANOUT_ENABLED === "1");
+    || (effectiveProfile === "claude-code" && env.A2A_DOCKER_RUNNER_CLAUDE_CODE_FANOUT_ENABLED === "1")
+    || (effectiveProfile === "piri" && env.A2A_DOCKER_RUNNER_PIRI_FANOUT_ENABLED === "1");
   const maxCount = enabled
     ? parseBoundedInteger(env.A2A_DOCKER_RUNNER_CONTAINED_SUBAGENTS_MAX, 3, 1, 4, "A2A_DOCKER_RUNNER_CONTAINED_SUBAGENTS_MAX")
     : 0;

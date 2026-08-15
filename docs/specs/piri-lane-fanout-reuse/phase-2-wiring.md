@@ -4,8 +4,8 @@ Concrete wiring design turning the Phase-1 mapping (`phase-1-mapping.md` §6)
 into implementable changes. Mirrors the structure of the claude-code
 `docs/specs/cc-worker-container-fanout/phase-2-wiring.md` (its WS1–WS5), with
 every claude-specific mechanism replaced by its named piri equivalent or an
-explicitly designed gap-closure. Status: **spec only — drafted 2026-08-15; no
-runtime change is authorized or started by this document.** Fanout stays
+explicitly designed gap-closure. Status: **WS1 implemented (code+tests,
+2026-08-15); WS2–WS5 remain spec-only.** Fanout stays
 opt-in and default-off everywhere; every live spawn / deploy / restart /
 canary step remains operator-approved per the #1798 decision packet.
 
@@ -27,7 +27,7 @@ the container stays a thin executor. The pipeline:
 
 ## Workstreams
 
-### WS1 — mirrored opt-in flag + rollback
+### WS1 — mirrored opt-in flag + rollback (**implemented**, 2026-08-15)
 
 - New env `A2A_DOCKER_RUNNER_PIRI_FANOUT_ENABLED` (default `0`), mirroring
   `A2A_DOCKER_RUNNER_CLAUDE_CODE_FANOUT_ENABLED` exactly.

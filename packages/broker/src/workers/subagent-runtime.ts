@@ -74,8 +74,26 @@ export interface DynamicSubagentRuntimeOptions {
   subagentCap: number;
   executionIsolation?: "isolated" | "shared";
   fanoutEnabled: boolean;
+  /** Which lane's fanout flag the authorized/closed env emits (piri reuse WS1). Default: "claude-code". */
+  fanoutFlagKey?: FanoutFlagKey;
   staticRunnerMax: number;
   staticRunnerRoles: string[];
+}
+
+/** Lanes with a broker-emitted fanout opt-in flag (piri reuse WS1, #1836 WS1). */
+export type FanoutFlagKey = "claude-code" | "piri";
+
+export const FANOUT_FLAG_ENV_KEYS: Record<FanoutFlagKey, string> = {
+  "claude-code": "A2A_DOCKER_RUNNER_CLAUDE_CODE_FANOUT_ENABLED",
+  piri: "A2A_DOCKER_RUNNER_PIRI_FANOUT_ENABLED",
+};
+
+/** Resolve the active lane from the runner env. Deterministic tie-break:
+ * claude-code wins if both flags are set (the runner emits exactly one). */
+export function resolveActiveFanoutFlagKey(env: NodeJS.ProcessEnv): FanoutFlagKey | undefined {
+  if (env[FANOUT_FLAG_ENV_KEYS["claude-code"]] === "1") return "claude-code";
+  if (env[FANOUT_FLAG_ENV_KEYS.piri] === "1") return "piri";
+  return undefined;
 }
 
 export interface DynamicSubagentRuntime {
@@ -84,7 +102,6 @@ export interface DynamicSubagentRuntime {
 }
 
 const CLOSED_DYNAMIC_SUBAGENT_ENV = {
-  A2A_DOCKER_RUNNER_CLAUDE_CODE_FANOUT_ENABLED: "0",
   A2A_DOCKER_RUNNER_CONTAINED_SUBAGENTS_MAX: "0",
   A2A_DOCKER_RUNNER_CONTAINED_SUBAGENTS_ROLES: "",
   A2A_SUBAGENT_CONDUCTOR: "1",
@@ -109,6 +126,11 @@ export function buildDynamicSubagentRuntime(
   options: DynamicSubagentRuntimeOptions,
 ): DynamicSubagentRuntime {
   if (!options.fanoutEnabled) return { env: {} };
+  const fanoutFlagEnv = FANOUT_FLAG_ENV_KEYS[options.fanoutFlagKey ?? "claude-code"];
+  const closedEnvBase = (): Record<string, string> => ({
+    ...CLOSED_DYNAMIC_SUBAGENT_ENV,
+    [fanoutFlagEnv]: "0",
+  });
 
   const staticRunnerMax = Number.isInteger(options.staticRunnerMax)
     ? Math.max(0, Math.min(4, options.staticRunnerMax))
@@ -127,7 +149,7 @@ export function buildDynamicSubagentRuntime(
   });
   const closed = (reason: string, fields: Record<string, unknown> = {}): DynamicSubagentRuntime => ({
     env: {
-      ...CLOSED_DYNAMIC_SUBAGENT_ENV,
+      ...closedEnvBase(),
       A2A_DOCKER_RUNNER_CONTAINED_SUBAGENTS_REASONS: reason,
       A2A_SUBAGENT_PLAN: plan({
         state: "refused",
@@ -298,7 +320,7 @@ export function buildDynamicSubagentRuntime(
         A2A_SUBAGENT_MAX: String(authorizedSubagentCount),
         A2A_SUBAGENT_ROLES: authorizedRoles.join(","),
         A2A_SUBAGENT_PLAN: planEvidence,
-        A2A_DOCKER_RUNNER_CLAUDE_CODE_FANOUT_ENABLED: "1",
+        [fanoutFlagEnv]: "1",
         A2A_DOCKER_RUNNER_CONTAINED_SUBAGENTS_MAX: String(authorizedSubagentCount),
         A2A_DOCKER_RUNNER_CONTAINED_SUBAGENTS_ROLES: authorizedRoles.join(","),
         A2A_DOCKER_RUNNER_CONTAINED_SUBAGENTS_REASONS: reducedBy.join(",") || "authorized",
