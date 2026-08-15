@@ -1,6 +1,6 @@
 # Phase-2 wiring design: claude-code container-lane sub-agent fanout
 
-Concrete wiring design for **Phase 2** of `spec.md` (epic #1543). Turns the Phase-2 checklist into implementable changes against current code. Status: **WS1/WS3/WS4/WS5 implemented; WS2 pending.** Fanout stays opt-in and default-off. Since #1700, agentic is the normal non-fanout implementation mode; deterministic `single-shot` remains an explicit bounded fallback.
+Concrete wiring design for **Phase 2** of `spec.md` (epic #1543). Turns the Phase-2 checklist into implementable changes against current code. Status: **WS1/WS3/WS4/WS5 implemented (code); WS2 pending — field verification 2026-08-15: the roster is undeployed and the claude-code lane is dormant fleet-wide (see the WS2 note below and the #1798 decision packet).** Fanout stays opt-in and default-off. Since #1700, agentic is the normal non-fanout implementation mode; deterministic `single-shot` remains an explicit bounded fallback.
 
 ## Where each concern lives (the key split)
 
@@ -37,6 +37,13 @@ The container never re-derives the gate/brief; it consumes what the broker compu
 - **Mechanism = the roster agent md `model:` frontmatter (host harness), not a runner env** (see resolved decision D3). Claude Code resolves a sub-agent's model from its agent md `model:` field; the current roster md carries a custom `model_tier: low-cost` that Claude Code ignores. Set `model: sonnet` (alias → the node's Sonnet-5-grade) on each `~/.claude/agents/a2a-*.md`. The parent/finalizer keeps `A2A_CLAUDE_MODEL` (e.g. opus). An `A2A_CONTAINED_SUBAGENTS_MODEL` env would be inert for model selection.
 - This makes WS2 a **host-harness (ccc-node) roster change**, not a nexus runner change; nexus's role is only to mount that harness (already does).
 - **Acceptance:** in fanout mode, sub-agents run at Sonnet-5-grade (from the md `model:`), finalizer at the parent model. Confirm the deployed Claude Code CLI version honors the `model:` frontmatter field.
+
+#### WS2 field verification (2026-08-15, read-only) — #1798
+
+- **Mechanism confirmed.** Claude Code subagents are markdown files with YAML frontmatter under `~/.claude/agents/` / `.claude/agents/`; the official sub-agents documentation's own example uses exactly `model: sonnet`, and routing cheaper work to a lower-cost model is the documented purpose of the field. The deployed cc-lane runner images carry Claude Code 2.1.220 (T1 host) and 2.1.210 (T2 hosts); the documentation states frontmatter fields and file locations are unchanged across these versions.
+- **Blocker — the roster is undeployed.** No `a2a-*.md` roster files exist in any cc-lane runner's claude config directory in the field. The normative roster mapping (`docs/specs/cc-worker-subagent-roster/`) was never materialized as concrete agent md files on the hosts, so WS3's "roster present in the mounted host config" acceptance is **not met in the field** even though the bridge-side `Task`-tool wiring is implemented.
+- **Blocker — the claude-code patch lane is structurally unreachable.** The live fleet standardized `PATCH_COMMAND_PROFILE=piri` (#1802, 2026-08-10): every docker patch execution uses the piri profile, and the one T1 host that had a claude lane is marked dormant with its claude-lane credentials removed by operator direction (2026-08-12). No fanout spawn can reach a claude-code container today.
+- **Remaining node-side work, in order:** (a) an operator decision restoring claude-code profile reachability on a pilot host (or standing up a parallel lane); (b) materialize the four roster md files (`a2a-explorer` / `a2a-researcher` / `a2a-implementer` / `a2a-verifier`) with `model: sonnet` frontmatter into that host's runner claude config directory, per the normative mapping; (c) live-verify one fanout spawn actually runs sub-agents at the roster model and the finalizer at the parent model. Deploying inert roster files before (a) has no observable effect, so (b) intentionally waits for (a).
 
 ### WS3 — Task tool + roster exposure (**implemented**)
 - Bridge fanout path builds the claude call with `--allowedTools "Task Read Grep Glob Bash Edit Write"` (adds `Task`). Single-shot/agentic tool sets unchanged.
