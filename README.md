@@ -95,7 +95,7 @@ This repository is the canonical A2A Nexus source and coordination workspace for
 
 | Repository | Public role | Canonical source |
 | --- | --- | --- |
-| [`a2a-nexus`](https://github.com/jinwon-int/a2a-nexus) | Canonical monorepo: broker, harness adapters, Docker runner, contracts, docs, examples, readiness/release gates | **Canonical** — `packages/broker`, `packages/docker-runner`, `packages/policy-referee`, `packages/attestation`, project docs, contracts, compatibility/readiness policy, issue routing |
+| [`a2a-nexus`](https://github.com/jinwon-int/a2a-nexus) | Canonical monorepo: broker, harness adapters, Docker runner, contracts, docs, examples, readiness/release gates | **Canonical** — `packages/broker`, `packages/docker-runner`, `packages/policy-referee`, `packages/attestation`, `packages/nclex-evaluation`, project docs, contracts, compatibility/readiness policy, issue routing |
 | `jinwon-int/a2a-broker` | Historical provenance mirror | **Archived and private.** Superseded by `packages/broker`; retained for issue/PR/tag provenance only and not reachable to outside readers. |
 | `jinwon-int/plugin-a2a` | Historical OpenClaw integration mirror | **Archived and private.** The package it mirrored was removed from `a2a-nexus`; harness integration is now the per-harness bridge surface under `packages/broker/scripts/`. |
 | `jinwon-int/a2a-docker-runner` | Historical provenance mirror | **Archived and private.** Superseded by `packages/docker-runner`; retained for issue/PR/tag provenance only and not reachable to outside readers. |
@@ -111,6 +111,7 @@ packages/broker/scripts/*-a2a-analysis-bridge.mjs
                                  # platform-independent contract in contracts/a2a/
 packages/docker-runner/          # isolated GitHub patch runner for worker tasks
 packages/policy-referee/         # declarative worker-class policy engine (warn/enforce), consumed by the broker
+packages/nclex-evaluation/       # NCLEX content PR evaluation domain (signed receipts, store, merge-ready projection), consumed by the broker (#1601 first slice)
 packages/attestation/           # agent work attestation toolkit (verdict signing, evidence assembly, gates, provenance)
 contracts/a2a/                   # shared A2A Nexus task lifecycle and terminal semantics contracts
 contracts/compatibility/         # compatibility matrix and supported baselines

@@ -49,7 +49,7 @@ export interface BrokerSnapshot {
   pushNotificationConfigs?: TaskPushNotificationConfig[];
   /** NCLEX evaluation receipts (#1724); snapshot-extension field, passthrough schema. */
   nclexEvaluationReceipts?: Array<{
-    receipt: import("../nclex-evaluation/receipt-contract.js").NclexSignedReceipt;
+    receipt: import("a2a-nclex-evaluation").NclexSignedReceipt;
     recordedAt: string;
   }>;
 }

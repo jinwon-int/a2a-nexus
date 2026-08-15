@@ -17,8 +17,8 @@ import {
   receiptIdOf,
   NCLEX_RECEIPT_SCHEMA,
   type NclexEvaluationKeyring,
-} from "../nclex-evaluation/receipt-contract.js";
-import { NclexEvaluationReceiptStore } from "../nclex-evaluation/receipt-store.js";
+} from "a2a-nclex-evaluation";
+import { NclexEvaluationReceiptStore } from "a2a-nclex-evaluation";
 import { handleNclexEvaluationRoutesIfMatched } from "./nclex-evaluation-routes.js";
 
 class CapturingResponse extends EventEmitter {

@@ -61,6 +61,19 @@ export const PACKAGE_CI_SURFACES = {
       requiredBin: ['a2a-docker-runner'],
     },
   },
+  'nclex-evaluation': {
+    packageDir: 'packages/nclex-evaluation',
+    commands: [
+      ['npm', ['run', 'build', '-w', 'packages/nclex-evaluation']],
+      ['npm', ['run', 'test', '-w', 'packages/nclex-evaluation']],
+      ['npm', ['run', 'coverage:baseline', '-w', 'packages/nclex-evaluation']],
+    ],
+    metadata: {
+      private: true,
+      requiredScripts: ['build', 'check', 'test', 'coverage:baseline'],
+      requiredFiles: ['README.md', 'scripts/coverage-baseline-report.mjs'],
+    },
+  },
   'attestation': {
     packageDir: 'packages/attestation',
     commands: [
