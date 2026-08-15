@@ -1,8 +1,14 @@
-# Read-only merged-branch residue watchdog (#1507).
+# Read-only repository hygiene watchdog (#1507 + 2026-08-15 review follow-up).
 #
-# This workflow only inventories repository metadata, branches, and pull
-# requests. Findings fail the check and emit warnings. Branch deletion and
-# repository-setting changes require a separate, explicitly approved process.
+# Two checks per pass:
+# 1. merged-branch residue — same-repository PR head branches that still exist
+#    after merge;
+# 2. default-branch run redness — every workflow whose LATEST run on the default
+#    branch failed (e.g. the 2026-08-14 transient paths-filter download failure
+#    on main that nothing recurring would have surfaced).
+# Findings fail the check and emit warnings. Branch deletion, workflow re-runs,
+# and repository-setting changes require a separate, explicitly approved
+# process.
 name: repository-hygiene-watchdog
 
 on:
@@ -10,9 +16,12 @@ on:
     - cron: '43 2 * * 1' # Mondays 02:43 UTC
   workflow_dispatch:
 
+# `actions: read` widens the token only for the read-only workflow-run
+# inventory used by the redness check.
 permissions:
   contents: read
   pull-requests: read
+  actions: read
 
 jobs:
   merged-branch-residue:
@@ -26,7 +35,7 @@ jobs:
       - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v6
         with:
           node-version: '22'
-      - name: Detect merged PR head branches that still exist
+      - name: Detect merged PR head branches and default-branch run redness
         run: node scripts/lib/check-repository-hygiene-watchdog.mjs
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

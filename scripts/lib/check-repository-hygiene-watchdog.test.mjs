@@ -5,10 +5,14 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 import {
+  findDefaultBranchRunFailures,
   findMergedBranchResidue,
   formatFinding,
+  formatRunFailure,
+  readDefaultBranchWorkflowRuns,
   readRepositoryHygieneState,
   reportFindings,
+  reportRunFailures,
 } from './check-repository-hygiene-watchdog.mjs';
 
 const repository = 'jinwon-int/a2a-nexus';
@@ -215,8 +219,153 @@ test('workflow is weekly plus manual, read-only, and does not persist checkout c
 
   assert.match(workflow, /^\s{2}schedule:/m);
   assert.match(workflow, /^\s{2}workflow_dispatch:/m);
-  assert.match(workflow, /^permissions:\n  contents: read\n  pull-requests: read$/m);
+  assert.match(workflow, /^permissions:\n  contents: read\n  pull-requests: read\n  actions: read$/m);
   assert.match(workflow, /persist-credentials: false/);
   assert.match(workflow, /node scripts\/lib\/check-repository-hygiene-watchdog\.mjs/);
   assert.doesNotMatch(workflow, /^\s+\w[\w-]*:\s*write\s*$/m);
+});
+
+const workflowRun = (id, overrides = {}) => ({
+  id,
+  name: 'ci',
+  head_branch: 'main',
+  conclusion: 'success',
+  event: 'push',
+  created_at: '2026-08-14T07:00:06Z',
+  html_url: `https://github.com/${repository}/actions/runs/${id}`,
+  ...overrides,
+});
+
+test('findDefaultBranchRunFailures reports no findings when every workflow is green on the default branch', () => {
+  const findings = findDefaultBranchRunFailures({
+    defaultBranch: 'main',
+    runs: [
+      workflowRun(1, { name: 'ci' }),
+      workflowRun(2, { name: 'codeql', event: 'schedule', conclusion: 'success' }),
+    ],
+  });
+  assert.deepEqual(findings, []);
+});
+
+test('findDefaultBranchRunFailures reports workflows whose latest default-branch run failed', () => {
+  const findings = findDefaultBranchRunFailures({
+    defaultBranch: 'main',
+    runs: [
+      workflowRun(1, { name: 'ci', conclusion: 'failure', event: 'push', created_at: '2026-08-14T07:00:06Z' }),
+      workflowRun(2, { name: 'codeql' }),
+    ],
+  });
+  assert.deepEqual(findings, [
+    {
+      workflow: 'ci',
+      runId: 1,
+      conclusion: 'failure',
+      event: 'push',
+      createdAt: '2026-08-14T07:00:06Z',
+      url: `https://github.com/${repository}/actions/runs/1`,
+    },
+  ]);
+});
+
+test('a newer completed run of the same workflow clears an older failure', () => {
+  const findings = findDefaultBranchRunFailures({
+    defaultBranch: 'main',
+    runs: [
+      workflowRun(1, { name: 'ci', conclusion: 'failure' }),
+      workflowRun(2, { name: 'ci', conclusion: 'success', created_at: '2026-08-14T08:00:00Z' }),
+    ],
+  });
+  assert.deepEqual(findings, []);
+});
+
+test('pull-request and non-default-branch runs never raise a finding', () => {
+  const findings = findDefaultBranchRunFailures({
+    defaultBranch: 'main',
+    runs: [
+      workflowRun(1, { head_branch: 'feature/x', conclusion: 'failure' }),
+      workflowRun(2, { head_branch: 'some-fork-branch', conclusion: 'failure' }),
+    ],
+  });
+  assert.deepEqual(findings, []);
+});
+
+test('cancelled, timed-out, in-progress, and startup-free latest runs are not main redness', () => {
+  const findings = findDefaultBranchRunFailures({
+    defaultBranch: 'main',
+    runs: [
+      workflowRun(1, { name: 'auto-merge', conclusion: null }),
+      workflowRun(2, { name: 'ci', conclusion: 'cancelled' }),
+      workflowRun(3, { name: 'codeql', conclusion: 'timed_out' }),
+    ],
+  });
+  assert.deepEqual(findings, []);
+});
+
+test('startup_failure is treated as main redness and findings sort by workflow name', () => {
+  const findings = findDefaultBranchRunFailures({
+    defaultBranch: 'main',
+    runs: [
+      workflowRun(1, { name: 'codeql', conclusion: 'startup_failure' }),
+      workflowRun(2, { name: 'ci', conclusion: 'failure' }),
+    ],
+  });
+  assert.deepEqual(
+    findings.map((finding) => finding.workflow),
+    ['ci', 'codeql'],
+  );
+});
+
+test('readDefaultBranchWorkflowRuns unwraps workflow_runs pages and stops at a short page', async () => {
+  const requests = [];
+  const fetchImpl = async (url) => {
+    requests.push(String(url));
+    return {
+      ok: true,
+      json: async () => ({ workflow_runs: [workflowRun(3)] }),
+    };
+  };
+  const runs = await readDefaultBranchWorkflowRuns({
+    repository,
+    defaultBranch: 'main',
+    token: 'test-token',
+    fetchImpl,
+  });
+  assert.equal(runs.length, 1);
+  assert.equal(requests.length, 1);
+  assert.match(requests[0], /branch=main/);
+});
+
+test('readDefaultBranchWorkflowRuns fails closed on a malformed page', async () => {
+  await assert.rejects(
+    readDefaultBranchWorkflowRuns({
+      repository,
+      defaultBranch: 'main',
+      token: 'test-token',
+      fetchImpl: async () => ({ ok: true, json: async () => ({ total_count: 1 }) }),
+    }),
+    /malformed workflow-runs page/,
+  );
+});
+
+test('reportRunFailures emits a workflow warning and returns a failing status', () => {
+  const errors = []
+  const logs = [];
+  const finding = {
+    workflow: 'ci',
+    runId: 31778278226,
+    conclusion: 'failure',
+    event: 'push',
+    createdAt: '2026-08-14T07:00:06Z',
+    url: 'https://github.com/jinwon-int/a2a-nexus/actions/runs/31778278226',
+  };
+
+  assert.equal(reportRunFailures([finding], { error: (line) => errors.push(line) }), 1);
+  const joined = errors.join('\n');
+  assert.match(joined, /repository hygiene watchdog FAILED: 1 workflow\(s\)/);
+  assert.match(joined, /::warning title=Main branch CI redness::/);
+  assert.match(formatRunFailure(finding), /ci: latest default-branch run 31778278226 concluded failure/);
+  assert.match(joined, /no workflow or setting was changed here/);
+
+  assert.equal(reportRunFailures([], { error: () => {}, log: (line) => logs.push(line) }), 0);
+  assert.match(logs.join('\n'), /ok: the latest default-branch run of every workflow is not failed/);
 });
