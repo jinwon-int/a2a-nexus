@@ -49,20 +49,95 @@ test('coverage fails closed and lists missing test files', () => {
   assert.deepEqual(result.missing, ['scripts/lib/b.test.mjs']);
 });
 
-test('coverage accepts manifest, inventory direct args, and package script implementation peers', () => {
+test('coverage accepts manifest and inventory direct args', () => {
   const root = makeRepo();
   fs.writeFileSync(path.join(root, 'scripts/manifest.test.mjs'), '');
   fs.writeFileSync(path.join(root, 'scripts/inventory.test.mjs'), '');
-  fs.writeFileSync(path.join(root, 'scripts/package-peer.test.mjs'), '');
   writeJson(path.join(root, 'scripts/release-gate-manifest.json'), {
     entries: [{ file: 'scripts/manifest.test.mjs', class: 'gate' }],
   });
   writeJson(path.join(root, 'docs/ops/release-gate-step-inventory.json'), {
     entries: [{ name: 'inventory', command: 'node', args: ['--test', 'scripts/inventory.test.mjs'], tier: 'core' }],
   });
+  const result = evaluateReleaseGateManifestCoverage(root);
+  assert.equal(result.ok, true, result.missing.join('\n'));
+});
+
+test('implementation-peer coverage alone fails closed until opted in with a reason (#1832)', () => {
+  const root = makeRepo();
+  fs.writeFileSync(path.join(root, 'scripts/package-peer.test.mjs'), '');
   writeJson(path.join(root, 'package.json'), {
     scripts: { 'check:peer': 'node scripts/package-peer.mjs' },
   });
   const result = evaluateReleaseGateManifestCoverage(root);
+  assert.equal(result.ok, false);
+  assert.deepEqual(result.missing, ['scripts/package-peer.test.mjs']);
+  assert.deepEqual(result.peerBlocked, ['scripts/package-peer.test.mjs']);
+  assert.deepEqual(result.peerCovered, []);
+});
+
+test('a per-file opt-in with a reason re-enables peer coverage', () => {
+  const root = makeRepo();
+  fs.writeFileSync(path.join(root, 'scripts/package-peer.test.mjs'), '');
+  writeJson(path.join(root, 'package.json'), {
+    scripts: { 'check:peer': 'node scripts/package-peer.mjs' },
+  });
+  writeJson(path.join(root, 'docs/ops/release-gate-peer-coverage-optins.json'), {
+    optIns: {
+      'scripts/package-peer.test.mjs': {
+        reason: 'suite is smoke-only; the peer script runs its assertions inline',
+        ref: 'a2a-nexus#1832',
+      },
+    },
+  });
+  const result = evaluateReleaseGateManifestCoverage(root);
   assert.equal(result.ok, true, result.missing.join('\n'));
+  assert.deepEqual(result.peerCovered, ['scripts/package-peer.test.mjs']);
+  assert.equal(result.counts.peerOptedIn, 1);
+});
+
+test('stale peer-coverage opt-ins fail closed (directly registered, missing file, unregistered peer)', () => {
+  const root = makeRepo();
+  fs.writeFileSync(path.join(root, 'scripts/direct.test.mjs'), '');
+  fs.writeFileSync(path.join(root, 'scripts/unregistered-peer.test.mjs'), '');
+  writeJson(path.join(root, 'scripts/release-gate-manifest.json'), {
+    entries: [{ file: 'scripts/direct.test.mjs', class: 'gate' }],
+  });
+  writeJson(path.join(root, 'docs/ops/release-gate-peer-coverage-optins.json'), {
+    optIns: {
+      'scripts/direct.test.mjs': {
+        reason: 'stale: this file is now directly registered',
+      },
+      'scripts/vanished-file.test.mjs': {
+        reason: 'stale: this file no longer exists',
+      },
+      'scripts/unregistered-peer.test.mjs': {
+        reason: 'stale: the implementation peer is not registered either',
+      },
+    },
+  });
+  const result = evaluateReleaseGateManifestCoverage(root);
+  assert.equal(result.ok, false);
+  assert.deepEqual(result.staleOptIns, [
+    'scripts/direct.test.mjs',
+    'scripts/unregistered-peer.test.mjs',
+    'scripts/vanished-file.test.mjs',
+  ]);
+});
+
+test('a malformed opt-in registry fails closed', () => {
+  const root = makeRepo();
+  fs.writeFileSync(path.join(root, 'scripts/package-peer.test.mjs'), '');
+  writeJson(path.join(root, 'package.json'), {
+    scripts: { 'check:peer': 'node scripts/package-peer.mjs' },
+  });
+  writeJson(path.join(root, 'docs/ops/release-gate-peer-coverage-optins.json'), {
+    optIns: {
+      'scripts/package-peer.test.mjs': { reason: 'too short' },
+    },
+  });
+  assert.throws(
+    () => evaluateReleaseGateManifestCoverage(root),
+    /needs a reason of >=10 chars/,
+  );
 });
