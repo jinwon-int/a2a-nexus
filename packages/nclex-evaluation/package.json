@@ -27,8 +27,8 @@
     }
   },
   "scripts": {
-    "build": "tsc -p tsconfig.json",
-    "check": "tsc -p tsconfig.json --noEmit",
+    "build": "tsc -b tsconfig.json",
+    "check": "tsc -b tsconfig.json",
     "pretest": "npm run build",
     "test": "node --test dist/receipt-contract.test.js",
     "coverage:baseline": "npm run build && node scripts/coverage-baseline-report.mjs"
