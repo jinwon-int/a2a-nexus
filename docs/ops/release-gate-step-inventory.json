@@ -657,6 +657,34 @@
       "note": "Unit+doc conformance for the promotion capstone (a2a-nexus#1822): the suite previously imported the removed openclaw-plugin-a2a package and ran nowhere; this step keeps it on the default release-gate path."
     },
     {
+      "name": "pr-review-healthcheck-test",
+      "command": "node",
+      "args": [
+        "--test",
+        "scripts/pr-review-healthcheck.test.mjs"
+      ],
+      "tier": "core",
+      "owner": "release-gate-tooling",
+      "consumer": "pr-gate",
+      "retirement": "keep",
+      "retirementCondition": "Retire only when the pr-review:healthcheck workflow script itself is retired (#1503) or a narrower owner-scoped gate demonstrably runs this suite; no removal while the suite is the only runner.",
+      "note": "Unit test for the pr-review:healthcheck operator script (a2a-nexus#1832): the suite passed standalone but ran nowhere; this step keeps it on the default release-gate path."
+    },
+    {
+      "name": "review-worktree-check-test",
+      "command": "node",
+      "args": [
+        "--test",
+        "scripts/review-worktree-check.test.mjs"
+      ],
+      "tier": "core",
+      "owner": "release-gate-tooling",
+      "consumer": "pr-gate",
+      "retirement": "keep",
+      "retirementCondition": "Retire only when the review:check workflow script itself is retired (#1503) or a narrower owner-scoped gate demonstrably runs this suite; no removal while the suite is the only runner.",
+      "note": "Unit test for the review:check worktree script (a2a-nexus#1832): the suite passed standalone but ran nowhere; this step keeps it on the default release-gate path."
+    },
+    {
       "name": "package-matrix",
       "command": "node",
       "args": [
