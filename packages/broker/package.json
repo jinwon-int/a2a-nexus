@@ -66,9 +66,10 @@
     "node": ">=22.5"
   },
   "dependencies": {
-    "zod": "^4.3.6",
+    "a2a-attestation": "0.1.0",
+    "a2a-nclex-evaluation": "0.1.0",
     "a2a-policy-referee": "0.1.0",
-    "a2a-attestation": "0.1.0"
+    "zod": "^4.3.6"
   },
   "devDependencies": {
     "@types/node": "^22.20.1",

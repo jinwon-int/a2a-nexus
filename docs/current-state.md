@@ -84,8 +84,9 @@ release-gate step pinning it. The terminal states those phases reached are:
   `packages/docker-runner` (plus, at the time, `packages/openclaw-plugin-a2a`)
   became the canonical source. The plugin package was later removed from this
   tree; the current canonical packages are `packages/broker`,
-  `packages/docker-runner`, `packages/attestation`, and
-  `packages/policy-referee`, and per-harness bridges live under
+  `packages/docker-runner`, `packages/attestation`, `packages/policy-referee`,
+  and `packages/nclex-evaluation` (extracted from the broker core in the first
+  #1601 slimming slice), and per-harness bridges live under
   `packages/broker/scripts/`.
 - **Mirrors archived** — `jinwon-int/a2a-broker`, `jinwon-int/a2a-docker-runner`
   and `jinwon-int/plugin-a2a` carry README/MIRROR_NOTICE source-routing notices
