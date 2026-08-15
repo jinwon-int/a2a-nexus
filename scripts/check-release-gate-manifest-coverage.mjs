@@ -7,6 +7,12 @@
  * package/inventory command for the corresponding implementation script. This
  * catches the silent "new test file exists but no gate runs it" class without
  * adding another root npm script.
+ *
+ * Implementation-peer coverage is NOT execution (#1832): a test whose
+ * implementation sibling is registered still needs an explicit per-file opt-in
+ * with a reason in docs/ops/release-gate-peer-coverage-optins.json, so
+ * "covered but never run" is visible instead of silent. Stale opt-ins (missing
+ * file, directly-registered file, or unregistered peer) also fail closed.
  */
 import fs from 'node:fs';
 import path from 'node:path';
@@ -122,9 +128,31 @@ function collectPackageScriptFiles(repoRoot) {
   return files;
 }
 
-function isCovered(testPath, registeredFiles) {
+function isCovered(testPath, registeredFiles, peerOptIns) {
   if (registeredFiles.has(testPath)) return true;
-  return registeredFiles.has(implementationPeer(testPath));
+  return registeredFiles.has(implementationPeer(testPath)) && peerOptIns.has(testPath);
+}
+
+function collectPeerOptIns(repoRoot) {
+  const optInsPath = path.join(repoRoot, 'docs/ops/release-gate-peer-coverage-optins.json');
+  if (!fs.existsSync(optInsPath)) return new Map();
+  const parsed = readJson(optInsPath);
+  const raw = parsed?.optIns;
+  if (raw === null || typeof raw !== 'object' || Array.isArray(raw)) {
+    throw new Error('release-gate peer-coverage opt-ins: "optIns" must be an object');
+  }
+  const optIns = new Map();
+  for (const [file, entry] of Object.entries(raw)) {
+    if (!/^(scripts|scripts\/lib)\/[\w.-]+\.test\.mjs$/.test(file)) {
+      throw new Error(`release-gate peer-coverage opt-ins: unexpected key ${file}`);
+    }
+    const reason = entry?.reason;
+    if (typeof reason !== 'string' || reason.trim().length < 10) {
+      throw new Error(`release-gate peer-coverage opt-ins: ${file} needs a reason of >=10 chars`);
+    }
+    optIns.set(file, { reason: reason.trim(), ref: typeof entry?.ref === 'string' ? entry.ref : undefined });
+  }
+  return optIns;
 }
 
 export function evaluateReleaseGateManifestCoverage(repoRoot = REPO_ROOT) {
@@ -132,18 +160,46 @@ export function evaluateReleaseGateManifestCoverage(repoRoot = REPO_ROOT) {
   const releaseGateManifest = collectManifestFiles(repoRoot);
   const inventory = collectInventoryFiles(repoRoot);
   const packageScripts = collectPackageScriptFiles(repoRoot);
+  const peerOptIns = collectPeerOptIns(repoRoot);
   const registered = new Set([...releaseGateManifest, ...inventory, ...packageScripts]);
-  const missing = discovered.filter((file) => !isCovered(file, registered));
+  const missing = [];
+  const peerCovered = [];
+  const peerBlocked = [];
+  for (const file of discovered) {
+    if (registered.has(file)) continue;
+    if (!registered.has(implementationPeer(file))) {
+      missing.push(file);
+      continue;
+    }
+    // Peer registered: coverage requires the explicit per-file opt-in (#1832).
+    if (peerOptIns.has(file)) peerCovered.push(file);
+    else peerBlocked.push(file);
+  }
+  const allMissing = [...peerBlocked, ...missing];
+  // Stale opt-ins rot silently unless they fail closed too (#1832): an entry is
+  // stale when its file no longer exists, is directly registered (opt-in no
+  // longer needed), or its implementation peer is no longer registered (the
+  // opt-in is masking nothing at all).
+  const discoveredSet = new Set(discovered);
+  const staleOptIns = [...peerOptIns.keys()].filter((file) =>
+    !discoveredSet.has(file)
+    || registered.has(file)
+    || !registered.has(implementationPeer(file))).sort();
   return {
-    ok: missing.length === 0,
+    ok: allMissing.length === 0 && staleOptIns.length === 0,
     discovered,
-    missing,
+    missing: allMissing,
+    peerCovered,
+    peerBlocked,
+    staleOptIns,
     counts: {
       discovered: discovered.length,
       releaseGateManifest: releaseGateManifest.size,
       inventory: inventory.size,
       packageScripts: packageScripts.size,
+      peerOptedIn: peerCovered.length,
       missing: missing.length,
+      staleOptIns: staleOptIns.length,
     },
   };
 }
@@ -161,11 +217,19 @@ function main() {
     console.log(JSON.stringify(result, null, 2));
   } else {
     console.log(
-      `release-gate manifest coverage: discovered=${result.counts.discovered} missing=${result.counts.missing}`,
+      `release-gate manifest coverage: discovered=${result.counts.discovered} missing=${result.counts.missing}`
+      + ` peer-opted-in=${result.counts.peerOptedIn} stale-optins=${result.counts.staleOptIns}`,
     );
     if (result.missing.length) {
       console.error('release-gate manifest coverage: unregistered test file(s):');
-      for (const file of result.missing) console.error(`  ${file}`);
+      for (const file of result.missing) {
+        const peerBlocked = result.peerBlocked.includes(file);
+        console.error(`  ${file}${peerBlocked ? ' (peer registered; needs a peer-coverage opt-in with a reason)' : ''}`);
+      }
+    }
+    if (result.staleOptIns.length) {
+      console.error('release-gate manifest coverage: stale peer-coverage opt-in(s):');
+      for (const file of result.staleOptIns) console.error(`  ${file}`);
     }
   }
   if (!result.ok) process.exitCode = 1;

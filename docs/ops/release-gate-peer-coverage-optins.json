@@ -1,0 +1,4 @@
+{
+  "description": "Per-file opt-in registry for release-gate implementation-peer coverage (#1832). A scripts/*.test.mjs or scripts/lib/*.test.mjs whose implementation sibling (peer .mjs) is registered in the manifest/inventory/package scripts is NOT considered covered by check-release-gate-manifest-coverage.mjs until it is listed here with a reason. Peer coverage is not execution: the reason must state why running the suite only via its implementation peer is acceptable. Stale entries fail closed.",
+  "optIns": {}
+}
