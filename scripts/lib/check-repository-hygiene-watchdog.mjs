@@ -1,16 +1,29 @@
 #!/usr/bin/env node
 /**
- * Read-only merged-branch residue watchdog (#1507).
+ * Read-only repository hygiene watchdog (#1507, 2026-08-15 review follow-up).
  *
- * The GitHub reader below is intentionally GET-only. It inventories branches
- * and closed pull requests, then reports same-repository PR head branches that
- * still point to the exact commit that was merged. It never deletes a branch
- * or changes repository settings.
+ * The GitHub reader below is intentionally GET-only. Two checks run per pass:
+ *
+ * 1. Merged-branch residue: inventories branches and closed pull requests,
+ *    then reports same-repository PR head branches that still point to the
+ *    exact commit that was merged.
+ * 2. Default-branch run redness: reports every workflow whose LATEST run on
+ *    the default branch concluded `failure`/`startup_failure`. Motivation: the
+ *    2026-08-14 main push CI failed on a transient `dorny/paths-filter`
+ *    archive download error (run 31778278226) and stayed red because no
+ *    recurring lane watched main; the weekly cadence of this watchdog is the
+ *    bounded safety net for exactly that class of incident.
+ *
+ * It never deletes a branch, re-runs a workflow, or changes repository
+ * settings.
  */
 import process from 'node:process';
 
 const PER_PAGE = 100;
 const MAX_PAGES = 100;
+
+/** Run conclusions that count as "this lane is red on the default branch". */
+const DEFAULT_BRANCH_FAILURE_CONCLUSIONS = new Set(['failure', 'startup_failure']);
 
 function normalizedRepository(value) {
   return String(value ?? '').trim().toLowerCase();
@@ -175,8 +188,113 @@ export async function readRepositoryHygieneState({
   };
 }
 
+/**
+ * Fetch every workflow run recorded for the default branch (all workflows,
+ * newest first per GitHub's default ordering). GET-only like the reader above.
+ */
+export async function readDefaultBranchWorkflowRuns({
+  repository,
+  defaultBranch,
+  token,
+  apiBase = 'https://api.github.com',
+  fetchImpl = globalThis.fetch,
+}) {
+  assertRepository(repository);
+  if (typeof defaultBranch !== 'string' || defaultBranch.length === 0) {
+    throw new TypeError('defaultBranch must be a non-empty string');
+  }
+  if (!token) throw new Error('GITHUB_TOKEN is required');
+  if (typeof fetchImpl !== 'function') throw new TypeError('fetch implementation is required');
+
+  const repoPath = `/repos/${repositoryPath(repository)}/actions/runs`;
+  const runs = [];
+  for (let page = 1; page <= MAX_PAGES; page += 1) {
+    const url = new URL(repoPath, `${apiBase.replace(/\/+$/, '')}/`);
+    url.searchParams.set('branch', defaultBranch);
+    url.searchParams.set('per_page', String(PER_PAGE));
+    url.searchParams.set('page', String(page));
+
+    const payload = await getJson({ url: url.toString(), token, fetchImpl });
+    if (!payload || !Array.isArray(payload.workflow_runs)) {
+      throw new TypeError(`GitHub API GET returned a malformed workflow-runs page for ${url}`);
+    }
+    runs.push(...payload.workflow_runs);
+    if (payload.workflow_runs.length < PER_PAGE) return runs;
+  }
+  throw new Error(`GitHub API pagination exceeded the ${MAX_PAGES}-page safety limit for ${repoPath}`);
+}
+
 function escapeWorkflowCommand(value) {
   return String(value).replaceAll('%', '%25').replaceAll('\r', '%0D').replaceAll('\n', '%0A');
+}
+
+/**
+ * Return deterministic findings for workflows whose latest default-branch run
+ * failed. Runs from other branches (pull requests, feature branches) are
+ * ignored; an older failed run of the same workflow is cleared by any newer
+ * completed run regardless of its conclusion. Runs that are still in progress,
+ * cancelled, timed out, skipped, or neutral conclusions (success, neutral)
+ * do not raise a finding: a superseded or deliberately cancelled run is not
+ * main redness. GitHub run ids are monotonic, so the highest id per workflow
+ * name is the latest run.
+ */
+export function findDefaultBranchRunFailures({ defaultBranch, runs }) {
+  if (typeof defaultBranch !== 'string' || defaultBranch.length === 0) {
+    throw new TypeError('defaultBranch must be a non-empty string');
+  }
+  if (!Array.isArray(runs)) throw new TypeError('runs must be an array');
+
+  const latest = new Map();
+  for (const run of runs) {
+    if (!run || typeof run !== 'object') continue;
+    if (run.head_branch !== defaultBranch) continue;
+    const workflow =
+      typeof run.name === 'string' && run.name.length > 0
+        ? run.name
+        : typeof run.path === 'string' && run.path.length > 0
+          ? run.path
+          : 'unknown workflow';
+    const current = latest.get(workflow);
+    if (!current || Number(run.id ?? 0) > Number(current.id ?? 0)) {
+      latest.set(workflow, run);
+    }
+  }
+
+  return [...latest.entries()]
+    .filter(([, run]) => DEFAULT_BRANCH_FAILURE_CONCLUSIONS.has(String(run.conclusion ?? '')))
+    .map(([workflow, run]) => ({
+      workflow,
+      runId: run.id ?? null,
+      conclusion: run.conclusion ?? null,
+      event: run.event ?? null,
+      createdAt: run.created_at ?? null,
+      url: run.html_url ?? null,
+    }))
+    .sort((a, b) => compareText(a.workflow, b.workflow));
+}
+
+export function formatRunFailure(finding) {
+  const at = finding.createdAt ? ` (created ${finding.createdAt})` : '';
+  const event = finding.event ? `, event ${finding.event}` : '';
+  return `${finding.workflow}: latest default-branch run ${finding.runId} concluded ${finding.conclusion}${event}${at}: ${finding.url ?? 'no url'}`;
+}
+
+export function reportRunFailures(findings, { error = console.error, log = console.log } = {}) {
+  if (findings.length === 0) {
+    log('repository hygiene watchdog ok: the latest default-branch run of every workflow is not failed');
+    return 0;
+  }
+
+  error(`repository hygiene watchdog FAILED: ${findings.length} workflow(s) have their latest default-branch run failed`);
+  for (const finding of findings) {
+    const message = formatRunFailure(finding);
+    error(`::warning title=Main branch CI redness::${escapeWorkflowCommand(message)}`);
+    error(`  - ${message}`);
+  }
+  error(
+    'This check is read-only: re-run the failed jobs or fix the cause in a reviewed PR. Transient runner/infrastructure failures (for example a pinned-action archive download error) are resolved by re-running the failed jobs; no workflow or setting was changed here.',
+  );
+  return 1;
 }
 
 export function formatFinding(finding) {
@@ -213,8 +331,22 @@ async function main() {
     token,
     apiBase: process.env.GITHUB_API_URL || 'https://api.github.com',
   });
-  const findings = findMergedBranchResidue(state);
-  return reportFindings(findings);
+  const residueFindings = findMergedBranchResidue(state);
+  const residueExit = reportFindings(residueFindings);
+
+  const runs = await readDefaultBranchWorkflowRuns({
+    repository,
+    defaultBranch: state.defaultBranch,
+    token,
+    apiBase: process.env.GITHUB_API_URL || 'https://api.github.com',
+  });
+  const runFindings = findDefaultBranchRunFailures({
+    defaultBranch: state.defaultBranch,
+    runs,
+  });
+  const runExit = reportRunFailures(runFindings);
+
+  return Math.max(residueExit, runExit);
 }
 
 const isDirectRun =
