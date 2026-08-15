@@ -80,8 +80,13 @@ The staged monorepo migration is finished. It ran as phases `#514` through
 a preflight and an execution-result document, plus a `check:monorepo-*`
 release-gate step pinning it. The terminal states those phases reached are:
 
-- **`MONOREPO_PACKAGES_CANONICAL`** — `packages/broker`, `packages/docker-runner`
-  and `packages/openclaw-plugin-a2a` are the canonical source.
+- **`MONOREPO_PACKAGES_CANONICAL`** — `packages/broker` and
+  `packages/docker-runner` (plus, at the time, `packages/openclaw-plugin-a2a`)
+  became the canonical source. The plugin package was later removed from this
+  tree; the current canonical packages are `packages/broker`,
+  `packages/docker-runner`, `packages/attestation`, and
+  `packages/policy-referee`, and per-harness bridges live under
+  `packages/broker/scripts/`.
 - **Mirrors archived** — `jinwon-int/a2a-broker`, `jinwon-int/a2a-docker-runner`
   and `jinwon-int/plugin-a2a` carry README/MIRROR_NOTICE source-routing notices
   and are now **archived and private**. They reached `ACTIVE_PROVENANCE_MIRROR`
@@ -143,7 +148,11 @@ These issues are completed and should not be treated as active blockers:
 | `a2a-plane` | Public start-here docs, repo map, cross-repo coordination, source-of-truth pointers, active tracker index, no-live integration smoke spec, compatibility/readiness matrices, finalizer synthesis templates. | Broker runtime, runner execution, plugin Gateway behavior, live operations truth. |
 | `a2a-broker` | Task lifecycle, worker registry/capacity, dispatch/readiness gates, work-mode decision enforcement, durable task/run records, evidence contract, stale/cancel/reconcile semantics. | Container execution, OpenClaw UX, benchmark scoring. |
 | `a2a-docker-runner` | Isolated execution, repo checkout hygiene, PR/Done/Block evidence, `readOnlyValidation` / `allowNoChanges`, artifact manifests, runner chaos/smoke reliability. | Routing decisions, task lifecycle authority, finalizer decisions. |
-| `openclaw-plugin-a2a` | OpenClaw adapter boundary: request/status/cancel mapping, operator-visible status, diagnostics, broker profile projection, provider-accepted-not-ACK policy. | Broker state machine, Docker execution, repo topology. |
+
+The former `openclaw-plugin-a2a` ownership row is retired with the package:
+the OpenClaw adapter boundary it described now lives as the per-harness bridge
+surface under `packages/broker/scripts/` and routes to `source:a2a-broker`
+(`docs/issue-routing.md`).
 
 `agent-olympics` is an independent repository and is intentionally outside the
 A2A current-state backlog, package map, monorepo rehearsal, and issue routing
