@@ -6,6 +6,8 @@ import { validateDockerRunnerExtraMountsReadiness } from "./workers/docker-runne
 import {
   buildSubagentDirectiveEnv,
   buildDynamicSubagentRuntime,
+  resolveActiveFanoutFlagKey,
+  FANOUT_FLAG_ENV_KEYS,
 } from "./workers/subagent-runtime.js";
 import {
   finalizeSubagentEvidence,
@@ -864,10 +866,10 @@ export function validateTaskCompletionEvidence(task: TaskRecord, result?: TaskRe
   return validateAcceptanceEvidence(task, result) ?? validateReviewEvidence(task, result) ?? validateGithubTaskCompletionEvidence(task, result);
 }
 
-export { buildSubagentDirectiveEnv, buildDynamicSubagentRuntime };
+export { buildSubagentDirectiveEnv, buildDynamicSubagentRuntime, resolveActiveFanoutFlagKey, FANOUT_FLAG_ENV_KEYS };
 export { probeAnalysisArtifactReadiness } from "./workers/worker-metadata.js";
 export type { AnalysisArtifactProbe } from "./workers/worker-metadata.js";
-export type { DynamicSubagentRuntimeOptions, DynamicSubagentRuntime } from "./workers/subagent-runtime.js";
+export type { DynamicSubagentRuntimeOptions, DynamicSubagentRuntime, FanoutFlagKey } from "./workers/subagent-runtime.js";
 
 export function createBuiltinWorkerHandler(kind: BuiltinWorkerHandlerKind): WorkerTaskHandler {
   switch (kind) {
@@ -935,20 +937,27 @@ export function createExternalWorkerHandler(config: ExternalWorkerHandlerConfig)
     const directiveBudget = config.subagentDirectiveDisabled
       ? null
       : Number(directiveEnv.A2A_SUBAGENT_MAX ?? 0);
+    // piri reuse WS1 (#1836): fanout is keyed per lane. The active lane is
+    // resolved once from the runner env (claude-code wins a both-set tie — the
+    // runner emits exactly one); the same key threads through the dynamic
+    // runtime emission and every read-back below.
+    const fanoutFlagKey = resolveActiveFanoutFlagKey(config.env ?? {});
+    const fanoutFlagEnvKey = FANOUT_FLAG_ENV_KEYS[fanoutFlagKey ?? "claude-code"];
     const dynamicRuntime = buildDynamicSubagentRuntime(task, {
       workerId: config.workerId ?? "worker",
       subagentCap: config.subagentCap ?? 4,
       executionIsolation: config.subagentExecutionIsolation ?? "shared",
-      fanoutEnabled: config.env?.A2A_DOCKER_RUNNER_CLAUDE_CODE_FANOUT_ENABLED === "1",
+      fanoutEnabled: config.env?.[fanoutFlagEnvKey] === "1",
+      fanoutFlagKey,
       staticRunnerMax: Number(config.env?.A2A_DOCKER_RUNNER_CONTAINED_SUBAGENTS_MAX ?? 0),
       staticRunnerRoles: (config.env?.A2A_DOCKER_RUNNER_CONTAINED_SUBAGENTS_ROLES ?? "")
         .split(",")
         .map((role) => role.trim())
         .filter(Boolean),
     });
-    const dynamicDirectiveBudget = dynamicRuntime.env.A2A_DOCKER_RUNNER_CLAUDE_CODE_FANOUT_ENABLED === "1"
+    const dynamicDirectiveBudget = dynamicRuntime.env[fanoutFlagEnvKey] === "1"
       ? Number(dynamicRuntime.env.A2A_DOCKER_RUNNER_CONTAINED_SUBAGENTS_MAX ?? 0)
-      : dynamicRuntime.env.A2A_DOCKER_RUNNER_CLAUDE_CODE_FANOUT_ENABLED === "0"
+      : dynamicRuntime.env[fanoutFlagEnvKey] === "0"
         ? 0
         : directiveBudget;
     const configuredOutputBytes = Number(config.env?.A2A_DOCKER_RUNNER_CONTAINED_SUBAGENTS_OUTPUT_BYTES ?? 12_000);
@@ -958,7 +967,7 @@ export function createExternalWorkerHandler(config: ExternalWorkerHandlerConfig)
     const subagentRedactionMode: A2AWorkerSubagentRedactionMode =
       config.env?.A2A_WORKER_SUBAGENT_REDACTION_MODE === "reject" ? "reject" : "redact";
     const runtimeEvidenceContext: RuntimeSubagentEvidenceContext = {
-      fanoutEnabled: dynamicRuntime.env.A2A_DOCKER_RUNNER_CLAUDE_CODE_FANOUT_ENABLED === "1",
+      fanoutEnabled: dynamicRuntime.env[fanoutFlagEnvKey] === "1",
       workerId: config.workerId ?? "worker",
       taskId: task.id,
       planJson: dynamicRuntime.env["A2A_SUBAGENT_PLAN"],
