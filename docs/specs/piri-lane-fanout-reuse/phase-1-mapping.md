@@ -79,7 +79,7 @@ checkout at `v0.83.0-piri.1` (`packages/coding-agent` 0.83.0).
    generalize the extractor to accept a bare final-answer JSON or have the
    piri script wrap stdout into the envelope — one of the two, named up front.
 5. **(new) Scope pinning.** The `subagent` tool takes an `agentScope` param
-   that can load repo-controlled `.pi/agents/*.md` (project scope). The
+   that can load repo-controlled `.piri/agents/*.md` (project scope — the piri build's `CONFIG_DIR_NAME` is `.piri`, so the example's project-scope lookup targets `.piri/agents`). The
    default is user scope; the Phase-2 fanout prompt must pin user scope and
    never pass `agentScope: "project"|"both"`, preserving the claude lane's
    host-controlled-roster security property.
