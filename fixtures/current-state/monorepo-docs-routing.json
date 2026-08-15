@@ -16,8 +16,7 @@
   "sourceLabels": [
     "source:a2a-plane",
     "source:a2a-broker",
-    "source:a2a-docker-runner",
-    "source:openclaw-plugin-a2a"
+    "source:a2a-docker-runner"
   ],
   "forbiddenSourceLabels": [
     "source:agent-olympics"

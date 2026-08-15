@@ -93,24 +93,6 @@ export const PACKAGE_CI_SURFACES = {
       requiredFiles: ['README.md', 'scripts/coverage-baseline-report.mjs'],
     },
   },
-  'openclaw-plugin-a2a': {
-    packageDir: 'packages/openclaw-plugin-a2a',
-    commands: [
-      ['npm', ['run', 'check:source-quality-floors', '--', '--package', 'packages/openclaw-plugin-a2a']],
-      ['npm', ['run', 'scan:public-readiness', '-w', 'packages/openclaw-plugin-a2a']],
-      ['npm', ['run', 'smoke:a2a-conformance', '-w', 'packages/openclaw-plugin-a2a']],
-      ['npm', ['test', '-w', 'packages/openclaw-plugin-a2a']],
-      ['npm', ['run', 'coverage:baseline', '-w', 'packages/openclaw-plugin-a2a']],
-      ['npm', ['run', 'prepack', '-w', 'packages/openclaw-plugin-a2a']],
-    ],
-    metadata: {
-      private: true,
-      peerDependencies: ['openclaw'],
-      requiredScripts: ['build', 'check', 'test', 'prepack', 'scan:public-readiness', 'smoke:a2a-conformance', 'coverage:baseline'],
-      requiredFiles: ['scripts/scan-public-readiness.sh', 'scripts/smoke-a2a-conformance.sh', 'openclaw.plugin.json', 'scripts/coverage-baseline-report.mjs'],
-      requiredExports: ['./openclaw.plugin.json', './package.json'],
-    },
-  },
 };
 
 function fail(message) {

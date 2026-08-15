@@ -11,7 +11,8 @@ Open unclear or cross-repo issues in `a2a-nexus` first. Route implementation wor
 | `source:a2a-plane` | monorepo-level docs/contracts/examples/scripts | Public umbrella docs, contracts, fixtures, readiness gates, topology decisions, issue routing, release policy. |
 | `source:a2a-broker` | `packages/broker/` | Broker API, task lifecycle, worker registry, dispatch/readiness gates, durable evidence, broker persistence. |
 | `source:a2a-docker-runner` | `packages/docker-runner/` | Isolated execution, checkout hygiene, PR/Done/Block evidence, runner CLI/package, runner release dry-run evidence. |
-| `source:openclaw-plugin-a2a` | `packages/openclaw-plugin-a2a/` | OpenClaw adapter behavior, request/status/cancel mapping, diagnostics, OpenClaw peer boundary. |
+
+The former `source:openclaw-plugin-a2a` label is retired: the plugin package was removed from this repository and per-harness bridges live under `packages/broker/scripts/`, so harness adapter behaviour routes to `source:a2a-broker`.
 
 Do not create or use `source:agent-olympics` in A2A routing. Agent Olympics is an independent repository and not an A2A implementation package.
 
