@@ -173,7 +173,7 @@ test('promotion capstone records the live-main quality-floor consistency contrac
   assert.match(section, /broker `noUnusedLocals`/i);
   assert.match(section, /async-safety approval/i);
   assert.match(section, /floating-promises=0/i);
-  assert.match(section, /all four TypeScript workspace packages/i);
+  assert.match(section, /all five TypeScript workspace packages/i);
   assert.match(section, /Package-CI parity analyzes only its selected package/i);
   assert.match(section, /#1506/);
 });

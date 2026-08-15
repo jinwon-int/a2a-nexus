@@ -27,6 +27,7 @@
         "packages/attestation",
         "packages/broker",
         "packages/docker-runner",
+        "packages/nclex-evaluation",
         "packages/policy-referee"
       ],
       "definition": "A Promise-valued production-source expression statement that is not awaited, returned, assigned, rejection-handled with catch/then, or explicitly marked as reviewed fire-and-forget work with void. Tests, declarations, generated output, archive, and non-src files are excluded.",

@@ -38,3 +38,4 @@
 # packages added since the CODEOWNERS map was last updated.
 /packages/attestation/ @jinon86 @seoseo-ai
 /packages/policy-referee/ @jinon86 @seoseo-ai
+/packages/nclex-evaluation/ @jinon86 @seoseo-ai

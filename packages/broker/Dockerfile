@@ -7,7 +7,8 @@ COPY package.json package-lock.json ./
 COPY packages/broker/package.json packages/broker/
 COPY packages/policy-referee/package.json packages/policy-referee/
 COPY packages/attestation/package.json packages/attestation/
-RUN npm ci --include=dev -w packages/broker -w packages/policy-referee -w packages/attestation
+COPY packages/nclex-evaluation/package.json packages/nclex-evaluation/
+RUN npm ci --include=dev -w packages/broker -w packages/policy-referee -w packages/attestation -w packages/nclex-evaluation
 
 FROM deps AS build
 WORKDIR /app
@@ -16,6 +17,8 @@ COPY packages/policy-referee/tsconfig.json packages/policy-referee/
 COPY packages/policy-referee/src packages/policy-referee/src
 COPY packages/attestation/tsconfig.json packages/attestation/
 COPY packages/attestation/src packages/attestation/src
+COPY packages/nclex-evaluation/tsconfig.json packages/nclex-evaluation/
+COPY packages/nclex-evaluation/src packages/nclex-evaluation/src
 COPY packages/broker/tsconfig.json packages/broker/
 COPY packages/broker/src packages/broker/src
 COPY packages/broker/scripts/generate-build-info.mjs packages/broker/scripts/generate-build-info.mjs
@@ -68,10 +71,12 @@ COPY package.json package-lock.json ./
 COPY packages/broker/package.json packages/broker/
 COPY packages/policy-referee/package.json packages/policy-referee/
 COPY packages/attestation/package.json packages/attestation/
-RUN npm ci --omit=dev -w packages/broker -w packages/policy-referee -w packages/attestation
+COPY packages/nclex-evaluation/package.json packages/nclex-evaluation/
+RUN npm ci --omit=dev -w packages/broker -w packages/policy-referee -w packages/attestation -w packages/nclex-evaluation
 COPY --from=build /app/packages/broker/dist ./packages/broker/dist
 COPY --from=build /app/packages/policy-referee/dist ./packages/policy-referee/dist
 COPY --from=build /app/packages/attestation/dist ./packages/attestation/dist
+COPY --from=build /app/packages/nclex-evaluation/dist ./packages/nclex-evaluation/dist
 COPY packages/broker/scripts/generate-build-info.mjs ./packages/broker/scripts/generate-build-info.mjs
 COPY packages/broker/scripts/check-build-revision.mjs ./packages/broker/scripts/check-build-revision.mjs
 COPY packages/broker/scripts/export-sqlite-state.mjs ./packages/broker/scripts/export-sqlite-state.mjs
