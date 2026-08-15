@@ -15,9 +15,9 @@ import { sendJson } from "./response.js";
 import {
   verifySignedReceipt,
   type NclexEvaluationKeyring,
-} from "../nclex-evaluation/receipt-contract.js";
-import type { NclexEvaluationReceiptStore } from "../nclex-evaluation/receipt-store.js";
-import { projectMergeReady } from "../nclex-evaluation/merge-ready.js";
+} from "a2a-nclex-evaluation";
+import type { NclexEvaluationReceiptStore } from "a2a-nclex-evaluation";
+import { projectMergeReady } from "a2a-nclex-evaluation";
 
 const READ_ROLES = ["hub", "operator", "analyst", "researcher"] as const;
 

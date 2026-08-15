@@ -44,6 +44,7 @@ export const ASYNC_SAFETY_PACKAGES = Object.freeze([
   'packages/attestation',
   'packages/broker',
   'packages/docker-runner',
+  'packages/nclex-evaluation',
   'packages/policy-referee',
 ]);
 

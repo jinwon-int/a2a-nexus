@@ -49,6 +49,7 @@ jobs:
       docker-runner: ${{ steps.filter.outputs.docker-runner }}
       policy-referee: ${{ steps.filter.outputs.policy-referee }}
       attestation: ${{ steps.filter.outputs.attestation }}
+      nclex-evaluation: ${{ steps.filter.outputs.nclex-evaluation }}
       contracts: ${{ steps.filter.outputs.contracts }}
       docs: ${{ steps.filter.outputs.docs }}
       scripts: ${{ steps.filter.outputs.scripts }}
@@ -67,6 +68,8 @@ jobs:
               - 'packages/policy-referee/**'
             attestation:
               - 'packages/attestation/**'
+            nclex-evaluation:
+              - 'packages/nclex-evaluation/**'
             contracts:
               - 'contracts/**'
               - 'fixtures/**'
@@ -142,7 +145,7 @@ jobs:
   # ── Broker package (API, lifecycle, evidence bridge) ────────────────
   broker:
     needs: [setup, paths-filter]
-    if: ${{ needs.paths-filter.outputs.broker == 'true' || needs.paths-filter.outputs['policy-referee'] == 'true' || needs.paths-filter.outputs.attestation == 'true' || needs.paths-filter.outputs.contracts == 'true' || needs.paths-filter.outputs.root == 'true' }}
+    if: ${{ needs.paths-filter.outputs.broker == 'true' || needs.paths-filter.outputs['policy-referee'] == 'true' || needs.paths-filter.outputs.attestation == 'true' || needs.paths-filter.outputs['nclex-evaluation'] == 'true' || needs.paths-filter.outputs.contracts == 'true' || needs.paths-filter.outputs.root == 'true' }}
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
@@ -222,6 +225,30 @@ jobs:
       - run: npm ci --include=dev
         if: steps.npm-deps.outputs.cache-hit != 'true'
       - run: node scripts/run-monorepo-package-ci-parity.mjs attestation
+
+  # ── NCLEX evaluation package (receipt domain, #1601 first slice) ────
+  nclex-evaluation:
+    needs: [setup, paths-filter]
+    if: ${{ needs.paths-filter.outputs['nclex-evaluation'] == 'true' || needs.paths-filter.outputs.contracts == 'true' || needs.paths-filter.outputs.root == 'true' }}
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v6
+        with:
+          node-version: '22'
+          cache: npm
+      - uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6
+        id: npm-deps
+        with:
+          path: node_modules
+          key: ${{ needs.setup.outputs.cache-key }}
+      - uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6
+        with:
+          path: packages/nclex-evaluation/dist
+          key: tsbuild-nclex-evaluation-${{ runner.os }}-${{ hashFiles('packages/nclex-evaluation/**/*.ts', 'packages/nclex-evaluation/tsconfig.json') }}
+      - run: npm ci --include=dev
+        if: steps.npm-deps.outputs.cache-hit != 'true'
+      - run: node scripts/run-monorepo-package-ci-parity.mjs nclex-evaluation
 
   # ── Policy referee package (worker-class policy engine, #1601 P1) ────
   policy-referee:
