@@ -287,3 +287,85 @@ test("missing --message fails before any docker invocation", () => {
 	assert.equal(child.status, 1);
 	assert.match(child.stderr, /missing --message/);
 });
+
+// ── Schema-retry reason telemetry (#1815 item 1) ─────────────────────────
+// Bounded-enum classification of piri's output_schema_retry markers; the
+// marker's validator errors are classified here, never relayed raw, so lane
+// telemetry stays content-free while naming the dominant failure shape.
+
+import {
+	classifySchemaRetryErrors,
+	piriExecutionTelemetry,
+	normalizeAnalysisExecutionTelemetry,
+	SCHEMA_RETRY_REASONS,
+} from "./lib/analysis-execution-telemetry.mjs";
+
+test("classifySchemaRetryErrors maps validator error shapes onto the bounded enum (#1815)", () => {
+	// Empty error list: the model's text had no extractable JSON candidate at
+	// all (markdown/wrapper shape).
+	assert.equal(classifySchemaRetryErrors([]), "no_json_candidate");
+	assert.equal(classifySchemaRetryErrors(undefined), "no_json_candidate");
+	assert.equal(classifySchemaRetryErrors(["output candidate was not parseable JSON"]), "no_json_candidate");
+	// additionalProperties:false violations.
+	assert.equal(
+		classifySchemaRetryErrors(["/ : Unexpected property", "/ : Unexpected external member"]),
+		"extra_property",
+	);
+	// required-field violations.
+	assert.equal(classifySchemaRetryErrors(["/findings: Expected required property"]), "missing_field");
+	// enum/type/value violations.
+	assert.equal(
+		classifySchemaRetryErrors(["/status: Expected union value", "/summary: Expected string"]),
+		"invalid_value",
+	);
+	// provider-side failure text wins before shape classification.
+	assert.equal(
+		classifySchemaRetryErrors(["provider request failed after 3 attempts", "/status: Expected union value"]),
+		"provider_failure",
+	);
+	// unknown shapes fall into other, still bounded.
+	assert.equal(classifySchemaRetryErrors(["something novel happened"]), "other");
+	assert.ok(SCHEMA_RETRY_REASONS.includes("other"));
+});
+
+test("piriExecutionTelemetry counts bounded retry reasons from progress markers (#1815)", () => {
+	const dir = mkdtempSync(join(tmpdir(), "piri-retry-reasons-"));
+	try {
+		const progressPath = join(dir, "piri-progress.jsonl");
+		writeFileSync(
+			progressPath,
+			[
+				JSON.stringify({ ts: "t", type: "turn_start" }),
+				JSON.stringify({ ts: "t", type: "marker", marker: "output_schema_retry", attempt: 1, maxAttempts: 3, errors: ["/ : Unexpected property"] }),
+				JSON.stringify({ ts: "t", type: "marker", marker: "output_schema_retry", attempt: 2, maxAttempts: 3, errors: ["/status: Expected union value"] }),
+				JSON.stringify({ ts: "t", type: "marker", marker: "output_schema_retry", attempt: 3, maxAttempts: 3, errors: [] }),
+				JSON.stringify({ ts: "t", type: "marker", marker: "usage", requests: 4, inputTokens: 10, outputTokens: 5 }),
+			].join("\n") + "\n",
+		);
+		const telemetry = piriExecutionTelemetry(progressPath, 1234);
+		assert.equal(telemetry.schemaRetries, 3);
+		assert.deepEqual(telemetry.schemaRetryReasons, { extra_property: 1, invalid_value: 1, no_json_candidate: 1 });
+
+		// Round-trip through the task-handler normalizer keeps the bounded map
+		// and drops nothing.
+		const normalized = normalizeAnalysisExecutionTelemetry(telemetry);
+		assert.deepEqual(normalized.schemaRetryReasons, telemetry.schemaRetryReasons);
+
+		// A run with no retries stays clean — no empty map on the wire.
+		writeFileSync(progressPath, JSON.stringify({ type: "turn_start" }) + "\n");
+		const clean = piriExecutionTelemetry(progressPath, 10);
+		assert.equal(clean.schemaRetries, 0);
+		assert.equal(clean.schemaRetryReasons, undefined);
+		assert.equal(normalizeAnalysisExecutionTelemetry(clean).schemaRetryReasons, undefined);
+
+		// The normalizer rejects unknown enum keys instead of passing them on.
+		const forged = normalizeAnalysisExecutionTelemetry({
+			schemaVersion: "a2a.analysis-execution-telemetry.v1",
+			source: "piri_progress_file",
+			schemaRetryReasons: { not_an_enum_key: 2, invalid_value: "x", other: 1 },
+		});
+		assert.deepEqual(forged.schemaRetryReasons, { other: 1 });
+	} finally {
+		rmSync(dir, { recursive: true, force: true });
+	}
+});
