@@ -31,6 +31,7 @@ import { spawnSync } from "node:child_process";
 import { existsSync, mkdirSync, readFileSync, readdirSync, rmSync, statSync, writeFileSync } from "node:fs";
 import { basename, isAbsolute, join, relative, resolve, sep } from "node:path";
 import { piriExecutionTelemetry } from "./lib/analysis-execution-telemetry.mjs";
+import { sourceCarrierStatsFromEnv } from "./lib/source-carriers.mjs";
 
 const DEFAULT_TIMEOUT_SEC = 300;
 const DEFAULT_MAX_FILES = 16;
@@ -473,7 +474,7 @@ function sanitizeName(value) {
 	return safeText(value, "task").replace(/[^A-Za-z0-9_.-]+/g, "-").replace(/^-+|-+$/g, "").slice(0, 48) || "task";
 }
 
-function bridgeError({ code, stage, failureShape, message, elapsedMs }) {
+function bridgeError({ code, stage, failureShape, message, elapsedMs, context }) {
 	const detail = {
 		code,
 		stage,
@@ -482,8 +483,14 @@ function bridgeError({ code, stage, failureShape, message, elapsedMs }) {
 		bridgeContractVersion: BRIDGE_CONTRACT_VERSION,
 		structuredOutputMode: STRUCTURED_OUTPUT_MODE,
 		elapsedMs,
+		...(context ?? {}),
 	};
-	console.error(`A2A_BRIDGE_ERROR=${JSON.stringify(detail)}`);
+	// #1725 finding 1: the failure record must survive with bounded telemetry
+	// (model fields, execution telemetry incl. schema-retry reasons, source
+	// counts) so a schema-exhausted lane is diagnosable without rerunning the
+	// provider. Undefined context fields drop off the wire.
+	const bounded = Object.fromEntries(Object.entries(detail).filter(([, value]) => value !== undefined));
+	console.error(`A2A_BRIDGE_ERROR=${JSON.stringify(bounded)}`);
 	if (message) console.error(String(message).slice(0, 2000));
 	process.exit(1);
 }
@@ -608,6 +615,19 @@ function main() {
 
 	const model = safeText(env.A2A_PIRI_ANALYSIS_MODEL || env.A2A_PIRI_MODEL, DEFAULT_PIRI_MODEL);
 	const thinking = safeText(env.A2A_PIRI_ANALYSIS_THINKING || env.A2A_PIRI_THINKING, DEFAULT_PIRI_THINKING);
+	// #1725 finding 1 / #1815 item 1: bounded diagnostic context attached to
+	// every failure record so a schema-exhausted lane carries the model fields,
+	// source counts, and (once the run started) execution telemetry including
+	// the classified schema-retry reasons — no provider rerun needed to explain
+	// the failure. Mirrors the requested/actual split of the success path.
+	const failureContext = (extra = {}) => ({
+		requestedModel: safeText(flags.model, undefined),
+		requestedThinking: safeText(flags.thinking, undefined),
+		actualRuntimeModel: model,
+		modelInheritanceMode: "bridge_env_pin",
+		sourceCarrierStats: sourceCarrierStatsFromEnv(env),
+		...extra,
+	});
 	const timeoutSec = positiveIntegerEnv(flags.timeout || env.A2A_PIRI_ANALYSIS_TIMEOUT_SEC, DEFAULT_TIMEOUT_SEC);
 	const prompt = applyPiriPromptBudget(
 		buildPiriPrompt({ message, payload, sourceBundle, flags, model, thinking }),
@@ -624,10 +644,12 @@ function main() {
 			failureShape: "handler_artifact_failure",
 			message: error instanceof Error ? error.message : String(error),
 			elapsedMs: 0,
+			context: failureContext(),
 		});
 	}
 	const { child, elapsedMs, workDir } = invocation;
 	const executionTelemetry = piriExecutionTelemetry(join(workDir, "artifacts", "piri-progress.jsonl"), elapsedMs);
+	const invocationFailureContext = () => failureContext({ executionTelemetry });
 
 	if (child.error) {
 		bridgeError({
@@ -636,6 +658,7 @@ function main() {
 			failureShape: "handler_artifact_failure",
 			message: child.error.message,
 			elapsedMs,
+			context: invocationFailureContext(),
 		});
 	}
 	if (child.signal || child.status === null) {
@@ -645,6 +668,7 @@ function main() {
 			failureShape: "provider_or_model_failure",
 			message: `piri analysis run killed by signal ${child.signal || "unknown"}`,
 			elapsedMs,
+			context: invocationFailureContext(),
 		});
 	}
 	if (child.status === 2) {
@@ -654,6 +678,7 @@ function main() {
 			failureShape: "handler_artifact_failure",
 			message: safeText(child.stderr, "piri exited 2 (usage/config error)"),
 			elapsedMs,
+			context: invocationFailureContext(),
 		});
 	}
 	// jinwon-int/piri#14 stable exit contract: 3 = provider/request failure,
@@ -665,6 +690,7 @@ function main() {
 			failureShape: "provider_or_model_failure",
 			message: safeText(child.stderr, "piri exited 3 (provider/request failure)"),
 			elapsedMs,
+			context: invocationFailureContext(),
 		});
 	}
 	if (child.status === 4) {
@@ -674,6 +700,7 @@ function main() {
 			failureShape: "provider_or_model_failure",
 			message: safeText(child.stderr, "piri could not satisfy the output schema within the attempt budget"),
 			elapsedMs,
+			context: invocationFailureContext(),
 		});
 	}
 	if (child.status !== 0) {
@@ -685,6 +712,7 @@ function main() {
 			failureShape: "provider_or_model_failure",
 			message: safeText(child.stderr, `piri exited ${child.status} (internal error)`),
 			elapsedMs,
+			context: invocationFailureContext(),
 		});
 	}
 
@@ -698,6 +726,7 @@ function main() {
 			failureShape: "provider_or_model_failure",
 			message: "schema-locked piri stdout was not valid JSON (contract regression)",
 			elapsedMs,
+			context: invocationFailureContext(),
 		});
 	}
 
@@ -720,6 +749,7 @@ function main() {
 			failureShape: "provider_or_model_failure",
 			message: error.message,
 			elapsedMs,
+			context: invocationFailureContext(),
 		});
 	}
 

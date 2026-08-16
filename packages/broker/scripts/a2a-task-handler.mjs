@@ -1077,6 +1077,65 @@ function parseAnalysisBridgeFailure(stderrText) {
   return null;
 }
 
+// Trust boundary for the #1725 structured bridge failure line: as far as the
+// task error record is concerned, bridge stderr is attacker-shaped input, so
+// project it onto a closed, bounded field set before it lands in
+// error.details.bridgeFailure. Unknown keys, oversized strings, negative or
+// fractional numbers, and non-bounded-enum telemetry keys drop off; a line
+// without a string code is discarded entirely (legacy bridges keep the
+// pre-#1725 plain-stderr shape).
+const BRIDGE_FAILURE_DETAIL_MAX = 64;
+const BRIDGE_FAILURE_EXCERPT_MAX = 500;
+const SOURCE_CARRIER_STAT_KEYS = [
+  "sourceBundleFiles",
+  "sourceFiles",
+  "sourceEvidence",
+  "embeddedSourceEvidence",
+  "totalFiles",
+  "totalBytes",
+];
+
+function boundedBridgeFailureString(value, max) {
+  const text = safeText(value, "");
+  return text ? text.slice(0, max) : undefined;
+}
+
+function boundedBridgeFailureCount(value) {
+  return Number.isSafeInteger(value) && value >= 0 ? value : undefined;
+}
+
+function normalizeAnalysisBridgeFailure(detail) {
+  if (!detail || typeof detail !== "object" || Array.isArray(detail)) return null;
+  const code = safeText(detail.code, "");
+  if (!code) return null;
+  const normalized = {
+    code: code.slice(0, BRIDGE_FAILURE_DETAIL_MAX),
+    stage: boundedBridgeFailureString(detail.stage, BRIDGE_FAILURE_DETAIL_MAX),
+    failureShape: boundedBridgeFailureString(detail.failureShape, BRIDGE_FAILURE_DETAIL_MAX),
+    adapterClass: boundedBridgeFailureString(detail.adapterClass, BRIDGE_FAILURE_DETAIL_MAX),
+    bridgeContractVersion: boundedBridgeFailureString(detail.bridgeContractVersion, BRIDGE_FAILURE_DETAIL_MAX),
+    structuredOutputMode: boundedBridgeFailureString(detail.structuredOutputMode, BRIDGE_FAILURE_DETAIL_MAX),
+    requestedModel: boundedBridgeFailureString(detail.requestedModel, BRIDGE_FAILURE_DETAIL_MAX),
+    requestedThinking: boundedBridgeFailureString(detail.requestedThinking, BRIDGE_FAILURE_DETAIL_MAX),
+    actualRuntimeModel: boundedBridgeFailureString(detail.actualRuntimeModel, BRIDGE_FAILURE_DETAIL_MAX),
+    modelInheritanceMode: boundedBridgeFailureString(detail.modelInheritanceMode, BRIDGE_FAILURE_DETAIL_MAX),
+    excerpt: boundedBridgeFailureString(detail.excerpt, BRIDGE_FAILURE_EXCERPT_MAX),
+    turnsUsed: boundedBridgeFailureCount(detail.turnsUsed),
+    elapsedMs: boundedBridgeFailureCount(detail.elapsedMs),
+    executionTelemetry: normalizeAnalysisExecutionTelemetry(detail.executionTelemetry),
+  };
+  const rawStats = detail.sourceCarrierStats;
+  const sourceStats = rawStats && typeof rawStats === "object" && !Array.isArray(rawStats)
+    ? Object.fromEntries(
+        SOURCE_CARRIER_STAT_KEYS
+          .map((key) => [key, boundedBridgeFailureCount(rawStats[key])])
+          .filter(([, value]) => value !== undefined),
+      )
+    : {};
+  if (Object.keys(sourceStats).length > 0) normalized.sourceCarrierStats = sourceStats;
+  return Object.fromEntries(Object.entries(normalized).filter(([, value]) => value !== undefined));
+}
+
 function runOpenClawAnalysisBridge(task, env = process.env) {
   let payload = taskPayload(task);
   let suppliedSnapshotSources = [];
@@ -1200,7 +1259,8 @@ function runOpenClawAnalysisBridge(task, env = process.env) {
     };
   }
   if (child.status !== 0) {
-    const bridgeFailure = child.signal ? null : parseAnalysisBridgeFailure(child.stderr);
+    const parsedBridgeFailure = child.signal ? null : parseAnalysisBridgeFailure(child.stderr);
+    const bridgeFailure = parsedBridgeFailure ? normalizeAnalysisBridgeFailure(parsedBridgeFailure) : null;
     return {
       error: {
         code: child.signal ? "openclaw_analysis_timeout" : "openclaw_analysis_failed",

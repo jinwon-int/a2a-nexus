@@ -2349,6 +2349,133 @@ process.exit(1);
   }
 });
 
+test("bridge failure details are projected onto a bounded field set before reaching the task error (#1725)", () => {
+  const dir = mkdtempSync(join(tmpdir(), "a2a-analysis-bridge-forged-failure-"));
+  const bin = join(dir, "forged-failing-bridge.mjs");
+  const forged = JSON.stringify({
+    code: "analysis_bridge_schema_unsatisfied",
+    stage: "validate",
+    failureShape: "provider_or_model_failure",
+    adapterClass: "piri",
+    bridgeContractVersion: "piri-a2a-analysis.v1",
+    structuredOutputMode: "piri_output_schema",
+    requestedModel: "kimi-coding/k3",
+    actualRuntimeModel: "zai/glm-5.2",
+    modelInheritanceMode: "bridge_env_pin",
+    excerpt: "x".repeat(900),
+    turnsUsed: -5,
+    elapsedMs: 1234,
+    // unknown key with oversized payload must not survive
+    promptLeak: "y".repeat(5000),
+    sourceCarrierStats: {
+      sourceFiles: 3,
+      totalFiles: 3,
+      totalBytes: 4096,
+      secretPath: "/root/.ssh/id_ed25519",
+      totalBytesFractional: 1.5,
+    },
+    executionTelemetry: {
+      schemaVersion: "a2a.analysis-execution-telemetry.v1",
+      source: "piri_progress_file",
+      elapsedMs: 1234,
+      schemaRetries: 2,
+      schemaRetryReasons: { extra_property: 1, forged_reason: 7 },
+      modelRequests: 4,
+    },
+  });
+  // forged is already the JSON string; one stringify here turns it into a
+  // safely escaped JS string literal whose runtime value is the raw JSON.
+  const detailJson = JSON.stringify(forged);
+  writeFileSync(bin, `#!/usr/bin/env node
+const line = "A2A_BRIDGE_ERROR=" + ${detailJson};
+process.stderr.write(line + String.fromCharCode(10));
+process.exit(1);
+`);
+  chmodSync(bin, 0o755);
+  try {
+    const result = handleTask({
+      id: "task-forged-bridge-failure",
+      intent: "analyze",
+      assignedWorkerId: "workerzeta",
+      message: "Analyze forged bridge failure read-only",
+      payload: {
+        mode: "github-read-only-validation",
+        repo: "jinwon-int/a2a-nexus",
+        sourceOnly: true,
+        readOnlyValidation: true,
+        noLive: true,
+        noGitHubWrites: true,
+      },
+    }, {
+      PATH: process.env.PATH,
+      A2A_EXECUTOR_MODE: "builtin",
+      A2A_OPENCLAW_ANALYSIS_ENABLED: "1",
+      A2A_OPENCLAW_ANALYSIS_BIN: bin,
+      A2A_OPENCLAW_ANALYSIS_TIMEOUT_SEC: "5",
+      A2A_NODE_ID: "workerzeta",
+    });
+
+    assert.equal(result.error?.code, "openclaw_analysis_failed");
+    const bridgeFailure = result.error?.details?.bridgeFailure;
+    assert.ok(bridgeFailure, "structured failure survives");
+    // bounded string set
+    assert.equal(bridgeFailure.code, "analysis_bridge_schema_unsatisfied");
+    assert.equal(bridgeFailure.requestedModel, "kimi-coding/k3");
+    assert.equal(bridgeFailure.actualRuntimeModel, "zai/glm-5.2");
+    assert.ok(!("promptLeak" in bridgeFailure), "unknown keys drop off");
+    assert.ok(bridgeFailure.excerpt.length <= 500, "excerpt is capped");
+    assert.equal(bridgeFailure.turnsUsed, undefined, "negative counts drop off");
+    assert.equal(bridgeFailure.elapsedMs, 1234);
+    // source stats keep only known non-negative integer keys
+    assert.deepEqual(bridgeFailure.sourceCarrierStats, { sourceFiles: 3, totalFiles: 3, totalBytes: 4096 });
+    // telemetry reuses the #1847 bounded-enum normalizer
+    assert.equal(bridgeFailure.executionTelemetry.schemaRetries, 2);
+    assert.deepEqual(bridgeFailure.executionTelemetry.schemaRetryReasons, { extra_property: 1 });
+    assert.equal(bridgeFailure.executionTelemetry.modelRequests, 4);
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test("a structured failure line without a code is discarded, not half-preserved", () => {
+  const dir = mkdtempSync(join(tmpdir(), "a2a-analysis-bridge-nocode-failure-"));
+  const bin = join(dir, "nocode-failing-bridge.mjs");
+  writeFileSync(bin, `#!/usr/bin/env node
+const line = "A2A_BRIDGE_ERROR=" + '{"stage":"extract","adapterClass":"piri","elapsedMs":5}';
+process.stderr.write(line + String.fromCharCode(10));
+process.exit(1);
+`);
+  chmodSync(bin, 0o755);
+  try {
+    const result = handleTask({
+      id: "task-nocode-bridge-failure",
+      intent: "analyze",
+      assignedWorkerId: "workerzeta",
+      message: "Analyze codeless bridge failure read-only",
+      payload: {
+        mode: "github-read-only-validation",
+        repo: "jinwon-int/a2a-nexus",
+        sourceOnly: true,
+        readOnlyValidation: true,
+        noLive: true,
+        noGitHubWrites: true,
+      },
+    }, {
+      PATH: process.env.PATH,
+      A2A_EXECUTOR_MODE: "builtin",
+      A2A_OPENCLAW_ANALYSIS_ENABLED: "1",
+      A2A_OPENCLAW_ANALYSIS_BIN: bin,
+      A2A_OPENCLAW_ANALYSIS_TIMEOUT_SEC: "5",
+      A2A_NODE_ID: "workerzeta",
+    });
+
+    assert.equal(result.error?.code, "openclaw_analysis_failed");
+    assert.equal(result.error?.details?.bridgeFailure, undefined, "no code means no structured failure");
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
 test("normalizeAnalysisBridgeAdapter maps piri aliases (a2a-nexus#1745)", () => {
   assert.equal(__test.normalizeAnalysisBridgeAdapter("piri"), "piri");
   assert.equal(__test.normalizeAnalysisBridgeAdapter("pi"), "piri");

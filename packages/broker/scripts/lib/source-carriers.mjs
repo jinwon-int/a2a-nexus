@@ -85,6 +85,25 @@ export function normalizeSourceCarrierFile(item, options = {}) {
   };
 }
 
+/**
+ * Diagnostic-only source-carrier stats the task handler injects via env
+ * (A2A_ANALYSIS_SOURCE_CARRIER_STATS). Bridges echo them on failure records
+ * so postmortems know how much source the lane actually saw (#1725). The
+ * value is parsed as-is here; the task-handler trust boundary re-projects
+ * it onto the bounded numeric key set before it reaches a task error.
+ */
+export function sourceCarrierStatsFromEnv(env = process.env) {
+  const raw = safeText(env.A2A_ANALYSIS_SOURCE_CARRIER_STATS, "");
+  if (!raw) return undefined;
+  try {
+    const parsed = JSON.parse(raw);
+    if (parsed && typeof parsed === "object" && !Array.isArray(parsed)) return parsed;
+  } catch {
+    // fall through: stats are diagnostic only, never fail the failure path
+  }
+  return undefined;
+}
+
 export function sourceCarrierStats(payload) {
   const entries = collectSourceCarrierItems(payload);
   return {

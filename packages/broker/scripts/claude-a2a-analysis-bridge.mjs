@@ -13,6 +13,7 @@ import {
   sourceCarrierContent,
   sourceCarrierPath,
   sourceCarrierRepo,
+  sourceCarrierStatsFromEnv,
 } from "./lib/source-carriers.mjs";
 import { payloadWithRetrievalSnapshotSourceCarriers } from "./lib/retrieval-snapshot-carriers.mjs";
 import {
@@ -240,18 +241,6 @@ function classifyExtractionFailure(stdout, outer) {
     return "provider_error_text";
   }
   return candidates.length === 0 ? "no_json" : "schema_invalid";
-}
-
-function sourceCarrierStatsFromEnv(env = process.env) {
-  const raw = safeText(env.A2A_ANALYSIS_SOURCE_CARRIER_STATS, "");
-  if (!raw) return undefined;
-  try {
-    const parsed = JSON.parse(raw);
-    if (parsed && typeof parsed === "object" && !Array.isArray(parsed)) return parsed;
-  } catch {
-    // fall through: stats are diagnostic only, never fail the failure path
-  }
-  return undefined;
 }
 
 function dieStructured(failure, env = process.env) {

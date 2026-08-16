@@ -7,6 +7,7 @@ import {
   normalizeSourceCarrierFile,
   sourceCarrierContent,
   sourceCarrierPath,
+  sourceCarrierStatsFromEnv,
 } from "./source-carriers.mjs";
 
 test("source carrier helper normalizes all carriers and content fields including summary (#1272)", () => {
@@ -84,4 +85,20 @@ test("V4 reproduction shape keeps two 8-item content carriers usable (#1272)", (
   for (const requiredPath of requiredPaths) {
     assert.equal(items.some((item) => sourceCarrierPath(item.item) === requiredPath), true);
   }
+});
+
+test("sourceCarrierStatsFromEnv parses the handler-injected diagnostic stats (#1725)", () => {
+  // Present and well-formed: the parsed object comes back as-is for bridges
+  // to echo on failure records.
+  const stats = { sourceFiles: 3, totalFiles: 3, totalBytes: 4096 };
+  assert.deepEqual(
+    sourceCarrierStatsFromEnv({ A2A_ANALYSIS_SOURCE_CARRIER_STATS: JSON.stringify(stats) }),
+    stats,
+  );
+  // Absent / empty: no stats, never a failure.
+  assert.equal(sourceCarrierStatsFromEnv({}), undefined);
+  assert.equal(sourceCarrierStatsFromEnv({ A2A_ANALYSIS_SOURCE_CARRIER_STATS: "" }), undefined);
+  // Malformed JSON or a non-object value: diagnostic-only, stays undefined.
+  assert.equal(sourceCarrierStatsFromEnv({ A2A_ANALYSIS_SOURCE_CARRIER_STATS: "{not json" }), undefined);
+  assert.equal(sourceCarrierStatsFromEnv({ A2A_ANALYSIS_SOURCE_CARRIER_STATS: "[1,2]" }), undefined);
 });
