@@ -4,8 +4,9 @@ Concrete wiring design turning the Phase-1 mapping (`phase-1-mapping.md` §6)
 into implementable changes. Mirrors the structure of the claude-code
 `docs/specs/cc-worker-container-fanout/phase-2-wiring.md` (its WS1–WS5), with
 every claude-specific mechanism replaced by its named piri equivalent or an
-explicitly designed gap-closure. Status: **WS1–WS4 implemented (code+tests,
-2026-08-15/16); WS5 remains spec-only.** Fanout stays
+explicitly designed gap-closure. Status: **Phase 2 code complete — WS1–WS5
+all implemented (code+tests, 2026-08-15/16); Phase 3 (shadow → canary →
+widen) remains, per-step operator approval per #1798.** Fanout stays
 opt-in and default-off everywhere; every live spawn / deploy / restart /
 canary step remains operator-approved per the #1798 decision packet.
 
@@ -117,7 +118,7 @@ the container stays a thin executor. The pipeline:
   `PIRI_FANOUT_ARGS=()` — fanout is not available for them in Phase 2
   (keeps the first slice small; widen later only with operator approval).
 
-### WS5 — evidence return (gap 4: named choice = generalize the extractor)
+### WS5 — evidence return (gap 4: generalize the extractor) (**implemented**, 2026-08-16)
 
 - **Decision:** generalize `extractStructuredSubagentReport`
   (`packages/docker-runner/src/runner.ts`) to accept **either** the existing
@@ -132,7 +133,9 @@ the container stays a thin executor. The pipeline:
   `additionalProperties: false` makes this an explicit schema change; it is
   additive because the field is optional and the broker's
   `finalizeSubagentEvidence` already fails closed on absent reports in
-  fanout mode.
+  fanout mode. The broker-side `a2a-task-handler.mjs` already accepted a
+  direct top-level `subagentReport` (`extractRunnerSubagentReport`) — the
+  runner extractor was the only missing half, now closed.
 - Broker-side binding, redaction, and assembly run unchanged
   (`subagent-evidence.ts`): count/roles/ids/write-sets vs the trusted plan;
   raw entries stripped; `A2A_WORKER_SUBAGENT_REDACTION_MODE` default
@@ -160,7 +163,9 @@ the container stays a thin executor. The pipeline:
   fanout-mode emission — flag 0 ⇒ no fanout branch (byte-identical script),
   1 ⇒ `-e`/`-t`/advertising/budget-echo present, read-only head preserved,
   injected budget follows through (**WS3/WS4 part landed** in
-  `config.test.ts`).
+  `config.test.ts`); runner-manifest bare-JSON extractor variant
+  (**WS5 part landed**: bare-shape extraction + missing-report absence +
+  budget-refusal parity + envelope-path unchanged coverage).
 
 ## Non-goals
 

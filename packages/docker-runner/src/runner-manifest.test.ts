@@ -310,6 +310,72 @@ test("extractStructuredSubagentReport preserves a report beyond the 8KB stream v
   assert.doesNotMatch(JSON.stringify(extracted), /123456789|\/root\/\.hermes/);
 });
 
+test("extractStructuredSubagentReport accepts the bare piri final-answer JSON shape (piri fanout WS5)", () => {
+  const report = {
+    count: 2,
+    entries: [
+      { role: "explorer", id: "exp-1", writeSet: [], status: "complete", output: "read-only recon done" },
+      { role: "implementer", id: "impl-1", writeSet: ["src/index.ts"], status: "complete", output: "edited src/index.ts" },
+    ],
+  };
+  // piri `-p` stdout is the bare schema-validated final answer, not an envelope.
+  const stdout = JSON.stringify({
+    status: "done",
+    summary: "implemented via fanout",
+    findings: ["f"],
+    risks: [],
+    recommendations: [],
+    evidenceRefs: ["src/index.ts"],
+    subagentReport: report,
+  });
+
+  const extracted = extractStructuredSubagentReport(stdout, {
+    maxCount: 2,
+    maxOutputBytes: 1024,
+    allowedRoles: ["explorer", "implementer", "verifier"],
+  });
+
+  assert.equal(extracted?.count, 2);
+  assert.deepEqual(extracted.entries.map((e) => e.id), ["exp-1", "impl-1"]);
+  assert.deepEqual(extracted.entries[1].writeSet, ["src/index.ts"]);
+  assert.equal(extracted.entries[0].redacted, false);
+
+  // Bare final answer without a report: extractor stays absent — broker-side
+  // fanout mode fails closed on missing reports.
+  const noReport = extractStructuredSubagentReport(
+    JSON.stringify({ status: "done", summary: "s", findings: [], risks: [], recommendations: [], evidenceRefs: [] }),
+    { maxCount: 2, maxOutputBytes: 1024, allowedRoles: ["explorer"] },
+  );
+  assert.equal(noReport, undefined);
+
+  // Bare shape with a budget violation is refused exactly like the envelope path.
+  const refused = extractStructuredSubagentReport(
+    JSON.stringify({ status: "done", summary: "s", findings: [], risks: [], recommendations: [], evidenceRefs: [], subagentReport: report }),
+    { maxCount: 1, maxOutputBytes: 1024, allowedRoles: ["explorer", "implementer", "verifier"] },
+  );
+  assert.equal(refused, undefined);
+});
+
+test("extractStructuredSubagentReport still refuses malformed envelopes without touching the bare path", () => {
+  // Envelope with a non-JSON text payload: unchanged fail-undefined behavior.
+  assert.equal(
+    extractStructuredSubagentReport(
+      JSON.stringify({ payloads: [{ text: "not json" }] }),
+      { maxCount: 2, maxOutputBytes: 64, allowedRoles: ["explorer"] },
+    ),
+    undefined,
+  );
+  // Non-object stdout: unchanged.
+  assert.equal(
+    extractStructuredSubagentReport("[]", { maxCount: 2, maxOutputBytes: 64, allowedRoles: ["explorer"] }),
+    undefined,
+  );
+  assert.equal(
+    extractStructuredSubagentReport("garbage", { maxCount: 2, maxOutputBytes: 64, allowedRoles: ["explorer"] }),
+    undefined,
+  );
+});
+
 test("sanitizeTaskArtifactPayload redacts env secrets and secret-like prompt text", () => {
   const syntheticSecret = "github" + "_pat" + "_" + "B".repeat(90);
   const sanitized = sanitizeTaskArtifactPayload({
