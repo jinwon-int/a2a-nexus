@@ -361,6 +361,21 @@ test("classifySchemaRetryErrors maps validator error shapes onto the bounded enu
 		classifySchemaRetryErrors(["/ : Unexpected property", "/ : Unexpected external member"]),
 		"extra_property",
 	);
+	// Deployed-field shapes: the pinned piri's TypeBox Compile emits "must not
+	// have additional properties" — captured from retained worker-host
+	// clinical-lane progress files (2026-08-16), where it is the DOMINANT retry
+	// shape (every observed output_schema_retry carried it). Before this fix
+	// those markers fell through the path-prefix match to invalid_value.
+	assert.equal(
+		classifySchemaRetryErrors(["/: must not have additional properties"]),
+		"extra_property",
+	);
+	assert.equal(
+		classifySchemaRetryErrors(["/: must not have additional properties", "/status: must be string"]),
+		"extra_property",
+	);
+	// Root type mismatch (model returned a non-object root) stays invalid_value.
+	assert.equal(classifySchemaRetryErrors(["/: must be object"]), "invalid_value");
 	// required-field violations.
 	assert.equal(classifySchemaRetryErrors(["/findings: Expected required property"]), "missing_field");
 	// enum/type/value violations.
