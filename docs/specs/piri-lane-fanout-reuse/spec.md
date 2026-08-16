@@ -1,6 +1,6 @@
 # Feature Spec: reuse the fanout decider stack on the piri patch lane
 
-Parent: #1798 (alternative path), #1601. Status: **Phase 2 spec complete (2026-08-15) — wiring design drafted in [`phase-2-wiring.md`](phase-2-wiring.md) (Phase 1: [`phase-1-mapping.md`](phase-1-mapping.md); Phase 0: [`phase-0-findings.md`](phase-0-findings.md)); implementation remains default-off and gated, Phase 3 canary needs operator approval per step.** Documentation only; no runtime change authorized by this document.
+Parent: #1798 (alternative path), #1601. Status: **Phase 2 in progress (2026-08-15) — WS1 (mirrored opt-in flag) and WS2 (hardened executor extension, baked into the piri runner image) implemented code+tests; wiring design in [`phase-2-wiring.md`](phase-2-wiring.md) (Phase 1: [`phase-1-mapping.md`](phase-1-mapping.md); Phase 0: [`phase-0-findings.md`](phase-0-findings.md)); WS3–WS5 remain spec-only; implementation stays default-off and gated, Phase 3 canary needs operator approval per step.**
 
 ## Problem
 
