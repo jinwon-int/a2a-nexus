@@ -57,12 +57,65 @@ function boundUtf8(value: string, maxBytes: number): string {
  *   block. A stdout wrapper script was rejected by design — this is the
  *   additive parsing path instead.
  */
+/**
+ * First balanced JSON object in free text (string/escape aware). The
+ * container stdout mixes the pipeline narration (summary lines, the Auto-patch
+ * commit, gh pr output) around the bridge's envelope/final answer, and the
+ * claude bridge's envelope is not newline-terminated before the next pipeline
+ * step appends — a strict whole-stream JSON.parse finds nothing. Mirrors
+ * piri's extractJsonCandidate approach (#1855 field canary: the report
+ * otherwise never reaches the broker's WS5 gate and an authorized fanout
+ * fails as subagent_report_missing despite a clean bridge envelope).
+ */
+function firstBalancedJsonObject(text: string): Record<string, unknown> | undefined {
+  const start = text.indexOf("{");
+  if (start === -1) return undefined;
+  let depth = 0;
+  let inString = false;
+  let escaped = false;
+  for (let i = start; i < text.length; i += 1) {
+    const ch = text[i];
+    if (inString) {
+      if (escaped) escaped = false;
+      else if (ch === "\\") escaped = true;
+      else if (ch === '"') inString = false;
+      continue;
+    }
+    if (ch === '"') inString = true;
+    else if (ch === "{") depth += 1;
+    else if (ch === "}") {
+      depth -= 1;
+      if (depth === 0) {
+        try {
+          const parsed = JSON.parse(text.slice(start, i + 1)) as unknown;
+          if (parsed && typeof parsed === "object" && !Array.isArray(parsed)) {
+            return parsed as Record<string, unknown>;
+          }
+        } catch {
+          // unparseable candidate — keep scanning from the next brace
+        }
+        return firstBalancedJsonObject(text.slice(i + 1));
+      }
+    }
+  }
+  return undefined;
+}
+
 export function extractStructuredSubagentReport(
   stdout: string,
   options: StructuredSubagentReportOptions,
 ): RunnerSubagentReport | undefined {
   try {
-    const parsed = JSON.parse(stdout.trim()) as Record<string, unknown>;
+    const trimmed = stdout.trim();
+    let parsed: Record<string, unknown> | undefined;
+    try {
+      parsed = JSON.parse(trimmed) as Record<string, unknown>;
+    } catch {
+      // Noisy container stream (pipeline narration around the payload):
+      // fall back to the first balanced JSON object.
+      parsed = firstBalancedJsonObject(trimmed);
+    }
+    if (!parsed) return undefined;
     let payload: Record<string, unknown> | undefined;
     if (Array.isArray(parsed.payloads)) {
       const payloads = parsed.payloads;
