@@ -4,8 +4,8 @@ Concrete wiring design turning the Phase-1 mapping (`phase-1-mapping.md` §6)
 into implementable changes. Mirrors the structure of the claude-code
 `docs/specs/cc-worker-container-fanout/phase-2-wiring.md` (its WS1–WS5), with
 every claude-specific mechanism replaced by its named piri equivalent or an
-explicitly designed gap-closure. Status: **WS1 and WS2 implemented (code+tests,
-2026-08-15); WS3–WS5 remain spec-only.** Fanout stays
+explicitly designed gap-closure. Status: **WS1–WS4 implemented (code+tests,
+2026-08-15/16); WS5 remains spec-only.** Fanout stays
 opt-in and default-off everywhere; every live spawn / deploy / restart /
 canary step remains operator-approved per the #1798 decision packet.
 
@@ -84,35 +84,38 @@ the container stays a thin executor. The pipeline:
   bake). The example's TUI renderers/prompts/sample agents were dropped
   (headless lane; roster is host-side per WS3).
 
-### WS3 — tool allowlist + roster
+### WS3 — tool allowlist + roster (**implemented**, 2026-08-16)
 
-- Parent invocation gains `-e /opt/a2a-runner/piri-fanout-extension -t
-  subagent,read,grep,find,ls,edit,write,bash` (superset for the finalizer
-  parent; per-child narrowing comes from the roster frontmatter `tools:`).
-- Roster: author the four files from the normative mapping
-  (`docs/specs/cc-worker-subagent-roster/spec.md`) — `a2a-explorer`,
-  `a2a-researcher`, `a2a-implementer`, `a2a-verifier` — with piri frontmatter
-  (`name`, `description`, `tools`, `model`) into the host piri config dir
-  `<piri-config>/agents/`. They travel via the existing config copy
+- `buildPiriPatchCommandScript` gains the fanout branch (selected only when
+  the WS1 flag is `1`, emitted at script build time): the patch-lane arm sets
+  `PIRI_FANOUT_ARGS=(-e /opt/a2a-runner/piri-fanout-extension -t
+  subagent,read,grep,find,ls,edit,write,bash)` (superset for the finalizer
+  parent; per-child narrowing comes from the roster frontmatter `tools:`) and
+  the invocation expands it inline beside the progress/schema args. Flag off
+  ⇒ the emitted script is byte-identical to the non-fanout one. A flag-on
+  image missing the baked extension fails closed with
+  `error=piri_fanout_extension_missing` (exit 2). Roster: the four files
+  remain a host-side artifact per the normative mapping
+  (`docs/specs/cc-worker-subagent-roster/spec.md`) — they travel via the
+  existing config copy
   (`cp -a /run/secrets/piri-dir /work/piri-home/.piri`) — no new mount, no
-  secret surface change. Explorer/researcher `tools:` are read-only;
-  implementer adds `edit,write,bash` inside its declared write set;
-  verifier adds `bash` for tests only. `model:` values must resolve in the
-  lane model contract (the `A2A_PIRI_MODEL` pattern space).
+  secret surface change.
 
-### WS4 — prompt + brief + mode
+### WS4 — prompt + brief + mode (**implemented**, 2026-08-16)
 
-- `buildPiriPatchCommandScript` gains a fanout branch (selected only when
-  the WS1 flag is `1`): the composed `piri-prompt.md` appends the same
-  advertising text as the claude lane (budget/roles/reasons/output-bytes,
-  brief pointer) and points helpers at `/work/artifacts/context-brief.md`.
+- The flag-on patch-lane `piri-prompt.md` appends the shared advertising
+  text (`buildContainedSubagentPrompt("Piri", …)`: budget/roles/reasons/
+  output-bytes) plus the brief pointer — helpers read
+  `/work/artifacts/context-brief.md` first when present. The budget is also
+  echoed into `summary.txt` (`piri_fanout=enabled`,
+  `contained_subagents_*`) for the evidence stream.
 - The runner's existing contained-subagent env injection
-  (`runner.ts` L812–823) and `materializeSubagentContextBrief` are
+  (`runner.ts` L813–823) and `materializeSubagentContextBrief` are
   lane-independent and activate automatically once WS1 enables the config
-  for the piri profile — no change needed there.
-- Read-only tasks keep the read-only prompt head; fanout is not available
-  for them in Phase 2 (keeps the first slice small; widen later only with
-  operator approval).
+  for the piri profile — verified unchanged.
+- Read-only tasks keep the read-only prompt head and set
+  `PIRI_FANOUT_ARGS=()` — fanout is not available for them in Phase 2
+  (keeps the first slice small; widen later only with operator approval).
 
 ### WS5 — evidence return (gap 4: named choice = generalize the extractor)
 
@@ -153,7 +156,11 @@ the container stays a thin executor. The pipeline:
   engine-contract piri-profile contained-subagent env + brief expectations;
   runner-manifest bare-JSON extractor variant; extension unit tests for
   env-input refusal, clamp-down, child timeout, scope pinning (**WS2 part
-  landed** with `src/piri-fanout-extension.test.ts`).
+  landed** with `src/piri-fanout-extension.test.ts`); config.test piri
+  fanout-mode emission — flag 0 ⇒ no fanout branch (byte-identical script),
+  1 ⇒ `-e`/`-t`/advertising/budget-echo present, read-only head preserved,
+  injected budget follows through (**WS3/WS4 part landed** in
+  `config.test.ts`).
 
 ## Non-goals
 

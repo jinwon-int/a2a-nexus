@@ -513,6 +513,58 @@ test("Piri patch mode prompt states the final-answer JSON contract (#1802)", () 
   assertBashScriptParses(script);
 });
 
+test("Piri fanout mode: flag off emits no fanout branch (piri reuse WS3/WS4)", () => {
+  const script = buildPiriPatchCommandScript({});
+  assert.doesNotMatch(script, /piri-fanout-extension/);
+  assert.doesNotMatch(script, /PIRI_FANOUT_ARGS/);
+  assert.doesNotMatch(script, /piri_fanout/);
+  assert.doesNotMatch(script, /Piri subagent/);
+  assertBashScriptParses(script);
+});
+
+test("Piri fanout mode: flag on wires the extension, tools, and budget advertising (piri reuse WS3/WS4)", () => {
+  const script = buildPiriPatchCommandScript({ A2A_DOCKER_RUNNER_PIRI_FANOUT_ENABLED: "1" });
+  // WS3: finalizer-superset invocation with the baked hardened extension.
+  assert.match(
+    script,
+    /PIRI_FANOUT_ARGS=\(-e \/opt\/a2a-runner\/piri-fanout-extension -t subagent,read,grep,find,ls,edit,write,bash\)/,
+  );
+  assert.match(script, /\$\{PIRI_FANOUT_ARGS\[@\]/);
+  // fail closed when the image lacks the baked extension the flag requires
+  assert.match(script, /error=piri_fanout_extension_missing/);
+  // WS4: budget/roles/reasons/output-bytes advertising + brief pointer in the
+  // PATCH prompt, and the budget echoed into the evidence stream.
+  assert.match(script, /You may spawn up to 3 Piri subagent\(s\)/);
+  assert.match(script, /helper roles: explorer, implementer, verifier/);
+  assert.match(script, /reasons: context_heavy, broad_source_inspection, validation_split/);
+  assert.match(script, /context-brief\.md/);
+  assert.match(script, /piri_fanout=enabled/);
+  assert.match(script, /contained_subagents_max=3/);
+  // read-only tasks keep the read-only head and never get fanout args
+  assert.match(script, /This is a READ-ONLY validation\/analysis task/);
+  assert.match(script, /^PIRI_FANOUT_ARGS=\(\)$/m);
+  const roPrompt = script.match(/<<'A2A_PIRI_RO_PROMPT_EOF'([\s\S]*?)\nA2A_PIRI_RO_PROMPT_EOF/);
+  assert.ok(roPrompt, "read-only prompt heredoc must exist");
+  assert.doesNotMatch(roPrompt[1], /Piri subagent/);
+  const patchPrompt = script.match(/<<'A2A_PIRI_PROMPT_EOF'([\s\S]*?)\nA2A_PIRI_PROMPT_EOF/);
+  assert.ok(patchPrompt, "patch-mode prompt heredoc must exist");
+  assert.match(patchPrompt[1], /Piri subagent\(s\)/);
+  assert.match(patchPrompt[1], /context-brief\.md/);
+  assertBashScriptParses(script);
+});
+
+test("Piri fanout mode: advertising follows the injected contained-subagent budget (piri reuse WS4)", () => {
+  const script = buildPiriPatchCommandScript({
+    A2A_DOCKER_RUNNER_PIRI_FANOUT_ENABLED: "1",
+    A2A_DOCKER_RUNNER_CONTAINED_SUBAGENTS_MAX: "2",
+    A2A_DOCKER_RUNNER_CONTAINED_SUBAGENTS_ROLES: "explorer,verifier",
+  });
+  assert.match(script, /You may spawn up to 2 Piri subagent\(s\)/);
+  assert.match(script, /helper roles: explorer, verifier/);
+  assert.match(script, /contained_subagents_max=2/);
+  assertBashScriptParses(script);
+});
+
 test("Piri profile name and image aliases normalize", () => {
   assert.equal(normalizePatchCommandProfile("piri"), "piri");
   assert.equal(normalizePatchCommandProfile("PI"), "piri");
