@@ -1961,6 +1961,19 @@ test("dynamic subagent runtime consults Phase-1 deciders and produces a redacted
   assert.equal(runtime.env.A2A_DOCKER_RUNNER_CLAUDE_CODE_FANOUT_ENABLED, "1");
   assert.equal(runtime.env.A2A_DOCKER_RUNNER_CONTAINED_SUBAGENTS_MAX, "2");
   assert.equal(runtime.env.A2A_DOCKER_RUNNER_CONTAINED_SUBAGENTS_ROLES, "explorer,verifier");
+  // The runner validates REASONS against its bounded enum at config load —
+  // any value the broker emits must survive that check (regression: the
+  // pre-fix authorized fallback "authorized" failed the runner's enum and
+  // killed every fully-authorized fanout spawn at dispatch, #1836 field canary).
+  const RUNNER_SUBAGENT_REASONS = new Set([
+    "context_heavy",
+    "broad_source_inspection",
+    "context_overflow_retry",
+    "validation_split",
+  ]);
+  for (const reason of (runtime.env.A2A_DOCKER_RUNNER_CONTAINED_SUBAGENTS_REASONS ?? "").split(",").filter(Boolean)) {
+    assert.ok(RUNNER_SUBAGENT_REASONS.has(reason), `broker-emitted REASONS entry must be runner-legal: ${reason}`);
+  }
   const runtimePlan = JSON.parse(runtime.env.A2A_SUBAGENT_PLAN ?? "{}");
   assert.equal(runtimePlan.state, "authorized");
   assert.equal(runtimePlan.approvalRef, "approval-ws5");

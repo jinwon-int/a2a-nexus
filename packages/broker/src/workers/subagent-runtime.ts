@@ -298,6 +298,24 @@ export function buildDynamicSubagentRuntime(
       ...policy.resourceGate.reducedBy,
       ...(authorizedSubagentCount < gate.authorizedSubagentCount ? ["static_runner_policy"] : []),
     ])];
+    // The runner validates A2A_DOCKER_RUNNER_CONTAINED_SUBAGENTS_REASONS
+    // against its bounded enum (context_heavy / broad_source_inspection /
+    // context_overflow_retry / validation_split) at config load, but
+    // reducedBy mixes in reduction provenance (shared_workspace,
+    // static_runner_policy, host pressure …) that is evidence, not
+    // advertising copy. Filter to runner-legal reasons for the env; the
+    // unfiltered list stays in the plan evidence. An authorized spawn with
+    // nothing legal left advertises context_heavy — the policy only
+    // recommends subagents for context/coupling-heavy tasks (field-caught:
+    // the pre-fix "authorized"/"shared_workspace" emissions killed every
+    // fanout spawn at runner config load, #1836 field canary 2026-08-16).
+    const RUNNER_LEGAL_SUBAGENT_REASONS = new Set([
+      "context_heavy",
+      "broad_source_inspection",
+      "context_overflow_retry",
+      "validation_split",
+    ]);
+    const advertisedReasons = reducedBy.filter((reason) => RUNNER_LEGAL_SUBAGENT_REASONS.has(reason));
     const briefDigest = `sha256:${createHash("sha256").update(subagentContextBrief, "utf8").digest("hex")}`;
     const planEvidence = plan({
       state: "authorized",
@@ -323,7 +341,8 @@ export function buildDynamicSubagentRuntime(
         [fanoutFlagEnv]: "1",
         A2A_DOCKER_RUNNER_CONTAINED_SUBAGENTS_MAX: String(authorizedSubagentCount),
         A2A_DOCKER_RUNNER_CONTAINED_SUBAGENTS_ROLES: authorizedRoles.join(","),
-        A2A_DOCKER_RUNNER_CONTAINED_SUBAGENTS_REASONS: reducedBy.join(",") || "authorized",
+        // (see advertisedReasons above — never raw reduction provenance)
+        A2A_DOCKER_RUNNER_CONTAINED_SUBAGENTS_REASONS: advertisedReasons.join(",") || "context_heavy",
       },
       subagentContextBrief,
     };
