@@ -4,7 +4,7 @@ ARG PIRI_REPO=https://github.com/jinwon-int/piri.git
 # Pinned distribution tag (jinwon-int/piri), not a moving branch: image
 # builds stay reproducible and the baked harness revision is auditable.
 # Bump deliberately via PR when piri ships a new distribution tag.
-ARG PIRI_REF=v0.83.0-piri.1
+ARG PIRI_REF=v0.83.0-piri.2
 ARG GH_VERSION=2.93.0
 ARG GITLEAKS_VERSION=8.30.1
 
@@ -70,7 +70,7 @@ RUN chmod 0755 /etc/a2a-runner
 # broker-injected A2A_CONTAINED_SUBAGENTS_* budget with per-child timeouts
 # and user-scope pinning. Loaded only in fanout mode via
 # `-e /opt/a2a-runner/piri-fanout-extension` (WS3); with the fanout flag off
-# nothing here is loaded. No piri ref bump needed: the pinned v0.83.0-piri.1
+# nothing here is loaded. No piri ref bump needed: the pinned piri
 # already ships the example this forks, and the fork is self-contained.
 COPY docker/piri-fanout-extension /opt/a2a-runner/piri-fanout-extension
 RUN chmod -R a+rX /opt/a2a-runner/piri-fanout-extension
