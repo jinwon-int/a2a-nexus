@@ -310,6 +310,42 @@ test("extractStructuredSubagentReport preserves a report beyond the 8KB stream v
   assert.doesNotMatch(JSON.stringify(extracted), /123456789|\/root\/\.hermes/);
 });
 
+test("extractStructuredSubagentReport recovers the report from a noisy container stream (#1855 field canary)", () => {
+  // Real canary13 shape: pipeline narration before, the claude bridge's
+  // envelope NOT newline-terminated, and the Auto-patch commit appending
+  // directly after it — a strict whole-stream parse finds nothing.
+  const envelope = JSON.stringify({
+    payloads: [{ text: JSON.stringify({ status: "done", subagentReport: { count: 0, entries: [] } }) }],
+  });
+  const stdout = [
+    "A2A Docker Runner task cc-fanout-canary13",
+    "intent=propose_patch",
+    "patch_mode=script",
+    envelope + "[a2a-patch-20260816-173032-x c983bf6] Auto-patch: cc-fanout-canary13",
+    " 1 file changed, 1 insertion(+), 1 deletion(-)",
+    "branch=a2a-patch-20260816-173032-x",
+    "https://github.com/jinwon-int/a2a-fanout-sandbox/pull/4",
+  ].join("\n");
+
+  const extracted = extractStructuredSubagentReport(stdout, {
+    maxCount: 4,
+    allowedRoles: ["explorer", "implementer", "verifier"],
+    maxOutputBytes: 12000,
+  });
+  assert.deepEqual(extracted, { count: 0, entries: [] });
+
+  // Bare piri shape inside narration: the final-answer JSON is mid-stream.
+  const bare = JSON.stringify({ status: "done", summary: "ok", subagentReport: { count: 1, entries: [{ role: "explorer", id: "a2a-explorer-1", writeSet: [], status: "complete", output: "read the README" }] } });
+  const stdout2 = `A2A Docker Runner task piri\n${bare}\n[a2a-patch-x abc123] Auto-patch: t\n`;
+  const extracted2 = extractStructuredSubagentReport(stdout2, {
+    maxCount: 4,
+    allowedRoles: ["explorer", "implementer", "verifier"],
+    maxOutputBytes: 12000,
+  });
+  assert.equal(extracted2?.count, 1);
+  assert.equal(extracted2?.entries[0]?.id, "a2a-explorer-1");
+});
+
 test("extractStructuredSubagentReport accepts the bare piri final-answer JSON shape (piri fanout WS5)", () => {
   const report = {
     count: 2,
