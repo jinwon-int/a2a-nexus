@@ -35,6 +35,7 @@ import * as fs from "node:fs";
 import * as os from "node:os";
 import * as path from "node:path";
 import { StringEnum } from "@earendil-works/pi-ai";
+import { Type } from "typebox";
 import { getAgentDir } from "@earendil-works/pi-coding-agent";
 import { discoverAgents } from "./agents.js";
 import { ENV, parseSubagentBudget, resolveChildTimeoutSec, truncateOutputBytes } from "./policy.js";
