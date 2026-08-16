@@ -1040,6 +1040,21 @@ export function buildPiriPatchCommandScript(env: NodeJS.ProcessEnv): string {
   const defaultThinking = shellSingleQuote(env.A2A_PIRI_THINKING || DEFAULT_PIRI_THINKING);
   const defaultTimeout = shellSingleQuote(env.A2A_PIRI_TIMEOUT_SEC || DEFAULT_PIRI_TIMEOUT_SEC);
   const defaultOutputSchema = shellSingleQuote(DEFAULT_PIRI_OUTPUT_SCHEMA);
+  // piri fanout WS3/WS4 (#1836): the WS1 flag selects a fanout branch — load
+  // the baked hardened subagent extension (-e) with a finalizer-superset tool
+  // list (-t) and advertise the broker-authorized budget plus the brief
+  // pointer in the composed prompt. Flag off (default) emits none of this;
+  // the plain `piri -p` script stays byte-for-byte. Read-only tasks keep the
+  // read-only head regardless of the flag (fanout is patch-lane only in
+  // Phase 2).
+  const piriFanoutEnabled = env.A2A_DOCKER_RUNNER_PIRI_FANOUT_ENABLED === "1";
+  const fanoutSubagents = piriFanoutEnabled ? loadContainedSubagentsConfig(env, "piri") : undefined;
+  const fanoutPromptLines = fanoutSubagents?.enabled
+    ? `${buildContainedSubagentPrompt("Piri", fanoutSubagents)}\n- Read the shared context brief at /work/artifacts/context-brief.md before spawning helpers (when present); helpers consume it instead of re-deriving task context.`
+    : "";
+  const fanoutSummaryLines = fanoutSubagents?.enabled
+    ? `printf 'piri_fanout=enabled\\n' | tee -a /work/artifacts/summary.txt\n${buildContainedSubagentSummaryShell(fanoutSubagents)}`
+    : "";
   return `#!/usr/bin/env bash
 set -euo pipefail
 export DEBIAN_FRONTEND=noninteractive
@@ -1102,7 +1117,16 @@ A2A_PIRI_GH_LIFECYCLE_GUARD
 chmod 755 "$A2A_LIFECYCLE_GUARD_BIN/git" "$A2A_LIFECYCLE_GUARD_BIN/gh"
 export PATH="$A2A_LIFECYCLE_GUARD_BIN:$PATH"
 printf 'lifecycle_guard=enabled profile=piri\n' | tee -a /work/artifacts/summary.txt
-
+${piriFanoutEnabled ? `
+# piri fanout WS3 (#1836): fail closed when the flag is on but the image does
+# not carry the hardened subagent extension the fanout branch loads.
+if [ ! -d /opt/a2a-runner/piri-fanout-extension ]; then
+  printf 'error=piri_fanout_extension_missing\n' | tee -a /work/artifacts/summary.txt
+  printf 'A2A_DOCKER_RUNNER_PIRI_FANOUT_ENABLED=1 requires an image with the hardened subagent extension baked at /opt/a2a-runner/piri-fanout-extension.\n' | tee /work/artifacts/patch-command.log
+  exit 2
+fi
+${fanoutSummaryLines}
+` : ""}
 printf 'piri_cli=%s\n' "$(piri --version 2>/dev/null | head -n 1 || printf unknown)" | tee -a /work/artifacts/summary.txt
 printf 'model=%s thinking=%s profile=piri\n' "$A2A_PIRI_MODEL" "$A2A_PIRI_THINKING" | tee -a /work/artifacts/summary.txt
 
@@ -1129,7 +1153,10 @@ Hard rules:
 
 The assignment follows:
 A2A_PIRI_RO_PROMPT_EOF
-else
+${piriFanoutEnabled ? `# Read-only validation tasks keep the read-only head; fanout is not
+# available for them in Phase 2 (keeps the first slice small).
+PIRI_FANOUT_ARGS=()
+` : ""}else
 cat > /work/artifacts/piri-prompt.md <<'A2A_PIRI_PROMPT_EOF'
 You are running inside the A2A Docker Runner on a checked-out GitHub repository.
 
@@ -1151,10 +1178,14 @@ Final answer contract:
   "findings": string[], "risks": string[], "recommendations": string[],
   "evidenceRefs": string[]}. Summarize what you changed in 'summary' and list
   the files you edited in 'evidenceRefs'.
-
+${fanoutPromptLines ? `${fanoutPromptLines}
+` : ""}
 The assignment follows:
 A2A_PIRI_PROMPT_EOF
-fi
+${piriFanoutEnabled ? `# piri fanout WS3 (#1836): finalizer-superset tool list; per-child narrowing
+# comes from the roster frontmatter tools: (host-side artifact per WS3).
+PIRI_FANOUT_ARGS=(-e /opt/a2a-runner/piri-fanout-extension -t subagent,read,grep,find,ls,edit,write,bash)
+` : ""}fi
 cat /work/artifacts/prompt.md >> /work/artifacts/piri-prompt.md
 
 PIRI_SCHEMA_ARGS=()
@@ -1203,7 +1234,7 @@ timeout "$A2A_PIRI_TIMEOUT_SEC" piri -p "$(cat /work/artifacts/piri-prompt.md)" 
   --thinking "$A2A_PIRI_THINKING" \
   --approve \
   --no-session \
-  \${PIRI_PROGRESS_ARGS[@]+\"\${PIRI_PROGRESS_ARGS[@]}\"} \
+  ${piriFanoutEnabled ? `  \${PIRI_FANOUT_ARGS[@]+"\${PIRI_FANOUT_ARGS[@]}"}   ` : ""}\${PIRI_PROGRESS_ARGS[@]+\"\${PIRI_PROGRESS_ARGS[@]}\"} \
   \${PIRI_SCHEMA_ARGS[@]+\"\${PIRI_SCHEMA_ARGS[@]}\"}
 `;
 }
@@ -2209,7 +2240,10 @@ function shellSingleQuote(value: string): string {
   return `'${value.replace(/'/g, `'"'"'`)}'`;
 }
 
-function buildContainedSubagentPrompt(label: "OpenClaw" | "Hermes" | "Codex", config: RunnerContainedSubagentsConfig): string {
+function buildContainedSubagentPrompt(
+  label: "OpenClaw" | "Hermes" | "Codex" | "Piri",
+  config: RunnerContainedSubagentsConfig,
+): string {
   if (!config.enabled) {
     return [
       "",
