@@ -12,7 +12,13 @@ import { accessSync, constants as fsConstants, existsSync } from "node:fs";
 import { delimiter as pathDelimiter, isAbsolute, join as joinPath, resolve as resolvePath } from "node:path";
 import { fileURLToPath } from "node:url";
 import { readGeneratedBuildInfo } from "../broker-build-info.js";
-import type { WorkerRuntimeProfile } from "../worker.js";
+
+/**
+ * Runtime profile vocabulary shared by worker.ts and workers/worker-env.ts
+ * (extracted from worker.ts slice 6): how this worker process talks to the
+ * broker.
+ */
+export type WorkerRuntimeProfile = "broker-poll-only" | "openclaw-poll-only";
 
 export function optionalTrimmed(value: string | undefined): string | undefined {
   const trimmed = value?.trim();
