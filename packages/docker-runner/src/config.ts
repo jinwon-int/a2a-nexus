@@ -1417,6 +1417,10 @@ if [ -d /run/secrets/claude-dir ]; then
 fi
 chmod -R u+rwX "$CLAUDE_CONFIG_DIR"
 export A2A_CLAUDE_CODE_PATCH_MODE=${patchMode}
+# #1855 runner context: the runner pipeline owns the checkout/branch and the
+# deterministic post-steps (Auto-patch commit, push, gh pr create). The bridge
+# works in the existing checkout and must not demand model-owned PR evidence.
+export A2A_CLAUDE_PATCH_RUNNER_CONTEXT=1
 ${turnBudgetExports}
 export A2A_CLAUDE_CODE_MAX_OUTPUT_BYTES="\${A2A_CLAUDE_CODE_MAX_OUTPUT_BYTES:-16777216}"
 printf 'claude_cli=%s\\n' "$(claude --version 2>/dev/null | head -n 1 || printf unknown)" | tee -a /work/artifacts/summary.txt

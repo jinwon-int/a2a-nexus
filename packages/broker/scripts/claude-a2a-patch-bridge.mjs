@@ -24,8 +24,10 @@ import {
   lstatSync,
   mkdtempSync,
   readdirSync,
+  readFileSync,
   realpathSync,
   rmSync,
+  statSync,
   writeFileSync,
 } from "node:fs";
 import { tmpdir } from "node:os";
@@ -791,7 +793,37 @@ function isPatchIntent(message) {
   );
 }
 
-function buildPatchPrompt(message) {
+/**
+ * Docker-runner execution context (#1855): when the bridge runs as the
+ * runner image's patch command, the RUNNER owns the repository checkout
+ * (cwd is already /work/repo on the runner-created branch) and the
+ * deterministic post-steps (Auto-patch commit, push, gh pr create, evidence
+ * verification). The model must only edit files and return a status — the
+ * Termux-era "clone it yourself and open the PR" contract is both flaky
+ * (glm/z.ai compliance — field-caught in the 2026-08-16 cc fanout canaries)
+ * and redundant with the runner pipeline.
+ */
+function isRunnerPatchContext(env = process.env) {
+  return safeText(env.A2A_CLAUDE_PATCH_RUNNER_CONTEXT).trim() === "1";
+}
+
+function buildPatchPrompt(message, env = process.env) {
+  if (isRunnerPatchContext(env)) {
+    const preamble = [
+      "You are a Claude Code CLI-backed A2A GitHub PATCH bridge running inside the A2A docker runner.",
+      "HARD CONSTRAINTS (override anything to the contrary):",
+      "- Emit JSON only as your final output. No markdown, no prose outside the JSON.",
+      "- Work in the repository checkout in the CURRENT WORKING DIRECTORY. It is already on the assignment branch; do NOT clone, re-branch, merge, rebase, or switch branches.",
+      "- Do NOT run git commit, git push, or gh pr create; the runner owns those after you exit and will open the pull request deterministically.",
+      "- Do NOT modify files outside the current repository checkout.",
+      "- Never print, stage, or commit secrets, tokens, `.env` files, or bootstrap/agent-context files (`.openclaw/`, `AGENTS.md`, `SOUL.md`).",
+      "- If you cannot finish safely, return status=blocked with the exact blocker in the JSON.",
+      "- prUrl/doneCommentUrl are NOT required in your JSON; report status, summary, filesChanged, and test evidence only.",
+      "",
+      "----- BROKER TASK (authoritative instructions follow) -----",
+    ].join("\n");
+    return `${preamble}\n${message}`;
+  }
   const preamble = [
     "You are a Claude Code CLI-backed A2A GitHub PATCH bridge running on a non-Docker (Termux/proot) worker.",
     "HARD CONSTRAINTS (override anything to the contrary):",
@@ -896,6 +928,33 @@ async function runClaudePatch(prompt, flags, env, cwd, opts = {}) {
 }
 
 // Find the innermost object that carries at least one GitHub evidence URL.
+function findAnyResultObject(value, depth = 0) {
+  if (depth > 8 || value === undefined || value === null) return null;
+  if (typeof value === "string") {
+    if (!value.trim()) return null;
+    try {
+      return findAnyResultObject(parseJsonCandidate(value), depth + 1);
+    } catch {
+      return null;
+    }
+  }
+  if (Array.isArray(value)) {
+    for (const entry of value) {
+      const found = findAnyResultObject(entry, depth + 1);
+      if (found) return found;
+    }
+    return null;
+  }
+  if (typeof value !== "object") return null;
+  for (const key of ["result", "content", "message", "text", "response", "output", "value", "payloads"]) {
+    const found = findAnyResultObject(value[key], depth + 1);
+    if (found) return found;
+  }
+  // The innermost JSON object the model emitted (status/summary shape).
+  if (typeof value.status === "string" || typeof value.summary === "string") return value;
+  return null;
+}
+
 function findGithubEvidenceObject(value, depth = 0) {
   if (depth > 10 || value === undefined || value === null) return null;
   if (Array.isArray(value)) {
@@ -968,6 +1027,87 @@ function normalizeFanoutSubagentReport(value, options) {
   return { count, entries };
 }
 
+/**
+ * Deterministic sub-agent spawn evidence from the Claude Code session
+ * transcripts (#1855 item 2). The CLI's --output-format json result object
+ * does not carry tool_use events, but every session writes a full JSONL
+ * transcript under $CLAUDE_CONFIG_DIR/projects. Task tool_use blocks there
+ * are ground truth for what was actually spawned — no model self-reporting
+ * required (#1725 finding-1 principle: deterministic local extraction over
+ * provider re-asking).
+ */
+const SUBAGENT_AGENT_ROLE_MAP = new Map([
+  ["a2a-explorer", "explorer"],
+  ["a2a-researcher", "explorer"],
+  ["a2a-implementer", "implementer"],
+  ["a2a-verifier", "verifier"],
+]);
+
+function extractSubagentReportFromSessionTranscripts(env, startedAtMs, options) {
+  const configDir = safeText(env.CLAUDE_CONFIG_DIR, "");
+  if (!configDir) return undefined;
+  const projectsDir = join(configDir, "projects");
+  let files;
+  try {
+    files = readdirSync(projectsDir, { recursive: true })
+      .map((entry) => String(entry))
+      .filter((entry) => entry.endsWith(".jsonl"))
+      .map((entry) => join(projectsDir, entry))
+      .filter((file) => {
+        try {
+          return statSync(file).mtimeMs >= startedAtMs - 1000;
+        } catch {
+          return false;
+        }
+      });
+  } catch {
+    return undefined;
+  }
+  const events = [];
+  for (const file of files) {
+    let text;
+    try {
+      text = readFileSync(file, "utf8");
+    } catch {
+      continue;
+    }
+    for (const line of text.split("\n")) {
+      if (!line.includes('"tool_use"')) continue;
+      let entry;
+      try {
+        entry = JSON.parse(line);
+      } catch {
+        continue;
+      }
+      const block = entry?.message?.content;
+      if (!Array.isArray(block)) continue;
+      for (const item of block) {
+        if (item?.type !== "tool_use" || safeText(item.name) !== "Task") continue;
+        const agent = safeText(item.input?.agent ?? item.input?.subagent_type, "");
+        events.push({ agent, description: safeText(item.input?.description ?? item.input?.prompt, "") });
+      }
+    }
+  }
+  if (events.length === 0) return { count: 0, entries: [] };
+  if (events.length > options.maxSubagents) {
+    throw new Error(
+      `fanout spawned ${events.length} subagents, exceeding the authorized maximum of ${options.maxSubagents}`,
+    );
+  }
+  const seenIds = new Set();
+  const entries = events.map((event, index) => {
+    const role = SUBAGENT_AGENT_ROLE_MAP.get(event.agent) ?? "explorer";
+    if (!options.allowedRoles.has(role)) {
+      throw new Error(`fanout spawned a subagent with unauthorized agent mapping (${event.agent || "unknown"})`);
+    }
+    let id = `${event.agent || "subagent"}-${index + 1}`.replace(/[^A-Za-z0-9._:-]/g, "-").slice(0, 128);
+    while (seenIds.has(id)) id = `${id}-x`;
+    seenIds.add(id);
+    return { role, id, writeSet: [], status: "complete", output: event.description.slice(0, options.maxOutputBytes) };
+  });
+  return { count: entries.length, entries };
+}
+
 function normalizePatchResponse(obj, options = {}) {
   const prUrl = safeText(obj.prUrl || obj.pullRequestUrl, "");
   const doneCommentUrl = safeText(obj.doneCommentUrl || obj.commentUrl, "");
@@ -1003,10 +1143,18 @@ function normalizePatchResponse(obj, options = {}) {
   if (doneCommentUrl) result.doneCommentUrl = doneCommentUrl;
   if (blockCommentUrl) result.blockCommentUrl = blockCommentUrl;
   if (options.fanout === true) {
-    result.subagentReport = normalizeFanoutSubagentReport(obj.subagentReport, options);
+    // Prefer the model's own bounded report; when absent in runner context,
+    // the deterministic session-transcript fallback (#1855 item 2) already
+    // ran — an honest spawn is never lost to flaky self-reporting.
+    result.subagentReport = obj.subagentReport === undefined && options.subagentReportFallback
+      ? options.subagentReportFallback
+      : normalizeFanoutSubagentReport(obj.subagentReport, options);
   }
 
-  if (!prUrl && !doneCommentUrl && !blockCommentUrl) {
+  if (!prUrl && !doneCommentUrl && !blockCommentUrl && options.runnerContext !== true) {
+    // Runner context (#1855): the docker runner owns commit/push/PR — a
+    // model JSON without evidence URLs is a normal successful edit pass;
+    // the runner's pipeline creates and verifies the PR afterwards.
     throw new Error("patch response missing prUrl, doneCommentUrl, or blockCommentUrl");
   }
   return result;
@@ -2505,13 +2653,19 @@ async function runPatchMode(message, flags) {
     process.stderr.write("A2A_CLAUDE_CODE_PATCH_MODE=fanout: agentic patch with sub-agent orchestration (Task tool + dynamic authorization + redacted context brief); WS5 return redaction/assembly pending\n");
   }
   // Session-scoped isolation (#1129): prefix the workspace with the session id.
+  // Runner context (#1855): the docker runner already cd'd into its own
+  // checkout on the assignment branch; work there directly instead of an
+  // isolated clone, and let the runner's deterministic post-steps own
+  // commit/push/PR.
   const sessionId = safeText(flags["session-id"], "default");
-  const workspace = mkdtempSync(join(tmpdir(), `a2a-patch-${sanitizeSessionSegment(sessionId)}-`));
+  const runnerContext = isRunnerPatchContext(process.env);
+  const workspace = runnerContext ? process.cwd() : mkdtempSync(join(tmpdir(), `a2a-patch-${sanitizeSessionSegment(sessionId)}-`));
+  const startedAtMs = Date.now();
   let exitCode = 0;
   let envelope = null;
   let turnBudget = null;
   try {
-    const prompt = buildPatchPrompt(message);
+    const prompt = buildPatchPrompt(message, process.env);
     const claudeRun = await runClaudePatch(prompt, flags, process.env, workspace, { fanout });
     turnBudget = claudeRun.turnBudget;
 
@@ -2521,7 +2675,8 @@ async function runPatchMode(message, flags) {
     } catch {
       outer = claudeRun.stdout;
     }
-    const evidenceObj = findGithubEvidenceObject(outer);
+    const evidenceObj = findGithubEvidenceObject(outer)
+      ?? (runnerContext ? findAnyResultObject(outer) : null);
     if (!evidenceObj) {
       throw new Error("Claude patch output missing GitHub evidence (prUrl/doneCommentUrl/blockCommentUrl)");
     }
@@ -2536,9 +2691,22 @@ async function runPatchMode(message, flags) {
       positiveInteger(process.env.A2A_CONTAINED_SUBAGENTS_OUTPUT_BYTES, 12000),
       64 * 1024,
     );
+    // Deterministic spawn evidence (#1855): derive the subagentReport from
+    // the session transcripts when the model didn't report one.
+    let subagentReportFallback;
+    if (fanout && runnerContext) {
+      subagentReportFallback = extractSubagentReportFromSessionTranscripts(process.env, startedAtMs, {
+        maxSubagents,
+        allowedRoles,
+        maxOutputBytes,
+      });
+      if (subagentReportFallback) {
+        process.stderr.write(`A2A_FANOUT_SUBAGENT_REPORT_SOURCE=session_transcript count=${subagentReportFallback.count}\n`);
+      }
+    }
     const result = attachClaudeModelTelemetry(
       {
-        ...normalizePatchResponse(evidenceObj, { fanout, maxSubagents, allowedRoles, maxOutputBytes }),
+        ...normalizePatchResponse(evidenceObj, { fanout, maxSubagents, allowedRoles, maxOutputBytes, subagentReportFallback, runnerContext }),
         turnBudget,
       },
       {
@@ -2568,8 +2736,10 @@ async function runPatchMode(message, flags) {
     process.stderr.write(`${redactSecrets(safeText(error.message, "Claude Code patch bridge failed"))}\n`);
     exitCode = 1;
   } finally {
-    // Always clean up the isolated workspace, even on error/timeout.
-    rmSync(workspace, { recursive: true, force: true });
+    // Always clean up the isolated workspace, even on error/timeout. In
+    // runner context there is no isolated workspace — the checkout belongs
+    // to the runner pipeline.
+    if (!runnerContext) rmSync(workspace, { recursive: true, force: true });
   }
 
   if (envelope !== null) {

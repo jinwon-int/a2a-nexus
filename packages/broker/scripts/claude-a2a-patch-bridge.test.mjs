@@ -2433,3 +2433,150 @@ test("diagnoseHunkHeaderCounts stays silent on unmodified diff -U0 without the f
 
   assert.deepEqual(diagnoseHunkHeaderCounts(body), []);
 });
+
+// ── Runner context (#1855): the docker runner owns checkout/commit/push/PR ──
+
+test("runner context: model JSON without GitHub evidence still succeeds (runner owns the PR)", () => {
+  const tempDir = mkdtempSync(join(tmpdir(), "claude-patch-runnerctx-"));
+  const fakeClaudePath = join(tempDir, "fake-claude.mjs");
+  const cwdCapturePath = join(tempDir, "claude-cwd.txt");
+  try {
+    writeStubClaude(fakeClaudePath, [
+      "import { writeFileSync } from 'node:fs';",
+      "writeFileSync(process.env.CAPTURE_CWD_PATH, process.cwd());",
+      "const args = process.argv.slice(2);",
+      "const prompt = args[args.indexOf('-p') + 1];",
+      "if (!prompt.includes('inside the A2A docker runner')) throw new Error('runner-context preamble missing');",
+      "if (!prompt.includes('do NOT clone')) throw new Error('no-clone instruction missing');",
+      "if (/clone the target repo/.test(prompt)) throw new Error('termux clone instruction leaked into runner context');",
+      "const result = { status: 'done', summary: '파일 편집 완료', filesChanged: ['README.md'], tests: [], risks: [] };",
+      "console.log(JSON.stringify({ type: 'result', subtype: 'success', num_turns: 2, result: JSON.stringify(result) }));",
+    ]);
+    const result = spawnSync(bridgePath, bridgeArgs(patchMessage()), {
+      encoding: "utf8",
+      cwd: tempDir,
+      env: {
+        ...process.env,
+        A2A_CLAUDE_CODE_BIN: fakeClaudePath,
+        A2A_CLAUDE_PATCH_RUNNER_CONTEXT: "1",
+        CAPTURE_CWD_PATH: cwdCapturePath,
+      },
+    });
+    assert.equal(result.status, 0, result.stderr);
+    const envelope = JSON.parse(result.stdout);
+    const payload = JSON.parse(envelope.payloads[0]?.text);
+    assert.equal(payload.status, "done");
+    assert.equal(payload.prUrl, undefined);
+    assert.deepEqual(payload.filesChanged, ["README.md"]);
+    // The model ran in the runner's checkout (cwd), not an isolated clone.
+    assert.equal(readFileSync(cwdCapturePath, "utf8"), tempDir);
+  } finally {
+    rmSync(tempDir, { recursive: true, force: true });
+  }
+});
+
+test("runner context + fanout: missing model subagentReport is derived from session transcripts", () => {
+  const tempDir = mkdtempSync(join(tmpdir(), "claude-patch-runnerctx-fanout-"));
+  const fakeClaudePath = join(tempDir, "fake-claude.mjs");
+  const configDir = join(tempDir, "claude-config");
+  const transcriptDir = join(configDir, "projects", "p1");
+  mkdirSync(transcriptDir, { recursive: true });
+  try {
+    writeStubClaude(fakeClaudePath, [
+      "import { appendFileSync, mkdirSync, writeFileSync } from 'node:fs';",
+      "const transcriptDir = process.env.CAPTURE_TRANSCRIPT_DIR;",
+      "mkdirSync(transcriptDir, { recursive: true });",
+      "appendFileSync(`${transcriptDir}/session.jsonl`, JSON.stringify({ message: { content: [",
+      "  { type: 'tool_use', name: 'Task', input: { agent: 'a2a-explorer', description: 'read the README' } },",
+      "  { type: 'tool_use', name: 'Task', input: { agent: 'a2a-verifier', description: 'check wording' } },",
+      "] } }) + '\\n');",
+      "const result = { status: 'done', summary: 'ok', filesChanged: ['README.md'], tests: [], risks: [] };",
+      "console.log(JSON.stringify({ type: 'result', subtype: 'success', num_turns: 5, result: JSON.stringify(result) }));",
+    ]);
+    const result = spawnSync(bridgePath, bridgeArgs(patchMessage()), {
+      encoding: "utf8",
+      cwd: tempDir,
+      env: {
+        ...process.env,
+        A2A_CLAUDE_CODE_BIN: fakeClaudePath,
+        A2A_CLAUDE_PATCH_RUNNER_CONTEXT: "1",
+        A2A_DOCKER_RUNNER_CLAUDE_CODE_FANOUT_ENABLED: "1",
+        A2A_CLAUDE_CODE_PATCH_MODE: "fanout",
+        A2A_CONTAINED_SUBAGENTS_ENABLED: "1",
+        A2A_CONTAINED_SUBAGENTS_MAX: "3",
+        A2A_CONTAINED_SUBAGENTS_ROLES: "explorer,implementer,verifier",
+        CLAUDE_CONFIG_DIR: configDir,
+        CAPTURE_TRANSCRIPT_DIR: transcriptDir,
+      },
+    });
+    assert.equal(result.status, 0, result.stderr);
+    assert.match(result.stderr, /A2A_FANOUT_SUBAGENT_REPORT_SOURCE=session_transcript count=2/);
+    const envelope = JSON.parse(result.stdout);
+    const payload = JSON.parse(envelope.payloads[0]?.text);
+    assert.equal(payload.subagentReport.count, 2);
+    assert.deepEqual(payload.subagentReport.entries.map((e) => e.role), ["explorer", "verifier"]);
+    assert.ok(payload.subagentReport.entries.every((e) => /^[A-Za-z0-9._:-]{1,128}$/.test(e.id)));
+  } finally {
+    rmSync(tempDir, { recursive: true, force: true });
+  }
+});
+
+test("runner context + fanout: no Task events in transcripts yields the 0-subagent escape hatch, not a failure", () => {
+  const tempDir = mkdtempSync(join(tmpdir(), "claude-patch-runnerctx-zero-"));
+  const fakeClaudePath = join(tempDir, "fake-claude.mjs");
+  const configDir = join(tempDir, "claude-config");
+  const transcriptDir = join(configDir, "projects", "p1");
+  mkdirSync(transcriptDir, { recursive: true });
+  try {
+    writeStubClaude(fakeClaudePath, [
+      "import { appendFileSync } from 'node:fs';",
+      "appendFileSync(`${process.env.CAPTURE_TRANSCRIPT_DIR}/session.jsonl`, JSON.stringify({ message: { content: [",
+      "  { type: 'tool_use', name: 'Read', input: { path: 'README.md' } }",
+      "] } }) + '\\n');",
+      "const result = { status: 'done', summary: 'solo', filesChanged: ['README.md'], tests: [], risks: [] };",
+      "console.log(JSON.stringify({ type: 'result', subtype: 'success', num_turns: 1, result: JSON.stringify(result) }));",
+    ]);
+    const result = spawnSync(bridgePath, bridgeArgs(patchMessage()), {
+      encoding: "utf8",
+      cwd: tempDir,
+      env: {
+        ...process.env,
+        A2A_CLAUDE_CODE_BIN: fakeClaudePath,
+        A2A_CLAUDE_PATCH_RUNNER_CONTEXT: "1",
+        A2A_DOCKER_RUNNER_CLAUDE_CODE_FANOUT_ENABLED: "1",
+        A2A_CLAUDE_CODE_PATCH_MODE: "fanout",
+        A2A_CONTAINED_SUBAGENTS_ENABLED: "1",
+        A2A_CONTAINED_SUBAGENTS_MAX: "3",
+        A2A_CONTAINED_SUBAGENTS_ROLES: "explorer,implementer,verifier",
+        CLAUDE_CONFIG_DIR: configDir,
+        CAPTURE_TRANSCRIPT_DIR: transcriptDir,
+      },
+    });
+    assert.equal(result.status, 0, result.stderr);
+    const envelope = JSON.parse(result.stdout);
+    const payload = JSON.parse(envelope.payloads[0]?.text);
+    assert.equal(payload.subagentReport.count, 0);
+    assert.deepEqual(payload.subagentReport.entries, []);
+  } finally {
+    rmSync(tempDir, { recursive: true, force: true });
+  }
+});
+
+test("non-runner context keeps the Termux evidence contract unchanged", () => {
+  const tempDir = mkdtempSync(join(tmpdir(), "claude-patch-termux-contract-"));
+  const fakeClaudePath = join(tempDir, "fake-claude.mjs");
+  try {
+    writeStubClaude(fakeClaudePath, [
+      "const result = { status: 'done', summary: 'no url', tests: [], filesChanged: [], risks: [] };",
+      "console.log(JSON.stringify({ type: 'result', subtype: 'success', result: JSON.stringify(result) }));",
+    ]);
+    const result = spawnSync(bridgePath, bridgeArgs(patchMessage()), {
+      encoding: "utf8",
+      env: { ...process.env, A2A_CLAUDE_CODE_BIN: fakeClaudePath },
+    });
+    assert.notEqual(result.status, 0);
+    assert.match(result.stderr, /missing GitHub evidence/);
+  } finally {
+    rmSync(tempDir, { recursive: true, force: true });
+  }
+});
