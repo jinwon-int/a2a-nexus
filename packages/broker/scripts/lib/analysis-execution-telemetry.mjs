@@ -32,9 +32,15 @@ export function classifySchemaRetryErrors(errors) {
   const text = listed.join("\n");
   if (/provider|request failed|rate limit|timeout/i.test(text)) return "provider_failure";
   if (/not parseable JSON/i.test(text)) return "no_json_candidate";
-  // TypeBox shapes: "Unexpected property", "Unexpected external member",
-  // "Unexpected property key" — additionalProperties:false violations.
-  if (/Unexpected (property|external member|property key)/i.test(text)) return "extra_property";
+  // additionalProperties:false violations. Deployed-field shapes first — the
+  // pinned piri's TypeBox Compile emits "must not have additional
+  // properties" (verified against retained worker-host clinical-lane progress
+  // files, 2026-08-16; this is the dominant #1815 content_clinical retry
+  // shape). Older TypeBox said "Unexpected property/external member/property
+  // key"; keep those plus the ajv-style phrasing for forward/backward cover.
+  if (/must not have additional propert|additionalProperties|Unexpected (property|external member|property key)/i.test(text)) {
+    return "extra_property";
+  }
   // "Required property" / "Expected required property".
   if (/required property/i.test(text)) return "missing_field";
   // Value-shape violations carry a JSON path or an "Expected …" predicate
