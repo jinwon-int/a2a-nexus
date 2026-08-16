@@ -48,19 +48,36 @@ function boundUtf8(value: string, maxBytes: number): string {
  * before the generic 8KB stdout view is truncated. The additive RunnerResult
  * field is already redacted and byte-bounded; the broker still performs the
  * authoritative task/worker/plan binding and final redaction/assembly gate.
+ *
+ * Accepts either output shape (piri fanout WS5, #1836):
+ * - claude envelope: {"payloads":[{"text":"<final answer JSON>"}]} where the
+ *   final answer carries subagentReport (the claude-code lane, unchanged);
+ * - bare final-answer JSON (the piri `-p` stdout shape): the schema-validated
+ *   final answer object itself carries an optional top-level subagentReport
+ *   block. A stdout wrapper script was rejected by design — this is the
+ *   additive parsing path instead.
  */
 export function extractStructuredSubagentReport(
   stdout: string,
   options: StructuredSubagentReportOptions,
 ): RunnerSubagentReport | undefined {
   try {
-    const envelope = JSON.parse(stdout.trim()) as Record<string, unknown>;
-    const payloads = Array.isArray(envelope.payloads) ? envelope.payloads : [];
-    const first = payloads[0];
-    if (!first || typeof first !== "object" || Array.isArray(first)) return undefined;
-    const text = (first as Record<string, unknown>).text;
-    if (typeof text !== "string") return undefined;
-    const payload = JSON.parse(text) as Record<string, unknown>;
+    const parsed = JSON.parse(stdout.trim()) as Record<string, unknown>;
+    let payload: Record<string, unknown> | undefined;
+    if (Array.isArray(parsed.payloads)) {
+      const payloads = parsed.payloads;
+      const first = payloads[0];
+      if (!first || typeof first !== "object" || Array.isArray(first)) return undefined;
+      const text = (first as Record<string, unknown>).text;
+      if (typeof text !== "string") return undefined;
+      const inner = JSON.parse(text) as Record<string, unknown>;
+      if (!inner || typeof inner !== "object" || Array.isArray(inner)) return undefined;
+      payload = inner;
+    } else if (parsed.subagentReport !== undefined) {
+      payload = parsed;
+    } else {
+      return undefined;
+    }
     const report = payload.subagentReport;
     if (!report || typeof report !== "object" || Array.isArray(report)) return undefined;
     const record = report as Record<string, unknown>;

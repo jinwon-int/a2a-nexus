@@ -31,6 +31,31 @@
 		},
 		"doneCommentUrl": { "type": "string" },
 		"blockCommentUrl": { "type": "string" },
-		"startCommentUrl": { "type": "string" }
+		"startCommentUrl": { "type": "string" },
+		"subagentReport": {
+			"type": "object",
+			"description": "Optional contained-subagent helper report (piri fanout WS5, a2a-nexus#1836): present only when the broker authorized subagent fanout. Same shape the claude-code final answer carries; the docker-runner extractor accepts it as a top-level block on this bare final-answer object. Absent reports fail closed broker-side in fanout mode.",
+			"additionalProperties": false,
+			"required": ["count", "entries"],
+			"properties": {
+				"count": { "type": "integer", "minimum": 0, "maximum": 4 },
+				"entries": {
+				"type": "array",
+				"maxItems": 4,
+				"items": {
+					"type": "object",
+					"additionalProperties": false,
+					"required": ["role", "id", "writeSet", "status", "output"],
+						"properties": {
+							"role": { "type": "string", "enum": ["explorer", "implementer", "verifier"] },
+							"id": { "type": "string", "pattern": "^[A-Za-z0-9._:-]{1,128}$" },
+							"writeSet": { "type": "array", "items": { "type": "string", "minLength": 1 } },
+							"status": { "type": "string", "enum": ["complete", "blocked", "failed", "skipped"] },
+							"output": { "type": "string", "description": "Bounded per-helper evidence summary; the runner redacts secrets/private paths before broker handoff." }
+						}
+					}
+				}
+			}
+		}
 	}
 }
