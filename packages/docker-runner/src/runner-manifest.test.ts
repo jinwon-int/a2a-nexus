@@ -311,20 +311,24 @@ test("extractStructuredSubagentReport preserves a report beyond the 8KB stream v
 });
 
 test("extractStructuredSubagentReport recovers the report from a noisy container stream (#1855 field canary)", () => {
-  // Real canary13 shape: pipeline narration before, the claude bridge's
-  // envelope NOT newline-terminated, and the Auto-patch commit appending
-  // directly after it — a strict whole-stream parse finds nothing.
+  // Real canary14 shape (from the runner's own captured stdout): the bridge's
+  // turn-budget diagnostic JSON lands on stdout BEFORE the envelope, the
+  // envelope is not newline-terminated, and the Auto-patch commit appends
+  // directly after it — a strict whole-stream parse finds nothing, and a
+  // first-object-only scan grabs the turn budget instead of the envelope.
+  const turnBudget = JSON.stringify({ schemaVersion: "a2a.claude.turn-budget.v1", mode: "fanout-patch", outcome: "success", turnsUsed: 11 });
   const envelope = JSON.stringify({
     payloads: [{ text: JSON.stringify({ status: "done", subagentReport: { count: 0, entries: [] } }) }],
   });
   const stdout = [
-    "A2A Docker Runner task cc-fanout-canary13",
+    "A2A Docker Runner task cc-fanout-canary14",
     "intent=propose_patch",
     "patch_mode=script",
-    envelope + "[a2a-patch-20260816-173032-x c983bf6] Auto-patch: cc-fanout-canary13",
+    turnBudget,
+    envelope + "[a2a-patch-20260816-174744-x c983bf6] Auto-patch: cc-fanout-canary14",
     " 1 file changed, 1 insertion(+), 1 deletion(-)",
-    "branch=a2a-patch-20260816-173032-x",
-    "https://github.com/jinwon-int/a2a-fanout-sandbox/pull/4",
+    "branch=a2a-patch-20260816-174744-x",
+    "https://github.com/jinwon-int/a2a-fanout-sandbox/pull/5",
   ].join("\n");
 
   const extracted = extractStructuredSubagentReport(stdout, {
