@@ -12,7 +12,7 @@
  */
 
 import { optionalTrimmed, parseBooleanEnv, type WorkerRuntimeProfile } from "./worker-metadata.js";
-import type { BuiltinWorkerHandlerKind } from "../worker.js";
+import type { BuiltinWorkerHandlerKind } from "./task-handler-factories.js";
 import type {
   A2APartyKind,
   A2APartyRole,
