@@ -1779,6 +1779,10 @@ test("claude-code patch mode: normal non-fanout lane is agentic; deterministic a
   // every implementation mode can parse repository and issue context.
   const defaultScript = buildClaudeCodePatchCommandScript({});
   assert.match(defaultScript, /export A2A_CLAUDE_CODE_PATCH_MODE=agentic\b/);
+  // #1855 runner context: the bridge must know the runner owns checkout/
+  // commit/push/PR so it neither demands model-reported PR evidence nor
+  // clones into an isolated workspace.
+  assert.match(defaultScript, /export A2A_CLAUDE_PATCH_RUNNER_CONTEXT=1/);
   assert.match(defaultScript, /export A2A_CLAUDE_CODE_TIMEOUT_SEC='3600'/);
   assert.doesNotMatch(defaultScript, /export A2A_CLAUDE_CODE_MAX_TURNS=/);
   assert.doesNotMatch(defaultScript, /export A2A_CLAUDE_CODE_PATCH_MAX_TURNS=/);
