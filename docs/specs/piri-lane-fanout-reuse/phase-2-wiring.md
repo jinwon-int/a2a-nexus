@@ -4,8 +4,8 @@ Concrete wiring design turning the Phase-1 mapping (`phase-1-mapping.md` §6)
 into implementable changes. Mirrors the structure of the claude-code
 `docs/specs/cc-worker-container-fanout/phase-2-wiring.md` (its WS1–WS5), with
 every claude-specific mechanism replaced by its named piri equivalent or an
-explicitly designed gap-closure. Status: **WS1 implemented (code+tests,
-2026-08-15); WS2–WS5 remain spec-only.** Fanout stays
+explicitly designed gap-closure. Status: **WS1 and WS2 implemented (code+tests,
+2026-08-15); WS3–WS5 remain spec-only.** Fanout stays
 opt-in and default-off everywhere; every live spawn / deploy / restart /
 canary step remains operator-approved per the #1798 decision packet.
 
@@ -46,13 +46,17 @@ the container stays a thin executor. The pipeline:
 - **Rollback** = set the flag to `0`/unset ⇒ the current plain
   `piri -p` script path byte-for-byte; single flag, no second switch.
 
-### WS2 — executor: hardened subagent extension (Phase-1 gap 1, 3, 5)
+### WS2 — executor: hardened subagent extension (**implemented**, 2026-08-15)
 
-- Fork the official example extension
-  (`packages/coding-agent/examples/extensions/subagent/`, present but unwired
-  in the pinned image) into the docker-runner image at a stable path,
-  e.g. `/opt/a2a-runner/piri-fanout-extension/`, and bump the image pin.
-- Hardening requirements (all named by Phase-1 §4):
+- Forked into the repo at
+  `packages/docker-runner/docker/piri-fanout-extension/` (`index.js` tool +
+  `agents.js` user-scope discovery + dependency-free `policy.js`), baked
+  into the image at `/opt/a2a-runner/piri-fanout-extension/` by
+  `piri-runner.Dockerfile`. **No piri ref bump needed:** the pinned
+  `v0.83.0-piri.1` already ships the example this forks, and the fork is
+  self-contained (piri's extension loader provides the
+  `@earendil-works/*`/`typebox` modules to extensions regardless of path).
+- Hardening as designed (all named by Phase-1 §4):
   1. **Env inputs:** read `A2A_CONTAINED_SUBAGENTS_MAX / ROLES /
      OUTPUT_BYTES / REASONS`; refuse (`exit 3`-style error result, no spawn)
      when `A2A_CONTAINED_SUBAGENTS_ENABLED != 1` or the env is absent.
@@ -68,11 +72,17 @@ the container stays a thin executor. The pipeline:
      (SIGTERM→5 s→SIGKILL). The roster `tools:` scoping and the parent
      `timeout` remain defense-in-depth.
   4. **Scope pinning (gap 5):** the tool config pins `agentScope: "user"`
-     and rejects any prompt-selected `project`/`both`; project-local
-     `.piri/agents` can never load.
+     and rejects any prompt-selected `project`/`both`;
+     `agents.js` additionally deletes the project-scope discovery walk, so
+     project-local `.piri/agents` can never load.
 - The extension spawns children with `--mode json -p --no-session` and
   inherited env (no `env` override), so the injected
   `A2A_CONTAINED_SUBAGENTS_*` keys and the guarded `PATH` reach every child.
+- Unit coverage: `packages/docker-runner/src/piri-fanout-extension.test.ts`
+  (env-input refusal, clamp-down incl. never-expansion, child-timeout math
+  incl. override/cap, scope pinning, inherited-env spawn contract, Dockerfile
+  bake). The example's TUI renderers/prompts/sample agents were dropped
+  (headless lane; roster is host-side per WS3).
 
 ### WS3 — tool allowlist + roster
 
@@ -142,7 +152,8 @@ the container stays a thin executor. The pipeline:
   1 ⇒ `-e`/`-t`/advertising present; read-only head preserved);
   engine-contract piri-profile contained-subagent env + brief expectations;
   runner-manifest bare-JSON extractor variant; extension unit tests for
-  env-input refusal, clamp-down, child timeout, scope pinning.
+  env-input refusal, clamp-down, child timeout, scope pinning (**WS2 part
+  landed** with `src/piri-fanout-extension.test.ts`).
 
 ## Non-goals
 

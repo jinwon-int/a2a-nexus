@@ -65,6 +65,16 @@ COPY --chmod=0644 docker/piri-analysis-output.schema.json /etc/a2a-runner/piri-a
 # too; restore the traverse bit so non-root container users can read the file.
 RUN chmod 0755 /etc/a2a-runner
 
+# Hardened subagent fanout extension for the piri lane (piri fanout WS2,
+# a2a-nexus#1836): fork of the piri example extension hardened to the
+# broker-injected A2A_CONTAINED_SUBAGENTS_* budget with per-child timeouts
+# and user-scope pinning. Loaded only in fanout mode via
+# `-e /opt/a2a-runner/piri-fanout-extension` (WS3); with the fanout flag off
+# nothing here is loaded. No piri ref bump needed: the pinned v0.83.0-piri.1
+# already ships the example this forks, and the fork is self-contained.
+COPY docker/piri-fanout-extension /opt/a2a-runner/piri-fanout-extension
+RUN chmod -R a+rX /opt/a2a-runner/piri-fanout-extension
+
 # Record the resolved piri commit so a built image is auditable even when
 # PIRI_REF names a tag or branch instead of a commit.
 RUN cd /opt/piri && git rev-parse HEAD > /etc/a2a-runner/piri-revision
