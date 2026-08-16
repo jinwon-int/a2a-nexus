@@ -58,64 +58,79 @@ function boundUtf8(value: string, maxBytes: number): string {
  *   additive parsing path instead.
  */
 /**
- * First balanced JSON object in free text (string/escape aware). The
- * container stdout mixes the pipeline narration (summary lines, the Auto-patch
- * commit, gh pr output) around the bridge's envelope/final answer, and the
- * claude bridge's envelope is not newline-terminated before the next pipeline
- * step appends — a strict whole-stream JSON.parse finds nothing. Mirrors
- * piri's extractJsonCandidate approach (#1855 field canary: the report
- * otherwise never reaches the broker's WS5 gate and an authorized fanout
- * fails as subagent_report_missing despite a clean bridge envelope).
+ * Every balanced top-level JSON object in free text, in order (string/
+ * escape aware). The container stdout mixes pipeline narration AND other
+ * JSON emits (the bridge's turn-budget diagnostic can land on stdout before
+ * the envelope) around the payload — a strict whole-stream JSON.parse finds
+ * nothing, and stopping at the FIRST balanced object grabs the wrong one.
+ * Mirrors piri's extractJsonCandidate scanning approach (#1855 field canary:
+ * the report otherwise never reaches the broker's WS5 gate and an authorized
+ * fanout fails as subagent_report_missing despite a clean bridge envelope).
  */
-function firstBalancedJsonObject(text: string): Record<string, unknown> | undefined {
-  const start = text.indexOf("{");
-  if (start === -1) return undefined;
-  let depth = 0;
-  let inString = false;
-  let escaped = false;
-  for (let i = start; i < text.length; i += 1) {
-    const ch = text[i];
-    if (inString) {
-      if (escaped) escaped = false;
-      else if (ch === "\\") escaped = true;
-      else if (ch === '"') inString = false;
-      continue;
-    }
-    if (ch === '"') inString = true;
-    else if (ch === "{") depth += 1;
-    else if (ch === "}") {
-      depth -= 1;
-      if (depth === 0) {
-        try {
-          const parsed = JSON.parse(text.slice(start, i + 1)) as unknown;
-          if (parsed && typeof parsed === "object" && !Array.isArray(parsed)) {
-            return parsed as Record<string, unknown>;
+function* balancedJsonObjects(text: string): Generator<Record<string, unknown>> {
+  let rest = text;
+  while (rest.length > 0) {
+    const start = rest.indexOf("{");
+    if (start === -1) return;
+    let depth = 0;
+    let inString = false;
+    let escaped = false;
+    for (let i = start; i < rest.length; i += 1) {
+      const ch = rest[i];
+      if (inString) {
+        if (escaped) escaped = false;
+        else if (ch === "\\") escaped = true;
+        else if (ch === '"') inString = false;
+        continue;
+      }
+      if (ch === '"') inString = true;
+      else if (ch === "{") depth += 1;
+      else if (ch === "}") {
+        depth -= 1;
+        if (depth === 0) {
+          try {
+            const parsed = JSON.parse(rest.slice(start, i + 1)) as unknown;
+            if (parsed && typeof parsed === "object" && !Array.isArray(parsed)) {
+              yield parsed as Record<string, unknown>;
+            }
+          } catch {
+            // unparseable candidate — keep scanning
           }
-        } catch {
-          // unparseable candidate — keep scanning from the next brace
+          rest = rest.slice(i + 1);
+          break;
         }
-        return firstBalancedJsonObject(text.slice(i + 1));
       }
     }
+    if (depth !== 0) return; // unbalanced tail — nothing more to yield
   }
-  return undefined;
 }
 
 export function extractStructuredSubagentReport(
   stdout: string,
   options: StructuredSubagentReportOptions,
 ): RunnerSubagentReport | undefined {
+  const candidates: Record<string, unknown>[] = [];
   try {
-    const trimmed = stdout.trim();
-    let parsed: Record<string, unknown> | undefined;
-    try {
-      parsed = JSON.parse(trimmed) as Record<string, unknown>;
-    } catch {
-      // Noisy container stream (pipeline narration around the payload):
-      // fall back to the first balanced JSON object.
-      parsed = firstBalancedJsonObject(trimmed);
+    const strict = JSON.parse(stdout.trim()) as unknown;
+    if (strict && typeof strict === "object" && !Array.isArray(strict)) {
+      candidates.push(strict as Record<string, unknown>);
     }
-    if (!parsed) return undefined;
+  } catch {
+    // Noisy container stream (pipeline narration and other JSON emits around
+    // the payload): fall back to scanning every balanced JSON object.
+  }
+  candidates.push(...balancedJsonObjects(stdout));
+  for (const parsed of candidates) {
+    const extracted = subagentReportFromPayloadObject(parsed, options);
+    if (extracted !== undefined) return extracted;
+  }
+  return undefined;
+}
+
+function subagentReportFromPayloadObject(
+  parsed: Record<string, unknown>,
+  options: StructuredSubagentReportOptions,
+): RunnerSubagentReport | undefined {
     let payload: Record<string, unknown> | undefined;
     if (Array.isArray(parsed.payloads)) {
       const payloads = parsed.payloads;
@@ -123,9 +138,14 @@ export function extractStructuredSubagentReport(
       if (!first || typeof first !== "object" || Array.isArray(first)) return undefined;
       const text = (first as Record<string, unknown>).text;
       if (typeof text !== "string") return undefined;
-      const inner = JSON.parse(text) as Record<string, unknown>;
+      let inner: unknown;
+      try {
+        inner = JSON.parse(text);
+      } catch {
+        return undefined;
+      }
       if (!inner || typeof inner !== "object" || Array.isArray(inner)) return undefined;
-      payload = inner;
+      payload = inner as Record<string, unknown>;
     } else if (parsed.subagentReport !== undefined) {
       payload = parsed;
     } else {
@@ -174,9 +194,6 @@ export function extractStructuredSubagentReport(
       });
     }
     return { count, entries };
-  } catch {
-    return undefined;
-  }
 }
 
 export async function runTask(config: RunnerConfig, task: RunnerTask): Promise<RunnerResult> {
