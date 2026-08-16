@@ -11,7 +11,7 @@
  * (including toTaskError, the single boundary every task-processing error
  * crosses).
  *
- * Depends on worker.ts only for the shared BrokerApiError class; everything
+ * Depends on broker-worker-client.ts only for the shared BrokerApiError class; everything
  * else is self-contained pure logic over the core types.
  */
 
@@ -20,7 +20,7 @@ import { mkdir, readFile, writeFile } from "node:fs/promises";
 import { dirname } from "node:path";
 import type { TaskError, TaskResult } from "../core/types.js";
 import type { FailureClass } from "../core/task-error-details.js";
-import { BrokerApiError } from "../worker.js";
+import { BrokerApiError } from "./broker-worker-client.js";
 
 export interface WorkerHandlerOutcome {
   result?: TaskResult;
