@@ -208,6 +208,51 @@ test("schema exhaustion (piri exit 4) maps to a structured provider_or_model_fai
 	}
 });
 
+test("failure records carry execution telemetry, model fields, and source counts (#1725/#1815)", () => {
+	const dir = mkdtempSync(join(tmpdir(), "piri-bridge-"));
+	try {
+		const docker = makeFakeDocker(dir, {
+			exitCode: 4,
+			stderr: "--output-schema not satisfied after 3 attempt(s)\n",
+			progressLines: [
+				JSON.stringify({ ts: "t", type: "turn_start" }),
+				JSON.stringify({ ts: "t", type: "marker", marker: "output_schema_retry", attempt: 1, maxAttempts: 3, errors: ["/ : Unexpected property"] }),
+				JSON.stringify({ ts: "t", type: "marker", marker: "output_schema_retry", attempt: 2, maxAttempts: 3, errors: ["/status: Expected union value"] }),
+				JSON.stringify({ ts: "t", type: "marker", marker: "usage", requests: 4, inputTokens: 10, outputTokens: 5 }),
+			],
+		});
+		const configDir = makeConfigDir(dir);
+		const child = runBridge(
+			["agent", "--local", "--message", sampleMessage({}), "--model", "kimi-coding/k3", "--thinking", "low", "--timeout", "30", "--json"],
+			{
+				A2A_PIRI_DOCKER_BIN: docker,
+				A2A_PIRI_WORK_ROOT: join(dir, "tasks"),
+				A2A_PIRI_CONFIG_DIR: configDir,
+				A2A_PIRI_MODEL: "zai/glm-5.2",
+				A2A_ANALYSIS_SOURCE_CARRIER_STATS: JSON.stringify({ sourceFiles: 3, totalFiles: 3, totalBytes: 4096 }),
+			},
+		);
+		assert.equal(child.status, 1);
+		const detail = JSON.parse(child.stderr.split("\n").find((l) => l.startsWith("A2A_BRIDGE_ERROR=")).slice("A2A_BRIDGE_ERROR=".length));
+		assert.equal(detail.code, "analysis_bridge_schema_unsatisfied");
+		// requested/actual model split survives into the failure record.
+		assert.equal(detail.requestedModel, "kimi-coding/k3");
+		assert.equal(detail.requestedThinking, "low");
+		assert.equal(detail.actualRuntimeModel, "zai/glm-5.2");
+		assert.equal(detail.modelInheritanceMode, "bridge_env_pin");
+		// source counts echo what the lane actually saw.
+		assert.deepEqual(detail.sourceCarrierStats, { sourceFiles: 3, totalFiles: 3, totalBytes: 4096 });
+		// execution telemetry incl. the classified schema-retry reasons.
+		assert.equal(detail.executionTelemetry.schemaVersion, "a2a.analysis-execution-telemetry.v1");
+		assert.equal(detail.executionTelemetry.source, "piri_progress_file");
+		assert.equal(detail.executionTelemetry.schemaRetries, 2);
+		assert.deepEqual(detail.executionTelemetry.schemaRetryReasons, { extra_property: 1, invalid_value: 1 });
+		assert.equal(detail.executionTelemetry.modelRequests, 4);
+	} finally {
+		rmSync(dir, { recursive: true, force: true });
+	}
+});
+
 test("provider failure (piri exit 3) maps to analysis_bridge_provider_failure", () => {
 	const dir = mkdtempSync(join(tmpdir(), "piri-bridge-"));
 	try {
@@ -277,6 +322,11 @@ test("missing piri credential fails closed before docker invocation", () => {
 		assert.equal(detail.code, "analysis_bridge_credential_unavailable");
 		assert.equal(detail.stage, "preflight");
 		assert.equal(detail.failureShape, "handler_artifact_failure");
+		// Pre-invocation failures still carry the resolved model fields but no
+		// execution telemetry (the run never started).
+		assert.equal(detail.actualRuntimeModel, "kimi-coding/k3");
+		assert.equal(detail.modelInheritanceMode, "bridge_env_pin");
+		assert.equal(detail.executionTelemetry, undefined);
 	} finally {
 		rmSync(dir, { recursive: true, force: true });
 	}
