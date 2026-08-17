@@ -76,6 +76,15 @@ import {
   startBrokerExchange,
 } from "./broker-exchange.js";
 import { applyBrokerExchangeMessageDecision } from "./broker-exchange-task-decision.js";
+import {
+  acceptBrokerConversationMessage,
+  consumeConversationMessage,
+  openBrokerConversation,
+  pollConversationInbox,
+  type A2AConversationReceipt,
+  type A2AConversationState,
+  type ConversationInboxEntry,
+} from "./broker-conversation.js";
 import { getBrokerRoundStatus, listBrokerTasks, readBrokerTask } from "./broker-task-read.js";
 import { readBrokerProposal, listBrokerProposals } from "./broker-proposal-read.js";
 import {
@@ -326,6 +335,8 @@ const DEFAULT_CHECKPOINT_TIMEOUT_MS = 24 * 60 * 60 * 1000;
 export class InMemoryA2ABroker {
   private readonly exchanges = new Map<string, A2AExchangeState>();
   private readonly exchangeMessages = new Map<string, A2AExchangeMessageRecord>();
+  /** Trusted Conversation Plane state (#1862; envelope domain in broker-conversation.ts). */
+  private readonly conversations = new Map<string, A2AConversationState>();
   private readonly proposals = new Map<string, ChangeProposal>();
   private readonly artifacts = new Map<string, ArtifactRecord>();
   private readonly validations = new Map<string, ValidationResult>();
@@ -930,6 +941,119 @@ export class InMemoryA2ABroker {
       appendAuditEvent: (input) => this.appendAuditEvent(input),
       persistState: () => this.persistState(),
     });
+  }
+
+  // ---------------------------------------------------------------------------
+  // Trusted Conversation Plane (#1862, C2 slice 2): broker wiring over the
+  // pure domain in broker-conversation.ts. Thin delegators — the rules live
+  // in the domain module and its tests.
+  // ---------------------------------------------------------------------------
+
+  /** Broker id used for conversation receipts and relay hops. */
+  private get conversationBrokerId(): string {
+    return this.brokerId ?? "broker-local";
+  }
+
+  private conversationNow(): string {
+    return new Date().toISOString();
+  }
+
+  private requireConversation(conversationId: string): A2AConversationState {
+    const conversation = this.conversations.get(conversationId);
+    if (!conversation) throw new BrokerError("not_found", `conversation ${conversationId} not found`);
+    return conversation;
+  }
+
+  startConversation(request: {
+    homeBrokerId: string;
+    maxTurns?: number;
+    envelope: unknown;
+  }): { conversation: A2AConversationState; messageId: string } {
+    const { conversation, message } = openBrokerConversation(request, {
+      now: () => this.conversationNow(),
+      appendAuditEvent: (input) => this.appendAuditEvent({
+        actorId: input.actorId,
+        action: input.action as AuditAction,
+        targetType: input.targetType as AuditEvent["targetType"],
+        targetId: input.targetId,
+        note: input.note,
+      }),
+      setConversationRecord: (conversation) => {
+        this.conversations.set(conversation.conversationId, conversation);
+      },
+      persistState: () => this.persistState(),
+    });
+    return { conversation, messageId: message.messageId };
+  }
+
+  getConversation(conversationId: string): A2AConversationState | null {
+    return this.conversations.get(conversationId) ?? null;
+  }
+
+  listConversations(): A2AConversationState[] {
+    return [...this.conversations.values()];
+  }
+
+  addConversationMessage(
+    conversationId: string,
+    envelope: unknown,
+  ): { outcome: "accepted" | "converged"; conversation: A2AConversationState; messageId: string; sequence: number } {
+    const conversation = this.requireConversation(conversationId);
+    const result = acceptBrokerConversationMessage(conversation, { envelope }, {
+      now: () => this.conversationNow(),
+      appendAuditEvent: (input) => this.appendAuditEvent({
+        actorId: input.actorId,
+        action: input.action as AuditAction,
+        targetType: input.targetType as AuditEvent["targetType"],
+        targetId: input.targetId,
+        note: input.note,
+      }),
+      setConversationRecord: (updated) => {
+        this.conversations.set(updated.conversationId, updated);
+      },
+      persistState: () => this.persistState(),
+      requireConversationMessage: (id, messageId) => {
+        const record = this.conversations.get(id)?.messagesById[messageId];
+        if (!record) throw new BrokerError("not_found", `conversation message ${messageId} not found`);
+        return record;
+      },
+    });
+    return {
+      outcome: result.outcome,
+      conversation: result.conversation,
+      messageId: result.message.messageId,
+      sequence: result.message.sequence,
+    };
+  }
+
+  pollConversationInbox(
+    conversationId: string,
+    actor: { kind: string; id: string; homeBrokerId: string },
+  ): { entries: ConversationInboxEntry[]; markedDelivered: number } {
+    const conversation = this.requireConversation(conversationId);
+    return pollConversationInbox(conversation, actor, { now: this.conversationNow() });
+  }
+
+  consumeConversationMessage(
+    conversationId: string,
+    messageId: string,
+    actor: { kind: string; id: string; homeBrokerId: string },
+    evidence: { kind: "reply" | "task-result" | "ack"; ref: string },
+  ): { receipt: A2AConversationReceipt } {
+    const conversation = this.requireConversation(conversationId);
+    const result = consumeConversationMessage(conversation, messageId, actor, evidence, {
+      now: this.conversationNow(),
+      brokerId: this.conversationBrokerId,
+    });
+    this.appendAuditEvent({
+      actorId: actor.id,
+      action: "conversation.message.processed",
+      targetType: "conversation-message",
+      targetId: messageId,
+      note: `evidence=${evidence.kind}:${evidence.ref} digest=${result.message.contentDigest}`,
+    });
+    this.persistState();
+    return { receipt: result.receipt };
   }
 
   /**
@@ -1772,6 +1896,7 @@ export class InMemoryA2ABroker {
       version: CURRENT_BROKER_STATE_VERSION,
       exchanges: [...this.exchanges.values()],
       exchangeMessages: [...this.exchangeMessages.values()],
+      conversations: [...this.conversations.values()],
       proposals: [...this.proposals.values()],
       artifacts: [...this.artifacts.values()],
       validations: [...this.validations.values()],
@@ -1826,6 +1951,10 @@ export class InMemoryA2ABroker {
 
     for (const message of snapshot.exchangeMessages ?? []) {
       this.exchangeMessages.set(message.id, normalizeExchangeMessageRecord(message));
+    }
+
+    for (const conversation of snapshot.conversations ?? []) {
+      this.conversations.set(conversation.conversationId, conversation);
     }
 
     for (const exchange of this.exchanges.values()) {

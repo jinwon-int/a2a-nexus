@@ -682,6 +682,36 @@ export const brokerSnapshotSchema = z
     version: z.number().int().nonnegative().optional().default(CURRENT_BROKER_STATE_VERSION),
     exchanges: z.array(exchangeStateSchema).optional().default([]),
     exchangeMessages: z.array(exchangeMessageSchema).optional().default([]),
+    // Trusted Conversation Plane (#1862): passthrough-record shape — the
+    // authoritative field rules live in broker-conversation.ts validation;
+    // the snapshot schema only guarantees the envelope survives round-trips.
+    conversations: z
+      .array(
+        z
+          .object({
+        schemaVersion: z.literal("a2a.conversation-state.v1"),
+        conversationId: z.string().min(1),
+        homeBrokerId: z.string().min(1),
+        status: z.enum(["open", "closed"]),
+        closureReason: z.string().optional(),
+        maxTurns: z.number().int().positive(),
+        turnCount: z.number().int().nonnegative(),
+        totalContentBytes: z.number().int().nonnegative(),
+        lastAssignedSequence: z.number().int().positive(),
+        rootMessageId: z.string().min(1),
+        latestMessageId: z.string().min(1),
+        participants: z.array(z.string()),
+        messagesById: z.record(z.string(), z.unknown()),
+        idempotencyByKey: z.record(z.string(), z.unknown()),
+        createdAt: z.string(),
+        updatedAt: z.string(),
+          })
+          .passthrough(),
+      )
+      // Optional without default (pushNotificationConfigs pattern): hot-table
+      // projections build snapshots field-by-field and must not be forced to
+      // carry an empty array; conversation absence means "none persisted".
+      .optional(),
     proposals: z.array(proposalSchema).optional().default([]),
     artifacts: z.array(artifactSchema).optional().default([]),
     validations: z.array(validationSchema).optional().default([]),

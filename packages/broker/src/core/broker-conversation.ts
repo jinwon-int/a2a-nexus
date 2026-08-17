@@ -664,3 +664,124 @@ export function buildConversationReceipt(
     receiptDigest: `sha256:${createHash("sha256").update(JSON.stringify(receipt), "utf8").digest("hex")}`,
   } satisfies A2AConversationReceipt;
 }
+
+// ---------------------------------------------------------------------------
+// Inbox + consume (C2 slice 2): the worker-facing half of the loop.
+// Polling marks persisted→delivered (spec: polling exposure is `delivered`,
+// never `processed`); consuming advances to `processed` with linked evidence.
+// ---------------------------------------------------------------------------
+
+function recipientMatches(
+  message: A2AConversationMessageRecord,
+  actor: { kind: string; id: string; homeBrokerId: string },
+): boolean {
+  return message.recipients.some((recipient) => recipient.kind === actor.kind && recipient.id === actor.id && recipient.homeBrokerId === actor.homeBrokerId);
+}
+
+export interface ConversationInboxEntry {
+  messageId: string;
+  sequence: number;
+  kind: A2AConversationMessageKind;
+  sender: A2AConversationActorRef;
+  taskId?: string;
+  contentDigest: string;
+  redacted: boolean;
+  deliveryState: A2AConversationDeliveryState;
+  expiresAt?: string;
+  /** Present only when polling is allowed to expose content (delivered+). */
+  content?: { text: string };
+  createdAt: string;
+}
+
+export interface PollConversationInboxResult {
+  entries: ConversationInboxEntry[];
+  /** How many messages this poll advanced persisted→delivered. */
+  markedDelivered: number;
+}
+
+/**
+ * Poll an actor's conversation inbox. Participant-only (T6). Messages addressed
+ * to the polling actor that are still `persisted` advance to `delivered` —
+ * that is the entire effect of a poll; `processed` is never set here.
+ */
+export function pollConversationInbox(
+  conversation: A2AConversationState,
+  actor: { kind: string; id: string; homeBrokerId: string },
+  options: { now: string },
+): PollConversationInboxResult {
+  assertConversationParticipant(conversation, actor, "read");
+  expireStaleConversationMessages(conversation, options.now);
+  const entries: ConversationInboxEntry[] = [];
+  let markedDelivered = 0;
+  const ordered = Object.values(conversation.messagesById).sort((left, right) => left.sequence - right.sequence);
+  for (const message of ordered) {
+    if (!recipientMatches(message, actor)) continue;
+    if (TERMINAL_DELIVERY_STATES.has(message.deliveryState) || message.deliveryState === "processed") continue;
+    if (message.deliveryState === "accepted" || message.deliveryState === "persisted") {
+      // accepted→persisted is the broker's own durability step; a poll can
+      // carry it forward so the inbox never shows a half-accepted message.
+      if (message.deliveryState === "accepted") appendStateLog(message, "persisted", options.now);
+      appendStateLog(message, "delivered", options.now);
+      markedDelivered += 1;
+    }
+    entries.push({
+      messageId: message.messageId,
+      sequence: message.sequence,
+      kind: message.kind,
+      sender: message.sender,
+      ...(message.taskId !== undefined ? { taskId: message.taskId } : {}),
+      contentDigest: message.contentDigest,
+      redacted: message.redacted,
+      deliveryState: message.deliveryState,
+      ...(message.expiresAt !== undefined ? { expiresAt: message.expiresAt } : {}),
+      content: { text: message.content.text },
+      createdAt: message.createdAt,
+    });
+  }
+  if (markedDelivered > 0) conversation.updatedAt = options.now;
+  return { entries, markedDelivered };
+}
+
+export interface ConsumeConversationMessageResult {
+  message: A2AConversationMessageRecord;
+  receipt: A2AConversationReceipt;
+}
+
+/**
+ * Consume an inbox message: the polled (delivered) message advances to
+ * `processed` with linked evidence — a reply message id, a task result ref, or
+ * an explicit ack. Only a recipient of the message may consume it (T6), and
+ * only via broker mediation: there is no path here that bypasses the evidence
+ * requirement (spec non-proof: polling and provider-send never equal
+ * processed).
+ */
+export function consumeConversationMessage(
+  conversation: A2AConversationState,
+  messageId: string,
+  actor: { kind: string; id: string; homeBrokerId: string },
+  evidence: { kind: "reply" | "task-result" | "ack"; ref: string },
+  options: { now: string; brokerId: string },
+): ConsumeConversationMessageResult {
+  assertConversationParticipant(conversation, actor, "write");
+  const message = conversation.messagesById[messageId];
+  if (!message) {
+    throw new BrokerError("not_found", `conversation message ${messageId} not found in ${conversation.conversationId}`);
+  }
+  if (!recipientMatches(message, actor)) {
+    throw new BrokerError("policy_denied", `conversation message ${messageId} is not addressed to ${conversationActorKey(actor)}`);
+  }
+  if (!evidence.ref || typeof evidence.ref !== "string") {
+    throw new BrokerError("bad_request", "consume requires evidence.kind (reply|task-result|ack) and a non-empty evidence.ref");
+  }
+  if (message.deliveryState === "persisted" || message.deliveryState === "accepted") {
+    // An unpolled consume still passes through delivered so the state log
+    // records the exposure step (poll semantics) before processed.
+    if (message.deliveryState === "accepted") appendStateLog(message, "persisted", options.now);
+    appendStateLog(message, "delivered", options.now);
+  }
+  advanceConversationDelivery(conversation, messageId, "processed", {
+    now: options.now,
+    processedEvidence: evidence,
+  });
+  return { message, receipt: buildConversationReceipt(message, options.brokerId, options.now) };
+}
