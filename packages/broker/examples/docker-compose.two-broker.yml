@@ -1,0 +1,85 @@
+# Real two-broker demo topology (#1814 C6 / #1866).
+#
+# The previous two-broker demo doc pointed at docker-compose.trading-partners.yml,
+# which has only ONE broker service — the second broker existed only in the doc's
+# topology diagram. This compose is the real thing: two broker services, separate
+# state volumes, one shared network, loopback-published ports.
+#
+# Safety: loopback networking and placeholder credentials only. Do NOT point
+# this at production brokers, databases, provider transports, or terminal
+# outboxes. The peer-credential env values here are placeholders for the
+# conversation relay demo; provision real secrets only in operator-approved
+# environments.
+
+services:
+  broker-alpha:
+    build:
+      context: ../..
+      dockerfile: packages/broker/Dockerfile
+      args:
+        A2A_BROKER_REVISION: ${A2A_BROKER_REVISION:?set A2A_BROKER_REVISION=$(git rev-parse HEAD), or run npm run build:image -w packages/broker}
+        A2A_BROKER_VERSION: ${A2A_BROKER_VERSION:-0.1.0}
+        A2A_BROKER_CREATED: ${A2A_BROKER_CREATED:?set A2A_BROKER_CREATED=$(date -u +%Y-%m-%dT%H:%M:%SZ)}
+    container_name: two-broker-alpha
+    hostname: broker-alpha
+    restart: unless-stopped
+    environment:
+      HOST: 0.0.0.0
+      PORT: 8787
+      SERVICE_NAME: broker-alpha
+      PUBLIC_BASE_URL: http://broker-alpha:8787
+      STATE_FILE: /var/lib/a2a-broker/state.json
+      WORKER_OFFLINE_AFTER_SEC: 90
+      STALE_REAPER_ENABLED: "0"
+    ports:
+      - "127.0.0.1:8787:8787"
+    volumes:
+      - broker-alpha-state:/var/lib/a2a-broker
+    networks:
+      - two-broker
+    healthcheck:
+      test: ["CMD", "node", "-e", "fetch('http://127.0.0.1:8787/livez').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+      start_period: 5s
+
+  broker-beta:
+    build:
+      context: ../..
+      dockerfile: packages/broker/Dockerfile
+      args:
+        A2A_BROKER_REVISION: ${A2A_BROKER_REVISION:?set A2A_BROKER_REVISION=$(git rev-parse HEAD), or run npm run build:image -w packages/broker}
+        A2A_BROKER_VERSION: ${A2A_BROKER_VERSION:-0.1.0}
+        A2A_BROKER_CREATED: ${A2A_BROKER_CREATED:?set A2A_BROKER_CREATED=$(date -u +%Y-%m-%dT%H:%M:%SZ)}
+    container_name: two-broker-beta
+    hostname: broker-beta
+    restart: unless-stopped
+    environment:
+      HOST: 0.0.0.0
+      PORT: 8788
+      SERVICE_NAME: broker-beta
+      PUBLIC_BASE_URL: http://broker-beta:8788
+      STATE_FILE: /var/lib/a2a-broker/state.json
+      WORKER_OFFLINE_AFTER_SEC: 90
+      STALE_REAPER_ENABLED: "0"
+    ports:
+      - "127.0.0.1:8788:8788"
+    volumes:
+      - broker-beta-state:/var/lib/a2a-broker
+    networks:
+      - two-broker
+    healthcheck:
+      test: ["CMD", "node", "-e", "fetch('http://127.0.0.1:8788/livez').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+      start_period: 5s
+
+networks:
+  two-broker:
+    name: two-broker-demo
+
+volumes:
+  broker-alpha-state:
+  broker-beta-state:

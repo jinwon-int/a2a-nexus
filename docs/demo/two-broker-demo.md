@@ -28,22 +28,28 @@ Each broker runs in its own container with a separate state volume. Workers regi
 
 ## 1. Build the broker image
 
+> **Topology fix (#1814 C6 / #1866):** this demo previously pointed at
+> `docker-compose.trading-partners.yml`, which contains only ONE broker service
+> — the second broker existed only in this document's diagram. The
+> `docker-compose.two-broker.yml` file is the real two-broker topology: two
+> broker services, separate state volumes, one shared network.
+
 From the repository root:
 
 ```bash
-docker compose -f packages/broker/examples/docker-compose.trading-partners.yml build
+docker compose -f packages/broker/examples/docker-compose.two-broker.yml build
 ```
 
 ## 2. Start the two-broker stack
 
 ```bash
-docker compose -f packages/broker/examples/docker-compose.trading-partners.yml up -d
+docker compose -f packages/broker/examples/docker-compose.two-broker.yml up -d
 ```
 
 Wait for both brokers to be healthy (usually 5-10 seconds):
 
 ```bash
-docker compose -f packages/broker/examples/docker-compose.trading-partners.yml ps
+docker compose -f packages/broker/examples/docker-compose.two-broker.yml ps
 # Both services should show "healthy"
 ```
 
@@ -159,7 +165,7 @@ done
 Stop the two-broker stack and remove volumes:
 
 ```bash
-docker compose -f packages/broker/examples/docker-compose.trading-partners.yml down -v --remove-orphans
+docker compose -f packages/broker/examples/docker-compose.two-broker.yml down -v --remove-orphans
 ```
 
 Verify ports are released:
@@ -181,7 +187,7 @@ lsof -i :8788 2>/dev/null || echo "Port 8788 free"
 
 ## Reference
 
-- Broker compose file: `packages/broker/examples/docker-compose.trading-partners.yml`
+- Broker compose file: `packages/broker/examples/docker-compose.two-broker.yml`
 - Broker env template: `packages/broker/.env.example`
 - Broker API spec: `packages/broker/docs/api-spec-draft.md`
 - Demo overview: [`docs/demo/README.md`](README.md)

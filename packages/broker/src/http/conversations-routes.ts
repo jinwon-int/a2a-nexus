@@ -140,6 +140,18 @@ export async function handleConversationRoutesIfMatched(ctx: ConversationRoutesC
   if (ctx.method === "GET" && ctx.segments[2] === "inbox" && ctx.segments.length === 3) {
     const actor = parseActorParam(ctx.url.searchParams.get("actor"));
     requesterMatchesActor(ctx.enforceRequesterIdentity, ctx.requesterIdentity, actor, "conversation.inbox.poll");
+    // C5/C6: mirror conversations (cross-broker) poll through the mirror inbox.
+    if (!ctx.broker.getConversation(conversationId)) {
+      const mirrorResult = ctx.broker.pollRelayMirrorInbox(conversationId, actor);
+      await awaitDurablePersistenceAck(ctx.stateStore);
+      sendJson(ctx.res, 200, {
+        conversationId,
+        actor: `${actor.kind}:${actor.id}:${actor.homeBrokerId}`,
+        markedDelivered: mirrorResult.markedDelivered,
+        entries: mirrorResult.entries,
+      });
+      return true;
+    }
     const result = ctx.broker.pollConversationInbox(conversationId, actor);
     await awaitDurablePersistenceAck(ctx.stateStore);
     sendJson(ctx.res, 200, {
