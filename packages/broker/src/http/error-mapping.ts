@@ -108,6 +108,7 @@ export function statusCodeFor(code: BrokerError["code"]): number {
     // they are mapped here so the REST surface cannot regress into the hang
     // described above if a future route throws them.
     case "invalid_transition":
+    case "idempotency_conflict":
     case "unsupported_operation":
     case "task_lineage_cycle":
       return 409;
