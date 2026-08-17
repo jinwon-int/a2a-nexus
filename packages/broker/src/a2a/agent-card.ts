@@ -115,6 +115,13 @@ export function createBrokerAgentCard(options: CreateBrokerAgentCardOptions): Ag
         description: "Coordinate target-side apply after approval while preserving local workspace ownership.",
         tags: ["apply", "workspace", "policy"],
       },
+      {
+        id: "conversation",
+        name: "Conversation",
+        description:
+          "Broker-mediated conversations (a2a.conversation-envelope.v1): inbox poll/consume, task result projection, and cross-broker relay with idempotent ordering. Served on the broker conversation surface (/conversations) and the peer relay — not as A2A JSON-RPC methods.",
+        tags: ["conversation", "inbox", "relay", "cross-broker"],
+      },
     ],
   };
 }

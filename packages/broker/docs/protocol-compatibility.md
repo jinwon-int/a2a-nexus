@@ -76,6 +76,15 @@ The agent card currently advertises:
   secure-passport extension key.
 - Treating broker-specific extension methods such as `a2a.peer.status` as part of
   the A2A compatibility claim.
+- Treating the Trusted Conversation Plane (#1814, spec frozen #1861) as A2A
+  protocol methods. The conversation plane (broker REST `/conversations` +
+  peer relay `/peer/conversations/*`) is a broker surface: `SendMessage` keeps
+  its exchange/task meaning and `conversationPlane.a2aJsonRpcMethods` stays
+  `[]`. Its own non-goals (chat UI, autonomous agent debate, direct
+  worker-to-worker sockets, full broker DB / raw conversation replication,
+  provider-send success or polling exposure as processed / read receipt)
+  remain unsupported — see `conversationPlane` in
+  `src/fixtures/a2a-protocol-compatibility.ts` and the drift-watch gate.
 
 ## Broker-status to A2A 1.0 task-state mapping
 

@@ -39,6 +39,7 @@ These surfaces are production-covered and pinned by the drift-watch test.
 | `GetExtendedAgentCard` | Returns broker agent card when `extendedAgentCard` capability is set; otherwise `-32007` | JSON-RPC 2.0 POST | Agent card golden fixture + capability gate |
 | `a2a.peer.status` / `PeerStatus` | `src/a2a/peer-status.ts` — broker extension | JSON-RPC 2.0 POST | Extension-gated; not part of A2A 1.0 compatibility claim |
 | Task projection | `src/a2a/task-projection.ts` — `A2ATaskProjection`, `A2ATaskListProjection` | Internal | Projection keys, metadata keys, state mapping, artifact ids |
+| Conversation plane (#1814 C6) | `src/http/conversations-routes.ts` + `src/http/conversation-relay-routes.ts` — broker conversations, peer relay | Broker REST (`/conversations`, `/peer/conversations/*`) — NOT A2A JSON-RPC | `conversationPlane` matrix in the compatibility fixture: `a2aJsonRpcMethods` stays `[]`; non-goals stay advertised unsupported |
 
 ## Explicitly unsupported protocol surfaces
 
@@ -52,6 +53,7 @@ explicitly added to the compatibility matrix.
 | **gRPC transport** (`a2aproject/a2a-js` gRPC client/server, `a2aproject/a2a-python` proto modules) | gRPC | No gRPC server or client is integrated. The broker is HTTP/JSON-RPC only. | Add gRPC server with proto-defined A2A services + update this document + add drift-watch coverage. |
 | **Push notification delivery** | Live push sends, retries, replay protection, receipt semantics | Config CRUD is implemented opt-in (`A2A_PUSH_NOTIFICATIONS_ENABLED`, registration only); the **default** card advertises `pushNotifications: false` and delivery is never performed. Outbox APIs are broker/operator integration surfaces, not A2A push conformance. | Implement A2A push delivery + update this document + add drift-watch coverage. |
 | **A2A 0.3 compatibility mode** | Any | No 0.3-style protocol is implemented. The broker is 1.0-compatible only. | Add 0.3 envelope/method translation layer + update compatibility matrix + add drift-watch coverage. |
+| **Conversation plane as A2A JSON-RPC** | JSON-RPC 2.0 | The Trusted Conversation Plane (#1814) is a broker REST + peer-relay surface, not A2A protocol methods; `SendMessage` keeps its exchange/task meaning. Its own non-goals (chat UI, autonomous debate, direct worker sockets, full replication, provider-send/polling-as-processed) stay unsupported per the spec. | Define A2A conversation methods upstream (or as an extension) + move `conversationPlane.a2aJsonRpcMethods` off `[]` + update this document + drift-watch coverage. |
 | **OAuth/OIDC dynamic client auth** | HTTP discovery | Not modeled. Broker uses edge-secret and requester identity headers. | Implement official A2A auth-flow discovery + update this document. |
 
 ## AgentCard capability enforcement
@@ -103,6 +105,8 @@ Methods from the official SDK NOT implemented:
 - `ResubscribeToTask` — not in broker surface
 
 ## Drift-watch test suite
+
+- `drift: conversation plane advertises support and non-support accurately (#1866)` — pins `conversationPlane.a2aJsonRpcMethods === []` (the plane is broker REST + peer relay, never A2A JSON-RPC), the non-goal list (chat UI / autonomous debate / worker-to-worker sockets / replication / polling-as-processed), the AgentCard `conversation` skill framing (`a2a.conversation-envelope.v1`, `not as A2A JSON-RPC methods`), and that no A2A transport bindings are added for it.
 
 The drift-watch test lives at `src/a2a/drift-watch.test.ts` and enforces:
 
