@@ -1269,6 +1269,70 @@ export class InMemoryA2ABroker {
     return { outcome: "queued", messageId: envelope.messageId, relayEntryId: entry.id };
   }
 
+  /**
+   * C5 (#1865 closeout): a LOCAL worker consumes a message from a MIRROR
+   * inbox. Same domain semantics as the same-broker consume (recipient-only,
+   * evidence-required, delivered→processed, broker receipt from the
+   * mirror-holding broker) plus lineage sync: a deterministic `ack` message is
+   * queued for relay to the conversation's HOME broker, which applies it with
+   * the next home-assigned sequence — so processing converges into the ONE
+   * original lineage instead of living only in the mirror.
+   */
+  consumeMirrorConversationMessage(
+    conversationId: string,
+    messageId: string,
+    actor: { kind: string; id: string; homeBrokerId: string },
+    evidence: { kind: "reply" | "task-result" | "ack"; ref: string },
+  ): { receipt: A2AConversationReceipt; ackQueued: boolean; ackMessageId: string } {
+    const mirror = this.conversationRelayMirrors.get(conversationId);
+    if (!mirror) throw new BrokerError("not_found", `conversation mirror ${conversationId} not found`);
+    const result = consumeConversationMessage(mirror, messageId, actor, evidence, {
+      now: this.conversationNow(),
+      brokerId: this.conversationBrokerId,
+    });
+    const consumed = result.message;
+    const ackText = `ack=${messageId} kind=${evidence.kind} ref=${evidence.ref}`;
+    const redactedAck = redactConversationContentText(ackText);
+    const ackDigest = conversationContentDigest(redactedAck.text);
+    const ackMessageId = `ack-${messageId}`;
+    const payload = buildMirrorReplyRelayPayload(
+      this.conversationBrokerId,
+      mirror.homeBrokerId,
+      conversationId,
+      mirror.homeBrokerId,
+      {
+        messageId: ackMessageId,
+        kind: "ack",
+        sender: actor as { kind: "worker" | "broker" | "operator"; id: string; homeBrokerId: string },
+        recipients: [consumed.sender as { kind: "worker" | "broker"; id: string; homeBrokerId: string }],
+        idempotencyKey: `ack:${conversationId}:${messageId}`,
+        content: { text: redactedAck.text },
+      },
+      ackDigest,
+    );
+    this.conversationRelayOutbox.enqueue({
+      id: `relay-${conversationId}-${ackMessageId}`,
+      destinationBrokerId: mirror.homeBrokerId,
+      conversationId,
+      homeBrokerId: mirror.homeBrokerId,
+      messageId: ackMessageId,
+      sequence: 0,
+      content: { text: redactedAck.text },
+      contentDigest: ackDigest,
+      createdAt: this.conversationNow(),
+      payload,
+    });
+    this.appendAuditEvent({
+      actorId: actor.id,
+      action: "conversation.message.processed",
+      targetType: "conversation-message",
+      targetId: messageId,
+      note: `mirror evidence=${evidence.kind}:${evidence.ref} digest=${consumed.contentDigest}`,
+    });
+    this.persistState();
+    return { receipt: result.receipt, ackQueued: true, ackMessageId };
+  }
+
   /** Mirror inbox for a local actor (participant rules apply via the domain guard). */
   pollRelayMirrorInbox(conversationId: string, actor: { kind: string; id: string; homeBrokerId: string }): { entries: ConversationInboxEntry[]; markedDelivered: number } {
     const conversation = this.conversationRelayMirrors.get(conversationId);
