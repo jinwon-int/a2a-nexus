@@ -85,6 +85,14 @@ import {
   type A2AConversationState,
   type ConversationInboxEntry,
 } from "./broker-conversation.js";
+import {
+  applyRelayedConversationMessage,
+  buildConversationRelayPayload,
+  ConversationRelayOutbox,
+  type ApplyRelayedConversationResult,
+  type ConversationRelayOutboxEntry,
+  type ConversationRelayPayload,
+} from "./broker-conversation-relay.js";
 import { getBrokerRoundStatus, listBrokerTasks, readBrokerTask } from "./broker-task-read.js";
 import { readBrokerProposal, listBrokerProposals } from "./broker-proposal-read.js";
 import {
@@ -337,6 +345,10 @@ export class InMemoryA2ABroker {
   private readonly exchangeMessages = new Map<string, A2AExchangeMessageRecord>();
   /** Trusted Conversation Plane state (#1862; envelope domain in broker-conversation.ts). */
   private readonly conversations = new Map<string, A2AConversationState>();
+  /** Receiving-broker mirrors of cross-broker conversations (C4 relay). */
+  private readonly conversationRelayMirrors = new Map<string, A2AConversationState>();
+  /** Outbound cross-broker conversation relay log (C4 relay). */
+  readonly conversationRelayOutbox = new ConversationRelayOutbox();
   private readonly proposals = new Map<string, ChangeProposal>();
   private readonly artifacts = new Map<string, ArtifactRecord>();
   private readonly validations = new Map<string, ValidationResult>();
@@ -1054,6 +1066,62 @@ export class InMemoryA2ABroker {
     });
     this.persistState();
     return { receipt: result.receipt };
+  }
+
+  // --- Cross-broker conversation relay (C4 slice 2, #1864) ---
+
+  /** Queue a message for relay to a peer broker (pull model, cursor-addressed). */
+  enqueueConversationRelay(conversationId: string, messageId: string, destinationBrokerId: string): ConversationRelayOutboxEntry {
+    const conversation = this.requireConversation(conversationId);
+    const message = conversation.messagesById[messageId];
+    if (!message) throw new BrokerError("not_found", `conversation message ${messageId} not found`);
+    return this.conversationRelayOutbox.enqueue({
+      id: `relay-${conversationId}-${messageId}`,
+      destinationBrokerId,
+      conversationId,
+      homeBrokerId: conversation.homeBrokerId,
+      messageId,
+      sequence: message.sequence,
+      content: { text: message.content.text },
+      contentDigest: message.contentDigest,
+      createdAt: this.conversationNow(),
+    });
+  }
+
+  buildConversationRelayPayload(conversationId: string, messageId: string, destinationBrokerId: string): ConversationRelayPayload {
+    const conversation = this.requireConversation(conversationId);
+    const message = conversation.messagesById[messageId];
+    if (!message) throw new BrokerError("not_found", `conversation message ${messageId} not found`);
+    return buildConversationRelayPayload(this.conversationBrokerId, destinationBrokerId, conversation, message);
+  }
+
+  /** Outbox pull for a peer (GET /peer/conversations/outbox). */
+  listConversationRelayOutbox(cursor: number, limit: number, destinationBrokerId: string): { entries: ConversationRelayOutboxEntry[]; latestCursor: number } {
+    return {
+      entries: this.conversationRelayOutbox.listAfter(cursor, limit, destinationBrokerId),
+      latestCursor: this.conversationRelayOutbox.latestCursor(),
+    };
+  }
+
+  /**
+   * Apply an inbound relayed message into the local mirror (peer auth and
+   * sender-proof verification happen in the route layer BEFORE this).
+   */
+  applyConversationRelay(payload: unknown): ApplyRelayedConversationResult {
+    const result = applyRelayedConversationMessage(this.conversationRelayMirrors, payload, {
+      localBrokerId: this.conversationBrokerId,
+      now: this.conversationNow(),
+      conversations: this.conversations,
+    });
+    if (result.outcome === "applied") this.persistState();
+    return result;
+  }
+
+  /** Mirror inbox for a local actor (participant rules apply via the domain guard). */
+  pollRelayMirrorInbox(conversationId: string, actor: { kind: string; id: string; homeBrokerId: string }): { entries: ConversationInboxEntry[]; markedDelivered: number } {
+    const conversation = this.conversationRelayMirrors.get(conversationId);
+    if (!conversation) throw new BrokerError("not_found", `conversation mirror ${conversationId} not found`);
+    return pollConversationInbox(conversation, actor, { now: this.conversationNow() });
   }
 
   /**
@@ -1897,6 +1965,8 @@ export class InMemoryA2ABroker {
       exchanges: [...this.exchanges.values()],
       exchangeMessages: [...this.exchangeMessages.values()],
       conversations: [...this.conversations.values()],
+      conversationRelayMirrors: [...this.conversationRelayMirrors.values()],
+      conversationRelayOutbox: this.conversationRelayOutbox.snapshot(),
       proposals: [...this.proposals.values()],
       artifacts: [...this.artifacts.values()],
       validations: [...this.validations.values()],
@@ -1955,6 +2025,13 @@ export class InMemoryA2ABroker {
 
     for (const conversation of snapshot.conversations ?? []) {
       this.conversations.set(conversation.conversationId, conversation);
+    }
+
+    for (const mirror of snapshot.conversationRelayMirrors ?? []) {
+      this.conversationRelayMirrors.set(mirror.conversationId, mirror);
+    }
+    if (snapshot.conversationRelayOutbox) {
+      this.conversationRelayOutbox.hydrate(snapshot.conversationRelayOutbox);
     }
 
     for (const exchange of this.exchanges.values()) {

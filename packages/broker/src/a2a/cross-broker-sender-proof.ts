@@ -168,6 +168,7 @@ export function verifyCrossBrokerSenderProof(
   const handoff = record.crossBrokerHandoff as Record<string, unknown> | undefined;
   const claimed =
     (typeof handoff?.handoffBrokerId === "string" && (handoff.handoffBrokerId as string)) ||
+    (typeof record.senderBrokerId === "string" && record.senderBrokerId) ||
     (typeof record.originBrokerId === "string" && record.originBrokerId) ||
     "";
   const claimedBrokerId = claimed.trim();

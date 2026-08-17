@@ -712,6 +712,8 @@ export const brokerSnapshotSchema = z
       // projections build snapshots field-by-field and must not be forced to
       // carry an empty array; conversation absence means "none persisted".
       .optional(),
+    conversationRelayMirrors: z.array(z.unknown()).optional(),
+    conversationRelayOutbox: z.array(z.unknown()).optional(),
     proposals: z.array(proposalSchema).optional().default([]),
     artifacts: z.array(artifactSchema).optional().default([]),
     validations: z.array(validationSchema).optional().default([]),

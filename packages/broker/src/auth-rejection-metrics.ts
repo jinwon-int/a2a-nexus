@@ -82,6 +82,11 @@ const STATIC_MESSAGE_REASONS: ReadonlyArray<readonly [string, AuthRejectionReaso
   ["peer credentials are not accepted by this broker", "peer_handoff_denied"],
   ["x-a2a-peer-broker-id and x-a2a-peer-secret must be presented together", "peer_handoff_denied"],
   ["peer credential rejected", "peer_handoff_denied"],
+  // Conversation relay peer surface (#1864): same collapse discipline — the
+  // wire responses stay indistinguishable; metrics carry one reason.
+  ["conversation relay outbox requires peer credentials", "peer_handoff_denied"],
+  ["conversation relay sender proof rejected", "peer_handoff_denied"],
+  ["conversation relay senderBrokerId does not match", "peer_handoff_denied"],
 ];
 
 export interface AuthRejectionClassification {

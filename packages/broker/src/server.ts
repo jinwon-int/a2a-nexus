@@ -201,6 +201,7 @@ import { handleAuditReadRouteIfMatched } from "./http/audit-read-route.js";
 import { handleProposalsReadRouteIfMatched } from "./http/proposals-read.js";
 import { handleExchangeRoutesIfMatched } from "./http/exchanges-read.js";
 import { handleConversationRoutesIfMatched } from "./http/conversations-routes.js";
+import { handleConversationRelayRoutesIfMatched } from "./http/conversation-relay-routes.js";
 import { handleComplexityOrchestrationRoutesIfMatched } from "./http/complexity-orchestration-routes.js";
 import { handleWavePlanRoutesIfMatched } from "./http/wave-plan-routes.js";
 import { handleReviewLineageRoutesIfMatched } from "./http/review-lineage-routes.js";
@@ -1472,6 +1473,22 @@ export function createBrokerServer(options: BrokerServerOptions = {}): BrokerSer
         broker,
         enforceRequesterIdentity,
         requesterIdentity,
+      })) {
+        return;
+      }
+
+      if (await handleConversationRelayRoutesIfMatched({
+        method: req.method,
+        path,
+        req,
+        res,
+        url,
+        broker,
+        stateStore,
+        crossBrokerTrustAnchors,
+        crossBrokerNonceCache,
+        peerCredentialRegistry,
+        peerHandoffScopeMode,
       })) {
         return;
       }
