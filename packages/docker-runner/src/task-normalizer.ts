@@ -217,12 +217,20 @@ function buildDefaultCommentOnlyCommands(task: RunnerTask): string[] {
   ].join("\n")];
 }
 
+// Stream separation (#1855 field chain root cause): patch-command stderr must
+// NOT merge into container stdout. The `2>&1` merge used to pull the bridge's
+// turn-budget diagnostic (`claude_turn_budget=…`, emitMaxTurnFailure JSON) and
+// CLI noise onto the stdout envelope stream, so subagentReport extraction had
+// to scan past them (#1857/#1858 runner-side mitigations). Keeping stderr on
+// stderr also restores the runner's stderr-based fallbacks
+// (extractClaudeTurnBudgetDiagnostic(completed.stderr), terminal_reason=max_turns)
+// and preserves diagnostics in artifacts/patch-command.stderr.log for triage.
 function buildPatchCommandBlock(): string {
   return [
     `# Patch command execution: safe script file (recommended).`,
     `if [ -x /work/patch-command.sh ]; then`,
     `  printf 'patch_mode=script\\n' | tee -a /work/artifacts/summary.txt`,
-    `  /work/patch-command.sh 2>&1 | tee /work/artifacts/patch-command.log`,
+    `  /work/patch-command.sh 2> >(tee /work/artifacts/patch-command.stderr.log >&2) | tee /work/artifacts/patch-command.log`,
     `elif [ -n "\${A2A_PATCH_COMMAND_JSON:-}" ]; then`,
     `  printf 'patch_mode=json_argv_unconverted\\n' | tee -a /work/artifacts/summary.txt`,
     `  printf 'error=json_argv_received_without_host_side_script_conversion\\n' >&2`,
@@ -230,7 +238,7 @@ function buildPatchCommandBlock(): string {
     `elif [ -n "\${A2A_PATCH_COMMAND:-}" ]; then`,
     `  printf 'patch_mode=legacy_eval\\n' | tee -a /work/artifacts/summary.txt`,
     `  printf 'warning=deprecated_eval_path_prefer_commandScript_or_commandJson\\n' | tee -a /work/artifacts/summary.txt`,
-    `  eval "\${A2A_PATCH_COMMAND}" 2>&1 | tee /work/artifacts/patch-command.log`,
+    `  eval "\${A2A_PATCH_COMMAND}" 2> >(tee /work/artifacts/patch-command.stderr.log >&2) | tee /work/artifacts/patch-command.log`,
     `else`,
     `  printf 'error=no_patch_command_configured\\n' | tee -a /work/artifacts/summary.txt`,
     `  printf 'Set A2A_DOCKER_RUNNER_PATCH_COMMAND_SCRIPT or A2A_DOCKER_RUNNER_PATCH_COMMAND_JSON to inject a host-side OpenClaw/Codex coding agent.\\n' | tee /work/artifacts/patch-command.log`,
@@ -338,11 +346,13 @@ function buildDefaultPatchCommands(task: RunnerTask, primaryRepo: RunnerRepo): s
   //   1. /work/patch-command.sh  →  safe script file (commandScript / commandJson)
   //   2. $A2A_PATCH_COMMAND_JSON  →  JSON argv/env (should be pre-converted; safety net)
   //   3. $A2A_PATCH_COMMAND       →  LEGACY eval (deprecated, kept for compatibility)
+  // Stderr stays on stderr here too (see buildPatchCommandBlock): merging it
+  // into stdout pollutes the envelope stream the broker parses (#1858).
   const patchCommandBlock = [
     `# Patch command execution: safe script file (recommended).`,
     `if [ -x /work/patch-command.sh ]; then`,
     `  printf 'patch_mode=script\\n' | tee -a /work/artifacts/summary.txt`,
-    `  /work/patch-command.sh 2>&1 | tee /work/artifacts/patch-command.log`,
+    `  /work/patch-command.sh 2> >(tee /work/artifacts/patch-command.stderr.log >&2) | tee /work/artifacts/patch-command.log`,
     `elif [ -n "\${A2A_PATCH_COMMAND_JSON:-}" ]; then`,
     `  printf 'patch_mode=json_argv_unconverted\\n' | tee -a /work/artifacts/summary.txt`,
     `  printf 'error=json_argv_received_without_host_side_script_conversion\\n' >&2`,
@@ -350,7 +360,7 @@ function buildDefaultPatchCommands(task: RunnerTask, primaryRepo: RunnerRepo): s
     `elif [ -n "\${A2A_PATCH_COMMAND:-}" ]; then`,
     `  printf 'patch_mode=legacy_eval\\n' | tee -a /work/artifacts/summary.txt`,
     `  printf 'warning=deprecated_eval_path_prefer_commandScript_or_commandJson\\n' | tee -a /work/artifacts/summary.txt`,
-    `  eval "\${A2A_PATCH_COMMAND}" 2>&1 | tee /work/artifacts/patch-command.log`,
+    `  eval "\${A2A_PATCH_COMMAND}" 2> >(tee /work/artifacts/patch-command.stderr.log >&2) | tee /work/artifacts/patch-command.log`,
     `else`,
     `  printf 'error=no_patch_command_configured\\n' | tee -a /work/artifacts/summary.txt`,
     `  printf 'Set A2A_DOCKER_RUNNER_PATCH_COMMAND_SCRIPT or A2A_DOCKER_RUNNER_PATCH_COMMAND_JSON to inject a host-side OpenClaw/Codex coding agent.\\n' | tee /work/artifacts/patch-command.log`,

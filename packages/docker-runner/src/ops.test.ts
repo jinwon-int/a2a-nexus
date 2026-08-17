@@ -1,10 +1,10 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { mkdtemp, mkdir, writeFile, utimes, stat } from "node:fs/promises";
+import { mkdtemp, mkdir, writeFile, utimes, stat, chmod } from "node:fs/promises";
 import { execFileSync, spawnSync } from "node:child_process";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { checkDeployedRevision, checkDeployMarker, checkExtraMounts, checkGitHubPatchReadiness, cleanup, install, parseProbeKeyValues } from "./ops.js";
+import { checkDeployedRevision, checkDeployMarker, checkExtraMounts, checkGitHubPatchReadiness, checkSecretMountContainerReadability, cleanup, dropsDacOverride, install, parseContainerUserRef, parseProbeKeyValues } from "./ops.js";
 import type { RunnerConfig } from "./types.js";
 import { buildExampleReadinessInput } from "./openclaw-profile-readiness.js";
 import { projectClaudeCodeTurnBudgets } from "./config.js";
@@ -1071,4 +1071,134 @@ test("cleanup report preserves JSON shape with all fields", async () => {
   const json = JSON.stringify(report);
   const parsed = JSON.parse(json);
   assert.equal(parsed.ok, report.ok);
+});
+
+// ---------------------------------------------------------------------------
+// #1809 secret-mount readability preflight (cap-drop ALL + container user)
+// ---------------------------------------------------------------------------
+
+const CURRENT_UID = typeof process.getuid === "function" ? process.getuid() : 0;
+
+function readabilityConfig(overrides: Partial<RunnerConfig> = {}): RunnerConfig {
+  return {
+    rootDir: "/tmp/a2a-test",
+    engine: "docker",
+    image: "example:latest",
+    defaultTimeoutMs: 1000,
+    ...overrides,
+  };
+}
+
+test("dropsDacOverride recognises ALL and DAC_OVERRIDE spellings", () => {
+  assert.equal(dropsDacOverride(["ALL"]), true);
+  assert.equal(dropsDacOverride(["all"]), true);
+  assert.equal(dropsDacOverride(["CAP_DAC_OVERRIDE"]), true);
+  assert.equal(dropsDacOverride(["dac_override"]), true);
+  assert.equal(dropsDacOverride(["dac_read_search"]), true);
+  assert.equal(dropsDacOverride(["NET_ADMIN", "CHOWN"]), false);
+  assert.equal(dropsDacOverride(undefined), false);
+  assert.equal(dropsDacOverride([]), false);
+});
+
+test("parseContainerUserRef resolves uid, uid:gid, root, and rejects garbage", () => {
+  assert.deepEqual(parseContainerUserRef("1000:700"), { uid: 1000, gid: 700 });
+  assert.deepEqual(parseContainerUserRef("1000"), { uid: 1000 });
+  assert.deepEqual(parseContainerUserRef("root"), { uid: 0 });
+  assert.equal(parseContainerUserRef("someuser"), undefined);
+  assert.equal(parseContainerUserRef("-1"), undefined);
+  assert.equal(parseContainerUserRef(""), undefined);
+  assert.equal(parseContainerUserRef(undefined), undefined);
+});
+
+test("secret-mount readability fails closed for uid-owned 0600 secret under cap-drop ALL (#1809 fleet trap)", async () => {
+  const dir = await mkdtemp(join(tmpdir(), "a2a-secret-read-"));
+  const profileDir = join(dir, "piri-dir");
+  await mkdir(profileDir);
+  await writeFile(join(profileDir, "auth.json"), "{}");
+  await chmod(join(profileDir, "auth.json"), 0o600);
+  const mismatchUid = CURRENT_UID === 4242 ? 4243 : 4242;
+
+  const report = await checkSecretMountContainerReadability(readabilityConfig({
+    capDrop: ["ALL"],
+    user: `${mismatchUid}:${mismatchUid}`,
+    extraMounts: [{ source: profileDir, target: "/run/secrets/piri-dir", readOnly: true }],
+  }));
+
+  assert.equal(report.status, "fail");
+  assert.match(report.message, /unreadable by the container user/);
+  assert.match(String(report.detail?.remediation), /A2A_DOCKER_RUNNER_USER/);
+  const entries = report.detail?.entries as Array<Record<string, unknown>>;
+  const authEntry = entries.find((entry) => String(entry.source).endsWith("auth.json"));
+  assert.ok(authEntry, "expected the inner profile file to be scanned");
+  assert.equal(authEntry.readable, false);
+  assert.equal(authEntry.via, "others");
+});
+
+test("secret-mount readability passes when the container user owns the secret", async () => {
+  const dir = await mkdtemp(join(tmpdir(), "a2a-secret-owner-"));
+  await writeFile(join(dir, "gh-hosts.yml"), "{}");
+  await chmod(join(dir, "gh-hosts.yml"), 0o600);
+
+  const report = await checkSecretMountContainerReadability(readabilityConfig({
+    capDrop: ["ALL"],
+    user: `${CURRENT_UID}`,
+    githubTokenFile: join(dir, "gh-hosts.yml"),
+  }));
+
+  assert.equal(report.status, "ok");
+  const entries = report.detail?.entries as Array<Record<string, unknown>>;
+  assert.equal(entries[0].readable, true);
+  assert.equal(entries[0].via, "owner");
+});
+
+test("secret-mount readability passes via others-read bits when owner differs", async () => {
+  const dir = await mkdtemp(join(tmpdir(), "a2a-secret-others-"));
+  await writeFile(join(dir, "auth.json"), "{}");
+  await chmod(join(dir, "auth.json"), 0o644);
+  await chmod(dir, 0o755);
+
+  const report = await checkSecretMountContainerReadability(readabilityConfig({
+    capDrop: ["ALL"],
+    user: "4242:4242",
+    extraMounts: [{ source: dir, target: "/run/secrets/piri-dir", readOnly: true }],
+  }));
+
+  assert.equal(report.status, "ok");
+  const entries = report.detail?.entries as Array<Record<string, unknown>>;
+  assert.equal(entries[0].readable, true);
+  assert.equal(entries[0].via, "others");
+});
+
+test("secret-mount readability skips when cap-drop keeps DAC_OVERRIDE or no mounts exist", async () => {
+  const dir = await mkdtemp(join(tmpdir(), "a2a-secret-skip-"));
+  await writeFile(join(dir, "auth.json"), "{}");
+  await chmod(join(dir, "auth.json"), 0o600);
+
+  const noCapDrop = await checkSecretMountContainerReadability(readabilityConfig({
+    user: "4242:4242",
+    extraMounts: [{ source: dir, target: "/run/secrets/piri-dir", readOnly: true }],
+  }));
+  assert.equal(noCapDrop.status, "skip");
+  assert.match(noCapDrop.message, /keeps CAP_DAC_OVERRIDE/);
+
+  const noMounts = await checkSecretMountContainerReadability(readabilityConfig({
+    capDrop: ["ALL"],
+    user: "4242:4242",
+  }));
+  assert.equal(noMounts.status, "skip");
+  assert.match(noMounts.message, /no secret mounts configured/);
+});
+
+test("secret-mount readability warns for non-numeric container users instead of guessing", async () => {
+  const dir = await mkdtemp(join(tmpdir(), "a2a-secret-nameduser-"));
+  await writeFile(join(dir, "auth.json"), "{}");
+
+  const report = await checkSecretMountContainerReadability(readabilityConfig({
+    capDrop: ["ALL"],
+    user: "runner-user",
+    extraMounts: [{ source: dir, target: "/run/secrets/piri-dir", readOnly: true }],
+  }));
+
+  assert.equal(report.status, "warn");
+  assert.match(String(report.detail?.remediation), /A2A_DOCKER_RUNNER_USER/);
 });

@@ -495,6 +495,12 @@ broker, GitHub, Telegram, OpenClaw Gateway, or Docker.
 - `docker` and `podman` availability
 - configured task-root access and permissions
 - optional GitHub hosts secret readability and intended `:ro` container mount
+- `secretMountReadability` preflight (#1809): under `--cap-drop ALL`, every
+  profile secret-mount source (`/run/secrets/*-dir`, gh hosts file) and the
+  direct children of mounted directories must be readable by the configured
+  `A2A_DOCKER_RUNNER_USER`; owner mismatch without group/others read fails
+  closed with ownership-alignment remediation (see
+  [trusted-operator hardening](docs/trusted-operator-hardening.md))
 - configured base-image presence or pull readiness
 - `githubPatch` readiness for generic `github-propose-patch` execution; the
   OpenClaw profile path includes a no-secret container probe for the `openclaw`

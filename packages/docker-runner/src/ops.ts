@@ -23,6 +23,8 @@ export interface DoctorReport {
   taskRoot: OpsCheck;
   secretMount: OpsCheck;
   extraMounts: OpsCheck;
+  /** #1809 preflight: secret-mount readability under the container user + cap-drop contract. */
+  secretMountReadability: OpsCheck;
   baseImage: OpsCheck;
   githubPatch: OpsCheck;
   /** Deploy-marker validation: checks whether the deployed revision matches an expected deploy marker. */
@@ -274,12 +276,13 @@ export async function doctor(config: RunnerConfig): Promise<DoctorReport> {
   const taskRoot = await checkTaskRoot(config.rootDir);
   const secretMount = await checkSecretMount(config.githubTokenFile);
   const extraMounts = await checkExtraMounts(config);
+  const secretMountReadability = await checkSecretMountContainerReadability(config);
   const baseImage = (engine === "docker" ? docker : podman).status === "ok"
     ? checkBaseImage(engine, config.image)
     : { status: "fail" as const, message: "no container engine available for base image check", detail: { image: config.image } };
   const githubPatch = checkGitHubPatchReadiness(config, { engine });
   const engineReady = docker.status === "ok" || podman.status === "ok";
-  const checks = [runnerRevision, taskRoot, secretMount, extraMounts, baseImage, githubPatch];
+  const checks = [runnerRevision, taskRoot, secretMount, extraMounts, secretMountReadability, baseImage, githubPatch];
 
   // Deploy-marker is optional: only checked when buildMetadata.revision is provided.
   let deployMarker: OpsCheck | undefined;
@@ -297,6 +300,7 @@ export async function doctor(config: RunnerConfig): Promise<DoctorReport> {
     taskRoot,
     secretMount,
     extraMounts,
+    secretMountReadability,
     baseImage,
     githubPatch,
     ...(deployMarker ? { deployMarker } : {}),
@@ -487,6 +491,171 @@ async function checkSecretMount(githubTokenFile?: string): Promise<OpsCheck> {
   } catch (error) {
     return { status: "fail", message: "configured secret file is not readable", detail: { path, error: errorMessage(error) } };
   }
+}
+
+// #1809: `--cap-drop ALL` (or DAC_OVERRIDE) removes CAP_DAC_OVERRIDE, so the
+// container user cannot bypass permission bits even as root. A secret mount
+// owned by a different uid without group/others read is therefore unreadable
+// inside the container — the fleet trap that surfaced as misleading
+// `piri_config_mount_missing` / `start_comment_failed` errors (#1802).
+const DAC_SENSITIVE_CAP_DROPS = new Set(["all", "dac_override", "dac_read_search"]);
+
+export function dropsDacOverride(capDrop?: string[]): boolean {
+  return (capDrop ?? []).some((entry) => DAC_SENSITIVE_CAP_DROPS.has(entry.trim().toLowerCase().replace(/^cap_/, "")));
+}
+
+/** Resolve `--user` (uid[:gid]) to numbers. "root" maps to 0. Undefined when unresolvable. */
+export function parseContainerUserRef(user?: string): { uid: number; gid?: number } | undefined {
+  const raw = user?.trim();
+  if (!raw) return undefined;
+  if (raw === "root") return { uid: 0 };
+  const [uidPart, gidPart] = raw.split(":");
+  const uid = Number(uidPart);
+  if (!Number.isSafeInteger(uid) || uid < 0) return undefined;
+  if (gidPart === undefined) return { uid };
+  const gid = Number(gidPart);
+  if (!Number.isSafeInteger(gid) || gid < 0) return undefined;
+  return { uid, gid };
+}
+
+function pathReadabilityForContainerUser(
+  info: { mode: number; uid: number; gid: number },
+  container: { uid: number; gid?: number },
+  isDirectory: boolean,
+): { readable: boolean; via: "owner" | "group" | "others" | "none" } {
+  const ownerRead = (info.mode & 0o400) !== 0;
+  const groupRead = (info.mode & 0o040) !== 0;
+  const othersRead = (info.mode & 0o004) !== 0;
+  const ownerExec = (info.mode & 0o100) !== 0;
+  const groupExec = (info.mode & 0o010) !== 0;
+  const othersExec = (info.mode & 0o001) !== 0;
+  const needsExec = isDirectory;
+  if (container.uid === info.uid) {
+    return { readable: ownerRead && (!needsExec || ownerExec), via: "owner" };
+  }
+  if (container.gid !== undefined && container.gid === info.gid) {
+    return { readable: groupRead && (!needsExec || groupExec), via: "group" };
+  }
+  return { readable: othersRead && (!needsExec || othersExec), via: "others" };
+}
+
+export interface SecretMountReadabilityEntry {
+  source: string;
+  target?: string;
+  kind: "github_token" | "profile_mount";
+  type: "file" | "directory";
+  ownerUid: number;
+  ownerGid: number;
+  mode: string;
+  readable: boolean;
+  via: "owner" | "group" | "others" | "none";
+}
+
+const SECRET_MOUNT_READABILITY_SCAN_ENTRY_LIMIT = 64;
+
+/**
+ * Preflight (#1809): under a DAC_OVERRIDE-dropping cap-drop, verify every
+ * profile secret-mount source (and, for directories, their direct children)
+ * is readable by the configured container user BEFORE a task fails inside the
+ * container with an unrelated-looking error. Keep `--cap-drop ALL`; the fix is
+ * ownership alignment (e.g. `A2A_DOCKER_RUNNER_USER=1000:1000` matching a
+ * uid1000-owned profile dir), not capability relaxation.
+ */
+export async function checkSecretMountContainerReadability(config: RunnerConfig): Promise<OpsCheck> {
+  const sources: Array<{ source: string; target?: string; kind: "github_token" | "profile_mount" }> = [];
+  if (config.githubTokenFile) {
+    sources.push({ source: config.githubTokenFile, target: "/run/secrets/gh-hosts.yml", kind: "github_token" });
+  }
+  for (const mount of config.extraMounts ?? []) {
+    sources.push({ source: mount.source, target: mount.target, kind: "profile_mount" });
+  }
+
+  if (sources.length === 0) {
+    return { status: "skip", message: "no secret mounts configured", detail: { reason: "no_github_token_or_extra_mounts" } };
+  }
+  if (!dropsDacOverride(config.capDrop)) {
+    return {
+      status: "skip",
+      message: "cap-drop keeps CAP_DAC_OVERRIDE; secret-mount owner mismatch is not fatal",
+      detail: { capDrop: config.capDrop ?? [] },
+    };
+  }
+
+  // Runner images have no USER directive, so an unset --user runs as root (uid 0).
+  const userRef = parseContainerUserRef(config.user);
+  const containerUser = userRef ?? { uid: 0 };
+  const detail: Record<string, unknown> = {
+    containerUser: config.user ?? "root (image default; --user not set)",
+    containerUid: containerUser.uid,
+    ...(containerUser.gid !== undefined ? { containerGid: containerUser.gid } : {}),
+    capDrop: config.capDrop ?? [],
+  };
+  if (!userRef) detail.userAssumed = true;
+  if (!/^[0-9]+(:[0-9]+)?$|^root$/.test(config.user?.trim() ?? "")) {
+    return {
+      status: "warn",
+      message: "container user is not a numeric uid[:gid]; cannot statically verify secret-mount readability",
+      detail: { ...detail, remediation: "set A2A_DOCKER_RUNNER_USER to an explicit uid[:gid] (for example 1000:1000) so doctor can verify mounts" },
+    };
+  }
+
+  const entries: SecretMountReadabilityEntry[] = [];
+  const problems: string[] = [];
+  const statErrors: string[] = [];
+
+  const inspect = async (absolute: string, target: string | undefined, kind: "github_token" | "profile_mount") => {
+    const info = await stat(absolute).catch((error: unknown) => {
+      statErrors.push(`${absolute}: ${errorMessage(error)}`);
+      return null;
+    });
+    if (!info) return;
+    const isDirectory = info.isDirectory();
+    const verdict = pathReadabilityForContainerUser(
+      { mode: info.mode, uid: info.uid, gid: info.gid },
+      containerUser,
+      isDirectory,
+    );
+    entries.push({
+      source: absolute,
+      ...(target ? { target } : {}),
+      kind,
+      type: isDirectory ? "directory" : "file",
+      ownerUid: info.uid,
+      ownerGid: info.gid,
+      mode: `0${(info.mode & 0o777).toString(8)}`,
+      readable: verdict.readable,
+      via: verdict.via,
+    });
+    if (!verdict.readable) {
+      problems.push(`${absolute} (owner ${info.uid}:${info.gid}, mode 0${(info.mode & 0o777).toString(8)}) is unreadable by container user ${config.user?.trim() || "root(assumed)"}`);
+    }
+    if (isDirectory) {
+      const children = await readdir(absolute).catch(() => [] as string[]);
+      for (const child of children.slice(0, SECRET_MOUNT_READABILITY_SCAN_ENTRY_LIMIT)) {
+        await inspect(join(absolute, child), undefined, kind);
+      }
+    }
+  };
+
+  for (const source of sources) {
+    await inspect(resolve(source.source), source.target, source.kind);
+  }
+
+  detail.entries = entries;
+  if (statErrors.length > 0) {
+    detail.statErrors = statErrors;
+    return { status: "fail", message: "secret mount source cannot be inspected", detail };
+  }
+  if (problems.length > 0) {
+    detail.unreadable = problems;
+    detail.remediation = "align ownership: set A2A_DOCKER_RUNNER_USER to the secret owner (e.g. 1000:1000) or grant group/others read; keep --cap-drop ALL (#1809)";
+    return {
+      status: "fail",
+      message: `secret mounts unreadable by the container user under cap-drop (${problems.length} path${problems.length === 1 ? "" : "s"})`,
+      detail,
+    };
+  }
+  return { status: "ok", message: "secret mounts are readable by the container user under the configured cap-drop", detail };
 }
 
 export async function checkExtraMounts(config: RunnerConfig): Promise<OpsCheck> {
