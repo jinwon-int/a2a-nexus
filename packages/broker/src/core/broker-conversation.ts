@@ -112,6 +112,8 @@ export interface A2AConversationEnvelopeInput {
   expiresAt?: string;
   content: { text: string };
   clientContentDigest?: string;
+  /** T1: worker JWS over {conversationId?, messageId, contentDigest}; verified when present. */
+  workerSignature?: unknown;
   hopTrace?: Array<{ brokerId: string; at?: string; action?: string }>;
 }
 
@@ -176,6 +178,8 @@ export interface OpenBrokerConversationContext {
   appendAuditEvent(input: { actorId: string; action: string; targetType: string; targetId: string; note?: string }): void;
   setConversationRecord(conversation: A2AConversationState): void;
   persistState(): void;
+  /** T1 gate options; absent = signatures verified when present, absence allowed. */
+  workerSignatureGate?: WorkerSignatureGateOptions;
 }
 
 export interface AcceptBrokerConversationMessageContext extends OpenBrokerConversationContext {
@@ -291,6 +295,7 @@ export function validateConversationEnvelopeInput(input: unknown): A2AConversati
     ...(expiresAt !== undefined ? { expiresAt } : {}),
     content: { text: content.text as string },
     ...(record.clientContentDigest !== undefined ? { clientContentDigest: String(record.clientContentDigest) } : {}),
+    ...(record.workerSignature !== undefined ? { workerSignature: record.workerSignature } : {}),
     hopTrace: hopTrace as A2AConversationEnvelopeInput["hopTrace"],
   };
 }
@@ -378,6 +383,7 @@ export function openBrokerConversation(
   if (envelope.clientContentDigest && envelope.clientContentDigest !== digest) {
     throw new BrokerError("bad_request", "client content digest does not match the redacted content digest computed by the broker");
   }
+  enforceWorkerSignature(envelope, digest, context.workerSignatureGate, undefined);
   const message: A2AConversationMessageRecord = {
     schemaVersion: A2A_CONVERSATION_ENVELOPE_SCHEMA_VERSION,
     conversationId,
@@ -500,6 +506,8 @@ export function acceptBrokerConversationMessage(
   if (envelope.clientContentDigest && envelope.clientContentDigest !== digest) {
     throw new BrokerError("bad_request", "client content digest does not match the redacted content digest computed by the broker");
   }
+
+  enforceWorkerSignature(envelope, digest, context.workerSignatureGate, conversation.conversationId);
 
   // Conversation byte budget (T10).
   const messageBytes = Buffer.byteLength(redacted.text, "utf8");
@@ -936,4 +944,119 @@ export function summarizeConversationDelivery(
     recipients: [...byRecipient.values()],
     messages,
   };
+}
+
+// ---------------------------------------------------------------------------
+// Worker message signature (T1, #1862 remaining): a worker-originated message
+// carries a JWS over the binding {conversationId?, messageId, contentDigest} —
+// the fields the worker actually knows. The home-broker-assigned sequence is
+// covered by the broker countersign (receipt) per the sequence-authority rule
+// (T3): the worker cannot sign a sequence it does not own. Additive rollout:
+// a present signature is verified against the worker's registered public key;
+// `enforceWorkerMessageSignatures` flips absence into a refusal.
+// ---------------------------------------------------------------------------
+
+import { createPrivateKey, createPublicKey, sign as workerSignCrypto, verify as workerVerifyCrypto, type KeyObject as WorkerKeyObject } from "node:crypto";
+import { base64url as jwsBase64url, algorithmForKey as jwsAlgorithmForKey } from "../a2a/cross-broker-sender-proof.js";
+import { canonicalizeJson as jwsCanonicalize } from "a2a-attestation";
+
+export interface WorkerEnvelopeSignature {
+  protected: string;
+  signature: string;
+  binding: {
+    /** Present on replies (the client knows the conversation); absent on open. */
+    conversationId?: string;
+    messageId: string;
+    contentDigest: string;
+  };
+}
+
+export function buildWorkerEnvelopeSignature(
+  privateKeyPem: string,
+  binding: WorkerEnvelopeSignature["binding"],
+): WorkerEnvelopeSignature {
+  const key = createPrivateKey(privateKeyPem);
+  const { alg, cryptoAlg, dsaEncoding } = jwsAlgorithmForKey(key as WorkerKeyObject);
+  const header = { alg, typ: "JOSE" };
+  const protectedHeader = jwsBase64url(jwsCanonicalize(header));
+  const payload = jwsBase64url(jwsCanonicalize(binding));
+  const signature = workerSignCrypto(
+    cryptoAlg,
+    Buffer.from(`${protectedHeader}.${payload}`, "utf8"),
+    dsaEncoding ? { key, dsaEncoding } : key,
+  );
+  return { protected: protectedHeader, signature: signature.toString("base64url"), binding };
+}
+
+export type WorkerSignatureVerdict = { ok: true } | { ok: false; reason: string };
+
+export function verifyWorkerEnvelopeSignature(
+  publicKeyPem: string,
+  signature: unknown,
+  expected: WorkerEnvelopeSignature["binding"],
+): WorkerSignatureVerdict {
+  if (!signature || typeof signature !== "object" || Array.isArray(signature)) {
+    return { ok: false, reason: "workerSignature must be an object" };
+  }
+  const record = signature as Record<string, unknown>;
+  if (typeof record.protected !== "string" || typeof record.signature !== "string" || !record.binding) {
+    return { ok: false, reason: "workerSignature must carry protected/signature/binding" };
+  }
+  const binding = record.binding as Record<string, unknown>;
+  if (
+    binding.messageId !== expected.messageId
+    || binding.contentDigest !== expected.contentDigest
+    || (binding.conversationId ?? undefined) !== (expected.conversationId ?? undefined)
+  ) {
+    return { ok: false, reason: "workerSignature binding does not match the envelope" };
+  }
+  const key = createPublicKey(publicKeyPem);
+  const { alg, cryptoAlg, dsaEncoding } = jwsAlgorithmForKey(key as WorkerKeyObject);
+  const header = JSON.parse(Buffer.from(record.protected, "base64url").toString("utf8")) as { alg?: string };
+  if (header.alg !== alg) {
+    return { ok: false, reason: `workerSignature alg ${header.alg} does not match the key` };
+  }
+  const payload = jwsBase64url(jwsCanonicalize({ ...expected }));
+  const verified = workerVerifyCrypto(
+    cryptoAlg,
+    Buffer.from(`${record.protected}.${payload}`, "utf8"),
+    dsaEncoding ? { key, dsaEncoding } : key,
+    Buffer.from(record.signature, "base64url"),
+  );
+  return verified ? { ok: true } : { ok: false, reason: "workerSignature JWS verification failed" };
+}
+
+export interface WorkerSignatureGateOptions {
+  /** Resolve the registered signing public key for a worker; undefined = unknown key. */
+  resolveWorkerSigningKey?: (workerId: string, homeBrokerId: string) => string | undefined;
+  /** Refuse unsigned worker messages (off during additive rollout). */
+  enforceWorkerMessageSignatures?: boolean;
+}
+
+function enforceWorkerSignature(
+  envelope: A2AConversationEnvelopeInput,
+  redactedDigest: string,
+  options: WorkerSignatureGateOptions | undefined,
+  conversationId: string | undefined,
+): void {
+  if (envelope.sender.kind !== "worker") return;
+  const signature = (envelope as A2AConversationEnvelopeInput & { workerSignature?: unknown }).workerSignature;
+  if (signature === undefined) {
+    if (options?.enforceWorkerMessageSignatures) {
+      throw new BrokerError("policy_denied", "worker messages must carry a workerSignature");
+    }
+    return;
+  }
+  const key = options?.resolveWorkerSigningKey?.(envelope.sender.id, envelope.sender.homeBrokerId);
+  if (!key) {
+    throw new BrokerError("policy_denied", `no signing key registered for worker ${envelope.sender.id}; cannot verify its signature`);
+  }
+  const verdict = verifyWorkerEnvelopeSignature(key, signature, {
+    ...(conversationId !== undefined ? { conversationId } : {}),
+    messageId: envelope.messageId,
+    contentDigest: redactedDigest,
+  });
+  if (!verdict.ok) {
+    throw new BrokerError("policy_denied", `worker signature rejected: ${verdict.reason}`);
+  }
 }
