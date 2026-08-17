@@ -319,3 +319,181 @@ test("relay outbox and mirrors survive snapshot rehydration with cursor continui
   const inbox = betaRevived.pollRelayMirrorInbox(conversation.conversationId, { kind: "worker", id: "worker-b", homeBrokerId: "broker-beta" });
   assert.equal(inbox.entries.length, 1);
 });
+
+// ---------------------------------------------------------------------------
+// C5 (#1865): cross-broker worker↔worker routing — full lineage convergence
+// ---------------------------------------------------------------------------
+
+import { handleConversationRoutesIfMatched } from "./conversations-routes.js";
+
+async function callConversation(
+  broker: InMemoryA2ABroker,
+  options: { method: string; path: string; body?: unknown },
+) {
+  const res = new CapturingResponse();
+  const pathOnly = options.path.split("?")[0];
+  const req = (options.body === undefined
+    ? Readable.from([])
+    : Readable.from([JSON.stringify(options.body)])) as unknown as IncomingMessage;
+  (req as unknown as { headers: Record<string, string> }).headers = {};
+  const handled = await handleConversationRoutesIfMatched({
+    method: options.method,
+    path: pathOnly,
+    segments: pathOnly.split("/").filter(Boolean),
+    req,
+    res: res as unknown as ServerResponse,
+    url: new URL(`http://broker.test${options.path}`),
+    stateStore: {} as BrokerStateStore,
+    broker,
+    enforceRequesterIdentity: false,
+    requesterIdentity: null,
+  });
+  return { handled, res, json: JSON.parse(res.body || "{}") };
+}
+
+async function pullAndApplyAll(
+  from: InMemoryA2ABroker,
+  to: InMemoryA2ABroker,
+  pullerBrokerId: string,
+  pullerSecret: string,
+): Promise<string[]> {
+  const outcomes: string[] = [];
+  let cursor = 0;
+  for (;;) {
+    const pulled = await callRelay(from, {
+      method: "GET",
+      path: `/peer/conversations/outbox?cursor=${cursor}&limit=50`,
+      headers: peerHeaders(pullerBrokerId, pullerSecret),
+    });
+    if (!pulled.json.entries?.length) break;
+    for (const entry of pulled.json.entries) {
+      if (!entry.payload) continue;
+      const applied = await callRelay(to, {
+        method: "POST",
+        path: "/peer/conversations/relay",
+        body: entry.payload,
+        headers: { "x-a2a-peer-broker-id": entry.payload.senderBrokerId, "x-a2a-peer-secret": entry.payload.senderBrokerId === "broker-alpha" ? SECRET_A : SECRET_B },
+      });
+      outcomes.push(String(applied.json.outcome));
+      cursor = entry.cursor;
+    }
+  }
+  return outcomes;
+}
+
+test("C5: A→brokerA→brokerB→B question and reverse reply converge into ONE lineage", async () => {
+  const alpha = new InMemoryA2ABroker(undefined, undefined, { brokerId: "broker-alpha" });
+  const beta = new InMemoryA2ABroker(undefined, undefined, { brokerId: "broker-beta" });
+
+  // 1) worker-a@alpha opens a conversation targeting worker-b@beta.
+  const opened = await callConversation(alpha, {
+    method: "POST",
+    path: "/conversations",
+    body: {
+      envelope: {
+        messageId: "msg-1",
+        kind: "question",
+        sender: { kind: "worker", id: "worker-a", homeBrokerId: "broker-alpha" },
+        recipients: [{ kind: "worker", id: "worker-b", homeBrokerId: "broker-beta" }],
+        idempotencyKey: "idem-1",
+        content: { text: "cross-broker question" },
+      },
+    },
+  });
+  const conversationId = opened.json.conversationId;
+  alpha.enqueueConversationRelay(conversationId, "msg-1", "broker-beta");
+
+  // 2) beta pulls and applies → mirror; worker-b sees it in its inbox.
+  const forward = await pullAndApplyAll(alpha, beta, "broker-beta", SECRET_B);
+  assert.deepEqual(forward, ["applied"]);
+  const bInbox = beta.pollRelayMirrorInbox(conversationId, { kind: "worker", id: "worker-b", homeBrokerId: "broker-beta" });
+  assert.equal(bInbox.entries.length, 1);
+  await callConversation(beta, {
+    method: "POST",
+    path: `/conversations/${conversationId}/messages/msg-1/processed`,
+    body: {
+      actor: { kind: "worker", id: "worker-b", homeBrokerId: "broker-beta" },
+      evidence: { kind: "reply", ref: "msg-2" },
+    },
+  }).catch(() => undefined); // mirror consume is a later slice; queueing the reply is the C5 core
+
+  // 3) worker-b replies ON THE MIRROR → queued for relay to the home broker.
+  const queued = await callConversation(beta, {
+    method: "POST",
+    path: `/conversations/${conversationId}/messages`,
+    body: {
+      envelope: {
+        messageId: "msg-2",
+        kind: "reply",
+        sender: { kind: "worker", id: "worker-b", homeBrokerId: "broker-beta" },
+        recipients: [{ kind: "worker", id: "worker-a", homeBrokerId: "broker-alpha" }],
+        idempotencyKey: "idem-2",
+        content: { text: "cross-broker answer" },
+      },
+    },
+  });
+  assert.equal(queued.res.statusCode, 202);
+  assert.equal(queued.json.outcome, "queued");
+
+  // 4) alpha pulls beta's outbox and applies → the reply lands in the
+  //    ORIGINAL conversation with the home broker's next sequence.
+  const reverse = await pullAndApplyAll(beta, alpha, "broker-alpha", SECRET_A);
+  assert.deepEqual(reverse, ["applied"]);
+  const original = alpha.getConversation(conversationId);
+  assert.ok(original, "original conversation exists at the home broker");
+  assert.equal(original.messagesById["msg-2"].sequence, 2); // home broker assigned
+  assert.equal(original.messagesById["msg-2"].sender.homeBrokerId, "broker-beta");
+  assert.equal(original.lastAssignedSequence, 2);
+
+  // 5) ONE lineage: alpha relays the applied reply back; beta's mirror advances.
+  alpha.enqueueConversationRelay(conversationId, "msg-2", "broker-beta");
+  // The pull walks the append-only outbox from cursor 0, so the earlier
+  // forward entry redelivers first (collapses as duplicate — T8) before the
+  // new back-relay entry applies.
+  const back = await pullAndApplyAll(alpha, beta, "broker-beta", SECRET_B);
+  assert.deepEqual(back, ["duplicate", "applied"]);
+  const mirror = beta.pollRelayMirrorInbox(conversationId, { kind: "worker", id: "worker-a", homeBrokerId: "broker-alpha" });
+  assert.equal(mirror.entries.filter((entry: { messageId: string }) => entry.messageId === "msg-2").length, 1);
+
+  // 6) No cross-registration: beta never registered worker-a, alpha never
+  //    registered worker-b — the actors exist only as envelope participants.
+  assert.equal(alpha.getWorkerView ? alpha.getWorkerView("worker-b", 30_000) : null, null);
+  assert.equal(beta.getWorkerView ? beta.getWorkerView("worker-a", 30_000) : null, null);
+  assert.ok(original.participants.includes("worker:worker-b:broker-beta"));
+});
+
+test("C5 resync: re-pulling from cursor 0 after loss re-applies idempotently (no loss, no duplication)", async () => {
+  const alpha = new InMemoryA2ABroker(undefined, undefined, { brokerId: "broker-alpha" });
+  const beta = new InMemoryA2ABroker(undefined, undefined, { brokerId: "broker-beta" });
+  const opened = await callConversation(alpha, {
+    method: "POST",
+    path: "/conversations",
+    body: {
+      envelope: {
+        messageId: "msg-1",
+        kind: "question",
+        sender: { kind: "worker", id: "worker-a", homeBrokerId: "broker-alpha" },
+        recipients: [{ kind: "worker", id: "worker-b", homeBrokerId: "broker-beta" }],
+        idempotencyKey: "idem-1",
+        content: { text: "question" },
+      },
+    },
+  });
+  const conversationId = opened.json.conversationId;
+  alpha.enqueueConversationRelay(conversationId, "msg-1", "broker-beta");
+
+  await pullAndApplyAll(alpha, beta, "broker-beta", SECRET_B);
+
+  // Simulate cursor loss / operator resync: pull from cursor 0 again and
+  // re-apply everything — duplicates collapse, nothing is lost or duplicated.
+  const resyncOutcomes = await pullAndApplyAll(alpha, beta, "broker-beta", SECRET_B);
+  assert.deepEqual(resyncOutcomes, ["duplicate"]);
+  const mirrorInbox = beta.pollRelayMirrorInbox(conversationId, { kind: "worker", id: "worker-b", homeBrokerId: "broker-beta" });
+  assert.equal(mirrorInbox.entries.length, 1);
+
+  // Reverse direction after alpha restart (snapshot rehydration): the outbox
+  // still serves the entry and re-apply at the home broker is idempotent.
+  const revivedAlpha = new InMemoryA2ABroker(undefined, alpha.exportSnapshot(), { brokerId: "broker-alpha" });
+  const revived = await pullAndApplyAll(revivedAlpha, beta, "broker-beta", SECRET_B);
+  assert.deepEqual(revived, ["duplicate"]);
+});

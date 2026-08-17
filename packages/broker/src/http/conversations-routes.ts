@@ -159,6 +159,14 @@ export async function handleConversationRoutesIfMatched(ctx: ConversationRoutesC
       throw new BrokerError("bad_request", "envelope with envelope.sender is required");
     }
     requesterMatchesActor(ctx.enforceRequesterIdentity, ctx.requesterIdentity, sender, "conversation.message.create");
+    // C5: when the id names a MIRROR conversation (cross-broker), the reply
+    // queues for relay to the home broker instead of applying locally.
+    if (!ctx.broker.getConversation(conversationId)) {
+      const queued = ctx.broker.addMirrorConversationReply(conversationId, envelope);
+      await awaitDurablePersistenceAck(ctx.stateStore);
+      sendJson(ctx.res, 202, queued);
+      return true;
+    }
     const result = ctx.broker.addConversationMessage(conversationId, envelope);
     await awaitDurablePersistenceAck(ctx.stateStore);
     sendJson(ctx.res, result.outcome === "converged" ? 200 : 201, {
