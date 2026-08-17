@@ -408,14 +408,6 @@ test("C5: A→brokerA→brokerB→B question and reverse reply converge into ONE
   assert.deepEqual(forward, ["applied"]);
   const bInbox = beta.pollRelayMirrorInbox(conversationId, { kind: "worker", id: "worker-b", homeBrokerId: "broker-beta" });
   assert.equal(bInbox.entries.length, 1);
-  await callConversation(beta, {
-    method: "POST",
-    path: `/conversations/${conversationId}/messages/msg-1/processed`,
-    body: {
-      actor: { kind: "worker", id: "worker-b", homeBrokerId: "broker-beta" },
-      evidence: { kind: "reply", ref: "msg-2" },
-    },
-  }).catch(() => undefined); // mirror consume is a later slice; queueing the reply is the C5 core
 
   // 3) worker-b replies ON THE MIRROR → queued for relay to the home broker.
   const queued = await callConversation(beta, {
@@ -435,17 +427,34 @@ test("C5: A→brokerA→brokerB→B question and reverse reply converge into ONE
   assert.equal(queued.res.statusCode, 202);
   assert.equal(queued.json.outcome, "queued");
 
-  // 4) alpha pulls beta's outbox and applies → the reply lands in the
-  //    ORIGINAL conversation with the home broker's next sequence.
+  // 4) worker-b consumes the mirrored question with the reply as evidence —
+  //    mirror processed + receipt + a deterministic ack queued for the home broker.
+  const consumed = await callConversation(beta, {
+    method: "POST",
+    path: `/conversations/${conversationId}/messages/msg-1/processed`,
+    body: {
+      actor: { kind: "worker", id: "worker-b", homeBrokerId: "broker-beta" },
+      evidence: { kind: "reply", ref: "msg-2" },
+    },
+  });
+  assert.equal(consumed.res.statusCode, 200);
+  assert.equal(consumed.json.ackQueued, true);
+  assert.equal(consumed.json.ackMessageId, "ack-msg-1");
+  assert.equal(consumed.json.receipt.brokerId, "broker-beta");
+
+  // 5) alpha pulls beta's outbox and applies → the reply AND the ack land in
+  //    the ORIGINAL conversation with home-assigned sequences (one lineage).
   const reverse = await pullAndApplyAll(beta, alpha, "broker-alpha", SECRET_A);
-  assert.deepEqual(reverse, ["applied"]);
+  assert.deepEqual(reverse, ["applied", "applied"]);
   const original = alpha.getConversation(conversationId);
   assert.ok(original, "original conversation exists at the home broker");
   assert.equal(original.messagesById["msg-2"].sequence, 2); // home broker assigned
   assert.equal(original.messagesById["msg-2"].sender.homeBrokerId, "broker-beta");
-  assert.equal(original.lastAssignedSequence, 2);
+  assert.equal(original.messagesById["ack-msg-1"].kind, "ack");
+  assert.equal(original.messagesById["ack-msg-1"].sequence, 3);
+  assert.equal(original.lastAssignedSequence, 3);
 
-  // 5) ONE lineage: alpha relays the applied reply back; beta's mirror advances.
+  // 6) ONE lineage: alpha relays the applied reply back; beta's mirror advances.
   alpha.enqueueConversationRelay(conversationId, "msg-2", "broker-beta");
   // The pull walks the append-only outbox from cursor 0, so the earlier
   // forward entry redelivers first (collapses as duplicate — T8) before the
@@ -455,7 +464,7 @@ test("C5: A→brokerA→brokerB→B question and reverse reply converge into ONE
   const mirror = beta.pollRelayMirrorInbox(conversationId, { kind: "worker", id: "worker-a", homeBrokerId: "broker-alpha" });
   assert.equal(mirror.entries.filter((entry: { messageId: string }) => entry.messageId === "msg-2").length, 1);
 
-  // 6) No cross-registration: beta never registered worker-a, alpha never
+  // 7) No cross-registration: beta never registered worker-a, alpha never
   //    registered worker-b — the actors exist only as envelope participants.
   assert.equal(alpha.getWorkerView ? alpha.getWorkerView("worker-b", 30_000) : null, null);
   assert.equal(beta.getWorkerView ? beta.getWorkerView("worker-a", 30_000) : null, null);
@@ -496,4 +505,99 @@ test("C5 resync: re-pulling from cursor 0 after loss re-applies idempotently (no
   const revivedAlpha = new InMemoryA2ABroker(undefined, alpha.exportSnapshot(), { brokerId: "broker-alpha" });
   const revived = await pullAndApplyAll(revivedAlpha, beta, "broker-beta", SECRET_B);
   assert.deepEqual(revived, ["duplicate"]);
+});
+
+test("C5 mirror consume: evidence required, recipient-only, ack converges idempotently into the home lineage", async () => {
+  const alpha = new InMemoryA2ABroker(undefined, undefined, { brokerId: "broker-alpha" });
+  const beta = new InMemoryA2ABroker(undefined, undefined, { brokerId: "broker-beta" });
+  const opened = await callConversation(alpha, {
+    method: "POST",
+    path: "/conversations",
+    body: {
+      envelope: {
+        messageId: "msg-1",
+        kind: "question",
+        sender: { kind: "worker", id: "worker-a", homeBrokerId: "broker-alpha" },
+        recipients: [{ kind: "worker", id: "worker-b", homeBrokerId: "broker-beta" }],
+        idempotencyKey: "idem-1",
+        content: { text: "question" },
+      },
+    },
+  });
+  const conversationId = opened.json.conversationId;
+  alpha.enqueueConversationRelay(conversationId, "msg-1", "broker-beta");
+  await pullAndApplyAll(alpha, beta, "broker-beta", SECRET_B);
+  beta.pollRelayMirrorInbox(conversationId, { kind: "worker", id: "worker-b", homeBrokerId: "broker-beta" });
+
+  // Missing evidence fails closed.
+  await assert.rejects(
+    () => callConversation(beta, {
+      method: "POST",
+      path: `/conversations/${conversationId}/messages/msg-1/processed`,
+      body: { actor: { kind: "worker", id: "worker-b", homeBrokerId: "broker-beta" } },
+    }),
+    (error: unknown) => error instanceof Error && /evidence/.test(error.message),
+  );
+
+  // A participant that is not a recipient of the message cannot consume it.
+  await assert.rejects(
+    () => callConversation(beta, {
+      method: "POST",
+      path: `/conversations/${conversationId}/messages/msg-1/processed`,
+      body: {
+        actor: { kind: "worker", id: "worker-a", homeBrokerId: "broker-alpha" },
+        evidence: { kind: "ack", ref: "self-ack" },
+      },
+    }),
+    (error: unknown) => error instanceof Error && /not addressed to/.test(error.message),
+  );
+
+  // A third worker is not even a participant.
+  await assert.rejects(
+    () => callConversation(beta, {
+      method: "POST",
+      path: `/conversations/${conversationId}/messages/msg-1/processed`,
+      body: {
+        actor: { kind: "worker", id: "worker-z", homeBrokerId: "broker-beta" },
+        evidence: { kind: "ack", ref: "z" },
+      },
+    }),
+    (error: unknown) => error instanceof Error && /participant/.test(error.message),
+  );
+
+  // Valid consume: receipt from the mirror-holding broker + ack queued.
+  const consumed = await callConversation(beta, {
+    method: "POST",
+    path: `/conversations/${conversationId}/messages/msg-1/processed`,
+    body: {
+      actor: { kind: "worker", id: "worker-b", homeBrokerId: "broker-beta" },
+      evidence: { kind: "ack", ref: "read" },
+    },
+  });
+  assert.equal(consumed.res.statusCode, 200);
+  assert.equal(consumed.json.receipt.brokerId, "broker-beta");
+  assert.match(consumed.json.receipt.receiptDigest, /^sha256:[0-9a-f]{64}$/);
+
+  // The mirror's message is processed and cannot re-process.
+  await assert.rejects(
+    () => callConversation(beta, {
+      method: "POST",
+      path: `/conversations/${conversationId}/messages/msg-1/processed`,
+      body: {
+        actor: { kind: "worker", id: "worker-b", homeBrokerId: "broker-beta" },
+        evidence: { kind: "ack", ref: "again" },
+      },
+    }),
+    (error: unknown) => error instanceof Error && /cannot transition/.test(error.message),
+  );
+
+  // The ack converges into the home lineage; re-pulling collapses (T8).
+  const applied = await pullAndApplyAll(beta, alpha, "broker-alpha", SECRET_A);
+  assert.deepEqual(applied, ["applied"]);
+  const original = alpha.getConversation(conversationId);
+  assert.ok(original, "original conversation exists at the home broker");
+  assert.equal(original.messagesById["ack-msg-1"].kind, "ack");
+  assert.equal(original.messagesById["ack-msg-1"].sequence, 2);
+  const resync = await pullAndApplyAll(beta, alpha, "broker-alpha", SECRET_A);
+  assert.deepEqual(resync, ["duplicate"]);
 });

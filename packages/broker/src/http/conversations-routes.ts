@@ -195,6 +195,22 @@ export async function handleConversationRoutesIfMatched(ctx: ConversationRoutesC
     if (!evidence || !["reply", "task-result", "ack"].includes(String(evidence.kind)) || !evidence.ref) {
       throw new BrokerError("bad_request", "evidence {kind: reply|task-result|ack, ref} is required");
     }
+    // C5: when the id names a MIRROR conversation (cross-broker), the consume
+    // runs on the mirror and queues a deterministic ack back to the home broker.
+    if (!ctx.broker.getConversation(conversationId)) {
+      const mirrorResult = ctx.broker.consumeMirrorConversationMessage(conversationId, messageId, actor, {
+        kind: evidence.kind as "reply" | "task-result" | "ack",
+        ref: String(evidence.ref),
+      });
+      await awaitDurablePersistenceAck(ctx.stateStore);
+      sendJson(ctx.res, 200, {
+        messageId,
+        receipt: mirrorResult.receipt,
+        ackQueued: mirrorResult.ackQueued,
+        ackMessageId: mirrorResult.ackMessageId,
+      });
+      return true;
+    }
     const result = ctx.broker.consumeConversationMessage(conversationId, messageId, actor, {
       kind: evidence.kind as "reply" | "task-result" | "ack",
       ref: String(evidence.ref),
