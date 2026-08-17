@@ -97,6 +97,11 @@ import {
   type ConversationRelayOutboxEntry,
   type ConversationRelayPayload,
 } from "./broker-conversation-relay.js";
+import {
+  buildTaskResultReplyEnvelope,
+  RESUMING_MESSAGE_KINDS,
+  taskReferencesOf,
+} from "./broker-conversation-task-bridge.js";
 import { getBrokerRoundStatus, listBrokerTasks, readBrokerTask } from "./broker-task-read.js";
 import { readBrokerProposal, listBrokerProposals } from "./broker-proposal-read.js";
 import {
@@ -1034,12 +1039,45 @@ export class InMemoryA2ABroker {
         return record;
       },
     });
+    // C3 bridge: an accepted reply/clarification/decision that references a
+    // task with an awaiting_operator checkpoint (the input-required projection)
+    // resumes it exactly once. Converged replays never reach here, and
+    // resumeTask is itself idempotent, so there is no double resume.
+    if (result.outcome === "accepted" && RESUMING_MESSAGE_KINDS.has(result.message.kind)) {
+      for (const taskId of taskReferencesOf(result.message)) {
+        const task = this.tasks.get(taskId);
+        if (task?.checkpoint?.state === "awaiting_operator") {
+          this.resumeTask(taskId, result.message.sender.id, {
+            checkpointId: task.checkpoint.checkpointId,
+          });
+        }
+      }
+    }
     return {
       outcome: result.outcome,
       conversation: result.conversation,
       messageId: result.message.messageId,
       sequence: result.message.sequence,
     };
+  }
+
+  /**
+   * C3 bridge: project a task result as ONE bounded conversation reply
+   * (#1863). Deterministic messageId/idempotencyKey per (taskId, status) —
+   * re-projecting converges instead of duplicating. All accept-time gates
+   * (redaction, byte/turn budgets, digest, audit) apply unchanged.
+   */
+  projectTaskResultAsConversationReply(
+    conversationId: string,
+    taskId: string,
+    options: { recipients?: Array<{ kind: string; id: string; homeBrokerId: string }> } = {},
+  ): { outcome: "accepted" | "converged"; messageId: string; sequence: number } {
+    const conversation = this.requireConversation(conversationId);
+    const task = this.tasks.get(taskId);
+    if (!task) throw new BrokerError("not_found", `task ${taskId} not found`);
+    const envelope = buildTaskResultReplyEnvelope(conversation, task, options);
+    const result = this.addConversationMessage(conversationId, envelope);
+    return { outcome: result.outcome, messageId: result.messageId, sequence: result.sequence };
   }
 
   pollConversationInbox(
