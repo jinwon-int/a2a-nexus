@@ -6,10 +6,12 @@ import { join } from "node:path";
 import type { IncomingMessage } from "node:http";
 
 import {
+  assertPeerConversationScope,
   assertPeerHandoffScope,
   loadPeerCredentialRegistryFile,
   parsePeerCredentialRegistry,
   parsePeerHandoffScopeMode,
+  peerHasConversationScope,
   peerHasHandoffScope,
   resolvePeerFromRequest,
   sha256Hex,
@@ -35,7 +37,7 @@ test("parsePeerCredentialRegistry accepts digest records with known scopes", () 
 test("parsePeerCredentialRegistry fails closed on unknown scope tokens and empty scope lists", () => {
   assert.throws(
     () => parsePeerCredentialRegistry({ p: { secretSha256: sha256Hex("s"), scopes: ["handoff:everything"] } }, "test"),
-    /unknown handoff scope/,
+    /unknown peer scope/,
   );
   assert.throws(
     () => parsePeerCredentialRegistry({ p: { secretSha256: sha256Hex("s"), scopes: [] } }, "test"),
@@ -152,4 +154,68 @@ test("parsePeerHandoffScopeMode defaults to auto and rejects unknown modes", () 
   assert.equal(parsePeerHandoffScopeMode("off", "TEST"), "off");
   assert.equal(parsePeerHandoffScopeMode("enforce", "TEST"), "enforce");
   assert.throws(() => parsePeerHandoffScopeMode("always", "TEST"), /must be one of off\|auto\|enforce/);
+});
+
+// ---------------------------------------------------------------------------
+// Trusted Conversation Plane peer scopes (#1864 slice 1, spec frozen as #1861)
+// ---------------------------------------------------------------------------
+
+test("parsePeerCredentialRegistry accepts the additive conversation:* scopes", () => {
+  const registry = parsePeerCredentialRegistry(
+    {
+      p: {
+        secretSha256: sha256Hex("s"),
+        scopes: ["handoff:create", "conversation:send", "conversation:read", "conversation:relay"],
+      },
+    },
+    "test",
+  );
+  assert.deepEqual(registry.p.scopes, ["handoff:create", "conversation:send", "conversation:read", "conversation:relay"]);
+});
+
+test("parsePeerCredentialRegistry still fails closed on unknown conversation-shaped scope tokens", () => {
+  assert.throws(
+    () => parsePeerCredentialRegistry({ p: { secretSha256: sha256Hex("s"), scopes: ["conversation:admin"] } }, "test"),
+    /unknown peer scope/,
+  );
+  assert.throws(
+    () => parsePeerCredentialRegistry({ p: { secretSha256: sha256Hex("s"), scopes: ["handoff:conversation"] } }, "test"),
+    /unknown peer scope/,
+  );
+});
+
+test("assertPeerConversationScope enforces the conversation plane fail-closed semantics", () => {
+  const peer = { peerBrokerId: "broker-beta", scopes: ["conversation:read" as const] };
+  // off: no gate
+  assert.doesNotThrow(() => assertPeerConversationScope("off", null, "conversation:send", "relay submit"));
+  // auto without peer headers: legacy behavior continues
+  assert.doesNotThrow(() => assertPeerConversationScope("auto", null, "conversation:send", "relay submit"));
+  // enforce without a verified peer fails closed
+  assert.throws(
+    () => assertPeerConversationScope("enforce", null, "conversation:send", "relay submit"),
+    /requires a peer credential with the conversation:send scope/,
+  );
+  // missing scope on a verified peer fails closed
+  assert.throws(
+    () => assertPeerConversationScope("enforce", peer, "conversation:send", "relay submit"),
+    /is not granted the conversation:send scope/,
+  );
+  // granted scope passes
+  assert.doesNotThrow(() => assertPeerConversationScope("enforce", peer, "conversation:read", "relay read"));
+});
+
+test("peerHasConversationScope fails closed for missing peers, revoked records, and absent scopes", () => {
+  const registry = parsePeerCredentialRegistry(
+    {
+      active: { secretSha256: sha256Hex("a"), scopes: ["conversation:send"] },
+      revoked: { secretSha256: sha256Hex("r"), scopes: ["conversation:send"], status: "revoked" },
+    },
+    "test",
+  );
+  assert.equal(peerHasConversationScope(registry, "active", "conversation:send"), true);
+  assert.equal(peerHasConversationScope(registry, "active", "conversation:relay"), false);
+  assert.equal(peerHasConversationScope(registry, "revoked", "conversation:send"), false);
+  assert.equal(peerHasConversationScope(registry, "missing", "conversation:send"), false);
+  assert.equal(peerHasConversationScope(null, "active", "conversation:send"), false);
+  assert.equal(peerHasConversationScope(registry, undefined, "conversation:send"), false);
 });

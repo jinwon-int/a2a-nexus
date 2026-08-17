@@ -1198,7 +1198,28 @@ export const A2A_PEER_HANDOFF_SCOPES = [
 
 export type A2APeerHandoffScope = (typeof A2A_PEER_HANDOFF_SCOPES)[number];
 
-const A2A_PEER_HANDOFF_SCOPE_SET: ReadonlySet<string> = new Set(A2A_PEER_HANDOFF_SCOPES);
+/**
+ * Minimum-scope peer tokens for the Trusted Conversation Plane relay
+ * (docs/specs/trusted-conversation-plane/spec.md, frozen as #1861; track
+ * #1864). Deliberately separate from the handoff v0 scopes: the handoff
+ * contract freezes `handoff:*` and requires a v0→v1 plan for scope changes,
+ * so the conversation plane adds its own additive token set instead of
+ * overloading task-scoped permissions with message-relay meaning. No runtime
+ * route consumes these yet — the relay track wires them; they are accepted by
+ * the peer credential registry now so credential provisioning is not blocked
+ * behind a code change later.
+ */
+export const A2A_CONVERSATION_PEER_SCOPES = [
+  "conversation:send",
+  "conversation:read",
+  "conversation:relay",
+] as const;
+
+export type A2APeerConversationScope = (typeof A2A_CONVERSATION_PEER_SCOPES)[number];
+
+export type A2APeerScope = A2APeerHandoffScope | A2APeerConversationScope;
+
+const A2A_PEER_SCOPE_SET: ReadonlySet<string> = new Set([...A2A_PEER_HANDOFF_SCOPES, ...A2A_CONVERSATION_PEER_SCOPES]);
 
 export type PeerHandoffScopeMode = "off" | "auto" | "enforce";
 
@@ -1210,7 +1231,7 @@ export interface PeerCredentialRecord {
   /** Hex sha256 digest of the peer secret. */
   secretSha256: string;
   /** Explicit minimum scope subset granted to this peer credential. */
-  scopes: readonly A2APeerHandoffScope[];
+  scopes: readonly A2APeerScope[];
   /** Optional lifecycle switch; `revoked` fails closed while staying listed. */
   status?: "active" | "revoked";
 }
@@ -1219,7 +1240,7 @@ export type PeerCredentialRegistry = Record<string, PeerCredentialRecord>;
 
 export interface VerifiedPeer {
   peerBrokerId: string;
-  scopes: readonly A2APeerHandoffScope[];
+  scopes: readonly A2APeerScope[];
 }
 
 /**
@@ -1362,6 +1383,43 @@ export function peerHasHandoffScope(
   return record.scopes.includes(requiredScope);
 }
 
+/** Conversation-plane mirror of {@link assertPeerHandoffScope} (#1864 slice 1). */
+export function assertPeerConversationScope(
+  mode: PeerHandoffScopeMode,
+  peer: VerifiedPeer | null,
+  requiredScope: A2APeerConversationScope,
+  operation: string,
+): void {
+  if (mode === "off") return;
+  if (peer === null) {
+    if (mode === "enforce") {
+      throw new BrokerError(
+        "unauthorized",
+        `${operation} requires a peer credential with the ${requiredScope} scope`,
+      );
+    }
+    return;
+  }
+  if (!peer.scopes.includes(requiredScope)) {
+    throw new BrokerError(
+      "unauthorized",
+      `peer ${peer.peerBrokerId} is not granted the ${requiredScope} scope required for ${operation}`,
+    );
+  }
+}
+
+/** Registry lookup helper for the conversation relay lane (non-HTTP surfaces). */
+export function peerHasConversationScope(
+  registry: PeerCredentialRegistry | null,
+  peerBrokerId: string | undefined,
+  requiredScope: A2APeerConversationScope,
+): boolean {
+  if (!registry || !peerBrokerId) return false;
+  const record = registry[peerBrokerId];
+  if (!record || record.status === "revoked") return false;
+  return record.scopes.includes(requiredScope);
+}
+
 export function sha256Hex(value: string): string {
   return createHash("sha256").update(value, "utf8").digest("hex");
 }
@@ -1398,20 +1456,20 @@ function resolveSecretDigest(
   return digest.toLowerCase();
 }
 
-function parsePeerScopes(value: unknown, registryKey: string): readonly A2APeerHandoffScope[] {
+function parsePeerScopes(value: unknown, registryKey: string): readonly A2APeerScope[] {
   if (!Array.isArray(value) || value.length === 0) {
     throw new Error(
-      `A2A peer credential registry record ${registryKey} scopes must be a non-empty array of handoff scope tokens`,
+      `A2A peer credential registry record ${registryKey} scopes must be a non-empty array of peer scope tokens`,
     );
   }
-  const scopes = new Set<A2APeerHandoffScope>();
+  const scopes = new Set<A2APeerScope>();
   for (const entry of value) {
-    if (typeof entry !== "string" || !A2A_PEER_HANDOFF_SCOPE_SET.has(entry)) {
+    if (typeof entry !== "string" || !A2A_PEER_SCOPE_SET.has(entry)) {
       throw new Error(
-        `A2A peer credential registry record ${registryKey} has unknown handoff scope ${JSON.stringify(entry)}`,
+        `A2A peer credential registry record ${registryKey} has unknown peer scope ${JSON.stringify(entry)}`,
       );
     }
-    scopes.add(entry as A2APeerHandoffScope);
+    scopes.add(entry as A2APeerScope);
   }
   return [...scopes];
 }
