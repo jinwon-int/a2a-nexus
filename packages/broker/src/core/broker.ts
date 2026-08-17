@@ -64,6 +64,8 @@ import {
 } from "./broker-retention-selectors.js";
 // Re-exported to preserve the existing public surface; the thresholds now live
 // in broker-worker-status.js alongside the logic that classifies against them.
+// Also imported for the conversation delivery liveness resolver (#1862).
+import { MOBILE_DISCONNECTED_AFTER_MS, MOBILE_OFFLINE_AFTER_MS } from "./broker-worker-status.js";
 export { MOBILE_OFFLINE_AFTER_MS, MOBILE_DISCONNECTED_AFTER_MS } from "./broker-worker-status.js";
 import {
   isoNow,
@@ -81,8 +83,10 @@ import {
   consumeConversationMessage,
   openBrokerConversation,
   pollConversationInbox,
+  summarizeConversationDelivery,
   type A2AConversationReceipt,
   type A2AConversationState,
+  type ConversationDeliverySummary,
   type ConversationInboxEntry,
 } from "./broker-conversation.js";
 import {
@@ -1153,6 +1157,39 @@ export class InMemoryA2ABroker {
     });
     if (result.outcome === "applied") this.persistState();
     return result;
+  }
+
+  /**
+   * Delivery clarity for offline/stale/busy recipients (#1862 exit criteria):
+   * queue semantics made inspectable. Liveness mirrors the worker-status
+   * thresholds (<=30s online, <=90s stale, >90s offline; unregistered or
+   * foreign-homed = unknown); busy = the worker currently holds claimed or
+   * running tasks — busy never blocks conversation queuing.
+   */
+  getConversationDeliverySummary(conversationId: string): ConversationDeliverySummary {
+    const conversation = this.requireConversation(conversationId);
+    const nowMs = Date.now();
+    const busyWorkers = new Set(
+      [...this.tasks.values()]
+        .filter((task) => (task.status === "claimed" || task.status === "running") && task.claimedBy)
+        .map((task) => task.claimedBy as string),
+    );
+    return summarizeConversationDelivery(conversation, {
+      now: new Date(nowMs).toISOString(),
+      liveness: (workerId, homeBrokerId) => {
+        if (homeBrokerId !== this.conversationBrokerId) {
+          return { liveness: "unknown", busy: false };
+        }
+        const worker = this.workers.get(workerId);
+        if (!worker) return { liveness: "unknown", busy: false };
+        const lastSeenMs = Date.parse(worker.lastSeenAt);
+        if (!Number.isFinite(lastSeenMs)) return { liveness: "unknown", busy: busyWorkers.has(workerId) };
+        const ageMs = nowMs - lastSeenMs;
+        const liveness =
+          ageMs <= MOBILE_OFFLINE_AFTER_MS ? "online" : ageMs <= MOBILE_DISCONNECTED_AFTER_MS ? "stale" : "offline";
+        return { liveness, busy: busyWorkers.has(workerId) };
+      },
+    });
   }
 
   /** Mirror inbox for a local actor (participant rules apply via the domain guard). */
