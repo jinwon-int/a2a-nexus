@@ -71,6 +71,7 @@ export const REQUEST_ROUTE_GROUPS = [
   "conversations.create",
   "conversations.detail",
   "conversations.inbox",
+  "conversations.delivery",
   "conversations.messages",
   "conversations.message.processed",
   "proposals.list",
@@ -216,6 +217,7 @@ export function classifyRequestRoute(method: string | undefined, pathname: strin
   if (method === "POST" && pathname === "/conversations") return "conversations.create";
   if (segments[0] === "conversations" && segments[1]) {
     if (segments[2] === "inbox") return "conversations.inbox";
+    if (segments[2] === "delivery") return "conversations.delivery";
     if (segments[2] === "messages" && !segments[3]) return "conversations.messages";
     if (segments[2] === "messages" && segments[3] && segments[4] === "processed") return "conversations.message.processed";
     return "conversations.detail";

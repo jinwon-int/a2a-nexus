@@ -124,6 +124,19 @@ export async function handleConversationRoutesIfMatched(ctx: ConversationRoutesC
     return true;
   }
 
+  if (ctx.method === "GET" && ctx.segments[2] === "delivery" && ctx.segments.length === 3) {
+    const actor = parseActorParam(ctx.url.searchParams.get("actor"));
+    const conversation = ctx.broker.getConversation(conversationId);
+    if (!conversation) throw new BrokerError("not_found", "conversation not found");
+    const { assertConversationParticipant } = await import("../core/broker-conversation.js");
+    assertConversationParticipant(conversation, actor, "read");
+    // Participant read exposes the queue matrix only — message bodies stay
+    // behind the inbox poll (digest-first summary here).
+    const summary = ctx.broker.getConversationDeliverySummary(conversationId);
+    sendJson(ctx.res, 200, summary);
+    return true;
+  }
+
   if (ctx.method === "GET" && ctx.segments[2] === "inbox" && ctx.segments.length === 3) {
     const actor = parseActorParam(ctx.url.searchParams.get("actor"));
     requesterMatchesActor(ctx.enforceRequesterIdentity, ctx.requesterIdentity, actor, "conversation.inbox.poll");

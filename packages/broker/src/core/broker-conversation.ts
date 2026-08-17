@@ -787,3 +787,153 @@ export function consumeConversationMessage(
   });
   return { message, receipt: buildConversationReceipt(message, options.brokerId, options.now) };
 }
+
+// ---------------------------------------------------------------------------
+// Delivery clarity for offline/stale/busy recipients (#1862 exit criteria).
+// Queue semantics (spec §Worker↔Worker): a message for an unreachable
+// recipient is never dropped — it stays `persisted` (queued) until the
+// recipient polls; TTL expiry terminates it as `expired`; retry is poll-based
+// (the recipient retries by polling again — the sender never re-sends). This
+// summary makes those outcomes inspectable per recipient.
+// ---------------------------------------------------------------------------
+
+export type ConversationRecipientLiveness = "online" | "stale" | "offline" | "unknown";
+
+export interface ConversationWorkerLivenessLookup {
+  /**
+   * Resolve a locally-homed worker recipient's liveness. `unknown` covers
+   * non-worker recipients, foreign-homed workers, and unregistered ids.
+   */
+  (workerId: string, homeBrokerId: string): {
+    liveness: ConversationRecipientLiveness;
+    busy: boolean;
+  };
+}
+
+export interface ConversationDeliveryRecipientView {
+  recipientKey: string;
+  kind: string;
+  id: string;
+  homeBrokerId: string;
+  liveness: ConversationRecipientLiveness;
+  busy: boolean;
+  queuedCount: number;
+  oldestQueuedAt?: string;
+  deliveredCount: number;
+  processedCount: number;
+  expiredCount: number;
+}
+
+export interface ConversationDeliveryMessageView {
+  messageId: string;
+  sequence: number;
+  kind: A2AConversationMessageKind;
+  deliveryState: A2AConversationDeliveryState;
+  taskId?: string;
+  createdAt: string;
+  expiresAt?: string;
+  expired: boolean;
+  nextExpiryAt?: string;
+}
+
+export interface ConversationDeliverySummary {
+  conversationId: string;
+  status: "open" | "closed";
+  closureReason?: string;
+  maxTurns: number;
+  turnCount: number;
+  /** Queue semantics contract line, stable for operators. */
+  queueSemantics: "queued-until-polled; ttl-expiry-terminal; retry-is-poll-based";
+  recipients: ConversationDeliveryRecipientView[];
+  messages: ConversationDeliveryMessageView[];
+}
+
+export function summarizeConversationDelivery(
+  conversation: A2AConversationState,
+  options: {
+    now: string;
+    liveness: ConversationWorkerLivenessLookup;
+  },
+): ConversationDeliverySummary {
+  expireStaleConversationMessages(conversation, options.now);
+  const nowMs = Date.parse(options.now);
+
+  const byRecipient = new Map<string, ConversationDeliveryRecipientView>();
+  const ensure = (recipient: { kind: string; id: string; homeBrokerId: string }): ConversationDeliveryRecipientView => {
+    const key = conversationActorKey(recipient);
+    let view = byRecipient.get(key);
+    if (!view) {
+      const livenessInfo = recipient.kind === "worker"
+        ? options.liveness(recipient.id, recipient.homeBrokerId)
+        : { liveness: "unknown" as ConversationRecipientLiveness, busy: false };
+      view = {
+        recipientKey: key,
+        kind: recipient.kind,
+        id: recipient.id,
+        homeBrokerId: recipient.homeBrokerId,
+        liveness: livenessInfo.liveness,
+        busy: livenessInfo.busy,
+        queuedCount: 0,
+        deliveredCount: 0,
+        processedCount: 0,
+        expiredCount: 0,
+      };
+      byRecipient.set(key, view);
+    }
+    return view;
+  };
+
+  const ordered = Object.values(conversation.messagesById).sort((left, right) => left.sequence - right.sequence);
+  const messages: ConversationDeliveryMessageView[] = [];
+  let nextExpiryAt: string | undefined;
+
+  for (const message of ordered) {
+    const expiresAtMs = message.expiresAt ? Date.parse(message.expiresAt) : undefined;
+    const expired = message.deliveryState === "expired"
+      || (expiresAtMs !== undefined && expiresAtMs <= nowMs && message.deliveryState !== "processed");
+    if (!expired && expiresAtMs !== undefined && expiresAtMs > nowMs) {
+      if (nextExpiryAt === undefined || expiresAtMs < Date.parse(nextExpiryAt)) {
+        nextExpiryAt = message.expiresAt;
+      }
+    }
+    messages.push({
+      messageId: message.messageId,
+      sequence: message.sequence,
+      kind: message.kind,
+      deliveryState: message.deliveryState,
+      ...(message.taskId !== undefined ? { taskId: message.taskId } : {}),
+      createdAt: message.createdAt,
+      ...(message.expiresAt !== undefined ? { expiresAt: message.expiresAt } : {}),
+      expired,
+      ...(nextExpiryAt !== undefined ? { nextExpiryAt } : {}),
+    });
+
+    for (const recipient of message.recipients) {
+      const view = ensure(recipient);
+      if (expired) {
+        view.expiredCount += 1;
+      } else if (message.deliveryState === "processed") {
+        view.processedCount += 1;
+      } else if (message.deliveryState === "delivered") {
+        view.deliveredCount += 1;
+      } else {
+        // accepted/persisted and not yet expired: queued for this recipient.
+        view.queuedCount += 1;
+        if (view.oldestQueuedAt === undefined || message.createdAt < view.oldestQueuedAt) {
+          view.oldestQueuedAt = message.createdAt;
+        }
+      }
+    }
+  }
+
+  return {
+    conversationId: conversation.conversationId,
+    status: conversation.status,
+    ...(conversation.closureReason !== undefined ? { closureReason: conversation.closureReason } : {}),
+    maxTurns: conversation.maxTurns,
+    turnCount: conversation.turnCount,
+    queueSemantics: "queued-until-polled; ttl-expiry-terminal; retry-is-poll-based",
+    recipients: [...byRecipient.values()],
+    messages,
+  };
+}
