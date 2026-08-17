@@ -413,3 +413,163 @@ function isBadRequest(error: unknown): boolean {
 function isPolicyDenied(error: unknown): boolean {
   return error instanceof BrokerError && error.code === "policy_denied";
 }
+
+// ---------------------------------------------------------------------------
+// T1 (#1862 remaining): worker message signatures
+// ---------------------------------------------------------------------------
+
+import { generateKeyPairSync } from "node:crypto";
+import {
+  buildWorkerEnvelopeSignature,
+  verifyWorkerEnvelopeSignature,
+} from "./broker-conversation.js";
+
+function registerSigningWorker(broker: InMemoryLikeWorker, workerId: string, publicKeyPem: string): void {
+  broker.registerWorker({
+    nodeId: workerId,
+    role: "analyst",
+    capabilities: {
+      canAnalyze: true,
+      canBackfill: false,
+      canPatchWorkspace: false,
+      canPromoteLive: false,
+      workspaceIds: ["ws1"],
+      environments: ["research"],
+    },
+    metadata: { conversationSigningPublicKey: publicKeyPem },
+  });
+}
+
+interface InMemoryLikeWorkerAdd {
+  registerWorker(request: { nodeId: string; role: string; capabilities: Record<string, unknown>; metadata?: Record<string, string> }): unknown;
+}
+
+type InMemoryLikeWorker = InMemoryLikeWorkerAdd;
+
+test("T1: a signed worker message verifies; tampered digest and wrong key fail closed", async () => {
+  const { InMemoryA2ABroker } = await import("./broker.js");
+  const broker = new InMemoryA2ABroker(undefined, undefined, { brokerId: "broker-alpha" }) as unknown as InMemoryLikeWorker;
+  const { privateKey, publicKey } = generateKeyPairSync("ed25519");
+  const privatePem = privateKey.export({ type: "pkcs8", format: "pem" }).toString();
+  const publicPem = publicKey.export({ type: "spki", format: "pem" }).toString();
+  registerSigningWorker(broker as never, "worker-signer", publicPem);
+
+  const opened = broker2Start(broker as never);
+  const signature = buildWorkerEnvelopeSignature(privatePem, {
+    conversationId: opened.conversationId,
+    messageId: "msg-signed",
+    contentDigest: opened.digest,
+  });
+  const reply = (broker as never as { addConversationMessage: (id: string, env: unknown) => { outcome: string } }).addConversationMessage(opened.conversationId, {
+    messageId: "msg-signed",
+    kind: "reply",
+    sender: { kind: "worker", id: "worker-signer", homeBrokerId: "broker-alpha" },
+    recipients: [{ kind: "worker", id: "worker-a", homeBrokerId: "broker-alpha" }],
+    idempotencyKey: "idem-signed",
+    content: { text: opened.text },
+    workerSignature: signature,
+  });
+  assert.equal(reply.outcome, "accepted");
+
+  // Tampered content under the same signature: digest mismatch → rejected.
+  assert.throws(
+    () => (broker as never as { addConversationMessage: (id: string, env: unknown) => unknown }).addConversationMessage(opened.conversationId, {
+      messageId: "msg-tamper",
+      kind: "reply",
+      sender: { kind: "worker", id: "worker-signer", homeBrokerId: "broker-alpha" },
+      recipients: [{ kind: "worker", id: "worker-a", homeBrokerId: "broker-alpha" }],
+      idempotencyKey: "idem-tamper",
+      content: { text: "different content entirely" },
+      workerSignature: signature,
+    }),
+    (error: unknown) => error instanceof BrokerError && error.code === "policy_denied" && /binding does not match|signature rejected/.test(error.message),
+  );
+
+  // A signature from a DIFFERENT key (attacker) fails verification.
+  const { privateKey: attackerKey } = generateKeyPairSync("ed25519");
+  const attackerSignature = buildWorkerEnvelopeSignature(
+    attackerKey.export({ type: "pkcs8", format: "pem" }).toString(),
+    { conversationId: opened.conversationId, messageId: "msg-attacker", contentDigest: opened.digest },
+  );
+  assert.throws(
+    () => (broker as never as { addConversationMessage: (id: string, env: unknown) => unknown }).addConversationMessage(opened.conversationId, {
+      messageId: "msg-attacker",
+      kind: "reply",
+      sender: { kind: "worker", id: "worker-signer", homeBrokerId: "broker-alpha" },
+      recipients: [{ kind: "worker", id: "worker-a", homeBrokerId: "broker-alpha" }],
+      idempotencyKey: "idem-attacker",
+      content: { text: opened.text },
+      workerSignature: attackerSignature,
+    }),
+    (error: unknown) => error instanceof BrokerError && error.code === "policy_denied" && /JWS verification failed|signature rejected/.test(error.message),
+  );
+});
+
+test("T1: unsigned worker messages pass by default; a signature from an unknown-key worker is refused (cannot verify)", async () => {
+  const { InMemoryA2ABroker } = await import("./broker.js");
+  const broker = new InMemoryA2ABroker(undefined, undefined, { brokerId: "broker-alpha" });
+  const opened = broker.startConversation({
+    homeBrokerId: "broker-alpha",
+    envelope: baseEnvelope(),
+  });
+  // Unsigned reply from a worker with no registered key: additive mode allows.
+  const unsigned = broker.addConversationMessage(opened.conversation.conversationId, {
+    messageId: "msg-unsigned",
+    kind: "reply",
+    sender: { kind: "worker", id: "worker-a", homeBrokerId: "broker-alpha" },
+    recipients: [{ kind: "worker", id: "worker-a", homeBrokerId: "broker-alpha" }],
+    idempotencyKey: "idem-unsigned",
+    content: { text: "unsigned but allowed in additive rollout" },
+  });
+  assert.equal(unsigned.outcome, "accepted");
+
+  // A PRESENT signature whose worker has no registered key fails closed —
+  // "cannot verify" must never degrade to accept.
+  const { privateKey } = generateKeyPairSync("ed25519");
+  const ghost = buildWorkerEnvelopeSignature(privateKey.export({ type: "pkcs8", format: "pem" }).toString(), {
+    conversationId: opened.conversation.conversationId,
+    messageId: "msg-ghost",
+    contentDigest: opened.conversation.messagesById[opened.conversation.rootMessageId].contentDigest,
+  });
+  assert.throws(
+    () => broker.addConversationMessage(opened.conversation.conversationId, {
+      messageId: "msg-ghost",
+      kind: "reply",
+      sender: { kind: "worker", id: "worker-a", homeBrokerId: "broker-alpha" },
+      recipients: [{ kind: "worker", id: "worker-a", homeBrokerId: "broker-alpha" }],
+      idempotencyKey: "idem-ghost",
+      content: { text: "text matching the digest" },
+      workerSignature: ghost,
+    }),
+    (error: unknown) => error instanceof BrokerError && error.code === "policy_denied" && /no signing key registered/.test(error.message),
+  );
+});
+
+test("T1 unit: verifyWorkerEnvelopeSignature binds conversationId/messageId/contentDigest exactly", () => {
+  const { privateKey, publicKey } = generateKeyPairSync("ed25519");
+  const pem = privateKey.export({ type: "pkcs8", format: "pem" }).toString();
+  const pub = publicKey.export({ type: "spki", format: "pem" }).toString();
+  const binding = { conversationId: "conv-x", messageId: "msg-x", contentDigest: "sha256:" + "a".repeat(64) };
+  const signature = buildWorkerEnvelopeSignature(pem, binding);
+  assert.deepEqual(verifyWorkerEnvelopeSignature(pub, signature, binding), { ok: true });
+  assert.equal(verifyWorkerEnvelopeSignature(pub, signature, { ...binding, messageId: "msg-y" }).ok, false);
+  assert.equal(verifyWorkerEnvelopeSignature(pub, signature, { messageId: "msg-x", contentDigest: binding.contentDigest }).ok, false);
+  assert.equal(verifyWorkerEnvelopeSignature(pub, { garbage: true }, binding).ok, false);
+});
+
+/** Open a conversation and return the fields the signing tests need. */
+function broker2Start(broker: { startConversation(request: { homeBrokerId: string; envelope: unknown }): { conversation: A2AConversationState; messageId: string } }): { conversationId: string; digest: string; text: string } {
+  const { conversation } = broker.startConversation({
+    homeBrokerId: "broker-alpha",
+    envelope: {
+      messageId: "msg-root",
+      kind: "question",
+      sender: { kind: "worker", id: "worker-a", homeBrokerId: "broker-alpha" },
+      recipients: [{ kind: "worker", id: "worker-signer", homeBrokerId: "broker-alpha" }],
+      idempotencyKey: "idem-root",
+      content: { text: "sign this reply please" },
+    },
+  });
+  const root = conversation.messagesById[conversation.rootMessageId];
+  return { conversationId: conversation.conversationId, digest: root.contentDigest, text: root.content.text };
+}

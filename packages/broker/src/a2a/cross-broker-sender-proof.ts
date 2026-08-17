@@ -68,7 +68,8 @@ export interface CrossBrokerSenderProof {
   binding: CrossBrokerSenderBinding;
 }
 
-function base64url(input: Buffer | string): string {
+/** Exported for the conversation-plane worker signature (same JWS plumbing). */
+export function base64url(input: Buffer | string): string {
   return Buffer.from(input).toString("base64url");
 }
 
@@ -78,7 +79,8 @@ interface KeyAlg {
   dsaEncoding?: "ieee-p1363";
 }
 
-function algorithmForKey(key: KeyObject): KeyAlg {
+/** Exported for the conversation-plane worker signature (same JWS plumbing). */
+export function algorithmForKey(key: KeyObject): KeyAlg {
   if (key.asymmetricKeyType === "ed25519") return { alg: "EdDSA", cryptoAlg: null };
   if (key.asymmetricKeyType === "ec") {
     if (key.asymmetricKeyDetails?.namedCurve !== "prime256v1") {
