@@ -167,6 +167,8 @@ export interface A2AConversationState {
   idempotencyByKey: Record<string, A2AConversationIdempotencyRecord>;
   createdAt: string;
   updatedAt: string;
+  /** True on the receiving broker's projection of a cross-broker conversation (C4 relay). */
+  relayMirror?: true;
 }
 
 export interface OpenBrokerConversationContext {

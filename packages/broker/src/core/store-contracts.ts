@@ -38,6 +38,10 @@ export interface BrokerSnapshot {
   exchangeMessages: A2AExchangeMessageRecord[];
   /** Trusted Conversation Plane states (#1862); snapshot-extension field. */
   conversations?: A2AConversationState[];
+  /** Receiving-broker mirrors of cross-broker conversations (#1864 relay). */
+  conversationRelayMirrors?: A2AConversationState[];
+  /** Outbound conversation relay log (#1864 relay). */
+  conversationRelayOutbox?: import("./broker-conversation-relay.js").ConversationRelayOutboxEntry[];
   proposals: ChangeProposal[];
   artifacts: ArtifactRecord[];
   validations: ValidationResult[];
