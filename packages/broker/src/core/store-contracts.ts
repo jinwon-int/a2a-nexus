@@ -26,6 +26,8 @@ import type {
   BrokerHotEntityMirrorStatus,
   BrokerHotHintCounts,
 } from "./hot-diagnostics.js";
+import type { A2AConversationState } from "./broker-conversation.js";
+
 
 export const CURRENT_BROKER_STATE_VERSION = 8;
 export const DEFAULT_BROKER_STATE_MAX_BYTES = 50 * 1024 * 1024;
@@ -34,6 +36,8 @@ export interface BrokerSnapshot {
   version: number;
   exchanges: A2AExchangeState[];
   exchangeMessages: A2AExchangeMessageRecord[];
+  /** Trusted Conversation Plane states (#1862); snapshot-extension field. */
+  conversations?: A2AConversationState[];
   proposals: ChangeProposal[];
   artifacts: ArtifactRecord[];
   validations: ValidationResult[];

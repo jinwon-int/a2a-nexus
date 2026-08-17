@@ -68,6 +68,11 @@ export const REQUEST_ROUTE_GROUPS = [
   "exchanges.list",
   "exchanges.create",
   "exchanges.messages",
+  "conversations.create",
+  "conversations.detail",
+  "conversations.inbox",
+  "conversations.messages",
+  "conversations.message.processed",
   "proposals.list",
   "proposals.detail",
   "proposals.create",
@@ -208,6 +213,13 @@ export function classifyRequestRoute(method: string | undefined, pathname: strin
   if (method === "GET" && pathname === "/exchanges") return "exchanges.list";
   if (method === "POST" && pathname === "/exchanges") return "exchanges.create";
   if (segments[0] === "exchanges" && segments[1] && segments[2] === "messages") return "exchanges.messages";
+  if (method === "POST" && pathname === "/conversations") return "conversations.create";
+  if (segments[0] === "conversations" && segments[1]) {
+    if (segments[2] === "inbox") return "conversations.inbox";
+    if (segments[2] === "messages" && !segments[3]) return "conversations.messages";
+    if (segments[2] === "messages" && segments[3] && segments[4] === "processed") return "conversations.message.processed";
+    return "conversations.detail";
+  }
   if (method === "GET" && pathname === "/proposals") return "proposals.list";
   if (method === "POST" && pathname === "/proposals") return "proposals.create";
   if (segments[0] === "proposals" && segments[1]) {

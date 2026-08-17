@@ -211,7 +211,10 @@ export type AuditAction =
   | "worker.identity_churn_detected"
   | "worker.onboarding_evaluated"
   | "wave.stalled"
-  | "broker.cleanup.applied";
+  | "broker.cleanup.applied"
+  | "conversation.opened"
+  | "conversation.message.accepted"
+  | "conversation.message.processed";
 export type A2AWorkerEnvironment = "research" | "staging" | "live";
 export type WorkerStatus = "online" | "stale";
 export type WorkerPlaneStatus = "online" | "unknown";
@@ -890,7 +893,7 @@ export interface AuditEvent {
   id: string;
   actorId: string;
   action: AuditAction;
-  targetType: "proposal" | "artifact" | "validation" | "worker" | "task" | "exchange" | "exchange-message" | "broker" | "wave-plan";
+  targetType: "proposal" | "artifact" | "validation" | "worker" | "task" | "exchange" | "exchange-message" | "broker" | "wave-plan" | "conversation" | "conversation-message";
   targetId: string;
   proposalId?: string;
   note?: string;

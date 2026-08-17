@@ -200,6 +200,7 @@ import { handleRoundStatusRouteIfMatched } from "./http/rounds.js";
 import { handleAuditReadRouteIfMatched } from "./http/audit-read-route.js";
 import { handleProposalsReadRouteIfMatched } from "./http/proposals-read.js";
 import { handleExchangeRoutesIfMatched } from "./http/exchanges-read.js";
+import { handleConversationRoutesIfMatched } from "./http/conversations-routes.js";
 import { handleComplexityOrchestrationRoutesIfMatched } from "./http/complexity-orchestration-routes.js";
 import { handleWavePlanRoutesIfMatched } from "./http/wave-plan-routes.js";
 import { handleReviewLineageRoutesIfMatched } from "./http/review-lineage-routes.js";
@@ -1446,6 +1447,21 @@ export function createBrokerServer(options: BrokerServerOptions = {}): BrokerSer
       }
 
       if (await handleExchangeRoutesIfMatched({
+        method: req.method,
+        path,
+        segments,
+        req,
+        res,
+        url,
+        stateStore,
+        broker,
+        enforceRequesterIdentity,
+        requesterIdentity,
+      })) {
+        return;
+      }
+
+      if (await handleConversationRoutesIfMatched({
         method: req.method,
         path,
         segments,

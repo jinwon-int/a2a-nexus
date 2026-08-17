@@ -263,6 +263,12 @@ function isAuditEventProtected(
       return protectedIds.exchangeMessageIds.has(event.targetId);
     case "broker":
     case "wave-plan":
+      // Conversation audit events are digest-first (#1862) and small; they are
+      // not hot-table protected yet because conversations persist through the
+      // snapshot blob, not hot tables.
+      return false;
+    case "conversation":
+    case "conversation-message":
       return false;
   }
 }
