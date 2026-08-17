@@ -18,7 +18,7 @@ import {
 } from "./broker-task-record-normalizers.js";
 import { planClassAwareTaskRetry } from "./task-retry-policy.js";
 import { validateGithubTaskCompletionEvidence } from "./github-task-completion.js";
-import { validateReviewEvidence } from "../worker-review.js";
+import { extractReviewVerdict, validateReviewEvidence } from "../worker-review.js";
 import {
   evaluateFinalizerVerdictAdmission,
   type FinalizerVerdictEnforcement,
@@ -110,6 +110,31 @@ export function completeTask(
   const completionEvidenceError =
     validateReviewEvidence(task, normalizedResult) ?? validateGithubTaskCompletionEvidence(task, normalizedResult);
   if (completionEvidenceError) {
+    // #1815 item 5: a failed review verdict used to discard the submitted
+    // result entirely, forcing a same-source diagnostic re-dispatch just to
+    // recover the findings. Preserve it on the task record — the gate below
+    // still fails the task; only the evidence survives.
+    if (completionEvidenceError.code === "review_verdict_failed") {
+      const verdict = extractReviewVerdict(normalizedResult);
+      if (verdict) {
+        task.negativeVerdictEvidence = {
+          reviewerNodeId: verdict.reviewerNodeId,
+          verdict: verdict.verdict,
+          result: normalizedResult,
+          recordedAt: isoNow(),
+        };
+        task.updatedAt = task.negativeVerdictEvidence.recordedAt;
+        context.appendAuditEvent({
+          actorId: workerId,
+          action: "task.negative_verdict_preserved",
+          targetType: "task",
+          targetId: task.id,
+          note: `negative-verdict-preserved reviewer=${verdict.reviewerNodeId} verdict=${verdict.verdict}`,
+        });
+        context.setTaskRecord(task);
+        context.persistState();
+      }
+    }
     const brokerErrorCode =
       completionEvidenceError.code === "review_evidence_missing" ||
       completionEvidenceError.code === "review_not_independent" ||
@@ -188,6 +213,7 @@ export function failTask(
   workerId: string,
   error: TaskError | undefined,
   context: TaskTerminalContext,
+  options: { negativeVerdictResult?: TaskResult } = {},
 ): TaskRecord {
   const task = context.requireTask(taskId);
   context.assertTaskWorker(task, workerId, "fail");
@@ -219,6 +245,22 @@ export function failTask(
   task.updatedAt = now;
   task.completedAt = now;
   task.error = normalizedError;
+  // #1815 item 5: the worker client validates review evidence locally and
+  // never reaches completeTask, so its fail submission carries the result it
+  // was holding. Preserve it ONLY when the failure is actually the verdict
+  // gate (a re-used error code with unrelated evidence must not attach).
+  if (normalizedError.code === "review_verdict_failed" && options.negativeVerdictResult) {
+    const normalizedEvidence = normalizeTaskResult(options.negativeVerdictResult);
+    const verdict = extractReviewVerdict(normalizedEvidence);
+    if (verdict) {
+      task.negativeVerdictEvidence = {
+        reviewerNodeId: verdict.reviewerNodeId,
+        verdict: verdict.verdict,
+        result: normalizedEvidence,
+        recordedAt: now,
+      };
+    }
+  }
 
   const retryPlan = planClassAwareTaskRetry(task, normalizedError, {
     maxRequeueAttempts: context.maxRequeueAttempts,

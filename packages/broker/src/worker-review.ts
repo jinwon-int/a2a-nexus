@@ -113,6 +113,20 @@ function reviewValidation(result: TaskResult | undefined): TaskValidationPayload
   return result.validation;
 }
 
+/**
+ * #1815 item 5: the review verdict + reviewer of a submitted result, for
+ * negative-verdict evidence preservation on the failure path. Returns undefined
+ * when no review-shaped validation is present (the caller only preserves
+ * evidence when the gate actually failed on a review verdict).
+ */
+export function extractReviewVerdict(result: TaskResult | undefined): { reviewerNodeId: string; verdict: string } | undefined {
+  const validation = reviewValidation(result);
+  const reviewerNodeId = typeof validation?.nodeId === "string" ? validation.nodeId.trim() : "";
+  const verdict = typeof validation?.verdict === "string" ? validation.verdict.trim() : "";
+  if (!reviewerNodeId || !verdict) return undefined;
+  return { reviewerNodeId, verdict };
+}
+
 export function validateReviewEvidence(task: TaskRecord, result?: TaskResult, authorWorkerId?: string): TaskError | null {
   const parsed = parseTaskReview(task);
   if (parsed === null) return null;

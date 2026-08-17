@@ -215,6 +215,9 @@ const A2ABrokerTaskCompleteRequestSchema = A2ABrokerTaskWorkerRequestSchema.exte
 
 const A2ABrokerTaskFailRequestSchema = A2ABrokerTaskWorkerRequestSchema.extend({
   error: A2ABrokerTaskErrorSchema.optional(),
+  // #1815 item 5: the result the worker was holding when a review verdict
+  // failed — preserved by the broker as negativeVerdictEvidence.
+  negativeVerdictEvidence: A2ABrokerTaskResultSchema.optional(),
 }).strict();
 
 const A2ABrokerTaskCreateRequestSchema = z
