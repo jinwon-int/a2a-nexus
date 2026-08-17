@@ -1,6 +1,6 @@
 # Feature Spec: Trusted Conversation Plane — `a2a.conversation-envelope.v1` contract (C1)
 
-Parent: #1814 (P1 epic). Status: **Draft for review (2026-08-17).** This document is the C1 deliverable of the #1814 spec-first track: the envelope contract, state machine, ownership rules, idempotency semantics, budget enforcement points, exchange/context compatibility, and the threat model. It intentionally contains **no runtime changes**. C2–C6 are child tracks that stay closed until this contract is frozen.
+Parent: #1814 (P1 epic). Status: **Frozen (2026-08-17, independently reviewed and merged as #1861).** This document is the C1 deliverable of the #1814 spec-first track: the envelope contract, state machine, ownership rules, idempotency semantics, budget enforcement points, exchange/context compatibility, and the threat model. It intentionally contains **no runtime changes**. The child tracks are split as #1862 (C2), #1863 (C3), #1864 (C4), #1865 (C5), #1866 (C6); changes to frozen field/state/ownership semantics now require a v1→v2 plan (same discipline as the handoff v0 freeze).
 
 ## Problem
 
