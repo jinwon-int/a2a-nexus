@@ -250,3 +250,132 @@ test("conversation state survives broker rehydration from the snapshot", async (
   });
   assert.equal(next.json.sequence, 2);
 });
+
+// ---------------------------------------------------------------------------
+// #1862 exit criteria: offline/stale/busy queue clarity
+// ---------------------------------------------------------------------------
+
+test("offline/stale/busy recipients: queued-until-polled, ttl-expiry-terminal, retry-is-poll-based", async () => {
+  const broker = new InMemoryA2ABroker(undefined, undefined, { brokerId: "broker-alpha" });
+  // Register the target worker so liveness is computable; stale via lastSeenAt.
+  const staleSeen = new Date(Date.now() - 60_000).toISOString(); // >30s, <=90s → stale
+  // Register directly through the broker internals surface used by tests.
+  (broker as unknown as { workers: Map<string, unknown> }).workers.set("worker-b", {
+    nodeId: "worker-b",
+    role: "analyst",
+    capabilities: { canAnalyze: true, canPatch: false, canValidate: false, canOperate: false },
+    createdAt: staleSeen,
+    updatedAt: staleSeen,
+    lastSeenAt: staleSeen,
+  });
+
+  const expiresSoon = new Date(Date.now() + 1_000).toISOString();
+  const opened = await call("POST", "/conversations", broker, {
+    body: {
+      envelope: {
+        messageId: "msg-1",
+        kind: "question",
+        sender: WORKER_A,
+        recipients: [WORKER_B],
+        idempotencyKey: "idem-1",
+        content: { text: "queued question for a stale worker" },
+        expiresAt: expiresSoon,
+      },
+    },
+  });
+  const conversationId = opened.json.conversationId;
+
+  // Accept succeeds for an unreachable recipient: queue semantics, not failure.
+  const queued = await call("POST", `/conversations/${conversationId}/messages`, broker, {
+    body: {
+      envelope: {
+        messageId: "msg-2",
+        kind: "question",
+        sender: WORKER_A,
+        recipients: [WORKER_B],
+        idempotencyKey: "idem-2",
+        content: { text: "second queued question" },
+      },
+    },
+  });
+  assert.equal(queued.res.statusCode, 201);
+
+  // Delivery summary makes the queue state explicit.
+  const delivery = await call("GET", `/conversations/${conversationId}/delivery?actor=worker:worker-a:broker-alpha`, broker);
+  assert.equal(delivery.res.statusCode, 200);
+  assert.equal(delivery.json.queueSemantics, "queued-until-polled; ttl-expiry-terminal; retry-is-poll-based");
+  const recipient = delivery.json.recipients.find((entry: { id: string }) => entry.id === "worker-b");
+  assert.ok(recipient, "worker-b must appear in the delivery matrix");
+  assert.equal(recipient.liveness, "stale");
+  assert.equal(recipient.busy, false);
+  assert.equal(recipient.queuedCount, 2);
+  assert.equal(recipient.oldestQueuedAt, delivery.json.messages[0].createdAt);
+
+  // TTL passes → the message terminates expired even though never polled.
+  await new Promise((resolve) => setTimeout(resolve, 1_100));
+  const afterExpiry = await call("GET", `/conversations/${conversationId}/delivery?actor=worker:worker-a:broker-alpha`, broker);
+  const expiredRecipient = afterExpiry.json.recipients.find((entry: { id: string }) => entry.id === "worker-b");
+  assert.equal(expiredRecipient.expiredCount, 1);
+  assert.equal(expiredRecipient.queuedCount, 1);
+
+  // Retry is poll-based: when the (now reachable) worker polls, the surviving
+  // queued message delivers — no sender re-send, no drop.
+  const inbox = await call("GET", `/conversations/${conversationId}/inbox?actor=worker:worker-b:broker-alpha`, broker);
+  assert.equal(inbox.json.markedDelivered, 1);
+  assert.equal(inbox.json.entries.length, 1);
+  assert.equal(inbox.json.entries[0].messageId, "msg-2");
+});
+
+test("busy and unregistered recipients classify explicitly in the delivery matrix", async () => {
+  const broker = new InMemoryA2ABroker(undefined, undefined, { brokerId: "broker-alpha" });
+  const seen = new Date().toISOString();
+  broker.registerWorker({
+    nodeId: "worker-busy",
+    role: "analyst",
+    capabilities: {
+      canAnalyze: true,
+      canBackfill: false,
+      canPatchWorkspace: false,
+      canPromoteLive: false,
+      workspaceIds: ["ws1"],
+      environments: ["research"],
+    },
+    metadata: {},
+  });
+  // Minimal-but-shape-complete running task so the busy flag resolves and the
+  // retention reachability walk (task.target.id) stays safe.
+  (broker as unknown as { tasks: Map<string, Record<string, unknown>> }).tasks.set("task-1", {
+    id: "task-1",
+    status: "running",
+    claimedBy: "worker-busy",
+    targetNodeId: "worker-busy",
+    target: { id: "worker-busy", kind: "node", role: "analyst" },
+    createdAt: seen,
+    updatedAt: seen,
+  });
+
+  const opened = await call("POST", "/conversations", broker, {
+    body: {
+      envelope: {
+        messageId: "msg-1",
+        kind: "question",
+        sender: WORKER_A,
+        recipients: [
+          { kind: "worker", id: "worker-busy", homeBrokerId: "broker-alpha" },
+          { kind: "worker", id: "worker-ghost", homeBrokerId: "broker-alpha" },
+        ],
+        idempotencyKey: "idem-1",
+        content: { text: "to a busy and an unregistered worker" },
+      },
+    },
+  });
+  const conversationId = opened.json.conversationId;
+  const delivery = await call("GET", `/conversations/${conversationId}/delivery?actor=worker:worker-a:broker-alpha`, broker);
+  const busy = delivery.json.recipients.find((entry: { id: string }) => entry.id === "worker-busy");
+  assert.equal(busy.liveness, "online");
+  assert.equal(busy.busy, true); // busy never blocks queuing — the message still queued
+  assert.equal(busy.queuedCount, 1);
+  const ghost = delivery.json.recipients.find((entry: { id: string }) => entry.id === "worker-ghost");
+  assert.equal(ghost.liveness, "unknown");
+  assert.equal(ghost.queuedCount, 1);
+});
