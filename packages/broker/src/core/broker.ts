@@ -107,6 +107,7 @@ import {
   RESUMING_MESSAGE_KINDS,
   taskReferencesOf,
 } from "./broker-conversation-task-bridge.js";
+import type { WorkerSignatureGateOptions } from "./broker-conversation.js";
 import { getBrokerRoundStatus, listBrokerTasks, readBrokerTask } from "./broker-task-read.js";
 import { readBrokerProposal, listBrokerProposals } from "./broker-proposal-read.js";
 import {
@@ -984,6 +985,24 @@ export class InMemoryA2ABroker {
     return new Date().toISOString();
   }
 
+  /**
+   * T1 worker-signature gate (#1862): keys live in worker.metadata
+   * (`conversationSigningPublicKey`, SPKI PEM). Verification happens whenever a
+   * signature is present; absence is only refused when
+   * A2A_CONVERSATION_WORKER_SIGNATURE_ENFORCE=1 (additive rollout, default off).
+   */
+  private get conversationWorkerSignatureGate(): WorkerSignatureGateOptions {
+    return {
+      resolveWorkerSigningKey: (workerId, homeBrokerId) => {
+        if (homeBrokerId !== this.conversationBrokerId) return undefined;
+        const key = this.workers.get(workerId)?.metadata?.["conversationSigningPublicKey"];
+        return key && key.includes("PUBLIC KEY") ? key : undefined;
+      },
+      enforceWorkerMessageSignatures:
+        process.env.A2A_CONVERSATION_WORKER_SIGNATURE_ENFORCE === "1",
+    };
+  }
+
   private requireConversation(conversationId: string): A2AConversationState {
     const conversation = this.conversations.get(conversationId);
     if (!conversation) throw new BrokerError("not_found", `conversation ${conversationId} not found`);
@@ -997,6 +1016,7 @@ export class InMemoryA2ABroker {
   }): { conversation: A2AConversationState; messageId: string } {
     const { conversation, message } = openBrokerConversation(request, {
       now: () => this.conversationNow(),
+      workerSignatureGate: this.conversationWorkerSignatureGate,
       appendAuditEvent: (input) => this.appendAuditEvent({
         actorId: input.actorId,
         action: input.action as AuditAction,
@@ -1027,6 +1047,7 @@ export class InMemoryA2ABroker {
     const conversation = this.requireConversation(conversationId);
     const result = acceptBrokerConversationMessage(conversation, { envelope }, {
       now: () => this.conversationNow(),
+      workerSignatureGate: this.conversationWorkerSignatureGate,
       appendAuditEvent: (input) => this.appendAuditEvent({
         actorId: input.actorId,
         action: input.action as AuditAction,
