@@ -235,6 +235,11 @@ test("generates PR-producing default commands for github-propose-patch mode with
   assert.ok(pipeline.includes("A2A_DOCKER_RUNNER_PATCH_COMMAND_SCRIPT"), "Expected actionable commandScript env guidance");
   assert.ok(pipeline.includes("deprecated_eval_path"), "Expected deprecation warning");
   assert.ok(pipeline.includes("/work/artifacts/patch-command.log"), "Expected coding agent log artifact");
+  // #1858 root cause: patch-command stderr must stay OFF the stdout envelope
+  // stream (separate tee to patch-command.stderr.log + container stderr).
+  assert.ok(!pipeline.includes("patch-command.sh 2>&1"), "patch-command.sh must not merge stderr into stdout");
+  assert.ok(!pipeline.includes('eval "${A2A_PATCH_COMMAND}" 2>&1'), "legacy eval must not merge stderr into stdout");
+  assert.ok(pipeline.includes("patch-command.sh 2> >(tee /work/artifacts/patch-command.stderr.log >&2)"), "Expected stderr preserved separately");
   assert.ok(pipeline.includes("/work/artifacts/pr-output.txt"), "Expected PR output artifact");
   assert.ok(pipeline.includes("a2a-gh-pr-update-branch \"$PR_URL\" \"main\""), "Expected post-create update-branch helper");
   assert.ok(pipeline.includes("/work/artifacts/pr-update-branch-output.txt"), "Expected update-branch output artifact");
