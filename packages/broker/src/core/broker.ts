@@ -80,10 +80,14 @@ import {
 import { applyBrokerExchangeMessageDecision } from "./broker-exchange-task-decision.js";
 import {
   acceptBrokerConversationMessage,
+  assertConversationParticipant,
   consumeConversationMessage,
+  conversationContentDigest,
   openBrokerConversation,
   pollConversationInbox,
+  redactConversationContentText,
   summarizeConversationDelivery,
+  validateConversationEnvelopeInput,
   type A2AConversationReceipt,
   type A2AConversationState,
   type ConversationDeliverySummary,
@@ -92,6 +96,7 @@ import {
 import {
   applyRelayedConversationMessage,
   buildConversationRelayPayload,
+  buildMirrorReplyRelayPayload,
   ConversationRelayOutbox,
   type ApplyRelayedConversationResult,
   type ConversationRelayOutboxEntry,
@@ -1117,6 +1122,7 @@ export class InMemoryA2ABroker {
     const conversation = this.requireConversation(conversationId);
     const message = conversation.messagesById[messageId];
     if (!message) throw new BrokerError("not_found", `conversation message ${messageId} not found`);
+    const payload = buildConversationRelayPayload(this.conversationBrokerId, destinationBrokerId, conversation, message);
     return this.conversationRelayOutbox.enqueue({
       id: `relay-${conversationId}-${messageId}`,
       destinationBrokerId,
@@ -1127,6 +1133,7 @@ export class InMemoryA2ABroker {
       content: { text: message.content.text },
       contentDigest: message.contentDigest,
       createdAt: this.conversationNow(),
+      payload,
     });
   }
 
@@ -1190,6 +1197,55 @@ export class InMemoryA2ABroker {
         return { liveness, busy: busyWorkers.has(workerId) };
       },
     });
+  }
+
+  /**
+   * C5 (#1865): a LOCAL worker replies on a MIRROR conversation. The reply is
+   * validated (all envelope gates) and queued for relay to the conversation's
+   * HOME broker, which assigns the sequence (its authority) and applies it
+   * into the ORIGINAL conversation — one lineage, no cross-registration. The
+   * mirror itself advances only when the home broker relays the applied
+   * message back (normal relay flow).
+   */
+  addMirrorConversationReply(conversationId: string, envelopeInput: unknown): { outcome: "queued"; messageId: string; relayEntryId: string } {
+    const mirror = this.conversationRelayMirrors.get(conversationId);
+    if (!mirror) throw new BrokerError("not_found", `conversation mirror ${conversationId} not found`);
+    const envelope = validateConversationEnvelopeInput(envelopeInput);
+    assertConversationParticipant(mirror, envelope.sender, "write");
+    const redacted = redactConversationContentText(envelope.content.text);
+    const digest = conversationContentDigest(redacted.text);
+    const payload = buildMirrorReplyRelayPayload(
+      this.conversationBrokerId,
+      mirror.homeBrokerId,
+      conversationId,
+      mirror.homeBrokerId,
+      {
+        messageId: envelope.messageId,
+        kind: envelope.kind,
+        sender: envelope.sender,
+        recipients: envelope.recipients,
+        idempotencyKey: envelope.idempotencyKey,
+        content: { text: redacted.text },
+        ...(envelope.createdAt !== undefined ? { createdAt: envelope.createdAt } : {}),
+        ...(envelope.expiresAt !== undefined ? { expiresAt: envelope.expiresAt } : {}),
+        ...(envelope.taskId !== undefined ? { taskId: envelope.taskId } : {}),
+      },
+      digest,
+    );
+    const entry = this.conversationRelayOutbox.enqueue({
+      id: `relay-${conversationId}-${envelope.messageId}`,
+      destinationBrokerId: mirror.homeBrokerId,
+      conversationId,
+      homeBrokerId: mirror.homeBrokerId,
+      messageId: envelope.messageId,
+      sequence: 0,
+      content: { text: redacted.text },
+      contentDigest: digest,
+      createdAt: this.conversationNow(),
+      payload,
+    });
+    this.persistState();
+    return { outcome: "queued", messageId: envelope.messageId, relayEntryId: entry.id };
   }
 
   /** Mirror inbox for a local actor (participant rules apply via the domain guard). */

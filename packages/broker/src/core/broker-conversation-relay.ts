@@ -44,6 +44,7 @@ export interface ConversationRelayOutboxEntry {
   conversationId: string;
   homeBrokerId: string;
   messageId: string;
+  /** 0 for reverse replies (the home broker assigns on apply). */
   sequence: number;
   /** Bounded content for delivery; digested, already redacted at accept time. */
   content: { text: string };
@@ -51,6 +52,11 @@ export interface ConversationRelayOutboxEntry {
   createdAt: string;
   attempts: number;
   lastError?: string;
+  /**
+   * Full wire payload (C5): the pull response carries it so the receiving
+   * broker can apply directly without re-deriving envelope fields.
+   */
+  payload?: ConversationRelayPayload;
 }
 
 /** In-memory durable log (persisted through the broker snapshot field). */
@@ -68,6 +74,7 @@ export class ConversationRelayOutbox {
     content: { text: string };
     contentDigest: string;
     createdAt: string;
+    payload?: ConversationRelayPayload;
   }): ConversationRelayOutboxEntry {
     if (this.entries.some((entry) => entry.id === input.id)) {
       throw new BrokerError("idempotency_conflict", `relay outbox entry ${input.id} already exists`);
@@ -85,6 +92,7 @@ export class ConversationRelayOutbox {
       contentDigest: input.contentDigest,
       createdAt: input.createdAt,
       attempts: 0,
+      ...(input.payload !== undefined ? { payload: input.payload } : {}),
     };
     this.nextCursor += 1;
     this.entries.push(entry);
@@ -171,6 +179,53 @@ export function buildConversationRelayPayload(
   };
 }
 
+/**
+ * Build the reverse-direction relay payload for a local worker's reply on a
+ * MIRROR conversation (C5): sequence stays 0 — the HOME broker assigns it on
+ * apply (it owns the sequence authority), so the reverse payload cannot claim
+ * one. Ordering safety is preserved because the home conversation already
+ * exists (`known` path) and applies are idempotent.
+ */
+export function buildMirrorReplyRelayPayload(
+  senderBrokerId: string,
+  destinationBrokerId: string,
+  conversationId: string,
+  homeBrokerId: string,
+  envelope: {
+    messageId: string;
+    kind: A2AConversationMessageRecord["kind"];
+    sender: A2AConversationMessageRecord["sender"];
+    recipients: A2AConversationMessageRecord["recipients"];
+    idempotencyKey: string;
+    content: { text: string };
+    createdAt?: string;
+    expiresAt?: string;
+    taskId?: string;
+  },
+  contentDigest: string,
+): ConversationRelayPayload {
+  return {
+    schemaVersion: A2A_CONVERSATION_RELAY_SCHEMA_VERSION,
+    senderBrokerId,
+    destinationBrokerId,
+    conversationId,
+    homeBrokerId,
+    message: {
+      messageId: envelope.messageId,
+      sequence: 0,
+      kind: envelope.kind,
+      sender: envelope.sender,
+      recipients: envelope.recipients,
+      idempotencyKey: envelope.idempotencyKey,
+      content: { text: envelope.content.text },
+      contentDigest,
+      createdAt: envelope.createdAt ?? new Date().toISOString(),
+      ...(envelope.expiresAt !== undefined ? { expiresAt: envelope.expiresAt } : {}),
+      ...(envelope.taskId !== undefined ? { taskId: envelope.taskId } : {}),
+    },
+  };
+}
+
 export interface ApplyRelayedConversationResult {
   outcome: "applied" | "duplicate" | "blocked";
   /** Set when blocked: the mirror's last applied sequence (T9 resync marker). */
@@ -219,13 +274,27 @@ export function applyRelayedConversationMessage(
   if (!homeBrokerId || !conversationId || !message.messageId || !message.idempotencyKey) {
     throw new BrokerError("bad_request", "conversation relay requires conversationId, homeBrokerId, message.messageId, message.idempotencyKey");
   }
-  if (typeof message.sequence !== "number" || !Number.isSafeInteger(message.sequence) || message.sequence < 1) {
-    throw new BrokerError("bad_request", "conversation relay message.sequence must be a positive integer");
+  // 0 is legal ONLY for reverse replies (home broker assigns); >=1 is the
+  // normal forward flow with explicit home-assigned sequences.
+  if (typeof message.sequence !== "number" || !Number.isSafeInteger(message.sequence) || message.sequence < 0) {
+    throw new BrokerError("bad_request", "conversation relay message.sequence must be a non-negative integer");
   }
   const redacted = redactConversationContentText(String(message.content?.text ?? ""));
   const digest = conversationContentDigest(redacted.text);
   if (message.contentDigest !== digest) {
     throw new BrokerError("bad_request", "conversation relay contentDigest does not match the relayed content");
+  }
+
+  // C5 reverse replies carry sequence 0: the home broker assigns (authority).
+  // Only valid when the conversation already exists locally — a mirror may not
+  // be seeded from an unsequenced reply.
+  let assignedSequence = message.sequence;
+  if (assignedSequence === 0) {
+    const knownForAssign = mirrors.get(conversationId) ?? options.conversations.get(conversationId);
+    if (!knownForAssign) {
+      throw new BrokerError("bad_request", "conversation relay with sequence 0 requires an existing conversation (home broker assigns)");
+    }
+    assignedSequence = knownForAssign.lastAssignedSequence + 1;
   }
 
   // T8: idempotent collapse against BOTH the mirror and locally-known state.
@@ -234,14 +303,14 @@ export function applyRelayedConversationMessage(
     if (known.idempotencyByKey[message.idempotencyKey]) {
       return { outcome: "duplicate", messageId: message.messageId };
     }
-    if (message.sequence <= known.lastAssignedSequence) {
+    if (assignedSequence <= known.lastAssignedSequence) {
       // Old sequence with a fresh key: not a replay, a fork — refuse.
       throw new BrokerError(
         "idempotency_conflict",
         `conversation relay sequence ${message.sequence} is not newer than the applied ${known.lastAssignedSequence} for ${conversationId}`,
       );
     }
-    if (message.sequence > known.lastAssignedSequence + 1) {
+    if (assignedSequence > known.lastAssignedSequence + 1) {
       // T9: gap — block, never skip ahead. The mirror stays at its cursor.
       return {
         outcome: "blocked",
@@ -250,11 +319,11 @@ export function applyRelayedConversationMessage(
         expectedSequence: known.lastAssignedSequence + 1,
       };
     }
-    appendRelayedMessage(known, message, redacted.text, digest, options.now);
+    appendRelayedMessage(known, { ...message, sequence: assignedSequence }, redacted.text, digest, options.now);
     return { outcome: "applied", messageId: message.messageId };
   }
 
-  if (message.sequence !== 1) {
+  if (assignedSequence !== 1) {
     // No mirror yet and not the root: the lineage head was lost — block for
     // resync instead of fabricating a partial history (T9 cursor-loss case).
     return {
