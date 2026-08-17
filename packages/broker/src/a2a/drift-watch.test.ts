@@ -286,3 +286,51 @@ test("drift: default input/output modes are text-only", () => {
   assert.deepEqual(card.defaultInputModes, ["text"]);
   assert.deepEqual(card.defaultOutputModes, ["text"]);
 });
+
+// ---------------------------------------------------------------------------
+// Trusted Conversation Plane advertisement (#1814 C6 / #1866)
+// ---------------------------------------------------------------------------
+
+test("drift: conversation plane advertises support and non-support accurately (#1866)", () => {
+  const plane = A2A_COMPATIBILITY_PROFILE.conversationPlane;
+
+  // The plane is deliberately NOT part of the A2A JSON-RPC method surface —
+  // SendMessage keeps its pre-existing exchange/task meaning.
+  assert.deepEqual(
+    plane.a2aJsonRpcMethods,
+    [],
+    "the conversation plane must not be advertised as A2A JSON-RPC methods",
+  );
+  for (const supported of plane.supported) {
+    assert.ok(!/SendMessage/i.test(supported), "supported list must not reframe SendMessage");
+  }
+
+  // The spec's non-goals stay advertised as unsupported.
+  const unsupportedJoined = plane.unsupported.join("\n");
+  for (const required of ["chat UI", "autonomous agent debate", "worker-to-worker sockets", "replication", "polling exposure"]) {
+    assert.ok(
+      unsupportedJoined.includes(required),
+      `conversationPlane.unsupported must keep advertising: ${required}`,
+    );
+  }
+
+  // The AgentCard carries the conversation skill with the accurate framing.
+  const card = createBrokerAgentCard({
+    serviceName: "drift-broker",
+    publicBaseUrl: "https://broker.example.com/",
+    supportsStreaming: true,
+    supportsPushNotifications: false,
+  });
+  const skill = card.skills.find((entry) => entry.id === "conversation");
+  assert.ok(skill, "AgentCard must advertise the conversation skill");
+  assert.match(skill.description, /a2a\.conversation-envelope\.v1/);
+  assert.match(skill.description, /not as A2A JSON-RPC methods/);
+
+  // And the card must NOT advertise REST/gRPC interfaces for it (transport
+  // gates above stay intact: url remains the JSON-RPC endpoint).
+  assert.deepEqual(
+    card.supportedInterfaces.map((entry) => entry.protocolBinding),
+    ["JSONRPC"],
+    "conversation surface must not add A2A transport bindings",
+  );
+});

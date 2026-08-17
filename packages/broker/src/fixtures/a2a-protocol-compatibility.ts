@@ -35,6 +35,35 @@ export const A2A_COMPATIBILITY_PROFILE = {
   unsupportedPushDelivery: true,
   unsupportedA2A03Compat: true,
   /**
+   * Trusted Conversation Plane (#1814, spec frozen #1861; C1–C6). The plane
+   * is a BROKER surface — REST /conversations + peer relay /peer/conversations
+   * — deliberately NOT part of the A2A 1.0 JSON-RPC method surface above;
+   * SendMessage keeps its pre-existing exchange/task meaning. The AgentCard
+   * `conversation` skill and the drift-watch gate pin this framing so the
+   * plane is never advertised as A2A JSON-RPC conversation methods, and the
+   * spec's non-goals stay advertised as unsupported.
+   */
+  conversationPlane: {
+    spec: "a2a.conversation-envelope.v1 (#1861 frozen)",
+    transport: "broker REST (/conversations) + peer relay (/peer/conversations/*)",
+    a2aJsonRpcMethods: [] as string[],
+    supported: [
+      "same-broker broker↔worker / worker↔worker inbox poll + evidence-required consume (#1862)",
+      "worker envelope signatures (opt-in enforce: A2A_CONVERSATION_WORKER_SIGNATURE_ENFORCE) (#1874)",
+      "task result → bounded conversation reply; input-required resume exactly-once (#1863)",
+      "cross-broker relay: cursor-addressed outbox pull/push, conversation:* peer scopes, request-bound sender proof when trust anchors are configured (#1864)",
+      "cross-broker worker↔worker mirror replies + consume with deterministic ack lineage convergence; cursor-0 idempotent resync (#1865, #1876)",
+      "delivery matrix for offline/stale/busy queue, expiry, and retry clarity (#1872)",
+    ],
+    unsupported: [
+      "chat UI, personas, or long-term memory",
+      "unbounded autonomous agent debate",
+      "direct worker-to-worker sockets or worker credential sharing",
+      "full broker DB or raw conversation replication",
+      "provider-send success or polling exposure treated as processed / read receipt",
+    ],
+  },
+  /**
    * A2A 1.0 signed agent cards: opt-in JWS (EdDSA or ES256) over the
    * RFC 8785 canonicalized card excluding the signatures field, enabled via
    * AGENT_CARD_SIGNING_KEY_FILE. Unsigned serving remains the default.
