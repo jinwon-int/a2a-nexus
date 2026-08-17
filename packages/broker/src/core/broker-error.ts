@@ -18,6 +18,7 @@ export const BROKER_ERROR_CODES = [
   "unsupported_operation",
   "policy_denied",
   "invalid_transition",
+  "idempotency_conflict",
   "spec_underspecified",
   "source_projection_empty",
   "retry_policy_malformed",
