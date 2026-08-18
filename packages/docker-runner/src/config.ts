@@ -62,6 +62,8 @@ const DEFAULT_CLAUDE_CODE_TIMEOUT_SEC = "3600";
 const DEFAULT_CODEX_TIMEOUT_SEC = "3600";
 const DEFAULT_CODEX_CONFIG_DIR = "/var/lib/a2a-runner/codex-dir";
 const DEFAULT_PIRI_CONFIG_DIR = "/var/lib/a2a-runner/piri-dir";
+/** Host-side bounded memory snapshot dir for the piri lane (#1797 item 3a). */
+const DEFAULT_PIRI_MEMORY_DIR = "/var/lib/a2a-runner/piri-memory";
 const DEFAULT_PIRI_MODEL = "kimi-coding/k3";
 const DEFAULT_PIRI_THINKING = "high";
 const DEFAULT_PIRI_TIMEOUT_SEC = "3600";
@@ -300,11 +302,22 @@ export function loadExtraMounts(env: NodeJS.ProcessEnv): RunnerExtraMount[] | un
       }];
     }
     if (profile === "piri") {
-      return [{
+      const mounts: RunnerExtraMount[] = [{
         source: env.A2A_DOCKER_RUNNER_PIRI_CONFIG_DIR || DEFAULT_PIRI_CONFIG_DIR,
         target: "/run/secrets/piri-dir",
         readOnly: true,
       }];
+      // #1797 item 3a follow-up: optional host-produced bounded memory snapshot,
+      // mounted read-only only when the lane opted in. The host dir must exist
+      // (producer installed) or docker fails the container start fail-closed.
+      if (env.A2A_DOCKER_RUNNER_PIRI_MEMORY_ENABLED === "1") {
+        mounts.push({
+          source: env.A2A_DOCKER_RUNNER_PIRI_MEMORY_DIR || DEFAULT_PIRI_MEMORY_DIR,
+          target: "/run/secrets/piri-memory",
+          readOnly: true,
+        });
+      }
+      return mounts;
     }
     return undefined;
   }
@@ -1140,8 +1153,14 @@ if [ ! -d /opt/a2a-runner/piri-memory-extension ]; then
   printf 'A2A_DOCKER_RUNNER_PIRI_MEMORY_ENABLED=1 requires an image with the memory extension baked at /opt/a2a-runner/piri-memory-extension.\n' | tee /work/artifacts/patch-command.log
   exit 2
 fi
-A2A_PIRI_MEMORY_FILE="\${A2A_PIRI_MEMORY_FILE:-/work/memory.md}"
 A2A_PIRI_MEMORY_MAX_BYTES="\${A2A_PIRI_MEMORY_MAX_BYTES:-32768}"
+if [ -z "\${A2A_PIRI_MEMORY_FILE:-}" ]; then
+  if [ -f /run/secrets/piri-memory/MEMORY.md ]; then
+    A2A_PIRI_MEMORY_FILE=/run/secrets/piri-memory/MEMORY.md
+  else
+    A2A_PIRI_MEMORY_FILE=/work/memory.md
+  fi
+fi
 export A2A_PIRI_MEMORY_FILE A2A_PIRI_MEMORY_MAX_BYTES
 if [ -f "$A2A_PIRI_MEMORY_FILE" ]; then
   printf 'memory_snapshot=present path=%s bytes=%s\n' "$A2A_PIRI_MEMORY_FILE" "$(wc -c < "$A2A_PIRI_MEMORY_FILE" | tr -d ' ')" | tee -a /work/artifacts/summary.txt

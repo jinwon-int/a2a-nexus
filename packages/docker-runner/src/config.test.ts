@@ -450,6 +450,45 @@ test("Piri patch profile defaults to the dedicated minimal credential directory"
   assertBashScriptParses(config.commandScript ?? "");
 });
 
+test("Piri memory mode: host snapshot mount is wired only on opt-in (#1797 item 3a follow-up)", async () => {
+  const base = {
+    ...baseEnv,
+    A2A_DOCKER_RUNNER_PATCH_COMMAND_PROFILE: "piri",
+    A2A_DOCKER_RUNNER_TRUSTED_OPERATOR: "1",
+    A2A_DOCKER_RUNNER_IMAGE: "a2a-docker-runner-piri:latest",
+  };
+
+  // Flag off: no memory mount, no memory file preference in the script.
+  const off = await loadConfig({ ...base });
+  assert.deepEqual(off.extraMounts, [
+    { source: "/var/lib/a2a-runner/piri-dir", target: "/run/secrets/piri-dir", readOnly: true },
+  ]);
+
+  // Flag on: read-only host snapshot mount at the allowlisted target with the default dir.
+  const on = await loadConfig({ ...base, A2A_DOCKER_RUNNER_PIRI_MEMORY_ENABLED: "1" });
+  assert.deepEqual(on.extraMounts, [
+    { source: "/var/lib/a2a-runner/piri-dir", target: "/run/secrets/piri-dir", readOnly: true },
+    { source: "/var/lib/a2a-runner/piri-memory", target: "/run/secrets/piri-memory", readOnly: true },
+  ]);
+  // The lane prefers the mounted snapshot, falling back to a task-packaged file.
+  assert.match(on.commandScript ?? "", /if \[ -f \/run\/secrets\/piri-memory\/MEMORY\.md \]/);
+  assert.match(on.commandScript ?? "", /A2A_PIRI_MEMORY_FILE=\/run\/secrets\/piri-memory\/MEMORY\.md/);
+  assert.match(on.commandScript ?? "", /A2A_PIRI_MEMORY_FILE=\/work\/memory\.md/);
+  assertBashScriptParses(on.commandScript ?? "");
+
+  // Custom host dir is honored.
+  const custom = await loadConfig({
+    ...base,
+    A2A_DOCKER_RUNNER_PIRI_MEMORY_ENABLED: "1",
+    A2A_DOCKER_RUNNER_PIRI_MEMORY_DIR: "/srv/fleet-memory",
+  });
+  assert.deepEqual(custom.extraMounts?.[1], {
+    source: "/srv/fleet-memory",
+    target: "/run/secrets/piri-memory",
+    readOnly: true,
+  });
+});
+
 test("Piri patch profile defaults --output-schema to the image-baked contract", () => {
   const script = buildPiriPatchCommandScript({});
 
@@ -582,7 +621,8 @@ test("Piri memory mode: flag on wires the baked extension and snapshot observabi
   // fail closed when the image lacks the baked extension the flag requires
   assert.match(script, /error=piri_memory_extension_missing/);
   // bounded snapshot contract surfaced to the evidence stream before launch
-  assert.match(script, /A2A_PIRI_MEMORY_FILE="\$\{A2A_PIRI_MEMORY_FILE:-\/work\/memory\.md\}"/);
+  assert.match(script, /if \[ -f \/run\/secrets\/piri-memory\/MEMORY\.md \]/);
+  assert.match(script, /A2A_PIRI_MEMORY_FILE=\/work\/memory\.md/);
   assert.match(script, /A2A_PIRI_MEMORY_MAX_BYTES="\$\{A2A_PIRI_MEMORY_MAX_BYTES:-32768\}"/);
   assert.match(script, /memory_snapshot=present/);
   assert.match(script, /memory_snapshot=absent/);
