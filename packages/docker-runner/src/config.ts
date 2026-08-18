@@ -1048,6 +1048,11 @@ export function buildPiriPatchCommandScript(env: NodeJS.ProcessEnv): string {
   // read-only head regardless of the flag (fanout is patch-lane only in
   // Phase 2).
   const piriFanoutEnabled = env.A2A_DOCKER_RUNNER_PIRI_FANOUT_ENABLED === "1";
+  // piri memory injection (#1797 item 3a): opt-in flag loads the baked memory
+  // extension (-e) on both the read-only and patch lanes and surfaces the
+  // bounded snapshot contract to the evidence stream. Flag off (default)
+  // emits none of this; the plain `piri -p` script stays byte-for-byte.
+  const piriMemoryEnabled = env.A2A_DOCKER_RUNNER_PIRI_MEMORY_ENABLED === "1";
   const fanoutSubagents = piriFanoutEnabled ? loadContainedSubagentsConfig(env, "piri") : undefined;
   const fanoutPromptLines = fanoutSubagents?.enabled
     ? `${buildContainedSubagentPrompt("Piri", fanoutSubagents)}\n- Read the shared context brief at /work/artifacts/context-brief.md before spawning helpers (when present); helpers consume it instead of re-deriving task context.`
@@ -1126,6 +1131,24 @@ if [ ! -d /opt/a2a-runner/piri-fanout-extension ]; then
   exit 2
 fi
 ${fanoutSummaryLines}
+` : ""}
+${piriMemoryEnabled ? `
+# piri memory injection (#1797 item 3a): fail closed when the flag is on but
+# the image does not carry the baked memory extension.
+if [ ! -d /opt/a2a-runner/piri-memory-extension ]; then
+  printf 'error=piri_memory_extension_missing\n' | tee -a /work/artifacts/summary.txt
+  printf 'A2A_DOCKER_RUNNER_PIRI_MEMORY_ENABLED=1 requires an image with the memory extension baked at /opt/a2a-runner/piri-memory-extension.\n' | tee /work/artifacts/patch-command.log
+  exit 2
+fi
+A2A_PIRI_MEMORY_FILE="\${A2A_PIRI_MEMORY_FILE:-/work/memory.md}"
+A2A_PIRI_MEMORY_MAX_BYTES="\${A2A_PIRI_MEMORY_MAX_BYTES:-32768}"
+export A2A_PIRI_MEMORY_FILE A2A_PIRI_MEMORY_MAX_BYTES
+if [ -f "$A2A_PIRI_MEMORY_FILE" ]; then
+  printf 'memory_snapshot=present path=%s bytes=%s\n' "$A2A_PIRI_MEMORY_FILE" "$(wc -c < "$A2A_PIRI_MEMORY_FILE" | tr -d ' ')" | tee -a /work/artifacts/summary.txt
+else
+  printf 'memory_snapshot=absent path=%s\n' "$A2A_PIRI_MEMORY_FILE" | tee -a /work/artifacts/summary.txt
+fi
+PIRI_MEMORY_ARGS=(-e /opt/a2a-runner/piri-memory-extension)
 ` : ""}
 printf 'piri_cli=%s\n' "$(piri --version 2>/dev/null | head -n 1 || printf unknown)" | tee -a /work/artifacts/summary.txt
 printf 'model=%s thinking=%s profile=piri\n' "$A2A_PIRI_MODEL" "$A2A_PIRI_THINKING" | tee -a /work/artifacts/summary.txt
@@ -1234,7 +1257,8 @@ timeout "$A2A_PIRI_TIMEOUT_SEC" piri -p "$(cat /work/artifacts/piri-prompt.md)" 
   --thinking "$A2A_PIRI_THINKING" \
   --approve \
   --no-session \
-  ${piriFanoutEnabled ? `  \${PIRI_FANOUT_ARGS[@]+"\${PIRI_FANOUT_ARGS[@]}"}   ` : ""}\${PIRI_PROGRESS_ARGS[@]+\"\${PIRI_PROGRESS_ARGS[@]}\"} \
+${piriMemoryEnabled ? `  \${PIRI_MEMORY_ARGS[@]+"\${PIRI_MEMORY_ARGS[@]}"} \
+` : ""}  ${piriFanoutEnabled ? `  \${PIRI_FANOUT_ARGS[@]+"\${PIRI_FANOUT_ARGS[@]}"}   ` : ""}\${PIRI_PROGRESS_ARGS[@]+\"\${PIRI_PROGRESS_ARGS[@]}\"} \
   \${PIRI_SCHEMA_ARGS[@]+\"\${PIRI_SCHEMA_ARGS[@]}\"}
 `;
 }
