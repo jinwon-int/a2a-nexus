@@ -1,3 +1,4 @@
+import type { TaskAttemptStoreSurface } from "../task-attempt/producer.js";
 import type { TaskReadinessMode } from "../task-readiness.js";
 import type { ArtifactRuntimeRepository } from "./artifact-repository.js";
 import type { AuditRuntimeRepository } from "./audit-repository.js";
@@ -56,6 +57,14 @@ export interface BrokerRetentionPolicy {
 }
 
 export interface InMemoryA2ABrokerOptions {
+  /**
+   * Optional durable TaskAttemptRecordV1 store (#1799 slice 1). Injecting a
+   * store enables record mode: terminal task transitions additionally emit a
+   * public-safe attempt record. Absent (the default) the surface is fully
+   * off. Recording is advisory and fail-open — it never changes task
+   * execution, claims, retries, or finalization.
+   */
+  taskAttemptRecordStore?: TaskAttemptStoreSurface;
   /** Optional table-native repository for high-churn task lifecycle state. */
   taskRepository?: TaskRuntimeRepository;
   /** Optional table-native repository for append-only audit diagnostics. */
