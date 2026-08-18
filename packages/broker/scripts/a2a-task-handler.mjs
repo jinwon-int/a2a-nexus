@@ -854,7 +854,10 @@ function analysisBridgeCommand(env = process.env) {
     env.A2A_PIRI_ANALYSIS_BIN,
     safeText(
       env.A2A_HERMES_ANALYSIS_BIN,
-      safeText(env.A2A_OPENCLAW_ANALYSIS_BIN, DEFAULT_ANALYSIS_BRIDGE),
+      safeText(
+        env.A2A_OPENCLAW_ANALYSIS_BIN,
+        safeText(env.OPENCLAW_BIN, DEFAULT_ANALYSIS_BRIDGE),
+      ),
     ),
   );
 }

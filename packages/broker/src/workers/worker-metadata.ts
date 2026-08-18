@@ -153,6 +153,7 @@ function analysisBridgeCommandForProbe(env: NodeJS.ProcessEnv): string {
     optionalTrimmed(env.A2A_PIRI_ANALYSIS_BIN) ??
     optionalTrimmed(env.A2A_HERMES_ANALYSIS_BIN) ??
     optionalTrimmed(env.A2A_OPENCLAW_ANALYSIS_BIN) ??
+    optionalTrimmed(env.OPENCLAW_BIN) ??
     PROBE_DEFAULT_ANALYSIS_BRIDGE
   );
 }
