@@ -214,7 +214,8 @@ export type AuditAction =
   | "broker.cleanup.applied"
   | "conversation.opened"
   | "conversation.message.accepted"
-  | "conversation.message.processed";
+  | "conversation.message.processed"
+  | "task.negative_verdict_preserved";
 export type A2AWorkerEnvironment = "research" | "staging" | "live";
 export type WorkerStatus = "online" | "stale";
 export type WorkerPlaneStatus = "online" | "unknown";
@@ -692,6 +693,19 @@ export interface TaskRecord extends A2ATaskRequest {
   /** Terminal approval decision, including negative outcomes that keep live-impact work stopped. */
   approvalOutcome?: TaskApprovalOutcomeInfo;
   /**
+   * #1815 item 5: when an acceptance-review lane fails its verdict gate
+   * (`review_verdict_failed`), the SUBMITTED result is preserved here instead
+   * of being discarded, so operators read the negative findings from the task
+   * record without re-dispatching the same source to a diagnostic lane. The
+   * task still FAILS — this preserves evidence, it does not soften the gate.
+   */
+  negativeVerdictEvidence?: {
+    reviewerNodeId: string;
+    verdict: string;
+    result: TaskResult;
+    recordedAt: string;
+  };
+  /**
    * Count of times this task has been requeued from claimed/running back to queued by the
    * stale-task reaper or the manual requeue endpoint. Capped by the broker's
    * `maxRequeueAttempts` policy so a flapping worker cannot thrash the queue indefinitely.
@@ -816,6 +830,8 @@ export interface TaskEvidenceRequest extends TaskClaimRequest {
 
 export interface TaskFailRequest extends TaskClaimRequest {
   error?: TaskError;
+  /** #1815 item 5: the result the worker was holding when the review verdict failed. */
+  negativeVerdictEvidence?: TaskResult;
 }
 
 export interface TaskCancelRequest {

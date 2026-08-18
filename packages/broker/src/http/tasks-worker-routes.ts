@@ -255,7 +255,12 @@ export async function handlePostEvidenceRequest(ctx: TaskScopedContext): Promise
 /** POST /tasks/:id/fail — a worker reports a failure. */
 export async function handleFailTaskRequest(ctx: TaskScopedContext): Promise<void> {
   const { body, workerId } = await authWorkerAction<TaskFailRequest>(ctx, "task.fail");
-  const task = ctx.broker.failTask(ctx.taskId, workerId, body.error);
+  // #1815 item 5: workers validate review evidence locally; when the verdict
+  // gate failed they submit the held result so the broker preserves the
+  // negative findings instead of discarding them.
+  const task = ctx.broker.failTask(ctx.taskId, workerId, body.error, {
+    negativeVerdictResult: body.negativeVerdictEvidence,
+  });
   await awaitDurablePersistenceAck(ctx.stateStore);
   sendTask(ctx, task);
 }

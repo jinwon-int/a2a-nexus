@@ -2068,8 +2068,8 @@ export class InMemoryA2ABroker {
     return taskTerminal.completeTask(taskId, workerId, result, this.taskTerminalContext());
   }
 
-  failTask(taskId: string, workerId: string, error?: TaskError): TaskRecord {
-    return taskTerminal.failTask(taskId, workerId, error, this.taskTerminalContext());
+  failTask(taskId: string, workerId: string, error?: TaskError, options?: { negativeVerdictResult?: TaskResult }): TaskRecord {
+    return taskTerminal.failTask(taskId, workerId, error, this.taskTerminalContext(), options);
   }
 
   // Stale-task requeue engine (#1289 L-broker-10): the sweep moved to

@@ -352,7 +352,14 @@ export class A2ABrokerWorker {
       if (completionEvidenceError) {
         stopTaskHeartbeat?.();
         stopTaskHeartbeat = undefined;
-        await this.failTask(task.id, completionEvidenceError);
+        // #1815 item 5: on a failed review verdict, submit the held result
+        // with the failure so the broker preserves the negative findings
+        // (task.negativeVerdictEvidence) instead of discarding them — no
+        // same-source diagnostic re-dispatch needed to recover them.
+        const verdictEvidence = completionEvidenceError.code === "review_verdict_failed"
+          ? outcome.result
+          : undefined;
+        await this.failTask(task.id, completionEvidenceError, verdictEvidence);
         console.warn(`[worker:${this.workerId}] task ${task.id} failed: ${completionEvidenceError.message}`);
         return true;
       }
@@ -516,10 +523,10 @@ export class A2ABrokerWorker {
     });
   }
 
-  private async failTask(taskId: string, error?: TaskError): Promise<TaskRecord> {
+  private async failTask(taskId: string, error?: TaskError, negativeVerdictEvidence?: TaskResult): Promise<TaskRecord> {
     return this.requestJson<TaskRecord>(`/tasks/${encodeURIComponent(taskId)}/fail`, {
       method: "POST",
-      body: { workerId: this.workerId, error },
+      body: { workerId: this.workerId, error, ...(negativeVerdictEvidence ? { negativeVerdictEvidence } : {}) },
     });
   }
 
