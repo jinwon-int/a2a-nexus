@@ -9,7 +9,7 @@ import { spawnSync } from 'node:child_process';
 const FLOOR = 84;
 const run = spawnSync(
   process.execPath,
-  ['--test', '--experimental-test-coverage', 'dist/broker-policy.test.js'],
+  ['--test', '--test-reporter=tap', '--experimental-test-coverage', 'dist/broker-policy.test.js'],
   { encoding: 'utf8' },
 );
 const output = `${run.stdout ?? ''}${run.stderr ?? ''}`;
