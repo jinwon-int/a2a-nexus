@@ -136,7 +136,7 @@ exit 0
 			["agent", "--local", "--json", "--message", patchMessage(), "--timeout", "5", "--session-id", "s1"],
 			{
 				PATH: `${binDir}:${process.env.PATH}`,
-				A2A_PIRI_BIN: join(binDir, "piri"),
+				A2A_PIRI_CLI: join(binDir, "piri"),
 				A2A_PIRI_CONFIG_DIR: configDir,
 			},
 		);
@@ -179,7 +179,7 @@ exit 0
 			["agent", "--local", "--json", "--message", patchMessage(), "--timeout", "5"],
 			{
 				PATH: `${binDir}:${process.env.PATH}`,
-				A2A_PIRI_BIN: join(binDir, "piri"),
+				A2A_PIRI_CLI: join(binDir, "piri"),
 				A2A_PIRI_CONFIG_DIR: configDir,
 			},
 		);

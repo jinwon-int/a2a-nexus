@@ -122,7 +122,7 @@ function bridgeError({ code, message, extra = {}, exitCode = 1 }) {
 }
 
 function resolvePiriBin(env = process.env) {
-	const explicit = safeText(env.A2A_PIRI_BIN);
+	const explicit = safeText(env.A2A_PIRI_CLI);
 	if (explicit) return explicit;
 	if (existsSync("/opt/piri/piri-test.sh")) return "/opt/piri/piri-test.sh";
 	return "piri";
