@@ -75,6 +75,14 @@ RUN chmod 0755 /etc/a2a-runner
 COPY docker/piri-fanout-extension /opt/a2a-runner/piri-fanout-extension
 RUN chmod -R a+rX /opt/a2a-runner/piri-fanout-extension
 
+# Memory-injection extension for the piri lane (a2a-nexus#1797 item 3a):
+# appends a bounded operator-provided snapshot (/work/memory.md or an
+# allowlisted override) to the system prompt. Loaded only when the runner
+# opts in via A2A_DOCKER_RUNNER_PIRI_MEMORY_ENABLED=1 and the command script
+# adds `-e /opt/a2a-runner/piri-memory-extension`; default off loads nothing.
+COPY docker/piri-memory-extension /opt/a2a-runner/piri-memory-extension
+RUN chmod -R a+rX /opt/a2a-runner/piri-memory-extension
+
 # Record the resolved piri commit so a built image is auditable even when
 # PIRI_REF names a tag or branch instead of a commit.
 RUN cd /opt/piri && git rev-parse HEAD > /etc/a2a-runner/piri-revision

@@ -565,6 +565,40 @@ test("Piri fanout mode: advertising follows the injected contained-subagent budg
   assertBashScriptParses(script);
 });
 
+test("Piri memory mode: flag off emits no memory branch (a2a-nexus#1797 item 3a)", () => {
+  const script = buildPiriPatchCommandScript({});
+  assert.doesNotMatch(script, /piri-memory-extension/);
+  assert.doesNotMatch(script, /PIRI_MEMORY_ARGS/);
+  assert.doesNotMatch(script, /memory_snapshot/);
+  assert.doesNotMatch(script, /A2A_PIRI_MEMORY/);
+  assertBashScriptParses(script);
+});
+
+test("Piri memory mode: flag on wires the baked extension and snapshot observability (a2a-nexus#1797 item 3a)", () => {
+  const script = buildPiriPatchCommandScript({ A2A_DOCKER_RUNNER_PIRI_MEMORY_ENABLED: "1" });
+  // load the baked extension on the final piri invocation
+  assert.match(script, /PIRI_MEMORY_ARGS=\(-e \/opt\/a2a-runner\/piri-memory-extension\)/);
+  assert.match(script, /\$\{PIRI_MEMORY_ARGS\[@\]/);
+  // fail closed when the image lacks the baked extension the flag requires
+  assert.match(script, /error=piri_memory_extension_missing/);
+  // bounded snapshot contract surfaced to the evidence stream before launch
+  assert.match(script, /A2A_PIRI_MEMORY_FILE="\$\{A2A_PIRI_MEMORY_FILE:-\/work\/memory\.md\}"/);
+  assert.match(script, /A2A_PIRI_MEMORY_MAX_BYTES="\$\{A2A_PIRI_MEMORY_MAX_BYTES:-32768\}"/);
+  assert.match(script, /memory_snapshot=present/);
+  assert.match(script, /memory_snapshot=absent/);
+  // the extension reads its config from the child env, so the script exports it
+  assert.match(script, /export A2A_PIRI_MEMORY_FILE A2A_PIRI_MEMORY_MAX_BYTES/);
+  assertBashScriptParses(script);
+});
+
+test("Piri memory mode: applies to both read-only and patch lanes (#1797 item 3a)", () => {
+  // Unlike fanout (patch-lane only in Phase 2), task memory helps analysis
+  // too, so the extension args must not be cleared on the read-only branch.
+  const script = buildPiriPatchCommandScript({ A2A_DOCKER_RUNNER_PIRI_MEMORY_ENABLED: "1" });
+  assert.doesNotMatch(script, /^PIRI_MEMORY_ARGS=\(\)$/m);
+  assertBashScriptParses(script);
+});
+
 test("Piri profile name and image aliases normalize", () => {
   assert.equal(normalizePatchCommandProfile("piri"), "piri");
   assert.equal(normalizePatchCommandProfile("PI"), "piri");
