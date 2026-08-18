@@ -19,7 +19,7 @@ const FLOORS = new Map([
 
 const run = spawnSync(
   process.execPath,
-  ['--test', '--experimental-test-coverage', 'dist/**/*.test.js'],
+  ['--test', '--test-reporter=tap', '--experimental-test-coverage', 'dist/**/*.test.js'],
   { encoding: 'utf8', shell: false },
 );
 const output = `${run.stdout ?? ''}${run.stderr ?? ''}`;

@@ -118,7 +118,7 @@ function measureCoverage(distTestFiles) {
   try {
     const res = spawnSync(
       process.execPath,
-      ['--test', '--experimental-test-coverage', ...distTestFiles],
+      ['--test', '--test-reporter=tap', '--experimental-test-coverage', ...distTestFiles],
       { cwd: pkgRoot, encoding: 'utf8', timeout: 180_000 },
     );
     const text = `${res.stdout || ''}\n${res.stderr || ''}`;
