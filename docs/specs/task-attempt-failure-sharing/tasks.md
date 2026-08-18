@@ -17,10 +17,12 @@ Refs #1635.
 
 ## Explicitly deferred
 
-- [ ] Admit a runtime broker-execution producer.
-- [ ] Admit a runtime bounded-experiment producer.
+- [x] Admit a runtime broker-execution producer. (#1799 slice 1 — see
+      [runtime.md](./runtime.md); default-off, injection-gated)
+- [ ] Admit a runtime bounded-experiment producer. (#1796 decision pending)
 - [ ] Add a consumer, route, exchange write, or dispatcher read.
-- [ ] Add a store, database schema, migration, or persistence.
+- [x] Add a store, database schema, migration, or persistence. (#1799 slice 1
+      — own SQLite file, no broker-state migration)
 - [ ] Add dispatcher enforcement, claim denial, or automatic dispatch policy.
 - [ ] Add automatic retry or finalizer integration.
 - [ ] Change existing `TaskRecord`, broker exchange, or task-lineage behavior.

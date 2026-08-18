@@ -3,6 +3,10 @@ import { TaskEventDispatcher } from "./task-event-dispatcher.js";
 import { BrokerListenerRegistry } from "./broker-listener-registry.js";
 import { WorkerIdentityChurnTracker } from "./worker-identity-churn-tracker.js";
 import { SnapshotExtensionRegistry } from "./snapshot-extension-registry.js";
+import {
+  recordBrokerTerminalAttempt,
+  type TaskAttemptStoreSurface,
+} from "../task-attempt/producer.js";
 import { HeartbeatPersistThrottle } from "./heartbeat-persist-throttle.js";
 import { PendingHotStateBuffer } from "./pending-hot-state-buffer.js";
 import { computeRetainedRecordIds } from "./broker-retention-reachability.js";
@@ -398,6 +402,10 @@ export class InMemoryA2ABroker {
   private readonly teamId?: string;
   private readonly taskReadinessMode: TaskReadinessMode;
   private readonly reviewLineageMode: ReviewLineageRolloutMode;
+  // #1799 slice 1: optional injected attempt-record store; absent ⇒ off.
+  private readonly taskAttemptRecordStore?: TaskAttemptStoreSurface;
+  private taskAttemptRecordCounts = { emitted: 0, replayed: 0, conflicted: 0, skipped: 0 };
+  private taskAttemptRecordLastSkipReason?: string;
   private readonly policyDocument?: BrokerPolicyDocument;
   private readonly injectedKnowledge?: InjectedKnowledgeSnapshot;
   private readonly finalizerVerdictEnforcement: FinalizerVerdictEnforcement;
@@ -427,6 +435,7 @@ export class InMemoryA2ABroker {
     this.snapshotExtensions = new SnapshotExtensionRegistry(options.snapshotExtensions);
     this.brokerId = normalizeOwnershipString(options.brokerId);
     this.teamId = normalizeOwnershipString(options.teamId);
+    this.taskAttemptRecordStore = options.taskAttemptRecordStore;
     this.taskReadinessMode = normalizeTaskReadinessMode(options.taskReadinessMode);
     this.reviewLineageMode = options.reviewLineageMode ?? "off";
     if (this.reviewLineageMode !== "off" && this.reviewLineageMode !== "record") {
@@ -1963,7 +1972,9 @@ export class InMemoryA2ABroker {
   }
 
   cancelTask(taskId: string, request: TaskCancelRequest): TaskRecord {
-    return taskCancellation.cancelTask(taskId, request, this.taskCancellationContext());
+    const task = taskCancellation.cancelTask(taskId, request, this.taskCancellationContext());
+    this.emitTaskAttemptRecord(task);
+    return task;
   }
 
   // Operator approval decision pair (#1289 L-broker-12): moved to
@@ -2065,11 +2076,65 @@ export class InMemoryA2ABroker {
   }
 
   completeTask(taskId: string, workerId: string, result?: TaskResult): TaskRecord {
-    return taskTerminal.completeTask(taskId, workerId, result, this.taskTerminalContext());
+    const task = taskTerminal.completeTask(taskId, workerId, result, this.taskTerminalContext());
+    this.emitTaskAttemptRecord(task);
+    return task;
   }
 
   failTask(taskId: string, workerId: string, error?: TaskError, options?: { negativeVerdictResult?: TaskResult }): TaskRecord {
-    return taskTerminal.failTask(taskId, workerId, error, this.taskTerminalContext(), options);
+    const task = taskTerminal.failTask(taskId, workerId, error, this.taskTerminalContext(), options);
+    this.emitTaskAttemptRecord(task);
+    return task;
+  }
+
+  /**
+   * #1799 slice 1: advisory, fail-open attempt-record emission on terminal
+   * transitions. Off unless a store was injected. Errors and unmappable
+   * snapshots are counted, never thrown — recording must not change task
+   * execution (spec §6/§9). Idempotent per task, so the terminal wrappers'
+   * already-terminal early returns re-emit harmlessly as replays.
+   */
+  private emitTaskAttemptRecord(task: TaskRecord): void {
+    const store = this.taskAttemptRecordStore;
+    if (store === undefined) return;
+    if (task.status !== "succeeded" && task.status !== "failed" && task.status !== "canceled") return;
+    try {
+      const outcome = recordBrokerTerminalAttempt(store, {
+        localTaskId: task.id,
+        localBrokerId: this.brokerId ?? "broker-local",
+        status: task.status,
+        cancellationKind: task.cancellation?.kind,
+        everClaimed: task.claimedBy !== undefined,
+        retryOfLocalTaskId: task.retryOfTaskId,
+      });
+      if (outcome.status === "accepted") this.taskAttemptRecordCounts.emitted += 1;
+      else if (outcome.status === "idempotent_replay") this.taskAttemptRecordCounts.replayed += 1;
+      else if (outcome.status === "same_key_payload_conflict") this.taskAttemptRecordCounts.conflicted += 1;
+      else {
+        // Remaining union members (contract_rejected | skipped) both carry a reason.
+        this.taskAttemptRecordCounts.skipped += 1;
+        this.taskAttemptRecordLastSkipReason = outcome.reason;
+      }
+    } catch (error) {
+      this.taskAttemptRecordCounts.skipped += 1;
+      this.taskAttemptRecordLastSkipReason = "emit_error:" + String((error as Error)?.message ?? error);
+    }
+  }
+
+  /** Operator-visible #1799 recording diagnostics (no silent failure — #1081 lesson). */
+  taskAttemptRecordDiagnostics(): {
+    enabled: boolean;
+    emitted: number;
+    replayed: number;
+    conflicted: number;
+    skipped: number;
+    lastSkipReason?: string;
+  } {
+    return {
+      enabled: this.taskAttemptRecordStore !== undefined,
+      ...this.taskAttemptRecordCounts,
+      lastSkipReason: this.taskAttemptRecordLastSkipReason,
+    };
   }
 
   // Stale-task requeue engine (#1289 L-broker-10): the sweep moved to
