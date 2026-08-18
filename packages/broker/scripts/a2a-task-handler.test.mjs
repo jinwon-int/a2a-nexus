@@ -2485,3 +2485,78 @@ test("normalizeAnalysisBridgeAdapter maps piri aliases (a2a-nexus#1745)", () => 
   assert.equal(__test.normalizeAnalysisBridgeAdapter("codex"), "codex");
   assert.equal(__test.normalizeAnalysisBridgeAdapter(""), "");
 });
+
+// #1880: oversized payloads detach large sourceBundle contents into physical
+// files so the evaluator's Read view is never truncated at ~96KiB.
+test("writeAnalysisBridgeInputFiles detaches oversized sourceBundle files above the split threshold (#1880)", () => {
+  const bigContent = "가".repeat(40_000);
+  const payload = {
+    sourceBundle: {
+      files: [
+        { path: "src/big-a.ts", content: bigContent },
+        { path: "docs/big-b.md", content: "B".repeat(30_000) },
+        { path: "src/small.ts", content: "export const x = 1;" },
+      ],
+    },
+  };
+  const env = { ...process.env, A2A_ANALYSIS_PAYLOAD_SPLIT_BYTES: "80000", A2A_HANDLER_CWD: mkdtempSync(join(tmpdir(), "a2a-split-cwd-")) };
+  try {
+    const result = __test.writeAnalysisBridgeInputFiles(task(), payload, env);
+    try {
+      assert.equal(result.payloadSplitFiles.length, 2, "16KB 미만 파일은 인라인 유지");
+      const written = JSON.parse(readFileSync(result.payloadFile, "utf8"));
+      const files = written.sourceBundle.files;
+      assert.equal(files[0].content, undefined);
+      assert.equal(files[0].contentRef.bytes, Buffer.byteLength(bigContent, "utf8"));
+      assert.equal(files[0].contentRef.field, "content");
+      assert.equal(files[1].content, undefined);
+      assert.equal(files[2].content, "export const x = 1;", "소형 파일은 인라인 유지");
+      assert.equal(readFileSync(files[0].contentRef.path, "utf8"), bigContent, "물리 파일 원문 보존");
+      assert.equal(readFileSync(files[1].contentRef.path, "utf8"), payload.sourceBundle.files[1].content);
+      assert.equal(result.sourceCarrierStats.payloadSplit.thresholdBytes, 80000);
+      assert.deepEqual(
+        result.sourceCarrierStats.payloadSplit.files.map((f) => f.refPath),
+        ["src/big-a.ts", "docs/big-b.md"],
+      );
+    } finally {
+      rmSync(result.dir, { recursive: true, force: true });
+    }
+  } finally {
+    rmSync(env.A2A_HANDLER_CWD, { recursive: true, force: true });
+  }
+});
+
+test("writeAnalysisBridgeInputFiles keeps payloads under the threshold inline (#1880)", () => {
+  const payload = { sourceBundle: { files: [{ path: "src/a.ts", content: "A".repeat(30_000) }] } };
+  const env = { ...process.env, A2A_HANDLER_CWD: mkdtempSync(join(tmpdir(), "a2a-split-cwd-")) };
+  try {
+    const result = __test.writeAnalysisBridgeInputFiles(task(), payload, env);
+    try {
+      assert.equal(result.payloadSplitFiles.length, 0);
+      const written = JSON.parse(readFileSync(result.payloadFile, "utf8"));
+      assert.equal(written.sourceBundle.files[0].content, payload.sourceBundle.files[0].content);
+      assert.equal(result.sourceCarrierStats.payloadSplit, undefined);
+    } finally {
+      rmSync(result.dir, { recursive: true, force: true });
+    }
+  } finally {
+    rmSync(env.A2A_HANDLER_CWD, { recursive: true, force: true });
+  }
+});
+
+test("writeAnalysisBridgeInputFiles honors A2A_ANALYSIS_PAYLOAD_SPLIT_BYTES=0 (split disabled) (#1880)", () => {
+  const payload = { sourceBundle: { files: [{ path: "src/a.ts", content: "A".repeat(120_000) }] } };
+  const env = { ...process.env, A2A_ANALYSIS_PAYLOAD_SPLIT_BYTES: "0", A2A_HANDLER_CWD: mkdtempSync(join(tmpdir(), "a2a-split-cwd-")) };
+  try {
+    const result = __test.writeAnalysisBridgeInputFiles(task(), payload, env);
+    try {
+      assert.equal(result.payloadSplitFiles.length, 0);
+      const written = JSON.parse(readFileSync(result.payloadFile, "utf8"));
+      assert.equal(written.sourceBundle.files[0].content.length, 120_000);
+    } finally {
+      rmSync(result.dir, { recursive: true, force: true });
+    }
+  } finally {
+    rmSync(env.A2A_HANDLER_CWD, { recursive: true, force: true });
+  }
+});

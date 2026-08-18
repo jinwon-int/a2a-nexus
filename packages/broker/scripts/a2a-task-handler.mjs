@@ -909,15 +909,76 @@ function resolveAnalysisBridgeDir(env = process.env) {
   }
 }
 
+// #1880: payload.json이 ~96KiB를 넘으면 평가자의 Read 뷰가 절단되어 후반부
+// 근거 발췌를 못 읽고 "허위 BLOCK"이 난다(2026-08-18 실측: 98,304B=96KiB 절단).
+// 총량이 임계를 넘으면 sourceBundle.files[]의 대형 content를 물리 파일로 분리해
+// payload에는 contentRef 경로만 남긴다. additive — 임계 미만이면 종전과 동일.
+const PAYLOAD_SPLIT_DEFAULT_BYTES = 80_000;
+// 이 크기 이하 파일은 인라인 유지 — 파일별 Read 호출 수를 제한하기 위함.
+const PAYLOAD_SPLIT_MIN_FILE_BYTES = 16_000;
+
+function resolvePayloadSplitThresholdBytes(env = process.env) {
+  const raw = Number(env.A2A_ANALYSIS_PAYLOAD_SPLIT_BYTES);
+  if (Number.isSafeInteger(raw) && raw >= 0) return raw; // 0 = 분리 비활성
+  return PAYLOAD_SPLIT_DEFAULT_BYTES;
+}
+
+function sourceFileContentField(file) {
+  for (const field of ["content", "contentText", "text"]) {
+    if (typeof file?.[field] === "string") return field;
+  }
+  return "";
+}
+
+function detachOversizedSourceBundleFiles(payload, dir, thresholdBytes) {
+  const sourceBundle = payload?.sourceBundle;
+  const files = Array.isArray(sourceBundle?.files) ? sourceBundle.files : null;
+  if (!files || files.length === 0 || thresholdBytes <= 0) return { payload, splitFiles: [] };
+  const splitDir = join(dir, "payload-files");
+  const splitFiles = [];
+  let changed = false;
+  const nextFiles = files.map((file, index) => {
+    const field = sourceFileContentField(file);
+    if (!field) return file;
+    const content = file[field];
+    const bytes = Buffer.byteLength(content, "utf8");
+    if (bytes < PAYLOAD_SPLIT_MIN_FILE_BYTES) return file;
+    const refPath = safeText(file.path || file.file || file.name || file.id, `file-${index}`);
+    const safeBase = basename(refPath).replace(/[^A-Za-z0-9._-]/g, "_") || `file-${index}`;
+    if (splitFiles.length === 0) mkdirSync(splitDir, { recursive: true, mode: 0o700 });
+    const outPath = join(splitDir, `${String(index).padStart(3, "0")}-${safeBase}`);
+    writeFileSync(outPath, content, "utf8");
+    splitFiles.push({ refPath, path: outPath, bytes });
+    changed = true;
+    const next = { ...file };
+    delete next[field];
+    next.contentRef = { path: outPath, bytes, field };
+    return next;
+  });
+  if (!changed) return { payload, splitFiles: [] };
+  return { payload: { ...payload, sourceBundle: { ...sourceBundle, files: nextFiles } }, splitFiles };
+}
+
 function writeAnalysisBridgeInputFiles(task, payload, env = process.env) {
   const { dir, inWorkspace: payloadFileInWorkspace } = resolveAnalysisBridgeDir(env);
   const taskFile = join(dir, "task.json");
   const payloadFile = join(dir, "payload.json");
   const taskText = `${JSON.stringify(task, null, 2)}\n`;
-  const payloadText = `${JSON.stringify(payload, null, 2)}\n`;
+  let payloadText = `${JSON.stringify(payload, null, 2)}\n`;
+  const thresholdBytes = resolvePayloadSplitThresholdBytes(env);
+  let payloadSplitFiles = [];
+  let effectivePayload = payload;
+  if (Buffer.byteLength(payloadText, "utf8") > thresholdBytes) {
+    const detached = detachOversizedSourceBundleFiles(payload, dir, thresholdBytes);
+    if (detached.splitFiles.length > 0) {
+      effectivePayload = detached.payload;
+      payloadSplitFiles = detached.splitFiles;
+      payloadText = `${JSON.stringify(effectivePayload, null, 2)}\n`;
+    }
+  }
   writeFileSync(taskFile, taskText, "utf8");
   writeFileSync(payloadFile, payloadText, "utf8");
-  let payloadFileStats = sourceCarrierStats(payload);
+  let payloadFileStats = sourceCarrierStats(effectivePayload);
   try {
     payloadFileStats = sourceCarrierStats(JSON.parse(readFileSync(payloadFile, "utf8")));
   } catch {
@@ -929,7 +990,13 @@ function writeAnalysisBridgeInputFiles(task, payload, env = process.env) {
     payloadFileBytes: Buffer.byteLength(payloadText, "utf8"),
     lossyRecoveryUsed: false,
   };
-  return { dir, taskFile, payloadFile, payloadFileInWorkspace, sourceCarrierStats: carrierStats };
+  if (payloadSplitFiles.length > 0) {
+    carrierStats.payloadSplit = {
+      thresholdBytes,
+      files: payloadSplitFiles.map(({ refPath, bytes }) => ({ refPath, bytes })),
+    };
+  }
+  return { dir, taskFile, payloadFile, payloadFileInWorkspace, payloadSplitFiles, sourceCarrierStats: carrierStats };
 }
 
 function githubIssueTargetFromTask(task) {
@@ -1187,6 +1254,9 @@ function runOpenClawAnalysisBridge(task, env = process.env) {
     // 발췌만으로 BLOCK 을 낸다(#1726). 경로를 직접 주면 바로 Read 하면 된다.
     `Read the full payload from this exact path before judging: ${bridgeFiles.payloadFile}`,
     "Use A2A_ANALYSIS_PAYLOAD_FILE (same path) for the full payload; the prompt payload below is an intentionally bounded excerpt to avoid model-bridge oversized-payload failures.",
+    bridgeFiles.payloadSplitFiles && bridgeFiles.payloadSplitFiles.length > 0
+      ? `The payload detaches ${bridgeFiles.payloadSplitFiles.length} oversized source file(s) into physical files (payload entries carry contentRef instead of inline content). Read each detached file from its exact path before judging:\n${bridgeFiles.payloadSplitFiles.map((f) => `- ${f.refPath} (${f.bytes} bytes): ${f.path}`).join("\n")}`
+      : "",
     bridgeFiles.payloadFileInWorkspace
       ? ""
       : "NOTE: the full-payload file is outside the handler workspace on this node. If your tooling cannot read it, say so explicitly and report the excerpt limit rather than blocking for insufficient evidence.",
@@ -2632,6 +2702,7 @@ export const __test = Object.freeze({
   resolveWorkerModel,
   resolveWorkerThinking,
   validateWorkerOverrides,
+  writeAnalysisBridgeInputFiles,
 });
 
 export function handleTask(task, env = process.env) {
