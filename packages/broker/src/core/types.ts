@@ -1172,6 +1172,18 @@ export interface TaskDiagnosticReport {
   };
   /** For terminal tasks: the tombstone, if one was written. */
   tombstone?: TaskTombstone;
+  /**
+   * #1815 item 5: whether a same-source diagnostic/readback redispatch is
+   * still needed to recover BLOCK findings. Absent when the task is not a
+   * review-verdict failure.
+   */
+  sameSourceRedispatch?: {
+    action: "skip" | "needed" | "not_applicable";
+    reason: string;
+    reviewerNodeId?: string;
+    verdict?: string;
+    findingCount?: number;
+  };
   /** Lifecycle summary: key timestamps. */
   lifecycle: {
     createdAt: string;
