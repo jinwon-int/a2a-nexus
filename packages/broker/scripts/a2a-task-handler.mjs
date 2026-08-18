@@ -261,8 +261,20 @@ function hybridWritePointPreflight(task, parsed) {
 }
 
 function isOpenClawBridgeConfigured(env = process.env) {
-  if (isTruthyEnv(env.A2A_OPENCLAW_BRIDGE_DISABLED)) return false;
-  return isTruthyEnv(env.A2A_OPENCLAW_BRIDGE_ENABLED) || Boolean(safeText(env.OPENCLAW_BIN, ""));
+  if (isTruthyEnv(env.A2A_OPENCLAW_BRIDGE_DISABLED) || isTruthyEnv(env.A2A_PIRI_PATCH_BRIDGE_DISABLED)) return false;
+  return (
+    isTruthyEnv(env.A2A_OPENCLAW_BRIDGE_ENABLED) ||
+    isTruthyEnv(env.A2A_PIRI_PATCH_BRIDGE_ENABLED) ||
+    Boolean(hostPatchBridgeCommand(env))
+  );
+}
+
+/** Host GitHub patch binary. Prefer Piri names; OPENCLAW_BIN is legacy. */
+function hostPatchBridgeCommand(env = process.env) {
+  return safeText(
+    env.A2A_PIRI_BIN,
+    safeText(env.A2A_PIRI_PATCH_BIN, safeText(env.OPENCLAW_BIN, "")),
+  );
 }
 
 function buildRunnerTask(task, env = process.env) {
@@ -839,8 +851,14 @@ export const DEFAULT_ANALYSIS_BRIDGE = fileURLToPath(
 
 function analysisBridgeCommand(env = process.env) {
   return safeText(
-    env.A2A_HERMES_ANALYSIS_BIN,
-    safeText(env.A2A_OPENCLAW_ANALYSIS_BIN, safeText(env.OPENCLAW_BIN, DEFAULT_ANALYSIS_BRIDGE)),
+    env.A2A_PIRI_ANALYSIS_BIN,
+    safeText(
+      env.A2A_HERMES_ANALYSIS_BIN,
+      safeText(
+        env.A2A_OPENCLAW_ANALYSIS_BIN,
+        safeText(env.OPENCLAW_BIN, DEFAULT_ANALYSIS_BRIDGE),
+      ),
+    ),
   );
 }
 
@@ -1669,7 +1687,7 @@ function runDecisionDialecticBridge(task, env = process.env) {
     `Payload JSON:\n${jsonForPrompt(payload, 24000)}`,
   ].join("\n\n");
 
-  const baseCommand = safeText(env.A2A_OPENCLAW_ANALYSIS_BIN, safeText(env.OPENCLAW_BIN, "openclaw"));
+  const baseCommand = analysisBridgeCommand(env);
   const bridgePreflight = analysisBridgeArtifactPreflight(baseCommand, env);
   if (bridgePreflight) return bridgePreflight;
   const baseArgs = [
@@ -2003,7 +2021,7 @@ function runOpenClawBridge(task, env = process.env) {
     `Payload JSON:\n${jsonForPrompt(payload)}`,
   ].join("\n\n");
 
-  const baseCommand = safeText(env.A2A_OPENCLAW_ANALYSIS_BIN, safeText(env.OPENCLAW_BIN, "openclaw"));
+  const baseCommand = hostPatchBridgeCommand(env) || "openclaw";
   const baseArgs = [
     "agent",
     "--local",
@@ -2699,6 +2717,8 @@ export const __test = Object.freeze({
   normalizeAnalysisBridgeAdapter,
   normalizedPatchCommandProfile,
   resolveNodeScriptInvocation,
+  hostPatchBridgeCommand,
+  analysisBridgeCommand,
   resolveWorkerModel,
   resolveWorkerThinking,
   validateWorkerOverrides,

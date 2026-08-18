@@ -2560,3 +2560,26 @@ test("writeAnalysisBridgeInputFiles honors A2A_ANALYSIS_PAYLOAD_SPLIT_BYTES=0 (s
     rmSync(env.A2A_HANDLER_CWD, { recursive: true, force: true });
   }
 });
+
+test("hostPatchBridgeCommand prefers A2A_PIRI_BIN over legacy OPENCLAW_BIN", () => {
+  assert.equal(
+    __test.hostPatchBridgeCommand({
+      A2A_PIRI_BIN: "/opt/a2a-broker-worker/scripts/piri-a2a-patch-bridge.mjs",
+      OPENCLAW_BIN: "/legacy/openclaw",
+    }),
+    "/opt/a2a-broker-worker/scripts/piri-a2a-patch-bridge.mjs",
+  );
+  assert.equal(
+    __test.hostPatchBridgeCommand({ OPENCLAW_BIN: "/legacy/openclaw" }),
+    "/legacy/openclaw",
+  );
+  assert.equal(__test.hostPatchBridgeCommand({}), "");
+});
+
+test("analysisBridgeCommand does not inherit A2A_PIRI_BIN (patch slot)", () => {
+  const command = __test.analysisBridgeCommand({
+    A2A_PIRI_BIN: "/opt/a2a-broker-worker/scripts/piri-a2a-patch-bridge.mjs",
+    A2A_PIRI_ANALYSIS_BIN: "/opt/a2a-broker-worker/scripts/piri-a2a-analysis-bridge.mjs",
+  });
+  assert.equal(command, "/opt/a2a-broker-worker/scripts/piri-a2a-analysis-bridge.mjs");
+});

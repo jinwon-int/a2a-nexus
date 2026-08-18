@@ -52,7 +52,7 @@ const HANDLER_SUPPORT_FILENAMES = [
   'lib/retrieval-snapshot-carriers.mjs',
   'lib/live-operation-adapter.mjs',
 ];
-const ANALYSIS_BRIDGE_BIN_VARS = ['A2A_HERMES_ANALYSIS_BIN', 'A2A_OPENCLAW_ANALYSIS_BIN', 'OPENCLAW_BIN'];
+const ANALYSIS_BRIDGE_BIN_VARS = ['A2A_PIRI_ANALYSIS_BIN', 'A2A_HERMES_ANALYSIS_BIN', 'A2A_OPENCLAW_ANALYSIS_BIN', 'OPENCLAW_BIN'];
 const UNSET_ENV_TOKENS = new Set(['', 'none', 'null', 'undefined']);
 const workerRoot = process.env.A2A_WORKER_ROOT || process.env.WORKER_ROOT;
 
@@ -594,7 +594,9 @@ guard('executor-policy', () => {
   };
 
   const bridgePolicies = {
+    A2A_PIRI_BIN: envPresence('A2A_PIRI_BIN'),
     OPENCLAW_BIN: envPresence('OPENCLAW_BIN'),
+    A2A_PIRI_ANALYSIS_BIN: envPresence('A2A_PIRI_ANALYSIS_BIN'),
     A2A_HERMES_ANALYSIS_BIN: envPresence('A2A_HERMES_ANALYSIS_BIN'),
     A2A_OPENCLAW_ANALYSIS_BIN: envPresence('A2A_OPENCLAW_ANALYSIS_BIN'),
     A2A_OPENCLAW_BRIDGE_ENABLED: envPresence('A2A_OPENCLAW_BRIDGE_ENABLED'),

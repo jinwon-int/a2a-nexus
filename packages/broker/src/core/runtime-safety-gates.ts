@@ -318,6 +318,12 @@ function deriveWorkerRuntimeMetadata(bridgeBin: string): WorkerRuntimeMetadata {
   if (/claude-a2a-patch-bridge\.mjs$/.test(bin)) {
     return { runtime: "claude-code", harness: "patch-bridge", adapter: "claude-a2a-patch-bridge" };
   }
+  if (/piri-a2a-patch-bridge\.mjs$/.test(bin)) {
+    return { runtime: "piri", harness: "patch-bridge", adapter: "piri-a2a-patch-bridge" };
+  }
+  if (/piri-a2a-analysis-bridge\.mjs$/.test(bin)) {
+    return { runtime: "piri", harness: "analysis-bridge", adapter: "piri-a2a-analysis-bridge" };
+  }
   if (/claude-a2a-analysis-bridge\.mjs$/.test(bin)) {
     return { runtime: "claude-code", harness: "analysis-bridge", adapter: "claude-a2a-analysis-bridge" };
   }
