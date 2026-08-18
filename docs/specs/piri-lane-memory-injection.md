@@ -48,8 +48,8 @@ runner and does not require the RPC contract; both share the bounded-snapshot
 
 ## Follow-ups (separate, operator-approved)
 
-- Producer wiring: nunchi/MemPalace → bounded `memory.md` materialization on
-  the worker host, plus broker/task-packer placement into the task workspace.
+- Producer wiring: nunchi/MemPalace → bounded `MEMORY.md` materialization on
+  the worker host into `/var/lib/a2a-runner/piri-memory/` (systemd timer).
 - Image re-bake + pin baseline refresh (`/etc/a2a-runner/piri-revision`
   unchanged; the extension is image content, so the image digest changes).
 - Pilot enablement per fleet phase gates (shadow → canary → widen), like the
