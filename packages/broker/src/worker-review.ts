@@ -127,6 +127,95 @@ export function extractReviewVerdict(result: TaskResult | undefined): { reviewer
   return { reviewerNodeId, verdict };
 }
 
+/** Bounded reasons a dispatcher may skip or still need a same-source diagnostic rerun. */
+export type SameSourceRedispatchReason =
+  | "negative_verdict_preserved"
+  | "no_evidence"
+  | "empty_result"
+  | "generic_ack"
+  | "not_verdict_failure";
+
+export interface SameSourceRedispatchDecision {
+  action: "skip" | "needed" | "not_applicable";
+  reason: SameSourceRedispatchReason;
+  reviewerNodeId?: string;
+  verdict?: string;
+  findingCount?: number;
+}
+
+const GENERIC_ACK = /^(ok|done|ack|acknowledged|generic[_ -]?ack|received|thanks)\.?$/i;
+
+function countFindings(result: TaskResult | undefined): number {
+  const output = result?.output;
+  const raw = output && typeof output === "object" ? (output as { findings?: unknown }).findings : undefined;
+  return Array.isArray(raw) ? raw.length : 0;
+}
+
+function reviewNote(result: TaskResult | undefined): string {
+  const validation = reviewValidation(result);
+  return typeof validation?.note === "string" ? validation.note.trim() : "";
+}
+
+function isGenericAck(result: TaskResult | undefined): boolean {
+  const summary = (result?.summary ?? "").trim();
+  const note = reviewNote(result);
+  if (countFindings(result) > 0) return false;
+  if (note.length >= 12) return false;
+  if (!summary) return !note;
+  return GENERIC_ACK.test(summary);
+}
+
+function isSubstantiveNegative(result: TaskResult | undefined, verdict: string): boolean {
+  const v = verdict.trim().toLowerCase();
+  if (v !== "fail" && v !== "block") return false;
+  if (countFindings(result) > 0) return true;
+  const note = reviewNote(result);
+  const summary = (result?.summary ?? "").trim();
+  if (note.length >= 12) return true;
+  return /block|fail|위반|결함|reject/i.test(summary);
+}
+
+/**
+ * #1815 item 5 slice 2: should a dispatcher re-run the SAME source on a
+ * diagnostic/readback lane to recover BLOCK findings?
+ *
+ * After #1878 the submitted result survives on `task.negativeVerdictEvidence`.
+ * Skip the extra provider call when that evidence is substantive. Empty
+ * results and generic acknowledgements still need a rerun; independence
+ * violations are not verdict-gate failures and stay not_applicable.
+ */
+export function classifySameSourceRedispatch(task: TaskRecord): SameSourceRedispatchDecision {
+  const errorCode = task.error?.code;
+  const evidence = task.negativeVerdictEvidence;
+  const result = evidence?.result;
+  const verdict = (evidence?.verdict ?? extractReviewVerdict(result)?.verdict ?? "").trim();
+  const reviewerNodeId = (evidence?.reviewerNodeId ?? extractReviewVerdict(result)?.reviewerNodeId ?? "").trim();
+  const findingCount = countFindings(result);
+
+  if (errorCode !== "review_verdict_failed" && !evidence) {
+    return { action: "not_applicable", reason: "not_verdict_failure" };
+  }
+  if (!evidence || !result) {
+    return { action: "needed", reason: "no_evidence" };
+  }
+  if (!reviewerNodeId || !verdict) {
+    return { action: "needed", reason: "empty_result" };
+  }
+  if (isGenericAck(result)) {
+    return { action: "needed", reason: "generic_ack", reviewerNodeId, verdict, findingCount };
+  }
+  if (isSubstantiveNegative(result, verdict)) {
+    return {
+      action: "skip",
+      reason: "negative_verdict_preserved",
+      reviewerNodeId,
+      verdict,
+      findingCount,
+    };
+  }
+  return { action: "needed", reason: "empty_result", reviewerNodeId, verdict, findingCount };
+}
+
 export function validateReviewEvidence(task: TaskRecord, result?: TaskResult, authorWorkerId?: string): TaskError | null {
   const parsed = parseTaskReview(task);
   if (parsed === null) return null;

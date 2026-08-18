@@ -20,6 +20,7 @@ import type {
 // TaskDiagnosticsOptions is defined and exported by broker.ts; imported here
 // type-only, so there is no runtime import cycle.
 import type { TaskDiagnosticsOptions } from "./broker.js";
+import { classifySameSourceRedispatch } from "../worker-review.js";
 
 export function collectThreadMessageIds(
   messages: A2AExchangeMessageRecord[],
@@ -331,6 +332,7 @@ export function buildTaskDiagnosticReport(
   const stalenessMs = task.status === "claimed" || task.status === "running"
     ? nowMs - resolveTaskStalenessSignalMs(task, nowMs)
     : undefined;
+  const sameSourceRedispatch = classifySameSourceRedispatch(task);
 
   return {
     taskId: task.id,
@@ -342,6 +344,7 @@ export function buildTaskDiagnosticReport(
     currentStatusDurationMs: nowMs - lastStatusChangeMs,
     stalenessMs,
     brokerHints: durableSignals.brokerHints,
+    ...(sameSourceRedispatch.action === "not_applicable" ? {} : { sameSourceRedispatch }),
     tombstone: tombstone ? structuredClone(tombstone) : undefined,
     lifecycle: {
       createdAt: task.createdAt,

@@ -8,7 +8,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 
 import { InMemoryA2ABroker } from "./broker.js";
-import { extractReviewVerdict } from "../worker-review.js";
+import { classifySameSourceRedispatch, extractReviewVerdict } from "../worker-review.js";
 import type { TaskRecord } from "./types.js";
 
 const AUTHOR = "author-node";
@@ -151,6 +151,49 @@ test("extractReviewVerdict returns the reviewer and verdict only for review-shap
     extractReviewVerdict({ validations: [{ kind: "smoke", nodeId: "n", verdict: "pass" }] } as never),
     undefined,
   );
+});
+
+test("classifySameSourceRedispatch skips when BLOCK findings were preserved", () => {
+  const broker = new InMemoryA2ABroker();
+  setupWorker(broker);
+  const task = reviewTask(broker);
+  broker.failTask(task.id, REVIEWER, { code: "review_verdict_failed", message: "gate" }, {
+    negativeVerdictResult: failResult("fail") as never,
+  });
+  const decision = classifySameSourceRedispatch(broker.getTask(task.id)!);
+  assert.equal(decision.action, "skip");
+  assert.equal(decision.reason, "negative_verdict_preserved");
+  assert.equal(decision.reviewerNodeId, "reviewer-x");
+  assert.equal(decision.findingCount, 1);
+  const diag = broker.getTaskDiagnostics(task.id);
+  assert.equal(diag.sameSourceRedispatch?.action, "skip");
+});
+
+test("classifySameSourceRedispatch still needs a rerun for empty or generic ack evidence", () => {
+  const broker = new InMemoryA2ABroker();
+  setupWorker(broker);
+
+  const empty = reviewTask(broker);
+  broker.failTask(empty.id, REVIEWER, { code: "review_verdict_failed", message: "gate" });
+  assert.deepEqual(classifySameSourceRedispatch(broker.getTask(empty.id)!), {
+    action: "needed",
+    reason: "no_evidence",
+  });
+
+  const generic = reviewTask(broker);
+  broker.failTask(generic.id, REVIEWER, { code: "review_verdict_failed", message: "gate" }, {
+    negativeVerdictResult: {
+      summary: "ok",
+      validations: [{ kind: "review", nodeId: "reviewer-x", verdict: "fail", note: "ack" }],
+    } as never,
+  });
+  const genericDecision = classifySameSourceRedispatch(broker.getTask(generic.id)!);
+  assert.equal(genericDecision.action, "needed");
+  assert.equal(genericDecision.reason, "generic_ack");
+
+  const crash = reviewTask(broker);
+  broker.failTask(crash.id, REVIEWER, { code: "handler_exit_nonzero", message: "boom" });
+  assert.equal(classifySameSourceRedispatch(broker.getTask(crash.id)!).action, "not_applicable");
 });
 
 test("a pass verdict still succeeds with no evidence field", () => {
