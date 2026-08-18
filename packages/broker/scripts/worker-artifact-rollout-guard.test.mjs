@@ -93,7 +93,7 @@ function makeWorkerRoot({ bridgeHandlersContent = 'bridge-ok\n', handlersExecuta
 
 function runGuard(root, env = {}) {
   const childEnv = { ...process.env, A2A_WORKER_ROOT: root, ...env };
-  for (const key of ['A2A_HERMES_ANALYSIS_BIN', 'A2A_OPENCLAW_ANALYSIS_BIN', 'OPENCLAW_BIN', 'A2A_WORKER_ENV_PATH', 'WORKER_ENV_PATH']) {
+  for (const key of ['A2A_PIRI_ANALYSIS_BIN', 'A2A_PIRI_BIN', 'A2A_HERMES_ANALYSIS_BIN', 'A2A_OPENCLAW_ANALYSIS_BIN', 'OPENCLAW_BIN', 'A2A_WORKER_ENV_PATH', 'WORKER_ENV_PATH']) {
     if (!(key in env)) delete childEnv[key];
   }
   return spawnSync(process.execPath, [guardPath, '--deployed'], {
