@@ -112,8 +112,9 @@ const COMMON_FIELDS = [
  */
 export function canonicalTaskAttemptJson(value: unknown): string {
   if (typeof value === "string") {
-    // eslint-disable-next-line no-control-regex
-    if (!/^[\x00-\x7F]*$/.test(value)) throw new Error("non-ASCII string in canonical payload");
+    for (let i = 0; i < value.length; i += 1) {
+      if (value.charCodeAt(i) > 0x7f) throw new Error("non-ASCII string in canonical payload");
+    }
     return JSON.stringify(value);
   }
   if (typeof value === "number") {
