@@ -362,3 +362,23 @@ test("bridge report: fail verdict keeps its note; malformed reports return null"
   assert.equal(defaulted?.verdict, "pass");
   assert.equal(defaulted?.metrics?.exitCode, -1);
 });
+
+test("bridge report: the nested result.output.acceptance position is also accepted (#1910 follow-up)", () => {
+  // a2a-task-handler.mjs runOpenClawBridge maps the bridge response into
+  // result.output; the verdict arrives at result.output.acceptance, not at
+  // result.acceptance. Both positions must normalize.
+  const nested = normalizeBridgeAcceptanceReport({
+    output: {
+      prUrl: "https://github.com/x/y/pull/1",
+      acceptance: {
+        kind: "smoke",
+        verdict: "pass",
+        metrics: { exitCode: 0, expectedExitCode: 0, durationMs: 5, timedOut: false },
+        note: "acceptance passed: grep -q fleet operator README.md",
+      },
+    },
+  } as unknown as TaskResult);
+  assert.equal(nested?.verdict, "pass");
+  assert.equal(nested?.kind, "smoke");
+  assert.match(nested?.note ?? "", /acceptance passed/);
+});
