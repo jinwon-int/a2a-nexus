@@ -14,7 +14,11 @@ function makeArm(sample, adapter, order) {
     taskId: `${sample.id}-${adapter}`,
     evidenceUrl: `https://example.invalid/${sample.id}/${adapter}`,
     inputDigest: `sha256:${createHash("sha256").update(sample.id).digest("hex")}`,
-    runtimeEvidence: { ...expectedRuntime, evidenceRef: `worker-registry:${adapter}` },
+    runtimeEvidence: {
+      ...expectedRuntime,
+      evidenceRef: `worker-registry:${adapter}`,
+      bridgeBinary: `${adapter === "claude_code" ? "claude" : adapter}-a2a-analysis-bridge.mjs`,
+    },
     createdAt: order === 0 ? "2026-08-10T00:00:00.000Z" : "2026-08-10T00:00:03.000Z",
     completedAt: order === 0 ? "2026-08-10T00:00:02.000Z" : "2026-08-10T00:00:05.000Z",
     output: {
@@ -126,4 +130,19 @@ test("fails closed on duplicate rubric scores", () => {
   const scores = results.pairs[0].arms.piri.rubricScores;
   scores[1] = { ...scores[0] };
   assert.throws(() => evaluateBenchmark(manifest, results), /exactly one score per rubric criterion/);
+});
+
+test("fails closed when the executed bridge binary contradicts the adapter label (#1895)", () => {
+  // 2026-08-19 incident shape: the handler labeled the arm claude_code while
+  // the task actually executed piri-a2a-analysis-bridge.mjs. Label evidence
+  // alone must never be enough — the binary has to match the claimed adapter.
+  const results = makeResults();
+  results.pairs[1].arms.claude_code.runtimeEvidence.bridgeBinary = "piri-a2a-analysis-bridge.mjs";
+  assert.throws(() => evaluateBenchmark(manifest, results), /bridge binary.*claude_code|does not match the executed bridge binary/);
+});
+
+test("fails closed when the executed bridge binary evidence is missing (#1895)", () => {
+  const results = makeResults();
+  delete results.pairs[0].arms.piri.runtimeEvidence.bridgeBinary;
+  assert.throws(() => evaluateBenchmark(manifest, results), /bridge binary/);
 });
