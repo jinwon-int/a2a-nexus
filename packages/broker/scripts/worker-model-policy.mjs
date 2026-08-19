@@ -24,6 +24,9 @@ export const ALLOWED_WORKER_MODELS = Object.freeze([
   "k3[1m]",
   "zai/glm-5.2",
   "glm-5.2[1m]",
+  // GLM-5.3 piri fleet workers (#1907): released after the #1802 allowlist.
+  "zai/glm-5.3",
+  "glm-5.3[1m]",
 ]);
 
 export const DEFAULT_WORKER_MODEL = "openai-codex/gpt-5.6-sol";
@@ -118,6 +121,7 @@ export function canonicalizeWorkerModel(model) {
   // provider prefix (#1802).
   if (value === "k3") return "kimi-coding/k3";
   if (value === "glm-5.2") return "zai/glm-5.2";
+  if (value === "glm-5.3") return "zai/glm-5.3";
   return value;
 }
 
