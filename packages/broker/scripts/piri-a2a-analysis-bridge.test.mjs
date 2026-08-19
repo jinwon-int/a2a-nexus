@@ -68,6 +68,134 @@ test("payloadFromStructuredEnv prefers the full payload file (excerpt-mode dispa
 	}
 });
 
+test("collectSourceBundle inlines #1880 contentRef detach files from the payload dir (#1891)", () => {
+	const dir = mkdtempSync(join(tmpdir(), "piri-contentref-"));
+	try {
+		const splitDir = join(dir, "payload-files");
+		mkdirSync(splitDir, { recursive: true });
+		writeFileSync(join(splitDir, "000-case-a.ts"), "const detached = 1;\n");
+		writeFileSync(join(splitDir, "001-case-b.ts"), "const detachedB = 2;\n");
+		const payloadFile = join(dir, "payload.json");
+		writeFileSync(payloadFile, JSON.stringify({ repo: "embedded" }));
+		const payload = {
+			sourceBundle: {
+				files: [
+					{ path: "cases/a.ts", contentRef: { path: join(splitDir, "000-case-a.ts"), bytes: 19, field: "content" } },
+					{ path: "cases/b.ts", contentRef: { path: join(splitDir, "001-case-b.ts"), bytes: 20, field: "content" } },
+				],
+			},
+		};
+		const bundle = __test.collectSourceBundle(payload, { A2A_ANALYSIS_PAYLOAD_FILE: payloadFile });
+		assert.equal(bundle.files.length, 2);
+		assert.equal(bundle.files[0].repo, "embedded");
+		assert.equal(bundle.files[0].path, "cases/a.ts");
+		assert.equal(bundle.files[0].content, "const detached = 1;\n");
+		assert.equal(bundle.files[1].content, "const detachedB = 2;\n");
+		assert.deepEqual(bundle.warnings, []);
+	} finally {
+		rmSync(dir, { recursive: true, force: true });
+	}
+});
+
+test("collectSourceBundle refuses contentRef paths outside the payload dir (#1891 fail-closed)", () => {
+	const dir = mkdtempSync(join(tmpdir(), "piri-contentref-outside-"));
+	try {
+		const outside = join(dir, "outside.txt");
+		writeFileSync(outside, "secret");
+		const payloadDir = join(dir, "bridge");
+		mkdirSync(payloadDir, { recursive: true });
+		const payloadFile = join(payloadDir, "payload.json");
+		writeFileSync(payloadFile, "{}");
+		const payload = {
+			sourceBundle: { files: [{ path: "x.ts", contentRef: { path: outside, bytes: 6, field: "content" } }] },
+		};
+		assert.throws(
+			() => __test.collectSourceBundle(payload, { A2A_ANALYSIS_PAYLOAD_FILE: payloadFile }),
+			/escapes the payload directory/,
+		);
+	} finally {
+		rmSync(dir, { recursive: true, force: true });
+	}
+});
+
+test("collectSourceBundle fails fast when a contentRef file is missing (#1891)", () => {
+	const dir = mkdtempSync(join(tmpdir(), "piri-contentref-missing-"));
+	try {
+		const payloadFile = join(dir, "payload.json");
+		writeFileSync(payloadFile, "{}");
+		const payload = {
+			sourceBundle: { files: [{ path: "gone.ts", contentRef: { path: join(dir, "payload-files", "000-gone.ts"), bytes: 1, field: "content" } }] },
+		};
+		assert.throws(
+			() => __test.collectSourceBundle(payload, { A2A_ANALYSIS_PAYLOAD_FILE: payloadFile }),
+			/contentRef file is unreadable/,
+		);
+	} finally {
+		rmSync(dir, { recursive: true, force: true });
+	}
+});
+
+test("collectSourceBundle refuses contentRef without the payload-file carrier (#1891)", () => {
+	const payload = {
+		sourceBundle: { files: [{ path: "x.ts", contentRef: { path: "/tmp/anywhere.txt", bytes: 1, field: "content" } }] },
+	};
+	assert.throws(() => __test.collectSourceBundle(payload, {}), /requires the payload-file carrier/);
+});
+
+test("collectSourceBundle applies the per-file byte cap to detached content (#1891)", () => {
+	const dir = mkdtempSync(join(tmpdir(), "piri-contentref-cap-"));
+	try {
+		const splitDir = join(dir, "payload-files");
+		mkdirSync(splitDir, { recursive: true });
+		writeFileSync(join(splitDir, "000-big.ts"), "x".repeat(4096));
+		const payloadFile = join(dir, "payload.json");
+		writeFileSync(payloadFile, "{}");
+		const payload = {
+			sourceBundle: { files: [{ path: "big.ts", contentRef: { path: join(splitDir, "000-big.ts"), bytes: 4096, field: "content" } }] },
+		};
+		const bundle = __test.collectSourceBundle(payload, {
+			A2A_ANALYSIS_PAYLOAD_FILE: payloadFile,
+			A2A_PIRI_ANALYSIS_MAX_FILE_BYTES: "1024",
+		});
+		assert.equal(bundle.files.length, 1);
+		assert.equal(bundle.files[0].truncated, true);
+		assert.equal(bundle.files[0].bytes, 4096);
+		assert.equal(Buffer.byteLength(bundle.files[0].content, "utf8"), 1024);
+	} finally {
+		rmSync(dir, { recursive: true, force: true });
+	}
+});
+
+test("collectSourceBundle prefers inline content over contentRef (#1891)", () => {
+	const payload = {
+		sourceBundle: {
+			files: [{ path: "a.ts", content: "inline wins", contentRef: { path: "/nonexistent/000-a.ts", bytes: 11, field: "content" } }],
+		},
+	};
+	const bundle = __test.collectSourceBundle(payload, {});
+	assert.equal(bundle.files.length, 1);
+	assert.equal(bundle.files[0].content, "inline wins");
+});
+
+test("unreadable contentRef fails closed before any docker invocation (#1891)", () => {
+	const dir = mkdtempSync(join(tmpdir(), "piri-contentref-flow-"));
+	try {
+		const payloadFile = join(dir, "payload.json");
+		writeFileSync(payloadFile, JSON.stringify({
+			sourceBundle: { files: [{ path: "gone.ts", contentRef: { path: join(dir, "payload-files", "000-gone.ts"), bytes: 1, field: "content" } }] },
+		}));
+		const result = runBridge(
+			["agent", "--local", "--agent", "t", "--session-id", "s", "--message", "review", "--model", "m", "--thinking", "high", "--json"],
+			{ A2A_ANALYSIS_PAYLOAD_FILE: payloadFile },
+		);
+		assert.notEqual(result.status, 0);
+		assert.match(result.stderr, /contentRef/);
+		assert.equal(result.stdout.trim(), "");
+	} finally {
+		rmSync(dir, { recursive: true, force: true });
+	}
+});
+
 test("buildPiriPrompt embeds source bundle and schema instruction", () => {
 	const prompt = __test.buildPiriPrompt({
 		message: "msg",

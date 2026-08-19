@@ -19,6 +19,8 @@
  *           --model <m> --thinking <t> --timeout <sec> --json
  *   stdout: {"payloads":[{"text": "<analysis contract JSON string>"}]}
  *   stderr: A2A_BRIDGE_ERROR={...} on failure (structured, #1725 shape)
+ *   payload: sourceBundle files >=16KB may arrive as contentRef={path,...}
+ *            (#1880 detach); the bridge re-inlines them host-side (#1891).
  *
  * piri exit-code mapping (jinwon-int/piri#14 stable contract):
  *   2 usage/config   → analysis_bridge_invocation_invalid (handler_artifact_failure)
@@ -28,8 +30,8 @@
  *                      returned 1 for provider and schema failures alike.
  */
 import { spawnSync } from "node:child_process";
-import { existsSync, mkdirSync, readFileSync, readdirSync, rmSync, statSync, writeFileSync } from "node:fs";
-import { basename, isAbsolute, join, relative, resolve, sep } from "node:path";
+import { existsSync, mkdirSync, readFileSync, readdirSync, realpathSync, rmSync, statSync, writeFileSync } from "node:fs";
+import { basename, dirname, isAbsolute, join, relative, resolve, sep } from "node:path";
 import { piriExecutionTelemetry } from "./lib/analysis-execution-telemetry.mjs";
 import { sourceCarrierStatsFromEnv } from "./lib/source-carriers.mjs";
 
@@ -314,12 +316,52 @@ function collectEmbeddedSourceEvidence(payload) {
 	return candidates;
 }
 
-function normalizeEmbeddedSourceFile(item, fallbackRepo, maxFileBytes, remainingBytes) {
+/**
+ * #1891 / #1880: the task handler detaches oversized sourceBundle files into
+ * <payload-dir>/payload-files/ and leaves contentRef={path,bytes,field} in the
+ * payload. The piri sandbox cannot reach those paths, so the bridge resolves
+ * them host-side and inlines the content before prompt assembly. Fail-closed:
+ * a declared contentRef that is non-absolute, missing, or escapes the payload
+ * directory is a hard error (handler artifact failure), never a silent skip —
+ * silent source loss produced false BLOCK verdicts on 2026-08-18.
+ */
+function resolveDetachedContentRef(item, contentRefRoot) {
+	const ref = item?.contentRef;
+	if (!ref || typeof ref !== "object" || Array.isArray(ref)) return undefined;
+	const refPath = safeText(ref.path, "");
+	if (!refPath || refPath.includes("\0") || !isAbsolute(refPath)) {
+		throw new Error(`contentRef path must be an absolute path: ${refPath || "<empty>"}`);
+	}
+	if (!contentRefRoot) {
+		throw new Error(`contentRef ${refPath} requires the payload-file carrier (A2A_ANALYSIS_PAYLOAD_FILE)`);
+	}
+	let realRoot;
+	let realRef;
+	try {
+		realRoot = realpathSync(contentRefRoot);
+		realRef = realpathSync(refPath);
+	} catch {
+		throw new Error(`contentRef file is unreadable: ${refPath}`);
+	}
+	if (!insideRoot(realRoot, realRef)) {
+		throw new Error(`contentRef path escapes the payload directory: ${refPath}`);
+	}
+	if (!statSync(realRef).isFile()) {
+		throw new Error(`contentRef path is not a regular file: ${refPath}`);
+	}
+	return readFileSync(realRef, "utf8");
+}
+
+function normalizeEmbeddedSourceFile(item, fallbackRepo, maxFileBytes, remainingBytes, contentRefRoot = "") {
 	if (!item || typeof item !== "object" || Array.isArray(item)) return { warning: "skipped malformed embedded source evidence" };
 	const repo = safeText(item.repo || item.repository || fallbackRepo || "embedded", "embedded");
 	const path = safeText(item.path || item.file || item.name, "");
 	if (!isSafeRelativePath(path)) return { warning: `skipped unsafe embedded source path: ${path || "<empty>"}` };
-	const rawContent = typeof item.content === "string" ? item.content : typeof item.text === "string" ? item.text : "";
+	let rawContent = typeof item.content === "string" ? item.content : typeof item.text === "string" ? item.text : "";
+	if (!rawContent) {
+		const detached = resolveDetachedContentRef(item, contentRefRoot);
+		if (detached !== undefined) rawContent = detached;
+	}
 	if (!rawContent) return { warning: `skipped empty embedded source file: ${repo}:${path}` };
 	const maxBytes = Math.max(0, Math.min(maxFileBytes, remainingBytes));
 	const buffer = Buffer.from(rawContent, "utf8");
@@ -343,10 +385,15 @@ function collectSourceBundle(payload, env) {
 	let totalBytes = 0;
 
 	const fallbackRepo = safeText(payload.repo || payload.repository || "embedded", "embedded");
+	// #1891: contentRef detach files always live under the payload file's
+	// directory (handler writes <dir>/payload-files/); use it as the
+	// containment root for fail-closed host-side resolution.
+	const payloadFilePath = safeText(env.A2A_ANALYSIS_PAYLOAD_FILE, "");
+	const contentRefRoot = payloadFilePath ? dirname(resolve(payloadFilePath)) : "";
 	for (const embedded of collectEmbeddedSourceEvidence(payload)) {
 		if (files.length >= maxFiles || totalBytes >= maxTotalBytes) break;
 		const remaining = Math.max(0, maxTotalBytes - totalBytes);
-		const normalized = normalizeEmbeddedSourceFile(embedded, fallbackRepo, maxFileBytes, remaining);
+		const normalized = normalizeEmbeddedSourceFile(embedded, fallbackRepo, maxFileBytes, remaining, contentRefRoot);
 		if (normalized.warning) {
 			warnings.push(normalized.warning);
 			continue;
