@@ -2627,3 +2627,55 @@ test("analysisBridgeCommand does not inherit A2A_PIRI_BIN (patch slot)", () => {
   });
   assert.equal(command, "/opt/a2a-broker-worker/scripts/piri-a2a-analysis-bridge.mjs");
 });
+
+// #1904 regression: a bridge that executed payload.acceptance inside its own
+// workspace reports the verdict as response.acceptance (OpenClaw envelope);
+// the handler must pass it through as result.output.acceptance so the worker
+// client adopts the clone-context verdict instead of re-running the spec in
+// its file-less cwd.
+test("host patch bridge acceptance verdict survives the handler response mapping (#1904)", () => {
+  const dir = mkdtempSync(join(tmpdir(), "a2a-bridge-acceptance-"));
+  const bridge = join(dir, "fake-piri-patch-bridge.mjs");
+  const bridgeResponse = {
+    status: "pr_opened",
+    summary: "host piri patch opened https://github.com/jinwon-int/a2a-broker/pull/1906",
+    branch: "a2a/piri-host-test",
+    prUrl: "https://github.com/jinwon-int/a2a-broker/pull/1906",
+    filesChanged: ["README.md"],
+    acceptance: {
+      kind: "smoke",
+      verdict: "pass",
+      metrics: { acceptance: true, exitCode: 0, expectedExitCode: 0, durationMs: 9, timedOut: false },
+      note: "acceptance passed: grep -q sandbox-only README.md",
+      acceptanceContext: "piri-host-patch-clone",
+    },
+  };
+  writeFileSync(bridge, [
+    "#!/usr/bin/env node",
+    `const response = ${JSON.stringify(bridgeResponse)};`,
+    'process.stdout.write(JSON.stringify({ payloads: [{ text: JSON.stringify(response) }] }) + "\\n");',
+    "",
+  ].join("\n"));
+  chmodSync(bridge, 0o755);
+
+  try {
+    const result = handleTask(patchTask({
+      id: "task-bridge-acceptance",
+      payload: {
+        acceptance: { command: ["grep", "-q", "sandbox-only", "README.md"], expectExitCode: 0, timeoutMs: 10000 },
+      },
+    }), {
+      PATH: process.env.PATH,
+      A2A_EXECUTOR_MODE: "auto",
+      A2A_PIRI_BIN: bridge,
+    });
+
+    assert.equal(result.error, undefined);
+    const acceptance = result.result?.output?.acceptance;
+    assert.equal(acceptance?.verdict, "pass");
+    assert.equal(acceptance?.acceptanceContext, "piri-host-patch-clone");
+    assert.equal(result.result?.output?.prUrl, "https://github.com/jinwon-int/a2a-broker/pull/1906");
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});

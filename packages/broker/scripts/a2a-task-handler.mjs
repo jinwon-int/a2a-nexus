@@ -2147,6 +2147,13 @@ function runOpenClawBridge(task, env = process.env) {
       effectiveThinking,
       modelFromPayload: modelFromPayload || undefined,
     };
+    // #1904: a handler-side bridge that executed payload.acceptance inside its
+    // own workspace (host piri patch clone) reports the verdict as
+    // response.acceptance; pass it through so the worker client adopts it
+    // instead of re-running the spec in its own file-less cwd.
+    if (response.acceptance && typeof response.acceptance === "object") {
+      output.acceptance = response.acceptance;
+    }
     if (safeText(evidence.startCommentUrl, "")) output.startCommentUrl = safeText(evidence.startCommentUrl);
     if (safeText(evidence.prUrl, "")) output.prUrl = safeText(evidence.prUrl);
     if (safeText(evidence.doneCommentUrl, "")) output.doneCommentUrl = safeText(evidence.doneCommentUrl);
