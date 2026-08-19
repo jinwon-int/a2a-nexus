@@ -13,7 +13,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 
 import { createWorkerConfigFromEnv, probeAnalysisArtifactReadiness } from "./worker.js";
-import { isWorkerSubstantiveAnalysisReady } from "./core/broker-worker-status.js";
+import { isWorkerSubstantiveAnalysisReady, workerAnalysisAdapterMismatch } from "./core/broker-worker-status.js";
 import { buildWorkerCapacitySummary } from "./core/broker-worker-capacity.js";
 import type { WorkerRecord } from "./core/types.js";
 
@@ -47,6 +47,54 @@ function workerRecord(overrides: Partial<WorkerRecord> = {}): WorkerRecord {
     ...overrides,
   };
 }
+
+test("adapter/harness metadata contradicting the analysis handler path degrades readiness (#1895)", () => {
+  // 2026-08-19 incident shape: the worker advertised claude labels while the
+  // resolved analysis bridge was the piri bridge — the broker projection must
+  // darken so the label drift is visible instead of silently mis-attributing
+  // analysis runs.
+  const worker = workerRecord({
+    metadata: {
+      harness: "claude",
+      adapter: "claude_code",
+      analysisHandlerPath: "/opt/a2a-broker-worker/scripts/piri-a2a-analysis-bridge.mjs",
+    },
+  });
+  assert.equal(isWorkerSubstantiveAnalysisReady(worker), false);
+  assert.match(workerAnalysisAdapterMismatch(worker.metadata) ?? "", /mismatch/);
+});
+
+test("consistent adapter metadata keeps readiness (#1895)", () => {
+  const worker = workerRecord({
+    metadata: {
+      harness: "piri",
+      adapter: "piri-a2a-analysis-bridge",
+      analysisHandlerPath: "/opt/a2a-broker-worker/scripts/piri-a2a-analysis-bridge.mjs",
+    },
+  });
+  assert.equal(isWorkerSubstantiveAnalysisReady(worker), true);
+  assert.equal(workerAnalysisAdapterMismatch(worker.metadata), undefined);
+});
+
+test("intent-aware claude patch bridge serving analysis is consistent (#1895)", () => {
+  // The claude patch bridge serves analysis in a read-only mode by design, so
+  // a worker whose analysis handler IS the claude patch bridge is consistent.
+  const worker = workerRecord({
+    metadata: {
+      harness: "claude",
+      adapter: "claude-a2a-patch-bridge",
+      analysisHandlerPath: "/opt/a2a-broker-worker/scripts/claude-a2a-patch-bridge.mjs",
+    },
+  });
+  assert.equal(isWorkerSubstantiveAnalysisReady(worker), true);
+  assert.equal(workerAnalysisAdapterMismatch(worker.metadata), undefined);
+});
+
+test("absent handler-path metadata never darkens legacy workers (#1895)", () => {
+  const worker = workerRecord({ metadata: { harness: "claude" } });
+  assert.equal(isWorkerSubstantiveAnalysisReady(worker), true);
+  assert.equal(workerAnalysisAdapterMismatch({ harness: "claude" }), undefined);
+});
 
 test("missing handler script artifact flips canAnalyze and records a structured reason (#1597)", () => {
   const config = configFrom({

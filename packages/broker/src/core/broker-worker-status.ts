@@ -37,6 +37,7 @@ export function toWorkerViewRecord(worker: WorkerRecord, offlineAfterMs: number)
   const workerPlane: WorkerPlaneStatus = status === "online" ? "online" : "unknown";
   const managementPlane: ManagementPlaneStatus = worker.managementPlane ?? "unknown";
   const updateEligible = workerPlane === "online" && managementPlane !== "disconnected";
+  const analysisAdapterMismatch = workerAnalysisAdapterMismatch(worker.metadata);
 
   return {
     ...worker,
@@ -45,6 +46,7 @@ export function toWorkerViewRecord(worker: WorkerRecord, offlineAfterMs: number)
     managementPlane,
     updateEligible,
     substantiveAnalysisReady: isWorkerSubstantiveAnalysisReady(worker),
+    ...(analysisAdapterMismatch ? { analysisAdapterMismatch } : {}),
   };
 }
 
@@ -59,7 +61,40 @@ export function toWorkerViewRecord(worker: WorkerRecord, offlineAfterMs: number)
  */
 export function isWorkerSubstantiveAnalysisReady(worker: WorkerRecord): boolean {
   if (worker.capabilities?.canAnalyze !== true) return false;
-  return worker.metadata?.analysisReady !== "false";
+  if (worker.metadata?.analysisReady === "false") return false;
+  return workerAnalysisAdapterMismatch(worker.metadata) === undefined;
+}
+
+/**
+ * #1895: adapter/harness metadata claims must not contradict the resolved
+ * analysis handler path. Workers labeled claude once executed the piri bridge
+ * for every analysis run (2026-08-19), silently mis-attributing the lane.
+ * Returns a human-readable mismatch reason, or undefined when the metadata is
+ * consistent — or carries no evaluable signal (legacy/unprobed workers stay
+ * untouched, matching the analysisReady probe's non-darkening guarantee).
+ */
+const ADAPTER_KEYWORDS = ["codex", "claude", "hermes", "piri"] as const;
+
+function adapterKeywordOf(value: string | undefined): string {
+  const text = (value ?? "").toLowerCase();
+  for (const keyword of ADAPTER_KEYWORDS) {
+    if (text.includes(keyword)) return keyword;
+  }
+  return "";
+}
+
+export function workerAnalysisAdapterMismatch(metadata: Record<string, string> | undefined): string | undefined {
+  const handlerPath = metadata?.analysisHandlerPath;
+  const handlerSignal = adapterKeywordOf(handlerPath?.split("/").pop());
+  if (!handlerSignal) return undefined;
+  for (const field of ["harness", "adapter"] as const) {
+    const claimValue = metadata?.[field];
+    const claim = adapterKeywordOf(claimValue);
+    if (claim && claim !== handlerSignal) {
+      return `analysis adapter metadata mismatch: metadata.${field} says ${claimValue}, but analysisHandlerPath is ${handlerPath}`;
+    }
+  }
+  return undefined;
 }
 
 export function isWorkerStale(lastSeenAt: string, offlineAfterMs: number, nowMs: number): boolean {
