@@ -570,7 +570,9 @@ function applyClaudePromptBudget(prompt, env = process.env) {
   const maxPromptBytes = Math.min(configured, DEFAULT_MAX_PROMPT_BYTES);
   const promptBytes = Buffer.byteLength(prompt, "utf8");
   if (promptBytes <= maxPromptBytes) return prompt;
-  const suffix = `\n\n[truncated by claude-a2a-analysis-bridge prompt budget: originalBytes=${promptBytes} maxBytes=${maxPromptBytes}.]`;
+  // #1903: name the cut section — with the message-first layout the tail is
+  // always the source bundle, so say so explicitly for downstream triage.
+  const suffix = `\n\n[truncated by claude-a2a-analysis-bridge prompt budget: originalBytes=${promptBytes} maxBytes=${maxPromptBytes}. Tail cut: read-only source bundle section.]`;
   const prefixBudget = Math.max(0, maxPromptBytes - Buffer.byteLength(suffix, "utf8"));
   return truncateUtf8ToBytes(`${truncateUtf8ToBytes(prompt, prefixBudget)}${suffix}`, maxPromptBytes);
 }
@@ -589,9 +591,14 @@ function buildClaudePrompt({ message, flags, payload }) {
     `Session id: ${safeText(flags["session-id"], "")}`,
     `Requested model: ${safeText(flags.model, "")}`,
     `Requested thinking: ${safeText(flags.thinking, "")}`,
-    sourceSection,
+    // #1903: the worker message (the actual task) must precede the source
+    // bundle. The prompt budget tail-truncates, so a bundle-first layout
+    // silently dropped the task question on large packets — the model then
+    // honestly blocked. Message-first keeps the assignment intact; only
+    // source tails absorb the truncation.
     "Original worker message:",
     message,
+    sourceSection,
   ].filter(Boolean).join("\n\n");
 }
 

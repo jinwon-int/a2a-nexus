@@ -919,3 +919,46 @@ test("bridge fails closed on array-only output with a structured record", () => 
     rmSync(tempDir, { recursive: true, force: true });
   }
 });
+
+test("worker message precedes the source bundle so budget truncation never drops the task (#1903)", () => {
+  const tempDir = mkdtempSync(join(tmpdir(), "claude-a2a-bridge-layout-"));
+  try {
+    const promptPath = join(tempDir, "claude-prompt.txt");
+    const fakeClaudePath = stubClaude(tempDir, [
+      "import { writeFileSync } from 'node:fs';",
+      "const args = process.argv.slice(2);",
+      "const prompt = args[args.indexOf('-p') + 1];",
+      "writeFileSync(process.env.CAPTURE_PROMPT_PATH, prompt);",
+      "const analysis = { status: 'done', summary: 'ok', findings: [], risks: [], recommendations: [], evidenceRefs: [] };",
+      "console.log(JSON.stringify({ type: 'result', subtype: 'success', result: JSON.stringify(analysis), num_turns: 1, duration_ms: 100 }));",
+    ], { CAPTURE_PROMPT_PATH: promptPath });
+    const payloadFile = join(tempDir, "payload.json");
+    writeFileSync(payloadFile, JSON.stringify({
+      mode: "analysis-only",
+      sourceBundle: { files: [{ repo: "x/y", path: "big.ts", content: "x".repeat(150_000) }] },
+    }));
+
+    const result = spawnSync(bridgePath, bridgeArgs("TASK-QUESTION-MARKER-1903: analyze the contract"), {
+      encoding: "utf8",
+      env: {
+        ...process.env,
+        A2A_CLAUDE_MODEL: "",
+        A2A_CLAUDE_EFFORT: "",
+        A2A_CLAUDE_CODE_BIN: fakeClaudePath,
+        A2A_ANALYSIS_PAYLOAD_FILE: payloadFile,
+        CAPTURE_PROMPT_PATH: promptPath,
+      },
+    });
+    assert.equal(result.status, 0, result.stderr);
+    const prompt = readFileSync(promptPath, "utf8");
+    const messageIdx = prompt.indexOf("Original worker message:");
+    const sourceIdx = prompt.indexOf("Read-only source bundle");
+    assert.ok(messageIdx >= 0, "worker message section missing");
+    assert.ok(sourceIdx >= 0, "source bundle section missing");
+    assert.ok(messageIdx < sourceIdx, "worker message must precede the source bundle");
+    assert.ok(prompt.includes("TASK-QUESTION-MARKER-1903"), "worker message was truncated away by the prompt budget");
+    assert.match(prompt, /truncated by claude-a2a-analysis-bridge prompt budget/);
+  } finally {
+    rmSync(tempDir, { recursive: true, force: true });
+  }
+});
