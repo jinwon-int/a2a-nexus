@@ -155,6 +155,18 @@ export function evaluateBenchmark(manifest, results) {
       ) {
         fail(`${pair.sampleId}/${adapter} runtime evidence does not match the manifest arm`);
       }
+      // #1895: the handler-attributed adapter label is not enough — the label
+      // once said claude_code while the task actually executed the piri bridge
+      // (stale worker env hints, 2026-08-19). Require the executed bridge
+      // binary basename (handler output.bridgeCommand) and cross-check it
+      // against the claimed adapter.
+      const bridgeBinary = typeof arm.runtimeEvidence?.bridgeBinary === "string" ? arm.runtimeEvidence.bridgeBinary.trim() : "";
+      if (!bridgeBinary) fail(`${pair.sampleId}/${adapter} runtime evidence is missing the executed bridge binary`);
+      const ADAPTER_BINARY_SIGNAL = { piri: "piri", claude_code: "claude", codex: "codex", hermes: "hermes" };
+      const binarySignal = ADAPTER_BINARY_SIGNAL[expectedRuntime.adapter] ?? expectedRuntime.adapter;
+      if (!bridgeBinary.toLowerCase().includes(binarySignal)) {
+        fail(`${pair.sampleId}/${adapter} adapter label does not match the executed bridge binary: ${bridgeBinary}`);
+      }
       const telemetry = arm.output?.executionTelemetry;
       if (telemetry?.schemaVersion !== "a2a.analysis-execution-telemetry.v1") fail(`${pair.sampleId}/${adapter} is missing execution telemetry`);
       if (telemetry.truncated === true) fail(`${pair.sampleId}/${adapter} telemetry is truncated`);

@@ -18,6 +18,15 @@ Before the first arm:
 
 1. Verify both workers are idle and report the intended adapter/provider/model.
    Preserve a timestamped registry/config evidence reference in each arm.
+   **The worker's env/metadata label is not sufficient adapter evidence**: a
+   true adapter arm requires the target worker's resolved analysis bridge
+   command (`A2A_PIRI_ANALYSIS_BIN` → `A2A_HERMES_ANALYSIS_BIN` →
+   `A2A_OPENCLAW_ANALYSIS_BIN` → `OPENCLAW_BIN` → default) to actually point at
+   the matching bridge binary. On 2026-08-19 a worker labeled `claude_code`
+   (stale runtime-flavor hint) executed `piri-a2a-analysis-bridge.mjs` for
+   every "claude" arm. The evaluator therefore requires each arm's
+   `runtimeEvidence.bridgeBinary` (the handler-reported `bridgeCommand`
+   basename) and fails closed when it contradicts the claimed adapter.
 2. Record a provider-backed Kimi 5-hour remaining-request snapshot. Do not run
    when fewer than 100 of 359 requests remain or telemetry is unavailable.
 3. Bind every task to manifest `baseRevision` and compute one canonical input
