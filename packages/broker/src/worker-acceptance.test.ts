@@ -5,6 +5,7 @@ import { once } from "node:events";
 import {
   parseTaskAcceptance,
   runTaskAcceptance,
+  normalizeBridgeAcceptanceReport,
   validateAcceptanceEvidence,
   DEFAULT_ACCEPTANCE_TIMEOUT_MS,
   LEGACY_SINGLETON_ACCEPTANCE_CUTOFF_ISO,
@@ -12,7 +13,7 @@ import {
 import { A2ABrokerWorker, createBuiltinWorkerHandler, validateTaskCompletionEvidence } from "./worker.js";
 import { createBrokerServer } from "./server.js";
 import { emptySnapshot, type BrokerStateStore } from "./core/store.js";
-import type { TaskRecord } from "./core/types.js";
+import type { TaskRecord, TaskResult } from "./core/types.js";
 
 const EDGE_SECRET = "acceptance-test-edge-secret";
 
@@ -313,4 +314,51 @@ test("integration: failing acceptance fails the task instead of completing it", 
     await worker.stop().catch(() => {});
     await server.close();
   }
+});
+
+// ---------------------------------------------------------------------------
+// normalizeBridgeAcceptanceReport (#1904)
+// ---------------------------------------------------------------------------
+
+test("bridge report: a valid bridge-executed verdict normalizes to a smoke validation", () => {
+  const report = normalizeBridgeAcceptanceReport({
+    status: "pr_opened",
+    acceptance: {
+      kind: "smoke",
+      verdict: "pass",
+      metrics: { acceptance: true, exitCode: 0, expectedExitCode: 0, durationMs: 12, timedOut: false },
+      note: "acceptance passed: grep -qi disposable README.md",
+      acceptanceContext: "piri-host-patch-clone",
+    },
+  } as unknown as TaskResult);
+  assert.equal(report?.kind, "smoke");
+  assert.equal(report?.verdict, "pass");
+  assert.equal(report?.metrics?.exitCode, 0);
+  assert.match(report?.note ?? "", /acceptance passed/);
+});
+
+test("bridge report: fail verdict keeps its note; malformed reports return null", () => {
+  const failing = normalizeBridgeAcceptanceReport({
+    acceptance: {
+      kind: "smoke",
+      verdict: "fail",
+      metrics: { exitCode: 1, expectedExitCode: 0 },
+      note: "acceptance failed (exit 1, expected 0): grep x README.md",
+    },
+  } as unknown as TaskResult);
+  assert.equal(failing?.verdict, "fail");
+  assert.match(failing?.note ?? "", /acceptance failed/);
+
+  assert.equal(normalizeBridgeAcceptanceReport(undefined), null);
+  assert.equal(normalizeBridgeAcceptanceReport({} as TaskResult), null);
+  assert.equal(
+    normalizeBridgeAcceptanceReport({ acceptance: { verdict: "maybe" } } as unknown as TaskResult),
+    null,
+  );
+  // A non-record metrics field still normalizes to defaulted metrics, not a null.
+  const defaulted = normalizeBridgeAcceptanceReport({
+    acceptance: { verdict: "pass", metrics: "nope" },
+  } as unknown as TaskResult);
+  assert.equal(defaulted?.verdict, "pass");
+  assert.equal(defaulted?.metrics?.exitCode, -1);
 });

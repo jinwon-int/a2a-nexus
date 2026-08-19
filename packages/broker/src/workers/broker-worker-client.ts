@@ -16,7 +16,7 @@ import { setTimeout as delay } from "node:timers/promises";
 import { signTaskResultProvenance } from "a2a-attestation";
 import { normalizeBrokerUrl } from "./worker-env.js";
 import { optionalTrimmed } from "./worker-metadata.js";
-import { parseTaskAcceptance, runTaskAcceptance, validateAcceptanceEvidence } from "../worker-acceptance.js";
+import { parseTaskAcceptance, runTaskAcceptance, normalizeBridgeAcceptanceReport, validateAcceptanceEvidence } from "../worker-acceptance.js";
 import { validateReviewEvidence } from "../worker-review.js";
 import { validateGithubTaskCompletionEvidence } from "../core/github-task-completion.js";
 import { normalizeTaskResult } from "../core/broker-task-record-normalizers.js";
@@ -337,7 +337,12 @@ export class A2ABrokerWorker {
         return true;
       }
       if (acceptance?.spec) {
-        const validation = runTaskAcceptance(acceptance.spec);
+        // #1904: a handler-side bridge that owns a real workspace (host piri
+        // patch clone) may have already executed the spec where the patched
+        // files live and reported the verdict as result.acceptance. Prefer it;
+        // the worker cwd has no checkout, so a local spawn could only fail.
+        const reported = normalizeBridgeAcceptanceReport(outcome.result);
+        const validation = reported ?? runTaskAcceptance(acceptance.spec);
         outcome.result = { ...(outcome.result ?? {}), validation };
         if (validation.verdict !== "pass") {
           stopTaskHeartbeat?.();
