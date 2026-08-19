@@ -179,7 +179,12 @@ function isPlainRecord(value: unknown): value is Record<string, unknown> {
  * (worker-cwd execution), preserving pre-#1904 behavior.
  */
 export function normalizeBridgeAcceptanceReport(result: TaskResult | undefined): TaskValidationPayload | null {
-  const raw = (result as unknown as Record<string, unknown> | undefined)?.acceptance;
+  // Two legitimate positions: external bridge handlers that return the raw
+  // bridge response put it at result.acceptance, while a2a-task-handler.mjs
+  // maps the bridge response into result.output (runOpenClawBridge) and the
+  // verdict lands at result.output.acceptance. Accept both.
+  const record = result as unknown as Record<string, unknown> | undefined;
+  const raw = record?.acceptance ?? (isPlainRecord(record?.output) ? record.output.acceptance : undefined);
   if (!isPlainRecord(raw)) return null;
   const verdict = raw.verdict;
   if (verdict !== "pass" && verdict !== "fail") return null;
