@@ -806,9 +806,20 @@ function analysisBridgeTelemetry(command, env = process.env) {
       bridgeCommand: commandName,
     };
   }
-  const combined = [
-    commandText,
-    commandName,
+  // #1895: the resolved bridge command is the ground truth of what actually
+  // runs — detect the adapter from it first. Legacy env hints (CLAUDE_BIN,
+  // runtime flavor, metadata notes) may describe OTHER lanes on the same
+  // worker (e.g. a claude patch lane on a piri-analysis node) and must not
+  // outrank the real binary. 2026-08-19: jingun/dungae-style configs labeled
+  // piri-bridge analysis runs as claude_code.
+  const detectAdapter = (signal) => {
+    if (signal.includes("codex")) return "codex";
+    if (signal.includes("claude")) return "claude_code";
+    if (signal.includes("hermes")) return "hermes";
+    if (signal.includes("piri")) return "piri";
+    return "";
+  };
+  const envHints = [
     safeText(env.A2A_CLAUDE_CODE_BIN, ""),
     safeText(env.CLAUDE_BIN, ""),
     safeText(env.A2A_WORKER_RUNTIME_FLAVOR, ""),
@@ -819,10 +830,7 @@ function analysisBridgeTelemetry(command, env = process.env) {
   // It is piri now because that is what the fleet actually runs
   // (CCC_AGENT_PROVIDER=piri on the worker nodes since 2026-08-05), and because
   // the openclaw default could only fail: see analysisBridgeCommand below.
-  let bridgeAdapter = "piri";
-  if (combined.includes("codex")) bridgeAdapter = "codex";
-  else if (combined.includes("claude")) bridgeAdapter = "claude_code";
-  else if (combined.includes("hermes")) bridgeAdapter = "hermes";
+  const bridgeAdapter = detectAdapter(`${commandText}\n${commandName}`.toLowerCase()) || detectAdapter(envHints) || "piri";
   return {
     analysisKind: "analysis_bridge",
     bridgeAdapter,
@@ -2715,6 +2723,7 @@ export const __test = Object.freeze({
   DEFAULT_OPENCLAW_TIMEOUT_SEC,
   DEFAULT_RUNNER_TASK_TIMEOUT_MS,
   normalizeAnalysisBridgeAdapter,
+  analysisBridgeTelemetry,
   normalizedPatchCommandProfile,
   resolveNodeScriptInvocation,
   hostPatchBridgeCommand,

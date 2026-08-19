@@ -1918,6 +1918,33 @@ test("Termux glibc node wrappers use the node wrapper instead of process.execPat
   assert.deepEqual(invocation.args, ["/data/data/com.termux/files/home/a2a-broker-worker/scripts/claude-a2a-patch-bridge.mjs", "agent"]);
 });
 
+test("analysis bridge adapter label follows the resolved bridge command over claude-ish env hints (#1895)", () => {
+	// Regression for the 2026-08-19 A/B mislabel: nodes run the piri bridge via
+	// *_ANALYSIS_BIN while legacy env (claude patch lane bin, stale runtime
+	// flavor, metadata notes) still says claude — the label must follow the
+	// binary that actually runs.
+	const env = {
+		A2A_CLAUDE_CODE_BIN: "/usr/bin/claude",
+		A2A_WORKER_RUNTIME_FLAVOR: "claude-code",
+		WORKER_METADATA_JSON: JSON.stringify({ harness: "claude", note: "patch lane via claude-a2a-patch-bridge" }),
+	};
+	const telemetry = __test.analysisBridgeTelemetry("/opt/a2a-broker-worker/scripts/piri-a2a-analysis-bridge.mjs", env);
+	assert.equal(telemetry.bridgeAdapter, "piri");
+	assert.equal(telemetry.bridgeCommand, "piri-a2a-analysis-bridge.mjs");
+});
+
+test("analysis bridge adapter label detects each adapter from the command path (#1895)", () => {
+	assert.equal(__test.analysisBridgeTelemetry("/opt/x/claude-a2a-analysis-bridge.mjs", {}).bridgeAdapter, "claude_code");
+	assert.equal(__test.analysisBridgeTelemetry("/opt/x/codex-a2a-analysis-bridge.mjs", {}).bridgeAdapter, "codex");
+	assert.equal(__test.analysisBridgeTelemetry("/opt/x/hermes-a2a-analysis-bridge.mjs", {}).bridgeAdapter, "hermes");
+	assert.equal(__test.analysisBridgeTelemetry("/opt/x/piri-a2a-analysis-bridge.mjs", {}).bridgeAdapter, "piri");
+});
+
+test("analysis bridge adapter label falls back to env hints for generic wrapper commands (#1895)", () => {
+	const telemetry = __test.analysisBridgeTelemetry("/opt/bin/custom-wrapper.sh", { A2A_WORKER_RUNTIME_FLAVOR: "claude-code" });
+	assert.equal(telemetry.bridgeAdapter, "claude_code");
+});
+
 test("Claude bridge env is attributed as claude_code without OpenClaw success labels (#948)", () => {
   const dir = mkdtempSync(join(tmpdir(), "a2a-claude-telemetry-"));
   const bin = join(dir, "claude-a2a-analysis-bridge.mjs");
