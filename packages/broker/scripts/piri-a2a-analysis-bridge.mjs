@@ -31,6 +31,7 @@
  */
 import { spawnSync } from "node:child_process";
 import { existsSync, mkdirSync, readFileSync, readdirSync, realpathSync, rmSync, statSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
 import { basename, dirname, isAbsolute, join, relative, resolve, sep } from "node:path";
 import { piriExecutionTelemetry } from "./lib/analysis-execution-telemetry.mjs";
 import { sourceCarrierStatsFromEnv } from "./lib/source-carriers.mjs";
@@ -46,6 +47,14 @@ const DEFAULT_PIRI_THINKING = "high";
 const DEFAULT_PIRI_IMAGE = "a2a-docker-runner-piri:latest";
 const DEFAULT_PIRI_CONFIG_DIR = "/var/lib/a2a-runner/piri-dir";
 const DEFAULT_PIRI_WORK_ROOT = "/var/lib/a2a-runner/piri-tasks";
+// Native exec (#1899): Docker-less worker hosts (Termux/Android mobile
+// workers) reuse the repo contract schema on the host and a work root that
+// does not assume the docker-runner's /var/lib layout.
+const DEFAULT_NATIVE_WORK_ROOT = join(tmpdir(), "a2a-piri-analysis-tasks");
+const DEFAULT_NATIVE_SCHEMA_PATH = resolve(import.meta.dirname, "../../docker-runner/docker/piri-analysis-output.schema.json");
+// Linux MAX_ARG_STRLEN is 128 KiB per argument; the default prompt budget is
+// 96 KiB. Fail closed above this line instead of surfacing E2BIG at spawn.
+const NATIVE_PROMPT_ARGV_LIMIT_BYTES = 120 * 1024;
 const BRIDGE_CONTRACT_VERSION = "piri-a2a-analysis.v1";
 const STRUCTURED_OUTPUT_MODE = "piri_output_schema";
 const IMAGE_SCHEMA_PATH = "/etc/a2a-runner/piri-analysis-output.schema.json";
@@ -521,6 +530,33 @@ function sanitizeName(value) {
 	return safeText(value, "task").replace(/[^A-Za-z0-9_.-]+/g, "-").replace(/^-+|-+$/g, "").slice(0, 48) || "task";
 }
 
+function piriExecMode(env) {
+	const mode = safeText(env.A2A_PIRI_EXEC, "docker").toLowerCase();
+	if (mode === "docker") return "docker";
+	if (mode === "native") return "native";
+	throw new Error(`unsupported A2A_PIRI_EXEC "${mode}" (expected "docker" or "native")`);
+}
+
+// Same precedence as the host patch bridge (#1886): explicit CLI, the fleet
+// launcher path, then PATH lookup.
+function resolveNativePiriBin(env) {
+	const explicit = safeText(env.A2A_PIRI_CLI);
+	if (explicit) return explicit;
+	if (existsSync("/opt/piri/piri-test.sh")) return "/opt/piri/piri-test.sh";
+	return "piri";
+}
+
+function nativeSchemaPath(env) {
+	return safeText(env.A2A_PIRI_SCHEMA_PATH, DEFAULT_NATIVE_SCHEMA_PATH);
+}
+
+function nativeCredentialFile(env) {
+	const explicit = safeText(env.A2A_PIRI_AUTH_FILE, "");
+	if (explicit) return explicit;
+	const home = safeText(env.HOME, "");
+	return home ? join(home, ".piri", "agent", "auth.json") : "";
+}
+
 function bridgeError({ code, stage, failureShape, message, elapsedMs, context }) {
 	const detail = {
 		code,
@@ -574,31 +610,41 @@ function normalizeStringArray(value) {
 }
 
 /**
- * Run piri in the runner image with the schema-locked analysis contract.
- * The task workdir is bind-mounted at /work so the model reads the prompt
- * from a file (no argv budget) and the content-free progress file lands on
- * the host while the task is still running.
+ * Run piri with the schema-locked analysis contract. Both lanes share the
+ * workdir layout (prompt.md + artifacts/piri-progress.jsonl) so progress-file
+ * telemetry and the piri #14 exit-code mapping stay identical.
  */
-function runPiri({ prompt, model, thinking, timeoutSec, sessionId, env }) {
+function runPiri({ prompt, model, thinking, timeoutSec, sessionId, env, native = null }) {
+	const taskName = sanitizeName(sessionId || `piri-${Date.now()}`);
+	const workRoot = safeText(env.A2A_PIRI_WORK_ROOT, native ? DEFAULT_NATIVE_WORK_ROOT : DEFAULT_PIRI_WORK_ROOT);
+	const workDir = join(workRoot, taskName);
+	mkdirSync(join(workDir, "artifacts"), { recursive: true });
+	writeFileSync(join(workDir, "prompt.md"), prompt, "utf8");
+	// piri opens progress files in append mode. Reset this invocation's file so
+	// a retried/reused session id cannot inherit request counts from an older run.
+	writeFileSync(join(workDir, "artifacts", "piri-progress.jsonl"), "", "utf8");
+	return native
+		? runPiriNative({ model, thinking, timeoutSec, env, workDir, native })
+		: runPiriDocker({ model, thinking, timeoutSec, env, workDir, taskName });
+}
+
+/**
+ * Docker lane: the task workdir is bind-mounted at /work so the model reads
+ * the prompt from a file (no argv budget) and the content-free progress file
+ * lands on the host while the task is still running.
+ */
+function runPiriDocker({ model, thinking, timeoutSec, env, workDir, taskName }) {
 	const image = safeText(env.A2A_PIRI_RUNNER_IMAGE, DEFAULT_PIRI_IMAGE);
 	const configDir = safeText(env.A2A_PIRI_CONFIG_DIR || env.A2A_DOCKER_RUNNER_PIRI_CONFIG_DIR, DEFAULT_PIRI_CONFIG_DIR);
 	const authFile = join(configDir, "agent", "auth.json");
 	if (!existsSync(authFile)) {
 		throw new Error(`piri credential file does not exist: ${authFile}`);
 	}
-	const workRoot = safeText(env.A2A_PIRI_WORK_ROOT, DEFAULT_PIRI_WORK_ROOT);
 	const network = safeText(env.A2A_PIRI_NETWORK, "bridge");
 	const dockerBin = safeText(env.A2A_PIRI_DOCKER_BIN, "docker");
-	const taskName = sanitizeName(sessionId || `piri-${Date.now()}`);
-	const workDir = join(workRoot, taskName);
 	const authMountPoint = join(workDir, "piri-home", ".piri", "agent", "auth.json");
-	mkdirSync(join(workDir, "artifacts"), { recursive: true });
 	mkdirSync(join(workDir, "piri-home", ".piri", "agent"), { recursive: true });
 	writeFileSync(authMountPoint, "", { mode: 0o600 });
-	writeFileSync(join(workDir, "prompt.md"), prompt, "utf8");
-	// piri opens progress files in append mode. Reset this invocation's file so
-	// a retried/reused session id cannot inherit request counts from an older run.
-	writeFileSync(join(workDir, "artifacts", "piri-progress.jsonl"), "", "utf8");
 
 	const inner = [
 		"set -euo pipefail",
@@ -634,6 +680,34 @@ function runPiri({ prompt, model, thinking, timeoutSec, sessionId, env }) {
 	return { child, elapsedMs, workDir };
 }
 
+/**
+ * Native lane (#1899): run the host piri CLI directly on Docker-less worker
+ * hosts, mirroring the host patch bridge (#1886). The worker environment is
+ * inherited verbatim, so piri reads its own credential store under $HOME — no
+ * credential bytes are copied anywhere. The prompt rides argv under the
+ * NATIVE_PROMPT_ARGV_LIMIT_BYTES guard (enforced in main before spawn).
+ */
+function runPiriNative({ model, thinking, timeoutSec, env, workDir, native }) {
+	const args = [
+		"-p", readFileSync(join(workDir, "prompt.md"), "utf8"),
+		"--model", model,
+		"--thinking", thinking,
+		"--approve",
+		"--no-session",
+		"--output-schema", native.schemaPath,
+		"--progress-file", join(workDir, "artifacts", "piri-progress.jsonl"),
+	];
+	const startedAt = Date.now();
+	const child = spawnSync(native.piriBin, args, {
+		env,
+		encoding: "utf8",
+		maxBuffer: 50 * 1024 * 1024,
+		timeout: (timeoutSec + 30) * 1000,
+		killSignal: "SIGKILL",
+	});
+	return { child, elapsedMs: Date.now() - startedAt, workDir };
+}
+
 function shellQuote(value) {
 	return `'${String(value).replace(/'/g, `'\\''`)}'`;
 }
@@ -662,6 +736,65 @@ function main() {
 
 	const model = safeText(env.A2A_PIRI_ANALYSIS_MODEL || env.A2A_PIRI_MODEL, DEFAULT_PIRI_MODEL);
 	const thinking = safeText(env.A2A_PIRI_ANALYSIS_THINKING || env.A2A_PIRI_THINKING, DEFAULT_PIRI_THINKING);
+	// #1899: resolve the exec lane before anything else so configuration
+	// mistakes surface as invocation errors, never as a half-configured run.
+	let execMode = "docker";
+	try {
+		execMode = piriExecMode(env);
+	} catch (error) {
+		bridgeError({
+			code: "analysis_bridge_invocation_invalid",
+			stage: "preflight",
+			failureShape: "handler_artifact_failure",
+			message: error instanceof Error ? error.message : String(error),
+			elapsedMs: 0,
+			context: {
+				requestedModel: safeText(flags.model, undefined),
+				requestedThinking: safeText(flags.thinking, undefined),
+				actualRuntimeModel: model,
+				modelInheritanceMode: "bridge_env_pin",
+				sourceCarrierStats: sourceCarrierStatsFromEnv(env),
+			},
+		});
+	}
+	let native = null;
+	if (execMode === "native") {
+		const schema = nativeSchemaPath(env);
+		if (!existsSync(schema)) {
+			bridgeError({
+				code: "analysis_bridge_invocation_invalid",
+				stage: "preflight",
+				failureShape: "handler_artifact_failure",
+				message: `piri analysis output schema does not exist: ${schema}`,
+				elapsedMs: 0,
+				context: {
+					requestedModel: safeText(flags.model, undefined),
+					requestedThinking: safeText(flags.thinking, undefined),
+					actualRuntimeModel: model,
+					modelInheritanceMode: "bridge_env_pin",
+					sourceCarrierStats: sourceCarrierStatsFromEnv(env),
+				},
+			});
+		}
+		const credential = nativeCredentialFile(env);
+		if (credential && !existsSync(credential)) {
+			bridgeError({
+				code: "analysis_bridge_credential_unavailable",
+				stage: "preflight",
+				failureShape: "handler_artifact_failure",
+				message: `piri credential file does not exist: ${credential}`,
+				elapsedMs: 0,
+				context: {
+					requestedModel: safeText(flags.model, undefined),
+					requestedThinking: safeText(flags.thinking, undefined),
+					actualRuntimeModel: model,
+					modelInheritanceMode: "bridge_env_pin",
+					sourceCarrierStats: sourceCarrierStatsFromEnv(env),
+				},
+			});
+		}
+		native = { piriBin: resolveNativePiriBin(env), schemaPath: schema };
+	}
 	// #1725 finding 1 / #1815 item 1: bounded diagnostic context attached to
 	// every failure record so a schema-exhausted lane carries the model fields,
 	// source counts, and (once the run started) execution telemetry including
@@ -673,6 +806,7 @@ function main() {
 		actualRuntimeModel: model,
 		modelInheritanceMode: "bridge_env_pin",
 		sourceCarrierStats: sourceCarrierStatsFromEnv(env),
+		piriExecMode: execMode,
 		...extra,
 	});
 	const timeoutSec = positiveIntegerEnv(flags.timeout || env.A2A_PIRI_ANALYSIS_TIMEOUT_SEC, DEFAULT_TIMEOUT_SEC);
@@ -680,10 +814,22 @@ function main() {
 		buildPiriPrompt({ message, payload, sourceBundle, flags, model, thinking }),
 		env,
 	);
+	// Native lane: the prompt rides a single argv element, so guard the kernel
+	// per-argument limit here instead of surfacing E2BIG at spawn.
+	if (execMode === "native" && Buffer.byteLength(prompt, "utf8") > NATIVE_PROMPT_ARGV_LIMIT_BYTES) {
+		bridgeError({
+			code: "analysis_bridge_invocation_invalid",
+			stage: "preflight",
+			failureShape: "handler_artifact_failure",
+			message: `native exec prompt is ${Buffer.byteLength(prompt, "utf8")} bytes, above the ${NATIVE_PROMPT_ARGV_LIMIT_BYTES}-byte per-argument argv budget; lower A2A_PIRI_ANALYSIS_MAX_PROMPT_BYTES or use the docker lane`,
+			elapsedMs: 0,
+			context: failureContext(),
+		});
+	}
 
 	let invocation;
 	try {
-		invocation = runPiri({ prompt, model, thinking, timeoutSec, sessionId: safeText(flags["session-id"], ""), env });
+		invocation = runPiri({ prompt, model, thinking, timeoutSec, sessionId: safeText(flags["session-id"], ""), env, native });
 	} catch (error) {
 		bridgeError({
 			code: "analysis_bridge_credential_unavailable",
@@ -787,6 +933,7 @@ function main() {
 			requestedThinking: safeText(flags.thinking, undefined),
 			actualRuntimeModel: model,
 			modelInheritanceMode: "bridge_env_pin",
+			piriExecMode: execMode,
 			executionTelemetry,
 		};
 	} catch (error) {

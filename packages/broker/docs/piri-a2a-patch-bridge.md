@@ -22,4 +22,27 @@ A2A_PIRI_CLI=/opt/piri/piri-test.sh   # optional piri executable
 
 `OPENCLAW_BIN` remains a legacy fallback for the host patch command. Do not point `A2A_PIRI_BIN` at the piri CLI itself.
 
+### Analysis lane on Docker-less hosts (`A2A_PIRI_EXEC=native`, #1899)
+
+The analysis bridge defaults to the docker lane above. Worker hosts without a
+Docker runtime (Termux/Android mobile workers) set `A2A_PIRI_EXEC=native` to run
+the host piri CLI directly — same schema contract, progress-file telemetry, and
+piri #14 exit-code mapping, with the worker environment inherited verbatim so
+piri reads its own credential store under `$HOME/.piri/agent/auth.json`:
+
+```
+A2A_PIRI_EXEC=native
+A2A_PIRI_CLI=/data/.../piri/pi-test.sh     # host piri CLI (same precedence as the patch bridge)
+A2A_PIRI_MODEL=zai/glm-5.3
+A2A_PIRI_THINKING=high
+A2A_PIRI_WORK_ROOT=$HOME/.a2a/piri-analysis-tasks   # optional; defaults to os.tmpdir()
+A2A_PIRI_SCHEMA_PATH=...                          # optional; defaults to the repo contract schema
+```
+
+Preflight fail-closed mapping: invalid `A2A_PIRI_EXEC`, a missing schema, or a
+prompt above the native per-argument argv budget exits as
+`analysis_bridge_invocation_invalid` (handler_artifact_failure); a missing host
+credential exits as `analysis_bridge_credential_unavailable`. Docker lanes are
+unaffected when `A2A_PIRI_EXEC` is unset or `docker`.
+
 No live provider or GitHub calls in unit tests. Fleet deploy/restart is a separate operator step after merge.

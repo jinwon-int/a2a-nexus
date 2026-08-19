@@ -289,6 +289,7 @@ test("full flow emits the OpenClaw envelope around schema-valid piri output", ()
 			requestedThinking: "t",
 			actualRuntimeModel: "kimi-coding/k3",
 			modelInheritanceMode: "bridge_env_pin",
+			piriExecMode: "docker",
 			executionTelemetry: response.executionTelemetry,
 		});
 		assert.equal(response.bridgeAdapter, "piri");
@@ -310,6 +311,180 @@ test("full flow emits the OpenClaw envelope around schema-valid piri output", ()
 		assert.ok(dockerArgs.includes(`${join(configDir, "agent", "auth.json")}:/work/piri-home/.piri/agent/auth.json:ro`));
 		assert.doesNotMatch(dockerArgs.join(" "), /run\/secrets\/piri-dir|cp -a/);
 		assert.equal(existsSync(join(workRoot, "sess-1", "piri-home", ".piri", "agent", "auth.json")), false);
+	} finally {
+		rmSync(dir, { recursive: true, force: true });
+	}
+});
+
+// ── Native exec mode (A2A_PIRI_EXEC=native, #1899) ───────────────────────
+// Docker-less worker hosts (Termux/Android mobile workers) run the host piri
+// CLI directly, mirroring the host patch bridge (#1886). The fake piri writes
+// its argv so the tests can assert the exact invocation contract.
+
+function makeFakePiri(dir, behavior) {
+	const bin = join(dir, "fake-piri.mjs");
+	writeFileSync(bin, `#!/usr/bin/env node
+import { mkdirSync, writeFileSync } from "node:fs";
+import { dirname } from "node:path";
+const behavior = ${JSON.stringify(behavior)};
+if (behavior.argsFile) writeFileSync(behavior.argsFile, JSON.stringify(process.argv.slice(2)));
+const progressIndex = process.argv.indexOf("--progress-file");
+if (progressIndex !== -1 && Array.isArray(behavior.progressLines)) {
+  mkdirSync(dirname(process.argv[progressIndex + 1]), { recursive: true });
+  writeFileSync(process.argv[progressIndex + 1], behavior.progressLines.join("\\n") + "\\n");
+}
+if (behavior.stdout) process.stdout.write(behavior.stdout);
+if (behavior.stderr) process.stderr.write(behavior.stderr);
+process.exit(behavior.exitCode ?? 0);
+`);
+	chmodSync(bin, 0o755);
+	return bin;
+}
+
+function makeNativeHome(dir) {
+	const home = join(dir, "home");
+	mkdirSync(join(home, ".piri", "agent"), { recursive: true });
+	writeFileSync(join(home, ".piri", "agent", "auth.json"), "{}\n", { mode: 0o600 });
+	return home;
+}
+
+function bridgeErrorDetail(stderr) {
+	return JSON.parse(stderr.split("\n").find((line) => line.startsWith("A2A_BRIDGE_ERROR=")).slice("A2A_BRIDGE_ERROR=".length));
+}
+
+test("native exec mode (A2A_PIRI_EXEC=native) runs the host piri CLI without docker (#1899)", () => {
+	const dir = mkdtempSync(join(tmpdir(), "piri-bridge-native-"));
+	try {
+		const contract = { status: "done", summary: "native lane 완료", findings: ["f1"], risks: [], recommendations: [], evidenceRefs: [] };
+		const piri = makeFakePiri(dir, {
+			argsFile: join(dir, "piri-args.json"),
+			stdout: `${JSON.stringify(contract)}\n`,
+		});
+		const workRoot = join(dir, "tasks");
+		const child = runBridge(
+			["agent", "--local", "--session-id", "sess-native", "--message", sampleMessage({}), "--model", "req-m", "--thinking", "req-t", "--timeout", "30", "--json"],
+			{
+				A2A_PIRI_EXEC: "native",
+				A2A_PIRI_CLI: piri,
+				A2A_PIRI_WORK_ROOT: workRoot,
+				A2A_PIRI_MODEL: "zai/glm-5.3",
+				A2A_PIRI_THINKING: "high",
+				// Native mode must never resolve the docker binary.
+				A2A_PIRI_DOCKER_BIN: "/nonexistent/docker",
+				HOME: makeNativeHome(dir),
+			},
+		);
+		assert.equal(child.status, 0, child.stderr);
+		const response = JSON.parse(JSON.parse(child.stdout).payloads[0].text);
+		assert.equal(response.status, "done");
+		assert.equal(response.piriExecMode, "native");
+		assert.equal(response.actualRuntimeModel, "zai/glm-5.3");
+		assert.equal(response.modelInheritanceMode, "bridge_env_pin");
+		assert.equal(response.requestedModel, "req-m");
+		const args = JSON.parse(readFileSync(join(dir, "piri-args.json"), "utf8"));
+		// Env pin beats the OpenClaw-shaped --model/--thinking flags, same as docker.
+		assert.equal(args[args.indexOf("--model") + 1], "zai/glm-5.3");
+		assert.equal(args[args.indexOf("--thinking") + 1], "high");
+		assert.ok(args.includes("--approve"));
+		assert.ok(args.includes("--no-session"));
+		// Default schema is the repo contract, host-side.
+		assert.equal(args[args.indexOf("--output-schema") + 1], resolve(import.meta.dirname, "../../docker-runner/docker/piri-analysis-output.schema.json"));
+		const progressPath = args[args.indexOf("--progress-file") + 1];
+		assert.ok(progressPath.startsWith(workRoot), progressPath);
+		assert.match(args[args.indexOf("-p") + 1], /output schema/);
+		// Prompt + progress artifacts land in the host workdir, docker-free.
+		assert.equal(existsSync(join(workRoot, "sess-native", "prompt.md")), true);
+		assert.equal(existsSync(join(workRoot, "sess-native", "artifacts", "piri-progress.jsonl")), true);
+	} finally {
+		rmSync(dir, { recursive: true, force: true });
+	}
+});
+
+test("invalid A2A_PIRI_EXEC fails closed as an invocation error before any spawn (#1899)", () => {
+	const child = runBridge(
+		["agent", "--local", "--message", sampleMessage({}), "--timeout", "30", "--json"],
+		{ A2A_PIRI_EXEC: "podman", A2A_PIRI_CLI: "/nonexistent/piri", A2A_PIRI_DOCKER_BIN: "/nonexistent/docker" },
+	);
+	assert.equal(child.status, 1);
+	const detail = bridgeErrorDetail(child.stderr);
+	assert.equal(detail.code, "analysis_bridge_invocation_invalid");
+	assert.equal(detail.stage, "preflight");
+	assert.equal(detail.failureShape, "handler_artifact_failure");
+	assert.match(child.stderr, /A2A_PIRI_EXEC/);
+});
+
+test("native preflight rejects a missing output schema before spawning piri (#1899)", () => {
+	const dir = mkdtempSync(join(tmpdir(), "piri-bridge-native-schema-"));
+	try {
+		const child = runBridge(
+			["agent", "--local", "--message", sampleMessage({}), "--timeout", "30", "--json"],
+			{
+				A2A_PIRI_EXEC: "native",
+				A2A_PIRI_CLI: "/nonexistent/piri",
+				A2A_PIRI_SCHEMA_PATH: join(dir, "missing.schema.json"),
+				HOME: makeNativeHome(dir),
+			},
+		);
+		assert.equal(child.status, 1);
+		const detail = bridgeErrorDetail(child.stderr);
+		assert.equal(detail.code, "analysis_bridge_invocation_invalid");
+		assert.equal(detail.stage, "preflight");
+		assert.equal(detail.failureShape, "handler_artifact_failure");
+		assert.match(child.stderr, /schema does not exist/);
+	} finally {
+		rmSync(dir, { recursive: true, force: true });
+	}
+});
+
+test("native preflight fails closed when the host piri credential is absent (#1899)", () => {
+	const dir = mkdtempSync(join(tmpdir(), "piri-bridge-native-cred-"));
+	try {
+		const bareHome = join(dir, "bare-home");
+		mkdirSync(bareHome, { recursive: true });
+		const child = runBridge(
+			["agent", "--local", "--message", sampleMessage({}), "--timeout", "30", "--json"],
+			{
+				A2A_PIRI_EXEC: "native",
+				A2A_PIRI_CLI: "/nonexistent/piri",
+				HOME: bareHome,
+			},
+		);
+		assert.equal(child.status, 1);
+		const detail = bridgeErrorDetail(child.stderr);
+		assert.equal(detail.code, "analysis_bridge_credential_unavailable");
+		assert.equal(detail.stage, "preflight");
+		assert.equal(detail.failureShape, "handler_artifact_failure");
+		assert.match(child.stderr, /credential file does not exist/);
+	} finally {
+		rmSync(dir, { recursive: true, force: true });
+	}
+});
+
+test("native mode rejects prompts above the per-argument argv budget instead of failing at spawn (#1899)", () => {
+	const dir = mkdtempSync(join(tmpdir(), "piri-bridge-native-argv-"));
+	try {
+		const payloadFile = join(dir, "payload.json");
+		writeFileSync(payloadFile, JSON.stringify({
+			sourceBundle: { files: [{ path: "big.ts", content: "x".repeat(140 * 1024) }] },
+		}));
+		const child = runBridge(
+			["agent", "--local", "--message", sampleMessage({}), "--timeout", "30", "--json"],
+			{
+				A2A_PIRI_EXEC: "native",
+				A2A_PIRI_CLI: "/nonexistent/piri",
+				A2A_ANALYSIS_PAYLOAD_FILE: payloadFile,
+				A2A_PIRI_ANALYSIS_MAX_FILE_BYTES: String(200 * 1024),
+				A2A_PIRI_ANALYSIS_MAX_TOTAL_BYTES: String(200 * 1024),
+				A2A_PIRI_ANALYSIS_MAX_PROMPT_BYTES: String(200 * 1024),
+				HOME: makeNativeHome(dir),
+			},
+		);
+		assert.equal(child.status, 1);
+		const detail = bridgeErrorDetail(child.stderr);
+		assert.equal(detail.code, "analysis_bridge_invocation_invalid");
+		assert.equal(detail.stage, "preflight");
+		assert.equal(detail.failureShape, "handler_artifact_failure");
+		assert.match(child.stderr, /argv budget/);
 	} finally {
 		rmSync(dir, { recursive: true, force: true });
 	}
@@ -368,6 +543,7 @@ test("failure records carry execution telemetry, model fields, and source counts
 		assert.equal(detail.requestedThinking, "low");
 		assert.equal(detail.actualRuntimeModel, "zai/glm-5.2");
 		assert.equal(detail.modelInheritanceMode, "bridge_env_pin");
+		assert.equal(detail.piriExecMode, "docker");
 		// source counts echo what the lane actually saw.
 		assert.deepEqual(detail.sourceCarrierStats, { sourceFiles: 3, totalFiles: 3, totalBytes: 4096 });
 		// execution telemetry incl. the classified schema-retry reasons.
