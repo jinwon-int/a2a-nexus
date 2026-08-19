@@ -1007,6 +1007,12 @@ export interface WorkerView extends WorkerRecord {
    */
   substantiveAnalysisReady: boolean;
   /**
+   * Derived (#1895): human-readable reason when the worker's adapter/harness
+   * metadata contradicts the resolved analysis handler path. Absent when the
+   * metadata is consistent or carries no evaluable signal.
+   */
+  analysisAdapterMismatch?: string;
+  /**
    * True only when workerPlane is "online" and managementPlane is not
    * "disconnected". Operators may override this decision externally.
    */
