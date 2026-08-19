@@ -810,8 +810,8 @@ function analysisBridgeTelemetry(command, env = process.env) {
   // runs — detect the adapter from it first. Legacy env hints (CLAUDE_BIN,
   // runtime flavor, metadata notes) may describe OTHER lanes on the same
   // worker (e.g. a claude patch lane on a piri-analysis node) and must not
-  // outrank the real binary. 2026-08-19: jingun/dungae-style configs labeled
-  // piri-bridge analysis runs as claude_code.
+  // outrank the real binary. 2026-08-19: fleet workers labeled piri-bridge
+  // analysis runs as claude_code this way.
   const detectAdapter = (signal) => {
     if (signal.includes("codex")) return "codex";
     if (signal.includes("claude")) return "claude_code";
