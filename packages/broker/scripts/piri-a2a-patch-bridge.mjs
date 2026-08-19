@@ -243,7 +243,10 @@ function commitPushAndCreatePr({ cloneDir, repo, branch, issueNumber, filesChang
 	].join("\n");
 	const pr = runTool(
 		"gh",
-		["pr", "create", "--repo", repo, "--title", title, "--body", body],
+		// --head is required: a "gh repo clone --depth 1" checkout has a single-branch
+		// fetch refspec, so a freshly pushed branch gets no local remote-tracking ref
+		// and gh aborts with "you must first push the current branch to a remote".
+		["pr", "create", "--repo", repo, "--head", branch, "--title", title, "--body", body],
 		{ cwd: cloneDir, env, timeoutMs: 120_000 },
 	);
 	if (pr.status !== 0) throw new Error(safeText(pr.stderr, "gh pr create failed"));
