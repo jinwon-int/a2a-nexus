@@ -547,14 +547,30 @@ function resolveNativePiriBin(env) {
 }
 
 function nativeSchemaPath(env) {
-	return safeText(env.A2A_PIRI_SCHEMA_PATH, DEFAULT_NATIVE_SCHEMA_PATH);
+	return resolve(safeText(env.A2A_PIRI_SCHEMA_PATH, DEFAULT_NATIVE_SCHEMA_PATH));
 }
 
 function nativeCredentialFile(env) {
-	const explicit = safeText(env.A2A_PIRI_AUTH_FILE, "");
-	if (explicit) return explicit;
 	const home = safeText(env.HOME, "");
 	return home ? join(home, ".piri", "agent", "auth.json") : "";
+}
+
+function isRegularFile(path) {
+	if (!path) return false;
+	try {
+		return statSync(path).isFile();
+	} catch {
+		return false;
+	}
+}
+
+function requireDockerCredential(env) {
+	const configDir = safeText(env.A2A_PIRI_CONFIG_DIR || env.A2A_DOCKER_RUNNER_PIRI_CONFIG_DIR, DEFAULT_PIRI_CONFIG_DIR);
+	const authFile = join(configDir, "agent", "auth.json");
+	if (!existsSync(authFile)) {
+		throw new Error(`piri credential file does not exist: ${authFile}`);
+	}
+	return authFile;
 }
 
 function bridgeError({ code, stage, failureShape, message, elapsedMs, context }) {
@@ -615,6 +631,9 @@ function normalizeStringArray(value) {
  * telemetry and the piri #14 exit-code mapping stay identical.
  */
 function runPiri({ prompt, model, thinking, timeoutSec, sessionId, env, native = null }) {
+	// Preserve the Docker-default preflight order: do not create a workdir or
+	// persist the prompt when its credential is unavailable.
+	const dockerAuthFile = native ? "" : requireDockerCredential(env);
 	const taskName = sanitizeName(sessionId || `piri-${Date.now()}`);
 	const workRoot = safeText(env.A2A_PIRI_WORK_ROOT, native ? DEFAULT_NATIVE_WORK_ROOT : DEFAULT_PIRI_WORK_ROOT);
 	const workDir = join(workRoot, taskName);
@@ -625,7 +644,7 @@ function runPiri({ prompt, model, thinking, timeoutSec, sessionId, env, native =
 	writeFileSync(join(workDir, "artifacts", "piri-progress.jsonl"), "", "utf8");
 	return native
 		? runPiriNative({ model, thinking, timeoutSec, env, workDir, native })
-		: runPiriDocker({ model, thinking, timeoutSec, env, workDir, taskName });
+		: runPiriDocker({ model, thinking, timeoutSec, env, workDir, taskName, authFile: dockerAuthFile });
 }
 
 /**
@@ -633,13 +652,8 @@ function runPiri({ prompt, model, thinking, timeoutSec, sessionId, env, native =
  * the prompt from a file (no argv budget) and the content-free progress file
  * lands on the host while the task is still running.
  */
-function runPiriDocker({ model, thinking, timeoutSec, env, workDir, taskName }) {
+function runPiriDocker({ model, thinking, timeoutSec, env, workDir, taskName, authFile }) {
 	const image = safeText(env.A2A_PIRI_RUNNER_IMAGE, DEFAULT_PIRI_IMAGE);
-	const configDir = safeText(env.A2A_PIRI_CONFIG_DIR || env.A2A_DOCKER_RUNNER_PIRI_CONFIG_DIR, DEFAULT_PIRI_CONFIG_DIR);
-	const authFile = join(configDir, "agent", "auth.json");
-	if (!existsSync(authFile)) {
-		throw new Error(`piri credential file does not exist: ${authFile}`);
-	}
 	const network = safeText(env.A2A_PIRI_NETWORK, "bridge");
 	const dockerBin = safeText(env.A2A_PIRI_DOCKER_BIN, "docker");
 	const authMountPoint = join(workDir, "piri-home", ".piri", "agent", "auth.json");
@@ -699,6 +713,9 @@ function runPiriNative({ model, thinking, timeoutSec, env, workDir, native }) {
 	];
 	const startedAt = Date.now();
 	const child = spawnSync(native.piriBin, args, {
+		// `--approve` may enable filesystem tools. Keep the native analysis lane
+		// rooted in its task workdir rather than the worker installation checkout.
+		cwd: workDir,
 		env,
 		encoding: "utf8",
 		maxBuffer: 50 * 1024 * 1024,
@@ -760,7 +777,7 @@ function main() {
 	let native = null;
 	if (execMode === "native") {
 		const schema = nativeSchemaPath(env);
-		if (!existsSync(schema)) {
+		if (!isRegularFile(schema)) {
 			bridgeError({
 				code: "analysis_bridge_invocation_invalid",
 				stage: "preflight",
@@ -777,12 +794,12 @@ function main() {
 			});
 		}
 		const credential = nativeCredentialFile(env);
-		if (credential && !existsSync(credential)) {
+		if (!isRegularFile(credential)) {
 			bridgeError({
 				code: "analysis_bridge_credential_unavailable",
 				stage: "preflight",
 				failureShape: "handler_artifact_failure",
-				message: `piri credential file does not exist: ${credential}`,
+				message: `piri credential file does not exist: ${credential || "$HOME/.piri/agent/auth.json"}`,
 				elapsedMs: 0,
 				context: {
 					requestedModel: safeText(flags.model, undefined),
@@ -806,7 +823,6 @@ function main() {
 		actualRuntimeModel: model,
 		modelInheritanceMode: "bridge_env_pin",
 		sourceCarrierStats: sourceCarrierStatsFromEnv(env),
-		piriExecMode: execMode,
 		...extra,
 	});
 	const timeoutSec = positiveIntegerEnv(flags.timeout || env.A2A_PIRI_ANALYSIS_TIMEOUT_SEC, DEFAULT_TIMEOUT_SEC);
@@ -933,7 +949,6 @@ function main() {
 			requestedThinking: safeText(flags.thinking, undefined),
 			actualRuntimeModel: model,
 			modelInheritanceMode: "bridge_env_pin",
-			piriExecMode: execMode,
 			executionTelemetry,
 		};
 	} catch (error) {
