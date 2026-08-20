@@ -44,3 +44,15 @@ pass_count, invariant_ok, status: keep|discard|crash, description}`.
 런별 `tapFile` 경로로 실패 테스트를 즉시 특정할 수 있다 — attempt 11처럼
 "1/3 non-green인데 대상 테스트 미상"으로 끝나는 경우를 방지. non-green
 시도는 attempts.jsonl `description`에 failing test ID를 함께 적는다.
+
+## 채택 기록 (#1796)
+
+PoC retained target `{"testConcurrency": 12}`는 2026-08-21부터 실제 broker
+테스트 커맨드에 배선됐다: `packages/broker/scripts/test-manifest.json`의
+step-17(대형 `node --test` 단계)에 `--test-concurrency=12`로 적용. 이제 이
+하니스는 참조 0건의 고아가 아니라 CI 배선의 근거(provenance) 문서다.
+
+주의(외삽): PoC 측정은 pinned 2페이즈(`tsc` + `dist/core/*.test.js`,
+8코어 VPS) 기준이고, step-17은 그 superset(스크립트 테스트 + 전 dist 디렉터리)
+다. CI 러너 코어 수도 다를 수 있으므로 채택 후 broker job wall-clock을 관찰하고,
+회귀 시 step-17에서 플래그 하나만 제거하면 롤백된다.
