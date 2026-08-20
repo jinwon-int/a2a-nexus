@@ -165,3 +165,43 @@ export function validateAcceptanceEvidence(task: TaskRecord, result?: TaskResult
         : `task declares payload.acceptance but ${Array.isArray(result?.validations) ? "result.validations[kind=smoke]" : "result.validation"}.verdict is "${verdict}" (requires "pass")`,
   };
 }
+
+function isPlainRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
+/**
+ * Normalize an acceptance verdict a handler-side bridge already executed in
+ * its own workspace (#1904). The host piri patch bridge runs the spec inside
+ * its task clone — the only place the patched files exist — and embeds the
+ * verdict as `result.acceptance`. Returns null when the report is absent or
+ * malformed so the caller falls back to the local runTaskAcceptance spawn
+ * (worker-cwd execution), preserving pre-#1904 behavior.
+ */
+export function normalizeBridgeAcceptanceReport(result: TaskResult | undefined): TaskValidationPayload | null {
+  // Two legitimate positions: external bridge handlers that return the raw
+  // bridge response put it at result.acceptance, while a2a-task-handler.mjs
+  // maps the bridge response into result.output (runOpenClawBridge) and the
+  // verdict lands at result.output.acceptance. Accept both.
+  const record = result as unknown as Record<string, unknown> | undefined;
+  const raw = record?.acceptance ?? (isPlainRecord(record?.output) ? record.output.acceptance : undefined);
+  if (!isPlainRecord(raw)) return null;
+  const verdict = raw.verdict;
+  if (verdict !== "pass" && verdict !== "fail") return null;
+  const metrics = isPlainRecord(raw.metrics) ? raw.metrics : {};
+  const note = typeof raw.note === "string" && raw.note.trim()
+    ? raw.note
+    : `bridge acceptance verdict: ${verdict}`;
+  return {
+    kind: "smoke",
+    verdict,
+    metrics: {
+      acceptance: true,
+      exitCode: typeof metrics.exitCode === "number" ? metrics.exitCode : -1,
+      expectedExitCode: typeof metrics.expectedExitCode === "number" ? metrics.expectedExitCode : 0,
+      durationMs: typeof metrics.durationMs === "number" ? metrics.durationMs : 0,
+      timedOut: metrics.timedOut === true,
+    },
+    note,
+  };
+}

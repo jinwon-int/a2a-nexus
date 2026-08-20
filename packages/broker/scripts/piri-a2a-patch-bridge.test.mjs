@@ -201,3 +201,84 @@ test("normalizePatchResponse fills contract fields", () => {
 	assert.equal(normalized.bridgeAdapter, "piri");
 	assert.deepEqual(normalized.tests, []);
 });
+
+function handlerShapedMessage(payloadExtra = {}) {
+	return [
+		"You are A2A worker gongyung. Complete this GitHub development assignment end-to-end.",
+		`Repository: jinwon-int/a2a-fanout-sandbox`,
+		`Issue: #1`,
+		`Issue URL: https://github.com/jinwon-int/a2a-fanout-sandbox/issues/1`,
+		`Payload JSON:\n${JSON.stringify({ mode: "github-propose-patch", repo: "jinwon-int/a2a-fanout-sandbox", acceptance: { command: ["grep", "-qi", "disposable", "README.md"], expectExitCode: 0, timeoutMs: 10000 }, ...payloadExtra }, null, 2)}`,
+	].join("\n\n");
+}
+
+test("parseAcceptanceSpec extracts the acceptance spec from a handler-shaped prompt", () => {
+	const spec = __test.parseAcceptanceSpec(handlerShapedMessage());
+	assert.deepEqual(spec, {
+		command: ["grep", "-qi", "disposable", "README.md"],
+		expectExitCode: 0,
+		timeoutMs: 10000,
+	});
+});
+
+test("parseAcceptanceSpec applies contract defaults and rejects malformed shapes", () => {
+	const defaults = __test.parseAcceptanceSpec(
+		handlerShapedMessage({ acceptance: { command: ["true"] } }),
+	);
+	assert.deepEqual(defaults, { command: ["true"], expectExitCode: 0, timeoutMs: 120000 });
+
+	assert.equal(__test.parseAcceptanceSpec("no payload marker here"), null);
+	assert.equal(
+		__test.parseAcceptanceSpec(handlerShapedMessage({ acceptance: { command: [] } })),
+		null,
+	);
+	assert.equal(
+		__test.parseAcceptanceSpec(handlerShapedMessage({ acceptance: { command: ["true"], expectExitCode: "zero" } })),
+		null,
+	);
+	// Truncated payload JSON (jsonForPrompt budget) must fail open to null.
+	assert.equal(
+		__test.parseAcceptanceSpec(`${handlerShapedMessage()}\n... [truncated 99999 chars]`),
+		null,
+	);
+});
+
+test("runAcceptanceInClone executes in the clone cwd and reports a smoke verdict", () => {
+	const dir = mkdtempSync(join(tmpdir(), "piri-patch-accept-"));
+	try {
+		writeFileSync(join(dir, "README.md"), "This repository is disposable.\n");
+		const passing = __test.runAcceptanceInClone({
+			spec: { command: ["grep", "-qi", "disposable", "README.md"], expectExitCode: 0, timeoutMs: 10000 },
+			cloneDir: dir,
+			env: process.env,
+		});
+		assert.equal(passing.verdict, "pass");
+		assert.equal(passing.kind, "smoke");
+		assert.equal(passing.acceptanceContext, "piri-host-patch-clone");
+		assert.equal(passing.metrics.exitCode, 0);
+
+		const failing = __test.runAcceptanceInClone({
+			spec: { command: ["grep", "-qi", "absent", "README.md"], expectExitCode: 0, timeoutMs: 10000 },
+			cloneDir: dir,
+			env: process.env,
+		});
+		assert.equal(failing.verdict, "fail");
+		// Exit code for a no-match grep differs by grep build (GNU: 1 no-match /
+		// 2 file error; toybox: 1) — assert the failure note shape, not the code.
+		assert.match(failing.note, /acceptance failed \(exit [0-9]+, expected 0\): grep -qi absent README\.md/);
+	} finally {
+		rmSync(dir, { recursive: true, force: true });
+	}
+});
+
+test("normalizePatchResponse passes the bridge acceptance verdict through", () => {
+	const normalized = __test.normalizePatchResponse({
+		status: "pr_opened",
+		summary: "ok",
+		acceptance: { kind: "smoke", verdict: "pass", metrics: { acceptance: true } },
+	});
+	assert.equal(normalized.acceptance.verdict, "pass");
+
+	const without = __test.normalizePatchResponse({ status: "pr_opened", summary: "ok" });
+	assert.equal(without.acceptance, undefined);
+});

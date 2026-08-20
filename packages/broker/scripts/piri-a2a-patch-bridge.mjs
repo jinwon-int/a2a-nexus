@@ -34,6 +34,10 @@ const DEFAULT_PIRI_THINKING = "high";
 const DEFAULT_PIRI_CONFIG_DIR = "/var/lib/a2a-runner/piri-dir";
 const BRIDGE_CONTRACT_VERSION = "piri-a2a-patch.v1";
 const BOOTSTRAP_LEAK = /(^|\/)(\.env|\.piri|AGENTS\.md|SOUL\.md|\.openclaw)(\/|$)/i;
+// Mirrors packages/broker/src/worker-acceptance.ts (#1218) so the bridge-side
+// execution follows the same acceptance contract rules as the worker client.
+const DEFAULT_ACCEPTANCE_TIMEOUT_MS = 120_000;
+const MAX_ACCEPTANCE_NOTE_COMMAND_LENGTH = 200;
 
 function die(message, code = 1) {
 	console.error(message);
@@ -96,6 +100,82 @@ function parseTaskContext(message) {
 	return {
 		repo: repoMatch ? safeText(repoMatch[1]) : "",
 		issueNumber: issueHash ? issueHash[1] : issueUrlHash ? issueUrlHash[1] : "",
+	};
+}
+
+/**
+ * Parse task.payload.acceptance from the handler prompt (#1904).
+ *
+ * The handler prompt ends with `Payload JSON:\n{...}` (a2a-task-handler.mjs
+ * runOpenClawBridge), so the LAST occurrence of that marker is the task
+ * payload. Truncated or malformed payloads return null — the worker client
+ * then falls back to its own execution. All shape rules mirror the broker's
+ * acceptance contract (#1218): command is a non-empty string argv,
+ * expectExitCode an integer (default 0), timeoutMs a positive finite number
+ * (default 120s).
+ */
+function parseAcceptanceSpec(message) {
+	const marker = "Payload JSON:\n";
+	const idx = safeText(message).lastIndexOf(marker);
+	if (idx === -1) return null;
+	const rest = safeText(message).slice(idx + marker.length).trim();
+	if (!rest.startsWith("{")) return null;
+	let payload;
+	try {
+		payload = JSON.parse(rest);
+	} catch {
+		return null;
+	}
+	if (!payload || typeof payload !== "object" || Array.isArray(payload)) return null;
+	const raw = payload.acceptance;
+	if (!raw || typeof raw !== "object" || Array.isArray(raw)) return null;
+	const { command } = raw;
+	if (!Array.isArray(command) || command.length === 0 || !command.every((part) => typeof part === "string" && part.length > 0)) {
+		return null;
+	}
+	let expectExitCode = 0;
+	if (raw.expectExitCode !== undefined) {
+		if (typeof raw.expectExitCode !== "number" || !Number.isInteger(raw.expectExitCode)) return null;
+		expectExitCode = raw.expectExitCode;
+	}
+	let timeoutMs = DEFAULT_ACCEPTANCE_TIMEOUT_MS;
+	if (raw.timeoutMs !== undefined) {
+		if (typeof raw.timeoutMs !== "number" || !Number.isFinite(raw.timeoutMs) || raw.timeoutMs <= 0) return null;
+		timeoutMs = raw.timeoutMs;
+	}
+	return { command, expectExitCode, timeoutMs };
+}
+
+/**
+ * Execute the acceptance spec inside the patch clone (#1904). The worker
+ * client cannot run it there: its cwd has no checkout, and this bridge
+ * deletes the clone in `finally`. The verdict mirrors the worker's
+ * TaskValidationPayload smoke shape (worker-acceptance.ts runTaskAcceptance)
+ * so the client adopts it instead of re-running a doomed local spawn.
+ */
+function runAcceptanceInClone({ spec, cloneDir, env }) {
+	const startedAt = Date.now();
+	const [bin, ...args] = spec.command;
+	const run = runTool(bin, args, { cwd: cloneDir, env, timeoutMs: spec.timeoutMs });
+	const durationMs = Date.now() - startedAt;
+	const timedOut = Boolean(run.error) && run.error.code === "ETIMEDOUT";
+	const exitCode = typeof run.status === "number" ? run.status : -1;
+	const pass = !run.error && exitCode === spec.expectExitCode;
+	const commandNote = spec.command.join(" ").slice(0, MAX_ACCEPTANCE_NOTE_COMMAND_LENGTH);
+	return {
+		kind: "smoke",
+		verdict: pass ? "pass" : "fail",
+		metrics: {
+			acceptance: true,
+			exitCode,
+			expectedExitCode: spec.expectExitCode,
+			durationMs,
+			timedOut,
+		},
+		note: pass
+			? `acceptance passed: ${commandNote}`
+			: `acceptance failed (${timedOut ? "timeout" : `exit ${exitCode}, expected ${spec.expectExitCode}`}): ${commandNote}`,
+		acceptanceContext: "piri-host-patch-clone",
 	};
 }
 
@@ -243,7 +323,10 @@ function commitPushAndCreatePr({ cloneDir, repo, branch, issueNumber, filesChang
 	].join("\n");
 	const pr = runTool(
 		"gh",
-		["pr", "create", "--repo", repo, "--title", title, "--body", body],
+		// --head is required: a "gh repo clone --depth 1" checkout has a single-branch
+		// fetch refspec, so a freshly pushed branch gets no local remote-tracking ref
+		// and gh aborts with "you must first push the current branch to a remote".
+		["pr", "create", "--repo", repo, "--head", branch, "--title", title, "--body", body],
 		{ cwd: cloneDir, env, timeoutMs: 120_000 },
 	);
 	if (pr.status !== 0) throw new Error(safeText(pr.stderr, "gh pr create failed"));
@@ -265,6 +348,9 @@ function normalizePatchResponse(result) {
 		filesChanged: Array.isArray(result.filesChanged) ? result.filesChanged : [],
 		tests: Array.isArray(result.tests) ? result.tests : [],
 		risks: Array.isArray(result.risks) ? result.risks : [],
+		...(result.acceptance && typeof result.acceptance === "object"
+			? { acceptance: result.acceptance }
+			: {}),
 		bridgeAdapter: "piri",
 		bridgeContractVersion: BRIDGE_CONTRACT_VERSION,
 	};
@@ -291,6 +377,9 @@ function runPatch(message, flags, env = process.env) {
 	const cloneDir = join(workspace, "repo");
 	const piriHome = join(workspace, "piri-home");
 	const branch = `a2a/piri-host-${Date.now().toString(36)}`;
+	// Acceptance (#1904): the clone is the only place the patched files exist,
+	// so the spec (if any) must execute here, before the `finally` cleanup.
+	const acceptanceSpec = parseAcceptanceSpec(message);
 	try {
 		copyPiriHome(resolvePiriConfigDir(env), piriHome);
 		cloneAndBranch({ repo: context.repo, cloneDir, branch, env });
@@ -336,11 +425,15 @@ function runPatch(message, flags, env = process.env) {
 			});
 		}
 		const stdout = safeText(child.stdout);
+		const acceptanceReport = acceptanceSpec
+			? runAcceptanceInClone({ spec: acceptanceSpec, cloneDir, env })
+			: null;
 		if (/^BLOCK:/m.test(stdout)) {
 			emitSuccess({
 				status: "blocked",
 				summary: stdout.split("\n").find((line) => line.startsWith("BLOCK:")) || stdout,
 				filesChanged: [],
+				...(acceptanceReport ? { acceptance: acceptanceReport } : {}),
 			});
 			return;
 		}
@@ -372,6 +465,7 @@ function runPatch(message, flags, env = process.env) {
 			branch,
 			prUrl,
 			filesChanged,
+			...(acceptanceReport ? { acceptance: acceptanceReport } : {}),
 		});
 	} catch (error) {
 		bridgeError({
@@ -407,6 +501,8 @@ export const __test = Object.freeze({
 	parseArgs,
 	isPatchIntent,
 	parseTaskContext,
+	parseAcceptanceSpec,
+	runAcceptanceInClone,
 	buildPiriPatchPrompt,
 	resolvePiriBin,
 	resolvePiriConfigDir,
