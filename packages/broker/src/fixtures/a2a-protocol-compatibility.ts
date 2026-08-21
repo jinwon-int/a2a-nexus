@@ -73,7 +73,8 @@ export const A2A_COMPATIBILITY_PROFILE = {
    * A2A 1.0 version negotiation on /a2a/jsonrpc. Documented deviation: a
    * missing/empty A2A-Version header is served with 1.0 semantics instead of
    * the spec's 0.3 fallback (0.3 semantics are unsupported); an explicit
-   * version we cannot honor is rejected with -32600.
+   * version we cannot honor is rejected with the A2A-reserved
+   * VersionNotSupportedError (-32009), not a generic -32600 Invalid Request.
    */
   /**
    * Result wire shapes: clients that explicitly negotiate A2A-Version get
@@ -86,6 +87,8 @@ export const A2A_COMPATIBILITY_PROFILE = {
     header: "A2A-Version",
     supported: ["1.0"],
     emptyFallback: "1.0 (spec says 0.3; deviation documented — 0.3 unsupported)",
+    /** VersionNotSupportedError, A2A reserved family (#1912 D5 readback). */
+    versionNotSupportedErrorCode: -32009,
   },
   taskStates: [
     "submitted",
@@ -127,6 +130,18 @@ export const A2A_COMPATIBILITY_PROFILE = {
     "claimed|running": { when: "checkpoint.state === \"awaiting_operator\"", state: "input-required" },
   },
   projectionKeys: ["artifacts", "id", "kind", "metadata", "status"],
+  /**
+   * ListTasks result ordering (#1912 D11). The spec requires status timestamp
+   * descending; the broker's native read path sorts by createdAt, which
+   * diverges once a task is claimed, run, or completed. The spec shape
+   * re-sorts on `status.timestamp` (= completedAt ?? updatedAt) with an
+   * ascending task-id tiebreak so the order is total and stable. The
+   * header-less legacy envelope keeps createdAt ordering.
+   */
+  listTasksOrdering: {
+    spec: "status.timestamp desc, task id asc",
+    legacy: "createdAt desc (plugin-era ordering retained)",
+  },
   metadataKeys: [
     "approval",
     "assignedWorkerId",

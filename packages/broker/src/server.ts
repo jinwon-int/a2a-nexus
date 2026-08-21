@@ -648,11 +648,14 @@ export function createBrokerServer(options: BrokerServerOptions = {}): BrokerSer
         "Set A2A_PEER_CREDENTIALS_FILE to a root-only registry file, or use mode auto/off.",
     );
   }
+  // No casts: AgentCard now expresses the signed wire shape, so the compiler
+  // sees the signatures the broker actually serves (#1912 F2). The unsigned
+  // branch returns the card untouched, leaving the `signatures` key absent.
   const agentCard = signingKeyPem
-    ? signAgentCard(unsignedAgentCard as unknown as Record<string, unknown>, {
+    ? signAgentCard(unsignedAgentCard, {
         privateKeyPem: signingKeyPem,
         kid: agentCardSigningKid,
-      }) as unknown as typeof unsignedAgentCard
+      })
     : unsignedAgentCard;
   const peerStatusService = peerStatusEnabled
     ? new PeerStatusService(broker, { workerOfflineAfterMs: workerOfflineAfterSec * 1000 })
