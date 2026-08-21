@@ -70,6 +70,24 @@ export const A2A_COMPATIBILITY_PROFILE = {
    */
   signedAgentCards: { optIn: true, algs: ["EdDSA", "ES256"], canonicalization: "RFC 8785" },
   /**
+   * Declared authentication (#1912 D8). The broker authenticates at the edge
+   * with a shared secret header; the card declares it as a ProtoJSON
+   * `apiKeySecurityScheme` — the encoding used by a2a.proto v1.0.1, the
+   * generated schema bundle, and the official a2a-js v1.0.1 types — but only
+   * when the deployment actually enforces it.
+   *
+   * `x-a2a-requester-id` is excluded on purpose: it is a caller-asserted
+   * identity, not a credential.
+   */
+  declaredSecurity: {
+    scheme: "apiKeySecurityScheme",
+    header: "x-a2a-edge-secret",
+    schemeId: "edgeSecret",
+    declaredOnlyWhenEnforced: true,
+    excludedFromDeclaration: ["x-a2a-requester-id"],
+    publicUnauthenticatedRoutes: ["/livez", "/.well-known/agent-card.json"],
+  },
+  /**
    * A2A 1.0 version negotiation on /a2a/jsonrpc. Documented deviation: a
    * missing/empty A2A-Version header is served with 1.0 semantics instead of
    * the spec's 0.3 fallback (0.3 semantics are unsupported); an explicit

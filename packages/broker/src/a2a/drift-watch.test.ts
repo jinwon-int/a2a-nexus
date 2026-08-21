@@ -505,3 +505,85 @@ test("drift: every AgentInterface declares its own protocolVersion (#1912 D7)", 
     "card-level and interface-level protocol versions must not drift apart",
   );
 });
+
+test("drift: the card declares the edge-secret scheme only when it is enforced (#1912 D8)", () => {
+  const base = {
+    serviceName: "drift-broker",
+    publicBaseUrl: "https://broker.example.com/",
+    supportsStreaming: true,
+    supportsPushNotifications: false,
+  } as const;
+
+  // Posture 1 — no edge secret configured. assertEdgeSecret() is a no-op in
+  // that case, so there is genuinely no authentication and the card MUST NOT
+  // claim any. A card that advertises auth a deployment does not enforce is
+  // worse than a card that stays silent.
+  const open = createBrokerAgentCard(base);
+  assert.equal(Object.hasOwn(open, "securitySchemes"), false);
+  assert.equal(Object.hasOwn(open, "securityRequirements"), false);
+
+  // Posture 2 — edge secret enforced. Declared as a ProtoJSON SecurityScheme
+  // oneof (`apiKeySecurityScheme`), matching a2a.proto v1.0.1 and the
+  // generated schema bundle. Note `location`, not OpenAPI's `in`.
+  const secured = createBrokerAgentCard({ ...base, edgeSecretRequired: true });
+  // Bind the profile claim to the shipped card rather than restating it.
+  const declared = A2A_COMPATIBILITY_PROFILE.declaredSecurity;
+  assert.equal(declared.declaredOnlyWhenEnforced, true);
+  assert.equal(
+    secured.securitySchemes?.[declared.schemeId]?.apiKeySecurityScheme?.name,
+    declared.header,
+  );
+  assert.deepEqual(secured.securitySchemes, {
+    edgeSecret: {
+      apiKeySecurityScheme: {
+        description:
+          "Shared edge secret required on every request except liveness and public agent-card discovery.",
+        location: "header",
+        name: "x-a2a-edge-secret",
+      },
+    },
+  });
+  // SecurityRequirement.schemes is map<string, StringList>; the edge secret
+  // carries no OAuth-style scopes, so the list is emptyrather than absent.
+  assert.deepEqual(secured.securityRequirements, [{ schemes: { edgeSecret: { list: [] } } }]);
+
+  // x-a2a-requester-id is an asserted identity, not a credential. Declaring it
+  // as a security scheme would present an unauthenticated, caller-chosen value
+  // as though it authenticated the caller.
+  assert.equal(
+    JSON.stringify(secured.securitySchemes).includes("requester-id"),
+    false,
+    "the requester-id header must never be declared as a credential",
+  );
+});
+
+test("drift: a broker booted with an edge secret serves the declaration on the wire (#1912 D8)", async () => {
+  // The card route is deliberately public — assertEdgeSecret exempts
+  // /.well-known/agent-card.json — so discovery works before a client holds
+  // the credential. That is exactly why the declaration has to be there.
+  const secured = await startTestServer({ edgeSecret: "drift-edge-secret" });
+  try {
+    const card = await (await fetch(`${secured.baseUrl}/.well-known/agent-card.json`)).json();
+    assert.equal(
+      card.securitySchemes?.edgeSecret?.apiKeySecurityScheme?.name,
+      "x-a2a-edge-secret",
+      "an enforcing broker must publish how to authenticate",
+    );
+    assert.equal(card.securitySchemes.edgeSecret.apiKeySecurityScheme.location, "header");
+    assert.deepEqual(card.securityRequirements, [{ schemes: { edgeSecret: { list: [] } } }]);
+  } finally {
+    await secured.close();
+  }
+
+  const open = await startTestServer({});
+  try {
+    const card = await (await fetch(`${open.baseUrl}/.well-known/agent-card.json`)).json();
+    assert.equal(
+      "securitySchemes" in card,
+      false,
+      "a broker enforcing nothing must not advertise a scheme",
+    );
+  } finally {
+    await open.close();
+  }
+});
