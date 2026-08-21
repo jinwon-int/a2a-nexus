@@ -7,6 +7,11 @@ import {
   recordBrokerTerminalAttempt,
   type TaskAttemptStoreSurface,
 } from "../task-attempt/producer.js";
+import {
+  buildTaskAttemptHistoryPreflight,
+  validateTaskAttemptHistoryQuery,
+  type TaskAttemptHistoryPreflightResponseV1,
+} from "../task-attempt/views.js";
 import { HeartbeatPersistThrottle } from "./heartbeat-persist-throttle.js";
 import { PendingHotStateBuffer } from "./pending-hot-state-buffer.js";
 import { computeRetainedRecordIds } from "./broker-retention-reachability.js";
@@ -406,6 +411,14 @@ export class InMemoryA2ABroker {
   private readonly taskAttemptRecordStore?: TaskAttemptStoreSurface;
   private taskAttemptRecordCounts = { emitted: 0, replayed: 0, conflicted: 0, skipped: 0 };
   private taskAttemptRecordLastSkipReason?: string;
+  private taskAttemptReadCounts = {
+    served: 0,
+    rejectedQueries: 0,
+    readErrors: 0,
+    unusableRecords: 0,
+    truncatedEntries: 0,
+  };
+  private taskAttemptReadLastRejectReason?: string;
   private readonly policyDocument?: BrokerPolicyDocument;
   private readonly injectedKnowledge?: InjectedKnowledgeSnapshot;
   private readonly finalizerVerdictEnforcement: FinalizerVerdictEnforcement;
@@ -2134,6 +2147,73 @@ export class InMemoryA2ABroker {
       enabled: this.taskAttemptRecordStore !== undefined,
       ...this.taskAttemptRecordCounts,
       lastSkipReason: this.taskAttemptRecordLastSkipReason,
+    };
+  }
+
+  /**
+   * spec §8 dispatcher same-attempt-history preflight (#1799 slice 2).
+   *
+   * **Advisory only.** The response pins `automaticDeny=false`,
+   * `retryAuthority=not_provided`, `finalizerVerdict=not_provided`,
+   * `successEvidence=false`, `automaticDispatchPolicy=none`. A caller MUST NOT
+   * turn presence, absence, count, class, or code into automatic denial,
+   * retry, finalization, success, or dispatch behavior.
+   *
+   * Returns the **public-safe closed view only** — read diagnostics stay on
+   * {@link taskAttemptReadDiagnostics}, because unusable-row and truncation
+   * counts describe broker-local store health, not the shared contract.
+   *
+   * `undefined` means "no usable view" — surface off, unusable query, or a
+   * store read that failed. It never means "no prior failures"; that is an
+   * empty `priorFailures` on a returned view. Conflating the two is how an
+   * advisory read starts making claims it cannot support.
+   *
+   * Fail-open per spec §9: this never throws and never changes task execution.
+   */
+  taskAttemptHistoryPreflight(query: unknown): TaskAttemptHistoryPreflightResponseV1 | undefined {
+    const store = this.taskAttemptRecordStore;
+    if (store === undefined) return undefined;
+    const parsed = validateTaskAttemptHistoryQuery(query);
+    if (!parsed.ok) {
+      this.taskAttemptReadCounts.rejectedQueries += 1;
+      this.taskAttemptReadLastRejectReason = parsed.reason;
+      return undefined;
+    }
+    try {
+      const records = store.listByRetryRoot(parsed.query.brokerOfRecord, parsed.query.retryRootTaskId);
+      const { preflight, diagnostics } = buildTaskAttemptHistoryPreflight(records, parsed.query);
+      this.taskAttemptReadCounts.served += 1;
+      this.taskAttemptReadCounts.unusableRecords += diagnostics.unusableRecords;
+      this.taskAttemptReadCounts.truncatedEntries += diagnostics.truncatedEntries;
+      return preflight;
+    } catch (error) {
+      this.taskAttemptReadCounts.readErrors += 1;
+      this.taskAttemptReadLastRejectReason = "read_error:" + String((error as Error)?.message ?? error);
+      return undefined;
+    }
+  }
+
+  /**
+   * Operator-only read diagnostics for the #1799 advisory views.
+   *
+   * Deliberately separate from the public projection: unusable-row and
+   * truncation counts are broker-local store health, and the spec §7/§8 views
+   * are closed shapes with nowhere to put them. Keeping them here is the
+   * public/operator projection split — and keeps truncation from being silent.
+   */
+  taskAttemptReadDiagnostics(): {
+    enabled: boolean;
+    served: number;
+    rejectedQueries: number;
+    readErrors: number;
+    unusableRecords: number;
+    truncatedEntries: number;
+    lastRejectReason?: string;
+  } {
+    return {
+      enabled: this.taskAttemptRecordStore !== undefined,
+      ...this.taskAttemptReadCounts,
+      lastRejectReason: this.taskAttemptReadLastRejectReason,
     };
   }
 
