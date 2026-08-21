@@ -8,8 +8,10 @@
 > Phase 2.4 restart-continuity, Phase 2.6 expiry-boundary, and Phase 2.7
 > claim-graph projection/rollback backend-neutral conformance harnesses
 > exercised against clearly labeled test-only deterministic reference models.
-> Phase 2.5 partition/unavailable injection is deliberately still open and is
-> not a prerequisite of the Phase 2.6 or Phase 2.7 slices.
+> Phase 2.5 partition/unavailable injection is still open, is not a
+> prerequisite of the Phase 2.6 or Phase 2.7 slices, and is now
+> backend-neutral in full after its route-level readiness assertion moved to
+> Phase 4.
 > SQLite/shared adapter implementations and their conformance,
 > retention/prune execution, runtime health/endpoint and query integration,
 > migration, and operational rollout remain unchecked.
@@ -208,17 +210,35 @@ completion remain unimplemented and unchecked.
 ### 2.5 Partition/unavailable injection
 
 - [ ] Wrap the adapter with deterministic unavailable, timeout,
-  ambiguous-commit, lost-fence, and delayed-read fault points.
+  ambiguous-commit, lost-fence, and delayed-read fault points. The existing
+  harnesses already exercise `authority_unavailable`, `ambiguous_commit`,
+  `unsafe_clock`, and `lost_ownership`; `lock_timeout` and delayed-read have
+  no existing coverage and are the real work here.
 - [ ] Assert replay/rate protected requests return unavailable, never an empty
   local decision.
 - [ ] Assert claims/renewals/completions and idempotent mutations do not apply
   while authority is unavailable.
 - [ ] Assert outbox producer transaction fails atomically; consumer may replay
   but cannot ACK/prune while partitioned.
-- [ ] Assert graph queries distinguish stale/incomplete/unavailable from
-  `no_evidence_path`.
-- [ ] Assert `/readyz` becomes false and non-liveness routes stop serving
-  while `/livez` remains liveness-only.
+- [ ] Assert a partitioned graph query serves an explicitly stale result with
+  checkpoint and lag. Phase 2.7 already proves the
+  `projection_incomplete`/`projection_unavailable`/`no_evidence_path`
+  distinction and the complete-checkpoint rule for negative evidence, so this
+  item covers only the stale-result case and must not reimplement them.
+- [ ] Assert the adapter lifecycle reports not-ready with the closed
+  readiness/lifecycle reason vocabulary while the authority is unavailable,
+  and that no state mutation applies in that state.
+
+Phase 2.5 is backend-neutral in full. The route-level readiness assertion that
+previously sat here moved to Phase 4, because `/readyz` and the non-serving
+middleware are Phase 4 deliverables that do not exist yet: `spec.md` section
+7.2 calls the endpoint *planned*, and no `/readyz` route exists in broker
+source. Asserting route behavior from Phase 2 therefore had an inverted
+dependency on a later phase, which is why this section could not be started as
+written. The backend-neutral readiness item above is the part Phase 2 can
+actually prove: the same facts are already expressed at the adapter-lifecycle
+layer, and Phase 2.4 proved one of them (`unsafe_clock` producing lifecycle
+`failed` with writes forbidden).
 
 ### 2.6 Expiry boundaries
 
@@ -348,6 +368,10 @@ than a negative judgment — the harness separately asserts that
 - [ ] Add startup version/capability/clock/schema/migration checks.
 - [ ] Add fenced singleton ownership and loss monitoring.
 - [ ] Add `/readyz` and state-authority non-serving middleware.
+- [ ] Assert `/readyz` becomes false and non-liveness routes stop serving
+  while `/livez` remains liveness-only. Moved here from section 2.5: the
+  assertion needs the middleware above, so it cannot be proved by a
+  backend-neutral Phase 2 harness.
 - [ ] Add secret-safe `stateContract` health without identity-bearing top-key
   data.
 - [ ] Add volatile replay/rate reset-risk epoch/reason signals.
