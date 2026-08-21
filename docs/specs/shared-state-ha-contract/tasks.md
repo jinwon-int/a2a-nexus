@@ -4,9 +4,11 @@
 > documentation packet and the completed bounded Phase 1 contract/parser and
 > keyspace/digest/time-evaluator/idempotency-registry/outbox-registry and
 > observability-catalog/parser/projector slices, plus the first bounded Phase
-> 2.1 lease/claim, Phase 2.2 `executeIdempotent`, and Phase 2.3 outbox-ordering
-> and Phase 2.4 restart-continuity backend-neutral conformance harnesses
-> exercised against clearly labeled test-only deterministic reference models.
+> 2.1 lease/claim, Phase 2.2 `executeIdempotent`, Phase 2.3 outbox-ordering,
+> Phase 2.4 restart-continuity, and Phase 2.6 expiry-boundary backend-neutral
+> conformance harnesses exercised against clearly labeled test-only
+> deterministic reference models. Phase 2.5 partition/unavailable injection is
+> deliberately still open and is not a prerequisite of the Phase 2.6 slice.
 > SQLite/shared adapter implementations and their conformance,
 > retention/prune execution, runtime health/endpoint and query integration,
 > migration, and operational rollout remain unchecked.
@@ -43,8 +45,10 @@
 Tests use seeded deterministic schedules, explicit barriers where concurrency
 is exercised, isolated factory-created targets, bounded operation counts, and
 no external network or production data. An injected fake clock is used only
-where the scenario has time semantics; the Phase 2.3 slice has none and the
-Phase 2.4 slice uses one fake clock for exact integer observations.
+where the scenario has time semantics; the Phase 2.3 slice has none, the
+Phase 2.4 slice uses one fake clock for exact integer observations, and the
+Phase 2.6 slice uses one fake clock advanced to exact `expiry-1`, `expiry`,
+and `expiry+1` instants.
 
 ### 2.1 Claim/lease concurrency
 
@@ -216,14 +220,42 @@ completion remain unimplemented and unchecked.
 
 ### 2.6 Expiry boundaries
 
-- [ ] For replay, rate cost, lease, and allowed idempotency-retention fixtures,
+- [x] For replay, rate cost, lease, and allowed idempotency-retention fixtures,
   test `expiry-1`, `expiry`, and `expiry+1` with the fake clock.
-- [ ] Assert physical cleanup delay never changes logical decisions.
-- [ ] Assert capacity pressure never evicts unexpired replay/idempotency
+- [x] Assert physical cleanup delay never changes logical decisions.
+- [x] Assert capacity pressure never evicts unexpired replay/idempotency
   safety records permissively.
-- [ ] Assert lease expiry requires an atomic ownership transition and advances
+- [x] Assert lease expiry requires an atomic ownership transition and advances
   the fence.
-- [ ] Assert unacknowledged outbox and claim provenance have no implicit TTL.
+- [x] Assert unacknowledged outbox and claim provenance have no implicit TTL.
+- [ ] Repeat the Phase 2.6 boundary matrix through SQLite/shared adapters and
+  separately prove authorized retention/prune execution at and after the
+  logical boundary.
+
+The checked Phase 2.6 facts above use one injected fake clock advanced through
+three exact instants, four closed boundary fixtures probed at each instant for
+twelve total probe cases, 44 existing storage V1 commands, 14 existing
+lifecycle transitions, 11 bounded aggregate snapshot controls, two
+physical-cleanup controls, one capacity-pressure control, six exact fake-clock
+controls, seven isolated targets, and a 64-command ceiling. The declared
+fixture list is checked against the closed time V1 boundary vocabulary at
+module load, so a later vocabulary addition fails closed instead of silently
+under-covering. The reference model is in-memory, test-only, non-production,
+non-SQLite, non-shared, non-conforming, detached from broker runtime, and
+makes no durable adapter claim. It deliberately retains physically expired
+rows so the slice can prove that presence is not an input to a logical
+decision; that retention is a conformance control, not a durability or
+retention-policy claim.
+
+Two boundary facts are proved only against pure evaluators rather than a
+registered runtime policy. No V1 idempotency namespace is currently registered
+as `time-bounded`, so the allowed idempotency-retention fixture uses an
+explicitly labeled test-only registration passed directly to the existing
+expiry evaluator; every registered namespace is separately asserted to remain
+`non-expiring-until-prune-proof`. Retention and prune are never executed, so a
+logically expired retention boundary is asserted to leave the retained outcome
+replayable rather than deleted. Partition/unavailable injection and readiness
+route behavior remain out of scope and unchecked in section 2.5.
 
 ### 2.7 Claim-graph projection and rollback
 
@@ -403,3 +435,26 @@ model. Test-object close/reopen retention is not a durability claim.
 SQLite/shared adapter persistence or conformance, runtime/query integration,
 retention/prune execution, migration, deployment, live rollout, and overall
 issue completion remain open.
+
+Phase 2.6 source slice:
+
+```bash
+npm run build --workspace=a2a-broker
+node --test packages/broker/dist/shared-state-expiry-conformance-v1.test.js
+npm test --workspace=a2a-broker
+npm run check
+npm run scan:public-readiness
+npm run scan:external-secrets
+npm run check:markdown-links
+git diff --check
+```
+
+The focused Phase 2.6 command proves only the backend-neutral expiry-boundary
+harness against the detached test-only reference model. The test model's
+retention of physically expired rows is a conformance control, not a
+durability or retention-policy claim, and the allowed time-bounded retention
+posture is exercised only through a test-only registration that is never added
+to the closed catalog. SQLite/shared adapter conformance, runtime integration,
+retention/prune execution, partition/unavailable injection, readiness route
+behavior, migration, deployment, live rollout, and overall issue completion
+remain out of scope.
