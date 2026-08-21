@@ -134,14 +134,24 @@ function joseEcdsaSignatureToDer(raw: Buffer, partLength: number): Buffer {
   return Buffer.concat([Buffer.from([0x30]), encodeDerLength(body.length), body]);
 }
 
-/** The exact bytes a card signature covers: JCS(card sans `signatures`). */
-export function agentCardSigningPayload(card: Record<string, unknown>): string {
-  const { signatures: _ignored, ...rest } = card;
+/**
+ * The exact bytes a card signature covers: JCS(card sans `signatures`).
+ *
+ * Takes `object` rather than `Record<string, unknown>` so typed callers (an
+ * `AgentCard`, a provenance payload) can pass their value directly. A TS
+ * interface has no index signature and so does not satisfy `Record<string,
+ * unknown>`; requiring it forced every caller to widen through `unknown`,
+ * which is how the shipped card lost its type on the signing path (#1912 F2).
+ * The single widening now happens here, at the serialization boundary, where
+ * the value is about to become JSON regardless.
+ */
+export function agentCardSigningPayload(card: object): string {
+  const { signatures: _ignored, ...rest } = card as Record<string, unknown>;
   return canonicalizeJson(rest);
 }
 
 /** Sign a card and return a copy carrying the `signatures` array. */
-export function signAgentCard<T extends Record<string, unknown>>(
+export function signAgentCard<T extends object>(
   card: T,
   options: { privateKeyPem: string; kid?: string },
 ): T & { signatures: AgentCardSignature[] } {
@@ -164,7 +174,7 @@ export function signAgentCard<T extends Record<string, unknown>>(
 
 /** Verify the first signature on a card against a PEM public key. */
 export function verifyAgentCardSignature(
-  card: Record<string, unknown> & { signatures?: AgentCardSignature[] },
+  card: object & { signatures?: AgentCardSignature[] },
   publicKeyPem: string,
 ): boolean {
   const entry = card.signatures?.[0];
