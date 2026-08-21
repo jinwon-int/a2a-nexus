@@ -226,6 +226,32 @@ specified in `spec.md`.
   in-memory, non-production, non-SQLite, non-shared, non-conforming, detached,
   retains physically expired rows only as a conformance control, and executes
   no retention or prune.
+- [x] Backend-neutral claim-graph projection and rollback conformance harness
+  interface implemented with the existing storage V1 command/result/lifecycle
+  parsers, keyspace digests, closed `graphNodeTypes` and graph-completeness
+  vocabulary, stable decision/rejection/unavailable vocabulary, a seeded
+  deterministic source order, no clock, three isolated factory-created
+  targets, a 48-command ceiling/31-command exact count, and strict
+  aggregate-only non-reflecting reports, snapshots, controls, and errors.
+- [x] Adjacent test-only deterministic claim-graph reference-model tests
+  implement and pass typed provenance-bearing source appends across all six
+  closed node types with strictly increasing sequences; one atomic projection
+  batch answered as `path_found` from graph and source references only;
+  projection paused behind the source high-water reported as
+  `projection_incomplete` with exact lag and unchanged checkpoint, plus a
+  `source_range_incomplete` rejection for a batch reaching past the durable
+  high-water; a fault between node/edge writes and the checkpoint leaving the
+  checkpoint and graph state exactly unchanged and reporting
+  `projection_unavailable`, followed by one clean retry; an injected false
+  merge reversed by its recorded inverse batch with the prior graph restored
+  and immutable source facts intact; and idempotent reapplication of the same
+  batch and the same rollback.
+- [x] Phase 2.7 negative evidence is withheld unless the checkpoint is
+  complete, matching `negativeEvidenceRequires=complete-checkpoint`; the four
+  spec section 5.6 results are declared as harness-owned vocabulary because V1
+  registers no query operation, and the evidence-path seam is a bounded
+  test-only conformance control rather than a storage query, graph service, or
+  runtime API.
 - [ ] Claim tests pass against a SQLite or shared adapter.
 - [ ] Idempotency tests pass against a SQLite or shared adapter.
 - [ ] Idempotency retention/prune execution is implemented and proven.
@@ -238,7 +264,9 @@ specified in `spec.md`.
 - [ ] Exact expiry-boundary tests repeat and pass through a SQLite/shared
   adapter, including authorized retention/prune execution at and after the
   logical boundary.
-- [ ] Claim-graph/rollback tests implemented/passing.
+- [ ] Claim-graph/rollback tests repeat and pass through a SQLite/shared
+  adapter, including a real query surface rather than a test-only
+  evidence-path control.
 - [ ] Performance thresholds measured/approved.
 
 ## G. Migration/cutover
