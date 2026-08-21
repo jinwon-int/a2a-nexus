@@ -252,6 +252,30 @@ specified in `spec.md`.
   registers no query operation, and the evidence-path seam is a bounded
   test-only conformance control rather than a storage query, graph service, or
   runtime API.
+- [x] Backend-neutral partition and unavailable-injection conformance harness
+  interface implemented with the existing storage V1 command/result/lifecycle
+  parsers, keyspace digests, the closed unavailable/lifecycle/readiness reason
+  vocabulary, a seeded deterministic fault order, no clock, five isolated
+  factory-created targets, a 64-command ceiling/18-command exact count, and
+  strict aggregate-only non-reflecting reports, snapshots, controls, and
+  errors.
+- [x] Adjacent test-only deterministic partition reference-model tests
+  implement and pass all five declared fault points mapped to their exact
+  closed unavailable reasons with no empty or permissive local decision and no
+  state mutation; protected replay and rate requests failing closed as
+  `authority_unavailable` and `lock_timeout`; claims, renewals, fenced
+  mutations, and idempotent mutations refusing to apply while the authority is
+  unavailable followed by one clean retry applying once; an outbox producer
+  transaction failing atomically with consumer replay preserved, ACK refused
+  while partitioned, and nothing pruned; and a partitioned read served as an
+  explicitly stale answer carrying checkpoint and lag.
+- [x] Phase 2.5 readiness is proved at the adapter-lifecycle layer only, and
+  the two-layer vocabulary claim is checked rather than asserted: every
+  lifecycle fault reason has an exact readiness counterpart (eight codes) and
+  the only lifecycle-only codes are normal transitions. `/readyz`, the
+  non-serving middleware, and route status remain Phase 4 and are not proved
+  here. `lock_timeout` and delayed-read had no prior coverage in the
+  repository and are exercised for the first time.
 - [ ] Claim tests pass against a SQLite or shared adapter.
 - [ ] Idempotency tests pass against a SQLite or shared adapter.
 - [ ] Idempotency retention/prune execution is implemented and proven.
@@ -260,7 +284,9 @@ specified in `spec.md`.
   implemented and proven.
 - [ ] Restart-continuity tests repeat and pass through a SQLite/shared adapter
   with actual durability and adapter clock-floor persistence.
-- [ ] Partition/unavailable tests are implemented/passing.
+- [ ] Partition/unavailable tests repeat and pass through a SQLite/shared
+  adapter against a real authority, and the Phase 4 route-level readiness
+  assertion is implemented/passing.
 - [ ] Exact expiry-boundary tests repeat and pass through a SQLite/shared
   adapter, including authorized retention/prune execution at and after the
   logical boundary.
