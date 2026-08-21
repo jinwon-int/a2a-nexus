@@ -20,7 +20,9 @@ Refs #1635.
 - [x] Admit a runtime broker-execution producer. (#1799 slice 1 — see
       [runtime.md](./runtime.md); default-off, injection-gated)
 - [ ] Admit a runtime bounded-experiment producer. (#1796 decision pending)
-- [ ] Add a consumer, route, exchange write, or dispatcher read.
+- [x] Add a dispatcher read. (#1799 slice 2 — in-process advisory read path,
+      default-off; see [runtime.md](./runtime.md). A route, exchange write, or
+      external consumer remains deferred.)
 - [x] Add a store, database schema, migration, or persistence. (#1799 slice 1
       — own SQLite file, no broker-state migration)
 - [ ] Add dispatcher enforcement, claim denial, or automatic dispatch policy.
