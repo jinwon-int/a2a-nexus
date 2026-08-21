@@ -150,7 +150,7 @@ export function signTaskResultProvenance(
 ): TaskResultProvenance {
   const resultHash = hashTaskResult(result);
   const payload = workerResultProvenancePayload({ taskId: options.taskId, claimedAt: options.claimedAt, resultHash });
-  const signed = signAgentCard(payload as unknown as Record<string, unknown>, {
+  const signed = signAgentCard(payload, {
     privateKeyPem: options.privateKeyPem,
     kid: options.workerKeyId,
   });
@@ -181,7 +181,7 @@ export function verifyTaskResultProvenance(
     taskId: options.taskId,
     claimedAt: provenance.claimedAt,
     resultHash: provenance.resultHash,
-  }) as unknown as Record<string, unknown> & { signatures?: AgentCardSignature[] };
+  });
   const ok = verifyAgentCardSignature({ ...payload, signatures: [provenance.workerSig] }, options.publicKeyPem);
   return ok ? { ok: true } : { ok: false, reason: "worker signature invalid" };
 }
@@ -197,7 +197,7 @@ export function countersignTaskResultProvenance(
     verifiedAt: options.verifiedAt,
     workerSig: provenance.workerSig,
   };
-  const signed = signAgentCard(payload as unknown as Record<string, unknown>, {
+  const signed = signAgentCard(payload, {
     privateKeyPem: options.privateKeyPem,
     kid: options.brokerKeyId,
   });
