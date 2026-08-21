@@ -185,20 +185,30 @@ export const A2A_AGENT_CARD_GOLDEN: Pick<AgentCard, "protocolVersion" | "capabil
 };
 
 /**
- * Trust-model golden: the current broker AgentCard is intentionally unsigned.
- *
- * When card signing is implemented, this constant will be updated to include
- * a valid signature envelope. Until then, the absence of `signature` and
- * `signedExtensions` is the expected and tested behavior.
+ * Trust-model golden: the broker AgentCard is unsigned by default, and card
+ * signing is an implemented opt-in, not a deferred feature. When
+ * AGENT_CARD_SIGNING_KEY_FILE is configured, server.ts signs the served card
+ * via signAgentCard() (JWS EdDSA/ES256 over the RFC 8785 canonicalized
+ * card); with no key configured the card is served unsigned, exactly as
+ * before. drift-watch pins this fixture against that shipped code path so
+ * the fixture can never again describe signing as unimplemented while the
+ * server signs (#1912 F1).
  */
 export const A2A_AGENT_CARD_TRUST_GOLDEN = {
-  /** Card signing is deferred. AgentCard.signature must remain undefined. */
+  /**
+   * Signatures are opt-in, not required: AgentCard.signatures stays absent
+   * unless a signing key is configured. This stays false only while unsigned
+   * serving remains a supported default — it no longer means "signing is
+   * unimplemented".
+   */
   signatureRequired: false,
-  /** Signed extensions are deferred. AgentCard.signedExtensions must remain undefined. */
+  /** Signed extensions remain unimplemented: no code path produces them. */
   signedExtensionsRequired: false,
   /**
-   * The broker trusts cards through transport auth (edge-secret +
-   * requester-id), not through portable signed metadata.
+   * Inbound trust only: the broker authenticates peers and workers through
+   * transport auth (edge-secret + requester-id), not through signed metadata
+   * they present. Independent of the opt-in signature the broker's own card
+   * can carry for clients to verify.
    */
   trustModel: "transport-auth-only",
   /**
