@@ -11,7 +11,10 @@
 > test-only deterministic reference models.
 > Phase 2.5 partition/unavailable injection is also complete as a
 > backend-neutral slice after its route-level readiness assertion moved to
-> Phase 4; the moved assertion remains unchecked there.
+> Phase 4; the moved assertion remains unchecked there. Sections 2.1 through
+> 2.7 are therefore complete, and the two remaining section 2 subsections are
+> blocked by design rather than by omission: 2.8 depends on section 3, and 2.9
+> depends on an operator-approved performance budget.
 > SQLite/shared adapter implementations and their conformance,
 > retention/prune execution, runtime health/endpoint and query integration,
 > migration, and operational rollout remain unchecked.
@@ -53,6 +56,13 @@ Phase 2.4 slice uses one fake clock for exact integer observations, and the
 Phase 2.6 slice uses one fake clock advanced to exact `expiry-1`, `expiry`,
 and `expiry+1` instants. The Phase 2.7 slice has no time semantics and uses no
 clock.
+
+Section numbers here are not `plan.md` phase numbers. Sections 2.1 through 2.7
+are the deterministic-harness work of `plan.md` Phase 1 and are backend-neutral
+throughout. Sections 2.8 and 2.9 are not: 2.8 corresponds to `plan.md` Phase 5,
+which the plan places *after* its SQLite adapter phase, and 2.9 has no
+`plan.md` counterpart at all. Both carry prerequisites recorded in their own
+sections. Read those before assuming either can be started from here.
 
 ### 2.1 Claim/lease concurrency
 
@@ -343,6 +353,19 @@ than a negative judgment — the harness separately asserts that
 
 ### 2.8 Migration/rollback rehearsal
 
+**Prerequisite: section 3.** This section is `plan.md` Phase 5
+("Local/offline migration rehearsal"), which the plan places after its
+Phase 2 SQLite single-writer adapter — the work filed here as section 3. The
+first item below imports into SQLite V1, so it needs V1 tables and migrations
+to exist; none do today. Section 3 is in turn gated on the unchecked
+`Obtain required approval for the packet` item in section 0, which is an
+operator decision.
+
+Its section number therefore sits inside the deterministic-harness block while
+its dependency sits after it. That ordering is deliberate in `plan.md` and is
+recorded here only so the section is not mistaken for startable
+backend-neutral work. Nothing in this section is re-scoped by that note.
+
 - [ ] Import a versioned local legacy fixture into SQLite V1 and compare
   redacted canonical digests/counts.
 - [ ] Shadow/dual-read a deterministic trace with legacy responses
@@ -357,6 +380,13 @@ than a negative judgment — the harness separately asserts that
   external service.
 
 ### 2.9 Bounded local performance characterization
+
+**Prerequisite: an operator-approved budget.** This section has no `plan.md`
+counterpart — the plan defines no performance phase — and its fourth item
+states its own gate: do not invent a pass threshold until Phase 1 records the
+workload and an operator approves the budget. Measurement without that
+approval would produce numbers with no accepted meaning, so this section is
+not startable on its own either.
 
 - [ ] Use fixed fixture sizes, seeded operation order, injected clock, one
   warm-up, and a bounded sample count; record machine/runtime metadata without
