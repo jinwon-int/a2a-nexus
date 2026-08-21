@@ -443,7 +443,7 @@ the two writers block each other (`database is locked` at the default
 than advancing the legacy store's `SQLITE_SCHEMA_VERSION`.
 
 - [x] Add V1 tables/migrations only in a separately reviewed source PR.
-- [ ] Add exclusive singleton ownership and monotonic lifecycle epoch.
+- [x] Add exclusive singleton ownership and monotonic lifecycle epoch.
 - [ ] Implement all primitives with `BEGIN IMMEDIATE` atomic boundaries.
 - [ ] Prove inline writer conformance.
 - [ ] Prove optional FIFO worker writer conformance and durable ACK behavior.
@@ -461,7 +461,29 @@ ownership/lifecycle epoch. Every table is `STRICT` and every statement is
 `IF NOT EXISTS`, so applying the schema twice is a no-op and a wrong column
 type fails closed at write time.
 
-That slice implements **no adapter behavior**: no transaction boundary, no
+Slice B adds the lifecycle and ownership seam in
+`packages/broker/src/shared-state-sqlite-adapter-v1.ts` and no primitive.
+`open` validates the schema and contract version, then acquires exclusive
+ownership and advances the lifecycle epoch inside one `BEGIN IMMEDIATE`
+transaction, so two adapters racing the same file cannot both win. A second
+adapter meeting a live owner token is refused with `ownership_conflict`
+rather than waiting or taking over: the default `busy_timeout` is zero and V1
+has no ownership lease, so waiting would convert a clear conflict into a lock
+error and taking over would be the permissive answer. A refused open consumes
+no epoch.
+
+`beginWrite` is the guard every later command must pass. It rejects outside
+`ready` and re-reads the ownership row, so a session whose token was taken
+over — or whose epoch was superseded — stops being able to write instead of
+continuing on a stale belief. `drain` stops writes before `close`, and `close`
+releases ownership without lowering the epoch, so the next acquisition
+resumes above it.
+
+The still-unchecked items are the primitives and the writer/read-consistency
+work; slice B deliberately ships none of them.
+
+The first schema slice implements **no adapter behavior**: no transaction
+boundary, no
 primitive, no clock read, no ownership acquisition, and no runtime wiring. It
 creates the ownership and clock-floor row shapes without claiming ownership or
 reading a clock. A foreign schema or contract version is rejected rather than
@@ -649,6 +671,20 @@ npm run scan:external-secrets
 npm run check:markdown-links
 git diff --check
 ```
+
+Section 3 slice B (lifecycle and ownership):
+
+```bash
+npm run build --workspace=a2a-broker
+node --test packages/broker/dist/shared-state-sqlite-adapter-v1.test.js
+npm test --workspace=a2a-broker
+npm run check
+git diff --check
+```
+
+The focused slice B command proves only lifecycle transitions, exclusive
+ownership refusal, epoch monotonicity across close and reopen, and the write
+guard. It proves no primitive, because that slice implements none.
 
 Section 3 slice A (V1 schema):
 
