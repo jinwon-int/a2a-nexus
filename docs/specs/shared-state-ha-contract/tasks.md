@@ -430,7 +430,19 @@ not startable on its own either.
 
 ## 3. SQLite adapter implementation
 
-- [ ] Add V1 tables/migrations only in a separately reviewed source PR.
+The V1 schema lives in its own database file, separate from the legacy
+`broker_*` store. That is required rather than stylistic: section 6.2 of
+`spec.md` forbids nested or cross-adapter transactions, section 6.3 states the
+contract does not imply that a generic existing SQLite store already conforms,
+and the closed vocabulary keeps `legacy-sqlite` and `sqlite-single-writer` as
+distinct backend classes. Measured on Node v22.22.2 `node:sqlite`, sharing the
+legacy connection is impossible (a nested `BEGIN IMMEDIATE` raises `cannot
+start a transaction within a transaction`) and sharing the legacy file makes
+the two writers block each other (`database is locked` at the default
+`busy_timeout=0`). The V1 schema therefore carries its own version axis rather
+than advancing the legacy store's `SQLITE_SCHEMA_VERSION`.
+
+- [x] Add V1 tables/migrations only in a separately reviewed source PR.
 - [ ] Add exclusive singleton ownership and monotonic lifecycle epoch.
 - [ ] Implement all primitives with `BEGIN IMMEDIATE` atomic boundaries.
 - [ ] Prove inline writer conformance.
@@ -439,6 +451,23 @@ not startable on its own either.
   unacknowledged write as committed.
 - [ ] Preserve existing export/inspection and fail-safe recovery behavior.
 - [ ] Keep runtime integration/default enablement off.
+
+The checked schema item above ships eleven `shared_state_*` tables in
+`packages/broker/src/shared-state-sqlite-schema-v1.ts`, derived from what
+section 6.2 requires an adapter replacement to preserve — keys, fingerprints,
+fences, sequence numbers, expiry instants, projection checkpoints, and stable
+outcomes — plus the section 4.2 clock floor and the section 6.2
+ownership/lifecycle epoch. Every table is `STRICT` and every statement is
+`IF NOT EXISTS`, so applying the schema twice is a no-op and a wrong column
+type fails closed at write time.
+
+That slice implements **no adapter behavior**: no transaction boundary, no
+primitive, no clock read, no ownership acquisition, and no runtime wiring. It
+creates the ownership and clock-floor row shapes without claiming ownership or
+reading a clock. A foreign schema or contract version is rejected rather than
+migrated, because V1 defines no upgrade path and adapting silently would be
+the permissive answer. Tests inject temporary database paths; the operational
+path decision belongs to section 4 and is deliberately not made here.
 
 ## 4. Startup/readiness/runtime integration
 
@@ -620,6 +649,24 @@ npm run scan:external-secrets
 npm run check:markdown-links
 git diff --check
 ```
+
+Section 3 slice A (V1 schema):
+
+```bash
+npm run build --workspace=a2a-broker
+node --test packages/broker/dist/shared-state-sqlite-schema-v1.test.js
+npm test --workspace=a2a-broker
+npm run check
+npm run scan:public-readiness
+npm run scan:external-secrets
+npm run check:markdown-links
+git diff --check
+```
+
+The focused slice A command proves only that the V1 tables are created,
+reapplied idempotently, read back, isolated from a legacy database, and
+rejected on a foreign version. It proves no adapter behavior, because that
+slice implements none.
 
 The focused Phase 2.5 command proves only the backend-neutral partition and
 unavailable-injection harness against the detached test-only reference model.
