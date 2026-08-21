@@ -27,6 +27,33 @@ export interface AgentSkill {
 export interface AgentInterface {
   protocolBinding: "JSONRPC" | "GRPC" | "HTTP+JSON";
   url: string;
+  /**
+   * The A2A protocol version this interface exposes (#1912 D7).
+   *
+   * v1.0 moved the protocol version onto the interface, where the proto marks
+   * it REQUIRED (`string protocol_version = 4` in a2a.proto v1.0.1). The
+   * mechanism it enables is one agent serving 0.3 and 1.0 on different URLs —
+   * a client picks an entry from `supportedInterfaces` and reads the version
+   * from the entry it picked, not from the card.
+   *
+   * The card-level {@link AgentCard.protocolVersion} is retained alongside it
+   * as a documented deviation (see docs/protocol-compatibility.md); drift-watch
+   * pins the two to the same value so they cannot disagree.
+   */
+  protocolVersion: string;
+  /**
+   * Opaque routing identifier for multi-agent endpoints (`tenant = 3` in the
+   * proto). When an interface sets it, clients MUST echo the value in the
+   * `tenant` field of every request to that interface.
+   *
+   * The broker serves a single agent and does no tenant routing, so it never
+   * sets this — which is the correct spec-compliant state, not a gap. It is
+   * typed so a card from another implementation round-trips intact, and so
+   * D9 has the shape it needs. **It is not an authorization boundary**: the
+   * value is client-supplied and opaque, and authorization must be performed
+   * on every request independently of it.
+   */
+  tenant?: string;
 }
 
 /**
@@ -84,6 +111,9 @@ export interface CreateBrokerAgentCardOptions {
 export function createBrokerAgentCard(options: CreateBrokerAgentCardOptions): AgentCard {
   const baseUrl = trimTrailingSlash(options.publicBaseUrl);
   const jsonRpcUrl = `${baseUrl}/a2a/jsonrpc`;
+  // One source for both the card-level field and every interface entry, so the
+  // deviation stays a duplicate rather than becoming a contradiction (#1912 D7).
+  const protocolVersion = options.protocolVersion ?? "1.0";
   return {
     name: options.serviceName,
     description:
@@ -91,7 +121,7 @@ export function createBrokerAgentCard(options: CreateBrokerAgentCardOptions): Ag
       "Broker-first A2A coordination service for delegated tasks, proposal review, and auditable worker execution.",
     url: jsonRpcUrl,
     version: options.version ?? "0.1.0",
-    protocolVersion: options.protocolVersion ?? "1.0",
+    protocolVersion,
     provider: options.provider,
     capabilities: {
       streaming: options.supportsStreaming ?? false,
@@ -99,7 +129,7 @@ export function createBrokerAgentCard(options: CreateBrokerAgentCardOptions): Ag
     },
     defaultInputModes: ["text"],
     defaultOutputModes: ["text"],
-    supportedInterfaces: [{ protocolBinding: "JSONRPC", url: jsonRpcUrl }],
+    supportedInterfaces: [{ protocolBinding: "JSONRPC", url: jsonRpcUrl, protocolVersion }],
     skills: [
       {
         id: "analyze",

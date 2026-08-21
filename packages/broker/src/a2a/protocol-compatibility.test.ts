@@ -74,10 +74,21 @@ test("agent card stays aligned with the documented A2A profile", () => {
   );
   assert.equal(card.url, "https://broker.example.com/a2a/jsonrpc");
   // A2A 1.0 transport binding (CARD-PROTO-001 / BIND-FIELD-001): exactly the
-  // single JSON-RPC interface the broker serves, at the same URL as card.url.
+  // single JSON-RPC interface the broker serves, at the same URL as card.url,
+  // carrying the per-interface protocolVersion v1.0 marks REQUIRED (#1912 D7).
   assert.deepEqual(card.supportedInterfaces, [
-    { protocolBinding: "JSONRPC", url: "https://broker.example.com/a2a/jsonrpc" },
+    {
+      protocolBinding: "JSONRPC",
+      url: "https://broker.example.com/a2a/jsonrpc",
+      protocolVersion: "1.0",
+    },
   ]);
+  // The broker serves one agent and does no tenant routing, so no interface
+  // sets `tenant`. Clients echo it only when an interface declares it, so
+  // leaving it unset is the compliant state rather than a missing feature.
+  for (const entry of card.supportedInterfaces) {
+    assert.equal(Object.hasOwn(entry, "tenant"), false);
+  }
 });
 
 test("task projection shape is pinned for A2A compatibility", () => {

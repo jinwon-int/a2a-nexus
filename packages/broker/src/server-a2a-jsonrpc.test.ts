@@ -21,9 +21,14 @@ test("server exposes a public agent card on the well-known path", async () => {
     assert.equal(card.protocolVersion, "1.0");
     assert.equal(card.capabilities.streaming, true);
     assert.equal(card.capabilities.pushNotifications, false);
-    // A2A 1.0 transport binding declaration (CARD-PROTO / BIND-FIELD).
+    // A2A 1.0 transport binding declaration (CARD-PROTO / BIND-FIELD). Each
+    // interface carries its own protocolVersion, REQUIRED in v1.0 (#1912 D7).
     assert.deepEqual(card.supportedInterfaces, [
-      { protocolBinding: "JSONRPC", url: "https://broker.example.com/a2a/jsonrpc" },
+      {
+        protocolBinding: "JSONRPC",
+        url: "https://broker.example.com/a2a/jsonrpc",
+        protocolVersion: "1.0",
+      },
     ]);
     assert.ok(Array.isArray(card.skills));
     assert.ok(card.skills.some((skill: { id: string }) => skill.id === "propose_patch"));

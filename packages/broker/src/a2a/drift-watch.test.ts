@@ -475,3 +475,33 @@ test("drift: ListTasks ordering claim matches the shipped comparator (#1912 D11)
     "the comparator must be reflexive so sorts stay stable",
   );
 });
+
+test("drift: every AgentInterface declares its own protocolVersion (#1912 D7)", () => {
+  const card = createBrokerAgentCard({
+    serviceName: "drift-broker",
+    publicBaseUrl: "https://broker.example.com/",
+    supportsStreaming: true,
+    supportsPushNotifications: false,
+  });
+
+  // A2A v1.0 moved protocol_version into AgentInterface, where it is REQUIRED
+  // (a2a.proto v1.0.1: `string protocol_version = 4 [REQUIRED]`). A v1.0 client
+  // picking an interface out of supported_interfaces reads the version from the
+  // entry it picked, not from the card.
+  assert.ok(card.supportedInterfaces.length > 0, "the card must advertise an interface");
+  for (const entry of card.supportedInterfaces) {
+    assert.equal(
+      entry.protocolVersion,
+      A2A_COMPATIBILITY_PROFILE.protocolVersion,
+      `interface ${entry.protocolBinding} must declare the advertised protocol version`,
+    );
+  }
+
+  // The card-level field is retained as a documented deviation for existing
+  // readers; the two must not be allowed to disagree.
+  assert.equal(
+    card.protocolVersion,
+    card.supportedInterfaces[0].protocolVersion,
+    "card-level and interface-level protocol versions must not drift apart",
+  );
+});

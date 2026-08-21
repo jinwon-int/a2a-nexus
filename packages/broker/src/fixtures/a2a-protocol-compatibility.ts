@@ -194,7 +194,12 @@ export const A2A_AGENT_CARD_GOLDEN: Pick<AgentCard, "protocolVersion" | "capabil
     streaming: true,
     pushNotifications: false,
   },
-  supportedInterfaces: [{ protocolBinding: "JSONRPC", url: "https://broker.example.com/a2a/jsonrpc" }],
+  supportedInterfaces: [{
+    protocolBinding: "JSONRPC",
+    url: "https://broker.example.com/a2a/jsonrpc",
+    // v1.0 marks protocol_version REQUIRED on each interface (#1912 D7).
+    protocolVersion: A2A_COMPATIBILITY_PROFILE.protocolVersion,
+  }],
   defaultInputModes: ["text"],
   defaultOutputModes: ["text"],
 };
