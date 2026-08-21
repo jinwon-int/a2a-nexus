@@ -5,13 +5,13 @@
 > keyspace/digest/time-evaluator/idempotency-registry/outbox-registry and
 > observability-catalog/parser/projector slices, plus the first bounded Phase
 > 2.1 lease/claim, Phase 2.2 `executeIdempotent`, Phase 2.3 outbox-ordering,
-> Phase 2.4 restart-continuity, Phase 2.6 expiry-boundary, and Phase 2.7
-> claim-graph projection/rollback backend-neutral conformance harnesses
-> exercised against clearly labeled test-only deterministic reference models.
-> Phase 2.5 partition/unavailable injection is still open, is not a
-> prerequisite of the Phase 2.6 or Phase 2.7 slices, and is now
-> backend-neutral in full after its route-level readiness assertion moved to
-> Phase 4.
+> Phase 2.4 restart-continuity, Phase 2.5 partition/unavailable injection,
+> Phase 2.6 expiry-boundary, and Phase 2.7 claim-graph projection/rollback
+> backend-neutral conformance harnesses exercised against clearly labeled
+> test-only deterministic reference models.
+> Phase 2.5 partition/unavailable injection is also complete as a
+> backend-neutral slice after its route-level readiness assertion moved to
+> Phase 4; the moved assertion remains unchecked there.
 > SQLite/shared adapter implementations and their conformance,
 > retention/prune execution, runtime health/endpoint and query integration,
 > migration, and operational rollout remain unchecked.
@@ -209,25 +209,49 @@ completion remain unimplemented and unchecked.
 
 ### 2.5 Partition/unavailable injection
 
-- [ ] Wrap the adapter with deterministic unavailable, timeout,
+- [x] Wrap the adapter with deterministic unavailable, timeout,
   ambiguous-commit, lost-fence, and delayed-read fault points. The existing
   harnesses already exercise `authority_unavailable`, `ambiguous_commit`,
   `unsafe_clock`, and `lost_ownership`; `lock_timeout` and delayed-read have
   no existing coverage and are the real work here.
-- [ ] Assert replay/rate protected requests return unavailable, never an empty
+- [x] Assert replay/rate protected requests return unavailable, never an empty
   local decision.
-- [ ] Assert claims/renewals/completions and idempotent mutations do not apply
+- [x] Assert claims/renewals/completions and idempotent mutations do not apply
   while authority is unavailable.
-- [ ] Assert outbox producer transaction fails atomically; consumer may replay
+- [x] Assert outbox producer transaction fails atomically; consumer may replay
   but cannot ACK/prune while partitioned.
-- [ ] Assert a partitioned graph query serves an explicitly stale result with
+- [x] Assert a partitioned graph query serves an explicitly stale result with
   checkpoint and lag. Phase 2.7 already proves the
   `projection_incomplete`/`projection_unavailable`/`no_evidence_path`
   distinction and the complete-checkpoint rule for negative evidence, so this
   item covers only the stale-result case and must not reimplement them.
-- [ ] Assert the adapter lifecycle reports not-ready with the closed
+- [x] Assert the adapter lifecycle reports not-ready with the closed
   readiness/lifecycle reason vocabulary while the authority is unavailable,
   and that no state mutation applies in that state.
+
+- [ ] Repeat the Phase 2.5 fault matrix through SQLite/shared adapters and
+  separately prove real partition behavior against a live authority.
+
+The checked Phase 2.5 facts above use 18 existing storage V1 commands, 10
+existing lifecycle transitions, 14 bounded aggregate snapshot controls, 14
+fault controls, two bounded stale-read controls, two bounded adapter-lifecycle
+readiness controls, five isolated targets, and a 64-command ceiling. The four
+write fault points are checked at module load against the closed
+`unavailableReasonCodes`, so a later vocabulary addition fails closed rather
+than silently under-covering; `unsafe_clock` is deliberately the one closed
+reason not driven by partition injection, because Phase 2.4 proves it through
+the time contract instead. `lock_timeout` and delayed-read had no prior
+coverage anywhere in the repository and are proved here for the first time.
+The reference model is in-memory, test-only, non-production, non-SQLite,
+non-shared, non-conforming, detached from broker runtime, and makes no durable
+adapter claim.
+
+The readiness item is proved at the adapter-lifecycle layer only. The harness
+additionally checks, rather than asserts, the two-layer claim that justified
+the boundary move: every lifecycle fault reason has an exact
+`readinessReasonCodes` counterpart (eight codes), and the only lifecycle-only
+codes are normal transitions. `/readyz`, the non-serving middleware, and any
+route status remain Phase 4 and are not proved here.
 
 Phase 2.5 is backend-neutral in full. The route-level readiness assertion that
 previously sat here moved to Phase 4, because `/readyz` and the non-serving
@@ -529,3 +553,25 @@ query, runtime API, or graph service. SQLite/shared adapter conformance, a
 real query surface, runtime integration, retention/prune execution,
 partition/unavailable injection, readiness route behavior, migration,
 deployment, live rollout, and overall issue completion remain out of scope.
+
+Phase 2.5 source slice:
+
+```bash
+npm run build --workspace=a2a-broker
+node --test packages/broker/dist/shared-state-partition-conformance-v1.test.js
+npm test --workspace=a2a-broker
+npm run check
+npm run scan:public-readiness
+npm run scan:external-secrets
+npm run check:markdown-links
+git diff --check
+```
+
+The focused Phase 2.5 command proves only the backend-neutral partition and
+unavailable-injection harness against the detached test-only reference model.
+Its readiness control reports the adapter-lifecycle view and is not `/readyz`,
+middleware, or a route contract; its stale-read control is not a V1 storage
+query. SQLite/shared adapter conformance, real partition behavior against a
+live authority, runtime integration, retention/prune execution, readiness
+route behavior, migration, deployment, live rollout, and overall issue
+completion remain out of scope.
