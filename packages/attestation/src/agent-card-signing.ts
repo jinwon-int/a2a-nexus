@@ -59,6 +59,17 @@ export interface AgentCardSignature {
   protected: string;
   /** base64url of the signature over `protected + "." + payload`. */
   signature: string;
+  /**
+   * JWS unprotected header (#1919). Optional in JWS and never emitted by this
+   * signer, but a card from another A2A implementation may carry it, and the
+   * type must be able to hold it rather than silently dropping it on a
+   * round-trip.
+   *
+   * It is deliberately **not** covered by the signature: the signing payload
+   * excludes the entire `signatures` array, and only `protected` participates
+   * in the signing input. Nothing here may be treated as authenticated.
+   */
+  header?: Record<string, unknown>;
 }
 
 function base64url(input: Buffer | string): string {
@@ -172,25 +183,74 @@ export function signAgentCard<T extends object>(
   };
 }
 
-/** Verify the first signature on a card against a PEM public key. */
+/** The `alg` an entry claims in its protected header, or undefined if unreadable. */
+function protectedAlg(entry: AgentCardSignature): string | undefined {
+  try {
+    const header = JSON.parse(Buffer.from(entry.protected, "base64url").toString("utf8")) as unknown;
+    if (header === null || typeof header !== "object" || Array.isArray(header)) return undefined;
+    const alg = (header as { alg?: unknown }).alg;
+    return typeof alg === "string" ? alg : undefined;
+  } catch {
+    return undefined;
+  }
+}
+
+/**
+ * Verify **any** signature on a card against a PEM public key (#1919).
+ *
+ * `signatures` is an array precisely so a card can carry more than one signer —
+ * key rotation publishes a card signed by both the old and the new key, and
+ * co-signing publishes one signed by two parties. Checking only `signatures[0]`
+ * therefore rejected valid signatures based on their position, which broke
+ * rotation and cross-implementation verification.
+ *
+ * Returns true if *some* entry verifies under this key. Still fail-closed: a
+ * key that signed nothing on the card is rejected, and no entry is accepted on
+ * anything weaker than a real signature check.
+ *
+ * Two things every entry gets independently, which is what makes "any" safe:
+ *
+ * - **Its own declared `alg`.** The algorithm is read from the entry's
+ *   protected header and must match what this key can verify. Assuming the
+ *   key's algorithm for every entry would feed, say, 64 raw EdDSA bytes
+ *   through the ECDSA DER conversion — which throws, or worse, silently
+ *   misreads.
+ * - **Its own failure isolation.** A malformed neighbour must not decide the
+ *   outcome for a well-formed entry; that would reintroduce exactly the
+ *   position-dependent rejection this fixes, just triggered by junk instead of
+ *   by index.
+ *
+ * The signing payload excludes the whole `signatures` array, so every entry
+ * covers identical bytes and the payload is computed once.
+ */
 export function verifyAgentCardSignature(
   card: object & { signatures?: AgentCardSignature[] },
   publicKeyPem: string,
 ): boolean {
-  const entry = card.signatures?.[0];
-  if (!entry) {
+  const entries = card.signatures;
+  if (!Array.isArray(entries) || entries.length === 0) {
     return false;
   }
   const key = createPublicKey(publicKeyPem);
   const { alg, cryptoAlg } = algorithmForKey(key);
   const payload = base64url(agentCardSigningPayload(card));
-  const signingInput = `${entry.protected}.${payload}`;
-  const signature = Buffer.from(entry.signature, "base64url");
-  const cryptoSignature = alg === "ES256" ? joseEcdsaSignatureToDer(signature, 32) : signature;
-  return cryptoVerify(
-    cryptoAlg,
-    Buffer.from(signingInput, "utf8"),
-    key,
-    cryptoSignature,
-  );
+
+  for (const entry of entries) {
+    if (entry === null || typeof entry !== "object") continue;
+    if (typeof entry.protected !== "string" || typeof entry.signature !== "string") continue;
+    // An entry signed under a different algorithm cannot be ours; skip it
+    // rather than attempting a mismatched decode.
+    if (protectedAlg(entry) !== alg) continue;
+    try {
+      const signature = Buffer.from(entry.signature, "base64url");
+      const cryptoSignature = alg === "ES256" ? joseEcdsaSignatureToDer(signature, 32) : signature;
+      if (cryptoVerify(cryptoAlg, Buffer.from(`${entry.protected}.${payload}`, "utf8"), key, cryptoSignature)) {
+        return true;
+      }
+    } catch {
+      // Malformed signature bytes for this entry only — keep checking the rest.
+      continue;
+    }
+  }
+  return false;
 }
