@@ -587,3 +587,29 @@ test("drift: a broker booted with an edge secret serves the declaration on the w
     await open.close();
   }
 });
+
+test("drift: multi-tenancy stance stays honest about what is not implemented (#1912 D9)", () => {
+  const stance = A2A_COMPATIBILITY_PROFILE.multiTenancy;
+
+  // The claim side must not quietly flip to "supported" while the blockers
+  // below are still real. Multi-tenancy is the direction, not the state.
+  assert.equal(stance.supported, false);
+  assert.equal(stance.requestTenantPolicy, "reject-undeclared");
+  assert.ok(stance.blockers.length >= 5, "each unmet prerequisite stays listed");
+
+  // Code-path side: the shipped card declares no interface tenant, which is
+  // what makes "reject-undeclared" the correct policy rather than a guess.
+  const card = createBrokerAgentCard({
+    serviceName: "drift-broker",
+    publicBaseUrl: "https://broker.example.com/",
+    supportsStreaming: true,
+    supportsPushNotifications: false,
+  });
+  for (const entry of card.supportedInterfaces) {
+    assert.equal(
+      entry.tenant,
+      undefined,
+      "declaring an interface tenant means multi-tenancy shipped — update this stance with it",
+    );
+  }
+});
