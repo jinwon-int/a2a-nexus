@@ -31,7 +31,31 @@
 - [x] Define staged migration, cutover gates, rollback invariants, and separate
   live authorizations.
 - [x] Reconcile the directly affected limitation/durability docs.
-- [ ] Obtain required approval for the packet.
+- [x] Obtain required approval for the packet.
+
+Packet approval was given by the repository operator on 2026-08-22 KST and is
+recorded by this change and on issue #1504.
+
+Two things it does, stated separately because they are different:
+
+1. It **retroactively covers** `plan.md` Phase 1 — the work filed here as
+   sections 1 and 2 — which was built and merged in full while this item stayed
+   unchecked. Thirteen commits touching `packages/broker/src/shared-state-*.ts`
+   landed from `a54257d5` (#1696) through `1099aea2` (#1931) before the gate was
+   reached. `plan.md` Phase 0 states that merge or local check success is not
+   packet approval and does not authorize Phase 1, so the documented
+   authorization order and the actual work order had diverged. That divergence
+   is recorded on issue #1504 rather than erased by this checkbox.
+2. It **authorizes** the next phase: section 3, the SQLite adapter. That is the
+   first work in this issue that writes to a real store instead of a detached
+   test-only reference model.
+
+What it does not do: it grants none of the twenty-one separately authorized
+live actions listed in `plan.md`, which remain individually gated and none of
+which have been taken. `plan.md` also still requires every source and runtime
+phase after Phase 0 to be a separately reviewed change, so section 3 proceeds
+PR-first exactly as sections 1 and 2 did. Runtime integration and default
+enablement stay off.
 
 ## 1. Contract/schema work
 
