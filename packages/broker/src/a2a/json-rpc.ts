@@ -4,7 +4,11 @@ import { assertRequesterCanSubscribeToTask, type RequesterIdentity } from "../co
 import type { A2AExchangeVia, TaskListFilters, TaskRecord } from "../core/types.js";
 import type { AgentCard, AgentCapabilities } from "./agent-card.js";
 import { PEER_STATUS_VERBOSE_SCOPE, PeerStatusService, type PeerStatusRequest } from "./peer-status.js";
-import { projectBrokerTask, projectBrokerTaskForList } from "./task-projection.js";
+import {
+  compareByA2AStatusTimestampDesc,
+  projectBrokerTask,
+  projectBrokerTaskForList,
+} from "./task-projection.js";
 import { matchDefaultAgentConvention } from "./default-agent-conventions.js";
 import {
   buildTaskLineageReadProjection,
@@ -274,7 +278,17 @@ export function executeA2AJsonRpc(
           // Proto ListTasksResponse: tasks + nextPageToken/pageSize/totalSize
           // are all REQUIRED. The broker serves the full result set in one
           // page, so the token is empty and both sizes equal the result count.
-          const tasks = visible.map((task) => projectSpecTask(task, options.broker));
+          //
+          // Spec ordering is status timestamp descending (#1912 D11). The
+          // broker's own read path sorts by createdAt, which diverges for any
+          // task that has been claimed, run, or completed, so re-sort here.
+          // Safe against truncation: parseListTaskFilters never sets `limit`,
+          // so listTasks() returns the full matching set and re-ordering it
+          // cannot drop rows. Scoped to the spec shape — the headerless legacy
+          // envelope keeps its established createdAt ordering.
+          const tasks = [...visible]
+            .sort(compareByA2AStatusTimestampDesc)
+            .map((task) => projectSpecTask(task, options.broker));
           return success(id, {
             tasks,
             nextPageToken: "",
