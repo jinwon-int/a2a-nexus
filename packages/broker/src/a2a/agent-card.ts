@@ -1,3 +1,5 @@
+import type { AgentCardSignature } from "a2a-attestation";
+
 export interface AgentProvider {
   organization: string;
   url?: string;
@@ -52,6 +54,20 @@ export interface AgentCard {
   skills: AgentSkill[];
   /** A2A 1.0 transport bindings the agent serves (CARD-PROTO / BIND-FIELD). */
   supportedInterfaces: AgentInterface[];
+  /**
+   * A2A 1.0 signed card envelope (#1912 F2). Present only when the broker is
+   * booted with AGENT_CARD_SIGNING_KEY_FILE; the default card is served
+   * unsigned with this key **absent**, not present-and-undefined — the
+   * signing payload is JCS over the card sans `signatures`, so a serialized
+   * null would change the canonical bytes.
+   *
+   * This is not a placeholder field: the broker genuinely serves it, and
+   * typing it is what lets the compiler catch regressions in the signed card
+   * structure. It is deliberately `signatures[]` (the spec's top-level array),
+   * not the v0.3-era `signature`/`signedExtensions` scalars, which the broker
+   * has never emitted.
+   */
+  signatures?: AgentCardSignature[];
 }
 
 export interface CreateBrokerAgentCardOptions {
