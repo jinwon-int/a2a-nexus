@@ -312,13 +312,53 @@ const A2ABrokerOperatorSseEventNameSchema = z.enum([
   "operator-alert-resolved",
 ]);
 
-const A2ABrokerTaskProjectionStateSchema = z.enum([
+const A2A_BROKER_LEGACY_TASK_STATES = [
   "submitted",
   "working",
+  "input-required",
+  "auth-required",
   "completed",
   "failed",
   "canceled",
-]);
+  "rejected",
+] as const;
+
+/**
+ * Wire encoding the broker emits depends on A2A-Version negotiation: spec
+ * (negotiated) surfaces carry v1.0 ProtoJSON SCREAMING_SNAKE states, legacy
+ * (header-less) surfaces carry the historical lowercase states. The client
+ * accepts both and normalizes to the legacy lowercase form so downstream
+ * consumers see exactly one vocabulary during the encoding migration
+ * (#1912 D1). The enum is exhaustive on purpose — an unknown wire state
+ * fails parsing loudly instead of degrading to a silent mismatch.
+ */
+const A2A_BROKER_SPEC_TO_LEGACY_TASK_STATE: Record<string, (typeof A2A_BROKER_LEGACY_TASK_STATES)[number]> = {
+  TASK_STATE_SUBMITTED: "submitted",
+  TASK_STATE_WORKING: "working",
+  TASK_STATE_INPUT_REQUIRED: "input-required",
+  TASK_STATE_AUTH_REQUIRED: "auth-required",
+  TASK_STATE_COMPLETED: "completed",
+  TASK_STATE_FAILED: "failed",
+  TASK_STATE_CANCELED: "canceled",
+  TASK_STATE_REJECTED: "rejected",
+};
+
+const A2ABrokerTaskProjectionStateSchema = z
+  .enum([
+    ...A2A_BROKER_LEGACY_TASK_STATES,
+    "TASK_STATE_SUBMITTED",
+    "TASK_STATE_WORKING",
+    "TASK_STATE_INPUT_REQUIRED",
+    "TASK_STATE_AUTH_REQUIRED",
+    "TASK_STATE_COMPLETED",
+    "TASK_STATE_FAILED",
+    "TASK_STATE_CANCELED",
+    "TASK_STATE_REJECTED",
+  ])
+  .transform(
+    (state): (typeof A2A_BROKER_LEGACY_TASK_STATES)[number] =>
+      A2A_BROKER_SPEC_TO_LEGACY_TASK_STATE[state] ?? (state as (typeof A2A_BROKER_LEGACY_TASK_STATES)[number]),
+  );
 
 const A2ABrokerTaskProjectionSchema = z
   .object({
@@ -500,6 +540,15 @@ export type A2ABrokerClientOptions = {
   requester?: A2ABrokerPartyRef;
   fetchImpl?: FetchLike;
   userAgent?: string;
+  /**
+   * A2A-Version negotiation for version-aware surfaces (per-task SSE stream).
+   * Defaults to "1.0" — the client advertises the version it understands and
+   * accepts both the v1.0 ProtoJSON (TASK_STATE_*) and legacy (lowercase)
+   * state encodings on the wire, normalizing to the legacy lowercase form
+   * for downstream consumers (#1912 D1). Set to null to opt out and receive
+   * the historical legacy envelopes.
+   */
+  a2aVersion?: string | null;
 };
 
 export class A2ABrokerClientError extends Error {
@@ -682,11 +731,15 @@ function buildRequestHeaders(params: {
   edgeSecret?: string;
   userAgent: string;
   contentType?: string;
+  a2aVersion?: string;
 }): Headers {
   const headers = new Headers({
     accept: "application/json",
     "user-agent": params.userAgent,
   });
+  if (params.a2aVersion) {
+    headers.set("a2a-version", params.a2aVersion);
+  }
   if (params.contentType) {
     headers.set("content-type", params.contentType);
   }
@@ -1046,6 +1099,9 @@ export function createA2ABrokerClient(options: A2ABrokerClientOptions) {
   const fetchImpl = options.fetchImpl ?? fetch;
   const edgeSecret = normalizeOptionalString(options.edgeSecret);
   const userAgent = normalizeOptionalString(options.userAgent) ?? DEFAULT_USER_AGENT;
+  const a2aVersion = options.a2aVersion === null
+    ? undefined
+    : normalizeOptionalString(options.a2aVersion ?? undefined) ?? "1.0";
 
   return {
     async health(): Promise<A2ABrokerHealth> {
@@ -1208,6 +1264,7 @@ export function createA2ABrokerClient(options: A2ABrokerClientOptions) {
         requester: options.requester,
         edgeSecret,
         userAgent,
+        a2aVersion,
       });
       headers.set("accept", "text/event-stream");
       const init: RequestInit = {

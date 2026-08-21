@@ -12,6 +12,11 @@ import {
 import type { A2AHttpSignatureVerifiedWorker } from "../server.js";
 import { assertRequesterCanSubscribeToWorkerAssignments } from "../request-parsers.js";
 import {
+  A2A_VERSION_HEADER,
+  SUPPORTED_A2A_VERSIONS,
+  negotiateA2AVersion,
+} from "../a2a/version-negotiation.js";
+import {
   handleTaskEventStream,
   handleWorkerAssignmentEventStream,
 } from "./task-event-streams.js";
@@ -69,10 +74,24 @@ export function handleA2ATaskEventsRoute(ctx: A2ATaskStreamRouteContext): void {
     assertRequesterCanSubscribeToTask(ctx.requesterIdentity, task);
   }
 
+  // A2A-Version negotiation on the SSE surface, mirroring the JSON-RPC route:
+  // an explicit unsupported version is rejected fail-closed; a negotiated
+  // client gets v1.0 ProtoJSON task payloads (TASK_STATE_*), header-less
+  // clients keep the historical lowercase projection (#1912 D1).
+  const negotiated = negotiateA2AVersion(ctx.req.headers[A2A_VERSION_HEADER]);
+  if (!negotiated.ok) {
+    throw new BrokerError("bad_request", negotiated.message, {
+      requested: negotiated.requested,
+      supported: [...SUPPORTED_A2A_VERSIONS],
+    });
+  }
+  ctx.res.setHeader("a2a-version", negotiated.version);
+
   handleTaskEventStream(ctx.req, ctx.res, {
     broker: ctx.broker,
     task,
     heartbeatMs: ctx.taskSubscribeHeartbeatSec * 1000,
+    responseShape: negotiated.requested !== null ? "spec" : "legacy",
   });
 }
 
