@@ -1,5 +1,6 @@
 import type { IncomingMessage, ServerResponse } from "node:http";
 
+import { specTaskStateName } from "../a2a/json-rpc.js";
 import { projectBrokerTask } from "../a2a/task-projection.js";
 import { InMemoryA2ABroker } from "../core/broker.js";
 import type { TaskUpdate } from "../core/broker.js";
@@ -205,11 +206,32 @@ export function handleTaskEventStream(
     broker: InMemoryA2ABroker;
     task: TaskRecord;
     heartbeatMs: number;
+    /**
+     * Task payload encoding: "spec" (client negotiated an A2A-Version header)
+     * projects the v1.0 ProtoJSON Task (TASK_STATE_* states); "legacy" keeps
+     * the historical lowercase projection for header-less clients (#1912 D1).
+     */
+    responseShape?: "spec" | "legacy";
     /** Test seam: invoked at the snapshot→subscribe boundary to exercise the gap. */
     afterSnapshot?: () => void;
   },
 ): void {
   const { broker, task, heartbeatMs, afterSnapshot } = params;
+  const spec = params.responseShape === "spec";
+  // This route is a broker extension, so the envelope (event names, reason,
+  // final, projection fields) stays identical in both shapes — only the
+  // status.state vocabulary flips to the v1.0 ProtoJSON encoding for
+  // negotiated clients (#1912 D1). Full spec Task shapes (contextId, ProtoJSON
+  // artifacts) remain the JSON-RPC spec path's contract.
+  const projectForShape = (record: TaskRecord): Record<string, unknown> => {
+    const projected = projectBrokerTask(record) as unknown as Record<string, unknown>;
+    if (spec) {
+      (projected.status as Record<string, unknown>).state = specTaskStateName(
+        (projected.status as { state: Parameters<typeof specTaskStateName>[0] }).state,
+      );
+    }
+    return projected;
+  };
 
   writeSseResponseHeaders(res);
 
@@ -230,7 +252,7 @@ export function handleTaskEventStream(
     writeSseEvent(
       res,
       "task-snapshot",
-      { task: projectBrokerTask(task), reason: "snapshot", final: true },
+      { task: projectForShape(task), reason: "snapshot", final: true },
       broker.formatSseEventId(task.id, snapshotSeq > 0 ? snapshotSeq : 0),
     );
     res.end();
@@ -266,7 +288,7 @@ export function handleTaskEventStream(
       res,
       "task-status-update",
       {
-        task: projectBrokerTask(update.task),
+        task: projectForShape(update.task),
         reason: update.reason,
         final: update.final,
       },
@@ -298,7 +320,7 @@ export function handleTaskEventStream(
         res,
         buffered.event,
         {
-          task: projectBrokerTask(buffered.data.task),
+          task: projectForShape(buffered.data.task),
           reason: buffered.data.reason,
           final: buffered.data.final,
         },
@@ -318,7 +340,7 @@ export function handleTaskEventStream(
     res,
     "task-snapshot",
     {
-      task: projectBrokerTask(task),
+      task: projectForShape(task),
       reason: "snapshot",
       final: false,
     },

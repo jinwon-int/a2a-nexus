@@ -73,7 +73,7 @@ export interface ExecuteJsonRpcOptions {
   responseShape?: "spec" | "legacy";
 }
 
-function specTaskStateName(state: ReturnType<typeof projectBrokerTask>["status"]["state"]): string {
+export function specTaskStateName(state: ReturnType<typeof projectBrokerTask>["status"]["state"]): string {
   switch (state) {
     case "submitted": return "TASK_STATE_SUBMITTED";
     case "working": return "TASK_STATE_WORKING";
@@ -89,6 +89,7 @@ function specTaskStateName(state: ReturnType<typeof projectBrokerTask>["status"]
 
 /** Proto-JSON TaskStatus ({ state: TASK_STATE_*, timestamp, message? }). */
 function specTaskStatus(task: TaskRecord): Record<string, unknown> {
+/** Proto-JSON TaskStatus ({ state: TASK_STATE_*, timestamp, message? }). */
   const projected = projectBrokerTask(task);
   return {
     state: specTaskStateName(projected.status.state),
