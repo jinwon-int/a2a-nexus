@@ -5,10 +5,11 @@
 > keyspace/digest/time-evaluator/idempotency-registry/outbox-registry and
 > observability-catalog/parser/projector slices, plus the first bounded Phase
 > 2.1 lease/claim, Phase 2.2 `executeIdempotent`, Phase 2.3 outbox-ordering,
-> Phase 2.4 restart-continuity, and Phase 2.6 expiry-boundary backend-neutral
-> conformance harnesses exercised against clearly labeled test-only
-> deterministic reference models. Phase 2.5 partition/unavailable injection is
-> deliberately still open and is not a prerequisite of the Phase 2.6 slice.
+> Phase 2.4 restart-continuity, Phase 2.6 expiry-boundary, and Phase 2.7
+> claim-graph projection/rollback backend-neutral conformance harnesses
+> exercised against clearly labeled test-only deterministic reference models.
+> Phase 2.5 partition/unavailable injection is deliberately still open and is
+> not a prerequisite of the Phase 2.6 or Phase 2.7 slices.
 > SQLite/shared adapter implementations and their conformance,
 > retention/prune execution, runtime health/endpoint and query integration,
 > migration, and operational rollout remain unchecked.
@@ -48,7 +49,8 @@ no external network or production data. An injected fake clock is used only
 where the scenario has time semantics; the Phase 2.3 slice has none, the
 Phase 2.4 slice uses one fake clock for exact integer observations, and the
 Phase 2.6 slice uses one fake clock advanced to exact `expiry-1`, `expiry`,
-and `expiry+1` instants.
+and `expiry+1` instants. The Phase 2.7 slice has no time semantics and uses no
+clock.
 
 ### 2.1 Claim/lease concurrency
 
@@ -259,17 +261,41 @@ route behavior remain out of scope and unchecked in section 2.5.
 
 ### 2.7 Claim-graph projection and rollback
 
-- [ ] Append typed `Entity`, `Claim`, `Source`, `Artifact`, `AgentRun`, and
+- [x] Append typed `Entity`, `Claim`, `Source`, `Artifact`, `AgentRun`, and
   `Evaluation` source fixtures with provenance.
-- [ ] Project one batch atomically and answer a cross-task evidence-path query
+- [x] Project one batch atomically and answer a cross-task evidence-path query
   using graph/source references only.
-- [ ] Pause projection behind source high-water and assert incomplete result,
+- [x] Pause projection behind source high-water and assert incomplete result,
   lag, and checkpoint.
-- [ ] Inject failure between node/edge writes and checkpoint; assert checkpoint
+- [x] Inject failure between node/edge writes and checkpoint; assert checkpoint
   does not advance.
-- [ ] Inject a false merge, apply its recorded inverse/tombstone batch, and
+- [x] Inject a false merge, apply its recorded inverse/tombstone batch, and
   assert the prior complete graph is restored while immutable sources remain.
-- [ ] Reapply the same batch/rollback and assert idempotent results.
+- [x] Reapply the same batch/rollback and assert idempotent results.
+- [ ] Repeat the Phase 2.7 projection/rollback matrix through SQLite/shared
+  adapters and separately implement and prove a real graph query surface.
+
+The checked Phase 2.7 facts above use 31 existing storage V1 commands, six
+existing lifecycle transitions, 10 bounded aggregate snapshot controls, one
+projection-fault control, six bounded evidence-path controls, three isolated
+targets, and a 48-command ceiling. The six typed source fixtures are checked
+against the closed `graphNodeTypes` vocabulary at module load, so a later
+vocabulary addition fails closed instead of silently under-covering. The
+reference model is in-memory, test-only, non-production, non-SQLite,
+non-shared, non-conforming, detached from broker runtime, and makes no durable
+adapter claim.
+
+Two boundaries deserve explicit statement. **V1 registers no query operation**,
+so the cross-task evidence-path answer is produced by a bounded test-only
+conformance control, not by a storage query contract; the four results
+`path_found`, `no_evidence_path`, `projection_incomplete`, and
+`projection_unavailable` are named by spec section 5.6 and are declared as
+harness-owned vocabulary rather than added to the storage contract. And
+because rolling a batch back necessarily leaves the checkpoint behind the
+source high-water, the restored query returns `projection_incomplete` rather
+than a negative judgment — the harness separately asserts that
+`no_evidence_path` is only ever returned at a complete checkpoint, matching
+`negativeEvidenceRequires=complete-checkpoint`.
 
 ### 2.8 Migration/rollback rehearsal
 
@@ -458,3 +484,24 @@ to the closed catalog. SQLite/shared adapter conformance, runtime integration,
 retention/prune execution, partition/unavailable injection, readiness route
 behavior, migration, deployment, live rollout, and overall issue completion
 remain out of scope.
+
+Phase 2.7 source slice:
+
+```bash
+npm run build --workspace=a2a-broker
+node --test packages/broker/dist/shared-state-claim-graph-conformance-v1.test.js
+npm test --workspace=a2a-broker
+npm run check
+npm run scan:public-readiness
+npm run scan:external-secrets
+npm run check:markdown-links
+git diff --check
+```
+
+The focused Phase 2.7 command proves only the backend-neutral claim-graph
+projection and rollback harness against the detached test-only reference
+model. Its evidence-path seam is a conformance control and not a V1 storage
+query, runtime API, or graph service. SQLite/shared adapter conformance, a
+real query surface, runtime integration, retention/prune execution,
+partition/unavailable injection, readiness route behavior, migration,
+deployment, live rollout, and overall issue completion remain out of scope.
