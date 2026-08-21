@@ -479,8 +479,32 @@ continuing on a stale belief. `drain` stops writes before `close`, and `close`
 releases ownership without lowering the epoch, so the next acquisition
 resumes above it.
 
-The still-unchecked items are the primitives and the writer/read-consistency
-work; slice B deliberately ships none of them.
+Slice C adds the first two primitives — `consumeReplayNonce` and
+`reserveRateLimitCost` — behind that guard. Each runs inside one
+`BEGIN IMMEDIATE` boundary that also contains the section 4.2 trusted-time
+evaluation and the clock-floor advance, so a decision cannot commit against a
+floor that did not durably move with it. The adapter still performs no clock
+read: the observed instant is caller-supplied, exactly as the owner token is,
+and the section 4.2 evaluator rather than the caller decides whether that
+observation is safe. A backward observation beyond tolerance answers with the
+existing `unsafe_clock` unavailable reason code and leaves the adapter
+unwritable, which is the same fact Phase 2.4 proved at the lifecycle layer.
+The clock-floor row is established by `open` rather than by the schema, because
+it is bound to the adapter's clock profile and the schema slice implements no
+adapter behavior; a row carrying a foreign profile is refused, not rewritten.
+
+Records outside their logical boundary are deliberately left on disk. Removing
+them during a decision would make physical cleanup timing observable in a
+logical answer, which section 2.6 forbids — so the Phase 2.6 repeat item stays
+unchecked on both halves: the boundary matrix is not yet driven through the
+harness, and authorized retention execution at and after the boundary is a
+separate exercise this slice does not perform.
+
+The eleven remaining operations are refused with `operation_not_implemented`
+rather than answered, because a placeholder answer is indistinguishable from a
+real decision to a caller. `Implement all primitives` therefore stays unchecked
+until slices D through G land; the writer and read-consistency items are
+untouched.
 
 The first schema slice implements **no adapter behavior**: no transaction
 boundary, no
