@@ -79,6 +79,39 @@ export const A2A_COMPATIBILITY_PROFILE = {
    * `x-a2a-requester-id` is excluded on purpose: it is a caller-asserted
    * identity, not a credential.
    */
+  /**
+   * Multi-tenancy (#1912 D9) — **intended direction, not yet implemented.**
+   *
+   * `tenant` is an opaque routing identifier the client echoes from the
+   * `AgentInterface` it selected. The broker serves a single agent and
+   * declares no interface tenant, which is a compliant state: clients send
+   * `tenant` only when an interface sets one.
+   *
+   * What ships now is the honest half — a request carrying an undeclared
+   * tenant is **rejected** rather than silently ignored, so a client cannot go
+   * on believing it is routed to an isolated tenant that does not exist. The
+   * matching branch is written so declaring interface tenants later routes
+   * correctly rather than needing the logic rebuilt.
+   *
+   * `tenant` is NOT an authorization boundary in any of this: it is
+   * client-supplied and opaque, so authorization runs per request
+   * independently of it. Treating it as identity would be a trivial IDOR.
+   *
+   * The blockers below are ordered — each is a prerequisite for the next, and
+   * routing is last, not first.
+   */
+  multiTenancy: {
+    supported: false,
+    stance: "intended direction; prerequisites unmet",
+    requestTenantPolicy: "reject-undeclared",
+    blockers: [
+      "shared-state/HA contract (#1504): replay and rate-limit state is process-local, multi-process unsupported — a tenant boundary cannot rest on per-process state",
+      "per-tenant credentials: a single edge secret currently opens everything (#1912 D8)",
+      "read-path tenant scoping audit: one unscoped read is a cross-tenant disclosure",
+      "worker pool isolation: workers and docker-runner workspaces are shared across all work today",
+      "tenant binding in signed evidence: receipts and verdicts carry no tenant, so evidence could be replayed across tenants",
+    ],
+  },
   declaredSecurity: {
     scheme: "apiKeySecurityScheme",
     header: "x-a2a-edge-secret",

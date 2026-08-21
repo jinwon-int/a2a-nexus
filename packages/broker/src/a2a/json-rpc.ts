@@ -213,6 +213,60 @@ export function specSendResult(
   };
 }
 
+/**
+ * Fail closed on a `tenant` this deployment never declared (#1912 D9).
+ *
+ * `tenant` is an opaque routing identifier carried on every A2A request
+ * message. The contract is directional: a client MUST echo the value from the
+ * `AgentInterface` it selected, **and only when that interface sets one**.
+ *
+ * The broker serves a single agent and declares no interface tenant, so a
+ * request carrying one is making an assumption this deployment cannot honor.
+ * Silently ignoring it — the previous behavior, since the params parsers drop
+ * unknown keys — leaves that client believing it is routed to an isolated
+ * tenant when it is not. Rejecting makes the mismatch visible at the first
+ * request instead of letting it look like it worked.
+ *
+ * This is **not** an authorization check and must never be mistaken for one:
+ * `tenant` is a client-supplied opaque string, so it can be set to anything by
+ * anyone. Authorization is performed per request independently of this value.
+ * The guard only enforces "did you address an interface that exists".
+ *
+ * The matching branch is already written so that declaring interface tenants
+ * later routes correctly instead of needing this logic rebuilt.
+ */
+function assertDeclaredTenant(params: unknown, options: ExecuteJsonRpcOptions): void {
+  if (!isRecord(params)) {
+    return;
+  }
+  const requested = params.tenant;
+  // Proto3 string default is "", and ProtoJSON may omit or send it; both mean
+  // "no tenant addressed".
+  if (requested === undefined || requested === null || requested === "") {
+    return;
+  }
+  if (typeof requested !== "string") {
+    throw new BrokerError("bad_request", "tenant must be a string");
+  }
+  const declared = new Set(
+    (options.agentCard?.supportedInterfaces ?? [])
+      .map((entry) => entry.tenant)
+      .filter((value): value is string => typeof value === "string" && value.length > 0),
+  );
+  if (declared.size === 0) {
+    throw new BrokerError(
+      "bad_request",
+      "this agent declares no interface tenant; requests must not carry one",
+    );
+  }
+  if (!declared.has(requested)) {
+    throw new BrokerError(
+      "bad_request",
+      "tenant does not match any declared AgentInterface tenant",
+    );
+  }
+}
+
 export function executeA2AJsonRpc(
   request: unknown,
   options: ExecuteJsonRpcOptions,
@@ -226,6 +280,7 @@ export function executeA2AJsonRpc(
   const { method, params } = parsed;
 
   try {
+    assertDeclaredTenant(params, options);
     switch (method) {
       case "SendMessage": {
         const result = executeSendMessage(params, options);

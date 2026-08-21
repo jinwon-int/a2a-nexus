@@ -3,8 +3,15 @@ import assert from "node:assert/strict";
 
 import { InMemoryA2ABroker } from "../core/broker.js";
 import { parseSingleStreamingMessageRequest } from "../http/streaming-message.js";
-import { createBrokerAgentCard } from "./agent-card.js";
-import { executeA2AJsonRpc, executeA2AJsonRpcBody, type ExecuteJsonRpcOptions, type JsonRpcResponse } from "./json-rpc.js";
+import { createBrokerAgentCard, type AgentCard } from "./agent-card.js";
+import {
+  executeA2AJsonRpc,
+  executeA2AJsonRpcBody,
+  type ExecuteJsonRpcOptions,
+  type JsonRpcFailure,
+  type JsonRpcResponse,
+  type JsonRpcSuccess,
+} from "./json-rpc.js";
 
 function createBroker(): InMemoryA2ABroker {
   return new InMemoryA2ABroker();
@@ -613,4 +620,100 @@ test("broker-specific errors carry an ErrorInfo array in the broker domain", () 
   const data = result.error.data as Array<Record<string, unknown>>;
   assert.ok(Array.isArray(data));
   assert.equal((data[0].metadata as Record<string, unknown>).brokerCode, "bad_request");
+});
+
+// ---------------------------------------------------------------------------
+// tenant addressing (#1912 D9) — fail closed on an undeclared tenant
+// ---------------------------------------------------------------------------
+
+function listTasksWithTenant(
+  broker: InMemoryA2ABroker,
+  tenant: unknown,
+  cardOverride?: AgentCard,
+): JsonRpcSuccess | JsonRpcFailure {
+  return executeA2AJsonRpc(
+    { jsonrpc: "2.0", id: 9, method: "ListTasks", params: tenant === undefined ? {} : { tenant } },
+    createJsonRpcOptions(broker, {
+      enforceRequesterIdentity: false,
+      ...(cardOverride ? { agentCard: cardOverride } : {}),
+    }),
+  );
+}
+
+test("a tenant this agent never declared is rejected, not silently ignored (#1912 D9)", () => {
+  const broker = createBroker();
+
+  const result = listTasksWithTenant(broker, "acme-corp");
+
+  assert.ok("error" in result, "an undeclared tenant must fail closed");
+  if (!("error" in result)) return;
+  assert.equal(result.error.code, -32602, "an unroutable address is an invalid param");
+  assert.match(result.error.message, /declares no interface tenant/);
+});
+
+test("absent or empty tenant is unaffected (#1912 D9)", () => {
+  const broker = createBroker();
+
+  // Absent: the normal case for every existing client.
+  assert.ok("result" in listTasksWithTenant(broker, undefined));
+  // Proto3 string default is "", which means "unset", not "a tenant named ''".
+  assert.ok("result" in listTasksWithTenant(broker, ""));
+});
+
+test("a non-string tenant is rejected (#1912 D9)", () => {
+  const broker = createBroker();
+  const result = listTasksWithTenant(broker, 42);
+  assert.ok("error" in result);
+  if (!("error" in result)) return;
+  assert.match(result.error.message, /tenant must be a string/);
+});
+
+test("a declared tenant is accepted and a mismatched one is not (#1912 D9)", () => {
+  const broker = createBroker();
+  // Forward compatibility: the matching branch is written now so that declaring
+  // interface tenants later routes correctly instead of rebuilding this logic.
+  const multiTenantCard: AgentCard = {
+    ...agentCard,
+    supportedInterfaces: [
+      { ...agentCard.supportedInterfaces[0], tenant: "acme-corp" },
+    ],
+  };
+
+  assert.ok(
+    "result" in listTasksWithTenant(broker, "acme-corp", multiTenantCard),
+    "the tenant the card declares must be accepted",
+  );
+
+  const wrong = listTasksWithTenant(broker, "other-corp", multiTenantCard);
+  assert.ok("error" in wrong, "a tenant the card does not declare must fail closed");
+  if (!("error" in wrong)) return;
+  assert.match(wrong.error.message, /does not match any declared/);
+});
+
+test("the tenant guard is addressing, never authorization (#1912 D9)", () => {
+  const broker = createBroker();
+  const card: AgentCard = {
+    ...agentCard,
+    supportedInterfaces: [{ ...agentCard.supportedInterfaces[0], tenant: "acme-corp" }],
+  };
+
+  // Any caller can set any tenant string — it is client-supplied and opaque.
+  // Passing the guard therefore proves only that the address exists, never that
+  // the caller is entitled to anything. Authorization stays on requester
+  // identity, enforced independently of this value.
+  const accepted = listTasksWithTenant(broker, "acme-corp", card);
+  assert.ok("result" in accepted);
+
+  const unauthenticated = executeA2AJsonRpc(
+    { jsonrpc: "2.0", id: 10, method: "ListTasks", params: { tenant: "acme-corp" } },
+    createJsonRpcOptions(broker, {
+      agentCard: card,
+      requesterIdentity: null,
+      enforceRequesterIdentity: true,
+    }),
+  );
+  assert.ok(
+    "error" in unauthenticated,
+    "a matching tenant must not substitute for requester authorization",
+  );
 });
