@@ -57,6 +57,34 @@ export interface AgentInterface {
 }
 
 /**
+ * A2A 1.0 `SecurityScheme` (#1912 D8).
+ *
+ * The proto models this as a `oneof`, so the JSON form is ProtoJSON: exactly
+ * one member key naming the variant. Verified against a2a.proto v1.0.1, the
+ * generated schema bundle (which accepts `apiKeySecurityScheme` and
+ * `api_key_security_scheme`), and the official a2a-js v1.0.1 types
+ * (`$case: "apiKeySecurityScheme"`).
+ *
+ * It is deliberately **not** the OpenAPI-flavoured `{ type: "apiKey", in }`
+ * shape. The proto comment cites OpenAPI as the modeling source, not the wire
+ * encoding, and no OpenAPI-style form appears anywhere in the generated
+ * schema. Only the members the broker can honestly declare are typed here.
+ */
+export interface AgentCardSecurityScheme {
+  apiKeySecurityScheme?: {
+    description?: string;
+    /** "query" | "header" | "cookie" — proto field name is `location`, not `in`. */
+    location: string;
+    name: string;
+  };
+}
+
+/** A2A 1.0 `SecurityRequirement`: `map<string, StringList>` (#1912 D8). */
+export interface AgentCardSecurityRequirement {
+  schemes: Record<string, { list: string[] }>;
+}
+
+/**
  * A2A 1.0 AgentCard (public discovery shape).
  *
  * **Naming guard:** `AgentCard.capabilities` carries A2A protocol-level flags
@@ -95,6 +123,19 @@ export interface AgentCard {
    * has never emitted.
    */
   signatures?: AgentCardSignature[];
+  /**
+   * Declared authentication schemes (#1912 D8), `security_schemes = 8`.
+   *
+   * **Emitted only when the deployment actually enforces authentication.**
+   * `assertEdgeSecret` is a no-op when no secret is configured, so a static
+   * declaration would let an unauthenticated broker advertise authentication
+   * it does not perform. A card that overstates its security is worse than one
+   * that stays silent, so absence here means "this deployment enforces
+   * nothing", not "unimplemented".
+   */
+  securitySchemes?: Record<string, AgentCardSecurityScheme>;
+  /** Which declared schemes a caller must satisfy (`security_requirements = 9`). */
+  securityRequirements?: AgentCardSecurityRequirement[];
 }
 
 export interface CreateBrokerAgentCardOptions {
@@ -106,7 +147,19 @@ export interface CreateBrokerAgentCardOptions {
   provider?: AgentProvider;
   supportsStreaming?: boolean;
   supportsPushNotifications?: boolean;
+  /**
+   * Whether this deployment actually enforces the edge secret (#1912 D8).
+   *
+   * Must be derived from the resolved runtime config (`Boolean(edgeSecret)`),
+   * never assumed — see {@link AgentCard.securitySchemes}.
+   */
+  edgeSecretRequired?: boolean;
 }
+
+/** Header carrying the shared edge secret, when one is configured. */
+export const EDGE_SECRET_HEADER = "x-a2a-edge-secret";
+/** Key for the edge-secret entry in the card's `securitySchemes` map. */
+export const EDGE_SECRET_SCHEME_ID = "edgeSecret";
 
 export function createBrokerAgentCard(options: CreateBrokerAgentCardOptions): AgentCard {
   const baseUrl = trimTrailingSlash(options.publicBaseUrl);
@@ -114,7 +167,26 @@ export function createBrokerAgentCard(options: CreateBrokerAgentCardOptions): Ag
   // One source for both the card-level field and every interface entry, so the
   // deviation stays a duplicate rather than becoming a contradiction (#1912 D7).
   const protocolVersion = options.protocolVersion ?? "1.0";
+  // Declared only when enforced. `x-a2a-requester-id` is deliberately absent:
+  // it is a caller-asserted identity, not a credential, and declaring it as a
+  // scheme would present an unauthenticated value as an authenticating one.
+  const security = options.edgeSecretRequired
+    ? {
+        securitySchemes: {
+          [EDGE_SECRET_SCHEME_ID]: {
+            apiKeySecurityScheme: {
+              description:
+                "Shared edge secret required on every request except liveness and public agent-card discovery.",
+              location: "header",
+              name: EDGE_SECRET_HEADER,
+            },
+          },
+        },
+        securityRequirements: [{ schemes: { [EDGE_SECRET_SCHEME_ID]: { list: [] as string[] } } }],
+      }
+    : {};
   return {
+    ...security,
     name: options.serviceName,
     description:
       options.description ??

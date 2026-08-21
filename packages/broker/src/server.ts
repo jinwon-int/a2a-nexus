@@ -604,6 +604,10 @@ export function createBrokerServer(options: BrokerServerOptions = {}): BrokerSer
       publicBaseUrl,
       supportsStreaming: true,
       supportsPushNotifications: pushNotificationsEnabled,
+      // Derived from resolved config, never assumed (#1912 D8): assertEdgeSecret
+      // is a no-op without a secret, so declaring the scheme unconditionally
+      // would advertise authentication this deployment does not enforce.
+      edgeSecretRequired: Boolean(edgeSecret),
     });
   // A2A 1.0 signed agent cards: opt-in via AGENT_CARD_SIGNING_KEY_FILE
   // (PEM Ed25519 or EC P-256 private key). A missing key serves the card
