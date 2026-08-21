@@ -200,6 +200,32 @@ specified in `spec.md`.
   clock, health, readiness, query, adapter, or runtime APIs; the reference
   model is in-memory, non-production, non-SQLite, non-shared, non-conforming,
   detached, and makes no durability claim for close/reopen state retention.
+- [x] Backend-neutral expiry-boundary conformance harness interface
+  implemented with the existing storage V1 command/result/lifecycle parsers,
+  keyspace digests, closed idempotency/outbox registrations, the existing time
+  V1 logical-boundary and expiry-derivation evaluators, stable
+  decision/rejection/unavailable vocabulary, one injected exact-integer fake
+  clock, a seeded deterministic fixture order, seven isolated
+  factory-created targets, a 64-command ceiling/44-command exact count, and
+  strict aggregate-only non-reflecting reports, snapshots, controls, and
+  errors.
+- [x] Adjacent test-only deterministic expiry reference-model tests implement
+  and pass the exact `expiry-1`/`expiry`/`expiry+1` matrix over all four
+  closed boundary kinds with equality expired/excluded and the
+  before-epoch-threshold counted case; refused early eviction of a logically
+  active record and unchanged retained counts across the boundary; sheddable
+  new work under critical capacity pressure with no permissive eviction of an
+  unexpired replay or idempotency safety record; expiry alone leaving
+  ownership untransferred followed by one atomic reclaim that strictly
+  advances the fence and rejects the stale fence; and no implicit TTL for
+  unacknowledged outbox rows or claim provenance across a bounded maximum
+  advance, including parser rejection of caller-supplied retention fields.
+- [x] Phase 2.6 test-only snapshot, physical-cleanup, and capacity-pressure
+  seams are explicitly conformance controls, not competing storage, clock,
+  health, readiness, query, adapter, or runtime APIs; the reference model is
+  in-memory, non-production, non-SQLite, non-shared, non-conforming, detached,
+  retains physically expired rows only as a conformance control, and executes
+  no retention or prune.
 - [ ] Claim tests pass against a SQLite or shared adapter.
 - [ ] Idempotency tests pass against a SQLite or shared adapter.
 - [ ] Idempotency retention/prune execution is implemented and proven.
@@ -208,8 +234,10 @@ specified in `spec.md`.
   implemented and proven.
 - [ ] Restart-continuity tests repeat and pass through a SQLite/shared adapter
   with actual durability and adapter clock-floor persistence.
-- [ ] Partition/unavailable and exact expiry-boundary tests are
-  implemented/passing.
+- [ ] Partition/unavailable tests are implemented/passing.
+- [ ] Exact expiry-boundary tests repeat and pass through a SQLite/shared
+  adapter, including authorized retention/prune execution at and after the
+  logical boundary.
 - [ ] Claim-graph/rollback tests implemented/passing.
 - [ ] Performance thresholds measured/approved.
 
