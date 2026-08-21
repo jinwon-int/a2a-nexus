@@ -21,6 +21,8 @@ import { join } from "node:path";
 import { test } from "node:test";
 import { verifyAgentCardSignature } from "a2a-attestation";
 import { createBrokerAgentCard } from "./agent-card.js";
+import { a2aStatusTimestamp, compareByA2AStatusTimestampDesc } from "./task-projection.js";
+import type { TaskRecord } from "../core/types.js";
 import { startTestServer } from "../server-test-helpers.js";
 import {
   A2A_AGENT_CARD_GOLDEN,
@@ -404,5 +406,72 @@ test("drift: conversation plane advertises support and non-support accurately (#
     card.supportedInterfaces.map((entry) => entry.protocolBinding),
     ["JSONRPC"],
     "conversation surface must not add A2A transport bindings",
+  );
+});
+
+test("drift: ListTasks ordering claim matches the shipped comparator (#1912 D11)", () => {
+  const ordering = A2A_COMPATIBILITY_PROFILE.listTasksOrdering;
+  assert.equal(
+    ordering.spec,
+    "status.timestamp desc, task id asc",
+    "the spec-shape ordering claim must not drift without updating the comparator",
+  );
+  assert.match(
+    ordering.legacy,
+    /createdAt desc/,
+    "the legacy envelope keeps createdAt ordering; changing it is a separate contract decision",
+  );
+
+  // Bind the claim to the shipped code path rather than restating it: the
+  // comparator must actually order by status timestamp (completedAt ??
+  // updatedAt) and must actually fall back to ascending task id.
+  const base = {
+    intent: "analyze",
+    status: "queued",
+    requester: { id: "requester-a", kind: "service", role: "researcher" },
+    target: { id: "worker-a", kind: "node", role: "analyst" },
+    payload: {},
+    message: "drift",
+  } as unknown as TaskRecord;
+
+  const completedEarlyCreated: TaskRecord = {
+    ...base,
+    id: "created-first-completed-last",
+    createdAt: "2026-08-21T10:00:00.000Z",
+    updatedAt: "2026-08-21T10:30:00.000Z",
+    completedAt: "2026-08-21T10:30:00.000Z",
+  };
+  const createdLater: TaskRecord = {
+    ...base,
+    id: "created-last-still-queued",
+    createdAt: "2026-08-21T10:20:00.000Z",
+    updatedAt: "2026-08-21T10:20:00.000Z",
+  };
+
+  assert.ok(
+    compareByA2AStatusTimestampDesc(completedEarlyCreated, createdLater) < 0,
+    "a later-completed task must sort ahead of a later-created one — createdAt ordering would invert this",
+  );
+  assert.equal(
+    a2aStatusTimestamp(completedEarlyCreated),
+    "2026-08-21T10:30:00.000Z",
+    "the status timestamp must be completedAt when the task is terminal",
+  );
+  assert.equal(
+    a2aStatusTimestamp(createdLater),
+    "2026-08-21T10:20:00.000Z",
+    "the status timestamp must fall back to updatedAt when the task is not terminal",
+  );
+
+  const tieLow: TaskRecord = { ...createdLater, id: "aaa" };
+  const tieHigh: TaskRecord = { ...createdLater, id: "bbb" };
+  assert.ok(
+    compareByA2AStatusTimestampDesc(tieLow, tieHigh) < 0,
+    "equal status timestamps must break on ascending task id so the order is total",
+  );
+  assert.equal(
+    compareByA2AStatusTimestampDesc(tieLow, tieLow),
+    0,
+    "the comparator must be reflexive so sorts stay stable",
   );
 });

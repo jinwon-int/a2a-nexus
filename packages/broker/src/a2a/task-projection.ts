@@ -39,6 +39,40 @@ export interface A2ATaskListProjection extends A2ATaskProjection {
   };
 }
 
+/**
+ * The A2A status timestamp for a task: the instant the task entered its
+ * current status. Terminal tasks carry `completedAt`; everything else is
+ * last-touched at `updatedAt`.
+ *
+ * This is the single source of truth for the value projected as
+ * `status.timestamp` on both response shapes, and for the A2A v1.0 ListTasks
+ * ordering (#1912 D11). Keep the two in lockstep: ordering by a different key
+ * than the one clients read back is exactly the drift the spec ordering rule
+ * exists to prevent.
+ */
+export function a2aStatusTimestamp(task: TaskRecord): string {
+  return task.completedAt ?? task.updatedAt;
+}
+
+/**
+ * A2A v1.0 ListTasks ordering: status timestamp descending (#1912 D11).
+ *
+ * Ties break on ascending task id so the order is total and stable — equal
+ * timestamps are common (bulk transitions share an instant), and an unstable
+ * comparator would let the same query return different orders across reads.
+ */
+export function compareByA2AStatusTimestampDesc(a: TaskRecord, b: TaskRecord): number {
+  const left = a2aStatusTimestamp(a);
+  const right = a2aStatusTimestamp(b);
+  if (left !== right) {
+    return left < right ? 1 : -1;
+  }
+  if (a.id === b.id) {
+    return 0;
+  }
+  return a.id < b.id ? -1 : 1;
+}
+
 export function projectBrokerTask(task: TaskRecord): A2ATaskProjection {
   const summary = task.result?.summary ?? task.result?.note ?? task.message;
   return {
@@ -46,7 +80,7 @@ export function projectBrokerTask(task: TaskRecord): A2ATaskProjection {
     kind: "task",
     status: {
       state: mapTaskState(task),
-      timestamp: task.completedAt ?? task.updatedAt,
+      timestamp: a2aStatusTimestamp(task),
       message: summary
         ? {
             role: "agent",
