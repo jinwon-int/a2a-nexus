@@ -10,14 +10,21 @@
  * 4. The JSON-RPC method inventory matches the documented set.
  * 5. External SDK references are tracked with pinned refs.
  *
- * All tests are deterministic — they do not make live network calls.
+ * All tests are deterministic — they make no live network calls beyond
+ * loopback test servers bound to 127.0.0.1:0.
  */
 import assert from "node:assert/strict";
-import { readFileSync } from "node:fs";
+import { generateKeyPairSync } from "node:crypto";
+import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { test } from "node:test";
+import { verifyAgentCardSignature } from "a2a-attestation";
 import { createBrokerAgentCard } from "./agent-card.js";
+import { startTestServer } from "../server-test-helpers.js";
 import {
   A2A_AGENT_CARD_GOLDEN,
+  A2A_AGENT_CARD_TRUST_GOLDEN,
   A2A_COMPATIBILITY_PROFILE,
   A2A_DRIFT_EXTERNAL_REFS,
 } from "../fixtures/a2a-protocol-compatibility.js";
@@ -145,6 +152,71 @@ test("drift: AgentCard golden fixture stays aligned with createBrokerAgentCard",
     false,
     "pushNotifications capability must remain false",
   );
+});
+
+// ---------------------------------------------------------------------------
+// Trust golden ↔ shipped signing code path
+// ---------------------------------------------------------------------------
+
+test("drift: trust golden reflects the shipped opt-in signing code path (#1912 F1)", async () => {
+  // Claim side: signing is opt-in and not required, and the profile advertises
+  // the exact algorithms/canonicalization the shipped code path must produce.
+  assert.equal(A2A_AGENT_CARD_TRUST_GOLDEN.signatureRequired, false);
+  assert.equal(A2A_AGENT_CARD_TRUST_GOLDEN.trustModel, "transport-auth-only");
+  assert.deepEqual(A2A_COMPATIBILITY_PROFILE.signedAgentCards, {
+    optIn: true,
+    algs: ["EdDSA", "ES256"],
+    canonicalization: "RFC 8785",
+  });
+
+  // Code-path side: a broker booted with a signing key serves a card whose JWS
+  // verifies against that key and whose alg stays inside the advertised set.
+  // This is the server.ts AGENT_CARD_SIGNING_KEY_FILE → signAgentCard path —
+  // the drift this suite previously could not see.
+  const { privateKey, publicKey } = generateKeyPairSync("ed25519");
+  const keyDir = mkdtempSync(join(tmpdir(), "a2a-card-signing-"));
+  try {
+    const keyFile = join(keyDir, "card-signing.pem");
+    writeFileSync(keyFile, privateKey.export({ type: "pkcs8", format: "pem" }).toString());
+    const publicPem = publicKey.export({ type: "spki", format: "pem" }).toString();
+
+    const signedServer = await startTestServer({ agentCardSigningKeyFile: keyFile });
+    try {
+      const card = await (await fetch(`${signedServer.baseUrl}/.well-known/agent-card.json`)).json();
+      assert.ok(
+        Array.isArray(card.signatures) && card.signatures.length === 1,
+        "a broker with a signing key must serve exactly one JWS entry on the card",
+      );
+      const header = JSON.parse(Buffer.from(card.signatures[0].protected, "base64url").toString("utf8"));
+      assert.ok(
+        (A2A_COMPATIBILITY_PROFILE.signedAgentCards.algs as readonly string[]).includes(header.alg),
+        `served JWS alg ${header.alg} must stay inside the advertised set`,
+      );
+      assert.equal(
+        verifyAgentCardSignature(card, publicPem),
+        true,
+        "served card signature must verify against the configured key",
+      );
+    } finally {
+      await signedServer.close();
+    }
+
+    // Unsigned serving remains the supported default: no key → no signatures
+    // field at all (not even a placeholder).
+    const unsignedServer = await startTestServer();
+    try {
+      const card = await (await fetch(`${unsignedServer.baseUrl}/.well-known/agent-card.json`)).json();
+      assert.equal(
+        "signatures" in card,
+        false,
+        "default card must not carry a signatures placeholder",
+      );
+    } finally {
+      await unsignedServer.close();
+    }
+  } finally {
+    rmSync(keyDir, { recursive: true, force: true });
+  }
 });
 
 // ---------------------------------------------------------------------------
