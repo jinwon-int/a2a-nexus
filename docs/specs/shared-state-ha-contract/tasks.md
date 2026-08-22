@@ -375,6 +375,15 @@ than a negative judgment — the harness separately asserts that
 `no_evidence_path` is only ever returned at a complete checkpoint, matching
 `negativeEvidenceRequires=complete-checkpoint`.
 
+The same harness has since been run a second time against a real V1 SQLite
+adapter target, described in section 3. That run proves the matrix through
+SQLite, which is the first clause of the repeat item above. The item stays
+unchecked because its second clause is separate work: it requires a real graph
+query surface, and V1 registers no query operation, so the evidence-path answer
+is still produced by the bounded test-only control named earlier in this
+section. The unchecked box should be read as "no query surface", not as "no
+SQLite evidence".
+
 ### 2.8 Migration/rollback rehearsal
 
 **Prerequisite: section 3.** This section is `plan.md` Phase 5
@@ -664,10 +673,47 @@ trigger in any harness, reference model, or spec text. None was invented for
 them.
 
 `Implement all primitives` therefore stays unchecked until slice F lands; the
-writer and read-consistency items are untouched. The Phase 2.7 repeat item also
-stays unchecked: proving conformance means driving the harness itself, which
-needs test-only snapshot, fault-injection, and evidence-path seams that must
-not become adapter API, and no slice has built a conformance target yet.
+writer and read-consistency items are untouched.
+
+A conformance target now exists for Phase 2.7. It lives in
+`packages/broker/src/shared-state-sqlite-claim-graph-target-v1.test.ts` and
+drives the real Phase 2.7 harness against the V1 SQLite adapter — three
+isolated database files, 31 storage V1 commands, six lifecycle transitions,
+one injected projection fault. `SharedStateSqliteAdapterV1` gained nothing: a
+test asserts its prototype still carries exactly `lifecycle`, `open`,
+`beginWrite`, `transact`, `drain`, `close`, and the two accessors, and that no
+seam name appears on it.
+
+The fault seam is the part that needed a decision. The adapter cannot be asked
+to fail, and giving it a way to be asked would be adding a storage API the
+contract does not register. So the target proxies the `DatabaseSync` handle the
+adapter was constructed with and throws when the adapter prepares the
+checkpoint write. The adapter's own `BEGIN IMMEDIATE` boundary then performs a
+real `ROLLBACK`. All-or-none is observed rather than simulated, and a separate
+test asserts the batch insert was prepared **before** the trigger fired — a
+fault landing before any write would leave identical observable state and prove
+nothing, and the harness cannot tell those apart.
+
+Nodes and edges are derived rather than stored, which is the shape slice G
+committed to and it is exact for this harness: one node per source sequence in
+a live batch's `[from, through]` range, one edge from the first sequence to
+each later one, and no tombstone state because rollback removes a batch's
+effects rather than tombstoning them. One assumption rides along and the
+harness does not exercise it — batches must not overlap, or a sequence covered
+by two live batches would count as two nodes. It is recorded here rather than
+left to look proved.
+
+Three adversarial controls were required to make the assertions credible, and
+all three fail the harness as intended: counting rolled-back batches as live
+fails `rollback_restoration_mismatch`, accepting the arm request without
+injecting fails `checkpoint_advanced_on_fault`, and leaving the authority
+reported available after a real fault fails `evidence_path_mismatch`.
+
+The Phase 2.7 repeat item still stays unchecked, now for one reason instead of
+two: the item also requires a real graph query surface, and
+`evaluateConformanceEvidencePath` is explicitly not one, because V1 registers
+no query operation. The seam gap that blocked it is closed; the query surface
+is a separate piece of work.
 
 The first schema slice implements **no adapter behavior**: no transaction
 boundary, no
