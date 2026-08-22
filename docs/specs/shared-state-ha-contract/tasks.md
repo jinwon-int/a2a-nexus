@@ -139,6 +139,29 @@ model. The model is explicitly non-production, non-SQLite, non-shared,
 non-conforming, detached from broker runtime, and makes no durable adapter
 claim. Retention/prune execution remains unimplemented and untested.
 
+The same harness has since been run against a real V1 SQLite adapter target,
+described in section 3. That run proves the matrix through SQLite, which is the
+first clause of the repeat item above; the item stays unchecked because its
+second clause — separately proving authorized retention/prune behavior — is
+neither this work nor an adapter decision.
+
+It is also the first target to use the recorded fault-point collapse decision,
+and the collapse is worth stating here rather than only in the target. V1
+performs no reservation and executes no domain mutation of its own, so
+`after_reservation` and `after_domain_mutation` name the same instant — nothing
+durable written yet — and map to the same statement. The remaining two points
+map to the outcome write and to the commit. Four armed points, three real
+positions, declared rather than fabricated.
+
+The same collapse reaches the snapshot counters, which extends the decision
+from fault points to counts. V1 keeps one durable record per executed effect,
+so `reservationCount`, `domainMutationCount`, and `stableOutcomeCount` are all
+derived from the idempotency row and `outboxAppendCount` from the link row
+staged in the same transaction. The counts still answer what the harness asks —
+whether exactly one effect happened — but they are not four independent
+observations. `pendingReservationCount` is the one counter whose zero is real
+rather than collapsed, because V1 has no reservation to leave pending.
+
 ### 2.3 Outbox ordering
 
 - [x] Release exactly eight deterministic producers at an explicit promise
@@ -763,6 +786,38 @@ two: the item also requires a real graph query surface, and
 `evaluateConformanceEvidencePath` is explicitly not one, because V1 registers
 no query operation. The seam gap that blocked it is closed; the query surface
 is a separate piece of work.
+
+A second target follows in
+`packages/broker/src/shared-state-sqlite-idempotency-target-v1.test.ts`, which
+drives the Phase 2.2 harness through the adapter: eight isolated database
+files, 78 operations, 64 same-key commands released at one barrier, a real
+close and reopen of the same database, and all five fault points.
+
+It extends the fault seam rather than reusing it unchanged. The Phase 2.7 seam
+intercepts `prepare` only, which was enough for a fault point sitting between
+two prepared statements. `BEGIN IMMEDIATE`, `COMMIT`, and `ROLLBACK` are issued
+through `exec`, so a commit-boundary fault point needs `exec` intercepted too,
+and `after_outcome_staging` is exactly that point.
+
+This is also the first place the collapse decision is used. Its terms are met
+literally: the four transaction fault points map onto three real positions, the
+collapse and its reason are stated in a frozen descriptor the tests assert
+against, no boundary is fabricated, and the adapter grew no durable write to
+manufacture one. The descriptor also names which snapshot counters share a row,
+which extends the decision from fault points to counts and is recorded as an
+extension rather than folded in silently.
+
+Four adversarial controls were confirmed RED. Two are worth naming: a blanket
+skip of fault injection fails at `ambiguous_commit_mismatch`, which means it
+never reaches the transaction fault matrix at all — so a second control that
+skips only the statement triggers was added, and it fails at
+`transaction_not_atomic`. Without it the statement mapping would have had no
+control over it. The other two are double-counting the outbox append and
+letting an ambiguous commit roll back instead of committing.
+
+A separate test asserts all three statement positions are actually reached in
+the adapter's order, because a collapse onto boundaries that are never reached
+would pass the matrix for the wrong reason.
 
 The first schema slice implements **no adapter behavior**: no transaction
 boundary, no
