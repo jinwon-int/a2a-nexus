@@ -592,6 +592,55 @@ comparing the harness to the target should expect the descriptor's synthesis
 list to account for the difference, and should treat an undeclared gap as a
 defect rather than an instance of this decision.
 
+Slice H, first part, drives the Phase 2.4 harness through the adapter in
+`packages/broker/src/shared-state-sqlite-restart-continuity-target-v1.test.ts`.
+It is the first target whose close and reopen are a real restart: the database
+is a file, the adapter is handed a `DatabaseSync` rather than owning one, and
+`close`/`open` release and re-acquire ownership against that same file. The
+three earlier targets already used file-backed databases, so what is new here
+is not the file but that continuity across a close is the thing under test.
+
+No fault point collapses. Two of the four are statement faults in different
+commands — `before-command-commit` at the outbox link INSERT, which is
+`executeIdempotent`'s first durable write, and `before-ack-commit` at the
+acknowledgment transaction's COMMIT. The other two are deliberately not
+statement faults at all: the transaction has to commit for the answer to be
+ambiguous, which is the shape Phase 2.2 established. A test asserts exactly two
+statement faults fire, and at which statement kinds, so the matrix cannot pass
+because nothing ran.
+
+Three measured facts shaped the target and none of them was predictable from
+the earlier slices. The adapter must be constructed with the harness's own
+backward-skew tolerance rather than the `"0"` the three earlier targets pass,
+because the backward-clock scenario observes exactly one millisecond beyond it.
+The injected instant must be passed through verbatim rather than replaced by a
+target-owned counter as Phase 2.3 does, because the adapter derives
+`expiresInMs` and `resetInMs` from it and the harness asserts both are 900.
+And after a crash fault the harness reopens with no close of its own, so the
+target takes the adapter down itself — a fault leaves the adapter `ready` and a
+bare reopen would answer `already_open`. For the same reason `close` branches on
+adapter state: `drain` refuses anything that is not `ready`, and the adapter is
+`failed` after the forbidden write.
+
+Seventeen of the nineteen snapshot fields are real queries. `domainEffectCount`
+is collapsed onto the idempotency row exactly as Phase 2.2 and 2.3 declared;
+`idempotentOutboxEffectCount` is not collapsed with it, because the outbox link
+is its own table and its own row. `leaseMutationCount` is the declared constant
+above. Fencing tokens and sequences are compared as integers rather than by SQL
+`MAX()`, which sorts TEXT lexically and would rank `"9"` above `"10"` — the same
+trap the adapter documents against itself.
+
+One adversarial control did not reach the check it exists to fail on its first
+form, which is now the seventh time this section has caught that. Dropping the
+reconciliation cursor's floor alone changed nothing, because at the point the
+harness reconciles, the only event above the floor is also the only
+unacknowledged one; the control had to drop the acknowledgment filter as well
+before it could return a wrong answer.
+
+The Phase 2.4 repeat item stays unchecked, for the same reason the three
+earlier ones do: it also requires separately proving authorized runtime/query
+reconciliation and retention/prune behaviour, which no slice has performed.
+
 The checked schema item above shipped eleven `shared_state_*` tables in
 `packages/broker/src/shared-state-sqlite-schema-v1.ts`, derived from what
 section 6.2 requires an adapter replacement to preserve — keys, fingerprints,
