@@ -1242,7 +1242,7 @@ path decision belongs to section 4 and is deliberately not made here.
 
 ## 4. Startup/readiness/runtime integration
 
-- [ ] Add exact grade and expected-process configuration.
+- [x] Add exact grade and expected-process configuration.
 - [ ] Add startup version/capability/clock/schema/migration checks.
 - [ ] Add fenced singleton ownership and loss monitoring.
 - [ ] Add `/readyz` and state-authority non-serving middleware.
@@ -1256,6 +1256,35 @@ path decision belongs to section 4 and is deliberately not made here.
 - [ ] Make `shared-state-ha` fail until an approved conforming backend exists.
 - [ ] Integrate primitives one at a time behind default-off flags.
 - [ ] Run compatibility/regression/performance tests.
+
+### Slice J, first part — grade and expected-process configuration
+
+Slice J, first part, adds the closed configuration parser in
+`packages/broker/src/shared-state-deployment-grade-v1.ts`. It does not bind a
+socket, open the V1 adapter, install `/readyz`, or change broker defaults.
+The broker still does not read these variables.
+
+The two keys are `BROKER_DEPLOYMENT_GRADE` and
+`BROKER_EXPECTED_PROCESS_COUNT`. An omitted grade defaults to
+`single-process` with `gradeDefaulted=true`, which is the section 3.1
+backward-compatible default. An omitted count defaults to `1`. A present
+empty string is a misconfiguration, not an omitted default.
+
+`multi-process-unsupported` is refused as a configured value. It remains an
+effective grade for a later live ownership conflict, which this slice does
+not detect. `shared-state-ha` fails closed with `shared_backend_unavailable`
+because no approved conforming shared adapter exists; the parser records
+`approvedSharedBackend: false` rather than inventing a backend name. An
+expected process count other than `1` fails closed under both servable
+single-writer grades, which is the section 3.1 rule that those grades MUST
+NOT start with a replica count greater than one.
+
+The later items in this section — startup checks, ownership-loss monitoring,
+`/readyz`, non-serving middleware, and `stateContract` health — stay
+unchecked. They are the consumers of this decision, not part of it. Item
+`Make shared-state-ha fail until an approved conforming backend exists` also
+stays unchecked: the parser already refuses that grade, but startup does not
+yet call the parser, so a process can still boot without seeing the refusal.
 
 ## 5. Migration and operations
 
