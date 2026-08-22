@@ -1071,6 +1071,32 @@ export class SharedStateSqliteAdapterV1 {
     const outcomeDigest = deriveOutcomeDigest(input);
     if (outcomeDigest === null) return failure("adapter_unavailable");
 
+    // The effect's outbox block is staged before the outcome, in this same
+    // transaction, which is the order the Phase 2.2 fault matrix names:
+    // outbox staging precedes outcome staging. Nothing reads these four
+    // values — not the reference model, not either outcome digest, not this
+    // adapter — but the effect declares them durably, so a later authorized
+    // reconciliation can tell which outbox event an executed effect promised.
+    //
+    // They are recorded exactly as supplied. No value is derived, defaulted,
+    // or invented, which is what separates this from writing a registered
+    // `shared_state_outbox` row.
+    this.#db
+      .prepare(
+        `INSERT INTO shared_state_idempotency_outbox_link
+           (namespace, key_digest, stream_key_digest, event_key_digest,
+            payload_digest, retention_policy_version)
+         VALUES (?, ?, ?, ?, ?, ?)`,
+      )
+      .run(
+        input.namespace,
+        input.keyDigest,
+        input.effect.outbox.streamKeyDigest,
+        input.effect.outbox.eventKeyDigest,
+        input.effect.outbox.payloadDigest,
+        input.effect.outbox.retentionPolicyVersion,
+      );
+
     this.#db
       .prepare(
         `INSERT INTO shared_state_idempotency
