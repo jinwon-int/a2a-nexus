@@ -408,6 +408,163 @@ function seedSources(
 /**
  * Opens a ready adapter with the clock floor at zero.
  */
+const OUTBOX_NAMESPACE = "broker.terminal-outbox";
+
+/**
+ * Builds the policy fields every outbox command repeats.
+ *
+ * The stream key is structured and the digest is recomputed from it by the
+ * evaluator, so the two cannot be varied independently here — which is the
+ * point: a test that hand-wrote a digest would be testing a value the adapter
+ * never trusts.
+ */
+function outboxStream(streamId: string): {
+  readonly streamKey: Record<string, unknown>;
+  readonly streamKeyDigest: string;
+} {
+  const components = [
+    { field: "streamType", type: "utf8", value: "broker-terminal-outbox" },
+    { field: "streamId", type: "utf8", value: streamId },
+  ];
+  return {
+    streamKey: { keyspaceVersion: V.versions.keyspace, components },
+    streamKeyDigest: namespacedDigest(
+      OUTBOX_NAMESPACE,
+      "broker.outbox.stream-key",
+      components,
+    ),
+  };
+}
+
+function outboxCommand(
+  operation: string,
+  input: Record<string, unknown>,
+): SharedStateTransactionCommandV1 {
+  const parsed = parseSharedStateTransactionCommandV1({
+    kind: V.kinds.transactionCommand,
+    contractVersion: V.versions.contract,
+    transactionVersion: V.versions.transaction,
+    operationVersion: V.versions.operation,
+    operation,
+    input,
+  });
+  assert.equal(parsed.ok, true);
+  if (!parsed.ok) throw new Error("unreachable");
+  return parsed.value;
+}
+
+function appendOutboxCommand(input: {
+  readonly streamId?: string;
+  readonly producerId?: string;
+  readonly clientKey?: string;
+  readonly eventId?: string;
+  readonly payload?: string;
+}): SharedStateTransactionCommandV1 {
+  const stream = outboxStream(input.streamId ?? "stream-1");
+  const d = (
+    domain: string,
+    components: readonly Record<string, unknown>[],
+  ): string => namespacedDigest(OUTBOX_NAMESPACE, domain, components);
+  return outboxCommand("appendOutbox", {
+    namespace: OUTBOX_NAMESPACE,
+    eventPurpose: "task-terminal-notification",
+    streamKey: stream.streamKey,
+    streamKeyDigest: stream.streamKeyDigest,
+    orderingScope: "total-within-exact-stream-key",
+    idempotencyKeyDigest: d("broker.outbox.idempotency-key", [
+      { field: "producerId", type: "utf8", value: input.producerId ?? "p-1" },
+      { field: "clientKey", type: "utf8", value: input.clientKey ?? "c-1" },
+    ]),
+    eventKeyDigest: d("broker.outbox.event-key", [
+      { field: "eventId", type: "utf8", value: input.eventId ?? "e-1" },
+    ]),
+    payloadDigest: d("broker.outbox.payload", [
+      { field: "payload", type: "bytes", value: input.payload ?? "a1" },
+    ]),
+    retentionPolicyVersion: "task-terminal-outbox-retention.v1",
+    receiptPolicyVersion: "terminal-notification-receipt.v1",
+    acknowledgmentPolicyVersion: "terminal-notification-ack.v1",
+  });
+}
+
+function receiptCommand(input: {
+  readonly streamId?: string;
+  readonly eventId?: string;
+  readonly evidenceKind: string;
+  readonly expected: string;
+  readonly next: string;
+}): SharedStateTransactionCommandV1 {
+  const stream = outboxStream(input.streamId ?? "stream-1");
+  const d = (
+    domain: string,
+    components: readonly Record<string, unknown>[],
+  ): string => namespacedDigest(OUTBOX_NAMESPACE, domain, components);
+  return outboxCommand("updateOutboxReceipt", {
+    namespace: OUTBOX_NAMESPACE,
+    eventPurpose: "task-terminal-notification",
+    streamKey: stream.streamKey,
+    streamKeyDigest: stream.streamKeyDigest,
+    orderingScope: "total-within-exact-stream-key",
+    eventKeyDigest: d("broker.outbox.event-key", [
+      { field: "eventId", type: "utf8", value: input.eventId ?? "e-1" },
+    ]),
+    receiptEvidenceDigest: d("broker.outbox.receipt-evidence", [
+      { field: "provider", type: "utf8", value: "provider-1" },
+      { field: "evidence", type: "bytes", value: "e1" },
+    ]),
+    receiptEvidenceKind: input.evidenceKind,
+    expectedReceiptState: input.expected,
+    newReceiptState: input.next,
+    retentionPolicyVersion: "task-terminal-outbox-retention.v1",
+    receiptPolicyVersion: "terminal-notification-receipt.v1",
+    acknowledgmentPolicyVersion: "terminal-notification-ack.v1",
+  });
+}
+
+function acknowledgeCommand(input: {
+  readonly streamId?: string;
+  readonly eventId?: string;
+  readonly evidenceKind?: string;
+}): SharedStateTransactionCommandV1 {
+  const stream = outboxStream(input.streamId ?? "stream-1");
+  const d = (
+    domain: string,
+    components: readonly Record<string, unknown>[],
+  ): string => namespacedDigest(OUTBOX_NAMESPACE, domain, components);
+  return outboxCommand("acknowledgeOutbox", {
+    namespace: OUTBOX_NAMESPACE,
+    eventPurpose: "task-terminal-notification",
+    streamKey: stream.streamKey,
+    streamKeyDigest: stream.streamKeyDigest,
+    orderingScope: "total-within-exact-stream-key",
+    eventKeyDigest: d("broker.outbox.event-key", [
+      { field: "eventId", type: "utf8", value: input.eventId ?? "e-1" },
+    ]),
+    receiptEvidenceDigest: d("broker.outbox.receipt-evidence", [
+      { field: "provider", type: "utf8", value: "provider-1" },
+      { field: "evidence", type: "bytes", value: "e1" },
+    ]),
+    receiptEvidenceKind: input.evidenceKind ?? "operator-confirmed",
+    expectedReceiptState: "confirmed",
+    expectedAcknowledgmentState: "unacknowledged",
+    retentionPolicyVersion: "task-terminal-outbox-retention.v1",
+    receiptPolicyVersion: "terminal-notification-receipt.v1",
+    acknowledgmentPolicyVersion: "terminal-notification-ack.v1",
+  });
+}
+
+function readOutboxRows(
+  db: DatabaseSync,
+): readonly Record<string, unknown>[] {
+  return db
+    .prepare(
+      `SELECT event_key_digest, stream_sequence, receipt_state,
+              acknowledgment_state
+         FROM shared_state_outbox ORDER BY rowid`,
+    )
+    .all() as readonly Record<string, unknown>[];
+}
+
 function readyAdapter(
   db: DatabaseSync,
   ownerToken = "owner-a",
@@ -668,9 +825,10 @@ test("rejects reopening an already-open adapter", () => {
   }
 });
 
-test("implements every primitive except outbox, on closed vocabulary", () => {
+test("implements every primitive, on closed vocabulary", () => {
   // The public surface is the lifecycle seam, the write guard, and one
-  // command entry point. No primitive gets its own public method.
+  // command entry point. No primitive gets its own public method — the three
+  // outbox commands added no public member, and neither did any before them.
   const surface = Object.getOwnPropertyNames(
     SharedStateSqliteAdapterV1.prototype,
   ).filter((name) => name !== "constructor");
@@ -721,20 +879,27 @@ test("implements every primitive except outbox, on closed vocabulary", () => {
   );
 });
 
-test("refuses every operation this slice does not implement", () => {
+test("refuses an operation outside the closed vocabulary", () => {
   const fixture = makeFixture();
   try {
     const owner = readyAdapter(fixture.db);
-    // Built by hand rather than parsed: the point is that the adapter refuses
-    // on the operation alone, before it looks at anything else.
+    // With the outbox commands in place there is no longer an operation in
+    // the vocabulary this adapter declines, so the refusal has to be proved
+    // with a name the vocabulary does not contain. Built by hand rather than
+    // parsed: the point is that the adapter refuses on the operation alone,
+    // before it looks at anything else.
     const unimplemented = {
       kind: V.kinds.transactionCommand,
       contractVersion: V.versions.contract,
       transactionVersion: V.versions.transaction,
       operationVersion: V.versions.operation,
-      operation: "appendOutbox",
+      operation: "pruneOutbox",
       input: {},
     } as unknown as SharedStateTransactionCommandV1;
+    assert.equal(
+      V.operations.includes("pruneOutbox" as (typeof V.operations)[number]),
+      false,
+    );
     const refused = owner.transact(unimplemented, { observedAtUnixMs: "10" });
     assert.equal(refused.ok, false);
     if (refused.ok) return;
@@ -2277,5 +2442,361 @@ test("the outbox link and the outcome commit together or not at all", () => {
   } finally {
     db.close();
     rmSync(directory, { recursive: true, force: true });
+  }
+});
+
+test("an appended event starts pending and unacknowledged at sequence one", () => {
+  const fixture = makeFixture();
+  try {
+    const owner = readyAdapter(fixture.db);
+    const result = committed(
+      owner.transact(appendOutboxCommand({}), { observedAtUnixMs: "1000" }),
+    );
+    assert.equal(result.decision, "appended");
+    assert.equal(result.streamSequence, "1");
+
+    const rows = readOutboxRows(fixture.db);
+    assert.equal(rows.length, 1);
+    assert.equal(rows[0]?.receipt_state, "pending");
+    assert.equal(rows[0]?.acknowledgment_state, "unacknowledged");
+    assert.equal(rows[0]?.stream_sequence, "1");
+  } finally {
+    disposeFixture(fixture);
+  }
+});
+
+test("a retried producer key replays the original event id and sequence", () => {
+  const fixture = makeFixture();
+  try {
+    const owner = readyAdapter(fixture.db);
+    const first = committed(
+      owner.transact(appendOutboxCommand({}), { observedAtUnixMs: "1000" }),
+    );
+    // Same producer key and payload, retried.
+    const retry = committed(
+      owner.transact(appendOutboxCommand({}), { observedAtUnixMs: "1001" }),
+    );
+    assert.equal(retry.decision, "replayed");
+    assert.equal(retry.eventKeyDigest, first.eventKeyDigest);
+    assert.equal(retry.streamSequence, first.streamSequence);
+    // A replay is not a second event.
+    assert.equal(readOutboxRows(fixture.db).length, 1);
+  } finally {
+    disposeFixture(fixture);
+  }
+});
+
+test("the same producer key with a different payload is a conflict", () => {
+  const fixture = makeFixture();
+  try {
+    const owner = readyAdapter(fixture.db);
+    committed(
+      owner.transact(appendOutboxCommand({}), { observedAtUnixMs: "1000" }),
+    );
+    // The one thing an idempotency binding must never absorb: the key was
+    // reused for different work.
+    const reason = rejected(
+      owner.transact(
+        appendOutboxCommand({ payload: "a2", eventId: "e-2" }),
+        { observedAtUnixMs: "1001" },
+      ),
+    );
+    assert.equal(reason, "idempotency_conflict");
+    assert.equal(readOutboxRows(fixture.db).length, 1);
+  } finally {
+    disposeFixture(fixture);
+  }
+});
+
+test("a second producer key may not take an event id already on the stream", () => {
+  const fixture = makeFixture();
+  try {
+    const owner = readyAdapter(fixture.db);
+    committed(
+      owner.transact(appendOutboxCommand({}), { observedAtUnixMs: "1000" }),
+    );
+    // Different producer key, same event id. The primary key would refuse the
+    // insert; the adapter answers the conflict instead of failing the store.
+    const reason = rejected(
+      owner.transact(appendOutboxCommand({ clientKey: "c-2" }), {
+        observedAtUnixMs: "1001",
+      }),
+    );
+    assert.equal(reason, "idempotency_conflict");
+    assert.equal(readOutboxRows(fixture.db).length, 1);
+  } finally {
+    disposeFixture(fixture);
+  }
+});
+
+test("sequences pass ten without comparing as text", () => {
+  const fixture = makeFixture();
+  try {
+    const owner = readyAdapter(fixture.db);
+    // `stream_sequence` is TEXT. A lexical maximum answers "9" for a stream
+    // that already reached "10", so the eleventh append would collide on the
+    // unique index. Eleven appends is the shortest run that reaches it.
+    for (let index = 1; index <= 11; index += 1) {
+      const result = committed(
+        owner.transact(
+          appendOutboxCommand({
+            clientKey: `c-${index}`,
+            eventId: `e-${index}`,
+            payload: index.toString(16).padStart(2, "0"),
+          }),
+          { observedAtUnixMs: `${1000 + index}` },
+        ),
+      );
+      assert.equal(result.decision, "appended");
+      assert.equal(result.streamSequence, `${index}`);
+    }
+    assert.equal(readOutboxRows(fixture.db).length, 11);
+  } finally {
+    disposeFixture(fixture);
+  }
+});
+
+test("each exact stream key has its own sequence space", () => {
+  const fixture = makeFixture();
+  try {
+    const owner = readyAdapter(fixture.db);
+    const first = committed(
+      owner.transact(appendOutboxCommand({}), { observedAtUnixMs: "1000" }),
+    );
+    // A different stream key, so the registry's per-exact-stream-key ordering
+    // means this restarts at one rather than continuing.
+    const other = committed(
+      owner.transact(
+        appendOutboxCommand({ streamId: "stream-2", eventId: "e-2" }),
+        { observedAtUnixMs: "1001" },
+      ),
+    );
+    assert.equal(first.streamSequence, "1");
+    assert.equal(other.streamSequence, "1");
+    assert.equal(readOutboxRows(fixture.db).length, 2);
+  } finally {
+    disposeFixture(fixture);
+  }
+});
+
+test("provider acceptance keeps the event pending, confirmation moves it", () => {
+  const fixture = makeFixture();
+  try {
+    const owner = readyAdapter(fixture.db);
+    committed(
+      owner.transact(appendOutboxCommand({}), { observedAtUnixMs: "1000" }),
+    );
+
+    // Provider acceptance is not consumer visibility: it is evidence the
+    // event left, not evidence it arrived, so it stays pending.
+    const accepted = committed(
+      owner.transact(
+        receiptCommand({
+          evidenceKind: "provider-accepted",
+          expected: "pending",
+          next: "pending",
+        }),
+        { observedAtUnixMs: "1001" },
+      ),
+    );
+    assert.equal(accepted.receiptState, "pending");
+    assert.equal(readOutboxRows(fixture.db)[0]?.receipt_state, "pending");
+
+    const confirmed = committed(
+      owner.transact(
+        receiptCommand({
+          evidenceKind: "operator-confirmed",
+          expected: "pending",
+          next: "confirmed",
+        }),
+        { observedAtUnixMs: "1002" },
+      ),
+    );
+    assert.equal(confirmed.receiptState, "confirmed");
+    assert.equal(readOutboxRows(fixture.db)[0]?.receipt_state, "confirmed");
+  } finally {
+    disposeFixture(fixture);
+  }
+});
+
+test("a receipt update that expects the wrong state is a conflict", () => {
+  const fixture = makeFixture();
+  try {
+    const owner = readyAdapter(fixture.db);
+    committed(
+      owner.transact(appendOutboxCommand({}), { observedAtUnixMs: "1000" }),
+    );
+    committed(
+      owner.transact(
+        receiptCommand({
+          evidenceKind: "operator-confirmed",
+          expected: "pending",
+          next: "confirmed",
+        }),
+        { observedAtUnixMs: "1001" },
+      ),
+    );
+    // The row is confirmed now, so a compare-and-set that still expects
+    // pending must not silently move it back.
+    const reason = rejected(
+      owner.transact(
+        receiptCommand({
+          evidenceKind: "delivery-failed",
+          expected: "pending",
+          next: "failed",
+        }),
+        { observedAtUnixMs: "1002" },
+      ),
+    );
+    assert.equal(reason, "receipt_state_conflict");
+    assert.equal(readOutboxRows(fixture.db)[0]?.receipt_state, "confirmed");
+  } finally {
+    disposeFixture(fixture);
+  }
+});
+
+test("a receipt update for an event that does not exist is not found", () => {
+  const fixture = makeFixture();
+  try {
+    const owner = readyAdapter(fixture.db);
+    const reason = rejected(
+      owner.transact(
+        receiptCommand({
+          evidenceKind: "operator-confirmed",
+          expected: "pending",
+          next: "confirmed",
+        }),
+        { observedAtUnixMs: "1000" },
+      ),
+    );
+    assert.equal(reason, "event_not_found");
+    assert.equal(readOutboxRows(fixture.db).length, 0);
+  } finally {
+    disposeFixture(fixture);
+  }
+});
+
+test("acknowledging is refused until the receipt is confirmed", () => {
+  const fixture = makeFixture();
+  try {
+    const owner = readyAdapter(fixture.db);
+    committed(
+      owner.transact(appendOutboxCommand({}), { observedAtUnixMs: "1000" }),
+    );
+    const reason = rejected(
+      owner.transact(acknowledgeCommand({}), { observedAtUnixMs: "1001" }),
+    );
+    assert.equal(reason, "receipt_not_confirmed");
+    assert.equal(
+      readOutboxRows(fixture.db)[0]?.acknowledgment_state,
+      "unacknowledged",
+    );
+  } finally {
+    disposeFixture(fixture);
+  }
+});
+
+test("a confirmed event acknowledges once and then reports already", () => {
+  const fixture = makeFixture();
+  try {
+    const owner = readyAdapter(fixture.db);
+    committed(
+      owner.transact(appendOutboxCommand({}), { observedAtUnixMs: "1000" }),
+    );
+    committed(
+      owner.transact(
+        receiptCommand({
+          evidenceKind: "operator-confirmed",
+          expected: "pending",
+          next: "confirmed",
+        }),
+        { observedAtUnixMs: "1001" },
+      ),
+    );
+
+    const first = committed(
+      owner.transact(acknowledgeCommand({}), { observedAtUnixMs: "1002" }),
+    );
+    assert.equal(first.decision, "acknowledged");
+
+    // The same command again. The policy forces the expected acknowledgment
+    // state to `unacknowledged`, so a retry necessarily disagrees with the
+    // stored state — answering a conflict would refuse the retry the
+    // idempotent decision exists for.
+    const again = committed(
+      owner.transact(acknowledgeCommand({}), { observedAtUnixMs: "1003" }),
+    );
+    assert.equal(again.decision, "already_acknowledged");
+
+    const rows = readOutboxRows(fixture.db);
+    assert.equal(rows[0]?.acknowledgment_state, "acknowledged");
+    assert.equal(rows[0]?.receipt_state, "confirmed");
+  } finally {
+    disposeFixture(fixture);
+  }
+});
+
+test("provider acceptance is not acknowledging evidence", () => {
+  const fixture = makeFixture();
+  try {
+    const owner = readyAdapter(fixture.db);
+    committed(
+      owner.transact(appendOutboxCommand({}), { observedAtUnixMs: "1000" }),
+    );
+    committed(
+      owner.transact(
+        receiptCommand({
+          evidenceKind: "operator-confirmed",
+          expected: "pending",
+          next: "confirmed",
+        }),
+        { observedAtUnixMs: "1001" },
+      ),
+    );
+    // The contract parser refuses this before the adapter sees it: provider
+    // acceptance has its own error code precisely so it cannot be mistaken
+    // for an acknowledgment.
+    const parsed = parseSharedStateTransactionCommandV1({
+      kind: V.kinds.transactionCommand,
+      contractVersion: V.versions.contract,
+      transactionVersion: V.versions.transaction,
+      operationVersion: V.versions.operation,
+      operation: "acknowledgeOutbox",
+      input: (acknowledgeCommand({ evidenceKind: "operator-confirmed" }) as
+        unknown as { input: Record<string, unknown> }).input,
+    });
+    assert.equal(parsed.ok, true);
+
+    assert.throws(() =>
+      acknowledgeCommand({ evidenceKind: "provider-accepted" })
+    );
+    assert.equal(
+      readOutboxRows(fixture.db)[0]?.acknowledgment_state,
+      "unacknowledged",
+    );
+  } finally {
+    disposeFixture(fixture);
+  }
+});
+
+test("an outbox command from a session that lost ownership writes nothing", () => {
+  const fixture = makeFixture();
+  try {
+    const owner = readyAdapter(fixture.db);
+    fixture.db
+      .prepare(
+        `UPDATE shared_state_ownership SET owner_token = ? WHERE id = ?`,
+      )
+      .run("owner-b", SHARED_STATE_SQLITE_ADAPTER_V1.ownershipRowId);
+
+    const result = owner.transact(appendOutboxCommand({}), {
+      observedAtUnixMs: "1000",
+    });
+    assert.equal(result.ok, false);
+    if (result.ok) return;
+    assert.equal(result.error.code, "ownership_lost");
+    assert.equal(readOutboxRows(fixture.db).length, 0);
+  } finally {
+    disposeFixture(fixture);
   }
 });

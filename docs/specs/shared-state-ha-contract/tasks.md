@@ -476,7 +476,7 @@ than advancing the legacy store's `SQLITE_SCHEMA_VERSION`.
 
 - [x] Add V1 tables/migrations only in a separately reviewed source PR.
 - [x] Add exclusive singleton ownership and monotonic lifecycle epoch.
-- [ ] Implement all primitives with `BEGIN IMMEDIATE` atomic boundaries.
+- [x] Implement all primitives with `BEGIN IMMEDIATE` atomic boundaries.
 - [ ] Prove inline writer conformance.
 - [ ] Prove optional FIFO worker writer conformance and durable ACK behavior.
 - [ ] Ensure synchronous reads declare/bound consistency and cannot observe an
@@ -687,6 +687,12 @@ place in this section where the table shape genuinely had to move. It is now
 settled: `shared_state_idempotency_outbox_link`, described earlier in this
 section, which took the shape from eleven tables to twelve.
 
+That separation is now confirmed from the other side. The outbox commands write
+`shared_state_outbox` and supply all nine of its columns directly, exactly as
+the measurement predicted; the link table is untouched by them. The two paths
+never contend for the same row, so no reconciliation between them was needed —
+and none was invented, since no V1 reader consumes either one.
+
 Slice G adds the three claim-graph commands. Phase 2.7 has no policy module to
 reuse — unlike section 2.6's time module or section 2.2's catalog evaluator,
 its only normative source is the conformance harness and its reference model —
@@ -744,8 +750,65 @@ Three rejection reason codes in the closed vocabulary — `source_fact_conflict`
 trigger in any harness, reference model, or spec text. None was invented for
 them.
 
-`Implement all primitives` therefore stays unchecked until slice F lands; the
-writer and read-consistency items are untouched.
+`Implement all primitives` is now checked. Slice F's second part adds the three
+outbox commands, which were the last operations the adapter refused, so all
+thirteen storage V1 operations are implemented inside the one `BEGIN IMMEDIATE`
+boundary. The writer and read-consistency items are untouched.
+
+The outbox slice reuses the section 2.3 evaluator rather than restating it. One
+entry point, `evaluateSharedStateOutboxPolicyV1`, already answers the closed
+purpose registry, the three policy version bindings, the ordering scope, the
+recomputed stream key digest, the receipt transition table, and the
+acknowledgment evidence gate. What was left for the adapter is what the
+evaluator cannot know: whether a row exists, and what sequence comes next. Its
+field list is a strict subset of the command input, so the command is projected
+onto it — passing the three digests the evaluator does not take would be
+answered with `unknown_field` rather than a policy decision.
+
+Sequence allocation is the adapter's job by registration, not by choice:
+`adapter-allocated-per-exact-stream-key` with `callerSequencePolicy:
+"forbidden"`, which the evaluator enforces by scanning the whole input tree for
+a caller-supplied sequence field before it looks at anything else. Two measured
+details shaped the implementation. `stream_sequence` is TEXT, so SQL `MAX()`
+compares it lexically and answers `"9"` for a stream that already reached
+`"10"`; the maximum is taken as `BigInt`, and a test appends eleven events
+because that is the shortest run which reaches the collision. And the
+idempotency binding is keyed by `idempotencyKeyDigest` rather than by the event
+id, because the registered answer is that the same key and payload return the
+ORIGINAL event id and sequence — so the original has to be found by the key the
+producer retried with.
+
+Receipt and acknowledgment evidence digests are validated by the contract and
+then not stored. Nothing in V1 reads them back: they appear in no conformance
+snapshot counter and in no reconcile response. Adding columns for values no
+reader consumes would be inventing durable state, so the twelve-table shape did
+not move for this slice.
+
+Two rejection codes in the outbox vocabulary have no trigger and none was
+invented for them. `ordering_conflict` has no defining condition in any harness,
+reference model, or spec text, and mapping the evaluator's
+`ordering_scope_mismatch` onto it would misdescribe a refused policy binding as
+a sequence conflict. `ack_state_conflict` is unreachable for a different
+reason: the policy forces `expectedAcknowledgmentState` to `unacknowledged`, and
+a row that is already acknowledged is answered `already_acknowledged` before the
+expected state is compared — calling that a conflict would refuse the retry the
+idempotent decision exists for.
+
+`acknowledgeOutbox` is the one operation where no policy failure maps to a
+rejection at all. Its three codes — `event_not_found`, `receipt_not_confirmed`,
+`ack_state_conflict` — all describe stored row state, while a forbidden purpose
+or non-acknowledging evidence describes the command. Those are reported as
+adapter failures under `unregistered_outbox_registration` rather than dressed as
+one of the three, on the same principle slice E applied to an unregistered
+idempotency namespace.
+
+Seven adversarial controls were run against these assertions and all seven went
+red: a lexical sequence maximum, a removed `already_acknowledged` short circuit,
+a disabled event-id takeover check, a removed receipt compare-and-set, a global
+instead of per-stream sequence space, an idempotency lookup keyed by event id,
+and an acknowledgment that does not require confirmation. This is the first
+section 3 slice where no control passed, so no coverage gap had to be closed
+after the fact.
 
 A conformance target now exists for Phase 2.7. It lives in
 `packages/broker/src/shared-state-sqlite-claim-graph-target-v1.test.ts` and
