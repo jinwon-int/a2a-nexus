@@ -543,7 +543,43 @@ must stage neither. That crosses into the outbox slice and is not implemented
 here. The harness also exercises a single resource; multi-resource behavior is
 covered by tests added in this slice rather than by the harness.
 
-`Implement all primitives` therefore stays unchecked until slices E through G
+Slice E adds `executeIdempotent`. Its semantics come from Phase 2.2 the same
+way, and its shape is unusual in two respects worth stating.
+
+It takes no observed instant. The registered namespaces are
+`non-expiring-until-prune-proof` with a null logical expiry boundary, so an
+idempotency record has no TTL for a clock to be compared against. Retention is
+released by an authorized prune, which is neither this slice nor an adapter
+decision, and inventing an expiry would be the permissive answer in reverse.
+
+A replay returns the **stored** outcome rather than deriving it again. The
+distinction only becomes visible when a retry repeats the key and payload but
+declares a different effect: re-deriving would answer with the new effect's
+outcome, which would let a later caller restate what already happened. The
+first execution is what happened.
+
+Idempotency namespaces are registered rather than free-form, and the contract
+parser already refuses an unregistered namespace and a mismatched retention
+policy before a command can reach the adapter. The adapter repeats the catalog
+check as defence in depth. An unregistered namespace is answered as an adapter
+failure rather than a rejection, because the rejection vocabulary
+(`idempotency_conflict`, `unknown_idempotency_outcome`,
+`retention_policy_mismatch`) contains no code for it, and answering one it does
+not contain would be inventing it.
+
+`outcomeDigest`, like `attemptKeyDigest`, is produced by the command and never
+supplied to it, so the adapter derives it: `outcomeType` from the declared
+effect kind, `outcomeBody` from the domain mutation digest. V1 executes no
+effect of its own, so the mutation the caller declared is the only thing an
+outcome can be bound to.
+
+The Phase 2.2 repeat item stays unchecked for the same reason as Phase 2.1:
+the harness requires an outbox append staged inside the same transaction, with
+rejected commands staging nothing. Both sections now wait on the outbox slice,
+which makes slice F the point at which three repeat items — 2.1, 2.2, and 2.3
+— become checkable together.
+
+`Implement all primitives` therefore stays unchecked until slices F and G
 land; the writer and read-consistency items are untouched.
 
 The first schema slice implements **no adapter behavior**: no transaction
