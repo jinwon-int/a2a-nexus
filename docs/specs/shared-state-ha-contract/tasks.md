@@ -748,6 +748,97 @@ real partition behaviour against a live authority, which it does not — a
 single-process SQLite file has no authority to be partitioned from. Injected
 unavailability is not a partition, and checking the item would claim it was.
 
+### Slice I, first part — the Phase 2.1 lease target, and what "inline writer" means
+
+Before the target itself, an ordering fact that was easy to get wrong. The two
+unchecked writer items above are not independent, and the worker one is not
+startable yet. `plan.md`'s Phase 2 says "Reuse the optional FIFO worker writer
+only after direct-mode conformance; reads remain bounded and
+consistency-declared", and its exit gate is "both inline and worker-writer
+SQLite modes pass the same V1 suite." So `Prove inline writer conformance` is a
+prerequisite for the worker item rather than a sibling of it, and what it
+cashes out to is running every Phase 2 harness through the adapter — the work
+slices F, G, and H have been doing one section at a time. Five of the seven
+were done before this slice; `2.1 lease` and `2.6 expiry` were the remainder.
+
+The worker item also has a second gate that is worth recording now rather than
+rediscovering: the spec attaches the declare-consistency duty to reads that
+decide authorization, claim, finalization, ACK, prune, or cutover (section 6.2)
+and puts it on `query`, but the adapter exposes eight members and `query` is
+not among them. There is no read surface on which to declare anything yet.
+
+Slice I, first part, drives the Phase 2.1 harness through the adapter in
+`packages/broker/src/shared-state-sqlite-lease-target-v1.test.ts`. Adapter
+source is unchanged, as in the five earlier targets.
+
+Two things here are new. It is the first target to open **two adapters on one
+database file**: the harness asks for a second simultaneous owner and requires
+it to fail closed, and the refusal is the adapter's own — `open()` meets a live
+foreign `owner_token` and answers `ownership_conflict` without waiting and
+without taking over, leaving the holder untouched at `ready`. A separate test
+also shows the refusal is a conflict rather than corruption, by releasing the
+holder and watching the contender then acquire the same file. The reference
+model could only assert that behaviour; this runs it. It is also the first
+contended barrier against real SQLite: thirty-two contenders claim one
+resource, exactly one commits, and the other thirty-one are rejected
+`claim_conflict` by the adapter's own ladder — which puts `claim_conflict`
+ahead of `version_conflict`, so a contender that met a live holder is told what
+actually stopped it rather than being told its version was stale.
+
+One fault point collapses under decision 2. `after_resource_mutation` and
+`after_audit_outbox_staging` are one instant, because V1 stages neither an
+audit record nor an outbox event for a lease: `claimLease` writes exactly one
+row, to `shared_state_lease`. "After the staging" and "after the resource
+mutation" are therefore the same moment, and separating them would invent a
+boundary. Four armed points, three distinct positions, and a test asserts the
+collapsed pair really does fire twice at one position.
+
+Reaching that position needed a seam none of the earlier targets had. The two
+proxy hooks used so far — intercept `prepare`, intercept `exec` — can only fire
+*before* a statement runs. An "after the resource mutation" fault has to land
+with the row already written and the transaction still open, so the target
+wraps the prepared statement and throws from `run` after delegating. That the
+snapshot is then unchanged is real rollback evidence rather than evidence that
+nothing was attempted.
+
+Decision 3 is applied more widely here than in any earlier slice — three of the
+nine snapshot counters — and the reason is worth stating plainly because it
+changes what the checked item claims. `auditCount` and `outboxCount` are the
+notable pair: the harness requires each to be **one** after a clean claim, not
+zero. V1 has no audit table at all — the schema ships eleven `shared_state_*`
+tables and none is an audit log — and a lease command appends no outbox event.
+Both are therefore derived from the lease row the claim really wrote, so they
+move with genuine adapter state rather than being constants, but neither is an
+independent observation. `mutationCount` is a declared constant zero, the same
+gap Phase 2.4 recorded as `leaseMutationCount`. The other six counters are real
+queries, and a test asserts the derived, constant, and independent lists
+partition the snapshot with no counter claimed in two of them.
+
+The target deliberately does not make the pair real by appending an outbox row
+of its own. Seeding starting state is legitimate — the Phase 2.5 target seeds
+provenance the harness then reads as lag — but writing the very row a counter
+is asserted against would manufacture the evidence instead of declaring its
+absence, which is precisely what decision 3(iii) exists to prevent.
+
+One envelope is constructed rather than returned. The harness wants the refused
+second owner as a lifecycle envelope carrying `ownership_conflict`, and the
+adapter reports that code through its result channel while rendering every
+`failed` lifecycle as `adapter_unavailable`. The target pairs the adapter's
+real error code with the adapter's real failed state; only the envelope shape
+is the target's, and it is built through the contract parser rather than
+assembled by hand, because the lifecycle kind is `V.kinds.lifecycle` and
+getting it wrong fails parsing silently.
+
+Five adversarial controls, each pinned to the exact error code it must produce:
+a skipped injection, a second owner reported ready, a reopen that loses state,
+a barrier that lets a second contender commit, and a zeroed audit counter. All
+five reached their intended check on the first form, which is the first time in
+this section that has happened.
+
+The Phase 2.1 repeat item stays unchecked, for the reason the earlier ones do:
+it also binds authorized query/reconciliation and retention behaviour that no
+slice has performed.
+
 The checked schema item above shipped eleven `shared_state_*` tables in
 `packages/broker/src/shared-state-sqlite-schema-v1.ts`, derived from what
 section 6.2 requires an adapter replacement to preserve — keys, fingerprints,
