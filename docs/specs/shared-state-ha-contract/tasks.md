@@ -641,6 +641,113 @@ The Phase 2.4 repeat item stays unchecked, for the same reason the three
 earlier ones do: it also requires separately proving authorized runtime/query
 reconciliation and retention/prune behaviour, which no slice has performed.
 
+Slice H, second part, drives the Phase 2.5 harness through the adapter in
+`packages/broker/src/shared-state-sqlite-partition-target-v1.test.ts`. It is
+the fifth section to run on the real adapter and the first to prove
+`lock_timeout` as anything other than vocabulary.
+
+That is this slice's actual contribution and it is worth stating narrowly. The
+in-memory reference target never injects a lock at all — it returns the mapped
+reason from a table — so before this slice the checked item above covered
+`lock_timeout` at the level of the name. Here the fault is a second
+`DatabaseSync` on the same file holding a RESERVED lock through
+`BEGIN IMMEDIATE`, and the adapter's own `BEGIN IMMEDIATE` collides with it.
+Measured: the collision raises `SQLITE_BUSY` after zero milliseconds, because
+the adapter's `busy_timeout` is zero — so the proof needs no timer and stays
+deterministic. The adapter reports `store_failure` with `began` still false, so
+it never reaches a ROLLBACK and never writes, and it stays `ready`, which is
+what makes `lock_timeout` the honest reason rather than `authority_unavailable`.
+Two further measurements shaped the fixture: reads succeed while the lock is
+held, so the snapshot control can observe state with a fault armed; and a
+nested `BEGIN IMMEDIATE` on the same connection raises `cannot start a
+transaction within a transaction` instead, so the competing lock must be a
+separate connection or it proves nothing.
+
+The fault switch is level-triggered, which is the one structural break from all
+four earlier targets and the only place copying them fails outright. The
+harness arms `unavailable` once and then requires four separate commands to be
+refused, while every earlier target consumes its arm on the first firing; it
+also disarms explicitly with `null`, which no earlier harness does. So
+`armConformanceFault` heals whatever the previous point established and then
+installs the new one, and the point stays installed until the next arm. The
+heal is required rather than tidy: the seeded order ends scenario A on
+`lost-fence` and scenario B arms `unavailable` with no disarm between them, so
+without it the adapter would still be `failed` and every later command would be
+refused `not_ready` — a real refusal, which must never be dressed up as an
+injected fault.
+
+One pair of fault points collapses under decision 2. `unavailable` and
+`lost-fence` rest on two different durable premises — a foreign `owner_token`
+and a `lifecycle_epoch` the session never acquired — but `beginWrite` reaches
+both through one branch and reports both as `ownership_lost`. Two durable
+premises, one adapter code path; the reasons stay distinct because the target
+knows which premise it wrote, not because the adapter distinguishes them. The
+premise is re-established per command rather than left to the failed state the
+previous command produced, so each refusal in a run is a fresh ownership check
+inside the adapter rather than a cached verdict.
+
+The readiness envelope is the decision 3 case the passage above anticipated,
+and it is cut to the width that decision requires. `lifecycleState` and
+`lifecycleReasonCodes` are the adapter's real `lifecycle()` output; only the
+`ready` boolean and the projection of those real reasons into the readiness
+vocabulary are synthesized. The adapter genuinely is `failed` when the harness
+reads not-ready, because arming drives the ownership premise through
+`beginWrite` before the capture — and the target asserts that observation
+actually reached the adapter rather than assuming it did.
+`prunedRecordCount` is the only other synthesized value: V1 implements no
+retention prune, so no durable prune record exists to count, which is the same
+fact the report states as `retentionPruneExecution: "not-executed"`. Every
+other snapshot field is a real query.
+
+`ambiguous_commit` is only half expressible here, and the limit is recorded
+rather than worked around. The armed point throws at `COMMIT` before delegating,
+so the caller does not learn the outcome — that half holds. The other half, that
+it may actually have committed, cannot be represented: measured, a fault thrown
+after a successful COMMIT leaves the row durably present and the following
+ROLLBACK raises `cannot rollback - no transaction is active`, which the adapter
+swallows before returning `store_failure`. The harness pins `stateMutated:
+false` and compares graph state against a baseline, so that shape fails as
+`mutation_applied_while_unavailable`. Phase 2.4 used the opposite direction — a
+real commit with only the response lost — because its section asserts a
+different invariant, and it is not a precedent to copy here.
+
+The section 2.9 boundary is held in code rather than by intention.
+`readConformanceStaleProjection` computes a checkpoint, a high-water mark, and
+the gap between them, and contains no judgment ladder: the Phase 2.5 stale-read
+shape has no field to put a verdict in, and Phase 2.7 already proves the
+`projection_incomplete`/`projection_unavailable`/`no_evidence_path`
+distinction. The lag is a stored fact rather than a chosen constant — `open()`
+seeds three graph sources and no projection batch, leaving a checkpoint of zero
+against a high-water mark of three. Seeding inside `open()` is what keeps it
+outside the harness's counters, which are exact equalities rather than upper
+bounds — 18 commands, 10 lifecycle transitions, 14 snapshot controls, 14 fault
+controls, two stale reads, two readiness captures, five targets — and which
+count only what the harness issues, never what a target does to establish its
+own starting state.
+
+The adversarial matrix is five controls and each one reaches the check it
+exists to fail. Against the recurring failure this section has now caught seven
+times — a matrix that passes because nothing ran — the run additionally asserts
+exact per-seam refusal counts: two real `SQLITE_BUSY` collisions, ten real
+`ownership_lost` transitions, and one real throw at COMMIT, which together with
+the five commands issued unarmed account for all 18 the harness pins. A seam
+that silently stopped being installed moves one of those numbers.
+
+Two predictions from the investigation held and one did not. The seeded fault
+order was predicted and confirmed as `timeout`, `unavailable`, `delayed-read`,
+`ambiguous-commit`, `lost-fence`, and the `SQLITE_BUSY` behaviour was predicted
+and confirmed by direct measurement before any target code existed. The
+prediction that the Phase 2.3 one-shot fault seam could be reused did not
+survive contact with the harness, for the reason recorded above; a later target
+should read a harness's arm-to-command ratio before copying any earlier switch.
+
+The Phase 2.5 repeat item stays unchecked, and here the reason is narrower than
+the earlier four. That item binds two things: repeating the fault matrix
+through SQLite/shared adapters, which this slice does, and separately proving
+real partition behaviour against a live authority, which it does not — a
+single-process SQLite file has no authority to be partitioned from. Injected
+unavailability is not a partition, and checking the item would claim it was.
+
 The checked schema item above shipped eleven `shared_state_*` tables in
 `packages/broker/src/shared-state-sqlite-schema-v1.ts`, derived from what
 section 6.2 requires an adapter replacement to preserve — keys, fingerprints,
