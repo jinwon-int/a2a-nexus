@@ -20,10 +20,22 @@
  * The lifecycle epoch increments on each successful acquisition and never
  * decreases, including across close and reopen.
  *
- * Primitives: this adapter implements the replay, rate, lease, and
- * idempotency commands. Outbox and graph projection are refused with
+ * Primitives: this adapter implements the replay, rate, lease, idempotency,
+ * and claim-graph commands. Outbox is refused with
  * `operation_not_implemented` rather than given a placeholder answer, and
  * there is still no broker runtime wiring.
+ *
+ * The claim-graph commands put idempotent replay ahead of every precondition,
+ * for the same reason the lease ladder puts `claim_conflict` first: a retrying
+ * producer necessarily holds a stale expected sequence, because its own first
+ * attempt advanced it, so checking the sequence first would answer
+ * `source_sequence_conflict` about a fact that is already durable. Source
+ * sequences are one space per namespace rather than per stream — a projection
+ * batch names a `[from, through]` range with no stream qualifier, so the range
+ * is only meaningful if sequences are unique across the namespace, and the
+ * stream key is recorded as provenance instead. A rollback restores the
+ * checkpoint the batch was applied over rather than decrementing, so the
+ * checkpoint is not monotonic; only the source high-water mark is.
  *
  * `executeIdempotent` takes no observed instant. Its registered namespaces are
  * `non-expiring-until-prune-proof` with no logical expiry boundary, so a
@@ -191,6 +203,11 @@ type ConsumeReplayNonceInputV1 = CommandInputForV1<"consumeReplayNonce">;
 type ReserveRateLimitCostInputV1 = CommandInputForV1<"reserveRateLimitCost">;
 type ClaimLeaseInputV1 = CommandInputForV1<"claimLease">;
 type ExecuteIdempotentInputV1 = CommandInputForV1<"executeIdempotent">;
+type AppendGraphSourceInputV1 = CommandInputForV1<"appendGraphSource">;
+type ApplyGraphProjectionBatchInputV1 =
+  CommandInputForV1<"applyGraphProjectionBatch">;
+type RollbackGraphProjectionBatchInputV1 =
+  CommandInputForV1<"rollbackGraphProjectionBatch">;
 
 /**
  * The three lease commands that must present existing authority. They share a
@@ -214,6 +231,9 @@ const IMPLEMENTED_OPERATIONS_V1: readonly OperationV1[] = Object.freeze([
   "mutateWithFence",
   "releaseLease",
   "executeIdempotent",
+  "appendGraphSource",
+  "applyGraphProjectionBatch",
+  "rollbackGraphProjectionBatch",
 ] as const);
 
 const LEASE_OPERATIONS_V1: readonly OperationV1[] = Object.freeze([
@@ -798,6 +818,15 @@ export class SharedStateSqliteAdapterV1 {
         case "executeIdempotent":
           outcome = this.#executeIdempotent(command.input);
           break;
+        case "appendGraphSource":
+          outcome = this.#appendGraphSource(command.input);
+          break;
+        case "applyGraphProjectionBatch":
+          outcome = this.#applyGraphProjectionBatch(command.input);
+          break;
+        case "rollbackGraphProjectionBatch":
+          outcome = this.#rollbackGraphProjectionBatch(command.input);
+          break;
         default:
           // Not a fallthrough: an operation added to the implemented list
           // without a case here must not silently take the lease path.
@@ -1060,6 +1089,294 @@ export class SharedStateSqliteAdapterV1 {
     return committedEnvelope(operation, {
       decision: V.operationDecisions.executeIdempotent[0],
       outcomeDigest,
+    });
+  }
+
+  /**
+   * Appends an immutable source fact.
+   *
+   * A fact already recorded is replayed before its expected sequence is
+   * considered at all. A retrying producer necessarily holds a stale sequence
+   * — the first attempt advanced it — so checking the sequence first would
+   * answer `source_sequence_conflict` to a caller whose fact is already
+   * durably recorded, which describes the wrong problem.
+   */
+  #appendGraphSource(
+    input: AppendGraphSourceInputV1,
+  ): SharedStateSqliteAdapterResultV1<SharedStateTransactionResultV1> {
+    const operation = V.operations[10];
+
+    const existing = this.#db
+      .prepare(
+        `SELECT source_sequence FROM shared_state_graph_source
+          WHERE namespace = ? AND source_fact_digest = ?`,
+      )
+      .get(input.namespace, input.sourceFactDigest) as
+      | { source_sequence?: unknown }
+      | undefined;
+    if (existing !== undefined) {
+      if (typeof existing.source_sequence !== "string") {
+        return failure("store_failure");
+      }
+      return committedEnvelope(operation, {
+        decision: V.operationDecisions.appendGraphSource[1],
+        sourceSequence: existing.source_sequence,
+      });
+    }
+
+    const highWater = this.#graphSourceHighWater(input.namespace);
+    if (highWater === null) return failure("store_failure");
+    if (BigInt(input.expectedSourceSequence) !== highWater) {
+      return rejectedEnvelope(operation, "source_sequence_conflict");
+    }
+
+    const sourceSequence = (highWater + 1n).toString();
+    this.#db
+      .prepare(
+        `INSERT INTO shared_state_graph_source
+           (namespace, source_fact_digest, source_stream_key_digest,
+            node_type, source_sequence)
+         VALUES (?, ?, ?, ?, ?)`,
+      )
+      .run(
+        input.namespace,
+        input.sourceFactDigest,
+        input.sourceStreamKeyDigest,
+        input.nodeType,
+        sourceSequence,
+      );
+    return committedEnvelope(operation, {
+      decision: V.operationDecisions.appendGraphSource[0],
+      sourceSequence,
+    });
+  }
+
+  /**
+   * The greatest source sequence recorded in a namespace, or zero.
+   */
+  #graphSourceHighWater(namespace: string): bigint | null {
+    const rows = this.#db
+      .prepare(
+        `SELECT source_sequence FROM shared_state_graph_source
+          WHERE namespace = ?`,
+      )
+      .all(namespace) as readonly { source_sequence?: unknown }[];
+    let high = 0n;
+    for (const row of rows) {
+      if (typeof row.source_sequence !== "string") return null;
+      const value = BigInt(row.source_sequence);
+      if (value > high) high = value;
+    }
+    return high;
+  }
+
+  #graphCheckpoint(
+    namespace: string,
+    projectionVersion: string,
+  ): bigint | null | undefined {
+    const row = this.#db
+      .prepare(
+        `SELECT checkpoint_sequence FROM shared_state_graph_projection
+          WHERE namespace = ? AND projection_version = ?`,
+      )
+      .get(namespace, projectionVersion) as
+      | { checkpoint_sequence?: unknown }
+      | undefined;
+    if (row === undefined) return null;
+    if (typeof row.checkpoint_sequence !== "string") return undefined;
+    return BigInt(row.checkpoint_sequence);
+  }
+
+  #writeGraphCheckpoint(
+    namespace: string,
+    projectionVersion: string,
+    checkpointSequence: string,
+  ): void {
+    this.#db
+      .prepare(
+        `INSERT INTO shared_state_graph_projection
+           (namespace, projection_version, checkpoint_sequence)
+         VALUES (?, ?, ?)
+         ON CONFLICT(namespace, projection_version) DO UPDATE SET
+           checkpoint_sequence = excluded.checkpoint_sequence`,
+      )
+      .run(namespace, projectionVersion, checkpointSequence);
+  }
+
+  #graphBatch(
+    namespace: string,
+    projectionVersion: string,
+    batchKeyDigest: string,
+  ): { from: bigint; through: bigint; prior: bigint; rolledBack: boolean }
+    | null
+    | undefined {
+    const row = this.#db
+      .prepare(
+        `SELECT source_sequence_from, source_sequence_through,
+                prior_checkpoint_sequence, rolled_back
+           FROM shared_state_graph_batch
+          WHERE namespace = ? AND projection_version = ?
+            AND batch_key_digest = ?`,
+      )
+      .get(namespace, projectionVersion, batchKeyDigest) as
+      | Record<string, unknown>
+      | undefined;
+    if (row === undefined) return null;
+    if (
+      typeof row.source_sequence_from !== "string"
+      || typeof row.source_sequence_through !== "string"
+      || typeof row.prior_checkpoint_sequence !== "string"
+      || typeof row.rolled_back !== "number"
+    ) {
+      return undefined;
+    }
+    return {
+      from: BigInt(row.source_sequence_from),
+      through: BigInt(row.source_sequence_through),
+      prior: BigInt(row.prior_checkpoint_sequence),
+      rolledBack: row.rolled_back !== 0,
+    };
+  }
+
+  /**
+   * Applies a projection batch and advances the checkpoint to the last source
+   * sequence the batch consumed.
+   *
+   * Nodes and edges are not stored. They are exactly derivable from the
+   * `[from, through]` range of every batch that has not been rolled back — one
+   * node per sequence in the range and one edge from the first sequence to
+   * each later one — so materializing them would duplicate the batch rows
+   * rather than record anything new. Rollback removes a batch's effects rather
+   * than tombstoning them, so no tombstone state exists to keep either.
+   *
+   * A batch already recorded is replayed, including one that has been rolled
+   * back: reapplying must not resurrect the effects its inverse removed.
+   */
+  #applyGraphProjectionBatch(
+    input: ApplyGraphProjectionBatchInputV1,
+  ): SharedStateSqliteAdapterResultV1<SharedStateTransactionResultV1> {
+    const operation = V.operations[11];
+    const checkpoint = this.#graphCheckpoint(
+      input.namespace,
+      input.projectionVersion,
+    );
+    if (checkpoint === undefined) return failure("store_failure");
+    const current = checkpoint ?? 0n;
+
+    const existing = this.#graphBatch(
+      input.namespace,
+      input.projectionVersion,
+      input.batchKeyDigest,
+    );
+    if (existing === undefined) return failure("store_failure");
+    if (existing !== null) {
+      return committedEnvelope(operation, {
+        decision: V.operationDecisions.applyGraphProjectionBatch[1],
+        checkpointSequence: current.toString(),
+      });
+    }
+
+    const from = BigInt(input.sourceSequenceFrom);
+    const through = BigInt(input.sourceSequenceThrough);
+    const highWater = this.#graphSourceHighWater(input.namespace);
+    if (highWater === null) return failure("store_failure");
+    // A batch may only project source facts that are already durable.
+    if (through > highWater || from > through) {
+      return rejectedEnvelope(operation, "source_range_incomplete");
+    }
+    if (BigInt(input.expectedCheckpointSequence) !== current) {
+      return rejectedEnvelope(operation, "checkpoint_conflict");
+    }
+
+    this.#db
+      .prepare(
+        `INSERT INTO shared_state_graph_batch
+           (namespace, projection_version, batch_key_digest, inverse_digest,
+            source_sequence_from, source_sequence_through,
+            prior_checkpoint_sequence, rolled_back)
+         VALUES (?, ?, ?, ?, ?, ?, ?, 0)`,
+      )
+      .run(
+        input.namespace,
+        input.projectionVersion,
+        input.batchKeyDigest,
+        input.inverseDigest,
+        input.sourceSequenceFrom,
+        input.sourceSequenceThrough,
+        input.expectedCheckpointSequence,
+      );
+    this.#writeGraphCheckpoint(
+      input.namespace,
+      input.projectionVersion,
+      through.toString(),
+    );
+    return committedEnvelope(operation, {
+      decision: V.operationDecisions.applyGraphProjectionBatch[0],
+      checkpointSequence: through.toString(),
+    });
+  }
+
+  /**
+   * Rolls a projection batch back to the checkpoint it was applied over.
+   *
+   * The checkpoint returns to the batch's recorded prior value rather than
+   * being decremented, so a rollback undoes exactly the batch it names.
+   * Source facts are never touched: they are immutable, and a projection
+   * being wrong does not make the facts it read wrong.
+   *
+   * A batch already rolled back is replayed regardless of which rollback key
+   * asks. The stored shape records that a batch was rolled back but not the
+   * rollback keys that did it, so the adapter cannot tell a repeat of the same
+   * rollback from a different one. Replaying is the narrower of the two
+   * answers — it never re-runs an inverse — and the Phase 2.7 harness only
+   * ever issues one rollback key per batch, so it does not separate them.
+   * Recording rollback keys would need a column this shape does not have.
+   */
+  #rollbackGraphProjectionBatch(
+    input: RollbackGraphProjectionBatchInputV1,
+  ): SharedStateSqliteAdapterResultV1<SharedStateTransactionResultV1> {
+    const operation = V.operations[12];
+    const checkpoint = this.#graphCheckpoint(
+      input.namespace,
+      input.projectionVersion,
+    );
+    if (checkpoint === undefined) return failure("store_failure");
+    const current = checkpoint ?? 0n;
+
+    const batch = this.#graphBatch(
+      input.namespace,
+      input.projectionVersion,
+      input.batchKeyDigest,
+    );
+    if (batch === undefined) return failure("store_failure");
+    if (batch === null) {
+      return rejectedEnvelope(operation, "projection_batch_not_found");
+    }
+    if (batch.rolledBack) {
+      return committedEnvelope(operation, {
+        decision: V.operationDecisions.rollbackGraphProjectionBatch[1],
+        checkpointSequence: current.toString(),
+      });
+    }
+    if (BigInt(input.expectedCheckpointSequence) !== current) {
+      return rejectedEnvelope(operation, "checkpoint_conflict");
+    }
+
+    this.#db
+      .prepare(
+        `UPDATE shared_state_graph_batch SET rolled_back = 1
+          WHERE namespace = ? AND projection_version = ?
+            AND batch_key_digest = ?`,
+      )
+      .run(input.namespace, input.projectionVersion, input.batchKeyDigest);
+    this.#writeGraphCheckpoint(
+      input.namespace,
+      input.projectionVersion,
+      batch.prior.toString(),
+    );
+    return committedEnvelope(operation, {
+      decision: V.operationDecisions.rollbackGraphProjectionBatch[0],
+      checkpointSequence: batch.prior.toString(),
     });
   }
 

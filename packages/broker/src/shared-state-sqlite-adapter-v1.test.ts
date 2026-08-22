@@ -1,6 +1,6 @@
 /**
  * Tests for the V1 SQLite adapter: lifecycle, ownership, and the replay,
- * rate, lease, and idempotency primitives.
+ * rate, lease, idempotency, and claim-graph primitives.
  *
  * Exclusive ownership is the property this whole contract exists to obtain,
  * so it gets the most attention here: a second owner must be refused, a
@@ -25,6 +25,12 @@
  * and payload but declares a different effect is the only case that separates
  * returning the stored outcome from re-deriving it, and it too was found by a
  * control that passed first.
+ *
+ * Two claim-graph tests exist because a control passed: rolling back a batch
+ * that spans more than one sequence is the only case that separates restoring
+ * the recorded prior checkpoint from decrementing, and a namespace-wide source
+ * sequence is only observable with two streams. The Phase 2.7 harness uses one
+ * stream and single-sequence batches, so neither is covered there.
  *
  * Every database is a temporary file removed at the end of its test.
  */
@@ -307,6 +313,98 @@ function idempotentCommand(input: {
   return parsed.value;
 }
 
+const PROJECTION_VERSION = "projection-v1";
+
+function sourceCommand(input: {
+  readonly fact: string;
+  readonly expectedSourceSequence: string;
+  readonly nodeType?: string;
+  readonly stream?: string;
+}): SharedStateTransactionCommandV1 {
+  return command("appendGraphSource", {
+    sourceStreamKeyDigest: digest("broker.claim-graph.source-stream-key", [
+      { field: "sourceType", type: "utf8", value: "run" },
+      { field: "sourceId", type: "utf8", value: input.stream ?? "run-1" },
+    ]),
+    sourceFactDigest: digest("broker.claim-graph.source-fact", [
+      { field: "nodeType", type: "utf8", value: input.nodeType ?? "Claim" },
+      { field: "fact", type: "bytes", value: input.fact },
+    ]),
+    nodeType: input.nodeType ?? "Claim",
+    expectedSourceSequence: input.expectedSourceSequence,
+  });
+}
+
+function batchKey(batchId: string): string {
+  return digest("broker.claim-graph.projection-batch-key", [
+    { field: "projectionVersion", type: "utf8", value: PROJECTION_VERSION },
+    { field: "batchId", type: "utf8", value: batchId },
+  ]);
+}
+
+function applyCommand(input: {
+  readonly batchId: string;
+  readonly from: string;
+  readonly through: string;
+  readonly expectedCheckpointSequence: string;
+}): SharedStateTransactionCommandV1 {
+  return command("applyGraphProjectionBatch", {
+    projectionVersion: PROJECTION_VERSION,
+    batchKeyDigest: batchKey(input.batchId),
+    batchDigest: digest("broker.claim-graph.projection-batch", [
+      { field: "batch", type: "bytes", value: "a1" },
+    ]),
+    inverseDigest: digest("broker.claim-graph.projection-inverse", [
+      { field: "inverse", type: "bytes", value: "b1" },
+    ]),
+    sourceSequenceFrom: input.from,
+    sourceSequenceThrough: input.through,
+    expectedCheckpointSequence: input.expectedCheckpointSequence,
+  });
+}
+
+function rollbackCommand(input: {
+  readonly batchId: string;
+  readonly rollbackId: string;
+  readonly expectedCheckpointSequence: string;
+}): SharedStateTransactionCommandV1 {
+  return command("rollbackGraphProjectionBatch", {
+    projectionVersion: PROJECTION_VERSION,
+    batchKeyDigest: batchKey(input.batchId),
+    rollbackBatchKeyDigest: digest("broker.claim-graph.rollback-batch-key", [
+      { field: "projectionVersion", type: "utf8", value: PROJECTION_VERSION },
+      { field: "rollbackId", type: "utf8", value: input.rollbackId },
+    ]),
+    inverseDigest: digest("broker.claim-graph.projection-inverse", [
+      { field: "inverse", type: "bytes", value: "b1" },
+    ]),
+    expectedCheckpointSequence: input.expectedCheckpointSequence,
+  });
+}
+
+/**
+ * Appends `count` source facts and returns the resulting high water mark.
+ */
+function seedSources(
+  owner: SharedStateSqliteAdapterV1,
+  count: number,
+): string {
+  let sequence = "0";
+  for (let index = 0; index < count; index += 1) {
+    const result = committed(
+      owner.transact(
+        sourceCommand({
+          fact: `f${index}`,
+          expectedSourceSequence: sequence,
+        }),
+        { observedAtUnixMs: "1000" },
+      ),
+    );
+    sequence = String(result.sourceSequence);
+  }
+  return sequence;
+}
+
 /**
  * Opens a ready adapter with the clock floor at zero.
  */
@@ -570,7 +668,7 @@ test("rejects reopening an already-open adapter", () => {
   }
 });
 
-test("implements the replay, rate, lease, and idempotency primitives", () => {
+test("implements every primitive except outbox, on closed vocabulary", () => {
   // The public surface is the lifecycle seam, the write guard, and one
   // command entry point. No primitive gets its own public method.
   const surface = Object.getOwnPropertyNames(
@@ -1510,6 +1608,493 @@ test("the adapter re-checks the idempotency catalog the parser already gates", (
       .prepare("SELECT COUNT(*) AS total FROM shared_state_idempotency")
       .get() as { total?: unknown };
     assert.equal(rows.total, 0);
+  } finally {
+    disposeFixture(fixture);
+  }
+});
+
+test("source facts append in sequence, and a duplicate fact replays", () => {
+  const fixture = makeFixture();
+  try {
+    const owner = readyAdapter(fixture.db);
+    const first = committed(
+      owner.transact(
+        sourceCommand({ fact: "f0", expectedSourceSequence: "0" }),
+        { observedAtUnixMs: "1000" },
+      ),
+    );
+    assert.equal(first.decision, V.operationDecisions.appendGraphSource[0]);
+    assert.equal(first.sourceSequence, "1");
+
+    // The load-bearing case. A retrying producer necessarily holds a stale
+    // expected sequence, because its first attempt advanced it. The fact is
+    // already durable, so it must replay rather than be told its sequence is
+    // wrong — checking the sequence first would answer the wrong problem.
+    const retry = committed(
+      owner.transact(
+        sourceCommand({ fact: "f0", expectedSourceSequence: "0" }),
+        { observedAtUnixMs: "1100" },
+      ),
+    );
+    assert.equal(retry.decision, V.operationDecisions.appendGraphSource[1]);
+    assert.equal(retry.sourceSequence, "1");
+
+    // A genuinely new fact at a stale sequence is a conflict.
+    assert.equal(
+      rejected(
+        owner.transact(
+          sourceCommand({ fact: "f1", expectedSourceSequence: "0" }),
+          { observedAtUnixMs: "1200" },
+        ),
+      ),
+      "source_sequence_conflict",
+    );
+
+    const rows = fixture.db
+      .prepare("SELECT COUNT(*) AS total FROM shared_state_graph_source")
+      .get() as { total?: unknown };
+    assert.equal(rows.total, 1);
+  } finally {
+    disposeFixture(fixture);
+  }
+});
+
+test("source sequence is one space per namespace, not one per stream", () => {
+  // The harness uses a single source stream, so it cannot separate these.
+  // A namespace-wide sequence is required rather than stylistic: a projection
+  // batch names a `[from, through]` range with no stream qualifier, so the
+  // range is only meaningful if sequences are unique across the namespace.
+  // The stream key is recorded as provenance, not used for numbering.
+  const fixture = makeFixture();
+  try {
+    const owner = readyAdapter(fixture.db);
+    const first = committed(
+      owner.transact(
+        sourceCommand({
+          fact: "f0",
+          stream: "run-1",
+          expectedSourceSequence: "0",
+        }),
+        { observedAtUnixMs: "1000" },
+      ),
+    );
+    assert.equal(first.sourceSequence, "1");
+
+    // A different stream continues the same sequence rather than restarting.
+    const second = committed(
+      owner.transact(
+        sourceCommand({
+          fact: "f1",
+          stream: "run-2",
+          expectedSourceSequence: "1",
+        }),
+        { observedAtUnixMs: "1000" },
+      ),
+    );
+    assert.equal(second.sourceSequence, "2");
+
+    // And restarting at 0 on the second stream is a conflict.
+    assert.equal(
+      rejected(
+        owner.transact(
+          sourceCommand({
+            fact: "f2",
+            stream: "run-2",
+            expectedSourceSequence: "0",
+          }),
+          { observedAtUnixMs: "1000" },
+        ),
+      ),
+      "source_sequence_conflict",
+    );
+
+    // A batch can therefore span facts from both streams.
+    const applied = committed(
+      owner.transact(
+        applyCommand({
+          batchId: "b1",
+          from: "1",
+          through: "2",
+          expectedCheckpointSequence: "0",
+        }),
+        { observedAtUnixMs: "1000" },
+      ),
+    );
+    assert.equal(applied.checkpointSequence, "2");
+  } finally {
+    disposeFixture(fixture);
+  }
+});
+
+test("a batch may only project source facts that are already durable", () => {
+  const fixture = makeFixture();
+  try {
+    const owner = readyAdapter(fixture.db);
+    seedSources(owner, 2);
+
+    // Reaching past the high water mark, and an inverted range, are both
+    // incomplete rather than checkpoint problems.
+    assert.equal(
+      rejected(
+        owner.transact(
+          applyCommand({
+            batchId: "b1",
+            from: "1",
+            through: "3",
+            expectedCheckpointSequence: "0",
+          }),
+          { observedAtUnixMs: "1000" },
+        ),
+      ),
+      "source_range_incomplete",
+    );
+    assert.equal(
+      rejected(
+        owner.transact(
+          applyCommand({
+            batchId: "b1",
+            from: "2",
+            through: "1",
+            expectedCheckpointSequence: "0",
+          }),
+          { observedAtUnixMs: "1000" },
+        ),
+      ),
+      "source_range_incomplete",
+    );
+
+    // The range check comes first: a batch that is out of range AND has a
+    // stale checkpoint is still reported as incomplete.
+    assert.equal(
+      rejected(
+        owner.transact(
+          applyCommand({
+            batchId: "b1",
+            from: "1",
+            through: "9",
+            expectedCheckpointSequence: "7",
+          }),
+          { observedAtUnixMs: "1000" },
+        ),
+      ),
+      "source_range_incomplete",
+    );
+
+    const rows = fixture.db
+      .prepare("SELECT COUNT(*) AS total FROM shared_state_graph_batch")
+      .get() as { total?: unknown };
+    assert.equal(rows.total, 0);
+  } finally {
+    disposeFixture(fixture);
+  }
+});
+
+test("the checkpoint advances to the last sequence a batch consumed", () => {
+  const fixture = makeFixture();
+  try {
+    const owner = readyAdapter(fixture.db);
+    seedSources(owner, 3);
+
+    const applied = committed(
+      owner.transact(
+        applyCommand({
+          batchId: "b1",
+          from: "1",
+          through: "2",
+          expectedCheckpointSequence: "0",
+        }),
+        { observedAtUnixMs: "1000" },
+      ),
+    );
+    assert.equal(
+      applied.decision,
+      V.operationDecisions.applyGraphProjectionBatch[0],
+    );
+    // Not checkpoint + 1: the checkpoint tracks consumed source sequence.
+    assert.equal(applied.checkpointSequence, "2");
+
+    // A second batch must present the new checkpoint.
+    assert.equal(
+      rejected(
+        owner.transact(
+          applyCommand({
+            batchId: "b2",
+            from: "3",
+            through: "3",
+            expectedCheckpointSequence: "0",
+          }),
+          { observedAtUnixMs: "1000" },
+        ),
+      ),
+      "checkpoint_conflict",
+    );
+    const second = committed(
+      owner.transact(
+        applyCommand({
+          batchId: "b2",
+          from: "3",
+          through: "3",
+          expectedCheckpointSequence: "2",
+        }),
+        { observedAtUnixMs: "1000" },
+      ),
+    );
+    assert.equal(second.checkpointSequence, "3");
+  } finally {
+    disposeFixture(fixture);
+  }
+});
+
+test("rollback returns the checkpoint the batch was applied over", () => {
+  const fixture = makeFixture();
+  try {
+    const owner = readyAdapter(fixture.db);
+    seedSources(owner, 4);
+    committed(
+      owner.transact(
+        applyCommand({
+          batchId: "b1",
+          from: "1",
+          through: "1",
+          expectedCheckpointSequence: "0",
+        }),
+        { observedAtUnixMs: "1000" },
+      ),
+    );
+    // b2 spans three sequences, so its prior checkpoint (1) is NOT its last
+    // sequence minus one (3). Only a batch spanning more than one sequence
+    // separates "restore the recorded prior" from "decrement".
+    const second = committed(
+      owner.transact(
+        applyCommand({
+          batchId: "b2",
+          from: "2",
+          through: "4",
+          expectedCheckpointSequence: "1",
+        }),
+        { observedAtUnixMs: "1000" },
+      ),
+    );
+    assert.equal(second.checkpointSequence, "4");
+
+    const rolledBack = committed(
+      owner.transact(
+        rollbackCommand({
+          batchId: "b2",
+          rollbackId: "r1",
+          expectedCheckpointSequence: "4",
+        }),
+        { observedAtUnixMs: "1000" },
+      ),
+    );
+    assert.equal(
+      rolledBack.decision,
+      V.operationDecisions.rollbackGraphProjectionBatch[0],
+    );
+    assert.equal(rolledBack.checkpointSequence, "1");
+
+    // Source facts are immutable: a wrong projection does not make the facts
+    // it read wrong.
+    const sources = fixture.db
+      .prepare("SELECT COUNT(*) AS total FROM shared_state_graph_source")
+      .get() as { total?: unknown };
+    assert.equal(sources.total, 4);
+  } finally {
+    disposeFixture(fixture);
+  }
+});
+
+test("reapplying a rolled-back batch does not resurrect its effects", () => {
+  const fixture = makeFixture();
+  try {
+    const owner = readyAdapter(fixture.db);
+    seedSources(owner, 3);
+    // Two batches, so rolling the second one back leaves a positive
+    // checkpoint. The single-batch case is its own test below.
+    committed(
+      owner.transact(
+        applyCommand({
+          batchId: "b1",
+          from: "1",
+          through: "2",
+          expectedCheckpointSequence: "0",
+        }),
+        { observedAtUnixMs: "1000" },
+      ),
+    );
+    committed(
+      owner.transact(
+        applyCommand({
+          batchId: "b2",
+          from: "3",
+          through: "3",
+          expectedCheckpointSequence: "2",
+        }),
+        { observedAtUnixMs: "1000" },
+      ),
+    );
+    committed(
+      owner.transact(
+        rollbackCommand({
+          batchId: "b2",
+          rollbackId: "r1",
+          expectedCheckpointSequence: "3",
+        }),
+        { observedAtUnixMs: "1000" },
+      ),
+    );
+
+    // Reapplying the same batch key replays. It must not move the checkpoint
+    // back up, which would restore exactly the effects the inverse removed.
+    const reapplied = committed(
+      owner.transact(
+        applyCommand({
+          batchId: "b2",
+          from: "3",
+          through: "3",
+          expectedCheckpointSequence: "2",
+        }),
+        { observedAtUnixMs: "1000" },
+      ),
+    );
+    assert.equal(
+      reapplied.decision,
+      V.operationDecisions.applyGraphProjectionBatch[1],
+    );
+    assert.equal(reapplied.checkpointSequence, "2");
+
+    // Rolling back again replays too, and the batch row stays rolled back.
+    const rolledAgain = committed(
+      owner.transact(
+        rollbackCommand({
+          batchId: "b2",
+          rollbackId: "r1",
+          expectedCheckpointSequence: "2",
+        }),
+        { observedAtUnixMs: "1000" },
+      ),
+    );
+    assert.equal(
+      rolledAgain.decision,
+      V.operationDecisions.rollbackGraphProjectionBatch[1],
+    );
+    assert.equal(rolledAgain.checkpointSequence, "2");
+
+    const row = fixture.db
+      .prepare(
+        `SELECT rolled_back AS r FROM shared_state_graph_batch
+          WHERE batch_key_digest = ?`,
+      )
+      .get(batchKey("b2")) as { r?: unknown };
+    assert.equal(row.r, 1);
+  } finally {
+    disposeFixture(fixture);
+  }
+});
+
+test("replaying the only rolled-back batch is unrepresentable, and fails closed", () => {
+  // A contract corner, not an adapter choice. `applyGraphProjectionBatch`
+  // requires a POSITIVE checkpoint in both of its decisions, while
+  // `rollbackGraphProjectionBatch` allows zero. So rolling back the first and
+  // only batch legally returns checkpoint 0, and then the `replayed` answer
+  // for reapplying that batch cannot be expressed at all.
+  //
+  // The adapter refuses rather than inventing a checkpoint, because it never
+  // emits an envelope it could not itself parse.
+  const fixture = makeFixture();
+  try {
+    const owner = readyAdapter(fixture.db);
+    seedSources(owner, 2);
+    committed(
+      owner.transact(
+        applyCommand({
+          batchId: "b1",
+          from: "1",
+          through: "2",
+          expectedCheckpointSequence: "0",
+        }),
+        { observedAtUnixMs: "1000" },
+      ),
+    );
+    const rolledBack = committed(
+      owner.transact(
+        rollbackCommand({
+          batchId: "b1",
+          rollbackId: "r1",
+          expectedCheckpointSequence: "2",
+        }),
+        { observedAtUnixMs: "1000" },
+      ),
+    );
+    // Rollback CAN say zero.
+    assert.equal(rolledBack.checkpointSequence, "0");
+
+    const reapplied = owner.transact(
+      applyCommand({
+        batchId: "b1",
+        from: "1",
+        through: "2",
+        expectedCheckpointSequence: "0",
+      }),
+      { observedAtUnixMs: "1000" },
+    );
+    assert.equal(reapplied.ok, false);
+    if (reapplied.ok) return;
+    assert.equal(reapplied.error.code, "adapter_unavailable");
+
+    // And the refusal wrote nothing: the batch is still rolled back and the
+    // checkpoint is still zero.
+    const row = fixture.db
+      .prepare(
+        `SELECT rolled_back AS r FROM shared_state_graph_batch LIMIT 1`,
+      )
+      .get() as { r?: unknown };
+    assert.equal(row.r, 1);
+    const checkpoint = fixture.db
+      .prepare(
+        "SELECT checkpoint_sequence AS c FROM shared_state_graph_projection",
+      )
+      .get() as { c?: unknown };
+    assert.equal(checkpoint.c, "0");
+  } finally {
+    disposeFixture(fixture);
+  }
+});
+
+test("rolling back a batch that was never applied is not found", () => {
+  const fixture = makeFixture();
+  try {
+    const owner = readyAdapter(fixture.db);
+    seedSources(owner, 1);
+    assert.equal(
+      rejected(
+        owner.transact(
+          rollbackCommand({
+            batchId: "never-applied",
+            rollbackId: "r1",
+            expectedCheckpointSequence: "0",
+          }),
+          { observedAtUnixMs: "1000" },
+        ),
+      ),
+      "projection_batch_not_found",
+    );
+
+    // Not-found is decided before the checkpoint, so a wrong checkpoint does
+    // not mask a batch that does not exist.
+    assert.equal(
+      rejected(
+        owner.transact(
+          rollbackCommand({
+            batchId: "never-applied",
+            rollbackId: "r1",
+            expectedCheckpointSequence: "9",
+          }),
+          { observedAtUnixMs: "1000" },
+        ),
+      ),
+      "projection_batch_not_found",
+    );
   } finally {
     disposeFixture(fixture);
   }
