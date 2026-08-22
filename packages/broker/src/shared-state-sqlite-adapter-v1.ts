@@ -20,12 +20,23 @@
  * The lifecycle epoch increments on each successful acquisition and never
  * decreases, including across close and reopen.
  *
- * Primitives: this slice implements `consumeReplayNonce` and
- * `reserveRateLimitCost` and nothing else. Lease, idempotency, outbox, and
- * graph projection are refused with `operation_not_implemented` rather than
- * given a placeholder answer, and there is still no broker runtime wiring.
+ * Primitives: this adapter implements the replay, rate, and lease commands.
+ * Idempotency, outbox, and graph projection are refused with
+ * `operation_not_implemented` rather than given a placeholder answer, and
+ * there is still no broker runtime wiring.
  *
- * Both primitives run inside a single `BEGIN IMMEDIATE` boundary that also
+ * Two orderings in the lease rejection ladder carry weight and are not
+ * stylistic. A contender that meets a live holder is told `claim_conflict`
+ * before its resource version is even considered — every loser of a claim
+ * race also holds a stale version, because the winner moved it, and answering
+ * `version_conflict` there would describe the wrong problem. And a caller
+ * presenting a superseded fence is told `stale_fence` before owner, expiry, or
+ * version are considered, so a fenced-out writer never learns anything about
+ * the current holder. The fence it is compared against is the stored
+ * high-water mark, not the active claim: release and expiry do not lower it,
+ * so an old fence stays stale even when nothing holds the resource.
+ *
+ * Every primitive runs inside a single `BEGIN IMMEDIATE` boundary that also
  * contains the trusted-time evaluation and the clock-floor advance, so a
  * decision can never commit against a floor that did not durably move with it.
  * The adapter performs no clock read: the observed instant is supplied by the
@@ -58,6 +69,7 @@ import {
   evaluateSharedStateTimeV1,
   type SharedStateTimeEvaluationV1,
 } from "./shared-state-time-v1.js";
+import { digestSharedStateKeyV1 } from "./shared-state-storage-keyspace-v1.js";
 import {
   SHARED_STATE_SQLITE_SCHEMA_V1,
   readSharedStateSqliteSchemaV1,
@@ -161,6 +173,16 @@ type CommandInputForV1<Operation extends OperationV1> = Extract<
 
 type ConsumeReplayNonceInputV1 = CommandInputForV1<"consumeReplayNonce">;
 type ReserveRateLimitCostInputV1 = CommandInputForV1<"reserveRateLimitCost">;
+type ClaimLeaseInputV1 = CommandInputForV1<"claimLease">;
+
+/**
+ * The three lease commands that must present existing authority. They share a
+ * rejection ladder, so they are handled through one shape.
+ */
+type LeaseAuthorityInputV1 =
+  | CommandInputForV1<"renewLease">
+  | CommandInputForV1<"mutateWithFence">
+  | CommandInputForV1<"releaseLease">;
 
 /**
  * The two operations this slice implements. Every other operation is refused
@@ -170,6 +192,17 @@ type ReserveRateLimitCostInputV1 = CommandInputForV1<"reserveRateLimitCost">;
 const IMPLEMENTED_OPERATIONS_V1: readonly OperationV1[] = Object.freeze([
   "consumeReplayNonce",
   "reserveRateLimitCost",
+  "claimLease",
+  "renewLease",
+  "mutateWithFence",
+  "releaseLease",
+] as const);
+
+const LEASE_OPERATIONS_V1: readonly OperationV1[] = Object.freeze([
+  "claimLease",
+  "renewLease",
+  "mutateWithFence",
+  "releaseLease",
 ] as const);
 
 /**
@@ -250,6 +283,102 @@ function readClockFloor(db: DatabaseSync): ClockFloorRow | null {
     clock_profile: row.clock_profile,
     persisted_floor_unix_ms: row.persisted_floor_unix_ms,
   };
+}
+
+interface LeaseRow {
+  readonly owner_key_digest: string | null;
+  readonly attempt_key_digest: string | null;
+  readonly fencing_token: string;
+  readonly resource_version: string;
+  readonly lease_expires_at_unix_ms: string | null;
+}
+
+/**
+ * The state a resource is in before it has ever been claimed. Reading an
+ * absent row as this rather than as an error keeps a first claim and a
+ * re-claim on the same path.
+ */
+const UNCLAIMED_LEASE_V1: LeaseRow = Object.freeze({
+  owner_key_digest: null,
+  attempt_key_digest: null,
+  fencing_token: "0",
+  resource_version: "0",
+  lease_expires_at_unix_ms: null,
+});
+
+function optionalText(value: unknown): string | null | undefined {
+  if (value === null) return null;
+  if (typeof value === "string") return value;
+  return undefined;
+}
+
+function readLease(
+  db: DatabaseSync,
+  namespace: string,
+  resourceKeyDigest: string,
+): LeaseRow | null | undefined {
+  const row = db
+    .prepare(
+      `SELECT owner_key_digest, attempt_key_digest, fencing_token,
+              resource_version, lease_expires_at_unix_ms
+         FROM shared_state_lease
+        WHERE namespace = ? AND resource_key_digest = ?`,
+    )
+    .get(namespace, resourceKeyDigest) as
+    | Record<string, unknown>
+    | undefined;
+  if (row === undefined) return null;
+  const owner = optionalText(row.owner_key_digest);
+  const attempt = optionalText(row.attempt_key_digest);
+  const expires = optionalText(row.lease_expires_at_unix_ms);
+  if (owner === undefined || attempt === undefined || expires === undefined) {
+    return undefined;
+  }
+  if (
+    typeof row.fencing_token !== "string"
+    || typeof row.resource_version !== "string"
+  ) {
+    return undefined;
+  }
+  return {
+    owner_key_digest: owner,
+    attempt_key_digest: attempt,
+    fencing_token: row.fencing_token,
+    resource_version: row.resource_version,
+    lease_expires_at_unix_ms: expires,
+  };
+}
+
+/**
+ * Derives the attempt key a successful claim reports.
+ *
+ * The contract makes `attemptKeyDigest` an output of `claimLease` and an input
+ * to the other three lease commands, so the adapter must produce it. Its two
+ * components are fixed by the closed keyspace: `resourceId` and
+ * `attemptNumber`.
+ *
+ * `resourceId` is bound to the resource key digest, which is the only
+ * resource-identifying material the adapter holds — a caller passes a digest,
+ * never the pre-image. `attemptNumber` is bound to the fencing token the claim
+ * just took. The fence increases on claim and only on claim, so one attempt
+ * number belongs to exactly one claim, which is the binding the conformance
+ * harness checks.
+ */
+function deriveAttemptKeyDigest(
+  namespace: string,
+  resourceKeyDigest: string,
+  fencingToken: string,
+): string | null {
+  const built = digestSharedStateKeyV1({
+    keyspaceVersion: V.versions.keyspace,
+    domain: "broker.lease.attempt-key",
+    namespace,
+    components: [
+      { field: "resourceId", type: "utf8", value: resourceKeyDigest },
+      { field: "attemptNumber", type: "uint", value: fencingToken },
+    ],
+  });
+  return built.ok ? built.value.digest : null;
 }
 
 /**
@@ -569,12 +698,30 @@ export class SharedStateSqliteAdapterV1 {
       }
       nextFloor = time.value.nextPersistedFloorUnixMs;
 
-      outcome = command.operation === "consumeReplayNonce"
-        ? this.#consumeReplayNonce(command.input, time.value)
-        : this.#reserveRateLimitCost(
-          command.input as ReserveRateLimitCostInputV1,
-          time.value,
-        );
+      switch (command.operation) {
+        case "consumeReplayNonce":
+          outcome = this.#consumeReplayNonce(command.input, time.value);
+          break;
+        case "reserveRateLimitCost":
+          outcome = this.#reserveRateLimitCost(command.input, time.value);
+          break;
+        case "claimLease":
+          outcome = this.#claimLease(command.input, time.value);
+          break;
+        default:
+          // Not a fallthrough: an operation added to the implemented list
+          // without a case here must not silently take the lease path.
+          if (!LEASE_OPERATIONS_V1.includes(command.operation)) {
+            this.#db.exec("ROLLBACK");
+            return failure("operation_not_implemented");
+          }
+          outcome = this.#leaseAuthorityCommand(
+            command.operation,
+            command.input as LeaseAuthorityInputV1,
+            time.value,
+          );
+          break;
+      }
       if (!outcome.ok) {
         this.#db.exec("ROLLBACK");
         return outcome;
@@ -741,6 +888,233 @@ export class SharedStateSqliteAdapterV1 {
       decision: V.operationDecisions.reserveRateLimitCost[0],
       remaining: Number(limit - used - cost),
       resetInMs: Number(oldest + windowMs - now),
+    });
+  }
+
+  /**
+   * Reads a lease row, mapping an absent row to the unclaimed state so a
+   * first claim and a re-claim take the same path.
+   */
+  #leaseRow(
+    namespace: string,
+    resourceKeyDigest: string,
+  ): LeaseRow | undefined {
+    const row = readLease(this.#db, namespace, resourceKeyDigest);
+    if (row === undefined) return undefined;
+    return row ?? UNCLAIMED_LEASE_V1;
+  }
+
+  /**
+   * True while the stored lease has an owner and has not reached its expiry
+   * instant. The boundary rule is the section 2.6 one — `now < expiresAt`, so
+   * the instant of expiry is already expired — and it is evaluated by that
+   * module rather than re-derived here.
+   */
+  #leaseIsActive(
+    row: LeaseRow,
+    time: SharedStateTimeEvaluationV1,
+  ): boolean | null {
+    if (row.attempt_key_digest === null) return false;
+    if (row.lease_expires_at_unix_ms === null) return false;
+    const boundary = evaluateSharedStateLogicalBoundaryV1(time, {
+      timeVersion: TIME_V.version,
+      kind: "lease",
+      expiresAtUnixMs: row.lease_expires_at_unix_ms,
+    });
+    if (!boundary.ok) return null;
+    return boundary.value.decision === "active";
+  }
+
+  #claimLease(
+    input: ClaimLeaseInputV1,
+    time: SharedStateTimeEvaluationV1,
+  ): SharedStateSqliteAdapterResultV1<SharedStateTransactionResultV1> {
+    const operation = V.operations[2];
+    if (!time.safe) return failure("invalid_time_observation");
+    const row = this.#leaseRow(input.namespace, input.resourceKeyDigest);
+    if (row === undefined) return failure("store_failure");
+
+    // A live claim blocks a new one. This is checked before the version
+    // check, so a contender racing a healthy holder is told it lost the
+    // resource rather than being told its version is stale.
+    const active = this.#leaseIsActive(row, time);
+    if (active === null) return failure("store_failure");
+    if (active) return rejectedEnvelope(operation, "claim_conflict");
+
+    if (BigInt(input.expectedResourceVersion) !== BigInt(row.resource_version)) {
+      return rejectedEnvelope(operation, "version_conflict");
+    }
+
+    const expiresAt = deriveSharedStateExpiryV1(
+      time,
+      String(input.leaseDurationMs),
+    );
+    if (!expiresAt.ok) return rejectedEnvelope(operation, "lease_expired");
+
+    // The fence rises on claim and only on claim, so it never decreases and
+    // an expired or released claim never lets a later claim reuse a fence.
+    const fencingToken = (BigInt(row.fencing_token) + 1n).toString();
+    const resourceVersion = (BigInt(row.resource_version) + 1n).toString();
+    const attemptKeyDigest = deriveAttemptKeyDigest(
+      input.namespace,
+      input.resourceKeyDigest,
+      fencingToken,
+    );
+    if (attemptKeyDigest === null) return failure("adapter_unavailable");
+
+    this.#db
+      .prepare(
+        `INSERT INTO shared_state_lease
+           (namespace, resource_key_digest, owner_key_digest,
+            attempt_key_digest, fencing_token, resource_version,
+            lease_expires_at_unix_ms)
+         VALUES (?, ?, ?, ?, ?, ?, ?)
+         ON CONFLICT(namespace, resource_key_digest) DO UPDATE SET
+           owner_key_digest = excluded.owner_key_digest,
+           attempt_key_digest = excluded.attempt_key_digest,
+           fencing_token = excluded.fencing_token,
+           resource_version = excluded.resource_version,
+           lease_expires_at_unix_ms = excluded.lease_expires_at_unix_ms`,
+      )
+      .run(
+        input.namespace,
+        input.resourceKeyDigest,
+        input.ownerKeyDigest,
+        attemptKeyDigest,
+        fencingToken,
+        resourceVersion,
+        expiresAt.value,
+      );
+
+    return committedEnvelope(operation, {
+      decision: V.operationDecisions.claimLease[0],
+      attemptKeyDigest,
+      fencingToken,
+      resourceVersion,
+      leaseExpiresInMs: input.leaseDurationMs,
+    });
+  }
+
+  /**
+   * The shared rejection ladder for `renewLease`, `mutateWithFence`, and
+   * `releaseLease`.
+   *
+   * Order matters and is not arbitrary. A caller holding a superseded fence is
+   * told `stale_fence` before anything else is considered, so a fenced-out
+   * writer never learns about the current holder. `releaseLease` alone skips
+   * the expiry check: releasing a lease that has already expired is how a
+   * holder cleans up after itself, and refusing it would leave the row
+   * claimed until something else took over.
+   */
+  #leaseAuthorityRejection(
+    operation: OperationV1,
+    input: LeaseAuthorityInputV1,
+    row: LeaseRow,
+    time: SharedStateTimeEvaluationV1,
+  ): string | null | undefined {
+    if (BigInt(input.fencingToken) !== BigInt(row.fencing_token)) {
+      return "stale_fence";
+    }
+    if (row.attempt_key_digest === null) {
+      return operation === "releaseLease"
+        ? "invalid_state_transition"
+        : "lease_expired";
+    }
+    if (input.attemptKeyDigest !== row.attempt_key_digest) {
+      return "stale_fence";
+    }
+    if (input.ownerKeyDigest !== row.owner_key_digest) {
+      return "owner_mismatch";
+    }
+    if (operation !== "releaseLease") {
+      const active = this.#leaseIsActive(row, time);
+      if (active === null) return undefined;
+      if (!active) return "lease_expired";
+    }
+    if (BigInt(input.expectedResourceVersion) !== BigInt(row.resource_version)) {
+      return "version_conflict";
+    }
+    return null;
+  }
+
+  #leaseAuthorityCommand(
+    operation: OperationV1,
+    input: LeaseAuthorityInputV1,
+    time: SharedStateTimeEvaluationV1,
+  ): SharedStateSqliteAdapterResultV1<SharedStateTransactionResultV1> {
+    if (!time.safe) return failure("invalid_time_observation");
+    const row = this.#leaseRow(input.namespace, input.resourceKeyDigest);
+    if (row === undefined) return failure("store_failure");
+
+    const rejection = this.#leaseAuthorityRejection(
+      operation,
+      input,
+      row,
+      time,
+    );
+    if (rejection === undefined) return failure("store_failure");
+    if (rejection !== null) return rejectedEnvelope(operation, rejection);
+
+    // Every accepted lease command advances the resource version, so a
+    // concurrent holder of a stale version cannot apply a second effect.
+    const resourceVersion = (BigInt(row.resource_version) + 1n).toString();
+
+    if (operation === "renewLease") {
+      const renew = input as CommandInputForV1<"renewLease">;
+      const expiresAt = deriveSharedStateExpiryV1(
+        time,
+        String(renew.leaseDurationMs),
+      );
+      if (!expiresAt.ok) return rejectedEnvelope(operation, "lease_expired");
+      this.#db
+        .prepare(
+          `UPDATE shared_state_lease
+              SET resource_version = ?, lease_expires_at_unix_ms = ?
+            WHERE namespace = ? AND resource_key_digest = ?`,
+        )
+        .run(
+          resourceVersion,
+          expiresAt.value,
+          input.namespace,
+          input.resourceKeyDigest,
+        );
+      return committedEnvelope(operation, {
+        decision: V.operationDecisions.renewLease[0],
+        resourceVersion,
+        leaseExpiresInMs: renew.leaseDurationMs,
+      });
+    }
+
+    // A checkpoint mutation keeps the claim; every other mutation kind, and
+    // any release, ends it. The fence is left where it is — releasing must
+    // never lower it, so the next claim resumes above.
+    const endsClaim = operation === "releaseLease"
+      || (input as CommandInputForV1<"mutateWithFence">).mutationKind
+        !== V.leaseMutationKinds[0];
+
+    if (endsClaim) {
+      this.#db
+        .prepare(
+          `UPDATE shared_state_lease
+              SET resource_version = ?, owner_key_digest = NULL,
+                  attempt_key_digest = NULL, lease_expires_at_unix_ms = NULL
+            WHERE namespace = ? AND resource_key_digest = ?`,
+        )
+        .run(resourceVersion, input.namespace, input.resourceKeyDigest);
+    } else {
+      this.#db
+        .prepare(
+          `UPDATE shared_state_lease SET resource_version = ?
+            WHERE namespace = ? AND resource_key_digest = ?`,
+        )
+        .run(resourceVersion, input.namespace, input.resourceKeyDigest);
+    }
+
+    return committedEnvelope(operation, {
+      decision: operation === "releaseLease"
+        ? V.operationDecisions.releaseLease[0]
+        : V.operationDecisions.mutateWithFence[0],
+      resourceVersion,
     });
   }
 

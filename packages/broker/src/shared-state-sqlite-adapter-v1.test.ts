@@ -1,6 +1,6 @@
 /**
- * Tests for the V1 SQLite adapter: lifecycle, ownership, and the replay and
- * rate primitives.
+ * Tests for the V1 SQLite adapter: lifecycle, ownership, and the replay,
+ * rate, and lease primitives.
  *
  * Exclusive ownership is the property this whole contract exists to obtain,
  * so it gets the most attention here: a second owner must be refused, a
@@ -12,6 +12,14 @@
  * `expiry+1`), a decision taken while expired rows are still on disk, a
  * backward clock, and a command issued by a session that silently lost
  * ownership. Each of the last three also asserts that nothing was written.
+ *
+ * The lease tests target the two orderings that carry weight rather than the
+ * happy path: a contender whose version is ALSO stale must still be told
+ * `claim_conflict`, and a superseded fence must be reported before owner,
+ * expiry, or version — including when nothing holds the resource, which is
+ * what separates comparing against the stored fence from comparing against
+ * the active claim. Both cases were found by adversarial controls that passed
+ * against an earlier, weaker version of these tests.
  *
  * Every database is a temporary file removed at the end of its test.
  */
@@ -35,7 +43,10 @@ import {
   parseSharedStateTransactionCommandV1,
   type SharedStateTransactionCommandV1,
 } from "./shared-state-storage-contract-v1.js";
-import { digestSharedStateKeyV1 } from "./shared-state-storage-keyspace-v1.js";
+import {
+  digestSharedStateKeyV1,
+  parseSharedStateDigestV1,
+} from "./shared-state-storage-keyspace-v1.js";
 
 interface Fixture {
   readonly db: DatabaseSync;
@@ -89,7 +100,7 @@ function digest(
 }
 
 function command(
-  operation: "consumeReplayNonce" | "reserveRateLimitCost",
+  operation: SharedStateTransactionCommandV1["operation"],
   input: Record<string, unknown>,
 ): SharedStateTransactionCommandV1 {
   const parsed = parseSharedStateTransactionCommandV1({
@@ -136,6 +147,76 @@ function rateCommand(input: {
   });
 }
 
+const RESOURCE = digest("broker.lease.resource-key", [
+  { field: "resourceType", type: "utf8", value: "task" },
+  { field: "resourceId", type: "utf8", value: "task-1" },
+]);
+
+function ownerDigest(ownerId: string): string {
+  return digest("broker.lease.owner-key", [
+    { field: "ownerId", type: "utf8", value: ownerId },
+  ]);
+}
+
+/**
+ * The mutation digest binds the kind, so a `checkpoint` digest is not a
+ * `complete` digest.
+ */
+function mutationDigest(kind: string): string {
+  return digest("broker.lease.mutation", [
+    { field: "mutationKind", type: "utf8", value: kind },
+    { field: "mutationBody", type: "bytes", value: "00" },
+  ]);
+}
+
+function claim(input: {
+  readonly owner: string;
+  readonly leaseDurationMs: number;
+  readonly expectedResourceVersion: string;
+}): SharedStateTransactionCommandV1 {
+  return command("claimLease", {
+    resourceKeyDigest: RESOURCE,
+    ownerKeyDigest: ownerDigest(input.owner),
+    leaseDurationMs: input.leaseDurationMs,
+    expectedResourceVersion: input.expectedResourceVersion,
+  });
+}
+
+/**
+ * The authority a `claimLease` result grants. The three follow-up commands all
+ * present exactly this, so tests thread it through instead of restating it.
+ */
+interface Authority {
+  readonly owner: string;
+  readonly attemptKeyDigest: string;
+  readonly fencingToken: string;
+  readonly expectedResourceVersion: string;
+}
+
+function authorityOf(owner: string, result: Record<string, unknown>): Authority {
+  return {
+    owner,
+    attemptKeyDigest: String(result.attemptKeyDigest),
+    fencingToken: String(result.fencingToken),
+    expectedResourceVersion: String(result.resourceVersion),
+  };
+}
+
+function authorityCommand(
+  operation: "renewLease" | "mutateWithFence" | "releaseLease",
+  authority: Authority,
+  extra: Record<string, unknown>,
+): SharedStateTransactionCommandV1 {
+  return command(operation, {
+    resourceKeyDigest: RESOURCE,
+    ownerKeyDigest: ownerDigest(authority.owner),
+    attemptKeyDigest: authority.attemptKeyDigest,
+    fencingToken: authority.fencingToken,
+    expectedResourceVersion: authority.expectedResourceVersion,
+    ...extra,
+  });
+}
+
 /**
  * Opens a ready adapter with the clock floor at zero.
  */
@@ -146,6 +227,18 @@ function readyAdapter(
   const owner = adapter(db, ownerToken);
   assert.equal(owner.open().ok, true);
   return owner;
+}
+
+function rejected(
+  result: ReturnType<SharedStateSqliteAdapterV1["transact"]>,
+): string {
+  assert.equal(result.ok, true);
+  if (!result.ok) throw new Error("unreachable");
+  assert.equal(result.value.status, V.transactionStatuses[1]);
+  if (result.value.status !== V.transactionStatuses[1]) {
+    throw new Error("unreachable");
+  }
+  return result.value.reasonCode;
 }
 
 function committed(
@@ -387,7 +480,7 @@ test("rejects reopening an already-open adapter", () => {
   }
 });
 
-test("implements the replay and rate primitives only, on closed vocabulary", () => {
+test("implements the replay, rate, and lease primitives, on closed vocabulary", () => {
   // The public surface is the lifecycle seam, the write guard, and one
   // command entry point. No primitive gets its own public method.
   const surface = Object.getOwnPropertyNames(
@@ -451,7 +544,7 @@ test("refuses every operation this slice does not implement", () => {
       contractVersion: V.versions.contract,
       transactionVersion: V.versions.transaction,
       operationVersion: V.versions.operation,
-      operation: "claimLease",
+      operation: "executeIdempotent",
       input: {},
     } as unknown as SharedStateTransactionCommandV1;
     const refused = owner.transact(unimplemented, { observedAtUnixMs: "10" });
@@ -669,6 +762,438 @@ test("a backward observation beyond tolerance is unavailable, not a decision", (
       .prepare("SELECT COUNT(*) AS total FROM shared_state_replay_nonce")
       .get() as { total?: unknown };
     assert.equal(rows.total, 1);
+  } finally {
+    disposeFixture(fixture);
+  }
+});
+
+test("a claim binds owner, attempt, and fence, and raises the version", () => {
+  const fixture = makeFixture();
+  try {
+    const owner = readyAdapter(fixture.db);
+    const claimed = committed(
+      owner.transact(
+        claim({ owner: "o-1", leaseDurationMs: 1_000, expectedResourceVersion: "0" }),
+        { observedAtUnixMs: "1000" },
+      ),
+    );
+    assert.equal(claimed.decision, V.operationDecisions.claimLease[0]);
+    assert.equal(claimed.fencingToken, "1");
+    assert.equal(claimed.resourceVersion, "1");
+    assert.equal(claimed.leaseExpiresInMs, 1_000);
+
+    // The attempt key is a real attempt-key digest in this namespace, not an
+    // opaque token the adapter made up.
+    const parsed = parseSharedStateDigestV1(claimed.attemptKeyDigest, {
+      domain: "broker.lease.attempt-key",
+      namespace: NAMESPACE,
+    });
+    assert.equal(parsed.ok, true);
+  } finally {
+    disposeFixture(fixture);
+  }
+});
+
+test("a live claim blocks a contender, and version staleness is reported separately", () => {
+  const fixture = makeFixture();
+  try {
+    const owner = readyAdapter(fixture.db);
+    committed(
+      owner.transact(
+        claim({ owner: "o-1", leaseDurationMs: 1_000, expectedResourceVersion: "0" }),
+        { observedAtUnixMs: "1000" },
+      ),
+    );
+
+    // A contender with the CORRECT version loses to the live holder.
+    assert.equal(
+      rejected(
+        owner.transact(
+          claim({ owner: "o-2", leaseDurationMs: 1_000, expectedResourceVersion: "1" }),
+          { observedAtUnixMs: "1500" },
+        ),
+      ),
+      "claim_conflict",
+    );
+
+    // The load-bearing case. A contender whose version is ALSO stale — every
+    // loser of a barrier race is in exactly this state, because the winner
+    // moved the version out from under it — must still be told it lost the
+    // resource, not that its version is stale. Checking the version first
+    // would answer `version_conflict` here and is what this asserts against.
+    assert.equal(
+      rejected(
+        owner.transact(
+          claim({ owner: "o-3", leaseDurationMs: 1_000, expectedResourceVersion: "0" }),
+          { observedAtUnixMs: "1500" },
+        ),
+      ),
+      "claim_conflict",
+    );
+
+    // After expiry the resource is claimable, but a stale version is now the
+    // reason it fails.
+    assert.equal(
+      rejected(
+        owner.transact(
+          claim({ owner: "o-2", leaseDurationMs: 1_000, expectedResourceVersion: "0" }),
+          { observedAtUnixMs: "2000" },
+        ),
+      ),
+      "version_conflict",
+    );
+  } finally {
+    disposeFixture(fixture);
+  }
+});
+
+test("the fence never decreases across expiry, takeover, and release", () => {
+  const fixture = makeFixture();
+  try {
+    const owner = readyAdapter(fixture.db);
+    const first = committed(
+      owner.transact(
+        claim({ owner: "o-1", leaseDurationMs: 1_000, expectedResourceVersion: "0" }),
+        { observedAtUnixMs: "1000" },
+      ),
+    );
+    assert.equal(first.fencingToken, "1");
+
+    // Let it expire, then take over.
+    const second = committed(
+      owner.transact(
+        claim({ owner: "o-2", leaseDurationMs: 1_000, expectedResourceVersion: "1" }),
+        { observedAtUnixMs: "2000" },
+      ),
+    );
+    assert.equal(second.fencingToken, "2");
+    assert.equal(second.resourceVersion, "2");
+    assert.notEqual(second.attemptKeyDigest, first.attemptKeyDigest);
+
+    // Release, then claim again: the fence resumes above, it does not reset.
+    const authority = authorityOf("o-2", second);
+    committed(
+      owner.transact(
+        authorityCommand("releaseLease", authority, { releaseKind: "release" }),
+        { observedAtUnixMs: "2100" },
+      ),
+    );
+    const third = committed(
+      owner.transact(
+        claim({ owner: "o-3", leaseDurationMs: 1_000, expectedResourceVersion: "3" }),
+        { observedAtUnixMs: "2200" },
+      ),
+    );
+    assert.equal(third.fencingToken, "3");
+  } finally {
+    disposeFixture(fixture);
+  }
+});
+
+test("a superseded holder is fenced out before anything else is considered", () => {
+  const fixture = makeFixture();
+  try {
+    const owner = readyAdapter(fixture.db);
+    const first = committed(
+      owner.transact(
+        claim({ owner: "o-1", leaseDurationMs: 1_000, expectedResourceVersion: "0" }),
+        { observedAtUnixMs: "1000" },
+      ),
+    );
+    const stale = authorityOf("o-1", first);
+
+    // o-1 expires and o-2 takes over.
+    committed(
+      owner.transact(
+        claim({ owner: "o-2", leaseDurationMs: 1_000, expectedResourceVersion: "1" }),
+        { observedAtUnixMs: "2000" },
+      ),
+    );
+
+    // o-1 now holds fence 1 while the resource is at fence 2. Every command
+    // it can issue is `stale_fence` — it never learns about the new holder.
+    for (
+      const attempt of [
+        authorityCommand("renewLease", stale, { leaseDurationMs: 1_000 }),
+        authorityCommand("mutateWithFence", stale, {
+          mutationKind: "checkpoint",
+          mutationDigest: mutationDigest("checkpoint"),
+        }),
+        authorityCommand("releaseLease", stale, { releaseKind: "release" }),
+      ]
+    ) {
+      assert.equal(
+        rejected(owner.transact(attempt, { observedAtUnixMs: "2100" })),
+        "stale_fence",
+      );
+    }
+
+    // And nothing it tried changed the resource version.
+    const row = fixture.db
+      .prepare(
+        "SELECT resource_version AS v FROM shared_state_lease LIMIT 1",
+      )
+      .get() as { v?: unknown };
+    assert.equal(row.v, "2");
+  } finally {
+    disposeFixture(fixture);
+  }
+});
+
+test("renew extends the lease, and expiry is judged at the exact instant", () => {
+  // `expiry` itself is already expired, matching the section 2.6 rule.
+  const probes = [
+    { observed: "1999", expected: "renewed" },
+    { observed: "2000", expected: "lease_expired" },
+  ] as const;
+  for (const probe of probes) {
+    const fixture = makeFixture();
+    try {
+      const owner = readyAdapter(fixture.db);
+      const first = committed(
+        owner.transact(
+          claim({ owner: "o-1", leaseDurationMs: 1_000, expectedResourceVersion: "0" }),
+          { observedAtUnixMs: "1000" },
+        ),
+      );
+      const authority = authorityOf("o-1", first);
+      const renewal = owner.transact(
+        authorityCommand("renewLease", authority, { leaseDurationMs: 500 }),
+        { observedAtUnixMs: probe.observed },
+      );
+      if (probe.expected === "renewed") {
+        const result = committed(renewal);
+        assert.equal(result.decision, V.operationDecisions.renewLease[0]);
+        assert.equal(result.resourceVersion, "2");
+      } else {
+        assert.equal(rejected(renewal), "lease_expired");
+      }
+    } finally {
+      disposeFixture(fixture);
+    }
+  }
+});
+
+test("a checkpoint mutation keeps the claim; any other kind ends it", () => {
+  for (const kind of V.leaseMutationKinds) {
+    const fixture = makeFixture();
+    try {
+      const owner = readyAdapter(fixture.db);
+      const first = committed(
+        owner.transact(
+          claim({ owner: "o-1", leaseDurationMs: 1_000, expectedResourceVersion: "0" }),
+          { observedAtUnixMs: "1000" },
+        ),
+      );
+      const authority = authorityOf("o-1", first);
+      const applied = committed(
+        owner.transact(
+          authorityCommand("mutateWithFence", authority, {
+            mutationKind: kind,
+            mutationDigest: mutationDigest(kind),
+          }),
+          { observedAtUnixMs: "1100" },
+        ),
+      );
+      assert.equal(applied.decision, V.operationDecisions.mutateWithFence[0]);
+      assert.equal(applied.resourceVersion, "2");
+
+      const row = fixture.db
+        .prepare(
+          "SELECT attempt_key_digest AS a FROM shared_state_lease LIMIT 1",
+        )
+        .get() as { a?: unknown };
+      if (kind === "checkpoint") {
+        assert.equal(row.a, authority.attemptKeyDigest);
+      } else {
+        // A terminal mutation ends the claim, so the resource is immediately
+        // claimable again without waiting for the lease to expire.
+        assert.equal(row.a, null);
+        const retaken = committed(
+          owner.transact(
+            claim({ owner: "o-2", leaseDurationMs: 1_000, expectedResourceVersion: "2" }),
+            { observedAtUnixMs: "1200" },
+          ),
+        );
+        assert.equal(retaken.fencingToken, "2");
+      }
+    } finally {
+      disposeFixture(fixture);
+    }
+  }
+});
+
+test("release works after expiry, but not twice", () => {
+  const fixture = makeFixture();
+  try {
+    const owner = readyAdapter(fixture.db);
+    const first = committed(
+      owner.transact(
+        claim({ owner: "o-1", leaseDurationMs: 1_000, expectedResourceVersion: "0" }),
+        { observedAtUnixMs: "1000" },
+      ),
+    );
+    const authority = authorityOf("o-1", first);
+
+    // Well past expiry. Releasing is how a holder cleans up after itself, so
+    // it must still be allowed.
+    const released = committed(
+      owner.transact(
+        authorityCommand("releaseLease", authority, { releaseKind: "release" }),
+        { observedAtUnixMs: "9000" },
+      ),
+    );
+    assert.equal(released.decision, V.operationDecisions.releaseLease[0]);
+    assert.equal(released.resourceVersion, "2");
+
+    // A second release has no claim to end. It is a state-transition error,
+    // not an expiry one.
+    assert.equal(
+      rejected(
+        owner.transact(
+          authorityCommand("releaseLease", authority, { releaseKind: "release" }),
+          { observedAtUnixMs: "9100" },
+        ),
+      ),
+      "invalid_state_transition",
+    );
+
+    // Once somebody else claims, the released holder's fence is superseded.
+    // It must now be told `stale_fence` rather than `invalid_state_transition`:
+    // the fence is compared against the stored high-water mark, which release
+    // did not lower, not against the (absent) active claim.
+    const second = committed(
+      owner.transact(
+        claim({ owner: "o-2", leaseDurationMs: 1_000, expectedResourceVersion: "2" }),
+        { observedAtUnixMs: "9200" },
+      ),
+    );
+    // o-2 releases too, so there is no active claim at all — only a fence
+    // high-water mark of 2. This is the state that separates "compare against
+    // the stored fence" from "compare against the active claim".
+    committed(
+      owner.transact(
+        authorityCommand("releaseLease", authorityOf("o-2", second), {
+          releaseKind: "release",
+        }),
+        { observedAtUnixMs: "9250" },
+      ),
+    );
+    assert.equal(
+      rejected(
+        owner.transact(
+          authorityCommand("releaseLease", authority, { releaseKind: "release" }),
+          { observedAtUnixMs: "9300" },
+        ),
+      ),
+      "stale_fence",
+    );
+  } finally {
+    disposeFixture(fixture);
+  }
+});
+
+test("the right holder with the wrong owner or version is refused distinctly", () => {
+  const fixture = makeFixture();
+  try {
+    const owner = readyAdapter(fixture.db);
+    const first = committed(
+      owner.transact(
+        claim({ owner: "o-1", leaseDurationMs: 1_000, expectedResourceVersion: "0" }),
+        { observedAtUnixMs: "1000" },
+      ),
+    );
+    const authority = authorityOf("o-1", first);
+
+    assert.equal(
+      rejected(
+        owner.transact(
+          authorityCommand(
+            "renewLease",
+            { ...authority, owner: "o-2" },
+            { leaseDurationMs: 500 },
+          ),
+          { observedAtUnixMs: "1100" },
+        ),
+      ),
+      "owner_mismatch",
+    );
+    assert.equal(
+      rejected(
+        owner.transact(
+          authorityCommand(
+            "renewLease",
+            { ...authority, expectedResourceVersion: "0" },
+            { leaseDurationMs: 500 },
+          ),
+          { observedAtUnixMs: "1100" },
+        ),
+      ),
+      "version_conflict",
+    );
+
+    // A forged attempt key with the right fence is still stale, not an owner
+    // mismatch: the attempt binding is checked first.
+    assert.equal(
+      rejected(
+        owner.transact(
+          authorityCommand(
+            "renewLease",
+            {
+              ...authority,
+              attemptKeyDigest: digest("broker.lease.attempt-key", [
+                { field: "resourceId", type: "utf8", value: "forged" },
+                { field: "attemptNumber", type: "uint", value: "1" },
+              ]),
+            },
+            { leaseDurationMs: 500 },
+          ),
+          { observedAtUnixMs: "1100" },
+        ),
+      ),
+      "stale_fence",
+    );
+
+    // None of the three refusals moved the resource.
+    const row = fixture.db
+      .prepare("SELECT resource_version AS v FROM shared_state_lease LIMIT 1")
+      .get() as { v?: unknown };
+    assert.equal(row.v, "1");
+  } finally {
+    disposeFixture(fixture);
+  }
+});
+
+test("leases in different namespaces and resources do not interfere", () => {
+  const fixture = makeFixture();
+  try {
+    const owner = readyAdapter(fixture.db);
+    const other = digest("broker.lease.resource-key", [
+      { field: "resourceType", type: "utf8", value: "task" },
+      { field: "resourceId", type: "utf8", value: "task-2" },
+    ]);
+    committed(
+      owner.transact(
+        claim({ owner: "o-1", leaseDurationMs: 1_000, expectedResourceVersion: "0" }),
+        { observedAtUnixMs: "1000" },
+      ),
+    );
+    // A different resource is unclaimed, so it starts at version 0 and takes
+    // its own fence — the reference model is single-resource, the adapter
+    // is not.
+    const second = committed(
+      owner.transact(
+        command("claimLease", {
+          resourceKeyDigest: other,
+          ownerKeyDigest: ownerDigest("o-2"),
+          leaseDurationMs: 1_000,
+          expectedResourceVersion: "0",
+        }),
+        { observedAtUnixMs: "1000" },
+      ),
+    );
+    assert.equal(second.fencingToken, "1");
+    assert.equal(second.resourceVersion, "1");
   } finally {
     disposeFixture(fixture);
   }

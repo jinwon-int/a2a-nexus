@@ -500,11 +500,51 @@ unchecked on both halves: the boundary matrix is not yet driven through the
 harness, and authorized retention execution at and after the boundary is a
 separate exercise this slice does not perform.
 
-The eleven remaining operations are refused with `operation_not_implemented`
-rather than answered, because a placeholder answer is indistinguishable from a
-real decision to a caller. `Implement all primitives` therefore stays unchecked
-until slices D through G land; the writer and read-consistency items are
-untouched.
+Operations the adapter does not yet implement are refused with
+`operation_not_implemented` rather than answered, because a placeholder answer
+is indistinguishable from a real decision to a caller.
+
+Slice D adds the four lease commands. Its semantics are not invented: Phase
+2.1's conformance harness and its reference model already fix them, and two
+orderings in the rejection ladder carry weight rather than being stylistic.
+
+A contender that meets a live holder is answered `claim_conflict` before its
+resource version is considered at all. Every loser of a claim race also holds a
+stale version — the winner moved it — so checking the version first would
+answer `version_conflict` to all of them and describe the wrong problem. A
+caller presenting a superseded fence is answered `stale_fence` before owner,
+expiry, or version, so a fenced-out writer learns nothing about the current
+holder. The fence it is compared against is the stored high-water mark rather
+than the active claim: neither release nor expiry lowers it, so an old fence
+stays stale even when nothing holds the resource, and the next claim always
+resumes above every fence ever issued.
+
+`releaseLease` alone skips the expiry check. Releasing an expired lease is how
+a holder cleans up after itself; refusing it would leave the row claimed until
+something else took over. Releasing when no claim is held is
+`invalid_state_transition`, not `lease_expired` — the release reason vocabulary
+does not contain the latter. A `checkpoint` mutation keeps the claim; every
+other mutation kind ends it, which makes the resource immediately claimable
+without waiting for the lease to expire.
+
+The eleven-table shape held again here. The reference model's attempt counter
+and its fence both advance on claim and only on claim, so they are always
+equal, and the attempt number is derived from the fence rather than needing a
+column of its own. Resource state is derived from whether an attempt is
+recorded. `attemptKeyDigest` is produced by `claimLease` and consumed by the
+other three, so the adapter derives it, binding `resourceId` to the resource
+key digest — the only resource-identifying material a caller gives it — and
+`attemptNumber` to the fence the claim just took.
+
+Two gaps are recorded rather than papered over. The Phase 2.1 repeat item
+stays unchecked: the harness additionally requires audit and outbox rows staged
+inside the same transaction as the resource mutation, and rejected commands
+must stage neither. That crosses into the outbox slice and is not implemented
+here. The harness also exercises a single resource; multi-resource behavior is
+covered by tests added in this slice rather than by the harness.
+
+`Implement all primitives` therefore stays unchecked until slices E through G
+land; the writer and read-consistency items are untouched.
 
 The first schema slice implements **no adapter behavior**: no transaction
 boundary, no
