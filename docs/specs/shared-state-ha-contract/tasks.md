@@ -461,7 +461,54 @@ than advancing the legacy store's `SQLITE_SCHEMA_VERSION`.
 - [ ] Preserve existing export/inspection and fail-safe recovery behavior.
 - [ ] Keep runtime integration/default enablement off.
 
-The checked schema item above ships eleven `shared_state_*` tables in
+### Slice F, first part — the idempotency effect's outbox link
+
+Two owner decisions settled the question slice F was blocked on, and both are
+recorded here because each changes what a later reader should expect.
+
+**Decision 1 — the effect's outbox block is a caller-owned link, stored in its
+own table.** Nothing reads its four values: the Phase 2.2 reference model
+increments a counter, the harness asserts that counter is one, and neither
+outcome digest nor this adapter binds any of the fields. But the harness
+requires something staged in the transaction, and section 5.4.1 says the outbox
+operations are not aliases for `executeIdempotent`. The schemas agree — the
+effect's `retentionPolicyVersion` is a shape-only string while
+`appendOutbox.retentionPolicyVersion` is the closed section 5.5.1 registry — so
+a block that cannot name a registered policy is not describing a registered
+row. `shared_state_idempotency_outbox_link` records the four values exactly as
+supplied. Nothing is derived, defaulted, or invented.
+
+A separate table rather than columns, and that part was measured rather than
+argued. `CREATE TABLE IF NOT EXISTS` skips the entire statement when the table
+exists, so columns added to `shared_state_idempotency` never reach a database
+already in use — while a new table is created on that same database normally.
+Worse, schema validation checks table names and not columns, so the added-column
+shape reports `ok` and fails at the first write instead. Raising the schema
+version does not rescue it: that rejects the database outright. The table count
+goes from eleven to twelve, which is the whole cost.
+
+The link is staged **before** the outcome row, in the same `BEGIN IMMEDIATE`
+boundary, because that is the order the Phase 2.2 fault matrix names — outbox
+staging precedes outcome staging. A test fails the outcome write through a
+proxied database handle and asserts both rows are gone, and asserts the link
+statement was prepared first, because a failure landing before the link write
+would leave the same empty table and prove nothing.
+
+**Decision 2 — a target may declare a fault-point collapse.** The Phase 2.2
+harness arms four in-transaction fault points; V1 performs no reservation and
+executes no domain mutation of its own, so `after_reservation` and
+`after_domain_mutation` name the same instant — nothing durable written yet.
+Phase 2.1 collapses at the other end, where nothing is written between audit and
+outbox staging and the commit. A SQLite target may map such a point onto the
+nearest real boundary and **state the collapse in its report**; it may not
+fabricate a boundary, and the adapter may not grow a durable write with no
+effect behind it purely to create one.
+
+The consequence is worth stating plainly rather than discovering later: a repeat
+item checked under this decision proves all-or-none **at every boundary V1
+actually has**, not at every boundary the reference model models.
+
+The checked schema item above shipped eleven `shared_state_*` tables in
 `packages/broker/src/shared-state-sqlite-schema-v1.ts`, derived from what
 section 6.2 requires an adapter replacement to preserve — keys, fingerprints,
 fences, sequence numbers, expiry instants, projection checkpoints, and stable
@@ -536,7 +583,7 @@ does not contain the latter. A `checkpoint` mutation keeps the claim; every
 other mutation kind ends it, which makes the resource immediately claimable
 without waiting for the lease to expire.
 
-The eleven-table shape held again here. The reference model's attempt counter
+The table shape held again here. The reference model's attempt counter
 and its fence both advance on claim and only on claim, so they are always
 equal, and the attempt number is derived from the fence rather than needing a
 column of its own. Resource state is derived from whether an attempt is
@@ -612,8 +659,10 @@ acknowledgment remain separate section 6.1 operations, are not aliases for
 That is consistent with the measurement: the effect's retention policy is
 absent from the outbox registry because the effect is a caller-owned link, not
 a registered outbox row. Whether that link is represented in
-`shared_state_outbox` or elsewhere is a slice F decision, and it is the first
-place in this section where the eleven-table shape may genuinely need to move.
+`shared_state_outbox` or elsewhere was a slice F decision, and it was the first
+place in this section where the table shape genuinely had to move. It is now
+settled: `shared_state_idempotency_outbox_link`, described earlier in this
+section, which took the shape from eleven tables to twelve.
 
 Slice G adds the three claim-graph commands. Phase 2.7 has no policy module to
 reuse — unlike section 2.6's time module or section 2.2's catalog evaluator,

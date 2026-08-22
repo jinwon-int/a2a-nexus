@@ -2126,3 +2126,156 @@ test("a command from a session that lost ownership never reaches the store", () 
     disposeFixture(fixture, [second]);
   }
 });
+
+/**
+ * Reads the effect outbox link rows for a namespace.
+ */
+function linkRows(db: DatabaseSync): readonly Record<string, unknown>[] {
+  return db
+    .prepare(
+      `SELECT namespace, key_digest, stream_key_digest, event_key_digest,
+              payload_digest, retention_policy_version
+         FROM shared_state_idempotency_outbox_link`,
+    )
+    .all() as readonly Record<string, unknown>[];
+}
+
+test("an executed effect stages its outbox link with the supplied values", () => {
+  const fixture = makeFixture();
+  try {
+    const owner = readyAdapter(fixture.db);
+    const command = idempotentCommand({ payload: "a1" });
+    assert.equal(linkRows(fixture.db).length, 0);
+
+    committed(owner.transact(command, { observedAtUnixMs: "1000" }));
+
+    const rows = linkRows(fixture.db);
+    assert.equal(rows.length, 1);
+    if (command.operation !== "executeIdempotent") {
+      throw new Error("unreachable");
+    }
+    // Recorded exactly as supplied. Nothing derived, defaulted, or invented.
+    assert.equal(rows[0]!.namespace, command.input.namespace);
+    assert.equal(rows[0]!.key_digest, command.input.keyDigest);
+    assert.equal(
+      rows[0]!.stream_key_digest,
+      command.input.effect.outbox.streamKeyDigest,
+    );
+    assert.equal(
+      rows[0]!.event_key_digest,
+      command.input.effect.outbox.eventKeyDigest,
+    );
+    assert.equal(
+      rows[0]!.payload_digest,
+      command.input.effect.outbox.payloadDigest,
+    );
+    assert.equal(
+      rows[0]!.retention_policy_version,
+      command.input.effect.outbox.retentionPolicyVersion,
+    );
+  } finally {
+    disposeFixture(fixture);
+  }
+});
+
+test("a replayed effect stages no second outbox link", () => {
+  const fixture = makeFixture();
+  try {
+    const owner = readyAdapter(fixture.db);
+    const command = idempotentCommand({ payload: "a1" });
+    committed(owner.transact(command, { observedAtUnixMs: "1000" }));
+    const after = committed(
+      owner.transact(command, { observedAtUnixMs: "1000" }),
+    );
+    assert.equal(after.decision, V.operationDecisions.executeIdempotent[1]);
+    assert.equal(linkRows(fixture.db).length, 1);
+  } finally {
+    disposeFixture(fixture);
+  }
+});
+
+test("a rejected effect leaves no outbox link behind", () => {
+  const fixture = makeFixture();
+  try {
+    const owner = readyAdapter(fixture.db);
+    committed(
+      owner.transact(idempotentCommand({ payload: "a1" }), {
+        observedAtUnixMs: "1000",
+      }),
+    );
+    // Same key, different payload: the one thing idempotency must not absorb.
+    const reason = rejected(
+      owner.transact(idempotentCommand({ payload: "a2" }), {
+        observedAtUnixMs: "1000",
+      }),
+    );
+    assert.equal(reason, "idempotency_conflict");
+    assert.equal(linkRows(fixture.db).length, 1);
+  } finally {
+    disposeFixture(fixture);
+  }
+});
+
+/**
+ * The link is only meaningful if it shares the outcome's transaction. Failing
+ * at the outcome write proves that directly: the link statement has already
+ * run at that point, so a surviving link row would mean two boundaries rather
+ * than one. The statement order is asserted too, because a failure that
+ * landed before the link write would leave the same empty table and prove
+ * nothing.
+ */
+test("the outbox link and the outcome commit together or not at all", () => {
+  const directory = mkdtempSync(join(tmpdir(), "shared-state-link-atomic-"));
+  const db = new DatabaseSync(join(directory, "v1.db"));
+  try {
+    assert.equal(applySharedStateSqliteSchemaV1(db).ok, true);
+    const prepared: string[] = [];
+    const proxy = new Proxy(db, {
+      get(target, property, receiver): unknown {
+        const value = Reflect.get(target, property, receiver) as unknown;
+        if (property !== "prepare") {
+          return typeof value === "function" ? value.bind(target) : value;
+        }
+        return (sql: string): unknown => {
+          prepared.push(sql);
+          if (sql.includes("INSERT INTO shared_state_idempotency\n")) {
+            throw new Error("test-only-injected-outcome-write-failure");
+          }
+          return target.prepare(sql);
+        };
+      },
+    }) as DatabaseSync;
+
+    const owner = new SharedStateSqliteAdapterV1({
+      db: proxy,
+      ownerToken: "owner-link",
+      backwardSkewToleranceMs: "0",
+    });
+    assert.equal(owner.open().ok, true);
+
+    const result = owner.transact(idempotentCommand({ payload: "a1" }), {
+      observedAtUnixMs: "1000",
+    });
+    assert.equal(result.ok, false);
+
+    const linkIndex = prepared.findIndex((sql) =>
+      sql.includes("INSERT INTO shared_state_idempotency_outbox_link"),
+    );
+    const outcomeIndex = prepared.findIndex((sql) =>
+      sql.includes("INSERT INTO shared_state_idempotency\n"),
+    );
+    assert.notEqual(linkIndex, -1);
+    assert.notEqual(outcomeIndex, -1);
+    assert.equal(linkIndex < outcomeIndex, true);
+
+    // The rollback took the link with it.
+    assert.equal(linkRows(db).length, 0);
+    const outcomes = db
+      .prepare(`SELECT COUNT(*) AS total FROM shared_state_idempotency`)
+      .get() as { total?: unknown };
+    assert.equal(Number(outcomes.total), 0);
+  } finally {
+    db.close();
+    rmSync(directory, { recursive: true, force: true });
+  }
+});

@@ -43,6 +43,7 @@ export const SHARED_STATE_SQLITE_SCHEMA_V1 = Object.freeze({
     "shared_state_rate_cost",
     "shared_state_lease",
     "shared_state_idempotency",
+    "shared_state_idempotency_outbox_link",
     "shared_state_outbox",
     "shared_state_graph_source",
     "shared_state_graph_batch",
@@ -149,6 +150,33 @@ const SCHEMA_STATEMENTS_V1: readonly string[] = Object.freeze([
      key_digest TEXT NOT NULL,
      payload_fingerprint TEXT NOT NULL,
      outcome_digest TEXT NOT NULL,
+     retention_policy_version TEXT NOT NULL,
+     PRIMARY KEY (namespace, key_digest)
+   ) STRICT`,
+
+  // The outbox event an `executeIdempotent` effect promises.
+  //
+  // This is a caller-owned link, not a registered outbox row. Spec section
+  // 5.4.1 states the outbox operations are separate section 6.1 operations
+  // rather than aliases for `executeIdempotent`, and the schemas agree: the
+  // effect's `retentionPolicyVersion` is a shape-only string while
+  // `appendOutbox.retentionPolicyVersion` is the closed section 5.5.1
+  // registry. A block that cannot name a registered policy is not describing
+  // a registered row, so it gets its own table instead of being written into
+  // `shared_state_outbox` with values V1 would have to invent.
+  //
+  // It is a separate table rather than columns on `shared_state_idempotency`
+  // because `CREATE TABLE IF NOT EXISTS` skips the whole statement when the
+  // table already exists. Added columns therefore never reach a database that
+  // is already in use, and schema validation checks table names rather than
+  // columns, so it reports healthy and the first write fails instead. A new
+  // table is created normally on that same database.
+  `CREATE TABLE IF NOT EXISTS shared_state_idempotency_outbox_link (
+     namespace TEXT NOT NULL,
+     key_digest TEXT NOT NULL,
+     stream_key_digest TEXT NOT NULL,
+     event_key_digest TEXT NOT NULL,
+     payload_digest TEXT NOT NULL,
      retention_policy_version TEXT NOT NULL,
      PRIMARY KEY (namespace, key_digest)
    ) STRICT`,
