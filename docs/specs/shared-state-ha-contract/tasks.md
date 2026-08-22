@@ -1461,3 +1461,89 @@ query. SQLite/shared adapter conformance, real partition behavior against a
 live authority, runtime integration, retention/prune execution, readiness
 route behavior, migration, deployment, live rollout, and overall issue
 completion remain out of scope.
+
+### Slice I, second part — the Phase 2.6 expiry target
+
+Slice I, second part, drives the Phase 2.6 harness through the adapter in
+`packages/broker/src/shared-state-sqlite-expiry-target-v1.test.ts`. Adapter
+source is unchanged, as in the six earlier targets. This is the last of the
+seven Phase 2 harnesses; `Prove inline writer conformance` is now the suite
+itself rather than a remaining section.
+
+Two things here are new, and both come from what V1 does not do. The adapter
+has no `DELETE FROM shared_state_*` path: a logically expired replay, rate, or
+lease row stays on disk, and the exclusive boundary — `observed == expires` is
+already expired — is the adapter's own evaluator. Section 2.6 requires
+`attempt-early-eviction` to be refused so that physical cleanup timing cannot
+become an input to a logical answer; V1 refuses it structurally, which is why
+the retain is evidence rather than a declared synthesis. A dedicated test
+consumes the same nonce at `expiry-1` / `expiry` / `expiry+1` and counts one
+row across the overwrite, so the exclusive instant and the missing delete path
+are both observed rather than inferred.
+
+There is no fault-injection surface. The six earlier targets all wrap the
+database handle; this one does not, because the Phase 2.6 harness has no
+`armFault` and its two controls — cleanup and capacity — are both synchronous
+and test-only. Two handles are enough: one for the adapter, one raw for
+observation. Copying a proxy seam here would have been invention.
+
+The clock shape is the Phase 2.1 / 2.4 one, with two traps that are easy to
+copy wrong. `create({clock})` is required, and the method is
+`readObservedUnixMilliseconds`, not the Phase 2.1 `readLogicalMilliseconds`.
+The seven targets share one clock; constructing a fresh one per target would
+desynchronize the probe points. And `backwardSkewToleranceMs` is `"10"`, the
+harness's own `TIME_POLICIES` value: five of the six earlier targets pass
+`"0"`, and Phase 2.4 already recorded that copying them fails the
+policy-agreement check even when the clock only advances. The observation is
+passed through verbatim. A target-owned counter would break every boundary
+probe.
+
+Decision 2 has nothing to collapse. No fault points are armed, so the
+collapsed list is empty, and a test asserts it does not overlap the synthesis
+list. An empty collapse is still a declaration: a later reader should not have
+to infer that the absence was considered.
+
+Decision 3 is one field, cut as narrowly as (iii) requires.
+`ownershipEpoch` is the harness's lease-claim generation — `"1"` after the
+first claim, `"2"` after an atomic reap/new-claim. V1 has no
+lease-ownership-epoch column. The nearest real durable value is
+`shared_state_lease.fencing_token`, which rises on claim and only on claim.
+The investigation note that named `shared_state_ownership.lifecycle_epoch` is
+wrong on the meaning, and a dedicated test pins why: `open` establishes the
+session epoch at `"1"`, a reclaim leaves it there, and the fence is what
+moves to `"2"`. Mapping the snapshot field onto the ownership row would fail
+scenario D. The target does not invent a column or write a generation counter
+of its own; it reports the fence the claim really wrote, and the descriptor
+says so.
+
+`physicalCleanupState` and `capacityPressureBand` are not syntheses. The
+harness header already calls them test-only controls; the target reports the
+control it was last asked to apply. They sit in a third list so a later reader
+cannot mistake a control report for a missing durable column. The other
+fourteen snapshot fields are real queries over stored state, with TEXT
+sequences compared as BigInt because SQL `MAX()` ranks `"9"` above `"10"`.
+
+Capacity shedding is a target-level control, not an adapter API. Critical
+pressure refuses new work with `unavailable` / `authority_unavailable` and
+still forwards an unexpired replay of an existing nonce, or a replay of an
+existing idempotency key, so the adapter's own accept/replay decision is what
+the harness sees for the retained records. The target looks those rows up on
+the raw handle before calling the adapter; it does not write a row and then
+undo it.
+
+Five adversarial controls, each pinned to the exact error code it must
+produce: an early eviction that deletes the active replay, a pressure band
+that drops unexpired safety records, a clock that treats the exclusive instant
+as still active, a snapshot that silently retires an unacknowledged outbox
+row, and a critical band that still accepts new work. `reopenLosesState` was
+considered and dropped: the Phase 2.6 harness never reopens a target, so that
+control would be consumed by `close` and then sit unused — the pattern this
+section has now caught eight times, a matrix that passes because the check was
+never reached.
+
+The Phase 2.6 repeat item stays unchecked, for the reason the earlier ones do
+and for one more that is this slice's own. That item binds two things:
+repeating the boundary matrix through SQLite/shared adapters, which this slice
+does, and separately proving authorized retention/prune execution at and after
+the logical boundary, which it does not. V1 has no delete path to run such a
+prune through, and checking the item would claim the second half was done.
