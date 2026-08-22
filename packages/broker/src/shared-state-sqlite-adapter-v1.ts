@@ -21,9 +21,23 @@
  * decreases, including across close and reopen.
  *
  * Primitives: this adapter implements the replay, rate, lease, idempotency,
- * and claim-graph commands. Outbox is refused with
- * `operation_not_implemented` rather than given a placeholder answer, and
- * there is still no broker runtime wiring.
+ * claim-graph, and outbox commands. There is still no broker runtime wiring,
+ * and no authorized query, reconciliation, retention, or prune behaviour.
+ *
+ * The outbox commands allocate `stream_sequence` themselves. The registry
+ * makes that the adapter's job — `adapter-allocated-per-exact-stream-key`,
+ * with `callerSequencePolicy: "forbidden"` — and the evaluator enforces it by
+ * scanning the whole input tree for a caller-supplied sequence field before it
+ * looks at anything else. Sequences are unique and strictly increasing within
+ * one exact stream key, gaps allowed, with no order across streams. The
+ * idempotency binding is keyed by the producer's `idempotencyKeyDigest` rather
+ * than by the event id, because the registered answer is that the same key and
+ * payload return the ORIGINAL event id and sequence.
+ *
+ * Receipt and acknowledgment evidence digests are validated by the contract
+ * and then not stored: nothing in V1 reads them back, and adding columns for
+ * values no reader consumes would be inventing durable state. What is stored
+ * is the state each piece of evidence moved the event to.
  *
  * The claim-graph commands put idempotent replay ahead of every precondition,
  * for the same reason the lease ladder puts `claim_conflict` first: a retrying
@@ -98,6 +112,10 @@ import {
 } from "./shared-state-storage-keyspace-v1.js";
 import { evaluateSharedStateIdempotencyPolicyV1 } from "./shared-state-idempotency-v1.js";
 import {
+  evaluateSharedStateOutboxPolicyV1,
+  evaluateSharedStateOutboxRetryBindingV1,
+} from "./shared-state-outbox-v1.js";
+import {
   SHARED_STATE_SQLITE_SCHEMA_V1,
   readSharedStateSqliteSchemaV1,
 } from "./shared-state-sqlite-schema-v1.js";
@@ -131,6 +149,7 @@ export const SHARED_STATE_SQLITE_ADAPTER_ERROR_CODES_V1 = Object.freeze([
   "invalid_time_observation",
   "clock_profile_mismatch",
   "unregistered_idempotency_namespace",
+  "unregistered_outbox_registration",
 ] as const);
 
 export type SharedStateSqliteAdapterErrorCodeV1 =
@@ -203,6 +222,9 @@ type ConsumeReplayNonceInputV1 = CommandInputForV1<"consumeReplayNonce">;
 type ReserveRateLimitCostInputV1 = CommandInputForV1<"reserveRateLimitCost">;
 type ClaimLeaseInputV1 = CommandInputForV1<"claimLease">;
 type ExecuteIdempotentInputV1 = CommandInputForV1<"executeIdempotent">;
+type AppendOutboxInputV1 = CommandInputForV1<"appendOutbox">;
+type UpdateOutboxReceiptInputV1 = CommandInputForV1<"updateOutboxReceipt">;
+type AcknowledgeOutboxInputV1 = CommandInputForV1<"acknowledgeOutbox">;
 type AppendGraphSourceInputV1 = CommandInputForV1<"appendGraphSource">;
 type ApplyGraphProjectionBatchInputV1 =
   CommandInputForV1<"applyGraphProjectionBatch">;
@@ -231,6 +253,9 @@ const IMPLEMENTED_OPERATIONS_V1: readonly OperationV1[] = Object.freeze([
   "mutateWithFence",
   "releaseLease",
   "executeIdempotent",
+  "appendOutbox",
+  "updateOutboxReceipt",
+  "acknowledgeOutbox",
   "appendGraphSource",
   "applyGraphProjectionBatch",
   "rollbackGraphProjectionBatch",
@@ -486,6 +511,119 @@ function readIdempotency(
     outcome_digest: row.outcome_digest,
     retention_policy_version: row.retention_policy_version,
   };
+}
+
+interface OutboxRow {
+  readonly event_key_digest: string;
+  readonly idempotency_key_digest: string;
+  readonly payload_digest: string;
+  readonly stream_sequence: string;
+  readonly receipt_state: string;
+  readonly acknowledgment_state: string;
+}
+
+const OUTBOX_COLUMNS_V1 = `event_key_digest, idempotency_key_digest,
+   payload_digest, stream_sequence, receipt_state, acknowledgment_state`;
+
+function toOutboxRow(row: Record<string, unknown> | undefined): OutboxRow | null
+  | undefined {
+  if (row === undefined) return null;
+  if (
+    typeof row.event_key_digest !== "string"
+    || typeof row.idempotency_key_digest !== "string"
+    || typeof row.payload_digest !== "string"
+    || typeof row.stream_sequence !== "string"
+    || typeof row.receipt_state !== "string"
+    || typeof row.acknowledgment_state !== "string"
+  ) {
+    return undefined;
+  }
+  return {
+    event_key_digest: row.event_key_digest,
+    idempotency_key_digest: row.idempotency_key_digest,
+    payload_digest: row.payload_digest,
+    stream_sequence: row.stream_sequence,
+    receipt_state: row.receipt_state,
+    acknowledgment_state: row.acknowledgment_state,
+  };
+}
+
+/**
+ * Reads the event a producer key already committed on this exact stream.
+ *
+ * The idempotency binding is keyed by `idempotency_key_digest`, not by the
+ * event key: the registry answer is "same key and payload return the original
+ * event id and sequence", so the original has to be found by the key the
+ * producer retried with rather than by the event id it happened to send.
+ */
+function readOutboxByIdempotencyKey(
+  db: DatabaseSync,
+  namespace: string,
+  streamKeyDigest: string,
+  idempotencyKeyDigest: string,
+): OutboxRow | null | undefined {
+  return toOutboxRow(
+    db
+      .prepare(
+        `SELECT ${OUTBOX_COLUMNS_V1}
+           FROM shared_state_outbox
+          WHERE namespace = ? AND stream_key_digest = ?
+            AND idempotency_key_digest = ?`,
+      )
+      .get(namespace, streamKeyDigest, idempotencyKeyDigest) as
+      | Record<string, unknown>
+      | undefined,
+  );
+}
+
+function readOutboxByEventKey(
+  db: DatabaseSync,
+  namespace: string,
+  streamKeyDigest: string,
+  eventKeyDigest: string,
+): OutboxRow | null | undefined {
+  return toOutboxRow(
+    db
+      .prepare(
+        `SELECT ${OUTBOX_COLUMNS_V1}
+           FROM shared_state_outbox
+          WHERE namespace = ? AND stream_key_digest = ?
+            AND event_key_digest = ?`,
+      )
+      .get(namespace, streamKeyDigest, eventKeyDigest) as
+      | Record<string, unknown>
+      | undefined,
+  );
+}
+
+/**
+ * Allocates the next sequence for one exact stream key.
+ *
+ * `stream_sequence` is TEXT, so SQL `MAX()` would compare it lexically and
+ * answer `"9"` for a stream that already reached `"10"`. The maximum is taken
+ * as `BigInt` here for that reason. Gaps are allowed by the registry
+ * (`unique-strictly-increasing-gaps-allowed`), so a sequence burned by a
+ * rolled-back transaction is never reused and never has to be.
+ */
+function nextOutboxSequence(
+  db: DatabaseSync,
+  namespace: string,
+  streamKeyDigest: string,
+): string | undefined {
+  const rows = db
+    .prepare(
+      `SELECT stream_sequence FROM shared_state_outbox
+        WHERE namespace = ? AND stream_key_digest = ?`,
+    )
+    .all(namespace, streamKeyDigest) as readonly Record<string, unknown>[];
+  let highest = 0n;
+  for (const row of rows) {
+    if (typeof row.stream_sequence !== "string") return undefined;
+    if (!/^[1-9][0-9]{0,39}$/.test(row.stream_sequence)) return undefined;
+    const value = BigInt(row.stream_sequence);
+    if (value > highest) highest = value;
+  }
+  return (highest + 1n).toString();
 }
 
 /**
@@ -818,6 +956,15 @@ export class SharedStateSqliteAdapterV1 {
         case "executeIdempotent":
           outcome = this.#executeIdempotent(command.input);
           break;
+        case "appendOutbox":
+          outcome = this.#appendOutbox(command.input);
+          break;
+        case "updateOutboxReceipt":
+          outcome = this.#updateOutboxReceipt(command.input);
+          break;
+        case "acknowledgeOutbox":
+          outcome = this.#acknowledgeOutbox(command.input);
+          break;
         case "appendGraphSource":
           outcome = this.#appendGraphSource(command.input);
           break;
@@ -1115,6 +1262,293 @@ export class SharedStateSqliteAdapterV1 {
     return committedEnvelope(operation, {
       decision: V.operationDecisions.executeIdempotent[0],
       outcomeDigest,
+    });
+  }
+
+  /**
+   * Appends a registered outbox event and allocates its stream sequence.
+   *
+   * Every policy question — the closed purpose registry, the three policy
+   * version bindings, the ordering scope, the recomputed stream key digest,
+   * and the caller-sequence scan — is answered by the section 2.3 evaluator.
+   * The contract parser already ran it, so this is defence in depth in the
+   * same shape `executeIdempotent` uses. What is left for the adapter is
+   * exactly two things the evaluator cannot know: whether a row already
+   * exists, and what sequence comes next.
+   */
+  #appendOutbox(
+    input: AppendOutboxInputV1,
+  ): SharedStateSqliteAdapterResultV1<SharedStateTransactionResultV1> {
+    const operation = V.operations[7];
+
+    // The evaluator's field list is a strict subset of the command input: the
+    // three digests below are not policy inputs, and passing them would be
+    // answered with `unknown_field` rather than a policy decision.
+    const policy = evaluateSharedStateOutboxPolicyV1({
+      operation,
+      namespace: input.namespace,
+      eventPurpose: input.eventPurpose,
+      streamKey: input.streamKey,
+      streamKeyDigest: input.streamKeyDigest,
+      orderingScope: input.orderingScope,
+      retentionPolicyVersion: input.retentionPolicyVersion,
+      receiptPolicyVersion: input.receiptPolicyVersion,
+      acknowledgmentPolicyVersion: input.acknowledgmentPolicyVersion,
+    });
+    if (!policy.ok) {
+      // Only the retention family has a verbatim counterpart in this
+      // operation's rejection vocabulary. Every other policy disagreement is
+      // reported as an adapter failure rather than approximated onto
+      // `ordering_conflict`, which means a sequence conflict and not a
+      // rejected policy binding.
+      if (
+        policy.error.code === "retention_policy_mismatch"
+        || policy.error.code === "unknown_retention_policy_version"
+        || policy.error.code === "invalid_retention_policy_version"
+      ) {
+        return rejectedEnvelope(operation, "retention_policy_mismatch");
+      }
+      return failure("unregistered_outbox_registration");
+    }
+    // The evaluator recomputed this from the structured stream key and proved
+    // it equal to the supplied digest, so the recomputed value is used.
+    const streamKeyDigest = policy.value.streamKeyDigest;
+
+    const original = readOutboxByIdempotencyKey(
+      this.#db,
+      input.namespace,
+      streamKeyDigest,
+      input.idempotencyKeyDigest,
+    );
+    if (original === undefined) return failure("store_failure");
+
+    if (original !== null) {
+      // Replay or conflict is the retry-binding evaluator's decision, not a
+      // comparison restated here. The sequence is supplied on both sides
+      // because the adapter is asserting the binding it would return is the
+      // original one; a differing payload or event key fails inside.
+      const binding = evaluateSharedStateOutboxRetryBindingV1({
+        original: {
+          namespace: input.namespace,
+          idempotencyKeyDigest: original.idempotency_key_digest,
+          payloadDigest: original.payload_digest,
+          eventKeyDigest: original.event_key_digest,
+          streamSequence: original.stream_sequence,
+        },
+        retry: {
+          namespace: input.namespace,
+          idempotencyKeyDigest: input.idempotencyKeyDigest,
+          payloadDigest: input.payloadDigest,
+          eventKeyDigest: input.eventKeyDigest,
+          streamSequence: original.stream_sequence,
+        },
+      });
+      if (!binding.ok) {
+        if (binding.error.code === "idempotent_retry_conflict") {
+          return rejectedEnvelope(operation, "idempotency_conflict");
+        }
+        return failure("unregistered_outbox_registration");
+      }
+      return committedEnvelope(operation, {
+        decision: V.operationDecisions.appendOutbox[1],
+        eventKeyDigest: binding.value.eventKeyDigest,
+        streamSequence: binding.value.streamSequence,
+      });
+    }
+
+    // A different producer key already owns this event id on this stream. The
+    // primary key would refuse the insert; answering the conflict is better
+    // than letting the constraint surface as a store failure.
+    const taken = readOutboxByEventKey(
+      this.#db,
+      input.namespace,
+      streamKeyDigest,
+      input.eventKeyDigest,
+    );
+    if (taken === undefined) return failure("store_failure");
+    if (taken !== null) {
+      return rejectedEnvelope(operation, "idempotency_conflict");
+    }
+
+    const streamSequence = nextOutboxSequence(
+      this.#db,
+      input.namespace,
+      streamKeyDigest,
+    );
+    if (streamSequence === undefined) return failure("store_failure");
+
+    this.#db
+      .prepare(
+        `INSERT INTO shared_state_outbox
+           (namespace, stream_key_digest, event_key_digest,
+            idempotency_key_digest, payload_digest, stream_sequence,
+            receipt_state, acknowledgment_state, retention_policy_version)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      )
+      .run(
+        input.namespace,
+        streamKeyDigest,
+        input.eventKeyDigest,
+        input.idempotencyKeyDigest,
+        input.payloadDigest,
+        streamSequence,
+        V.receiptStates[0],
+        V.acknowledgmentStates[0],
+        input.retentionPolicyVersion,
+      );
+
+    return committedEnvelope(operation, {
+      decision: V.operationDecisions.appendOutbox[0],
+      eventKeyDigest: input.eventKeyDigest,
+      streamSequence,
+    });
+  }
+
+  /**
+   * Moves one event's receipt state under compare-and-set.
+   *
+   * Which transitions the presented evidence permits is the evaluator's
+   * decision — including that provider acceptance keeps the event `pending`
+   * and that projection evidence may only ever be `pending` to `pending`. The
+   * adapter compares the stored state against the expected one and writes.
+   */
+  #updateOutboxReceipt(
+    input: UpdateOutboxReceiptInputV1,
+  ): SharedStateSqliteAdapterResultV1<SharedStateTransactionResultV1> {
+    const operation = V.operations[8];
+
+    const policy = evaluateSharedStateOutboxPolicyV1({
+      operation,
+      namespace: input.namespace,
+      eventPurpose: input.eventPurpose,
+      streamKey: input.streamKey,
+      streamKeyDigest: input.streamKeyDigest,
+      orderingScope: input.orderingScope,
+      retentionPolicyVersion: input.retentionPolicyVersion,
+      receiptPolicyVersion: input.receiptPolicyVersion,
+      acknowledgmentPolicyVersion: input.acknowledgmentPolicyVersion,
+      receiptEvidenceKind: input.receiptEvidenceKind,
+      expectedReceiptState: input.expectedReceiptState,
+      newReceiptState: input.newReceiptState,
+    });
+    if (!policy.ok) {
+      // A transition the registered receipt policy does not allow is exactly
+      // what this vocabulary calls an invalid state transition.
+      if (policy.error.code === "receipt_transition_mismatch") {
+        return rejectedEnvelope(operation, "invalid_state_transition");
+      }
+      return failure("unregistered_outbox_registration");
+    }
+
+    const row = readOutboxByEventKey(
+      this.#db,
+      input.namespace,
+      policy.value.streamKeyDigest,
+      input.eventKeyDigest,
+    );
+    if (row === undefined) return failure("store_failure");
+    if (row === null) return rejectedEnvelope(operation, "event_not_found");
+    if (row.receipt_state !== input.expectedReceiptState) {
+      return rejectedEnvelope(operation, "receipt_state_conflict");
+    }
+
+    this.#db
+      .prepare(
+        `UPDATE shared_state_outbox SET receipt_state = ?
+          WHERE namespace = ? AND stream_key_digest = ?
+            AND event_key_digest = ?`,
+      )
+      .run(
+        input.newReceiptState,
+        input.namespace,
+        policy.value.streamKeyDigest,
+        input.eventKeyDigest,
+      );
+
+    return committedEnvelope(operation, {
+      decision: V.operationDecisions.updateOutboxReceipt[0],
+      receiptState: input.newReceiptState,
+    });
+  }
+
+  /**
+   * Acknowledges one confirmed event.
+   *
+   * The evaluator decides whether this purpose may be acknowledged at all
+   * (projection evidence may not), and whether the presented evidence is
+   * acknowledging evidence rather than provider acceptance. The adapter reads
+   * the stored states and moves one of them.
+   */
+  #acknowledgeOutbox(
+    input: AcknowledgeOutboxInputV1,
+  ): SharedStateSqliteAdapterResultV1<SharedStateTransactionResultV1> {
+    const operation = V.operations[9];
+
+    const policy = evaluateSharedStateOutboxPolicyV1({
+      operation,
+      namespace: input.namespace,
+      eventPurpose: input.eventPurpose,
+      streamKey: input.streamKey,
+      streamKeyDigest: input.streamKeyDigest,
+      orderingScope: input.orderingScope,
+      retentionPolicyVersion: input.retentionPolicyVersion,
+      receiptPolicyVersion: input.receiptPolicyVersion,
+      acknowledgmentPolicyVersion: input.acknowledgmentPolicyVersion,
+      receiptEvidenceKind: input.receiptEvidenceKind,
+      expectedReceiptState: input.expectedReceiptState,
+      expectedAcknowledgmentState: input.expectedAcknowledgmentState,
+    });
+    if (!policy.ok) {
+      // None of this operation's three rejection codes describes a refused
+      // acknowledgment policy: they all describe stored row state. A
+      // forbidden purpose or non-acknowledging evidence is reported as an
+      // adapter failure rather than dressed as one of them.
+      return failure("unregistered_outbox_registration");
+    }
+
+    const row = readOutboxByEventKey(
+      this.#db,
+      input.namespace,
+      policy.value.streamKeyDigest,
+      input.eventKeyDigest,
+    );
+    if (row === undefined) return failure("store_failure");
+    if (row === null) return rejectedEnvelope(operation, "event_not_found");
+
+    // A duplicate acknowledgment is answered before the expected state is
+    // compared. The policy forces `expectedAcknowledgmentState` to
+    // `unacknowledged`, so a retry of an accepted command necessarily
+    // disagrees with the stored state; calling that a conflict would refuse
+    // the retry the idempotent answer exists for.
+    if (row.acknowledgment_state === V.acknowledgmentStates[1]) {
+      return committedEnvelope(operation, {
+        decision: V.operationDecisions.acknowledgeOutbox[1],
+        acknowledgmentState: V.acknowledgmentStates[1],
+      });
+    }
+    if (row.receipt_state !== V.receiptStates[1]) {
+      return rejectedEnvelope(operation, "receipt_not_confirmed");
+    }
+    if (row.acknowledgment_state !== input.expectedAcknowledgmentState) {
+      return rejectedEnvelope(operation, "ack_state_conflict");
+    }
+
+    this.#db
+      .prepare(
+        `UPDATE shared_state_outbox SET acknowledgment_state = ?
+          WHERE namespace = ? AND stream_key_digest = ?
+            AND event_key_digest = ?`,
+      )
+      .run(
+        V.acknowledgmentStates[1],
+        input.namespace,
+        policy.value.streamKeyDigest,
+        input.eventKeyDigest,
+      );
+
+    return committedEnvelope(operation, {
+      decision: V.operationDecisions.acknowledgeOutbox[0],
+      acknowledgmentState: V.acknowledgmentStates[1],
     });
   }
 
