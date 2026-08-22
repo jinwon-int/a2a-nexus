@@ -484,7 +484,7 @@ than advancing the legacy store's `SQLITE_SCHEMA_VERSION`.
 - [x] Add V1 tables/migrations only in a separately reviewed source PR.
 - [x] Add exclusive singleton ownership and monotonic lifecycle epoch.
 - [x] Implement all primitives with `BEGIN IMMEDIATE` atomic boundaries.
-- [ ] Prove inline writer conformance.
+- [x] Prove inline writer conformance.
 - [ ] Prove optional FIFO worker writer conformance and durable ACK behavior.
 - [ ] Ensure synchronous reads declare/bound consistency and cannot observe an
   unacknowledged write as committed.
@@ -1547,3 +1547,34 @@ repeating the boundary matrix through SQLite/shared adapters, which this slice
 does, and separately proving authorized retention/prune execution at and after
 the logical boundary, which it does not. V1 has no delete path to run such a
 prune through, and checking the item would claim the second half was done.
+
+### Slice I, closeout — what the 487 check means, and why 488/489 stay closed
+
+The inline-writer box above is now checked. The meaning is the one Slice I,
+first part already fixed: every Phase 2 harness runs through the adapter's
+inline `transact` path. That is seven targets and seven passing reports, and
+it is not the section 6.1 surface. The adapter still exposes eight members
+(`ownerToken`, `lifecycleEpoch`, `lifecycle`, `open`, `beginWrite`,
+`transact`, `drain`, `close`) and not `metadata`, `withTransaction`, `query`,
+or `health`. Checking 487 does not claim those members exist, does not claim
+a worker-writer mode, and does not check any of the Phase 2.x repeat items.
+
+488 and 489 stay unchecked by owner decision C (2026-08-23 KST,
+`#1504` issuecomment-5381339233). They are the write face and the read face
+of one observation problem: a FIFO worker makes writes durable only after
+ACK, and section 6.2 requires the reads that decide authorization, claim,
+finalization, ACK, prune, or cutover to declare consistency. The spec puts
+that declaration on `query`. The adapter has no `query`, so there is no
+surface on which to declare anything and no surface on which to prove that
+an unacknowledged write is not observed as committed. Implementing 488
+without that surface would let the item close on write evidence alone.
+
+The existing optional FIFO worker (`sqlite-worker-thread-persistence.ts`) is
+the legacy `SqliteBrokerStateStore` path. It is a different file, a different
+schema, and a different connection. Reusing it here would be a nested or
+cross-adapter transaction, which section 6.2 forbids. Decision C therefore
+leaves 488/489 untouched until Phase 3, when `/readyz` and non-serving
+middleware make a read surface necessary. The alternatives recorded and not
+chosen were A (add a minimal `query` now) and B (split 488 so today's empty
+in-flight `drain` counts as a half). `plan.md`'s Phase 2 exit gate still
+names both writer modes; that gate stays open on the worker half.
