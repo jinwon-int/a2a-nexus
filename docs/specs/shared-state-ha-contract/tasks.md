@@ -606,8 +606,68 @@ a registered outbox row. Whether that link is represented in
 `shared_state_outbox` or elsewhere is a slice F decision, and it is the first
 place in this section where the eleven-table shape may genuinely need to move.
 
-`Implement all primitives` therefore stays unchecked until slices F and G
-land; the writer and read-consistency items are untouched.
+Slice G adds the three claim-graph commands. Phase 2.7 has no policy module to
+reuse — unlike section 2.6's time module or section 2.2's catalog evaluator,
+its only normative source is the conformance harness and its reference model —
+and the contract parser enforces digest domain and namespace bindings but no
+catalog, so graph namespaces stay free-form.
+
+Idempotent replay comes before every precondition, for the same reason the
+lease ladder puts `claim_conflict` first: a retrying producer necessarily holds
+a stale expected sequence, because its own first attempt advanced it, so
+checking the sequence first would answer `source_sequence_conflict` about a
+fact that is already durable.
+
+Source sequences are one space per namespace rather than one per stream. That
+is forced rather than chosen: a projection batch names a `[from, through]`
+range with no stream qualifier, so the range is only meaningful if sequences
+are unique across the namespace. The stream key is recorded as provenance.
+
+A rollback restores the checkpoint the batch was applied over rather than
+decrementing, so the projection checkpoint is not monotonic; only the source
+high-water mark is. A batch that has been rolled back stays recorded and
+replays if reapplied, so its inverse-removed effects are never resurrected.
+
+Nodes and edges are not stored. They are exactly derivable from the
+`[from, through]` range of every batch that has not been rolled back — one node
+per sequence in the range, one edge from the first sequence to each later one —
+so materializing them would duplicate the batch rows. Rollback removes a
+batch's effects rather than tombstoning them, so there is no tombstone state to
+keep either. This is why the absence of node and edge tables is not a gap.
+
+Two findings are recorded rather than worked around.
+
+The first is a contract asymmetry. `applyGraphProjectionBatch` requires a
+**positive** checkpoint sequence in both of its decisions, while
+`rollbackGraphProjectionBatch` allows zero. Rolling back the first and only
+batch therefore legally returns checkpoint zero, and the `replayed` answer for
+reapplying that batch cannot be expressed at all. The adapter refuses rather
+than inventing a checkpoint, because it never emits an envelope it could not
+itself parse, and a test pins that behavior.
+
+The second is a shape gap. The reference model keeps a set of rollback batch
+keys so it can tell a repeat of the same rollback from a different one;
+`shared_state_graph_batch` records only that a batch was rolled back. The
+adapter therefore replays any rollback of an already-rolled-back batch,
+regardless of key. Replaying is the narrower of the two answers — it never
+re-runs an inverse — and the Phase 2.7 harness only ever issues one rollback
+key per batch, so it does not separate them. Recording rollback keys would need
+a column this shape does not have, and adding one is more expensive than it
+looks: every statement is `CREATE TABLE IF NOT EXISTS`, so a new column would
+not reach an existing database, and raising the schema version would reject one
+outright. Nothing operational has been written yet, which is the cheapest
+moment to revisit it if a reviewer prefers fidelity over narrowness.
+
+Three rejection reason codes in the closed vocabulary — `source_fact_conflict`,
+`projection_batch_conflict`, and `unknown_idempotency_outcome` — have no
+trigger in any harness, reference model, or spec text. None was invented for
+them.
+
+`Implement all primitives` therefore stays unchecked until slice F lands; the
+writer and read-consistency items are untouched. The Phase 2.7 repeat item also
+stays unchecked: proving conformance means driving the harness itself, which
+needs test-only snapshot, fault-injection, and evidence-path seams that must
+not become adapter API, and no slice has built a conformance target yet.
 
 The first schema slice implements **no adapter behavior**: no transaction
 boundary, no
