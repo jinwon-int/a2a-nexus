@@ -538,6 +538,60 @@ The consequence is worth stating plainly rather than discovering later: a repeat
 item checked under this decision proves all-or-none **at every boundary V1
 actually has**, not at every boundary the reference model models.
 
+### Slice H — declared synthesis
+
+**Decision 3 — a target may synthesize a value or lifecycle state V1 does not
+have, provided it declares it.** This is a different category from decision 2
+and the difference is the reason it needed deciding separately. Decision 2 maps
+a fault point onto the nearest *real* boundary: something exists to map onto.
+The Phase 2.4 and 2.5 harnesses instead ask for three things V1 has no
+counterpart for at all, so there is nothing to map and the target must either
+produce the value itself or the section cannot be driven.
+
+A target may therefore synthesize, under three conditions: the frozen
+descriptor **lists** every synthesized value, a test **asserts** that list, and
+the synthesis is **cut as narrowly as possible so it does not mask evidence the
+adapter can genuinely produce**. The third condition is the operative one, and
+the backward-clock case below shows what it buys.
+
+The three cases, each measured rather than argued:
+
+`leaseMutationCount` has no durable source. `shared_state_lease` carries seven
+columns and none of them counts mutations or stores a mutation digest;
+`mutateWithFence` writes `resource_version` and nothing else. Deriving the count
+from `resource_version` is wrong arithmetic — a claim, a renewal, and one
+mutation leave version three and mutation count one. It is therefore a declared
+constant zero. This is the exact inverse of the Phase 2.3 target's
+`receiptFailedCount`, which that descriptor was careful to record as a real
+query that returns zero rather than a hard-coded value, so the two must be
+listed in different buckets and not confused by a later reader.
+
+The Phase 2.4 backward-clock scenario requires `open()` to answer `failed` with
+`unsafe_clock`. V1 evaluates time in exactly one place — inside `transact` —
+and `open()` validates schema, ownership, clock profile, and epoch without ever
+consulting the clock; its `failed` envelope carries `adapter_unavailable`.
+Rather than synthesize the whole scenario, the target opens the adapter **for
+real** and synthesizes only the lifecycle envelope, leaving the adapter open.
+The forbidden write the harness issues next then reaches `transact`, whose own
+time evaluation produces a real rollback, a real `unsafe_clock` unavailable
+envelope, and a real `failed` state — so the unchanged-snapshot assertions are
+genuine rollback evidence. Two of the scenario's three facts stay real and the
+declaration narrows to one sentence: the adapter is open while the target
+reports failed, because V1 `open()` evaluates no clock.
+
+The Phase 2.5 readiness envelope has no adapter surface behind it at all — the
+adapter exposes eight members and readiness is not among them — so the target
+constructs it. The adapter's `failed` lifecycle reason is `adapter_unavailable`,
+which is already exactly what that section asserts, so only the readiness half
+is synthesized.
+
+The consequence, stated plainly for the same reason decision 2 states its own: a
+repeat item checked under this decision proves **what V1 actually has, plus the
+synthesis it declares** — not every fact the reference model models. A reader
+comparing the harness to the target should expect the descriptor's synthesis
+list to account for the difference, and should treat an undeclared gap as a
+defect rather than an instance of this decision.
+
 The checked schema item above shipped eleven `shared_state_*` tables in
 `packages/broker/src/shared-state-sqlite-schema-v1.ts`, derived from what
 section 6.2 requires an adapter replacement to preserve — keys, fingerprints,
