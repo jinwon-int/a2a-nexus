@@ -579,6 +579,33 @@ rejected commands staging nothing. Both sections now wait on the outbox slice,
 which makes slice F the point at which three repeat items — 2.1, 2.2, and 2.3
 — become checkable together.
 
+Phase 2.2's outbox requirement is structurally stronger than Phase 2.1's: its
+snapshot equivalence class counts an outbox append as one of five required
+effects and its transaction fault points include one immediately after outbox
+staging, so the harness cannot be satisfied without it. Three measured facts
+say the gap is not simply "write the row anyway", and slice F should settle
+them before assuming otherwise:
+
+- `shared_state_outbox` has nine `NOT NULL` columns, while the
+  `executeIdempotent` effect supplies four fields. `idempotency_key_digest`,
+  `stream_sequence`, `receipt_state`, and `acknowledgment_state` have no
+  source in the command.
+- `idempotency_key_digest` cannot be filled from `keyDigest`: they are
+  different digest domains (`broker.outbox.idempotency-key` versus
+  `broker.idempotency.key`).
+- The retention policy the Phase 2.2 harness attaches to that effect,
+  `caller-owned-outbox.v1`, is not among the three registered outbox retention
+  policy versions. It exists only in test and conformance sources.
+
+Section 5.4.1 of `spec.md` already says outbox append, receipt, and
+acknowledgment remain separate section 6.1 operations, are not aliases for
+`executeIdempotent`, and use the separate closed registry in section 5.5.1.
+That is consistent with the measurement: the effect's retention policy is
+absent from the outbox registry because the effect is a caller-owned link, not
+a registered outbox row. Whether that link is represented in
+`shared_state_outbox` or elsewhere is a slice F decision, and it is the first
+place in this section where the eleven-table shape may genuinely need to move.
+
 `Implement all primitives` therefore stays unchecked until slices F and G
 land; the writer and read-consistency items are untouched.
 
