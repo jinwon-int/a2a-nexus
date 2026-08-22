@@ -20,10 +20,21 @@
  * The lifecycle epoch increments on each successful acquisition and never
  * decreases, including across close and reopen.
  *
- * Primitives: this adapter implements the replay, rate, and lease commands.
- * Idempotency, outbox, and graph projection are refused with
+ * Primitives: this adapter implements the replay, rate, lease, and
+ * idempotency commands. Outbox and graph projection are refused with
  * `operation_not_implemented` rather than given a placeholder answer, and
  * there is still no broker runtime wiring.
+ *
+ * `executeIdempotent` takes no observed instant. Its registered namespaces are
+ * `non-expiring-until-prune-proof` with no logical expiry boundary, so a
+ * record has no TTL for a clock to be compared against; retention is released
+ * by an authorized prune, which is neither this slice nor an adapter decision.
+ * A replay returns the STORED outcome rather than deriving it again, so a
+ * later caller declaring a different effect under the same key cannot restate
+ * what already happened. The catalog check the contract parser already
+ * performs is repeated here as defence in depth, and an unregistered namespace
+ * is an adapter failure rather than a rejection, because the rejection
+ * vocabulary has no code for it.
  *
  * Two orderings in the lease rejection ladder carry weight and are not
  * stylistic. A contender that meets a live holder is told `claim_conflict`
@@ -69,7 +80,11 @@ import {
   evaluateSharedStateTimeV1,
   type SharedStateTimeEvaluationV1,
 } from "./shared-state-time-v1.js";
-import { digestSharedStateKeyV1 } from "./shared-state-storage-keyspace-v1.js";
+import {
+  digestSharedStateKeyV1,
+  parseSharedStateDigestV1,
+} from "./shared-state-storage-keyspace-v1.js";
+import { evaluateSharedStateIdempotencyPolicyV1 } from "./shared-state-idempotency-v1.js";
 import {
   SHARED_STATE_SQLITE_SCHEMA_V1,
   readSharedStateSqliteSchemaV1,
@@ -103,6 +118,7 @@ export const SHARED_STATE_SQLITE_ADAPTER_ERROR_CODES_V1 = Object.freeze([
   "operation_not_implemented",
   "invalid_time_observation",
   "clock_profile_mismatch",
+  "unregistered_idempotency_namespace",
 ] as const);
 
 export type SharedStateSqliteAdapterErrorCodeV1 =
@@ -174,6 +190,7 @@ type CommandInputForV1<Operation extends OperationV1> = Extract<
 type ConsumeReplayNonceInputV1 = CommandInputForV1<"consumeReplayNonce">;
 type ReserveRateLimitCostInputV1 = CommandInputForV1<"reserveRateLimitCost">;
 type ClaimLeaseInputV1 = CommandInputForV1<"claimLease">;
+type ExecuteIdempotentInputV1 = CommandInputForV1<"executeIdempotent">;
 
 /**
  * The three lease commands that must present existing authority. They share a
@@ -196,6 +213,7 @@ const IMPLEMENTED_OPERATIONS_V1: readonly OperationV1[] = Object.freeze([
   "renewLease",
   "mutateWithFence",
   "releaseLease",
+  "executeIdempotent",
 ] as const);
 
 const LEASE_OPERATIONS_V1: readonly OperationV1[] = Object.freeze([
@@ -379,6 +397,75 @@ function deriveAttemptKeyDigest(
     ],
   });
   return built.ok ? built.value.digest : null;
+}
+
+/**
+ * Derives the outcome digest a first execution reports.
+ *
+ * Like `attemptKeyDigest`, the contract makes `outcomeDigest` an output of
+ * `executeIdempotent` and never an input, so the adapter must produce it. Its
+ * two components are fixed by the closed keyspace: `outcomeType` and
+ * `outcomeBody`.
+ *
+ * Both are bound to what the caller declared the effect to be. `outcomeType`
+ * is the effect kind, which is a closed vocabulary value. `outcomeBody` is the
+ * domain mutation digest's hash, because the outcome of this operation is
+ * whatever that mutation produced — V1 executes no effect of its own and has
+ * nothing else to bind to. Two executions declaring the same mutation
+ * therefore derive the same outcome, which is the stability the contract asks
+ * for.
+ */
+function deriveOutcomeDigest(
+  input: ExecuteIdempotentInputV1,
+): string | null {
+  const mutation = parseSharedStateDigestV1(
+    input.effect.domainMutationDigest,
+    { domain: "broker.idempotency.domain-mutation" },
+  );
+  if (!mutation.ok) return null;
+  const built = digestSharedStateKeyV1({
+    keyspaceVersion: V.versions.keyspace,
+    domain: "broker.idempotency.outcome",
+    namespace: input.namespace,
+    components: [
+      { field: "outcomeType", type: "utf8", value: input.effect.kind },
+      { field: "outcomeBody", type: "bytes", value: mutation.value.hex },
+    ],
+  });
+  return built.ok ? built.value.digest : null;
+}
+
+interface IdempotencyRow {
+  readonly payload_fingerprint: string;
+  readonly outcome_digest: string;
+  readonly retention_policy_version: string;
+}
+
+function readIdempotency(
+  db: DatabaseSync,
+  namespace: string,
+  keyDigest: string,
+): IdempotencyRow | null | undefined {
+  const row = db
+    .prepare(
+      `SELECT payload_fingerprint, outcome_digest, retention_policy_version
+         FROM shared_state_idempotency
+        WHERE namespace = ? AND key_digest = ?`,
+    )
+    .get(namespace, keyDigest) as Record<string, unknown> | undefined;
+  if (row === undefined) return null;
+  if (
+    typeof row.payload_fingerprint !== "string"
+    || typeof row.outcome_digest !== "string"
+    || typeof row.retention_policy_version !== "string"
+  ) {
+    return undefined;
+  }
+  return {
+    payload_fingerprint: row.payload_fingerprint,
+    outcome_digest: row.outcome_digest,
+    retention_policy_version: row.retention_policy_version,
+  };
 }
 
 /**
@@ -708,6 +795,9 @@ export class SharedStateSqliteAdapterV1 {
         case "claimLease":
           outcome = this.#claimLease(command.input, time.value);
           break;
+        case "executeIdempotent":
+          outcome = this.#executeIdempotent(command.input);
+          break;
         default:
           // Not a fallthrough: an operation added to the implemented list
           // without a case here must not silently take the lease path.
@@ -888,6 +978,88 @@ export class SharedStateSqliteAdapterV1 {
       decision: V.operationDecisions.reserveRateLimitCost[0],
       remaining: Number(limit - used - cost),
       resetInMs: Number(oldest + windowMs - now),
+    });
+  }
+
+  /**
+   * Executes a keyed effect at most once.
+   *
+   * This command takes no observed instant. The registered namespaces are
+   * `non-expiring-until-prune-proof` with no logical expiry boundary, so an
+   * idempotency record has no TTL to compare a clock against — inventing one
+   * would be the permissive answer in reverse. Retention is released by an
+   * authorized prune, which is not this slice and not an adapter decision.
+   */
+  #executeIdempotent(
+    input: ExecuteIdempotentInputV1,
+  ): SharedStateSqliteAdapterResultV1<SharedStateTransactionResultV1> {
+    const operation = V.operations[6];
+
+    // Idempotency namespaces are registered, not free-form: the catalog fixes
+    // which retention policy and effect kind each one may use. The existing
+    // section 2.2 evaluator decides that, so no policy rule is restated here.
+    const policy = evaluateSharedStateIdempotencyPolicyV1({
+      namespace: input.namespace,
+      retentionPolicyVersion: input.retentionPolicyVersion,
+      effectKind: input.effect.kind,
+    });
+    if (!policy.ok) {
+      // Only a retention or effect disagreement has a rejection reason code.
+      // An unregistered namespace has none, so it is an adapter failure rather
+      // than a decision — answering a contract rejection the vocabulary does
+      // not contain would be inventing one.
+      if (
+        policy.error.code === "retention_policy_mismatch"
+        || policy.error.code === "effect_policy_mismatch"
+        || policy.error.code === "unknown_retention_policy_version"
+      ) {
+        return rejectedEnvelope(operation, "retention_policy_mismatch");
+      }
+      return failure("unregistered_idempotency_namespace");
+    }
+
+    const existing = readIdempotency(
+      this.#db,
+      input.namespace,
+      input.keyDigest,
+    );
+    if (existing === undefined) return failure("store_failure");
+
+    if (existing !== null) {
+      // Same key, different payload. The caller reused a key for different
+      // work, which is the one thing idempotency must never absorb.
+      if (existing.payload_fingerprint !== input.payloadFingerprint) {
+        return rejectedEnvelope(operation, "idempotency_conflict");
+      }
+      // A replay returns the stored outcome rather than deriving it again, so
+      // the answer stays identical even if derivation ever changed.
+      return committedEnvelope(operation, {
+        decision: V.operationDecisions.executeIdempotent[1],
+        outcomeDigest: existing.outcome_digest,
+      });
+    }
+
+    const outcomeDigest = deriveOutcomeDigest(input);
+    if (outcomeDigest === null) return failure("adapter_unavailable");
+
+    this.#db
+      .prepare(
+        `INSERT INTO shared_state_idempotency
+           (namespace, key_digest, payload_fingerprint, outcome_digest,
+            retention_policy_version)
+         VALUES (?, ?, ?, ?, ?)`,
+      )
+      .run(
+        input.namespace,
+        input.keyDigest,
+        input.payloadFingerprint,
+        outcomeDigest,
+        input.retentionPolicyVersion,
+      );
+
+    return committedEnvelope(operation, {
+      decision: V.operationDecisions.executeIdempotent[0],
+      outcomeDigest,
     });
   }
 

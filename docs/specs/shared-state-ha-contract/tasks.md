@@ -543,7 +543,70 @@ must stage neither. That crosses into the outbox slice and is not implemented
 here. The harness also exercises a single resource; multi-resource behavior is
 covered by tests added in this slice rather than by the harness.
 
-`Implement all primitives` therefore stays unchecked until slices E through G
+Slice E adds `executeIdempotent`. Its semantics come from Phase 2.2 the same
+way, and its shape is unusual in two respects worth stating.
+
+It takes no observed instant. The registered namespaces are
+`non-expiring-until-prune-proof` with a null logical expiry boundary, so an
+idempotency record has no TTL for a clock to be compared against. Retention is
+released by an authorized prune, which is neither this slice nor an adapter
+decision, and inventing an expiry would be the permissive answer in reverse.
+
+A replay returns the **stored** outcome rather than deriving it again. The
+distinction only becomes visible when a retry repeats the key and payload but
+declares a different effect: re-deriving would answer with the new effect's
+outcome, which would let a later caller restate what already happened. The
+first execution is what happened.
+
+Idempotency namespaces are registered rather than free-form, and the contract
+parser already refuses an unregistered namespace and a mismatched retention
+policy before a command can reach the adapter. The adapter repeats the catalog
+check as defence in depth. An unregistered namespace is answered as an adapter
+failure rather than a rejection, because the rejection vocabulary
+(`idempotency_conflict`, `unknown_idempotency_outcome`,
+`retention_policy_mismatch`) contains no code for it, and answering one it does
+not contain would be inventing it.
+
+`outcomeDigest`, like `attemptKeyDigest`, is produced by the command and never
+supplied to it, so the adapter derives it: `outcomeType` from the declared
+effect kind, `outcomeBody` from the domain mutation digest. V1 executes no
+effect of its own, so the mutation the caller declared is the only thing an
+outcome can be bound to.
+
+The Phase 2.2 repeat item stays unchecked for the same reason as Phase 2.1:
+the harness requires an outbox append staged inside the same transaction, with
+rejected commands staging nothing. Both sections now wait on the outbox slice,
+which makes slice F the point at which three repeat items — 2.1, 2.2, and 2.3
+— become checkable together.
+
+Phase 2.2's outbox requirement is structurally stronger than Phase 2.1's: its
+snapshot equivalence class counts an outbox append as one of five required
+effects and its transaction fault points include one immediately after outbox
+staging, so the harness cannot be satisfied without it. Three measured facts
+say the gap is not simply "write the row anyway", and slice F should settle
+them before assuming otherwise:
+
+- `shared_state_outbox` has nine `NOT NULL` columns, while the
+  `executeIdempotent` effect supplies four fields. `idempotency_key_digest`,
+  `stream_sequence`, `receipt_state`, and `acknowledgment_state` have no
+  source in the command.
+- `idempotency_key_digest` cannot be filled from `keyDigest`: they are
+  different digest domains (`broker.outbox.idempotency-key` versus
+  `broker.idempotency.key`).
+- The retention policy the Phase 2.2 harness attaches to that effect,
+  `caller-owned-outbox.v1`, is not among the three registered outbox retention
+  policy versions. It exists only in test and conformance sources.
+
+Section 5.4.1 of `spec.md` already says outbox append, receipt, and
+acknowledgment remain separate section 6.1 operations, are not aliases for
+`executeIdempotent`, and use the separate closed registry in section 5.5.1.
+That is consistent with the measurement: the effect's retention policy is
+absent from the outbox registry because the effect is a caller-owned link, not
+a registered outbox row. Whether that link is represented in
+`shared_state_outbox` or elsewhere is a slice F decision, and it is the first
+place in this section where the eleven-table shape may genuinely need to move.
+
+`Implement all primitives` therefore stays unchecked until slices F and G
 land; the writer and read-consistency items are untouched.
 
 The first schema slice implements **no adapter behavior**: no transaction

@@ -1,6 +1,6 @@
 /**
  * Tests for the V1 SQLite adapter: lifecycle, ownership, and the replay,
- * rate, and lease primitives.
+ * rate, lease, and idempotency primitives.
  *
  * Exclusive ownership is the property this whole contract exists to obtain,
  * so it gets the most attention here: a second owner must be refused, a
@@ -20,6 +20,11 @@
  * what separates comparing against the stored fence from comparing against
  * the active claim. Both cases were found by adversarial controls that passed
  * against an earlier, weaker version of these tests.
+ *
+ * The idempotency tests do the same for replay: a retry that repeats the key
+ * and payload but declares a different effect is the only case that separates
+ * returning the stored outcome from re-deriving it, and it too was found by a
+ * control that passed first.
  *
  * Every database is a temporary file removed at the end of its test.
  */
@@ -215,6 +220,91 @@ function authorityCommand(
     expectedResourceVersion: authority.expectedResourceVersion,
     ...extra,
   });
+}
+
+/**
+ * Idempotency namespaces are registered, not free-form, so these tests use the
+ * catalog's own registration rather than the `broker.test` namespace the other
+ * primitives use.
+ */
+const IDEMPOTENCY_NAMESPACE = "broker.task.create";
+const IDEMPOTENCY_RETENTION = "task-create-effects.v1";
+
+function namespacedDigest(
+  namespace: string,
+  domain: string,
+  components: readonly Record<string, unknown>[],
+): string {
+  const built = digestSharedStateKeyV1({
+    keyspaceVersion: V.versions.keyspace,
+    domain,
+    namespace,
+    components,
+  });
+  assert.equal(built.ok, true);
+  if (!built.ok) throw new Error("unreachable");
+  return built.value.digest;
+}
+
+function idempotentCommand(input: {
+  readonly clientKey?: string;
+  readonly payload: string;
+  readonly mutation?: string;
+}): SharedStateTransactionCommandV1 {
+  const namespace = IDEMPOTENCY_NAMESPACE;
+  const d = (
+    domain: string,
+    components: readonly Record<string, unknown>[],
+  ): string => namespacedDigest(namespace, domain, components);
+  const parsed = parseSharedStateTransactionCommandV1({
+    kind: V.kinds.transactionCommand,
+    contractVersion: V.versions.contract,
+    transactionVersion: V.versions.transaction,
+    operationVersion: V.versions.operation,
+    operation: "executeIdempotent",
+    input: {
+      namespace,
+      keyDigest: d("broker.idempotency.key", [
+        { field: "operationName", type: "utf8", value: "create-task" },
+        {
+          field: "clientKey",
+          type: "utf8",
+          value: input.clientKey ?? "client-1",
+        },
+      ]),
+      payloadFingerprint: d("broker.idempotency.payload-fingerprint", [
+        { field: "payload", type: "bytes", value: input.payload },
+      ]),
+      retentionPolicyVersion: IDEMPOTENCY_RETENTION,
+      effect: {
+        kind: "domain-mutation-with-outbox",
+        domainMutationDigest: d("broker.idempotency.domain-mutation", [
+          { field: "mutationType", type: "utf8", value: "create" },
+          {
+            field: "mutationBody",
+            type: "bytes",
+            value: input.mutation ?? "aa",
+          },
+        ]),
+        outbox: {
+          streamKeyDigest: d("broker.outbox.stream-key", [
+            { field: "streamType", type: "utf8", value: "task" },
+            { field: "streamId", type: "utf8", value: "s-1" },
+          ]),
+          eventKeyDigest: d("broker.outbox.event-key", [
+            { field: "eventId", type: "utf8", value: "e-1" },
+          ]),
+          payloadDigest: d("broker.outbox.payload", [
+            { field: "payload", type: "bytes", value: "bb" },
+          ]),
+          retentionPolicyVersion: "caller-owned-outbox.v1",
+        },
+      },
+    },
+  });
+  assert.equal(parsed.ok, true);
+  if (!parsed.ok) throw new Error("unreachable");
+  return parsed.value;
 }
 
 /**
@@ -480,7 +570,7 @@ test("rejects reopening an already-open adapter", () => {
   }
 });
 
-test("implements the replay, rate, and lease primitives, on closed vocabulary", () => {
+test("implements the replay, rate, lease, and idempotency primitives", () => {
   // The public surface is the lifecycle seam, the write guard, and one
   // command entry point. No primitive gets its own public method.
   const surface = Object.getOwnPropertyNames(
@@ -544,7 +634,7 @@ test("refuses every operation this slice does not implement", () => {
       contractVersion: V.versions.contract,
       transactionVersion: V.versions.transaction,
       operationVersion: V.versions.operation,
-      operation: "executeIdempotent",
+      operation: "appendOutbox",
       input: {},
     } as unknown as SharedStateTransactionCommandV1;
     const refused = owner.transact(unimplemented, { observedAtUnixMs: "10" });
@@ -1194,6 +1284,232 @@ test("leases in different namespaces and resources do not interfere", () => {
     );
     assert.equal(second.fencingToken, "1");
     assert.equal(second.resourceVersion, "1");
+  } finally {
+    disposeFixture(fixture);
+  }
+});
+
+test("a keyed effect executes once and then replays the identical outcome", () => {
+  const fixture = makeFixture();
+  try {
+    const owner = readyAdapter(fixture.db);
+    const first = committed(
+      owner.transact(idempotentCommand({ payload: "a1" }), {
+        observedAtUnixMs: "1000",
+      }),
+    );
+    assert.equal(first.decision, V.operationDecisions.executeIdempotent[0]);
+    const parsed = parseSharedStateDigestV1(first.outcomeDigest, {
+      domain: "broker.idempotency.outcome",
+      namespace: IDEMPOTENCY_NAMESPACE,
+    });
+    assert.equal(parsed.ok, true);
+
+    // A retry much later still replays, and returns the same outcome byte for
+    // byte. There is no TTL: the registered namespaces are non-expiring until
+    // an authorized prune, so time must not change this answer.
+    const second = committed(
+      owner.transact(idempotentCommand({ payload: "a1" }), {
+        observedAtUnixMs: "999000",
+      }),
+    );
+    assert.equal(second.decision, V.operationDecisions.executeIdempotent[1]);
+    assert.equal(second.outcomeDigest, first.outcomeDigest);
+
+    // The load-bearing case for "returns the STORED outcome". A retry that
+    // repeats the key and the payload but declares a different mutation would
+    // derive a different outcome, so re-deriving on replay and returning the
+    // stored value give different answers here — and only the stored value is
+    // correct. The first execution is what happened; a later caller does not
+    // get to restate it.
+    const drifted = committed(
+      owner.transact(
+        idempotentCommand({ payload: "a1", mutation: "ff" }),
+        { observedAtUnixMs: "999100" },
+      ),
+    );
+    assert.equal(drifted.decision, V.operationDecisions.executeIdempotent[1]);
+    assert.equal(drifted.outcomeDigest, first.outcomeDigest);
+
+    // Exactly one record, not two.
+    const rows = fixture.db
+      .prepare("SELECT COUNT(*) AS total FROM shared_state_idempotency")
+      .get() as { total?: unknown };
+    assert.equal(rows.total, 1);
+  } finally {
+    disposeFixture(fixture);
+  }
+});
+
+test("the same key with a different payload is a conflict, and writes nothing", () => {
+  const fixture = makeFixture();
+  try {
+    const owner = readyAdapter(fixture.db);
+    const first = committed(
+      owner.transact(idempotentCommand({ payload: "a1" }), {
+        observedAtUnixMs: "1000",
+      }),
+    );
+
+    // Reusing a key for different work is the one thing idempotency must
+    // never absorb: it would report success for work that never happened.
+    assert.equal(
+      rejected(
+        owner.transact(idempotentCommand({ payload: "b1" }), {
+          observedAtUnixMs: "1100",
+        }),
+      ),
+      "idempotency_conflict",
+    );
+
+    const row = fixture.db
+      .prepare(
+        `SELECT payload_fingerprint AS p, outcome_digest AS o
+           FROM shared_state_idempotency`,
+      )
+      .get() as { p?: unknown; o?: unknown };
+    assert.equal(row.o, first.outcomeDigest);
+    // The stored fingerprint is still the original one.
+    assert.equal(
+      row.p,
+      namespacedDigest(
+        IDEMPOTENCY_NAMESPACE,
+        "broker.idempotency.payload-fingerprint",
+        [{ field: "payload", type: "bytes", value: "a1" }],
+      ),
+    );
+  } finally {
+    disposeFixture(fixture);
+  }
+});
+
+test("a different key under the same namespace executes on its own", () => {
+  const fixture = makeFixture();
+  try {
+    const owner = readyAdapter(fixture.db);
+    const first = committed(
+      owner.transact(idempotentCommand({ payload: "a1" }), {
+        observedAtUnixMs: "1000",
+      }),
+    );
+    const other = committed(
+      owner.transact(
+        idempotentCommand({ clientKey: "client-2", payload: "a1" }),
+        { observedAtUnixMs: "1000" },
+      ),
+    );
+    assert.equal(other.decision, V.operationDecisions.executeIdempotent[0]);
+    // Same declared mutation, so the derived outcome is the same value — the
+    // outcome is bound to the effect, not to the key.
+    assert.equal(other.outcomeDigest, first.outcomeDigest);
+
+    // A different mutation derives a different outcome.
+    const changed = committed(
+      owner.transact(
+        idempotentCommand({
+          clientKey: "client-3",
+          payload: "a1",
+          mutation: "cc",
+        }),
+        { observedAtUnixMs: "1000" },
+      ),
+    );
+    assert.notEqual(changed.outcomeDigest, first.outcomeDigest);
+  } finally {
+    disposeFixture(fixture);
+  }
+});
+
+test("the adapter re-checks the idempotency catalog the parser already gates", () => {
+  // `parseSharedStateTransactionCommandV1` already refuses an unregistered
+  // namespace (`unknown_idempotency_namespace`) and a mismatched retention
+  // policy (`idempotency_retention_policy_mismatch`), so neither can reach the
+  // adapter through a parsed command. These commands are therefore built by
+  // hand: the adapter's own catalog check is defence in depth, and this
+  // asserts it fails closed rather than trusting its caller.
+  const handBuilt = (
+    namespace: string,
+    retentionPolicyVersion: string,
+  ): SharedStateTransactionCommandV1 => {
+    const d = (
+      domain: string,
+      components: readonly Record<string, unknown>[],
+    ): string => namespacedDigest(namespace, domain, components);
+    return {
+      kind: V.kinds.transactionCommand,
+      contractVersion: V.versions.contract,
+      transactionVersion: V.versions.transaction,
+      operationVersion: V.versions.operation,
+      operation: "executeIdempotent",
+      input: {
+        namespace,
+        keyDigest: d("broker.idempotency.key", [
+          { field: "operationName", type: "utf8", value: "create-task" },
+          { field: "clientKey", type: "utf8", value: "client-1" },
+        ]),
+        payloadFingerprint: d("broker.idempotency.payload-fingerprint", [
+          { field: "payload", type: "bytes", value: "a1" },
+        ]),
+        retentionPolicyVersion,
+        effect: {
+          kind: "domain-mutation-with-outbox",
+          domainMutationDigest: d("broker.idempotency.domain-mutation", [
+            { field: "mutationType", type: "utf8", value: "create" },
+            { field: "mutationBody", type: "bytes", value: "aa" },
+          ]),
+          outbox: {
+            streamKeyDigest: d("broker.outbox.stream-key", [
+              { field: "streamType", type: "utf8", value: "task" },
+              { field: "streamId", type: "utf8", value: "s-1" },
+            ]),
+            eventKeyDigest: d("broker.outbox.event-key", [
+              { field: "eventId", type: "utf8", value: "e-1" },
+            ]),
+            payloadDigest: d("broker.outbox.payload", [
+              { field: "payload", type: "bytes", value: "bb" },
+            ]),
+            retentionPolicyVersion: "caller-owned-outbox.v1",
+          },
+        },
+      },
+    } as unknown as SharedStateTransactionCommandV1;
+  };
+
+  const fixture = makeFixture();
+  try {
+    const owner = readyAdapter(fixture.db);
+
+    // A registered namespace carrying another namespace's retention policy
+    // has a rejection reason code, so it is a decision.
+    assert.equal(
+      rejected(
+        owner.transact(
+          handBuilt(IDEMPOTENCY_NAMESPACE, "task-wake-effects.v1"),
+          { observedAtUnixMs: "1000" },
+        ),
+      ),
+      "retention_policy_mismatch",
+    );
+
+    // An unregistered namespace has none. Answering a rejection the contract
+    // vocabulary does not contain would be inventing one, so this is an
+    // adapter failure instead.
+    const unregistered = owner.transact(
+      handBuilt("broker.test", IDEMPOTENCY_RETENTION),
+      { observedAtUnixMs: "1000" },
+    );
+    assert.equal(unregistered.ok, false);
+    if (unregistered.ok) return;
+    assert.equal(
+      unregistered.error.code,
+      "unregistered_idempotency_namespace",
+    );
+
+    // Neither refusal wrote anything.
+    const rows = fixture.db
+      .prepare("SELECT COUNT(*) AS total FROM shared_state_idempotency")
+      .get() as { total?: unknown };
+    assert.equal(rows.total, 0);
   } finally {
     disposeFixture(fixture);
   }
