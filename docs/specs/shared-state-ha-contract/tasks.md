@@ -197,6 +197,13 @@ rather than collapsed, because V1 has no reservation to leave pending.
 - [ ] Repeat the Phase 2.3 harness through SQLite/shared adapters and
   separately implement/prove any authorized query/reconciliation and
   retention/prune behavior.
+  <!-- The SQLite half of this item is done: the Phase 2.3 harness runs
+  against the V1 SQLite adapter in
+  `packages/broker/src/shared-state-sqlite-outbox-target-v1.test.ts`. The item
+  stays unchecked for the second clause only — authorized query and
+  reconciliation, and retention and prune, are separate work and not adapter
+  decisions. The reconciliation used by that target is a bounded test-only
+  control, explicitly not a V1 query surface. -->
 
 The checked Phase 2.3 facts above are proved with 30 existing storage V1
 commands, three bounded test-only reconciliation controls, one parser/policy
@@ -809,6 +816,47 @@ instead of per-stream sequence space, an idempotency lookup keyed by event id,
 and an acknowledgment that does not require confirmation. This is the first
 section 3 slice where no control passed, so no coverage gap had to be closed
 after the fact.
+
+A conformance target now exists for Phase 2.3 as well, in
+`packages/broker/src/shared-state-sqlite-outbox-target-v1.test.ts`. It drives
+the real Phase 2.3 harness against the V1 SQLite adapter: seven isolated
+database files, thirty target commands, eight producers released from one
+barrier across two streams, a close and reopen of the same adapter instance,
+three reconciliation controls, and all three armed fault points. The adapter
+gained nothing — a test asserts that none of `snapshot`, `armFault`,
+`reconcileConformanceControl`, or the three outbox commands appears on its
+prototype.
+
+This is the first target that needs NO fault-point collapse. All three armed
+points land on distinct real instants: `domain-before-append` on the outbox
+INSERT as it is prepared, which is before any durable write, and the two commit
+points on the commits of the append and the acknowledgment. The last two match
+the same SQL text because both are commits, but they are positions in different
+commands, and a fault is consumed by the single command that follows it. The
+declared count of real positions therefore equals the count of armed points,
+and the descriptor records an empty collapse list rather than omitting the
+field.
+
+One counter is collapsed and says so. V1 keeps no durable record of a domain
+effect apart from the event it appended, so `domainEffectCount` is derived from
+the outbox row count; the harness holds `domainEffectCount === outboxEventCount`
+at every point it checks. Every other counter is a real query over stored
+state, `receiptFailedCount` included — it reads zero because no scenario fails
+a receipt, not because it is hard-coded, which is a stronger position than the
+Phase 2.2 target could take.
+
+Two of the five adversarial controls passed on their first form, and both were
+the same mistake: the control never reached the check it was written for.
+Replaying acknowledged events changed nothing, because the one acknowledged
+event sits below the cursor floor that already excluded it — the control had to
+bypass the floor for acknowledged rows to reach the harness invariant. A reopen
+onto a fresh database also changed nothing, because the target's observation
+handle still pointed at the original file, so the loss was invisible to the
+snapshot; the read handle had to move with the adapter. Both now fail with
+`reconcile_invariant_mismatch` and `reopen_snapshot_mismatch`. This is the
+sixth occurrence of a control passing for lack of reachability rather than for
+correctness, and it stays worth writing down: a green control is evidence about
+the test, not about the code.
 
 A conformance target now exists for Phase 2.7. It lives in
 `packages/broker/src/shared-state-sqlite-claim-graph-target-v1.test.ts` and
