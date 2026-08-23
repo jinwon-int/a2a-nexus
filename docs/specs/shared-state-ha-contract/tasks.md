@@ -1306,6 +1306,37 @@ This part does not stash the decision on the runtime, add a
 install `/readyz`, change `/health`, or publish `gradeDefaulted`. Those stay
 with the later items. 488/489 stay decision C.
 
+### Slice K, first part — acquire the serving fence at construction
+
+Owner decision A+A1 (2026-08-23 KST, `#1504` issuecomment-5383391750):
+the singleton serving fence is the V1 `shared_state_ownership` CAS, used
+for both JSON-file and SQLite persistence. A new lock is not invented.
+`BROKER_SHARED_STATE_FILE` overrides; otherwise the path is
+`${stateFile}.shared-state-v1.sqlite`. The legacy `SQLITE_STATE_FILE` /
+`BROKER_SQLITE_FILE` is never that file. An injected test `stateStore` is
+not the `STATE_FILE` identity, so it gets an isolated temp fence unless the
+path was set explicitly. If the derived directory does not exist and the
+state file is still the hardcoded `/var/lib/a2a-broker/state.json` default,
+the fence is isolated rather than creating that system path from tests.
+
+Slice K, first part, makes `createBrokerServer` apply the V1 schema if
+needed and `open()` that file before the HTTP server is created. A live
+foreign token fails closed with `ownership_conflict` and listen never
+happens. The owner token is a per-process random UUID, never `BROKER_ID`.
+Graceful `closeWorkerPersistence` / `server.close` drains and releases the
+token so a later process can acquire. Crash without release leaves the
+token set. That is A1, not a lease.
+
+A child-process test proves two broker processes cannot both acquire the
+same file, and that a successor can acquire after the holder releases.
+
+This part does not check `Add fenced singleton ownership and loss
+monitoring` or `Add startup version/capability/clock/schema/migration
+checks`. `open()` validates schema/version/clock on the fence file, but
+there is no loss monitoring, no `/readyz`, no non-serving middleware, no
+`stateContract`, no primitive integration, and no ownership lease. 488/489
+stay decision C.
+
 ## 5. Migration and operations
 
 - [ ] Obtain authorization for production backup/read.
