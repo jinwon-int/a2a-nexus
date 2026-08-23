@@ -1245,8 +1245,8 @@ path decision belongs to section 4 and is deliberately not made here.
 - [x] Add exact grade and expected-process configuration.
 - [ ] Add startup version/capability/clock/schema/migration checks.
 - [ ] Add fenced singleton ownership and loss monitoring.
-- [ ] Add `/readyz` and state-authority non-serving middleware.
-- [ ] Assert `/readyz` becomes false and non-liveness routes stop serving
+- [x] Add `/readyz` and state-authority non-serving middleware.
+- [x] Assert `/readyz` becomes false and non-liveness routes stop serving
   while `/livez` remains liveness-only. Moved here from section 2.5: the
   assertion needs the middleware above, so it cannot be proved by a
   backend-neutral Phase 2 harness.
@@ -1354,6 +1354,23 @@ This part does not check `Add /readyz and state-authority non-serving
 middleware` or the moved 2.5 assertion. Those need the middleware. It
 does not start a background monitor, a lease, or 488/489. Decision C
 stays: the route existing does not authorize implementing those items.
+
+### Slice L, second part — non-serving middleware
+
+Slice L, second part, refuses every route after `/readyz` and `/livez`
+when `probe()` is not ready. The 503 uses the probe's closed readiness
+code (`lost_fence` or `adapter_unavailable`) and the message
+`state authority unavailable`. It does not call `beginDrain` and does
+not emit `broker_draining`.
+
+Auth stays first: a request without the edge secret is still 401. A
+secret-bearing `/workers` after a stolen token is 503. `/livez` stays
+200. `/readyz` stays the public probe.
+
+That checks the middleware item and the moved 2.5 assertion. Loss
+monitoring (background timer), `stateContract`, lease/A2, and 488/489
+stay unchecked. Decision C is reopened as a question only — this slice
+does not implement those items.
 
 ## 5. Migration and operations
 

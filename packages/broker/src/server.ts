@@ -1076,6 +1076,19 @@ export function createBrokerServer(options: BrokerServerOptions = {}): BrokerSer
         });
       }
 
+      const authority = servingFence?.probe() ?? {
+        ready: false as const,
+        reasonCode: "adapter_unavailable" as const,
+      };
+      if (!authority.ready) {
+        return sendJson(res, 503, {
+          error: {
+            code: authority.reasonCode,
+            message: "state authority unavailable",
+          },
+        });
+      }
+
       if (req.method === "GET" && path === "/health") {
         const t0 = performance.now();
         const runtimeMemory = readRuntimeMemoryUsage();
