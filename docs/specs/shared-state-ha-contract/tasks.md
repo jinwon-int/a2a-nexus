@@ -1372,6 +1372,19 @@ monitoring (background timer), `stateContract`, lease/A2, and 488/489
 stay unchecked. Decision C is reopened as a question only — this slice
 does not implement those items.
 
+### Slice M, first part — `/health` `stateContract` without primitive bands
+
+Slice M, first part, adds `stateContract` to authenticated `/health`.
+It reports configured/effective grade, `gradeDefaulted`, `serving`,
+`reasonCodes`, `topology.expectedProcessCount`, and `ownership`. The
+adapter block is `legacy-process` with `contractVersion: null` because
+V1 is the serving fence, not the serving store. Primitive reset-risk
+bands are omitted.
+
+The module does not import `shared-state-observability-v1`. The full
+`stateContract` item and the reset-risk item stay unchecked. 488/489
+stay decision C.
+
 ## 5. Migration and operations
 
 - [ ] Obtain authorization for production backup/read.

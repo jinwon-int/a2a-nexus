@@ -38,7 +38,8 @@ test("/readyz is public and reports ready while the fence is held", async () => 
     assert.equal(health.status, 200);
     const healthBody = await health.json();
     assert.equal(Object.hasOwn(healthBody, "configuredGrade"), false);
-    assert.equal(Object.hasOwn(healthBody, "stateContract"), false);
+    assert.equal(healthBody.stateContract.gradeDefaulted, true);
+    assert.equal(Object.hasOwn(healthBody.stateContract, "primitives"), false);
   } finally {
     await server.close();
   }
