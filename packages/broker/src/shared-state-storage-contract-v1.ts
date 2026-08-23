@@ -1266,10 +1266,11 @@ export type SharedStateDrainRequestV1 = z.infer<
 >;
 
 /**
- * Structural seam for the transaction/lifecycle slice only. Q1 defines query
- * request/result envelopes above, but deliberately does not add `query()` to
- * this interface or any adapter. This interface is not a claim that a complete
- * or conforming adapter exists.
+ * Structural seam for the transaction/lifecycle slice only. Query envelopes
+ * are defined above, but `query()` is not added to this broad interface until
+ * both read families have an implementation. A backend-specific class may
+ * expose a narrower reviewed slice. This interface is not a claim that a
+ * complete or conforming adapter exists.
  */
 export interface SharedStateStorageTransactionV1 {
   execute(

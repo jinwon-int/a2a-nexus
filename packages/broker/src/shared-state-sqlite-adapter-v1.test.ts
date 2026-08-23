@@ -825,10 +825,11 @@ test("rejects reopening an already-open adapter", () => {
   }
 });
 
-test("implements every primitive, on closed vocabulary", () => {
-  // The public surface is the lifecycle seam, the write guard, and one
-  // command entry point. No primitive gets its own public method — the three
-  // outbox commands added no public member, and neither did any before them.
+test("implements every primitive and the Q2 query slice, on closed vocabulary", () => {
+  // The public surface is the lifecycle seam, the write guard, one command
+  // entry point, and the narrowed Q2 outbox query. No primitive gets its own
+  // public method — the three outbox commands added no public member, and
+  // neither did any before them.
   const surface = Object.getOwnPropertyNames(
     SharedStateSqliteAdapterV1.prototype,
   ).filter((name) => name !== "constructor");
@@ -840,6 +841,7 @@ test("implements every primitive, on closed vocabulary", () => {
     "lifecycleEpoch",
     "open",
     "ownerToken",
+    "query",
     "transact",
   ]);
 

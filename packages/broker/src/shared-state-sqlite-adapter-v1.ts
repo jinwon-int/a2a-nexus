@@ -21,8 +21,17 @@
  * decreases, including across close and reopen.
  *
  * Primitives: this adapter implements the replay, rate, lease, idempotency,
- * claim-graph, and outbox commands. There is still no broker runtime wiring,
- * and no authorized query, reconciliation, retention, or prune behaviour.
+ * claim-graph, and outbox commands. Q2 adds only the closed
+ * `reconcileOutbox` read; graph evidence-path query, broker runtime wiring,
+ * retention, and prune behaviour remain absent.
+ *
+ * Outbox reconciliation takes `BEGIN IMMEDIATE` even though it does not write.
+ * That places each page after every durable inline write and gives the declared
+ * serializable-per-stream observation. Its opaque cursor carries a versioned
+ * stream binding and the last returned sequence; malformed, tampered, or
+ * cross-stream reuse returns closed unavailable rather than restarting at the
+ * beginning. This says nothing about the future FIFO worker path or its
+ * durable-commit ACK boundary.
  *
  * The outbox commands allocate `stream_sequence` themselves. The registry
  * makes that the adapter's job — `adapter-allocated-per-exact-stream-key`,
@@ -89,12 +98,17 @@
  * separate, still-unchecked item.
  */
 
+import { createHash } from "node:crypto";
 import type { DatabaseSync } from "node:sqlite";
 
 import {
   SHARED_STATE_STORAGE_V1_VALUES as V,
+  parseSharedStateQueryRequestV1,
+  parseSharedStateQueryResultV1,
   parseSharedStateStorageLifecycleV1,
   parseSharedStateTransactionResultV1,
+  type SharedStateQueryRequestV1,
+  type SharedStateQueryResultV1,
   type SharedStateStorageLifecycleV1,
   type SharedStateTransactionCommandV1,
   type SharedStateTransactionResultV1,
@@ -131,6 +145,10 @@ export const SHARED_STATE_SQLITE_ADAPTER_V1 = Object.freeze({
   clockProfile: "sqlite-single-writer",
   initialClockFloorUnixMs: "0",
 } as const);
+
+export const SHARED_STATE_SQLITE_QUERY_OPERATIONS_V1 = Object.freeze([
+  "reconcileOutbox",
+] as const);
 
 export const SHARED_STATE_SQLITE_ADAPTER_ERROR_CODES_V1 = Object.freeze([
   "ownership_conflict",
@@ -231,6 +249,16 @@ type ApplyGraphProjectionBatchInputV1 =
 type RollbackGraphProjectionBatchInputV1 =
   CommandInputForV1<"rollbackGraphProjectionBatch">;
 
+type ReconcileOutboxQueryRequestV1 = Extract<
+  SharedStateQueryRequestV1,
+  { readonly operation: "reconcileOutbox" }
+>;
+
+type ReconcileOutboxQueryResultV1 = Extract<
+  SharedStateQueryResultV1,
+  { readonly operation: "reconcileOutbox" }
+>;
+
 /**
  * The three lease commands that must present existing authority. They share a
  * rejection ladder, so they are handled through one shape.
@@ -321,6 +349,42 @@ function unavailableEnvelope(
   return envelope(operation, {
     status: V.transactionStatuses[2],
     completeness: V.resultCompletenessStates[1],
+    reasonCode,
+  });
+}
+
+function outboxQueryEnvelope(
+  tail: Record<string, unknown>,
+): SharedStateSqliteAdapterResultV1<ReconcileOutboxQueryResultV1> {
+  const parsed = parseSharedStateQueryResultV1({
+    kind: V.kinds.queryResult,
+    contractVersion: V.versions.contract,
+    queryVersion: V.versions.query,
+    operation: V.queryOperations[0],
+    ...tail,
+  });
+  if (!parsed.ok || parsed.value.operation !== "reconcileOutbox") {
+    return failure("adapter_unavailable");
+  }
+  return { ok: true, value: parsed.value };
+}
+
+function outboxQuerySucceededEnvelope(
+  result: Record<string, unknown>,
+): SharedStateSqliteAdapterResultV1<ReconcileOutboxQueryResultV1> {
+  return outboxQueryEnvelope({
+    status: V.queryStatuses[0],
+    achievedConsistency: V.queryConsistency.reconcileOutbox,
+    result,
+  });
+}
+
+function outboxQueryUnavailableEnvelope(
+  reasonCode: (typeof V.queryUnavailableReasonCodes)[number],
+): SharedStateSqliteAdapterResultV1<ReconcileOutboxQueryResultV1> {
+  return outboxQueryEnvelope({
+    status: V.queryStatuses[1],
+    achievedConsistency: null,
     reasonCode,
   });
 }
@@ -548,6 +612,134 @@ function toOutboxRow(row: Record<string, unknown> | undefined): OutboxRow | null
   };
 }
 
+const OUTBOX_QUERY_CURSOR_PREFIX_V1 = "q1";
+const POSITIVE_DECIMAL_V1 = /^[1-9][0-9]{0,39}$/;
+
+function outboxQueryCursorBinding(
+  namespace: string,
+  streamKeyDigest: string,
+  streamSequence: string,
+): string {
+  return createHash("sha256")
+    .update(JSON.stringify([
+      V.versions.contract,
+      V.versions.query,
+      V.queryOperations[0],
+      namespace,
+      streamKeyDigest,
+      streamSequence,
+    ]))
+    .digest("hex");
+}
+
+function encodeOutboxQueryCursor(
+  namespace: string,
+  streamKeyDigest: string,
+  streamSequence: string,
+): string {
+  return [
+    OUTBOX_QUERY_CURSOR_PREFIX_V1,
+    streamSequence,
+    outboxQueryCursorBinding(namespace, streamKeyDigest, streamSequence),
+  ].join(".");
+}
+
+function decodeOutboxQueryCursor(
+  cursor: string | null,
+  namespace: string,
+  streamKeyDigest: string,
+): string | null {
+  if (cursor === null) return "0";
+  const parts = cursor.split(".");
+  if (parts.length !== 3 || parts[0] !== OUTBOX_QUERY_CURSOR_PREFIX_V1) {
+    return null;
+  }
+  const sequence = parts[1];
+  const binding = parts[2];
+  if (
+    sequence === undefined
+    || binding === undefined
+    || !POSITIVE_DECIMAL_V1.test(sequence)
+    || binding !== outboxQueryCursorBinding(
+      namespace,
+      streamKeyDigest,
+      sequence,
+    )
+  ) {
+    return null;
+  }
+  return sequence;
+}
+
+function readOutboxQueryPage(
+  db: DatabaseSync,
+  namespace: string,
+  streamKeyDigest: string,
+  afterSequence: string,
+  limit: number,
+): readonly OutboxRow[] | null {
+  const rows = db
+    .prepare(
+      `SELECT ${OUTBOX_COLUMNS_V1}
+         FROM shared_state_outbox
+        WHERE namespace = ? AND stream_key_digest = ?
+        ORDER BY length(stream_sequence), stream_sequence`,
+    )
+    .all(namespace, streamKeyDigest) as readonly Record<string, unknown>[];
+  const result: OutboxRow[] = [];
+  const eventKeys = new Set<string>();
+  let previousSequence = 0n;
+  for (const row of rows) {
+    const parsed = toOutboxRow(row);
+    if (parsed === null || parsed === undefined) return null;
+    if (!POSITIVE_DECIMAL_V1.test(parsed.stream_sequence)) return null;
+    if (
+      !parseSharedStateDigestV1(parsed.event_key_digest, {
+        domain: "broker.outbox.event-key",
+        namespace,
+      }).ok
+      || !parseSharedStateDigestV1(parsed.idempotency_key_digest, {
+        domain: "broker.outbox.idempotency-key",
+        namespace,
+      }).ok
+      || !parseSharedStateDigestV1(parsed.payload_digest, {
+        domain: "broker.outbox.payload",
+        namespace,
+      }).ok
+      || !(V.receiptStates as readonly string[]).includes(
+        parsed.receipt_state,
+      )
+      || !(V.acknowledgmentStates as readonly string[]).includes(
+        parsed.acknowledgment_state,
+      )
+      || (parsed.acknowledgment_state === "acknowledged"
+        && parsed.receipt_state !== "confirmed")
+      || eventKeys.has(parsed.event_key_digest)
+    ) {
+      return null;
+    }
+    const sequence = BigInt(parsed.stream_sequence);
+    if (sequence <= previousSequence) return null;
+    previousSequence = sequence;
+    eventKeys.add(parsed.event_key_digest);
+    result.push(parsed);
+  }
+  if (
+    afterSequence !== "0"
+    && !result.some((row) => row.stream_sequence === afterSequence)
+  ) {
+    return null;
+  }
+  const after = BigInt(afterSequence);
+  return result
+    .filter((row) => BigInt(row.stream_sequence) > after)
+    .slice(0, limit + 1);
+}
+
+function isSqliteBusy(error: unknown): boolean {
+  return error instanceof Error && /\b(?:busy|locked)\b/i.test(error.message);
+}
+
 /**
  * Reads the event a producer key already committed on this exact stream.
  *
@@ -619,7 +811,7 @@ function nextOutboxSequence(
   let highest = 0n;
   for (const row of rows) {
     if (typeof row.stream_sequence !== "string") return undefined;
-    if (!/^[1-9][0-9]{0,39}$/.test(row.stream_sequence)) return undefined;
+    if (!POSITIVE_DECIMAL_V1.test(row.stream_sequence)) return undefined;
     const value = BigInt(row.stream_sequence);
     if (value > highest) highest = value;
   }
@@ -808,12 +1000,7 @@ export class SharedStateSqliteAdapterV1 {
     return { ok: true, value: envelope };
   }
 
-  /**
-   * The guard every later state-changing command must pass. It rejects
-   * outside `ready` and re-verifies that this adapter still holds ownership,
-   * so a session whose row was taken over cannot keep writing.
-   */
-  beginWrite(): SharedStateSqliteAdapterResultV1<
+  #verifyReadyOwnership(): SharedStateSqliteAdapterResultV1<
     SharedStateSqliteAdapterWriteLeaseV1
   > {
     if (this.#state !== "ready") return failure("not_ready");
@@ -842,6 +1029,133 @@ export class SharedStateSqliteAdapterV1 {
         ownerToken: this.#ownerToken,
       }),
     };
+  }
+
+  /**
+   * The guard every later state-changing command must pass. It rejects
+   * outside `ready` and re-verifies that this adapter still holds ownership,
+   * so a session whose row was taken over cannot keep writing.
+   */
+  beginWrite(): SharedStateSqliteAdapterResultV1<
+    SharedStateSqliteAdapterWriteLeaseV1
+  > {
+    return this.#verifyReadyOwnership();
+  }
+
+  /**
+   * Reads one exact outbox stream behind a `BEGIN IMMEDIATE` boundary.
+   *
+   * Q2 deliberately narrows this method to `reconcileOutbox`; the graph read
+   * family remains unimplemented and the broader storage adapter interface is
+   * unchanged. The write lock orders this page behind every durable inline
+   * write. It proves nothing about a future FIFO worker, so 488/489 remain
+   * open.
+   */
+  query(
+    request: ReconcileOutboxQueryRequestV1,
+  ): SharedStateSqliteAdapterResultV1<ReconcileOutboxQueryResultV1> {
+    const parsed = parseSharedStateQueryRequestV1(request);
+    if (!parsed.ok) return failure("adapter_unavailable");
+    if (parsed.value.operation !== "reconcileOutbox") {
+      return failure("operation_not_implemented");
+    }
+    const input = parsed.value.input;
+
+    const lifecycleEpoch = this.#lifecycleEpoch;
+    if (this.#state !== "ready" || lifecycleEpoch === null) {
+      return failure("not_ready");
+    }
+
+    const afterSequence = decodeOutboxQueryCursor(
+      input.cursor,
+      input.namespace,
+      input.streamKeyDigest,
+    );
+    if (afterSequence === null) {
+      return outboxQueryUnavailableEnvelope("authority_unavailable");
+    }
+
+    let began = false;
+    try {
+      this.#db.exec("BEGIN IMMEDIATE");
+      began = true;
+
+      // Verify ownership under the same serialization boundary as the page,
+      // so no token change can land between authorization and observation.
+      const ownership = readOwnership(this.#db);
+      if (ownership === null) {
+        this.#db.exec("ROLLBACK");
+        began = false;
+        this.#state = "failed";
+        return outboxQueryUnavailableEnvelope("authority_unavailable");
+      }
+      if (
+        ownership.owner_token !== this.#ownerToken
+        || ownership.lifecycle_epoch !== lifecycleEpoch
+      ) {
+        this.#db.exec("ROLLBACK");
+        began = false;
+        this.#state = "failed";
+        return outboxQueryUnavailableEnvelope("lost_ownership");
+      }
+
+      const rows = readOutboxQueryPage(
+        this.#db,
+        input.namespace,
+        input.streamKeyDigest,
+        afterSequence,
+        input.limit,
+      );
+      if (rows === null) {
+        this.#db.exec("ROLLBACK");
+        began = false;
+        return outboxQueryUnavailableEnvelope("authority_unavailable");
+      }
+
+      const hasMore = rows.length > input.limit;
+      const page = rows.slice(0, input.limit);
+      const events = page.map((row) => ({
+        eventKeyDigest: row.event_key_digest,
+        payloadDigest: row.payload_digest,
+        streamSequence: row.stream_sequence,
+        receiptState: row.receipt_state,
+        acknowledgmentState: row.acknowledgment_state,
+      }));
+      const last = page[page.length - 1];
+      const nextCursor = hasMore && last !== undefined
+        ? encodeOutboxQueryCursor(
+            input.namespace,
+            input.streamKeyDigest,
+            last.stream_sequence,
+          )
+        : null;
+      const result = outboxQuerySucceededEnvelope({
+        namespace: input.namespace,
+        streamKeyDigest: input.streamKeyDigest,
+        events,
+        hasMore,
+        nextCursor,
+      });
+      if (!result.ok) {
+        this.#db.exec("ROLLBACK");
+        began = false;
+        return outboxQueryUnavailableEnvelope("authority_unavailable");
+      }
+      this.#db.exec("COMMIT");
+      began = false;
+      return result;
+    } catch (error) {
+      if (began) {
+        try {
+          this.#db.exec("ROLLBACK");
+        } catch {
+          // Preserve the query failure; rollback failure cannot strengthen it.
+        }
+      }
+      return outboxQueryUnavailableEnvelope(
+        isSqliteBusy(error) ? "lock_timeout" : "authority_unavailable",
+      );
+    }
   }
 
   /**

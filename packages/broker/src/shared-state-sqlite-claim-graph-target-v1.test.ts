@@ -498,7 +498,8 @@ test("keeps every conformance seam off the adapter's public surface", () => {
       `adapter must not expose ${name}`,
     );
   }
-  // The six members the adapter is allowed to have, and nothing else.
+  // The lifecycle/write members plus the narrowed Q2 outbox query, and
+  // nothing else. In particular, no graph conformance seam is public.
   const own = Object.getOwnPropertyNames(SharedStateSqliteAdapterV1.prototype)
     .filter((name) => name !== "constructor")
     .sort();
@@ -510,6 +511,7 @@ test("keeps every conformance seam off the adapter's public surface", () => {
     "lifecycleEpoch",
     "open",
     "ownerToken",
+    "query",
     "transact",
   ]);
 });

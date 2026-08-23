@@ -143,6 +143,7 @@ const ADAPTER_PUBLIC_MEMBERS_V1 = Object.freeze([
   "open",
   "beginWrite",
   "transact",
+  "query",
   "drain",
   "close",
 ] as const);
