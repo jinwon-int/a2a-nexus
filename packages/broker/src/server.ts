@@ -41,6 +41,7 @@ import {
   validateBrokerStartupSecurity,
 } from "./startup-security.js";
 import { resolveSharedStateDeploymentGradeFromEnvV1 } from "./shared-state-deployment-grade-v1.js";
+import { acquireSharedStateServingFenceForBrokerV1 } from "./shared-state-serving-fence-v1.js";
 import { createServer, type IncomingMessage, type RequestListener, type Server, type ServerResponse } from "node:http";
 import {
   DEFAULT_KEEPALIVE_TIMEOUT_MS,
@@ -517,11 +518,17 @@ export function createBrokerServer(options: BrokerServerOptions = {}): BrokerSer
       ? undefined
       : stateStore;
   let workerPersistenceClosePromise: Promise<void> | undefined;
+  let servingFence: { release(): void } | undefined;
   const closeWorkerPersistence = (): Promise<void> => {
+    const releaseFence = (): void => {
+      servingFence?.release();
+      servingFence = undefined;
+    };
     if (!workerPersistenceHandle) {
+      releaseFence();
       return Promise.resolve();
     }
-    workerPersistenceClosePromise ??= workerPersistenceHandle.close();
+    workerPersistenceClosePromise ??= workerPersistenceHandle.close().finally(releaseFence);
     return workerPersistenceClosePromise;
   };
   let unsubscribePushNotificationPruneListener: (() => void) | undefined;
@@ -1975,6 +1982,13 @@ export function createBrokerServer(options: BrokerServerOptions = {}): BrokerSer
     }
   };
 
+  servingFence = acquireSharedStateServingFenceForBrokerV1({
+    ...(options.sharedStateFile === undefined
+      ? {}
+      : { sharedStateFile: options.sharedStateFile }),
+    stateFile,
+    injectedStore: options.stateStore !== undefined,
+  });
   const server = createServer(handler);
   httpServerForDiagnostics = server;
 

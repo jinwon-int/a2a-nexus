@@ -120,6 +120,8 @@ export interface BrokerServerOptions extends BrokerRuntimeHotLimitOptions {
   serviceName?: string;
   publicBaseUrl?: string;
   stateFile?: string;
+  /** Dedicated V1 fence file. Env: `BROKER_SHARED_STATE_FILE`. */
+  sharedStateFile?: string;
   sqliteFile?: string;
   persistenceBackend?: "json-file" | "sqlite";
   sqliteLoadSource?: SqliteBrokerLoadSource;
