@@ -31,6 +31,7 @@ export const SHARED_STATE_STORAGE_V1_VALUES = deepFreeze({
     declarations: 1,
     transaction: 1,
     operation: 1,
+    query: 1,
     drain: 1,
   },
   kinds: {
@@ -43,6 +44,8 @@ export const SHARED_STATE_STORAGE_V1_VALUES = deepFreeze({
     completeness: "SharedStateCompletenessDeclarationV1",
     transactionCommand: "SharedStateTransactionCommandV1",
     transactionResult: "SharedStateTransactionResultV1",
+    queryRequest: "SharedStateQueryRequestV1",
+    queryResult: "SharedStateQueryResultV1",
     drainRequest: "SharedStateDrainRequestV1",
   },
   backendClasses: [
@@ -485,6 +488,30 @@ export const SHARED_STATE_STORAGE_V1_VALUES = deepFreeze({
     "applyGraphProjectionBatch",
     "rollbackGraphProjectionBatch",
   ],
+  queryOperations: [
+    "reconcileOutbox",
+    "queryGraphEvidencePath",
+  ],
+  queryStatuses: [
+    "succeeded",
+    "unavailable",
+  ],
+  queryConsistency: {
+    reconcileOutbox: {
+      model: "serializable",
+      scope: "per-stream",
+    },
+    queryGraphEvidencePath: {
+      model: "monotonic-eventual",
+      scope: "projection-batch",
+    },
+  },
+  graphEvidenceResults: [
+    "path_found",
+    "no_evidence_path",
+    "projection_incomplete",
+    "projection_unavailable",
+  ],
   transactionStatuses: [
     "committed",
     "rejected",
@@ -696,6 +723,12 @@ export const SHARED_STATE_STORAGE_V1_VALUES = deepFreeze({
     "ambiguous_commit",
     "unsafe_clock",
   ],
+  queryUnavailableReasonCodes: [
+    "authority_unavailable",
+    "lock_timeout",
+    "lost_ownership",
+    "unsafe_clock",
+  ],
   parserErrorCodes: [
     "invalid_type",
     "invalid_value",
@@ -706,6 +739,7 @@ export const SHARED_STATE_STORAGE_V1_VALUES = deepFreeze({
     "unknown_health_version",
     "unknown_transaction_version",
     "unknown_operation_version",
+    "unknown_query_version",
     "unknown_drain_version",
     "unknown_field",
     "invalid_discriminant",
@@ -717,6 +751,9 @@ export const SHARED_STATE_STORAGE_V1_VALUES = deepFreeze({
     "sensitive_field_forbidden",
     "identity_health_field_forbidden",
     "operation_result_mismatch",
+    "query_result_mismatch",
+    "query_consistency_mismatch",
+    "query_completeness_mismatch",
     "backend_class_mismatch",
     "writer_model_mismatch",
     "schema_version_mismatch",
@@ -772,6 +809,8 @@ export const SHARED_STATE_STORAGE_V1_VALUES = deepFreeze({
     maxKeyComponentBytes: 1024,
     maxKeyComponents: 8,
     maxDigestDomainLength: 96,
+    maxQueryPageSize: 100,
+    maxGraphEvidencePathEdges: 32,
   },
 } as const);
 
