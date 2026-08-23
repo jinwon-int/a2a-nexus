@@ -1252,7 +1252,7 @@ path decision belongs to section 4 and is deliberately not made here.
   backend-neutral Phase 2 harness.
 - [ ] Add secret-safe `stateContract` health without identity-bearing top-key
   data.
-- [ ] Add volatile replay/rate reset-risk epoch/reason signals.
+- [x] Add volatile replay/rate reset-risk epoch/reason signals.
 - [x] Make `shared-state-ha` fail until an approved conforming backend exists.
 - [ ] Integrate primitives one at a time behind default-off flags.
 - [ ] Run compatibility/regression/performance tests.
@@ -1384,6 +1384,21 @@ bands are omitted.
 The module does not import `shared-state-observability-v1`. The full
 `stateContract` item and the reset-risk item stay unchecked. 488/489
 stay decision C.
+
+### Slice M, second part — process-local reset-risk bands
+
+Slice M, second part, adds `primitives.replay` and `primitives.rateLimit`
+to the same `/health` `stateContract`. Both bands are the closed process
+fact: `source=process`, `durability=volatile`, `continuity=reset`,
+`resetRisk=true`, `lastResetReason=process_start`. Age and pressure are
+`unknown` because this slice does not collect live limiter or cache
+stats and must not invent `low`. The module still does not import
+`shared-state-observability-v1` or the storage-contract projector.
+
+That checks `Add volatile replay/rate reset-risk epoch/reason signals`.
+The full `stateContract` item stays unchecked: there is still no clock,
+consistency, completeness, or graph projection block. 488/489 stay
+decision C. Loss monitoring and primitive runtime integration stay off.
 
 ## 5. Migration and operations
 
