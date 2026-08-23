@@ -4,8 +4,9 @@
  * Decision A+A1 on #1504: reuse the V1 `shared_state_ownership` CAS as the
  * broker singleton fence for both JSON-file and SQLite persistence. This
  * module applies the V1 schema to a dedicated file, opens one adapter, and
- * releases the token on drain/close. It does not install `/readyz`, renew a
- * lease, take over a live token, or issue V1 primitive commands.
+ * releases the token on drain/close. `probe()` re-reads the ownership row
+ * for `/readyz`. It does not install non-serving middleware, renew a lease,
+ * take over a live token, or issue V1 primitive commands.
  */
 
 import { randomUUID } from "node:crypto";
@@ -15,6 +16,7 @@ import { dirname, join } from "node:path";
 import { DatabaseSync } from "node:sqlite";
 
 import {
+  SHARED_STATE_SQLITE_ADAPTER_V1,
   SharedStateSqliteAdapterV1,
   type SharedStateSqliteAdapterErrorCodeV1,
 } from "./shared-state-sqlite-adapter-v1.js";
@@ -63,14 +65,37 @@ export interface SharedStateServingFencePathInputV1 {
   readonly stateFile: string;
 }
 
+export const SHARED_STATE_SERVING_FENCE_PROBE_REASON_CODES_V1 = Object.freeze([
+  "lost_fence",
+  "adapter_unavailable",
+] as const);
+
+export type SharedStateServingFenceProbeReasonCodeV1 =
+  (typeof SHARED_STATE_SERVING_FENCE_PROBE_REASON_CODES_V1)[number];
+
+export type SharedStateServingFenceProbeV1 =
+  | { readonly ready: true }
+  | {
+    readonly ready: false;
+    readonly reasonCode: SharedStateServingFenceProbeReasonCodeV1;
+  };
+
 export interface SharedStateServingFenceV1 {
   release(): void;
+  probe(): SharedStateServingFenceProbeV1;
 }
 
 function fail(
   code: SharedStateServingFenceErrorCodeV1,
 ): SharedStateServingFenceResultV1<never> {
   return { ok: false, error: Object.freeze({ code }) };
+}
+
+function ownershipTokenFromRow(row: unknown): string | undefined {
+  if (!row || typeof row !== "object") return undefined;
+  if (!("owner_token" in row)) return undefined;
+  const token = row.owner_token;
+  return typeof token === "string" ? token : undefined;
 }
 
 function isFenceErrorCode(
@@ -148,9 +173,10 @@ export function openSharedStateServingFenceV1(input: {
     return fail(mapSchemaCode(applied.error.code));
   }
 
+  const ownerToken = input.ownerToken ?? randomUUID();
   const adapter = new SharedStateSqliteAdapterV1({
     db,
-    ownerToken: input.ownerToken ?? randomUUID(),
+    ownerToken,
     backwardSkewToleranceMs: "0",
   });
   const opened = adapter.open();
@@ -169,6 +195,32 @@ export function openSharedStateServingFenceV1(input: {
         adapter.drain();
         adapter.close();
         db.close();
+      },
+      probe(): SharedStateServingFenceProbeV1 {
+        if (released) {
+          return Object.freeze({ ready: false, reasonCode: "adapter_unavailable" });
+        }
+        try {
+          const row: unknown = db.prepare(
+            `SELECT owner_token FROM shared_state_ownership WHERE id = ?`,
+          ).get(SHARED_STATE_SQLITE_ADAPTER_V1.ownershipRowId);
+          const token = ownershipTokenFromRow(row);
+          if (token === undefined) {
+            return Object.freeze({
+              ready: false,
+              reasonCode: "adapter_unavailable",
+            });
+          }
+          if (token !== ownerToken) {
+            return Object.freeze({ ready: false, reasonCode: "lost_fence" });
+          }
+          return Object.freeze({ ready: true });
+        } catch {
+          return Object.freeze({
+            ready: false,
+            reasonCode: "adapter_unavailable",
+          });
+        }
       },
     }),
   };

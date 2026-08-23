@@ -41,7 +41,10 @@ import {
   validateBrokerStartupSecurity,
 } from "./startup-security.js";
 import { resolveSharedStateDeploymentGradeFromEnvV1 } from "./shared-state-deployment-grade-v1.js";
-import { acquireSharedStateServingFenceForBrokerV1 } from "./shared-state-serving-fence-v1.js";
+import {
+  acquireSharedStateServingFenceForBrokerV1,
+  type SharedStateServingFenceV1,
+} from "./shared-state-serving-fence-v1.js";
 import { createServer, type IncomingMessage, type RequestListener, type Server, type ServerResponse } from "node:http";
 import {
   DEFAULT_KEEPALIVE_TIMEOUT_MS,
@@ -356,6 +359,7 @@ export function createBrokerServer(options: BrokerServerOptions = {}): BrokerSer
       `shared-state deployment grade rejected: ${deploymentGrade.error.code}`,
     );
   }
+  const servingGrade = deploymentGrade.value;
   const githubWebhookSecret = firstNonEmpty(
     options.githubWebhookSecret,
     process.env.GITHUB_WEBHOOK_SECRET,
@@ -518,7 +522,7 @@ export function createBrokerServer(options: BrokerServerOptions = {}): BrokerSer
       ? undefined
       : stateStore;
   let workerPersistenceClosePromise: Promise<void> | undefined;
-  let servingFence: { release(): void } | undefined;
+  let servingFence: SharedStateServingFenceV1 | undefined;
   const closeWorkerPersistence = (): Promise<void> => {
     const releaseFence = (): void => {
       servingFence?.release();
@@ -966,7 +970,8 @@ export function createBrokerServer(options: BrokerServerOptions = {}): BrokerSer
       requesterIdentity = extractRequesterIdentity(req);
       const isPublicDiscoveryRoute = req.method === "GET" && path === "/.well-known/agent-card.json";
       const isPublicLivenessRoute = req.method === "GET" && path === "/livez";
-      if (!isPublicLivenessRoute && !isPublicDiscoveryRoute) {
+      const isPublicReadyzRoute = req.method === "GET" && path === "/readyz";
+      if (!isPublicLivenessRoute && !isPublicReadyzRoute && !isPublicDiscoveryRoute) {
         assertEdgeSecret(req, edgeSecret);
 
         const bucket = classifyRateLimitBucket(req, url);
@@ -996,6 +1001,24 @@ export function createBrokerServer(options: BrokerServerOptions = {}): BrokerSer
         }
       }
 
+      if (req.method === "GET" && path === "/readyz") {
+        const probe = servingFence?.probe() ?? {
+          ready: false as const,
+          reasonCode: "adapter_unavailable" as const,
+        };
+        if (probe.ready) {
+          return sendJson(res, 200, {
+            ready: true,
+            effectiveGrade: servingGrade.effectiveGrade,
+            reasonCodes: [],
+          });
+        }
+        return sendJson(res, 503, {
+          ready: false,
+          effectiveGrade: servingGrade.effectiveGrade,
+          reasonCodes: [probe.reasonCode],
+        });
+      }
       if (req.method === "GET" && path === "/livez") {
         const lifecycleTiming = readRequestLifecycleTiming(req);
         const handlerStartUnixMs = lifecycleTiming?.handlerStartUnixMs ?? Date.now();

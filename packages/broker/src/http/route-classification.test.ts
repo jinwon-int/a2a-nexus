@@ -22,6 +22,7 @@ test("route classification group inventories keep expected observability labels"
 
 test("classifyEndpointGroup preserves coarse endpoint attribution", () => {
   assert.equal(classifyEndpointGroup("GET", "/livez", segments("/livez")), "livez");
+  assert.equal(classifyEndpointGroup("GET", "/readyz", segments("/readyz")), "readyz");
   assert.equal(classifyEndpointGroup("GET", "/.well-known/agent-card.json", segments("/.well-known/agent-card.json")), "well-known");
   assert.equal(classifyEndpointGroup("GET", "/dashboard/status", segments("/dashboard/status")), "dashboard");
   assert.equal(classifyEndpointGroup("GET", "/terminal-brief/sidecar/abc", segments("/terminal-brief/sidecar/abc")), "sidecar");
@@ -40,6 +41,7 @@ test("classifyEndpointGroup preserves coarse endpoint attribution", () => {
 test("classifyRequestRoute preserves fine-grained route attribution", () => {
   const cases: Array<[string | undefined, string, string]> = [
     ["GET", "/livez", "livez"],
+    ["GET", "/readyz", "readyz"],
     ["GET", "/health", "health"],
     ["GET", "/schedz", "schedz"],
     ["GET", "/.well-known/agent-card.json", "well-known"],

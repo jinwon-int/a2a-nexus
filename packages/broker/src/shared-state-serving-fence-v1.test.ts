@@ -106,6 +106,7 @@ test("a second open on the same file fails closed until the first releases", () 
     assert.equal(second.error.code, "ownership_conflict");
 
     first.value.release();
+    assert.equal(first.value.probe().ready, false);
     const third = openSharedStateServingFenceV1({ filePath });
     assert.equal(third.ok, true);
     if (!third.ok) throw new Error("unreachable");
