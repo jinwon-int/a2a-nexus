@@ -1955,3 +1955,60 @@ the full Phase 2.7 matrix still cannot be driven through a durable
 Q3 checks no 488/489 item and adds no FIFO worker, serving-store promotion,
 primitive integration, `stateContract`, retention/prune, migration,
 performance, deployment, or issue closure.
+
+### Decision Q4 — promote the closed query union to the broad async contract
+
+Owner decision Q4 (2026-08-24 KST, `#1504`): Q1 now defines both closed query
+families and Q2/Q3 implement both against the inline SQLite adapter. The next
+source slice may therefore add the query member that section 6.1 has always
+planned to the broad backend-neutral interface:
+
+```text
+query(request: SharedStateQueryRequestV1)
+  -> Promise<SharedStateQueryResultV1>
+```
+
+This promotes exactly the existing `reconcileOutbox` and
+`queryGraphEvidencePath` union. It does not add a generic SQL/read command,
+metadata or health query, replay/rate/lease/idempotency preflight read, a
+test-only conformance control, or a third operation. Adding another operation
+requires another closed contract and owner decision.
+
+The parse boundary and the result boundary remain distinct. An untyped caller
+must first use `parseSharedStateQueryRequestV1`; a parser rejection remains a
+closed parser error and is never converted into a query result with an
+invented operation. The broad member accepts only a successfully parsed
+`SharedStateQueryRequestV1`. Implementations still validate defensively, but a
+request that cannot identify one of the two registered operations cannot be
+made to look like either operation succeeded or became unavailable.
+
+After a valid request enters `query`, every ordinary storage or lifecycle
+inability resolves to an operation-preserving `SharedStateQueryResultV1` with
+`status=unavailable`, `achievedConsistency=null`, and the existing bounded
+query reason vocabulary. It must not escape the SQLite-local
+`{ok:false,error}` wrapper through the broad contract, reject merely because a
+backend is synchronous, or return a weaker successful consistency. Busy,
+ownership-loss, authority, and genuinely observed unsafe-clock conditions map
+only to their existing closed reasons; no reason is inferred when its
+condition was not observed.
+
+The broad member is asynchronous because a future shared backend may require
+network I/O. The current SQLite dispatcher may remain synchronous behind the
+normalization seam; wrapping that completed local result in a promise changes
+neither its `BEGIN IMMEDIATE` serialization boundary nor its consistency
+claim. This decision does not make `SharedStateSqliteAdapterV1` claim the full
+section 6.1 interface or conformance: its other planned broad lifecycle,
+metadata, transaction-callback, and health surfaces remain separate work.
+
+The next reviewed source slice is limited to the broad interface member, the
+narrow SQLite normalization seam, and focused type/runtime fail-closed tests.
+It does not wire a broker caller or HTTP route, select a serving store, move a
+primitive source of truth, retire a legacy authority, change `stateContract`,
+or alter a default. Those require a later owner decision naming one primitive,
+one authoritative store, its shadow comparison, and its legacy retirement
+rule.
+
+Q4 proves neither FIFO durable-commit ACK ordering nor worker-backed read
+consistency, so 488/489 remain unchecked. It authorizes no FIFO worker,
+serving-store promotion, primitive integration, retention/prune, migration,
+performance claim, deployment, live action, or issue closure.
