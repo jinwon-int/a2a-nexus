@@ -1,8 +1,8 @@
 /**
  * Slice L, first part: GET /readyz re-reads the serving fence.
  *
- * No non-serving middleware, no background monitor, no /health
- * stateContract, and no 488/489.
+ * Slice L, second part adds non-serving middleware: lost fence stops
+ * non-liveness routes. No beginDrain, no background monitor, no 488/489.
  */
 
 import assert from "node:assert/strict";
@@ -44,7 +44,7 @@ test("/readyz is public and reports ready while the fence is held", async () => 
   }
 });
 
-test("/readyz is 503 lost_fence after the ownership row is stolen; other routes still serve", async () => {
+test("/readyz is 503 lost_fence after the ownership row is stolen; non-liveness stops", async () => {
   const directory = mkdtempSync(join(tmpdir(), "a2a-readyz-"));
   const sharedStateFile = join(directory, "fence.sqlite");
   const server = await startTestServer({
@@ -54,6 +54,7 @@ test("/readyz is 503 lost_fence after the ownership row is stolen; other routes 
   try {
     const ready = await fetch(`${server.baseUrl}/readyz`);
     assert.equal(ready.status, 200);
+    assert.equal(server.runtime.isDraining(), false);
 
     const db = new DatabaseSync(sharedStateFile, { timeout: 0 });
     db.prepare(
@@ -74,7 +75,14 @@ test("/readyz is 503 lost_fence after the ownership row is stolen; other routes 
     const workers = await fetch(`${server.baseUrl}/workers`, {
       headers: { "x-a2a-edge-secret": "s" },
     });
-    assert.equal(workers.status, 200);
+    assert.equal(workers.status, 503);
+    const workersBody = await workers.json();
+    assert.equal(workersBody.error.code, "lost_fence");
+    assert.notEqual(workersBody.error.code, "broker_draining");
+    assert.equal(server.runtime.isDraining(), false);
+
+    const unauth = await fetch(`${server.baseUrl}/workers`);
+    assert.equal(unauth.status, 401);
   } finally {
     await server.close();
     rmSync(directory, { recursive: true, force: true });
