@@ -15,6 +15,7 @@ import test from "node:test";
 import { createBrokerServer } from "./server.js";
 import {
   SHARED_STATE_SERVING_FENCE_V1,
+  acquireSharedStateServingFenceForBrokerV1,
   openSharedStateServingFenceV1,
   resolveSharedStateServingFencePathV1,
 } from "./shared-state-serving-fence-v1.js";
@@ -137,6 +138,15 @@ test("createBrokerServer acquires the fence and a second constructor on the same
       first.server.close();
     }
   });
+});
+
+test("a missing default state directory isolates the fence", () => {
+  const fence = acquireSharedStateServingFenceForBrokerV1({
+    stateFile: SHARED_STATE_SERVING_FENCE_V1.defaultLegacyStateFile,
+    injectedStore: false,
+    env: {},
+  });
+  fence.release();
 });
 
 test("an injected store without an explicit fence path still constructs", async () => {

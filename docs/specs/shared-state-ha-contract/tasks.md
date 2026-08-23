@@ -1315,7 +1315,9 @@ for both JSON-file and SQLite persistence. A new lock is not invented.
 `${stateFile}.shared-state-v1.sqlite`. The legacy `SQLITE_STATE_FILE` /
 `BROKER_SQLITE_FILE` is never that file. An injected test `stateStore` is
 not the `STATE_FILE` identity, so it gets an isolated temp fence unless the
-path was set explicitly.
+path was set explicitly. If the derived directory does not exist and the
+state file is still the hardcoded `/var/lib/a2a-broker/state.json` default,
+the fence is isolated rather than creating that system path from tests.
 
 Slice K, first part, makes `createBrokerServer` apply the V1 schema if
 needed and `open()` that file before the HTTP server is created. A live

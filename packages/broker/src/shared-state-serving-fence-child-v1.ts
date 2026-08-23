@@ -1,8 +1,8 @@
 /**
  * Child-process helper for the serving-fence startup test.
  *
- * Acquires the fence at the path in BROKER_SHARED_STATE_FILE, prints
- * "acquired", and releases on SIGTERM. It is not a test file.
+ * Acquires the fence, prints "acquired", and releases on SIGTERM or after
+ * a hard 8s deadman. It is not a test file.
  */
 
 import { createBrokerServer } from "./server.js";
@@ -23,14 +23,18 @@ try {
     sharedStateFile,
   });
   process.stdout.write("acquired\n");
-  const keepAlive = setInterval(() => {}, 60_000);
-  const release = (): void => {
-    clearInterval(keepAlive);
-    runtime.server.close();
-    void runtime.closeWorkerPersistence().finally(() => process.exit(0));
+  const shutdown = (code: number): void => {
+    try {
+      runtime.server.close();
+    } catch {
+      // Best-effort: the deadman still exits.
+    }
+    void runtime.closeWorkerPersistence().finally(() => process.exit(code));
+    setTimeout(() => process.exit(code), 2_000).unref();
   };
-  process.once("SIGTERM", release);
-  process.once("SIGINT", release);
+  process.once("SIGTERM", () => shutdown(0));
+  process.once("SIGINT", () => shutdown(0));
+  setTimeout(() => shutdown(2), 8_000);
 } catch (error) {
   const message = error instanceof Error ? error.message : String(error);
   process.stdout.write(`${message}\n`);

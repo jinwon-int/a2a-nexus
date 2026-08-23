@@ -9,9 +9,9 @@
  */
 
 import { randomUUID } from "node:crypto";
-import { mkdtempSync } from "node:fs";
+import { existsSync, mkdtempSync, mkdirSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { dirname, join } from "node:path";
 import { DatabaseSync } from "node:sqlite";
 
 import {
@@ -29,6 +29,7 @@ export const SHARED_STATE_SERVING_FENCE_V1 = Object.freeze({
   defaultSuffix: ".shared-state-v1.sqlite",
   isolatedTempPrefix: "a2a-serving-fence-",
   isolatedTempFileName: "shared-state-v1.sqlite",
+  defaultLegacyStateFile: "/var/lib/a2a-broker/state.json",
 } as const);
 
 export const SHARED_STATE_SERVING_FENCE_ERROR_CODES_V1 = Object.freeze([
@@ -200,19 +201,39 @@ export function acquireSharedStateServingFenceForBrokerV1(input: {
   const explicit =
     input.sharedStateFile !== undefined
     || Object.hasOwn(env, SHARED_STATE_SERVING_FENCE_V1.envKey);
-  const path = explicit || !input.injectedStore
-    ? resolveSharedStateServingFencePathV1({
-      ...(input.sharedStateFile === undefined
-        ? {}
-        : { sharedStateFile: input.sharedStateFile }),
-      stateFile: input.stateFile,
-      env,
-    })
-    : { ok: true as const, value: isolatedSharedStateServingFencePathV1() };
+  if (!explicit && input.injectedStore) {
+    return assertSharedStateServingFenceV1({
+      filePath: isolatedSharedStateServingFencePathV1(),
+    });
+  }
+  const path = resolveSharedStateServingFencePathV1({
+    ...(input.sharedStateFile === undefined
+      ? {}
+      : { sharedStateFile: input.sharedStateFile }),
+    stateFile: input.stateFile,
+    env,
+  });
   if (!path.ok) {
     throw new Error(
       `shared-state serving fence rejected: ${path.error.code}`,
     );
+  }
+  const directory = dirname(path.value);
+  if (!existsSync(directory)) {
+    const defaultLegacy =
+      input.stateFile === SHARED_STATE_SERVING_FENCE_V1.defaultLegacyStateFile;
+    if (!explicit && defaultLegacy) {
+      return assertSharedStateServingFenceV1({
+        filePath: isolatedSharedStateServingFencePathV1(),
+      });
+    }
+    try {
+      mkdirSync(directory, { recursive: true });
+    } catch {
+      throw new Error(
+        "shared-state serving fence rejected: adapter_unavailable",
+      );
+    }
   }
   return assertSharedStateServingFenceV1({ filePath: path.value });
 }
