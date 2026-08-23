@@ -2012,3 +2012,42 @@ Q4 proves neither FIFO durable-commit ACK ordering nor worker-backed read
 consistency, so 488/489 remain unchecked. It authorizes no FIFO worker,
 serving-store promotion, primitive integration, retention/prune, migration,
 performance claim, deployment, live action, or issue closure.
+
+### Slice Q5 — broad async query member and SQLite normalization only
+
+Q5 adds the Q4-authorized `query(request) -> Promise<result>` member to
+`SharedStateStorageAdapterV1`. Its input and output are exactly the Q1
+`SharedStateQueryRequestV1` and `SharedStateQueryResultV1` unions. No generic
+read command or third query operation is added, and the interface remains a
+planned structural contract rather than a claim that the current SQLite class
+implements every section 6.1 member.
+
+`packages/broker/src/shared-state-sqlite-query-surface-v1.ts` is the separate
+normalization seam. It exposes only `Pick<SharedStateStorageAdapterV1,
+"query">`, wraps the existing synchronous SQLite dispatcher in the required
+promise, and leaves `SharedStateSqliteAdapterV1` and its transaction/ownership
+boundaries unchanged. Nothing imports the seam into broker runtime.
+
+An untyped or malformed request is rejected with the existing closed parser
+error before the dispatcher is called; no operation is invented to create an
+unavailable result. Once a valid request enters, the seam returns only a
+validated operation-matched query result. A SQLite-local `ownership_lost`
+wrapper becomes closed `lost_ownership`; every other local wrapper failure,
+throw, malformed result, or crossed-operation result becomes closed
+`authority_unavailable`. Closed reasons the SQLite query already observed —
+including `lock_timeout`, `lost_ownership`, and `unsafe_clock` — pass through
+only after full result parsing. The local `{ok:false,error}` wrapper never
+crosses the broad interface.
+
+Focused tests pin the Promise shape, the query-only surface, both operation
+families, parser-before-dispatch behavior, every SQLite-local error code,
+closed reason preservation, thrown/malformed/crossed fail-closed behavior, and
+a real not-ready SQLite dispatcher. This slice does not add a broker caller or
+HTTP route, promote a serving store, claim full adapter conformance, move a
+primitive source of truth, retire a legacy authority, change `stateContract`,
+or alter any default.
+
+Q5 still proves neither FIFO durable-commit ACK ordering nor worker-backed
+read consistency, so 488/489 remain unchecked. It adds no FIFO worker,
+primitive integration, retention/prune, migration, performance claim,
+deployment, live action, or issue closure.
