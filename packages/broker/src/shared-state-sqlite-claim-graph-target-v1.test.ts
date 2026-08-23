@@ -3,19 +3,19 @@
  *
  * The seven Phase 2 harnesses are backend-neutral: each drives a target
  * interface whose non-`transact` methods are explicitly bounded test-only
- * conformance controls. `SharedStateSqliteAdapterV1` has none of them, and
- * must not grow them — a snapshot, a fault switch, or an evidence query on
- * the adapter would be a storage API the contract does not register. That is
- * why this file exists and why it is a test file: it holds the controls
- * adjacent to the harness, exactly as the reference model does, and the
- * adapter keeps its six public members.
+ * conformance controls. `SharedStateSqliteAdapterV1` has none of those test
+ * seams, and must not grow them — its closed Q3 evidence query is a parsed V1
+ * request/result surface, not this ordinal-based harness control. That is why
+ * this file exists and why it is a test file: it holds the controls adjacent
+ * to the harness, exactly as the reference model does.
  *
  * The fault control is the part worth reading. It does not ask the adapter to
  * fail; the adapter has no way to be asked. It proxies the `DatabaseSync`
  * handle the adapter was constructed with and throws when the adapter
  * prepares the checkpoint write. The adapter's own `BEGIN IMMEDIATE` boundary
  * then performs a real `ROLLBACK`, so all-or-none is observed rather than
- * simulated. Nothing in `shared-state-sqlite-adapter-v1.ts` changes.
+ * simulated. The production query is exercised separately and does not reuse
+ * this fault switch.
  *
  * Nodes and edges are derived, not stored, which is the shape slice G
  * committed to: one node per source sequence in a batch's `[from, through]`
@@ -26,10 +26,10 @@
  * be counted as two nodes. The assumption is stated here rather than left to
  * look proved.
  *
- * What this does NOT do: check the Phase 2.7 repeat item. That item also
- * requires a real graph query surface, and `evaluateConformanceEvidencePath`
- * is explicitly not one — V1 registers no query operation. The item stays
- * unchecked for that single reason.
+ * What this does NOT do: turn `evaluateConformanceEvidencePath` into the Q3
+ * query or claim the full Phase 2.7 repeat item. The current durable ledger
+ * has no projection-authority marker from which Q3 could honestly synthesize
+ * `projection_unavailable`; that remains a later contract/storage decision.
  */
 
 import assert from "node:assert/strict";
@@ -467,7 +467,7 @@ async function expectConformanceErrorCode(
   }
 }
 
-test("labels the SQLite claim-graph target test-only with no query claim", () => {
+test("keeps the SQLite conformance target separate from the Q3 query", () => {
   assert.deepEqual(TEST_ONLY_SQLITE_CLAIM_GRAPH_TARGET_V1, {
     label: "test-only-sqlite-claim-graph-conformance-target",
     production: false,
@@ -498,7 +498,7 @@ test("keeps every conformance seam off the adapter's public surface", () => {
       `adapter must not expose ${name}`,
     );
   }
-  // The lifecycle/write members plus the narrowed Q2 outbox query, and
+  // The lifecycle/write members plus the one closed query dispatcher, and
   // nothing else. In particular, no graph conformance seam is public.
   const own = Object.getOwnPropertyNames(SharedStateSqliteAdapterV1.prototype)
     .filter((name) => name !== "constructor")

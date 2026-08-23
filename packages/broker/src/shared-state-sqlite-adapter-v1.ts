@@ -21,9 +21,10 @@
  * decreases, including across close and reopen.
  *
  * Primitives: this adapter implements the replay, rate, lease, idempotency,
- * claim-graph, and outbox commands. Q2 adds only the closed
- * `reconcileOutbox` read; graph evidence-path query, broker runtime wiring,
- * retention, and prune behaviour remain absent.
+ * claim-graph, and outbox commands. Q2 added the closed `reconcileOutbox`
+ * read; Q3 adds the closed `queryGraphEvidencePath` read over the durable
+ * source/batch/checkpoint ledger. Broker runtime wiring, retention, and prune
+ * behaviour remain absent.
  *
  * Outbox reconciliation takes `BEGIN IMMEDIATE` even though it does not write.
  * That places each page after every durable inline write and gives the declared
@@ -148,6 +149,7 @@ export const SHARED_STATE_SQLITE_ADAPTER_V1 = Object.freeze({
 
 export const SHARED_STATE_SQLITE_QUERY_OPERATIONS_V1 = Object.freeze([
   "reconcileOutbox",
+  "queryGraphEvidencePath",
 ] as const);
 
 export const SHARED_STATE_SQLITE_ADAPTER_ERROR_CODES_V1 = Object.freeze([
@@ -249,14 +251,19 @@ type ApplyGraphProjectionBatchInputV1 =
 type RollbackGraphProjectionBatchInputV1 =
   CommandInputForV1<"rollbackGraphProjectionBatch">;
 
-type ReconcileOutboxQueryRequestV1 = Extract<
-  SharedStateQueryRequestV1,
-  { readonly operation: "reconcileOutbox" }
->;
-
 type ReconcileOutboxQueryResultV1 = Extract<
   SharedStateQueryResultV1,
   { readonly operation: "reconcileOutbox" }
+>;
+
+type GraphEvidencePathQueryRequestV1 = Extract<
+  SharedStateQueryRequestV1,
+  { readonly operation: "queryGraphEvidencePath" }
+>;
+
+type GraphEvidencePathQueryResultV1 = Extract<
+  SharedStateQueryResultV1,
+  { readonly operation: "queryGraphEvidencePath" }
 >;
 
 /**
@@ -383,6 +390,42 @@ function outboxQueryUnavailableEnvelope(
   reasonCode: (typeof V.queryUnavailableReasonCodes)[number],
 ): SharedStateSqliteAdapterResultV1<ReconcileOutboxQueryResultV1> {
   return outboxQueryEnvelope({
+    status: V.queryStatuses[1],
+    achievedConsistency: null,
+    reasonCode,
+  });
+}
+
+function graphQueryEnvelope(
+  tail: Record<string, unknown>,
+): SharedStateSqliteAdapterResultV1<GraphEvidencePathQueryResultV1> {
+  const parsed = parseSharedStateQueryResultV1({
+    kind: V.kinds.queryResult,
+    contractVersion: V.versions.contract,
+    queryVersion: V.versions.query,
+    operation: V.queryOperations[1],
+    ...tail,
+  });
+  if (!parsed.ok || parsed.value.operation !== "queryGraphEvidencePath") {
+    return failure("adapter_unavailable");
+  }
+  return { ok: true, value: parsed.value };
+}
+
+function graphQuerySucceededEnvelope(
+  result: Record<string, unknown>,
+): SharedStateSqliteAdapterResultV1<GraphEvidencePathQueryResultV1> {
+  return graphQueryEnvelope({
+    status: V.queryStatuses[0],
+    achievedConsistency: V.queryConsistency.queryGraphEvidencePath,
+    result,
+  });
+}
+
+function graphQueryUnavailableEnvelope(
+  reasonCode: (typeof V.queryUnavailableReasonCodes)[number],
+): SharedStateSqliteAdapterResultV1<GraphEvidencePathQueryResultV1> {
+  return graphQueryEnvelope({
     status: V.queryStatuses[1],
     achievedConsistency: null,
     reasonCode,
@@ -614,6 +657,7 @@ function toOutboxRow(row: Record<string, unknown> | undefined): OutboxRow | null
 
 const OUTBOX_QUERY_CURSOR_PREFIX_V1 = "q1";
 const POSITIVE_DECIMAL_V1 = /^[1-9][0-9]{0,39}$/;
+const NON_NEGATIVE_DECIMAL_V1 = /^(?:0|[1-9][0-9]{0,39})$/;
 
 function outboxQueryCursorBinding(
   namespace: string,
@@ -734,6 +778,288 @@ function readOutboxQueryPage(
   return result
     .filter((row) => BigInt(row.stream_sequence) > after)
     .slice(0, limit + 1);
+}
+
+interface GraphQuerySourceRowV1 {
+  readonly sourceFactDigest: string;
+  readonly sourceStreamKeyDigest: string;
+  readonly nodeType: string;
+  readonly sequence: bigint;
+}
+
+interface GraphQueryBatchRowV1 {
+  readonly from: bigint;
+  readonly through: bigint;
+  readonly prior: bigint;
+  readonly rolledBack: boolean;
+}
+
+function readGraphQuerySourceRows(
+  db: DatabaseSync,
+  namespace: string,
+): readonly GraphQuerySourceRowV1[] | null {
+  const raw = db
+    .prepare(
+      `SELECT source_fact_digest, source_stream_key_digest, node_type,
+              source_sequence
+         FROM shared_state_graph_source
+        WHERE namespace = ?
+        ORDER BY length(source_sequence), source_sequence`,
+    )
+    .all(namespace) as readonly Record<string, unknown>[];
+  const rows: GraphQuerySourceRowV1[] = [];
+  let expected = 1n;
+  for (const row of raw) {
+    if (
+      typeof row.source_fact_digest !== "string"
+      || typeof row.source_stream_key_digest !== "string"
+      || typeof row.node_type !== "string"
+      || typeof row.source_sequence !== "string"
+      || !POSITIVE_DECIMAL_V1.test(row.source_sequence)
+      || BigInt(row.source_sequence) !== expected
+      || !(V.graphNodeTypes as readonly string[]).includes(row.node_type)
+      || !parseSharedStateDigestV1(row.source_fact_digest, {
+        domain: "broker.claim-graph.source-fact",
+        namespace,
+      }).ok
+      || !parseSharedStateDigestV1(row.source_stream_key_digest, {
+        domain: "broker.claim-graph.source-stream-key",
+        namespace,
+      }).ok
+    ) {
+      return null;
+    }
+    rows.push({
+      sourceFactDigest: row.source_fact_digest,
+      sourceStreamKeyDigest: row.source_stream_key_digest,
+      nodeType: row.node_type,
+      sequence: expected,
+    });
+    expected += 1n;
+  }
+  return rows;
+}
+
+function readGraphQueryCheckpoint(
+  db: DatabaseSync,
+  namespace: string,
+  projectionVersion: string,
+): { readonly present: boolean; readonly value: bigint } | null {
+  const row = db
+    .prepare(
+      `SELECT checkpoint_sequence
+         FROM shared_state_graph_projection
+        WHERE namespace = ? AND projection_version = ?`,
+    )
+    .get(namespace, projectionVersion) as
+      | { readonly checkpoint_sequence?: unknown }
+      | undefined;
+  if (row === undefined) return { present: false, value: 0n };
+  if (
+    typeof row.checkpoint_sequence !== "string"
+    || !NON_NEGATIVE_DECIMAL_V1.test(row.checkpoint_sequence)
+  ) {
+    return null;
+  }
+  return { present: true, value: BigInt(row.checkpoint_sequence) };
+}
+
+function readGraphQueryBatches(
+  db: DatabaseSync,
+  namespace: string,
+  projectionVersion: string,
+  highWater: bigint,
+): readonly GraphQueryBatchRowV1[] | null {
+  const raw = db
+    .prepare(
+      `SELECT batch_key_digest, inverse_digest, source_sequence_from,
+              source_sequence_through, prior_checkpoint_sequence, rolled_back
+         FROM shared_state_graph_batch
+        WHERE namespace = ? AND projection_version = ?`,
+    )
+    .all(namespace, projectionVersion) as readonly Record<string, unknown>[];
+  const batches: GraphQueryBatchRowV1[] = [];
+  for (const row of raw) {
+    if (
+      typeof row.batch_key_digest !== "string"
+      || typeof row.inverse_digest !== "string"
+      || typeof row.source_sequence_from !== "string"
+      || typeof row.source_sequence_through !== "string"
+      || typeof row.prior_checkpoint_sequence !== "string"
+      || typeof row.rolled_back !== "number"
+      || !POSITIVE_DECIMAL_V1.test(row.source_sequence_from)
+      || !POSITIVE_DECIMAL_V1.test(row.source_sequence_through)
+      || !NON_NEGATIVE_DECIMAL_V1.test(row.prior_checkpoint_sequence)
+      || (row.rolled_back !== 0 && row.rolled_back !== 1)
+      || !parseSharedStateDigestV1(row.batch_key_digest, {
+        domain: "broker.claim-graph.projection-batch-key",
+        namespace,
+      }).ok
+      || !parseSharedStateDigestV1(row.inverse_digest, {
+        domain: "broker.claim-graph.projection-inverse",
+        namespace,
+      }).ok
+    ) {
+      return null;
+    }
+    const from = BigInt(row.source_sequence_from);
+    const through = BigInt(row.source_sequence_through);
+    const prior = BigInt(row.prior_checkpoint_sequence);
+    if (
+      from > through
+      || through > highWater
+      || prior > highWater
+    ) {
+      return null;
+    }
+    batches.push({
+      from,
+      through,
+      prior,
+      rolledBack: row.rolled_back === 1,
+    });
+  }
+  return batches;
+}
+
+function liveGraphQueryBatches(
+  batches: readonly GraphQueryBatchRowV1[],
+  checkpoint: bigint,
+): readonly GraphQueryBatchRowV1[] | null {
+  const byPrior = new Map<string, GraphQueryBatchRowV1>();
+  for (const batch of batches) {
+    if (batch.rolledBack) continue;
+    if (
+      batch.from !== batch.prior + 1n
+      || batch.through < batch.from
+      || byPrior.has(batch.prior.toString())
+    ) {
+      return null;
+    }
+    byPrior.set(batch.prior.toString(), batch);
+  }
+
+  const ordered: GraphQueryBatchRowV1[] = [];
+  let current = 0n;
+  while (true) {
+    const next = byPrior.get(current.toString());
+    if (next === undefined) break;
+    ordered.push(next);
+    current = next.through;
+    if (ordered.length > byPrior.size) return null;
+  }
+  if (ordered.length !== byPrior.size || current !== checkpoint) return null;
+  return ordered;
+}
+
+function findGraphEvidencePath(
+  adjacency: ReadonlyMap<string, readonly string[]>,
+  claimSourceFactDigest: string,
+  evidenceSourceFactDigest: string,
+  maxPathEdges: number,
+): readonly string[] | null {
+  if (claimSourceFactDigest === evidenceSourceFactDigest) return null;
+  const queue: { readonly node: string; readonly path: readonly string[] }[] = [
+    { node: claimSourceFactDigest, path: [claimSourceFactDigest] },
+  ];
+  const visited = new Set([claimSourceFactDigest]);
+  for (let index = 0; index < queue.length; index += 1) {
+    const current = queue[index]!;
+    if (current.path.length - 1 >= maxPathEdges) continue;
+    for (const next of adjacency.get(current.node) ?? []) {
+      if (visited.has(next)) continue;
+      const path = [...current.path, next];
+      if (next === evidenceSourceFactDigest) return path;
+      visited.add(next);
+      queue.push({ node: next, path });
+    }
+  }
+  return null;
+}
+
+function readGraphQueryResult(
+  db: DatabaseSync,
+  input: GraphEvidencePathQueryRequestV1["input"],
+): Record<string, unknown> | null {
+  const sources = readGraphQuerySourceRows(db, input.namespace);
+  if (sources === null) return null;
+  const highWater = BigInt(sources.length);
+  const checkpointState = readGraphQueryCheckpoint(
+    db,
+    input.namespace,
+    input.projectionVersion,
+  );
+  if (checkpointState === null || checkpointState.value > highWater) {
+    return null;
+  }
+  const checkpoint = checkpointState.value;
+  const batches = readGraphQueryBatches(
+    db,
+    input.namespace,
+    input.projectionVersion,
+    highWater,
+  );
+  if (batches === null) return null;
+  if (!checkpointState.present && batches.length > 0) return null;
+  const live = liveGraphQueryBatches(batches, checkpoint);
+  if (live === null) return null;
+
+  const sourceBySequence = new Map(
+    sources.map((source) => [
+      source.sequence.toString(),
+      source.sourceFactDigest,
+    ] as const),
+  );
+  const adjacency = new Map<string, string[]>();
+  for (const batch of live) {
+    const from = sourceBySequence.get(batch.from.toString());
+    if (from === undefined) return null;
+    const edges = adjacency.get(from) ?? [];
+    for (
+      let sequence = batch.from + 1n;
+      sequence <= batch.through;
+      sequence += 1n
+    ) {
+      const to = sourceBySequence.get(sequence.toString());
+      if (to === undefined) return null;
+      edges.push(to);
+    }
+    adjacency.set(from, edges);
+  }
+
+  const sourcePath = findGraphEvidencePath(
+    adjacency,
+    input.claimSourceFactDigest,
+    input.evidenceSourceFactDigest,
+    input.maxPathEdges,
+  );
+  const complete = checkpoint === highWater;
+  const common = {
+    namespace: input.namespace,
+    projectionVersion: input.projectionVersion,
+    claimSourceFactDigest: input.claimSourceFactDigest,
+    evidenceSourceFactDigest: input.evidenceSourceFactDigest,
+    asOfSourceSequence: checkpoint.toString(),
+    checkpointSequence: checkpoint.toString(),
+    sourceSequenceHighWater: highWater.toString(),
+    lag: (highWater - checkpoint).toString(),
+  };
+  if (sourcePath !== null) {
+    return {
+      ...common,
+      evidence: V.graphEvidenceResults[0],
+      completeness: complete ? "complete" : "incomplete",
+      sourcePath,
+    };
+  }
+  return {
+    ...common,
+    evidence: complete
+      ? V.graphEvidenceResults[1]
+      : V.graphEvidenceResults[2],
+    completeness: complete ? "complete" : "incomplete",
+    sourcePath: [],
+  };
 }
 
 function isSqliteBusy(error: unknown): boolean {
@@ -1043,21 +1369,22 @@ export class SharedStateSqliteAdapterV1 {
   }
 
   /**
-   * Reads one exact outbox stream behind a `BEGIN IMMEDIATE` boundary.
+   * Runs either closed Q1 query behind its operation-specific read boundary.
    *
-   * Q2 deliberately narrows this method to `reconcileOutbox`; the graph read
-   * family remains unimplemented and the broader storage adapter interface is
-   * unchanged. The write lock orders this page behind every durable inline
-   * write. It proves nothing about a future FIFO worker, so 488/489 remain
-   * open.
+   * Q2 added the exact-stream outbox page. Q3 adds the graph evidence-path
+   * snapshot but does not promote the broad storage adapter interface or wire
+   * a runtime/HTTP caller. Both reads take the write lock so ownership and the
+   * durable rows they authorize are observed in one SQLite serialization
+   * boundary. This still proves nothing about a future FIFO worker, so
+   * 488/489 remain open.
    */
   query(
-    request: ReconcileOutboxQueryRequestV1,
-  ): SharedStateSqliteAdapterResultV1<ReconcileOutboxQueryResultV1> {
+    request: SharedStateQueryRequestV1,
+  ): SharedStateSqliteAdapterResultV1<SharedStateQueryResultV1> {
     const parsed = parseSharedStateQueryRequestV1(request);
     if (!parsed.ok) return failure("adapter_unavailable");
-    if (parsed.value.operation !== "reconcileOutbox") {
-      return failure("operation_not_implemented");
+    if (parsed.value.operation === "queryGraphEvidencePath") {
+      return this.#queryGraphEvidencePath(parsed.value);
     }
     const input = parsed.value.input;
 
@@ -1153,6 +1480,65 @@ export class SharedStateSqliteAdapterV1 {
         }
       }
       return outboxQueryUnavailableEnvelope(
+        isSqliteBusy(error) ? "lock_timeout" : "authority_unavailable",
+      );
+    }
+  }
+
+  #queryGraphEvidencePath(
+    request: GraphEvidencePathQueryRequestV1,
+  ): SharedStateSqliteAdapterResultV1<GraphEvidencePathQueryResultV1> {
+    const lifecycleEpoch = this.#lifecycleEpoch;
+    if (this.#state !== "ready" || lifecycleEpoch === null) {
+      return failure("not_ready");
+    }
+
+    let began = false;
+    try {
+      this.#db.exec("BEGIN IMMEDIATE");
+      began = true;
+
+      const ownership = readOwnership(this.#db);
+      if (ownership === null) {
+        this.#db.exec("ROLLBACK");
+        began = false;
+        this.#state = "failed";
+        return graphQueryUnavailableEnvelope("authority_unavailable");
+      }
+      if (
+        ownership.owner_token !== this.#ownerToken
+        || ownership.lifecycle_epoch !== lifecycleEpoch
+      ) {
+        this.#db.exec("ROLLBACK");
+        began = false;
+        this.#state = "failed";
+        return graphQueryUnavailableEnvelope("lost_ownership");
+      }
+
+      const graph = readGraphQueryResult(this.#db, request.input);
+      if (graph === null) {
+        this.#db.exec("ROLLBACK");
+        began = false;
+        return graphQueryUnavailableEnvelope("authority_unavailable");
+      }
+      const result = graphQuerySucceededEnvelope(graph);
+      if (!result.ok) {
+        this.#db.exec("ROLLBACK");
+        began = false;
+        return graphQueryUnavailableEnvelope("authority_unavailable");
+      }
+      this.#db.exec("COMMIT");
+      began = false;
+      return result;
+    } catch (error) {
+      if (began) {
+        try {
+          this.#db.exec("ROLLBACK");
+        } catch {
+          // Preserve the query failure; rollback failure cannot strengthen it.
+        }
+      }
+      return graphQueryUnavailableEnvelope(
         isSqliteBusy(error) ? "lock_timeout" : "authority_unavailable",
       );
     }

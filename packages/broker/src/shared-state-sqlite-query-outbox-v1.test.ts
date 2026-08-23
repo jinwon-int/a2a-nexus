@@ -7,7 +7,6 @@ import test from "node:test";
 
 import {
   SHARED_STATE_SQLITE_ADAPTER_V1,
-  SHARED_STATE_SQLITE_QUERY_OPERATIONS_V1,
   SharedStateSqliteAdapterV1,
   type SharedStateSqliteAdapterResultV1,
 } from "./shared-state-sqlite-adapter-v1.js";
@@ -226,15 +225,10 @@ function unavailable(
   return value.reasonCode;
 }
 
-test("pins only SQLite outbox reconciliation and pages stored receipt/ACK state", () => {
+test("pages stored receipt/ACK state without changing it", () => {
   const fixture = makeFixture();
   try {
     const owner = readyAdapter(fixture.db);
-    assert.deepEqual(SHARED_STATE_SQLITE_QUERY_OPERATIONS_V1, [
-      "reconcileOutbox",
-    ]);
-    assert.equal(Object.isFrozen(SHARED_STATE_SQLITE_QUERY_OPERATIONS_V1), true);
-
     const empty = succeeded(owner.query(queryRequest("stream-1", null, 2)));
     assert.deepEqual(empty.events, []);
     assert.equal(empty.hasMore, false);
@@ -381,7 +375,7 @@ test("does not emit a successful page from malformed durable state", () => {
   }
 });
 
-test("keeps graph query and pre-open reads outside the Q2 surface", () => {
+test("keeps outbox reads outside the pre-open lifecycle", () => {
   const fixture = makeFixture();
   try {
     const owner = new SharedStateSqliteAdapterV1({
@@ -393,42 +387,10 @@ test("keeps graph query and pre-open reads outside the Q2 surface", () => {
     assert.equal(beforeOpen.ok, false);
     if (!beforeOpen.ok) assert.equal(beforeOpen.error.code, "not_ready");
     assert.equal(owner.open().ok, true);
-
-    const graph = parseSharedStateQueryRequestV1({
-      kind: V.kinds.queryRequest,
-      contractVersion: V.versions.contract,
-      queryVersion: V.versions.query,
-      operation: "queryGraphEvidencePath",
-      input: {
-        namespace: "broker.claim-graph",
-        projectionVersion: "projection-v1",
-        claimSourceFactDigest: digest(
-          "broker.claim-graph",
-          "broker.claim-graph.source-fact",
-          [
-            { field: "nodeType", type: "utf8", value: "Claim" },
-            { field: "fact", type: "bytes", value: "a1" },
-          ],
-        ),
-        evidenceSourceFactDigest: digest(
-          "broker.claim-graph",
-          "broker.claim-graph.source-fact",
-          [
-            { field: "nodeType", type: "utf8", value: "Source" },
-            { field: "fact", type: "bytes", value: "b1" },
-          ],
-        ),
-        maxPathEdges: 8,
-        requiredConsistency: V.queryConsistency.queryGraphEvidencePath,
-      },
-    });
-    assert.equal(graph.ok, true);
-    if (!graph.ok) throw new Error("unreachable");
-    const graphResult = owner.query(graph.value as never);
-    assert.equal(graphResult.ok, false);
-    if (!graphResult.ok) {
-      assert.equal(graphResult.error.code, "operation_not_implemented");
-    }
+    assert.deepEqual(
+      succeeded(owner.query(queryRequest("stream-1", null, 2))).events,
+      [],
+    );
   } finally {
     disposeFixture(fixture);
   }

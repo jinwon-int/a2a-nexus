@@ -1910,3 +1910,48 @@ FIFO worker's durable-commit ACK ordering and therefore checks neither 488 nor
 489. Graph query, broker runtime/HTTP, the broad adapter interface,
 `stateContract`, serving-store promotion, primitive integration, migration,
 performance, deployment, and issue closure remain outside Q2.
+
+### Slice Q3 — SQLite graph evidence-path query only
+
+Q3 adds `queryGraphEvidencePath` to the same closed SQLite query dispatcher.
+It reads only the durable `shared_state_graph_source`, graph batch, and
+projection checkpoint rows; it does not reuse the ordinal-based test-only
+conformance control. The broad async `SharedStateStorageAdapterV1`, broker
+runtime, and HTTP surface remain unchanged.
+
+The query opens `BEGIN IMMEDIATE` and verifies the current owner token and
+lifecycle epoch inside that transaction before reading graph state. A busy
+writer returns closed `lock_timeout`; changed ownership returns closed
+`lost_ownership`; unreadable or malformed durable authority returns closed
+`authority_unavailable`. The successful envelope always reports Q1's exact
+`monotonic-eventual` / `projection-batch` consistency.
+
+Before answering, Q3 validates the exact namespace's source-fact and
+source-stream digest domains, typed node vocabulary, contiguous canonical
+source sequence, selected projection checkpoint, batch/inverse digest domains,
+and the live batch lineage from checkpoint zero to the selected checkpoint.
+It refuses a checkpoint above source high-water, a gap or fork in live batch
+lineage, a non-canonical decimal, or a batch range outside durable source
+truth. This whole-ledger validation is a correctness boundary, not a
+performance claim.
+
+The evidence graph follows the storage shape already committed by the SQLite
+projection slice: every live batch contributes one edge from its first source
+sequence to each later sequence in that batch. A deterministic bounded search
+returns only source-fact digests. A path may be reported at an incomplete
+checkpoint with `completeness=incomplete`; absence becomes
+`no_evidence_path` only when checkpoint equals source high-water. Otherwise it
+returns `projection_incomplete` with exact checkpoint, high-water, and lag.
+Rollback removes the rolled-back batch from the derived path while preserving
+immutable source facts and exposes the restored, possibly incomplete,
+checkpoint.
+
+The current SQLite ledger has no durable projection-authority marker, so Q3
+does not invent a successful `projection_unavailable` graph result. Database
+or ownership inability instead uses the closed unavailable envelope. Because
+the full Phase 2.7 matrix still cannot be driven through a durable
+`projection_unavailable` state, its repeat item remains unchecked.
+
+Q3 checks no 488/489 item and adds no FIFO worker, serving-store promotion,
+primitive integration, `stateContract`, retention/prune, migration,
+performance, deployment, or issue closure.
