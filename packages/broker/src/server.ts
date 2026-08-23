@@ -45,6 +45,7 @@ import {
   acquireSharedStateServingFenceForBrokerV1,
   type SharedStateServingFenceV1,
 } from "./shared-state-serving-fence-v1.js";
+import { buildSharedStateContractHealthV1 } from "./shared-state-contract-health-v1.js";
 import { createServer, type IncomingMessage, type RequestListener, type Server, type ServerResponse } from "node:http";
 import {
   DEFAULT_KEEPALIVE_TIMEOUT_MS,
@@ -1261,6 +1262,20 @@ export function createBrokerServer(options: BrokerServerOptions = {}): BrokerSer
           jsonMs: jsonDurationMs,
           fromCache,
         };
+
+        const healthProbe = servingFence?.probe() ?? {
+          ready: false as const,
+          reasonCode: "adapter_unavailable" as const,
+        };
+        body.stateContract = buildSharedStateContractHealthV1({
+          configuredGrade: servingGrade.configuredGrade,
+          effectiveGrade: servingGrade.effectiveGrade,
+          gradeDefaulted: servingGrade.gradeDefaulted,
+          expectedProcessCount: servingGrade.expectedProcessCount,
+          serving: healthProbe.ready,
+          ownership: healthProbe.ready ? "held" : "lost",
+          reasonCodes: healthProbe.ready ? [] : [healthProbe.reasonCode],
+        });
 
         return sendJson(res, 200, body, {
           "cache-control": "no-store",

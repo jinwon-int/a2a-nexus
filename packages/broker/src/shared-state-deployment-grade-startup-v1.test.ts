@@ -84,7 +84,7 @@ test("present empty grade string fails closed before listen", async () => {
   });
 });
 
-test("startup wiring does not add stateContract health", async () => {
+test("startup wiring does not put grade fields on the /health top level", async () => {
   await withEnv({
     BROKER_DEPLOYMENT_GRADE: undefined,
     BROKER_EXPECTED_PROCESS_COUNT: undefined,
@@ -99,7 +99,7 @@ test("startup wiring does not add stateContract health", async () => {
       assert.equal(Object.hasOwn(health, "configuredGrade"), false);
       assert.equal(Object.hasOwn(health, "effectiveGrade"), false);
       assert.equal(Object.hasOwn(health, "gradeDefaulted"), false);
-      assert.equal(Object.hasOwn(health, "stateContract"), false);
+      assert.equal(health.stateContract.gradeDefaulted, true);
     } finally {
       await server.close();
     }
