@@ -84,18 +84,13 @@ test("present empty grade string fails closed before listen", async () => {
   });
 });
 
-test("startup wiring does not add /readyz or stateContract health", async () => {
+test("startup wiring does not add stateContract health", async () => {
   await withEnv({
     BROKER_DEPLOYMENT_GRADE: undefined,
     BROKER_EXPECTED_PROCESS_COUNT: undefined,
   }, async () => {
     const server = await startTestServer({ edgeSecret: "s" });
     try {
-      const readyz = await fetch(`${server.baseUrl}/readyz`, {
-        headers: { "x-a2a-edge-secret": "s" },
-      });
-      assert.equal(readyz.status, 404);
-
       const healthRes = await fetch(`${server.baseUrl}/health`, {
         headers: { "x-a2a-edge-secret": "s" },
       });

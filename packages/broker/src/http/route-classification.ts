@@ -1,5 +1,6 @@
 export const ENDPOINT_GROUPS = [
   "livez",
+  "readyz",
   "health",
   "schedz",
   "workers.list",
@@ -25,6 +26,7 @@ export type EndpointGroup = (typeof ENDPOINT_GROUPS)[number];
 
 export const REQUEST_ROUTE_GROUPS = [
   "livez",
+  "readyz",
   "health",
   "schedz",
   "workers.list",
@@ -97,6 +99,7 @@ export type RequestRouteGroup = (typeof REQUEST_ROUTE_GROUPS)[number];
 
 export function classifyEndpointGroup(method: string | undefined, pathname: string, segments: string[]): EndpointGroup {
   if (pathname === "/livez") return "livez";
+  if (pathname === "/readyz") return "readyz";
   if (pathname === "/health") return "health";
   if (pathname === "/schedz") return "schedz";
   if (pathname === "/.well-known/agent-card.json" || pathname.startsWith("/.well-known/")) return "well-known";
@@ -134,6 +137,7 @@ export function classifyEndpointGroup(method: string | undefined, pathname: stri
 
 export function classifyRequestRoute(method: string | undefined, pathname: string, segments: string[]): RequestRouteGroup {
   if (pathname === "/livez") return "livez";
+  if (pathname === "/readyz") return "readyz";
   if (pathname === "/health") return "health";
   if (pathname === "/schedz") return "schedz";
   if (pathname === "/.well-known/agent-card.json" || pathname.startsWith("/.well-known/")) return "well-known";

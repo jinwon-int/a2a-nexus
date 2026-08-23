@@ -1337,6 +1337,24 @@ there is no loss monitoring, no `/readyz`, no non-serving middleware, no
 `stateContract`, no primitive integration, and no ownership lease. 488/489
 stay decision C.
 
+### Slice L, first part — `/readyz` re-reads the fence
+
+Slice L, first part, adds `GET /readyz`. On each request it calls
+`probe()` on the serving fence: the ownership row is read again, and the
+process is ready only while the token is still this process's. The route
+is public, like `/livez`. The body is `ready`, `effectiveGrade`, and at
+most one closed readiness reason (`lost_fence` or `adapter_unavailable`).
+No token, path, or filename is emitted.
+
+A stolen ownership row makes `/readyz` 503. `/livez` stays 200. Other
+routes still serve — non-serving middleware is the next part, not this
+one. `/health` still has no `stateContract` or `gradeDefaulted`.
+
+This part does not check `Add /readyz and state-authority non-serving
+middleware` or the moved 2.5 assertion. Those need the middleware. It
+does not start a background monitor, a lease, or 488/489. Decision C
+stays: the route existing does not authorize implementing those items.
+
 ## 5. Migration and operations
 
 - [ ] Obtain authorization for production backup/read.
