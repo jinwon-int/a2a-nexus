@@ -35,10 +35,11 @@ function spawnFenceChild(sharedStateFile: string) {
   delete env.BROKER_EXPECTED_PROCESS_COUNT;
   const brokerRoot = join(fileURLToPath(new URL(".", import.meta.url)), "..");
   if (modulePath.endsWith(".ts")) {
-    return spawn("npx", ["--no-install", "tsx", modulePath], {
+    return spawn("npm", ["exec", "--yes=false", "--", "tsx", modulePath], {
       cwd: brokerRoot,
       env,
       stdio: ["pipe", "pipe", "pipe"],
+      detached: true,
     });
   }
   return spawn(process.execPath, [modulePath], {
@@ -73,6 +74,36 @@ function readLine(
   });
 }
 
+function killChild(child: ReturnType<typeof spawn>, signal: NodeJS.Signals): void {
+  if (child.pid && child.exitCode === null && child.signalCode === null) {
+    try {
+      process.kill(-child.pid, signal);
+    } catch {
+      child.kill(signal);
+    }
+  }
+}
+
+function waitExit(
+  child: ReturnType<typeof spawn>,
+  timeoutMs: number,
+): Promise<number | null> {
+  return new Promise((resolve, reject) => {
+    if (child.exitCode !== null) {
+      resolve(child.exitCode);
+      return;
+    }
+    const timer = setTimeout(() => {
+      killChild(child, "SIGKILL");
+      reject(new Error("timed out waiting for child exit"));
+    }, timeoutMs);
+    child.once("exit", (code) => {
+      clearTimeout(timer);
+      resolve(code);
+    });
+  });
+}
+
 test("two child processes cannot both acquire the same serving fence", async () => {
   const directory = mkdtempSync(join(tmpdir(), "a2a-serving-fence-child-"));
   const sharedStateFile = join(directory, "fence.sqlite");
@@ -84,9 +115,7 @@ test("two child processes cannot both acquire the same serving fence", async () 
     const contender = spawnFenceChild(sharedStateFile);
     const [contenderLine, contenderStatus] = await Promise.all([
       readLine(contender, 15_000).catch((error: Error) => error.message),
-      new Promise<number | null>((resolve) => {
-        contender.once("exit", (code) => resolve(code));
-      }),
+      waitExit(contender, 15_000),
     ]);
     assert.equal(contenderStatus, 1);
     assert.match(
@@ -94,10 +123,8 @@ test("two child processes cannot both acquire the same serving fence", async () 
       /shared-state serving fence rejected: ownership_conflict/,
     );
 
-    holder.stdin?.end();
-    const holderStatus = await new Promise<number | null>((resolve) => {
-      holder.once("exit", (code) => resolve(code));
-    });
+    killChild(holder, "SIGTERM");
+    const holderStatus = await waitExit(holder, 15_000);
     assert.equal(holderStatus, 0);
 
     const successor = spawnFenceChild(sharedStateFile);
@@ -105,15 +132,13 @@ test("two child processes cannot both acquire the same serving fence", async () 
       const successorLine = await readLine(successor, 15_000);
       assert.equal(successorLine, "acquired");
     } finally {
-      successor.stdin?.end();
-      await new Promise<void>((resolve) => {
-        successor.once("exit", () => resolve());
-      });
+      killChild(successor, "SIGTERM");
+      await waitExit(successor, 15_000);
     }
   } finally {
     if (holder.exitCode === null && holder.signalCode === null) {
-      holder.stdin?.end();
-      holder.kill("SIGKILL");
+      killChild(holder, "SIGKILL");
+      await waitExit(holder, 5_000).catch(() => undefined);
     }
     rmSync(directory, { recursive: true, force: true });
   }

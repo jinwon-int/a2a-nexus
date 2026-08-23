@@ -136,7 +136,7 @@ export function openSharedStateServingFenceV1(input: {
 }): SharedStateServingFenceResultV1<SharedStateServingFenceV1> {
   let db: DatabaseSync;
   try {
-    db = new DatabaseSync(input.filePath);
+    db = new DatabaseSync(input.filePath, { timeout: 0 });
   } catch {
     return fail("adapter_unavailable");
   }
