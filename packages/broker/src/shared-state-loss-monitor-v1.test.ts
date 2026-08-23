@@ -3,6 +3,7 @@
  */
 
 import assert from "node:assert/strict";
+import http from "node:http";
 import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -121,14 +122,14 @@ test("/readyz stays lost_fence after the stolen row is restored", async () => {
     assert.deepEqual(observed, { ready: false, reasonCode: "lost_fence" });
     writeOwnershipToken(sharedStateFile, original);
 
-    const lost = await fetch(`${server.baseUrl}/readyz`);
+    const lost = await fetchAfterLostFence(`${server.baseUrl}/readyz`);
     assert.equal(lost.status, 503);
     const body = await lost.json();
     assert.deepEqual(body.reasonCodes, ["lost_fence"]);
     assert.equal(JSON.stringify(body).includes("foreign-token"), false);
     assert.equal(server.runtime.isDraining(), false);
 
-    const workers = await fetch(`${server.baseUrl}/workers`, {
+    const workers = await fetchAfterLostFence(`${server.baseUrl}/workers`, {
       headers: { "x-a2a-edge-secret": "s" },
     });
     assert.equal(workers.status, 503);
@@ -136,9 +137,66 @@ test("/readyz stays lost_fence after the stolen row is restored", async () => {
     assert.equal(workersBody.error.code, "lost_fence");
     assert.notEqual(workersBody.error.code, "broker_draining");
 
-    const livez = await fetch(`${server.baseUrl}/livez`);
+    const livez = await fetchAfterLostFence(`${server.baseUrl}/livez`);
     assert.equal(livez.status, 200);
   } finally {
+    await server.close();
+    rmSync(directory, { recursive: true, force: true });
+  }
+});
+
+async function fetchAfterLostFence(
+  url: string,
+  init?: RequestInit,
+): Promise<Response> {
+  try {
+    return await fetch(url, init);
+  } catch {
+    return await fetch(url, init);
+  }
+}
+
+function connectionCount(server: http.Server): Promise<number> {
+  return new Promise((resolve, reject) => {
+    server.getConnections((error, count) => {
+      if (error) reject(error);
+      else resolve(count);
+    });
+  });
+}
+
+test("lost_fence latch closes every HTTP connection and does not drain", async () => {
+  const directory = mkdtempSync(join(tmpdir(), "a2a-loss-monitor-d1-"));
+  const sharedStateFile = join(directory, "fence.sqlite");
+  const server = await startTestServer({
+    edgeSecret: "s",
+    sharedStateFile,
+  });
+  const agent = new http.Agent({ keepAlive: true, maxSockets: 1 });
+  try {
+    await new Promise<void>((resolve, reject) => {
+      http.get(`${server.baseUrl}/livez`, { agent }, (res) => {
+        res.resume();
+        res.on("end", () => resolve());
+        res.on("error", reject);
+      }).on("error", reject);
+    });
+    assert.ok(await connectionCount(server.runtime.server) >= 1);
+    writeOwnershipToken(sharedStateFile, "foreign-token");
+    server.runtime.evaluateSharedStateLossMonitor();
+    const startedAt = Date.now();
+    while (await connectionCount(server.runtime.server) !== 0) {
+      if (Date.now() - startedAt > 500) {
+        throw new Error("connections were not closed after lost_fence");
+      }
+      await new Promise((resolve) => setTimeout(resolve, 5));
+    }
+    assert.equal(server.runtime.isDraining(), false);
+    const lost = await fetchAfterLostFence(`${server.baseUrl}/readyz`);
+    assert.equal(lost.status, 503);
+    assert.deepEqual((await lost.json()).reasonCodes, ["lost_fence"]);
+  } finally {
+    agent.destroy();
     await server.close();
     rmSync(directory, { recursive: true, force: true });
   }

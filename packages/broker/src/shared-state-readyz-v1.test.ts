@@ -15,6 +15,18 @@ import test from "node:test";
 import { SHARED_STATE_SQLITE_ADAPTER_V1 } from "./shared-state-sqlite-adapter-v1.js";
 import { startTestServer } from "./server-test-helpers.js";
 
+/** D1 drops keep-alive sockets after the first lost_fence; retry once. */
+async function fetchAfterLostFence(
+  url: string,
+  init?: RequestInit,
+): Promise<Response> {
+  try {
+    return await fetch(url, init);
+  } catch {
+    return await fetch(url, init);
+  }
+}
+
 test("/readyz is public and reports ready while the fence is held", async () => {
   const server = await startTestServer({ edgeSecret: "s" });
   try {
@@ -65,17 +77,17 @@ test("/readyz is 503 lost_fence after the ownership row is stolen; non-liveness 
     ).run("foreign-token", SHARED_STATE_SQLITE_ADAPTER_V1.ownershipRowId);
     db.close();
 
-    const lost = await fetch(`${server.baseUrl}/readyz`);
+    const lost = await fetchAfterLostFence(`${server.baseUrl}/readyz`);
     assert.equal(lost.status, 503);
     const body = await lost.json();
     assert.equal(body.ready, false);
     assert.deepEqual(body.reasonCodes, ["lost_fence"]);
     assert.equal(JSON.stringify(body).includes("foreign-token"), false);
 
-    const livez = await fetch(`${server.baseUrl}/livez`);
+    const livez = await fetchAfterLostFence(`${server.baseUrl}/livez`);
     assert.equal(livez.status, 200);
 
-    const workers = await fetch(`${server.baseUrl}/workers`, {
+    const workers = await fetchAfterLostFence(`${server.baseUrl}/workers`, {
       headers: { "x-a2a-edge-secret": "s" },
     });
     assert.equal(workers.status, 503);
@@ -84,7 +96,7 @@ test("/readyz is 503 lost_fence after the ownership row is stolen; non-liveness 
     assert.notEqual(workersBody.error.code, "broker_draining");
     assert.equal(server.runtime.isDraining(), false);
 
-    const unauth = await fetch(`${server.baseUrl}/workers`);
+    const unauth = await fetchAfterLostFence(`${server.baseUrl}/workers`);
     assert.equal(unauth.status, 401);
   } finally {
     await server.close();
