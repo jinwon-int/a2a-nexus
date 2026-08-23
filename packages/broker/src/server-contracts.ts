@@ -15,6 +15,7 @@ import type { BrokerStateStore, SqliteBrokerLoadSource } from "./core/store.js";
 import type { ReviewLineageRolloutMode } from "./core/review-lineage-store.js";
 import type { OperatorSummary } from "./http/dashboard-response.js";
 import type { TaskReadinessMode } from "./task-readiness.js";
+import type { SharedStateServingFenceProbeV1 } from "./shared-state-serving-fence-v1.js";
 
 export interface BrokerBuildInfo {
   component: string;
@@ -374,6 +375,12 @@ export interface BrokerServerRuntime {
   beginDrain: () => void;
   /** Whether the server is currently draining for shutdown. */
   isDraining: () => boolean;
+  /**
+   * Re-read the serving fence through the P1 loss monitor. A latched
+   * `lost_fence` stays not-ready for the process lifetime. Tests use this
+   * so a stolen row can be observed without waiting for the timer.
+   */
+  evaluateSharedStateLossMonitor: () => SharedStateServingFenceProbeV1;
   /** Run the stale-task reaper sweep once. Returns the number of requeued tasks. */
   runStaleReaperSweep: () => number;
   /** Stop the periodic stale-task reaper timer (if started). Safe to call multiple times. */

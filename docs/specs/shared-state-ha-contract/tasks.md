@@ -1400,6 +1400,25 @@ The full `stateContract` item stays unchecked: there is still no clock,
 consistency, completeness, or graph projection block. 488/489 stay
 decision C. Loss monitoring and primitive runtime integration stay off.
 
+### Slice N, first part — P1 `lost_fence` latch without drain
+
+Owner decision P1+S1 (2026-08-23 KST, `#1504` issuecomment-5385421354):
+the first loss-monitor slice latches `lost_fence` for the process
+lifetime. It does not call `beginDrain`, exit, release the token, or add
+a lease. `adapter_unavailable` is not latched. Clock, consistency, and
+completeness stay off the `/health` envelope (S1).
+
+Slice N, first part, adds `packages/broker/src/shared-state-loss-monitor-v1.ts`.
+`/readyz`, non-serving middleware, and `/health` inspect through the
+monitor. A background interval also inspects so a stolen row is seen
+without inbound traffic. The first `lost_fence` logs one closed line and
+closes idle connections. Restoring the original token does not make this
+process ready again.
+
+This part does not check `Add fenced singleton ownership and loss
+monitoring`. Drain/shutdown is the next sentence of section 7.1, not this
+latch. 488/489 stay decision C.
+
 ## 5. Migration and operations
 
 - [ ] Obtain authorization for production backup/read.
