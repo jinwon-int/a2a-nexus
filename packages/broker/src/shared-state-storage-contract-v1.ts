@@ -1266,11 +1266,9 @@ export type SharedStateDrainRequestV1 = z.infer<
 >;
 
 /**
- * Structural seam for the transaction/lifecycle slice only. Query envelopes
- * and backend-specific SQLite reads are defined separately, but promoting a
- * query method onto this broad async interface is a later reviewed integration
- * decision. This interface is not a claim that a complete or conforming
- * adapter exists.
+ * Structural seam for the planned backend-neutral adapter. Q5 promotes only
+ * the already closed query union onto this broad async interface. This
+ * interface is not a claim that a complete or conforming adapter exists.
  */
 export interface SharedStateStorageTransactionV1 {
   execute(
@@ -1287,6 +1285,9 @@ export interface SharedStateStorageAdapterV1 {
   withTransaction<Result>(
     callback: (transaction: SharedStateStorageTransactionV1) => Promise<Result>,
   ): Promise<Result>;
+  query(
+    request: SharedStateQueryRequestV1,
+  ): Promise<SharedStateQueryResultV1>;
   health(): Promise<SharedStateHealthProjectionV1>;
   drain(
     request: SharedStateDrainRequestV1,
