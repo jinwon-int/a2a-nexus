@@ -1779,3 +1779,50 @@ middleware make a read surface necessary. The alternatives recorded and not
 chosen were A (add a minimal `query` now) and B (split 488 so today's empty
 in-flight `drain` counts as a half). `plan.md`'s Phase 2 exit gate still
 names both writer modes; that gate stays open on the worker half.
+
+### Decision Q0 — open the query face before worker-writer or serving-store work
+
+Owner decision Q0 (2026-08-23 KST, `#1504`): the next face is the closed V1
+`query` contract. This reopens only alternative A from decision C now that the
+Phase 3 HTTP/fence face has reached its recorded stop at `81e9ced0`. It does
+not split 488, check 488/489, or authorize a FIFO worker, serving-store
+promotion, primitive runtime integration, or an HTTP query route.
+
+The first query contract has exactly two read families, because they are the
+two gaps already named by the checked contract and harnesses:
+
+1. **Outbox reconciliation** reads retained events and receipt/ACK state from
+   an exact registered stream and cursor under the existing
+   `serializable-per-stream` guarantee. It does not ACK, prune, send, infer
+   provider acceptance as ACK, or create a global cross-stream order.
+2. **Graph evidence path** answers with the existing four results
+   `path_found`, `no_evidence_path`, `projection_incomplete`, and
+   `projection_unavailable`, plus the declared source high-water, checkpoint,
+   lag, projection version, and completeness. `no_evidence_path` remains valid
+   only at a complete checkpoint.
+
+Replay, rate, lease/claim, and idempotency do not gain standalone reads in this
+decision. Their protected decisions stay inside the existing atomic
+transaction commands; adding a preflight read would create a time-of-check /
+time-of-use seam rather than a useful query contract. Metadata and secret-safe
+health remain the separate section 6.1 surfaces already specified.
+
+Every query request must name its required consistency and every result must
+carry the achieved consistency and, where applicable, completeness. An
+adapter that cannot meet the request returns the existing bounded unavailable
+reason vocabulary in a closed unavailable result rather than a weaker
+successful result. For a future FIFO worker, a query must not report a queued
+write as committed before the writer's durable commit ACK: it must order behind
+that ACK or return unavailable. The writer ACK is not an outbox receipt/ACK.
+That rule is the later joint proof point for 488 and 489; this record alone
+proves neither.
+
+The next source slice after this decision is closed query values, request and
+result schemas/parsers, synthetic fixtures, and fail-closed tests only. It
+does not add `query()` to the SQLite adapter, reuse test-only reconciliation or
+evidence-path controls as runtime APIs, touch broker runtime/HTTP, import the
+observability catalog into `/health`, change `stateContract`, or alter any
+default. Outbox and graph SQLite implementations follow as separate reviewed
+slices. Serving-store authority remains legacy until a later explicit owner
+decision names one primitive, one source of truth, and the retirement rule for
+its legacy authority.
