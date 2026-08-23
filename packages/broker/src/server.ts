@@ -40,6 +40,7 @@ import {
   resolveA2AHttpSignatureWorkerAuthMode,
   validateBrokerStartupSecurity,
 } from "./startup-security.js";
+import { resolveSharedStateDeploymentGradeFromEnvV1 } from "./shared-state-deployment-grade-v1.js";
 import { createServer, type IncomingMessage, type RequestListener, type Server, type ServerResponse } from "node:http";
 import {
   DEFAULT_KEEPALIVE_TIMEOUT_MS,
@@ -348,6 +349,12 @@ export function createBrokerServer(options: BrokerServerOptions = {}): BrokerSer
     workerKeyCount: Object.keys(a2aHttpSignatureKeyRegistry).length,
     allowInsecureDev,
   });
+  const deploymentGrade = resolveSharedStateDeploymentGradeFromEnvV1();
+  if (!deploymentGrade.ok) {
+    throw new Error(
+      `shared-state deployment grade rejected: ${deploymentGrade.error.code}`,
+    );
+  }
   const githubWebhookSecret = firstNonEmpty(
     options.githubWebhookSecret,
     process.env.GITHUB_WEBHOOK_SECRET,

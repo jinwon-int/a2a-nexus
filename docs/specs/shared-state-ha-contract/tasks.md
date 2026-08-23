@@ -1253,7 +1253,7 @@ path decision belongs to section 4 and is deliberately not made here.
 - [ ] Add secret-safe `stateContract` health without identity-bearing top-key
   data.
 - [ ] Add volatile replay/rate reset-risk epoch/reason signals.
-- [ ] Make `shared-state-ha` fail until an approved conforming backend exists.
+- [x] Make `shared-state-ha` fail until an approved conforming backend exists.
 - [ ] Integrate primitives one at a time behind default-off flags.
 - [ ] Run compatibility/regression/performance tests.
 
@@ -1283,8 +1283,28 @@ The later items in this section — startup checks, ownership-loss monitoring,
 `/readyz`, non-serving middleware, and `stateContract` health — stay
 unchecked. They are the consumers of this decision, not part of it. Item
 `Make shared-state-ha fail until an approved conforming backend exists` also
-stays unchecked: the parser already refuses that grade, but startup does not
-yet call the parser, so a process can still boot without seeing the refusal.
+stayed unchecked after this part: the parser already refused that grade, but
+startup did not yet call the parser, so a process could still boot without
+seeing the refusal.
+
+### Slice J, second part — startup calls the parser
+
+Slice J, second part, makes `createBrokerServer` call
+`resolveSharedStateDeploymentGradeFromEnvV1` next to the existing startup
+security check. A rejected grade throws before the HTTP server listens, so
+`startBrokerServer` and `startTestServer` both see the refusal. The throw
+carries only the closed parser error code.
+
+An omitted grade still defaults to `single-process` and still constructs.
+`BROKER_DEPLOYMENT_GRADE=shared-state-ha`, a present empty string, and an
+expected process count other than `1` now fail closed at construction.
+That is what checks `Make shared-state-ha fail until an approved conforming
+backend exists`: the process can no longer boot past the parser refusal.
+
+This part does not stash the decision on the runtime, add a
+`BrokerServerOptions` grade field, open the V1 adapter, acquire ownership,
+install `/readyz`, change `/health`, or publish `gradeDefaulted`. Those stay
+with the later items. 488/489 stay decision C.
 
 ## 5. Migration and operations
 
