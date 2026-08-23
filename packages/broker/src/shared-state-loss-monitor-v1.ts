@@ -5,10 +5,11 @@
  * latches the first `lost_fence` for the process lifetime, logs one
  * closed reason, and asks the caller to drop connections. Slice N,
  * second part (D1) closes every HTTP connection, not only idle ones.
- * It does not call `beginDrain`, exit the process, release the token,
- * or add a lease. `adapter_unavailable` is not latched. The
- * ownership-and-loss monitoring item stays unchecked because
- * drain/shutdown is not this slice. 488/489 stay decision C.
+ * Slice N, third part (D3a) then exits 1 after that close. It does not
+ * call `beginDrain`, release the token, or add a lease.
+ * `adapter_unavailable` is not latched. The ownership-and-loss
+ * monitoring item stays unchecked because drain is not this slice.
+ * 488/489 stay decision C.
  */
 
 import type { SharedStateServingFenceProbeV1 } from "./shared-state-serving-fence-v1.js";

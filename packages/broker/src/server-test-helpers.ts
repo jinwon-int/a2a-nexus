@@ -66,6 +66,8 @@ export async function startTestServer(options: Partial<BrokerServerOptions> = {}
     // assertions about idle broker state.
     staleReaperEnabled: options.staleReaperEnabled ?? false,
     ...options,
+    // D3a production default is process.exit(1). Tests must not inherit it.
+    lostFenceExit: options.lostFenceExit ?? (() => {}),
   });
   runtime.server.listen(0, "127.0.0.1");
   await once(runtime.server, "listening");

@@ -202,6 +202,38 @@ test("lost_fence latch closes every HTTP connection and does not drain", async (
   }
 });
 
+test("lost_fence latch exits after the 503 path and does not drain", async () => {
+  const directory = mkdtempSync(join(tmpdir(), "a2a-loss-monitor-d3a-"));
+  const sharedStateFile = join(directory, "fence.sqlite");
+  let exits = 0;
+  const server = await startTestServer({
+    edgeSecret: "s",
+    sharedStateFile,
+    lostFenceExit: () => {
+      exits += 1;
+    },
+  });
+  try {
+    writeOwnershipToken(sharedStateFile, "foreign-token");
+    server.runtime.evaluateSharedStateLossMonitor();
+    const startedAt = Date.now();
+    while (exits === 0) {
+      if (Date.now() - startedAt > 500) {
+        throw new Error("lost_fence did not exit");
+      }
+      await new Promise((resolve) => setTimeout(resolve, 5));
+    }
+    assert.equal(exits, 1);
+    assert.equal(server.runtime.isDraining(), false);
+    const lost = await fetchAfterLostFence(`${server.baseUrl}/readyz`);
+    assert.equal(lost.status, 503);
+    assert.deepEqual((await lost.json()).reasonCodes, ["lost_fence"]);
+  } finally {
+    await server.close();
+    rmSync(directory, { recursive: true, force: true });
+  }
+});
+
 test("/readyz recovers from adapter_unavailable because it is not latched", async () => {
   const directory = mkdtempSync(join(tmpdir(), "a2a-loss-monitor-ua-"));
   const sharedStateFile = join(directory, "fence.sqlite");
