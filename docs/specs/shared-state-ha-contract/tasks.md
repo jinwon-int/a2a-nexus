@@ -1873,3 +1873,40 @@ result. Focused tests parse every fixture and drive the negative matrix. No
 section 2 repeat item, 488/489, full `stateContract`, primitive integration,
 retention/prune, migration, performance, or operational item is checked by
 this slice.
+
+### Slice Q2 — SQLite outbox reconciliation only
+
+Q2 implements only `reconcileOutbox` on `SharedStateSqliteAdapterV1`. The
+method accepts the already parsed Q1 outbox request shape; it does not add
+`query()` to the broad `SharedStateStorageAdapterV1` interface because the
+graph evidence-path family remains a separate reviewed slice. Passing another
+query operation at an untyped runtime boundary fails as not implemented rather
+than pretending the SQLite adapter satisfies the full query union.
+
+Each page checks the local ready lifecycle and then opens `BEGIN IMMEDIATE`.
+This places the read behind every durable write made by the current inline
+SQLite path and provides Q1's serializable-per-exact-stream observation.
+Ownership is verified inside that same boundary so no token change can land
+between authorization and the page read. A busy writer returns closed
+`lock_timeout`; lost ownership returns closed `lost_ownership`; malformed
+stored state or an invalid cursor returns
+closed `authority_unavailable`. No weaker successful consistency is emitted.
+
+The adapter-opaque cursor is versioned and bound to the query operation,
+namespace, stream-key digest, and last returned sequence. Pages compare the
+decimal sequence by length and then lexical value, rather than SQLite's plain
+TEXT ordering, so `10` follows `9`. A malformed, tampered, or cross-stream
+cursor cannot restart from zero or reveal another stream. The query returns
+only event/payload digests, sequence, receipt state, and acknowledgment state;
+it performs no send, ACK, receipt transition, retention, or prune action.
+
+Before slicing a page, Q2 validates the exact stream's stored sequence,
+digest, receipt, and ACK invariants and requires a non-initial cursor to name
+an event that still exists. This is intentionally not a performance claim;
+bounded retention and pruning remain separate work.
+
+This proves only the inline SQLite outbox read. It does not prove the future
+FIFO worker's durable-commit ACK ordering and therefore checks neither 488 nor
+489. Graph query, broker runtime/HTTP, the broad adapter interface,
+`stateContract`, serving-store promotion, primitive integration, migration,
+performance, deployment, and issue closure remain outside Q2.

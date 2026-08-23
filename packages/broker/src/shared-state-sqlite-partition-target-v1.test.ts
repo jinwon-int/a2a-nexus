@@ -169,6 +169,7 @@ const ADAPTER_PUBLIC_MEMBERS_V1 = Object.freeze([
   "open",
   "beginWrite",
   "transact",
+  "query",
   "drain",
   "close",
 ] as const);
@@ -921,8 +922,9 @@ test("keeps every conformance seam off the adapter's public surface", () => {
       `adapter must not expose ${name}`,
     );
   }
-  // And the surface it does have is exactly the eight members the earlier
-  // slices froze, so a conformance seam cannot be added without this failing.
+  // And the surface it does have is exactly the lifecycle/write surface plus
+  // the narrowed Q2 outbox query, so a conformance seam cannot be added
+  // without this failing.
   assert.deepEqual(
     Object.getOwnPropertyNames(SharedStateSqliteAdapterV1.prototype)
       .filter((name) => name !== "constructor")
