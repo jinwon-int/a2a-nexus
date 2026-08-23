@@ -1267,10 +1267,10 @@ export type SharedStateDrainRequestV1 = z.infer<
 
 /**
  * Structural seam for the transaction/lifecycle slice only. Query envelopes
- * are defined above, but `query()` is not added to this broad interface until
- * both read families have an implementation. A backend-specific class may
- * expose a narrower reviewed slice. This interface is not a claim that a
- * complete or conforming adapter exists.
+ * and backend-specific SQLite reads are defined separately, but promoting a
+ * query method onto this broad async interface is a later reviewed integration
+ * decision. This interface is not a claim that a complete or conforming
+ * adapter exists.
  */
 export interface SharedStateStorageTransactionV1 {
   execute(
