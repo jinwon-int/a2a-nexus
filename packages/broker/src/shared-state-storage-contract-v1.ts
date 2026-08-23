@@ -107,10 +107,14 @@ export type SharedStateHealthBackendClassV1 =
 export type SharedStateWriterModelV1 = (typeof V.writerModels)[number];
 export type SharedStateLifecycleStateV1 = (typeof V.lifecycleStates)[number];
 export type SharedStateOperationV1 = (typeof V.operations)[number];
+export type SharedStateQueryOperationV1 =
+  (typeof V.queryOperations)[number];
 export type SharedStateContractErrorCodeV1 =
   (typeof V.parserErrorCodes)[number];
 export type SharedStateOperationUnavailableReasonCodeV1 =
   (typeof V.unavailableReasonCodes)[number];
+export type SharedStateQueryUnavailableReasonCodeV1 =
+  (typeof V.queryUnavailableReasonCodes)[number];
 
 export interface SharedStateContractErrorV1 {
   readonly code: SharedStateContractErrorCodeV1;
@@ -1036,6 +1040,218 @@ export const sharedStateTransactionResultV1Schema = z.discriminatedUnion(
   ],
 );
 
+const sharedStateQueryRequestInputV1Schemas = {
+  reconcileOutbox: z
+    .object({
+      namespace: z.literal("broker.terminal-outbox"),
+      streamKeyDigest: purposeDigestSchema("broker.outbox.stream-key"),
+      cursor: opaqueTokenSchema.nullable(),
+      limit: z.number().int().positive().max(V.limits.maxQueryPageSize),
+      requiredConsistency: z
+        .object({
+          model: z.literal(V.queryConsistency.reconcileOutbox.model),
+          scope: z.literal(V.queryConsistency.reconcileOutbox.scope),
+        })
+        .strict(),
+    })
+    .strict(),
+  queryGraphEvidencePath: z
+    .object({
+      namespace: namespaceSchema,
+      projectionVersion: opaqueTokenSchema,
+      claimSourceFactDigest: purposeDigestSchema(
+        "broker.claim-graph.source-fact",
+      ),
+      evidenceSourceFactDigest: purposeDigestSchema(
+        "broker.claim-graph.source-fact",
+      ),
+      maxPathEdges: z
+        .number()
+        .int()
+        .positive()
+        .max(V.limits.maxGraphEvidencePathEdges),
+      requiredConsistency: z
+        .object({
+          model: z.literal(V.queryConsistency.queryGraphEvidencePath.model),
+          scope: z.literal(V.queryConsistency.queryGraphEvidencePath.scope),
+        })
+        .strict(),
+    })
+    .strict(),
+} as const satisfies Record<SharedStateQueryOperationV1, z.ZodType>;
+
+function queryRequestEnvelopeSchema<
+  Operation extends SharedStateQueryOperationV1,
+  Schema extends z.ZodType,
+>(operation: Operation, input: Schema) {
+  return z
+    .object({
+      kind: z.literal(V.kinds.queryRequest),
+      contractVersion: z.literal(V.versions.contract),
+      queryVersion: z.literal(V.versions.query),
+      operation: z.literal(operation),
+      input,
+    })
+    .strict();
+}
+
+export const sharedStateQueryRequestV1Schema = z.discriminatedUnion(
+  "operation",
+  [
+    queryRequestEnvelopeSchema(
+      V.queryOperations[0],
+      sharedStateQueryRequestInputV1Schemas.reconcileOutbox,
+    ),
+    queryRequestEnvelopeSchema(
+      V.queryOperations[1],
+      sharedStateQueryRequestInputV1Schemas.queryGraphEvidencePath,
+    ),
+  ],
+);
+
+export type SharedStateQueryRequestV1 = z.infer<
+  typeof sharedStateQueryRequestV1Schema
+>;
+
+const outboxQueryEventV1Schema = z
+  .object({
+    eventKeyDigest: purposeDigestSchema("broker.outbox.event-key"),
+    payloadDigest: purposeDigestSchema("broker.outbox.payload"),
+    streamSequence: positiveDecimalSchema,
+    receiptState: z.enum(V.receiptStates),
+    acknowledgmentState: z.enum(V.acknowledgmentStates),
+  })
+  .strict();
+
+const outboxQueryResultV1Schema = z
+  .object({
+    namespace: z.literal("broker.terminal-outbox"),
+    streamKeyDigest: purposeDigestSchema("broker.outbox.stream-key"),
+    events: z.array(outboxQueryEventV1Schema).max(V.limits.maxQueryPageSize),
+    hasMore: z.boolean(),
+    nextCursor: opaqueTokenSchema.nullable(),
+  })
+  .strict();
+
+const graphEvidenceResultCommonV1Schema = {
+  namespace: namespaceSchema,
+  projectionVersion: opaqueTokenSchema,
+  claimSourceFactDigest: purposeDigestSchema(
+    "broker.claim-graph.source-fact",
+  ),
+  evidenceSourceFactDigest: purposeDigestSchema(
+    "broker.claim-graph.source-fact",
+  ),
+  asOfSourceSequence: nonNegativeDecimalSchema,
+  checkpointSequence: nonNegativeDecimalSchema,
+  sourceSequenceHighWater: nonNegativeDecimalSchema,
+  lag: nonNegativeDecimalSchema,
+} as const;
+
+const graphSourcePathV1Schema = z
+  .array(purposeDigestSchema("broker.claim-graph.source-fact"))
+  .max(V.limits.maxGraphEvidencePathEdges + 1);
+
+const graphEvidenceQueryResultV1Schema = z.discriminatedUnion("evidence", [
+  z
+    .object({
+      ...graphEvidenceResultCommonV1Schema,
+      evidence: z.literal(V.graphEvidenceResults[0]),
+      completeness: z.enum(["complete", "incomplete"]),
+      sourcePath: graphSourcePathV1Schema.min(2),
+    })
+    .strict(),
+  z
+    .object({
+      ...graphEvidenceResultCommonV1Schema,
+      evidence: z.literal(V.graphEvidenceResults[1]),
+      completeness: z.literal("complete"),
+      sourcePath: graphSourcePathV1Schema.length(0),
+    })
+    .strict(),
+  z
+    .object({
+      ...graphEvidenceResultCommonV1Schema,
+      evidence: z.literal(V.graphEvidenceResults[2]),
+      completeness: z.literal("incomplete"),
+      sourcePath: graphSourcePathV1Schema.length(0),
+    })
+    .strict(),
+  z
+    .object({
+      ...graphEvidenceResultCommonV1Schema,
+      evidence: z.literal(V.graphEvidenceResults[3]),
+      completeness: z.literal("unavailable"),
+      sourcePath: graphSourcePathV1Schema.length(0),
+    })
+    .strict(),
+]);
+
+const sharedStateQuerySucceededResultV1Schemas = {
+  reconcileOutbox: outboxQueryResultV1Schema,
+  queryGraphEvidencePath: graphEvidenceQueryResultV1Schema,
+} as const satisfies Record<SharedStateQueryOperationV1, z.ZodType>;
+
+function queryConsistencySchema<
+  Operation extends SharedStateQueryOperationV1,
+>(operation: Operation) {
+  const declaration = V.queryConsistency[operation];
+  return z
+    .object({
+      model: z.literal(declaration.model),
+      scope: z.literal(declaration.scope),
+    })
+    .strict();
+}
+
+function queryResultEnvelopeSchema<
+  Operation extends SharedStateQueryOperationV1,
+  Schema extends z.ZodType,
+>(operation: Operation, resultSchema: Schema) {
+  const common = {
+    kind: z.literal(V.kinds.queryResult),
+    contractVersion: z.literal(V.versions.contract),
+    queryVersion: z.literal(V.versions.query),
+    operation: z.literal(operation),
+  };
+  return z.discriminatedUnion("status", [
+    z
+      .object({
+        ...common,
+        status: z.literal(V.queryStatuses[0]),
+        achievedConsistency: queryConsistencySchema(operation),
+        result: resultSchema,
+      })
+      .strict(),
+    z
+      .object({
+        ...common,
+        status: z.literal(V.queryStatuses[1]),
+        achievedConsistency: z.null(),
+        reasonCode: z.enum(V.queryUnavailableReasonCodes),
+      })
+      .strict(),
+  ]);
+}
+
+export const sharedStateQueryResultV1Schema = z.discriminatedUnion(
+  "operation",
+  [
+    queryResultEnvelopeSchema(
+      V.queryOperations[0],
+      sharedStateQuerySucceededResultV1Schemas.reconcileOutbox,
+    ),
+    queryResultEnvelopeSchema(
+      V.queryOperations[1],
+      sharedStateQuerySucceededResultV1Schemas.queryGraphEvidencePath,
+    ),
+  ],
+);
+
+export type SharedStateQueryResultV1 = z.infer<
+  typeof sharedStateQueryResultV1Schema
+>;
+
 export const sharedStateDrainRequestV1Schema = z
   .object({
     kind: z.literal(V.kinds.drainRequest),
@@ -1050,10 +1266,10 @@ export type SharedStateDrainRequestV1 = z.infer<
 >;
 
 /**
- * Structural seam for this bounded transaction/lifecycle slice only. It has no
- * runtime implementation and exposes only validated V1 envelopes. The broader
- * `query(request)` union remains checklist-open; this interface is not a claim
- * that a complete or conforming adapter exists.
+ * Structural seam for the transaction/lifecycle slice only. Q1 defines query
+ * request/result envelopes above, but deliberately does not add `query()` to
+ * this interface or any adapter. This interface is not a claim that a complete
+ * or conforming adapter exists.
  */
 export interface SharedStateStorageTransactionV1 {
   execute(
@@ -2111,6 +2327,408 @@ export function parseSharedStateTransactionResultV1(
     return errorResult("operation_result_mismatch", ["result"]);
   }
   return parsed;
+}
+
+function queryConsistencyPreflight<T>(
+  input: RecordValue,
+): SharedStateParseResultV1<T> | null {
+  if (
+    !V.queryOperations.includes(
+      input.operation as SharedStateQueryOperationV1,
+    )
+  ) {
+    return null;
+  }
+  const operation = input.operation as SharedStateQueryOperationV1;
+  const expected = V.queryConsistency[operation];
+  if (input.kind === V.kinds.queryRequest && isRecord(input.input)) {
+    const required = input.input.requiredConsistency;
+    if (
+      isRecord(required)
+      && (
+        required.model !== expected.model
+        || required.scope !== expected.scope
+      )
+    ) {
+      return errorResult("query_consistency_mismatch", [
+        "input",
+        "requiredConsistency",
+        required.model !== expected.model ? "model" : "scope",
+      ]);
+    }
+  }
+  if (input.kind === V.kinds.queryResult) {
+    if (input.status === V.queryStatuses[0]) {
+      const achieved = input.achievedConsistency;
+      if (
+        isRecord(achieved)
+        && (
+          achieved.model !== expected.model
+          || achieved.scope !== expected.scope
+        )
+      ) {
+        return errorResult("query_consistency_mismatch", [
+          "achievedConsistency",
+          achieved.model !== expected.model ? "model" : "scope",
+        ]);
+      }
+    } else if (
+      input.status === V.queryStatuses[1]
+      && Object.hasOwn(input, "achievedConsistency")
+      && input.achievedConsistency !== null
+    ) {
+      return errorResult("query_consistency_mismatch", [
+        "achievedConsistency",
+      ]);
+    }
+  }
+  return null;
+}
+
+function queryCompletenessPreflight<T>(
+  input: RecordValue,
+): SharedStateParseResultV1<T> | null {
+  if (
+    input.kind !== V.kinds.queryResult
+    || input.operation !== "queryGraphEvidencePath"
+    || input.status !== V.queryStatuses[0]
+    || !isRecord(input.result)
+    || typeof input.result.evidence !== "string"
+    || typeof input.result.completeness !== "string"
+  ) {
+    return null;
+  }
+  const expected = input.result.evidence === "no_evidence_path"
+    ? "complete"
+    : input.result.evidence === "projection_incomplete"
+      ? "incomplete"
+      : input.result.evidence === "projection_unavailable"
+        ? "unavailable"
+        : null;
+  if (
+    (expected !== null && input.result.completeness !== expected)
+    || (input.result.evidence === "path_found"
+      && input.result.completeness === "unavailable")
+  ) {
+    return errorResult("query_completeness_mismatch", [
+      "result",
+      "completeness",
+    ]);
+  }
+  return null;
+}
+
+function queryOutboxNamespacePreflight<T>(
+  input: RecordValue,
+): SharedStateParseResultV1<T> | null {
+  if (input.operation !== "reconcileOutbox") return null;
+  const section = input.kind === V.kinds.queryRequest
+    ? "input"
+    : input.kind === V.kinds.queryResult
+        && input.status === V.queryStatuses[0]
+      ? "result"
+      : null;
+  if (section === null || !isRecord(input[section])) return null;
+  const namespace = input[section].namespace;
+  if (typeof namespace !== "string") return null;
+  if (
+    namespace.length > V.limits.namespaceLength
+    || !/^[a-z][a-z0-9]*(?:[.-][a-z0-9]+)*$/.test(namespace)
+  ) {
+    return errorResult(
+      section === "input"
+        ? "invalid_outbox_stream_namespace"
+        : "query_result_mismatch",
+      [section, "namespace"],
+    );
+  }
+  if (namespace !== "broker.terminal-outbox") {
+    return errorResult(
+      section === "input"
+        ? "unknown_outbox_stream_namespace"
+        : "query_result_mismatch",
+      [section, "namespace"],
+    );
+  }
+  return null;
+}
+
+function queryDigestAt<T>(
+  value: unknown,
+  domain: SharedStateDigestDomainV1,
+  namespace: string,
+  path: readonly (string | number)[],
+): SharedStateParseResultV1<T> | null {
+  const parsed = parseSharedStateDigestV1(value, { domain, namespace });
+  if (parsed.ok) return null;
+  return errorResult(contractDigestErrorCode(parsed.error.code), path);
+}
+
+function validateQueryDigestBindings<T>(
+  input: RecordValue,
+): SharedStateParseResultV1<T> | null {
+  if (
+    !V.queryOperations.includes(
+      input.operation as SharedStateQueryOperationV1,
+    )
+  ) {
+    return null;
+  }
+  const section = input.kind === V.kinds.queryRequest
+    ? "input"
+    : input.kind === V.kinds.queryResult
+        && input.status === V.queryStatuses[0]
+      ? "result"
+      : null;
+  if (section === null || !isRecord(input[section])) return null;
+  const body = input[section];
+  if (typeof body.namespace !== "string") return null;
+  const namespace = body.namespace;
+
+  if (input.operation === "reconcileOutbox") {
+    if (typeof body.streamKeyDigest === "string") {
+      const stream = queryDigestAt<T>(
+        body.streamKeyDigest,
+        "broker.outbox.stream-key",
+        namespace,
+        [section, "streamKeyDigest"],
+      );
+      if (stream) return stream;
+    }
+    if (section === "result" && Array.isArray(body.events)) {
+      for (let index = 0; index < body.events.length; index += 1) {
+        const event = body.events[index];
+        if (!isRecord(event)) continue;
+        if (typeof event.eventKeyDigest === "string") {
+          const eventKey = queryDigestAt<T>(
+            event.eventKeyDigest,
+            "broker.outbox.event-key",
+            namespace,
+            [section, "events", index, "eventKeyDigest"],
+          );
+          if (eventKey) return eventKey;
+        }
+        if (typeof event.payloadDigest === "string") {
+          const payload = queryDigestAt<T>(
+            event.payloadDigest,
+            "broker.outbox.payload",
+            namespace,
+            [section, "events", index, "payloadDigest"],
+          );
+          if (payload) return payload;
+        }
+      }
+    }
+    return null;
+  }
+
+  const anchors = [
+    ["claimSourceFactDigest", body.claimSourceFactDigest],
+    ["evidenceSourceFactDigest", body.evidenceSourceFactDigest],
+  ] as const;
+  for (const [field, value] of anchors) {
+    if (typeof value !== "string") continue;
+    const anchor = queryDigestAt<T>(
+      value,
+      "broker.claim-graph.source-fact",
+      namespace,
+      [section, field],
+    );
+    if (anchor) return anchor;
+  }
+  if (section === "result" && Array.isArray(body.sourcePath)) {
+    for (let index = 0; index < body.sourcePath.length; index += 1) {
+      if (typeof body.sourcePath[index] !== "string") continue;
+      const pathDigest = queryDigestAt<T>(
+        body.sourcePath[index],
+        "broker.claim-graph.source-fact",
+        namespace,
+        [section, "sourcePath", index],
+      );
+      if (pathDigest) return pathDigest;
+    }
+  }
+  return null;
+}
+
+function preflightQueryEnvelope<T>(
+  input: unknown,
+): SharedStateParseResultV1<T> | null {
+  const preflight = preflightClosedInput<T>(input, {
+    versionFields: [
+      {
+        field: "contractVersion",
+        expected: V.versions.contract,
+        code: "unknown_contract_version",
+      },
+      {
+        field: "queryVersion",
+        expected: V.versions.query,
+        code: "unknown_query_version",
+      },
+    ],
+  });
+  if (preflight) return preflight;
+  if (
+    isRecord(input)
+    && Object.hasOwn(input, "operation")
+    && !V.queryOperations.includes(
+      input.operation as SharedStateQueryOperationV1,
+    )
+  ) {
+    return errorResult("invalid_discriminant", ["operation"]);
+  }
+  if (isRecord(input)) {
+    const consistency = queryConsistencyPreflight<T>(input);
+    if (consistency) return consistency;
+    const completeness = queryCompletenessPreflight<T>(input);
+    if (completeness) return completeness;
+    const outboxNamespace = queryOutboxNamespacePreflight<T>(input);
+    if (outboxNamespace) return outboxNamespace;
+    const digest = validateQueryDigestBindings<T>(input);
+    if (digest) return digest;
+  }
+  return null;
+}
+
+function validateOutboxQueryResult(
+  input: Extract<
+    SharedStateQueryResultV1,
+    { readonly operation: "reconcileOutbox"; readonly status: "succeeded" }
+  >,
+): SharedStateParseResultV1<SharedStateQueryResultV1> | null {
+  if (input.result.hasMore !== (input.result.nextCursor !== null)) {
+    return errorResult("query_result_mismatch", [
+      "result",
+      "nextCursor",
+    ]);
+  }
+  let previous = 0n;
+  const eventKeys = new Set<string>();
+  for (let index = 0; index < input.result.events.length; index += 1) {
+    const event = input.result.events[index]!;
+    if (eventKeys.has(event.eventKeyDigest)) {
+      return errorResult("query_result_mismatch", [
+        "result",
+        "events",
+        index,
+        "eventKeyDigest",
+      ]);
+    }
+    eventKeys.add(event.eventKeyDigest);
+    const sequence = BigInt(event.streamSequence);
+    if (sequence <= previous) {
+      return errorResult("query_result_mismatch", [
+        "result",
+        "events",
+        index,
+        "streamSequence",
+      ]);
+    }
+    previous = sequence;
+    if (
+      event.acknowledgmentState === "acknowledged"
+      && event.receiptState !== "confirmed"
+    ) {
+      return errorResult("query_result_mismatch", [
+        "result",
+        "events",
+        index,
+        "acknowledgmentState",
+      ]);
+    }
+  }
+  return null;
+}
+
+function validateGraphQueryResult(
+  input: Extract<
+    SharedStateQueryResultV1,
+    {
+      readonly operation: "queryGraphEvidencePath";
+      readonly status: "succeeded";
+    }
+  >,
+): SharedStateParseResultV1<SharedStateQueryResultV1> | null {
+  const result = input.result;
+  const checkpoint = BigInt(result.checkpointSequence);
+  const highWater = BigInt(result.sourceSequenceHighWater);
+  if (checkpoint > highWater) {
+    return errorResult("query_result_mismatch", [
+      "result",
+      "checkpointSequence",
+    ]);
+  }
+  if (BigInt(result.asOfSourceSequence) !== checkpoint) {
+    return errorResult("query_result_mismatch", [
+      "result",
+      "asOfSourceSequence",
+    ]);
+  }
+  if (BigInt(result.lag) !== highWater - checkpoint) {
+    return errorResult("query_result_mismatch", ["result", "lag"]);
+  }
+  if (result.evidence === "path_found") {
+    const pathDigests = new Set(result.sourcePath);
+    if (pathDigests.size !== result.sourcePath.length) {
+      return errorResult("query_result_mismatch", [
+        "result",
+        "sourcePath",
+      ]);
+    }
+    if (result.sourcePath[0] !== result.claimSourceFactDigest) {
+      return errorResult("query_result_mismatch", [
+        "result",
+        "sourcePath",
+        0,
+      ]);
+    }
+    if (
+      result.sourcePath[result.sourcePath.length - 1]
+      !== result.evidenceSourceFactDigest
+    ) {
+      return errorResult("query_result_mismatch", [
+        "result",
+        "sourcePath",
+        result.sourcePath.length - 1,
+      ]);
+    }
+  }
+  return null;
+}
+
+export function parseSharedStateQueryRequestV1(
+  input: unknown,
+): SharedStateParseResultV1<SharedStateQueryRequestV1> {
+  const preflight = preflightQueryEnvelope<SharedStateQueryRequestV1>(input);
+  if (preflight) return preflight;
+  return parseSchema(sharedStateQueryRequestV1Schema, input);
+}
+
+export function parseSharedStateQueryResultV1(
+  input: unknown,
+): SharedStateParseResultV1<SharedStateQueryResultV1> {
+  const preflight = preflightQueryEnvelope<SharedStateQueryResultV1>(input);
+  if (preflight) return preflight;
+  const parsed = parseSchema(sharedStateQueryResultV1Schema, input);
+  if (!parsed.ok) {
+    if (
+      isRecord(input)
+      && V.queryOperations.includes(
+        input.operation as SharedStateQueryOperationV1,
+      )
+      && input.status === V.queryStatuses[0]
+      && Object.hasOwn(input, "result")
+    ) {
+      return errorResult("query_result_mismatch", ["result"]);
+    }
+    return parsed;
+  }
+  if (parsed.value.status !== "succeeded") return parsed;
+  const semantic = parsed.value.operation === "reconcileOutbox"
+    ? validateOutboxQueryResult(parsed.value)
+    : validateGraphQueryResult(parsed.value);
+  return semantic ?? parsed;
 }
 
 export function parseSharedStateDrainRequestV1(

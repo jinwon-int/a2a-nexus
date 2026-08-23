@@ -1826,3 +1826,50 @@ default. Outbox and graph SQLite implementations follow as separate reviewed
 slices. Serving-store authority remains legacy until a later explicit owner
 decision names one primitive, one source of truth, and the retirement rule for
 its legacy authority.
+
+### Slice Q1 — closed query envelopes and parsers only
+
+Q1 adds the source-only request/result contract that decision Q0 authorized.
+`queryVersion=1` is separate from the transaction operation version, and the
+two closed operations are exactly `reconcileOutbox` and
+`queryGraphEvidencePath`. The slice adds no `query()` member to
+`SharedStateStorageAdapterV1` or `SharedStateSqliteAdapterV1`; the envelopes are
+validated data only, not an adapter, test-control alias, or runtime surface.
+
+`reconcileOutbox` is bound to the one registered
+`broker.terminal-outbox` namespace and one purpose-bound stream-key digest. It
+accepts an adapter-opaque cursor and a page limit from 1 through 100. A
+successful page reports the exact stream binding and only fields the planned
+V1 row can preserve: event/payload digests, strictly increasing stream
+sequence, receipt state, and acknowledgment state. Duplicate event keys,
+non-increasing sequence, an ACK without a confirmed receipt, or a cursor whose
+presence disagrees with `hasMore` fails closed. The query does not carry a
+payload, send, ACK, prune, infer provider acceptance, or claim cross-stream
+order.
+
+`queryGraphEvidencePath` is bound to a namespace, projection version, and
+claim/evidence source-fact digest pair. The caller bounds the path at no more
+than 32 edges. A successful result uses exactly Q0's four evidence states and
+reports achieved monotonic-eventual consistency, completeness,
+`asOfSourceSequence`, projection checkpoint, source high-water, and exact lag.
+A found path is an acyclic list of source-fact references whose first and last
+members are the requested anchors. Negative evidence requires a complete
+checkpoint; incomplete and unavailable are distinct non-judgment results.
+The parser additionally requires `asOf == checkpoint <= high-water` and
+`lag == high-water - checkpoint`.
+
+Every request names the exact required consistency. A successful result names
+the exact achieved consistency; an unavailable result carries `null` instead
+of pretending a weaker guarantee and uses the query-safe subset of the
+existing bounded unavailable reasons. Query parsers reject unknown versions,
+operations and fields, consistency/completeness mismatches, digest
+domain/namespace mismatches, caller clocks, backend commands, sensitive paths,
+cross-operation result shapes, and the semantic page/path violations above.
+
+The public synthetic fixture is
+`packages/broker/fixtures/shared-state-storage/query-v1-golden.json`; it covers
+both requests, an outbox page, all four graph states, and an unavailable
+result. Focused tests parse every fixture and drive the negative matrix. No
+section 2 repeat item, 488/489, full `stateContract`, primitive integration,
+retention/prune, migration, performance, or operational item is checked by
+this slice.

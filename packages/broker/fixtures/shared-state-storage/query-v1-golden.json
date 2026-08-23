@@ -1,0 +1,186 @@
+{
+  "$schema": "https://example.invalid/a2a/shared-state-query-v1-golden.schema.json",
+  "fixtureVersion": 1,
+  "contractVersion": "a2a.shared-state.storage/v1",
+  "queryVersion": 1,
+  "description": "Public synthetic envelopes for the closed source-only V1 query contract. No adapter, runtime, HTTP, retention, migration, or serving-store integration is implied.",
+  "requests": [
+    {
+      "kind": "SharedStateQueryRequestV1",
+      "contractVersion": "a2a.shared-state.storage/v1",
+      "queryVersion": 1,
+      "operation": "reconcileOutbox",
+      "input": {
+        "namespace": "broker.terminal-outbox",
+        "streamKeyDigest": "a2a.shared-state.keyspace/v1|broker.outbox.stream-key|broker.terminal-outbox|sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "cursor": null,
+        "limit": 2,
+        "requiredConsistency": {
+          "model": "serializable",
+          "scope": "per-stream"
+        }
+      }
+    },
+    {
+      "kind": "SharedStateQueryRequestV1",
+      "contractVersion": "a2a.shared-state.storage/v1",
+      "queryVersion": 1,
+      "operation": "queryGraphEvidencePath",
+      "input": {
+        "namespace": "broker.claim-graph",
+        "projectionVersion": "claim-graph-projection-v1",
+        "claimSourceFactDigest": "a2a.shared-state.keyspace/v1|broker.claim-graph.source-fact|broker.claim-graph|sha256:1111111111111111111111111111111111111111111111111111111111111111",
+        "evidenceSourceFactDigest": "a2a.shared-state.keyspace/v1|broker.claim-graph.source-fact|broker.claim-graph|sha256:3333333333333333333333333333333333333333333333333333333333333333",
+        "maxPathEdges": 8,
+        "requiredConsistency": {
+          "model": "monotonic-eventual",
+          "scope": "projection-batch"
+        }
+      }
+    }
+  ],
+  "results": [
+    {
+      "kind": "SharedStateQueryResultV1",
+      "contractVersion": "a2a.shared-state.storage/v1",
+      "queryVersion": 1,
+      "operation": "reconcileOutbox",
+      "status": "succeeded",
+      "achievedConsistency": {
+        "model": "serializable",
+        "scope": "per-stream"
+      },
+      "result": {
+        "namespace": "broker.terminal-outbox",
+        "streamKeyDigest": "a2a.shared-state.keyspace/v1|broker.outbox.stream-key|broker.terminal-outbox|sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "events": [
+          {
+            "eventKeyDigest": "a2a.shared-state.keyspace/v1|broker.outbox.event-key|broker.terminal-outbox|sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+            "payloadDigest": "a2a.shared-state.keyspace/v1|broker.outbox.payload|broker.terminal-outbox|sha256:cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+            "streamSequence": "1",
+            "receiptState": "pending",
+            "acknowledgmentState": "unacknowledged"
+          },
+          {
+            "eventKeyDigest": "a2a.shared-state.keyspace/v1|broker.outbox.event-key|broker.terminal-outbox|sha256:dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd",
+            "payloadDigest": "a2a.shared-state.keyspace/v1|broker.outbox.payload|broker.terminal-outbox|sha256:eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee",
+            "streamSequence": "2",
+            "receiptState": "confirmed",
+            "acknowledgmentState": "acknowledged"
+          }
+        ],
+        "hasMore": true,
+        "nextCursor": "outbox-page-2"
+      }
+    },
+    {
+      "kind": "SharedStateQueryResultV1",
+      "contractVersion": "a2a.shared-state.storage/v1",
+      "queryVersion": 1,
+      "operation": "queryGraphEvidencePath",
+      "status": "succeeded",
+      "achievedConsistency": {
+        "model": "monotonic-eventual",
+        "scope": "projection-batch"
+      },
+      "result": {
+        "namespace": "broker.claim-graph",
+        "projectionVersion": "claim-graph-projection-v1",
+        "claimSourceFactDigest": "a2a.shared-state.keyspace/v1|broker.claim-graph.source-fact|broker.claim-graph|sha256:1111111111111111111111111111111111111111111111111111111111111111",
+        "evidenceSourceFactDigest": "a2a.shared-state.keyspace/v1|broker.claim-graph.source-fact|broker.claim-graph|sha256:3333333333333333333333333333333333333333333333333333333333333333",
+        "evidence": "path_found",
+        "completeness": "complete",
+        "asOfSourceSequence": "6",
+        "checkpointSequence": "6",
+        "sourceSequenceHighWater": "6",
+        "lag": "0",
+        "sourcePath": [
+          "a2a.shared-state.keyspace/v1|broker.claim-graph.source-fact|broker.claim-graph|sha256:1111111111111111111111111111111111111111111111111111111111111111",
+          "a2a.shared-state.keyspace/v1|broker.claim-graph.source-fact|broker.claim-graph|sha256:2222222222222222222222222222222222222222222222222222222222222222",
+          "a2a.shared-state.keyspace/v1|broker.claim-graph.source-fact|broker.claim-graph|sha256:3333333333333333333333333333333333333333333333333333333333333333"
+        ]
+      }
+    },
+    {
+      "kind": "SharedStateQueryResultV1",
+      "contractVersion": "a2a.shared-state.storage/v1",
+      "queryVersion": 1,
+      "operation": "queryGraphEvidencePath",
+      "status": "succeeded",
+      "achievedConsistency": {
+        "model": "monotonic-eventual",
+        "scope": "projection-batch"
+      },
+      "result": {
+        "namespace": "broker.claim-graph",
+        "projectionVersion": "claim-graph-projection-v1",
+        "claimSourceFactDigest": "a2a.shared-state.keyspace/v1|broker.claim-graph.source-fact|broker.claim-graph|sha256:1111111111111111111111111111111111111111111111111111111111111111",
+        "evidenceSourceFactDigest": "a2a.shared-state.keyspace/v1|broker.claim-graph.source-fact|broker.claim-graph|sha256:3333333333333333333333333333333333333333333333333333333333333333",
+        "evidence": "no_evidence_path",
+        "completeness": "complete",
+        "asOfSourceSequence": "6",
+        "checkpointSequence": "6",
+        "sourceSequenceHighWater": "6",
+        "lag": "0",
+        "sourcePath": []
+      }
+    },
+    {
+      "kind": "SharedStateQueryResultV1",
+      "contractVersion": "a2a.shared-state.storage/v1",
+      "queryVersion": 1,
+      "operation": "queryGraphEvidencePath",
+      "status": "succeeded",
+      "achievedConsistency": {
+        "model": "monotonic-eventual",
+        "scope": "projection-batch"
+      },
+      "result": {
+        "namespace": "broker.claim-graph",
+        "projectionVersion": "claim-graph-projection-v1",
+        "claimSourceFactDigest": "a2a.shared-state.keyspace/v1|broker.claim-graph.source-fact|broker.claim-graph|sha256:1111111111111111111111111111111111111111111111111111111111111111",
+        "evidenceSourceFactDigest": "a2a.shared-state.keyspace/v1|broker.claim-graph.source-fact|broker.claim-graph|sha256:3333333333333333333333333333333333333333333333333333333333333333",
+        "evidence": "projection_incomplete",
+        "completeness": "incomplete",
+        "asOfSourceSequence": "4",
+        "checkpointSequence": "4",
+        "sourceSequenceHighWater": "6",
+        "lag": "2",
+        "sourcePath": []
+      }
+    },
+    {
+      "kind": "SharedStateQueryResultV1",
+      "contractVersion": "a2a.shared-state.storage/v1",
+      "queryVersion": 1,
+      "operation": "queryGraphEvidencePath",
+      "status": "succeeded",
+      "achievedConsistency": {
+        "model": "monotonic-eventual",
+        "scope": "projection-batch"
+      },
+      "result": {
+        "namespace": "broker.claim-graph",
+        "projectionVersion": "claim-graph-projection-v1",
+        "claimSourceFactDigest": "a2a.shared-state.keyspace/v1|broker.claim-graph.source-fact|broker.claim-graph|sha256:1111111111111111111111111111111111111111111111111111111111111111",
+        "evidenceSourceFactDigest": "a2a.shared-state.keyspace/v1|broker.claim-graph.source-fact|broker.claim-graph|sha256:3333333333333333333333333333333333333333333333333333333333333333",
+        "evidence": "projection_unavailable",
+        "completeness": "unavailable",
+        "asOfSourceSequence": "0",
+        "checkpointSequence": "0",
+        "sourceSequenceHighWater": "6",
+        "lag": "6",
+        "sourcePath": []
+      }
+    },
+    {
+      "kind": "SharedStateQueryResultV1",
+      "contractVersion": "a2a.shared-state.storage/v1",
+      "queryVersion": 1,
+      "operation": "reconcileOutbox",
+      "status": "unavailable",
+      "achievedConsistency": null,
+      "reasonCode": "authority_unavailable"
+    }
+  ]
+}
