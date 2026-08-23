@@ -2051,3 +2051,90 @@ Q5 still proves neither FIFO durable-commit ACK ordering nor worker-backed
 read consistency, so 488/489 remain unchecked. It adds no FIFO worker,
 primitive integration, retention/prune, migration, performance claim,
 deployment, live action, or issue closure.
+
+### Decision W0 — V1-owned FIFO writer and query ordering
+
+Owner decision W0 (2026-08-24 KST, `#1504`): inline SQLite conformance and
+the two-operation query surface now exist, so a later source slice may open the
+worker-writer proof lane that decision C left closed. This decision records the
+lane only. It adds no worker source and checks neither 488 nor 489.
+
+The existing
+`packages/broker/src/core/sqlite-worker-thread-persistence.ts` is not the V1
+worker. It owns the legacy `SqliteBrokerStateStore` file and schema, keeps
+main-thread read connections, and preserves void-typed call sites that may use
+fire-and-forget writes. Importing that proxy, sharing its connection, or
+placing the V1 file behind it would not prove the V1 transaction, ownership,
+clock-floor, result-parser, or ACK boundaries. `plan.md`'s instruction to
+reuse the optional FIFO worker therefore means reuse the bounded single-FIFO
+architecture and opt-in posture, not the legacy module, protocol, database,
+or runtime flag.
+
+Worker mode has exactly one V1 SQLite authority. The worker owns the V1
+database connection, `SharedStateSqliteAdapterV1` instance, lifecycle epoch,
+and ownership token for that mode. The main thread must not open a second V1
+adapter or bypass the worker for a query. A new purpose-bound protocol carries
+only the existing closed transaction commands, the two closed Q1 query
+requests, lifecycle controls, and the adapter-owned trusted time observation
+needed by a command. Caller clock fields, arbitrary SQL, backend commands,
+generic method names, and protocol extensions remain forbidden. Both sides
+validate the closed envelope defensively. The broad
+`withTransaction(callback)` function is never serialized or transferred to
+the worker; a narrow closed-command worker surface does not by itself
+implement or conform to the full broad adapter interface.
+
+One bounded FIFO lane serializes every accepted transaction command and query.
+Admission assigns a monotonically increasing process-local ticket only after
+the request passes its closed parser and a queue slot is available. A rejected
+parse, saturated/closing queue, unavailable worker, or failed lifecycle is not
+an accepted write and returns the existing closed failure or
+operation-preserving unavailable result. The ticket is scheduling evidence
+only: it is not durable state, an outbox sequence, an outbox receipt/ACK, an
+idempotency key, or a public field.
+
+A transaction promise may report a committed result only after the worker's
+SQLite `COMMIT` has completed and the worker has returned the result for that
+ticket. A domain rejection or rollback must likewise have a known terminal
+result before its ticket settles. Transport loss, worker exit, timeout, or a
+malformed/crossed response after dispatch is ambiguous: the proxy must not
+invent a rollback, retry the command, or report a committed result. It fails
+the worker surface closed and returns unavailable through the existing result
+family where one can be identified.
+
+A query takes its serialization point from its position in the same FIFO. It
+executes on the worker-owned adapter only after every earlier accepted command
+has reached a known committed or rolled-back result. The main thread must not
+resolve a successful query before the durable-commit ACKs for all earlier
+committed tickets have crossed the worker boundary. If the barrier or worker
+authority cannot be proved, the query returns its operation-preserving
+`status=unavailable` result; it does not perform a main-thread stale read or
+weaken the requested consistency. Writes admitted after the query are outside
+that query's serialization point. This ACK is internal persistence evidence
+and remains unrelated to terminal-outbox receipt or acknowledgment.
+
+Worker failure rejects queued work, makes unresolved dispatched writes
+ambiguous, and makes later queries unavailable. It must not silently create a
+replacement authority or reopen the file. Adapter `drain` is also distinct
+from the broker `beginDrain` path prohibited for `lost_fence`: it closes
+admission, waits for every accepted ticket to reach a known terminal result,
+and succeeds only when no ambiguous write remains. A timeout or crash fails
+drain closed. `close` may ask the worker-owned adapter to release ownership
+only after a successful drain; forced termination is not a clean close and
+must not claim that ownership was released.
+
+Implementation follows as separately reviewed source slices. The first may
+add only the purpose-built protocol, bounded FIFO proxy/worker, and focused
+temporary-database tests for parser-before-admission, capacity, exact order,
+COMMIT-before-ACK, query barriers, known rollback, ambiguity, crash,
+drain/close, and both existing query families. It must remain detached from
+broker runtime and may not claim the full broad adapter interface merely
+because a narrow worker surface exists. A later slice must run every applicable
+V1 deterministic conformance/failure suite through worker mode before 488 can
+be checked. 489 additionally requires focused proof that a query cannot
+resolve successfully across a delayed or missing earlier durable ACK. Neither
+box is checked on protocol shape, queue FIFO tests, or inline evidence alone.
+
+W0 authorizes no runtime/HTTP import, existing persistence-worker change,
+configuration flag, default, serving-store selection, primitive source-of-
+truth move, legacy retirement, `stateContract` change, retention/prune,
+migration, performance claim, deployment, live action, or issue closure.
