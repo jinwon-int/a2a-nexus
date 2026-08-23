@@ -1419,6 +1419,21 @@ This part does not check `Add fenced singleton ownership and loss
 monitoring`. Drain/shutdown is the next sentence of section 7.1, not this
 latch. 488/489 stay decision C.
 
+### Slice N, second part — D1 close every connection, still no drain
+
+Owner decision D1 (2026-08-23 KST, `#1504`): the latch callback closes
+every HTTP connection (`closeAllConnections`), not only idle ones. The
+close is deferred with `setImmediate` so the request that first observed
+`lost_fence` can still write its 503. It still does not set `draining`,
+emit `broker_draining`, exit, release the token, or add a lease.
+`/readyz` and non-liveness routes keep the `lost_fence` reason.
+
+This part still does not check `Add fenced singleton ownership and loss
+monitoring`. Drain/shutdown remains a later sentence. The startup
+version/capability/clock/schema/migration item also stays unchecked:
+fence `open()` already validates the fence file, not the serving store,
+and V1 defines no migration. 488/489 stay decision C.
+
 ## 5. Migration and operations
 
 - [ ] Obtain authorization for production backup/read.
