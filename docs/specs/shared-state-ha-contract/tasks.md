@@ -1434,6 +1434,18 @@ version/capability/clock/schema/migration item also stays unchecked:
 fence `open()` already validates the fence file, not the serving store,
 and V1 defines no migration. 488/489 stay decision C.
 
+### Slice N, third part — D3a exit after the lost_fence 503
+
+Owner decision D3a (2026-08-23 KST, `#1504`): after the deferred
+`closeAllConnections`, the process exits 1. It does not call
+`beginDrain`, reuse the SIGTERM drain path, or emit `broker_draining`.
+`/livez` dies with the process. A restart that still sees a foreign
+token fails closed with `ownership_conflict` (A1). Tests inject
+`lostFenceExit` so the runner does not die.
+
+This part still does not check `Add fenced singleton ownership and loss
+monitoring`. Drain is still absent. 488/489 stay decision C.
+
 ## 5. Migration and operations
 
 - [ ] Obtain authorization for production backup/read.

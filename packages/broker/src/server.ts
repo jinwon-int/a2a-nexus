@@ -2049,8 +2049,12 @@ export function createBrokerServer(options: BrokerServerOptions = {}): BrokerSer
       reasonCode: "adapter_unavailable" as const,
     },
     onLostFence: () => {
+      const exitAfterLostFence = options.lostFenceExit ?? (() => {
+        process.exit(1);
+      });
       setImmediate(() => {
         server.closeAllConnections?.();
+        exitAfterLostFence();
       });
     },
   });
