@@ -1244,7 +1244,7 @@ path decision belongs to section 4 and is deliberately not made here.
 
 - [x] Add exact grade and expected-process configuration.
 - [ ] Add startup version/capability/clock/schema/migration checks.
-- [ ] Add fenced singleton ownership and loss monitoring.
+- [x] Add fenced singleton ownership and loss monitoring.
 - [x] Add `/readyz` and state-authority non-serving middleware.
 - [x] Assert `/readyz` becomes false and non-liveness routes stop serving
   while `/livez` remains liveness-only. Moved here from section 2.5: the
@@ -1445,6 +1445,18 @@ token fails closed with `ownership_conflict` (A1). Tests inject
 
 This part still does not check `Add fenced singleton ownership and loss
 monitoring`. Drain is still absent. 488/489 stay decision C.
+
+### Slice N, closeout — what the monitoring check means
+
+Owner decision M1 (2026-08-23 KST, `#1504`): the item is checked with
+the meaning its name already had. Slice K acquired the fence. P1 latches
+`lost_fence`. D1 closes every connection. D3a exits 1. That is fenced
+singleton ownership and loss monitoring.
+
+`beginDrain` is **outside this item**. Calling it would hide `lost_fence`
+behind `broker_draining`. A later drain slice, if any, is a new decision.
+Checking this box does not authorize that work, does not add a lease,
+and does not start 488/489. Decision C stays.
 
 ## 5. Migration and operations
 
