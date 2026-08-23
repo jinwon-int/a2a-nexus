@@ -43,8 +43,10 @@ import {
 import { resolveSharedStateDeploymentGradeFromEnvV1 } from "./shared-state-deployment-grade-v1.js";
 import {
   acquireSharedStateServingFenceForBrokerV1,
+  type SharedStateServingFenceProbeV1,
   type SharedStateServingFenceV1,
 } from "./shared-state-serving-fence-v1.js";
+import { createSharedStateLossMonitorV1 } from "./shared-state-loss-monitor-v1.js";
 import { buildSharedStateContractHealthV1 } from "./shared-state-contract-health-v1.js";
 import { createServer, type IncomingMessage, type RequestListener, type Server, type ServerResponse } from "node:http";
 import {
@@ -524,6 +526,14 @@ export function createBrokerServer(options: BrokerServerOptions = {}): BrokerSer
       : stateStore;
   let workerPersistenceClosePromise: Promise<void> | undefined;
   let servingFence: SharedStateServingFenceV1 | undefined;
+  let lossMonitor: ReturnType<typeof createSharedStateLossMonitorV1> | undefined;
+  const inspectServingAuthority = (): SharedStateServingFenceProbeV1 => {
+    if (lossMonitor !== undefined) return lossMonitor.inspect();
+    return servingFence?.probe() ?? {
+      ready: false as const,
+      reasonCode: "adapter_unavailable" as const,
+    };
+  };
   const closeWorkerPersistence = (): Promise<void> => {
     const releaseFence = (): void => {
       servingFence?.release();
@@ -1003,10 +1013,7 @@ export function createBrokerServer(options: BrokerServerOptions = {}): BrokerSer
       }
 
       if (req.method === "GET" && path === "/readyz") {
-        const probe = servingFence?.probe() ?? {
-          ready: false as const,
-          reasonCode: "adapter_unavailable" as const,
-        };
+        const probe = inspectServingAuthority();
         if (probe.ready) {
           return sendJson(res, 200, {
             ready: true,
@@ -1077,10 +1084,7 @@ export function createBrokerServer(options: BrokerServerOptions = {}): BrokerSer
         });
       }
 
-      const authority = servingFence?.probe() ?? {
-        ready: false as const,
-        reasonCode: "adapter_unavailable" as const,
-      };
+      const authority = inspectServingAuthority();
       if (!authority.ready) {
         return sendJson(res, 503, {
           error: {
@@ -1263,10 +1267,7 @@ export function createBrokerServer(options: BrokerServerOptions = {}): BrokerSer
           fromCache,
         };
 
-        const healthProbe = servingFence?.probe() ?? {
-          ready: false as const,
-          reasonCode: "adapter_unavailable" as const,
-        };
+        const healthProbe = inspectServingAuthority();
         body.stateContract = buildSharedStateContractHealthV1({
           configuredGrade: servingGrade.configuredGrade,
           effectiveGrade: servingGrade.effectiveGrade,
@@ -2042,6 +2043,16 @@ export function createBrokerServer(options: BrokerServerOptions = {}): BrokerSer
   });
   const server = createServer(handler);
   httpServerForDiagnostics = server;
+  lossMonitor = createSharedStateLossMonitorV1({
+    probe: () => servingFence?.probe() ?? {
+      ready: false as const,
+      reasonCode: "adapter_unavailable" as const,
+    },
+    onLostFence: () => {
+      server.closeIdleConnections?.();
+    },
+  });
+  lossMonitor.start();
 
   // Configure keepAliveTimeout to exceed the heartbeat interval so worker heartbeat
   // TCP connections survive between beats and can be reused. The Node.js default is
@@ -2072,6 +2083,7 @@ export function createBrokerServer(options: BrokerServerOptions = {}): BrokerSer
   // tests and for any runtime that shuts down via server.close() rather than the SIGINT
   // path in startBrokerServer.
   server.on("close", () => {
+    lossMonitor?.stop();
     stopStaleReaper();
     stopPoller();
     defaultAgentHandle?.stop();
@@ -2094,6 +2106,7 @@ export function createBrokerServer(options: BrokerServerOptions = {}): BrokerSer
       server.closeIdleConnections?.();
     },
     isDraining: () => draining,
+    evaluateSharedStateLossMonitor: inspectServingAuthority,
     runStaleReaperSweep,
     stopStaleReaper,
     getStaleReaperStatus,
