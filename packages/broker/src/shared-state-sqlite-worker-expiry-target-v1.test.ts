@@ -50,13 +50,9 @@ import {
   SHARED_STATE_SQLITE_CONFORMANCE_CONTROL_V1,
 } from "./shared-state-sqlite-conformance-control-v1.js";
 import {
-  createSharedStateSqliteConformanceChannelV1,
-  type SharedStateSqliteConformanceChannelV1,
-} from "./shared-state-sqlite-conformance-channel-v1.js";
-import {
-  createSharedStateSqliteWorkerLaneV1,
-  type SharedStateSqliteWorkerLaneV1,
-} from "./shared-state-sqlite-worker-lane-v1.js";
+  createSharedStateSqliteWorkerConformanceSessionV1,
+  type SharedStateSqliteWorkerConformanceSessionV1,
+} from "./shared-state-sqlite-worker-conformance-session-v1.js";
 import {
   SHARED_STATE_STORAGE_V1_VALUES as V,
   parseSharedStateTransactionResultV1,
@@ -65,6 +61,14 @@ import {
 
 const SKEW_TOLERANCE_MS =
   SHARED_STATE_EXPIRY_CONFORMANCE_V1.backwardSkewToleranceMs.toString();
+
+/**
+ * At least the harness's peak concurrency. A saturated lane answers the surplus
+ * with an operation-preserving `unavailable` result, which a harness cannot
+ * distinguish from an adapter answering inconsistently.
+ */
+const LANE_QUEUE_CAPACITY =
+  SHARED_STATE_EXPIRY_CONFORMANCE_V1.expectedTargetCommandCount;
 
 /**
  * The complete inventory of what worker-mode Phase 2.6 reaches for beyond the
@@ -142,21 +146,18 @@ interface SafetyReplayStateV1 {
 
 class WorkerExpiryConformanceTargetV1
 implements SharedStateExpiryConformanceTargetV1 {
-  readonly #lane: SharedStateSqliteWorkerLaneV1;
-  readonly #channel: SharedStateSqliteConformanceChannelV1;
+  readonly #session: SharedStateSqliteWorkerConformanceSessionV1;
   readonly #clock: SharedStateExpiryConformanceClockV1;
   readonly #adversarial: AdversarialWorkerExpiryControlV1;
   #cleanupState: "none" | "early-eviction-refused" | "deferred" = "none";
   #pressureBand: (typeof V.pressureBands)[number] = "none";
 
   constructor(input: {
-    readonly lane: SharedStateSqliteWorkerLaneV1;
-    readonly channel: SharedStateSqliteConformanceChannelV1;
+    readonly session: SharedStateSqliteWorkerConformanceSessionV1;
     readonly clock: SharedStateExpiryConformanceClockV1;
     readonly adversarial: AdversarialWorkerExpiryControlV1;
   }) {
-    this.#lane = input.lane;
-    this.#channel = input.channel;
+    this.#session = input.session;
     this.#clock = input.clock;
     this.#adversarial = input.adversarial;
   }
@@ -170,7 +171,7 @@ implements SharedStateExpiryConformanceTargetV1 {
    * the same port as the lane request that follows, so it is applied first.
    */
   #publishInstant(): void {
-    this.#channel.send("setObservedInstant", {
+    this.#session.channel().send("setObservedInstant", {
       observedAtUnixMs: this.#observedAtUnixMs(),
     });
   }
@@ -178,23 +179,22 @@ implements SharedStateExpiryConformanceTargetV1 {
   async #safetyReplayState(
     command: SharedStateTransactionCommandV1,
   ): Promise<SafetyReplayStateV1> {
-    return (await this.#channel.control(
+    return (await this.#session.channel().control(
       "expirySafetyReplayState",
       safetyReplayQuery(command),
     )) as SafetyReplayStateV1;
   }
 
   async open(): Promise<unknown> {
-    this.#publishInstant();
-    const opened = await this.#lane.open();
+    // No instant is published here: `open` consumes none, and publishing one
+    // would shift every later command's pairing by one.
+    const opened = await this.#session.open();
     if (!opened.ok) throw new Error(`open refused: ${opened.error.code}`);
     return opened.value;
   }
 
   async close(): Promise<unknown> {
-    const drained = await this.#lane.drain();
-    if (!drained.ok) throw new Error(`drain refused: ${drained.error.code}`);
-    const closed = await this.#lane.close();
+    const closed = await this.#session.close();
     if (!closed.ok) throw new Error(`close refused: ${closed.error.code}`);
     return closed.value;
   }
@@ -206,7 +206,7 @@ implements SharedStateExpiryConformanceTargetV1 {
       if (this.#adversarial.earlyEvictionActuallyDeletes === true) {
         // Violation: cleanup removed a logically active record. V1 has no
         // delete path, so this can only happen if the target does it.
-        this.#channel.send("expiryViolation", {
+        this.#session.channel().send("expiryViolation", {
           violation: "early-eviction-deletes",
         });
       }
@@ -224,7 +224,7 @@ implements SharedStateExpiryConformanceTargetV1 {
   ): void {
     if (this.#adversarial.pressureEvictsUnexpired === true) {
       // Violation: pressure dropped unexpired safety records.
-      this.#channel.send("expiryViolation", {
+      this.#session.channel().send("expiryViolation", {
         violation: "pressure-evicts-unexpired",
       });
     }
@@ -241,7 +241,7 @@ implements SharedStateExpiryConformanceTargetV1 {
     if (inclusiveReplay !== null) return inclusiveReplay;
 
     this.#publishInstant();
-    const result = await this.#lane.transact(command);
+    const result = await this.#session.lane().transact(command);
     if (!result.ok) throw new Error(`lane refused: ${result.error.code}`);
     return result.value;
   }
@@ -298,11 +298,11 @@ implements SharedStateExpiryConformanceTargetV1 {
   async captureConformanceSnapshot(): Promise<unknown> {
     if (this.#adversarial.implicitTtlOnOutbox === true) {
       // Violation: an implicit TTL silently retires an unacknowledged row.
-      await this.#channel.control("expiryViolation", {
+      await this.#session.channel().control("expiryViolation", {
         violation: "implicit-ttl-on-outbox",
       });
     }
-    return this.#channel.control("expirySnapshot", {
+    return this.#session.channel().control("expirySnapshot", {
       observedAtUnixMs: this.#observedAtUnixMs(),
       physicalCleanupState: this.#cleanupState,
       capacityPressureBand: this.#pressureBand,
@@ -317,7 +317,7 @@ function createWorkerExpiryFixtureV1(
   dispose(): Promise<void>;
 } {
   const directories: string[] = [];
-  const channels: SharedStateSqliteConformanceChannelV1[] = [];
+  const sessions: SharedStateSqliteWorkerConformanceSessionV1[] = [];
   let ordinal = 0;
 
   const factory: SharedStateExpiryConformanceTargetFactoryV1 = Object.freeze({
@@ -330,21 +330,18 @@ function createWorkerExpiryFixtureV1(
       );
       directories.push(directory);
 
-      const channel = createSharedStateSqliteConformanceChannelV1({
+      const session = createSharedStateSqliteWorkerConformanceSessionV1({
         filePath: join(directory, "v1.db"),
         ownerToken: `worker-expiry-conformance-owner-${ordinal}`,
         backwardSkewToleranceMs: SKEW_TOLERANCE_MS,
+        queueCapacity: LANE_QUEUE_CAPACITY,
+        acknowledgmentTimeoutMs: 30_000,
+        drainTimeoutMs: 30_000,
       });
-      channels.push(channel);
+      sessions.push(session);
 
       return new WorkerExpiryConformanceTargetV1({
-        lane: createSharedStateSqliteWorkerLaneV1({
-          channel: channel.laneChannel,
-          queueCapacity: 16,
-          acknowledgmentTimeoutMs: 30_000,
-          drainTimeoutMs: 30_000,
-        }),
-        channel,
+        session,
         clock: input.clock,
         adversarial,
       });
@@ -354,12 +351,8 @@ function createWorkerExpiryFixtureV1(
   return {
     factory,
     async dispose(): Promise<void> {
-      for (const channel of channels) {
-        try {
-          await channel.terminate();
-        } catch {
-          // The directory removal below is what actually matters.
-        }
+      for (const session of sessions) {
+        await session.dispose();
       }
       for (const directory of directories) {
         rmSync(directory, { recursive: true, force: true });
