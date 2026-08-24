@@ -2383,3 +2383,40 @@ persistence-worker change, configuration flag, default, serving-store selection,
 primitive source-of-truth move, legacy retirement, `stateContract` change,
 retention/prune, migration, performance claim, deployment, live action, or issue
 closure.
+
+### Slice W2c — Phase 2.3 through the worker lane
+
+Third harness onto the W2a scaffolding, and the first whose out-of-band surface
+is a row set rather than a scalar. Phase 2.3 derives both its snapshot and its
+reconciliation response from the same committed rows, so worker mode fetches
+those rows once through one `outboxRows` control and derives both on the main
+thread, exactly as the inline target derives both from one raw query. Deriving
+them from two separate reads would let a snapshot and a reconciliation disagree
+about what was committed, which is the specific confusion this harness exists to
+catch.
+
+The scaffolding needed one addition and no changes. Phase 2.3 is the first
+harness with an adversarial reopen that binds to a different database: inline it
+constructs a fresh `DatabaseSync`, and in worker mode it must spawn a worker
+against a different file. The session now exposes that as
+`rebindFilePathForViolation`, named so it cannot be mistaken for ordinary
+lifecycle. Nothing in a passing run calls it. Worker mode strengthens this
+particular violation rather than weakening it: the observation surface lives in
+the same worker that holds the connection, so a target cannot lose state and
+keep reporting the old rows.
+
+The inline target holds two handles against the same file, `reads` and `writes`.
+Worker mode collapses both into the worker that owns the connection, so the
+worker-mode target holds none. Everything W2b established carried over
+unchanged: the instant queue, harness-derived queue sizing, the reopen-capable
+session, and observing a fired fault by monotonic count rather than a reset
+flag.
+
+W2c checks neither 488 nor 489 and this record checks no box. Four harnesses run
+inline only — restart-continuity, partition, claim-graph, and lease — and no
+delayed-or-missing-earlier-ACK query case is proved. Phase 2.5's rival
+connection remains unjudged. It adds no broker runtime or HTTP import, existing
+persistence-worker change, configuration flag, default, serving-store selection,
+primitive source-of-truth move, legacy retirement, `stateContract` change,
+retention/prune, migration, performance claim, deployment, live action, or issue
+closure.

@@ -224,6 +224,16 @@ function applyControl(
       const parsed = expirySnapshotInputSchema.parse(input);
       return buildSharedStateExpiryConformanceSnapshotV1(db, parsed);
     }
+    case "outboxRows": {
+      // Observation uses the raw connection, never the fault handle.
+      return db
+        .prepare(
+          `SELECT stream_key_digest, event_key_digest, stream_sequence,
+                  receipt_state, acknowledgment_state
+             FROM shared_state_outbox`,
+        )
+        .all();
+    }
     case "idempotencyEffectCounts": {
       const total = (table: string): number => {
         const row = db
