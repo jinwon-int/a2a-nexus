@@ -20,11 +20,14 @@
  * NO MAIN-THREAD BYPASS. This target opens no `DatabaseSync` and holds no raw
  * read handle. Effect counts travel over the conformance control channel.
  *
- * What this does NOT do: it checks neither 488 nor 489. Five harnesses still run
- * inline only, and this proves no delayed-or-missing-ACK query case. It also
- * does not re-prove the adapter's statement ordering, which the inline target
- * already asserts and which is a property of the adapter rather than of the
- * lane.
+ * What this does NOT do: it checks neither 488 nor 489, and this proves no
+ * delayed-or-missing-ACK query case. It also does not re-prove the adapter's
+ * statement ordering, which the inline target already asserts and which is a
+ * property of the adapter rather than of the lane. Decision W6 recorded what does remain
+ * inline only: the write-effect assertions no worker target can make while it
+ * holds no raw handle, and the Phase 2.5 proofs about the adapter's real state
+ * under stress. Whether the ported set satisfies W0's wording is the separate
+ * judgment W6 describes.
  */
 import assert from "node:assert/strict";
 import { mkdtempSync, rmSync } from "node:fs";

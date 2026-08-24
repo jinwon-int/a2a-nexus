@@ -27,8 +27,12 @@
  * one `MessagePort` and `postMessage` delivery is ordered: a control posted
  * before the next lane request is applied before that request executes.
  *
- * What this does NOT do: it checks neither 488 nor 489. Six harnesses still run
- * inline only, and this proves no delayed-or-missing-ACK query case.
+ * What this does NOT do: it checks neither 488 nor 489, and this proves no
+ * delayed-or-missing-ACK query case. Decision W6 recorded what does remain
+ * inline only: the write-effect assertions no worker target can make while it
+ * holds no raw handle, and the Phase 2.5 proofs about the adapter's real state
+ * under stress. Whether the ported set satisfies W0's wording is the separate
+ * judgment W6 describes.
  */
 import assert from "node:assert/strict";
 import { mkdtempSync, rmSync } from "node:fs";

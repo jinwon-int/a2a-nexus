@@ -2969,3 +2969,58 @@ broker runtime or HTTP import, existing persistence-worker change, configuration
 flag, default, serving-store selection, primitive source-of-truth move, legacy
 retirement, `stateContract` change, retention/prune, migration, performance
 claim, deployment, live action, or issue closure. Issue #1504 remains OPEN.
+
+### Slice W8 — the documentary corrections W6 owed, and six headers that had gone stale
+
+W6 owed two documentary items: recording the statement-position exclusion in the
+worker headers that dropped it silently, and amending the plan's exit gate to
+name W0's close rule as a permitted divergence. This slice takes both, and fixes
+a third defect found while doing so. It changes no source and adds no test.
+
+**The statement-position exclusion is now recorded where it applies.** W6 found
+five worker targets that drop an inline assertion about where in the statement
+stream a fault or seam fires, and only two headers — claim-graph and
+idempotency — said so. The exclusion itself is upheld: the inline target asserts
+it against its own `preparedSql` log, which is an in-address-space artifact, and
+what it pins is a property of the adapter's SQL order rather than of the lane.
+The lease, outbox and restart-continuity headers now say the same thing about
+their own assertion. An unrecorded exclusion is indistinguishable from an
+oversight by anyone reading later, which is the whole reason W6 called it owed.
+
+**Six of the seven headers were asserting something that had stopped being
+true.** Each was written mid-sequence and counted the harnesses not yet ported —
+"Phase 2.5 still runs inline only" in lease, "Four harnesses still run inline
+only" in outbox, and similar counts in claim-graph, idempotency, restart-
+continuity and expiry. All seven have run in worker mode since W4, so every one
+of those sentences was false, and each was false in the direction that
+overstates how much is left rather than how much is done. Only the partition
+header, written last, was accurate. They now say what actually remains inline:
+the write-effect assertions no worker target can make while holding no raw
+handle, and the Phase 2.5 proofs about the adapter's real state under stress.
+
+This was not on W6's list. It was found while editing the three headers W6 did
+name, and it is worth recording that the defect class is the same one W6
+described — a file stating the state of the world at the moment it was written
+and never revisited. The counts are removed rather than corrected, because a
+count is exactly the kind of claim that goes stale silently; the replacement
+names the categories instead.
+
+**The exit gate now says what it does and does not prove.** The plan reads "both
+inline and worker-writer SQLite modes pass the same V1 suite", and W6 found that
+wording was serving as a proxy for "behaves the same way" while one scenario is
+passed by two different routes: inline closes a failed adapter and releases
+ownership even when `drain` refused, and W0 permits releasing ownership only
+after a successful drain, so worker mode tears down without claiming the release
+and reopens with the same owner token. W6 judged that a permitted divergence
+rather than a gate violation and this slice does not reopen that judgment. What
+it adds is the sentence the gate was missing: passing the same suite does not
+mean taking the same path, and the gate is not evidence the modes behave
+identically — only that neither fails.
+
+W8 checks no box. Two of W6's five owed items remain: the write-effect ports and
+the Phase 2.5 adapter-state ports, both of which need new closed read controls
+rather than documentation. It adds no broker runtime or HTTP import, existing
+persistence-worker change, configuration flag, default, serving-store selection,
+primitive source-of-truth move, legacy retirement, `stateContract` change,
+retention/prune, migration, performance claim, deployment, live action, or issue
+closure. Issue #1504 remains OPEN.

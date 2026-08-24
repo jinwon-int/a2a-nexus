@@ -40,6 +40,13 @@ Exit gate: source-only contract fixtures and negative parsing tests pass.
 - Run the full deterministic concurrent/failure suite locally.
 
 Exit gate: both inline and worker-writer SQLite modes pass the same V1 suite.
+Passing the same suite does not mean taking the same path, and where Decision W0
+is stricter than inline it wins. The known divergence is `close`: inline may
+close a failed adapter and release ownership even when `drain` refused, while W0
+permits releasing ownership only after a successful drain, so worker mode tears
+down without claiming the release and reopens with the same owner token. That is
+a permitted divergence, not a gate failure — but the gate is not evidence that
+the two modes behave identically, only that neither fails the suite.
 No production schema or broker path is changed.
 
 ## Phase 3 — Startup/readiness guard, source-only integration
