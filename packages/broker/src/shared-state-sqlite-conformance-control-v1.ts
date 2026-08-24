@@ -143,6 +143,15 @@ export const SHARED_STATE_SQLITE_CONFORMANCE_CONTROLS_V1 = Object.freeze([
    * projection contains.
    */
   "claimGraphState",
+  /**
+   * Phase 2.4 — returns every table the restart-continuity snapshot, cursor,
+   * and reconciliation are derived from, plus the persisted clock floor. One
+   * read for all of them: the harness compares snapshots across a restart by
+   * JSON string, so a snapshot assembled from several reads taken at different
+   * moments could differ from itself for reasons that have nothing to do with
+   * continuity.
+   */
+  "restartContinuityState",
 ] as const);
 
 /**

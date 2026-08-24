@@ -42,19 +42,19 @@ import {
   type SharedStateIdempotencyConformanceTargetFactoryV1,
   type SharedStateIdempotencyConformanceTargetV1,
   type SharedStateIdempotencyFaultPointV1,
-} from "./shared-state-idempotency-conformance-v1.js";
+} from "../shared-state-idempotency-conformance-v1.js";
 import {
   SHARED_STATE_SQLITE_CONFORMANCE_CONTROLS_V1,
   type SharedStateSqliteConformanceFaultPlanV1,
-} from "./shared-state-sqlite-conformance-control-v1.js";
+} from "../shared-state-sqlite-conformance-control-v1.js";
 import {
   createSharedStateSqliteWorkerConformanceSessionV1,
   type SharedStateSqliteWorkerConformanceSessionV1,
-} from "./shared-state-sqlite-worker-conformance-session-v1.js";
+} from "../shared-state-sqlite-worker-conformance-session-v1.js";
 import {
   SHARED_STATE_STORAGE_V1_VALUES as V,
   parseSharedStateTransactionResultV1,
-} from "./shared-state-storage-contract-v1.js";
+} from "../shared-state-storage-contract-v1.js";
 
 const COMMIT_SQL = "COMMIT";
 const LINK_WRITE_SQL_FRAGMENT = "INSERT INTO shared_state_idempotency_outbox_link";
