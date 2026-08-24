@@ -18,7 +18,7 @@ import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { Worker } from "node:worker_threads";
 
-import type { SharedStateSqliteWorkerBootstrapV1 } from "./shared-state-sqlite-worker-entry-v1.js";
+import type { SharedStateSqliteWorkerBootstrapV1 } from "./shared-state-sqlite-worker-runtime-v1.js";
 import type { SharedStateSqliteWorkerRequestV1 } from "./shared-state-sqlite-worker-protocol-v1.js";
 import type {
   SharedStateSqliteWorkerChannelFactoryV1,

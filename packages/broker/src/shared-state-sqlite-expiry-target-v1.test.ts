@@ -63,7 +63,6 @@ import {
   SHARED_STATE_EXPIRY_CONFORMANCE_V1,
   SharedStateExpiryConformanceErrorV1,
   runSharedStateExpiryConformanceV1,
-  sharedStateExpiryConformanceSnapshotV1Schema,
   type SharedStateExpiryCleanupControlV1,
   type SharedStateExpiryConformanceClockV1,
   type SharedStateExpiryConformanceTargetFactoryV1,
@@ -71,6 +70,7 @@ import {
 } from "./shared-state-expiry-conformance-v1.js";
 import { SharedStateSqliteAdapterV1 } from "./shared-state-sqlite-adapter-v1.js";
 import { applySharedStateSqliteSchemaV1 } from "./shared-state-sqlite-schema-v1.js";
+import { buildSharedStateExpiryConformanceSnapshotV1 } from "./shared-state-sqlite-expiry-snapshot-v1.js";
 import {
   SHARED_STATE_STORAGE_V1_VALUES as V,
   digestSharedStateKeyV1,
@@ -375,107 +375,15 @@ implements SharedStateExpiryConformanceTargetV1 {
 
   // ---- observation, always through the raw handle -----------------------
 
-  #count(table: string, where = ""): number {
-    const row = this.#reads
-      .prepare(`SELECT COUNT(*) AS count FROM ${table} ${where}`)
-      .get() as { count?: unknown };
-    return Number(row.count);
-  }
-
-  #maximum(table: string, column: string): bigint {
-    const rows = this.#reads
-      .prepare(`SELECT ${column} AS value FROM ${table}`)
-      .all() as readonly { value?: unknown }[];
-    let high = 0n;
-    for (const row of rows) {
-      // TEXT columns: SQL MAX() would order them lexically and rank "9" above
-      // "10". The comparison has to happen in BigInt.
-      if (row.value === null || row.value === undefined) continue;
-      const value = BigInt(String(row.value));
-      if (value > high) high = value;
-    }
-    return high;
-  }
-
-  #checkpointSequence(): bigint {
-    const row = this.#reads
-      .prepare(
-        `SELECT checkpoint_sequence FROM shared_state_graph_projection`,
-      )
-      .get() as { checkpoint_sequence?: unknown } | undefined;
-    if (row === undefined) return 0n;
-    return BigInt(String(row.checkpoint_sequence));
-  }
-
-  #activeLeaseCount(now: bigint): number {
-    const rows = this.#reads
-      .prepare(
-        `SELECT owner_key_digest, lease_expires_at_unix_ms
-           FROM shared_state_lease`,
-      )
-      .all() as readonly {
-        owner_key_digest?: unknown;
-        lease_expires_at_unix_ms?: unknown;
-      }[];
-    let count = 0;
-    for (const row of rows) {
-      if (typeof row.owner_key_digest !== "string") continue;
-      if (typeof row.lease_expires_at_unix_ms !== "string") continue;
-      if (BigInt(row.lease_expires_at_unix_ms) > now) count += 1;
-    }
-    return count;
-  }
-
   async captureConformanceSnapshot(): Promise<unknown> {
     if (this.#adversarial.implicitTtlOnOutbox === true) {
       // Violation: an implicit TTL silently retires an unacknowledged row.
       this.#reads.exec("DELETE FROM shared_state_outbox");
     }
-    const now = this.#clock.readObservedUnixMilliseconds();
-    const bound = this.#count(
-      "shared_state_lease",
-      "WHERE owner_key_digest IS NOT NULL",
-    );
-    return sharedStateExpiryConformanceSnapshotV1Schema.parse({
-      kind: "SharedStateExpiryConformanceSnapshotV1",
-      snapshotVersion: 1,
-      replayRetainedCount: this.#count("shared_state_replay_nonce"),
-      rateEntryRetainedCount: this.#count("shared_state_rate_cost"),
-      leaseBinding: bound > 0 ? "bound" : "unbound",
-      activeLeaseCount: this.#activeLeaseCount(now),
-      // Declared synthesis: derived from the fence the claim really wrote.
-      ownershipEpoch: this.#maximum(
-        "shared_state_lease",
-        "fencing_token",
-      ).toString(),
-      maximumFencingToken: this.#maximum(
-        "shared_state_lease",
-        "fencing_token",
-      ).toString(),
-      leaseResourceVersion: this.#maximum(
-        "shared_state_lease",
-        "resource_version",
-      ).toString(),
-      idempotencyOutcomeRetainedCount: this.#count("shared_state_idempotency"),
-      outboxEventRetainedCount: this.#count("shared_state_outbox"),
-      unacknowledgedEventCount: this.#count(
-        "shared_state_outbox",
-        "WHERE acknowledgment_state = 'unacknowledged'",
-      ),
-      acknowledgedEventCount: this.#count(
-        "shared_state_outbox",
-        "WHERE acknowledgment_state = 'acknowledged'",
-      ),
-      streamSequenceHighWater: this.#maximum(
-        "shared_state_outbox",
-        "stream_sequence",
-      ).toString(),
-      provenanceSourceRetainedCount: this.#count("shared_state_graph_source"),
-      provenanceSourceSequenceHighWater: this.#maximum(
-        "shared_state_graph_source",
-        "source_sequence",
-      ).toString(),
-      provenanceCheckpointSequence: this.#checkpointSequence().toString(),
+    // W2 extracted this builder so the worker-mode target proves the same
+    // snapshot shape from inside the worker instead of a second copy of it.
+    return buildSharedStateExpiryConformanceSnapshotV1(this.#reads, {
+      observedAtUnixMs: this.#clock.readObservedUnixMilliseconds().toString(),
       physicalCleanupState: this.#cleanupState,
       capacityPressureBand: this.#pressureBand,
     });

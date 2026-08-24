@@ -2232,3 +2232,86 @@ runtime or HTTP import, existing persistence-worker change, configuration flag,
 default, serving-store selection, primitive source-of-truth move, legacy
 retirement, `stateContract` change, retention/prune, migration, performance
 claim, deployment, live action, or issue closure.
+
+### Slice W2a — worker-mode conformance scaffolding and the first harness
+
+Decision W0 says a later slice must run every applicable V1 deterministic
+conformance/failure suite through worker mode before 488 can be checked. That
+is not a single slice. The seven inline SQLite targets are 550 to 1,200 lines
+each, and one pull request carrying worker-mode counterparts for all of them
+would be unreviewable. W2a therefore builds the shared scaffolding and moves
+exactly one harness onto it; the remaining six follow as separate slices, and
+neither 488 nor 489 is checked by any of them until the last.
+
+Phase 2.6 was chosen first because it is the only harness with no statement
+proxy at all: its controls are plain out-of-band SQL. That makes it the honest
+test of whether the scaffolding works, rather than a test of how clever the
+fault seam is.
+
+Four judgments were required to write this, and they are recorded here because
+they were made by the implementer rather than by an owner decision packet.
+
+**Judgment 1 — how fault injection and observation reach the worker.** Both
+travel over a new conformance control family in
+`shared-state-sqlite-conformance-control-v1.ts`. It is not an extension of the
+lane protocol: that protocol stays exactly as W0 fixed it, with five commands
+and no test affordance. Control messages ride the same port but are a separate,
+separately parsed family, and the conformance channel filters them out before
+the lane sees them — the lane treats an unrecognised envelope as a crossed
+response, so a leaked control reply would declare an unrelated ticket ambiguous.
+The control set is closed and enumerated rather than an SQL channel, so the
+out-of-band access each harness needs is a reviewable list. Sending a control to
+the production worker does nothing: that entry cannot correlate a message with
+no ticket and answers nothing. The test affordances live in a second worker
+build, `shared-state-sqlite-conformance-worker-entry-v1.ts`; the shipped entry
+imports none of it. Both builds serve the lane protocol through the same
+extracted `shared-state-sqlite-worker-runtime-v1.ts`, so a conformance run
+exercises the request handling that production runs.
+
+**Judgment 2 — the main-thread raw read handle is not needed, so it is not
+taken.** W0 forbids opening a second V1 adapter and bypassing the worker for a
+query, and it is genuinely ambiguous whether a test-only raw read handle for
+conformance snapshots falls under that. The ambiguity is avoided rather than
+resolved: because observation already has to travel for the controls, the
+snapshot travels with it. A worker-mode target opens no `DatabaseSync` and holds
+no raw handle, so the worker remains the single authority for its file and no
+interpretation of W0 is required. This is a stronger position than the inline
+targets hold.
+
+**Judgment 3 — the observed instant is injected into the worker, not carried on
+the protocol.** This was not visible until a clock-bearing harness was wired up.
+W1's worker reads `Date.now()`, which honours W0's prohibition on caller clock
+fields but cannot express `expiry - 1`, `expiry`, `expiry + 1` — the boundaries
+Phase 2.6 probes exactly, and which Phases 2.1, 2.2, and 2.4 also depend on. The
+runtime now takes its clock as a constructor input. The production entry passes
+the real one; the conformance build passes a deterministic one it drives through
+a control. The observation is still made by the thread that owns the adapter, at
+execution time, and no clock field appears on the lane protocol or on any
+command, so the prohibition holds as written and as intended.
+
+**Judgment 4 — the harnesses' sync `void` controls are satisfiable.** Every
+harness arms faults and applies controls through methods typed `: void` that it
+does not await, so a worker implementation cannot confirm delivery. Controls and
+lane requests share one `MessagePort` and `postMessage` delivery is ordered, so
+a control posted before the next lane request is applied before that request
+executes. The ordering guarantee, not an acknowledgment, is what makes these
+methods work; no harness signature changed.
+
+The Phase 2.6 snapshot builder was extracted from the inline target into
+`shared-state-sqlite-expiry-snapshot-v1.ts` and both modes now call it. Two
+copies of that SQL would let the two modes' evidence drift apart silently, and a
+worker-mode pass would stop meaning what an inline pass means. The extraction
+changed no behaviour: the inline Phase 2.6 target still passes unchanged.
+
+Still open, and deliberately not judged here: Phase 2.5 needs a second rival
+connection on the same file taking `BEGIN IMMEDIATE`, plus out-of-band ownership
+rewrites. Whether that rival belongs inside the worker, beside it, or is
+inapplicable to worker mode is a question for the slice that moves 2.5, and
+nothing here presumes an answer.
+
+W2a checks neither 488 nor 489 and this record checks no box. Six harnesses run
+inline only, and no delayed-or-missing-earlier-ACK query case is proved. It adds
+no broker runtime or HTTP import, existing persistence-worker change,
+configuration flag, default, serving-store selection, primitive source-of-truth
+move, legacy retirement, `stateContract` change, retention/prune, migration,
+performance claim, deployment, live action, or issue closure.
