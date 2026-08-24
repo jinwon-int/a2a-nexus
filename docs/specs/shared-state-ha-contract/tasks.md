@@ -2138,3 +2138,97 @@ W0 authorizes no runtime/HTTP import, existing persistence-worker change,
 configuration flag, default, serving-store selection, primitive source-of-
 truth move, legacy retirement, `stateContract` change, retention/prune,
 migration, performance claim, deployment, live action, or issue closure.
+
+### Slice W1 — the purpose-built protocol and the bounded FIFO lane
+
+This is the first source slice decision W0 authorized, and it is the only part
+of that decision it implements. It adds four modules and one test file under
+`packages/broker/src/`, and it changes no existing source.
+
+`shared-state-sqlite-worker-protocol-v1.ts` is the closed wire contract. It
+carries the existing closed transaction commands, the two existing closed Q1
+query requests, the three lifecycle controls `open`/`drain`/`close`, and a
+process-local ticket. It carries nothing else. Payload members are structurally
+`unknown` on the envelope and are then run through the real contract parsers on
+both sides, so a caller clock field, a backend command, or a sensitive field is
+refused by the same rules that already govern the inline path rather than by a
+second, weaker copy of them. The five command names are the adapter's own
+member names, not generic method names, and the envelope is `.strict()` in both
+directions.
+
+The broad `withTransaction(callback)` member is absent from the protocol by
+construction. Its callback and the `SharedStateStorageTransactionV1` it
+receives are functions, so structured clone cannot carry them, and holding a
+SQLite transaction open across message round-trips is not this lane's shape. It
+is never serialized and never transferred.
+
+`shared-state-sqlite-worker-entry-v1.ts` is the single V1 authority for its
+file in worker mode. It owns the `DatabaseSync` connection, the
+`SharedStateSqliteAdapterV1` instance, the lifecycle epoch, and the ownership
+token. It does not import, extend, or share a connection with
+`core/sqlite-worker-thread-persistence.ts`; it does not touch the legacy
+`SqliteBrokerStateStore` file, schema, protocol, or runtime flag; and the main
+thread holds no read connection of its own. The trusted time observation that
+`transact` requires is taken inside this thread, immediately before execution,
+which is why no clock field appears on the wire.
+
+`shared-state-sqlite-worker-lane-v1.ts` is the bounded FIFO. A ticket is
+assigned only after the request clears its closed parser and a queue slot is
+available, and exactly one request is in flight at a time, so a query's
+serialization point is its queue position. A rejected parse has no operation to
+preserve and returns the existing closed adapter failure; a saturated or
+closing queue, an unavailable worker, or a failed lifecycle returns the
+operation-preserving `unavailable` result, because in those cases the operation
+is known. The ticket never appears in a returned contract envelope and is not
+durable state, an outbox sequence, an outbox receipt or acknowledgment, or an
+idempotency key.
+
+A transaction promise reports `committed` only after the adapter's `transact`
+returned — which is after SQLite `COMMIT` — and after the worker's response for
+that exact ticket crossed back. Transport loss, worker exit, acknowledgment
+timeout, and a malformed or crossed response after dispatch are all ambiguous:
+the lane records the ambiguity, returns `unavailable`, and never invents a
+rollback, retries the command, or reports a commit. Because a later query could
+not then prove that every earlier accepted command reached a known committed or
+rolled-back result, the lane stops serving after an ambiguity instead of
+performing a main-thread stale read or weakening the requested consistency. It
+creates no replacement authority and never reopens the file. `drain` closes
+admission, waits for accepted tickets to settle, and fails closed on a timeout,
+a crash, or any remaining ambiguity; `close` asks the worker-owned adapter to
+release ownership only after that successful drain, and a forced termination
+never claims ownership was released.
+
+`shared-state-sqlite-worker-channel-v1.ts` is the only module that touches
+`node:worker_threads`. It resolves the compiled entry as a sibling of itself,
+the same mechanic the repository's one existing production worker uses, so the
+lane itself can be driven by a substitute channel.
+
+The test file proves both levels on purpose. A substitute channel drives
+capacity, exact dispatch order, crossed responses, acknowledgment timeout,
+worker loss, the query barrier, drain timeout, and unclean close, because those
+fail-closed rules are not reliably reproducible against a real thread and a
+flaky proof of a fail-closed rule is worse than none. A real worker thread
+drives open, commit-before-acknowledgment verified by an independent reader on
+the same file, a real domain rejection, both closed query families, and
+ownership release through drain then close, because those are exactly the
+claims a substitute channel could fake.
+
+Two defects were found and fixed by these tests before publication. A forced
+`terminate` left an already dispatched ticket permanently unsettled instead of
+declaring it ambiguous. And the acknowledgment and drain timers were `unref`ed,
+so a lane holding an unsettled write could let the process exit quietly and the
+ambiguity would never be declared; a dispatched-but-unsettled write is exactly
+the state in which that must not happen, and the timers are cleared when the
+ticket settles.
+
+W1 checks neither 488 nor 489, and this record checks no box. It runs no V1
+deterministic conformance or failure suite through worker mode, which 488
+requires, and it proves no delayed-or-missing-earlier-ACK query case beyond the
+single-lane barrier asserted here, which 489 requires. It claims no conformance
+to the broad `SharedStateStorageAdapterV1` interface: a narrow closed-command
+worker surface does not implement that interface merely by existing, and the
+lane is deliberately not declared as implementing it. It adds no broker
+runtime or HTTP import, existing persistence-worker change, configuration flag,
+default, serving-store selection, primitive source-of-truth move, legacy
+retirement, `stateContract` change, retention/prune, migration, performance
+claim, deployment, live action, or issue closure.
