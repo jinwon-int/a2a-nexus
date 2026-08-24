@@ -2315,3 +2315,71 @@ no broker runtime or HTTP import, existing persistence-worker change,
 configuration flag, default, serving-store selection, primitive source-of-truth
 move, legacy retirement, `stateContract` change, retention/prune, migration,
 performance claim, deployment, live action, or issue closure.
+
+### Slice W2b — Phase 2.2 through the worker lane, and what 2.6 could not surface
+
+Phase 2.2 is the second harness onto the W2a scaffolding. It was chosen next
+because 2.6 has no statement proxy at all, so W2a built the fault seam and the
+`readFaultState` control without ever exercising them. 2.2 arms four statement
+faults and asks whether each fired, which is the first real test of both.
+
+Moving one harness at a time paid for itself here: three defects surfaced that
+2.6 structurally could not have shown.
+
+**The observed instant had to become a queue, not a slot.** W2a published an
+instant to the worker and then admitted the command. Phase 2.2 submits
+sixty-four same-fingerprint contenders at once, so a later caller's instant
+overwrote an earlier caller's before the worker executed the earlier command.
+Each target publishes its instant immediately before admitting its command, in
+the same synchronous step, so publication order and lane admission order are the
+same order; consuming one instant per command therefore pairs each command with
+the instant its caller intended. An empty queue now fails the command closed
+rather than reusing a stale instant, because reusing one would answer with a
+silently wrong observation that no conformance suite can detect. Phase 2.6 is
+sequential and never exposed this.
+
+**The lane queue must be at least as deep as the harness's peak concurrency.**
+With a queue of sixteen against sixty-four contenders, the lane answered the
+surplus with an operation-preserving `unavailable` result. That is correct lane
+behaviour and indistinguishable, to a harness, from an adapter that gave
+identical requests different outcomes. Both worker-mode targets now size their
+queue from the harness's own declared operation count, which keeps the queue a
+scheduling detail rather than a silent participant in the proof. The inline
+targets have no queue, so nothing could have surfaced this before worker mode.
+
+**A clean close cannot be reopened in place, and should not be.** Every harness
+closes a target and reopens it. An inline target reopens an adapter that still
+holds its connection. Worker mode cannot: a clean close releases ownership and
+terminates the thread, and the lane refuses to reopen a closed lane by design,
+because a lane that quietly reopened would be creating the replacement authority
+W0 forbids. A reopen therefore spawns a new worker against the same file, which
+is a stronger proof than the inline reopen rather than a weaker one — the new
+worker must acquire ownership from scratch, which only succeeds if the previous
+close really released it. That lifecycle now lives in
+`shared-state-sqlite-worker-conformance-session-v1.ts` so the five remaining
+harnesses cannot each get ownership release subtly wrong.
+
+**How a fired fault is observed.** The inline target shares a boolean with its
+own proxy and resets it before each command. The proxy is in the worker here, so
+the target compares the worker's monotonic fired count before and after instead.
+A count survives a race that a reset flag does not: if a fault fires between the
+reset and the read, a flag reports the wrong transaction while a count still
+reports the right delta.
+
+**One unrelated test was repaired.** `shared-state-loss-monitor-v1.test.ts`
+asserted that two 20 ms timer probes land inside a fixed 70 ms sleep. That
+assumption stopped holding as the broker suite grew worker threads: it failed
+once during W1 and twice consecutively here, without the monitor ever being
+wrong. It now polls for the probes to a generous deadline, which keeps the claim
+and still fails if the timer never fires. This slice made a latent flake
+systematic, so it is repaired here rather than left for the next slice to
+rediscover.
+
+W2b checks neither 488 nor 489 and this record checks no box. Five harnesses run
+inline only — outbox, restart-continuity, partition, claim-graph, and lease — and
+no delayed-or-missing-earlier-ACK query case is proved. Phase 2.5's rival
+connection remains unjudged. It adds no broker runtime or HTTP import, existing
+persistence-worker change, configuration flag, default, serving-store selection,
+primitive source-of-truth move, legacy retirement, `stateContract` change,
+retention/prune, migration, performance claim, deployment, live action, or issue
+closure.

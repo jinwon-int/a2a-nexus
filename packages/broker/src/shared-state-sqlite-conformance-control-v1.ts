@@ -123,6 +123,12 @@ export const SHARED_STATE_SQLITE_CONFORMANCE_CONTROLS_V1 = Object.freeze([
    * belongs to the worker.
    */
   "expirySafetyReplayState",
+  /**
+   * Phase 2.2 — reports the durable effect counts the idempotency snapshot is
+   * built from. Two counts rather than a built snapshot, because the harness's
+   * snapshot shape is assembled from target-owned state as well.
+   */
+  "idempotencyEffectCounts",
 ] as const);
 
 /**

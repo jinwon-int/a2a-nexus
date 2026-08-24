@@ -101,8 +101,20 @@ test("timer inspects without an inbound request", async () => {
     },
   });
   monitor.start(20);
-  await new Promise((resolve) => setTimeout(resolve, 70));
-  monitor.stop();
+  try {
+    // Wait for the probes rather than sleeping a fixed span. A 70 ms sleep
+    // assumes two 20 ms timers get scheduled inside it, which stops holding
+    // under manifest-level load — this assertion went flaky as the suite grew
+    // worker threads, without the monitor ever being wrong. Polling to a
+    // generous deadline keeps the claim ("the timer probes with no inbound
+    // request") and still fails if the timer never fires at all.
+    const deadline = Date.now() + 5_000;
+    while (probes < 2 && Date.now() < deadline) {
+      await new Promise((resolve) => setTimeout(resolve, 10));
+    }
+  } finally {
+    monitor.stop();
+  }
   assert.ok(probes >= 2);
 });
 

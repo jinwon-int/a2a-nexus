@@ -73,10 +73,22 @@ const faultHandle = createSharedStateSqliteConformanceFaultHandleV1(
  * This worker's own clock. It is still worker-owned and still read at execution
  * time; it is simply deterministic, because the harnesses probe expiry and
  * lease boundaries exactly and a real clock cannot express `expiry - 1`,
- * `expiry`, and `expiry + 1`. It starts at zero so a harness that never sets an
- * instant gets an obviously unset value rather than a plausible wrong one.
+ * `expiry`, and `expiry + 1`.
+ *
+ * It is a queue, not a slot, and that is load-bearing. A harness may submit
+ * many commands concurrently — Phase 2.2 submits sixty-four contenders at once.
+ * Each target publishes its instant immediately before admitting its command to
+ * the lane, in the same synchronous step, so publication order and lane
+ * admission order are the same order. Consuming one instant per command
+ * therefore pairs each command with the instant its caller intended. A single
+ * slot would let a later caller overwrite an earlier caller's instant before
+ * the worker ever executed the earlier command.
+ *
+ * An empty queue fails the command closed rather than reusing a stale instant.
+ * Reusing one would silently answer with the wrong observation, and a
+ * conformance suite cannot detect that.
  */
-let observedInstant = "0";
+const observedInstants: string[] = [];
 
 const runtime = createSharedStateSqliteWorkerRuntimeV1({
   db: faultHandle,
@@ -87,7 +99,13 @@ const runtime = createSharedStateSqliteWorkerRuntimeV1({
   }),
   clock: {
     observeUnixMs(): string {
-      return observedInstant;
+      const next = observedInstants.shift();
+      if (next === undefined) {
+        throw new Error(
+          "conformance worker has no published instant for this command",
+        );
+      }
+      return next;
     },
   },
 });
@@ -183,7 +201,9 @@ function applyControl(
       };
     }
     case "setObservedInstant": {
-      observedInstant = observedInstantInputSchema.parse(input).observedAtUnixMs;
+      observedInstants.push(
+        observedInstantInputSchema.parse(input).observedAtUnixMs,
+      );
       return null;
     }
     case "expiryViolation": {
@@ -203,6 +223,18 @@ function applyControl(
     case "expirySnapshot": {
       const parsed = expirySnapshotInputSchema.parse(input);
       return buildSharedStateExpiryConformanceSnapshotV1(db, parsed);
+    }
+    case "idempotencyEffectCounts": {
+      const total = (table: string): number => {
+        const row = db
+          .prepare(`SELECT COUNT(*) AS total FROM ${table}`)
+          .get() as { total?: unknown };
+        return Number(row.total);
+      };
+      return {
+        outcomeCount: total("shared_state_idempotency"),
+        linkCount: total("shared_state_idempotency_outbox_link"),
+      };
     }
     case "expirySafetyReplayState": {
       return readExpirySafetyReplayState(
