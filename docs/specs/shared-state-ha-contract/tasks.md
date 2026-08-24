@@ -3106,3 +3106,76 @@ change, configuration flag, default, serving-store selection, primitive
 source-of-truth move, legacy retirement, `stateContract` change, retention/prune,
 migration, performance claim, deployment, live action, or issue closure. Issue
 #1504 remains OPEN.
+
+### Slice W10 — the adapter-stress ports, and an assertion that only works as an equality
+
+W6's last owed item. The worker partition target passes the Phase 2.5 harness
+and carries five adversarial controls, but each of those asserts that
+`runSharedStatePartitionConformanceV1` throws a named code when the target lies.
+That proves the harness is honest; it does not prove the adapter behaved. The
+three inline proofs left behind are the ones about behaviour: a real
+`SQLITE_BUSY` rather than a mapped constant, an armed fault that keeps firing
+rather than being consumed once, and a genuinely failed lifecycle rather than a
+target that merely reports not-ready. All three are ported here, in a new file,
+with no new control name, no generic SELECT and no second main-thread handle.
+
+**Every reading goes through `partitionState`, and that is the point.** Reading
+the target's own `captureConformanceReadiness()` would restate the harness,
+because the envelope it returns is the target's word. `partitionState` reads the
+raw connection and `adapter.lifecycle()` inside the worker, so it is a second
+witness independent of the object under test. W6's finding — that catching a
+lying target is not the same as observing the adapter — reappears one level
+down, and this is where it is answered.
+
+**Three details had to differ from inline, each for a reason.** The busy case
+asserts `store_failure`, not `lock_timeout`: the latter is the harness's mapped
+reason, and asserting it would re-prove the mapping instead of the collision.
+The level-trigger case arms `ambiguous-commit` and nothing else, because the
+worker target re-establishes the two ownership points per command, so those
+would satisfy an arm-once-refuse-many shape without ever level-triggering; only
+the commit point rides the repeating plan. And the still-`ready` reading in the
+busy case is taken while the rival provably still holds the lock, because
+`partitionHeal` reopens a failed adapter and a `ready` read taken after healing
+is a fact about the heal. For the same reason every recovery leg is proved by a
+committed write rather than by a lifecycle read.
+
+**`commitFaultFiredCount` is `firedAt.length` — every fault point, not just
+commits.** An exact delta off it is only safe in a file where one point is ever
+armed, which is why these tests arm nothing else and why `disarmFault`, which
+clears `firedAt`, is deliberately unused.
+
+**The teeth were checked in six passes, and two of them are worth recording
+because they disagree.** Removing the rival establishment failed the busy test
+alone. Disabling the `beginWrite` drive on the `unavailable` path — so the
+ownership row is foreign but the adapter has not observed it — failed the
+lifecycle test alone. Switching that test's premise from `unavailable` to
+`lost-fence` also failed it, which is the outcome wanted: the two collapse to
+the same lifecycle and reason codes, so without pinning the ownership row the
+test could not claim it established one premise rather than the other.
+
+The level-trigger pair is the instructive one. Making the plan one-shot failed
+the test, as it should. But the first attempt at that mutation also weakened the
+count assertion to a lower bound at the same time, and the test still failed —
+for the wrong reason, because a one-shot arm lets the second and third commands
+commit and the per-command refusal assertion catches that first. Isolating it
+showed what matters: with the plan one-shot, the per-command assertions relaxed,
+**and** the count weakened from `=== before + 3` to `> before`, the test passes.
+The exact equality is the only thing standing between this test and a one-shot
+arm that fires once and is silently consumed. A lower bound would have read as a
+reasonable relaxation and would have made the test decorative.
+
+Each mutation was reverted and both the test file and the worker entry restored
+byte-identical before committing.
+
+W10 checks no box. With this slice W6's owed list is empty: the read-path
+fails-closed cases landed in W7, the documentary corrections in W8, the
+write-effect ports in W9 with two of W6's five entries corrected, and the
+adapter-stress ports here. Whether the ported set now satisfies W0's wording —
+"every applicable V1 deterministic conformance/failure suite" — is the judgment
+W6 described and did not take, and W6's condition still holds: it should not be
+taken by a slice that benefits from the answer, which now means not by W7
+through W10 either. It adds no broker runtime or HTTP import, existing
+persistence-worker change, configuration flag, default, serving-store selection,
+primitive source-of-truth move, legacy retirement, `stateContract` change,
+retention/prune, migration, performance claim, deployment, live action, or issue
+closure. Issue #1504 remains OPEN.
