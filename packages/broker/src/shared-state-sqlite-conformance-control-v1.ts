@@ -167,6 +167,31 @@ export const SHARED_STATE_SQLITE_CONFORMANCE_CONTROLS_V1 = Object.freeze([
    * also commits. A deliberate violation; nothing in a passing run calls it.
    */
   "leaseClearViolation",
+  /**
+   * Phase 2.5 — heals whatever premise a previous fault point installed:
+   * disarms the commit fault without clearing its fired history, releases the
+   * rival lock, restores the ownership row, and reopens a failed adapter.
+   */
+  "partitionHeal",
+  /**
+   * Phase 2.5 — installs one fault premise. Decision W3 places the rival
+   * connection inside this worker, so the `timeout` premise is a real
+   * `BEGIN IMMEDIATE` taken by a second connection on the same file rather
+   * than a simulated refusal.
+   */
+  "partitionEstablish",
+  /**
+   * Phase 2.5 — heals, installs, and for the two ownership premises drives the
+   * adapter's own `beginWrite` guard so the premise is genuinely observed.
+   *
+   * The harness arms faults through a synchronous `void` method it never
+   * awaits, so a failure here cannot be thrown back at the caller. It is
+   * recorded instead and surfaced by the next awaited control, which is where
+   * the harness would notice it in any case.
+   */
+  "partitionArm",
+  /** Phase 2.5 — the single read the snapshot, readiness, and stale-read probes derive from. */
+  "partitionState",
 ] as const);
 
 /**

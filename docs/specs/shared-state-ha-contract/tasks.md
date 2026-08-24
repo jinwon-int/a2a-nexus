@@ -2634,3 +2634,56 @@ or issue closure. It checks neither 488 nor 489, and it does not by itself make
 488 checkable: that still requires the Phase 2.5 slice to land and, separately,
 489 requires focused proof that a query cannot resolve successfully across a
 delayed or missing earlier durable ACK.
+
+### Slice W4 — Phase 2.5 through the worker lane, completing the seven
+
+The last harness, implemented under the boundary decision W3 fixed. All seven
+Phase 2 conformance harnesses now run through the worker lane, unmodified, with
+every adversarial violation still failing closed.
+
+Decision W3 is what made this tractable. The rival connection lives inside the
+conformance worker as a bare second `DatabaseSync`, so the `timeout` premise is
+a real `RESERVED` lock colliding with the adapter's own `BEGIN IMMEDIATE`
+rather than a simulated refusal, and no main-thread handle exists — not even
+for the one harness whose subject is contention. The other four points were the
+shapes earlier slices had already solved.
+
+**The synchronous arm needed a place to put failures.** `armConformanceFault`
+is typed `: void` and the harness never awaits it, yet in worker mode it must
+heal the previous premise, install the new one, and for the two ownership
+points drive the adapter's own `beginWrite` guard so the premise is genuinely
+observed. Message ordering makes that work land before the next lane request,
+but a failure inside it cannot be thrown back at a caller that has already
+returned. The worker records it and the next awaited control surfaces it. That
+is where the harness would notice in any case, and it is strictly better than
+letting the failure vanish — a silently un-established premise would let the
+run report partition tolerance it never exercised.
+
+**Every refusal is a real adapter boundary.** `ownership_lost` comes from the
+adapter re-reading the ownership row; `store_failure` comes from a genuinely
+busy store or a throwing `COMMIT`. The target asserts which boundary produced
+each refusal rather than assuming it, exactly as the inline target does, and it
+re-establishes the ownership premises per command so each refusal is a fresh
+check inside the adapter rather than a cached verdict.
+
+Two mistakes are recorded because both failed quietly rather than loudly. The
+stale-read control was first written from the harness's schema rather than the
+inline target's construction, which dropped `completeness` and
+`asOfSourceSequence` and passed a decimal string where a number belongs; the
+harness reported a control failure, not a shape error. And the target initially
+did not seed provenance sources in `open()`, so checkpoint and high-water were
+equal, the stale answer read as `complete`, and the run failed as though the
+target had mislabelled a stale read when in fact it had never created the lag
+the harness measures.
+
+**What this does not do.** It checks neither 488 nor 489. Checking 488 is a
+separate judgment about whether seven passing worker-mode harnesses satisfy
+"every applicable V1 deterministic conformance/failure suite" as W0 worded it,
+and that judgment belongs in its own record rather than being taken here by the
+slice that would benefit from it. 489 additionally needs focused proof that a
+query cannot resolve successfully across a delayed or missing earlier durable
+ACK, which nothing in W1 through W4 provides. It adds no broker runtime or HTTP
+import, existing persistence-worker change, configuration flag, default,
+serving-store selection, primitive source-of-truth move, legacy retirement,
+`stateContract` change, retention/prune, migration, performance claim,
+deployment, live action, or issue closure.
