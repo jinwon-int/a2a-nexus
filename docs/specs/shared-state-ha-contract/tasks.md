@@ -2687,3 +2687,50 @@ import, existing persistence-worker change, configuration flag, default,
 serving-store selection, primitive source-of-truth move, legacy retirement,
 `stateContract` change, retention/prune, migration, performance claim,
 deployment, live action, or issue closure.
+
+### Slice W5 — the focused delayed-or-missing-ACK query proof
+
+Checklist item 489 asks for focused proof that a query cannot resolve
+successfully across a delayed or missing earlier durable ACK. W1 through W4 did
+not provide it, and it is worth being precise about why, because the gap was
+easy to mistake for covered ground.
+
+W1 already proves a query goes `unavailable` once the barrier *cannot be
+proved* — but it reaches that state by killing the worker. A crash is a
+different mechanism from an acknowledgment that is merely outstanding. The
+failure 489 guards against is not a crash: it is a query answering from state it
+was not yet entitled to see, while an earlier committed write is still in
+flight. A lane could pass every W1 test and still do that, because nothing there
+holds an ACK back and then releases it.
+
+This slice adds one test file and changes no source. It asserts three shapes of
+"the ACK has not crossed yet". A **delayed** ACK: while an earlier ticket is
+dispatched and unanswered, the later query is not dispatched at all and does not
+settle; when the ACK crosses, the query reaches the wire strictly after it, and
+that ordering is asserted on the wire rather than inferred from a result that
+happened to look right. A **missing** ACK with no failure signal: the query
+never resolves successfully, and when the lane is finally torn down it resolves
+`unavailable` rather than succeeding late. A **missing** ACK declared by
+timeout: the earlier ticket becomes ambiguous and the query is then
+operation-preserving `unavailable` with `achievedConsistency: null`. A fourth
+case drives a real worker, because a scripted channel could in principle satisfy
+all three while a genuine durable commit still raced.
+
+**The assertions were checked for teeth.** A test that cannot fail proves
+nothing, and this file's central claim — that a query stays behind an
+unacknowledged write — is exactly the kind that passes for the wrong reason if
+the queue happens to be empty. The lane was temporarily mutated to let a queued
+query jump the FIFO, and all five tests failed; the mutation was reverted and
+the file restored byte-identical before anything was committed. That is the same
+discipline the Phase 2 adversarial controls exist to enforce, applied to a
+proof this lane wrote for itself.
+
+W5 checks no box. 489 additionally requires what 488 requires, and whether the
+seven worker-mode harnesses satisfy W0's wording — "every applicable V1
+deterministic conformance/failure suite" — has not been recorded. That judgment
+would also have to say what "applicable" excludes and why, and it should not be
+taken by a slice that benefits from the answer. It adds no broker runtime or
+HTTP import, existing persistence-worker change, configuration flag, default,
+serving-store selection, primitive source-of-truth move, legacy retirement,
+`stateContract` change, retention/prune, migration, performance claim,
+deployment, live action, or issue closure.
