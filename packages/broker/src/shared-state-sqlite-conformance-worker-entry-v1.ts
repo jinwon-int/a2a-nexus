@@ -224,6 +224,50 @@ function applyControl(
       const parsed = expirySnapshotInputSchema.parse(input);
       return buildSharedStateExpiryConformanceSnapshotV1(db, parsed);
     }
+    case "restartContinuityState": {
+      // Observation uses the raw connection, never the fault handle.
+      const all = (sql: string): readonly Record<string, unknown>[] =>
+        db.prepare(sql).all() as readonly Record<string, unknown>[];
+      const total = (table: string): number => {
+        const row = db
+          .prepare(`SELECT COUNT(*) AS total FROM ${table}`)
+          .get() as { total?: unknown };
+        return Number(row.total);
+      };
+      const floor = db
+        .prepare(
+          `SELECT persisted_floor_unix_ms FROM shared_state_clock_floor
+            WHERE id = 1`,
+        )
+        .get() as { persisted_floor_unix_ms?: unknown } | undefined;
+
+      return {
+        outboxRows: all(
+          `SELECT stream_key_digest, stream_sequence, receipt_state,
+                  acknowledgment_state
+             FROM shared_state_outbox`,
+        ),
+        leaseRows: all(
+          `SELECT attempt_key_digest, fencing_token, resource_version
+             FROM shared_state_lease`,
+        ),
+        rateRows: all(`SELECT cost FROM shared_state_rate_cost`),
+        graphSourceRows: all(
+          `SELECT source_sequence FROM shared_state_graph_source`,
+        ),
+        projectionRows: all(
+          `SELECT checkpoint_sequence FROM shared_state_graph_projection`,
+        ),
+        replayRecordCount: total("shared_state_replay_nonce"),
+        idempotencyCount: total("shared_state_idempotency"),
+        linkCount: total("shared_state_idempotency_outbox_link"),
+        graphBatchCount: total("shared_state_graph_batch"),
+        persistedFloorUnixMs:
+          floor === undefined || typeof floor.persisted_floor_unix_ms !== "string"
+            ? null
+            : floor.persisted_floor_unix_ms,
+      };
+    }
     case "claimGraphState": {
       // Observation uses the raw connection, never the fault handle.
       const batches = (

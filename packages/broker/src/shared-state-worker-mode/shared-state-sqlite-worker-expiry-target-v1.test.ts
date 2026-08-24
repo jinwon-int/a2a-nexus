@@ -44,20 +44,20 @@ import {
   type SharedStateExpiryConformanceClockV1,
   type SharedStateExpiryConformanceTargetFactoryV1,
   type SharedStateExpiryConformanceTargetV1,
-} from "./shared-state-expiry-conformance-v1.js";
+} from "../shared-state-expiry-conformance-v1.js";
 import {
   SHARED_STATE_SQLITE_CONFORMANCE_CONTROLS_V1,
   SHARED_STATE_SQLITE_CONFORMANCE_CONTROL_V1,
-} from "./shared-state-sqlite-conformance-control-v1.js";
+} from "../shared-state-sqlite-conformance-control-v1.js";
 import {
   createSharedStateSqliteWorkerConformanceSessionV1,
   type SharedStateSqliteWorkerConformanceSessionV1,
-} from "./shared-state-sqlite-worker-conformance-session-v1.js";
+} from "../shared-state-sqlite-worker-conformance-session-v1.js";
 import {
   SHARED_STATE_STORAGE_V1_VALUES as V,
   parseSharedStateTransactionResultV1,
   type SharedStateTransactionCommandV1,
-} from "./shared-state-storage-contract-v1.js";
+} from "../shared-state-storage-contract-v1.js";
 
 const SKEW_TOLERANCE_MS =
   SHARED_STATE_EXPIRY_CONFORMANCE_V1.backwardSkewToleranceMs.toString();

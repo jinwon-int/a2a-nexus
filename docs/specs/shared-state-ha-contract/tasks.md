@@ -2464,3 +2464,60 @@ persistence-worker change, configuration flag, default, serving-store selection,
 primitive source-of-truth move, legacy retirement, `stateContract` change,
 retention/prune, migration, performance claim, deployment, live action, or issue
 closure.
+
+### Slice W2e — Phase 2.4 through the worker lane, and isolating worker-mode load
+
+Fifth harness onto the W2a scaffolding, and the hardest. Phase 2.4 is the first
+that crashes a target and reopens it with no close of its own, and the first
+that compares whole snapshots across a restart by JSON string. Both press on the
+lane's lifecycle rather than its transaction path, and three things had to be
+settled that no earlier slice reached.
+
+**A failed adapter is invisible to the lane, so the target restarts it.** After
+the forbidden backward-clock write the adapter rolls back and marks itself
+failed, and refuses everything afterwards. The lane cannot see that: the refusal
+arrives as an ordinary operation-preserving `unavailable` result value, not as a
+lane error, so the lane keeps believing it is ready and answers the harness's
+next `open` with `already_open`. The target now tears the worker down when it
+sees `unsafe_clock`, which is the worker-mode equivalent of the inline adapter
+being left failed — what follows a failed authority is a restart.
+
+**W0's close rule is kept rather than relaxed to match inline.** In the same
+scenario `drain` legitimately refuses, and the inline target simply closes
+anyway, releasing ownership. Decision W0 does not permit that here: `close` may
+ask the worker-owned adapter to release ownership only after a successful drain.
+So this target tears the worker down without claiming ownership was released,
+and the reopen re-acquires with the same owner token. That is what an unclean
+shutdown followed by a restart actually looks like, and it was verified
+empirically before being relied on.
+
+**Observation has to survive a crash.** The harness snapshots between a crash
+and the reopen that follows it, when no lifecycle is held. The session now
+exposes an observation channel that spawns a worker without opening the lane on
+it. Controls read the raw connection and do not require an open adapter, so this
+observes without acquiring ownership.
+
+**Worker-mode suites moved to their own serial manifest step.** These suites
+spawn real worker threads, and Phase 2.4 respawns one per simulated crash.
+Inside the `--test-concurrency=12` step that load pushed the `/health` p50 and
+p99 latency budgets past their thresholds — four manifest failures, none of them
+in the code under test. Those budgets guard something real, so they were not
+relaxed; the load was isolated instead. The suites now live in
+`packages/broker/src/shared-state-worker-mode/` and run as their own serial
+step after the concurrent one, which removed three of the four failures.
+
+The fourth is a property of the machine rather than of the change: this node has
+two CPUs, the concurrent step requests twelve, and the remaining failure was a
+p50 of 31.4 ms against a 30 ms budget at load average 7.5. The same manifest
+passed with `exit 0` on a rerun at load average 4.5, and the health suite passes
+14/14 in isolation. Recorded rather than smoothed over, because the honest
+statement is that this node cannot hold that budget under that concurrency, not
+that the budget is wrong.
+
+W2e checks neither 488 nor 489 and this record checks no box. Two harnesses run
+inline only — partition and lease — and no delayed-or-missing-earlier-ACK query
+case is proved. Phase 2.5's rival connection remains unjudged. It adds no broker
+runtime or HTTP import, existing persistence-worker change, configuration flag,
+default, serving-store selection, primitive source-of-truth move, legacy
+retirement, `stateContract` change, retention/prune, migration, performance
+claim, deployment, live action, or issue closure.

@@ -50,14 +50,43 @@ export interface SharedStateSqliteWorkerConformanceSessionV1 {
   lane(): SharedStateSqliteWorkerLaneV1;
   /** The live control channel. Throws if the session is not open. */
   channel(): SharedStateSqliteConformanceChannelV1;
+  /**
+   * A control channel for observation, spawning a worker if none is live but
+   * never opening the lane on it.
+   *
+   * Phase 2.4 needs this: it crashes a target and then asks for a snapshot
+   * before reopening, so the committed state has to be readable while no
+   * lifecycle is held. Controls read the raw connection and do not require an
+   * open adapter, so this observes without acquiring ownership. A later `open`
+   * still opens the lane normally on the worker this spawned.
+   */
+  observationChannel(): SharedStateSqliteConformanceChannelV1;
   /** Spawns a worker if needed and opens the lane on it. */
   open(): Promise<
     SharedStateSqliteAdapterResultV1<SharedStateStorageLifecycleV1>
   >;
-  /** Drains, closes, and only then terminates the worker. */
-  close(): Promise<
+  /**
+   * Drains, closes, and only then terminates the worker.
+   *
+   * `toleratesDrainFailure` exists for Phase 2.4, where a forbidden write
+   * leaves the adapter failed and `drain` legitimately refuses. The inline
+   * target branches on the adapter's lifecycle to skip drain in that case;
+   * tolerating the refusal is the same thing said from the lane's side. It is
+   * opt-in so an ordinary close still surfaces a drain that should have worked.
+   */
+  close(options?: {
+    readonly toleratesDrainFailure?: boolean;
+  }): Promise<
     SharedStateSqliteAdapterResultV1<SharedStateStorageLifecycleV1>
   >;
+  /**
+   * Simulates a crash: best-effort drain and close, then teardown, ignoring
+   * every failure. A crash takes the process down, so the harness reopens with
+   * no close of its own and the target must leave the file in a state a bare
+   * open can legally acquire — which means ownership has to be released, the
+   * same thing the inline target does.
+   */
+  crashForConformance(): Promise<void>;
   /** Forced teardown for fixtures. Never claims ownership was released. */
   dispose(): Promise<void>;
   /**
@@ -113,6 +142,15 @@ export function createSharedStateSqliteWorkerConformanceSessionV1(
       return channel;
     },
 
+    observationChannel(): SharedStateSqliteConformanceChannelV1 {
+      if (channel === null || lane === null) {
+        const spawned = spawn();
+        channel = spawned.channel;
+        lane = spawned.lane;
+      }
+      return channel;
+    },
+
     async open(): Promise<
       SharedStateSqliteAdapterResultV1<SharedStateStorageLifecycleV1>
     > {
@@ -124,14 +162,18 @@ export function createSharedStateSqliteWorkerConformanceSessionV1(
       return lane.open();
     },
 
-    async close(): Promise<
+    async close(options?: {
+      readonly toleratesDrainFailure?: boolean;
+    }): Promise<
       SharedStateSqliteAdapterResultV1<SharedStateStorageLifecycleV1>
     > {
       if (lane === null || channel === null) {
         throw new Error("worker conformance session is not open");
       }
       const drained = await lane.drain();
-      if (!drained.ok) return drained;
+      if (!drained.ok && options?.toleratesDrainFailure !== true) {
+        return drained;
+      }
       const closed = await lane.close();
       if (!closed.ok) return closed;
       // `lane.close` already terminated the thread after ownership release.
@@ -140,6 +182,28 @@ export function createSharedStateSqliteWorkerConformanceSessionV1(
       channel = null;
       lane = null;
       return closed;
+    },
+
+    async crashForConformance(): Promise<void> {
+      const liveLane = lane;
+      const liveChannel = channel;
+      channel = null;
+      lane = null;
+      if (liveLane !== null) {
+        try {
+          await liveLane.drain();
+          await liveLane.close();
+        } catch {
+          // A crash tolerates every failure on the way down.
+        }
+      }
+      if (liveChannel !== null) {
+        try {
+          await liveChannel.terminate();
+        } catch {
+          // Same.
+        }
+      }
     },
 
     rebindFilePathForViolation(next: string): void {
