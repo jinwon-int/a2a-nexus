@@ -155,11 +155,22 @@ export const SHARED_STATE_SQLITE_CONFORMANCE_CONTROLS_V1 = Object.freeze([
   /** Phase 2.1 — returns the committed lease rows the snapshot derives from. */
   "leaseRows",
   /**
-   * Phase 2.1 — returns the worker-owned adapter's own lifecycle.
+   * Phase 2.1 — returns the worker-owned adapter's own lifecycle, paired with
+   * the session epoch it holds and the epoch stored in the ownership row.
    *
    * The lane's state is not a substitute. Proving that a refused second owner
    * reached a failed state is a claim about the adapter, and the lane failing
    * alongside it is a weaker, coincidental fact.
+   *
+   * The epoch pair lives here rather than in its own control because the claim
+   * it serves — that the ownership epoch derives from the lease fence rather
+   * than from the session, so a reclaim moves the fence while the session epoch
+   * stays put — is a statement about this adapter's lifecycle. Both values are
+   * already returned verbatim by `partitionState`, so this re-cuts an existing
+   * read rather than reaching anywhere new.
+   *
+   * Reply shape: `{ lifecycle, adapterLifecycleEpoch,
+   * ownershipRowLifecycleEpoch }`.
    */
   "adapterLifecycle",
   /**

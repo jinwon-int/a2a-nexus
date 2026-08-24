@@ -331,7 +331,24 @@ function applyControl(
         .all();
     }
     case "adapterLifecycle": {
-      return adapter.lifecycle();
+      // The epoch pair rides along because the claim it serves — that the
+      // ownership epoch derives from the lease fence rather than from the
+      // session — is a statement about this adapter's lifecycle, which is what
+      // this control is named for. Both values are already returned verbatim by
+      // `partitionState`, so this re-cuts an existing read rather than reaching
+      // anywhere new. Observation uses the raw connection, never the fault
+      // handle.
+      const ownership = db
+        .prepare(
+          `SELECT lifecycle_epoch FROM shared_state_ownership WHERE id = 1`,
+        )
+        .get() as { lifecycle_epoch?: unknown } | undefined;
+      return {
+        lifecycle: adapter.lifecycle(),
+        adapterLifecycleEpoch: adapter.lifecycleEpoch,
+        ownershipRowLifecycleEpoch:
+          ownership === undefined ? null : String(ownership.lifecycle_epoch),
+      };
     }
     case "partitionHeal": {
       // Order matters: the commit fault goes first, because reacquiring

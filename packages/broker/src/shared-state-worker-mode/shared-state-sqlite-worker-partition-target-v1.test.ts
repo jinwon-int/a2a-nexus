@@ -558,6 +558,42 @@ test("runs the Phase 2.5 harness through the V1 SQLite worker lane", async () =>
   }
 });
 
+test("serves the stale answer from the worker's stored checkpoint and high-water state", async () => {
+  // Decision W6 owed this one. The harness run and the `staleReadNotLabeled`
+  // adversarial case both exercise `readConformanceStaleProjection`, but
+  // neither asserts the numbers it derives — the first only cares that the run
+  // passes, the second only that a lying target is caught. So nothing pinned
+  // that the stale answer is built from what the seeded transactions actually
+  // committed rather than from constants, which is the mode-dependent part:
+  // these sequences came back through the lane from a worker-owned adapter.
+  const fixture = createWorkerPartitionFixtureV1();
+  try {
+    const target = await fixture.factory.create();
+    await target.open();
+    const stale = (await target.readConformanceStaleProjection()) as {
+      readonly completeness?: unknown;
+      readonly checkpointSequence?: unknown;
+      readonly sourceSequenceHighWater?: unknown;
+      readonly asOfSourceSequence?: unknown;
+      readonly lag?: unknown;
+    };
+
+    // No projection batch is applied during seeding, so the checkpoint is still
+    // zero while the sources have advanced. A stale read must say so rather
+    // than round the gap away.
+    assert.equal(stale.completeness, "incomplete");
+    assert.equal(stale.checkpointSequence, "0");
+    assert.equal(
+      stale.sourceSequenceHighWater,
+      String(SEEDED_GRAPH_SOURCE_COUNT),
+    );
+    assert.equal(stale.asOfSourceSequence, stale.checkpointSequence);
+    assert.equal(stale.lag, SEEDED_GRAPH_SOURCE_COUNT);
+  } finally {
+    await fixture.dispose();
+  }
+});
+
 test("fails closed on each adversarial partition violation in worker mode", async () => {
   await expectWorkerConformanceErrorCode(
     { skipFaultInjection: true },

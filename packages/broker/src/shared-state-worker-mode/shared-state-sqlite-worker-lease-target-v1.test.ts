@@ -229,8 +229,8 @@ implements SharedStateLeaseConformanceTargetV1 {
     // is not a substitute: the claim under test is about the adapter.
     const failed = (await this.#secondary.observationChannel().control(
       "adapterLifecycle",
-    )) as { readonly state?: unknown } | null;
-    if (failed === null || failed.state !== "failed") {
+    )) as { readonly lifecycle?: { readonly state?: unknown } | null } | null;
+    if (failed === null || failed.lifecycle?.state !== "failed") {
       throw new Error("refused owner did not reach a failed state");
     }
     // The state is the adapter's; the reason code is the adapter's; only the

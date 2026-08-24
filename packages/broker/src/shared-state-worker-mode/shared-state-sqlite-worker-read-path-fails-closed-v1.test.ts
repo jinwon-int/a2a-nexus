@@ -349,10 +349,10 @@ function committedResult(
 async function lifecycleState(
   session: SharedStateSqliteWorkerConformanceSessionV1,
 ): Promise<string> {
-  const lifecycle = (await session.channel().control("adapterLifecycle")) as {
-    readonly state?: unknown;
+  const reply = (await session.channel().control("adapterLifecycle")) as {
+    readonly lifecycle?: { readonly state?: unknown } | null;
   } | null;
-  return String(lifecycle?.state);
+  return String(reply?.lifecycle?.state);
 }
 
 /**
