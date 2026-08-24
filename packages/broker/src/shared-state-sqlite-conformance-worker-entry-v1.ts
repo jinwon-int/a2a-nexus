@@ -25,6 +25,7 @@ import { buildSharedStateExpiryConformanceSnapshotV1 } from "./shared-state-sqli
 import { SHARED_STATE_STORAGE_V1_VALUES as V } from "./shared-state-storage-contract-v1.js";
 import {
   SHARED_STATE_SQLITE_EXPIRY_VIOLATIONS_V1,
+  SHARED_STATE_SQLITE_READ_PATH_CORRUPTIONS_V1,
   buildSharedStateSqliteConformanceReplyV1,
   parseSharedStateSqliteConformanceRequestV1,
   sharedStateSqliteConformanceFaultPlanV1Schema,
@@ -202,6 +203,22 @@ const expirySafetyReplayInputSchema = z
   .strict();
 
 /**
+ * Decision W6's read-path corruption. The identity carried here is the row's
+ * own digest, which the target already holds legitimately — the graph target
+ * computes its source fact digests, and the outbox event key digest comes back
+ * through the lane in the committed transaction result. No table, column,
+ * literal or predicate crosses the channel; the corruption member fixes all
+ * four.
+ */
+const readPathCorruptionInputSchema = z
+  .object({
+    corruption: z.enum(SHARED_STATE_SQLITE_READ_PATH_CORRUPTIONS_V1),
+    namespace: z.string().min(1),
+    digest: z.string().min(1),
+  })
+  .strict();
+
+/**
  * Reads the state capacity shedding and the inclusive-boundary probe both need.
  * Observation uses the raw connection, never the fault handle: a probe must not
  * be subject to an injected fault.
@@ -278,6 +295,25 @@ function applyControl(
         return null;
       }
       db.exec("DELETE FROM shared_state_outbox");
+      return null;
+    }
+    case "readPathCorruption": {
+      // Mutation uses the raw connection, never the fault handle: the point is
+      // a row that really is on disk and really is wrong, not an injected
+      // error the query layer could distinguish from genuine corruption.
+      const { corruption, namespace, digest } =
+        readPathCorruptionInputSchema.parse(input);
+      if (corruption === "graph-source-sequence-noncanonical") {
+        db.prepare(
+          `UPDATE shared_state_graph_source SET source_sequence = ?
+             WHERE namespace = ? AND source_fact_digest = ?`,
+        ).run("03", namespace, digest);
+        return null;
+      }
+      db.prepare(
+        `UPDATE shared_state_outbox SET receipt_state = ?
+           WHERE namespace = ? AND event_key_digest = ?`,
+      ).run("invented", namespace, digest);
       return null;
     }
     case "expirySnapshot": {
