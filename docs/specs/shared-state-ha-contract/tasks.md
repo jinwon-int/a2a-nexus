@@ -3024,3 +3024,85 @@ persistence-worker change, configuration flag, default, serving-store selection,
 primitive source-of-truth move, legacy retirement, `stateContract` change,
 retention/prune, migration, performance claim, deployment, live action, or issue
 closure. Issue #1504 remains OPEN.
+
+### Slice W9 — the write-effect ports, and two items W6 should not have listed
+
+W6 said no worker target asserts what a command left on disk, because worker
+targets hold no raw handle by design, and listed five inline tests as owed. This
+slice ports the ones that are really owed and records why two of them are not.
+
+**Three ports, and a fourth claim nobody had ever made.** The expiry retention
+proof — that an overwrite never briefly deletes the replay row, so the count
+stays one across the exclusive boundary — and the epoch provenance proof — that
+a lease reclaim moves the fence while the session epoch stays put — are both
+mode-dependent, and both are now made against a worker-owned adapter. The Phase
+2.5 stale answer is a third: the harness run and the `staleReadNotLabeled`
+adversarial case each exercise `readConformanceStaleProjection`, but neither
+asserts the numbers it derives, so nothing pinned that the stale answer is built
+from what the seeded transactions actually committed rather than from constants.
+
+The fourth is the one worth naming. `shared-state-sqlite-lease-target-v1.test.ts:810`
+is titled "confirms a lease command writes one row and stages no audit or
+outbox" and its body runs no lease command. It opens a bare handle, applies the
+schema, and reads `sqlite_master` to show no audit table exists. That is a
+schema-shape claim, and the worker entry applies the same schema function to the
+same file, so the catalogue cannot differ by mode; porting it would need a
+generic catalogue read in order to prove nothing. But the claim in its *title*
+is mode-dependent and had never actually been asserted anywhere. It is made here
+for the first time, against the durable rows: one lease row, zero outbox rows,
+zero idempotency effects.
+
+**Almost nothing new was needed.** `leaseRows`, `outboxRows`,
+`idempotencyEffectCounts` and `expirySnapshot` already return every value these
+ports assert but one. The exception is the epoch pair, and it was added to
+`adapterLifecycle`'s reply rather than to a new control, because `partitionState`
+already returned both values verbatim — this re-cuts an existing read rather
+than reaching anywhere new, and the claim it serves is a statement about the
+adapter's lifecycle, which is what that control is named for. No new control
+name, no generic SELECT, no second main-thread handle.
+
+**W6 was wrong about `shared-state-sqlite-outbox-target-v1.test.ts:604`, and
+this is a correction rather than a quiet omission.** That test reads
+`SqliteOutboxConformanceTargetV1.prototype.appendOutbox.toString()` and asserts
+the source string contains no "sequence". It opens no database. W6's own
+definition excludes static assertions over source text or a prototype precisely
+because they cannot change with execution mode — and then W6 listed this one
+among the write-effect gaps, under a sentence about what no worker test can
+assert about disk. It asserts nothing about disk. It appears to have been swept
+in by file-and-line proximity to the genuine items rather than by content.
+
+The same overreach explains lease-target:810, whose title matches the
+write-effect category while its body does not. Both errors point the same way:
+W6 read the titles when it should have read the bodies. The owed list is
+corrected from five items to four, and this slice closes three of them plus the
+claim lease-target:810 only ever promised.
+
+Recording this matters more than fixing it quietly. W6 itself argued that an
+unrecorded exclusion is indistinguishable from an oversight to anyone reading
+later; dropping two of its own items without saying so would have been the same
+failure with the sign reversed.
+
+**The assertions were checked for teeth**, in four passes. Shifting the exclusive
+boundary by one instant failed the retention test and nothing else. Consuming a
+different nonce at the third instant — so the table legitimately holds two rows
+— failed the same test on its on-disk count, which is the assertion no worker
+target could make before. Removing the second lease claim failed the epoch
+provenance test, since the fence then never moves. Deriving the stale
+high-water from the checkpoint rather than the stored sequence failed the Phase
+2.5 port along with two existing tests. An earlier attempt at the third mutation
+— reclaiming under the same owner id — did *not* fail, because a same-owner
+reclaim still advances the fence; that was a bad mutation rather than a weak
+assertion, and it was replaced. Each mutation was reverted and the files
+restored byte-identical before committing.
+
+W9 checks no box. One of W6's owed items remains: the Phase 2.5 proofs about the
+adapter's real state under stress — a real `SQLITE_BUSY` producing
+`lock_timeout`, a level-triggered arm that keeps firing and is restored by
+disarming, and a genuinely failed lifecycle before a not-ready report. Whether
+the ported set then satisfies W0's wording is still the separate judgment W6
+describes, and it should still not be taken by a slice that benefits from the
+answer. It adds no broker runtime or HTTP import, existing persistence-worker
+change, configuration flag, default, serving-store selection, primitive
+source-of-truth move, legacy retirement, `stateContract` change, retention/prune,
+migration, performance claim, deployment, live action, or issue closure. Issue
+#1504 remains OPEN.
