@@ -485,8 +485,8 @@ than advancing the legacy store's `SQLITE_SCHEMA_VERSION`.
 - [x] Add exclusive singleton ownership and monotonic lifecycle epoch.
 - [x] Implement all primitives with `BEGIN IMMEDIATE` atomic boundaries.
 - [x] Prove inline writer conformance.
-- [ ] Prove optional FIFO worker writer conformance and durable ACK behavior.
-- [ ] Ensure synchronous reads declare/bound consistency and cannot observe an
+- [x] Prove optional FIFO worker writer conformance and durable ACK behavior.
+- [x] Ensure synchronous reads declare/bound consistency and cannot observe an
   unacknowledged write as committed.
 - [ ] Preserve existing export/inspection and fail-safe recovery behavior.
 - [ ] Keep runtime integration/default enablement off.
@@ -3179,3 +3179,118 @@ persistence-worker change, configuration flag, default, serving-store selection,
 primitive source-of-truth move, legacy retirement, `stateContract` change,
 retention/prune, migration, performance claim, deployment, live action, or issue
 closure. Issue #1504 remains OPEN.
+
+### Decision W11 — independent final judgment for 488 and 489
+
+This decision was taken from merged `main` at `1262f3d7`, after W10 PR #1984,
+by a reviewer who wrote none of W1 through W10. It changes no source or test.
+Its job is the judgment W6 reserved: re-read the bodies rather than the titles,
+decide what W0's "applicable" means, and then decide checklist items 488 and
+489 in that order.
+
+**The W6 definition is retained, with a narrower statement of why.** A suite is
+applicable when the truth of the claim it makes can change because worker mode
+moves adapter authority, ordering, durable-result acknowledgment, lifecycle, or
+the observable failure boundary behind the FIFO thread. Mere physical ability
+to send the same input through a worker is not enough. Otherwise every adapter
+value matrix would become a worker conformance requirement even though the
+worker invokes the same parsed command on the same adapter implementation, and
+"applicable" would do no work at all. This reading follows the subject of item
+488 and W0: worker-writer conformance, not a second proof of every inline unit
+fact. It also explains W0's explicit rejection of protocol shape, FIFO-only,
+and inline-only evidence: the mode boundary must carry the claim.
+
+This was not a definition chosen to make the remaining set small. Under it W6
+found mode-dependent omissions inside work already called complete, and W7
+through W10 had to add read-path, durable-effect, and real-adapter stress proofs.
+Those additions would be unnecessary under a lineage-only or file-name reading.
+W9's two corrections show that W6 applied its own definition incorrectly twice;
+they do not show that the definition itself was self-serving.
+
+**The four unported suites were re-read by body.** The result is:
+
+- `shared-state-sqlite-query-surface-v1.test.ts` remains inapplicable. Its first
+  six tests exercise the broad async normalization wrapper with fixtures or
+  hand-written dispatchers. The seventh constructs a real adapter but never
+  opens it. Worker mode exposes the narrow W0 lane, not that broad wrapper, and
+  bootstraps the adapter before the lane can answer an operation. No worker
+  authority, FIFO, or durable-ACK claim is present in those bodies.
+- The three successful graph-query bodies and three successful outbox-query
+  bodies remain adapter semantics rather than worker-mode claims. They pin
+  projection, rollback, pagination, numeric ordering, and cursor binding inside
+  the same `SharedStateSqliteAdapterV1` the worker owns. W1 carries each closed
+  query family through a real worker and the two-sided closed result parser;
+  rerunning every data matrix would duplicate the adapter proof, not establish
+  a new authority or ordering fact. Their pre-open bodies are unreachable for
+  the same bootstrap reason. Their six mode-dependent failure arms were the
+  real omission: rival lock, withdrawn ownership, and malformed durable state
+  for both query families. W7 now proves all six through worker mode and proves
+  admission rather than accepting a lane-synthesized refusal as adapter output.
+- `shared-state-sqlite-adapter-v1.test.ts` is not applicable wholesale. Its
+  closed-surface/catalog assertions are static; its primitive value matrices
+  exercise the unchanged adapter implementation; and most of its durable-row
+  checks use the fixture's raw handle, which W0 correctly forbids exporting.
+  The claims for which that raw handle concealed a worker-specific gap are now
+  separately observable: W9 proves the lease row, expiry retention, epoch/fence
+  provenance, and stale projection values; W10 proves real lock collision,
+  level-triggered fault behavior, and failed lifecycle; W7 proves query refusal;
+  and the seven backend-neutral Phase 2 harnesses run on the worker-owned
+  adapter. The no-schema half of the open test is deliberately replaced by
+  worker bootstrap applying the schema; a foreign schema fails in that shared
+  schema applier before an adapter exists and is covered at the lane boundary by
+  worker-loss fail-closed behavior. The prepared-SQL ordering body remains an
+  in-thread implementation witness, not a lane claim.
+
+This body review confirms W9's two W6 corrections. Outbox target line 604 reads
+a prototype string and opens no database. Lease target line 810 reads
+`sqlite_master`; despite its title, it executes no lease command. The former is
+static and excluded. The latter catalog fact is mode-invariant, while W9 added
+the stronger body its title had promised: one durable lease row and no outbox
+or idempotency effect through the worker.
+
+**The test-count difference is not an unclosed conformance difference.** The
+inline target files and worker target files do not map one Node test to one Node
+test. A worker target invokes the same backend-neutral Phase 2 harness, whose
+scenario matrix and assertions live below that invocation, then adds its
+worker-specific adversarial controls. Counting only top-level `test()` calls
+therefore understates what each worker harness runs. What the count could hide
+was examined claim by claim in W6 and then closed by W7 through W10. Static
+shape, raw prepared-statement position, broad-wrapper, and pre-open assertions
+remain deliberate exclusions; no identified worker-dependent assertion remains
+only inline.
+
+**488 can now be checked.** The purpose-built lane proves parser-before-
+admission, bounded FIFO dispatch, known rejection, ambiguity without retry,
+worker loss, drain/close, and a real COMMIT before its ticket acknowledgment.
+All seven applicable deterministic Phase 2 conformance/failure harnesses run on
+the worker-owned adapter. W7 through W10 add the mode-dependent claims those
+harness invocations had dropped, and the worker directory now contains 42
+passing top-level tests. This is worker-writer conformance plus durable ACK
+behavior, not a full broad-adapter or runtime-integration claim.
+
+**489 can be checked only after 488, and 488 now stands.** Both query families
+carry their required consistency through the real worker. W7 proves busy,
+withdrawn-ownership, and malformed-state reads return operation-preserving
+`unavailable` with no false admission. W5 proves a later query is not dispatched
+or settled while an earlier write response is outstanding, is dispatched only
+after that response crosses, and cannot succeed when the response never arrives
+or times out; its real-worker case then proves the query observes the committed
+append only behind that append.
+
+One W5 helper is misleading and was not treated as evidence it does not contain:
+`committedAppendValue()` actually builds an `unavailable` transaction result.
+That means the scripted delayed-response test alone is not a real committed
+append. It does not invalidate the ordering proof: before any response exists,
+the lane cannot inspect its eventual status and the query remains undispatched;
+W1 separately proves with an independent SQLite reader that a real worker
+commits before acknowledging, and W5's real-worker case proves the post-commit
+query observes the append. The delayed/missing claim therefore rests on those
+three bodies together, not on the helper's name. Renaming that fixture or using
+a committed envelope would improve local clarity, but it is not missing safety
+evidence and is not a prerequisite to either box.
+
+The two checklist boxes above are checked by this docs-only decision. This does
+not attach the lane to broker runtime, make it a default or serving store, claim
+full broad-adapter conformance, change `stateContract`, authorize primitive
+integration, retention/prune, migration, performance, deployment, or any live
+action, or close #1504. Issue #1504 remains OPEN.
