@@ -2734,3 +2734,167 @@ HTTP import, existing persistence-worker change, configuration flag, default,
 serving-store selection, primitive source-of-truth move, legacy retirement,
 `stateContract` change, retention/prune, migration, performance claim,
 deployment, live action, or issue closure.
+
+### Decision W6 — what "applicable" means for 488, and why neither box is checked
+
+W5 closed by naming the judgment it could not take: whether the seven
+worker-mode harnesses satisfy W0's wording, "every applicable V1 deterministic
+conformance/failure suite", and what "applicable" excludes and why. This slice
+takes that judgment. It was taken by a reviewer who wrote none of W1 through
+W5, which is the condition W5 attached to it. It changes no source and adds no
+test.
+
+**"Applicable" is decided by mode-dependence, not by suite lineage.** A V1
+deterministic conformance/failure suite is applicable to 488 when its claim
+could come out differently once the adapter is owned by a worker thread behind
+the bounded FIFO lane. That is the only reading under which running a suite
+through worker mode proves something, and it is the reading W0 already implies
+when it refuses protocol shape, queue FIFO tests, and inline evidence as
+grounds. Four categories therefore fall outside it. Static assertions over
+source text or a prototype — the descriptor shape and collapse arithmetic each
+target declares, and the "keeps every conformance seam off the adapter's public
+surface" test present in all seven inline targets — cannot change with
+execution mode, because no database is opened. In-address-space artifacts are
+excluded for the opposite reason: a prepared-SQL log and a fault armed at a
+statement position are observable only from the thread holding the connection,
+and exporting them across the lane would widen the closed control protocol that
+W0 exists to keep narrow. Pre-open lifecycle windows are excluded because they
+are structurally unobservable: the worker runtime opens the adapter during
+bootstrap, so there is no interval in which the lane can present an unopened
+adapter. And suites driven by stubs or golden fixtures rather than a real
+database are excluded by W0's own sentence.
+
+**The four suites that construct the adapter but were never ported.** Measured
+at this commit, eleven test files construct `SharedStateSqliteAdapterV1`; seven
+have worker-mode counterparts and four do not, totalling 3,976 lines and 74
+tests. Each is answered separately, because the aggregate number is misleading.
+
+`shared-state-sqlite-query-surface-v1.test.ts` (239 lines, 7 tests) is **not
+applicable**. Six of its seven tests drive hand-written stub dispatchers and a
+golden JSON fixture and open no database at all; the seventh, "maps a real
+not-ready SQLite dispatcher to closed unavailable" at line 222, is a pre-open
+case. Running shape assertions through a worker would be inline evidence
+wearing a worker costume.
+
+`shared-state-sqlite-adapter-v1.test.ts` (2,804 lines, 55 tests) is **not
+applicable as a suite**, and this is the answer most at risk of being wrong, so
+it is given in parts. It is the inline unit suite of the adapter, not a Phase
+2.x conformance harness. Its genuinely mode-dependent claims — exclusive
+ownership, monotonic lifecycle epoch, fails-closed on lost ownership, expiry
+boundaries, lease fencing, idempotent replay — are already proved through the
+lane by the worker lease, expiry, idempotency, restart-continuity, and
+partition targets, so porting them re-proves settled ground. The residue is
+what cannot be ported: forty-one of its tests assert or mutate through the raw
+`DatabaseSync` the fixture hands them, against roughly ten tables, and the
+conformance control channel is a closed enum of harness-shaped reads with no
+generic SELECT, deliberately. The statement-ordering proof at line 2394 works
+by proxying `prepare` and comparing indices in a captured SQL log. The
+schema-refusal test at line 784 needs an adapter opened against a missing or
+corrupted schema, which both worker entry points make unreachable by applying
+the schema and throwing before the adapter exists. Porting this suite means
+inventing about a dozen new control names, which is the protocol widening W0
+forbids, in exchange for claims already held elsewhere.
+
+`shared-state-sqlite-query-graph-v1.test.ts` (536 lines, 6 tests) and
+`shared-state-sqlite-query-outbox-v1.test.ts` (397 lines, 6 tests) are
+**partially applicable, and this is a real gap.** Their pre-open tests, at
+graph line 519 and outbox line 378, are excluded as unobservable. Their cursor
+and ordering tests are portable but duplicative, since the query families
+already run end-to-end through a real thread in the W1 lane suite. But four
+tests are neither: "returns closed unavailable for a busy writer and lost
+ownership" at graph line 456 and outbox line 324, and the malformed-durable-
+state tests at graph line 489 and outbox line 355. These are read-path
+fails-closed proofs, they depend on who owns the connection, and nothing in
+worker mode covers them. The ACK barrier added by W5 proves the barrier holds;
+it does not prove a read fails closed against a rival writer's lock, a
+withdrawn ownership row, or a corrupted durable row. Checklist item 489 is
+explicitly a read-path item, so this gap bears on 489 directly and not only
+through 488.
+
+**The seven ported harnesses are not a one-to-one port, and that is where the
+larger gap is.** The four unported suites are the visible number; they are
+mostly not applicable. The harnesses recorded as done are the opposite. Across
+the seven pairs the inline targets hold 57 tests and the worker targets hold
+21, and by assertion content rather than test name roughly 14 are genuinely
+re-proved. The adversarial layer is complete and should be said so plainly:
+every fails-closed control name and expected error code appears verbatim in the
+corresponding worker target, in all seven pairs, with no omission. The harness
+runs are likewise ported. What is missing divides in two. Some of it is
+correctly excluded under the definition above — the static descriptor and
+seam-surface tests, and the statement-position tests — but only two worker
+headers, claim-graph at line 28 and idempotency at line 25, actually say so.
+The lease, outbox, and restart-continuity headers drop the same statement-
+position assertion silently, and their "declares the control inventory and
+fault mapping" tests assert the static plan rather than an observed firing
+position, which is a resemblance of name and not of content. Those three
+exclusions are correct but unrecorded, and an unrecorded exclusion is
+indistinguishable from an oversight by anyone reading later.
+
+The rest is not correctly excluded. Worker targets hold no raw handle by
+design, so no worker test can assert what reached disk. That removes the lease
+write-effect test at line 810, the expiry retention and lease-fence provenance
+tests at lines 643 and 720, the partition stale-answer test at line 1134, and
+the outbox sequence-provenance test at line 604. It also removes three
+partition proofs about the adapter's real state under stress: a genuine
+`SQLITE_BUSY` producing `lock_timeout` at line 996, a level-triggered arm that
+keeps firing and is restored by disarming at line 1054, and a genuinely failed
+lifecycle before a not-ready report at line 1088. The worker suite substitutes
+adversarial controls that catch a lying target, which proves the harness is
+honest rather than that the adapter behaved. These claims are mode-dependent by
+the definition this decision adopts, so their absence is a coverage gap and not
+an exclusion. It is a plumbing debt, not a design error: the no-bypass rule is
+right, and the missing piece is a small set of closed read controls that would
+let a worker target observe durable state without opening a second connection.
+
+**On the two exclusions W2d and W2f recorded.** Both are upheld. Statement
+ordering is a property of the adapter's SQL order rather than of the lane, and
+the inline target asserts it against its own `preparedSql` log; seam firing
+position is the same claim. Neither becomes a different fact when the adapter
+sits behind a worker. The correction owed is documentary, not substantive: the
+same exclusion applies to three further pairs whose headers do not mention it.
+
+**On the W2e divergence between inline and worker mode.** W2e kept W0's close
+rule rather than relaxing it to match inline, so in the scenario where `drain`
+legitimately refuses, the inline target closes anyway and releases ownership
+while the worker target tears down without claiming ownership was released and
+reopens with the same owner token. The exit gate in the plan reads "both inline
+and worker-writer SQLite modes pass the same V1 suite". This is **not a
+violation of that gate.** Both modes pass the same suite; W0 is the later and
+more specific decision, and it deliberately forbids in worker mode what inline
+permits. The gate is nonetheless weaker than it looks, because "passes the same
+suite" was serving as a proxy for "behaves the same way", and here the proxy
+leaks: one scenario is passed by two different routes. The honest repair is to
+say so in the plan rather than to reinterpret the gate. This decision does not
+make that edit, because the plan is the artifact a later slice must change
+alongside checking the box; it is carried below as owed work, namely that W0's
+close rule takes precedence and that a shared suite does not imply shared
+paths.
+
+**Neither 488 nor 489 is checked.** 488 fails on the read-path fails-closed
+gap and on the write-effect and adapter-state assertions dropped from the seven
+ported harnesses. 489 says "additionally", so it requires what 488 requires;
+its own focused proof is in hand and was checked for teeth, but it cannot stand
+on a foundation that is not yet there. The order matters and must not be
+inverted. It is worth recording that the reason differs from the one the
+handoff expected: the 3,976 unported lines are largely not applicable, and the
+exposure is inside the work already recorded as complete.
+
+**What a later slice must do before 488 can be checked.** Add closed read
+controls sufficient for a worker target to observe durable state without a
+second connection — lease row effects, expiry retention across the exclusive
+boundary, ownership epoch against the lease fence, and partition checkpoint and
+high-water state — and port the five write-effect assertions onto them. Port
+the three partition proofs about real adapter state under stress, reusing the
+rival-inside-the-worker machinery W3 established rather than adding a new
+bypass. Port the four read-path fails-closed cases from the graph and outbox
+query suites, which is the highest priority of the three because 489 depends on
+it directly. Record the statement-position exclusion in the lease, outbox, and
+restart-continuity worker headers. Amend the plan's exit gate to name W0's
+close rule as a permitted divergence. None of that requires a new adapter, a
+runtime change, or a wider lane protocol.
+
+W6 checks no box and is a documentation decision only. It adds no broker
+runtime or HTTP import, existing persistence-worker change, configuration flag,
+default, serving-store selection, primitive source-of-truth move, legacy
+retirement, `stateContract` change, retention/prune, migration, performance
+claim, deployment, live action, or issue closure. Issue #1504 remains OPEN.
