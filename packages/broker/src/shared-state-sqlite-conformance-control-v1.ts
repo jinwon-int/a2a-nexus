@@ -152,6 +152,21 @@ export const SHARED_STATE_SQLITE_CONFORMANCE_CONTROLS_V1 = Object.freeze([
    * continuity.
    */
   "restartContinuityState",
+  /** Phase 2.1 — returns the committed lease rows the snapshot derives from. */
+  "leaseRows",
+  /**
+   * Phase 2.1 — returns the worker-owned adapter's own lifecycle.
+   *
+   * The lane's state is not a substitute. Proving that a refused second owner
+   * reached a failed state is a claim about the adapter, and the lane failing
+   * alongside it is a weaker, coincidental fact.
+   */
+  "adapterLifecycle",
+  /**
+   * Phase 2.1 — clears the live lease so a second contender at the same barrier
+   * also commits. A deliberate violation; nothing in a passing run calls it.
+   */
+  "leaseClearViolation",
 ] as const);
 
 /**

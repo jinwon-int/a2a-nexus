@@ -2521,3 +2521,43 @@ runtime or HTTP import, existing persistence-worker change, configuration flag,
 default, serving-store selection, primitive source-of-truth move, legacy
 retirement, `stateContract` change, retention/prune, migration, performance
 claim, deployment, live action, or issue closure.
+
+### Slice W2f — Phase 2.1 through the worker lane
+
+Sixth harness onto the W2a scaffolding, and the first that needs two
+authorities at once. Phase 2.1 opens a second owner against the same file and
+requires the adapter — not the target — to refuse it, which is the whole proof
+that the singleton is exclusive.
+
+Worker mode expresses that as two sessions on one file with different owner
+tokens. No session change was needed: a session is already parameterised by
+file and token, so two of them is the natural spelling. The arrangement is
+stronger than the inline one rather than merely equivalent, because the refusal
+now crosses a real thread boundary between two separately owned connections
+instead of occurring between two objects sharing an address space.
+
+One control was added for a reason worth stating. The harness requires the
+refused owner to have reached a failed state, and the lane's own state is not a
+substitute for that. The lane failing alongside its adapter is a coincidental
+fact; the claim under test is about the adapter. So `adapterLifecycle` reports
+the worker-owned adapter's real lifecycle and the target asserts on that. The
+same instinct that kept `authorityUnavailable` on the main thread in W2d
+applies here in the opposite direction: the assertion has to read the thing it
+is actually about.
+
+The two `after_` fault points map to the seam's `after-run` phase, so the lease
+row is really written before the fault fires. Mapping them to `before-prepare`
+would have made them `before_mutation` under another name, and the harness
+would have reported atomicity it never tested — the inline target's own comment
+warns about exactly that, and the descriptor test now asserts the mapping.
+
+Everything W2b through W2e established carried over unchanged.
+
+W2f checks neither 488 nor 489 and this record checks no box. Phase 2.5
+partition runs inline only, and no delayed-or-missing-earlier-ACK query case is
+proved. Phase 2.5's rival connection remains unjudged and is the last open
+question before 488 can be considered. It adds no broker runtime or HTTP
+import, existing persistence-worker change, configuration flag, default,
+serving-store selection, primitive source-of-truth move, legacy retirement,
+`stateContract` change, retention/prune, migration, performance claim,
+deployment, live action, or issue closure.

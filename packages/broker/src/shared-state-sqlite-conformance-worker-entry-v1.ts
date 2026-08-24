@@ -90,13 +90,15 @@ const faultHandle = createSharedStateSqliteConformanceFaultHandleV1(
  */
 const observedInstants: string[] = [];
 
+const adapter = new SharedStateSqliteAdapterV1({
+  db: faultHandle,
+  ownerToken: bootstrap.ownerToken,
+  backwardSkewToleranceMs: bootstrap.backwardSkewToleranceMs,
+});
+
 const runtime = createSharedStateSqliteWorkerRuntimeV1({
   db: faultHandle,
-  adapter: new SharedStateSqliteAdapterV1({
-    db: faultHandle,
-    ownerToken: bootstrap.ownerToken,
-    backwardSkewToleranceMs: bootstrap.backwardSkewToleranceMs,
-  }),
+  adapter,
   clock: {
     observeUnixMs(): string {
       const next = observedInstants.shift();
@@ -223,6 +225,23 @@ function applyControl(
     case "expirySnapshot": {
       const parsed = expirySnapshotInputSchema.parse(input);
       return buildSharedStateExpiryConformanceSnapshotV1(db, parsed);
+    }
+    case "leaseRows": {
+      // Observation uses the raw connection, never the fault handle.
+      return db
+        .prepare(
+          `SELECT owner_key_digest, attempt_key_digest, fencing_token,
+                  resource_version, lease_expires_at_unix_ms
+             FROM shared_state_lease`,
+        )
+        .all();
+    }
+    case "adapterLifecycle": {
+      return adapter.lifecycle();
+    }
+    case "leaseClearViolation": {
+      db.prepare(`DELETE FROM shared_state_lease`).run();
+      return null;
     }
     case "restartContinuityState": {
       // Observation uses the raw connection, never the fault handle.
