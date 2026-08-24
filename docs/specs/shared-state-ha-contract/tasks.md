@@ -2561,3 +2561,76 @@ import, existing persistence-worker change, configuration flag, default,
 serving-store selection, primitive source-of-truth move, legacy retirement,
 `stateContract` change, retention/prune, migration, performance claim,
 deployment, live action, or issue closure.
+
+### Decision W3 — the Phase 2.5 rival connection in worker mode
+
+Six of the seven Phase 2 harnesses now run through the worker lane. Phase 2.5
+partition is the last, and W2a deliberately left one question about it
+unjudged: its target needs a second rival connection on the same file taking
+`BEGIN IMMEDIATE`, and whether that rival belongs inside the worker, beside it,
+or is inapplicable to worker mode was not something a scaffolding slice should
+have decided. This records the boundary only. It adds no source and checks
+neither 488 nor 489.
+
+**What Phase 2.5 actually requires.** Its five fault points are not equally
+novel, and four of them are already-solved shapes:
+
+- `unavailable` rewrites `owner_token` to a foreign value — an out-of-band
+  `UPDATE`, the same shape as every violation control since W2a.
+- `lost-fence` advances `lifecycle_epoch` past the session — likewise.
+- `ambiguous-commit` fires at `COMMIT` — the existing seam's `before-exec`
+  phase, already exercised by Phases 2.2, 2.3, and 2.4.
+- `delayed-read` establishes nothing; the projection lag is already stored.
+- `timeout` takes a `RESERVED` lock from a second connection so the adapter's
+  own `BEGIN IMMEDIATE` raises a real busy error.
+
+Only the last is new. The question is therefore narrower than it looked: not
+"how do we move Phase 2.5", but "where does one rival connection live".
+
+**The decision: the rival lives inside the conformance worker.** It is a bare
+second `DatabaseSync` on the same file, opened by the conformance build,
+controlled by test-only controls, and it is never a second V1 adapter. The
+worker remains the single V1 authority for its file.
+
+Two alternatives were considered and are not chosen. Opening the rival on the
+main thread would reintroduce exactly the main-thread database handle that
+every worker-mode slice since W2a has avoided, and it would do so for the one
+harness whose subject is contention — the place where an extra unowned
+connection is least defensible. Declaring the rival inapplicable to worker mode
+would hollow out the harness: `timeout` is the only point that produces a real
+`SQLITE_BUSY`, and a Phase 2.5 run without it would report partition tolerance
+it never tested, which is the precise failure mode the inline target's own
+header warns about.
+
+**This was verified before being decided, not after.** A second connection in
+the same thread does collide: with the rival holding `BEGIN IMMEDIATE`, the
+owning connection's `BEGIN IMMEDIATE` fails with `database is locked`, that
+message matches the adapter's existing busy detection and therefore maps to
+`lock_timeout` rather than a generic failure, and the owner re-acquires cleanly
+after the rival rolls back, so healing works. SQLite locking is per-connection
+rather than per-process, which is why sharing a thread does not weaken the
+collision.
+
+**Why this stays inside decision W0.** W0 forbids the main thread opening a
+second V1 adapter and forbids bypassing the worker for a query. A rival
+connection inside the worker is neither: it is not on the main thread, it is
+not an adapter, it answers no query, and it exists only to make the owning
+adapter's own `BEGIN IMMEDIATE` fail the way a partitioned store would. It is
+the same object the inline target already uses, moved to the side of the
+boundary that owns the file.
+
+**What the following source slice may add.** Only the worker-mode Phase 2.5
+target, the rival connection in the conformance build, and the controls that
+establish and heal the five fault points. It must not relax the lane's rules to
+make the harness pass, must not open a main-thread handle, and must not extend
+the closed lane protocol. If the harness cannot be satisfied within those
+limits, that is a finding to record rather than a rule to bend.
+
+This decision authorizes no source, no runtime/HTTP import, no existing
+persistence-worker change, no configuration flag, default, serving-store
+selection, primitive source-of-truth move, legacy retirement, `stateContract`
+change, retention/prune, migration, performance claim, deployment, live action,
+or issue closure. It checks neither 488 nor 489, and it does not by itself make
+488 checkable: that still requires the Phase 2.5 slice to land and, separately,
+489 requires focused proof that a query cannot resolve successfully across a
+delayed or missing earlier durable ACK.
