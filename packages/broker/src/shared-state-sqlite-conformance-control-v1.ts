@@ -136,6 +136,13 @@ export const SHARED_STATE_SQLITE_CONFORMANCE_CONTROLS_V1 = Object.freeze([
    * disagree about what was committed.
    */
   "outboxRows",
+  /**
+   * Phase 2.7 — returns the projection state the snapshot and the evidence-path
+   * probe are both derived from. One read for both, for the same reason
+   * `outboxRows` is one read: two would let them disagree about what the
+   * projection contains.
+   */
+  "claimGraphState",
 ] as const);
 
 /**

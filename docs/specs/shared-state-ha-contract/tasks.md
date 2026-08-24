@@ -2420,3 +2420,47 @@ persistence-worker change, configuration flag, default, serving-store selection,
 primitive source-of-truth move, legacy retirement, `stateContract` change,
 retention/prune, migration, performance claim, deployment, live action, or issue
 closure.
+
+### Slice W2d — Phase 2.7 through the worker lane
+
+Fourth harness onto the W2a scaffolding, and the first whose out-of-band
+surface is *derived* state rather than stored state. Phase 2.7's snapshot and
+its evidence-path probe both compute over the same live batches, checkpoint, and
+source high-water mark, and the derivation is the thing under test: which
+batches count, what completeness means, and whether a negative judgment is
+permitted at all. Worker mode fetches that state once through one
+`claimGraphState` control and performs every derivation on the main thread,
+exactly where the inline target performs it. Two reads would let the snapshot
+and the probe disagree about the projection, which is the confusion this
+harness exists to catch — the same reason `outboxRows` is one read in W2c.
+
+One placement decision was not obvious and is recorded because it could have
+been made wrongly. The target keeps an `authorityUnavailable` flag that an
+injected fault sets and the next clean command clears. It is target-owned state
+rather than a database row, so it would have been natural to move it into the
+worker alongside the fault seam that triggers it. That would have been a
+mistake: the `authorityStaysAvailableAfterFault` violation exists to prove the
+harness catches a target that keeps reporting an available authority after a
+real fault, and a worker cannot know that a target chose to lie about it. The
+flag stays on the main thread, so the violation stays reachable. The general
+rule this instance illustrates: state whose *misreporting* is what a violation
+simulates has to live where the simulation lives.
+
+The scaffolding needed one control and no changes. Everything W2b and W2c
+established carried over: the instant queue, harness-derived queue sizing, the
+reopen-capable session, observing a fired fault by monotonic count, and
+deriving many answers from one read.
+
+Worker mode does not re-prove where in the statement stream the seam fires. The
+inline target asserts that against its own `preparedSql` log, and it is a
+property of the adapter's SQL order rather than of the lane, so it is left
+where it already holds.
+
+W2d checks neither 488 nor 489 and this record checks no box. Three harnesses
+run inline only — restart-continuity, partition, and lease — and no
+delayed-or-missing-earlier-ACK query case is proved. Phase 2.5's rival
+connection remains unjudged. It adds no broker runtime or HTTP import, existing
+persistence-worker change, configuration flag, default, serving-store selection,
+primitive source-of-truth move, legacy retirement, `stateContract` change,
+retention/prune, migration, performance claim, deployment, live action, or issue
+closure.

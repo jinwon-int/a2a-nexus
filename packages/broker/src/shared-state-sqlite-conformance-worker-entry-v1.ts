@@ -224,6 +224,44 @@ function applyControl(
       const parsed = expirySnapshotInputSchema.parse(input);
       return buildSharedStateExpiryConformanceSnapshotV1(db, parsed);
     }
+    case "claimGraphState": {
+      // Observation uses the raw connection, never the fault handle.
+      const batches = (
+        db
+          .prepare(
+            `SELECT source_sequence_from, source_sequence_through, rolled_back
+               FROM shared_state_graph_batch`,
+          )
+          .all() as readonly Record<string, unknown>[]
+      ).map((row) => ({
+        from: String(row["source_sequence_from"]),
+        through: String(row["source_sequence_through"]),
+        rolledBack: row["rolled_back"] !== 0,
+      }));
+
+      const sequences = db
+        .prepare(`SELECT source_sequence FROM shared_state_graph_source`)
+        .all() as readonly { source_sequence?: unknown }[];
+      let high = 0n;
+      for (const row of sequences) {
+        const value = BigInt(String(row.source_sequence));
+        if (value > high) high = value;
+      }
+
+      const checkpoint = db
+        .prepare(`SELECT checkpoint_sequence FROM shared_state_graph_projection`)
+        .get() as { checkpoint_sequence?: unknown } | undefined;
+
+      return {
+        batches,
+        sourceFactCount: sequences.length,
+        sourceSequenceHighWater: high.toString(),
+        checkpointSequence:
+          checkpoint === undefined
+            ? "0"
+            : String(checkpoint.checkpoint_sequence),
+      };
+    }
     case "outboxRows": {
       // Observation uses the raw connection, never the fault handle.
       return db
