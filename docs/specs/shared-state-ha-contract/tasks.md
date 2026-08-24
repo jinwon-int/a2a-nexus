@@ -2898,3 +2898,74 @@ runtime or HTTP import, existing persistence-worker change, configuration flag,
 default, serving-store selection, primitive source-of-truth move, legacy
 retirement, `stateContract` change, retention/prune, migration, performance
 claim, deployment, live action, or issue closure. Issue #1504 remains OPEN.
+
+### Slice W7 — the read-path fails-closed ports, and a false pass they nearly hid
+
+W6 listed five owed items and ranked the read-path fails-closed ports first,
+because checklist item 489 is explicitly a read-path item. This slice takes that
+one. It ports the four cases named there — a rival writer's lock and a withdrawn
+ownership row, each for both closed query families, plus malformed durable state
+for each — into worker mode. Six tests, because the two "busy writer and lost
+ownership" inline tests each carry two independent arms that are cleaner apart
+than together.
+
+**Decision W3's rival is reused rather than rebuilt.** The lock the inline tests
+take with a second main-thread `DatabaseSync` is already available inside the
+conformance worker as the Phase 2.5 rival, taken and released through
+`partitionEstablish` and `partitionHeal`. The ownership withdrawal is the same
+control's `unavailable` point, which performs exactly the `UPDATE
+shared_state_ownership` the inline tests write by hand. Those four cases needed
+no new control at all.
+
+**One control was added.** Nothing in the closed set corrupts a committed row in
+place: `expiryViolation` and `leaseClearViolation` only ever delete, and proving
+a read refuses a *malformed* row needs the row to still be there and be wrong.
+`readPathCorruption` names a closed corruption and the row's own identity
+digest, and carries no table, column, literal or predicate — those are fixed by
+the corruption member, so the reviewable inventory stays the enum rather than
+the call site. Nothing reads the row back afterwards; the assertion is the
+query's refusal, and a confirming SELECT would be the generic read W0 keeps out
+of this channel. The lane protocol is unchanged, and the target opens no
+`DatabaseSync`.
+
+**The part worth recording is what the first version of this got wrong.** The
+lane answers a ticket it cannot admit with its own operation-preserving
+`unavailable` envelope, carrying `achievedConsistency: null` and reason
+`authority_unavailable` — the same shape the adapter returns when it refuses
+malformed durable state. So a test asserting only status, consistency and reason
+code passes whether or not the query ever reached the adapter. That much was
+anticipated, and the guard chosen for it was to assert the adapter was still
+`ready` afterwards.
+
+That guard does not work, and it was measured rather than argued. Saturating a
+lane produces `{status: "unavailable", achievedConsistency: null, reasonCode:
+"authority_unavailable"}` with `adapterLifecycle` reporting `ready`, because a
+refusal that never reaches the adapter cannot change its lifecycle either. The
+two cases are indistinguishable on every field the first version asserted. A
+suite that looked like it was proving the adapter fails closed would have been
+proving only that some component somewhere said `unavailable`.
+
+The discriminator is admission: a lane refusal increments `refusedAdmissions`
+and never dispatches, while an answer from the adapter is an admitted ticket. So
+every case asserts `refusedAdmissions` stayed at zero across the query. The
+lifecycle assertion is kept beside it for the narrower claim it does support —
+that the adapter declined without failing itself, which is what separates a busy
+file from a lost authority.
+
+**The assertions were checked for teeth**, in three passes. Removing the
+corruption injection failed exactly the two malformed-state tests and nothing
+else. Removing the partition establishment failed exactly the four lock and
+ownership tests. Forcing the lane to refuse admission — capacity lowered and
+every injection removed — failed all six, which is the pass that demonstrates
+the new guard is load-bearing rather than decorative; under the first version's
+lifecycle-only guard those same six would have passed. Each mutation was
+reverted and the file restored byte-identical before anything was committed.
+
+W7 checks no box. It closes one of W6's five owed items; the write-effect ports,
+the three partition adapter-state ports, the two documentary corrections and the
+plan's exit-gate amendment are still outstanding, and whether the set then
+satisfies W0's wording remains the separate judgment W6 described. It adds no
+broker runtime or HTTP import, existing persistence-worker change, configuration
+flag, default, serving-store selection, primitive source-of-truth move, legacy
+retirement, `stateContract` change, retention/prune, migration, performance
+claim, deployment, live action, or issue closure. Issue #1504 remains OPEN.

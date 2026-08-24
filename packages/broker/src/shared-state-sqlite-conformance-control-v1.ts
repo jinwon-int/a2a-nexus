@@ -192,6 +192,21 @@ export const SHARED_STATE_SQLITE_CONFORMANCE_CONTROLS_V1 = Object.freeze([
   "partitionArm",
   /** Phase 2.5 — the single read the snapshot, readiness, and stale-read probes derive from. */
   "partitionState",
+  /**
+   * Read path (Decision W6) — corrupt one already-committed durable row in
+   * place, so a query can be shown to fail closed rather than answer from state
+   * it cannot validate. Distinct from `expiryViolation` and
+   * `leaseClearViolation`, which only ever delete: proving a read refuses a
+   * *malformed* row needs the row to still be there and to be wrong.
+   *
+   * The input names a closed corruption and the row's own identity digest. It
+   * carries no table, no column, no literal and no predicate — those are fixed
+   * by the corruption member, so the reviewable inventory stays the enum rather
+   * than the call site. Nothing reads the row back: the assertion is the
+   * query's refusal, and a confirming SELECT would be exactly the generic read
+   * Decision W0 keeps out of this channel.
+   */
+  "readPathCorruption",
 ] as const);
 
 /**
@@ -210,6 +225,26 @@ export const SHARED_STATE_SQLITE_EXPIRY_VIOLATIONS_V1 = Object.freeze([
 
 export type SharedStateSqliteExpiryViolationV1 =
   (typeof SHARED_STATE_SQLITE_EXPIRY_VIOLATIONS_V1)[number];
+
+/**
+ * The closed set of read-path corruptions a target may ask the worker to commit
+ * on its behalf (Decision W6). Each names one column of one table made
+ * non-canonical in a way the query layer is required to notice; none is
+ * reachable outside a conformance run.
+ *
+ * Each member is written so the row stays present and addressable — the point
+ * is that a query holding a valid request against a valid checkpoint still
+ * refuses, because the durable state underneath it cannot be validated.
+ */
+export const SHARED_STATE_SQLITE_READ_PATH_CORRUPTIONS_V1 = Object.freeze([
+  /** A projected graph source carries a non-canonical decimal TEXT sequence. */
+  "graph-source-sequence-noncanonical",
+  /** A committed outbox row carries a receipt state outside the closed set. */
+  "outbox-receipt-state-invented",
+] as const);
+
+export type SharedStateSqliteReadPathCorruptionV1 =
+  (typeof SHARED_STATE_SQLITE_READ_PATH_CORRUPTIONS_V1)[number];
 
 export type SharedStateSqliteConformanceControlNameV1 =
   (typeof SHARED_STATE_SQLITE_CONFORMANCE_CONTROLS_V1)[number];
