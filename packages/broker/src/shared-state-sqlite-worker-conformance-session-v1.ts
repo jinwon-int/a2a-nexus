@@ -60,6 +60,15 @@ export interface SharedStateSqliteWorkerConformanceSessionV1 {
   >;
   /** Forced teardown for fixtures. Never claims ownership was released. */
   dispose(): Promise<void>;
+  /**
+   * Points the next `open` at a different file.
+   *
+   * This exists only for the adversarial control that reopens onto an empty
+   * database to prove the harness catches silent state loss. Nothing in a
+   * passing run calls it, and it cannot affect a session that is already open —
+   * it takes effect on the next spawn.
+   */
+  rebindFilePathForViolation(filePath: string): void;
 }
 
 export function createSharedStateSqliteWorkerConformanceSessionV1(
@@ -67,13 +76,14 @@ export function createSharedStateSqliteWorkerConformanceSessionV1(
 ): SharedStateSqliteWorkerConformanceSessionV1 {
   let channel: SharedStateSqliteConformanceChannelV1 | null = null;
   let lane: SharedStateSqliteWorkerLaneV1 | null = null;
+  let filePath = options.filePath;
 
   const spawn = (): {
     channel: SharedStateSqliteConformanceChannelV1;
     lane: SharedStateSqliteWorkerLaneV1;
   } => {
     const next = createSharedStateSqliteConformanceChannelV1({
-      filePath: options.filePath,
+      filePath,
       ownerToken: options.ownerToken,
       backwardSkewToleranceMs: options.backwardSkewToleranceMs,
     });
@@ -130,6 +140,10 @@ export function createSharedStateSqliteWorkerConformanceSessionV1(
       channel = null;
       lane = null;
       return closed;
+    },
+
+    rebindFilePathForViolation(next: string): void {
+      filePath = next;
     },
 
     async dispose(): Promise<void> {

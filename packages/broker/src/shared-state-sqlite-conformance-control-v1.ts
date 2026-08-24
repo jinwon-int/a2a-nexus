@@ -129,6 +129,13 @@ export const SHARED_STATE_SQLITE_CONFORMANCE_CONTROLS_V1 = Object.freeze([
    * snapshot shape is assembled from target-owned state as well.
    */
   "idempotencyEffectCounts",
+  /**
+   * Phase 2.3 — returns the committed outbox rows. The snapshot and the
+   * reconciliation response are both derived from this one read, exactly as the
+   * inline target derives them from one raw query, so the two modes cannot
+   * disagree about what was committed.
+   */
+  "outboxRows",
 ] as const);
 
 /**
