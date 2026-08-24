@@ -70,6 +70,35 @@ const faultHandle = createSharedStateSqliteConformanceFaultHandleV1(
 );
 
 /**
+ * Decision W3: the Phase 2.5 rival lives here, inside the worker, as a bare
+ * second connection on the same file. It is never a V1 adapter and answers no
+ * query — it exists only so the owning adapter's own `BEGIN IMMEDIATE` collides
+ * with a real `RESERVED` lock. Opened lazily so no other harness pays for it.
+ */
+let rival: DatabaseSync | null = null;
+let rivalHoldsLock = false;
+let lastArmError: string | null = null;
+
+function rivalConnection(): DatabaseSync {
+  rival ??= new DatabaseSync(bootstrap.filePath, { timeout: 0 });
+  return rival;
+}
+
+function takeRivalLock(): void {
+  if (rivalHoldsLock) return;
+  // BEGIN IMMEDIATE takes RESERVED straight away, which is exactly what the
+  // adapter's own BEGIN IMMEDIATE will collide with.
+  rivalConnection().exec("BEGIN IMMEDIATE");
+  rivalHoldsLock = true;
+}
+
+function releaseRivalLock(): void {
+  if (!rivalHoldsLock) return;
+  rivalConnection().exec("ROLLBACK");
+  rivalHoldsLock = false;
+}
+
+/**
  * This worker's own clock. It is still worker-owned and still read at execution
  * time; it is simply deterministic, because the harnesses probe expiry and
  * lease boundaries exactly and a real clock cannot express `expiry - 1`,
@@ -131,6 +160,35 @@ const expirySnapshotInputSchema = z
       "deferred",
     ]),
     capacityPressureBand: z.enum(V.pressureBands),
+  })
+  .strict();
+
+const partitionEstablishInputSchema = z
+  .object({
+    faultPoint: z.enum([
+      "unavailable",
+      "lost-fence",
+      "timeout",
+      "ambiguous-commit",
+      "delayed-read",
+    ]),
+    usurperToken: z.string().min(1),
+  })
+  .strict();
+
+const partitionArmInputSchema = z
+  .object({
+    faultPoint: z
+      .enum([
+        "unavailable",
+        "lost-fence",
+        "timeout",
+        "ambiguous-commit",
+        "delayed-read",
+      ])
+      .nullable(),
+    skipFaultInjection: z.boolean(),
+    usurperToken: z.string().min(1),
   })
   .strict();
 
@@ -238,6 +296,168 @@ function applyControl(
     }
     case "adapterLifecycle": {
       return adapter.lifecycle();
+    }
+    case "partitionHeal": {
+      // Order matters: the commit fault goes first, because reacquiring
+      // ownership issues its own COMMIT. The fired history is deliberately not
+      // cleared — a heal undoes a premise, it does not erase evidence.
+      faultState.armed = null;
+      releaseRivalLock();
+      const owner = db
+        .prepare(`SELECT owner_token FROM shared_state_ownership WHERE id = 1`)
+        .get() as { owner_token?: unknown } | undefined;
+      if (owner !== undefined && owner.owner_token !== bootstrap.ownerToken) {
+        db.prepare(
+          `UPDATE shared_state_ownership SET owner_token = ? WHERE id = 1`,
+        ).run(bootstrap.ownerToken);
+      }
+      if (adapter.lifecycle()?.state === "failed") {
+        const reopened = adapter.open();
+        if (!reopened.ok) {
+          throw new Error(`adapter reopen refused: ${reopened.error.code}`);
+        }
+      }
+      return null;
+    }
+    case "partitionEstablish": {
+      const { faultPoint, usurperToken } = partitionEstablishInputSchema.parse(
+        input,
+      );
+      if (faultPoint === "unavailable") {
+        // A foreign owner token: the row says someone else holds the authority.
+        db.prepare(
+          `UPDATE shared_state_ownership SET owner_token = ? WHERE id = 1`,
+        ).run(usurperToken);
+        return null;
+      }
+      if (faultPoint === "lost-fence") {
+        // An epoch this session never acquired. The epoch only moves up.
+        const row = db
+          .prepare(
+            `SELECT lifecycle_epoch FROM shared_state_ownership WHERE id = 1`,
+          )
+          .get() as { lifecycle_epoch?: unknown };
+        const current = BigInt(String(row.lifecycle_epoch));
+        db.prepare(
+          `UPDATE shared_state_ownership SET lifecycle_epoch = ? WHERE id = 1`,
+        ).run((current + 1_000n).toString());
+        return null;
+      }
+      if (faultPoint === "timeout") {
+        takeRivalLock();
+        return null;
+      }
+      if (faultPoint === "ambiguous-commit") {
+        // Non-disarming on purpose: section 2.5 needs a point that keeps
+        // firing until it is replaced.
+        faultState.armed = {
+          point: "ambiguous-commit",
+          sqlFragment: "COMMIT",
+          phase: "before-exec",
+          repeating: true,
+        };
+        return null;
+      }
+      // `delayed-read` is a read-path point: the projection lag is already
+      // stored and nothing needs establishing.
+      return null;
+    }
+    case "partitionArm": {
+      const parsed = partitionArmInputSchema.parse(input);
+      lastArmError = null;
+      try {
+        applyControl("partitionHeal", null);
+        if (parsed.faultPoint === null || parsed.skipFaultInjection) return null;
+        applyControl("partitionEstablish", {
+          faultPoint: parsed.faultPoint,
+          usurperToken: parsed.usurperToken,
+        });
+        if (
+          parsed.faultPoint === "unavailable"
+          || parsed.faultPoint === "lost-fence"
+        ) {
+          // `beginWrite` is the adapter's own guard, not a conformance seam.
+          const observed = adapter.beginWrite();
+          if (observed.ok || observed.error.code !== "ownership_lost") {
+            lastArmError = "ownership premise did not reach the adapter";
+          }
+        }
+      } catch (error: unknown) {
+        lastArmError = error instanceof Error ? error.message : String(error);
+      }
+      return null;
+    }
+    case "partitionState": {
+      const count = (table: string, where = ""): number => {
+        const row = db
+          .prepare(`SELECT COUNT(*) AS count FROM ${table} ${where}`)
+          .get() as { count?: unknown };
+        return Number(row.count);
+      };
+      const maximum = (table: string, column: string): string => {
+        const rows = db
+          .prepare(`SELECT ${column} AS value FROM ${table}`)
+          .all() as readonly { value?: unknown }[];
+        let high = 0n;
+        for (const row of rows) {
+          if (row.value === null || row.value === undefined) continue;
+          const value = BigInt(String(row.value));
+          if (value > high) high = value;
+        }
+        return high.toString();
+      };
+      const checkpoint = db
+        .prepare(`SELECT checkpoint_sequence FROM shared_state_graph_projection`)
+        .get() as { checkpoint_sequence?: unknown } | undefined;
+      const ownership = db
+        .prepare(
+          `SELECT owner_token, lifecycle_epoch FROM shared_state_ownership
+            WHERE id = 1`,
+        )
+        .get() as
+        | { owner_token?: unknown; lifecycle_epoch?: unknown }
+        | undefined;
+
+      return {
+        replayRecordCount: count("shared_state_replay_nonce"),
+        rateEntryCount: count("shared_state_rate_cost"),
+        activeLeaseCount: count(
+          "shared_state_lease",
+          "WHERE owner_key_digest IS NOT NULL",
+        ),
+        maximumFencingToken: maximum("shared_state_lease", "fencing_token"),
+        leaseResourceVersion: maximum("shared_state_lease", "resource_version"),
+        idempotencyOutcomeCount: count("shared_state_idempotency"),
+        outboxEventCount: count("shared_state_outbox"),
+        unacknowledgedEventCount: count(
+          "shared_state_outbox",
+          "WHERE acknowledgment_state = 'unacknowledged'",
+        ),
+        acknowledgedEventCount: count(
+          "shared_state_outbox",
+          "WHERE acknowledgment_state = 'acknowledged'",
+        ),
+        streamSequenceHighWater: maximum("shared_state_outbox", "stream_sequence"),
+        provenanceSourceCount: count("shared_state_graph_source"),
+        provenanceSourceHighWater: maximum(
+          "shared_state_graph_source",
+          "source_sequence",
+        ),
+        provenanceCheckpointSequence:
+          checkpoint === undefined ? "0" : String(checkpoint.checkpoint_sequence),
+        ownerTokenRow:
+          ownership === undefined || typeof ownership.owner_token !== "string"
+            ? null
+            : ownership.owner_token,
+        lifecycleEpochRow:
+          ownership === undefined ? null : String(ownership.lifecycle_epoch),
+        adapterOwnerToken: adapter.ownerToken,
+        adapterLifecycleEpoch: adapter.lifecycleEpoch,
+        adapterLifecycle: adapter.lifecycle(),
+        rivalHoldsLock,
+        commitFaultFiredCount: faultState.firedAt.length,
+        lastArmError,
+      };
     }
     case "leaseClearViolation": {
       db.prepare(`DELETE FROM shared_state_lease`).run();
