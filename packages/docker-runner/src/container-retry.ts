@@ -299,6 +299,21 @@ function buildRetryEvidence(
   };
 }
 
+// Hard cap on captured output per stream. A task that floods stdout/stderr
+// (`yes`, a chatty agent, an accidental binary dump) would otherwise grow these
+// strings until the runner host process OOMs, since redaction/bounding only run
+// after full accumulation. We keep draining the pipe (so the child never blocks
+// on a full OS buffer) but discard bytes past the cap (BUG-05).
+const MAX_CAPTURED_OUTPUT_CHARS = 16 * 1024 * 1024;
+const OUTPUT_TRUNCATION_MARKER = "\n<output truncated: exceeded capture limit>\n";
+
+function appendBoundedOutput(buffer: string, chunk: string): string {
+  if (buffer.length >= MAX_CAPTURED_OUTPUT_CHARS) return buffer;
+  const next = buffer + chunk;
+  if (next.length <= MAX_CAPTURED_OUTPUT_CHARS) return next;
+  return next.slice(0, MAX_CAPTURED_OUTPUT_CHARS) + OUTPUT_TRUNCATION_MARKER;
+}
+
 function spawnWithTimeout(
   command: string,
   args: string[],
@@ -320,8 +335,8 @@ function spawnWithTimeout(
     timer.unref();
     child.stdout.setEncoding("utf8");
     child.stderr.setEncoding("utf8");
-    child.stdout.on("data", (chunk) => { stdout += chunk; });
-    child.stderr.on("data", (chunk) => { stderr += chunk; });
+    child.stdout.on("data", (chunk) => { stdout = appendBoundedOutput(stdout, chunk); });
+    child.stderr.on("data", (chunk) => { stderr = appendBoundedOutput(stderr, chunk); });
     child.on("error", (error: NodeJS.ErrnoException) => {
       clearTimeout(timer);
       resolvePromise({

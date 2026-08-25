@@ -947,6 +947,13 @@ test("buildContainerScript includes redact_artifact_file for post-command log re
   // The redaction must use the same temp-file-and-mv pattern (no -i flag needed)
   assert.ok(script.includes(".a2a-redacted"), "Expected temp file suffix .a2a-redacted for atomic write");
   assert.ok(script.includes("mv \"\${_a2a_f}.a2a-redacted\" \"$_a2a_f\""), "Expected mv of temp file to original");
+  // BUG-06: redaction must also run from the EXIT trap so a failing command
+  // (set -e abort) cannot leave command logs unredacted on disk, and it must
+  // cover the patch/engine output files, not just command-*.log.
+  assert.ok(script.includes("trap on_container_exit EXIT"), "Expected redaction wired into the EXIT trap");
+  assert.ok(/on_container_exit\(\)\s*\{[\s\S]*redact_command_artifacts[\s\S]*restore_work_ownership[\s\S]*\}/.test(script), "Expected exit handler to redact then restore ownership");
+  assert.ok(script.includes("/work/artifacts/patch-command.log"), "Expected patch-command.log in redaction set");
+  assert.ok(script.includes("/work/artifacts/openclaw-output.txt"), "Expected openclaw-output.txt in redaction set");
 });
 
 // ---------------------------------------------------------------------------

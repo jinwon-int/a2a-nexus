@@ -69,12 +69,33 @@ redact_artifact_file() {
     -e 's#("[^"]*(GH_TOKEN|GITHUB_TOKEN|NPM_TOKEN|A2A_TOKEN|[Tt][Oo][Kk][Ee][Nn]|[Pp][Aa][Ss][Ss][Ww][Oo][Rr][Dd]|[Ss][Ee][Cc][Rr][Ee][Tt]|[Aa][Pp][Ii][_-]?[Kk][Ee][Yy])[^"]*"[[:space:]]*:[[:space:]]*")[^"]*"#\\1<redacted>"#g' \
     "$_a2a_f" > "\${_a2a_f}.a2a-redacted" && mv "\${_a2a_f}.a2a-redacted" "$_a2a_f"
 }
+redact_command_artifacts() {
+  for _a2a_log in \
+    /work/artifacts/command-*.log \
+    /work/artifacts/patch-command.log \
+    /work/artifacts/patch-command.stderr.log \
+    /work/artifacts/openclaw-output.txt \
+    /work/artifacts/hermes-output.txt \
+    /work/artifacts/pr-output.txt; do
+    [ -f "$_a2a_log" ] && redact_artifact_file "$_a2a_log" || true
+  done
+}
+# Redaction also runs from the EXIT trap so command output logs are scrubbed even
+# when a command fails and \`set -e\` aborts before the eager pass below (BUG-06):
+# the collected on-disk evidence bundle must never retain unredacted secrets. The
+# earlier \`trap restore_work_ownership EXIT\` covered the window before these
+# redaction helpers were defined; from here on the exit path does both.
+on_container_exit() {
+  [ -f /work/task.json ] && redact_task_artifact || true
+  redact_command_artifacts
+  restore_work_ownership
+}
+trap on_container_exit EXIT
 redact_task_artifact
 ${runCommandsScript(task)}
-# Post-command: redact command output logs to prevent secret leakage in artifacts.
-for _a2a_log in /work/artifacts/command-*.log; do
-  [ -f "$_a2a_log" ] && redact_artifact_file "$_a2a_log"
-done
+# Eager post-command redaction (the EXIT trap repeats this so a mid-command
+# failure cannot leave logs unredacted).
+redact_command_artifacts
 ${bootstrapPostGuardScript(task)}
 printf 'status=completed\n' | tee -a /work/artifacts/summary.txt
 `;

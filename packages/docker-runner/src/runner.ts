@@ -936,6 +936,12 @@ export function buildRunArgs(config: RunnerConfig, task: RunnerTask, workDir: st
     "GH_CONFIG_DIR",
     "GIT_ASKPASS",
     "GIT_TERMINAL_PROMPT",
+    // The patch pipeline runs `eval "${A2A_PATCH_COMMAND}"` in-container, so a
+    // task-supplied env entry must never be able to inject it (or its JSON
+    // form) and reach that eval with the mounted GH token — the runner, not the
+    // task, controls the patch executor (BUG-03).
+    "A2A_PATCH_COMMAND",
+    "A2A_PATCH_COMMAND_JSON",
     "A2A_CONTAINED_SUBAGENTS_ENABLED",
     "A2A_CONTAINED_SUBAGENTS_MAX",
     "A2A_CONTAINED_SUBAGENTS_ROLES",
