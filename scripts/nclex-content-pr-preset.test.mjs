@@ -163,16 +163,28 @@ test("merge-ready requires gate, fresh quorum, zero blockers, distinct approval,
   });
   assert.equal(ready.ready, true);
 
+  // Stale (previous-head) receipts are excluded from the vote and reported via
+  // staleReceiptCount, but must NOT veto readiness when quorum is otherwise met
+  // (BUG-08); a stale-count veto deadlocked re-reviewed PRs since receipts are
+  // never pruned.
+  const withStale = evaluateMergeReadiness({
+    gateGreen: true,
+    currentHeadSha: HEAD_A,
+    receipts: [...receipts, { receiptId: "r-stale", headSha: HEAD_B, verdict: "PASS", signed: true }],
+    blockingFindings: 0,
+    authorDistinctApproval: true,
+    mergeConflict: false,
+  });
+  assert.equal(withStale.ready, true, "stale receipts must not veto a PR that meets quorum");
+  assert.equal(withStale.staleReceiptCount, 1);
+  assert.ok(!withStale.reasons.includes("stale_receipts_excluded:1"), "stale receipts must not be a blocking reason");
+
   const cases = [
     [{ gateGreen: false }, "github_gate_not_green"],
     [{ receipts: receipts.slice(1) }, "insufficient_fresh_signed_pass:1/2"],
     [{ blockingFindings: 1 }, "blocking_findings:1"],
     [{ authorDistinctApproval: false }, "author_distinct_approval_missing"],
     [{ mergeConflict: true }, "merge_conflict_present"],
-    [
-      { receipts: [{ receiptId: "r3", headSha: HEAD_B, verdict: "PASS", signed: true }, ...receipts.slice(1)] },
-      "stale_receipts_excluded:1",
-    ],
     [
       { receipts: [{ receiptId: "r4", headSha: HEAD_A, verdict: "PASS", signed: false }, ...receipts.slice(1)] },
       "insufficient_fresh_signed_pass:1/2",
