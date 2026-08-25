@@ -12,7 +12,14 @@ function run(files, env = {}) {
   for (const [name, body] of Object.entries(files)) {
     const p = path.join(cwd, name); fs.mkdirSync(path.dirname(p), { recursive: true }); fs.writeFileSync(p, body);
   }
-  return spawnSync(process.execPath, [script], { cwd, env: { ...process.env, ...env }, encoding: 'utf8' });
+  // CI sets strict mode globally. Tests that exercise the scanner's default
+  // warning/baseline behavior must explicitly reset it; individual cases can
+  // still override this with env.PUBLIC_READINESS_STRICT_INTERNAL.
+  return spawnSync(process.execPath, [script], {
+    cwd,
+    env: { ...process.env, PUBLIC_READINESS_STRICT_INTERNAL: '0', ...env },
+    encoding: 'utf8',
+  });
 }
 
 test('private a2a-plane URL fails closed', () => {

@@ -9,7 +9,10 @@ test("normalizes GitHub shorthand repo URLs", () => {
 
 test("rejects repo URLs that could smuggle git clone options or non-remote sources (BUG-22)", () => {
   assert.throws(() => normalizeRepoUrl("--upload-pack=evil"), /http\(s\), git, ssh, or scp-like remote/);
-  assert.throws(() => normalizeRepoUrl("-oProxyCommand=evil"), /scp-like remote/);
+  assert.throws(() => normalizeRepoUrl("-oProxyCommand=evil"), /must not start with '-'/);
+  // A leading dash remains option injection even when the rest is shaped like
+  // an scp remote; reject it before git can parse it as a clone flag.
+  assert.throws(() => normalizeRepoUrl("-o@host:repo.git"), /must not start with '-'/);
   assert.throws(() => normalizeRepoUrl("file:///etc/passwd"), /scp-like remote/);
   assert.throws(() => normalizeRepoUrl("ext::sh -c evil"), /scp-like remote/);
   // Legitimate remotes still pass through unchanged.

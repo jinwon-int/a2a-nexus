@@ -658,6 +658,7 @@ Detailed operator guidance for dry-run closeout is in the
 - [Parent-round closeout go/no-go runbook](../a2a-parent-round-closeout-go-nogo/runbook.md)
 - [Team1 dispatch-wrapper runbook](../a2a-team1-dispatch-wrapper/runbook.md)
 - [Scheduler control tower](../a2a-scheduler-control-tower/spec.md)
+- [Round closeout reconciler](../../../packages/broker/src/github/round-closeout-reconcile.ts)
 - [Task lifecycle contract](../../../contracts/a2a/task-lifecycle.md)
 - [Terminal semantics contract](../../../contracts/a2a/terminal-semantics.md)
 - [Broker handoff protocol](../../../contracts/a2a/broker-handoff-protocol.md)

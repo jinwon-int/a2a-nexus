@@ -35,7 +35,10 @@ redact_task_artifact() {
   sed -E \
     -e 's#gh[pousr]_[A-Za-z0-9_]{20,}#<redacted-github-token>#g' \
     -e 's#github_pat_[A-Za-z0-9_]{20,}#<redacted-github-token>#g' \
-    -e 's#/root/\.openclaw(/[^[:space:]",}]+)?#<openclaw-dir>#g' \
+    -e 's#/root/\\.openclaw(/[^[:space:]",}]+)?#<openclaw-dir>#g' \
+    -e 's#/root/\\.(hermes|claude|codex|piri|config)(/[^[:space:]",}]+)?#<private-dir>#g' \
+    -e 's#/var/folders/[^[:space:]",}]+#<private-dir>#g' \
+    -e 's#/(home|Users)/[^[:space:]",}]+#<private-dir>#g' \
     -e 's#/tmp/openclaw-agent-workspace(/[^[:space:]",}]+)?#<openclaw-workspace>#g' \
     -e 's#xai-[A-Za-z0-9_-]{40,}#<redacted-api-key>#g' \
     -e 's#sm_[A-Za-z0-9_-]{40,}#<redacted-api-key>#g' \
@@ -56,7 +59,10 @@ redact_artifact_file() {
   sed -E \
     -e 's#gh[pousr]_[A-Za-z0-9_]{20,}#<redacted-github-token>#g' \
     -e 's#github_pat_[A-Za-z0-9_]{20,}#<redacted-github-token>#g' \
-    -e 's#/root/\.openclaw(/[^[:space:]",}]+)?#<openclaw-dir>#g' \
+    -e 's#/root/\\.openclaw(/[^[:space:]",}]+)?#<openclaw-dir>#g' \
+    -e 's#/root/\\.(hermes|claude|codex|piri|config)(/[^[:space:]",}]+)?#<private-dir>#g' \
+    -e 's#/var/folders/[^[:space:]",}]+#<private-dir>#g' \
+    -e 's#/(home|Users)/[^[:space:]",}]+#<private-dir>#g' \
     -e 's#/tmp/openclaw-agent-workspace(/[^[:space:]",}]+)?#<openclaw-workspace>#g' \
     -e 's#xai-[A-Za-z0-9_-]{40,}#<redacted-api-key>#g' \
     -e 's#sm_[A-Za-z0-9_-]{40,}#<redacted-api-key>#g' \

@@ -307,11 +307,15 @@ function buildRetryEvidence(
 const MAX_CAPTURED_OUTPUT_CHARS = 16 * 1024 * 1024;
 const OUTPUT_TRUNCATION_MARKER = "\n<output truncated: exceeded capture limit>\n";
 
-function appendBoundedOutput(buffer: string, chunk: string): string {
-  if (buffer.length >= MAX_CAPTURED_OUTPUT_CHARS) return buffer;
+export function appendBoundedOutput(
+  buffer: string,
+  chunk: string,
+  maxChars = MAX_CAPTURED_OUTPUT_CHARS,
+): string {
+  if (buffer.length >= maxChars) return buffer;
   const next = buffer + chunk;
-  if (next.length <= MAX_CAPTURED_OUTPUT_CHARS) return next;
-  return next.slice(0, MAX_CAPTURED_OUTPUT_CHARS) + OUTPUT_TRUNCATION_MARKER;
+  if (next.length <= maxChars) return next;
+  return next.slice(0, maxChars) + OUTPUT_TRUNCATION_MARKER;
 }
 
 function spawnWithTimeout(

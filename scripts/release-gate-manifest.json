@@ -63,35 +63,30 @@
     },
     {
       "file": "scripts/archive/check-team1-source-public-readiness-libero.test.mjs",
-      "archived": true,
       "class": "gate",
       "round": null,
       "note": "Team1 source public readiness; no round id in filename, kept as gate (conservative)."
     },
     {
       "file": "scripts/archive/check-team1-evidence-nochange-hardening-libero.test.mjs",
-      "archived": true,
       "class": "gate",
       "round": null,
       "note": "Team1 evidence no-change hardening; no round id, kept as gate (conservative)."
     },
     {
       "file": "scripts/archive/check-team1-source-public-approval-packet-libero.test.mjs",
-      "archived": true,
       "class": "gate",
       "round": null,
       "note": "Team1 source public approval packet; no round id, kept as gate (conservative)."
     },
     {
       "file": "scripts/archive/check-team1-source-dryrun-orchestrator-libero.test.mjs",
-      "archived": true,
       "class": "gate",
       "round": null,
       "note": "Team1 source dryrun orchestrator; no round id, kept as gate (conservative)."
     },
     {
       "file": "scripts/archive/check-team1-source-public-approval-rehearsal-libero.test.mjs",
-      "archived": true,
       "class": "gate",
       "round": null,
       "note": "Team1 source public approval rehearsal; no round id, kept as gate (conservative)."
@@ -104,7 +99,6 @@
     },
     {
       "file": "scripts/archive/check-team1-workerDelta-source-public-approval-rehearsal-libero.test.mjs",
-      "archived": true,
       "class": "gate",
       "round": null,
       "note": "Team1 workerDelta source public approval rehearsal; no round id, kept as gate (conservative)."
@@ -117,14 +111,12 @@
     },
     {
       "file": "scripts/archive/check-team1-source-public-execution-orchestrator-libero.test.mjs",
-      "archived": true,
       "class": "gate",
       "round": null,
       "note": "Team1 source public execution orchestrator; no round id, kept as gate (conservative)."
     },
     {
       "file": "scripts/archive/check-team1-source-parent-round-dispatch-guardrails-libero.test.mjs",
-      "archived": true,
       "class": "gate",
       "round": null,
       "note": "Parent round dispatch guardrails; describes round dispatch mechanics, no specific round id, kept as gate (conservative)."
@@ -143,42 +135,36 @@
     },
     {
       "file": "scripts/archive/check-team2-final-go-no-go-semantics-libero.test.mjs",
-      "archived": true,
       "class": "gate",
       "round": null,
       "note": "Team2 final go/no-go semantics; no round id, kept as gate (conservative)."
     },
     {
       "file": "scripts/archive/check-team1-ops-stability-standards-libero.test.mjs",
-      "archived": true,
       "class": "gate",
       "round": null,
       "note": "Team1 ops stability standards; no round id, kept as gate (conservative)."
     },
     {
       "file": "scripts/archive/check-team1-workerDelta-terminal-brief-activation-libero.test.mjs",
-      "archived": true,
       "class": "gate",
       "round": null,
       "note": "Team1 workerDelta terminal brief activation; no round id, kept as gate (conservative)."
     },
     {
       "file": "scripts/archive/check-team2-terminal-brief-activation-libero.test.mjs",
-      "archived": true,
       "class": "gate",
       "round": null,
       "note": "Team2 terminal brief activation; no round id, kept as gate (conservative)."
     },
     {
       "file": "scripts/archive/check-team1-config-schema-skew-libero.test.mjs",
-      "archived": true,
       "class": "gate",
       "round": null,
       "note": "Team1 config schema skew; no round id, kept as gate (conservative)."
     },
     {
       "file": "scripts/archive/check-team2-config-schema-parity-libero.test.mjs",
-      "archived": true,
       "class": "gate",
       "round": null,
       "note": "Team2 config schema parity; no round id, kept as gate (conservative)."
@@ -191,14 +177,12 @@
     },
     {
       "file": "scripts/archive/check-team1-workerDelta-public-readiness-gate-synthesis.test.mjs",
-      "archived": true,
       "class": "gate",
       "round": null,
       "note": "Team1 workerDelta public readiness gate synthesis; no round id, kept as gate (conservative)."
     },
     {
       "file": "scripts/archive/check-team1-workerDelta-db-lifecycle-cleanup-go-nogo.test.mjs",
-      "archived": true,
       "class": "gate",
       "round": null,
       "note": "Team1 workerDelta db lifecycle cleanup go/no-go; no round id, kept as gate (conservative)."
@@ -217,14 +201,12 @@
     },
     {
       "file": "scripts/archive/check-team1-workerAlpha-residue-cleanup-go-nogo.test.mjs",
-      "archived": true,
       "class": "gate",
       "round": null,
       "note": "Team1 workerAlpha residue cleanup go/no-go; no round id, kept as gate (conservative)."
     },
     {
       "file": "scripts/archive/check-team1-workerDelta-go-nogo-evidence-pack.test.mjs",
-      "archived": true,
       "class": "gate",
       "round": null,
       "note": "Team1 workerDelta go/no-go evidence pack; no round id, kept as gate (conservative)."
@@ -437,19 +419,19 @@
       "file": "test/conformance/run-conformance.test.mjs",
       "class": "gate",
       "round": null,
-      "note": "Tests the conformance runner (test/conformance/run-conformance.mjs) that executes the CHECKS allowlist; the suite existed but was never wired into any gate (cruft cleanup)."
+      "note": "Tests the conformance runner allowlist and was previously unwired."
     },
     {
       "file": "test/conformance/public-readiness-scan.test.mjs",
       "class": "gate",
       "round": null,
-      "note": "Tests the public-readiness scanner gate (scripts/public-readiness-scan.mjs); the suite existed but was never wired into any gate (cruft cleanup)."
+      "note": "Tests the public-readiness scanner gate and was previously unwired."
     },
     {
       "file": "test/conformance/check-approval-records.test.mjs",
       "class": "gate",
       "round": null,
-      "note": "Tests the approval-records readiness gate (scanner/readiness/check-approval-records.mjs); the suite existed but was never wired into any gate (cruft cleanup)."
+      "note": "Tests the approval-records readiness gate and was previously unwired."
     }
   ]
 }
