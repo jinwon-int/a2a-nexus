@@ -546,6 +546,19 @@ export function createBrokerServer(options: BrokerServerOptions = {}): BrokerSer
     workerPersistenceClosePromise ??= workerPersistenceHandle.close().finally(releaseFence);
     return workerPersistenceClosePromise;
   };
+  // Acquire the singleton serving fence BEFORE any state write or the stale
+  // reaper starts (BUG-04). A second broker accidentally started against the
+  // same shared state must fail here with ownership_conflict — before it can
+  // load a stale snapshot and clobber the canonical one, and before it leaks a
+  // reaper timer / worker thread on the throw. `closeWorkerPersistence` (above)
+  // and the drain/close paths release it.
+  servingFence = acquireSharedStateServingFenceForBrokerV1({
+    ...(options.sharedStateFile === undefined
+      ? {}
+      : { sharedStateFile: options.sharedStateFile }),
+    stateFile,
+    injectedStore: options.stateStore !== undefined,
+  });
   let unsubscribePushNotificationPruneListener: (() => void) | undefined;
   let unsubscribePushNotificationSnapshotExtension: (() => void) | undefined;
   const broker =
@@ -2034,13 +2047,6 @@ export function createBrokerServer(options: BrokerServerOptions = {}): BrokerSer
     }
   };
 
-  servingFence = acquireSharedStateServingFenceForBrokerV1({
-    ...(options.sharedStateFile === undefined
-      ? {}
-      : { sharedStateFile: options.sharedStateFile }),
-    stateFile,
-    injectedStore: options.stateStore !== undefined,
-  });
   const server = createServer(handler);
   httpServerForDiagnostics = server;
   lossMonitor = createSharedStateLossMonitorV1({
