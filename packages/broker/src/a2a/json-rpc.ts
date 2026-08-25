@@ -1082,13 +1082,19 @@ function deriveActor(
     };
     if (enforceRequesterIdentity) {
       if (!requesterIdentity?.id) {
-        throw new BrokerError("unauthorized", "x-a2a-requester-id is required for CancelTask");
+        throw new BrokerError("unauthorized", "x-a2a-requester-id is required to act as an actor");
       }
       if (requesterIdentity.id !== actor.id) {
-        throw new BrokerError("unauthorized", `CancelTask requester id must match ${actor.id}`);
+        throw new BrokerError("unauthorized", `requester id must match actor id ${actor.id}`);
       }
-      if (actor.role && requesterIdentity.role && requesterIdentity.role !== actor.role) {
-        throw new BrokerError("unauthorized", `CancelTask requester role must match ${actor.role}`);
+      // A body-supplied actor.role must be backed by the authenticated requester
+      // identity's role. Previously this ran only when BOTH roles were set, so a
+      // request with no requester-role header could claim actor.role "operator"
+      // in the body and gain operator authority in cancelTask (BUG-02). Also
+      // fixes the misleading "CancelTask ..." wording on the SendMessage path,
+      // which shares this helper (BUG-21).
+      if (actor.role && requesterIdentity.role !== actor.role) {
+        throw new BrokerError("unauthorized", `requester role must match actor role ${actor.role}`);
       }
     }
     return actor;
