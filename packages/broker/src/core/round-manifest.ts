@@ -23,7 +23,6 @@
  *    No broker state mutation, no outbox writes, no GitHub API calls.
  *
  * @see Issue #928 — broker-side round manifest foundation
- * @see RoundCloseoutReconciliation in github/round-closeout-reconcile.ts
  */
 
 import { createHash } from "node:crypto";
