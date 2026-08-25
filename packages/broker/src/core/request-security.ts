@@ -784,7 +784,7 @@ export function classifyRateLimitBucket(req: IncomingMessage, url: URL): RateLim
     req.method === "POST" &&
     segments[0] === "tasks" &&
     segments[1] &&
-    ["claim", "start", "complete", "evidence", "fail", "heartbeat"].includes(segments[2] ?? "")
+    ["claim", "start", "complete", "checkpoint", "evidence", "fail", "heartbeat"].includes(segments[2] ?? "")
   ) {
     return "worker";
   }

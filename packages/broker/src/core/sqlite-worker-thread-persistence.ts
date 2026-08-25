@@ -448,7 +448,15 @@ export class WorkerThreadProxyStore extends SqliteBrokerStateStore {
 
   private trackWrite(promise: Promise<unknown>): void {
     this.pendingWrites.push(promise);
-    promise.catch(() => undefined);
+    // Always leave a trace of a background write failure. Fire-and-forget saves
+    // (stale-reaper requeues, snapshot extensions, relay outbox) may never be
+    // consumed by awaitDurablePersistenceAck, so without this the rejection was
+    // swallowed silently and only ever surfaced mis-attributed to a later,
+    // unrelated request (BUG-10). Logging still consumes the rejection, so it
+    // does not resurface as an unhandledRejection.
+    promise.catch((error) => {
+      console.error("[worker-thread-persistence] background write failed:", normalizeQueueError(error).message);
+    });
   }
 
   private async awaitWritesWithTimeout(writes: Promise<unknown>[]): Promise<PromiseSettledResult<unknown>[]> {

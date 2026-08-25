@@ -2232,6 +2232,7 @@ export class InMemoryA2ABroker {
       writeTombstone: (task, reason) => this.writeTombstone(task, reason),
       persistState: () => this.persistState(),
       emitTaskEvent: (task, reason) => this.taskEvents.emit(task, reason),
+      emitTaskAttemptRecord: (task) => this.emitTaskAttemptRecord(task),
       cancelTask: (taskId, request) => this.cancelTask(taskId, request),
     };
   }

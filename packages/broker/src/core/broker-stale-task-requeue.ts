@@ -37,6 +37,7 @@ export interface StaleTaskRequeueContext {
   writeTombstone(task: TaskRecord, reason: TombstoneReason): void;
   persistState(): void;
   emitTaskEvent(task: TaskRecord, reason: TaskUpdateReason): void;
+  emitTaskAttemptRecord(task: TaskRecord): void;
   cancelTask(taskId: string, request: TaskCancelRequest): TaskRecord;
 }
 
@@ -117,6 +118,11 @@ export function requeueStaleTasksDetailed(
         },
       };
       context.setTaskRecord(task);
+      // Dead-lettered terminals must land in attempt history / preflight views
+      // like the completeTask/failTask/cancelTask paths do; previously only the
+      // checkpoint-expiry cancels (which go through context.cancelTask) were
+      // recorded, leaving dead-letters invisible in forensic data (BUG-14).
+      context.emitTaskAttemptRecord(task);
       context.syncExchangeStateFromTask(task, "failed");
       context.appendAuditEvent({
         actorId: "broker",

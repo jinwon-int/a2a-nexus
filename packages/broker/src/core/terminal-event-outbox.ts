@@ -1,3 +1,4 @@
+import { BrokerError } from "./broker-error.js";
 import { isRecord } from "./value-guards.js";
 import type { TaskRecord, TaskStatus } from "./types.js";
 import type { TaskStatusEvent } from "./task-events.js";
@@ -486,7 +487,8 @@ export class TerminalTaskEventOutbox {
           receiptStatus: event.receipt.status,
         });
       }
-      throw new TypeError("terminal outbox ack requires current-session-visible/operator-visible evidence");
+      // Client-side condition: return a 4xx with the reason, not a 500 (BUG-19).
+      throw new BrokerError("bad_request", "terminal outbox ack requires current-session-visible/operator-visible evidence");
     }
     if (!event) return null;
     if (event.ack) {
@@ -501,7 +503,8 @@ export class TerminalTaskEventOutbox {
         updatedAt: new Date().toISOString(),
         receiptStatus: event.receipt.status,
       });
-      throw new TypeError("terminal outbox ack rejected: parent-owned cross-broker projection row is evidence-only");
+      // Client ACKed an ineligible (evidence-only) row: 4xx, not a 500 (BUG-19).
+      throw new BrokerError("policy_denied", "terminal outbox ack rejected: parent-owned cross-broker projection row is evidence-only");
     }
     event.ack = buildAckState(receipt);
     event.receipt = buildReceiptStateFromAck(event.ack);
@@ -521,7 +524,7 @@ export class TerminalTaskEventOutbox {
   /** Record provider-side send/timeout/staleness without implying operator visibility. */
   recordReceiptStatus(id: string, receipt: TerminalTaskOutboxReceiptUpdateInput): TerminalTaskOutboxEvent | null {
     if (!receipt || !isTerminalTaskReceiptStatus(receipt.status)) {
-      throw new TypeError("terminal outbox receipt status must be accepted, started, produced, provider_sent, provider_accepted, current_session_visible, operator_visible, timed_out, stale, or failed");
+      throw new BrokerError("bad_request", "terminal outbox receipt status must be accepted, started, produced, provider_sent, provider_accepted, current_session_visible, operator_visible, timed_out, stale, or failed");
     }
     const event = this.events.find((candidate) => candidate.id === id);
     if (!event) return null;
@@ -535,7 +538,7 @@ export class TerminalTaskEventOutbox {
           updatedAt: new Date().toISOString(),
           receiptStatus: event.receipt.status,
         });
-        throw new TypeError("terminal outbox receipt rejected: parent-owned cross-broker projection row is evidence-only");
+        throw new BrokerError("policy_denied", "terminal outbox receipt rejected: parent-owned cross-broker projection row is evidence-only");
       }
     }
     event.receipt = buildReceiptState(receipt.status, receipt.updatedAt ?? new Date().toISOString(), receipt.note);
