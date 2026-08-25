@@ -261,8 +261,23 @@ export function evaluateTaskPolicy(
       };
     }
   }
-  if (rule.maxTasksPerDay !== undefined) {
-    const used = input.countTasksToday ? input.countTasksToday() : 0;
+  // Budgets are create-time only: the broker re-evaluates class-match rules at
+  // claim but must not re-bill the budget (no counter is wired at claim, by
+  // design). At every other evaluation point the budget is enforced, and a
+  // declared budget with no way to count DENIES rather than silently allowing —
+  // mirroring the requireImplementationCapability gate above, which also fails
+  // closed on a missing input rather than no-opping a safety rule. Previously a
+  // missing counter defaulted `used` to 0, so a forgotten thunk silently
+  // disabled the daily budget (BUG-07).
+  if (rule.maxTasksPerDay !== undefined && input.evaluationPoint !== "claim") {
+    if (!input.countTasksToday) {
+      return {
+        action: "deny",
+        ruleId: rule.id,
+        reason: `daily task budget for worker class '${input.workerClass}' cannot be evaluated: task counter was not provided`,
+      };
+    }
+    const used = input.countTasksToday();
     if (used >= rule.maxTasksPerDay) {
       return {
         action: "deny",
