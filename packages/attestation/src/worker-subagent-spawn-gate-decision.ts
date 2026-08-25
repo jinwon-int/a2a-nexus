@@ -119,10 +119,15 @@ export function buildA2AWorkerSubagentSpawnGateDecision(
   const budgetBlocks = budget?.budgetExhausted === true || budget?.spawnBudgetCeiling === 0;
   const effectiveCeiling = budgetBlocks ? 0 : policyCeiling;
 
-  const implementerWriteSets = subagents
-    .filter((s) => /implementer/i.test(s.role))
-    .flatMap((s) => (Array.isArray(s.writeSet) ? s.writeSet : []));
-  const writeSetOverlap = hasOverlappingWriteSets(implementerWriteSets);
+  const implementers = subagents.filter((s) => /implementer/i.test(s.role));
+  const implementerWriteSets = implementers.flatMap((s) => (Array.isArray(s.writeSet) ? s.writeSet : []));
+  // An implementer that declares no write set cannot be proven disjoint from the
+  // others; with more than one implementer that is the maximal-overlap case the
+  // Write-Set Rule exists to prevent, so undeclared scope counts as overlap
+  // rather than silently passing the isolation check (BUG-09).
+  const undeclaredImplementerScope = implementers.length > 1
+    && implementers.some((s) => !Array.isArray(s.writeSet) || s.writeSet.length === 0);
+  const writeSetOverlap = undeclaredImplementerScope || hasOverlappingWriteSets(implementerWriteSets);
 
   const checks = buildChecks({ auth, budget, requestedCount, effectiveCeiling, writeSetOverlap });
   const blockers = checks.filter((c) => c.status === "fail").map((c) => `${c.id}: ${c.summary}`);
