@@ -68,6 +68,14 @@ export async function handleTasksListRequest(ctx: TasksCollectionRouteContext): 
     }
     const verifiedWorker = await ctx.assertWorkerHttpSignatureRoute(ctx.req, url);
     ctx.assertVerifiedWorkerMatches(verifiedWorker, expectedWorkerId, "tasks.list");
+  } else if (ctx.enforceRequesterIdentity) {
+    // A non-worker-scoped list exposes every task's summary, result, and error
+    // detail. Worker-scoped polls above authenticate via HTTP signature; without
+    // this gate a caller that cannot sign its scoped poll could simply drop the
+    // filter and read all tasks (BUG-01). Match the other read routes
+    // (merge-ready, terminal-brief inbox, streams): in the hardened posture the
+    // broad read is an operator/hub operation.
+    assertRequesterHasRole(ctx.requesterIdentity, ["hub", "operator"], "tasks.list");
   }
   const filters = taskFiltersFromUrl(url, { defaultLimit: DEFAULT_TASK_LIST_LIMIT });
   const includeFullTaskRecords = url.searchParams.get("detail") === "full" || url.searchParams.get("include") === "full";
