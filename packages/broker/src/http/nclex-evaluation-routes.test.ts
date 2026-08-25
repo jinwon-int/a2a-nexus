@@ -192,10 +192,13 @@ test("merge-ready projection reflects stored fresh receipts and query facts (#17
   });
   assert.equal(res.statusCode, 200);
   const body = JSON.parse(res.body);
-  assert.equal(body.ready, false, "one stale receipt is reported as a reason");
+  // BUG-08: a stale receipt is reported via staleReceiptCount but is NOT a
+  // merge-ready veto. With quorum met, gate green, author-distinct approval and
+  // no conflict, the PR is ready even though an old-head receipt lingers.
+  assert.equal(body.ready, true, "stale receipts must not block a PR that otherwise meets every condition");
   assert.equal(body.freshPassCount, 2);
   assert.equal(body.staleReceiptCount, 1);
-  assert.ok(body.reasons.includes("stale_receipts_excluded:1"));
+  assert.ok(!body.reasons.includes("stale_receipts_excluded:1"), "stale receipts must not appear as a blocking reason");
 
   const res2 = new CapturingResponse();
   const url2 = new URL(

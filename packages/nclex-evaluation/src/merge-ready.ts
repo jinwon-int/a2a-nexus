@@ -42,7 +42,12 @@ export function projectMergeReady(records: NclexReceiptRecord[], input: MergeRea
   const reasons: string[] = [];
   if (input.gateGreen !== true) reasons.push("github_gate_not_green");
   if (freshPasses.length < quorum) reasons.push(`insufficient_fresh_signed_pass:${freshPasses.length}/${quorum}`);
-  if (stale.length > 0) reasons.push(`stale_receipts_excluded:${stale.length}`);
+  // Stale receipts (for a previous head) are excluded from the vote and reported
+  // via staleReceiptCount — they are NOT a merge-ready veto. The spec lists only
+  // gate-green, same-head signed PASS >= quorum, zero blocking findings,
+  // author-distinct approval, and no conflict as conditions. Treating a stale
+  // count as a blocking reason deadlocked any PR that earned a receipt and was
+  // then pushed to, because receipts are never pruned (BUG-08).
   if (blockingFindings > 0) reasons.push(`blocking_findings:${blockingFindings}`);
   if (input.authorDistinctApproval !== true) reasons.push("author_distinct_approval_missing");
   if (input.mergeConflict === true) reasons.push("merge_conflict_present");
