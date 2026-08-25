@@ -270,7 +270,15 @@ export async function runTask(config: RunnerConfig, task: RunnerTask): Promise<R
   try {
     execution = await runContainerWithRetry(engine, args, timeoutMs);
     if (codexCredentialRuntime) {
-      await commitCodexCredentialRefresh(codexCredentialRuntime);
+      try {
+        await commitCodexCredentialRefresh(codexCredentialRuntime);
+      } catch (error) {
+        // A rejected credential refresh (e.g. the validator finds a changed
+        // protected field) must NOT discard an otherwise-successful run — the
+        // container may already have opened a PR. Skip persisting the refresh
+        // and surface it, rather than throwing out of runTask (BUG-16).
+        console.warn(`[a2a-docker-runner] codex credential refresh not committed: ${redactSecrets((error as Error).message)}`);
+      }
     }
   } finally {
     if (codexCredentialRuntime) {

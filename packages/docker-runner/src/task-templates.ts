@@ -118,7 +118,11 @@ export function expandTask(task: RunnerTask): RunnerTask {
     return { ...task };
   }
 
-  const vars = task.templateVars ?? {};
+  // Optional-var defaults declared by the template form the base; explicit
+  // task.templateVars override them. Without this merge a declared default
+  // (e.g. DOCTOR_ARGS) was never applied and its `${NAME}` placeholder leaked
+  // into the expanded prompt/commands verbatim (BUG-15).
+  const vars = { ...(template.optionalVars ?? {}), ...(task.templateVars ?? {}) };
 
   // Helper: expand env entries.
   const expandEnv = (env: Record<string, string> | undefined): Record<string, string> | undefined => {
