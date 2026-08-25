@@ -1,6 +1,11 @@
 import fs from 'node:fs';
 import path from 'node:path';
+import { fileURLToPath } from 'node:url';
 
+// Anchor to the repo root (this script lives in scripts/) so the layout check is
+// correct regardless of the caller's cwd; a bare cwd-relative existsSync falsely
+// reported every path missing when run from a subdirectory (BUG-24).
+const repoRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const required = [
   'packages/broker',
   'packages/docker-runner',
@@ -10,7 +15,7 @@ const required = [
   'examples',
   'tsconfig.base.json',
 ];
-const missing = required.filter((p) => !fs.existsSync(p));
+const missing = required.filter((p) => !fs.existsSync(path.join(repoRoot, p)));
 if (missing.length) {
   console.error(`Missing required paths: ${missing.join(', ')}`);
   process.exit(1);

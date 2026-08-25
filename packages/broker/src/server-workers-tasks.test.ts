@@ -444,7 +444,11 @@ test("server rejects task creation when brokerOfRecord targets another broker", 
       },
     });
 
-    const listRes = await fetch(`${server.baseUrl}/tasks?detail=full`);
+    // Broad (non-worker-scoped) reads require an operator/hub role under
+    // enforcement (BUG-01); this verification read is a hub operation.
+    const listRes = await fetch(`${server.baseUrl}/tasks?detail=full`, {
+      headers: jsonHeaders({ "x-a2a-requester-id": "hub-a", "x-a2a-requester-role": "hub" }),
+    });
     assert.equal(listRes.status, 200);
     const listBody = await listRes.json() as { items: Array<{ id: string }> };
     assert.deepEqual(listBody.items.map((task) => task.id), []);
@@ -989,6 +993,42 @@ test("server approves blocked live-impact task with operator audit metadata", as
     assert.equal(audit.items[0].note, "change ticket reviewed");
   } finally {
     await server.close();
+  }
+});
+
+test("GET /tasks broad reads require an operator/hub role under enforcement (BUG-01)", async () => {
+  const { baseUrl, close } = await startTestServer();
+  try {
+    await registerTestWorker(baseUrl, "worker-a", "analyst");
+    const createRes = await fetch(`${baseUrl}/tasks`, {
+      method: "POST",
+      headers: jsonHeaders({ "x-a2a-requester-id": "hub-a", "x-a2a-requester-role": "hub" }),
+      body: JSON.stringify({
+        id: "broad-read-guard",
+        requester: { id: "hub-a", kind: "node", role: "hub" },
+        target: { id: "worker-a", kind: "node", role: "analyst" },
+        targetNodeId: "worker-a",
+        intent: "chat",
+        message: "guarded",
+      }),
+    });
+    assert.equal(createRes.status, 201);
+
+    // A worker cannot read every task by dropping its worker filter: the broad
+    // (non-worker-scoped) list is an operator/hub operation.
+    const deniedRes = await fetch(`${baseUrl}/tasks?detail=full`, {
+      headers: jsonHeaders({ "x-a2a-requester-id": "worker-a", "x-a2a-requester-role": "analyst" }),
+    });
+    assert.equal(deniedRes.status, 401);
+
+    const okRes = await fetch(`${baseUrl}/tasks?detail=full`, {
+      headers: jsonHeaders({ "x-a2a-requester-id": "ops", "x-a2a-requester-role": "operator" }),
+    });
+    assert.equal(okRes.status, 200);
+    const okBody = await okRes.json() as { items: Array<{ id: string }> };
+    assert.ok(okBody.items.some((entry) => entry.id === "broad-read-guard"));
+  } finally {
+    await close();
   }
 });
 

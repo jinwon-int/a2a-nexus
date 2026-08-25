@@ -80,7 +80,13 @@ export async function handleCrossBrokerTerminalBriefIngestRequest(
   assertPeerScopeForRoute(ctx, "handoff:evidence", "cross-broker-terminal-brief.ingest");
 
   const body = await readJson(ctx.req);
-  if (ctx.crossBrokerTrustAnchors && ctx.crossBrokerNonceCache) {
+  if (ctx.crossBrokerTrustAnchors) {
+    // Anchors without the shared nonce cache would skip sender-proof verification
+    // entirely; fail closed rather than accept an unverified/replayable ingest
+    // (BUG-13).
+    if (!ctx.crossBrokerNonceCache) {
+      throw new Error("cross-broker trust anchors configured without a shared nonce cache");
+    }
     const verdict = verifyCrossBrokerSenderProof(ctx.crossBrokerTrustAnchors, body, {
       nonceCache: ctx.crossBrokerNonceCache,
     });

@@ -16,8 +16,12 @@ function redactSecretsSegment(value: string): string {
     .replace(new RegExp("gh[pousr]" + "_" + "[A-Za-z0-9_]{20,}", "g"), "<redacted-github-token>")
     .replace(new RegExp("github" + "_pat" + "_" + "[A-Za-z0-9_]{20,}", "g"), "<redacted-github-token>")
     .replace(/\/root\/\.openclaw(?:\/[^\s"',}]+)?/g, "<openclaw-dir>")
-    .replace(/\/root\/\.hermes(?:\/[^\s"',}]+)?/g, "<private-dir>")
+    // Agent config/credential dirs the profile scripts create/copy. Previously
+    // only .hermes was covered, so .claude/.codex/.piri/.config paths could
+    // appear unredacted in error output (BUG-17).
+    .replace(/\/root\/\.(?:hermes|claude|codex|piri|config)(?:\/[^\s"',}]+)?/g, "<private-dir>")
     .replace(/\/tmp\/openclaw-agent-workspace(?:\/[^\s"',}]+)?/g, "<openclaw-workspace>")
+    .replace(/\/var\/folders\/[^\s"',}]+/g, "<private-dir>")
     .replace(/\/(?:home|Users)\/[^\s"',}]+(?:\/[^\s"',}]+)?/g, "<private-dir>")
     .replace(/\btelegram:-?\d{6,}\b/gi, "telegram:<redacted-target>")
     .replace(/(["']?(?:telegram|chat[_-]?id|thread[_-]?id|target[_-]?id|channel[_-]?id)["']?\s*[:=]\s*)(["']?)\s*(-?\d{6,})\s*\2/gi, "$1$2<redacted-target>$2")
@@ -30,8 +34,8 @@ function redactSecretsSegment(value: string): string {
     .replace(/x-access-token:[^@\s]+@github\.com/g, "x-access-token:<redacted>@github.com")
     // oauth_token in YAML/JSON
     .replace(/(oauth_token:\s*)\S+/gi, "$1<redacted>")
-    // Authorization / Bearer headers
-    .replace(/(Authorization:\s*Bearer\s+)\S+/gi, "$1<redacted>")
+    // Authorization headers (Bearer or token schemes; matches the in-container sed)
+    .replace(/(Authorization:\s*(?:Bearer|token)\s+)\S+/gi, "$1<redacted>")
     .replace(/(gh auth login --with-token\s+)\S+/gi, "$1<redacted>")
     // Generic key=value and JSON/YAML-style secrets (after API key patterns)
     .replace(/\b((?:[A-Z0-9]+[_-])*(?:TOKEN|SECRET|PASSWORD|KEY|API[_-]?KEY|APIKEY|ACCESS[_-]?TOKEN|EDGE[_-]?SECRET))\s*=\s*(?!<redacted)[^\s]+/gi, "$1=<redacted>")

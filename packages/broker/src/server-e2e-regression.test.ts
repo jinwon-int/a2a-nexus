@@ -690,7 +690,8 @@ test("E2E: failure lifecycle through HTTP endpoints produces correct dashboard +
 test("E2E: fail-path preserves bounded redacted readback details", async () => {
   const server = await startTestServer({ edgeSecret: "s" });
   try {
-    const hdrs = h("s");
+    // Broad task reads require an operator/hub role under enforcement (BUG-01).
+    const hdrs = h("s", { "x-a2a-requester-id": "hub-1", "x-a2a-requester-role": "hub" });
     await fetch(`${server.baseUrl}/workers/register`, {
       method: "POST",
       headers: h("s", { "x-a2a-requester-id": "w1", "x-a2a-requester-role": "analyst" }),
@@ -1025,7 +1026,8 @@ test("E2E: exchange-linked task through JSON-RPC lifecycle with cancel fan-out",
 test("E2E: task filters return correct subsets for each status", async () => {
   const server = await startTestServer({ edgeSecret: "s" });
   try {
-    const hdrs = h("s");
+    // Broad (non-worker-scoped) task reads require an operator/hub role under
+    // enforcement (BUG-01), so every list read below uses the hub headers.
     const hubHdrs = h("s", { "x-a2a-requester-id": "hub-1", "x-a2a-requester-role": "hub" });
     const workerHdrs = h("s", { "x-a2a-requester-id": "w1", "x-a2a-requester-role": "analyst" });
 
@@ -1049,7 +1051,7 @@ test("E2E: task filters return correct subsets for each status", async () => {
     })).json();
 
     // Both should be queued
-    const queuedFilter = await (await fetch(`${server.baseUrl}/tasks?status=queued`, { headers: hdrs })).json();
+    const queuedFilter = await (await fetch(`${server.baseUrl}/tasks?status=queued`, { headers: hubHdrs })).json();
     assert.equal(queuedFilter.items.length, 2);
 
     // Complete task1
@@ -1058,17 +1060,17 @@ test("E2E: task filters return correct subsets for each status", async () => {
     await fetch(`${server.baseUrl}/tasks/${task1.id}/complete`, { method: "POST", headers: workerHdrs, body: JSON.stringify({ workerId: "w1", result: { summary: "done" } }) });
 
     // Filter by status=succeeded
-    const succeededFilter = await (await fetch(`${server.baseUrl}/tasks?status=succeeded`, { headers: hdrs })).json();
+    const succeededFilter = await (await fetch(`${server.baseUrl}/tasks?status=succeeded`, { headers: hubHdrs })).json();
     assert.equal(succeededFilter.items.length, 1);
     assert.equal(succeededFilter.items[0].id, task1.id);
 
     // Filter by intent=backfill
-    const backfillFilter = await (await fetch(`${server.baseUrl}/tasks?intent=backfill`, { headers: hdrs })).json();
+    const backfillFilter = await (await fetch(`${server.baseUrl}/tasks?intent=backfill`, { headers: hubHdrs })).json();
     assert.equal(backfillFilter.items.length, 1);
     assert.equal(backfillFilter.items[0].id, task2.id);
 
     // No filter returns both (succeeded + queued)
-    const allTasks = await (await fetch(`${server.baseUrl}/tasks`, { headers: hdrs })).json();
+    const allTasks = await (await fetch(`${server.baseUrl}/tasks`, { headers: hubHdrs })).json();
     assert.equal(allTasks.items.length, 2);
   } finally {
     await server.close();

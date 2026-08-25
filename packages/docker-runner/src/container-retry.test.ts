@@ -11,6 +11,7 @@
 import { describe, it } from "node:test";
 import assert from "node:assert/strict";
 import {
+  appendBoundedOutput,
   argsForAttempt,
   computeRetryDelay,
   defaultRetryConfig,
@@ -197,6 +198,14 @@ describe("computeRetryDelay", () => {
     for (let i = 0; i < 200; i++) {
       assert.ok(computeRetryDelay(4, cc) <= 3000);
     }
+  });
+});
+
+describe("appendBoundedOutput", () => {
+  it("caps retained output while continuing to accept drained chunks", () => {
+    const first = appendBoundedOutput("1234", "567890", 8);
+    assert.match(first, /^12345678\n<output truncated:/);
+    assert.equal(appendBoundedOutput(first, "discarded", 8), first);
   });
 });
 

@@ -3,12 +3,14 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { parseArgs } from 'node:util';
 
-const { values } = parseArgs({
-  options: {
-    spec: { type: 'string', default: 'docs/readiness/fail-closed-gates.json' },
-    input: { type: 'string' },
-  },
-});
+function parseCliArgs() {
+  return parseArgs({
+    options: {
+      spec: { type: 'string', default: 'docs/readiness/fail-closed-gates.json' },
+      input: { type: 'string' },
+    },
+  }).values;
+}
 
 function readJson(file) {
   try {
@@ -92,7 +94,8 @@ function validateSpec(spec) {
 }
 
 function evaluateInput(spec, input) {
-  const blockers = [];
+  const readinessBlockers = [];
+  const redactionBlockers = [];
   const gateStatuses = input.gates && typeof input.gates === 'object' ? input.gates : {};
   const decision = String(input.decision || spec.defaultDecision || 'NO-GO').trim().toUpperCase();
 
@@ -109,17 +112,20 @@ function evaluateInput(spec, input) {
   for (const id of spec.goDecisionRequires || []) {
     const gate = gateStatuses[id];
     const status = String(gate?.status || 'MISSING').toUpperCase();
-    if (status !== 'GO') blockers.push(`${id}: status is ${status}`);
-    if (!hasEvidence(gate)) blockers.push(`${id}: redacted evidence link is missing`);
+    if (status !== 'GO') readinessBlockers.push(`${id}: status is ${status}`);
+    if (!hasEvidence(gate)) readinessBlockers.push(`${id}: redacted evidence link is missing`);
+  }
+
+  // Evidence redaction is enforced for GO and NO-GO alike: a NO-GO record whose
+  // evidence carries raw secrets is committed just like a GO one, so the
+  // redactedEvidencePolicy must hold regardless of the decision (BUG-18).
+  for (const { gateId, entry } of evidenceEntries(gateStatuses)) {
+    for (const rule of unredactedEvidenceRules) {
+      if (rule.re.test(entry)) redactionBlockers.push(`${gateId}: evidence is not redacted (${rule.kind})`);
+    }
   }
 
   if (decision === 'GO') {
-    for (const { gateId, entry } of evidenceEntries(gateStatuses)) {
-      for (const rule of unredactedEvidenceRules) {
-        if (rule.re.test(entry)) blockers.push(`${gateId}: evidence is not redacted (${rule.kind})`);
-      }
-    }
-
     const operatorEvidence = new Set(
       (gateStatuses.operatorApproval?.evidence || [])
         .filter((entry) => typeof entry === 'string')
@@ -127,23 +133,27 @@ function evaluateInput(spec, input) {
         .filter(Boolean),
     );
     if (operatorEvidence.size === 0) {
-      blockers.push('operatorApproval: separate operator approval evidence is required');
+      readinessBlockers.push('operatorApproval: separate operator approval evidence is required');
     } else {
       for (const { gateId, entry } of evidenceEntries(gateStatuses)) {
         if (gateId !== 'operatorApproval' && operatorEvidence.has(entry.trim())) {
-          blockers.push(`operatorApproval: approval evidence must be separate from ${gateId}`);
+          readinessBlockers.push(`operatorApproval: approval evidence must be separate from ${gateId}`);
         }
       }
     }
   }
 
-  if (decision === 'GO' && blockers.length) {
-    return { ok: false, decision, blockers };
-  }
-  return { ok: true, decision, blockers };
+  const blockers = [...readinessBlockers, ...redactionBlockers];
+  // A GO must clear every blocker. A NO-GO is a valid fail-closed outcome even
+  // with unresolved readiness gates, but must still fail on unredacted evidence.
+  const ok = decision === 'GO' ? blockers.length === 0 : redactionBlockers.length === 0;
+  return { ok, decision, blockers };
 }
 
 try {
+  // Parse inside the try so an unknown flag yields the structured {ok:false,error}
+  // JSON every other failure path emits, not a raw ERR_PARSE_ARGS stack (BUG-24).
+  const values = parseCliArgs();
   const specPath = path.resolve(values.spec);
   const spec = readJson(specPath);
   const specFailures = validateSpec(spec);

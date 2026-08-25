@@ -90,12 +90,18 @@ export async function handleConversationRelayRoutesIfMatched(ctx: ConversationRe
     // request-bound sender proof for the claimed sender broker whose
     // bodyHash covers the payload (proof fields excluded from the hash).
     if (ctx.crossBrokerTrustAnchors) {
+      // Trust anchors without the shared nonce cache is a server misconfiguration:
+      // a fresh per-request cache would silently disable replay detection, so fail
+      // closed rather than accept a replayable relay (BUG-13).
+      if (!ctx.crossBrokerNonceCache) {
+        throw new Error("conversation relay trust anchors configured without a shared cross-broker nonce cache");
+      }
       const senderBrokerId = typeof body.senderBrokerId === "string" ? body.senderBrokerId : "";
       if (!senderBrokerId) {
         throw new BrokerError("bad_request", "conversation relay requires senderBrokerId");
       }
       const verdict = verifyCrossBrokerSenderProof(ctx.crossBrokerTrustAnchors, body, {
-        nonceCache: ctx.crossBrokerNonceCache ?? new CrossBrokerNonceCache(),
+        nonceCache: ctx.crossBrokerNonceCache,
       });
       if (!verdict.ok) {
         throw new BrokerError("unauthorized", `conversation relay sender proof rejected: ${verdict.reason}`);

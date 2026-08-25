@@ -464,6 +464,21 @@ export function createBrokerServer(options: BrokerServerOptions = {}): BrokerSer
   const teamId = resolveStringOption(options.teamId, process.env.A2A_TEAM_ID);
   const buildInfo = resolveBrokerBuildInfo(options, serviceName);
 
+  // The singleton fence must precede state-store construction, worker-thread
+  // creation, snapshot loading, and broker construction. Keep the whole startup
+  // sequence guarded so any later validation/construction error releases the
+  // fence instead of poisoning retries in this process.
+  let workerPersistenceHandle: WorkerThreadPersistenceHandle | undefined;
+  let servingFence: SharedStateServingFenceV1 | undefined;
+  servingFence = acquireSharedStateServingFenceForBrokerV1({
+    ...(options.sharedStateFile === undefined
+      ? {}
+      : { sharedStateFile: options.sharedStateFile }),
+    stateFile,
+    injectedStore: options.stateStore !== undefined,
+  });
+
+  try {
   let stateStore: BrokerStateStore =
     options.stateStore ??
     createDefaultStateStore({
@@ -482,7 +497,6 @@ export function createBrokerServer(options: BrokerServerOptions = {}): BrokerSer
   // to a dedicated worker thread. All read methods remain synchronous on the
   // main thread. The proxy extends SqliteBrokerStateStore, so instanceof
   // checks and repository constructors work unchanged.
-  let workerPersistenceHandle: WorkerThreadPersistenceHandle | undefined;
   if (
     persistenceBackend === "sqlite" &&
     sqliteFile &&
@@ -525,7 +539,6 @@ export function createBrokerServer(options: BrokerServerOptions = {}): BrokerSer
       ? undefined
       : stateStore;
   let workerPersistenceClosePromise: Promise<void> | undefined;
-  let servingFence: SharedStateServingFenceV1 | undefined;
   let lossMonitor: ReturnType<typeof createSharedStateLossMonitorV1> | undefined;
   const inspectServingAuthority = (): SharedStateServingFenceProbeV1 => {
     if (lossMonitor !== undefined) return lossMonitor.inspect();
@@ -2034,13 +2047,6 @@ export function createBrokerServer(options: BrokerServerOptions = {}): BrokerSer
     }
   };
 
-  servingFence = acquireSharedStateServingFenceForBrokerV1({
-    ...(options.sharedStateFile === undefined
-      ? {}
-      : { sharedStateFile: options.sharedStateFile }),
-    stateFile,
-    injectedStore: options.stateStore !== undefined,
-  });
   const server = createServer(handler);
   httpServerForDiagnostics = server;
   lossMonitor = createSharedStateLossMonitorV1({
@@ -2162,6 +2168,25 @@ export function createBrokerServer(options: BrokerServerOptions = {}): BrokerSer
       build: buildInfo.build,
     },
   };
+  } catch (error) {
+    if (workerPersistenceHandle) {
+      // The worker owns persistence resources; close it before releasing the
+      // shared-state fence. Consume close errors so the original startup error
+      // remains the one reported to the caller.
+      void workerPersistenceHandle.close()
+        .catch((closeError) => {
+          console.error("[a2a-broker] startup cleanup failed:", closeError);
+        })
+        .finally(() => {
+          servingFence?.release();
+          servingFence = undefined;
+        });
+    } else {
+      servingFence?.release();
+      servingFence = undefined;
+    }
+    throw error;
+  }
 }
 
 export function startBrokerServer(options: BrokerServerOptions = {}): BrokerServerRuntime {

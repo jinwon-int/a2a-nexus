@@ -333,6 +333,21 @@ test("all 4 terminal-brief templates are registered", () => {
   assert.ok(ids.includes("terminal-brief-worker-readiness"));
 });
 
+test("template optionalVars defaults are applied when the task omits them", () => {
+  const task: RunnerTask = {
+    id: "tb-latency-defaults",
+    intent: "propose_patch",
+    template: "terminal-brief-latency-diagnostics",
+    templateVars: {
+      TARGET_NODE: "workerAlpha",
+      RUN_ID: "default-test",
+    },
+  };
+  const expanded = expandTask(task);
+  assert.ok(expanded.prompt?.includes("500"), "expected declared optional default to expand");
+  assert.doesNotMatch(expanded.prompt ?? "", /\$\{P95_THRESHOLD_MS\}/);
+});
+
 test("terminal-brief-node-health expansion produces evidence with vars expanded", () => {
   const task: RunnerTask = {
     id: "tb-node-health-run",

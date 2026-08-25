@@ -117,6 +117,22 @@ test("path 4 — budget exhaustion denies at the cap and allows under it", () =>
   assert.match((at as { reason: string }).reason, /budget exhausted .*\(2\/2\)/);
 });
 
+test("path 4b — a declared budget with no counter fails closed except at claim (BUG-07)", () => {
+  const d = doc({ rules: [{ id: "r-1", workerClass: "mobile", maxTasksPerDay: 2 }] });
+  // No counter wired at create/unknown point: a budget that cannot be counted
+  // must deny rather than silently allow (previously it defaulted used=0).
+  const create = evaluateTaskPolicy({ intent: "analyze", workerClass: "mobile", evaluationPoint: "create" }, d);
+  assert.equal(create.action, "deny");
+  assert.match((create as { reason: string }).reason, /cannot be evaluated/);
+  const unknown = evaluateTaskPolicy({ intent: "analyze", workerClass: "mobile" }, d);
+  assert.equal(unknown.action, "deny");
+  // Budgets are create-time only: claim re-evaluation skips the budget entirely
+  // (the broker wires no counter at claim by design), so a claim with no counter
+  // is allowed by the budget check, not denied.
+  const claim = evaluateTaskPolicy({ intent: "analyze", workerClass: "mobile", evaluationPoint: "claim" }, d);
+  assert.equal(claim.action, "allow");
+});
+
 test("path 5 — unclassified worker matches its own class and the wildcard", () => {
   const wildcardDeny = doc({ rules: [{ id: "r-1", workerClass: "*", allowIntents: ["analyze"] }] });
   const denied = evaluateTaskPolicy({ intent: "deploy", workerClass: "unclassified" }, wildcardDeny);

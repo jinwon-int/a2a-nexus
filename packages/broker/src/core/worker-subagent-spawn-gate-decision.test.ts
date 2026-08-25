@@ -84,6 +84,27 @@ test("authorizes a real spawn-authorization packet within budget and count", () 
   assert.equal(packet.semantics.enforcesSpawn, false);
 });
 
+test("refuses two implementers that declare no write set — undeclared scope is not disjoint (BUG-09)", () => {
+  const auth = readySpawnAuthorization();
+  const budget = buildA2AWorkerSubagentBudgetCounter({
+    now: NOW,
+    workerId: "workergamma",
+    usage: { taskTokensSpent: 14000, taskTokenCeiling: 20000, brokerTokensSpent: 460000, brokerTokenCeiling: 500000 },
+  });
+  const input = extractA2AWorkerSubagentSpawnGateDecisionInput({
+    spawnAuthorization: auth,
+    budgetCounter: budget,
+    requestedSpawn: { subagents: [{ role: "implementer" }, { role: "implementer" }] },
+  });
+  const packet = buildA2AWorkerSubagentSpawnGateDecision({ ...input, now: NOW });
+
+  assert.equal(packet.state, "refused");
+  assert.ok(
+    packet.blockers.some((b) => b.startsWith("write_set_isolation")),
+    `expected a write_set_isolation blocker, got ${JSON.stringify(packet.blockers)}`,
+  );
+});
+
 test("refuses when the budget counter is exhausted (shrink-only ceiling 0)", () => {
   const auth = readySpawnAuthorization();
   const budget = buildA2AWorkerSubagentBudgetCounter({

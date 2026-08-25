@@ -93,9 +93,12 @@ export function startDefaultAgent(
           ? (outcome.result as TaskResult)
           : (outcome as TaskResult | undefined);
       broker.completeTask(task.id, nodeId, result ?? { summary: `handled ${task.intent}` });
-    } catch {
+    } catch (error) {
       // The agent must never throw into the broker's state-change emit path.
-      // A failed drive leaves the task for the stale reaper / next attempt.
+      // A failed drive leaves the task for the stale reaper / next attempt — but
+      // log it so the stall is diagnosable instead of a silent hang until the
+      // reaper collects it minutes later (BUG-11).
+      console.error(`[a2a-default-agent] drive failed for task ${task.id}:`, (error as Error)?.message ?? error);
     }
   };
 

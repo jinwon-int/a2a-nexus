@@ -414,6 +414,24 @@
       "class": "gate",
       "round": null,
       "note": "Tests for #1725 failure-signature measurement: structured/legacy invalid-JSON classification, per-adapter rates and wasted-cost counters, advisory thresholds (warning vs exclusion candidate)."
+    },
+    {
+      "file": "test/conformance/run-conformance.test.mjs",
+      "class": "gate",
+      "round": null,
+      "note": "Tests the conformance runner allowlist and was previously unwired."
+    },
+    {
+      "file": "test/conformance/public-readiness-scan.test.mjs",
+      "class": "gate",
+      "round": null,
+      "note": "Tests the public-readiness scanner gate and was previously unwired."
+    },
+    {
+      "file": "test/conformance/check-approval-records.test.mjs",
+      "class": "gate",
+      "round": null,
+      "note": "Tests the approval-records readiness gate and was previously unwired."
     }
   ]
 }

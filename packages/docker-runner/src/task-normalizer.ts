@@ -113,6 +113,13 @@ function normalizeWorkerOverride(value: string | undefined, field: string): stri
 
 export function normalizeRepoUrl(url: string): string {
   if (GITHUB_REPO_SHORTHAND.test(url)) return `https://github.com/${url}.git`;
+  // Shell-quoting does not stop git's own arg parser: a URL beginning with '-'
+  // is consumed by `git clone` as an option (e.g. --upload-pack=...). Restrict
+  // to http(s)/git/ssh/scp-like remotes so a task cannot smuggle clone flags or
+  // a non-remote source through repo.url (BUG-22).
+  if (url.startsWith("-") || (!/^(?:https?|git|ssh):\/\//.test(url) && !/^[A-Za-z0-9_.-]+@[^\s:]+:/.test(url))) {
+    throw new Error(`task.repos[].url must be an http(s), git, ssh, or scp-like remote and must not start with '-' (got: ${url})`);
+  }
   return url;
 }
 

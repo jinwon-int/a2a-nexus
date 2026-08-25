@@ -215,7 +215,10 @@ function buildResourceGate(host: A2AWorkerSubagentHostSnapshot): A2AWorkerSubage
   const ioOk = (host.ioPressure ?? "low") !== "high";
   const eventLoopOk = host.eventLoopDegraded !== true;
   const gatewayOk = (host.gatewayPressure ?? "low") !== "high";
-  const workerCapOk = (host.activeSubagents ?? 0) < (host.workerSubagentCap ?? 2);
+  // Default cap must match the capacity arithmetic above (workerSubagentCap ?? 4);
+  // a divergent default here (previously 2) made the gate report "worker cap
+  // reached" while the ceiling computed free slots — a self-contradiction (BUG-20).
+  const workerCapOk = (host.activeSubagents ?? 0) < (host.workerSubagentCap ?? 4);
   const brokerCapOk = (host.brokerActiveSubagents ?? 0) < (host.brokerSubagentCap ?? 12);
   const reducedBy = [
     ...(!cpuOk ? ["cpu_load"] : []),

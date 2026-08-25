@@ -181,6 +181,25 @@ test("passes normalized OpenClaw worker overrides into container env", () => {
   assert.ok(args.includes("A2A_OPENCLAW_THINKING=high"));
 });
 
+test("task env cannot override runner-controlled patch command variables", () => {
+  const task: NormalizedRunnerTask = {
+    id: "patch-env-injection",
+    intent: "propose_patch",
+    repos: [],
+    commands: [],
+    env: {
+      A2A_PATCH_COMMAND: "malicious legacy command",
+      A2A_PATCH_COMMAND_JSON: '["malicious"]',
+      SAFE_TASK_VALUE: "kept",
+    },
+  };
+
+  const args = buildRunArgs(baseConfig, task, "/tmp/a2a-patch-env-test", "run123");
+  assert.ok(!args.some((arg) => arg === "A2A_PATCH_COMMAND=malicious legacy command"));
+  assert.ok(!args.some((arg) => arg === 'A2A_PATCH_COMMAND_JSON=["malicious"]'));
+  assert.ok(args.includes("SAFE_TASK_VALUE=kept"));
+});
+
 test("redacts OpenClaw runtime paths from result streams", () => {
   const redacted = redactSecrets([
     "session=/root/.openclaw/agents/main/sessions/session-123.jsonl",
@@ -928,6 +947,8 @@ test("task artifact shell redactor includes API-key and prompt secret parity pat
   assert.ok(script.includes("sk-[A-Za-z0-9_-]{32,}"), "Expected OpenAI key redaction in container artifact path");
   assert.ok(script.includes("Authorization:[[:space:]]*(Bearer|token)"), "Expected Authorization header redaction in container artifact path");
   assert.ok(script.includes("((token|password|secret|api[_-]?key)=)"), "Expected prompt key=value secret redaction in container artifact path");
+  assert.ok(script.includes("/root/\\.(hermes|claude|codex|piri|config)"), "Expected private agent-directory redaction in container artifacts");
+  assert.ok(script.includes("/var/folders/"), "Expected macOS private temp-path redaction in container artifacts");
 });
 
 test("buildContainerScript includes redact_artifact_file for post-command log redaction", () => {
@@ -947,6 +968,13 @@ test("buildContainerScript includes redact_artifact_file for post-command log re
   // The redaction must use the same temp-file-and-mv pattern (no -i flag needed)
   assert.ok(script.includes(".a2a-redacted"), "Expected temp file suffix .a2a-redacted for atomic write");
   assert.ok(script.includes("mv \"\${_a2a_f}.a2a-redacted\" \"$_a2a_f\""), "Expected mv of temp file to original");
+  // BUG-06: redaction must also run from the EXIT trap so a failing command
+  // (set -e abort) cannot leave command logs unredacted on disk, and it must
+  // cover the patch/engine output files, not just command-*.log.
+  assert.ok(script.includes("trap on_container_exit EXIT"), "Expected redaction wired into the EXIT trap");
+  assert.ok(/on_container_exit\(\)\s*\{[\s\S]*redact_command_artifacts[\s\S]*restore_work_ownership[\s\S]*\}/.test(script), "Expected exit handler to redact then restore ownership");
+  assert.ok(script.includes("/work/artifacts/patch-command.log"), "Expected patch-command.log in redaction set");
+  assert.ok(script.includes("/work/artifacts/openclaw-output.txt"), "Expected openclaw-output.txt in redaction set");
 });
 
 // ---------------------------------------------------------------------------

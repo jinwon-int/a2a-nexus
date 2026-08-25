@@ -141,6 +141,34 @@ test("createBrokerServer acquires the fence and a second constructor on the same
   });
 });
 
+test("createBrokerServer releases the fence when startup fails after acquisition", () => {
+  withTempDir((directory) => {
+    const sharedStateFile = join(directory, "fence.sqlite");
+    assert.throws(
+      () => createBrokerServer({
+        host: "127.0.0.1",
+        port: 0,
+        publicBaseUrl: "https://broker.test/",
+        stateStore: createInMemoryStateStore(),
+        sharedStateFile,
+        resultProvenanceCountersign: "enforce",
+      }),
+      /requires a broker signing key/,
+    );
+
+    // A failed constructor must not leave an ownership-conflict tombstone in
+    // this process; a corrected retry on the same fence must succeed.
+    const retry = createBrokerServer({
+      host: "127.0.0.1",
+      port: 0,
+      publicBaseUrl: "https://broker.test/",
+      stateStore: createInMemoryStateStore(),
+      sharedStateFile,
+    });
+    retry.server.close();
+  });
+});
+
 test("a missing default state directory isolates the fence", () => {
   const fence = acquireSharedStateServingFenceForBrokerV1({
     stateFile: SHARED_STATE_SERVING_FENCE_V1.defaultLegacyStateFile,

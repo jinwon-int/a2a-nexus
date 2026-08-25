@@ -92,6 +92,20 @@ test('NO-GO remains a valid fail-closed outcome with unresolved gates', () => {
   assert.match(result.stdout, /externalScannerEvidence: status is MISSING/);
 });
 
+test('NO-GO also fails closed when evidence contains an unredacted secret (BUG-18)', () => {
+  const unsafePath = '/' + 'home/operator/leak.txt';
+  const input = {
+    decision: 'NO-GO',
+    gates: {
+      publicPrivateBoundary: { status: 'GO', evidence: [unsafePath] },
+    },
+  };
+  const result = run(input);
+
+  assert.notEqual(result.status, 0);
+  assert.match(result.stderr, /evidence is not redacted \(absolute-private-path\)/);
+});
+
 test('malformed decision values fail closed instead of skipping evidence checks', () => {
   for (const decision of ['GO ', 'Go-live', 'YES']) {
     const input = { ...allGo(), decision };

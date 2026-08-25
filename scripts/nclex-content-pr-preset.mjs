@@ -255,7 +255,9 @@ export function evaluateMergeReadiness({
   if (freshPasses.length < quorum) {
     reasons.push(`insufficient_fresh_signed_pass:${freshPasses.length}/${quorum}`);
   }
-  if (stale.length > 0) reasons.push(`stale_receipts_excluded:${stale.length}`);
+  // Stale receipts are excluded from the vote and reported via staleReceiptCount,
+  // not treated as a merge-ready veto (spec-aligned; matches merge-ready.ts). A
+  // stale-count veto deadlocked re-reviewed PRs since receipts are never pruned.
   if (blockingFindings > 0) reasons.push(`blocking_findings:${blockingFindings}`);
   if (authorDistinctApproval !== true) reasons.push("author_distinct_approval_missing");
   if (mergeConflict === true) reasons.push("merge_conflict_present");

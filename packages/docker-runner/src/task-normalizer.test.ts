@@ -7,6 +7,19 @@ test("normalizes GitHub shorthand repo URLs", () => {
   assert.equal(normalizeRepoUrl("https://github.com/jinwon-int/openclaw-plugin-a2a.git"), "https://github.com/jinwon-int/openclaw-plugin-a2a.git");
 });
 
+test("rejects repo URLs that could smuggle git clone options or non-remote sources (BUG-22)", () => {
+  assert.throws(() => normalizeRepoUrl("--upload-pack=evil"), /http\(s\), git, ssh, or scp-like remote/);
+  assert.throws(() => normalizeRepoUrl("-oProxyCommand=evil"), /must not start with '-'/);
+  // A leading dash remains option injection even when the rest is shaped like
+  // an scp remote; reject it before git can parse it as a clone flag.
+  assert.throws(() => normalizeRepoUrl("-o@host:repo.git"), /must not start with '-'/);
+  assert.throws(() => normalizeRepoUrl("file:///etc/passwd"), /scp-like remote/);
+  assert.throws(() => normalizeRepoUrl("ext::sh -c evil"), /scp-like remote/);
+  // Legitimate remotes still pass through unchanged.
+  assert.equal(normalizeRepoUrl("git@github.com:jinwon-int/repo.git"), "git@github.com:jinwon-int/repo.git");
+  assert.equal(normalizeRepoUrl("ssh://git@host/repo.git"), "ssh://git@host/repo.git");
+});
+
 test("derives stable checkout paths", () => {
   assert.equal(defaultCheckoutPath("https://github.com/jinwon-int/openclaw-plugin-a2a.git"), "openclaw-plugin-a2a");
   assert.equal(defaultCheckoutPath("jinwon-int/openclaw-plugin-a2a"), "openclaw-plugin-a2a");

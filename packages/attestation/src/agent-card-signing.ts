@@ -38,6 +38,19 @@ export function canonicalizeJson(value: unknown): string {
     return `[${value.map((entry) => canonicalizeJson(entry === undefined ? null : entry)).join(",")}]`;
   }
   if (typeof value === "object") {
+    // Match JSON.stringify: honor toJSON so a Date (or any object exposing it)
+    // canonicalizes to its wire form instead of silently becoming "{}" (BUG-23).
+    const maybeToJson = (value as { toJSON?: unknown }).toJSON;
+    if (typeof maybeToJson === "function") {
+      return canonicalizeJson((value as { toJSON: () => unknown }).toJSON());
+    }
+    // A non-plain object (Map, Set, class instance) has no stable JSON form and
+    // would otherwise serialize to "{}"; reject it loudly rather than sign bytes
+    // no verifier of the served JSON could reproduce.
+    const proto = Object.getPrototypeOf(value);
+    if (proto !== Object.prototype && proto !== null) {
+      throw new Error("RFC 8785 cannot canonicalize a non-plain object");
+    }
     const record = value as Record<string, unknown>;
     const keys = Object.keys(record)
       .filter((key) => record[key] !== undefined)
