@@ -264,21 +264,18 @@ function metaTableExists(db: DatabaseSync): boolean {
 }
 
 function presentTableCount(db: DatabaseSync): number {
-  let present = 0;
-  for (const table of SHARED_STATE_SQLITE_SCHEMA_V1.tables) {
-    try {
-      const row = db
-        .prepare(
-          `SELECT name FROM sqlite_master
-           WHERE type = 'table' AND name = ?`,
-        )
-        .get(table) as { name?: unknown } | undefined;
-      if (row !== undefined) present += 1;
-    } catch {
-      return -1;
-    }
+  const tables = SHARED_STATE_SQLITE_SCHEMA_V1.tables;
+  try {
+    const row = db
+      .prepare(
+        `SELECT COUNT(*) AS present FROM sqlite_master
+         WHERE type = 'table' AND name IN (${tables.map(() => "?").join(", ")})`,
+      )
+      .get(...tables) as { present?: unknown } | undefined;
+    return typeof row?.present === "number" ? row.present : Number(row?.present ?? -1);
+  } catch {
+    return -1;
   }
-  return present;
 }
 
 /**

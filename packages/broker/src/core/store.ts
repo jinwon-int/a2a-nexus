@@ -1,6 +1,6 @@
 import { existsSync, mkdirSync } from "node:fs";
 import { dirname } from "node:path";
-import { DatabaseSync } from "node:sqlite";
+import { DatabaseSync, type StatementSync } from "node:sqlite";
 
 import { z } from "zod";
 
@@ -385,6 +385,10 @@ export class SqliteBrokerStateStore implements BrokerStateStore {
   private readonly db: DatabaseSync;
   private readonly journalMode: string;
   private readonly reviewLineageObservations: SqliteReviewLineageObservationStore;
+  // node:sqlite's prepare() recompiles the SQL text on every call. The store's
+  // statements come from a small closed set of shapes, so memoize them per
+  // text; dynamic-arity statements (e.g. IN-list deletes) stay uncached.
+  private readonly preparedStatements = new Map<string, StatementSync>();
 
   constructor(
     private readonly dbFile: string,
@@ -431,6 +435,15 @@ export class SqliteBrokerStateStore implements BrokerStateStore {
     // Publish schema 13 only after the canonical lineage/ledger and Phase 14
     // authenticated source-event tables initialize on the same connection.
     this.writeMetadata("schema_version", String(SQLITE_SCHEMA_VERSION));
+  }
+
+  private stmt(sql: string): StatementSync {
+    let statement = this.preparedStatements.get(sql);
+    if (!statement) {
+      statement = this.db.prepare(sql);
+      this.preparedStatements.set(sql, statement);
+    }
+    return statement;
   }
 
   load(): BrokerSnapshot {
@@ -517,16 +530,16 @@ export class SqliteBrokerStateStore implements BrokerStateStore {
       "updated_at DESC, id ASC",
       filters.limit ?? (filters.maxRows !== undefined && filters.maxRows > 0 ? normalizeOptionalSqliteLimit(filters.maxRows) : undefined),
     );
-    return this.db
-      .prepare(sql)
+    return this
+      .stmt(sql)
       .all(...params)
       .flatMap((row) => parseHotEntityPayloadSafe(row, taskSchema, "broker_tasks")) as TaskRecord[];
   }
 
   readHotTaskListItems(filters: SqliteTaskHotTableFilters = {}): SqliteTaskListItemProjection[] {
     const { sql, params } = buildHotTaskListItemSelect(filters);
-    return this.db
-      .prepare(sql)
+    return this
+      .stmt(sql)
       .all(...params)
       .flatMap((row) => parseHotTaskListItemProjection(row));
   }
@@ -537,8 +550,8 @@ export class SqliteBrokerStateStore implements BrokerStateStore {
       [["id", filters.id]],
       "created_at DESC, id ASC",
     );
-    return this.db
-      .prepare(sql)
+    return this
+      .stmt(sql)
       .all(...params)
       .map((row) => parseHotEntityPayload(row, exchangeStateSchema, "broker_exchanges")) as A2AExchangeState[];
   }
@@ -552,8 +565,8 @@ export class SqliteBrokerStateStore implements BrokerStateStore {
       ],
       "created_at ASC, CASE WHEN kind = 'root' THEN 0 ELSE 1 END ASC, id ASC",
     );
-    return this.db
-      .prepare(sql)
+    return this
+      .stmt(sql)
       .all(...params)
       .map((row) => parseHotEntityPayload(row, exchangeMessageSchema, "broker_exchange_messages")) as A2AExchangeMessageRecord[];
   }
@@ -570,8 +583,8 @@ export class SqliteBrokerStateStore implements BrokerStateStore {
       ],
       "created_at DESC, id ASC",
     );
-    return this.db
-      .prepare(sql)
+    return this
+      .stmt(sql)
       .all(...params)
       .map((row) => parseHotEntityPayload(row, proposalSchema, "broker_proposals")) as ChangeProposal[];
   }
@@ -585,8 +598,8 @@ export class SqliteBrokerStateStore implements BrokerStateStore {
       ],
       "created_at DESC, id ASC",
     );
-    return this.db
-      .prepare(sql)
+    return this
+      .stmt(sql)
       .all(...params)
       .map((row) => parseHotEntityPayload(row, artifactSchema, "broker_artifacts")) as ArtifactRecord[];
   }
@@ -600,8 +613,8 @@ export class SqliteBrokerStateStore implements BrokerStateStore {
       ],
       "created_at DESC, id ASC",
     );
-    return this.db
-      .prepare(sql)
+    return this
+      .stmt(sql)
       .all(...params)
       .map((row) => parseHotEntityPayload(row, validationSchema, "broker_validations")) as ValidationResult[];
   }
@@ -616,8 +629,8 @@ export class SqliteBrokerStateStore implements BrokerStateStore {
       "last_seen_at DESC, node_id ASC",
       filters.maxRows,
     );
-    return this.db
-      .prepare(sql)
+    return this
+      .stmt(sql)
       .all(...params)
       .flatMap((row) => parseHotEntityPayloadSafe(row, workerSchema, "broker_workers")) as WorkerRecord[];
   }
@@ -633,8 +646,8 @@ export class SqliteBrokerStateStore implements BrokerStateStore {
       "tombstoned_at DESC, task_id ASC",
       filters.maxRows,
     );
-    const tombstones = this.db
-      .prepare(sql)
+    const tombstones = this
+      .stmt(sql)
       .all(...params)
       .map((row) => parseHotEntityPayload(row, tombstoneSchema, "broker_tombstones")) as TaskTombstone[];
     return filters.since
@@ -645,11 +658,11 @@ export class SqliteBrokerStateStore implements BrokerStateStore {
   readHotTerminalOutbox(options: { limit?: number } = {}): TerminalTaskOutboxEvent[] {
     const limit = normalizeOptionalSqliteLimit(options.limit);
     const rows = limit === undefined
-      ? this.db
-        .prepare("SELECT payload FROM broker_terminal_outbox ORDER BY created_at ASC, id ASC")
+      ? this
+        .stmt("SELECT payload FROM broker_terminal_outbox ORDER BY created_at ASC, id ASC")
         .all()
-      : this.db
-        .prepare(
+      : this
+        .stmt(
           `SELECT payload FROM (
              SELECT payload, created_at, id
              FROM broker_terminal_outbox
@@ -674,8 +687,8 @@ export class SqliteBrokerStateStore implements BrokerStateStore {
       "created_at DESC, id ASC",
       filters.maxRows,
     );
-    const events = this.db
-      .prepare(sql)
+    const events = this
+      .stmt(sql)
       .all(...params)
       .map((row) => parseHotEntityPayload(row, auditEventSchema, "broker_audit_events")) as AuditEvent[];
     return events.filter((event) => {
@@ -690,8 +703,8 @@ export class SqliteBrokerStateStore implements BrokerStateStore {
   }
 
   private readHotTasksForRuntime(): TaskRecord[] {
-    return this.db
-      .prepare(
+    return this
+      .stmt(
         `SELECT payload FROM (
            SELECT payload, updated_at, id
            FROM broker_tasks
@@ -713,8 +726,8 @@ export class SqliteBrokerStateStore implements BrokerStateStore {
   }
 
   private readHotAuditEventsForRuntime(): AuditEvent[] {
-    return this.db
-      .prepare(
+    return this
+      .stmt(
         `SELECT payload FROM (
            SELECT payload, created_at, id
            FROM broker_audit_events
@@ -728,6 +741,7 @@ export class SqliteBrokerStateStore implements BrokerStateStore {
   }
 
   close(): void {
+    this.preparedStatements.clear();
     this.db.close();
   }
 
@@ -811,32 +825,32 @@ export class SqliteBrokerStateStore implements BrokerStateStore {
   }
 
   planHotTaskRetention(options: SqliteTaskHotRetentionPlanOptions): SqliteHotRetentionPlan {
-    const records = this.db
-      .prepare("SELECT payload FROM broker_tasks")
+    const records = this
+      .stmt("SELECT payload FROM broker_tasks")
       .all()
       .map((row) => parseHotEntityPayload(row, taskSchema, "broker_tasks")) as TaskRecord[];
     return planTaskRetentionFromRecords(records, options);
   }
 
   planHotAuditRetention(options: SqliteAuditHotRetentionPlanOptions): SqliteHotRetentionPlan {
-    const records = this.db
-      .prepare("SELECT payload FROM broker_audit_events")
+    const records = this
+      .stmt("SELECT payload FROM broker_audit_events")
       .all()
       .map((row) => parseHotEntityPayload(row, auditEventSchema, "broker_audit_events")) as AuditEvent[];
     return planAuditRetentionFromRecords(records, options);
   }
 
   planHotWorkerRetention(options: SqliteWorkerHotRetentionPlanOptions): SqliteHotRetentionPlan {
-    const records = this.db
-      .prepare("SELECT payload FROM broker_workers")
+    const records = this
+      .stmt("SELECT payload FROM broker_workers")
       .all()
       .map((row) => parseHotEntityPayload(row, workerSchema, "broker_workers")) as WorkerRecord[];
     return planWorkerRetentionFromRecords(records, options);
   }
 
   planHotTerminalOutboxRetention(options: SqliteTerminalOutboxHotRetentionPlanOptions): SqliteHotRetentionPlan {
-    const records = this.db
-      .prepare("SELECT payload FROM broker_terminal_outbox")
+    const records = this
+      .stmt("SELECT payload FROM broker_terminal_outbox")
       .all()
       .map((row) => parseHotEntityPayload(row, terminalOutboxEventSchema, "broker_terminal_outbox")) as TerminalTaskOutboxEvent[];
     return planTerminalOutboxRetentionFromRecords(records, options);
@@ -1008,8 +1022,8 @@ export class SqliteBrokerStateStore implements BrokerStateStore {
     if (!normalizedConsumedAt || !Number.isFinite(parsedConsumedAt.getTime()) || parsedConsumedAt.toISOString() !== normalizedConsumedAt) {
       throw new Error("live approval consumedAt must be a canonical ISO timestamp");
     }
-    const result = this.db
-      .prepare(
+    const result = this
+      .stmt(
         `INSERT OR IGNORE INTO broker_live_approval_consumptions
            (consumption_key, consumed_at)
          VALUES (?, ?)`,
@@ -1019,7 +1033,7 @@ export class SqliteBrokerStateStore implements BrokerStateStore {
   }
 
   private initializeDatabase(): string {
-    const journal = this.db.prepare("PRAGMA journal_mode = WAL").get() as
+    const journal = this.stmt("PRAGMA journal_mode = WAL").get() as
       | { journal_mode?: string }
       | undefined;
     this.db.exec(`
@@ -1190,8 +1204,8 @@ export class SqliteBrokerStateStore implements BrokerStateStore {
   }
 
   private loadCanonicalSnapshot(): BrokerSnapshot {
-    const row = this.db
-      .prepare("SELECT payload FROM broker_snapshots WHERE id = 1")
+    const row = this
+      .stmt("SELECT payload FROM broker_snapshots WHERE id = 1")
       .get() as { payload?: string } | undefined;
     if (typeof row?.payload === "string") {
       return parseSnapshotPayload(row.payload, `SQLite broker snapshot at ${this.dbFile}`, this.maxBytes);
@@ -1243,8 +1257,8 @@ export class SqliteBrokerStateStore implements BrokerStateStore {
     BrokerSnapshot,
     "pushNotificationConfigs" | "wavePlans" | "reviewLineages" | "crossBrokerTerminalBriefs"
   > {
-    const row = this.db
-      .prepare("SELECT payload FROM broker_snapshots WHERE id = 1")
+    const row = this
+      .stmt("SELECT payload FROM broker_snapshots WHERE id = 1")
       .get() as { payload?: string } | undefined;
     if (typeof row?.payload !== "string") {
       return {};
@@ -1285,8 +1299,8 @@ export class SqliteBrokerStateStore implements BrokerStateStore {
   }
 
   private hasCanonicalSnapshot(): boolean {
-    const row = this.db
-      .prepare("SELECT 1 AS found FROM broker_snapshots WHERE id = 1")
+    const row = this
+      .stmt("SELECT 1 AS found FROM broker_snapshots WHERE id = 1")
       .get() as { found?: number } | undefined;
     return row?.found === 1;
   }
@@ -1345,8 +1359,8 @@ export class SqliteBrokerStateStore implements BrokerStateStore {
 
   private writeCanonicalSnapshotPayloadRow(snapshot: BrokerSnapshot, updatedAt: string): number {
     const fit = fitSnapshotToBudget(snapshot, this.maxBytes);
-    this.db
-      .prepare(
+    this
+      .stmt(
         `INSERT INTO broker_snapshots (id, version, payload, updated_at)
          VALUES (1, ?, ?, ?)
          ON CONFLICT(id) DO UPDATE SET
@@ -1458,8 +1472,8 @@ export class SqliteBrokerStateStore implements BrokerStateStore {
   // original error so a caller on the serving path can still fail closed — is
   // the behaviour every caller wants.
   private readCanonicalSnapshotRow(): CanonicalSnapshotRowRead {
-    const row = this.db
-      .prepare("SELECT payload, updated_at AS updatedAt FROM broker_snapshots WHERE id = 1")
+    const row = this
+      .stmt("SELECT payload, updated_at AS updatedAt FROM broker_snapshots WHERE id = 1")
       .get() as { payload?: string; updatedAt?: string } | undefined;
     if (typeof row?.payload !== "string") {
       return { status: "absent" };
@@ -1484,7 +1498,7 @@ export class SqliteBrokerStateStore implements BrokerStateStore {
   }
 
   private readTableCount(tableName: SqliteHotEntityTable): number {
-    const row = this.db.prepare(`SELECT COUNT(*) AS count FROM ${tableName}`).get() as { count?: number | bigint } | undefined;
+    const row = this.stmt(`SELECT COUNT(*) AS count FROM ${tableName}`).get() as { count?: number | bigint } | undefined;
     if (typeof row?.count === "bigint") {
       return Number(row.count);
     }
@@ -1493,7 +1507,7 @@ export class SqliteBrokerStateStore implements BrokerStateStore {
 
   private readHotHeartbeatAuditCount(): number {
     return coerceSqliteCount(
-      this.db.prepare("SELECT COUNT(*) AS count FROM broker_audit_events WHERE action IN ('worker.heartbeat', 'task.heartbeat')").get() as
+      this.stmt("SELECT COUNT(*) AS count FROM broker_audit_events WHERE action IN ('worker.heartbeat', 'task.heartbeat')").get() as
         | { count?: number | bigint }
         | undefined,
     );
@@ -1685,6 +1699,8 @@ export class SqliteBrokerStateStore implements BrokerStateStore {
     if (pruneIds.length > 0) {
       const primaryKeyColumn = this.hotRetentionPrimaryKeyColumn(plan.table);
       const placeholders = pruneIds.map(() => "?").join(", ");
+      // Placeholder arity varies with the prune batch, so this statement is
+      // deliberately not memoized (an unbounded set of SQL texts).
       this.db.prepare(`DELETE FROM ${plan.table} WHERE ${primaryKeyColumn} IN (${placeholders})`).run(...pruneIds);
     }
     return {
@@ -1698,12 +1714,12 @@ export class SqliteBrokerStateStore implements BrokerStateStore {
 
   private readTableIds(tableName: SqliteHotRetentionPlan["table"]): string[] {
     const primaryKeyColumn = this.hotRetentionPrimaryKeyColumn(tableName);
-    return (this.db.prepare(`SELECT ${primaryKeyColumn} AS id FROM ${tableName} ORDER BY ${primaryKeyColumn} ASC`).all() as Array<{ id?: string }>)
+    return (this.stmt(`SELECT ${primaryKeyColumn} AS id FROM ${tableName} ORDER BY ${primaryKeyColumn} ASC`).all() as Array<{ id?: string }>)
       .flatMap((row) => typeof row.id === "string" ? [row.id] : []);
   }
 
   private upsertHotTasksUnsafe(tasks: TaskRecord[]): void {
-    const upsertTask = this.db.prepare(
+    const upsertTask = this.stmt(
       `INSERT INTO broker_tasks
         (id, status, intent, target_node_id, assigned_worker_id, task_origin, updated_at, payload)
        VALUES (?, ?, ?, ?, ?, ?, ?, ?)
@@ -1731,7 +1747,7 @@ export class SqliteBrokerStateStore implements BrokerStateStore {
   }
 
   private upsertHotExchangesUnsafe(exchanges: A2AExchangeState[]): void {
-    const upsertExchange = this.db.prepare(
+    const upsertExchange = this.stmt(
       `INSERT INTO broker_exchanges
         (id, status, intent, target_node_id, assigned_worker_id, created_at, updated_at, payload)
        VALUES (?, ?, ?, ?, ?, ?, ?, ?)
@@ -1759,7 +1775,7 @@ export class SqliteBrokerStateStore implements BrokerStateStore {
   }
 
   private upsertHotExchangeMessagesUnsafe(messages: A2AExchangeMessageRecord[]): void {
-    const upsertMessage = this.db.prepare(
+    const upsertMessage = this.stmt(
       `INSERT INTO broker_exchange_messages
         (id, exchange_id, kind, parent_message_id, created_at, updated_at, payload)
        VALUES (?, ?, ?, ?, ?, ?, ?)
@@ -1785,7 +1801,7 @@ export class SqliteBrokerStateStore implements BrokerStateStore {
   }
 
   private upsertHotProposalsUnsafe(proposals: ChangeProposal[]): void {
-    const upsertProposal = this.db.prepare(
+    const upsertProposal = this.stmt(
       `INSERT INTO broker_proposals
         (id, status, kind, source_node_id, target_node_id, created_at, updated_at, payload)
        VALUES (?, ?, ?, ?, ?, ?, ?, ?)
@@ -1813,7 +1829,7 @@ export class SqliteBrokerStateStore implements BrokerStateStore {
   }
 
   private upsertHotArtifactsUnsafe(artifacts: ArtifactRecord[]): void {
-    const upsertArtifact = this.db.prepare(
+    const upsertArtifact = this.stmt(
       `INSERT INTO broker_artifacts
         (id, proposal_id, kind, created_at, payload)
        VALUES (?, ?, ?, ?, ?)
@@ -1835,7 +1851,7 @@ export class SqliteBrokerStateStore implements BrokerStateStore {
   }
 
   private upsertHotValidationsUnsafe(validations: ValidationResult[]): void {
-    const upsertValidation = this.db.prepare(
+    const upsertValidation = this.stmt(
       `INSERT INTO broker_validations
         (id, proposal_id, node_id, kind, verdict, created_at, payload)
        VALUES (?, ?, ?, ?, ?, ?, ?)
@@ -1861,7 +1877,7 @@ export class SqliteBrokerStateStore implements BrokerStateStore {
   }
 
   private upsertHotAuditEventsUnsafe(events: AuditEvent[]): void {
-    const upsertAudit = this.db.prepare(
+    const upsertAudit = this.stmt(
       `INSERT INTO broker_audit_events
         (id, action, target_type, target_id, created_at, payload)
        VALUES (?, ?, ?, ?, ?, ?)
@@ -1896,7 +1912,7 @@ export class SqliteBrokerStateStore implements BrokerStateStore {
         remainingCount: before,
       };
     }
-    const deleteResult = this.db.prepare(
+    const deleteResult = this.stmt(
       `DELETE FROM broker_audit_events
        WHERE id IN (
          SELECT id FROM broker_audit_events
@@ -1926,7 +1942,7 @@ export class SqliteBrokerStateStore implements BrokerStateStore {
         remainingCount: before,
       };
     }
-    const deleteResult = this.db.prepare(
+    const deleteResult = this.stmt(
       `DELETE FROM broker_audit_events
        WHERE id IN (
          SELECT id FROM broker_audit_events
@@ -1946,7 +1962,7 @@ export class SqliteBrokerStateStore implements BrokerStateStore {
   }
 
   private upsertHotWorkersUnsafe(workers: WorkerRecord[]): void {
-    const upsertWorker = this.db.prepare(
+    const upsertWorker = this.stmt(
       `INSERT INTO broker_workers
         (node_id, role, last_seen_at, updated_at, payload)
        VALUES (?, ?, ?, ?, ?)
@@ -1968,7 +1984,7 @@ export class SqliteBrokerStateStore implements BrokerStateStore {
   }
 
   private upsertHotTerminalOutboxUnsafe(events: TerminalTaskOutboxEvent[]): void {
-    const upsertEvent = this.db.prepare(
+    const upsertEvent = this.stmt(
       `INSERT INTO broker_terminal_outbox
         (id, task_event_id, acknowledged_at, created_at, payload)
        VALUES (?, ?, ?, ?, ?)
@@ -1990,7 +2006,7 @@ export class SqliteBrokerStateStore implements BrokerStateStore {
   }
 
   private upsertHotTombstonesUnsafe(tombstones: TaskTombstone[]): void {
-    const upsertTombstone = this.db.prepare(
+    const upsertTombstone = this.stmt(
       `INSERT INTO broker_tombstones
         (task_id, terminal_status, tombstone_reason, tombstoned_at, payload)
        VALUES (?, ?, ?, ?, ?)
@@ -2037,8 +2053,8 @@ export class SqliteBrokerStateStore implements BrokerStateStore {
   }
 
   private writeMetadata(key: string, value: string): void {
-    this.db
-      .prepare(
+    this
+      .stmt(
         `INSERT INTO broker_metadata (key, value)
          VALUES (?, ?)
          ON CONFLICT(key) DO UPDATE SET value = excluded.value`,
@@ -2047,18 +2063,18 @@ export class SqliteBrokerStateStore implements BrokerStateStore {
   }
 
   private readMetadata(key: string): string | undefined {
-    const row = this.db
-      .prepare("SELECT value FROM broker_metadata WHERE key = ?")
+    const row = this
+      .stmt("SELECT value FROM broker_metadata WHERE key = ?")
       .get(key) as { value?: string } | undefined;
     return typeof row?.value === "string" ? row.value : undefined;
   }
 
   private deleteMetadata(key: string): void {
-    this.db.prepare("DELETE FROM broker_metadata WHERE key = ?").run(key);
+    this.stmt("DELETE FROM broker_metadata WHERE key = ?").run(key);
   }
 
   private ensureColumn(tableName: string, columnName: string, columnDefinition: string): void {
-    const rows = this.db.prepare(`PRAGMA table_info(${tableName})`).all() as Array<{ name?: string }>;
+    const rows = this.stmt(`PRAGMA table_info(${tableName})`).all() as Array<{ name?: string }>;
     if (rows.some((row) => row.name === columnName)) {
       return;
     }

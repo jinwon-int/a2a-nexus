@@ -13,7 +13,7 @@ import { randomUUID } from "node:crypto";
 import { existsSync, mkdtempSync, mkdirSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
-import { DatabaseSync } from "node:sqlite";
+import { DatabaseSync, type StatementSync } from "node:sqlite";
 
 import {
   SHARED_STATE_SQLITE_ADAPTER_V1,
@@ -186,6 +186,10 @@ export function openSharedStateServingFenceV1(input: {
   }
 
   let released = false;
+  // The probe runs on every request the server fences, so compile its
+  // statement once; lazily inside the try so a prepare failure still reads
+  // as adapter_unavailable.
+  let probeStatement: StatementSync | undefined;
   return {
     ok: true,
     value: Object.freeze({
@@ -201,9 +205,10 @@ export function openSharedStateServingFenceV1(input: {
           return Object.freeze({ ready: false, reasonCode: "adapter_unavailable" });
         }
         try {
-          const row: unknown = db.prepare(
+          probeStatement ??= db.prepare(
             `SELECT owner_token FROM shared_state_ownership WHERE id = ?`,
-          ).get(SHARED_STATE_SQLITE_ADAPTER_V1.ownershipRowId);
+          );
+          const row: unknown = probeStatement.get(SHARED_STATE_SQLITE_ADAPTER_V1.ownershipRowId);
           const token = ownershipTokenFromRow(row);
           if (token === undefined) {
             return Object.freeze({

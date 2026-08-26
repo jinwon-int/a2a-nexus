@@ -100,7 +100,7 @@
  */
 
 import { createHash } from "node:crypto";
-import type { DatabaseSync } from "node:sqlite";
+import { DatabaseSync, type StatementSync } from "node:sqlite";
 
 import {
   SHARED_STATE_STORAGE_V1_VALUES as V,
@@ -215,9 +215,37 @@ interface OwnershipRow {
   readonly lifecycle_epoch: string;
 }
 
+/**
+ * node:sqlite's prepare() recompiles the SQL text on every call. Every
+ * statement in this adapter is a constant text, so memoize StatementSync per
+ * connection; the WeakMap ties each cache to its connection's lifetime.
+ *
+ * Conformance fault seams wrap connections in a Proxy whose prepare trap
+ * fires faults at statement boundaries; memoization would bypass the trap
+ * after the first call. A wrapped connection surfaces a non-native prepare,
+ * so those connections keep the per-call prepare path.
+ */
+const preparedStatementsByDb = new WeakMap<DatabaseSync, Map<string, StatementSync>>();
+
+function preparedStmt(db: DatabaseSync, sql: string): StatementSync {
+  if (db.prepare !== DatabaseSync.prototype.prepare) {
+    return db.prepare(sql);
+  }
+  let cache = preparedStatementsByDb.get(db);
+  if (cache === undefined) {
+    cache = new Map();
+    preparedStatementsByDb.set(db, cache);
+  }
+  let statement = cache.get(sql);
+  if (statement === undefined) {
+    statement = db.prepare(sql);
+    cache.set(sql, statement);
+  }
+  return statement;
+}
+
 function readOwnership(db: DatabaseSync): OwnershipRow | null {
-  const row = db
-    .prepare(
+  const row = preparedStmt(db, 
       `SELECT owner_token, lifecycle_epoch FROM shared_state_ownership
        WHERE id = ?`,
     )
@@ -438,8 +466,7 @@ interface ClockFloorRow {
 }
 
 function readClockFloor(db: DatabaseSync): ClockFloorRow | null {
-  const row = db
-    .prepare(
+  const row = preparedStmt(db, 
       `SELECT clock_profile, persisted_floor_unix_ms
          FROM shared_state_clock_floor WHERE id = ?`,
     )
@@ -487,8 +514,7 @@ function readLease(
   namespace: string,
   resourceKeyDigest: string,
 ): LeaseRow | null | undefined {
-  const row = db
-    .prepare(
+  const row = preparedStmt(db, 
       `SELECT owner_key_digest, attempt_key_digest, fencing_token,
               resource_version, lease_expires_at_unix_ms
          FROM shared_state_lease
@@ -598,8 +624,7 @@ function readIdempotency(
   namespace: string,
   keyDigest: string,
 ): IdempotencyRow | null | undefined {
-  const row = db
-    .prepare(
+  const row = preparedStmt(db, 
       `SELECT payload_fingerprint, outcome_digest, retention_policy_version
          FROM shared_state_idempotency
         WHERE namespace = ? AND key_digest = ?`,
@@ -722,8 +747,7 @@ function readOutboxQueryPage(
   afterSequence: string,
   limit: number,
 ): readonly OutboxRow[] | null {
-  const rows = db
-    .prepare(
+  const rows = preparedStmt(db, 
       `SELECT ${OUTBOX_COLUMNS_V1}
          FROM shared_state_outbox
         WHERE namespace = ? AND stream_key_digest = ?
@@ -798,8 +822,7 @@ function readGraphQuerySourceRows(
   db: DatabaseSync,
   namespace: string,
 ): readonly GraphQuerySourceRowV1[] | null {
-  const raw = db
-    .prepare(
+  const raw = preparedStmt(db, 
       `SELECT source_fact_digest, source_stream_key_digest, node_type,
               source_sequence
          FROM shared_state_graph_source
@@ -845,8 +868,7 @@ function readGraphQueryCheckpoint(
   namespace: string,
   projectionVersion: string,
 ): { readonly present: boolean; readonly value: bigint } | null {
-  const row = db
-    .prepare(
+  const row = preparedStmt(db, 
       `SELECT checkpoint_sequence
          FROM shared_state_graph_projection
         WHERE namespace = ? AND projection_version = ?`,
@@ -870,8 +892,7 @@ function readGraphQueryBatches(
   projectionVersion: string,
   highWater: bigint,
 ): readonly GraphQueryBatchRowV1[] | null {
-  const raw = db
-    .prepare(
+  const raw = preparedStmt(db, 
       `SELECT batch_key_digest, inverse_digest, source_sequence_from,
               source_sequence_through, prior_checkpoint_sequence, rolled_back
          FROM shared_state_graph_batch
@@ -1081,8 +1102,7 @@ function readOutboxByIdempotencyKey(
   idempotencyKeyDigest: string,
 ): OutboxRow | null | undefined {
   return toOutboxRow(
-    db
-      .prepare(
+    preparedStmt(db, 
         `SELECT ${OUTBOX_COLUMNS_V1}
            FROM shared_state_outbox
           WHERE namespace = ? AND stream_key_digest = ?
@@ -1101,8 +1121,7 @@ function readOutboxByEventKey(
   eventKeyDigest: string,
 ): OutboxRow | null | undefined {
   return toOutboxRow(
-    db
-      .prepare(
+    preparedStmt(db, 
         `SELECT ${OUTBOX_COLUMNS_V1}
            FROM shared_state_outbox
           WHERE namespace = ? AND stream_key_digest = ?
@@ -1128,8 +1147,7 @@ function nextOutboxSequence(
   namespace: string,
   streamKeyDigest: string,
 ): string | undefined {
-  const rows = db
-    .prepare(
+  const rows = preparedStmt(db, 
       `SELECT stream_sequence FROM shared_state_outbox
         WHERE namespace = ? AND stream_key_digest = ?`,
     )
@@ -1266,8 +1284,7 @@ export class SharedStateSqliteAdapterV1 {
       // guarantee the stored profile was making.
       const floor = readClockFloor(this.#db);
       if (floor === null) {
-        this.#db
-          .prepare(
+        preparedStmt(this.#db, 
             `INSERT INTO shared_state_clock_floor
                (id, clock_profile, persisted_floor_unix_ms)
              VALUES (?, ?, ?)`,
@@ -1291,8 +1308,7 @@ export class SharedStateSqliteAdapterV1 {
         this.#state = "failed";
         return failure("epoch_regression");
       }
-      this.#db
-        .prepare(
+      preparedStmt(this.#db, 
           `UPDATE shared_state_ownership
              SET owner_token = ?, lifecycle_epoch = ?
            WHERE id = ?`,
@@ -1630,8 +1646,7 @@ export class SharedStateSqliteAdapterV1 {
         return unavailableEnvelope(command.operation, "unsafe_clock");
       }
       if (time.value.floorWriteRequired) {
-        this.#db
-          .prepare(
+        preparedStmt(this.#db, 
             `UPDATE shared_state_clock_floor
                SET persisted_floor_unix_ms = ?
              WHERE id = ?`,
@@ -1721,8 +1736,7 @@ export class SharedStateSqliteAdapterV1 {
     if (!time.safe) return rejectedEnvelope(operation, "invalid_expiry");
     const now = BigInt(time.effectiveNowUnixMs);
 
-    const existing = this.#db
-      .prepare(
+    const existing = preparedStmt(this.#db, 
         `SELECT expires_at_unix_ms FROM shared_state_replay_nonce
          WHERE namespace = ? AND key_digest = ? AND nonce_digest = ?`,
       )
@@ -1750,8 +1764,7 @@ export class SharedStateSqliteAdapterV1 {
       // deleted-then-inserted so the row never briefly disappears.
     }
 
-    this.#db
-      .prepare(
+    preparedStmt(this.#db, 
         `INSERT INTO shared_state_replay_nonce
            (namespace, key_digest, nonce_digest, expires_at_unix_ms)
          VALUES (?, ?, ?, ?)
@@ -1779,8 +1792,7 @@ export class SharedStateSqliteAdapterV1 {
     const now = BigInt(time.effectiveNowUnixMs);
     const windowMs = BigInt(input.windowMs);
 
-    const rows = this.#db
-      .prepare(
+    const rows = preparedStmt(this.#db, 
         `SELECT event_at_unix_ms, cost, entry_ordinal
            FROM shared_state_rate_cost
           WHERE namespace = ? AND bucket_key_digest = ?
@@ -1834,8 +1846,7 @@ export class SharedStateSqliteAdapterV1 {
       });
     }
 
-    this.#db
-      .prepare(
+    preparedStmt(this.#db, 
         `INSERT INTO shared_state_rate_cost
            (namespace, bucket_key_digest, event_at_unix_ms, cost,
             entry_ordinal)
@@ -1928,8 +1939,7 @@ export class SharedStateSqliteAdapterV1 {
     // They are recorded exactly as supplied. No value is derived, defaulted,
     // or invented, which is what separates this from writing a registered
     // `shared_state_outbox` row.
-    this.#db
-      .prepare(
+    preparedStmt(this.#db, 
         `INSERT INTO shared_state_idempotency_outbox_link
            (namespace, key_digest, stream_key_digest, event_key_digest,
             payload_digest, retention_policy_version)
@@ -1944,8 +1954,7 @@ export class SharedStateSqliteAdapterV1 {
         input.effect.outbox.retentionPolicyVersion,
       );
 
-    this.#db
-      .prepare(
+    preparedStmt(this.#db, 
         `INSERT INTO shared_state_idempotency
            (namespace, key_digest, payload_fingerprint, outcome_digest,
             retention_policy_version)
@@ -2077,8 +2086,7 @@ export class SharedStateSqliteAdapterV1 {
     );
     if (streamSequence === undefined) return failure("store_failure");
 
-    this.#db
-      .prepare(
+    preparedStmt(this.#db, 
         `INSERT INTO shared_state_outbox
            (namespace, stream_key_digest, event_key_digest,
             idempotency_key_digest, payload_digest, stream_sequence,
@@ -2152,8 +2160,7 @@ export class SharedStateSqliteAdapterV1 {
       return rejectedEnvelope(operation, "receipt_state_conflict");
     }
 
-    this.#db
-      .prepare(
+    preparedStmt(this.#db, 
         `UPDATE shared_state_outbox SET receipt_state = ?
           WHERE namespace = ? AND stream_key_digest = ?
             AND event_key_digest = ?`,
@@ -2233,8 +2240,7 @@ export class SharedStateSqliteAdapterV1 {
       return rejectedEnvelope(operation, "ack_state_conflict");
     }
 
-    this.#db
-      .prepare(
+    preparedStmt(this.#db, 
         `UPDATE shared_state_outbox SET acknowledgment_state = ?
           WHERE namespace = ? AND stream_key_digest = ?
             AND event_key_digest = ?`,
@@ -2266,8 +2272,7 @@ export class SharedStateSqliteAdapterV1 {
   ): SharedStateSqliteAdapterResultV1<SharedStateTransactionResultV1> {
     const operation = V.operations[10];
 
-    const existing = this.#db
-      .prepare(
+    const existing = preparedStmt(this.#db, 
         `SELECT source_sequence FROM shared_state_graph_source
           WHERE namespace = ? AND source_fact_digest = ?`,
       )
@@ -2291,8 +2296,7 @@ export class SharedStateSqliteAdapterV1 {
     }
 
     const sourceSequence = (highWater + 1n).toString();
-    this.#db
-      .prepare(
+    preparedStmt(this.#db, 
         `INSERT INTO shared_state_graph_source
            (namespace, source_fact_digest, source_stream_key_digest,
             node_type, source_sequence)
@@ -2315,8 +2319,7 @@ export class SharedStateSqliteAdapterV1 {
    * The greatest source sequence recorded in a namespace, or zero.
    */
   #graphSourceHighWater(namespace: string): bigint | null {
-    const rows = this.#db
-      .prepare(
+    const rows = preparedStmt(this.#db, 
         `SELECT source_sequence FROM shared_state_graph_source
           WHERE namespace = ?`,
       )
@@ -2334,8 +2337,7 @@ export class SharedStateSqliteAdapterV1 {
     namespace: string,
     projectionVersion: string,
   ): bigint | null | undefined {
-    const row = this.#db
-      .prepare(
+    const row = preparedStmt(this.#db, 
         `SELECT checkpoint_sequence FROM shared_state_graph_projection
           WHERE namespace = ? AND projection_version = ?`,
       )
@@ -2352,8 +2354,7 @@ export class SharedStateSqliteAdapterV1 {
     projectionVersion: string,
     checkpointSequence: string,
   ): void {
-    this.#db
-      .prepare(
+    preparedStmt(this.#db, 
         `INSERT INTO shared_state_graph_projection
            (namespace, projection_version, checkpoint_sequence)
          VALUES (?, ?, ?)
@@ -2370,8 +2371,7 @@ export class SharedStateSqliteAdapterV1 {
   ): { from: bigint; through: bigint; prior: bigint; rolledBack: boolean }
     | null
     | undefined {
-    const row = this.#db
-      .prepare(
+    const row = preparedStmt(this.#db, 
         `SELECT source_sequence_from, source_sequence_through,
                 prior_checkpoint_sequence, rolled_back
            FROM shared_state_graph_batch
@@ -2448,8 +2448,7 @@ export class SharedStateSqliteAdapterV1 {
       return rejectedEnvelope(operation, "checkpoint_conflict");
     }
 
-    this.#db
-      .prepare(
+    preparedStmt(this.#db, 
         `INSERT INTO shared_state_graph_batch
            (namespace, projection_version, batch_key_digest, inverse_digest,
             source_sequence_from, source_sequence_through,
@@ -2522,8 +2521,7 @@ export class SharedStateSqliteAdapterV1 {
       return rejectedEnvelope(operation, "checkpoint_conflict");
     }
 
-    this.#db
-      .prepare(
+    preparedStmt(this.#db, 
         `UPDATE shared_state_graph_batch SET rolled_back = 1
           WHERE namespace = ? AND projection_version = ?
             AND batch_key_digest = ?`,
@@ -2611,8 +2609,7 @@ export class SharedStateSqliteAdapterV1 {
     );
     if (attemptKeyDigest === null) return failure("adapter_unavailable");
 
-    this.#db
-      .prepare(
+    preparedStmt(this.#db, 
         `INSERT INTO shared_state_lease
            (namespace, resource_key_digest, owner_key_digest,
             attempt_key_digest, fencing_token, resource_version,
@@ -2715,8 +2712,7 @@ export class SharedStateSqliteAdapterV1 {
         String(renew.leaseDurationMs),
       );
       if (!expiresAt.ok) return rejectedEnvelope(operation, "lease_expired");
-      this.#db
-        .prepare(
+      preparedStmt(this.#db, 
           `UPDATE shared_state_lease
               SET resource_version = ?, lease_expires_at_unix_ms = ?
             WHERE namespace = ? AND resource_key_digest = ?`,
@@ -2742,8 +2738,7 @@ export class SharedStateSqliteAdapterV1 {
         !== V.leaseMutationKinds[0];
 
     if (endsClaim) {
-      this.#db
-        .prepare(
+      preparedStmt(this.#db, 
           `UPDATE shared_state_lease
               SET resource_version = ?, owner_key_digest = NULL,
                   attempt_key_digest = NULL, lease_expires_at_unix_ms = NULL
@@ -2751,8 +2746,7 @@ export class SharedStateSqliteAdapterV1 {
         )
         .run(resourceVersion, input.namespace, input.resourceKeyDigest);
     } else {
-      this.#db
-        .prepare(
+      preparedStmt(this.#db, 
           `UPDATE shared_state_lease SET resource_version = ?
             WHERE namespace = ? AND resource_key_digest = ?`,
         )
@@ -2799,8 +2793,7 @@ export class SharedStateSqliteAdapterV1 {
         this.#db.exec("BEGIN IMMEDIATE");
         const row = readOwnership(this.#db);
         if (row !== null && row.owner_token === this.#ownerToken) {
-          this.#db
-            .prepare(
+          preparedStmt(this.#db, 
               `UPDATE shared_state_ownership SET owner_token = NULL
                WHERE id = ?`,
             )
