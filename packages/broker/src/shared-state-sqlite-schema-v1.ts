@@ -198,6 +198,13 @@ const SCHEMA_STATEMENTS_V1: readonly string[] = Object.freeze([
   `CREATE UNIQUE INDEX IF NOT EXISTS shared_state_outbox_stream_sequence
      ON shared_state_outbox (namespace, stream_key_digest, stream_sequence)`,
 
+  // Retry-binding lookups resolve an append by idempotency key on every
+  // appendOutbox; without this index that read walks the stream's whole
+  // primary-key range. IF NOT EXISTS reaches databases already in use, and
+  // schema validation checks table names, so this is additive.
+  `CREATE INDEX IF NOT EXISTS shared_state_outbox_idempotency_key
+     ON shared_state_outbox (namespace, stream_key_digest, idempotency_key_digest)`,
+
   `CREATE TABLE IF NOT EXISTS shared_state_graph_source (
      namespace TEXT NOT NULL,
      source_fact_digest TEXT NOT NULL,

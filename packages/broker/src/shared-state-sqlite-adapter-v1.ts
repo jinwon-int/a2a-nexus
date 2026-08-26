@@ -227,6 +227,10 @@ interface OwnershipRow {
  */
 const preparedStatementsByDb = new WeakMap<DatabaseSync, Map<string, StatementSync>>();
 
+// Mirrors the time module's canonical decimal validation; used to decide when
+// the rate-window scan may be bounded in SQL without changing any decision.
+const CANONICAL_RATE_WINDOW_PATTERN = /^(?:0|[1-9][0-9]*)$/;
+
 function preparedStmt(db: DatabaseSync, sql: string): StatementSync {
   if (db.prepare !== DatabaseSync.prototype.prepare) {
     return db.prepare(sql);
@@ -754,9 +758,14 @@ function readOutboxQueryPage(
         ORDER BY length(stream_sequence), stream_sequence`,
     )
     .all(namespace, streamKeyDigest) as readonly Record<string, unknown>[];
-  const result: OutboxRow[] = [];
+  // Whole-stream validation is the read path's fail-closed audit and stays;
+  // the page itself is collected in the same pass instead of re-walking and
+  // re-parsing every sequence afterwards.
+  const page: OutboxRow[] = [];
   const eventKeys = new Set<string>();
   let previousSequence = 0n;
+  const after = BigInt(afterSequence);
+  let cursorSeen = afterSequence === "0";
   for (const row of rows) {
     const parsed = toOutboxRow(row);
     if (parsed === null || parsed === undefined) return null;
@@ -790,18 +799,13 @@ function readOutboxQueryPage(
     if (sequence <= previousSequence) return null;
     previousSequence = sequence;
     eventKeys.add(parsed.event_key_digest);
-    result.push(parsed);
+    if (parsed.stream_sequence === afterSequence) cursorSeen = true;
+    if (sequence > after && page.length < limit + 1) {
+      page.push(parsed);
+    }
   }
-  if (
-    afterSequence !== "0"
-    && !result.some((row) => row.stream_sequence === afterSequence)
-  ) {
-    return null;
-  }
-  const after = BigInt(afterSequence);
-  return result
-    .filter((row) => BigInt(row.stream_sequence) > after)
-    .slice(0, limit + 1);
+  if (!cursorSeen) return null;
+  return page;
 }
 
 interface GraphQuerySourceRowV1 {
@@ -1136,9 +1140,10 @@ function readOutboxByEventKey(
 /**
  * Allocates the next sequence for one exact stream key.
  *
- * `stream_sequence` is TEXT, so SQL `MAX()` would compare it lexically and
- * answer `"9"` for a stream that already reached `"10"`. The maximum is taken
- * as `BigInt` here for that reason. Gaps are allowed by the registry
+ * `stream_sequence` is TEXT, so a bare SQL `MAX()` would compare it lexically
+ * and answer `"9"` for a stream that already reached `"10"`; the
+ * length-then-lexical ordering below is the numeric maximum for canonical
+ * sequences. Gaps are allowed by the registry
  * (`unique-strictly-increasing-gaps-allowed`), so a sequence burned by a
  * rolled-back transaction is never reused and never has to be.
  */
@@ -1147,19 +1152,31 @@ function nextOutboxSequence(
   namespace: string,
   streamKeyDigest: string,
 ): string | undefined {
-  const rows = preparedStmt(db, 
-      `SELECT stream_sequence FROM shared_state_outbox
+  // One index-only aggregate instead of materializing every row into JS.
+  // Canonical sequences (no leading zeros) order numerically as
+  // length-then-lexical, so the subquery's head IS the numeric maximum; the
+  // canonical count preserves the fail-closed answer when any row carries a
+  // non-canonical sequence.
+  const row = preparedStmt(db,
+      `SELECT COUNT(*) AS total,
+              COALESCE(SUM(stream_sequence GLOB '[1-9]*'
+                AND stream_sequence NOT GLOB '*[^0-9]*'
+                AND length(stream_sequence) <= 40), 0) AS canonical,
+              (SELECT stream_sequence FROM shared_state_outbox
+                WHERE namespace = ? AND stream_key_digest = ?
+                ORDER BY length(stream_sequence) DESC, stream_sequence DESC
+                LIMIT 1) AS head
+         FROM shared_state_outbox
         WHERE namespace = ? AND stream_key_digest = ?`,
     )
-    .all(namespace, streamKeyDigest) as readonly Record<string, unknown>[];
-  let highest = 0n;
-  for (const row of rows) {
-    if (typeof row.stream_sequence !== "string") return undefined;
-    if (!POSITIVE_DECIMAL_V1.test(row.stream_sequence)) return undefined;
-    const value = BigInt(row.stream_sequence);
-    if (value > highest) highest = value;
-  }
-  return (highest + 1n).toString();
+    .get(namespace, streamKeyDigest, namespace, streamKeyDigest) as
+    | { total?: unknown; canonical?: unknown; head?: unknown }
+    | undefined;
+  if (row === undefined || typeof row.total !== "number") return undefined;
+  if (row.total === 0) return "1";
+  if (row.canonical !== row.total) return undefined;
+  if (typeof row.head !== "string" || !POSITIVE_DECIMAL_V1.test(row.head)) return undefined;
+  return (BigInt(row.head) + 1n).toString();
 }
 
 /**
@@ -1792,21 +1809,58 @@ export class SharedStateSqliteAdapterV1 {
     const now = BigInt(time.effectiveNowUnixMs);
     const windowMs = BigInt(input.windowMs);
 
-    const rows = preparedStmt(this.#db, 
-        `SELECT event_at_unix_ms, cost, entry_ordinal
-           FROM shared_state_rate_cost
-          WHERE namespace = ? AND bucket_key_digest = ?
-          ORDER BY entry_ordinal`,
-      )
-      .all(input.namespace, input.bucketKeyDigest) as readonly {
+    // Expired entries are never deleted (section 2.6), so the bucket grows
+    // with lifetime traffic. Bound the scan in SQL when it provably cannot
+    // change a decision: exclude only rows that are canonically formed AND
+    // strictly older than the window start, so every row the boundary
+    // evaluator would count — or fail validation on — is still returned and
+    // evaluated exactly as before. When the window itself would not pass the
+    // evaluator's validation (or timestamps exceed exact double range), fall
+    // back to the unbounded read so the evaluator's own rejection surfaces.
+    const canBoundScan =
+      CANONICAL_RATE_WINDOW_PATTERN.test(String(input.windowMs))
+      && windowMs > 0n
+      && windowMs <= BigInt(TIME_V.limits.maxDurationMs)
+      && windowMs <= now
+      && now < 2n ** 52n;
+    const rows = (canBoundScan
+      ? preparedStmt(this.#db,
+          `SELECT event_at_unix_ms, cost, entry_ordinal
+             FROM shared_state_rate_cost
+            WHERE namespace = ? AND bucket_key_digest = ?
+              AND NOT (
+                length(event_at_unix_ms) <= 13
+                AND (event_at_unix_ms = '0'
+                  OR (event_at_unix_ms GLOB '[1-9]*' AND event_at_unix_ms NOT GLOB '*[^0-9]*'))
+                AND CAST(event_at_unix_ms AS INTEGER) < ?
+              )
+            ORDER BY entry_ordinal`,
+        )
+        .all(input.namespace, input.bucketKeyDigest, Number(now - windowMs))
+      : preparedStmt(this.#db,
+          `SELECT event_at_unix_ms, cost, entry_ordinal
+             FROM shared_state_rate_cost
+            WHERE namespace = ? AND bucket_key_digest = ?
+            ORDER BY entry_ordinal`,
+        )
+        .all(input.namespace, input.bucketKeyDigest)) as readonly {
         event_at_unix_ms?: unknown;
         cost?: unknown;
         entry_ordinal?: unknown;
       }[];
 
+    // The next ordinal comes from the bucket head via the primary key, not
+    // from scanning every row.
+    const ordinalRow = preparedStmt(this.#db,
+        `SELECT COALESCE(MAX(entry_ordinal), 0) AS max_ordinal
+           FROM shared_state_rate_cost
+          WHERE namespace = ? AND bucket_key_digest = ?`,
+      )
+      .get(input.namespace, input.bucketKeyDigest) as { max_ordinal?: unknown } | undefined;
+    const maxOrdinal = typeof ordinalRow?.max_ordinal === "number" ? ordinalRow.max_ordinal : 0;
+
     let used = 0n;
     let oldestCounted: bigint | null = null;
-    let maxOrdinal = 0;
     for (const row of rows) {
       if (
         typeof row.event_at_unix_ms !== "string"
@@ -1815,7 +1869,6 @@ export class SharedStateSqliteAdapterV1 {
       ) {
         return failure("store_failure");
       }
-      maxOrdinal = Math.max(maxOrdinal, row.entry_ordinal);
       const boundary = evaluateSharedStateLogicalBoundaryV1(time, {
         timeVersion: TIME_V.version,
         kind: "rate-window-entry",
@@ -2319,7 +2372,33 @@ export class SharedStateSqliteAdapterV1 {
    * The greatest source sequence recorded in a namespace, or zero.
    */
   #graphSourceHighWater(namespace: string): bigint | null {
-    const rows = preparedStmt(this.#db, 
+    // Canonical sequences order numerically as length-then-lexical, so the
+    // head subquery answers without materializing the namespace into JS. A
+    // store carrying any non-canonical row falls back to the original scan
+    // so its exact answer (including failure) is preserved.
+    const summary = preparedStmt(this.#db,
+        `SELECT COUNT(*) AS total,
+                COALESCE(SUM(source_sequence GLOB '[1-9]*'
+                  AND source_sequence NOT GLOB '*[^0-9]*'
+                  AND length(source_sequence) <= 40), 0) AS canonical,
+                (SELECT source_sequence FROM shared_state_graph_source
+                  WHERE namespace = ?
+                  ORDER BY length(source_sequence) DESC, source_sequence DESC
+                  LIMIT 1) AS head
+           FROM shared_state_graph_source
+          WHERE namespace = ?`,
+      )
+      .get(namespace, namespace) as
+      | { total?: unknown; canonical?: unknown; head?: unknown }
+      | undefined;
+    if (summary !== undefined && typeof summary.total === "number") {
+      if (summary.total === 0) return 0n;
+      if (summary.canonical === summary.total && typeof summary.head === "string") {
+        return BigInt(summary.head);
+      }
+    }
+
+    const rows = preparedStmt(this.#db,
         `SELECT source_sequence FROM shared_state_graph_source
           WHERE namespace = ?`,
       )
