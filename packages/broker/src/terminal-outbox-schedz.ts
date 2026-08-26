@@ -29,8 +29,8 @@ export function oldestAgeMs(events: TerminalTaskOutboxEvent[], nowMs: number): n
 
 export function summarizeTerminalOutboxForSchedz(outbox: TerminalTaskEventOutbox) {
   const limit = 200;
-  const retained = outbox.snapshot();
-  const events = retained.slice(-limit);
+  const retainedCount = outbox.size;
+  const events = outbox.tail(limit);
   const nowMs = Date.now();
   const byWorker: Record<string, number> = {};
   const byStatus: Record<string, number> = {};
@@ -68,11 +68,11 @@ export function summarizeTerminalOutboxForSchedz(outbox: TerminalTaskEventOutbox
     : null;
 
   return {
-    retainedCount: retained.length,
+    retainedCount,
     sampledCount: events.length,
     sampleLimit: limit,
     pendingAckCount: pendingAckEvents.length,
-    oldestPendingAckAgeMs: oldestAgeMs(pendingAckEvents, nowMs),
+    oldestPendingAckAgeMs: oldestPendingAckAt === null ? null : Math.max(0, Math.round(nowMs - oldestPendingAckAt)),
     topWorkers: topCounterEntries(byWorker),
     topStatuses: topCounterEntries(byStatus),
     topReceiptStatuses: topCounterEntries(byReceiptStatus),

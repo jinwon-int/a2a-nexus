@@ -54,11 +54,16 @@ export interface FailureReadbackDetails {
   failureClass?: FailureClass;
 }
 
+// Built by concatenation so the patterns themselves cannot trip secret
+// scanners; hoisted so redactSecrets does not recompile them per call.
+const GITHUB_CLASSIC_TOKEN_PATTERN = new RegExp("gh[pousr]" + "_" + "[A-Za-z0-9_]{20,}", "g");
+const GITHUB_FINE_GRAINED_TOKEN_PATTERN = new RegExp("github" + "_pat" + "_" + "[A-Za-z0-9_]{20,}", "g");
+
 function redactSecrets(value: string): string {
   return value
     // GitHub tokens (classic, fine-grained, app/user/server tokens).
-    .replace(new RegExp("gh[pousr]" + "_" + "[A-Za-z0-9_]{20,}", "g"), "<redacted-github-token>")
-    .replace(new RegExp("github" + "_pat" + "_" + "[A-Za-z0-9_]{20,}", "g"), "<redacted-github-token>")
+    .replace(GITHUB_CLASSIC_TOKEN_PATTERN, "<redacted-github-token>")
+    .replace(GITHUB_FINE_GRAINED_TOKEN_PATTERN, "<redacted-github-token>")
     // Common model/API key patterns.
     .replace(/xai-[A-Za-z0-9_-]{40,}/g, "<redacted-api-key>")
     .replace(/sm_[A-Za-z0-9_-]{40,}/g, "<redacted-api-key>")

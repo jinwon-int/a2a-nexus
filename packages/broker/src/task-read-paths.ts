@@ -77,6 +77,7 @@ export interface TaskListItem {
 
 export function projectTaskListItem(task: TaskRecord): TaskListItem {
   const artifactIds = task.result?.artifactIds ?? task.artifactIds;
+  const failureReadback = task.error ? failureReadbackFromError(task.error) : undefined;
   return {
     id: task.id,
     intent: task.intent,
@@ -96,7 +97,7 @@ export function projectTaskListItem(task: TaskRecord): TaskListItem {
       ? {
           code: task.error.code,
           message: task.error.message,
-          ...(failureReadbackFromError(task.error) ? { details: failureReadbackFromError(task.error) } : {}),
+          ...(failureReadback ? { details: failureReadback } : {}),
         }
       : undefined,
     requeueCount: task.requeueCount,

@@ -2507,46 +2507,48 @@ export class InMemoryA2ABroker {
   }
 
   private setTaskRecord(task: TaskRecord): void {
-    this.taskRepository?.upsertTask(structuredClone(task));
+    // Repositories serialize synchronously (JSON.stringify / postMessage clone)
+    // and never retain the record, so passing the live object is safe.
+    this.taskRepository?.upsertTask(task);
     this.tasks.set(task.id, task);
     this.pendingHot.stageTask(task);
   }
 
   private setExchangeRecord(exchange: A2AExchangeState): void {
     const normalizedExchange = normalizeExchangeState(exchange);
-    this.exchangeRepository?.upsertExchange(structuredClone(normalizedExchange));
+    this.exchangeRepository?.upsertExchange(normalizedExchange);
     this.exchanges.set(normalizedExchange.id, normalizedExchange);
     this.pendingHot.stageExchange(normalizedExchange);
   }
 
   private setExchangeMessageRecord(message: A2AExchangeMessageRecord): void {
     const normalizedMessage = normalizeExchangeMessageRecord(message);
-    this.exchangeMessageRepository?.upsertExchangeMessage(structuredClone(normalizedMessage));
+    this.exchangeMessageRepository?.upsertExchangeMessage(normalizedMessage);
     this.exchangeMessages.set(normalizedMessage.id, normalizedMessage);
     this.pendingHot.stageExchangeMessage(normalizedMessage);
   }
 
   private setProposalRecord(proposal: ChangeProposal): void {
-    this.proposalRepository?.upsertProposal(structuredClone(proposal));
+    this.proposalRepository?.upsertProposal(proposal);
     this.proposals.set(proposal.id, proposal);
     this.pendingHot.stageProposal(proposal);
   }
 
   private setArtifactRecord(artifact: ArtifactRecord): void {
-    this.artifactRepository?.upsertArtifact(structuredClone(artifact));
+    this.artifactRepository?.upsertArtifact(artifact);
     this.artifacts.set(artifact.id, artifact);
     this.pendingHot.stageArtifact(artifact);
   }
 
   private setValidationRecord(validation: ValidationResult): void {
-    this.validationRepository?.upsertValidation(structuredClone(validation));
+    this.validationRepository?.upsertValidation(validation);
     this.validations.set(validation.id, validation);
     this.pendingHot.stageValidation(validation);
   }
 
   private setWorkerRecord(worker: WorkerRecord): void {
     const normalizedWorker = normalizeWorkerRecord(worker);
-    this.workerRepository?.upsertWorker(structuredClone(normalizedWorker));
+    this.workerRepository?.upsertWorker(normalizedWorker);
     this.workers.set(normalizedWorker.nodeId, normalizedWorker);
     this.pendingHot.stageWorker(normalizedWorker);
   }
@@ -2582,7 +2584,7 @@ export class InMemoryA2ABroker {
     };
 
     this.auditEvents.set(event.id, event);
-    this.auditRepository?.appendAuditEvent(structuredClone(event));
+    this.auditRepository?.appendAuditEvent(event);
     this.pendingHot.stageAuditEvent(event);
     if (event.targetType === "task") {
       const task = this.tasks.get(event.targetId);
@@ -2915,7 +2917,7 @@ export class InMemoryA2ABroker {
     }
 
     this.tombstones.set(task.id, tombstone);
-    this.tombstoneRepository?.upsertTombstone(structuredClone(tombstone));
+    this.tombstoneRepository?.upsertTombstone(tombstone);
     this.pendingHot.stageTombstone(task.id, tombstone);
     this.appendAuditEvent({
       actorId: context?.actorId ?? "broker",

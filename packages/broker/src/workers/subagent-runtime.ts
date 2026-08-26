@@ -110,6 +110,12 @@ const CLOSED_DYNAMIC_SUBAGENT_ENV = {
 } as const;
 
 const DYNAMIC_SUBAGENT_ROLES = new Set(["explorer", "implementer", "verifier"]);
+const RUNNER_LEGAL_SUBAGENT_REASONS = new Set([
+  "context_heavy",
+  "broad_source_inspection",
+  "context_overflow_retry",
+  "validation_split",
+]);
 const SUBAGENT_CONTEXT_BRIEF_PATH = "/work/artifacts/context-brief.md";
 
 function isSafeAuthorizedWriteSetPath(value: string): boolean {
@@ -309,12 +315,6 @@ export function buildDynamicSubagentRuntime(
     // recommends subagents for context/coupling-heavy tasks (field-caught:
     // the pre-fix "authorized"/"shared_workspace" emissions killed every
     // fanout spawn at runner config load, #1836 field canary 2026-08-16).
-    const RUNNER_LEGAL_SUBAGENT_REASONS = new Set([
-      "context_heavy",
-      "broad_source_inspection",
-      "context_overflow_retry",
-      "validation_split",
-    ]);
     const advertisedReasons = reducedBy.filter((reason) => RUNNER_LEGAL_SUBAGENT_REASONS.has(reason));
     const briefDigest = `sha256:${createHash("sha256").update(subagentContextBrief, "utf8").digest("hex")}`;
     const planEvidence = plan({
