@@ -35,6 +35,9 @@ export interface HomeBrokerLease {
 }
 
 const DEFAULT_SHUTDOWN_GRACE_MS = 5_000;
+// UTF-16 unit ceiling per captured stream (~8MB of ASCII), matching the
+// Claude bridge's maxBuffer so a runaway handler cannot OOM the worker.
+const MAX_HANDLER_STREAM_CHARS = 8 * 1024 * 1024;
 
 export async function runExternalHandler(options: {
   command: string;
@@ -79,10 +82,20 @@ export async function runExternalHandler(options: {
 
     child.stdout.setEncoding("utf8");
     child.stderr.setEncoding("utf8");
+    // Cap accumulation so a runaway handler cannot OOM the worker (the
+    // Claude bridge applies the same 8MB ceiling). Excess output is
+    // discarded; a response truncated here fails handler-output parsing
+    // with the existing invalid-output error path.
+    let stdoutLength = 0;
+    let stderrLength = 0;
     child.stdout.on("data", (chunk: string) => {
+      if (stdoutLength >= MAX_HANDLER_STREAM_CHARS) return;
+      stdoutLength += chunk.length;
       stdout += chunk;
     });
     child.stderr.on("data", (chunk: string) => {
+      if (stderrLength >= MAX_HANDLER_STREAM_CHARS) return;
+      stderrLength += chunk.length;
       stderr += chunk;
     });
 

@@ -40,8 +40,16 @@ export function ageSecFromIso(iso: string, nowMs: number): number {
   return Math.max(0, Math.floor((nowMs - parsed) / 1000));
 }
 
-export function sortNewestFirst<T extends { createdAt: string }>(a: T, b: T): number {
-  return a.createdAt < b.createdAt ? 1 : -1;
+export function sortNewestFirst<T extends { createdAt: string; id?: string }>(a: T, b: T): number {
+  // Returning 0 (or an id tie-break) on equal createdAt keeps the comparator
+  // contract; the previous always-nonzero answer made same-timestamp order
+  // engine-dependent.
+  if (a.createdAt < b.createdAt) return 1;
+  if (a.createdAt > b.createdAt) return -1;
+  if (a.id !== undefined && b.id !== undefined && a.id !== b.id) {
+    return a.id < b.id ? -1 : 1;
+  }
+  return 0;
 }
 
 /** Tally items by a string key, returning per-key counts. */
