@@ -203,15 +203,17 @@ if (Array.isArray(releaseGateInventory.entries)) {
   const publicReadiness = byName.get('public-readiness');
   const layout = byName.get('layout');
   const packages = byName.get('packages');
+  // The inventory invokes these gate scripts directly (node <script>) rather
+  // than through their npm aliases, which stay in package.json for humans.
   expect(Boolean(publicReadiness), 'release-gate inventory must include public-readiness scan');
   expect(publicReadiness?.tier === 'public-readiness', 'public-readiness scan must stay in public-readiness tier');
-  expect(JSON.stringify(publicReadiness?.args) === JSON.stringify(['run', 'scan:public-readiness']), 'public-readiness release-gate args must invoke scan:public-readiness');
+  expect(JSON.stringify(publicReadiness?.args) === JSON.stringify(['scripts/public-readiness-scan.mjs', '--strict-internal']), 'public-readiness release-gate args must invoke the strict public-readiness scan');
   expect(Boolean(layout), 'release-gate inventory must include layout check');
   expect(layout?.tier === 'core', 'layout check must stay in core tier');
-  expect(JSON.stringify(layout?.args) === JSON.stringify(['run', 'check:layout']), 'layout release-gate args must invoke check:layout');
+  expect(JSON.stringify(layout?.args) === JSON.stringify(['scripts/check-layout.mjs']), 'layout release-gate args must invoke the layout check');
   expect(Boolean(packages), 'release-gate inventory must include package checks');
   expect(packages?.tier === 'core', 'package checks must stay in core tier');
-  expect(JSON.stringify(packages?.args) === JSON.stringify(['run', 'check:packages']), 'package release-gate args must invoke check:packages');
+  expect(JSON.stringify(packages?.args) === JSON.stringify(['scripts/check-packages.mjs']), 'package release-gate args must invoke the package checks');
 }
 
 // ── Compatibility baseline doc ──────────────────────────────────────────────

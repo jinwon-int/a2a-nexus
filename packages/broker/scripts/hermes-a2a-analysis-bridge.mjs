@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 import { spawnSync } from "node:child_process";
-import { existsSync, readFileSync, readdirSync, statSync } from "node:fs";
+import { closeSync, existsSync, fstatSync, openSync, readFileSync, readdirSync, readSync, statSync } from "node:fs";
 import { basename, isAbsolute, join, relative, resolve, sep } from "node:path";
 import { DatabaseSync } from "node:sqlite";
 import { HERMES_FINALIZER_TOOLSETS } from "./finalizer-tool-policy.mjs";
@@ -207,11 +207,24 @@ function insideRoot(root, candidate) {
 }
 
 function readTextFile(path, maxBytes) {
-  const buffer = readFileSync(path);
-  const truncated = buffer.length > maxBytes;
-  const sliced = truncated ? buffer.subarray(0, maxBytes) : buffer;
-  const content = sliced.toString("utf8");
-  return { content, truncated, bytes: buffer.length };
+  // Bounded read: only maxBytes come off disk even for multi-MB files; the
+  // reported size still reflects the whole file.
+  const fd = openSync(path, "r");
+  try {
+    const size = fstatSync(fd).size;
+    const truncated = size > maxBytes;
+    const length = truncated ? maxBytes : size;
+    const buffer = Buffer.allocUnsafe(length);
+    let offset = 0;
+    while (offset < length) {
+      const read = readSync(fd, buffer, offset, length - offset, offset);
+      if (read <= 0) break;
+      offset += read;
+    }
+    return { content: buffer.subarray(0, offset).toString("utf8"), truncated, bytes: size };
+  } finally {
+    closeSync(fd);
+  }
 }
 
 function walkTree(root, maxEntries) {
@@ -452,10 +465,6 @@ function buildSourceBlockedResponse(sourceBlocked, fallbackSourceProjection) {
   };
 }
 
-function hasExplicitSourceEvidence(payload) {
-  return collectEmbeddedSourceEvidence(payload).length > 0;
-}
-
 function collectSourceBundle(payload, env) {
   const repoMap = parseRepoMap(env);
   const repos = collectRepos(payload);
@@ -503,7 +512,8 @@ function collectSourceBundle(payload, env) {
   }
 
   const fallbackRepo = safeText(payload.repo || payload.repository || "embedded", "embedded");
-  for (const embedded of collectEmbeddedSourceEvidence(payload)) {
+  const embeddedSourceEvidence = collectEmbeddedSourceEvidence(payload);
+  for (const embedded of embeddedSourceEvidence) {
     if (files.length >= maxFiles) {
       warnings.push(`dropped embedded source files: reason=max_files maxFiles=${maxFiles}`);
       break;
@@ -522,7 +532,7 @@ function collectSourceBundle(payload, env) {
     }
   }
 
-  const explicitSourceEvidence = hasExplicitSourceEvidence(payload);
+  const explicitSourceEvidence = embeddedSourceEvidence.length > 0;
   if (explicitSourceEvidence && files.length === 0) {
     return {
       files,
@@ -787,7 +797,7 @@ function summarizeDroppedByReason(warnings) {
 }
 
 function payloadForPrompt(payload) {
-  const copy = JSON.parse(JSON.stringify(payload ?? {}));
+  const copy = structuredClone(payload ?? {});
   if (copy.sourceBundle && typeof copy.sourceBundle === "object" && !Array.isArray(copy.sourceBundle)) {
     copy.sourceBundle = {
       ...copy.sourceBundle,

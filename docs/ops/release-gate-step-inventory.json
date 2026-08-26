@@ -12,10 +12,9 @@
   "entries": [
     {
       "name": "layout",
-      "command": "npm",
+      "command": "node",
       "args": [
-        "run",
-        "check:layout"
+        "scripts/check-layout.mjs"
       ],
       "tier": "core",
       "owner": "release-gate-tooling",
@@ -26,17 +25,17 @@
     },
     {
       "name": "contract-conformance-fixtures",
-      "command": "npm",
+      "command": "node",
       "args": [
-        "run",
-        "test:conformance"
+        "test/conformance/run-conformance.mjs"
       ],
       "tier": "core",
       "owner": "broker",
       "consumer": "pr-gate",
       "retirement": "keep",
       "retirementCondition": "Retire only when a narrower owner-scoped gate demonstrably covers the same invariant; no removal while it runs on the default release-gate path.",
-      "note": "Runs on ordinary release-gate path; keep until a narrower owner gate replaces it."
+      "note": "Runs on ordinary release-gate path; keep until a narrower owner gate replaces it.",
+      "weightMs": 60000
     },
     {
       "name": "runtime-hardening-docs",
@@ -92,10 +91,9 @@
     },
     {
       "name": "packages",
-      "command": "npm",
+      "command": "node",
       "args": [
-        "run",
-        "check:packages"
+        "scripts/check-packages.mjs"
       ],
       "tier": "core",
       "owner": "release-gate-tooling",
@@ -106,10 +104,9 @@
     },
     {
       "name": "runner-import-smoke",
-      "command": "npm",
+      "command": "node",
       "args": [
-        "run",
-        "check:runner-import-smoke"
+        "scripts/check-runner-import-smoke.mjs"
       ],
       "tier": "core",
       "owner": "broker",
@@ -120,10 +117,9 @@
     },
     {
       "name": "terminal-brief-routing",
-      "command": "npm",
+      "command": "node",
       "args": [
-        "run",
-        "check:terminal-brief-routing"
+        "scripts/check-terminal-brief-routing.mjs"
       ],
       "tier": "core",
       "owner": "broker",
@@ -134,10 +130,9 @@
     },
     {
       "name": "message-id-ack-boundary",
-      "command": "npm",
+      "command": "node",
       "args": [
-        "run",
-        "check:message-id-ack-boundary"
+        "scripts/check-message-id-ack-boundary.mjs"
       ],
       "tier": "core",
       "owner": "broker",
@@ -148,10 +143,9 @@
     },
     {
       "name": "external-harness-conformance",
-      "command": "npm",
+      "command": "node",
       "args": [
-        "run",
-        "check:external-harness-conformance"
+        "scripts/check-external-harness-conformance.mjs"
       ],
       "tier": "core",
       "owner": "broker",
@@ -176,10 +170,10 @@
     },
     {
       "name": "a2a-skill-guard",
-      "command": "npm",
+      "command": "node",
       "args": [
-        "run",
-        "a2a:skill-guard:test"
+        "--test",
+        "scripts/a2a-skill-guard.test.mjs"
       ],
       "tier": "core",
       "owner": "broker",
@@ -204,10 +198,11 @@
     },
     {
       "name": "a2ad-finalizer-lineage-evidence",
-      "command": "npm",
+      "command": "node",
       "args": [
-        "run",
-        "finalizer:gate:test"
+        "--test",
+        "scripts/a2ad-finalizer-gate.test.mjs",
+        "test/review-lineage-finalizer-evidence.test.mjs"
       ],
       "tier": "core",
       "owner": "broker",
@@ -232,10 +227,10 @@
     },
     {
       "name": "public-readiness",
-      "command": "npm",
+      "command": "node",
       "args": [
-        "run",
-        "scan:public-readiness"
+        "scripts/public-readiness-scan.mjs",
+        "--strict-internal"
       ],
       "tier": "public-readiness",
       "owner": "public-readiness",
@@ -246,10 +241,11 @@
     },
     {
       "name": "readiness-gates",
-      "command": "npm",
+      "command": "node",
       "args": [
-        "run",
-        "scan:readiness-gates"
+        "scanner/readiness/fail-closed-gates.mjs",
+        "--spec",
+        "docs/readiness/fail-closed-gates.json"
       ],
       "tier": "public-readiness",
       "owner": "public-readiness",
@@ -260,10 +256,9 @@
     },
     {
       "name": "approval-records",
-      "command": "npm",
+      "command": "node",
       "args": [
-        "run",
-        "check:approval-records"
+        "scanner/readiness/check-approval-records.mjs"
       ],
       "tier": "public-readiness",
       "owner": "governance-approval",
@@ -288,17 +283,17 @@
     },
     {
       "name": "external-secrets",
-      "command": "npm",
+      "command": "node",
       "args": [
-        "run",
-        "scan:external-secrets"
+        "scripts/external-secret-scan.mjs"
       ],
       "tier": "public-readiness",
       "owner": "supply-chain-security",
       "consumer": "pr-gate",
       "retirement": "keep",
       "retirementCondition": "Retire only when a narrower owner-scoped gate demonstrably covers the same invariant; no removal while it runs on the default release-gate path.",
-      "note": "Public-readiness or visibility hygiene; do not retire as generic cleanup."
+      "note": "Public-readiness or visibility hygiene; do not retire as generic cleanup.",
+      "weightMs": 30000
     },
     {
       "name": "dependency-advisories",
@@ -315,10 +310,9 @@
     },
     {
       "name": "markdown-links",
-      "command": "npm",
+      "command": "node",
       "args": [
-        "run",
-        "check:markdown-links"
+        "scripts/check-markdown-links.mjs"
       ],
       "tier": "public-readiness",
       "owner": "docs-provenance",
@@ -329,10 +323,10 @@
     },
     {
       "name": "ci-docs-safety-tests",
-      "command": "npm",
+      "command": "node",
       "args": [
-        "run",
-        "check:ci-docs-safety"
+        "--test",
+        "scripts/ci-docs-safety.test.mjs"
       ],
       "tier": "public-readiness",
       "owner": "supply-chain-security",
@@ -357,10 +351,9 @@
     },
     {
       "name": "body-safety-scan",
-      "command": "npm",
+      "command": "node",
       "args": [
-        "run",
-        "safety:body"
+        "scripts/a2a-body-safety-scan.mjs"
       ],
       "tier": "core",
       "owner": "supply-chain-security",
@@ -371,10 +364,10 @@
     },
     {
       "name": "body-safety-tests",
-      "command": "npm",
+      "command": "node",
       "args": [
-        "run",
-        "safety:body:test"
+        "--test",
+        "scripts/a2a-safe-body.test.mjs"
       ],
       "tier": "core",
       "owner": "supply-chain-security",
@@ -421,7 +414,7 @@
       "consumer": "pr-gate",
       "retirement": "keep",
       "retirementCondition": "Retire only when the document it pins is itself removed; while the doc is reachable from docs/README.md the check stays on the default release-gate path.",
-      "note": "Promoted from historical-transition to core: it validates docs/current-state-no-live-integration-smoke.md, which is linked from docs/README.md and pins the no-live boundary. A gate worth keeping is a gate worth running."
+      "note": "Promoted from historical-transition to core: it validates docs/current-state-no-live-integration-smoke.md, which is linked from docs/README.md and pins the no-live boundary. A gate worth keeping is a gate worth running. Stays an npm alias: docs/ops/data-driven-validation-registry.json pins these exact args."
     },
     {
       "name": "monorepo-docs-routing",
@@ -435,7 +428,7 @@
       "consumer": "pr-gate",
       "retirement": "keep",
       "retirementCondition": "Retire only when a narrower owner-scoped gate demonstrably covers the same invariant; no removal while it runs on the default release-gate path.",
-      "note": "Public-readiness or visibility hygiene; do not retire as generic cleanup."
+      "note": "Public-readiness or visibility hygiene; do not retire as generic cleanup. Stays an npm alias: docs/ops/data-driven-validation-registry.json pins these exact args."
     },
     {
       "name": "readme-canonical-surface",
@@ -449,14 +442,13 @@
       "consumer": "pr-gate",
       "retirement": "keep",
       "retirementCondition": "Retire only when a narrower owner-scoped gate demonstrably covers the same invariant; no removal while it runs on the default release-gate path.",
-      "note": "Public-readiness or visibility hygiene; do not retire as generic cleanup."
+      "note": "Public-readiness or visibility hygiene; do not retire as generic cleanup. Stays an npm alias: docs/ops/data-driven-validation-registry.json pins these exact args."
     },
     {
       "name": "broker-core-dependency-isolation",
-      "command": "npm",
+      "command": "node",
       "args": [
-        "run",
-        "check:broker-core-dependency-isolation"
+        "scripts/check-broker-core-dependency-isolation.mjs"
       ],
       "tier": "core",
       "owner": "broker",
@@ -467,10 +459,9 @@
     },
     {
       "name": "broker-docker-hardening",
-      "command": "npm",
+      "command": "node",
       "args": [
-        "run",
-        "check:broker-docker-hardening"
+        "scripts/check-broker-docker-hardening.mjs"
       ],
       "tier": "core",
       "owner": "broker",
@@ -481,10 +472,13 @@
     },
     {
       "name": "doc-check-lib",
-      "command": "npm",
+      "command": "node",
       "args": [
-        "run",
-        "test:doc-check-lib"
+        "--test",
+        "scripts/lib/doc-check.test.mjs",
+        "scripts/lib/doc-spec-check.test.mjs",
+        "scripts/lib/runtime-reliability-evidence-lane.test.mjs",
+        "scripts/build-release-candidate-evidence.test.mjs"
       ],
       "tier": "core",
       "owner": "release-gate-tooling",
@@ -522,10 +516,9 @@
     },
     {
       "name": "script-budget",
-      "command": "npm",
+      "command": "node",
       "args": [
-        "run",
-        "check:script-budget"
+        "scripts/check-script-budget.mjs"
       ],
       "tier": "core",
       "owner": "release-gate-tooling",
@@ -536,10 +529,10 @@
     },
     {
       "name": "script-budget-tests",
-      "command": "npm",
+      "command": "node",
       "args": [
-        "run",
-        "check:script-budget:test"
+        "--test",
+        "scripts/check-script-budget.test.mjs"
       ],
       "tier": "core",
       "owner": "release-gate-tooling",
@@ -550,17 +543,17 @@
     },
     {
       "name": "source-quality-floors",
-      "command": "npm",
+      "command": "node",
       "args": [
-        "run",
-        "check:source-quality-floors"
+        "scripts/check-source-quality-floors.mjs"
       ],
       "tier": "core",
       "owner": "release-gate-tooling",
       "consumer": "pr-gate",
       "retirement": "keep",
       "retirementCondition": "Retire only when a narrower owner-scoped gate demonstrably covers the same invariant; no removal while it runs on the default release-gate path.",
-      "note": "#1506 enforced source-quality floor: unsafe TypeScript suppressions in the source bucket may only ratchet down. Deterministic and behavior-neutral; keep on the ordinary release-gate path."
+      "note": "#1506 enforced source-quality floor: unsafe TypeScript suppressions in the source bucket may only ratchet down. Deterministic and behavior-neutral; keep on the ordinary release-gate path.",
+      "weightMs": 45000
     },
     {
       "name": "release-gate-inventory",
@@ -629,18 +622,20 @@
       "note": "Source-only current-state drift gate (#1501): docs/current-state.md must not frame an issue recorded closed in docs/ops/github-state-snapshot.json as active coordination; offline, no network."
     },
     {
-      "name": "current-state-drift-test",
+      "name": "doc-drift-lib-tests",
       "command": "node",
       "args": [
         "--test",
-        "scripts/lib/check-current-state-drift.test.mjs"
+        "scripts/lib/check-current-state-drift.test.mjs",
+        "scripts/lib/check-package-matrix.test.mjs",
+        "scripts/lib/check-changelog-release-drift.test.mjs"
       ],
       "tier": "core",
       "owner": "docs-provenance",
       "consumer": "pr-gate",
       "retirement": "keep",
       "retirementCondition": "Retire only when a narrower owner-scoped gate demonstrably covers the same invariant; no removal while it runs on the default release-gate path.",
-      "note": "Unit test for the #1501 current-state drift gate (RED closed-as-active, GREEN historical framing); local/read-only, budget-neutral scripts/lib placement."
+      "note": "Single-runner suite for the #1501 docs-vs-source drift gate unit tests (current-state drift, package matrix, changelog release drift): one node --test invocation replaces three tiny per-file steps; local/read-only, budget-neutral scripts/lib placement."
     },
     {
       "name": "promotion-capstone-conformance-test",
@@ -698,20 +693,6 @@
       "note": "Source-only package matrix gate (#1501): README Package/Repository Map and the all-private/unpublished claim must stay a single-source projection of the actual packages/*/package.json manifests; offline, no network."
     },
     {
-      "name": "package-matrix-test",
-      "command": "node",
-      "args": [
-        "--test",
-        "scripts/lib/check-package-matrix.test.mjs"
-      ],
-      "tier": "core",
-      "owner": "docs-provenance",
-      "consumer": "pr-gate",
-      "retirement": "keep",
-      "retirementCondition": "Retire only when a narrower owner-scoped gate demonstrably covers the same invariant; no removal while it runs on the default release-gate path.",
-      "note": "Unit test for the #1501 package matrix gate (RED missing/stale package + visibility drift, GREEN consistent projection); local/read-only, budget-neutral scripts/lib placement."
-    },
-    {
       "name": "changelog-release-drift",
       "command": "node",
       "args": [
@@ -723,20 +704,6 @@
       "retirement": "keep",
       "retirementCondition": "Retire only when a narrower owner-scoped gate demonstrably covers the same invariant; no removal while it runs on the default release-gate path.",
       "note": "Source-only CHANGELOG release-drift gate (#1501, criterion 4): when docs/ops/release-state-snapshot.json arms enforcement, CHANGELOG.md \"## Unreleased\" must not stay an empty placeholder beneath a released version; offline, no network."
-    },
-    {
-      "name": "changelog-release-drift-test",
-      "command": "node",
-      "args": [
-        "--test",
-        "scripts/lib/check-changelog-release-drift.test.mjs"
-      ],
-      "tier": "core",
-      "owner": "docs-provenance",
-      "consumer": "pr-gate",
-      "retirement": "keep",
-      "retirementCondition": "Retire only when a narrower owner-scoped gate demonstrably covers the same invariant; no removal while it runs on the default release-gate path.",
-      "note": "Unit test for the #1501 changelog release-drift gate (RED armed+empty placeholder, GREEN unarmed/populated/pre-release); local/read-only, budget-neutral scripts/lib placement."
     },
     {
       "name": "review-policy",

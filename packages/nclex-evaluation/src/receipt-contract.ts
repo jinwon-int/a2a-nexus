@@ -10,7 +10,7 @@
  * Fail-closed: malformed cores, unknown key ids, invalid signatures, and
  * self-review are rejected; nothing is admitted on a soft error.
  */
-import { createHash, createPublicKey, verify as cryptoVerify } from "node:crypto";
+import { createHash, createPublicKey, verify as cryptoVerify, type KeyObject } from "node:crypto";
 
 import { canonicalizeJson } from "a2a-attestation";
 
@@ -136,7 +136,30 @@ export function parseReceiptCore(value: unknown): NclexReceiptCore {
 export function receiptIdOf(core: NclexReceiptCore): string {
   // sha256 of the canonical core — identical id to the offline module
   // (both hash canonicalizeJson(core)).
-  return `sha256:${createHash("sha256").update(canonicalizeJson(core), "utf8").digest("hex")}`;
+  return receiptIdOfCanonical(canonicalizeJson(core));
+}
+
+/** receiptIdOf over an already-canonicalized core, so verify canonicalizes once. */
+function receiptIdOfCanonical(canonical: string): string {
+  return `sha256:${createHash("sha256").update(canonical, "utf8").digest("hex")}`;
+}
+
+// Parsed-SPKI memoization: keyrings are tiny and static, so parse each PEM once
+// instead of per verify. Bounded with insertion-order eviction; a parse failure
+// is never cached and fails the verify exactly as an uncached parse would.
+const MAX_CACHED_PUBLIC_KEYS = 64;
+const publicKeyCache = new Map<string, KeyObject>();
+
+function publicKeyFor(pem: string): KeyObject {
+  const cached = publicKeyCache.get(pem);
+  if (cached) return cached;
+  const key = createPublicKey(pem);
+  if (publicKeyCache.size >= MAX_CACHED_PUBLIC_KEYS) {
+    const oldest = publicKeyCache.keys().next().value;
+    if (oldest !== undefined) publicKeyCache.delete(oldest);
+  }
+  publicKeyCache.set(pem, key);
+  return key;
 }
 
 function kidOf(entry: { protected?: unknown }): string | null {
@@ -162,7 +185,8 @@ export function verifySignedReceipt(value: unknown, keyring: NclexEvaluationKeyr
   } catch (error) {
     return { ok: false, reason: error instanceof NclexReceiptValidationError ? error.code : "receipt_malformed" };
   }
-  if (!hasText(receiptId) || receiptId !== receiptIdOf(core)) {
+  const canonical = canonicalizeJson(core);
+  if (!hasText(receiptId) || receiptId !== receiptIdOfCanonical(canonical)) {
     return { ok: false, reason: "receipt_id_mismatch" };
   }
   if (!Array.isArray(signatures) || signatures.length !== 1 || !isPlainObject(signatures[0])) {
@@ -178,8 +202,8 @@ export function verifySignedReceipt(value: unknown, keyring: NclexEvaluationKeyr
     return { ok: false, reason: "receipt_key_unknown" };
   }
   try {
-    const key = createPublicKey(pem);
-    const signingInput = `${entry.protected}.${Buffer.from(canonicalizeJson(core), "utf8").toString("base64url")}`;
+    const key = publicKeyFor(pem);
+    const signingInput = `${entry.protected}.${Buffer.from(canonical, "utf8").toString("base64url")}`;
     const signature = Buffer.from(entry.signature, "base64url");
     if (!cryptoVerify(null, Buffer.from(signingInput, "utf8"), key, signature)) {
       return { ok: false, reason: "receipt_signature_invalid" };

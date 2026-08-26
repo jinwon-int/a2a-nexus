@@ -17,6 +17,24 @@ export function writeSseResponseHeaders(res: ServerResponse<IncomingMessage>): v
   res.write("retry: 3000\n\n");
 }
 
+// Fan-out payloads (operator events, replay buffers) hand the same frozen
+// data object to every subscriber; memoize its serialization so one emit
+// serializes once instead of once per connection. Emitted payloads are
+// treated as immutable after emit, so the cached text stays valid.
+const serializedSseData = new WeakMap<object, string>();
+
+function serializeSseData(data: unknown): string {
+  if (typeof data !== "object" || data === null) {
+    return JSON.stringify(data);
+  }
+  let serialized = serializedSseData.get(data);
+  if (serialized === undefined) {
+    serialized = JSON.stringify(data);
+    serializedSseData.set(data, serialized);
+  }
+  return serialized;
+}
+
 export function writeSseEvent(
   res: ServerResponse<IncomingMessage>,
   event: string,
@@ -26,9 +44,7 @@ export function writeSseEvent(
   if (res.writableEnded) {
     return;
   }
-  if (id) {
-    res.write(`id: ${id}\n`);
-  }
-  res.write(`event: ${event}\n`);
-  res.write(`data: ${JSON.stringify(data)}\n\n`);
+  // One write per event frame instead of three keeps syscalls down.
+  const idLine = id ? `id: ${id}\n` : "";
+  res.write(`${idLine}event: ${event}\ndata: ${serializeSseData(data)}\n\n`);
 }

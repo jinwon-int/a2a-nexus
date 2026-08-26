@@ -11,24 +11,24 @@
  * and doc-conformance checks cannot provide.
  */
 import path from 'node:path';
-import { existsSync } from 'node:fs';
-import { spawnSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
+
+import { ensureBuilt } from './lib/ensure-built.mjs';
 
 const here = path.dirname(fileURLToPath(import.meta.url));
 const root = path.resolve(here, '../..');
 
-// Same self-sufficiency pattern as check-trace-propagation.mjs: this check
-// can run before the package build step, so build any missing dist entry.
-function ensureBuilt(pkg, distEntry) {
-  if (existsSync(path.join(root, distEntry))) return;
-  const res = spawnSync('npm', ['run', 'build', '-w', `packages/${pkg}`], { cwd: root, stdio: 'inherit' });
-  if (res.status !== 0) {
-    throw new Error(`failed to build packages/${pkg} for the three-component e2e check`);
-  }
-}
-ensureBuilt('broker', 'packages/broker/dist/server.js');
-ensureBuilt('broker', 'packages/broker/dist/client/broker-client.js');
+// Same self-sufficiency pattern as check-trace-propagation.mjs: standalone
+// invocation builds missing dist once (one probe set for every broker entry
+// this check imports, so at most one build instead of the former two calls);
+// under run-conformance.mjs the runner has already built it and this never
+// spawns.
+ensureBuilt(root, 'broker', [
+  'packages/broker/dist/server.js',
+  'packages/broker/dist/core/store.js',
+  'packages/broker/dist/worker.js',
+  'packages/broker/dist/client/broker-client.js',
+]);
 
 const { createBrokerServer } = await import(path.join(root, 'packages/broker/dist/server.js'));
 const { emptySnapshot } = await import(path.join(root, 'packages/broker/dist/core/store.js'));

@@ -30,12 +30,14 @@
  * live dispatch, restart, credential, DB, or Terminal ACK action is performed.
  */
 import fs from 'node:fs';
+import os from 'node:os';
 import path from 'node:path';
 import { execFileSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 import ts from 'typescript';
 
-import { analyzeProject } from './lib/async-safety.mjs';
+import { analyzeProject, createCachedRealpath } from './lib/async-safety.mjs';
+import { analyzeProjectsParallel } from './lib/async-safety-parallel.mjs';
 import { createDocCheckContext } from './lib/doc-check.mjs';
 
 export const FLOOR_MANIFEST_REL = 'docs/ops/source-quality-floors.json';
@@ -113,12 +115,13 @@ export function listTrackedPaths(root) {
 export function collectMeasured(root) {
   const rels = listTrackedPaths(root);
   const realRoot = fs.realpathSync(root);
+  const resolveReal = createCachedRealpath();
   let measured = 0;
   const offenders = [];
   for (const rel of rels) {
     if (classifyFile(rel) !== 'source') continue;
     const sourcePath = path.join(root, rel);
-    const realSource = fs.realpathSync(sourcePath);
+    const realSource = resolveReal(sourcePath);
     const realRelative = path.relative(realRoot, realSource);
     if (realRelative.startsWith(`..${path.sep}`) || path.isAbsolute(realRelative)) {
       throw new Error(`${rel}: tracked source symlink resolves outside the repository`);
@@ -133,24 +136,56 @@ export function collectMeasured(root) {
   return { measured, offenders };
 }
 
-export function collectFloatingPromises(root, packageRels = ASYNC_SAFETY_PACKAGES) {
+function packageProject(root, packageRel) {
+  const packageRoot = path.join(root, packageRel);
+  return { configPath: path.join(packageRoot, 'tsconfig.json'), packageRoot };
+}
+
+/**
+ * Merge per-package findings (collected in packageRels order) into the single
+ * deterministic finding list the floor evaluates: package-prefixed paths,
+ * sorted by file/line/column.
+ */
+function mergePackageFindings(packageRels, perPackage) {
   const findings = [];
-  for (const packageRel of packageRels) {
-    const packageRoot = path.join(root, packageRel);
-    const configPath = path.join(packageRoot, 'tsconfig.json');
-    for (const finding of analyzeProject({ configPath, packageRoot })) {
+  packageRels.forEach((packageRel, index) => {
+    for (const finding of perPackage[index]) {
       findings.push({
         ...finding,
         file: `${packageRel}/${finding.file}`,
       });
     }
-  }
+  });
   return findings.sort(
     (left, right) =>
       left.file.localeCompare(right.file) ||
       left.line - right.line ||
       left.column - right.column,
   );
+}
+
+export function collectFloatingPromises(root, packageRels = ASYNC_SAFETY_PACKAGES) {
+  return mergePackageFindings(
+    packageRels,
+    packageRels.map((packageRel) => analyzeProject(packageProject(root, packageRel))),
+  );
+}
+
+/**
+ * Same result as collectFloatingPromises, but the per-package ts.Program
+ * analyses run across worker threads (bounded by CPUs). Each worker loads its
+ * own TypeScript instance, so when there is no parallelism to exploit (a
+ * single package in scope, or a single-CPU host) this degrades to the
+ * in-process collector instead of paying worker startup for nothing.
+ */
+export async function collectFloatingPromisesParallel(root, packageRels = ASYNC_SAFETY_PACKAGES) {
+  if (packageRels.length < 2 || os.cpus().length < 2) {
+    return collectFloatingPromises(root, packageRels);
+  }
+  const perPackage = await analyzeProjectsParallel(
+    packageRels.map((packageRel) => packageProject(root, packageRel)),
+  );
+  return mergePackageFindings(packageRels, perPackage);
 }
 
 export function parseAsyncSafetyScope(args) {
@@ -235,7 +270,7 @@ export function evaluateFloatingPromiseFloor(measured, manifest) {
   return { ok: failures.length === 0, failures };
 }
 
-function main() {
+async function main() {
   const { parseJson, fail, finish } = createDocCheckContext({ name: 'source quality floor guard' });
   const manifest = parseJson(FLOOR_MANIFEST_REL);
   const { measured, offenders } = collectMeasured(process.cwd());
@@ -252,7 +287,7 @@ function main() {
   let asyncSafetyScope = [];
   try {
     asyncSafetyScope = parseAsyncSafetyScope(process.argv.slice(2));
-    floatingPromises = collectFloatingPromises(process.cwd(), asyncSafetyScope);
+    floatingPromises = await collectFloatingPromisesParallel(process.cwd(), asyncSafetyScope);
   } catch (error) {
     fail(
       `floating-Promise analysis failed closed: ${
@@ -279,5 +314,5 @@ function main() {
 }
 
 if (process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
-  main();
+  await main();
 }

@@ -11,8 +11,11 @@
 // decision surfaces, not a third-party worker/broker compatibility check.
 
 import { spawn } from 'node:child_process';
+import os from 'node:os';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
+
+import { buildConformancePrereqs } from './lib/ensure-built.mjs';
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const THIS_FILE = fileURLToPath(import.meta.url);
@@ -47,6 +50,24 @@ export const CHECKS = [
   'check-trace-propagation.mjs',
   'check-three-component-e2e.mjs',
 ];
+
+// Checks that import compiled package dist. When any of them is selected the
+// runner builds the dist prerequisites once BEFORE fanning out, so their
+// module-level ensureBuilt probes become existsSync no-ops and can never race
+// two `npm run build -w` invocations into the same dist on a cold cache.
+const DIST_DEPENDENT_CHECKS = new Set([
+  'check-trace-propagation.mjs',
+  'check-three-component-e2e.mjs',
+]);
+
+// Bounded check fan-out. Launching all ~26 checks at once oversubscribes the
+// CPU — and scripts/release-gate.mjs already runs this runner inside its own
+// bounded pool, passing a reduced budget down via A2A_CONFORMANCE_CONCURRENCY.
+function conformanceConcurrency() {
+  const raw = Number.parseInt(process.env.A2A_CONFORMANCE_CONCURRENCY ?? '', 10);
+  if (Number.isInteger(raw) && raw > 0) return raw;
+  return Math.max(1, Math.min(os.cpus().length, 8));
+}
 
 function nowMs() {
   return Number(process.hrtime.bigint() / 1_000_000n);
@@ -83,7 +104,20 @@ function runCheck(file, { baseDir = HERE, cwd = process.cwd() } = {}) {
 
 export async function runChecks(checks = CHECKS, opts = {}) {
   const startedAt = nowMs();
-  const results = await Promise.all(checks.map((file) => runCheck(file, opts)));
+  if (checks.some((file) => DIST_DEPENDENT_CHECKS.has(file))) {
+    buildConformancePrereqs(opts.cwd ?? process.cwd(), { quiet: true });
+  }
+  const results = new Array(checks.length);
+  let cursor = 0;
+  async function worker() {
+    while (cursor < checks.length) {
+      const index = cursor++;
+      results[index] = await runCheck(checks[index], opts);
+    }
+  }
+  await Promise.all(
+    Array.from({ length: Math.min(conformanceConcurrency(), checks.length || 1) }, worker),
+  );
   const failedChecks = results.filter((r) => r.status !== 'pass');
   const exitCode = failedChecks.length > 0 ? (failedChecks[0].exitCode || 1) : 0;
   return {
@@ -137,7 +171,14 @@ async function main(argv = process.argv.slice(2)) {
     return 0;
   }
   const jsonMode = argv.includes('--json');
-  const result = await runChecks(CHECKS, { baseDir: HERE, cwd: resolve(HERE, '../..') });
+  let result;
+  try {
+    result = await runChecks(CHECKS, { baseDir: HERE, cwd: resolve(HERE, '../..') });
+  } catch (error) {
+    // Fail closed (e.g. the dist prerequisite build failed) without fanning out.
+    console.error(`conformance: ${error instanceof Error ? error.message : String(error)}`);
+    return 1;
+  }
   if (jsonMode) {
     const publicResult = {
       ...result,

@@ -77,6 +77,7 @@ export interface TaskListItem {
 
 export function projectTaskListItem(task: TaskRecord): TaskListItem {
   const artifactIds = task.result?.artifactIds ?? task.artifactIds;
+  const failureReadback = task.error ? failureReadbackFromError(task.error) : undefined;
   return {
     id: task.id,
     intent: task.intent,
@@ -96,7 +97,7 @@ export function projectTaskListItem(task: TaskRecord): TaskListItem {
       ? {
           code: task.error.code,
           message: task.error.message,
-          ...(failureReadbackFromError(task.error) ? { details: failureReadbackFromError(task.error) } : {}),
+          ...(failureReadback ? { details: failureReadback } : {}),
         }
       : undefined,
     requeueCount: task.requeueCount,
@@ -116,6 +117,36 @@ export function shouldFilterSqliteActiveReadPath(filters: TaskListFilters): bool
 export function taskIsLiveInMutationMap(broker: InMemoryA2ABroker, task: { id: string; status: TaskStatus }): boolean {
   if (!ACTIVE_READ_PATH_STATUSES.has(task.status)) return true;
   return Boolean(broker.getTask(task.id));
+}
+
+// Widening factor for the active read path's paged liveness fetch below.
+const ACTIVE_READ_PATH_OVERFETCH_FACTOR = 4;
+// Beyond this fetch size fall back to the unbounded scan rather than paging.
+const ACTIVE_READ_PATH_MAX_OVERFETCH = 10_000;
+
+/**
+ * Page the active (liveness-filtered) SQLite read path at the requested limit
+ * instead of scanning the whole queued set per request. Stale hot rows are
+ * rare, so the first fetch normally satisfies the page; when filtering leaves
+ * it short, widen the fetch — each widened read is a superset in the same
+ * order, so the result matches the previous unbounded scan exactly.
+ */
+function collectLiveActiveReadPathItems<T extends { id: string; status: TaskStatus }>(
+  broker: InMemoryA2ABroker,
+  requestedLimit: number | undefined,
+  read: (limit: number | undefined) => T[],
+): T[] {
+  let fetchLimit = requestedLimit;
+  for (;;) {
+    const items = read(fetchLimit);
+    const exhausted = fetchLimit === undefined || items.length < fetchLimit;
+    const live = items.filter((task) => taskIsLiveInMutationMap(broker, task));
+    if (exhausted || requestedLimit === undefined || live.length >= requestedLimit) {
+      return requestedLimit === undefined ? live : live.slice(0, requestedLimit);
+    }
+    const widened = fetchLimit === undefined ? undefined : fetchLimit * ACTIVE_READ_PATH_OVERFETCH_FACTOR;
+    fetchLimit = widened !== undefined && widened > ACTIVE_READ_PATH_MAX_OVERFETCH ? undefined : widened;
+  }
 }
 
 export function listAllTasksForStatsReadPath(
@@ -140,13 +171,12 @@ export function listTasksForReadPath(
       intent: filters.intent,
       assignedWorkerId: filters.assignedWorkerId,
       taskOrigin: filters.taskOrigin,
-      limit: shouldFilterSqliteActiveReadPath(filters) ? undefined : filters.limit,
     };
-    const tasks = stateStore.readHotTasks(sqliteFilters);
-    const filtered = shouldFilterSqliteActiveReadPath(filters)
-      ? tasks.filter((task) => taskIsLiveInMutationMap(broker, task))
-      : tasks;
-    return filtered.slice(0, filters.limit);
+    if (!shouldFilterSqliteActiveReadPath(filters)) {
+      return stateStore.readHotTasks({ ...sqliteFilters, limit: filters.limit }).slice(0, filters.limit);
+    }
+    return collectLiveActiveReadPathItems(broker, filters.limit, (limit) =>
+      stateStore.readHotTasks({ ...sqliteFilters, limit }));
   }
   return broker.listTasks(filters);
 }
@@ -163,13 +193,15 @@ export function listTaskItemsForReadPath(
       intent: filters.intent,
       assignedWorkerId: filters.assignedWorkerId,
       taskOrigin: filters.taskOrigin,
-      limit: shouldFilterSqliteActiveReadPath(filters) ? undefined : filters.limit,
     };
-    const items = stateStore.readHotTaskListItems(sqliteFilters);
-    const filtered = shouldFilterSqliteActiveReadPath(filters)
-      ? items.filter((task) => taskIsLiveInMutationMap(broker, task))
-      : items;
-    return filtered.slice(0, filters.limit).map(projectSqliteTaskListItem);
+    if (!shouldFilterSqliteActiveReadPath(filters)) {
+      return stateStore
+        .readHotTaskListItems({ ...sqliteFilters, limit: filters.limit })
+        .slice(0, filters.limit)
+        .map(projectSqliteTaskListItem);
+    }
+    return collectLiveActiveReadPathItems(broker, filters.limit, (limit) =>
+      stateStore.readHotTaskListItems({ ...sqliteFilters, limit })).map(projectSqliteTaskListItem);
   }
   return broker.listTasks(filters).map(projectTaskListItem);
 }

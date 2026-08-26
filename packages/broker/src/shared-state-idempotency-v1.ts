@@ -204,9 +204,14 @@ function firstUnknownField(
   value: RecordValue,
   allowed: readonly string[],
 ): string | null {
-  const allowedSet = new Set(allowed);
-  return Object.keys(value).filter((key) => !allowedSet.has(key)).sort()[0] ??
-    null;
+  // Single pass tracking the code-unit-first unknown key (same pick as
+  // filter().sort()[0]); the common all-known path allocates nothing.
+  let first: string | null = null;
+  for (const key of Object.keys(value)) {
+    if (allowed.includes(key)) continue;
+    if (first === null || key < first) first = key;
+  }
+  return first;
 }
 
 function mapZodError(

@@ -198,6 +198,13 @@ const SCHEMA_STATEMENTS_V1: readonly string[] = Object.freeze([
   `CREATE UNIQUE INDEX IF NOT EXISTS shared_state_outbox_stream_sequence
      ON shared_state_outbox (namespace, stream_key_digest, stream_sequence)`,
 
+  // Retry-binding lookups resolve an append by idempotency key on every
+  // appendOutbox; without this index that read walks the stream's whole
+  // primary-key range. IF NOT EXISTS reaches databases already in use, and
+  // schema validation checks table names, so this is additive.
+  `CREATE INDEX IF NOT EXISTS shared_state_outbox_idempotency_key
+     ON shared_state_outbox (namespace, stream_key_digest, idempotency_key_digest)`,
+
   `CREATE TABLE IF NOT EXISTS shared_state_graph_source (
      namespace TEXT NOT NULL,
      source_fact_digest TEXT NOT NULL,
@@ -264,21 +271,18 @@ function metaTableExists(db: DatabaseSync): boolean {
 }
 
 function presentTableCount(db: DatabaseSync): number {
-  let present = 0;
-  for (const table of SHARED_STATE_SQLITE_SCHEMA_V1.tables) {
-    try {
-      const row = db
-        .prepare(
-          `SELECT name FROM sqlite_master
-           WHERE type = 'table' AND name = ?`,
-        )
-        .get(table) as { name?: unknown } | undefined;
-      if (row !== undefined) present += 1;
-    } catch {
-      return -1;
-    }
+  const tables = SHARED_STATE_SQLITE_SCHEMA_V1.tables;
+  try {
+    const row = db
+      .prepare(
+        `SELECT COUNT(*) AS present FROM sqlite_master
+         WHERE type = 'table' AND name IN (${tables.map(() => "?").join(", ")})`,
+      )
+      .get(...tables) as { present?: unknown } | undefined;
+    return typeof row?.present === "number" ? row.present : Number(row?.present ?? -1);
+  } catch {
+    return -1;
   }
-  return present;
 }
 
 /**

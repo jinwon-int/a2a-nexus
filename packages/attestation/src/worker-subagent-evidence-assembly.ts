@@ -141,11 +141,12 @@ export function buildA2AWorkerSubagentEvidenceAssembly(
   const execution = input.execution ?? {};
 
   const normalized = (input.entries ?? []).map(normalizeEntry);
-  const ordered = [...normalized].sort((a, b) => {
-    const ka = sortKey(a);
-    const kb = sortKey(b);
-    return ka < kb ? -1 : ka > kb ? 1 : 0;
-  });
+  // Decorate-sort-undecorate: sortKey canonicalizes, so compute it once per
+  // entry instead of on every comparison. Same code-unit compare, same order.
+  const ordered = normalized
+    .map((entry) => ({ key: sortKey(entry), entry }))
+    .sort((a, b) => (a.key < b.key ? -1 : a.key > b.key ? 1 : 0))
+    .map((decorated) => decorated.entry);
 
   const assembledEvidence: A2AWorkerSubagentAssembledEntry[] = ordered.map((entry, index) => ({
     order: index,

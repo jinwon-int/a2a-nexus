@@ -8,6 +8,12 @@ export class RequestTimingWindow {
   private readonly samples: number[] = [];
   private nextIndex = 0;
   private readonly maxSamples: number;
+  // Percentiles only change when record() runs, so diagnostics endpoints that
+  // snapshot hundreds of windows per request reuse the last computed snapshot
+  // until the next sample invalidates it. Consumers treat snapshots as
+  // read-only projection data.
+  private cachedSnapshot: ReturnType<RequestTimingWindow["snapshot"]> = null;
+  private cacheValid = false;
 
   constructor(maxSamples = 200) {
     this.maxSamples = maxSamples;
@@ -20,6 +26,7 @@ export class RequestTimingWindow {
       this.samples[this.nextIndex] = durationMs;
     }
     this.nextIndex = (this.nextIndex + 1) % this.maxSamples;
+    this.cacheValid = false;
   }
 
   snapshot(): {
@@ -32,6 +39,14 @@ export class RequestTimingWindow {
     p99Ms: number;
     p999Ms: number;
   } | null {
+    if (this.cacheValid) return this.cachedSnapshot;
+    const computed = this.computeSnapshot();
+    this.cachedSnapshot = computed;
+    this.cacheValid = true;
+    return computed;
+  }
+
+  private computeSnapshot(): ReturnType<RequestTimingWindow["snapshot"]> {
     const count = this.samples.length;
     if (count === 0) return null;
     const sorted = [...this.samples].sort((a, b) => a - b);

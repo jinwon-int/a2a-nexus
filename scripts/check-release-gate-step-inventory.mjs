@@ -63,6 +63,12 @@ export function compareInventory({ inventory }) {
     if (typeof entry.retirementCondition !== 'string' || entry.retirementCondition.length < 20) {
       failures.push(`${entry.name}: retirementCondition must state the retirement trigger`);
     }
+    if (
+      entry.weightMs !== undefined &&
+      (typeof entry.weightMs !== 'number' || !Number.isFinite(entry.weightMs) || entry.weightMs < 0)
+    ) {
+      failures.push(`${entry.name}: weightMs must be a non-negative number when present`);
+    }
     summary[entry.tier] = (summary[entry.tier] ?? 0) + 1;
   }
 

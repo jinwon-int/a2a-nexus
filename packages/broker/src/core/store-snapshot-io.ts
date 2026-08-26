@@ -82,14 +82,13 @@ export function serializeBrokerSnapshot(
   snapshot: BrokerSnapshot,
   maxBytes: number = DEFAULT_BROKER_STATE_MAX_BYTES,
 ): string {
-  const payload = JSON.stringify(
-    {
-      ...snapshot,
-      version: CURRENT_BROKER_STATE_VERSION,
-    },
-    null,
-    2,
-  );
+  // Compact serialization: the json-file store rewrites the whole snapshot
+  // on every full persist, and indentation added 20-30% bytes to each write
+  // (and to the SQLite canonical row) for no reader — loads JSON.parse it.
+  const payload = JSON.stringify({
+    ...snapshot,
+    version: CURRENT_BROKER_STATE_VERSION,
+  });
   const bytes = Buffer.byteLength(payload, "utf8");
   if (bytes > maxBytes) {
     throw new Error(`broker snapshot exceeds max size (${bytes} > ${maxBytes} bytes)`);

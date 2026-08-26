@@ -206,10 +206,13 @@ export function reconcileTerminalBriefGitHubEvidenceComments(
   existingComments: GitHubIssueCommentObservation[],
   options: TerminalBriefGitHubEvidenceOptions = {},
 ): TerminalBriefGitHubCommentWritePlan[] {
+  // Only marker-bearing comments can match a projection, so filter the
+  // (often bot-heavy) comment list once instead of per input.
+  const markerComments = existingComments.filter((comment) => comment.body.includes(MARKER_PREFIX));
   const plans: TerminalBriefGitHubCommentWritePlan[] = [];
   for (const input of inputs) {
     const projection = projectTerminalBriefGitHubEvidenceComment(input, options);
-    if (projection) plans.push(planTerminalBriefGitHubCommentWrite(projection, existingComments));
+    if (projection) plans.push(planTerminalBriefGitHubCommentWrite(projection, markerComments));
   }
   return plans;
 }

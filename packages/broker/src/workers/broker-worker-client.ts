@@ -141,6 +141,10 @@ export class A2ABrokerWorker {
   private loopAbort: (() => void) | null = null;
   private homeBrokerVerified = false;
   private initialHeartbeatSent = false;
+  // Per-task cache of matching piri session dirs so heartbeats stop listing
+  // the whole (history-sized) piri root on every tick. Invalidated when the
+  // root's mtime changes (a new session dir touches it) or after 60s.
+  private readonly piriSessionDirCache = new Map<string, { rootMtimeMs: number; scannedAtMs: number; matchingDirs: string[] }>();
 
   constructor(config: BrokerWorkerConfig, options?: { fetchImpl?: FetchLike }) {
     this.config = config;
@@ -450,15 +454,34 @@ export class A2ABrokerWorker {
       .replace(/^-+|-+$/g, "")
       .slice(0, 48);
     try {
-      for (const entry of readdirSync(piriRoot, { withFileTypes: true })) {
-        if (!entry.isDirectory()) continue;
-        if (entry.name !== sessionDir && !entry.name.includes(taskId) && !taskId.includes(entry.name)) continue;
-        consider(joinPath(piriRoot, entry.name, "artifacts", "piri-progress.jsonl"));
+      for (const dirName of this.matchingPiriSessionDirs(piriRoot, taskId, sessionDir)) {
+        consider(joinPath(piriRoot, dirName, "artifacts", "piri-progress.jsonl"));
       }
     } catch {
       // root missing
     }
     return latestMs > 0 ? new Date(latestMs).toISOString() : undefined;
+  }
+
+  private matchingPiriSessionDirs(piriRoot: string, taskId: string, sessionDir: string): string[] {
+    const rootMtimeMs = statSync(piriRoot).mtimeMs;
+    const nowMs = Date.now();
+    const cached = this.piriSessionDirCache.get(taskId);
+    if (cached && cached.rootMtimeMs === rootMtimeMs && nowMs - cached.scannedAtMs < 60_000) {
+      return cached.matchingDirs;
+    }
+    const matchingDirs: string[] = [];
+    for (const entry of readdirSync(piriRoot, { withFileTypes: true })) {
+      if (!entry.isDirectory()) continue;
+      if (entry.name !== sessionDir && !entry.name.includes(taskId) && !taskId.includes(entry.name)) continue;
+      matchingDirs.push(entry.name);
+    }
+    if (this.piriSessionDirCache.size >= 64 && !this.piriSessionDirCache.has(taskId)) {
+      const oldest = this.piriSessionDirCache.keys().next().value;
+      if (oldest !== undefined) this.piriSessionDirCache.delete(oldest);
+    }
+    this.piriSessionDirCache.set(taskId, { rootMtimeMs, scannedAtMs: nowMs, matchingDirs });
+    return matchingDirs;
   }
 
   private startTaskHeartbeatTimer(taskId: string): () => void {

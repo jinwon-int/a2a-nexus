@@ -72,15 +72,22 @@ function collectThreadMessageIds(
   messages: A2AExchangeMessageRecord[],
   parentMessageId: string,
 ): Set<string> {
+  const childIdsByParent = new Map<string, string[]>();
+  for (const message of messages) {
+    if (!message.parentMessageId) continue;
+    const siblings = childIdsByParent.get(message.parentMessageId) ?? [];
+    siblings.push(message.id);
+    childIdsByParent.set(message.parentMessageId, siblings);
+  }
+
   const allowedIds = new Set<string>([parentMessageId]);
-  let changed = true;
-  while (changed) {
-    changed = false;
-    for (const message of messages) {
-      if (message.parentMessageId && allowedIds.has(message.parentMessageId) && !allowedIds.has(message.id)) {
-        allowedIds.add(message.id);
-        changed = true;
-      }
+  const frontier = [parentMessageId];
+  while (frontier.length > 0) {
+    const current = frontier.pop()!;
+    for (const childId of childIdsByParent.get(current) ?? []) {
+      if (allowedIds.has(childId)) continue;
+      allowedIds.add(childId);
+      frontier.push(childId);
     }
   }
   return allowedIds;

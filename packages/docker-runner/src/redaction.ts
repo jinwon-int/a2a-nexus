@@ -59,8 +59,16 @@ function boundUtf8(value: string, maxBytes: number): string {
 }
 
 export function redactAndBound(value: string, limit = RESULT_STREAM_LIMIT): string {
+  return boundRedacted(redactSecrets(value), limit);
+}
+
+/**
+ * Bound a stream that redactSecrets already covered (e.g. at capture time in
+ * container-retry) without re-running the redaction regex passes. Callers must
+ * only pass values that went through redactSecrets.
+ */
+export function boundRedacted(redacted: string, limit = RESULT_STREAM_LIMIT): string {
   const maxBytes = Number.isFinite(limit) ? Math.max(0, Math.floor(limit)) : 0;
-  const redacted = redactSecrets(value);
   if (Buffer.byteLength(redacted, "utf8") <= maxBytes) return redacted;
   let marker = `\n<truncated ${redacted.length} chars>`;
   if (Buffer.byteLength(marker, "utf8") >= maxBytes) return boundUtf8(redacted, maxBytes);

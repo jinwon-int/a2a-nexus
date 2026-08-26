@@ -40,6 +40,14 @@ export function ageSecFromIso(iso: string, nowMs: number): number {
   return Math.max(0, Math.floor((nowMs - parsed) / 1000));
 }
 
+// KNOWN QUIRK (deliberately preserved): this comparator never returns 0, which
+// violates the comparator contract for equal createdAt values. Several read
+// paths and tests pin the resulting whole-array ordering (an exact reversal of
+// insertion order for the common ascending-with-ties input), an id tie-break
+// would order same-timestamp records by random UUID, and a 0-return would let
+// stable sort produce a tie-pattern-dependent order instead. Fixing this needs
+// an explicit tie semantic (newest-first, later-inserted first) threaded
+// through the newest-first read paths as its own change.
 export function sortNewestFirst<T extends { createdAt: string }>(a: T, b: T): number {
   return a.createdAt < b.createdAt ? 1 : -1;
 }

@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-import { existsSync, readdirSync, readFileSync, statSync } from 'node:fs';
+import { readdirSync, readFileSync, statSync } from 'node:fs';
 import { dirname, extname, join, normalize, relative, resolve } from 'node:path';
 
 const root = resolve(process.argv[2] || process.cwd());
@@ -28,6 +28,24 @@ function stripAnchor(target) {
   return hash >= 0 ? target.slice(0, hash) : target;
 }
 
+// Many links point at the same targets (README, docs indexes), so memoize
+// existence per resolved target. One statSync replaces the former redundant
+// existsSync + statSync pair; both old branches pushed the identical failure
+// line, so a single existence verdict preserves the output exactly.
+const targetExists = new Map();
+function targetOk(target) {
+  let ok = targetExists.get(target);
+  if (ok === undefined) {
+    try {
+      ok = statSync(target, { throwIfNoEntry: false }) !== undefined;
+    } catch {
+      ok = false;
+    }
+    targetExists.set(target, ok);
+  }
+  return ok;
+}
+
 const failures = [];
 for (const file of walk(root)) {
   const text = readFileSync(file, 'utf8');
@@ -44,13 +62,7 @@ for (const file of walk(root)) {
         failures.push(`${relative(root, file)}:${index + 1} -> ${raw} (escapes repo root)`);
         continue;
       }
-      if (!existsSync(target)) {
-        failures.push(`${relative(root, file)}:${index + 1} -> ${raw}`);
-        continue;
-      }
-      try {
-        statSync(target);
-      } catch {
+      if (!targetOk(target)) {
         failures.push(`${relative(root, file)}:${index + 1} -> ${raw}`);
       }
     }

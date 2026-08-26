@@ -100,6 +100,7 @@ export function buildSharedStateExpiryConformanceSnapshotV1(
     "shared_state_lease",
     "WHERE owner_key_digest IS NOT NULL",
   );
+  const maximumFencingToken = maximum(reads, "shared_state_lease", "fencing_token");
   return sharedStateExpiryConformanceSnapshotV1Schema.parse({
     kind: "SharedStateExpiryConformanceSnapshotV1",
     snapshotVersion: 1,
@@ -108,16 +109,9 @@ export function buildSharedStateExpiryConformanceSnapshotV1(
     leaseBinding: bound > 0 ? "bound" : "unbound",
     activeLeaseCount: activeLeaseCount(reads, now),
     // Declared synthesis: derived from the fence the claim really wrote.
-    ownershipEpoch: maximum(
-      reads,
-      "shared_state_lease",
-      "fencing_token",
-    ).toString(),
-    maximumFencingToken: maximum(
-      reads,
-      "shared_state_lease",
-      "fencing_token",
-    ).toString(),
+    // Both fields report the same maximum, so scan the table once.
+    ownershipEpoch: maximumFencingToken.toString(),
+    maximumFencingToken: maximumFencingToken.toString(),
     leaseResourceVersion: maximum(
       reads,
       "shared_state_lease",

@@ -650,7 +650,14 @@ export function executeA2AJsonRpcBody(
   } catch {
     return failure(null, -32700, "parse error");
   }
+  return executeA2AJsonRpcParsedBody(parsed, options);
+}
 
+/** Body-already-parsed variant so the transport route parses each body once. */
+export function executeA2AJsonRpcParsedBody(
+  parsed: unknown,
+  options: ExecuteJsonRpcOptions,
+): JsonRpcResponse | JsonRpcResponse[] | null {
   if (Array.isArray(parsed)) {
     if (parsed.length === 0) {
       return failure(null, -32600, "invalid JSON-RPC request: empty batch");

@@ -237,8 +237,10 @@ export interface TerminalTaskEventOutboxOptions {
  */
 export class TerminalTaskEventOutbox {
   private readonly events: TerminalTaskOutboxEvent[] = [];
+  private readonly eventsById = new Map<string, TerminalTaskOutboxEvent>();
   private readonly seen = new Set<string>();
   private readonly seenOrder: string[] = [];
+  private seenOrderHead = 0;
   private readonly maxEvents: number;
   private readonly maxSeen: number;
 
@@ -264,7 +266,7 @@ export class TerminalTaskEventOutbox {
     if (taskEvent.taskId !== task.id) return null;
 
     const id = formatTerminalTaskEventId(task.id, task.status, task.completedAt ?? task.updatedAt);
-    const existing = this.events.find((event) => event.id === id);
+    const existing = this.eventsById.get(id);
     if (existing) return existing;
     if (this.seen.has(id)) return null;
 
@@ -291,6 +293,7 @@ export class TerminalTaskEventOutbox {
       attempts: 0,
     };
     this.events.push(event);
+    this.eventsById.set(event.id, event);
     this.markSeen(id);
     this.enforceRetention();
     return event;
@@ -320,7 +323,7 @@ export class TerminalTaskEventOutbox {
     const stableId = `cross-broker:${projection.parentRoundId}:${projection.originBrokerId}:${projectionChildKey}:${projection.status}:${notificationOwner}`;
     const id = `terminal:${encodeURIComponent(stableId)}`;
 
-    const existing = this.events.find((event) => event.id === id);
+    const existing = this.eventsById.get(id);
     if (existing) return existing;
     if (this.seen.has(id)) return null;
 
@@ -391,6 +394,7 @@ export class TerminalTaskEventOutbox {
       attempts: 0,
     };
     this.events.push(event);
+    this.eventsById.set(event.id, event);
     this.markSeen(id);
     this.enqueueCrossBrokerOperatorFacingRow(projection, payload, stableId);
     this.enforceRetention();
@@ -404,7 +408,7 @@ export class TerminalTaskEventOutbox {
   ): TerminalTaskOutboxEvent | null {
     const stableId = `cross-broker-operator:${projectionStableId}`;
     const id = `terminal:${encodeURIComponent(stableId)}`;
-    const existing = this.events.find((event) => event.id === id);
+    const existing = this.eventsById.get(id);
     if (existing) return existing;
     if (this.seen.has(id)) return null;
 
@@ -432,6 +436,7 @@ export class TerminalTaskEventOutbox {
       attempts: 0,
     };
     this.events.push(event);
+    this.eventsById.set(event.id, event);
     this.markSeen(id);
     return event;
   }
@@ -457,13 +462,13 @@ export class TerminalTaskEventOutbox {
     const newEvents = this.events.slice(replayStart);
     const replay = [...unacknowledgedBeforeCursor, ...newEvents];
     const events = this.applyLimit(replay, options.limit);
+    // Replayed-unacked events are exactly the prefix contributed by
+    // unacknowledgedBeforeCursor: they all sit at/before the cursor and were
+    // selected by the same not-receipt-confirmed predicate in this call.
     return {
       events,
-      cursor: this.nextCursor(options.afterId, afterIndex, events),
-      reconciledUnacked: events.filter((event) => {
-        const index = this.events.findIndex((candidate) => candidate.id === event.id);
-        return index >= 0 && index <= afterIndex && !isReceiptConfirmed(event);
-      }).length,
+      cursor: this.nextCursor(options.afterId, afterIndex, events, unacknowledgedBeforeCursor.length),
+      reconciledUnacked: Math.min(events.length, unacknowledgedBeforeCursor.length),
     };
   }
 
@@ -477,7 +482,7 @@ export class TerminalTaskEventOutbox {
    * repeated enqueue/ack operations idempotent.
    */
   acknowledge(id: string, receipt: TerminalTaskOutboxAckInput): TerminalTaskOutboxEvent | null {
-    const event = this.events.find((candidate) => candidate.id === id);
+    const event = this.eventsById.get(id);
     if (!receipt || !isTerminalTaskOutboxAckInputEvidence(receipt.evidence)) {
       if (event) {
         event.ackAudit = buildAckAudit(event.payload, {
@@ -526,7 +531,7 @@ export class TerminalTaskEventOutbox {
     if (!receipt || !isTerminalTaskReceiptStatus(receipt.status)) {
       throw new BrokerError("bad_request", "terminal outbox receipt status must be accepted, started, produced, provider_sent, provider_accepted, current_session_visible, operator_visible, timed_out, stale, or failed");
     }
-    const event = this.events.find((candidate) => candidate.id === id);
+    const event = this.eventsById.get(id);
     if (!event) return null;
     // Projection/evidence rows must not record provider-send or visibility receipts.
     // Those belong to the parent broker's separate operator-facing row.
@@ -553,6 +558,15 @@ export class TerminalTaskEventOutbox {
   /** Return a persistence-safe copy of retained records. */
   snapshot(): TerminalTaskOutboxEvent[] {
     return structuredClone(this.events);
+  }
+
+  /**
+   * Read-only view of the newest retained records for diagnostics surfaces.
+   * Returns the live event objects — callers must not mutate them; use
+   * snapshot() when a persistence-safe copy is required.
+   */
+  tail(limit: number): readonly TerminalTaskOutboxEvent[] {
+    return limit >= this.events.length ? this.events : this.events.slice(-Math.max(0, limit));
   }
 
   /** Merge previously persisted records without duplicating stable ids. */
@@ -593,6 +607,7 @@ export class TerminalTaskEventOutbox {
       })
       : buildAckAudit(restored.payload, ackAuditFromReceipt(restored.receipt));
     this.events.push(restored);
+    this.eventsById.set(restored.id, restored);
     this.markSeen(event.id);
   }
 
@@ -630,21 +645,29 @@ export class TerminalTaskEventOutbox {
     return typeof limit === "number" && limit >= 0 ? events.slice(0, limit) : events;
   }
 
-  private nextCursor(afterId: string | undefined, afterIndex: number, events: TerminalTaskOutboxEvent[]): string | null {
+  private nextCursor(
+    afterId: string | undefined,
+    afterIndex: number,
+    events: TerminalTaskOutboxEvent[],
+    replayedUnackedCount: number,
+  ): string | null {
     if (!afterId || afterIndex < 0) return events.at(-1)?.id ?? null;
-    const newestReturned = events
-      .map((event) => this.events.findIndex((candidate) => candidate.id === event.id))
-      .filter((index) => index > afterIndex)
-      .at(-1);
-    return typeof newestReturned === "number" ? this.events[newestReturned]!.id : afterId;
+    // Events past the replayed-unacked prefix are the newly forwarded records
+    // (in outbox order), so the newest one is the last returned event.
+    return events.length > replayedUnackedCount ? events.at(-1)!.id : afterId;
   }
 
   private markSeen(id: string): void {
     this.seen.add(id);
     this.seenOrder.push(id);
-    while (this.seenOrder.length > this.maxSeen) {
-      const evicted = this.seenOrder.shift();
+    while (this.seenOrder.length - this.seenOrderHead > this.maxSeen) {
+      const evicted = this.seenOrder[this.seenOrderHead];
+      this.seenOrderHead += 1;
       if (evicted) this.seen.delete(evicted);
+    }
+    if (this.seenOrderHead > this.maxSeen) {
+      this.seenOrder.splice(0, this.seenOrderHead);
+      this.seenOrderHead = 0;
     }
   }
 
@@ -656,21 +679,27 @@ export class TerminalTaskEventOutbox {
     // "drop oldest" splice silently evicted unacked events under burst and
     // broke the replay-unacked contract.
     let toRemove = this.events.length - this.maxEvents;
-    for (let i = 0; i < this.events.length && toRemove > 0; ) {
-      if (isReceiptConfirmed(this.events[i]!)) {
-        this.events.splice(i, 1);
+    const retained: TerminalTaskOutboxEvent[] = [];
+    for (const event of this.events) {
+      if (toRemove > 0 && isReceiptConfirmed(event)) {
         toRemove--;
-      } else {
-        i++;
+        this.eventsById.delete(event.id);
+        continue;
       }
+      retained.push(event);
     }
 
     // Hard ceiling so the buffer cannot grow without bound if receipts never
     // arrive; only then are the oldest unacked events dropped.
     const hardCap = this.maxEvents * 2;
-    if (this.events.length > hardCap) {
-      this.events.splice(0, this.events.length - hardCap);
+    if (retained.length > hardCap) {
+      for (const event of retained.splice(0, retained.length - hardCap)) {
+        this.eventsById.delete(event.id);
+      }
     }
+
+    this.events.length = 0;
+    this.events.push(...retained);
   }
 }
 

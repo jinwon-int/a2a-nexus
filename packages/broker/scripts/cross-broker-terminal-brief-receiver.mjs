@@ -110,7 +110,7 @@ async function once() {
     skipped: result.skipped,
     cursorToPersist: result.cursorToPersist,
   }, null, 2));
-  return result.ok ? 0 : 1;
+  return result;
 }
 
 if (!envBool("CROSS_BROKER_TERMINAL_BRIEF_RECEIVER_ENABLED") && !process.argv.includes("--once")) {
@@ -123,11 +123,18 @@ if (!envBool("CROSS_BROKER_TERMINAL_BRIEF_RECEIVER_ENABLED") && !process.argv.in
 }
 
 const intervalMs = envNumber("CROSS_BROKER_POLL_INTERVAL_MS", 3000);
+const maxBackoffMs = Math.max(intervalMs, envNumber("CROSS_BROKER_POLL_MAX_BACKOFF_MS", 60_000));
 if (process.argv.includes("--once")) {
-  process.exit(await once());
+  process.exit((await once()).ok ? 0 : 1);
 }
 
+// Back off exponentially on idle or failed polls (a productive fetch resets
+// to the base interval) so a down or quiet peer is not hit at a fixed rate.
+let delayMs = intervalMs;
 while (true) {
-  await once();
-  await new Promise((resolve) => setTimeout(resolve, intervalMs));
+  const result = await once();
+  delayMs = result.ok && result.fetched > 0
+    ? intervalMs
+    : Math.min(Math.max(delayMs * 2, intervalMs), maxBackoffMs);
+  await new Promise((resolve) => setTimeout(resolve, delayMs));
 }

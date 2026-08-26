@@ -41,13 +41,24 @@ function _initEventLoopHistogram(): void {
 }
 _initEventLoopHistogram();
 
+// Minimum age before the shared histogram window resets. /livez and /health
+// both read this histogram; the previous reset-on-every-read let concurrent
+// probes zero each other's window, so both reported a near-empty histogram.
+const EVENT_LOOP_DELAY_RESET_INTERVAL_MS = 5_000;
+let _eventLoopDelayWindowStartedMs = Date.now();
+
 export function readEventLoopDelayMs(): number | null {
   try {
     if (!_eventLoopDelayHistogram) return null;
     const p99 = _eventLoopDelayHistogram.percentile(99) / 1e6;
     const p50 = _eventLoopDelayHistogram.percentile(50) / 1e6;
-    // Return max(p50, p99) as a conservative estimate; reset to avoid stale accumulation.
-    _eventLoopDelayHistogram.reset();
+    // Return max(p50, p99) as a conservative estimate; reset on an interval
+    // (not per read) to avoid stale accumulation without racing other probes.
+    const now = Date.now();
+    if (now - _eventLoopDelayWindowStartedMs >= EVENT_LOOP_DELAY_RESET_INTERVAL_MS) {
+      _eventLoopDelayHistogram.reset();
+      _eventLoopDelayWindowStartedMs = now;
+    }
     return Math.round(Math.max(p50, p99) * 1000) / 1000;
   } catch {
     return null;

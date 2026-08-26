@@ -15,6 +15,7 @@ import { PeerStatusService } from "../a2a/peer-status.js";
 import {
   a2aProtocolErrorData,
   executeA2AJsonRpcBody,
+  executeA2AJsonRpcParsedBody,
   executeSendMessage,
   jsonRpcErrorFromUnknown,
   resolveSubscribeToTaskTarget,
@@ -29,8 +30,7 @@ import { readRawBody } from "./body.js";
 import {
   handleStreamingMessageResponse,
   handleSubscribeToTaskStreamResponse,
-  parseSingleJsonRpcMethodRequest,
-  parseSingleStreamingMessageRequest,
+  parseSingleJsonRpcMethodRequestFromParsed,
 } from "./streaming-message.js";
 import { sendJson } from "./response.js";
 
@@ -111,12 +111,23 @@ export async function handleA2AJsonRpcRequest(ctx: A2AJsonRpcRouteContext): Prom
   // than the broker's HTTP error envelope, and so batch arrays /
   // notifications are handled by the JSON-RPC transport layer.
   const rawBody = (await readRawBody(req)).toString("utf8");
+  // Parse once for every probe below; a malformed body falls through to
+  // executeA2AJsonRpcBody, which owns the -32700 answer.
+  let parsedBody: unknown;
+  let bodyParseFailed = false;
+  try {
+    parsedBody = JSON.parse(rawBody);
+  } catch {
+    bodyParseFailed = true;
+  }
 
   // A2A 1.0 SendStreamingMessage: a single (non-batch) request streams
   // JSON-RPC result envelopes over SSE instead of a unary response.
   // Batch-embedded SendStreamingMessage falls through to the JSON-RPC
   // layer, which rejects it with -32600.
-  const streamingRequest = parseSingleStreamingMessageRequest(rawBody);
+  const streamingRequest = bodyParseFailed
+    ? null
+    : parseSingleJsonRpcMethodRequestFromParsed(parsedBody, "SendStreamingMessage");
   if (streamingRequest) {
     let created;
     try {
@@ -155,8 +166,8 @@ export async function handleA2AJsonRpcRequest(ctx: A2AJsonRpcRouteContext): Prom
   // resolveSubscribeToTaskTarget; failures answer as a plain JSON-RPC
   // error envelope, which streaming clients parse as an immediate error.
   const acceptHeader = String(req.headers.accept ?? "");
-  if (acceptHeader.includes("text/event-stream")) {
-    const subscribeRequest = parseSingleJsonRpcMethodRequest(rawBody, "SubscribeToTask");
+  if (!bodyParseFailed && acceptHeader.includes("text/event-stream")) {
+    const subscribeRequest = parseSingleJsonRpcMethodRequestFromParsed(parsedBody, "SubscribeToTask");
     if (subscribeRequest) {
       let subscribeTarget;
       try {
@@ -181,10 +192,9 @@ export async function handleA2AJsonRpcRequest(ctx: A2AJsonRpcRouteContext): Prom
     }
   }
 
-  const response = executeA2AJsonRpcBody(rawBody, {
-    ...executeOptions,
-    responseShape,
-  });
+  const response = bodyParseFailed
+    ? executeA2AJsonRpcBody(rawBody, { ...executeOptions, responseShape })
+    : executeA2AJsonRpcParsedBody(parsedBody, { ...executeOptions, responseShape });
   if (response === null) {
     // Entirely notifications — JSON-RPC requires no response body.
     res.writeHead(204);

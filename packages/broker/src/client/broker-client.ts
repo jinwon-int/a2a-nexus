@@ -877,6 +877,29 @@ export type A2ABrokerStreamOperatorEventsOptions = {
  * Parses an async iterable of SSE chunks (text or bytes) into framed events.
  * Strict to the broker's SSE format: id/event/data fields and frame boundaries.
  */
+/**
+ * Locate the next SSE frame separator (`\r?\n\r?\n`) at or after `from`.
+ * Equivalent to the previous regex search, but resumable from an offset so
+ * chunk handling stays linear in stream length.
+ */
+function findFrameBoundary(buffer: string, from: number): { start: number; end: number } | null {
+  for (let i = from; i < buffer.length; i += 1) {
+    const code = buffer.charCodeAt(i);
+    if (code !== 10 && code !== 13) continue;
+    let next = i;
+    if (code === 13) {
+      if (buffer.charCodeAt(next + 1) !== 10) continue;
+      next += 2;
+    } else {
+      next += 1;
+    }
+    const second = buffer.charCodeAt(next);
+    if (second === 10) return { start: i, end: next + 1 };
+    if (second === 13 && buffer.charCodeAt(next + 1) === 10) return { start: i, end: next + 2 };
+  }
+  return null;
+}
+
 export async function* parseA2ABrokerTaskSseFrames(
   source: AsyncIterable<A2ABrokerSseChunk> | Iterable<A2ABrokerSseChunk>,
 ): AsyncIterable<SseFrame> {
@@ -933,19 +956,31 @@ export async function* parseA2ABrokerTaskSseFrames(
     return frame;
   };
 
+  // Frame scanning tracks a cursor into the buffer instead of re-slicing it:
+  // searching from the last scanned offset and trimming once per chunk keeps
+  // long-lived streams linear in stream length rather than quadratic.
+  let cursor = 0;
+  let scanFrom = 0;
   for await (const chunk of source as AsyncIterable<A2ABrokerSseChunk>) {
     buffer += typeof chunk === "string" ? chunk : decoder.decode(chunk, { stream: true });
-    let boundary = buffer.search(/\r?\n\r?\n/);
-    while (boundary !== -1) {
-      const raw = buffer.slice(0, boundary);
-      const matched = buffer.slice(boundary).match(/^\r?\n\r?\n/);
-      const advance = boundary + (matched ? matched[0].length : 2);
-      buffer = buffer.slice(advance);
-      const frame = flush(raw);
+    for (;;) {
+      const boundary = findFrameBoundary(buffer, Math.max(cursor, scanFrom));
+      if (boundary === null) {
+        // A separator can straddle chunks; resume the scan up to 3 chars back.
+        scanFrom = Math.max(cursor, buffer.length - 3);
+        break;
+      }
+      const frame = flush(buffer.slice(cursor, boundary.start));
+      cursor = boundary.end;
+      scanFrom = cursor;
       if (frame) {
         yield frame;
       }
-      boundary = buffer.search(/\r?\n\r?\n/);
+    }
+    if (cursor > 0) {
+      buffer = buffer.slice(cursor);
+      scanFrom = Math.max(0, scanFrom - cursor);
+      cursor = 0;
     }
   }
 

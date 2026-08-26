@@ -1385,8 +1385,19 @@ function isRecord(value: unknown): value is RecordValue {
   return value !== null && typeof value === "object" && !Array.isArray(value);
 }
 
+// Field names repeat heavily across commands, so memoize normalization.
+// Keys are caller-controlled: the cache clears at capacity instead of
+// growing without bound.
+const normalizedFieldNameCache = new Map<string, string>();
+
 function normalizedFieldName(value: string): string {
-  return value.replace(/[-_]/g, "").toLowerCase();
+  let normalized = normalizedFieldNameCache.get(value);
+  if (normalized === undefined) {
+    normalized = value.replace(/[-_]/g, "").toLowerCase();
+    if (normalizedFieldNameCache.size >= 4096) normalizedFieldNameCache.clear();
+    normalizedFieldNameCache.set(value, normalized);
+  }
+  return normalized;
 }
 
 function contractError(
@@ -1403,26 +1414,69 @@ function errorResult<T>(
   return { ok: false, error: contractError(code, path) };
 }
 
-function findForbiddenField(
+interface ForbiddenFieldMatches {
+  clock: readonly (string | number)[] | null;
+  backendCommand: readonly (string | number)[] | null;
+  sensitive: readonly (string | number)[] | null;
+  identity: readonly (string | number)[] | null;
+}
+
+/**
+ * One walk over the input recording, per category, the first match in the
+ * same depth-first key order the previous per-category walks used. Category
+ * priority (clock > backend command > sensitive > identity) is applied by
+ * the caller, so a clock match anywhere still outranks an earlier match of
+ * a lower category; only a clock match can stop the walk early. Paths are
+ * materialized only on a hit, keeping the common all-clean pass
+ * allocation-free.
+ */
+function findForbiddenFieldMatches(
   value: unknown,
-  names: ReadonlySet<string>,
-  path: readonly (string | number)[] = [],
-): readonly (string | number)[] | null {
-  if (Array.isArray(value)) {
-    for (let index = 0; index < value.length; index += 1) {
-      const found = findForbiddenField(value[index], names, [...path, index]);
-      if (found) return found;
+  includeIdentity: boolean,
+): ForbiddenFieldMatches {
+  const matches: ForbiddenFieldMatches = {
+    clock: null,
+    backendCommand: null,
+    sensitive: null,
+    identity: null,
+  };
+  const stack: (string | number)[] = [];
+  const visit = (node: unknown): boolean => {
+    if (Array.isArray(node)) {
+      for (let index = 0; index < node.length; index += 1) {
+        stack.push(index);
+        const stop = visit(node[index]);
+        stack.pop();
+        if (stop) return true;
+      }
+      return false;
     }
-    return null;
-  }
-  if (!isRecord(value)) return null;
-  for (const [key, nested] of Object.entries(value)) {
-    const nextPath = [...path, key];
-    if (names.has(normalizedFieldName(key))) return nextPath;
-    const found = findForbiddenField(nested, names, nextPath);
-    if (found) return found;
-  }
-  return null;
+    if (!isRecord(node)) return false;
+    for (const [key, nested] of Object.entries(node)) {
+      stack.push(key);
+      const normalized = normalizedFieldName(key);
+      if (CLOCK_FIELD_NAMES.has(normalized)) {
+        matches.clock = [...stack];
+        stack.pop();
+        return true;
+      }
+      if (matches.backendCommand === null && BACKEND_COMMAND_FIELD_NAMES.has(normalized)) {
+        matches.backendCommand = [...stack];
+      }
+      if (matches.sensitive === null && SENSITIVE_FIELD_NAMES.has(normalized)) {
+        matches.sensitive = [...stack];
+      }
+      if (includeIdentity && matches.identity === null && HEALTH_IDENTITY_FIELD_NAMES.has(normalized)) {
+        matches.identity = [...stack];
+      }
+      const stop = visit(nested);
+      stack.pop();
+      if (stop) return true;
+    }
+    return false;
+  };
+  visit(value);
+  return matches;
 }
 
 function preflightClosedInput<T>(
@@ -1447,30 +1501,16 @@ function preflightClosedInput<T>(
     }
   }
 
-  const clockField = findForbiddenField(input, CLOCK_FIELD_NAMES);
-  if (clockField) return errorResult("caller_clock_forbidden", clockField);
-
-  const backendCommandField = findForbiddenField(
-    input,
-    BACKEND_COMMAND_FIELD_NAMES,
-  );
-  if (backendCommandField) {
-    return errorResult("backend_command_forbidden", backendCommandField);
+  const matches = findForbiddenFieldMatches(input, options.health === true);
+  if (matches.clock) return errorResult("caller_clock_forbidden", matches.clock);
+  if (matches.backendCommand) {
+    return errorResult("backend_command_forbidden", matches.backendCommand);
   }
-
-  const sensitiveField = findForbiddenField(input, SENSITIVE_FIELD_NAMES);
-  if (sensitiveField) {
-    return errorResult("sensitive_field_forbidden", sensitiveField);
+  if (matches.sensitive) {
+    return errorResult("sensitive_field_forbidden", matches.sensitive);
   }
-
-  if (options.health) {
-    const identityField = findForbiddenField(
-      input,
-      HEALTH_IDENTITY_FIELD_NAMES,
-    );
-    if (identityField) {
-      return errorResult("identity_health_field_forbidden", identityField);
-    }
+  if (options.health && matches.identity) {
+    return errorResult("identity_health_field_forbidden", matches.identity);
   }
   return null;
 }

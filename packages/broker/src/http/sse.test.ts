@@ -77,10 +77,19 @@ test("SSE event helper serializes optional id, event name, and JSON data (#788)"
 
   writeSseEvent(response.res, "task-terminal", { taskId: "task-1", final: true }, "task-1:7");
 
+  // One write per frame (id/event/data concatenated) keeps syscalls down.
   assert.deepEqual(response.writes, [
-    "id: task-1:7\n",
-    "event: task-terminal\n",
-    'data: {"taskId":"task-1","final":true}\n\n',
+    'id: task-1:7\nevent: task-terminal\ndata: {"taskId":"task-1","final":true}\n\n',
+  ]);
+});
+
+test("SSE event helper omits the id line when no id is given (#788)", () => {
+  const response = createResponseDouble();
+
+  writeSseEvent(response.res, "task-status", { taskId: "task-2" });
+
+  assert.deepEqual(response.writes, [
+    'event: task-status\ndata: {"taskId":"task-2"}\n\n',
   ]);
 });
 

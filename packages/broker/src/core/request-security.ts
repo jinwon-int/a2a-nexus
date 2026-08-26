@@ -603,7 +603,20 @@ export class InMemoryRateLimiter {
 
   check(key: string, nowMs = Date.now()): RateLimitDecision {
     const windowStart = nowMs - this.windowMs;
-    const timestamps = (this.buckets.get(key) ?? []).filter((value) => value > windowStart);
+    let timestamps = this.buckets.get(key);
+    if (!timestamps) {
+      timestamps = [];
+      this.buckets.set(key, timestamps);
+    }
+    // Timestamps are appended in arrival order, so expired entries form a
+    // prefix; drop it in place instead of reallocating the bucket per request.
+    let expired = 0;
+    while (expired < timestamps.length && timestamps[expired]! <= windowStart) {
+      expired += 1;
+    }
+    if (expired > 0) {
+      timestamps.splice(0, expired);
+    }
     const allowed = timestamps.length < this.maxRequests;
 
     if (allowed) {
@@ -612,8 +625,6 @@ export class InMemoryRateLimiter {
     } else {
       this.deniedRequests += 1;
     }
-
-    this.buckets.set(key, timestamps);
 
     if (this.buckets.size > RATE_LIMITER_MAX_KEYS) {
       this.pruneBuckets(nowMs);

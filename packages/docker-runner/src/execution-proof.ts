@@ -105,6 +105,9 @@ export function buildExecutionProof(options: BuildExecutionProofOptions): Execut
 
   // Determine outcome classification.
   const status = result.ok ? "completed" : result.status === "timeout" ? "timeout" : "failed";
+  const outcome = classifyOutcome(result);
+  const failureCategory = classifyFailure(result);
+  const summary = buildSummary(result);
 
   const proof: ExecutionProof = {
     schemaVersion: "a2a.runner.execution-proof.v1",
@@ -123,9 +126,9 @@ export function buildExecutionProof(options: BuildExecutionProofOptions): Execut
     ok,
     status,
     ...(result.prUrl ? { prUrl: result.prUrl } : {}),
-    ...(classifyOutcome(result) ? { outcome: classifyOutcome(result) } : {}),
-    ...(classifyFailure(result) ? { failureCategory: classifyFailure(result) } : {}),
-    ...(buildSummary(result) ? { summary: buildSummary(result) } : {}),
+    ...(outcome ? { outcome } : {}),
+    ...(failureCategory ? { failureCategory } : {}),
+    ...(summary ? { summary } : {}),
     manifestPath: "artifacts/manifest.json",
   };
 

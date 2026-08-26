@@ -139,6 +139,19 @@ function buildRejectionBlockMap(lines) {
   return map;
 }
 
+/**
+ * Cheap literal prefilter: every prohibited pattern requires one of these
+ * lowercase substrings ('provider', 'send', or 'messageid'), so any file or
+ * line without them can skip the regex sweep — and the rejection-block map is
+ * only built for files that still have a candidate line. Findings are
+ * identical to the unfiltered sweep; this only skips lines that cannot match.
+ */
+const PREFILTER_LITERALS = ['provider', 'send', 'messageid'];
+
+function hasCandidateLiteral(lowerText) {
+  return PREFILTER_LITERALS.some((literal) => lowerText.includes(literal));
+}
+
 const findings = [];
 
 for (const file of trackedFiles()) {
@@ -155,16 +168,22 @@ for (const file of trackedFiles()) {
     continue;
   }
 
+  if (!hasCandidateLiteral(text.toLowerCase())) continue;
+
   const lines = text.split(/\r?\n/);
-  const rejectionBlock = buildRejectionBlockMap(lines);
+  let rejectionBlock = null;
 
   for (let i = 0; i < lines.length; i++) {
     const line = lines[i];
 
+    if (!hasCandidateLiteral(line.toLowerCase())) continue;
+
     // Skip lines that are themselves negated
     if (negationTerms.test(line)) continue;
 
-    // Skip lines inside a rejection/prohibition block
+    // Skip lines inside a rejection/prohibition block (map built lazily, only
+    // for files that reach a candidate line)
+    rejectionBlock ??= buildRejectionBlockMap(lines);
     if (rejectionBlock[i]) continue;
 
     for (const { label, re } of prohibitedPatterns) {
