@@ -1,35 +1,18 @@
 [extend]
 useDefault = true
 
+# NOTE (#1928): do NOT add a [[allowlists]] paths block here. The gate's
+# pass/fail decision never consults path entries in this file — gitleaks runs
+# with --redact and the exit decision filters findings in
+# scripts/external-secret-scan.mjs via EXACT_SYNTHETIC_FIXTURE_FILES.
+# Exact synthetic-fixture path allowlisting lives there and only there;
+# scripts/ci-docs-safety.test.mjs fails if a paths block reappears here.
+
 [[allowlists]]
 description = "Allow exact redaction placeholder secret values"
 regexTarget = "secret"
 regexes = [
   '''^REDACTED$'''
-]
-
-
-
-[[allowlists]]
-description = "Known synthetic redacted test fixtures; exact files only, not broad test/dist directories"
-paths = [
-  '''^packages/broker/dist/core/orchestration-intelligence-worker-subagent-spawn-bridge\.test\.js$''',
-  '''^packages/broker/dist/github/handoff-receiver\.test\.js$''',
-  '''^packages/broker/scripts/round-coordinator-closeout-dry-run\.test\.mjs$''',
-  '''^packages/broker/src/core/orchestration-intelligence-worker-subagent-spawn-bridge\.test\.ts$''',
-  '''^packages/broker/src/github/handoff-receiver\.test\.ts$''',
-  '''^packages/docker-runner/dist/engine-contract\.test\.js$''',
-  '''^packages/docker-runner/src/engine-contract\.test\.ts$''',
-  '''^packages/docker-runner/dist/github-evidence\.test\.js$''',
-  '''^packages/docker-runner/src/github-evidence\.test\.ts$''',
-  '''^packages/docker-runner/dist/runner-manifest\.test\.js$''',
-  '''^packages/docker-runner/src/runner-manifest\.test\.ts$''',
-  '''^packages/docker-runner/dist/scanner\.test\.js$''',
-  '''^packages/docker-runner/src/scanner\.test\.ts$''',
-  '''^packages/openclaw-plugin-a2a/tests/cross-broker-terminal-relay\.test\.ts$''',
-  '''^packages/openclaw-plugin-a2a/tests/proposal-marker-bridge\.test\.ts$''',
-  '''^packages/broker/src/server-live-task-admission\.test\.ts$''',
-  '''^packages/broker/dist/server-live-task-admission\.test\.js$'''
 ]
 
 [[allowlists]]
