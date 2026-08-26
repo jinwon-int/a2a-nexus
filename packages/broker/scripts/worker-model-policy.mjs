@@ -27,7 +27,7 @@ export const ALLOWED_WORKER_MODELS = Object.freeze([
   // GLM-5.3 piri fleet workers (#1907): released after the #1802 allowlist.
   "zai/glm-5.3",
   "glm-5.3[1m]",
-  // GLM-5.3-Flash piri fleet workers (jingun/soonwook 2026-08-27).
+  // GLM-5.3-Flash piri fleet workers (after the #1907 GLM-5.3 allowlist).
   "zai/glm-5.3-flash",
 ]);
 
