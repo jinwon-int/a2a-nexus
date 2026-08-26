@@ -1,6 +1,6 @@
 import { createHash } from "node:crypto";
 import { readFileSync } from "node:fs";
-import { chmod, chown, lstat, mkdir, writeFile, readdir, readFile, stat } from "node:fs/promises";
+import { chmod, chown, lstat, mkdir, open, writeFile, readdir, readFile, stat } from "node:fs/promises";
 import { basename, join, relative, resolve } from "node:path";
 import { runContainerWithRetry } from "./container-retry.js";
 import { pruneFailureOutputLogs, writeFailureOutputLog } from "./failure-output-log.js";
@@ -14,7 +14,7 @@ import { sanitizeSourcePublicExecutionPreflight } from "./source-public-prefligh
 import { expandTask, resolveTemplate, buildTemplateExpansionEvidence } from "./task-templates.js";
 import { buildExecutionProof } from "./execution-proof.js";
 import { detectEmbeddedModelTimeoutNoFallback } from "./failure-classification.js";
-import { redactAndBound, redactSecrets } from "./redaction.js";
+import { boundRedacted, redactAndBound, redactSecrets } from "./redaction.js";
 import {
   cleanupCodexCredentialRuntime,
   commitCodexCredentialRefresh,
@@ -68,15 +68,15 @@ function boundUtf8(value: string, maxBytes: number): string {
  * fanout fails as subagent_report_missing despite a clean bridge envelope).
  */
 function* balancedJsonObjects(text: string): Generator<Record<string, unknown>> {
-  let rest = text;
-  while (rest.length > 0) {
-    const start = rest.indexOf("{");
+  let cursor = 0;
+  while (cursor < text.length) {
+    const start = text.indexOf("{", cursor);
     if (start === -1) return;
     let depth = 0;
     let inString = false;
     let escaped = false;
-    for (let i = start; i < rest.length; i += 1) {
-      const ch = rest[i];
+    for (let i = start; i < text.length; i += 1) {
+      const ch = text[i];
       if (inString) {
         if (escaped) escaped = false;
         else if (ch === "\\") escaped = true;
@@ -89,14 +89,14 @@ function* balancedJsonObjects(text: string): Generator<Record<string, unknown>> 
         depth -= 1;
         if (depth === 0) {
           try {
-            const parsed = JSON.parse(rest.slice(start, i + 1)) as unknown;
+            const parsed = JSON.parse(text.slice(start, i + 1)) as unknown;
             if (parsed && typeof parsed === "object" && !Array.isArray(parsed)) {
               yield parsed as Record<string, unknown>;
             }
           } catch {
             // unparseable candidate — keep scanning
           }
-          rest = rest.slice(i + 1);
+          cursor = i + 1;
           break;
         }
       }
@@ -109,23 +109,24 @@ export function extractStructuredSubagentReport(
   stdout: string,
   options: StructuredSubagentReportOptions,
 ): RunnerSubagentReport | undefined {
-  const candidates: Record<string, unknown>[] = [];
   try {
     const strict = JSON.parse(stdout.trim()) as unknown;
     if (strict && typeof strict === "object" && !Array.isArray(strict)) {
-      candidates.push(strict as Record<string, unknown>);
+      const extracted = subagentReportFromPayloadObject(strict as Record<string, unknown>, options);
+      if (extracted !== undefined) return extracted;
     }
   } catch {
     // Noisy container stream (pipeline narration and other JSON emits around
     // the payload): fall back to scanning every balanced JSON object.
   }
-  candidates.push(...balancedJsonObjects(stdout));
-  for (const parsed of candidates) {
+  for (const parsed of balancedJsonObjects(stdout)) {
     const extracted = subagentReportFromPayloadObject(parsed, options);
     if (extracted !== undefined) return extracted;
   }
   return undefined;
 }
+
+const SUBAGENT_ENTRY_STATUSES = new Set(["complete", "blocked", "failed", "skipped"]);
 
 function subagentReportFromPayloadObject(
   parsed: Record<string, unknown>,
@@ -176,7 +177,7 @@ function subagentReportFromPayloadObject(
           : undefined;
       if (!role || !allowedRoles.has(role)) return undefined;
       if (!/^[A-Za-z0-9._:-]{1,128}$/.test(id) || seenIds.has(id)) return undefined;
-      if (!rawWriteSet || !new Set(["complete", "blocked", "failed", "skipped"]).has(status) || output === undefined) return undefined;
+      if (!rawWriteSet || !SUBAGENT_ENTRY_STATUSES.has(status) || output === undefined) return undefined;
       const writeSet = rawWriteSet.map((path) => redactSecrets(path));
       const redactedOutput = redactSecrets(output);
       const redacted = redactedOutput !== output || writeSet.some((path, index) => path !== rawWriteSet[index]);
@@ -312,9 +313,12 @@ export async function runTask(config: RunnerConfig, task: RunnerTask): Promise<R
     && safeCheckpointAvailable
     ? "artifacts/claude-max-turn-checkpoint.json" as const
     : undefined;
-  const artifacts = await listArtifacts(workDir);
-  const stdout = redactAndBound(completed.stdout);
-  const stderr = redactAndBound(completed.stderr);
+  const artifactEntries = await listArtifacts(workDir);
+  const artifacts = artifactEntries.map((entry) => entry.path);
+  // runContainerWithRetry already redacted the captured streams at spawn time,
+  // so bounding is the only remaining pass here.
+  const stdout = boundRedacted(completed.stdout);
+  const stderr = boundRedacted(completed.stderr);
   const detectedPrUrls = extractPrUrls(completed.stdout);
   const prUrlCandidates = !maxTurnsStopped && shouldTreatDetectedPrUrlAsCanonical(
     normalizedTask,
@@ -359,6 +363,7 @@ export async function runTask(config: RunnerConfig, task: RunnerTask): Promise<R
     claudeTurnBudget,
     checkpointRef,
     ...(budgetStop ? budgetStop : {}),
+    artifactSizes: new Map(artifactEntries.map((entry) => [entry.path, entry.sizeBytes])),
   });
   await writeArtifactManifest(workDir, manifest);
   const retryAttempted = retryEvidence.totalAttempts > 1;
@@ -367,8 +372,15 @@ export async function runTask(config: RunnerConfig, task: RunnerTask): Promise<R
     resultSummary.containerRetryEvidence = retryEvidence;
   }
 
+  const runFailed = maxTurnsStopped || completed.code !== 0 || completed.timedOut;
+  // Already-redacted streams (see above): one combined string serves both the
+  // actionable error and the failure-output log without re-running redaction.
+  const redactedCombinedOutput = runFailed
+    ? [completed.stderr, completed.stdout].filter(Boolean).join("\n").trim()
+    : "";
+
   const result: RunnerResult = {
-    ok: !maxTurnsStopped && completed.code === 0 && !completed.timedOut,
+    ok: !runFailed,
     taskId: task.id,
     status: completed.timedOut
       ? "timeout"
@@ -394,17 +406,15 @@ export async function runTask(config: RunnerConfig, task: RunnerTask): Promise<R
       ? `Claude Code max-turn budget exhausted; task remains failed (terminal_reason=max_turns).${checkpointRef ? ` Safe checkpoint: ${checkpointRef}.` : ""}`
       : completed.code === 0 && !completed.timedOut
         ? undefined
-        : buildActionableError(engine, config.image, completed),
+        : buildActionableError(engine, config.image, completed, redactedCombinedOutput),
   };
 
   if (!result.ok) {
     // #1610 item 2: containers are --rm, so persist the failed run's output
     // on the worker host (redacted, tail-bounded) and keep the volume capped.
     await writeFailureOutputLog(workDir, {
-      // raw captured streams: the helper redacts and TAIL-bounds, so the
-      // actual error at the end of the output survives (#1610)
-      stdout: completed.stdout,
-      stderr: completed.stderr,
+      // TAIL-bounded, so the actual error at the end of the output survives (#1610)
+      redactedCombined: redactedCombinedOutput,
       maxBytes: config.failureLogMaxBytes,
     });
     await pruneFailureOutputLogs(root, config.failureLogKeep);
@@ -1349,18 +1359,16 @@ export interface ArtifactManifestContext {
   githubCommentProjection?: GitHubCommentProjection;
   sourcePublicApprovalRehearsal?: SourcePublicApprovalRehearsal;
   sourcePublicExecutionPreflight?: SourcePublicExecutionPreflight;
+  /** Sizes already collected by listArtifacts, keyed by absolute path. */
+  artifactSizes?: ReadonlyMap<string, number>;
 }
 
 export async function buildArtifactManifest(workDir: string, artifacts: string[], context: ArtifactManifestContext = {}): Promise<ArtifactManifest> {
-  const entries: ArtifactManifestEntry[] = [];
-  for (const artifact of artifacts) {
-    const info = await stat(artifact);
-    entries.push({
-      path: relative(workDir, artifact).split("/").join("/"),
-      name: basename(artifact),
-      sizeBytes: info.size,
-    });
-  }
+  const entries: ArtifactManifestEntry[] = await Promise.all(artifacts.map(async (artifact) => ({
+    path: relative(workDir, artifact).split("/").join("/"),
+    name: basename(artifact),
+    sizeBytes: context.artifactSizes?.get(artifact) ?? (await stat(artifact)).size,
+  })));
   entries.sort((a, b) => a.path.localeCompare(b.path));
   const evidence = await buildArtifactEvidenceParts(workDir, entries, context.status);
   const task = context.task;
@@ -1797,8 +1805,7 @@ async function buildArtifactEvidenceParts(
   entries: ArtifactManifestEntry[],
   runStatus: ArtifactManifestStatus = "done",
 ): Promise<ArtifactEvidencePart[]> {
-  const parts: ArtifactEvidencePart[] = [];
-  for (const entry of entries) {
+  return Promise.all(entries.map(async (entry): Promise<ArtifactEvidencePart> => {
     const lower = entry.path.toLowerCase();
     const kind = lower.endsWith(".diff") || lower.endsWith(".patch")
       ? "diff"
@@ -1807,21 +1814,45 @@ async function buildArtifactEvidenceParts(
         : lower.endsWith(".log") || lower.endsWith(".txt") || lower.endsWith(".md")
           ? "log"
           : "file";
-    parts.push({
+    return {
       kind,
       label: entry.name,
       status: kind === "test" ? (runStatus === "done" ? "passed" : "failed") : runStatus === "blocked" ? "blocked" : "unknown",
       path: entry.path,
       ...(await readArtifactExcerpt(workDir, entry.path)),
-    });
-  }
-  return parts;
+    };
+  }));
 }
+
+// Excerpts keep at most 600 redacted bytes, so a bounded prefix is enough and
+// avoids loading + redacting arbitrarily large artifacts.
+const ARTIFACT_EXCERPT_SCAN_BYTES = 4096;
 
 async function readArtifactExcerpt(workDir: string, relativePath: string): Promise<Pick<ArtifactEvidencePart, "excerpt">> {
   try {
-    const content = await readFile(join(workDir, relativePath), "utf8");
-    const excerpt = redactAndBound(content.trim(), 600);
+    const handle = await open(join(workDir, relativePath), "r");
+    const buffer = Buffer.alloc(ARTIFACT_EXCERPT_SCAN_BYTES);
+    let length = 0;
+    try {
+      while (length < buffer.length) {
+        const { bytesRead } = await handle.read(buffer, length, buffer.length - length, length);
+        if (bytesRead === 0) break;
+        length += bytesRead;
+      }
+    } finally {
+      await handle.close();
+    }
+    let end = length;
+    if (length === buffer.length) {
+      // The prefix may cut a UTF-8 sequence: drop a trailing incomplete one.
+      let lead = end - 1;
+      while (lead >= 0 && (buffer[lead] & 0xc0) === 0x80) lead -= 1;
+      if (lead >= 0 && (buffer[lead] & 0x80) !== 0) {
+        const sequenceLength = buffer[lead] >= 0xf0 ? 4 : buffer[lead] >= 0xe0 ? 3 : 2;
+        if (lead + sequenceLength > end) end = lead;
+      }
+    }
+    const excerpt = redactAndBound(buffer.toString("utf8", 0, end).trim(), 600);
     return excerpt ? { excerpt } : {};
   } catch {
     return {};
@@ -1848,8 +1879,10 @@ async function writeArtifactManifest(workDir: string, manifest: ArtifactManifest
 }
 
 
-export function buildActionableError(engine: string, image: string, completed: SpawnResult): string {
-  const combined = redactSecrets([completed.stderr, completed.stdout].filter(Boolean).join("\n")).trim();
+export function buildActionableError(engine: string, image: string, completed: SpawnResult, redactedCombined?: string): string {
+  // redactedCombined callers (runTask) pass streams that were already redacted
+  // at capture time; without it the raw streams are redacted here.
+  const combined = redactedCombined ?? redactSecrets([completed.stderr, completed.stdout].filter(Boolean).join("\n")).trim();
   if (completed.errorCode === "ENOENT") {
     return `${engine} 실행 파일을 찾을 수 없습니다. Docker 또는 Podman을 설치하거나 A2A_DOCKER_RUNNER_ENGINE을 사용 가능한 엔진으로 설정하세요.`;
   }
@@ -1857,7 +1890,7 @@ export function buildActionableError(engine: string, image: string, completed: S
     const elapsedSec = ((completed.elapsedMs ?? 0) / 1000).toFixed(1);
     return `컨테이너 실행이 제한 시간 안에 끝나지 않았습니다 (elapsed=${elapsedSec}s). timeoutMs를 늘리거나 작업 명령을 줄이고, 남은 컨테이너가 있으면 '${engine} ps -a --filter label=a2a.task.id=<safeTaskId>'로 확인한 뒤 run별 container name을 지정해 정리하세요.\n${combined}`.trim();
   }
-  const engineStderr = redactSecrets(completed.stderr).trim();
+  const engineStderr = (redactedCombined === undefined ? redactSecrets(completed.stderr) : completed.stderr).trim();
   // OOM detection: Docker/Podman kills with SIGKILL (exit 137 = 128+9) when
   // the container exceeds its memory limit.  The daemon may also emit "Out of
   // memory" to stderr.  Report resource evidence for stability gates.
@@ -1898,16 +1931,17 @@ interface SpawnResult {
   elapsedMs?: number;
 }
 
-async function listArtifacts(workDir: string): Promise<string[]> {
+async function listArtifacts(workDir: string): Promise<{ path: string; sizeBytes: number }[]> {
   const dir = join(workDir, "artifacts");
   try {
     const entries = await readdir(dir);
-    const files: string[] = [];
-    for (const entry of entries) {
+    const infos = await Promise.all(entries.map(async (entry) => {
       const path = join(dir, entry);
-      if ((await stat(path)).isFile()) files.push(path);
-    }
-    return files;
+      return { path, info: await stat(path) };
+    }));
+    return infos
+      .filter(({ info }) => info.isFile())
+      .map(({ path, info }) => ({ path, sizeBytes: info.size }));
   } catch {
     return [];
   }

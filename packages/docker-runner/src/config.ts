@@ -1469,9 +1469,8 @@ export A2A_CLAUDE_CODE_MAX_OUTPUT_BYTES="\${A2A_CLAUDE_CODE_MAX_OUTPUT_BYTES:-16
 printf 'claude_cli=%s\\n' "$(claude --version 2>/dev/null | head -n 1 || printf unknown)" | tee -a /work/artifacts/summary.txt
 printf 'model_source=env profile=claude-code\\n' | tee -a /work/artifacts/summary.txt
 printf 'claude_config_bytes=%s\\n' "$(du -sb "$CLAUDE_CONFIG_DIR" | awk '{print $1}')" | tee -a /work/artifacts/summary.txt
-TASK_REPO="$(node -e 'const fs=require("node:fs"); const task=JSON.parse(fs.readFileSync("/work/artifacts/task.json", "utf8")); process.stdout.write(String(task.repo || ""));')"
-TASK_ISSUE="$(node -e 'const fs=require("node:fs"); const task=JSON.parse(fs.readFileSync("/work/artifacts/task.json", "utf8")); process.stdout.write(String(task.issue || ""));')"
-TASK_ISSUE_URL="$(node -e 'const fs=require("node:fs"); const task=JSON.parse(fs.readFileSync("/work/artifacts/task.json", "utf8")); process.stdout.write(String(task.issueUrl || ""));')"
+# One node invocation reads task.json once and emits all three NUL-terminated fields.
+{ IFS= read -r -d '' TASK_REPO; IFS= read -r -d '' TASK_ISSUE; IFS= read -r -d '' TASK_ISSUE_URL; } < <(node -e 'const fs=require("node:fs"); const task=JSON.parse(fs.readFileSync("/work/artifacts/task.json", "utf8")); for (const field of [task.repo, task.issue, task.issueUrl]) process.stdout.write(String(field || "").replace(/\\n+$/, "") + "\\0");')
 ASSIGNMENT="$(printf 'GitHub development assignment\\nRepository: %s\\nIssue: %s\\nIssue URL: %s\\n\\n%s' "$TASK_REPO" "$TASK_ISSUE" "$TASK_ISSUE_URL" "$(cat /work/artifacts/prompt.md)")"
 exec node "$A2A_CLAUDE_PATCH_BRIDGE" agent --json --message "$ASSIGNMENT"
 `;
