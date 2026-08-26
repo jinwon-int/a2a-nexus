@@ -54,6 +54,8 @@ export interface OperatorDashboardSnapshot {
 export interface OperatorDashboardBrokerProjection {
   listTasks(): TaskRecord[];
   getTaskDiagnostics(id: string, options: { staleAfterMs: number; longRunningAfterMs?: number }): TaskDiagnosticReport;
+  /** Optional batched variant; when present the snapshot builds every report in one pass. */
+  listTaskDiagnostics?(options: { staleAfterMs: number; longRunningAfterMs?: number }): TaskDiagnosticReport[];
 }
 
 export interface OperatorDashboardStaleReaperProjection {
@@ -73,12 +75,17 @@ export function buildOperatorDashboardSnapshot(input: {
   const terminalStatuses = new Set<TaskStatus>(["succeeded", "failed", "canceled"]);
   const activeStatuses = new Set<TaskStatus>(["blocked", "queued", "claimed", "running"]);
   const attentionItems: OperatorAttentionItem[] = [];
+  const diagnosticsOptions = {
+    staleAfterMs: input.staleAfterMs ?? Math.max(1, input.staleReaper.olderThanSec) * 1000,
+    longRunningAfterMs: input.longRunningAfterMs,
+  };
+  const reportsByTaskId = input.broker.listTaskDiagnostics
+    ? new Map(input.broker.listTaskDiagnostics(diagnosticsOptions).map((report) => [report.taskId, report]))
+    : undefined;
 
   for (const task of tasks) {
-    const report = input.broker.getTaskDiagnostics(task.id, {
-      staleAfterMs: input.staleAfterMs ?? Math.max(1, input.staleReaper.olderThanSec) * 1000,
-      longRunningAfterMs: input.longRunningAfterMs,
-    });
+    const report = reportsByTaskId?.get(task.id)
+      ?? input.broker.getTaskDiagnostics(task.id, diagnosticsOptions);
     const statusAgeSec = Math.floor(report.currentStatusDurationMs / 1000);
     const whoClaimed = task.claimedBy ?? task.assignedWorkerId ?? null;
     const base = {

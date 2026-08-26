@@ -2747,6 +2747,30 @@ export class InMemoryA2ABroker {
     });
   }
 
+  /**
+   * Diagnostics for every task in one pass. Prebuilds the tombstone and
+   * latest-requeue-event indexes so projections over the whole task table
+   * cost O(tasks + audit events) instead of a per-task audit scan and
+   * tombstone lookup.
+   */
+  listTaskDiagnostics(options?: TaskDiagnosticsOptions): TaskDiagnosticReport[] {
+    const tombstonesByTaskId = new Map(
+      this.listTombstones().map((tombstone) => [tombstone.taskId, tombstone]),
+    );
+    // listAuditEvents returns newest-first, so the first event seen per task
+    // is the same one findLatestTaskAuditEvent would pick.
+    const latestRequeueEventByTaskId = new Map<string, AuditEvent>();
+    for (const event of this.listAuditEvents({ action: "task.requeued" })) {
+      if (!latestRequeueEventByTaskId.has(event.targetId)) {
+        latestRequeueEventByTaskId.set(event.targetId, event);
+      }
+    }
+    return this.listTasks().map((task) => this.getTaskDiagnosticsForRecord(task, options, {
+      tombstone: tombstonesByTaskId.get(task.id) ?? null,
+      lastRequeueEvent: latestRequeueEventByTaskId.get(task.id) ?? null,
+    }));
+  }
+
   /** Compute diagnostics for a task snapshot supplied by a read model/store. */
   getTaskDiagnosticsForRecord(
     task: TaskRecord,

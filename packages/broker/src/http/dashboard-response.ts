@@ -242,10 +242,8 @@ export function buildAlertScan(input: {
 }): AlertScanResult {
   const staleAfterMs = input.staleAfterMs ?? DEFAULT_ALERT_STALE_AFTER_MS;
   const longRunningAfterMs = input.longRunningAfterMs ?? DEFAULT_ALERT_LONG_RUNNING_AFTER_MS;
-  const allTasks = input.broker.listTasks();
-  const reports = allTasks.map((task) =>
-    input.broker.getTaskDiagnostics(task.id, { staleAfterMs, longRunningAfterMs }),
-  );
+  // Batched: one audit/tombstone index pass instead of a per-task scan.
+  const reports = input.broker.listTaskDiagnostics({ staleAfterMs, longRunningAfterMs });
 
   return projectAlerts(reports, {
     staleWarningMs: input.staleWarningMs,

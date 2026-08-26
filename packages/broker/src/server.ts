@@ -937,11 +937,25 @@ export function createBrokerServer(options: BrokerServerOptions = {}): BrokerSer
     return {
       keyid: result.keyid,
       requesterId: result.requesterId,
-      publicKeyPem: verifiedRecord
-        ? createPublicKey({ key: verifiedRecord.publicKeyJwk, format: "jwk" }).export({ type: "spki", format: "pem" }).toString()
-        : undefined,
+      publicKeyPem: verifiedRecord ? workerPublicKeyPemForKeyid(result.keyid, verifiedRecord) : undefined,
       scopes: verifiedRecord?.scopes,
     };
+  };
+
+  // The registry is fixed for the server's lifetime, so convert each worker
+  // JWK to PEM once instead of on every signed request (five routes verify,
+  // but only /complete consumes the PEM).
+  const workerPublicKeyPemByKeyid = new Map<string, string>();
+  const workerPublicKeyPemForKeyid = (
+    keyid: string,
+    record: NonNullable<(typeof a2aHttpSignatureKeyRegistry)[string]>,
+  ): string => {
+    let pem = workerPublicKeyPemByKeyid.get(keyid);
+    if (pem === undefined) {
+      pem = createPublicKey({ key: record.publicKeyJwk, format: "jwk" }).export({ type: "spki", format: "pem" }).toString();
+      workerPublicKeyPemByKeyid.set(keyid, pem);
+    }
+    return pem;
   };
 
   const assertVerifiedWorkerMatches = (

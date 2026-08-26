@@ -41,6 +41,17 @@ export function parseSingleJsonRpcMethodRequest(
   } catch {
     return null;
   }
+  return parseSingleJsonRpcMethodRequestFromParsed(parsed, method);
+}
+
+/**
+ * Body-already-parsed variant so the transport route can JSON.parse a
+ * (up to multi-MB) body once and probe several methods against it.
+ */
+export function parseSingleJsonRpcMethodRequestFromParsed(
+  parsed: unknown,
+  method: string,
+): { id: string | number | null; params: unknown } | null {
   if (Array.isArray(parsed) || typeof parsed !== "object" || parsed === null) {
     return null;
   }
