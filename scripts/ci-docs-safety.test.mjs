@@ -77,16 +77,19 @@ process.exit(0);
   }
 });
 
-test('external secret scan mirrors the exact live-task fixture paths from gitleaks config', () => {
+test('external secret scan keeps exact fixture allowlisting only in the scanner script (#1928)', () => {
   const config = readFileSync(join(repoRoot, '.gitleaks.toml'), 'utf8');
   const scanner = externalSecretScanText();
+  // Single source of truth: EXACT_SYNTHETIC_FIXTURE_FILES in the scanner
+  // script decides allowlisted paths; a [[allowlists]] paths block in
+  // .gitleaks.toml never reaches the exit decision (#1928).
   for (const fixture of [
     'packages/broker/src/server-live-task-admission.test.ts',
     'packages/broker/dist/server-live-task-admission.test.js',
   ]) {
-    assert.ok(config.includes(fixture.replaceAll('.', '\\.')), `${fixture} missing from gitleaks config`);
     assert.ok(scanner.includes(`'${fixture}'`), `${fixture} missing from exact scanner allowlist`);
   }
+  assert.doesNotMatch(config, /^paths\s*=/m, '.gitleaks.toml must not carry a paths allowlist; use EXACT_SYNTHETIC_FIXTURE_FILES in scripts/external-secret-scan.mjs');
 });
 
 test('tracked markdown link checker rejects missing relative links', () => {
