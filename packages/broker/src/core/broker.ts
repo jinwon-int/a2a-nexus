@@ -925,6 +925,11 @@ export class InMemoryA2ABroker {
     return this.taskEvents.replay(taskId, afterSeq);
   }
 
+  /** Buffered event count for one task without copying the replay buffer. */
+  countBufferedTaskEvents(taskId: string): number {
+    return this.taskEvents.bufferedEventCount(taskId);
+  }
+
   /** Build the SSE `id` field value: `{taskId}:{seq}`. */
   formatSseEventId(taskId: string, seq: number): string {
     return `${taskId}:${seq}`;

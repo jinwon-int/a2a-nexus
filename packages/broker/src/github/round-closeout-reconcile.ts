@@ -134,13 +134,23 @@ export function reconcileRoundCloseout(
   const required = workers.filter((worker) => worker.required);
   const counts = {
     required: required.length,
-    completed: required.filter((worker) => worker.state === "completed").length,
-    blocked: required.filter((worker) => worker.state === "blocked").length,
-    missingEvidence: required.filter((worker) => worker.state === "missing-evidence").length,
-    stuck: required.filter((worker) => worker.state === "stuck").length,
-    waiting: required.filter((worker) => worker.state === "waiting").length,
-    excluded: workers.filter((worker) => worker.state === "excluded").length,
+    completed: 0,
+    blocked: 0,
+    missingEvidence: 0,
+    stuck: 0,
+    waiting: 0,
+    excluded: 0,
   };
+  for (const worker of required) {
+    if (worker.state === "completed") counts.completed += 1;
+    else if (worker.state === "blocked") counts.blocked += 1;
+    else if (worker.state === "missing-evidence") counts.missingEvidence += 1;
+    else if (worker.state === "stuck") counts.stuck += 1;
+    else if (worker.state === "waiting") counts.waiting += 1;
+  }
+  for (const worker of workers) {
+    if (worker.state === "excluded") counts.excluded += 1;
+  }
 
   const state = classifyRoundState(counts);
   const { summary, action } = roundMessage(state, counts);

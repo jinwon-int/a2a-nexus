@@ -248,7 +248,7 @@ export function handleTaskEventStream(
   // Already-terminal task: emit the snapshot and close. No future updates fire,
   // so there is no subscription to register and no race to close.
   if (isTerminalSnapshotStatus(task.status)) {
-    const snapshotSeq = broker.replayTaskEvents(task.id, -1).length;
+    const snapshotSeq = broker.countBufferedTaskEvents(task.id);
     writeSseEvent(
       res,
       "task-snapshot",

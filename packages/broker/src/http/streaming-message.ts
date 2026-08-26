@@ -110,7 +110,7 @@ export function handleStreamingMessageResponse(
     result,
   });
 
-  const snapshotSeq = broker.replayTaskEvents(task.id, -1).length;
+  const snapshotSeq = broker.countBufferedTaskEvents(task.id);
   writeSseEvent(
     res,
     "task-snapshot",
@@ -202,7 +202,7 @@ export function handleSubscribeToTaskStreamResponse(
     result,
   });
 
-  const snapshotSeq = broker.replayTaskEvents(task.id, -1).length;
+  const snapshotSeq = broker.countBufferedTaskEvents(task.id);
   writeSseEvent(
     res,
     "task-snapshot",

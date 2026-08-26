@@ -102,6 +102,11 @@ export class TaskEventDispatcher {
     return buffer.filter((e) => e.seq > afterSeq);
   }
 
+  /** Number of buffered events for one task without copying the buffer. */
+  bufferedEventCount(taskId: string): number {
+    return this.buffers.get(taskId)?.length ?? 0;
+  }
+
   /** Number of tasks with a non-empty replay buffer (compact diagnostics). */
   bufferedStreamCount(): number {
     return this.buffers.size;

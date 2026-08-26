@@ -231,8 +231,8 @@ function claudeEnvelopeTelemetry(outer) {
 // Name the observed malformed-output shape so postmortems do not need nested
 // stdout archaeology: no JSON at all, JSON that is not analysis-shaped, a
 // provider error carried as text, or prose that recovery had to reject.
-function classifyExtractionFailure(stdout, outer) {
-  const candidates = extractBalancedJsonObjects(safeText(stdout));
+function classifyExtractionFailure(stdout, outer, precomputedCandidates) {
+  const candidates = precomputedCandidates ?? extractBalancedJsonObjects(safeText(stdout));
   if (outer === null || outer === undefined) {
     return candidates.length === 0 ? "no_json" : "schema_invalid";
   }
@@ -454,12 +454,18 @@ function proseAnalysisFromClaudeText(outer) {
   return null;
 }
 
-function extractAnalysisJsonFromClaudeOutput(stdout) {
+function extractAnalysisJsonFromClaudeOutput(stdout, preparsedOuter) {
+  // The caller usually parsed the envelope already; reuse it so a multi-MB
+  // stdout is not JSON.parsed twice per task.
   let outer = null;
-  try {
-    outer = parseJsonCandidate(stdout);
-  } catch {
-    outer = null;
+  if (preparsedOuter !== undefined) {
+    outer = preparsedOuter;
+  } else {
+    try {
+      outer = parseJsonCandidate(stdout);
+    } catch {
+      outer = null;
+    }
   }
   const found = findAnalysisJson(outer);
   if (found) return found;
@@ -481,7 +487,7 @@ function extractAnalysisJsonFromClaudeOutput(stdout) {
 
   throw new AnalysisBridgeFailure(
     "extract",
-    classifyExtractionFailure(stdout, outer),
+    classifyExtractionFailure(stdout, outer, candidates),
     "Claude output did not contain valid analysis JSON",
     { ...claudeEnvelopeTelemetry(outer), excerpt: stdout },
   );
@@ -673,7 +679,7 @@ async function main() {
     }
     response = attachClaudeModelTelemetry(
       {
-        ...normalizeResponse(extractAnalysisJsonFromClaudeOutput(claudeRun.stdout)),
+        ...normalizeResponse(extractAnalysisJsonFromClaudeOutput(claudeRun.stdout, outer ?? null)),
         executionTelemetry: claudeExecutionTelemetry(outer),
       },
       {
