@@ -262,6 +262,7 @@ test("unsupported workerModel fails closed before a patch attempt", () => {
     "glm-5.2[1m]",
     "zai/glm-5.3",
     "glm-5.3[1m]",
+    "zai/glm-5.3-flash",
   ]);
 });
 
@@ -357,6 +358,7 @@ test("worker model policy module exposes auditable allowlist and fallbacks (#799
     "glm-5.2[1m]",
     "zai/glm-5.3",
     "glm-5.3[1m]",
+    "zai/glm-5.3-flash",
   ]);
   assert.equal(DEFAULT_WORKER_MODEL, "openai-codex/gpt-5.6-sol");
   assert.deepEqual(HERMES_UNSUPPORTED_WORKER_MODELS, [
@@ -401,6 +403,15 @@ test("worker model policy module exposes auditable allowlist and fallbacks (#799
   });
   assert.deepEqual(resolveWorkerModelInputs({ envModel: "glm-5.3" }), {
     model: "zai/glm-5.3",
+    fromPayload: false,
+  });
+  // Piri fleet GLM-5.3-Flash: prefixed id plus bare metadata canonicalize.
+  assert.deepEqual(resolveWorkerModelInputs({ payloadModel: "zai/glm-5.3-flash" }), {
+    model: "zai/glm-5.3-flash",
+    fromPayload: true,
+  });
+  assert.deepEqual(resolveWorkerModelInputs({ envModel: "glm-5.3-flash" }), {
+    model: "zai/glm-5.3-flash",
     fromPayload: false,
   });
   assert.deepEqual(resolveWorkerModelInputs({ payloadModel: "k3" }), {
