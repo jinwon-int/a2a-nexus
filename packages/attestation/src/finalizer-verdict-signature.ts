@@ -16,10 +16,11 @@
 // requires X509/Fulcio chain verification, which stays with the merge gate
 // (verify-finalizer-verdict.mjs) to keep cert-chain work out of the completion
 // hot path — a documented v0 boundary.
-import { createPublicKey, verify as cryptoVerify } from "node:crypto";
+import { verify as cryptoVerify, type KeyObject } from "node:crypto";
 import { readFileSync } from "node:fs";
 
 import { canonicalizeJson } from "./agent-card-signing.js";
+import { cachedPublicKey } from "./key-object-cache.js";
 
 const FINALIZER_ROLE_PREFIX = "finalizer:";
 
@@ -33,6 +34,8 @@ export interface FinalizerKeyRecord {
   status?: "active" | "revoked";
   notBefore?: string;
   expiresAt?: string;
+  /** Resolved once by loadFinalizerKeyring so verify skips the per-call PEM re-parse. */
+  keyObject?: KeyObject;
 }
 
 /**
@@ -100,7 +103,7 @@ export function verifyFinalizerVerdictSignature(verdict: unknown, keyring: Final
 
   let key;
   try {
-    key = createPublicKey(pem);
+    key = record.keyObject ?? cachedPublicKey(pem);
   } catch {
     return { ok: false, reason: `registered key for '${finalizerKeyId}' is not a parseable public key` };
   }
@@ -159,11 +162,20 @@ export function loadFinalizerKeyring(value: unknown): FinalizerKeyring {
     if (notBefore !== undefined && expiresAt !== undefined && Date.parse(notBefore) >= Date.parse(expiresAt)) {
       throw new Error(`finalizer keyring entry '${keyId}' notBefore must be earlier than expiresAt`);
     }
+    // Resolve the KeyObject once here; an unparseable PEM stays unresolved so
+    // verify fails per-verdict with the same reason as before, not at load.
+    let keyObject: KeyObject | undefined;
+    try {
+      keyObject = cachedPublicKey(pem);
+    } catch {
+      keyObject = undefined;
+    }
     validated[keyId] = {
       pem,
       ...(record["status"] !== undefined ? { status: record["status"] as "active" | "revoked" } : {}),
       ...(notBefore !== undefined ? { notBefore } : {}),
       ...(expiresAt !== undefined ? { expiresAt } : {}),
+      ...(keyObject !== undefined ? { keyObject } : {}),
     };
   }
   return { keys: validated };

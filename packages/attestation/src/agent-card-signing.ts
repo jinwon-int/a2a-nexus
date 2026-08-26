@@ -11,7 +11,9 @@
  * EC P-256). No key, no signature — the card is served unsigned exactly as
  * before.
  */
-import { createPrivateKey, createPublicKey, sign as cryptoSign, verify as cryptoVerify, type KeyObject } from "node:crypto";
+import { sign as cryptoSign, verify as cryptoVerify, type KeyObject } from "node:crypto";
+
+import { cachedPrivateKey, cachedPublicKey } from "./key-object-cache.js";
 
 // ---------------------------------------------------------------------------
 // RFC 8785 (JCS) canonicalization
@@ -179,7 +181,7 @@ export function signAgentCard<T extends object>(
   card: T,
   options: { privateKeyPem: string; kid?: string },
 ): T & { signatures: AgentCardSignature[] } {
-  const key = createPrivateKey(options.privateKeyPem);
+  const key = cachedPrivateKey(options.privateKeyPem);
   const { alg, cryptoAlg } = algorithmForKey(key);
   const header: Record<string, unknown> = { alg, typ: "JOSE" };
   if (options.kid) {
@@ -244,7 +246,7 @@ export function verifyAgentCardSignature(
   if (!Array.isArray(entries) || entries.length === 0) {
     return false;
   }
-  const key = createPublicKey(publicKeyPem);
+  const key = cachedPublicKey(publicKeyPem);
   const { alg, cryptoAlg } = algorithmForKey(key);
   const payload = base64url(agentCardSigningPayload(card));
 
