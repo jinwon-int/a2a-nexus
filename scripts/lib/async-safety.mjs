@@ -37,6 +37,30 @@ function normalizePath(value) {
   return value.split(path.sep).join('/');
 }
 
+/**
+ * realpathSync with per-directory memoization. Non-symlink entries resolve as
+ * their (cached) parent directory's realpath plus their own basename — the
+ * same result realpathSync would produce, without re-walking the directory
+ * chain for every file. Symlinked entries fall back to a full realpathSync so
+ * symlink-escape checks keep their exact semantics.
+ */
+export function createCachedRealpath() {
+  const dirCache = new Map();
+  const realDir = (dir) => {
+    let real = dirCache.get(dir);
+    if (real === undefined) {
+      real = fs.realpathSync(dir);
+      dirCache.set(dir, real);
+    }
+    return real;
+  };
+  return (file) => (
+    fs.lstatSync(file).isSymbolicLink()
+      ? fs.realpathSync(file)
+      : path.join(realDir(path.dirname(file)), path.basename(file))
+  );
+}
+
 export function isProductionSource(fileName, packageRoot = DEFAULT_PACKAGE_ROOT) {
   const relative = normalizePath(path.relative(packageRoot, fileName));
   return (
@@ -149,9 +173,10 @@ export function analyzeProject({
   }
 
   const realPackageRoot = fs.realpathSync(packageRoot);
+  const resolveReal = createCachedRealpath();
   for (const fileName of parsed.fileNames) {
     if (!isProductionSource(fileName, packageRoot)) continue;
-    const realFile = fs.realpathSync(fileName);
+    const realFile = resolveReal(fileName);
     const realRelative = path.relative(realPackageRoot, realFile);
     if (realRelative.startsWith(`..${path.sep}`) || path.isAbsolute(realRelative)) {
       throw new Error(

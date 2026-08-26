@@ -61,7 +61,7 @@ function candidateFiles() {
     return execFileSync('git', ['ls-files', '--cached', '--others', '--exclude-standard'], {
       encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'],
     }).split(/\r?\n/).filter(Boolean)
-      .filter((file) => fs.existsSync(file) && fs.statSync(file).isFile())
+      .filter((file) => fs.statSync(file, { throwIfNoEntry: false })?.isFile() ?? false)
       .filter((file) => !file.split('/').some((part) => skipDirs.has(part)))
       .filter((file) => !/(^|\/)(?:test|tests|__tests__)\//.test(file))
       .filter((file) => !/\.(?:test|spec)\.(?:ts|mts|cts|js|mjs|cjs)$/.test(file))
@@ -70,6 +70,9 @@ function candidateFiles() {
 }
 
 function isAllowedWarning(file) { return allowWarningPaths.some((re) => re.test(file)); }
+// Per-line rules (everything after the two path-shape rules), hoisted so the
+// slice is not re-allocated for every line of every scanned file.
+const lineRules = deny.slice(2);
 const findings = [];
 for (const file of candidateFiles()) {
   for (const rule of deny) {
@@ -81,7 +84,7 @@ for (const file of candidateFiles()) {
   let text;
   try { text = fs.readFileSync(file, 'utf8'); } catch { continue; }
   text.split(/\r?\n/).forEach((line, i) => {
-    for (const rule of deny.slice(2)) {
+    for (const rule of lineRules) {
       if (!rule.re.test(line)) continue;
       const severity = (rule.kind === 'internal-node-identifier' && isAllowedWarning(file))
         || (rule.kind === 'operator-personal-name' && file === 'LICENSE')

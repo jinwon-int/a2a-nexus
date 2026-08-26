@@ -8,7 +8,7 @@
  * focused scan.
  */
 
-import { existsSync, readdirSync, readFileSync, statSync } from 'node:fs';
+import { readdirSync, readFileSync, statSync } from 'node:fs';
 import { extname, join, relative } from 'node:path';
 import process from 'node:process';
 
@@ -45,17 +45,38 @@ function shouldScanFile(path) {
   return SCANNED_EXTENSIONS.has(extname(path));
 }
 
+// Explicit/top-level paths (and symlinked entries, which dirent types cannot
+// classify) resolve their type with a single stat; missing or unreadable paths
+// are skipped, as the former existsSync guard did.
 function collectFiles(path, out = []) {
-  if (!existsSync(path)) return out;
-  const st = statSync(path);
+  let st;
+  try {
+    st = statSync(path, { throwIfNoEntry: false });
+  } catch {
+    return out;
+  }
+  if (!st) return out;
   if (st.isFile()) {
     if (shouldScanFile(path)) out.push(path);
     return out;
   }
   if (!st.isDirectory()) return out;
-  const base = path.split(/[\\/]/).pop();
+  return collectDir(path, out);
+}
+
+// Directory recursion reads each level once with withFileTypes, so regular
+// entries need no per-child stat; symlinks fall back to the stat-following
+// collectFiles above.
+function collectDir(dir, out) {
+  const base = dir.split(/[\\/]/).pop();
   if (SKIP_DIRS.has(base)) return out;
-  for (const entry of readdirSync(path)) collectFiles(join(path, entry), out);
+  for (const entry of readdirSync(dir, { withFileTypes: true })) {
+    const child = join(dir, entry.name);
+    if (entry.isSymbolicLink()) collectFiles(child, out);
+    else if (entry.isFile()) {
+      if (shouldScanFile(child)) out.push(child);
+    } else if (entry.isDirectory()) collectDir(child, out);
+  }
   return out;
 }
 

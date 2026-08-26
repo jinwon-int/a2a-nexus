@@ -14,25 +14,24 @@
  */
 import assert from 'node:assert/strict';
 import { pathToFileURL } from 'node:url';
-import { existsSync } from 'node:fs';
-import { spawnSync } from 'node:child_process';
 import path from 'node:path';
+
+import { ensureBuilt } from './lib/ensure-built.mjs';
 
 const root = process.cwd();
 const TRACE = 'trace-conformance-abc123';
 
-// This check verifies behavior against the compiled packages. test:conformance
-// can run before the package build step (release-gate ordering), so build any
-// package whose dist entry is missing — self-sufficient, no external state.
-function ensureBuilt(pkg, distEntry) {
-  if (existsSync(path.join(root, distEntry))) return;
-  const res = spawnSync('npm', ['run', 'build', '-w', `packages/${pkg}`], { cwd: root, stdio: 'inherit' });
-  if (res.status !== 0) {
-    throw new Error(`failed to build packages/${pkg} for the trace-propagation conformance check`);
-  }
-}
-ensureBuilt('broker', 'packages/broker/dist/core/broker.js');
-ensureBuilt('docker-runner', 'packages/docker-runner/dist/runner.js');
+// This check verifies behavior against the compiled packages. Standalone
+// invocation stays self-sufficient: build any package whose dist entries are
+// missing. Under run-conformance.mjs the runner has already built these
+// before fan-out, so both calls are cheap existsSync no-ops that never spawn
+// a build concurrently with a sibling check.
+ensureBuilt(root, 'broker', [
+  'packages/broker/dist/core/broker.js',
+  'packages/broker/dist/a2a/task-projection.js',
+  'packages/broker/dist/worker.js',
+]);
+ensureBuilt(root, 'docker-runner', ['packages/docker-runner/dist/runner.js']);
 
 // ── 1. Broker projection exposes via.traceId ──────────────────────────────
 const broker = await import(pathToFileURL(path.join(root, 'packages/broker/dist/core/broker.js')).href);

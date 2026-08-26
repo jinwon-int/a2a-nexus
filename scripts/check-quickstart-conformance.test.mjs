@@ -105,10 +105,12 @@ test('release gate inventory keeps public-readiness and package checks', async (
   const inventory = JSON.parse(await readFile(join(repoRoot, 'docs', 'ops', 'release-gate-step-inventory.json'), 'utf8'));
   const byName = new Map(inventory.entries.map((entry) => [entry.name, entry]));
 
+  // Gate steps invoke their scripts directly (node <script>); the npm aliases
+  // stay in package.json as the human entry points.
   assert.deepEqual(byName.get('public-readiness'), {
     name: 'public-readiness',
-    command: 'npm',
-    args: ['run', 'scan:public-readiness'],
+    command: 'node',
+    args: ['scripts/public-readiness-scan.mjs', '--strict-internal'],
     tier: 'public-readiness',
     owner: 'public-readiness',
     consumer: 'pr-gate',
@@ -118,9 +120,9 @@ test('release gate inventory keeps public-readiness and package checks', async (
     note: 'Public-readiness or visibility hygiene; do not retire as generic cleanup.',
   });
   assert.equal(byName.get('layout')?.tier, 'core');
-  assert.deepEqual(byName.get('layout')?.args, ['run', 'check:layout']);
+  assert.deepEqual(byName.get('layout')?.args, ['scripts/check-layout.mjs']);
   assert.equal(byName.get('packages')?.tier, 'core');
-  assert.deepEqual(byName.get('packages')?.args, ['run', 'check:packages']);
+  assert.deepEqual(byName.get('packages')?.args, ['scripts/check-packages.mjs']);
 });
 
 // ── Root package.json validation ────────────────────────────────────────────

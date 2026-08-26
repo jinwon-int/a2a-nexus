@@ -95,6 +95,12 @@ export function loadReleaseGateInventory(inventoryPath = DEFAULT_INVENTORY_PATH)
     if (typeof entry.retirementCondition !== 'string' || entry.retirementCondition.length < 20) {
       fail(`${entry.name}: retirementCondition must state the retirement trigger`);
     }
+    if (
+      entry.weightMs !== undefined &&
+      (typeof entry.weightMs !== 'number' || !Number.isFinite(entry.weightMs) || entry.weightMs < 0)
+    ) {
+      fail(`${entry.name}: weightMs must be a non-negative number when present`);
+    }
   }
 
   return parsed;
