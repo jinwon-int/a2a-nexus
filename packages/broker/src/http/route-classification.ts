@@ -17,6 +17,7 @@ export const ENDPOINT_GROUPS = [
   "terminal-brief",
   "complexity",
   "wave-plan",
+  "wave-plan-dag-v2",
   "review-lineage",
   "sidecar",
   "other",
@@ -90,6 +91,7 @@ export const REQUEST_ROUTE_GROUPS = [
   "terminal-brief.closeout",
   "complexity",
   "wave-plan",
+  "wave-plan-dag-v2",
   "review-lineage",
   "sidecar",
   "other",
@@ -108,6 +110,7 @@ export function classifyEndpointGroup(method: string | undefined, pathname: stri
   if (pathname.startsWith("/terminal-brief")) return "terminal-brief";
   if (pathname.startsWith("/complexity")) return "complexity";
   if (pathname === "/wave-plans" || pathname.startsWith("/wave-plans/")) return "wave-plan";
+  if (pathname === "/wave-plan-dag-v2" || pathname.startsWith("/wave-plan-dag-v2/")) return "wave-plan-dag-v2";
   if (pathname === "/review-lineages" || pathname.startsWith("/review-lineages/")) return "review-lineage";
   if (method === "GET" && pathname === "/workers") return "workers.list";
   if (method === "GET" && pathname === "/workers/capacity") return "workers.capacity";
@@ -148,6 +151,7 @@ export function classifyRequestRoute(method: string | undefined, pathname: strin
   if (pathname.startsWith("/terminal-brief")) return "terminal-brief";
   if (pathname.startsWith("/complexity")) return "complexity";
   if (pathname === "/wave-plans" || pathname.startsWith("/wave-plans/")) return "wave-plan";
+  if (pathname === "/wave-plan-dag-v2" || pathname.startsWith("/wave-plan-dag-v2/")) return "wave-plan-dag-v2";
   if (pathname === "/review-lineages" || pathname.startsWith("/review-lineages/")) return "review-lineage";
   if (method === "GET" && pathname === "/workers") return "workers.list";
   if (method === "GET" && pathname === "/workers/capacity") return "workers.capacity";

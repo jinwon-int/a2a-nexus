@@ -8,6 +8,7 @@ import type { AgentCard } from "./a2a/agent-card.js";
 import type { BoundedPoller } from "./github/bounded-poller.js";
 import type { GitHubIngestionService } from "./github/ingestion.js";
 import type { BrokerRuntimeHotLimitOptions } from "./broker-runtime-config.js";
+import type { WavePlanDagV2RecordStore } from "./wave-plan-dag-v2/record-store.js";
 import type { Alert, AlertScanResult } from "./core/alert-projection.js";
 import type { BrokerError, BrokerRetentionPolicy, InMemoryA2ABroker } from "./core/broker.js";
 import type { A2AHttpSignatureKeyRegistry } from "./core/request-security.js";
@@ -307,6 +308,17 @@ export interface BrokerServerOptions extends BrokerRuntimeHotLimitOptions {
    * `A2A_REVIEW_LINEAGE_MODE` (`off` default; `record` is observational).
    */
   reviewLineageMode?: ReviewLineageRolloutMode;
+  /**
+   * WavePlanDagV2 rehearsal-evidence rollout mode (#1800). Env:
+   * `A2A_WAVE_PLAN_DAG_V2_MODE` (`off` default; `record` lets explicit
+   * operator/hub calls append to the evidence store — nothing automatic).
+   */
+  wavePlanDagV2Mode?: "off" | "record";
+  /**
+   * Pre-built V2 record store (test seam). Requires `wavePlanDagV2Mode`
+   * `record`; when absent in record mode the broker lazily creates its own.
+   */
+  wavePlanDagV2RecordStore?: WavePlanDagV2RecordStore;
   /**
    * NCLEX evaluation receipt keyring file (JSON `{ "keys": { "<kid>": "<spki pem>" } }`).
    * Env: `A2A_NCLEX_EVALUATION_KEYRING_FILE`. Unset disables the
