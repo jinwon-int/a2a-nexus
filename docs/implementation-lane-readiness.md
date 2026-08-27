@@ -193,7 +193,7 @@ Deciding a floor from the stale 2026-07-26 matrix is prohibited.
 
 Live readback of the team1 broker (`GET /workers`, 2026-08-27): all **five
 registered workers report no `implementationCapability` profile**, and the
-reachable worker nodes (gongyung, daegyo) ship no `WORKER_IMPLEMENTATION_*`
+reachable worker nodes ship no `WORKER_IMPLEMENTATION_*`
 declarations in their canonical env files. The readiness infrastructure is
 landed; the declarations are not deployed.
 
