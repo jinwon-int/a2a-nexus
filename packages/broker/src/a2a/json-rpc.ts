@@ -5,12 +5,16 @@ import type { A2AExchangeVia, TaskListFilters, TaskRecord } from "../core/types.
 import type { AgentCard, AgentCapabilities } from "./agent-card.js";
 import { PEER_STATUS_VERBOSE_SCOPE, PeerStatusService, type PeerStatusRequest } from "./peer-status.js";
 import {
+  a2aStatusTimestamp,
   compareByA2AStatusTimestampDesc,
   projectBrokerTask,
   projectBrokerTaskForList,
 } from "./task-projection.js";
 import { matchDefaultAgentConvention } from "./default-agent-conventions.js";
-import { parseSpecListTaskFilters } from "./list-tasks-spec-filters.js";
+import {
+  pageSpecTasks,
+  parseSpecListTaskFilters,
+} from "./list-tasks-spec-filters.js";
 import {
   buildTaskLineageReadProjection,
   parseTaskLineageChildrenRequestV1,
@@ -349,24 +353,37 @@ export function executeA2AJsonRpc(
         }
         if (options.responseShape === "spec") {
           // Proto ListTasksResponse: tasks + nextPageToken/pageSize/totalSize
-          // are all REQUIRED. The broker serves the full result set in one
-          // page, so the token is empty and both sizes equal the result count.
-          //
-          // Spec ordering is status timestamp descending (#1912 D11). The
-          // broker's own read path sorts by createdAt, which diverges for any
-          // task that has been claimed, run, or completed, so re-sort here.
-          // Safe against truncation: neither parser sets `limit`, so listTasks()
-          // returns the full matching set and re-ordering it cannot drop rows.
-          // Scoped to the spec shape — the headerless legacy envelope keeps its
-          // established createdAt ordering.
-          const tasks = [...visible]
-            .sort(compareByA2AStatusTimestampDesc)
-            .map((task) => projectSpecTask(task, options.broker));
+          // are all REQUIRED. Spec ordering is status timestamp descending
+          // (#1912 D11); ties break on ascending task id. The spec path is
+          // always bounded (#1912 D3, #1997 slice 2): default 50, max 100,
+          // continued via the opaque scope-bound cursor in nextPageToken.
+          // Scoped to the spec shape — the headerless legacy envelope keeps
+          // its established createdAt ordering and unbounded result set.
+          let matched = visible;
+          if (specFilters?.specStatus) {
+            // Status matching happens at the projection boundary so projected
+            // subtleties are respected: a running task paused on an operator
+            // checkpoint satisfies TASK_STATE_INPUT_REQUIRED, a canceled task
+            // with a rejected approval outcome only satisfies TASK_STATE_REJECTED.
+            const wanted = specFilters.specStatus;
+            matched = matched.filter((task) => projectBrokerTask(task).status.state === wanted);
+          }
+          if (specFilters?.statusTimestampAfterMs !== undefined) {
+            // Inclusive lower bound on the projected status timestamp (spec:
+            // "greater than or equal to this value").
+            const afterMs = specFilters.statusTimestampAfterMs;
+            matched = matched.filter(
+              (task) => Date.parse(a2aStatusTimestamp(task)) >= afterMs,
+            );
+          }
+          const totalSize = matched.length;
+          const sorted = [...matched].sort(compareByA2AStatusTimestampDesc);
+          const { page, nextPageToken } = pageSpecTasks(sorted, specFilters ?? {});
           return success(id, {
-            tasks,
-            nextPageToken: "",
-            pageSize: tasks.length,
-            totalSize: tasks.length,
+            tasks: page.map((task) => projectSpecTask(task, options.broker)),
+            nextPageToken,
+            pageSize: page.length,
+            totalSize,
           });
         }
         return success(id, { tasks: visible.map(projectBrokerTaskForList) });

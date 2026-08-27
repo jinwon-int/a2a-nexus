@@ -129,7 +129,7 @@ function listIds(
 function expectInvalidParams(
   broker: InMemoryA2ABroker,
   params: Record<string, unknown>,
-  messagePart: string,
+  messagePart: string | RegExp,
 ): void {
   const response = executeA2AJsonRpc(
     { jsonrpc: "2.0", id: 1, method: "ListTasks", params },
@@ -190,15 +190,19 @@ test("internal-vocabulary filter keys are not part of the spec surface", () => {
   expectInvalidParams(broker, { anythingElse: 1 }, "anythingElse");
 });
 
-test("known-but-unsupported pagination/filter params fail closed pointing at #1997 slice 2", () => {
-  const broker = brokerWithTasks([task("a"), task("b")]);
+test("pagination params are honored as of #1997 slice 2 (fail-closed only on invalid values)", () => {
+  const broker = brokerWithTasks(Array.from({ length: 30 }, (_, index) => task(`bulk-${index}`)));
 
-  expectInvalidParams(broker, { pageSize: 5 }, "#1997");
-  expectInvalidParams(broker, { page_token: 5 }, "#1997");
-  expectInvalidParams(broker, { statusTimestampAfter: "2026-08-21T10:00:00Z" }, "#1997");
-  // an empty token is the proto3 default and means "first page" — not a request
-  // for continuation — so it stays acceptable until real cursors land
+  // large pageSize clamps to the documented maximum instead of erroring
+  assert.equal(listIds(broker, { pageSize: 150 }).length, 30);
+  // empty pageToken is the proto default "first page"
   assert.doesNotThrow(() => listIds(broker, { pageToken: "" }));
+  // a real timestamp is accepted and filters inclusively
+  assert.doesNotThrow(() => listIds(broker, { statusTimestampAfter: "2026-08-20T00:00:00Z" }));
+  // invalid values still fail closed
+  expectInvalidParams(broker, { pageSize: 0 }, /pageSize/);
+  expectInvalidParams(broker, { pageToken: "garbage" }, /pageToken/);
+  expectInvalidParams(broker, { statusTimestampAfter: "nope" }, /statusTimestampAfter/);
 });
 
 test("historyLength is honored trivially because the projection has no per-task history", () => {
