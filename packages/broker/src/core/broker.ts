@@ -181,6 +181,18 @@ import {
 import { ConferenceRoomManager } from "./conference-room.js";
 import { WavePlanStore, type StalledWavePlan } from "./wave-plan-store.js";
 import type { WavePlan, WaveStageEvidence } from "./wave-plan.js";
+import { classifyWavePlanIntake } from "../wave-plan-dag-v2/dispatch-boundary.js";
+import {
+  admitWavePlanDagManifestV2,
+} from "../wave-plan-dag-v2/manifest.js";
+import { runWavePlanDagDryRunV2 } from "../wave-plan-dag-v2/dry-run.js";
+import {
+  createWavePlanDagV2RecordStore,
+  wavePlanDagV2ManifestAdmissionEntry,
+  wavePlanDagV2RehearsalOutcomeEntry,
+  type WavePlanDagV2RecordStore,
+  type WavePlanDagV2StoredEntry,
+} from "../wave-plan-dag-v2/record-store.js";
 import { summarizeWaveStageEvidence, type WaveLaneEvidence } from "./wave-evidence.js";
 import {
   ReviewLineageStore,
@@ -364,6 +376,18 @@ const HOT_PERSIST_FULL_RETENTION_INTERVAL_MS = 5 * 60_000;
 const DEFAULT_CHECKPOINT_TIMEOUT_MS = 24 * 60 * 60 * 1000;
 
 
+
+/**
+ * Admission on an isolated snapshot: the caller's object cannot be mutated by
+ * validation, and a later mutation of the caller's payload cannot retroactively
+ * change what this method stored. Mirrors the boundary classifier's isolation.
+ */
+function admitIsolated(payload: unknown) {
+  return admitWavePlanDagManifestV2(
+    payload === null || typeof payload !== "object" ? payload : structuredClone(payload),
+  );
+}
+
 export class InMemoryA2ABroker {
   private readonly exchanges = new Map<string, A2AExchangeState>();
   private readonly exchangeMessages = new Map<string, A2AExchangeMessageRecord>();
@@ -407,6 +431,11 @@ export class InMemoryA2ABroker {
   private readonly teamId?: string;
   private readonly taskReadinessMode: TaskReadinessMode;
   private readonly reviewLineageMode: ReviewLineageRolloutMode;
+  private readonly wavePlanDagV2Mode: "off" | "record";
+  /** Present in record mode once first used; absent store surfaces nothing. */
+  private wavePlanDagV2Store?: WavePlanDagV2RecordStore;
+  private wavePlanDagV2Counts = { appends: 0, duplicates: 0, rejected: 0, skipped: 0 };
+  private wavePlanDagV2LastSkipReason?: string;
   // #1799 slice 1: optional injected attempt-record store; absent ⇒ off.
   private readonly taskAttemptRecordStore?: TaskAttemptStoreSurface;
   private taskAttemptRecordCounts = { emitted: 0, replayed: 0, conflicted: 0, skipped: 0 };
@@ -455,6 +484,16 @@ export class InMemoryA2ABroker {
       throw new Error(
         `invalid reviewLineageMode '${String(this.reviewLineageMode)}' (expected off | record)`,
       );
+    }
+    this.wavePlanDagV2Mode = options.wavePlanDagV2Mode ?? "off";
+    if (this.wavePlanDagV2Mode !== "off" && this.wavePlanDagV2Mode !== "record") {
+      throw new Error(
+        `invalid wavePlanDagV2Mode '${String(this.wavePlanDagV2Mode)}' (expected off | record)`,
+      );
+    }
+    this.wavePlanDagV2Store = options.wavePlanDagV2RecordStore;
+    if (this.wavePlanDagV2Mode === "off" && options.wavePlanDagV2RecordStore !== undefined) {
+      throw new Error("wavePlanDagV2RecordStore requires wavePlanDagV2Mode 'record'");
     }
     this.policyDocument = options.policyDocument;
     this.injectedKnowledge = options.injectedKnowledge;
@@ -602,6 +641,96 @@ export class InMemoryA2ABroker {
 
   listWavePlans(): WavePlan[] {
     return this.wavePlans.list();
+  }
+
+  // --- WavePlanDagV2 rehearsal-evidence recording (#1800 slice 5) ------------
+  // Mode-gated (off default), opt-in store, and ONE write entry point. Nothing
+  // in the broker calls these methods automatically: recording happens only
+  // when an operator/hub explicitly invokes them, mirroring v1's privileged
+  // advance posture (spec §1 — recording is never authority). The boundary
+  // classifier (#1994) runs before anything is stored, so a V2-shaped payload
+  // that fails admission never reaches the store, and non-V2 payloads are
+  // passed through untouched with a counted skip.
+
+  /**
+   * Classify one intake through the version boundary; when it yields V2
+   * evidence (admission ± rehearsal), append it to the record store.
+   * Returns `undefined` untouched for off-mode/store-absent/v1-routed
+   * payloads so callers can distinguish "nothing configured" from results.
+   */
+  recordWavePlanDagV2Intake(payload: unknown, request?: unknown): WavePlanDagV2StoredEntry[] | undefined {
+    if (this.wavePlanDagV2Mode === "off") return undefined;
+    const store = (this.wavePlanDagV2Store ??= createWavePlanDagV2RecordStore());
+
+    // Boundary first: non-V2 payloads pass through untouched with a counted
+    // skip — the classifier guarantees it read nothing but `kind`.
+    const classified = classifyWavePlanIntake(payload);
+    if (classified.routesTo === "v1_wave_plan_spec") {
+      this.wavePlanDagV2Counts.skipped += 1;
+      this.wavePlanDagV2LastSkipReason = "routed_to_v1_wave_plan_spec";
+      return undefined;
+    }
+
+    // Admissions are derived ONLY from the canonical builder over an isolated
+    // snapshot so stored digests can never be caller-fabricated, then the
+    // optional request is rehearsed for its receipt. A payload that fails
+    // admission is recorded as an operator-counter skip, NOT as a store row:
+    // the store's flow-ordering contract (slice 4) requires every rehearsal
+    // record to reference an admitted manifest, and a rejected proposal has
+    // no admitted digest to reference — keying one synthetically would risk
+    // colliding with a later legitimate admission. The §5 reason and message
+    // land in wavePlanDagV2RecordDiagnostics() instead.
+    const admission = admitIsolated(payload);
+    if (!admission.ok) {
+      this.wavePlanDagV2Counts.rejected += 1;
+      this.wavePlanDagV2LastSkipReason = `manifest_rejected:${admission.reason}`;
+      return undefined;
+    }
+    const entries: WavePlanDagV2StoredEntry[] = [
+      wavePlanDagV2ManifestAdmissionEntry(admission),
+    ];
+    if (request !== undefined) {
+      const run = runWavePlanDagDryRunV2(admission, structuredClone(request));
+      entries.push(wavePlanDagV2RehearsalOutcomeEntry(run, admission.manifest.manifestDigest));
+    }
+
+    const result = store.append(entries);
+    if (!result.ok) {
+      this.wavePlanDagV2Counts.rejected += 1;
+      this.wavePlanDagV2LastSkipReason = `${result.reason}:${result.message}`;
+      return undefined;
+    }
+    this.wavePlanDagV2Counts.appends += result.committed;
+    this.wavePlanDagV2Counts.duplicates += result.skippedDuplicates;
+    return entries;
+  }
+
+  wavePlanDagV2RecordDiagnostics(): {
+    mode: "off" | "record";
+    enabled: boolean;
+    appends: number;
+    duplicates: number;
+    rejected: number;
+    skipped: number;
+    lastSkipReason?: string;
+  } {
+    return {
+      mode: this.wavePlanDagV2Mode,
+      enabled: this.wavePlanDagV2Mode === "record",
+      ...this.wavePlanDagV2Counts,
+      lastSkipReason: this.wavePlanDagV2LastSkipReason,
+    };
+  }
+
+  /** Read-only store accessors (absent surface when not enabled). */
+  listWavePlanDagV2Admissions(): Extract<WavePlanDagV2StoredEntry, { entryType: "manifest_admitted" }>[] {
+    if (this.wavePlanDagV2Mode === "off") return [];
+    return this.wavePlanDagV2Store?.admissions() ?? [];
+  }
+
+  listWavePlanDagV2Rehearsals(manifestDigest: string): WavePlanDagV2StoredEntry[] {
+    if (this.wavePlanDagV2Mode === "off") return [];
+    return this.wavePlanDagV2Store?.rehearsalsOf(manifestDigest) ?? [];
   }
 
   // --- Bounded PR review lineage telemetry (#1518 Phases 3b/10/12/14-18) ----

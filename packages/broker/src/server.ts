@@ -114,6 +114,7 @@ import { loadInjectedKnowledgeFile } from "./core/broker-knowledge-injection.js"
 import { resolveFinalizerVerdictEnforcement } from "./core/finalizer-verdict-admission.js";
 import { loadFinalizerKeyringFile } from "a2a-attestation";
 import { resolveReviewLineageRolloutMode } from "./core/review-lineage-store.js";
+import { resolveWavePlanDagV2Mode } from "./core/wave-plan-dag-v2-mode.js";
 import { normalizePersistenceBackend, normalizeSqliteLoadSource } from "./persistence-options.js";
 import {
   resolveBrokerId,
@@ -212,6 +213,7 @@ import { handleConversationRoutesIfMatched } from "./http/conversations-routes.j
 import { handleConversationRelayRoutesIfMatched } from "./http/conversation-relay-routes.js";
 import { handleComplexityOrchestrationRoutesIfMatched } from "./http/complexity-orchestration-routes.js";
 import { handleWavePlanRoutesIfMatched } from "./http/wave-plan-routes.js";
+import { handleWavePlanDagV2RoutesIfMatched } from "./http/wave-plan-dag-v2-routes.js";
 import { handleReviewLineageRoutesIfMatched } from "./http/review-lineage-routes.js";
 import { handleNclexEvaluationRoutesIfMatched } from "./http/nclex-evaluation-routes.js";
 import { NclexEvaluationReceiptStore, loadNclexEvaluationKeyringFromFile } from "a2a-nclex-evaluation";
@@ -384,6 +386,12 @@ export function createBrokerServer(options: BrokerServerOptions = {}): BrokerSer
   );
   const reviewLineageMode = resolveReviewLineageRolloutMode(
     options.reviewLineageMode ?? process.env.A2A_REVIEW_LINEAGE_MODE,
+  );
+  // WavePlanDagV2 (#1800): default-off rollout gate mirroring the review-
+  // lineage posture. Invalid values fail startup loudly; `off` keeps the
+  // whole surface absent regardless of any store option.
+  const wavePlanDagV2Mode = resolveWavePlanDagV2Mode(
+    options.wavePlanDagV2Mode ?? process.env.A2A_WAVE_PLAN_DAG_V2_MODE,
   );
   // NCLEX evaluation receipt surface (#1724): default-off; a configured
   // keyring file that is unreadable or malformed fails startup loudly.
@@ -598,6 +606,8 @@ export function createBrokerServer(options: BrokerServerOptions = {}): BrokerSer
       teamId,
       taskReadinessMode,
       reviewLineageMode,
+      wavePlanDagV2Mode,
+      wavePlanDagV2RecordStore: options.wavePlanDagV2RecordStore,
       policyDocument: brokerPolicyDocument,
       injectedKnowledge,
       finalizerVerdictEnforcement,
@@ -1356,6 +1366,26 @@ export function createBrokerServer(options: BrokerServerOptions = {}): BrokerSer
         enforceRequesterIdentity,
         requesterIdentity,
       })) {
+        return;
+      }
+
+      // WavePlanDagV2 (#1800) — independent read-only prefix, disjoint from
+      // v1 /wave-plans*. The versioned dispatch boundary (#1994) documents
+      // that v1 intake never crosses this handler and vice versa.
+      if (
+        await handleWavePlanDagV2RoutesIfMatched(
+          {
+            method: req.method,
+            path,
+            req,
+            res,
+            broker,
+            enforceRequesterIdentity,
+            requesterIdentity,
+          },
+          url,
+        )
+      ) {
         return;
       }
 

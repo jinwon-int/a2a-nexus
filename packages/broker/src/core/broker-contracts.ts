@@ -16,6 +16,7 @@ import type { WorkerCapabilityCardRepository } from "./worker-capability-card.js
 import type { BrokerSnapshot } from "./store.js";
 import type { TaskRecord, TaskStatus } from "./types.js";
 import type { ReviewLineageRolloutMode } from "./review-lineage-store.js";
+import type { WavePlanDagV2RecordStore } from "../wave-plan-dag-v2/record-store.js";
 
 // Type-only contract bundle for InMemoryA2ABroker. Keep runtime broker logic in
 // broker.ts; this module only hosts exported contracts/constants whose existing
@@ -186,6 +187,19 @@ export interface InMemoryA2ABrokerOptions {
   finalizerKeyring?: FinalizerKeyring;
   /** Optional lightweight profiling hook for broker internals. Listener errors are ignored. */
   profilingListener?: BrokerProfilingListener;
+  /**
+   * Rollout mode for the WavePlanDagV2 rehearsal-evidence store (#1800).
+   * `off` (default) keeps the entire surface absent; `record` lets the broker
+   * hold a store that explicit operator/hub calls may append to. There is no
+   * acting mode — recording is never authority (spec §1).
+   */
+  wavePlanDagV2Mode?: "off" | "record";
+  /**
+   * When `wavePlanDagV2Mode` is not `off`, the store to use. Optional even in
+   * record mode so diagnostics can distinguish mode-on/store-absent; absent
+   * store surfaces nothing (mirrors taskAttemptRecordStore).
+   */
+  wavePlanDagV2RecordStore?: WavePlanDagV2RecordStore;
   /** Optional non-core state to include in full broker snapshots. */
   snapshotExtensions?: () => Partial<BrokerSnapshot>;
 }
