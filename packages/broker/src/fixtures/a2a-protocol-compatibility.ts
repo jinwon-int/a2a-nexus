@@ -164,6 +164,19 @@ export const A2A_COMPATIBILITY_PROFILE = {
     canceled: "canceled",
   },
   /**
+   * Spec-path ListTasks filter vocabulary (#1912 D2, #1997 slice 1).
+   * Documented deviation: an explicit includeArtifacts=false is accepted but
+   * artifacts are still returned — elision is the D4 gap.
+   */
+  listTaskFilters: {
+    surface: "pinned v1.0.1 proto fields only (both ProtoJSON casings)",
+    statusMatching: "TASK_STATE_* against the projected state (checkpoint interrupts satisfy INPUT_REQUIRED)",
+    unknownKeys: "-32602 fail-closed, named in the message (#1924 precedent)",
+    pendingSlice2: ["pageSize", "pageToken", "statusTimestampAfter"],
+    historyLength: "honored trivially — projections carry no per-task history",
+    includeArtifactsFalse: "accepted; artifact elision remains the documented D4 gap",
+  },
+  /**
    * Terminal projection refinements applied on top of the base status map:
    * a canceled task whose approvalOutcome.status is "rejected" projects as
    * the spec's `rejected` terminal state instead of generic `canceled`.

@@ -10,6 +10,7 @@ import {
   projectBrokerTaskForList,
 } from "./task-projection.js";
 import { matchDefaultAgentConvention } from "./default-agent-conventions.js";
+import { parseSpecListTaskFilters } from "./list-tasks-spec-filters.js";
 import {
   buildTaskLineageReadProjection,
   parseTaskLineageChildrenRequestV1,
@@ -322,13 +323,30 @@ export function executeA2AJsonRpc(
       }
 
       case "ListTasks": {
-        const filters = parseListTaskFilters(params);
+        // The spec path (A2A-Version negotiated) gets the strict v1.0.1 filter
+        // vocabulary (#1912 D2, #1997 slice 1); the headerless legacy envelope
+        // keeps its historical internal-vocabulary parser untouched.
+        const specFilters =
+          options.responseShape === "spec" ? parseSpecListTaskFilters(params) : undefined;
+        const filters: TaskListFilters = specFilters
+          ? specFilters.exchangeId
+            ? { exchangeId: specFilters.exchangeId }
+            : {}
+          : parseListTaskFilters(params);
         if (options.enforceRequesterIdentity) {
           requireTaskListRequester(options);
         }
-        const visible = options.broker
+        let visible = options.broker
           .listTasks(filters)
           .filter((task) => canReadTaskSnapshot(options, task));
+        if (specFilters?.specStatus) {
+          // Status matching happens at the projection boundary so projected
+          // subtleties are respected: a running task paused on an operator
+          // checkpoint satisfies TASK_STATE_INPUT_REQUIRED, a canceled task
+          // with a rejected approval outcome only satisfies TASK_STATE_REJECTED.
+          const wanted = specFilters.specStatus;
+          visible = visible.filter((task) => projectBrokerTask(task).status.state === wanted);
+        }
         if (options.responseShape === "spec") {
           // Proto ListTasksResponse: tasks + nextPageToken/pageSize/totalSize
           // are all REQUIRED. The broker serves the full result set in one
@@ -337,10 +355,10 @@ export function executeA2AJsonRpc(
           // Spec ordering is status timestamp descending (#1912 D11). The
           // broker's own read path sorts by createdAt, which diverges for any
           // task that has been claimed, run, or completed, so re-sort here.
-          // Safe against truncation: parseListTaskFilters never sets `limit`,
-          // so listTasks() returns the full matching set and re-ordering it
-          // cannot drop rows. Scoped to the spec shape — the headerless legacy
-          // envelope keeps its established createdAt ordering.
+          // Safe against truncation: neither parser sets `limit`, so listTasks()
+          // returns the full matching set and re-ordering it cannot drop rows.
+          // Scoped to the spec shape — the headerless legacy envelope keeps its
+          // established createdAt ordering.
           const tasks = [...visible]
             .sort(compareByA2AStatusTimestampDesc)
             .map((task) => projectSpecTask(task, options.broker));
