@@ -168,3 +168,39 @@ Implementation provider/model readiness is broker-local. Team/private worker
 capability cards may expose it only with the existing
 `exposeProviderCapabilities` opt-in. Public capability cards always omit it,
 and validation rejects manual public exposure.
+
+## Model-tier policy: record-everywhere, pin judgment-critical lanes (Prop 2)
+
+Operator decision (#1597, 2026-08-27): **hybrid**.
+
+- **Record, everywhere.** Every implementation worker should declare the
+  `implementationCapability` profile; the declaration itself is the record.
+  Absent profiles stay ineligible for implementation lanes — that is the
+  existing fail-closed readiness rule, unchanged.
+- **Pin, only judgment-critical lanes.** Lanes whose verdict decides a public
+  or hard-to-reverse outcome (NCLEX content quorum reviewer/finalizer lanes,
+  bounded-review finalizers — the signed-receipt family) should additionally
+  carry a `requiredModelTier` floor via the scheduler implementation policy
+  above. The mechanism already exists; no dispatch code change is required.
+
+### Pin floors are decided from declared profiles, not before
+
+The floor for each pinned lane is set only after at least **two workers have
+declared profiles** in the fleet, using their `lastVerifiedAt`-fresh values.
+Deciding a floor from the stale 2026-07-26 matrix is prohibited.
+
+### Rollout prerequisite (measured 2026-08-27)
+
+Live readback of the team1 broker (`GET /workers`, 2026-08-27): all **five
+registered workers report no `implementationCapability` profile**, and the
+reachable worker nodes ship no `WORKER_IMPLEMENTATION_*`
+declarations in their canonical env files. The readiness infrastructure is
+landed; the declarations are not deployed.
+
+Therefore, until declarations are deployed:
+
+- implementation lanes stay ineligible by the existing rule (no behavior
+  change from this policy), and
+- the first deployment of `WORKER_IMPLEMENTATION_*` declarations on worker
+  nodes is a per-node env change plus worker restart — a sensitive operation
+  requiring its own operator approval, tracked in #1597.
