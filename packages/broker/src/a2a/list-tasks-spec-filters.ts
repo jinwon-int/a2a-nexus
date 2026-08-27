@@ -1,7 +1,10 @@
 import { BrokerError } from "../core/broker.js";
+import type { TaskRecord } from "../core/types.js";
+import { a2aStatusTimestamp } from "./task-projection.js";
 
 /**
- * Spec-path ListTasks filter vocabulary (#1912 D2, slice 1 of #1997).
+ * Spec-path ListTasks filter vocabulary + bounded pagination
+ * (#1912 D2+D3, slices 1–2 of #1997).
  *
  * The v1.0.1 proto defines exactly eight request fields for ListTasks
  * (`tenant`, `context_id`, `status`, `page_size`, `page_token`,
@@ -11,10 +14,16 @@ import { BrokerError } from "../core/broker.js";
  *
  *  - unknown keys reject instead of dropping silently (the audit's core
  *    complaint about the old behavior, also fixed for `tenant` in #1924);
- *  - `pageSize`, non-empty `pageToken`, and `statusTimestampAfter` are part of
- *    the bounded-pagination contract (D3) and land with its cursor slice, not
- *    before (#1997 slice 2). An empty token is the proto default "first page"
- *    and stays acceptable;
+ *  - `pageSize` defaults to 50 when unspecified and clamps to the documented
+ *    maximum of 100: the server may return fewer than requested, never more
+ *    than the maximum. Values below the minimum of 1 (0, negatives,
+ *    non-integers, non-numbers) reject;
+ *  - `pageToken` is an opaque, checksummed cursor bound to the exact filter
+ *    scope it was issued under. Forged, tampered, stale, or scope-mismatched
+ *    tokens reject with -32602. An empty token is the proto default "first
+ *    page" and stays acceptable;
+ *  - `statusTimestampAfter` filters inclusively (>=) on the projected status
+ *    timestamp; a value that is not a parseable timestamp rejects;
  *  - `historyLength` caps per-task history messages. The broker's projection
  *    carries no per-task history at all, so every valid value is honored
  *    trivially and we accept it outright;
@@ -77,6 +86,18 @@ const VALID_SPEC_KEYS: ReadonlySet<string> = new Set(
   Object.values(FIELD_SOURCES).flat(),
 );
 
+export const SPEC_PAGE_SIZE_DEFAULT = 50;
+export const SPEC_PAGE_SIZE_MAX = 100;
+
+export interface DecodedListCursor {
+  /** id of the last task on the previously returned page. */
+  lastId: string;
+  /** projected status timestamp of that task (the D11 ordering key). */
+  lastStatusTimestamp: string;
+  /** fingerprint of the filter scope the cursor was issued under. */
+  scopeKey: string;
+}
+
 export interface SpecTaskListFilters {
   /** Conversation constraint (proto `context_id`) mapped onto the internal field. */
   exchangeId?: string;
@@ -85,6 +106,14 @@ export interface SpecTaskListFilters {
    * including an explicitly sent `TASK_STATE_UNSPECIFIED` (proto enum zero).
    */
   specStatus?: ProjectedSpecState;
+  /** Bounded page size (1..100, default 50) — the spec path is always paged. */
+  pageSize?: number;
+  /** Validated continuation cursor, when a non-empty pageToken was supplied. */
+  cursor?: DecodedListCursor;
+  /** Inclusive lower bound (epoch ms) on the projected status timestamp. */
+  statusTimestampAfterMs?: number;
+  /** Fingerprint of the filter scope this query (and its cursors) belongs to. */
+  scopeKey?: string;
 }
 
 interface FieldRead {
@@ -108,9 +137,88 @@ function badRequest(message: string): never {
   throw new BrokerError("bad_request", message);
 }
 
+/** Small non-cryptographic fingerprint for cursor integrity and scope binding. */
+function fnv1a32(input: string): string {
+  let hash = 0x811c9dc5;
+  for (let index = 0; index < input.length; index += 1) {
+    hash ^= input.charCodeAt(index);
+    hash = Math.imul(hash, 0x01000193);
+  }
+  return (hash >>> 0).toString(36);
+}
+
+/** Fingerprint of the filter context a cursor belongs to. */
+function scopeKeyFor(parts: {
+  contextId?: string;
+  specStatus?: string;
+  statusTimestampAfterMs?: number;
+}): string {
+  return fnv1a32(
+    JSON.stringify([
+      parts.contextId ?? null,
+      parts.specStatus ?? null,
+      parts.statusTimestampAfterMs ?? null,
+    ]),
+  );
+}
+
+export function encodeListCursor(cursor: DecodedListCursor): string {
+  const payload = JSON.stringify({
+    v: 1,
+    i: cursor.lastId,
+    t: cursor.lastStatusTimestamp,
+    f: cursor.scopeKey,
+  });
+  return `${Buffer.from(payload, "utf8").toString("base64url")}.${fnv1a32(payload)}`;
+}
+
+function decodeListCursor(token: string, expectedScopeKey: string): DecodedListCursor {
+  const reject = (): never =>
+    badRequest(
+      "ListTasks pageToken is not a valid cursor for this query: request a fresh first page (tokens are opaque, checksummed, scope-bound, and expire when their task leaves the result)",
+    );
+  const dot = token.lastIndexOf(".");
+  if (dot <= 0 || dot === token.length - 1) reject();
+  const encoded = token.slice(0, dot);
+  const checksum = token.slice(dot + 1);
+  const payload = (() => {
+    try {
+      return Buffer.from(encoded, "base64url").toString("utf8");
+    } catch {
+      return reject();
+    }
+  })();
+  // Integrity: the checksum must match the payload exactly, so a tampered or
+  // hand-crafted token fails closed before any field is interpreted.
+  if (fnv1a32(payload) !== checksum) reject();
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(payload);
+  } catch {
+    reject();
+  }
+  if (
+    typeof parsed !== "object" ||
+    parsed === null ||
+    (parsed as Record<string, unknown>).v !== 1 ||
+    typeof (parsed as Record<string, unknown>).i !== "string" ||
+    typeof (parsed as Record<string, unknown>).t !== "string" ||
+    typeof (parsed as Record<string, unknown>).f !== "string"
+  ) {
+    reject();
+  }
+  const decoded = parsed as { v: number; i: string; t: string; f: string };
+  if (decoded.f !== expectedScopeKey) {
+    badRequest(
+      "ListTasks pageToken belongs to a different query scope: cursors cannot be reused across differing filters",
+    );
+  }
+  return { lastId: decoded.i, lastStatusTimestamp: decoded.t, scopeKey: decoded.f };
+}
+
 export function parseSpecListTaskFilters(params: unknown): SpecTaskListFilters {
   if (params === undefined || params === null || params === "") {
-    return {};
+    return { pageSize: SPEC_PAGE_SIZE_DEFAULT };
   }
   if (typeof params !== "object" || Array.isArray(params)) {
     badRequest("params must be an object");
@@ -131,6 +239,7 @@ export function parseSpecListTaskFilters(params: unknown): SpecTaskListFilters {
 
   // --- status -----------------------------------------------------------------
   let specStatus: ProjectedSpecState | undefined;
+  let rawStatusValue: string | undefined;
   const status = readField(record, "status");
   if (status.present) {
     if (typeof status.value !== "string") {
@@ -148,6 +257,7 @@ export function parseSpecListTaskFilters(params: unknown): SpecTaskListFilters {
         );
       }
       specStatus = projected;
+      rawStatusValue = status.value;
     }
   }
 
@@ -161,27 +271,54 @@ export function parseSpecListTaskFilters(params: unknown): SpecTaskListFilters {
     exchangeId = contextId.value;
   }
 
-  // --- bounded pagination contract (D3) arrives with #1997 slice 2 -------------
-  const pageSize = readField(record, "pageSize");
-  if (pageSize.present) {
-    badRequest(
-      `ListTasks ${pageSize.spelling} is not yet honored: bounded pagination lands with #1997 slice 2 (#1912 D3)`,
-    );
+  // --- bounded pagination (D3) ------------------------------------------------
+  let pageSize = SPEC_PAGE_SIZE_DEFAULT;
+  const pageSizeField = readField(record, "pageSize");
+  if (pageSizeField.present) {
+    if (
+      typeof pageSizeField.value !== "number" ||
+      !Number.isInteger(pageSizeField.value) ||
+      pageSizeField.value < 1
+    ) {
+      badRequest(
+        `ListTasks ${pageSizeField.spelling} must be an integer >= 1 (the proto minimum); values above ${SPEC_PAGE_SIZE_MAX} clamp`,
+      );
+    }
+    pageSize = Math.min(pageSizeField.value, SPEC_PAGE_SIZE_MAX);
   }
 
-  const pageToken = readField(record, "pageToken");
-  if (pageToken.present) {
-    // "" never reaches here (empty string reads as unset); anything real needs cursors.
-    badRequest(
-      `non-empty ListTasks ${pageToken.spelling} is not yet honored: resync cursors land with #1997 slice 2 (#1912 D3)`,
-    );
-  }
-
+  // The scope key must be computed before decoding a token so a cursor can be
+  // bound to exactly the filters it was issued with.
+  let statusTimestampAfterMs: number | undefined;
   const statusAfter = readField(record, "statusTimestampAfter");
   if (statusAfter.present) {
-    badRequest(
-      `ListTasks ${statusAfter.spelling} is not yet honored: timestamp filtering lands with #1997 slice 2 (#1912 D2/D3 follow-up)`,
-    );
+    if (typeof statusAfter.value !== "string") {
+      badRequest(
+        `ListTasks ${statusAfter.spelling} must be an RFC 3339 timestamp string (e.g. "2026-08-21T10:00:00Z")`,
+      );
+    }
+    const parsedMs = Date.parse(statusAfter.value);
+    if (Number.isNaN(parsedMs)) {
+      badRequest(
+        `ListTasks ${statusAfter.spelling} is not a parseable timestamp: '${statusAfter.value}'`,
+      );
+    }
+    statusTimestampAfterMs = parsedMs;
+  }
+
+  const scopeKey = scopeKeyFor({
+    contextId: exchangeId,
+    specStatus: rawStatusValue,
+    statusTimestampAfterMs,
+  });
+
+  let cursor: DecodedListCursor | undefined;
+  const pageToken = readField(record, "pageToken");
+  if (pageToken.present) {
+    if (typeof pageToken.value !== "string") {
+      badRequest(`ListTasks ${pageToken.spelling} must be a string`);
+    }
+    cursor = decodeListCursor(pageToken.value, scopeKey);
   }
 
   // --- per-task history cap ---------------------------------------------------
@@ -210,5 +347,49 @@ export function parseSpecListTaskFilters(params: unknown): SpecTaskListFilters {
   return {
     ...(exchangeId ? { exchangeId } : {}),
     ...(specStatus ? { specStatus } : {}),
+    pageSize,
+    scopeKey,
+    ...(cursor ? { cursor } : {}),
+    ...(statusTimestampAfterMs !== undefined ? { statusTimestampAfterMs } : {}),
   };
+}
+
+/**
+ * Slice the sorted, fully-matched task list into the requested page and build
+ * the continuation token. Returns the page plus the next token ("" on the last
+ * page). `cursor` seek fails closed when its anchor task is no longer in the
+ * result — the client re-queries from the first page.
+ */
+export function pageSpecTasks(
+  sorted: TaskRecord[],
+  filters: SpecTaskListFilters,
+): { page: TaskRecord[]; nextPageToken: string } {
+  const pageSize = filters.pageSize ?? SPEC_PAGE_SIZE_DEFAULT;
+  let start = 0;
+  if (filters.cursor) {
+    const cursor = filters.cursor;
+    const anchor = sorted.findIndex(
+      (task) =>
+        task.id === cursor.lastId &&
+        a2aStatusTimestamp(task) === cursor.lastStatusTimestamp,
+    );
+    if (anchor === -1) {
+      badRequest(
+        "ListTasks pageToken no longer matches any task in this query's result (stale cursor): re-query from the first page",
+      );
+    }
+    start = anchor + 1;
+  }
+  const page = sorted.slice(start, start + pageSize);
+  const hasMore = start + page.length < sorted.length;
+  const last = page[page.length - 1];
+  const nextPageToken =
+    hasMore && last
+      ? encodeListCursor({
+          lastId: last.id,
+          lastStatusTimestamp: a2aStatusTimestamp(last),
+          scopeKey: filters.scopeKey ?? "",
+        })
+      : "";
+  return { page, nextPageToken };
 }

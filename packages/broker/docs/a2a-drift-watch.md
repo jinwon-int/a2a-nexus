@@ -86,7 +86,7 @@ set matches the documented profile.
 | `SendMessage` | ✅ Implemented | Yes | With `metadata.contextId` alias |
 | `SendStreamingMessage` | ✅ Implemented | Yes | Single non-batch requests only; SSE response |
 | `GetTask` | ✅ Implemented | Yes | Returns `A2ATaskProjection` |
-| `ListTasks` | ✅ Implemented | Yes | Spec path: strict v1.0.1 vocabulary, fail-closed unknown keys (#1912 D2); legacy: broker-oriented filters. Bounded pagination (D3) pending #1997 slice 2 |
+| `ListTasks` | ✅ Implemented | Yes | Spec path: strict v1.0.1 vocabulary, fail-closed unknown keys (#1912 D2); bounded pagination default 50/max 100 with scope-bound cursors (#1912 D3); legacy: broker-oriented filters, unbounded |
 | `CancelTask` | ✅ Implemented | Yes | Idempotent, fan-out |
 | `SubscribeToTask` | ✅ Implemented | Yes | Advisory + SSE URL |
 | `CreateTaskPushNotificationConfig` | ✅ Implemented | Yes | Opt-in via A2A_PUSH_NOTIFICATIONS_ENABLED |

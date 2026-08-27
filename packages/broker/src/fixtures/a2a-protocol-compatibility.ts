@@ -164,15 +164,22 @@ export const A2A_COMPATIBILITY_PROFILE = {
     canceled: "canceled",
   },
   /**
-   * Spec-path ListTasks filter vocabulary (#1912 D2, #1997 slice 1).
-   * Documented deviation: an explicit includeArtifacts=false is accepted but
-   * artifacts are still returned — elision is the D4 gap.
+   * Spec-path ListTasks filter vocabulary + bounded pagination
+   * (#1912 D2+D3, #1997 slices 1–2). Documented deviation: an explicit
+   * includeArtifacts=false is accepted but artifacts are still returned —
+   * elision is the D4 gap.
    */
   listTaskFilters: {
     surface: "pinned v1.0.1 proto fields only (both ProtoJSON casings)",
     statusMatching: "TASK_STATE_* against the projected state (checkpoint interrupts satisfy INPUT_REQUIRED)",
     unknownKeys: "-32602 fail-closed, named in the message (#1924 precedent)",
-    pendingSlice2: ["pageSize", "pageToken", "statusTimestampAfter"],
+    pagination: {
+      defaultPageSize: 50,
+      maxPageSize: 100,
+      oversizeRequests: "clamp, never exceed (server may return fewer)",
+      pageToken: "opaque checksummed cursor bound to its exact filter scope; forged/tampered/stale/scope-mismatched reject -32602",
+      statusTimestampAfter: "inclusive >= on the projected status timestamp",
+    },
     historyLength: "honored trivially — projections carry no per-task history",
     includeArtifactsFalse: "accepted; artifact elision remains the documented D4 gap",
   },
