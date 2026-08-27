@@ -165,9 +165,7 @@ export const A2A_COMPATIBILITY_PROFILE = {
   },
   /**
    * Spec-path ListTasks filter vocabulary + bounded pagination
-   * (#1912 D2+D3, #1997 slices 1–2). Documented deviation: an explicit
-   * includeArtifacts=false is accepted but artifacts are still returned —
-   * elision is the D4 gap.
+   * (#1912 D2+D3, #1997 slices 1–2; D4 artifact elision, #2002).
    */
   listTaskFilters: {
     surface: "pinned v1.0.1 proto fields only (both ProtoJSON casings)",
@@ -181,7 +179,7 @@ export const A2A_COMPATIBILITY_PROFILE = {
       statusTimestampAfter: "inclusive >= on the projected status timestamp",
     },
     historyLength: "honored trivially — projections carry no per-task history",
-    includeArtifactsFalse: "accepted; artifact elision remains the documented D4 gap",
+    includeArtifacts: "proto default false — absent or explicit false elides the artifacts key from every task (never [] or null); true always carries it (#1912 D4, #2002)",
   },
   /**
    * Terminal projection refinements applied on top of the base status map:

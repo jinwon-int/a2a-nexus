@@ -98,7 +98,6 @@ export function specTaskStateName(state: ReturnType<typeof projectBrokerTask>["s
 
 /** Proto-JSON TaskStatus ({ state: TASK_STATE_*, timestamp, message? }). */
 function specTaskStatus(task: TaskRecord): Record<string, unknown> {
-/** Proto-JSON TaskStatus ({ state: TASK_STATE_*, timestamp, message? }). */
   const projected = projectBrokerTask(task);
   return {
     state: specTaskStateName(projected.status.state),
@@ -156,14 +155,29 @@ function specTaskArtifacts(task: TaskRecord, broker: InMemoryA2ABroker): Array<R
   });
 }
 
-/** A2A 1.0 proto-JSON Task: id + top-level contextId, TASK_STATE_* status, no kind. */
-export function projectSpecTask(task: TaskRecord, broker: InMemoryA2ABroker): Record<string, unknown> {
+/**
+ * A2A 1.0 proto-JSON Task: id + top-level contextId, TASK_STATE_* status, no
+ * kind.
+ *
+ * `options.includeArtifacts` mirrors the proto `ListTasksRequest
+ * .include_artifacts` flag (#1912 D4): false — the proto default — elides the
+ * `artifacts` key entirely from the task (never `[]`, never `null`); true
+ * always carries the key. Omitted options mean the method has no such proto
+ * field (GetTask), which keeps artifacts unconditionally.
+ */
+export function projectSpecTask(
+  task: TaskRecord,
+  broker: InMemoryA2ABroker,
+  options?: { includeArtifacts?: boolean },
+): Record<string, unknown> {
   const projected = projectBrokerTask(task);
   return {
     id: projected.id,
     contextId: task.exchangeId,
     status: specTaskStatus(task),
-    artifacts: specTaskArtifacts(task, broker),
+    ...(options?.includeArtifacts === false
+      ? {}
+      : { artifacts: specTaskArtifacts(task, broker) }),
     metadata: projected.metadata,
   };
 }
@@ -380,7 +394,14 @@ export function executeA2AJsonRpc(
           const sorted = [...matched].sort(compareByA2AStatusTimestampDesc);
           const { page, nextPageToken } = pageSpecTasks(sorted, specFilters ?? {});
           return success(id, {
-            tasks: page.map((task) => projectSpecTask(task, options.broker)),
+            // includeArtifacts defaults to false on the spec path (#1912 D4):
+            // the artifacts key is elided unless the client opted in. GetTask
+            // has no such proto field and keeps artifacts unconditionally.
+            tasks: page.map((task) =>
+              projectSpecTask(task, options.broker, {
+                includeArtifacts: specFilters?.includeArtifacts === true,
+              }),
+            ),
             nextPageToken,
             pageSize: page.length,
             totalSize,

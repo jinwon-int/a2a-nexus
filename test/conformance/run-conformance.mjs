@@ -48,6 +48,7 @@ export const CHECKS = [
   'check-retrieval-approval-contract.mjs',
   'check-retrieval-source-carrier-binding.mjs',
   'check-spec-listtasks-pagination.mjs',
+  'check-spec-listtasks-artifacts.mjs',
   'check-trace-propagation.mjs',
   'check-three-component-e2e.mjs',
 ];
