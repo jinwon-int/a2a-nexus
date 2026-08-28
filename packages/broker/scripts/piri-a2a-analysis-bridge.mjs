@@ -35,6 +35,7 @@ import { tmpdir } from "node:os";
 import { basename, dirname, isAbsolute, join, relative, resolve, sep } from "node:path";
 import { piriExecutionTelemetry } from "./lib/analysis-execution-telemetry.mjs";
 import { sourceCarrierStatsFromEnv } from "./lib/source-carriers.mjs";
+import { sliceUtf8AtBoundary, truncateUtf8ToBytesSafe } from "./lib/utf8-byte-budget.mjs";
 
 const DEFAULT_TIMEOUT_SEC = 300;
 const DEFAULT_MAX_FILES = 16;
@@ -245,7 +246,7 @@ function insideRoot(root, candidate) {
 function readTextFile(path, maxBytes) {
 	const buffer = readFileSync(path);
 	const truncated = buffer.length > maxBytes;
-	const sliced = truncated ? buffer.subarray(0, maxBytes) : buffer;
+	const sliced = truncated ? sliceUtf8AtBoundary(buffer, maxBytes) : buffer;
 	const content = sliced.toString("utf8");
 	return { content, truncated, bytes: buffer.length };
 }
@@ -375,7 +376,10 @@ function normalizeEmbeddedSourceFile(item, fallbackRepo, maxFileBytes, remaining
 	const maxBytes = Math.max(0, Math.min(maxFileBytes, remainingBytes));
 	const buffer = Buffer.from(rawContent, "utf8");
 	const truncated = buffer.length > maxBytes;
-	const content = buffer.subarray(0, maxBytes).toString("utf8");
+	// #2005: byte-capped cuts must land on a UTF-8 character boundary — a raw
+	// subarray cut decodes a split multi-byte character as U+FFFD and reaches
+	// reviewers as phantom source-text corruption.
+	const content = sliceUtf8AtBoundary(buffer, maxBytes).toString("utf8");
 	return { file: { repo, path, content, truncated, bytes: buffer.length } };
 }
 
@@ -468,14 +472,7 @@ function collectSourceBundle(payload, env) {
 }
 
 function truncateUtf8ToBytes(text, maxBytes) {
-	const value = String(text || "");
-	if (Buffer.byteLength(value, "utf8") <= maxBytes) return value;
-	if (maxBytes <= 0) return "";
-	let truncated = Buffer.from(value, "utf8").subarray(0, maxBytes).toString("utf8");
-	while (Buffer.byteLength(truncated, "utf8") > maxBytes) {
-		truncated = truncated.slice(0, -1);
-	}
-	return truncated;
+	return truncateUtf8ToBytesSafe(text, maxBytes);
 }
 
 function buildPiriPrompt({ message, payload, sourceBundle, flags, model, thinking }) {

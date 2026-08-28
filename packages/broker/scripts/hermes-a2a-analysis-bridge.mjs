@@ -11,6 +11,7 @@ import {
   sourceCarrierContent,
 } from "./lib/source-carriers.mjs";
 import { payloadWithRetrievalSnapshotSourceCarriers } from "./lib/retrieval-snapshot-carriers.mjs";
+import { sliceUtf8AtBoundary, truncateUtf8ToBytesSafe } from "./lib/utf8-byte-budget.mjs";
 
 const DEFAULT_TIMEOUT_SEC = 300;
 const DEFAULT_MAX_FILES = 16;
@@ -221,7 +222,10 @@ function readTextFile(path, maxBytes) {
       if (read <= 0) break;
       offset += read;
     }
-    return { content: buffer.subarray(0, offset).toString("utf8"), truncated, bytes: size };
+    // #2005: decode only up to a UTF-8 character boundary — a raw byte cut
+    // turns a split multi-byte character into U+FFFD replacement characters.
+    const sliced = sliceUtf8AtBoundary(buffer.subarray(0, offset), maxBytes);
+    return { content: sliced.toString("utf8"), truncated, bytes: size };
   } finally {
     closeSync(fd);
   }
@@ -383,7 +387,8 @@ function boundedTextFile(repo, path, content, maxBytes) {
   return {
     repo,
     path,
-    content: buffer.subarray(0, limit).toString("utf8"),
+    // #2005: boundary-safe cut, never a mid-character byte slice
+    content: sliceUtf8AtBoundary(buffer, limit).toString("utf8"),
     truncated,
     bytes: buffer.length,
   };
@@ -1036,14 +1041,7 @@ function positiveIntegerEnv(value, fallback) {
 }
 
 function truncateUtf8ToBytes(text, maxBytes) {
-  const value = String(text || "");
-  if (Buffer.byteLength(value, "utf8") <= maxBytes) return value;
-  if (maxBytes <= 0) return "";
-  let truncated = Buffer.from(value, "utf8").subarray(0, maxBytes).toString("utf8");
-  while (Buffer.byteLength(truncated, "utf8") > maxBytes) {
-    truncated = truncated.slice(0, -1);
-  }
-  return truncated;
+  return truncateUtf8ToBytesSafe(text, maxBytes);
 }
 
 function applyHermesPromptArgBudget(prompt, env) {
