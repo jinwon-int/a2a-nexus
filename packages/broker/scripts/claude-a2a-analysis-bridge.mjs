@@ -16,6 +16,7 @@ import {
   sourceCarrierStatsFromEnv,
 } from "./lib/source-carriers.mjs";
 import { payloadWithRetrievalSnapshotSourceCarriers } from "./lib/retrieval-snapshot-carriers.mjs";
+import { truncateUtf8ToBytesSafe } from "./lib/utf8-byte-budget.mjs";
 import {
   buildClaudeRuntimeArgs,
 } from "./lib/claude-runtime-flags.mjs";
@@ -563,12 +564,7 @@ function sourcePromptSection(payload) {
 }
 
 function truncateUtf8ToBytes(text, maxBytes) {
-  const value = String(text || "");
-  if (Buffer.byteLength(value, "utf8") <= maxBytes) return value;
-  if (maxBytes <= 0) return "";
-  let truncated = Buffer.from(value, "utf8").subarray(0, maxBytes).toString("utf8");
-  while (Buffer.byteLength(truncated, "utf8") > maxBytes) truncated = truncated.slice(0, -1);
-  return truncated;
+  return truncateUtf8ToBytesSafe(text, maxBytes);
 }
 
 function applyClaudePromptBudget(prompt, env = process.env) {

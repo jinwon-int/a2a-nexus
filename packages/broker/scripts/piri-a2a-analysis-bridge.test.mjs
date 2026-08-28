@@ -97,6 +97,38 @@ test("collectSourceBundle inlines #1880 contentRef detach files from the payload
 	}
 });
 
+test("collectSourceBundle never emits U+FFFD when a detached file exceeds the byte cap (#2005)", () => {
+	const dir = mkdtempSync(join(tmpdir(), "piri-contentref-utf8-"));
+	try {
+		const splitDir = join(dir, "payload-files");
+		mkdirSync(splitDir, { recursive: true });
+		// '돼' is 3 bytes (EB 8F BC). Build content whose byte cap lands inside it.
+		const prefix = "걸어가도 "; // 13 bytes
+		const content = `${prefix}돼요. 나머지 내용`;
+		const cap = Buffer.byteLength(prefix, "utf8") + 1; // 14 — mid-character
+		writeFileSync(join(splitDir, "000-bundle.json"), content, "utf8");
+		const payloadFile = join(dir, "payload.json");
+		writeFileSync(payloadFile, JSON.stringify({ repo: "embedded" }));
+		const payload = {
+			sourceBundle: {
+				files: [
+					{ path: "bundle.json", contentRef: { path: join(splitDir, "000-bundle.json"), bytes: Buffer.byteLength(content, "utf8"), field: "content" } },
+				],
+			},
+		};
+		const bundle = __test.collectSourceBundle(payload, {
+			A2A_ANALYSIS_PAYLOAD_FILE: payloadFile,
+			A2A_PIRI_ANALYSIS_MAX_FILE_BYTES: String(cap),
+		});
+		assert.equal(bundle.files.length, 1);
+		assert.equal(bundle.files[0].truncated, true);
+		assert.ok(!bundle.files[0].content.includes("\uFFFD"), "cut must not produce replacement characters");
+		assert.equal(bundle.files[0].content, prefix);
+	} finally {
+		rmSync(dir, { recursive: true, force: true });
+	}
+});
+
 test("collectSourceBundle refuses contentRef paths outside the payload dir (#1891 fail-closed)", () => {
 	const dir = mkdtempSync(join(tmpdir(), "piri-contentref-outside-"));
 	try {
