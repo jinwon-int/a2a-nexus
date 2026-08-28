@@ -74,18 +74,18 @@ treated as a handler failure, not a verdict.
 {
   "roundId": "skills-intake-pr18-r1-20260901-0900",
   "brokerUrl": "https://<broker>",
-  "requester": { "id": "seoseo", "role": "orchestrator" },
+  "requester": { "id": "<publisher-node>", "role": "orchestrator" },
   "defaults": { "intent": "skills-intake-review" },
   "lanes": [
     {
-      "target": { "id": "nosuk", "role": "reviewer" }, // keyring-registered; != author node
+      "target": { "id": "<trusted-worker>", "role": "reviewer" }, // keyring-registered; != author node
       "intent": "skills-intake-review",
       "message": "Review fleet-skills intake PR #18 (harness-managed-skill-catalog) per skills.skill-intake-review.v1; return the verdict JSON only.",
       "payload": {
         "schema": "skills.skill-intake-review.v1",
         "rubricVersion": "2026-08-28.1",
-        "provenance": { "author_node": "gongmyoung", "intake_pr": 18,
-                        "branch": "skill-intake/gongmyoung/harness-managed-skill-catalog-claude-9436cb40cb4f",
+        "provenance": { "author_node": "<author-node>", "intake_pr": 18,
+                        "branch": "skill-intake/<author-node>/<skill-name>-claude-<tree8>",
                         "head_sha": "<sha>", "source_tree_sha256": "<sha>" },
         "machineGate": { "secret_scan": "pass", "node_facts": "pass", "dedup": "pass",
                          "structure": "pass", "codex_compat": "n/a", "claims": "pass" },
