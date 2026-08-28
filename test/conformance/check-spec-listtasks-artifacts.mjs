@@ -32,8 +32,18 @@ const parser = read(parserRel);
 
 assert.match(
   parser,
-  /includeArtifacts = artifactsField\.value;/,
-  'D4: the parser must capture the explicit boolean instead of dropping it',
+  /hasOwnProperty\.call\(record, spelling\)/,
+  'D4: the parser must key off actual own-property presence, not truthiness',
+)
+assert.match(
+  parser,
+  /Only true own-property absence means the/,
+  'D4: absent own property (proto default false) must be the only silent path',
+)
+assert.match(
+  parser,
+  /rejects whatever the client actually/,
+  'D4: explicit null/"" must reject like any other non-boolean (reviewer finding, PR #2004)',
 );
 assert.match(
   parser,
@@ -116,6 +126,15 @@ assert.match(
   /Object\.hasOwn\(entry, "artifacts"\)/,
   'tests must pin key absence structurally (Object.hasOwn), not by value comparison',
 );
+for (const casing of ["includeArtifacts", "include_artifacts"]) {
+  for (const junk of ["null", '""']) {
+    const needle = `expectInvalidParams(broker, { ${casing}: ${junk} }, "${casing}")`;
+    assert.ok(
+      vocabularyTests.includes(needle),
+      `tests must pin explicit ${casing}=${junk} rejection (-32602)`,
+    );
+  }
+}
 
 console.log('check-spec-listtasks-artifacts: ok');
 console.log('  pinned: includeArtifacts proto default false, full key elision (never []/null),');

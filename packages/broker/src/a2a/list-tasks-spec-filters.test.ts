@@ -241,6 +241,12 @@ test("includeArtifacts elides the artifacts key by default and on explicit false
 
   expectInvalidParams(broker, { includeArtifacts: "yes" }, "includeArtifacts");
   expectInvalidParams(broker, { include_artifacts: 1 }, "include_artifacts");
+  // Explicit null / empty string are own-property values the client actually
+  // sent — readField's absent-for-convenience semantics must not apply here.
+  expectInvalidParams(broker, { includeArtifacts: null }, "includeArtifacts");
+  expectInvalidParams(broker, { includeArtifacts: "" }, "includeArtifacts");
+  expectInvalidParams(broker, { include_artifacts: null }, "include_artifacts");
+  expectInvalidParams(broker, { include_artifacts: "" }, "include_artifacts");
 });
 
 test("includeArtifacts=true always carries the artifacts key", () => {

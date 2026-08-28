@@ -345,16 +345,25 @@ export function parseSpecListTaskFilters(params: unknown): SpecTaskListFilters {
   }
 
   // --- artifact inclusion (#1912 D4) ------------------------------------------
+  // An explicitly sent includeArtifacts must be a boolean — including explicit
+  // null or "" (readField treats those as absent for the other fields, but
+  // this flag's fail-closed contract rejects whatever the client actually
+  // sent, #1924/#1997 precedent). Only true own-property absence means the
+  // proto default. First declared spelling wins when both are sent.
   let includeArtifacts: boolean | undefined;
-  const artifactsField = readField(record, "includeArtifacts");
-  if (artifactsField.present) {
-    if (typeof artifactsField.value !== "boolean") {
-      badRequest(`ListTasks ${artifactsField.spelling} must be a boolean`);
+  for (const spelling of FIELD_SOURCES.includeArtifacts) {
+    if (!Object.prototype.hasOwnProperty.call(record, spelling)) {
+      continue;
+    }
+    const value = record[spelling];
+    if (typeof value !== "boolean") {
+      badRequest(`ListTasks ${spelling} must be a boolean`);
     }
     // Proto default is false: absent and explicit false both elide the
     // artifacts key from every projected task. The flag is shape-only and
     // never joins the scopeKey above — it cannot change membership.
-    includeArtifacts = artifactsField.value;
+    includeArtifacts = value;
+    break;
   }
 
   return {
