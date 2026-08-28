@@ -37,7 +37,7 @@ Dispatch manifest `lanes[].payload`:
 | Field | Type | Notes |
 |---|---|---|
 | `schema` | const `"skills.skill-intake-review.v1"` | |
-| `rubricVersion` | string | rubric id, e.g. `"2026-08-28.1"` |
+| `rubricVersion` | string | rubric id, e.g. `"2026-08-28.2"` |
 | `provenance` | object | `author_node`, `intake_pr` (number), `branch`, `head_sha`, `source_tree_sha256` |
 | `machineGate` | object | node-side gate results (secret scan, node-facts, dedup, structure lint, codex compat, claims) |
 | `skillFiles[]` | array | `{path, content}` — bounded: <=16 files, <=64KiB each (same caps as staging) |
@@ -83,7 +83,7 @@ treated as a handler failure, not a verdict.
       "message": "Review fleet-skills intake PR #18 (harness-managed-skill-catalog) per skills.skill-intake-review.v1; return the verdict JSON only.",
       "payload": {
         "schema": "skills.skill-intake-review.v1",
-        "rubricVersion": "2026-08-28.1",
+        "rubricVersion": "2026-08-28.2",
         "provenance": { "author_node": "<author-node>", "intake_pr": 18,
                         "branch": "skill-intake/<author-node>/<skill-name>-claude-<tree8>",
                         "head_sha": "<sha>", "source_tree_sha256": "<sha>" },
@@ -105,18 +105,61 @@ The worker runtime executes its local agent over the packet. The procedure:
 
 1. Read `skillFiles[]` in full. Do not fetch anything not present in the
    packet or named in `evidence` re-verification.
-2. Apply the rubric in order; record a finding per failed check:
-   - **secrets** — credential patterns, private endpoints, node-identifying
-     paths (`/home/<user>`, IPs) that should not be public;
-   - **duplication** — compare against every `inventorySnapshot[]` entry:
-     same trigger conditions + same procedure = major (propose consolidation
-     target instead);
-   - **claims** — every pinned version, exit code, HTTP status, or URL must
-     carry its own verification path; untraceable claims are major;
-   - **structure** — frontmatter standard (name == dir, description
-     20–1024), body >= 3 sections, procedure is executable as written;
-   - **utility** — would a competent operator keep this after one use?
-     Weak-utility alone caps at `revise`, never `reject`.
+2. Apply the rubric in order; record a finding per failed check. Sources:
+   the Agent Skills specification (agentskills.io/specification), the
+   official `skill-creator` authoring guide (anthropics/skills), and the
+   fleet's own gates. Rubric version: `2026-08-28.2`.
+
+   **A. Safety — Lack of Surprise** (any hit = blocker)
+   - malware, exploit code, or content aiding unauthorized access, data
+     exfiltration, or deception;
+   - the body's real intent diverges from what the description declares;
+   - credential patterns, private endpoints, node-identifying paths
+     (`/home/<user>`, IPs), or unpublished security knowledge (overlaps with
+     the machine secret/node-facts gates — re-checked by eye).
+
+   **B. Spec conformance** (frontmatter + layout; failures = major unless
+   cosmetic)
+   - `name`: 1–64 chars, lowercase alphanumerics + hyphens, no
+     leading/trailing/consecutive hyphens, **matches the directory name**;
+   - `description`: 1–1024 chars, present;
+   - optional fields used correctly: `license` (short name or bundled file),
+     `compatibility` (<=500 chars, only when environment requirements exist —
+     most skills need none), `metadata` (string→string map), `allowed-tools`
+     (space-separated);
+   - layout: `scripts/` for deterministic executable steps, `references/`
+     for docs loaded on demand, `assets/` for output resources; multi-variant
+     skills organize references per variant.
+
+   **C. Triggering quality (description is the router; failures = major)**
+   - describes BOTH what the skill does and when to use it;
+   - carries concrete trigger keywords, phrased to counter undertriggering;
+   - thin "Helps with X." descriptions are a finding.
+
+   **D. Progressive disclosure** (failures = minor→major by impact)
+   - SKILL.md ideally <500 lines; near the limit it must split into
+     `references/` with explicit read-when pointers;
+   - reference files >300 lines carry a table of contents;
+   - the body does not duplicate what a bundled script executes.
+
+   **E. Content quality** (failures = minor, patterns per `skill-creator`)
+   - imperative instructions with reasons instead of heavy-handed MUSTs;
+   - input/output examples where format matters;
+   - output templates defined when the artifact shape matters;
+   - general and transferable rather than narrowed to one past incident.
+
+   **F. Claims verifiability** (untraceable pinned claim = major)
+   - every pinned version, exit code, HTTP status, or URL carries its own
+     verification path (citation, `file:line`, `--help` proof, dated
+     verification marker).
+
+   **G. Duplication** (same trigger + same procedure vs the
+   `inventorySnapshot[]` = major)
+   - propose the consolidation target instead of rejecting silently;
+   - complementary overlap (different trigger, shared steps) = minor note.
+
+   **H. Utility** (weak alone caps at `revise`, never `reject`)
+   - would a competent operator keep this after one real use?
 3. Bias controls: single candidate (no position comparison), structure
    over verbosity, reviewer runtime differs from the authoring runtime when
    the fleet allows, every major/blocker carries re-verifiable evidence.
