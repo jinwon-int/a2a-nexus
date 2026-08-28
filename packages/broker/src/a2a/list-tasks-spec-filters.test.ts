@@ -213,21 +213,101 @@ test("historyLength is honored trivially because the projection has no per-task 
   expectInvalidParams(broker, { history_length: "many" }, "history_length");
 });
 
-test("includeArtifacts is accepted while artifact elision remains a documented D4 gap", () => {
+test("includeArtifacts elides the artifacts key by default and on explicit false (#1912 D4)", () => {
+  const broker = brokerWithTasks([task("a"), task("b")]);
+
+  const listTasks = (params: Record<string, unknown>): Array<Record<string, unknown>> => {
+    const response = executeA2AJsonRpc(
+      { jsonrpc: "2.0", id: 1, method: "ListTasks", params },
+      options(broker),
+    );
+    if ("error" in response) {
+      throw new Error(`ListTasks failed unexpectedly: ${response.error.code} ${response.error.message}`);
+    }
+    return (response.result as { tasks?: Array<Record<string, unknown>> }).tasks ?? [];
+  };
+
+  for (const params of [{}, { includeArtifacts: false }, { include_artifacts: false }]) {
+    const tasks = listTasks(params);
+    assert.equal(tasks.length, 2);
+    for (const entry of tasks) {
+      assert.equal(
+        Object.hasOwn(entry, "artifacts"),
+        false,
+        `artifacts must be elided entirely for ${JSON.stringify(params)} — never [] or null`,
+      );
+    }
+  }
+
+  expectInvalidParams(broker, { includeArtifacts: "yes" }, "includeArtifacts");
+  expectInvalidParams(broker, { include_artifacts: 1 }, "include_artifacts");
+  // Explicit null / empty string are own-property values the client actually
+  // sent — readField's absent-for-convenience semantics must not apply here.
+  expectInvalidParams(broker, { includeArtifacts: null }, "includeArtifacts");
+  expectInvalidParams(broker, { includeArtifacts: "" }, "includeArtifacts");
+  expectInvalidParams(broker, { include_artifacts: null }, "include_artifacts");
+  expectInvalidParams(broker, { include_artifacts: "" }, "include_artifacts");
+});
+
+test("includeArtifacts=true always carries the artifacts key", () => {
   const broker = brokerWithTasks([task("a")]);
 
-  const ids = listIds(broker, { includeArtifacts: false });
-  assert.deepEqual(ids, ["a"]);
-  assert.equal(listIds(broker, { includeArtifacts: true }).length, 1);
-
   const response = executeA2AJsonRpc(
-    { jsonrpc: "2.0", id: 1, method: "ListTasks", params: { include_artifacts: false } },
+    { jsonrpc: "2.0", id: 1, method: "ListTasks", params: { includeArtifacts: true } },
     options(broker),
   );
-  assert.ok(!("error" in response), "snake_case includeArtifacts should be accepted");
+  assert.ok(!("error" in response));
   const first = ((response.result as { tasks?: Array<Record<string, unknown>> }).tasks ?? [])[0];
-  assert.ok(Array.isArray(first?.artifacts), "artifacts remain present until #1912 D4 lands");
-  expectInvalidParams(broker, { includeArtifacts: "yes" }, "includeArtifacts");
+  assert.equal(Object.hasOwn(first ?? {}, "artifacts"), true, "true guarantees the key");
+  assert.ok(Array.isArray(first?.artifacts), "artifacts stay an array when included");
+});
+
+test("the artifacts flag is shape-only: paging can flip it without changing membership", () => {
+  const broker = brokerWithTasks([task("a"), task("b")]);
+
+  const firstPage = executeA2AJsonRpc(
+    { jsonrpc: "2.0", id: 1, method: "ListTasks", params: { pageSize: 1 } },
+    options(broker),
+  );
+  assert.ok(!("error" in firstPage));
+  const firstResult = firstPage.result as {
+    tasks: Array<Record<string, unknown>>;
+    nextPageToken: string;
+    totalSize: number;
+  };
+  assert.equal(Object.hasOwn(firstResult.tasks[0], "artifacts"), false);
+
+  const secondPage = executeA2AJsonRpc(
+    {
+      jsonrpc: "2.0",
+      id: 2,
+      method: "ListTasks",
+      params: { pageSize: 1, pageToken: firstResult.nextPageToken, includeArtifacts: true },
+    },
+    options(broker),
+  );
+  assert.ok(!("error" in secondPage), "flipping the flag must not invalidate the cursor scope");
+  const secondResult = secondPage.result as {
+    tasks: Array<{ id?: string } & Record<string, unknown>>;
+    totalSize: number;
+  };
+  assert.equal(secondResult.tasks.length, 1);
+  assert.equal(Object.hasOwn(secondResult.tasks[0], "artifacts"), true);
+  assert.equal(secondResult.totalSize, firstResult.totalSize, "membership metrics stay consistent");
+});
+
+test("spec GetTask keeps artifacts — it has no includeArtifacts proto field", () => {
+  const broker = brokerWithTasks([task("a")]);
+
+  const response = executeA2AJsonRpc(
+    { jsonrpc: "2.0", id: 1, method: "GetTask", params: { id: "a" } },
+    options(broker),
+  );
+  assert.ok(!("error" in response));
+  // The spec shape returns the proto-JSON Task directly as the result (the
+  // legacy envelope wraps it in { task }).
+  const taskResult = response.result as Record<string, unknown>;
+  assert.equal(Object.hasOwn(taskResult, "artifacts"), true, "GetTask is out of D4 scope");
 });
 
 test("the tenant guard still fires before spec filtering", () => {

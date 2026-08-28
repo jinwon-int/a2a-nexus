@@ -105,18 +105,18 @@ assert.match(
 );
 
 // ---------------------------------------------------------------------------
-// 5. The documented D4 deviation stays explicit until elision lands
+// 5. The D4 artifact contract moved to check-spec-listtasks-artifacts.mjs
 // ---------------------------------------------------------------------------
-assert.match(
+assert.doesNotMatch(
   parser,
-  /elision for false remains the documented D4 gap/,
-  'D4: includeArtifacts=false acceptance must keep pointing at the documented artifact-elision gap',
+  /D4 gap/,
+  'D4: the documented artifact-elision gap must be gone once elision lands (#2002)',
 );
 const doc = read(docRel);
-assert.match(
+assert.doesNotMatch(
   doc,
-  /includeArtifacts=false` is accepted but artifacts are still returned/,
-  'D4: protocol-compatibility.md must record the artifact-elision deviation',
+  /D4 gap/,
+  'D4: protocol-compatibility.md must describe implemented elision, not a deviation',
 );
 assert.match(
   doc,
@@ -180,4 +180,5 @@ assert.match(
 
 console.log('check-spec-listtasks-pagination: ok');
 console.log('  pinned: pageSize default 50 / max 100 clamp, scope-bound fail-closed cursors,');
-console.log('  projected-state status matching, legacy invariance, documented D4 deviation.');
+console.log('  projected-state status matching, legacy invariance; artifact inclusion contract');
+console.log('  (#1912 D4, #2002) is pinned by check-spec-listtasks-artifacts.mjs.');

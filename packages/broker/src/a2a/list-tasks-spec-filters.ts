@@ -27,9 +27,10 @@ import { a2aStatusTimestamp } from "./task-projection.js";
  *  - `historyLength` caps per-task history messages. The broker's projection
  *    carries no per-task history at all, so every valid value is honored
  *    trivially and we accept it outright;
- *  - `includeArtifacts` is accepted for both values, but artifact elision for
- *    `false` is still the documented D4 gap — responses keep artifacts until
- *    D4 lands (recorded in protocol-compatibility.md);
+ *  - `includeArtifacts` defaults to false (proto: "Defaults to false to
+ *    reduce payload size"). When false — explicitly or by omission — every
+ *    projected task elides the `artifacts` key entirely (#1912 D4); when
+ *    true, the key is always present. A non-boolean value rejects;
  *  - `status` must be the normative `TASK_STATE_*` spelling. Matching happens
  *    against the **projected** state (see mapTaskState in task-projection.ts),
  *    so a running task paused on an operator checkpoint correctly satisfies
@@ -112,6 +113,14 @@ export interface SpecTaskListFilters {
   cursor?: DecodedListCursor;
   /** Inclusive lower bound (epoch ms) on the projected status timestamp. */
   statusTimestampAfterMs?: number;
+  /**
+   * Whether task projections carry `artifacts` (#1912 D4). The proto default
+   * is false: absent and explicit false both elide the `artifacts` key from
+   * every returned task — never `[]`, never `null`. Shape-only: it changes
+   * how a matching task renders, never which tasks match, so it must not
+   * join the cursor scopeKey.
+   */
+  includeArtifacts?: boolean;
   /** Fingerprint of the filter scope this query (and its cursors) belongs to. */
   scopeKey?: string;
 }
@@ -335,13 +344,26 @@ export function parseSpecListTaskFilters(params: unknown): SpecTaskListFilters {
     // history messages, which already satisfies any cap.
   }
 
-  // --- artifacts --------------------------------------------------------------
-  const includeArtifacts = readField(record, "includeArtifacts");
-  if (includeArtifacts.present) {
-    if (typeof includeArtifacts.value !== "boolean") {
-      badRequest(`ListTasks ${includeArtifacts.spelling} must be a boolean`);
+  // --- artifact inclusion (#1912 D4) ------------------------------------------
+  // An explicitly sent includeArtifacts must be a boolean — including explicit
+  // null or "" (readField treats those as absent for the other fields, but
+  // this flag's fail-closed contract rejects whatever the client actually
+  // sent, #1924/#1997 precedent). Only true own-property absence means the
+  // proto default. First declared spelling wins when both are sent.
+  let includeArtifacts: boolean | undefined;
+  for (const spelling of FIELD_SOURCES.includeArtifacts) {
+    if (!Object.prototype.hasOwnProperty.call(record, spelling)) {
+      continue;
     }
-    // Both values accepted; elision for false remains the documented D4 gap.
+    const value = record[spelling];
+    if (typeof value !== "boolean") {
+      badRequest(`ListTasks ${spelling} must be a boolean`);
+    }
+    // Proto default is false: absent and explicit false both elide the
+    // artifacts key from every projected task. The flag is shape-only and
+    // never joins the scopeKey above — it cannot change membership.
+    includeArtifacts = value;
+    break;
   }
 
   return {
@@ -349,6 +371,7 @@ export function parseSpecListTaskFilters(params: unknown): SpecTaskListFilters {
     ...(specStatus ? { specStatus } : {}),
     pageSize,
     scopeKey,
+    includeArtifacts: includeArtifacts === true,
     ...(cursor ? { cursor } : {}),
     ...(statusTimestampAfterMs !== undefined ? { statusTimestampAfterMs } : {}),
   };
