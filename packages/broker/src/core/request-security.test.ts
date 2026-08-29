@@ -110,13 +110,13 @@ test("request-security rejects roles outside the shared requester-role contract"
   const request = createRequest({
     headers: {
       "x-a2a-requester-id": "requester-a",
-      "x-a2a-requester-role": "orchestrator",
+      "x-a2a-requester-role": "stranger",
     },
   });
 
   assert.throws(
     () => extractRequesterIdentity(request),
-    /x-a2a-requester-role must be one of: hub, live-trader, researcher, analyst, operator/,
+    /x-a2a-requester-role must be one of: hub, live-trader, researcher, analyst, operator, publisher, reviewer, orchestrator/,
   );
 });
 

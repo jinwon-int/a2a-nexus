@@ -612,8 +612,8 @@ The lifecycle is drivable over HTTP:
 | `POST /wave-plans/{id}/evidence` | report current-stage evidence + apply gate | hub/operator |
 | `POST /wave-plans/{id}/advance` | stage_ready → next / completed (**privileged**) | hub/operator |
 | `POST /wave-plans/{id}/abort` | non-terminal → aborted | hub/operator |
-| `GET /wave-plans` | list plans | hub/operator/analyst/researcher/live-trader |
-| `GET /wave-plans/{id}` | one plan (status) | hub/operator/analyst/researcher/live-trader |
+| `GET /wave-plans` | list plans | hub/operator/analyst/researcher/live-trader/publisher/reviewer/orchestrator |
+| `GET /wave-plans/{id}` | one plan (status) | hub/operator/analyst/researcher/live-trader/publisher/reviewer/orchestrator |
 
 `advance` is the privileged next-stage step — the HTTP handler enforces the same
 hub/operator scope as the other mutations, and the state machine rejects an

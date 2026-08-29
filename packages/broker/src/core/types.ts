@@ -4,7 +4,10 @@ export type A2APartyRole =
   | "live-trader"
   | "researcher"
   | "analyst"
-  | "operator";
+  | "operator"
+  | "publisher"
+  | "reviewer"
+  | "orchestrator";
 
 export type A2AExchangeIntent =
   | "chat"
