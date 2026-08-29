@@ -1141,7 +1141,7 @@ function deriveActor(
     const actor = {
       id: params.actor.id,
       kind: optionalEnum(params.actor.kind, ["session", "node", "user", "service"]),
-      role: optionalEnum(params.actor.role, ["hub", "live-trader", "researcher", "analyst", "operator"]),
+      role: optionalEnum(params.actor.role, ["hub", "live-trader", "researcher", "analyst", "operator", "publisher", "reviewer", "orchestrator"]),
     };
     if (enforceRequesterIdentity) {
       if (!requesterIdentity?.id) {

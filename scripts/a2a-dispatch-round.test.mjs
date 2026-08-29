@@ -140,6 +140,9 @@ test('dispatcher consumes the broker requester-role contract without drift', () 
     'researcher',
     'analyst',
     'operator',
+    'publisher',
+    'reviewer',
+    'orchestrator',
   ]);
 });
 
@@ -156,9 +159,9 @@ test('dry-run accepts every broker requester role for requester and target', asy
 
 test('invalid requester role fails locally with the broker allowed set and no POST', async () => {
   const manifest = makeManifest('http://unused', 1);
-  manifest.requester.role = 'orchestrator';
+  manifest.requester.role = 'stranger';
   const expectedErrors = [
-    'requester.role must be one of: hub, live-trader, researcher, analyst, operator',
+    'requester.role must be one of: hub, live-trader, researcher, analyst, operator, publisher, reviewer, orchestrator',
   ];
   let fetchCalls = 0;
 
@@ -181,9 +184,9 @@ test('invalid requester role fails locally with the broker allowed set and no PO
 
 test('invalid target role fails locally with the broker allowed set and no POST', async () => {
   const manifest = makeManifest('http://unused', 1);
-  manifest.lanes[0].target.role = 'reviewer';
+  manifest.lanes[0].target.role = 'stranger';
   const expectedErrors = [
-    'lanes[0].target.role must be one of: hub, live-trader, researcher, analyst, operator',
+    'lanes[0].target.role must be one of: hub, live-trader, researcher, analyst, operator, publisher, reviewer, orchestrator',
   ];
   let fetchCalls = 0;
 
