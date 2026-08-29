@@ -84,6 +84,7 @@ treated as a handler failure, not a verdict.
       "payload": {
         "schema": "skills.skill-intake-review.v1",
         "rubricVersion": "2026-08-28.2",
+        "scope": "fleet-internal",
         "provenance": { "author_node": "<author-node>", "intake_pr": 18,
                         "branch": "skill-intake/<author-node>/<skill-name>-claude-<tree8>",
                         "head_sha": "<sha>", "source_tree_sha256": "<sha>" },
@@ -117,6 +118,13 @@ The worker runtime executes its local agent over the packet. The procedure:
    - credential patterns, private endpoints, node-identifying paths
      (`/home/<user>`, IPs), or unpublished security knowledge (overlaps with
      the machine secret/node-facts gates — re-checked by eye).
+   - **Scope qualifier (`payload.scope`, #2011 rollout):** for
+     `fleet-internal` candidates (the default for this lane — the private
+     canon exists precisely to hold fleet operational knowledge), node
+     names and fleet topology are *acceptable content*, not findings;
+     credentials, raw secrets, and exploitable detail remain blockers.
+     The `public-elevation` scope applies the full clause above (that
+     standard is reserved for skills headed to the public canon).
 
    **B. Spec conformance** (frontmatter + layout; failures = major unless
    cosmetic)
@@ -180,6 +188,13 @@ the intake PR, and the fleet-skills `a2a-receipts` workflow (ported from
 nclex) verifies it against the keyring and projects the `a2a/receipts`
 commit status on the exact head. Merge discipline: human sign-off remains a
 separate, explicit approval.
+
+## Status
+
+2026-08-29: added `payload.scope` (`fleet-internal` default,
+`public-elevation` for rare promotion-canon reviews) after the #2011
+rollout showed fleet-internal candidates being revised solely for
+containing the node roster the private canon exists to hold.
 
 ## Status
 
