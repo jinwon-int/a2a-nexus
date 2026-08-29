@@ -141,7 +141,8 @@ describe("task heartbeat", () => {
     broker.claimTask(task.id, "worker-1");
     broker.startTask(task.id, "worker-1");
 
-    const progressAt = "2026-08-07T09:00:00.000Z";
+    // Within the task lifetime (#2011 clamps pre-creation reports to createdAt).
+    const progressAt = new Date(Date.now() - 60_000).toISOString();
     const updated = broker.heartbeatTask(task.id, "worker-1", progressAt);
     assert.equal(updated.lastProgressAt, progressAt);
     assert.ok(updated.lastHeartbeatAt);
@@ -169,6 +170,23 @@ describe("task heartbeat", () => {
     const future = broker.heartbeatTask(task.id, "worker-1", futureProgressAt);
     assert.ok(future.lastProgressAt);
     assert.ok(Date.parse(future.lastProgressAt) <= Date.parse(future.lastHeartbeatAt!), "future worker time is broker-bounded");
+  });
+
+  it("heartbeatTask ignores progress reports predating the task (#2011 backstop)", () => {
+    const broker = makeBroker();
+    registerWorker(broker);
+    const task = createTask(broker);
+    broker.claimTask(task.id, "worker-1");
+    broker.startTask(task.id, "worker-1");
+
+    // The #2011 shape: a worker-side scanner absorbed a days-old file mtime
+    // (e.g. from a stray directory) and reported it as live progress. The
+    // broker must ignore it instead of marking a fresh task stale.
+    const preCreation = new Date(Date.parse(task.createdAt) - 9 * 86_400_000).toISOString();
+    const updated = broker.heartbeatTask(task.id, "worker-1", preCreation);
+
+    assert.equal(updated.lastProgressAt, undefined, "absorbed stale state must not become progress");
+    assert.ok(updated.lastHeartbeatAt, "the heartbeat itself is still recorded");
   });
 
   it("heartbeatTask rejects for unclaimed task", () => {

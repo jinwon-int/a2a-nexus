@@ -82,6 +82,37 @@ export class BrokerApiError extends Error {
 /** Ceiling for the jittered reconnect backoff (#1405). */
 export const MAX_RECONNECT_DELAY_MS = 30_000;
 
+/**
+ * Sanitize a name the same way the piri analysis bridge sanitizes session
+ * directory names (regex shared with the bridge's sanitizeName).
+ */
+export function sanitizePiriName(value: string): string {
+  return value.replace(/[^A-Za-z0-9_.-]+/g, "-").replace(/^-+|-+$/g, "");
+}
+
+/**
+ * Whether a piri work-root directory name may carry this task's progress.
+ *
+ * #2011: the previous predicate also accepted directories whose name was any
+ * substring of the raw task id (`taskId.includes(entry.name)`), so a stray
+ * one-character directory matched nearly every task id and its days-old file
+ * mtime was reported as live progress — instantly tripping the broker's stale
+ * detection and dead-lettering the task through automatic requeues.
+ * Matching is now: the exact sanitized session directory, or a directory that
+ * contains the sanitized task id (suffixed session shapes such as
+ * decision-dialectic / github variants). Generic short names can never match.
+ */
+export function piriProgressDirMatches(entryName: string, sessionDir: string, taskId: string): boolean {
+  if (entryName === sessionDir) return true;
+  const sanitizedTaskId = sanitizePiriName(taskId);
+  // A sanitized id shorter than this is too generic to substring-match safely.
+  if (sanitizedTaskId.length >= 8 && entryName.includes(sanitizedTaskId)) return true;
+  // Long ids truncate the session directory at 48 chars; suffixed shapes
+  // still carry that exact truncated prefix, which garbage cannot contain.
+  if (sessionDir.length >= 8 && entryName.includes(sessionDir)) return true;
+  return false;
+}
+
 const CONNECTION_ERROR_CODES = new Set([
   "ECONNRESET",
   "ECONNREFUSED",
@@ -447,12 +478,10 @@ export class A2ABrokerWorker {
     // piri bridge root: the handler names analysis sessions
     // `a2a-<workerId>-<taskId>-analysis` and the bridge sanitizes+truncates
     // that to 48 chars (piri-a2a-analysis-bridge sanitizeName), so the
-    // directory is reconstructible exactly. Substring checks cover other
-    // session shapes (decision-dialectic, github suffixes).
-    const sessionDir = `a2a-${this.workerId}-${taskId}-analysis`
-      .replace(/[^A-Za-z0-9_.-]+/g, "-")
-      .replace(/^-+|-+$/g, "")
-      .slice(0, 48);
+    // directory is reconstructible exactly. Suffixed session shapes
+    // (decision-dialectic, github variants) contain the sanitized task id —
+    // see piriProgressDirMatches for the #2011 matching rules.
+    const sessionDir = sanitizePiriName(`a2a-${this.workerId}-${taskId}-analysis`).slice(0, 48);
     try {
       for (const dirName of this.matchingPiriSessionDirs(piriRoot, taskId, sessionDir)) {
         consider(joinPath(piriRoot, dirName, "artifacts", "piri-progress.jsonl"));
@@ -473,7 +502,7 @@ export class A2ABrokerWorker {
     const matchingDirs: string[] = [];
     for (const entry of readdirSync(piriRoot, { withFileTypes: true })) {
       if (!entry.isDirectory()) continue;
-      if (entry.name !== sessionDir && !entry.name.includes(taskId) && !taskId.includes(entry.name)) continue;
+      if (!piriProgressDirMatches(entry.name, sessionDir, taskId)) continue;
       matchingDirs.push(entry.name);
     }
     if (this.piriSessionDirCache.size >= 64 && !this.piriSessionDirCache.has(taskId)) {

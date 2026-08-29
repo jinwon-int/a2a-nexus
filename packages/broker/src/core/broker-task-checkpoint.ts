@@ -8,7 +8,6 @@
 // heartbeat-audit throttle state stays class-owned behind two callbacks;
 // InMemoryA2ABroker keeps all three public methods as delegators.
 import { randomUUID } from "node:crypto";
-
 import { BrokerError } from "./broker-error.js";
 import { isoNow } from "./broker-helpers.js";
 import { isTerminalTaskStatus } from "./broker-status-predicates.js";
@@ -21,6 +20,14 @@ import type {
   TaskInterruptDecisionType,
   TaskRecord,
 } from "./types.js";
+
+/**
+ * #2011 backstop grace: heartbeat progress reports older than
+ * `task.createdAt` minus this window are treated as absorbed stale state
+ * (not this task's live progress) and ignored. Covers worker↔broker clock
+ * skew plus normal dispatch latency.
+ */
+export const PROGRESS_REPORT_BACKSTOP_GRACE_MS = 10 * 60_000;
 
 /** Frozen interrupt decision types (contracts/a2a/checkpoint-interrupt.md §2.2). */
 const TASK_INTERRUPT_DECISION_TYPES: readonly TaskInterruptDecisionType[] = [
@@ -184,11 +191,21 @@ export function heartbeatTask(taskId: string, workerId: string, context: TaskChe
     const reportedProgressMs = Date.parse(lastProgressAt);
     if (Number.isFinite(reportedProgressMs)) {
       const priorProgressMs = task.lastProgressAt ? Date.parse(task.lastProgressAt) : Number.NaN;
-      const boundedProgressMs = Math.min(reportedProgressMs, nowMs);
-      const monotonicProgressMs = Number.isFinite(priorProgressMs) && priorProgressMs <= nowMs
-        ? Math.max(priorProgressMs, boundedProgressMs)
-        : boundedProgressMs;
-      task.lastProgressAt = new Date(monotonicProgressMs).toISOString();
+      // #2011 backstop: a report older than the task itself (beyond a small
+      // clock-skew grace window) was absorbed from stale state rather than
+      // produced by this task's harness. Ignore it — trusting it let a
+      // days-old file mtime mark a fresh task stale and dead-letter it.
+      const createdAtMs = Date.parse(task.createdAt);
+      const backstopMs = Number.isFinite(createdAtMs)
+        ? createdAtMs - PROGRESS_REPORT_BACKSTOP_GRACE_MS
+        : Number.NEGATIVE_INFINITY;
+      if (reportedProgressMs >= backstopMs) {
+        const boundedProgressMs = Math.min(reportedProgressMs, nowMs);
+        const monotonicProgressMs = Number.isFinite(priorProgressMs) && priorProgressMs <= nowMs
+          ? Math.max(priorProgressMs, boundedProgressMs)
+          : boundedProgressMs;
+        task.lastProgressAt = new Date(monotonicProgressMs).toISOString();
+      }
     }
   }
   task.updatedAt = now;
