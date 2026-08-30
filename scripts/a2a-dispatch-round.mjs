@@ -31,6 +31,7 @@ import fs from 'node:fs';
 import { parseArgs } from 'node:util';
 
 import { A2A_REQUESTER_ROLES } from '../packages/broker/src/core/requester-role-contract.mjs';
+import { validateRetrievalManifestBlock } from '../packages/broker/src/retrieval/web-retrieval-contract.mjs';
 
 // ─── Classifications ────────────────────────────────────────────────────────
 
@@ -326,6 +327,9 @@ function validateManifest(manifest) {
   if (manifest.defaults != null && !isPlainObject(manifest.defaults)) {
     errors.push('defaults, when present, must be an object');
   }
+  if (manifest.defaults != null) {
+    errors.push(...validateRetrievalManifestBlock(manifest.defaults.retrieval, 'defaults'));
+  }
 
   const lanesInput = Array.isArray(manifest.lanes) ? manifest.lanes : null;
   if (!lanesInput || lanesInput.length === 0) {
@@ -388,6 +392,8 @@ function validateManifest(manifest) {
     const parentRoundOrder = lane.parentRoundOrder ?? defaults.parentRoundOrder ?? order;
 
     validateSourceOnlyBundle(errors, tag, payload);
+    errors.push(...validateRetrievalManifestBlock(lane.retrieval, tag));
+    const retrieval = lane.retrieval ?? defaults.retrieval;
     validateA2adOpinionLane(errors, tag, intent, payload, { terminalBrief });
     validateReviewLaneContract(errors, tag, lane, payload);
     validateGitHubPatchWriteCapability(errors, tag, payload);
@@ -414,6 +420,7 @@ function validateManifest(manifest) {
     if (taskOrigin !== undefined) normalized.taskOrigin = taskOrigin;
     if (workspace !== undefined) normalized.workspace = workspace;
     if (terminalBrief !== undefined) normalized.terminalBrief = terminalBrief;
+    if (retrieval !== undefined) normalized.retrieval = retrieval;
     lanes.push(normalized);
   });
 
@@ -438,6 +445,7 @@ function buildCreateTaskBody(manifest, lane) {
   if (lane.taskOrigin !== undefined) body.taskOrigin = lane.taskOrigin;
   if (lane.workspace !== undefined) body.workspace = lane.workspace;
   if (lane.terminalBrief !== undefined) body.terminalBrief = lane.terminalBrief;
+  if (lane.retrieval !== undefined) body.retrieval = lane.retrieval;
   return body;
 }
 
@@ -947,6 +955,7 @@ if (invokedDirectly) {
 export {
   runDispatch,
   validateManifest,
+  buildCreateTaskBody,
   dispatchLane,
   fetchTask,
   verifyRound,

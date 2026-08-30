@@ -432,6 +432,12 @@
       "class": "gate",
       "round": null,
       "note": "Tests the approval-records readiness gate and was previously unwired."
+    },
+    {
+      "file": "scripts/retrieval-manifest-contract.test.mjs",
+      "class": "gate",
+      "round": null,
+      "note": "Broker<->dispatch shared retrieval-manifest contract test for the signed web-retrieval snapshot gateway (#2017, #2019)."
     }
   ]
 }
