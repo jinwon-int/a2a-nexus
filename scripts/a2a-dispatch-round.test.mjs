@@ -9,6 +9,7 @@ import test from 'node:test';
 import {
   runDispatch,
   validateManifest,
+  buildCreateTaskBody,
   deriveLaneId,
   CLASS_CREATED,
   CLASS_ACCEPTED_UNCONFIRMED,
@@ -128,6 +129,56 @@ test('validateManifest honors explicit parentRoundOrder in lane payload', () => 
   const { lanes } = validateManifest(m);
   assert.equal(lanes[0].payload.parentRoundOrder, 9);
   assert.equal(lanes[0].payload.parentRoundTotal, 2);
+});
+
+test('validateManifest: absent retrieval blocks stay absent and produce no errors (#2017)', () => {
+  const { errors, lanes } = validateManifest(makeManifest('http://x', 2));
+  assert.equal(errors.length, 0);
+  assert.equal(lanes.every((lane) => lane.retrieval === undefined), true);
+});
+
+test('validateManifest: valid retrieval block resolves from defaults and carries to the lane (#2017)', () => {
+  const m = makeManifest('http://x', 2);
+  m.defaults.retrieval = { allowedHosts: ['docs.example.com'], maxRequests: 3, maxBytes: 50000, phases: ['thesis', 'antithesis'] };
+  const { errors, lanes } = validateManifest(m);
+  assert.deepEqual(errors, []);
+  assert.deepEqual(lanes[0].retrieval, m.defaults.retrieval);
+});
+
+test('validateManifest: lane-level retrieval overrides defaults and is validated (#2017)', () => {
+  const m = makeManifest('http://x', 1);
+  m.defaults.retrieval = { allowedHosts: ['docs.example.com'] };
+  m.lanes[0].retrieval = { allowedHosts: ['papers.example.org'], maxRequests: 2 };
+  const { errors, lanes } = validateManifest(m);
+  assert.deepEqual(errors, []);
+  assert.deepEqual(lanes[0].retrieval, { allowedHosts: ['papers.example.org'], maxRequests: 2 });
+});
+
+test('validateManifest: invalid retrieval blocks fail closed with classified errors (#2017)', () => {
+  const m = makeManifest('http://x', 1);
+  m.defaults.retrieval = { allowedHosts: ['localhost'] };
+  const defaulted = validateManifest(m);
+  assert.match(defaulted.errors.join('\n'), /defaults\.retrieval\.allowedHosts\[0\].*denied/);
+
+  const m2 = makeManifest('http://x', 1);
+  m2.lanes[0].retrieval = { allowedHosts: ['https://docs.example.com'], maxRequests: -1 };
+  const laneLevel = validateManifest(m2);
+  const joined = laneLevel.errors.join('\n');
+  assert.match(joined, /lanes\[0\]\.retrieval\.allowedHosts\[0\]/);
+  assert.match(joined, /maxRequests/);
+});
+
+test('buildCreateTaskBody includes the resolved retrieval block when present (#2017)', () => {
+  const m = makeManifest('http://x', 1);
+  m.defaults.retrieval = { allowedHosts: ['docs.example.com'] };
+  const { lanes } = validateManifest(m);
+  const body = buildCreateTaskBody(m, lanes[0]);
+  assert.deepEqual(body.retrieval, { allowedHosts: ['docs.example.com'] });
+
+  const plain = makeManifest('http://x', 1);
+  const { lanes: plainLanes } = validateManifest(plain);
+  const plainBody = buildCreateTaskBody(plain, plainLanes[0]);
+  assert.equal('retrieval' in plainBody, false);
 });
 
 // ─── runDispatch: dry-run ────────────────────────────────────────────────────
