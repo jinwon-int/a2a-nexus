@@ -2690,3 +2690,85 @@ test("host patch bridge acceptance verdict survives the handler response mapping
     rmSync(dir, { recursive: true, force: true });
   }
 });
+
+// #2023 — the handler must declare the payload carrier honestly: truncated
+// payloads stamp A2A_PAYLOAD_CARRIER_REQUIRED=<path> (bridge enforces the file
+// carrier), fully-embedded payloads stamp A2A_PAYLOAD_CARRIER=embedded so the
+// evaluator never hunts for a file that is not part of the contract.
+test("analysis prompt stamps A2A_PAYLOAD_CARRIER_REQUIRED when the payload excerpt is truncated (#2023)", () => {
+  const dir = mkdtempSync(join(tmpdir(), "a2a-carrier-required-"));
+  const bin = join(dir, "capture-bridge.mjs");
+  const capture = join(dir, "capture.json");
+  writeFileSync(bin, `#!/usr/bin/env node
+import fs from "node:fs";
+const argv = process.argv.slice(2);
+const prompt = argv[argv.indexOf("--message") + 1] || "";
+fs.writeFileSync(${JSON.stringify(capture)}, JSON.stringify({
+  payloadFile: process.env.A2A_ANALYSIS_PAYLOAD_FILE || "",
+  prompt,
+}));
+const response = { status: "done", summary: "ok", findings: [], risks: [], recommendations: [], evidenceRefs: ["#2023"] };
+process.stdout.write(JSON.stringify({ payloads: [{ text: JSON.stringify(response) }] }) + "\\n");
+`);
+  chmodSync(bin, 0o755);
+  try {
+    const result = handleTask({
+      id: "task-carrier-required",
+      intent: "analyze",
+      assignedWorkerId: "workeralpha",
+      message: "Analyze large payload",
+      payload: { mode: "analysis-only", sourceOnly: true, noLive: true, bulk: "x".repeat(40000) },
+    }, {
+      PATH: process.env.PATH,
+      A2A_EXECUTOR_MODE: "builtin",
+      A2A_OPENCLAW_ANALYSIS_ENABLED: "1",
+      A2A_OPENCLAW_ANALYSIS_BIN: bin,
+      A2A_NODE_ID: "workeralpha",
+    });
+    assert.equal(result.error, undefined);
+    const seen = JSON.parse(readFileSync(capture, "utf8"));
+    assert.match(seen.prompt, /A2A_PAYLOAD_CARRIER_REQUIRED=\S+/);
+    assert.ok(seen.prompt.includes(seen.payloadFile), "required-carrier marker must pin the absolute payload path");
+    assert.doesNotMatch(seen.prompt, /A2A_PAYLOAD_CARRIER=embedded/);
+    assert.match(seen.prompt, /fail loudly/);
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test("analysis prompt stamps A2A_PAYLOAD_CARRIER=embedded when the payload fits the excerpt (#2023)", () => {
+  const dir = mkdtempSync(join(tmpdir(), "a2a-carrier-embedded-"));
+  const bin = join(dir, "capture-bridge-embedded.mjs");
+  const capture = join(dir, "capture.json");
+  writeFileSync(bin, `#!/usr/bin/env node
+import fs from "node:fs";
+const argv = process.argv.slice(2);
+const prompt = argv[argv.indexOf("--message") + 1] || "";
+fs.writeFileSync(${JSON.stringify(capture)}, JSON.stringify({ prompt }));
+const response = { status: "done", summary: "ok", findings: [], risks: [], recommendations: [], evidenceRefs: ["#2023"] };
+process.stdout.write(JSON.stringify({ payloads: [{ text: JSON.stringify(response) }] }) + "\\n");
+`);
+  chmodSync(bin, 0o755);
+  try {
+    const result = handleTask({
+      id: "task-carrier-embedded",
+      intent: "analyze",
+      assignedWorkerId: "workeralpha",
+      message: "Analyze small payload",
+      payload: { mode: "analysis-only", sourceOnly: true, noLive: true, note: "small enough to embed fully" },
+    }, {
+      PATH: process.env.PATH,
+      A2A_EXECUTOR_MODE: "builtin",
+      A2A_OPENCLAW_ANALYSIS_ENABLED: "1",
+      A2A_OPENCLAW_ANALYSIS_BIN: bin,
+      A2A_NODE_ID: "workeralpha",
+    });
+    assert.equal(result.error, undefined);
+    const seen = JSON.parse(readFileSync(capture, "utf8"));
+    assert.match(seen.prompt, /A2A_PAYLOAD_CARRIER=embedded/);
+    assert.doesNotMatch(seen.prompt, /A2A_PAYLOAD_CARRIER_REQUIRED=/);
+    assert.doesNotMatch(seen.prompt, /Read the full payload from this exact path/);
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});

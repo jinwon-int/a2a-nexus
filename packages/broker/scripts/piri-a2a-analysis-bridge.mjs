@@ -153,6 +153,17 @@ function extractPayload(message) {
 }
 
 /**
+ * #2023: the handler stamps `A2A_PAYLOAD_CARRIER_REQUIRED=<path>` when the
+ * prompt payload excerpt is truncated and the file carrier is therefore the
+ * only complete evidence source. Absence of the marker means the excerpt is
+ * the full payload (embedded carrier) and no file is required.
+ */
+function declaredRequiredCarrierPath(message) {
+	const match = /A2A_PAYLOAD_CARRIER_REQUIRED=(\S+)/.exec(message || "");
+	return match ? safeText(match[1], "").trim() : "";
+}
+
+/**
  * Full-payload carrier preferred by the current dispatcher: the prompt only
  * embeds a bounded "Payload JSON excerpt" and the complete payload JSON lives
  * in A2A_ANALYSIS_PAYLOAD_FILE (payload_file mode, hermes bridge parity).
@@ -736,7 +747,24 @@ function main() {
 	const env = process.env;
 	let payload;
 	try {
-		payload = payloadFromStructuredEnv(env) ?? extractPayload(message);
+		const structured = payloadFromStructuredEnv(env);
+		// #2023 fail-closed: when the handler declared the file carrier REQUIRED
+		// (truncated excerpt) and it is not readable in this bridge environment,
+		// judging from the excerpt alone would silently drop evidence. Surface a
+		// classified invocation error instead of degrading quietly.
+		if (!structured) {
+			const requiredCarrier = declaredRequiredCarrierPath(message);
+			if (requiredCarrier) {
+				bridgeError({
+					code: "analysis_payload_carrier_missing",
+					stage: "payload",
+					failureShape: "blocked_infra",
+					message: `handler declared a required full-payload carrier but it is not readable in this bridge environment: ${requiredCarrier}`,
+					context: { declaredCarrierPath: requiredCarrier, envFileSet: Boolean(safeText(env.A2A_ANALYSIS_PAYLOAD_FILE, "")) },
+				});
+			}
+		}
+		payload = structured ?? extractPayload(message);
 	} catch (error) {
 		die(error.message);
 	}
@@ -967,6 +995,7 @@ if (isDirectRun) main();
 
 export const __test = Object.freeze({
 	extractPayload,
+	declaredRequiredCarrierPath,
 	payloadFromStructuredEnv,
 	collectSourceBundle,
 	buildPiriPrompt,

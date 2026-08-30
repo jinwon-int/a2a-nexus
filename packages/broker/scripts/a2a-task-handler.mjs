@@ -1263,6 +1263,12 @@ function runOpenClawAnalysisBridge(task, env = process.env) {
     : (strictJsonInstruction ? 8000 : 16000);
   // 프롬프트가 payload 파일의 절대경로를 인라인하므로 프롬프트 구성보다 먼저 만든다.
   const bridgeFiles = writeAnalysisBridgeInputFiles(task, payload, env);
+  // #2023: the handler must declare the payload carrier honestly so the bridge
+  // can fail closed when the declared carrier never reaches its environment.
+  // embeddedFull === true means the excerpt IS the full payload (no file needed);
+  // otherwise the file carrier is REQUIRED and the bridge enforces it.
+  const payloadExcerpt = jsonForPrompt(payload, promptPayloadLimit);
+  const payloadCarrierEmbedded = payloadExcerpt === JSON.stringify(payload, null, 2);
   // 브리지 실패 시 보존한 입력 디렉터리 경로 — 오류 details 에 실어 사후 진단에 쓴다.
   let retainedAnalysisBridgeDir = "";
   const prompt = [
@@ -1278,8 +1284,12 @@ function runOpenClawAnalysisBridge(task, env = process.env) {
     // 절대경로를 프롬프트에 박는다. 환경변수 이름만 주면 평가자가 Glob 으로
     // 파일을 찾아야 하는데, 그 탐색이 실패하면 "파일 0건"으로 판단하고
     // 발췌만으로 BLOCK 을 낸다(#1726). 경로를 직접 주면 바로 Read 하면 된다.
-    `Read the full payload from this exact path before judging: ${bridgeFiles.payloadFile}`,
-    "Use A2A_ANALYSIS_PAYLOAD_FILE (same path) for the full payload; the prompt payload below is an intentionally bounded excerpt to avoid model-bridge oversized-payload failures.",
+    payloadCarrierEmbedded
+      ? "A2A_PAYLOAD_CARRIER=embedded — the full payload JSON is embedded below; no external payload file is needed for this task."
+      : `A2A_PAYLOAD_CARRIER_REQUIRED=${bridgeFiles.payloadFile} — the payload excerpt below is intentionally truncated; read the full payload from this exact path (or via A2A_ANALYSIS_PAYLOAD_FILE) before judging. If the carrier is not readable in this environment, fail loudly — do not judge from the excerpt alone (#2023).`,
+    payloadCarrierEmbedded
+      ? ""
+      : "Use A2A_ANALYSIS_PAYLOAD_FILE (same path) for the full payload; the prompt payload below is an intentionally bounded excerpt to avoid model-bridge oversized-payload failures.",
     bridgeFiles.payloadSplitFiles && bridgeFiles.payloadSplitFiles.length > 0
       ? `The payload detaches ${bridgeFiles.payloadSplitFiles.length} oversized source file(s) into physical files (payload entries carry contentRef instead of inline content). Read each detached file from its exact path before judging:\n${bridgeFiles.payloadSplitFiles.map((f) => `- ${f.refPath} (${f.bytes} bytes): ${f.path}`).join("\n")}`
       : "",
@@ -1294,7 +1304,9 @@ function runOpenClawAnalysisBridge(task, env = process.env) {
     `Effective model: ${effectiveModel}${modelFromPayload ? " (from payload override)" : ""}`,
     `Effective thinking: ${effectiveThinking}${thinkingFromPayload ? " (from payload override)" : ""}`,
     `Task message:\n${safeText(task.message, "")}`,
-    `Payload JSON excerpt (${promptPayloadLimit} chars max; full payload is in A2A_ANALYSIS_PAYLOAD_FILE):\n${jsonForPrompt(payload, promptPayloadLimit)}`,
+    payloadCarrierEmbedded
+      ? `Payload JSON (full; ${payloadExcerpt.length} chars):\n${payloadExcerpt}`
+      : `Payload JSON excerpt (${promptPayloadLimit} chars max; full payload is in A2A_ANALYSIS_PAYLOAD_FILE):\n${payloadExcerpt}`,
   ].filter(Boolean).join("\n\n");
 
   const baseCommand = analysisBridgeCommand(env);
