@@ -32,7 +32,8 @@ test('hosts must be lowercase canonical bare hostnames', () => {
   const joined = errors.join('\n');
   assert.match(joined, /lowercase canonical/);
   assert.match(joined, /bare public hostname/);
-  assert.equal(errors.filter((e) => e.includes('ok.example.com')).length, 0);
+  assert.equal(errors.length, 4); // one classified error per invalid entry, none for the valid index-4 entry
+  assert.equal(errors.some((e) => /allowedHosts\[4\]/.test(e)), false);
 });
 
 test('duplicate allowlist entries are rejected', () => {
