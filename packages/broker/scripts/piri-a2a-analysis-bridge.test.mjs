@@ -770,3 +770,22 @@ test("piriExecutionTelemetry counts bounded retry reasons from progress markers 
 		rmSync(dir, { recursive: true, force: true });
 	}
 });
+
+// #2023 — carrier marker contract between the handler prompt and the bridge.
+test("declaredRequiredCarrierPath extracts the required carrier path from the prompt", () => {
+  const message = [
+    "some preamble",
+    "A2A_PAYLOAD_CARRIER_REQUIRED=/tmp/a2a-analysis-bridge-abc/payload.json — the payload excerpt below is intentionally truncated",
+    "A2A_PAYLOAD_CARRIER=embedded should not confuse the parser",
+  ].join("\n");
+  assert.equal(
+    __test.declaredRequiredCarrierPath(message),
+    "/tmp/a2a-analysis-bridge-abc/payload.json",
+  );
+});
+
+test("declaredRequiredCarrierPath returns empty when the payload is embedded (no file carrier required)", () => {
+  assert.equal(__test.declaredRequiredCarrierPath("A2A_PAYLOAD_CARRIER=embedded — full payload below"), "");
+  assert.equal(__test.declaredRequiredCarrierPath(""), "");
+  assert.equal(__test.declaredRequiredCarrierPath(undefined), "");
+});
