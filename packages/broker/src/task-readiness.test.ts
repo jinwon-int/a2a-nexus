@@ -309,10 +309,12 @@ test("POST /tasks returns an existing task before applying stricter readiness li
       headers: headers(),
       body: JSON.stringify({ ...githubPatchTask({}), id }),
     });
-    const replayBody = await replayResponse.json() as { id?: string; payload?: Record<string, unknown> };
-    assert.equal(replayResponse.status, 201);
-    assert.equal(replayBody.id, id);
-    assert.ok(replayBody.payload?.["acceptance"]);
+    const replayBody = await replayResponse.json() as { task?: { id?: string; payload?: Record<string, unknown> }; idempotentReturn?: boolean };
+    // #2010: the replay is marked instead of returning a byte-identical 201.
+    assert.equal(replayResponse.status, 200);
+    assert.equal(replayBody.idempotentReturn, true);
+    assert.equal(replayBody.task?.id, id);
+    assert.ok(replayBody.task?.payload?.["acceptance"]);
   } finally {
     await server.close();
   }

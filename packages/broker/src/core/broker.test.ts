@@ -2324,3 +2324,46 @@ test("#1786 enforce mode rejects a no-go registration; warn mode admits it", () 
   assert.equal(events.length, 1);
   assert.match(events[0].note ?? "", /no-go/);
 });
+
+test("idempotent create replay returns the existing record and records one task.create_idempotent_hit audit event (#2010)", () => {
+  const broker = new InMemoryA2ABroker(undefined, undefined, { brokerId: "broker-2010" });
+  registerWorker(broker, "worker-2010");
+
+  const fresh = createWorkerTask(broker, "replay-2010", "worker-2010");
+  const actionsFor = (taskId: string) =>
+    broker.listAuditEvents({ targetId: taskId }).map((event) => event.action);
+  // A fresh create must not be mislabeled as a replay.
+  assert.equal(actionsFor(fresh.id).includes("task.create_idempotent_hit"), false);
+
+  const replay = broker.createTask({
+    id: "replay-2010",
+    intent: "chat",
+    requester: { id: "hub-a", kind: "node", role: "hub" },
+    target: { id: "worker-2010", kind: "node", role: "analyst" },
+    assignedWorkerId: "worker-2010",
+    message: "replayed dispatch of the same id",
+  });
+  assert.deepEqual(replay, fresh);
+
+  const hits = broker
+    .listAuditEvents({ targetId: "replay-2010" })
+    .filter((event) => event.action === "task.create_idempotent_hit");
+  assert.equal(hits.length, 1);
+  assert.equal(hits[0]!.actorId, "hub-a");
+  assert.match(hits[0]!.note ?? "", /requested id replay-2010/);
+  assert.match(hits[0]!.note ?? "", /status queued/);
+
+  // Replaying again records exactly one more hit each time (no coalescing).
+  broker.createTask({
+    id: "replay-2010",
+    intent: "chat",
+    requester: { id: "hub-a", kind: "node", role: "hub" },
+    target: { id: "worker-2010", kind: "node", role: "analyst" },
+    assignedWorkerId: "worker-2010",
+    message: "second replay",
+  });
+  assert.equal(
+    broker.listAuditEvents({ targetId: "replay-2010" }).filter((event) => event.action === "task.create_idempotent_hit").length,
+    2,
+  );
+});

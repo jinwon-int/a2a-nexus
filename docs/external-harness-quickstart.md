@@ -62,6 +62,13 @@ An external harness should treat A2A work as a durable task lifecycle:
 
 Replay safety is required. A duplicate task id must return the same terminal result or a clear Block, not duplicate side effects.
 
+The dispatcher side of that contract is observable too (#2010): `POST /tasks` is
+idempotent on a client-supplied id. When the id already exists, the broker
+returns the stored record unchanged and marks the response with
+`idempotentReturn: true` (HTTP 200, versus 201 for a fresh create) plus a
+`task.create_idempotent_hit` audit event. Treat a marked response as
+"already exists" — never count it as a new create.
+
 ## 4. Terminal Brief Adapter Contract
 
 Terminal Brief delivery is harness-neutral. An external harness can provide an adapter process that accepts one Terminal Brief envelope on stdin and returns one JSON receipt decision on stdout.

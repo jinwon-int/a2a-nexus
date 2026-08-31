@@ -186,6 +186,7 @@ export type AuditAction =
   | "proposal.applied"
   | "exchange.message.added"
   | "task.created"
+  | "task.create_idempotent_hit"
   | "task.lane_assigned"
   | "task.approved"
   | "task.approval_rejected"
