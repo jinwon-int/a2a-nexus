@@ -1728,7 +1728,15 @@ test("idempotent create returns existing task for same id", () => {
   assert.equal(task1, task2);
 
   const auditAfter = broker.listAuditEvents({ targetId: "dup-1" });
-  assert.equal(auditAfter.length, auditBefore.length, "no duplicate audit events");
+  // #2010: the replay records exactly one task.create_idempotent_hit and
+  // nothing else — the same id never produces a second task.created.
+  assert.equal(auditAfter.length, auditBefore.length + 1, "exactly one replay audit event");
+  assert.equal(
+    auditAfter.filter((event) => event.action === "task.created").length,
+    1,
+    "no second task.created for the same id",
+  );
+  assert.equal(auditAfter.filter((event) => event.action === "task.create_idempotent_hit").length, 1);
 });
 
 test("idempotent create does not revalidate", () => {

@@ -1767,6 +1767,14 @@ export class InMemoryA2ABroker {
     return proposalWrite.applyProposalLocally(proposalId, request, this.proposalWriteContext());
   }
 
+  /**
+   * Create a task. When the request carries an id whose task already exists,
+   * the stored record is returned unchanged (idempotent create) and a
+   * `task.create_idempotent_hit` audit event is recorded (#2010) — the
+   * returned record alone does not distinguish the replay from a fresh
+   * create. The HTTP surface additionally marks the replay response with
+   * `idempotentReturn: true` (200 vs 201).
+   */
   createTask(request: CreateTaskRequest): TaskRecord {
     const normalizedGitHubRequest = normalizeGitHubPatchTaskRequest(request);
     const brokerOfRecord = normalizeOwnershipString(normalizedGitHubRequest.brokerOfRecord) ?? this.brokerId;
@@ -1784,6 +1792,19 @@ export class InMemoryA2ABroker {
     if (normalizedRequest.id) {
       const existing = this.getTask(normalizedRequest.id);
       if (existing) {
+        // #2010: an idempotent return used to be indistinguishable from a
+        // fresh create — no flag, no audit. A fleet dispatcher replaying a
+        // fixed task id (the #2007 skills-intake incident) counted each
+        // silent return as created=1 and archived one round's result N times.
+        // Record the hit so replays are observable broker-side.
+        this.appendAuditEvent({
+          actorId: normalizedRequest.requester.id,
+          action: "task.create_idempotent_hit",
+          targetType: "task",
+          targetId: existing.id,
+          note: `idempotent create: requested id ${existing.id} returned the existing task in status ${existing.status}`,
+        });
+        this.persistState();
         return existing;
       }
     }

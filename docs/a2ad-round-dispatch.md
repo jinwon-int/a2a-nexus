@@ -337,6 +337,12 @@ makes re-running the same manifest **idempotent**: a re-dispatch that the broker
 rejects as a duplicate is confirmed via `GET /tasks/:id` and classified as
 `already-exists` rather than `failed`.
 
+`POST /tasks` idempotency is observable (#2010): when the requested id already
+exists, the broker returns the stored record unchanged, marks the response with
+`idempotentReturn: true` (HTTP 200, versus 201 for a fresh create), and records
+a `task.create_idempotent_hit` audit event. Dispatchers must count a marked
+response as `already-exists`, never as `created=1`.
+
 ## Broker request contract
 
 For each lane the CLI issues a sequential `POST /tasks` (one at a time, to avoid

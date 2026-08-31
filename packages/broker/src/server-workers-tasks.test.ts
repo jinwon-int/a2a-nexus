@@ -1960,3 +1960,53 @@ test("POST bodies over the size cap are rejected with 400 (a2a-nexus#573 item 13
     await server.close();
   }
 });
+
+test("POST /tasks marks an idempotent create replay instead of a byte-identical 201 (#2010)", async () => {
+  const server = await startTestServer({ enforceRequesterIdentity: false });
+  try {
+    await registerTestWorker(server.baseUrl, "worker-idem", "analyst");
+    const make = () => ({
+      id: "task-idempotent-2010",
+      requester: { id: "hub", kind: "node", role: "hub" },
+      target: { id: "worker-idem", kind: "node", role: "analyst" },
+      targetNodeId: "worker-idem",
+      intent: "analyze",
+      message: "idempotent replay probe",
+      taskOrigin: "api",
+    });
+
+    const first = await fetch(server.baseUrl + "/tasks", {
+      method: "POST",
+      headers: jsonHeaders(),
+      body: JSON.stringify(make()),
+    });
+    assert.equal(first.status, 201);
+    const created = await first.json() as { id?: string; status?: string };
+    assert.equal(created.id, "task-idempotent-2010");
+
+    const replay = await fetch(server.baseUrl + "/tasks", {
+      method: "POST",
+      headers: jsonHeaders(),
+      body: JSON.stringify(make()),
+    });
+    assert.equal(replay.status, 200);
+    const body = await replay.json() as {
+      task?: { id?: string };
+      idempotentReturn?: boolean;
+      durable?: boolean;
+      hint?: string;
+    };
+    assert.equal(body.task?.id, "task-idempotent-2010");
+    assert.equal(body.idempotentReturn, true);
+    // The durable-ack fields belong to the 202 accepted-unconfirmed shape only.
+    assert.equal(body.durable, undefined);
+    assert.match(body.hint ?? "", /already existed/);
+
+    const auditActions = server.runtime.broker
+      .listAuditEvents({ targetId: "task-idempotent-2010" })
+      .map((event) => event.action);
+    assert.ok(auditActions.includes("task.create_idempotent_hit"));
+  } finally {
+    await server.close();
+  }
+});

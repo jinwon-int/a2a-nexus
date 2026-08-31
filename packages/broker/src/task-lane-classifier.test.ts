@@ -248,6 +248,8 @@ test("broker records one bounded secret-safe lane audit after task.created and c
   assert.deepEqual(audits.map((event) => event.action), [
     "task.created",
     "task.lane_assigned",
+    // #2010: the replay above is now observable instead of a silent no-op.
+    "task.create_idempotent_hit",
   ]);
   const laneAudit = audits[1]!;
   assert.deepEqual(JSON.parse(laneAudit.note ?? ""), first.laneAssignment);

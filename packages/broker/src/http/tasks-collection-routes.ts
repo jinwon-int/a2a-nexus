@@ -134,6 +134,15 @@ export async function handleCreateTaskRequest(ctx: TasksCollectionRouteContext):
       brokerId: ctx.brokerId,
     });
   }
+  // #2010 idempotent-create observability: the classic create path returns an
+  // existing record as-is for a client-supplied id. Detect the replay up
+  // front — this check and createTask below run back-to-back in one
+  // synchronous block, so no other request can interleave — and mark the
+  // response so dispatchers can tell "returned existing" (200 + flag) from a
+  // fresh create (201, bare record).
+  const idempotentReplay = body.id !== undefined
+    && body.payload?.mode !== LIVE_TASK_MODE
+    && ctx.broker.getTask(body.id) !== null;
   const task = ctx.broker.createTask(body);
   // Durable-ack disambiguation (a2a-nexus#636/#638): at this point the task
   // EXISTS in the broker — a persistence-queue ack timeout must not be reported
@@ -150,13 +159,24 @@ export async function handleCreateTaskRequest(ctx: TasksCollectionRouteContext):
     ) {
       sendJson(ctx.res, 202, {
         task,
+        ...(idempotentReplay ? { idempotentReturn: true } : {}),
         durable: false,
         ackError: { code: error.code, message: error.message },
-        hint: `task ${task.id} was created; confirm with GET /tasks/${task.id} — it persists on the next successful flush`,
+        hint: idempotentReplay
+          ? `task ${task.id} already existed and was returned unchanged; confirm with GET /tasks/${task.id}`
+          : `task ${task.id} was created; confirm with GET /tasks/${task.id} — it persists on the next successful flush`,
       });
       return;
     }
     throw error;
+  }
+  if (idempotentReplay) {
+    sendJson(ctx.res, 200, {
+      task,
+      idempotentReturn: true,
+      hint: `task ${task.id} already existed; the broker returned it unchanged (idempotent create)`,
+    });
+    return;
   }
   sendJson(ctx.res, 201, task);
 }
