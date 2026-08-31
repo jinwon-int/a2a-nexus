@@ -60,6 +60,8 @@ Dispatch manifest `lanes[].payload`:
   ],
   "model": "<runtime model id>",
   "reviewer_node": "<worker node id>",
+  "review_agent": "<agent family: claude | pi | ...>",
+  "review_model": "<concrete model id, e.g. xai/grok-4.6>",
   "head_sha": "<intake PR head at dispatch time>",
   "rubric_version": "2026-08-28.1"
 }
@@ -67,6 +69,17 @@ Dispatch manifest `lanes[].payload`:
 
 A verdict without `evidence` for any major/blocker finding is malformed and
 treated as a handler failure, not a verdict.
+
+### Review provenance fields (#2027)
+
+`reviewer_node`, `review_agent`, and `review_model` are first-class verdict
+fields. The canonical handler injects all three deterministically —
+`review_agent` from the `REVIEW_AGENT_BIN` basename, `review_model` from an
+explicit `--model` in `REVIEW_AGENT_ARGS` (falling back to the agent's
+self-reported `model`). The publisher warns on stderr when a consumed verdict
+is missing any of them; a warning is never a gate failure — verdicts composed
+before the provenance handler rolled out remain valid (backward
+compatibility).
 
 ## Dispatch manifest example
 
