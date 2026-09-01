@@ -69,7 +69,7 @@
     "a2a-attestation": "0.1.0",
     "a2a-nclex-evaluation": "0.1.0",
     "a2a-policy-referee": "0.1.0",
-    "zod": "^4.3.6"
+    "zod": "^4.5.2"
   },
   "devDependencies": {
     "@types/node": "^22.20.1",
