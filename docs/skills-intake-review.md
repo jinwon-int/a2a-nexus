@@ -205,6 +205,22 @@ nclex) verifies it against the keyring and projects the `a2a/receipts`
 commit status on the exact head. Merge discipline: the keyring-verified
 receipt plus the `approve` verdict are the final approval (a2a-nexus#2030).
 
+## Conformance
+
+The contract envelope above is machine-checked by the deterministic,
+no-network conformance checker `test/conformance/check-skills-intake-review.mjs`
+(fixture: `fixtures/contract/skills-intake-review.json`, registered in the
+conformance runner and in `check-contract-fixtures.mjs`). It enforces the
+packet envelope (schema const, provenance formats, 16-file / 64KiB-per-file
+bounds, inventory row shape), the verdict schema (enums, severity floors —
+blocker forces `reject`, major forces at least `revise` — and the evidence
+mandate for major/blocker findings), author disqualification, and exact-head
+binding between `verdict.head_sha` and `packet.provenance.head_sha`. Missing
+`review_agent`/`review_model` are warnings, never gate failures (#2027
+backward compatibility), and a `rubric_version` mismatch warns without
+gating. The checker deliberately does not re-implement the review rubric:
+rubric quality is the reviewer's judgment call.
+
 ## Status
 
 2026-09-01: owner decision jinwon-int/a2a-nexus#2030 — the A2A verdict is

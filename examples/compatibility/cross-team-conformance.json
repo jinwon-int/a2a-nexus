@@ -30,7 +30,8 @@
     "fixtures/contract/completion-certificate.json",
     "fixtures/contract/retrieval-approval-contract.json",
     "fixtures/contract/retrieval-source-carrier-binding.json",
-    "fixtures/contract/terminal-evidence-state-machine.json"
+    "fixtures/contract/terminal-evidence-state-machine.json",
+    "fixtures/contract/skills-intake-review.json"
   ],
   "validationCommand": "node test/conformance/check-contract-fixtures.mjs",
   "intentionallyExcluded": [
