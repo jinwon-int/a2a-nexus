@@ -27,6 +27,7 @@ const fixtureFiles = {
   retrievalApprovalContract: 'retrieval-approval-contract.json',
   retrievalSourceCarrierBinding: 'retrieval-source-carrier-binding.json',
   skillsIntakeReview: 'skills-intake-review.json',
+  skillsIntakeRevise: 'skills-intake-revise.json',
   terminalEvidenceStateMachine: 'terminal-evidence-state-machine.json',
 };
 
