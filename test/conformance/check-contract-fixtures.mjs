@@ -26,6 +26,7 @@ const fixtureFiles = {
   completionCertificate: 'completion-certificate.json',
   retrievalApprovalContract: 'retrieval-approval-contract.json',
   retrievalSourceCarrierBinding: 'retrieval-source-carrier-binding.json',
+  skillsIntakeReview: 'skills-intake-review.json',
   terminalEvidenceStateMachine: 'terminal-evidence-state-machine.json',
 };
 
