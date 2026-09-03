@@ -231,6 +231,7 @@ import { handleTasksWorkerRouteIfMatched } from "./http/tasks-worker-routes.js";
 import { handleWorkersWriteRouteIfMatched } from "./http/workers-write-routes.js";
 import { handleTasksCollectionRouteIfMatched } from "./http/tasks-collection-routes.js";
 import { handleTaskStatsRouteIfMatched } from "./http/task-stats-routes.js";
+import { handleWorkerLatencyStatsRouteIfMatched } from "./http/worker-latency-stats-routes.js";
 import { handleGitHubRouteIfMatched } from "./http/github-routes.js";
 import { handleTasksReadRouteIfMatched } from "./http/tasks-read.js";
 import { handleA2ATerminalOutboxRouteIfMatched } from "./http/a2a-terminal-outbox-routes.js";
@@ -1654,6 +1655,19 @@ export function createBrokerServer(options: BrokerServerOptions = {}): BrokerSer
       }
 
       if (handleTaskStatsRouteIfMatched({ method: req.method, path, res, url, broker, stateStore })) {
+        return;
+      }
+
+      if (handleWorkerLatencyStatsRouteIfMatched({
+        method: req.method,
+        path,
+        res,
+        url,
+        broker,
+        stateStore,
+        enforceRequesterIdentity,
+        requesterIdentity,
+      })) {
         return;
       }
 
