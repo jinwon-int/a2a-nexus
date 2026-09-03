@@ -81,8 +81,8 @@ export interface TaskStatsResponse {
   latency: TaskLifecycleLatencyResponse;
 }
 
-const TERMINAL_STATUSES = new Set<TaskStatus>(["succeeded", "failed", "canceled"]);
-const LIFECYCLE_ACTIONS = new Set<AuditEvent["action"]>([
+export const TERMINAL_STATUSES = new Set<TaskStatus>(["succeeded", "failed", "canceled"]);
+export const LIFECYCLE_ACTIONS = new Set<AuditEvent["action"]>([
   "task.created",
   "task.claimed",
   "task.started",
@@ -90,13 +90,13 @@ const LIFECYCLE_ACTIONS = new Set<AuditEvent["action"]>([
   "task.failed",
   "task.canceled",
 ]);
-const TERMINAL_ACTION_FOR_STATUS: Partial<Record<TaskStatus, AuditEvent["action"]>> = {
+export const TERMINAL_ACTION_FOR_STATUS: Partial<Record<TaskStatus, AuditEvent["action"]>> = {
   succeeded: "task.succeeded",
   failed: "task.failed",
   canceled: "task.canceled",
 };
 
-interface IndexedLifecycleEvents {
+export interface IndexedLifecycleEvents {
   rawCountByAction: Partial<Record<AuditEvent["action"], number>>;
   timesByAction: Partial<Record<AuditEvent["action"], number[]>>;
 }
@@ -129,7 +129,7 @@ export function summarizeTaskLatency(values: Iterable<number>): TaskLatencyDistr
   };
 }
 
-function indexLifecycleEvents(auditEvents: Iterable<AuditEvent>, taskIds: ReadonlySet<string>): {
+export function indexLifecycleEvents(auditEvents: Iterable<AuditEvent>, taskIds: ReadonlySet<string>): {
   byTaskId: Map<string, IndexedLifecycleEvents>;
   invalidTimestampEvents: number;
 } {
@@ -155,7 +155,7 @@ function indexLifecycleEvents(auditEvents: Iterable<AuditEvent>, taskIds: Readon
   return { byTaskId, invalidTimestampEvents };
 }
 
-function preferredEventTime(
+export function preferredEventTime(
   row: IndexedLifecycleEvents | undefined,
   action: AuditEvent["action"],
   fallback: string | undefined,
@@ -166,7 +166,7 @@ function preferredEventTime(
   return timestampMs(fallback);
 }
 
-function latestWithin(values: readonly number[], lower: number | null, upper: number | null): number | null {
+export function latestWithin(values: readonly number[], lower: number | null, upper: number | null): number | null {
   for (let index = values.length - 1; index >= 0; index -= 1) {
     const value = values[index];
     if (value === undefined) continue;
@@ -177,7 +177,7 @@ function latestWithin(values: readonly number[], lower: number | null, upper: nu
   return null;
 }
 
-function hasTimestampSignal(
+export function hasTimestampSignal(
   row: IndexedLifecycleEvents | undefined,
   action: AuditEvent["action"],
   fallback: string | undefined,
@@ -431,4 +431,210 @@ export function aggregateTaskStats(tasks: Iterable<TaskRecord>, options: TaskSta
     byRound: { top },
     latency: aggregateTaskLifecycleLatency(selectedTasks, options.auditEvents ?? []),
   };
+}
+
+export const WORKER_LATENCY_PROFILES_SCHEMA_VERSION = "a2a.worker-latency-profiles.v1" as const;
+
+export const DEFAULT_MAX_WORKER_PROFILES = 128;
+export const MAX_FAILURE_CODES_PER_WORKER = 5;
+
+export interface WorkerLatencyProfileOptions {
+  /** Deterministic cap on emitted profiles; overflow is counted, never silent. */
+  maxWorkers?: number;
+  /** Inclusive window bounds on the task's terminal timestamp (completedAt ?? updatedAt ?? createdAt), ms epoch. */
+  window?: { sinceMs: number; untilMs: number };
+}
+
+export interface WorkerLatencyProfileSegments {
+  /** task.started → terminal completion (execution time as the broker saw it). */
+  runMs: TaskLatencyDistribution;
+  /** task.created → task.claimed (dispatch wait). */
+  queueMs: TaskLatencyDistribution;
+  /** task.created → terminal completion. */
+  totalMs: TaskLatencyDistribution;
+}
+
+export interface WorkerLatencyFailureCodeCount {
+  code: string;
+  count: number;
+}
+
+export interface WorkerLatencyProfile {
+  workerId: string;
+  terminalTasks: number;
+  /** Terminal tasks with a monotonic created→claimed→started→completed chain. */
+  completeChains: number;
+  byStatus: { succeeded: number; failed: number; canceled: number };
+  /** Deterministic top failure codes (count desc, code asc), bounded. */
+  failureCodes: { top: WorkerLatencyFailureCodeCount[] };
+  latency: WorkerLatencyProfileSegments;
+}
+
+export interface WorkerLatencyProfilesResponse {
+  schemaVersion: typeof WORKER_LATENCY_PROFILES_SCHEMA_VERSION;
+  viewMode: "read_only_advisory";
+  automaticRoutingPolicy: "none";
+  measurementPolicy: {
+    selection: "terminal tasks in the requested stats window";
+    attempt: "latest monotonic claim/start pair before terminal completion";
+    percentile: "nearest-rank";
+    consumption: "tie-break only after capability/independence/team/readiness filters";
+  };
+  coverage: {
+    workers: number;
+    truncatedWorkers: number;
+    invalidTimestampEvents: number;
+    tasksWithoutWorkerIdentity: number;
+  };
+  profiles: WorkerLatencyProfile[];
+}
+
+interface WorkerAccumulator {
+  terminalTasks: number;
+  completeChains: number;
+  byStatus: { succeeded: number; failed: number; canceled: number };
+  failureCodeCounts: Map<string, number>;
+  runSamples: number[];
+  queueSamples: number[];
+  totalSamples: number[];
+}
+
+function emptyAccumulator(): WorkerAccumulator {
+  return {
+    terminalTasks: 0,
+    completeChains: 0,
+    byStatus: { succeeded: 0, failed: 0, canceled: 0 },
+    failureCodeCounts: new Map(),
+    runSamples: [],
+    queueSamples: [],
+    totalSamples: [],
+  };
+}
+
+/** Terminal tasks only, grouped by assigned worker (falling back to target node). */
+export function workerIdentityForTask(task: TaskRecord): string | undefined {
+  return task.assignedWorkerId ?? task.targetNodeId;
+}
+
+export function aggregateWorkerLatencyProfiles(
+  tasks: Iterable<TaskRecord>,
+  auditEvents: Iterable<AuditEvent>,
+  options: WorkerLatencyProfileOptions = {},
+): WorkerLatencyProfilesResponse {
+  const maxWorkers = Math.max(1, Math.floor(options.maxWorkers ?? DEFAULT_MAX_WORKER_PROFILES));
+  const windowMs = options.window;
+  const terminalTaskRows = [...tasks]
+    .filter((task) => TERMINAL_STATUSES.has(task.status))
+    .filter((task) => {
+      if (!windowMs) return true;
+      const timestamp = workerProfileTimestampMs(task);
+      return timestamp >= windowMs.sinceMs && timestamp <= windowMs.untilMs;
+    });
+
+  const identityByTaskId = new Map<string, string>();
+  const unattributed = new Set<string>();
+  for (const task of terminalTaskRows) {
+    const workerId = workerIdentityForTask(task);
+    if (workerId === undefined || workerId === "") {
+      unattributed.add(task.id);
+      continue;
+    }
+    identityByTaskId.set(task.id, workerId);
+  }
+
+  const eventIndex = indexLifecycleEvents(auditEvents, new Set(identityByTaskId.keys()));
+  const workers = new Map<string, WorkerAccumulator>();
+
+  for (const task of terminalTaskRows) {
+    const workerId = identityByTaskId.get(task.id);
+    if (workerId === undefined) continue;
+    const acc = workers.get(workerId) ?? emptyAccumulator();
+    acc.terminalTasks += 1;
+    acc.byStatus[task.status as keyof WorkerAccumulator["byStatus"]] += 1;
+    if (task.status === "failed" && task.error?.code) {
+      acc.failureCodeCounts.set(task.error.code, (acc.failureCodeCounts.get(task.error.code) ?? 0) + 1);
+    }
+
+    const row: IndexedLifecycleEvents | undefined = eventIndex.byTaskId.get(task.id);
+    const terminalAction = TERMINAL_ACTION_FOR_STATUS[task.status];
+    const createdAt = preferredEventTime(row, "task.created", task.createdAt, "earliest");
+    const completedAt = terminalAction
+      ? preferredEventTime(row, terminalAction, task.completedAt, "latest")
+      : timestampMs(task.completedAt);
+    const claimCandidates = [...(row?.timesByAction["task.claimed"] ?? [])];
+    const claimedFallback = timestampMs(task.claimedAt);
+    if (claimedFallback !== null && !claimCandidates.includes(claimedFallback)) claimCandidates.push(claimedFallback);
+    claimCandidates.sort((left, right) => left - right);
+    const claimedAt = latestWithin(claimCandidates, createdAt, completedAt);
+    const startedAt = claimedAt === null ? null : latestWithin(row?.timesByAction["task.started"] ?? [], claimedAt, completedAt);
+
+    const chainMonotonic =
+      createdAt !== null
+      && claimedAt !== null
+      && startedAt !== null
+      && completedAt !== null
+      && createdAt <= claimedAt
+      && claimedAt <= startedAt
+      && startedAt <= completedAt;
+    if (chainMonotonic) {
+      acc.completeChains += 1;
+      acc.queueSamples.push(claimedAt - createdAt);
+      acc.runSamples.push(completedAt - startedAt);
+      acc.totalSamples.push(completedAt - createdAt);
+    }
+
+    workers.set(workerId, acc);
+  }
+
+  // Deterministic emission order: terminal volume desc, then workerId asc.
+  const ordered = [...workers.entries()].sort((left, right) => {
+    const volume = right[1].terminalTasks - left[1].terminalTasks;
+    if (volume !== 0) return volume;
+    return left[0].localeCompare(right[0]);
+  });
+  const truncatedWorkers = Math.max(0, ordered.length - maxWorkers);
+  const emitted = ordered.slice(0, maxWorkers);
+
+  const profiles: WorkerLatencyProfile[] = emitted.map(([workerId, acc]) => ({
+    workerId,
+    terminalTasks: acc.terminalTasks,
+    completeChains: acc.completeChains,
+    byStatus: { ...acc.byStatus },
+    failureCodes: {
+      top: [...acc.failureCodeCounts.entries()]
+        .sort((left, right) => (right[1] - left[1]) || left[0].localeCompare(right[0]))
+        .slice(0, MAX_FAILURE_CODES_PER_WORKER)
+        .map(([code, count]) => ({ code, count })),
+    },
+    latency: {
+      runMs: summarizeTaskLatency(acc.runSamples),
+      queueMs: summarizeTaskLatency(acc.queueSamples),
+      totalMs: summarizeTaskLatency(acc.totalSamples),
+    },
+  }));
+
+  return {
+    schemaVersion: WORKER_LATENCY_PROFILES_SCHEMA_VERSION,
+    viewMode: "read_only_advisory",
+    automaticRoutingPolicy: "none",
+    measurementPolicy: {
+      selection: "terminal tasks in the requested stats window",
+      attempt: "latest monotonic claim/start pair before terminal completion",
+      percentile: "nearest-rank",
+      consumption: "tie-break only after capability/independence/team/readiness filters",
+    },
+    coverage: {
+      workers: workers.size,
+      truncatedWorkers,
+      invalidTimestampEvents: eventIndex.invalidTimestampEvents,
+      tasksWithoutWorkerIdentity: unattributed.size,
+    },
+    profiles,
+  };
+}
+
+/** Terminal-anchor timestamp for window filtering — same policy as aggregateTaskStats. */
+function workerProfileTimestampMs(task: TaskRecord): number {
+  const ms = timestampMs(task.completedAt ?? task.updatedAt ?? task.createdAt);
+  return ms ?? 0;
 }
