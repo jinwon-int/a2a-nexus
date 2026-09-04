@@ -14,6 +14,10 @@ export const ALLOWED_WORKER_MODELS = Object.freeze([
   // Current Claude Code ccc-node worker defaults.
   "claude-fable-5",
   "claude-sonnet-5",
+  // Claude Opus 5 claude-code worker lane (operator rollout 2026-09-05).
+  // Without this entry an env-pinned A2A_CLAUDE_MODEL=claude-opus-5 silently
+  // falls back to DEFAULT_WORKER_MODEL in resolveWorkerModelInputs.
+  "claude-opus-5",
   "grok-4.20",
   // M3 fleet workers run minimax-m3 via the custom:minimax provider (#673).
   "minimax-m3",
