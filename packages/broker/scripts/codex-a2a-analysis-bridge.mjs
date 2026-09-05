@@ -79,7 +79,7 @@ function normalizedModel(value) {
 
 function normalizedReasoning(value) {
   const level = safeText(value, "high").toLowerCase();
-  return ["minimal", "low", "medium", "high", "xhigh"].includes(level) ? level : "high";
+  return ["minimal", "low", "medium", "high", "xhigh", "max"].includes(level) ? level : "high";
 }
 
 function termuxChildEnv(env = process.env) {
