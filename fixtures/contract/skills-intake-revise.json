@@ -1,0 +1,86 @@
+{
+  "schemaVersion": "skills-intake-revise-conformance.v1",
+  "v0Freeze": {
+    "frozenAt": "2026-09-02T09:30:00.000Z",
+    "round": "a2a-nexus-2007-skills-intake-revise-conformance-20260902T093000Z",
+    "sourceOnly": true,
+    "noLive": true
+  },
+  "refs": {
+    "issue": "jinwon-int/a2a-nexus#2007",
+    "doc": "docs/skills-intake-revise.md",
+    "checker": "test/conformance/check-skills-intake-revise.mjs"
+  },
+  "validPacket": {
+    "schema": "skills.skill-intake-revise.v1",
+    "rubricVersion": "2026-08-28.2",
+    "scope": "fleet-internal",
+    "skillName": "check-pr-cycle",
+    "provenance": {
+      "author_node": "node-alpha",
+      "provider": "claude",
+      "intake_pr": 18,
+      "branch": "skill-intake/node-alpha/check-pr-cycle-claude-ab12cd34",
+      "head_sha": "3f2a1b9c4d5e6f70819a2b3c4d5e6f70819a2b3c",
+      "source_tree_sha256": "7c1f4e8a2b6d093e5f7a1c8b2d4e6f80917a2b3c4d5e6f708192a3b4c5d6e7f8",
+      "revise_round": 1,
+      "revise_round_limit": 2
+    },
+    "findings": [
+      {
+        "severity": "major",
+        "area": "duplication",
+        "note": "Same trigger and procedure as the approved gh-pr-flow entry; consolidate or differentiate."
+      },
+      {
+        "severity": "minor",
+        "area": "structure",
+        "note": "Rubric reference already split into references/ correctly."
+      }
+    ],
+    "skillFiles": [
+      {
+        "path": "check-pr-cycle/SKILL.md",
+        "content": "---\nname: check-pr-cycle\ndescription: Audit a GitHub PR review cycle end to end and report blockers with evidence. Use when a PR seems stuck or a review looks stale.\n---\n\n# Check PR cycle\n\n1. Fetch the PR head SHA and compare it against the last review timestamp.\n2. Report every blocker with a re-verifiable citation.\n"
+      },
+      {
+        "path": "check-pr-cycle/references/rubric.md",
+        "content": "# Review rubric\n\nSeverity floors and evidence rules live here so SKILL.md stays short.\n"
+      }
+    ],
+    "reviseResultSchema": {
+      "see": "docs/skills-intake-revise.md#result-schema"
+    },
+    "workerProcedure": "docs/skills-intake-revise.md#worker-procedure-skills-intake-reviser-draft"
+  },
+  "validResults": {
+    "revised": {
+      "outcome": "revised",
+      "skillName": "check-pr-cycle",
+      "sourceTreeSha256": "7c1f4e8a2b6d093e5f7a1c8b2d4e6f80917a2b3c4d5e6f708192a3b4c5d6e7f8",
+      "skillFiles": [
+        {
+          "path": "check-pr-cycle/SKILL.md",
+          "content": "---\nname: check-pr-cycle\ndescription: Audit a GitHub PR review cycle end to end and report blockers with evidence. Use when a PR seems stuck or a review looks stale.\n---\n\n# Check PR cycle\n\n1. Fetch the PR head SHA and compare it against the last review timestamp.\n2. Report every blocker with a re-verifiable citation.\n3. Differentiate from gh-pr-flow: this skill audits an existing cycle, it does not ship a merge.\n"
+        },
+        {
+          "path": "check-pr-cycle/references/rubric.md",
+          "content": "# Review rubric\n\nSeverity floors and evidence rules live here so SKILL.md stays short.\n"
+        }
+      ],
+      "changeSummary": "Major duplication finding addressed by adding the differentiation step against gh-pr-flow; the minor structure note needed no change.",
+      "model": "test-model-1",
+      "reviser_node": "node-alpha"
+    },
+    "drop_recommendation": {
+      "outcome": "drop_recommendation",
+      "skillName": "check-pr-cycle",
+      "sourceTreeSha256": "7c1f4e8a2b6d093e5f7a1c8b2d4e6f80917a2b3c4d5e6f708192a3b4c5d6e7f8",
+      "dropRecommendation": {
+        "reason": "Single-incident checklist with no generalizable procedure; a competent operator would not keep it after one real use (rubric area H)."
+      },
+      "model": "test-model-1",
+      "reviser_node": "node-alpha"
+    }
+  }
+}
