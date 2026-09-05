@@ -30,6 +30,8 @@ export const CHECKS = [
   'check-a2ad-review-mode.mjs',
   'check-bounded-pr-review-lifecycle.mjs',
   'check-task-attempt-failure-sharing.mjs',
+  'check-skills-intake-review.mjs',
+  'check-skills-intake-revise.mjs',
   'check-wave-plan-dag-v2.mjs',
   'check-canonical-progress-validation-matrix.mjs',
   'check-github-evidence-projection.mjs',

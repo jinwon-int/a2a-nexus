@@ -1,7 +1,8 @@
 # Skills intake review — `skills.skill-intake-review.v1`
 
-An A2A review gate for fleet-skills intake PRs, placed **before the human
-sign-off**. It ports the proven nclex content-pipeline pattern (author-
+An A2A review gate for fleet-skills intake PRs, placed as the **final
+promotion gate** (owner decision jinwon-int/a2a-nexus#2030). It ports the
+proven nclex content-pipeline pattern (author-
 disqualified trusted reviewer, signed receipts projected onto the exact head)
 to the skill distribution network. Tracker: jinwon-int/a2a-nexus#2007; audit
 context: jinwon-int/ccc-node#1347; graduation linkage:
@@ -10,11 +11,11 @@ jinwon-int/ccc-node `docs/skill-graduation.md`.
 ## Why
 
 Auto-generated skills enter fleet-skills through draft intake PRs opened by
-the publisher. Today the only gate after the node-side machine checks is a
-human. An independent A2A reviewer — a keyring-registered worker that is
-**never the authoring node** — gives every intake a structured, reproducible
-second opinion before the human spends attention, and produces evidence the
-human can re-verify.
+the publisher. After the node-side machine checks, the A2A verdict is the
+only remaining gate. An independent A2A reviewer — a keyring-registered
+worker that is **never the authoring node** — gives every intake a
+structured, reproducible review and produces signed evidence any operator
+can re-verify.
 
 ## Flow
 
@@ -24,11 +25,13 @@ node autosave (machine gates x6) -> publisher opens draft intake PR
        manifest -> trusted worker (author node excluded) -> verdict JSON
   -> receipt posted on the PR -> fleet-skills workflow verifies (keyring)
        -> commit status `a2a/receipts` projected on the exact head
-  -> human final sign-off (reviewed_by) -> merge
+  -> merge/promotion (the A2A verdict is final, #2030)
 ```
 
-The A2A PASS never replaces the human signature. There is no auto-close: a
-`reject` verdict fails the gate (closed discipline) and the human decides.
+The A2A verdict is the final gate (owner decision jinwon-int/a2a-nexus#2030,
+effective upon completion of the #2024 validation window on 2026-09-07).
+There is no auto-close: a `reject` verdict fails the gate (closed discipline)
+and escalates to the owner.
 
 ## Packet schema — `skills.skill-intake-review.v1`
 
@@ -199,10 +202,31 @@ On PASS, the publisher composes the receipt from the broker result —
 `{task_id, head_sha, lane, reviewer_node, author_node, result}` — posts it on
 the intake PR, and the fleet-skills `a2a-receipts` workflow (ported from
 nclex) verifies it against the keyring and projects the `a2a/receipts`
-commit status on the exact head. Merge discipline: human sign-off remains a
-separate, explicit approval.
+commit status on the exact head. Merge discipline: the keyring-verified
+receipt plus the `approve` verdict are the final approval (a2a-nexus#2030).
+
+## Conformance
+
+The contract envelope above is machine-checked by the deterministic,
+no-network conformance checker `test/conformance/check-skills-intake-review.mjs`
+(fixture: `fixtures/contract/skills-intake-review.json`, registered in the
+conformance runner and in `check-contract-fixtures.mjs`). It enforces the
+packet envelope (schema const, provenance formats, 16-file / 64KiB-per-file
+bounds, inventory row shape), the verdict schema (enums, severity floors —
+blocker forces `reject`, major forces at least `revise` — and the evidence
+mandate for major/blocker findings), author disqualification, and exact-head
+binding between `verdict.head_sha` and `packet.provenance.head_sha`. Missing
+`review_agent`/`review_model` are warnings, never gate failures (#2027
+backward compatibility), and a `rubric_version` mismatch warns without
+gating. The checker deliberately does not re-implement the review rubric:
+rubric quality is the reviewer's judgment call.
 
 ## Status
+
+2026-09-01: owner decision jinwon-int/a2a-nexus#2030 — the A2A verdict is
+the final promotion gate; the human `reviewed_by` sign-off is retired once
+the #2024 validation window closes (2026-09-07). Fail-closed receipts,
+author/reviewer separation, and owner escalation on `reject` are unchanged.
 
 2026-08-29: added `payload.scope` (`fleet-internal` default,
 `public-elevation` for rare promotion-canon reviews) after the #2011

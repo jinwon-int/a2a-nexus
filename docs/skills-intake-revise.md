@@ -114,6 +114,25 @@ failure — not a revision — and is consumed once without retry.
 - One revision dispatch per (intake PR, head): a failed or malformed result
   is consumed once and never automatically re-dispatched.
 
+## Conformance
+
+The contract envelope above is machine-checked by the deterministic,
+no-network conformance checker `test/conformance/check-skills-intake-revise.mjs`
+(fixture: `fixtures/contract/skills-intake-revise.json`, registered in the
+conformance runner and in `check-contract-fixtures.mjs`). It enforces the
+packet envelope (schema const, provenance incl. `provider` and
+`revise_round`/`revise_round_limit` within the documented cap of 2,
+skillFiles bounds, embedded result schema and workerProcedure pointer), the
+motivation rule (findings must include at least one major or blocker — a
+revise verdict over minor-only findings contradicts the review gate's
+severity floor), and the result contract: exclusive shapes (outcome=revised
+⇔ skillFiles + changeSummary, outcome=drop_recommendation ⇔
+dropRecommendation.reason), the skillName/sourceTreeSha256 bindings, and
+the reversed independence rule — `reviser_node` MUST be the packet's
+`author_node`, because the revise round runs on the author node. Daily-cap
+and one-dispatch-per-head discipline are publisher runtime behaviors and
+stay out of the checker's scope.
+
 ## Status
 
 - 2026-08-29: drafted as the R2 deliverable of jinwon-int/ccc-node#1357.
