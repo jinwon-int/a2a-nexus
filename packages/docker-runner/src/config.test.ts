@@ -1980,3 +1980,36 @@ test("failure log knobs default and parse from env (#1610)", async () => {
   assert.equal(tuned.failureLogMaxBytes, 65536);
   assert.equal(tuned.failureLogKeep, 5);
 });
+
+
+test("Codex worker model inheritance pins every helper without changing role boundaries", async () => {
+  const config = await loadConfig({
+    A2A_DOCKER_RUNNER_SKIP_ENGINE_DETECT: "1",
+    A2A_DOCKER_RUNNER_PATCH_COMMAND_PROFILE: "codex",
+    A2A_DOCKER_RUNNER_IMAGE: "a2a-docker-runner-codex:test",
+    A2A_DOCKER_RUNNER_CONTAINED_SUBAGENTS_ENABLED: "1",
+    A2A_CODEX_SUBAGENTS_INHERIT_MODEL: "1",
+    A2A_CODEX_MODEL: "openai-codex/gpt-5.6-luna",
+    A2A_CODEX_REASONING_EFFORT: "max",
+  });
+  const script = config.commandScript ?? "";
+  assert.equal((script.match(/^model = "gpt-5.6-luna"$/gm) ?? []).length, 4);
+  assert.equal((script.match(/^model_reasoning_effort = "max"$/gm) ?? []).length, 4);
+  assert.match(script, /sandbox_mode = "workspace-write"/);
+  assert.equal((script.match(/^sandbox_mode = "read-only"$/gm) ?? []).length, 3);
+  assert.doesNotMatch(script, /gpt-5\.6-sol|GPT-5\.6 Sol|reasoning=xhigh/);
+  assert.match(script, /contained_subagents_verifier_model=gpt-5.6-luna reasoning=max/);
+  assert.match(script, /a2a_implementer.*gpt-5.6-luna with max reasoning/);
+});
+
+test("Codex worker inheritance rejects shell and TOML injection in model or effort", async () => {
+  for (const overrides of [{ A2A_CODEX_MODEL: 'bad"\nmodel="injected' }, { A2A_CODEX_REASONING_EFFORT: "max;false" }]) {
+    await assert.rejects(loadConfig({
+      A2A_DOCKER_RUNNER_SKIP_ENGINE_DETECT: "1",
+      A2A_DOCKER_RUNNER_PATCH_COMMAND_PROFILE: "codex",
+      A2A_DOCKER_RUNNER_IMAGE: "a2a-docker-runner-codex:test",
+      A2A_CODEX_SUBAGENTS_INHERIT_MODEL: "1",
+      ...overrides,
+    }), /invalid A2A_CODEX_/);
+  }
+});

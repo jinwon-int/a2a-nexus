@@ -862,7 +862,22 @@ private data. You are evidence-only; the parent worker is the single finalizer.
   },
 ];
 
-function buildCodexSubagentProfileInstallShell(config: RunnerContainedSubagentsConfig): string {
+// Opt-in node policy: keep every contained helper on the configured worker model.
+// Validate before interpolation into both TOML and generated shell text.
+function codexSubagentOverride(env: NodeJS.ProcessEnv): { model: string; effort: string } | undefined {
+  if (env.A2A_CODEX_SUBAGENTS_INHERIT_MODEL !== "1") return undefined;
+  const model = (env.A2A_CODEX_MODEL || "gpt-5.6-sol").replace(/^openai-codex\//, "");
+  const effort = env.A2A_CODEX_REASONING_EFFORT || "high";
+  if (!/^[a-zA-Z0-9][a-zA-Z0-9._-]*$/.test(model)) {
+    throw new Error("invalid A2A_CODEX_MODEL for contained subagent inheritance");
+  }
+  if (!["minimal", "low", "medium", "high", "xhigh", "max", "ultra"].includes(effort)) {
+    throw new Error("invalid A2A_CODEX_REASONING_EFFORT for contained subagent inheritance");
+  }
+  return { model, effort };
+}
+
+function buildCodexSubagentProfileInstallShell(config: RunnerContainedSubagentsConfig, override?: { model: string; effort: string }): string {
   if (!config.enabled) return "";
   const allowedRoles = new Set(config.roles);
   const profiles = CODEX_SUBAGENT_PROFILE_SPECS.filter((profile) => allowedRoles.has(profile.role));
@@ -870,7 +885,7 @@ function buildCodexSubagentProfileInstallShell(config: RunnerContainedSubagentsC
     'install -d -m 0700 "$CODEX_HOME/agents"',
     ...profiles.flatMap((profile) => [
       `cat > "$CODEX_HOME/agents/${profile.fileName}" <<'A2A_CODEX_AGENT_PROFILE_EOF'`,
-      profile.contents,
+      override ? profile.contents.replace(/^model = .*$/m, `model = "${override.model}"`).replace(/^model_reasoning_effort = .*$/m, `model_reasoning_effort = "${override.effort}"`) : profile.contents,
       "A2A_CODEX_AGENT_PROFILE_EOF",
       `chmod 0600 "$CODEX_HOME/agents/${profile.fileName}"`,
     ]),
@@ -889,7 +904,7 @@ function buildCodexSubagentProfileInstallShell(config: RunnerContainedSubagentsC
 // subagent 활성화는 `$CODEX_HOME/agents/` 에 설치하는 역할 프로파일이 이미
 // 담당하므로(buildCodexSubagentProfileInstallShell), 이 스칼라 오버라이드는
 // 기능적으로도 불필요하다. 비활성일 때는 프로파일을 설치하지 않는 것으로 족하다.
-function buildCodexSubagentRosterPrompt(config: RunnerContainedSubagentsConfig): string {
+function buildCodexSubagentRosterPrompt(config: RunnerContainedSubagentsConfig, override?: { model: string; effort: string }): string {
   if (!config.enabled) return "";
   const lines = [
     "- Use only the custom A2A agent profiles installed for the allowed helper roles.",
@@ -904,10 +919,11 @@ function buildCodexSubagentRosterPrompt(config: RunnerContainedSubagentsConfig):
     lines.push("- Use a2a_verifier from clean-slate inputs for an independent check. It stays on GPT-5.6 Sol with xhigh reasoning.");
   }
   lines.push("- The parent Codex worker keeps its configured model and remains the only finalizer; subagents never own the terminal result or GitHub lifecycle.");
-  return lines.join("\n");
+  const text = lines.join("\n");
+  return override ? text.replace(/GPT-5\.6 (?:Luna|Sol) with (?:max|high|xhigh) reasoning/g, `${override.model} with ${override.effort} reasoning`) : text;
 }
 
-function buildCodexSubagentModelSummaryShell(config: RunnerContainedSubagentsConfig): string {
+function buildCodexSubagentModelSummaryShell(config: RunnerContainedSubagentsConfig, override?: { model: string; effort: string }): string {
   if (!config.enabled) return "";
   const lines: string[] = [];
   if (config.roles.includes("explorer")) {
@@ -919,7 +935,8 @@ function buildCodexSubagentModelSummaryShell(config: RunnerContainedSubagentsCon
   if (config.roles.includes("verifier")) {
     lines.push("printf 'contained_subagents_verifier_model=gpt-5.6-sol reasoning=xhigh\\n' | tee -a /work/artifacts/summary.txt");
   }
-  return lines.join("\n");
+  const text = lines.join("\n");
+  return override ? text.replace(/model=gpt-5\.6-(?:luna|sol) reasoning=(?:max|high|xhigh)/g, `model=${override.model} reasoning=${override.effort}`) : text;
 }
 
 export function buildCodexPatchCommandScript(env: NodeJS.ProcessEnv): string {
@@ -928,14 +945,15 @@ export function buildCodexPatchCommandScript(env: NodeJS.ProcessEnv): string {
   const defaultTimeout = shellSingleQuote(env.A2A_CODEX_TIMEOUT_SEC || DEFAULT_CODEX_TIMEOUT_SEC);
   const subagents = loadContainedSubagentsConfig(env, "codex");
   const subagentInstruction = buildContainedSubagentPrompt("Codex", subagents);
-  const subagentRosterInstruction = buildCodexSubagentRosterPrompt(subagents);
-  const subagentProfileInstall = buildCodexSubagentProfileInstallShell(subagents);
+  const subagentModelOverride = codexSubagentOverride(env);
+  const subagentRosterInstruction = buildCodexSubagentRosterPrompt(subagents, subagentModelOverride);
+  const subagentProfileInstall = buildCodexSubagentProfileInstallShell(subagents, subagentModelOverride);
   // #1729 note: codex 0.144.1 rejects scalar agents.* CLI overrides, so none
   // are emitted. They must also never re-enter the exec template inline — an
   // empty interpolation line breaks the shell line-continuation chain and
   // detaches the prompt redirect from `codex exec` (#1731 canary evidence).
   const subagentSummary = buildContainedSubagentSummaryShell(subagents);
-  const subagentModelSummary = buildCodexSubagentModelSummaryShell(subagents);
+  const subagentModelSummary = buildCodexSubagentModelSummaryShell(subagents, subagentModelOverride);
   return `#!/usr/bin/env bash
 set -euo pipefail
 export DEBIAN_FRONTEND=noninteractive
