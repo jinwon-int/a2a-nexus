@@ -250,6 +250,8 @@ test("unsupported workerModel fails closed before a patch attempt", () => {
     "deepseek-v4-pro",
     "openai-codex/gpt-5.6-sol",
     "gpt-5.6-sol",
+    "openai-codex/gpt-5.6-luna",
+    "gpt-5.6-luna",
     "openai-codex/gpt-5.5",
     "gpt-5.5",
     "claude-fable-5",
@@ -348,6 +350,8 @@ test("worker model policy module exposes auditable allowlist and fallbacks (#799
     "deepseek-v4-pro",
     "openai-codex/gpt-5.6-sol",
     "gpt-5.6-sol",
+    "openai-codex/gpt-5.6-luna",
+    "gpt-5.6-luna",
     "openai-codex/gpt-5.5",
     "gpt-5.5",
     "claude-fable-5",
@@ -2774,4 +2778,13 @@ process.stdout.write(JSON.stringify({ payloads: [{ text: JSON.stringify(response
   } finally {
     rmSync(dir, { recursive: true, force: true });
   }
+});
+
+test("Luna worker env and explicit task models never silently fall back to Sol", () => {
+  for (const model of ["gpt-5.6-luna", "openai-codex/gpt-5.6-luna"]) {
+    assert.equal(resolveWorkerModelInputs({ envModel: model }).model, model);
+    assert.equal(resolveWorkerModelInputs({ payloadModel: model }).model, model);
+    assert.equal(canonicalizeWorkerModel(model), "openai-codex/gpt-5.6-luna");
+  }
+  assert.ok(resolveWorkerModelInputs({ payloadModel: "gpt-unknown" }).error);
 });

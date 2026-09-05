@@ -929,3 +929,13 @@ and convert the runner result into the normal A2A worker completion payload.
 - **No live Telegram/notifier send**: The runner produces compact terminal evidence
   for the broker; actual notification delivery is owned by the broker/plugin-notifier,
   not by this runner.
+
+### Uniform Codex helper models
+
+Set `A2A_CODEX_SUBAGENTS_INHERIT_MODEL=1` to pin every installed Codex helper
+(explorer, researcher, implementer, verifier) to `A2A_CODEX_MODEL` and
+`A2A_CODEX_REASONING_EFFORT`. For example, `gpt-5.6-luna` with `max` applies to
+all four profiles, their roster instructions, and model summaries. Omitting the
+flag preserves the existing role-specific models. Role permissions and the
+single-finalizer boundary remain unchanged. This flag configures contained
+Docker helpers; configure host Codex subagent defaults separately.

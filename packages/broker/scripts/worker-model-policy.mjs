@@ -9,6 +9,8 @@ export const ALLOWED_WORKER_MODELS = Object.freeze([
   // Current Codex fleet baseline plus the retained GPT-5.5 rollback alias.
   "openai-codex/gpt-5.6-sol",
   "gpt-5.6-sol",
+  "openai-codex/gpt-5.6-luna",
+  "gpt-5.6-luna",
   "openai-codex/gpt-5.5",
   "gpt-5.5",
   // Current Claude Code ccc-node worker defaults.
@@ -120,6 +122,7 @@ export function canonicalizeWorkerModel(model) {
   const value = safeText(model, "");
   if (value === "deepseek-v4-flash") return "deepseek/deepseek-v4-flash";
   if (value === "deepseek-v4-pro") return "deepseek/deepseek-v4-pro";
+  if (value === "gpt-5.6-luna") return "openai-codex/gpt-5.6-luna";
   if (value === "gpt-5.6-sol") return "openai-codex/gpt-5.6-sol";
   if (value === "gpt-5.5") return "openai-codex/gpt-5.5";
   if (value === "custom:minimax/minimax-m3") return "minimax-m3";

@@ -18,13 +18,13 @@ const sourceAuth = {
   },
 };
 
-function bridgeArgs(message) {
+function bridgeArgs(message, model = "gpt-5.6-sol", effort = "high") {
   return [
     "agent", "--local", "--agent", "main",
     "--session-id", "a2a-codex-analysis",
     "--message", message,
-    "--model", "openai-codex/gpt-5.6-sol",
-    "--thinking", "high",
+    "--model", `openai-codex/${model}`,
+    "--thinking", effort,
     "--timeout", "60",
     "--json",
   ];
@@ -36,7 +36,8 @@ test("Codex A2A analysis bridge exists and is executable JavaScript", () => {
   assert.equal(check.status, 0, check.stderr);
 });
 
-test("Codex A2A analysis bridge applies model/reasoning and returns the shared envelope", () => {
+for (const [model, effort] of [["gpt-5.6-sol", "high"], ["gpt-5.6-luna", "max"]]) {
+test(`Codex A2A analysis bridge applies ${model}/${effort} and returns the shared envelope`, () => {
   const dir = mkdtempSync(join(tmpdir(), "codex-a2a-bridge-test-"));
   const fakeCodex = join(dir, "fake-codex.mjs");
   const configDir = join(dir, "codex-dir");
@@ -67,7 +68,7 @@ test("Codex A2A analysis bridge applies model/reasoning and returns the shared e
     ].join("\n"));
     chmodSync(fakeCodex, 0o755);
 
-    const result = spawnSync(bridgePath, bridgeArgs("Return JSON only. Payload JSON:\n" + JSON.stringify({ sourceOnly: true, noLive: true })), {
+    const result = spawnSync(bridgePath, bridgeArgs("Return JSON only. Payload JSON:\n" + JSON.stringify({ sourceOnly: true, noLive: true }), model, effort), {
       encoding: "utf8",
       env: {
         ...process.env,
@@ -88,16 +89,16 @@ test("Codex A2A analysis bridge applies model/reasoning and returns the shared e
     assert.equal(payload.status, "done");
     assert.equal(payload.bridgeAdapter, "codex");
     assert.equal(payload.bridgeContractVersion, "codex-a2a-analysis.v1");
-    assert.equal(payload.actualRuntimeModel, "gpt-5.6-sol");
-    assert.equal(payload.requestedThinking, "high");
+    assert.equal(payload.actualRuntimeModel, model);
+    assert.equal(payload.requestedThinking, effort);
     assert.equal(payload.modelInheritanceMode, "explicit");
 
     const args = JSON.parse(readFileSync(argsPath, "utf8"));
     assert.deepEqual(args.slice(0, 2), ["exec", "--skip-git-repo-check"]);
-    assert.equal(args[args.indexOf("--model") + 1], "gpt-5.6-sol");
+    assert.equal(args[args.indexOf("--model") + 1], model);
     assert.equal(args[args.indexOf("--sandbox") + 1], "read-only");
     assert.ok(args.includes('approval_policy="never"'));
-    assert.ok(args.includes('model_reasoning_effort="high"'));
+    assert.ok(args.includes(`model_reasoning_effort="${effort}"`));
 
     const childEnv = JSON.parse(readFileSync(envPath, "utf8"));
     assert.equal(childEnv.brokerSecret, undefined);
@@ -117,6 +118,7 @@ test("Codex A2A analysis bridge applies model/reasoning and returns the shared e
     rmSync(dir, { recursive: true, force: true });
   }
 });
+}
 
 test("Codex A2A analysis bridge rejects incompatible auth write-back", () => {
   const dir = mkdtempSync(join(tmpdir(), "codex-a2a-bridge-invalid-refresh-"));
