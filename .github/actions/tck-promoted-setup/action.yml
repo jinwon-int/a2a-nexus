@@ -1,0 +1,51 @@
+# Shared setup for the promoted-category A2A TCK gate jobs.
+#
+# Every promoted TCK job in .github/workflows/tck-promoted-gate.yml needed the
+# same four things before it could run its category selector: Node 22 + a dev
+# install, Python 3.11, and the pinned official TCK cloned into /tmp/a2a-tck
+# with its own venv. That block was copy-pasted six times, so the reviewed TCK
+# pin lived in six places and could drift between jobs.
+#
+# It is a local composite action (`uses: ./.github/actions/tck-promoted-setup`),
+# so the caller must run actions/checkout first. Job names are unchanged: they
+# are required status checks in the main ruleset and renaming one would leave
+# every PR permanently pending.
+name: TCK promoted-gate setup
+description: Install Node, Python and the pinned official A2A TCK for a promoted-category gate job.
+
+inputs:
+  tck-ref:
+    description: Reviewed commit of the jinwon-int/a2a-tck fork (same pin as tck-measurement.yml; bump deliberately).
+    required: false
+    default: "1154216630fb79b7d83bc4dc8a4428eec27e7a41"
+  tck-dir:
+    description: Directory the TCK checkout and its venv are created in.
+    required: false
+    default: /tmp/a2a-tck
+
+runs:
+  using: composite
+  steps:
+    - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v6
+      with:
+        node-version: "22"
+        cache: npm
+
+    - run: npm ci --include=dev
+      shell: bash
+
+    - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+      with:
+        python-version: "3.11"
+
+    - name: Clone and install the pinned official A2A TCK
+      shell: bash
+      env:
+        TCK_REF: ${{ inputs.tck-ref }}
+        TCK_DIR: ${{ inputs.tck-dir }}
+      run: |
+        set -euo pipefail
+        git clone --filter=blob:none https://github.com/jinwon-int/a2a-tck "$TCK_DIR"
+        git -C "$TCK_DIR" checkout --detach "$TCK_REF"
+        python3 -m venv "$TCK_DIR/.venv"
+        "$TCK_DIR/.venv/bin/pip" install -q -e "$TCK_DIR"

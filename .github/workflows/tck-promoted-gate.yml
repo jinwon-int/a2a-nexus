@@ -82,26 +82,10 @@ jobs:
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
 
-      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v6
-        with:
-          node-version: "22"
-          cache: npm
-      - run: npm ci --include=dev
-
-      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
-        with:
-          python-version: "3.11"
-
-      - name: Clone and install the pinned official A2A TCK
-        env:
-          # Same reviewed pin as tck-measurement.yml (org fork; bump deliberately).
-          TCK_REF: "1154216630fb79b7d83bc4dc8a4428eec27e7a41"
-        run: |
-          set -euo pipefail
-          git clone --filter=blob:none https://github.com/jinwon-int/a2a-tck /tmp/a2a-tck
-          git -C /tmp/a2a-tck checkout --detach "$TCK_REF"
-          python3 -m venv /tmp/a2a-tck/.venv
-          /tmp/a2a-tck/.venv/bin/pip install -q -e /tmp/a2a-tck
+      # Node + Python + the pinned official TCK (same reviewed pin as
+      # tck-measurement.yml; bump it in the composite action, which is now the
+      # single place all six promoted-category jobs read it from).
+      - uses: ./.github/actions/tck-promoted-setup
 
       - name: Run promoted agent_card TCK category
         working-directory: packages/broker
@@ -134,25 +118,7 @@ jobs:
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
 
-      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v6
-        with:
-          node-version: "22"
-          cache: npm
-      - run: npm ci --include=dev
-
-      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
-        with:
-          python-version: "3.11"
-
-      - name: Clone and install the pinned official A2A TCK
-        env:
-          TCK_REF: "1154216630fb79b7d83bc4dc8a4428eec27e7a41"
-        run: |
-          set -euo pipefail
-          git clone --filter=blob:none https://github.com/jinwon-int/a2a-tck /tmp/a2a-tck
-          git -C /tmp/a2a-tck checkout --detach "$TCK_REF"
-          python3 -m venv /tmp/a2a-tck/.venv
-          /tmp/a2a-tck/.venv/bin/pip install -q -e /tmp/a2a-tck
+      - uses: ./.github/actions/tck-promoted-setup
 
       - name: Run promoted version-negotiation TCK sub-category
         working-directory: packages/broker
@@ -184,25 +150,7 @@ jobs:
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
 
-      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v6
-        with:
-          node-version: "22"
-          cache: npm
-      - run: npm ci --include=dev
-
-      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
-        with:
-          python-version: "3.11"
-
-      - name: Clone and install the pinned official A2A TCK
-        env:
-          TCK_REF: "1154216630fb79b7d83bc4dc8a4428eec27e7a41"
-        run: |
-          set -euo pipefail
-          git clone --filter=blob:none https://github.com/jinwon-int/a2a-tck /tmp/a2a-tck
-          git -C /tmp/a2a-tck checkout --detach "$TCK_REF"
-          python3 -m venv /tmp/a2a-tck/.venv
-          /tmp/a2a-tck/.venv/bin/pip install -q -e /tmp/a2a-tck
+      - uses: ./.github/actions/tck-promoted-setup
 
       - name: Run promoted artifact/message-projection TCK sub-category
         working-directory: packages/broker
@@ -232,25 +180,7 @@ jobs:
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
 
-      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v6
-        with:
-          node-version: "22"
-          cache: npm
-      - run: npm ci --include=dev
-
-      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
-        with:
-          python-version: "3.11"
-
-      - name: Clone and install the pinned official A2A TCK
-        env:
-          TCK_REF: "1154216630fb79b7d83bc4dc8a4428eec27e7a41"
-        run: |
-          set -euo pipefail
-          git clone --filter=blob:none https://github.com/jinwon-int/a2a-tck /tmp/a2a-tck
-          git -C /tmp/a2a-tck checkout --detach "$TCK_REF"
-          python3 -m venv /tmp/a2a-tck/.venv
-          /tmp/a2a-tck/.venv/bin/pip install -q -e /tmp/a2a-tck
+      - uses: ./.github/actions/tck-promoted-setup
 
       - name: Run promoted error-codes/ErrorInfo TCK sub-category
         working-directory: packages/broker
@@ -286,25 +216,7 @@ jobs:
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
 
-      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v6
-        with:
-          node-version: "22"
-          cache: npm
-      - run: npm ci --include=dev
-
-      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
-        with:
-          python-version: "3.11"
-
-      - name: Clone and install the pinned official A2A TCK
-        env:
-          TCK_REF: "1154216630fb79b7d83bc4dc8a4428eec27e7a41"
-        run: |
-          set -euo pipefail
-          git clone --filter=blob:none https://github.com/jinwon-int/a2a-tck /tmp/a2a-tck
-          git -C /tmp/a2a-tck checkout --detach "$TCK_REF"
-          python3 -m venv /tmp/a2a-tck/.venv
-          /tmp/a2a-tck/.venv/bin/pip install -q -e /tmp/a2a-tck
+      - uses: ./.github/actions/tck-promoted-setup
 
       - name: Run promoted task-not-found TCK sub-category
         working-directory: packages/broker
@@ -336,25 +248,7 @@ jobs:
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
 
-      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v6
-        with:
-          node-version: "22"
-          cache: npm
-      - run: npm ci --include=dev
-
-      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
-        with:
-          python-version: "3.11"
-
-      - name: Clone and install the pinned official A2A TCK
-        env:
-          TCK_REF: "1154216630fb79b7d83bc4dc8a4428eec27e7a41"
-        run: |
-          set -euo pipefail
-          git clone --filter=blob:none https://github.com/jinwon-int/a2a-tck /tmp/a2a-tck
-          git -C /tmp/a2a-tck checkout --detach "$TCK_REF"
-          python3 -m venv /tmp/a2a-tck/.venv
-          /tmp/a2a-tck/.venv/bin/pip install -q -e /tmp/a2a-tck
+      - uses: ./.github/actions/tck-promoted-setup
 
       - name: Run promoted streaming/subscribe TCK sub-category
         working-directory: packages/broker
