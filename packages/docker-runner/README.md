@@ -613,6 +613,25 @@ Precedence is `commandScript > commandJson > commandProfile > commandTemplate`:
 | `A2A_DOCKER_RUNNER_PATCH_COMMAND_PROFILE=codex` | generated `commandScript` | `/work/patch-command.sh` | Operator-only trusted-worker profile. The host source at `A2A_DOCKER_RUNNER_CODEX_CONFIG_DIR` (default `/var/lib/a2a-runner/codex-dir`) is copied to a task-scoped host temp directory, and only that clone is mounted read-write at `/run/secrets/codex-dir`. After `codex exec --ephemeral --json`, the host runner validates that only refreshable token fields/`last_refresh` changed and atomically writes back `auth.json` with the original owner and mode. `config.toml` and generated custom-agent files are discarded. The parent uses `gpt-5.6-sol`, reasoning `high`, approval `never`, and `danger-full-access` inside the external container boundary. Optional contained fanout keeps the parent unchanged, routes explorer/researcher to `gpt-5.6-luna`/`max`, and keeps implementer/verifier on Sol. Use `a2a-docker-runner-codex:<runner-sha>`; credentials are never baked into image layers or runner artifacts. |
 | `A2A_DOCKER_RUNNER_PATCH_COMMAND_TEMPLATE` | `commandTemplate` | `/work/patch-command.sh` | Legacy eval path; rejected for GitHub patch execution. |
 
+#### Where the generated profile scripts live (`profiles/`)
+
+The container scripts generated for the `codex`, `claude-code`, `hermes`, and
+`openclaw` profiles are checked in as real shell files under `profiles/`, not as
+TypeScript template literals (a2a-nexus#2049). Editing a runner script is a
+script diff, and `npm run lint` runs `bash -n` over each one.
+
+| Concern | Contract |
+|---|---|
+| Substitution | Each host-computed value is a `__A2A_PROFILE_<name>__` token — a valid bash word, so the template still parses. `src/profile-scripts.ts` does one left-to-right pass with a function replacer; values are never rescanned. |
+| Fail-closed | A token with no supplied value, or a supplied value no token consumes, throws instead of shipping a script with a lost value. |
+| Build/deploy | `npm run build` runs `tsc` **then** `scripts/sync-profiles.mjs`, which mirrors `profiles/` into `dist/profiles/`. `dist/` stays self-contained: the loader resolves the scripts next to its own compiled module, never `../` out of `dist/`. A missing mirror throws with the `npm run build` remedy rather than emitting a broken script. |
+| Regression proof | `fixtures/patch-command-scripts/` holds goldens captured from the pre-extraction implementation. `src/patch-command-script-goldens.test.ts` replays that env matrix and compares bytes and SHA-256, so any escaping or whitespace drift fails closed. |
+
+The `piri` profile script is deliberately **not** extracted: its template
+interleaves conditional multi-line shell blocks (fanout/memory extension
+opt-ins) that have no single static form, so a placeholder file would misrepresent
+the script the container actually receives.
+
 #### Claude turn-budget resolution and recovery
 
 The Claude bridge is the canonical owner of max-turn defaults. The Docker
