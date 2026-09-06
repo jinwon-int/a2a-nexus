@@ -50,14 +50,13 @@ package emits `.test.js` files under its own `dist/`. No script change is needed
 
 ### Task types referencing repos
 
-The `task-normalizer.ts` has two hardcoded references to specific repository paths:
+The `task-normalizer.ts` has one hardcoded reference to a repository path:
 
-1. **`openclaw-plugin-a2a-dev` preset** — hardcodes `jinwon-int/openclaw-plugin-a2a` as
-   the primary repo with `/work/openclaw-plugin-a2a` checkout path and generates
-   `npm ci` + `npm test` commands for that directory.
-
-2. **Default `repo` field** — when a single `repo` is given (without explicit `repos` array),
+1. **Default `repo` field** — when a single `repo` is given (without explicit `repos` array),
    the checkout path is `/work/repo`.
+
+(The `openclaw-plugin-a2a-dev` preset used to hardcode a second path,
+`/work/openclaw-plugin-a2a`; it was retired in #2048.)
 
 ### Multi-repo task support
 
@@ -75,15 +74,14 @@ Tasks can already specify multiple repos via the `repos` field:
 The `repos` field is the natural monorepo-compatible pattern: tasks can check out
 multiple repos and run commands across them sequentially.
 
-### Preset limitations
+### Presets (retired)
 
-The `openclaw-plugin-a2a-dev` preset generates test-only commands (`npm ci` + `npm test`).
-In monorepo layout, this preset would need to understand which workspace package
-to target. Current assumption: the preset checks out and tests the entire `openclaw-plugin-a2a`
-repo as a standalone package.
+The `openclaw-plugin-a2a-dev` preset generated test-only commands (`npm ci` +
+`npm test`) against a hardcoded checkout, and could not express which workspace
+package a monorepo task should target. It was retired in #2048.
 
-**Recommendation**: For monorepo, use explicit `repos` + `commands` instead of
-presets. The preset is a convenience for simple single-repo tasks.
+**Recommendation**: use explicit `repos` + `commands`. That was already the
+guidance for monorepo layouts and is now the only path.
 
 ### Workspace symlinks
 

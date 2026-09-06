@@ -36,7 +36,6 @@ If operators want to manage runner settings through Gateway/plugin config instea
     "properties": {
       "enabled": { "type": "boolean", "default": false },
       "allGithub": { "type": "boolean", "default": false },
-      "preset": { "type": "string", "minLength": 1 },
       "bin": { "type": "string", "minLength": 1 },
       "argsJson": { "type": "string", "minLength": 2 },
       "taskTimeoutMs": { "type": "integer", "minimum": 1 },

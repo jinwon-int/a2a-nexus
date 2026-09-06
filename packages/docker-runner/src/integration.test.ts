@@ -4,7 +4,7 @@
  * Covers:
  * - Feature-flag bypass (host-workspace direct execution bypass)
  * - PR/Block/Done/malformed/timeout evidence mapping
- * - Env passthrough and preset resolution
+ * - Env passthrough and repo resolution
  * - Full canary-task round-trip simulation
  */
 
@@ -123,21 +123,23 @@ test("shouldUseDockerRunnerForGithub: true when A2A_DOCKER_RUNNER_ALL_GITHUB=1 r
   assert.equal(shouldUseDockerRunnerForGithub(task, env), true);
 });
 
-test("shouldUseDockerRunnerForGithub: A2A_DOCKER_RUNNER_ALL_GITHUB=1 overrides preset-only restriction", () => {
+test("shouldUseDockerRunnerForGithub: A2A_DOCKER_RUNNER_ALL_GITHUB=1 overrides the repo-scope restriction", () => {
   const env: HandlerEnv = { A2A_DOCKER_RUNNER_ENABLED: "1", A2A_DOCKER_RUNNER_ALL_GITHUB: "1" };
   const task: HandlerTask = { payload: { mode: "github-propose-patch", repo: "jinwon-int/a2a-docker-runner" } };
   assert.equal(shouldUseDockerRunnerForGithub(task, env), true);
 });
 
-test("shouldUseDockerRunnerForGithub: true for openclaw-plugin-a2a preset from payload", () => {
+// #2048: the retired preset is no longer a routing signal. A stale payload key
+// or a stale operator env var must be ignored, not crash and not route.
+test("shouldUseDockerRunnerForGithub: stale payload runnerPreset no longer routes (#2048)", () => {
   const task: HandlerTask = { payload: { mode: "github-propose-patch", runnerPreset: "openclaw-plugin-a2a-dev" } };
-  assert.equal(shouldUseDockerRunnerForGithub(task, baseEnv), true);
+  assert.equal(shouldUseDockerRunnerForGithub(task, baseEnv), false);
 });
 
-test("shouldUseDockerRunnerForGithub: true for openclaw-plugin-a2a preset from env", () => {
-  const env: HandlerEnv = { A2A_DOCKER_RUNNER_ENABLED: "1", A2A_DOCKER_RUNNER_PRESET: "openclaw-plugin-a2a-dev" };
+test("shouldUseDockerRunnerForGithub: stale A2A_DOCKER_RUNNER_PRESET env no longer routes (#2048)", () => {
+  const env = { A2A_DOCKER_RUNNER_ENABLED: "1", A2A_DOCKER_RUNNER_PRESET: "openclaw-plugin-a2a-dev" } as unknown as HandlerEnv;
   const task: HandlerTask = { payload: { mode: "github-propose-patch" } };
-  assert.equal(shouldUseDockerRunnerForGithub(task, env), true);
+  assert.equal(shouldUseDockerRunnerForGithub(task, env), false);
 });
 
 test("shouldUseDockerRunnerForGithub: true for openclaw-plugin-a2a repo pattern", () => {
@@ -162,17 +164,23 @@ test("shouldUseDockerRunnerForGithub: A2A_DOCKER_RUNNER_ALL_GITHUB=on works", ()
   assert.equal(shouldUseDockerRunnerForGithub(task, env), true);
 });
 
-test("shouldUseDockerRunnerForGithub: prefers payload preset over env preset", () => {
-  const env: HandlerEnv = { A2A_DOCKER_RUNNER_ENABLED: "1", A2A_DOCKER_RUNNER_PRESET: "other-preset" };
-  const task: HandlerTask = { payload: { mode: "github-propose-patch", runnerPreset: "openclaw-plugin-a2a-dev" } };
-  assert.equal(shouldUseDockerRunnerForGithub(task, env), true);
+test("shouldUseDockerRunnerForGithub: a stale preset never overrides the repo scope (#2048)", () => {
+  const env = { A2A_DOCKER_RUNNER_ENABLED: "1", A2A_DOCKER_RUNNER_PRESET: "other-preset" } as unknown as HandlerEnv;
+  // Preset from either source is inert; only the repo decides.
+  const presetOnly: HandlerTask = { payload: { mode: "github-propose-patch", runnerPreset: "openclaw-plugin-a2a-dev" } };
+  assert.equal(shouldUseDockerRunnerForGithub(presetOnly, env), false);
+
+  const pluginRepo: HandlerTask = {
+    payload: { mode: "github-propose-patch", repo: "jinwon-int/openclaw-plugin-a2a", runnerPreset: "openclaw-plugin-a2a-dev" },
+  };
+  assert.equal(shouldUseDockerRunnerForGithub(pluginRepo, env), true);
 });
 
 // ═══════════════════════════════════════════════════════════════════════════
 // buildRunnerTaskFromHandlerPayload — Env passthrough tests
 // ═══════════════════════════════════════════════════════════════════════════
 
-test("buildRunnerTaskFromHandlerPayload: openclaw-plugin-a2a-dev preset via payload.runnerPreset", () => {
+test("buildRunnerTaskFromHandlerPayload: stale payload.runnerPreset is dropped, not carried (#2048)", () => {
   const task: HandlerTask = {
     id: "task-abc",
     intent: "propose_patch",
@@ -183,13 +191,28 @@ test("buildRunnerTaskFromHandlerPayload: openclaw-plugin-a2a-dev preset via payl
   assert.equal(result.id, "task-abc");
   assert.equal(result.intent, "propose_patch");
   assert.equal(result.mode, "github-propose-patch");
-  assert.equal(result.preset, "openclaw-plugin-a2a-dev");
-  assert.equal(result.baseBranch, "develop");
+  assert.equal((result as unknown as Record<string, unknown>).preset, undefined);
+  // No repo was declared, so nothing is invented for the caller.
+  assert.equal(result.repo, undefined);
+  assert.equal(result.baseBranch, undefined);
   assert.equal(result.timeoutMs, 60 * 60 * 1000);
 });
 
-test("buildRunnerTaskFromHandlerPayload: env A2A_DOCKER_RUNNER_PRESET passthrough", () => {
-  const env: HandlerEnv = { A2A_DOCKER_RUNNER_ENABLED: "1", A2A_DOCKER_RUNNER_PRESET: "openclaw-plugin-a2a-dev" };
+test("buildRunnerTaskFromHandlerPayload: openclaw-plugin-a2a repo keeps its repo instead of a preset (#2048)", () => {
+  const task: HandlerTask = {
+    id: "task-plugin-repo",
+    intent: "propose_patch",
+    payload: { mode: "github-propose-patch", repo: "jinwon-int/openclaw-plugin-a2a", baseBranch: "develop" },
+  };
+  const result = buildRunnerTaskFromHandlerPayload(task, baseEnv);
+
+  assert.equal((result as unknown as Record<string, unknown>).preset, undefined);
+  assert.equal(result.repo, "jinwon-int/openclaw-plugin-a2a", "repo must no longer be dropped by the preset early-return");
+  assert.equal(result.baseBranch, "develop");
+});
+
+test("buildRunnerTaskFromHandlerPayload: stale A2A_DOCKER_RUNNER_PRESET env is ignored (#2048)", () => {
+  const env = { A2A_DOCKER_RUNNER_ENABLED: "1", A2A_DOCKER_RUNNER_PRESET: "openclaw-plugin-a2a-dev" } as unknown as HandlerEnv;
   const task: HandlerTask = {
     id: "task-env-preset",
     intent: "propose_patch",
@@ -197,8 +220,8 @@ test("buildRunnerTaskFromHandlerPayload: env A2A_DOCKER_RUNNER_PRESET passthroug
   };
   const result = buildRunnerTaskFromHandlerPayload(task, env);
 
-  assert.equal(result.preset, "openclaw-plugin-a2a-dev");
-  assert.equal(result.baseBranch, "develop");
+  assert.equal((result as unknown as Record<string, unknown>).preset, undefined);
+  assert.equal(result.baseBranch, undefined);
 });
 
 test("buildRunnerTaskFromHandlerPayload: env A2A_DOCKER_RUNNER_TASK_TIMEOUT_MS passthrough", () => {
@@ -2535,20 +2558,22 @@ test("buildHandlerResult: nodeId does not affect status computation", () => {
 // Full integration flow simulation — canary task round-trip
 // ═══════════════════════════════════════════════════════════════════════════
 
-test("integration flow: openclaw-plugin-a2a-dev preset → runner task → parse → evidence → handler result", () => {
-  // 1. Handler receives github-propose-patch task
+test("integration flow: openclaw-plugin-a2a repo → runner task → parse → evidence → handler result", () => {
+  // 1. Handler receives github-propose-patch task carrying a stale preset key
+  //    that must be ignored end to end (#2048).
   const task: HandlerTask = {
     id: "a2a-integ-1",
     intent: "propose_patch",
-    payload: { mode: "github-propose-patch", runnerPreset: "openclaw-plugin-a2a-dev" },
+    payload: { mode: "github-propose-patch", repo: "jinwon-int/openclaw-plugin-a2a", runnerPreset: "openclaw-plugin-a2a-dev" },
   };
 
-  // 2. Feature flag routing check
+  // 2. Feature flag routing check — routes on the repo, not the preset
   assert.equal(shouldUseDockerRunnerForGithub(task, baseEnv), true);
 
   // 3. Build runner task
   const runnerTask = buildRunnerTaskFromHandlerPayload(task, baseEnv);
-  assert.equal(runnerTask.preset, "openclaw-plugin-a2a-dev");
+  assert.equal((runnerTask as unknown as Record<string, unknown>).preset, undefined);
+  assert.equal(runnerTask.repo, "jinwon-int/openclaw-plugin-a2a");
 
   // 4. Simulated runner output (success with PR)
   const raw = JSON.stringify({
@@ -2657,7 +2682,7 @@ test("canary flow: rollback — unset env var, verify bypass", () => {
   assert.equal(shouldUseDockerRunnerForGithub(task, rollbackEnv), false);
 });
 
-test("canary flow: partial rollback — disable ALL_GITHUB, keep ENABLED, verify preset-only routing", () => {
+test("canary flow: partial rollback — disable ALL_GITHUB, keep ENABLED, verify repo-scoped routing", () => {
   // Partial rollback: keep runner enabled but remove ALL_GITHUB flag
   const partialRollbackEnv: HandlerEnv = {
     A2A_DOCKER_RUNNER_ENABLED: "1",
@@ -2690,7 +2715,7 @@ test("integration flow: blocked task round-trip (no token, no PR, failure)", () 
 
   assert.equal(shouldUseDockerRunnerForGithub(task, baseEnv), false);
 
-  // Even though routing was false (no matching preset), let's test the evidence
+  // Even though routing was false (no matching repo), let's test the evidence
   // path for a scenario where routing DID happen but execution failed.
   const raw = JSON.stringify({
     ok: false,

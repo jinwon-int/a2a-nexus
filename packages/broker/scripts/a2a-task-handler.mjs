@@ -117,8 +117,9 @@ function shouldUseDockerRunner(task, env = process.env) {
 
   const payload = taskPayload(task);
   const repo = safeText(payload.repo, "");
-  const requestedPreset = safeText(payload.runnerPreset ?? env.A2A_DOCKER_RUNNER_PRESET, "");
-  return requestedPreset === "openclaw-plugin-a2a-dev" || /openclaw-plugin-a2a/.test(repo);
+  // #2048: payload.runnerPreset / A2A_DOCKER_RUNNER_PRESET were retired as a
+  // routing signal. Only the repo match keeps the plugin-only scope alive.
+  return /openclaw-plugin-a2a/.test(repo);
 }
 
 function hasBlockedClaudeDockerConfig(env = process.env) {
@@ -280,8 +281,6 @@ function hostPatchBridgeCommand(env = process.env) {
 function buildRunnerTask(task, env = process.env) {
   const payload = taskPayload(task);
   const repo = safeText(payload.repo, "");
-  const requestedPreset = safeText(payload.runnerPreset ?? env.A2A_DOCKER_RUNNER_PRESET, "");
-  const usesPluginPreset = requestedPreset === "openclaw-plugin-a2a-dev" || /openclaw-plugin-a2a/.test(repo);
 
   const runnerTask = {
     id: safeText(task.id, `task-${Date.now()}`),
@@ -333,12 +332,9 @@ function buildRunnerTask(task, env = process.env) {
     }
   }
 
-  if (usesPluginPreset) {
-    runnerTask.preset = "openclaw-plugin-a2a-dev";
-    if (safeText(payload.baseBranch, "")) runnerTask.baseBranch = safeText(payload.baseBranch);
-    return runnerTask;
-  }
-
+  // #2048: openclaw-plugin-a2a repo/preset tasks used to return early here with
+  // `preset` set and `repo` dropped, which also skipped the workerModel /
+  // workerThinking resolution below. All tasks now take the single repo path.
   if (repo) {
     runnerTask.repo = repo;
     if (safeText(payload.baseBranch, "")) runnerTask.baseBranch = safeText(payload.baseBranch);

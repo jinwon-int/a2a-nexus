@@ -22,8 +22,6 @@ export interface TaskTemplate {
   label?: string;
   /** Execution mode (e.g. "github-propose-patch", "github-verify"). */
   mode?: string;
-  /** Optional preset. */
-  preset?: RunnerPreset;
   /** Repos defined by the template. Tasks may extend these. */
   repos?: RunnerRepo[];
   /** Commands with ${variable} placeholders. */
@@ -304,8 +302,6 @@ export interface RunnerExtraMount {
   /** Defaults to true; set false only for explicitly writable scratch mounts. */
   readOnly?: boolean;
 }
-
-export type RunnerPreset = "openclaw-plugin-a2a-dev";
 
 /**
  * Worker profile that identifies which runtime should execute this task.
@@ -816,8 +812,12 @@ export interface RunnerTask {
    * Parent: a2a-plane#464
    */
   workerProfile?: RunnerWorkerProfile;
-  /** Optional preset that expands into default repos/commands. */
-  preset?: RunnerPreset;
+  // NOTE (#2048): `preset` (only value `openclaw-plugin-a2a-dev`) was retired.
+  // It expanded into a checkout of `jinwon-int/openclaw-plugin-a2a`, a repo
+  // deleted in #1783, so taking the path always failed. The key is *tolerated*
+  // on inbound task JSON — unknown keys are carried through and never read — so
+  // an old hand-written payload is ignored rather than rejected. Declare
+  // `repo`/`repos` and `commands` explicitly instead.
   /** Backward-compatible single repo input. */
   repo?: string;
   baseBranch?: string;

@@ -47,7 +47,6 @@ interface CanaryPayload {
     excludeNodes?: string[];
     reportLanguage?: string;
     timeoutMs?: number;
-    runnerPreset?: string | null;
     prompt?: string;
   };
   evidenceGuide?: Record<string, string>;
@@ -300,7 +299,7 @@ test("shouldUseDockerRunnerForGithub routes canary payload when ENABLED + ALL_GI
   assert.equal(shouldUseDockerRunnerForGithub(handlerTask, env), true);
 });
 
-test("shouldUseDockerRunnerForGithub does not route canary payload without ALL_GITHUB or matching preset", () => {
+test("shouldUseDockerRunnerForGithub does not route canary payload without ALL_GITHUB or matching repo", () => {
   const handlerTask: HandlerTask = {
     id: "canary-no-route",
     payload: {
@@ -309,7 +308,7 @@ test("shouldUseDockerRunnerForGithub does not route canary payload without ALL_G
     },
   };
 
-  // ENABLED but no ALL_GITHUB and no matching preset → should not route
+  // ENABLED but no ALL_GITHUB and no matching repo → should not route
   const env: HandlerEnv = { A2A_DOCKER_RUNNER_ENABLED: "1" };
   assert.equal(shouldUseDockerRunnerForGithub(handlerTask, env), false);
 });
