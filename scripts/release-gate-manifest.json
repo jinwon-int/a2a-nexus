@@ -11,7 +11,7 @@
       "file": "scripts/check-dependency-advisories.test.mjs",
       "class": "gate",
       "round": null,
-      "note": "Dependency advisory warn-only gate tests for #1287."
+      "note": "Dependency advisory enforcement gate tests for #1287, armed in #2050."
     },
     {
       "file": "scanner/readiness/fail-closed-gates.test.mjs",

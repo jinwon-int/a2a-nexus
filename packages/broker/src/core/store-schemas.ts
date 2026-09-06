@@ -901,6 +901,47 @@ export const createTaskRequestSchema = taskSchema
     artifactIds: z.array(z.string()).optional(),
   });
 
+/**
+ * The one caller-influenced field of a terminal-outbox payload that the store
+ * schema constrains more tightly than the writer did (#2051).
+ *
+ * `buildTerminalTaskPayload` lifts `githubIssueNumber` out of the *opaque*
+ * `task.payload` — a field `createTaskRequestSchema` deliberately omits,
+ * because `normalizeTaskPayload` copies the record through as-is. Its guard
+ * was `typeof issue === "number" && Number.isFinite(issue)`, so a task created
+ * with `payload.githubIssueNumber: -5` (or `3.5`) had that value copied
+ * verbatim into `payload.issue` of the persisted outbox row, which
+ * {@link terminalOutboxEventSchema} then rejects with
+ * `payload.issue: Too small: expected number to be >=0` on the next snapshot
+ * load — the exact #1504/#1725 shape.
+ *
+ * Read off `terminalOutboxEventSchema` rather than restated, so the guard
+ * cannot drift from the persistence rule. It is applied as a *filter*, not an
+ * `assertRequestPayload` rejection: `issue` is optional in the store schema
+ * and the value is derived at task-completion time, so failing closed there
+ * would strand a worker's completed task over a cosmetic Terminal Brief field.
+ * Dropping the unusable value keeps the operator-facing row deliverable.
+ */
+export const terminalOutboxPayloadIssueSchema =
+  terminalOutboxEventSchema.shape.payload.shape.issue;
+
+// Not derived on purpose: `reviewLineageRecordSchema` (#2051).
+//
+// Investigated for the same drift and there is none — the same call as
+// `wave-plan-routes.ts` in #2055, recorded here so it is not re-investigated.
+// Every `/review-lineages*` write goes through
+// `review-lifecycle/observation.ts`, which rebuilds `contract`, `budget`,
+// `receipt` and each ledger finding as *fresh* objects out of per-field
+// parsers (`intentContractAt`, `budgetAt`, `findingAt`); `createLineage`
+// then assembles the record from those normalized values and broker-owned
+// state (`state`, `counters`, `startedAt`, `terminalReason`, ...). No request
+// field reaches the persisted record unchecked, and the parser is strictly
+// *stricter* than the store schema at every point: `exactKeys` rejects
+// unknown keys where the store schema is `.passthrough()`, ids/shas/hashes
+// carry regex patterns the store schema does not, and `intentHash`/
+// `findingSignature` are recomputed and compared. Deriving a request schema
+// here could only reject payloads the store already accepts.
+
 /** Format zod issues into one compact, operator-safe message. */
 export function formatRequestIssues(error: z.ZodError): string {
   return error.issues
