@@ -599,6 +599,13 @@ test("server can hydrate broker runtime from SQLite hot-table load source", asyn
     sqliteFile,
     sqliteLoadSource: "hot-tables",
     stateStore: undefined,
+    // #2051 item 5: `stateStore: undefined` means "not an injected store", so
+    // the serving fence falls back to STATE_FILE's default
+    // (`/var/lib/a2a-broker/state.json.shared-state-v1.sqlite`). On any node
+    // running a live broker that file is owned by another process and the test
+    // died with `ownership_conflict` regardless of the change under test. Pin
+    // the fence into this test's own temp dir.
+    sharedStateFile: join(dir, "serving-fence.sqlite"),
     enforceRequesterIdentity: false,
     staleReaperEnabled: false,
   });

@@ -155,6 +155,8 @@ import {
 } from "./core/request-security.js";
 import {
   DEFAULT_BROKER_STATE_MAX_BYTES,
+  describeSnapshotQuarantineWarning,
+  readSnapshotQuarantineHealth,
   SqliteArtifactRuntimeRepository,
   SqliteAuditRuntimeRepository,
   SqliteBrokerStateStore,
@@ -1208,6 +1210,11 @@ export function createBrokerServer(options: BrokerServerOptions = {}): BrokerSer
           },
           persistence,
           persistenceQueue,
+          // #2051 item 2: snapshot-record quarantine (#2044) kept the broker
+          // bootable but dropped the offending rows from live state, and the
+          // next save removes them from the file too. Surface the counters so
+          // that silent data loss is observable without reading broker logs.
+          snapshotQuarantine: readSnapshotQuarantineHealth(),
           workerHeartbeatPersistence,
           ...(auditDiagnostics !== undefined ? { auditDiagnostics } : {}),
           ...(hotTableGrowth !== undefined ? { hotTableGrowth } : {}),
@@ -1265,6 +1272,17 @@ export function createBrokerServer(options: BrokerServerOptions = {}): BrokerSer
         if (workerHeartbeatPersistence.warning) {
           const existing = body.warning ? `${body.warning}; ` : "";
           body.warning = `${existing}${workerHeartbeatPersistence.warning}`;
+        }
+
+        // A quarantined record is data that was accepted, persisted and then
+        // dropped — it must read as a standing degradation, not just a counter
+        // buried in the body. Warning (not `ok: false`): the broker is serving
+        // correctly; what is lost is already lost, and flipping /health to
+        // not-ok would take a healthy broker out of rotation forever.
+        const quarantineWarning = describeSnapshotQuarantineWarning();
+        if (quarantineWarning) {
+          const existing = body.warning ? `${body.warning}; ` : "";
+          body.warning = `${existing}${quarantineWarning}`;
         }
 
         // #1763: an unreadable canonical mirror under hot-tables load is a

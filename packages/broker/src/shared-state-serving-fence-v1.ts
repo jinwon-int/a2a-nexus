@@ -253,6 +253,15 @@ export function acquireSharedStateServingFenceForBrokerV1(input: {
   readonly stateFile: string;
   readonly injectedStore: boolean;
   readonly env?: NodeJS.ProcessEnv;
+  /**
+   * Which `stateFile` counts as "the unconfigured default" for the
+   * missing-directory isolation branch below. Defaults to the production
+   * constant; injectable so tests can exercise that branch against a path that
+   * is genuinely absent instead of the host's live `/var/lib/a2a-broker`, which
+   * on any broker-running node is owned by another process and turns the test
+   * into an unconditional `ownership_conflict` (#2051 item 5).
+   */
+  readonly defaultLegacyStateFile?: string;
 }): SharedStateServingFenceV1 {
   const env = input.env ?? process.env;
   const explicit =
@@ -278,7 +287,8 @@ export function acquireSharedStateServingFenceForBrokerV1(input: {
   const directory = dirname(path.value);
   if (!existsSync(directory)) {
     const defaultLegacy =
-      input.stateFile === SHARED_STATE_SERVING_FENCE_V1.defaultLegacyStateFile;
+      input.stateFile ===
+      (input.defaultLegacyStateFile ?? SHARED_STATE_SERVING_FENCE_V1.defaultLegacyStateFile);
     if (!explicit && defaultLegacy) {
       return assertSharedStateServingFenceV1({
         filePath: isolatedSharedStateServingFencePathV1(),

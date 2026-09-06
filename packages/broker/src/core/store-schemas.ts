@@ -824,6 +824,83 @@ export const submitValidationRequestSchema = validationSchema
     artifactIds: z.array(z.string().min(1)).optional(),
   });
 
+/**
+ * POST /workers/register body (and every other path that reaches
+ * `InMemoryA2ABroker.registerWorker`).
+ *
+ * Derived from {@link workerSchema} minus the broker-assigned timestamps.
+ * `capabilities` is deliberately omitted rather than derived: the writer runs
+ * every registration through `normalizeCapabilities`, which accepts a legacy
+ * string array as well as a partial object and always emits a well-formed
+ * `WorkerCapabilities` — so the persisted shape is normalizer-guaranteed and a
+ * derived request schema there would only reject payloads the store never sees.
+ * The omitted key still passes through (`workerSchema` is `.passthrough()`),
+ * and the presence check stays in `assertWorkerRegistrationPayload`.
+ *
+ * What this *does* close is the pre-existing drift: `nodeId`/`role` were only
+ * truthiness-checked (`nodeId: 12345` passed), and `metadata` was not checked
+ * at all while the store requires `Record<string, string>` — both are copied
+ * verbatim into the persisted worker record by `buildRegisteredWorkerRecord`.
+ */
+export const registerWorkerRequestSchema = workerSchema.omit({
+  capabilities: true,
+  createdAt: true,
+  updatedAt: true,
+  lastSeenAt: true,
+});
+
+/**
+ * `createTask` request body (HTTP `POST /tasks`, the JSON-RPC `message/send`
+ * bridge, and every internal caller) — validated in
+ * `broker-task-admission.assertTaskPayload` after normalization, so it covers
+ * all transports at once the way #2044 covered proposals in the core writer.
+ *
+ * Derived from {@link taskSchema}. Omitted keys are the broker-owned ones —
+ * either assigned by `createTask` (`id`, `targetNodeId`, `status`, timestamps,
+ * `laneAssignment`) or only ever written by a later lifecycle transition
+ * (`claimedAt`/`claimedBy`/`result`/`error`/`cancellation`/`approval*`/
+ * `requeueCount`/heartbeat marks/`attemptId`/`wake`). `payload` is omitted
+ * because `normalizeTaskPayload` always produces a plain record regardless of
+ * input. Everything left is copied verbatim from the request into the record:
+ * `intent`, `requester`/`target` party refs, `workspace`, `message`, `via`,
+ * `proposalId`, `assignedWorkerId`, `exchangeId`, `parentTaskId`,
+ * `policyContext`, `taskOrigin`.
+ *
+ * `id` and `artifactIds` are relaxed to optional: a caller may pin an id
+ * (idempotent create) and `artifactIds` defaults to `[]`. `artifactIds` is
+ * re-stated because `uniqueIds()` de-duplicates without coercing, so a
+ * `[1, 2]` request used to be persisted as numbers and then rejected by
+ * `taskSchema` on the next snapshot load.
+ */
+export const createTaskRequestSchema = taskSchema
+  .omit({
+    id: true,
+    targetNodeId: true,
+    payload: true,
+    artifactIds: true,
+    status: true,
+    createdAt: true,
+    updatedAt: true,
+    claimedAt: true,
+    completedAt: true,
+    claimedBy: true,
+    result: true,
+    error: true,
+    cancellation: true,
+    approval: true,
+    approvalOutcome: true,
+    requeueCount: true,
+    lastHeartbeatAt: true,
+    lastProgressAt: true,
+    attemptId: true,
+    wake: true,
+    laneAssignment: true,
+  })
+  .extend({
+    id: z.string().min(1).optional(),
+    artifactIds: z.array(z.string()).optional(),
+  });
+
 /** Format zod issues into one compact, operator-safe message. */
 export function formatRequestIssues(error: z.ZodError): string {
   return error.issues

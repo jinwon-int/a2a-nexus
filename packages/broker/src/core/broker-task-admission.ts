@@ -9,6 +9,7 @@ import { BrokerError } from "./broker-error.js";
 import { isoNow } from "./broker-helpers.js";
 import {
   assertA2ARoundTaskPolicy,
+  assertCreateTaskRecordShape,
   assertWorkModeDecisionEvidence,
   assertTerminalBriefMetadata,
 } from "./broker-payload-validators.js";
@@ -179,6 +180,15 @@ export function assertTaskPayload(request: CreateTaskRequest, context: TaskAdmis
   assertA2ARoundTaskPolicy(request, context.brokerId);
   assertWorkModeDecisionEvidence(request);
   assertTerminalBriefMetadata(request.payload, context.brokerId);
+
+  // #2051 item 1 / #2044 failure class: the hand-written checks above are
+  // truthiness-shaped, so `intent: 7`, `message: {}`, `requester.role: 3`,
+  // `artifactIds: [1]` or a non-string `workspace.branch` all pass them and are
+  // then copied verbatim into the persisted task record — where `taskSchema`
+  // rejects them on the next snapshot load. Validate the normalized request
+  // against the store-derived schema last, so the historical error messages
+  // still win for the cases they cover.
+  assertCreateTaskRecordShape(request);
 }
 
 export function assertTaskReadiness(request: CreateTaskRequest, context: TaskAdmissionContext): void {
