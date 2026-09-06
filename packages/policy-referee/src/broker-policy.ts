@@ -56,8 +56,33 @@ export type BrokerPolicyDecision =
 
 export interface BrokerPolicyEvaluationInput {
   intent: string;
-  /** The task's payload.mode, when declared. */
+  /**
+   * The task's payload.mode, when declared. Must be a non-empty string when
+   * present; anything else (absent, empty, non-string coerced away by the
+   * caller) counts as UNDETERMINED and fails closed against `denyModes` unless
+   * `modeResolution: "absent"` says the caller positively established that the
+   * task declares no mode at all. See `modeResolution` (BUG-B4).
+   */
   mode?: string;
+  /**
+   * How the caller resolved `mode`, so "the task declares no mode" cannot be
+   * confused with "the mode could not be determined" (BUG-B4). Previously both
+   * arrived as `mode: undefined` and the `denyModes` check was skipped whole,
+   * so a payload whose `mode` was non-string (e.g. `{"mode": ["patch"]}`) —
+   * which callers normalize to undefined — silently bypassed a deny rule.
+   *
+   * Semantics, mirroring the `implementation` and `countTasksToday` gates:
+   * - omitted / `"undetermined"`: fail-closed. A matched rule that declares
+   *   `denyModes` DENIES, because the engine cannot prove the task's mode is
+   *   outside the deny list.
+   * - `"absent"`: the caller inspected the payload and there is no mode key at
+   *   all, so no `denyModes` entry can match; evaluation continues.
+   * - `"declared"`: redundant with a non-empty `mode`, accepted for symmetry.
+   *
+   * A refactor that drops the plumbing therefore denies rather than silently
+   * disabling the rule.
+   */
+  modeResolution?: "declared" | "absent" | "undetermined";
   /** Anonymous worker class of the task's target/claiming worker. */
   workerClass: string;
   /**
@@ -221,7 +246,8 @@ export function deriveTaskWorkerClass(input: {
  *
  * Matching is FIRST-MATCH-WINS on workerClass (exact class before "*" only by
  * document order — order rules deliberately). Within the matched rule, checks
- * run deny-first: denyModes, then allowIntents, then
+ * run deny-first: denyModes (fail-closed on an undeterminable mode), then
+ * allowIntents, then
  * requireImplementationCapability, then maxTasksPerDay, then requireApproval.
  * No matched rule falls through to defaultAction.
  */
@@ -235,8 +261,27 @@ export function evaluateTaskPolicy(
       ? { action: "deny", ruleId: "default", reason: `no rule matches worker class '${input.workerClass}' and defaultAction is deny` }
       : { action: "allow" };
   }
-  if (rule.denyModes && input.mode !== undefined && rule.denyModes.includes(input.mode)) {
-    return { action: "deny", ruleId: rule.id, reason: `mode '${input.mode}' is denied for worker class '${input.workerClass}'` };
+  if (rule.denyModes) {
+    // Fail-closed on an undeterminable mode (BUG-B4). A rule that declares
+    // denyModes states that SOME modes are unsafe for this class; if the engine
+    // cannot see the task's mode it cannot prove the task is outside that list,
+    // so it denies instead of skipping the whole check. Callers that positively
+    // established the task declares no mode opt out with
+    // `modeResolution: "absent"`. Previously `mode === undefined` skipped the
+    // check entirely, so a payload whose `mode` was present but non-string —
+    // which callers normalize to undefined — bypassed the rule outright.
+    const declaredMode = typeof input.mode === "string" && input.mode.length > 0 ? input.mode : undefined;
+    if (declaredMode === undefined && input.modeResolution !== "absent") {
+      return {
+        action: "deny",
+        ruleId: rule.id,
+        reason: `mode could not be determined for worker class '${input.workerClass}': ` +
+          `rule declares denyModes and the task mode was not supplied`,
+      };
+    }
+    if (declaredMode !== undefined && rule.denyModes.includes(declaredMode)) {
+      return { action: "deny", ruleId: rule.id, reason: `mode '${declaredMode}' is denied for worker class '${input.workerClass}'` };
+    }
   }
   if (rule.allowIntents && !rule.allowIntents.includes(input.intent)) {
     return { action: "deny", ruleId: rule.id, reason: `intent '${input.intent}' is not allowed for worker class '${input.workerClass}'` };

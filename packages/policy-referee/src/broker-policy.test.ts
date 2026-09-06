@@ -93,9 +93,13 @@ test("path 1 — allow: intent inside allowIntents", () => {
 
 test("path 2 — deny: intent outside allowIntents, and denyModes match", () => {
   const d = doc({ rules: [{ id: "r-1", workerClass: "mobile", allowIntents: ["analyze"], denyModes: ["apply"] }] });
-  const denyIntent = evaluateTaskPolicy({ intent: "apply_local_change", workerClass: "mobile" }, d);
+  const denyIntent = evaluateTaskPolicy(
+    { intent: "apply_local_change", workerClass: "mobile", modeResolution: "absent" },
+    d,
+  );
   assert.equal(denyIntent.action, "deny");
   assert.equal(denyIntent.ruleId, "r-1");
+  assert.match((denyIntent as { reason: string }).reason, /is not allowed/);
   const denyMode = evaluateTaskPolicy({ intent: "analyze", mode: "apply", workerClass: "mobile" }, d);
   assert.equal(denyMode.action, "deny");
   assert.match((denyMode as { reason: string }).reason, /mode 'apply' is denied/);
@@ -334,6 +338,9 @@ test("denyModes and allowIntents still win over the implementation gate (#1597)"
   const byIntent = evaluateTaskPolicy({
     intent: "analyze",
     workerClass: "vps",
+    // The rule declares denyModes, so the intent gate is only reachable once
+    // the mode is positively resolved (BUG-B4 fail-closed ordering).
+    modeResolution: "absent",
     evaluationPoint: "claim",
     implementation: { isImplementationIntent: false, ready: false },
   }, policy);
@@ -358,4 +365,70 @@ test("a class-specific rule listed first shadows a later wildcard gate (#1597)",
     }, policy),
     { action: "allow", ruleId: "mobile-open" },
   );
+});
+
+// --- BUG-B4: denyModes must not be bypassed by an undeterminable mode ---
+
+test("BUG-B4 regression: a matched denyModes rule denies when the mode is not supplied", () => {
+  const policy = doc({
+    rules: [{ id: "mobile-no-patch", workerClass: "mobile", denyModes: ["apply", "patch"] }],
+  });
+
+  // Before the fix, `mode === undefined` skipped the denyModes branch whole and
+  // the evaluation fell through to `{ action: "allow", ruleId }`.
+  const decision = evaluateTaskPolicy({ intent: "apply_local_change", workerClass: "mobile" }, policy);
+  assert.equal(decision.action, "deny", "an undeterminable mode must not bypass denyModes");
+  assert.equal(decision.ruleId, "mobile-no-patch");
+  assert.match((decision as { reason: string }).reason, /mode could not be determined/);
+});
+
+test("BUG-B4 regression: a non-string payload mode normalized to undefined cannot bypass denyModes", () => {
+  const policy = doc({
+    rules: [{ id: "mobile-no-patch", workerClass: "mobile", denyModes: ["patch"] }],
+  });
+
+  // Callers (the broker) normalize `typeof payload.mode !== "string"` to
+  // undefined. A task carrying `mode: ["patch"]` therefore reached the engine
+  // as `mode: undefined` and was ALLOWED before the fix.
+  for (const smuggled of [undefined, "" as string]) {
+    const decision = evaluateTaskPolicy(
+      { intent: "propose_patch", mode: smuggled, workerClass: "mobile" },
+      policy,
+    );
+    assert.equal(decision.action, "deny", `mode=${JSON.stringify(smuggled)} must fail closed`);
+    assert.match((decision as { reason: string }).reason, /mode could not be determined/);
+  }
+});
+
+test("BUG-B4: `modeResolution: \"absent\"` is the explicit opt-out and keeps mode-less tasks allowed", () => {
+  const policy = doc({
+    rules: [{ id: "mobile-no-patch", workerClass: "mobile", denyModes: ["patch"] }],
+  });
+
+  assert.deepEqual(
+    evaluateTaskPolicy({ intent: "analyze", workerClass: "mobile", modeResolution: "absent" }, policy),
+    { action: "allow", ruleId: "mobile-no-patch" },
+  );
+  // "declared" without an actual mode string is still undeterminable.
+  assert.equal(
+    evaluateTaskPolicy({ intent: "analyze", workerClass: "mobile", modeResolution: "declared" }, policy).action,
+    "deny",
+  );
+});
+
+test("BUG-B4: rules without denyModes are unaffected by mode resolution", () => {
+  const policy = doc({ rules: [{ id: "open", workerClass: "*", allowIntents: ["analyze"] }] });
+  assert.deepEqual(
+    evaluateTaskPolicy({ intent: "analyze", workerClass: "mobile" }, policy),
+    { action: "allow", ruleId: "open" },
+  );
+});
+
+test("BUG-B4: the operator policy denies a mode-less mobile task instead of allowing it (#1355)", () => {
+  const policy = operatorPolicyDoc();
+
+  const decision = evaluateTaskPolicy({ intent: "analyze", workerClass: "mobile" }, policy);
+  assert.equal(decision.action, "deny");
+  assert.equal(decision.ruleId, "mobile-analyze-only");
+  assert.match((decision as { reason: string }).reason, /mode could not be determined/);
 });

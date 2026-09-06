@@ -133,12 +133,17 @@ jobs:
         with:
           path: node_modules
           key: ${{ needs.setup.outputs.cache-key }}
-      - uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6
-        with:
-          path: packages/*/dist
-          key: tsbuild-all-${{ runner.os }}-${{ hashFiles('packages/**/*.ts', 'packages/**/tsconfig.json') }}
+      # No packages/*/dist cache here: check:layout is a pure path existence
+      # check and check:packages runs `npm -w <pkg> run check` (tsc --noEmit),
+      # so this job neither reads nor produces dist. Restoring it was dead
+      # weight, and on a miss this job saved an *empty* packages/*/dist under
+      # the shared tsbuild-all key, poisoning the cache the check job restores.
       - run: npm ci --include=dev
         if: steps.npm-deps.outputs.cache-hit != 'true'
+      # Both steps are also release-gate entries (`layout`, `packages`) run by
+      # the always-on check job. The job is kept because `layout` is a required
+      # status check in the main ruleset; renaming or deleting it would leave
+      # every PR permanently pending.
       - run: npm run check:layout
       - run: npm run check:packages
 
@@ -159,12 +164,22 @@ jobs:
           path: node_modules
           key: ${{ needs.setup.outputs.cache-key }}
       - uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6
+        id: broker-dist
         with:
           path: packages/broker/dist
           key: tsbuild-broker-${{ runner.os }}-${{ hashFiles('packages/broker/**/*.ts', 'packages/broker/tsconfig.json') }}
       - run: npm ci --include=dev
         if: steps.npm-deps.outputs.cache-hit != 'true'
+        # On an exact tsbuild-broker cache hit the restored packages/broker/dist
+        # is the compiled output of exactly these sources (the key hashes every
+        # broker .ts plus tsconfig.json, and there are no restore-keys, so a hit
+        # cannot be partial). Skipping the manifest's `npm run clean:dist`
+        # step-01 therefore keeps the cache usable instead of deleting it and
+        # forcing a cold ~35s recompile on every run. On a miss the value is
+        # '0' and the clean step runs exactly as before.
       - run: node scripts/run-monorepo-package-ci-parity.mjs broker
+        env:
+          BROKER_TEST_SKIP_CLEAN_DIST: ${{ steps.broker-dist.outputs.cache-hit == 'true' && '1' || '0' }}
       - name: a2a-inspector bridge artifact
         run: |
           mkdir -p artifacts/a2a-inspector
@@ -290,23 +305,18 @@ jobs:
         with:
           path: node_modules
           key: ${{ needs.setup.outputs.cache-key }}
-      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
-        with:
-          go-version: '1.24.x'
-      - uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6
-        id: gitleaks-bin
-        with:
-          path: ~/go/bin/gitleaks
-          key: gitleaks-${{ runner.os }}-${{ env.GITLEAKS_VERSION }}
-      - run: go install "github.com/zricethezav/gitleaks/v8@${GITLEAKS_VERSION}"
-        if: steps.gitleaks-bin.outputs.cache-hit != 'true'
-      - run: echo "$(go env GOPATH)/bin" >> "$GITHUB_PATH"
       - run: npm ci --include=dev
         if: steps.npm-deps.outputs.cache-hit != 'true'
+      # This job keeps only the conformance run that gives it its name. The
+      # three other steps it used to run — scan:external-secrets,
+      # check:approval-records, check:compatibility-baselines — are release-gate
+      # entries (`external-secrets`, `approval-records`,
+      # `compatibility-baselines`) already executed by the always-on check job,
+      # so they were pure duplicates. Dropping scan:external-secrets also drops
+      # the Go toolchain + gitleaks install this job needed only for it.
+      # `contracts` stays a job because it is a required status check in the
+      # main ruleset.
       - run: npm run test:conformance
-      - run: npm run scan:external-secrets
-      - run: npm run check:approval-records
-      - run: npm run check:compatibility-baselines
 
   # ── Docs-only validation (no code build required) ───────────────────
   docs:
@@ -337,7 +347,11 @@ jobs:
       - run: echo "$(go env GOPATH)/bin" >> "$GITHUB_PATH"
       - run: npm ci --include=dev
         if: steps.npm-deps.outputs.cache-hit != 'true'
-      - run: npm run check:layout
+      # check:layout removed: it is a release-gate entry run by the always-on
+      # check job and also by the layout job, so this was a third execution.
+      # check:markdown-links and scan:external-secrets are release-gate entries
+      # too, but scripts/ci-docs-safety.test.mjs pins both command strings to
+      # ci.yml as the docs-lane contract, so they stay here deliberately.
       - run: npm run check:markdown-links
       - run: npm run scan:external-secrets
       - run: echo "docs-only change — code build/smoke skipped"
@@ -420,5 +434,16 @@ jobs:
       - run: npm ci --include=dev
         if: steps.npm-deps.outputs.cache-hit != 'true'
       - run: npm run check
-      - run: npm run check:quickstart-conformance
-      - run: npm run test:release-gate
+      # check:quickstart-conformance and test:release-gate are both already
+      # inside `npm run smoke:quickstart`, which the promotion-capstone job
+      # runs. They are re-run here only when promotion-capstone is skipped, so
+      # the union of executed gates is unchanged while the overlap (every main
+      # push and every docs/scripts/root PR) no longer pays for them twice.
+      # The condition intentionally mirrors the promotion-capstone `if:`; keep
+      # the two in sync when either changes.
+      - name: quickstart conformance (only when promotion-capstone is skipped)
+        if: ${{ !(github.ref == 'refs/heads/main' || needs.paths-filter.outputs.docs == 'true' || needs.paths-filter.outputs.scripts == 'true' || needs.paths-filter.outputs.root == 'true') }}
+        run: npm run check:quickstart-conformance
+      - name: release gate suite (only when promotion-capstone is skipped)
+        if: ${{ !(github.ref == 'refs/heads/main' || needs.paths-filter.outputs.docs == 'true' || needs.paths-filter.outputs.scripts == 'true' || needs.paths-filter.outputs.root == 'true') }}
+        run: npm run test:release-gate

@@ -11,7 +11,11 @@ import { randomUUID } from "node:crypto";
 
 import { BrokerError } from "./broker-error.js";
 import { isoNow, uniqueIds } from "./broker-helpers.js";
-import { assertProposalPayload } from "./broker-payload-validators.js";
+import {
+  assertAttachArtifactPayload,
+  assertProposalPayload,
+  assertSubmitValidationPayload,
+} from "./broker-payload-validators.js";
 import { assertTransition } from "./broker-transition-guards.js";
 import {
   assertProposalApplyAllowed,
@@ -108,9 +112,7 @@ export function attachArtifact(
   context: ProposalWriteContext,
 ): ArtifactRecord {
   const proposal = context.requireProposal(proposalId);
-  if (!request.kind || !request.uri) {
-    throw new BrokerError("bad_request", "kind and uri are required");
-  }
+  assertAttachArtifactPayload(request);
 
   const artifact: ArtifactRecord = {
     id: randomUUID(),
@@ -147,9 +149,7 @@ export function submitValidationResult(
   context: ProposalWriteContext,
 ): ValidationResult {
   const proposal = context.requireProposal(proposalId);
-  if (!request.kind || !request.verdict || !request.nodeId) {
-    throw new BrokerError("bad_request", "nodeId, kind, and verdict are required");
-  }
+  assertSubmitValidationPayload(request);
 
   try {
     assertValidationSubmissionAllowed(proposal, request);

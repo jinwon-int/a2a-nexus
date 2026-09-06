@@ -1718,6 +1718,8 @@ export interface ContainerRetryEvidence {
     maxDelayMs: number;
     backoffFactor: number;
     jitterFactor: number;
+    /** Absolute wall-clock budget for the whole retry sequence, when configured. */
+    totalBudgetMs?: number;
   };
   /** Per-attempt records in execution order. */
   attempts: Array<{
@@ -1742,4 +1744,8 @@ export interface ContainerRetryEvidence {
   totalAttempts: number;
   /** Attempt number that succeeded (0 = all failed). */
   succeededOnAttempt: number;
+  /** Absolute wall-clock budget applied to the whole retry sequence (ms). */
+  totalBudgetMs?: number;
+  /** True when retries stopped early because the absolute budget was exhausted. */
+  budgetExhausted?: boolean;
 }

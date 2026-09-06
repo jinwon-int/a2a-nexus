@@ -172,6 +172,7 @@ import {
 } from "../task-readiness.js";
 import { classifyTaskLane } from "../task-lane-classifier.js";
 import { TaskEventStream } from "./task-event-stream.js";
+import { RoundProgressTracker } from "./round-progress-tracker.js";
 import {
   TerminalTaskEventOutbox,
   type TerminalTaskOutboxAckInput,
@@ -504,8 +505,18 @@ export class InMemoryA2ABroker {
     this.maxRequeueAttempts = normalizeMaxRequeueAttempts(options.maxRequeueAttempts);
     this.checkpointTimeoutMs = Math.max(0, options.checkpointTimeoutMs ?? DEFAULT_CHECKPOINT_TIMEOUT_MS);
     this.taskEvents = new TaskEventDispatcher(options.maxBufferedEventsPerTask ?? 100);
-    this.taskEventStream = new TaskEventStream({ maxEvents: options.maxTaskStatusEvents });
-    this.terminalTaskEventOutbox = new TerminalTaskEventOutbox({ maxEvents: options.maxTerminalTaskOutboxEvents });
+    // One shared round-progress counter for both terminal surfaces: the SSE
+    // compact stream and the operator-facing Terminal Brief outbox must never
+    // report different `n/N` numerators for the same round (B6).
+    const roundProgress = new RoundProgressTracker();
+    this.taskEventStream = new TaskEventStream({
+      maxEvents: options.maxTaskStatusEvents,
+      roundProgress,
+    });
+    this.terminalTaskEventOutbox = new TerminalTaskEventOutbox({
+      maxEvents: options.maxTerminalTaskOutboxEvents,
+      roundProgress,
+    });
     this.crossBrokerTerminalBriefs = new CrossBrokerTerminalBriefProjectionStore([], {
       brokerId: this.brokerId,
       hasParentRound: (parentRoundId) => this.tasks.has(parentRoundId),

@@ -5,7 +5,8 @@
   "entries": [
     {
       "name": "step-01",
-      "command": "npm run clean:dist"
+      "command": "npm run clean:dist",
+      "skipWhenEnv": "BROKER_TEST_SKIP_CLEAN_DIST"
     },
     {
       "name": "step-02",
