@@ -22,7 +22,11 @@ const REQUIRED_PARITY_GATES = [
   "'check', '-w', 'packages/docker-runner'",
   "'build', '-w', 'packages/docker-runner'",
   "'lint', '-w', 'packages/docker-runner'",
-  "'test', '-w', 'packages/docker-runner'",
+  // The compiled dist test suite is executed by coverage:baseline, which runs
+  // `node --test --experimental-test-coverage` over every dist/**/*.test.js and
+  // fails closed on a non-zero test exit. The parity runner no longer also
+  // invokes the bare `test` script, which ran the identical suite a second time.
+  "'coverage:baseline', '-w', 'packages/docker-runner'",
   "pre-pr-bootstrap-guard.mjs",
   "chaos:e2e",
 ];
