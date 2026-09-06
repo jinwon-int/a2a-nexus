@@ -22,6 +22,10 @@ import type {
   ProposalActorRequest,
   SubmitValidationRequest,
 } from "../core/types.js";
+import {
+  assertRequestPayload,
+  createProposalRequestSchema,
+} from "../core/store-schemas.js";
 import { awaitDurablePersistenceAck } from "./error-mapping.js";
 import { readJson } from "./body.js";
 import { sendJson } from "./response.js";
@@ -55,6 +59,10 @@ export async function handleCreateProposalRequest(ctx: ProposalsWriteRouteContex
   if (!body) {
     throw new BrokerError("bad_request", "request body is required");
   }
+  // Schema-validate before touching `body.source.id`: an unguarded read on a
+  // malformed body used to throw a TypeError (500) instead of a 400, and the
+  // derived schema also rejects payloads the snapshot store would refuse.
+  assertRequestPayload(createProposalRequestSchema, body, "proposal payload");
   if (ctx.enforceRequesterIdentity) {
     assertRequesterMatchesParty(
       ctx.requesterIdentity,

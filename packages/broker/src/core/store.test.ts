@@ -121,7 +121,10 @@ test("JsonFileBrokerStateStore rejects oversized snapshots", () => {
   }
 });
 
-test("JsonFileBrokerStateStore rejects malformed snapshot entries", () => {
+test("JsonFileBrokerStateStore quarantines malformed snapshot entries instead of failing the load", () => {
+  // Behaviour change (B1b): a single malformed record must not stop the broker
+  // from starting. The row is skipped and preserved in a quarantine file; the
+  // rest of the snapshot loads. A structurally broken envelope still throws.
   const temp = withTempFile("invalid-state.json");
   try {
     writeFileSync(
@@ -133,6 +136,18 @@ test("JsonFileBrokerStateStore rejects malformed snapshot entries", () => {
       "utf8",
     );
 
+    const store = new JsonFileBrokerStateStore(temp.filePath);
+    const loaded = store.load();
+    assert.equal(loaded.exchanges.length, 0);
+  } finally {
+    temp.cleanup();
+  }
+});
+
+test("JsonFileBrokerStateStore still rejects a structurally invalid snapshot envelope", () => {
+  const temp = withTempFile("invalid-envelope-state.json");
+  try {
+    writeFileSync(temp.filePath, JSON.stringify({ version: "not-a-number" }), "utf8");
     const store = new JsonFileBrokerStateStore(temp.filePath);
     assert.throws(() => store.load(), /invalid broker snapshot/);
   } finally {

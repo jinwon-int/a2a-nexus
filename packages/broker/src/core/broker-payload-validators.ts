@@ -5,10 +5,18 @@
 // explicit `brokerId` argument), so they are unit-testable in isolation.
 import { BrokerError } from "./broker-error.js";
 import type {
+  AttachArtifactRequest,
   CreateProposalRequest,
   CreateTaskRequest,
   RegisterWorkerRequest,
+  SubmitValidationRequest,
 } from "./types.js";
+import {
+  assertRequestPayload,
+  attachArtifactRequestSchema,
+  createProposalRequestSchema,
+  submitValidationRequestSchema,
+} from "./store-schemas.js";
 import { isPlainRecord } from "./broker-task-record-normalizers.js";
 import { readString, normalizeOwnershipString } from "./broker-task-request-normalizers.js";
 import { validateA2ARoundTaskPolicy } from "./a2a-round-policy.js";
@@ -31,7 +39,17 @@ export function assertWorkerRegistrationPayload(request: RegisterWorkerRequest):
   }
 }
 
-/** Reject a change proposal that is missing required fields or kind-specific payload. */
+/**
+ * Reject a change proposal that is missing required fields or kind-specific payload.
+ *
+ * Two layers, in this order:
+ *  1. the historical field checks, which own the stable operator-facing error
+ *     messages (`summary is required`, ...);
+ *  2. {@link createProposalRequestSchema}, derived from the persisted
+ *     `proposalSchema`, which closes the drift that let a request-accepted but
+ *     store-rejected record (empty/non-string `kind`, non-string `summary`,
+ *     wrong-typed `parameterPayload`) be persisted and then break snapshot load.
+ */
 export function assertProposalPayload(request: CreateProposalRequest): void {
   if (!request.source?.id || !request.target?.id) {
     throw new BrokerError("bad_request", "source.id and target.id are required");
@@ -57,6 +75,31 @@ export function assertProposalPayload(request: CreateProposalRequest): void {
       "hybrid proposals require patchText, parameterPayload, or both",
     );
   }
+  assertRequestPayload(createProposalRequestSchema, request, "proposal payload");
+}
+
+/**
+ * Reject an artifact attachment whose shape the snapshot schema would refuse
+ * (non-string `kind`/`uri`, non-numeric `sizeBytes`, ...). Derived from
+ * `artifactSchema`.
+ */
+export function assertAttachArtifactPayload(request: AttachArtifactRequest): void {
+  if (!request?.kind || !request.uri) {
+    throw new BrokerError("bad_request", "kind and uri are required");
+  }
+  assertRequestPayload(attachArtifactRequestSchema, request, "artifact payload");
+}
+
+/**
+ * Reject a validation submission whose shape the snapshot schema would refuse
+ * (non-scalar `metrics` values, non-string `verdict`, ...). Derived from
+ * `validationSchema`.
+ */
+export function assertSubmitValidationPayload(request: SubmitValidationRequest): void {
+  if (!request?.kind || !request.verdict || !request.nodeId) {
+    throw new BrokerError("bad_request", "nodeId, kind, and verdict are required");
+  }
+  assertRequestPayload(submitValidationRequestSchema, request, "validation payload");
 }
 
 /** Enforce the A2A round task policy for a task creation request. */
