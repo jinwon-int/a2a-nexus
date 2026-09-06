@@ -17,6 +17,48 @@ type SqliteHotEntityTable =
   | "broker_workers"
   | "broker_terminal_outbox";
 
+/**
+ * SQL expressions for task fields that live inside the JSON payload rather than
+ * in a dedicated `broker_tasks` column.
+ *
+ * These exist so filters on them can be pushed into the SELECT. When they were
+ * applied in JavaScript after the query, the SQL `LIMIT` had to be dropped —
+ * limiting before an unapplied predicate would truncate matches — so a
+ * `claimedBy` or round lookup read and zod-parsed every task row in the store.
+ * `store.ts` creates a matching expression index for each of these, so the same
+ * text must be used for the predicate and the index.
+ */
+export const TASK_CLAIMED_BY_SQL = "json_extract(payload, '$.claimedBy')";
+export const TASK_EXCHANGE_ID_SQL = "json_extract(payload, '$.exchangeId')";
+export const TASK_PROPOSAL_ID_SQL = "json_extract(payload, '$.proposalId')";
+
+/**
+ * Mirrors `hoistParentRoundFields`: the top-level field wins, an empty/blank
+ * value falls through to the payload copy, and surrounding whitespace is
+ * trimmed. `char(32,9,10,13,11,12)` is the ASCII whitespace set — SQLite's
+ * one-argument `trim()` only strips spaces.
+ */
+export const TASK_PARENT_ROUND_ID_SQL =
+  "coalesce(" +
+  "nullif(trim(json_extract(payload, '$.parentRoundId'), char(32,9,10,13,11,12)), ''), " +
+  "nullif(trim(json_extract(payload, '$.payload.parentRoundId'), char(32,9,10,13,11,12)), '')" +
+  ")";
+
+/** Payload-derived task filter predicates, in the order they are appended. */
+export function hotTaskPayloadFilterPairs(filters: {
+  claimedBy?: string;
+  exchangeId?: string;
+  proposalId?: string;
+  parentRoundId?: string;
+}): Array<[string, string | undefined]> {
+  return [
+    [TASK_CLAIMED_BY_SQL, filters.claimedBy],
+    [TASK_EXCHANGE_ID_SQL, filters.exchangeId],
+    [TASK_PROPOSAL_ID_SQL, filters.proposalId],
+    [TASK_PARENT_ROUND_ID_SQL, filters.parentRoundId],
+  ];
+}
+
 export function normalizeNonNegativeSqliteLimit(value: number | undefined, fallback: number): number {
   if (typeof value === "number" && Number.isFinite(value)) {
     return Math.max(0, Math.trunc(value));
@@ -52,14 +94,15 @@ export function buildHotTableSelect(
 
 export function buildHotTaskListItemSelect(filters: SqliteTaskHotTableFilters): { sql: string; params: Array<string | number> } {
   const params: Array<string | number> = [];
-  const clauses = [
+  const clauses = ([
     ["id", filters.id],
     ["status", filters.status],
     ["target_node_id", filters.targetNodeId],
     ["intent", filters.intent],
     ["assigned_worker_id", filters.assignedWorkerId],
     ["task_origin", filters.taskOrigin],
-  ].flatMap(([column, value]) => {
+    ...hotTaskPayloadFilterPairs(filters),
+  ] as Array<[string, string | undefined]>).flatMap(([column, value]) => {
     if (!value) {
       return [];
     }

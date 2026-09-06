@@ -1552,34 +1552,36 @@ export class InMemoryA2ABroker {
 
     const worker = buildRegisteredWorkerRecord(request, capabilities, existing, now);
 
-    this.setWorkerRecord(worker);
-    this.appendAuditEvent({
-      actorId: worker.nodeId,
-      action: "worker.registered",
-      targetType: "worker",
-      targetId: worker.nodeId,
-      note: worker.displayName ?? worker.role,
+    this.commitMutation(() => {
+      this.setWorkerRecord(worker);
+      this.appendAuditEvent({
+        actorId: worker.nodeId,
+        action: "worker.registered",
+        targetType: "worker",
+        targetId: worker.nodeId,
+        note: worker.displayName ?? worker.role,
+      });
+      if (onboarding) {
+        this.appendAuditEvent({
+          actorId: worker.nodeId,
+          action: "worker.onboarding_evaluated",
+          targetType: "worker",
+          targetId: worker.nodeId,
+          note: `${onboarding.kind} ${onboarding.decision}` +
+            (onboarding.reasons.length ? `: ${onboarding.reasons.join("; ")}` : ""),
+        });
+      }
+      if (identityWarning) {
+        this.appendAuditEvent({
+          actorId: worker.nodeId,
+          action: "worker.identity_churn_detected",
+          targetType: "worker",
+          targetId: worker.nodeId,
+          note: identityWarning.message,
+        });
+      }
+      this.persistState();
     });
-    if (onboarding) {
-      this.appendAuditEvent({
-        actorId: worker.nodeId,
-        action: "worker.onboarding_evaluated",
-        targetType: "worker",
-        targetId: worker.nodeId,
-        note: `${onboarding.kind} ${onboarding.decision}` +
-          (onboarding.reasons.length ? `: ${onboarding.reasons.join("; ")}` : ""),
-      });
-    }
-    if (identityWarning) {
-      this.appendAuditEvent({
-        actorId: worker.nodeId,
-        action: "worker.identity_churn_detected",
-        targetType: "worker",
-        targetId: worker.nodeId,
-        note: identityWarning.message,
-      });
-    }
-    this.persistState();
     return worker;
   }
 
@@ -1605,18 +1607,20 @@ export class InMemoryA2ABroker {
       return worker;
     }
 
-    this.setWorkerRecord(worker);
-    this.appendAuditEvent({
-      actorId: worker.nodeId,
-      action: "worker.heartbeat",
-      targetType: "worker",
-      targetId: worker.nodeId,
-      note: "heartbeat",
-    });
-    this.persistState({
-      kind: "worker.heartbeat",
-      workerId: worker.nodeId,
-      materialChange,
+    this.commitMutation(() => {
+      this.setWorkerRecord(worker);
+      this.appendAuditEvent({
+        actorId: worker.nodeId,
+        action: "worker.heartbeat",
+        targetType: "worker",
+        targetId: worker.nodeId,
+        note: "heartbeat",
+      });
+      this.persistState({
+        kind: "worker.heartbeat",
+        workerId: worker.nodeId,
+        materialChange,
+      });
     });
     this.workerHeartbeatPersist.markPersisted(worker.nodeId, nowMs);
     return worker;
@@ -1890,37 +1894,39 @@ export class InMemoryA2ABroker {
       ...(teamId ? { teamId } : {}),
     };
 
-    this.setTaskRecord(task);
-    if (task.exchangeId) {
-      this.linkTaskToExchange(task);
-    }
-    this.appendAuditEvent({
-      actorId: task.requester.id,
-      action: "task.created",
-      targetType: "task",
-      targetId: task.id,
-      proposalId: task.proposalId,
-      note: task.status === "blocked" ? `approval required: ${task.message ?? task.intent}` : task.message ?? task.intent,
-    });
-    this.appendAuditEvent({
-      actorId: task.requester.id,
-      action: "task.lane_assigned",
-      targetType: "task",
-      targetId: task.id,
-      note: JSON.stringify(task.laneAssignment),
-    });
-    if (policyDecision?.action === "deny") {
-      // warn mode (an enforce deny threw before creation): structural evidence
-      // that this task WOULD be denied under enforce, without blocking it.
+    this.commitMutation(() => {
+      this.setTaskRecord(task);
+      if (task.exchangeId) {
+        this.linkTaskToExchange(task);
+      }
       this.appendAuditEvent({
         actorId: task.requester.id,
-        action: "task.policy_warned",
+        action: "task.created",
         targetType: "task",
         targetId: task.id,
-        note: `rule ${policyDecision.ruleId}: ${policyDecision.reason}`,
+        proposalId: task.proposalId,
+        note: task.status === "blocked" ? `approval required: ${task.message ?? task.intent}` : task.message ?? task.intent,
       });
-    }
-    this.persistState();
+      this.appendAuditEvent({
+        actorId: task.requester.id,
+        action: "task.lane_assigned",
+        targetType: "task",
+        targetId: task.id,
+        note: JSON.stringify(task.laneAssignment),
+      });
+      if (policyDecision?.action === "deny") {
+        // warn mode (an enforce deny threw before creation): structural evidence
+        // that this task WOULD be denied under enforce, without blocking it.
+        this.appendAuditEvent({
+          actorId: task.requester.id,
+          action: "task.policy_warned",
+          targetType: "task",
+          targetId: task.id,
+          note: `rule ${policyDecision.ruleId}: ${policyDecision.reason}`,
+        });
+      }
+      this.persistState();
+    });
     this.taskEvents.emit(task, "created");
     return task;
   }
@@ -2178,22 +2184,24 @@ export class InMemoryA2ABroker {
     assertTaskStatus(task.status, ["queued"], "claim");
 
     const now = isoNow();
-    task.status = "claimed";
-    task.attemptId = randomUUID();
-    task.claimedBy = workerId;
-    task.claimedAt = now;
-    task.updatedAt = now;
-    this.setTaskRecord(task);
-    this.syncExchangeStateFromTask(task, "running");
-    this.appendAuditEvent({
-      actorId: workerId,
-      action: "task.claimed",
-      targetType: "task",
-      targetId: task.id,
-      proposalId: task.proposalId,
-      note: task.intent,
+    this.commitMutation(() => {
+      task.status = "claimed";
+      task.attemptId = randomUUID();
+      task.claimedBy = workerId;
+      task.claimedAt = now;
+      task.updatedAt = now;
+      this.setTaskRecord(task);
+      this.syncExchangeStateFromTask(task, "running");
+      this.appendAuditEvent({
+        actorId: workerId,
+        action: "task.claimed",
+        targetType: "task",
+        targetId: task.id,
+        proposalId: task.proposalId,
+        note: task.intent,
+      });
+      this.persistState();
     });
-    this.persistState();
     this.taskEvents.emit(task, "claimed");
     return task;
   }
@@ -2203,19 +2211,21 @@ export class InMemoryA2ABroker {
     this.assertTaskWorker(task, workerId, "start");
     assertTaskStatus(task.status, ["claimed"], "start");
 
-    task.status = "running";
-    task.updatedAt = isoNow();
-    this.setTaskRecord(task);
-    this.syncExchangeStateFromTask(task, "running");
-    this.appendAuditEvent({
-      actorId: workerId,
-      action: "task.started",
-      targetType: "task",
-      targetId: task.id,
-      proposalId: task.proposalId,
-      note: task.intent,
+    this.commitMutation(() => {
+      task.status = "running";
+      task.updatedAt = isoNow();
+      this.setTaskRecord(task);
+      this.syncExchangeStateFromTask(task, "running");
+      this.appendAuditEvent({
+        actorId: workerId,
+        action: "task.started",
+        targetType: "task",
+        targetId: task.id,
+        proposalId: task.proposalId,
+        note: task.intent,
+      });
+      this.persistState();
     });
-    this.persistState();
     this.taskEvents.emit(task, "started");
     return task;
   }
@@ -2661,6 +2671,28 @@ export class InMemoryA2ABroker {
     });
   }
 
+  /**
+   * Run one broker mutation so every store write it performs commits once.
+   *
+   * A single lifecycle transition writes the store three to four times — the
+   * entity-repository upsert, the audit-event append, the audit retention
+   * prune, and the persistState hint write — and each of those used to open its
+   * own transaction. On the SQLite backend in WAL mode a commit is an fsync, so
+   * the commit count, not the row count, is the cost. Wrapping the mutation
+   * collapses them into one commit and makes the transition atomic: a throw
+   * midway no longer leaves the task row durable with no audit trail.
+   *
+   * Deliberately scoped to the mutation, ending at persistState. Task/state
+   * event emission stays outside: subscriber callbacks perform their own I/O
+   * (SSE writes) and a throwing subscriber must not roll back a completed
+   * mutation. Stores without transactions (the JSON-file store) leave runBatch
+   * undefined and the callback simply runs inline.
+   */
+  private commitMutation<T>(fn: () => T): T {
+    const store = this.stateStore;
+    return store?.runBatch ? store.runBatch(fn) : fn();
+  }
+
   private setTaskRecord(task: TaskRecord): void {
     // Repositories serialize synchronously (JSON.stringify / postMessage clone)
     // and never retain the record, so passing the live object is safe.
@@ -2863,6 +2895,7 @@ export class InMemoryA2ABroker {
         this.retentionPolicy.heartbeatAuditSampleIntervalMs,
       ),
       markHeartbeatAuditPersisted: (taskId, nowMs) => this.taskHeartbeatAuditPersist.markPersisted(taskId, nowMs),
+      commitMutation: (fn) => this.commitMutation(fn),
     };
   }
 

@@ -53,6 +53,16 @@ export interface TaskCheckpointContext {
   emitTaskEvent(task: TaskRecord, reason: TaskUpdateReason): void;
   shouldPersistHeartbeatAudit(taskId: string, nowMs: number): boolean;
   markHeartbeatAuditPersisted(taskId: string, nowMs: number): void;
+  /**
+   * Optional: run the record write, audit append, and persist as a single store
+   * transaction (one fsync instead of one per write). Absent on hand-built test
+   * contexts, in which case the callback runs inline with no batching.
+   */
+  commitMutation?<T>(fn: () => T): T;
+}
+
+function commitMutation<T>(context: TaskCheckpointContext, fn: () => T): T {
+  return context.commitMutation ? context.commitMutation(fn) : fn();
 }
 
 /**
@@ -186,42 +196,47 @@ export function heartbeatTask(taskId: string, workerId: string, context: TaskChe
 
   const now = isoNow();
   const nowMs = Date.parse(now);
-  task.lastHeartbeatAt = now;
-  if (lastProgressAt) {
-    const reportedProgressMs = Date.parse(lastProgressAt);
-    if (Number.isFinite(reportedProgressMs)) {
-      const priorProgressMs = task.lastProgressAt ? Date.parse(task.lastProgressAt) : Number.NaN;
-      // #2011 backstop: a report older than the task itself (beyond a small
-      // clock-skew grace window) was absorbed from stale state rather than
-      // produced by this task's harness. Ignore it — trusting it let a
-      // days-old file mtime mark a fresh task stale and dead-letter it.
-      const createdAtMs = Date.parse(task.createdAt);
-      const backstopMs = Number.isFinite(createdAtMs)
-        ? createdAtMs - PROGRESS_REPORT_BACKSTOP_GRACE_MS
-        : Number.NEGATIVE_INFINITY;
-      if (reportedProgressMs >= backstopMs) {
-        const boundedProgressMs = Math.min(reportedProgressMs, nowMs);
-        const monotonicProgressMs = Number.isFinite(priorProgressMs) && priorProgressMs <= nowMs
-          ? Math.max(priorProgressMs, boundedProgressMs)
-          : boundedProgressMs;
-        task.lastProgressAt = new Date(monotonicProgressMs).toISOString();
+  // Task-row write + throttled heartbeat audit + persist commit once. This was
+  // the most transaction-heavy call in the broker (5 store commits, so 5 fsyncs
+  // per worker heartbeat) and it runs on the hottest polling loop there is.
+  commitMutation(context, () => {
+    task.lastHeartbeatAt = now;
+    if (lastProgressAt) {
+      const reportedProgressMs = Date.parse(lastProgressAt);
+      if (Number.isFinite(reportedProgressMs)) {
+        const priorProgressMs = task.lastProgressAt ? Date.parse(task.lastProgressAt) : Number.NaN;
+        // #2011 backstop: a report older than the task itself (beyond a small
+        // clock-skew grace window) was absorbed from stale state rather than
+        // produced by this task's harness. Ignore it — trusting it let a
+        // days-old file mtime mark a fresh task stale and dead-letter it.
+        const createdAtMs = Date.parse(task.createdAt);
+        const backstopMs = Number.isFinite(createdAtMs)
+          ? createdAtMs - PROGRESS_REPORT_BACKSTOP_GRACE_MS
+          : Number.NEGATIVE_INFINITY;
+        if (reportedProgressMs >= backstopMs) {
+          const boundedProgressMs = Math.min(reportedProgressMs, nowMs);
+          const monotonicProgressMs = Number.isFinite(priorProgressMs) && priorProgressMs <= nowMs
+            ? Math.max(priorProgressMs, boundedProgressMs)
+            : boundedProgressMs;
+          task.lastProgressAt = new Date(monotonicProgressMs).toISOString();
+        }
       }
     }
-  }
-  task.updatedAt = now;
-  context.setTaskRecord(task);
-  if (context.shouldPersistHeartbeatAudit(task.id, nowMs)) {
-    context.appendAuditEvent({
-      actorId: workerId,
-      action: "task.heartbeat",
-      targetType: "task",
-      targetId: task.id,
-      proposalId: task.proposalId,
-      note: "task heartbeat",
-    });
-    context.markHeartbeatAuditPersisted(task.id, nowMs);
-  }
-  context.persistState();
+    task.updatedAt = now;
+    context.setTaskRecord(task);
+    if (context.shouldPersistHeartbeatAudit(task.id, nowMs)) {
+      context.appendAuditEvent({
+        actorId: workerId,
+        action: "task.heartbeat",
+        targetType: "task",
+        targetId: task.id,
+        proposalId: task.proposalId,
+        note: "task heartbeat",
+      });
+      context.markHeartbeatAuditPersisted(task.id, nowMs);
+    }
+    context.persistState();
+  });
   context.emitTaskEvent(task, "started"); // re-emit so subscribers see the heartbeat
   return task;
 }

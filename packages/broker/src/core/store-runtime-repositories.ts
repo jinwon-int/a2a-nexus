@@ -44,8 +44,16 @@ export class SqliteTaskRuntimeRepository implements TaskRuntimeRepository {
     return this.store.readHotTasks({ id })[0] ?? null;
   }
 
+  /**
+   * Every filter is now expressed in SQL — the column-backed ones directly, the
+   * payload-derived ones (exchangeId/proposalId/claimedBy/parentRoundId) through
+   * indexed `json_extract` expressions. Previously those four were applied in
+   * JavaScript after the query, which forced the `LIMIT` to be dropped: a query
+   * for 20 tasks claimed by one worker read and zod-parsed the entire task
+   * table. The JavaScript predicate is kept as a post-check so the result set is
+   * defined by one authority even if a stored payload shape drifts.
+   */
   listTasks(filters: TaskListFilters = {}): TaskRecord[] {
-    const sqliteCanApplyLimit = !filters.exchangeId && !filters.proposalId && !filters.claimedBy;
     return this.store
       .readHotTasks({
         status: filters.status,
@@ -53,7 +61,11 @@ export class SqliteTaskRuntimeRepository implements TaskRuntimeRepository {
         intent: filters.intent,
         assignedWorkerId: filters.assignedWorkerId,
         taskOrigin: filters.taskOrigin,
-        limit: sqliteCanApplyLimit ? filters.limit : undefined,
+        exchangeId: filters.exchangeId,
+        proposalId: filters.proposalId,
+        claimedBy: filters.claimedBy,
+        parentRoundId: filters.parentRoundId,
+        limit: filters.limit,
       })
       .filter((task) => taskMatchesRuntimeFilters(task, filters))
       .slice(0, normalizeRuntimeTaskListLimit(filters.limit));
@@ -183,11 +195,18 @@ export class SqliteAuditRuntimeRepository implements AuditRuntimeRepository {
 
   appendAuditEvent(event: AuditEvent): void {
     const hotEvent = { ...event, id: getHeartbeatAuditEventId(event) ?? event.id };
-    this.store.upsertHotAuditEvents([hotEvent]);
-    if (isHeartbeatAuditEvent(hotEvent)) {
-      this.store.pruneHotHeartbeatAuditEventsToMax(this.maxHotHeartbeatAuditEvents);
-    }
-    this.store.pruneHotAuditEventsToMax(this.maxHotAuditEvents);
+    // Append + both retention prunes are one unit of work. They used to be two
+    // or three separate BEGIN IMMEDIATE transactions — i.e. two or three fsyncs
+    // per audit event — and an append that committed before a failing prune left
+    // the hot table over its cap. `runBatch` joins an outer broker-level batch
+    // when one is open, so this does not add a commit of its own on that path.
+    this.store.runBatch(() => {
+      this.store.upsertHotAuditEvents([hotEvent]);
+      if (isHeartbeatAuditEvent(hotEvent)) {
+        this.store.pruneHotHeartbeatAuditEventsToMax(this.maxHotHeartbeatAuditEvents);
+      }
+      this.store.pruneHotAuditEventsToMax(this.maxHotAuditEvents);
+    });
   }
 }
 

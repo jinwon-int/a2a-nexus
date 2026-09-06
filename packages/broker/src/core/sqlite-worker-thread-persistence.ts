@@ -404,6 +404,18 @@ export class WorkerThreadProxyStore extends SqliteBrokerStateStore {
     this.trackWrite(promise);
   }
 
+  /**
+   * Writes leave this process through the queue, so the base-class transaction
+   * must NOT be taken here: a BEGIN IMMEDIATE on the main-thread connection
+   * would hold the database write lock while the worker thread — a separate
+   * connection — tries to commit the queued write, turning every batched
+   * mutation into a busy_timeout stall. Batching is the worker thread's job on
+   * this topology; here the batch is a plain call.
+   */
+  override runBatch<T>(fn: () => T): T {
+    return fn();
+  }
+
   override applyReviewLineageObservation(
     command: ProjectedReviewLineageObservation,
   ): Promise<ReviewLineageObservationApplicationResult> {

@@ -27,9 +27,14 @@ import {
 import {
   buildHotTableSelect,
   buildHotTaskListItemSelect,
+  hotTaskPayloadFilterPairs,
   normalizeNonNegativeSqliteLimit,
   normalizeOptionalSqliteLimit,
   parseHotTaskListItemProjection,
+  TASK_CLAIMED_BY_SQL,
+  TASK_EXCHANGE_ID_SQL,
+  TASK_PARENT_ROUND_ID_SQL,
+  TASK_PROPOSAL_ID_SQL,
 } from "./store-hot-select-projections.js";
 import { DEFAULT_HOT_RUNTIME_MAX_HEARTBEAT_AUDIT_EVENTS } from "./store-runtime-repositories.js";
 import * as hotDiagnostics from "./store-hot-diagnostics-read.js";
@@ -141,6 +146,15 @@ export interface SqliteTaskHotTableFilters {
   intent?: TaskRecord["intent"];
   assignedWorkerId?: string;
   taskOrigin?: TaskRecord["taskOrigin"];
+  /**
+   * Payload-derived filters. `broker_tasks` has no column for these, so they
+   * are matched through indexed `json_extract` expressions rather than by
+   * post-filtering the whole table in JavaScript.
+   */
+  claimedBy?: string;
+  exchangeId?: string;
+  proposalId?: string;
+  parentRoundId?: string;
   /** Optional cap on result rows to prevent unbounded heap materialization on hot-table diagnostic/cleanup reads. */
   maxRows?: number;
   /** Runtime listing cap. Unlike maxRows, limit=0 intentionally returns no rows. */
@@ -389,6 +403,10 @@ export class SqliteBrokerStateStore implements BrokerStateStore {
   // statements come from a small closed set of shapes, so memoize them per
   // text; dynamic-arity statements (e.g. IN-list deletes) stay uncached.
   private readonly preparedStatements = new Map<string, StatementSync>();
+  // 0 when no transaction is open on this connection, 1 while `runBatch` holds
+  // one. node:sqlite has a single connection per store and SQLite has no true
+  // nested transactions, so this is a join flag rather than a nesting counter.
+  private transactionDepth = 0;
 
   constructor(
     private readonly dbFile: string,
@@ -526,6 +544,7 @@ export class SqliteBrokerStateStore implements BrokerStateStore {
         ["intent", filters.intent],
         ["assigned_worker_id", filters.assignedWorkerId],
         ["task_origin", filters.taskOrigin],
+        ...hotTaskPayloadFilterPairs(filters),
       ],
       "updated_at DESC, id ASC",
       filters.limit ?? (filters.maxRows !== undefined && filters.maxRows > 0 ? normalizeOptionalSqliteLimit(filters.maxRows) : undefined),
@@ -1189,6 +1208,23 @@ export class SqliteBrokerStateStore implements BrokerStateStore {
     this.db.exec(`
       CREATE INDEX IF NOT EXISTS broker_tasks_origin_status_idx
         ON broker_tasks(task_origin, status);
+    `);
+    // Expression indexes for the payload-derived task filters. Without them the
+    // pushed-down predicates would still scan every row (they would just scan it
+    // in SQLite instead of in JavaScript); with them, a claimedBy or round-status
+    // lookup touches only matching rows and the SQL LIMIT becomes usable again.
+    // The expression text must match store-hot-select-projections exactly or
+    // SQLite silently ignores the index. All parts are deterministic, which
+    // SQLite requires of an indexed expression.
+    this.db.exec(`
+      CREATE INDEX IF NOT EXISTS broker_tasks_claimed_by_idx
+        ON broker_tasks(${TASK_CLAIMED_BY_SQL}, updated_at DESC, id ASC);
+      CREATE INDEX IF NOT EXISTS broker_tasks_exchange_id_idx
+        ON broker_tasks(${TASK_EXCHANGE_ID_SQL}, updated_at DESC, id ASC);
+      CREATE INDEX IF NOT EXISTS broker_tasks_proposal_id_idx
+        ON broker_tasks(${TASK_PROPOSAL_ID_SQL}, updated_at DESC, id ASC);
+      CREATE INDEX IF NOT EXISTS broker_tasks_parent_round_id_idx
+        ON broker_tasks(${TASK_PARENT_ROUND_ID_SQL}, updated_at DESC, id ASC);
     `);
     this.writeMetadata("state_version", String(CURRENT_BROKER_STATE_VERSION_VALUE));
     return journal?.journal_mode ?? "unknown";
@@ -2037,11 +2073,30 @@ export class SqliteBrokerStateStore implements BrokerStateStore {
     return "id";
   }
 
-  private runImmediateTransaction(fn: () => void): void {
+  /**
+   * Run `fn` inside a single durable transaction, joining an already-open one
+   * instead of opening a nested (and unsupported) second BEGIN.
+   *
+   * Every write entry point on this store used to open its own BEGIN IMMEDIATE,
+   * so one broker mutation cost several commits — and in WAL mode each commit is
+   * an fsync. A single `claimTask` measured 4 BEGINs: the task row upsert, the
+   * audit-event upsert, the audit retention prune, and the persist hint write.
+   * `runBatch` lets a caller declare the whole mutation as one unit; the inner
+   * `runImmediateTransaction` calls then become no-op joins, which collapses the
+   * commits to one and makes the mutation atomic end to end.
+   */
+  runBatch<T>(fn: () => T): T {
+    if (this.transactionDepth > 0) {
+      // Already inside a transaction on this connection: join it. Committing
+      // here would publish a half-finished outer unit of work.
+      return fn();
+    }
     this.db.exec("BEGIN IMMEDIATE");
+    this.transactionDepth = 1;
     try {
-      fn();
+      const result = fn();
       this.db.exec("COMMIT");
+      return result;
     } catch (error) {
       try {
         this.db.exec("ROLLBACK");
@@ -2049,7 +2104,13 @@ export class SqliteBrokerStateStore implements BrokerStateStore {
         // Preserve the original error; rollback failure only confirms the write did not cleanly complete.
       }
       throw error;
+    } finally {
+      this.transactionDepth = 0;
     }
+  }
+
+  private runImmediateTransaction(fn: () => void): void {
+    this.runBatch(fn);
   }
 
   private writeMetadata(key: string, value: string): void {
