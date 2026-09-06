@@ -14,12 +14,42 @@
  * building the broker. Keep the two rule sets in lockstep via the contract:
  * contracts/a2a/broker-policy.md
  *
- * Safety: source-only validation. No network, no writes.
+ * Deployment path (#2064). This script is also the single CLI that owns the
+ * document's lifecycle, so validation and deployment cannot drift apart:
+ *   validate  (default)  schema gate on the committed document — CI-safe
+ *   drift                compare a broker's live document to the canonical one
+ *   sync                 deploy the canonical document to a broker's live path
+ * The drift/sync mechanics live in scripts/lib/broker-policy-deployment.mjs.
  *
- * Usage: node scripts/check-broker-policy.mjs [path/to/broker-policy.json]
+ * Why drift/sync are node-local and not a CI gate: CI runners have no route to
+ * a broker host (the brokers sit behind private tunnels) and no fleet ssh
+ * credentials. Giving CI those credentials to read one file would be a larger
+ * standing risk than the drift it detects, and the repo may not name fleet
+ * nodes at all (scripts/public-readiness-scan.mjs --strict-internal fails on
+ * node identifiers). So the split is: CI keeps the schema gate plus the unit
+ * tests below it, and the liveness comparison runs on each broker node, where
+ * the live file actually is. See contracts/a2a/broker-policy.md §4.1.
+ *
+ * Safety: `validate` and `drift` are read-only source/file inspection with no
+ * network. `sync` is dry-run by default; only `sync --apply` writes, and it
+ * writes exactly two files (the live policy document and a backup of the
+ * previous one). Nothing here restarts, reloads or dispatches to a broker.
+ *
+ * Usage:
+ *   node scripts/check-broker-policy.mjs [path/to/broker-policy.json]
+ *   node scripts/check-broker-policy.mjs drift [--live PATH] [--canonical PATH]
+ *   node scripts/check-broker-policy.mjs sync  [--live PATH] [--canonical PATH] [--apply]
  */
 import fs from 'node:fs';
-import path from 'node:path';
+
+import {
+  DEFAULT_CANONICAL_POLICY_PATH,
+  DEFAULT_LIVE_POLICY_PATH,
+  applyPolicySync,
+  formatDeploymentReport,
+  formatSyncReport,
+  inspectPolicyDeployment,
+} from './lib/broker-policy-deployment.mjs';
 
 export const BROKER_POLICY_SCHEMA = 'a2a.broker.policy.v1';
 export const MODES = ['warn', 'enforce'];
@@ -101,8 +131,70 @@ export function validatePolicyDocument(doc) {
   return errors;
 }
 
+const SUBCOMMANDS = new Set(['validate', 'drift', 'sync']);
+
+function parseFlags(argv) {
+  const flags = { apply: false };
+  for (let i = 0; i < argv.length; i += 1) {
+    const arg = argv[i];
+    if (arg === '--apply') flags.apply = true;
+    else if (arg === '--live') flags.live = argv[++i];
+    else if (arg === '--canonical') flags.canonical = argv[++i];
+    else if (arg.startsWith('--live=')) flags.live = arg.slice('--live='.length);
+    else if (arg.startsWith('--canonical=')) flags.canonical = arg.slice('--canonical='.length);
+    else return { error: `unknown argument '${arg}'` };
+  }
+  return flags;
+}
+
+/** drift: fail when a broker's live document differs from the canonical one. Never repairs. */
+function driftCommand(argv) {
+  const flags = parseFlags(argv);
+  if (flags.error) {
+    process.stderr.write(`${flags.error}\n`);
+    return 2;
+  }
+  const result = inspectPolicyDeployment({
+    canonicalPath: flags.canonical ?? DEFAULT_CANONICAL_POLICY_PATH,
+    livePath: flags.live ?? DEFAULT_LIVE_POLICY_PATH,
+    validate: validatePolicyDocument,
+  });
+  for (const line of formatDeploymentReport(result)) process.stdout.write(`${line}\n`);
+  if (result.status === 'ok') return 0;
+  // 2 = could not read/parse one side (fail-closed, never "assumed equal");
+  // 1 = a real policy difference that needs an operator decision.
+  return result.status === 'drift' ? 1 : 2;
+}
+
+/** sync: deploy the canonical document to a live path. Dry-run unless --apply. */
+function syncCommand(argv) {
+  const flags = parseFlags(argv);
+  if (flags.error) {
+    process.stderr.write(`${flags.error}\n`);
+    return 2;
+  }
+  const result = applyPolicySync({
+    canonicalPath: flags.canonical ?? DEFAULT_CANONICAL_POLICY_PATH,
+    livePath: flags.live ?? DEFAULT_LIVE_POLICY_PATH,
+    apply: flags.apply,
+    validate: validatePolicyDocument,
+  });
+  for (const line of formatSyncReport(result)) process.stdout.write(`${line}\n`);
+  if (result.refused || result.status === 'verify-failed') return 2;
+  return 0;
+}
+
 function main(argv) {
-  const target = argv[0] ?? path.join('docs', 'ops', 'broker-policy.json');
+  if (argv[0] && SUBCOMMANDS.has(argv[0])) {
+    if (argv[0] === 'drift') return driftCommand(argv.slice(1));
+    if (argv[0] === 'sync') return syncCommand(argv.slice(1));
+    return validateCommand(argv.slice(1));
+  }
+  return validateCommand(argv);
+}
+
+function validateCommand(argv) {
+  const target = argv[0] ?? DEFAULT_CANONICAL_POLICY_PATH;
   let doc;
   try {
     doc = JSON.parse(fs.readFileSync(target, 'utf8'));
