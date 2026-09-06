@@ -34,6 +34,72 @@ import type {
 
 const DEFAULT_A2A_ROUND_WORKER_OFFLINE_AFTER_MS = 90_000;
 
+/**
+ * Three-way resolution of a task's `payload.mode` for the policy referee
+ * (a2a-nexus#2046, follow-up to the B4 fix in #2040).
+ *
+ * Both policy call sites used to write
+ * `typeof payload?.mode === "string" ? payload.mode : undefined`, which
+ * collapses two very different states into one:
+ *
+ *   - the payload declares no mode at all, and
+ *   - the payload declares a mode the broker could not read
+ *     (`{"mode": ["patch"]}`, `{"mode": 3}`, `{"mode": ""}`).
+ *
+ * The referee's `denyModes` check now fails closed on an undeterminable mode,
+ * so it needs the distinction: without it, every mode-less task in a class
+ * whose rule declares `denyModes` would be treated as suspicious, and the
+ * warn-window false-positive count that gates the `enforce` promotion
+ * (contracts/a2a/broker-policy.md §5.1) would be inflated by ordinary traffic.
+ *
+ * `malformed` is reported separately so the audit note can say which of the
+ * two produced the deny — a non-string `mode` is an anomaly in its own right,
+ * not merely a missing field.
+ */
+export function resolveTaskPolicyMode(payload: unknown): {
+  mode?: string;
+  modeResolution: "declared" | "absent" | "undetermined";
+  malformed: boolean;
+} {
+  if (typeof payload !== "object" || payload === null || !("mode" in payload)) {
+    return { modeResolution: "absent", malformed: false };
+  }
+  const raw = (payload as { mode?: unknown }).mode;
+  if (raw === undefined) {
+    // An explicit `mode: undefined` is indistinguishable from an absent key
+    // once the payload round-trips through JSON, so treat it as absent.
+    return { modeResolution: "absent", malformed: false };
+  }
+  if (typeof raw === "string" && raw.length > 0) {
+    return { mode: raw, modeResolution: "declared", malformed: false };
+  }
+  return { modeResolution: "undetermined", malformed: true };
+}
+
+/**
+ * Annotate a deny that came from an unreadable mode, once, on the decision
+ * itself — the reason string is what every downstream consumer records
+ * (the enforce-path throw, the create-path audit note written by broker.ts,
+ * and the claim-path note here), so annotating the decision keeps them
+ * consistent instead of patching each site.
+ *
+ * The suffix is appended, never prepended: `reasonCodeForDecision` in
+ * a2a-policy-referee classifies by reason PREFIX, so `mode_undetermined`
+ * still resolves correctly.
+ */
+function annotateMalformedMode(
+  decision: BrokerPolicyDecision,
+  malformed: boolean,
+): BrokerPolicyDecision {
+  if (!malformed || decision.action !== "deny") return decision;
+  return {
+    ...decision,
+    reason:
+      `${decision.reason} (the task payload declared a mode that is not a non-empty string; ` +
+      `this deny is the fail-closed path, not a missing-field default)`,
+  };
+}
+
 export interface TaskAdmissionContext {
   brokerId?: string;
   teamId?: string;
@@ -187,15 +253,18 @@ export function evaluateCreateTaskPolicy(
   const doc = context.policyDocument;
   if (!doc) return undefined;
   const workerClass = workerClassForPolicy(request.payload, request.assignedWorkerId ?? request.target.id, context);
-  const decision = evaluateTaskPolicy({
+  const resolvedMode = resolveTaskPolicyMode(request.payload);
+  const rawDecision = evaluateTaskPolicy({
     intent: request.intent,
-    mode: typeof request.payload?.mode === "string" ? request.payload.mode : undefined,
+    mode: resolvedMode.mode,
+    modeResolution: resolvedMode.modeResolution,
     workerClass,
     // requireImplementationCapability is a claim-time rule; opt out explicitly
     // so the referee does not fail closed on the missing readiness input here.
     evaluationPoint: "create",
     countTasksToday: () => countTasksCreatedTodayInClass(workerClass, context),
   }, doc);
+  const decision = annotateMalformedMode(rawDecision, resolvedMode.malformed);
   if (decision.action === "deny") {
     if (doc.mode === "enforce") {
       context.appendAuditEvent({
@@ -212,6 +281,7 @@ export function evaluateCreateTaskPolicy(
       reason: decision.reason,
       intent: request.intent,
       workerClass,
+      malformedMode: resolvedMode.malformed,
     });
   }
   return decision;
@@ -309,15 +379,18 @@ export function assertClaimTaskPolicy(task: TaskRecord, workerId: string, contex
   if (!doc) return;
   const workerClass = workerClassForPolicy(task.payload, workerId, context);
   const readiness = evaluateClaimImplementationReadiness(task, workerId, context);
-  const decision = evaluateTaskPolicy({
+  const resolvedMode = resolveTaskPolicyMode(task.payload);
+  const rawDecision = evaluateTaskPolicy({
     intent: task.intent,
-    mode: typeof task.payload?.mode === "string" ? task.payload.mode : undefined,
+    mode: resolvedMode.mode,
+    modeResolution: resolvedMode.modeResolution,
     workerClass,
     evaluationPoint: "claim",
     implementation: readiness.kind === "not_implementation"
       ? { isImplementationIntent: false, ready: false }
       : { isImplementationIntent: true, ready: readiness.ready, blockers: readiness.blockers },
   }, doc);
+  const decision = annotateMalformedMode(rawDecision, resolvedMode.malformed);
   if (decision.action === "allow") return;
   if (decision.action === "require_approval" && task.approval) return;
   const note = `rule ${decision.ruleId}: ${decision.reason}`;
