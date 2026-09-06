@@ -233,7 +233,11 @@ export async function runTask(config: RunnerConfig, task: RunnerTask): Promise<R
   const workDir = join(taskRoot, runToken);
   await mkdir(taskRoot, { recursive: true, mode: 0o700 });
   await mkdir(workDir, { recursive: false, mode: 0o700 });
-  await writeFile(join(workDir, "task.json"), JSON.stringify(normalizedTask, null, 2));
+  // 0600: the raw task payload is the *unredacted* one (the sanitized copy is
+  // artifacts/task.json). It can carry prompts, repo/branch targets and
+  // task.env values, so it must not be world-readable on a shared runner host
+  // via the default 0644 umask (BUG-B7).
+  await writeFile(join(workDir, "task.json"), JSON.stringify(normalizedTask, null, 2), { mode: 0o600 });
   await materializeSubagentContextBrief(workDir, normalizedTask);
   await writeFile(join(workDir, "run.json"), JSON.stringify({
     taskId: task.id,
@@ -263,6 +267,14 @@ export async function runTask(config: RunnerConfig, task: RunnerTask): Promise<R
     ? withCodexCredentialRuntime(config, codexCredentialRuntime)
     : config;
   const args = buildRunArgs(executionConfig, normalizedTask, workDir, runToken);
+  // Load the execution-proof signing key BEFORE the container runs (BUG-B7).
+  // It used to be read at proof-build time, i.e. after a full task execution:
+  // a missing/unreadable key file threw out of runTask only once the container
+  // had already cloned, patched and possibly pushed a PR — burning the whole
+  // run on a config error that is knowable up front. Fail fast instead.
+  const proofSigningKeyPem = config.proofSigningKeyFile
+    ? readProofSigningKey(config.proofSigningKeyFile)
+    : undefined;
   const timeoutMs = normalizedTask.timeoutMs ?? config.defaultTimeoutMs;
   const engine = config.engine ?? "docker";
   // Use retry harness for transient container failures.
@@ -493,9 +505,10 @@ export async function runTask(config: RunnerConfig, task: RunnerTask): Promise<R
     result,
     expanded: expandedTask,
     runToken,
-    ...(config.proofSigningKeyFile
+    // Read pre-execution (see proofSigningKeyPem above) — never re-read here.
+    ...(proofSigningKeyPem !== undefined
       ? {
-          signingKeyPem: readFileSync(config.proofSigningKeyFile, "utf8"),
+          signingKeyPem: proofSigningKeyPem,
           signingKid: config.proofSigningKid,
         }
       : {}),
@@ -835,6 +848,20 @@ function buildWorkerProfileBlockResult(
   };
 }
 
+/**
+ * Read the execution-proof signing key up front so a misconfigured key file
+ * fails the run before any container work happens (BUG-B7).
+ */
+function readProofSigningKey(keyFile: string): string {
+  try {
+    return readFileSync(keyFile, "utf8");
+  } catch (error) {
+    throw new Error(
+      `execution proof signing key is not readable before container start: ${redactSecrets((error as Error).message)}`,
+    );
+  }
+}
+
 function safeId(id: string): string {
   const safe = id.replace(/[^a-zA-Z0-9_.-]/g, "_").replace(/^[-.]+/, "_").slice(0, 80);
   return safe || "task";
@@ -850,11 +877,50 @@ function buildContainerName(taskId: string, runToken: string): string {
   return `a2a-${safeId(taskId)}-${runToken}`.slice(0, 128);
 }
 
+/**
+ * Allowlist for `task.env` pass-through into the container (BUG-B5).
+ *
+ * This was a denylist of a handful of GitHub/patch keys, which is unsound: any
+ * key not explicitly named reached the container, including ones that hijack
+ * the in-container toolchain rather than merely configure it —
+ * `GIT_CONFIG_COUNT`/`GIT_CONFIG_KEY_*`/`GIT_CONFIG_VALUE_*` (inject arbitrary
+ * git config such as `core.sshCommand` / `credential.helper`),
+ * `GIT_SSH_COMMAND` and `GIT_PROXY_COMMAND` (arbitrary command execution on
+ * every git remote op), `LD_PRELOAD`/`LD_LIBRARY_PATH` (code injection into
+ * every binary the run script spawns), `PATH`/`BASH_ENV`/`ENV` (shadow `gh`,
+ * `git`, `node` with task-controlled binaries), and `HTTP_PROXY`/`HTTPS_PROXY`/
+ * `ALL_PROXY`/`NO_PROXY` (redirect the token-bearing GitHub traffic through a
+ * task-chosen endpoint, defeating the egress allowlist). All of these run with
+ * the mounted GH token, so the runner — not the task — must own them.
+ *
+ * Tasks legitimately need only runner/worker knobs, which are `A2A_`-prefixed
+ * (`A2A_OPENCLAW_MODEL`, `A2A_HERMES_THINKING`, `A2A_RUNNER_BASE_BRANCH`,
+ * `A2A_DOCKER_RUNNER_NO_LIVE`, … — see `normalizeTaskEnv` and the built-in task
+ * templates), so the allowlist is prefix-based with a small explicit tail for
+ * the correlation ids the broker/evidence path already reads off `task.env`.
+ */
+const TASK_ENV_ALLOWED_PREFIXES = ["A2A_"] as const;
+
+/** Non-`A2A_` keys kept for compatibility; correlation ids only, never behaviour. */
+const TASK_ENV_ALLOWED_KEYS = new Set([
+  "RUN_ID",
+  "TRACE_ID",
+]);
+
+/** POSIX-ish env name syntax; blocks `-e` smuggling via `=`/whitespace in a key. */
+const TASK_ENV_KEY_SYNTAX = /^[A-Za-z_][A-Za-z0-9_]*$/;
+
 export function buildRunArgs(config: RunnerConfig, task: RunnerTask, workDir: string, runToken = createRunToken()): string[] {
   const containerName = buildContainerName(task.id, runToken);
   const args = [
     "run",
     "--rm",
+    // PID 1 in the task container is `bash /work/run.sh`, and a shell ignores
+    // SIGTERM while it waits on a child. Without an init process a stop/kill
+    // (including the runner's own timeout path) leaves the workload running
+    // until SIGKILL, and reaped agent children become zombies. `--init` puts a
+    // signal-forwarding, zombie-reaping init at PID 1 (BUG-B2).
+    "--init",
     "--name",
     containerName,
     "--network",
@@ -967,8 +1033,14 @@ export function buildRunArgs(config: RunnerConfig, task: RunnerTask, workDir: st
     "A2A_CONTAINED_SUBAGENTS_REASONS",
     "A2A_SUBAGENT_CONTEXT_BRIEF",
   ]);
+  const isAllowedTaskEnvKey = (key: string): boolean => {
+    if (reservedSubagentEnv.has(key)) return false;
+    if (!TASK_ENV_KEY_SYNTAX.test(key)) return false;
+    if (TASK_ENV_ALLOWED_PREFIXES.some((prefix) => key.startsWith(prefix))) return true;
+    return TASK_ENV_ALLOWED_KEYS.has(key);
+  };
   for (const [key, value] of Object.entries(task.env ?? {})) {
-    if (reservedSubagentEnv.has(key)) continue;
+    if (!isAllowedTaskEnvKey(key)) continue;
     args.push("-e", `${key}=${value}`);
   }
 
