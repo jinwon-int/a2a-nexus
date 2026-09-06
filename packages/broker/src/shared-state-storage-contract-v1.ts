@@ -26,6 +26,7 @@ import {
   SHARED_STATE_OUTBOX_V1_VALUES as OUTBOX_V,
 } from "./shared-state-outbox-v1-values.js";
 import { SHARED_STATE_STORAGE_V1_VALUES as V } from "./shared-state-storage-v1-values.js";
+import { isRecord } from "./core/value-guards.js";
 
 export { SHARED_STATE_STORAGE_V1_VALUES } from "./shared-state-storage-v1-values.js";
 export {
@@ -1380,10 +1381,6 @@ const HEALTH_IDENTITY_FIELD_NAMES = new Set([
   "sourcecontent",
   "provenancepayload",
 ]);
-
-function isRecord(value: unknown): value is RecordValue {
-  return value !== null && typeof value === "object" && !Array.isArray(value);
-}
 
 // Field names repeat heavily across commands, so memoize normalization.
 // Keys are caller-controlled: the cache clears at capacity instead of

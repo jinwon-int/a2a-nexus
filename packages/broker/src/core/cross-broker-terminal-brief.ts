@@ -1,6 +1,7 @@
 import { createHash } from "node:crypto";
 
 import type { TaskStatus } from "./types.js";
+import { stableStringify } from "./value-guards.js";
 import {
   validateTerminalBriefMetadata as canonicalValidateTerminalBriefMetadata,
 } from "./terminal-brief-metadata.js";
@@ -491,13 +492,4 @@ function sanitizeRenderedText(value: unknown, maxChars: number): string | undefi
     .replace(/(^|\s)(?:[A-Za-z]:)?\/[\w./-]+/g, "$1[path]")
     .slice(0, maxChars);
   return sanitized || undefined;
-}
-
-function stableStringify(value: unknown): string {
-  if (Array.isArray(value)) return `[${value.map(stableStringify).join(",")}]`;
-  if (value && typeof value === "object") {
-    const record = value as Record<string, unknown>;
-    return `{${Object.keys(record).sort().map((key) => `${JSON.stringify(key)}:${stableStringify(record[key])}`).join(",")}}`;
-  }
-  return JSON.stringify(value);
 }

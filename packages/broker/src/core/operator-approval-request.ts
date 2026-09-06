@@ -37,7 +37,7 @@
 // Parent:    #982 Team2 — complexity execution plan draft.
 // ─────────────────────────────────────────────────────────────────────────────
 
-import { isRecord } from "./value-guards.js";
+import { isRecord, stableStringify } from "./value-guards.js";
 import { createHash } from "node:crypto";
 import type {
   ComplexityExecutionPlanDraftPacket,
@@ -1367,28 +1367,9 @@ function buildRefId(
   return `ref-${createHash("sha256").update(seed).digest("hex").slice(0, 12)}`;
 }
 
-// ---------------------------------------------------------------------------
-// Stable JSON stringify for deterministic keying
-// ---------------------------------------------------------------------------
-
-function stableStringify(value: unknown): string {
-  if (value === null || typeof value !== "object") {
-    return JSON.stringify(value);
-  }
-  if (Array.isArray(value)) {
-    return `[${value.map(stableStringify).join(",")}]`;
-  }
-  const record = value as Record<string, unknown>;
-  return `{${Object.keys(record)
-    .sort()
-    .map((k) => `${JSON.stringify(k)}:${stableStringify(record[k])}`)
-    .join(",")}}`;
-}
-
 function isComplexityExecutionPlanPreflightSealPacket(
   value: unknown,
 ): value is ComplexityExecutionPlanPreflightSealPacket {
   return isRecord(value) &&
     value.kind === "a2a-broker.complexity-execution-plan-preflight-seal.packet";
 }
-

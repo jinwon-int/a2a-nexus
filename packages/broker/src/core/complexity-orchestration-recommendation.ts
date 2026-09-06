@@ -24,6 +24,7 @@
 // ─────────────────────────────────────────────────────────────────────────────
 
 import { createHash } from "node:crypto";
+import { stableStringify } from "./value-guards.js";
 import type {
   TaskComplexityClassification,
   ComplexityLevel,
@@ -370,22 +371,4 @@ export function renderComplexityOrchestrationRecommendationMarkdown(
     "dispatches broker work, deploys/restarts services, moves secrets, " +
     "sends provider messages, or performs ACK/replay.",
   ].join("\n");
-}
-
-// ---------------------------------------------------------------------------
-// Stable JSON stringify for deterministic keying
-// ---------------------------------------------------------------------------
-
-function stableStringify(value: unknown): string {
-  if (value === null || typeof value !== "object") {
-    return JSON.stringify(value);
-  }
-  if (Array.isArray(value)) {
-    return `[${value.map(stableStringify).join(",")}]`;
-  }
-  const record = value as Record<string, unknown>;
-  return `{${Object.keys(record)
-    .sort()
-    .map((k) => `${JSON.stringify(k)}:${stableStringify(record[k])}`)
-    .join(",")}}`;
 }

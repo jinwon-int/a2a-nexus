@@ -1,3 +1,5 @@
+import { isRecord } from "./value-guards.js";
+
 // Durable wave plan (#1357 G3) — pure state machine + gate evaluation.
 //
 // The manual wave rhythm (dispatch -> readback -> quorum/gate -> implement ->
@@ -65,10 +67,6 @@ export class WavePlanError extends Error {
 }
 
 const TERMINAL_STATES = new Set<WavePlanState>(["completed", "aborted"]);
-
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === "object" && value !== null && !Array.isArray(value);
-}
 
 function validateGate(raw: unknown, where: string): WaveStageGate {
   if (!isRecord(raw)) throw new WavePlanError("wave_spec_invalid", `${where}: gate must be an object`);

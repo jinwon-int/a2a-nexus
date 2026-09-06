@@ -1,4 +1,5 @@
 import type { TaskError, TaskRecord, TaskRetryPolicy } from "./types.js";
+import { isRecord } from "./value-guards.js";
 
 export const RETRY_HARD_DENY_CODES = new Set([
   "acceptance_failed",
@@ -184,8 +185,4 @@ function firstString(...values: unknown[]): string | undefined {
     if (typeof value === "string" && value.trim().length > 0) return value.trim();
   }
   return undefined;
-}
-
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === "object" && value !== null && !Array.isArray(value);
 }

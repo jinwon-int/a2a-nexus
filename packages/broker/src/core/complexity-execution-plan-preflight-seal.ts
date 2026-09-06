@@ -16,7 +16,7 @@
 //            approval envelope.
 // ─────────────────────────────────────────────────────────────────────────────
 
-import { isRecord } from "./value-guards.js";
+import { isRecord, stableStringify } from "./value-guards.js";
 import { createHash } from "node:crypto";
 import type { ComplexityExecutionPlanDraftPacket } from "./complexity-execution-plan-draft.js";
 
@@ -1100,24 +1100,6 @@ export function checkPreflightSealBootstrapContextIsolation(): string[] {
   // Static check: these paths would be blocked if present in the repo root.
   // At code level, no reference to these paths is emitted.
   return blockedPaths.filter(() => false); // all clean — no paths found
-}
-
-// ---------------------------------------------------------------------------
-// Stable JSON stringify for deterministic keying
-// ---------------------------------------------------------------------------
-
-function stableStringify(value: unknown): string {
-  if (value === null || typeof value !== "object") {
-    return JSON.stringify(value);
-  }
-  if (Array.isArray(value)) {
-    return `[${value.map(stableStringify).join(",")}]`;
-  }
-  const record = value as Record<string, unknown>;
-  return `{${Object.keys(record)
-    .sort()
-    .map((k) => `${JSON.stringify(k)}:${stableStringify(record[k])}`)
-    .join(",")}}`;
 }
 
 function isComplexityExecutionPlanDraftPacket(

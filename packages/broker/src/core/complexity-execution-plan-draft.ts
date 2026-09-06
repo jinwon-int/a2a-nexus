@@ -27,7 +27,7 @@
 //            recommendation packet.
 // ─────────────────────────────────────────────────────────────────────────────
 
-import { isRecord } from "./value-guards.js";
+import { isRecord, stableStringify } from "./value-guards.js";
 import { createHash } from "node:crypto";
 import type { FinalizerApprovalEnvelopeDraftPacket } from "./complexity-finalizer-approval-envelope-draft.js";
 
@@ -843,24 +843,6 @@ export function checkBootstrapContextIsolation(): string[] {
   }
 
   return missingIgnores;
-}
-
-// ---------------------------------------------------------------------------
-// Stable JSON stringify for deterministic keying
-// ---------------------------------------------------------------------------
-
-function stableStringify(value: unknown): string {
-  if (value === null || typeof value !== "object") {
-    return JSON.stringify(value);
-  }
-  if (Array.isArray(value)) {
-    return `[${value.map(stableStringify).join(",")}]`;
-  }
-  const record = value as Record<string, unknown>;
-  return `{${Object.keys(record)
-    .sort()
-    .map((k) => `${JSON.stringify(k)}:${stableStringify(record[k])}`)
-    .join(",")}}`;
 }
 
 function isFinalizerApprovalEnvelopeDraftPacket(

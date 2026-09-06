@@ -368,6 +368,12 @@ function safeExecutionSafetyGates(): SourcePublicExecutionPreflight["safetyGates
   };
 }
 
+// Byte-for-byte behavioural twin of `core/value-guards.ts#stableStringify` in
+// the broker package (#2047). Kept local because @openclaw/a2a-docker-runner
+// declares no dependency on the broker package, and adding one to share a
+// seven-line serializer would couple the runner's build to the broker's. If
+// this ever diverges from the shared implementation the digests below stop
+// matching the broker's, so change both or neither.
 function stableStringify(value: unknown): string {
   if (value === null || typeof value !== "object") return JSON.stringify(value);
   if (Array.isArray(value)) return `[${value.map(stableStringify).join(",")}]`;

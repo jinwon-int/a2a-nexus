@@ -21,6 +21,7 @@ import { readFileSync } from "node:fs";
 
 import { canonicalizeJson } from "./agent-card-signing.js";
 import { cachedPublicKey } from "./key-object-cache.js";
+import { isRecord } from "./value-guards.js";
 
 const FINALIZER_ROLE_PREFIX = "finalizer:";
 
@@ -53,10 +54,6 @@ function keyRecordOf(entry: string | FinalizerKeyRecord): FinalizerKeyRecord {
 export interface FinalizerVerdictSignatureResult {
   ok: boolean;
   reason?: string;
-}
-
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === "object" && value !== null && !Array.isArray(value);
 }
 
 /**

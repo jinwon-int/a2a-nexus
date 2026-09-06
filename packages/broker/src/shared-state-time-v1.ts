@@ -7,6 +7,7 @@
  */
 
 import { SHARED_STATE_TIME_V1_VALUES as V } from "./shared-state-time-v1-values.js";
+import { isRecord } from "./core/value-guards.js";
 
 export { SHARED_STATE_TIME_V1_VALUES } from "./shared-state-time-v1-values.js";
 
@@ -171,10 +172,6 @@ const CANONICAL_DECIMAL_PATTERN = /^(?:0|[1-9][0-9]*)$/;
 const MAX_TIMESTAMP = BigInt(V.limits.maxTimestampUnixMs);
 const MAX_DURATION = BigInt(V.limits.maxDurationMs);
 const MAX_TOLERANCE = BigInt(V.limits.maxBackwardSkewToleranceMs);
-
-function isRecord(value: unknown): value is RecordValue {
-  return value !== null && typeof value === "object" && !Array.isArray(value);
-}
 
 function errorResult<T>(
   code: SharedStateTimeErrorCodeV1,
