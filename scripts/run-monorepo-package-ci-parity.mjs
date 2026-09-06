@@ -43,7 +43,14 @@ export const PACKAGE_CI_SURFACES = {
       ['npm', ['run', 'check', '-w', 'packages/docker-runner']],
       ['npm', ['run', 'build', '-w', 'packages/docker-runner']],
       ['npm', ['run', 'lint', '-w', 'packages/docker-runner']],
-      ['npm', ['test', '-w', 'packages/docker-runner']],
+      // No standalone `npm test -w packages/docker-runner` here: the
+      // coverage:baseline command below runs the same compiled dist suite via
+      // `node --test --experimental-test-coverage` over every
+      // `dist/**/*.test.js` (a superset of the package `test` script, whose
+      // `dist/**/*.test.js` glob only expands one level under POSIX sh), and
+      // fails closed when that run exits non-zero
+      // (buildBaseline -> floorEvaluation, coverage-baseline-report.mjs).
+      // Running both executed the whole suite twice per docker-runner CI job.
       ['node', ['packages/docker-runner/scripts/pre-pr-bootstrap-guard.mjs', '--repo-dir', 'packages/docker-runner']],
       ['npm', ['run', 'chaos:e2e', '-w', 'packages/docker-runner']],
       ['npm', ['run', 'coverage:baseline', '-w', 'packages/docker-runner']],
