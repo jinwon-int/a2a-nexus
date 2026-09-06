@@ -84,7 +84,12 @@ evaluator semantics.
 ```
 
 - `intent` is required and uses the canonical token rule above.
-- `mode` is optional and uses the same token rule.
+- `mode` is optional and uses the same token rule. Omitting it is **fail-closed
+  against `denyModes`** (BUG-B4): when the matched rule declares `denyModes`,
+  a task with no `mode` is denied with `mode_undetermined` rather than skipping
+  the deny check. The offline CLI has no opt-out; only in-process callers that
+  positively established the task declares no mode may pass
+  `modeResolution: "absent"` to `evaluateTaskPolicy`.
 - `evaluationPoint` is required and is exactly `create` or `claim`.
 - `tasksToday` is a safe integer from `0` through `1000000`. It is required
   only when the matched evaluator rule invokes `maxTasksPerDay`, and is
@@ -145,6 +150,7 @@ The reason-code vocabulary is:
 | `rule_allow` | matched rule allows |
 | `default_deny` | no matching rule and `defaultAction=deny` |
 | `mode_denied` | `denyModes` wins |
+| `mode_undetermined` | matched rule declares `denyModes` but the task supplied no `mode` (fail-closed, BUG-B4) |
 | `intent_not_allowed` | `allowIntents` denies |
 | `implementation_readiness_missing` | claim-time readiness was omitted |
 | `implementation_capability_unready` | implementation intent is not ready |

@@ -90,6 +90,7 @@ export type PolicyRefereeReasonCode =
   | "implementation_readiness_missing"
   | "intent_not_allowed"
   | "mode_denied"
+  | "mode_undetermined"
   | "rule_allow";
 
 export interface PolicyRefereeDecisionEnvelope {
@@ -297,6 +298,9 @@ function reasonCodeForDecision(decision: BrokerPolicyDecision): PolicyRefereeRea
   if (decision.action === "require_approval") return "approval_required";
   if (decision.reason.startsWith("no rule matches worker class ")) return "default_deny";
   if (decision.reason.startsWith("mode '")) return "mode_denied";
+  if (decision.reason.startsWith("mode could not be determined for worker class ")) {
+    return "mode_undetermined";
+  }
   if (decision.reason.startsWith("intent '") && decision.reason.includes(" is not allowed for worker class ")) {
     return "intent_not_allowed";
   }
