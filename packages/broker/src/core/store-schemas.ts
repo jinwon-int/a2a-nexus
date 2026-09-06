@@ -728,3 +728,31 @@ export const brokerSnapshotSchema = z
     pushNotificationConfigs: z.array(pushNotificationConfigSchema).optional(),
   })
   .passthrough();
+
+/**
+ * Per-record schemas for the record collections inside a broker snapshot.
+ *
+ * Used by `store-snapshot-io.parseSnapshotPayload` to isolate a single corrupt
+ * record instead of failing the whole load: one bad row must never keep the
+ * broker from starting (#1504, #1725). Collections whose element schema is
+ * intentionally loose (`z.unknown()` arrays such as the conversation-relay
+ * mirrors) are omitted — they cannot fail element validation anyway.
+ */
+export const SNAPSHOT_RECORD_SCHEMAS = {
+  exchanges: exchangeStateSchema,
+  exchangeMessages: exchangeMessageSchema,
+  proposals: proposalSchema,
+  artifacts: artifactSchema,
+  validations: validationSchema,
+  auditEvents: auditEventSchema,
+  workers: workerSchema,
+  tasks: taskSchema,
+  tombstones: tombstoneSchema,
+  terminalOutbox: terminalOutboxEventSchema,
+  crossBrokerTerminalBriefs: crossBrokerTerminalBriefProjectionSchema,
+  wavePlans: persistedWavePlanSchema,
+  reviewLineages: reviewLineageRecordSchema,
+  pushNotificationConfigs: pushNotificationConfigSchema,
+} as const;
+
+export type SnapshotRecordCollection = keyof typeof SNAPSHOT_RECORD_SCHEMAS;

@@ -3,6 +3,7 @@ import { isRecord } from "./value-guards.js";
 import type { TaskRecord, TaskStatus } from "./types.js";
 import type { TaskStatusEvent } from "./task-events.js";
 import type { CrossBrokerTerminalBriefProjection } from "./cross-broker-terminal-brief.js";
+import { RoundProgressTracker, applyRoundProgressMetadata } from "./round-progress-tracker.js";
 
 const TERMINAL_TASK_STATUSES = new Set<TaskStatus>(["succeeded", "failed", "canceled", "blocked"]);
 const TERMINAL_TASK_EVENT_KINDS = new Set<TaskStatusEvent["kind"]>(["succeeded", "failed", "canceled"]);
@@ -224,6 +225,12 @@ export interface TerminalTaskEventOutboxOptions {
   maxEvents?: number;
   /** Previously persisted outbox records to replay after broker restart. */
   events?: TerminalTaskOutboxEvent[];
+  /**
+   * Shared parent-round progress counter. Pass the same tracker used by
+   * {@link TaskEventStream} so SSE and Terminal Brief report identical `n/N`
+   * numerators. Defaults to a private tracker when omitted.
+   */
+  roundProgress?: RoundProgressTracker;
 }
 
 /**
@@ -245,15 +252,17 @@ export class TerminalTaskEventOutbox {
   private readonly maxSeen: number;
 
   /**
-   * Tracks unique terminal canonical child task IDs per run/round key.
-   * The set size is used as the parentRoundProgress numerator so that n/N
+   * Bounded tracker of unique terminal canonical child task IDs per run/round
+   * key. The count is used as the parentRoundProgress numerator so that n/N
    * reflects terminal lane arrivals, regardless of succeeded/failed/canceled
    * outcome. A failed Terminal Brief still closes that lane for operator
-   * progress purposes.
+   * progress purposes. Shared with {@link TaskEventStream} when the broker
+   * injects a common tracker.
    */
-  private readonly terminalChildIds = new Map<string, Set<string>>();
+  private readonly terminalChildIds: RoundProgressTracker;
 
   constructor(options: TerminalTaskEventOutboxOptions = {}) {
+    this.terminalChildIds = options.roundProgress ?? new RoundProgressTracker();
     this.maxEvents = normalizePositiveInt(options.maxEvents, DEFAULT_TERMINAL_TASK_OUTBOX_RETENTION);
     this.maxSeen = this.maxEvents * 2;
     this.restoreSnapshot(options.events ?? []);
@@ -619,16 +628,16 @@ export class TerminalTaskEventOutbox {
   /**
    * Rebuild terminal child counters from stored events so that fresh enqueues
    * resume at the correct completed-lane count after a snapshot restore.
+   *
+   * The merge is additive (no clear): the tracker may be shared with the live
+   * task event stream, and a restore must not erase lanes already observed
+   * in-process. Child ids are deduplicated by the tracker, so replaying the
+   * same records repeatedly is idempotent.
    */
   private rebuildRoundCounters(): void {
-    this.terminalChildIds.clear();
-    for (const event of this.events) {
-      const runKey = event.payload.run;
-      if (!runKey) continue;
-      const terminalCounted = this.terminalChildIds.get(runKey) ?? new Set<string>();
-      terminalCounted.add(event.payload.taskId);
-      this.terminalChildIds.set(runKey, terminalCounted);
-    }
+    this.terminalChildIds.mergeFrom(
+      this.events.map((event) => ({ run: event.payload.run, taskId: event.payload.taskId })),
+    );
   }
 
   private indexAfter(afterId: string | undefined): number {
@@ -1302,48 +1311,6 @@ function sanitizeAckText(value: unknown, maxChars: number): string | undefined {
 
 function normalizePositiveInt(value: number | undefined, fallback: number): number {
   return typeof value === "number" && Number.isInteger(value) && value > 0 ? value : fallback;
-}
-
-/**
- * Set broker-local progress counters by incrementing a sequence keyed by the
- * payload's run key. Cross-broker title rendering prefers explicit
- * parentRoundOrder when present, so a child/handoff broker cannot rewrite
- * parent lane 2/2 to local completion 1/2.
- *
- * When the payload has no run key this is a no-op. When parentRoundTotal is
- * unknown, the sequence counter still advances but the payload field is omitted
- * so downstream notifiers fall back instead of rendering misleading `n/?`
- * progress.
- */
-function applyRoundProgressMetadata(
-  payload: TerminalTaskEventPayload,
-  terminalChildIds: Map<string, Set<string>>,
-): void {
-  const runKey = payload.run;
-  if (!runKey) return;
-
-  const terminalCounted = terminalChildIds.get(runKey) ?? new Set<string>();
-  terminalCounted.add(payload.taskId);
-  terminalChildIds.set(runKey, terminalCounted);
-
-  // Numerator = count of unique terminal canonical children for this run.
-  // Success/failure/canceled/blocked all mean that lane has reported in.
-  const terminalCount = terminalChildIds.get(runKey)?.size ?? 0;
-
-  // Only set progress when total is known
-  if (payload.parentRoundTotal) {
-    const useParentRoundOrder = payload.parentRoundProgressSource === "parent_round_order"
-      && payload.parentRoundOrder !== undefined;
-    payload.parentRoundProgress = useParentRoundOrder
-      ? payload.parentRoundOrder
-      : terminalCount;
-    payload.parentRoundTerminalProgress = useParentRoundOrder
-      ? payload.parentRoundOrder
-      : terminalCount;
-    if (!payload.parentRoundProgressSource) {
-      payload.parentRoundProgressSource = "broker_local_count";
-    }
-  }
 }
 
 function applyTerminalBriefTitle(payload: TerminalTaskEventPayload): void {

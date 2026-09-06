@@ -2,6 +2,7 @@ import { isRecord } from "./value-guards.js";
 import { CursorEventBuffer } from "./event-buffer.js";
 import type { AuditAction, AuditEvent, TaskRecord } from "./types.js";
 import { buildTerminalBriefTitle, buildTerminalTaskPayload } from "./terminal-event-outbox.js";
+import { RoundProgressTracker, applyRoundProgressMetadata } from "./round-progress-tracker.js";
 import type { TerminalTaskEventPayload } from "./terminal-event-outbox.js";
 import type {
   TaskStatusEvent,
@@ -22,6 +23,12 @@ export interface TaskEventStreamOptions {
    * Values <= 0 fall back to the default.
    */
   maxEvents?: number;
+  /**
+   * Shared parent-round progress counter. Pass the same tracker used by the
+   * terminal outbox so SSE and Terminal Brief report identical `n/N`
+   * numerators. Defaults to a private tracker when omitted.
+   */
+  roundProgress?: RoundProgressTracker;
 }
 
 export interface TaskEventSubscribeOptions {
@@ -79,9 +86,10 @@ export class TaskEventStream {
   private readonly terminalBuffer: CursorEventBuffer<TerminalTaskEvent>;
   private readonly listeners = new Set<TaskStatusEventListener>();
   private readonly terminalListeners = new Set<TerminalTaskEventListener>();
-  private readonly terminalChildIds = new Map<string, Set<string>>();
+  private readonly terminalChildIds: RoundProgressTracker;
 
   constructor(options: TaskEventStreamOptions = {}) {
+    this.terminalChildIds = options.roundProgress ?? new RoundProgressTracker();
     const requested = options.maxEvents;
     const maxEvents =
       requested !== undefined && requested > 0 ? requested : DEFAULT_TASK_EVENT_RETENTION;
@@ -285,25 +293,6 @@ export class TaskEventStream {
     applyRoundProgressMetadata(terminalPayload, this.terminalChildIds);
     copyTerminalBriefRoutingFields(event, terminalPayload);
     return event;
-  }
-}
-
-function applyRoundProgressMetadata(
-  payload: TerminalTaskEventPayload,
-  terminalChildIds: Map<string, Set<string>>,
-): void {
-  if (!payload.run) return;
-  const terminalCounted = terminalChildIds.get(payload.run) ?? new Set<string>();
-  terminalCounted.add(payload.taskId);
-  terminalChildIds.set(payload.run, terminalCounted);
-  if (payload.parentRoundTotal === undefined) return;
-  const useParentRoundOrder = payload.parentRoundProgressSource === "parent_round_order"
-    && payload.parentRoundOrder !== undefined;
-  const terminalCount = terminalCounted.size;
-  payload.parentRoundProgress = useParentRoundOrder ? payload.parentRoundOrder : terminalCount;
-  payload.parentRoundTerminalProgress = useParentRoundOrder ? payload.parentRoundOrder : terminalCount;
-  if (!payload.parentRoundProgressSource) {
-    payload.parentRoundProgressSource = "broker_local_count";
   }
 }
 
