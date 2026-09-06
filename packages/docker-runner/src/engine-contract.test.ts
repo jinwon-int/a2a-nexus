@@ -26,7 +26,7 @@ const task: RunnerTask = {
   id: "contract/test 1",
   intent: "propose_patch",
   env: {
-    SAFE_VALUE: "ok",
+    A2A_SAFE_VALUE: "ok",
     GH_TOKEN: classicGitHubToken,
   },
   commands: ["printf ok"],
@@ -39,7 +39,7 @@ const task: RunnerTask = {
 test("builds a Docker/Podman-compatible invocation contract without requiring an engine", () => {
   const args = buildRunArgs(config, task, "/tmp/a2a-work", "ci-run-1");
 
-  assert.deepEqual(args.slice(0, 2), ["run", "--rm"]);
+  assert.deepEqual(args.slice(0, 3), ["run", "--rm", "--init"]);
   assert.ok(args.includes("--name"));
   const nameIndex = args.indexOf("--name") + 1;
   assert.match(args[nameIndex], /^a2a-contract_test_1-ci-run-1$/);
@@ -57,7 +57,7 @@ test("builds a Docker/Podman-compatible invocation contract without requiring an
   assert.ok(args.includes("/tmp/a2a-work:/work"));
   assert.ok(args.includes("/tmp/hosts.yml:/run/secrets/gh-hosts.yml:ro"));
   assert.ok(args.includes("GH_CONFIG_HOSTS=/run/secrets/gh-hosts.yml"));
-  assert.ok(args.includes("SAFE_VALUE=ok"));
+  assert.ok(args.includes("A2A_SAFE_VALUE=ok"));
   assert.ok(!args.some((arg) => arg.startsWith("GH_TOKEN=")), "runner-controlled credential env must not be injected into task commands");
   assert.deepEqual(args.slice(-3), ["example/image:ci", "bash", "/work/run.sh"]);
 });
@@ -547,7 +547,7 @@ test("task env cannot override the contained-subagent conductor policy (a2a-nexu
         A2A_CONTAINED_SUBAGENTS_MAX: "99",
         A2A_CONTAINED_SUBAGENTS_ENABLED: "1",
         A2A_CONTAINED_SUBAGENTS_ROLES: "explorer,implementer,implementer,implementer",
-        SAFE_VALUE: "ok",
+        A2A_SAFE_VALUE: "ok",
       },
     },
     "/tmp/a2a-work",
@@ -559,8 +559,8 @@ test("task env cannot override the contained-subagent conductor policy (a2a-nexu
   assert.ok(!args.includes("A2A_CONTAINED_SUBAGENTS_ROLES=explorer,implementer,implementer,implementer"));
   // Exactly one MAX entry (no shadow override appended later).
   assert.equal(args.filter((a) => a.startsWith("A2A_CONTAINED_SUBAGENTS_MAX=")).length, 1);
-  // Non-reserved task env still passes through.
-  assert.ok(args.includes("SAFE_VALUE=ok"));
+  // Non-reserved, allowlisted task env still passes through.
+  assert.ok(args.includes("A2A_SAFE_VALUE=ok"));
 });
 
 test("task env cannot enable contained subagents when policy is disabled (a2a-nexus#614 review)", () => {
