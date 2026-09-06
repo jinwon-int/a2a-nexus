@@ -77,7 +77,13 @@ fixer output, prompts, provider payloads, or credentials.
 
 ## Dependency update monitoring
 
-Dependabot monitors both GitHub Actions and the npm workspace lockfile. npm dependency updates arrive as reviewed PRs; minor and patch updates may be grouped, while major updates stay separate. The dependency advisory gate is warn-only in this alpha stage: it summarizes `npm audit --omit=dev --json` output when registry access is available, warns on high/critical production advisories, and skips with a reason when the audit endpoint is unavailable. Enforcement can be tightened only after observing noise and recording a separate cutoff decision.
+Dependabot monitors both GitHub Actions and the npm workspace lockfile. npm dependency updates arrive as reviewed PRs; minor and patch updates may be grouped, while major updates stay separate.
+
+The dependency advisory gate (`scripts/check-dependency-advisories.mjs`, a release-gate step run by the `check` job) is **enforcing**: it summarizes `npm audit --omit=dev --json` output when registry access is available and **fails** on high/critical production advisories. Low, moderate, and info advisories never fail. When the audit endpoint is unavailable the gate still skips with a reason rather than failing closed, because an offline runner is not evidence of a vulnerability.
+
+The gate was warn-only until issue #2050. It was armed because auto-merge only requires the CI check run to report `conclusion == 'success'`, so a warn-only exit 0 allowed a PR carrying high/critical advisories to land unattended. Arming was done against a measured baseline of `high=0 critical=0`, so no open PR was turned red by the change.
+
+A high/critical advisory that cannot be fixed immediately is accepted by adding an entry to `ADVISORY_ALLOWLIST` in `scripts/check-dependency-advisories.mjs`. Every entry requires an advisory id (GHSA id, numeric `npm audit` source, or the `pkg:<name>` pseudo-id), a `reason`, and an `expires` date. An expired entry stops waiving and the gate fails again, so an accepted risk cannot be accepted forever by default. Adding an entry is a reviewed decision recorded in the diff, not a way to unblock CI.
 
 ## Supported versions
 
