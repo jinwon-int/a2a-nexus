@@ -21,6 +21,19 @@ test('docs/root-doc CI path runs markdown links and external secret scan', () =>
   assert.match(ci, /npm run scan:external-secrets/);
 });
 
+test('auto-merge squashes, because main requires linear history (#2050)', () => {
+  const autoMerge = readFileSync(join(repoRoot, '.github/workflows/auto-merge.yml'), 'utf8');
+  const mergeCommands = autoMerge.match(/gh pr merge[^\n]*/g) ?? [];
+  assert.equal(mergeCommands.length, 1, 'expected exactly one gh pr merge invocation');
+  const [command] = mergeCommands;
+  assert.match(command, /--squash/);
+  // `--merge` creates a merge commit, which main's required_linear_history
+  // rejects. The workflow shipped with `--merge` from its first commit and
+  // never hit the line, so nothing caught it until the repo review.
+  assert.doesNotMatch(command, /(^|\s)--merge(\s|$)/);
+  assert.doesNotMatch(command, /(^|\s)--rebase(\s|$)/);
+});
+
 test('package exposes tracked markdown link validation script', () => {
   const scripts = packageJson().scripts ?? {};
   assert.equal(scripts['check:markdown-links'], 'node scripts/check-markdown-links.mjs');
