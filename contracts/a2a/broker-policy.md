@@ -151,7 +151,7 @@ change until the operator commits rules. Promotion to `enforce` is a separate
 operator decision after a warn-mode observation window with zero false
 positives (per-rule `task.policy_warned` counts are the evidence).
 
-**Current state (2026-09-06): promoted to `enforce`, fleet-wide.** T1 `seoseo`
+**Current state (2026-09-06): promoted to `enforce`, fleet-wide.** The T1 broker
 had been running `enforce` since 2026-07-22 while this repo's committed
 document still said `warn`; the two were never linked by any tooling, so the
 divergence went unnoticed for two months and caused a live broker's posture to
