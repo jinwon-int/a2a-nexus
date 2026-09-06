@@ -1039,9 +1039,23 @@ export function buildRunArgs(config: RunnerConfig, task: RunnerTask, workDir: st
     if (TASK_ENV_ALLOWED_PREFIXES.some((prefix) => key.startsWith(prefix))) return true;
     return TASK_ENV_ALLOWED_KEYS.has(key);
   };
+  // A dropped key is a silent behaviour change for any task payload written
+  // against the previous denylist, so surface the key NAMES (never the values,
+  // which may carry credentials) once per container build. Without this the
+  // allowlist turns "my env var was ignored" into an unobservable failure.
+  const droppedTaskEnvKeys: string[] = [];
   for (const [key, value] of Object.entries(task.env ?? {})) {
-    if (!isAllowedTaskEnvKey(key)) continue;
+    if (!isAllowedTaskEnvKey(key)) {
+      droppedTaskEnvKeys.push(key);
+      continue;
+    }
     args.push("-e", `${key}=${value}`);
+  }
+  if (droppedTaskEnvKeys.length > 0) {
+    console.warn(
+      `[a2a-docker-runner] task ${safeId(task.id)}: dropped ${droppedTaskEnvKeys.length} task.env ` +
+        `key(s) not permitted by the task-env allowlist: ${droppedTaskEnvKeys.join(", ")}`,
+    );
   }
 
   args.push(config.image, "bash", "/work/run.sh");
