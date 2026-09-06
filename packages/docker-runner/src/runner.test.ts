@@ -1025,22 +1025,25 @@ test("handles multi-repo configuration", async () => {
 });
 
 // ---------------------------------------------------------------------------
-// preset expansion
+// retired preset key tolerance (#2048)
 // ---------------------------------------------------------------------------
 
-test("expands openclaw-plugin-a2a-dev preset correctly", async () => {
-  const task: RunnerTask = {
+test("a stale preset key on an inbound task is tolerated, not fatal (#2048)", async () => {
+  const task = {
     id: "preset-test",
     intent: "propose_patch",
     preset: "openclaw-plugin-a2a-dev",
-  };
+  } as unknown as RunnerTask;
   const config = { ...baseConfig, defaultTimeoutMs: 5000 };
 
   try {
     await runTask(config, task);
-    // The preset expands to checkout + npm ci + npm test
-  } catch {
-    // Docker not available; skip.
+  } catch (error) {
+    // Docker not available; skip. But the failure must never be about `preset`.
+    assert.ok(
+      !/preset/i.test(String((error as Error)?.message ?? error)),
+      "a retired preset key must never produce a preset-specific error",
+    );
   }
 });
 

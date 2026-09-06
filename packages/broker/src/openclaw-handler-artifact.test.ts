@@ -526,7 +526,7 @@ process.exit(1);
   }
 });
 
-test("openclaw-plugin-a2a repo requests map to the plugin runner preset", () => {
+test("openclaw-plugin-a2a repo requests keep their repo on the runner task (#2048)", () => {
   const tempDir = mkdtempSync(join(tmpdir(), "handler-plugin-preset-test-"));
   const fakeRunnerPath = join(tempDir, "fake-runner.mjs");
   try {
@@ -534,7 +534,8 @@ test("openclaw-plugin-a2a repo requests map to the plugin runner preset", () => 
 import { readFileSync } from "node:fs";
 const taskPath = process.argv.at(-1);
 const task = JSON.parse(readFileSync(taskPath, "utf8"));
-if (task.preset !== "openclaw-plugin-a2a-dev") throw new Error("expected plugin preset");
+if (task.preset !== undefined) throw new Error("retired preset must not be set (#2048)");
+if (!/openclaw-plugin-a2a/.test(String(task.repo ?? ""))) throw new Error("expected plugin repo to be preserved");
 console.log(JSON.stringify({ ok: true, taskId: task.id, status: "completed", workDir: "/tmp/work-fixture", artifacts: [], prUrl: "https://github.com/jinwon-int/openclaw-plugin-a2a/pull/1" }));
 `);
 
@@ -1731,7 +1732,8 @@ test("plugin-only scope with unconfigured A2A_DOCKER_RUNNER_BIN does not trigger
 import { readFileSync } from "node:fs";
 const taskPath = process.argv.at(-1);
 const task = JSON.parse(readFileSync(taskPath, "utf8"));
-if (task.preset !== "openclaw-plugin-a2a-dev") throw new Error("expected plugin preset");
+if (task.preset !== undefined) throw new Error("retired preset must not be set (#2048)");
+if (!/openclaw-plugin-a2a/.test(String(task.repo ?? ""))) throw new Error("expected plugin repo to be preserved");
 console.log(JSON.stringify({ ok: true, taskId: task.id, status: "completed", workDir: "/tmp/work-fixture", artifacts: [], prUrl: "https://github.com/jinon86/openclaw-plugin-a2a/pull/2" }));
 `);
 

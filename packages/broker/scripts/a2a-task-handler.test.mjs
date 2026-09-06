@@ -768,6 +768,45 @@ test("runner task carries model and thinking overrides to downstream runner comm
   assert.equal(runnerTask.workerThinking, "high");
 });
 
+// ─── #2048: retired `runnerPreset` / `preset` backward compatibility ───
+
+test("stale payload.runnerPreset is ignored and never sets task.preset (#2048)", () => {
+  const runnerTask = __test.buildRunnerTask(patchTask({
+    payload: {
+      repo: "jinwon-int/openclaw-plugin-a2a",
+      runnerPreset: "openclaw-plugin-a2a-dev",
+      baseBranch: "develop",
+    },
+  }), {});
+
+  assert.equal(runnerTask.preset, undefined, "the retired preset must never be written onto the runner task");
+  assert.equal(runnerTask.repo, "jinwon-int/openclaw-plugin-a2a", "repo must no longer be dropped by the preset early-return");
+  assert.equal(runnerTask.baseBranch, "develop");
+});
+
+test("stale A2A_DOCKER_RUNNER_PRESET env is ignored and never sets task.preset (#2048)", () => {
+  const runnerTask = __test.buildRunnerTask(patchTask({
+    payload: { repo: "jinwon-int/a2a-broker" },
+  }), { A2A_DOCKER_RUNNER_PRESET: "openclaw-plugin-a2a-dev" });
+
+  assert.equal(runnerTask.preset, undefined);
+  assert.equal(runnerTask.repo, "jinwon-int/a2a-broker");
+});
+
+test("plugin-repo tasks now receive workerModel/workerThinking instead of returning early (#2048)", () => {
+  const runnerTask = __test.buildRunnerTask(patchTask({
+    payload: {
+      repo: "jinwon-int/openclaw-plugin-a2a",
+      runnerPreset: "openclaw-plugin-a2a-dev",
+      workerModel: "deepseek/deepseek-v4-pro",
+      workerThinking: "high",
+    },
+  }), {});
+
+  assert.equal(runnerTask.workerModel, "deepseek/deepseek-v4-pro");
+  assert.equal(runnerTask.workerThinking, "high");
+});
+
 test("runner task preserves the broker-generated bounded subagent context brief (Phase-2 WS5)", () => {
   const brief = "# A2A sub-agent context brief\n\nredacted shared context";
   const runnerTask = __test.buildRunnerTask(task({
@@ -2217,7 +2256,9 @@ test("Hermes patch profile rejects later legacy model drift even when an earlier
   assert.equal(result.error?.details.canonicalModel, "deepseek/deepseek-v4-flash");
 });
 
-test("Hermes plugin preset tasks reject runner env model drift before plugin execution (#860)", () => {
+// #2048 retired `runnerPreset`; the payload key is kept here on purpose so the
+// gate is proven to still fire on a legacy payload shape.
+test("Hermes plugin repo tasks reject runner env model drift before plugin execution (#860)", () => {
   const result = handleTask(patchTask({
     payload: {
       repo: "jinwon-int/openclaw-plugin-a2a",

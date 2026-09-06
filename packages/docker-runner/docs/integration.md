@@ -97,7 +97,6 @@ const runnerTask = buildRunnerTaskFromHandlerPayload(task, env);
 //   intent: "propose_patch",
 //   mode: "github-propose-patch",
 //   repo: "jinwon-int/openclaw-plugin-a2a",
-//   preset: "openclaw-plugin-a2a-dev",
 //   issueUrl: "https://github.com/jinwon-int/openclaw-plugin-a2a/issues/42",
 //   ...
 // }
@@ -138,7 +137,6 @@ const handlerResult = buildHandlerResult(parsed, task, nodeId);
 |---|---|---|
 | `A2A_DOCKER_RUNNER_ENABLED` | `0` | Master switch. Set `1`/`true`/`yes`/`on` |
 | `A2A_DOCKER_RUNNER_ALL_GITHUB` | `0` | Route all github-propose-patch tasks through runner |
-| `A2A_DOCKER_RUNNER_PRESET` | — | Default preset (e.g. `openclaw-plugin-a2a-dev`) |
 | `A2A_DOCKER_RUNNER_BIN` | `a2a-docker-runner` | Runner binary path |
 | `A2A_DOCKER_RUNNER_ARGS_JSON` | `[]` | Extra CLI args before `run` |
 | `A2A_DOCKER_RUNNER_TASK_TIMEOUT_MS` | `3600000` (60m) | Task timeout override |
@@ -247,7 +245,7 @@ a2a-docker-runner run examples/task.canary.json
 | 항목 | 확인 방법 | 예상 결과 |
 |---|---|---|
 | feature flag 감지 | `shouldUseDockerRunnerForGithub(task, env) === true` | true |
-| Runner task 빌드 | 환경변수 passthrough 확인 | repo, timeoutMs, preset 정확 |
+| Runner task 빌드 | 환경변수 passthrough 확인 | repo, timeoutMs 정확 |
 | Container 생성 | `docker ps -a` | `a2a-canary-smoke-001` 컨테이너 확인 |
 | 명령 실행 | artifacts 확인 | 지정한 commands 로그 파일 생성 |
 | Runner 결과 JSON | stdout JSON 파싱 | `ok: true, status: "completed"` |
@@ -402,7 +400,7 @@ export A2A_DOCKER_RUNNER_ENABLED=false
 ### 부분 Rollback (ALL_GITHUB만 해제)
 
 ```bash
-# Runner는 유지하되, preset/repo 매칭 태스크만 Runner로 라우팅
+# Runner는 유지하되, repo 매칭 태스크만 Runner로 라우팅
 export A2A_DOCKER_RUNNER_ENABLED=1
 unset A2A_DOCKER_RUNNER_ALL_GITHUB
 # 또는
@@ -410,7 +408,7 @@ export A2A_DOCKER_RUNNER_ALL_GITHUB=0
 ```
 
 **영향**:
-- `openclaw-plugin-a2a` repo/preset 태스크 → 계속 Runner 사용
+- `openclaw-plugin-a2a` repo 태스크 → 계속 Runner 사용
 - 그 외 모든 repo (`jinwon-int/a2a-docker-runner`, `jinwon-int/seoyoon-family-wiki` 등) → host-workspace direct execution
 
 ### Rollback 검증
@@ -432,7 +430,7 @@ assert.equal(shouldUseDockerRunnerForGithub(task, rollbackEnv), false);
 | `A2A_DOCKER_RUNNER_ENABLED` | `A2A_DOCKER_RUNNER_ALL_GITHUB` | Task Type | Route |
 |---|---|---|---|
 | `0` / 미설정 | any | github-propose-patch | ❌ host-workspace direct |
-| `1` | `0` / 미설정 | openclaw-plugin-a2a repo/preset | ✅ Docker runner |
+| `1` | `0` / 미설정 | openclaw-plugin-a2a repo | ✅ Docker runner |
 | `1` | `0` / 미설정 | other repo | ❌ host-workspace direct |
 | `1` | `1` | any github-propose-patch | ✅ Docker runner |
 | `1` | `1` | non github task (chat, propose_patch) | ❌ host-workspace direct |
@@ -443,7 +441,7 @@ assert.equal(shouldUseDockerRunnerForGithub(task, rollbackEnv), false);
 
 ```bash
 export A2A_DOCKER_RUNNER_ENABLED=1
-export A2A_DOCKER_RUNNER_ALL_GITHUB=0  # preset 매칭만
+export A2A_DOCKER_RUNNER_ALL_GITHUB=0  # repo 매칭만
 # openclaw-plugin-a2a 태스크만 Runner로 라우팅
 ```
 

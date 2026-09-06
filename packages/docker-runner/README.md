@@ -310,27 +310,12 @@ carry an empty risk list, while a PR-less Block result should say that
 validation was blocked and point operators at the Block evidence.  Missing
 PR/Done/Block evidence remains a separate fail-closed condition.
 
-## OpenClaw plugin A2A development preset
+## Multi-repo development jobs
 
-The first-class A2A development path is to keep the runner stateless and clone `openclaw-plugin-a2a` for each job:
-
-```json
-{
-  "id": "issue-76-plugin-run",
-  "intent": "propose_patch",
-  "preset": "openclaw-plugin-a2a-dev",
-  "timeoutMs": 3600000
-}
-```
-
-The preset expands to:
-
-- checkout `https://github.com/jinwon-int/openclaw-plugin-a2a.git` into `/work/openclaw-plugin-a2a`
-- run `cd /work/openclaw-plugin-a2a && npm ci`
-- run `cd /work/openclaw-plugin-a2a && npm test`
-- write command logs and task metadata under `/work/artifacts`
-
-For integration jobs, pass explicit repos and commands instead:
+The runner is stateless: every job declares the repos it needs and is cloned
+fresh. There is no built-in preset — the `openclaw-plugin-a2a-dev` preset was
+retired in #2048 together with the repo it hardcoded — so pass explicit repos
+and commands:
 
 ```json
 {
@@ -613,7 +598,7 @@ For `github-propose-patch` / `propose_patch` mode tasks **without** explicit
 Step 2 can be configured from host environment. Prefer the safe host-side
 Hermes/OpenClaw/Codex paths for new rollouts. The legacy template eval path is blocked
 for GitHub patch execution, and Claude-in-Docker references are rejected even if
-an old opt-in variable is present. This keeps plugin preset patch tasks from
+an old opt-in variable is present. This keeps plugin patch tasks from
 falling back to a blocked Claude-in-Docker command and falsely succeeding.
 
 Precedence is `commandScript > commandJson > commandProfile > commandTemplate`:

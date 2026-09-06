@@ -97,30 +97,23 @@ test("isPatchMode recognizes all patch modes relevant to monorepo migration", ()
 });
 
 // ---------------------------------------------------------------------------
-// 4. Preset scope in monorepo context
+// 4. Retired preset scope in monorepo context (#2048)
 // ---------------------------------------------------------------------------
 
-test("openclaw-plugin-a2a-dev preset generates test commands for single-checkout monorepo packages", () => {
+test("retired openclaw-plugin-a2a-dev preset no longer derives a hardcoded monorepo checkout (#2048)", () => {
   const task = normalizeTask({
     id: "plugin-monorepo",
     intent: "propose_patch",
+    // Stale key from a pre-#2048 payload — must be inert, not fatal.
     preset: "openclaw-plugin-a2a-dev",
     baseBranch: "develop",
-  });
+  } as unknown as Parameters<typeof normalizeTask>[0]);
 
-  assert.equal(task.repos.length, 1);
-  assert.equal(task.repos[0]?.branch, "develop");
-  assert.equal(task.repos[0]?.path, "openclaw-plugin-a2a");
-  assert.equal(task.repos[0]?.url, "https://github.com/jinwon-int/openclaw-plugin-a2a.git");
-
-  // Preset commands: npm ci + npm test
-  assert.deepEqual(task.commands, [
-    "cd /work/openclaw-plugin-a2a && npm ci",
-    "cd /work/openclaw-plugin-a2a && npm test",
-  ]);
+  assert.equal(task.repos.length, 0, "the dead jinwon-int/openclaw-plugin-a2a checkout must not be injected");
+  assert.deepEqual(task.commands, [], "npm ci + npm test must not be generated from a preset");
 });
 
-test("explicit commands override preset-generated commands for workspace-aware testing", () => {
+test("explicit commands are used for workspace-aware testing", () => {
   const task = normalizeTask({
     id: "monorepo-workspace-test",
     intent: "propose_patch",
@@ -188,16 +181,14 @@ test("task with single repo field and no repos array creates one repo entry", ()
   assert.equal(task.repos[0]?.primary, true);
 });
 
-test("task without repo or repos uses preset derivation", () => {
+test("task without repo or repos derives no checkout, preset key or not (#2048)", () => {
   const task = normalizeTask({
     id: "preset-only",
     intent: "propose_patch",
     preset: "openclaw-plugin-a2a-dev",
-  });
+  } as unknown as Parameters<typeof normalizeTask>[0]);
 
-  assert.equal(task.repos.length, 1);
-  assert.equal(task.repos[0]?.path, "openclaw-plugin-a2a");
-  assert.equal(task.repos[0]?.url, "https://github.com/jinwon-int/openclaw-plugin-a2a.git");
+  assert.equal(task.repos.length, 0);
 });
 
 // ---------------------------------------------------------------------------
