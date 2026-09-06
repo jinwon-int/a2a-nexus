@@ -34,7 +34,7 @@ Parent: a2a-plane#464
 1. worker claims task from broker
 2. handler writes canonical `task.json`
 3. runner creates `/var/lib/openclaw-a2a/tasks/<taskId>`
-4. runner expands presets, repos, and commands
+4. runner expands repos and commands
 5. runner starts container with bounded CPU/RAM/time
 6. container clones task repos into `/work/<repo-path>`
 7. container executes configured commands
@@ -57,7 +57,7 @@ a2a-docker-runner
       └─ /work/artifacts             logs, result metadata, evidence
 ```
 
-The built-in `openclaw-plugin-a2a-dev` preset clones `jinwon-int/openclaw-plugin-a2a` and runs its normal install/test path. More complex jobs should use explicit `repos` and `commands` so each task declares exactly what it needs.
+There is no built-in preset (the `openclaw-plugin-a2a-dev` preset was retired in #2048 along with the repo it cloned). Every job declares explicit `repo`/`repos` and `commands` so each task states exactly what it needs.
 
 ## Deployment marker (`.deploy-source-sha`)
 

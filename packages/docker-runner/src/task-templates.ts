@@ -102,7 +102,7 @@ export function expandVars(template: string, vars: TaskTemplateVars): string {
  * - `env`: template env is base, task env overrides
  * - `repos`: template repos come first, task repos append.  Duplicate
  *   URLs are deduped (first wins).
- * - `mode`, `preset`, `baseBranch`, `reportLanguage`, `timeoutMs`: task
+ * - `mode`, `baseBranch`, `reportLanguage`, `timeoutMs`: task
  *   values override template values (template used as fallback)
  *
  * @returns The expanded task (a shallow copy with expanded fields).
@@ -158,7 +158,6 @@ export function expandTask(task: RunnerTask): RunnerTask {
     ...task,
     // Fields where template provides fallback.
     mode: task.mode ?? template.mode,
-    preset: task.preset ?? (template.preset as RunnerTask["preset"]),
     baseBranch: task.baseBranch ?? template.baseBranch,
     reportLanguage: task.reportLanguage ?? template.reportLanguage,
     timeoutMs: task.timeoutMs ?? template.timeoutMs,

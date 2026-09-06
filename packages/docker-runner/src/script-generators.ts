@@ -20,7 +20,6 @@ trap restore_work_ownership EXIT
 mkdir -p /work/artifacts
 printf 'A2A Docker Runner task %s\n' ${shellQuote(task.id)} | tee /work/artifacts/summary.txt
 printf 'intent=%s\n' ${shellQuote(task.intent)} | tee -a /work/artifacts/summary.txt
-printf 'preset=%s\n' ${shellQuote(task.preset ?? "")} | tee -a /work/artifacts/summary.txt
 if [ -n "\${A2A_RUNNER_BUILD_VERSION:-}" ]; then printf 'runner.version=%s\n' "$A2A_RUNNER_BUILD_VERSION" | tee -a /work/artifacts/summary.txt; fi
 if [ -n "\${A2A_RUNNER_BUILD_REVISION:-}" ]; then printf 'runner.revision=%s\n' "$A2A_RUNNER_BUILD_REVISION" | tee -a /work/artifacts/summary.txt; fi
 if [ -n "\${A2A_RUNNER_BUILD_SOURCE:-}" ]; then printf 'runner.source=%s\n' "$A2A_RUNNER_BUILD_SOURCE" | tee -a /work/artifacts/summary.txt; fi

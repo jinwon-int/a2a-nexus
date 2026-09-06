@@ -141,15 +141,10 @@ function normalizeRepos(task: RunnerTask): RunnerRepo[] {
     });
   }
 
-  if (task.preset === "openclaw-plugin-a2a-dev" && !repos.length) {
-    repos.push({
-      name: "openclaw-plugin-a2a",
-      url: "jinwon-int/openclaw-plugin-a2a",
-      branch: task.baseBranch ?? "main",
-      path: "openclaw-plugin-a2a",
-      primary: true,
-    });
-  }
+  // #2048: the `openclaw-plugin-a2a-dev` preset used to inject a hardcoded
+  // checkout of `jinwon-int/openclaw-plugin-a2a` here. That repo was deleted in
+  // #1783, so the injected checkout could only ever fail. Tasks now declare
+  // their own `repo`/`repos`; a task with neither simply has no checkouts.
 
   return repos.map((repo, index) => ({
     ...repo,
@@ -177,9 +172,6 @@ export function isPatchMode(mode?: string): boolean {
 }
 
 function defaultCommands(task: RunnerTask, primaryRepo?: RunnerRepo): string[] {
-  // Patch mode always takes priority over preset so that
-  // openclaw-plugin-a2a-dev tasks in github-propose-patch / propose_patch
-  // mode produce a PR instead of running test-only commands.
   if (isPatchMode(task.mode) && task.commentOnly) {
     return buildDefaultCommentOnlyCommands(task);
   }
@@ -195,13 +187,9 @@ function defaultCommands(task: RunnerTask, primaryRepo?: RunnerRepo): string[] {
     return buildDefaultPatchCommands(task, primaryRepo);
   }
 
-  if (task.preset === "openclaw-plugin-a2a-dev") {
-    const dir = primaryRepo?.path ?? "openclaw-plugin-a2a";
-    return [
-      `cd /work/${dir} && npm ci`,
-      `cd /work/${dir} && npm test`,
-    ];
-  }
+  // #2048: the `openclaw-plugin-a2a-dev` preset used to emit `npm ci` +
+  // `npm test` here. Retired together with the preset; non-patch tasks now fall
+  // through to toolchain detection on the primary repo.
 
   if (primaryRepo) {
     return [buildToolchainDetectedCommandsForRepo(primaryRepo.path ?? "repo")];

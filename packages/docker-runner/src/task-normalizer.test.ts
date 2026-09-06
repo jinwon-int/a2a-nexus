@@ -25,24 +25,19 @@ test("derives stable checkout paths", () => {
   assert.equal(defaultCheckoutPath("jinwon-int/openclaw-plugin-a2a"), "openclaw-plugin-a2a");
 });
 
-test("expands openclaw-plugin-a2a preset into repo checkout and test commands", () => {
+// #2048: `preset: "openclaw-plugin-a2a-dev"` used to expand into a checkout of
+// jinwon-int/openclaw-plugin-a2a (deleted in #1783) plus npm ci + npm test.
+// The preset is retired; a stale key from an old hand-written payload must be
+// ignored silently rather than crash or silently resurrect the dead checkout.
+test("retired openclaw-plugin-a2a-dev preset expands into nothing and does not throw (#2048)", () => {
   const task = normalizeTask({
     id: "plugin-dev",
     intent: "propose_patch",
     preset: "openclaw-plugin-a2a-dev",
-  });
+  } as unknown as Parameters<typeof normalizeTask>[0]);
 
-  assert.deepEqual(task.repos, [{
-    name: "openclaw-plugin-a2a",
-    url: "https://github.com/jinwon-int/openclaw-plugin-a2a.git",
-    branch: "main",
-    path: "openclaw-plugin-a2a",
-    primary: true,
-  }]);
-  assert.deepEqual(task.commands, [
-    "cd /work/openclaw-plugin-a2a && npm ci",
-    "cd /work/openclaw-plugin-a2a && npm test",
-  ]);
+  assert.deepEqual(task.repos, [], "must not inject the deleted openclaw-plugin-a2a checkout");
+  assert.deepEqual(task.commands, [], "must not generate preset npm ci + npm test commands");
 });
 
 test("keeps explicit multi-repo and command configuration", () => {
@@ -359,22 +354,26 @@ test("handles patch mode with no prompt gracefully", () => {
 
 // Regression: openclaw-plugin-a2a issue #119 — preset was checked before
 // isPatchMode, so preset+patch-mode tasks ran test-only commands instead of
-// the PR-producing pipeline.
-test("uses patch pipeline when openclaw-plugin-a2a-dev preset is combined with github-propose-patch mode", () => {
+// the PR-producing pipeline. The preset is retired (#2048); the patch-pipeline
+// contract is now asserted on an explicitly declared repo, and a stale preset
+// key riding along must not disturb it.
+test("uses patch pipeline for a plugin repo in github-propose-patch mode, ignoring a stale preset key", () => {
   const task = normalizeTask({
     id: "plugin-patch",
     intent: "propose_patch",
     mode: "github-propose-patch",
     preset: "openclaw-plugin-a2a-dev",
+    repo: "jinwon-int/openclaw-plugin-a2a",
     baseBranch: "main",
     prompt: "Fix the plugin bug.",
     issueUrl: "https://github.com/jinwon-int/openclaw-plugin-a2a/issues/119",
     requestedBy: "jinwon",
-  });
+  } as unknown as Parameters<typeof normalizeTask>[0]);
 
-  // Repo should still be expanded from the preset.
+  // Repo comes from the caller-declared `repo`, not from the retired preset.
   assert.equal(task.repos.length, 1);
   assert.equal(task.repos[0]?.name, "openclaw-plugin-a2a");
+  assert.equal(task.repos[0]?.url, "https://github.com/jinwon-int/openclaw-plugin-a2a.git");
 
   // Commands must be the PR-producing pipeline, NOT npm test.
   assert.ok(task.commands.length > 0, "Expected commands");
@@ -388,32 +387,30 @@ test("uses patch pipeline when openclaw-plugin-a2a-dev preset is combined with g
   assert.ok(!pipeline.includes("npm test"), "Must NOT contain bare npm test — should be patch pipeline, not test preset");
 });
 
-test("uses patch pipeline when openclaw-plugin-a2a-dev preset is combined with propose_patch mode", () => {
+test("uses patch pipeline for a plugin repo in propose_patch mode, ignoring a stale preset key", () => {
   const task = normalizeTask({
     id: "plugin-patch-legacy",
     intent: "propose_patch",
     mode: "propose_patch",
     preset: "openclaw-plugin-a2a-dev",
+    repo: "jinwon-int/openclaw-plugin-a2a",
     baseBranch: "main",
     prompt: "Update plugin.",
-  });
+  } as unknown as Parameters<typeof normalizeTask>[0]);
 
   const pipeline = task.commands[1] ?? "";
   assert.ok(pipeline.includes("git checkout -b"), "Expected branch creation in patch pipeline");
   assert.ok(pipeline.includes("gh pr create"), "Expected PR create in patch pipeline");
 });
 
-test("openclaw-plugin-a2a-dev preset without patch mode still runs test commands", () => {
+test("stale preset key without patch mode generates no commands (#2048)", () => {
   const task = normalizeTask({
     id: "plugin-dev-test",
     intent: "smoke",
     preset: "openclaw-plugin-a2a-dev",
-  });
+  } as unknown as Parameters<typeof normalizeTask>[0]);
 
-  assert.deepEqual(task.commands, [
-    "cd /work/openclaw-plugin-a2a && npm ci",
-    "cd /work/openclaw-plugin-a2a && npm test",
-  ]);
+  assert.deepEqual(task.commands, [], "npm ci + npm test must no longer be derived from a preset");
 });
 
 test("sanitises task id in branch name", () => {

@@ -820,14 +820,14 @@ describe("TerminalTaskEventOutbox", () => {
       ["succeeded", "failed", "succeeded"],
     );
     assert.equal(outbox.size, 3);
+    // The compact SSE projection mints exactly the same terminal records as the
+    // durable outbox (#2056). `proof-blocked` is parked at the approval gate and
+    // has not run, so neither surface announces it as terminal.
     assert.deepEqual(
       sseEvents.map((event) => event.status),
-      ["succeeded", "failed", "blocked", "succeeded"],
+      ["succeeded", "failed", "succeeded"],
     );
-    assert.equal(
-      sseEvents.find((event) => event.taskId === "proof-blocked")?.blockUrl,
-      "https://github.com/jinwon-int/a2a-broker/issues/229#issuecomment-block",
-    );
+    assert.equal(sseEvents.find((event) => event.taskId === "proof-blocked"), undefined);
 
     const replay = outbox.subscribe({ afterId: webhookEvents[1]!.id });
     assert.deepEqual(
@@ -1357,6 +1357,99 @@ describe("TerminalTaskEventOutbox", () => {
 
     assert.equal(blocked.status, "blocked");
     assert.equal(broker.getTerminalTaskEventOutbox().subscribe().length, 0);
+  });
+
+  // ---------------------------------------------------------------------------
+  // Regression: SSE terminal stream and durable outbox must agree on what is
+  // terminal (#2056).
+  //
+  // `blocked` is the pre-execution approval gate (broker.ts sets it at creation
+  // and on requeue when `policyContext.requiresApproval` is set), not a
+  // completion result. A worker that reports a Block outcome fails the task
+  // (`TaskEvidenceOutcome` "blocked" -> failTask -> status "failed"), so Block
+  // evidence still reaches both surfaces through the `failed` path.
+  // ---------------------------------------------------------------------------
+
+  it("does not project an approval-blocked task as terminal on either surface", () => {
+    const broker = new InMemoryA2ABroker();
+    registerWorker(broker);
+
+    const sseEvents: TerminalTaskEvent[] = [];
+    broker.getTaskEventStream().onTerminal((event) => sseEvents.push(event));
+
+    const blocked = createTask(broker, {
+      id: "gate-blocked",
+      policyContext: { requiresApproval: true },
+      payload: { blockUrl: "https://github.com/jinwon-int/a2a-broker/issues/2056#issuecomment-block" },
+    });
+
+    assert.equal(blocked.status, "blocked");
+    // Durable outbox gates on kind; the SSE stream must gate on the same set.
+    assert.deepEqual(
+      broker.getTerminalTaskEventOutbox().subscribe().map((event) => event.payload.status),
+      [],
+    );
+    assert.deepEqual(sseEvents.map((event) => event.status), []);
+
+    // The non-terminal status stream still carries the early "waiting on an
+    // operator" signal, so removing the terminal projection loses no visibility.
+    const statusEvents = broker.getTaskEventStream().subscribe({ taskId: "gate-blocked" });
+    assert.deepEqual(
+      statusEvents.map((event) => `${event.kind}:${event.status}`),
+      ["created:blocked"],
+    );
+
+    // Once approved, claimed and completed, both surfaces emit exactly one
+    // terminal record with the same status.
+    broker.approveTask("gate-blocked", {
+      actor: { id: "operator-1", kind: "node", role: "operator" },
+    });
+    broker.claimTask("gate-blocked", "worker-1");
+    broker.completeTask("gate-blocked", "worker-1", { summary: "done" });
+
+    assert.deepEqual(sseEvents.map((event) => event.status), ["succeeded"]);
+    assert.deepEqual(
+      broker.getTerminalTaskEventOutbox().subscribe().map((event) => event.payload.status),
+      ["succeeded"],
+    );
+  });
+
+  it("approval-blocked lane does not inflate the shared parent-round numerator", () => {
+    const broker = new InMemoryA2ABroker();
+    registerWorker(broker, "worker-1");
+    registerWorker(broker, "worker-2");
+
+    // Lane A is parked at the approval gate and never runs.
+    const laneA = createTask(broker, {
+      id: "round-lane-a",
+      targetNodeId: "worker-1",
+      policyContext: { requiresApproval: true },
+      payload: { run: "round-2056", parentRoundTotal: 2 },
+    });
+    assert.equal(laneA.status, "blocked");
+
+    // Lane B actually runs to completion.
+    createTask(broker, {
+      id: "round-lane-b",
+      targetNodeId: "worker-2",
+      payload: { run: "round-2056", parentRoundTotal: 2 },
+    });
+    broker.claimTask("round-lane-b", "worker-2");
+    broker.completeTask("round-lane-b", "worker-2", { summary: "ok" });
+
+    const outbox = broker.getTerminalTaskEventOutbox().subscribe();
+    assert.equal(outbox.length, 1);
+    const [event] = outbox;
+    assert.equal(event.payload.taskId, "round-lane-b");
+    // The SSE stream shares the RoundProgressTracker with the outbox, so a
+    // terminal projection for the still-gated lane A would report the round as
+    // 2/2 complete while lane A has not even been dispatched.
+    assert.equal(event.payload.parentRoundProgress, 1);
+    assert.equal(event.payload.parentRoundTotal, 2);
+    assert.ok(
+      event.payload.terminalBriefTitle?.includes("1/2"),
+      `Terminal Brief title must report 1/2, got: ${event.payload.terminalBriefTitle}`,
+    );
   });
 
   it("Terminal Brief single-task 1/1 succeeds with 1/1 progress", () => {

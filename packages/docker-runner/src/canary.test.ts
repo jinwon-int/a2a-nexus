@@ -288,19 +288,19 @@ test("canary e2e: rollback simulation — ENABLED=0 bypasses runner entirely", a
   assert.equal(runnerTask.repo, "jinwon-int/a2a-docker-runner");
 });
 
-test("canary e2e: partial rollback — ALL_GITHUB unset, preset routing only", async () => {
+test("canary e2e: partial rollback — ALL_GITHUB unset, repo-scoped routing only", async () => {
   const partialEnv: HandlerEnv = {
     A2A_DOCKER_RUNNER_ENABLED: "1",
     // ALL_GITHUB intentionally absent
   };
 
-  // a2a-docker-runner repo should NOT route (no matching preset)
+  // a2a-docker-runner repo should NOT route (no matching repo)
   const handlerTask = makeCanaryHandlerTask();
   assert.equal(shouldUseDockerRunnerForGithub(handlerTask, partialEnv), false);
 
-  // openclaw-plugin-a2a should still route
+  // openclaw-plugin-a2a should still route on the repo match
   const a2aTask: HandlerTask = {
-    id: "canary-preset",
+    id: "canary-repo-scoped",
     payload: { mode: "github-propose-patch", repo: "jinwon-int/openclaw-plugin-a2a" },
   };
   assert.equal(shouldUseDockerRunnerForGithub(a2aTask, partialEnv), true);

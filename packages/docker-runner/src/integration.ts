@@ -17,8 +17,6 @@ export interface HandlerEnv {
   A2A_DOCKER_RUNNER_ENABLED?: string;
   /** Force all github-propose-patch tasks through the runner. "1"/"true"/"yes"/"on". */
   A2A_DOCKER_RUNNER_ALL_GITHUB?: string;
-  /** Preset to use when building the runner task. */
-  A2A_DOCKER_RUNNER_PRESET?: string;
   /** Binary path for a2a-docker-runner. Defaults to "a2a-docker-runner". */
   A2A_DOCKER_RUNNER_BIN?: string;
   /** Extra CLI args passed before "run". JSON string array. */
@@ -54,6 +52,13 @@ export interface HandlerTaskPayload {
   acceptance?: string;
   prompt?: string;
   timeoutMs?: number;
+  /**
+   * Retired in #2048. Accepted on the wire so that an old payload is ignored
+   * rather than rejected, but never read: it no longer affects routing and no
+   * longer sets any field on the runner task.
+   *
+   * @deprecated no-op
+   */
   runnerPreset?: string;
   requestedBy?: string;
   worker?: string;
@@ -416,7 +421,12 @@ export function isEnvTruthy(value?: string): boolean {
  * - A2A_DOCKER_RUNNER_ENABLED must be truthy.
  * - Task payload must be a github-propose-patch task.
  * - Either A2A_DOCKER_RUNNER_ALL_GITHUB is set, or the task targets a known
- *   repo/preset (openclaw-plugin-a2a, etc.).
+ *   repo (openclaw-plugin-a2a, etc.).
+ *
+ * #2048: `payload.runnerPreset` / `A2A_DOCKER_RUNNER_PRESET` used to be a third
+ * way into the scope-limited lane. Retired — only the repo match remains, so a
+ * preset-only task now falls back to the legacy direct-workspace path unless
+ * A2A_DOCKER_RUNNER_ALL_GITHUB is set.
  */
 export function shouldUseDockerRunnerForGithub(
   task: HandlerTask,
@@ -427,8 +437,7 @@ export function shouldUseDockerRunnerForGithub(
   if (isEnvTruthy(env.A2A_DOCKER_RUNNER_ALL_GITHUB)) return true;
 
   const repo = normalizeString(task?.payload?.repo) ?? "";
-  const requestedPreset = normalizeString(task?.payload?.runnerPreset ?? env.A2A_DOCKER_RUNNER_PRESET);
-  return requestedPreset === "openclaw-plugin-a2a-dev" || /openclaw-plugin-a2a/.test(repo);
+  return /openclaw-plugin-a2a/.test(repo);
 }
 
 // ── Runner task builder ────────────────────────────────────────────────────
@@ -443,9 +452,6 @@ export function buildRunnerTaskFromHandlerPayload(
   env: HandlerEnv,
 ): RunnerTask {
   const repo = normalizeString(task?.payload?.repo);
-  const requestedPreset = normalizeString(
-    task?.payload?.runnerPreset ?? env.A2A_DOCKER_RUNNER_PRESET,
-  );
 
   const requestedMode = normalizeString(task?.payload?.mode) ?? "github-propose-patch";
   const isVerifyMode = requestedMode === "github-verify";
@@ -518,17 +524,11 @@ export function buildRunnerTaskFromHandlerPayload(
     }
   }
 
-  // ── preset path (openclaw-plugin-a2a-dev, etc.) ──
-  if (requestedPreset === "openclaw-plugin-a2a-dev" || (repo != null && /openclaw-plugin-a2a/.test(repo))) {
-    runnerTask.preset = "openclaw-plugin-a2a-dev";
-    const baseBranch = normalizeString(task?.payload?.baseBranch);
-    if (baseBranch) {
-      runnerTask.baseBranch = baseBranch;
-    }
-    return runnerTask;
-  }
-
   // ── general repo path ──
+  // #2048: openclaw-plugin-a2a repo/preset tasks used to short-circuit here,
+  // setting `preset` and dropping `repo`. Every task now takes this one path,
+  // so the caller-declared repo is honoured instead of being replaced by a
+  // hardcoded checkout of a repo that no longer exists.
   if (repo) {
     runnerTask.repo = repo;
     const baseBranch = normalizeString(task?.payload?.baseBranch);

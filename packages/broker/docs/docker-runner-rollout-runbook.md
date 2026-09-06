@@ -53,7 +53,7 @@ A2A_EXECUTOR_FALLBACK=builtin
 | `docker` | GitHub `propose_patch` / `github-propose-patch` task 를 docker-runner 로 라우팅 |
 | `auto` | scope 정책에 맞는 GitHub patch task 만 docker-runner 로 라우팅 |
 
-`A2A_DOCKER_RUNNER_SCOPE=plugin-only` 는 `openclaw-plugin-a2a` repo/preset 만
+`A2A_DOCKER_RUNNER_SCOPE=plugin-only` 는 `openclaw-plugin-a2a` repo 만
 docker-runner 로 보낸다. `all-github` 은 모든 GitHub patch task 를 보낸다.
 
 기존 운영 env 는 계속 호환된다:
@@ -88,7 +88,9 @@ legacy all-GitHub opt-in 이다. 신규 배포에서는
 다음 조건을 모두 만족할 때만 runner 로 라우팅한다:
 
 - `A2A_DOCKER_RUNNER_ENABLED=1` 이고
-- task repo 가 `openclaw-plugin-a2a` 를 포함하거나 preset 이 `openclaw-plugin-a2a-dev` 인 경우
+- task repo 가 `openclaw-plugin-a2a` 를 포함하는 경우
+
+  (#2048 이전에는 `payload.runnerPreset` / `A2A_DOCKER_RUNNER_PRESET` 가 `openclaw-plugin-a2a-dev` 인 것도 세 번째 진입 경로였으나, 해당 preset 은 은퇴했습니다. 이제 repo 매칭만 남습니다.)
 
 범용 GitHub repo (예: `jinwon-int/example-wiki`) 에 대한 docker-runner
 라우팅은 위 조건에 해당하지 않으므로 **built-in handler 로 폴백**된다.
@@ -105,7 +107,7 @@ A2A_DOCKER_RUNNER_ALL_GITHUB=1
 
 ### 2.3 Routing Decision Table
 
-| Env | Task Intent | Task Repo/Preset | Route |
+| Env | Task Intent | Task Repo | Route |
 |---|---|---|---|
 | `ENABLED=0` or unset | any | any | built-in handler |
 | `ENABLED=1`, `ALL_GITHUB=0` | `propose_patch` | `.../openclaw-plugin-a2a` | docker-runner |
@@ -292,11 +294,11 @@ cd /opt/a2a-docker-runner && node dist/cli.js doctor
 `engine` 이 `docker` 또는 `podman` 인지 확인하고, `githubTokenFile` 이
 `"configured"` 로 표시되는지 확인한다.
 
-### 4.3 Plugin Dev Preset Smoke (standalone)
+### 4.3 Standalone Task Smoke
 
 ```bash
 cd /opt/a2a-docker-runner
-node dist/cli.js run examples/task.openclaw-plugin-a2a.json
+node dist/cli.js run examples/task.canonical.json
 ```
 
 기대값:
@@ -304,9 +306,9 @@ node dist/cli.js run examples/task.openclaw-plugin-a2a.json
 ```json
 {
   "ok": true,
-  "taskId": "example-openclaw-plugin-a2a-dev",
+  "taskId": "canonical-github-propose-patch",
   "status": "completed",
-  "workDir": "/var/lib/openclaw-a2a/tasks/example-openclaw-plugin-a2a-dev",
+  "workDir": "/var/lib/openclaw-a2a/tasks/canonical-github-propose-patch",
   "exitCode": 0,
   "stdout": "...",
   "artifacts": [
@@ -358,7 +360,7 @@ curl -sf https://broker.example.com/tasks/$TASK_ID \
 |---|---|---|
 | Worker online | `GET /workers/workerbeta` | `status: "online"`, `lastSeenAt` < 30s |
 | Runner doctor | `cli.js doctor` | `ok: true`, engine detected, token configured |
-| Standalone preset | `cli.js run examples/task.openclaw-plugin-a2a.json` | `status: "completed"`, `ok: true`, `exitCode: 0` |
+| Standalone task | `cli.js run examples/task.canonical.json` | `status: "completed"`, `ok: true`, `exitCode: 0` |
 | Broker live task | `POST /tasks` → poll `GET /tasks/:id` | `status: "succeeded"`, GitHub evidence present |
 
 ## 5. Rollout — workergamma / workerepsilon / workeralpha
@@ -732,7 +734,7 @@ workerdelta worker 가 broker 에 등록된 경우 `GET /workers/workerdelta` �
   참고
 - `docs/smoke-compose.md` — compose smoke reference
 - `scripts/a2a-task-handler.mjs` — versioned handler artifact (>= 0.2.0)
-- `a2a-docker-runner` README — runner CLI 및 preset 상세
+- `a2a-docker-runner` README — runner CLI 상세
 
 ## 10. Quick Reference Card
 

@@ -23,7 +23,6 @@
     ],
     "reportLanguage": "ko",
     "timeoutMs": 300000,
-    "runnerPreset": null,
     "prompt": "This is a CI-safe canary payload. Do not execute real work — validate conversion only."
   },
   "evidenceGuide": {
