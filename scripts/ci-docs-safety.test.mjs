@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict';
-import { chmodSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { chmodSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 import { spawnSync } from 'node:child_process';
@@ -32,6 +32,62 @@ test('auto-merge squashes, because main requires linear history (#2050)', () => 
   // never hit the line, so nothing caught it until the repo review.
   assert.doesNotMatch(command, /(^|\s)--merge(\s|$)/);
   assert.doesNotMatch(command, /(^|\s)--rebase(\s|$)/);
+});
+
+// #2050 item 3. package.json declared `packageManager` while no workflow
+// enforced or even checked it, so the npm CI ran was the image's npm by
+// coincidence. `corepack enable` was rejected in favour of a zero-network
+// assertion; these tests pin both halves of that decision — the assertion
+// exists in the job every other ci.yml job depends on, and no setup-node block
+// anywhere may float to a different Node line (a different Node line is what
+// changes npm's major/minor and therefore its install semantics).
+test('package.json declares packageManager as an exact npm version (#2050)', () => {
+  const declared = packageJson().packageManager;
+  assert.match(String(declared), /^npm@\d+\.\d+\.\d+$/);
+});
+
+test('ci.yml setup job asserts the running npm matches packageManager (#2050)', () => {
+  const ci = ciText();
+  const setupJob = ci.match(/\n {2}setup:\n[\s\S]*?(?=\n {2}[a-z][a-z0-9-]*:\n)/)?.[0];
+  assert.ok(setupJob, 'expected a setup job in ci.yml');
+  assert.match(setupJob, /enforce packageManager contract \(#2050\)/);
+  assert.match(setupJob, /require\('\.\/package\.json'\)\.packageManager/);
+  assert.match(setupJob, /npm --version/);
+  // The assertion must be able to fail. A drift that only prints is the
+  // warn-only failure mode this issue exists to remove.
+  assert.match(setupJob, /declared_minor" != "\$running_minor"[\s\S]*?exit 1/);
+  // No executable corepack step: the rejection of (a) is part of the contract,
+  // not just a comment. Prose mentioning corepack in the rationale is fine.
+  const executableLines = setupJob.split('\n').filter((line) => !/^\s*#/.test(line));
+  assert.equal(
+    executableLines.some((line) => /corepack/.test(line)),
+    false,
+    'setup job must not shell out to corepack',
+  );
+});
+
+test('every setup-node block pins the same Node line, so npm cannot float (#2050)', () => {
+  const workflowsDir = join(repoRoot, '.github/workflows');
+  const files = readdirSync(workflowsDir).filter((name) => name.endsWith('.yml') || name.endsWith('.yaml'));
+  assert.ok(files.length > 0);
+  const versions = new Set();
+  let blocks = 0;
+  for (const file of files) {
+    const text = readFileSync(join(workflowsDir, file), 'utf8');
+    const matches = text.matchAll(/uses:\s*actions\/setup-node@[^\n]*\n(?:[^\n]*\n){0,4}?\s*node-version:\s*(\S+)/g);
+    for (const match of matches) {
+      blocks += 1;
+      versions.add(match[1].replace(/^['"]|['"]$/g, ''));
+    }
+    const declarations = (text.match(/uses:\s*actions\/setup-node@/g) ?? []).length;
+    assert.equal(
+      (text.match(/node-version:/g) ?? []).length >= declarations,
+      true,
+      `${file}: every actions/setup-node block must declare node-version`,
+    );
+  }
+  assert.ok(blocks > 0, 'expected at least one setup-node block');
+  assert.deepEqual([...versions], ['22'], `setup-node node-version drift: ${[...versions].join(', ')}`);
 });
 
 test('package exposes tracked markdown link validation script', () => {
