@@ -108,6 +108,47 @@ jobs:
         with:
           node-version: '22'
           cache: npm
+      # packageManager contract (#2050). package.json declares
+      # "packageManager": "npm@<version>" but nothing enforced it, so every job
+      # ran whatever npm happened to ship inside the setup-node image.
+      #
+      # `corepack enable` was rejected: it would put a network-dependent npm
+      # download at the head of every npm-using job, and corepack failing to
+      # reach the registry would take down CI wholesale for a property the
+      # runner image already provides.
+      #
+      # This asserts the contract instead — no network, and a drift is fixed by
+      # editing one line in package.json. It runs once in `setup`, which every
+      # other job in this workflow depends on directly or transitively and
+      # which pins the same `node-version`, so the asserted npm is the npm the
+      # rest of the workflow gets. Comparison is major.minor: Node 22.x patch
+      # releases bump npm's patch (10.9.3 through 10.9.8 all ship inside Node
+      # 22) without changing install or lockfile semantics, while an npm major
+      # or minor change — which is what arrives if a job silently floats to a
+      # newer Node line — fails here loudly. scripts/ci-docs-safety.test.mjs
+      # pins the node-version of every setup-node block so that floating
+      # cannot happen unnoticed in the workflows this step does not gate.
+      - name: enforce packageManager contract (#2050)
+        run: |
+          set -euo pipefail
+          declared="$(node -p "require('./package.json').packageManager || ''")"
+          case "$declared" in
+            npm@*) ;;
+            *)
+              echo "packageManager must be declared as npm@<version> in package.json, got '${declared}'" >&2
+              exit 1
+              ;;
+          esac
+          declared_version="${declared#npm@}"
+          running_version="$(npm --version)"
+          declared_minor="$(printf '%s' "$declared_version" | cut -d. -f1,2)"
+          running_minor="$(printf '%s' "$running_version" | cut -d. -f1,2)"
+          echo "packageManager declared=npm@${declared_version} running=npm@${running_version}"
+          if [ "$declared_minor" != "$running_minor" ]; then
+            echo "packageManager drift: package.json declares npm@${declared_version} but this runner has npm@${running_version} (${declared_minor} != ${running_minor})." >&2
+            echo "Fix by updating the packageManager field in package.json to match the npm shipped by node-version, or by pinning node-version to a release that ships npm ${declared_minor}.x." >&2
+            exit 1
+          fi
       - uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6
         id: npm-deps
         with:

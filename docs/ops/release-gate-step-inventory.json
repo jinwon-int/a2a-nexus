@@ -306,7 +306,7 @@
       "consumer": "pr-gate",
       "retirement": "keep",
       "retirementCondition": "Retire only when a narrower owner-scoped gate demonstrably covers the same invariant; no removal while it runs on the default release-gate path.",
-      "note": "Warn-only npm production dependency advisory signal for #1287; skips with reason when registry audit access is unavailable and does not mutate dependencies."
+      "note": "Enforcing npm production dependency advisory gate (#1287, armed in #2050): fails on unwaived high/critical advisories, waives only via dated ADVISORY_ALLOWLIST entries, skips with reason when registry audit access is unavailable, and does not mutate dependencies."
     },
     {
       "name": "markdown-links",
