@@ -2829,3 +2829,37 @@ test("Luna worker env and explicit task models never silently fall back to Sol",
   }
   assert.ok(resolveWorkerModelInputs({ payloadModel: "gpt-unknown" }).error);
 });
+
+test("readStdin decodes multi-byte UTF-8 intact across pipe chunk boundaries (#2070)", async () => {
+  const { spawnSync } = await import("node:child_process");
+  const { fileURLToPath } = await import("node:url");
+  const scriptPath = fileURLToPath(new URL("./a2a-task-handler.mjs", import.meta.url));
+
+  // Build a stdin stream whose 64 KiB pipe-chunk boundary falls inside a run
+  // of multi-byte characters: bytes [60_000..72_000] are all Korean, so any
+  // 64 KiB-aligned chunk split lands mid-character. The pre-fix reader
+  // (`input += chunk`) decoded each chunk independently and emitted U+FFFD
+  // phantoms at the boundary; the Buffer-accumulating reader must not.
+  const marker = "피부는 장벽 아래 닫혔으며";
+  const fillerBytes = 72_000 - 60_000;
+  const filler = "한".repeat(Math.ceil(fillerBytes / 3));
+  const head = "a".repeat(60_000);
+  const message = `${head}${filler}${marker}${marker}`;
+  const bigTask = task({
+    id: "task-stdin-utf8-boundary",
+    message,
+    payload: { mode: "docker-broker-noop-smoke", noOp: true, runId: "run-stdin-utf8", worker: "workerdelta", sourceOnly: true },
+  });
+
+  const result = spawnSync(process.execPath, [scriptPath], {
+    input: JSON.stringify(bigTask),
+    encoding: "utf8",
+    timeout: 120_000,
+  });
+  assert.equal(result.status, 0, `handler exited nonzero: ${result.stderr?.slice(0, 400)}`);
+  const outcome = JSON.parse(result.stdout);
+  assert.equal(outcome.error, undefined);
+  assert.equal(outcome.result?.output?.message, message, "task message must round-trip byte-exact");
+  assert.ok(outcome.result.output.message.includes(marker));
+  assert.doesNotMatch(outcome.result.output.message, /\uFFFD/, "no U+FFFD phantom characters may appear");
+});

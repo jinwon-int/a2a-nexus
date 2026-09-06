@@ -2785,11 +2785,18 @@ export function handleTask(task, env = process.env) {
 }
 
 async function readStdin() {
-  let input = "";
+  // #2070: `input += chunk` decoded each pipe chunk independently, so a
+  // multi-byte UTF-8 character split across a stream chunk boundary became
+  // U+FFFD phantom characters inside the task JSON. Downstream reviewers read
+  // those phantoms as source-text corruption and BLOCK otherwise-clean work
+  // (observed live 2026-09-07: backfill review lanes failed 3/3 on one worker
+  // node with a Korean rationale character straddling the stdin chunk
+  // boundary). Accumulate Buffers and decode once, mirroring release-gate.mjs.
+  const chunks = [];
   for await (const chunk of process.stdin) {
-    input += chunk;
+    chunks.push(Buffer.from(chunk));
   }
-  return input;
+  return Buffer.concat(chunks).toString("utf8");
 }
 
 if (process.argv[1] === SOURCE_PATH) {
