@@ -2830,7 +2830,7 @@ test("Luna worker env and explicit task models never silently fall back to Sol",
   assert.ok(resolveWorkerModelInputs({ payloadModel: "gpt-unknown" }).error);
 });
 
-test("readStdin decodes multi-byte UTF-8 intact across pipe chunk boundaries (#2069)", async () => {
+test("readStdin decodes multi-byte UTF-8 intact across pipe chunk boundaries (#2070)", async () => {
   const { spawnSync } = await import("node:child_process");
   const { fileURLToPath } = await import("node:url");
   const scriptPath = fileURLToPath(new URL("./a2a-task-handler.mjs", import.meta.url));
