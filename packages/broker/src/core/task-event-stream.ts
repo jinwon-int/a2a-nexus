@@ -62,11 +62,32 @@ const TERMINAL_ACTIONS = new Set<AuditAction>([
   "task.failed",
   "task.canceled",
 ]);
+/**
+ * Task statuses that justify minting a compact terminal event.
+ *
+ * Deliberately mirrors the durable outbox's terminal-kind gate
+ * (`TERMINAL_TASK_EVENT_KINDS` in `terminal-event-outbox.ts`) so the SSE stream
+ * and the outbox cannot disagree about what "terminal" means (#2056).
+ *
+ * `blocked` is intentionally absent. In this broker `blocked` is the
+ * *pre-execution* approval gate — `createTask`/`requeueTask` set it when
+ * `policyContext.requiresApproval` is true — not a completion result. A worker
+ * that reports a Block outcome fails the task (`TaskEvidenceOutcome` "blocked"
+ * calls `failTask`), so Block evidence still reaches both surfaces as `failed`.
+ * Emitting a terminal event for an approval-gated task told consumers a task
+ * was finished before it had run, and — because `buildTerminalEvent` stamps the
+ * shared {@link RoundProgressTracker} — advanced the parent-round numerator that
+ * the operator-facing Terminal Brief reports, so a round could render `2/2`
+ * while one lane was still waiting on an operator.
+ *
+ * {@link TerminalTaskEventStatus} still admits `blocked` because persisted
+ * outbox snapshots from older brokers may contain such rows; this set only
+ * governs what is newly minted.
+ */
 const NOTIFIABLE_TERMINAL_STATUSES = new Set<TerminalTaskEventStatus>([
   "succeeded",
   "failed",
   "canceled",
-  "blocked",
 ]);
 const TASK_BRIEF_KEYS = ["githubIssueTitle", "taskTitle", "title", "taskBrief"] as const;
 const MAX_TASK_BRIEF_CHARS = 160;

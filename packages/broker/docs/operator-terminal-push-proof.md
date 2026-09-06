@@ -8,8 +8,14 @@ The CI test `TerminalTaskEventOutbox proves operator terminal push envelopes wit
 
 - `succeeded` task completion
 - `failed` task completion
-- `blocked` task with Block evidence URL
 - PR opened / Done evidence task with `prUrl` and `doneUrl`
+
+The proof also asserts a negative: an approval-gated task (`status: "blocked"`)
+produces **no** terminal record on either surface. `blocked` is the
+pre-execution approval gate, not a completion result, so neither the durable
+outbox nor the compact SSE projection announces it as terminal (#2056). A worker
+that reports a Block outcome fails the task, so real Block evidence still
+arrives as a `failed` terminal record carrying `blockUrl`.
 
 Expected fake envelope shape:
 
