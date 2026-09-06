@@ -16,7 +16,7 @@ import {
   attachArtifactRequestSchema,
   createProposalRequestSchema,
   submitValidationRequestSchema,
-} from "./broker-request-schemas.js";
+} from "./store-schemas.js";
 import { isPlainRecord } from "./broker-task-record-normalizers.js";
 import { readString, normalizeOwnershipString } from "./broker-task-request-normalizers.js";
 import { validateA2ARoundTaskPolicy } from "./a2a-round-policy.js";

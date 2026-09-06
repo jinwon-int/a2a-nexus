@@ -25,7 +25,7 @@ import type {
 import {
   assertRequestPayload,
   createProposalRequestSchema,
-} from "../core/broker-request-schemas.js";
+} from "../core/store-schemas.js";
 import { awaitDurablePersistenceAck } from "./error-mapping.js";
 import { readJson } from "./body.js";
 import { sendJson } from "./response.js";

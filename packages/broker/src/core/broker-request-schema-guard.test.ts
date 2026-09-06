@@ -10,7 +10,7 @@ import { InMemoryA2ABroker } from "./broker.js";
 import { BrokerError } from "./broker-error.js";
 import { proposalSchema } from "./store-schemas.js";
 import { serializeBrokerSnapshot, parseSnapshotPayload } from "./store-snapshot-io.js";
-import { createProposalRequestSchema } from "./broker-request-schemas.js";
+import { createProposalRequestSchema } from "./store-schemas.js";
 import type { CreateProposalRequest } from "./types.js";
 
 function baseProposal(overrides: Record<string, unknown> = {}): CreateProposalRequest {
