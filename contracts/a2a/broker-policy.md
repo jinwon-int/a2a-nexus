@@ -138,6 +138,75 @@ satisfies a `requireApproval` rule at claim.
 - Audit evidence: `task.policy_warned` / `task.policy_denied` events carry the
   ruleId and reason; a denied create still records evidence.
 
+### 4.1 Deployment path: how the committed document reaches a broker (#2064)
+
+Invariant 4 says policy changes land via operator commits to
+`docs/ops/broker-policy.json`. Until #2064 this contract said nothing about how
+that committed document reaches the file a broker actually loads, and there was
+no automation for it — deployment was a human copying a file onto a host. The
+two therefore diverged silently for two months: the committed document said
+`mode: "warn"` while one live broker had been running `mode: "enforce"` since
+2026-07-22, with byte-identical rules. Every repo-side check stayed green, and
+reviews repeatedly concluded "the document is `warn`, so there is no live
+behaviour change" — which was false for that broker.
+
+**The committed document is canonical. The live file is a deployed copy of it,
+and drift between them is a defect, not a configuration option.**
+
+Both directions are subcommands of the same CLI, so validation and deployment
+cannot drift apart:
+
+```bash
+# detect (read-only, never repairs)
+node scripts/check-broker-policy.mjs drift [--live PATH] [--canonical PATH]
+
+# deploy (dry-run by default; --apply is the only writing path)
+node scripts/check-broker-policy.mjs sync  [--live PATH] [--apply]
+```
+
+`--live` defaults to `/var/lib/a2a-broker/broker-policy.json`, the conventional
+`A2A_BROKER_POLICY_FILE` target.
+
+- **Comparison is normalized, not byte-for-byte.** Both documents are parsed and
+  deep-compared with object keys sorted; rule *array order* is significant
+  because §1 matching is first-match-wins. A byte-only difference (indent,
+  trailing newline, key order) passes with a printed note rather than failing —
+  a checker that fails on cosmetics trains operators to ignore it, which is the
+  failure mode that let the real `mode` drift hide. Exit codes: `0` match,
+  `1` policy drift, `2` either document missing/unparseable or the canonical
+  document invalid (fail-closed; an unreadable side is never assumed equal).
+- **`drift` never picks a winner.** It prints the differing field paths and
+  fails. Deciding whether the repo is stale or the host drifted is an operator
+  decision under invariant 4; a checker that auto-corrected would be an agent
+  self-modifying policy.
+- **`sync` is dry-run unless `--apply`.** With `--apply` it backs the existing
+  live document up to `<live>.bak-<UTC timestamp>` before writing, then re-reads
+  from disk and re-compares to verify the write landed. It refuses to deploy a
+  canonical document that does not validate: invariant 3 makes a
+  configured-but-invalid document fail broker startup loudly, so pushing one
+  would take the broker down at its next restart.
+- **A file swap alone changes nothing — a restart is required.** The broker
+  reads the document exactly once, at `createServer`
+  (`packages/broker/src/server.ts:412-413`), and passes the parsed snapshot to
+  `createBroker`; there is no watcher and no reload route. `sync` therefore
+  prints the restart instruction and does **not** restart anything — a broker
+  restart is a fresh-approval operator action.
+- **Post-restart verification.** A configured-but-invalid or unreadable document
+  fails startup loudly, so a broker that comes up healthy with
+  `A2A_BROKER_POLICY_FILE` set is the evidence that it loaded the document.
+  Confirm with `check-broker-policy.mjs drift` afterwards.
+
+**Where each check runs.** The schema gate (`check-broker-policy.mjs` with no
+subcommand) is the CI/release-gate leg and stays there. `drift` is deliberately
+**not** a CI gate: CI runners have no route to a broker host and no fleet
+credentials, and granting them standing ssh access to read one file would be a
+larger permanent risk than the drift it detects. `drift` runs on each broker
+node, where the live file is — as a post-deploy step and on a schedule. After
+any commit that changes `docs/ops/broker-policy.json`, run `sync` (dry-run,
+then `--apply` under approval) and `drift` on **every** broker in the population
+named by the §5.1 promotion packet; a policy commit is not deployed until every
+one of them reports a match.
+
 ## 5. Rollout (G1-d)
 
 v1 ships `mode: warn`, `defaultAction: allow`, `rules: []` — zero behavior
