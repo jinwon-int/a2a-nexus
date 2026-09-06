@@ -423,6 +423,21 @@ export function reapContainer(command: string, containerName: string): Promise<v
   });
 }
 
+/**
+ * Bounded best-effort wait for the child's stdio pipes to close after it has
+ * already exited (#2052).
+ *
+ * `close` only fires once every writer of the pipes is gone. A grandchild that
+ * inherited them keeps them open long after the direct child is dead, so making
+ * the attempt result contingent on `close` lets the promise outlive its own
+ * timeout by an unbounded amount. We therefore settle on `exit` and give the
+ * pipes only this grace window to deliver whatever is still buffered — long
+ * enough that a normally-terminating child never loses output (its `close`
+ * follows `exit` within a tick), short enough that a leaked pipe cannot extend
+ * the attempt materially.
+ */
+export const STDIO_DRAIN_GRACE_MS = 500;
+
 function spawnWithTimeout(
   command: string,
   args: string[],
@@ -436,6 +451,7 @@ function spawnWithTimeout(
     let stdout = "";
     let stderr = "";
     let timedOut = false;
+    let settled = false;
     const timer = setTimeout(() => {
       timedOut = true;
       child.kill("SIGTERM");
@@ -445,6 +461,9 @@ function spawnWithTimeout(
     // On timeout the container outlives the killed CLI, so reap it by name
     // before reporting the attempt result (BUG-B2).
     const settle = (result: SpawnResult): void => {
+      if (settled) return;
+      settled = true;
+      clearTimeout(timer);
       const containerName = result.timedOut ? containerNameFromArgs(args) : undefined;
       if (!containerName) {
         resolvePromise(result);
@@ -457,7 +476,6 @@ function spawnWithTimeout(
     child.stdout.on("data", (chunk) => { stdout = appendBoundedOutput(stdout, chunk); });
     child.stderr.on("data", (chunk) => { stderr = appendBoundedOutput(stderr, chunk); });
     child.on("error", (error: NodeJS.ErrnoException) => {
-      clearTimeout(timer);
       settle({
         code: null,
         signal: null,
@@ -468,8 +486,18 @@ function spawnWithTimeout(
         elapsedMs: Date.now() - startMs,
       });
     });
-    child.on("close", (code, signal) => {
-      clearTimeout(timer);
+
+    // `close` may fire before or after `exit`. Record it either way: if it has
+    // already landed when `exit` arrives, the pipes are drained and we settle
+    // immediately with no grace wait at all (the common, fast path).
+    let closed = false;
+    let drainTimer: NodeJS.Timeout | undefined;
+    const finish = (code: number | null, signal: NodeJS.Signals | null): void => {
+      if (drainTimer) clearTimeout(drainTimer);
+      // Past the grace window the pipes belong to something we no longer wait
+      // for; release our read side so the event loop is not held open by it.
+      child.stdout?.destroy();
+      child.stderr?.destroy();
       settle({
         code,
         signal,
@@ -478,6 +506,20 @@ function spawnWithTimeout(
         timedOut,
         elapsedMs: Date.now() - startMs,
       });
+    };
+    child.on("close", () => { closed = true; });
+    child.on("exit", (code, signal) => {
+      clearTimeout(timer);
+      if (closed) {
+        finish(code, signal);
+        return;
+      }
+      // Best-effort drain with its own cap: anything the pipes deliver inside
+      // the window is kept, and a pipe held open by a grandchild can delay the
+      // result by at most STDIO_DRAIN_GRACE_MS.
+      drainTimer = setTimeout(() => finish(code, signal), STDIO_DRAIN_GRACE_MS);
+      drainTimer.unref();
+      child.once("close", () => finish(code, signal));
     });
   });
 }

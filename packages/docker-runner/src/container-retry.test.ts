@@ -19,6 +19,7 @@ import {
   isTransientContainerError,
   reapContainer,
   runContainerWithRetry,
+  STDIO_DRAIN_GRACE_MS,
 } from "./container-retry.js";
 import type { RetryConfig } from "./container-retry.js";
 import { chmodSync, mkdirSync, mkdtempSync, readFileSync, writeFileSync, existsSync } from "node:fs";
@@ -344,6 +345,74 @@ exit 0
     );
     assert.equal(result.code, 0);
     assert.equal(existsSync(join(dir, "reap-argv")), false);
+  });
+});
+
+// ─── #2052: a leaked stdio pipe must not extend the attempt ────────────────
+
+describe("runContainerWithRetry (grandchild holds the stdio pipes)", () => {
+  const baseCfg: RetryConfig = { maxAttempts: 1, baseDelayMs: 10, maxDelayMs: 100, backoffFactor: 2, jitterFactor: 0 };
+
+  it("resolves a timed-out attempt on child exit even while a grandchild keeps the pipes open", async () => {
+    // The engine forks a long-lived grandchild that inherits stdout/stderr and
+    // then execs the foreground process, so SIGTERM kills the direct child but
+    // the pipes stay open for 10s. Resolving on `close` would make this
+    // attempt outlast its 300ms timeout by ~10s (#2052).
+    const { enginePath } = makeFakeEngine(`
+if [ "$1" = "rm" ]; then exit 0; fi
+sleep 10 &
+exec sleep 10
+`);
+    const startedAt = Date.now();
+    const { result } = await runContainerWithRetry(
+      enginePath,
+      ["run", "--rm", "--name", "a2a-pipe-holder", "image"],
+      300,
+      baseCfg,
+    );
+    const elapsedMs = Date.now() - startedAt;
+
+    assert.equal(result.timedOut, true);
+    assert.ok(
+      elapsedMs < 3000,
+      `timeout must not be contingent on pipe closure, resolved in ${elapsedMs}ms (grandchild holds pipes for 10000ms)`,
+    );
+  });
+
+  it("keeps stdout/stderr written before exit when a grandchild holds the pipes open", async () => {
+    // The child writes, exits 7 immediately; the grandchild keeps the pipes
+    // open. The result must arrive promptly AND carry the output — dropping it
+    // would trade a hang for lost diagnostic evidence.
+    const { enginePath } = makeFakeEngine(`
+if [ "$1" = "rm" ]; then exit 0; fi
+sleep 10 &
+printf 'evidence-on-stdout\\n'
+printf 'evidence-on-stderr\\n' >&2
+exit 7
+`);
+    const startedAt = Date.now();
+    const { result, retryEvidence } = await runContainerWithRetry(enginePath, ["run"], 30_000, baseCfg);
+    const elapsedMs = Date.now() - startedAt;
+
+    assert.equal(result.code, 7);
+    assert.equal(result.timedOut, false);
+    assert.match(result.stdout, /evidence-on-stdout/);
+    assert.match(result.stderr, /evidence-on-stderr/);
+    assert.equal(retryEvidence.attempts[0].outcome, "container_exit");
+    assert.ok(
+      elapsedMs < 3000,
+      `exit must settle the attempt without waiting for the leaked pipes, took ${elapsedMs}ms`,
+    );
+  });
+
+  it("adds no drain latency to a normally terminating child", async () => {
+    const startedAt = Date.now();
+    const { result } = await runContainerWithRetry("printf", ["fast\\n"], 5000, baseCfg);
+    const elapsedMs = Date.now() - startedAt;
+
+    assert.equal(result.code, 0);
+    assert.match(result.stdout, /fast/);
+    assert.ok(elapsedMs < STDIO_DRAIN_GRACE_MS, `clean exit must not wait for the drain grace, took ${elapsedMs}ms`);
   });
 });
 
