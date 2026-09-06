@@ -6,6 +6,7 @@ import type {
   TerminalTaskStatus,
 } from "../core/terminal-event-outbox.js";
 import { redactSensitive } from "./projection.js";
+import { isRecord } from "../core/value-guards.js";
 
 export type TerminalBriefGitHubEvidenceMarker = "Start" | "PR" | "Done" | "Block";
 export type TerminalBriefGitHubEvidenceSource = "task-start" | "terminal-task-outbox";
@@ -441,6 +442,19 @@ function buildIdempotencyKey(manifest: TerminalBriefGitHubEvidenceManifest, mani
     .join(":");
 }
 
+/**
+ * NOT the shared `core/value-guards.ts#stableStringify` (#2047).
+ *
+ * This is the second, incompatible canonical form in the repo. It sorts into a
+ * fresh object and then hands the result to `JSON.stringify`, so unlike the
+ * shared variant it drops `undefined` members, renders array holes as `null`,
+ * and honours `toJSON()`. Its output seeds `manifestSha256`, which is embedded
+ * in the terminal-brief comment marker and idempotency key already published
+ * on GitHub issues and PRs — switching to the shared variant would re-key
+ * every existing marker and break comment dedup, so the duplication is
+ * deliberate. `core/value-guards.test.ts` pins the fact that the two forms
+ * disagree.
+ */
 function stableStringify(value: unknown): string {
   return JSON.stringify(sortForStableJson(value));
 }
@@ -544,8 +558,4 @@ function visitForUnsafePaths(value: unknown, found: Set<string>): void {
     visitForUnsafePaths(key, found);
     visitForUnsafePaths(raw, found);
   }
-}
-
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === "object" && value !== null && !Array.isArray(value);
 }

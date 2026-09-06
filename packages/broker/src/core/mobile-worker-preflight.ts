@@ -5,7 +5,7 @@
 // tmux, SSH tunnel, Gateway, Android, or Termux state.
 // ---------------------------------------------------------------------------
 
-import { isRecord } from "./value-guards.js";
+import { isRecord, stableStringify } from "./value-guards.js";
 import { createHash } from "node:crypto";
 
 export type MobileWorkerPreflightFormat = "markdown" | "json";
@@ -910,18 +910,4 @@ function stringValue(value: unknown): string {
 
 function hasAnyKey(record: Record<string, unknown>, keys: string[]): boolean {
   return keys.some((key) => Object.prototype.hasOwnProperty.call(record, key));
-}
-
-function stableStringify(value: unknown): string {
-  if (value === null || typeof value !== "object") {
-    return JSON.stringify(value);
-  }
-  if (Array.isArray(value)) {
-    return `[${value.map(stableStringify).join(",")}]`;
-  }
-  const record = value as Record<string, unknown>;
-  return `{${Object.keys(record)
-    .sort()
-    .map((key) => `${JSON.stringify(key)}:${stableStringify(record[key])}`)
-    .join(",")}}`;
 }

@@ -8,6 +8,7 @@
  */
 
 import { z } from "zod";
+import { isRecord } from "./core/value-guards.js";
 
 import {
   digestSharedStateKeyV1,
@@ -341,10 +342,6 @@ function deepFreeze<T>(value: T): Readonly<T> {
     }
   }
   return value;
-}
-
-function isRecord(value: unknown): value is RecordValue {
-  return value !== null && typeof value === "object" && !Array.isArray(value);
 }
 
 function errorResult<T>(

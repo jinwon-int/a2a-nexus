@@ -11,6 +11,7 @@ import {
   projectBrokerTaskForList,
 } from "./task-projection.js";
 import { matchDefaultAgentConvention } from "./default-agent-conventions.js";
+import { isRecord } from "../core/value-guards.js";
 import {
   pageSpecTasks,
   parseSpecListTaskFilters,
@@ -1242,10 +1243,6 @@ function optionalEnum<T extends string>(value: unknown, allowed: readonly T[]): 
   }
   const normalized = value.trim() as T;
   return allowed.includes(normalized) ? normalized : undefined;
-}
-
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === "object" && value !== null && !Array.isArray(value);
 }
 
 function readId(id: unknown): JsonRpcId {

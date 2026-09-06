@@ -9,6 +9,7 @@
 import { createHash } from "node:crypto";
 
 import { SHARED_STATE_STORAGE_V1_VALUES as V } from "./shared-state-storage-v1-values.js";
+import { isRecord } from "./core/value-guards.js";
 
 export type SharedStateDigestDomainV1 = keyof typeof V.digestDomains;
 export type SharedStateKeyComponentTypeV1 =
@@ -84,10 +85,6 @@ const TOP_LEVEL_FIELDS = [
   "components",
 ] as const;
 const COMPONENT_FIELDS = ["field", "type", "value"] as const;
-
-function isRecord(value: unknown): value is RecordValue {
-  return value !== null && typeof value === "object" && !Array.isArray(value);
-}
 
 function errorResult<T>(
   code: SharedStateKeyspaceErrorCodeV1,

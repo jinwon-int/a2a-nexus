@@ -16,6 +16,7 @@ import {
 } from "./shared-state-storage-contract-v1.js";
 import { SHARED_STATE_STORAGE_V1_VALUES as SV } from "./shared-state-storage-v1-values.js";
 import { SHARED_STATE_OBSERVABILITY_V1_VALUES as V } from "./shared-state-observability-v1-values.js";
+import { isRecord } from "./core/value-guards.js";
 
 export {
   SHARED_STATE_OBSERVABILITY_V1_VALUES,
@@ -585,8 +586,6 @@ export type SharedStateOperatorObservabilityProjectionV1 = z.infer<
   typeof sharedStateOperatorObservabilityProjectionV1Schema
 >;
 
-type RecordValue = Record<string, unknown>;
-
 const CONFUSABLE_ASCII: Readonly<Record<string, string>> = Object.freeze({
   "\u0430": "a",
   "\u0435": "e",
@@ -605,10 +604,6 @@ const CONFUSABLE_ASCII: Readonly<Record<string, string>> = Object.freeze({
   "\u03c4": "t",
   "\u03c7": "x",
 });
-
-function isRecord(value: unknown): value is RecordValue {
-  return value !== null && typeof value === "object" && !Array.isArray(value);
-}
 
 function normalizedFieldName(value: string): string {
   const folded = [...value.normalize("NFKC")]

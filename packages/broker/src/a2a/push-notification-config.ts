@@ -20,6 +20,7 @@
  * outlive task lifecycle.
  */
 import { randomUUID } from "node:crypto";
+import { isRecord } from "../core/value-guards.js";
 
 export interface PushNotificationAuthenticationInfo {
   schemes?: string[];
@@ -170,10 +171,6 @@ function isHttpUrl(value: string | undefined): value is string {
   } catch {
     return false;
   }
-}
-
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === "object" && value !== null && !Array.isArray(value);
 }
 
 function normalizeAuthentication(value: unknown): PushNotificationAuthenticationInfo | undefined {

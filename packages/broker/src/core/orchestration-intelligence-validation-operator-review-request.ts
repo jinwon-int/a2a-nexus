@@ -6,6 +6,7 @@ import {
   type OIValidationFinalizerScenarioReview,
 } from "./orchestration-intelligence-validation-finalizer-review.js";
 import { buildOIValidationScorePacket } from "./orchestration-intelligence-validation-scorer.js";
+import { stableStringify } from "./value-guards.js";
 
 export type OIValidationOperatorReviewRequestState =
   | "operator_review_request_ready"
@@ -258,14 +259,4 @@ function unique(values: string[]): string[] {
 
 function stableId(prefix: string, value: unknown): string {
   return `${prefix}-${createHash("sha256").update(stableStringify(value)).digest("hex").slice(0, 24)}`;
-}
-
-function stableStringify(value: unknown): string {
-  if (value === null || typeof value !== "object") return JSON.stringify(value);
-  if (Array.isArray(value)) return `[${value.map((entry) => stableStringify(entry)).join(",")}]`;
-  const record = value as Record<string, unknown>;
-  return `{${Object.keys(record)
-    .sort()
-    .map((key) => `${JSON.stringify(key)}:${stableStringify(record[key])}`)
-    .join(",")}}`;
 }

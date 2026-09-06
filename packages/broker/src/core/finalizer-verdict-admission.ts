@@ -26,6 +26,7 @@
 // accept moment, before side-effects, without faking the crypto it cannot do.
 import { verifyFinalizerVerdictSignature, type FinalizerKeyring } from "a2a-attestation";
 import type { TaskRecord, TaskResult } from "./types.js";
+import { isRecord } from "./value-guards.js";
 
 export const FINALIZER_VERDICT_SCHEMA = "a2a.finalizer.verdict.v1";
 const FINALIZER_ROLE_PREFIX = "finalizer:";
@@ -44,10 +45,6 @@ export interface FinalizerVerdictAdmissionResult {
   applies: boolean;
   ok: boolean;
   violations: string[];
-}
-
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === "object" && value !== null && !Array.isArray(value);
 }
 
 /**

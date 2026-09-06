@@ -26,7 +26,7 @@
 // Parent:    #971  Team2 — complexity orchestration recommendation packet.
 // ─────────────────────────────────────────────────────────────────────────────
 
-import { isRecord } from "./value-guards.js";
+import { isRecord, stableStringify } from "./value-guards.js";
 import { createHash } from "node:crypto";
 import type { ComplexityOrchestrationRecommendationPacket } from "./complexity-orchestration-recommendation.js";
 
@@ -598,20 +598,6 @@ function titleForEnvelope(packet: FinalizerApprovalEnvelopeDraftPacket): string 
     return `# No approval needed: Finalizer approval envelope for ${packet.action}`;
   }
   return `# Approval request draft: Finalizer approval envelope for ${packet.action}`;
-}
-
-function stableStringify(value: unknown): string {
-  if (value === null || typeof value !== "object") {
-    return JSON.stringify(value);
-  }
-  if (Array.isArray(value)) {
-    return `[${value.map(stableStringify).join(",")}]`;
-  }
-  const record = value as Record<string, unknown>;
-  return `{${Object.keys(record)
-    .sort()
-    .map((k) => `${JSON.stringify(k)}:${stableStringify(record[k])}`)
-    .join(",")}}`;
 }
 
 function isComplexityOrchestrationRecommendationPacket(
