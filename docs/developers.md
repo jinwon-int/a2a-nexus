@@ -29,10 +29,15 @@ Examples for focused checks while editing:
 ```bash
 npm run check:layout
 npm run check:packages
-npm run check:monorepo-reentry
-npm run check:monorepo-import-rehearsal
-npm run check:monorepo-ci-parity
+npm run check:monorepo-docs-routing
+npm run check:release-gate-inventory
 ```
+
+`check:monorepo-reentry`, `check:monorepo-import-rehearsal` and
+`check:monorepo-ci-parity` were **deleted** with the rest of the monorepo
+migration ceremony in #1779; they are not runnable. Use
+`npm run --silent release-gate -- --list` to see the commands the gate actually
+selects today.
 
 For broader source changes, run:
 
