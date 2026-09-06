@@ -33,7 +33,8 @@ in docs/skill discipline (unenforced) and scattered per-gate modules.
 
 Matching is **first-match-wins on workerClass in document order** (a `*` rule
 listed first shadows later class-specific rules — order rules deliberately).
-Within the matched rule, checks run deny-first: `denyModes`, `allowIntents`,
+Within the matched rule, checks run deny-first: `denyModes` (fail-closed on an
+undetermined mode — see invariant 2), `allowIntents`,
 `requireImplementationCapability`, `maxTasksPerDay`, then `requireApproval`. No
 matching rule falls through to `defaultAction`.
 
@@ -49,12 +50,23 @@ matching rule falls through to `defaultAction`.
    it is not a named worker identity. The operator rule therefore permits
    read-only verification and local no-GitHub-write proposals, while
    `github-propose-patch` remains incompatible with the class.
-2. **Fail-closed validation.** Unknown fields anywhere are an error — a typo
+2. **Fail-closed mode resolution (BUG-B4).** `denyModes` is evaluated
+   fail-closed: when the matched rule declares `denyModes` and the evaluator was
+   not given a non-empty `mode` string, the task is **denied**
+   (`mode could not be determined …`, CLI reason code `mode_undetermined`).
+   Previously an absent `mode` skipped the whole `denyModes` branch, so a
+   payload whose `mode` was present but not a string — which the broker
+   normalizes to `undefined` — bypassed the rule and fell through to `allow`.
+   A caller that positively established the task declares no mode at all opts
+   out with `modeResolution: "absent"`; omitting the field means
+   "undetermined" and denies, so dropping the plumbing fails closed like the
+   `requireImplementationCapability` and `maxTasksPerDay` gates.
+3. **Fail-closed validation.** Unknown fields anywhere are an error — a typo
    like `denyIntents` must never silently no-op a safety rule. Rule ids are
    unique. A configured-but-invalid document **fails broker startup loudly**.
-3. **Operator-committed only.** Policy changes land via operator commits to
+4. **Operator-committed only.** Policy changes land via operator commits to
    `docs/ops/broker-policy.json`; agents must not self-modify policy via PR.
-4. **Missing document = legacy behavior.** No `A2A_BROKER_POLICY_FILE` means no
+5. **Missing document = legacy behavior.** No `A2A_BROKER_POLICY_FILE` means no
    policy evaluation at all — everything allowed, exactly as before G1.
 
 ## 3. Mode semantics (warn → enforce, the G1 pattern)
