@@ -1,5 +1,6 @@
 import { BrokerError } from "./broker-error.js";
 import { isRecord } from "./value-guards.js";
+import { terminalOutboxPayloadIssueSchema } from "./store-schemas.js";
 import type { TaskRecord, TaskStatus } from "./types.js";
 import type { TaskStatusEvent } from "./task-events.js";
 import type { CrossBrokerTerminalBriefProjection } from "./cross-broker-terminal-brief.js";
@@ -973,8 +974,11 @@ export function buildTerminalTaskPayload(task: TaskRecord): TerminalTaskEventPay
   if (worker) payload.worker = worker;
   const repo = task.payload["githubRepo"];
   if (typeof repo === "string" && repo.length > 0) payload.repo = repo;
-  const issue = task.payload["githubIssueNumber"];
-  if (typeof issue === "number" && Number.isFinite(issue)) payload.issue = issue;
+  // Derived from the snapshot schema (see terminalOutboxPayloadIssueSchema):
+  // a non-integer/negative `githubIssueNumber` in the opaque task payload used
+  // to reach the persisted outbox row and then fail the snapshot load (#2051).
+  const issue = terminalOutboxPayloadIssueSchema.safeParse(task.payload["githubIssueNumber"]);
+  if (issue.success && issue.data !== undefined) payload.issue = issue.data;
   const taskBrief = buildTaskBrief(task, output);
   if (taskBrief) payload.taskBrief = taskBrief;
   const prUrl = firstSafeHttpUrl(
