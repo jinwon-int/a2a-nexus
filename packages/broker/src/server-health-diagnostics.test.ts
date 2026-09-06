@@ -1,6 +1,10 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { startTestServer, jsonHeaders, withEnv, registerTestWorker } from "./server-test-helpers.js";
+import {
+  parseSnapshotPayload,
+  resetSnapshotQuarantineStats,
+} from "./core/store-snapshot-io.js";
 
 test("server warns when SQLite worker heartbeat persistence is configured to persist every heartbeat", async () => {
   const server = await startTestServer({
@@ -1347,6 +1351,50 @@ test("GET /dashboard attention flags aged claimed and running tasks", async () =
     })).json();
     assert.ok(dashboard.attention.items.some((item: { code: string }) => item.code === "aged-running-task"));
   } finally {
+    await server.close();
+  }
+});
+
+
+// #2051 item 2: snapshot-record quarantine (#2044) kept the broker bootable but
+// dropped the offending rows from live state, and nothing surfaced that. /health
+// is the surface (not /schedz): it already owns persistence diagnostics and the
+// ok/warning degradation vocabulary, whereas /schedz is scoped to host/process
+// scheduling attribution (#1032).
+test("server reports snapshot quarantine counters on /health and warns once a record is dropped", async () => {
+  resetSnapshotQuarantineStats();
+  const server = await startTestServer();
+  try {
+    const clean = await (await fetch(`${server.baseUrl}/health`)).json();
+    assert.equal(clean.snapshotQuarantine.degraded, false);
+    assert.equal(clean.snapshotQuarantine.recordsDropped, 0);
+    assert.equal(clean.snapshotQuarantine.lastQuarantineFile, null);
+    assert.ok(
+      !/snapshot quarantine/.test(String(clean.warning ?? "")),
+      "a clean broker must not carry a quarantine warning",
+    );
+
+    // Drive one quarantine through the same code path the loader uses. The
+    // counters are process-wide, which is exactly why /health can report them.
+    parseSnapshotPayload(
+      JSON.stringify({
+        version: 1,
+        workers: [{ nodeId: 42 }],
+      }),
+      "memory://health-quarantine-test",
+      10_000_000,
+    );
+
+    const degraded = await (await fetch(`${server.baseUrl}/health`)).json();
+    assert.equal(degraded.snapshotQuarantine.degraded, true);
+    assert.equal(degraded.snapshotQuarantine.recordsDropped, 1);
+    assert.equal(degraded.snapshotQuarantine.loadsRecovered, 1);
+    assert.ok(degraded.snapshotQuarantine.lastQuarantineAt);
+    assert.match(String(degraded.warning), /snapshot quarantine active/);
+    // Degradation, not an outage: the broker is still serving.
+    assert.equal(degraded.ok, true);
+  } finally {
+    resetSnapshotQuarantineStats();
     await server.close();
   }
 });

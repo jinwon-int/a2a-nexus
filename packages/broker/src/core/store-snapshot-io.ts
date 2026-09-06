@@ -174,7 +174,9 @@ export function parseSnapshotPayload(payload: string, source: string, maxBytes: 
     if (recovered.success) {
       snapshotQuarantineStats.recordsDropped += recovery.dropped.length;
       snapshotQuarantineStats.loadsRecovered += 1;
+      snapshotQuarantineStats.lastQuarantineAt = new Date().toISOString();
       const quarantinePath = writeQuarantineFile(source, recovery.dropped);
+      snapshotQuarantineStats.lastQuarantineFile = quarantinePath;
       for (const dropped of recovery.dropped) {
         console.warn(
           JSON.stringify({
@@ -226,6 +228,15 @@ interface SnapshotQuarantineStats {
   quarantineFilesWritten: number;
   /** Quarantine files that could not be written (best-effort persistence). */
   quarantineWriteFailures: number;
+  /**
+   * ISO timestamp of the most recent recovered load, or undefined when nothing
+   * has been quarantined in this process. #2051 item 2: the counters alone
+   * answer "how many", not "when" — an operator reading `/health` needs the
+   * latter to correlate a quarantine with a restart.
+   */
+  lastQuarantineAt?: string;
+  /** Path of the most recent quarantine file, when one could be written. */
+  lastQuarantineFile?: string;
 }
 
 const snapshotQuarantineStats: SnapshotQuarantineStats = {
@@ -248,6 +259,64 @@ export function resetSnapshotQuarantineStats(): void {
   snapshotQuarantineStats.loadsFailed = 0;
   snapshotQuarantineStats.quarantineFilesWritten = 0;
   snapshotQuarantineStats.quarantineWriteFailures = 0;
+  delete snapshotQuarantineStats.lastQuarantineAt;
+  delete snapshotQuarantineStats.lastQuarantineFile;
+}
+
+/**
+ * Operator-facing projection of the quarantine counters for `/health`.
+ *
+ * `/health` (not `/schedz`) is the right surface: `/schedz` is scoped to
+ * host/process scheduling attribution (#1032), while `/health` already owns
+ * persistence diagnostics and the `ok`/`warning` degradation vocabulary this
+ * needs — a quarantined record is silent data loss (the row is gone from live
+ * state and removed from the file on the next save), so it has to be visible
+ * as a standing warning, not just a counter someone might read.
+ *
+ * `degraded` is the single boolean an operator/monitor can alert on.
+ */
+export function readSnapshotQuarantineHealth(): {
+  degraded: boolean;
+  recordsDropped: number;
+  loadsRecovered: number;
+  loadsFailed: number;
+  quarantineFilesWritten: number;
+  quarantineWriteFailures: number;
+  lastQuarantineAt: string | null;
+  lastQuarantineFile: string | null;
+} {
+  const stats = getSnapshotQuarantineStats();
+  return {
+    degraded:
+      stats.recordsDropped > 0 ||
+      stats.loadsFailed > 0 ||
+      stats.quarantineWriteFailures > 0,
+    recordsDropped: stats.recordsDropped,
+    loadsRecovered: stats.loadsRecovered,
+    loadsFailed: stats.loadsFailed,
+    quarantineFilesWritten: stats.quarantineFilesWritten,
+    quarantineWriteFailures: stats.quarantineWriteFailures,
+    lastQuarantineAt: stats.lastQuarantineAt ?? null,
+    lastQuarantineFile: stats.lastQuarantineFile ?? null,
+  };
+}
+
+/**
+ * One-line operator summary for the `/health` warning band, or undefined when
+ * nothing has been quarantined.
+ */
+export function describeSnapshotQuarantineWarning(): string | undefined {
+  const health = readSnapshotQuarantineHealth();
+  if (!health.degraded) return undefined;
+  const parts = [
+    `${health.recordsDropped} record(s) dropped across ${health.loadsRecovered} recovered load(s)`,
+  ];
+  if (health.loadsFailed > 0) parts.push(`${health.loadsFailed} unrecoverable load(s)`);
+  if (health.quarantineWriteFailures > 0) {
+    parts.push(`${health.quarantineWriteFailures} quarantine file(s) could not be written`);
+  }
+  if (health.lastQuarantineFile) parts.push(`last file ${health.lastQuarantineFile}`);
+  return `snapshot quarantine active: ${parts.join("; ")}; quarantined rows are absent from live state and are removed from the snapshot on the next save`;
 }
 
 /**

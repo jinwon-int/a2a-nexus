@@ -15,6 +15,8 @@ import {
   assertRequestPayload,
   attachArtifactRequestSchema,
   createProposalRequestSchema,
+  createTaskRequestSchema,
+  registerWorkerRequestSchema,
   submitValidationRequestSchema,
 } from "./store-schemas.js";
 import { isPlainRecord } from "./broker-task-record-normalizers.js";
@@ -26,7 +28,19 @@ import {
   validateTerminalBriefMetadata,
 } from "./terminal-brief-metadata.js";
 
-/** Reject a worker registration that is missing required identity/capability fields. */
+/**
+ * Reject a worker registration that is missing required identity/capability
+ * fields, or whose shape the snapshot schema would later refuse.
+ *
+ * Two layers, in the #2044 order:
+ *  1. the historical presence checks, which own the stable operator-facing
+ *     messages (`nodeId is required`, ...);
+ *  2. {@link registerWorkerRequestSchema}, derived from the persisted
+ *     `workerSchema` — this is what closes issue #2051 item 3. Presence-only
+ *     checks let `nodeId: 12345` or `metadata: { retries: 3 }` through; both
+ *     land verbatim in the worker record and are then rejected by
+ *     `workerSchema` on the next snapshot load (the #1504/#1725 failure class).
+ */
 export function assertWorkerRegistrationPayload(request: RegisterWorkerRequest): void {
   if (!request.nodeId) {
     throw new BrokerError("bad_request", "nodeId is required");
@@ -37,6 +51,19 @@ export function assertWorkerRegistrationPayload(request: RegisterWorkerRequest):
   if (!request.capabilities) {
     throw new BrokerError("bad_request", "capabilities are required");
   }
+  assertRequestPayload(registerWorkerRequestSchema, request, "worker registration payload");
+}
+
+/**
+ * Reject a task-creation request whose shape the snapshot schema would refuse.
+ *
+ * Called from `assertTaskPayload` on the already-normalized request, so it sees
+ * exactly the values `createTask` is about to persist, and it sits in the core
+ * admission path rather than in `tasks-collection-routes.ts` so the HTTP and
+ * JSON-RPC surfaces are covered by one check (#2051 item 1).
+ */
+export function assertCreateTaskRecordShape(request: CreateTaskRequest): void {
+  assertRequestPayload(createTaskRequestSchema, request, "task payload");
 }
 
 /**

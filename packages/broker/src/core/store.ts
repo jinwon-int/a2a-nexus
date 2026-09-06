@@ -123,6 +123,11 @@ export {
   emptySnapshot,
   serializeBrokerSnapshot,
   writeBrokerSnapshotFile,
+  // #2051 item 2: the quarantine counters had no reader outside tests. Re-export
+  // the operator projections here so `/health` can surface them without the
+  // server reaching into a store-internal module.
+  describeSnapshotQuarantineWarning,
+  readSnapshotQuarantineHealth,
 } from "./store-snapshot-io.js";
 export { buildHotEntityHintCoverage } from "./store-hot-retention-planning.js";
 

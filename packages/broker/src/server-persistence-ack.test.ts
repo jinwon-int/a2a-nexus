@@ -347,6 +347,10 @@ test("server wires worker-thread persistence queue through HTTP ACK and diagnost
       persistenceBackend: "sqlite",
       sqliteFile,
       sqliteLoadSource: "hot-tables",
+      // #2051 item 5: nulling the injected store sends the serving fence to the
+      // host's default STATE_FILE path, which a live broker on this host owns —
+      // an unconditional `ownership_conflict`. Keep the fence inside tmpDir.
+      sharedStateFile: join(tmpDir, "serving-fence.sqlite"),
       edgeSecret: "test-edge-secret",
       enforceRequesterIdentity: false,
     });

@@ -12,8 +12,10 @@ import { join } from "node:path";
 import { InMemoryA2ABroker } from "./broker.js";
 import {
   JsonFileBrokerStateStore,
+  describeSnapshotQuarantineWarning,
   getSnapshotQuarantineStats,
   parseSnapshotPayload,
+  readSnapshotQuarantineHealth,
   resetSnapshotQuarantineStats,
   serializeBrokerSnapshot,
 } from "./store-snapshot-io.js";
@@ -143,5 +145,58 @@ describe("snapshot load isolation", () => {
     assert.equal(stats.recordsDropped, 0);
     assert.equal(stats.loadsRecovered, 0);
     assert.equal(stats.quarantineFilesWritten, 0);
+  });
+});
+
+// #2051 item 2: the counters above existed but nothing read them, so a
+// quarantine — which drops the row from live state and removes it from the file
+// on the next save — was silent data loss. These cover the operator projection
+// that `/health` renders.
+describe("snapshot quarantine observability", () => {
+  beforeEach(() => {
+    resetSnapshotQuarantineStats();
+  });
+
+  it("reports not-degraded and no warning when nothing was quarantined", () => {
+    const health = readSnapshotQuarantineHealth();
+    assert.equal(health.degraded, false);
+    assert.equal(health.recordsDropped, 0);
+    assert.equal(health.lastQuarantineAt, null);
+    assert.equal(health.lastQuarantineFile, null);
+    assert.equal(describeSnapshotQuarantineWarning(), undefined);
+  });
+
+  it("flips to degraded with a file reference and timestamp after a recovered load", () => {
+    const dir = mkdtempSync(join(tmpdir(), "broker-quarantine-health-"));
+    const statePath = join(dir, "state.json");
+    const snapshot = healthySnapshotObject();
+    (snapshot["proposals"] as unknown[]).push(poisonProposal("poisoned-proposal"));
+    writeFileSync(statePath, JSON.stringify(snapshot), "utf8");
+
+    new JsonFileBrokerStateStore(statePath).load();
+
+    const health = readSnapshotQuarantineHealth();
+    assert.equal(health.degraded, true);
+    assert.equal(health.recordsDropped, 1);
+    assert.equal(health.loadsRecovered, 1);
+    assert.equal(health.quarantineFilesWritten, 1);
+    assert.ok(health.lastQuarantineAt, "lastQuarantineAt must be populated");
+    assert.match(String(health.lastQuarantineFile), /\.quarantine-/);
+
+    const warning = describeSnapshotQuarantineWarning();
+    assert.match(String(warning), /snapshot quarantine active/);
+    assert.match(String(warning), /1 record\(s\) dropped/);
+    assert.match(String(warning), /absent from live state/);
+  });
+
+  it("counts an unrecoverable load as degraded too", () => {
+    assert.throws(
+      () => parseSnapshotPayload(JSON.stringify({ version: "nope" }), "memory://bad", MAX_BYTES),
+      /invalid broker snapshot/,
+    );
+    const health = readSnapshotQuarantineHealth();
+    assert.equal(health.degraded, true);
+    assert.equal(health.loadsFailed, 1);
+    assert.match(String(describeSnapshotQuarantineWarning()), /1 unrecoverable load\(s\)/);
   });
 });

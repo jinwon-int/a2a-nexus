@@ -7,9 +7,9 @@
  */
 
 import assert from "node:assert/strict";
-import { mkdtempSync, rmSync } from "node:fs";
+import { existsSync, mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { dirname, join } from "node:path";
 import test from "node:test";
 
 import { createBrokerServer } from "./server.js";
@@ -169,13 +169,42 @@ test("createBrokerServer releases the fence when startup fails after acquisition
   });
 });
 
+// #2051 item 5: this used to call the real
+// `SHARED_STATE_SERVING_FENCE_V1.defaultLegacyStateFile`
+// (`/var/lib/a2a-broker/state.json`). The behaviour under test is "the default
+// state directory does not exist -> isolate the fence into a temp file", but on
+// any node that actually runs a broker the directory *does* exist and is owned
+// by the live process, so the test failed with `ownership_conflict` no matter
+// what the change under test was (ruled out by hand during #2043 and #2044).
+// The default path is now injected, so the missing-directory branch is exercised
+// deterministically and the host's live broker is never touched.
 test("a missing default state directory isolates the fence", () => {
+  const missingDefaultStateFile = join(
+    tmpdir(),
+    `a2a-serving-fence-absent-${process.pid}-${Date.now()}`,
+    "state.json",
+  );
+  assert.equal(existsSync(dirname(missingDefaultStateFile)), false);
+
   const fence = acquireSharedStateServingFenceForBrokerV1({
-    stateFile: SHARED_STATE_SERVING_FENCE_V1.defaultLegacyStateFile,
+    stateFile: missingDefaultStateFile,
+    defaultLegacyStateFile: missingDefaultStateFile,
     injectedStore: false,
     env: {},
   });
   fence.release();
+
+  // The isolation branch must not have materialized the "default" directory.
+  assert.equal(existsSync(dirname(missingDefaultStateFile)), false);
+});
+
+test("the real default legacy state file is still the production default", () => {
+  // Guards the injection above from drifting away from what the broker uses:
+  // the parameter defaults to the production constant when omitted.
+  assert.equal(
+    SHARED_STATE_SERVING_FENCE_V1.defaultLegacyStateFile,
+    "/var/lib/a2a-broker/state.json",
+  );
 });
 
 test("an injected store without an explicit fence path still constructs", async () => {
