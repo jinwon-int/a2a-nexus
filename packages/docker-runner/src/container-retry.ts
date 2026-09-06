@@ -25,6 +25,18 @@ export interface RetryConfig {
   backoffFactor: number;
   /** Jitter fraction; actual delay = computed_delay * (1 ± jitterFactor). */
   jitterFactor: number;
+  /**
+   * Absolute wall-clock budget in ms for the whole retry sequence (BUG-B3).
+   *
+   * Without it, `maxAttempts` retries each get a fresh `timeoutMs`, so the
+   * worst-case wall clock is `maxAttempts × timeoutMs` (3× the declared task
+   * timeout with the defaults) — the broker/operator budget is silently
+   * multiplied. When omitted, `runContainerWithRetry` defaults the budget to
+   * the per-attempt `timeoutMs`, i.e. the declared timeout is the *total*
+   * budget: each attempt's timeout is clamped to the remaining budget and
+   * retries stop once the budget is spent.
+   */
+  totalBudgetMs?: number;
 }
 
 export interface RetryAttemptRecord {
@@ -44,6 +56,10 @@ export interface ContainerRetryEvidence {
   attempts: RetryAttemptRecord[];
   totalAttempts: number;
   succeededOnAttempt: number;
+  /** Absolute wall-clock budget applied to the whole retry sequence (ms). */
+  totalBudgetMs?: number;
+  /** True when retries stopped because the absolute budget was exhausted. */
+  budgetExhausted?: boolean;
 }
 
 // ─── Internal SpawnResult (mirrors runner.ts interface) ─────────────────────
@@ -169,6 +185,15 @@ export function computeRetryDelay(attempt: number, config: RetryConfig): number 
 // ─── Retry Harness ──────────────────────────────────────────────────────────
 
 /**
+ * Floor for a budget-clamped attempt timeout.
+ *
+ * A retry funded with a few hundred ms is worthless (it cannot even pull the
+ * engine socket), and a 0 ms timeout would make the attempt "time out"
+ * instantly, so the harness stops retrying instead of burning an attempt.
+ */
+export const MIN_ATTEMPT_TIMEOUT_MS = 1000;
+
+/**
  * Run a container command with transient-failure retry and backoff.
  *
  * Returns the final spawn result and a structured retry evidence record.
@@ -185,6 +210,19 @@ export async function runContainerWithRetry(
   const attempts: RetryAttemptRecord[] = [];
   let succeededOnAttempt = 0;
 
+  // Absolute wall-clock budget for the whole sequence (BUG-B3). Retries reuse
+  // the per-attempt timeout, so without a deadline `maxAttempts` failures cost
+  // up to `maxAttempts × timeoutMs`. The declared timeout is the total budget
+  // unless the caller opts into a wider one.
+  const totalBudgetMs = config.totalBudgetMs !== undefined && config.totalBudgetMs > 0
+    ? config.totalBudgetMs
+    : timeoutMs;
+  const deadline = Date.now() + totalBudgetMs;
+  const remainingBudgetMs = (): number => deadline - Date.now();
+  let budgetExhausted = false;
+  const budgetEvidence = (): { totalBudgetMs: number; budgetExhausted: boolean } =>
+    ({ totalBudgetMs, budgetExhausted });
+
   // We accumulate output from all attempts so no evidence is lost.
   let accumulatedStdout = "";
   let accumulatedStderr = "";
@@ -192,7 +230,13 @@ export async function runContainerWithRetry(
 
   for (let attempt = 1; attempt <= config.maxAttempts; attempt++) {
     const startedAt = Date.now();
-    const attemptResult = await spawnWithTimeout(command, argsForAttempt(args, attempt), timeoutMs, attempt, config.maxAttempts);
+    // Clamp each attempt to what is left of the absolute budget. The first
+    // attempt always gets at least MIN_ATTEMPT_TIMEOUT_MS so a degenerate
+    // budget can never produce a 0 ms (instantly timing out) run.
+    const attemptTimeoutMs = attempt === 1
+      ? Math.min(timeoutMs, Math.max(remainingBudgetMs(), MIN_ATTEMPT_TIMEOUT_MS))
+      : Math.min(timeoutMs, remainingBudgetMs());
+    const attemptResult = await spawnWithTimeout(command, argsForAttempt(args, attempt), attemptTimeoutMs, attempt, config.maxAttempts);
 
     const elapsedMs = Date.now() - startedAt;
 
@@ -226,7 +270,7 @@ export async function runContainerWithRetry(
           timedOut: false,
           elapsedMs: Date.now() - startedAt,
         },
-        retryEvidence: buildRetryEvidence(config, attempts, succeededOnAttempt),
+        retryEvidence: buildRetryEvidence(config, attempts, succeededOnAttempt, budgetEvidence()),
       };
     }
 
@@ -242,7 +286,7 @@ export async function runContainerWithRetry(
           timedOut: false,
           elapsedMs: Date.now() - startedAt,
         },
-        retryEvidence: buildRetryEvidence(config, attempts, succeededOnAttempt),
+        retryEvidence: buildRetryEvidence(config, attempts, succeededOnAttempt, budgetEvidence()),
       };
     }
 
@@ -258,13 +302,18 @@ export async function runContainerWithRetry(
           errorCode: attemptResult.errorCode,
           elapsedMs: Date.now() - startedAt,
         },
-        retryEvidence: buildRetryEvidence(config, attempts, 0),
+        retryEvidence: buildRetryEvidence(config, attempts, 0, budgetEvidence()),
       };
     }
 
-    // Transient failure: compute backoff delay and wait.
+    // Transient failure: compute backoff delay and wait — unless the absolute
+    // budget cannot fund the backoff plus a meaningful next attempt (BUG-B3).
     if (attempt < config.maxAttempts) {
       const delayMs = computeRetryDelay(attempt, config);
+      if (remainingBudgetMs() - delayMs < MIN_ATTEMPT_TIMEOUT_MS) {
+        budgetExhausted = true;
+        break;
+      }
       await sleep(delayMs);
     }
   }
@@ -279,7 +328,7 @@ export async function runContainerWithRetry(
       timedOut: attempts.some((a) => a.outcome === "timeout"),
       elapsedMs: Date.now() - (attempts[0]?.startedAt ?? Date.now()),
     },
-    retryEvidence: buildRetryEvidence(config, attempts, 0),
+    retryEvidence: buildRetryEvidence(config, attempts, 0, budgetEvidence()),
   };
 }
 
@@ -289,6 +338,7 @@ function buildRetryEvidence(
   config: RetryConfig,
   attempts: RetryAttemptRecord[],
   succeededOnAttempt: number,
+  budget?: { totalBudgetMs: number; budgetExhausted: boolean },
 ): ContainerRetryEvidence {
   return {
     schemaVersion: "a2a.runner.container-retry-evidence.v1",
@@ -296,6 +346,9 @@ function buildRetryEvidence(
     attempts,
     totalAttempts: attempts.length,
     succeededOnAttempt,
+    ...(budget
+      ? { totalBudgetMs: budget.totalBudgetMs, budgetExhausted: budget.budgetExhausted }
+      : {}),
   };
 }
 
@@ -318,6 +371,58 @@ export function appendBoundedOutput(
   return next.slice(0, maxChars) + OUTPUT_TRUNCATION_MARKER;
 }
 
+/**
+ * Extract the `--name` value baked into the `docker run` argv.
+ *
+ * `buildRunArgs` always assigns a deterministic `a2a-<taskId>-<runToken>`
+ * container name (and `argsForAttempt` suffixes it per retry), so the exact
+ * container a timed-out attempt left behind is always addressable.
+ */
+export function containerNameFromArgs(args: string[]): string | undefined {
+  const idx = args.indexOf("--name");
+  if (idx < 0 || idx + 1 >= args.length) return undefined;
+  const name = args[idx + 1];
+  return name && !name.startsWith("-") ? name : undefined;
+}
+
+/** Wall-clock cap for the best-effort `docker rm -f` reap of a timed-out run. */
+const REAP_TIMEOUT_MS = 15_000;
+
+/**
+ * Force-remove a container left behind by a timed-out attempt (BUG-B2).
+ *
+ * Killing the `docker run` CLI does NOT stop the container: the engine keeps
+ * the workload running detached, so without this reap a timed-out task leaks a
+ * container (holding its memory/CPU/pids reservation and the mounted work dir)
+ * until an operator notices. Failures are swallowed — the container may already
+ * be gone via `--rm`, and reaping must never mask the real timeout result.
+ */
+export function reapContainer(command: string, containerName: string): Promise<void> {
+  return new Promise((resolveReap) => {
+    let settled = false;
+    const done = (): void => {
+      if (settled) return;
+      settled = true;
+      clearTimeout(killTimer);
+      resolveReap();
+    };
+    let child: ReturnType<typeof spawn>;
+    try {
+      child = spawn(command, ["rm", "-f", containerName], { stdio: ["ignore", "ignore", "ignore"] });
+    } catch {
+      resolveReap();
+      return;
+    }
+    const killTimer = setTimeout(() => {
+      child.kill("SIGKILL");
+      done();
+    }, REAP_TIMEOUT_MS);
+    killTimer.unref();
+    child.on("error", done);
+    child.on("close", done);
+  });
+}
+
 function spawnWithTimeout(
   command: string,
   args: string[],
@@ -337,13 +442,23 @@ function spawnWithTimeout(
       setTimeout(() => child.kill("SIGKILL"), 5000).unref();
     }, timeoutMs);
     timer.unref();
+    // On timeout the container outlives the killed CLI, so reap it by name
+    // before reporting the attempt result (BUG-B2).
+    const settle = (result: SpawnResult): void => {
+      const containerName = result.timedOut ? containerNameFromArgs(args) : undefined;
+      if (!containerName) {
+        resolvePromise(result);
+        return;
+      }
+      void reapContainer(command, containerName).then(() => resolvePromise(result));
+    };
     child.stdout.setEncoding("utf8");
     child.stderr.setEncoding("utf8");
     child.stdout.on("data", (chunk) => { stdout = appendBoundedOutput(stdout, chunk); });
     child.stderr.on("data", (chunk) => { stderr = appendBoundedOutput(stderr, chunk); });
     child.on("error", (error: NodeJS.ErrnoException) => {
       clearTimeout(timer);
-      resolvePromise({
+      settle({
         code: null,
         signal: null,
         stdout: "",
@@ -355,7 +470,7 @@ function spawnWithTimeout(
     });
     child.on("close", (code, signal) => {
       clearTimeout(timer);
-      resolvePromise({
+      settle({
         code,
         signal,
         stdout: redactSecrets(stdout),

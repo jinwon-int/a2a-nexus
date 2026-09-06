@@ -14,11 +14,16 @@ import {
   appendBoundedOutput,
   argsForAttempt,
   computeRetryDelay,
+  containerNameFromArgs,
   defaultRetryConfig,
   isTransientContainerError,
+  reapContainer,
   runContainerWithRetry,
 } from "./container-retry.js";
 import type { RetryConfig } from "./container-retry.js";
+import { chmodSync, mkdirSync, mkdtempSync, readFileSync, writeFileSync, existsSync } from "node:fs";
+import { join } from "node:path";
+import { fileURLToPath } from "node:url";
 
 // ─── argsForAttempt: unique container name per retry ─────────────────────────
 
@@ -264,6 +269,156 @@ describe("runContainerWithRetry (single attempt)", () => {
     assert.doesNotMatch(result.stdout, new RegExp(token));
     assert.doesNotMatch(result.stderr, new RegExp(key));
     assert.doesNotMatch(retryEvidence.attempts[0].errorMessage ?? "", new RegExp(key));
+  });
+});
+
+// ─── BUG-B2: timed-out containers are reaped by name ───────────────────────
+
+function makeFakeEngine(body: string): { enginePath: string; dir: string } {
+  const executableTmpDir = fileURLToPath(new URL("../tmp/", import.meta.url));
+  mkdirSync(executableTmpDir, { recursive: true });
+  const dir = mkdtempSync(join(executableTmpDir, "retry-engine-"));
+  const enginePath = join(dir, "fake-engine.sh");
+  writeFileSync(enginePath, `#!/usr/bin/env bash\n${body}\n`);
+  chmodSync(enginePath, 0o700);
+  return { enginePath, dir };
+}
+
+describe("containerNameFromArgs", () => {
+  it("extracts the deterministic --name assigned by buildRunArgs", () => {
+    assert.equal(
+      containerNameFromArgs(["run", "--rm", "--init", "--name", "a2a-task-tok", "--network", "bridge"]),
+      "a2a-task-tok",
+    );
+  });
+
+  it("returns undefined when --name is absent, trailing, or flag-like", () => {
+    assert.equal(containerNameFromArgs(["run", "--rm"]), undefined);
+    assert.equal(containerNameFromArgs(["run", "--name"]), undefined);
+    assert.equal(containerNameFromArgs(["run", "--name", "--network"]), undefined);
+  });
+});
+
+describe("reapContainer", () => {
+  it("invokes '<engine> rm -f <name>' for the leaked container", async () => {
+    const { enginePath, dir } = makeFakeEngine(`printf '%s ' "$@" > "$(dirname "$0")/reap-argv"`);
+    await reapContainer(enginePath, "a2a-leaked-container");
+    assert.equal(readFileSync(join(dir, "reap-argv"), "utf8").trim(), "rm -f a2a-leaked-container");
+  });
+
+  it("never throws when the engine is missing or fails", async () => {
+    await reapContainer("engine-does-not-exist-xyz", "a2a-leaked-container");
+    const { enginePath } = makeFakeEngine("exit 3");
+    await reapContainer(enginePath, "a2a-leaked-container");
+  });
+});
+
+describe("runContainerWithRetry (timeout reap)", () => {
+  const baseCfg: RetryConfig = { maxAttempts: 1, baseDelayMs: 10, maxDelayMs: 100, backoffFactor: 2, jitterFactor: 0 };
+
+  it("force-removes the container by name after a timeout kills the CLI", async () => {
+    // `run` hangs past the timeout (the real CLI's container keeps running
+    // detached); `rm` records that the reap happened.
+    const { enginePath, dir } = makeFakeEngine(`
+if [ "$1" = "rm" ]; then printf '%s ' "$@" > "$(dirname "$0")/reap-argv"; exit 0; fi
+exec sleep 30
+`);
+    const args = ["run", "--rm", "--init", "--name", "a2a-timeout-victim", "image"];
+    const { result } = await runContainerWithRetry(enginePath, args, 300, baseCfg);
+
+    assert.equal(result.timedOut, true);
+    assert.ok(existsSync(join(dir, "reap-argv")), "timed-out run must be reaped");
+    assert.equal(readFileSync(join(dir, "reap-argv"), "utf8").trim(), "rm -f a2a-timeout-victim");
+  });
+
+  it("does not reap when the attempt exits normally", async () => {
+    const { enginePath, dir } = makeFakeEngine(`
+if [ "$1" = "rm" ]; then printf '%s ' "$@" > "$(dirname "$0")/reap-argv"; exit 0; fi
+exit 0
+`);
+    const { result } = await runContainerWithRetry(
+      enginePath,
+      ["run", "--rm", "--name", "a2a-clean-exit", "image"],
+      5000,
+      baseCfg,
+    );
+    assert.equal(result.code, 0);
+    assert.equal(existsSync(join(dir, "reap-argv")), false);
+  });
+});
+
+// ─── BUG-B3: absolute retry budget ─────────────────────────────────────────
+
+describe("runContainerWithRetry (absolute budget)", () => {
+  it("defaults the total budget to the per-attempt timeout and records it", async () => {
+    const { retryEvidence } = await runContainerWithRetry("true", [], 5000, {
+      maxAttempts: 3, baseDelayMs: 10, maxDelayMs: 100, backoffFactor: 2, jitterFactor: 0,
+    });
+    assert.equal(retryEvidence.totalBudgetMs, 5000);
+    assert.equal(retryEvidence.budgetExhausted, false);
+  });
+
+  it("honours an explicit totalBudgetMs", async () => {
+    const { retryEvidence } = await runContainerWithRetry("true", [], 5000, {
+      maxAttempts: 3, baseDelayMs: 10, maxDelayMs: 100, backoffFactor: 2, jitterFactor: 0,
+      totalBudgetMs: 12_000,
+    });
+    assert.equal(retryEvidence.totalBudgetMs, 12_000);
+  });
+
+  it("stops retrying transient failures once the absolute budget is spent", async () => {
+    // Each attempt burns ~400ms and fails transiently; a 900ms total budget
+    // funds two attempts at most, not the configured five.
+    const { enginePath } = makeFakeEngine(`
+if [ "$1" = "rm" ]; then exit 0; fi
+sleep 0.4
+echo "Error response from daemon: connection reset" >&2
+exit 125
+`);
+    const startedAt = Date.now();
+    const { retryEvidence } = await runContainerWithRetry(enginePath, ["run"], 5000, {
+      maxAttempts: 5, baseDelayMs: 10, maxDelayMs: 20, backoffFactor: 2, jitterFactor: 0,
+      totalBudgetMs: 900,
+    });
+    const elapsedMs = Date.now() - startedAt;
+
+    assert.ok(retryEvidence.totalAttempts < 5, `budget must cut retries short, got ${retryEvidence.totalAttempts}`);
+    assert.equal(retryEvidence.budgetExhausted, true);
+    assert.equal(retryEvidence.succeededOnAttempt, 0);
+    // Without the deadline this would be 5 × ~400ms ≈ 2s.
+    assert.ok(elapsedMs < 1800, `total wall clock must stay near the budget, got ${elapsedMs}ms`);
+  });
+
+  it("clamps a retry's timeout to the remaining budget instead of granting a fresh one", async () => {
+    // Attempt 1 burns most of a 1500ms budget, then hangs on retry: the retry
+    // must time out against the ~1s remainder, not a fresh 5000ms timeout.
+    const { enginePath, dir } = makeFakeEngine(`
+if [ "$1" = "rm" ]; then exit 0; fi
+n=$(cat "$(dirname "$0")/count" 2>/dev/null || echo 0)
+echo $((n + 1)) > "$(dirname "$0")/count"
+if [ "$n" = "0" ]; then
+  sleep 0.3
+  echo "Error response from daemon: connection reset" >&2
+  exit 125
+fi
+exec sleep 30
+`);
+    writeFileSync(join(dir, "count"), "0");
+    const startedAt = Date.now();
+    const { result, retryEvidence } = await runContainerWithRetry(
+      enginePath,
+      ["run", "--name", "a2a-budget-clamp"],
+      5000,
+      {
+        maxAttempts: 2, baseDelayMs: 10, maxDelayMs: 20, backoffFactor: 2, jitterFactor: 0,
+        totalBudgetMs: 1500,
+      },
+    );
+    const elapsedMs = Date.now() - startedAt;
+
+    assert.equal(retryEvidence.totalAttempts, 2);
+    assert.equal(result.timedOut, true);
+    assert.ok(elapsedMs < 4000, `retry must be clamped to the remaining budget, got ${elapsedMs}ms`);
   });
 });
 

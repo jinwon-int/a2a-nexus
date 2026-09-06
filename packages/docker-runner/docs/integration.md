@@ -150,6 +150,16 @@ const handlerResult = buildHandlerResult(parsed, task, nodeId);
 | `A2A_DOCKER_RUNNER_PATCH_COMMAND_JSON` | — | Safe patch command JSON `{ "argv": [...], "env": {...} }`; used when script is unset |
 | `A2A_DOCKER_RUNNER_PATCH_COMMAND_TEMPLATE` | — | Legacy eval template; used only when script/json are unset |
 
+### `task.env` Pass-Through (allowlist)
+
+태스크 페이로드의 `task.env`는 **allowlist**로 필터링되어 컨테이너에 주입된다.
+
+- 허용: `A2A_` 접두 키 전체 (`A2A_OPENCLAW_MODEL`, `A2A_HERMES_THINKING`, `A2A_RUNNER_BASE_BRANCH`, `A2A_DOCKER_RUNNER_NO_LIVE`, …) + 상관 ID `RUN_ID` / `TRACE_ID`.
+- 차단: 그 외 전부. 특히 in-container 툴체인을 탈취할 수 있는 `PATH`, `BASH_ENV`, `ENV`, `LD_PRELOAD`, `LD_LIBRARY_PATH`, `GIT_CONFIG_*`, `GIT_SSH_COMMAND`, `GIT_PROXY_COMMAND`, `HTTP(S)_PROXY` / `ALL_PROXY` / `NO_PROXY` 는 절대 전달되지 않는다.
+- runner가 소유하는 예약 키(`GH_TOKEN`, `GH_CONFIG_HOSTS`, `A2A_PATCH_COMMAND*`, `A2A_CONTAINED_SUBAGENTS_*`, `A2A_SUBAGENT_CONTEXT_BRIEF` 등)는 `A2A_` 접두여도 태스크가 덮어쓸 수 없다.
+
+새 태스크 측 변수를 추가하려면 `A2A_` 접두를 사용한다.
+
 Patch command precedence is `SCRIPT > JSON > TEMPLATE`. Prefer `SCRIPT` or
 `JSON` for active targets (`workerGamma`, `workerEpsilon`, `workerBeta`, `workerAlpha`) and keep the
 legacy template only for compatibility during rollout.
@@ -305,7 +315,7 @@ FAKE_RUNNER_MODE=pr bash scripts/fake-runner.sh run examples/task.canary.json
 
 ### Container Cleanup
 
-기본적으로 runner는 태스크 완료 후 컨테이너를 **삭제한다** (`--rm`). 하지만 일부 중단(crash, SIGKILL, 데몬 재시작) 시 컨테이너가 남을 수 있다. 아래 명령어로 확인/정리한다:
+기본적으로 runner는 태스크 완료 후 컨테이너를 **삭제한다** (`--rm`). 컨테이너는 `--init`으로 실행되므로 PID 1이 SIGTERM을 하위 프로세스에 전달하고 좀비를 회수한다. 타임아웃 시에는 `docker run` CLI를 SIGTERM→SIGKILL한 뒤 결정론적 컨테이너 이름(`a2a-<safeTaskId>-<runToken>`, 재시도는 `-r<n>` 접미)으로 `<engine> rm -f`를 수행해 컨테이너를 확실히 회수한다. 그래도 일부 중단(runner 프로세스 crash, 호스트 SIGKILL, 데몬 재시작) 시 컨테이너가 남을 수 있다. 아래 명령어로 확인/정리한다:
 
 ```bash
 # 남은 a2a-runner 컨테이너 확인
