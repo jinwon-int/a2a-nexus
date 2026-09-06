@@ -1,0 +1,45 @@
+{
+  "schema": "a2a-nexus.patch-command-script-goldens.v1",
+  "cases": [
+    {
+      "name": "codex-default",
+      "bytes": 4912,
+      "sha256": "9ce546c70a1952217bcaa6d1b826060ffadf59c08936667a1be5af2ea367c1bb"
+    },
+    {
+      "name": "codex-subagents-all-roles",
+      "bytes": 9996,
+      "sha256": "c0aacfd95c3a03818756afa7d4ad0a5c398083e3445db816102781441c36e619"
+    },
+    {
+      "name": "claude-code-default",
+      "bytes": 3416,
+      "sha256": "93b7b4cb39e5c9cba40b7d0ef62b6316b2d5c14113b09cd4a1f808c4fc3001fb"
+    },
+    {
+      "name": "claude-code-fanout-budgets",
+      "bytes": 3460,
+      "sha256": "0d2970bc336c03019268b4d6b0c9ca5d50cef3e97f35c2243966d40ce1afe7ae"
+    },
+    {
+      "name": "hermes-default",
+      "bytes": 15293,
+      "sha256": "19e08784fe43564c0324fd6da159e295c2a3369b87bbc151456567ae40a8d991"
+    },
+    {
+      "name": "hermes-native-no-subagents",
+      "bytes": 14700,
+      "sha256": "2e6a7e9bdeb1bed5d779827baadc7ea7ca0b9c82ccf3192d09c92369af01b403"
+    },
+    {
+      "name": "openclaw-default",
+      "bytes": 21358,
+      "sha256": "d548b85d5cfae8694240fec1e4c4c4eb11401ad53f3ac752efa32c8d8668f58c"
+    },
+    {
+      "name": "openclaw-npm-fallback-no-subagents",
+      "bytes": 20818,
+      "sha256": "1a10f1ef892027a07e3cfdc5e0779874cd994aa05431181a5b0402e5bd8654a3"
+    }
+  ]
+}

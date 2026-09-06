@@ -7,6 +7,7 @@
   "description": "Docker/Podman task runner for A2A workers",
   "files": [
     "dist",
+    "profiles",
     "scripts",
     "README.md",
     "LICENSE",
@@ -16,11 +17,11 @@
     "a2a-docker-runner": "./dist/cli.js"
   },
   "scripts": {
-    "build": "tsc -p tsconfig.json",
+    "build": "tsc -p tsconfig.json && node scripts/sync-profiles.mjs",
     "check": "tsc -p tsconfig.json --noEmit",
     "test": "node --test dist/**/*.test.js",
     "coverage:baseline": "npm run build && node --test scripts/coverage-baseline-report.test.mjs && node scripts/coverage-baseline-report.mjs",
-    "lint": "node --check dist/cli.js && node --check scripts/coverage-baseline-report.mjs && node --check scripts/chaos-e2e-gate.mjs && node --check scripts/telegram-terminal-notification-smoke.mjs && node --check scripts/terminal-brief-receipt-r4-smoke.mjs && node --check scripts/rollout-receipt-evidence-guard.mjs && node --check scripts/public-demo-safety-audit.mjs && node --check scripts/pre-pr-bootstrap-guard.mjs && node --check scripts/release-candidate-parity-audit.mjs && node --check scripts/runner-canary-parity-smoke.mjs && node --check scripts/runner-canary-recovery-audit-smoke.mjs && node --check scripts/deploy-marker-doctor.mjs && node --check scripts/tag-release-candidate.mjs && node --check scripts/terminal-outbox-canary-smoke.mjs",
+    "lint": "node --check dist/cli.js && bash -n profiles/openclaw.sh && bash -n profiles/hermes.sh && bash -n profiles/claude-code.sh && bash -n profiles/codex.sh && node --check scripts/sync-profiles.mjs && node --check scripts/coverage-baseline-report.mjs && node --check scripts/chaos-e2e-gate.mjs && node --check scripts/telegram-terminal-notification-smoke.mjs && node --check scripts/terminal-brief-receipt-r4-smoke.mjs && node --check scripts/rollout-receipt-evidence-guard.mjs && node --check scripts/public-demo-safety-audit.mjs && node --check scripts/pre-pr-bootstrap-guard.mjs && node --check scripts/release-candidate-parity-audit.mjs && node --check scripts/runner-canary-parity-smoke.mjs && node --check scripts/runner-canary-recovery-audit-smoke.mjs && node --check scripts/deploy-marker-doctor.mjs && node --check scripts/tag-release-candidate.mjs && node --check scripts/terminal-outbox-canary-smoke.mjs",
     "smoke:conformance": "npm run check && npm run build && npm run lint && npm test && node scripts/pre-pr-bootstrap-guard.mjs --repo-dir . && npm run audit:release-candidate && npm run chaos:e2e && node --test dist/canary.test.js && node dist/cli.js --help",
     "smoke:telegram-terminal-ack": "npm run build && node scripts/telegram-terminal-notification-smoke.mjs",
     "smoke:terminal-brief-receipt-r4": "npm run build && node scripts/terminal-brief-receipt-r4-smoke.mjs",
