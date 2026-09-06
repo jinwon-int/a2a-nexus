@@ -66,6 +66,12 @@ matching rule falls through to `defaultAction`.
    unique. A configured-but-invalid document **fails broker startup loudly**.
 4. **Operator-committed only.** Policy changes land via operator commits to
    `docs/ops/broker-policy.json`; agents must not self-modify policy via PR.
+   The prohibition is on an agent *deciding* a policy change — loosening its own
+   constraints — not on transcription. An agent MAY open a policy PR when the
+   operator has directed the specific change, provided the PR states the
+   directive, changes nothing beyond it, and is approved and merged by the
+   operator. Absent an explicit operator directive, an agent proposing a policy
+   edit is exactly what this rule forbids.
 5. **Missing document = legacy behavior.** No `A2A_BROKER_POLICY_FILE` means no
    policy evaluation at all — everything allowed, exactly as before G1.
 
@@ -144,6 +150,33 @@ v1 ships `mode: warn`, `defaultAction: allow`, `rules: []` — zero behavior
 change until the operator commits rules. Promotion to `enforce` is a separate
 operator decision after a warn-mode observation window with zero false
 positives (per-rule `task.policy_warned` counts are the evidence).
+
+**Current state (2026-09-06): promoted to `enforce`, fleet-wide.** T1 `seoseo`
+had been running `enforce` since 2026-07-22 while this repo's committed
+document still said `warn`; the two were never linked by any tooling, so the
+divergence went unnoticed for two months and caused a live broker's posture to
+be misread from the repo (a2a-nexus#2064). The operator's ruling is that the
+enforcing state is correct and the committed document was the stale side, so
+the document now says `enforce` and both brokers run it.
+
+Two things follow, and they are the point of this paragraph:
+
+- The observation-window requirement above is **satisfied by the operating
+  record, not by a fresh window**: T1 enforced for over two months with no
+  `task.policy_denied` events. A new warn window would add nothing.
+- **Never infer a broker's posture from this repo alone.** The committed
+  document is canonical for what the posture *should* be; what a broker is
+  actually running is the file at `A2A_BROKER_POLICY_FILE`. Check it directly:
+
+  ```bash
+  docker inspect <broker-container> \
+    --format '{{range .Config.Env}}{{println .}}{{end}}' | grep POLICY
+  python3 -c "import json;d=json.load(open('/var/lib/a2a-broker/broker-policy.json'));\
+    print(d['mode'], [r['id'] for r in d['rules']])"
+  ```
+
+  Closing that gap with tooling — a sync path plus a drift check, so this can
+  never diverge silently again — is tracked in a2a-nexus#2064.
 
 ### 5.1 Observation report shape
 
