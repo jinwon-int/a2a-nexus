@@ -1,17 +1,35 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 
-import { normalizePersistenceBackend, normalizeSqliteLoadSource } from "./persistence-options.js";
+import {
+  DEFAULT_BROKER_PERSISTENCE_BACKEND,
+  normalizePersistenceBackend,
+  normalizeSqliteLoadSource,
+} from "./persistence-options.js";
 
-test("normalizePersistenceBackend accepts only sqlite and otherwise falls back to json-file (#819)", () => {
+test("normalizePersistenceBackend accepts sqlite and keeps json-file opt-in (#819)", () => {
   assert.equal(normalizePersistenceBackend("sqlite"), "sqlite");
   assert.equal(normalizePersistenceBackend("SQLITE"), "sqlite");
   assert.equal(normalizePersistenceBackend("  sqlite  "), "sqlite");
 
-  assert.equal(normalizePersistenceBackend(undefined), "json-file");
-  assert.equal(normalizePersistenceBackend(""), "json-file");
   assert.equal(normalizePersistenceBackend("json-file"), "json-file");
-  assert.equal(normalizePersistenceBackend("postgres"), "json-file");
+  assert.equal(normalizePersistenceBackend("  JSON-FILE  "), "json-file");
+  assert.equal(normalizePersistenceBackend("json_file"), "json-file");
+  assert.equal(normalizePersistenceBackend("json"), "json-file");
+  assert.equal(normalizePersistenceBackend("file"), "json-file");
+});
+
+test("normalizePersistenceBackend defaults to sqlite; json-file stays reachable for rollback (perf pass)", () => {
+  // The json-file store rewrites and fsyncs the whole snapshot on every
+  // persisted mutation, so an unconfigured broker no longer inherits it.
+  assert.equal(normalizePersistenceBackend(undefined), DEFAULT_BROKER_PERSISTENCE_BACKEND);
+  assert.equal(normalizePersistenceBackend(""), "sqlite");
+  assert.equal(normalizePersistenceBackend("   "), "sqlite");
+  assert.equal(DEFAULT_BROKER_PERSISTENCE_BACKEND, "sqlite");
+  // Unknown values resolve to the default rather than silently selecting the
+  // slow store, and the documented rollback token still works.
+  assert.equal(normalizePersistenceBackend("postgres"), "sqlite");
+  assert.equal(normalizePersistenceBackend("json-file"), "json-file");
 });
 
 test("normalizeSqliteLoadSource accepts hot-table aliases and otherwise falls back to snapshot (#819)", () => {

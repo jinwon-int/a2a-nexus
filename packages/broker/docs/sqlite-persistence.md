@@ -1,8 +1,14 @@
 # SQLite Persistence Mode
 
-Round 32 introduces an explicit opt-in SQLite persistence backend while keeping the existing JSON snapshot store as the default.
+Round 32 introduced SQLite as an opt-in persistence backend. **It is now the default**; the JSON snapshot store is opt-in.
 
 This first slice intentionally preserves the existing `BrokerStateStore` snapshot contract. The broker still reads and writes a validated broker snapshot, but the snapshot is stored inside SQLite with WAL enabled. This gives operators a safer durable backend and a migration foothold before the broker is split into table/repository-level writes.
+
+## Default backend
+
+`BROKER_PERSISTENCE_BACKEND` defaults to `sqlite`. The JSON-file store has no incremental write path: every persisted mutation re-serializes the whole broker snapshot and pays a tmp-file fsync, a `.bak` copy plus fsync, a rename, and a directory fsync. On a 400-task snapshot that measured ~23 ms per mutation against ~6 ms for SQLite, and the gap grows with snapshot size.
+
+Upgrading needs no operator action. The SQLite store is constructed with `STATE_FILE` as its import source, so an existing `state.json` is validated and imported into `${STATE_FILE}.sqlite` on the first start and the JSON file is left in place. To stay on the old backend, set `BROKER_PERSISTENCE_BACKEND=json-file` (`json` and `file` are accepted aliases); any other value resolves to `sqlite`. That is also the rollback path — the JSON file it resumes from is whatever was last written before the cutover, so state written after the cutover stays in SQLite and must be exported (`npm run export:sqlite`) if it is needed.
 
 ## Enable
 
@@ -15,7 +21,7 @@ npm start
 
 Environment:
 
-- `BROKER_PERSISTENCE_BACKEND=sqlite` — enable SQLite mode.
+- `BROKER_PERSISTENCE_BACKEND=sqlite` — SQLite mode (the default; set `json-file` for the legacy store).
 - `BROKER_SQLITE_FILE` or `SQLITE_STATE_FILE` — SQLite DB path. If omitted, the broker uses `${STATE_FILE}.sqlite`.
 - `BROKER_SQLITE_LOAD_SOURCE=hot-tables` — optional Round 36 cold-start mode that hydrates broker runtime state from mirrored hot tables instead of the canonical snapshot row. Default: `snapshot`.
 - `STATE_FILE` — remains meaningful as the optional JSON import source.

@@ -37,6 +37,9 @@ export function taskMatchesFilters(task: TaskRecord, filters?: TaskListFilters):
   if (filters?.taskOrigin && (task.taskOrigin ?? "unknown") !== filters.taskOrigin) {
     return false;
   }
+  if (filters?.parentRoundId && task.parentRoundId !== filters.parentRoundId) {
+    return false;
+  }
   return true;
 }
 

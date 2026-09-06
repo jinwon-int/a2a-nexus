@@ -862,6 +862,12 @@ export interface TaskListFilters {
   claimedBy?: string;
   assignedWorkerId?: string;
   taskOrigin?: TaskOrigin;
+  /**
+   * Lanes of one parent round (`task.parentRoundId`). Internal read-path filter
+   * for round-status aggregation; it is not parsed from query strings, so the
+   * HTTP list surface is unchanged.
+   */
+  parentRoundId?: string;
   /** Include SQLite active rows that are absent from the live broker mutation map. Diagnostic only. */
   includeStaleReadPath?: boolean;
   /** Maximum number of newest matching tasks to return. */

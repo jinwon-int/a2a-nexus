@@ -93,6 +93,17 @@ export interface BrokerStateStore {
    */
   saveHotEntities?(hints: BrokerStateSaveHints): void;
   /**
+   * Run a caller-defined unit of work so that every store write it performs
+   * commits once, atomically. Stores with no transaction concept leave this
+   * undefined and callers just invoke the function directly.
+   *
+   * The broker uses this to collapse one task mutation (record upsert + audit
+   * append + retention prune + persist) from four commits into one; in WAL mode
+   * each commit is an fsync, so the commit count is the dominant write cost.
+   * Implementations must join an already-open transaction rather than nesting.
+   */
+  runBatch?<T>(fn: () => T): T;
+  /**
    * Optional durable-write acknowledgement hook for queued/asynchronous stores.
    * Mutating HTTP routes call this after broker mutation and before returning
    * success, preserving the existing "persistState returned" ACK boundary.

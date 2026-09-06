@@ -1,3 +1,4 @@
+import { parentRoundString } from "./broker-task-record-normalizers.js";
 import type {
   TaskListFilters,
   TaskRecord,
@@ -29,6 +30,16 @@ export function taskMatchesRuntimeFilters(task: TaskRecord, filters: TaskListFil
   }
   if (filters.taskOrigin && (task.taskOrigin ?? "unknown") !== filters.taskOrigin) {
     return false;
+  }
+  if (filters.parentRoundId) {
+    // Hot rows are raw stored records — normalizeTaskRecord has not run yet — so
+    // reproduce hoistParentRoundFields here: top-level first, payload copy as
+    // the fallback for dispatch paths that only stamped the payload.
+    const parentRoundId = parentRoundString(task.parentRoundId)
+      ?? parentRoundString(task.payload?.["parentRoundId"]);
+    if (parentRoundId !== filters.parentRoundId) {
+      return false;
+    }
   }
   return true;
 }
