@@ -137,7 +137,8 @@ test('release-gate --list prints default tiered selection without running steps'
   assert.equal(lines.length, expectedDefault.length + 1);
   // 55 -> 53: the three #1501 docs-provenance drift lib unit-test steps now run
   // as one combined node --test step (doc-drift-lib-tests).
-  assert.match(lines.at(-1), /release gate selected 53\/53 step\(s\)/);
+  // 53 -> 54: #2068 added the `hermes` native-worker conformance step.
+  assert.match(lines.at(-1), /release gate selected 54\/54 step\(s\)/);
   assert.ok(lines.some((line) => line.startsWith('external-secrets\tpublic-readiness\t')));
   assert.ok(lines.some((line) => line.startsWith('dependency-advisories\tpublic-readiness\t')));
   });
@@ -149,7 +150,8 @@ test('release-gate --all --list prints every tier including approval-only paths'
   const lines = res.stdout.trim().split('\n');
   assert.equal(lines.length, inventory.entries.length + 1);
   // 55 -> 53: see the default --list test above.
-  assert.match(lines.at(-1), /release gate selected 53\/53 step\(s\)/);
+  // 53 -> 54: #2068 added the `hermes` native-worker conformance step.
+  assert.match(lines.at(-1), /release gate selected 54\/54 step\(s\)/);
     assert.ok(lines.some((line) => line.startsWith('current-state-no-live-smoke\tcore\t')));
 });
 
