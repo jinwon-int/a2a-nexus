@@ -19,7 +19,7 @@ const repoRoot = process.cwd();
 const fixturePath = 'fixtures/native-worker/no-live-conformance.json';
 const checklistPath = 'docs/hermes-native-worker-conformance-checklist.md';
 const androidRunbookPath = 'docs/hermes-android-native-worker-runbook.md';
-const gongyungSpecPath = 'docs/specs/mobileAlpha-hermes-worker-profile/spec.md';
+const gongyungSpecPath = 'docs/specs/mobile-alpha-hermes-worker-profile/spec.md';
 const hermesIntegrationSpec = 'docs/specs/hermes-worker-integration/spec.md';
 
 function escapeRegExp(str) {
@@ -201,7 +201,7 @@ test('checklist references all required source documents', () => {
   const content = readFileSync(join(repoRoot, checklistPath), 'utf8');
 
   assert.match(content, /hermes-worker-integration\/spec\.md/);
-  assert.match(content, /mobileAlpha-hermes-worker-profile\/spec\.md/);
+  assert.match(content, /mobile-alpha-hermes-worker-profile\/spec\.md/);
   assert.match(content, /hermes-android-native-worker-runbook\.md/);
   assert.match(content, /native-worker\/no-live-conformance\.json/);
 });
@@ -271,7 +271,7 @@ test('checklist has no secret values', () => {
 test('fixture profiles field references mobileAlpha spec', () => {
   const fixture = JSON.parse(readFileSync(join(repoRoot, fixturePath), 'utf8'));
   const profiles = fixture.profiles || [];
-  assert.ok(profiles.some(p => p.includes('mobileAlpha-hermes-worker-profile')), 'fixture must reference mobileAlpha profile spec');
+  assert.ok(profiles.some(p => p.includes('mobile-alpha-hermes-worker-profile')), 'fixture must reference mobileAlpha profile spec');
 });
 
 test('fixture runbook field references android native worker runbook', () => {
@@ -295,7 +295,7 @@ test('android runbook documents no-Gateway boot path', () => {
   assert.match(content, /not require a full OpenClaw Gateway install/);
   assert.match(content, /termux-wake-lock/);
   assert.match(content, /\.termux\/boot\/a2a-hermes-worker/);
-  assert.match(content, /re-registers and heartbeats on every pass/);
+  assert.match(content, /Each loop ensures a fresh-enough registration/);
 });
 
 test('android runbook has no secret values', () => {

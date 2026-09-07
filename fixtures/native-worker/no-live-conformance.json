@@ -133,7 +133,7 @@
       "expectedOutcome": "NO-GO signal returned, task not claimed",
       "noLive": true,
       "rejectionReasons": ["mobileAlpha_not_docker_runner", "intent_not_allowed", "mode_not_allowed", "capability_not_satisfied", "at_capacity"],
-      "validationScript": "scripts/check-mobileAlpha-hermes-worker-profile.test.mjs"
+      "validationScript": "scripts/check-mobile-alpha-hermes-worker-profile.test.mjs"
     },
     {
       "step": 10,

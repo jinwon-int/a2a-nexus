@@ -7,7 +7,7 @@ import { fileURLToPath } from 'node:url';
 import { readFileSync } from 'node:fs';
 
 const repoRoot = process.cwd();
-const profileDir = join(repoRoot, 'docs', 'specs', 'mobileAlpha-hermes-worker-profile');
+const profileDir = join(repoRoot, 'docs', 'specs', 'mobile-alpha-hermes-worker-profile');
 
 /**
  * Helper: assert that a string contains all expected substrings.
@@ -35,21 +35,21 @@ function escapeRegExp(str) {
 // Profile path tests
 // ──────────────────────────────────────────────────────────
 
-test('spec packet exists at docs/specs/mobileAlpha-hermes-worker-profile/', () => {
+test('spec packet exists at docs/specs/mobile-alpha-hermes-worker-profile/', () => {
   for (const file of ['analyze.md', 'plan.md', 'spec.md', 'tasks.md']) {
     const fullPath = join(profileDir, file);
     assert.ok(existsSync(fullPath), `Missing required file: ${file}`);
   }
 });
 
-test('spec.md references mobileAlpha Hermes lightweight worker profile title', async () => {
+test('spec.md references mobile-alpha Hermes lightweight worker profile title', async () => {
   const spec = await readFile(join(profileDir, 'spec.md'), 'utf8');
-  assert.match(spec, /mobileAlpha Hermes Lightweight (A2A )?Worker Profile/);
+  assert.match(spec, /mobile-alpha Hermes Lightweight (A2A )?Worker Profile/);
 });
 
-test('plan.md references mobileAlpha Hermes lightweight worker profile title', async () => {
+test('plan.md references mobile-alpha Hermes lightweight worker profile title', async () => {
   const plan = await readFile(join(profileDir, 'plan.md'), 'utf8');
-  assert.match(plan, /mobileAlpha Hermes Lightweight (A2A )?Worker Profile/);
+  assert.match(plan, /mobile-alpha Hermes Lightweight (A2A )?Worker Profile/);
 });
 
 // ──────────────────────────────────────────────────────────
@@ -208,9 +208,9 @@ test('spec safety section lists required human approvals as none', async () => {
 
 test('plan references spec and prior art', async () => {
   const plan = await readFile(join(profileDir, 'plan.md'), 'utf8');
-  assert.match(plan, /mobileAlpha-hermes-worker-profile\/spec\.md/);
+  assert.match(plan, /mobile-alpha-hermes-worker-profile\/spec\.md/);
   assert.match(plan, /#384/);
-  assert.match(plan, /brokerAlpha/);
+  assert.match(plan, /broker-alpha/);
   assert.match(plan, /Small/);
 });
 
@@ -223,9 +223,9 @@ test('plan says no broker/worker code change', async () => {
 // Tasks consistency
 // ──────────────────────────────────────────────────────────
 
-test('tasks references brokerAlpha as finalizer', async () => {
+test('tasks references broker-alpha as finalizer', async () => {
   const tasks = await readFile(join(profileDir, 'tasks.md'), 'utf8');
-  assert.match(tasks, /brokerAlpha/);
+  assert.match(tasks, /broker-alpha/);
   assert.match(tasks, /Final closeout/i);
 });
 
