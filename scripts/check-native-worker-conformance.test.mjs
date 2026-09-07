@@ -295,7 +295,7 @@ test('android runbook documents no-Gateway boot path', () => {
   assert.match(content, /not require a full OpenClaw Gateway install/);
   assert.match(content, /termux-wake-lock/);
   assert.match(content, /\.termux\/boot\/a2a-hermes-worker/);
-  assert.match(content, /re-registers and heartbeats on every pass/);
+  assert.match(content, /Each loop ensures a fresh-enough registration/);
 });
 
 test('android runbook has no secret values', () => {
