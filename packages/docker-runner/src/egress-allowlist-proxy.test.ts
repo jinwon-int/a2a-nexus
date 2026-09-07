@@ -4,6 +4,7 @@ import test from "node:test";
 
 import {
   createPinnedLookup,
+  declaredLengthExceeds,
   EgressAllowlistError,
   fetchGithubResolvedRefSnapshot,
   fetchWithEgressAllowlist,
@@ -333,3 +334,14 @@ test("RED adversarial: a slow redirect chain is cut off by the total deadline", 
   assert.equal(hops, 2);
 });
 
+
+test("RED adversarial: an over-cap declared content-length is refused before buffering", () => {
+  assert.equal(declaredLengthExceeds("4096", 1024), true);
+  assert.equal(declaredLengthExceeds("1024", 1024), false, "exactly at the cap is allowed");
+  // Absent, empty, malformed, or multi-valued lengths decide nothing — the
+  // streaming counter stays the authority so a lying length is still caught.
+  assert.equal(declaredLengthExceeds(undefined, 1024), false);
+  assert.equal(declaredLengthExceeds("", 1024), false);
+  assert.equal(declaredLengthExceeds("not-a-number", 1024), false);
+  assert.equal(declaredLengthExceeds(["4096", "8192"], 1024), false);
+});

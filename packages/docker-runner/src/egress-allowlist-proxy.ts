@@ -271,6 +271,18 @@ export function createPinnedLookup(resolvedIp: string, family: 4 | 6) {
   };
 }
 
+/**
+ * True when a response's declared `content-length` alone already exceeds the
+ * byte cap, so the transfer can be refused before any of it is buffered.
+ * Absent, malformed, or multi-valued headers decide nothing here — the
+ * streaming byte counter remains the authority for a lying length.
+ */
+export function declaredLengthExceeds(header: string | string[] | undefined, maxBytes: number): boolean {
+  if (typeof header !== "string" || header.trim() === "") return false;
+  const declared = Number(header);
+  return Number.isFinite(declared) && declared > maxBytes;
+}
+
 async function defaultRequest({ url, resolvedIp, family, timeoutMs, maxBytes }: EgressHttpRequest): Promise<Omit<EgressHttpResponse, "finalUrl" | "resolvedIp">> {
   return new Promise((resolve, reject) => {
     const req = httpsRequest({
@@ -285,8 +297,7 @@ async function defaultRequest({ url, resolvedIp, family, timeoutMs, maxBytes }: 
     }, (res) => {
       // Refuse an over-cap body on its declared length instead of buffering up
       // to the cap first. A lying content-length is still caught below.
-      const declared = Number(res.headers["content-length"]);
-      if (Number.isFinite(declared) && declared > maxBytes) {
+      if (declaredLengthExceeds(res.headers["content-length"], maxBytes)) {
         req.destroy(new EgressAllowlistError("response_too_large", `response exceeded ${maxBytes} bytes`));
         return;
       }
