@@ -75,6 +75,15 @@ export interface BoundedPollerStats {
   idleCycles: number;
   /** Total cycles that encountered a fetch error. */
   errorCycles: number;
+  /**
+   * Total events the fetch returned but the cycle refused to process because
+   * `maxEventsPerPoll` was already reached. Nothing re-reads them, so a
+   * non-zero value means the caller's `fetchEvents` cursor is outrunning the
+   * cap and events are being lost.
+   */
+  droppedEvents: number;
+  /** Total individual events whose ingestion threw. */
+  failedEvents: number;
   /** ISO timestamp of the last completed poll cycle, or null. */
   lastPollAt: string | null;
   /** ISO timestamp of the last fetch error, or null. */
@@ -114,6 +123,8 @@ export class BoundedPoller {
   private _totalEventsIngested = 0;
   private _idleCycles = 0;
   private _errorCycles = 0;
+  private _droppedEvents = 0;
+  private _failedEvents = 0;
   private _lastPollAt: string | null = null;
   private _lastErrorAt: string | null = null;
   private _lastErrorMessage: string | null = null;
@@ -171,6 +182,8 @@ export class BoundedPoller {
       totalEventsIngested: this._totalEventsIngested,
       idleCycles: this._idleCycles,
       errorCycles: this._errorCycles,
+      droppedEvents: this._droppedEvents,
+      failedEvents: this._failedEvents,
       lastPollAt: this._lastPollAt,
       lastErrorAt: this._lastErrorAt,
       lastErrorMessage: this._lastErrorMessage,
@@ -210,28 +223,50 @@ export class BoundedPoller {
       const batches = Array.isArray(result) ? result : [result];
       let totalFetched = 0;
       let totalIngested = 0;
+      let totalDropped = 0;
+      let totalFailed = 0;
 
       for (const batch of batches) {
-        const events = batch.events.slice(0, this.maxEventsPerPoll - totalFetched);
+        const remaining = Math.max(0, this.maxEventsPerPoll - totalFetched);
+        const events = batch.events.slice(0, remaining);
+        // Nothing re-reads what the cap leaves behind, so count it instead of
+        // discarding it silently: a rising droppedEvents is the only signal
+        // that the source is producing faster than a cycle can accept.
+        totalDropped += batch.events.length - events.length;
         if (events.length === 0) continue;
 
         totalFetched += events.length;
 
         for (const event of events) {
-          const ingestionResult: IngestionResult = this.ingestionService.ingest(event, batch.context);
-          if (!ingestionResult.deduped && !ingestionResult.replaySkipped) {
-            totalIngested++;
+          // One malformed event must not abandon the rest of the batch: the
+          // events already ingested this cycle would drop out of the counters
+          // and the cycle would be charged as a fetch error.
+          try {
+            const ingestionResult: IngestionResult = this.ingestionService.ingest(event, batch.context);
+            if (!ingestionResult.deduped && !ingestionResult.replaySkipped) {
+              totalIngested++;
+            }
+          } catch (error) {
+            totalFailed++;
+            this.logger.warn(
+              `[${this.label}] event ingestion failed: ${error instanceof Error ? error.message : String(error)}`,
+            );
           }
         }
-
-        if (totalFetched >= this.maxEventsPerPoll) break;
       }
 
       this._totalPolls++;
       this._totalEventsFetched += totalFetched;
       this._totalEventsIngested += totalIngested;
+      this._droppedEvents += totalDropped;
+      this._failedEvents += totalFailed;
       this._lastPollAt = new Date().toISOString();
       this._idleCycles += totalFetched === 0 ? 1 : 0;
+      if (totalDropped > 0) {
+        this.logger.warn(
+          `[${this.label}] dropped ${totalDropped} event(s) past maxEventsPerPoll=${this.maxEventsPerPoll}; they are not re-read`,
+        );
+      }
 
       if (totalFetched > 0) {
         // Reset backoff on successful non-empty poll

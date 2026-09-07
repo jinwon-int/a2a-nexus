@@ -5,7 +5,7 @@
 import type { IncomingMessage, RequestListener, Server, ServerResponse } from "node:http";
 
 import type { AgentCard } from "./a2a/agent-card.js";
-import type { BoundedPoller } from "./github/bounded-poller.js";
+import type { BoundedPoller, BoundedPollerOptions } from "./github/bounded-poller.js";
 import type { GitHubIngestionService } from "./github/ingestion.js";
 import type { BrokerRuntimeHotLimitOptions } from "./broker-runtime-config.js";
 import type { WavePlanDagV2RecordStore } from "./wave-plan-dag-v2/record-store.js";
@@ -410,6 +410,15 @@ export interface BrokerServerRuntime {
   githubIngestion: GitHubIngestionService;
   /** Bounded poller for periodic GitHub event fetch — exposed for diagnostics. */
   boundedPoller?: BoundedPoller;
+  /**
+   * Start the bounded poller against a caller-supplied event source, replacing
+   * any poller already running. The broker ships no GitHub API client, so the
+   * poller stays opt-in: /github/webhook is the live ingestion path.
+   */
+  startPoller: (
+    fetchEvents: BoundedPollerOptions["fetchEvents"],
+    options?: Omit<BoundedPollerOptions, "ingestionService" | "fetchEvents">,
+  ) => BoundedPoller;
   /** Stop the bounded poller (if started). Safe to call multiple times. */
   stopPoller: () => void;
   /** Drain and terminate the worker-thread persistence queue, if enabled. */

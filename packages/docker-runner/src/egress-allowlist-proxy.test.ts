@@ -4,6 +4,7 @@ import test from "node:test";
 
 import {
   createPinnedLookup,
+  declaredLengthExceeds,
   EgressAllowlistError,
   fetchGithubResolvedRefSnapshot,
   fetchWithEgressAllowlist,
@@ -253,4 +254,94 @@ test("GREEN: response byte cap fails closed", async () => {
     })),
     (error) => failCode(error) === "response_too_large",
   );
+});
+
+test("RED adversarial: DNS answers in newly covered internal ranges are denied", async () => {
+  const denied = [
+    "169.254.169.254", // cloud metadata
+    "192.0.0.1", // 192.0.0.0/24 IETF protocol assignments
+    "198.18.0.5", // 198.18.0.0/15 benchmarking
+    "224.0.0.1", // multicast
+    "255.255.255.255", // 240.0.0.0/4 reserved / broadcast
+  ];
+  for (const address of denied) {
+    await assert.rejects(
+      () => fetchWithEgressAllowlist("https://raw.githubusercontent.com/owner/repo/ref/path", ALLOW, deps({
+        resolveHost: async () => [{ address, family: 4 }],
+        request: async () => assert.fail(`request must not be issued for ${address}`),
+      })),
+      (error: unknown) => failCode(error) === "internal_ip_denied",
+      address,
+    );
+  }
+});
+
+test("RED adversarial: IPv6 forms embedding or reaching internal space are denied", async () => {
+  const denied = [
+    "::ffff:169.254.169.254", // IPv4-mapped
+    "::127.0.0.1", // deprecated IPv4-compatible
+    "64:ff9b::10.0.0.1", // NAT64 well-known prefix
+    "fec0::1", // deprecated site-local
+    "febf::1", // link-local upper half of fe80::/10
+    "ff02::1", // multicast
+  ];
+  for (const address of denied) {
+    await assert.rejects(
+      () => fetchWithEgressAllowlist("https://raw.githubusercontent.com/owner/repo/ref/path", ALLOW, deps({
+        resolveHost: async () => [{ address, family: 6 }],
+        request: async () => assert.fail(`request must not be issued for ${address}`),
+      })),
+      (error: unknown) => failCode(error) === "internal_ip_denied",
+      address,
+    );
+  }
+});
+
+test("GREEN: a public IPv6 answer is still allowed", async () => {
+  const response = await fetchWithEgressAllowlist(
+    "https://raw.githubusercontent.com/owner/repo/ref/path",
+    ALLOW,
+    deps({ resolveHost: async () => [{ address: "2606:50c0:8000::153", family: 6 }] }),
+  );
+  assert.equal(response.statusCode, 200);
+});
+
+test("RED adversarial: a slow redirect chain is cut off by the total deadline", async () => {
+  let hops = 0;
+  let clock = 0;
+  const realNow = Date.now;
+  Date.now = () => clock;
+  try {
+    await assert.rejects(
+      () => fetchWithEgressAllowlist("https://raw.githubusercontent.com/a", {
+        ...ALLOW,
+        timeoutMs: 1000,
+        maxRedirects: 5,
+        totalTimeoutMs: 1500,
+      }, deps({
+        request: async () => {
+          hops += 1;
+          clock += 900; // each hop burns most of the shared budget
+          return { statusCode: 302, headers: { location: `https://raw.githubusercontent.com/${hops}` }, body: Buffer.alloc(0) };
+        },
+      })),
+      (error: unknown) => failCode(error) === "deadline_exceeded",
+    );
+  } finally {
+    Date.now = realNow;
+  }
+  // Without the shared deadline this would have run all 6 hops.
+  assert.equal(hops, 2);
+});
+
+
+test("RED adversarial: an over-cap declared content-length is refused before buffering", () => {
+  assert.equal(declaredLengthExceeds("4096", 1024), true);
+  assert.equal(declaredLengthExceeds("1024", 1024), false, "exactly at the cap is allowed");
+  // Absent, empty, malformed, or multi-valued lengths decide nothing — the
+  // streaming counter stays the authority so a lying length is still caught.
+  assert.equal(declaredLengthExceeds(undefined, 1024), false);
+  assert.equal(declaredLengthExceeds("", 1024), false);
+  assert.equal(declaredLengthExceeds("not-a-number", 1024), false);
+  assert.equal(declaredLengthExceeds(["4096", "8192"], 1024), false);
 });

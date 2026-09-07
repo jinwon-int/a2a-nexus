@@ -225,19 +225,31 @@ test("GET /github/poller/health returns not_started when poller not started", as
   }
 });
 
-test("GET /github/poller/health returns started stats after poller started", async () => {
+test("GET /github/poller/health returns started stats after runtime.startPoller", async () => {
   const { runtime, base } = await startTestServer();
   try {
-    // startPoller is exposed as an internal function in createBrokerServer
-    // but not on the runtime.  We start the poller by the same route the server
-    // would (via the server's own internal `stopPoller`/`startPoller` pattern).
-    // For test purposes, check that the poller health endpoint behaves
-    // consistently regardless of whether the server started a poller.
+    // The broker ships no GitHub API client, so the poller is opt-in against a
+    // caller-supplied event source. Before startPoller existed on the runtime
+    // there was no way to reach it at all and this endpoint could only ever
+    // answer not_started.
+    const poller = runtime.startPoller(
+      () => ({ events: [], context: { deliveryId: "d-poll", receivedAt: new Date().toISOString() } }),
+      { pollIntervalMs: 100_000, label: "test-runtime-poller", logger: { log: () => {}, warn: () => {}, error: () => {} } },
+    );
+    assert.equal(poller.running, true);
+    assert.equal(runtime.boundedPoller, poller);
+
     const res = await fetch(`${base}/github/poller/health`);
     assert.equal(res.status, 200);
-    const body = await res.json() as Record<string, unknown>;
+    const body = await res.json() as { ok?: boolean; status?: string; stats?: Record<string, unknown> };
     assert.equal(body.ok, true);
-    assert.equal(body.status, "not_started");
+    assert.equal(body.status, "started");
+    assert.equal(body.stats?.label, "test-runtime-poller");
+    assert.equal(body.stats?.droppedEvents, 0);
+
+    runtime.stopPoller();
+    assert.equal(poller.running, false);
+    assert.equal(runtime.boundedPoller, undefined);
   } finally {
     runtime.server.close();
     runtime.stopPoller();

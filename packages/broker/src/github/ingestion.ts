@@ -75,18 +75,75 @@ export interface AssignmentIntent {
 
 const COMMAND_PREFIX = "/a2a assign";
 
+/** Opening/closing marker of a fenced code block (``` or ~~~, three or more). */
+const CODE_FENCE = /^(`{3,}|~{3,})/;
+
+/** Inline code span: `…` or ``…``. Replaced by spaces so offsets stay stable. */
+const INLINE_CODE_SPAN = /(`+)(?:(?!\1)[\s\S])*?\1/g;
+
+/**
+ * Blank out inline code spans. A command shown as `` `/a2a assign worker` `` is
+ * documentation, not a request, and previously parsed into a live intent with
+ * a backtick-mangled target.
+ */
+function maskInlineCode(line: string): string {
+  return line.replace(INLINE_CODE_SPAN, (span) => " ".repeat(span.length));
+}
+
+/**
+ * Index of a command occurrence in `line`, or -1. The prefix must be preceded
+ * by start-of-line or whitespace and followed by whitespace or end-of-line, so
+ * `/a2a assignment` and `see#/a2a assign` are not commands.
+ */
+function findCommandStart(line: string): number {
+  const lower = line.toLowerCase();
+  let from = 0;
+  for (;;) {
+    const idx = lower.indexOf(COMMAND_PREFIX, from);
+    if (idx < 0) return -1;
+    const before = idx === 0 ? 32 : line.charCodeAt(idx - 1);
+    const after = line.charCodeAt(idx + COMMAND_PREFIX.length);
+    if ((before === 32 || before === 9) && (Number.isNaN(after) || after === 32 || after === 9)) {
+      return idx;
+    }
+    from = idx + 1;
+  }
+}
+
 export function parseAssignmentIntents(text: string | null | undefined): AssignmentIntent[] {
   if (typeof text !== "string" || text.length === 0) {
     return [];
   }
 
   const intents: AssignmentIntent[] = [];
+  // Open fence marker (backtick or tilde) plus its length, or null outside a
+  // fenced block. A closing fence must use the same character and be at least
+  // as long, per CommonMark; anything else inside the block stays content.
+  let fence: { char: string; length: number } | null = null;
   for (const rawLine of text.split(/\r?\n/)) {
     const line = rawLine.trim();
-    const idx = line.toLowerCase().indexOf(COMMAND_PREFIX);
+
+    const fenceMatch = CODE_FENCE.exec(line);
+    if (fenceMatch) {
+      const marker = fenceMatch[1]!;
+      if (fence === null) {
+        fence = { char: marker[0]!, length: marker.length };
+      } else if (marker[0] === fence.char && marker.length >= fence.length) {
+        fence = null;
+      }
+      continue;
+    }
+    // Quoted or fenced copies of a command are citations, not requests.
+    // GitHub's "Quote reply" produces a new comment id, so the deterministic
+    // `gh:repo#issue:c<commentId>:<index>` task id does not collapse onto the
+    // original and the worker really would be dispatched a second time.
+    if (fence !== null) continue;
+    if (line.startsWith(">")) continue;
+
+    const idx = findCommandStart(maskInlineCode(line));
     if (idx < 0) continue;
-    const command = line.slice(idx);
-    const parsed = parseCommandLine(command);
+
+    const parsed = parseCommandLine(line.slice(idx));
     if (parsed) intents.push(parsed);
   }
   return intents;
