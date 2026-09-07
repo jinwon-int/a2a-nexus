@@ -203,7 +203,7 @@ import {
 } from "./trading-dialectic/read-model.js";
 import type { AlertScanResult } from "./core/alert-projection.js";
 import { GitHubIngestionService } from "./github/ingestion.js";
-import { BoundedPoller } from "./github/bounded-poller.js";
+import { BoundedPoller, type BoundedPollerOptions } from "./github/bounded-poller.js";
 import { readJson, readRawBody } from "./http/body.js";
 import { sendJson, truncateMessage } from "./http/response.js";
 import { awaitDurablePersistenceAck, sendError } from "./http/error-mapping.js";
@@ -900,8 +900,27 @@ export function createBrokerServer(options: BrokerServerOptions = {}): BrokerSer
     requesterId: "github-ingestion",
   });
 
-  // Bounded poller for periodic GitHub event fetch. Not started by default.
+  // Bounded poller for periodic GitHub event fetch. Not started by default:
+  // /github/webhook is the live ingestion path, and the broker ships no GitHub
+  // API client, so the event source is always caller-supplied. Embedders that
+  // have one call startPoller(); until then /github/poller/health reports
+  // `not_started` and stopPoller() is a no-op.
   let boundedPoller: BoundedPoller | undefined;
+
+  /**
+   * Start the bounded poller against a caller-supplied event source, replacing
+   * any poller already running. Returns the live poller for diagnostics.
+   */
+  function startPoller(
+    fetchEvents: BoundedPollerOptions["fetchEvents"],
+    options: Omit<BoundedPollerOptions, "ingestionService" | "fetchEvents"> = {},
+  ): BoundedPoller {
+    stopPoller();
+    const poller = new BoundedPoller({ ...options, ingestionService: githubIngestion, fetchEvents });
+    boundedPoller = poller;
+    poller.start();
+    return poller;
+  }
 
   /** Stop the bounded poller. Safe to call multiple times. */
   function stopPoller(): void {
@@ -2202,6 +2221,7 @@ export function createBrokerServer(options: BrokerServerOptions = {}): BrokerSer
     get boundedPoller(): BoundedPoller | undefined {
       return boundedPoller;
     },
+    startPoller,
     stopPoller,
     closeWorkerPersistence,
     config: {

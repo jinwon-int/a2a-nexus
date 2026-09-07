@@ -145,3 +145,61 @@ test("loadFinalizerKeyring accepts the record form and validates lifecycle field
     /earlier than expiresAt|before/i,
   );
 });
+
+test("a verdict whose protected header claims a different kid than finalizerKeyId fails", () => {
+  const k = ed25519();
+  const keyring: FinalizerKeyring = { keys: { "finalizer:panel:v1": k.pem } };
+  // Correctly signed with the registered key, but the covered header names a
+  // different key — the claim and the check must agree.
+  const verdict = signVerdict(
+    { schemaVersion: "a2a.finalizer.verdict.v1", subject: { kind: "task-result", resultHash: "sha256:abc" }, decision: "go", finalizerKeyId: "finalizer:panel:v1" },
+    k.privateKey, "finalizer:panel:v2",
+  );
+  const result = verifyFinalizerVerdictSignature(verdict, keyring);
+  assert.equal(result.ok, false);
+  assert.match(result.reason ?? "", /kid .* does not match finalizerKeyId/);
+});
+
+test("a verdict whose protected header claims a non-EdDSA alg fails", () => {
+  const k = ed25519();
+  const keyring: FinalizerKeyring = { keys: { "finalizer:panel:v1": k.pem } };
+  const verdict = signVerdict(
+    { schemaVersion: "a2a.finalizer.verdict.v1", subject: { kind: "task-result", resultHash: "sha256:abc" }, decision: "go", finalizerKeyId: "finalizer:panel:v1" },
+    k.privateKey, "finalizer:panel:v1",
+  );
+  const header = Buffer.from(canonicalizeJson({ alg: "none", kid: "finalizer:panel:v1", typ: "JOSE" })).toString("base64url");
+  const result = verifyFinalizerVerdictSignature(
+    { ...verdict, sig: { ...(verdict as { sig: Record<string, string> }).sig, protected: header } },
+    keyring,
+  );
+  assert.equal(result.ok, false);
+  assert.match(result.reason ?? "", /alg 'none'/);
+});
+
+test("a verdict with an undecodable protected header fails closed", () => {
+  const k = ed25519();
+  const keyring: FinalizerKeyring = { keys: { "finalizer:panel:v1": k.pem } };
+  const verdict = signVerdict(
+    { schemaVersion: "a2a.finalizer.verdict.v1", subject: { kind: "task-result", resultHash: "sha256:abc" }, decision: "go", finalizerKeyId: "finalizer:panel:v1" },
+    k.privateKey, "finalizer:panel:v1",
+  );
+  const result = verifyFinalizerVerdictSignature(
+    { ...verdict, sig: { ...(verdict as { sig: Record<string, string> }).sig, protected: "not-base64url-json" } },
+    keyring,
+  );
+  assert.equal(result.ok, false);
+  assert.match(result.reason ?? "", /protected/);
+});
+
+test("a verdict header with no kid still verifies (kid is optional)", () => {
+  const k = ed25519();
+  const keyring: FinalizerKeyring = { keys: { "finalizer:panel:v1": k.pem } };
+  const base = { schemaVersion: "a2a.finalizer.verdict.v1", subject: { kind: "task-result", resultHash: "sha256:abc" }, decision: "go", finalizerKeyId: "finalizer:panel:v1" };
+  const header = Buffer.from(canonicalizeJson({ alg: "EdDSA", typ: "JOSE" })).toString("base64url");
+  const payload = Buffer.from(canonicalizeJson(base)).toString("base64url");
+  const signature = cryptoSign(null, Buffer.from(`${header}.${payload}`, "utf8"), k.privateKey).toString("base64url");
+  assert.deepEqual(
+    verifyFinalizerVerdictSignature({ ...base, sig: { protected: header, signature } }, keyring),
+    { ok: true },
+  );
+});
