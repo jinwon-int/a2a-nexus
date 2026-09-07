@@ -25,7 +25,7 @@ const enrollmentFixturePath = 'fixtures/native-worker/enrollment-evidence.json';
 const conformanceFixturePath = 'fixtures/native-worker/no-live-conformance.json';
 const conformanceChecklistPath = 'docs/hermes-native-worker-conformance-checklist.md';
 const androidRunbookPath = 'docs/hermes-android-native-worker-runbook.md';
-const gongyungSpecPath = 'docs/specs/mobileAlpha-hermes-worker-profile/spec.md';
+const gongyungSpecPath = 'docs/specs/mobile-alpha-hermes-worker-profile/spec.md';
 const hermesIntegrationSpec = 'docs/specs/hermes-worker-integration/spec.md';
 const workerCapabilityRegistryPath = 'packages/broker/docs/worker-capability-registry.md';
 
@@ -109,7 +109,7 @@ test('enrollment runbook references prerequisite documents', () => {
 
   assert.match(content, /hermes-android-native-worker-runbook/);
   assert.match(content, /hermes-native-worker-conformance-checklist/);
-  assert.match(content, /mobileAlpha-hermes-worker-profile/);
+  assert.match(content, /mobile-alpha-hermes-worker-profile/);
   assert.match(content, /hermes-worker-integration/);
   assert.match(content, /no-live-conformance\.json/);
   assert.match(content, /enrollment-evidence\.json/);
@@ -288,7 +288,7 @@ test('enrollment fixture references prior art issues', () => {
 test('enrollment fixture has reference fields', () => {
   const fixture = JSON.parse(readFileSync(join(repoRoot, enrollmentFixturePath), 'utf8'));
 
-  assert.ok(fixture.profiles.some(p => p.includes('mobileAlpha-hermes-worker-profile')), 'fixture must reference mobileAlpha profile');
+  assert.ok(fixture.profiles.some(p => p.includes('mobile-alpha-hermes-worker-profile')), 'fixture must reference mobileAlpha profile');
   assert.ok(fixture.runbook.includes('hermes-native-worker-enrollment-runbook'), 'fixture must reference enrollment runbook');
   assert.ok(fixture.priorFixture.includes('no-live-conformance.json'), 'fixture must reference no-live conformance fixture');
   assert.ok(fixture.referenceWorker.includes('hermes-reference-worker'), 'fixture must reference worker');

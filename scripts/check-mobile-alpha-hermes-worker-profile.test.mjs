@@ -7,7 +7,7 @@ import { fileURLToPath } from 'node:url';
 import { readFileSync } from 'node:fs';
 
 const repoRoot = process.cwd();
-const profileDir = join(repoRoot, 'docs', 'specs', 'mobileAlpha-hermes-worker-profile');
+const profileDir = join(repoRoot, 'docs', 'specs', 'mobile-alpha-hermes-worker-profile');
 
 /**
  * Helper: assert that a string contains all expected substrings.
@@ -35,7 +35,7 @@ function escapeRegExp(str) {
 // Profile path tests
 // ──────────────────────────────────────────────────────────
 
-test('spec packet exists at docs/specs/mobileAlpha-hermes-worker-profile/', () => {
+test('spec packet exists at docs/specs/mobile-alpha-hermes-worker-profile/', () => {
   for (const file of ['analyze.md', 'plan.md', 'spec.md', 'tasks.md']) {
     const fullPath = join(profileDir, file);
     assert.ok(existsSync(fullPath), `Missing required file: ${file}`);
@@ -208,7 +208,7 @@ test('spec safety section lists required human approvals as none', async () => {
 
 test('plan references spec and prior art', async () => {
   const plan = await readFile(join(profileDir, 'plan.md'), 'utf8');
-  assert.match(plan, /mobileAlpha-hermes-worker-profile\/spec\.md/);
+  assert.match(plan, /mobile-alpha-hermes-worker-profile\/spec\.md/);
   assert.match(plan, /#384/);
   assert.match(plan, /brokerAlpha/);
   assert.match(plan, /Small/);
