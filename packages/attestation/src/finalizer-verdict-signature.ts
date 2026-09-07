@@ -107,6 +107,16 @@ export function verifyFinalizerVerdictSignature(verdict: unknown, keyring: Final
   if (key.asymmetricKeyType !== "ed25519") {
     return { ok: false, reason: `finalizer key '${finalizerKeyId}' must be Ed25519 (EdDSA)` };
   }
+  // The protected header is covered by the signature, so it cannot be forged
+  // — but nothing previously read it, so a verdict could verify while claiming
+  // an `alg`/`kid` that disagreed with the key it was actually checked
+  // against. Verify the claim matches the check, as verifyAgentCardSignature
+  // and verifyRetrievalSnapshot already do.
+  const headerCheck = checkProtectedHeader(sig["protected"], finalizerKeyId);
+  if (headerCheck) {
+    return { ok: false, reason: headerCheck };
+  }
+
   const { sig: _omit, ...unsigned } = verdict;
   let payload: string;
   try {
@@ -121,6 +131,32 @@ export function verifyFinalizerVerdictSignature(verdict: unknown, keyring: Final
   } catch (error) {
     return { ok: false, reason: `signature verification error: ${error instanceof Error ? error.message : String(error)}` };
   }
+}
+
+/**
+ * Reason string when the JWS protected header disagrees with the key the
+ * verdict is being verified against, or undefined when it is consistent.
+ * `kid` is optional in the contract header, but when present it must name the
+ * same key as `finalizerKeyId`.
+ */
+function checkProtectedHeader(protectedHeader: string, finalizerKeyId: string): string | undefined {
+  let header: unknown;
+  try {
+    header = JSON.parse(Buffer.from(protectedHeader, "base64url").toString("utf8"));
+  } catch {
+    return "verdict.sig.protected is not a decodable JWS header";
+  }
+  if (!isRecord(header)) {
+    return "verdict.sig.protected is not a JSON object";
+  }
+  if (header["alg"] !== "EdDSA") {
+    return `verdict.sig.protected claims alg '${String(header["alg"])}'; only EdDSA finalizer verdicts are verified here`;
+  }
+  const kid = header["kid"];
+  if (kid !== undefined && kid !== finalizerKeyId) {
+    return `verdict.sig.protected kid '${String(kid)}' does not match finalizerKeyId '${finalizerKeyId}'`;
+  }
+  return undefined;
 }
 
 function validateInstant(value: unknown, field: string, keyId: string): string | undefined {

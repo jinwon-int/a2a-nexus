@@ -195,6 +195,21 @@ tag, deploy, or mutate any live state.
 - Dependency and supply-chain bumps: `fast-uri` override for dependabot alert
   #3 then `3.1.7` (`#1850`, `#2037`), `zod` `4.5.2` (`#2032`), and periodic
   GitHub Actions group bumps (`#1811`, `#1879`, `#1986`, `#2033`).
+- GitHub ingestion no longer treats a quoted, fenced, or inline-code copy of
+  `/a2a assign` as a live command: GitHub's "Quote reply" produced a new
+  comment id, so the deterministic child-task id did not collapse onto the
+  original and the worker was dispatched a second time.
+- The finalizer verdict verifier now checks the signed JWS protected header's
+  `alg`/`kid` against the key it verifies with, matching the agent-card and
+  retrieval-snapshot verifiers; the egress allowlist denies the internal IPv4
+  and IPv6 ranges it previously missed (`192.0.0.0/24`, `198.18.0.0/15`,
+  multicast, reserved, NAT64, IPv4-compatible, and site-local forms) and
+  enforces one deadline across a redirect chain instead of only per hop.
+- The bounded GitHub poller reports events dropped past `maxEventsPerPoll` and
+  survives a single failing event instead of abandoning the batch; the broker
+  runtime exposes `startPoller`, so the poller and its health endpoint are
+  reachable at all. Request-body reads cache the in-flight read rather than its
+  result, so concurrent readers of one request cannot observe an empty body.
 
 ### Added — documentation and governance
 

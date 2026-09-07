@@ -7,27 +7,37 @@ import { BrokerError } from "../core/broker.js";
 // state transfers have their own bounded paths.
 export const MAX_REQUEST_BODY_BYTES = 10 * 1024 * 1024;
 
-const rawBodyCache = new WeakMap<IncomingMessage, Buffer>();
+// Cache the in-flight read, not its result: a request stream can only be
+// consumed once, so two callers racing on the same IncomingMessage (signature
+// verification and the route handler, say) must share one read. Caching the
+// resolved Buffer alone let the second caller iterate an already-drained
+// stream and cache an empty body over the real one.
+const rawBodyCache = new WeakMap<IncomingMessage, Promise<Buffer>>();
 
-export async function readRawBody(req: IncomingMessage): Promise<Buffer> {
+export function readRawBody(req: IncomingMessage): Promise<Buffer> {
   const cached = rawBodyCache.get(req);
   if (cached) {
     return cached;
   }
 
-  const chunks: Buffer[] = [];
-  let total = 0;
-  for await (const chunk of req) {
-    const buf = Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk);
-    total += buf.length;
-    if (total > MAX_REQUEST_BODY_BYTES) {
-      throw new BrokerError("bad_request", `request body exceeds ${MAX_REQUEST_BODY_BYTES} bytes`);
+  const pending = (async () => {
+    const chunks: Buffer[] = [];
+    let total = 0;
+    for await (const chunk of req) {
+      const buf = Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk);
+      total += buf.length;
+      if (total > MAX_REQUEST_BODY_BYTES) {
+        throw new BrokerError("bad_request", `request body exceeds ${MAX_REQUEST_BODY_BYTES} bytes`);
+      }
+      chunks.push(buf);
     }
-    chunks.push(buf);
-  }
-  const raw = Buffer.concat(chunks);
-  rawBodyCache.set(req, raw);
-  return raw;
+    return Buffer.concat(chunks);
+  })();
+
+  // A failed read stays cached so every caller sees the same rejection rather
+  // than retrying against a drained stream.
+  rawBodyCache.set(req, pending);
+  return pending;
 }
 
 export async function readJson<T = unknown>(req: IncomingMessage): Promise<T | null> {

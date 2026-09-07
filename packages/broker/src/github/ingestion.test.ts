@@ -198,6 +198,60 @@ describe("parseAssignmentIntents", () => {
     const intents = parseAssignmentIntents("/a2a assign --work-mode github");
     assert.deepEqual(intents, []);
   });
+
+  it("ignores a quoted command so GitHub's Quote reply cannot re-dispatch it", () => {
+    assert.deepEqual(parseAssignmentIntents("> /a2a assign worker-a --intent analyze"), []);
+    assert.deepEqual(parseAssignmentIntents(">> /a2a assign worker-a"), []);
+    assert.deepEqual(
+      parseAssignmentIntents(
+        ["> @someone wrote:", "> /a2a assign worker-a", "", "agreed"].join("\n"),
+      ),
+      [],
+    );
+  });
+
+  it("ignores commands inside a fenced code block", () => {
+    assert.deepEqual(
+      parseAssignmentIntents(["```", "/a2a assign worker-a", "```"].join("\n")),
+      [],
+    );
+    assert.deepEqual(
+      parseAssignmentIntents(["~~~bash", "/a2a assign worker-a", "~~~"].join("\n")),
+      [],
+    );
+    // A shorter same-character run does not close the block, and a different
+    // marker inside it is content rather than a fence.
+    assert.deepEqual(
+      parseAssignmentIntents(["````", "```", "/a2a assign worker-a", "````"].join("\n")),
+      [],
+    );
+  });
+
+  it("still parses a command that follows a closed fenced block", () => {
+    const intents = parseAssignmentIntents(
+      ["```", "/a2a assign worker-a", "```", "/a2a assign worker-b"].join("\n"),
+    );
+    assert.equal(intents.length, 1);
+    assert.equal(intents[0]!.target, "worker-b");
+  });
+
+  it("ignores a command shown inside an inline code span", () => {
+    assert.deepEqual(parseAssignmentIntents("run `/a2a assign worker-a` to dispatch"), []);
+    assert.deepEqual(parseAssignmentIntents("``/a2a assign worker-a``"), []);
+    // Only the code span is masked; a real command later on the line still runs.
+    const intents = parseAssignmentIntents("like `/a2a assign worker-a`: /a2a assign worker-b");
+    assert.equal(intents.length, 1);
+    assert.equal(intents[0]!.target, "worker-b");
+  });
+
+  it("requires the prefix to stand as its own token", () => {
+    assert.deepEqual(parseAssignmentIntents("/a2a assignment worker-a"), []);
+    assert.deepEqual(parseAssignmentIntents("x/a2a assign worker-a"), []);
+    // Prose before the command is still supported.
+    const intents = parseAssignmentIntents("Follow up: /a2a assign worker-a");
+    assert.equal(intents.length, 1);
+    assert.equal(intents[0]!.target, "worker-a");
+  });
 });
 
 // ---------------------------------------------------------------------------

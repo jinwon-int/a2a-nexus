@@ -196,3 +196,77 @@ test("BoundedPoller scheduleNext replaces a pending timer instead of stacking ch
     globalThis.clearTimeout = origClear;
   }
 });
+
+/** Helper: a fetch result carrying `count` distinct placeholder events. */
+function eventsResult(count: number, label = "poll-n"): PollerFetchResult {
+  return {
+    events: Array.from({ length: count }, (_v, i) => ({ id: `${label}-${i}` }) as never),
+    context: { deliveryId: label, receivedAt: new Date().toISOString() },
+  };
+}
+
+const SILENT_LOGGER = { log: () => {}, warn: () => {}, error: () => {} };
+
+test("BoundedPoller counts events dropped past maxEventsPerPoll", async () => {
+  const ingested: unknown[] = [];
+  const poller = new BoundedPoller({
+    ingestionService: {
+      ingest: (event: unknown) => {
+        ingested.push(event);
+        return { deduped: false, replaySkipped: false, childTaskIds: [], lifecycleTransition: null };
+      },
+    } as never,
+    fetchEvents: () => [eventsResult(3, "a"), eventsResult(4, "b")],
+    pollIntervalMs: 100_000,
+    maxEventsPerPoll: 5,
+    label: "test-dropped",
+    logger: SILENT_LOGGER,
+  });
+  const internals = poller as unknown as { poll(): Promise<void> };
+
+  poller.start();
+  await internals.poll();
+  poller.stop();
+
+  const stats = poller.getStats();
+  assert.equal(ingested.length, 5);
+  assert.equal(stats.totalEventsFetched, 5);
+  assert.equal(stats.totalEventsIngested, 5);
+  // 2 left over in the second batch — nothing re-reads them, so they are
+  // reported rather than silently discarded.
+  assert.equal(stats.droppedEvents, 2);
+  assert.equal(stats.failedEvents, 0);
+  assert.equal(stats.errorCycles, 0);
+});
+
+test("BoundedPoller keeps ingesting a batch after one event throws", async () => {
+  let seen = 0;
+  const poller = new BoundedPoller({
+    ingestionService: {
+      ingest: () => {
+        seen += 1;
+        if (seen === 2) throw new Error("malformed event");
+        return { deduped: false, replaySkipped: false, childTaskIds: [], lifecycleTransition: null };
+      },
+    } as never,
+    fetchEvents: () => eventsResult(4, "c"),
+    pollIntervalMs: 100_000,
+    label: "test-partial-failure",
+    logger: SILENT_LOGGER,
+  });
+  const internals = poller as unknown as { poll(): Promise<void> };
+
+  poller.start();
+  await internals.poll();
+  poller.stop();
+
+  const stats = poller.getStats();
+  assert.equal(seen, 4, "every event in the batch is attempted");
+  assert.equal(stats.totalEventsFetched, 4);
+  assert.equal(stats.totalEventsIngested, 3);
+  assert.equal(stats.failedEvents, 1);
+  // A single bad event is not a fetch failure, so the cycle keeps its
+  // successful-poll backoff reset.
+  assert.equal(stats.errorCycles, 0);
+  assert.equal(stats.currentBackoffMs, 100_000);
+});

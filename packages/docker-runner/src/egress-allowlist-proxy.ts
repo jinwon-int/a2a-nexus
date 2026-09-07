@@ -24,6 +24,7 @@ export type EgressAllowlistErrorCode =
   | "dns_resolution_failed"
   | "redirect_missing_location"
   | "redirect_limit_exceeded"
+  | "deadline_exceeded"
   | "response_too_large"
   | "request_failed"
   | "symbolic_ref_denied"
@@ -45,8 +46,14 @@ export interface EgressAllowlistConfig {
   allowedHosts?: string[];
   /** Maximum response bytes read into the snapshot. */
   maxBytes?: number;
-  /** Per-request timeout in milliseconds. */
+  /** Per-hop timeout in milliseconds. Each redirect hop gets its own socket timeout. */
   timeoutMs?: number;
+  /**
+   * Wall-clock ceiling for the whole fetch, DNS and every redirect hop
+   * included. Defaults to `timeoutMs * (maxRedirects + 1)` — the worst case a
+   * per-hop timeout alone permits, now actually enforced rather than implied.
+   */
+  totalTimeoutMs?: number;
   /** Maximum number of redirects; each redirect is revalidated against host/IP rules. */
   maxRedirects?: number;
 }
@@ -145,30 +152,52 @@ function ipv4InCidr(ip: string, base: string, bits: number): boolean {
   return (value & mask) === (baseValue & mask);
 }
 
-function mappedIpv4(ip: string): string | undefined {
+/**
+ * The embedded IPv4 literal of an IPv6 address that carries one: the
+ * `::ffff:a.b.c.d` mapped form, the deprecated `::a.b.c.d` compatible form,
+ * and the `64:ff9b::a.b.c.d` NAT64 well-known prefix. Each reaches an IPv4
+ * destination, so each must be judged by the IPv4 rules.
+ */
+function embeddedIpv4(ip: string): string | undefined {
   const lower = ip.toLowerCase();
-  const match = /^::ffff:(\d{1,3}(?:\.\d{1,3}){3})$/.exec(lower);
+  const match = /^(?:::ffff:|::|64:ff9b::)(\d{1,3}(?:\.\d{1,3}){3})$/.exec(lower);
   return match?.[1];
 }
+
+const DENIED_IPV4_CIDRS: ReadonlyArray<readonly [string, number]> = [
+  ["0.0.0.0", 8], // "this network"
+  ["10.0.0.0", 8], // RFC 1918 private
+  ["100.64.0.0", 10], // RFC 6598 carrier-grade NAT
+  ["127.0.0.0", 8], // loopback
+  ["169.254.0.0", 16], // link-local, incl. cloud metadata at 169.254.169.254
+  ["172.16.0.0", 12], // RFC 1918 private
+  ["192.0.0.0", 24], // IETF protocol assignments
+  ["192.168.0.0", 16], // RFC 1918 private
+  ["198.18.0.0", 15], // RFC 2544 benchmarking
+  ["224.0.0.0", 4], // multicast
+  ["240.0.0.0", 4], // reserved, incl. 255.255.255.255 broadcast
+];
 
 export function isDeniedInternalIp(address: string): boolean {
   const family = isIP(address);
   if (family === 4) {
-    return [
-      ["0.0.0.0", 8],
-      ["10.0.0.0", 8],
-      ["100.64.0.0", 10],
-      ["127.0.0.0", 8],
-      ["169.254.0.0", 16],
-      ["172.16.0.0", 12],
-      ["192.168.0.0", 16],
-    ].some(([base, bits]) => ipv4InCidr(address, base as string, bits as number));
+    return DENIED_IPV4_CIDRS.some(([base, bits]) => ipv4InCidr(address, base, bits));
   }
   if (family === 6) {
     const lower = address.toLowerCase();
-    const mapped = mappedIpv4(lower);
-    if (mapped) return isDeniedInternalIp(mapped);
-    return lower === "::" || lower === "::1" || lower.startsWith("fc") || lower.startsWith("fd") || lower.startsWith("fe80:");
+    const embedded = embeddedIpv4(lower);
+    if (embedded) return isDeniedInternalIp(embedded);
+    return (
+      lower === "::" ||
+      lower === "::1" ||
+      lower.startsWith("fc") || // fc00::/7 unique local
+      lower.startsWith("fd") ||
+      // fe00::/8 covers fe80::/10 link-local and fec0::/10 site-local; no
+      // global unicast (2000::/3) falls in it, so denying the whole block is
+      // safe and leaves no gap between the two.
+      lower.startsWith("fe") ||
+      lower.startsWith("ff") // ff00::/8 multicast
+    );
   }
   return false;
 }
@@ -242,6 +271,18 @@ export function createPinnedLookup(resolvedIp: string, family: 4 | 6) {
   };
 }
 
+/**
+ * True when a response's declared `content-length` alone already exceeds the
+ * byte cap, so the transfer can be refused before any of it is buffered.
+ * Absent, malformed, or multi-valued headers decide nothing here — the
+ * streaming byte counter remains the authority for a lying length.
+ */
+export function declaredLengthExceeds(header: string | string[] | undefined, maxBytes: number): boolean {
+  if (typeof header !== "string" || header.trim() === "") return false;
+  const declared = Number(header);
+  return Number.isFinite(declared) && declared > maxBytes;
+}
+
 async function defaultRequest({ url, resolvedIp, family, timeoutMs, maxBytes }: EgressHttpRequest): Promise<Omit<EgressHttpResponse, "finalUrl" | "resolvedIp">> {
   return new Promise((resolve, reject) => {
     const req = httpsRequest({
@@ -254,6 +295,12 @@ async function defaultRequest({ url, resolvedIp, family, timeoutMs, maxBytes }: 
       timeout: timeoutMs,
       lookup: createPinnedLookup(resolvedIp, family),
     }, (res) => {
+      // Refuse an over-cap body on its declared length instead of buffering up
+      // to the cap first. A lying content-length is still caught below.
+      if (declaredLengthExceeds(res.headers["content-length"], maxBytes)) {
+        req.destroy(new EgressAllowlistError("response_too_large", `response exceeded ${maxBytes} bytes`));
+        return;
+      }
       const chunks: Buffer[] = [];
       let total = 0;
       res.on("data", (chunk: Buffer) => {
@@ -280,6 +327,12 @@ export async function fetchWithEgressAllowlist(
   const maxBytes = Math.max(1, Math.floor(config.maxBytes ?? DEFAULT_EGRESS_MAX_BYTES));
   const timeoutMs = Math.max(1, Math.floor(config.timeoutMs ?? DEFAULT_EGRESS_TIMEOUT_MS));
   const maxRedirects = Math.max(0, Math.floor(config.maxRedirects ?? DEFAULT_EGRESS_MAX_REDIRECTS));
+  const totalTimeoutMs = Math.max(
+    1,
+    Math.floor(config.totalTimeoutMs ?? timeoutMs * (maxRedirects + 1)),
+  );
+  const startedAt = Date.now();
+  const remainingMs = (): number => totalTimeoutMs - (Date.now() - startedAt);
   let current: URL;
   try {
     current = new URL(urlInput);
@@ -290,7 +343,14 @@ export async function fetchWithEgressAllowlist(
   for (let redirect = 0; redirect <= maxRedirects; redirect += 1) {
     const host = validateHostBeforeDns(current, config);
     const pinned = await resolveAndPinHost(host, deps);
-    const response = await (deps.request ?? defaultRequest)({ url: current, resolvedIp: pinned.address, family: pinned.family, timeoutMs, maxBytes });
+    // A per-hop timeout alone lets DNS plus a full redirect chain run for
+    // (maxRedirects + 1) x timeoutMs; charge each hop against the shared
+    // deadline so the caller's ceiling is the real one.
+    const hopBudget = remainingMs();
+    if (hopBudget <= 0) {
+      throw new EgressAllowlistError("deadline_exceeded", `egress fetch exceeded its ${totalTimeoutMs}ms deadline`);
+    }
+    const response = await (deps.request ?? defaultRequest)({ url: current, resolvedIp: pinned.address, family: pinned.family, timeoutMs: Math.min(timeoutMs, hopBudget), maxBytes });
     if ([301, 302, 303, 307, 308].includes(response.statusCode)) {
       const location = Array.isArray(response.headers.location) ? response.headers.location[0] : response.headers.location;
       if (!location) throw new EgressAllowlistError("redirect_missing_location", "redirect response did not include a Location header");
