@@ -69,8 +69,6 @@ export function createReportConformanceErrorClassV1<Kind extends string, Report 
   toJSON(): Report;
 } {
   const conformanceError = class extends Error {
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any -- the
-    // readonly surface is provided by the declared return type above
     constructor(code: Report["code"]) {
       super(code);
       this.name = kind;
