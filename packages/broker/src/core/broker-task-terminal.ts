@@ -64,6 +64,19 @@ export interface TaskTerminalContext {
   emitTaskEvent(task: TaskRecord, reason: TaskUpdateReason): void;
   submitValidationResult(proposalId: string, request: SubmitValidationRequest): ValidationResult;
   applyProposalLocally(proposalId: string, request: ApplyProposalRequest): ChangeProposal;
+  /**
+   * Optional (#2077 step 1): run the record writes, exchange sync, audit
+   * appends, tombstone, and persist as a single store transaction (one fsync
+   * instead of 4–7). Absent on hand-built test contexts, in which case the
+   * callback runs inline with no batching. Nested commitMutation calls (e.g.
+   * proposal side-effects) join the open transaction via the store's depth
+   * join, so only the outermost batch commits.
+   */
+  commitMutation?<T>(fn: () => T): T;
+}
+
+function commitMutation<T>(context: TaskTerminalContext, fn: () => T): T {
+  return context.commitMutation ? context.commitMutation(fn) : fn();
 }
 
 function uniqueTaskErrorHistory(history: TaskError[] | undefined, error: TaskError): TaskError[] {
@@ -124,15 +137,19 @@ export function completeTask(
           recordedAt: isoNow(),
         };
         task.updatedAt = task.negativeVerdictEvidence.recordedAt;
-        context.appendAuditEvent({
-          actorId: workerId,
-          action: "task.negative_verdict_preserved",
-          targetType: "task",
-          targetId: task.id,
-          note: `negative-verdict-preserved reviewer=${verdict.reviewerNodeId} verdict=${verdict.verdict}`,
+        // The evidence preservation must survive the throw below, so the
+        // batch commits before the BrokerError propagates (#2077 step 1).
+        commitMutation(context, () => {
+          context.appendAuditEvent({
+            actorId: workerId,
+            action: "task.negative_verdict_preserved",
+            targetType: "task",
+            targetId: task.id,
+            note: `negative-verdict-preserved reviewer=${verdict.reviewerNodeId} verdict=${verdict.verdict}`,
+          });
+          context.setTaskRecord(task);
+          context.persistState();
         });
-        context.setTaskRecord(task);
-        context.persistState();
       }
     }
     const brokerErrorCode =
@@ -177,8 +194,6 @@ export function completeTask(
     });
   }
 
-  applyTaskCompletion(task, workerId, normalizedResult, context);
-
   const now = isoNow();
   task.status = "succeeded";
   task.claimedBy = workerId;
@@ -192,17 +207,26 @@ export function completeTask(
     ...(normalizedResult.validation?.artifactIds ?? []),
     ...(normalizedResult.apply?.artifactIds ?? []),
   ]);
-  context.setTaskRecord(task);
-  context.syncExchangeStateFromTask(task, "completed");
-  context.appendAuditEvent({
-    actorId: workerId,
-    action: "task.succeeded",
-    targetType: "task",
-    targetId: task.id,
-    proposalId: task.proposalId,
-    note: normalizedResult.note ?? normalizedResult.summary ?? task.intent,
+  // #2077 step 1: this was the heaviest terminal transition — record write,
+  // exchange sync, audit append, proposal side-effects, and persist each
+  // opened their own BEGIN IMMEDIATE (4–7 fsyncs). One batch, one commit.
+  // applyTaskCompletion's proposal writes join this batch through the nested
+  // context commitMutation. Event emission stays outside: a throwing
+  // subscriber must not roll back the completed mutation.
+  commitMutation(context, () => {
+    applyTaskCompletion(task, workerId, normalizedResult, context);
+    context.setTaskRecord(task);
+    context.syncExchangeStateFromTask(task, "completed");
+    context.appendAuditEvent({
+      actorId: workerId,
+      action: "task.succeeded",
+      targetType: "task",
+      targetId: task.id,
+      proposalId: task.proposalId,
+      note: normalizedResult.note ?? normalizedResult.summary ?? task.intent,
+    });
+    context.persistState();
   });
-  context.persistState();
   context.emitTaskEvent(task, "succeeded");
   // Succeeded tasks don't get a tombstone — they completed normally.
   return task;
@@ -302,34 +326,39 @@ export function failTask(
     });
   }
 
-  context.setTaskRecord(task);
-  if (retryTask) {
-    context.setTaskRecord(retryTask);
-  }
-  context.syncExchangeStateFromTask(task, "failed");
-  context.appendAuditEvent({
-    actorId: workerId,
-    action: "task.failed",
-    targetType: "task",
-    targetId: task.id,
-    proposalId: task.proposalId,
-    note: normalizedError.message,
-  });
-  if (retryTask) {
+  // #2077 step 1: record write, retry-task materialization, exchange sync,
+  // audit appends, tombstone, and persist as one store commit. Event
+  // emission stays outside the batch.
+  commitMutation(context, () => {
+    context.setTaskRecord(task);
+    if (retryTask) {
+      context.setTaskRecord(retryTask);
+    }
+    context.syncExchangeStateFromTask(task, "failed");
     context.appendAuditEvent({
-      actorId: "broker",
-      action: "task.retry_scheduled",
+      actorId: workerId,
+      action: "task.failed",
       targetType: "task",
       targetId: task.id,
       proposalId: task.proposalId,
-      note: `scheduled retry ${retryTask.id} attempt ${retryTask.attempt} class ${retryPlan.retryClass}`,
+      note: normalizedError.message,
     });
-  }
-  // writeTombstone mutates state (tombstone + audit event) without persisting,
-  // so it must run before persistState() — otherwise a crash between the two
-  // loses the tombstone until the next unrelated persist.
-  context.writeTombstone(task, "failed");
-  context.persistState();
+    if (retryTask) {
+      context.appendAuditEvent({
+        actorId: "broker",
+        action: "task.retry_scheduled",
+        targetType: "task",
+        targetId: task.id,
+        proposalId: task.proposalId,
+        note: `scheduled retry ${retryTask.id} attempt ${retryTask.attempt} class ${retryPlan.retryClass}`,
+      });
+    }
+    // writeTombstone mutates state (tombstone + audit event) without persisting,
+    // so it must run before persistState() — otherwise a crash between the two
+    // loses the tombstone until the next unrelated persist.
+    context.writeTombstone(task, "failed");
+    context.persistState();
+  });
   context.emitTaskEvent(task, "failed");
   return task;
 }
@@ -358,20 +387,22 @@ function recordLateEvidenceAfterCancel(
     submittedBy: workerId,
   };
   task.updatedAt = now;
-  context.setTaskRecord(task);
-  context.appendAuditEvent({
-    actorId: workerId,
-    action: "task.updated",
-    targetType: "task",
-    targetId: task.id,
-    proposalId: task.proposalId,
-    note: `late ${kind} evidence after cancel (issue #954)`,
+  commitMutation(context, () => {
+    context.setTaskRecord(task);
+    context.appendAuditEvent({
+      actorId: workerId,
+      action: "task.updated",
+      targetType: "task",
+      targetId: task.id,
+      proposalId: task.proposalId,
+      note: `late ${kind} evidence after cancel (issue #954)`,
+    });
+    context.writeTombstone(task, "canceled_with_late_completion", {
+      actorId: workerId,
+      reason: `worker posted ${kind} evidence after cancel`,
+    });
+    context.persistState();
   });
-  context.writeTombstone(task, "canceled_with_late_completion", {
-    actorId: workerId,
-    reason: `worker posted ${kind} evidence after cancel`,
-  });
-  context.persistState();
   return task;
 }
 

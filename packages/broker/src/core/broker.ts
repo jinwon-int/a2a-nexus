@@ -1090,11 +1090,13 @@ export class InMemoryA2ABroker {
   }
 
   startExchange(request: A2AExchangeRequest): A2AExchangeState {
-    return startBrokerExchange(request, {
-      setExchangeMessageRecord: (message) => this.setExchangeMessageRecord(message),
-      setExchangeRecord: (exchange) => this.setExchangeRecord(exchange),
-      persistState: () => this.persistState(),
-    });
+    // #2077 step 1: message + exchange record writes + persist as one commit.
+    return this.commitMutation(() =>
+      startBrokerExchange(request, {
+        setExchangeMessageRecord: (message) => this.setExchangeMessageRecord(message),
+        setExchangeRecord: (exchange) => this.setExchangeRecord(exchange),
+        persistState: () => this.persistState(),
+      }));
   }
 
   getExchange(id: string): A2AExchangeState | null {
@@ -1121,20 +1123,24 @@ export class InMemoryA2ABroker {
   }
 
   addExchangeMessage(exchangeId: string, request: A2AExchangeMessageRequest): A2AExchangeMessageRecord {
-    return addBrokerExchangeMessage(exchangeId, request, {
-      requireExchange: (id) => this.requireExchange(id),
-      requireWorker: (nodeId) => this.requireWorker(nodeId),
-      requireExchangeMessage: (id, messageId) => this.requireExchangeMessage(id, messageId),
-      setExchangeMessageRecord: (message) => this.setExchangeMessageRecord(message),
-      setExchangeRecord: (exchange) => this.setExchangeRecord(exchange),
-      applyExchangeMessageDecision: (exchange, message, hasExplicitAssignment) => this.applyExchangeMessageDecision(
-        exchange,
-        message,
-        hasExplicitAssignment,
-      ),
-      appendAuditEvent: (input) => this.appendAuditEvent(input),
-      persistState: () => this.persistState(),
-    });
+    // #2077 step 1: message/exchange writes + decision side-effects + persist
+    // as one commit. Nested mutations (applyExchangeMessageDecision may create
+    // tasks) join this batch through the store's transaction-depth join.
+    return this.commitMutation(() =>
+      addBrokerExchangeMessage(exchangeId, request, {
+        requireExchange: (id) => this.requireExchange(id),
+        requireWorker: (nodeId) => this.requireWorker(nodeId),
+        requireExchangeMessage: (id, messageId) => this.requireExchangeMessage(id, messageId),
+        setExchangeMessageRecord: (message) => this.setExchangeMessageRecord(message),
+        setExchangeRecord: (exchange) => this.setExchangeRecord(exchange),
+        applyExchangeMessageDecision: (exchange, message, hasExplicitAssignment) => this.applyExchangeMessageDecision(
+          exchange,
+          message,
+          hasExplicitAssignment,
+        ),
+        appendAuditEvent: (input) => this.appendAuditEvent(input),
+        persistState: () => this.persistState(),
+      }));
   }
 
   // ---------------------------------------------------------------------------
@@ -1730,6 +1736,7 @@ export class InMemoryA2ABroker {
       setValidationRecord: (validation) => this.setValidationRecord(validation),
       appendAuditEvent: (input) => this.appendAuditEvent(input),
       persistState: () => this.persistState(),
+      commitMutation: (fn) => this.commitMutation(fn),
     };
   }
 
@@ -1804,7 +1811,7 @@ export class InMemoryA2ABroker {
     this.assertTaskPayload(normalizedRequest);
 
     // Idempotent create: if a task with the requested id already exists, return it as-is.
-    if (normalizedRequest.id) {
+      if (normalizedRequest.id) {
       const existing = this.getTask(normalizedRequest.id);
       if (existing) {
         // #2010: an idempotent return used to be indistinguishable from a
@@ -1812,14 +1819,16 @@ export class InMemoryA2ABroker {
         // fixed task id (the #2007 skills-intake incident) counted each
         // silent return as created=1 and archived one round's result N times.
         // Record the hit so replays are observable broker-side.
-        this.appendAuditEvent({
-          actorId: normalizedRequest.requester.id,
-          action: "task.create_idempotent_hit",
-          targetType: "task",
-          targetId: existing.id,
-          note: `idempotent create: requested id ${existing.id} returned the existing task in status ${existing.status}`,
+        this.commitMutation(() => {
+          this.appendAuditEvent({
+            actorId: normalizedRequest.requester.id,
+            action: "task.create_idempotent_hit",
+            targetType: "task",
+            targetId: existing.id,
+            note: `idempotent create: requested id ${existing.id} returned the existing task in status ${existing.status}`,
+          });
+          this.persistState();
         });
-        this.persistState();
         return existing;
       }
     }
@@ -1963,8 +1972,10 @@ export class InMemoryA2ABroker {
         replayCount: (existing.replayCount ?? 0) + 1,
         updatedAt: isoNow(),
       };
-      this.setTaskRecord(task);
-      this.persistState();
+      this.commitMutation(() => {
+        this.setTaskRecord(task);
+        this.persistState();
+      });
       return {
         task,
         wake: task.wake,
@@ -1991,16 +2002,19 @@ export class InMemoryA2ABroker {
 
     task.wake = wake;
     task.updatedAt = now;
-    this.setTaskRecord(task);
-    this.appendAuditEvent({
-      actorId: task.requester.id,
-      action: "task.wake.planned",
-      targetType: "task",
-      targetId: task.id,
-      proposalId: task.proposalId,
-      note: wake.message ?? wake.wakeKey,
+    // #2077 step 1: record write + audit + persist as one store commit.
+    this.commitMutation(() => {
+      this.setTaskRecord(task);
+      this.appendAuditEvent({
+        actorId: task.requester.id,
+        action: "task.wake.planned",
+        targetType: "task",
+        targetId: task.id,
+        proposalId: task.proposalId,
+        note: wake.message ?? wake.wakeKey,
+      });
+      this.persistState();
     });
-    this.persistState();
     this.taskEvents.emit(task, "wake_planned");
     return { task, wake, shouldDispatch: true, replayed: false };
   }
@@ -2031,17 +2045,20 @@ export class InMemoryA2ABroker {
       updatedAt: now,
     };
     task.updatedAt = now;
-    this.setTaskRecord(task);
-    const action = wakeDecisionAuditAction(request.status);
-    this.appendAuditEvent({
-      actorId: "broker",
-      action,
-      targetType: "task",
-      targetId: task.id,
-      proposalId: task.proposalId,
-      note: `${request.status}: ${message}`,
+    // #2077 step 1: record write + audit + persist as one store commit.
+    this.commitMutation(() => {
+      this.setTaskRecord(task);
+      const action = wakeDecisionAuditAction(request.status);
+      this.appendAuditEvent({
+        actorId: "broker",
+        action,
+        targetType: "task",
+        targetId: task.id,
+        proposalId: task.proposalId,
+        note: `${request.status}: ${message}`,
+      });
+      this.persistState();
     });
-    this.persistState();
     this.taskEvents.emit(task, wakeDecisionUpdateReason(request.status));
     return task;
   }
@@ -2071,16 +2088,19 @@ export class InMemoryA2ABroker {
     const now = isoNow();
     task.payload = normalizeTaskPayload(payload);
     task.updatedAt = now;
-    this.setTaskRecord(task);
-    this.appendAuditEvent({
-      actorId: request.actor.id,
-      action: "task.updated",
-      targetType: "task",
-      targetId: task.id,
-      proposalId: task.proposalId,
-      note: request.note ?? "task payload updated",
+    // #2077 step 1: record write + audit append + persist as one store commit.
+    this.commitMutation(() => {
+      this.setTaskRecord(task);
+      this.appendAuditEvent({
+        actorId: request.actor.id,
+        action: "task.updated",
+        targetType: "task",
+        targetId: task.id,
+        proposalId: task.proposalId,
+        note: request.note ?? "task payload updated",
+      });
+      this.persistState();
     });
-    this.persistState();
     this.taskEvents.emit(task, "updated");
     return task;
   }
@@ -2123,19 +2143,22 @@ export class InMemoryA2ABroker {
     task.requeueCount = 0;
     task.attemptId = undefined;
     task.updatedAt = now;
-    this.setTaskRecord(task);
-    this.syncExchangeStateFromTask(task, "queued");
-    this.appendAuditEvent({
-      actorId: request.actor.id,
-      action: "task.reassigned",
-      targetType: "task",
-      targetId: task.id,
-      proposalId: task.proposalId,
-      note:
-        request.note ??
-        `reassigned targetNodeId ${previousTargetNodeId} -> ${task.targetNodeId}, assignedWorkerId ${previousAssignedWorkerId} -> ${task.assignedWorkerId}`,
+    // #2077 step 1: record write + exchange sync + audit + persist as one commit.
+    this.commitMutation(() => {
+      this.setTaskRecord(task);
+      this.syncExchangeStateFromTask(task, "queued");
+      this.appendAuditEvent({
+        actorId: request.actor.id,
+        action: "task.reassigned",
+        targetType: "task",
+        targetId: task.id,
+        proposalId: task.proposalId,
+        note:
+          request.note ??
+          `reassigned targetNodeId ${previousTargetNodeId} -> ${task.targetNodeId}, assignedWorkerId ${previousAssignedWorkerId} -> ${task.assignedWorkerId}`,
+      });
+      this.persistState();
     });
-    this.persistState();
     this.taskEvents.emit(task, "reassigned");
     return task;
   }
@@ -2153,6 +2176,7 @@ export class InMemoryA2ABroker {
       writeTombstone: (task, reason, tombstoneContext) => this.writeTombstone(task, reason, tombstoneContext),
       persistState: () => this.persistState(),
       emitTaskEvent: (task, reason) => this.taskEvents.emit(task, reason),
+      commitMutation: (fn) => this.commitMutation(fn),
     };
   }
 
@@ -2174,6 +2198,7 @@ export class InMemoryA2ABroker {
       persistState: () => this.persistState(),
       emitTaskEvent: (task, reason) => this.taskEvents.emit(task, reason),
       cancelTaskTree: (task, params) => this.cancelTaskTree(task, params),
+      commitMutation: (fn) => this.commitMutation(fn),
     };
   }
 
@@ -2261,6 +2286,7 @@ export class InMemoryA2ABroker {
       emitTaskEvent: (task, reason) => this.taskEvents.emit(task, reason),
       submitValidationResult: (proposalId, request) => this.submitValidationResult(proposalId, request),
       applyProposalLocally: (proposalId, request) => this.applyProposalLocally(proposalId, request),
+      commitMutation: (fn) => this.commitMutation(fn),
     };
   }
 
@@ -2410,6 +2436,7 @@ export class InMemoryA2ABroker {
       emitTaskEvent: (task, reason) => this.taskEvents.emit(task, reason),
       emitTaskAttemptRecord: (task) => this.emitTaskAttemptRecord(task),
       cancelTask: (taskId, request) => this.cancelTask(taskId, request),
+      commitMutation: (fn) => this.commitMutation(fn),
     };
   }
 

@@ -42,6 +42,12 @@ export interface TaskApprovalContext {
   persistState(): void;
   emitTaskEvent(task: TaskRecord, reason: TaskUpdateReason): void;
   cancelTaskTree(task: TaskRecord, params: { actorId: string; reason?: string }): TaskRecord;
+  /** Optional (#2077 step 1) — see TaskTerminalContext.commitMutation. */
+  commitMutation?<T>(fn: () => T): T;
+}
+
+function commitMutation<T>(context: TaskApprovalContext, fn: () => T): T {
+  return context.commitMutation ? context.commitMutation(fn) : fn();
 }
 
 export function approveTask(taskId: string, request: TaskApprovalRequest, context: TaskApprovalContext): TaskRecord {
@@ -85,17 +91,22 @@ export function approveTask(taskId: string, request: TaskApprovalRequest, contex
   };
   task.status = "queued";
   task.updatedAt = now;
-  context.setTaskRecord(task);
-  context.syncExchangeStateFromTask(task, "queued");
-  context.appendAuditEvent({
-    actorId: request.actor.id,
-    action: "task.approved",
-    targetType: "task",
-    targetId: task.id,
-    proposalId: task.proposalId,
-    note: task.approval.reason ?? `approvalId=${task.approval.approvalId}`,
+  // #2077 step 1: record write + exchange sync + audit + persist as one commit.
+  const approvalId = task.approval?.approvalId;
+  const approvalReason = task.approval?.reason;
+  commitMutation(context, () => {
+    context.setTaskRecord(task);
+    context.syncExchangeStateFromTask(task, "queued");
+    context.appendAuditEvent({
+      actorId: request.actor.id,
+      action: "task.approved",
+      targetType: "task",
+      targetId: task.id,
+      proposalId: task.proposalId,
+      note: approvalReason ?? `approvalId=${approvalId}`,
+    });
+    context.persistState();
   });
-  context.persistState();
   context.emitTaskEvent(task, "approved");
   return task;
 }
@@ -140,18 +151,22 @@ export function rejectTaskApproval(
     requesterRole: task.requester.role,
     reason,
   };
-  const canceled = context.cancelTaskTree(task, {
-    actorId: request.actor.id,
-    reason,
+  // #2077 step 1: the tree cancel (each record batch joins this one), the
+  // rejection audit, and the persist as a single store commit.
+  return commitMutation(context, () => {
+    const canceled = context.cancelTaskTree(task, {
+      actorId: request.actor.id,
+      reason,
+    });
+    context.appendAuditEvent({
+      actorId: request.actor.id,
+      action: "task.approval_rejected",
+      targetType: "task",
+      targetId: task.id,
+      proposalId: task.proposalId,
+      note: `${status}: ${reason}`,
+    });
+    context.persistState();
+    return canceled;
   });
-  context.appendAuditEvent({
-    actorId: request.actor.id,
-    action: "task.approval_rejected",
-    targetType: "task",
-    targetId: task.id,
-    proposalId: task.proposalId,
-    note: `${status}: ${reason}`,
-  });
-  context.persistState();
-  return canceled;
 }
