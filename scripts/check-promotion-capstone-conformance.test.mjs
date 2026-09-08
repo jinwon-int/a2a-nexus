@@ -25,7 +25,7 @@ import {
 } from '../packages/docker-runner/scripts/coverage-baseline-report.mjs';
 import {
   evaluateQualityFloorContract,
-  EXPECTED_COVERAGE_BASELINE_COMMAND,
+  expectedCoverageBaselineCommand,
   EXPECTED_BROKER_FLOORS,
   EXPECTED_RUNNER_FLOORS,
 } from './check-promotion-capstone-conformance.mjs';
@@ -51,7 +51,7 @@ function validQualityContract(name = 'docker-runner') {
   return {
     name,
     dir,
-    coverageCommand: EXPECTED_COVERAGE_BASELINE_COMMAND,
+    coverageCommand: expectedCoverageBaselineCommand(name),
     reporterTestPresent: true,
     baseline: {
       schema: 'a2a-nexus.coverage-baseline.v1',
@@ -192,7 +192,7 @@ test('promotion capstone pins the repository async-safety zero floor and package
 test('package coverage commands, reporter files, and parity metadata stay aligned', async () => {
   for (const { name, dir } of packageContracts) {
     const manifest = JSON.parse(await readFile(join(repoRoot, dir, 'package.json'), 'utf8'));
-    assert.strictEqual(manifest.scripts?.['coverage:baseline'], EXPECTED_COVERAGE_BASELINE_COMMAND);
+    assert.strictEqual(manifest.scripts?.['coverage:baseline'], expectedCoverageBaselineCommand(name));
     assert.ok(existsSync(join(repoRoot, dir, 'scripts', 'coverage-baseline-report.mjs')));
     assert.ok(existsSync(join(repoRoot, dir, 'scripts', 'coverage-baseline-report.test.mjs')));
 

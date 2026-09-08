@@ -182,7 +182,7 @@ jobs:
       - uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6
         with:
           path: packages/*/dist
-          key: tsbuild-all-${{ runner.os }}-${{ hashFiles('packages/**/*.ts', 'packages/**/tsconfig.json') }}
+          key: tsbuild-all-${{ runner.os }}-${{ hashFiles('packages/**/*.ts', 'packages/**/tsconfig.json', 'packages/broker/tsconfig.build.json') }}
       # No packages/*/dist *save* here (restore-only action, no save step): this
       # job's `check:packages` runs in --manifests-only mode and compiles
       # nothing, so it has no dist to contribute. The tsc --noEmit check surface
@@ -218,7 +218,7 @@ jobs:
         id: broker-dist
         with:
           path: packages/broker/dist
-          key: tsbuild-broker-${{ runner.os }}-${{ hashFiles('packages/broker/**/*.ts', 'packages/broker/tsconfig.json') }}
+          key: tsbuild-broker-${{ runner.os }}-${{ hashFiles('packages/broker/**/*.ts', 'packages/broker/tsconfig.json', 'packages/broker/tsconfig.build.json') }}
       - run: npm ci --include=dev
         if: steps.npm-deps.outputs.cache-hit != 'true'
         # On an exact tsbuild-broker cache hit the restored packages/broker/dist
@@ -363,7 +363,7 @@ jobs:
       - uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6
         with:
           path: packages/*/dist
-          key: tsbuild-all-${{ runner.os }}-${{ hashFiles('packages/**/*.ts', 'packages/**/tsconfig.json') }}
+          key: tsbuild-all-${{ runner.os }}-${{ hashFiles('packages/**/*.ts', 'packages/**/tsconfig.json', 'packages/broker/tsconfig.build.json') }}
       - run: npm ci --include=dev
         if: steps.npm-deps.outputs.cache-hit != 'true'
       # This job keeps only the conformance run that gives it its name. The
@@ -437,7 +437,7 @@ jobs:
       - uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6
         with:
           path: packages/*/dist
-          key: tsbuild-all-${{ runner.os }}-${{ hashFiles('packages/**/*.ts', 'packages/**/tsconfig.json') }}
+          key: tsbuild-all-${{ runner.os }}-${{ hashFiles('packages/**/*.ts', 'packages/**/tsconfig.json', 'packages/broker/tsconfig.build.json') }}
       - run: npm ci --include=dev
         if: steps.npm-deps.outputs.cache-hit != 'true'
       - run: npm run smoke:quickstart
@@ -496,7 +496,7 @@ jobs:
       - uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6
         with:
           path: packages/*/dist
-          key: tsbuild-all-${{ runner.os }}-${{ hashFiles('packages/**/*.ts', 'packages/**/tsconfig.json') }}
+          key: tsbuild-all-${{ runner.os }}-${{ hashFiles('packages/**/*.ts', 'packages/**/tsconfig.json', 'packages/broker/tsconfig.build.json') }}
       - run: npm ci --include=dev
         if: steps.npm-deps.outputs.cache-hit != 'true'
       - run: npm run check

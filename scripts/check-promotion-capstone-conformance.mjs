@@ -19,6 +19,18 @@ import { fileURLToPath } from 'node:url';
 export const EXPECTED_COVERAGE_BASELINE_COMMAND =
   'npm run build && node --test scripts/coverage-baseline-report.test.mjs && node scripts/coverage-baseline-report.mjs';
 
+// #2080 step 2: broker's `build` is the runtime-only config
+// (tsconfig.build.json), so its coverage baseline compiles tests via
+// build:tests; measuring coverage without dist tests would fail closed.
+export const EXPECTED_COVERAGE_BASELINE_TEST_BUILD_COMMAND =
+  'npm run build:tests && node --test scripts/coverage-baseline-report.test.mjs && node scripts/coverage-baseline-report.mjs';
+
+export function expectedCoverageBaselineCommand(packageName) {
+  return packageName === 'broker'
+    ? EXPECTED_COVERAGE_BASELINE_TEST_BUILD_COMMAND
+    : EXPECTED_COVERAGE_BASELINE_COMMAND;
+}
+
 // Independent approved ratchet: deliberately separate from the runtime
 // reporter so a coupled reporter-floor lowering or module removal fails here.
 export const EXPECTED_BROKER_FLOORS = Object.freeze({
@@ -48,7 +60,7 @@ export function evaluateQualityFloorContract(contract) {
   const { name, dir, coverageCommand, reporterTestPresent, baseline, surface, noUnusedLocals, expectedNoUnusedLocals } = contract;
 
   add(
-    coverageCommand === EXPECTED_COVERAGE_BASELINE_COMMAND,
+    coverageCommand === expectedCoverageBaselineCommand(name),
     `${name}: coverage:baseline command drifted`,
   );
   add(reporterTestPresent === true, `${name}: missing coverage baseline reporter test`);

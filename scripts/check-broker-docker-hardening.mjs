@@ -72,6 +72,12 @@ function check() {
   // shared-state conformance harnesses out of packages/broker/dist. Removing
   // this block silently puts ~5.4 MB of never-executed test JS (and
   // harness-only shared-state scaffolding) back into the shipped image.
+  // #2080 step 2: the image build compiles the runtime-only config, so the
+  // 291 test files never enter dist in the first place.
+  ok("image build compiles the runtime-only tsconfig (#2080)", () => {
+    assert.match(brokerPkg.scripts?.build ?? "", /tsc -b tsconfig\.build\.json/);
+    assert.match(dockerfile, /COPY packages\/broker\/tsconfig\.build\.json packages\/broker\//);
+  });
   ok("runtime image dist ships no tests or conformance harnesses (#2080)", () => {
     assert.match(dockerfile, /find packages\/broker\/dist -name '\*\.test\.js' -delete/);
     assert.match(dockerfile, /find packages\/broker\/dist -maxdepth 1 -name 'shared-state-\*conformance\*\.js' -delete/);

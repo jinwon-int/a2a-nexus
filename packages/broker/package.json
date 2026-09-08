@@ -6,7 +6,8 @@
   "type": "module",
   "description": "Minimal standalone A2A broker scaffold",
   "scripts": {
-    "build": "node scripts/check-build-revision.mjs --quiet && tsc -b tsconfig.json && node scripts/generate-build-info.mjs",
+    "build": "node scripts/check-build-revision.mjs --quiet && tsc -b tsconfig.build.json && node scripts/generate-build-info.mjs",
+    "build:tests": "tsc -b tsconfig.json && node scripts/generate-build-info.mjs",
     "build:image": "node scripts/check-build-revision.mjs --docker-build",
     "check": "tsc -b tsconfig.json",
     "test": "node scripts/run-test-manifest.mjs",
@@ -18,7 +19,7 @@
     "tck:check-regressions": "node scripts/check-tck-regressions.mjs",
     "reconcile_closeout": "node scripts/closeout-reconcile.mjs",
     "terminal_brief": "node scripts/terminal-brief.mjs",
-    "test:worker": "npm run build && node --test dist/worker.test.js",
+    "test:worker": "npm run build:tests && node --test dist/worker.test.js",
     "start": "node dist/server.js",
     "start:worker": "node dist/worker.js",
     "smoke:restart-recovery": "node scripts/restart-recovery-smoke.mjs",
@@ -60,7 +61,7 @@
     "worker:echo": "BROKER_URL=${LOCAL_A2A_BROKER_URL:-http://127.0.0.1:8787} WORKER_ID=${LOCAL_A2A_WORKER_ID:-local-echo-worker} WORKER_DISPLAY_NAME=${LOCAL_A2A_WORKER_DISPLAY_NAME:-Local Echo Worker} WORKER_HANDLER_BUILTIN=echo WORKER_POLL_INTERVAL_MS=1000 WORKER_HEARTBEAT_INTERVAL_MS=5000 npm run start:worker",
     "a2ad_evidence_classifier": "node scripts/a2ad-evidence-classifier.mjs",
     "clean:dist": "node -e \"require('node:fs').rmSync('dist',{recursive:true,force:true})\"",
-    "coverage:baseline": "npm run build && node --test scripts/coverage-baseline-report.test.mjs && node scripts/coverage-baseline-report.mjs"
+    "coverage:baseline": "npm run build:tests && node --test scripts/coverage-baseline-report.test.mjs && node scripts/coverage-baseline-report.mjs"
   },
   "engines": {
     "node": ">=22.5"

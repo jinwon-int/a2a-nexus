@@ -20,6 +20,8 @@ COPY packages/attestation/src packages/attestation/src
 COPY packages/nclex-evaluation/tsconfig.json packages/nclex-evaluation/
 COPY packages/nclex-evaluation/src packages/nclex-evaluation/src
 COPY packages/broker/tsconfig.json packages/broker/
+# #2080 step 2: the image builds from the runtime-only config (no dist tests).
+COPY packages/broker/tsconfig.build.json packages/broker/
 COPY packages/broker/src packages/broker/src
 COPY packages/broker/scripts/generate-build-info.mjs packages/broker/scripts/generate-build-info.mjs
 # #1766: generate-build-info verifies any claimed revision through the shared
