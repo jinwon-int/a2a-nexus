@@ -51,12 +51,82 @@ export interface TasksCollectionRouteContext {
     expectedWorkerId: string | undefined,
     operation: A2AWorkerRouteScope,
   ) => void;
+  /**
+   * #2082 B: whether the broker is draining (#1405). While draining, a
+   * `waitMs` long-poll answers immediately instead of holding the slot.
+   */
+  isDraining?: () => boolean;
+  /**
+   * #2082 B: bounds concurrent held long-polls. `tryAcquire()` returning false
+   * degrades this request to a plain immediate poll instead of waiting.
+   */
+  taskLongPollGate?: TaskLongPollGate;
+}
+
+/** Upper bound for a `waitMs` task long-poll (#2082 B). */
+export const TASK_LONG_POLL_MAX_WAIT_MS = 30_000;
+
+/**
+ * Long-poll waits are sliced so drain/close are observed within this bound
+ * (drain has no broker state-change to wake the wait with).
+ */
+export const TASK_LONG_POLL_DRAIN_CHECK_SLICE_MS = 250;
+
+/** Concurrent-capacity gate for held task long-polls (#2082 B). */
+export interface TaskLongPollGate {
+  tryAcquire(): boolean;
+  release(): void;
+}
+
+/**
+ * Parse the `waitMs` long-poll parameter (0/absent = plain poll). Invalid
+ * values are rejected; values above the 30s cap are clamped (#2082 B).
+ */
+export function parseTaskLongPollWaitMs(raw: string | null): number {
+  if (raw === null || raw.trim() === "") {
+    return 0;
+  }
+  const parsed = Number(raw);
+  if (!Number.isInteger(parsed) || parsed < 0) {
+    throw new BrokerError("bad_request", "waitMs must be a non-negative integer (milliseconds)");
+  }
+  return Math.min(parsed, TASK_LONG_POLL_MAX_WAIT_MS);
+}
+
+/**
+ * Resolve when the broker persists a mutation (any `subscribeToState` fire),
+ * the response closes, or the deadline expires — whichever comes first.
+ */
+function waitForStateWake(
+  broker: InMemoryA2ABroker,
+  res: ServerResponse,
+  timeoutMs: number,
+): Promise<void> {
+  return new Promise((resolve) => {
+    let settled = false;
+    const settle = () => {
+      if (settled) {
+        return;
+      }
+      settled = true;
+      clearTimeout(timer);
+      unsubscribe();
+      res.removeListener("close", settle);
+      resolve();
+    };
+    const unsubscribe = broker.subscribeToState(() => settle());
+    const timer = setTimeout(settle, Math.max(0, timeoutMs));
+    res.once("close", settle);
+  });
 }
 
 /** GET /tasks — list tasks (item or full detail); worker-filtered queries are signature-gated. */
 export async function handleTasksListRequest(ctx: TasksCollectionRouteContext): Promise<void> {
+  console.log("[LP-DEBUG] list handler entered, waitMs param =", ctx.url.searchParams.get("waitMs"));
   const { url } = ctx;
+  let workerScoped = false;
   if (url.searchParams.has("worker") || url.searchParams.has("assignedWorkerId")) {
+    workerScoped = true;
     const workerParam = optionalString(url.searchParams.get("worker"));
     const assignedWorkerParam = optionalString(url.searchParams.get("assignedWorkerId"));
     if (workerParam && assignedWorkerParam && workerParam !== assignedWorkerParam) {
@@ -79,21 +149,66 @@ export async function handleTasksListRequest(ctx: TasksCollectionRouteContext): 
   }
   const filters = taskFiltersFromUrl(url, { defaultLimit: DEFAULT_TASK_LIST_LIMIT });
   const includeFullTaskRecords = url.searchParams.get("detail") === "full" || url.searchParams.get("include") === "full";
-  if (includeFullTaskRecords) {
-    const tasks = listTasksForReadPath(ctx.stateStore, ctx.broker, filters);
-    sendJson(ctx.res, 200, {
-      count: tasks.length,
+  const listBody = () => {
+    if (includeFullTaskRecords) {
+      const tasks = listTasksForReadPath(ctx.stateStore, ctx.broker, filters);
+      return {
+        count: tasks.length,
+        limit: filters.limit,
+        items: tasks as TaskRecord[],
+      };
+    }
+    const items = listTaskItemsForReadPath(ctx.stateStore, ctx.broker, filters);
+    return {
+      count: items.length,
       limit: filters.limit,
-      items: tasks,
-    });
+      items,
+    };
+  };
+
+  // #2082 B: worker poll long-polling. An empty worker-scoped page with
+  // `waitMs` holds the request (bounded by the 30s cap, the concurrent-slot
+  // gate, and drain) until a persisted mutation produces a non-empty page.
+  // Old brokers ignore the parameter, and workers degrade to their idle
+  // backoff — the response contract (shape/status) never changes.
+  const waitMs = parseTaskLongPollWaitMs(url.searchParams.get("waitMs"));
+  if (waitMs > 0 && !workerScoped) {
+    throw new BrokerError("bad_request", "waitMs requires a worker-scoped query (worker or assignedWorkerId)");
+  }
+  const firstBody = listBody();
+  if (
+    firstBody.count > 0 ||
+    waitMs <= 0 ||
+    ctx.isDraining?.() ||
+    !ctx.taskLongPollGate?.tryAcquire()
+  ) {
+    sendJson(ctx.res, 200, firstBody);
     return;
   }
-  const items = listTaskItemsForReadPath(ctx.stateStore, ctx.broker, filters);
-  sendJson(ctx.res, 200, {
-    count: items.length,
-    limit: filters.limit,
-    items,
-  });
+  try {
+    const deadlineMs = Date.now() + waitMs;
+    while (Date.now() < deadlineMs && !ctx.isDraining?.() && !ctx.res.writableEnded && !ctx.req.destroyed) {
+      // Wake on any persisted mutation, but never sleep past a slice without
+      // re-checking drain/close — drain has no state-change of its own.
+      await waitForStateWake(ctx.broker, ctx.res, Math.min(deadlineMs - Date.now(), TASK_LONG_POLL_DRAIN_CHECK_SLICE_MS));
+      if (ctx.isDraining?.() || ctx.res.writableEnded || ctx.req.destroyed) {
+        break;
+      }
+      const next = listBody();
+      if (next.count > 0) {
+        sendJson(ctx.res, 200, next);
+        return;
+      }
+    }
+  } finally {
+    ctx.taskLongPollGate.release();
+  }
+  // Deadline/drain/close: answer with a final (typically empty) page — same
+  // shape and status as a plain poll.
+  if (ctx.res.writableEnded || ctx.req.destroyed) {
+    return;
+  }
+  sendJson(ctx.res, 200, listBody());
 }
 
 function assertTaskAcceptanceShapeAtCreate(body: CreateTaskRequest): void {
