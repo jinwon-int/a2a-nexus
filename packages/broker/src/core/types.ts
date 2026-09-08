@@ -992,6 +992,17 @@ export interface WorkerHeartbeatRequest {
    * When absent the broker defaults to "unknown".
    */
   managementPlane?: ManagementPlaneStatus;
+  /**
+   * #2082 C: the task this worker is actively executing, carried so the
+   * single worker heartbeat sustains task liveness too (the separate
+   * POST /tasks/:id/heartbeat timer becomes unnecessary). The broker stamps
+   * task liveness only when the task exists, is assigned to this worker, and
+   * is in an active (claimed/running) state; any mismatch is ignored so the
+   * worker heartbeat itself never fails because of it.
+   */
+  activeTaskId?: string;
+  /** Optional harness progress-surface mtime (ISO 8601) for activeTaskId. */
+  activeTaskLastProgressAt?: string;
 }
 
 export interface WorkerListFilters {
