@@ -366,10 +366,46 @@ test("does not emit a successful page from malformed durable state", () => {
       )
       .run("invented", OUTBOX_NAMESPACE, String(event.eventKeyDigest));
 
+    // #2081: the page itself is validated fail-closed — a malformed row
+    // inside the requested page still refuses the read (cursor "2" puts the
+    // tampered row 3 inside the limit-1 page).
     assert.equal(
-      unavailable(owner.query(queryRequest("stream-1", null, 1))),
+      unavailable(owner.query(queryRequest("stream-1", "2", 1))),
       "authority_unavailable",
     );
+    // And so does a tampered cursor row: the cursor is validated in full at
+    // primary-key cost, so a corrupted earlier row cannot silently anchor a
+    // page.
+    assert.equal(
+      unavailable(owner.query(queryRequest("stream-1", "3", 1))),
+      "authority_unavailable",
+    );
+  } finally {
+    disposeFixture(fixture);
+  }
+});
+
+test("a malformed row beyond the page is the whole-stream audit's domain (#2081)", () => {
+  // Keyset pagination bounds reads to limit + 1 rows after the cursor. A
+  // corrupt row further down the stream is no longer observed by this read —
+  // that whole-stream audit moved to the explicit conformance harnesses, the
+  // exact separation #2081 prescribes. The cursor-existence probe still
+  // fails closed, so pages can never be anchored on a vanished cursor.
+  const fixture = makeFixture();
+  try {
+    const owner = readyAdapter(fixture.db);
+    append(owner, 1);
+    append(owner, 2);
+    const beyond = append(owner, 3);
+    fixture.db
+      .prepare(
+        `UPDATE shared_state_outbox SET receipt_state = ?
+          WHERE namespace = ? AND event_key_digest = ?`,
+      )
+      .run("invented", OUTBOX_NAMESPACE, String(beyond.eventKeyDigest));
+
+    const page = succeeded(owner.query(queryRequest("stream-1", null, 1)));
+    assert.deepEqual(page.events.map((event) => event.streamSequence), ["1"]);
   } finally {
     disposeFixture(fixture);
   }

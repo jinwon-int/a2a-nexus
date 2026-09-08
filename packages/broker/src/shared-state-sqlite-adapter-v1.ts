@@ -751,21 +751,64 @@ function readOutboxQueryPage(
   afterSequence: string,
   limit: number,
 ): readonly OutboxRow[] | null {
-  const rows = preparedStmt(db, 
-      `SELECT ${OUTBOX_COLUMNS_V1}
-         FROM shared_state_outbox
-        WHERE namespace = ? AND stream_key_digest = ?
-        ORDER BY length(stream_sequence), stream_sequence`,
-    )
-    .all(namespace, streamKeyDigest) as readonly Record<string, unknown>[];
-  // Whole-stream validation is the read path's fail-closed audit and stays;
-  // the page itself is collected in the same pass instead of re-walking and
-  // re-parsing every sequence afterwards.
+  // #2081: keyset pagination. The old form read and re-validated the whole
+  // stream on every page (O(N^2/L) across a full drain). The cursor existence
+  // probe is a primary-key lookup, and the page itself reads at most
+  // limit + 1 rows after the cursor. Row-level validation (digests, receipt/
+  // ack states, monotonic sequences, event-key uniqueness within the page)
+  // still fails closed; a corrupt row BEYOND the page is no longer observed
+  // by this read — the whole-stream audit belongs to the explicit conformance
+  // harnesses, exactly as #2081 prescribes.
   const page: OutboxRow[] = [];
   const eventKeys = new Set<string>();
-  let previousSequence = 0n;
   const after = BigInt(afterSequence);
-  let cursorSeen = afterSequence === "0";
+  let previousSequence = after;
+  if (afterSequence !== "0") {
+    // The cursor row itself is fully validated (primary-key lookup, one row):
+    // a vanished cursor fails closed, and so does a cursor row whose durable
+    // state was tampered with.
+    const cursorRow = preparedStmt(
+      db,
+      `SELECT ${OUTBOX_COLUMNS_V1}
+         FROM shared_state_outbox
+        WHERE namespace = ? AND stream_key_digest = ? AND stream_sequence = ?`,
+    ).get(namespace, streamKeyDigest, afterSequence) as
+      | Record<string, unknown>
+      | undefined;
+    const cursorParsed = cursorRow === undefined ? null : toOutboxRow(cursorRow);
+    if (cursorParsed === null || cursorParsed === undefined) return null;
+    if (
+      !POSITIVE_DECIMAL_V1.test(cursorParsed.stream_sequence)
+      || !parseSharedStateDigestV1(cursorParsed.event_key_digest, {
+        domain: "broker.outbox.event-key",
+        namespace,
+      }).ok
+      || !parseSharedStateDigestV1(cursorParsed.idempotency_key_digest, {
+        domain: "broker.outbox.idempotency-key",
+        namespace,
+      }).ok
+      || !parseSharedStateDigestV1(cursorParsed.payload_digest, {
+        domain: "broker.outbox.payload",
+        namespace,
+      }).ok
+      || !(V.receiptStates as readonly string[]).includes(cursorParsed.receipt_state)
+      || !(V.acknowledgmentStates as readonly string[]).includes(cursorParsed.acknowledgment_state)
+      || (cursorParsed.acknowledgment_state === "acknowledged"
+        && cursorParsed.receipt_state !== "confirmed")
+    ) {
+      return null;
+    }
+  }
+  const rows = preparedStmt(
+    db,
+    `SELECT ${OUTBOX_COLUMNS_V1}
+       FROM shared_state_outbox
+      WHERE namespace = ? AND stream_key_digest = ?
+        AND (length(stream_sequence) > length(?)
+          OR (length(stream_sequence) = length(?) AND stream_sequence > ?))
+      ORDER BY length(stream_sequence), stream_sequence
+      LIMIT ?`,
+  ).all(namespace, streamKeyDigest, afterSequence, afterSequence, afterSequence, limit + 1) as readonly Record<string, unknown>[];
   for (const row of rows) {
     const parsed = toOutboxRow(row);
     if (parsed === null || parsed === undefined) return null;
@@ -799,12 +842,8 @@ function readOutboxQueryPage(
     if (sequence <= previousSequence) return null;
     previousSequence = sequence;
     eventKeys.add(parsed.event_key_digest);
-    if (parsed.stream_sequence === afterSequence) cursorSeen = true;
-    if (sequence > after && page.length < limit + 1) {
-      page.push(parsed);
-    }
+    page.push(parsed);
   }
-  if (!cursorSeen) return null;
   return page;
 }
 
@@ -1825,14 +1864,22 @@ export class SharedStateSqliteAdapterV1 {
       && now < 2n ** 52n;
     const rows = (canBoundScan
       ? preparedStmt(this.#db,
+          // #2081: window-bounded scan, index-backed by
+          // shared_state_rate_cost_window_idx (namespace, bucket,
+          // CAST(event_at AS INTEGER)). Logically identical to the old
+          // NOT(numeric AND below-bound) form: well-formed rows outside the
+          // window are skipped, malformed rows stay included so the
+          // boundary evaluator keeps failing closed on them.
           `SELECT event_at_unix_ms, cost, entry_ordinal
              FROM shared_state_rate_cost
             WHERE namespace = ? AND bucket_key_digest = ?
-              AND NOT (
-                length(event_at_unix_ms) <= 13
-                AND (event_at_unix_ms = '0'
-                  OR (event_at_unix_ms GLOB '[1-9]*' AND event_at_unix_ms NOT GLOB '*[^0-9]*'))
-                AND CAST(event_at_unix_ms AS INTEGER) < ?
+              AND (
+                CAST(event_at_unix_ms AS INTEGER) >= ?
+                OR NOT (
+                  length(event_at_unix_ms) <= 13
+                  AND (event_at_unix_ms = '0'
+                    OR (event_at_unix_ms GLOB '[1-9]*' AND event_at_unix_ms NOT GLOB '*[^0-9]*'))
+                )
               )
             ORDER BY entry_ordinal`,
         )
@@ -2896,6 +2943,75 @@ export class SharedStateSqliteAdapterV1 {
     const envelope = this.lifecycle();
     if (envelope === null) return failure("adapter_unavailable");
     return { ok: true, value: envelope };
+  }
+}
+
+export interface SharedStateSqlitePruneResultV1 {
+  readonly kind: "SharedStateSqlitePruneResultV1";
+  readonly rateCostDeleted: number;
+  readonly nonceDeleted: number;
+}
+
+/**
+ * #2081: physical retention for the append-only rate-cost and replay-nonce
+ * tables. Deliberately a SEPARATE operation from any logical decision — the
+ * reserve/consume paths leave out-of-window (and expired-but-unconsumed) rows
+ * on disk so physical cleanup timing is never observable in a logical answer;
+ * this job removes them later.
+ *
+ * - `rate_cost`: rows whose numeric `event_at_unix_ms` is older than
+ *   `rateCostCutoffUnixMs`. Operators choose the cutoff; it must be at least
+ *   the largest window still being reserved against (a 24h retention against
+ *   minute-scale windows is the intended shape).
+ * - `replay_nonce`: rows whose `expires_at_unix_ms` is older than `nowUnixMs`.
+ *   Expired nonces are already logically consumable, so deleting them early
+ *   changes nothing — this only reclaims the row.
+ *
+ * Runs in one `BEGIN IMMEDIATE` transaction and is idempotent. Returns the
+ * per-table deletion counts for operator visibility.
+ */
+export function pruneSharedStateSqliteV1(
+  db: DatabaseSync,
+  options: {
+    readonly nowUnixMs: bigint;
+    readonly rateCostCutoffUnixMs: bigint;
+  },
+): SharedStateSqlitePruneResultV1 {
+  db.exec("BEGIN IMMEDIATE");
+  try {
+    const rateCost = preparedStmt(
+      db,
+      `DELETE FROM shared_state_rate_cost
+        WHERE length(event_at_unix_ms) <= 13
+          AND (event_at_unix_ms = '0'
+            OR (event_at_unix_ms GLOB '[1-9]*' AND event_at_unix_ms NOT GLOB '*[^0-9]*'))
+          AND CAST(event_at_unix_ms AS INTEGER) < ?`,
+    ).run(Number(options.rateCostCutoffUnixMs));
+    const nonce = preparedStmt(
+      db,
+      `DELETE FROM shared_state_replay_nonce
+        WHERE length(expires_at_unix_ms) <= 13
+          AND (expires_at_unix_ms = '0'
+            OR (expires_at_unix_ms GLOB '[1-9]*' AND expires_at_unix_ms NOT GLOB '*[^0-9]*'))
+          AND CAST(expires_at_unix_ms AS INTEGER) < ?`,
+    ).run(Number(options.nowUnixMs));
+    db.exec("COMMIT");
+    return Object.freeze({
+      kind: "SharedStateSqlitePruneResultV1",
+      rateCostDeleted: Number(rateCost.changes),
+      nonceDeleted: Number(nonce.changes),
+    });
+  } catch {
+    try {
+      db.exec("ROLLBACK");
+    } catch {
+      // Preserve the original failure.
+    }
+    return Object.freeze({
+      kind: "SharedStateSqlitePruneResultV1",
+      rateCostDeleted: -1,
+      nonceDeleted: -1,
+    });
   }
 }
 
