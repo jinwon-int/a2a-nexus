@@ -15,7 +15,78 @@ export function workerMetadataMateriallyEqual(
   a?: Record<string, string>,
   b?: Record<string, string>,
 ): boolean {
-  return JSON.stringify(materialWorkerMetadata(a)) === JSON.stringify(materialWorkerMetadata(b));
+  // #2079 C: key-wise comparison instead of serializing both records — same
+  // semantics (string→string record equality) without the per-heartbeat JSON
+  // string allocations.
+  const materialA = materialWorkerMetadata(a);
+  const materialB = materialWorkerMetadata(b);
+  const keysA = Object.keys(materialA ?? {});
+  const keysB = Object.keys(materialB ?? {});
+  if (keysA.length !== keysB.length) return false;
+  return keysA.every((key) => (materialA ?? {})[key] === (materialB ?? {})[key]);
+}
+
+function stringArrayEqual(a: readonly string[], b: readonly string[]): boolean {
+  if (a.length !== b.length) return false;
+  return a.every((value, index) => value === b[index]);
+}
+
+/**
+ * #2079 C: field comparison for the per-heartbeat capability equality checks
+ * (register/heartbeat paths serialized both capability records to JSON two to
+ * four times per heartbeat). Every WorkerCapabilities field is compared;
+ * arrays element-wise in order (both inputs come from the same normalizer, so
+ * insertion order is canonical), provider-capability entries per field, and
+ * absent optionals normalize to undefined on both sides.
+ */
+export function workerCapabilitiesEqual(a: WorkerCapabilities, b: WorkerCapabilities): boolean {
+  if (
+    a.canAnalyze !== b.canAnalyze ||
+    a.canBackfill !== b.canBackfill ||
+    a.canPatchWorkspace !== b.canPatchWorkspace ||
+    a.canPromoteLive !== b.canPromoteLive
+  ) {
+    return false;
+  }
+  if (!stringArrayEqual(a.workspaceIds, b.workspaceIds)) return false;
+  if (!stringArrayEqual(a.environments, b.environments)) return false;
+
+  const providersA = a.providerCapabilities ?? [];
+  const providersB = b.providerCapabilities ?? [];
+  if (providersA.length !== providersB.length) return false;
+  for (let index = 0; index < providersA.length; index += 1) {
+    const left = providersA[index]!;
+    const right = providersB[index]!;
+    if (
+      left.providerId !== right.providerId ||
+      (left.modelFamily ?? null) !== (right.modelFamily ?? null) ||
+      (left.modelId ?? null) !== (right.modelId ?? null) ||
+      left.routeKind !== right.routeKind ||
+      left.availability !== right.availability ||
+      (left.lastVerifiedAt ?? null) !== (right.lastVerifiedAt ?? null)
+    ) {
+      return false;
+    }
+  }
+
+  const implA = a.implementationCapability;
+  const implB = b.implementationCapability;
+  if (
+    (implA?.capable ?? false) !== (implB?.capable ?? false) ||
+    (implA?.runtime ?? null) !== (implB?.runtime ?? null) ||
+    (implA?.providerId ?? null) !== (implB?.providerId ?? null) ||
+    (implA?.modelTier ?? null) !== (implB?.modelTier ?? null) ||
+    (implA?.availability ?? null) !== (implB?.availability ?? null) ||
+    (implA?.lastVerifiedAt ?? null) !== (implB?.lastVerifiedAt ?? null) ||
+    (implA?.evidenceId ?? null) !== (implB?.evidenceId ?? null)
+  ) {
+    return false;
+  }
+
+  return (
+    (a.runtimeFlavor ?? null) === (b.runtimeFlavor ?? null) &&
+    (a.gatewayRequired ?? null) === (b.gatewayRequired ?? null)
+  );
 }
 
 export function workerIdentityFingerprint(
@@ -44,7 +115,7 @@ export function workerIdentityChangedFields(
   if (existing.brokerUrl !== request.brokerUrl) fields.push("brokerUrl");
   if (existing.workerMode !== request.workerMode) fields.push("workerMode");
   if (existing.managementPlane !== request.managementPlane) fields.push("managementPlane");
-  if (JSON.stringify(existing.capabilities) !== JSON.stringify(capabilities)) fields.push("capabilities");
+  if (!workerCapabilitiesEqual(existing.capabilities, capabilities)) fields.push("capabilities");
   if (!workerMetadataMateriallyEqual(existing.metadata, request.metadata)) fields.push("metadata");
   return fields.length > 0 ? fields : ["unknown"];
 }
