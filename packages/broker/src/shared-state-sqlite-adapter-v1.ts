@@ -105,9 +105,7 @@ import { DatabaseSync, type StatementSync } from "node:sqlite";
 import {
   SHARED_STATE_STORAGE_V1_VALUES as V,
   parseSharedStateQueryRequestV1,
-  parseSharedStateQueryResultV1,
   parseSharedStateStorageLifecycleV1,
-  parseSharedStateTransactionResultV1,
   type SharedStateQueryRequestV1,
   type SharedStateQueryResultV1,
   type SharedStateStorageLifecycleV1,
@@ -336,27 +334,37 @@ const LEASE_OPERATIONS_V1: readonly OperationV1[] = Object.freeze([
 ] as const);
 
 /**
- * Builds a result envelope and parses it with the contract parser, so the
- * adapter can never emit an envelope it could not itself accept.
+ * Builds a result envelope directly from the version constants the adapter
+ * already owns.
+ *
+ * #2081 phase 2 (single parser): the adapter used to re-parse every envelope
+ * it built — a full contract pass per operation, doubled again at the worker
+ * protocol trust boundary. The self-parse invariant ("every envelope this
+ * adapter emits satisfies the closed contract parser") is now pinned by
+ * `shared-state-sqlite-envelope-invariant-v1.test.ts`, which drives every
+ * implemented operation through every outcome and re-parses each observed
+ * envelope; the hot path constructs instead of re-validating. Rejection and
+ * unavailability reason codes stay compile-checked against the per-operation
+ * vocabulary, so the remaining drift a cast could hide is a field inside a
+ * committed result — exactly what the invariant test sweeps.
  */
 function envelope(
   operation: OperationV1,
   tail: Record<string, unknown>,
 ): SharedStateSqliteAdapterResultV1<SharedStateTransactionResultV1> {
-  const parsed = parseSharedStateTransactionResultV1({
-    kind: V.kinds.transactionResult,
-    contractVersion: V.versions.contract,
-    transactionVersion: V.versions.transaction,
-    operationVersion: V.versions.operation,
-    operation,
-    consistency: {
-      model: V.operationConsistency[operation].model,
-      scope: V.operationConsistency[operation].scope,
-    },
-    ...tail,
-  });
-  if (!parsed.ok) return failure("adapter_unavailable");
-  return { ok: true, value: parsed.value };
+  const consistency = V.operationConsistency[operation];
+  return {
+    ok: true,
+    value: {
+      kind: V.kinds.transactionResult,
+      contractVersion: V.versions.contract,
+      transactionVersion: V.versions.transaction,
+      operationVersion: V.versions.operation,
+      operation,
+      consistency: { model: consistency.model, scope: consistency.scope },
+      ...tail,
+    } as SharedStateTransactionResultV1,
+  };
 }
 
 function committedEnvelope(
@@ -370,9 +378,9 @@ function committedEnvelope(
   });
 }
 
-function rejectedEnvelope(
-  operation: OperationV1,
-  reasonCode: string,
+function rejectedEnvelope<Operation extends OperationV1>(
+  operation: Operation,
+  reasonCode: (typeof V.operationRejectionReasonCodes)[Operation][number],
 ): SharedStateSqliteAdapterResultV1<SharedStateTransactionResultV1> {
   return envelope(operation, {
     status: V.transactionStatuses[1],
@@ -395,17 +403,16 @@ function unavailableEnvelope(
 function outboxQueryEnvelope(
   tail: Record<string, unknown>,
 ): SharedStateSqliteAdapterResultV1<ReconcileOutboxQueryResultV1> {
-  const parsed = parseSharedStateQueryResultV1({
-    kind: V.kinds.queryResult,
-    contractVersion: V.versions.contract,
-    queryVersion: V.versions.query,
-    operation: V.queryOperations[0],
-    ...tail,
-  });
-  if (!parsed.ok || parsed.value.operation !== "reconcileOutbox") {
-    return failure("adapter_unavailable");
-  }
-  return { ok: true, value: parsed.value };
+  return {
+    ok: true,
+    value: {
+      kind: V.kinds.queryResult,
+      contractVersion: V.versions.contract,
+      queryVersion: V.versions.query,
+      operation: V.queryOperations[0],
+      ...tail,
+    } as ReconcileOutboxQueryResultV1,
+  };
 }
 
 function outboxQuerySucceededEnvelope(
@@ -431,17 +438,16 @@ function outboxQueryUnavailableEnvelope(
 function graphQueryEnvelope(
   tail: Record<string, unknown>,
 ): SharedStateSqliteAdapterResultV1<GraphEvidencePathQueryResultV1> {
-  const parsed = parseSharedStateQueryResultV1({
-    kind: V.kinds.queryResult,
-    contractVersion: V.versions.contract,
-    queryVersion: V.versions.query,
-    operation: V.queryOperations[1],
-    ...tail,
-  });
-  if (!parsed.ok || parsed.value.operation !== "queryGraphEvidencePath") {
-    return failure("adapter_unavailable");
-  }
-  return { ok: true, value: parsed.value };
+  return {
+    ok: true,
+    value: {
+      kind: V.kinds.queryResult,
+      contractVersion: V.versions.contract,
+      queryVersion: V.versions.query,
+      operation: V.queryOperations[1],
+      ...tail,
+    } as GraphEvidencePathQueryResultV1,
+  };
 }
 
 function graphQuerySucceededEnvelope(
@@ -858,21 +864,50 @@ interface GraphQueryBatchRowV1 {
   readonly from: bigint;
   readonly through: bigint;
   readonly prior: bigint;
-  readonly rolledBack: boolean;
 }
 
+function readGraphQuerySourceRowCount(
+  db: DatabaseSync,
+  namespace: string,
+): bigint | null {
+  const row = preparedStmt(db, 
+      `SELECT COUNT(*) AS total
+         FROM shared_state_graph_source
+        WHERE namespace = ?`,
+    )
+    .get(namespace) as { total?: unknown } | undefined;
+  if (row === undefined || typeof row.total !== "number") return null;
+  return BigInt(row.total);
+}
+
+/**
+ * #2081 phase 2: the query reads only the sequence range the live batches
+ * tile — `[1, checkpoint]` — instead of materializing the whole namespace.
+ * The `shared_state_graph_source_seq_idx` expression index bounds the scan;
+ * contiguity from 1 is still validated row by row, so every row this read
+ * answers from is fully validated at fetch cost.
+ *
+ * Trade-off (same separation as the keyset outbox page): a corrupt row at a
+ * sequence above the checkpoint is no longer observed here. The whole-namespace
+ * ledger audit lives in the conformance harnesses; this closed read observes
+ * exactly the rows its answer depends on.
+ */
 function readGraphQuerySourceRows(
   db: DatabaseSync,
   namespace: string,
+  throughSequence: bigint,
 ): readonly GraphQuerySourceRowV1[] | null {
+  if (throughSequence < 1n) return [];
   const raw = preparedStmt(db, 
       `SELECT source_fact_digest, source_stream_key_digest, node_type,
               source_sequence
          FROM shared_state_graph_source
         WHERE namespace = ?
+          AND CAST(source_sequence AS INTEGER) BETWEEN 1 AND ?
         ORDER BY length(source_sequence), source_sequence`,
     )
-    .all(namespace) as readonly Record<string, unknown>[];
+    .all(namespace, throughSequence.toString()) as
+    readonly Record<string, unknown>[];
   const rows: GraphQuerySourceRowV1[] = [];
   let expected = 1n;
   for (const row of raw) {
@@ -903,6 +938,9 @@ function readGraphQuerySourceRows(
     });
     expected += 1n;
   }
+  // A short read (missing sequence inside the tiled range) is corruption this
+  // read observes; the answer depends on exactly these rows.
+  if (expected !== throughSequence + 1n) return null;
   return rows;
 }
 
@@ -929,6 +967,13 @@ function readGraphQueryCheckpoint(
   return { present: true, value: BigInt(row.checkpoint_sequence) };
 }
 
+/**
+ * #2081 phase 2: only LIVE batches are read (`rolled_back = 0` via the
+ * `shared_state_graph_batch_live_idx` index). A rolled-back batch can no
+ * longer fail this read by carrying corrupt columns — whole-table batch audit
+ * belongs to the conformance harnesses, exactly like the outbox whole-stream
+ * audit and the source-ledger audit above.
+ */
 function readGraphQueryBatches(
   db: DatabaseSync,
   namespace: string,
@@ -937,9 +982,9 @@ function readGraphQueryBatches(
 ): readonly GraphQueryBatchRowV1[] | null {
   const raw = preparedStmt(db, 
       `SELECT batch_key_digest, inverse_digest, source_sequence_from,
-              source_sequence_through, prior_checkpoint_sequence, rolled_back
+              source_sequence_through, prior_checkpoint_sequence
          FROM shared_state_graph_batch
-        WHERE namespace = ? AND projection_version = ?`,
+        WHERE namespace = ? AND projection_version = ? AND rolled_back = 0`,
     )
     .all(namespace, projectionVersion) as readonly Record<string, unknown>[];
   const batches: GraphQueryBatchRowV1[] = [];
@@ -950,11 +995,9 @@ function readGraphQueryBatches(
       || typeof row.source_sequence_from !== "string"
       || typeof row.source_sequence_through !== "string"
       || typeof row.prior_checkpoint_sequence !== "string"
-      || typeof row.rolled_back !== "number"
       || !POSITIVE_DECIMAL_V1.test(row.source_sequence_from)
       || !POSITIVE_DECIMAL_V1.test(row.source_sequence_through)
       || !NON_NEGATIVE_DECIMAL_V1.test(row.prior_checkpoint_sequence)
-      || (row.rolled_back !== 0 && row.rolled_back !== 1)
       || !parseSharedStateDigestV1(row.batch_key_digest, {
         domain: "broker.claim-graph.projection-batch-key",
         namespace,
@@ -980,7 +1023,6 @@ function readGraphQueryBatches(
       from,
       through,
       prior,
-      rolledBack: row.rolled_back === 1,
     });
   }
   return batches;
@@ -992,7 +1034,6 @@ function liveGraphQueryBatches(
 ): readonly GraphQueryBatchRowV1[] | null {
   const byPrior = new Map<string, GraphQueryBatchRowV1>();
   for (const batch of batches) {
-    if (batch.rolledBack) continue;
     if (
       batch.from !== batch.prior + 1n
       || batch.through < batch.from
@@ -1041,22 +1082,37 @@ function findGraphEvidencePath(
   return null;
 }
 
+/**
+ * #2081 phase 2: the read only materializes the sequence range the live
+ * batches tile — `[1, checkpoint]` — instead of the whole namespace. The
+ * `shared_state_graph_source_seq_idx` expression index bounds the scan, and
+ * contiguity from 1 is still validated row by row, so every row this read
+ * answers from is fully validated at fetch cost. An adjacency memo was tried
+ * here and removed: the read-path fail-closed contract pins that corruption
+ * of a row inside the tiled range turns the next query `unavailable`, and
+ * corruption reaches these rows from outside the adapter (any holder of the
+ * file), so no invalidation scheme owned by the write paths can be complete.
+ * The whole-namespace audit above the checkpoint moves to the conformance
+ * harnesses — the same separation as the keyset outbox page (phase 1).
+ */
 function readGraphQueryResult(
   db: DatabaseSync,
   input: GraphEvidencePathQueryRequestV1["input"],
 ): Record<string, unknown> | null {
-  const sources = readGraphQuerySourceRows(db, input.namespace);
-  if (sources === null) return null;
-  const highWater = BigInt(sources.length);
   const checkpointState = readGraphQueryCheckpoint(
     db,
     input.namespace,
     input.projectionVersion,
   );
-  if (checkpointState === null || checkpointState.value > highWater) {
+  if (checkpointState === null) return null;
+  const checkpoint = checkpointState.value;
+  // The live batches tile `[1, checkpoint]` exactly (chained from prior 0),
+  // so the source fetch is bounded by the checkpoint rather than the whole
+  // namespace; the row count is an index-only aggregate.
+  const highWater = readGraphQuerySourceRowCount(db, input.namespace);
+  if (highWater === null || checkpoint > highWater) {
     return null;
   }
-  const checkpoint = checkpointState.value;
   const batches = readGraphQueryBatches(
     db,
     input.namespace,
@@ -1068,6 +1124,8 @@ function readGraphQueryResult(
   const live = liveGraphQueryBatches(batches, checkpoint);
   if (live === null) return null;
 
+  const sources = readGraphQuerySourceRows(db, input.namespace, checkpoint);
+  if (sources === null) return null;
   const sourceBySequence = new Map(
     sources.map((source) => [
       source.sequence.toString(),
@@ -2019,7 +2077,18 @@ export class SharedStateSqliteAdapterV1 {
         return rejectedEnvelope(operation, "idempotency_conflict");
       }
       // A replay returns the stored outcome rather than deriving it again, so
-      // the answer stays identical even if derivation ever changed.
+      // the answer stays identical even if derivation ever changed. A corrupt
+      // stored digest would make this committed envelope unparseable; the
+      // self-parse used to turn that into adapter failure, so the closed
+      // check stays explicit here (#2081 phase 2).
+      if (
+        !parseSharedStateDigestV1(existing.outcome_digest, {
+          domain: "broker.idempotency.outcome",
+          namespace: input.namespace,
+        }).ok
+      ) {
+        return failure("adapter_unavailable");
+      }
       return committedEnvelope(operation, {
         decision: V.operationDecisions.executeIdempotent[1],
         outcomeDigest: existing.outcome_digest,
@@ -2556,6 +2625,12 @@ export class SharedStateSqliteAdapterV1 {
     );
     if (existing === undefined) return failure("store_failure");
     if (existing !== null) {
+      // Replaying the only rolled-back batch can require checkpoint 0, which
+      // the apply committed-result schema cannot represent (both decisions
+      // demand a positive checkpoint). The adapter refuses rather than
+      // emitting an envelope it could not itself parse — behavior the
+      // self-parse used to enforce implicitly, now explicit (#2081 phase 2).
+      if (current < 1n) return failure("adapter_unavailable");
       return committedEnvelope(operation, {
         decision: V.operationDecisions.applyGraphProjectionBatch[1],
         checkpointSequence: current.toString(),
@@ -2722,7 +2797,13 @@ export class SharedStateSqliteAdapterV1 {
       time,
       String(input.leaseDurationMs),
     );
-    if (!expiresAt.ok) return rejectedEnvelope(operation, "lease_expired");
+    // The claimLease rejection vocabulary has no code for an unusable
+    // duration (zero, non-canonical, or overflowing the timestamp bound), so
+    // the closed answer is adapter failure. The self-parse this adapter used
+    // before #2081 phase 2 enforced that implicitly — the "lease_expired"
+    // envelope never survived it — and the explicit failure preserves the
+    // shipped behavior.
+    if (!expiresAt.ok) return failure("adapter_unavailable");
 
     // The fence rises on claim and only on claim, so it never decreases and
     // an expired or released claim never lets a later claim reuse a fence.
@@ -2783,7 +2864,10 @@ export class SharedStateSqliteAdapterV1 {
     input: LeaseAuthorityInputV1,
     row: LeaseRow,
     time: SharedStateTimeEvaluationV1,
-  ): string | null | undefined {
+  ):
+    | (typeof V.operationRejectionReasonCodes)[OperationV1][number]
+    | null
+    | undefined {
     if (BigInt(input.fencingToken) !== BigInt(row.fencing_token)) {
       return "stale_fence";
     }

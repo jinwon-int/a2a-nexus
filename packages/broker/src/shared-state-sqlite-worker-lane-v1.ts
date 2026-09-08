@@ -63,9 +63,7 @@ import {
 import {
   SHARED_STATE_STORAGE_V1_VALUES as V,
   parseSharedStateQueryRequestV1,
-  parseSharedStateQueryResultV1,
   parseSharedStateTransactionCommandV1,
-  parseSharedStateTransactionResultV1,
   type SharedStateOperationUnavailableReasonCodeV1,
   type SharedStateOperationV1,
   type SharedStateQueryOperationV1,
@@ -178,16 +176,20 @@ function value<T>(input: T): SharedStateSqliteAdapterResultV1<T> {
 }
 
 /**
- * Builds the operation-preserving transaction `unavailable` envelope through
- * the real closed parser, so a drift in the contract surfaces here as a thrown
- * invariant rather than as a silently malformed result.
+ * Builds the operation-preserving transaction `unavailable` envelope.
+ *
+ * #2081 phase 2 (single parser): this used to round-trip through the closed
+ * parser so contract drift surfaced as a thrown invariant. The drift case is
+ * now covered by the envelope invariant test; the admission parse upstream
+ * and the worker-protocol narrowing parse downstream remain the trust
+ * boundaries that fail closed.
  */
 function transactionUnavailable(
   operation: SharedStateOperationV1,
   reasonCode: SharedStateOperationUnavailableReasonCodeV1,
 ): SharedStateTransactionResultV1 {
   const consistency = V.operationConsistency[operation];
-  const candidate = {
+  return {
     kind: V.kinds.transactionResult,
     contractVersion: V.versions.contract,
     transactionVersion: V.versions.transaction,
@@ -197,19 +199,14 @@ function transactionUnavailable(
     consistency: { model: consistency.model, scope: consistency.scope },
     completeness: V.resultCompletenessStates[1],
     reasonCode,
-  };
-  const parsed = parseSharedStateTransactionResultV1(candidate);
-  if (!parsed.ok) {
-    throw new Error("closed SQLite worker lane transaction invariant failed");
-  }
-  return parsed.value;
+  } as SharedStateTransactionResultV1;
 }
 
 function queryUnavailable(
   operation: SharedStateQueryOperationV1,
   reasonCode: SharedStateQueryUnavailableReasonCodeV1,
 ): SharedStateQueryResultV1 {
-  const candidate = {
+  return {
     kind: V.kinds.queryResult,
     contractVersion: V.versions.contract,
     queryVersion: V.versions.query,
@@ -217,12 +214,7 @@ function queryUnavailable(
     status: V.queryStatuses[1],
     achievedConsistency: null,
     reasonCode,
-  };
-  const parsed = parseSharedStateQueryResultV1(candidate);
-  if (!parsed.ok) {
-    throw new Error("closed SQLite worker lane query invariant failed");
-  }
-  return parsed.value;
+  } as SharedStateQueryResultV1;
 }
 
 export interface SharedStateSqliteWorkerLaneV1 {
