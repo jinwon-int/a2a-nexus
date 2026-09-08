@@ -41,12 +41,33 @@ function isAllowedGitleaksFinding(finding) {
 }
 
 function runGitleaks() {
+  // #2085: scan exactly the tracked tree, not the working directory.
+  // `--no-git` ignores .gitignore, so a restored node_modules (38 MB) and
+  // whichever build output happened to exist entered the scan surface — and
+  // because package steps compile concurrently, whether dist/ was inside the
+  // scan was a race, making the gate's input non-deterministic. Exporting
+  // `git archive HEAD` pins the scan to tracked files: the result no longer
+  // depends on untracked build artifacts lying around. Uncommitted files are
+  // not scanned — CI always checks out a commit.
   mkdirSync('.tmp', { recursive: true });
+  const scanDir = '.tmp/gitleaks-tracked-tree';
+  rmSync(scanDir, { force: true, recursive: true });
+  mkdirSync(scanDir, { recursive: true });
+  const archive = spawnSync('git', ['archive', 'HEAD'], { maxBuffer: 256 * 1024 * 1024 });
+  if (archive.status !== 0) {
+    console.error('git archive HEAD failed — cannot build the tracked-tree scan snapshot');
+    process.exit(archive.status ?? 1);
+  }
+  const untar = spawnSync('tar', ['-x', '-C', scanDir], { input: archive.stdout, stdio: ['pipe', 'inherit', 'inherit'] });
+  if (untar.status !== 0) {
+    console.error('tar extraction of the tracked-tree snapshot failed');
+    process.exit(untar.status ?? 1);
+  }
   const reportPath = '.tmp/gitleaks-external-secret-scan.json';
   rmSync(reportPath, { force: true });
   const args = [
     'detect',
-    '--source', '.',
+    '--source', scanDir,
     '--redact',
     '--no-banner',
     '--verbose',
@@ -67,6 +88,20 @@ function runGitleaks() {
   } catch (error) {
     console.error(`gitleaks report parse failed: ${error instanceof Error ? error.message : String(error)}`);
     process.exit(1);
+  }
+
+  // Report paths are relative to --source, which is the tracked-tree snapshot;
+  // strip the snapshot prefix so allowlist matching and fingerprints stay
+  // identical to repo-relative paths.
+  for (const finding of findings) {
+    for (const key of ['File', 'file']) {
+      if (typeof finding[key] === 'string') {
+        finding[key] = finding[key].replace(/^\.tmp\/[\w-]+\//, '');
+      }
+    }
+    if (typeof finding.Fingerprint === 'string') {
+      finding.Fingerprint = finding.Fingerprint.replace(/^\.tmp\/[\w-]+\//, '');
+    }
   }
 
   const disallowed = findings.filter((finding) => !isAllowedGitleaksFinding(finding));

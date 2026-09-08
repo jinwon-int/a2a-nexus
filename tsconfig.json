@@ -1,0 +1,9 @@
+{
+  "files": [],
+  "references": [
+    { "path": "packages/policy-referee" },
+    { "path": "packages/attestation" },
+    { "path": "packages/nclex-evaluation" },
+    { "path": "packages/broker" }
+  ]
+}

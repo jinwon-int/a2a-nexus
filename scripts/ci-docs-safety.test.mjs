@@ -134,6 +134,13 @@ fs.writeFileSync(out, JSON.stringify([
 process.exit(0);
 `);
     chmodSync(fake, 0o755);
+    // #2085: the scanner exports `git archive HEAD` to pin the scan to tracked
+    // files, so the fixture needs a commit to scan.
+    spawnSync('git', ['init', '-q'], { cwd: temp });
+    spawnSync('git', ['-C', temp, 'config', 'user.email', 'fixture@example.invalid'], { cwd: temp });
+    spawnSync('git', ['-C', temp, 'config', 'user.name', 'fixture'], { cwd: temp });
+    spawnSync('git', ['-C', temp, 'add', '.'], { cwd: temp });
+    spawnSync('git', ['-C', temp, 'commit', '-q', '-m', 'fixture'], { cwd: temp });
     const result = spawnSync(process.execPath, [join(repoRoot, 'scripts/external-secret-scan.mjs')], {
       cwd: temp,
       env: { ...process.env, PATH: `${join(temp, 'bin')}:${process.env.PATH}` },

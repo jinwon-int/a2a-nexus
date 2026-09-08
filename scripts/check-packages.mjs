@@ -1,6 +1,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
-import { spawn } from 'node:child_process';
+import { spawn, spawnSync } from 'node:child_process';
+import { createRequire } from 'node:module';
 
 // --manifests-only validates package manifests without compiling: the always-on
 // check job runs the full `npm -w <pkg> run check` surface (and the release-gate
@@ -94,9 +95,33 @@ function runCheck(dir) {
   });
 }
 
+// #2085: one solution build instead of five concurrent per-package tsc runs.
+// The old fan-out had broker's `tsc -b` (which builds policy-referee,
+// attestation, and nclex via project references) racing those packages' own
+// checks — the same dist/.tsbuildinfo and .d.ts files written concurrently by
+// 2-3 tsc processes. The root solution tsconfig builds the reference graph
+// once, topologically, with a single writer; docker-runner is standalone (not
+// composite, referenced by nobody) and checks separately.
+function runSolutionBuild() {
+  const tsc = createRequire(path.join(root, 'scripts', 'check-packages.mjs')).resolve('typescript/bin/tsc');
+  const result = spawnSync('node', [tsc, '-b', 'tsconfig.json'], { cwd: root, encoding: 'utf8' });
+  return {
+    dir: 'solution (broker + policy-referee + attestation + nclex-evaluation)',
+    status: result.status ?? 1,
+    output: `${result.stdout ?? ''}${result.stderr ?? ''}`,
+  };
+}
+
 const results = manifestsOnly
   ? []
-  : await Promise.all(runnable.map(runCheck));
+  : [
+      runSolutionBuild(),
+      ...(await Promise.all(
+        runnable
+          .filter((dir) => dir !== 'packages/broker' && dir !== 'packages/policy-referee' && dir !== 'packages/attestation' && dir !== 'packages/nclex-evaluation')
+          .map(runCheck),
+      )),
+    ];
 
 let failed = 0;
 for (const { dir, status, output } of results) {

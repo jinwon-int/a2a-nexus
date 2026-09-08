@@ -19,7 +19,8 @@ const REQUIRED_PACKAGE_SCRIPTS = ["check", "build", "lint", "test", "chaos:e2e"]
 // (relative to this package dir) instead of the dead nested workflow.
 const MONOREPO_PARITY_RUNNER = "../../scripts/run-monorepo-package-ci-parity.mjs";
 const REQUIRED_PARITY_GATES = [
-  "'check', '-w', 'packages/docker-runner'",
+  // (#2085) no standalone `check` gate: the build gate is the same tsc project
+  // compiled with emit, so a --noEmit pass ahead of it was a duplicate compile.
   "'build', '-w', 'packages/docker-runner'",
   "'lint', '-w', 'packages/docker-runner'",
   // The compiled dist test suite is executed by coverage:baseline, which runs
