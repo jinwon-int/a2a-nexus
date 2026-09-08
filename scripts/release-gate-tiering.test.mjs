@@ -235,8 +235,11 @@ test('script surface manifest validates current root and broker package scripts'
   // scripts/check-script-budget.mjs BUDGETS.brokerNpmScripts.
   // Monorepo migration retirement: root 101→84 as the 17 check:monorepo-*
   // aliases retire with the migration ceremony they gated.
+  // #2080 step 2: broker 55→56 for build:tests, the test-including compile the
+  // test manifest step-02 and coverage:baseline run now that `build` is the
+  // runtime-only config (tsconfig.build.json).
   assert.equal(byId.get('root')?.scriptCount, 81);
-  assert.equal(byId.get('broker')?.scriptCount, 55);
+  assert.equal(byId.get('broker')?.scriptCount, 56);
   assert.ok((byId.get('root')?.kindCounts['required-gate'] ?? 0) >= 7);
   assert.ok((byId.get('broker')?.kindCounts['required-gate'] ?? 0) >= 7);
 });

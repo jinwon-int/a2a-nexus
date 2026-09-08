@@ -10,10 +10,12 @@ const brokerTestManifestPath = new URL('./test-manifest.json', import.meta.url).
 
 test('broker npm test manifest removes ignored dist artifacts before incremental build', () => {
   const manifest = JSON.parse(readFileSync(brokerTestManifestPath, 'utf8'));
-  assert.match(manifest.legacyEquivalent ?? '', /npm run clean:dist && npm run build/);
+  // #2080 step 2: step-02 compiles the test config (build:tests) because the
+  // production `build` script now uses the runtime-only tsconfig.build.json.
+  assert.match(manifest.legacyEquivalent ?? '', /npm run clean:dist && npm run build:tests/);
   assert.deepEqual(manifest.entries.slice(0, 2).map((entry) => entry.command), [
     'npm run clean:dist',
-    'npm run build',
+    'npm run build:tests',
   ]);
 });
 
