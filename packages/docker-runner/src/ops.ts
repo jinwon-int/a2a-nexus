@@ -1,6 +1,12 @@
 import { constants } from "node:fs";
 import { access, mkdir, readdir, readFile, rm, rmdir, stat } from "node:fs/promises";
+
+import { runAgeMsFromMeta, walkRunDirs, type WalkedTaskRoot } from "./scanner.js";
 import { spawnSync } from "node:child_process";
+import { execFile } from "node:child_process";
+import { promisify } from "node:util";
+
+const execFileP = promisify(execFile);
 import { join, resolve } from "node:path";
 import type { RunnerConfig, RunnerEngine } from "./types.js";
 import { DEFAULT_PROFILE_MOUNT_PATH, validateOpenClawProfileReadiness } from "./openclaw-profile-readiness.js";
@@ -119,23 +125,14 @@ export async function cleanup(options: CleanupOptions): Promise<CleanupReport> {
   const candidates: string[] = [];
   const skipped: string[] = [];
 
-  let taskRoots: string[];
-  try {
-    taskRoots = await readdir(rootDir);
-  } catch {
-    return { ok: true, dryRun, rootDir, ttlMs: options.ttlMs, removed, candidates, skipped };
-  }
-
-  for (const entry of taskRoots) {
-    const taskRoot = join(rootDir, entry);
-    const taskRootInfo = await stat(taskRoot).catch(() => undefined);
-    if (!taskRootInfo?.isDirectory()) {
-      skipped.push(taskRoot);
+  for await (const walked of walkRunDirs(rootDir)) {
+    if (!walked.isDirectory) {
+      skipped.push(walked.path);
       continue;
     }
 
-    const { expiredDirs, recentDirs, skippedDirs } = await evaluateTaskRoot(
-      taskRoot,
+    const { expiredDirs, recentDirs, skippedDirs } = evaluateTaskRoot(
+      walked,
       options.ttlMs,
       nowMs,
     );
@@ -166,21 +163,21 @@ export async function cleanup(options: CleanupOptions): Promise<CleanupReport> {
       // In dry-run mode the expired dirs still exist on disk, so we check
       // whether all remaining entries are exactly the expired run dirs.
       if (dryRun) {
-        const remaining = await readdir(taskRoot).catch(() => [] as string[]);
+        const remaining = await readdir(walked.path).catch(() => [] as string[]);
         const expiredNames = new Set(expiredDirs.map((d) => d.split("/").pop()!));
         if (remaining.length > 0 && remaining.every((name) => expiredNames.has(name))) {
-          candidates.push(taskRoot);
+          candidates.push(walked.path);
         }
       } else {
-        const remaining = await readdir(taskRoot).catch(() => [] as string[]);
+        const remaining = await readdir(walked.path).catch(() => [] as string[]);
         if (remaining.length === 0) {
-          candidates.push(taskRoot);
+          candidates.push(walked.path);
           // Non-recursive rmdir: if a run dir is created concurrently between
           // the readdir check and removal, this fails with ENOTEMPTY instead
           // of recursively deleting the freshly-started run.
           try {
-            await rmdir(taskRoot);
-            removed.push(taskRoot);
+            await rmdir(walked.path);
+            removed.push(walked.path);
           } catch {
             // A concurrent run repopulated the task root; leave it in place.
           }
@@ -200,85 +197,65 @@ export async function cleanup(options: CleanupOptions): Promise<CleanupReport> {
  * - recentDirs: run dirs whose age < ttlMs
  * - skippedDirs: non-directory entries or malformed entries inside the task root
  */
-async function evaluateTaskRoot(
-  taskRoot: string,
+function evaluateTaskRoot(
+  walked: WalkedTaskRoot,
   ttlMs: number,
   nowMs: number,
-): Promise<{
+): {
   expiredDirs: string[];
   recentDirs: string[];
   skippedDirs: string[];
-}> {
+} {
   const expiredDirs: string[] = [];
   const recentDirs: string[] = [];
   const skippedDirs: string[] = [];
 
-  let entries: string[];
-  try {
-    entries = await readdir(taskRoot);
-  } catch {
+  if (!walked.entries) {
+    // Unreadable task root — nothing to classify.
     return { expiredDirs, recentDirs, skippedDirs };
   }
 
-  for (const entry of entries) {
-    const runDir = join(taskRoot, entry);
-    const info = await stat(runDir).catch(() => undefined);
-    if (!info?.isDirectory()) {
-      skippedDirs.push(runDir);
+  for (const run of walked.entries) {
+    if (!run.isDirectory) {
+      skippedDirs.push(run.path);
       continue;
     }
 
     // Prefer run.json.createdAt for age calculation; fall back to mtime.
-    const ageMs = await runAgeMs(runDir, nowMs, info.mtimeMs);
+    // (Clamped at zero — a pre-existing clock-skew negative age classified
+    // the run as recent anyway, so this is behavior-neutral.)
+    const ageMs = runAgeMsFromMeta(run.runMeta, run.mtimeMs, nowMs);
     if (ageMs < ttlMs) {
-      recentDirs.push(runDir);
+      recentDirs.push(run.path);
     } else {
-      expiredDirs.push(runDir);
+      expiredDirs.push(run.path);
     }
   }
 
   return { expiredDirs, recentDirs, skippedDirs };
 }
 
-/**
- * Calculate the age of a run directory in milliseconds.
- *
- * Prefers the `createdAt` field from run.json (ISO timestamp) when available.
- * Falls back to directory mtimeMs when run.json is missing or unreadable.
- */
-async function runAgeMs(runDir: string, nowMs: number, mtimeMsFallback: number): Promise<number> {
-  try {
-    const runJsonPath = join(runDir, "run.json");
-    const content = await readFile(runJsonPath, "utf8");
-    const parsed = JSON.parse(content);
-    if (parsed && typeof parsed.createdAt === "string") {
-      const createdAtMs = new Date(parsed.createdAt).getTime();
-      if (!isNaN(createdAtMs)) {
-        return nowMs - createdAtMs;
-      }
-    }
-  } catch {
-    // fall through to mtime fallback
-  }
-  return nowMs - mtimeMsFallback;
-}
-
 export async function doctor(config: RunnerConfig): Promise<DoctorReport> {
-  const runnerRevision = await checkDeployedRevision();
-  const docker = checkEngine("docker");
-  const podman = checkEngine("podman");
+  // #2083: independent probes run concurrently (the git-backed revision check
+  // used to serialize four spawnSync calls ahead of every other probe).
+  const [runnerRevision, docker, podman, taskRoot, secretMount, extraMounts, secretMountReadability] =
+    await Promise.all([
+      checkDeployedRevision(),
+      checkEngine("docker"),
+      checkEngine("podman"),
+      checkTaskRoot(config.rootDir),
+      checkSecretMount(config.githubTokenFile),
+      checkExtraMounts(config),
+      checkSecretMountContainerReadability(config),
+    ]);
   const configuredEngine = config.engine;
   const engine = configuredEngine && (configuredEngine === "docker" ? docker : podman).status === "ok"
     ? configuredEngine
     : docker.status === "ok"
       ? "docker"
       : "podman";
-  const taskRoot = await checkTaskRoot(config.rootDir);
-  const secretMount = await checkSecretMount(config.githubTokenFile);
-  const extraMounts = await checkExtraMounts(config);
-  const secretMountReadability = await checkSecretMountContainerReadability(config);
   const baseImage = (engine === "docker" ? docker : podman).status === "ok"
-    ? checkBaseImage(engine, config.image)
+    ? await checkBaseImage(engine, config.image)
     : { status: "fail" as const, message: "no container engine available for base image check", detail: { image: config.image } };
   const githubPatch = checkGitHubPatchReadiness(config, { engine });
   const engineReady = docker.status === "ok" || podman.status === "ok";
@@ -308,8 +285,10 @@ export async function doctor(config: RunnerConfig): Promise<DoctorReport> {
 }
 
 export async function checkDeployedRevision(cwd = process.cwd(), upstreamRef = "origin/main"): Promise<OpsCheck> {
-  const version = await readPackageVersion(cwd);
-  const insideWorkTree = git(cwd, ["rev-parse", "--is-inside-work-tree"]);
+  const [version, insideWorkTree] = await Promise.all([
+    readPackageVersion(cwd),
+    gitAsync(cwd, ["rev-parse", "--is-inside-work-tree"]),
+  ]);
 
   if (insideWorkTree.status !== 0 || insideWorkTree.stdout.trim() !== "true") {
     return {
@@ -321,14 +300,21 @@ export async function checkDeployedRevision(cwd = process.cwd(), upstreamRef = "
     };
   }
 
-  const fullLocalSha = normalizeSha(git(cwd, ["rev-parse", "HEAD"]).stdout.trim());
+  // Independent probes run concurrently (was four sequential spawnSync calls).
+  const [headResult, branchResult, porcelainResult, upstreamSha] = await Promise.all([
+    gitAsync(cwd, ["rev-parse", "HEAD"]),
+    gitAsync(cwd, ["branch", "--show-current"]),
+    gitAsync(cwd, ["status", "--porcelain"]),
+    resolveUpstreamMainSha(cwd, upstreamRef),
+  ]);
+  const fullLocalSha = normalizeSha(headResult.stdout.trim());
   const localSha = fullLocalSha?.slice(0, 12);
-  const branch = git(cwd, ["branch", "--show-current"]).stdout.trim() || "detached";
+  const branch = branchResult.stdout.trim() || "detached";
 
   // Compute dirty flag, but exclude .deploy-source-sha as an expected
   // deployment marker — it records the deployed SHA and should not trigger
   // a misleading dirty-worktree warning.
-  const porcelainAll = git(cwd, ["status", "--porcelain"]).stdout;
+  const porcelainAll = porcelainResult.stdout;
   const porcelainLines = porcelainAll.split("\n").filter((l) => l.trim().length > 0);
   const realChanges = porcelainLines.filter((l) => !l.includes(".deploy-source-sha"));
   const dirty = realChanges.length > 0;
@@ -336,8 +322,6 @@ export async function checkDeployedRevision(cwd = process.cwd(), upstreamRef = "
   // Detect .deploy-source-sha as a deployment marker.
   const deploySourceShaStatus = porcelainLines.find((l) => l.includes(".deploy-source-sha"));
   const deploymentMarker = deploySourceShaStatus !== undefined;
-
-  const upstreamSha = await resolveUpstreamMainSha(cwd, upstreamRef);
 
   const reasons: string[] = [];
   if (!localSha) reasons.push("local SHA unavailable");
@@ -386,7 +370,7 @@ export async function checkDeployMarker(
   cwd = process.cwd(),
 ): Promise<OpsCheck> {
   const version = await readPackageVersion(cwd);
-  const insideWorkTree = git(cwd, ["rev-parse", "--is-inside-work-tree"]);
+  const insideWorkTree = await gitAsync(cwd, ["rev-parse", "--is-inside-work-tree"]);
 
   if (insideWorkTree.status !== 0 || insideWorkTree.stdout.trim() !== "true") {
     return {
@@ -401,10 +385,15 @@ export async function checkDeployMarker(
     };
   }
 
-  const fullLocalSha = normalizeSha(git(cwd, ["rev-parse", "HEAD"]).stdout.trim());
+  const [headResult, branchResult, porcelainResult] = await Promise.all([
+    gitAsync(cwd, ["rev-parse", "HEAD"]),
+    gitAsync(cwd, ["branch", "--show-current"]),
+    gitAsync(cwd, ["status", "--porcelain"]),
+  ]);
+  const fullLocalSha = normalizeSha(headResult.stdout.trim());
   const localSha = fullLocalSha?.slice(0, 12);
-  const branch = git(cwd, ["branch", "--show-current"]).stdout.trim() || "detached";
-  const dirty = git(cwd, ["status", "--porcelain"]).stdout.trim().length > 0;
+  const branch = branchResult.stdout.trim() || "detached";
+  const dirty = porcelainResult.stdout.trim().length > 0;
 
   if (!fullLocalSha) {
     return {
@@ -459,10 +448,13 @@ export async function install(config: RunnerConfig): Promise<InstallReport> {
   return { ok: taskRoot.status !== "fail" && secretMount.status !== "fail", created, taskRoot, secretMount };
 }
 
-function checkEngine(engine: RunnerEngine): OpsCheck {
-  const version = spawnSync(engine, ["--version"], { encoding: "utf8" });
-  if (version.status !== 0) return { status: "fail", message: `${engine} is not available` };
-  return { status: "ok", message: `${engine} is available`, detail: { version: version.stdout.trim() } };
+async function checkEngine(engine: RunnerEngine): Promise<OpsCheck> {
+  try {
+    const version = await execFileP(engine, ["--version"], { encoding: "utf8", timeout: 5_000 });
+    return { status: "ok", message: `${engine} is available`, detail: { version: version.stdout.trim() } };
+  } catch {
+    return { status: "fail", message: `${engine} is not available` };
+  }
 }
 
 async function checkTaskRoot(rootDir: string): Promise<OpsCheck> {
@@ -1413,9 +1405,15 @@ function boundedProbeError(status: number | null, error: Error | undefined): str
   return "container probe exited with status " + (status ?? "unknown");
 }
 
-function git(cwd: string, args: string[]): { status: number | null; stdout: string; stderr: string } {
-  const result = spawnSync("git", ["-C", cwd, ...args], { encoding: "utf8", timeout: 5000 });
-  return { status: result.status, stdout: result.stdout ?? "", stderr: result.stderr ?? "" };
+/** #2083: async git probe (previously spawnSync — four sequential probes per doctor run). */
+async function gitAsync(cwd: string, args: string[]): Promise<{ status: number | null; stdout: string; stderr: string }> {
+  try {
+    const result = await execFileP("git", ["-C", cwd, ...args], { encoding: "utf8", timeout: 5000, maxBuffer: 4 * 1024 * 1024 });
+    return { status: 0, stdout: result.stdout ?? "", stderr: result.stderr ?? "" };
+  } catch (error) {
+    const err = error as { code?: number | null; stdout?: string; stderr?: string; killed?: boolean };
+    return { status: err.code ?? null, stdout: err.stdout ?? "", stderr: err.stderr ?? "" };
+  }
 }
 
 async function readPackageVersion(cwd: string): Promise<string | undefined> {
@@ -1429,14 +1427,15 @@ async function readPackageVersion(cwd: string): Promise<string | undefined> {
 
 async function resolveUpstreamMainSha(cwd: string, upstreamRef: string): Promise<{ full: string; short: string } | undefined> {
   const remote = upstreamRef.includes("/") ? upstreamRef.slice(0, upstreamRef.indexOf("/")) : "origin";
-  const remoteHead = git(cwd, ["ls-remote", "--heads", remote, "main"]);
+  // Network probe — bounded so a cold host cannot hang the doctor.
+  const remoteHead = await gitAsync(cwd, ["ls-remote", "--heads", remote, "main"]);
   const match = /(^|\n)([0-9a-f]{40})\s+refs\/heads\/main(?:\n|$)/i.exec(remoteHead.stdout);
   if (match) {
     const full = match[2].toLowerCase();
     return { full, short: full.slice(0, 12) };
   }
 
-  const localRef = git(cwd, ["rev-parse", upstreamRef]);
+  const localRef = await gitAsync(cwd, ["rev-parse", upstreamRef]);
   const localRefSha = normalizeSha(localRef.stdout.trim());
   if (localRefSha) return { full: localRefSha, short: localRefSha.slice(0, 12) };
   return undefined;
@@ -1486,12 +1485,35 @@ function compactRevisionDetail(input: {
   };
 }
 
-function checkBaseImage(engine: RunnerEngine, image: string): OpsCheck {
-  const inspect = spawnSync(engine, ["image", "inspect", image], { encoding: "utf8" });
-  if (inspect.status === 0) return { status: "ok", message: "base image is present locally", detail: { image } };
-  const pull = spawnSync(engine, ["pull", "--quiet", image], { encoding: "utf8" });
-  if (pull.status === 0) return { status: "ok", message: "base image pull succeeded", detail: { image } };
-  return { status: "fail", message: "base image is not ready", detail: { image, stderr: pull.stderr.trim() || inspect.stderr.trim() } };
+/**
+ * #2083: the doctor's base-image check no longer pulls by default — a health
+ * probe must not do network I/O on a cold host. Set
+ * A2A_DOCKER_RUNNER_DOCTOR_PULL=1 to restore the pull-if-missing behavior;
+ * both inspect and pull are bounded by timeouts.
+ */
+export async function checkBaseImage(engine: RunnerEngine, image: string): Promise<OpsCheck> {
+  let inspectStderr = "";
+  try {
+    await execFileP(engine, ["image", "inspect", image], { encoding: "utf8", timeout: 10_000 });
+    return { status: "ok", message: "base image is present locally", detail: { image } };
+  } catch (error) {
+    inspectStderr = (error as { stderr?: string }).stderr?.trim() ?? "";
+  }
+  const doctorPull = process.env.A2A_DOCKER_RUNNER_DOCTOR_PULL === "1";
+  if (!doctorPull) {
+    return {
+      status: "fail",
+      message: "base image is missing locally (set A2A_DOCKER_RUNNER_DOCTOR_PULL=1 to let the doctor pull it)",
+      detail: { image, stderr: inspectStderr },
+    };
+  }
+  try {
+    await execFileP(engine, ["pull", "--quiet", image], { encoding: "utf8", timeout: 120_000 });
+    return { status: "ok", message: "base image pull succeeded", detail: { image } };
+  } catch (error) {
+    const pullStderr = (error as { stderr?: string }).stderr?.trim() ?? "";
+    return { status: "fail", message: "base image is not ready", detail: { image, stderr: pullStderr || inspectStderr } };
+  }
 }
 
 function errorMessage(error: unknown): string {
