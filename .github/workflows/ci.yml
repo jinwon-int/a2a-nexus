@@ -174,11 +174,21 @@ jobs:
         with:
           path: node_modules
           key: ${{ needs.setup.outputs.cache-key }}
-      # No packages/*/dist cache here: check:layout is a pure path existence
-      # check and check:packages runs `npm -w <pkg> run check` (tsc --noEmit),
-      # so this job neither reads nor produces dist. Restoring it was dead
-      # weight, and on a miss this job saved an *empty* packages/*/dist under
-      # the shared tsbuild-all key, poisoning the cache the check job restores.
+      # Restore-only dist cache (#2085): the check job (which always runs and
+      # builds every package) owns the `tsbuild-all-*` key, so restoring here is
+      # free warm-up and a miss cannot poison anything — restore-only never
+      # saves. `check:layout` itself ignores dist; this only keeps the checkout
+      # consistent for the manifests-only `check:packages` below.
+      - uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6
+        with:
+          path: packages/*/dist
+          key: tsbuild-all-${{ runner.os }}-${{ hashFiles('packages/**/*.ts', 'packages/**/tsconfig.json') }}
+      # No packages/*/dist *save* here (restore-only action, no save step): this
+      # job's `check:packages` runs in --manifests-only mode and compiles
+      # nothing, so it has no dist to contribute. The tsc --noEmit check surface
+      # is owned by the check job's `packages` step, which always runs — so the
+      # compilation this job used to perform cold and then discard (~5×/run, see
+      # #2085) is gone without dropping the invariant from CI.
       - run: npm ci --include=dev
         if: steps.npm-deps.outputs.cache-hit != 'true'
       # Both steps are also release-gate entries (`layout`, `packages`) run by
@@ -186,7 +196,7 @@ jobs:
       # status check in the main ruleset; renaming or deleting it would leave
       # every PR permanently pending.
       - run: npm run check:layout
-      - run: npm run check:packages
+      - run: node scripts/check-packages.mjs --manifests-only
 
   # ── Broker package (API, lifecycle, evidence bridge) ────────────────
   broker:
@@ -346,6 +356,14 @@ jobs:
         with:
           path: node_modules
           key: ${{ needs.setup.outputs.cache-key }}
+      # Restore-only dist cache (#2085): test:conformance's ensure-built skips
+      # its cold broker/docker-runner rebuild when these dist entries already
+      # exist. The check job owns the key and saves it; a miss here just falls
+      # back to the previous cold build.
+      - uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6
+        with:
+          path: packages/*/dist
+          key: tsbuild-all-${{ runner.os }}-${{ hashFiles('packages/**/*.ts', 'packages/**/tsconfig.json') }}
       - run: npm ci --include=dev
         if: steps.npm-deps.outputs.cache-hit != 'true'
       # This job keeps only the conformance run that gives it its name. The
@@ -413,6 +431,13 @@ jobs:
         with:
           path: node_modules
           key: ${{ needs.setup.outputs.cache-key }}
+      # Restore-only dist cache (#2085): smoke:quickstart starts with
+      # `npm run build`, which is incremental over `packages/*/dist` + tsbuildinfo
+      # — a hit turns the 5-workspace cold build (~28s) into a no-op warm check.
+      - uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6
+        with:
+          path: packages/*/dist
+          key: tsbuild-all-${{ runner.os }}-${{ hashFiles('packages/**/*.ts', 'packages/**/tsconfig.json') }}
       - run: npm ci --include=dev
         if: steps.npm-deps.outputs.cache-hit != 'true'
       - run: npm run smoke:quickstart

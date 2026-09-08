@@ -2,6 +2,13 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { spawn } from 'node:child_process';
 
+// --manifests-only validates package manifests without compiling: the always-on
+// check job runs the full `npm -w <pkg> run check` surface (and the release-gate
+// `packages` entry runs this script unflagged), so callers that run alongside
+// that job — the ci.yml `layout` job — use this flag to avoid a second (cold,
+// discarded) tsc compile of every package (#2085).
+const manifestsOnly = process.argv.includes('--manifests-only');
+
 const root = process.cwd();
 const packageRoot = path.join(root, 'packages');
 if (!fs.existsSync(packageRoot)) {
@@ -63,7 +70,9 @@ function runCheck(dir) {
   });
 }
 
-const results = await Promise.all(runnable.map(runCheck));
+const results = manifestsOnly
+  ? []
+  : await Promise.all(runnable.map(runCheck));
 
 let failed = 0;
 for (const { dir, status, output } of results) {
@@ -79,4 +88,6 @@ if (missingChecks.length) {
 
 if (failed !== 0) process.exit(failed);
 
-console.log(`package checks ok: ${packages.length} packages`);
+console.log(
+  `package checks ok: ${packages.length} packages${manifestsOnly ? ' (manifests-only)' : ''}`,
+);

@@ -19,8 +19,12 @@ const tmpDir = path.join(root, 'tmp', 'monorepo-package-ci-parity');
 export const PACKAGE_CI_SURFACES = {
   broker: {
     packageDir: 'packages/broker',
+    // No package-scoped check:source-quality-floors command (#2085): the
+    // always-on check job runs the full workspace floor analysis exactly once;
+    // repeating it here per package re-ran the same TypeScript program 5 extra
+    // times per CI run. The release-gate `source-quality-floors` entry keeps
+    // full-scope coverage, so no invariant is lost.
     commands: [
-      ['npm', ['run', 'check:source-quality-floors', '--', '--package', 'packages/broker']],
       ['npm', ['test', '-w', 'packages/broker']],
       ['npm', ['run', 'coverage:baseline', '-w', 'packages/broker']],
     ],
@@ -38,8 +42,8 @@ export const PACKAGE_CI_SURFACES = {
   },
   'docker-runner': {
     packageDir: 'packages/docker-runner',
+    // (#2085) no package-scoped floor command — see the broker surface note.
     commands: [
-      ['npm', ['run', 'check:source-quality-floors', '--', '--package', 'packages/docker-runner']],
       ['npm', ['run', 'check', '-w', 'packages/docker-runner']],
       ['npm', ['run', 'build', '-w', 'packages/docker-runner']],
       ['npm', ['run', 'lint', '-w', 'packages/docker-runner']],
@@ -70,8 +74,8 @@ export const PACKAGE_CI_SURFACES = {
   },
   'nclex-evaluation': {
     packageDir: 'packages/nclex-evaluation',
+    // (#2085) no package-scoped floor command — see the broker surface note.
     commands: [
-      ['npm', ['run', 'check:source-quality-floors', '--', '--package', 'packages/nclex-evaluation']],
       ['npm', ['run', 'build', '-w', 'packages/nclex-evaluation']],
       ['npm', ['run', 'test', '-w', 'packages/nclex-evaluation']],
       ['npm', ['run', 'coverage:baseline', '-w', 'packages/nclex-evaluation']],
@@ -84,8 +88,8 @@ export const PACKAGE_CI_SURFACES = {
   },
   'attestation': {
     packageDir: 'packages/attestation',
+    // (#2085) no package-scoped floor command — see the broker surface note.
     commands: [
-      ['npm', ['run', 'check:source-quality-floors', '--', '--package', 'packages/attestation']],
       ['npm', ['run', 'check', '-w', 'packages/attestation']],
       ['npm', ['run', 'build', '-w', 'packages/attestation']],
       ['npm', ['test', '-w', 'packages/attestation']],
@@ -100,8 +104,8 @@ export const PACKAGE_CI_SURFACES = {
   },
   'policy-referee': {
     packageDir: 'packages/policy-referee',
+    // (#2085) no package-scoped floor command — see the broker surface note.
     commands: [
-      ['npm', ['run', 'check:source-quality-floors', '--', '--package', 'packages/policy-referee']],
       ['npm', ['run', 'check', '-w', 'packages/policy-referee']],
       ['npm', ['run', 'build', '-w', 'packages/policy-referee']],
       ['npm', ['test', '-w', 'packages/policy-referee']],

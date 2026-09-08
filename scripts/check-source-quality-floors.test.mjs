@@ -280,7 +280,7 @@ test('async-safety scope accepts the full gate or one canonical package only', (
   assert.throws(() => parseAsyncSafetyScope(['--all']), /usage:/);
 });
 
-test('live production packages stay at the zero floating-Promise floor', () => {
+test('live production packages stay at the zero floating-Promise floor (opt-in)', { skip: process.env.A2A_SOURCE_FLOOR_LIVE === '1' ? false : 'full-workspace TypeScript analysis duplicates the release-gate source-quality-floors entry; set A2A_SOURCE_FLOOR_LIVE=1 to run it locally (#2085)' }, () => {
   assert.deepEqual(collectFloatingPromises(process.cwd()), []);
 });
 
@@ -347,14 +347,20 @@ test('tracked src/tmp and symlinked source are counted and a matching nonzero fl
   }
 });
 
-test('every package-only CI parity route scopes async analysis to that package', () => {
+test('no package CI parity route re-runs the workspace floor analysis (#2085)', () => {
+  // The full-scope floor analysis runs exactly once per CI run (the always-on
+  // check job via the release-gate `source-quality-floors` entry). Package
+  // parity routes must not duplicate it with a --package-scoped re-run.
   for (const [surface, config] of Object.entries(PACKAGE_CI_SURFACES)) {
-    assert.ok(
-      config.commands.some(([command, args]) =>
+    const duplicates = config.commands.filter(
+      ([command, args]) =>
         command === 'npm' &&
-        args.join(' ') ===
-          `run check:source-quality-floors -- --package ${config.packageDir}`),
-      `${surface}: package CI parity must scope check:source-quality-floors`,
+        args.includes('check:source-quality-floors'),
+    );
+    assert.deepEqual(
+      duplicates,
+      [],
+      `${surface}: package CI parity must not duplicate the workspace floor analysis`,
     );
   }
 });
