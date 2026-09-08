@@ -142,8 +142,6 @@ import {
   applyRateLimitHeaders,
   assertEdgeSecret,
   assertA2AWorkerScopeAllowed,
-  assertRequesterHasRole,
-  assertRequesterMatchesParty,
   classifyRateLimitBucket,
   extractRequesterIdentity,
   InMemoryRateLimiter,
@@ -184,62 +182,53 @@ import {
   createWorkerThreadPersistence,
 } from "./core/sqlite-worker-thread-persistence.js";
 import type { WorkerThreadPersistenceHandle } from "./core/sqlite-worker-thread-persistence.js";
-import type { DecisionDialecticPatchV1, DecisionDialecticPhase } from "./decision-dialectic/types.js";
-import {
-  applyDecisionDialecticPatch,
-  buildDecisionDialecticPhaseTaskRequest,
-  DecisionDialecticExecutionError,
-  extractDecisionDialecticTaskInput,
-  nextDecisionDialecticPhase,
-} from "./decision-dialectic/execution.js";
-import {
-  projectDecisionDialecticReadModel,
-  DecisionDialecticReadModelError,
-} from "./decision-dialectic/read-model.js";
-import {
-  projectTradingDialecticReadModel,
-  TradingDialecticReadModelError,
-} from "./trading-dialectic/read-model.js";
 import type { AlertScanResult } from "./core/alert-projection.js";
 import { GitHubIngestionService } from "./github/ingestion.js";
 import { BoundedPoller, type BoundedPollerOptions } from "./github/bounded-poller.js";
-import { readJson, readRawBody } from "./http/body.js";
+import { readRawBody } from "./http/body.js";
 import { sendJson, truncateMessage } from "./http/response.js";
-import { awaitDurablePersistenceAck, sendError } from "./http/error-mapping.js";
-import { handleRoundStatusRouteIfMatched } from "./http/rounds.js";
-import { handleAuditReadRouteIfMatched } from "./http/audit-read-route.js";
-import { handleProposalsReadRouteIfMatched } from "./http/proposals-read.js";
-import { handleExchangeRoutesIfMatched } from "./http/exchanges-read.js";
-import { handleConversationRoutesIfMatched } from "./http/conversations-routes.js";
-import { handleConversationRelayRoutesIfMatched } from "./http/conversation-relay-routes.js";
-import { handleComplexityOrchestrationRoutesIfMatched } from "./http/complexity-orchestration-routes.js";
-import { handleWavePlanRoutesIfMatched } from "./http/wave-plan-routes.js";
-import { handleWavePlanDagV2RoutesIfMatched } from "./http/wave-plan-dag-v2-routes.js";
-import { handleReviewLineageRoutesIfMatched } from "./http/review-lineage-routes.js";
-import { handleNclexEvaluationRoutesIfMatched } from "./http/nclex-evaluation-routes.js";
-import { NclexEvaluationReceiptStore, loadNclexEvaluationKeyringFromFile } from "a2a-nclex-evaluation";
-import { handleTerminalBriefCloseoutRoutesIfMatched } from "./http/terminal-brief-routes.js";
+import { sendError } from "./http/error-mapping.js";
 import {
-  handleWorkersReadRouteIfMatched,
-} from "./http/workers-read.js";
-import { handleOperatorDiagnosticsReadRouteIfMatched } from "./http/operator-diagnostics-read.js";
-import { handleOperatorCleanupRouteIfMatched } from "./http/operator-cleanup-routes.js";
-import { handleOperatorDashboardRouteIfMatched } from "./http/operator-dashboard-routes.js";
-import { handleOperatorReportingReadRouteIfMatched } from "./http/operator-reporting-read.js";
-import { handleProposalsWriteRouteIfMatched } from "./http/proposals-write-routes.js";
-import { handleTasksDecisionRouteIfMatched } from "./http/tasks-decision-routes.js";
-import { handleTasksWorkerRouteIfMatched } from "./http/tasks-worker-routes.js";
-import { handleWorkersWriteRouteIfMatched } from "./http/workers-write-routes.js";
-import { handleTasksCollectionRouteIfMatched } from "./http/tasks-collection-routes.js";
-import { handleTaskStatsRouteIfMatched } from "./http/task-stats-routes.js";
-import { handleWorkerLatencyStatsRouteIfMatched } from "./http/worker-latency-stats-routes.js";
-import { handleGitHubRouteIfMatched } from "./http/github-routes.js";
-import { handleTasksReadRouteIfMatched } from "./http/tasks-read.js";
-import { handleA2ATerminalOutboxRouteIfMatched } from "./http/a2a-terminal-outbox-routes.js";
-import { handleA2AJsonRpcRouteIfMatched } from "./http/a2a-jsonrpc-route.js";
-import { handleA2AStreamRouteIfMatched } from "./http/a2a-stream-routes.js";
-import { handleA2ATaskStreamRouteIfMatched } from "./http/a2a-task-stream-routes.js";
-import { handleTasksWakeRouteIfMatched } from "./http/tasks-wake-routes.js";
+  createA2AJsonRpcRouteEntries,
+  createComplexityOrchestrationRouteEntries,
+  createWavePlanRouteEntries,
+  createWavePlanDagV2RouteEntries,
+  createReviewLineageRouteEntries,
+  createNclexEvaluationRouteEntries,
+  createA2ATaskStreamRouteEntries,
+  createA2ATerminalOutboxRouteEntries,
+  createA2AStreamRouteEntries,
+  createOperatorDashboardRouteEntries,
+  createOperatorReportingReadRouteEntries,
+  createTerminalBriefCloseoutRouteEntries,
+  createOperatorCleanupRouteEntries,
+  createOperatorDiagnosticsReadRouteEntries,
+  createWorkersReadRouteEntries,
+  createWorkersWriteRouteEntries,
+  createExchangeRouteEntries,
+  createConversationRouteEntries,
+  createConversationRelayRouteEntries,
+  createProposalsReadRouteEntries,
+  createProposalsWriteRouteEntries,
+  createRoundStatusRouteEntries,
+  createTaskStatsRouteEntries,
+  createWorkerLatencyStatsRouteEntries,
+  createTasksCollectionRouteEntries,
+  createTasksReadRouteEntries,
+  createTasksWakeRouteEntries,
+  createTasksDecisionRouteEntries,
+  createTasksWorkerRouteEntries,
+  createAuditReadRouteEntries,
+  createGitHubRouteEntries,
+} from "./http/route-entries.js";
+import { createDialecticRouteEntries } from "./http/dialectic-routes.js";
+import {
+  buildRouteIndex,
+  entryRateLimitBucket,
+  lookupRoute,
+  type BrokerRequestContext,
+} from "./http/route-table.js";
+import { NclexEvaluationReceiptStore, loadNclexEvaluationKeyringFromFile } from "a2a-nclex-evaluation";
 import {
   classifyEndpointGroup,
   classifyRequestRoute,
@@ -1071,15 +1060,151 @@ export function createBrokerServer(options: BrokerServerOptions = {}): BrokerSer
 
   // Graceful drain (#1405): while draining, every response carries
   // `Connection: close` so keep-alive sockets end cleanly after their in-flight
-  // response, and the two NEW-WORK routes (task poll + claim) are refused with
-  // 503 broker_draining + Retry-After. Submission/lifecycle routes keep working
+  // response, and the two NEW-WORK routes (task poll + claim; see the
+  // `drainRefused` entries in the route table) are refused with 503
+  // broker_draining + Retry-After. Submission/lifecycle routes keep working
   // so in-flight worker results land before the process exits.
   let draining = false;
   const drainRetryAfterSec = 2;
-  const isDrainRefusedRoute = (method: string | undefined, path: string, segments: string[]): boolean => {
-    if (method === "GET" && path === "/tasks") return true;
-    return method === "POST" && segments.length === 3 && segments[0] === "tasks" && segments[2] === "claim";
-  };
+
+  // ---- Table-driven route dispatch (#2079 A) ----
+  // Single source for request routing: one entry per (method, path shape),
+  // carrying the observability labels, rate-limit bucket, and drain class the
+  // legacy per-request if-chain classifiers used to re-derive. Handlers
+  // delegate to the unchanged per-module dispatchers. Entry order mirrors the
+  // legacy handler chain (first match wins).
+  const routeIndex = buildRouteIndex([
+    ...createA2AJsonRpcRouteEntries({
+      broker,
+      agentCard,
+      publicBaseUrl,
+      peerStatusService,
+      pushNotificationConfigStore,
+      persistPushNotificationConfigs,
+      defaultAgentNodeId,
+      taskSubscribeHeartbeatSec,
+    }),
+    ...createComplexityOrchestrationRouteEntries({}),
+    ...createWavePlanRouteEntries({ broker, stateStore }),
+    ...createWavePlanDagV2RouteEntries({ broker }),
+    ...createReviewLineageRouteEntries({
+      broker,
+      assertWorkerHttpSignatureRoute,
+      assertVerifiedWorkerMatches,
+    }),
+    ...(nclexEvaluationStore && nclexEvaluationKeyring
+      ? createNclexEvaluationRouteEntries({
+          store: nclexEvaluationStore,
+          keyring: nclexEvaluationKeyring,
+          persistReceipts: () => stateStore.save(broker.exportSnapshot()),
+        })
+      : []),
+    ...createA2ATaskStreamRouteEntries({
+      broker,
+      taskSubscribeHeartbeatSec,
+      assertWorkerHttpSignatureRoute,
+      assertVerifiedWorkerMatches,
+    }),
+    ...createA2ATerminalOutboxRouteEntries({
+      broker,
+      stateStore,
+      crossBrokerTrustAnchors,
+      crossBrokerNonceCache,
+      peerCredentialRegistry,
+      peerHandoffScopeMode,
+    }),
+    ...createA2AStreamRouteEntries({
+      broker,
+      taskSubscribeHeartbeatSec,
+      currentOperatorSnapshot,
+      replayOperatorEvents,
+      subscribeToOperatorEvents,
+      currentOperatorReplayWindow,
+    }),
+    ...createOperatorDashboardRouteEntries({
+      broker,
+      stateStore,
+      brokerId,
+      workerOfflineAfterSec,
+      getStaleReaperStatus,
+      rateLimiter,
+      workerRateLimiter,
+      buildInfo,
+      persistenceQueueDiagnosticsProvider,
+    }),
+    ...createOperatorReportingReadRouteEntries({ broker, stateStore }),
+    ...createTerminalBriefCloseoutRouteEntries({}),
+    ...createOperatorCleanupRouteEntries({ stateStore }),
+    ...createOperatorDiagnosticsReadRouteEntries({
+      broker,
+      stateStore,
+      workerOfflineAfterMs: workerOfflineAfterSec * 1000,
+    }),
+    ...createWorkersReadRouteEntries({
+      stateStore,
+      broker,
+      workerOfflineAfterMs: workerOfflineAfterSec * 1000,
+    }),
+    ...createWorkersWriteRouteEntries({
+      broker,
+      stateStore,
+      brokerId,
+      workerOfflineAfterMs: workerOfflineAfterSec * 1000,
+      assertWorkerHttpSignatureRoute,
+      assertVerifiedWorkerMatches,
+    }),
+    ...createExchangeRouteEntries({ stateStore, broker }),
+    ...createConversationRouteEntries({ stateStore, broker }),
+    ...createConversationRelayRouteEntries({
+      broker,
+      stateStore,
+      crossBrokerTrustAnchors,
+      crossBrokerNonceCache,
+      peerCredentialRegistry,
+      peerHandoffScopeMode,
+    }),
+    ...createProposalsReadRouteEntries({ stateStore, broker }),
+    ...createProposalsWriteRouteEntries({ broker, stateStore }),
+    ...createRoundStatusRouteEntries({ broker }),
+    ...createTaskStatsRouteEntries({ broker, stateStore }),
+    ...createWorkerLatencyStatsRouteEntries({ broker, stateStore }),
+    ...createTasksCollectionRouteEntries({
+      broker,
+      stateStore,
+      maxTaskPayloadBytes,
+      workerOfflineAfterSec,
+      liveApprovalSigningKey,
+      brokerId,
+      assertWorkerHttpSignatureRoute,
+      assertVerifiedWorkerMatches,
+    }),
+    ...createDialecticRouteEntries({ broker, stateStore }),
+    ...createTasksReadRouteEntries({ broker, stateStore }),
+    ...createTasksWakeRouteEntries({ broker, stateStore }),
+    ...createTasksDecisionRouteEntries({ broker, stateStore }),
+    ...createTasksWorkerRouteEntries({
+      broker,
+      stateStore,
+      assertWorkerHttpSignatureRoute,
+      assertVerifiedWorkerMatches,
+      resultProvenanceBrokerSigner: signingKeyPem
+        ? {
+            privateKeyPem: signingKeyPem,
+            brokerKeyId: agentCardSigningKid ?? brokerId,
+          }
+        : undefined,
+      resultProvenanceCountersign,
+    }),
+    ...createAuditReadRouteEntries({ broker, stateStore }),
+    ...createGitHubRouteEntries({
+      githubIngestion,
+      githubWebhookSecret,
+      // `boundedPoller` is mutable during startup — read it per request.
+      get boundedPoller() {
+        return boundedPoller;
+      },
+    }),
+  ]);
 
   const handler: RequestListener<typeof IncomingMessage, typeof ServerResponse> = async (req, res) => {
     const url = new URL(req.url ?? "/", `http://${req.headers.host ?? "localhost"}`);
@@ -1094,8 +1219,17 @@ export function createBrokerServer(options: BrokerServerOptions = {}): BrokerSer
       } catch {
         throw new BrokerError("bad_request", "invalid URL path encoding");
       }
+      // Table lookup first (pure path/method match — no auth, no I/O) so
+      // classification, rate bucket, and drain class all derive from the
+      // matched entry; unmatched requests keep the legacy if-chain labels.
+      const routeMatch = lookupRoute(routeIndex, req.method, segments);
       // Accept-side scheduling hook: tracks active count and handler duration.
-      initSchedulingHook(req, res, classifyEndpointGroup(req.method, path, segments), classifyRequestRoute(req.method, path, segments));
+      initSchedulingHook(
+        req,
+        res,
+        routeMatch ? routeMatch.entry.group : classifyEndpointGroup(req.method, path, segments),
+        routeMatch ? routeMatch.entry.route : classifyRequestRoute(req.method, path, segments),
+      );
 
       requesterIdentity = extractRequesterIdentity(req);
       const isPublicDiscoveryRoute = req.method === "GET" && path === "/.well-known/agent-card.json";
@@ -1104,7 +1238,16 @@ export function createBrokerServer(options: BrokerServerOptions = {}): BrokerSer
       if (!isPublicLivenessRoute && !isPublicReadyzRoute && !isPublicDiscoveryRoute) {
         assertEdgeSecret(req, edgeSecret);
 
-        const bucket = classifyRateLimitBucket(req, url);
+        const bucket = routeMatch
+          ? entryRateLimitBucket(routeMatch.entry, {
+              method: req.method,
+              segments,
+              params: routeMatch.params,
+              req,
+              url,
+              path,
+            }) ?? classifyRateLimitBucket(req, url)
+          : classifyRateLimitBucket(req, url);
         const limiter = bucket === "worker" ? workerRateLimiter : rateLimiter;
         const decision = limiter.check(
           rateLimitKey(req, requesterIdentity, {
@@ -1120,7 +1263,7 @@ export function createBrokerServer(options: BrokerServerOptions = {}): BrokerSer
 
       if (draining) {
         res.setHeader("connection", "close");
-        if (isDrainRefusedRoute(req.method, path, segments)) {
+        if (routeMatch?.entry.drainRefused) {
           res.setHeader("retry-after", String(drainRetryAfterSec));
           return sendJson(res, 503, {
             error: {
@@ -1424,602 +1567,31 @@ export function createBrokerServer(options: BrokerServerOptions = {}): BrokerSer
         });
       }
 
-      if (await handleA2AJsonRpcRouteIfMatched({
+      // ---- Table-driven dispatch (#2079 A) ----
+      // One shared request context per request; only the matched entry's
+      // handler runs. A `false` from a delegated dispatcher falls through to
+      // the next candidate entry (mirroring the legacy chain), and a table
+      // miss reaches the /schedz + 404 tails below, exactly as before.
+      const requestContext: BrokerRequestContext = {
         method: req.method,
         path,
-        req,
-        res,
-        broker,
-        agentCard,
-        publicBaseUrl,
-        requesterIdentity,
-        enforceRequesterIdentity,
-        peerStatusService,
-        pushNotificationConfigStore,
-        persistPushNotificationConfigs,
-        defaultAgentNodeId,
-        taskSubscribeHeartbeatSec,
-      })) {
-        return;
-      }
-
-      if (await handleComplexityOrchestrationRoutesIfMatched({
-        method: req.method,
-        path,
-        req,
-        res,
-        enforceRequesterIdentity,
-        requesterIdentity,
-      })) {
-        return;
-      }
-
-      if (await handleWavePlanRoutesIfMatched({
-        method: req.method,
-        path,
-        req,
-        res,
-        broker,
-        stateStore,
-        enforceRequesterIdentity,
-        requesterIdentity,
-      })) {
-        return;
-      }
-
-      // WavePlanDagV2 (#1800) — independent read-only prefix, disjoint from
-      // v1 /wave-plans*. The versioned dispatch boundary (#1994) documents
-      // that v1 intake never crosses this handler and vice versa.
-      if (
-        await handleWavePlanDagV2RoutesIfMatched(
-          {
-            method: req.method,
-            path,
-            req,
-            res,
-            broker,
-            enforceRequesterIdentity,
-            requesterIdentity,
-          },
-          url,
-        )
-      ) {
-        return;
-      }
-
-      if (await handleReviewLineageRoutesIfMatched({
-        method: req.method,
-        path,
+        segments,
+        params: {},
         req,
         res,
         url,
-        broker,
-        enforceRequesterIdentity,
         requesterIdentity,
-        assertWorkerHttpSignatureRoute,
-        assertVerifiedWorkerMatches,
-      })) {
-        return;
-      }
-
-      if (nclexEvaluationStore && nclexEvaluationKeyring) {
-        if (await handleNclexEvaluationRoutesIfMatched({
-          method: req.method,
-          path,
-          req,
-          res,
-          url,
-          store: nclexEvaluationStore,
-          keyring: nclexEvaluationKeyring,
-          enforceRequesterIdentity,
-          requesterIdentity,
-          persistReceipts: () => stateStore.save(broker.exportSnapshot()),
-        })) {
+        enforceRequesterIdentity,
+      };
+      let dispatched = routeMatch;
+      let skippedMatches = 0;
+      while (dispatched) {
+        requestContext.params = dispatched.params;
+        if (await dispatched.entry.handle(requestContext)) {
           return;
         }
-      }
-
-      if (await handleA2ATaskStreamRouteIfMatched({
-        method: req.method,
-        segments,
-        req,
-        res,
-        url,
-        broker,
-        enforceRequesterIdentity,
-        requesterIdentity,
-        taskSubscribeHeartbeatSec,
-        assertWorkerHttpSignatureRoute,
-        assertVerifiedWorkerMatches,
-      })) {
-        return;
-      }
-
-      if (await handleA2ATerminalOutboxRouteIfMatched({
-        method: req.method,
-        path,
-        req,
-        res,
-        url,
-        broker,
-        stateStore,
-        enforceRequesterIdentity,
-        requesterIdentity,
-        crossBrokerTrustAnchors,
-        crossBrokerNonceCache,
-        peerCredentialRegistry,
-        peerHandoffScopeMode,
-      })) {
-        return;
-      }
-
-      if (handleA2AStreamRouteIfMatched({
-        method: req.method,
-        path,
-        req,
-        res,
-        broker,
-        enforceRequesterIdentity,
-        requesterIdentity,
-        taskSubscribeHeartbeatSec,
-        currentOperatorSnapshot,
-        replayOperatorEvents,
-        subscribeToOperatorEvents,
-        currentOperatorReplayWindow,
-      })) {
-        return;
-      }
-
-      if (handleOperatorDashboardRouteIfMatched({
-        method: req.method,
-        path,
-        res,
-        url,
-        broker,
-        stateStore,
-        brokerId,
-        workerOfflineAfterSec,
-        getStaleReaperStatus,
-        rateLimiter,
-        workerRateLimiter,
-        buildInfo,
-        persistenceQueueDiagnosticsProvider,
-        enforceRequesterIdentity,
-        requesterIdentity,
-      })) {
-        return;
-      }
-
-      if (handleOperatorReportingReadRouteIfMatched({
-        method: req.method,
-        path,
-        res,
-        url,
-        broker,
-        stateStore,
-        enforceRequesterIdentity,
-        requesterIdentity,
-      })) {
-        return;
-      }
-
-      if (await handleTerminalBriefCloseoutRoutesIfMatched({
-        method: req.method,
-        path,
-        req,
-        res,
-        url,
-        enforceRequesterIdentity,
-        requesterIdentity,
-      })) {
-        return;
-      }
-
-      if (await handleOperatorCleanupRouteIfMatched({
-        method: req.method,
-        path,
-        req,
-        res,
-        url,
-        stateStore,
-        enforceRequesterIdentity,
-        requesterIdentity,
-      })) {
-        return;
-      }
-
-      // GET /alerts — monitoring-friendly alert projection
-      if (handleOperatorDiagnosticsReadRouteIfMatched({
-        method: req.method,
-        path,
-        res,
-        url,
-        broker,
-        stateStore,
-        workerOfflineAfterMs: workerOfflineAfterSec * 1000,
-        enforceRequesterIdentity,
-        requesterIdentity,
-      })) {
-        return;
-      }
-
-      if (handleWorkersReadRouteIfMatched({
-        method: req.method,
-        path,
-        segments,
-        res,
-        url,
-        stateStore,
-        broker,
-        workerOfflineAfterMs: workerOfflineAfterSec * 1000,
-      })) {
-        return;
-      }
-
-      if (await handleWorkersWriteRouteIfMatched({
-        method: req.method,
-        path,
-        segments,
-        req,
-        res,
-        url,
-        broker,
-        stateStore,
-        brokerId,
-        workerOfflineAfterMs: workerOfflineAfterSec * 1000,
-        enforceRequesterIdentity,
-        requesterIdentity,
-        assertWorkerHttpSignatureRoute,
-        assertVerifiedWorkerMatches,
-      })) {
-        return;
-      }
-
-      if (await handleExchangeRoutesIfMatched({
-        method: req.method,
-        path,
-        segments,
-        req,
-        res,
-        url,
-        stateStore,
-        broker,
-        enforceRequesterIdentity,
-        requesterIdentity,
-      })) {
-        return;
-      }
-
-      if (await handleConversationRoutesIfMatched({
-        method: req.method,
-        path,
-        segments,
-        req,
-        res,
-        url,
-        stateStore,
-        broker,
-        enforceRequesterIdentity,
-        requesterIdentity,
-      })) {
-        return;
-      }
-
-      if (await handleConversationRelayRoutesIfMatched({
-        method: req.method,
-        path,
-        req,
-        res,
-        url,
-        broker,
-        stateStore,
-        crossBrokerTrustAnchors,
-        crossBrokerNonceCache,
-        peerCredentialRegistry,
-        peerHandoffScopeMode,
-      })) {
-        return;
-      }
-
-      if (handleProposalsReadRouteIfMatched({
-        method: req.method,
-        path,
-        segments,
-        res,
-        url,
-        stateStore,
-        broker,
-      })) {
-        return;
-      }
-
-      if (await handleProposalsWriteRouteIfMatched({
-        method: req.method,
-        path,
-        segments,
-        req,
-        res,
-        broker,
-        stateStore,
-        enforceRequesterIdentity,
-        requesterIdentity,
-      })) {
-        return;
-      }
-
-      if (handleRoundStatusRouteIfMatched({ method: req.method, segments, res, broker })) {
-        return;
-      }
-
-      if (handleTaskStatsRouteIfMatched({ method: req.method, path, res, url, broker, stateStore })) {
-        return;
-      }
-
-      if (handleWorkerLatencyStatsRouteIfMatched({
-        method: req.method,
-        path,
-        res,
-        url,
-        broker,
-        stateStore,
-        enforceRequesterIdentity,
-        requesterIdentity,
-      })) {
-        return;
-      }
-
-
-      if (await handleTasksCollectionRouteIfMatched({
-        method: req.method,
-        path,
-        req,
-        res,
-        url,
-        broker,
-        stateStore,
-        enforceRequesterIdentity,
-        requesterIdentity,
-        maxTaskPayloadBytes,
-        workerOfflineAfterSec,
-        liveApprovalSigningKey,
-        brokerId,
-        assertWorkerHttpSignatureRoute,
-        assertVerifiedWorkerMatches,
-      })) {
-        return;
-      }
-
-      if (
-        req.method === "GET" &&
-        segments[0] === "tasks" &&
-        segments[1] &&
-        segments[2] === "decision-dialectic" &&
-        segments.length === 3
-      ) {
-        const task = broker.getTask(segments[1]);
-        if (!task) {
-          throw new BrokerError("not_found", "task not found");
-        }
-        try {
-          const readModel = projectDecisionDialecticReadModel(task);
-          return sendJson(res, 200, readModel);
-        } catch (error) {
-          if (error instanceof DecisionDialecticReadModelError) {
-            const code = error.code === "missing_contract" || error.code === "wrong_kind" ? "not_found" : "bad_request";
-            throw new BrokerError(code, error.message);
-          }
-          throw error;
-        }
-      }
-
-      if (
-        req.method === "POST" &&
-        segments[0] === "tasks" &&
-        segments[1] &&
-        segments[2] === "decision-dialectic" &&
-        segments[3] === "advance" &&
-        segments.length === 4
-      ) {
-        const body = (await readJson<{ id?: string; phase?: DecisionDialecticPhase }>(req)) ?? {};
-        if (enforceRequesterIdentity) {
-          assertRequesterHasRole(requesterIdentity, ["hub", "operator"], "decision-dialectic.advance");
-        }
-        const task = broker.getTask(segments[1]);
-        if (!task) {
-          throw new BrokerError("not_found", "task not found");
-        }
-        try {
-          const { phase, request } = buildDecisionDialecticPhaseTaskRequest(task, {
-            id: body.id,
-            phase: body.phase,
-            requesterId: requesterIdentity?.id,
-          });
-          const childTask = broker.createTask(request);
-          await awaitDurablePersistenceAck(stateStore);
-          return sendJson(res, 201, {
-            phase,
-            parentTaskId: task.id,
-            childTask,
-          });
-        } catch (error) {
-          if (error instanceof DecisionDialecticExecutionError) {
-            const code =
-              error.code === "missing_contract" || error.code === "wrong_kind"
-                ? "not_found"
-                : "bad_request";
-            throw new BrokerError(code, error.message);
-          }
-          throw error;
-        }
-      }
-
-      if (
-        req.method === "POST" &&
-        segments[0] === "tasks" &&
-        segments[1] &&
-        segments[2] === "decision-dialectic" &&
-        segments[3] === "patch" &&
-        segments.length === 4
-      ) {
-        const body = await readJson<DecisionDialecticPatchV1>(req);
-        if (!body) {
-          throw new BrokerError("bad_request", "request body is required");
-        }
-        if (enforceRequesterIdentity) {
-          const requesterRole = requesterIdentity?.role;
-          if (requesterRole === "hub" || requesterRole === "operator") {
-            assertRequesterHasRole(requesterIdentity, ["hub", "operator"], "decision-dialectic.patch");
-          } else {
-            assertRequesterMatchesParty(requesterIdentity, { id: body.authorAgent }, "decision-dialectic.patch");
-          }
-        }
-        const task = broker.getTask(segments[1]);
-        if (!task) {
-          throw new BrokerError("not_found", "task not found");
-        }
-        try {
-          const input = extractDecisionDialecticTaskInput(task.payload);
-          const updatedTask = applyDecisionDialecticPatch(input.contract.task, body);
-          const nextPhase = nextDecisionDialecticPhase(updatedTask) ?? input.contract.phase;
-          const updated = broker.updateTaskPayload(
-            task.id,
-            {
-              ...task.payload,
-              contract: {
-                ...input.contract,
-                phase: nextPhase,
-                task: updatedTask,
-              },
-            },
-            {
-              actor: {
-                id: requesterIdentity?.id ?? body.authorAgent,
-                kind: "node",
-                role: requesterIdentity?.role,
-              },
-              note: "decision.dialectic patch " + body.op,
-            },
-          );
-          await awaitDurablePersistenceAck(stateStore);
-          const readModel = projectDecisionDialecticReadModel(updated);
-          return sendJson(res, 200, readModel);
-        } catch (error) {
-          if (error instanceof DecisionDialecticExecutionError) {
-            const code =
-              error.code === "missing_contract" || error.code === "wrong_kind"
-                ? "not_found"
-                : error.code === "invalid_contract"
-                  ? "bad_request"
-                  : "invalid_transition";
-            throw new BrokerError(code, error.message);
-          }
-          throw error;
-        }
-      }
-
-      if (
-        req.method === "GET" &&
-        segments[0] === "tasks" &&
-        segments[1] &&
-        segments[2] === "trading-dialectic" &&
-        segments.length === 3
-      ) {
-        const task = broker.getTask(segments[1]);
-        if (!task) {
-          throw new BrokerError("not_found", "task not found");
-        }
-        try {
-          const readModel = projectTradingDialecticReadModel(task);
-          return sendJson(res, 200, readModel);
-        } catch (error) {
-          if (error instanceof TradingDialecticReadModelError) {
-            const code = error.code === "missing_contract" || error.code === "wrong_kind" ? "not_found" : "bad_request";
-            throw new BrokerError(code, error.message);
-          }
-          throw error;
-        }
-      }
-
-      // GET /tasks/diagnostics — bulk diagnostic scan (MUST come before /tasks/:id)
-      if (handleTasksReadRouteIfMatched({
-        method: req.method,
-        path,
-        segments,
-        res,
-        url,
-        broker,
-        stateStore,
-      })) {
-        return;
-      }
-
-      if (await handleTasksWakeRouteIfMatched({
-        method: req.method,
-        segments,
-        req,
-        res,
-        broker,
-        stateStore,
-        enforceRequesterIdentity,
-        requesterIdentity,
-      })) {
-        return;
-      }
-
-      if (await handleTasksDecisionRouteIfMatched({
-        method: req.method,
-        segments,
-        req,
-        res,
-        broker,
-        stateStore,
-        enforceRequesterIdentity,
-        requesterIdentity,
-      })) {
-        return;
-      }
-
-      if (await handleTasksWorkerRouteIfMatched({
-        method: req.method,
-        segments,
-        req,
-        res,
-        url,
-        broker,
-        stateStore,
-        enforceRequesterIdentity,
-        requesterIdentity,
-        assertWorkerHttpSignatureRoute,
-        assertVerifiedWorkerMatches,
-        resultProvenanceBrokerSigner: signingKeyPem
-          ? {
-              privateKeyPem: signingKeyPem,
-              brokerKeyId: agentCardSigningKid ?? brokerId,
-            }
-          : undefined,
-        resultProvenanceCountersign,
-      })) {
-        return;
-      }
-
-
-      if (handleAuditReadRouteIfMatched({ method: req.method, path, res, url, broker, stateStore })) {
-        return;
-      }
-
-      // -----------------------------------------------------------------------
-      // GitHub /a2a assign ingestion endpoint
-      // -----------------------------------------------------------------------
-      if (await handleGitHubRouteIfMatched({
-        method: req.method,
-        path,
-        req,
-        res,
-        githubIngestion,
-        githubWebhookSecret,
-        boundedPoller,
-      })) {
-        return;
+        skippedMatches += 1;
+        dispatched = lookupRoute(routeIndex, req.method, segments, skippedMatches);
       }
 
       // GET /schedz - host/process/container scheduling attribution (#1032)
