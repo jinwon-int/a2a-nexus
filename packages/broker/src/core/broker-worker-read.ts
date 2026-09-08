@@ -11,19 +11,28 @@ export interface BrokerWorkerReadContext {
   workerRepository?: WorkerRuntimeRepository;
 }
 
+/**
+ * Map-first (#2078 B), mirroring readBrokerTask: every write path (including
+ * the non-persisted heartbeat branch) updates the in-memory map and the
+ * serving fence guarantees a single writer, so the cache is authoritative.
+ * The repository is only a miss-path fallback that warms the map.
+ */
 export function readBrokerWorker(ctx: BrokerWorkerReadContext, nodeId: string): WorkerRecord | null {
-  const cachedWorker = ctx.workers.get(nodeId) ?? null;
+  const cachedWorker = ctx.workers.get(nodeId);
+  if (cachedWorker) {
+    return cachedWorker;
+  }
   const repositoryWorker = ctx.workerRepository?.getWorker(nodeId);
   if (repositoryWorker) {
-    const worker = chooseFresherWorkerRecord(cachedWorker, normalizeWorkerRecord(repositoryWorker));
+    const worker = normalizeWorkerRecord(repositoryWorker);
     ctx.workers.set(worker.nodeId, worker);
     return worker;
   }
-  return cachedWorker;
+  return null;
 }
 
 export function readBrokerWorkerCachedFirst(ctx: BrokerWorkerReadContext, nodeId: string): WorkerRecord | null {
-  return ctx.workers.get(nodeId) ?? readBrokerWorker(ctx, nodeId);
+  return readBrokerWorker(ctx, nodeId);
 }
 
 export function listBrokerWorkers(ctx: BrokerWorkerReadContext, filters?: WorkerListFilters): WorkerRecord[] {

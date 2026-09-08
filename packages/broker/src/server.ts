@@ -170,7 +170,6 @@ import {
   type BrokerStateStore,
 } from "./core/store.js";
 import {
-  projectHotTableGrowth,
   type HotTableGrowthProjection,
 } from "./core/hot-table-growth.js";
 import { HealthDiagnosticsCache } from "./health-diagnostics-cache.js";
@@ -801,14 +800,15 @@ export function createBrokerServer(options: BrokerServerOptions = {}): BrokerSer
 
   const operatorEvents = new OperatorEventStream(DEFAULT_OPERATOR_EVENT_BUFFER_LIMIT);
 
-  // Compute hot-table growth for operator alerts once per snapshot.
+  // #2078 A: hot-table growth for operator alerts reads through a 5s
+  // HealthDiagnosticsCache instead of re-running the per-table COUNT/SUM
+  // payload scans on every state change. This is a dedicated instance: the
+  // /health path keeps its own, so an operator-idle broker never pre-warms
+  // the health cache and /health still surfaces a corrupt store on its first
+  // call (#1504 pin).
+  const operatorDiagnosticsCache = new HealthDiagnosticsCache();
   const currentHotTableGrowth = (): HotTableGrowthProjection | undefined =>
-    stateStore instanceof SqliteBrokerStateStore
-      ? projectHotTableGrowth({
-          current: stateStore.readHotTableLoadMetrics(),
-          runtimeLoadLimits: stateStore.readHotTableRuntimeLoadLimits(),
-        })
-      : undefined;
+    operatorDiagnosticsCache.get(stateStore).hotTableGrowth;
 
   const operatorAlerts = new OperatorAlertDiffer(
     buildAlertScan({
@@ -819,6 +819,17 @@ export function createBrokerServer(options: BrokerServerOptions = {}): BrokerSer
   );
 
   const currentOperatorSnapshot = (): OperatorSnapshotEvent => {
+    // #2078 A: one full diagnostics pass feeds both the dashboard snapshot and
+    // the alert scan. The alert scan's thresholds differ from the dashboard's
+    // (reaper-derived), so buildAlertScan re-classifies the shared reports
+    // locally (a pure per-report computation) instead of re-running the whole
+    // tombstone/audit/listTasks pass.
+    const taskDiagnostics = {
+      reports: broker.listTaskDiagnostics({
+        staleAfterMs: Math.max(1, staleReaperOlderThanSec) * 1000,
+      }),
+      staleAfterMs: Math.max(1, staleReaperOlderThanSec) * 1000,
+    };
     return {
       summary: buildDashboardResponse({
         broker,
@@ -829,11 +840,13 @@ export function createBrokerServer(options: BrokerServerOptions = {}): BrokerSer
         version: buildInfo.version,
         build: buildInfo.build,
         persistenceQueue: readPersistenceQueueDiagnostics(persistenceQueueDiagnosticsProvider),
+        taskDiagnostics,
       }),
       alerts: buildAlertScan({
         broker,
         workerHeartbeatMissedAfterMs: workerOfflineAfterSec * 1000,
         hotTableGrowth: currentHotTableGrowth(),
+        taskDiagnostics,
       }),
     };
   };
@@ -850,7 +863,7 @@ export function createBrokerServer(options: BrokerServerOptions = {}): BrokerSer
   const emitOperatorEvent = (event: OperatorEventName, data: OperatorEventPayload): void =>
     operatorEvents.emit(event, data);
 
-  const publishOperatorEvents = (): void => {
+  const publishOperatorEventsNow = (): void => {
     if (operatorEvents.listenerCount === 0) {
       // Do not run operator projections on every broker state change while
       // the SSE stream is idle. A new subscriber gets a fresh snapshot on
@@ -865,6 +878,41 @@ export function createBrokerServer(options: BrokerServerOptions = {}): BrokerSer
     });
 
     publishOperatorAlertChanges(snapshot.alerts);
+  };
+
+  // #2078 A: trailing-edge coalescing. Every state change used to synchronously
+  // rebuild the full operator snapshot (full task read + diagnostics pass);
+  // bursts of N mutations paid N snapshots within the window. With subscribers
+  // attached, the snapshot is now computed once per debounce window; with none,
+  // nothing is computed (checked above at flush time too).
+  const OPERATOR_EVENT_PUBLISH_DEBOUNCE_MS = 500;
+  let operatorPublishTimer: NodeJS.Timeout | null = null;
+  const stopOperatorPublishTimer = (): void => {
+    if (operatorPublishTimer !== null) {
+      clearTimeout(operatorPublishTimer);
+      operatorPublishTimer = null;
+    }
+  };
+  const publishOperatorEvents = (): void => {
+    if (operatorPublishTimer !== null) {
+      return;
+    }
+    operatorPublishTimer = setTimeout(() => {
+      operatorPublishTimer = null;
+      try {
+        publishOperatorEventsNow();
+      } catch (error) {
+        // The old synchronous path had listener-registry error absorption;
+        // a deferred callback has no such wrapper, so keep a diagnostics
+        // failure from crashing the process (#2078 A).
+        console.error(
+          `[a2a-broker] operator snapshot publish failed: ${
+            error instanceof Error ? error.message : String(error)
+          }`,
+        );
+      }
+    }, OPERATOR_EVENT_PUBLISH_DEBOUNCE_MS);
+    operatorPublishTimer.unref?.();
   };
 
   const publishOperatorAlertChanges = (alerts: AlertScanResult): void => {
@@ -2194,6 +2242,7 @@ export function createBrokerServer(options: BrokerServerOptions = {}): BrokerSer
     stopStaleReaper();
     stopPoller();
     defaultAgentHandle?.stop();
+    stopOperatorPublishTimer();
     unsubscribeBrokerState();
     unsubscribePushNotificationPruneListener?.();
     unsubscribePushNotificationSnapshotExtension?.();

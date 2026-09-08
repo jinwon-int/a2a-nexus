@@ -8,12 +8,18 @@ export function readBrokerProposal(
   proposalRepository: ProposalRuntimeRepository | undefined,
   id: string,
 ): ChangeProposal | null {
+  // Map-first (#2078 B, mirroring readBrokerTask): single-writer broker keeps
+  // the in-memory map authoritative; repository is the miss-path fallback.
+  const cached = proposals.get(id);
+  if (cached) {
+    return cached;
+  }
   const repositoryProposal = proposalRepository?.getProposal(id);
   if (repositoryProposal) {
     proposals.set(repositoryProposal.id, repositoryProposal);
     return repositoryProposal;
   }
-  return proposals.get(id) ?? null;
+  return null;
 }
 
 export function listBrokerProposals(

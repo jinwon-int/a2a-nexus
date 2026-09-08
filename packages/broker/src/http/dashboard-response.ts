@@ -2,6 +2,9 @@ import { InMemoryA2ABroker } from "../core/broker.js";
 import { InMemoryRateLimiter, type RateLimitPressureSnapshot } from "../core/request-security.js";
 import type { BrokerDashboard } from "../core/types.js";
 import { projectAlerts, type AlertScanResult } from "../core/alert-projection.js";
+import { computeTaskDiagnosticStatus } from "../core/broker-status-predicates.js";
+import type { TaskDiagnosticReport } from "../core/types.js";
+import type { SharedTaskDiagnostics } from "../core/operator-dashboard-snapshot.js";
 import type { BrokerHotEntityDiagnostics } from "../core/store.js";
 import type { HotTableGrowthProjection } from "../core/hot-table-growth.js";
 import {
@@ -193,6 +196,8 @@ export function buildDashboardResponse(input: {
   pendingActionLimit?: number;
   hotEntityDiagnostics?: BrokerHotEntityDiagnostics;
   persistenceQueue: BrokerPersistenceQueueDiagnostics;
+  /** Precomputed diagnostics (#2078 A); when absent the snapshot computes its own. */
+  taskDiagnostics?: SharedTaskDiagnostics;
 }): OperatorSummary {
   const dashboard = input.broker.getDashboard({
     offlineAfterMs: input.workerOfflineAfterSec * 1000,
@@ -221,6 +226,7 @@ export function buildDashboardResponse(input: {
       broker: input.broker,
       dashboard,
       staleReaper,
+      taskDiagnostics: input.taskDiagnostics,
     }),
     hotEntityDiagnostics: input.hotEntityDiagnostics,
     persistenceQueue: input.persistenceQueue,
@@ -239,11 +245,39 @@ export function buildAlertScan(input: {
   nowMs?: number;
   /** Optional hot-table growth projection for storage-growth alerts. */
   hotTableGrowth?: HotTableGrowthProjection | null;
+  /**
+   * Precomputed diagnostics (#2078 A). When the thresholds they were computed
+   * with differ from this scan's, the reports are re-classified locally (pure
+   * per-report work) so the full tombstone/audit/listTasks pass still runs
+   * exactly once per snapshot.
+   */
+  taskDiagnostics?: SharedTaskDiagnostics;
 }): AlertScanResult {
   const staleAfterMs = input.staleAfterMs ?? DEFAULT_ALERT_STALE_AFTER_MS;
   const longRunningAfterMs = input.longRunningAfterMs ?? DEFAULT_ALERT_LONG_RUNNING_AFTER_MS;
   // Batched: one audit/tombstone index pass instead of a per-task scan.
-  const reports = input.broker.listTaskDiagnostics({ staleAfterMs, longRunningAfterMs });
+  let reports: TaskDiagnosticReport[];
+  if (input.taskDiagnostics) {
+    const computedStaleAfterMs = input.taskDiagnostics.staleAfterMs;
+    const computedLongRunningAfterMs = input.taskDiagnostics.longRunningAfterMs
+      ?? DEFAULT_ALERT_LONG_RUNNING_AFTER_MS;
+    if (computedStaleAfterMs === staleAfterMs && computedLongRunningAfterMs === longRunningAfterMs) {
+      reports = input.taskDiagnostics.reports;
+    } else {
+      const nowMs = input.nowMs ?? Date.now();
+      reports = input.taskDiagnostics.reports.map((report) => ({
+        ...report,
+        diagnosticStatus: computeTaskDiagnosticStatus(
+          report.task,
+          staleAfterMs,
+          longRunningAfterMs,
+          nowMs,
+        ),
+      }));
+    }
+  } else {
+    reports = input.broker.listTaskDiagnostics({ staleAfterMs, longRunningAfterMs });
+  }
 
   return projectAlerts(reports, {
     staleWarningMs: input.staleWarningMs,

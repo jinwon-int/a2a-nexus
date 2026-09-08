@@ -1,5 +1,18 @@
 import type { BrokerDashboard, TaskDiagnosticReport, TaskKind, TaskRecord, TaskStatus } from "./types.js";
 
+/**
+ * Precomputed diagnostics shared between the dashboard snapshot and the alert
+ * scan (#2078 A): one full task/tombstone/audit pass per operator snapshot,
+ * stamped with the staleAfterMs the reports were classified with so a consumer
+ * needing different thresholds can re-classify locally instead of re-running
+ * the pass.
+ */
+export interface SharedTaskDiagnostics {
+  reports: TaskDiagnosticReport[];
+  staleAfterMs: number;
+  longRunningAfterMs?: number;
+}
+
 export interface OperatorTaskStatusSummary {
   total: number;
   active: number;
@@ -69,6 +82,11 @@ export function buildOperatorDashboardSnapshot(input: {
   staleReaper: OperatorDashboardStaleReaperProjection;
   staleAfterMs?: number;
   longRunningAfterMs?: number;
+  /**
+   * Precomputed reports (#2078 A). Must have been classified with the same
+   * thresholds this snapshot derives; when absent the pass runs here as before.
+   */
+  taskDiagnostics?: SharedTaskDiagnostics;
 }): OperatorDashboardSnapshot {
   const tasks = input.broker.listTasks();
   const byStatus = { ...input.dashboard.queue.byStatus } as Record<TaskStatus, number>;
@@ -79,9 +97,16 @@ export function buildOperatorDashboardSnapshot(input: {
     staleAfterMs: input.staleAfterMs ?? Math.max(1, input.staleReaper.olderThanSec) * 1000,
     longRunningAfterMs: input.longRunningAfterMs,
   };
-  const reportsByTaskId = input.broker.listTaskDiagnostics
-    ? new Map(input.broker.listTaskDiagnostics(diagnosticsOptions).map((report) => [report.taskId, report]))
+  const sharedReports = input.taskDiagnostics
+    && input.taskDiagnostics.staleAfterMs === diagnosticsOptions.staleAfterMs
+    && input.taskDiagnostics.longRunningAfterMs === diagnosticsOptions.longRunningAfterMs
+    ? input.taskDiagnostics.reports
     : undefined;
+  const reportsByTaskId = sharedReports
+    ? new Map(sharedReports.map((report) => [report.taskId, report]))
+    : input.broker.listTaskDiagnostics
+      ? new Map(input.broker.listTaskDiagnostics(diagnosticsOptions).map((report) => [report.taskId, report]))
+      : undefined;
 
   for (const task of tasks) {
     const report = reportsByTaskId?.get(task.id)

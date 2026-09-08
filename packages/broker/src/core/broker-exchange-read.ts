@@ -10,21 +10,27 @@ import { normalizeExchangeState } from "./broker-exchange-normalizers.js";
 import { sortedCopy, sortNewestFirst } from "./broker-helpers.js";
 
 /**
- * Read a single exchange by id, preferring the durable repository and warming
- * the in-memory cache with the normalized record. Returns null when unknown.
+ * Read a single exchange by id, map-first (#2078 B, mirroring readBrokerTask):
+ * every write path updates the in-memory map and the broker is single-writer,
+ * so the repository is only a miss-path fallback that warms the map.
+ * Returns null when unknown.
  */
 export function readExchange(
   exchanges: Map<string, A2AExchangeState>,
   repository: ExchangeRuntimeRepository | undefined,
   id: string,
 ): A2AExchangeState | null {
+  const cached = exchanges.get(id);
+  if (cached) {
+    return cached;
+  }
   const repositoryExchange = repository?.getExchange(id);
   if (repositoryExchange) {
     const exchange = normalizeExchangeState(repositoryExchange);
     exchanges.set(exchange.id, exchange);
     return exchange;
   }
-  return exchanges.get(id) ?? null;
+  return null;
 }
 
 /**
