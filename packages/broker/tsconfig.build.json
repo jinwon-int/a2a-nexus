@@ -3,6 +3,11 @@
   "compilerOptions": {
     "tsBuildInfoFile": "dist/.tsbuildinfo.runtime"
   },
+  "references": [
+    { "path": "../policy-referee" },
+    { "path": "../attestation" },
+    { "path": "../nclex-evaluation" }
+  ],
   "exclude": [
     "src/**/*.test.ts",
     "src/shared-state-*conformance-v1.ts",
