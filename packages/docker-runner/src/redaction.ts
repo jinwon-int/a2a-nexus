@@ -1,5 +1,13 @@
 export const RESULT_STREAM_LIMIT = 8_000;
 
+// GitHub tokens (classic + fine-grained + PAT v2). The concatenated literals
+// keep the secret scanner from flagging this source file itself; the RegExps
+// are built once at module load instead of on every redaction call (#2083).
+// Safe to reuse with String.replace: /g regexes are stateless across replace
+// calls (lastIndex is reset internally).
+const GITHUB_TOKEN_CLASSIC_PATTERN = new RegExp("gh[pousr]" + "_" + "[A-Za-z0-9_]{20,}", "g");
+const GITHUB_TOKEN_PAT_PATTERN = new RegExp("github" + "_pat" + "_" + "[A-Za-z0-9_]{20,}", "g");
+
 export function redactSecrets(value: string): string {
   const brokerMarker = "[redacted]";
   return value.split(brokerMarker).map(redactSecretsSegment).join(brokerMarker);
@@ -13,8 +21,8 @@ function redactSecretsSegment(value: string): string {
     .replace(/(["']?(?:[A-Z0-9]+[_-])*(?:token|secret|password|key|api[_-]?key|apikey|access[_-]?token|edge[_-]?secret)["']?\s*:\s*)"(?:\\.|[^"\\\r\n])*"/gi, '$1"<redacted>"')
     .replace(/(["']?(?:[A-Z0-9]+[_-])*(?:token|secret|password|key|api[_-]?key|apikey|access[_-]?token|edge[_-]?secret)["']?\s*:\s*)'(?:\\.|[^'\\\r\n])*'/gi, "$1'<redacted>'")
     // GitHub tokens (classic + fine-grained + PAT v2)
-    .replace(new RegExp("gh[pousr]" + "_" + "[A-Za-z0-9_]{20,}", "g"), "<redacted-github-token>")
-    .replace(new RegExp("github" + "_pat" + "_" + "[A-Za-z0-9_]{20,}", "g"), "<redacted-github-token>")
+    .replace(GITHUB_TOKEN_CLASSIC_PATTERN, "<redacted-github-token>")
+    .replace(GITHUB_TOKEN_PAT_PATTERN, "<redacted-github-token>")
     .replace(/\/root\/\.openclaw(?:\/[^\s"',}]+)?/g, "<openclaw-dir>")
     // Agent config/credential dirs the profile scripts create/copy. Previously
     // only .hermes was covered, so .claude/.codex/.piri/.config paths could

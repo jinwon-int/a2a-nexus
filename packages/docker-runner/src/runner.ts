@@ -307,11 +307,15 @@ export async function runTask(config: RunnerConfig, task: RunnerTask): Promise<R
       })
     : undefined;
   await writeSanitizedTaskArtifact(workDir, normalizedTask);
-  const claudeTurnBudgetArtifact = await readArtifactJson<RunnerClaudeTurnBudgetDiagnostic>(
-    workDir,
-    "claude-turn-budget.json",
-    isClaudeTurnBudgetDiagnostic,
-  );
+  // #2083: the five evidence reads are mutually independent — run them
+  // concurrently instead of serially awaiting each one.
+  const [claudeTurnBudgetArtifact, artifactEntries, postPatchVerification, diffHygiene, reproducibility] = await Promise.all([
+    readArtifactJson<RunnerClaudeTurnBudgetDiagnostic>(workDir, "claude-turn-budget.json", isClaudeTurnBudgetDiagnostic),
+    listArtifacts(workDir),
+    readArtifactJson<RunnerPostPatchVerificationEvidence>(workDir, "post-patch-verification.json", isPostPatchVerificationEvidence),
+    readArtifactJson<RunnerDiffHygieneEvidence>(workDir, "diff-hygiene.json", isDiffHygieneEvidence),
+    buildReproducibilityMetadata(config, normalizedTask, workDir),
+  ]);
   const claudeTurnBudget = claudeTurnBudgetArtifact
     ?? extractClaudeTurnBudgetDiagnostic(completed.stderr);
   const maxTurnsStopped = (
@@ -325,7 +329,6 @@ export async function runTask(config: RunnerConfig, task: RunnerTask): Promise<R
     && safeCheckpointAvailable
     ? "artifacts/claude-max-turn-checkpoint.json" as const
     : undefined;
-  const artifactEntries = await listArtifacts(workDir);
   const artifacts = artifactEntries.map((entry) => entry.path);
   // runContainerWithRetry already redacted the captured streams at spawn time,
   // so bounding is the only remaining pass here.
@@ -360,9 +363,6 @@ export async function runTask(config: RunnerConfig, task: RunnerTask): Promise<R
         }
       : undefined);
   const receiptTrace = sanitizeReceiptTrace(normalizedTask.receiptTrace ?? parseReceiptTraceEnv(normalizedTask.env));
-  const postPatchVerification = await readArtifactJson<RunnerPostPatchVerificationEvidence>(workDir, "post-patch-verification.json", isPostPatchVerificationEvidence);
-  const diffHygiene = await readArtifactJson<RunnerDiffHygieneEvidence>(workDir, "diff-hygiene.json", isDiffHygieneEvidence);
-  const reproducibility = await buildReproducibilityMetadata(config, normalizedTask, workDir);
   const manifest = await buildArtifactManifest(workDir, artifacts, {
     task: normalizedTask,
     status: budgetStop ? "budget_limited" : completed.timedOut ? "failed" : completed.code === 0 ? "done" : "failed",
@@ -768,11 +768,18 @@ function safeGitHubRepoSlug(value: string | undefined): string | undefined {
   return match?.[1] && slugPattern.test(match[1]) ? match[1] : undefined;
 }
 
+// #2083: compiled once at module load instead of per call.
+const SAFE_GITHUB_URL_PATTERNS: Record<"issues" | "pull", RegExp> = {
+  issues: new RegExp("^/[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+/" + "issues" + "/\\d+(?:#issuecomment-\\d+)?$"),
+  pull: new RegExp("^/[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+/" + "pull" + "/\\d+(?:#issuecomment-\\d+)?$"),
+};
+
 function safeGitHubUrl(value: string | undefined, kind: "issues" | "pull"): boolean {
   if (!value || hasUnsafeHintContent(value)) return false;
   try {
     const url = new URL(value);
-    const urlPattern = new RegExp("^/[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+/" + kind + "/\\d+(?:#issuecomment-\\d+)?$");
+    // #2083: compiled once at module load instead of per call.
+    const urlPattern = SAFE_GITHUB_URL_PATTERNS[kind];
     return url.protocol === "https:" && url.hostname === "github.com" && urlPattern.test(url.pathname + url.hash);
   } catch {
     return false;
@@ -1860,17 +1867,23 @@ function isReceiptEvidence(value: string | undefined): value is NonNullable<Runn
   return value === "operator_visible" || value === "operator_confirmed" || value === "provider_delivery_receipt";
 }
 
-function extractBudgetField(text: string, field: "limitKind" | "limit" | "used" | "reason" | "nextPrompt"): string | undefined {
-  const aliases: Record<typeof field, string[]> = {
+// #2083: compiled once at module load instead of per call.
+const BUDGET_FIELD_PATTERNS: Record<"limitKind" | "limit" | "used" | "reason" | "nextPrompt", RegExp[]> = Object.fromEntries(
+  (Object.entries({
     limitKind: ["budget.limitKind", "budget_limit_kind"],
     limit: ["budget.limit", "budget_limit"],
     used: ["budget.used", "budget_used"],
     reason: ["budget.reason", "budget_reason"],
     nextPrompt: ["continuation.nextPrompt", "continuation_next_prompt"],
-  };
-  for (const alias of aliases[field]) {
-    const escaped = alias.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
-    const match = text.match(new RegExp(`(?:^|\\n)${escaped}=([^\\r\\n]+)`, "i"));
+  } as const).map(([field, aliases]) => [
+    field,
+    aliases.map((alias) => new RegExp(`(?:^|\\n)${alias.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}=([^\\r\\n]+)`, "i")),
+  ])),
+) as typeof BUDGET_FIELD_PATTERNS;
+
+function extractBudgetField(text: string, field: "limitKind" | "limit" | "used" | "reason" | "nextPrompt"): string | undefined {
+  for (const pattern of BUDGET_FIELD_PATTERNS[field]) {
+    const match = text.match(pattern);
     if (match?.[1]) return match[1].trim();
   }
   return undefined;
