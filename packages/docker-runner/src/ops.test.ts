@@ -1,10 +1,10 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { mkdtemp, mkdir, writeFile, utimes, stat, chmod } from "node:fs/promises";
+import { mkdtemp, mkdir, readFile, writeFile, utimes, stat, chmod } from "node:fs/promises";
 import { execFileSync, spawnSync } from "node:child_process";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { checkDeployedRevision, checkDeployMarker, checkExtraMounts, checkGitHubPatchReadiness, checkSecretMountContainerReadability, cleanup, dropsDacOverride, install, parseContainerUserRef, parseProbeKeyValues } from "./ops.js";
+import { checkBaseImage, checkDeployedRevision, checkDeployMarker, checkExtraMounts, checkGitHubPatchReadiness, checkSecretMountContainerReadability, cleanup, dropsDacOverride, install, parseContainerUserRef, parseProbeKeyValues } from "./ops.js";
 import type { RunnerConfig } from "./types.js";
 import { buildExampleReadinessInput } from "./openclaw-profile-readiness.js";
 import { projectClaudeCodeTurnBudgets } from "./config.js";
@@ -1201,4 +1201,66 @@ test("secret-mount readability warns for non-numeric container users instead of 
 
   assert.equal(report.status, "warn");
   assert.match(String(report.detail?.remediation), /A2A_DOCKER_RUNNER_USER/);
+});
+
+// ── #2083 doctor: no network by default ────────────────────────────────────
+
+/**
+ * Installs a fake container engine on PATH that logs every invocation and
+ * fails `image inspect` (image missing) while succeeding at `pull`.
+ */
+async function installFakeEngine(logPath: string): Promise<string> {
+  const binDir = await mkdtemp(join(tmpdir(), "a2a-fake-engine-"));
+  const script = [
+    "#!/bin/sh",
+    `echo \"$*\" >> ${logPath}`,
+    'if [ "$1" = "image" ]; then echo "no such image" >&2; exit 1; fi',
+    "exit 0",
+  ].join("\n");
+  const enginePath = join(binDir, "docker");
+  await writeFile(enginePath, script);
+  await chmod(enginePath, 0o755);
+  return binDir;
+}
+
+test("doctor base-image check does not touch the network by default (inspect only)", async () => {
+  const logPath = join(tmpdir(), `a2a-engine-log-${Date.now()}-${Math.random().toString(16).slice(2)}`);
+  const binDir = await installFakeEngine(logPath);
+  const previousPath = process.env.PATH;
+  const previousPull = process.env.A2A_DOCKER_RUNNER_DOCTOR_PULL;
+  delete process.env.A2A_DOCKER_RUNNER_DOCTOR_PULL;
+  process.env.PATH = `${binDir}:${previousPath ?? ""}`;
+  try {
+    const check = await checkBaseImage("docker", "a2a-missing-image:test");
+    assert.equal(check.status, "fail");
+    assert.match(check.message, /missing locally/);
+    assert.match(check.message, /A2A_DOCKER_RUNNER_DOCTOR_PULL=1/);
+    const log = await readFile(logPath, "utf8");
+    assert.match(log, /image inspect/);
+    assert.doesNotMatch(log, /\bpull\b/, "the default doctor run must never invoke pull");
+  } finally {
+    process.env.PATH = previousPath;
+    if (previousPull === undefined) delete process.env.A2A_DOCKER_RUNNER_DOCTOR_PULL;
+    else process.env.A2A_DOCKER_RUNNER_DOCTOR_PULL = previousPull;
+  }
+});
+
+test("doctor base-image check pulls only when A2A_DOCKER_RUNNER_DOCTOR_PULL=1", async () => {
+  const logPath = join(tmpdir(), `a2a-engine-log-${Date.now()}-${Math.random().toString(16).slice(2)}`);
+  const binDir = await installFakeEngine(logPath);
+  const previousPath = process.env.PATH;
+  const previousPull = process.env.A2A_DOCKER_RUNNER_DOCTOR_PULL;
+  process.env.A2A_DOCKER_RUNNER_DOCTOR_PULL = "1";
+  process.env.PATH = `${binDir}:${previousPath ?? ""}`;
+  try {
+    const check = await checkBaseImage("docker", "a2a-missing-image:test");
+    assert.equal(check.status, "ok");
+    assert.match(check.message, /pull succeeded/);
+    const log = await readFile(logPath, "utf8");
+    assert.match(log, /pull --quiet/);
+  } finally {
+    process.env.PATH = previousPath;
+    if (previousPull === undefined) delete process.env.A2A_DOCKER_RUNNER_DOCTOR_PULL;
+    else process.env.A2A_DOCKER_RUNNER_DOCTOR_PULL = previousPull;
+  }
 });
