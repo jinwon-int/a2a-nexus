@@ -1138,157 +1138,138 @@ export function createA2ABrokerClient(options: A2ABrokerClientOptions) {
     ? undefined
     : normalizeOptionalString(options.a2aVersion ?? undefined) ?? "1.0";
 
-  return {
-    async health(): Promise<A2ABrokerHealth> {
-      const response = await fetchImpl(buildEndpointUrl(baseUrl, "health"), {
-        method: "GET",
-        headers: buildRequestHeaders({
-          userAgent,
-        }),
+  // #2082 E: one request path for every JSON method. schema => parseBrokerJson
+  // (throws a client error on !ok); ok => readBrokerJson + !ok client error;
+  // neither => plain readBrokerJson (the diagnostics surfaces' historical
+  // contract: pass the parsed body through without an ok gate).
+  async function requestJson<T>(params: {
+    method: "GET" | "POST";
+    path: string;
+    body?: unknown;
+    schema?: z.ZodType<T>;
+    requester?: A2ABrokerPartyRef;
+    searchParams?: Array<[string, string]>;
+    ok?: boolean;
+  }): Promise<T> {
+    const url = new URL(buildEndpointUrl(baseUrl, params.path));
+    for (const [key, value] of params.searchParams ?? []) {
+      url.searchParams.set(key, value);
+    }
+    const hasBody = params.body !== undefined;
+    const response = await fetchImpl(url, {
+      method: params.method,
+      headers: buildRequestHeaders({
+        requester: params.requester ?? options.requester,
+        edgeSecret,
+        userAgent,
+        ...(hasBody ? { contentType: "application/json" } : {}),
+      }),
+      ...(hasBody ? { body: JSON.stringify(params.body) } : {}),
+    });
+    if (params.schema) {
+      return await parseBrokerJson(response, params.schema);
+    }
+    const body = await readBrokerJson(response);
+    if ((params.ok ?? false) && !response.ok) {
+      throw buildClientError(response, body);
+    }
+    return body as T;
+  }
+
+  const taskPath = (taskId: string): string =>
+    `tasks/${encodeURIComponent(normalizeRequiredTaskId(taskId))}`;
+
+  const requireWorkerId = (workerId: string | undefined, action: string): string => {
+    const resolved = normalizeOptionalString(workerId) ?? options.requester?.id;
+    if (!resolved) {
+      throw new Error(`workerId or configured requester.id is required to ${action} a broker task`);
+    }
+    return resolved;
+  };
+
+  // #2082 E: claim/start/complete/fail share the worker-id gate, path shape,
+  // and TaskRecord response; only the request schema differs.
+  const workerAction = (
+    segment: string,
+    action: string,
+    buildBody: (workerId: string, request?: { workerId?: string; result?: unknown; error?: unknown }) => unknown,
+  ) =>
+    async (taskId: string, request?: { workerId?: string; result?: unknown; error?: unknown }): Promise<A2ABrokerTaskRecord> => {
+      const workerId = requireWorkerId(request?.workerId, action);
+      const body = buildBody(workerId, request);
+      return await requestJson({
+        method: "POST",
+        path: `${taskPath(taskId)}/${segment}`,
+        body,
+        schema: A2ABrokerTaskRecordSchema,
       });
-      return await parseBrokerJson(response, A2ABrokerHealthSchema);
+    };
+
+  // #2082 E: approve/reject-approval/cancel share the actor resolution and
+  // cancellation-shaped request bodies; error strings are preserved verbatim.
+  const actorAction = <RequestT extends { actor?: A2ABrokerPartyRef }>(
+    segment: string,
+    actionLabel: string,
+    buildBody: (actor: A2ABrokerPartyRef, request?: RequestT) => unknown,
+  ) =>
+    async (taskId: string, request?: RequestT, overrides?: { requester?: A2ABrokerPartyRef }): Promise<A2ABrokerTaskRecord> => {
+      const requester = overrides?.requester ?? request?.actor ?? options.requester;
+      const actor = request?.actor ?? requester;
+      if (!actor) {
+        throw new Error(`actor or configured requester is required to ${actionLabel}`);
+      }
+      return await requestJson({
+        method: "POST",
+        path: `${taskPath(taskId)}/${segment}`,
+        requester,
+        body: buildBody(actor, request),
+        schema: A2ABrokerTaskRecordSchema,
+      });
+    };
+
+  return {
+    health(): Promise<A2ABrokerHealth> {
+      return requestJson({ method: "GET", path: "health", schema: A2ABrokerHealthSchema });
     },
 
-    async createTask(
+    createTask(
       request: A2ABrokerTaskCreateRequest,
       overrides?: { requester?: A2ABrokerPartyRef },
     ): Promise<A2ABrokerTaskRecord> {
       const parsedRequest = A2ABrokerTaskCreateRequestSchema.parse(request);
       const requester = overrides?.requester ?? parsedRequest.requester ?? options.requester;
-      const response = await fetchImpl(buildEndpointUrl(baseUrl, "tasks"), {
+      return requestJson({
         method: "POST",
-        headers: buildRequestHeaders({
-          requester,
-          edgeSecret,
-          userAgent,
-          contentType: "application/json",
-        }),
-        body: JSON.stringify(parsedRequest),
+        path: "tasks",
+        requester,
+        body: parsedRequest,
+        schema: A2ABrokerTaskRecordSchema,
       });
-      return await parseBrokerJson(response, A2ABrokerTaskRecordSchema);
     },
 
-    async getTask(taskId: string): Promise<A2ABrokerTaskRecord> {
-      const normalizedTaskId = normalizeRequiredTaskId(taskId);
-      const response = await fetchImpl(
-        buildEndpointUrl(baseUrl, `tasks/${encodeURIComponent(normalizedTaskId)}`),
-        {
-          method: "GET",
-          headers: buildRequestHeaders({
-            requester: options.requester,
-            edgeSecret,
-            userAgent,
-          }),
-        },
-      );
-      return await parseBrokerJson(response, A2ABrokerTaskRecordSchema);
+    getTask(taskId: string): Promise<A2ABrokerTaskRecord> {
+      return requestJson({
+        method: "GET",
+        path: taskPath(taskId),
+        schema: A2ABrokerTaskRecordSchema,
+      });
     },
 
-    async claimTask(taskId: string, request?: { workerId?: string }): Promise<A2ABrokerTaskRecord> {
-      const normalizedTaskId = normalizeRequiredTaskId(taskId);
-      const workerId = normalizeOptionalString(request?.workerId) ?? options.requester?.id;
-      if (!workerId) {
-        throw new Error("workerId or configured requester.id is required to claim a broker task");
-      }
-      const parsedRequest = A2ABrokerTaskWorkerRequestSchema.parse({ workerId });
-      const response = await fetchImpl(
-        buildEndpointUrl(baseUrl, `tasks/${encodeURIComponent(normalizedTaskId)}/claim`),
-        {
-          method: "POST",
-          headers: buildRequestHeaders({
-            requester: options.requester,
-            edgeSecret,
-            userAgent,
-            contentType: "application/json",
-          }),
-          body: JSON.stringify(parsedRequest),
-        },
-      );
-      return await parseBrokerJson(response, A2ABrokerTaskRecordSchema);
-    },
+    claimTask: workerAction("claim", "claim", (workerId) => A2ABrokerTaskWorkerRequestSchema.parse({ workerId })),
 
-    async startTask(taskId: string, request?: { workerId?: string }): Promise<A2ABrokerTaskRecord> {
-      const normalizedTaskId = normalizeRequiredTaskId(taskId);
-      const workerId = normalizeOptionalString(request?.workerId) ?? options.requester?.id;
-      if (!workerId) {
-        throw new Error("workerId or configured requester.id is required to start a broker task");
-      }
-      const parsedRequest = A2ABrokerTaskWorkerRequestSchema.parse({ workerId });
-      const response = await fetchImpl(
-        buildEndpointUrl(baseUrl, `tasks/${encodeURIComponent(normalizedTaskId)}/start`),
-        {
-          method: "POST",
-          headers: buildRequestHeaders({
-            requester: options.requester,
-            edgeSecret,
-            userAgent,
-            contentType: "application/json",
-          }),
-          body: JSON.stringify(parsedRequest),
-        },
-      );
-      return await parseBrokerJson(response, A2ABrokerTaskRecordSchema);
-    },
+    startTask: workerAction("start", "start", (workerId) => A2ABrokerTaskWorkerRequestSchema.parse({ workerId })),
 
-    async completeTask(
-      taskId: string,
-      request?: { workerId?: string; result?: unknown },
-    ): Promise<A2ABrokerTaskRecord> {
-      const normalizedTaskId = normalizeRequiredTaskId(taskId);
-      const workerId = normalizeOptionalString(request?.workerId) ?? options.requester?.id;
-      if (!workerId) {
-        throw new Error(
-          "workerId or configured requester.id is required to complete a broker task",
-        );
-      }
-      const parsedRequest = A2ABrokerTaskCompleteRequestSchema.parse({
+    completeTask: workerAction("complete", "complete", (workerId, request) =>
+      A2ABrokerTaskCompleteRequestSchema.parse({
         workerId,
         ...(request?.result ? { result: request.result } : {}),
-      });
-      const response = await fetchImpl(
-        buildEndpointUrl(baseUrl, `tasks/${encodeURIComponent(normalizedTaskId)}/complete`),
-        {
-          method: "POST",
-          headers: buildRequestHeaders({
-            requester: options.requester,
-            edgeSecret,
-            userAgent,
-            contentType: "application/json",
-          }),
-          body: JSON.stringify(parsedRequest),
-        },
-      );
-      return await parseBrokerJson(response, A2ABrokerTaskRecordSchema);
-    },
+      })),
 
-    async failTask(
-      taskId: string,
-      request?: { workerId?: string; error?: unknown },
-    ): Promise<A2ABrokerTaskRecord> {
-      const normalizedTaskId = normalizeRequiredTaskId(taskId);
-      const workerId = normalizeOptionalString(request?.workerId) ?? options.requester?.id;
-      if (!workerId) {
-        throw new Error("workerId or configured requester.id is required to fail a broker task");
-      }
-      const parsedRequest = A2ABrokerTaskFailRequestSchema.parse({
+    failTask: workerAction("fail", "fail", (workerId, request) =>
+      A2ABrokerTaskFailRequestSchema.parse({
         workerId,
         ...(request?.error ? { error: request.error } : {}),
-      });
-      const response = await fetchImpl(
-        buildEndpointUrl(baseUrl, `tasks/${encodeURIComponent(normalizedTaskId)}/fail`),
-        {
-          method: "POST",
-          headers: buildRequestHeaders({
-            requester: options.requester,
-            edgeSecret,
-            userAgent,
-            contentType: "application/json",
-          }),
-          body: JSON.stringify(parsedRequest),
-        },
-      );
-      return await parseBrokerJson(response, A2ABrokerTaskRecordSchema);
-    },
+      })),
 
     async *streamTaskEvents(
       taskId: string,
@@ -1379,18 +1360,8 @@ export function createA2ABrokerClient(options: A2ABrokerClientOptions) {
       }
     },
 
-    async approveTask(
-      taskId: string,
-      request?: Partial<A2ABrokerTaskApprovalRequest>,
-      overrides?: { requester?: A2ABrokerPartyRef },
-    ): Promise<A2ABrokerTaskRecord> {
-      const normalizedTaskId = normalizeRequiredTaskId(taskId);
-      const requester = overrides?.requester ?? request?.actor ?? options.requester;
-      const actor = request?.actor ?? requester;
-      if (!actor) {
-        throw new Error("actor or configured requester is required to approve broker task");
-      }
-      const parsedRequest = A2ABrokerTaskApprovalRequestSchema.parse({
+    approveTask: actorAction<Partial<A2ABrokerTaskApprovalRequest>>("approve", "approve broker task", (actor, request) =>
+      A2ABrokerTaskApprovalRequestSchema.parse({
         actor,
         ...(normalizeOptionalString(request?.reason)
           ? { reason: normalizeOptionalString(request?.reason) }
@@ -1398,39 +1369,10 @@ export function createA2ABrokerClient(options: A2ABrokerClientOptions) {
         ...(normalizeOptionalString(request?.approvalId)
           ? { approvalId: normalizeOptionalString(request?.approvalId) }
           : {}),
-      });
-      const response = await fetchImpl(
-        buildEndpointUrl(baseUrl, `tasks/${encodeURIComponent(normalizedTaskId)}/approve`),
-        {
-          method: "POST",
-          headers: buildRequestHeaders({
-            requester,
-            edgeSecret,
-            userAgent,
-            contentType: "application/json",
-          }),
-          body: JSON.stringify(parsedRequest),
-        },
-      );
-      if (!response.ok) {
-        const body = await readBrokerJson(response).catch(() => undefined);
-        throw buildClientError(response, body);
-      }
-      return await parseBrokerJson(response, A2ABrokerTaskRecordSchema);
-    },
+      })),
 
-    async rejectTaskApproval(
-      taskId: string,
-      request?: Partial<A2ABrokerTaskApprovalTerminalRequest>,
-      overrides?: { requester?: A2ABrokerPartyRef },
-    ): Promise<A2ABrokerTaskRecord> {
-      const normalizedTaskId = normalizeRequiredTaskId(taskId);
-      const requester = overrides?.requester ?? request?.actor ?? options.requester;
-      const actor = request?.actor ?? requester;
-      if (!actor) {
-        throw new Error("actor or configured requester is required to reject broker task approval");
-      }
-      const parsedRequest = A2ABrokerTaskApprovalTerminalRequestSchema.parse({
+    rejectTaskApproval: actorAction<Partial<A2ABrokerTaskApprovalTerminalRequest>>("reject-approval", "reject broker task approval", (actor, request) =>
+      A2ABrokerTaskApprovalTerminalRequestSchema.parse({
         actor,
         ...(normalizeOptionalString(request?.reason)
           ? { reason: normalizeOptionalString(request?.reason) }
@@ -1439,129 +1381,48 @@ export function createA2ABrokerClient(options: A2ABrokerClientOptions) {
           ? { approvalId: normalizeOptionalString(request?.approvalId) }
           : {}),
         ...(request?.status ? { status: request.status } : {}),
-      });
-      const response = await fetchImpl(
-        buildEndpointUrl(baseUrl, `tasks/${encodeURIComponent(normalizedTaskId)}/reject-approval`),
-        {
-          method: "POST",
-          headers: buildRequestHeaders({
-            requester,
-            edgeSecret,
-            userAgent,
-            contentType: "application/json",
-          }),
-          body: JSON.stringify(parsedRequest),
-        },
-      );
-      if (!response.ok) {
-        const body = await readBrokerJson(response).catch(() => undefined);
-        throw buildClientError(response, body);
-      }
-      return await parseBrokerJson(response, A2ABrokerTaskRecordSchema);
-    },
+      })),
 
-    async cancelTask(
-      taskId: string,
-      request?: Partial<A2ABrokerTaskCancelRequest>,
-      overrides?: { requester?: A2ABrokerPartyRef },
-    ): Promise<A2ABrokerTaskRecord> {
-      const normalizedTaskId = normalizeRequiredTaskId(taskId);
-      const requester = overrides?.requester ?? request?.actor ?? options.requester;
-      const actor = request?.actor ?? requester;
-      if (!actor) {
-        throw new Error("actor or configured requester is required to cancel a broker task");
-      }
-      const parsedRequest = A2ABrokerTaskCancelRequestSchema.parse({
+    cancelTask: actorAction<Partial<A2ABrokerTaskCancelRequest>>("cancel", "cancel a broker task", (actor, request) =>
+      A2ABrokerTaskCancelRequestSchema.parse({
         actor,
         ...(normalizeOptionalString(request?.reason)
           ? { reason: normalizeOptionalString(request?.reason) }
           : {}),
-      });
-      const response = await fetchImpl(
-        buildEndpointUrl(baseUrl, `tasks/${encodeURIComponent(normalizedTaskId)}/cancel`),
-        {
-          method: "POST",
-          headers: buildRequestHeaders({
-            requester,
-            edgeSecret,
-            userAgent,
-            contentType: "application/json",
-          }),
-          body: JSON.stringify(parsedRequest),
-        },
-      );
-      return await parseBrokerJson(response, A2ABrokerTaskRecordSchema);
+      })),
+
+    getTaskDiagnostics(taskId: string): Promise<unknown> {
+      return requestJson({ method: "GET", path: `${taskPath(taskId)}/diagnostics` });
     },
 
-    async getTaskDiagnostics(taskId: string): Promise<unknown> {
-      const normalizedTaskId = normalizeRequiredTaskId(taskId);
-      const response = await fetchImpl(
-        buildEndpointUrl(baseUrl, `tasks/${encodeURIComponent(normalizedTaskId)}/diagnostics`),
-        {
-          method: "GET",
-          headers: buildRequestHeaders({
-            requester: options.requester,
-            edgeSecret,
-            userAgent,
-          }),
-        },
-      );
-      return await readBrokerJson(response);
+    listDiagnostics(): Promise<unknown> {
+      return requestJson({ method: "GET", path: "tasks/diagnostics" });
     },
 
-    async listDiagnostics(): Promise<unknown> {
-      const response = await fetchImpl(
-        buildEndpointUrl(baseUrl, "tasks/diagnostics"),
-        {
-          method: "GET",
-          headers: buildRequestHeaders({
-            requester: options.requester,
-            edgeSecret,
-            userAgent,
-          }),
-        },
-      );
-      return await readBrokerJson(response);
+    getAlerts(): Promise<unknown> {
+      return requestJson({ method: "GET", path: "alerts" });
     },
 
-    async getAlerts(): Promise<unknown> {
-      const response = await fetchImpl(
-        buildEndpointUrl(baseUrl, "alerts"),
-        {
-          method: "GET",
-          headers: buildRequestHeaders({
-            requester: options.requester,
-            edgeSecret,
-            userAgent,
-          }),
-        },
-      );
-      return await readBrokerJson(response);
-    },
-
-    async listTerminalOutbox(params: {
+    listTerminalOutbox(params: {
       afterId?: string;
       limit?: number;
       reconcileUnacked?: boolean;
     } = {}): Promise<A2ATerminalOutboxListResponse> {
-      const url = new URL(buildEndpointUrl(baseUrl, "a2a/tasks/terminal-outbox"));
+      const searchParams: Array<[string, string]> = [];
       const afterId = normalizeOptionalString(params.afterId);
-      if (afterId) url.searchParams.set("after_id", afterId);
+      if (afterId) searchParams.push(["after_id", afterId]);
       if (typeof params.limit === "number" && Number.isInteger(params.limit) && params.limit >= 0) {
-        url.searchParams.set("limit", String(params.limit));
+        searchParams.push(["limit", String(params.limit)]);
       }
       if (params.reconcileUnacked === true) {
-        url.searchParams.set("reconcile_unacked", "true");
+        searchParams.push(["reconcile_unacked", "true"]);
       }
-      const response = await fetchImpl(url, {
+      return requestJson({
         method: "GET",
-        headers: buildRequestHeaders({
-          requester: options.requester,
-          edgeSecret,
-          userAgent,
-        }),
+        path: "a2a/tasks/terminal-outbox",
+        searchParams,
+        schema: A2ATerminalOutboxListResponseSchema,
       });
-      return await parseBrokerJson(response, A2ATerminalOutboxListResponseSchema);
     },
 
     async ackTerminalOutbox(params: {
@@ -1573,18 +1434,12 @@ export function createA2ABrokerClient(options: A2ABrokerClientOptions) {
         note?: string;
       };
     }): Promise<A2ATerminalOutboxEvent> {
-      const id = normalizeRequiredTaskId(params.id);
-      const response = await fetchImpl(buildEndpointUrl(baseUrl, "a2a/tasks/terminal-outbox/ack"), {
+      const body = await requestJson({
         method: "POST",
-        headers: buildRequestHeaders({
-          requester: options.requester,
-          edgeSecret,
-          userAgent,
-          contentType: "application/json",
-        }),
-        body: JSON.stringify({ id, receipt: params.receipt }),
+        path: "a2a/tasks/terminal-outbox/ack",
+        body: { id: normalizeRequiredTaskId(params.id), receipt: params.receipt },
+        schema: A2ATerminalOutboxAckResponseSchema,
       });
-      const body = await parseBrokerJson(response, A2ATerminalOutboxAckResponseSchema);
       return body.event;
     },
 
@@ -1596,18 +1451,12 @@ export function createA2ABrokerClient(options: A2ABrokerClientOptions) {
         note?: string;
       };
     }): Promise<A2ATerminalOutboxEvent> {
-      const id = normalizeRequiredTaskId(params.id);
-      const response = await fetchImpl(buildEndpointUrl(baseUrl, "a2a/tasks/terminal-outbox/receipt"), {
+      const body = await requestJson({
         method: "POST",
-        headers: buildRequestHeaders({
-          requester: options.requester,
-          edgeSecret,
-          userAgent,
-          contentType: "application/json",
-        }),
-        body: JSON.stringify({ id, receipt: params.receipt }),
+        path: "a2a/tasks/terminal-outbox/receipt",
+        body: { id: normalizeRequiredTaskId(params.id), receipt: params.receipt },
+        schema: A2ATerminalOutboxAckResponseSchema,
       });
-      const body = await parseBrokerJson(response, A2ATerminalOutboxAckResponseSchema);
       return body.event;
     },
 
