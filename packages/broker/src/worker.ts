@@ -69,6 +69,13 @@ export interface BrokerWorkerConfig {
   worker: RegisterWorkerRequest;
   requesterKind: A2APartyKind;
   pollIntervalMs: number;
+  /**
+   * #2082 A: optional idle-poll backoff ceiling. When set and a poll processes
+   * zero tasks, the next delay grows geometrically (×1.5, ±20% jitter) up to
+   * this ceiling, and resets to `pollIntervalMs` the moment a task is
+   * processed. Unset/0 keeps the historical fixed-interval polling.
+   */
+  maxIdlePollIntervalMs?: number;
   heartbeatIntervalMs: number;
   handlerTimeoutMs: number;
   /** Per-request HTTP timeout for broker calls; bounds a hung connection. */
@@ -135,6 +142,11 @@ export function createWorkerConfigFromEnv(env: NodeJS.ProcessEnv = process.env):
       DEFAULT_POLL_INTERVAL_MS,
       "WORKER_POLL_INTERVAL_MS",
     ),
+    maxIdlePollIntervalMs: parsePositiveInt(
+      env.WORKER_MAX_IDLE_POLL_INTERVAL_MS ?? env.A2A_WORKER_MAX_IDLE_POLL_INTERVAL_MS,
+      0,
+      "WORKER_MAX_IDLE_POLL_INTERVAL_MS",
+    ) || undefined,
     heartbeatIntervalMs: parsePositiveInt(
       env.WORKER_HEARTBEAT_INTERVAL_MS ?? env.A2A_WORKER_HEARTBEAT_INTERVAL_MS,
       DEFAULT_HEARTBEAT_INTERVAL_MS,

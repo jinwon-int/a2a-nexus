@@ -7,7 +7,7 @@
  * parseWorkerHttpSignatureConfig, validateWorkerPrivateJwk. worker.ts imports
  * them back one-way; only the required `export` keywords differ.
  */
-import { createHash, createPrivateKey, randomUUID, sign } from "node:crypto";
+import { createHash, createPrivateKey, randomUUID, sign, type KeyObject } from "node:crypto";
 import { buildA2AHttpSignatureBase } from "../core/request-security.js";
 import { optionalTrimmed } from "./worker-metadata.js";
 
@@ -20,6 +20,31 @@ export interface WorkerA2AHttpSignatureConfig {
   expiresAfterSec?: number;
   nowEpochSeconds?: () => number;
   nonceFactory?: () => string;
+}
+
+// #2082 D: the signing key registry is process-lifetime-immutable, but
+// `createPrivateKey({ key: jwk })` ran on every signed request (and the PEM
+// export on every completion). Cache the imported key material per config
+// object — one import per process instead of one per poll/heartbeat/claim.
+const signingKeyCache = new WeakMap<WorkerA2AHttpSignatureConfig, KeyObject>();
+const privateKeyPemCache = new WeakMap<WorkerA2AHttpSignatureConfig, string>();
+
+export function workerSigningKey(config: WorkerA2AHttpSignatureConfig): KeyObject {
+  let key = signingKeyCache.get(config);
+  if (!key) {
+    key = createPrivateKey({ key: config.privateKeyJwk, format: "jwk" });
+    signingKeyCache.set(config, key);
+  }
+  return key;
+}
+
+export function workerPrivateKeyPem(config: WorkerA2AHttpSignatureConfig): string {
+  let pem = privateKeyPemCache.get(config);
+  if (!pem) {
+    pem = workerSigningKey(config).export({ type: "pkcs8", format: "pem" }).toString();
+    privateKeyPemCache.set(config, pem);
+  }
+  return pem;
 }
 
 export function signA2AWorkerRequest(options: {
@@ -58,7 +83,7 @@ export function signA2AWorkerRequest(options: {
     headers,
     signatureInput,
   });
-  const privateKey = createPrivateKey({ key: options.config.privateKeyJwk, format: "jwk" });
+  const privateKey = workerSigningKey(options.config);
   const signatureValue = sign(null, Buffer.from(signatureBase), privateKey).toString("base64");
   options.headers.set("signature", `a2a=:${signatureValue}:`);
 }
