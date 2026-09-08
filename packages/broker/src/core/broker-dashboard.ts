@@ -151,6 +151,18 @@ export function buildBrokerDashboard(
   // --- Workers ---
   let onlineCount = 0;
   let staleCount = 0;
+  // #2078: one pass over tasks instead of a per-worker scan — the old
+  // allTasks.filter(...) inside the worker map was O(workers × tasks).
+  const activeTasksByNodeId = new Map<string, number>();
+  for (const t of allTasks) {
+    if (t.status === "claimed" || t.status === "running") {
+      for (const nodeId of t.assignedWorkerId === t.targetNodeId
+        ? [t.assignedWorkerId]
+        : [t.assignedWorkerId, t.targetNodeId]) {
+        if (nodeId) activeTasksByNodeId.set(nodeId, (activeTasksByNodeId.get(nodeId) ?? 0) + 1);
+      }
+    }
+  }
   const byNode = allWorkers.map((w) => {
     const effectiveOffline = effectiveOfflineAfterMs(w.workerMode, offlineAfterMs);
     const isStale = isWorkerStale(w.lastSeenAt, effectiveOffline, nowMs);
@@ -165,12 +177,7 @@ export function buildBrokerDashboard(
       role: w.role,
       displayName: w.displayName,
       status,
-      activeTaskCount: allTasks.filter(
-        (t) =>
-          t.status === "claimed" || t.status === "running"
-            ? t.assignedWorkerId === w.nodeId || t.targetNodeId === w.nodeId
-            : false,
-      ).length,
+      activeTaskCount: activeTasksByNodeId.get(w.nodeId) ?? 0,
       lastSeenAt: w.lastSeenAt,
       lastSeenAgeSec: ageSecFromIso(w.lastSeenAt, nowMs),
       workerMode: w.workerMode,

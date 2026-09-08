@@ -3106,12 +3106,18 @@ export class InMemoryA2ABroker {
 
   /** Get a tombstone by task ID. */
   getTombstone(taskId: string): TaskTombstone | null {
+    // Map-first (#2078 B): the tombstone map is updated by every writeTombstone
+    // and the broker is single-writer, so the repository is only a fallback.
+    const cached = this.tombstones.get(taskId);
+    if (cached) {
+      return cached;
+    }
     const repositoryTombstone = this.tombstoneRepository?.getTombstone(taskId);
     if (repositoryTombstone) {
       this.tombstones.set(repositoryTombstone.taskId, repositoryTombstone);
       return repositoryTombstone;
     }
-    return this.tombstones.get(taskId) ?? null;
+    return null;
   }
 
   /** List tombstones with optional filters. */

@@ -2032,7 +2032,11 @@ test("broker worker mutations can use the SQLite runtime repository without JSON
 
     assert.equal(row.lastSeenAt, heartbeat.lastSeenAt);
     assert.deepEqual(row.metadata, { check: "alive" });
-    assert.deepEqual(broker.getWorker("worker-sqlite"), row);
+    // #2078 B map-first: getWorker returns the authoritative in-memory record
+    // (the repository row normalizes away undefined-valued keys, so compare
+    // the state-bearing fields rather than record identity).
+    assert.equal(broker.getWorker("worker-sqlite")?.lastSeenAt, heartbeat.lastSeenAt);
+    assert.deepEqual(broker.getWorker("worker-sqlite")?.metadata, { check: "alive" });
     assert.deepEqual(
       broker.listWorkers({ role: "analyst", environment: "research", workspaceId: "repo-seam" }).map((worker) => worker.nodeId),
       ["worker-sqlite"],

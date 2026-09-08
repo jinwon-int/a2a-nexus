@@ -74,9 +74,11 @@ export function chooseFresherWorkerRecord(cachedWorker: WorkerRecord | null, per
   if (cachedFreshnessMs > persistedFreshnessMs) {
     return cachedWorker;
   }
+  // #2078 B: freshness is a timestamp comparison; the old JSON.stringify
+  // pre-check on the tie branch serialized both records' metadata on every
+  // read. The material comparison alone decides the tie-break.
   if (
     cachedFreshnessMs === persistedFreshnessMs &&
-    JSON.stringify(cachedWorker.metadata ?? null) !== JSON.stringify(persistedWorker.metadata ?? null) &&
     workerMetadataMateriallyEqual(cachedWorker.metadata, persistedWorker.metadata)
   ) {
     return cachedWorker;

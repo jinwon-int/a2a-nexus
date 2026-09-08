@@ -340,7 +340,11 @@ export function buildTaskDiagnosticReport(
     brokerState: durableSignals.brokerState,
     reconcileNeeded: durableSignals.reconcileNeeded,
     interruption: durableSignals.interruption,
-    task: structuredClone(task),
+    // #2078: internal consumers (dashboard snapshot, alert projection) and the
+    // HTTP boundary (sendJson serializes synchronously) never mutate the
+    // report's task, so per-report structuredClone is pure waste on the
+    // hottest read path. The record references the live task map entry.
+    task,
     currentStatusDurationMs: nowMs - lastStatusChangeMs,
     stalenessMs,
     brokerHints: durableSignals.brokerHints,
