@@ -43,8 +43,9 @@ export const PACKAGE_CI_SURFACES = {
   'docker-runner': {
     packageDir: 'packages/docker-runner',
     // (#2085) no package-scoped floor command — see the broker surface note.
+    // (#2085) no standalone check: the build below is the same tsc project
+    // with emit, so a --noEmit pass ahead of it was a duplicate compile.
     commands: [
-      ['npm', ['run', 'check', '-w', 'packages/docker-runner']],
       ['npm', ['run', 'build', '-w', 'packages/docker-runner']],
       ['npm', ['run', 'lint', '-w', 'packages/docker-runner']],
       // No standalone `npm test -w packages/docker-runner` here: the
@@ -75,8 +76,8 @@ export const PACKAGE_CI_SURFACES = {
   'nclex-evaluation': {
     packageDir: 'packages/nclex-evaluation',
     // (#2085) no package-scoped floor command — see the broker surface note.
+    // (#2085) no standalone build: pretest runs it before test.
     commands: [
-      ['npm', ['run', 'build', '-w', 'packages/nclex-evaluation']],
       ['npm', ['run', 'test', '-w', 'packages/nclex-evaluation']],
       ['npm', ['run', 'coverage:baseline', '-w', 'packages/nclex-evaluation']],
     ],
@@ -89,9 +90,9 @@ export const PACKAGE_CI_SURFACES = {
   'attestation': {
     packageDir: 'packages/attestation',
     // (#2085) no package-scoped floor command — see the broker surface note.
+    // (#2085) no standalone check/build: pretest runs the build before test
+    // (one tsc instead of three).
     commands: [
-      ['npm', ['run', 'check', '-w', 'packages/attestation']],
-      ['npm', ['run', 'build', '-w', 'packages/attestation']],
       ['npm', ['test', '-w', 'packages/attestation']],
       ['npm', ['run', 'coverage:baseline', '-w', 'packages/attestation']],
     ],
@@ -105,9 +106,9 @@ export const PACKAGE_CI_SURFACES = {
   'policy-referee': {
     packageDir: 'packages/policy-referee',
     // (#2085) no package-scoped floor command — see the broker surface note.
+    // (#2085) no standalone check/build: pretest runs the build before test
+    // (one tsc instead of three).
     commands: [
-      ['npm', ['run', 'check', '-w', 'packages/policy-referee']],
-      ['npm', ['run', 'build', '-w', 'packages/policy-referee']],
       ['npm', ['test', '-w', 'packages/policy-referee']],
       ['npm', ['run', 'coverage:baseline', '-w', 'packages/policy-referee']],
     ],
