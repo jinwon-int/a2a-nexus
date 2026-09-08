@@ -8,6 +8,13 @@
  * retention, or attach to broker runtime.
  */
 
+import {
+  boundedCountSchemaV1,
+  createReportConformanceErrorClassV1,
+  deepFreeze,
+  seededDeterministicShuffleV1,
+} from "./shared-state-conformance-common-v1.js";
+
 import { z } from "zod";
 
 import {
@@ -139,26 +146,14 @@ export type SharedStateOutboxConformanceErrorReportV1 = Readonly<
   z.infer<typeof sharedStateOutboxConformanceErrorReportV1Schema>
 >;
 
-export class SharedStateOutboxConformanceErrorV1 extends Error {
+export const SharedStateOutboxConformanceErrorV1 = createReportConformanceErrorClassV1(
+  "SharedStateOutboxConformanceErrorV1",
+) as new (code: SharedStateOutboxConformanceErrorCodeV1) => Error & {
+  readonly name: "SharedStateOutboxConformanceErrorV1";
   readonly code: SharedStateOutboxConformanceErrorCodeV1;
   readonly publicReport: SharedStateOutboxConformanceErrorReportV1;
-
-  constructor(code: SharedStateOutboxConformanceErrorCodeV1) {
-    super(code);
-    this.name = "SharedStateOutboxConformanceErrorV1";
-    this.code = code;
-    this.publicReport = deepFreeze({
-      kind: "SharedStateOutboxConformanceErrorV1",
-      errorVersion: 1,
-      code,
-    } as const);
-    this.stack = `${this.name}: ${code}`;
-  }
-
-  toJSON(): SharedStateOutboxConformanceErrorReportV1 {
-    return this.publicReport;
-  }
-}
+  toJSON(): SharedStateOutboxConformanceErrorReportV1;
+};
 
 function fail(code: SharedStateOutboxConformanceErrorCodeV1): never {
   throw new SharedStateOutboxConformanceErrorV1(code);
@@ -174,7 +169,7 @@ const streamKeyDigestSchema = z.string().regex(
 const eventKeyDigestSchema = z.string().regex(
   /^a2a\.shared-state\.keyspace\/v1\|broker\.outbox\.event-key\|broker\.terminal-outbox\|sha256:[0-9a-f]{64}$/,
 );
-const boundedCountSchema = z.number().int().nonnegative().max(
+const boundedCountSchema = boundedCountSchemaV1(
   SHARED_STATE_OUTBOX_CONFORMANCE_V1.operationLimit,
 );
 
@@ -516,23 +511,7 @@ export function seededDeterministicOutboxOrderV1(
     return fail("invalid_generated_command");
   }
   const order = Array.from({ length: count }, (_, index) => index);
-  let state = SHARED_STATE_OUTBOX_CONFORMANCE_V1.schedulerSeed >>> 0;
-  for (let index = order.length - 1; index > 0; index -= 1) {
-    state = (
-      Math.imul(state, 1_664_525) + 1_013_904_223
-    ) >>> 0;
-    const other = state % (index + 1);
-    [order[index], order[other]] = [order[other]!, order[index]!];
-  }
-  return Object.freeze(order);
-}
-
-function deepFreeze<T>(value: T): T {
-  if (value !== null && typeof value === "object" && !Object.isFrozen(value)) {
-    Object.freeze(value);
-    for (const nested of Object.values(value)) deepFreeze(nested);
-  }
-  return value;
+  return seededDeterministicShuffleV1(order, SHARED_STATE_OUTBOX_CONFORMANCE_V1.schedulerSeed);
 }
 
 function sameSnapshot(

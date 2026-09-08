@@ -8,6 +8,13 @@
  * transaction fault points, singleton lifecycle, and a public-safe snapshot.
  */
 
+import {
+  boundedCountSchemaV1,
+  createSimpleConformanceErrorClassV1,
+  deepFreeze,
+  seededDeterministicShuffleV1,
+} from "./shared-state-conformance-common-v1.js";
+
 import { z } from "zod";
 
 import {
@@ -85,16 +92,12 @@ type LeaseCommandForV1<Operation extends SharedStateLeaseOperationV1> =
 type LeaseResultForV1<Operation extends SharedStateLeaseOperationV1> =
   Extract<SharedStateLeaseTransactionResultV1, { readonly operation: Operation }>;
 
-export class SharedStateLeaseConformanceErrorV1 extends Error {
+export const SharedStateLeaseConformanceErrorV1 = createSimpleConformanceErrorClassV1(
+  "SharedStateLeaseConformanceErrorV1",
+) as new (code: SharedStateLeaseConformanceErrorCodeV1) => Error & {
+  readonly name: "SharedStateLeaseConformanceErrorV1";
   readonly code: SharedStateLeaseConformanceErrorCodeV1;
-
-  constructor(code: SharedStateLeaseConformanceErrorCodeV1) {
-    super(code);
-    this.name = "SharedStateLeaseConformanceErrorV1";
-    this.code = code;
-    this.stack = `${this.name}: ${code}`;
-  }
-}
+};
 
 function fail(
   code: SharedStateLeaseConformanceErrorCodeV1,
@@ -103,7 +106,7 @@ function fail(
 }
 
 const decimalSchema = z.string().regex(/^(?:0|[1-9][0-9]{0,39})$/);
-const boundedCountSchema = z.number().int().nonnegative().max(
+const boundedCountSchema = boundedCountSchemaV1(
   SHARED_STATE_LEASE_CONFORMANCE_V1.transactionLimit,
 );
 
@@ -330,23 +333,7 @@ export function seededDeterministicContenderOrderV1(): readonly number[] {
     { length: SHARED_STATE_LEASE_CONFORMANCE_V1.contenderCount },
     (_, index) => index,
   );
-  let state = SHARED_STATE_LEASE_CONFORMANCE_V1.schedulerSeed >>> 0;
-  for (let index = order.length - 1; index > 0; index -= 1) {
-    state = (
-      Math.imul(state, 1_664_525) + 1_013_904_223
-    ) >>> 0;
-    const other = state % (index + 1);
-    [order[index], order[other]] = [order[other]!, order[index]!];
-  }
-  return Object.freeze(order);
-}
-
-function deepFreeze<T>(value: T): T {
-  if (value !== null && typeof value === "object" && !Object.isFrozen(value)) {
-    Object.freeze(value);
-    for (const nested of Object.values(value)) deepFreeze(nested);
-  }
-  return value;
+  return seededDeterministicShuffleV1(order, SHARED_STATE_LEASE_CONFORMANCE_V1.schedulerSeed);
 }
 
 function sameSnapshot(

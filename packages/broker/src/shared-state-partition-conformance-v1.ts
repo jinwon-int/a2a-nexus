@@ -15,6 +15,13 @@
  * proves the equivalent facts at the adapter-lifecycle layer instead.
  */
 
+import {
+  boundedCountSchemaV1,
+  createReportConformanceErrorClassV1,
+  deepFreeze,
+  seededDeterministicShuffleV1,
+} from "./shared-state-conformance-common-v1.js";
+
 import { z } from "zod";
 
 import {
@@ -124,26 +131,14 @@ export type SharedStatePartitionErrorReportV1 = Readonly<
   z.infer<typeof sharedStatePartitionErrorReportV1Schema>
 >;
 
-export class SharedStatePartitionConformanceErrorV1 extends Error {
+export const SharedStatePartitionConformanceErrorV1 = createReportConformanceErrorClassV1(
+  "SharedStatePartitionConformanceErrorV1",
+) as new (code: SharedStatePartitionErrorCodeV1) => Error & {
+  readonly name: "SharedStatePartitionConformanceErrorV1";
   readonly code: SharedStatePartitionErrorCodeV1;
   readonly publicReport: SharedStatePartitionErrorReportV1;
-
-  constructor(code: SharedStatePartitionErrorCodeV1) {
-    super(code);
-    this.name = "SharedStatePartitionConformanceErrorV1";
-    this.code = code;
-    this.publicReport = deepFreeze({
-      kind: "SharedStatePartitionConformanceErrorV1",
-      errorVersion: 1,
-      code,
-    } as const);
-    this.stack = `${this.name}: ${code}`;
-  }
-
-  toJSON(): SharedStatePartitionErrorReportV1 {
-    return this.publicReport;
-  }
-}
+  toJSON(): SharedStatePartitionErrorReportV1;
+};
 
 function fail(code: SharedStatePartitionErrorCodeV1): never {
   throw new SharedStatePartitionConformanceErrorV1(code);
@@ -152,11 +147,9 @@ function fail(code: SharedStatePartitionErrorCodeV1): never {
 const nonNegativeDecimalSchema = z
   .string()
   .regex(/^(?:0|[1-9][0-9]{0,39})$/);
-const boundedCountSchema = z
-  .number()
-  .int()
-  .nonnegative()
-  .max(SHARED_STATE_PARTITION_CONFORMANCE_V1.targetCommandLimit);
+const boundedCountSchema = boundedCountSchemaV1(
+  SHARED_STATE_PARTITION_CONFORMANCE_V1.targetCommandLimit,
+);
 
 /**
  * Strict aggregate snapshot returned only by the target's test-only
@@ -414,14 +407,6 @@ export interface SharedStatePartitionConformanceTargetV1 {
 
 export interface SharedStatePartitionConformanceTargetFactoryV1 {
   create(): Promise<SharedStatePartitionConformanceTargetV1>;
-}
-
-function deepFreeze<T>(value: T): T {
-  if (value !== null && typeof value === "object" && !Object.isFrozen(value)) {
-    Object.freeze(value);
-    for (const nested of Object.values(value)) deepFreeze(nested);
-  }
-  return value;
 }
 
 /**
@@ -806,13 +791,7 @@ async function createTarget(
 export function seededDeterministicPartitionFaultOrderV1():
 readonly SharedStatePartitionFaultPointV1[] {
   const order = [...SHARED_STATE_PARTITION_FAULT_POINTS_V1];
-  let state = SHARED_STATE_PARTITION_CONFORMANCE_V1.schedulerSeed >>> 0;
-  for (let index = order.length - 1; index > 0; index -= 1) {
-    state = (Math.imul(state, 1_664_525) + 1_013_904_223) >>> 0;
-    const other = state % (index + 1);
-    [order[index], order[other]] = [order[other]!, order[index]!];
-  }
-  return Object.freeze(order);
+  return seededDeterministicShuffleV1(order, SHARED_STATE_PARTITION_CONFORMANCE_V1.schedulerSeed);
 }
 
 /**

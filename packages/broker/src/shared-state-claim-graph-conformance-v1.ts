@@ -14,6 +14,13 @@
  * the evidence-path seam exists only to observe the reference model.
  */
 
+import {
+  boundedCountSchemaV1,
+  createReportConformanceErrorClassV1,
+  deepFreeze,
+  seededDeterministicShuffleV1,
+} from "./shared-state-conformance-common-v1.js";
+
 import { z } from "zod";
 
 import {
@@ -128,26 +135,14 @@ export type SharedStateClaimGraphErrorReportV1 = Readonly<
   z.infer<typeof sharedStateClaimGraphErrorReportV1Schema>
 >;
 
-export class SharedStateClaimGraphConformanceErrorV1 extends Error {
+export const SharedStateClaimGraphConformanceErrorV1 = createReportConformanceErrorClassV1(
+  "SharedStateClaimGraphConformanceErrorV1",
+) as new (code: SharedStateClaimGraphErrorCodeV1) => Error & {
+  readonly name: "SharedStateClaimGraphConformanceErrorV1";
   readonly code: SharedStateClaimGraphErrorCodeV1;
   readonly publicReport: SharedStateClaimGraphErrorReportV1;
-
-  constructor(code: SharedStateClaimGraphErrorCodeV1) {
-    super(code);
-    this.name = "SharedStateClaimGraphConformanceErrorV1";
-    this.code = code;
-    this.publicReport = deepFreeze({
-      kind: "SharedStateClaimGraphConformanceErrorV1",
-      errorVersion: 1,
-      code,
-    } as const);
-    this.stack = `${this.name}: ${code}`;
-  }
-
-  toJSON(): SharedStateClaimGraphErrorReportV1 {
-    return this.publicReport;
-  }
-}
+  toJSON(): SharedStateClaimGraphErrorReportV1;
+};
 
 function fail(code: SharedStateClaimGraphErrorCodeV1): never {
   throw new SharedStateClaimGraphConformanceErrorV1(code);
@@ -156,11 +151,9 @@ function fail(code: SharedStateClaimGraphErrorCodeV1): never {
 const nonNegativeDecimalSchema = z
   .string()
   .regex(/^(?:0|[1-9][0-9]{0,39})$/);
-const boundedCountSchema = z
-  .number()
-  .int()
-  .nonnegative()
-  .max(SHARED_STATE_CLAIM_GRAPH_CONFORMANCE_V1.targetCommandLimit);
+const boundedCountSchema = boundedCountSchemaV1(
+  SHARED_STATE_CLAIM_GRAPH_CONFORMANCE_V1.targetCommandLimit,
+);
 
 /**
  * Strict aggregate snapshot returned only by the target's test-only
@@ -404,14 +397,6 @@ export interface SharedStateClaimGraphConformanceTargetFactoryV1 {
   create(): Promise<SharedStateClaimGraphConformanceTargetV1>;
 }
 
-function deepFreeze<T>(value: T): T {
-  if (value !== null && typeof value === "object" && !Object.isFrozen(value)) {
-    Object.freeze(value);
-    for (const nested of Object.values(value)) deepFreeze(nested);
-  }
-  return value;
-}
-
 /**
  * The declared typed-source fixtures must stay exactly the closed graph
  * node-type vocabulary. If the vocabulary grows, this slice fails closed
@@ -611,13 +596,7 @@ async function createTarget(
 export function seededDeterministicClaimGraphSourceOrderV1():
 readonly SharedStateClaimGraphNodeTypeV1[] {
   const order = [...V.graphNodeTypes];
-  let state = SHARED_STATE_CLAIM_GRAPH_CONFORMANCE_V1.schedulerSeed >>> 0;
-  for (let index = order.length - 1; index > 0; index -= 1) {
-    state = (Math.imul(state, 1_664_525) + 1_013_904_223) >>> 0;
-    const other = state % (index + 1);
-    [order[index], order[other]] = [order[other]!, order[index]!];
-  }
-  return Object.freeze(order);
+  return seededDeterministicShuffleV1(order, SHARED_STATE_CLAIM_GRAPH_CONFORMANCE_V1.schedulerSeed);
 }
 
 /**
