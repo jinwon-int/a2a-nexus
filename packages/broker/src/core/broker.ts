@@ -3003,6 +3003,34 @@ export class InMemoryA2ABroker {
     return taskCheckpoint.heartbeatTask(taskId, workerId, this.taskCheckpointContext(), lastProgressAt);
   }
 
+  /**
+   * #2082 C: stamp task liveness from a worker heartbeat when the reported
+   * active task actually belongs to this worker and is still active. Lenient
+   * by design — a stale/racing activeTaskId (task completed, reassigned, or
+   * unknown) is skipped silently so the worker heartbeat that carried it
+   * never fails because of it. Old workers' dedicated task heartbeats keep
+   * working unchanged.
+   */
+  heartbeatActiveTaskIfAssigned(workerId: string, activeTaskId: string, lastProgressAt?: string): void {
+    const taskId = activeTaskId.trim();
+    if (!taskId) {
+      return;
+    }
+    const task = this.getTask(taskId);
+    if (
+      !task ||
+      task.assignedWorkerId !== workerId ||
+      (task.status !== "claimed" && task.status !== "running")
+    ) {
+      return;
+    }
+    const normalizedProgress =
+      typeof lastProgressAt === "string" && lastProgressAt.trim() && !Number.isNaN(Date.parse(lastProgressAt.trim()))
+        ? lastProgressAt.trim()
+        : undefined;
+    this.heartbeatTask(taskId, workerId, normalizedProgress);
+  }
+
   // --- Diagnostics ---
 
   /** Compute the diagnostic status for a single task. */

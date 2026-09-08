@@ -655,7 +655,7 @@ test("worker sends full heartbeat once and empty heartbeat bodies afterward", as
   assert.deepEqual(bodies[1], {});
 });
 
-test("worker sends task heartbeats while a handler is running", async () => {
+test("worker heartbeats carry active task liveness while a handler is running", async () => {
   const server = await startTestServer();
   const worker = new A2ABrokerWorker({
     brokerUrl: server.baseUrl,
@@ -685,7 +685,7 @@ test("worker sends task heartbeats while a handler is running", async () => {
 
   try {
     await worker.register();
-    await createTask(server.baseUrl, {
+    const created = await createTask(server.baseUrl, {
       intent: "analyze",
       requester: { id: "hub-a", kind: "node", role: "hub" },
       target: { id: "worker-a", kind: "node", role: "analyst" },
@@ -694,16 +694,31 @@ test("worker sends task heartbeats while a handler is running", async () => {
       payload: {},
     });
 
-    const processed = await worker.runOnce();
-    assert.equal(processed, 1);
+    // #2082 C: task liveness rides the unified worker heartbeat (which names
+    // the active task), so the full run loop — not a bare runOnce — must
+    // sustain it while the slow handler works.
+    const runPromise = worker.run().catch(() => {});
 
+    let taskResponse = await fetch(`${server.baseUrl}/tasks/${created.id}`);
+    let completedTask = (await taskResponse.json()) as { status?: string; lastHeartbeatAt?: string };
+    const deadline = Date.now() + 5_000;
+    while (completedTask.status !== "succeeded" && Date.now() < deadline) {
+      await new Promise((resolve) => setTimeout(resolve, 25));
+      taskResponse = await fetch(`${server.baseUrl}/tasks/${created.id}`);
+      completedTask = (await taskResponse.json()) as { status?: string; lastHeartbeatAt?: string };
+    }
+
+    await worker.stop();
+    await runPromise;
+
+    assert.equal(completedTask.status, "succeeded");
     const auditResponse = await fetch(`${server.baseUrl}/audit?action=task.heartbeat`);
     const audit = await auditResponse.json();
-    assert.ok(audit.items.length >= 1, "expected at least one task heartbeat audit event");
+    const heartbeatEvents = (audit.items as Array<{ targetId: string }>).filter(
+      (item) => item.targetId === created.id,
+    );
+    assert.ok(heartbeatEvents.length >= 1, "expected at least one task heartbeat audit event");
 
-    const taskResponse = await fetch(`${server.baseUrl}/tasks/${audit.items[0].targetId}`);
-    const completedTask = await taskResponse.json();
-    assert.equal(completedTask.status, "succeeded");
     assert.equal(typeof completedTask.lastHeartbeatAt, "string");
   } finally {
     await worker.stop();

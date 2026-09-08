@@ -9,7 +9,7 @@
  * `./worker.js` consumers keep working unchanged.
  */
 
-import { readdirSync, statSync } from "node:fs";
+import { promises as fsp, readdirSync, statSync } from "node:fs";
 import { join as joinPath } from "node:path";
 import { setTimeout as delay } from "node:timers/promises";
 import { signTaskResultProvenance } from "a2a-attestation";
@@ -204,6 +204,12 @@ export class A2ABrokerWorker {
   // the whole (history-sized) piri root on every tick. Invalidated when the
   // root's mtime changes (a new session dir touches it) or after 60s.
   private readonly piriSessionDirCache = new Map<string, { rootMtimeMs: number; scannedAtMs: number; matchingDirs: string[] }>();
+  // #2082 C: the task the worker is actively executing — carried on every
+  // worker heartbeat so task liveness rides the same timer. Null when idle.
+  private activeTaskId: string | null = null;
+  // Progress-surface scan results cached for one heartbeat cycle (the scan is
+  // now async off the event loop and only the periodic heartbeat needs it).
+  private readonly progressAtCache = new Map<string, { scannedAtMs: number; value: string | undefined }>();
 
   constructor(config: BrokerWorkerConfig, options?: { fetchImpl?: FetchLike }) {
     this.config = config;
@@ -223,14 +229,23 @@ export class A2ABrokerWorker {
   }
 
   async heartbeat(): Promise<WorkerView> {
-    const body: WorkerHeartbeatRequest = this.initialHeartbeatSent
-      ? {}
-      : {
-          displayName: this.config.worker.displayName,
-          brokerUrl: this.config.worker.brokerUrl,
-          capabilities: this.config.worker.capabilities,
-          metadata: this.config.worker.metadata,
-        };
+    // #2082 C: name the actively-running task so the single worker heartbeat
+    // sustains task liveness too (the broker stamps it only when the task is
+    // still assigned and active). resolveTaskProgressAt is async now and
+    // cached per heartbeat cycle.
+    const activeTaskId = this.activeTaskId;
+    const activeTaskLastProgressAt = activeTaskId ? await this.resolveTaskProgressAt(activeTaskId) : undefined;
+    const body: WorkerHeartbeatRequest = {
+      ...(this.initialHeartbeatSent
+        ? {}
+        : {
+            displayName: this.config.worker.displayName,
+            brokerUrl: this.config.worker.brokerUrl,
+            capabilities: this.config.worker.capabilities,
+            metadata: this.config.worker.metadata,
+          }),
+      ...(activeTaskId ? { activeTaskId, activeTaskLastProgressAt } : {}),
+    };
     const heartbeat = await this.requestJson<WorkerView>(`/workers/${encodeURIComponent(this.workerId)}/heartbeat`, {
       method: "POST",
       body,
@@ -409,15 +424,15 @@ export class A2ABrokerWorker {
       throw error;
     }
 
-    let stopTaskHeartbeat: (() => void) | undefined;
+    // #2082 C: task liveness rides the regular worker heartbeat (which now
+    // names this task as active) instead of a dedicated heartbeat timer.
     try {
       const runningTask = await this.startTask(task.id);
-      stopTaskHeartbeat = this.startTaskHeartbeatTimer(task.id);
+      this.activeTaskId = task.id;
       const outcome = normalizeWorkerHandlerOutcome(await this.config.handler(runningTask));
 
       if (outcome.error) {
-        stopTaskHeartbeat?.();
-        stopTaskHeartbeat = undefined;
+        this.activeTaskId = null;
         await this.failTask(task.id, outcome.error);
         console.warn(`[worker:${this.workerId}] task ${task.id} failed: ${outcome.error.message}`);
         return true;
@@ -425,8 +440,7 @@ export class A2ABrokerWorker {
 
       const acceptance = parseTaskAcceptance(runningTask);
       if (acceptance?.error) {
-        stopTaskHeartbeat?.();
-        stopTaskHeartbeat = undefined;
+        this.activeTaskId = null;
         await this.failTask(task.id, acceptance.error);
         console.warn(`[worker:${this.workerId}] task ${task.id} failed: ${acceptance.error.message}`);
         return true;
@@ -440,8 +454,7 @@ export class A2ABrokerWorker {
         const validation = reported ?? runTaskAcceptance(acceptance.spec);
         outcome.result = { ...(outcome.result ?? {}), validation };
         if (validation.verdict !== "pass") {
-          stopTaskHeartbeat?.();
-          stopTaskHeartbeat = undefined;
+          this.activeTaskId = null;
           await this.failTask(task.id, { code: "acceptance_failed", message: validation.note ?? "acceptance command failed" });
           console.warn(`[worker:${this.workerId}] task ${task.id} failed: ${validation.note}`);
           return true;
@@ -450,8 +463,7 @@ export class A2ABrokerWorker {
 
       const completionEvidenceError = validateTaskCompletionEvidence(runningTask, outcome.result);
       if (completionEvidenceError) {
-        stopTaskHeartbeat?.();
-        stopTaskHeartbeat = undefined;
+        this.activeTaskId = null;
         // #1815 item 5: on a failed review verdict, submit the held result
         // with the failure so the broker preserves the negative findings
         // (task.negativeVerdictEvidence) instead of discarding them — no
@@ -464,15 +476,13 @@ export class A2ABrokerWorker {
         return true;
       }
 
-      stopTaskHeartbeat?.();
-      stopTaskHeartbeat = undefined;
+      this.activeTaskId = null;
       await this.completeTask(task.id, this.attachResultProvenance(runningTask, outcome.result));
       return true;
     } catch (error) {
       const taskError = toTaskError(error);
+      this.activeTaskId = null;
       try {
-        stopTaskHeartbeat?.();
-        stopTaskHeartbeat = undefined;
         await this.failTask(task.id, taskError);
       } catch (failError) {
         console.error(`[worker:${this.workerId}] failed to mark task ${task.id} as failed`, failError);
@@ -481,7 +491,7 @@ export class A2ABrokerWorker {
       console.warn(`[worker:${this.workerId}] task ${task.id} failed: ${taskError.message}`);
       return true;
     } finally {
-      stopTaskHeartbeat?.();
+      this.activeTaskId = null;
     }
   }
 
@@ -499,38 +509,47 @@ export class A2ABrokerWorker {
     });
   }
 
-  private async heartbeatTask(taskId: string): Promise<TaskRecord> {
-    const lastProgressAt = this.resolveTaskProgressAt(taskId);
-    return this.requestJson<TaskRecord>(`/tasks/${encodeURIComponent(taskId)}/heartbeat`, {
-      method: "POST",
-      body: { workerId: this.workerId, ...(lastProgressAt ? { lastProgressAt } : {}) },
-    });
+  /**
+   * #2082 C: the per-task progress scan result is cached for one heartbeat
+   * cycle — the only caller is the periodic worker heartbeat, and the scan
+   * used to hit the event loop synchronously on every tick.
+   */
+  private async resolveTaskProgressAt(taskId: string): Promise<string | undefined> {
+    const cached = this.progressAtCache.get(taskId);
+    const nowMs = Date.now();
+    if (cached && nowMs - cached.scannedAtMs < this.config.heartbeatIntervalMs) {
+      return cached.value;
+    }
+    const value = await this.scanTaskProgressAt(taskId);
+    this.progressAtCache.set(taskId, { scannedAtMs: nowMs, value });
+    if (this.progressAtCache.size >= 64) {
+      for (const key of this.progressAtCache.keys()) {
+        this.progressAtCache.delete(key);
+        break;
+      }
+    }
+    return value;
   }
 
-  /**
-   * Newest mtime on the harness's own progress surface for this task, when
-   * the runner/bridge writes one (piri --progress-file, a2a-nexus#1745 ②).
-   * Scan is worker-local and read-only: the docker-runner root indexes by
-   * exact task id, the piri analysis bridge root by task-id-containing dir.
-   */
-  private resolveTaskProgressAt(taskId: string): string | undefined {
+  private async scanTaskProgressAt(taskId: string): Promise<string | undefined> {
     const env = process.env;
     const runnerRoot = optionalTrimmed(env.A2A_DOCKER_RUNNER_ROOT) ?? "/var/lib/openclaw-a2a/tasks";
     const piriRoot = optionalTrimmed(env.A2A_PIRI_WORK_ROOT) ?? "/var/lib/a2a-runner/piri-tasks";
-    let latestMs = 0;
-    const consider = (progressPath: string): void => {
+    // #2082 C: fs.promises instead of the old sync statSync/readdirSync walk.
+    const consider = async (progressPath: string): Promise<number> => {
       try {
-        const ms = statSync(progressPath).mtimeMs;
-        if (ms > latestMs) latestMs = ms;
+        return (await fsp.stat(progressPath)).mtimeMs;
       } catch {
-        // not present
+        return 0; // not present
       }
     };
     // docker-runner root: <root>/<taskId>/*/artifacts/piri-progress.jsonl
+    const candidates: Array<Promise<number>> = [];
     try {
-      for (const runDir of readdirSync(joinPath(runnerRoot, taskId), { withFileTypes: true })) {
+      const runDirs = await fsp.readdir(joinPath(runnerRoot, taskId), { withFileTypes: true });
+      for (const runDir of runDirs) {
         if (!runDir.isDirectory()) continue;
-        consider(joinPath(runnerRoot, taskId, runDir.name, "artifacts", "piri-progress.jsonl"));
+        candidates.push(consider(joinPath(runnerRoot, taskId, runDir.name, "artifacts", "piri-progress.jsonl")));
       }
     } catch {
       // root or task dir missing
@@ -544,11 +563,12 @@ export class A2ABrokerWorker {
     const sessionDir = sanitizePiriName(`a2a-${this.workerId}-${taskId}-analysis`).slice(0, 48);
     try {
       for (const dirName of this.matchingPiriSessionDirs(piriRoot, taskId, sessionDir)) {
-        consider(joinPath(piriRoot, dirName, "artifacts", "piri-progress.jsonl"));
+        candidates.push(consider(joinPath(piriRoot, dirName, "artifacts", "piri-progress.jsonl")));
       }
     } catch {
       // root missing
     }
+    const latestMs = Math.max(0, ...(await Promise.all(candidates)));
     return latestMs > 0 ? new Date(latestMs).toISOString() : undefined;
   }
 
@@ -571,41 +591,6 @@ export class A2ABrokerWorker {
     }
     this.piriSessionDirCache.set(taskId, { rootMtimeMs, scannedAtMs: nowMs, matchingDirs });
     return matchingDirs;
-  }
-
-  private startTaskHeartbeatTimer(taskId: string): () => void {
-    let stopped = false;
-    let inFlight = false;
-    const heartbeatTimer = setInterval(() => {
-      // Skip while a previous task heartbeat is still in flight so a slow
-      // broker cannot pile up concurrent requests for the same task.
-      if (stopped || inFlight) {
-        return;
-      }
-      inFlight = true;
-      void this.safeTaskHeartbeat(taskId).finally(() => {
-        inFlight = false;
-      });
-    }, this.config.heartbeatIntervalMs);
-    if (typeof heartbeatTimer.unref === "function") {
-      heartbeatTimer.unref();
-    }
-    return () => {
-      stopped = true;
-      clearInterval(heartbeatTimer);
-    };
-  }
-
-  private async safeTaskHeartbeat(taskId: string): Promise<void> {
-    if (this.stopping) {
-      return;
-    }
-
-    try {
-      await this.heartbeatTask(taskId);
-    } catch (error) {
-      console.error(`[worker:${this.workerId}] task ${taskId} heartbeat failed`, error);
-    }
   }
 
   private attachResultProvenance(task: TaskRecord, result?: TaskResult): TaskResult | undefined {
