@@ -13,6 +13,14 @@
  * runtime APIs.
  */
 
+import {
+  boundedCountSchemaV1,
+  createHarnessTimeEvaluatorV1,
+  createReportConformanceErrorClassV1,
+  deepFreeze,
+  seededDeterministicShuffleV1,
+} from "./shared-state-conformance-common-v1.js";
+
 import { z } from "zod";
 
 import {
@@ -33,10 +41,7 @@ import {
   SHARED_STATE_TIME_V1_VALUES as TIME_V,
   deriveSharedStateExpiryV1,
   evaluateSharedStateLogicalBoundaryV1,
-  evaluateSharedStateTimeV1,
-  type SharedStateClockProfileV1,
   type SharedStateTimeEvaluationV1,
-  type SharedStateTimePolicyV1,
 } from "./shared-state-time-v1.js";
 
 export const SHARED_STATE_EXPIRY_CONFORMANCE_V1 = Object.freeze({
@@ -147,26 +152,14 @@ export type SharedStateExpiryErrorReportV1 = Readonly<
   z.infer<typeof sharedStateExpiryErrorReportV1Schema>
 >;
 
-export class SharedStateExpiryConformanceErrorV1 extends Error {
+export const SharedStateExpiryConformanceErrorV1 = createReportConformanceErrorClassV1(
+  "SharedStateExpiryConformanceErrorV1",
+) as new (code: SharedStateExpiryErrorCodeV1) => Error & {
+  readonly name: "SharedStateExpiryConformanceErrorV1";
   readonly code: SharedStateExpiryErrorCodeV1;
   readonly publicReport: SharedStateExpiryErrorReportV1;
-
-  constructor(code: SharedStateExpiryErrorCodeV1) {
-    super(code);
-    this.name = "SharedStateExpiryConformanceErrorV1";
-    this.code = code;
-    this.publicReport = deepFreeze({
-      kind: "SharedStateExpiryConformanceErrorV1",
-      errorVersion: 1,
-      code,
-    } as const);
-    this.stack = `${this.name}: ${code}`;
-  }
-
-  toJSON(): SharedStateExpiryErrorReportV1 {
-    return this.publicReport;
-  }
-}
+  toJSON(): SharedStateExpiryErrorReportV1;
+};
 
 function fail(code: SharedStateExpiryErrorCodeV1): never {
   throw new SharedStateExpiryConformanceErrorV1(code);
@@ -175,11 +168,9 @@ function fail(code: SharedStateExpiryErrorCodeV1): never {
 const nonNegativeDecimalSchema = z
   .string()
   .regex(/^(?:0|[1-9][0-9]{0,39})$/);
-const boundedCountSchema = z
-  .number()
-  .int()
-  .nonnegative()
-  .max(SHARED_STATE_EXPIRY_CONFORMANCE_V1.targetCommandLimit);
+const boundedCountSchema = boundedCountSchemaV1(
+  SHARED_STATE_EXPIRY_CONFORMANCE_V1.targetCommandLimit,
+);
 
 /**
  * Strict aggregate snapshot returned only by the target's test-only
@@ -459,14 +450,6 @@ export interface SharedStateExpiryConformanceTargetFactoryV1 {
   create(input: {
     readonly clock: SharedStateExpiryConformanceClockV1;
   }): Promise<SharedStateExpiryConformanceTargetV1>;
-}
-
-function deepFreeze<T>(value: T): T {
-  if (value !== null && typeof value === "object" && !Object.isFrozen(value)) {
-    Object.freeze(value);
-    for (const nested of Object.values(value)) deepFreeze(nested);
-  }
-  return value;
 }
 
 /**
@@ -938,56 +921,10 @@ function graphProjectionCommand(): CommandFor<"applyGraphProjectionBatch"> {
   });
 }
 
-function timePolicyForProfile(
-  clockProfile: SharedStateClockProfileV1,
-): SharedStateTimePolicyV1 {
-  const requirements = TIME_V.profileRequirements[clockProfile];
-  return {
-    kind: TIME_V.kinds.policy,
-    timeVersion: TIME_V.version,
-    clockProfile,
-    clockAuthority: requirements.clockAuthority,
-    observationSource: requirements.observationSource,
-    timestampUnit: TIME_V.timestampUnit,
-    integerEncoding: TIME_V.integerEncoding,
-    backwardSkewToleranceMs:
-      SHARED_STATE_EXPIRY_CONFORMANCE_V1.backwardSkewToleranceMs
-        .toString(),
-  };
-}
-
-const TIME_POLICIES = Object.freeze(
-  TIME_V.clockProfiles.map(timePolicyForProfile),
-);
-
-function evaluateHarnessTime(
-  observed: bigint,
-  persistedFloor: bigint,
-): SharedStateTimeEvaluationV1 {
-  let commonEvaluation: SharedStateTimeEvaluationV1 | null = null;
-  for (const policy of TIME_POLICIES) {
-    const result = evaluateSharedStateTimeV1(policy, {
-      kind: TIME_V.kinds.observation,
-      timeVersion: TIME_V.version,
-      trustBoundary: TIME_V.trustBoundary,
-      clockProfile: policy.clockProfile,
-      clockAuthority: policy.clockAuthority,
-      observationSource: policy.observationSource,
-      observedAtUnixMs: observed.toString(),
-      persistedFloorUnixMs: persistedFloor.toString(),
-      minimumExpectedFloorUnixMs: persistedFloor.toString(),
-    });
-    if (!result.ok) return fail("time_evaluator_mismatch");
-    if (
-      commonEvaluation !== null
-      && JSON.stringify(commonEvaluation) !== JSON.stringify(result.value)
-    ) {
-      return fail("time_evaluator_mismatch");
-    }
-    commonEvaluation = result.value;
-  }
-  return commonEvaluation ?? fail("time_evaluator_mismatch");
-}
+const evaluateHarnessTime = createHarnessTimeEvaluatorV1({
+  backwardSkewToleranceMs: SHARED_STATE_EXPIRY_CONFORMANCE_V1.backwardSkewToleranceMs,
+  fail,
+});
 
 /**
  * Derives the absolute expiry exactly the way the contract prescribes: the
@@ -1064,13 +1001,7 @@ async function createTarget(
 export function seededDeterministicExpiryFixtureOrderV1():
 readonly SharedStateExpiryBoundaryFixtureV1[] {
   const order = [...SHARED_STATE_EXPIRY_BOUNDARY_FIXTURES_V1];
-  let state = SHARED_STATE_EXPIRY_CONFORMANCE_V1.schedulerSeed >>> 0;
-  for (let index = order.length - 1; index > 0; index -= 1) {
-    state = (Math.imul(state, 1_664_525) + 1_013_904_223) >>> 0;
-    const other = state % (index + 1);
-    [order[index], order[other]] = [order[other]!, order[index]!];
-  }
-  return Object.freeze(order);
+  return seededDeterministicShuffleV1(order, SHARED_STATE_EXPIRY_CONFORMANCE_V1.schedulerSeed);
 }
 
 /**

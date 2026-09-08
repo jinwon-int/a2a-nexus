@@ -119,6 +119,10 @@ keeps branch protection changes, release/tag creation, npm/GitHub Packages
 publication, Docker/GHCR publication, and canonical flip actions blocked until
 separate explicit operator approval.
 
+## Shared-State Runtime Reachability
+
+`packages/broker/src/shared-state-*` (the second SQLite stack, `a2a.shared-state.storage/v1`) is runtime-reachable only through the serving fence (`acquireSharedStateServingFenceForBrokerV1`); the adapter's 13 primitives and the eight conformance harnesses remain undeployed (no non-test importers) and are staged for the `#1504` HA wiring — see `#2081` for the pre-wiring query-scaling work.
+
 ## Snapshot retention
 
 The remaining `fixtures/current-state/*.json` snapshots and their release-gate
