@@ -38,7 +38,7 @@
  * and x-a2a-ratelimit-bucket.
  */
 
-import { createHash, createHmac, createPublicKey, timingSafeEqual, verify } from "node:crypto";
+import { createHash, createHmac, createPublicKey, timingSafeEqual, verify, type KeyObject } from "node:crypto";
 import { readFileSync, statSync } from "node:fs";
 import type { IncomingMessage, ServerResponse } from "node:http";
 import { z } from "zod";
@@ -107,6 +107,20 @@ export const A2A_WORKER_ROUTE_SCOPES = [
 export type A2AWorkerRouteScope = (typeof A2A_WORKER_ROUTE_SCOPES)[number];
 
 const A2A_WORKER_ROUTE_SCOPE_SET: ReadonlySet<string> = new Set(A2A_WORKER_ROUTE_SCOPES);
+
+// #2079 C: the registry is fixed for the process lifetime — cache the imported
+// public key per registry record object (one createPublicKey per record instead
+// of one per signed request).
+const publicKeyByRecord = new WeakMap<object, KeyObject>();
+
+function cachedPublicKeyForRecord(keyRecord: A2AHttpSignatureKeyRecord): KeyObject {
+  let key = publicKeyByRecord.get(keyRecord);
+  if (!key) {
+    key = createPublicKey({ key: keyRecord.publicKeyJwk, format: "jwk" });
+    publicKeyByRecord.set(keyRecord, key);
+  }
+  return key;
+}
 
 export interface A2AHttpSignatureKeyRecord {
   keyid: string;
@@ -528,7 +542,10 @@ export function verifyA2AHttpSignature(
   }
 
   try {
-    const publicKey = createPublicKey({ key: keyRecord.publicKeyJwk, format: "jwk" });
+    // #2079 C: the key registry is fixed for the process lifetime, so cache the
+    // imported KeyObject per registry record instead of rebuilding it from the
+    // JWK on every signed request.
+    const publicKey = cachedPublicKeyForRecord(keyRecord);
     const valid = verify(null, Buffer.from(signingBase), publicKey, signatureBytes);
     if (!valid) {
       return signatureFailure("a2a_signature_invalid", "A2A HTTP signature verification failed");

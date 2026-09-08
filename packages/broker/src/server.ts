@@ -550,6 +550,18 @@ export function createBrokerServer(options: BrokerServerOptions = {}): BrokerSer
       : stateStore;
   let workerPersistenceClosePromise: Promise<void> | undefined;
   let lossMonitor: ReturnType<typeof createSharedStateLossMonitorV1> | undefined;
+  // #2079 B: two accessors. The per-request gate reads the monitor's cached
+  // probe (fresh within the serving-authority TTL; the 1s monitor tick keeps
+  // it refreshed) so one fence SELECT serves a whole tick instead of one per
+  // request. Operator-facing readiness/health evaluations stay live so a
+  // stolen row is reported on the very next check.
+  const inspectServingAuthorityCached = (): SharedStateServingFenceProbeV1 => {
+    if (lossMonitor !== undefined) return lossMonitor.inspectCached();
+    return servingFence?.probe() ?? {
+      ready: false as const,
+      reasonCode: "adapter_unavailable" as const,
+    };
+  };
   const inspectServingAuthority = (): SharedStateServingFenceProbeV1 => {
     if (lossMonitor !== undefined) return lossMonitor.inspect();
     return servingFence?.probe() ?? {
@@ -1191,7 +1203,7 @@ export function createBrokerServer(options: BrokerServerOptions = {}): BrokerSer
         });
       }
 
-      const authority = inspectServingAuthority();
+      const authority = inspectServingAuthorityCached();
       if (!authority.ready) {
         return sendJson(res, 503, {
           error: {
