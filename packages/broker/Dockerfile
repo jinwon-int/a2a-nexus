@@ -77,6 +77,16 @@ COPY --from=build /app/packages/broker/dist ./packages/broker/dist
 COPY --from=build /app/packages/policy-referee/dist ./packages/policy-referee/dist
 COPY --from=build /app/packages/attestation/dist ./packages/attestation/dist
 COPY --from=build /app/packages/nclex-evaluation/dist ./packages/nclex-evaluation/dist
+# #2080 step 1: the runtime image ships executable runtime JS only. The broker
+# build compiles the whole src tree, so dist carries ~5.4 MB of *.test.js and
+# the shared-state conformance harnesses — none of it has a runtime importer
+# (server.js imports zero conformance modules; the harness-only
+# shared-state-sqlite-expiry-snapshot-v1.js would keep a dangling import to a
+# deleted harness, so it goes too). check:broker-docker-hardening pins this.
+RUN find packages/broker/dist -name '*.test.js' -delete \
+  && find packages/broker/dist -maxdepth 1 -name 'shared-state-*conformance*.js' -delete \
+  && rm -f packages/broker/dist/shared-state-sqlite-expiry-snapshot-v1.js \
+  && rm -rf packages/broker/dist/shared-state-worker-mode packages/broker/dist/fixtures
 COPY packages/broker/scripts/generate-build-info.mjs ./packages/broker/scripts/generate-build-info.mjs
 COPY packages/broker/scripts/check-build-revision.mjs ./packages/broker/scripts/check-build-revision.mjs
 COPY packages/broker/scripts/export-sqlite-state.mjs ./packages/broker/scripts/export-sqlite-state.mjs

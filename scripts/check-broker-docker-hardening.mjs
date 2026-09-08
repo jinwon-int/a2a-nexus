@@ -68,6 +68,16 @@ function check() {
     // A revision that is not a git SHA cannot be checked against a tree.
     assert.match(dockerfile, /grep\s+-Eq\s+'\^\[0-9a-f\]\{7,40\}\(-dirty\)\?\$'/);
   });
+  // #2080 step 1: the runtime stage must prune compiled tests and the
+  // shared-state conformance harnesses out of packages/broker/dist. Removing
+  // this block silently puts ~5.4 MB of never-executed test JS (and
+  // harness-only shared-state scaffolding) back into the shipped image.
+  ok("runtime image dist ships no tests or conformance harnesses (#2080)", () => {
+    assert.match(dockerfile, /find packages\/broker\/dist -name '\*\.test\.js' -delete/);
+    assert.match(dockerfile, /find packages\/broker\/dist -maxdepth 1 -name 'shared-state-\*conformance\*\.js' -delete/);
+    assert.match(dockerfile, /rm -f packages\/broker\/dist\/shared-state-sqlite-expiry-snapshot-v1\.js/);
+    assert.match(dockerfile, /rm -rf packages\/broker\/dist\/shared-state-worker-mode packages\/broker\/dist\/fixtures/);
+  });
 
   return { ok: true, checked: checks.length, checks };
 }

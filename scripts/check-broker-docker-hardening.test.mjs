@@ -58,3 +58,15 @@ test("broker image records whether its revision was verified against the built t
   assert.match(compose, /A2A_BROKER_REVISION_VERIFIED:\s+\$\{A2A_BROKER_REVISION_VERIFIED:-false\}/);
   assert.match(dockerfile, /grep\s+-Eq\s+'\^\[0-9a-f\]\{7,40\}\(-dirty\)\?\$'/);
 });
+
+test("broker runtime image prunes compiled tests and conformance harnesses from dist (#2080)", () => {
+  assert.match(dockerfile, /find packages\/broker\/dist -name '\*\.test\.js' -delete/);
+  assert.match(dockerfile, /find packages\/broker\/dist -maxdepth 1 -name 'shared-state-\*conformance\*\.js' -delete/);
+  assert.match(dockerfile, /rm -f packages\/broker\/dist\/shared-state-sqlite-expiry-snapshot-v1\.js/);
+  assert.match(dockerfile, /rm -rf packages\/broker\/dist\/shared-state-worker-mode packages\/broker\/dist\/fixtures/);
+  // The prune must happen in the runtime stage: after the dist COPY, before
+  // the server entrypoint is the only ordering that guarantees the shipped
+  // tree was actually pruned.
+  const runtimeStage = dockerfile.slice(dockerfile.lastIndexOf("COPY --from=build"));
+  assert.match(runtimeStage, /\*\.test\.js' -delete/);
+});
