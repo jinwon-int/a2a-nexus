@@ -12,6 +12,14 @@
  * runtime APIs.
  */
 
+import {
+  boundedCountSchemaV1,
+  createHarnessTimeEvaluatorV1,
+  createReportConformanceErrorClassV1,
+  deepFreeze,
+  seededDeterministicShuffleV1,
+} from "./shared-state-conformance-common-v1.js";
+
 import { z } from "zod";
 
 import {
@@ -29,10 +37,7 @@ import {
 import {
   SHARED_STATE_TIME_V1_VALUES as TIME_V,
   evaluateSharedStateLogicalBoundaryV1,
-  evaluateSharedStateTimeV1,
-  type SharedStateClockProfileV1,
   type SharedStateTimeEvaluationV1,
-  type SharedStateTimePolicyV1,
 } from "./shared-state-time-v1.js";
 
 export const SHARED_STATE_RESTART_CONTINUITY_CONFORMANCE_V1 =
@@ -127,27 +132,14 @@ export type SharedStateRestartContinuityErrorReportV1 = Readonly<
   z.infer<typeof sharedStateRestartContinuityErrorReportV1Schema>
 >;
 
-export class SharedStateRestartContinuityConformanceErrorV1
-extends Error {
+export const SharedStateRestartContinuityConformanceErrorV1 = createReportConformanceErrorClassV1(
+  "SharedStateRestartContinuityConformanceErrorV1",
+) as new (code: SharedStateRestartContinuityErrorCodeV1) => Error & {
+  readonly name: "SharedStateRestartContinuityConformanceErrorV1";
   readonly code: SharedStateRestartContinuityErrorCodeV1;
   readonly publicReport: SharedStateRestartContinuityErrorReportV1;
-
-  constructor(code: SharedStateRestartContinuityErrorCodeV1) {
-    super(code);
-    this.name = "SharedStateRestartContinuityConformanceErrorV1";
-    this.code = code;
-    this.publicReport = deepFreeze({
-      kind: "SharedStateRestartContinuityConformanceErrorV1",
-      errorVersion: 1,
-      code,
-    } as const);
-    this.stack = `${this.name}: ${code}`;
-  }
-
-  toJSON(): SharedStateRestartContinuityErrorReportV1 {
-    return this.publicReport;
-  }
-}
+  toJSON(): SharedStateRestartContinuityErrorReportV1;
+};
 
 function fail(
   code: SharedStateRestartContinuityErrorCodeV1,
@@ -161,11 +153,9 @@ const nonNegativeDecimalSchema = z
 const positiveDecimalSchema = z
   .string()
   .regex(/^[1-9][0-9]{0,39}$/);
-const boundedCountSchema = z
-  .number()
-  .int()
-  .nonnegative()
-  .max(SHARED_STATE_RESTART_CONTINUITY_CONFORMANCE_V1.targetCommandLimit);
+const boundedCountSchema = boundedCountSchemaV1(
+  SHARED_STATE_RESTART_CONTINUITY_CONFORMANCE_V1.targetCommandLimit,
+);
 
 const streamHighWaterSchema = z
   .object({
@@ -552,14 +542,6 @@ export interface SharedStateRestartContinuityConformanceTargetFactoryV1 {
   }): Promise<SharedStateRestartContinuityConformanceTargetV1>;
 }
 
-function deepFreeze<T>(value: T): T {
-  if (value !== null && typeof value === "object" && !Object.isFrozen(value)) {
-    Object.freeze(value);
-    for (const nested of Object.values(value)) deepFreeze(nested);
-  }
-  return value;
-}
-
 const EMPTY_CRASH_BASELINE_SNAPSHOT_V1 = deepFreeze({
   kind: "SharedStateRestartContinuityConformanceSnapshotV1",
   snapshotVersion: 1,
@@ -724,16 +706,7 @@ readonly SharedStateRestartContinuityFaultPointV1[] {
   const order = [
     ...SHARED_STATE_RESTART_CONTINUITY_FAULT_POINTS_V1,
   ];
-  let state =
-    SHARED_STATE_RESTART_CONTINUITY_CONFORMANCE_V1.schedulerSeed >>> 0;
-  for (let index = order.length - 1; index > 0; index -= 1) {
-    state = (
-      Math.imul(state, 1_664_525) + 1_013_904_223
-    ) >>> 0;
-    const other = state % (index + 1);
-    [order[index], order[other]] = [order[other]!, order[index]!];
-  }
-  return Object.freeze(order);
+  return seededDeterministicShuffleV1(order, SHARED_STATE_RESTART_CONTINUITY_CONFORMANCE_V1.schedulerSeed);
 }
 
 const IDEMPOTENCY_REGISTRATION = (() => {
@@ -1187,57 +1160,11 @@ function graphProjectionCommand(
 const GRAPH_PROJECTION_TWO_COMMAND = graphProjectionCommand(2);
 const GRAPH_PROJECTION_ONE_COMMAND = graphProjectionCommand(1);
 
-function timePolicyForProfile(
-  clockProfile: SharedStateClockProfileV1,
-): SharedStateTimePolicyV1 {
-  const requirements = TIME_V.profileRequirements[clockProfile];
-  return {
-    kind: TIME_V.kinds.policy,
-    timeVersion: TIME_V.version,
-    clockProfile,
-    clockAuthority: requirements.clockAuthority,
-    observationSource: requirements.observationSource,
-    timestampUnit: TIME_V.timestampUnit,
-    integerEncoding: TIME_V.integerEncoding,
-    backwardSkewToleranceMs:
-      SHARED_STATE_RESTART_CONTINUITY_CONFORMANCE_V1
-        .backwardSkewToleranceMs
-        .toString(),
-  };
-}
-
-const TIME_POLICIES = Object.freeze(
-  TIME_V.clockProfiles.map(timePolicyForProfile),
-);
-
-function evaluateHarnessTime(
-  observed: bigint,
-  persistedFloor: bigint,
-): SharedStateTimeEvaluationV1 {
-  let commonEvaluation: SharedStateTimeEvaluationV1 | null = null;
-  for (const policy of TIME_POLICIES) {
-    const result = evaluateSharedStateTimeV1(policy, {
-      kind: TIME_V.kinds.observation,
-      timeVersion: TIME_V.version,
-      trustBoundary: TIME_V.trustBoundary,
-      clockProfile: policy.clockProfile,
-      clockAuthority: policy.clockAuthority,
-      observationSource: policy.observationSource,
-      observedAtUnixMs: observed.toString(),
-      persistedFloorUnixMs: persistedFloor.toString(),
-      minimumExpectedFloorUnixMs: persistedFloor.toString(),
-    });
-    if (!result.ok) return fail("time_evaluator_mismatch");
-    if (
-      commonEvaluation !== null
-      && JSON.stringify(commonEvaluation) !== JSON.stringify(result.value)
-    ) {
-      return fail("time_evaluator_mismatch");
-    }
-    commonEvaluation = result.value;
-  }
-  return commonEvaluation ?? fail("time_evaluator_mismatch");
-}
+const evaluateHarnessTime = createHarnessTimeEvaluatorV1({
+  backwardSkewToleranceMs:
+    SHARED_STATE_RESTART_CONTINUITY_CONFORMANCE_V1.backwardSkewToleranceMs,
+  fail,
+});
 
 function requireActiveBoundaries(
   time: SharedStateTimeEvaluationV1,

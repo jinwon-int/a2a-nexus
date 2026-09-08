@@ -9,6 +9,13 @@
  * transaction fault points, lifecycle continuity, and a public-safe snapshot.
  */
 
+import {
+  boundedCountSchemaV1,
+  createReportConformanceErrorClassV1,
+  deepFreeze,
+  seededDeterministicShuffleV1,
+} from "./shared-state-conformance-common-v1.js";
+
 import { z } from "zod";
 
 import {
@@ -101,26 +108,14 @@ export type SharedStateIdempotencyConformanceErrorReportV1 = Readonly<
   z.infer<typeof sharedStateIdempotencyConformanceErrorReportV1Schema>
 >;
 
-export class SharedStateIdempotencyConformanceErrorV1 extends Error {
+export const SharedStateIdempotencyConformanceErrorV1 = createReportConformanceErrorClassV1(
+  "SharedStateIdempotencyConformanceErrorV1",
+) as new (code: SharedStateIdempotencyConformanceErrorCodeV1) => Error & {
+  readonly name: "SharedStateIdempotencyConformanceErrorV1";
   readonly code: SharedStateIdempotencyConformanceErrorCodeV1;
   readonly publicReport: SharedStateIdempotencyConformanceErrorReportV1;
-
-  constructor(code: SharedStateIdempotencyConformanceErrorCodeV1) {
-    super(code);
-    this.name = "SharedStateIdempotencyConformanceErrorV1";
-    this.code = code;
-    this.publicReport = Object.freeze({
-      kind: "SharedStateIdempotencyConformanceErrorV1",
-      errorVersion: 1,
-      code,
-    });
-    this.stack = `${this.name}: ${code}`;
-  }
-
-  toJSON(): SharedStateIdempotencyConformanceErrorReportV1 {
-    return this.publicReport;
-  }
-}
+  toJSON(): SharedStateIdempotencyConformanceErrorReportV1;
+};
 
 function fail(
   code: SharedStateIdempotencyConformanceErrorCodeV1,
@@ -128,7 +123,7 @@ function fail(
   throw new SharedStateIdempotencyConformanceErrorV1(code);
 }
 
-const boundedCountSchema = z.number().int().nonnegative().max(
+const boundedCountSchema = boundedCountSchemaV1(
   SHARED_STATE_IDEMPOTENCY_CONFORMANCE_V1.operationLimit,
 );
 
@@ -380,23 +375,7 @@ export function seededDeterministicIdempotencyOrderV1(
     return fail("invalid_generated_command");
   }
   const order = Array.from({ length: count }, (_, index) => index);
-  let state = SHARED_STATE_IDEMPOTENCY_CONFORMANCE_V1.schedulerSeed >>> 0;
-  for (let index = order.length - 1; index > 0; index -= 1) {
-    state = (
-      Math.imul(state, 1_664_525) + 1_013_904_223
-    ) >>> 0;
-    const other = state % (index + 1);
-    [order[index], order[other]] = [order[other]!, order[index]!];
-  }
-  return Object.freeze(order);
-}
-
-function deepFreeze<T>(value: T): T {
-  if (value !== null && typeof value === "object" && !Object.isFrozen(value)) {
-    Object.freeze(value);
-    for (const nested of Object.values(value)) deepFreeze(nested);
-  }
-  return value;
+  return seededDeterministicShuffleV1(order, SHARED_STATE_IDEMPOTENCY_CONFORMANCE_V1.schedulerSeed);
 }
 
 function sameSnapshot(
