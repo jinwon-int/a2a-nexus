@@ -117,6 +117,106 @@ const DEFAULT_SCAN_LIMIT = 100;
  * - Redacts all secrets from summaries and metadata.
  * - Truncates long fields at safe bounds.
  */
+/**
+ * One run directory visited by {@link walkRunDirs}. run.json is parsed exactly
+ * once per run (`runMeta`; undefined when missing or malformed) and shared by
+ * every consumer — scanHistory used to read it twice per run (age + entry).
+ */
+export interface WalkedRunDir {
+  readonly name: string;
+  readonly path: string;
+  readonly mtimeMs: number;
+  readonly isDirectory: boolean;
+  readonly runMeta: Record<string, unknown> | undefined;
+}
+
+/** One task root visited by {@link walkRunDirs}. */
+export interface WalkedTaskRoot {
+  readonly name: string;
+  readonly path: string;
+  readonly isDirectory: boolean;
+  /** undefined when the task root itself could not be read. */
+  readonly entries: readonly WalkedRunDir[] | undefined;
+}
+
+/** Read and parse a run's run.json once. undefined when missing or malformed. */
+export async function readRunJsonOnce(runDir: string): Promise<Record<string, unknown> | undefined> {
+  try {
+    return JSON.parse(await readFile(join(runDir, "run.json"), "utf8")) as Record<string, unknown>;
+  } catch {
+    return undefined;
+  }
+}
+
+/**
+ * Shared run-age computation: prefers run.json's createdAt (ISO), falls back
+ * to the run directory's mtime, and clamps at zero (clock skew must not make
+ * a run look older than it is). This replaces the scanner's clamped copy and
+ * ops.ts's unclamped duplicate.
+ */
+export function runAgeMsFromMeta(
+  runMeta: Record<string, unknown> | undefined,
+  mtimeMs: number,
+  nowMs: number,
+): number {
+  const createdAt = runMeta && typeof runMeta.createdAt === "string" ? runMeta.createdAt : undefined;
+  if (createdAt) {
+    const createdAtMs = new Date(createdAt).getTime();
+    if (!Number.isNaN(createdAtMs)) {
+      return Math.max(0, nowMs - createdAtMs);
+    }
+  }
+  return Math.max(0, nowMs - mtimeMs);
+}
+
+/**
+ * Walk every task root under `rootDir` (sorted, deterministic) and yield its
+ * run directories (sorted, stat'ed and run.json-parsed with bounded
+ * parallelism inside the root). Non-directory entries are yielded with
+ * `isDirectory: false` so consumers can classify skips; unreadable task roots
+ * yield `entries: undefined`.
+ */
+export async function* walkRunDirs(rootDir: string): AsyncGenerator<WalkedTaskRoot> {
+  let taskRootNames: string[];
+  try {
+    taskRootNames = (await readdir(rootDir)).sort();
+  } catch {
+    return;
+  }
+  for (const name of taskRootNames) {
+    const path = join(rootDir, name);
+    const rootInfo = await stat(path).catch(() => undefined);
+    if (!rootInfo?.isDirectory()) {
+      yield { name, path, isDirectory: false, entries: undefined };
+      continue;
+    }
+    let runNames: string[];
+    try {
+      runNames = (await readdir(path)).sort();
+    } catch {
+      yield { name, path, isDirectory: true, entries: undefined };
+      continue;
+    }
+    const entries = await Promise.all(
+      runNames.map(async (runName): Promise<WalkedRunDir> => {
+        const runPath = join(path, runName);
+        const runInfo = await stat(runPath).catch(() => undefined);
+        if (!runInfo?.isDirectory()) {
+          return { name: runName, path: runPath, mtimeMs: 0, isDirectory: false, runMeta: undefined };
+        }
+        return {
+          name: runName,
+          path: runPath,
+          mtimeMs: runInfo.mtimeMs,
+          isDirectory: true,
+          runMeta: await readRunJsonOnce(runPath),
+        };
+      }),
+    );
+    yield { name, path, isDirectory: true, entries };
+  }
+}
+
 export async function scanHistory(options: ScanOptions): Promise<ScanProfile> {
   const rootDir = resolve(options.rootDir);
   const limit = options.limit && options.limit > 0 ? options.limit : DEFAULT_SCAN_LIMIT;
@@ -126,51 +226,19 @@ export async function scanHistory(options: ScanOptions): Promise<ScanProfile> {
   const entries: ScanRunEntry[] = [];
   let totalRunDirs = 0;
 
-  let taskRoots: string[];
-  try {
-    taskRoots = await readdir(rootDir);
-  } catch {
-    return {
-      schemaVersion: "a2a.runner.scan-profile.v1",
-      generatedAt: "1970-01-01T00:00:00.000Z",
-      rootLabel: sanitizeRootLabel(rootDir),
-      totalRunDirs: 0,
-      runs: [],
-    };
-  }
-
-  // Sort task roots for deterministic output.
-  taskRoots.sort();
-
-  for (const entry of taskRoots) {
-    const taskRoot = join(rootDir, entry);
-    const taskRootInfo = await stat(taskRoot).catch(() => undefined);
-    if (!taskRootInfo?.isDirectory()) continue;
-
-    let runDirs: string[];
-    try {
-      runDirs = await readdir(taskRoot);
-    } catch {
-      continue;
-    }
-
-    // Sort run dirs deterministically.
-    runDirs.sort();
-
-    for (const runEntry of runDirs) {
-      const runDir = join(taskRoot, runEntry);
-      const runInfo = await stat(runDir).catch(() => undefined);
-      if (!runInfo?.isDirectory()) continue;
-
+  for await (const taskRootWalked of walkRunDirs(rootDir)) {
+    if (!taskRootWalked.isDirectory || !taskRootWalked.entries) continue;
+    for (const run of taskRootWalked.entries) {
+      if (!run.isDirectory) continue;
       totalRunDirs++;
 
-      // Age filter.
-      const ageMs = await runAgeMs(runDir, nowMs, runInfo.mtimeMs);
+      // Age filter (run.json already parsed once by the walker).
+      const ageMs = runAgeMsFromMeta(run.runMeta, run.mtimeMs, nowMs);
       if (ageMs < minAgeMs) continue;
 
       if (entries.length >= limit) continue;
 
-      const scanEntry = await buildScanRunEntry(runDir, entry, runEntry);
+      const scanEntry = await buildScanRunEntry(run.path, taskRootWalked.name, run.name, run.runMeta);
       if (scanEntry) entries.push(scanEntry);
     }
   }
@@ -194,15 +262,9 @@ async function buildScanRunEntry(
   runDir: string,
   safeTaskId: string,
   runToken: string,
+  runMeta: Record<string, unknown> | undefined,
 ): Promise<ScanRunEntry | undefined> {
-  // Read run.json for metadata.
-  let runMeta: Record<string, unknown> | undefined;
-  try {
-    const raw = await readFile(join(runDir, "run.json"), "utf8");
-    runMeta = JSON.parse(raw);
-  } catch {
-    // Malformed run.json; produce minimal entry.
-  }
+  // run.json was parsed once by the walker and passed in as runMeta.
 
   // Read task.json (prefer the redacted artifact copy).
   let taskMeta: Record<string, unknown> | undefined;
@@ -228,8 +290,8 @@ async function buildScanRunEntry(
 
   const taskId = typeof taskMeta?.id === "string" ? taskMeta.id : safeTaskId;
   const createdAt = typeof runMeta?.createdAt === "string" ? runMeta.createdAt : "unknown";
-  const exitCode = readExitCode(runMeta, manifest);
-  const timedOut = readTimedOut(runMeta, manifest);
+  const exitCode = readExitCode(runMeta);
+  const timedOut = readTimedOut(runMeta);
 
   const entry: ScanRunEntry = {
     taskId: redactSecrets(sanitizeScanText(taskId, 200)),
@@ -346,7 +408,6 @@ async function buildScanRunEntry(
 
 function readExitCode(
   runMeta: Record<string, unknown> | undefined,
-  _manifest: ArtifactManifest | undefined,
 ): number | null | undefined {
   if (typeof runMeta?.exitCode === "number") return runMeta.exitCode;
   return undefined;
@@ -354,7 +415,6 @@ function readExitCode(
 
 function readTimedOut(
   runMeta: Record<string, unknown> | undefined,
-  _manifest: ArtifactManifest | undefined,
 ): boolean | undefined {
   if (runMeta?.timedOut === true) return true;
   return undefined;
@@ -370,28 +430,6 @@ function inferScanStatus(
   if (exitCode === 0) return "completed";
   if (exitCode != null && exitCode !== 0) return "failed";
   return "unknown";
-}
-
-/**
- * Calculate the age of a run directory in milliseconds.
- *
- * Prefers the `createdAt` field from run.json (ISO timestamp) when available.
- * Falls back to directory mtimeMs when run.json is missing or unreadable.
- */
-async function runAgeMs(runDir: string, nowMs: number, mtimeMsFallback: number): Promise<number> {
-  try {
-    const content = await readFile(join(runDir, "run.json"), "utf8");
-    const parsed = JSON.parse(content);
-    if (parsed && typeof parsed.createdAt === "string") {
-      const createdAtMs = new Date(parsed.createdAt).getTime();
-      if (!isNaN(createdAtMs)) {
-        return Math.max(0, nowMs - createdAtMs);
-      }
-    }
-  } catch {
-    // fall through to mtime fallback.
-  }
-  return Math.max(0, nowMs - mtimeMsFallback);
 }
 
 function sanitizeScanText(value: string, maxLen: number): string {
@@ -937,31 +975,16 @@ export async function readinessScan(options: ReadinessOptions): Promise<Readines
   let malformedRuns = 0;
   let orphanTaskRoots = 0;
 
-  let taskRoots: string[];
-  try {
-    taskRoots = await readdir(rootDir);
-  } catch {
-    return emptyReadinessReport(rootDir);
-  }
-
-  taskRoots.sort();
-
-  for (const entry of taskRoots) {
-    const taskRoot = join(rootDir, entry);
-    const taskRootInfo = await stat(taskRoot).catch(() => undefined);
-    if (!taskRootInfo?.isDirectory()) continue;
-
+  for await (const walked of walkRunDirs(rootDir)) {
+    if (!walked.isDirectory) continue;
     totalTaskRoots++;
 
-    let runDirs: string[];
-    try {
-      runDirs = await readdir(taskRoot);
-    } catch {
+    if (!walked.entries) {
       // Unreadable task root — treat as orphan.
       orphanTaskRoots++;
       if (runs.length < limit) {
         runs.push({
-          safeTaskId: sanitizeScanText(entry, 200),
+          safeTaskId: sanitizeScanText(walked.name, 200),
           runToken: "<unreadable>",
           ageMs: 0,
           status: "orphan",
@@ -976,12 +999,12 @@ export async function readinessScan(options: ReadinessOptions): Promise<Readines
     }
 
     // Detect orphan task root: no run subdirectories.
-    const realRunDirs = runDirs.filter((name) => name !== "artifacts" && name !== "manifest.json");
+    const realRunDirs = walked.entries.filter((e) => e.name !== "artifacts" && e.name !== "manifest.json");
     if (realRunDirs.length === 0) {
       orphanTaskRoots++;
       if (runs.length < limit) {
         runs.push({
-          safeTaskId: sanitizeScanText(entry, 200),
+          safeTaskId: sanitizeScanText(walked.name, 200),
           runToken: "<no-runs>",
           ageMs: 0,
           status: "orphan",
@@ -995,35 +1018,18 @@ export async function readinessScan(options: ReadinessOptions): Promise<Readines
       continue;
     }
 
-    runDirs.sort();
-
-    for (const runEntry of runDirs) {
-      const runDir = join(taskRoot, runEntry);
-      const runInfo = await stat(runDir).catch(() => undefined);
-      if (!runInfo?.isDirectory()) continue;
+    for (const run of walked.entries) {
+      if (!run.isDirectory) continue;
 
       totalRunDirs++;
 
       if (runs.length >= limit) continue;
 
-      // Parse run.json for age and status info.
-      let runMeta: Record<string, unknown> | undefined;
-      let runJsonMalformed = false;
-      try {
-        const raw = await readFile(join(runDir, "run.json"), "utf8");
-        runMeta = JSON.parse(raw);
-      } catch {
-        runJsonMalformed = true;
-      }
+      // run.json was parsed once by the walker; undefined = missing/malformed.
+      const runMeta = run.runMeta;
+      const runJsonMalformed = runMeta === undefined;
 
-      // Derive age.
-      let ageMs: number;
-      if (runMeta && typeof runMeta.createdAt === "string") {
-        const parsed = new Date(runMeta.createdAt).getTime();
-        ageMs = !isNaN(parsed) ? Math.max(0, nowMs - parsed) : Math.max(0, nowMs - runInfo.mtimeMs);
-      } else {
-        ageMs = Math.max(0, nowMs - runInfo.mtimeMs);
-      }
+      const ageMs = runAgeMsFromMeta(runMeta, run.mtimeMs, nowMs);
 
       // Parse manifest for terminal status.
       let manifestMalformed = false;
@@ -1031,7 +1037,7 @@ export async function readinessScan(options: ReadinessOptions): Promise<Readines
       let exitCode: number | null | undefined;
       let timedOut: boolean | undefined;
       try {
-        const raw = await readFile(join(runDir, "artifacts", "manifest.json"), "utf8");
+        const raw = await readFile(join(run.path, "artifacts", "manifest.json"), "utf8");
         const manifest = JSON.parse(raw);
         exitCode = typeof runMeta?.exitCode === "number" ? runMeta.exitCode : undefined;
         timedOut = runMeta?.timedOut === true || manifest?.timedOut === true;
@@ -1070,8 +1076,8 @@ export async function readinessScan(options: ReadinessOptions): Promise<Readines
       }
 
       runs.push({
-        safeTaskId: sanitizeScanText(entry, 200),
-        runToken: sanitizeScanText(runEntry, 200),
+        safeTaskId: sanitizeScanText(walked.name, 200),
+        runToken: sanitizeScanText(run.name, 200),
         ageMs,
         status,
         terminal,
@@ -1099,16 +1105,3 @@ export async function readinessScan(options: ReadinessOptions): Promise<Readines
   };
 }
 
-function emptyReadinessReport(rootDir: string): ReadinessReport {
-  return {
-    schemaVersion: "a2a.runner.readiness-report.v1",
-    generatedAt: "1970-01-01T00:00:00.000Z",
-    rootLabel: sanitizeRootLabel(rootDir),
-    totalTaskRoots: 0,
-    totalRunDirs: 0,
-    staleRuns: 0,
-    malformedRuns: 0,
-    orphanTaskRoots: 0,
-    runs: [],
-  };
-}
