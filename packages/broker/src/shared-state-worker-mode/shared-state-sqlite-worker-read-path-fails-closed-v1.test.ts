@@ -634,13 +634,16 @@ test("a malformed outbox receipt state makes the outbox query fail closed, not p
       digest: outboxEventKeyDigest(3),
     });
 
-    // `limit: 1` is load-bearing and must not be relaxed. Event 3 is the
-    // corrupted row and falls outside the returned page; the refusal therefore
-    // proves the whole fetched window is validated, not merely the rows handed
-    // back. Raising the limit would silently prove something weaker.
+    // #2081 keyset pagination: a page reads at most limit + 1 rows after the
+    // cursor, and every fetched row is still validated fail-closed. Cursor
+    // "2" places the corrupted event 3 inside the limit-1 page — the refusal
+    // proves the fetched window is validated, not merely the rows handed
+    // back. (A corrupted row strictly beyond the fetched window is the
+    // whole-stream audit's domain now and no longer fails this read; that
+    // separation is the point of #2081 item 3.)
     assert.equal(
       unavailable(
-        await lane.query(outboxQueryRequest("stream-1", null, 1)),
+        await lane.query(outboxQueryRequest("stream-1", "2", 1)),
         "reconcileOutbox",
       ),
       "authority_unavailable",
