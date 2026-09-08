@@ -46,6 +46,9 @@ import type {
 
 const DEFAULT_REQUEST_TIMEOUT_MS = 30_000;
 
+/** Mirrors the broker's TASK_LONG_POLL_MAX_WAIT_MS (#2082 B). */
+const MAX_TASK_LONG_POLL_WAIT_MS = 30_000;
+
 interface TaskListResponse {
   items: TaskRecord[];
 }
@@ -240,13 +243,33 @@ export class A2ABrokerWorker {
     return this.requestJson<WorkerView>(`/workers/${encodeURIComponent(this.workerId)}`);
   }
 
-  async pollQueuedTasks(): Promise<TaskRecord[]> {
+  async pollQueuedTasks(waitMs = 0): Promise<TaskRecord[]> {
     const search = new URLSearchParams({
       assignedWorkerId: this.workerId,
       status: "queued",
     });
-    const response = await this.requestJson<TaskListResponse>(`/tasks?${search.toString()}`);
+    // #2082 B: hold the poll server-side for waitMs when the page is empty
+    // (capped at the broker's 30s bound). An old broker ignores the parameter
+    // and the idle backoff below degrades naturally.
+    const effectiveWaitMs = Math.max(0, Math.min(Math.round(waitMs), MAX_TASK_LONG_POLL_WAIT_MS));
+    if (effectiveWaitMs > 0) {
+      search.set("waitMs", String(effectiveWaitMs));
+    }
+    const response = await this.requestJson<TaskListResponse>(`/tasks?${search.toString()}`, {
+      // The held poll answers at waitMs; give the request headroom beyond the
+      // configured timeout so the long-poll is never aborted client-side.
+      timeoutMs: effectiveWaitMs > 0 ? effectiveWaitMs + 5_000 : undefined,
+    });
     return response.items ?? [];
+  }
+
+  /**
+   * #2082 B: server-side hold requested for an idle poll — 6× the base poll
+   * interval, capped at the broker's 30s long-poll bound. Derived from
+   * pollIntervalMs so fleets that shortened their poll also shorten the hold.
+   */
+  private taskLongPollWaitMs(): number {
+    return Math.min(this.config.pollIntervalMs * 6, MAX_TASK_LONG_POLL_WAIT_MS);
   }
 
   /**
@@ -258,7 +281,8 @@ export class A2ABrokerWorker {
    */
   async verifyPollReadiness(): Promise<void> {
     try {
-      await this.pollQueuedTasks();
+      // Readiness probe must stay instant — never hold on the long-poll path.
+      await this.pollQueuedTasks(0);
     } catch (error) {
       const detail =
         error instanceof BrokerApiError
@@ -276,7 +300,7 @@ export class A2ABrokerWorker {
   }
 
   async runOnce(): Promise<number> {
-    const tasks = await this.pollQueuedTasks();
+    const tasks = await this.pollQueuedTasks(this.taskLongPollWaitMs());
     let processed = 0;
 
     for (const task of tasks) {
@@ -779,7 +803,10 @@ export class A2ABrokerWorker {
     return typeof json?.brokerId === "string" && json.brokerId.trim() ? json.brokerId.trim() : undefined;
   }
 
-  private async requestJson<T>(path: string, init?: { method?: string; body?: unknown }): Promise<T> {
+  private async requestJson<T>(
+    path: string,
+    init?: { method?: string; body?: unknown; timeoutMs?: number },
+  ): Promise<T> {
     await this.ensureHomeBrokerLease();
 
     const headers = new Headers({
@@ -816,7 +843,7 @@ export class A2ABrokerWorker {
       method,
       headers,
       body,
-      signal: AbortSignal.timeout(this.config.requestTimeoutMs ?? DEFAULT_REQUEST_TIMEOUT_MS),
+      signal: AbortSignal.timeout(init?.timeoutMs ?? this.config.requestTimeoutMs ?? DEFAULT_REQUEST_TIMEOUT_MS),
     });
 
     const text = await response.text();

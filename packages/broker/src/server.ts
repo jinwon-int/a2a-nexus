@@ -222,6 +222,7 @@ import {
   createGitHubRouteEntries,
 } from "./http/route-entries.js";
 import { createDialecticRouteEntries } from "./http/dialectic-routes.js";
+import type { TaskLongPollGate } from "./http/tasks-collection-routes.js";
 import {
   buildRouteIndex,
   entryRateLimitBucket,
@@ -1067,6 +1068,27 @@ export function createBrokerServer(options: BrokerServerOptions = {}): BrokerSer
   let draining = false;
   const drainRetryAfterSec = 2;
 
+  // #2082 B: concurrent-slot gate for held task long-polls. Workers poll with
+  // waitMs; when every slot is taken a poll degrades to an immediate plain
+  // response instead of waiting. A2A_BROKER_TASK_LONG_POLL_MAX=0 disables
+  // holding entirely.
+  const rawTaskLongPollMax = Number.parseInt(process.env.A2A_BROKER_TASK_LONG_POLL_MAX ?? "", 10);
+  const taskLongPollMaxSlots =
+    Number.isFinite(rawTaskLongPollMax) && rawTaskLongPollMax >= 0 ? rawTaskLongPollMax : 256;
+  let taskLongPollsHeld = 0;
+  const taskLongPollGate: TaskLongPollGate = {
+    tryAcquire: () => {
+      if (taskLongPollsHeld >= taskLongPollMaxSlots) {
+        return false;
+      }
+      taskLongPollsHeld += 1;
+      return true;
+    },
+    release: () => {
+      taskLongPollsHeld = Math.max(0, taskLongPollsHeld - 1);
+    },
+  };
+
   // ---- Table-driven route dispatch (#2079 A) ----
   // Single source for request routing: one entry per (method, path shape),
   // carrying the observability labels, rate-limit bucket, and drain class the
@@ -1177,6 +1199,8 @@ export function createBrokerServer(options: BrokerServerOptions = {}): BrokerSer
       brokerId,
       assertWorkerHttpSignatureRoute,
       assertVerifiedWorkerMatches,
+      isDraining: () => draining,
+      taskLongPollGate,
     }),
     ...createDialecticRouteEntries({ broker, stateStore }),
     ...createTasksReadRouteEntries({ broker, stateStore }),
