@@ -9,7 +9,6 @@
  * `./worker.js` consumers keep working unchanged.
  */
 
-import { createPrivateKey } from "node:crypto";
 import { readdirSync, statSync } from "node:fs";
 import { join as joinPath } from "node:path";
 import { setTimeout as delay } from "node:timers/promises";
@@ -27,7 +26,7 @@ import {
   parseJsonText,
   toTaskError,
 } from "./external-handler.js";
-import { signA2AWorkerRequest } from "./worker-http-signature.js";
+import { signA2AWorkerRequest, workerPrivateKeyPem } from "./worker-http-signature.js";
 import type { FetchLike } from "../worker.js";
 import type { BrokerWorkerConfig } from "../worker.js";
 import type {
@@ -160,6 +159,32 @@ export function computeReconnectDelayMs(
   const exponential = Math.min(baseMs * 2 ** (attempt - 1), MAX_RECONNECT_DELAY_MS);
   const jitter = 1 + (random() * 0.5 - 0.25);
   return Math.max(0, Math.round(exponential * jitter));
+}
+
+/**
+ * #2082 A: delay after a poll, with optional idle backoff. An idle worker used
+ * to poll at the fixed `pollIntervalMs` forever — N idle workers cost the
+ * broker 12·N list queries per minute even with nothing to do. When a ceiling
+ * is configured, empty polls grow the delay geometrically (×1.5, ±20% jitter)
+ * capped at the ceiling; any processed task resets to the base interval.
+ * Connection-error backoff is handled separately (computeReconnectDelayMs).
+ */
+export function nextIdlePollDelayMs(options: {
+  processed: number;
+  currentIdleDelayMs: number;
+  pollIntervalMs: number;
+  maxIdlePollIntervalMs?: number;
+  random?: () => number;
+}): number {
+  const { processed, currentIdleDelayMs, pollIntervalMs } = options;
+  const maxIdlePollIntervalMs = options.maxIdlePollIntervalMs ?? 0;
+  if (processed > 0 || !maxIdlePollIntervalMs || maxIdlePollIntervalMs <= pollIntervalMs) {
+    return pollIntervalMs;
+  }
+  const random = options.random ?? Math.random;
+  const jitter = 1 + (random() * 0.4 - 0.2); // ±20%
+  const grown = Math.min(Math.max(currentIdleDelayMs, pollIntervalMs) * 1.5 * jitter, maxIdlePollIntervalMs);
+  return Math.max(pollIntervalMs, Math.round(grown));
 }
 export class A2ABrokerWorker {
   private readonly brokerUrl: string;
@@ -295,11 +320,22 @@ export class A2ABrokerWorker {
 
     try {
       let consecutiveConnectionFailures = 0;
+      let idlePollDelayMs = this.config.pollIntervalMs;
       while (this.running) {
         let nextDelayMs = this.config.pollIntervalMs;
         try {
           const processed = await this.runOnce();
           consecutiveConnectionFailures = 0;
+          // #2082 A: opt-in idle backoff. Unset ceiling keeps the historical
+          // fixed interval; a set ceiling grows the delay geometrically while
+          // polls come back empty and resets the moment a task is processed.
+          idlePollDelayMs = nextIdlePollDelayMs({
+            processed,
+            currentIdleDelayMs: idlePollDelayMs,
+            pollIntervalMs: this.config.pollIntervalMs,
+            maxIdlePollIntervalMs: this.config.maxIdlePollIntervalMs,
+          });
+          nextDelayMs = idlePollDelayMs;
           if (processed > 0) {
             console.log(`[worker:${this.workerId}] processed ${processed} task(s)`);
           }
@@ -558,9 +594,9 @@ export class A2ABrokerWorker {
     if (!httpSignature) {
       return normalizedResult;
     }
-    const privateKeyPem = createPrivateKey({ key: httpSignature.privateKeyJwk, format: "jwk" })
-      .export({ type: "pkcs8", format: "pem" })
-      .toString();
+    // #2082 D: the PEM export is cached per signature config (workerPrivateKeyPem)
+    // instead of importing and exporting the JWK on every completion.
+    const privateKeyPem = workerPrivateKeyPem(httpSignature);
     const claimedAt = task.claimedAt ?? new Date().toISOString();
     return {
       ...normalizedResult,
