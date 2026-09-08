@@ -177,6 +177,15 @@ export class SqliteWorkerRuntimeRepository implements WorkerRuntimeRepository {
 export class SqliteAuditRuntimeRepository implements AuditRuntimeRepository {
   private readonly maxHotAuditEvents: number;
   private readonly maxHotHeartbeatAuditEvents: number;
+  // #2077 step 2: the two retention prunes each COUNT the hot audit table;
+  // running them on every append re-scanned the table twice per audit event.
+  // The prune cadence scales with the cap (cap/32, minimum 1) so small caps
+  // keep exact per-append enforcement while large caps prune every few hundred
+  // appends — the cap may transiently overshoot by one prune window, which the
+  // retention bounds tolerate.
+  private static readonly PRUNE_WINDOW_DIVISOR = 32;
+  private pruneEveryAppends = 1;
+  private appendsSincePrune = 0;
 
   constructor(
     private readonly store: SqliteBrokerStateStore,
@@ -187,6 +196,7 @@ export class SqliteAuditRuntimeRepository implements AuditRuntimeRepository {
       0,
       Math.floor(options.maxHotHeartbeatAuditEvents ?? Math.min(this.maxHotAuditEvents, DEFAULT_HOT_RUNTIME_MAX_HEARTBEAT_AUDIT_EVENTS)),
     );
+    this.pruneEveryAppends = Math.max(1, Math.ceil(this.maxHotAuditEvents / SqliteAuditRuntimeRepository.PRUNE_WINDOW_DIVISOR));
   }
 
   listAuditEvents(filters: AuditListFilters = {}): AuditEvent[] {
@@ -195,17 +205,26 @@ export class SqliteAuditRuntimeRepository implements AuditRuntimeRepository {
 
   appendAuditEvent(event: AuditEvent): void {
     const hotEvent = { ...event, id: getHeartbeatAuditEventId(event) ?? event.id };
-    // Append + both retention prunes are one unit of work. They used to be two
+    const shouldPrune = this.appendsSincePrune === 0;
+    if (shouldPrune) {
+      this.appendsSincePrune = this.pruneEveryAppends;
+    }
+    this.appendsSincePrune -= 1;
+    // Append + retention prunes are one unit of work. They used to be two
     // or three separate BEGIN IMMEDIATE transactions — i.e. two or three fsyncs
     // per audit event — and an append that committed before a failing prune left
     // the hot table over its cap. `runBatch` joins an outer broker-level batch
     // when one is open, so this does not add a commit of its own on that path.
+    // (#2077 step 2 additionally throttles the prunes to one window per 16
+    // appends.)
     this.store.runBatch(() => {
       this.store.upsertHotAuditEvents([hotEvent]);
-      if (isHeartbeatAuditEvent(hotEvent)) {
-        this.store.pruneHotHeartbeatAuditEventsToMax(this.maxHotHeartbeatAuditEvents);
+      if (shouldPrune) {
+        if (isHeartbeatAuditEvent(hotEvent)) {
+          this.store.pruneHotHeartbeatAuditEventsToMax(this.maxHotHeartbeatAuditEvents);
+        }
+        this.store.pruneHotAuditEventsToMax(this.maxHotAuditEvents);
       }
-      this.store.pruneHotAuditEventsToMax(this.maxHotAuditEvents);
     });
   }
 }

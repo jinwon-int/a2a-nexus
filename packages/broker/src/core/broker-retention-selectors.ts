@@ -13,9 +13,33 @@ import type { AuditEvent, WorkerRecord } from "./types.js";
  * pretty-printed form is deliberate: the byte budget exists to bound the
  * canonical snapshot, which is written pretty-printed, so measuring the
  * compact form would systematically under-count.
+ *
+ * #2077 step 3: results are memoized per record object (validated against the
+ * record's `updatedAt` stamp) — terminal records are immutable, so a full
+ * persist re-measuring 2,000 unchanged terminal records pretty-printed 2,000
+ * JSON trees for identical answers. The WeakMap keys on record identity, so a
+ * re-read (SQLite planner) or an in-place mutation (validated via `updatedAt`)
+ * re-measures; nothing is shared between distinct records.
  */
+interface RetentionBytesCacheEntry {
+  updatedAt: string | undefined;
+  bytes: number;
+}
+const retentionBytesCache = new WeakMap<object, RetentionBytesCacheEntry>();
+
 export function estimateRetentionRecordBytes(record: unknown): number {
-  return Buffer.byteLength(JSON.stringify(record, null, 2), "utf8");
+  if (!record || typeof record !== "object") {
+    return Buffer.byteLength(JSON.stringify(record, null, 2), "utf8");
+  }
+  const updatedAt = (record as { updatedAt?: unknown }).updatedAt;
+  const stamp = typeof updatedAt === "string" ? updatedAt : undefined;
+  const cached = retentionBytesCache.get(record);
+  if (cached !== undefined && cached.updatedAt === stamp) {
+    return cached.bytes;
+  }
+  const bytes = Buffer.byteLength(JSON.stringify(record, null, 2), "utf8");
+  retentionBytesCache.set(record, { updatedAt: stamp, bytes });
+  return bytes;
 }
 
 export function parseRetentionTimestamp(value: string | undefined): number | null {

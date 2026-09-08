@@ -275,7 +275,7 @@ export interface BrokerProfilingSample {
   operation: BrokerProfilingOperation;
   startedAt: string;
   durationMs: number;
-  persistenceMode?: "full" | "hot";
+  persistenceMode?: "full" | "hot" | "durable-on-write";
   retentionApplied?: boolean;
   snapshotExported?: boolean;
   saveHints?: {
