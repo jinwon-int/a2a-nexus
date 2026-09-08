@@ -1,5 +1,5 @@
 import { normalizeCapabilities } from "./broker-capability-normalizers.js";
-import { workerMetadataMateriallyEqual } from "./broker-worker-identity.js";
+import { workerCapabilitiesEqual, workerMetadataMateriallyEqual } from "./broker-worker-identity.js";
 import type {
   RegisterWorkerRequest,
   WorkerCapabilities,
@@ -26,7 +26,7 @@ export function workerRegistrationMateriallyChanges(
     existing.brokerUrl !== request.brokerUrl ||
     existing.workerMode !== request.workerMode ||
     existing.managementPlane !== request.managementPlane ||
-    JSON.stringify(existing.capabilities) !== JSON.stringify(capabilities) ||
+    !workerCapabilitiesEqual(existing.capabilities, capabilities) ||
     !workerMetadataMateriallyEqual(existing.metadata, request.metadata);
 }
 
@@ -85,7 +85,7 @@ export function applyWorkerHeartbeatRuntimeUpdate(
   const nextManagementPlane = request?.managementPlane ?? worker.managementPlane;
   const capabilitiesChanged =
     request?.capabilities !== undefined &&
-    JSON.stringify(nextCapabilities) !== JSON.stringify(worker.capabilities);
+    !workerCapabilitiesEqual(worker.capabilities, nextCapabilities);
   const metadataChanged =
     request?.metadata !== undefined &&
     !workerMetadataMateriallyEqual(worker.metadata, nextMetadata);
