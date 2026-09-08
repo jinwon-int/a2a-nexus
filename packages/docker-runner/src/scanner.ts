@@ -1,4 +1,4 @@
-import { mkdir, readdir, readFile, stat, writeFile } from "node:fs/promises";
+import { copyFile, mkdir, open, readdir, readFile, stat, writeFile } from "node:fs/promises";
 import { join, resolve, basename } from "node:path";
 import { RESULT_STREAM_LIMIT, redactSecrets, redactAndBound, sanitizeSourcePublicApprovalRehearsal } from "./runner.js";
 import { sanitizeSourcePublicExecutionPreflight } from "./source-public-preflight.js";
@@ -559,9 +559,33 @@ export async function createArtifactBundle(options: BundleOptions): Promise<Arti
 /**
  * Copy a file to destPath, applying secret redaction to text content.
  * Binary files are copied as-is.
+ *
+ * #2083: the text path reads a bounded 64 KB prefix instead of the whole
+ * artifact — this previously read multi-MB logs in full and ran all 25
+ * redaction passes over them only to keep the first RESULT_STREAM_LIMIT
+ * characters. Files at or under the prefix are handled exactly as before
+ * (byte-identical). Larger files: a NUL byte or invalid UTF-8 in the prefix
+ * still copies the file raw (copyFile), and text files are redacted and
+ * bounded from the prefix, so output stays bounded regardless of input size.
  */
-async function copyAndRedactFile(srcPath: string, destPath: string): Promise<void> {
-  const raw = await readFile(srcPath);
+const REDACT_PREFIX_BYTES = 64 * 1024;
+
+export async function copyAndRedactFile(srcPath: string, destPath: string): Promise<void> {
+  const stats = await stat(srcPath);
+  const boundedRead = stats.size > REDACT_PREFIX_BYTES;
+  const handle = await open(srcPath, "r");
+  let raw: Buffer;
+  try {
+    if (boundedRead) {
+      raw = Buffer.alloc(REDACT_PREFIX_BYTES);
+      const { bytesRead } = await handle.read(raw, 0, REDACT_PREFIX_BYTES, 0);
+      raw = raw.subarray(0, bytesRead);
+    } else {
+      raw = await handle.readFile();
+    }
+  } finally {
+    await handle.close();
+  }
   let content: string;
   try {
     // readFile(path, "utf8") does NOT throw on binary input — it lossily
@@ -569,8 +593,15 @@ async function copyAndRedactFile(srcPath: string, destPath: string): Promise<voi
     // silently corrupt images, archives, etc. Detect binary content (a NUL
     // byte, or bytes that are not valid UTF-8) and copy those raw instead.
     if (raw.includes(0)) throw new Error("binary content");
-    content = new TextDecoder("utf-8", { fatal: true }).decode(raw);
+    // stream:true tolerates a truncated trailing multi-byte character, which a
+    // bounded prefix read can produce mid-codepoint; invalid bytes still throw.
+    content = new TextDecoder("utf-8", { fatal: true }).decode(raw, { stream: boundedRead });
   } catch {
+    if (boundedRead) {
+      // Oversized binary artifact: copy it whole, untouched.
+      await copyFile(srcPath, destPath);
+      return;
+    }
     await writeFile(destPath, raw);
     return;
   }

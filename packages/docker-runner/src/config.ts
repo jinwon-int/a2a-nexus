@@ -448,16 +448,16 @@ function validateOpenClawRuntimeMount(mount: RunnerExtraMount, index: number): v
   const source = normalizeAbsolutePathForPolicy(mount.source);
   const target = normalizeAbsolutePathForPolicy(mount.target);
   const writable = mount.readOnly === false;
-  const protectedSource = isProtectedOpenClawRuntimePath(source);
-  const protectedTarget = isProtectedOpenClawRuntimePath(target);
-  const protectedHermesSource = isProtectedHermesRuntimePath(source);
-  const protectedHermesTarget = isProtectedHermesRuntimePath(target);
-  const protectedClaudeSource = isProtectedClaudeRuntimePath(source);
-  const protectedClaudeTarget = isProtectedClaudeRuntimePath(target);
-  const protectedCodexSource = isProtectedCodexRuntimePath(source);
-  const protectedCodexTarget = isProtectedCodexRuntimePath(target);
-  const protectedPiriSource = isProtectedPiriRuntimePath(source);
-  const protectedPiriTarget = isProtectedPiriRuntimePath(target);
+  const protectedSource = isProtectedRuntimePath("openclaw", source);
+  const protectedTarget = isProtectedRuntimePath("openclaw", target);
+  const protectedHermesSource = isProtectedRuntimePath("hermes", source);
+  const protectedHermesTarget = isProtectedRuntimePath("hermes", target);
+  const protectedClaudeSource = isProtectedRuntimePath("claude", source);
+  const protectedClaudeTarget = isProtectedRuntimePath("claude", target);
+  const protectedCodexSource = isProtectedRuntimePath("codex", source);
+  const protectedCodexTarget = isProtectedRuntimePath("codex", target);
+  const protectedPiriSource = isProtectedRuntimePath("piri", source);
+  const protectedPiriTarget = isProtectedRuntimePath("piri", target);
 
   if (writable && (protectedSource || protectedTarget || protectedHermesSource || protectedHermesTarget || protectedClaudeSource || protectedClaudeTarget || protectedCodexSource || protectedCodexTarget || protectedPiriSource || protectedPiriTarget)) {
     throw new ExtraMountsConfigError(
@@ -476,49 +476,25 @@ function normalizeAbsolutePathForPolicy(value: string): string {
   }
 }
 
-function isProtectedOpenClawRuntimePath(value: string): boolean {
-  const normalized = value.replace(/\/+/g, "/").replace(/\/$/, "") || "/";
-  return [
-    /^\/root\/\.openclaw(?:\/|$)/,
-    /^\/home\/[^/]+\/\.openclaw(?:\/|$)/,
-    /^\/run\/secrets\/openclaw-dir(?:\/|$)/,
-  ].some((pattern) => pattern.test(normalized));
-}
+// #2083: one table + one matcher instead of five copy-pasted
+// isProtected*RuntimePath functions (same shape, different runtime name).
+const PROTECTED_RUNTIME_PROFILES = ["openclaw", "hermes", "claude", "codex", "piri"] as const;
+type ProtectedRuntimeProfile = (typeof PROTECTED_RUNTIME_PROFILES)[number];
 
-function isProtectedHermesRuntimePath(value: string): boolean {
-  const normalized = value.replace(/\/+/g, "/").replace(/\/$/, "") || "/";
-  return [
-    /^\/root\/\.hermes(?:\/|$)/,
-    /^\/home\/[^/]+\/\.hermes(?:\/|$)/,
-    /^\/run\/secrets\/hermes-dir(?:\/|$)/,
-  ].some((pattern) => pattern.test(normalized));
-}
+const PROTECTED_RUNTIME_PATH_TABLE: Record<ProtectedRuntimeProfile, RegExp[]> = Object.fromEntries(
+  PROTECTED_RUNTIME_PROFILES.map((name) => [
+    name,
+    [
+      new RegExp(`^/root/.${name}(?:/|$)`),
+      new RegExp(`^/home/[^/]+/.${name}(?:/|$)`),
+      new RegExp(`^/run/secrets/${name}-dir(?:/|$)`),
+    ],
+  ]),
+) as Record<ProtectedRuntimeProfile, RegExp[]>;
 
-function isProtectedClaudeRuntimePath(value: string): boolean {
+function isProtectedRuntimePath(profile: ProtectedRuntimeProfile, value: string): boolean {
   const normalized = value.replace(/\/+/g, "/").replace(/\/$/, "") || "/";
-  return [
-    /^\/root\/\.claude(?:\/|$)/,
-    /^\/home\/[^/]+\/\.claude(?:\/|$)/,
-    /^\/run\/secrets\/claude-dir(?:\/|$)/,
-  ].some((pattern) => pattern.test(normalized));
-}
-
-function isProtectedCodexRuntimePath(value: string): boolean {
-  const normalized = value.replace(/\/+/g, "/").replace(/\/$/, "") || "/";
-  return [
-    /^\/root\/\.codex(?:\/|$)/,
-    /^\/home\/[^/]+\/\.codex(?:\/|$)/,
-    /^\/run\/secrets\/codex-dir(?:\/|$)/,
-  ].some((pattern) => pattern.test(normalized));
-}
-
-function isProtectedPiriRuntimePath(value: string): boolean {
-  const normalized = value.replace(/\/+/g, "/").replace(/\/$/, "") || "/";
-  return [
-    /^\/root\/\.piri(?:\/|$)/,
-    /^\/home\/[^/]+\/\.piri(?:\/|$)/,
-    /^\/run\/secrets\/piri-dir(?:\/|$)/,
-  ].some((pattern) => pattern.test(normalized));
+  return PROTECTED_RUNTIME_PATH_TABLE[profile].some((pattern) => pattern.test(normalized));
 }
 
 function loadPatchCommandConfig(
