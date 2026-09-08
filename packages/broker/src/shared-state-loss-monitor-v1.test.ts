@@ -268,3 +268,67 @@ test("/readyz recovers from adapter_unavailable because it is not latched", asyn
     rmSync(directory, { recursive: true, force: true });
   }
 });
+
+// #2079 B: the request path (inspectCached) reuses the last probe within the
+// serving-authority TTL so one fence SELECT serves a whole tick instead of one
+// per request. inspect() itself stays live: its semantics (latch on
+// observation, synchronous observation of probe changes) are unchanged.
+test("inspectCached reuses the probe within the TTL and re-probes after staleness", () => {
+  let calls = 0;
+  let current: SharedStateServingFenceProbeV1 = { ready: true };
+  const monitor = createSharedStateLossMonitorV1({
+    probe: () => {
+      calls += 1;
+      return current;
+    },
+    probeMaxAgeMs: 1500,
+  });
+
+  // Prime the cache with a live inspect, then reuse it.
+  monitor.inspect();
+  assert.equal(monitor.inspectCached().ready, true);
+  assert.equal(monitor.inspectCached().ready, true);
+  assert.equal(calls, 1, "calls within the TTL window must be served from the cache");
+
+  // After the TTL the accessor falls back to a live probe.
+  awaitBump(1500);
+  monitor.inspectCached();
+  assert.equal(calls, 2, "a stale cache must fall back to a live probe");
+});
+
+test("inspectCached observes lost_fence on a stale cache and latches", () => {
+  let calls = 0;
+  let current: SharedStateServingFenceProbeV1 = { ready: true };
+  const lines: string[] = [];
+  const warn = console.warn;
+  console.warn = (...args: unknown[]) => {
+    lines.push(args.map(String).join(" "));
+  };
+  try {
+    const monitor = createSharedStateLossMonitorV1({
+      probe: () => {
+        calls += 1;
+        return current;
+      },
+      probeMaxAgeMs: 1500,
+    });
+    monitor.inspect();
+    current = { ready: false, reasonCode: "lost_fence" };
+    awaitBump(1500);
+    assert.deepEqual(monitor.inspectCached(), { ready: false, reasonCode: "lost_fence" });
+    // Latched: further cached reads short-circuit without probing.
+    const afterLatchCalls = calls;
+    assert.deepEqual(monitor.inspectCached(), { ready: false, reasonCode: "lost_fence" });
+    assert.equal(calls, afterLatchCalls);
+    assert.ok(lines.some((line) => line.includes("lost_fence")));
+  } finally {
+    console.warn = warn;
+  }
+});
+
+function awaitBump(ms: number): void {
+  const start = Date.now();
+  while (Date.now() - start < ms) {
+    // busy-wait past the cache TTL (tests, not production code)
+  }
+}
