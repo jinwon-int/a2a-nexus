@@ -44,10 +44,14 @@ export function listBrokerTasks(
   taskRepository: TaskRuntimeRepository | undefined,
   filters?: TaskListFilters,
 ): TaskRecord[] {
+  // #2078 C: read-only merge. The repository overlay used to be written back
+  // into the live mutation map, so retention-pruned terminal rows were
+  // resurrected into `this.tasks` on every listing — broker memory grew with
+  // read traffic until the next full persist. The overlay result is built
+  // locally; the live map is only ever mutated by write paths.
   const tasksById = new Map(tasks);
   if (taskRepository) {
     for (const repositoryTask of taskRepository.listTasks(filters).map(normalizeTaskRecord)) {
-      tasks.set(repositoryTask.id, repositoryTask);
       tasksById.set(repositoryTask.id, repositoryTask);
     }
   }
