@@ -8,7 +8,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import assert from 'node:assert/strict';
-import Ajv from 'ajv';
+import { createJsonSchemaValidator } from '../../scripts/lib/json-schema-lite.mjs';
 
 import {
   canonicalize,
@@ -30,9 +30,15 @@ const fixtureText = [
   fs.readFileSync(observationFixturePath, 'utf8'),
 ].join('\n');
 
-const ajv = new Ajv({ allErrors: true });
+// #2084: validation runs on json-schema-lite, the audited keyword-subset
+// validator in scripts/lib/json-schema-lite.mjs. It fails closed on any
+// keyword outside the subset, so schema growth cannot silently validate
+// less. The registry serves the whole-document $refs between schemas.
+const registry = {};
 function loadSchema(name) {
-  return JSON.parse(fs.readFileSync(path.join(specDir, 'schemas', name), 'utf8'));
+  const schema = JSON.parse(fs.readFileSync(path.join(specDir, 'schemas', name), 'utf8'));
+  registry[name] = schema;
+  return schema;
 }
 const schemas = {
   intentContract: loadSchema('intent-contract-v1.json'),
@@ -41,18 +47,14 @@ const schemas = {
   reviewReceipt: loadSchema('review-receipt-v1.json'),
   observation: loadSchema('review-lineage-observation-v1.json'),
 };
-ajv.addSchema(schemas.intentContract, 'intent-contract-v1.json');
-ajv.addSchema(schemas.budget, 'review-lineage-budget-v1.json');
-ajv.addSchema(schemas.findingLedger, 'finding-ledger-v1.json');
-ajv.addSchema(schemas.reviewReceipt, 'review-receipt-v1.json');
 
 function assertValid(schemaKey, value, label) {
-  const validate = ajv.compile(schemas[schemaKey]);
+  const validate = createJsonSchemaValidator(schemas[schemaKey], { registry });
   const ok = validate(value);
   assert.ok(ok, `${label} must validate against ${schemaKey}: ${JSON.stringify(validate.errors)}`);
 }
 function assertInvalid(schemaKey, value, label) {
-  const validate = ajv.compile(schemas[schemaKey]);
+  const validate = createJsonSchemaValidator(schemas[schemaKey], { registry });
   assert.equal(validate(value), false, `${label} must be rejected by ${schemaKey}`);
 }
 

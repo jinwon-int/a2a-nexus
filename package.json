@@ -91,11 +91,7 @@
   },
   "license": "MIT",
   "devDependencies": {
-    "@types/node": "^22.20.1",
-    "ajv": "^8.18.0"
-  },
-  "overrides": {
-    "fast-uri": "^3.1.7"
+    "@types/node": "^22.20.1"
   },
   "engines": {
     "node": ">=22.5"

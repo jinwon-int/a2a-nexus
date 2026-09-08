@@ -49,6 +49,30 @@ for (const dir of packages) {
   }
   if (!manifest.homepage || typeof manifest.homepage !== 'string') manifestFailures.push(`${dir}: homepage is required`);
   if (!manifest.bugs || manifest.bugs.url !== 'https://github.com/jinwon-int/a2a-nexus/issues') manifestFailures.push(`${dir}: bugs.url must point at a2a-nexus issues`);
+
+  // #2084 item 2: scripts must not shell out through `npx <pkg>` — that is an
+  // unpinned, registry-dependent execution path outside the lockfile. The
+  // former `npx tsx --test` scripts run their compiled dist tests instead.
+  for (const [script, command] of Object.entries(manifest.scripts ?? {})) {
+    if (typeof command === 'string' && command.split(/\s+/).includes('npx')) {
+      manifestFailures.push(`${dir}: script "${script}" must not invoke npx (unpinned registry execution); run the lockfile-installed binary or a compiled dist test instead`);
+    }
+  }
+
+  // #2084 item 4: runtime dependency allowlist. Runtime dependencies are
+  // limited to zod plus in-repo workspace packages; anything new requires a
+  // deliberate update to this gate (and usually a supply-chain review).
+  const RUNTIME_DEPENDENCY_ALLOWLIST = new Set([
+    'zod',
+    'a2a-attestation',
+    'a2a-nclex-evaluation',
+    'a2a-policy-referee',
+  ]);
+  for (const name of Object.keys(manifest.dependencies ?? {})) {
+    if (!RUNTIME_DEPENDENCY_ALLOWLIST.has(name)) {
+      manifestFailures.push(`${dir}: runtime dependency "${name}" is outside the allowlist (zod + in-repo workspaces); update check-packages.mjs deliberately (#2084)`);
+    }
+  }
 }
 
 if (manifestFailures.length) {

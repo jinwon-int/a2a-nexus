@@ -749,6 +749,21 @@
       "retirementCondition": "Retire only when the Hermes lightweight native-worker profile is withdrawn (#2065 mobile-worker retirement) or a narrower owner-scoped gate covers the same spec/fixture/runbook conformance invariants.",
       "note": "Runs the Hermes lightweight native-worker conformance suite (reference worker, mobile-alpha profile spec, native-worker conformance, enrollment runbook) on the default PR gate. Added for #2068: the check:hermes suite existed but no gate executed it, so it drifted red on main undetected.",
       "weightMs": 1000
+    },
+    {
+      "name": "json-schema-lite",
+      "command": "node",
+      "args": [
+        "--test",
+        "scripts/lib/json-schema-lite.test.mjs"
+      ],
+      "tier": "core",
+      "owner": "release-gate-tooling",
+      "consumer": "pr-gate",
+      "retirement": "keep",
+      "retirementCondition": "Retire only when a narrower owner-scoped gate demonstrably covers the same invariant; no removal while it runs on the default release-gate path.",
+      "note": "#2084: pins the fail-closed keyword contract of the ajv-replacement validator. If these tests fail, schema growth outpaced the validator and conformance would silently validate less.",
+      "weightMs": 1000
     }
   ]
 }
