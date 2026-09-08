@@ -51,6 +51,12 @@ export interface ProposalWriteContext {
     note?: string;
   }): AuditEvent;
   persistState(): void;
+  /** Optional (#2077 step 1) — see TaskTerminalContext.commitMutation. */
+  commitMutation?<T>(fn: () => T): T;
+}
+
+function commitMutation<T>(context: ProposalWriteContext, fn: () => T): T {
+  return context.commitMutation ? context.commitMutation(fn) : fn();
 }
 
 export function normalizePolicyError(error: unknown): BrokerError {
@@ -93,16 +99,19 @@ export function createProposal(request: CreateProposalRequest, context: Proposal
     updatedAt: now,
   };
 
-  context.setProposalRecord(proposal);
-  context.appendAuditEvent({
-    actorId: request.source.id,
-    action: "proposal.created",
-    targetType: "proposal",
-    targetId: proposal.id,
-    proposalId: proposal.id,
-    note: request.summary,
+  // #2077 step 1: record write + audit + persist as one store commit.
+  commitMutation(context, () => {
+    context.setProposalRecord(proposal);
+    context.appendAuditEvent({
+      actorId: request.source.id,
+      action: "proposal.created",
+      targetType: "proposal",
+      targetId: proposal.id,
+      proposalId: proposal.id,
+      note: request.summary,
+    });
+    context.persistState();
   });
-  context.persistState();
   return proposal;
 }
 
@@ -125,21 +134,24 @@ export function attachArtifact(
     createdAt: isoNow(),
   };
 
-  context.setArtifactRecord(artifact);
-  proposal.artifactIds = uniqueIds([...proposal.artifactIds, artifact.id]);
-  proposal.updatedAt = isoNow();
-  context.setProposalRecord(proposal);
+  // #2077 step 1: artifact + proposal writes, audit, and persist as one commit.
+  commitMutation(context, () => {
+    context.setArtifactRecord(artifact);
+    proposal.artifactIds = uniqueIds([...proposal.artifactIds, artifact.id]);
+    proposal.updatedAt = isoNow();
+    context.setProposalRecord(proposal);
 
-  context.appendAuditEvent({
-    actorId: proposal.sourceNodeId,
-    action: "artifact.attached",
-    targetType: "artifact",
-    targetId: artifact.id,
-    proposalId,
-    note: artifact.summary,
+    context.appendAuditEvent({
+      actorId: proposal.sourceNodeId,
+      action: "artifact.attached",
+      targetType: "artifact",
+      targetId: artifact.id,
+      proposalId,
+      note: artifact.summary,
+    });
+
+    context.persistState();
   });
-
-  context.persistState();
   return artifact;
 }
 
@@ -169,28 +181,31 @@ export function submitValidationResult(
     createdAt: isoNow(),
   };
 
-  context.setValidationRecord(validation);
-  // Only advance to "validated" from a pre-decision state. A stale validation
-  // — e.g. a validate_change task that completes after the proposal was
-  // already approved/applied/rejected — must not rewind the proposal into a
-  // second approve/apply cycle. The validation is still recorded as evidence.
-  if (proposal.status === "submitted" || proposal.status === "validated") {
-    proposal.status = "validated";
-  }
-  proposal.updatedAt = isoNow();
-  proposal.artifactIds = uniqueIds([...proposal.artifactIds, ...validation.artifactIds]);
-  context.setProposalRecord(proposal);
+  // #2077 step 1: validation + proposal writes, audit, and persist as one commit.
+  commitMutation(context, () => {
+    context.setValidationRecord(validation);
+    // Only advance to "validated" from a pre-decision state. A stale validation
+    // — e.g. a validate_change task that completes after the proposal was
+    // already approved/applied/rejected — must not rewind the proposal into a
+    // second approve/apply cycle. The validation is still recorded as evidence.
+    if (proposal.status === "submitted" || proposal.status === "validated") {
+      proposal.status = "validated";
+    }
+    proposal.updatedAt = isoNow();
+    proposal.artifactIds = uniqueIds([...proposal.artifactIds, ...validation.artifactIds]);
+    context.setProposalRecord(proposal);
 
-  context.appendAuditEvent({
-    actorId: request.nodeId,
-    action: "validation.submitted",
-    targetType: "validation",
-    targetId: validation.id,
-    proposalId,
-    note: request.note,
+    context.appendAuditEvent({
+      actorId: request.nodeId,
+      action: "validation.submitted",
+      targetType: "validation",
+      targetId: validation.id,
+      proposalId,
+      note: request.note,
+    });
+
+    context.persistState();
   });
-
-  context.persistState();
   return validation;
 }
 
@@ -210,16 +225,19 @@ export function approveProposal(
 
   proposal.status = "approved";
   proposal.updatedAt = isoNow();
-  context.setProposalRecord(proposal);
-  context.appendAuditEvent({
-    actorId: request.actor.id,
-    action: "proposal.approved",
-    targetType: "proposal",
-    targetId: proposal.id,
-    proposalId,
-    note: request.note,
+  // #2077 step 1: record write + audit + persist as one store commit.
+  commitMutation(context, () => {
+    context.setProposalRecord(proposal);
+    context.appendAuditEvent({
+      actorId: request.actor.id,
+      action: "proposal.approved",
+      targetType: "proposal",
+      targetId: proposal.id,
+      proposalId,
+      note: request.note,
+    });
+    context.persistState();
   });
-  context.persistState();
   return proposal;
 }
 
@@ -239,16 +257,19 @@ export function rejectProposal(
 
   proposal.status = "rejected";
   proposal.updatedAt = isoNow();
-  context.setProposalRecord(proposal);
-  context.appendAuditEvent({
-    actorId: request.actor.id,
-    action: "proposal.rejected",
-    targetType: "proposal",
-    targetId: proposal.id,
-    proposalId,
-    note: request.note,
+  // #2077 step 1: record write + audit + persist as one store commit.
+  commitMutation(context, () => {
+    context.setProposalRecord(proposal);
+    context.appendAuditEvent({
+      actorId: request.actor.id,
+      action: "proposal.rejected",
+      targetType: "proposal",
+      targetId: proposal.id,
+      proposalId,
+      note: request.note,
+    });
+    context.persistState();
   });
-  context.persistState();
   return proposal;
 }
 
@@ -275,15 +296,18 @@ export function applyProposalLocally(
 
   proposal.status = "applied";
   proposal.updatedAt = isoNow();
-  context.setProposalRecord(proposal);
-  context.appendAuditEvent({
-    actorId: request.actor.id,
-    action: "proposal.applied",
-    targetType: "proposal",
-    targetId: proposal.id,
-    proposalId,
-    note: request.note,
+  // #2077 step 1: record write + audit + persist as one store commit.
+  commitMutation(context, () => {
+    context.setProposalRecord(proposal);
+    context.appendAuditEvent({
+      actorId: request.actor.id,
+      action: "proposal.applied",
+      targetType: "proposal",
+      targetId: proposal.id,
+      proposalId,
+      note: request.note,
+    });
+    context.persistState();
   });
-  context.persistState();
   return proposal;
 }

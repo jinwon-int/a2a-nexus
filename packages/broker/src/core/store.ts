@@ -412,6 +412,8 @@ export class SqliteBrokerStateStore implements BrokerStateStore {
   // one. node:sqlite has a single connection per store and SQLite has no true
   // nested transactions, so this is a join flag rather than a nesting counter.
   private transactionDepth = 0;
+  // Top-level commits performed (#2077 diagnostic counter, see `commits`).
+  private commitCount = 0;
 
   constructor(
     private readonly dbFile: string,
@@ -2098,6 +2100,9 @@ export class SqliteBrokerStateStore implements BrokerStateStore {
     }
     this.db.exec("BEGIN IMMEDIATE");
     this.transactionDepth = 1;
+    // #2077: exposed so tests can assert a mutation ends in exactly one
+    // commit (one WAL fsync) — e.g. completeTask must be 1, not 4–7.
+    this.commitCount += 1;
     try {
       const result = fn();
       this.db.exec("COMMIT");
@@ -2112,6 +2117,15 @@ export class SqliteBrokerStateStore implements BrokerStateStore {
     } finally {
       this.transactionDepth = 0;
     }
+  }
+
+  /**
+   * Number of top-level transactions this store has committed (nested
+   * `runBatch` joins are not counted). Diagnostic counter for tests and
+   * tooling; never reset.
+   */
+  get commits(): number {
+    return this.commitCount;
   }
 
   private runImmediateTransaction(fn: () => void): void {

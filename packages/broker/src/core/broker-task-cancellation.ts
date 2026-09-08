@@ -37,6 +37,19 @@ export interface TaskCancellationContext {
   writeTombstone(task: TaskRecord, reason: TombstoneReason, context?: { actorId?: string; reason?: string }): void;
   persistState(): void;
   emitTaskEvent(task: TaskRecord, reason: TaskUpdateReason): void;
+  /**
+   * Optional (#2077 step 1): run one cancellation record's writes (task row,
+   * exchange sync, audit, tombstone, persist) as a single store transaction.
+   * Absent on hand-built test contexts, in which case the callback runs
+   * inline. Each tree record is its own batch so its event emission stays
+   * outside the transaction; nested calls (tree recursion) join the open
+   * transaction via the store's depth join.
+   */
+  commitMutation?<T>(fn: () => T): T;
+}
+
+function commitMutation<T>(context: TaskCancellationContext, fn: () => T): T {
+  return context.commitMutation ? context.commitMutation(fn) : fn();
 }
 
 interface CancelTaskParams {
@@ -150,20 +163,24 @@ function cancelTaskRecord(
     supersededByPrUrl: params.supersededByPrUrl,
     roundId: params.roundId,
   };
-  context.setTaskRecord(task);
-  context.syncExchangeStateFromTask(task, "queued");
-  context.appendAuditEvent({
-    actorId: params.actorId,
-    action: "task.canceled",
-    targetType: "task",
-    targetId: task.id,
-    proposalId: task.proposalId,
-    note: params.reason,
+  // #2077 step 1: record write + exchange sync + audit + tombstone + persist
+  // as one commit; the terminal event emission stays outside the batch.
+  commitMutation(context, () => {
+    context.setTaskRecord(task);
+    context.syncExchangeStateFromTask(task, "queued");
+    context.appendAuditEvent({
+      actorId: params.actorId,
+      action: "task.canceled",
+      targetType: "task",
+      targetId: task.id,
+      proposalId: task.proposalId,
+      note: params.reason,
+    });
+    // Tombstone before persist so a crash between the two cannot lose it
+    // (writeTombstone mutates state but does not persist on its own).
+    context.writeTombstone(task, "canceled", { actorId: params.actorId, reason: params.reason });
+    context.persistState();
   });
-  // Tombstone before persist so a crash between the two cannot lose it
-  // (writeTombstone mutates state but does not persist on its own).
-  context.writeTombstone(task, "canceled", { actorId: params.actorId, reason: params.reason });
-  context.persistState();
   context.emitTaskEvent(task, "canceled");
   return task;
 }

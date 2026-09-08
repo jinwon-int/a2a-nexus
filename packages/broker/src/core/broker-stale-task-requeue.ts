@@ -39,6 +39,12 @@ export interface StaleTaskRequeueContext {
   emitTaskEvent(task: TaskRecord, reason: TaskUpdateReason): void;
   emitTaskAttemptRecord(task: TaskRecord): void;
   cancelTask(taskId: string, request: TaskCancelRequest): TaskRecord;
+  /** Optional (#2077 step 1) — see TaskTerminalContext.commitMutation. */
+  commitMutation?<T>(fn: () => T): T;
+}
+
+function commitMutation<T>(context: StaleTaskRequeueContext, fn: () => T): T {
+  return context.commitMutation ? context.commitMutation(fn) : fn();
 }
 
 export function requeueStaleTasks(
@@ -78,88 +84,96 @@ export function requeueStaleTasksDetailed(
   const deadLettered: TaskRecord[] = [];
 
   const expiredCheckpointTaskIds: string[] = [];
-  for (const task of context.tasks.values()) {
-    // Contract §1.4/§2.3: a checkpoint that is never resumed transitions to
-    // cancelled when its timeout expires (collected first; cancelTask
-    // mutates and persists, so it runs after this scan).
-    if (
-      task.checkpoint &&
-      context.checkpointTimeoutMs > 0 &&
-      (task.status === "claimed" || task.status === "running") &&
-      nowMs - Date.parse(task.checkpoint.recordedAt) >= context.checkpointTimeoutMs
-    ) {
-      expiredCheckpointTaskIds.push(task.id);
-      continue;
-    }
-    const requeueReason = getTaskRequeueReason(task, thresholdMs, staleWorkerIds, nowMs);
-    if (!requeueReason) {
-      continue;
-    }
+  // #2077 step 1: the whole sweep is one store transaction. Previously each
+  // requeued/dead-lettered task paid 2–3 commits (record upsert, exchange
+  // sync, audit append) before the single persist at the end — an N-task
+  // sweep meant N+1 fsyncs where one suffices. Event emission and the
+  // expired-checkpoint cancels (which batch per record internally) stay
+  // outside the sweep batch.
+  commitMutation(context, () => {
+    for (const task of context.tasks.values()) {
+      // Contract §1.4/§2.3: a checkpoint that is never resumed transitions to
+      // cancelled when its timeout expires (collected first; cancelTask
+      // mutates and persists, so it runs after this scan).
+      if (
+        task.checkpoint &&
+        context.checkpointTimeoutMs > 0 &&
+        (task.status === "claimed" || task.status === "running") &&
+        nowMs - Date.parse(task.checkpoint.recordedAt) >= context.checkpointTimeoutMs
+      ) {
+        expiredCheckpointTaskIds.push(task.id);
+        continue;
+      }
+      const requeueReason = getTaskRequeueReason(task, thresholdMs, staleWorkerIds, nowMs);
+      if (!requeueReason) {
+        continue;
+      }
 
-    const currentRequeues = task.requeueCount ?? 0;
-    const previousStatus = task.status;
+      const currentRequeues = task.requeueCount ?? 0;
+      const previousStatus = task.status;
 
-    if (context.maxRequeueAttempts > 0 && currentRequeues >= context.maxRequeueAttempts) {
-      // Dead-letter: mark failed so operators see the real state instead of an endless
-      // requeue loop. Preserve `claimedBy` and the final `requeueCount` for forensics.
-      task.status = "failed";
+      if (context.maxRequeueAttempts > 0 && currentRequeues >= context.maxRequeueAttempts) {
+        // Dead-letter: mark failed so operators see the real state instead of an endless
+        // requeue loop. Preserve `claimedBy` and the final `requeueCount` for forensics.
+        task.status = "failed";
+        task.updatedAt = nowIso;
+        task.completedAt = nowIso;
+        task.error = {
+          code: REQUEUE_EXHAUSTED_ERROR_CODE,
+          message: `dead-lettered after ${currentRequeues} automatic requeue${
+            currentRequeues === 1 ? "" : "s"
+          }: ${requeueReason}`,
+          details: {
+            requeueCount: currentRequeues,
+            maxRequeueAttempts: context.maxRequeueAttempts,
+            previousStatus,
+            lastRequeueReason: requeueReason,
+          },
+        };
+        context.setTaskRecord(task);
+        // Dead-lettered terminals must land in attempt history / preflight views
+        // like the completeTask/failTask/cancelTask paths do; previously only the
+        // checkpoint-expiry cancels (which go through context.cancelTask) were
+        // recorded, leaving dead-letters invisible in forensic data (BUG-14).
+        context.emitTaskAttemptRecord(task);
+        context.syncExchangeStateFromTask(task, "failed");
+        context.appendAuditEvent({
+          actorId: "broker",
+          action: "task.failed",
+          targetType: "task",
+          targetId: task.id,
+          proposalId: task.proposalId,
+          note: task.error.message,
+        });
+        deadLettered.push(task);
+        context.writeTombstone(task, "dead_lettered");
+        continue;
+      }
+
+      task.status = "queued";
+      task.claimedBy = undefined;
+      task.claimedAt = undefined;
+      task.completedAt = undefined;
+      task.attemptId = undefined;
       task.updatedAt = nowIso;
-      task.completedAt = nowIso;
-      task.error = {
-        code: REQUEUE_EXHAUSTED_ERROR_CODE,
-        message: `dead-lettered after ${currentRequeues} automatic requeue${
-          currentRequeues === 1 ? "" : "s"
-        }: ${requeueReason}`,
-        details: {
-          requeueCount: currentRequeues,
-          maxRequeueAttempts: context.maxRequeueAttempts,
-          previousStatus,
-          lastRequeueReason: requeueReason,
-        },
-      };
+      task.requeueCount = currentRequeues + 1;
       context.setTaskRecord(task);
-      // Dead-lettered terminals must land in attempt history / preflight views
-      // like the completeTask/failTask/cancelTask paths do; previously only the
-      // checkpoint-expiry cancels (which go through context.cancelTask) were
-      // recorded, leaving dead-letters invisible in forensic data (BUG-14).
-      context.emitTaskAttemptRecord(task);
-      context.syncExchangeStateFromTask(task, "failed");
+      context.syncExchangeStateFromTask(task, "queued");
       context.appendAuditEvent({
         actorId: "broker",
-        action: "task.failed",
+        action: "task.requeued",
         targetType: "task",
         targetId: task.id,
         proposalId: task.proposalId,
-        note: task.error.message,
+        note: `requeued ${previousStatus} task without reassignment (attempt ${task.requeueCount}): ${requeueReason}`,
       });
-      deadLettered.push(task);
-      context.writeTombstone(task, "dead_lettered");
-      continue;
+      requeued.push(task);
     }
 
-    task.status = "queued";
-    task.claimedBy = undefined;
-    task.claimedAt = undefined;
-    task.completedAt = undefined;
-    task.attemptId = undefined;
-    task.updatedAt = nowIso;
-    task.requeueCount = currentRequeues + 1;
-    context.setTaskRecord(task);
-    context.syncExchangeStateFromTask(task, "queued");
-    context.appendAuditEvent({
-      actorId: "broker",
-      action: "task.requeued",
-      targetType: "task",
-      targetId: task.id,
-      proposalId: task.proposalId,
-      note: `requeued ${previousStatus} task without reassignment (attempt ${task.requeueCount}): ${requeueReason}`,
-    });
-    requeued.push(task);
-  }
-
-  if (requeued.length > 0 || deadLettered.length > 0) {
-    context.persistState();
-  }
+    if (requeued.length > 0 || deadLettered.length > 0) {
+      context.persistState();
+    }
+  });
 
   for (const task of deadLettered) {
     context.emitTaskEvent(task, "dead_lettered");
