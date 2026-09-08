@@ -19,7 +19,8 @@
 import { DatabaseSync } from "node:sqlite";
 
 import { SharedStateSqliteAdapterV1 } from "./shared-state-sqlite-adapter-v1.js";
-import { applySharedStateSqliteSchemaV1 } from "./shared-state-sqlite-schema-v1.js";
+import {
+  applySharedStateSqliteConnectionPragmasV1, applySharedStateSqliteSchemaV1 } from "./shared-state-sqlite-schema-v1.js";
 import {
   SHARED_STATE_SQLITE_WORKER_PROTOCOL_V1,
   buildSharedStateSqliteWorkerErrorResponseV1,
@@ -66,6 +67,9 @@ export function openSharedStateSqliteWorkerDatabaseV1(
   readonly adapter: SharedStateSqliteAdapterV1;
 } {
   const db = new DatabaseSync(bootstrap.filePath, { timeout: 0 });
+  // #2081: WAL for reader concurrency, FULL so the durable-commit ACK of the
+  // worker lane's write transactions keeps its power-failure guarantee.
+  applySharedStateSqliteConnectionPragmasV1(db, { durability: "ack" });
   const applied = applySharedStateSqliteSchemaV1(db);
   if (!applied.ok) {
     db.close();

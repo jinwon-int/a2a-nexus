@@ -233,6 +233,22 @@ const SCHEMA_STATEMENTS_V1: readonly string[] = Object.freeze([
      checkpoint_sequence TEXT NOT NULL,
      PRIMARY KEY (namespace, projection_version)
    ) STRICT`,
+
+  // #2081: expression index for the rate-cost window scan. The logical window
+  // bound compares `event_at_unix_ms` numerically (CAST), so the plain PK
+  // index cannot serve the range; this makes the bounded scan index-backed
+  // and gives the prune job its delete index.
+  `CREATE INDEX IF NOT EXISTS shared_state_rate_cost_window_idx
+     ON shared_state_rate_cost (namespace, bucket_key_digest,
+                                CAST(event_at_unix_ms AS INTEGER))`,
+
+  // #2081: graph-query projection batches by liveness; the source rows are
+  // fetched per live-batch sequence range.
+  `CREATE INDEX IF NOT EXISTS shared_state_graph_batch_live_idx
+     ON shared_state_graph_batch (namespace, projection_version, rolled_back)`,
+  `CREATE INDEX IF NOT EXISTS shared_state_graph_source_seq_idx
+     ON shared_state_graph_source (namespace,
+                                   CAST(source_sequence AS INTEGER))`,
 ]);
 
 function readMeta(
@@ -417,4 +433,31 @@ export function readSharedStateSqliteSchemaV1(
       tableCount,
     }),
   };
+}
+
+
+/**
+ * #2081: connection pragmas applied immediately after opening a
+ * shared-state database. V1 opened with SQLite's defaults — a DELETE journal
+ * with `synchronous=FULL` — so every commit fsynced twice and the
+ * request-path `probe()` readers blocked behind writers.
+ *
+ * - `journal_mode=WAL` lets the fence's ownership probe read while a writer
+ *   commits (the core store has run WAL since its first deployment).
+ * - `synchronous=NORMAL` is the standard WAL pairing where the connection is
+ *   a probe/read surface.
+ * - `synchronous=FULL` keeps the durable-commit ACK semantics for connections
+ *   that own the adapter's write transactions: a acknowledged commit survives
+ *   a power failure, at the cost of an fsync per commit.
+ */
+export function applySharedStateSqliteConnectionPragmasV1(
+  db: DatabaseSync,
+  options: { readonly durability: "ack" | "probe" },
+): void {
+  db.exec("PRAGMA journal_mode=WAL");
+  db.exec(
+    options.durability === "ack"
+      ? "PRAGMA synchronous=FULL"
+      : "PRAGMA synchronous=NORMAL",
+  );
 }

@@ -21,6 +21,7 @@ import {
   type SharedStateSqliteAdapterErrorCodeV1,
 } from "./shared-state-sqlite-adapter-v1.js";
 import {
+  applySharedStateSqliteConnectionPragmasV1,
   applySharedStateSqliteSchemaV1,
   type SharedStateSqliteSchemaErrorCodeV1,
 } from "./shared-state-sqlite-schema-v1.js";
@@ -166,6 +167,10 @@ export function openSharedStateServingFenceV1(input: {
   } catch {
     return fail("adapter_unavailable");
   }
+
+  // #2081: WAL so the request-path ownership probe never blocks behind a
+  // writer; NORMAL is the standard probe-connection pairing.
+  applySharedStateSqliteConnectionPragmasV1(db, { durability: "probe" });
 
   const applied = applySharedStateSqliteSchemaV1(db);
   if (!applied.ok) {
