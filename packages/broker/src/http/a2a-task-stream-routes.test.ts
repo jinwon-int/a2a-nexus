@@ -45,13 +45,19 @@ test("A2A task stream route dispatcher falls through non-GET and unknown A2A str
 test("A2A task stream route extraction keeps dynamic route glue out of server.js", () => {
   const routeModule = readFileSync(join(here, "a2a-task-stream-routes.js"), "utf8");
   const serverModule = readFileSync(join(distRoot, "server.js"), "utf8");
+  const routeEntriesModule = readFileSync(join(here, "route-entries.js"), "utf8");
 
   assert.match(routeModule, /workers\.assignment-events/);
   assert.match(routeModule, /handleWorkerAssignmentEventStream/);
   assert.match(routeModule, /handleTaskEventStream/);
   assert.doesNotMatch(routeModule, /from "\.\.\/server\.js"/);
 
-  assert.match(serverModule, /handleA2ATaskStreamRouteIfMatched/);
+  // #2079 A: server.js assembles the route table from entry factories; the
+  // per-module dispatchers are referenced by route-entries.js instead.
+  assert.match(routeEntriesModule, /handleA2ATaskStreamRouteIfMatched/);
+  assert.doesNotMatch(routeEntriesModule, /segments\[3\] === "assignment-events"/);
+  assert.doesNotMatch(routeEntriesModule, /segments\[3\] === "events"/);
+  assert.match(serverModule, /createA2ATaskStreamRouteEntries/);
   assert.doesNotMatch(serverModule, /segments\[3\] === "assignment-events"/);
   assert.doesNotMatch(serverModule, /segments\[3\] === "events"/);
 });
