@@ -122,7 +122,6 @@ function waitForStateWake(
 
 /** GET /tasks — list tasks (item or full detail); worker-filtered queries are signature-gated. */
 export async function handleTasksListRequest(ctx: TasksCollectionRouteContext): Promise<void> {
-  console.log("[LP-DEBUG] list handler entered, waitMs param =", ctx.url.searchParams.get("waitMs"));
   const { url } = ctx;
   let workerScoped = false;
   if (url.searchParams.has("worker") || url.searchParams.has("assignedWorkerId")) {
