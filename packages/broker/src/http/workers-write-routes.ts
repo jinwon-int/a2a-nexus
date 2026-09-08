@@ -101,6 +101,11 @@ export async function handleWorkerHeartbeatRequest(
   }
   const heartbeatStartedAt = performance.now();
   const worker = ctx.broker.heartbeatWorker(workerId, body ?? undefined);
+  // #2082 C: when the heartbeat names the actively-running task, stamp task
+  // liveness in the same beat (lenient — see heartbeatActiveTaskIfAssigned).
+  if (body?.activeTaskId) {
+    ctx.broker.heartbeatActiveTaskIfAssigned(workerId, body.activeTaskId, body.activeTaskLastProgressAt);
+  }
   recordWorkerHeartbeatPhase("brokerHeartbeat", heartbeatStartedAt, workerId);
   // Heartbeat always implies worker-plane online — use toWorkerView for consistent fields
   const toWorkerViewStartedAt = performance.now();
