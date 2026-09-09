@@ -11,7 +11,7 @@ import type { TaskRecord } from "../core/types.js";
 import { queryTerminalBriefInbox } from "../core/terminal-brief-query-api.js";
 import { buildReleaseEvidenceExport } from "../core/release-evidence.js";
 import { buildOperatorTaskReport } from "../core/operator-task-report.js";
-import { getTaskForReadPath, listTasksForReadPath, mapBrokerDiagnosticsToSnapshot } from "../task-read-paths.js";
+import { getTaskForReadPath, listAllTasksForReadPath, listTasksForReadPath, mapBrokerDiagnosticsToSnapshot } from "../task-read-paths.js";
 import { optionalString } from "../request-parsers.js";
 import { booleanQueryParam } from "./request-params.js";
 import { numberQueryParam, taskFiltersFromUrl, taskIdsFromUrl } from "./read-path-filters.js";
@@ -98,7 +98,9 @@ export function handleOperatorTaskReportRequest(ctx: OperatorReportingReadRouteC
   const updatedAfter = optionalString(ctx.url.searchParams.get("updated_after"));
   const tasks = taskIds.length
     ? taskIds.map((id) => getTaskForReadPath(ctx.stateStore, ctx.broker, id)).filter((task): task is TaskRecord => Boolean(task))
-    : listTasksForReadPath(ctx.stateStore, ctx.broker, {});
+    : // #2078 C2: the all-tasks report iterates bounded keyset pages so the
+      // sweep stays exhaustive without an unbounded SELECT.
+      listAllTasksForReadPath(ctx.stateStore, ctx.broker);
   const terminalOutbox = ctx.broker.getTerminalTaskEventOutbox().subscribe();
   sendJson(ctx.res, 200, buildOperatorTaskReport(tasks, { taskIds, parentIssue, staleAfterMs, updatedAfter, terminalOutbox }));
 }

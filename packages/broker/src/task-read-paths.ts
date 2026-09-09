@@ -5,6 +5,7 @@
 // valid unchanged.
 import { BrokerError } from "./core/broker-error.js";
 import { SqliteBrokerStateStore } from "./core/store.js";
+import { HOT_READ_HARD_MAX_LIMIT } from "./core/store-hot-select-projections.js";
 import { failureReadbackFromError } from "./core/task-error-details.js";
 import type { InMemoryA2ABroker, TaskDiagnosticsOptions } from "./core/broker.js";
 import type { BrokerStateStore, SqliteTaskListItemProjection } from "./core/store.js";
@@ -149,12 +150,23 @@ function collectLiveActiveReadPathItems<T extends { id: string; status: TaskStat
   }
 }
 
-export function listAllTasksForStatsReadPath(
+export function listAllTasksForReadPath(
   stateStore: BrokerStateStore,
   broker: InMemoryA2ABroker,
 ): TaskRecord[] {
   if (stateStore instanceof SqliteBrokerStateStore) {
-    return stateStore.readHotTasks();
+    // #2078 C2: iterate bounded keyset pages instead of one unbounded SELECT;
+    // the materialized result is identical to the previous full read.
+    const tasks: TaskRecord[] = [];
+    let cursor: { updatedAt: string; id: string } | undefined;
+    for (;;) {
+      const page = stateStore.readHotTaskPage(cursor);
+      tasks.push(...page.tasks);
+      if (!page.nextCursor) {
+        return tasks;
+      }
+      cursor = page.nextCursor;
+    }
   }
   return broker.listTasks();
 }
@@ -280,24 +292,38 @@ export function listTaskDiagnosticsForReadPath(
   options: TaskDiagnosticsOptions,
 ): TaskDiagnosticReport[] {
   if (stateStore instanceof SqliteBrokerStateStore) {
+    // #2078 C2: the auxiliary tables are retention-capped; read them with
+    // explicit hard-max bounds instead of relying on omitted limits, and
+    // iterate the task table through bounded keyset pages.
     const tombstonesByTaskId = new Map<string, TaskTombstone>(
-      stateStore.readHotTombstones().map((tombstone) => [tombstone.taskId, tombstone]),
+      stateStore.readHotTombstones({ maxRows: HOT_READ_HARD_MAX_LIMIT }).map((tombstone) => [tombstone.taskId, tombstone]),
     );
     const workersByNodeId = new Map<string, WorkerRecord>(
-      stateStore.readHotWorkers().map((worker) => [worker.nodeId, worker]),
+      stateStore.readHotWorkers({ maxRows: HOT_READ_HARD_MAX_LIMIT }).map((worker) => [worker.nodeId, worker]),
     );
     const latestRequeueEventByTaskId = new Map<string, AuditEvent>();
-    for (const event of stateStore.readHotAuditEvents({ action: "task.requeued" })) {
+    for (const event of stateStore.readHotAuditEvents({ action: "task.requeued", maxRows: HOT_READ_HARD_MAX_LIMIT })) {
       const existing = latestRequeueEventByTaskId.get(event.targetId);
       if (!existing || event.createdAt > existing.createdAt) {
         latestRequeueEventByTaskId.set(event.targetId, event);
       }
     }
-    return stateStore.readHotTasks().map((task) => broker.getTaskDiagnosticsForRecord(task, options, {
-      tombstone: tombstonesByTaskId.get(task.id) ?? null,
-      assignedWorker: task.assignedWorkerId ? workersByNodeId.get(task.assignedWorkerId) ?? null : null,
-      lastRequeueEvent: latestRequeueEventByTaskId.get(task.id) ?? null,
-    }));
+    const reports: TaskDiagnosticReport[] = [];
+    let cursor: { updatedAt: string; id: string } | undefined;
+    for (;;) {
+      const page = stateStore.readHotTaskPage(cursor);
+      for (const task of page.tasks) {
+        reports.push(broker.getTaskDiagnosticsForRecord(task, options, {
+          tombstone: tombstonesByTaskId.get(task.id) ?? null,
+          assignedWorker: task.assignedWorkerId ? workersByNodeId.get(task.assignedWorkerId) ?? null : null,
+          lastRequeueEvent: latestRequeueEventByTaskId.get(task.id) ?? null,
+        }));
+      }
+      if (!page.nextCursor) {
+        return reports;
+      }
+      cursor = page.nextCursor;
+    }
   }
   return broker.listTasks().map((task) => broker.getTaskDiagnostics(task.id, options));
 }

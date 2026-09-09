@@ -5,7 +5,7 @@ import { deriveTaskWorkerClass } from "a2a-policy-referee";
 import { aggregateTaskStats } from "../core/task-stats.js";
 import type { BrokerStateStore } from "../core/store.js";
 import type { TaskRecord } from "../core/types.js";
-import { listAllTasksForStatsReadPath, listAuditEventsForReadPath } from "../task-read-paths.js";
+import { listAllTasksForReadPath, listAuditEventsForReadPath } from "../task-read-paths.js";
 import { sendJson } from "./response.js";
 
 const DEFAULT_STATS_WINDOW_MS = 7 * 24 * 60 * 60 * 1000;
@@ -56,7 +56,7 @@ export function handleTaskStatsRouteIfMatched(ctx: TaskStatsRouteContext): boole
     return false;
   }
   const window = parseTaskStatsWindow(ctx.url);
-  const tasks = listAllTasksForStatsReadPath(ctx.stateStore, ctx.broker);
+  const tasks = listAllTasksForReadPath(ctx.stateStore, ctx.broker);
   const auditEvents = listAuditEventsForReadPath(ctx.stateStore, ctx.broker, {});
   try {
     const stats = aggregateTaskStats(tasks, {
