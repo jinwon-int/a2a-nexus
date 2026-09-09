@@ -2,6 +2,8 @@
 // #2078 C3 acceptance: lineage endpoints at T=5,000 must cost per request
 // proportional to the result size, not a full O(T) projection rebuild.
 // Run from packages/broker after a build:  node scripts/bench-task-lineage.mjs
+// (not registered as an npm alias — the brokerNpmScripts budget is ceilinged;
+// same convention as bench-persist.mjs)
 //
 // Columns:
 //   index  — the real JSON-RPC endpoint (operator mode → incremental index).
