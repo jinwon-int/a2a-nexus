@@ -9,17 +9,19 @@ import type { AuditEvent, WorkerRecord } from "./types.js";
  * Serialized size of a record for retention byte budgeting (#1579, #1768).
  *
  * Shared by the in-memory reachability path and the SQLite hot-retention
- * planner so the two cannot drift apart on what a record "costs". The
- * pretty-printed form is deliberate: the byte budget exists to bound the
- * canonical snapshot, which is written pretty-printed, so measuring the
- * compact form would systematically under-count.
+ * planner so the two cannot drift apart on what a record "costs". The measured
+ * form is the compact JSON the canonical snapshot row is actually written in
+ * (`serializeBrokerSnapshot` compacts in #1994; the earlier pretty-print
+ * measurement predated that switch and over-counted 20-30%).
  *
  * #2077 step 3: results are memoized per record object (validated against the
  * record's `updatedAt` stamp) — terminal records are immutable, so a full
- * persist re-measuring 2,000 unchanged terminal records pretty-printed 2,000
- * JSON trees for identical answers. The WeakMap keys on record identity, so a
- * re-read (SQLite planner) or an in-place mutation (validated via `updatedAt`)
- * re-measures; nothing is shared between distinct records.
+ * persist re-measuring 2,000 unchanged terminal records serialized 2,000 JSON
+ * trees for identical answers. The WeakMap keys on record identity, so an
+ * in-place mutation (validated via `updatedAt`) re-measures; nothing is shared
+ * between distinct records. The SQLite planner does not use this cache at all:
+ * it reads each row's exact stored payload length instead, which is both free
+ * and immune to re-read identity churn.
  */
 interface RetentionBytesCacheEntry {
   updatedAt: string | undefined;
@@ -29,7 +31,7 @@ const retentionBytesCache = new WeakMap<object, RetentionBytesCacheEntry>();
 
 export function estimateRetentionRecordBytes(record: unknown): number {
   if (!record || typeof record !== "object") {
-    return Buffer.byteLength(JSON.stringify(record, null, 2), "utf8");
+    return Buffer.byteLength(JSON.stringify(record), "utf8");
   }
   const updatedAt = (record as { updatedAt?: unknown }).updatedAt;
   const stamp = typeof updatedAt === "string" ? updatedAt : undefined;
@@ -37,7 +39,7 @@ export function estimateRetentionRecordBytes(record: unknown): number {
   if (cached !== undefined && cached.updatedAt === stamp) {
     return cached.bytes;
   }
-  const bytes = Buffer.byteLength(JSON.stringify(record, null, 2), "utf8");
+  const bytes = Buffer.byteLength(JSON.stringify(record), "utf8");
   retentionBytesCache.set(record, { updatedAt: stamp, bytes });
   return bytes;
 }
