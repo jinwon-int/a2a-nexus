@@ -156,7 +156,17 @@ export function parseSnapshotPayload(payload: string, source: string, maxBytes: 
   if (bytes > maxBytes) {
     throw new Error(`broker snapshot exceeds max size (${bytes} > ${maxBytes} bytes): ${source}`);
   }
-  const raw = JSON.parse(payload);
+  const raw = JSON.parse(payload) as { version?: unknown };
+  // #1504 §4: a snapshot envelope written by a NEWER binary (or with a
+  // hand-edited version) must fail closed before any row-level recovery. The
+  // schema below otherwise accepts any nonnegative version and would silently
+  // downgrade it on the next save. The "invalid broker snapshot" prefix keeps
+  // the /health diagnostics reason mapping intact.
+  if (typeof raw?.version === "number" && raw.version > CURRENT_BROKER_STATE_VERSION) {
+    throw new Error(
+      `invalid broker snapshot at ${source}: state_version_newer (${raw.version} > ${CURRENT_BROKER_STATE_VERSION})`,
+    );
+  }
   const parsed = brokerSnapshotSchema.safeParse(raw);
   if (parsed.success) {
     return parsed.data as BrokerSnapshot;

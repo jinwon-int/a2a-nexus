@@ -58,6 +58,11 @@ import {
   CURRENT_BROKER_STATE_VERSION as CURRENT_BROKER_STATE_VERSION_VALUE,
   DEFAULT_BROKER_STATE_MAX_BYTES as DEFAULT_BROKER_STATE_MAX_BYTES_VALUE,
 } from "./store-contracts.js";
+import {
+  evaluatePersistedClockV1,
+  evaluatePersistedSchemaVersionV1,
+  evaluatePersistedStateVersionV1,
+} from "../shared-state-startup-checks-v1.js";
 import type {
   BrokerHotTableLoadMetrics,
   BrokerHotTableRuntimeLoadLimits,
@@ -462,6 +467,12 @@ export class SqliteBrokerStateStore implements BrokerStateStore {
     // or parallel test processes sharing a db file) can still momentarily
     // contend; busy_timeout makes that wait rather than error.
     this.db.exec("PRAGMA busy_timeout = 5000");
+    // #1504 §4 startup checks: validate the persisted version markers and the
+    // last durable write BEFORE any schema mutation, so a database from a
+    // newer binary (or a host clock stepped back past tolerance) fails closed
+    // instead of being silently downgraded or appended with backward-dated
+    // rows. Absent markers (fresh or pre-versioning databases) pass through.
+    this.assertPersistedStateOpenable();
     this.journalMode = this.initializeDatabase();
     this.reviewLineageObservations =
       new SqliteReviewLineageObservationStore(this.db);
@@ -1117,6 +1128,43 @@ export class SqliteBrokerStateStore implements BrokerStateStore {
       )
       .run(normalizedKey, normalizedConsumedAt);
     return Number(result.changes) === 1;
+  }
+
+  /**
+   * #1504 §4: fail-closed startup checks over the EXISTING database, run before
+   * `initializeDatabase` can create or rewrite anything. Reads the version
+   * markers and the last durable write only when the metadata table already
+   * exists; a fresh database has none and passes through to initialization.
+   * Throws with the closed `shared-state-startup-checks-v1` code vocabulary.
+   */
+  private assertPersistedStateOpenable(): void {
+    const metadataTable = this.db
+      .prepare("SELECT name FROM sqlite_master WHERE type = 'table' AND name = 'broker_metadata'")
+      .get() as { name?: string } | undefined;
+    if (!metadataTable?.name) {
+      return;
+    }
+    const schemaCheck = evaluatePersistedSchemaVersionV1({
+      observed: this.readMetadata("schema_version"),
+      known: SQLITE_SCHEMA_VERSION,
+    });
+    if (schemaCheck) {
+      throw new Error(`shared-state startup check failed: ${schemaCheck.code} (${schemaCheck.detail})`);
+    }
+    const stateCheck = evaluatePersistedStateVersionV1({
+      observed: this.readMetadata("state_version"),
+      known: CURRENT_BROKER_STATE_VERSION_VALUE,
+    });
+    if (stateCheck) {
+      throw new Error(`shared-state startup check failed: ${stateCheck.code} (${stateCheck.detail})`);
+    }
+    const clockCheck = evaluatePersistedClockV1({
+      persistedAtIso: this.readMetadata("last_persist_at"),
+      nowUnixMs: Date.now(),
+    });
+    if (clockCheck) {
+      throw new Error(`shared-state startup check failed: ${clockCheck.code} (${clockCheck.detail})`);
+    }
   }
 
   private initializeDatabase(): string {

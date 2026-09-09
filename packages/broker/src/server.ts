@@ -41,6 +41,7 @@ import {
   validateBrokerStartupSecurity,
 } from "./startup-security.js";
 import { resolveSharedStateDeploymentGradeFromEnvV1 } from "./shared-state-deployment-grade-v1.js";
+import { evaluateGradeBackendCapabilityV1 } from "./shared-state-startup-checks-v1.js";
 import {
   acquireSharedStateServingFenceForBrokerV1,
   type SharedStateServingFenceProbeV1,
@@ -357,6 +358,20 @@ export function createBrokerServer(options: BrokerServerOptions = {}): BrokerSer
     );
   }
   const servingGrade = deploymentGrade.value;
+  // #1504 §4 startup capability check: a grade that promises one logical
+  // SQLite writer must not be served by a non-SQLite state source. Checked
+  // before the serving fence so a mismatch refuses startup without touching
+  // the fence file. Injected options.stateStore bypasses backend resolution,
+  // so there is no configured value to cross-check and the check is skipped.
+  if (!options.stateStore) {
+    const capability = evaluateGradeBackendCapabilityV1({
+      configuredGrade: servingGrade.configuredGrade,
+      backend: persistenceBackend,
+    });
+    if (capability) {
+      throw new Error(`shared-state startup check failed: ${capability.code} (${capability.detail})`);
+    }
+  }
   const githubWebhookSecret = firstNonEmpty(
     options.githubWebhookSecret,
     process.env.GITHUB_WEBHOOK_SECRET,

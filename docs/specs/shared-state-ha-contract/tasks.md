@@ -1243,7 +1243,7 @@ path decision belongs to section 4 and is deliberately not made here.
 ## 4. Startup/readiness/runtime integration
 
 - [x] Add exact grade and expected-process configuration.
-- [ ] Add startup version/capability/clock/schema/migration checks.
+- [x] Add startup version/capability/clock/schema/migration checks.
 - [x] Add fenced singleton ownership and loss monitoring.
 - [x] Add `/readyz` and state-authority non-serving middleware.
 - [x] Assert `/readyz` becomes false and non-liveness routes stop serving
@@ -3294,3 +3294,53 @@ not attach the lane to broker runtime, make it a default or serving store, claim
 full broad-adapter conformance, change `stateContract`, authorize primitive
 integration, retention/prune, migration, performance, deployment, or any live
 action, or close #1504. Issue #1504 remains OPEN.
+
+### Slice O — startup version/capability/clock/schema/migration checks
+
+Slice O adds the section 7.1 step 2 startup checks for the CURRENT serving
+state sources, without attaching the worker-lane V1 adapter to the broker
+runtime or claiming adapter conformance. The pure evaluators and the closed
+code vocabulary live in `shared-state-startup-checks-v1.ts`; no clock, I/O, or
+environment access happens in the module itself.
+
+**Version/schema/migration — refuse newer, keep the forward path.** The
+`SqliteBrokerStateStore` constructor now reads the existing `broker_metadata`
+markers (only when the table already exists; a fresh database passes through)
+BEFORE `initializeDatabase` can create or rewrite anything. A `schema_version`
+greater than the binary's known 13, or a `state_version` greater than the
+binary's known version, refuses construction with `schema_version_newer` /
+`state_version_newer`, because opening would misread newer rows and then
+silently rewrite the marker downward. Absent, equal, or older markers open as
+before: the in-place forward path (CREATE IF NOT EXISTS, `ensureColumn`,
+snapshot import) remains the sanctioned upgrade, which is the migration
+posture. The JSON snapshot parser gained the matching envelope bound in
+`parseSnapshotPayload`: a `version` above the binary's current throws
+`invalid broker snapshot …: state_version_newer` before schema parsing or
+record-level recovery, so the newer envelope can never be silently downgraded
+on the next save. The prefix keeps the `/health` diagnostics reason mapping
+(`snapshot_parse_failed`) intact.
+
+**Capability — the grade must match the state source.** `createBrokerServer`
+refuses `single-writer-durable` with a non-SQLite persistence backend
+(`grade_backend_mismatch`), because section 3 defines that grade as exactly one
+logical SQLite writer. The check runs before the serving fence is acquired, and
+only when the store comes from configuration: an injected
+`options.stateStore` bypasses backend resolution, so there is no configured
+value to cross-check. The default backend is already sqlite, and no fleet
+configuration sets the grade env today, so live behavior is unchanged.
+
+**Clock — one bounded startup observation, not a floor protocol.** The store
+constructor compares `last_persist_at` (written at every persist) against the
+host clock and refuses (`clock_backward_beyond_tolerance`) when the durable
+write is in the future by more than 300000 ms — the top of the section 4.2
+declared tolerance range, used because the current store has no declared
+per-deployment tolerance. A step within the tolerance stays openable. This is
+deliberately NOT the V1 per-observation floor protocol: the current grades
+expose no durable time floor, and inventing one would claim continuity the
+grade catalog does not promise.
+
+Boxes checked by this slice: `Add startup
+version/capability/clock/schema/migration checks`. Still open in this section:
+the full `stateContract` bands, primitive integration behind default-off
+flags, and the compatibility/regression/performance run. 488/489 remain as
+decided by W11.
