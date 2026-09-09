@@ -40,8 +40,10 @@ export interface SnapshotFitResult {
 }
 
 function measureSnapshotBytes(snapshot: BrokerSnapshot): number {
+  // Compact, matching serializeBrokerSnapshot — the error must report the
+  // bytes the canonical writer would actually produce (#2077 step 3).
   return Buffer.byteLength(
-    JSON.stringify({ ...snapshot, version: CURRENT_BROKER_STATE_VERSION }, null, 2),
+    JSON.stringify({ ...snapshot, version: CURRENT_BROKER_STATE_VERSION }),
     "utf8",
   );
 }
