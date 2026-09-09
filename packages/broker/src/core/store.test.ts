@@ -803,7 +803,7 @@ test("SqliteBrokerStateStore readHotAuditEvents respects maxRows cap", () => {
     assert.equal(store.readHotAuditEvents({ maxRows: 1 }).length, 1, "maxRows=1 must return at most 1");
     assert.equal(store.readHotAuditEvents({ maxRows: 2 }).length, 2, "maxRows=2 must return at most 2");
     assert.equal(store.readHotAuditEvents({ maxRows: 100 }).length, 4, "maxRows > dataset returns all");
-    assert.equal(store.readHotAuditEvents({ maxRows: 0 }).length, 4, "maxRows=0 returns all");
+    assert.equal(store.readHotAuditEvents({ maxRows: 0 }).length, 4, "maxRows=0 falls back to the bounded default (#2078 C2)");
 
     store.close();
   } finally {
@@ -837,7 +837,7 @@ test("SqliteBrokerStateStore readHotWorkers respects maxRows cap", () => {
     assert.equal(store.readHotWorkers().length, 3, "no maxRows returns all 3 workers");
     assert.equal(store.readHotWorkers({ maxRows: 1 }).length, 1, "maxRows=1 must return at most 1");
     assert.equal(store.readHotWorkers({ maxRows: 100 }).length, 3, "maxRows > dataset returns all");
-    assert.equal(store.readHotWorkers({ maxRows: 0 }).length, 3, "maxRows=0 returns all");
+    assert.equal(store.readHotWorkers({ maxRows: 0 }).length, 3, "maxRows=0 falls back to the bounded default (#2078 C2)");
 
     store.close();
   } finally {
@@ -872,7 +872,7 @@ test("SqliteBrokerStateStore readHotTombstones respects maxRows cap", () => {
     assert.equal(store.readHotTombstones({ maxRows: 1 }).length, 1, "maxRows=1 must return at most 1");
     assert.equal(store.readHotTombstones({ maxRows: 2 }).length, 2, "maxRows=2 must return at most 2");
     assert.equal(store.readHotTombstones({ maxRows: 100 }).length, 3, "maxRows > dataset returns all");
-    assert.equal(store.readHotTombstones({ maxRows: 0 }).length, 3, "maxRows=0 returns all");
+    assert.equal(store.readHotTombstones({ maxRows: 0 }).length, 3, "maxRows=0 falls back to the bounded default (#2078 C2)");
 
     store.close();
   } finally {

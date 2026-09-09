@@ -28,6 +28,8 @@ import {
   buildHotTableSelect,
   buildHotTaskListItemSelect,
   hotTaskPayloadFilterPairs,
+  HOT_READ_DEFAULT_LIMIT,
+  normalizeBoundedSqliteLimit,
   normalizeNonNegativeSqliteLimit,
   normalizeOptionalSqliteLimit,
   parseHotTaskListItemProjection,
@@ -566,6 +568,44 @@ export class SqliteBrokerStateStore implements BrokerStateStore {
       .stmt(sql)
       .all(...params)
       .flatMap((row) => parseHotEntityPayloadSafe(row, taskSchema, "broker_tasks")) as TaskRecord[];
+  }
+
+  /**
+   * #2078 C2: keyset-paginated hot-task reader for exhaustive consumers
+   * (stats aggregation, diagnostics reports, dashboard snapshots). Each call
+   * is a bounded query; iterating pages yields exactly the rows an unbounded
+   * read would have returned, in the same `updated_at DESC, id ASC` order,
+   * without any unbounded SELECT.
+   */
+  readHotTaskPage(
+    cursor?: { updatedAt: string; id: string },
+    limit: number = HOT_READ_DEFAULT_LIMIT,
+  ): { tasks: TaskRecord[]; nextCursor: { updatedAt: string; id: string } | null } {
+    const effectiveLimit = normalizeBoundedSqliteLimit(limit);
+    const params: Array<string | number> = [];
+    let where = "json_valid(payload)";
+    if (cursor) {
+      where += " AND (updated_at < ? OR (updated_at = ? AND id > ?))";
+      params.push(cursor.updatedAt, cursor.updatedAt, cursor.id);
+    }
+    params.push(effectiveLimit);
+    const rows = this
+      .stmt(
+        `SELECT payload, updated_at, id FROM broker_tasks
+         WHERE ${where}
+         ORDER BY updated_at DESC, id ASC
+         LIMIT ?`,
+      )
+      .all(...params) as Array<{ payload: string; updated_at: string; id: string }>;
+    const tasks = rows
+      .flatMap((row) => parseHotEntityPayloadSafe(row, taskSchema, "broker_tasks")) as TaskRecord[];
+    const last = rows.at(-1);
+    return {
+      tasks,
+      nextCursor: rows.length === effectiveLimit && last
+        ? { updatedAt: last.updated_at, id: last.id }
+        : null,
+    };
   }
 
   readHotTaskListItems(filters: SqliteTaskHotTableFilters = {}): SqliteTaskListItemProjection[] {
