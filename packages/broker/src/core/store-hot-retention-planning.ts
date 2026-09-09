@@ -25,10 +25,16 @@ export function planTaskRetentionFromRecords(
   const retainedIds = new Set(options.protectedTaskIds ?? []);
   const olderTerminalCandidates: Array<{ id: string; timestampMs: number; bytes: number }> = [];
   const measureBytes = options.maxTerminalRecordBytes !== undefined;
+  // #2077 step 3: byte measurement is injectable. The SQLite planner supplies
+  // the exact stored payload length (`length(CAST(payload AS BLOB))`), which is
+  // both free and byte-exact; callers without a stored payload fall back to
+  // compact serialization via estimateRetentionRecordBytes.
+  const getRecordBytes = options.getRecordBytes
+    ?? ((task: TaskRecord) => estimateRetentionRecordBytes(task));
   let totalTerminalBytes = 0;
 
   for (const task of records) {
-    const bytes = measureBytes ? estimateRetentionRecordBytes(task) : 0;
+    const bytes = measureBytes ? getRecordBytes(task) : 0;
     if (!isTerminalTaskStatus(task.status) || retainedIds.has(task.id)) {
       retainedIds.add(task.id);
       totalTerminalBytes += bytes;
