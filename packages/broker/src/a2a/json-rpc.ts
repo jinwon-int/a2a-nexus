@@ -816,10 +816,14 @@ function canReadTaskSnapshot(options: ExecuteJsonRpcOptions, task: TaskRecord): 
 }
 
 /**
- * Build exactly one ephemeral task-lineage index from the broker's canonical
- * list/repository read path. Authorization reduction happens before indexing,
- * so hidden tasks cannot affect graph edges, counts, cursors, anomalies, or
- * round hints.
+ * Build the task-lineage read projection for one request.
+ *
+ * Broad-visibility readers (operator mode, hub/operator requesters) are served
+ * from the broker's incremental lineage index (#2078 C3): its universe equals
+ * the canonical list/read universe, so no reduction is needed and the request
+ * no longer rebuilds an O(tasks) index. Restricted requesters still reduce to
+ * their authorized snapshot before indexing, so hidden tasks cannot affect
+ * graph edges, counts, cursors, anomalies, or round hints.
  */
 function taskLineageProjectionForRead(
   options: ExecuteJsonRpcOptions,
@@ -827,11 +831,15 @@ function taskLineageProjectionForRead(
 ) {
   if (options.enforceRequesterIdentity) {
     requireRequesterIdentityForTaskRead(options, method);
+    const role = options.requesterIdentity?.role;
+    if (role !== "hub" && role !== "operator") {
+      const visible = options.broker
+        .listTasks()
+        .filter((task) => canReadTaskSnapshot(options, task));
+      return buildTaskLineageReadProjection(visible);
+    }
   }
-  const visible = options.broker
-    .listTasks()
-    .filter((task) => canReadTaskSnapshot(options, task));
-  return buildTaskLineageReadProjection(visible);
+  return options.broker.taskLineageReadProjection();
 }
 
 /**

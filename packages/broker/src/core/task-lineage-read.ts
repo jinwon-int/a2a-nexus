@@ -276,7 +276,7 @@ export interface TaskLineageReadProjectionV1 {
   leaves(request: TaskLineageLeavesRequestV1): TaskLineageLeavesV1;
 }
 
-interface IndexedTask {
+export interface IndexedTask {
   task: TaskRecord;
   taskId: string;
   createdAt: string;
@@ -1156,7 +1156,7 @@ function increment(
   counts.set(code, (counts.get(code) ?? 0) + amount);
 }
 
-function indexedTaskFromRecord(
+export function indexedTaskFromRecord(
   task: TaskRecord,
   anomalies: Map<TaskLineageAnomalyCodeV1, number>,
 ): IndexedTask | undefined {
@@ -1217,7 +1217,7 @@ function indexedTaskFromRecord(
   };
 }
 
-function compareIndexedTask(left: IndexedTask, right: IndexedTask): number {
+export function compareIndexedTask(left: IndexedTask, right: IndexedTask): number {
   if (left.createdAtMs !== right.createdAtMs) {
     return left.createdAtMs - right.createdAtMs;
   }
@@ -1296,12 +1296,30 @@ function notFound(): never {
 }
 
 /**
- * Build one ephemeral projection from the caller's already-authorized task
+ * The structures one lineage read projection answers queries from. Built once
+ * per authorized task snapshot by `createTaskLineageReadIndex`, or maintained
+ * incrementally by the broker's `TaskLineageIndex` (#2078 C3) — both produce
+ * the same invariants, so one view function serves either.
+ */
+export interface TaskLineageReadIndexV1 {
+  byId: Map<string, IndexedTask>;
+  childEdgesByTask: Map<
+    string,
+    Map<string, Set<TaskLineageEdgeTypeV1>>
+  >;
+  roundChildren: Map<string, IndexedTask[]>;
+  tasksWithVisibleChildren: Set<string>;
+  canonicalCycleReachable: Set<string>;
+  anomalies: Map<TaskLineageAnomalyCodeV1, number>;
+}
+
+/**
+ * Build one ephemeral lineage index from the caller's already-authorized task
  * snapshot. Inaccessible tasks must be removed before calling this function.
  */
-export function buildTaskLineageReadProjection(
+export function createTaskLineageReadIndex(
   tasks: readonly TaskRecord[],
-): TaskLineageReadProjectionV1 {
+): TaskLineageReadIndexV1 {
   const anomalies = new Map<TaskLineageAnomalyCodeV1, number>();
   const byId = new Map<string, IndexedTask>();
 
@@ -1415,6 +1433,33 @@ export function buildTaskLineageReadProjection(
       if (reachesCycle) canonicalCycleReachable.add(task.taskId);
     }
   }
+
+  return {
+    byId,
+    childEdgesByTask,
+    roundChildren,
+    tasksWithVisibleChildren,
+    canonicalCycleReachable,
+    anomalies,
+  };
+}
+
+/**
+ * Build one ephemeral projection view over a lineage index. The view closes
+ * over the index structures; queries must complete synchronously (they do —
+ * every endpoint handler answers within one call stack).
+ */
+export function projectionFromTaskLineageReadIndex(
+  index: TaskLineageReadIndexV1,
+): TaskLineageReadProjectionV1 {
+  const {
+    byId,
+    childEdgesByTask,
+    roundChildren,
+    tasksWithVisibleChildren,
+    canonicalCycleReachable,
+    anomalies,
+  } = index;
 
   const nodeFor = (task: IndexedTask, depth: number): TaskLineageNodeV1 => {
     const visibleParent =
@@ -1709,4 +1754,14 @@ export function buildTaskLineageReadProjection(
       });
     },
   };
+}
+
+/**
+ * Build one ephemeral projection from the caller's already-authorized task
+ * snapshot. Inaccessible tasks must be removed before calling this function.
+ */
+export function buildTaskLineageReadProjection(
+  tasks: readonly TaskRecord[],
+): TaskLineageReadProjectionV1 {
+  return projectionFromTaskLineageReadIndex(createTaskLineageReadIndex(tasks));
 }
