@@ -3,6 +3,12 @@ import test from "node:test";
 
 import { InMemoryA2ABroker } from "../core/broker.js";
 import { emptySnapshot } from "../core/store.js";
+import {
+  buildTaskLineageReadProjection,
+  parseTaskLineageChildrenRequestV1,
+  parseTaskLineageLeavesRequestV1,
+  parseTaskLineageLineageRequestV1,
+} from "../core/task-lineage-read.js";
 import type { TaskRuntimeRepository } from "../core/task-repository.js";
 import type { TaskRecord } from "../core/types.js";
 import { createBrokerAgentCard } from "./agent-card.js";
@@ -296,6 +302,88 @@ test("task-lineage JSON-RPC uses one repository list snapshot and no per-item ge
   assert.ok("result" in result);
   assert.equal(listCalls, 1);
   assert.equal(getCalls, 0);
+});
+
+test("task-lineage JSON-RPC serves broad-visibility readers from the incremental index", () => {
+  let listCalls = 0;
+  const records = [
+    task("index-root", "worker-a"),
+    task("index-child", "worker-a", {
+      parentTaskId: "index-root",
+      parentRoundId: "index-round",
+      parentRoundTotal: 1,
+    }),
+    task("index-other", "worker-b", { parentTaskId: "index-root" }),
+  ];
+  const repository: TaskRuntimeRepository = {
+    getTask: () => null,
+    listTasks() {
+      listCalls += 1;
+      return [...records];
+    },
+    upsertTask: () => assert.fail("read projection must never write"),
+  };
+  const broker = new InMemoryA2ABroker(
+    undefined,
+    undefined,
+    { taskRepository: repository },
+  );
+  const hub = { id: "hub-node", kind: "service" as const, role: "hub" as const };
+  const first = rpc(broker, "tasks/children", { taskId: "index-root" }, hub);
+  const second = rpc(broker, "tasks/children", { taskId: "index-root" }, hub);
+  const lineage = rpc(broker, "tasks/lineage", { taskId: "index-child" }, hub);
+  const leaves = rpc(broker, "tasks/leaves", { parentRoundId: "index-round" }, hub);
+  assert.equal(listCalls, 1, "the index must sync the repository once, not per request");
+  assert.deepEqual(second, first, "repeated reads must be identical");
+
+  // Hub visibility spans the whole universe, so the index path must return
+  // exactly what a batch projection over all records returns.
+  const batch = buildTaskLineageReadProjection(records);
+  assert.deepEqual(
+    resultOf(first),
+    batch.children(parseTaskLineageChildrenRequestV1({ taskId: "index-root" })),
+  );
+  assert.deepEqual(
+    resultOf(lineage),
+    batch.lineage(parseTaskLineageLineageRequestV1({ taskId: "index-child" })),
+  );
+  assert.deepEqual(
+    resultOf(leaves),
+    batch.leaves(parseTaskLineageLeavesRequestV1({ parentRoundId: "index-round" })),
+  );
+});
+
+test("task-lineage JSON-RPC keeps per-requester scoping while broad readers use the index", () => {
+  const broker = brokerWithTasks([
+    task("scope-root", "worker-a"),
+    task("scope-hidden-child", "worker-b", { parentTaskId: "scope-root" }),
+  ]);
+  const hub = { id: "hub-node", kind: "service" as const, role: "hub" as const };
+  type leavesResult = {
+    leaves: Array<{ taskId: string }>;
+    diagnostics: { scannedVisibleTasks: number };
+  };
+  const hubLeaves = resultOf<leavesResult>(rpc(broker, "tasks/leaves", {}, hub));
+  assert.deepEqual(hubLeaves.leaves.map((node) => node.taskId), ["scope-hidden-child"]);
+  assert.equal(hubLeaves.diagnostics.scannedVisibleTasks, 2);
+
+  const analystLeaves = resultOf<leavesResult>(rpc(broker, "tasks/leaves", {}));
+  assert.deepEqual(analystLeaves.leaves.map((node) => node.taskId), ["scope-root"]);
+  assert.equal(analystLeaves.diagnostics.scannedVisibleTasks, 1);
+
+  // Operator mode (no requester enforcement) is broad too and must agree
+  // with the hub's index-served view.
+  const operatorResponse = executeA2AJsonRpc(
+    { jsonrpc: "2.0", id: "task-lineage-test", method: "tasks/leaves", params: {} },
+    {
+      broker,
+      agentCard,
+      requesterIdentity: null,
+      enforceRequesterIdentity: false,
+    },
+  );
+  const operatorLeaves = resultOf<leavesResult>(operatorResponse);
+  assert.deepEqual(operatorLeaves, hubLeaves);
 });
 
 test("task-lineage JSON-RPC maps canonical cycles to identifier-free structured errors", () => {

@@ -38,6 +38,7 @@
     "test:work_mode_pre_dispatch_decision": "node --test dist/core/work-mode-pre-dispatch-decision.test.js",
     "test:adaptive_work_mode_selector": "node --test dist/core/adaptive-work-mode-selector.test.js",
     "a2a_hybrid_worker_mode_benchmark": "node scripts/a2a-hybrid-worker-mode-benchmark.mjs",
+    "bench_task_lineage": "node scripts/bench-task-lineage.mjs",
     "test:execution-plan-draft": "node --test dist/core/complexity-execution-plan-draft.test.js",
     "test:operator-approval-request": "node --test dist/core/operator-approval-request.test.js",
     "test:terminal_brief_activation_report": "node --test scripts/terminal-brief-activation-report.test.mjs",

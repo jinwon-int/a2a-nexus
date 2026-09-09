@@ -118,6 +118,9 @@ import {
 } from "./broker-conversation-task-bridge.js";
 import type { WorkerSignatureGateOptions } from "./broker-conversation.js";
 import { getBrokerRoundStatus, listBrokerTasks, readBrokerTask } from "./broker-task-read.js";
+import { HOT_READ_HARD_MAX_LIMIT } from "./store-hot-select-projections.js";
+import { TaskLineageIndex } from "./task-lineage-index.js";
+import type { TaskLineageReadProjectionV1 } from "./task-lineage-read.js";
 import { readBrokerProposal, listBrokerProposals } from "./broker-proposal-read.js";
 import {
   listBrokerArtifactsForProposal,
@@ -457,6 +460,13 @@ export class InMemoryA2ABroker {
   private readonly finalizerKeyring?: FinalizerKeyring;
   private readonly workerHeartbeatPersistIntervalMs: number;
   private lastFullRetentionPersistAtMs = Date.now();
+  /**
+   * #2078 C3: incremental task-lineage index. Fed by every task write
+   * (setTaskRecord/loadSnapshot/backfill); retention compacts pruned entries
+   * instead of dropping them, mirroring the repository overlay universe.
+   */
+  private lineageIndex = new TaskLineageIndex();
+  private lineageRepositorySynced = false;
 
   private readonly resourceAwareOnboardingMode: "off" | "warn" | "enforce";
 
@@ -2082,7 +2092,45 @@ export class InMemoryA2ABroker {
   }
 
   getTask(id: string): TaskRecord | null {
-    return readBrokerTask(this.tasks, this.taskRepository, id);
+    const task = readBrokerTask(this.tasks, this.taskRepository, id);
+    // Backfill path (repository row restored into the map) must reach the
+    // lineage index too; map hits skip via the O(1) membership check.
+    if (task && !this.lineageIndex.has(task.id)) this.lineageIndex.upsert(task);
+    return task;
+  }
+
+  /**
+   * #2078 C3: lineage read projection served from the incremental index
+   * instead of rebuilding an O(tasks) index per request. The index universe
+   * equals the canonical list universe (live map + bounded repository
+   * overlay), so broad-visibility readers (operator mode, hub/operator
+   * requesters) get identical results without the per-request rebuild.
+   */
+  taskLineageReadProjection(): TaskLineageReadProjectionV1 {
+    if (this.lineageIndex.dirty) {
+      // Structural change on an existing record (never produced by current
+      // write paths — parent/round/reference fields are creation-time only):
+      // rebuild from the canonical snapshot.
+      this.lineageIndex = new TaskLineageIndex();
+      this.lineageRepositorySynced = false;
+      for (const task of this.tasks.values()) {
+        this.lineageIndex.upsert(task);
+      }
+    }
+    if (this.taskRepository && !this.lineageRepositorySynced) {
+      // One-time repository sync with the same bound the canonical list
+      // overlay applies: rows persisted by an earlier process that a partial
+      // hot-table restore did not bring into the map. Every later repository
+      // mutation flows through setTaskRecord, which feeds the index directly.
+      this.lineageRepositorySynced = true;
+      for (const row of this.taskRepository.listTasks({ limit: HOT_READ_HARD_MAX_LIMIT })) {
+        const task = normalizeTaskRecord(row);
+        if (this.lineageIndex.has(task.id)) continue;
+        this.lineageIndex.upsert(task);
+        if (!this.tasks.has(task.id)) this.lineageIndex.compact(task.id);
+      }
+    }
+    return this.lineageIndex.projection();
   }
 
   listTasks(filters?: TaskListFilters): TaskRecord[] {
@@ -2591,6 +2639,11 @@ export class InMemoryA2ABroker {
     pruneMapEntries(this.validations, retained.validationIds);
     pruneMapEntries(this.workers, retained.workerIds);
     pruneMapEntries(this.auditEvents, retained.auditEventIds);
+    // #2078 C3: pruned tasks stay in the lineage index (the repository
+    // overlay still serves their rows) but release their payload memory.
+    for (const prunedTaskId of prunedTaskIds) {
+      this.lineageIndex.compact(prunedTaskId);
+    }
     this.workerHeartbeatPersist.prune(retained.workerIds);
     this.taskHeartbeatAuditPersist.prune(retained.taskIds);
     this.taskEvents.prune(retained.taskIds, prunedTaskIds);
@@ -2656,7 +2709,9 @@ export class InMemoryA2ABroker {
     }
 
     for (const task of snapshot.tasks ?? []) {
-      this.tasks.set(task.id, normalizeTaskRecord(task));
+      const normalizedTask = normalizeTaskRecord(task);
+      this.tasks.set(normalizedTask.id, normalizedTask);
+      this.lineageIndex.upsert(normalizedTask);
     }
 
     for (const tombstone of snapshot.tombstones ?? []) {
@@ -2776,6 +2831,7 @@ export class InMemoryA2ABroker {
     // and never retain the record, so passing the live object is safe.
     this.taskRepository?.upsertTask(task);
     this.tasks.set(task.id, task);
+    this.lineageIndex.upsert(task);
     // #2077 step 2: with repository-on-write the hot row is already durable;
     // staging would re-UPSERT the same row on the next hot save (the audited
     // double write) after a structuredClone of the record.
