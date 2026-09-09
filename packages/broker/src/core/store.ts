@@ -15,7 +15,7 @@ import type {
   ValidationResult,
   WorkerRecord,
 } from "./types.js";
-import { isHeartbeatAuditEvent } from "./broker-retention-selectors.js";
+import { estimateRetentionRecordBytes, isHeartbeatAuditEvent } from "./broker-retention-selectors.js";
 import type { FailureClass } from "./task-error-details.js";
 import {
   buildHotEntityHintCoverage,
@@ -28,6 +28,8 @@ import {
   buildHotTableSelect,
   buildHotTaskListItemSelect,
   hotTaskPayloadFilterPairs,
+  HOT_READ_DEFAULT_LIMIT,
+  normalizeBoundedSqliteLimit,
   normalizeNonNegativeSqliteLimit,
   normalizeOptionalSqliteLimit,
   parseHotTaskListItemProjection,
@@ -349,6 +351,12 @@ export interface SqliteTaskHotRetentionPlanOptions {
    * reports `byteBudgetUnreachable` rather than eating into the window.
    */
   maxTerminalRecordBytes?: number;
+  /**
+   * #2077 step 3: byte-measurement override. The default compactly serializes
+   * each candidate record; the SQLite planner injects the exact stored payload
+   * length instead, so planning re-serializes nothing.
+   */
+  getRecordBytes?: (task: TaskRecord) => number;
 }
 
 export interface SqliteAuditHotRetentionProtection {
@@ -560,6 +568,44 @@ export class SqliteBrokerStateStore implements BrokerStateStore {
       .stmt(sql)
       .all(...params)
       .flatMap((row) => parseHotEntityPayloadSafe(row, taskSchema, "broker_tasks")) as TaskRecord[];
+  }
+
+  /**
+   * #2078 C2: keyset-paginated hot-task reader for exhaustive consumers
+   * (stats aggregation, diagnostics reports, dashboard snapshots). Each call
+   * is a bounded query; iterating pages yields exactly the rows an unbounded
+   * read would have returned, in the same `updated_at DESC, id ASC` order,
+   * without any unbounded SELECT.
+   */
+  readHotTaskPage(
+    cursor?: { updatedAt: string; id: string },
+    limit: number = HOT_READ_DEFAULT_LIMIT,
+  ): { tasks: TaskRecord[]; nextCursor: { updatedAt: string; id: string } | null } {
+    const effectiveLimit = normalizeBoundedSqliteLimit(limit);
+    const params: Array<string | number> = [];
+    let where = "json_valid(payload)";
+    if (cursor) {
+      where += " AND (updated_at < ? OR (updated_at = ? AND id > ?))";
+      params.push(cursor.updatedAt, cursor.updatedAt, cursor.id);
+    }
+    params.push(effectiveLimit);
+    const rows = this
+      .stmt(
+        `SELECT payload, updated_at, id FROM broker_tasks
+         WHERE ${where}
+         ORDER BY updated_at DESC, id ASC
+         LIMIT ?`,
+      )
+      .all(...params) as Array<{ payload: string; updated_at: string; id: string }>;
+    const tasks = rows
+      .flatMap((row) => parseHotEntityPayloadSafe(row, taskSchema, "broker_tasks")) as TaskRecord[];
+    const last = rows.at(-1);
+    return {
+      tasks,
+      nextCursor: rows.length === effectiveLimit && last
+        ? { updatedAt: last.updated_at, id: last.id }
+        : null,
+    };
   }
 
   readHotTaskListItems(filters: SqliteTaskHotTableFilters = {}): SqliteTaskListItemProjection[] {
@@ -851,11 +897,26 @@ export class SqliteBrokerStateStore implements BrokerStateStore {
   }
 
   planHotTaskRetention(options: SqliteTaskHotRetentionPlanOptions): SqliteHotRetentionPlan {
-    const records = this
-      .stmt("SELECT payload FROM broker_tasks")
-      .all()
-      .map((row) => parseHotEntityPayload(row, taskSchema, "broker_tasks")) as TaskRecord[];
-    return planTaskRetentionFromRecords(records, options);
+    // #2077 step 3: each row was compact-serialized at write time, so its
+    // exact serialized size is read back for free (`length(CAST(payload AS
+    // BLOB))`); planning over re-read rows re-serializes nothing.
+    const rows = this
+      .stmt(
+        "SELECT payload, length(CAST(payload AS BLOB)) AS payload_bytes FROM broker_tasks",
+      )
+      .all() as Array<{ payload: string; payload_bytes: number }>;
+    const records: TaskRecord[] = [];
+    const bytesById = new Map<string, number>();
+    for (const row of rows) {
+      const record = parseHotEntityPayload(row, taskSchema, "broker_tasks") as TaskRecord;
+      records.push(record);
+      bytesById.set(record.id, row.payload_bytes);
+    }
+    return planTaskRetentionFromRecords(records, {
+      ...options,
+      getRecordBytes: options.getRecordBytes ?? ((task) =>
+        bytesById.get(task.id) ?? estimateRetentionRecordBytes(task)),
+    });
   }
 
   planHotAuditRetention(options: SqliteAuditHotRetentionPlanOptions): SqliteHotRetentionPlan {

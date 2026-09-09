@@ -71,6 +71,25 @@ export function normalizeOptionalSqliteLimit(value: number | undefined): number 
   return normalizeNonNegativeSqliteLimit(value, 0);
 }
 
+/**
+ * Bounded hot-table reads (#2078 C2). Every hot-table SELECT carries a LIMIT:
+ * callers that need the full table iterate `readHotTaskPage` cursor pages
+ * instead of issuing one unbounded query, so no request path can turn a hot
+ * table into an unbounded read+zod-parse.
+ */
+export const HOT_READ_DEFAULT_LIMIT = 1_000;
+export const HOT_READ_HARD_MAX_LIMIT = 25_000;
+
+export function normalizeBoundedSqliteLimit(value: number | undefined): number {
+  const parsed = normalizeNonNegativeSqliteLimit(value, HOT_READ_DEFAULT_LIMIT);
+  // A zero bound means "no explicit bound requested" — apply the default
+  // rather than returning a single row or an unbounded scan (#2078 C2).
+  if (parsed === 0) {
+    return HOT_READ_DEFAULT_LIMIT;
+  }
+  return Math.min(parsed, HOT_READ_HARD_MAX_LIMIT);
+}
+
 export function buildHotTableSelect(
   tableName: SqliteHotEntityTable,
   filters: Array<[string, string | undefined]>,
@@ -85,10 +104,13 @@ export function buildHotTableSelect(
     params.push(value);
     return [`${column} = ?`];
   });
-  const hasLimit = typeof limit === "number" && Number.isInteger(limit) && limit > 0;
+  // #2078 C2: the LIMIT is unconditional. A caller that omits it gets the
+  // bounded default rather than an unbounded table scan; results that must be
+  // exhaustive iterate the page cursor instead.
+  const effectiveLimit = normalizeBoundedSqliteLimit(limit);
   return {
-    sql: `SELECT payload FROM ${tableName}${clauses.length ? ` WHERE ${clauses.join(" AND ")}` : ""} ORDER BY ${orderBy}${hasLimit ? " LIMIT ?" : ""}`,
-    params: hasLimit ? [...params, limit] : params,
+    sql: `SELECT payload FROM ${tableName}${clauses.length ? ` WHERE ${clauses.join(" AND ")}` : ""} ORDER BY ${orderBy} LIMIT ?`,
+    params: [...params, effectiveLimit],
   };
 }
 
@@ -110,10 +132,13 @@ export function buildHotTaskListItemSelect(filters: SqliteTaskHotTableFilters): 
     return [`${column} = ?`];
   });
   clauses.push("json_valid(payload)");
-  const limit = filters.limit ?? (filters.maxRows !== undefined && filters.maxRows > 0
-    ? normalizeOptionalSqliteLimit(filters.maxRows)
-    : undefined);
-  const hasLimit = typeof limit === "number" && Number.isInteger(limit) && limit > 0;
+  // #2078 C2: unconditional LIMIT — omitting it falls back to the bounded
+  // default instead of an unbounded scan.
+  const limit = normalizeBoundedSqliteLimit(
+    filters.limit ?? (filters.maxRows !== undefined && filters.maxRows > 0
+      ? normalizeOptionalSqliteLimit(filters.maxRows)
+      : undefined),
+  );
   return {
     sql: `SELECT
         id,
@@ -138,8 +163,9 @@ export function buildHotTaskListItemSelect(filters: SqliteTaskHotTableFilters): 
         json_extract(payload, '$.completedAt') AS completedAt
       FROM broker_tasks
       WHERE ${clauses.join(" AND ")}
-      ORDER BY updated_at DESC, id ASC${hasLimit ? " LIMIT ?" : ""}`,
-    params: hasLimit ? [...params, limit] : params,
+      ORDER BY updated_at DESC, id ASC
+      LIMIT ?`,
+    params: [...params, limit],
   };
 }
 

@@ -13,7 +13,7 @@ import { BrokerError, type InMemoryA2ABroker } from "../core/broker.js";
 import { assertRequesterHasRole, type RequesterIdentity } from "../core/request-security.js";
 import { aggregateWorkerLatencyProfiles } from "../core/task-stats.js";
 import type { BrokerStateStore } from "../core/store.js";
-import { listAllTasksForStatsReadPath, listAuditEventsForReadPath } from "../task-read-paths.js";
+import { listAllTasksForReadPath, listAuditEventsForReadPath } from "../task-read-paths.js";
 import { sendJson } from "./response.js";
 import { parseTaskStatsWindow } from "./task-stats-routes.js";
 
@@ -36,7 +36,7 @@ export function handleWorkerLatencyStatsRouteIfMatched(ctx: WorkerLatencyStatsRo
     assertRequesterHasRole(ctx.requesterIdentity, ["hub", "operator"], "worker_latency_profiles.read");
   }
   const window = parseTaskStatsWindow(ctx.url);
-  const tasks = listAllTasksForStatsReadPath(ctx.stateStore, ctx.broker);
+  const tasks = listAllTasksForReadPath(ctx.stateStore, ctx.broker);
   const auditEvents = listAuditEventsForReadPath(ctx.stateStore, ctx.broker, {});
   const response = aggregateWorkerLatencyProfiles(tasks, auditEvents, {
     maxWorkers: parseMaxWorkersParam(ctx.url),

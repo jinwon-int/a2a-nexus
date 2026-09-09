@@ -3,6 +3,7 @@ import { sortedCopy, sortNewestFirst } from "./broker-helpers.js";
 import { normalizeTaskRecord } from "./broker-task-record-normalizers.js";
 import { summarizeRoundStatus, type RoundStatusSummary } from "./round-status.js";
 import type { TaskRuntimeRepository } from "./task-repository.js";
+import { HOT_READ_HARD_MAX_LIMIT } from "./store-hot-select-projections.js";
 import type { TaskListFilters, TaskRecord } from "./types.js";
 
 /**
@@ -51,7 +52,15 @@ export function listBrokerTasks(
   // locally; the live map is only ever mutated by write paths.
   const tasksById = new Map(tasks);
   if (taskRepository) {
-    for (const repositoryTask of taskRepository.listTasks(filters).map(normalizeTaskRecord)) {
+    // #2078 C2: the repository query is always bounded. Callers that pass no
+    // limit previously pulled the entire hot table through a zod parse per
+    // row; they now get the hard-max bound and iterate the page cursor when
+    // they truly need more.
+    const repositoryFilters: TaskListFilters = {
+      ...filters,
+      limit: filters?.limit ?? HOT_READ_HARD_MAX_LIMIT,
+    };
+    for (const repositoryTask of taskRepository.listTasks(repositoryFilters).map(normalizeTaskRecord)) {
       tasksById.set(repositoryTask.id, repositoryTask);
     }
   }
