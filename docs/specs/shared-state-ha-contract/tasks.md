@@ -1254,7 +1254,9 @@ path decision belongs to section 4 and is deliberately not made here.
   data.
 - [x] Add volatile replay/rate reset-risk epoch/reason signals.
 - [x] Make `shared-state-ha` fail until an approved conforming backend exists.
-- [ ] Integrate primitives one at a time behind default-off flags.
+- [x] Integrate primitives one at a time behind default-off flags. (Slices
+  S-X, #2117/#2118/#2119/#2120/#2121 + this slice; see the Slice X narrative
+  for per-primitive scope and the named deferred sub-surfaces.)
 - [ ] Run compatibility/regression/performance tests.
 
 ### Slice J, first part — grade and expected-process configuration
@@ -3684,3 +3686,52 @@ retention/prune of acknowledged rows, and `/health` outbox aggregates (still
 `Integrate primitives one at a time behind default-off flags` stays unchecked
 until all six primitives are integrated; the compatibility/regression/
 performance run follows it. 488/489 remain as decided by W11.
+
+### Slice X — graph primitive on the source-fact append authority (§4, final integration)
+
+Slice X integrates the last primitive, scoped honestly to what §5.6 actually
+has today: the broker carries NO current claim-graph surface (no producer, no
+projection runner, no read-model consumer), so there is no current authority
+to upgrade. Slice X stands up the source-fact append authority — the first of
+§5.6's two atomic boundaries — with a real flag-gated producer. A new closed
+flag parser, `resolveSharedStateGraphPrimitiveModeV1` in
+`shared-state-graph-primitive-mode-v1.ts`, reads `BROKER_SHARED_STATE_V1_GRAPH`
+(unset/empty `off`, `on`, anything else fails startup loudly). With the flag
+off (default), no graph source facts are produced.
+
+With the flag `on`, every task terminal transition — captured at the same
+audit choke point as the outbox slice, so worker complete/fail, operator
+cancel, and reaper dead-letter all produce — appends one source fact to the
+V1 `appendGraphSource` authority through one new fail-closed fence passthrough
+(`appendTaskRunGraphSource`) on the same single-writer adapter: nodeType
+`AgentRun`, the canonical `{taskId, status, completedAt, brokerId}` fact body,
+namespace `broker.claim-graph`, source stream = (`task`, brokerId). The fact
+digest dedupes by construction: a re-fired hook for an already-recorded
+transition replays the original sequence instead of duplicating (§5.6 source
+facts are immutable provenance). A throw from the authority propagates into
+the enclosing `commitMutation` batch and rolls the terminal transition back
+whole — §5.6 partition: source append fails if its authority is unavailable;
+no local sequence is ever invented.
+
+The known trade-off, documented rather than hidden: `appendGraphSource`
+requires an `expectedSourceSequence` (namespace-wide optimistic CAS) and the
+adapter exposes no sequence read, so the gate tracks the high-water in memory
+and, after a restart's cold start, re-syncs by probing upward — rejected
+transactions allocate nothing and the probe runs at most once per process
+(the counter is warm afterwards); the proper fix is a sequence-read query,
+a §6 follow-up. Deliberately not in this slice: the projection-batch
+apply/rollback boundary (no read model consumes batches — the deterministic
+reversal acceptance is already provable at the adapter level in the
+conformance harnesses), the evidence-path query runtime wiring, `/health`
+graph aggregates (stays `unavailable`/`not-applicable` coherently), and any
+catalog work.
+
+With this slice all six primitives have flag-gated integrations, so box
+`Integrate primitives one at a time behind default-off flags` is CHECKED:
+replay (S #2117), rate (T #2118), lease (U #2119), idempotency (V #2120,
+task-create authority), outbox (W #2121, append/ordering authority), graph
+(this slice, source-append authority). Each slice names its deferred
+sub-surfaces in its narrative. The remaining §4 box is the
+compatibility/regression/performance run; §5 rollout stays separately
+authorized, flags default-off everywhere including the fleet. 488/489 remain
+as decided by W11.

@@ -79,6 +79,18 @@ export interface InMemoryA2ABrokerOptions {
    * append; a throw fails the enclosing domain transaction (§5.5 partition).
    * The core stays V1-agnostic.
    */
+  /**
+   * #1504 §4 Slice X: the V1 claim-graph source authority hook, injected
+   * only while the default-off `BROKER_SHARED_STATE_V1_GRAPH` flag is `on`.
+   * When present, each terminal task transition appends one source fact
+   * through the V1 `appendGraphSource` authority (§5.6); a throw fails the
+   * enclosing domain transaction. The core stays V1-agnostic.
+   */
+  taskTerminalGraphSourceAuthority?: (input: {
+    readonly taskId: string;
+    readonly status: string;
+    readonly completedAt: string;
+  }) => { readonly sequence: string };
   terminalOutboxAppendAuthority?: (input: {
     readonly eventId: string;
     readonly payload: string;

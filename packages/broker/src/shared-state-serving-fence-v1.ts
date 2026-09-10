@@ -50,9 +50,19 @@
  * idempotency key and payload replays the ORIGINAL sequence; every failure
  * collapses to `unavailable` — the producing domain transaction must fail
  * when the append authority is unreachable (§5.5 partition behavior).
+ *
+ * Slice X (#1504 §4 primitive integration, graph last): one fail-closed
+ * passthrough — `appendTaskRunGraphSource` — routes the §5.6 source-fact
+ * append authority for terminal task facts (namespace `broker.claim-graph`)
+ * through the same adapter when the default-off `BROKER_SHARED_STATE_V1_GRAPH`
+ * flag is `on`. The fact digest dedupes (a re-fired hook replays the original
+ * sequence); a fresh fact requires the caller's `expectedSourceSequence` to
+ * match the namespace high-water; every failure collapses to `unavailable` —
+ * the source append fails when its authority is unavailable (§5.6 partition
+ * behavior).
  */
 
-import { randomUUID } from "node:crypto";
+import { createHash, randomUUID } from "node:crypto";
 import { existsSync, mkdtempSync, mkdirSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
@@ -100,6 +110,9 @@ export const SHARED_STATE_SERVING_FENCE_V1 = Object.freeze({
   outboxRetentionPolicyVersion: "task-terminal-outbox-retention.v1",
   outboxReceiptPolicyVersion: "terminal-notification-receipt.v1",
   outboxAcknowledgmentPolicyVersion: "terminal-notification-ack.v1",
+  /** Slice X: the §5.6 source-fact namespace and stream binding. */
+  graphNamespace: "broker.claim-graph",
+  graphSourceStreamType: "task",
 } as const);
 
 /** Closed mutation kinds for `fenceTaskMutation` (Slice U, §5.3 vocabulary). */
@@ -189,6 +202,19 @@ export type SharedStateFenceIdempotencyOutcomeV1 =
 export type SharedStateFenceOutboxAppendOutcomeV1 =
   | { readonly outcome: "appended"; readonly streamSequence: string }
   | { readonly outcome: "replayed"; readonly streamSequence: string }
+  | { readonly outcome: "unavailable"; readonly reasonCode: string };
+
+/**
+ * Outcome of one fence-mediated `appendGraphSource` for a terminal task fact
+ * (Slice X). Only committed adapter decisions yield `appended`/`replayed`;
+ * a `source_sequence_conflict` rejection surfaces as `sequence_conflict`
+ * (the caller re-syncs its tracked high-water and retries); everything else
+ * is `unavailable`.
+ */
+export type SharedStateFenceGraphSourceOutcomeV1 =
+  | { readonly outcome: "appended"; readonly sourceSequence: string }
+  | { readonly outcome: "replayed"; readonly sourceSequence: string }
+  | { readonly outcome: "sequence_conflict" }
   | { readonly outcome: "unavailable"; readonly reasonCode: string };
 
 /**
@@ -367,6 +393,24 @@ export interface SharedStateServingFenceV1 {
     },
     nowMs: number,
   ): SharedStateFenceOutboxAppendOutcomeV1;
+  /**
+   * Slice X fail-closed passthrough of the V1 `appendGraphSource` primitive
+   * for a terminal task fact. `brokerAuthorityId` is the broker's source
+   * stream id; `taskId`/`status`/`completedAt` form the canonical fact body
+   * (hashed with the node type into the source-fact digest); the fact digest
+   * dedupes repeats. `expectedSourceSequence` is the caller's tracked
+   * namespace high-water — a mismatch comes back as `sequence_conflict`.
+   */
+  appendTaskRunGraphSource(
+    input: {
+      readonly brokerAuthorityId: string;
+      readonly taskId: string;
+      readonly status: string;
+      readonly completedAt: string;
+      readonly expectedSourceSequence: string;
+    },
+    nowMs: number,
+  ): SharedStateFenceGraphSourceOutcomeV1;
 }
 
 function fail(
@@ -675,6 +719,33 @@ function idempotencyDomainMutationDigest(requestSha256Hex: string) {
   });
 }
 
+function graphSourceFactDigest(
+  taskId: string,
+  status: string,
+  completedAt: string,
+  brokerAuthorityId: string,
+) {
+  // The canonical fact body, hashed here so the digest derivation stays in
+  // one place; the hash is what makes the fact digest deterministic per
+  // terminal transition (§5.6 dedupe by fact digest).
+  const factBody = JSON.stringify({
+    brokerId: brokerAuthorityId,
+    completedAt,
+    status,
+    taskId,
+  });
+  const factHex = createHash("sha256").update(factBody, "utf8").digest("hex");
+  return digestSharedStateKeyV1({
+    keyspaceVersion: V.versions.keyspace,
+    domain: "broker.claim-graph.source-fact",
+    namespace: SHARED_STATE_SERVING_FENCE_V1.graphNamespace,
+    components: [
+      { field: "nodeType", type: "utf8", value: "AgentRun" },
+      { field: "fact", type: "bytes", value: factHex },
+    ],
+  });
+}
+
 function isFenceErrorCode(
   code: string,
 ): code is SharedStateServingFenceErrorCodeV1 {
@@ -682,6 +753,44 @@ function isFenceErrorCode(
     if (item === code) return true;
   }
   return false;
+}
+
+/**
+ * Maps a committed/rejected/unavailable transaction envelope onto the
+ * fail-closed fence graph source outcome. Only the committed `appended` /
+ * `replayed` decisions carry the source sequence; the
+ * `source_sequence_conflict` rejection is `sequence_conflict` (the caller
+ * re-syncs and retries); everything else is `unavailable`.
+ */
+function fenceGraphSourceOutcomeFromResult(
+  result: SharedStateTransactionResultV1,
+): SharedStateFenceGraphSourceOutcomeV1 {
+  if (result.status === V.transactionStatuses[0]) {
+    const value = (result as {
+      result?: { decision?: unknown; sourceSequence?: unknown };
+    }).result;
+    if (
+      (value?.decision === V.operationDecisions.appendGraphSource[0]
+        || value?.decision === V.operationDecisions.appendGraphSource[1])
+      && typeof value.sourceSequence === "string"
+    ) {
+      return Object.freeze({
+        outcome: value.decision as "appended" | "replayed",
+        sourceSequence: value.sourceSequence,
+      });
+    }
+    return Object.freeze({ outcome: "unavailable", reasonCode: "store_failure" });
+  }
+  if (
+    (result as { reasonCode?: unknown }).reasonCode === "source_sequence_conflict"
+  ) {
+    return Object.freeze({ outcome: "sequence_conflict" });
+  }
+  const reasonCode = (result as { reasonCode?: unknown }).reasonCode;
+  return Object.freeze({
+    outcome: "unavailable",
+    reasonCode: typeof reasonCode === "string" ? reasonCode : "store_failure",
+  });
 }
 
 /**
@@ -1309,6 +1418,69 @@ export function openSharedStateServingFenceV1(input: {
             return Object.freeze({ outcome: "unavailable", reasonCode: result.error.code });
           }
           return Object.freeze(fenceOutboxAppendOutcomeFromResult(result.value));
+        } catch {
+          return Object.freeze({ outcome: "unavailable", reasonCode: "store_failure" });
+        }
+      },
+      appendTaskRunGraphSource(
+        input: {
+          readonly brokerAuthorityId: string;
+          readonly taskId: string;
+          readonly status: string;
+          readonly completedAt: string;
+          readonly expectedSourceSequence: string;
+        },
+        nowMs: number,
+      ): SharedStateFenceGraphSourceOutcomeV1 {
+        if (released) {
+          return Object.freeze({ outcome: "unavailable", reasonCode: "adapter_unavailable" });
+        }
+        try {
+          const streamKeyDigest = digestSharedStateKeyV1({
+            keyspaceVersion: V.versions.keyspace,
+            domain: "broker.claim-graph.source-stream-key",
+            namespace: SHARED_STATE_SERVING_FENCE_V1.graphNamespace,
+            components: [
+              { field: "sourceType", type: "utf8", value: SHARED_STATE_SERVING_FENCE_V1.graphSourceStreamType },
+              { field: "sourceId", type: "utf8", value: input.brokerAuthorityId },
+            ],
+          });
+          if (!streamKeyDigest.ok) {
+            return Object.freeze({ outcome: "unavailable", reasonCode: streamKeyDigest.error.code });
+          }
+          const sourceFactDigest = graphSourceFactDigest(
+            input.taskId,
+            input.status,
+            input.completedAt,
+            input.brokerAuthorityId,
+          );
+          if (!sourceFactDigest.ok) {
+            return Object.freeze({ outcome: "unavailable", reasonCode: sourceFactDigest.error.code });
+          }
+          const command = parseSharedStateTransactionCommandV1({
+            kind: V.kinds.transactionCommand,
+            contractVersion: V.versions.contract,
+            transactionVersion: V.versions.transaction,
+            operationVersion: V.versions.operation,
+            operation: V.operations[10],
+            input: {
+              namespace: SHARED_STATE_SERVING_FENCE_V1.graphNamespace,
+              sourceStreamKeyDigest: streamKeyDigest.value.digest,
+              sourceFactDigest: sourceFactDigest.value.digest,
+              nodeType: "AgentRun",
+              expectedSourceSequence: input.expectedSourceSequence,
+            },
+          });
+          if (!command.ok) {
+            return Object.freeze({ outcome: "unavailable", reasonCode: command.error.code });
+          }
+          const result = adapter.transact(command.value, {
+            observedAtUnixMs: String(nowMs),
+          });
+          if (!result.ok) {
+            return Object.freeze({ outcome: "unavailable", reasonCode: result.error.code });
+          }
+          return Object.freeze(fenceGraphSourceOutcomeFromResult(result.value));
         } catch {
           return Object.freeze({ outcome: "unavailable", reasonCode: "store_failure" });
         }
