@@ -3860,3 +3860,40 @@ backup artifacts. Full evidence:
 Phase 6 shadow implementation is now unblocked once the operator approves
 the window plan; Phases 6 and 7 each remain individually authorized stages.
 488/489 remain as decided by W11.
+
+### Slice ZC — Phase 6 shadow runtime implemented (§5, operator-approved)
+
+With the 15-minute security-window plan approved (and recorded), Slice ZC
+implements the Phase 6 shadow runtime — the read-only mirror that gives
+Phase 6 its evidence. A new closed flag parser,
+`resolveSharedStateShadowModeV1` in `shared-state-shadow-mode-v1.ts`, reads
+`BROKER_SHADOW_STATE_V1` (unset/empty `off`, `on`, anything else fails
+startup loudly). With the flag off (default), nothing changes: no shadow
+observations, no shadow store, no `/health` block.
+
+With the flag `on`, a new runtime (`SharedStateShadowRuntimeV1`) opens a
+SEPARATE shadow store (option `shadowStateFile`, default
+`<stateFile>.shadow-v1.sqlite` — never the serving store, never the
+serving-fence CAS store) with its own adapter, and mirrors the two security
+primitives the broker serves: each replay-check outcome and each
+rate-limit outcome is re-evaluated against the shadow store and classified —
+`match` (agreement), `warmup_mismatch` (disagreement during the 5-minute
+warm-up bound: the live store carries pre-shadow history the shadow lacks),
+and `unexplained` (any disagreement outside warm-up, or any shadow
+evaluation failure). The runtime is evidence-only and decision-neutral: it
+never throws into the request path, can never alter a live outcome, and its
+counters are aggregate-only (no keys, nonces, or identities — §5.5/§5.6
+observability rules). Failure to open the shadow store at startup fails
+loudly (an operator explicitly asked for the shadow; silently serving
+without it would fake the evidence). `/health` carries a `stateShadow`
+block (compared/matches/warmupMismatches/unexplained per family) while the
+flag is on.
+
+Deliberately scoped out: shadowing the lease/idempotency/outbox/graph
+primitives (they have no live non-shadow counterparts to compare against —
+their integrations ARE the V1 authority when their flags are on; a shadow
+comparison surface for them follows the same pattern if Phase 6 evidence
+demands it), the cutover mechanics (Phase 7), and any deployment action —
+enabling the shadow on the T1 broker is a separately authorized production
+deploy of a post-Phase-5 build with `BROKER_SHADOW_STATE_V1=on`. 488/489
+remain as decided by W11.
