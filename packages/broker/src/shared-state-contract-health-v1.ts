@@ -40,6 +40,12 @@ export interface RateLimitObservationInputV1 {
   readonly limit: number;
   readonly allowed: number;
   readonly denied: number;
+  /**
+   * #1504 Slice T: count of reservations lost to an unavailable authoritative
+   * store (the retryable `state_unavailable` rejections). The process-local
+   * limiter cannot produce these, so the flag-off path stays at zero.
+   */
+  readonly storeErrors?: number;
 }
 
 function ageBandFromSeconds(ageSec: number): (typeof OV.ageBands)[number] {
@@ -204,7 +210,7 @@ export function buildSharedStatePublicObservabilityV1(input: {
         counts: {
           allowed: Math.max(0, Math.round(input.rateLimit.allowed)),
           denied: Math.max(0, Math.round(input.rateLimit.denied)),
-          storeErrors: 0,
+          storeErrors: Math.max(0, Math.round(input.rateLimit.storeErrors ?? 0)),
         },
       },
       leaseClaim: { availability: "not-applicable", reasonCode: "primitive-not-implemented" },

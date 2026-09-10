@@ -108,6 +108,52 @@ test("V1 primitive domains report not-applicable; security primitives report rea
   assert.equal(domains.rateLimit.availability, "available");
 });
 
+test("rate-limit store errors flow into the public projection (#1504 Slice T)", () => {
+  const projection = buildSharedStatePublicObservabilityV1({
+    health: buildSharedStateHealthDeclarationV1(declarationInput()),
+    clockContinuity: "reset",
+    replay: { accepted: 50, replayed: 3 },
+    rateLimit: {
+      windowMs: 60_000,
+      limit: 10,
+      allowed: 500,
+      denied: 2,
+      storeErrors: 7,
+    },
+  });
+  assert.equal(projection.ok, true);
+  if (!projection.ok) return;
+  const rateLimit = projection.value.domains.rateLimit;
+  assert.equal(rateLimit.availability, "available");
+  if (rateLimit.availability === "available") {
+    // denied=2 is nonzero-but-below the public floor, so the whole group is
+    // suppressed — including storeErrors=7 — to keep small values
+    // unrecoverable; zeros still stay zero.
+    assert.equal(rateLimit.counts.storeErrors.state, "suppressed");
+    assert.equal(rateLimit.counts.allowed.state, "suppressed");
+  }
+
+  const allBig = buildSharedStatePublicObservabilityV1({
+    health: buildSharedStateHealthDeclarationV1(declarationInput()),
+    clockContinuity: "reset",
+    replay: { accepted: 50, replayed: 3 },
+    rateLimit: {
+      windowMs: 60_000,
+      limit: 10,
+      allowed: 500,
+      denied: 50,
+      storeErrors: 7,
+    },
+  });
+  assert.equal(allBig.ok, true);
+  if (!allBig.ok) return;
+  const big = allBig.value.domains.rateLimit;
+  if (big.availability === "available") {
+    assert.equal(big.counts.storeErrors.state, "reported");
+    assert.equal(big.counts.storeErrors.value, 7);
+  }
+});
+
 test("/health stateContract reports the defaulted grade and held fence through the catalog projection", async () => {
   await withEnv({
     BROKER_DEPLOYMENT_GRADE: undefined,

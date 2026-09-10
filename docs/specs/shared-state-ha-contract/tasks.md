@@ -3501,3 +3501,48 @@ Box `Integrate primitives one at a time behind default-off flags` stays
 unchecked until all six primitives are integrated; the
 compatibility/regression/performance run follows it. 488/489 remain as
 decided by W11.
+
+### Slice T — rate primitive behind the default-off flag (§4, second integration)
+
+Slice T is the second of the six one-at-a-time primitive integrations and
+replays the Slice S pattern for the rate primitive. A new closed flag parser,
+`resolveSharedStateRatePrimitiveModeV1` in
+`shared-state-rate-primitive-mode-v1.ts`, reads `BROKER_SHARED_STATE_V1_RATE`
+(unset/empty `off`, `on`, anything else fails startup loudly). With the flag
+off (default), nothing changes: the process-local `InMemoryRateLimiter` still
+answers every broker-edge rate-limit check, and the V1 counters stay zero.
+
+With the flag `on`, each non-public request reserves a cost of 1 through the
+V1 adapter's `reserveRateLimitCost` — reached through the serving fence, which
+gains one fail-closed passthrough method on its existing single-writer adapter
+(the same adapter `consumeReplayNonce` uses; no second adapter, no ownership
+CAS trip). The rate-limit key string maps to the `principal` component of the
+§5.2 digest domain `security.rate-limit.bucket-key` with the classified bucket
+(`general`/`worker`) as the `route` component, under the fixed namespace
+`security.rate.broker-edge` — so the two limit configurations stay independent
+buckets, and per-key isolation is exactly the local limiter's. A committed
+`accepted` decision admits the request and feeds the same
+`x-ratelimit-*`/`retry-after` headers from the primitive's `remaining` /
+`resetInMs`; a committed `rate_limited` decision reproduces the existing 429
+`rate_limited` response verbatim; every failure code, rejected/unavailable
+envelope, released fence, or thrown exception collapses to the Slice S
+retryable `state_unavailable` 503 — never a local permissive bucket (§5.2
+partition behavior; V1 defines no fail-open route class, so the whole edge
+fails closed) and never a fabricated `remaining`. Because a per-request schema
+rejection would mean every request 503s, a flag-on configuration whose limit
+or window exceeds the V1 caps fails startup loudly instead. `/health` switches
+the rate-limit observation source with the flag: the V1 counters feed the same
+bounded allowed/denied shape plus real `storeErrors`; the flag-off path keeps
+the local snapshot with `storeErrors` at zero. The declaration's
+`process_start` reset-risk posture stays until the full §4 item closes, as in
+Slice S.
+
+Not done by this slice, deliberately: the lease/idempotency/outbox/graph
+integrations (same flag-per-primitive pattern, later slices), a reset-risk
+epoch signal for the durable rate state, any live operator rollout — the flag
+ships default-off everywhere, including the fleet — and any change to the
+operator dashboard, which continues to read the process-local limiter
+snapshots. Box `Integrate primitives one at a time behind default-off flags`
+stays unchecked until all six primitives are integrated; the
+compatibility/regression/performance run follows it. 488/489 remain as
+decided by W11.

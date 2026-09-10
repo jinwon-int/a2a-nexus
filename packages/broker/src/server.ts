@@ -42,6 +42,9 @@ import {
 } from "./startup-security.js";
 import { resolveSharedStateDeploymentGradeFromEnvV1 } from "./shared-state-deployment-grade-v1.js";
 import { resolveSharedStateReplayPrimitiveModeV1 } from "./shared-state-replay-primitive-mode-v1.js";
+import { resolveSharedStateRatePrimitiveModeV1 } from "./shared-state-rate-primitive-mode-v1.js";
+import { SHARED_STATE_STORAGE_V1_VALUES as SHARED_STATE_V1_VALUES } from "./shared-state-storage-v1-values.js";
+import { SHARED_STATE_TIME_V1_VALUES as SHARED_STATE_TIME_VALUES } from "./shared-state-time-v1-values.js";
 import { evaluateGradeBackendCapabilityV1 } from "./shared-state-startup-checks-v1.js";
 import {
   acquireSharedStateServingFenceForBrokerV1,
@@ -151,6 +154,7 @@ import {
   verifyA2AHttpSignature,
   rateLimitKey,
   type A2AWorkerRouteScope,
+  type RateLimitDecision,
   type RequesterIdentity,
 } from "./core/request-security.js";
 import {
@@ -414,6 +418,41 @@ export function createBrokerServer(options: BrokerServerOptions = {}): BrokerSer
   // the process-local cache stats; when the flag is off these stay zero and
   // the local cache stats are reported instead.
   const sharedStateReplayV1Stats = { accepted: 0, replayed: 0 };
+  // #1504 §4 Slice T: rate-primitive integration flag. Default-off keeps the
+  // process-local InMemoryRateLimiter; `on` routes the broker-edge rate-limit
+  // check through the V1 adapter via the serving fence. Invalid values fail
+  // startup loudly (the resolver throws).
+  const sharedStateRateV1 = resolveSharedStateRatePrimitiveModeV1(
+    options.sharedStateRateV1 === undefined
+      ? process.env.BROKER_SHARED_STATE_V1_RATE
+      : options.sharedStateRateV1 ? "on" : "off",
+  ) === "on";
+  // Cumulative V1 rate outcomes for /health. When the flag is off these stay
+  // zero and the local limiter snapshots are reported instead.
+  const sharedStateRateV1Stats = { allowed: 0, denied: 0, storeErrors: 0 };
+  if (sharedStateRateV1) {
+    // The V1 command schema rejects out-of-cap limit/window per request,
+    // which under the flag would mean every request 503s. Surface a
+    // misconfigured limit/window at startup instead — loud, like an invalid
+    // env value. (cost is pinned to 1 per request, far under maxRateCost.)
+    const rateCaps = SHARED_STATE_V1_VALUES.limits;
+    const maxWindowMs = Number(SHARED_STATE_TIME_VALUES.limits.maxDurationMs);
+    for (const [name, limit, windowMs] of [
+      ["general", Math.max(1, rateLimitMaxRequests), Math.max(1, rateLimitWindowSec) * 1000],
+      ["worker", Math.max(1, workerRateLimitMaxRequests), Math.max(1, workerRateLimitWindowSec) * 1000],
+    ] as const) {
+      if (!Number.isSafeInteger(limit) || limit > rateCaps.maxRateLimit) {
+        throw new Error(
+          `invalid rate limit for the ${name} bucket: ${limit} exceeds the V1 primitive cap (${rateCaps.maxRateLimit})`,
+        );
+      }
+      if (!Number.isSafeInteger(windowMs) || windowMs > maxWindowMs) {
+        throw new Error(
+          `invalid rate window for the ${name} bucket: ${windowMs}ms exceeds the V1 primitive cap (${maxWindowMs}ms)`,
+        );
+      }
+    }
+  }
   // NCLEX evaluation receipt surface (#1724): default-off; a configured
   // keyring file that is unreadable or malformed fails startup loudly.
   // Domain moved to packages/nclex-evaluation (#1601 first slice); this is
@@ -1325,11 +1364,60 @@ export function createBrokerServer(options: BrokerServerOptions = {}): BrokerSer
             }) ?? classifyRateLimitBucket(req, url)
           : classifyRateLimitBucket(req, url);
         const limiter = bucket === "worker" ? workerRateLimiter : rateLimiter;
-        const decision = limiter.check(
-          rateLimitKey(req, requesterIdentity, {
-            trustedProxy,
-          }),
-        );
+        const principal = rateLimitKey(req, requesterIdentity, {
+          trustedProxy,
+        });
+        let decision: RateLimitDecision;
+        if (sharedStateRateV1) {
+          // #1504 §4 Slice T: reserve the cost through the V1 rate primitive
+          // (durable, linearizable per bucket) instead of the process-local
+          // limiter. Fail-closed per §5.2: an unavailable authoritative bucket
+          // rejects the request with retryable 503 — never a local permissive
+          // bucket (V1 defines no fail-open route class).
+          const fence = servingFence;
+          if (!fence) {
+            throw new BrokerError("state_unavailable", "rate_limit_state_unavailable: serving fence missing");
+          }
+          const nowMs = Date.now();
+          const limit = bucket === "worker"
+            ? Math.max(1, workerRateLimitMaxRequests)
+            : Math.max(1, rateLimitMaxRequests);
+          const windowMs = (bucket === "worker"
+            ? Math.max(1, workerRateLimitWindowSec)
+            : Math.max(1, rateLimitWindowSec)) * 1000;
+          const outcome = fence.reserveRateLimitCost(
+            { bucketClass: bucket, principal, cost: 1, limit, windowMs },
+            nowMs,
+          );
+          if (outcome.outcome === "unavailable") {
+            sharedStateRateV1Stats.storeErrors += 1;
+            throw new BrokerError("state_unavailable", `rate_limit_state_unavailable: ${outcome.reasonCode}`);
+          }
+          const retryAfterSec = Math.max(1, Math.ceil(outcome.resetInMs / 1000));
+          if (outcome.outcome === "rate_limited") {
+            sharedStateRateV1Stats.denied += 1;
+            decision = {
+              key: principal,
+              limit,
+              remaining: 0,
+              resetAtMs: nowMs + outcome.resetInMs,
+              retryAfterSec,
+              allowed: false,
+            };
+          } else {
+            sharedStateRateV1Stats.allowed += 1;
+            decision = {
+              key: principal,
+              limit,
+              remaining: outcome.remaining,
+              resetAtMs: nowMs + outcome.resetInMs,
+              retryAfterSec,
+              allowed: true,
+            };
+          }
+        } else {
+          decision = limiter.check(principal);
+        }
         applyRateLimitHeaders(res, decision, bucket);
         if (!decision.allowed) {
           res.setHeader("retry-after", String(decision.retryAfterSec));
@@ -1622,6 +1710,24 @@ export function createBrokerServer(options: BrokerServerOptions = {}): BrokerSer
         };
 
         const healthProbe = inspectServingAuthority();
+        // #1504 §4 Slice T: the rate-limit observation source switches with
+        // the flag — the V1 primitive feeds the same bounded allowed/denied
+        // shape (plus real storeErrors) instead of the local limiter snapshot.
+        const rateLimitObservation = {
+          windowMs: rateLimitWindowSec * 1000,
+          limit: rateLimitMaxRequests,
+          ...(sharedStateRateV1
+            ? {
+                allowed: sharedStateRateV1Stats.allowed,
+                denied: sharedStateRateV1Stats.denied,
+                storeErrors: sharedStateRateV1Stats.storeErrors,
+              }
+            : {
+                allowed: requestPressure.general.allowedRequests,
+                denied: requestPressure.general.deniedRequests,
+                storeErrors: 0,
+              }),
+        };
         // #1504 §4 (Slice R): the stateContract member is the observability
         // catalog's public-aggregate projection — bands instead of exact
         // counts, closed vocabularies only, and the catalog's own leak
@@ -1638,18 +1744,13 @@ export function createBrokerServer(options: BrokerServerOptions = {}): BrokerSer
             persistenceBackend,
             clockSafety: "safe",
             processUptimeSec: Math.round(process.uptime()),
-            rateLimitDenied: requestPressure.general.deniedRequests,
+            rateLimitDenied: rateLimitObservation.denied,
             rateLimitTotal:
-              requestPressure.general.allowedRequests + requestPressure.general.deniedRequests,
+              rateLimitObservation.allowed + rateLimitObservation.denied,
           }),
           clockContinuity: "reset",
           replay: sharedStateReplayV1 ? sharedStateReplayV1Stats : a2aHttpSignatureReplayCache.stats(),
-          rateLimit: {
-            windowMs: rateLimitWindowSec * 1000,
-            limit: rateLimitMaxRequests,
-            allowed: requestPressure.general.allowedRequests,
-            denied: requestPressure.general.deniedRequests,
-          },
+          rateLimit: rateLimitObservation,
         });
         if (contractProjection.ok) {
           body.stateContract = contractProjection.value.stateContract;
