@@ -16,6 +16,13 @@
  * error, parse error, rejected envelope, or thrown exception collapses to
  * `{outcome: "unavailable"}` — never a local fallback acceptance (§5.1
  * partition behavior).
+ *
+ * Slice T (#1504 §4 primitive integration, rate second): same pattern for the
+ * rate primitive — `reserveRateLimitCost` routes the broker-edge rate-limit
+ * check through the same single-writer adapter when the default-off
+ * `BROKER_SHARED_STATE_V1_RATE` flag is `on`. Every failure collapses to
+ * `{outcome: "unavailable"}` — never a local permissive bucket (§5.2
+ * partition behavior; V1 defines no fail-open route class).
  */
 
 import { randomUUID } from "node:crypto";
@@ -50,7 +57,22 @@ export const SHARED_STATE_SERVING_FENCE_V1 = Object.freeze({
   defaultLegacyStateFile: "/var/lib/a2a-broker/state.json",
   /** Slice S: fixed keyspace namespace for worker HTTP-signature replay. */
   replayNamespace: "security.replay.broker-worker-signature",
+  /** Slice T: fixed keyspace namespace for the broker-edge rate limiter. */
+  rateNamespace: "security.rate.broker-edge",
 } as const);
+
+/**
+ * Outcome of one fence-mediated `reserveRateLimitCost` (Slice T). Only a
+ * committed adapter decision yields `allowed` or `rate_limited`; everything
+ * else — failure codes, rejected/unavailable envelopes, released fence,
+ * thrown exceptions — is `unavailable`, which the caller must map to a
+ * retryable rejection, never a local permissive fallback (§5.2 partition
+ * behavior).
+ */
+export type SharedStateFenceRateOutcomeV1 =
+  | { readonly outcome: "allowed"; readonly remaining: number; readonly resetInMs: number }
+  | { readonly outcome: "rate_limited"; readonly resetInMs: number }
+  | { readonly outcome: "unavailable"; readonly reasonCode: string };
 
 /**
  * Outcome of one fence-mediated `consumeReplayNonce` (Slice S). Only a
@@ -125,6 +147,28 @@ export interface SharedStateServingFenceV1 {
     input: { readonly keyid: string; readonly nonce: string; readonly ttlMs: number },
     nowMs: number,
   ): SharedStateFenceReplayOutcomeV1;
+  /**
+   * Slice T fail-closed passthrough of the V1 rate primitive through the
+   * fence's single-writer adapter. `input.cost`/`input.limit` must already be
+   * positive integers within the V1 caps and `input.windowMs` a positive
+   * duration; the caller validates its configuration at startup. `bucketClass`
+   * separates the broker's general and worker limit configurations inside the
+   * fixed rate namespace (they have independent limits/windows), `principal`
+   * is the caller's rate-limit key string. `nowMs` is the caller's observed
+   * wall instant in epoch milliseconds and is passed to the adapter as the
+   * transaction's observed time (the adapter still evaluates and floors it —
+   * it is never trusted blindly).
+   */
+  reserveRateLimitCost(
+    input: {
+      readonly bucketClass: "general" | "worker";
+      readonly principal: string;
+      readonly cost: number;
+      readonly limit: number;
+      readonly windowMs: number;
+    },
+    nowMs: number,
+  ): SharedStateFenceRateOutcomeV1;
 }
 
 function fail(
@@ -156,6 +200,43 @@ function fenceReplayOutcomeFromResult(
     }
     if (decision === V.operationDecisions.consumeReplayNonce[1]) {
       return Object.freeze({ outcome: "replayed" });
+    }
+    return Object.freeze({ outcome: "unavailable", reasonCode: "store_failure" });
+  }
+  const reasonCode = (result as { reasonCode?: unknown }).reasonCode;
+  return Object.freeze({
+    outcome: "unavailable",
+    reasonCode: typeof reasonCode === "string" ? reasonCode : "store_failure",
+  });
+}
+
+/**
+ * Maps a committed/rejected/unavailable transaction envelope onto the
+ * fail-closed fence rate outcome. Only the committed adapter decisions are
+ * `allowed`/`rate_limited`; every other status or shape is `unavailable`.
+ */
+function fenceRateOutcomeFromResult(
+  result: SharedStateTransactionResultV1,
+): SharedStateFenceRateOutcomeV1 {
+  if (result.status === V.transactionStatuses[0]) {
+    const value = (result as {
+      result?: { decision?: unknown; remaining?: unknown; resetInMs?: unknown };
+    }).result;
+    if (value?.decision === V.operationDecisions.reserveRateLimitCost[0]) {
+      if (typeof value.remaining !== "number" || typeof value.resetInMs !== "number") {
+        return Object.freeze({ outcome: "unavailable", reasonCode: "store_failure" });
+      }
+      return Object.freeze({
+        outcome: "allowed",
+        remaining: value.remaining,
+        resetInMs: value.resetInMs,
+      });
+    }
+    if (value?.decision === V.operationDecisions.reserveRateLimitCost[1]) {
+      if (typeof value.resetInMs !== "number") {
+        return Object.freeze({ outcome: "unavailable", reasonCode: "store_failure" });
+      }
+      return Object.freeze({ outcome: "rate_limited", resetInMs: value.resetInMs });
     }
     return Object.freeze({ outcome: "unavailable", reasonCode: "store_failure" });
   }
@@ -348,6 +429,60 @@ export function openSharedStateServingFenceV1(input: {
             return Object.freeze({ outcome: "unavailable", reasonCode: result.error.code });
           }
           return Object.freeze(fenceReplayOutcomeFromResult(result.value));
+        } catch {
+          return Object.freeze({ outcome: "unavailable", reasonCode: "store_failure" });
+        }
+      },
+      reserveRateLimitCost(
+        input: {
+          readonly bucketClass: "general" | "worker";
+          readonly principal: string;
+          readonly cost: number;
+          readonly limit: number;
+          readonly windowMs: number;
+        },
+        nowMs: number,
+      ): SharedStateFenceRateOutcomeV1 {
+        if (released) {
+          return Object.freeze({ outcome: "unavailable", reasonCode: "adapter_unavailable" });
+        }
+        try {
+          const bucketKeyDigest = digestSharedStateKeyV1({
+            keyspaceVersion: V.versions.keyspace,
+            domain: "security.rate-limit.bucket-key",
+            namespace: SHARED_STATE_SERVING_FENCE_V1.rateNamespace,
+            components: [
+              { field: "principal", type: "utf8", value: input.principal },
+              { field: "route", type: "utf8", value: input.bucketClass },
+            ],
+          });
+          if (!bucketKeyDigest.ok) {
+            return Object.freeze({ outcome: "unavailable", reasonCode: bucketKeyDigest.error.code });
+          }
+          const command = parseSharedStateTransactionCommandV1({
+            kind: V.kinds.transactionCommand,
+            contractVersion: V.versions.contract,
+            transactionVersion: V.versions.transaction,
+            operationVersion: V.versions.operation,
+            operation: V.operations[1],
+            input: {
+              namespace: SHARED_STATE_SERVING_FENCE_V1.rateNamespace,
+              bucketKeyDigest: bucketKeyDigest.value.digest,
+              cost: input.cost,
+              limit: input.limit,
+              windowMs: input.windowMs,
+            },
+          });
+          if (!command.ok) {
+            return Object.freeze({ outcome: "unavailable", reasonCode: command.error.code });
+          }
+          const result = adapter.transact(command.value, {
+            observedAtUnixMs: String(nowMs),
+          });
+          if (!result.ok) {
+            return Object.freeze({ outcome: "unavailable", reasonCode: result.error.code });
+          }
+          return Object.freeze(fenceRateOutcomeFromResult(result.value));
         } catch {
           return Object.freeze({ outcome: "unavailable", reasonCode: "store_failure" });
         }
