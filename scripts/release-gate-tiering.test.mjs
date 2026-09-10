@@ -238,8 +238,12 @@ test('script surface manifest validates current root and broker package scripts'
   // #2080 step 2: broker 55→56 for build:tests, the test-including compile the
   // test manifest step-02 and coverage:baseline run now that `build` is the
   // runtime-only config (tsconfig.build.json).
+  // #1504 Phase 5: broker 56→57 for smoke:migration-rehearsal, the plan.md
+  // Phase 5 migration/rollback rehearsal entrypoint (scripts/
+  // migration-rehearsal-v1.mjs); mirrored in
+  // scripts/check-script-budget.mjs BUDGETS.brokerNpmScripts.
   assert.equal(byId.get('root')?.scriptCount, 81);
-  assert.equal(byId.get('broker')?.scriptCount, 56);
+  assert.equal(byId.get('broker')?.scriptCount, 57);
   assert.ok((byId.get('root')?.kindCounts['required-gate'] ?? 0) >= 7);
   assert.ok((byId.get('broker')?.kindCounts['required-gate'] ?? 0) >= 7);
 });
