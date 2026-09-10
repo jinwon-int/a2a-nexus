@@ -34,6 +34,11 @@ function usage(exitCode = 0) {
   stream.write(`                 (live per-entity tables — REQUIRED to see current state when the broker runs\n`);
   stream.write(`                 with BROKER_SQLITE_LOAD_SOURCE=hot-tables, whose snapshot blob goes stale).\n`);
   stream.write(`                 Defaults to BROKER_SQLITE_LOAD_SOURCE, matching the server runtime.\n`);
+  stream.write(`\n`);
+  stream.write(`Version boundary: a database written by a NEWER broker is refused\n`);
+  stream.write(`(schema_version_newer / state_version_newer) rather than misread — export\n`);
+  stream.write(`with the matching broker version. The startup clock guard is skipped for\n`);
+  stream.write(`export.\n`);
   stream.write(`  --help         Show this help.\n`);
   process.exit(exitCode);
 }
@@ -71,7 +76,17 @@ const { SqliteBrokerStateStore, serializeBrokerSnapshot, writeBrokerSnapshotFile
 // Same normalizer as the server runtime (#819): hot-table aliases accepted,
 // anything else falls back to the canonical snapshot blob.
 const loadSource = persistenceOptionsModule.normalizeSqliteLoadSource(loadSourceValue);
-const store = new SqliteBrokerStateStore(dbFile, { ...(maxBytes ? { maxBytes } : {}), loadSource });
+// #1504 §3: export is an inspection/recovery path — the startup clock guard is
+// skipped (a host with a broken clock is exactly when recovery export is most
+// needed), while the schema/state version guards stay enforced: a database
+// written by a NEWER broker is refused (schema_version_newer /
+// state_version_newer) instead of being best-effort misread. Export with the
+// matching broker version.
+const store = new SqliteBrokerStateStore(dbFile, {
+  ...(maxBytes ? { maxBytes } : {}),
+  loadSource,
+  startupClockCheck: "skip",
+});
 try {
   const snapshot = store.load();
   if (outFile) {

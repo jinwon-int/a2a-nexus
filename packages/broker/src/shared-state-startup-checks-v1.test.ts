@@ -202,6 +202,18 @@ test("last durable write in the future beyond tolerance refuses; within toleranc
     writeMetadata(dbFile, "last_persist_at", new Date(Date.now() + 60_000).toISOString());
     const reopened = new SqliteBrokerStateStore(dbFile);
     reopened.close();
+    // #1504 §3: inspection/export paths may skip the clock check explicitly —
+    // recovery export must not depend on host clock health. Version guards
+    // stay enforced regardless of this option.
+    writeMetadata(dbFile, "last_persist_at", new Date(Date.now() + STARTUP_CLOCK_BACKWARD_TOLERANCE_MS + 60_000).toISOString());
+    const inspected = new SqliteBrokerStateStore(dbFile, { startupClockCheck: "skip" });
+    assert.equal(inspected.load().version, CURRENT_BROKER_STATE_VERSION);
+    inspected.close();
+    writeMetadata(dbFile, "schema_version", "14");
+    assert.throws(() => new SqliteBrokerStateStore(dbFile, { startupClockCheck: "skip" }), (error: unknown) => {
+      assertStartupCheckError(error, "schema_version_newer");
+      return true;
+    });
   } finally {
     tmp.cleanup();
   }

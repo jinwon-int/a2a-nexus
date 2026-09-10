@@ -6,7 +6,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
-import { mkdtempSync } from "node:fs";
+import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -75,4 +75,50 @@ test("BROKER_SQLITE_LOAD_SOURCE env is honored like the server runtime; flag win
 test("unrecognized load source falls back to snapshot (same normalizer as the server)", () => {
   const snapshot = runExport(buildDivergentDb(), ["--load-source", "warm-cache"]);
   assert.deepEqual(snapshot.tasks ?? [], []);
+});
+
+// ---------------------------------------------------------------------------
+// #1504 §3 startup-check interaction: version guards refuse, clock guard is
+// skipped for export (inspection must not depend on host clock health).
+// ---------------------------------------------------------------------------
+
+function tamperMetadata(dbFile, key, value) {
+  const db = new DatabaseSync(dbFile);
+  try {
+    db.prepare("INSERT INTO broker_metadata (key, value) VALUES (?, ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value").run(key, value);
+  } finally {
+    db.close();
+  }
+}
+
+test("a database written by a newer broker refuses to export (schema_version_newer)", () => {
+  const dir = mkdtempSync(join(tmpdir(), "export-sqlite-state-"));
+  try {
+    const dbFile = join(dir, "state.sqlite");
+    const store = new SqliteBrokerStateStore(dbFile);
+    store.save(emptySnapshot());
+    store.close();
+    tamperMetadata(dbFile, "schema_version", "14");
+    const res = spawnSync(process.execPath, [CLI, "--db", dbFile], { encoding: "utf8" });
+    assert.notEqual(res.status, 0, "exporting a newer database must fail");
+    assert.match(`${res.stderr}${res.stdout}`, /schema_version_newer/);
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test("the startup clock guard is skipped for export (recovery export must not need a healthy clock)", () => {
+  const dir = mkdtempSync(join(tmpdir(), "export-sqlite-state-"));
+  try {
+    const dbFile = join(dir, "state.sqlite");
+    const store = new SqliteBrokerStateStore(dbFile);
+    store.save({ ...emptySnapshot(), tasks: [makeTask("recovery-task", "queued", "worker-a")] });
+    store.close();
+    tamperMetadata(dbFile, "last_persist_at", new Date(Date.now() + 6 * 60 * 60 * 1000).toISOString());
+    const snapshot = runExport(dbFile);
+    assert.equal(snapshot.tasks?.length, 1);
+    assert.equal(snapshot.tasks[0].id, "recovery-task");
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
 });

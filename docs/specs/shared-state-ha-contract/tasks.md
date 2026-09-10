@@ -488,8 +488,8 @@ than advancing the legacy store's `SQLITE_SCHEMA_VERSION`.
 - [x] Prove optional FIFO worker writer conformance and durable ACK behavior.
 - [x] Ensure synchronous reads declare/bound consistency and cannot observe an
   unacknowledged write as committed.
-- [ ] Preserve existing export/inspection and fail-safe recovery behavior.
-- [ ] Keep runtime integration/default enablement off.
+- [x] Preserve existing export/inspection and fail-safe recovery behavior.
+- [x] Keep runtime integration/default enablement off.
 
 ### Slice F, first part — the idempotency effect's outbox link
 
@@ -3391,3 +3391,42 @@ recorded in the report instead of numbers.
 **Characterization only (item 6):** every report carries the disclaimer that
 the numbers describe one machine and build and are not production capacity, HA
 evidence, or an approved budget.
+
+### Slice Q — export/inspection preservation and the runtime-detachment pin (§3)
+
+Slice Q verifies the two remaining section 3 boxes against the Slice O startup
+checks and pins the detachment so the claim cannot drift silently.
+
+**Export/inspection preserved, with one explicit boundary.** The Slice O
+constructor guard applies to every `SqliteBrokerStateStore` open, including
+operator paths. Version guards (schema_version / state_version) stay enforced
+everywhere — an export tool that best-effort misread a NEWER binary's database
+and wrote partial recovery JSON would be a hazard, so
+`export-sqlite-state.mjs` now refuses such databases with the stable codes
+(`schema_version_newer` / `state_version_newer`) and documents the
+matching-binary rule in `--help`. The clock guard, however, must NOT block
+recovery export — a host with a broken clock is exactly when recovery export is
+most needed — so the store gains `startupClockCheck: "enforce" | "skip"`
+(default enforce) and the export tool passes `"skip"`. Tests pin both: newer
+databases refuse through the CLI; a database with a far-future
+`last_persist_at` exports cleanly through the skip.
+
+**Fail-safe recovery verified live.** `smoke:restart-recovery` ran green
+against a local isolated broker (loopback, hot-tables load source, insecure-dev
+mode, no live involvement): created → claimed → started → heartbeat → broker
+restart mid-task → requeued → re-claim → started → succeeded, exit 0. The
+restarted broker reopened through the new startup checks without complaint
+(same-binary version markers). Canonical snapshot repair tests stay green.
+
+**Detachment pinned (item 2).** `shared-state-runtime-detachment-v1.test.ts`
+reads the built `dist/server.js` and fails if it imports the V1 SQLite adapter
+or any worker-lane module, and asserts the lane manifest still declares
+`attachedToBrokerRuntime: false` / `fullAdapterConformanceClaimed: false`.
+Wiring the lane into the runtime now requires acknowledging this test and
+revisiting the claim. The legacy opt-in
+`BROKER_PERSISTENCE_QUEUE_WORKER_THREAD` (default off) is the pre-existing
+legacy-store mechanism and is not part of the detachment claim.
+
+Boxes checked by this slice: `Preserve existing export/inspection and fail-safe
+recovery behavior` and `Keep runtime integration/default enablement off`.
+Section 3 is now fully checked. 488/489 remain as decided by W11.
