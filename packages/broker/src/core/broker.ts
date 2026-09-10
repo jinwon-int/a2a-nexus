@@ -337,6 +337,7 @@ import {
 
 import { BrokerError, REQUEUE_EXHAUSTED_ERROR_CODE, type BrokerErrorCode } from "./broker-error.js";
 import { canonicalJsonString } from "../shared-state-idempotency-gate-v1.js";
+import { isTerminalStatus } from "./terminal-event-outbox.js";
 import {
   DEFAULT_WORKER_HEARTBEAT_PERSIST_INTERVAL_MS,
   DEFAULT_WORKER_OFFLINE_AFTER_MS,
@@ -453,6 +454,13 @@ export class InMemoryA2ABroker {
     readonly taskId: string;
     readonly canonicalRequest: string;
   }) => TaskCreateIdempotencyDecisionV1;
+  // #1504 §4 Slice X: optional V1 claim-graph source authority; absent
+  // (flag off) ⇒ no graph source facts are produced.
+  private readonly taskTerminalGraphSourceAuthority?: (input: {
+    readonly taskId: string;
+    readonly status: string;
+    readonly completedAt: string;
+  }) => { readonly sequence: string };
   private taskAttemptRecordCounts = { emitted: 0, replayed: 0, conflicted: 0, skipped: 0 };
   private taskAttemptRecordLastSkipReason?: string;
   private taskAttemptReadCounts = {
@@ -517,6 +525,7 @@ export class InMemoryA2ABroker {
     this.teamId = normalizeOwnershipString(options.teamId);
     this.taskAttemptRecordStore = options.taskAttemptRecordStore;
     this.taskCreateIdempotencyAuthority = options.taskCreateIdempotencyAuthority;
+    this.taskTerminalGraphSourceAuthority = options.taskTerminalGraphSourceAuthority;
     this.taskReadinessMode = normalizeTaskReadinessMode(options.taskReadinessMode);
     this.reviewLineageMode = options.reviewLineageMode ?? "off";
     if (this.reviewLineageMode !== "off" && this.reviewLineageMode !== "record") {
@@ -2994,6 +3003,16 @@ export class InMemoryA2ABroker {
           if (terminalEvent) {
             this.pendingHot.stageTerminalOutboxEvent(terminalEvent);
           }
+        }
+        // #1504 §4 Slice X: the V1 claim-graph source authority — one fact
+        // per terminal transition, deduped by the fact digest. A throw
+        // fails the enclosing domain transaction (§5.6 partition).
+        if (this.taskTerminalGraphSourceAuthority && isTerminalStatus(task.status)) {
+          this.taskTerminalGraphSourceAuthority({
+            taskId: task.id,
+            status: task.status,
+            completedAt: task.completedAt ?? task.updatedAt,
+          });
         }
       }
     }

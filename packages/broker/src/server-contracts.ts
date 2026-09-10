@@ -155,6 +155,13 @@ export interface BrokerServerOptions extends BrokerRuntimeHotLimitOptions {
    * primitive via the serving fence. Default-off; env:
    * `BROKER_SHARED_STATE_V1_OUTBOX` (`off` | `on`).
    */
+  /**
+   * #1504 Slice X: route the §5.6 source-fact append authority for terminal
+   * task facts (namespace `broker.claim-graph`) through the V1
+   * `appendGraphSource` primitive via the serving fence. Default-off; env:
+   * `BROKER_SHARED_STATE_V1_GRAPH` (`off` | `on`).
+   */
+  sharedStateGraphV1?: boolean;
   sharedStateOutboxV1?: boolean;
   sharedStateIdempotencyV1?: boolean;
   /**

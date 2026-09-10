@@ -46,6 +46,8 @@ import { resolveSharedStateRatePrimitiveModeV1 } from "./shared-state-rate-primi
 import { resolveSharedStateLeasePrimitiveModeV1 } from "./shared-state-lease-primitive-mode-v1.js";
 import { resolveSharedStateIdempotencyPrimitiveModeV1 } from "./shared-state-idempotency-primitive-mode-v1.js";
 import { resolveSharedStateOutboxPrimitiveModeV1 } from "./shared-state-outbox-primitive-mode-v1.js";
+import { resolveSharedStateGraphPrimitiveModeV1 } from "./shared-state-graph-primitive-mode-v1.js";
+import { SharedStateGraphSourceGateV1 } from "./shared-state-graph-gate-v1.js";
 import { createHash } from "node:crypto";
 import {
   createTaskCreateIdempotencyAuthority,
@@ -487,6 +489,14 @@ export function createBrokerServer(options: BrokerServerOptions = {}): BrokerSer
       ? process.env.BROKER_SHARED_STATE_V1_OUTBOX
       : options.sharedStateOutboxV1 ? "on" : "off",
   ) === "on";
+  // #1504 §4 Slice X: graph-primitive integration flag. Default-off produces
+  // no graph source facts; `on` routes the §5.6 source-fact append authority
+  // for terminal task facts through the V1 adapter via the serving fence.
+  const sharedStateGraphV1 = resolveSharedStateGraphPrimitiveModeV1(
+    options.sharedStateGraphV1 === undefined
+      ? process.env.BROKER_SHARED_STATE_V1_GRAPH
+      : options.sharedStateGraphV1 ? "on" : "off",
+  ) === "on";
   // NCLEX evaluation receipt surface (#1724): default-off; a configured
   // keyring file that is unreadable or malformed fails startup loudly.
   // Domain moved to packages/nclex-evaluation (#1601 first slice); this is
@@ -636,6 +646,21 @@ export function createBrokerServer(options: BrokerServerOptions = {}): BrokerSer
         return { sequence: outcome.streamSequence };
       }
     : undefined;
+  // #1504 §4 Slice X: the claim-graph source gate tracks the namespace
+  // high-water and resyncs after a restart via bounded upward probing
+  // (rejected transactions allocate nothing — documented trade-off).
+  const taskTerminalGraphSourceGate = sharedStateGraphV1
+    ? new SharedStateGraphSourceGateV1(() => servingFence)
+    : undefined;
+  const taskTerminalGraphSourceAuthority = taskTerminalGraphSourceGate
+    ? (input: { readonly taskId: string; readonly status: string; readonly completedAt: string }) =>
+        taskTerminalGraphSourceGate.appendTerminalTaskFact({
+          brokerAuthorityId: brokerId,
+          taskId: input.taskId,
+          status: input.status,
+          completedAt: input.completedAt,
+        })
+    : undefined;
 
   // Worker-thread persistence facade (opt-in).
   // Off by default; enable with BROKER_PERSISTENCE_QUEUE_WORKER_THREAD=1.
@@ -756,6 +781,7 @@ export function createBrokerServer(options: BrokerServerOptions = {}): BrokerSer
       brokerId,
       taskCreateIdempotencyAuthority,
       terminalOutboxAppendAuthority,
+      taskTerminalGraphSourceAuthority,
       teamId,
       taskReadinessMode,
       reviewLineageMode,
