@@ -44,6 +44,10 @@ import { resolveSharedStateDeploymentGradeFromEnvV1 } from "./shared-state-deplo
 import { resolveSharedStateReplayPrimitiveModeV1 } from "./shared-state-replay-primitive-mode-v1.js";
 import { resolveSharedStateRatePrimitiveModeV1 } from "./shared-state-rate-primitive-mode-v1.js";
 import { resolveSharedStateLeasePrimitiveModeV1 } from "./shared-state-lease-primitive-mode-v1.js";
+import { resolveSharedStateIdempotencyPrimitiveModeV1 } from "./shared-state-idempotency-primitive-mode-v1.js";
+import {
+  createTaskCreateIdempotencyAuthority,
+} from "./shared-state-idempotency-gate-v1.js";
 import { SharedStateLeaseGateV1 } from "./shared-state-lease-gate-v1.js";
 import { SHARED_STATE_STORAGE_V1_VALUES as SHARED_STATE_V1_VALUES } from "./shared-state-storage-v1-values.js";
 import { SHARED_STATE_TIME_V1_VALUES as SHARED_STATE_TIME_VALUES } from "./shared-state-time-v1-values.js";
@@ -465,6 +469,14 @@ export function createBrokerServer(options: BrokerServerOptions = {}): BrokerSer
       ? process.env.BROKER_SHARED_STATE_V1_LEASE
       : options.sharedStateLeaseV1 ? "on" : "off",
   ) === "on";
+  // #1504 §4 Slice V: idempotency-primitive integration flag. Default-off
+  // keeps the legacy same-id replay path; `on` routes the task-create
+  // authority through the V1 `executeIdempotent` via the serving fence.
+  const sharedStateIdempotencyV1 = resolveSharedStateIdempotencyPrimitiveModeV1(
+    options.sharedStateIdempotencyV1 === undefined
+      ? process.env.BROKER_SHARED_STATE_V1_IDEMPOTENCY
+      : options.sharedStateIdempotencyV1 ? "on" : "off",
+  ) === "on";
   // NCLEX evaluation receipt surface (#1724): default-off; a configured
   // keyring file that is unreadable or malformed fails startup loudly.
   // Domain moved to packages/nclex-evaluation (#1601 first slice); this is
@@ -579,6 +591,12 @@ export function createBrokerServer(options: BrokerServerOptions = {}): BrokerSer
   const taskLeaseDurationMs = Math.max(1, staleReaperOlderThanSec) * 1000;
   const leaseGate = sharedStateLeaseV1
     ? new SharedStateLeaseGateV1(() => servingFence)
+    : undefined;
+  // #1504 §4 Slice V: the task-create idempotency authority lives only while
+  // the flag is on. The hook is synchronous — the V1 transact is sync — so
+  // createTask's signature is unchanged.
+  const taskCreateIdempotencyAuthority = sharedStateIdempotencyV1
+    ? createTaskCreateIdempotencyAuthority(() => servingFence)
     : undefined;
 
   // Worker-thread persistence facade (opt-in).
@@ -698,6 +716,7 @@ export function createBrokerServer(options: BrokerServerOptions = {}): BrokerSer
       maxRequeueAttempts,
       workerHeartbeatPersistIntervalMs,
       brokerId,
+      taskCreateIdempotencyAuthority,
       teamId,
       taskReadinessMode,
       reviewLineageMode,

@@ -15,6 +15,8 @@ import type { WorkerRuntimeRepository } from "./worker-repository.js";
 import type { WorkerCapabilityCardRepository } from "./worker-capability-card.js";
 import type { BrokerSnapshot } from "./store.js";
 import type { TaskRecord, TaskStatus } from "./types.js";
+import type { TaskCreateIdempotencyDecisionV1 } from "../shared-state-idempotency-gate-v1.js";
+export type { TaskCreateIdempotencyDecisionV1 };
 import type { ReviewLineageRolloutMode } from "./review-lineage-store.js";
 import type { WavePlanDagV2RecordStore } from "../wave-plan-dag-v2/record-store.js";
 
@@ -58,6 +60,21 @@ export interface BrokerRetentionPolicy {
 }
 
 export interface InMemoryA2ABrokerOptions {
+  /**
+   * #1504 §4 Slice V: the V1 task-create idempotency authority hook, injected
+   * only while the default-off `BROKER_SHARED_STATE_V1_IDEMPOTENCY` flag is
+   * `on`. When present, `createTask`'s same-id replay check is decided by the
+   * hook (§5.4 `executeIdempotent` on the `broker.task.create` authority) —
+   * REPLACING the legacy check, never layering over it (§5.4.1). The hook
+   * throws `idempotency_conflict` for a same-key/different-fingerprint retry
+   * and `state_unavailable` when the authority cannot be evaluated. The core
+   * stays V1-agnostic: it passes the normalized request's canonical JSON and
+   * follows the returned decision.
+   */
+  taskCreateIdempotencyAuthority?: (input: {
+    readonly taskId: string;
+    readonly canonicalRequest: string;
+  }) => TaskCreateIdempotencyDecisionV1;
   /**
    * Optional durable TaskAttemptRecordV1 store (#1799 slice 1). Injecting a
    * store enables record mode: terminal task transitions additionally emit a

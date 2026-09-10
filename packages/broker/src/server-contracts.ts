@@ -144,6 +144,13 @@ export interface BrokerServerOptions extends BrokerRuntimeHotLimitOptions {
    */
   sharedStateLeaseV1?: boolean;
   /**
+   * #1504 Slice V: route the task-create by caller-selected-id authority
+   * (§5.4.1 `broker.task.create`) through the V1 `executeIdempotent`
+   * primitive via the serving fence. Default-off; env:
+   * `BROKER_SHARED_STATE_V1_IDEMPOTENCY` (`off` | `on`).
+   */
+  sharedStateIdempotencyV1?: boolean;
+  /**
    * D3a hook after the first `lost_fence` 503 is written. Production
    * defaults to `process.exit(1)`. Tests inject a no-op or spy so the
    * runner does not die. This is not an operator env and does not call
