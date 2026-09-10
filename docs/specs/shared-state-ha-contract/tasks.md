@@ -1257,7 +1257,7 @@ path decision belongs to section 4 and is deliberately not made here.
 - [x] Integrate primitives one at a time behind default-off flags. (Slices
   S-X, #2117/#2118/#2119/#2120/#2121 + this slice; see the Slice X narrative
   for per-primitive scope and the named deferred sub-surfaces.)
-- [ ] Run compatibility/regression/performance tests.
+- [x] Run compatibility/regression/performance tests. (Slice Y closeout, below.)
 
 ### Slice J, first part — grade and expected-process configuration
 
@@ -3735,3 +3735,45 @@ sub-surfaces in its narrative. The remaining §4 box is the
 compatibility/regression/performance run; §5 rollout stays separately
 authorized, flags default-off everywhere including the fleet. 488/489 remain
 as decided by W11.
+
+### Slice Y — §4 closeout: compatibility/regression/performance run
+
+Slice Y runs the final §4 verification on the fully integrated build (main
+`ea7e758`, all six flags default-off, one flag per primitive) and records the
+three legs.
+
+**Regression.** The full broker test manifest — which includes every
+shared-state conformance harness (expiry, partition, restart-continuity,
+storage-contract, keyspace, idempotency, outbox, graph evidence-path
+querying) plus the six per-slice integration suites (flag parsers, fence
+passthroughs, server-level gating, durable restart continuity, default-off
+unchanged, invalid-env startup failures) — passes at exit 0 with 3724 tests
+on `ea7e758`. Each integration slice's PR also ran the repository CI
+(23 checks) at its exact merged head.
+
+**Compatibility.** Default-off compatibility is asserted per primitive by
+dedicated same-path tests (legacy replay check, process-local limiter,
+in-memory claim path, legacy same-id create, in-memory outbox append, no
+graph facts) — all green in the manifest. The §2.9 artifact remains the
+pinned `performance-characterization-v1.json` (Slice P baseline); the
+closeout run does not re-pin it.
+
+**Performance.** `scripts/bench-shared-state-v1.mjs --compare` on the final
+build (run `bench-20260910075829-a2a2`, same deterministic seed/parameters as
+the Slice P pin): the fault gate passes all 6 crash/fault suites before any
+measurement. Against the pinned baseline across all 18 measured families:
+15 flat, 2 slower, 1 faster — none degraded. The three non-flat families are
+microsecond-scale and within run-to-run noise for a shared 7-vCPU host
+(`inline.idem_conflict.rejected` 2.07→2.45 ms p50; `worker.claim_uncontended.claimed`
+2.92→3.56 ms p50; `inline.cleanup_prune.prune` 5.35→4.13 ms p50, faster).
+The characterization disclaimer is unchanged: these numbers describe this
+machine and build — not production capacity, not HA evidence, not an approved
+budget; the §2.9 pass-threshold gate stays with the operator.
+
+With this run, §4 implementation is complete end to end: startup checks,
+serving fence, stateContract observability, and all six primitives behind
+default-off flags, verified for compatibility, regression, and performance.
+§5 (shared-backend provision, migration, live rollout) remains a separately
+authorized stage per plan.md and the issue's safety boundary; every flag
+ships default-off everywhere including the fleet. 488/489 remain as decided
+by W11.
