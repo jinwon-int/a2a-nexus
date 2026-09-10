@@ -79,6 +79,12 @@ test("state-conflict and media-type codes keep distinguishable statuses (#1518/#
   assert.equal(statusCodeFor("retry_policy_malformed"), 400);
 });
 
+test("state_unavailable maps to retryable 503 like the other availability codes (#1504 Slice S)", () => {
+  assert.equal(statusCodeFor("state_unavailable"), 503);
+  // It stays grouped with the shared-state availability family, not with 4xx.
+  assert.equal(statusCodeFor("state_unavailable"), statusCodeFor("worker_unavailable"));
+});
+
 test("sendError writes a response for every BrokerErrorCode (#1518/#1725)", () => {
   for (const code of BROKER_ERROR_CODES) {
     const { res, recorded } = fakeResponse();

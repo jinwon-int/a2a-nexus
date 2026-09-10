@@ -129,6 +129,10 @@ export function statusCodeFor(code: BrokerError["code"]): number {
     case "queue_closed":
     case "worker_crashed":
     case "worker_unavailable":
+    // #1504 Slice S: the authoritative shared-state primitive could not be
+    // evaluated (e.g. replay consume unavailable). Retryable, like the
+    // non-serving middleware's 503 — never a silent fallback accept.
+    case "state_unavailable":
       return 503;
     default: {
       // Compile-time exhaustiveness: adding a BrokerErrorCode without mapping
