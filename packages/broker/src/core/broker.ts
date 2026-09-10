@@ -336,6 +336,7 @@ import {
 } from "./resource-aware-worker-policy.js";
 
 import { BrokerError, REQUEUE_EXHAUSTED_ERROR_CODE, type BrokerErrorCode } from "./broker-error.js";
+import { canonicalJsonString } from "../shared-state-idempotency-gate-v1.js";
 import {
   DEFAULT_WORKER_HEARTBEAT_PERSIST_INTERVAL_MS,
   DEFAULT_WORKER_OFFLINE_AFTER_MS,
@@ -346,6 +347,7 @@ import {
   type BrokerStateListener,
   type BufferedTaskEvent,
   type InMemoryA2ABrokerOptions,
+  type TaskCreateIdempotencyDecisionV1,
   type TaskDiagnosticsOptions,
   type TaskUpdateListener,
 } from "./broker-contracts.js";
@@ -445,6 +447,12 @@ export class InMemoryA2ABroker {
   private wavePlanDagV2LastSkipReason?: string;
   // #1799 slice 1: optional injected attempt-record store; absent ⇒ off.
   private readonly taskAttemptRecordStore?: TaskAttemptStoreSurface;
+  // #1504 §4 Slice V: optional V1 task-create idempotency authority; absent
+  // (flag off) ⇒ the legacy same-id replay check is the whole story.
+  private readonly taskCreateIdempotencyAuthority?: (input: {
+    readonly taskId: string;
+    readonly canonicalRequest: string;
+  }) => TaskCreateIdempotencyDecisionV1;
   private taskAttemptRecordCounts = { emitted: 0, replayed: 0, conflicted: 0, skipped: 0 };
   private taskAttemptRecordLastSkipReason?: string;
   private taskAttemptReadCounts = {
@@ -508,6 +516,7 @@ export class InMemoryA2ABroker {
     this.brokerId = normalizeOwnershipString(options.brokerId);
     this.teamId = normalizeOwnershipString(options.teamId);
     this.taskAttemptRecordStore = options.taskAttemptRecordStore;
+    this.taskCreateIdempotencyAuthority = options.taskCreateIdempotencyAuthority;
     this.taskReadinessMode = normalizeTaskReadinessMode(options.taskReadinessMode);
     this.reviewLineageMode = options.reviewLineageMode ?? "off";
     if (this.reviewLineageMode !== "off" && this.reviewLineageMode !== "record") {
@@ -1842,7 +1851,45 @@ export class InMemoryA2ABroker {
     // Idempotent create: if a task with the requested id already exists, return it as-is.
       if (normalizedRequest.id) {
       const existing = this.getTask(normalizedRequest.id);
-      if (existing) {
+      if (this.taskCreateIdempotencyAuthority) {
+        // #1504 §4 Slice V: the V1 authority decides (§5.4 `executeIdempotent`
+        // on the `broker.task.create` authority) — REPLACING the legacy check,
+        // never layering over it (§5.4.1). The local mirror only routes; it
+        // is never a second decision. A conflict (same key, different
+        // payload) and an unavailable authority throw from the hook.
+        const decision = this.taskCreateIdempotencyAuthority({
+          taskId: normalizedRequest.id,
+          canonicalRequest: canonicalJsonString(normalizedRequest),
+        });
+        if (decision.outcome === "replayed" || existing) {
+          // A replayed decision without the local record means the authority
+          // holds an outcome the store cannot serve: fail closed, never
+          // fabricate (§5.4 partition/fail-closed).
+          if (!existing) {
+            throw new BrokerError(
+              "state_unavailable",
+              "task_create_idempotency_state_unavailable: the authority holds an outcome the task store cannot serve",
+            );
+          }
+          // #2010: an idempotent return used to be indistinguishable from a
+          // fresh create — no flag, no audit. A fleet dispatcher replaying a
+          // fixed task id (the #2007 skills-intake incident) counted each
+          // silent return as created=1 and archived one round's result N times.
+          // Record the hit so replays are observable broker-side.
+          this.commitMutation(() => {
+            this.appendAuditEvent({
+              actorId: normalizedRequest.requester.id,
+              action: "task.create_idempotent_hit",
+              targetType: "task",
+              targetId: existing.id,
+              note: `idempotent create: requested id ${existing.id} returned the existing task in status ${existing.status}`,
+            });
+            this.persistState();
+          });
+          return existing;
+        }
+        // Executed on a fresh key: fall through to the guarded create.
+      } else if (existing) {
         // #2010: an idempotent return used to be indistinguishable from a
         // fresh create — no flag, no audit. A fleet dispatcher replaying a
         // fixed task id (the #2007 skills-intake incident) counted each

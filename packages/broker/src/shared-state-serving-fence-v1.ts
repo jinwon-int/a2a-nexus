@@ -31,6 +31,15 @@
  * Every failure collapses to `unavailable` — a broker that cannot reach the
  * lease authority must not grant, renew, requeue, or complete a claim (§5.3
  * partition behavior).
+ *
+ * Slice V (#1504 §4 primitive integration, idempotency fourth): one fail-
+ * closed passthrough — `executeTaskCreateIdempotent` — routes the §5.4.1
+ * task-create authority (`broker.task.create`, `task-create-effects.v1`)
+ * through the same adapter when the default-off
+ * `BROKER_SHARED_STATE_V1_IDEMPOTENCY` flag is `on`. Same key with a changed
+ * fingerprint is a `conflict`, never an absorbed replay; every failure
+ * collapses to `unavailable` — the protected mutation must not run when the
+ * authoritative record cannot be read or committed (§5.4 partition behavior).
  */
 
 import { randomUUID } from "node:crypto";
@@ -69,6 +78,10 @@ export const SHARED_STATE_SERVING_FENCE_V1 = Object.freeze({
   rateNamespace: "security.rate.broker-edge",
   /** Slice U: fixed keyspace namespace for the task-claim lease authority. */
   leaseNamespace: "broker.lease.task-claim",
+  /** Slice V: the §5.4.1 task-create idempotency namespace and its pinned policy. */
+  idempotencyNamespace: "broker.task.create",
+  idempotencyRetentionPolicyVersion: "task-create-effects.v1",
+  idempotencyEffectKind: "domain-mutation-with-outbox",
 } as const);
 
 /** Closed mutation kinds for `fenceTaskMutation` (Slice U, §5.3 vocabulary). */
@@ -133,6 +146,19 @@ export type SharedStateFenceLeaseAuthorityOutcomeV1 =
   | { readonly outcome: "applied"; readonly resourceVersion: string }
   | { readonly outcome: "released"; readonly resourceVersion: string }
   | { readonly outcome: "lost"; readonly reasonCode: string }
+  | { readonly outcome: "unavailable"; readonly reasonCode: string };
+
+/**
+ * Outcome of one fence-mediated `executeIdempotent` on the task-create
+ * authority (Slice V). Only committed adapter decisions yield `executed` or
+ * `replayed`; the same key presented with a different payload fingerprint is
+ * `conflict` (§5.4: the one thing idempotency must never absorb); everything
+ * else is `unavailable`.
+ */
+export type SharedStateFenceIdempotencyOutcomeV1 =
+  | { readonly outcome: "executed"; readonly outcomeDigest: string }
+  | { readonly outcome: "replayed"; readonly outcomeDigest: string }
+  | { readonly outcome: "conflict" }
   | { readonly outcome: "unavailable"; readonly reasonCode: string };
 
 /**
@@ -280,6 +306,20 @@ export interface SharedStateServingFenceV1 {
     },
     nowMs: number,
   ): SharedStateFenceLeaseAuthorityOutcomeV1;
+  /**
+   * Slice V fail-closed passthrough of the V1 `executeIdempotent` primitive
+   * on the task-create authority. `taskId` is the caller-selected id (the
+   * idempotency key); `requestSha256Hex` is the hex sha-256 of the canonical
+   * normalized request (the payload fingerprint and the outbox payload
+   * digest body). Deterministic, per §5.4.1's pinned retention version.
+   */
+  executeTaskCreateIdempotent(
+    input: {
+      readonly taskId: string;
+      readonly requestSha256Hex: string;
+    },
+    nowMs: number,
+  ): SharedStateFenceIdempotencyOutcomeV1;
 }
 
 function fail(
@@ -549,6 +589,45 @@ function fenceLeaseAuthorityOutcomeFromResult(
   });
 }
 
+/**
+ * Slice V idempotency derivations: the idempotency key, the payload
+ * fingerprint, the domain-mutation digest, and the deterministic outbox link
+ * digests — all under the §5.4.1 task-create namespace and its pinned
+ * retention policy.
+ */
+function idempotencyKeyDigest(taskId: string) {
+  return digestSharedStateKeyV1({
+    keyspaceVersion: V.versions.keyspace,
+    domain: "broker.idempotency.key",
+    namespace: SHARED_STATE_SERVING_FENCE_V1.idempotencyNamespace,
+    components: [
+      { field: "operationName", type: "utf8", value: "task.create" },
+      { field: "clientKey", type: "utf8", value: taskId },
+    ],
+  });
+}
+
+function idempotencyFingerprintDigest(requestSha256Hex: string) {
+  return digestSharedStateKeyV1({
+    keyspaceVersion: V.versions.keyspace,
+    domain: "broker.idempotency.payload-fingerprint",
+    namespace: SHARED_STATE_SERVING_FENCE_V1.idempotencyNamespace,
+    components: [{ field: "payload", type: "bytes", value: requestSha256Hex }],
+  });
+}
+
+function idempotencyDomainMutationDigest(requestSha256Hex: string) {
+  return digestSharedStateKeyV1({
+    keyspaceVersion: V.versions.keyspace,
+    domain: "broker.idempotency.domain-mutation",
+    namespace: SHARED_STATE_SERVING_FENCE_V1.idempotencyNamespace,
+    components: [
+      { field: "mutationType", type: "utf8", value: "task.create" },
+      { field: "mutationBody", type: "bytes", value: requestSha256Hex },
+    ],
+  });
+}
+
 function isFenceErrorCode(
   code: string,
 ): code is SharedStateServingFenceErrorCodeV1 {
@@ -556,6 +635,45 @@ function isFenceErrorCode(
     if (item === code) return true;
   }
   return false;
+}
+
+/**
+ * Maps a committed/rejected/unavailable transaction envelope onto the
+ * fail-closed fence idempotency outcome. Only the committed `executed` /
+ * `replayed` decisions carry the original outcome digest; the
+ * `idempotency_conflict` rejection is a conflict; everything else is
+ * `unavailable`.
+ */
+function fenceIdempotencyOutcomeFromResult(
+  result: SharedStateTransactionResultV1,
+): SharedStateFenceIdempotencyOutcomeV1 {
+  if (result.status === V.transactionStatuses[0]) {
+    const value = (result as {
+      result?: { decision?: unknown; outcomeDigest?: unknown };
+    }).result;
+    if (
+      (value?.decision === V.operationDecisions.executeIdempotent[0]
+        || value?.decision === V.operationDecisions.executeIdempotent[1])
+      && typeof value.outcomeDigest === "string"
+    ) {
+      return Object.freeze({
+        outcome: value.decision as "executed" | "replayed",
+        outcomeDigest: value.outcomeDigest,
+      });
+    }
+    return Object.freeze({ outcome: "unavailable", reasonCode: "store_failure" });
+  }
+  if (
+    (result as { reasonCode?: unknown }).reasonCode
+      === V.operationRejectionReasonCodes.executeIdempotent[0]
+  ) {
+    return Object.freeze({ outcome: "conflict" });
+  }
+  const reasonCode = (result as { reasonCode?: unknown }).reasonCode;
+  return Object.freeze({
+    outcome: "unavailable",
+    reasonCode: typeof reasonCode === "string" ? reasonCode : "store_failure",
+  });
 }
 
 export function isolatedSharedStateServingFencePathV1(): string {
@@ -920,6 +1038,100 @@ export function openSharedStateServingFenceV1(input: {
             nowMs,
             { kind: "release", releaseKind: input.releaseKind },
           ));
+        } catch {
+          return Object.freeze({ outcome: "unavailable", reasonCode: "store_failure" });
+        }
+      },
+      executeTaskCreateIdempotent(
+        input: {
+          readonly taskId: string;
+          readonly requestSha256Hex: string;
+        },
+        nowMs: number,
+      ): SharedStateFenceIdempotencyOutcomeV1 {
+        if (released) {
+          return Object.freeze({ outcome: "unavailable", reasonCode: "adapter_unavailable" });
+        }
+        try {
+          const keyDigest = idempotencyKeyDigest(input.taskId);
+          if (!keyDigest.ok) {
+            return Object.freeze({ outcome: "unavailable", reasonCode: keyDigest.error.code });
+          }
+          const fingerprint = idempotencyFingerprintDigest(input.requestSha256Hex);
+          if (!fingerprint.ok) {
+            return Object.freeze({ outcome: "unavailable", reasonCode: fingerprint.error.code });
+          }
+          const domainMutation = idempotencyDomainMutationDigest(input.requestSha256Hex);
+          if (!domainMutation.ok) {
+            return Object.freeze({ outcome: "unavailable", reasonCode: domainMutation.error.code });
+          }
+          const streamKey = digestSharedStateKeyV1({
+            keyspaceVersion: V.versions.keyspace,
+            domain: "broker.outbox.stream-key",
+            namespace: SHARED_STATE_SERVING_FENCE_V1.idempotencyNamespace,
+            components: [
+              { field: "streamType", type: "utf8", value: "task" },
+              { field: "streamId", type: "utf8", value: input.taskId },
+            ],
+          });
+          if (!streamKey.ok) {
+            return Object.freeze({ outcome: "unavailable", reasonCode: streamKey.error.code });
+          }
+          const eventKey = digestSharedStateKeyV1({
+            keyspaceVersion: V.versions.keyspace,
+            domain: "broker.outbox.event-key",
+            namespace: SHARED_STATE_SERVING_FENCE_V1.idempotencyNamespace,
+            components: [
+              { field: "eventId", type: "utf8", value: `created:${input.taskId}` },
+            ],
+          });
+          if (!eventKey.ok) {
+            return Object.freeze({ outcome: "unavailable", reasonCode: eventKey.error.code });
+          }
+          const payloadDigest = digestSharedStateKeyV1({
+            keyspaceVersion: V.versions.keyspace,
+            domain: "broker.outbox.payload",
+            namespace: SHARED_STATE_SERVING_FENCE_V1.idempotencyNamespace,
+            components: [{ field: "payload", type: "bytes", value: input.requestSha256Hex }],
+          });
+          if (!payloadDigest.ok) {
+            return Object.freeze({ outcome: "unavailable", reasonCode: payloadDigest.error.code });
+          }
+          const command = parseSharedStateTransactionCommandV1({
+            kind: V.kinds.transactionCommand,
+            contractVersion: V.versions.contract,
+            transactionVersion: V.versions.transaction,
+            operationVersion: V.versions.operation,
+            operation: V.operations[6],
+            input: {
+              namespace: SHARED_STATE_SERVING_FENCE_V1.idempotencyNamespace,
+              keyDigest: keyDigest.value.digest,
+              payloadFingerprint: fingerprint.value.digest,
+              retentionPolicyVersion:
+                SHARED_STATE_SERVING_FENCE_V1.idempotencyRetentionPolicyVersion,
+              effect: {
+                kind: SHARED_STATE_SERVING_FENCE_V1.idempotencyEffectKind,
+                domainMutationDigest: domainMutation.value.digest,
+                outbox: {
+                  streamKeyDigest: streamKey.value.digest,
+                  eventKeyDigest: eventKey.value.digest,
+                  payloadDigest: payloadDigest.value.digest,
+                  retentionPolicyVersion:
+                    SHARED_STATE_SERVING_FENCE_V1.idempotencyRetentionPolicyVersion,
+                },
+              },
+            },
+          });
+          if (!command.ok) {
+            return Object.freeze({ outcome: "unavailable", reasonCode: command.error.code });
+          }
+          const result = adapter.transact(command.value, {
+            observedAtUnixMs: String(nowMs),
+          });
+          if (!result.ok) {
+            return Object.freeze({ outcome: "unavailable", reasonCode: result.error.code });
+          }
+          return Object.freeze(fenceIdempotencyOutcomeFromResult(result.value));
         } catch {
           return Object.freeze({ outcome: "unavailable", reasonCode: "store_failure" });
         }

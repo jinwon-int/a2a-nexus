@@ -3595,3 +3595,51 @@ fed from the real authority in one coherent change. Box `Integrate primitives
 one at a time behind default-off flags` stays unchecked until all six
 primitives are integrated; the compatibility/regression/performance run
 follows it. 488/489 remain as decided by W11.
+
+### Slice V — idempotency primitive on the task-create authority (§4, fourth integration)
+
+Slice V integrates the idempotency primitive for the first of the six §5.4.1
+authorities: task create by caller-selected task ID (`broker.task.create`,
+retention `task-create-effects.v1`). One authority per slice keeps §5.4.1's
+"never layer a second independent decision over the current one" honest per
+authority — the other five (wake, terminal, live-approval, review-lineage,
+cross-broker brief) remain on their current durable-but-partial sources and
+are later slices. A new closed flag parser,
+`resolveSharedStateIdempotencyPrimitiveModeV1` in
+`shared-state-idempotency-primitive-mode-v1.ts`, reads
+`BROKER_SHARED_STATE_V1_IDEMPOTENCY` (unset/empty `off`, `on`, anything else
+fails startup loudly). With the flag off (default), the legacy same-id replay
+check is the whole story, unchanged.
+
+With the flag `on`, `createTask`'s replay check is decided by the V1
+`executeIdempotent` through one new fail-closed fence passthrough
+(`executeTaskCreateIdempotent`) on the same single-writer adapter. The local
+mirror `getTask` only routes — it is never a second decision. The key is
+(`task.create`, taskId) under `broker.idempotency.key`; the payload
+fingerprint is the sha-256 of the canonical (recursively key-sorted) normalized
+request under `broker.idempotency.payload-fingerprint`; the domain-mutation
+digest and the deterministic outbox link digests (stream = (task, taskId),
+event = `created:<taskId>`, payload = the fingerprint body) complete the
+§5.4.1 effect declaration with the catalog's exact retention version and
+`domain-mutation-with-outbox`. Same key + same fingerprint replays the
+original outcome (the existing task, with the #2010 audit hit); same key +
+different fingerprint fails `idempotency_conflict` — the fingerprint upgrade
+§5.4.1 explicitly names as missing today — mapped to 409. The core stays
+V1-agnostic behind a single synchronous injected function; the V1 transact is
+synchronous, so `createTask`'s signature is unchanged.
+
+Failure behavior follows §5.4 partition/fail-closed: an unavailable authority
+fails the create with retryable `state_unavailable` — the protected mutation
+must not run when the authoritative record cannot be read or committed — and
+there is no local dedupe fallback. A replayed decision whose local record is
+missing (the reserved-key-without-task two-store window after a broker-level
+persist failure) fails closed with 503 rather than fabricating continuity.
+Fresh (non-replay) creates run all fallible pre-checks before the reserve, so
+ordinary validation failures never burn a key; the first flag-on replay of a
+pre-flag task naturally backfills its fingerprint. Deliberately not in this
+slice: the other five authorities, `/health` idempotency aggregate counters
+(still `not-applicable` until fed from the real authority coherently), and
+any catalog status promotion. Box `Integrate primitives one at a time behind
+default-off flags` stays unchecked until all six primitives are integrated;
+the compatibility/regression/performance run follows it. 488/489 remain as
+decided by W11.
