@@ -5,6 +5,7 @@ import type { TaskRecord, TaskStatus } from "./types.js";
 import type { TaskStatusEvent } from "./task-events.js";
 import type { CrossBrokerTerminalBriefProjection } from "./cross-broker-terminal-brief.js";
 import { RoundProgressTracker, applyRoundProgressMetadata } from "./round-progress-tracker.js";
+import { canonicalJsonString } from "../shared-state-idempotency-gate-v1.js";
 
 const TERMINAL_TASK_STATUSES = new Set<TaskStatus>(["succeeded", "failed", "canceled", "blocked"]);
 const TERMINAL_TASK_EVENT_KINDS = new Set<TaskStatusEvent["kind"]>(["succeeded", "failed", "canceled"]);
@@ -232,6 +233,19 @@ export interface TerminalTaskEventOutboxOptions {
    * numerators. Defaults to a private tracker when omitted.
    */
   roundProgress?: RoundProgressTracker;
+  /**
+   * #1504 §4 Slice W: the V1 append/ordering authority for local terminal
+   * events, injected only while the default-off `BROKER_SHARED_STATE_V1_OUTBOX`
+   * flag is `on`. Called BEFORE the legacy in-memory append with the stable
+   * event id and the canonical payload; the adapter allocates the per-stream
+   * sequence and dedupes retries (returning the original allocation). A throw
+   * propagates and fails the enclosing domain transaction (§5.5 partition:
+   * producers fail when append is unavailable). The class stays V1-agnostic.
+   */
+  appendAuthority?: (input: {
+    readonly eventId: string;
+    readonly payload: string;
+  }) => { readonly sequence: string };
 }
 
 /**
@@ -251,6 +265,10 @@ export class TerminalTaskEventOutbox {
   private seenOrderHead = 0;
   private readonly maxEvents: number;
   private readonly maxSeen: number;
+  private readonly appendAuthority?: (input: {
+    readonly eventId: string;
+    readonly payload: string;
+  }) => { readonly sequence: string };
 
   /**
    * Bounded tracker of unique terminal canonical child task IDs per run/round
@@ -266,6 +284,7 @@ export class TerminalTaskEventOutbox {
     this.terminalChildIds = options.roundProgress ?? new RoundProgressTracker();
     this.maxEvents = normalizePositiveInt(options.maxEvents, DEFAULT_TERMINAL_TASK_OUTBOX_RETENTION);
     this.maxSeen = this.maxEvents * 2;
+    this.appendAuthority = options.appendAuthority;
     this.restoreSnapshot(options.events ?? []);
   }
 
@@ -278,6 +297,17 @@ export class TerminalTaskEventOutbox {
     const id = formatTerminalTaskEventId(task.id, task.status, task.completedAt ?? task.updatedAt);
     const existing = this.eventsById.get(id);
     if (existing) return existing;
+
+    // #1504 §4 Slice W: the V1 adapter is the append/ordering authority for
+    // this event — it allocates the per-stream sequence and dedupes retries
+    // (returning the original allocation even after this in-memory tracker
+    // has evicted the id). A throw propagates: the enclosing commitMutation
+    // batch rolls back, so the domain transition fails whole (§5.5 partition:
+    // producers fail the transaction when append is unavailable).
+    if (this.appendAuthority) {
+      this.appendAuthority({ eventId: id, payload: canonicalJsonString(buildTerminalTaskPayload(task)) });
+    }
+
     if (this.seen.has(id)) return null;
 
     const payload = buildTerminalTaskPayload(task);

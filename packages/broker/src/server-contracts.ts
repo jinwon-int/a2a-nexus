@@ -149,6 +149,13 @@ export interface BrokerServerOptions extends BrokerRuntimeHotLimitOptions {
    * primitive via the serving fence. Default-off; env:
    * `BROKER_SHARED_STATE_V1_IDEMPOTENCY` (`off` | `on`).
    */
+  /**
+   * #1504 Slice W: route the task-terminal-notification append/ordering
+   * authority (§5.5 `broker.terminal-outbox`) through the V1 `appendOutbox`
+   * primitive via the serving fence. Default-off; env:
+   * `BROKER_SHARED_STATE_V1_OUTBOX` (`off` | `on`).
+   */
+  sharedStateOutboxV1?: boolean;
   sharedStateIdempotencyV1?: boolean;
   /**
    * D3a hook after the first `lost_fence` 503 is written. Production

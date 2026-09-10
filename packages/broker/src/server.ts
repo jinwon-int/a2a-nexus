@@ -45,6 +45,8 @@ import { resolveSharedStateReplayPrimitiveModeV1 } from "./shared-state-replay-p
 import { resolveSharedStateRatePrimitiveModeV1 } from "./shared-state-rate-primitive-mode-v1.js";
 import { resolveSharedStateLeasePrimitiveModeV1 } from "./shared-state-lease-primitive-mode-v1.js";
 import { resolveSharedStateIdempotencyPrimitiveModeV1 } from "./shared-state-idempotency-primitive-mode-v1.js";
+import { resolveSharedStateOutboxPrimitiveModeV1 } from "./shared-state-outbox-primitive-mode-v1.js";
+import { createHash } from "node:crypto";
 import {
   createTaskCreateIdempotencyAuthority,
 } from "./shared-state-idempotency-gate-v1.js";
@@ -477,6 +479,14 @@ export function createBrokerServer(options: BrokerServerOptions = {}): BrokerSer
       ? process.env.BROKER_SHARED_STATE_V1_IDEMPOTENCY
       : options.sharedStateIdempotencyV1 ? "on" : "off",
   ) === "on";
+  // #1504 §4 Slice W: outbox-primitive integration flag. Default-off keeps
+  // the in-memory outbox append path; `on` makes the V1 adapter the
+  // append/ordering authority for local terminal events (§5.5).
+  const sharedStateOutboxV1 = resolveSharedStateOutboxPrimitiveModeV1(
+    options.sharedStateOutboxV1 === undefined
+      ? process.env.BROKER_SHARED_STATE_V1_OUTBOX
+      : options.sharedStateOutboxV1 ? "on" : "off",
+  ) === "on";
   // NCLEX evaluation receipt surface (#1724): default-off; a configured
   // keyring file that is unreadable or malformed fails startup loudly.
   // Domain moved to packages/nclex-evaluation (#1601 first slice); this is
@@ -598,6 +608,34 @@ export function createBrokerServer(options: BrokerServerOptions = {}): BrokerSer
   const taskCreateIdempotencyAuthority = sharedStateIdempotencyV1
     ? createTaskCreateIdempotencyAuthority(() => servingFence)
     : undefined;
+  // The outbox append authority: the adapter allocates the per-stream
+  // sequence and dedupes retries; a failure throws state_unavailable so the
+  // enclosing domain transaction rolls back whole (§5.5 partition).
+  const terminalOutboxAppendAuthority = sharedStateOutboxV1
+    ? (input: { readonly eventId: string; readonly payload: string }) => {
+        const fence = servingFence;
+        if (!fence) {
+          throw new BrokerError(
+            "state_unavailable",
+            "terminal_outbox_state_unavailable: serving fence missing",
+          );
+        }
+        const payloadSha256Hex = createHash("sha256")
+          .update(input.payload, "utf8")
+          .digest("hex");
+        const outcome = fence.appendTerminalTaskEvent(
+          { brokerAuthorityId: brokerId, eventId: input.eventId, payloadSha256Hex },
+          Date.now(),
+        );
+        if (outcome.outcome === "unavailable") {
+          throw new BrokerError(
+            "state_unavailable",
+            `terminal_outbox_state_unavailable: ${outcome.reasonCode}`,
+          );
+        }
+        return { sequence: outcome.streamSequence };
+      }
+    : undefined;
 
   // Worker-thread persistence facade (opt-in).
   // Off by default; enable with BROKER_PERSISTENCE_QUEUE_WORKER_THREAD=1.
@@ -717,6 +755,7 @@ export function createBrokerServer(options: BrokerServerOptions = {}): BrokerSer
       workerHeartbeatPersistIntervalMs,
       brokerId,
       taskCreateIdempotencyAuthority,
+      terminalOutboxAppendAuthority,
       teamId,
       taskReadinessMode,
       reviewLineageMode,
