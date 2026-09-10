@@ -659,6 +659,21 @@ export interface TaskLaneAssignment {
   reasonCodes: TaskLaneReasonCode[];
 }
 
+/**
+ * #1504 §4 Slice U: V1 lease authority stamp carried on a claimed/running
+ * task record while the default-off `BROKER_SHARED_STATE_V1_LEASE` flag is
+ * `on`. The fields are the V1 adapter's claim response, re-presented verbatim
+ * on every authority command (renew, fenced mutation, release).
+ */
+export interface TaskLeaseStampV1 {
+  /** Monotonic fencing token; only rises on claim, never on renew/mutate/release. */
+  fencingToken: string;
+  /** Attempt key digest returned by the claim — the attempt this stamp authorizes. */
+  attemptKeyDigest: string;
+  /** Observed resource version; bumps on every accepted authority command. */
+  resourceVersion: string;
+}
+
 export interface TaskRecord extends A2ATaskRequest {
   intent: TaskKind;
   status: TaskStatus;
@@ -734,6 +749,17 @@ export interface TaskRecord extends A2ATaskRequest {
    * Reset on requeue/reassign. Each attempt represents a discrete execution window.
    */
   attemptId?: string;
+  /**
+   * #1504 §4 Slice U: last-known V1 lease authority state for this task,
+   * written by the lease-gated routes while the default-off
+   * `BROKER_SHARED_STATE_V1_LEASE` flag is `on`. The fields are the V1
+   * adapter's response of the most recent accepted lease command, re-presented
+   * on the next command (claim uses the resource version; renew/mutate/release
+   * present the full triple). It is version MEMORY, not by itself evidence of
+   * an active claim — the adapter's ladder (fence → attempt → owner → expiry
+   * → version) is what rejects stale re-presentation (§5.3).
+   */
+  leaseV1?: TaskLeaseStampV1;
   /** Durable Wake-on-Task decision state for accepted-task replay/idempotency. */
   wake?: TaskWakeState;
   /**

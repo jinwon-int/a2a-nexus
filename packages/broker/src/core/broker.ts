@@ -317,6 +317,7 @@ import type {
   TaskWakePlanRequest,
   TaskWakePlanResult,
   TaskWakeState,
+  TaskLeaseStampV1,
   ValidationResult,
   WorkerCapacitySummary,
   WorkerHeartbeatRequest,
@@ -2308,11 +2309,37 @@ export class InMemoryA2ABroker {
     return task;
   }
 
+  /**
+   * #1504 §4 Slice U: set or clear the V1 lease authority stamp on a task
+   * record. Used only by the lease-gated worker routes (default-off); the
+   * stamp is written through the normal single-writer mutation path so it is
+   * persisted with the same durability as the rest of the record. Clearing
+   * (`stamp === null`) ends the record's claim association alongside a
+   * terminal transition or a released requeue.
+   */
+  stampTaskLeaseV1(taskId: string, stamp: TaskLeaseStampV1 | null): TaskRecord {
+    const task = this.requireTask(taskId);
+    this.commitMutation(() => {
+      if (stamp === null) {
+        delete task.leaseV1;
+      } else {
+        task.leaseV1 = {
+          fencingToken: stamp.fencingToken,
+          attemptKeyDigest: stamp.attemptKeyDigest,
+          resourceVersion: stamp.resourceVersion,
+        };
+      }
+      task.updatedAt = isoNow();
+      this.setTaskRecord(task);
+      this.persistState();
+    });
+    return task;
+  }
+
   startTask(taskId: string, workerId: string): TaskRecord {
     const task = this.requireTask(taskId);
     this.assertTaskWorker(task, workerId, "start");
     assertTaskStatus(task.status, ["claimed"], "start");
-
     this.commitMutation(() => {
       task.status = "running";
       task.updatedAt = isoNow();

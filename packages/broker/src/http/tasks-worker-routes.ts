@@ -21,6 +21,7 @@ import type {
   TaskCompleteRequest,
   TaskEvidenceRequest,
   TaskFailRequest,
+  TaskLeaseStampV1,
   TaskRecord,
 } from "../core/types.js";
 import type { A2AHttpSignatureVerifiedWorker } from "../server.js";
@@ -32,6 +33,11 @@ import {
 import { awaitDurablePersistenceAck } from "./error-mapping.js";
 import { readJson } from "./body.js";
 import { sendJson } from "./response.js";
+import {
+  leaseGateAuthorityOrThrow,
+  leaseGateClaimOrThrow,
+  type SharedStateLeaseGateV1,
+} from "../shared-state-lease-gate-v1.js";
 
 export interface TasksWorkerRouteContext {
   method: string | undefined;
@@ -67,6 +73,14 @@ export interface TasksWorkerRouteContext {
    * switch). Defaults to "auto" when unset.
    */
   resultProvenanceCountersign?: "enforce" | "auto" | "off";
+  /**
+   * #1504 §4 Slice U: the V1 lease gate, present only when the default-off
+   * `BROKER_SHARED_STATE_V1_LEASE` flag is `on`. When present, the worker
+   * task-claim lifecycle is fenced through the V1 lease authority (§5.3).
+   */
+  leaseGate?: SharedStateLeaseGateV1;
+  /** Lease duration for claim grants and renewals (the stale-reaper window). */
+  leaseDurationMs?: () => number;
 }
 
 type TaskScopedContext = TasksWorkerRouteContext & { taskId: string };
@@ -166,7 +180,45 @@ function verifyAndCountersignResultProvenance(
 /** POST /tasks/:id/claim — a worker claims a queued task. */
 export async function handleClaimTaskRequest(ctx: TaskScopedContext): Promise<void> {
   const { workerId } = await authWorkerAction<TaskClaimRequest>(ctx, "task.claim");
-  const task = ctx.broker.claimTask(ctx.taskId, workerId);
+  let task: TaskRecord;
+  if (ctx.leaseGate) {
+    // #1504 §4 Slice U: under the lease flag the authority grant precedes and
+    // gates the legacy transition — an unavailable authority means no grant
+    // (§5.3 partition behavior), and a claim_conflict maps to the same 409
+    // class as a legacy claim race.
+    const stamp = leaseGateClaimOrThrow(
+      ctx.leaseGate.claim({
+        taskId: ctx.taskId,
+        workerId,
+        expectedResourceVersion: ctx.broker.getTask(ctx.taskId)?.leaseV1?.resourceVersion,
+        leaseDurationMs: ctx.leaseDurationMs!(),
+      }),
+      ctx.taskId,
+    );
+    // Persist the version memory immediately: the row is now ahead of any
+    // older stamp, and the record must catch up before anything else runs.
+    ctx.broker.stampTaskLeaseV1(ctx.taskId, stamp);
+    try {
+      task = ctx.broker.claimTask(ctx.taskId, workerId);
+    } catch (error) {
+      // The authority granted but the legacy transition refused (raced
+      // status): release so the resource is not blocked until expiry, and
+      // keep the version memory in step. A failed release self-heals at
+      // lease expiry (bounded).
+      try {
+        const released = leaseGateAuthorityOrThrow(
+          ctx.leaseGate.release({ taskId: ctx.taskId, workerId, stamp, releaseKind: "release" }),
+          ctx.taskId,
+        );
+        ctx.broker.stampTaskLeaseV1(ctx.taskId, released);
+      } catch {
+        // Nothing local to fall back to; the lease lapses in bounded time.
+      }
+      throw error;
+    }
+  } else {
+    task = ctx.broker.claimTask(ctx.taskId, workerId);
+  }
   await awaitDurablePersistenceAck(ctx.stateStore);
   sendTask(ctx, task);
 }
@@ -179,10 +231,45 @@ export async function handleStartTaskRequest(ctx: TaskScopedContext): Promise<vo
   sendTask(ctx, task);
 }
 
+/**
+ * #1504 §4 Slice U: the current V1 lease stamp for a gated lifecycle
+ * transition on an already-claimed task. A claimed/running task without a
+ * stamp has unknown authority — fail closed (§5.3: never invent continuity).
+ */
+function requireLeaseStamp(ctx: TaskScopedContext): TaskLeaseStampV1 {
+  const task = ctx.broker.getTask(ctx.taskId);
+  if (!task?.leaseV1) {
+    throw new BrokerError(
+      "state_unavailable",
+      "task_lease_state_unavailable: missing lease authority stamp",
+    );
+  }
+  return task.leaseV1;
+}
+
 /** POST /tasks/:id/heartbeat — a worker reports liveness on a running task. */
 export async function handleHeartbeatTaskRequest(ctx: TaskScopedContext): Promise<void> {
   const { body, workerId } = await authWorkerAction<TaskHeartbeatRequest>(ctx, "task.heartbeat");
-  const task = ctx.broker.heartbeatTask(ctx.taskId, workerId, normalizeLastProgressAt(body.lastProgressAt));
+  let task: TaskRecord;
+  if (ctx.leaseGate) {
+    // §5.3: a heartbeat is a lease renewal — the authority decides, never the
+    // local record. A lost renewal (expired/superseded) rejects the heartbeat.
+    const stamp = leaseGateAuthorityOrThrow(
+      ctx.leaseGate.renew({
+        taskId: ctx.taskId,
+        workerId,
+        stamp: requireLeaseStamp(ctx),
+        leaseDurationMs: ctx.leaseDurationMs!(),
+      }),
+      ctx.taskId,
+    );
+    // Version memory first: the row advanced; the record must catch up
+    // before the legacy transition (or any later command) runs.
+    ctx.broker.stampTaskLeaseV1(ctx.taskId, stamp);
+    task = ctx.broker.heartbeatTask(ctx.taskId, workerId, normalizeLastProgressAt(body.lastProgressAt));
+  } else {
+    task = ctx.broker.heartbeatTask(ctx.taskId, workerId, normalizeLastProgressAt(body.lastProgressAt));
+  }
   await awaitDurablePersistenceAck(ctx.stateStore);
   sendTask(ctx, task);
 }
@@ -209,20 +296,71 @@ interface TaskCheckpointBody extends WorkerScopedBody {
 /** POST /tasks/:id/checkpoint — a worker records a pause/awaiting-operator checkpoint. */
 export async function handleCheckpointTaskRequest(ctx: TaskScopedContext): Promise<void> {
   const { body, workerId } = await authWorkerAction<TaskCheckpointBody>(ctx, "task.checkpoint");
-  const task = ctx.broker.checkpointTask(ctx.taskId, workerId, {
-    state: body.state as "paused" | "awaiting_operator",
-    checkpointId: body.checkpointId,
-    reason: body.reason,
-    decisionType: body.decisionType,
-    artifactRefs: body.artifactRefs,
-  });
+  let task: TaskRecord;
+  if (ctx.leaseGate) {
+    // §5.3: a checkpoint is a fenced mutation that KEEPS the claim.
+    const stamp = leaseGateAuthorityOrThrow(
+      ctx.leaseGate.mutate({
+        taskId: ctx.taskId,
+        workerId,
+        stamp: requireLeaseStamp(ctx),
+        mutationKind: "checkpoint",
+        mutationBody: JSON.stringify(body),
+      }),
+      ctx.taskId,
+    );
+    ctx.broker.stampTaskLeaseV1(ctx.taskId, stamp);
+    task = ctx.broker.checkpointTask(ctx.taskId, workerId, {
+      state: body.state as "paused" | "awaiting_operator",
+      checkpointId: body.checkpointId,
+      reason: body.reason,
+      decisionType: body.decisionType,
+      artifactRefs: body.artifactRefs,
+    });
+  } else {
+    task = ctx.broker.checkpointTask(ctx.taskId, workerId, {
+      state: body.state as "paused" | "awaiting_operator",
+      checkpointId: body.checkpointId,
+      reason: body.reason,
+      decisionType: body.decisionType,
+      artifactRefs: body.artifactRefs,
+    });
+  }
   await awaitDurablePersistenceAck(ctx.stateStore);
   sendTask(ctx, task);
+}
+
+/**
+ * #1504 §4 Slice U: run the fenced terminal mutation through the lease
+ * authority BEFORE the legacy transition (§5.3: terminal mutations compare
+ * owner/attempt/fence) and persist the advanced version memory. The claim
+ * ends in the authority; the legacy status guard alone then stands between a
+ * fenced-out worker and a late local commit.
+ */
+function gateTerminalMutation(
+  ctx: TaskScopedContext,
+  workerId: string,
+  kind: "complete" | "fail",
+  body: unknown,
+): void {
+  if (!ctx.leaseGate) return;
+  const stamp = leaseGateAuthorityOrThrow(
+    ctx.leaseGate.mutate({
+      taskId: ctx.taskId,
+      workerId,
+      stamp: requireLeaseStamp(ctx),
+      mutationKind: kind,
+      mutationBody: JSON.stringify(body ?? {}),
+    }),
+    ctx.taskId,
+  );
+  ctx.broker.stampTaskLeaseV1(ctx.taskId, stamp);
 }
 
 /** POST /tasks/:id/complete — a worker reports successful completion. */
 export async function handleCompleteTaskRequest(ctx: TaskScopedContext): Promise<void> {
   const { body, workerId, verifiedWorker } = await authWorkerAction<TaskCompleteRequest>(ctx, "task.complete");
+  gateTerminalMutation(ctx, workerId, "complete", body.result ?? body);
   const result = verifyAndCountersignResultProvenance(ctx, body.result, verifiedWorker);
   const task = ctx.broker.completeTask(ctx.taskId, workerId, result);
   await awaitDurablePersistenceAck(ctx.stateStore);
@@ -234,6 +372,7 @@ export async function handlePostEvidenceRequest(ctx: TaskScopedContext): Promise
   const { body, workerId, verifiedWorker } = await authWorkerAction<TaskEvidenceRequest>(ctx, "task.evidence");
   const outcome = body.outcome ?? "done";
   if (outcome === "done" || outcome === "pr") {
+    gateTerminalMutation(ctx, workerId, "complete", body.result ?? body);
     const result = verifyAndCountersignResultProvenance(ctx, body.result, verifiedWorker);
     const task = ctx.broker.completeTask(ctx.taskId, workerId, result);
     await awaitDurablePersistenceAck(ctx.stateStore);
@@ -241,6 +380,7 @@ export async function handlePostEvidenceRequest(ctx: TaskScopedContext): Promise
     return;
   }
   if (outcome === "blocked" || outcome === "failed") {
+    gateTerminalMutation(ctx, workerId, "fail", body.error ?? body.result ?? body);
     const task = ctx.broker.failTask(ctx.taskId, workerId, body.error ?? {
       code: outcome,
       message: body.result?.summary ?? body.result?.note ?? `worker posted ${outcome} evidence`,
@@ -258,6 +398,7 @@ export async function handleFailTaskRequest(ctx: TaskScopedContext): Promise<voi
   // #1815 item 5: workers validate review evidence locally; when the verdict
   // gate failed they submit the held result so the broker preserves the
   // negative findings instead of discarding them.
+  gateTerminalMutation(ctx, workerId, "fail", body.error ?? body.negativeVerdictEvidence ?? body);
   const task = ctx.broker.failTask(ctx.taskId, workerId, body.error, {
     negativeVerdictResult: body.negativeVerdictEvidence,
   });

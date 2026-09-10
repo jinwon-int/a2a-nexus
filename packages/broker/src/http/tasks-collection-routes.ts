@@ -14,6 +14,10 @@ import {
   type RequesterIdentity,
 } from "../core/request-security.js";
 import type { CreateTaskRequest, TaskRecord } from "../core/types.js";
+import {
+  leaseGateAuthorityOrThrow,
+  type SharedStateLeaseGateV1,
+} from "../shared-state-lease-gate-v1.js";
 import type { A2AHttpSignatureVerifiedWorker } from "../server.js";
 import { assertCreateTaskRequestParties, optionalString } from "../request-parsers.js";
 import {
@@ -61,6 +65,15 @@ export interface TasksCollectionRouteContext {
    * degrades this request to a plain immediate poll instead of waiting.
    */
   taskLongPollGate?: TaskLongPollGate;
+  /**
+   * #1504 §4 Slice U: the V1 lease gate, present only when the default-off
+   * `BROKER_SHARED_STATE_V1_LEASE` flag is `on`. Gates the operator stale
+   * requeue: each requeued claim's V1 lease is released BEFORE the legacy
+   * requeue so a pre-expiry requeue cannot wedge the resource (§5.3).
+   */
+  leaseGate?: SharedStateLeaseGateV1;
+  /** Lease duration for claim grants and renewals (the stale-reaper window). */
+  leaseDurationMs?: () => number;
 }
 
 /** Upper bound for a `waitMs` task long-poll (#2082 B). */
@@ -301,6 +314,30 @@ export async function handleRequeueStaleTasksRequest(ctx: TasksCollectionRouteCo
     assertRequesterHasRole(ctx.requesterIdentity, ["hub", "operator"], "task.requeue_stale");
   }
   const olderThanSec = numberQueryParam(ctx.url, "older_than_seconds") ?? 300;
+  if (ctx.leaseGate) {
+    // #1504 §4 Slice U: §5.3 — a broker that cannot reach the lease authority
+    // must not requeue a claim. Release each stale candidate's V1 lease
+    // BEFORE the legacy requeue; any unavailable authority aborts the whole
+    // request with retryable 503. Candidates without a stamp (unknown
+    // authority, e.g. claimed before the flag was enabled) are skipped —
+    // their claims self-expire within the lease window, and the legacy
+    // status guards hold meanwhile.
+    for (const candidate of ctx.broker.listStaleTasks({ staleAfterMs: olderThanSec * 1000 })) {
+      if (!candidate.leaseV1) continue;
+      const stamp = leaseGateAuthorityOrThrow(
+        ctx.leaseGate.release({
+          taskId: candidate.id,
+          workerId: candidate.claimedBy ?? "",
+          stamp: candidate.leaseV1,
+          releaseKind: "requeue",
+        }),
+        candidate.id,
+      );
+      // Version memory: the release advanced the row; record it so the next
+      // claim presents the right version.
+      ctx.broker.stampTaskLeaseV1(candidate.id, stamp);
+    }
+  }
   const { requeued, deadLettered } = ctx.broker.requeueStaleTasksDetailed(olderThanSec * 1000, {
     workerOfflineAfterMs: ctx.workerOfflineAfterSec * 1000,
   });
