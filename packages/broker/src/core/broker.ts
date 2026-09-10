@@ -554,6 +554,7 @@ export class InMemoryA2ABroker {
     this.terminalTaskEventOutbox = new TerminalTaskEventOutbox({
       maxEvents: options.maxTerminalTaskOutboxEvents,
       roundProgress,
+      appendAuthority: options.terminalOutboxAppendAuthority,
     });
     this.crossBrokerTerminalBriefs = new CrossBrokerTerminalBriefProjectionStore([], {
       brokerId: this.brokerId,

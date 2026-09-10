@@ -40,6 +40,16 @@
  * fingerprint is a `conflict`, never an absorbed replay; every failure
  * collapses to `unavailable` — the protected mutation must not run when the
  * authoritative record cannot be read or committed (§5.4 partition behavior).
+ *
+ * Slice W (#1504 §4 primitive integration, outbox fifth): one fail-closed
+ * passthrough — `appendTerminalTaskEvent` — routes the task-terminal-
+ * notification append/ordering authority (§5.5, namespace
+ * `broker.terminal-outbox`) through the same adapter when the default-off
+ * `BROKER_SHARED_STATE_V1_OUTBOX` flag is `on`. The adapter allocates the
+ * per-stream sequence (callers never select one); a retry with the same
+ * idempotency key and payload replays the ORIGINAL sequence; every failure
+ * collapses to `unavailable` — the producing domain transaction must fail
+ * when the append authority is unreachable (§5.5 partition behavior).
  */
 
 import { randomUUID } from "node:crypto";
@@ -82,6 +92,14 @@ export const SHARED_STATE_SERVING_FENCE_V1 = Object.freeze({
   idempotencyNamespace: "broker.task.create",
   idempotencyRetentionPolicyVersion: "task-create-effects.v1",
   idempotencyEffectKind: "domain-mutation-with-outbox",
+  /** Slice W: the §5.5 task-terminal outbox bindings, verbatim from the catalog. */
+  outboxNamespace: "broker.terminal-outbox",
+  outboxStreamType: "broker-terminal-outbox",
+  outboxEventPurpose: "task-terminal-notification" as const,
+  outboxOrderingScope: "total-within-exact-stream-key" as const,
+  outboxRetentionPolicyVersion: "task-terminal-outbox-retention.v1",
+  outboxReceiptPolicyVersion: "terminal-notification-receipt.v1",
+  outboxAcknowledgmentPolicyVersion: "terminal-notification-ack.v1",
 } as const);
 
 /** Closed mutation kinds for `fenceTaskMutation` (Slice U, §5.3 vocabulary). */
@@ -159,6 +177,18 @@ export type SharedStateFenceIdempotencyOutcomeV1 =
   | { readonly outcome: "executed"; readonly outcomeDigest: string }
   | { readonly outcome: "replayed"; readonly outcomeDigest: string }
   | { readonly outcome: "conflict" }
+  | { readonly outcome: "unavailable"; readonly reasonCode: string };
+
+/**
+ * Outcome of one fence-mediated `appendOutbox` on the task-terminal-
+ * notification stream (Slice W). Only committed adapter decisions yield
+ * `appended`/`replayed`; the stream sequence is adapter-allocated and a
+ * replay always returns the ORIGINAL one (§5.5: a retry never allocates
+ * again); everything else is `unavailable`.
+ */
+export type SharedStateFenceOutboxAppendOutcomeV1 =
+  | { readonly outcome: "appended"; readonly streamSequence: string }
+  | { readonly outcome: "replayed"; readonly streamSequence: string }
   | { readonly outcome: "unavailable"; readonly reasonCode: string };
 
 /**
@@ -320,6 +350,23 @@ export interface SharedStateServingFenceV1 {
     },
     nowMs: number,
   ): SharedStateFenceIdempotencyOutcomeV1;
+  /**
+   * Slice W fail-closed passthrough of the V1 `appendOutbox` primitive on
+   * the task-terminal-notification stream. `brokerAuthorityId` is the
+   * broker's stream id; `eventId` is the stable `task-id-status-completed-at`
+   * event id (both the event key and the idempotency client key);
+   * `payloadSha256Hex` is the hex sha-256 of the canonical event payload.
+   * The adapter allocates the per-stream sequence; a retry returns the
+   * original one.
+   */
+  appendTerminalTaskEvent(
+    input: {
+      readonly brokerAuthorityId: string;
+      readonly eventId: string;
+      readonly payloadSha256Hex: string;
+    },
+    nowMs: number,
+  ): SharedStateFenceOutboxAppendOutcomeV1;
 }
 
 function fail(
@@ -635,6 +682,39 @@ function isFenceErrorCode(
     if (item === code) return true;
   }
   return false;
+}
+
+/**
+ * Maps a committed/rejected/unavailable transaction envelope onto the
+ * fail-closed fence outbox append outcome. Only the committed `appended` /
+ * `replayed` decisions carry the adapter-allocated stream sequence; every
+ * rejection or failure is `unavailable` (the producing domain transaction
+ * must fail — §5.5 partition behavior).
+ */
+function fenceOutboxAppendOutcomeFromResult(
+  result: SharedStateTransactionResultV1,
+): SharedStateFenceOutboxAppendOutcomeV1 {
+  if (result.status === V.transactionStatuses[0]) {
+    const value = (result as {
+      result?: { decision?: unknown; streamSequence?: unknown };
+    }).result;
+    if (
+      (value?.decision === V.operationDecisions.appendOutbox[0]
+        || value?.decision === V.operationDecisions.appendOutbox[1])
+      && typeof value.streamSequence === "string"
+    ) {
+      return Object.freeze({
+        outcome: value.decision as "appended" | "replayed",
+        streamSequence: value.streamSequence,
+      });
+    }
+    return Object.freeze({ outcome: "unavailable", reasonCode: "store_failure" });
+  }
+  const reasonCode = (result as { reasonCode?: unknown }).reasonCode;
+  return Object.freeze({
+    outcome: "unavailable",
+    reasonCode: typeof reasonCode === "string" ? reasonCode : "store_failure",
+  });
 }
 
 /**
@@ -1132,6 +1212,103 @@ export function openSharedStateServingFenceV1(input: {
             return Object.freeze({ outcome: "unavailable", reasonCode: result.error.code });
           }
           return Object.freeze(fenceIdempotencyOutcomeFromResult(result.value));
+        } catch {
+          return Object.freeze({ outcome: "unavailable", reasonCode: "store_failure" });
+        }
+      },
+      appendTerminalTaskEvent(
+        input: {
+          readonly brokerAuthorityId: string;
+          readonly eventId: string;
+          readonly payloadSha256Hex: string;
+        },
+        nowMs: number,
+      ): SharedStateFenceOutboxAppendOutcomeV1 {
+        if (released) {
+          return Object.freeze({ outcome: "unavailable", reasonCode: "adapter_unavailable" });
+        }
+        try {
+          const streamKeyDigest = digestSharedStateKeyV1({
+            keyspaceVersion: V.versions.keyspace,
+            domain: "broker.outbox.stream-key",
+            namespace: SHARED_STATE_SERVING_FENCE_V1.outboxNamespace,
+            components: [
+              { field: "streamType", type: "utf8", value: SHARED_STATE_SERVING_FENCE_V1.outboxStreamType },
+              { field: "streamId", type: "utf8", value: input.brokerAuthorityId },
+            ],
+          });
+          if (!streamKeyDigest.ok) {
+            return Object.freeze({ outcome: "unavailable", reasonCode: streamKeyDigest.error.code });
+          }
+          const idempotencyKeyDigest = digestSharedStateKeyV1({
+            keyspaceVersion: V.versions.keyspace,
+            domain: "broker.outbox.idempotency-key",
+            namespace: SHARED_STATE_SERVING_FENCE_V1.outboxNamespace,
+            components: [
+              { field: "producerId", type: "utf8", value: SHARED_STATE_SERVING_FENCE_V1.outboxStreamType },
+              { field: "clientKey", type: "utf8", value: input.eventId },
+            ],
+          });
+          if (!idempotencyKeyDigest.ok) {
+            return Object.freeze({ outcome: "unavailable", reasonCode: idempotencyKeyDigest.error.code });
+          }
+          const eventKeyDigest = digestSharedStateKeyV1({
+            keyspaceVersion: V.versions.keyspace,
+            domain: "broker.outbox.event-key",
+            namespace: SHARED_STATE_SERVING_FENCE_V1.outboxNamespace,
+            components: [{ field: "eventId", type: "utf8", value: input.eventId }],
+          });
+          if (!eventKeyDigest.ok) {
+            return Object.freeze({ outcome: "unavailable", reasonCode: eventKeyDigest.error.code });
+          }
+          const payloadDigest = digestSharedStateKeyV1({
+            keyspaceVersion: V.versions.keyspace,
+            domain: "broker.outbox.payload",
+            namespace: SHARED_STATE_SERVING_FENCE_V1.outboxNamespace,
+            components: [{ field: "payload", type: "bytes", value: input.payloadSha256Hex }],
+          });
+          if (!payloadDigest.ok) {
+            return Object.freeze({ outcome: "unavailable", reasonCode: payloadDigest.error.code });
+          }
+          const command = parseSharedStateTransactionCommandV1({
+            kind: V.kinds.transactionCommand,
+            contractVersion: V.versions.contract,
+            transactionVersion: V.versions.transaction,
+            operationVersion: V.versions.operation,
+            operation: V.operations[7],
+            input: {
+              namespace: SHARED_STATE_SERVING_FENCE_V1.outboxNamespace,
+              eventPurpose: SHARED_STATE_SERVING_FENCE_V1.outboxEventPurpose,
+              streamKey: {
+                keyspaceVersion: V.versions.keyspace,
+                components: [
+                  { field: "streamType", type: "utf8", value: SHARED_STATE_SERVING_FENCE_V1.outboxStreamType },
+                  { field: "streamId", type: "utf8", value: input.brokerAuthorityId },
+                ],
+              },
+              streamKeyDigest: streamKeyDigest.value.digest,
+              orderingScope: SHARED_STATE_SERVING_FENCE_V1.outboxOrderingScope,
+              idempotencyKeyDigest: idempotencyKeyDigest.value.digest,
+              eventKeyDigest: eventKeyDigest.value.digest,
+              payloadDigest: payloadDigest.value.digest,
+              retentionPolicyVersion:
+                SHARED_STATE_SERVING_FENCE_V1.outboxRetentionPolicyVersion,
+              receiptPolicyVersion:
+                SHARED_STATE_SERVING_FENCE_V1.outboxReceiptPolicyVersion,
+              acknowledgmentPolicyVersion:
+                SHARED_STATE_SERVING_FENCE_V1.outboxAcknowledgmentPolicyVersion,
+            },
+          });
+          if (!command.ok) {
+            return Object.freeze({ outcome: "unavailable", reasonCode: command.error.code });
+          }
+          const result = adapter.transact(command.value, {
+            observedAtUnixMs: String(nowMs),
+          });
+          if (!result.ok) {
+            return Object.freeze({ outcome: "unavailable", reasonCode: result.error.code });
+          }
+          return Object.freeze(fenceOutboxAppendOutcomeFromResult(result.value));
         } catch {
           return Object.freeze({ outcome: "unavailable", reasonCode: "store_failure" });
         }

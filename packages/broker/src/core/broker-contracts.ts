@@ -71,6 +71,18 @@ export interface InMemoryA2ABrokerOptions {
    * stays V1-agnostic: it passes the normalized request's canonical JSON and
    * follows the returned decision.
    */
+  /**
+   * #1504 §4 Slice W: the V1 outbox append/ordering authority hook, injected
+   * only while the default-off `BROKER_SHARED_STATE_V1_OUTBOX` flag is `on`.
+   * When present, the terminal task event outbox presents each local terminal
+   * event to the V1 `appendOutbox` authority before its legacy in-memory
+   * append; a throw fails the enclosing domain transaction (§5.5 partition).
+   * The core stays V1-agnostic.
+   */
+  terminalOutboxAppendAuthority?: (input: {
+    readonly eventId: string;
+    readonly payload: string;
+  }) => { readonly sequence: string };
   taskCreateIdempotencyAuthority?: (input: {
     readonly taskId: string;
     readonly canonicalRequest: string;

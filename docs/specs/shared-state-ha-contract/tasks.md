@@ -3643,3 +3643,44 @@ any catalog status promotion. Box `Integrate primitives one at a time behind
 default-off flags` stays unchecked until all six primitives are integrated;
 the compatibility/regression/performance run follows it. 488/489 remain as
 decided by W11.
+
+### Slice W — outbox primitive on the task-terminal-notification stream (§4, fifth integration)
+
+Slice W integrates the outbox primitive's append/ordering authority for the
+primary local purpose (`task-terminal-notification`) of §5.5.1's single
+authority. A new closed flag parser, `resolveSharedStateOutboxPrimitiveModeV1`
+in `shared-state-outbox-primitive-mode-v1.ts`, reads
+`BROKER_SHARED_STATE_V1_OUTBOX` (unset/empty `off`, `on`, anything else fails
+startup loudly). With the flag off (default), the in-memory outbox append path
+is the whole story, unchanged.
+
+With the flag `on`, `TerminalTaskEventOutbox.enqueue` presents each local
+terminal event — the stable `task-id-status-completed-at` id and the sha-256
+of its canonical payload — to the V1 `appendOutbox` through one new fail-closed
+fence passthrough (`appendTerminalTaskEvent`) on the same single-writer
+adapter, BEFORE the legacy in-memory append. The catalog's exact §5.5.1
+bindings are used verbatim: namespace `broker.terminal-outbox`, stream =
+(`broker-terminal-outbox`, brokerId), ordering scope
+`total-within-exact-stream-key`, sequence authority
+`adapter-allocated-per-exact-stream-key`, caller sequence policy forbidden,
+and the pinned retention/receipt/ack policy versions; the idempotency key is
+(producer, eventId). The adapter allocates the per-stream sequence; a retry
+with the same key and payload replays the ORIGINAL allocation — including
+after the legacy bounded `seen` tracker has evicted the id, which §5.5.1
+itself flags as the current authority's retention gap. A throw from the
+authority propagates through the audit hook into the enclosing
+`commitMutation` batch, rolling the domain transition back whole: §5.5
+partition — producers fail the domain transaction when append is unavailable,
+and the worker's completion retry resolves via the idempotent replay property.
+The core and outbox class stay V1-agnostic behind one injected synchronous
+function; legacy in-memory rows remain the consumer read surface while the
+adapter becomes the ordering/dedupe authority.
+
+Deliberately not in this slice: `updateOutboxReceipt`/`acknowledgeOutbox`
+(the receipt/ACK CAS on operator-facing rows stays current-authority;
+provider-sent/accepted is still not ACK), the two cross-broker purposes,
+retention/prune of acknowledged rows, and `/health` outbox aggregates (still
+`not-applicable` until fed from the real authority coherently). Box
+`Integrate primitives one at a time behind default-off flags` stays unchecked
+until all six primitives are integrated; the compatibility/regression/
+performance run follows it. 488/489 remain as decided by W11.
