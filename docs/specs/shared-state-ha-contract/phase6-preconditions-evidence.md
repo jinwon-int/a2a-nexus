@@ -1,14 +1,15 @@
 # Phase 6 preconditions evidence — live shadow (§5, #1504)
 
-Captured 2026-09-10 ( Slice ZB ). Target: the production broker on **seoseo**
-(T1). No OpenClaw runtime/bootstrap context enters this evidence. Secrets are
+Captured 2026-09-10 (Slice ZB). Target: the T1 production broker host
+(the host and broker identifiers are recorded in internal operations
+memory, not in public docs). No OpenClaw runtime/bootstrap context enters this evidence. Secrets are
 not recorded; only configuration names and non-sensitive values. Mutable
 facts carry their capture timestamp and MUST be re-verified at any later
 authorization gate.
 
 ## Precondition 1 — exact production revision/config/backend identified
 
-- Serving container: `a2a-broker` (image `broker-a2a-broker`, tag prefix
+- Serving container: the production broker container (image `broker-a2a-broker`, tag prefix
   `github`), port `127.0.0.1:8787→8787`, `Up 8 hours (healthy)`,
   `RestartCount 0`, restart policy `unless-stopped` (captured 2026-09-10
   ~08:50 UTC).
@@ -33,11 +34,11 @@ authorization gate.
 ## Precondition 4 — topology proves exactly one serving process
 
 - Host process inventory (captured 2026-09-10 ~08:50 UTC): exactly one broker
-  process — the container's `packages/broker/dist/server.js` (pid 1821687 at
-  capture). The host-root `server.js` (pid 881, cwd `/opt/seoseo-memo`) is
-  the seoseo-memo service on `127.0.0.1:3120`, NOT a broker.
+  process — the container's `packages/broker/dist/server.js`. The one other
+  host node process named `server.js` (a loopback-port memo service) is NOT a
+  broker; host-level listeners were enumerated to prove it.
 - Exactly one broker container; exactly one `server.js` process inside it.
-- `/livez` → ok, brokerId `seoseo`, not draining; `/readyz` →
+- `/livez` → ok, not draining; `/readyz` →
   `{"ready":true,"effectiveGrade":"single-process","reasonCodes":[]}`.
 - No second broker listener on the host.
 
@@ -59,8 +60,9 @@ authorization gate.
   gate 6 ("outbox IDs/sequences/ACKs compare exactly") therefore requires the
   **raw DB copy** as the migration source (or the export cap lifted/raised
   before cutover); the JSON export remains the task-state restore artifact.
-- **Rollback owner**: 서진원 (GitHub `jinon86`) — recorded as the sole
-  approver/executor of any rollback action for this effort.
+- **Rollback owner**: the operator — the name is recorded in internal
+  operations memory per the public-docs identity policy; the owner is the
+  sole approver/executor of any rollback action for this effort.
 
 ## Precondition 3 — maintenance / maximum security-window plan (DRAFT for approval)
 
@@ -81,7 +83,7 @@ authorization gate.
   capture (simple COUNT/PRAGMA worked). Shadow-side reads should use simple
   prepared statements or run their queries from a newer-node host against a
   copied DB.
-- Live store paths: `/var/lib/a2a-broker/state.sqlite` (legacy broker state,
-  WAL mode, actively written) and
-  `/var/lib/a2a-broker/state.json.shared-state-v1.sqlite` (the serving-fence
-  CAS store — tiny, ownership/clock-floor only).
+- Live store paths: the broker state volume's `state.sqlite` (legacy broker
+  state, WAL mode, actively written) and the `*.shared-state-v1.sqlite`
+  serving-fence CAS store (tiny, ownership/clock-floor only). Exact paths
+  are recorded in internal operations memory.

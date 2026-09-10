@@ -3829,20 +3829,20 @@ decided by W11.
 ### Slice ZB — Phase 6 preconditions evidence gathered (§5, operator-approved)
 
 With operator approval for §5 recorded, Slice ZB gathers the Phase 6
-precondition evidence on the production broker (seoseo, T1) — read-only
-except the backup artifacts. Full evidence:
+precondition evidence on the T1 production broker — read-only except the
+backup artifacts. Full evidence:
 [phase6-preconditions-evidence.md](phase6-preconditions-evidence.md).
 
 1. **Revision/config/backend identified**: production runs `20812f7`
-   (image `github-20812f7`, docker, built 2026-09-10T00:39:40Z), backend
+   (image tag `github-20812f7`, docker, built 2026-09-10T00:39:40Z), backend
    `BROKER_PERSISTENCE_BACKEND=sqlite` (`hot-tables` load source, persistence
    worker thread on), rate configs recorded, all six shared-state flags
    absent (default-off). Gap noted: production predates Phases 4–5; the
    shadow runtime must build from a post-Phase-5 main.
-2. **Topology**: exactly one broker container (`a2a-broker`,
-   `127.0.0.1:8787`, healthy, restarts 0), exactly one `server.js` process,
-   `/readyz` reports `single-process`; the host-root `server.js` is the
-   unrelated seoseo-memo service.
+2. **Topology**: exactly one broker container (healthy, restarts 0, one
+   published loopback port), exactly one `server.js` process,
+   `/readyz` reports `single-process`; the host's only other `server.js`
+   process is an unrelated loopback memo service.
 3. **Backup/restore rehearsal**: backup set
    `backups/pre-phase6-shadow-20260910T085435Z/` (raw `state.sqlite` + WAL +
    SHM, and the canonical hot-tables export); restore probe on the copy:
@@ -3850,7 +3850,8 @@ except the backup artifacts. Full evidence:
    `terminalOutbox` at 1000 (`DEFAULT_TERMINAL_TASK_OUTBOX_RETENTION`) while
    the live DB holds 1048 — the JSON export is not a complete outbox backup;
    Phase 7 gate 6 must migrate from the raw DB copy (or the cap is lifted
-   first). **Rollback owner recorded: 서진원 (`jinon86`).**
+   first). **Rollback owner recorded: the operator (name held in internal
+   operations memory).**
 4. **Security-window plan drafted** (pending operator approval): the shadow
    needs no window (read-only); any non-serving drain must span ≥
    signature-expiry + rate windows (~6 min theoretical) — **15 minutes
