@@ -48,6 +48,8 @@ import { resolveSharedStateIdempotencyPrimitiveModeV1 } from "./shared-state-ide
 import { resolveSharedStateOutboxPrimitiveModeV1 } from "./shared-state-outbox-primitive-mode-v1.js";
 import { resolveSharedStateGraphPrimitiveModeV1 } from "./shared-state-graph-primitive-mode-v1.js";
 import { SharedStateGraphSourceGateV1 } from "./shared-state-graph-gate-v1.js";
+import { resolveSharedStateShadowModeV1 } from "./shared-state-shadow-mode-v1.js";
+import { SharedStateShadowRuntimeV1 } from "./shared-state-shadow-runtime-v1.js";
 import { createHash } from "node:crypto";
 import {
   createTaskCreateIdempotencyAuthority,
@@ -497,6 +499,14 @@ export function createBrokerServer(options: BrokerServerOptions = {}): BrokerSer
       ? process.env.BROKER_SHARED_STATE_V1_GRAPH
       : options.sharedStateGraphV1 ? "on" : "off",
   ) === "on";
+  // #1504 §5 Phase 6: live-shadow runtime flag. Default-off makes no shadow
+  // observations; `on` mirrors replay/rate decisions into a SEPARATE shadow
+  // store and classifies divergences — evidence-only, decision-neutral.
+  const sharedStateShadowV1 = resolveSharedStateShadowModeV1(
+    options.sharedStateShadowV1 === undefined
+      ? process.env.BROKER_SHADOW_STATE_V1
+      : options.sharedStateShadowV1 ? "on" : "off",
+  ) === "on";
   // NCLEX evaluation receipt surface (#1724): default-off; a configured
   // keyring file that is unreadable or malformed fails startup loudly.
   // Domain moved to packages/nclex-evaluation (#1601 first slice); this is
@@ -582,6 +592,9 @@ export function createBrokerServer(options: BrokerServerOptions = {}): BrokerSer
   // fence instead of poisoning retries in this process.
   let workerPersistenceHandle: WorkerThreadPersistenceHandle | undefined;
   let servingFence: SharedStateServingFenceV1 | undefined;
+  // #1504 §5 Phase 6: the shadow runtime (constructed inside the guarded
+  // startup block; closed wherever the fence is released).
+  let sharedStateShadowRuntime: SharedStateShadowRuntimeV1 | undefined;
   servingFence = acquireSharedStateServingFenceForBrokerV1({
     ...(options.sharedStateFile === undefined
       ? {}
@@ -661,6 +674,18 @@ export function createBrokerServer(options: BrokerServerOptions = {}): BrokerSer
           completedAt: input.completedAt,
         })
     : undefined;
+  // #1504 §5 Phase 6: the shadow runtime owns a SEPARATE shadow store file —
+  // never the serving store, never the serving-fence CAS store. Failure to
+  // open it fails startup loudly (an operator explicitly asked for the
+  // shadow; silently serving without it would fake the evidence).
+  if (sharedStateShadowV1) {
+    sharedStateShadowRuntime = new SharedStateShadowRuntimeV1({
+      // Naming follows the store's own sibling-file convention
+      // (state.json -> state.json.<suffix>.sqlite).
+      shadowFile: options.shadowStateFile ??
+        `${stateFile}.shadow-v1.sqlite`,
+    });
+  }
 
   // Worker-thread persistence facade (opt-in).
   // Off by default; enable with BROKER_PERSISTENCE_QUEUE_WORKER_THREAD=1.
@@ -735,6 +760,8 @@ export function createBrokerServer(options: BrokerServerOptions = {}): BrokerSer
     const releaseFence = (): void => {
       servingFence?.release();
       servingFence = undefined;
+      sharedStateShadowRuntime?.close();
+      sharedStateShadowRuntime = undefined;
     };
     if (!workerPersistenceHandle) {
       releaseFence();
@@ -1207,11 +1234,27 @@ export function createBrokerServer(options: BrokerServerOptions = {}): BrokerSer
       }
       if (outcome.outcome === "replayed") {
         sharedStateReplayV1Stats.replayed += 1;
+        sharedStateShadowRuntime?.observeReplay({
+          keyid: result.keyid, nonce: result.nonce, ttlMs, liveWasFirst: false,
+        }, nowMs);
         throw new BrokerError("unauthorized", "a2a_signature_replay: nonce has already been used for this key id");
       }
       sharedStateReplayV1Stats.accepted += 1;
-    } else if (!a2aHttpSignatureReplayCache.remember(result.keyid, result.nonce, result.expires)) {
-      throw new BrokerError("unauthorized", "a2a_signature_replay: nonce has already been used for this key id");
+      sharedStateShadowRuntime?.observeReplay({
+        keyid: result.keyid, nonce: result.nonce, ttlMs, liveWasFirst: true,
+      }, nowMs);
+    } else {
+      // #1504 §5 Phase 6: the shadow mirrors the process-local cache's
+      // decision (evidence-only; it can never alter the live outcome).
+      const liveWasFirst = a2aHttpSignatureReplayCache.remember(result.keyid, result.nonce, result.expires);
+      sharedStateShadowRuntime?.observeReplay({
+        keyid: result.keyid, nonce: result.nonce,
+        ttlMs: Math.max(1, result.expires * 1000 - Date.now()),
+        liveWasFirst,
+      });
+      if (!liveWasFirst) {
+        throw new BrokerError("unauthorized", "a2a_signature_replay: nonce has already been used for this key id");
+      }
     }
     const verifiedRecord = a2aHttpSignatureKeyRegistry[result.keyid];
     return {
@@ -1529,6 +1572,17 @@ export function createBrokerServer(options: BrokerServerOptions = {}): BrokerSer
         } else {
           decision = limiter.check(principal);
         }
+        // #1504 §5 Phase 6: the shadow mirrors the live decision (evidence-
+        // only; it can never alter the live outcome).
+        sharedStateShadowRuntime?.observeRate({
+          bucketClass: bucket,
+          principal,
+          limit: decision.limit,
+          windowMs: bucket === "worker"
+            ? Math.max(1, workerRateLimitWindowSec) * 1000
+            : Math.max(1, rateLimitWindowSec) * 1000,
+          liveAllowed: decision.allowed,
+        });
         applyRateLimitHeaders(res, decision, bucket);
         if (!decision.allowed) {
           res.setHeader("retry-after", String(decision.retryAfterSec));
@@ -1873,6 +1927,11 @@ export function createBrokerServer(options: BrokerServerOptions = {}): BrokerSer
           };
         } else {
           body.stateContract = { projection: "unavailable", reasonCode: "collection-failed" };
+        }
+        // #1504 §5 Phase 6: aggregate-only shadow evidence (no keys, nonces,
+        // or identities — §5.5/§5.6 observability rules).
+        if (sharedStateShadowRuntime) {
+          body.stateShadow = sharedStateShadowRuntime.snapshot();
         }
 
         return sendJson(res, 200, body, {
@@ -2228,6 +2287,8 @@ export function createBrokerServer(options: BrokerServerOptions = {}): BrokerSer
         .finally(() => {
           servingFence?.release();
           servingFence = undefined;
+          sharedStateShadowRuntime?.close();
+          sharedStateShadowRuntime = undefined;
         });
     } else {
       servingFence?.release();

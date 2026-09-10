@@ -161,6 +161,15 @@ export interface BrokerServerOptions extends BrokerRuntimeHotLimitOptions {
    * `appendGraphSource` primitive via the serving fence. Default-off; env:
    * `BROKER_SHARED_STATE_V1_GRAPH` (`off` | `on`).
    */
+  /**
+   * #1504 §5 Phase 6: run the live-shadow runtime — mirror replay/rate
+   * decisions into a SEPARATE shadow store and classify divergences
+   * (evidence-only; it can never drive a decision). Default-off; env:
+   * `BROKER_SHADOW_STATE_V1` (`off` | `on`).
+   */
+  sharedStateShadowV1?: boolean;
+  /** Shadow store file. Defaults to `<stateFile>.shadow-v1.sqlite`. */
+  shadowStateFile?: string;
   sharedStateGraphV1?: boolean;
   sharedStateOutboxV1?: boolean;
   sharedStateIdempotencyV1?: boolean;
