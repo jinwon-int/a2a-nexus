@@ -4,3 +4,13 @@
 150ed4797850bce0de4e07a5627740aab2e835ec:packages/docker-runner/src/engine-contract.test.ts:generic-api-key:280
 bb10d2befe40c89301ba9dde46e5aee7a57d2ae1:packages/broker/scripts/terminal-receipt-closeout-report.test.mjs:generic-api-key:115
 4c16d5c994fc9e0824206e6b256ed1c841841225:packages/broker/scripts/terminal-receipt-closeout-report.test.mjs:generic-api-key:115
+4d354191a5f059c7690a80dd9968ce1527218bfb:packages/broker/scripts/round-coordinator-closeout-dry-run.test.mjs:generic-api-key:272
+4d354191a5f059c7690a80dd9968ce1527218bfb:packages/broker/src/core/orchestration-intelligence-worker-subagent-spawn-bridge.test.ts:generic-api-key:423
+4d354191a5f059c7690a80dd9968ce1527218bfb:packages/broker/src/server-live-task-admission.test.ts:generic-api-key:7
+4d354191a5f059c7690a80dd9968ce1527218bfb:packages/broker/src/server-live-task-admission.test.ts:generic-api-key:8
+4d354191a5f059c7690a80dd9968ce1527218bfb:packages/docker-runner/src/engine-contract.test.ts:generic-api-key:304
+4d354191a5f059c7690a80dd9968ce1527218bfb:packages/docker-runner/src/engine-contract.test.ts:generic-api-key:311
+4d354191a5f059c7690a80dd9968ce1527218bfb:packages/docker-runner/src/github-evidence.test.ts:generic-api-key:961
+4d354191a5f059c7690a80dd9968ce1527218bfb:packages/docker-runner/src/scanner.test.ts:generic-api-key:231
+4d354191a5f059c7690a80dd9968ce1527218bfb:packages/docker-runner/src/scanner.test.ts:generic-api-key:303
+4d354191a5f059c7690a80dd9968ce1527218bfb:packages/docker-runner/src/scanner.test.ts:generic-api-key:307
