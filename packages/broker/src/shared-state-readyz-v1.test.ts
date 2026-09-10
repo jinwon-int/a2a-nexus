@@ -51,9 +51,11 @@ test("/readyz is public and reports ready while the fence is held", async () => 
     const healthBody = await health.json();
     assert.equal(Object.hasOwn(healthBody, "configuredGrade"), false);
     assert.equal(healthBody.stateContract.gradeDefaulted, true);
-    assert.equal(healthBody.stateContract.primitives.replay.resetRisk, true);
-    assert.equal(healthBody.stateContract.primitives.replay.epochAgeBand, "unknown");
-    assert.equal(healthBody.stateContract.primitives.rateLimit.resetRisk, true);
+    // Slice R: the bands are now REAL — epoch age derives from process uptime,
+    // which is under one minute for this fresh test server.
+    assert.equal(healthBody.stateContract.securityPrimitives.replay.resetRisk, true);
+    assert.equal(healthBody.stateContract.securityPrimitives.replay.epochAgeBand, "under-1m");
+    assert.equal(healthBody.stateContract.securityPrimitives.rateLimit.resetRisk, true);
   } finally {
     await server.close();
   }

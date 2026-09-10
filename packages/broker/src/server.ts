@@ -48,7 +48,7 @@ import {
   type SharedStateServingFenceV1,
 } from "./shared-state-serving-fence-v1.js";
 import { createSharedStateLossMonitorV1 } from "./shared-state-loss-monitor-v1.js";
-import { buildSharedStateContractHealthV1 } from "./shared-state-contract-health-v1.js";
+import { buildSharedStateHealthDeclarationV1, buildSharedStatePublicObservabilityV1 } from "./shared-state-contract-health-v1.js";
 import { createServer, type IncomingMessage, type RequestListener, type Server, type ServerResponse } from "node:http";
 import {
   DEFAULT_KEEPALIVE_TIMEOUT_MS,
@@ -1585,15 +1585,46 @@ export function createBrokerServer(options: BrokerServerOptions = {}): BrokerSer
         };
 
         const healthProbe = inspectServingAuthority();
-        body.stateContract = buildSharedStateContractHealthV1({
-          configuredGrade: servingGrade.configuredGrade,
-          effectiveGrade: servingGrade.effectiveGrade,
-          gradeDefaulted: servingGrade.gradeDefaulted,
-          expectedProcessCount: servingGrade.expectedProcessCount,
-          serving: healthProbe.ready,
-          ownership: healthProbe.ready ? "held" : "lost",
-          reasonCodes: healthProbe.ready ? [] : [healthProbe.reasonCode],
+        // #1504 §4 (Slice R): the stateContract member is the observability
+        // catalog's public-aggregate projection — bands instead of exact
+        // counts, closed vocabularies only, and the catalog's own leak
+        // preflight between the runtime and the published body.
+        const contractProjection = buildSharedStatePublicObservabilityV1({
+          health: buildSharedStateHealthDeclarationV1({
+            configuredGrade: servingGrade.configuredGrade,
+            effectiveGrade: servingGrade.effectiveGrade,
+            gradeDefaulted: servingGrade.gradeDefaulted,
+            serving: healthProbe.ready,
+            ownership: healthProbe.ready ? "held" : "lost",
+            reasonCodes: healthProbe.ready ? [] : [healthProbe.reasonCode],
+            expectedProcessCount: servingGrade.expectedProcessCount,
+            persistenceBackend,
+            clockSafety: "safe",
+            processUptimeSec: Math.round(process.uptime()),
+            rateLimitDenied: requestPressure.general.deniedRequests,
+            rateLimitTotal:
+              requestPressure.general.allowedRequests + requestPressure.general.deniedRequests,
+          }),
+          clockContinuity: "reset",
+          replay: a2aHttpSignatureReplayCache.stats(),
+          rateLimit: {
+            windowMs: rateLimitWindowSec * 1000,
+            limit: rateLimitMaxRequests,
+            allowed: requestPressure.general.allowedRequests,
+            denied: requestPressure.general.deniedRequests,
+          },
         });
+        if (contractProjection.ok) {
+          body.stateContract = contractProjection.value.stateContract;
+          body.stateContractDomains = contractProjection.value.domains;
+          body.stateContractCatalog = {
+            kind: contractProjection.value.kind,
+            catalogVersion: contractProjection.value.catalogVersion,
+            visibility: contractProjection.value.visibility,
+          };
+        } else {
+          body.stateContract = { projection: "unavailable", reasonCode: "collection-failed" };
+        }
 
         return sendJson(res, 200, body, {
           "cache-control": "no-store",

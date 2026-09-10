@@ -1250,7 +1250,7 @@ path decision belongs to section 4 and is deliberately not made here.
   while `/livez` remains liveness-only. Moved here from section 2.5: the
   assertion needs the middleware above, so it cannot be proved by a
   backend-neutral Phase 2 harness.
-- [ ] Add secret-safe `stateContract` health without identity-bearing top-key
+- [x] Add secret-safe `stateContract` health without identity-bearing top-key
   data.
 - [x] Add volatile replay/rate reset-risk epoch/reason signals.
 - [x] Make `shared-state-ha` fail until an approved conforming backend exists.
@@ -3430,3 +3430,36 @@ legacy-store mechanism and is not part of the detachment claim.
 Boxes checked by this slice: `Preserve existing export/inspection and fail-safe
 recovery behavior` and `Keep runtime integration/default enablement off`.
 Section 3 is now fully checked. 488/489 remain as decided by W11.
+
+### Slice R — the full `stateContract`: the observability public-aggregate projection (§4)
+
+Slice R replaces the Slice M reduced envelope with the catalog's full
+`public-aggregate` projection, per section 7.4. The runtime assembles a
+candidate — the complete health declaration plus per-domain observations —
+and publishes only what `projectSharedStatePublicObservabilityV1` returns, so
+the catalog's coarsening (exact process count becomes a one|multiple band) and
+its recursive leak preflight now stand between the runtime and `/health`.
+
+What the member now carries, all honest for a `legacy-process`/`legacy-sqlite`
+deployment: the grade/serving/readiness core; the adapter block reflecting the
+ACTUAL serving store (`legacy-sqlite` durable schema 13 when the configured
+backend is sqlite, `legacy-process` volatile otherwise; V1 fields null; no
+migration state); clock safety/continuity (`safe`/`reset`); the contract's
+consistency and completeness declarations (graph projection `unavailable`);
+REAL security-primitive bands (epoch age from process uptime, pressure from
+the live limiter denial share, `process_start` reset reasons); and per-domain
+observations — replay and rate limit `available` with cumulative counters from
+the replay cache and limiter (public-floor suppression grouping applied by the
+projector), lease/idempotency/outbox/graph `not-applicable`
+(`primitive-not-implemented`).
+
+An incoherent candidate fails closed: the projection result becomes
+`{projection: "unavailable"}` instead of a published lie, and the declaration
+parser's own grade/backend coherence rules (e.g. single-writer-durable demands
+a SQLite class; single writer demands one process) reject contradictions
+before anything reaches the body.
+
+Box checked by this slice: `Add secret-safe stateContract health without
+identity-bearing top-key data`. Remaining in this section: integrate the
+primitives one at a time behind default-off flags, and the
+compatibility/regression/performance run. 488/489 remain as decided by W11.
