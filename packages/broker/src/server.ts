@@ -43,6 +43,8 @@ import {
 import { resolveSharedStateDeploymentGradeFromEnvV1 } from "./shared-state-deployment-grade-v1.js";
 import { resolveSharedStateReplayPrimitiveModeV1 } from "./shared-state-replay-primitive-mode-v1.js";
 import { resolveSharedStateRatePrimitiveModeV1 } from "./shared-state-rate-primitive-mode-v1.js";
+import { resolveSharedStateLeasePrimitiveModeV1 } from "./shared-state-lease-primitive-mode-v1.js";
+import { SharedStateLeaseGateV1 } from "./shared-state-lease-gate-v1.js";
 import { SHARED_STATE_STORAGE_V1_VALUES as SHARED_STATE_V1_VALUES } from "./shared-state-storage-v1-values.js";
 import { SHARED_STATE_TIME_V1_VALUES as SHARED_STATE_TIME_VALUES } from "./shared-state-time-v1-values.js";
 import { evaluateGradeBackendCapabilityV1 } from "./shared-state-startup-checks-v1.js";
@@ -453,6 +455,16 @@ export function createBrokerServer(options: BrokerServerOptions = {}): BrokerSer
       }
     }
   }
+  // #1504 §4 Slice U: lease-primitive integration flag. Default-off keeps the
+  // legacy-only task-claim path; `on` fences the worker task-claim lifecycle
+  // (claim/heartbeat/checkpoint/terminal mutations) through the V1 lease
+  // authority via the serving fence. Invalid values fail startup loudly.
+  // The gate itself is constructed after the serving fence is acquired.
+  const sharedStateLeaseV1 = resolveSharedStateLeasePrimitiveModeV1(
+    options.sharedStateLeaseV1 === undefined
+      ? process.env.BROKER_SHARED_STATE_V1_LEASE
+      : options.sharedStateLeaseV1 ? "on" : "off",
+  ) === "on";
   // NCLEX evaluation receipt surface (#1724): default-off; a configured
   // keyring file that is unreadable or malformed fails startup loudly.
   // Domain moved to packages/nclex-evaluation (#1601 first slice); this is
@@ -557,6 +569,17 @@ export function createBrokerServer(options: BrokerServerOptions = {}): BrokerSer
       maxSnapshotBytes,
       hotRuntimeLimits,
     });
+
+  // #1504 §4 Slice U: the lease gate lives only while the flag is on. The
+  // lease duration is pinned to the stale-reaper window so the V1 expiry and
+  // the legacy requeue agree (§5.3: expiry alone does not transfer ownership;
+  // the reap/requeue transition does). The accessor resolves the CURRENT
+  // serving fence per call — release/reacquire is handled by treating a
+  // missing fence as an unavailable authority, never a local fallback.
+  const taskLeaseDurationMs = Math.max(1, staleReaperOlderThanSec) * 1000;
+  const leaseGate = sharedStateLeaseV1
+    ? new SharedStateLeaseGateV1(() => servingFence)
+    : undefined;
 
   // Worker-thread persistence facade (opt-in).
   // Off by default; enable with BROKER_PERSISTENCE_QUEUE_WORKER_THREAD=1.
@@ -1292,6 +1315,8 @@ export function createBrokerServer(options: BrokerServerOptions = {}): BrokerSer
       assertVerifiedWorkerMatches,
       isDraining: () => draining,
       taskLongPollGate,
+      leaseGate,
+      leaseDurationMs: () => taskLeaseDurationMs,
     }),
     ...createDialecticRouteEntries({ broker, stateStore }),
     ...createTasksReadRouteEntries({ broker, stateStore }),
@@ -1309,6 +1334,8 @@ export function createBrokerServer(options: BrokerServerOptions = {}): BrokerSer
           }
         : undefined,
       resultProvenanceCountersign,
+      leaseGate,
+      leaseDurationMs: () => taskLeaseDurationMs,
     }),
     ...createAuditReadRouteEntries({ broker, stateStore }),
     ...createGitHubRouteEntries({

@@ -3546,3 +3546,52 @@ snapshots. Box `Integrate primitives one at a time behind default-off flags`
 stays unchecked until all six primitives are integrated; the
 compatibility/regression/performance run follows it. 488/489 remain as
 decided by W11.
+
+### Slice U — lease primitive behind the default-off flag (§4, third integration)
+
+Slice U integrates the lease primitive — all four commands, because a fence
+only means something if every authority transition checks it — and replays
+the S/T pattern with the task-claim lifecycle as the resource. A new closed
+flag parser, `resolveSharedStateLeasePrimitiveModeV1` in
+`shared-state-lease-primitive-mode-v1.ts`, reads `BROKER_SHARED_STATE_V1_LEASE`
+(unset/empty `off`, `on`, anything else fails startup loudly). With the flag
+off (default), nothing changes: the legacy claim path remains the whole story.
+
+With the flag `on`, the worker task routes gate every claim-authority
+transition on the V1 adapter through the serving fence's four fail-closed
+passthroughs (`claimTaskLease`, `renewTaskLease`, `fenceTaskMutation`,
+`releaseTaskLease`) on the same single-writer adapter as S/T. The keying maps
+the §5.3 digest domains: resource = (`task`, taskId), owner = the claiming
+worker, mutation digest binds the mutation kind to a sha-256 of the raw effect
+body, all under the fixed namespace `broker.lease.task-claim`. The claim grant
+precedes and gates the legacy transition (a claim_conflict maps to the same
+409 class as a legacy claim race); heartbeat renews; checkpoint is a fenced
+mutation that keeps the claim; complete/fail are fenced mutations that end it;
+the operator stale-requeue route releases each candidate before the legacy
+requeue. The broker core gains exactly one additive method
+(`stampTaskLeaseV1`) that persists the authority's version memory — fencing
+token, attempt digest, observed resource version — on the task record, so the
+authority survives a durable restart (§5.3) and the next claim presents the
+advanced version. Rejections follow the §5.3 ladder: stale fence, owner
+mismatch, expired lease, and version conflict reject the mutation with 409 —
+a fenced-out attempt cannot commit — while every failure code, rejected
+envelope, released fence, or throw collapses to the retryable
+`state_unavailable` 503: a broker that cannot reach the authority must not
+grant, renew, requeue, or complete, and never falls back to a local decision.
+The lease duration is pinned to the stale-reaper window so the V1 expiry and
+the legacy requeue agree; expiry alone still transfers nothing — a re-claim
+advances the fence, which never decreases across releases or restarts.
+
+Deliberately out of scope: `start` (neither renewal nor terminal), operator
+cancel/reassign (the legacy status guard already rejects late worker commits,
+and the claim self-expires), and the internal reaper sweep (its window is the
+lease duration, so an expired claim is simply re-claimable). A record whose
+stamp is missing under the flag fails closed on gated transitions until the
+bounded lease window lapses — unknown authority is never invented into
+continuity (§5.3 restart behavior). `/health` observable changes are deferred
+to a later slice: the leaseClaim domain stays `not-applicable` in the catalog
+until the aggregate claim-pressure observations specified in §5.3/§7.4 can be
+fed from the real authority in one coherent change. Box `Integrate primitives
+one at a time behind default-off flags` stays unchecked until all six
+primitives are integrated; the compatibility/regression/performance run
+follows it. 488/489 remain as decided by W11.

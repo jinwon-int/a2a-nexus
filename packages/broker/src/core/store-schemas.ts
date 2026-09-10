@@ -239,6 +239,15 @@ export const taskLaneAssignmentSchema = z
   })
   .strict();
 
+export const taskLeaseStampV1Schema = z
+  .object({
+    /** Monotonic fencing token; only rises on claim (§5.3). */
+    fencingToken: z.string().regex(/^(?:0|[1-9][0-9]*)$/),
+    attemptKeyDigest: z.string().min(1),
+    resourceVersion: z.string().regex(/^(?:0|[1-9][0-9]*)$/),
+  })
+  .strict();
+
 export const taskSchema = z
   .object({
     id: z.string().min(1),
@@ -272,6 +281,7 @@ export const taskSchema = z
     lastHeartbeatAt: z.string().optional(),
     lastProgressAt: z.string().optional(),
     attemptId: z.string().min(1).optional(),
+    leaseV1: taskLeaseStampV1Schema.optional(),
     wake: taskWakeSchema.optional(),
     taskOrigin: taskOriginSchema,
   })
@@ -893,6 +903,7 @@ export const createTaskRequestSchema = taskSchema
     lastHeartbeatAt: true,
     lastProgressAt: true,
     attemptId: true,
+    leaseV1: true,
     wake: true,
     laneAssignment: true,
   })

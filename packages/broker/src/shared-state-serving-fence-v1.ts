@@ -23,6 +23,14 @@
  * `BROKER_SHARED_STATE_V1_RATE` flag is `on`. Every failure collapses to
  * `{outcome: "unavailable"}` — never a local permissive bucket (§5.2
  * partition behavior; V1 defines no fail-open route class).
+ *
+ * Slice U (#1504 §4 primitive integration, lease third): four fail-closed
+ * passthroughs — `claimTaskLease`, `renewTaskLease`, `fenceTaskMutation`,
+ * `releaseTaskLease` — route the task-claim lease authority through the same
+ * adapter when the default-off `BROKER_SHARED_STATE_V1_LEASE` flag is `on`.
+ * Every failure collapses to `unavailable` — a broker that cannot reach the
+ * lease authority must not grant, renew, requeue, or complete a claim (§5.3
+ * partition behavior).
  */
 
 import { randomUUID } from "node:crypto";
@@ -59,7 +67,14 @@ export const SHARED_STATE_SERVING_FENCE_V1 = Object.freeze({
   replayNamespace: "security.replay.broker-worker-signature",
   /** Slice T: fixed keyspace namespace for the broker-edge rate limiter. */
   rateNamespace: "security.rate.broker-edge",
+  /** Slice U: fixed keyspace namespace for the task-claim lease authority. */
+  leaseNamespace: "broker.lease.task-claim",
 } as const);
+
+/** Closed mutation kinds for `fenceTaskMutation` (Slice U, §5.3 vocabulary). */
+export type SharedStateLeaseMutationKindV1 = (typeof V.leaseMutationKinds)[number];
+/** Closed release kinds for `releaseTaskLease` (Slice U, §5.3 vocabulary). */
+export type SharedStateLeaseReleaseKindV1 = (typeof V.leaseReleaseKinds)[number];
 
 /**
  * Outcome of one fence-mediated `reserveRateLimitCost` (Slice T). Only a
@@ -72,6 +87,52 @@ export const SHARED_STATE_SERVING_FENCE_V1 = Object.freeze({
 export type SharedStateFenceRateOutcomeV1 =
   | { readonly outcome: "allowed"; readonly remaining: number; readonly resetInMs: number }
   | { readonly outcome: "rate_limited"; readonly resetInMs: number }
+  | { readonly outcome: "unavailable"; readonly reasonCode: string };
+
+/**
+ * Authority presentation the caller holds from a prior claim (Slice U): the
+ * adapter's claim response fields, re-presented verbatim on every authority
+ * command. The adapter compares fencing token first, then attempt, then
+ * owner, then expiry, then version — in that order.
+ */
+export interface SharedStateFenceLeaseAuthorityInputV1 {
+  readonly taskId: string;
+  readonly workerId: string;
+  readonly attemptKeyDigest: string;
+  readonly fencingToken: string;
+  readonly expectedResourceVersion: string;
+}
+
+/**
+ * Outcome of one fence-mediated `claimLease` (Slice U). Only a committed
+ * adapter decision yields `claimed`; `claim_conflict`/`version_conflict`
+ * rejections are `conflict` (the caller maps them to the same 409 class as a
+ * legacy claim race); everything else is `unavailable` — the claim MUST NOT
+ * be granted locally (§5.3 partition behavior).
+ */
+export type SharedStateFenceLeaseClaimOutcomeV1 =
+  | {
+      readonly outcome: "claimed";
+      readonly attemptKeyDigest: string;
+      readonly fencingToken: string;
+      readonly resourceVersion: string;
+    }
+  | { readonly outcome: "conflict"; readonly reasonCode: string }
+  | { readonly outcome: "unavailable"; readonly reasonCode: string };
+
+/**
+ * Outcome of one fence-mediated lease authority command — `renewLease`,
+ * `mutateWithFence`, or `releaseLease` (Slice U). Only committed adapter
+ * decisions yield the authorized variants; the §5.3 rejection ladder
+ * (`stale_fence`, `owner_mismatch`, `lease_expired`, `version_conflict`,
+ * `invalid_state_transition`) is `lost` — the caller must reject the
+ * mutation instead of committing locally; everything else is `unavailable`.
+ */
+export type SharedStateFenceLeaseAuthorityOutcomeV1 =
+  | { readonly outcome: "renewed"; readonly resourceVersion: string }
+  | { readonly outcome: "applied"; readonly resourceVersion: string }
+  | { readonly outcome: "released"; readonly resourceVersion: string }
+  | { readonly outcome: "lost"; readonly reasonCode: string }
   | { readonly outcome: "unavailable"; readonly reasonCode: string };
 
 /**
@@ -169,6 +230,56 @@ export interface SharedStateServingFenceV1 {
     },
     nowMs: number,
   ): SharedStateFenceRateOutcomeV1;
+  /**
+   * Slice U fail-closed passthrough of the V1 `claimLease` primitive. The
+   * resource is the ("task", taskId) pair and the owner the worker id, both
+   * digested under the fixed lease namespace. `expectedResourceVersion` is
+   * the caller's last-known resource version ("0" before the task's first
+   * V1 lease cycle). Only a committed `claimed` decision grants the claim.
+   */
+  claimTaskLease(
+    input: {
+      readonly taskId: string;
+      readonly workerId: string;
+      readonly expectedResourceVersion: string;
+      readonly leaseDurationMs: number;
+    },
+    nowMs: number,
+  ): SharedStateFenceLeaseClaimOutcomeV1;
+  /**
+   * Slice U fail-closed passthrough of `renewLease`. The caller presents the
+   * stamp it holds (attempt digest, fencing token, observed resource
+   * version); a superseded/expired/mismatched presentation comes back as
+   * `lost`, never as a local renewal.
+   */
+  renewTaskLease(
+    input: SharedStateFenceLeaseAuthorityInputV1 & { readonly leaseDurationMs: number },
+    nowMs: number,
+  ): SharedStateFenceLeaseAuthorityOutcomeV1;
+  /**
+   * Slice U fail-closed passthrough of `mutateWithFence`. `checkpoint` keeps
+   * the claim; every other mutation kind ends it. `mutationBodyHex` is the
+   * hex encoding of the content the caller binds to the mutation digest
+   * (sha-256 of the raw request body — always non-empty hex).
+   */
+  fenceTaskMutation(
+    input: SharedStateFenceLeaseAuthorityInputV1 & {
+      readonly mutationKind: (typeof V.leaseMutationKinds)[number];
+      readonly mutationBodyHex: string;
+    },
+    nowMs: number,
+  ): SharedStateFenceLeaseAuthorityOutcomeV1;
+  /**
+   * Slice U fail-closed passthrough of `releaseLease`. Releasing a claim that
+   * has already ended is reported as `released` (the cleanup goal is met),
+   * never as a fabricated new authority.
+   */
+  releaseTaskLease(
+    input: SharedStateFenceLeaseAuthorityInputV1 & {
+      readonly releaseKind: (typeof V.leaseReleaseKinds)[number];
+    },
+    nowMs: number,
+  ): SharedStateFenceLeaseAuthorityOutcomeV1;
 }
 
 function fail(
@@ -241,6 +352,197 @@ function fenceRateOutcomeFromResult(
     return Object.freeze({ outcome: "unavailable", reasonCode: "store_failure" });
   }
   const reasonCode = (result as { reasonCode?: unknown }).reasonCode;
+  return Object.freeze({
+    outcome: "unavailable",
+    reasonCode: typeof reasonCode === "string" ? reasonCode : "store_failure",
+  });
+}
+
+/**
+ * Slice U digest derivations under the fixed lease namespace. The resource
+ * is the ("task", taskId) pair, the owner the worker id, and the mutation
+ * digest binds the mutation kind to the hex-encoded effect body.
+ */
+function leaseResourceDigest(taskId: string) {
+  return digestSharedStateKeyV1({
+    keyspaceVersion: V.versions.keyspace,
+    domain: "broker.lease.resource-key",
+    namespace: SHARED_STATE_SERVING_FENCE_V1.leaseNamespace,
+    components: [
+      { field: "resourceType", type: "utf8", value: "task" },
+      { field: "resourceId", type: "utf8", value: taskId },
+    ],
+  });
+}
+
+function leaseOwnerDigest(workerId: string) {
+  return digestSharedStateKeyV1({
+    keyspaceVersion: V.versions.keyspace,
+    domain: "broker.lease.owner-key",
+    namespace: SHARED_STATE_SERVING_FENCE_V1.leaseNamespace,
+    components: [{ field: "ownerId", type: "utf8", value: workerId }],
+  });
+}
+
+function leaseMutationDigest(mutationKind: string, mutationBodyHex: string) {
+  return digestSharedStateKeyV1({
+    keyspaceVersion: V.versions.keyspace,
+    domain: "broker.lease.mutation",
+    namespace: SHARED_STATE_SERVING_FENCE_V1.leaseNamespace,
+    components: [
+      { field: "mutationKind", type: "utf8", value: mutationKind },
+      { field: "mutationBody", type: "bytes", value: mutationBodyHex },
+    ],
+  });
+}
+
+const CLAIM_LOST_CLASSIFICATION = new Set([
+  "claim_conflict",
+  "version_conflict",
+]);
+
+const AUTHORITY_LOST_CLASSIFICATION = new Set([
+  "stale_fence",
+  "owner_mismatch",
+  "lease_expired",
+  "version_conflict",
+  "invalid_state_transition",
+]);
+
+/**
+ * Shared transact path for the three lease authority commands (Slice U):
+ * derive the resource/owner digests, build the operation-specific command
+ * input (renew duration, mutation kind+digest, or release kind), present the
+ * caller's authority stamp verbatim, and map the envelope fail-closed.
+ */
+function leaseAuthorityTransact(
+  adapter: SharedStateSqliteAdapterV1,
+  operation: (typeof V.operations)[number],
+  authority: {
+    readonly taskId: string;
+    readonly workerId: string;
+    readonly attemptKeyDigest: string;
+    readonly fencingToken: string;
+    readonly expectedResourceVersion: string;
+  },
+  durationMs: number,
+  nowMs: number,
+  extra?:
+    | { readonly kind: "mutate"; readonly mutationKind: string; readonly mutationBodyHex: string }
+    | { readonly kind: "release"; readonly releaseKind: string },
+): SharedStateFenceLeaseAuthorityOutcomeV1 {
+  const unavailable = (reasonCode: string) =>
+    Object.freeze({ outcome: "unavailable", reasonCode }) as SharedStateFenceLeaseAuthorityOutcomeV1;
+  const resourceDigest = leaseResourceDigest(authority.taskId);
+  if (!resourceDigest.ok) return unavailable(resourceDigest.error.code);
+  const ownerDigest = leaseOwnerDigest(authority.workerId);
+  if (!ownerDigest.ok) return unavailable(ownerDigest.error.code);
+
+  const base = {
+    namespace: SHARED_STATE_SERVING_FENCE_V1.leaseNamespace,
+    resourceKeyDigest: resourceDigest.value.digest,
+    ownerKeyDigest: ownerDigest.value.digest,
+    attemptKeyDigest: authority.attemptKeyDigest,
+    fencingToken: authority.fencingToken,
+    expectedResourceVersion: authority.expectedResourceVersion,
+  };
+  let input: Record<string, unknown>;
+  if (extra?.kind === "mutate") {
+    const mutationDigest = leaseMutationDigest(extra.mutationKind, extra.mutationBodyHex);
+    if (!mutationDigest.ok) return unavailable(mutationDigest.error.code);
+    input = { ...base, mutationKind: extra.mutationKind, mutationDigest: mutationDigest.value.digest };
+  } else if (extra?.kind === "release") {
+    input = { ...base, releaseKind: extra.releaseKind };
+  } else {
+    input = { ...base, leaseDurationMs: durationMs };
+  }
+  const command = parseSharedStateTransactionCommandV1({
+    kind: V.kinds.transactionCommand,
+    contractVersion: V.versions.contract,
+    transactionVersion: V.versions.transaction,
+    operationVersion: V.versions.operation,
+    operation,
+    input,
+  });
+  if (!command.ok) return unavailable(command.error.code);
+  const result = adapter.transact(command.value, {
+    observedAtUnixMs: String(nowMs),
+  });
+  if (!result.ok) return unavailable(result.error.code);
+  const expected =
+    operation === V.operations[3]
+      ? V.operationDecisions.renewLease[0]
+      : operation === V.operations[4]
+        ? V.operationDecisions.mutateWithFence[0]
+        : V.operationDecisions.releaseLease[0];
+  return Object.freeze(
+    fenceLeaseAuthorityOutcomeFromResult(
+      expected as "renewed" | "applied" | "released",
+      result.value,
+    ),
+  );
+}
+
+function fenceLeaseClaimOutcomeFromResult(
+  result: SharedStateTransactionResultV1,
+): SharedStateFenceLeaseClaimOutcomeV1 {
+  if (result.status === V.transactionStatuses[0]) {
+    const value = (result as {
+      result?: {
+        decision?: unknown;
+        attemptKeyDigest?: unknown;
+        fencingToken?: unknown;
+        resourceVersion?: unknown;
+      };
+    }).result;
+    if (
+      value?.decision === V.operationDecisions.claimLease[0]
+      && typeof value.attemptKeyDigest === "string"
+      && typeof value.fencingToken === "string"
+      && typeof value.resourceVersion === "string"
+    ) {
+      return Object.freeze({
+        outcome: "claimed",
+        attemptKeyDigest: value.attemptKeyDigest,
+        fencingToken: value.fencingToken,
+        resourceVersion: value.resourceVersion,
+      });
+    }
+    return Object.freeze({ outcome: "unavailable", reasonCode: "store_failure" });
+  }
+  const reasonCode = (result as { reasonCode?: unknown }).reasonCode;
+  if (typeof reasonCode === "string" && CLAIM_LOST_CLASSIFICATION.has(reasonCode)) {
+    return Object.freeze({ outcome: "conflict", reasonCode });
+  }
+  return Object.freeze({
+    outcome: "unavailable",
+    reasonCode: typeof reasonCode === "string" ? reasonCode : "store_failure",
+  });
+}
+
+function fenceLeaseAuthorityOutcomeFromResult(
+  expected: "renewed" | "applied" | "released",
+  result: SharedStateTransactionResultV1,
+): SharedStateFenceLeaseAuthorityOutcomeV1 {
+  if (result.status === V.transactionStatuses[0]) {
+    const value = (result as {
+      result?: { decision?: unknown; resourceVersion?: unknown };
+    }).result;
+    if (
+      value?.decision === expected
+      && typeof value.resourceVersion === "string"
+    ) {
+      return Object.freeze({
+        outcome: expected,
+        resourceVersion: value.resourceVersion,
+      });
+    }
+    return Object.freeze({ outcome: "unavailable", reasonCode: "store_failure" });
+  }
+  const reasonCode = (result as { reasonCode?: unknown }).reasonCode;
+  if (typeof reasonCode === "string" && AUTHORITY_LOST_CLASSIFICATION.has(reasonCode)) {
+    return Object.freeze({ outcome: "lost", reasonCode });
+  }
   return Object.freeze({
     outcome: "unavailable",
     reasonCode: typeof reasonCode === "string" ? reasonCode : "store_failure",
@@ -483,6 +785,141 @@ export function openSharedStateServingFenceV1(input: {
             return Object.freeze({ outcome: "unavailable", reasonCode: result.error.code });
           }
           return Object.freeze(fenceRateOutcomeFromResult(result.value));
+        } catch {
+          return Object.freeze({ outcome: "unavailable", reasonCode: "store_failure" });
+        }
+      },
+      claimTaskLease(
+        input: {
+          readonly taskId: string;
+          readonly workerId: string;
+          readonly expectedResourceVersion: string;
+          readonly leaseDurationMs: number;
+        },
+        nowMs: number,
+      ): SharedStateFenceLeaseClaimOutcomeV1 {
+        if (released) {
+          return Object.freeze({ outcome: "unavailable", reasonCode: "adapter_unavailable" });
+        }
+        try {
+          const resourceDigest = leaseResourceDigest(input.taskId);
+          if (!resourceDigest.ok) {
+            return Object.freeze({ outcome: "unavailable", reasonCode: resourceDigest.error.code });
+          }
+          const ownerDigest = leaseOwnerDigest(input.workerId);
+          if (!ownerDigest.ok) {
+            return Object.freeze({ outcome: "unavailable", reasonCode: ownerDigest.error.code });
+          }
+          const command = parseSharedStateTransactionCommandV1({
+            kind: V.kinds.transactionCommand,
+            contractVersion: V.versions.contract,
+            transactionVersion: V.versions.transaction,
+            operationVersion: V.versions.operation,
+            operation: V.operations[2],
+            input: {
+              namespace: SHARED_STATE_SERVING_FENCE_V1.leaseNamespace,
+              resourceKeyDigest: resourceDigest.value.digest,
+              ownerKeyDigest: ownerDigest.value.digest,
+              leaseDurationMs: input.leaseDurationMs,
+              expectedResourceVersion: input.expectedResourceVersion,
+            },
+          });
+          if (!command.ok) {
+            return Object.freeze({ outcome: "unavailable", reasonCode: command.error.code });
+          }
+          const result = adapter.transact(command.value, {
+            observedAtUnixMs: String(nowMs),
+          });
+          if (!result.ok) {
+            return Object.freeze({ outcome: "unavailable", reasonCode: result.error.code });
+          }
+          return Object.freeze(fenceLeaseClaimOutcomeFromResult(result.value));
+        } catch {
+          return Object.freeze({ outcome: "unavailable", reasonCode: "store_failure" });
+        }
+      },
+      renewTaskLease(
+        input: SharedStateFenceLeaseAuthorityInputV1 & { readonly leaseDurationMs: number },
+        nowMs: number,
+      ): SharedStateFenceLeaseAuthorityOutcomeV1 {
+        if (released) {
+          return Object.freeze({ outcome: "unavailable", reasonCode: "adapter_unavailable" });
+        }
+        try {
+          return Object.freeze(leaseAuthorityTransact(
+            adapter,
+            V.operations[3],
+            {
+              taskId: input.taskId,
+              workerId: input.workerId,
+              attemptKeyDigest: input.attemptKeyDigest,
+              fencingToken: input.fencingToken,
+              expectedResourceVersion: input.expectedResourceVersion,
+            },
+            input.leaseDurationMs,
+            nowMs,
+          ));
+        } catch {
+          return Object.freeze({ outcome: "unavailable", reasonCode: "store_failure" });
+        }
+      },
+      fenceTaskMutation(
+        input: SharedStateFenceLeaseAuthorityInputV1 & {
+          readonly mutationKind: (typeof V.leaseMutationKinds)[number];
+          readonly mutationBodyHex: string;
+        },
+        nowMs: number,
+      ): SharedStateFenceLeaseAuthorityOutcomeV1 {
+        if (released) {
+          return Object.freeze({ outcome: "unavailable", reasonCode: "adapter_unavailable" });
+        }
+        try {
+          return Object.freeze(leaseAuthorityTransact(
+            adapter,
+            V.operations[4],
+            {
+              taskId: input.taskId,
+              workerId: input.workerId,
+              attemptKeyDigest: input.attemptKeyDigest,
+              fencingToken: input.fencingToken,
+              expectedResourceVersion: input.expectedResourceVersion,
+            },
+            0,
+            nowMs,
+            {
+              kind: "mutate",
+              mutationKind: input.mutationKind,
+              mutationBodyHex: input.mutationBodyHex,
+            },
+          ));
+        } catch {
+          return Object.freeze({ outcome: "unavailable", reasonCode: "store_failure" });
+        }
+      },
+      releaseTaskLease(
+        input: SharedStateFenceLeaseAuthorityInputV1 & {
+          readonly releaseKind: (typeof V.leaseReleaseKinds)[number];
+        },
+        nowMs: number,
+      ): SharedStateFenceLeaseAuthorityOutcomeV1 {
+        if (released) {
+          return Object.freeze({ outcome: "unavailable", reasonCode: "adapter_unavailable" });
+        }
+        try {
+          return Object.freeze(leaseAuthorityTransact(
+            adapter,
+            V.operations[5],
+            {
+              taskId: input.taskId,
+              workerId: input.workerId,
+              attemptKeyDigest: input.attemptKeyDigest,
+              fencingToken: input.fencingToken,
+              expectedResourceVersion: input.expectedResourceVersion,
+            },
+            0,
+            nowMs,
+            { kind: "release", releaseKind: input.releaseKind },
+          ));
         } catch {
           return Object.freeze({ outcome: "unavailable", reasonCode: "store_failure" });
         }
