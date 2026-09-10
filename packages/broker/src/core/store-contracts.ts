@@ -198,6 +198,15 @@ export interface SqliteBrokerStateStoreOptions {
   importJsonFile?: string;
   loadSource?: SqliteBrokerLoadSource;
   /**
+   * #1504 §3: the one-shot startup clock observation (last_persist_at vs the
+   * host clock) defaults to "enforce". Inspection/export paths pass "skip":
+   * exporting a database must not depend on the host clock being healthy,
+   * which is exactly when recovery export is most needed. The version guards
+   * (schema_version / state_version) are NOT skippable — they protect against
+   * misreading a database this binary cannot honestly interpret.
+   */
+  startupClockCheck?: "enforce" | "skip";
+  /**
    * Internal worker-thread proxy mode: main-thread loads may project a legacy
    * sidecar but must leave its one-time canonical import to the worker owner.
    */

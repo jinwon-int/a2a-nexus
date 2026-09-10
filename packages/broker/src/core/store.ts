@@ -414,6 +414,7 @@ export class SqliteBrokerStateStore implements BrokerStateStore {
   private readonly maxHotRuntimeHeartbeatAuditEvents: number;
   private readonly maxHotRuntimeTerminalOutboxEvents: number;
   private readonly deferReviewLineageImport: boolean;
+  private readonly startupClockCheckMode: "enforce" | "skip";
   private readonly db: DatabaseSync;
   private readonly journalMode: string;
   private readonly reviewLineageObservations: SqliteReviewLineageObservationStore;
@@ -467,6 +468,7 @@ export class SqliteBrokerStateStore implements BrokerStateStore {
     // or parallel test processes sharing a db file) can still momentarily
     // contend; busy_timeout makes that wait rather than error.
     this.db.exec("PRAGMA busy_timeout = 5000");
+    this.startupClockCheckMode = options.startupClockCheck ?? "enforce";
     // #1504 §4 startup checks: validate the persisted version markers and the
     // last durable write BEFORE any schema mutation, so a database from a
     // newer binary (or a host clock stepped back past tolerance) fails closed
@@ -1158,10 +1160,12 @@ export class SqliteBrokerStateStore implements BrokerStateStore {
     if (stateCheck) {
       throw new Error(`shared-state startup check failed: ${stateCheck.code} (${stateCheck.detail})`);
     }
-    const clockCheck = evaluatePersistedClockV1({
-      persistedAtIso: this.readMetadata("last_persist_at"),
-      nowUnixMs: Date.now(),
-    });
+    const clockCheck = this.startupClockCheckMode === "skip"
+      ? undefined
+      : evaluatePersistedClockV1({
+          persistedAtIso: this.readMetadata("last_persist_at"),
+          nowUnixMs: Date.now(),
+        });
     if (clockCheck) {
       throw new Error(`shared-state startup check failed: ${clockCheck.code} (${clockCheck.detail})`);
     }
