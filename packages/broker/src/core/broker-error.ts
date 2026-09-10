@@ -39,6 +39,7 @@ export const BROKER_ERROR_CODES = [
   "task_lineage_cycle",
   "unauthorized",
   "rate_limited",
+  "state_unavailable",
 ] as const;
 
 export type BrokerErrorCode = (typeof BROKER_ERROR_CODES)[number];

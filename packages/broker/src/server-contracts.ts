@@ -125,6 +125,12 @@ export interface BrokerServerOptions extends BrokerRuntimeHotLimitOptions {
   /** Dedicated V1 fence file. Env: `BROKER_SHARED_STATE_FILE`. */
   sharedStateFile?: string;
   /**
+   * #1504 Slice S: route the worker HTTP-signature replay check through the
+   * V1 `consumeReplayNonce` primitive via the serving fence. Default-off;
+   * env: `BROKER_SHARED_STATE_V1_REPLAY` (`off` | `on`).
+   */
+  sharedStateReplayV1?: boolean;
+  /**
    * D3a hook after the first `lost_fence` 503 is written. Production
    * defaults to `process.exit(1)`. Tests inject a no-op or spy so the
    * runner does not die. This is not an operator env and does not call

@@ -3463,3 +3463,41 @@ Box checked by this slice: `Add secret-safe stateContract health without
 identity-bearing top-key data`. Remaining in this section: integrate the
 primitives one at a time behind default-off flags, and the
 compatibility/regression/performance run. 488/489 remain as decided by W11.
+
+### Slice S — replay primitive behind the default-off flag (§4, first integration)
+
+Slice S is the first of the six one-at-a-time primitive integrations. A new
+closed flag parser, `resolveSharedStateReplayPrimitiveModeV1` in
+`shared-state-replay-primitive-mode-v1.ts`, reads
+`BROKER_SHARED_STATE_V1_REPLAY` (unset/empty `off`, `on`, anything else fails
+startup loudly — the wave-plan-dag/review-lineage posture). With the flag off
+(default), nothing changes: the process-local `A2AHttpSignatureReplayCache`
+still answers the worker HTTP-signature replay check, and the new counters
+stay zero.
+
+With the flag `on`, the check routes through the V1 adapter's
+`consumeReplayNonce` — reached through the serving fence, which gains one
+fail-closed passthrough method (`consumeReplayNonce`) on its existing
+single-writer adapter rather than opening a second adapter that the ownership
+CAS would rightly reject. The keyid/nonce map to the §5.1 digest domains
+(`security.replay.requester-key` / `security.replay.nonce`) under the fixed
+namespace `security.replay.broker-worker-signature`; ttl derives from the
+signature expiry (floored at 1 ms, since a non-positive duration is an
+adapter rejection). Only a committed `accepted` decision admits the request;
+a committed `replay` decision reproduces the existing
+`a2a_signature_replay` 401 verbatim; every failure code, rejected/unavailable
+envelope, released fence, or thrown exception collapses to a new retryable
+`state_unavailable` BrokerError mapped to 503 — never a local fallback accept
+(§5.1 partition behavior). `/health` replay counters switch source: the V1
+path feeds the same bounded accepted/replayed counter shape instead of the
+local cache stats.
+
+Not done by this slice, deliberately: the rate/lease/idempotency/outbox/graph
+integrations (same flag-per-primitive pattern, later slices), a reset-risk
+epoch signal for the durable replay state (the current `process_start`
+reset-risk declaration stays until the full §4 item closes), and any live
+operator rollout — the flag ships default-off everywhere, including the fleet.
+Box `Integrate primitives one at a time behind default-off flags` stays
+unchecked until all six primitives are integrated; the
+compatibility/regression/performance run follows it. 488/489 remain as
+decided by W11.

@@ -41,6 +41,7 @@ import {
   validateBrokerStartupSecurity,
 } from "./startup-security.js";
 import { resolveSharedStateDeploymentGradeFromEnvV1 } from "./shared-state-deployment-grade-v1.js";
+import { resolveSharedStateReplayPrimitiveModeV1 } from "./shared-state-replay-primitive-mode-v1.js";
 import { evaluateGradeBackendCapabilityV1 } from "./shared-state-startup-checks-v1.js";
 import {
   acquireSharedStateServingFenceForBrokerV1,
@@ -400,6 +401,19 @@ export function createBrokerServer(options: BrokerServerOptions = {}): BrokerSer
   const wavePlanDagV2Mode = resolveWavePlanDagV2Mode(
     options.wavePlanDagV2Mode ?? process.env.A2A_WAVE_PLAN_DAG_V2_MODE,
   );
+  // #1504 §4 Slice S: replay-primitive integration flag. Default-off keeps
+  // the process-local replay cache; `on` routes the worker HTTP-signature
+  // replay check through the V1 adapter via the serving fence. Invalid
+  // values fail startup loudly (the resolver throws).
+  const sharedStateReplayV1 = resolveSharedStateReplayPrimitiveModeV1(
+    options.sharedStateReplayV1 === undefined
+      ? process.env.BROKER_SHARED_STATE_V1_REPLAY
+      : options.sharedStateReplayV1 ? "on" : "off",
+  ) === "on";
+  // Cumulative V1 replay outcomes for /health. Same bounded counters shape as
+  // the process-local cache stats; when the flag is off these stay zero and
+  // the local cache stats are reported instead.
+  const sharedStateReplayV1Stats = { accepted: 0, replayed: 0 };
   // NCLEX evaluation receipt surface (#1724): default-off; a configured
   // keyring file that is unreadable or malformed fails startup loudly.
   // Domain moved to packages/nclex-evaluation (#1601 first slice); this is
@@ -1027,7 +1041,30 @@ export function createBrokerServer(options: BrokerServerOptions = {}): BrokerSer
     if (result.brokerId !== brokerId) {
       throw new BrokerError("unauthorized", `a2a_signature_identity_mismatch: signed broker id ${result.brokerId} does not match ${brokerId}`);
     }
-    if (!a2aHttpSignatureReplayCache.remember(result.keyid, result.nonce, result.expires)) {
+    if (sharedStateReplayV1) {
+      // #1504 §4 Slice S: consume the nonce through the V1 replay primitive
+      // (durable, linearizable per tuple) instead of the process-local cache.
+      // Fail-closed per §5.1: an unavailable authoritative state rejects the
+      // request with retryable 503 and never falls back to a local accept.
+      const nowMs = Date.now();
+      const fence = servingFence;
+      if (!fence) {
+        throw new BrokerError("state_unavailable", "a2a_signature_replay_state_unavailable: serving fence missing");
+      }
+      const ttlMs = Math.max(1, result.expires * 1000 - nowMs);
+      const outcome = fence.consumeReplayNonce(
+        { keyid: result.keyid, nonce: result.nonce, ttlMs },
+        nowMs,
+      );
+      if (outcome.outcome === "unavailable") {
+        throw new BrokerError("state_unavailable", `a2a_signature_replay_state_unavailable: ${outcome.reasonCode}`);
+      }
+      if (outcome.outcome === "replayed") {
+        sharedStateReplayV1Stats.replayed += 1;
+        throw new BrokerError("unauthorized", "a2a_signature_replay: nonce has already been used for this key id");
+      }
+      sharedStateReplayV1Stats.accepted += 1;
+    } else if (!a2aHttpSignatureReplayCache.remember(result.keyid, result.nonce, result.expires)) {
       throw new BrokerError("unauthorized", "a2a_signature_replay: nonce has already been used for this key id");
     }
     const verifiedRecord = a2aHttpSignatureKeyRegistry[result.keyid];
@@ -1606,7 +1643,7 @@ export function createBrokerServer(options: BrokerServerOptions = {}): BrokerSer
               requestPressure.general.allowedRequests + requestPressure.general.deniedRequests,
           }),
           clockContinuity: "reset",
-          replay: a2aHttpSignatureReplayCache.stats(),
+          replay: sharedStateReplayV1 ? sharedStateReplayV1Stats : a2aHttpSignatureReplayCache.stats(),
           rateLimit: {
             windowMs: rateLimitWindowSec * 1000,
             limit: rateLimitMaxRequests,
