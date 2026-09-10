@@ -3825,3 +3825,38 @@ were missing and every post-rollback re-migration verified green. Exit gate
 met: zero unexplained semantic divergence and a restorable pre-cutover copy.
 This phase says nothing about Phase 6/7 authorization; 488/489 remain as
 decided by W11.
+
+### Slice ZB — Phase 6 preconditions evidence gathered (§5, operator-approved)
+
+With operator approval for §5 recorded, Slice ZB gathers the Phase 6
+precondition evidence on the T1 production broker — read-only except the
+backup artifacts. Full evidence:
+[phase6-preconditions-evidence.md](phase6-preconditions-evidence.md).
+
+1. **Revision/config/backend identified**: production runs `20812f7`
+   (image tag `github-20812f7`, docker, built 2026-09-10T00:39:40Z), backend
+   `BROKER_PERSISTENCE_BACKEND=sqlite` (`hot-tables` load source, persistence
+   worker thread on), rate configs recorded, all six shared-state flags
+   absent (default-off). Gap noted: production predates Phases 4–5; the
+   shadow runtime must build from a post-Phase-5 main.
+2. **Topology**: exactly one broker container (healthy, restarts 0, one
+   published loopback port), exactly one `server.js` process,
+   `/readyz` reports `single-process`; the host's only other `server.js`
+   process is an unrelated loopback memo service.
+3. **Backup/restore rehearsal**: backup set
+   `backups/pre-phase6-shadow-20260910T085435Z/` (raw `state.sqlite` + WAL +
+   SHM, and the canonical hot-tables export); restore probe on the copy:
+   integrity ok, 676/676 tasks match. **Finding**: the hot-tables export caps
+   `terminalOutbox` at 1000 (`DEFAULT_TERMINAL_TASK_OUTBOX_RETENTION`) while
+   the live DB holds 1048 — the JSON export is not a complete outbox backup;
+   Phase 7 gate 6 must migrate from the raw DB copy (or the cap is lifted
+   first). **Rollback owner recorded: the operator (name held in internal
+   operations memory).**
+4. **Security-window plan drafted** (pending operator approval): the shadow
+   needs no window (read-only); any non-serving drain must span ≥
+   signature-expiry + rate windows (~6 min theoretical) — **15 minutes
+   proposed** as the standing approved window.
+
+Phase 6 shadow implementation is now unblocked once the operator approves
+the window plan; Phases 6 and 7 each remain individually authorized stages.
+488/489 remain as decided by W11.
