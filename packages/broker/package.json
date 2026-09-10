@@ -23,6 +23,7 @@
     "start": "node dist/server.js",
     "start:worker": "node dist/worker.js",
     "smoke:restart-recovery": "node scripts/restart-recovery-smoke.mjs",
+    "smoke:migration-rehearsal": "node scripts/migration-rehearsal-v1.mjs",
     "smoke:docker-broker": "node scripts/docker-broker-live-smoke.mjs",
     "smoke:docker-broker:fleet": "node scripts/docker-broker-live-smoke.mjs --fleet --require-workers workergamma,workerepsilon,workerbeta,workeralpha",
     "export:sqlite": "node scripts/export-sqlite-state.mjs",

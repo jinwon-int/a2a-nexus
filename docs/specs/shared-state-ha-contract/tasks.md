@@ -3777,3 +3777,51 @@ default-off flags, verified for compatibility, regression, and performance.
 authorized stage per plan.md and the issue's safety boundary; every flag
 ships default-off everywhere including the fleet. 488/489 remain as decided
 by W11.
+
+### Slice ZA — Phase 5 executed: local/offline migration rehearsal (§5, operator-approved)
+
+With operator approval for §5 recorded, Slice ZA executes **plan.md Phase 5
+only** — local, offline, source-only. Phases 6 (live shadow) and 7 (cutover)
+remain separately authorized stages; this slice touches no production
+process, no live store, and no traffic.
+
+New rehearsal harness: `scripts/migration-rehearsal-v1.mjs` (npm alias
+`smoke:migration-rehearsal`). One deterministic run with five stages, exit
+0/1:
+
+1. **Legacy fixture** — a real SQLite-backed broker driven through the core:
+   create/claim/complete, create/claim/fail, an idempotent create hit, an
+   operator cancel, a claim-then-requeue, and one task left actively claimed;
+   exported through the documented `export-sqlite-state.mjs` path.
+2. **Migrate** into a fresh V1 SQLite store, one transaction per domain:
+   idempotency (one record + outbox link per explicit-id task, digests
+   derived with the exact runtime derivations), outbox (legacy terminal
+   events in arrival order, sequences 1..N, task-terminal-notification policy
+   triple, receipt mapped per §5.5.1 — provider sent/accepted stay `pending`),
+   lease (each actively claimed task gets a fresh-authority fence token 1 +
+   fresh expiry window; a fenceless system cannot preserve tokens — the
+   invariant is that the V1 authority never decreases after cutover), graph
+   (zero facts; 0 = 0).
+3. **Verify** by reopening the V1 adapter: a migrated idempotency key replays
+   the SAME outcome digest; a migrated outbox event replays the SAME sequence
+   without re-allocation; a migrated active claim CONFLICTS (the fresh fence
+   protects it); per-domain counts compare legacy↔V1 exactly. Divergence
+   ledger requires zero unexplained entries.
+4. **Crash at every boundary + rollback**: aborts after each of the four
+   domain boundaries; a partial store fails verification exactly when a
+   not-yet-written domain carries rows (a crash after the last non-empty
+   domain is legitimately complete-equivalent); rollback discards the partial
+   store and re-migrates from the restorable pre-cutover export — green after
+   every boundary.
+5. **Volatile window**: replay nonces and rate costs are volatile and not
+   migrated; the run records the maximum safety window (signature-expiry
+   replay TTL bound; general + worker rate windows) and the non-serving-drain
+   requirement across it.
+
+Executed result: **pass, zero divergence** — fixture 5 tasks / 3 terminal
+events; migrated counts idempotency 5, outbox 3, lease 1, graph 0; full
+migration verification clean; all four boundary crashes detected where rows
+were missing and every post-rollback re-migration verified green. Exit gate
+met: zero unexplained semantic divergence and a restorable pre-cutover copy.
+This phase says nothing about Phase 6/7 authorization; 488/489 remain as
+decided by W11.
