@@ -451,20 +451,20 @@ workload and an operator approves the budget. Measurement without that
 approval would produce numbers with no accepted meaning, so this section is
 not startable on its own either.
 
-- [ ] Use fixed fixture sizes, seeded operation order, injected clock, one
+- [x] Use fixed fixture sizes, seeded operation order, injected clock, one
   warm-up, and a bounded sample count; record machine/runtime metadata without
   host-specific paths or identities.
-- [ ] Measure replay consume, rate reservation, uncontended/contended claim,
+- [x] Measure replay consume, rate reservation, uncontended/contended claim,
   idempotent first/replay/conflict, outbox append/read, and graph projection
   batch/query separately.
-- [ ] Record throughput, p50/p95/p99 latency, SQLite busy/queue counts, storage
+- [x] Record throughput, p50/p95/p99 latency, SQLite busy/queue counts, storage
   growth, and cleanup cost for inline and optional worker-writer modes.
-- [ ] Compare against a pinned local legacy baseline and classify regressions;
+- [x] Compare against a pinned local legacy baseline and classify regressions;
   do not invent a pass threshold until Phase 1 records the workload and an
   operator approves the budget.
-- [ ] Inject the same bounded unavailable/rollback faults during load and
+- [x] Inject the same bounded unavailable/rollback faults during load and
   assert correctness invariants before considering performance numbers.
-- [ ] Treat local results as characterization only, not production capacity or
+- [x] Treat local results as characterization only, not production capacity or
   HA evidence.
 
 ## 3. SQLite adapter implementation
@@ -3344,3 +3344,50 @@ version/capability/clock/schema/migration checks`. Still open in this section:
 the full `stateContract` bands, primitive integration behind default-off
 flags, and the compatibility/regression/performance run. 488/489 remain as
 decided by W11.
+
+### Slice P — bounded local performance characterization (§2.9)
+
+Slice P adds `packages/broker/scripts/bench-shared-state-v1.mjs` and pins its
+first run as `performance-characterization-v1.json` beside this document. The
+section's own gate is honored: the operator approved STARTING the measurement
+(2026-09-10), and NO pass threshold is invented — the pin/compare mechanism
+classifies per-family deltas directionally (±15% reporting band, explicitly a
+reporting aid, not an approved budget). Threshold/budget approval remains open.
+
+**Method (item 1):** fixed seed (0xa2a2, xorshift for contender order), fixed
+per-family sample counts (inline 1,000–2,000, worker 500, bounded), one warm-up
+band (50 ops, discarded), a monotonic injected clock (+1 ms per transaction,
+inline mode; the conformance worker publishes instants over its control
+channel, worker mode), and machine metadata with no host names or paths.
+
+**Families (item 2), each measured separately and per outcome:** replay
+consume, rate reservation, uncontended claim, contended claim (8 seeded
+contenders per round, 200 rounds), idempotent first/replay/conflict, outbox
+append and page-walk read, graph projection batch apply and evidence-path
+query, plus one bounded prune for cleanup cost.
+
+**Metrics (item 3):** per-outcome count, throughput, p50/p95/p99 latency for
+INLINE and WORKER-WRITER modes; storage growth (file bytes before/after); lane
+queue counts (admitted/refused/ambiguous/crossed). SQLite busy events surface
+as recorded per-family error outcomes because the V1 adapter keeps
+`busy_timeout=0` by design — there is no busy wait to count, only immediate
+conflict errors, and none occurred.
+
+**Baseline (item 4):** this run pins the first baseline
+(`performance-characterization-v1.json`). Re-runs with `--compare` classify
+each family/outcome p50 and p95 as flat/slower/faster. No threshold was
+invented and none is approved.
+
+**Faults before numbers (item 5):** the harness refuses to record any
+measurement until the six deterministic fault/crash suites pass (Phase 2.2
+statement-fault points, 2.4 crash/restart, 2.5 partition/unavailable —
+worker-mode targets). During the timed load itself, correctness invariants are
+asserted per family: exactly one winner per contended round, replay answers
+with the ORIGINAL outcome envelope (decision name excluded), adapter-allocated
+outbox sequences strictly increasing, the reconcile page walk observes every
+appended event, and the lane reports zero ambiguous writes. Any violation is
+recorded in the report instead of numbers.
+
+**Characterization only (item 6):** every report carries the disclaimer that
+the numbers describe one machine and build and are not production capacity, HA
+evidence, or an approved budget.

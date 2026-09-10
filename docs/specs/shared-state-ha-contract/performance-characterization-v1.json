@@ -1,0 +1,340 @@
+{
+  "kind": "SharedStatePerformanceCharacterizationV1",
+  "characterizationVersion": 1,
+  "seed": 41634,
+  "parameters": {
+    "warmupOpsDiscarded": 50,
+    "inlineSamplesPerFamily": 2000,
+    "workerSamplesPerFamily": 500,
+    "contendedRounds": 200,
+    "contendersPerRound": 8,
+    "injectedClock": "monotonic 1700000000000 +1ms per transaction (inline mode); worker mode clocks internally",
+    "backwardSkewToleranceMs": "300000"
+  },
+  "disclaimer": "Characterization only: describes this machine and build. Not production capacity, not HA evidence, not an approved budget. The §2.9 pass-threshold gate stays with the operator.",
+  "machine": {
+    "node": "v24.15.0",
+    "platform": "linux",
+    "arch": "x64",
+    "cpuCount": 7,
+    "cpuModel": "Intel(R) Xeon(R) CPU E5-2699 v4 @ 2.20GHz",
+    "totalMemGb": 7.8
+  },
+  "faultGate": {
+    "suites": [
+      "shared-state-sqlite-worker-idempotency-target-v1.test.js",
+      "shared-state-sqlite-worker-lease-target-v1.test.js",
+      "shared-state-sqlite-worker-outbox-target-v1.test.js",
+      "shared-state-sqlite-worker-restart-continuity-target-v1.test.js",
+      "shared-state-sqlite-worker-partition-target-v1.test.js",
+      "shared-state-sqlite-worker-expiry-target-v1.test.js"
+    ],
+    "pass": true,
+    "durationMs": 14277
+  },
+  "modes": {
+    "inline": {
+      "families": {
+        "replay_first": {
+          "family": "replay_first",
+          "total": 2000,
+          "outcomes": {
+            "accepted": {
+              "count": 2000,
+              "throughputOpsPerSec": 411,
+              "latencyUs": {
+                "p50": 2350.4,
+                "p95": 3101.8,
+                "p99": 4428.4
+              }
+            }
+          }
+        },
+        "rate_reservation": {
+          "family": "rate_reservation",
+          "total": 2000,
+          "outcomes": {
+            "accepted": {
+              "count": 2000,
+              "throughputOpsPerSec": 160,
+              "latencyUs": {
+                "p50": 5960.3,
+                "p95": 10824,
+                "p99": 12915.9
+              }
+            }
+          }
+        },
+        "claim_uncontended": {
+          "family": "claim_uncontended",
+          "total": 1000,
+          "outcomes": {
+            "claimed": {
+              "count": 1000,
+              "throughputOpsPerSec": 403,
+              "latencyUs": {
+                "p50": 2426.9,
+                "p95": 3184.8,
+                "p99": 4225.9
+              }
+            }
+          }
+        },
+        "claim_contended": {
+          "family": "claim_contended",
+          "total": 200,
+          "outcomes": {
+            "round": {
+              "count": 200,
+              "throughputOpsPerSec": 54,
+              "latencyUs": {
+                "p50": 18106.7,
+                "p95": 22626.3,
+                "p99": 27436.2
+              }
+            }
+          }
+        },
+        "idem_first": {
+          "family": "idem_first",
+          "total": 1000,
+          "outcomes": {
+            "executed": {
+              "count": 1000,
+              "throughputOpsPerSec": 413,
+              "latencyUs": {
+                "p50": 2362.2,
+                "p95": 3030.3,
+                "p99": 4362.1
+              }
+            }
+          }
+        },
+        "idem_replay": {
+          "family": "idem_replay",
+          "total": 1000,
+          "outcomes": {
+            "replay:replayed": {
+              "count": 1000,
+              "throughputOpsPerSec": 248,
+              "latencyUs": {
+                "p50": 3944.5,
+                "p95": 4891.8,
+                "p99": 8182.9
+              }
+            }
+          }
+        },
+        "idem_conflict": {
+          "family": "idem_conflict",
+          "total": 500,
+          "outcomes": {
+            "rejected": {
+              "count": 500,
+              "throughputOpsPerSec": 466,
+              "latencyUs": {
+                "p50": 2067.3,
+                "p95": 2573.7,
+                "p99": 3097.4
+              }
+            }
+          }
+        },
+        "outbox_append": {
+          "family": "outbox_append",
+          "total": 1000,
+          "outcomes": {
+            "appended": {
+              "count": 1000,
+              "throughputOpsPerSec": 319,
+              "latencyUs": {
+                "p50": 3023.5,
+                "p95": 4265.2,
+                "p99": 5446.2
+              }
+            }
+          }
+        },
+        "outbox_read": {
+          "family": "outbox_read",
+          "total": 20,
+          "outcomes": {
+            "walk_complete": {
+              "count": 20,
+              "throughputOpsPerSec": 36,
+              "latencyUs": {
+                "p50": 25565.5,
+                "p95": 43941.7,
+                "p99": 46447.2
+              }
+            }
+          }
+        },
+        "graph_batch_apply": {
+          "family": "graph_batch_apply",
+          "total": 2,
+          "outcomes": {
+            "applied": {
+              "count": 2,
+              "throughputOpsPerSec": 267,
+              "latencyUs": {
+                "p50": 2322.2,
+                "p95": 5173.3,
+                "p99": 5173.3
+              }
+            }
+          }
+        },
+        "graph_query": {
+          "family": "graph_query",
+          "total": 200,
+          "outcomes": {
+            "query:ok": {
+              "count": 200,
+              "throughputOpsPerSec": 616,
+              "latencyUs": {
+                "p50": 1592.5,
+                "p95": 1871.3,
+                "p99": 2150.6
+              }
+            }
+          }
+        },
+        "cleanup_prune": {
+          "family": "cleanup_prune",
+          "total": 1,
+          "outcomes": {
+            "prune": {
+              "count": 1,
+              "throughputOpsPerSec": null,
+              "latencyUs": {
+                "p50": 5354.2,
+                "p95": null,
+                "p99": null
+              }
+            },
+            "deleted": {
+              "count": 0,
+              "throughputOpsPerSec": null,
+              "latencyUs": {
+                "p50": null,
+                "p95": null,
+                "p99": null
+              }
+            }
+          }
+        }
+      },
+      "storage": {
+        "bytesBefore": 122880,
+        "bytesAfter": 7380992
+      }
+    },
+    "worker": {
+      "families": {
+        "replay_first": {
+          "family": "replay_first",
+          "total": 500,
+          "outcomes": {
+            "accepted": {
+              "count": 500,
+              "throughputOpsPerSec": 343,
+              "latencyUs": {
+                "p50": 2834.4,
+                "p95": 3757.1,
+                "p99": 4988.8
+              }
+            }
+          }
+        },
+        "rate_reservation": {
+          "family": "rate_reservation",
+          "total": 500,
+          "outcomes": {
+            "accepted": {
+              "count": 500,
+              "throughputOpsPerSec": 254,
+              "latencyUs": {
+                "p50": 3873.4,
+                "p95": 4981.7,
+                "p99": 7961
+              }
+            }
+          }
+        },
+        "claim_uncontended": {
+          "family": "claim_uncontended",
+          "total": 500,
+          "outcomes": {
+            "claimed": {
+              "count": 500,
+              "throughputOpsPerSec": 335,
+              "latencyUs": {
+                "p50": 2915.7,
+                "p95": 3593.2,
+                "p99": 5034.9
+              }
+            }
+          }
+        },
+        "idem_first": {
+          "family": "idem_first",
+          "total": 500,
+          "outcomes": {
+            "executed": {
+              "count": 500,
+              "throughputOpsPerSec": 298,
+              "latencyUs": {
+                "p50": 3254.7,
+                "p95": 4127.6,
+                "p99": 5867.5
+              }
+            }
+          }
+        },
+        "outbox_append": {
+          "family": "outbox_append",
+          "total": 500,
+          "outcomes": {
+            "appended": {
+              "count": 500,
+              "throughputOpsPerSec": 239,
+              "latencyUs": {
+                "p50": 4068.1,
+                "p95": 5068,
+                "p99": 6486.3
+              }
+            }
+          }
+        },
+        "outbox_read": {
+          "family": "outbox_read",
+          "total": 6,
+          "outcomes": {
+            "walk_complete": {
+              "count": 6,
+              "throughputOpsPerSec": 48,
+              "latencyUs": {
+                "p50": 20896,
+                "p95": 22621,
+                "p99": 22621
+              }
+            }
+          }
+        },
+        "lane_diagnostics": {
+          "admittedTickets": 3087,
+          "refusedAdmissions": 0,
+          "ambiguousWrites": 0,
+          "crossedResponses": 0
+        }
+      },
+      "storage": {
+        "bytesBefore": 0,
+        "bytesAfter": 3035136
+      }
+    }
+  },
+  "runId": "bench-20260910004428-a2a2",
+  "generatedAtUtc": "2026-09-10T00:44:28.901Z"
+}
