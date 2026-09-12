@@ -197,13 +197,21 @@ export async function handleTasksListRequest(ctx: TasksCollectionRouteContext): 
     sendJson(ctx.res, 200, firstBody);
     return;
   }
+  // Client-gone detection must read the RESPONSE side only. The worker
+  // signature gate (`assertWorkerHttpSignatureRoute` → `readRawBody`) drains
+  // the request body before this handler runs, and a fully-consumed
+  // IncomingMessage is auto-destroyed (`req.destroyed === true`) while the
+  // client is still waiting. Testing `req.destroyed` here made every SIGNED
+  // long-poll skip the hold and return without ever writing a response, so
+  // workers timed out at waitMs+5s on each idle poll (a2a-nexus#2127).
+  const clientGone = () => ctx.res.writableEnded || ctx.res.destroyed;
   try {
     const deadlineMs = Date.now() + waitMs;
-    while (Date.now() < deadlineMs && !ctx.isDraining?.() && !ctx.res.writableEnded && !ctx.req.destroyed) {
+    while (Date.now() < deadlineMs && !ctx.isDraining?.() && !clientGone()) {
       // Wake on any persisted mutation, but never sleep past a slice without
       // re-checking drain/close — drain has no state-change of its own.
       await waitForStateWake(ctx.broker, ctx.res, Math.min(deadlineMs - Date.now(), TASK_LONG_POLL_DRAIN_CHECK_SLICE_MS));
-      if (ctx.isDraining?.() || ctx.res.writableEnded || ctx.req.destroyed) {
+      if (ctx.isDraining?.() || clientGone()) {
         break;
       }
       const next = listBody();
@@ -217,7 +225,7 @@ export async function handleTasksListRequest(ctx: TasksCollectionRouteContext): 
   }
   // Deadline/drain/close: answer with a final (typically empty) page — same
   // shape and status as a plain poll.
-  if (ctx.res.writableEnded || ctx.req.destroyed) {
+  if (clientGone()) {
     return;
   }
   sendJson(ctx.res, 200, listBody());

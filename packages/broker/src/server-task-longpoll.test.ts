@@ -5,7 +5,10 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 
+import { generateKeyPairSync } from "node:crypto";
+
 import { startTestServer, jsonHeaders, workerPayload, withEnv } from "./server-test-helpers.js";
+import { signA2AWorkerRequest } from "./workers/worker-http-signature.js";
 
 async function registerWorker(baseUrl: string, nodeId: "workerbeta" | "workergamma"): Promise<void> {
   const res = await fetch(`${baseUrl}/workers/register`, {
@@ -136,4 +139,91 @@ test("the long-poll slot gate degrades to an immediate plain poll when exhausted
       await close();
     }
   });
+});
+
+// a2a-nexus#2127: production workers sign every request (A2A HTTP Signature).
+// The signature gate drains the request body before the handler runs, which
+// auto-destroys the IncomingMessage (`req.destroyed === true`) even though the
+// client is still connected. The hold loop used to test `req.destroyed` as a
+// client-gone signal, so every SIGNED long-poll skipped the hold and returned
+// WITHOUT writing a response — workers timed out at waitMs+5s on each idle
+// poll. These tests sign exactly the way the worker client does.
+const signedPollKeyPair = generateKeyPairSync("ed25519");
+const signedPollKeyid = "worker:workerbeta:longpoll";
+const signedPollKeyRegistry = {
+  [signedPollKeyid]: {
+    keyid: signedPollKeyid,
+    workerId: "workerbeta",
+    publicKeyJwk: signedPollKeyPair.publicKey.export({ format: "jwk" }) as Record<string, unknown>,
+  },
+};
+const signedPollSignatureConfig = {
+  keyid: signedPollKeyid,
+  privateKeyJwk: signedPollKeyPair.privateKey.export({ format: "jwk" }) as Record<string, unknown>,
+  brokerId: "brokeralpha",
+};
+
+function signedWorkerPoll(baseUrl: string, waitMs: number): Promise<Response> {
+  const url = new URL(`/tasks?assignedWorkerId=workerbeta&status=queued&waitMs=${waitMs}`, baseUrl);
+  const headers = new Headers({
+    accept: "application/json",
+    "x-a2a-requester-id": "workerbeta",
+    "x-a2a-requester-kind": "node",
+    "x-a2a-requester-role": "analyst",
+  });
+  signA2AWorkerRequest({ method: "GET", url, headers, body: "", config: signedPollSignatureConfig });
+  return fetch(url, { method: "GET", headers, signal: AbortSignal.timeout(waitMs + 5_000) });
+}
+
+test("a SIGNED waitMs poll still answers an empty page at the deadline (#2127)", async () => {
+  const { baseUrl, close } = await startTestServer({
+    enforceRequesterIdentity: false,
+    brokerId: "brokeralpha",
+    a2aHttpSignatureWorkerAuth: "optional",
+    a2aHttpSignatureKeyRegistry: signedPollKeyRegistry,
+  });
+  try {
+    await registerWorker(baseUrl, "workerbeta");
+    const startedAt = Date.now();
+    const response = await signedWorkerPoll(baseUrl, 1_000);
+    const elapsed = Date.now() - startedAt;
+    assert.equal(response.status, 200);
+    const body = (await response.json()) as { count: number; items: unknown[] };
+    assert.equal(body.count, 0);
+    assert.deepEqual(body.items, []);
+    assert.ok(elapsed >= 900, `signed poll must be held to the deadline, returned after ${elapsed}ms`);
+    assert.ok(elapsed < 4_000, `signed poll must answer at the deadline, took ${elapsed}ms`);
+  } finally {
+    await close();
+  }
+});
+
+test("a SIGNED waitMs poll wakes when a matching task is created while waiting (#2127)", async () => {
+  const { baseUrl, close } = await startTestServer({
+    enforceRequesterIdentity: false,
+    brokerId: "brokeralpha",
+    a2aHttpSignatureWorkerAuth: "optional",
+    a2aHttpSignatureKeyRegistry: signedPollKeyRegistry,
+  });
+  try {
+    await registerWorker(baseUrl, "workerbeta");
+    const startedAt = Date.now();
+    const pollPromise = signedWorkerPoll(baseUrl, 10_000);
+    await new Promise((resolve) => setTimeout(resolve, 150));
+    const created = await fetch(`${baseUrl}/tasks`, {
+      method: "POST",
+      headers: jsonHeaders(),
+      body: taskBody("lp-signed-create-1", "workerbeta"),
+    });
+    assert.equal(created.status, 201);
+    const response = await pollPromise;
+    const elapsed = Date.now() - startedAt;
+    assert.equal(response.status, 200);
+    const body = (await response.json()) as { count: number; items: Array<{ id: string }> };
+    assert.equal(body.count, 1);
+    assert.equal(body.items[0]?.id, "lp-signed-create-1");
+    assert.ok(elapsed < 5_000, `signed long-poll should wake on creation, took ${elapsed}ms`);
+  } finally {
+    await close();
+  }
 });
