@@ -2863,3 +2863,101 @@ test("readStdin decodes multi-byte UTF-8 intact across pipe chunk boundaries (#2
   assert.ok(outcome.result.output.message.includes(marker));
   assert.doesNotMatch(outcome.result.output.message, /\uFFFD/, "no U+FFFD phantom characters may appear");
 });
+
+// Synthetic transport records only: these fixtures are not clinical evidence.
+function boundedReviewOutcome(response, execution = "bridge", payloadOverrides = {}, envOverrides = {}) {
+  const reviewTask = {
+    id: "bounded-review-note",
+    intent: "analyze",
+    assignedWorkerId: "reviewer-node",
+    message: "Inspect synthetic source records.",
+    payload: {
+      ...response,
+      mode: "analysis-only",
+      sourceOnly: true,
+      readOnlyValidation: true,
+      review: { required: true, authorWorkerId: "author-node" },
+      ...payloadOverrides,
+    },
+  };
+  const env = { PATH: process.env.PATH, A2A_EXECUTOR_MODE: "builtin", A2A_NODE_ID: "reviewer-node", ...envOverrides };
+  if (execution === "builtin") return handleTask(reviewTask, env);
+  const dir = mkdtempSync(join(tmpdir(), "a2a-bounded-review-"));
+  const bin = join(dir, "bridge.mjs");
+  writeFileSync(bin, `#!/usr/bin/env node\nprocess.stdout.write(JSON.stringify({text: JSON.stringify(${JSON.stringify(response)})}));\n`);
+  chmodSync(bin, 0o755);
+  try {
+    return handleTask(reviewTask, { ...env, A2A_OPENCLAW_ANALYSIS_ENABLED: "1", A2A_OPENCLAW_ANALYSIS_BIN: bin });
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+}
+
+test("bounded review notes: Piri normalization preserves all four structured records through the handler", async () => {
+  const { __test: piri } = await import("./piri-a2a-analysis-bridge.mjs");
+  const records = Array.from({ length: 4 }, (_, i) => ({
+    item_id: `TEST-ITEM-${i + 1}`,
+    content_fingerprint: createHash("sha256").update(`synthetic-${i}`).digest("hex"),
+    checks: ["natural_korean", "case_reasoning", "distractor_reasoning", "meaning_preserved", "terms_explained"],
+    note: "Synthetic transport assertion: 사례 단서와 판단 근거를 확인하는 형식의 기록입니다. ".repeat(3),
+  }));
+  const note = records.map((r) => `KO-EXPLANATION-V1 ${JSON.stringify(r)}`).join("\n");
+  assert.ok(note.length > 1000);
+  const normalized = piri.normalizeResponse({ status: "done", verdict: "pass", summary: note, findings: [], risks: [], recommendations: [], evidenceRefs: [] });
+  const outcome = boundedReviewOutcome(normalized);
+  assert.equal(outcome.error, undefined);
+  const validation = outcome.result.validations[0];
+  assert.deepEqual(validation, { kind: "review", nodeId: "reviewer-node", verdict: "pass", note });
+  assert.deepEqual(validation.note.split("\n").map((line) => JSON.parse(line.slice("KO-EXPLANATION-V1 ".length))), records);
+  const { validateReviewEvidence } = await import("../dist/worker-review.js");
+  assert.equal(validateReviewEvidence({ payload: { review: { required: true, authorWorkerId: "author-node" } } }, outcome.result), null);
+});
+
+for (const execution of ["bridge", "builtin"]) {
+  test(`bounded review notes: ${execution} preserves the inclusive UTF-8 boundary`, () => {
+    const note = "가".repeat(21845) + "x";
+    assert.equal(Buffer.byteLength(note, "utf8"), 65536);
+    const outcome = boundedReviewOutcome({ verdict: "pass", summary: note }, execution);
+    assert.equal(outcome.error, undefined);
+    assert.equal(outcome.result.validations[0].note, note);
+  });
+
+  test(`bounded review notes: ${execution} rejects one byte over without partial output or note leakage`, () => {
+    const note = "가".repeat(21845) + "xy";
+    assert.ok(note.length < 65536, "byte limit must not become a character limit");
+    const outcome = boundedReviewOutcome({ verdict: "pass", summary: note, findings: ["short fallback"] }, execution);
+    assert.equal(outcome.result, undefined);
+    assert.deepEqual(outcome.error, {
+      code: "review_note_too_large",
+      message: "selected review note exceeds the UTF-8 byte limit; no partial review emitted",
+      details: { noteBytes: 65537, maxNoteBytes: 65536 },
+    });
+  });
+
+  test(`bounded review notes: ${execution} retains a long negative verdict`, async () => {
+    const note = "FAIL: " + "Concrete synthetic failure record. ".repeat(100);
+    const outcome = boundedReviewOutcome({ summary: note }, execution);
+    assert.equal(outcome.error, undefined);
+    assert.equal(outcome.result.validations[0].verdict, "fail");
+    assert.equal(outcome.result.validations[0].note, note.slice(6).trim());
+    const { validateReviewEvidence } = await import("../dist/worker-review.js");
+    assert.equal(validateReviewEvidence({ payload: { review: { required: true, authorWorkerId: "author-node" } } }, outcome.result)?.code, "review_verdict_failed");
+  });
+}
+
+test("bounded review notes: explicit note precedence survives without falling back on overflow", () => {
+  const note = "Exact explicit record. ".repeat(100);
+  const outcome = boundedReviewOutcome({ verdict: "pass", review: { note }, summary: "short summary" });
+  assert.equal(outcome.result.validations[0].note, note.trim());
+  const oversized = boundedReviewOutcome({ verdict: "pass", review: { note: "x".repeat(65537) }, reviewNote: "short fallback", summary: "short summary" });
+  assert.equal(oversized.result, undefined);
+  assert.equal(oversized.error.code, "review_note_too_large");
+});
+
+test("bounded review notes: oversize rejection precedes handler completion comment processing", () => {
+  // No credentials: if completion-comment processing runs it returns its own
+  // configuration error. The review error must take precedence before that.
+  const outcome = boundedReviewOutcome({ verdict: "pass", summary: "x".repeat(65537) }, "bridge", { postGithubComment: true }, { A2A_POST_ANALYSIS_EVIDENCE_COMMENTS: "1" });
+  assert.equal(outcome.result, undefined);
+  assert.equal(outcome.error.code, "review_note_too_large");
+});

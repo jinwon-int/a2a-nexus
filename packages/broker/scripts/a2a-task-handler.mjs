@@ -706,6 +706,10 @@ function firstString(values) {
   return "";
 }
 
+// Preserve complete structured review records before attestation; never slice
+// inside a record or a multibyte character. This limit is per selected note.
+const MAX_REVIEW_NOTE_BYTES = 64 * 1024;
+
 function reviewValidationFromAnalysis(task, response, env = process.env) {
   if (!isReviewRequiredTask(task)) return undefined;
   const review = response?.review && typeof response.review === "object" && !Array.isArray(response.review) ? response.review : {};
@@ -735,8 +739,16 @@ function reviewValidationFromAnalysis(task, response, env = process.env) {
     stripLeadingReviewVerdict(verdictText),
     response?.summary,
     ...(Array.isArray(response?.findings) ? response.findings : []),
-  ]).slice(0, 1000);
+  ]);
   if (!note) return undefined;
+  const noteBytes = Buffer.byteLength(note, "utf8");
+  if (noteBytes > MAX_REVIEW_NOTE_BYTES) {
+    return { error: {
+      code: "review_note_too_large",
+      message: "selected review note exceeds the UTF-8 byte limit; no partial review emitted",
+      details: { noteBytes, maxNoteBytes: MAX_REVIEW_NOTE_BYTES },
+    } };
+  }
   return {
     kind: "review",
     verdict,
@@ -1480,6 +1492,9 @@ function runOpenClawAnalysisBridge(task, env = process.env) {
     modelFromPayload: modelFromPayload || undefined,
   };
 
+  const reviewValidation = reviewValidationFromAnalysis(task, response, env);
+  if (reviewValidation?.error) return reviewValidation;
+
   if (postGithubComment) {
     const comment = postGithubIssueCommentSync({
       task,
@@ -1511,8 +1526,6 @@ function runOpenClawAnalysisBridge(task, env = process.env) {
       },
     };
   }
-
-  const reviewValidation = reviewValidationFromAnalysis(task, response, env);
 
   return {
     result: withReviewValidation({
@@ -2620,6 +2633,7 @@ function handleBuiltinTask(task, env = process.env) {
     const noLive = payload.noLive === true || payload.no_live === true || undefined;
     const sourceOnly = payload.sourceOnly === true || payload.source_only === true || undefined;
     const reviewValidation = reviewValidationFromAnalysis(task, payload, env);
+    if (reviewValidation?.error) return reviewValidation;
 
     if (blockCommentUrl) {
       return {
