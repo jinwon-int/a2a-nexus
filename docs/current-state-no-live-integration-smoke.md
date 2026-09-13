@@ -80,3 +80,9 @@ The fixture enforces the same no-live boundary set as the parent smoke, plus exp
 - Worker posts Start + PR/Done/Block evidence in GitHub comments
 - PR is opened against `main`
 - Evidence is compact and redacted-only
+
+## workerEta GitHub Patch Lane Re-Smoke
+
+A focused, low-risk docs-only re-smoke under `jinwon-int/a2a-nexus#2137` (runner model configuration fix) proving the `workerEta` `github-propose-patch` lane still produces a valid branch/PR with compact evidence. Same shape as the worker-gamma patch lane smoke above: PR opened against `main`, Start marker plus terminal PR/Done/Block evidence, compact redacted-only output.
+
+Boundaries unchanged: the worker does not merge the PR or close the issue; no deploy, restart, DB mutation, Terminal ACK/replay, provider/Telegram send, secret movement, workflow change, or code/fixture change. The patch is documentation-only by design, and a zero-diff result must be classified per the branch/no-diff closeout guidance rather than treated as success.
