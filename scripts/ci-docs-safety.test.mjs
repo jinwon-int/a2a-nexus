@@ -21,12 +21,36 @@ test('docs/root-doc CI path runs markdown links and external secret scan', () =>
   assert.match(ci, /npm run scan:external-secrets/);
 });
 
+test('required workflows accept queue events and pin path-filter comparison', () => {
+  for (const file of ['ci.yml', 'codeql.yml', 'tck-promoted-gate.yml', 'finalizer-verdict-gate.yml']) {
+    const text = readFileSync(join(repoRoot, '.github/workflows', file), 'utf8');
+    const events = text.split('\non:\n')[1].split(/\n\S/)[0];
+    assert.match(events, /^  merge_group:/m, file);
+    assert.doesNotMatch(events, /^\s+paths(?:-ignore)?:/m, file);
+    if (text.includes('dorny/paths-filter@')) {
+      assert.match(text, /base: \$\{\{ github\.event\.merge_group\.base_sha \|\| github\.ref \}\}/, file);
+      assert.match(text, /ref: \$\{\{ github\.event\.merge_group\.head_sha \|\| github\.sha \}\}/, file);
+    }
+  }
+});
+
+test('queue verdict gate remains enforce and bound to synthetic head, never warn/skip', () => {
+  const text = readFileSync(join(repoRoot, '.github/workflows/finalizer-verdict-gate.yml'), 'utf8');
+  assert.match(text, /HEAD_SHA: \$\{\{ github\.event\.pull_request\.head\.sha \|\| github\.sha \}\}/);
+  assert.match(text, /--head-sha "\$HEAD_SHA"/);
+  assert.match(text, /--mode enforce/);
+  assert.doesNotMatch(text, /if:.*merge_group|continue-on-error|--mode warn/);
+});
+
 test('auto-merge squashes, because main requires linear history (#2050)', () => {
   const autoMerge = readFileSync(join(repoRoot, '.github/workflows/auto-merge.yml'), 'utf8');
   const mergeCommands = autoMerge.match(/gh pr merge[^\n]*/g) ?? [];
   assert.equal(mergeCommands.length, 1, 'expected exactly one gh pr merge invocation');
   const [command] = mergeCommands;
   assert.match(command, /--squash/);
+  assert.match(command, /--auto/);
+  assert.match(command, /--match-head-commit "\$HEAD_SHA"/);
+  assert.doesNotMatch(command, /--admin|--delete-branch/);
   // `--merge` creates a merge commit, which main's required_linear_history
   // rejects. The workflow shipped with `--merge` from its first commit and
   // never hit the line, so nothing caught it until the repo review.
