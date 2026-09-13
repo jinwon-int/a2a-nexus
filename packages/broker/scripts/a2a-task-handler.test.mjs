@@ -1043,6 +1043,87 @@ test("existing read-only evidence task still sets readOnlyValidation", () => {
   assert.equal(runnerTask.allowNoChanges, undefined);
 });
 
+// ─── #2145: declaredScope / diffHygiene pass-through to the docker-runner task JSON ───
+
+test("plain docker lanes forward payload.declaredScope into the runner task JSON (#2145)", () => {
+  const runnerTask = __test.buildRunnerTask(patchTask({
+    payload: {
+      declaredScope: { paths: ["packages/broker/src/", "packages/broker/README.md"] },
+    },
+  }), {});
+
+  assert.deepEqual(runnerTask.declaredScope, { paths: ["packages/broker/src/", "packages/broker/README.md"] });
+});
+
+test("plain docker lanes forward payload.diffHygiene into the runner task JSON (#2145)", () => {
+  const diffHygiene = {
+    forbiddenPaths: ["AGENTS.md"],
+    allowLockfileChanges: true,
+    blockWhitespaceOnly: false,
+    churnWarnRatio: 0.4,
+    churnBlockRatio: 0.8,
+    churnMinLines: 50,
+    scope: { mode: "block" },
+  };
+  const runnerTask = __test.buildRunnerTask(patchTask({
+    payload: { diffHygiene },
+  }), {});
+
+  assert.deepEqual(runnerTask.diffHygiene, diffHygiene);
+});
+
+test("payloads without declaredScope/diffHygiene keep the runner task unchanged (#2145)", () => {
+  const runnerTask = __test.buildRunnerTask(patchTask({}), {});
+
+  assert.equal(runnerTask.declaredScope, undefined);
+  assert.equal(runnerTask.diffHygiene, undefined);
+});
+
+test("malformed payload.declaredScope fails closed instead of running unscoped (#2145)", () => {
+  const malformedCases = [
+    null,
+    "packages/broker/src/",
+    7,
+    [],
+    {},
+    { paths: [] },
+    { paths: [""] },
+    { paths: [42] },
+    { paths: ["a\r/b"] },
+  ];
+  for (const declaredScope of malformedCases) {
+    assert.throws(
+      () => __test.buildRunnerTask(patchTask({ payload: { declaredScope } }), {}),
+      /declaredScope/,
+      `expected a failure for declaredScope=${JSON.stringify(declaredScope)}`,
+    );
+  }
+});
+
+test("malformed payload.diffHygiene fails closed instead of running unscoped (#2145)", () => {
+  const malformedCases = [
+    null,
+    "block",
+    9,
+    [],
+    { scope: { mode: "enforce" } },
+    { scope: "block" },
+    { churnWarnRatio: 1.5 },
+    { churnBlockRatio: 0 },
+    { churnWarnRatio: 0.9, churnBlockRatio: 0.5 },
+    { churnMinLines: 0 },
+    { forbiddenPaths: [""] },
+    { allowLockfileChanges: "yes" },
+  ];
+  for (const diffHygiene of malformedCases) {
+    assert.throws(
+      () => __test.buildRunnerTask(patchTask({ payload: { diffHygiene } }), {}),
+      /diffHygiene/,
+      `expected a failure for diffHygiene=${JSON.stringify(diffHygiene)}`,
+    );
+  }
+});
+
 test("github-readonly-validation alias is treated as GitHub evidence and refuses generic builtin success", () => {
   const result = handleTask({
     id: "task-readonly-alias",
