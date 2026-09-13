@@ -30,3 +30,11 @@ The versioned handler artifact in `scripts/a2a-task-handler.mjs` exposes
 `BUILD_INFO` with version, source path, runtime checksum, and a credential-free /
 host-neutral contract. Installers should deploy this artifact from the repo (or a
 release bundle) instead of copying ad-hoc files from live nodes.
+
+## Bangtong smoke (2026-09-13)
+
+The `bangtong` `github-propose-patch` lane is the low-risk smoke for
+[jinwon-int/a2a-nexus#2134](https://github.com/jinwon-int/a2a-nexus/issues/2134)
+after reinstalling the `a2a-task-handler.mjs` delegation shim. Pass criteria:
+one PR against `main` with a documentation-only diff; this smoke does not merge
+the PR or close the issue.
