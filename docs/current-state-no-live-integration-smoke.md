@@ -80,3 +80,17 @@ The fixture enforces the same no-live boundary set as the parent smoke, plus exp
 - Worker posts Start + PR/Done/Block evidence in GitHub comments
 - PR is opened against `main`
 - Evidence is compact and redacted-only
+
+## workerEpsilon GitHub Patch Lane Re-Smoke
+
+This re-smoke under `a2a-nexus#2137` proves that workerEpsilon's `github-propose-patch` lane is healthy again after the worker model configuration fix. It is a docs-only re-run of the same lane contract as the smoke above, with no code, fixture, or workflow changes.
+
+Scope of the re-smoke:
+
+- Worker: `workerEpsilon`
+- Capability under test: `github-propose-patch`
+- Allowed change: exactly one small documentation change in this file
+- PR is opened against `main`; the worker must not merge the PR or close the issue
+- Evidence is compact and redacted-only
+
+The same no-live boundary set applies unchanged: no live A2A dispatch, no deploy/restart, no DB mutation, no Terminal ACK/replay, no provider/Telegram send, no credential movement, and no worker-owned GitHub mutation beyond the PR itself.
