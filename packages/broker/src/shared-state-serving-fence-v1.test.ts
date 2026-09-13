@@ -16,6 +16,7 @@ import { createBrokerServer } from "./server.js";
 import {
   SHARED_STATE_SERVING_FENCE_V1,
   acquireSharedStateServingFenceForBrokerV1,
+  assertSharedStateServingFenceV1,
   openSharedStateServingFenceV1,
   resolveSharedStateServingFencePathV1,
 } from "./shared-state-serving-fence-v1.js";
@@ -111,6 +112,53 @@ test("a second open on the same file fails closed until the first releases", () 
     assert.equal(third.ok, true);
     if (!third.ok) throw new Error("unreachable");
     third.value.release();
+  });
+});
+
+test("#2129: ownership_conflict rejection names the fence file and the clear-tool invocation", () => {
+  withTempDir((directory) => {
+    const filePath = join(directory, "fence.sqlite");
+    const first = openSharedStateServingFenceV1({ filePath });
+    assert.equal(first.ok, true);
+    if (!first.ok) throw new Error("unreachable");
+    try {
+      assert.throws(
+        () => assertSharedStateServingFenceV1({ filePath }),
+        (error: unknown) => {
+          assert.ok(error instanceof Error);
+          // Pre-existing regex-substring assertions elsewhere in the suite
+          // (this file and shared-state-serving-fence-startup-v1.test.ts)
+          // must keep matching an unmodified prefix.
+          assert.match(error.message, /shared-state serving fence rejected: ownership_conflict/);
+          assert.match(
+            error.message,
+            new RegExp(`file=${filePath.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}`),
+          );
+          assert.match(
+            error.message,
+            /run: node packages\/broker\/scripts\/shared-state-fence-clear\.mjs --file .+ --dry-run to diagnose, then without --dry-run to clear once verified safe/,
+          );
+          return true;
+        },
+      );
+    } finally {
+      first.value.release();
+    }
+  });
+});
+
+test("a non-ownership_conflict rejection still names the file but invents no clear-tool hint", () => {
+  withTempDir((directory) => {
+    const filePath = join(directory, "fence.sqlite");
+    assert.throws(
+      () => assertSharedStateServingFenceV1({ filePath: `${filePath}/not-a-directory/fence.sqlite` }),
+      (error: unknown) => {
+        assert.ok(error instanceof Error);
+        assert.match(error.message, /^shared-state serving fence rejected: adapter_unavailable \(file=/);
+        assert.doesNotMatch(error.message, /shared-state-fence-clear\.mjs/);
+        return true;
+      },
+    );
   });
 });
 

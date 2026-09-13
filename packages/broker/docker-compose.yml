@@ -28,6 +28,30 @@ services:
     container_name: ${SERVICE_NAME:-a2a-broker}
     hostname: ${SERVICE_NAME:-a2a-broker}
     restart: unless-stopped
+    # #2129: 2026-09-12 T1 incident — Compose's default 10s stop_grace_period
+    # let SIGKILL land mid-drain on a recreate (`docker compose up -d
+    # --no-build`), before the broker could release the shared-state serving
+    # fence's owner_token. Every following container then failed closed with
+    # `ownership_conflict` (decision A1, #1504: a crash without release
+    # leaves the token set) — a 7-minute outage until the token was cleared
+    # by hand. T1's state file was 301MB; T2 (190MB, unaffected) released
+    # cleanly in time.
+    #
+    # Measured basis for 60s: a bounded synthetic benchmark (single
+    # WAL-mode sqlite connection, PRAGMA synchronous=FULL, one blob write +
+    # `wal_checkpoint(TRUNCATE)` + close — the same fsync-bound shape as the
+    # broker's own full-snapshot save/close path) on this sandbox's local
+    # disk scaled roughly linearly with payload size: ~0.65s at 50MB, ~1.7s
+    # at 100MB, ~7.5s at 300MB (~25ms/MB). A live 301MB production state file
+    # under crash-loop load, on a possibly slower disk, is plausibly several
+    # times that — 60s keeps an ~8x margin over the fast-disk 300MB
+    # measurement. This is a floor, not a guarantee: `[a2a-broker] drain
+    # completed in <ms>ms (stop_grace_period budget: ...)` is now logged on
+    # every shutdown (server-lifecycle.ts) so operators can re-tune this
+    # value from real drain times instead of a synthetic estimate. Rework
+    # upward if the state file grows well past ~300MB or logs show drains
+    # approaching this budget.
+    stop_grace_period: 60s
     # NOTE (#1772): `env_file` injects this whole file over the image's own ENV.
     # A2A_BROKER_REVISION / _BUILT_AT / _IMAGE_TAG / _CREATED in `.env` are
     # therefore *build-time interpolation inputs only* — they no longer shape
