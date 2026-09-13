@@ -94,9 +94,9 @@ There is **no admin escape hatch** here: a ruleset that blocks everything can on
 be undone by another `PUT`. Keep a rollback payload before applying.
 
 The exact required-check list and its path-aware handling now live in the
-applied ruleset itself, not in a planning document. Read the live list with
-`gh api repos/<owner>/<repo>/branches/main/protection --jq
-.required_status_checks.contexts` and keep it in sync with the job names in
+applied ruleset itself, not in a planning document. Read effective rules with
+`gh api repos/<owner>/<repo>/rules/branches/main` (and any classic protection
+separately) and keep status-check contexts in sync with the job names in
 [`ci.yml`](../.github/workflows/ci.yml).
 
 ### Required checks as of 2026-08-15
@@ -131,13 +131,53 @@ even though one lands in a PR and the other is a settings mutation.
 This list is a snapshot for orientation, not the source of truth. The ruleset is,
 and it is mutable — read it with the command above before relying on it.
 
+## Merge queue rollout
+
+CI preparation is separate from settings activation. The `ci`, `codeql`,
+`tck-promoted-gate` and `finalizer-verdict-gate` workflows accept `merge_group`.
+Path filters compare `merge_group.base_sha` with `merge_group.head_sha`, not a
+moving default branch, so the complete queued diff determines package/TCK jobs.
+Queue jobs check out the synthetic group commit, not an individual PR head.
+
+After this preparation merges, an operator may add only a `merge_queue` rule to
+the freshly read ruleset, preserving reviews, required checks, CodeQL, strictness
+and bypass actors. Initial target: `ALLGREEN`, `SQUASH`, one entry per build/merge,
+60-minute check timeout. This document does not assert activation has occurred.
+
+`auto-merge` retains its conservative `CLEAN` filter and requests queue admission
+with `gh pr merge --auto --squash --match-head-commit`. A racing head update is
+rejected. It is a best-effort convenience, not a liveness guarantee: if review
+arrives after CI, or a PR is `BEHIND`, a maintainer may request admission with
+`gh pr merge NUMBER --auto --squash --match-head-commit REVIEWED_FULL_SHA`
+without bypassing required controls. Record that full SHA during review; if it
+moves, re-review rather than silently substituting the latest head.
+Repository branch cleanup happens after actual merge, not enqueue.
+
+### Signed verdict boundary
+
+The existing gate stays fail-closed and verifies against the event head (the
+synthetic SHA on queue events). A verdict signed for an individual PR SHA is
+**not** a signature for the combined queue commit. No carrier JSON is currently
+tracked; ordinary no-carrier PRs remain supported. Verdict-carrying queue groups
+are not claimed supported: a PR-head-bound verdict will block them. Do not skip
+the gate, accept an arbitrary ancestor SHA, or switch to warn to admit a carrier.
+A separately reviewed group-to-PR evidence-binding design is required before
+using carriers through the queue; until then stop and escalate that lane.
+
+Activation requires a real `merge_group` run on `gh-readonly-queue/main/...`
+with all required contexts satisfied and the PR actually merged. Keep the
+pre-change ruleset payload. If activation deadlocks, re-read and remove only the
+new queue rule, verifying all unrelated controls remain unchanged; do not blindly
+PUT an old snapshot over concurrent settings changes. No broker restart,
+provider call, deployment or release is authorized by this source change.
+
 ## How to verify the invariant holds
 
 These are read-only checks; none of them mutate settings.
 
 ```bash
-# Branch protection must NOT be "404 Branch not protected" once a ruleset is applied.
-gh api repos/jinwon-int/a2a-nexus/branches/main/protection >/dev/null && echo "protected"
+# Effective rules include ruleset-based protection; classic protection may be 404.
+gh api repos/jinwon-int/a2a-nexus/rules/branches/main
 
 # Repository rulesets must list the main ruleset (not an empty array).
 gh api repos/jinwon-int/a2a-nexus/rulesets
@@ -146,9 +186,10 @@ gh api repos/jinwon-int/a2a-nexus/rulesets
 gh pr view <number> --json mergeStateStatus
 ```
 
-If branch protection is absent (`404`) or the ruleset list is empty, the
-auto-merge invariant is **not** satisfied: either apply the approval-gated
-ruleset or disable the `auto-merge` workflow until it is in place.
+A classic-protection `404` alone does not mean the branch is unprotected.
+Inspect effective rules and any classic protection together. If neither enforces
+the required review/check controls, the auto-merge invariant is **not** satisfied:
+either apply the approval-gated ruleset or disable `auto-merge` until it is in place.
 
 ## Failure mode if this regresses
 
