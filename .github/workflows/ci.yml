@@ -64,7 +64,8 @@ jobs:
           # Compare the complete queued group with its event-pinned base, not
           # the moving default branch. PR events still use the PR files API.
           base: ${{ github.event.merge_group.base_sha || github.ref }}
-          ref: ${{ github.event.merge_group.head_sha || github.sha }}
+          # Keep equal branch-name inputs on push so paths-filter uses 'before'.
+          ref: ${{ github.event.merge_group.head_sha || github.ref }}
           filters: |
             broker:
               - 'packages/broker/**'

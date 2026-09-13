@@ -94,9 +94,9 @@ There is **no admin escape hatch** here: a ruleset that blocks everything can on
 be undone by another `PUT`. Keep a rollback payload before applying.
 
 The exact required-check list and its path-aware handling now live in the
-applied ruleset itself, not in a planning document. Read the live list with
-`gh api repos/<owner>/<repo>/branches/main/protection --jq
-.required_status_checks.contexts` and keep it in sync with the job names in
+applied ruleset itself, not in a planning document. Read effective rules with
+`gh api repos/<owner>/<repo>/rules/branches/main` (and any classic protection
+separately) and keep status-check contexts in sync with the job names in
 [`ci.yml`](../.github/workflows/ci.yml).
 
 ### Required checks as of 2026-08-15
@@ -148,7 +148,9 @@ and bypass actors. Initial target: `ALLGREEN`, `SQUASH`, one entry per build/mer
 with `gh pr merge --auto --squash --match-head-commit`. A racing head update is
 rejected. It is a best-effort convenience, not a liveness guarantee: if review
 arrives after CI, or a PR is `BEHIND`, a maintainer may request admission with
-`gh pr merge NUMBER --auto --squash` without bypassing required controls.
+`gh pr merge NUMBER --auto --squash --match-head-commit REVIEWED_FULL_SHA`
+without bypassing required controls. Record that full SHA during review; if it
+moves, re-review rather than silently substituting the latest head.
 Repository branch cleanup happens after actual merge, not enqueue.
 
 ### Signed verdict boundary

@@ -43,7 +43,8 @@ jobs:
         with:
           # Queue events must diff the whole group against the immutable base.
           base: ${{ github.event.merge_group.base_sha || github.ref }}
-          ref: ${{ github.event.merge_group.head_sha || github.sha }}
+          # Equal branch-name inputs retain the last-commit manual-dispatch path.
+          ref: ${{ github.event.merge_group.head_sha || github.ref }}
           filters: |
             tck:
               - 'packages/broker/src/a2a/**'
