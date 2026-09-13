@@ -967,8 +967,16 @@ export function buildRunArgs(config: RunnerConfig, task: RunnerTask, workDir: st
   }
 
   if (config.githubTokenFile && config.trustedOperator) {
+    // Only the mount is needed here: `githubAuthScript()` (script-generators.ts)
+    // reads this mounted file INSIDE the container, copies it to
+    // /work/.config/gh/hosts.yml, and exports the real GH_CONFIG_DIR (a
+    // directory, not this file path) plus GH_TOKEN. `GH_CONFIG_HOSTS` is not
+    // a real `gh` CLI environment variable (the documented one is
+    // `GH_CONFIG_DIR`, which must point at a directory containing a file
+    // literally named `hosts.yml`) — an `-e GH_CONFIG_HOSTS=...` line used to
+    // be pushed here too, but `gh` never reads it, so it was dead code
+    // (a2a-nexus#2137).
     args.push("-v", `${config.githubTokenFile}:/run/secrets/gh-hosts.yml:ro`);
-    args.push("-e", "GH_CONFIG_HOSTS=/run/secrets/gh-hosts.yml");
   }
 
   // Distributed-trace propagation: surface the task trace id to the in-
@@ -1023,7 +1031,10 @@ export function buildRunArgs(config: RunnerConfig, task: RunnerTask, workDir: st
   const reservedSubagentEnv = new Set([
     "GH_TOKEN",
     "GITHUB_TOKEN",
-    "GH_CONFIG_HOSTS",
+    // GH_CONFIG_HOSTS is not a real `gh` CLI env var (see the comment above
+    // where the GH token file is mounted) and the runner no longer emits it,
+    // so it doesn't need reserving here. GH_CONFIG_DIR below is the real one
+    // and is still runner-controlled.
     "GH_CONFIG_DIR",
     "GIT_ASKPASS",
     "GIT_TERMINAL_PROMPT",

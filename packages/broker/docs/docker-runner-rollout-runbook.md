@@ -211,12 +211,20 @@ runner 는 다음 docker args 를 추가한다:
 
 ```text
 -v <GITHUB_TOKEN_FILE>:/run/secrets/gh-hosts.yml:ro
--e GH_CONFIG_HOSTS=/run/secrets/gh-hosts.yml
 ```
 
-컨테이너 내 `run.sh` script 는 `gh-hosts.yml` 에서 `oauth_token` 값을
-추출하여 `GIT_ASKPASS` helper 로 등록한다. 파일은 **read-only** 로 마운트되며,
-`x-access-token` username + token password 조합으로 git 인증을 수행한다.
+(과거에는 여기에 `-e GH_CONFIG_HOSTS=/run/secrets/gh-hosts.yml` 도 추가했지만,
+`GH_CONFIG_HOSTS` 는 실제 `gh` CLI 환경변수가 아니라서 — 진짜 이름은
+`GH_CONFIG_DIR` 이고 파일 경로가 아니라 디렉터리를 가리켜야 한다 — `gh` 는 이
+값을 전혀 읽지 않았다. 순수 dead code 였으므로 제거했다: a2a-nexus#2137.)
+
+컨테이너 내 `run.sh` script 는 `gh-hosts.yml` 에서 활성 계정의 `oauth_token`
+값을 추출하여(`users:` 하위 다중 계정이 있어도 top-level 에 미러링된
+활성 계정 토큰을 우선한다) `GIT_ASKPASS` helper 로 등록하고, 파일을
+`/work/.config/gh/hosts.yml` 로 복사한 뒤 `GH_CONFIG_DIR=/work/.config/gh` 와
+`GH_TOKEN` 을 export 해 컨테이너 내부의 `gh` CLI 인증도 함께 구성한다.
+원본 파일은 **read-only** 로 마운트되며, git 인증은 `x-access-token`
+username + token password 조합으로 수행한다.
 
 Token file 은 `gh auth login` 으로 생성된 표준 `hosts.yml` 을 그대로
 사용한다. 파일이 없거나 읽을 수 없으면 token mount 는 skip 되고 git
