@@ -56,7 +56,12 @@ test("builds a Docker/Podman-compatible invocation contract without requiring an
   assert.ok(args.includes("no-new-privileges"));
   assert.ok(args.includes("/tmp/a2a-work:/work"));
   assert.ok(args.includes("/tmp/hosts.yml:/run/secrets/gh-hosts.yml:ro"));
-  assert.ok(args.includes("GH_CONFIG_HOSTS=/run/secrets/gh-hosts.yml"));
+  // GH_CONFIG_HOSTS is not a real `gh` CLI env var (the real one is
+  // GH_CONFIG_DIR, which must point at a directory, not this file path), so
+  // the runner must never emit it — it used to be pushed here as dead code
+  // that had no effect on `gh`'s actual behavior (a2a-nexus#2137).
+  assert.ok(!args.some((arg) => arg.startsWith("GH_CONFIG_HOSTS=")), "GH_CONFIG_HOSTS is not a real gh CLI env var and must not be emitted");
+  assert.ok(!args.some((arg) => arg.startsWith("GH_CONFIG_DIR=")), "GH_CONFIG_DIR is set inside the container by githubAuthScript(), not injected via -e here");
   assert.ok(args.includes("A2A_SAFE_VALUE=ok"));
   assert.ok(!args.some((arg) => arg.startsWith("GH_TOKEN=")), "runner-controlled credential env must not be injected into task commands");
   assert.deepEqual(args.slice(-3), ["example/image:ci", "bash", "/work/run.sh"]);
