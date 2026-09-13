@@ -139,14 +139,20 @@ const handlerResult = buildHandlerResult(parsed, task, nodeId);
 | `A2A_DOCKER_RUNNER_ALL_GITHUB` | `0` | Route all github-propose-patch tasks through runner |
 | `A2A_DOCKER_RUNNER_BIN` | `a2a-docker-runner` | Runner binary path |
 | `A2A_DOCKER_RUNNER_ARGS_JSON` | `[]` | Extra CLI args before `run` |
-| `A2A_DOCKER_RUNNER_TASK_TIMEOUT_MS` | `3600000` (60m) | Task timeout override |
-| `A2A_DOCKER_RUNNER_TIMEOUT_MS` | `3600000` (60m) | Container execution timeout fallback |
+| `A2A_DOCKER_RUNNER_TASK_TIMEOUT_MS` | `6000000` (100m) | Task timeout override |
+| `A2A_DOCKER_RUNNER_TIMEOUT_MS` | `6000000` (100m) | Container execution timeout fallback |
 | `A2A_DOCKER_RUNNER_ROOT` | `/var/lib/openclaw-a2a/tasks` | Runtime root dir |
 | `A2A_DOCKER_RUNNER_IMAGE` | `node:22-bookworm-slim` | Container image |
 | `A2A_DOCKER_RUNNER_GITHUB_TOKEN_FILE` | — | gh hosts.yml for container auth |
 | `A2A_DOCKER_RUNNER_PATCH_COMMAND_SCRIPT` | — | Safe patch command script content; highest precedence, written to `/work/patch-command.sh` |
 | `A2A_DOCKER_RUNNER_PATCH_COMMAND_JSON` | — | Safe patch command JSON `{ "argv": [...], "env": {...} }`; used when script is unset |
 | `A2A_DOCKER_RUNNER_PATCH_COMMAND_TEMPLATE` | — | Legacy eval template; used only when script/json are unset |
+
+Model execution defaults to 90 minutes for Codex/Piri/Claude Code Docker patch
+profiles; the outer worker handler defaults to 120 minutes. Existing explicit
+worker environment values are retained during upgrades and must be checked for
+shorter overrides. Host analysis time limits remain separate. See the
+[rollout guidance](../../broker/docs/docker-runner-rollout-runbook.md#35-timeout--resource-cap).
 
 ### `task.env` Pass-Through (allowlist)
 
@@ -458,7 +464,11 @@ export A2A_DOCKER_RUNNER_ALL_GITHUB=1  # 모든 github 태스크
 ```bash
 export A2A_DOCKER_RUNNER_ENABLED=1
 export A2A_DOCKER_RUNNER_ALL_GITHUB=1
-export A2A_DOCKER_RUNNER_TASK_TIMEOUT_MS=3600000  # 60분
-export A2A_DOCKER_RUNNER_TIMEOUT_MS=3600000       # 60분
-# 전체 활성화 + 표준 타임아웃
+export A2A_DOCKER_RUNNER_TASK_TIMEOUT_MS=6000000  # 100분
+export A2A_DOCKER_RUNNER_TIMEOUT_MS=6000000       # 100분
+export WORKER_HANDLER_TIMEOUT_MS=7200000        # 외부 120분
+export A2A_CODEX_TIMEOUT_SEC=5400                 # 선택한 Docker patch 모델 90분
+export A2A_PIRI_TIMEOUT_SEC=5400
+export A2A_CLAUDE_CODE_TIMEOUT_SEC=5400
+# 전체 활성화 + 표준 타임아웃. task env가 있으면 payload.timeoutMs보다 우선한다.
 ```

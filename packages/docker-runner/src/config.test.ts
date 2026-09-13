@@ -2028,3 +2028,13 @@ test("implementation model budgets leave container headroom and preserve shorter
   assert.ok(5400 * 1000 < config.defaultTimeoutMs);
   assert.equal((await loadConfig({ ...baseEnv, A2A_DOCKER_RUNNER_TIMEOUT_MS: "180000" })).defaultTimeoutMs, 180000);
 });
+
+
+test("shipped worker environment templates do not mask the implementation defaults", () => {
+  for (const file of ["../broker/.env.example", ".env.example"]) {
+    const env = loadEnvFile(file);
+    assert.equal(projectClaudeCodeTurnBudgets(env).activePatchMode, "agentic", file);
+    assert.equal(projectClaudeCodeTurnBudgets(env).agenticPatch.effectiveMaxTurns, 80, file);
+    assert.match(buildClaudeCodePatchCommandScript(env), /export A2A_CLAUDE_CODE_TIMEOUT_SEC='5400'/, file);
+  }
+});
