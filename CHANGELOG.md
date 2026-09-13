@@ -176,6 +176,11 @@ tag, deploy, or mutate any live state.
 
 ### Fixed — security and correctness
 
+- Docker-runner doctor now fails closed when a GitHub hosts secret is readable
+  by the host process but not by the task container's configured uid/gid under
+  `--cap-drop ALL`, including the explicit root escape hatch with a uid-1000
+  `0600` file. The report includes a separate `secretMountReadability` check
+  and ownership-alignment remediation without exposing secret contents (`#2143`).
 - Bounded the attestation redaction-marker probe to stop a polynomial ReDoS
   (`#1756`), and made card-signature verification check **any** signature
   rather than only `signatures[0]` (`#1920`).

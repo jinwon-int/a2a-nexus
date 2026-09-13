@@ -38,7 +38,9 @@ Rules:
   relaxation.
 - `doctor` (`secretMountReadability`) preflights this before a task runs:
   `status: "fail"` means the current host/user combination would fail inside
-  the container. Use an explicit numeric `uid[:gid]` so the check is static.
+  the container. Numeric `uid[:gid]` values are checked directly; the explicit
+  `root` escape hatch (and the equivalent unset `--user` image default) is
+  checked as uid 0, including the no-`CAP_DAC_OVERRIDE` case.
 
 | Need | Explicit setting |
 | --- | --- |
