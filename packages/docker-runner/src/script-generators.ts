@@ -186,16 +186,65 @@ export PATH="/work/.a2a-bin:$PATH"
 `;
 }
 
+/**
+ * Bash command that extracts the ACTIVE GitHub account's `oauth_token` from a
+ * `gh` CLI hosts.yml-format file at `hostsFilePath`.
+ *
+ * Modern (multi-account) hosts.yml files nest every account's token under a
+ * `users:` map, and separately mirror the *currently active* account's token
+ * at the top level (alongside `user:`, which names it) for backward
+ * compatibility, e.g.:
+ *
+ *   github.com:
+ *       users:
+ *           acct-a:
+ *               oauth_token: TOKEN_A
+ *           acct-b:
+ *               oauth_token: TOKEN_B
+ *       git_protocol: https
+ *       user: acct-b
+ *       oauth_token: TOKEN_B        <- the active account's token, mirrored
+ *
+ * Every `oauth_token:` line nested under `users:` is indented deeper than
+ * this top-level mirror, so picking the SHALLOWEST-indented `oauth_token:`
+ * line in the file (ties broken by the LAST such line, matching how gh
+ * always (re)writes the top-level mirror after the `users:` block) yields
+ * the active account's token. The previous implementation naively took
+ * whichever `oauth_token:` line appeared FIRST in the file, which for a
+ * multi-account hosts.yml is very likely one of the nested per-account
+ * entries rather than the active one (a2a-nexus#2137).
+ *
+ * Legacy single-account hosts.yml files have exactly one `oauth_token:` line
+ * at the top level, so this degrades to that line unchanged.
+ */
+export function githubHostsActiveTokenCommand(hostsFilePath: string): string {
+  return `awk '
+BEGIN { best_indent = -1; best_token = "" }
+/^[[:space:]]*oauth_token:/ {
+  line = $0
+  sub(/^[[:space:]]*oauth_token:[[:space:]]*/, "", line)
+  indent = 0
+  while (substr($0, indent + 1, 1) == " ") indent++
+  if (best_indent < 0 || indent <= best_indent) {
+    best_indent = indent
+    best_token = line
+  }
+}
+END { print best_token }
+' ${shellQuote(hostsFilePath)}`;
+}
+
 function githubAuthScript(): string {
+  const extractActiveToken = githubHostsActiveTokenCommand("/run/secrets/gh-hosts.yml");
   return `if [ -r /run/secrets/gh-hosts.yml ]; then
-  token=$(sed -n 's/^[[:space:]]*oauth_token:[[:space:]]*//p' /run/secrets/gh-hosts.yml | head -n 1)
+  token=$(${extractActiveToken})
   if [ -n "$token" ]; then
     mkdir -p /work/.a2a-bin
     cat > /work/.a2a-bin/git-askpass <<'ASKPASS'
 #!/usr/bin/env bash
 case "$1" in
   *Username*) printf '%s\n' "x-access-token" ;;
-  *Password*) sed -n 's/^[[:space:]]*oauth_token:[[:space:]]*//p' /run/secrets/gh-hosts.yml | head -n 1 ;;
+  *Password*) ${extractActiveToken} ;;
   *) printf '\n' ;;
 esac
 ASKPASS
