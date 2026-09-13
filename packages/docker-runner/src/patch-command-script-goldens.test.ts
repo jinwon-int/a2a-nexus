@@ -21,6 +21,8 @@ import {
  * `cases.mjs`. These tests replay the same matrix against the extracted
  * implementation and compare bytes and SHA-256, so any escaping, whitespace, or
  * dropped-substitution drift in the container scripts fails closed.
+ * The reviewed Codex/Claude default timeout bytes now use 5400 seconds;
+ * all other pre-extraction bytes remain pinned.
  */
 
 const FIXTURE_DIR = "fixtures/patch-command-scripts";
@@ -73,7 +75,7 @@ test("golden fixture matrix covers every extracted profile", () => {
 });
 
 for (const entry of PATCH_COMMAND_SCRIPT_GOLDEN_CASES) {
-  test(`patch-command script is byte-identical to the pre-extraction golden: ${entry.name}`, async () => {
+  test(`patch-command script is byte-identical to the reviewed golden: ${entry.name}`, async () => {
     const rendered = await renderCase(entry);
     const golden = goldenText(entry.name);
     const indexEntry = goldenIndex.cases.find((candidate) => candidate.name === entry.name);

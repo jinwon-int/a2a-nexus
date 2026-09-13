@@ -962,3 +962,27 @@ test("worker message precedes the source bundle so budget truncation never drops
     rmSync(tempDir, { recursive: true, force: true });
   }
 });
+
+
+test("standalone analysis sends the default 80-turn budget to Claude without provider access", () => {
+  const dir = mkdtempSync(join(tmpdir(), "claude-default-budget-"));
+  try {
+    const stub = join(dir, "claude.mjs");
+    writeFileSync(stub, [
+      "#!/usr/bin/env node",
+      "const args = process.argv.slice(2);",
+      "if (args[args.indexOf('--max-turns') + 1] !== '80') throw new Error('wrong default budget');",
+      "const result = { status: 'done', summary: 'offline budget proof', findings: ['captured CLI budget'], risks: [], recommendations: [], evidenceRefs: ['fixture:budget'], verdict: 'PASS' };",
+      "console.log(JSON.stringify({ type: 'result', subtype: 'success', result: JSON.stringify(result) }));",
+    ].join("\n"));
+    chmodSync(stub, 0o755);
+    const result = spawnSync(bridgePath, bridgeArgs('Read-only budget fixture. Payload JSON:\n' + JSON.stringify({ mode: 'analysis-only', noLive: true, sourceOnly: true })), {
+      encoding: "utf8",
+      env: { ...process.env, A2A_CLAUDE_CODE_BIN: stub, A2A_CLAUDE_CODE_MAX_TURNS: "", A2A_CLAUDE_MODEL: "", A2A_CLAUDE_EFFORT: "" },
+    });
+    assert.equal(result.status, 0, result.stderr);
+    assert.equal(JSON.parse(JSON.parse(result.stdout).payloads[0].text).status, "done");
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});

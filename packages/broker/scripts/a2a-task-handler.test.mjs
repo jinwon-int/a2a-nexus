@@ -736,7 +736,7 @@ test("task workerThinking override takes precedence over A2A_WORKER_THINKING", (
   assert.equal(runnerTask.workerThinking, "medium");
 });
 
-test("github runner task defaults to 60 minutes", () => {
+test("github runner task defaults to 100 minutes while host analysis remains 60", () => {
   const runnerTask = __test.buildRunnerTask(task({
     intent: "propose_patch",
     payload: {
@@ -748,7 +748,7 @@ test("github runner task defaults to 60 minutes", () => {
   }), {});
 
   assert.equal(__test.DEFAULT_OPENCLAW_TIMEOUT_SEC, 60 * 60);
-  assert.equal(runnerTask.timeoutMs, 60 * 60 * 1000);
+  assert.equal(runnerTask.timeoutMs, 100 * 60 * 1000);
 });
 
 test("runner task carries model and thinking overrides to downstream runner command input", () => {
@@ -3120,4 +3120,11 @@ test("bounded review notes: oversize rejection precedes handler completion comme
   const outcome = boundedReviewOutcome({ verdict: "pass", summary: "x".repeat(65537) }, "bridge", { postGithubComment: true }, { A2A_POST_ANALYSIS_EVIDENCE_COMMENTS: "1" });
   assert.equal(outcome.result, undefined);
   assert.equal(outcome.error.code, "review_note_too_large");
+});
+
+
+test("runner timeout override order remains env then payload then bounded default", () => {
+  const input = task({ intent: "propose_patch", payload: { mode: "github-propose-patch", repo: "owner/repo", timeoutMs: 180000 } });
+  assert.equal(__test.buildRunnerTask(input, {}).timeoutMs, 180000);
+  assert.equal(__test.buildRunnerTask(input, { A2A_DOCKER_RUNNER_TASK_TIMEOUT_MS: "240000" }).timeoutMs, 240000);
 });

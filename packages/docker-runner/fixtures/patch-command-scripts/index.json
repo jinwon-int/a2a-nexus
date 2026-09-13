@@ -4,7 +4,7 @@
     {
       "name": "codex-default",
       "bytes": 4912,
-      "sha256": "9ce546c70a1952217bcaa6d1b826060ffadf59c08936667a1be5af2ea367c1bb"
+      "sha256": "822c03512b95193f83a4ccb519074316005c1aa58e270b7de1248b39b0497052"
     },
     {
       "name": "codex-subagents-all-roles",
@@ -14,7 +14,7 @@
     {
       "name": "claude-code-default",
       "bytes": 3416,
-      "sha256": "93b7b4cb39e5c9cba40b7d0ef62b6316b2d5c14113b09cd4a1f808c4fc3001fb"
+      "sha256": "a318cd4fe0985cff426618021be9ba269c1c3a1e4bb2638467ae4209748dd5c2"
     },
     {
       "name": "claude-code-fanout-budgets",

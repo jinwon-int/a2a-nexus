@@ -76,15 +76,15 @@ test("patch bridge is executable JavaScript", () => {
   assert.equal(check.status, 0, check.stderr);
 });
 
-test("Claude turn budgets resolve by distinct mode with agentic default=40 and backward-compatible overrides", () => {
+test("Claude turn budgets resolve by distinct mode with agentic default=80 and backward-compatible overrides", () => {
   assert.deepEqual(resolveClaudeTurnBudget("agentic-patch", {}), {
     mode: "agentic-patch",
-    effectiveMaxTurns: 40,
+    effectiveMaxTurns: 80,
     source: "canonical_default",
   });
   assert.deepEqual(resolveClaudeTurnBudget("analysis", {}), {
     mode: "analysis",
-    effectiveMaxTurns: 10,
+    effectiveMaxTurns: 80,
     source: "canonical_default",
   });
   assert.deepEqual(resolveClaudeTurnBudget("analysis", {
@@ -250,7 +250,7 @@ test("PATCH telemetry omits turnsUsed when only model-controlled result text cla
     });
     assert.equal(result.status, 0, result.stderr);
     const payload = JSON.parse(JSON.parse(result.stdout).payloads[0].text);
-    assert.equal(payload.turnBudget.effectiveMaxTurns, 40);
+    assert.equal(payload.turnBudget.effectiveMaxTurns, 80);
     assert.equal(payload.turnBudget.source, "canonical_default");
     assert.equal(payload.turnBudget.turnsUsed, undefined);
     assert.doesNotMatch(result.stderr, /"turnsUsed"/);
@@ -275,7 +275,7 @@ test("PATCH max-turn exhaustion has a stable failed classification and never fab
     assert.equal(result.stdout, "");
     assert.match(result.stderr, /terminal_reason=max_turns/);
     assert.match(result.stderr, /failure_reason=max_turns_exhausted/);
-    assert.match(result.stderr, /budget\.limit=40/);
+    assert.match(result.stderr, /budget\.limit=80/);
     assert.match(result.stderr, /"failureReason":"max_turns"/);
     assert.doesNotMatch(result.stderr, /"turnsUsed"/);
     assert.doesNotMatch(result.stderr, /\/pull\/\d+/);

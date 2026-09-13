@@ -213,8 +213,8 @@ function positiveInteger(value, fallback) {
 }
 
 const CLAUDE_TURN_BUDGET_DEFAULTS = Object.freeze({
-  analysis: 10,
-  "agentic-patch": 40,
+  analysis: 80,
+  "agentic-patch": 80,
   "deterministic-single-shot": 6,
   "fanout-patch": 40,
 });

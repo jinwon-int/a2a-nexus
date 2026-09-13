@@ -12,6 +12,9 @@
  * "populated" branch of every conditional block substitution), otherwise a
  * placeholder could be dropped without any golden changing.
  *
+ * Codex/Claude default timeout fixtures were updated to 5400 seconds when
+ * the implementation budget defaults were raised; other bytes remain pinned.
+ *
  * Safety: pure env fixtures. No secrets, no live hosts, no credentials.
  */
 
