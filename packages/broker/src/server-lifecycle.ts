@@ -18,6 +18,18 @@ export const HEADERS_TIMEOUT_MARGIN_MS = 10000;
 // connections so a graceful shutdown cannot hang indefinitely.
 const SHUTDOWN_FORCE_CLOSE_MS = 5_000;
 
+/**
+ * #2129: `stop_grace_period` is a Docker Compose concept — it is not passed
+ * into the container, so this process cannot read Compose's actual configured
+ * value. This is only a hint used to decide whether the drain-duration log
+ * line below should read as a WARN (elapsed drain time approaching or past
+ * the budget operators configured in `docker-compose.yml`). Keep it in sync
+ * with that file's `stop_grace_period` for the `a2a-broker` service by hand,
+ * or override per-deployment with `A2A_STOP_GRACE_PERIOD_HINT_MS` — neither
+ * changes Compose's own kill timer, which is the actual enforcement point.
+ */
+const DEFAULT_STOP_GRACE_PERIOD_HINT_MS = 60_000;
+
 interface BrokerLifecycleRuntime {
   server: Server;
   /** Enter drain mode before close (#1405); optional for older runtime shapes. */
@@ -64,7 +76,24 @@ export function startBrokerServerWithFactory<Options, Runtime extends BrokerLife
   // recommends 5000.
   const shutdownDrainMs = Math.max(0, Math.floor(Number(process.env.A2A_SHUTDOWN_DRAIN_MS ?? 0)) || 0);
 
+  // #2129: see DEFAULT_STOP_GRACE_PERIOD_HINT_MS above — this is an
+  // operator-supplied hint, not something read from Docker.
+  const stopGracePeriodHintMs = Math.max(
+    0,
+    Math.floor(Number(process.env.A2A_STOP_GRACE_PERIOD_HINT_MS ?? DEFAULT_STOP_GRACE_PERIOD_HINT_MS))
+      || DEFAULT_STOP_GRACE_PERIOD_HINT_MS,
+  );
+
   const closeServer = (signal: NodeJS.Signals | "uncaughtException") => {
+    // #2129: T1 2026-09-12 — a container that could not finish draining
+    // before the Compose kill timer fired was SIGKILLed mid-release, leaving
+    // the shared-state serving fence's owner_token set and every subsequent
+    // container fail closed with `ownership_conflict`. Logging how long the
+    // drain actually took (ending when the fence is released in
+    // closeWorkerPersistence) makes a grace-period breach observable from the
+    // broker's own logs instead of only inferable after the fact from
+    // `docker events`/`docker inspect`.
+    const drainStartedAtMs = Date.now();
     console.log(`[a2a-broker] ${signal}: stopping stale reaper and closing server`);
     runtime.stopStaleReaper();
     runtime.stopPoller();
@@ -74,7 +103,20 @@ export function startBrokerServerWithFactory<Options, Runtime extends BrokerLife
           console.error("[a2a-broker] worker-thread persistence shutdown failed:", error);
           process.exitCode = 1;
         })
-        .finally(() => process.exit());
+        .finally(() => {
+          const elapsedMs = Date.now() - drainStartedAtMs;
+          const line = `[a2a-broker] drain completed in ${elapsedMs}ms (stop_grace_period budget: ${stopGracePeriodHintMs}ms)`;
+          // Warn once the drain has used most of the configured budget: by
+          // the time it fully exceeds the budget, Compose may already have
+          // sent SIGKILL and this line might never flush, so the warning
+          // threshold is deliberately set below 100% of the budget.
+          if (stopGracePeriodHintMs > 0 && elapsedMs >= stopGracePeriodHintMs * 0.8) {
+            console.warn(line);
+          } else {
+            console.log(line);
+          }
+          process.exit();
+        });
     });
     // server.close() only fires its callback once every connection ends, but
     // SSE streams are kept alive by heartbeats and never end on their own.

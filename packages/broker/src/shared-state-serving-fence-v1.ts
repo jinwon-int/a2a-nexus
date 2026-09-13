@@ -1489,14 +1489,36 @@ export function openSharedStateServingFenceV1(input: {
   };
 }
 
+/**
+ * #2129: `ownership_conflict` is the fail-closed outcome an operator hits
+ * when a prior container crashed without releasing the fence (decision A1,
+ * #1504 — a crash without release leaves the owner_token set on purpose).
+ * That is recoverable, but only through `scripts/shared-state-fence-clear.mjs`
+ * — before this, the only documented recovery was a manual sqlite `UPDATE`.
+ * Naming the fence file and the clear-tool invocation directly in the thrown
+ * message means an operator reading container logs does not have to go
+ * spelunking through source or runbooks mid-incident to find either.
+ */
+function describeFenceRejection(
+  filePath: string,
+  code: SharedStateServingFenceErrorCodeV1,
+): string {
+  if (code === "ownership_conflict") {
+    return (
+      `shared-state serving fence rejected: ${code} `
+      + `(file=${filePath}; run: node packages/broker/scripts/shared-state-fence-clear.mjs `
+      + `--file ${filePath} --dry-run to diagnose, then without --dry-run to clear once verified safe)`
+    );
+  }
+  return `shared-state serving fence rejected: ${code} (file=${filePath})`;
+}
+
 export function assertSharedStateServingFenceV1(input: {
   readonly filePath: string;
 }): SharedStateServingFenceV1 {
   const fence = openSharedStateServingFenceV1({ filePath: input.filePath });
   if (!fence.ok) {
-    throw new Error(
-      `shared-state serving fence rejected: ${fence.error.code}`,
-    );
+    throw new Error(describeFenceRejection(input.filePath, fence.error.code));
   }
   return fence.value;
 }
