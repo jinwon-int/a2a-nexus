@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { mkdtemp, mkdir, readFile, writeFile, utimes, stat, chmod } from "node:fs/promises";
+import { chown, mkdtemp, mkdir, readFile, writeFile, utimes, stat, chmod } from "node:fs/promises";
 import { execFileSync, spawnSync } from "node:child_process";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -1074,7 +1074,7 @@ test("cleanup report preserves JSON shape with all fields", async () => {
 });
 
 // ---------------------------------------------------------------------------
-// #1809 secret-mount readability preflight (cap-drop ALL + container user)
+// #1809/#2143 secret-mount readability preflight (cap-drop ALL + container user)
 // ---------------------------------------------------------------------------
 
 const CURRENT_UID = typeof process.getuid === "function" ? process.getuid() : 0;
@@ -1104,8 +1104,12 @@ test("parseContainerUserRef resolves uid, uid:gid, root, and rejects garbage", (
   assert.deepEqual(parseContainerUserRef("1000:700"), { uid: 1000, gid: 700 });
   assert.deepEqual(parseContainerUserRef("1000"), { uid: 1000 });
   assert.deepEqual(parseContainerUserRef("root"), { uid: 0 });
+  assert.deepEqual(parseContainerUserRef("ROOT"), { uid: 0 });
   assert.equal(parseContainerUserRef("someuser"), undefined);
   assert.equal(parseContainerUserRef("-1"), undefined);
+  assert.equal(parseContainerUserRef("+1"), undefined);
+  assert.equal(parseContainerUserRef("1e3"), undefined);
+  assert.equal(parseContainerUserRef("1000:"), undefined);
   assert.equal(parseContainerUserRef(""), undefined);
   assert.equal(parseContainerUserRef(undefined), undefined);
 });
@@ -1132,6 +1136,32 @@ test("secret-mount readability fails closed for uid-owned 0600 secret under cap-
   assert.ok(authEntry, "expected the inner profile file to be scanned");
   assert.equal(authEntry.readable, false);
   assert.equal(authEntry.via, "others");
+});
+
+test("secret-mount readability fails closed for implicit root without DAC_OVERRIDE", async () => {
+  const dir = await mkdtemp(join(tmpdir(), "a2a-secret-root-"));
+  const secret = join(dir, "gh-hosts.yml");
+  await writeFile(secret, "github.com:\n  oauth_token: synthetic\n");
+  await chmod(secret, 0o600);
+  // Keep the fixture a uid-1000-owned secret even when the test process is
+  // running as root (the usual non-root CI case already owns it as uid 1000).
+  const expectedOwnerUid = CURRENT_UID === 0 ? 1000 : CURRENT_UID;
+  if (CURRENT_UID === 0) await chown(secret, expectedOwnerUid, expectedOwnerUid);
+
+  const report = await checkSecretMountContainerReadability(readabilityConfig({
+    capDrop: ["ALL"],
+    // loadConfig maps A2A_DOCKER_RUNNER_USER=root to an unset --user.
+    githubTokenFile: secret,
+  }));
+
+  assert.equal(report.status, "fail");
+  assert.equal(report.detail?.containerUid, 0);
+  assert.equal(report.detail?.userAssumed, true);
+  assert.match(report.message, /unreadable by the container user/);
+  const entries = report.detail?.entries as Array<Record<string, unknown>>;
+  assert.equal(entries[0].readable, false);
+  assert.equal(entries[0].ownerUid, expectedOwnerUid);
+  assert.equal(entries[0].via, "others");
 });
 
 test("secret-mount readability passes when the container user owns the secret", async () => {

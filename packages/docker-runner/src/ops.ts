@@ -29,7 +29,7 @@ export interface DoctorReport {
   taskRoot: OpsCheck;
   secretMount: OpsCheck;
   extraMounts: OpsCheck;
-  /** #1809 preflight: secret-mount readability under the container user + cap-drop contract. */
+  /** #1809/#2143 preflight: secret-mount readability under the container user + cap-drop contract. */
   secretMountReadability: OpsCheck;
   baseImage: OpsCheck;
   githubPatch: OpsCheck;
@@ -500,7 +500,8 @@ export function dropsDacOverride(capDrop?: string[]): boolean {
 export function parseContainerUserRef(user?: string): { uid: number; gid?: number } | undefined {
   const raw = user?.trim();
   if (!raw) return undefined;
-  if (raw === "root") return { uid: 0 };
+  if (raw.toLowerCase() === "root") return { uid: 0 };
+  if (!/^\d+(?::\d+)?$/.test(raw)) return undefined;
   const [uidPart, gidPart] = raw.split(":");
   const uid = Number(uidPart);
   if (!Number.isSafeInteger(uid) || uid < 0) return undefined;
@@ -546,7 +547,7 @@ export interface SecretMountReadabilityEntry {
 const SECRET_MOUNT_READABILITY_SCAN_ENTRY_LIMIT = 64;
 
 /**
- * Preflight (#1809): under a DAC_OVERRIDE-dropping cap-drop, verify every
+ * Preflight (#1809/#2143): under a DAC_OVERRIDE-dropping cap-drop, verify every
  * profile secret-mount source (and, for directories, their direct children)
  * is readable by the configured container user BEFORE a task fails inside the
  * container with an unrelated-looking error. Keep `--cap-drop ALL`; the fix is
@@ -574,16 +575,20 @@ export async function checkSecretMountContainerReadability(config: RunnerConfig)
   }
 
   // Runner images have no USER directive, so an unset --user runs as root (uid 0).
-  const userRef = parseContainerUserRef(config.user);
+  // `loadConfig` intentionally represents the explicit `A2A_DOCKER_RUNNER_USER=root`
+  // escape hatch as an unset user, so an unset/blank value is a valid implicit-root
+  // configuration rather than an unresolvable named user.
+  const rawUser = config.user?.trim() ?? "";
+  const userRef = parseContainerUserRef(rawUser);
   const containerUser = userRef ?? { uid: 0 };
   const detail: Record<string, unknown> = {
-    containerUser: config.user ?? "root (image default; --user not set)",
+    containerUser: rawUser || "root (image default; --user not set)",
     containerUid: containerUser.uid,
     ...(containerUser.gid !== undefined ? { containerGid: containerUser.gid } : {}),
     capDrop: config.capDrop ?? [],
   };
-  if (!userRef) detail.userAssumed = true;
-  if (!/^[0-9]+(:[0-9]+)?$|^root$/.test(config.user?.trim() ?? "")) {
+  if (!rawUser) detail.userAssumed = true;
+  if (rawUser && !userRef) {
     return {
       status: "warn",
       message: "container user is not a numeric uid[:gid]; cannot statically verify secret-mount readability",
