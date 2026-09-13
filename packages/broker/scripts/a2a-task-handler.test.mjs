@@ -982,6 +982,85 @@ test("validateWorkerModelEnvCandidatesForPatchProfile checks env candidates in p
   }), null);
 });
 
+test("workerModelEnvCandidates order is profile-aware and considers A2A_PIRI_MODEL (#2155)", () => {
+  const staleFleetEnv = {
+    A2A_DOCKER_RUNNER_PATCH_COMMAND_PROFILE: "piri",
+    A2A_PIRI_MODEL: "zai/glm-5.2",
+    A2A_CODEX_MODEL: "openai-codex/gpt-5.6-sol",
+    A2A_CLAUDE_MODEL: "claude-sonnet-5",
+  };
+
+  // piri profile: the piri lane env leads; stale fleet-wide codex/claude
+  // values must not shadow it.
+  assert.deepEqual(__test.workerModelEnvCandidates(staleFleetEnv), [
+    "zai/glm-5.2",
+    "openai-codex/gpt-5.6-sol",
+    "claude-sonnet-5",
+  ]);
+
+  // The piri profile is also inferred from a piri runner image.
+  assert.equal(__test.workerModelEnvCandidates({
+    ...staleFleetEnv,
+    A2A_DOCKER_RUNNER_PATCH_COMMAND_PROFILE: "",
+    A2A_DOCKER_RUNNER_IMAGE: "a2a-docker-runner-piri:bd4f92c-fix2",
+  })[0], "zai/glm-5.2");
+
+  // Non-piri profiles keep the historical A2A_CODEX_MODEL-first order;
+  // A2A_PIRI_MODEL now participates after the historical leaders instead of
+  // being ignored entirely.
+  assert.deepEqual(__test.workerModelEnvCandidates({
+    A2A_DOCKER_RUNNER_PATCH_COMMAND_PROFILE: "hermes",
+    A2A_PIRI_MODEL: "zai/glm-5.2",
+    A2A_CODEX_MODEL: "openai-codex/gpt-5.6-sol",
+    A2A_CLAUDE_MODEL: "claude-sonnet-5",
+  }), [
+    "openai-codex/gpt-5.6-sol",
+    "claude-sonnet-5",
+    "zai/glm-5.2",
+  ]);
+
+  // No profile, no candidates -> unchanged empty result.
+  assert.deepEqual(__test.workerModelEnvCandidates({}), []);
+});
+
+test("A2A_PIRI_MODEL resolves the worker model on piri-profile nodes despite stale codex/claude env (#2155)", () => {
+  const piriProfileEnv = {
+    A2A_DOCKER_RUNNER_PATCH_COMMAND_PROFILE: "piri",
+    A2A_PIRI_MODEL: "kimi-coding/k3",
+    A2A_CODEX_MODEL: "openai-codex/gpt-5.6-sol",
+    A2A_CLAUDE_MODEL: "claude-sonnet-5",
+  };
+
+  const resolved = __test.resolveWorkerModel(task({}), piriProfileEnv);
+  assert.equal(resolved.model, "kimi-coding/k3");
+  assert.equal(resolved.fromPayload, false);
+
+  // The runner task carries the piri lane model, not the stale codex value.
+  const runnerTask = __test.buildRunnerTask(patchTask({}), piriProfileEnv);
+  assert.equal(runnerTask.workerModel, "kimi-coding/k3");
+
+  // Without the piri profile the same env keeps the historical winner.
+  const historical = __test.resolveWorkerModel(task({}), {
+    A2A_PIRI_MODEL: "kimi-coding/k3",
+    A2A_CODEX_MODEL: "openai-codex/gpt-5.6-sol",
+    A2A_CLAUDE_MODEL: "claude-sonnet-5",
+  });
+  assert.equal(historical.model, "openai-codex/gpt-5.6-sol");
+});
+
+test("A2A_PIRI_MODEL joins the env candidate preflight on non-piri profiles (#2155)", () => {
+  // A hermes-profile node carrying a hermes-unsupported piri lane env must
+  // now be blocked in preflight instead of the candidate being silently
+  // ignored.
+  const result = validateWorkerModelEnvCandidatesForPatchProfile(patchTask({}), {
+    A2A_DOCKER_RUNNER_PATCH_COMMAND_PROFILE: "hermes",
+    A2A_PIRI_MODEL: "deepseek/deepseek-v4-flash",
+  });
+  assert.equal(result?.error?.code, "worker_model_not_supported_by_profile");
+  assert.equal(result.error.details.requestedModel, "deepseek/deepseek-v4-flash");
+  assert.equal(result.error.details.modelSource, "env");
+});
+
 test("github-propose-patch + allowNoChanges=true sets runnerTask.allowNoChanges", () => {
   const runnerTask = __test.buildRunnerTask(patchTask({
     payload: { allowNoChanges: true },

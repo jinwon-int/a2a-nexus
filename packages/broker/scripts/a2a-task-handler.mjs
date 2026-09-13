@@ -20,7 +20,7 @@ import { normalizeAnalysisExecutionTelemetry } from "./lib/analysis-execution-te
 import { evaluateDeclaredWriteSetGate } from "../dist/core/runtime-safety-gates.js";
 import { runLiveOperationTask } from "./lib/live-operation-adapter.mjs";
 
-const HANDLER_VERSION = "0.2.17";
+const HANDLER_VERSION = "0.2.18";
 const SOURCE_PATH = fileURLToPath(import.meta.url);
 const sourceSha256 = createHash("sha256").update(readFileSync(SOURCE_PATH)).digest("hex");
 
@@ -494,9 +494,20 @@ const GITHUB_READ_ONLY_VALIDATION_MODES = new Set([
  * came from the task payload override.
  */
 function workerModelEnvCandidates(env = process.env) {
+  // Profile-aware priority order (#2155). The previous fixed list never
+  // considered A2A_PIRI_MODEL and always led with A2A_CODEX_MODEL, so a
+  // piri-profile node (see normalizedPatchCommandProfile) with a stale
+  // fleet-wide A2A_CODEX_MODEL / A2A_CLAUDE_MODEL resolved - and was
+  // preflight-gated against - the wrong lane model instead of its own
+  // A2A_PIRI_MODEL. The active profile's lane env now leads; every other
+  // profile keeps the historical order, with A2A_PIRI_MODEL appended so it
+  // participates in the same preflight instead of being silently ignored.
+  const piriProfile = normalizedPatchCommandProfile(env) === "piri";
+  const laneCandidates = piriProfile
+    ? [env.A2A_PIRI_MODEL, env.A2A_CODEX_MODEL, env.A2A_CLAUDE_MODEL]
+    : [env.A2A_CODEX_MODEL, env.A2A_CLAUDE_MODEL, env.A2A_PIRI_MODEL];
   return [
-    env.A2A_CODEX_MODEL,
-    env.A2A_CLAUDE_MODEL,
+    ...laneCandidates,
     env.A2A_OPENCLAW_MODEL,
     env.A2A_HERMES_DEFAULT_MODEL,
     // Legacy worker/runner environments can still inject the model under the
@@ -2850,6 +2861,7 @@ export const __test = Object.freeze({
   hostPatchBridgeCommand,
   analysisBridgeCommand,
   resolveWorkerModel,
+  workerModelEnvCandidates,
   resolveWorkerThinking,
   validateWorkerOverrides,
   writeAnalysisBridgeInputFiles,
