@@ -230,6 +230,12 @@ Status: **release candidate prepared for operator-approved tag/release**. This e
 - CodeQL SAST workflow (`.github/workflows/codeql.yml`) scans `javascript-typescript` on every pull request, on `main` pushes, and weekly; findings surface as code-scanning alerts.
 - External GitHub Actions references are pinned to full commit SHAs with source tag comments, enforced by the core `workflow-action-pinning` gate (`scripts/check-workflow-action-pinning.mjs`).
 
+### Changed — docker-runner declared-scope enforcement on patch lanes (behavior change, #2136)
+
+- `github-propose-patch` lanes now enforce a task's declared `declaredScope.paths` by default: the diff-hygiene scope gate defaults to `block` (previously `warn`), so a run that modifies files outside the declared scope fails closed with `diff_hygiene_scope_drift=blocked` before commit, push, or PR creation.
+- A patch-lane payload that declares `declaredScope.paths` without any `diffHygiene` policy now emits a fail-closed scope gate (with the standard forbidden-path, lockfile, whitespace, and churn checks) instead of silently skipping the check.
+- An explicit `diffHygiene.scope.mode` from the payload still wins (`off`/`warn` remain operator opt-outs), and `declaredScope.paths` validation now runs during normalization even when `diffHygiene` is omitted.
+
 ### Changed — docker-runner trusted-lane defaults (behavior change, #1204/#1209)
 
 - The trusted-operator default network dropped from `host` to `bridge`. Untrusted lanes keep `none`. Trusted workers that relied on host networking must opt in explicitly with `A2A_DOCKER_RUNNER_NETWORK=host`.

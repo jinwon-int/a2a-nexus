@@ -724,7 +724,7 @@ export interface RunnerDiffHygienePolicy {
   churnBlockRatio?: number;
   /** ...and at least this many whitespace-churn lines exist (default 100). */
   churnMinLines?: number;
-  /** Compare changed paths against task.declaredScope.paths (default mode: warn). */
+  /** Compare changed paths against task.declaredScope.paths (default mode: warn; patch-proposal lanes default to block when declaredScope.paths is declared — #2136). */
   scope?: {
     mode?: RunnerDiffHygieneScopeMode;
   };
@@ -887,7 +887,7 @@ export interface RunnerTask {
   postPatchVerification?: RunnerPostPatchVerification;
   /** Optional fail-closed diff hygiene policy run before PR/artifact success. */
   diffHygiene?: RunnerDiffHygienePolicy;
-  /** Optional declared path scope consumed by diffHygiene.scope (#1235). */
+  /** Optional declared path scope consumed by diffHygiene.scope (#1235); enforced (block) by default on github-propose-patch lanes (#2136). */
   declaredScope?: RunnerDeclaredScope;
   /** Safe broker/run identifier to carry into release-gate evidence when present. */
   runId?: string;
