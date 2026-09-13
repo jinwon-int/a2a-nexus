@@ -8,8 +8,8 @@ The goal is not to delete scripts. The goal is to make the first command obvious
 
 | Package surface | Package file | Current minimum | Source of truth |
 |---|---|---:|---|
-| Root workspace | `package.json` | `100` scripts | `docs/ops/script-surface-tier-manifest.json` |
-| Broker package | `packages/broker/package.json` | `150` scripts | `docs/ops/script-surface-tier-manifest.json` |
+| Root workspace | `package.json` | `81` scripts | `docs/ops/script-surface-tier-manifest.json` |
+| Broker package | `packages/broker/package.json` | `54` scripts | `docs/ops/script-surface-tier-manifest.json` |
 
 Verify the current count and tier classification with:
 
