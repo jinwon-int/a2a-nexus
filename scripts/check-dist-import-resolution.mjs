@@ -3,7 +3,7 @@
  * Resolve every compiled-output import specifier used by operator scripts (#1601).
  *
  * Operator `.mjs` scripts consume broker behaviour through compiled paths such
- * as `../dist/core/mobile-worker-preflight.js`. Nothing verified those paths.
+ * as `../dist/core/a2a-dispatch-helper.js`. Nothing verified those paths.
  * The broker test manifest checks these scripts with `node --check`, which only
  * *parses* a file — it never resolves an import — so a specifier can point at a
  * module that does not exist and every gate in the repository stays green while

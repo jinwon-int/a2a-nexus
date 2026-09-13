@@ -44,7 +44,7 @@ const SURFACES = [
     runner: join(HERE, "rollout.mjs"),
     manifest: join(HERE, "rollout-preflight-manifest.json"),
     npmEntry: "rollout",
-    expectedTools: 22,
+    expectedTools: 21,
     spotTool: "worker_subagent_redaction_gate",
     spotWrapper: "worker-subagent-redaction-gate.mjs",
   },
@@ -100,6 +100,14 @@ for (const surface of SURFACES) {
     assert.equal(viaRunner.stderr, direct.stderr);
   });
 }
+
+test("retired mobile preflight fails closed instead of dispatching (#2065)", () => {
+  const rollout = JSON.parse(readFileSync(join(HERE, "rollout-preflight-manifest.json"), "utf8"));
+  assert.ok(!("mobile_worker_preflight" in rollout.tools));
+  const result = spawnSync(process.execPath, [join(HERE, "rollout.mjs"), "--no-build", "mobile_worker_preflight"], { encoding: "utf8" });
+  assert.equal(result.status, 2);
+  assert.match(result.stderr, /unknown tool/);
+});
 
 test("manifest-required gates stay direct npm scripts, not dispatcher tools", () => {
   const rollout = JSON.parse(readFileSync(join(HERE, "rollout-preflight-manifest.json"), "utf8"));
