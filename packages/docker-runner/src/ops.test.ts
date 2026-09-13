@@ -334,7 +334,7 @@ test("GitHub patch readiness Claude Code profile reports bridge and credential m
   ]);
   const turnBudgets = detail.turnBudgets as ReturnType<typeof projectClaudeCodeTurnBudgets>;
   assert.equal(turnBudgets.activePatchMode, "agentic");
-  assert.equal(turnBudgets.agenticPatch.effectiveMaxTurns, 40);
+  assert.equal(turnBudgets.agenticPatch.effectiveMaxTurns, 80);
   assert.equal(turnBudgets.agenticPatch.source, "canonical_default");
 });
 
