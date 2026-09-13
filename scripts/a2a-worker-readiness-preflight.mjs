@@ -213,6 +213,88 @@ function requiredAnalysisReposOf(record, expectations) {
   return arrayOfText(expectations, ["requiredAnalysisRepos", "dispatchRequiredAnalysisRepos"]);
 }
 
+const HANDLER_COMMAND_FIELDS = [
+  "handlerCommand",
+  "configuredHandlerCommand",
+  "workerHandlerCommand",
+  "WORKER_HANDLER_COMMAND",
+  "A2A_WORKER_HANDLER_COMMAND",
+];
+const HANDLER_ARGUMENT_FIELDS = [
+  "handlerArgs",
+  "handlerArguments",
+  "WORKER_HANDLER_ARGS_JSON",
+  "A2A_WORKER_HANDLER_ARGS_JSON",
+];
+
+function textValuesOf(value) {
+  if (Array.isArray(value)) return value.flatMap(textValuesOf);
+  if (hasText(value)) {
+    const trimmed = value.trim();
+    if (trimmed.startsWith("[")) {
+      try {
+        const parsed = JSON.parse(trimmed);
+        if (Array.isArray(parsed)) return parsed.flatMap(textValuesOf);
+      } catch {
+        // Keep the original redaction-safe command text when JSON is invalid.
+      }
+    }
+    return [trimmed];
+  }
+  if (!value || typeof value !== "object") return [];
+  return ["command", "path", "handlerPath", "args", "arguments"].flatMap((field) => textValuesOf(value[field]));
+}
+
+function handlerConfigurationValuesOf(record) {
+  const sources = [
+    record,
+    record?.env,
+    record?.handler,
+    record?.configuredHandler,
+  ].filter((source) => source && typeof source === "object" && !Array.isArray(source));
+  return sources.flatMap((source) => [
+    ...HANDLER_COMMAND_FIELDS,
+    ...HANDLER_ARGUMENT_FIELDS,
+  ].flatMap((field) => textValuesOf(source[field])));
+}
+
+function normalizedArtifactPath(value) {
+  return value.trim().replace(/\\/g, "/").replace(/\/+/g, "/").replace(/\/$/, "") || "/";
+}
+
+function intentDispatcherPathOf(value) {
+  const tokens = value.match(/(?:"[^"]*"|'[^']*'|[^\s]+)/g) ?? [];
+  for (const token of tokens) {
+    const candidate = normalizedArtifactPath(token.replace(/^['"]|['"]$/g, "").replace(/[;,]$/, ""));
+    const basename = candidate.slice(candidate.lastIndexOf("/") + 1);
+    if (/^a2a-intent-dispatcher(?:\.[a-z0-9_-]+)?$/i.test(basename)) return candidate;
+  }
+  return null;
+}
+
+function intentDispatcherPathsOf(record, handlers) {
+  const candidates = [
+    ...handlerConfigurationValuesOf(record),
+    ...handlers.map((handler) => handler?.path),
+  ].filter(hasText);
+  return [...new Set(candidates.map(intentDispatcherPathOf).filter(Boolean))];
+}
+
+function siblingTaskHandlerPathOf(dispatcherPath) {
+  const slash = dispatcherPath.lastIndexOf("/");
+  if (slash < 0) return null;
+  return `${dispatcherPath.slice(0, slash)}/a2a-task-handler.mjs`;
+}
+
+function findHandler(handlers, required, exact = false) {
+  const normalizedRequired = exact ? normalizedArtifactPath(required) : required;
+  return handlers.find((handler) => {
+    if (!hasText(handler?.path)) return false;
+    const candidate = normalizedArtifactPath(handler.path);
+    return exact ? candidate === normalizedRequired : candidate.endsWith(required);
+  });
+}
+
 /**
  * Classify one worker's readiness. Returns the worker name, ok flag, and the
  * list of {code, reason} violations (empty when ready).
@@ -281,11 +363,31 @@ export function evaluateWorkerReadiness(record, expectations = {}) {
   // 5. handler artifacts present AND executable (covers the #659 EACCES class).
   const handlers = Array.isArray(record?.handlers) ? record.handlers : [];
   for (const required of exp.requiredHandlers) {
-    const match = handlers.find((h) => hasText(h?.path) && h.path.trim().endsWith(required));
+    const match = findHandler(handlers, required);
     if (!match || match.present === false) {
       violations.push({ code: "handler_missing", reason: `required handler '${required}' is missing` });
     } else if (match.executable === false) {
       violations.push({ code: "handler_missing", reason: `required handler '${required}' is present but not executable (EACCES on spawn)` });
+    }
+  }
+
+  // A configured intent dispatcher defaults to a task-handler shim next to
+  // itself. Check that exact path: the canonical handler under the worker root
+  // must not mask a missing dispatcher-directory delegation shim.
+  for (const dispatcherPath of intentDispatcherPathsOf(record, handlers)) {
+    const defaultTaskHandlerPath = siblingTaskHandlerPathOf(dispatcherPath);
+    if (!defaultTaskHandlerPath) continue;
+    const match = findHandler(handlers, defaultTaskHandlerPath, true);
+    if (!match || match.present === false) {
+      violations.push({
+        code: "handler_missing",
+        reason: `configured intent dispatcher '${dispatcherPath}' requires sibling default task handler '${defaultTaskHandlerPath}', which is missing`,
+      });
+    } else if (match.executable === false) {
+      violations.push({
+        code: "handler_missing",
+        reason: `sibling default task handler '${defaultTaskHandlerPath}' is present but not executable (EACCES on spawn)`,
+      });
     }
   }
 

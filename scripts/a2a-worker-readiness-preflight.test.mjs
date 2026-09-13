@@ -79,6 +79,39 @@ test("a missing required handler is handler_missing", () => {
   assert.ok(codes(r).includes("handler_missing"));
 });
 
+test("an intent dispatcher requires its exact sibling default task handler", () => {
+  const r = evaluateWorkerReadiness(healthy({
+    node: "workerGamma",
+    handlers: [
+      { path: "/opt/a2a-broker-worker/dist/worker.js", present: true, executable: true },
+      // The canonical worker-root handler must not satisfy the dispatcher shim check.
+      { path: "/opt/a2a-broker-worker/scripts/a2a-task-handler.mjs", present: true, executable: true },
+      { path: "/opt/a2a-broker-worker/scripts/hermes-a2a-analysis-bridge.mjs", present: true, executable: true },
+      { path: "/usr/local/sbin/a2a-intent-dispatcher.sh", present: true, executable: true },
+    ],
+  }));
+
+  assert.equal(r.ok, false);
+  const violation = r.violations.find((entry) => entry.code === "handler_missing");
+  assert.match(violation?.reason ?? "", /\/usr\/local\/sbin\/a2a-task-handler\.mjs/);
+});
+
+test("an intent dispatcher passes when its sibling default task handler is present", () => {
+  const r = evaluateWorkerReadiness(healthy({
+    node: "workerGamma",
+    handlerCommand: "/usr/local/sbin/a2a-intent-dispatcher.sh",
+    handlers: [
+      { path: "/opt/a2a-broker-worker/dist/worker.js", present: true, executable: true },
+      { path: "/opt/a2a-broker-worker/scripts/a2a-task-handler.mjs", present: true, executable: true },
+      { path: "/opt/a2a-broker-worker/scripts/hermes-a2a-analysis-bridge.mjs", present: true, executable: true },
+      { path: "/usr/local/sbin/a2a-intent-dispatcher.sh", present: true, executable: true },
+      { path: "/usr/local/sbin/a2a-task-handler.mjs", present: true, executable: true },
+    ],
+  }));
+
+  assert.equal(r.ok, true, JSON.stringify(r.violations));
+});
+
 test("evaluateFleetReadiness aggregates per-node violations and a clean fleet", () => {
   const clean = evaluateFleetReadiness([healthy(), healthy({ node: "workerEpsilon", teamId: "team2", homeBrokerId: "brokerBeta" })]);
   assert.equal(clean.ok, true);
