@@ -20,7 +20,10 @@ import { normalizeAnalysisExecutionTelemetry } from "./lib/analysis-execution-te
 import { evaluateDeclaredWriteSetGate } from "../dist/core/runtime-safety-gates.js";
 import { runLiveOperationTask } from "./lib/live-operation-adapter.mjs";
 
-const HANDLER_VERSION = "0.2.16";
+// Bump on every behavioral change to this file: rollout tooling keys on
+// BUILD_INFO.version to tell handler revisions apart (#2149: PR #2147 shipped
+// the declaredScope/diffHygiene passthrough still labeled 0.2.16).
+const HANDLER_VERSION = "0.2.17";
 const SOURCE_PATH = fileURLToPath(import.meta.url);
 const sourceSha256 = createHash("sha256").update(readFileSync(SOURCE_PATH)).digest("hex");
 

@@ -240,6 +240,7 @@ Status: **release candidate prepared for operator-approved tag/release**. This e
 
 - The worker task handler (`a2a-task-handler`) now forwards `payload.declaredScope` and `payload.diffHygiene` into the docker-runner task JSON on plain docker lanes, so the runner's declared-scope gate (`#2136`/`#2139`) actually receives its input instead of the lane silently running unscoped.
 - Malformed `declaredScope`/`diffHygiene` payloads now fail closed at the handler with a validation error instead of being silently dropped.
+- The worker handler version bumps to `0.2.17`: the passthrough above (`#2145`/`#2147`) changed handler behavior without a version bump, so rollout evidence could not distinguish the revision (`#2149`). A regression test now binds `BUILD_INFO.sourceSha256` to the on-disk handler source and fails when the source changes without a `HANDLER_VERSION` bump.
 
 ### Changed — docker-runner trusted-lane defaults (behavior change, #1204/#1209)
 

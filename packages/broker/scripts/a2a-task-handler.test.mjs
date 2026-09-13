@@ -4,8 +4,9 @@ import { chmodSync, existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
+import { fileURLToPath } from "node:url";
 
-import { __test, handleTask, validateWorkerModelEnvCandidatesForPatchProfile } from "./a2a-task-handler.mjs";
+import { BUILD_INFO, __test, handleTask, validateWorkerModelEnvCandidatesForPatchProfile } from "./a2a-task-handler.mjs";
 import {
   ADVISORY_SIDECAR_ROUTING_POLICY,
   ALLOWED_WORKER_MODELS,
@@ -3041,4 +3042,42 @@ test("bounded review notes: oversize rejection precedes handler completion comme
   const outcome = boundedReviewOutcome({ verdict: "pass", summary: "x".repeat(65537) }, "bridge", { postGithubComment: true }, { A2A_POST_ANALYSIS_EVIDENCE_COMMENTS: "1" });
   assert.equal(outcome.result, undefined);
   assert.equal(outcome.error.code, "review_note_too_large");
+});
+
+// #2149: PR #2147 changed handler behavior (declaredScope/diffHygiene
+// passthrough) without bumping HANDLER_VERSION, so rollout tooling keyed on
+// BUILD_INFO.version could not tell the revision had changed. BUILD_INFO
+// already binds sourceSha256 to the exact handler source bytes; this guard
+// keeps HANDLER_VERSION monotonic against that binding so a source change
+// without a version bump fails here at review time instead of in rollout.
+function compareSemverGreaterThan(a, b) {
+  const [aMajor, aMinor, aPatch] = a.split(".").map(Number);
+  const [bMajor, bMinor, bPatch] = b.split(".").map(Number);
+  if (aMajor !== bMajor) return aMajor > bMajor;
+  if (aMinor !== bMinor) return aMinor > bMinor;
+  return aPatch > bPatch;
+}
+
+test("handler source changes require a HANDLER_VERSION bump (#2149)", () => {
+  const handlerSource = readFileSync(fileURLToPath(new URL("./a2a-task-handler.mjs", import.meta.url)));
+  const sourceSha256 = createHash("sha256").update(handlerSource).digest("hex");
+
+  // BUILD_INFO.sourceSha256 must stay bound to the exact on-disk handler source.
+  assert.equal(BUILD_INFO.sourceSha256, sourceSha256);
+
+  // Baseline: the last handler revision that shipped without a bump — the
+  // declaredScope/diffHygiene passthrough (#2145/#2147) still labeled 0.2.16.
+  const BASELINE_SOURCE_SHA256 = "7aa3dbc0c8f320a26b6f25407ab094c69184b9189f12eaf82271a1b5c11495ed";
+  const BASELINE_VERSION = "0.2.16";
+
+  assert.match(BUILD_INFO.version, /^\d+\.\d+\.\d+$/, "HANDLER_VERSION must stay semver");
+  if (sourceSha256 === BASELINE_SOURCE_SHA256) {
+    // Unchanged source keeps its shipped version.
+    assert.equal(BUILD_INFO.version, BASELINE_VERSION);
+    return;
+  }
+  assert.ok(
+    compareSemverGreaterThan(BUILD_INFO.version, BASELINE_VERSION),
+    `a2a-task-handler.mjs source changed (sha256 ${sourceSha256}) without a HANDLER_VERSION bump: ${BUILD_INFO.version} must be > ${BASELINE_VERSION}. Bump HANDLER_VERSION in a2a-task-handler.mjs, then refresh BASELINE_SOURCE_SHA256/BASELINE_VERSION in this test.`,
+  );
 });
