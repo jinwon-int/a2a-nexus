@@ -153,6 +153,18 @@ without bypassing required controls. Record that full SHA during review; if it
 moves, re-review rather than silently substituting the latest head.
 Repository branch cleanup happens after actual merge, not enqueue.
 
+### Queue verification checklist
+
+- Record the reviewed PR head separately from the synthetic queue SHA and
+  `merge_group` run URL. Use exact-head admission; never reuse approval after
+  a head change or on another PR.
+- Inspect effective rules **and** classic protection. Their required-context
+  union, not just either list, must report on the queue commit.
+- Confirm path-selected package/TCK jobs execute when relevant; a legitimate
+  unrelated-path skip is not evidence that the package was tested.
+- Record the actual merged PR state and commit after queue checks complete.
+  Admission or an earlier green PR build alone does not close the rollout.
+
 ### Signed verdict boundary
 
 The existing gate stays fail-closed and verifies against the event head (the
