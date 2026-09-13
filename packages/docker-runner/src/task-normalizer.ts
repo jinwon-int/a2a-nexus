@@ -593,7 +593,22 @@ function buildDefaultPatchCommands(task: RunnerTask, primaryRepo: RunnerRepo): s
 }
 
 function buildDiffHygieneBlock(task: RunnerTask, baseBranch: string): string {
-  const policy = task.diffHygiene;
+  // Validate declaredScope before the early return below so a malformed scope
+  // fails normalization even when the payload omits a diffHygiene policy (#2136).
+  const declaredScopePaths = task.declaredScope?.paths ?? [];
+  if (task.declaredScope !== undefined && (
+    !Array.isArray(declaredScopePaths)
+    || declaredScopePaths.some((path) => typeof path !== "string" || path.trim().length === 0 || /[\0\r\n]/.test(path))
+  )) {
+    throw new Error("task.declaredScope.paths must be a non-empty string array when declaredScope is provided");
+  }
+  const normalizedDeclaredScopePaths = normalizeScopePaths(declaredScopePaths);
+  const patchProposalLane = PATCH_PROPOSAL_MODES.has(task.mode ?? "");
+  const scopeDeclared = normalizedDeclaredScopePaths.length > 0;
+  // #2136: a github-propose-patch payload that declares declaredScope.paths
+  // must have that scope enforced even when it omits diffHygiene — emit a
+  // scope-only hygiene gate instead of silently skipping the check.
+  const policy = task.diffHygiene ?? (patchProposalLane && scopeDeclared ? { scope: { mode: "block" as const } } : undefined);
   if (!policy) return "";
   const forbidden = policy.forbiddenPaths?.length ? policy.forbiddenPaths : ["AGENTS.md", "SOUL.md", "USER.md", "TOOLS.md", "HEARTBEAT.md", "IDENTITY.md", ".openclaw/", "memory/"];
   const forbiddenList = forbidden.map(shellSingleQuote).join(" ");
@@ -608,19 +623,14 @@ function buildDiffHygieneBlock(task: RunnerTask, baseBranch: string): string {
   if (!Number.isInteger(churnMinLines) || churnMinLines < 1) {
     throw new Error("task.diffHygiene.churnMinLines must be a positive integer");
   }
-  const scopeMode = policy.scope?.mode ?? "warn";
+  // #2136: patch-proposal lanes enforce a declared scope by default (block
+  // instead of the legacy warn default); an explicit diffHygiene.scope.mode
+  // from the payload still wins.
+  const scopeMode = policy.scope?.mode ?? (patchProposalLane && scopeDeclared ? "block" : "warn");
   if (scopeMode !== "off" && scopeMode !== "warn" && scopeMode !== "block") {
     throw new Error("task.diffHygiene.scope.mode must be one of: off, warn, block");
   }
-  const declaredScopePaths = task.declaredScope?.paths ?? [];
-  if (task.declaredScope !== undefined && (
-    !Array.isArray(declaredScopePaths)
-    || declaredScopePaths.some((path) => typeof path !== "string" || path.trim().length === 0 || /[\0\r\n]/.test(path))
-  )) {
-    throw new Error("task.declaredScope.paths must be a non-empty string array when declaredScope is provided");
-  }
-  const normalizedDeclaredScopePaths = normalizeScopePaths(declaredScopePaths);
-  const scopeEnabled = scopeMode !== "off" && normalizedDeclaredScopePaths.length > 0;
+  const scopeEnabled = scopeMode !== "off" && scopeDeclared;
   const declaredScopeList = normalizedDeclaredScopePaths.map(shellSingleQuote).join(" ");
   return [
     `# Fail-closed diff hygiene gate (#1219).`,

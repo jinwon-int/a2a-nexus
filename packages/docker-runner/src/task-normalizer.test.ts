@@ -1184,3 +1184,30 @@ test("toolchain-detect: Node.js and Python paths are preserved after Go/Java add
   assert.ok(goIdx < javaIdx, "Go detection must come before Java");
   assert.ok(javaIdx < unsupportedIdx, "Java detection must come before unsupported fallback");
 });
+
+test("malformed declaredScope.paths fails normalization even without diffHygiene (#2136)", () => {
+  // #2136: scope validation moved before the diffHygiene early return so a
+  // patch lane cannot dodge normalization by omitting the hygiene policy.
+  assert.throws(
+    () => normalizeTask({
+      id: "issue-2136-malformed-scope",
+      intent: "patch",
+      mode: "github-propose-patch",
+      repo: "jinwon-int/a2a-nexus",
+      baseBranch: "main",
+      declaredScope: { paths: ["   "] },
+    }),
+    /task\.declaredScope\.paths must be a non-empty string array/,
+  );
+  assert.throws(
+    () => normalizeTask({
+      id: "issue-2136-malformed-scope-type",
+      intent: "patch",
+      mode: "github-propose-patch",
+      repo: "jinwon-int/a2a-nexus",
+      baseBranch: "main",
+      declaredScope: { paths: ["ok", 42] as unknown as string[] },
+    }),
+    /task\.declaredScope\.paths must be a non-empty string array/,
+  );
+});

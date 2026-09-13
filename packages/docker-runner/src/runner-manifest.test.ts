@@ -1222,6 +1222,77 @@ test("buildContainerScript embeds declared-scope drift evidence and block mode",
   assert.match(script, /\[ "\$SCOPE_LEVEL" = block \]/);
 });
 
+test("buildContainerScript enforces declaredScope.paths without a diffHygiene policy on patch lanes (#2136)", () => {
+  const task = normalizeTask({
+    id: "issue-2136-scope-enforce-no-policy",
+    intent: "patch",
+    mode: "github-propose-patch",
+    repo: "jinwon-int/a2a-nexus",
+    baseBranch: "main",
+    declaredScope: { paths: ["packages/docker-runner/", "docs/operators.md"] },
+  });
+
+  const script = buildContainerScript(task);
+
+  // The declared-scope gate must exist even when the payload omits diffHygiene.
+  assert.match(script, /SCOPE_MODE='block'/);
+  assert.match(script, /diff_hygiene_scope_drift_level=/);
+  assert.match(script, /"scopeDrift":\{"declared":/);
+  assert.match(script, /\[ "\$SCOPE_LEVEL" = block \]/);
+  // Out-of-scope changes fail the run before commit/push/PR creation.
+  assert.match(script, /DIFF_HYGIENE_STATUS=blocked/);
+  assert.match(script, /diff_hygiene_scope_drift=blocked/);
+  assert.match(script, /exit 5/);
+});
+
+test("buildContainerScript defaults diffHygiene.scope.mode to block on patch lanes (#2136)", () => {
+  const task = normalizeTask({
+    id: "issue-2136-scope-default-block",
+    intent: "patch",
+    mode: "github-propose-patch",
+    repo: "jinwon-int/a2a-nexus",
+    baseBranch: "main",
+    declaredScope: { paths: ["packages/docker-runner/"] },
+    diffHygiene: {},
+  });
+
+  const script = buildContainerScript(task);
+
+  assert.match(script, /SCOPE_MODE='block'/);
+});
+
+test("buildContainerScript honors an explicit warn scope mode on patch lanes (#2136 back-compat)", () => {
+  const task = normalizeTask({
+    id: "issue-2136-scope-explicit-warn",
+    intent: "patch",
+    mode: "github-propose-patch",
+    repo: "jinwon-int/a2a-nexus",
+    baseBranch: "main",
+    declaredScope: { paths: ["packages/docker-runner/"] },
+    diffHygiene: { scope: { mode: "warn" } },
+  });
+
+  const script = buildContainerScript(task);
+
+  assert.match(script, /SCOPE_MODE='warn'/);
+});
+
+test("buildContainerScript honors an explicit off scope mode as operator opt-out (#2136)", () => {
+  const task = normalizeTask({
+    id: "issue-2136-scope-explicit-off",
+    intent: "patch",
+    mode: "github-propose-patch",
+    repo: "jinwon-int/a2a-nexus",
+    baseBranch: "main",
+    declaredScope: { paths: ["packages/docker-runner/"] },
+    diffHygiene: { scope: { mode: "off" } },
+  });
+
+  const script = buildContainerScript(task);
+
+  assert.doesNotMatch(script, /diff_hygiene_scope_drift_level=/);
+});
+
 test("artifact manifest schema accepts optional diffHygiene scopeDrift without requiring it", async () => {
   const schema = JSON.parse(await readFile(join(repoRoot, "docs", "artifact-manifest.schema.json"), "utf8"));
   const diffHygiene = schema.properties.diffHygiene;
