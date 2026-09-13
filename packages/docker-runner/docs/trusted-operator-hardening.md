@@ -48,3 +48,12 @@ Rules:
 ## Migration note
 
 Existing trusted workers that assumed host networking, root, or a writable root filesystem must set the corresponding explicit variable. This is a deliberate fail-closed hardening change for #1204.
+
+Switching an existing worker from `A2A_DOCKER_RUNNER_USER=root` to
+`A2A_DOCKER_RUNNER_USER=1000:1000` is not a standalone variable flip: repoint the
+gh hosts secret mount to the uid1000-owned file (`gh-hosts-uid1000.yml`) in the
+same change, then re-run `doctor` and confirm `secretMountReadability` reports
+`status: "ok"` before dispatching. Flipping the user while the mount still points
+at the root-owned `gh-hosts-root.yml` leaves the token unreadable under
+`--cap-drop ALL` and surfaces as `start_comment_failed` rather than a permission
+error.
