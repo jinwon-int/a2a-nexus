@@ -278,6 +278,89 @@ function hostPatchBridgeCommand(env = process.env) {
   );
 }
 
+// #2145: plain docker lanes forward payload.declaredScope / payload.diffHygiene
+// into the docker-runner task JSON so the runner's scope gate (#2136/#2139)
+// receives its input. The validators below fail closed: a payload that declares
+// a scope or hygiene policy must arrive well-formed or the task is refused
+// outright — silently dropping malformed gate input would run the task unscoped.
+const RUNNER_DIFF_HYGIENE_SCOPE_MODES = new Set(["off", "warn", "block"]);
+
+function validatePayloadDeclaredScope(declaredScope) {
+  if (declaredScope === undefined) return undefined;
+  if (typeof declaredScope !== "object" || declaredScope === null || Array.isArray(declaredScope)) {
+    throw new Error("task payload declaredScope must be an object with a paths string array");
+  }
+  const paths = declaredScope.paths;
+  if (!Array.isArray(paths) || paths.length === 0) {
+    throw new Error("task payload declaredScope.paths must be a non-empty string array when declaredScope is provided");
+  }
+  for (const path of paths) {
+    if (typeof path !== "string" || path.trim().length === 0 || /[\0\r\n]/.test(path)) {
+      throw new Error("task payload declaredScope.paths entries must be non-empty strings without control line breaks");
+    }
+  }
+  return { paths: [...paths] };
+}
+
+function validatePayloadDiffHygiene(diffHygiene) {
+  if (diffHygiene === undefined) return undefined;
+  if (typeof diffHygiene !== "object" || diffHygiene === null || Array.isArray(diffHygiene)) {
+    throw new Error("task payload diffHygiene must be an object");
+  }
+  const policy = {};
+  if (diffHygiene.forbiddenPaths !== undefined) {
+    if (
+      !Array.isArray(diffHygiene.forbiddenPaths)
+      || diffHygiene.forbiddenPaths.some((path) => typeof path !== "string" || path.trim().length === 0 || /[\0\r\n]/.test(path))
+    ) {
+      throw new Error("task payload diffHygiene.forbiddenPaths must be an array of non-empty strings when provided");
+    }
+    policy.forbiddenPaths = [...diffHygiene.forbiddenPaths];
+  }
+  for (const flag of ["allowLockfileChanges", "blockWhitespaceOnly"]) {
+    if (diffHygiene[flag] !== undefined) {
+      if (typeof diffHygiene[flag] !== "boolean") {
+        throw new Error(`task payload diffHygiene.${flag} must be a boolean when provided`);
+      }
+      policy[flag] = diffHygiene[flag];
+    }
+  }
+  for (const ratio of ["churnWarnRatio", "churnBlockRatio"]) {
+    if (diffHygiene[ratio] !== undefined) {
+      if (typeof diffHygiene[ratio] !== "number" || !Number.isFinite(diffHygiene[ratio]) || diffHygiene[ratio] <= 0 || diffHygiene[ratio] > 1) {
+        throw new Error(`task payload diffHygiene.${ratio} must be a finite number in (0, 1] when provided`);
+      }
+      policy[ratio] = diffHygiene[ratio];
+    }
+  }
+  if (
+    policy.churnWarnRatio !== undefined
+    && policy.churnBlockRatio !== undefined
+    && policy.churnWarnRatio > policy.churnBlockRatio
+  ) {
+    throw new Error("task payload diffHygiene churn ratios must satisfy churnWarnRatio <= churnBlockRatio");
+  }
+  if (diffHygiene.churnMinLines !== undefined) {
+    if (!Number.isInteger(diffHygiene.churnMinLines) || diffHygiene.churnMinLines < 1) {
+      throw new Error("task payload diffHygiene.churnMinLines must be a positive integer when provided");
+    }
+    policy.churnMinLines = diffHygiene.churnMinLines;
+  }
+  if (diffHygiene.scope !== undefined) {
+    if (typeof diffHygiene.scope !== "object" || diffHygiene.scope === null || Array.isArray(diffHygiene.scope)) {
+      throw new Error("task payload diffHygiene.scope must be an object when provided");
+    }
+    const mode = diffHygiene.scope.mode;
+    if (mode !== undefined) {
+      if (!RUNNER_DIFF_HYGIENE_SCOPE_MODES.has(mode)) {
+        throw new Error("task payload diffHygiene.scope.mode must be one of: off, warn, block");
+      }
+      policy.scope = { mode };
+    }
+  }
+  return Object.keys(policy).length > 0 ? policy : undefined;
+}
+
 function buildRunnerTask(task, env = process.env) {
   const payload = taskPayload(task);
   const repo = safeText(payload.repo, "");
@@ -352,6 +435,15 @@ function buildRunnerTask(task, env = process.env) {
   if (Array.isArray(payload.commands) && payload.commands.every((item) => typeof item === "string")) {
     runnerTask.commands = payload.commands;
   }
+
+  // #2145: pass declaredScope / diffHygiene through to the runner task JSON for
+  // plain docker lanes. Without this pass-through the docker runner's scope gate
+  // (#2136/#2139) never receives its input and a declared scope is silently
+  // unenforced; validation above fails closed on malformed input instead.
+  const declaredScope = validatePayloadDeclaredScope(payload.declaredScope);
+  if (declaredScope) runnerTask.declaredScope = declaredScope;
+  const diffHygiene = validatePayloadDiffHygiene(payload.diffHygiene);
+  if (diffHygiene) runnerTask.diffHygiene = diffHygiene;
 
   return runnerTask;
 }
