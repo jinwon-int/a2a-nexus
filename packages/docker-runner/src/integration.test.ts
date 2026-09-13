@@ -195,7 +195,7 @@ test("buildRunnerTaskFromHandlerPayload: stale payload.runnerPreset is dropped, 
   // No repo was declared, so nothing is invented for the caller.
   assert.equal(result.repo, undefined);
   assert.equal(result.baseBranch, undefined);
-  assert.equal(result.timeoutMs, 60 * 60 * 1000);
+  assert.equal(result.timeoutMs, 100 * 60 * 1000);
 });
 
 test("buildRunnerTaskFromHandlerPayload: openclaw-plugin-a2a repo keeps its repo instead of a preset (#2048)", () => {
@@ -573,14 +573,14 @@ test("buildRunnerTaskFromHandlerPayload: reportLanguage defaults to ko", () => {
   assert.equal(result.reportLanguage, "ko");
 });
 
-test("buildRunnerTaskFromHandlerPayload: default timeout is 60 minutes", () => {
+test("buildRunnerTaskFromHandlerPayload: default timeout is 100 minutes", () => {
   const task: HandlerTask = {
     id: "task-default-timeout",
     payload: { mode: "github-propose-patch", repo: "jinwon-int/test-repo" },
   };
   const result = buildRunnerTaskFromHandlerPayload(task, baseEnv);
 
-  assert.equal(result.timeoutMs, 60 * 60 * 1000);
+  assert.equal(result.timeoutMs, 100 * 60 * 1000);
 });
 
 // ═══════════════════════════════════════════════════════════════════════════

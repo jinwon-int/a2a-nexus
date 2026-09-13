@@ -182,11 +182,20 @@ A2A_DOCKER_RUNNER_ROOT=/var/lib/openclaw-a2a/tasks
 # GitHub token mount source
 A2A_DOCKER_RUNNER_GITHUB_TOKEN_FILE=/path/to/github-token-file
 
-# task-level timeout (handler → runner)
-A2A_DOCKER_RUNNER_TASK_TIMEOUT_MS=3600000   # 60분
+# Outer worker budget includes runner startup and terminal submission.
+WORKER_HANDLER_TIMEOUT_MS=7200000         # 120분
+# Selected Docker patch profile: Codex / Piri / Claude Code, 90분.
+A2A_CODEX_TIMEOUT_SEC=5400
+A2A_PIRI_TIMEOUT_SEC=5400
+A2A_CLAUDE_CODE_TIMEOUT_SEC=5400
+# Shared Claude implementation + host analysis turn budget.
+A2A_CLAUDE_CODE_MAX_TURNS=80
+
+# Task timeout is passed through the handler to runner container execution.
+A2A_DOCKER_RUNNER_TASK_TIMEOUT_MS=6000000   # 100분
 
 # container-level timeout (runner → docker run)
-A2A_DOCKER_RUNNER_TIMEOUT_MS=3600000        # 60분
+A2A_DOCKER_RUNNER_TIMEOUT_MS=6000000        # 100분
 
 # resource cap
 A2A_DOCKER_RUNNER_MEMORY=2g
@@ -244,10 +253,25 @@ host 쪽 work directory 에 남고, 다음 task 실행 시 runner 가
 
 | Setting | Default | Env | 적용 위치 |
 |---|---|---|---|
-| Task timeout | 60 min | `A2A_DOCKER_RUNNER_TASK_TIMEOUT_MS` | handler → runner spawn |
-| Container timeout | 60 min | `A2A_DOCKER_RUNNER_TIMEOUT_MS` | runner → `docker run` |
+| Task timeout | 100 min | `A2A_DOCKER_RUNNER_TASK_TIMEOUT_MS` | handler → runner task → container |
+| Container timeout fallback | 100 min | `A2A_DOCKER_RUNNER_TIMEOUT_MS` | runner → `docker run` |
+| Model execution (Codex/Piri/Claude Code patch) | 90 min | profile-specific `*_TIMEOUT_SEC` above | model command inside container |
+| Outer handler | 120 min | `WORKER_HANDLER_TIMEOUT_MS` | worker → handler process |
 | Memory limit | 2 GB | `A2A_DOCKER_RUNNER_MEMORY` | `docker run --memory` |
 | CPU limit | 2 cores | `A2A_DOCKER_RUNNER_CPUS` | `docker run --cpus` |
+
+신규 설치에서 변수를 생략하면 위 소스 기본값을 사용한다. 기존 env 파일의 짧은 명시값은
+자동으로 덮어쓰지 않는다. 업그레이드 시 예전 worker/runner env와 컨테이너 이미지의 고정값을
+대조하고, idle worker만 백업 후 순차 반영한다. 실행 프로세스 환경·설치된 runner의 생성 명령·
+브로커 재등록을 확인한다. 소스/템플릿 변경만으로 이미 실행 중인 워커가 갱신되지는 않는다.
+
+`A2A_DOCKER_RUNNER_TASK_TIMEOUT_MS`는 `payload.timeoutMs`보다 우선한다.
+작업별 짧은 제한을 쓰려면 task-timeout 환경변수를 비워 두고 payload를 지정한다.
+모델90분 < 컨테이너100분 < 외부120분의 여유를 유지한다. 일반 Claude 구현·분석은
+80턴이 기본이며, deterministic 6턴·fanout 40턴/상한200은 그대로다. 기존 명시적인
+mode별 값(예: deterministic 20턴)은 계속 우선한다. host 분석 시간은 별도
+analysis timeout/`--timeout` 경로이며 변경하지 않는다. 짧은 분석·HTTP·acceptance
+timeout과 보안/scope/리뷰 게이트를 구현 예산과 혼동하지 않는다.
 
 Timeout 초과 시 runner 는 SIGTERM → 5초 후 SIGKILL 로 container 를 종료한다.
 Runner result 의 `status` 는 `"timeout"`, `ok` 는 `false` 로 반환된다.
@@ -433,8 +457,8 @@ A2A_DOCKER_RUNNER_BIN=/usr/bin/node
 A2A_DOCKER_RUNNER_ARGS_JSON='["/opt/a2a-docker-runner/dist/cli.js"]'
 A2A_DOCKER_RUNNER_ROOT=/var/lib/openclaw-a2a/tasks
 A2A_DOCKER_RUNNER_GITHUB_TOKEN_FILE=/path/to/github-token-file
-A2A_DOCKER_RUNNER_TASK_TIMEOUT_MS=3600000
-A2A_DOCKER_RUNNER_TIMEOUT_MS=3600000
+A2A_DOCKER_RUNNER_TASK_TIMEOUT_MS=6000000
+A2A_DOCKER_RUNNER_TIMEOUT_MS=6000000
 A2A_DOCKER_RUNNER_MEMORY=2g
 A2A_DOCKER_RUNNER_CPUS=2
 ```

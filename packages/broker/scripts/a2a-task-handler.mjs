@@ -25,7 +25,7 @@ const SOURCE_PATH = fileURLToPath(import.meta.url);
 const sourceSha256 = createHash("sha256").update(readFileSync(SOURCE_PATH)).digest("hex");
 
 // ── Worker execution constants ──────────────────────────────────────────
-const DEFAULT_RUNNER_TASK_TIMEOUT_MS = 60 * 60 * 1000;
+const DEFAULT_RUNNER_TASK_TIMEOUT_MS = 100 * 60 * 1000;
 const DEFAULT_OPENCLAW_TIMEOUT_SEC = 60 * 60;
 
 export const BUILD_INFO = Object.freeze({

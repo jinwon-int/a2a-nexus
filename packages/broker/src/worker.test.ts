@@ -2570,3 +2570,11 @@ test("the piri lane flag key is emitted on authorized and refused paths (piri re
   assert.equal(claudeAuthorized.env[FANOUT_FLAG_ENV_KEYS["claude-code"]], "1");
   assert.equal(claudeAuthorized.env[FANOUT_FLAG_ENV_KEYS.piri], undefined);
 });
+
+
+test("worker default allows runner completion and preserves primary/legacy timeout overrides", () => {
+  const env = { BROKER_URL: "http://127.0.0.1:8787", WORKER_ID: "budget-fixture" };
+  assert.equal(createWorkerConfigFromEnv(env).handlerTimeoutMs, 120 * 60 * 1000);
+  assert.equal(createWorkerConfigFromEnv({ ...env, A2A_WORKER_HANDLER_TIMEOUT_MS: "9000" }).handlerTimeoutMs, 9000);
+  assert.equal(createWorkerConfigFromEnv({ ...env, WORKER_HANDLER_TIMEOUT_MS: "8000", A2A_WORKER_HANDLER_TIMEOUT_MS: "9000" }).handlerTimeoutMs, 8000);
+});

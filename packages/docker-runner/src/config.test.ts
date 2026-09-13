@@ -914,10 +914,10 @@ test("loadConfig reads OpenClaw patch command script env var", async () => {
   assert.equal(config.commandScript, "#!/usr/bin/env bash\nopenclaw agent --help");
 });
 
-test("loadConfig defaults runner container timeout to 60 minutes", async () => {
+test("loadConfig defaults runner container timeout to 100 minutes", async () => {
   const config = await loadConfig(baseEnv);
 
-  assert.equal(config.defaultTimeoutMs, 60 * 60 * 1000);
+  assert.equal(config.defaultTimeoutMs, 100 * 60 * 1000);
 });
 
 test("loadConfig builds first-class OpenClaw patch profile", async () => {
@@ -1857,7 +1857,7 @@ test("claude-code patch mode: normal non-fanout lane is agentic; deterministic a
   // commit/push/PR so it neither demands model-reported PR evidence nor
   // clones into an isolated workspace.
   assert.match(defaultScript, /export A2A_CLAUDE_PATCH_RUNNER_CONTEXT=1/);
-  assert.match(defaultScript, /export A2A_CLAUDE_CODE_TIMEOUT_SEC='3600'/);
+  assert.match(defaultScript, /export A2A_CLAUDE_CODE_TIMEOUT_SEC='5400'/);
   assert.doesNotMatch(defaultScript, /export A2A_CLAUDE_CODE_MAX_TURNS=/);
   assert.doesNotMatch(defaultScript, /export A2A_CLAUDE_CODE_PATCH_MAX_TURNS=/);
   assert.doesNotMatch(defaultScript, /export A2A_CLAUDE_CODE_DETERMINISTIC_MAX_TURNS=/);
@@ -1903,8 +1903,8 @@ test("claude-code patch mode: normal non-fanout lane is agentic; deterministic a
 test("claude-code preflight projection exposes canonical defaults, explicit sources, and fanout cap without env contents", () => {
   const defaults = projectClaudeCodeTurnBudgets({});
   assert.equal(defaults.activePatchMode, "agentic");
-  assert.deepEqual(defaults.analysis, { effectiveMaxTurns: 10, source: "canonical_default" });
-  assert.deepEqual(defaults.agenticPatch, { effectiveMaxTurns: 40, source: "canonical_default" });
+  assert.deepEqual(defaults.analysis, { effectiveMaxTurns: 80, source: "canonical_default" });
+  assert.deepEqual(defaults.agenticPatch, { effectiveMaxTurns: 80, source: "canonical_default" });
   assert.deepEqual(defaults.deterministicSingleShot, { effectiveMaxTurns: 6, source: "canonical_default" });
   assert.deepEqual(defaults.fanoutPatch, {
     effectiveMaxTurns: 40,
@@ -2012,4 +2012,19 @@ test("Codex worker inheritance rejects shell and TOML injection in model or effo
       ...overrides,
     }), /invalid A2A_CODEX_/);
   }
+});
+
+
+test("implementation model budgets leave container headroom and preserve shorter operator overrides", async () => {
+  for (const [key, build] of [
+    ["A2A_CODEX_TIMEOUT_SEC", buildCodexPatchCommandScript],
+    ["A2A_PIRI_TIMEOUT_SEC", buildPiriPatchCommandScript],
+    ["A2A_CLAUDE_CODE_TIMEOUT_SEC", buildClaudeCodePatchCommandScript],
+  ] as const) {
+    assert.match(build({}), /(?:DEFAULT_TIMEOUT_SEC=|export A2A_CLAUDE_CODE_TIMEOUT_SEC=)'5400'/, key);
+    assert.match(build({ [key]: "120" }), /(?:DEFAULT_TIMEOUT_SEC=|export A2A_CLAUDE_CODE_TIMEOUT_SEC=)'120'/, key);
+  }
+  const config = await loadConfig(baseEnv);
+  assert.ok(5400 * 1000 < config.defaultTimeoutMs);
+  assert.equal((await loadConfig({ ...baseEnv, A2A_DOCKER_RUNNER_TIMEOUT_MS: "180000" })).defaultTimeoutMs, 180000);
 });

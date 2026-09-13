@@ -56,18 +56,18 @@ export class ExtraMountsConfigError extends Error {
 
 const DEFAULT_ROOT = "/var/lib/openclaw-a2a/tasks";
 const DEFAULT_IMAGE = "node:22-bookworm-slim";
-const DEFAULT_TIMEOUT_MS = 60 * 60 * 1000;
+const DEFAULT_TIMEOUT_MS = 100 * 60 * 1000;
 const DEFAULT_OPENCLAW_TIMEOUT_SEC = "3600";
 const DEFAULT_HERMES_TIMEOUT_SEC = "3600";
-const DEFAULT_CLAUDE_CODE_TIMEOUT_SEC = "3600";
-const DEFAULT_CODEX_TIMEOUT_SEC = "3600";
+const DEFAULT_CLAUDE_CODE_TIMEOUT_SEC = "5400";
+const DEFAULT_CODEX_TIMEOUT_SEC = "5400";
 const DEFAULT_CODEX_CONFIG_DIR = "/var/lib/a2a-runner/codex-dir";
 const DEFAULT_PIRI_CONFIG_DIR = "/var/lib/a2a-runner/piri-dir";
 /** Host-side bounded memory snapshot dir for the piri lane (#1797 item 3a). */
 const DEFAULT_PIRI_MEMORY_DIR = "/var/lib/a2a-runner/piri-memory";
 const DEFAULT_PIRI_MODEL = "kimi-coding/k3";
 const DEFAULT_PIRI_THINKING = "high";
-const DEFAULT_PIRI_TIMEOUT_SEC = "3600";
+const DEFAULT_PIRI_TIMEOUT_SEC = "5400";
 /** Baked into piri-runner images; the command script uses it unless overridden. */
 const DEFAULT_PIRI_OUTPUT_SCHEMA = "/etc/a2a-runner/piri-analysis-output.schema.json";
 export const DEFAULT_SERVICE_ENV_FILE = "/etc/default/openclaw-a2a-worker";
@@ -1187,8 +1187,8 @@ ${piriMemoryEnabled ? `  \${PIRI_MEMORY_ARGS[@]+"\${PIRI_MEMORY_ARGS[@]}"} \
 }
 
 const CLAUDE_TURN_BUDGET_DEFAULTS = {
-  analysis: 10,
-  agenticPatch: 40,
+  analysis: 80,
+  agenticPatch: 80,
   deterministicSingleShot: 6,
   fanoutPatch: 40,
 } as const;

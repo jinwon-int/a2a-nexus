@@ -652,10 +652,18 @@ lane is agentic. The budget resolution order is mode-specific:
 
 | Mode | Resolution order | Canonical default |
 |---|---|---:|
-| Analysis | `A2A_CLAUDE_CODE_ANALYSIS_MAX_TURNS`, legacy shared `A2A_CLAUDE_CODE_MAX_TURNS`, default | 10 |
-| Agentic patch | `A2A_CLAUDE_CODE_MAX_TURNS`, default | 40 |
+| Analysis | `A2A_CLAUDE_CODE_ANALYSIS_MAX_TURNS`, legacy shared `A2A_CLAUDE_CODE_MAX_TURNS`, default | 80 |
+| Agentic patch | `A2A_CLAUDE_CODE_MAX_TURNS`, default | 80 |
 | Deterministic single-shot diff/apply | `A2A_CLAUDE_CODE_DETERMINISTIC_MAX_TURNS`, backward-compatible `A2A_CLAUDE_CODE_PATCH_MAX_TURNS`, default | 6 per Claude invocation |
 | Fanout patch | `A2A_CLAUDE_CODE_FANOUT_MAX_TURNS`, default, hard cap | 40, capped at 200 |
+
+Codex, Piri and Claude Code Docker patch commands default to 90 minutes.
+Runner task/container defaults are 100 minutes, with a 120-minute outer worker
+handler budget. Explicit environment and per-task overrides retain their existing
+precedence; upgrading source does not replace existing worker environment files.
+The standalone Claude host analysis bridge also defaults to 80 turns, while its
+separate analysis time limit is unchanged. See the [rollout budget and migration
+guidance](../broker/docs/docker-runner-rollout-runbook.md#35-timeout--resource-cap).
 
 Each completed Claude invocation writes secret-free
 `artifacts/claude-turn-budget.json` telemetry with the mode, effective value,

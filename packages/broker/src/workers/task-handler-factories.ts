@@ -39,7 +39,7 @@ import {
 import type { A2AWorkerSubagentRedactionMode } from "a2a-attestation";
 import type { TaskRecord, TaskResult } from "../core/types.js";
 
-export const DEFAULT_HANDLER_TIMEOUT_MS = 60_000;
+export const DEFAULT_HANDLER_TIMEOUT_MS = 120 * 60 * 1000;
 
 export type BuiltinWorkerHandlerKind = "noop" | "echo";
 export type WorkerTaskHandler = (task: TaskRecord) => Promise<WorkerHandlerOutcome | TaskResult | void>;

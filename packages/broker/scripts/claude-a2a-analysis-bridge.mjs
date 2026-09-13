@@ -607,7 +607,7 @@ function buildClaudePrompt({ message, flags, payload }) {
 async function runClaude(prompt, flags, env = process.env) {
   const claudeBin = safeText(env.A2A_CLAUDE_CODE_BIN, safeText(env.CLAUDE_BIN, "claude"));
   const timeoutSec = positiveInteger(flags.timeout, positiveInteger(env.A2A_CLAUDE_CODE_TIMEOUT_SEC, 600));
-  const maxTurns = positiveInteger(env.A2A_CLAUDE_CODE_MAX_TURNS, 10);
+  const maxTurns = positiveInteger(env.A2A_CLAUDE_CODE_MAX_TURNS, 80);
   const maxBuffer = positiveInteger(env.A2A_CLAUDE_CODE_MAX_OUTPUT_BYTES, 8 * 1024 * 1024);
   const sessionId = safeText(flags["session-id"], "default");
 

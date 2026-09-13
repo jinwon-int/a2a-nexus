@@ -460,7 +460,7 @@ export function buildRunnerTaskFromHandlerPayload(
   // Accept only a finite, strictly-positive timeout. Number("") === 0 and
   // negatives are NOT NaN, so a naive `!isNaN(...)` guard would turn an empty
   // or malformed env value into a 0 ms (instant) timeout instead of the
-  // 1-hour default.
+  // 100-minute default.
   const coercePositiveMs = (value: unknown): number | undefined => {
     const n = typeof value === "number" ? value : typeof value === "string" ? Number(value) : NaN;
     return Number.isFinite(n) && n > 0 ? n : undefined;
@@ -513,7 +513,7 @@ export function buildRunnerTaskFromHandlerPayload(
     timeoutMs:
       envTimeoutMs
       ?? coercePositiveMs(task?.payload?.timeoutMs)
-      ?? 60 * 60 * 1000,
+      ?? 100 * 60 * 1000,
   };
 
   // ── issueUrl fallback: construct from repo + issue/issueNumber ──
