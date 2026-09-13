@@ -21,12 +21,98 @@ test('docs/root-doc CI path runs markdown links and external secret scan', () =>
   assert.match(ci, /npm run scan:external-secrets/);
 });
 
+test('required workflows accept queue events and pin path-filter comparison', () => {
+  for (const file of ['ci.yml', 'codeql.yml', 'tck-promoted-gate.yml', 'finalizer-verdict-gate.yml']) {
+    const text = readFileSync(join(repoRoot, '.github/workflows', file), 'utf8');
+    const events = text.split('\non:\n')[1].split(/\n\S/)[0];
+    assert.match(events, /^  merge_group:/m, file);
+    assert.doesNotMatch(events, /^\s+paths(?:-ignore)?:/m, file);
+    if (text.includes('dorny/paths-filter@')) {
+      assert.match(text, /base: \$\{\{ github\.event\.merge_group\.base_sha \|\| github\.ref \}\}/, file);
+      assert.match(text, /ref: \$\{\{ github\.event\.merge_group\.head_sha \|\| github\.ref \}\}/, file);
+    }
+  }
+});
+
+// Evaluate the checked-in two-term input expressions, not a parallel fixture
+// configuration. dorny v4 selects before/last-commit only when branch inputs
+// are equal; a branch name vs its SHA instead selects a zero merge-base diff.
+function filterInputs(text, event) {
+  return ['base', 'ref'].map((key) => {
+    const expression = text.match(new RegExp(`^          ${key}: \\$\\{\\{ (.+) \\}\\}$`, 'm'))?.[1];
+    assert.ok(expression, `missing ${key}`);
+    return expression.split(' || ').map((term) => {
+      assert.ok(Object.hasOwn(event, term), `unsupported input expression: ${term}`);
+      return event[term];
+    }).find(Boolean);
+  });
+}
+
+function assertFilterEventMatrix(text) {
+  const ordinary = {
+    'github.event.merge_group.base_sha': '',
+    'github.event.merge_group.head_sha': '',
+    'github.ref': 'refs/heads/main',
+    'github.sha': 'b'.repeat(40),
+  };
+  // On push, equal branch names select event.before; manual dispatch selects
+  // the last commit. PR events keep the action's PR-files API (inputs ignored).
+  for (const eventName of ['push', 'workflow_dispatch']) {
+    assert.deepEqual(filterInputs(text, ordinary), ['refs/heads/main', 'refs/heads/main'], eventName);
+  }
+  assert.deepEqual(filterInputs(text, {
+    ...ordinary,
+    'github.event.merge_group.base_sha': 'a'.repeat(40),
+    'github.event.merge_group.head_sha': 'c'.repeat(40),
+    'github.ref': 'refs/heads/gh-readonly-queue/main/pr-1',
+  }), ['a'.repeat(40), 'c'.repeat(40)]);
+}
+
+test('path-filter event matrix preserves push/manual and immutable queue comparisons', () => {
+  for (const file of ['ci.yml', 'tck-promoted-gate.yml']) {
+    const text = readFileSync(join(repoRoot, '.github/workflows', file), 'utf8');
+    assertFilterEventMatrix(text);
+    assert.throws(() => assertFilterEventMatrix(text.replace(
+      'github.event.merge_group.head_sha || github.ref',
+      'github.event.merge_group.head_sha || github.sha',
+    )));
+  }
+});
+
+function assertVerdictWorkflow(text) {
+  const job = text.match(/^  finalizer-verdict-gate:\n[\s\S]*?(?=^  [\w-]+:\n|(?![\s\S]))/m)?.[0];
+  assert.ok(job);
+  // No job OR step skip conditions, including folded YAML expressions.
+  assert.doesNotMatch(job, /^\s*if:|continue-on-error|--mode warn/m);
+  assert.match(job, /HEAD_SHA: \$\{\{ github\.event\.pull_request\.head\.sha \|\| github\.sha \}\}/);
+  assert.match(job, /--head-sha "\$HEAD_SHA"/);
+  assert.match(job, /--mode enforce/);
+  assert.match(job, /^          set -euo pipefail$/m);
+  assert.match(job, /^            node scripts\/check-finalizer-verdict\.mjs "\$\{args\[@\]\}"$/m);
+}
+
+test('queue verdict workflow rejects skip conditions and swallowed verifier failures', () => {
+  const text = readFileSync(join(repoRoot, '.github/workflows/finalizer-verdict-gate.yml'), 'utf8');
+  assertVerdictWorkflow(text);
+  assert.throws(() => assertVerdictWorkflow(text.replace(
+    '  finalizer-verdict-gate:\n',
+    "  finalizer-verdict-gate:\n    if: >-\n      github.event_name != 'merge_group'\n",
+  )));
+  assert.throws(() => assertVerdictWorkflow(text.replace(
+    'node scripts/check-finalizer-verdict.mjs "${args[@]}"',
+    'node scripts/check-finalizer-verdict.mjs "${args[@]}" || true',
+  )));
+});
+
 test('auto-merge squashes, because main requires linear history (#2050)', () => {
   const autoMerge = readFileSync(join(repoRoot, '.github/workflows/auto-merge.yml'), 'utf8');
   const mergeCommands = autoMerge.match(/gh pr merge[^\n]*/g) ?? [];
   assert.equal(mergeCommands.length, 1, 'expected exactly one gh pr merge invocation');
   const [command] = mergeCommands;
   assert.match(command, /--squash/);
+  assert.match(command, /--auto/);
+  assert.match(command, /--match-head-commit "\$HEAD_SHA"/);
+  assert.doesNotMatch(command, /--admin|--delete-branch/);
   // `--merge` creates a merge commit, which main's required_linear_history
   // rejects. The workflow shipped with `--merge` from its first commit and
   // never hit the line, so nothing caught it until the repo review.

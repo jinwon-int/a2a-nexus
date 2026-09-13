@@ -73,14 +73,12 @@ jobs:
 
           while read -r pr; do
             [ -n "$pr" ] || continue
-            echo "Merging PR #${pr} after successful ci workflow_run for ${HEAD_SHA}."
-            # Squash, not merge. `main` protection sets required_linear_history,
-            # so a merge commit is rejected outright: `git log --merges main`
-            # is empty and every subject carries the `(#NNNN)` squash suffix.
-            # This line had never actually run — the workflow always exited
-            # early with no matching open PR — so the mismatch stayed latent.
-            # `--delete-branch` is belt-and-braces: the repo already has
-            # delete_branch_on_merge, but stating it here keeps the workflow
-            # readable without depending on a remote setting.
-            gh pr merge "$pr" --repo "$REPO" --squash --delete-branch
+            echo "Requesting merge/queue admission for PR #${pr}, CI head ${HEAD_SHA}."
+            # gh follows the base branch's queue requirement; --auto also works
+            # before rollout. Bind admission to the CI head to reject a push
+            # racing the list/read above. Never bypass protection with --admin.
+            # Keep squash for pre-queue linear-history compatibility. The queue
+            # ruleset owns the method once active. Repository branch cleanup
+            # runs only after actual merge, not when admission is requested.
+            gh pr merge "$pr" --repo "$REPO" --auto --squash --match-head-commit "$HEAD_SHA"
           done < /tmp/auto-merge-prs.txt
