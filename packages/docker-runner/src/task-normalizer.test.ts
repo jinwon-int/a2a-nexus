@@ -1211,3 +1211,26 @@ test("malformed declaredScope.paths fails normalization even without diffHygiene
     /task\.declaredScope\.paths must be a non-empty string array/,
   );
 });
+
+test("host-env bootstrap allowlist reaches the exported patch pipeline for the declared repo", () => {
+  const previous = process.env["A2A_DOCKER_RUNNER_BOOTSTRAP_ALLOWED_TRACKED"];
+  process.env["A2A_DOCKER_RUNNER_BOOTSTRAP_ALLOWED_TRACKED"] = "jinwon-int/danso:AGENTS.md";
+  try {
+    const task = normalizeTask({
+      id: "tracked-agents-normalizer",
+      intent: "propose_patch",
+      mode: "github-propose-patch",
+      repo: "jinwon-int/danso",
+      baseBranch: "main",
+      prompt: "test",
+    } as never);
+    const pipeline = task.commands.join("\n");
+    assert.ok(
+      pipeline.includes("BOOTSTRAP_ALLOWED_TRACKED_REPO_ENTRIES='.:AGENTS.md'"),
+      "Expected the exported pre-PR guard to allowlist the clean tracked AGENTS.md for the allowlisted repo"
+    );
+  } finally {
+    if (previous === undefined) delete process.env["A2A_DOCKER_RUNNER_BOOTSTRAP_ALLOWED_TRACKED"];
+    else process.env["A2A_DOCKER_RUNNER_BOOTSTRAP_ALLOWED_TRACKED"] = previous;
+  }
+});
