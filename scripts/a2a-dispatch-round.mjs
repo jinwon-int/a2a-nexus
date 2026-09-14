@@ -870,6 +870,8 @@ function usage(exitCode) {
   const out = exitCode === 0 ? process.stdout : process.stderr;
   out.write(`Usage: npm run dispatch:round -- --manifest <file> [--dry-run] [--verify] [--json]
 
+Read docs/agent-manual.md in this checkout before using A2A Nexus.
+
 Manifest-driven, fail-closed parent-round dispatch. Prompts/messages live in the
 manifest as plain strings (zero shell interpolation). The edge secret is read
 from A2A_EDGE_SECRET only (never a CLI flag, never logged).

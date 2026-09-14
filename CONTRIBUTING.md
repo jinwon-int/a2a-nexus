@@ -18,6 +18,21 @@ Do not include secrets, credentials, private endpoints, local operator paths, Te
 
 Do not perform repository visibility changes, tag/release creation, npm/Docker publication, production deploys, Gateway/broker/worker restarts, database mutations, provider sends, terminal-outbox ACK/replay mutations, or secret/credential movement unless an operator explicitly approves that specific action.
 
+## Keep agent usage current
+
+Read [docs/agent-manual.md](docs/agent-manual.md) before changing Nexus usage.
+A PR that changes commands, task fields, modes, authentication handling, defaults,
+precedence or result/recovery semantics must update that manual and the affected
+detailed reference in the same PR. Include the before/after behavior and
+verification evidence. For an internal-only change, explain why no usage update
+is needed in the PR template. Reviewers verify the instructions against code;
+link checks alone cannot establish semantic freshness.
+
+Keep repository agent instructions as a short, public routing entry to the
+manual. Environment-specific skills and runbooks should link to it and keep
+only their local inventory or credential-location procedures. Do not copy
+runtime memory or credentials into repository instructions.
+
 ## Validation entrypoints
 
 Use [`docs/ops/script-surface-entrypoints.md`](docs/ops/script-surface-entrypoints.md) to choose the command level:

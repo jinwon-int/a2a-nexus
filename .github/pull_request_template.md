@@ -25,6 +25,13 @@ escalated 2026-07-05 after three consecutive deviations). -->
 
 For Small changes where a full packet is not required, explain why the change is short, reversible, single-repo, and does not cross approval boundaries.
 
+## Agent manual impact
+
+- Usage changed: yes / no (explain why).
+- Before → after, including compatibility/default precedence:
+- Updated `docs/agent-manual.md` and affected reference sections, or reason N/A:
+- Command/schema verification evidence:
+
 ## Verification
 
 - [ ] `npm ci --ignore-scripts --include=dev`
@@ -48,7 +55,7 @@ For Small changes where a full packet is not required, explain why the change is
 - [ ] No production deploy, Gateway/broker/worker restart, production DB mutation, terminal-outbox ACK/replay, live provider/Telegram send, secret/credential movement, rotation/disclosure, history rewrite, or force push was performed.
 - [ ] Any approval-sensitive action is excluded or has a separate explicit operator approval link.
 - [ ] Evidence is redacted and contains no secrets, private endpoints, provider IDs, Telegram IDs, raw session dumps, or production data.
-- [ ] Branch/artifacts do not include OpenClaw runtime/bootstrap files: `AGENTS.md`, `SOUL.md`, `USER.md`, `TOOLS.md`, `HEARTBEAT.md`, `IDENTITY.md`, or `.openclaw/**`.
+- [ ] Branch/artifacts do not include OpenClaw runtime/bootstrap files (the canonical public root `AGENTS.md` routing document is the sole repository instruction exception): `SOUL.md`, `USER.md`, `TOOLS.md`, `HEARTBEAT.md`, `IDENTITY.md`, or `.openclaw/**`.
 
 ## Related issues
 

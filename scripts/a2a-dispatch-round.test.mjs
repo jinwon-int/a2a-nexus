@@ -1073,3 +1073,21 @@ test('dry-run accepts a well-formed antithesis lane with a distinct declared aut
   const out = await runDispatch(m, { dryRun: true });
   assert.equal(out.exitCode, 0, out.errors.join('\n'));
 });
+
+
+test('CLI help routes agents to the checkout manual without requiring credentials', () => {
+  const env = { ...process.env };
+  delete env.A2A_EDGE_SECRET;
+  const proc = spawnSync(process.execPath, [SCRIPT, '--help'], { encoding: 'utf8', env });
+  assert.equal(proc.status, 0, proc.stderr);
+  assert.match(proc.stdout, /Read docs\/agent-manual\.md in this checkout before using A2A Nexus/);
+});
+
+
+test('repository agent discovery pointer resolves to the checkout manual', () => {
+  const repoRoot = join(__dirname, '..');
+  const pointer = readFileSync(join(repoRoot, 'AGENTS.md'), 'utf8');
+  assert.match(pointer, /\[the agent manual\]\(docs\/agent-manual\.md\)/);
+  const manual = readFileSync(join(repoRoot, 'docs/agent-manual.md'), 'utf8');
+  assert.ok(manual.trim().length > 0, 'the discovered manual must exist and contain guidance');
+});

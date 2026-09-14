@@ -4,7 +4,7 @@ import path from 'node:path';
 
 const strictInternal = process.env.PUBLIC_READINESS_STRICT_INTERNAL === '1' || process.argv.includes('--strict-internal');
 const deny = [
-  { kind: 'runtime-bootstrap', severity: 'fail', re: /^(AGENTS|SOUL|USER|TOOLS|HEARTBEAT|IDENTITY)\.md$/ },
+  { kind: 'runtime-bootstrap', severity: 'fail', re: /(?:^|\/)(AGENTS|SOUL|USER|TOOLS|HEARTBEAT|IDENTITY)\.md$/ },
   { kind: 'openclaw-state', severity: 'fail', re: /^\.openclaw\// },
   { kind: 'secret-assignment', severity: 'fail', re: /^\s*(?:export\s+)?[A-Z0-9_]*(?:TOKEN|SECRET|PASSWORD|API[_-]?KEY)[A-Z0-9_]*\s*=\s*['"]?(?!<|\\?\$\{|YOUR_|\/path\/to\/)[^'"\s#]{12,}/ },
   { kind: 'github-token-shape', severity: 'fail', re: /\b(ghp|github_pat)_[A-Za-z0-9_]{20,}\b/ },
@@ -73,14 +73,47 @@ function isAllowedWarning(file) { return allowWarningPaths.some((re) => re.test(
 // Per-line rules (everything after the two path-shape rules), hoisted so the
 // slice is not re-allocated for every line of every scanned file.
 const lineRules = deny.slice(2);
+// The sole bootstrap exception is a fixed public entry point, not arbitrary
+// AGENTS instructions or a runtime-memory allowlist. Changes to its content must
+// deliberately update this contract alongside the public pointer.
+const publicAgentPointer = `# A2A Nexus agent entry point
+
+Before using A2A Nexus, read [the agent manual](docs/agent-manual.md) from the same
+checkout revision as the scripts you will run. Follow its route for dispatch,
+status checks, and result verification before performing live actions.
+
+When a change alters agent-facing usage, update that manual in the same PR.
+Keep this file a public documentation pointer; never add node memory, credentials,
+or private operating context here.
+`;
+function validPublicAgentPointer() {
+  try {
+    const pointer = fs.lstatSync('AGENTS.md');
+    const manualDirectory = fs.lstatSync('docs');
+    const manual = fs.lstatSync('docs/agent-manual.md');
+    return pointer.isFile() && !pointer.isSymbolicLink()
+      && pointer.size === Buffer.byteLength(publicAgentPointer)
+      && fs.readFileSync('AGENTS.md', 'utf8') === publicAgentPointer
+      && manualDirectory.isDirectory() && !manualDirectory.isSymbolicLink()
+      && manual.isFile() && !manual.isSymbolicLink() && manual.size > 0;
+  } catch { return false; }
+}
 const findings = [];
+const allowPublicAgentPointer = validPublicAgentPointer();
+// Check directly as git's candidate list can omit an ignored or dangling link.
+if (fs.lstatSync('AGENTS.md', { throwIfNoEntry: false }) && !allowPublicAgentPointer) {
+  findings.push({ kind: 'runtime-bootstrap', severity: 'fail', file: 'AGENTS.md' });
+}
 for (const file of candidateFiles()) {
   for (const rule of deny) {
     if (rule.re.test(file)) {
+      if (rule.kind === 'runtime-bootstrap' && file === 'AGENTS.md' && allowPublicAgentPointer) continue;
       const severity = rule.kind === 'internal-node-identifier' && isAllowedWarning(file) ? 'warn' : rule.severity;
       findings.push({ kind: rule.kind, severity, file });
     }
   }
+  // Invalid special-file pointers must fail without reading a FIFO or device.
+  if (file === 'AGENTS.md' && !fs.lstatSync(file).isFile()) continue;
   let text;
   try { text = fs.readFileSync(file, 'utf8'); } catch { continue; }
   text.split(/\r?\n/).forEach((line, i) => {

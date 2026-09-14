@@ -4,6 +4,11 @@ The documentation surface is split into three tiers (#1290 R5). The
 repository-level entry-point ordering lives in the [root README](../README.md)
 and is unchanged; this index is the map of everything under `docs/`.
 
+## Agent entry point
+
+Read the [agent manual](agent-manual.md) before Nexus use or after an update.
+It is the canonical workflow entry point; detailed references remain below.
+
 ## Getting started (users and external contributors)
 
 - [quickstart.md](quickstart.md) — five-minute local quickstart
