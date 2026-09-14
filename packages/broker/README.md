@@ -186,20 +186,12 @@ curl -s "$BROKER_URL/workers/capacity?stale_after_ms=120000" \
 
 If the command exits non-zero, pause dispatch and inspect the compact response instead of repeatedly fetching large `/tasks?detail=full` snapshots.
 
-For Termux/mobile workers such as mobilebeta, use the source-only mobile preflight
-packet before active lane assignment:
-
-```bash
-npm run rollout -- mobile_worker_preflight \
-  --input fixtures/mobile-worker-preflight/slow-polling.json
-```
-
-See [`docs/mobile-worker-preflight.md`](docs/mobile-worker-preflight.md). This
-is separate from Docker-runner doctor: it evaluates supplied mobile signals such
-as poll interval, broker stale windows, tmux supervisor presence, local-forward
-presence, and wake-lock state. It does not change live mobilebeta settings, execute
-`termux-wake-lock`, dispatch work, restart services, mutate DB state, send
-providers, or ACK/replay Terminal Brief rows.
+The fixture-only mobile preflight tool was retired in #2065; its rollout command
+is no longer supported. This does not retire runtime `workerMode` behavior or
+change worker offline windows, implementation readiness, policy, or fast-lane
+eligibility. Use the capacity check above for current worker load; implementation
+assignments additionally require the verified profile described in
+[`implementation-lane readiness`](../../docs/implementation-lane-readiness.md).
 
 ## What is included
 
