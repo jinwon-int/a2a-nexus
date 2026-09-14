@@ -189,7 +189,7 @@ import { classifyWavePlanIntake } from "../wave-plan-dag-v2/dispatch-boundary.js
 import {
   admitWavePlanDagManifestV2,
 } from "../wave-plan-dag-v2/manifest.js";
-import { runWavePlanDagDryRunV2 } from "../wave-plan-dag-v2/dry-run.js";
+import { runWavePlanDagDryRunV2, type WavePlanDagDryRunReceiptV2 } from "../wave-plan-dag-v2/dry-run.js";
 import {
   createWavePlanDagV2RecordStore,
   wavePlanDagV2ManifestAdmissionEntry,
@@ -197,6 +197,13 @@ import {
   type WavePlanDagV2RecordStore,
   type WavePlanDagV2StoredEntry,
 } from "../wave-plan-dag-v2/record-store.js";
+import {
+  planWavePlanDagV2StageBinding,
+  wavePlanDagStageFrontierProjectionV1,
+  type WavePlanDagStageFrontierProjectionV1,
+  type WavePlanDagStageFrontierPublicV1,
+  type WavePlanDagV2StageBindingWriteResult,
+} from "../wave-plan-dag-v2/stage-task-binding.js";
 import { summarizeWaveStageEvidence, type WaveLaneEvidence } from "./wave-evidence.js";
 import {
   ReviewLineageStore,
@@ -790,6 +797,164 @@ export class InMemoryA2ABroker {
   listWavePlanDagV2Rehearsals(manifestDigest: string): WavePlanDagV2StoredEntry[] {
     if (this.wavePlanDagV2Mode === "off") return [];
     return this.wavePlanDagV2Store?.rehearsalsOf(manifestDigest) ?? [];
+  }
+
+  // --- WavePlanDagV2 stage-to-task binding (#1800 B-2, default off) ---------
+  // Contract: docs/specs/wave-plan-dag-v2/stage-task-binding.md §4–§7 (adopted
+  // by operator ruling 2026-09-14). Same posture as slice 5: mode-gated
+  // (`off` default), ONE explicit write entry that nothing in the broker ever
+  // invokes automatically (D3 — binding is evidence, not authority), read-only
+  // accessors, and inherited ledger semantics (fail-closed restore, semantic
+  // idempotency). The slice-3 intake-record union stays action-free (§8):
+  // binding evidence is never a routing input.
+
+  /**
+   * The single explicit binding write entry (§7). Performs the §4.2
+   * preconditions in contract order — fresh admission + digest equality +
+   * ledger admission (`manifest_not_known`), stage membership
+   * (`unknown_stage`), live task resolution (`task_unknown`/`task_not_open`),
+   * and the §5 mandatory refusal (`duplicate_open_binding`) — then appends
+   * the binding row to the store. Returns `undefined` when off; rejections
+   * and no-ops are always counted in the operator diagnostics.
+   */
+  recordWavePlanDagV2StageBinding(request: {
+    /** Presented manifest payload; re-admitted fresh per §4.2 step 1. */
+    manifest: unknown;
+    manifestDigest: string;
+    stageId: string;
+    taskId: string;
+    bindingSource: "operator" | "hub";
+  }): WavePlanDagV2StageBindingWriteResult | undefined {
+    if (this.wavePlanDagV2Mode === "off") return undefined;
+    const store = (this.wavePlanDagV2Store ??= createWavePlanDagV2RecordStore());
+
+    const admission = admitIsolated(request.manifest);
+    const manifestAdmittedOnLedger =
+      admission.ok && store.admissions().some((row) => row.manifestDigest === admission.manifest.manifestDigest);
+    const boundTaskIds = manifestAdmittedOnLedger
+      ? store
+          .bindingsOf(admission.manifest.manifestDigest)
+          .filter((row) => row.stageId === request.stageId)
+          .map((row) => row.taskId)
+      : [];
+
+    const plan = planWavePlanDagV2StageBinding({
+      request: {
+        manifestDigest: request.manifestDigest,
+        stageId: request.stageId,
+        taskId: request.taskId,
+        bindingSource: request.bindingSource,
+      },
+      admission,
+      manifestAdmittedOnLedger,
+      boundTaskIds,
+      // Status is read live from the broker's task read source on every
+      // call — never cached in the ledger (contract §5).
+      taskStatusOf: (taskId) => this.getTask(taskId)?.status ?? null,
+    });
+    if (!plan.ok) {
+      this.wavePlanDagV2Counts.rejected += 1;
+      this.wavePlanDagV2LastSkipReason = `stage_binding_rejected:${plan.reason}:${plan.message}`;
+      return plan;
+    }
+
+    const result = store.append([plan.entry]);
+    if (!result.ok) {
+      this.wavePlanDagV2Counts.rejected += 1;
+      this.wavePlanDagV2LastSkipReason = `stage_binding_rejected:${result.reason}:${result.message}`;
+      return { ok: false, reason: result.reason, message: result.message };
+    }
+    this.wavePlanDagV2Counts.appends += result.committed;
+    this.wavePlanDagV2Counts.duplicates += result.skippedDuplicates;
+    return {
+      ok: true,
+      entry: plan.entry,
+      followUp: plan.followUp,
+      duplicated: result.skippedDuplicates > 0,
+    };
+  }
+
+  /** Read-only binding listing for one manifest (absent surface when off). */
+  listWavePlanDagV2StageBindings(manifestDigest: string): Extract<WavePlanDagV2StoredEntry, { entryType: "stage_task_binding_recorded" }>[] {
+    if (this.wavePlanDagV2Mode === "off") return [];
+    return this.wavePlanDagV2Store?.bindingsOf(manifestDigest) ?? [];
+  }
+
+  /**
+   * §6 frontier projection (read-only, in-process operator surface). The
+   * presented receipt must be the manifest's latest recorded rehearsal, per
+   * §6 `receipt_stale`; `null` is accepted only while the manifest is
+   * admitted-unrehearsed (`receipt_missing`). Returns `undefined` when off.
+   * No HTTP route ships for this projection: the bounded store entries do not
+   * carry receipt stage states, and §11 item 3 leaves read-route exposure to
+   * an explicit operator decision.
+   */
+  wavePlanDagV2StageFrontierProjection(
+    manifestDigest: string,
+    presentedReceipt: WavePlanDagDryRunReceiptV2 | null,
+  ): { operator: WavePlanDagStageFrontierProjectionV1; public: WavePlanDagStageFrontierPublicV1 } | undefined {
+    if (this.wavePlanDagV2Mode === "off") return undefined;
+    const store = this.wavePlanDagV2Store;
+    const receiptRows = (store?.rehearsalsOf(manifestDigest) ?? []).filter(
+      (row): row is Extract<WavePlanDagV2StoredEntry, { entryType: "rehearsal_receipt_recorded" }> =>
+        row.entryType === "rehearsal_receipt_recorded",
+    );
+    const latestReceiptDigest = receiptRows.length > 0
+      ? receiptRows[receiptRows.length - 1].receiptDigest
+      : null;
+    const childTasksByParent = this.wavePlanDagV2ChildTasksByParent();
+    return wavePlanDagStageFrontierProjectionV1({
+      manifestDigest,
+      bindings: store?.bindingsOf(manifestDigest) ?? [],
+      presentedReceipt,
+      latestReceiptDigest,
+      taskStatusOf: (taskId) => this.getTask(taskId)?.status ?? null,
+      subtreeLeafTaskIds: (taskId) =>
+        this.wavePlanDagV2SubtreeLeafTaskIds(taskId, childTasksByParent),
+    });
+  }
+
+  /** Parent→children map over the broker's visible task universe. */
+  private wavePlanDagV2ChildTasksByParent(): Map<string, string[]> {
+    const childTasksByParent = new Map<string, string[]>();
+    for (const task of this.tasks.values()) {
+      if (!task.parentTaskId) continue;
+      const siblings = childTasksByParent.get(task.parentTaskId);
+      if (siblings) siblings.push(task.id);
+      else childTasksByParent.set(task.parentTaskId, [task.id]);
+    }
+    return childTasksByParent;
+  }
+
+  /**
+   * Visible subtree leaves of one task via canonical `parentTaskId` ancestry,
+   * bounded at 1024 visited nodes so a malformed graph cannot inflate the
+   * projection (surface counts clamp independently). `null` when the task
+   * itself does not resolve.
+   */
+  private wavePlanDagV2SubtreeLeafTaskIds(
+    rootTaskId: string,
+    childTasksByParent: Map<string, string[]>,
+  ): string[] | null {
+    if (!this.tasks.has(rootTaskId)) return null;
+    const leaves: string[] = [];
+    const visited = new Set<string>([rootTaskId]);
+    const queue = [rootTaskId];
+    while (queue.length > 0 && visited.size <= 1024) {
+      const taskId = queue.shift() as string;
+      const children = childTasksByParent.get(taskId) ?? [];
+      if (children.length === 0) {
+        leaves.push(taskId);
+        continue;
+      }
+      for (const childId of children) {
+        if (!visited.has(childId)) {
+          visited.add(childId);
+          queue.push(childId);
+        }
+      }
+    }
+    return leaves;
   }
 
   // --- Bounded PR review lineage telemetry (#1518 Phases 3b/10/12/14-18) ----

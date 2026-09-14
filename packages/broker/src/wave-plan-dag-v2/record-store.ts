@@ -45,6 +45,14 @@
  * compatibility via plain value arrays comes with the future integration
  * slice). Entry unions carry no action fields — storage is not authority
  * (spec §1).
+ *
+ * #1800 B-2 (adopted 2026-09-14): the closed union gains its fourth member,
+ * `stage_task_binding_recorded` (§4.1) — the reviewable-boundary extension.
+ * Bindings inherit every guarantee above unchanged; their delta is limited
+ * to the identity key `(manifestDigest, stageId, taskId)` (identical
+ * redelivery is a counted no-op, a `bindingSource` rewrite is a
+ * `duplicate_conflict`) and the §4.2 precondition vocabulary lives in
+ * `stage-task-binding.ts`, separate from the §5 spec reasons.
  */
 
 import {
@@ -70,8 +78,19 @@ export type WavePlanDagV2StoreRejectionReason = (typeof WAVE_PLAN_DAG_V2_STORE_R
 
 const MANIFEST_ALIAS_PATTERN = /^wpm_[0-9a-f]{16}$/;
 const DIGEST_PATTERN = /^sha256:[0-9a-f]{64}$/;
+const STAGE_ID_PATTERN = /^stg_[0-9a-f]{8}$/;
+/** §3: 1–128 printable ASCII characters, no whitespace or control characters. */
+const TASK_ID_PATTERN = /^[\x21-\x7e]{1,128}$/;
 /** Spec §3 cap mirrored for structural validation. */
 const MAX_STAGES = 32;
+
+/**
+ * §3 closed binding-source enum — the acting class of the explicit caller
+ * (base contract §1 wording). A class, never an identity.
+ */
+export const WAVE_PLAN_DAG_V2_STAGE_BINDING_SOURCES = ["operator", "hub"] as const;
+
+export type WavePlanDagV2StageBindingSource = (typeof WAVE_PLAN_DAG_V2_STAGE_BINDING_SOURCES)[number];
 
 class StoreRejectionError extends Error {
   constructor(readonly reason: WavePlanDagV2StoreRejectionReason, message: string) {
@@ -108,11 +127,21 @@ interface RejectionFields {
   rejectionReason: WavePlanDagV2RejectionReason;
 }
 
+/** §4.1 binding entry — the fourth closed union member (reviewable boundary). */
+interface StageTaskBindingFields {
+  entryType: "stage_task_binding_recorded";
+  manifestDigest: string;
+  stageId: string;
+  taskId: string;
+  bindingSource: WavePlanDagV2StageBindingSource;
+}
+
 /** Closed stored-entry union. Any extra field makes the entry malformed. */
 export type WavePlanDagV2StoredEntry =
   | ({ kind: typeof WAVE_PLAN_DAG_V2_STORE_ENTRY_KIND; version: 1 } & ManifestAdmissionFields)
   | ({ kind: typeof WAVE_PLAN_DAG_V2_STORE_ENTRY_KIND; version: 1 } & ReceiptFields)
-  | ({ kind: typeof WAVE_PLAN_DAG_V2_STORE_ENTRY_KIND; version: 1 } & RejectionFields);
+  | ({ kind: typeof WAVE_PLAN_DAG_V2_STORE_ENTRY_KIND; version: 1 } & RejectionFields)
+  | ({ kind: typeof WAVE_PLAN_DAG_V2_STORE_ENTRY_KIND; version: 1 } & StageTaskBindingFields);
 
 function assertClosedEntryShape(entry: unknown): asserts entry is WavePlanDagV2StoredEntry {
   if (entry === null || typeof entry !== "object" || Array.isArray(entry)) {
@@ -129,7 +158,9 @@ function assertClosedEntryShape(entry: unknown): asserts entry is WavePlanDagV2S
         ? ["entryType", "kind", "manifestDigest", "receiptDigest", "topologyLength", "version"]
         : candidate.entryType === "rehearsal_rejected"
           ? ["entryType", "kind", "manifestDigest", "rejectionReason", "version"]
-          : null;
+          : candidate.entryType === "stage_task_binding_recorded"
+            ? ["bindingSource", "entryType", "kind", "manifestDigest", "stageId", "taskId", "version"]
+            : null;
   if (expected === null) {
     storeReject("entry_malformed", `unknown entryType ${String(candidate.entryType)}`);
   }
@@ -160,6 +191,16 @@ function validateEntrySemantics(entry: WavePlanDagV2StoredEntry): void {
     if (!Number.isSafeInteger(entry.topologyLength) || entry.topologyLength < 1 || entry.topologyLength > MAX_STAGES) {
       storeReject("entry_malformed", "topologyLength outside 1..32");
     }
+  } else if (entry.entryType === "stage_task_binding_recorded") {
+    if (!STAGE_ID_PATTERN.test(entry.stageId)) {
+      storeReject("entry_malformed", "stageId has invalid form");
+    }
+    if (!TASK_ID_PATTERN.test(entry.taskId)) {
+      storeReject("entry_malformed", "taskId has invalid form");
+    }
+    if (!WAVE_PLAN_DAG_V2_STAGE_BINDING_SOURCES.includes(entry.bindingSource)) {
+      storeReject("entry_malformed", "bindingSource is not closed");
+    }
   } else if (!WAVE_PLAN_DAG_V2_REJECTION_REASONS.includes(entry.rejectionReason)) {
     storeReject("entry_malformed", "rejectionReason is not a closed §5 reason");
   }
@@ -173,6 +214,10 @@ function identityKey(entry: WavePlanDagV2StoredEntry): string {
   if (entry.entryType === "manifest_admitted") return `A\0${entry.manifestDigest}`;
   if (entry.entryType === "rehearsal_receipt_recorded") {
     return `R\0${entry.manifestDigest}\0${entry.receiptDigest}`;
+  }
+  if (entry.entryType === "stage_task_binding_recorded") {
+    // §4.3 delta: binding identity is (manifestDigest, stageId, taskId).
+    return `B\0${entry.manifestDigest}\0${entry.stageId}\0${entry.taskId}`;
   }
   return `J\0${entry.manifestDigest}\0${entry.rejectionReason}`;
 }
@@ -278,7 +323,14 @@ export class WavePlanDagV2RecordStore {
   /** Every preserved rehearsal outcome for one manifest, in commit order. */
   rehearsalsOf(manifestDigest: string): Extract<WavePlanDagV2StoredEntry, { entryType: "rehearsal_receipt_recorded" | "rehearsal_rejected" }>[] {
     return this.entries
-      .filter((entry): entry is Extract<WavePlanDagV2StoredEntry, { entryType: "rehearsal_receipt_recorded" | "rehearsal_rejected" }> => entry.entryType !== "manifest_admitted" && entry.manifestDigest === manifestDigest)
+      .filter((entry): entry is Extract<WavePlanDagV2StoredEntry, { entryType: "rehearsal_receipt_recorded" | "rehearsal_rejected" }> => (entry.entryType === "rehearsal_receipt_recorded" || entry.entryType === "rehearsal_rejected") && entry.manifestDigest === manifestDigest)
+      .map((entry) => ({ ...entry }));
+  }
+
+  /** §4.3: every stage binding recorded for one manifest, in commit order. */
+  bindingsOf(manifestDigest: string): Extract<WavePlanDagV2StoredEntry, { entryType: "stage_task_binding_recorded" }>[] {
+    return this.entries
+      .filter((entry): entry is Extract<WavePlanDagV2StoredEntry, { entryType: "stage_task_binding_recorded" }> => entry.entryType === "stage_task_binding_recorded" && entry.manifestDigest === manifestDigest)
       .map((entry) => ({ ...entry }));
   }
 
@@ -353,6 +405,24 @@ export function wavePlanDagV2ManifestAdmissionEntry(
     manifestAlias: admission.manifest.manifestAlias,
     stageCount: admission.manifest.stages.length,
     proposalSource: admission.manifest.proposalSource,
+  };
+}
+
+/** §4.1 helper constructor for the binding entry type. */
+export function wavePlanDagV2StageBindingEntry(binding: {
+  manifestDigest: string;
+  stageId: string;
+  taskId: string;
+  bindingSource: WavePlanDagV2StageBindingSource;
+}): Extract<WavePlanDagV2StoredEntry, { entryType: "stage_task_binding_recorded" }> {
+  return {
+    kind: WAVE_PLAN_DAG_V2_STORE_ENTRY_KIND,
+    version: 1,
+    entryType: "stage_task_binding_recorded",
+    manifestDigest: binding.manifestDigest,
+    stageId: binding.stageId,
+    taskId: binding.taskId,
+    bindingSource: binding.bindingSource,
   };
 }
 

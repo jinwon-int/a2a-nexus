@@ -996,6 +996,435 @@ expectReason(
   'request digest mismatch',
 );
 
+// ---------------------------------------------------------------------------
+// Stage-to-task binding contract (#1800 B-2, adopted by operator ruling
+// 2026-09-14; docs/specs/wave-plan-dag-v2/stage-task-binding.md §4–§6).
+//
+// Deterministic 1:1 mirror of the runtime slice
+// (packages/broker/src/wave-plan-dag-v2/stage-task-binding.ts plus the
+// `stage_task_binding_recorded` record-store union member): closed entry
+// shapes, ledger identity semantics, the §5 follow-up state machine, and the
+// §6 frontier classification. No new digest scheme is introduced (D6) — the
+// only digests in play are the landed manifest and receipt digests. The
+// binding surface stays default-off in the broker; nothing here grants
+// authority (D3).
+// ---------------------------------------------------------------------------
+
+const STORE_ENTRY_KIND = 'WavePlanDagV2StoreEntryV1';
+const BINDING_ENTRY_FIELDS = Object.freeze([
+  'bindingSource', 'entryType', 'kind', 'manifestDigest', 'stageId', 'taskId', 'version',
+]);
+const STAGE_ID_RE = /^stg_[0-9a-f]{8}$/;
+const TASK_ID_RE = /^[\x21-\x7e]{1,128}$/;
+const BINDING_SOURCES = new Set(['hub', 'operator']);
+const OPEN_STATUSES = new Set(['blocked', 'queued', 'claimed', 'running']);
+const TERMINAL_STATUSES = new Set(['succeeded', 'failed', 'canceled']);
+const BINDING_COUNT_CAP = 64;
+
+function validateBindingEntry(entry) {
+  assertClosed(entry, BINDING_ENTRY_FIELDS, 'stage_task_binding_recorded', 'entry_malformed');
+  if (entry.kind !== STORE_ENTRY_KIND || entry.version !== 1) {
+    reject('entry_malformed', 'binding kind/version mismatch');
+  }
+  if (entry.entryType !== 'stage_task_binding_recorded') {
+    reject('entry_malformed', 'binding entryType mismatch');
+  }
+  assertPattern(entry.manifestDigest, DIGEST_PATTERN, 'binding manifestDigest', 'entry_malformed');
+  assertPattern(entry.stageId, STAGE_ID_RE, 'binding stageId', 'entry_malformed');
+  assertPattern(entry.taskId, TASK_ID_RE, 'binding taskId', 'entry_malformed');
+  if (!BINDING_SOURCES.has(entry.bindingSource)) {
+    reject('entry_malformed', 'bindingSource is not closed');
+  }
+  return entry;
+}
+
+function bindingRow(manifestDigest, stageId, taskId, bindingSource = 'operator') {
+  return validateBindingEntry({
+    kind: STORE_ENTRY_KIND,
+    version: 1,
+    entryType: 'stage_task_binding_recorded',
+    manifestDigest,
+    stageId,
+    taskId,
+    bindingSource,
+  });
+}
+
+/** Ledger mirror: semantic identity keys, atomic batches, flow ordering. */
+function createBindingLedger() {
+  const rows = [];
+  const identityToContent = new Map();
+  return {
+    rows,
+    append(batch) {
+      if (!Array.isArray(batch)) reject('entry_malformed', 'append batch must be an array');
+      if (batch.length > 64) reject('batch_limit_exceeded', 'batch cap');
+      const stagedRows = [...rows];
+      const stagedKeys = new Map(identityToContent);
+      let committed = 0;
+      let skipped = 0;
+      for (const raw of batch) {
+        validateBindingEntry(raw);
+        const identity = `B\0${raw.manifestDigest}\0${raw.stageId}\0${raw.taskId}`;
+        const pairs = sortedKeys(raw).map((key) => `${key}:${String(raw[key])}`).join('|');
+        const content = `${identity}|${pairs}`;
+        if (stagedKeys.has(identity)) {
+          if (stagedKeys.get(identity) !== content) {
+            reject('duplicate_conflict', 'same triple with a different bindingSource');
+          }
+          skipped += 1;
+          continue;
+        }
+        // Flow ordering (simplified mirror): every binding must reference an
+        // admission appended earlier in this ledger; the checker ledger only
+        // ever carries fixture-manifest bindings, so `manifest_not_known` is
+        // exercised by the runtime store pins (stage-task-binding.test.ts).
+        stagedKeys.set(identity, content);
+        stagedRows.push(raw);
+        committed += 1;
+      }
+      rows.length = 0;
+      rows.push(...stagedRows);
+      identityToContent.clear();
+      for (const [key, value] of stagedKeys) identityToContent.set(key, value);
+      return { committed, skipped };
+    },
+  };
+}
+
+const FIXTURE_MANIFEST_DIGEST = fixture.manifest.manifestDigest;
+
+function expectBindingReason(fn, reason, label) {
+  assert.throws(
+    fn,
+    (error) => error instanceof ContractError && error.reason === reason,
+    label,
+  );
+}
+
+const ledger = createBindingLedger();
+assert.deepEqual(
+  ledger.append([bindingRow(FIXTURE_MANIFEST_DIGEST, 'stg_00000000', 'task-1')]),
+  { committed: 1, skipped: 0 },
+);
+assert.deepEqual(
+  ledger.append([bindingRow(FIXTURE_MANIFEST_DIGEST, 'stg_00000000', 'task-1')]),
+  { committed: 0, skipped: 1 },
+  'identical redelivery is a counted no-op',
+);
+expectBindingReason(
+  () => ledger.append([bindingRow(FIXTURE_MANIFEST_DIGEST, 'stg_00000000', 'task-1', 'hub')]),
+  'duplicate_conflict',
+  'same triple with a different bindingSource conflicts',
+);
+assert.deepEqual(
+  ledger.append([bindingRow(FIXTURE_MANIFEST_DIGEST, 'stg_00000000', 'task-2')]),
+  { committed: 1, skipped: 0 },
+  'multiple tasks may bind one stage over time',
+);
+assert.equal(ledger.rows.length, 2);
+
+const malformedBindings = [
+  ['extra field', (row) => { row.extra = 'forbidden'; }],
+  ['bad digest', (row) => { row.manifestDigest = 'sha256:short'; }],
+  ['bad stageId', (row) => { row.stageId = 'stg_short'; }],
+  ['taskId whitespace', (row) => { row.taskId = 'has space'; }],
+  ['taskId control char', (row) => { row.taskId = 'tab\tchar'; }],
+  ['taskId too long', (row) => { row.taskId = 't'.repeat(129); }],
+  ['bindingSource not closed', (row) => { row.bindingSource = 'dispatcher'; }],
+  ['version bump', (row) => { row.version = 2; }],
+];
+for (const [label, mutate] of malformedBindings) {
+  const row = bindingRow(FIXTURE_MANIFEST_DIGEST, 'stg_00000000', 'task-x');
+  mutate(row);
+  expectBindingReason(() => validateBindingEntry(row), 'entry_malformed', label);
+}
+
+// §5 follow-up check — closed five-state machine over live lineage reads.
+function followUpCheck({ admittedStages, manifestDigest, stageId, boundTaskIds, statusOf }) {
+  if (manifestDigest !== FIXTURE_MANIFEST_DIGEST || !admittedStages.has(stageId)) {
+    return { state: 'unknown_binding_target', open: 0, terminal: 0 };
+  }
+  if (boundTaskIds.length === 0) return { state: 'no_prior_binding', open: 0, terminal: 0 };
+  let open = 0;
+  let terminal = 0;
+  for (const taskId of boundTaskIds) {
+    const status = statusOf(taskId);
+    if (status === null || (!OPEN_STATUSES.has(status) && !TERMINAL_STATUSES.has(status))) {
+      return { state: 'lineage_unavailable', open, terminal };
+    }
+    if (OPEN_STATUSES.has(status)) open += 1;
+    else terminal += 1;
+  }
+  return {
+    state: open > 0 ? 'prior_binding_open' : 'prior_binding_terminal',
+    open: Math.min(open, BINDING_COUNT_CAP),
+    openCollapsedAtCap: open > BINDING_COUNT_CAP,
+    terminal: Math.min(terminal, BINDING_COUNT_CAP),
+    terminalCollapsedAtCap: terminal > BINDING_COUNT_CAP,
+  };
+}
+
+const admittedStages = new Set(graph.stageById.keys());
+const statusOf = (map) => (taskId) => (taskId in map ? map[taskId] : null);
+assert.deepEqual(
+  followUpCheck({ admittedStages, manifestDigest: FIXTURE_MANIFEST_DIGEST, stageId: 'stg_00000000', boundTaskIds: [], statusOf: statusOf({}) }).state,
+  'no_prior_binding',
+);
+assert.deepEqual(
+  followUpCheck({
+    admittedStages,
+    manifestDigest: FIXTURE_MANIFEST_DIGEST,
+    stageId: 'stg_00000000',
+    boundTaskIds: ['task-1', 'task-2'],
+    statusOf: statusOf({ 'task-1': 'queued', 'task-2': 'blocked' }),
+  }),
+  { state: 'prior_binding_open', open: 2, openCollapsedAtCap: false, terminal: 0, terminalCollapsedAtCap: false },
+);
+assert.deepEqual(
+  followUpCheck({
+    admittedStages,
+    manifestDigest: FIXTURE_MANIFEST_DIGEST,
+    stageId: 'stg_00000000',
+    boundTaskIds: ['task-1', 'task-2'],
+    statusOf: statusOf({ 'task-1': 'succeeded', 'task-2': 'canceled' }),
+  }),
+  { state: 'prior_binding_terminal', open: 0, openCollapsedAtCap: false, terminal: 2, terminalCollapsedAtCap: false },
+);
+assert.equal(
+  followUpCheck({
+    admittedStages,
+    manifestDigest: FIXTURE_MANIFEST_DIGEST,
+    stageId: 'stg_00000000',
+    boundTaskIds: ['task-1', 'task-2'],
+    statusOf: statusOf({ 'task-1': 'succeeded' }),
+  }).state,
+  'lineage_unavailable',
+  'the check refuses rather than guessing',
+);
+assert.equal(
+  followUpCheck({ admittedStages, manifestDigest: FIXTURE_MANIFEST_DIGEST, stageId: 'stg_ffffffff', boundTaskIds: [], statusOf: statusOf({}) }).state,
+  'unknown_binding_target',
+);
+assert.equal(
+  followUpCheck({ admittedStages, manifestDigest: 'sha256:nope', stageId: 'stg_00000000', boundTaskIds: [], statusOf: statusOf({}) }).state,
+  'unknown_binding_target',
+);
+
+const clampStatuses = {};
+const clampBound = [];
+for (let index = 0; index < BINDING_COUNT_CAP + 16; index += 1) {
+  clampBound.push(`task-${index}`);
+  clampStatuses[`task-${index}`] = index % 8 === 0 ? 'succeeded' : 'queued';
+}
+const clamped = followUpCheck({
+  admittedStages,
+  manifestDigest: FIXTURE_MANIFEST_DIGEST,
+  stageId: 'stg_00000000',
+  boundTaskIds: clampBound,
+  statusOf: statusOf(clampStatuses),
+});
+assert.equal(clamped.open, BINDING_COUNT_CAP, 'open counts clamp at the cap');
+assert.equal(clamped.openCollapsedAtCap, true, 'clamp reached flag set');
+assert.equal(clamped.terminal, 10, 'terminal counts stay exact under the cap');
+assert.equal(clamped.terminalCollapsedAtCap, false);
+assert.equal(clamped.state, 'prior_binding_open');
+
+// §6 frontier projection — classification mirror over the two-stage manifest.
+const twoStageManifest = minimalManifest(
+  [
+    stage('stg_aaaaaaaa', 'mft_aaaaaaaaaaaaaaaa', '1', 'root'),
+    stage('stg_bbbbbbbb', 'mft_bbbbbbbbbbbbbbbb', '2'),
+  ],
+  [{ fromStageId: 'stg_aaaaaaaa', toStageId: 'stg_bbbbbbbb', when: 'any_terminal' }],
+);
+function twoStageReceipt(outcomes) {
+  return buildDryRunReceipt(clone(twoStageManifest), {
+    kind: 'WavePlanDagDryRunRequestV2',
+    version: 2,
+    manifestAlias: twoStageManifest.manifestAlias,
+    manifestDigest: twoStageManifest.manifestDigest,
+    outcomes,
+  });
+}
+const receiptNone = twoStageReceipt([]);
+const receiptBothPassed = twoStageReceipt([
+  { kind: 'WavePlanDagStageOutcomeV2', version: 2, stageId: 'stg_aaaaaaaa', outcome: 'gate_passed' },
+  { kind: 'WavePlanDagStageOutcomeV2', version: 2, stageId: 'stg_bbbbbbbb', outcome: 'gate_passed' },
+]);
+const receiptBothFailed = twoStageReceipt([
+  { kind: 'WavePlanDagStageOutcomeV2', version: 2, stageId: 'stg_aaaaaaaa', outcome: 'gate_failed' },
+  { kind: 'WavePlanDagStageOutcomeV2', version: 2, stageId: 'stg_bbbbbbbb', outcome: 'gate_failed' },
+]);
+
+function frontierProjection({ manifestDigest, bindings, presentedReceipt, latestReceiptDigest, statusOf, leavesOf }) {
+  const stageGroups = new Map();
+  const boundTaskIds = new Set();
+  for (const row of bindings) {
+    boundTaskIds.add(row.taskId);
+    const group = stageGroups.get(row.stageId);
+    if (group) group.push(row.taskId);
+    else stageGroups.set(row.stageId, [row.taskId]);
+  }
+  const refusal = (basis) => ({ receiptBasis: basis, stageFrontiers: [], unboundLeafTaskIds: [] });
+  if (latestReceiptDigest === null) return refusal('receipt_missing');
+  if (presentedReceipt === null) return refusal('receipt_stale');
+  const coversAll = [...stageGroups.keys()].every((stageId) =>
+    presentedReceipt.stages.some((signal) => signal.stageId === stageId));
+  if (
+    presentedReceipt.receiptDigest !== latestReceiptDigest
+    || presentedReceipt.manifestDigest !== manifestDigest
+    || !coversAll
+  ) {
+    return refusal('receipt_stale');
+  }
+  const signals = new Map(presentedReceipt.stages.map((signal) => [signal.stageId, signal]));
+  const unboundLeaves = new Set();
+  const stageFrontiers = [...stageGroups.keys()].sort().map((stageId) => {
+    const signal = signals.get(stageId);
+    const receiptTerminal = signal.state === 'terminal';
+    const receiptReason = signal.reason;
+    return {
+      stageId,
+      boundTasks: (stageGroups.get(stageId) ?? []).map((taskId) => {
+        const status = statusOf(taskId);
+        if (status === null || (!OPEN_STATUSES.has(status) && !TERMINAL_STATUSES.has(status))) {
+          return { taskId, frontierState: 'bound_task_missing' };
+        }
+        let frontierState;
+        if (OPEN_STATUSES.has(status)) {
+          frontierState = receiptTerminal
+            ? 'divergence_receipt_terminal_task_open'
+            : 'aligned_open';
+        } else {
+          const expectedClass = status === 'succeeded' ? 'gate_passed'
+            : status === 'failed' ? 'gate_failed'
+            : null;
+          frontierState = receiptTerminal && (expectedClass === null || receiptReason === expectedClass)
+            ? 'aligned_terminal'
+            : 'divergence_task_terminal_receipt_open';
+        }
+        for (const leafId of leavesOf(taskId) ?? []) {
+          if (!boundTaskIds.has(leafId)) unboundLeaves.add(leafId);
+        }
+        return { taskId, frontierState };
+      }),
+    };
+  });
+  return {
+    receiptBasis: 'receipt_current',
+    receiptDigest: presentedReceipt.receiptDigest,
+    stageFrontiers,
+    unboundLeafTaskIds: [...unboundLeaves].sort(),
+  };
+}
+
+const digest2 = twoStageManifest.manifestDigest;
+function frontierInput(overrides) {
+  return {
+    manifestDigest: digest2,
+    bindings: [bindingRow(digest2, 'stg_aaaaaaaa', 'task-1')],
+    presentedReceipt: null,
+    latestReceiptDigest: null,
+    statusOf: statusOf({ 'task-1': 'queued' }),
+    leavesOf: () => [],
+    ...overrides,
+  };
+}
+assert.equal(frontierProjection(frontierInput()).receiptBasis, 'receipt_missing');
+assert.deepEqual(frontierProjection(frontierInput()).stageFrontiers, [], 'receipt_missing makes no frontier claims');
+assert.equal(
+  frontierProjection(frontierInput({ presentedReceipt: null, latestReceiptDigest: receiptNone.receiptDigest })).receiptBasis,
+  'receipt_stale',
+  'presenting nothing while evidence exists refuses',
+);
+assert.equal(
+  frontierProjection(frontierInput({ presentedReceipt: receiptNone, latestReceiptDigest: receiptBothPassed.receiptDigest })).receiptBasis,
+  'receipt_stale',
+  'a receipt that is not the latest refuses',
+);
+assert.equal(
+  frontierProjection(frontierInput({ presentedReceipt: receiptNone, latestReceiptDigest: receiptNone.receiptDigest, manifestDigest: FIXTURE_MANIFEST_DIGEST })).receiptBasis,
+  'receipt_stale',
+  'cross-manifest receipts refuse as stale',
+);
+assert.equal(
+  frontierProjection(frontierInput({ presentedReceipt: receiptNone, latestReceiptDigest: receiptNone.receiptDigest })).receiptBasis,
+  'receipt_current',
+  'the manifest\'s own latest receipt is the valid basis',
+);
+
+const current = frontierProjection(frontierInput({
+  presentedReceipt: receiptNone,
+  latestReceiptDigest: receiptNone.receiptDigest,
+}));
+assert.equal(current.receiptBasis, 'receipt_current');
+assert.deepEqual(current.stageFrontiers, [
+  { stageId: 'stg_aaaaaaaa', boundTasks: [{ taskId: 'task-1', frontierState: 'aligned_open' }] },
+]);
+
+const classifications = [
+  ['succeeded', receiptBothPassed, 'aligned_terminal'],
+  ['canceled', receiptBothFailed, 'aligned_terminal'],
+  ['failed', receiptBothPassed, 'divergence_task_terminal_receipt_open'],
+  ['succeeded', receiptNone, 'divergence_task_terminal_receipt_open'],
+  ['queued', receiptBothPassed, 'divergence_receipt_terminal_task_open'],
+  ['missing', receiptNone, 'bound_task_missing'],
+];
+for (const [status, receipt, expected] of classifications) {
+  const projection = frontierProjection(frontierInput({
+    presentedReceipt: receipt,
+    latestReceiptDigest: receipt.receiptDigest,
+    statusOf: status === 'missing' ? () => null : statusOf({ 'task-1': status }),
+  }));
+  assert.deepEqual(
+    projection.stageFrontiers[0].boundTasks.map((row) => row.frontierState),
+    [expected],
+    `${status} against a ${receipt.stages[0].state}/${receipt.stages[0].reason} receipt`,
+  );
+}
+
+// §6 leaf_unbound on a hand-built branch/rejoin/orphan subtree:
+// task-t1 ── task-t2 ── task-t4 (leaf, bound)
+//        └─ task-t3 ── task-t5 (leaf, unbound orphan)
+const leavesOfMap = {
+  'task-t1': ['task-t4', 'task-t5'],
+  'task-t2': ['task-t4'],
+  'task-t3': ['task-t5'],
+};
+const leafProjection = frontierProjection(frontierInput({
+  bindings: [
+    bindingRow(digest2, 'stg_aaaaaaaa', 'task-t1'),
+    bindingRow(digest2, 'stg_bbbbbbbb', 'task-t4'),
+  ],
+  presentedReceipt: receiptNone,
+  latestReceiptDigest: receiptNone.receiptDigest,
+  statusOf: statusOf({ 'task-t1': 'queued', 'task-t4': 'queued' }),
+  leavesOf: (taskId) => leavesOfMap[taskId] ?? [],
+}));
+assert.deepEqual(leafProjection.unboundLeafTaskIds, ['task-t5']);
+
+// Public surface split: closed enums and clamped counts only — no task ids,
+// no stage ids, no digests.
+function publicFrontier(projection) {
+  return {
+    receiptBasis: projection.receiptBasis,
+    boundStageCount: projection.stageFrontiers.length,
+    boundTaskCount: projection.stageFrontiers.reduce((sum, stage) => sum + stage.boundTasks.length, 0),
+    unboundLeafCount: projection.unboundLeafTaskIds.length,
+  };
+}
+const publicView = JSON.stringify(publicFrontier(leafProjection));
+assert.ok(!publicView.includes('task-'), 'no task ids may reach the public surface');
+assert.ok(!publicView.includes('stg_'), 'no stage ids may reach the public surface');
+assert.ok(!publicView.includes('sha256:'), 'no digests may reach the public surface');
+assert.deepEqual(publicFrontier(leafProjection), {
+  receiptBasis: 'receipt_current',
+  boundStageCount: 2,
+  boundTaskCount: 2,
+  unboundLeafCount: 1,
+});
+
 console.log(
-  'wave-plan-dag-v2 conformance ok: closed DAG, deterministic joins/order/digests, read-only no-authority dry-run',
+  'wave-plan-dag-v2 conformance ok: closed DAG, deterministic joins/order/digests, read-only no-authority dry-run, stage-task binding evidence (follow-up guard + frontier projection)',
 );

@@ -91,6 +91,38 @@ function handleRehearsals(ctx: WavePlanDagV2RouteContext, url: URL): void {
   );
 }
 
+/**
+ * GET /wave-plan-dag-v2/bindings?manifestDigest=sha256:… — the stage-to-task
+ * binding ledger rows of one manifest (#1800 B-2 §7). Mode-gated: the binding
+ * surface is ABSENT when the rollout mode is `off` (fall-through below), per
+ * the §7 wiring contract. The §6 stage-frontier GET deliberately does NOT
+ * ship here: the bounded store receipt entries carry no stage states, and §11
+ * item 3 leaves read-route exposure to an explicit operator decision — the
+ * in-process `broker.wavePlanDagV2StageFrontierProjection()` covers operator
+ * tooling meanwhile.
+ */
+function handleBindings(ctx: WavePlanDagV2RouteContext, url: URL): void {
+  assertReadRole(ctx);
+  const digest = url.searchParams.get("manifestDigest") ?? "";
+  if (!/^sha256:[0-9a-f]{64}$/.test(digest)) {
+    throw new BrokerError("bad_request", "manifestDigest query parameter must be sha256:<64 lowercase hex>");
+  }
+  const diagnostics = ctx.broker.wavePlanDagV2RecordDiagnostics();
+  const bindings = ctx.broker.listWavePlanDagV2StageBindings(digest);
+  sendJson(
+    ctx.res,
+    200,
+    {
+      kind: "wave-plan-dag-v2-bindings",
+      mode: diagnostics.mode,
+      manifestDigest: digest,
+      count: bindings.length,
+      bindings,
+    },
+    { "cache-control": "no-store" },
+  );
+}
+
 export async function handleWavePlanDagV2RoutesIfMatched(
   ctx: {
     method: string | undefined;
@@ -124,6 +156,12 @@ export async function handleWavePlanDagV2RoutesIfMatched(
   }
   if (ctx.path === "/wave-plan-dag-v2/rehearsals") {
     handleRehearsals(routeCtx, url);
+    return true;
+  }
+  if (ctx.path === "/wave-plan-dag-v2/bindings") {
+    // §7: in `off`, the binding surface is absent — fall through untouched.
+    if (ctx.broker.wavePlanDagV2RecordDiagnostics().mode !== "record") return false;
+    handleBindings(routeCtx, url);
     return true;
   }
   return false;
