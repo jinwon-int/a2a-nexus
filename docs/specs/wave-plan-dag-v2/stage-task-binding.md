@@ -1,9 +1,10 @@
 # Stage-to-task binding contract (WavePlanDagV2)
 
-Status: **draft contract, spec-first docs only**. Refs a2a-nexus#1800 remaining
-item 3 (duplicate-follow-up / stale-frontier validation) and decision B-2
-(stage↔task binding, held NOT-DECIDED since 2026-08-27). This document defines
-the contract; it changes no code, no schema, no fixture, no flag, and authorizes
+Status: **adopted by operator ruling, 2026-09-14 (§11.1; a2a-nexus#1800)**.
+Refs a2a-nexus#1800 remaining item 3 (duplicate-follow-up / stale-frontier
+validation) and decision B-2 (stage↔task binding, held NOT-DECIDED since
+2026-08-27, hold released by the same ruling). This document defines the
+contract; it changes no code, no schema, no fixture, no flag, and authorizes
 no activation. Acceptance of this draft, any implementation slice, and any
 activation/rollout timing remain separate operator decisions (§11).
 
@@ -299,3 +300,21 @@ Drafting stops where these begin; each needs an explicit operator ruling:
 5. **Activation/rollout** — any resulting record-mode enablement stays under
    the existing activation checklist and fresh approval; this document
    changes no fleet state and decides no timing.
+
+
+### 11.1 Decision record (operator ruling, 2026-09-14 — a2a-nexus#1800)
+
+1. **Adoption** — accepted as-is. Item 3 / B-2 NOT-DECIDED is resolved in favor
+   of this contract.
+2. **Implementation timing** — the 2026-08-27 hold is released. The §4–§6
+   implementation slice is authorized to start immediately, keeping the §7
+   posture: default-off, single explicit write entry, no dispatcher wiring.
+3. **Read-route exposure** — both §7 GET surfaces (`bindings`,
+   `stage-frontier`) ship with the implementation slice, slice-5
+   authentication posture, non-GET refused.
+4. **Re-work posture** — `prior_binding_terminal` re-binding stays an ordinary
+   operator/hub action; ledger visibility and counting are the controls. No
+   separate approval artifact (contract text unchanged).
+5. **Activation/rollout** — deferred. No broker deployment of the binding
+   surface until the dispatch-connection work needs it; the existing
+   activation checklist plus a fresh approval apply at that time.
