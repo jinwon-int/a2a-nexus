@@ -270,6 +270,38 @@ broker has `A2A_BROKER_POLICY_FILE` wired and another does not, the packet must
 say so; an `enforce` flip should not be treated as fleet-wide until every broker
 that will enforce has loaded the same operator-committed policy document.
 
+### 5.1.1 Operating-record justification (alternate admissible path)
+
+A conforming warn window is the default evidence for a `warn → enforce` flip,
+but it is not the only admissible one. When a broker has already been enforcing
+under an operator-approved posture, reverting it to `warn` purely to re-run the
+window would remove a live protection in order to document that it holds. The
+operator MAY instead accept an **operating-record justification** packet when
+ALL of the following hold; the acceptance ruling is the operator's and is
+recorded in the packet or its tracking issue:
+
+1. **Sustained enforcing operation.** The flip being justified has been in
+   effect on every enforcing broker for **at least 6 weeks**, and the retained
+   audit history of at least one broker fully contains the flip instant.
+2. **Zero policy events across the covered window.** No `task.policy_warned`
+   and no `task.policy_denied` events within the retained window on every
+   broker whose audit history was read, with the retention limit and the wiring
+   state of each broker stated. A broker without `A2A_BROKER_POLICY_FILE`
+   wired during part of the window contributes **no evidence for that part**,
+   not a zero.
+3. **Fleet-consistent document.** Every enforcing broker loads the same
+   operator-committed document, byte-identical, with `drift` exit 0 on each.
+4. **Honest limits section.** The packet states what the zeros do and do not
+   prove: a rule that is unreachable by construction, or never exercised in
+   the window, is certified only as "never fired" — never as "correctly
+   calibrated" — and the packet says which.
+
+The operating-record path certifies only the flip it documents. A later flip of
+a changed rule set requires fresh evidence under the default warn window (or a
+new operating-record justification of its own). The first packet accepted under
+this path is the 2026-07-22 `enforce` flip, reconstructed from the operating
+record in a2a-nexus#2069 and accepted by operator ruling (2026-09-14).
+
 ### 5.2 Observation-driven source-only correction
 
 The first warn window produced 30 raw warnings across 15 task-deduplicated hits:
