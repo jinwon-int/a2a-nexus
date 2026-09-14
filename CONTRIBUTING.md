@@ -28,10 +28,11 @@ verification evidence. For an internal-only change, explain why no usage update
 is needed in the PR template. Reviewers verify the instructions against code;
 link checks alone cannot establish semantic freshness.
 
-Keep repository agent instructions as a short, public routing entry to the
-manual. Environment-specific skills and runbooks should link to it and keep
-only their local inventory or credential-location procedures. Do not copy
-runtime memory or credentials into repository instructions.
+Use the [agent entry-point integration note](docs/agent-entrypoint.md) to link
+environment-specific skills and runbooks to the manual. Keep only local
+inventory or credential-location procedures in those environment instructions.
+The runner currently rejects tracked root bootstrap files, including `AGENTS.md`;
+do not add one to this repository to enable discovery.
 
 ## Validation entrypoints
 

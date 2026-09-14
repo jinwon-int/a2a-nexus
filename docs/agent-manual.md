@@ -5,6 +5,8 @@ canonical agent entry point in `jinwon-int/a2a-nexus`. Read this file from the
 same checkout as the commands you will run; follow the linked reference only
 for the lane you need. Local skills, cached prompts and private fleet runbooks
 should link here instead of maintaining another copy of Nexus commands.
+See [agent entry-point integration](agent-entrypoint.md) for a reusable routing
+instruction and the current automatic-loading limitation.
 
 ## Fast path
 

@@ -1084,10 +1084,10 @@ test('CLI help routes agents to the checkout manual without requiring credential
 });
 
 
-test('repository agent discovery pointer resolves to the checkout manual', () => {
+test('repository README routes agents to an existing checkout manual', () => {
   const repoRoot = join(__dirname, '..');
-  const pointer = readFileSync(join(repoRoot, 'AGENTS.md'), 'utf8');
-  assert.match(pointer, /\[the agent manual\]\(docs\/agent-manual\.md\)/);
+  const pointer = readFileSync(join(repoRoot, 'README.md'), 'utf8');
+  assert.match(pointer, /\[agent manual\]\(docs\/agent-manual\.md\)/);
   const manual = readFileSync(join(repoRoot, 'docs/agent-manual.md'), 'utf8');
   assert.ok(manual.trim().length > 0, 'the discovered manual must exist and contain guidance');
 });

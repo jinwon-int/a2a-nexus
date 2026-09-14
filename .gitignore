@@ -6,8 +6,6 @@ coverage/
 !.env.example
 .openclaw/
 AGENTS.md
-# Public canonical documentation pointer only; nested runtime files stay ignored.
-!/AGENTS.md
 SOUL.md
 USER.md
 TOOLS.md
