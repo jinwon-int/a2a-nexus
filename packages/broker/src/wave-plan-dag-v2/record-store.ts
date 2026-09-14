@@ -53,6 +53,16 @@
  * redelivery is a counted no-op, a `bindingSource` rewrite is a
  * `duplicate_conflict`) and the §4.2 precondition vocabulary lives in
  * `stage-task-binding.ts`, separate from the §5 spec reasons.
+ *
+ * #1800 §11.1 item 3 completion (2026-09-14): the closed union gains its
+ * fifth member, `rehearsal_receipt_payload_recorded` — the verified dry-run
+ * receipt payload (manifest alias/digest, receipt digest, closed stage
+ * signals) preserved so the §6 frontier projection can run from the ledger.
+ * Existing rows are unchanged (fail-closed restore compatible); the payload
+ * delta is its identity key `receiptDigest` alone (a digest binds its
+ * payload cryptographically, so identical redelivery collapses and any
+ * same-digest/different-payload rewrite is a `duplicate_conflict` rejecting
+ * the whole batch).
  */
 
 import {
@@ -61,7 +71,7 @@ import {
 } from "./errors.js";
 import { compareAscii } from "./digest.js";
 import type { WavePlanDagManifestAdmissionOkV2, WavePlanDagProposalSourceV2 } from "./manifest.js";
-import type { WavePlanDagDryRunResultV2 } from "./dry-run.js";
+import type { WavePlanDagDryRunReceiptV2, WavePlanDagDryRunResultV2, WavePlanDagStageSignalV2 } from "./dry-run.js";
 
 export const WAVE_PLAN_DAG_V2_STORE_ENTRY_KIND = "WavePlanDagV2StoreEntryV1" as const;
 
@@ -136,12 +146,26 @@ interface StageTaskBindingFields {
   bindingSource: WavePlanDagV2StageBindingSource;
 }
 
+/**
+ * §11.1.3 completion entry — the fifth closed union member: the verified
+ * dry-run receipt payload, preserved so §6 frontier projections never infer
+ * stage facts from anything but retained evidence.
+ */
+interface ReceiptPayloadFields {
+  entryType: "rehearsal_receipt_payload_recorded";
+  manifestDigest: string;
+  manifestAlias: string;
+  receiptDigest: string;
+  stages: WavePlanDagStageSignalV2[];
+}
+
 /** Closed stored-entry union. Any extra field makes the entry malformed. */
 export type WavePlanDagV2StoredEntry =
   | ({ kind: typeof WAVE_PLAN_DAG_V2_STORE_ENTRY_KIND; version: 1 } & ManifestAdmissionFields)
   | ({ kind: typeof WAVE_PLAN_DAG_V2_STORE_ENTRY_KIND; version: 1 } & ReceiptFields)
   | ({ kind: typeof WAVE_PLAN_DAG_V2_STORE_ENTRY_KIND; version: 1 } & RejectionFields)
-  | ({ kind: typeof WAVE_PLAN_DAG_V2_STORE_ENTRY_KIND; version: 1 } & StageTaskBindingFields);
+  | ({ kind: typeof WAVE_PLAN_DAG_V2_STORE_ENTRY_KIND; version: 1 } & StageTaskBindingFields)
+  | ({ kind: typeof WAVE_PLAN_DAG_V2_STORE_ENTRY_KIND; version: 1 } & ReceiptPayloadFields);
 
 function assertClosedEntryShape(entry: unknown): asserts entry is WavePlanDagV2StoredEntry {
   if (entry === null || typeof entry !== "object" || Array.isArray(entry)) {
@@ -160,7 +184,9 @@ function assertClosedEntryShape(entry: unknown): asserts entry is WavePlanDagV2S
           ? ["entryType", "kind", "manifestDigest", "rejectionReason", "version"]
           : candidate.entryType === "stage_task_binding_recorded"
             ? ["bindingSource", "entryType", "kind", "manifestDigest", "stageId", "taskId", "version"]
-            : null;
+            : candidate.entryType === "rehearsal_receipt_payload_recorded"
+              ? ["entryType", "kind", "manifestAlias", "manifestDigest", "receiptDigest", "stages", "version"]
+              : null;
   if (expected === null) {
     storeReject("entry_malformed", `unknown entryType ${String(candidate.entryType)}`);
   }
@@ -169,6 +195,15 @@ function assertClosedEntryShape(entry: unknown): asserts entry is WavePlanDagV2S
     storeReject("entry_malformed", `store entry fields differ: ${JSON.stringify(actual)}`);
   }
 }
+
+/** Spec §5 closed state→reason pairings for retained receipt signals. */
+const RECEIPT_SIGNAL_REASONS_BY_STATE: ReadonlyMap<string, ReadonlySet<string>> = new Map([
+  ["ready", new Set(["root_stage", "all_matching_satisfied", "any_matching_satisfied"])],
+  ["waiting", new Set(["join_unresolved"])],
+  ["not_selected", new Set(["no_matching_edge", "all_matching_unsatisfied"])],
+  ["terminal", new Set(["gate_passed", "gate_failed"])],
+]);
+const RECEIPT_SIGNAL_FIELDS = ["reason", "stageId", "state"];
 
 function validateEntrySemantics(entry: WavePlanDagV2StoredEntry): void {
   if (!DIGEST_PATTERN.test(entry.manifestDigest)) {
@@ -201,6 +236,37 @@ function validateEntrySemantics(entry: WavePlanDagV2StoredEntry): void {
     if (!WAVE_PLAN_DAG_V2_STAGE_BINDING_SOURCES.includes(entry.bindingSource)) {
       storeReject("entry_malformed", "bindingSource is not closed");
     }
+  } else if (entry.entryType === "rehearsal_receipt_payload_recorded") {
+    if (!DIGEST_PATTERN.test(entry.receiptDigest)) {
+      storeReject("entry_malformed", "receiptDigest has invalid form");
+    }
+    if (!MANIFEST_ALIAS_PATTERN.test(entry.manifestAlias)) {
+      storeReject("entry_malformed", "manifestAlias has invalid form");
+    }
+    if (!Array.isArray(entry.stages) || entry.stages.length < 1 || entry.stages.length > MAX_STAGES) {
+      storeReject("entry_malformed", "stages outside 1..32");
+    }
+    for (const signal of entry.stages) {
+      if (signal === null || typeof signal !== "object" || Array.isArray(signal)) {
+        storeReject("entry_malformed", "receipt stage signal must be an object");
+      }
+      const candidate = signal as unknown as Record<string, unknown>;
+      const actual = Object.keys(candidate).sort(compareAscii);
+      if (JSON.stringify(actual) !== JSON.stringify(RECEIPT_SIGNAL_FIELDS)) {
+        storeReject("entry_malformed", "receipt stage signal fields differ");
+      }
+      if (typeof candidate.stageId !== "string" || !STAGE_ID_PATTERN.test(candidate.stageId)) {
+        storeReject("entry_malformed", "stage signal stageId has invalid form");
+      }
+      const allowedReasons = RECEIPT_SIGNAL_REASONS_BY_STATE.get(String(candidate.state));
+      if (
+        allowedReasons === undefined
+        || typeof candidate.reason !== "string"
+        || !allowedReasons.has(candidate.reason)
+      ) {
+        storeReject("entry_malformed", "stage signal state/reason pair is not closed");
+      }
+    }
   } else if (!WAVE_PLAN_DAG_V2_REJECTION_REASONS.includes(entry.rejectionReason)) {
     storeReject("entry_malformed", "rejectionReason is not a closed §5 reason");
   }
@@ -219,15 +285,30 @@ function identityKey(entry: WavePlanDagV2StoredEntry): string {
     // §4.3 delta: binding identity is (manifestDigest, stageId, taskId).
     return `B\0${entry.manifestDigest}\0${entry.stageId}\0${entry.taskId}`;
   }
+  if (entry.entryType === "rehearsal_receipt_payload_recorded") {
+    // §11.1.3 delta: payload identity is the receiptDigest alone — the digest
+    // binds its payload cryptographically, so redelivery collapses and any
+    // same-digest/different-payload rewrite is detected by the content key.
+    return `P\0${entry.receiptDigest}`;
+  }
   return `J\0${entry.manifestDigest}\0${entry.rejectionReason}`;
+}
+
+/** Deterministic JSON form so nested arrays join the conflict check. */
+function canonicalContentJson(value: unknown): string {
+  if (Array.isArray(value)) return `[${value.map(canonicalContentJson).join(",")}]`;
+  if (value !== null && typeof value === "object") {
+    const record = value as Record<string, unknown>;
+    return `{${Object.keys(record).sort(compareAscii)
+      .map((key) => `${JSON.stringify(key)}:${canonicalContentJson(record[key])}`)
+      .join(",")}}`;
+  }
+  return JSON.stringify(value);
 }
 
 /** Canonical content string used to tell conflicting writes apart from dupes. */
 function contentKey(entry: WavePlanDagV2StoredEntry): string {
-  const pairs = Object.keys(entry)
-    .sort(compareAscii)
-    .map((key) => `${key}:${String(((entry as unknown as Record<string, unknown>)[key]))}`);
-  return `${identityKey(entry)}|${pairs.join("|")}`;
+  return `${identityKey(entry)}|${canonicalContentJson(entry)}`;
 }
 
 export interface WavePlanDagV2StoreAppendOk {
@@ -334,9 +415,25 @@ export class WavePlanDagV2RecordStore {
       .map((entry) => ({ ...entry }));
   }
 
+  /** §11.1.3: every retained receipt payload for one manifest, in commit order. */
+  receiptPayloadsOf(manifestDigest: string): Extract<WavePlanDagV2StoredEntry, { entryType: "rehearsal_receipt_payload_recorded" }>[] {
+    return this.entries
+      .filter((entry): entry is Extract<WavePlanDagV2StoredEntry, { entryType: "rehearsal_receipt_payload_recorded" }> => entry.entryType === "rehearsal_receipt_payload_recorded" && entry.manifestDigest === manifestDigest)
+      .map((entry) => ({ ...entry, stages: entry.stages.map((signal) => ({ ...signal })) }));
+  }
+
+  /** §11.1.3: the latest retained receipt payload of one manifest, if any. */
+  latestReceiptPayloadOf(manifestDigest: string): Extract<WavePlanDagV2StoredEntry, { entryType: "rehearsal_receipt_payload_recorded" }> | undefined {
+    const rows = this.receiptPayloadsOf(manifestDigest);
+    return rows.length > 0 ? rows[rows.length - 1] : undefined;
+  }
+
   /** Plain value-array persistence form (timestamp-free; order is the sort key). */
   snapshot(): WavePlanDagV2StoredEntry[] {
-    return this.entries.map((entry) => ({ ...entry }));
+    return this.entries.map((entry) =>
+      entry.entryType === "rehearsal_receipt_payload_recorded"
+        ? { ...entry, stages: entry.stages.map((signal) => ({ ...signal })) }
+        : { ...entry });
   }
 
   /**
@@ -423,6 +520,25 @@ export function wavePlanDagV2StageBindingEntry(binding: {
     stageId: binding.stageId,
     taskId: binding.taskId,
     bindingSource: binding.bindingSource,
+  };
+}
+
+/**
+ * §11.1.3 helper constructor for the retained receipt payload: every field
+ * derives from the typed dry-run receipt only, so fabricated digests or
+ * stage signals have no path into the store through this door.
+ */
+export function wavePlanDagV2ReceiptPayloadEntry(
+  receipt: WavePlanDagDryRunReceiptV2,
+): Extract<WavePlanDagV2StoredEntry, { entryType: "rehearsal_receipt_payload_recorded" }> {
+  return {
+    kind: WAVE_PLAN_DAG_V2_STORE_ENTRY_KIND,
+    version: 1,
+    entryType: "rehearsal_receipt_payload_recorded",
+    manifestDigest: receipt.manifestDigest,
+    manifestAlias: receipt.manifestAlias,
+    receiptDigest: receipt.receiptDigest,
+    stages: receipt.stages.map((signal) => ({ ...signal })),
   };
 }
 

@@ -9,6 +9,7 @@ import {
   createWavePlanDagV2RecordStore,
   WavePlanDagV2RecordStore,
   wavePlanDagV2ManifestAdmissionEntry,
+  wavePlanDagV2ReceiptPayloadEntry,
   wavePlanDagV2RehearsalOutcomeEntry,
   wavePlanDagV2StageBindingEntry,
   type WavePlanDagV2StoredEntry,
@@ -22,6 +23,7 @@ import {
   WAVE_PLAN_DAG_V2_STAGE_FRONTIER_PROJECTION_KIND,
   WAVE_PLAN_DAG_V2_STAGE_FRONTIER_PUBLIC_KIND,
   type WavePlanDagV2BoundTaskStatusV1,
+  type WavePlanDagV2ReceiptEvidenceV1,
 } from "./stage-task-binding.js";
 import { InMemoryA2ABroker } from "../core/broker.js";
 import { BrokerError } from "../core/broker-error.js";
@@ -42,7 +44,9 @@ import { handleWavePlanDagV2RoutesIfMatched } from "../http/wave-plan-dag-v2-rou
  *    refusal exercised end-to-end at the write path.
  * 3. Frontier projection: aligned/divergent rows, `bound_task_missing`,
  *    `leaf_unbound` on a hand-built branch/rejoin/orphan DAG,
- *    `receipt_stale` refusal, `receipt_missing`.
+ *    `receipt_stale` refusal, `receipt_missing`, and the §11.1.3
+ *    `receipt_payload_not_retained` refusal with the retained payload as the
+ *    ledger-driven evidence source.
  * 4. Non-interference: classifier verdicts and frozen manifest digests are
  *    unchanged; public projections never carry task ids or digests.
  *
@@ -188,6 +192,99 @@ test("binding rows stay out of rehearsal listings and appear in bindingsOf", () 
   const bindings = store.bindingsOf(FIXTURE_DIGEST);
   assert.equal(bindings.length, 1);
   assert.ok(bindings.every((row) => row.entryType === "stage_task_binding_recorded"));
+});
+
+// ---------------------------------------------------------------------------
+// §11.1.3 — retained receipt payloads (fifth closed store union member)
+// ---------------------------------------------------------------------------
+
+function fixtureReceipt(vectorIndex: number) {
+  const run = runWavePlanDagDryRunV2(fixtureAdmission(), structuredClone(FIXTURE.dryRuns[vectorIndex].request));
+  assert.ok(run.ok);
+  if (!run.ok) throw new Error("fixture vector must rehearse");
+  return run.receipt;
+}
+
+test("receipt payload entries derive from typed receipts and dedupe by receiptDigest", () => {
+  const store = admittedStore();
+  const receipt = fixtureReceipt(0);
+  const entry = wavePlanDagV2ReceiptPayloadEntry(receipt);
+  assert.equal(entry.entryType, "rehearsal_receipt_payload_recorded");
+  assert.equal(entry.manifestDigest, FIXTURE_DIGEST);
+  assert.equal(entry.manifestAlias, receipt.manifestAlias);
+  assert.equal(entry.receiptDigest, FIXTURE.dryRuns[0].receipt.receiptDigest);
+  assert.deepEqual(entry.stages, receipt.stages.map((signal) => ({ ...signal })));
+
+  const first = store.append([entry]);
+  assert.deepEqual(first, { ok: true, committed: 1, skippedDuplicates: 0 });
+
+  // §11.1.3: receiptDigest-keyed idempotent redelivery is a counted no-op.
+  const replay = store.append([wavePlanDagV2ReceiptPayloadEntry(receipt)]);
+  assert.deepEqual(replay, { ok: true, committed: 0, skippedDuplicates: 1 });
+
+  // Same digest with a DIFFERENT payload is a duplicate_conflict rejecting
+  // the whole batch.
+  const conflicting = wavePlanDagV2ReceiptPayloadEntry(receipt) as unknown as Record<string, unknown>;
+  conflicting.stages = [{ stageId: ROOT_STAGE, state: "ready", reason: "root_stage" }];
+  const conflict = store.append([conflicting as unknown as WavePlanDagV2StoredEntry]);
+  assert.ok(!conflict.ok && conflict.reason === "duplicate_conflict");
+  assert.equal(store.receiptPayloadsOf(FIXTURE_DIGEST).length, 1, "failed batch must leave the store untouched");
+
+  // Flow ordering: no admission, no retained payload.
+  const orphan = createWavePlanDagV2RecordStore();
+  const flow = orphan.append([wavePlanDagV2ReceiptPayloadEntry(receipt)]);
+  assert.ok(!flow.ok && flow.reason === "manifest_not_known");
+
+  // Distinct rehearsal outcomes are distinct evidence; both stay visible and
+  // the latest accessor tracks commit order.
+  const other = wavePlanDagV2ReceiptPayloadEntry(fixtureReceipt(1));
+  assert.ok(store.append([other]).ok);
+  assert.equal(store.receiptPayloadsOf(FIXTURE_DIGEST).length, 2);
+  assert.equal(store.latestReceiptPayloadOf(FIXTURE_DIGEST)?.receiptDigest, FIXTURE.dryRuns[1].receipt.receiptDigest);
+});
+
+test("receipt payload rows reject malformed shapes and restore fail-closed", () => {
+  const store = admittedStore();
+  const receipt = fixtureReceipt(0);
+  const entry = wavePlanDagV2ReceiptPayloadEntry(receipt);
+
+  const malformed: Array<[WavePlanDagV2StoredEntry, string]> = [
+    [{ ...entry, extraField: "forbidden" } as unknown as WavePlanDagV2StoredEntry, "extra field"],
+    [{ ...entry, stages: [{ stageId: ROOT_STAGE, state: "ready", reason: "gate_passed" }] } as unknown as WavePlanDagV2StoredEntry, "state/reason pair not closed"],
+    [{ ...entry, stages: [{ stageId: ROOT_STAGE, state: "archived", reason: "root_stage" }] } as unknown as WavePlanDagV2StoredEntry, "state not closed"],
+    [{ ...entry, stages: [] } as unknown as WavePlanDagV2StoredEntry, "empty stage list"],
+    [{ ...entry, stages: Array.from({ length: 33 }, () => ({ stageId: ROOT_STAGE, state: "ready", reason: "root_stage" })) } as unknown as WavePlanDagV2StoredEntry, "stage list over 32"],
+    [{ ...entry, manifestAlias: "wpm_short" } as unknown as WavePlanDagV2StoredEntry, "bad manifestAlias"],
+  ];
+  for (const [candidate, label] of malformed) {
+    const result = store.append([candidate]);
+    assert.ok(!result.ok && result.reason === "entry_malformed", label);
+  }
+
+  assert.ok(store.append([entry]).ok);
+
+  // Restore detects a tampered stage signal and refuses the whole snapshot.
+  const tampered = structuredClone(store.snapshot()) as unknown as Array<Record<string, unknown>>;
+  const payloadRow = tampered.find((row) => row.entryType === "rehearsal_receipt_payload_recorded");
+  assert.ok(payloadRow);
+  const stages = payloadRow.stages as Array<Record<string, unknown>>;
+  stages[0].state = "waiting"; // terminal/gate_passed facts rewritten → invalid pair
+  const corrupt = WavePlanDagV2RecordStore.restore(tampered);
+  assert.ok(!corrupt.ok && corrupt.reason === "snapshot_corrupt");
+
+  // Accessors hand out deep copies: mutations never reach the store.
+  const copy = store.latestReceiptPayloadOf(FIXTURE_DIGEST);
+  assert.ok(copy);
+  (copy.stages[0] as unknown as Record<string, unknown>).reason = "tampered";
+  assert.equal(store.latestReceiptPayloadOf(FIXTURE_DIGEST)?.stages[0].reason, receipt.stages[0].reason);
+
+  // Timestamp-free determinism holds for payload rows too.
+  const buildStore = () => {
+    const fresh = admittedStore();
+    assert.ok(fresh.append([wavePlanDagV2ReceiptPayloadEntry(receipt)]).ok);
+    return fresh.snapshot();
+  };
+  assert.deepEqual(buildStore(), buildStore());
 });
 
 // ---------------------------------------------------------------------------
@@ -460,7 +557,7 @@ function frontierInput(overrides?: Partial<Parameters<typeof wavePlanDagStageFro
   return {
     manifestDigest: TWO_STAGE_DIGEST,
     bindings: [bindingEntry(TWO_STAGE_DIGEST, "stg_aaaaaaaa", "task-1")] as readonly WavePlanDagV2StoredEntry[],
-    presentedReceipt: null as WavePlanDagDryRunReceiptV2 | null,
+    presentedReceipt: null as WavePlanDagV2ReceiptEvidenceV1 | null,
     latestReceiptDigest: null as string | null,
     taskStatusOf: statusLookup({ "task-1": "queued" }),
     subtreeLeafTaskIds: (_taskId: string) => [] as string[],
@@ -503,6 +600,41 @@ test("frontier: receipt_stale refuses unless the presented receipt is the latest
   }));
   assert.equal(current.operator.receiptBasis, "receipt_current");
   assert.equal(current.operator.receiptDigest, latest.receiptDigest);
+});
+
+test("frontier: receipt_payload_not_retained refuses instead of guessing", () => {
+  const latest = RECEIPT_BOTH_PASSED();
+
+  // §11.1.3: a recorded latest rehearsal whose payload the store does not
+  // retain refuses as its own closed basis (never an inferred projection).
+  const refused = wavePlanDagStageFrontierProjectionV1(frontierInput({
+    presentedReceipt: null,
+    latestReceiptDigest: latest.receiptDigest,
+    latestReceiptPayloadRetained: false,
+  }));
+  assert.equal(refused.operator.receiptBasis, "receipt_payload_not_retained");
+  assert.equal(refused.public.receiptBasis, "receipt_payload_not_retained");
+  assert.deepEqual(refused.operator.stageFrontiers, []);
+  assert.equal(refused.operator.boundStageCount, 1, "ledger counts stay visible in the refusal");
+  assert.equal(refused.operator.boundTaskCount, 1);
+});
+
+test("frontier: the retained payload subset is valid receipt evidence", () => {
+  const receipt = RECEIPT_NONE();
+  const evidence: WavePlanDagV2ReceiptEvidenceV1 = {
+    manifestDigest: receipt.manifestDigest,
+    receiptDigest: receipt.receiptDigest,
+    stages: receipt.stages,
+  };
+  const projection = wavePlanDagStageFrontierProjectionV1(frontierInput({
+    presentedReceipt: evidence,
+    latestReceiptDigest: receipt.receiptDigest,
+    latestReceiptPayloadRetained: true,
+  }));
+  assert.equal(projection.operator.receiptBasis, "receipt_current");
+  assert.equal(projection.operator.receiptDigest, receipt.receiptDigest);
+  assert.equal(projection.operator.alignedOpenCount, 1);
+  assert.equal(projection.public.receiptBasis, "receipt_current");
 });
 
 test("frontier: a receipt for another manifest refuses as stale (fail-closed pairing)", () => {
@@ -918,9 +1050,117 @@ test("broker frontier projection reads the ledger basis and live lineage", () =>
   assert.ok(afterReceipt.public.unboundLeafCount === 1);
 });
 
+test("broker receipt-payload retention is an explicit, off-absent, idempotent write entry", () => {
+  const offBroker = new InMemoryA2ABroker();
+  assert.equal(
+    offBroker.recordWavePlanDagV2ReceiptPayload(structuredClone(FIXTURE.manifest), structuredClone(FIXTURE.dryRuns[0].request)),
+    undefined,
+  );
+
+  const broker = recordBroker();
+  broker.recordWavePlanDagV2Intake(structuredClone(FIXTURE.manifest));
+  const first = broker.recordWavePlanDagV2ReceiptPayload(
+    structuredClone(FIXTURE.manifest),
+    structuredClone(FIXTURE.dryRuns[0].request),
+  );
+  assert.ok(first && first.ok);
+  if (first.ok) {
+    assert.equal(first.entry.entryType, "rehearsal_receipt_payload_recorded");
+    assert.equal(first.entry.receiptDigest, FIXTURE.dryRuns[0].receipt.receiptDigest);
+    assert.equal(first.duplicated, false);
+  }
+
+  // Idempotent replay collapses with a counted duplicate.
+  const replay = broker.recordWavePlanDagV2ReceiptPayload(
+    structuredClone(FIXTURE.manifest),
+    structuredClone(FIXTURE.dryRuns[0].request),
+  );
+  assert.ok(replay && replay.ok && replay.duplicated);
+  const diagnostics = broker.wavePlanDagV2RecordDiagnostics();
+  assert.equal(diagnostics.appends, 2);
+  assert.equal(diagnostics.duplicates, 1);
+  assert.equal(diagnostics.rejected, 0);
+
+  // Flow ordering at the write path: no admission on the ledger, no
+  // retention (§4.2 step 1 posture).
+  const otherBroker = recordBroker();
+  const neverAdmitted = otherBroker.recordWavePlanDagV2ReceiptPayload(
+    structuredClone(FIXTURE.manifest),
+    structuredClone(FIXTURE.dryRuns[0].request),
+  );
+  assert.ok(neverAdmitted && !neverAdmitted.ok && neverAdmitted.reason === "manifest_not_known");
+
+  // A rejected rehearsal is counted, never stored.
+  const badRequest = structuredClone(FIXTURE.dryRuns[0].request) as Record<string, unknown>;
+  (badRequest.outcomes as Array<Record<string, unknown>>)[0].outcome = "completed";
+  const rejected = broker.recordWavePlanDagV2ReceiptPayload(structuredClone(FIXTURE.manifest), badRequest);
+  assert.ok(rejected && !rejected.ok && rejected.reason === "unknown_outcome");
+
+  // Non-admittable manifests are counted, never stored.
+  const broken = { ...structuredClone(FIXTURE.manifest), prompt: "forbidden" };
+  const notAdmitted = broker.recordWavePlanDagV2ReceiptPayload(broken, structuredClone(FIXTURE.dryRuns[0].request));
+  assert.ok(notAdmitted && !notAdmitted.ok && notAdmitted.reason === "manifest_malformed");
+  assert.equal(broker.wavePlanDagV2RecordDiagnostics().rejected, 2);
+});
+
+test("broker stage-frontier from the ledger: missing → not-retained → current", () => {
+  const broker = recordBroker();
+  broker.recordWavePlanDagV2Intake(structuredClone(FIXTURE.manifest));
+
+  // Admitted-unrehearsed: no frontier claims.
+  const missing = broker.wavePlanDagV2StageFrontierProjectionFromLedger(FIXTURE_DIGEST);
+  assert.ok(missing && missing.operator.receiptBasis === "receipt_missing");
+
+  // The intake rehearsal records a digest-only receipt row; without explicit
+  // retention the ledger-driven projection refuses instead of guessing.
+  broker.recordWavePlanDagV2Intake(
+    structuredClone(FIXTURE.manifest),
+    structuredClone(FIXTURE.dryRuns[0].request),
+  );
+  const notRetained = broker.wavePlanDagV2StageFrontierProjectionFromLedger(FIXTURE_DIGEST);
+  assert.ok(notRetained && notRetained.operator.receiptBasis === "receipt_payload_not_retained");
+  assert.deepEqual(notRetained ? notRetained.operator.stageFrontiers : [], []);
+
+  // Retention completes the §11.1.3 chain: the ledger now carries the
+  // payload of the latest recorded rehearsal.
+  const retained = broker.recordWavePlanDagV2ReceiptPayload(
+    structuredClone(FIXTURE.manifest),
+    structuredClone(FIXTURE.dryRuns[0].request),
+  );
+  assert.ok(retained && retained.ok);
+  const current = broker.wavePlanDagV2StageFrontierProjectionFromLedger(FIXTURE_DIGEST);
+  assert.ok(current && current.operator.receiptBasis === "receipt_current");
+  assert.equal(current ? current.operator.receiptDigest : "", FIXTURE.dryRuns[0].receipt.receiptDigest);
+  // Fixture vector 0 holds the root stage terminal/gate_passed; with no
+  // bindings the operator surface simply has no stage rows yet.
+  assert.deepEqual(current ? current.operator.stageFrontiers : [], []);
+});
+
+test("broker stage-frontier from the ledger: a retained older payload is not the latest basis", () => {
+  const broker = recordBroker();
+  broker.recordWavePlanDagV2Intake(
+    structuredClone(FIXTURE.manifest),
+    structuredClone(FIXTURE.dryRuns[0].request),
+  );
+  assert.ok(
+    broker.recordWavePlanDagV2ReceiptPayload(structuredClone(FIXTURE.manifest), structuredClone(FIXTURE.dryRuns[0].request))?.ok,
+  );
+
+  // A second rehearsal supersedes the retained payload; that newer receipt's
+  // own payload was never retained, so the projection refuses.
+  const second = broker.recordWavePlanDagV2Intake(
+    structuredClone(FIXTURE.manifest),
+    structuredClone(FIXTURE.dryRuns[1].request),
+  );
+  assert.ok(Array.isArray(second));
+  const projection = broker.wavePlanDagV2StageFrontierProjectionFromLedger(FIXTURE_DIGEST);
+  assert.ok(projection && projection.operator.receiptBasis === "receipt_payload_not_retained");
+});
+
 // ---------------------------------------------------------------------------
-// §7 — read-only bindings GET (mode-gated). The frontier GET stays an open
-// §11.3 operator decision, so only the bindings listing ships here.
+// §7 — read-only GETs (mode-gated). Per §11.1.3 (operator ruling,
+// 2026-09-14) BOTH read surfaces ship: `bindings` and `stage-frontier`, the
+// latter driven by the ledger's latest retained receipt payload.
 // ---------------------------------------------------------------------------
 
 function routeContext(broker: InMemoryA2ABroker, method: string, path: string, search = "") {
@@ -986,6 +1226,74 @@ test("bindings GET serves ledger rows in record mode and is absent when off", as
   const bad = routeContext(broker, "GET", "/wave-plan-dag-v2/bindings", "?manifestDigest=nope");
   await assert.rejects(
     () => handleWavePlanDagV2RoutesIfMatched(bad.ctx, bad.url),
+    (error) => error instanceof BrokerError && error.code === "bad_request",
+  );
+});
+
+test("stage-frontier GET serves the ledger-driven projection and is absent when off", async () => {
+  const broker = recordBroker();
+  broker.recordWavePlanDagV2Intake(
+    structuredClone(FIXTURE.manifest),
+    structuredClone(FIXTURE.dryRuns[0].request),
+  );
+  const task = createOpenTask(broker, "task-frontier-1");
+  assert.ok(broker.recordWavePlanDagV2StageBinding({
+    manifest: structuredClone(FIXTURE.manifest),
+    manifestDigest: FIXTURE_DIGEST,
+    stageId: ROOT_STAGE,
+    taskId: task.id,
+    bindingSource: "operator",
+  })?.ok);
+
+  // Without explicit retention the GET reports the §11.1.3 refusal basis.
+  const beforeRetention = routeContext(broker, "GET", "/wave-plan-dag-v2/stage-frontier", `?manifestDigest=${encodeURIComponent(FIXTURE_DIGEST)}`);
+  const beforeCapture = captureResponse();
+  beforeRetention.ctx.res = beforeCapture.res;
+  assert.equal(await handleWavePlanDagV2RoutesIfMatched(beforeRetention.ctx, beforeRetention.url), true);
+  const before = JSON.parse(beforeCapture.body());
+  assert.equal(before.kind, "wave-plan-dag-v2-stage-frontier");
+  assert.equal(before.mode, "record");
+  assert.equal(before.public.receiptBasis, "receipt_payload_not_retained");
+  assert.deepEqual(before.operator.stageFrontiers, []);
+
+  // Retention completes the chain: receipt_current with the §6 divergence
+  // (fixture vector 0 holds the root stage terminal/gate_passed while the
+  // bound task is still open) and the §6 surface split intact.
+  assert.ok(
+    broker.recordWavePlanDagV2ReceiptPayload(structuredClone(FIXTURE.manifest), structuredClone(FIXTURE.dryRuns[0].request))?.ok,
+  );
+  const get = routeContext(broker, "GET", "/wave-plan-dag-v2/stage-frontier", `?manifestDigest=${encodeURIComponent(FIXTURE_DIGEST)}`);
+  const captured = captureResponse();
+  get.ctx.res = captured.res;
+  assert.equal(await handleWavePlanDagV2RoutesIfMatched(get.ctx, get.url), true);
+  const parsed = JSON.parse(captured.body());
+  assert.equal(parsed.kind, "wave-plan-dag-v2-stage-frontier");
+  assert.equal(parsed.mode, "record");
+  assert.equal(parsed.manifestDigest, FIXTURE_DIGEST);
+  assert.equal(parsed.public.receiptBasis, "receipt_current");
+  assert.equal(parsed.operator.receiptDigest, FIXTURE.dryRuns[0].receipt.receiptDigest);
+  assert.equal(parsed.operator.stageFrontiers[0].stageId, ROOT_STAGE);
+  assert.equal(parsed.operator.stageFrontiers[0].boundTasks[0].taskId, "task-frontier-1");
+  assert.equal(
+    parsed.operator.stageFrontiers[0].boundTasks[0].frontierState,
+    "divergence_receipt_terminal_task_open",
+  );
+  assert.equal(parsed.public.boundTaskCount, 1);
+  assert.equal(parsed.public.divergenceReceiptTerminalTaskOpenCount, 1);
+  assert.ok(!JSON.stringify(parsed.public).includes("task-"), "no task ids may reach the public surface");
+  assert.ok(!JSON.stringify(parsed.public).includes("stg_"), "no stage ids may reach the public surface");
+  assert.ok(!JSON.stringify(parsed.public).includes("sha256:"), "no digests may reach the public surface");
+  assert.ok(JSON.stringify(parsed.operator).includes("task-frontier-1"));
+
+  // Off mode: the frontier surface is absent — the route falls through.
+  const offBroker = new InMemoryA2ABroker();
+  const off = routeContext(offBroker, "GET", "/wave-plan-dag-v2/stage-frontier", `?manifestDigest=${encodeURIComponent(FIXTURE_DIGEST)}`);
+  assert.equal(await handleWavePlanDagV2RoutesIfMatched(off.ctx, off.url), false);
+
+  // Fail-closed query validation.
+  const badQuery = routeContext(broker, "GET", "/wave-plan-dag-v2/stage-frontier", "?manifestDigest=nope");
+  await assert.rejects(
+    () => handleWavePlanDagV2RoutesIfMatched(badQuery.ctx, badQuery.url),
     (error) => error instanceof BrokerError && error.code === "bad_request",
   );
 });

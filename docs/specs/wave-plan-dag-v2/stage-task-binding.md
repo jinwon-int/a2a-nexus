@@ -109,6 +109,34 @@ union); the `kind` and `version` stay `WavePlanDagV2StoreEntryV1` / `1`:
 Exact field set: `entryType`, `kind`, `manifestDigest`, `stageId`, `taskId`,
 `bindingSource`, `version`. Any extra or missing field is `entry_malformed`.
 
+The §11.1 item 3 completion (2026-09-14) adds a fifth closed union member,
+`rehearsal_receipt_payload_recorded`, which preserves the verified dry-run
+receipt payload (base contract §5: `manifestAlias`, `manifestDigest`,
+`receiptDigest`, and the closed `stages` signals, 1..32) so §6 projections
+run from retained evidence instead of digest-only rows. Every field derives
+from the typed dry-run receipt at write time; existing rows are unchanged and
+restore-compatible:
+
+```json
+{
+  "kind": "WavePlanDagV2StoreEntryV1",
+  "version": 1,
+  "entryType": "rehearsal_receipt_payload_recorded",
+  "manifestDigest": "sha256:…",
+  "manifestAlias": "wpm_…",
+  "receiptDigest": "sha256:…",
+  "stages": [{ "stageId": "stg_…", "state": "terminal", "reason": "gate_passed" }]
+}
+```
+
+Exact field set: `entryType`, `kind`, `manifestAlias`, `manifestDigest`,
+`receiptDigest`, `stages`, `version`. Each stage signal carries exactly
+`stageId`, `state`, `reason` with the §5 closed pairings (terminal only with
+`gate_passed`/`gate_failed`, `ready` only with `root_stage`,
+`all_matching_satisfied`, or `any_matching_satisfied`, `waiting` only with
+`join_unresolved`, `not_selected` only with `no_matching_edge` or
+`all_matching_unsatisfied`).
+
 ### 4.2 Write-path preconditions
 
 The future binding write path (§7) is an explicit operator/hub action and MUST,
@@ -153,6 +181,17 @@ Delta for bindings only:
   reasons, per slice 4): `unknown_stage`, `task_unknown`, `task_not_open`,
   `duplicate_open_binding`.
 
+Delta for retained receipt payloads (§11.1.3 completion) only:
+
+- Identity key: `receiptDigest` alone — the digest binds its payload
+  cryptographically, so identical redelivery is a counted no-op and the same
+  digest with a different payload is a `duplicate_conflict` rejecting the
+  whole batch.
+- Flow ordering is inherited unchanged: the payload row must reference an
+  already-known admission, and the explicit retention entry re-admits the
+  presented manifest fresh (§4.2 step 1 posture) before preserving the
+  re-run receipt's payload.
+
 ## 5. Follow-up check (duplicate guard)
 
 `WavePlanDagStageFollowUpCheckV1` is a pure function over the ledger, the
@@ -182,10 +221,11 @@ wherever it lives today; this contract grants none.
 
 `WavePlanDagStageFrontierProjectionV1` is a pure, read-only projection over
 the ledger, the admitted manifest, the manifest's latest recorded dry-run
-receipt, and the task-lineage read model. It compares the plan's view of
-progress (receipt stage states) with task-graph reality (bound tasks and
-their subtree leaves) and reports divergences for operator attention only —
-no mutation, no effect on dispatch.
+receipt payload (§4.1 `rehearsal_receipt_payload_recorded`), and the
+task-lineage read model. It compares the plan's view of progress (receipt
+stage states) with task-graph reality (bound tasks and their subtree leaves)
+and reports divergences for operator attention only — no mutation, no effect
+on dispatch.
 
 Per-bound-task `frontierState`, closed enum:
 
@@ -213,6 +253,10 @@ Subtree/manifest-level codes:
   but evidence selection is not optional.
 - `receipt_missing` — the manifest is admitted-unrehearsed: no frontier
   claims are made.
+- `receipt_payload_not_retained` (§11.1.3 completion) — the latest rehearsal
+  digest is recorded but its payload is not retained in the store
+  (digest-only rows recorded before retention): refuse instead of inferring
+  stage facts; ledger counts stay visible in the refusal.
 
 Surface split (slice-2 pattern): the public projection carries closed enums
 and clamped counts only — no task ids, no digests, no free text. The operator
@@ -229,12 +273,19 @@ Any implementation slice MUST follow the slice-5 posture exactly:
   flip; no code change on rollback.
 - Exactly one explicit write entry point (e.g.,
   `recordWavePlanDagV2StageBinding(...)`), never auto-invoked anywhere in the
-  broker; binding recording is an explicit operator/hub act (D3).
-- Read-only GETs under the independent `/wave-plan-dag-v2/` prefix (e.g.,
-  `bindings?manifestDigest=`, `stage-frontier?manifestDigest=`), same
-  authentication posture as the slice-5 GETs, structurally separated from the
-  v1 `/wave-plans*` surface, non-GET refused. Route exposure itself is an
-  operator decision (§11).
+  broker; binding recording is an explicit operator/hub act (D3). The §11.1.3
+  completion adds the parallel explicit retention entry
+  (`recordWavePlanDagV2ReceiptPayload(...)`, also never auto-invoked): it
+  re-admits the manifest fresh and preserves the verified receipt payload per
+  §4.1.
+- Read-only GETs under the independent `/wave-plan-dag-v2/` prefix —
+  `bindings?manifestDigest=` and `stage-frontier?manifestDigest=` — ship with
+  the implementation slice per §11.1 item 3, same authentication posture as
+  the slice-5 GETs, structurally separated from the v1 `/wave-plans*`
+  surface, non-GET refused. The stage-frontier GET drives the §6 projection
+  from the manifest's latest retained receipt payload and answers
+  `receipt_payload_not_retained` (or `receipt_missing`) rather than guessing.
+  Route exposure itself is an operator decision (§11).
 - Snapshot participation via the value-array convention; fail-closed restore.
 - Pruning/cap stays deferred to the #1504 lineage/storage contract (trace
   note already recorded there); this contract claims nothing.
@@ -318,3 +369,21 @@ Drafting stops where these begin; each needs an explicit operator ruling:
 5. **Activation/rollout** — deferred. No broker deployment of the binding
    surface until the dispatch-connection work needs it; the existing
    activation checklist plus a fresh approval apply at that time.
+
+### 11.2 Completion amendment (§11.1 item 3, 2026-09-14)
+
+Item 3's remaining surface — the `stage-frontier` GET — shipped after an
+owner ruling for path 1 (retain receipt payloads, then add the GET). The
+minor amendments this ruling authorized, all reflected above:
+
+1. §4.1/§4.3 — the fifth closed store union member
+   `rehearsal_receipt_payload_recorded`, receiptDigest-keyed idempotency,
+   `duplicate_conflict` on same-digest/different-payload, inherited flow
+   ordering and fail-closed restore; existing rows unchanged.
+2. §6 — the closed manifest-level code `receipt_payload_not_retained`: a
+   recorded latest rehearsal without a retained payload refuses instead of
+   inferring; the projection's evidence is the retained payload.
+3. §7 — the `stage-frontier` GET ships alongside `bindings` (same posture:
+   mode-gated, read roles, non-GET refused, bounded responses), driven by the
+   latest retained payload through the explicit retention entry
+   `recordWavePlanDagV2ReceiptPayload`, never auto-invoked (D3).
