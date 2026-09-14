@@ -9,6 +9,16 @@ summary with representative PR anchors; not every internal change is listed).
 This section is release-preparation documentation only — it does not publish,
 tag, deploy, or mutate any live state.
 
+### Added — host-side bootstrap-guard tracked-file allowlist
+
+- `A2A_DOCKER_RUNNER_BOOTSTRAP_ALLOWED_TRACKED`: host-side opt-in that lets the
+  pre-PR bootstrap guard (a2a-broker#446) permit a git-tracked, clean
+  bootstrap-name file (for example a Pi-contract `AGENTS.md`) for explicitly
+  allowlisted repositories in patch lanes. Entries are scoped per repo slug,
+  restricted to the banned-name set, and must stay clean at both checks;
+  agent-injected or agent-modified copies remain blocked. Malformed entries
+  fail closed (`packages/docker-runner`).
+
 ### Added — signed finalizer verdicts and merge-gate enforcement
 
 - Signed finalizer verdict contract + enforcement gate, with in-broker and

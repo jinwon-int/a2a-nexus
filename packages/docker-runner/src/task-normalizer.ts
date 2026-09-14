@@ -1,4 +1,5 @@
 import type { NormalizedRunnerTask, RunnerDiffHygieneScopeDriftEvidence, RunnerDiffHygieneScopeMode, RunnerRepo, RunnerTask } from "./types.js";
+import { BOOTSTRAP_ALLOWED_TRACKED_ENV_VAR, parseBootstrapAllowedTrackedEnv } from "./script-generators.js";
 
 const GITHUB_REPO_SHORTHAND = /^[A-Za-z0-9_.-]+\/[A-Za-z0-9_.-]+$/;
 const FAMILY_WIKI_READONLY_AUDIT_MODE = "family-wiki-readonly-audit";
@@ -872,9 +873,20 @@ function parseGitHubRepoSlug(repoUrl: string): string | undefined {
 }
 
 function buildBootstrapAllowedTrackedRepoEntries(task: RunnerTask, primaryRepo: RunnerRepo): string[] {
-  if (task.mode !== FAMILY_WIKI_READONLY_AUDIT_MODE) return [];
-  if (parseGitHubRepoSlug(primaryRepo.url) !== FAMILY_WIKI_REPO_SLUG) return [];
-  return [".:AGENTS.md"];
+  if (task.mode === FAMILY_WIKI_READONLY_AUDIT_MODE
+    && parseGitHubRepoSlug(primaryRepo.url) === FAMILY_WIKI_REPO_SLUG) {
+    return [".:AGENTS.md"];
+  }
+  // Host-side opt-in (see script-generators.ts): allow a clean tracked file for
+  // the primary repo when the operator explicitly allowlisted its slug. The
+  // exported patch pipeline always inspects the primary checkout as ".".
+  const slug = parseGitHubRepoSlug(primaryRepo.url);
+  if (slug) {
+    for (const rule of parseBootstrapAllowedTrackedEnv(process.env[BOOTSTRAP_ALLOWED_TRACKED_ENV_VAR])) {
+      if (rule.repo === slug) return [`.:${rule.path}`];
+    }
+  }
+  return [];
 }
 
 /**

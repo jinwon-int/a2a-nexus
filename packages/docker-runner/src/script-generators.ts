@@ -279,11 +279,63 @@ function parseGitHubRepoSlug(repoUrl: string): string | undefined {
   return match?.[1];
 }
 
+// Host-side opt-in for repositories that legitimately track a bootstrap-name
+// file (for example a Pi-contract AGENTS.md) in patch mode. The guard still
+// requires the file to be tracked AND clean at both the pre- and post-check,
+// so an agent-modified or agent-injected copy stays blocked.
+export const BOOTSTRAP_ALLOWED_TRACKED_ENV_VAR = "A2A_DOCKER_RUNNER_BOOTSTRAP_ALLOWED_TRACKED";
+const BOOTSTRAP_BANNED_FILE_NAMES = new Set([
+  "AGENTS.md",
+  "BOOTSTRAP.md",
+  "HEARTBEAT.md",
+  "IDENTITY.md",
+  "MEMORY.md",
+  "SOUL.md",
+  "TOOLS.md",
+  "USER.md",
+]);
+const BOOTSTRAP_ALLOWED_REPO_SLUG_PATTERN = /^[A-Za-z0-9_.-]+\/[A-Za-z0-9_.-]+$/;
+
+export function parseBootstrapAllowedTrackedEnv(value: string | undefined): { repo: string; path: string }[] {
+  const text = (value ?? "").trim();
+  if (!text) return [];
+  return text.split(/\s+/).map((entry) => {
+    const separator = entry.indexOf(":");
+    const repo = separator === -1 ? "" : entry.slice(0, separator);
+    const path = separator === -1 ? "" : entry.slice(separator + 1);
+    const valid = BOOTSTRAP_ALLOWED_REPO_SLUG_PATTERN.test(repo)
+      && path.length > 0
+      && !path.startsWith("/")
+      && !path.includes("..")
+      && !/\s/.test(path)
+      && BOOTSTRAP_BANNED_FILE_NAMES.has(path);
+    if (!valid) {
+      throw new Error(
+        `${BOOTSTRAP_ALLOWED_TRACKED_ENV_VAR} entry '${entry}' is invalid: expected '<owner>/<repo>:<name>' where <name> is one of ${[...BOOTSTRAP_BANNED_FILE_NAMES].join(" ")} (fail-closed)`
+      );
+    }
+    return { repo, path };
+  });
+}
+
 function buildBootstrapAllowedTrackedRepoEntries(task: NormalizedRunnerTask): string[] {
-  if (task.mode !== FAMILY_WIKI_READONLY_AUDIT_MODE) return [];
-  return task.repos
-    .filter((repo) => parseGitHubRepoSlug(repo.url) === FAMILY_WIKI_REPO_SLUG)
-    .map((repo) => `/work/${repo.path ?? "repo"}:AGENTS.md`);
+  const entries: string[] = [];
+  if (task.mode === FAMILY_WIKI_READONLY_AUDIT_MODE) {
+    for (const repo of task.repos) {
+      if (parseGitHubRepoSlug(repo.url) === FAMILY_WIKI_REPO_SLUG) {
+        entries.push(`/work/${repo.path ?? "repo"}:AGENTS.md`);
+      }
+    }
+  }
+  const allowed = parseBootstrapAllowedTrackedEnv(process.env[BOOTSTRAP_ALLOWED_TRACKED_ENV_VAR]);
+  for (const rule of allowed) {
+    for (const repo of task.repos) {
+      if (parseGitHubRepoSlug(repo.url) === rule.repo) {
+        entries.push(`/work/${repo.path ?? "repo"}:${rule.path}`);
+      }
+    }
+  }
+  return entries;
 }
 
 /**

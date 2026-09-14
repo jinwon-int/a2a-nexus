@@ -1245,6 +1245,86 @@ test("bootstrap guard does not allow AGENTS.md for ordinary repositories", () =>
   assert.ok(script.includes("BOOTSTRAP_ALLOWED_TRACKED_REPO_ENTRIES=''"), "Expected no tracked bootstrap allowance by default");
 });
 
+test("host-env allowlist permits a clean tracked AGENTS.md for the declared repo only", () => {
+  const task: NormalizedRunnerTask = {
+    id: "tracked-agents-allowlist",
+    intent: "propose_patch",
+    mode: "github-propose-patch",
+    repos: [
+      { url: "jinwon-int/danso", path: "repo" },
+      { url: "jinwon-int/other", path: "other" },
+    ],
+    commands: [],
+  };
+  process.env.BOOTSTRAP_ALLOWED_TRACKED_ENV_TEST ??= "";
+  const previous = process.env["A2A_DOCKER_RUNNER_BOOTSTRAP_ALLOWED_TRACKED"];
+  process.env["A2A_DOCKER_RUNNER_BOOTSTRAP_ALLOWED_TRACKED"] = "jinwon-int/danso:AGENTS.md";
+  try {
+    const script = buildContainerScript(task);
+    assert.ok(
+      script.includes("BOOTSTRAP_ALLOWED_TRACKED_REPO_ENTRIES='/work/repo:AGENTS.md'"),
+      "Expected exactly the allowlisted repo's checkout to carry the tracked AGENTS.md allowance"
+    );
+    assert.ok(
+      script.includes("/work/repo:AGENTS.md"),
+      "Expected a /work/repo:AGENTS.md allowance entry"
+    );
+    assert.ok(
+      !script.includes("/work/other:AGENTS.md"),
+      "Expected non-allowlisted repos to stay banned"
+    );
+    assert.ok(
+      script.includes("is_allowed_tracked_bootstrap_path"),
+      "Expected the clean-tracked allowance helper to remain in the guard"
+    );
+  } finally {
+    if (previous === undefined) delete process.env["A2A_DOCKER_RUNNER_BOOTSTRAP_ALLOWED_TRACKED"];
+    else process.env["A2A_DOCKER_RUNNER_BOOTSTRAP_ALLOWED_TRACKED"] = previous;
+  }
+});
+
+test("host-env allowlist rejects malformed entries fail-closed", () => {
+  const previous = process.env["A2A_DOCKER_RUNNER_BOOTSTRAP_ALLOWED_TRACKED"];
+  process.env["A2A_DOCKER_RUNNER_BOOTSTRAP_ALLOWED_TRACKED"] = "jinwon-int/danso:../../etc/passwd";
+  try {
+    assert.throws(
+      () => buildContainerScript({
+        id: "allowlist-malformed",
+        intent: "propose_patch",
+        mode: "github-propose-patch",
+        repos: [{ url: "jinwon-int/danso", path: "repo" }],
+        commands: [],
+      }),
+      /A2A_DOCKER_RUNNER_BOOTSTRAP_ALLOWED_TRACKED entry '.*' is invalid/,
+      "Expected malformed allowlist entries to fail closed"
+    );
+  } finally {
+    if (previous === undefined) delete process.env["A2A_DOCKER_RUNNER_BOOTSTRAP_ALLOWED_TRACKED"];
+    else process.env["A2A_DOCKER_RUNNER_BOOTSTRAP_ALLOWED_TRACKED"] = previous;
+  }
+});
+
+test("host-env allowlist rejects names outside the banned set fail-closed", () => {
+  const previous = process.env["A2A_DOCKER_RUNNER_BOOTSTRAP_ALLOWED_TRACKED"];
+  process.env["A2A_DOCKER_RUNNER_BOOTSTRAP_ALLOWED_TRACKED"] = "jinwon-int/danso:README.md";
+  try {
+    assert.throws(
+      () => buildContainerScript({
+        id: "allowlist-non-banned-name",
+        intent: "propose_patch",
+        mode: "github-propose-patch",
+        repos: [{ url: "jinwon-int/danso", path: "repo" }],
+        commands: [],
+      }),
+      /is invalid/,
+      "Expected non-banned names to be rejected"
+    );
+  } finally {
+    if (previous === undefined) delete process.env["A2A_DOCKER_RUNNER_BOOTSTRAP_ALLOWED_TRACKED"];
+    else process.env["A2A_DOCKER_RUNNER_BOOTSTRAP_ALLOWED_TRACKED"] = previous;
+  }
+});
+
 test("bootstrap post-guard checks every configured repo path", () => {
   const task: NormalizedRunnerTask = {
     id: "bootstrap-guard-multi-repo",
