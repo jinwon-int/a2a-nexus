@@ -189,19 +189,23 @@ import { classifyWavePlanIntake } from "../wave-plan-dag-v2/dispatch-boundary.js
 import {
   admitWavePlanDagManifestV2,
 } from "../wave-plan-dag-v2/manifest.js";
-import { runWavePlanDagDryRunV2, type WavePlanDagDryRunReceiptV2 } from "../wave-plan-dag-v2/dry-run.js";
+import { runWavePlanDagDryRunV2 } from "../wave-plan-dag-v2/dry-run.js";
+import { type WavePlanDagV2RejectionReason } from "../wave-plan-dag-v2/errors.js";
 import {
   createWavePlanDagV2RecordStore,
   wavePlanDagV2ManifestAdmissionEntry,
+  wavePlanDagV2ReceiptPayloadEntry,
   wavePlanDagV2RehearsalOutcomeEntry,
   type WavePlanDagV2RecordStore,
   type WavePlanDagV2StoredEntry,
+  type WavePlanDagV2StoreRejectionReason,
 } from "../wave-plan-dag-v2/record-store.js";
 import {
   planWavePlanDagV2StageBinding,
   wavePlanDagStageFrontierProjectionV1,
   type WavePlanDagStageFrontierProjectionV1,
   type WavePlanDagStageFrontierPublicV1,
+  type WavePlanDagV2ReceiptEvidenceV1,
   type WavePlanDagV2StageBindingWriteResult,
 } from "../wave-plan-dag-v2/stage-task-binding.js";
 import { summarizeWaveStageEvidence, type WaveLaneEvidence } from "./wave-evidence.js";
@@ -881,17 +885,81 @@ export class InMemoryA2ABroker {
   }
 
   /**
+   * The single explicit receipt-payload retention entry (§11.1.3 completion
+   * amendment). Re-admits the presented manifest fresh, requires the ledger
+   * to already hold its `manifest_admitted` row (flow ordering), re-runs the
+   * deterministic dry-run over the presented request, then preserves the
+   * verified receipt payload as a `rehearsal_receipt_payload_recorded` store
+   * row — every field derives from the typed result, never caller strings.
+   * Rehearsal receipts recorded without this entry stay digest-only rows;
+   * the stage-frontier GET reports them as `receipt_payload_not_retained`
+   * instead of guessing. Returns `undefined` when off; rejections and
+   * idempotent replays are always counted in the operator diagnostics.
+   */
+  recordWavePlanDagV2ReceiptPayload(payload: unknown, request: unknown):
+    | {
+        ok: true;
+        entry: Extract<WavePlanDagV2StoredEntry, { entryType: "rehearsal_receipt_payload_recorded" }>;
+        /** True when this call was an identical redelivery (counted no-op). */
+        duplicated: boolean;
+      }
+    | { ok: false; reason: WavePlanDagV2RejectionReason | WavePlanDagV2StoreRejectionReason; message: string }
+    | undefined {
+    if (this.wavePlanDagV2Mode === "off") return undefined;
+    const store = (this.wavePlanDagV2Store ??= createWavePlanDagV2RecordStore());
+
+    const admission = admitIsolated(payload);
+    if (!admission.ok) {
+      this.wavePlanDagV2Counts.rejected += 1;
+      this.wavePlanDagV2LastSkipReason = `receipt_payload_rejected:${admission.reason}`;
+      return { ok: false, reason: admission.reason, message: admission.message };
+    }
+    // Flow ordering: retention extends evidence the ledger already holds, so
+    // the manifest must have been admitted here first (§4.2 step 1 posture).
+    const manifestAdmittedOnLedger = store.admissions().some(
+      (row) => row.manifestDigest === admission.manifest.manifestDigest,
+    );
+    if (!manifestAdmittedOnLedger) {
+      const reason: WavePlanDagV2StoreRejectionReason = "manifest_not_known";
+      this.wavePlanDagV2Counts.rejected += 1;
+      this.wavePlanDagV2LastSkipReason = `receipt_payload_rejected:${reason}`;
+      return {
+        ok: false,
+        reason,
+        message: `no admitted manifest ${admission.manifest.manifestDigest} precedes this retention`,
+      };
+    }
+    const run = runWavePlanDagDryRunV2(admission, structuredClone(request));
+    if (!run.ok) {
+      this.wavePlanDagV2Counts.rejected += 1;
+      this.wavePlanDagV2LastSkipReason = `receipt_payload_rejected:${run.reason}`;
+      return { ok: false, reason: run.reason, message: run.message };
+    }
+    const entry = wavePlanDagV2ReceiptPayloadEntry(run.receipt);
+    const result = store.append([entry]);
+    if (!result.ok) {
+      this.wavePlanDagV2Counts.rejected += 1;
+      this.wavePlanDagV2LastSkipReason = `receipt_payload_rejected:${result.reason}:${result.message}`;
+      return { ok: false, reason: result.reason, message: result.message };
+    }
+    this.wavePlanDagV2Counts.appends += result.committed;
+    this.wavePlanDagV2Counts.duplicates += result.skippedDuplicates;
+    return { ok: true, entry, duplicated: result.skippedDuplicates > 0 };
+  }
+
+  /**
    * §6 frontier projection (read-only, in-process operator surface). The
-   * presented receipt must be the manifest's latest recorded rehearsal, per
-   * §6 `receipt_stale`; `null` is accepted only while the manifest is
-   * admitted-unrehearsed (`receipt_missing`). Returns `undefined` when off.
-   * No HTTP route ships for this projection: the bounded store entries do not
-   * carry receipt stage states, and §11 item 3 leaves read-route exposure to
-   * an explicit operator decision.
+   * presented receipt evidence must be the manifest's latest recorded
+   * rehearsal, per §6 `receipt_stale`; `null` is accepted only while the
+   * manifest is admitted-unrehearsed (`receipt_missing`) or the latest
+   * payload is not retained (`receipt_payload_not_retained`). Returns
+   * `undefined` when off. The §11.1.3 stage-frontier GET is served by
+   * {@link wavePlanDagV2StageFrontierProjectionFromLedger}, which sources its
+   * evidence from the store's retained receipt payload.
    */
   wavePlanDagV2StageFrontierProjection(
     manifestDigest: string,
-    presentedReceipt: WavePlanDagDryRunReceiptV2 | null,
+    presentedReceipt: WavePlanDagV2ReceiptEvidenceV1 | null,
   ): { operator: WavePlanDagStageFrontierProjectionV1; public: WavePlanDagStageFrontierPublicV1 } | undefined {
     if (this.wavePlanDagV2Mode === "off") return undefined;
     const store = this.wavePlanDagV2Store;
@@ -908,6 +976,53 @@ export class InMemoryA2ABroker {
       bindings: store?.bindingsOf(manifestDigest) ?? [],
       presentedReceipt,
       latestReceiptDigest,
+      taskStatusOf: (taskId) => this.getTask(taskId)?.status ?? null,
+      subtreeLeafTaskIds: (taskId) =>
+        this.wavePlanDagV2SubtreeLeafTaskIds(taskId, childTasksByParent),
+    });
+  }
+
+  /**
+   * §6 frontier projection driven entirely by the ledger — the basis of the
+   * §11.1.3 stage-frontier GET. Evidence comes from the manifest's latest
+   * retained `rehearsal_receipt_payload_recorded` row when it matches the
+   * latest recorded rehearsal digest; a recorded latest rehearsal without a
+   * retained payload refuses as `receipt_payload_not_retained` (never a
+   * guess), and an admitted-unrehearsed manifest refuses as
+   * `receipt_missing`. Returns `undefined` when off.
+   */
+  wavePlanDagV2StageFrontierProjectionFromLedger(
+    manifestDigest: string,
+  ): { operator: WavePlanDagStageFrontierProjectionV1; public: WavePlanDagStageFrontierPublicV1 } | undefined {
+    if (this.wavePlanDagV2Mode === "off") return undefined;
+    const store = this.wavePlanDagV2Store;
+    const receiptRows = (store?.rehearsalsOf(manifestDigest) ?? []).filter(
+      (row): row is Extract<WavePlanDagV2StoredEntry, { entryType: "rehearsal_receipt_recorded" }> =>
+        row.entryType === "rehearsal_receipt_recorded",
+    );
+    const latestReceiptDigest = receiptRows.length > 0
+      ? receiptRows[receiptRows.length - 1].receiptDigest
+      : null;
+    const latestPayload = store?.latestReceiptPayloadOf(manifestDigest);
+    const retained =
+      latestPayload !== undefined
+      && latestReceiptDigest !== null
+      && latestPayload.receiptDigest === latestReceiptDigest;
+    const presentedReceipt: WavePlanDagV2ReceiptEvidenceV1 | null =
+      latestPayload !== undefined && retained
+        ? {
+            manifestDigest: latestPayload.manifestDigest,
+            receiptDigest: latestPayload.receiptDigest,
+            stages: latestPayload.stages,
+          }
+        : null;
+    const childTasksByParent = this.wavePlanDagV2ChildTasksByParent();
+    return wavePlanDagStageFrontierProjectionV1({
+      manifestDigest,
+      bindings: store?.bindingsOf(manifestDigest) ?? [],
+      presentedReceipt,
+      latestReceiptDigest,
+      latestReceiptPayloadRetained: retained,
       taskStatusOf: (taskId) => this.getTask(taskId)?.status ?? null,
       subtreeLeafTaskIds: (taskId) =>
         this.wavePlanDagV2SubtreeLeafTaskIds(taskId, childTasksByParent),

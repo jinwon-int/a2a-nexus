@@ -231,7 +231,8 @@ export type WavePlanDagStageFrontierStateV1 =
 export type WavePlanDagStageFrontierReceiptBasisV1 =
   | "receipt_current"
   | "receipt_stale"
-  | "receipt_missing";
+  | "receipt_missing"
+  | "receipt_payload_not_retained";
 
 export interface WavePlanDagStageFrontierBoundTaskV1 {
   taskId: string;
@@ -293,6 +294,19 @@ export type WavePlanDagStageFrontierPublicV1 = {
 
 /** Visible leaf task ids within one bound task's subtree (`null`: unresolvable). */
 export type WavePlanDagV2SubtreeLeafReader = (taskId: string) => string[] | null;
+
+/**
+ * §6 receipt evidence the projection consumes: the retained subset of a
+ * `WavePlanDagDryRunReceiptV2` (manifest/receipt digests + closed stage
+ * signals). Full receipts remain valid evidence; the §11.1.3 stage-frontier
+ * GET serves the projection from the store's retained
+ * `rehearsal_receipt_payload_recorded` row, which carries exactly this
+ * subset.
+ */
+export type WavePlanDagV2ReceiptEvidenceV1 = Pick<
+  WavePlanDagDryRunReceiptV2,
+  "manifestDigest" | "receiptDigest" | "stages"
+>;
 
 function zeroedCountFields(): WavePlanDagStageFrontierCountFields {
   return {
@@ -356,19 +370,30 @@ function isBindingEntry(entry: WavePlanDagV2StoredEntry): entry is Extract<WaveP
  * stage (the manifest's own rehearsal receipt always does, per the frozen
  * receipt contract). `receipt_missing` (admitted-unrehearsed) makes no
  * frontier claims at all; ledger counts stay visible in both refusal bases.
+ * Per the §11.1.3 completion amendment, a recorded latest rehearsal whose
+ * payload the store does not retain refuses as `receipt_payload_not_retained`
+ * when the caller reports `latestReceiptPayloadRetained: false` — the
+ * projection never infers stage facts from anything but retained evidence
+ * (full receipts presented by the caller keep the `receipt_stale` refusal).
  */
 export function wavePlanDagStageFrontierProjectionV1(args: {
   manifestDigest: string;
   /** Binding ledger rows for this manifest (arrival order preserved). */
   bindings: readonly WavePlanDagV2StoredEntry[];
-  /** The receipt the projection is requested against (typed dry-run output). */
-  presentedReceipt: WavePlanDagDryRunReceiptV2 | null;
+  /** The receipt evidence the projection is requested against. */
+  presentedReceipt: WavePlanDagV2ReceiptEvidenceV1 | null;
   /** Receipt digest of the manifest's latest recorded rehearsal, if any. */
   latestReceiptDigest: string | null;
+  /**
+   * Whether the manifest's latest recorded rehearsal has its payload retained
+   * in the store. Defaults to `true` (direct full-receipt presentation);
+   * ledger-driven callers pass the store's actual retention state.
+   */
+  latestReceiptPayloadRetained?: boolean;
   taskStatusOf: WavePlanDagV2TaskStatusReader;
   subtreeLeafTaskIds: WavePlanDagV2SubtreeLeafReader;
 }): { operator: WavePlanDagStageFrontierProjectionV1; public: WavePlanDagStageFrontierPublicV1 } {
-  const { manifestDigest, bindings, presentedReceipt, latestReceiptDigest, taskStatusOf, subtreeLeafTaskIds } = args;
+  const { manifestDigest, bindings, presentedReceipt, latestReceiptDigest, latestReceiptPayloadRetained, taskStatusOf, subtreeLeafTaskIds } = args;
 
   const bindingRows = bindings.filter(isBindingEntry);
   const stageGroups = new Map<string, string[]>();
@@ -380,7 +405,12 @@ export function wavePlanDagStageFrontierProjectionV1(args: {
     else stageGroups.set(row.stageId, [row.taskId]);
   }
 
-  const refuse = (basis: Extract<WavePlanDagStageFrontierReceiptBasisV1, "receipt_stale" | "receipt_missing">) => {
+  const refuse = (
+    basis: Extract<
+      WavePlanDagStageFrontierReceiptBasisV1,
+      "receipt_stale" | "receipt_missing" | "receipt_payload_not_retained"
+    >,
+  ) => {
     const operator: WavePlanDagStageFrontierProjectionV1 = {
       kind: WAVE_PLAN_DAG_V2_STAGE_FRONTIER_PROJECTION_KIND,
       version: 1,
@@ -415,8 +445,14 @@ export function wavePlanDagStageFrontierProjectionV1(args: {
   };
 
   // §6: admitted-unrehearsed manifests make no frontier claims.
-  if (latestReceiptDigest === null || presentedReceipt === null) {
-    return refuse(latestReceiptDigest === null ? "receipt_missing" : "receipt_stale");
+  if (latestReceiptDigest === null) {
+    return refuse("receipt_missing");
+  }
+  // §11.1.3: presenting nothing while a latest rehearsal is recorded refuses
+  // — as `receipt_payload_not_retained` when the store does not retain that
+  // rehearsal's payload, otherwise as the non-selection refusal `receipt_stale`.
+  if (presentedReceipt === null) {
+    return refuse(latestReceiptPayloadRetained === false ? "receipt_payload_not_retained" : "receipt_stale");
   }
   // Fail-closed pairing: the presented receipt must be this manifest's own
   // latest rehearsal. The frozen receipt contract guarantees full stage

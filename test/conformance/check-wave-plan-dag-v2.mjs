@@ -998,16 +998,17 @@ expectReason(
 
 // ---------------------------------------------------------------------------
 // Stage-to-task binding contract (#1800 B-2, adopted by operator ruling
-// 2026-09-14; docs/specs/wave-plan-dag-v2/stage-task-binding.md §4–§6).
+// 2026-09-14; docs/specs/wave-plan-dag-v2/stage-task-binding.md §4–§6, §11.1
+// item 3 completion).
 //
 // Deterministic 1:1 mirror of the runtime slice
 // (packages/broker/src/wave-plan-dag-v2/stage-task-binding.ts plus the
-// `stage_task_binding_recorded` record-store union member): closed entry
-// shapes, ledger identity semantics, the §5 follow-up state machine, and the
-// §6 frontier classification. No new digest scheme is introduced (D6) — the
-// only digests in play are the landed manifest and receipt digests. The
-// binding surface stays default-off in the broker; nothing here grants
-// authority (D3).
+// `stage_task_binding_recorded` and `rehearsal_receipt_payload_recorded`
+// record-store union members): closed entry shapes, ledger identity
+// semantics, the §5 follow-up state machine, and the §6 frontier
+// classification. No new digest scheme is introduced (D6) — the only digests
+// in play are the landed manifest and receipt digests. The binding surface
+// stays default-off in the broker; nothing here grants authority (D3).
 // ---------------------------------------------------------------------------
 
 const STORE_ENTRY_KIND = 'WavePlanDagV2StoreEntryV1';
@@ -1091,6 +1092,100 @@ function createBindingLedger() {
     },
   };
 }
+
+// §11.1.3 — retained receipt payloads (fifth store union member): the
+// verified receipt full text preserved under a receiptDigest-keyed identity.
+const PAYLOAD_ENTRY_FIELDS = Object.freeze([
+  'entryType', 'kind', 'manifestAlias', 'manifestDigest', 'receiptDigest', 'stages', 'version',
+]);
+const PAYLOAD_SIGNAL_FIELDS = Object.freeze(['reason', 'stageId', 'state']);
+const PAYLOAD_STATE_REASONS = new Map([
+  ['ready', new Set(['root_stage', 'all_matching_satisfied', 'any_matching_satisfied'])],
+  ['waiting', new Set(['join_unresolved'])],
+  ['not_selected', new Set(['no_matching_edge', 'all_matching_unsatisfied'])],
+  ['terminal', new Set(['gate_passed', 'gate_failed'])],
+]);
+
+function validatePayloadEntry(entry) {
+  assertClosed(entry, PAYLOAD_ENTRY_FIELDS, 'rehearsal_receipt_payload_recorded', 'entry_malformed');
+  if (entry.kind !== STORE_ENTRY_KIND || entry.version !== 1) {
+    reject('entry_malformed', 'payload kind/version mismatch');
+  }
+  if (entry.entryType !== 'rehearsal_receipt_payload_recorded') {
+    reject('entry_malformed', 'payload entryType mismatch');
+  }
+  assertPattern(entry.manifestDigest, DIGEST_PATTERN, 'payload manifestDigest', 'entry_malformed');
+  assertPattern(entry.receiptDigest, DIGEST_PATTERN, 'payload receiptDigest', 'entry_malformed');
+  assertPattern(entry.manifestAlias, PLAN_ALIAS_PATTERN, 'payload manifestAlias', 'entry_malformed');
+  if (!Array.isArray(entry.stages) || entry.stages.length < 1 || entry.stages.length > 32) {
+    reject('entry_malformed', 'payload stages outside 1..32');
+  }
+  for (const signal of entry.stages) {
+    assertClosed(signal, PAYLOAD_SIGNAL_FIELDS, 'payload stage signal', 'entry_malformed');
+    assertPattern(signal.stageId, STAGE_ID_PATTERN, 'payload stageId', 'entry_malformed');
+    const allowed = PAYLOAD_STATE_REASONS.get(signal.state);
+    if (allowed === undefined || !allowed.has(signal.reason)) {
+      reject('entry_malformed', 'payload state/reason pair is not closed');
+    }
+  }
+  return entry;
+}
+
+function payloadRow(receipt) {
+  return validatePayloadEntry({
+    kind: STORE_ENTRY_KIND,
+    version: 1,
+    entryType: 'rehearsal_receipt_payload_recorded',
+    manifestDigest: receipt.manifestDigest,
+    manifestAlias: receipt.manifestAlias,
+    receiptDigest: receipt.receiptDigest,
+    stages: clone(receipt.stages),
+  });
+}
+
+assert.deepEqual(
+  (() => {
+    const row = payloadRow(fixture.dryRuns[0].receipt);
+    return { digest: row.receiptDigest, signals: row.stages.length };
+  })(),
+  { digest: fixture.dryRuns[0].receipt.receiptDigest, signals: fixture.dryRuns[0].receipt.stages.length },
+  'payload rows derive verbatim from the verified receipt',
+);
+const malformedPayloads = [
+  ['extra field', (row) => { row.extra = 'forbidden'; }],
+  ['bad receiptDigest', (row) => { row.receiptDigest = 'sha256:short'; }],
+  ['bad manifestAlias', (row) => { row.manifestAlias = 'wpm_short'; }],
+  ['state not closed', (row) => { row.stages[0].state = 'archived'; }],
+  ['pair not closed', (row) => { row.stages[0].state = 'waiting'; }],
+  ['version bump', (row) => { row.version = 2; }],
+];
+for (const [label, mutate] of malformedPayloads) {
+  const row = payloadRow(fixture.dryRuns[0].receipt);
+  mutate(row);
+  expectBindingReason(() => validatePayloadEntry(row), 'entry_malformed', label);
+}
+// receiptDigest-keyed idempotency: same digest + different payload conflicts.
+const payloadIdentity = new Map();
+function appendPayload(entry) {
+  validatePayloadEntry(entry);
+  const identity = `P\0${entry.receiptDigest}`;
+  const content = `${identity}|${canonicalize(entry)}`;
+  if (payloadIdentity.has(identity)) {
+    if (payloadIdentity.get(identity) !== content) reject('duplicate_conflict', 'same digest, different payload');
+    return { committed: 0, skipped: 1 };
+  }
+  payloadIdentity.set(identity, content);
+  return { committed: 1, skipped: 0 };
+}
+assert.deepEqual(appendPayload(payloadRow(fixture.dryRuns[0].receipt)), { committed: 1, skipped: 0 });
+assert.deepEqual(appendPayload(payloadRow(fixture.dryRuns[0].receipt)), { committed: 0, skipped: 1 }, 'receiptDigest redelivery is a no-op');
+const conflictingPayload = payloadRow(fixture.dryRuns[0].receipt);
+conflictingPayload.stages = [{ stageId: 'stg_00000000', state: 'ready', reason: 'root_stage' }];
+expectBindingReason(
+  () => appendPayload(conflictingPayload),
+  'duplicate_conflict',
+  'same receiptDigest with a different payload conflicts',
+);
 
 const FIXTURE_MANIFEST_DIGEST = fixture.manifest.manifestDigest;
 
@@ -1257,7 +1352,7 @@ const receiptBothFailed = twoStageReceipt([
   { kind: 'WavePlanDagStageOutcomeV2', version: 2, stageId: 'stg_bbbbbbbb', outcome: 'gate_failed' },
 ]);
 
-function frontierProjection({ manifestDigest, bindings, presentedReceipt, latestReceiptDigest, statusOf, leavesOf }) {
+function frontierProjection({ manifestDigest, bindings, presentedReceipt, latestReceiptDigest, latestReceiptPayloadRetained = true, statusOf, leavesOf }) {
   const stageGroups = new Map();
   const boundTaskIds = new Set();
   for (const row of bindings) {
@@ -1268,7 +1363,9 @@ function frontierProjection({ manifestDigest, bindings, presentedReceipt, latest
   }
   const refusal = (basis) => ({ receiptBasis: basis, stageFrontiers: [], unboundLeafTaskIds: [] });
   if (latestReceiptDigest === null) return refusal('receipt_missing');
-  if (presentedReceipt === null) return refusal('receipt_stale');
+  if (presentedReceipt === null) {
+    return refusal(latestReceiptPayloadRetained === false ? 'receipt_payload_not_retained' : 'receipt_stale');
+  }
   const coversAll = [...stageGroups.keys()].every((stageId) =>
     presentedReceipt.stages.some((signal) => signal.stageId === stageId));
   if (
@@ -1337,6 +1434,16 @@ assert.equal(
   frontierProjection(frontierInput({ presentedReceipt: null, latestReceiptDigest: receiptNone.receiptDigest })).receiptBasis,
   'receipt_stale',
   'presenting nothing while evidence exists refuses',
+);
+assert.equal(
+  frontierProjection(frontierInput({ presentedReceipt: null, latestReceiptDigest: receiptNone.receiptDigest, latestReceiptPayloadRetained: false })).receiptBasis,
+  'receipt_payload_not_retained',
+  'a recorded latest rehearsal without a retained payload refuses instead of guessing',
+);
+assert.equal(
+  frontierProjection(frontierInput({ presentedReceipt: null, latestReceiptDigest: receiptNone.receiptDigest, latestReceiptPayloadRetained: false })).stageFrontiers.length,
+  0,
+  'payload-not-retained refusals make no frontier claims',
 );
 assert.equal(
   frontierProjection(frontierInput({ presentedReceipt: receiptNone, latestReceiptDigest: receiptBothPassed.receiptDigest })).receiptBasis,
@@ -1426,5 +1533,5 @@ assert.deepEqual(publicFrontier(leafProjection), {
 });
 
 console.log(
-  'wave-plan-dag-v2 conformance ok: closed DAG, deterministic joins/order/digests, read-only no-authority dry-run, stage-task binding evidence (follow-up guard + frontier projection)',
+  'wave-plan-dag-v2 conformance ok: closed DAG, deterministic joins/order/digests, read-only no-authority dry-run, stage-task binding evidence (follow-up guard + frontier projection + retained receipt payloads)',
 );

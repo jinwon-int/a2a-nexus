@@ -1,8 +1,8 @@
 /**
  * Read-only HTTP routes for the WavePlanDagV2 rehearsal-evidence store
- * (#1800 slice 5).
+ * (#1800 slice 5; §11.1 item 3 completion ships `stage-frontier`).
  *
- * Exactly two GET endpoints under an independent `/wave-plan-dag-v2/*`
+ * Exactly three GET endpoints under an independent `/wave-plan-dag-v2/*`
  * prefix — deliberately disjoint from v1's `/wave-plans*` so the versioned
  * dispatch boundary (#1994) stays structurally unambiguous: a request that
  * reaches this file is V2 by construction, and nothing here can touch the
@@ -95,11 +95,7 @@ function handleRehearsals(ctx: WavePlanDagV2RouteContext, url: URL): void {
  * GET /wave-plan-dag-v2/bindings?manifestDigest=sha256:… — the stage-to-task
  * binding ledger rows of one manifest (#1800 B-2 §7). Mode-gated: the binding
  * surface is ABSENT when the rollout mode is `off` (fall-through below), per
- * the §7 wiring contract. The §6 stage-frontier GET deliberately does NOT
- * ship here: the bounded store receipt entries carry no stage states, and §11
- * item 3 leaves read-route exposure to an explicit operator decision — the
- * in-process `broker.wavePlanDagV2StageFrontierProjection()` covers operator
- * tooling meanwhile.
+ * the §7 wiring contract.
  */
 function handleBindings(ctx: WavePlanDagV2RouteContext, url: URL): void {
   assertReadRole(ctx);
@@ -118,6 +114,40 @@ function handleBindings(ctx: WavePlanDagV2RouteContext, url: URL): void {
       manifestDigest: digest,
       count: bindings.length,
       bindings,
+    },
+    { "cache-control": "no-store" },
+  );
+}
+
+/**
+ * GET /wave-plan-dag-v2/stage-frontier?manifestDigest=sha256:… — the §6
+ * frontier projection of one manifest, driven entirely by the ledger's
+ * latest retained receipt payload (#1800 §11.1 item 3). Same posture as the
+ * bindings GET: mode-gated (absent when `off`), read roles, non-GET refused,
+ * fail-closed query validation. The response carries both bounded §6
+ * projections — `public` (closed enums + clamped counts only, no ids or
+ * digests) and `operator` (adds the ledger-known task/stage ids and the
+ * receipt digest). A recorded latest rehearsal without a retained payload is
+ * reported as `receiptBasis: "receipt_payload_not_retained"`, never guessed
+ * around; an admitted-unrehearsed manifest answers `"receipt_missing"`.
+ */
+function handleStageFrontier(ctx: WavePlanDagV2RouteContext, url: URL): void {
+  assertReadRole(ctx);
+  const digest = url.searchParams.get("manifestDigest") ?? "";
+  if (!/^sha256:[0-9a-f]{64}$/.test(digest)) {
+    throw new BrokerError("bad_request", "manifestDigest query parameter must be sha256:<64 lowercase hex>");
+  }
+  const diagnostics = ctx.broker.wavePlanDagV2RecordDiagnostics();
+  const projection = ctx.broker.wavePlanDagV2StageFrontierProjectionFromLedger(digest);
+  sendJson(
+    ctx.res,
+    200,
+    {
+      kind: "wave-plan-dag-v2-stage-frontier",
+      mode: diagnostics.mode,
+      manifestDigest: digest,
+      operator: projection?.operator,
+      public: projection?.public,
     },
     { "cache-control": "no-store" },
   );
@@ -162,6 +192,12 @@ export async function handleWavePlanDagV2RoutesIfMatched(
     // §7: in `off`, the binding surface is absent — fall through untouched.
     if (ctx.broker.wavePlanDagV2RecordDiagnostics().mode !== "record") return false;
     handleBindings(routeCtx, url);
+    return true;
+  }
+  if (ctx.path === "/wave-plan-dag-v2/stage-frontier") {
+    // §7/§11.1.3: in `off`, the frontier surface is absent — fall through.
+    if (ctx.broker.wavePlanDagV2RecordDiagnostics().mode !== "record") return false;
+    handleStageFrontier(routeCtx, url);
     return true;
   }
   return false;
