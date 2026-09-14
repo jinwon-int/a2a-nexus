@@ -8,6 +8,8 @@ It complements the public A2A protocol and SDK ecosystem rather than replacing i
 
 > **Compatibility statement:** A2A Nexus intends to interoperate with public A2A Agent Card / JSON-RPC conventions where practical, but it is not affiliated with or endorsed by a2aproject. Production deployment, package publication, external promotion, homepage metadata changes, and visibility-related actions remain separately operator-gated.
 
+**Using Nexus as an agent? Read the [agent manual](docs/agent-manual.md) first**, including when resuming after an update. It routes you to the current commands, lane contracts and recovery steps.
+
 For external readers, start here first:
 
 1. [Five-minute local quickstart](docs/quickstart.md) — disposable loopback broker plus echo worker path.

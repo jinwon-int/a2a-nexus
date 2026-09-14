@@ -25,6 +25,13 @@ escalated 2026-07-05 after three consecutive deviations). -->
 
 For Small changes where a full packet is not required, explain why the change is short, reversible, single-repo, and does not cross approval boundaries.
 
+## Agent manual impact
+
+- Usage changed: yes / no (explain why).
+- Before → after, including compatibility/default precedence:
+- Updated `docs/agent-manual.md` and affected reference sections, or reason N/A:
+- Command/schema verification evidence:
+
 ## Verification
 
 - [ ] `npm ci --ignore-scripts --include=dev`
