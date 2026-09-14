@@ -757,6 +757,233 @@ test('compact supplement supersedes a source-projection blocked lane without hid
   }]);
 });
 
+// ─── Multilingual substantive-evidence classification (#2157) ────────────────
+// Keyword-only heuristics are English-shaped, so they systematically misfiled
+// genuine task-specific analysis written in other languages as readiness_only
+// while a single appended English keyword upgraded readiness filler to
+// substantive. These regressions pin the evidence-sensitive contract:
+//   - substantive keywords anchor only real (non-readiness) opinion items;
+//   - readiness-dominated output escapes readiness_only only via reviewed-
+//     source anchors (path-like evidenceRefs + a non-readiness opinion item);
+//   - arrays alone, long/repeated filler, summary keywords, bare keyword
+//     stuffing, irrelevant refs, and self-declared classes never upgrade.
+// Fixtures use workerAlpha/brokerAlpha aliases only (no internal fleet names).
+
+// Concrete task-specific analysis written in Korean: cancel/consume race,
+// lost reply, worker crash. It embeds no English keyword from the classifier's
+// substantive list — exactly the shape keyword-only heuristics misfiled.
+function koreanCancelAnalysisOutput() {
+  return {
+    analysisStatus: 'done',
+    analysisKind: 'analysis_bridge',
+    analysisSummary: 'source-only no-live 로컬 브리지 경계 확인: 세션 워커 취소/소비 경로 검토',
+    findings: [
+      '취소 요청이 메시지 소비와 경쟁 상태에 진입하면 응답이 유실되고 워커가 비정상 종료합니다. runtime/app-src/session_worker.py:112 경로에서 재현됩니다.',
+      '유실된 응답 뒤 재시도가 같은 작업을 두 번 소비해 예약 상태가 어긋납니다.',
+    ],
+    risks: [
+      '이중 소비가 누적되면 이후 취소 요청이 영구 실패할 수 있습니다.',
+    ],
+    recommendations: [
+      '취소-소비 경쟁 구간에 순서 보장 검증을 추가하고 유실 응답 재시도를 단일 소비로 제한하세요.',
+      'sourceProjection 품질 complete / within budget — 추가 프로젝션 조치 불필요',
+    ],
+    evidenceRefs: ['runtime/app-src/session_worker.py', 'issue:#2157'],
+    sourceProjection: { quality: 'complete', projectedFileCount: 4 },
+  };
+}
+
+// The equivalent English analysis, keyword-free, with the same incidental
+// readiness disclosures — proves the escape path is language-neutral.
+function englishCancelAnalysisOutput() {
+  return {
+    analysisStatus: 'done',
+    analysisKind: 'analysis_bridge',
+    analysisSummary: 'source-only no-live local bridge boundary confirmed: session worker cancel/consume path review',
+    findings: [
+      'When a cancel request lands while a message is being consumed, the reply is lost and the worker exits abnormally at runtime/app-src/session_worker.py:112.',
+      'The retry after a lost reply consumes the same task twice and leaves the reservation state inconsistent.',
+    ],
+    risks: [
+      'Repeated duplicate consumes can make later cancel requests fail permanently.',
+    ],
+    recommendations: [
+      'Add ordering verification to the cancel-consume window and limit lost-reply retries to a single consume.',
+      'sourceProjection quality complete / within budget — no further projection action needed',
+    ],
+    evidenceRefs: ['runtime/app-src/session_worker.py', 'issue:#2157'],
+    sourceProjection: { quality: 'complete', projectedFileCount: 4 },
+  };
+}
+
+// Genuine readiness-only record in the shape observed on real health lanes.
+function readinessFillerOutput(summarySuffix = '') {
+  return {
+    analysisStatus: 'done',
+    analysisKind: 'analysis_bridge',
+    analysisSummary: `analysis bridge done: source-only local bridge verified no-live evidence path for health lane${summarySuffix}`,
+    findings: [
+      'runid round-a health lane',
+      'source files readable',
+      'no-live/source-only boundary confirmed',
+      'sourceProjection quality complete / within budget',
+    ],
+    risks: [],
+    recommendations: ['keep source-only health lanes on deterministic local bridge unless provider-backed lane is approved'],
+    evidenceRefs: ['task:round-a:health-lane'],
+    sourceProjection: { quality: 'complete', projectedFileCount: 4 },
+  };
+}
+
+const IRRELEVANT_REFS = ['task:round-a:lane-1', 'runid:20260914T0000Z', 'ticket:aux-9', 'note:readiness-log'];
+
+function expectReadinessOnly(taskId, output) {
+  const evidence = classifyLaneEvidence(lane(taskId, 'succeeded', { worker: 'workerAlpha', top: { output } }));
+  assert.equal(evidence.evidenceClass, 'readiness_only');
+  assert.equal(evidence.countsTowardQuorum, false);
+  return evidence;
+}
+
+function roundWithUnderTest(taskId, output) {
+  return [
+    lane(taskId, 'succeeded', { worker: 'workerAlpha', top: { output } }),
+    lane(`${taskId}-peer-2`, 'succeeded', { worker: 'workerAlpha' }),
+    lane(`${taskId}-peer-3`, 'succeeded', { worker: 'workerAlpha' }),
+  ];
+}
+
+test('Korean cancel/consume/lost-reply/crash analysis with incidental readiness disclosures is substantive (#2157)', () => {
+  const evidence = classifyLaneEvidence(lane('ko-cancel-1', 'succeeded', {
+    worker: 'workerAlpha',
+    top: { output: koreanCancelAnalysisOutput() },
+  }));
+  assert.equal(evidence.evidenceClass, 'substantive');
+  assert.equal(evidence.countsTowardQuorum, true);
+
+  const tasks = roundWithUnderTest('ko-cancel-1', koreanCancelAnalysisOutput());
+  const result = computeVerdict(tasks, {
+    round: ROUND,
+    quorum: null,
+    perTarget: null,
+    draft: 'Consensus cites ko-cancel-1, ko-cancel-1-peer-2, ko-cancel-1-peer-3.',
+  });
+  assert.equal(result.verdict, 'FINAL');
+  assert.equal(result.succeeded, 3);
+  assert.equal(result.nonSubstantive, 0);
+  assert.deepEqual(result.missingLanes, []);
+});
+
+test('equivalent English analysis with incidental readiness disclosures is substantive via the same evidence path (#2157)', () => {
+  const evidence = classifyLaneEvidence(lane('en-cancel-1', 'succeeded', {
+    worker: 'workerAlpha',
+    top: { output: englishCancelAnalysisOutput() },
+  }));
+  assert.equal(evidence.evidenceClass, 'substantive');
+  assert.equal(evidence.countsTowardQuorum, true);
+
+  const tasks = roundWithUnderTest('en-cancel-1', englishCancelAnalysisOutput());
+  const result = computeVerdict(tasks, {
+    round: ROUND,
+    quorum: null,
+    perTarget: null,
+    draft: 'Consensus cites en-cancel-1, en-cancel-1-peer-2, en-cancel-1-peer-3.',
+  });
+  assert.equal(result.verdict, 'FINAL');
+  assert.equal(result.succeeded, 3);
+  assert.equal(result.nonSubstantive, 0);
+  assert.deepEqual(result.missingLanes, []);
+});
+
+test('appending race/fix/security keywords to a readiness filler summary cannot flip it to substantive (#2157)', () => {
+  const output = readinessFillerOutput(' — race fix security posture verified');
+  expectReadinessOnly('kw-summary-1', output);
+
+  const result = computeVerdict(roundWithUnderTest('kw-summary-1', output), {
+    round: ROUND,
+    quorum: null,
+    perTarget: null,
+    draft: 'Consensus cites kw-summary-1, kw-summary-1-peer-2, kw-summary-1-peer-3.',
+  });
+  assert.equal(result.verdict, 'BLOCKED');
+  assert.equal(result.succeeded, 2);
+  const rejected = result.missingLanes.find((l) => l.taskId === 'kw-summary-1');
+  assert.equal(rejected?.evidenceClass, 'readiness_only');
+});
+
+test('bare race/fix/security keyword items are stuffing and cannot anchor substance (#2157)', () => {
+  const output = readinessFillerOutput();
+  output.findings = [...output.findings, 'race'];
+  output.risks = ['fix'];
+  output.recommendations = [...output.recommendations, 'security'];
+  expectReadinessOnly('kw-stuff-1', output);
+
+  const result = computeVerdict(roundWithUnderTest('kw-stuff-1', output), {
+    round: ROUND,
+    quorum: null,
+    perTarget: null,
+    draft: 'Consensus cites kw-stuff-1, kw-stuff-1-peer-2, kw-stuff-1-peer-3.',
+  });
+  assert.equal(result.verdict, 'BLOCKED');
+  assert.equal(result.succeeded, 2);
+});
+
+test('irrelevant evidenceRefs alone cannot upgrade readiness filler, keyword or not (#2157)', () => {
+  // (a) many irrelevant refs and no keywords: still readiness_only.
+  const plain = readinessFillerOutput();
+  plain.evidenceRefs = [...IRRELEVANT_REFS];
+  expectReadinessOnly('refs-irrelevant-1', plain);
+
+  // (b) even a summary-level keyword plus irrelevant refs cannot upgrade.
+  const stuffed = readinessFillerOutput(' — race fix security');
+  stuffed.evidenceRefs = [...IRRELEVANT_REFS];
+  expectReadinessOnly('refs-irrelevant-2', stuffed);
+
+  const result = computeVerdict(roundWithUnderTest('refs-irrelevant-2', stuffed), {
+    round: ROUND,
+    quorum: null,
+    perTarget: null,
+    draft: 'Consensus cites refs-irrelevant-2, refs-irrelevant-2-peer-2, refs-irrelevant-2-peer-3.',
+  });
+  assert.equal(result.verdict, 'BLOCKED');
+  assert.equal(result.succeeded, 2);
+});
+
+test('long repeated readiness filler stays rejected even with appended keywords (#2157)', () => {
+  const pad = 'source-only no-live boundary confirmed on deterministic local bridge; no further action required for this health lane. ';
+  const output = readinessFillerOutput(' — race fix security');
+  output.findings = [pad.repeat(8) + 'race', pad.repeat(8) + 'fix'];
+  output.risks = [pad.repeat(8)];
+  output.recommendations = [...output.recommendations, pad.repeat(8)];
+  expectReadinessOnly('long-filler-1', output);
+
+  const result = computeVerdict(roundWithUnderTest('long-filler-1', output), {
+    round: ROUND,
+    quorum: null,
+    perTarget: null,
+    draft: 'Consensus cites long-filler-1, long-filler-1-peer-2, long-filler-1-peer-3.',
+  });
+  assert.equal(result.verdict, 'BLOCKED');
+  assert.equal(result.succeeded, 2);
+});
+
+test('a self-declared substantive evidenceClass cannot override filler content (#2157)', () => {
+  const output = readinessFillerOutput();
+  output.evidenceClass = 'substantive';
+  const evidence = expectReadinessOnly('self-declared-1', output);
+  assert.match(evidence.reason ?? '', /readiness|source-only|no-live/i);
+});
+
+test('explicit readiness_only still rejects substantive-looking content (preserved contract)', () => {
+  const output = englishCancelAnalysisOutput();
+  output.evidenceClass = 'readiness_only';
+  const evidence = classifyLaneEvidence(lane('explicit-ro-1', 'succeeded', {
+    worker: 'workerAlpha',
+    top: { output },
+  }));
+  assert.equal(evidence.evidenceClass, 'readiness_only');
+  assert.equal(evidence.countsTowardQuorum, false);
+});
+
 // ─── CLI-level behavior ──────────────────────────────────────────────────────
 
 test('CLI exits 0 with FINAL when quorum satisfied', () => {

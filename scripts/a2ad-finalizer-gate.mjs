@@ -192,24 +192,61 @@ function classifyExplicitEvidenceClass(output) {
   return null;
 }
 
+// Signal regexes used to separate readiness boilerplate from task-specific
+// opinion evidence (#1230, #2157). The substantive list is English-shaped by
+// nature, so under #2157 it is only trusted as an anchor inside a substantive
+// opinion item (see classifyReadinessOrGenericDoneOutput) — never as a
+// summary-level escape hatch, and never as the only acceptance path.
+const SUBSTANTIVE_SIGNALS = /\b(false[- ]?negative|false[- ]?positive|misclassif|substring|auto[- ]?read|edge\s+case|regression\s+test|bug|defect|vulnerab|race|deadlock|root\s+cause|fix|patch|security|permission|rollback|data\s+loss)\b/i;
+const SUBSTANTIVE_SIGNALS_GLOBAL = /\b(false[- ]?negative|false[- ]?positive|misclassif|substring|auto[- ]?read|edge\s+case|regression\s+test|bug|defect|vulnerab|race|deadlock|root\s+cause|fix|patch|security|permission|rollback|data\s+loss)\b/gi;
+const READINESS_SIGNALS = /\b(source[- ]?only|no[- ]?live|readiness|source\s+files?\s+readable|sourceprojection\s+quality|within\s+budget|local\s+bridge\s+verified|bridge\s+verified|boundary\s+confirmed|runid|health\s+lane|deterministic\s+local\s+bridge)\b/i;
+const GENERIC_ACK_SIGNALS = /^\s*(analysis\s+bridge\s+done|analysis\s+done|analysis\s+complete|task\s+accepted|accepted|done)\s*$/i;
+// A keyword mention only anchors substance when the item carries more than the
+// keywords themselves; bare keyword stuffing never anchors (#2157).
+const MIN_OPINION_SUBSTANCE_CHARS = 4;
+
+function opinionSubstance(item) {
+  // Strip every substantive-signal keyword, then every non-letter/non-digit
+  // (Unicode-aware, so CJK text keeps its substance). What remains is the
+  // item's substance beyond the keywords.
+  return nestedText(item)
+    .replace(SUBSTANTIVE_SIGNALS_GLOBAL, ' ')
+    .replace(/[^\p{L}\p{N}]+/gu, '')
+    .length;
+}
+
+function isSourceAnchoredEvidenceRef(value) {
+  // Path-like anchors only: a directory segment plus a file suffix, optionally
+  // with a line number (e.g. 'runtime/app-src/session_worker.py:112'). Bare
+  // task ids, run ids, tickets, and prose never qualify (#2157).
+  const ref = nestedText(value).trim();
+  return ref.includes('/') && /\.[a-z0-9]{1,8}(?::\d+)?$/.test(ref.toLowerCase());
+}
+
 function classifyReadinessOrGenericDoneOutput(output) {
   const analysisStatus = String(output.analysisStatus ?? output.status ?? '').trim().toLowerCase();
   if (analysisStatus !== 'done') return null;
 
   const evidenceStrings = lowerEvidenceStrings(output);
   if (evidenceStrings.length === 0) return null;
-  const joined = evidenceStrings.join(' ');
   const risks = Array.isArray(output.risks) ? output.risks.filter((item) => hasText(nestedText(item))) : [];
   const recommendations = Array.isArray(output.recommendations) ? output.recommendations.filter((item) => hasText(nestedText(item))) : [];
   const findings = Array.isArray(output.findings) ? output.findings.filter((item) => hasText(nestedText(item))) : [];
+  const opinionItems = [...findings, ...risks, ...recommendations].map((item) => nestedText(item).trim());
 
-  const substantiveSignals = /\b(false[- ]?negative|false[- ]?positive|misclassif|substring|auto[- ]?read|edge\s+case|regression\s+test|bug|defect|vulnerab|race|deadlock|root\s+cause|fix|patch|security|permission|rollback|data\s+loss)\b/i;
-  const readinessSignals = /\b(source[- ]?only|no[- ]?live|readiness|source\s+files?\s+readable|sourceprojection\s+quality|within\s+budget|local\s+bridge\s+verified|bridge\s+verified|boundary\s+confirmed|runid|health\s+lane|deterministic\s+local\s+bridge)\b/i;
-  const genericAckSignals = /^\s*(analysis\s+bridge\s+done|analysis\s+done|analysis\s+complete|task\s+accepted|accepted|done)\s*$/i;
+  // #2157 (evidence-sensitive, language-neutral classification):
+  // A substantive keyword is only trusted when it anchors an opinion item
+  // (finding/risk/recommendation) that is itself readiness boilerplate-free
+  // and carries substance beyond the keywords. Summary-level keywords and
+  // bare keyword items never anchor: appending one English keyword to
+  // readiness filler used to flip its evidence class.
+  const anchoredSubstantive = opinionItems.some((item) =>
+    !READINESS_SIGNALS.test(item)
+    && SUBSTANTIVE_SIGNALS.test(item)
+    && opinionSubstance(item) >= MIN_OPINION_SUBSTANCE_CHARS);
+  if (anchoredSubstantive) return null;
 
-  if (substantiveSignals.test(joined)) return null;
-
-  const genericSummary = genericAckSignals.test(String(output.analysisSummary ?? output.summary ?? '').trim());
+  const genericSummary = GENERIC_ACK_SIGNALS.test(String(output.analysisSummary ?? output.summary ?? '').trim());
   const onlyGenericFindings = findings.every((item) => /\b(task\s+accepted|accepted|done|runid)\b/i.test(nestedText(item)));
   if (genericSummary && risks.length === 0 && recommendations.length === 0 && onlyGenericFindings) {
     return {
@@ -219,9 +256,21 @@ function classifyReadinessOrGenericDoneOutput(output) {
     };
   }
 
-  const readinessCount = evidenceStrings.filter((item) => readinessSignals.test(item)).length;
+  const readinessCount = evidenceStrings.filter((item) => READINESS_SIGNALS.test(item)).length;
   const hasReadinessProjection = String(output.sourceProjection?.quality ?? '').trim().toLowerCase() === 'complete';
   if (readinessCount >= 2 || (hasReadinessProjection && readinessCount >= 1)) {
+    // #2157: readiness-dominated output may still carry genuine task-specific
+    // analysis written in another language, which English keyword heuristics
+    // can never see. Escape readiness_only only when the lane BOTH cites
+    // path-like reviewed-source evidence AND carries a substantive
+    // non-readiness opinion item. Nonempty arrays, long/repeated filler,
+    // self-declared classes, and evidenceRefs alone (task/run ids) never
+    // upgrade readiness filler.
+    const hasSourceAnchoredRefs = Array.isArray(output.evidenceRefs)
+      && output.evidenceRefs.some((value) => isSourceAnchoredEvidenceRef(value));
+    const hasTaskOpinionInAnyLanguage = opinionItems.some((item) =>
+      !READINESS_SIGNALS.test(item) && opinionSubstance(item) >= MIN_OPINION_SUBSTANCE_CHARS);
+    if (hasSourceAnchoredRefs && hasTaskOpinionInAnyLanguage) return null;
     return {
       evidenceClass: 'readiness_only',
       countsTowardQuorum: false,
