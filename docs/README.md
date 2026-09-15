@@ -56,6 +56,7 @@ It is the canonical workflow entry point; detailed references remain below.
 - [fleet-routing-guard.md](fleet-routing-guard.md) — worker routing preflight
 - [current-state-no-live-integration-smoke.md](current-state-no-live-integration-smoke.md) — source-only smoke
 - [docker-runner-no-diff-closeout-guidance.md](docker-runner-no-diff-closeout-guidance.md) — closeout guidance
+- [nclex-content-pr-evaluation.md](nclex-content-pr-evaluation.md) — NCLEX content PR evaluation contract (#1724): pure offline preset, signed receipts, keyring-gated broker surface
 - [hermes-android-native-worker-runbook.md](hermes-android-native-worker-runbook.md) — native worker runbook
 - [hermes-native-worker-enrollment-runbook.md](hermes-native-worker-enrollment-runbook.md) — enrollment runbook
 - [hermes-native-worker-conformance-checklist.md](hermes-native-worker-conformance-checklist.md) — acceptance checklist
