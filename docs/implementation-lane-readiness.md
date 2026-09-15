@@ -162,6 +162,61 @@ de-duplicated per `(task, rule, action)`, so a stuck task records one
 `task.policy_denied` event rather than one per retry. This matches the
 task-deduplicated hit count the warn-mode observation report already uses.
 
+## Dispatcher proof at dispatch time (#1597)
+
+The round dispatcher (`scripts/a2a-dispatch-round.mjs`) enforces the same
+clauses 1–3 on `github-propose-patch` lanes. The profile carrier is fixed: the
+selected worker's readiness row must contain an `implementationCapability`
+field holding the canonical normalized profile, copied as-is from the worker's
+broker capabilities (for example from the normalized registration/heartbeat
+card). The readiness collector supplies the observed profile; fabricating one
+from `ok: true`, `githubPatch: ok`, or task success counts is prohibited.
+
+Minimal valid profile on a readiness row:
+
+```json
+{
+  "node": "worker-a",
+  "ok": true,
+  "githubPatch": "ok",
+  "implementationCapability": {
+    "capable": true,
+    "runtime": "claude-native",
+    "providerId": "example-provider",
+    "modelTier": "example-tier",
+    "availability": "canary_passed"
+  }
+}
+```
+
+`lastVerifiedAt` and `evidenceId` are optional in the carrier. Rows that fail
+the gate include, for example:
+
+- the field absent (legacy patch-capable rows), `null`, an array, or a string;
+- `capable: false`, or `capable: "true"` (only the boolean `true` counts);
+- `runtime: "unknown"` or any non-canonical runtime value;
+- blank or absent `providerId` / `modelTier`;
+- `availability: "configured"`, `"entitlement_failed"`, `"disabled"`, or absent.
+
+Rejection happens during manifest validation — before any `POST /tasks` — and
+the error names the failing field only; profile values are never echoed back.
+Analysis and GitHub read-only lanes are unaffected, and another worker's row
+never satisfies a lane assigned to a different worker. The dispatcher applies
+no freshness TTL and no runtime/provider/model-tier pin matching: pins remain
+scheduler policy (clause 4) and are not claimed as dispatcher-enforced.
+
+The existing `allowUnverifiedPatchWorkers` /
+`allowUnverifiedGithubPatchWorkers` overrides skip this gate together with all
+other readiness proof. They are broad exceptional bypasses, not evidence of
+implementation capability, and no narrower override was added.
+
+This gate intentionally excludes workers that have not deployed
+`WORKER_IMPLEMENTATION_*` declarations: a patch-capable readiness row without a
+verified canary profile is rejected, matching the fail-closed policy above.
+Merging this dispatcher check does not by itself change fleet state — readiness
+rows must be re-collected from brokers whose workers actually declare the
+profile before patch lanes dispatch again.
+
 ## Visibility
 
 Implementation provider/model readiness is broker-local. Team/private worker

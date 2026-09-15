@@ -173,6 +173,32 @@ function readinessNodeId(row) {
   return '';
 }
 
+// #1597: canonical implementationCapability runtime values. Mirrors the broker
+// normalizer in packages/broker/src/core/broker-capability-normalizers.ts;
+// 'unknown' is the broker's fallback for unrecognized declarations, so a
+// canonical profile copied from broker capabilities never carries it here.
+const IMPLEMENTATION_RUNTIMES = new Set(['claude-native', 'codex-native', 'provider-native']);
+
+/**
+ * Evaluate scheduler clauses 1–3 (docs/implementation-lane-readiness.md) over a
+ * readiness row's canonical implementationCapability profile. Blocker reasons
+ * name the failing field only — profile values are never echoed back so error
+ * output stays secret-safe. Deliberately no freshness TTL, model-tier ordering,
+ * or runtime/provider/tier pin matching: pins are scheduler policy (clause 4),
+ * not dispatcher proof. A profile is never synthesized from ok=true,
+ * githubPatch=ok, or task success counts.
+ */
+function implementationCapabilityBlockers(profile) {
+  if (!isPlainObject(profile)) return ['implementationCapability profile is missing or malformed'];
+  const blockers = [];
+  if (profile.capable !== true) blockers.push('implementationCapability.capable is not true');
+  if (!IMPLEMENTATION_RUNTIMES.has(profile.runtime)) blockers.push('implementationCapability.runtime is not a recognized implementation runtime');
+  if (!hasText(profile.providerId)) blockers.push('implementationCapability.providerId is not recorded');
+  if (!hasText(profile.modelTier)) blockers.push('implementationCapability.modelTier is not recorded');
+  if (profile.availability !== 'canary_passed') blockers.push('implementationCapability.availability is not canary_passed');
+  return blockers;
+}
+
 function readinessRowForLane(manifest, lane) {
   const workerId = hasText(lane.assignedWorkerId) ? lane.assignedWorkerId : lane.target?.id;
   if (!hasText(workerId)) return null;
@@ -204,6 +230,17 @@ function validateGitHubPatchReadiness(errors, tag, manifest, lane, payload) {
 
   if (missing.length > 0) {
     errors.push(`${tag}.workerReadiness for '${readinessNodeId(row)}' is not patch/PR capable for github-propose-patch (#1034): missing ${missing.join(', ')}`);
+  }
+
+  // #1597: patch/PR capability flags alone are not implementation readiness.
+  // The selected row must also carry a separately collected canonical
+  // implementationCapability profile with verified canary evidence, checked
+  // before any task is created. Missing/malformed/disabled/configured profiles
+  // fail closed here, matching the broker's implementation claim gate clauses
+  // 1–3 rather than admitting unprepared workers.
+  const capabilityBlockers = implementationCapabilityBlockers(row.implementationCapability);
+  if (capabilityBlockers.length > 0) {
+    errors.push(`${tag}.workerReadiness for '${readinessNodeId(row)}' fails the implementation readiness gate for github-propose-patch (#1597): ${capabilityBlockers.join('; ')} (see docs/implementation-lane-readiness.md)`);
   }
 }
 
@@ -878,7 +915,7 @@ from A2A_EDGE_SECRET only (never a CLI flag, never logged).
 
 Options:
   --manifest <file>          JSON manifest: { roundId, brokerUrl, requester, defaults?, lanes[] }
-  --worker-readiness <file>  Optional a2a-worker-readiness-preflight JSON result; ok:false rows are preflight-excluded before POST /tasks.
+  --worker-readiness <file>  Optional a2a-worker-readiness-preflight JSON result; ok:false rows are preflight-excluded before POST /tasks. github-propose-patch lanes additionally require a canonical implementationCapability profile on the selected row (#1597).
   --dry-run                  Validate the manifest and print the would-create table; no network.
   --verify                   After dispatch, re-fetch each dispatched lane and print a round status table.
   --json                     Emit machine-readable JSON instead of tables.
