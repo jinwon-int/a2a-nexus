@@ -122,8 +122,16 @@ prove the installed worker can run the patch.
   task; do not remove scope checks.
 - Do not combine a patch lane with `sourceOnly:true` or no-GitHub-write flags.
   Free-text “read only” instructions cannot neutralize a write-capable mode.
+- A `github-propose-patch` readiness row must also carry the canonical
+  `implementationCapability` profile with `availability: "canary_passed"`
+  (#1597); missing or unverified profiles fail dry-run before task creation.
+  See [implementation-lane-readiness](implementation-lane-readiness.md).
 - The CLI supports readiness overrides for exceptional documented cases. They
   are not the normal recipe and do not make an unverified worker capable.
+
+Patch-mode readiness and no-write checks trim surrounding mode whitespace,
+matching the worker handler; padding `github-propose-patch` does not bypass
+either boundary.
 
 ### Time budgets and overrides
 

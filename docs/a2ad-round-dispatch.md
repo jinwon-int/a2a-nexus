@@ -232,6 +232,22 @@ source-only declaration for an intentional PR-first write lane. Use
 `read-only-analysis` / `github-read-only-validation` for analysis-only evidence,
 and reserve `github-propose-patch` for an explicit PR-first patch lane.
 
+Patch lanes also require implementation readiness (#1597): the selected
+worker's readiness row must carry a canonical `implementationCapability`
+profile with `capable: true`, a recognized non-unknown runtime
+(`claude-native`, `codex-native`, or `provider-native`), non-empty
+`providerId`/`modelTier`, and `availability: "canary_passed"`. Missing,
+malformed, disabled, or merely `configured` profiles fail dry-run before any
+task is created. The dispatcher never synthesizes a profile from `ok: true`,
+`githubPatch: ok`, or task success counts, and failure messages name the
+failing field only — they do not echo profile values. The
+`allowUnverifiedPatchWorkers` / `allowUnverifiedGithubPatchWorkers` overrides
+remain broad exceptional bypasses: they skip this profile gate together with
+all other readiness proof and are not evidence of implementation capability.
+Runtime/provider/model-tier pin matching stays scheduler policy (clause 4 in
+[implementation-lane-readiness](implementation-lane-readiness.md)) and is not
+enforced by the dispatcher; analysis and GitHub read-only lanes are unaffected.
+
 ### Designated antithesis lanes (#1297)
 
 Ordinary A2A rounds may use a weak dialectic without switching to a full
@@ -342,6 +358,10 @@ exists, the broker returns the stored record unchanged, marks the response with
 `idempotentReturn: true` (HTTP 200, versus 201 for a fresh create), and records
 a `task.create_idempotent_hit` audit event. Dispatchers must count a marked
 response as `already-exists`, never as `created=1`.
+
+Patch-mode readiness and no-write checks trim surrounding mode whitespace,
+matching the worker handler; padding `github-propose-patch` does not bypass
+either boundary.
 
 ## Broker request contract
 
