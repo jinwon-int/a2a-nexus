@@ -71,13 +71,22 @@ only; `??` preserves explicit zero and overrides longer than the common window.
 | Constant | Value | Applies to |
 |---|---|---|
 | `DEFAULT_WORKER_OFFLINE_AFTER_MS` | 90,000 (90 s) | Persistent workers on dashboard surfaces; every mode on `a2a.peer.status` (common default) |
-| `MOBILE_OFFLINE_AFTER_MS` | 30,000 (30 s) | Mobile workers on dashboard/mobileHealth surfaces; conversation-delivery liveness for all modes |
-| `MOBILE_DISCONNECTED_AFTER_MS` | 90,000 (90 s) | Mobile workers — disconnected threshold (dashboard/mobileHealth surfaces) |
+| `HEARTBEAT_LIVENESS_ONLINE_WINDOW_MS` | 30,000 (30 s) | Neutral name for the pre-existing conversation-delivery online window (every mode) and the legacy `mobileHealth` ladder; **not** a raw `GET /workers` or `a2a.peer.status` default |
+| `HEARTBEAT_LIVENESS_OFFLINE_AFTER_MS` | 90,000 (90 s) | Neutral name for the pre-existing conversation-delivery stale→offline boundary (every mode) and the legacy `mobileHealth` ladder; **not** a raw `GET /workers` or `a2a.peer.status` default |
+| `MOBILE_OFFLINE_AFTER_MS` | 30,000 (30 s) | Deprecated exact-value alias of `HEARTBEAT_LIVENESS_ONLINE_WINDOW_MS`; legacy imports keep working unchanged |
+| `MOBILE_DISCONNECTED_AFTER_MS` | 90,000 (90 s) | Deprecated exact-value alias of `HEARTBEAT_LIVENESS_OFFLINE_AFTER_MS`; legacy imports keep working unchanged |
 
-`getConversationDeliverySummary()` also uses both `MOBILE_*` constants for
-conversation-participant liveness across all worker modes (30 s online, up to
-90 s stale, then offline). That separate consumer is unchanged by this
-peer-status update.
+`getConversationDeliverySummary()` classifies conversation-participant liveness
+for **every** worker mode with the neutral heartbeat-liveness ladder:
+`HEARTBEAT_LIVENESS_ONLINE_WINDOW_MS` (30 s online, inclusive) and
+`HEARTBEAT_LIVENESS_OFFLINE_AFTER_MS` (up to 90 s stale, inclusive, then
+offline). This is a migration-coupling rename only (#2065 retirement
+prerequisite): the deprecated `MOBILE_OFFLINE_AFTER_MS` /
+`MOBILE_DISCONNECTED_AFTER_MS` names remain exact-value aliases of the same
+values, so legacy imports behave identically and the ladder's behavior is
+unchanged. The conversation ladder stays separate from the `a2a.peer.status`
+window and from the raw/dashboard/capacity/mobileHealth surfaces described
+above; none of these constants is a universal default for other surfaces.
 
 ## Code Locations
 
