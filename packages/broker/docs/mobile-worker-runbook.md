@@ -71,8 +71,13 @@ only; `??` preserves explicit zero and overrides longer than the common window.
 | Constant | Value | Applies to |
 |---|---|---|
 | `DEFAULT_WORKER_OFFLINE_AFTER_MS` | 90,000 (90 s) | Persistent workers on dashboard surfaces; every mode on `a2a.peer.status` (common default) |
-| `MOBILE_OFFLINE_AFTER_MS` | 30,000 (30 s) | Mobile workers on dashboard/mobileHealth surfaces only |
+| `MOBILE_OFFLINE_AFTER_MS` | 30,000 (30 s) | Mobile workers on dashboard/mobileHealth surfaces; conversation-delivery liveness for all modes |
 | `MOBILE_DISCONNECTED_AFTER_MS` | 90,000 (90 s) | Mobile workers — disconnected threshold (dashboard/mobileHealth surfaces) |
+
+`getConversationDeliverySummary()` also uses both `MOBILE_*` constants for
+conversation-participant liveness across all worker modes (30 s online, up to
+90 s stale, then offline). That separate consumer is unchanged by this
+peer-status update.
 
 ## Code Locations
 

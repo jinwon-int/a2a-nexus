@@ -122,7 +122,7 @@ A lightweight JSON-RPC method for cheap, read-only worker health queries. Design
 | `stale`     | Worker registered but last heartbeat exceeds the resolved offline threshold (see [Worker modes](#worker-modes)) |
 | `unreachable` | Worker not registered at all |
 
-### Worker modes (read-only `a2a.peer.status` semantics, #2065)
+### Worker modes
 
 Workers declare `workerMode` on registration/heartbeat. The `workerMode` wire
 field is echoed verbatim (`"persistent"`, `"mobile"`, or absent) and the
