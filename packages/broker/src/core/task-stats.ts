@@ -438,6 +438,393 @@ export const WORKER_LATENCY_PROFILES_SCHEMA_VERSION = "a2a.worker-latency-profil
 export const DEFAULT_MAX_WORKER_PROFILES = 128;
 export const MAX_FAILURE_CODES_PER_WORKER = 5;
 
+// ---- #1815 item 1 slice: body-free receipt measurements -------------------
+// Producer-side contract mirrored from
+// packages/broker/scripts/lib/analysis-execution-telemetry.mjs (do not widen:
+// the producer owns normalization; this read path only counts bounded facts).
+
+export const WORKER_RECEIPT_TELEMETRY_SCHEMA_VERSION = "a2a.analysis-execution-telemetry.v1" as const;
+
+export const WORKER_RECEIPT_TELEMETRY_SOURCES = Object.freeze([
+  "piri_progress_file",
+  "claude_cli_envelope",
+] as const);
+
+export type WorkerReceiptTelemetrySource = (typeof WORKER_RECEIPT_TELEMETRY_SOURCES)[number];
+
+export const WORKER_RECEIPT_SCHEMA_RETRY_REASONS = Object.freeze([
+  "extra_property",
+  "missing_field",
+  "invalid_value",
+  "no_json_candidate",
+  "provider_failure",
+  "other",
+] as const);
+
+export type WorkerReceiptSchemaRetryReason = (typeof WORKER_RECEIPT_SCHEMA_RETRY_REASONS)[number];
+
+export interface ReceiptNumericDistribution {
+  count: number;
+  min: number | null;
+  max: number | null;
+  average: number | null;
+  p50: number | null;
+  p95: number | null;
+}
+
+export interface WorkerReceiptCarrierCounts {
+  /** Terminal tasks whose receipt came from error.details.bridgeFailure. */
+  structuredBridgeFailure: number;
+  /** Terminal tasks whose receipt came from result.output (success or preserved). */
+  resultOutput: number;
+  /** Terminal tasks with neither carrier — absence is reported, never imputed. */
+  none: number;
+}
+
+export interface WorkerReceiptSourceBytes {
+  /** Tasks whose chosen carrier carried a valid non-negative safe-integer totalBytes. */
+  observed: number;
+  /** Tasks whose chosen carrier omitted sourceCarrierStats or totalBytes. */
+  missing: number;
+  /** Present source stats/counts rejected by strict shape/integer validation. */
+  invalid: number;
+  totalBytes: ReceiptNumericDistribution;
+}
+
+export interface WorkerReceiptModelRequests {
+  /** Observed telemetry samples carrying a valid modelRequests count. */
+  observed: number;
+  /** Sum over observed samples; null means the exact sum exceeds safe-integer range. */
+  total: number | null;
+  distribution: ReceiptNumericDistribution;
+}
+
+export interface WorkerReceiptSchemaRetries {
+  /** Observed telemetry samples carrying a valid schemaRetries count. */
+  observed: number;
+  /** null means the exact sum exceeds safe-integer range. */
+  total: number | null;
+  /** Samples with a strictly positive count. */
+  tasksWithRetries: number;
+  /** Explicit valid zero counts — a real observation, distinct from absence. */
+  tasksWithZero: number;
+  /** Bounded-enum reason totals; unknown keys are dropped, never emitted. */
+  reasons: Partial<Record<WorkerReceiptSchemaRetryReason, number | null>>;
+}
+
+export interface WorkerReceiptTelemetry {
+  /** Carrier carried a well-formed a2a.analysis-execution-telemetry.v1 object. */
+  observed: number;
+  /** Carrier carried no telemetry object at all. */
+  missing: number;
+  /** Telemetry present but rejected by strict validation (schema/source/shape). */
+  invalid: number;
+  /** Observed telemetry that self-reports truncated:true. */
+  truncated: number;
+  modelRequests: WorkerReceiptModelRequests;
+  schemaRetries: WorkerReceiptSchemaRetries;
+}
+
+export interface WorkerReceiptLiteralEqualityCounts {
+  bothObserved: number;
+  literalMatch: number;
+  literalDifference: number;
+}
+
+export interface WorkerReceiptModelMetadata {
+  requestedModelObserved: number;
+  actualRuntimeModelObserved: number;
+  effectiveModelObserved: number;
+  requestedThinkingObserved: number;
+  effectiveThinkingObserved: number;
+  /**
+   * Literal string equality only: alias-equivalent ids (e.g. "k3[1m]" vs a
+   * canonical provider id) count as literal differences here. This is NOT
+   * evidence of a runtime mismatch by itself and no model names are emitted.
+   */
+  requestedActualModelLiteralEquality: WorkerReceiptLiteralEqualityCounts;
+  /** No "actual thinking" carrier exists; requested/effective only, never inferred. */
+  requestedEffectiveThinkingLiteralEquality: WorkerReceiptLiteralEqualityCounts;
+}
+
+export interface WorkerReceiptProfile {
+  carriers: WorkerReceiptCarrierCounts;
+  sourceBytes: WorkerReceiptSourceBytes;
+  executionTelemetry: WorkerReceiptTelemetry;
+  modelMetadata: WorkerReceiptModelMetadata;
+}
+
+/** Strict non-negative safe integer: no string/boolean/float coercion. */
+function receiptCount(value: unknown): number | undefined {
+  return typeof value === "number" && Number.isSafeInteger(value) && value >= 0 ? value : undefined;
+}
+
+function receiptObject(value: unknown): Record<string, unknown> | undefined {
+  return value !== null && typeof value === "object" && !Array.isArray(value)
+    ? (value as Record<string, unknown>)
+    : undefined;
+}
+
+type ParsedReceiptTelemetry =
+  | { state: "missing" }
+  | { state: "invalid" }
+  | {
+    state: "observed";
+    truncated: boolean;
+    modelRequests: number | undefined;
+    schemaRetries: number | undefined;
+    schemaRetryReasons: Partial<Record<WorkerReceiptSchemaRetryReason, number>>;
+  };
+
+function parseReceiptTelemetry(value: unknown): ParsedReceiptTelemetry {
+  if (value === undefined) return { state: "missing" };
+  const carrier = receiptObject(value);
+  if (!carrier) return { state: "invalid" };
+  if (carrier.schemaVersion !== WORKER_RECEIPT_TELEMETRY_SCHEMA_VERSION) return { state: "invalid" };
+  if (!WORKER_RECEIPT_TELEMETRY_SOURCES.includes(carrier.source as WorkerReceiptTelemetrySource)) {
+    return { state: "invalid" };
+  }
+  for (const key of ["modelRequests", "schemaRetries"] as const) {
+    if (carrier[key] !== undefined && receiptCount(carrier[key]) === undefined) return { state: "invalid" };
+  }
+  if (carrier.truncated !== undefined && typeof carrier.truncated !== "boolean") return { state: "invalid" };
+  const rawReasons = receiptObject(carrier.schemaRetryReasons);
+  if (carrier.schemaRetryReasons !== undefined && !rawReasons) return { state: "invalid" };
+  const schemaRetryReasons: Partial<Record<WorkerReceiptSchemaRetryReason, number>> = {};
+  if (rawReasons) {
+    for (const reason of WORKER_RECEIPT_SCHEMA_RETRY_REASONS) {
+      const count = receiptCount(rawReasons[reason]);
+      if (rawReasons[reason] !== undefined && count === undefined) return { state: "invalid" };
+      if (count !== undefined) schemaRetryReasons[reason] = count;
+    }
+  }
+  return {
+    state: "observed",
+    truncated: carrier.truncated === true,
+    modelRequests: receiptCount(carrier.modelRequests),
+    schemaRetries: receiptCount(carrier.schemaRetries),
+    schemaRetryReasons,
+  };
+}
+
+type ReceiptCarrierKind = "structuredBridgeFailure" | "resultOutput";
+
+interface ReceiptCarrier {
+  kind: ReceiptCarrierKind;
+  sourceCarrierStats: unknown;
+  telemetryRaw: unknown;
+  requestedModel: unknown;
+  requestedThinking: unknown;
+  actualRuntimeModel: unknown;
+  effectiveModel: unknown;
+  effectiveThinking: unknown;
+}
+
+function carrierFrom(kind: ReceiptCarrierKind, carrier: Record<string, unknown>): ReceiptCarrier {
+  return {
+    kind,
+    sourceCarrierStats: carrier.sourceCarrierStats,
+    telemetryRaw: carrier.executionTelemetry,
+    requestedModel: carrier.requestedModel,
+    requestedThinking: carrier.requestedThinking,
+    actualRuntimeModel: carrier.actualRuntimeModel,
+    effectiveModel: carrier.effectiveModel,
+    effectiveThinking: carrier.effectiveThinking,
+  };
+}
+
+/**
+ * Deterministic one-receipt-per-task carrier precedence: a structured bridge
+ * failure on a failed task wins so success-side metadata can never hide a
+ * failure receipt; otherwise preserved/success result output; a non-failed
+ * task with only a bridge-failure detail still reports through it.
+ */
+export function receiptCarrierForTask(task: TaskRecord): ReceiptCarrier | undefined {
+  const details = receiptObject(task.error?.details);
+  const bridgeFailure = receiptObject(details?.bridgeFailure);
+  const output = receiptObject(task.result?.output);
+  if (task.status === "failed" && bridgeFailure) return carrierFrom("structuredBridgeFailure", bridgeFailure);
+  if (output) return carrierFrom("resultOutput", output);
+  if (bridgeFailure) return carrierFrom("structuredBridgeFailure", bridgeFailure);
+  return undefined;
+}
+
+function countLiteralEquality(
+  counts: WorkerReceiptLiteralEqualityCounts,
+  left: string | undefined,
+  right: string | undefined,
+): void {
+  if (left === undefined || right === undefined) return;
+  counts.bothObserved += 1;
+  if (left === right) counts.literalMatch += 1;
+  else counts.literalDifference += 1;
+}
+
+function summarizeReceiptSamples(values: readonly number[]): ReceiptNumericDistribution {
+  const sorted = [...values].sort((left, right) => left - right);
+  if (sorted.length === 0) {
+    return { count: 0, min: null, max: null, average: null, p50: null, p95: null };
+  }
+  const sum = sorted.reduce((total, value) => total + BigInt(value), 0n);
+  const count = BigInt(sorted.length);
+  // Round in integer arithmetic before converting back to the display number.
+  const scaledAverage = (sum * 1_000n + count / 2n) / count;
+  return {
+    count: sorted.length,
+    min: sorted[0] ?? null,
+    max: sorted.at(-1) ?? null,
+    average: Number(scaledAverage / 1_000n) + Number(scaledAverage % 1_000n) / 1_000,
+    p50: nearestRank(sorted, 50),
+    p95: nearestRank(sorted, 95),
+  };
+}
+
+/** Nonnegative inputs make overflow permanent; never wrap, clamp or silently round. */
+function addReceiptCounts(total: number | null, value: number): number | null {
+  if (total === null) return null;
+  const sum = total + value;
+  return Number.isSafeInteger(sum) ? sum : null;
+}
+
+interface WorkerReceiptTally extends WorkerReceiptProfile {
+  byteSamples: number[];
+  modelRequestSamples: number[];
+  schemaRetryReasonTotals: Map<WorkerReceiptSchemaRetryReason, number | null>;
+  add(carrier: ReceiptCarrier | undefined): void;
+}
+
+function emptyReceiptTally(): WorkerReceiptTally {
+  const tally: WorkerReceiptTally = {
+    carriers: { structuredBridgeFailure: 0, resultOutput: 0, none: 0 },
+    sourceBytes: { observed: 0, missing: 0, invalid: 0, totalBytes: { count: 0, min: null, max: null, average: null, p50: null, p95: null } },
+    executionTelemetry: {
+      observed: 0,
+      missing: 0,
+      invalid: 0,
+      truncated: 0,
+      modelRequests: { observed: 0, total: 0, distribution: { count: 0, min: null, max: null, average: null, p50: null, p95: null } },
+      schemaRetries: { observed: 0, total: 0, tasksWithRetries: 0, tasksWithZero: 0, reasons: {} },
+    },
+    modelMetadata: {
+      requestedModelObserved: 0,
+      actualRuntimeModelObserved: 0,
+      effectiveModelObserved: 0,
+      requestedThinkingObserved: 0,
+      effectiveThinkingObserved: 0,
+      requestedActualModelLiteralEquality: { bothObserved: 0, literalMatch: 0, literalDifference: 0 },
+      requestedEffectiveThinkingLiteralEquality: { bothObserved: 0, literalMatch: 0, literalDifference: 0 },
+    },
+    byteSamples: [],
+    modelRequestSamples: [],
+    schemaRetryReasonTotals: new Map(),
+    add(carrier: ReceiptCarrier | undefined): void {
+      if (!carrier) {
+        tally.carriers.none += 1;
+        return;
+      }
+      if (carrier.kind === "structuredBridgeFailure") tally.carriers.structuredBridgeFailure += 1;
+      else tally.carriers.resultOutput += 1;
+
+      const stats = receiptObject(carrier.sourceCarrierStats);
+      const rawBytes = stats?.totalBytes;
+      const totalBytes = receiptCount(rawBytes);
+      if ((carrier.sourceCarrierStats !== undefined && !stats) || (rawBytes !== undefined && totalBytes === undefined)) {
+        tally.sourceBytes.invalid += 1;
+      } else if (totalBytes === undefined) tally.sourceBytes.missing += 1;
+      else {
+        tally.sourceBytes.observed += 1;
+        tally.byteSamples.push(totalBytes);
+      }
+
+      const parsed = parseReceiptTelemetry(carrier.telemetryRaw);
+      if (parsed.state === "missing") tally.executionTelemetry.missing += 1;
+      else if (parsed.state === "invalid") tally.executionTelemetry.invalid += 1;
+      else {
+        tally.executionTelemetry.observed += 1;
+        if (parsed.truncated) tally.executionTelemetry.truncated += 1;
+        if (parsed.modelRequests !== undefined) {
+          tally.executionTelemetry.modelRequests.observed += 1;
+          tally.executionTelemetry.modelRequests.total = addReceiptCounts(tally.executionTelemetry.modelRequests.total, parsed.modelRequests);
+          tally.modelRequestSamples.push(parsed.modelRequests);
+        }
+        const retries = tally.executionTelemetry.schemaRetries;
+        if (parsed.schemaRetries !== undefined) {
+          retries.observed += 1;
+          retries.total = addReceiptCounts(retries.total, parsed.schemaRetries);
+          if (parsed.schemaRetries === 0) retries.tasksWithZero += 1;
+          else retries.tasksWithRetries += 1;
+        }
+        for (const reason of WORKER_RECEIPT_SCHEMA_RETRY_REASONS) {
+          const count = parsed.schemaRetryReasons[reason];
+          if (count !== undefined) {
+            const previous = tally.schemaRetryReasonTotals.get(reason);
+            tally.schemaRetryReasonTotals.set(reason, addReceiptCounts(previous === undefined ? 0 : previous, count));
+          }
+        }
+      }
+
+      const metadata = tally.modelMetadata;
+      const requestedModel = stringFromUnknown(carrier.requestedModel);
+      const actualRuntimeModel = stringFromUnknown(carrier.actualRuntimeModel);
+      const effectiveModel = stringFromUnknown(carrier.effectiveModel);
+      const requestedThinking = stringFromUnknown(carrier.requestedThinking);
+      const effectiveThinking = stringFromUnknown(carrier.effectiveThinking);
+      if (requestedModel !== undefined) metadata.requestedModelObserved += 1;
+      if (actualRuntimeModel !== undefined) metadata.actualRuntimeModelObserved += 1;
+      if (effectiveModel !== undefined) metadata.effectiveModelObserved += 1;
+      if (requestedThinking !== undefined) metadata.requestedThinkingObserved += 1;
+      if (effectiveThinking !== undefined) metadata.effectiveThinkingObserved += 1;
+      countLiteralEquality(metadata.requestedActualModelLiteralEquality, requestedModel, actualRuntimeModel);
+      countLiteralEquality(metadata.requestedEffectiveThinkingLiteralEquality, requestedThinking, effectiveThinking);
+    },
+  };
+  return tally;
+}
+
+function receiptProfileFromTally(tally: WorkerReceiptTally): WorkerReceiptProfile {
+  const reasons: Partial<Record<WorkerReceiptSchemaRetryReason, number | null>> = {};
+  for (const reason of WORKER_RECEIPT_SCHEMA_RETRY_REASONS) {
+    const count = tally.schemaRetryReasonTotals.get(reason);
+    if (count !== undefined && (count === null || count > 0)) reasons[reason] = count;
+  }
+  return {
+    carriers: { ...tally.carriers },
+    sourceBytes: {
+      observed: tally.sourceBytes.observed,
+      missing: tally.sourceBytes.missing,
+      invalid: tally.sourceBytes.invalid,
+      totalBytes: summarizeReceiptSamples(tally.byteSamples),
+    },
+    executionTelemetry: {
+      observed: tally.executionTelemetry.observed,
+      missing: tally.executionTelemetry.missing,
+      invalid: tally.executionTelemetry.invalid,
+      truncated: tally.executionTelemetry.truncated,
+      modelRequests: {
+        observed: tally.executionTelemetry.modelRequests.observed,
+        total: tally.executionTelemetry.modelRequests.total,
+        distribution: summarizeReceiptSamples(tally.modelRequestSamples),
+      },
+      schemaRetries: {
+        observed: tally.executionTelemetry.schemaRetries.observed,
+        total: tally.executionTelemetry.schemaRetries.total,
+        tasksWithRetries: tally.executionTelemetry.schemaRetries.tasksWithRetries,
+        tasksWithZero: tally.executionTelemetry.schemaRetries.tasksWithZero,
+        reasons,
+      },
+    },
+    modelMetadata: {
+      requestedModelObserved: tally.modelMetadata.requestedModelObserved,
+      actualRuntimeModelObserved: tally.modelMetadata.actualRuntimeModelObserved,
+      effectiveModelObserved: tally.modelMetadata.effectiveModelObserved,
+      requestedThinkingObserved: tally.modelMetadata.requestedThinkingObserved,
+      effectiveThinkingObserved: tally.modelMetadata.effectiveThinkingObserved,
+      requestedActualModelLiteralEquality: { ...tally.modelMetadata.requestedActualModelLiteralEquality },
+      requestedEffectiveThinkingLiteralEquality: { ...tally.modelMetadata.requestedEffectiveThinkingLiteralEquality },
+    },
+  };
+}
+
 export interface WorkerLatencyProfileOptions {
   /** Deterministic cap on emitted profiles; overflow is counted, never silent. */
   maxWorkers?: number;
@@ -468,6 +855,8 @@ export interface WorkerLatencyProfile {
   /** Deterministic top failure codes (count desc, code asc), bounded. */
   failureCodes: { top: WorkerLatencyFailureCodeCount[] };
   latency: WorkerLatencyProfileSegments;
+  /** Body-free receipt measurements (#1815 item 1 slice); counts/distributions only. */
+  receipts: WorkerReceiptProfile;
 }
 
 export interface WorkerLatencyProfilesResponse {
@@ -479,12 +868,27 @@ export interface WorkerLatencyProfilesResponse {
     attempt: "latest monotonic claim/start pair before terminal completion";
     percentile: "nearest-rank";
     consumption: "tie-break only after capability/independence/team/readiness filters";
+    receiptCarrier: "one receipt per terminal task; structured bridge failure wins over preserved result output; absent carriers are never counted as zeros";
+    modelComparison: "literal identifier equality only; alias-equivalent model ids are not resolved and no model names are emitted";
   };
   coverage: {
     workers: number;
     truncatedWorkers: number;
     invalidTimestampEvents: number;
     tasksWithoutWorkerIdentity: number;
+    /** Receipt coverage spans every in-window terminal task, unattributed ones included. */
+    receipts: {
+      withCarrier: number;
+      structuredBridgeFailure: number;
+      resultOutput: number;
+      none: number;
+    };
+    executionTelemetry: {
+      observed: number;
+      missing: number;
+      invalid: number;
+      truncated: number;
+    };
   };
   profiles: WorkerLatencyProfile[];
 }
@@ -497,6 +901,7 @@ interface WorkerAccumulator {
   runSamples: number[];
   queueSamples: number[];
   totalSamples: number[];
+  receipts: WorkerReceiptTally;
 }
 
 function emptyAccumulator(): WorkerAccumulator {
@@ -508,6 +913,7 @@ function emptyAccumulator(): WorkerAccumulator {
     runSamples: [],
     queueSamples: [],
     totalSamples: [],
+    receipts: emptyReceiptTally(),
   };
 }
 
@@ -533,10 +939,14 @@ export function aggregateWorkerLatencyProfiles(
 
   const identityByTaskId = new Map<string, string>();
   const unattributed = new Set<string>();
+  const coverageReceipts = emptyReceiptTally();
   for (const task of terminalTaskRows) {
     const workerId = workerIdentityForTask(task);
     if (workerId === undefined || workerId === "") {
       unattributed.add(task.id);
+      // Unattributed tasks still count toward coverage receipts so nothing in
+      // the window silently disappears from the report.
+      coverageReceipts.add(receiptCarrierForTask(task));
       continue;
     }
     identityByTaskId.set(task.id, workerId);
@@ -583,6 +993,10 @@ export function aggregateWorkerLatencyProfiles(
       acc.totalSamples.push(completedAt - createdAt);
     }
 
+    const carrier = receiptCarrierForTask(task);
+    acc.receipts.add(carrier);
+    coverageReceipts.add(carrier);
+
     workers.set(workerId, acc);
   }
 
@@ -611,6 +1025,7 @@ export function aggregateWorkerLatencyProfiles(
       queueMs: summarizeTaskLatency(acc.queueSamples),
       totalMs: summarizeTaskLatency(acc.totalSamples),
     },
+    receipts: receiptProfileFromTally(acc.receipts),
   }));
 
   return {
@@ -622,12 +1037,26 @@ export function aggregateWorkerLatencyProfiles(
       attempt: "latest monotonic claim/start pair before terminal completion",
       percentile: "nearest-rank",
       consumption: "tie-break only after capability/independence/team/readiness filters",
+      receiptCarrier: "one receipt per terminal task; structured bridge failure wins over preserved result output; absent carriers are never counted as zeros",
+      modelComparison: "literal identifier equality only; alias-equivalent model ids are not resolved and no model names are emitted",
     },
     coverage: {
       workers: workers.size,
       truncatedWorkers,
       invalidTimestampEvents: eventIndex.invalidTimestampEvents,
       tasksWithoutWorkerIdentity: unattributed.size,
+      receipts: {
+        withCarrier: coverageReceipts.carriers.structuredBridgeFailure + coverageReceipts.carriers.resultOutput,
+        structuredBridgeFailure: coverageReceipts.carriers.structuredBridgeFailure,
+        resultOutput: coverageReceipts.carriers.resultOutput,
+        none: coverageReceipts.carriers.none,
+      },
+      executionTelemetry: {
+        observed: coverageReceipts.executionTelemetry.observed,
+        missing: coverageReceipts.executionTelemetry.missing,
+        invalid: coverageReceipts.executionTelemetry.invalid,
+        truncated: coverageReceipts.executionTelemetry.truncated,
+      },
     },
     profiles,
   };
