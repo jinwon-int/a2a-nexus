@@ -361,16 +361,42 @@ function validatePayloadDiffHygiene(diffHygiene) {
   return Object.keys(policy).length > 0 ? policy : undefined;
 }
 
+// #1601: buildRunnerTask built the docker-runner prompt from task.message
+// (with a payload.prompt fallback) and silently dropped payload.focus. The
+// official patch-manifest recipe puts the detailed scope/test instructions in
+// focus, so the dispatched agent received only the generic message and edited
+// the wrong files (a real failed task showed a 570-byte prompt without focus,
+// and an independent __test.buildRunnerTask sentinel probe reported
+// focusReached:false). For github-propose-patch tasks only — taskMode already
+// trims surrounding whitespace, matching the readiness/no-write checks — a
+// nonempty string focus is carried into the runner prompt as a clearly labeled
+// section. Exact whitespace-trimmed equality with the effective message
+// dedupes; substring overlap never drops distinct instructions. Absent, blank
+// or non-string focus leaves the prompt byte-identical to the pre-#1601
+// output, so older manifests and non-patch modes stay backward compatible.
+// This is instruction delivery only: it infers no readiness or permission and
+// changes no lifecycle/bootstrap instruction, timeout, model or scope field.
+function runnerPromptFocusSection(mode, payload, effectiveMessage) {
+  if (mode !== "github-propose-patch") return "";
+  if (typeof payload.focus !== "string") return "";
+  const focus = payload.focus.trim();
+  if (!focus || focus === effectiveMessage) return "";
+  return `Task focus:\n${focus}`;
+}
+
 function buildRunnerTask(task, env = process.env) {
   const payload = taskPayload(task);
   const repo = safeText(payload.repo, "");
+  const mode = taskMode(task);
+  const effectiveMessage = safeText(task.message, safeText(payload.prompt, ""));
 
   const runnerTask = {
     id: safeText(task.id, `task-${Date.now()}`),
     intent: safeText(task.intent, "propose_patch"),
-    mode: taskMode(task),
+    mode,
     prompt: [
-      safeText(task.message, safeText(payload.prompt, "")),
+      effectiveMessage,
+      runnerPromptFocusSection(mode, payload, effectiveMessage),
       "Leave a Start marker before work begins and a PR, Done, or Block marker when work ends; return startCommentUrl plus prUrl, doneCommentUrl, or blockCommentUrl when available.",
       "Before creating a PR, fail closed if OpenClaw runtime/bootstrap context files would enter the branch or artifact evidence. Report the exact repo-relative offending paths, including any of: AGENTS.md, SOUL.md, USER.md, TOOLS.md, HEARTBEAT.md, IDENTITY.md, .openclaw/**.",
     ].filter(Boolean).join("\n\n"),

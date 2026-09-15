@@ -1203,6 +1203,252 @@ test("malformed payload.diffHygiene fails closed instead of running unscoped (#2
   }
 });
 
+// ─── #1601: payload.focus forwarding into the github-propose-patch runner prompt ───
+
+const LEGACY_LIFECYCLE_INSTRUCTION = "Leave a Start marker before work begins and a PR, Done, or Block marker when work ends; return startCommentUrl plus prUrl, doneCommentUrl, or blockCommentUrl when available.";
+const LEGACY_OPENCLAW_INSTRUCTION = "Before creating a PR, fail closed if OpenClaw runtime/bootstrap context files would enter the branch or artifact evidence. Report the exact repo-relative offending paths, including any of: AGENTS.md, SOUL.md, USER.md, TOOLS.md, HEARTBEAT.md, IDENTITY.md, .openclaw/**.";
+
+function legacyPrompt(effectiveMessage) {
+  return [effectiveMessage, LEGACY_LIFECYCLE_INSTRUCTION, LEGACY_OPENCLAW_INSTRUCTION].join("\n\n");
+}
+
+test("patch runner prompt carries brief message plus detailed payload.focus (#1601)", () => {
+  const focus = [
+    "Scope: only packages/broker/scripts/a2a-task-handler.mjs and its test file.",
+    "The runner must receive the full scope; do not drop these instructions.",
+    "Run: node --test packages/broker/scripts/a2a-task-handler.test.mjs",
+  ].join("\n");
+  const message = "Implement the specified issue, add regression coverage, and open a PR.";
+
+  const runnerTask = __test.buildRunnerTask(task({
+    intent: "propose_patch",
+    message,
+    payload: {
+      mode: "github-propose-patch",
+      repo: "jinwon-int/a2a-nexus",
+      issue: "#1601",
+      focus,
+    },
+  }), {});
+
+  assert.ok(runnerTask.prompt.startsWith(message), "brief message must remain the prompt head");
+  assert.ok(runnerTask.prompt.includes("Task focus:\n"), "focus must arrive as a clearly labeled section");
+  assert.ok(runnerTask.prompt.includes(focus), "the full focus body must reach the runner prompt");
+  assert.ok(runnerTask.prompt.includes(LEGACY_LIFECYCLE_INSTRUCTION), "lifecycle instruction preserved");
+  assert.ok(runnerTask.prompt.includes(LEGACY_OPENCLAW_INSTRUCTION), "bootstrap instruction preserved");
+  assert.ok(
+    runnerTask.prompt.indexOf(focus) < runnerTask.prompt.indexOf(LEGACY_LIFECYCLE_INSTRUCTION),
+    "focus must precede the standing instructions",
+  );
+  // Timeout/model/scope fields are untouched by focus forwarding.
+  assert.equal(runnerTask.timeoutMs, 100 * 60 * 1000);
+  assert.equal(runnerTask.repo, "jinwon-int/a2a-nexus");
+});
+
+test("multiline focus with shell metacharacters is carried verbatim (#1601)", () => {
+  const focus = [
+    "Only touch src/a.ts. Keep this literal: $(rm -rf /tmp/never-run) and `backticks`.",
+    "Do NOT expand $HOME, ${USER}, or \"quoted $trings\" in these lines.",
+    "printf '%s\\n' 'single quotes survive too'",
+  ].join("\n");
+
+  const runnerTask = __test.buildRunnerTask(task({
+    intent: "propose_patch",
+    message: "Implement the fix",
+    payload: { mode: "github-propose-patch", repo: "jinwon-int/a2a-nexus", focus },
+  }), {});
+
+  assert.ok(runnerTask.prompt.includes(focus), "multiline focus with shell characters must remain literal");
+});
+
+test("absent, blank, or non-string focus preserves the exact pre-#1601 prompt (#1601)", () => {
+  const message = "Implement the fix";
+  const cases = [
+    ["absent", undefined],
+    ["empty string", ""],
+    ["blank whitespace", "   \n\t  "],
+    ["number", 42],
+    ["null", null],
+    ["object", { text: "do things" }],
+    ["array", ["do things"]],
+  ];
+
+  for (const [name, focus] of cases) {
+    const payload = { mode: "github-propose-patch", repo: "jinwon-int/a2a-nexus" };
+    if (focus !== undefined) payload.focus = focus;
+    const runnerTask = __test.buildRunnerTask(task({
+      intent: "propose_patch",
+      message,
+      payload,
+    }), {});
+
+    assert.equal(runnerTask.prompt, legacyPrompt(message), `${name} focus must not change the prompt`);
+    assert.ok(!runnerTask.prompt.includes("Task focus:"), `${name} focus must not add a focus label`);
+  }
+});
+
+test("focus identical to the effective message after whitespace trim is not duplicated (#1601)", () => {
+  const message = "Implement the fix";
+  const runnerTask = __test.buildRunnerTask(task({
+    intent: "propose_patch",
+    message,
+    payload: {
+      mode: "github-propose-patch",
+      repo: "jinwon-int/a2a-nexus",
+      focus: "  \n Implement the fix \n\t",
+    },
+  }), {});
+
+  assert.equal(runnerTask.prompt, legacyPrompt(message));
+  assert.equal(
+    runnerTask.prompt.split(message).length - 1,
+    1,
+    "the effective message must appear exactly once",
+  );
+});
+
+test("focus extending the message is kept even though it contains the message as a prefix (#1601)", () => {
+  const message = "Implement the fix";
+  const focus = `${message}\nAlso update docs/agent-manual.md in the same PR.`;
+  const runnerTask = __test.buildRunnerTask(task({
+    intent: "propose_patch",
+    message,
+    payload: { mode: "github-propose-patch", repo: "jinwon-int/a2a-nexus", focus },
+  }), {});
+
+  assert.ok(runnerTask.prompt.includes("Task focus:\n"), "no substring guessing: extended focus must be carried");
+  assert.ok(runnerTask.prompt.includes("Also update docs/agent-manual.md in the same PR."));
+});
+
+test("payload.prompt fallback still feeds the effective message and dedupes against focus (#1601)", () => {
+  const fallback = "Implement the fix from payload.prompt";
+
+  const distinct = __test.buildRunnerTask(task({
+    intent: "propose_patch",
+    message: "",
+    payload: {
+      mode: "github-propose-patch",
+      repo: "jinwon-int/a2a-nexus",
+      prompt: fallback,
+      focus: "Extra scope: run the repository tests.",
+    },
+  }), {});
+  assert.ok(distinct.prompt.startsWith(fallback), "payload.prompt fallback stays the prompt head");
+  assert.ok(distinct.prompt.includes("Task focus:\nExtra scope: run the repository tests."));
+
+  const identical = __test.buildRunnerTask(task({
+    intent: "propose_patch",
+    message: "",
+    payload: {
+      mode: "github-propose-patch",
+      repo: "jinwon-int/a2a-nexus",
+      prompt: fallback,
+      focus: fallback,
+    },
+  }), {});
+  assert.equal(identical.prompt, legacyPrompt(fallback));
+});
+
+test("padded github-propose-patch mode still forwards focus, matching trimmed mode semantics (#1601)", () => {
+  const runnerTask = __test.buildRunnerTask(task({
+    intent: "propose_patch",
+    message: "Implement the fix",
+    payload: {
+      mode: "  github-propose-patch\n",
+      repo: "jinwon-int/a2a-nexus",
+      focus: "Scope: handler only.",
+    },
+  }), {});
+
+  assert.equal(runnerTask.mode, "github-propose-patch");
+  assert.ok(runnerTask.prompt.includes("Task focus:\nScope: handler only."));
+});
+
+test("non-patch modes never receive focus in the runner prompt (#1601)", () => {
+  const focus = "Analysis focus: this must not reach non-patch runner prompts.";
+  const modes = [
+    "analysis-only",
+    "github-verify",
+    "github-readonly-validation",
+    "github-issue-instruction",
+    "docker-broker-noop-smoke",
+    "generic",
+  ];
+
+  for (const mode of modes) {
+    const runnerTask = __test.buildRunnerTask(task({
+      intent: "analyze",
+      message: "Analyze the source",
+      payload: { mode, focus },
+    }), {});
+
+    assert.ok(
+      !runnerTask.prompt.includes(focus) && !runnerTask.prompt.includes("Task focus:"),
+      `mode ${mode} must not receive focus in the prompt`,
+    );
+  }
+});
+
+test("#1601 regression: docker runner executor receives payload.focus inside the task JSON prompt", () => {
+  const dir = mkdtempSync(join(tmpdir(), "a2a-focus-forward-"));
+  const runner = join(dir, "fake-runner.mjs");
+  const invocation = join(dir, "runner-invoked.json");
+  // Invoked via process.execPath + A2A_DOCKER_RUNNER_ARGS_JSON so the probe does
+  // not depend on the exec bit of the checkout/tmp filesystem.
+  writeHybridRunnerStub(runner, `
+const { readFileSync, writeFileSync } = await import("node:fs");
+const taskPath = process.argv.at(-1);
+const executedTask = JSON.parse(readFileSync(taskPath, "utf8"));
+writeFileSync(${JSON.stringify(invocation)}, JSON.stringify(executedTask, null, 2));
+process.stdout.write(JSON.stringify({
+  ok: true,
+  status: "pr_opened",
+  prUrl: "https://github.com/jinwon-int/a2a-nexus/pull/1601",
+  branch: "focus-forward-1601",
+  filesChanged: ["packages/broker/scripts/a2a-task-handler.mjs"],
+  tests: ["node --test packages/broker/scripts/a2a-task-handler.test.mjs -> pass"]
+}) + "\\n");
+`);
+  const focus = [
+    "Scope: only packages/broker/scripts/a2a-task-handler.mjs and its test file.",
+    "Acceptance: node --test packages/broker/scripts/a2a-task-handler.test.mjs must pass.",
+  ].join("\n");
+
+  try {
+    const result = handleTask(patchTask({
+      id: "task-focus-forward-1601",
+      payload: {
+        repo: "jinwon-int/a2a-nexus",
+        issue: "#1601",
+        issueUrl: "https://github.com/jinwon-int/a2a-nexus/issues/1601",
+        focus,
+      },
+    }), {
+      PATH: process.env.PATH,
+      A2A_EXECUTOR_MODE: "docker",
+      A2A_DOCKER_RUNNER_BIN: process.execPath,
+      A2A_DOCKER_RUNNER_ARGS_JSON: JSON.stringify([runner]),
+    });
+
+    assert.equal(result.error, undefined);
+    const executedTask = JSON.parse(readFileSync(invocation, "utf8"));
+    assert.ok(
+      executedTask.prompt.includes("Task focus:\n"),
+      "task JSON handed to the executor must carry the labeled focus section",
+    );
+    assert.ok(
+      executedTask.prompt.includes(focus),
+      "task JSON handed to the executor must contain the full focus body",
+    );
+    assert.ok(
+      executedTask.prompt.indexOf("Implement the fix") < executedTask.prompt.indexOf("Task focus:"),
+      "brief message must precede the focus section",
+    );
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
 test("github-readonly-validation alias is treated as GitHub evidence and refuses generic builtin success", () => {
   const result = handleTask({
     id: "task-readonly-alias",
