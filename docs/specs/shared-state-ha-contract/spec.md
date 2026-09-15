@@ -610,6 +610,26 @@ evidence path for this claim?” can be answered from typed graph state and
 source references alone, with an explicit completeness result, and an injected
 false projection batch can be reversed deterministically.
 
+The closed query union additionally carries the additive
+`queryGraphSourceHighWater` operation (#1504 cold-start resync, Q4-successor
+source design). It is bound to the literal `broker.claim-graph` namespace and
+requires and achieves exactly `serializable` / `per-namespace` consistency.
+A succeeded result contains ONLY the namespace and the canonical nonnegative
+decimal `sourceSequenceHighWater` — the greatest stored source sequence
+anywhere in the namespace, independent of source stream, computed by exact
+BigInt comparison rather than a row count or TEXT order — and an empty
+namespace is honestly `0`. Each stored source fact must have a positive
+sequence; a persisted zero is corruption and fails the whole scoped read.
+The read performs no mutation, clock advance, or
+sequence allocation, reports no anchor, checkpoint, completeness, or write
+token, and fails closed on any malformed stored sequence in the requested
+namespace without normalization or a zero fallback; unrelated namespaces
+cannot affect the scoped read. Producers resolve a stale append expectation
+with one such read plus a bounded compare-and-set retry; a durable high-water
+below an already observed expectation fails closed instead of regressing the
+tracked value. Compatibility is additive only: parsers without this operation
+reject the unknown discriminant, with no fallback and no mixed-version claim.
+
 ## 6. `SharedStateStorageAdapterV1`
 
 ### 6.1 Contract identity

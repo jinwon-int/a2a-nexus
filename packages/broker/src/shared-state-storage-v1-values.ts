@@ -182,6 +182,7 @@ export const SHARED_STATE_STORAGE_V1_VALUES = deepFreeze({
     "per-event",
     "per-source-stream",
     "projection-batch",
+    "per-namespace",
   ],
   resultCompletenessStates: [
     "complete",
@@ -491,6 +492,7 @@ export const SHARED_STATE_STORAGE_V1_VALUES = deepFreeze({
   queryOperations: [
     "reconcileOutbox",
     "queryGraphEvidencePath",
+    "queryGraphSourceHighWater",
   ],
   queryStatuses: [
     "succeeded",
@@ -504,6 +506,10 @@ export const SHARED_STATE_STORAGE_V1_VALUES = deepFreeze({
     queryGraphEvidencePath: {
       model: "monotonic-eventual",
       scope: "projection-batch",
+    },
+    queryGraphSourceHighWater: {
+      model: "serializable",
+      scope: "per-namespace",
     },
   },
   graphEvidenceResults: [

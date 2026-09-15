@@ -105,8 +105,8 @@ test("exposes only the planned broad async query member", async () => {
   assert.equal(calls.length, 1);
 });
 
-test("passes both validated operation results without weakening them", async () => {
-  for (const [requestIndex, resultIndex] of [[0, 0], [1, 1]] as const) {
+test("passes all three validated operation results without weakening them", async () => {
+  for (const [requestIndex, resultIndex] of [[0, 0], [1, 1], [2, 6]] as const) {
     const expected = result(resultIndex);
     const surface = createSharedStateSqliteQuerySurfaceV1({
       query: () => ({ ok: true, value: expected }),
@@ -144,7 +144,7 @@ test("normalizes every SQLite-local failure without inventing evidence", async (
     const surface = createSharedStateSqliteQuerySurfaceV1({
       query: () => localFailure(code),
     });
-    for (const requestIndex of [0, 1]) {
+    for (const requestIndex of [0, 1, 2]) {
       const input = request(requestIndex);
       const value = await surface.query(input);
       expectUnavailable(
@@ -231,6 +231,11 @@ test("maps a real not-ready SQLite dispatcher to closed unavailable", async () =
     expectUnavailable(
       await surface.query(request(1)),
       "queryGraphEvidencePath",
+      "authority_unavailable",
+    );
+    expectUnavailable(
+      await surface.query(request(2)),
+      "queryGraphSourceHighWater",
       "authority_unavailable",
     );
   } finally {

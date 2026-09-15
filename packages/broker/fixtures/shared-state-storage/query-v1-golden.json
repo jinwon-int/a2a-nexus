@@ -37,6 +37,19 @@
           "scope": "projection-batch"
         }
       }
+    },
+    {
+      "kind": "SharedStateQueryRequestV1",
+      "contractVersion": "a2a.shared-state.storage/v1",
+      "queryVersion": 1,
+      "operation": "queryGraphSourceHighWater",
+      "input": {
+        "namespace": "broker.claim-graph",
+        "requiredConsistency": {
+          "model": "serializable",
+          "scope": "per-namespace"
+        }
+      }
     }
   ],
   "results": [
@@ -178,6 +191,30 @@
       "contractVersion": "a2a.shared-state.storage/v1",
       "queryVersion": 1,
       "operation": "reconcileOutbox",
+      "status": "unavailable",
+      "achievedConsistency": null,
+      "reasonCode": "authority_unavailable"
+    },
+    {
+      "kind": "SharedStateQueryResultV1",
+      "contractVersion": "a2a.shared-state.storage/v1",
+      "queryVersion": 1,
+      "operation": "queryGraphSourceHighWater",
+      "status": "succeeded",
+      "achievedConsistency": {
+        "model": "serializable",
+        "scope": "per-namespace"
+      },
+      "result": {
+        "namespace": "broker.claim-graph",
+        "sourceSequenceHighWater": "9007199254740993"
+      }
+    },
+    {
+      "kind": "SharedStateQueryResultV1",
+      "contractVersion": "a2a.shared-state.storage/v1",
+      "queryVersion": 1,
+      "operation": "queryGraphSourceHighWater",
       "status": "unavailable",
       "achievedConsistency": null,
       "reasonCode": "authority_unavailable"

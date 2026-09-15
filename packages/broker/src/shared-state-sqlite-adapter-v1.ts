@@ -23,7 +23,11 @@
  * Primitives: this adapter implements the replay, rate, lease, idempotency,
  * claim-graph, and outbox commands. Q2 added the closed `reconcileOutbox`
  * read; Q3 adds the closed `queryGraphEvidencePath` read over the durable
- * source/batch/checkpoint ledger. Broker runtime wiring, retention, and prune
+ * source/batch/checkpoint ledger. The #1504 cold-start resync adds the closed
+ * `queryGraphSourceHighWater` read: a strict, namespace-scoped, write-free
+ * observation of the greatest stored source sequence, so callers resync a
+ * stale CAS expectation in one read plus a bounded retry instead of probing
+ * rejected appends upward. Broker runtime wiring, retention, and prune
  * behaviour remain absent.
  *
  * Outbox reconciliation takes `BEGIN IMMEDIATE` even though it does not write.
@@ -148,6 +152,7 @@ export const SHARED_STATE_SQLITE_ADAPTER_V1 = Object.freeze({
 export const SHARED_STATE_SQLITE_QUERY_OPERATIONS_V1 = Object.freeze([
   "reconcileOutbox",
   "queryGraphEvidencePath",
+  "queryGraphSourceHighWater",
 ] as const);
 
 export const SHARED_STATE_SQLITE_ADAPTER_ERROR_CODES_V1 = Object.freeze([
@@ -294,6 +299,16 @@ type GraphEvidencePathQueryRequestV1 = Extract<
 type GraphEvidencePathQueryResultV1 = Extract<
   SharedStateQueryResultV1,
   { readonly operation: "queryGraphEvidencePath" }
+>;
+
+type GraphSourceHighWaterQueryRequestV1 = Extract<
+  SharedStateQueryRequestV1,
+  { readonly operation: "queryGraphSourceHighWater" }
+>;
+
+type GraphSourceHighWaterQueryResultV1 = Extract<
+  SharedStateQueryResultV1,
+  { readonly operation: "queryGraphSourceHighWater" }
 >;
 
 /**
@@ -464,6 +479,41 @@ function graphQueryUnavailableEnvelope(
   reasonCode: (typeof V.queryUnavailableReasonCodes)[number],
 ): SharedStateSqliteAdapterResultV1<GraphEvidencePathQueryResultV1> {
   return graphQueryEnvelope({
+    status: V.queryStatuses[1],
+    achievedConsistency: null,
+    reasonCode,
+  });
+}
+
+function graphHighWaterQueryEnvelope(
+  tail: Record<string, unknown>,
+): SharedStateSqliteAdapterResultV1<GraphSourceHighWaterQueryResultV1> {
+  return {
+    ok: true,
+    value: {
+      kind: V.kinds.queryResult,
+      contractVersion: V.versions.contract,
+      queryVersion: V.versions.query,
+      operation: V.queryOperations[2],
+      ...tail,
+    } as GraphSourceHighWaterQueryResultV1,
+  };
+}
+
+function graphHighWaterQuerySucceededEnvelope(
+  result: Record<string, unknown>,
+): SharedStateSqliteAdapterResultV1<GraphSourceHighWaterQueryResultV1> {
+  return graphHighWaterQueryEnvelope({
+    status: V.queryStatuses[0],
+    achievedConsistency: V.queryConsistency.queryGraphSourceHighWater,
+    result,
+  });
+}
+
+function graphHighWaterQueryUnavailableEnvelope(
+  reasonCode: (typeof V.queryUnavailableReasonCodes)[number],
+): SharedStateSqliteAdapterResultV1<GraphSourceHighWaterQueryResultV1> {
+  return graphHighWaterQueryEnvelope({
     status: V.queryStatuses[1],
     achievedConsistency: null,
     reasonCode,
@@ -878,6 +928,46 @@ function readGraphQuerySourceRowCount(
     .get(namespace) as { total?: unknown } | undefined;
   if (row === undefined || typeof row.total !== "number") return null;
   return BigInt(row.total);
+}
+
+/**
+ * Strict namespace high-water for the closed `queryGraphSourceHighWater` read:
+ * the greatest canonical positive decimal source sequence recorded anywhere
+ * in ONE namespace, independent of source stream, compared as BigInt (never a
+ * COUNT — a sparse or externally seeded ledger would make the row count lie —
+ * and never plain TEXT order, where "10" sorts before "9").
+ *
+ * Unlike the append-path helper, this read has NO permissive fallback: every
+ * stored sequence in the requested namespace must already be a canonical
+ * positive decimal within the existing 40-digit bound. Zero is reserved for
+ * the result of an empty namespace, never a persisted source fact. Any malformed,
+ * negative, fractional, oversized, or non-canonical row fails the whole
+ * scoped read (`null` -> closed `authority_unavailable`); a valid maximum
+ * elsewhere in the namespace does not rehabilitate it, invalid values are
+ * never normalized, and zero is never returned as an error fallback. Rows in
+ * OTHER namespaces are outside this scoped read and cannot affect the answer.
+ */
+function readGraphSourceHighWaterStrictly(
+  db: DatabaseSync,
+  namespace: string,
+): bigint | null {
+  const rows = preparedStmt(db,
+      `SELECT source_sequence FROM shared_state_graph_source
+        WHERE namespace = ?`,
+    )
+    .all(namespace) as readonly { source_sequence?: unknown }[];
+  let high: bigint | null = null;
+  for (const row of rows) {
+    if (
+      typeof row.source_sequence !== "string"
+      || !POSITIVE_DECIMAL_V1.test(row.source_sequence)
+    ) {
+      return null;
+    }
+    const value = BigInt(row.source_sequence);
+    if (high === null || value > high) high = value;
+  }
+  return high ?? 0n;
 }
 
 /**
@@ -1516,6 +1606,9 @@ export class SharedStateSqliteAdapterV1 {
     if (parsed.value.operation === "queryGraphEvidencePath") {
       return this.#queryGraphEvidencePath(parsed.value);
     }
+    if (parsed.value.operation === "queryGraphSourceHighWater") {
+      return this.#queryGraphSourceHighWater(parsed.value);
+    }
     const input = parsed.value.input;
 
     const lifecycleEpoch = this.#lifecycleEpoch;
@@ -1669,6 +1762,89 @@ export class SharedStateSqliteAdapterV1 {
         }
       }
       return graphQueryUnavailableEnvelope(
+        isSqliteBusy(error) ? "lock_timeout" : "authority_unavailable",
+      );
+    }
+  }
+
+  /**
+   * The closed Q4-successor high-water read (#1504 cold-start resync).
+   *
+   * Same inline boundary as the other two closed queries: `BEGIN IMMEDIATE`
+   * with the owner token and lifecycle epoch verified inside that one
+   * serialization boundary, so no ownership change can land between
+   * authorization and observation (no TOCTOU). The successful read performs
+   * no insert, update, delete, clock-floor advance, or sequence allocation —
+   * the adapter stays ready and the next CAS append is untouched; the query
+   * never authorizes an append, it only reports durable state.
+   *
+   * The answer is the greatest canonical stored sequence across the whole
+   * `broker.claim-graph` namespace (empty namespace = 0), computed by strict
+   * BigInt comparison; any malformed stored sequence in the requested
+   * namespace fails closed as `authority_unavailable` without mutation.
+   * Lost ownership, a busy writer, and a released adapter reuse the existing
+   * closed failure semantics (`lost_ownership`, `lock_timeout`, `not_ready`).
+   */
+  #queryGraphSourceHighWater(
+    request: GraphSourceHighWaterQueryRequestV1,
+  ): SharedStateSqliteAdapterResultV1<GraphSourceHighWaterQueryResultV1> {
+    const lifecycleEpoch = this.#lifecycleEpoch;
+    if (this.#state !== "ready" || lifecycleEpoch === null) {
+      return failure("not_ready");
+    }
+
+    let began = false;
+    try {
+      this.#db.exec("BEGIN IMMEDIATE");
+      began = true;
+
+      const ownership = readOwnership(this.#db);
+      if (ownership === null) {
+        this.#db.exec("ROLLBACK");
+        began = false;
+        this.#state = "failed";
+        return graphHighWaterQueryUnavailableEnvelope("authority_unavailable");
+      }
+      if (
+        ownership.owner_token !== this.#ownerToken
+        || ownership.lifecycle_epoch !== lifecycleEpoch
+      ) {
+        this.#db.exec("ROLLBACK");
+        began = false;
+        this.#state = "failed";
+        return graphHighWaterQueryUnavailableEnvelope("lost_ownership");
+      }
+
+      const highWater = readGraphSourceHighWaterStrictly(
+        this.#db,
+        request.input.namespace,
+      );
+      if (highWater === null) {
+        this.#db.exec("ROLLBACK");
+        began = false;
+        return graphHighWaterQueryUnavailableEnvelope("authority_unavailable");
+      }
+      const result = graphHighWaterQuerySucceededEnvelope({
+        namespace: request.input.namespace,
+        sourceSequenceHighWater: highWater.toString(),
+      });
+      if (!result.ok) {
+        this.#db.exec("ROLLBACK");
+        began = false;
+        return graphHighWaterQueryUnavailableEnvelope("authority_unavailable");
+      }
+      this.#db.exec("COMMIT");
+      began = false;
+      return result;
+    } catch (error) {
+      if (began) {
+        try {
+          this.#db.exec("ROLLBACK");
+        } catch {
+          // Preserve the query failure; rollback failure cannot strengthen it.
+        }
+      }
+      return graphHighWaterQueryUnavailableEnvelope(
         isSqliteBusy(error) ? "lock_timeout" : "authority_unavailable",
       );
     }

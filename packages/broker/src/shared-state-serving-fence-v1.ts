@@ -60,6 +60,14 @@
  * match the namespace high-water; every failure collapses to `unavailable` —
  * the source append fails when its authority is unavailable (§5.6 partition
  * behavior).
+ *
+ * #1504 cold-start resync: the fence also exposes the narrow fail-closed
+ * `queryGraphSourceHighWater` window onto the closed additive
+ * `queryGraphSourceHighWater` query over the same namespace. It reports the
+ * durable high-water so the gate can resync a stale CAS expectation with one
+ * read plus a bounded retry instead of probing rejected appends upward; the
+ * read itself authorizes nothing (ownership and the CAS stay on the append
+ * path), and every failure collapses to `unavailable`.
  */
 
 import { createHash, randomUUID } from "node:crypto";
@@ -80,6 +88,7 @@ import {
 } from "./shared-state-sqlite-schema-v1.js";
 import { digestSharedStateKeyV1 } from "./shared-state-storage-keyspace-v1.js";
 import {
+  parseSharedStateQueryRequestV1,
   parseSharedStateTransactionCommandV1,
   type SharedStateTransactionResultV1,
 } from "./shared-state-storage-contract-v1.js";
@@ -215,6 +224,17 @@ export type SharedStateFenceGraphSourceOutcomeV1 =
   | { readonly outcome: "appended"; readonly sourceSequence: string }
   | { readonly outcome: "replayed"; readonly sourceSequence: string }
   | { readonly outcome: "sequence_conflict" }
+  | { readonly outcome: "unavailable"; readonly reasonCode: string };
+
+/**
+ * Outcome of one fence-mediated `queryGraphSourceHighWater` (#1504 cold-start
+ * resync). Only a succeeded closed query yields `observed` with the exact
+ * canonical decimal string the namespace ledger holds; every adapter failure,
+ * parse failure, released fence, or unavailable envelope is `unavailable` —
+ * never a local guess, a zero fallback, or a fabricated sequence.
+ */
+export type SharedStateFenceGraphHighWaterOutcomeV1 =
+  | { readonly outcome: "observed"; readonly sourceSequenceHighWater: string }
   | { readonly outcome: "unavailable"; readonly reasonCode: string };
 
 /**
@@ -411,6 +431,16 @@ export interface SharedStateServingFenceV1 {
     },
     nowMs: number,
   ): SharedStateFenceGraphSourceOutcomeV1;
+  /**
+   * #1504 cold-start resync: narrow fail-closed high-water read over the
+   * closed `queryGraphSourceHighWater` query (namespace
+   * `broker.claim-graph`). The read never authorizes an append — ownership
+   * and the CAS are enforced by the next `appendTaskRunGraphSource` — it only
+   * reports the durable namespace high-water so a stale tracked expectation
+   * can resync in one read plus a bounded retry. Every failure collapses to
+   * `unavailable`; the caller must fail closed rather than guess.
+   */
+  queryGraphSourceHighWater(): SharedStateFenceGraphHighWaterOutcomeV1;
 }
 
 function fail(
@@ -1481,6 +1511,47 @@ export function openSharedStateServingFenceV1(input: {
             return Object.freeze({ outcome: "unavailable", reasonCode: result.error.code });
           }
           return Object.freeze(fenceGraphSourceOutcomeFromResult(result.value));
+        } catch {
+          return Object.freeze({ outcome: "unavailable", reasonCode: "store_failure" });
+        }
+      },
+      queryGraphSourceHighWater(): SharedStateFenceGraphHighWaterOutcomeV1 {
+        if (released) {
+          return Object.freeze({ outcome: "unavailable", reasonCode: "adapter_unavailable" });
+        }
+        try {
+          const request = parseSharedStateQueryRequestV1({
+            kind: V.kinds.queryRequest,
+            contractVersion: V.versions.contract,
+            queryVersion: V.versions.query,
+            operation: V.queryOperations[2],
+            input: {
+              namespace: SHARED_STATE_SERVING_FENCE_V1.graphNamespace,
+              requiredConsistency: V.queryConsistency.queryGraphSourceHighWater,
+            },
+          });
+          if (!request.ok) {
+            return Object.freeze({ outcome: "unavailable", reasonCode: request.error.code });
+          }
+          const result = adapter.query(request.value);
+          if (!result.ok) {
+            return Object.freeze({ outcome: "unavailable", reasonCode: result.error.code });
+          }
+          if (
+            result.value.status === V.queryStatuses[0]
+            && result.value.operation === V.queryOperations[2]
+            && typeof result.value.result.sourceSequenceHighWater === "string"
+          ) {
+            return Object.freeze({
+              outcome: "observed",
+              sourceSequenceHighWater: result.value.result.sourceSequenceHighWater,
+            });
+          }
+          const reasonCode = (result.value as { reasonCode?: unknown }).reasonCode;
+          return Object.freeze({
+            outcome: "unavailable",
+            reasonCode: typeof reasonCode === "string" ? reasonCode : "store_failure",
+          });
         } catch {
           return Object.freeze({ outcome: "unavailable", reasonCode: "store_failure" });
         }

@@ -310,13 +310,82 @@ function unavailable(
   return value.reasonCode;
 }
 
-test("pins both closed SQLite query operations and an empty complete graph", () => {
+type HighWaterQueryRequestV1 = Extract<
+  SharedStateQueryRequestV1,
+  { readonly operation: "queryGraphSourceHighWater" }
+>;
+
+type HighWaterQuerySucceededV1 = Extract<
+  SharedStateQueryResultV1,
+  {
+    readonly operation: "queryGraphSourceHighWater";
+    readonly status: "succeeded";
+  }
+>["result"];
+
+function highWaterQueryRequest(
+  namespace: string = HIGH_WATER_NAMESPACE,
+): HighWaterQueryRequestV1 {
+  const parsed = parseSharedStateQueryRequestV1({
+    kind: V.kinds.queryRequest,
+    contractVersion: V.versions.contract,
+    queryVersion: V.versions.query,
+    operation: "queryGraphSourceHighWater",
+    input: {
+      namespace,
+      requiredConsistency: V.queryConsistency.queryGraphSourceHighWater,
+    },
+  });
+  assert.equal(parsed.ok, true);
+  if (!parsed.ok || parsed.value.operation !== "queryGraphSourceHighWater") {
+    throw new Error("unreachable");
+  }
+  return parsed.value;
+}
+
+function highWaterSucceeded(
+  result: SharedStateSqliteAdapterResultV1<SharedStateQueryResultV1>,
+): HighWaterQuerySucceededV1 {
+  const value = queryValue(result);
+  assert.equal(value.operation, "queryGraphSourceHighWater");
+  assert.equal(value.status, "succeeded");
+  if (
+    value.operation !== "queryGraphSourceHighWater"
+    || value.status !== "succeeded"
+  ) {
+    throw new Error("unreachable");
+  }
+  assert.deepEqual(
+    value.achievedConsistency,
+    V.queryConsistency.queryGraphSourceHighWater,
+  );
+  return value.result;
+}
+
+function highWaterUnavailable(
+  result: SharedStateSqliteAdapterResultV1<SharedStateQueryResultV1>,
+): string {
+  const value = queryValue(result);
+  assert.equal(value.operation, "queryGraphSourceHighWater");
+  assert.equal(value.status, "unavailable");
+  if (
+    value.operation !== "queryGraphSourceHighWater"
+    || value.status !== "unavailable"
+  ) {
+    throw new Error("unreachable");
+  }
+  assert.equal(value.achievedConsistency, null);
+  return value.reasonCode;
+}
+
+test("pins all three closed SQLite query operations and an empty complete graph", () => {
   const fixture = makeFixture();
   try {
     const owner = readyAdapter(fixture.db);
     assert.deepEqual(SHARED_STATE_SQLITE_QUERY_OPERATIONS_V1, [
       "reconcileOutbox",
       "queryGraphEvidencePath",
+      "queryGraphSourceHighWater",
     ]);
     assert.equal(Object.isFrozen(SHARED_STATE_SQLITE_QUERY_OPERATIONS_V1), true);
 
@@ -530,6 +599,410 @@ test("keeps graph reads outside the pre-open lifecycle", () => {
     }));
     assert.equal(result.ok, false);
     if (!result.ok) assert.equal(result.error.code, "not_ready");
+  } finally {
+    disposeFixture(fixture);
+  }
+});
+
+// --- #1504 cold-start resync: the closed `queryGraphSourceHighWater` read ---
+
+// The high-water operation is bound to the one literal §5.6 namespace the
+// fence and gate share, NOT the per-fixture graph namespace above.
+const HIGH_WATER_NAMESPACE = "broker.claim-graph";
+const HIGH_WATER_PROJECTION = "high-water-projection-v1";
+
+function highWaterDigest(
+  domain: string,
+  components: readonly Record<string, unknown>[],
+): string {
+  const built = digestSharedStateKeyV1({
+    keyspaceVersion: V.versions.keyspace,
+    domain,
+    namespace: HIGH_WATER_NAMESPACE,
+    components,
+  });
+  assert.equal(built.ok, true);
+  if (!built.ok) throw new Error("unreachable");
+  return built.value.digest;
+}
+
+function highWaterFactDigest(index: number): string {
+  return highWaterDigest("broker.claim-graph.source-fact", [
+    { field: "nodeType", type: "utf8", value: "AgentRun" },
+    { field: "fact", type: "bytes", value: index.toString(16).padStart(4, "0") },
+  ]);
+}
+
+function highWaterStreamKey(streamId: string): string {
+  return highWaterDigest("broker.claim-graph.source-stream-key", [
+    { field: "sourceType", type: "utf8", value: "high-water-test" },
+    { field: "sourceId", type: "utf8", value: streamId },
+  ]);
+}
+
+function highWaterAppendCommand(
+  index: number,
+  expected: string,
+  streamId = "authority-a",
+): GraphCommandV1<"appendGraphSource"> {
+  return graphCommand("appendGraphSource", {
+    namespace: HIGH_WATER_NAMESPACE,
+    sourceStreamKeyDigest: highWaterStreamKey(streamId),
+    sourceFactDigest: highWaterFactDigest(index),
+    nodeType: "AgentRun",
+    expectedSourceSequence: expected,
+  });
+}
+
+function seedHighWaterSources(
+  owner: SharedStateSqliteAdapterV1,
+  count: number,
+  streamId = "authority-a",
+): bigint {
+  let high = 0n;
+  for (let index = 1; index <= count; index += 1) {
+    const committed = transact(
+      owner,
+      highWaterAppendCommand(index, high.toString(), streamId),
+      3_000 + index,
+    );
+    high += 1n;
+    assert.equal(committed.sourceSequence, high.toString());
+  }
+  return high;
+}
+
+function observedHighWater(
+  owner: SharedStateSqliteAdapterV1,
+): HighWaterQuerySucceededV1 {
+  return highWaterSucceeded(owner.query(highWaterQueryRequest()));
+}
+
+function storedSequenceCount(db: DatabaseSync, namespace: string): number {
+  return (db.prepare(
+    `SELECT COUNT(*) AS count FROM shared_state_graph_source WHERE namespace = ?`,
+  ).get(namespace) as { count: number }).count;
+}
+
+function insertRawSourceRow(
+  db: DatabaseSync,
+  factDigest: string,
+  sourceSequence: string,
+  namespace = HIGH_WATER_NAMESPACE,
+): void {
+  db.prepare(
+    `INSERT INTO shared_state_graph_source
+       (namespace, source_fact_digest, source_stream_key_digest,
+        node_type, source_sequence)
+     VALUES (?, ?, ?, ?, ?)`,
+  ).run(
+    namespace,
+    factDigest,
+    highWaterStreamKey("raw-seed"),
+    "AgentRun",
+    sourceSequence,
+  );
+}
+
+test("high-water: an empty real SQLite namespace observes canonical zero", () => {
+  const fixture = makeFixture();
+  try {
+    const owner = readyAdapter(fixture.db);
+    assert.deepEqual(observedHighWater(owner), {
+      namespace: HIGH_WATER_NAMESPACE,
+      sourceSequenceHighWater: "0",
+    });
+    // The read allocated nothing.
+    assert.equal(storedSequenceCount(fixture.db, HIGH_WATER_NAMESPACE), 0);
+  } finally {
+    disposeFixture(fixture);
+  }
+});
+
+test("high-water: real appends above nine, replay stays original, a second authority advances, reopen persists", () => {
+  const fixture = makeFixture();
+  let closed = false;
+  try {
+    const owner = readyAdapter(fixture.db);
+    const seeded = seedHighWaterSources(owner, 12);
+    assert.equal(seeded, 12n);
+    assert.equal(observedHighWater(owner).sourceSequenceHighWater, "12");
+
+    // Replay of an OLD fact: the adapter answers the original sequence
+    // regardless of the stale expectation, and the high-water does not move.
+    const replayed = transact(
+      owner,
+      highWaterAppendCommand(1, "0"),
+      4_000,
+    );
+    assert.equal(replayed.decision, "replayed");
+    assert.equal(replayed.sourceSequence, "1");
+    assert.equal(observedHighWater(owner).sourceSequenceHighWater, "12");
+
+    // A second append authority on a DIFFERENT source stream advances the
+    // same namespace: the read spans streams, the max is namespace-wide.
+    const other = transact(
+      owner,
+      highWaterAppendCommand(101, "12", "authority-b"),
+      4_001,
+    );
+    assert.equal(other.decision, "appended");
+    assert.equal(other.sourceSequence, "13");
+    assert.equal(observedHighWater(owner).sourceSequenceHighWater, "13");
+
+    // Reopen the same SQLite file: the namespace high-water persists.
+    // Release ownership cleanly first (drain + close), as a real restart does.
+    assert.equal(owner.drain().ok, true);
+    assert.equal(owner.close().ok, true);
+    fixture.db.close();
+    closed = true;
+    const reopened = new DatabaseSync(fixture.path);
+    try {
+      const owner2 = new SharedStateSqliteAdapterV1({
+        db: reopened,
+        ownerToken: "graph-query-owner-reopen",
+        backwardSkewToleranceMs: "0",
+      });
+      assert.equal(owner2.open().ok, true);
+      assert.equal(observedHighWater(owner2).sourceSequenceHighWater, "13");
+    } finally {
+      reopened.close();
+    }
+  } finally {
+    if (!closed) fixture.db.close();
+    rmSync(fixture.directory, { recursive: true, force: true });
+  }
+});
+
+test("high-water: labeled direct sparse fixture above MAX_SAFE_INTEGER — greatest canonical sequence, not COUNT, not TEXT order", () => {
+  const fixture = makeFixture();
+  try {
+    const owner = readyAdapter(fixture.db);
+    // Sparse direct seeds: gaps everywhere, TEXT order would pick "9" over
+    // "10", and COUNT would answer 4. The true maximum is 2^53 + 1.
+    insertRawSourceRow(fixture.db, highWaterFactDigest(1), "1");
+    insertRawSourceRow(fixture.db, highWaterFactDigest(9), "9");
+    insertRawSourceRow(fixture.db, highWaterFactDigest(10), "10");
+    insertRawSourceRow(
+      fixture.db,
+      highWaterFactDigest(9007199254740993),
+      "9007199254740993",
+    );
+
+    assert.equal(
+      observedHighWater(owner).sourceSequenceHighWater,
+      "9007199254740993",
+    );
+  } finally {
+    disposeFixture(fixture);
+  }
+});
+
+test("high-water: ANY malformed stored sequence in the namespace fails closed without mutation", () => {
+  const fixture = makeFixture();
+  try {
+    const owner = readyAdapter(fixture.db);
+    insertRawSourceRow(fixture.db, highWaterFactDigest(1), "1");
+    insertRawSourceRow(fixture.db, highWaterFactDigest(2), "2");
+    const before = () =>
+      fixture.db.prepare(
+        `SELECT source_fact_digest, source_sequence
+           FROM shared_state_graph_source WHERE namespace = ?
+          ORDER BY source_fact_digest`,
+      ).all(HIGH_WATER_NAMESPACE);
+
+    for (const malformed of ["0", "007", "-5", "1.5", "9".repeat(41), "", "1e3"]) {
+      // Corrupt a NON-maximum row: a valid maximum elsewhere must not
+      // rehabilitate the scoped read.
+      fixture.db
+        .prepare(
+          `UPDATE shared_state_graph_source SET source_sequence = ?
+            WHERE namespace = ? AND source_fact_digest = ?`,
+        )
+        .run(malformed, HIGH_WATER_NAMESPACE, highWaterFactDigest(1));
+      const corruptedOne = before();
+      assert.equal(
+        highWaterUnavailable(owner.query(highWaterQueryRequest())),
+        "authority_unavailable",
+        `expected fail-closed for ${JSON.stringify(malformed)}`,
+      );
+      // The failed read itself mutated nothing.
+      assert.deepEqual(before(), corruptedOne);
+      // And corrupting the maximum row fails the same way.
+      fixture.db
+        .prepare(
+          `UPDATE shared_state_graph_source SET source_sequence = ?
+            WHERE namespace = ? AND source_fact_digest = ?`,
+        )
+        .run(malformed, HIGH_WATER_NAMESPACE, highWaterFactDigest(2));
+      const corruptedBoth = before();
+      assert.equal(
+        highWaterUnavailable(owner.query(highWaterQueryRequest())),
+        "authority_unavailable",
+      );
+      assert.deepEqual(before(), corruptedBoth);
+      // Restore both rows for the next case.
+      fixture.db
+        .prepare(
+          `UPDATE shared_state_graph_source SET source_sequence = ?
+            WHERE namespace = ? AND source_fact_digest = ?`,
+        )
+        .run("1", HIGH_WATER_NAMESPACE, highWaterFactDigest(1));
+      fixture.db
+        .prepare(
+          `UPDATE shared_state_graph_source SET source_sequence = ?
+            WHERE namespace = ? AND source_fact_digest = ?`,
+        )
+        .run("2", HIGH_WATER_NAMESPACE, highWaterFactDigest(2));
+    }
+
+    // Values are never normalized: after the read, the store still holds
+    // exactly the canonical rows, and the read recovers to the true maximum.
+    assert.equal(observedHighWater(owner).sourceSequenceHighWater, "2");
+  } finally {
+    disposeFixture(fixture);
+  }
+});
+
+test("high-water: unrelated namespaces never affect the scoped read", () => {
+  const fixture = makeFixture();
+  try {
+    const owner = readyAdapter(fixture.db);
+    insertRawSourceRow(fixture.db, highWaterFactDigest(5), "5");
+    // Malformed rows in OTHER namespaces are outside this scoped read.
+    insertRawSourceRow(fixture.db, "other-fact-1", "007", "broker.claim-graph.other");
+    insertRawSourceRow(fixture.db, "other-fact-2", "999", "broker.claim-graph.aux");
+    assert.equal(
+      observedHighWater(owner).sourceSequenceHighWater,
+      "5",
+    );
+    assert.equal(storedSequenceCount(fixture.db, "broker.claim-graph"), 1);
+  } finally {
+    disposeFixture(fixture);
+  }
+});
+
+test("high-water: projection rollback leaves the source high-water untouched; the read recovers after a lock is released", () => {
+  const fixture = makeFixture();
+  try {
+    const owner = readyAdapter(fixture.db);
+    const seeded = seedHighWaterSources(owner, 3);
+    assert.equal(seeded, 3n);
+
+    const batchKey = highWaterDigest("broker.claim-graph.projection-batch-key", [
+      { field: "projectionVersion", type: "utf8", value: HIGH_WATER_PROJECTION },
+      { field: "batchId", type: "utf8", value: "batch-one" },
+    ]);
+    const inverse = highWaterDigest("broker.claim-graph.projection-inverse", [
+      { field: "inverse", type: "bytes", value: "696e7665727365" },
+    ]);
+    transact(
+      owner,
+      graphCommand("applyGraphProjectionBatch", {
+        namespace: HIGH_WATER_NAMESPACE,
+        projectionVersion: HIGH_WATER_PROJECTION,
+        batchKeyDigest: batchKey,
+        batchDigest: highWaterDigest("broker.claim-graph.projection-batch", [
+          { field: "batch", type: "bytes", value: "62617463682d6f6e65" },
+        ]),
+        inverseDigest: inverse,
+        sourceSequenceFrom: "1",
+        sourceSequenceThrough: "3",
+        expectedCheckpointSequence: "0",
+      }),
+      5_000,
+    );
+    transact(
+      owner,
+      graphCommand("rollbackGraphProjectionBatch", {
+        namespace: HIGH_WATER_NAMESPACE,
+        projectionVersion: HIGH_WATER_PROJECTION,
+        batchKeyDigest: batchKey,
+        rollbackBatchKeyDigest: highWaterDigest(
+          "broker.claim-graph.rollback-batch-key",
+          [
+            { field: "projectionVersion", type: "utf8", value: HIGH_WATER_PROJECTION },
+            { field: "rollbackId", type: "utf8", value: "rollback-one" },
+          ],
+        ),
+        inverseDigest: inverse,
+        expectedCheckpointSequence: "3",
+      }),
+      5_001,
+    );
+
+    // A valid rollback restores the CHECKPOINT; immutable source facts — and
+    // therefore the namespace source high-water — are untouched.
+    assert.equal(observedHighWater(owner).sourceSequenceHighWater, "3");
+  } finally {
+    disposeFixture(fixture);
+  }
+
+  // Recovery where valid: once the conflicting writer releases the lock,
+  // the same read succeeds against the unchanged store.
+  const locked = makeFixture();
+  const blocker = new DatabaseSync(locked.path);
+  try {
+    const owner = readyAdapter(locked.db);
+    insertRawSourceRow(locked.db, highWaterFactDigest(7), "7");
+    blocker.exec("BEGIN IMMEDIATE");
+    assert.equal(
+      highWaterUnavailable(owner.query(highWaterQueryRequest())),
+      "lock_timeout",
+    );
+    blocker.exec("ROLLBACK");
+    assert.equal(observedHighWater(owner).sourceSequenceHighWater, "7");
+    assert.equal(storedSequenceCount(locked.db, HIGH_WATER_NAMESPACE), 1);
+  } finally {
+    disposeFixture(locked, [blocker]);
+  }
+});
+
+test("high-water: lost ownership and a released adapter fail closed without mutation", () => {
+  const lost = makeFixture();
+  try {
+    const owner = readyAdapter(lost.db);
+    insertRawSourceRow(lost.db, highWaterFactDigest(2), "2");
+    lost.db
+      .prepare(`UPDATE shared_state_ownership SET owner_token = ? WHERE id = ?`)
+      .run("graph-query-owner-b", SHARED_STATE_SQLITE_ADAPTER_V1.ownershipRowId);
+    assert.equal(
+      highWaterUnavailable(owner.query(highWaterQueryRequest())),
+      "lost_ownership",
+    );
+    assert.equal(owner.lifecycle()?.state, "failed");
+    assert.equal(storedSequenceCount(lost.db, HIGH_WATER_NAMESPACE), 1);
+  } finally {
+    disposeFixture(lost);
+  }
+
+  const released = makeFixture();
+  try {
+    const owner = readyAdapter(released.db);
+    insertRawSourceRow(released.db, highWaterFactDigest(2), "2");
+    assert.equal(owner.drain().ok, true);
+    assert.equal(owner.close().ok, true);
+    const result = owner.query(highWaterQueryRequest());
+    assert.equal(result.ok, false);
+    if (!result.ok) assert.equal(result.error.code, "not_ready");
+    assert.equal(storedSequenceCount(released.db, HIGH_WATER_NAMESPACE), 1);
+  } finally {
+    disposeFixture(released);
+  }
+});
+
+
+test("high-water: a zero source row is corruption, not an empty namespace", () => {
+  const fixture = makeFixture();
+  try {
+    const owner = readyAdapter(fixture.db);
+    assert.equal(observedHighWater(owner).sourceSequenceHighWater, "0");
+    insertRawSourceRow(fixture.db, highWaterFactDigest(1), "0");
+    const before = fixture.db.prepare("SELECT * FROM shared_state_graph_source").all();
+    assert.equal(highWaterUnavailable(owner.query(highWaterQueryRequest())), "authority_unavailable");
+    assert.deepEqual(fixture.db.prepare("SELECT * FROM shared_state_graph_source").all(), before);
+    fixture.db.prepare("UPDATE shared_state_graph_source SET source_sequence = '1' WHERE namespace = ?").run(HIGH_WATER_NAMESPACE);
+    assert.equal(observedHighWater(owner).sourceSequenceHighWater, "1");
   } finally {
     disposeFixture(fixture);
   }

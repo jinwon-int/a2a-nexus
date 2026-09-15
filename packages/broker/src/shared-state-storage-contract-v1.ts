@@ -1079,6 +1079,21 @@ const sharedStateQueryRequestInputV1Schemas = {
         .strict(),
     })
     .strict(),
+  queryGraphSourceHighWater: z
+    .object({
+      namespace: z.literal("broker.claim-graph"),
+      requiredConsistency: z
+        .object({
+          model: z.literal(
+            V.queryConsistency.queryGraphSourceHighWater.model,
+          ),
+          scope: z.literal(
+            V.queryConsistency.queryGraphSourceHighWater.scope,
+          ),
+        })
+        .strict(),
+    })
+    .strict(),
 } as const satisfies Record<SharedStateQueryOperationV1, z.ZodType>;
 
 function queryRequestEnvelopeSchema<
@@ -1106,6 +1121,10 @@ export const sharedStateQueryRequestV1Schema = z.discriminatedUnion(
     queryRequestEnvelopeSchema(
       V.queryOperations[1],
       sharedStateQueryRequestInputV1Schemas.queryGraphEvidencePath,
+    ),
+    queryRequestEnvelopeSchema(
+      V.queryOperations[2],
+      sharedStateQueryRequestInputV1Schemas.queryGraphSourceHighWater,
     ),
   ],
 );
@@ -1188,9 +1207,17 @@ const graphEvidenceQueryResultV1Schema = z.discriminatedUnion("evidence", [
     .strict(),
 ]);
 
+const graphSourceHighWaterQueryResultV1Schema = z
+  .object({
+    namespace: z.literal("broker.claim-graph"),
+    sourceSequenceHighWater: nonNegativeDecimalSchema,
+  })
+  .strict();
+
 const sharedStateQuerySucceededResultV1Schemas = {
   reconcileOutbox: outboxQueryResultV1Schema,
   queryGraphEvidencePath: graphEvidenceQueryResultV1Schema,
+  queryGraphSourceHighWater: graphSourceHighWaterQueryResultV1Schema,
 } as const satisfies Record<SharedStateQueryOperationV1, z.ZodType>;
 
 function queryConsistencySchema<
@@ -1245,6 +1272,10 @@ export const sharedStateQueryResultV1Schema = z.discriminatedUnion(
     queryResultEnvelopeSchema(
       V.queryOperations[1],
       sharedStateQuerySucceededResultV1Schemas.queryGraphEvidencePath,
+    ),
+    queryResultEnvelopeSchema(
+      V.queryOperations[2],
+      sharedStateQuerySucceededResultV1Schemas.queryGraphSourceHighWater,
     ),
   ],
 );
@@ -2513,6 +2544,16 @@ function validateQueryDigestBindings<T>(
   ) {
     return null;
   }
+  // Explicit operation branch: only these two operations carry digest
+  // anchors. The closed `queryGraphSourceHighWater` operation has no digest
+  // fields at all — any digest-shaped field it carries is an unknown field
+  // for the strict request schema to reject, never a digest to validate.
+  if (
+    input.operation !== "reconcileOutbox"
+    && input.operation !== "queryGraphEvidencePath"
+  ) {
+    return null;
+  }
   const section = input.kind === V.kinds.queryRequest
     ? "input"
     : input.kind === V.kinds.queryResult
@@ -2736,6 +2777,31 @@ function validateGraphQueryResult(
   return null;
 }
 
+/**
+ * The source high-water result carries exactly the namespace and the observed
+ * sequence — there is no cross-field arithmetic to pin (no anchors, checkpoint,
+ * lag, or completeness), so the strict two-field schema is the whole contract.
+ * This explicit branch keeps the succeeded-result semantic sweep closed over
+ * all three operations instead of assuming non-outbox means evidence path.
+ */
+function validateGraphSourceHighWaterQueryResult(
+  input: Extract<
+    SharedStateQueryResultV1,
+    {
+      readonly operation: "queryGraphSourceHighWater";
+      readonly status: "succeeded";
+    }
+  >,
+): SharedStateParseResultV1<SharedStateQueryResultV1> | null {
+  if (
+    input.result.namespace !== "broker.claim-graph"
+    || !/^(?:0|[1-9][0-9]{0,39})$/.test(input.result.sourceSequenceHighWater)
+  ) {
+    return errorResult("query_result_mismatch", ["result"]);
+  }
+  return null;
+}
+
 export function parseSharedStateQueryRequestV1(
   input: unknown,
 ): SharedStateParseResultV1<SharedStateQueryRequestV1> {
@@ -2766,7 +2832,9 @@ export function parseSharedStateQueryResultV1(
   if (parsed.value.status !== "succeeded") return parsed;
   const semantic = parsed.value.operation === "reconcileOutbox"
     ? validateOutboxQueryResult(parsed.value)
-    : validateGraphQueryResult(parsed.value);
+    : parsed.value.operation === "queryGraphEvidencePath"
+      ? validateGraphQueryResult(parsed.value)
+      : validateGraphSourceHighWaterQueryResult(parsed.value);
   return semantic ?? parsed;
 }
 

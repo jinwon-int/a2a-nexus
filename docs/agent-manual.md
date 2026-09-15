@@ -214,6 +214,21 @@ path-qualified `node dist/server.js` invocations count as a running broker.
 See [broker recovery checks](../packages/broker/README.md#serving-fence-recovery-checks)
 for accepted probe shapes and the requirement to keep the broker stopped.
 
+With the default-off `BROKER_SHARED_STATE_V1_GRAPH` flag enabled, every task
+terminal transition appends one immutable source fact through the V1 graph
+authority, and a terminal transition fails whole with retryable
+`state_unavailable` when that authority is unavailable — never a local
+fallback. Since the #1504 cold-start resync change, a cold or raced gate
+resolves a stale sequence expectation with one durable high-water read plus a
+bounded compare-and-set retry (8-round budget). Rejected append attempts no
+longer grow with the sequence gap; the SQLite read still scans the namespace
+rows, so this is not a constant-time query or a measured fleet-latency claim. A
+`source_high_water_below_tracked_expectation` failure means the durable
+source ledger regressed below what the gate already observed — investigate
+the store (rollback, corruption, wrong file); do not simply retry. The flag
+remains default-off; this behavior change authorizes no deployment or
+activation.
+
 Terminal failure is not permission to replay side effects. Inspect retry lineage
 and existing artifacts before creating a corrected follow-up task.
 
