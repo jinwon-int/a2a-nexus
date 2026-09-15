@@ -3,7 +3,9 @@
  * Deterministic contract tests for the nclex_content_pr_v1 preset (#1724).
  * No network, no provider, no broker: routing, readiness, and projection are
  * pure functions pinned by golden cases plus fail-closed fixtures (self
- * review, head drift, manifest mismatch, malformed input).
+ * review, head drift, manifest mismatch, malformed input) and the #1724
+ * distinct-reviewer quorum (declared reviewerNodeId identity rules,
+ * preserved raw freshPassCount, additive insufficient_independent_reviewers).
  */
 import test from "node:test";
 import assert from "node:assert/strict";
@@ -149,9 +151,12 @@ test("receipt staleness: only exact-head receipts count as fresh", () => {
 });
 
 test("merge-ready requires gate, fresh quorum, zero blockers, distinct approval, no conflict", () => {
+  // Positive fixtures carry real distinct reviewer node IDs (#1724): quorum is
+  // judged on distinct declared IDs, so two same-reviewer receipts can never
+  // make a PR ready.
   const receipts = [
-    { receiptId: "r1", headSha: HEAD_A, verdict: "PASS", signed: true },
-    { receiptId: "r2", headSha: HEAD_A, verdict: "PASS", signed: true },
+    { receiptId: "r1", headSha: HEAD_A, verdict: "PASS", signed: true, reviewerNodeId: "seoseo" },
+    { receiptId: "r2", headSha: HEAD_A, verdict: "PASS", signed: true, reviewerNodeId: "nosuk" },
   ];
   const ready = evaluateMergeReadiness({
     gateGreen: true,
@@ -162,6 +167,8 @@ test("merge-ready requires gate, fresh quorum, zero blockers, distinct approval,
     mergeConflict: false,
   });
   assert.equal(ready.ready, true);
+  assert.equal(ready.freshPassCount, 2);
+  assert.equal(ready.distinctReviewerCount, 2);
 
   // Stale (previous-head) receipts are excluded from the vote and reported via
   // staleReceiptCount, but must NOT veto readiness when quorum is otherwise met
@@ -170,13 +177,14 @@ test("merge-ready requires gate, fresh quorum, zero blockers, distinct approval,
   const withStale = evaluateMergeReadiness({
     gateGreen: true,
     currentHeadSha: HEAD_A,
-    receipts: [...receipts, { receiptId: "r-stale", headSha: HEAD_B, verdict: "PASS", signed: true }],
+    receipts: [...receipts, { receiptId: "r-stale", headSha: HEAD_B, verdict: "PASS", signed: true, reviewerNodeId: "yukson" }],
     blockingFindings: 0,
     authorDistinctApproval: true,
     mergeConflict: false,
   });
   assert.equal(withStale.ready, true, "stale receipts must not veto a PR that meets quorum");
   assert.equal(withStale.staleReceiptCount, 1);
+  assert.equal(withStale.distinctReviewerCount, 2, "stale receipts are not votes toward distinct quorum either");
   assert.ok(!withStale.reasons.includes("stale_receipts_excluded:1"), "stale receipts must not be a blocking reason");
 
   const cases = [
@@ -186,7 +194,12 @@ test("merge-ready requires gate, fresh quorum, zero blockers, distinct approval,
     [{ authorDistinctApproval: false }, "author_distinct_approval_missing"],
     [{ mergeConflict: true }, "merge_conflict_present"],
     [
-      { receipts: [{ receiptId: "r4", headSha: HEAD_A, verdict: "PASS", signed: false }, ...receipts.slice(1)] },
+      {
+        receipts: [
+          { receiptId: "r4", headSha: HEAD_A, verdict: "PASS", signed: false, reviewerNodeId: "yukson" },
+          ...receipts.slice(1),
+        ],
+      },
       "insufficient_fresh_signed_pass:1/2",
     ],
   ];
@@ -215,6 +228,165 @@ test("merge-ready requires gate, fresh quorum, zero blockers, distinct approval,
   });
   assert.equal(highRisk.ready, false);
   assert.ok(highRisk.reasons.includes("insufficient_fresh_signed_pass:2/3"));
+  assert.ok(highRisk.reasons.includes("insufficient_independent_reviewers:2/3"));
+});
+
+test("distinct-reviewer quorum: one reviewer with different receipt metadata has one vote (#1724)", () => {
+  // Same declared node, different receiptId/producedAt/lane/team: fresh quorum
+  // metadata must never mint a second reviewer vote.
+  const projection = evaluateMergeReadiness({
+    gateGreen: true,
+    currentHeadSha: HEAD_A,
+    authorDistinctApproval: true,
+    receipts: [
+      {
+        receiptId: "r1",
+        headSha: HEAD_A,
+        verdict: "PASS",
+        signed: true,
+        reviewerNodeId: "seoseo",
+        producedAt: "2026-08-06T09:00:00.000Z",
+        lane: "content_clinical",
+        team: "T1",
+      },
+      {
+        receiptId: "r2",
+        headSha: HEAD_A,
+        verdict: "PASS",
+        signed: true,
+        reviewerNodeId: "seoseo",
+        producedAt: "2026-08-06T09:05:00.000Z",
+        lane: "evidence_adversarial",
+        team: "cross-team",
+      },
+    ],
+  });
+  assert.equal(projection.ready, false);
+  assert.equal(projection.freshPassCount, 2, "freshPassCount stays the raw qualifying PASS record count");
+  assert.equal(projection.distinctReviewerCount, 1, "different receiptId/producedAt/lane/team never add a reviewer");
+  assert.ok(projection.reasons.includes("insufficient_independent_reviewers:1/2"));
+  assert.ok(
+    !projection.reasons.some((reason) => reason.startsWith("insufficient_fresh_signed_pass")),
+    "the raw count met its quorum; only the distinct count is short",
+  );
+});
+
+test("distinct-reviewer quorum: trimmed duplicates collapse; comparison stays case-sensitive (#1724)", () => {
+  const whitespaceDuplicate = evaluateMergeReadiness({
+    gateGreen: true,
+    currentHeadSha: HEAD_A,
+    authorDistinctApproval: true,
+    receipts: [
+      { receiptId: "r1", headSha: HEAD_A, verdict: "PASS", signed: true, reviewerNodeId: "seoseo" },
+      { receiptId: "r2", headSha: HEAD_A, verdict: "PASS", signed: true, reviewerNodeId: "  seoseo  " },
+    ],
+  });
+  assert.equal(whitespaceDuplicate.distinctReviewerCount, 1, "whitespace variants are the same declared node");
+  assert.equal(whitespaceDuplicate.ready, false);
+  assert.ok(whitespaceDuplicate.reasons.includes("insufficient_independent_reviewers:1/2"));
+
+  const caseDistinct = evaluateMergeReadiness({
+    gateGreen: true,
+    currentHeadSha: HEAD_A,
+    authorDistinctApproval: true,
+    receipts: [
+      { receiptId: "r1", headSha: HEAD_A, verdict: "PASS", signed: true, reviewerNodeId: "seoseo" },
+      { receiptId: "r2", headSha: HEAD_A, verdict: "PASS", signed: true, reviewerNodeId: "Seoseo" },
+    ],
+  });
+  assert.equal(
+    caseDistinct.distinctReviewerCount,
+    2,
+    "node IDs are case-sensitive; no unsourced alias normalization collapses them",
+  );
+  assert.equal(caseDistinct.ready, true);
+});
+
+test("distinct-reviewer quorum: missing or malformed identities never count and never fall back (#1724)", () => {
+  const projection = evaluateMergeReadiness({
+    gateGreen: true,
+    currentHeadSha: HEAD_A,
+    authorDistinctApproval: true,
+    receipts: [
+      { receiptId: "r1", headSha: HEAD_A, verdict: "PASS", signed: true },
+      { receiptId: "r2", headSha: HEAD_A, verdict: "PASS", signed: true, reviewerNodeId: "" },
+      { receiptId: "r3", headSha: HEAD_A, verdict: "PASS", signed: true, reviewerNodeId: "   " },
+      { receiptId: "r4", headSha: HEAD_A, verdict: "PASS", signed: true, reviewerNodeId: 42 },
+      { receiptId: "r5", headSha: HEAD_A, verdict: "PASS", signed: true, reviewerNodeId: null },
+    ],
+  });
+  assert.equal(projection.freshPassCount, 5, "raw count is preserved; identity quality does not change it");
+  assert.equal(
+    projection.distinctReviewerCount,
+    0,
+    "missing/nonstring identities are not counted and not String-coerced; receiptId is no fallback",
+  );
+  assert.equal(projection.ready, false);
+  assert.ok(projection.reasons.includes("insufficient_independent_reviewers:0/2"));
+});
+
+test("distinct-reviewer quorum: stale, unsigned and BLOCK receipts are not votes (#1724)", () => {
+  const projection = evaluateMergeReadiness({
+    gateGreen: true,
+    currentHeadSha: HEAD_A,
+    authorDistinctApproval: true,
+    receipts: [
+      { receiptId: "stale-1", headSha: HEAD_B, verdict: "PASS", signed: true, reviewerNodeId: "seoseo" },
+      { receiptId: "unsigned-1", headSha: HEAD_A, verdict: "PASS", signed: false, reviewerNodeId: "nosuk" },
+      { receiptId: "block-1", headSha: HEAD_A, verdict: "BLOCK", signed: true, reviewerNodeId: "yukson" },
+    ],
+  });
+  assert.equal(projection.freshPassCount, 0);
+  assert.equal(projection.distinctReviewerCount, 0);
+  assert.equal(projection.staleReceiptCount, 1, "stale classification is preserved");
+  assert.ok(projection.reasons.includes("insufficient_fresh_signed_pass:0/2"));
+  assert.ok(projection.reasons.includes("insufficient_independent_reviewers:0/2"));
+});
+
+test("distinct-reviewer quorum: high-risk needs three distinct declared reviewers (#1724)", () => {
+  const twoDistinct = [
+    { receiptId: "r1", headSha: HEAD_A, verdict: "PASS", signed: true, reviewerNodeId: "seoseo" },
+    { receiptId: "r2", headSha: HEAD_A, verdict: "PASS", signed: true, reviewerNodeId: "nosuk" },
+  ];
+  const short = evaluateMergeReadiness({
+    gateGreen: true,
+    currentHeadSha: HEAD_A,
+    authorDistinctApproval: true,
+    risk: "high-risk",
+    receipts: twoDistinct,
+  });
+  assert.equal(short.ready, false);
+  assert.equal(short.distinctReviewerCount, 2);
+  assert.ok(short.reasons.includes("insufficient_independent_reviewers:2/3"));
+
+  const met = evaluateMergeReadiness({
+    gateGreen: true,
+    currentHeadSha: HEAD_A,
+    authorDistinctApproval: true,
+    risk: "high-risk",
+    receipts: [...twoDistinct, { receiptId: "r3", headSha: HEAD_A, verdict: "PASS", signed: true, reviewerNodeId: "yukson" }],
+  });
+  assert.equal(met.ready, true);
+  assert.equal(met.freshPassCount, 3);
+  assert.equal(met.distinctReviewerCount, 3);
+  assert.ok(!met.reasons.some((reason) => reason.startsWith("insufficient_")));
+});
+
+test("distinct-reviewer quorum: a duplicate reviewer's blocking finding still vetoes (#1724)", () => {
+  const projection = evaluateMergeReadiness({
+    gateGreen: true,
+    currentHeadSha: HEAD_A,
+    authorDistinctApproval: true,
+    receipts: [
+      { receiptId: "r1", headSha: HEAD_A, verdict: "PASS", signed: true, reviewerNodeId: "seoseo" },
+      { receiptId: "r2", headSha: HEAD_A, verdict: "PASS", signed: true, reviewerNodeId: "seoseo" },
+    ],
+    blockingFindings: 1,
+  });
+  assert.equal(projection.ready, false);
+  assert.equal(projection.distinctReviewerCount, 1);
+  assert.ok(projection.reasons.includes("blocking_findings:1"), "all fresh blocking findings still veto");
+  assert.ok(projection.reasons.includes("insufficient_independent_reviewers:1/2"));
 });
 
 test("comment projection is the exact body-free contract line", () => {

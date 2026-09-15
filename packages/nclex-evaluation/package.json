@@ -30,7 +30,7 @@
     "build": "tsc -b tsconfig.json",
     "check": "tsc -b tsconfig.json",
     "pretest": "npm run build",
-    "test": "node --test dist/receipt-contract.test.js",
+    "test": "node --test dist/receipt-contract.test.js dist/merge-ready.test.js",
     "coverage:baseline": "npm run build && node scripts/coverage-baseline-report.mjs"
   },
   "dependencies": {
