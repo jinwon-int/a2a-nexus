@@ -1,8 +1,8 @@
 // Worker status, staleness, and mobile-health derivation extracted from
-// broker.ts. These are pure functions over worker records plus the mobile
-// offline/disconnect thresholds they classify against; they hold no broker
-// state. The MOBILE_* thresholds live here with the logic that uses them and
-// are re-exported from broker.ts to preserve the existing public surface.
+// broker.ts. These are pure functions over worker records plus the heartbeat
+// liveness thresholds they classify against; they hold no broker state. The
+// thresholds live here with the logic that uses them and are re-exported from
+// broker.ts to preserve the existing public surface.
 import type {
   WorkerRecord,
   WorkerView,
@@ -12,18 +12,45 @@ import type {
 } from "./types.js";
 
 /**
+ * Neutral names for the pre-existing heartbeat-liveness ladder (#2065
+ * retirement prerequisite): <= {@link HEARTBEAT_LIVENESS_ONLINE_WINDOW_MS}
+ * online, up to {@link HEARTBEAT_LIVENESS_OFFLINE_AFTER_MS} stale, then
+ * offline. These constants describe the EXISTING conversation-recipient
+ * liveness ladder (`getConversationDeliverySummary`, every `workerMode`) and
+ * the legacy `mobileHealth` ladder — they are NOT universal defaults for raw
+ * `GET /workers` surfaces or `a2a.peer.status`, which resolve their own common
+ * `workerOfflineAfterMs ?? DEFAULT_WORKER_OFFLINE_AFTER_MS` window, and NOT a
+ * new timeout policy. Do not adopt them as defaults for new raw-worker or
+ * peer-status surfaces.
+ */
+export const HEARTBEAT_LIVENESS_ONLINE_WINDOW_MS = 30_000;
+
+/** See {@link HEARTBEAT_LIVENESS_ONLINE_WINDOW_MS}: stale→offline boundary of
+ * the existing conversation/legacy-health ladder, not a universal default. */
+export const HEARTBEAT_LIVENESS_OFFLINE_AFTER_MS = 90_000;
+
+/**
  * Shorter stale window for mobile workers (Termux/Hermes, battery-powered).
  * Mobile nodes may briefly sleep (Doze, lid close, network suspend), so this
  * threshold reflects expected brief offline windows — 30 seconds.
+ *
+ * @deprecated Legacy mobile-only name kept as an EXACT-VALUE alias of the
+ * neutral {@link HEARTBEAT_LIVENESS_ONLINE_WINDOW_MS} so existing imports
+ * compile and behave identically. New code should prefer the neutral name;
+ * neither constant is a universal raw-worker/`a2a.peer.status` default.
  */
-export const MOBILE_OFFLINE_AFTER_MS = 30_000;
+export const MOBILE_OFFLINE_AFTER_MS = HEARTBEAT_LIVENESS_ONLINE_WINDOW_MS;
 
 /**
  * Extended gap after which a mobile worker is considered fully disconnected
  * rather than merely stale. Workers exceeding this threshold without any
  * heartbeat are classified as `"disconnected"`.
+ *
+ * @deprecated Legacy mobile-only name kept as an EXACT-VALUE alias of the
+ * neutral {@link HEARTBEAT_LIVENESS_OFFLINE_AFTER_MS} so existing imports
+ * compile and behave identically. New code should prefer the neutral name.
  */
-export const MOBILE_DISCONNECTED_AFTER_MS = 90_000;
+export const MOBILE_DISCONNECTED_AFTER_MS = HEARTBEAT_LIVENESS_OFFLINE_AFTER_MS;
 
 export function computeWorkerStatus(
   lastSeenAt: string,

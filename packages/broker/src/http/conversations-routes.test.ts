@@ -379,3 +379,222 @@ test("busy and unregistered recipients classify explicitly in the delivery matri
   assert.equal(ghost.liveness, "unknown");
   assert.equal(ghost.queuedCount, 1);
 });
+
+// ---------------------------------------------------------------------------
+// #2065 retirement prerequisite: the conversation-recipient liveness ladder is
+// the universal heartbeat-liveness ladder (<=30s online, <=90s stale, >90s
+// offline), identical for every workerMode. These tests run against the real
+// delivery route with a controlled clock (no sleeps): node:test mock timers
+// freeze Date so heartbeat ages are exact at the <= boundaries.
+// ---------------------------------------------------------------------------
+
+const LADDER_AGES = [0, 29_999, 30_000, 30_001, 89_999, 90_000, 90_001] as const;
+const LADDER_EXPECTED = ["online", "online", "online", "stale", "stale", "stale", "offline"] as const;
+const FROZEN_CLOCK_MS = 1_700_000_000_000;
+
+type LadderWorkerMode = "mobile" | "persistent" | "absent";
+
+function enableFrozenClock(t: import("node:test").TestContext, baseMs: number): void {
+  t.mock.timers.enable({ apis: ["Date"] });
+  t.mock.timers.setTime(baseMs);
+}
+
+function registerLivenessWorker(
+  broker: InMemoryA2ABroker,
+  nodeId: string,
+  workerMode: LadderWorkerMode,
+  lastSeenAt: string,
+): void {
+  broker.registerWorker({
+    nodeId,
+    role: "analyst",
+    capabilities: {
+      canAnalyze: true,
+      canBackfill: false,
+      canPatchWorkspace: false,
+      canPromoteLive: false,
+      workspaceIds: ["liveness-ws"],
+      environments: ["research"],
+    },
+    ...(workerMode === "absent" ? {} : { workerMode }),
+    metadata: {},
+  });
+  // Pin the exact heartbeat age for the frozen-clock matrix without touching
+  // the underlying registered workerMode representation.
+  const workers = (broker as unknown as { workers: Map<string, { lastSeenAt: string }> }).workers;
+  const record = workers.get(nodeId);
+  assert.ok(record, `worker ${nodeId} must be registered in the broker hot table`);
+  record.lastSeenAt = lastSeenAt;
+  const stored = broker.getWorker(nodeId);
+  assert.equal(stored?.workerMode, workerMode === "absent" ? undefined : workerMode);
+}
+
+function injectTask(
+  broker: InMemoryA2ABroker,
+  taskId: string,
+  status: "claimed" | "running" | "queued",
+  claimedBy: string | undefined,
+): void {
+  // Minimal-but-shape-complete task record (mirrors the #1862 busy test above;
+  // target.id keeps the retention reachability walk safe).
+  (broker as unknown as { tasks: Map<string, Record<string, unknown>> }).tasks.set(taskId, {
+    id: taskId,
+    status,
+    claimedBy,
+    targetNodeId: claimedBy,
+    target: { id: claimedBy, kind: "node", role: "analyst" },
+    createdAt: new Date(FROZEN_CLOCK_MS).toISOString(),
+    updatedAt: new Date(FROZEN_CLOCK_MS).toISOString(),
+  });
+}
+
+async function openLadderConversation(
+  broker: InMemoryA2ABroker,
+  messageId: string,
+  recipients: Array<{ kind: "worker"; id: string; homeBrokerId: string }>,
+): Promise<string> {
+  const opened = await call("POST", "/conversations", broker, {
+    body: {
+      envelope: {
+        messageId,
+        kind: "question",
+        sender: WORKER_A,
+        recipients,
+        idempotencyKey: `idem-${messageId}`,
+        content: { text: "liveness ladder probe" },
+      },
+    },
+  });
+  // Queuing is accepted regardless of the recipients' liveness classification.
+  assert.equal(opened.res.statusCode, 201);
+  return opened.json.conversationId;
+}
+
+function recipientView(json: { recipients: Array<{ id: string; homeBrokerId: string; liveness: string; busy: boolean; queuedCount: number }> }, id: string) {
+  const view = json.recipients.find((entry) => entry.id === id);
+  assert.ok(view, `${id} must appear in the delivery matrix`);
+  return view;
+}
+
+async function fetchDelivery(broker: InMemoryA2ABroker, conversationId: string) {
+  const delivery = await call(
+    "GET",
+    `/conversations/${conversationId}/delivery?actor=worker:worker-a:broker-alpha`,
+    broker,
+  );
+  assert.equal(delivery.res.statusCode, 200);
+  return delivery.json;
+}
+
+test("delivery liveness ladder is identical for mobile, persistent, and absent workerMode across the boundary ages (controlled clock, no sleeps)", async (t) => {
+  enableFrozenClock(t, FROZEN_CLOCK_MS);
+  const broker = new InMemoryA2ABroker(undefined, undefined, { brokerId: "broker-alpha" });
+
+  for (const workerMode of ["mobile", "persistent", "absent"] as const) {
+    for (const ageMs of LADDER_AGES) {
+      registerLivenessWorker(broker, `worker-${workerMode}-${ageMs}`, workerMode, new Date(FROZEN_CLOCK_MS - ageMs).toISOString());
+    }
+  }
+
+  // One conversation per mode; 7 ages fit below the 8-recipient fanout bound.
+  for (const workerMode of ["mobile", "persistent", "absent"] as const) {
+    const recipients = LADDER_AGES.map((ageMs) => ({
+      kind: "worker" as const,
+      id: `worker-${workerMode}-${ageMs}`,
+      homeBrokerId: "broker-alpha",
+    }));
+    const conversationId = await openLadderConversation(broker, `msg-ladder-${workerMode}`, recipients);
+    const json = await fetchDelivery(broker, conversationId);
+    assert.equal(json.queueSemantics, "queued-until-polled; ttl-expiry-terminal; retry-is-poll-based");
+    LADDER_AGES.forEach((ageMs, index) => {
+      const view = recipientView(json, `worker-${workerMode}-${ageMs}`);
+      assert.equal(view.liveness, LADDER_EXPECTED[index], `${workerMode} age ${ageMs}ms must be ${LADDER_EXPECTED[index]}`);
+      assert.equal(view.busy, false, `${workerMode} age ${ageMs}ms holds no claimed/running task`);
+      assert.equal(view.queuedCount, 1, "queued regardless of liveness");
+    });
+  }
+});
+
+test("claimed/running tasks mark recipients busy independently of age; queued-only tasks do not", async (t) => {
+  enableFrozenClock(t, FROZEN_CLOCK_MS);
+  const broker = new InMemoryA2ABroker(undefined, undefined, { brokerId: "broker-alpha" });
+
+  registerLivenessWorker(broker, "worker-offline-busy", "persistent", new Date(FROZEN_CLOCK_MS - 90_001).toISOString());
+  registerLivenessWorker(broker, "worker-online-busy", "mobile", new Date(FROZEN_CLOCK_MS).toISOString());
+  registerLivenessWorker(broker, "worker-queued-only", "absent", new Date(FROZEN_CLOCK_MS).toISOString());
+  injectTask(broker, "task-claimed-offline", "claimed", "worker-offline-busy");
+  injectTask(broker, "task-running-online", "running", "worker-online-busy");
+  injectTask(broker, "task-queued-only", "queued", undefined);
+
+  const conversationId = await openLadderConversation(broker, "msg-busy-1", [
+    { kind: "worker", id: "worker-offline-busy", homeBrokerId: "broker-alpha" },
+    { kind: "worker", id: "worker-online-busy", homeBrokerId: "broker-alpha" },
+    { kind: "worker", id: "worker-queued-only", homeBrokerId: "broker-alpha" },
+  ]);
+
+  // Queuing remains accepted regardless of liveness: a second message to the
+  // offline busy recipient still queues (busy never blocks conversation queuing).
+  const second = await call("POST", `/conversations/${conversationId}/messages`, broker, {
+    body: {
+      envelope: {
+        messageId: "msg-busy-2",
+        kind: "question",
+        sender: WORKER_A,
+        recipients: [{ kind: "worker", id: "worker-offline-busy", homeBrokerId: "broker-alpha" }],
+        idempotencyKey: "idem-msg-busy-2",
+        content: { text: "second message to an offline busy worker" },
+      },
+    },
+  });
+  assert.equal(second.res.statusCode, 201);
+
+  const json = await fetchDelivery(broker, conversationId);
+  const offlineBusy = recipientView(json, "worker-offline-busy");
+  assert.equal(offlineBusy.liveness, "offline");
+  assert.equal(offlineBusy.busy, true, "claimed task marks busy even past the offline boundary");
+  assert.equal(offlineBusy.queuedCount, 2);
+  const onlineBusy = recipientView(json, "worker-online-busy");
+  assert.equal(onlineBusy.liveness, "online");
+  assert.equal(onlineBusy.busy, true, "running task marks busy");
+  const queuedOnly = recipientView(json, "worker-queued-only");
+  assert.equal(queuedOnly.liveness, "online");
+  assert.equal(queuedOnly.busy, false, "queued-only tasks never derive busy");
+});
+
+test("unregistered, invalid-heartbeat, and foreign-home recipients classify unknown with explicit busy derivation", async (t) => {
+  enableFrozenClock(t, FROZEN_CLOCK_MS);
+  const broker = new InMemoryA2ABroker(undefined, undefined, { brokerId: "broker-alpha" });
+
+  // Local busy worker whose id is ALSO targeted via a foreign homeBrokerId.
+  registerLivenessWorker(broker, "worker-shadow", "persistent", new Date(FROZEN_CLOCK_MS).toISOString());
+  injectTask(broker, "task-running-shadow", "running", "worker-shadow");
+  // Local worker with an unparseable heartbeat, idle.
+  registerLivenessWorker(broker, "worker-invalid", "mobile", new Date(FROZEN_CLOCK_MS).toISOString());
+  (broker as unknown as { workers: Map<string, { lastSeenAt: string }> }).workers.get("worker-invalid")!.lastSeenAt = "not-a-timestamp";
+  // Local worker with an unparseable heartbeat AND an independent busy task.
+  registerLivenessWorker(broker, "worker-invalid-busy", "persistent", new Date(FROZEN_CLOCK_MS).toISOString());
+  (broker as unknown as { workers: Map<string, { lastSeenAt: string }> }).workers.get("worker-invalid-busy")!.lastSeenAt = "also-not-a-timestamp";
+  injectTask(broker, "task-running-invalid", "running", "worker-invalid-busy");
+
+  const conversationId = await openLadderConversation(broker, "msg-unknown-1", [
+    { kind: "worker", id: "worker-ghost", homeBrokerId: "broker-alpha" },
+    { kind: "worker", id: "worker-invalid", homeBrokerId: "broker-alpha" },
+    { kind: "worker", id: "worker-shadow", homeBrokerId: "broker-other" },
+    { kind: "worker", id: "worker-invalid-busy", homeBrokerId: "broker-alpha" },
+  ]);
+  const json = await fetchDelivery(broker, conversationId);
+
+  const ghost = recipientView(json, "worker-ghost");
+  assert.equal(ghost.liveness, "unknown", "unregistered worker is unknown");
+  assert.equal(ghost.busy, false);
+  const invalid = recipientView(json, "worker-invalid");
+  assert.equal(invalid.liveness, "unknown", "unparseable heartbeat is unknown");
+  assert.equal(invalid.busy, false);
+  const foreignShadow = recipientView(json, "worker-shadow");
+  assert.equal(foreignShadow.homeBrokerId, "broker-other");
+  assert.equal(foreignShadow.liveness, "unknown", "foreign-home recipient is unknown even with a same-ID local busy worker");
+  assert.equal(foreignShadow.busy, false, "foreign-home busy stays false despite the same-ID local busy worker");
+  const invalidBusy = recipientView(json, "worker-invalid-busy");
+  assert.equal(invalidBusy.liveness, "unknown");
+  assert.equal(invalidBusy.busy, true, "invalid heartbeat still derives busy independently");
+});
