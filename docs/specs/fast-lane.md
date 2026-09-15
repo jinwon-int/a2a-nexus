@@ -121,7 +121,11 @@ v1은 exact structured key만 본다. orchestration key는 값이 `false`여도 
   (`version`/`mode`/`decision`/`reasonCodes`), `fast-lane.v1`/`shadow`,
   decision은 `fast | full`, reasonCodes는 닫힌 코드 집합·중복 없음·비어
   있지 않음, fast는 정확히 `["all_fast_conditions_met"]` 한 개, full은
-  all-clear 코드를 포함하지 않음. 이 외의 malformed/unknown/unsupported/
+  all-clear 코드를 포함하지 않음. mode 누락/불일치, worker mode 누락/불일치,
+  policy 누락/승인 필요/거부/알 수 없음은 각 그룹에서 하나만 허용한다.
+  독립된 그룹의 사유는 함께 허용하며 순서만 다른 집합도 동일하게 취급한다.
+  이는 집계용 의미 검증이며 기존 저장 스키마의 수용 범위를 바꾸거나
+  payload에서 누락 사유를 재계산하지 않는다. 이 외의 malformed/unknown/unsupported/
   모순된 기록은 절대 observed fast/full로 강제 편입되지 않고 invalid로
   분리 집계되며, raw 값(버전 문자열 포함)은 어디에도 반출되지 않는다.
 - **코호트별 노출**(빈 코호트도 명시적 0 구조로 출력, 결정적 정렬):
@@ -136,10 +140,10 @@ v1은 exact structured key만 본다. orchestration key는 값이 `false`여도 
 - 감사 이벤트 iterable은 전체 뷰와 코호트 계산이 같은 행을 쓰도록 정확히
   한 번 materialize한다(one-shot generator 안전).
 
-이 집계는 **기술적(descriptive) 기록일 뿐**이다: 모든 태스크는 여전히 full
+이 집계는 **관측용(descriptive) 기록일 뿐**이다: 모든 태스크는 여전히 full
 실행을 거치며, fast/full 코호트 간 시간·실패 차이는 판정 조건 자체가 다른
 모수적 선택 bias가 담긴 관측값이다. 인과적 속도 향상·품질 개선의 증거도,
-롤아웃 승인도 아니다. 실행 정책, 실제 칼나리/성능 검증, 경량화 추출 범위는
+롤아웃 승인도 아니다. 실행 정책, 실제 카나리/성능 검증, 경량화 추출 범위는
 #1601이 계속 소유한다.
 
 ## audit와 정책 순서

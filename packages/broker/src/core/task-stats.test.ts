@@ -449,6 +449,40 @@ test("strict validation separates legacy absent from invalid assignments and nev
   assert.equal(JSON.stringify(cohorts).includes("fast-lane.v9"), false);
 });
 
+test("mutually exclusive classifier reasons are invalid without rejecting independent dimensions", () => {
+  const impossiblePairs: TaskLaneReasonCode[][] = [
+    ["mode_missing", "mode_not_read_only_analysis"],
+    ["worker_mode_missing", "worker_not_persistent"],
+    ["policy_decision_missing", "policy_requires_approval"],
+    ["policy_decision_missing", "policy_denied"],
+    ["policy_decision_missing", "policy_decision_unknown"],
+    ["policy_requires_approval", "policy_denied"],
+    ["policy_requires_approval", "policy_decision_unknown"],
+    ["policy_denied", "policy_decision_unknown"],
+  ];
+  const validCombinations: TaskLaneReasonCode[][] = [
+    ["mode_missing", "worker_not_persistent", "policy_denied"],
+    ["fanout_marker_present", "sensitive_marker_present"],
+    ["policy_requires_approval", "approval_marker_present"],
+  ];
+  for (const reasons of impossiblePairs) {
+    assert.equal(validateLaneAssignmentForStats(fullAssignment(reasons)).state, "invalid", reasons.join(","));
+    assert.equal(validateLaneAssignmentForStats(fullAssignment([...reasons].reverse())).state, "invalid");
+  }
+  for (const reasons of validCombinations) {
+    assert.equal(validateLaneAssignmentForStats(fullAssignment(reasons)).state, "valid", reasons.join(","));
+  }
+  const cohorts = laneCohortsOf([...impossiblePairs, ...validCombinations].map((reasons, index) =>
+    chainedTask({ id: `reason-set-${index}`, laneAssignment: fullAssignment(reasons) }),
+  ));
+  assert.deepEqual(cohorts.coverage, {
+    selectedTasks: 11, validAssignments: 3, legacyAbsent: 0, invalidAssignment: 8,
+  });
+  assert.equal(cohorts.cohorts.fast.tasks, 0);
+  assert.equal(cohorts.cohorts.full.tasks, 3);
+  assert.equal(cohorts.cohorts.full.latency.coverage.terminalTasks, 3);
+});
+
 test("spoofed payload lane hints never create observed fast cohorts", () => {
   const spoofed = chainedTask({
     id: "spoofed-payload",

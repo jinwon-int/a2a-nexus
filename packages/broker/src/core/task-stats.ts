@@ -323,12 +323,21 @@ function laneAssignmentRecord(value: unknown): Record<string, unknown> | undefin
   return value as Record<string, unknown>;
 }
 
+// Each group is emitted by one mutually exclusive classifier branch. This
+// read-model check does not change the more permissive persistence schema.
+const EXCLUSIVE_LANE_REASON_GROUPS: readonly (readonly TaskLaneReasonCode[])[] = [
+  ["mode_missing", "mode_not_read_only_analysis"],
+  ["worker_mode_missing", "worker_not_persistent"],
+  ["policy_decision_missing", "policy_requires_approval", "policy_denied", "policy_decision_unknown"],
+];
+
 /**
  * Strict closed-set validation of a broker-owned fast-lane shadow assignment
  * against the current classifier contract: exactly the four recorded keys,
  * `fast-lane.v1`/`shadow`, closed decision and reason-code sets, no duplicate
  * codes, fast carrying exactly `["all_fast_conditions_met"]` and full never
- * carrying the all-clear code. `undefined` is "absent" (legacy records created
+ * carrying the all-clear code or mutually exclusive classifier reasons.
+ * `undefined` is "absent" (legacy records created
  * before fast-lane v1); everything else that fails validation is "invalid" —
  * malformed, unknown, unsupported or contradictory assignments are never
  * coerced into an observed fast/full cohort and no raw value is ever echoed.
@@ -354,6 +363,9 @@ export function validateLaneAssignmentForStats(value: unknown): LaneAssignmentVa
   if (record.decision === "fast") {
     if (rawReasons.length !== 1 || rawReasons[0] !== FAST_LANE_ALL_CLEAR_REASON) return { state: "invalid" };
   } else if (reasons.has(FAST_LANE_ALL_CLEAR_REASON)) {
+    return { state: "invalid" };
+  }
+  if (EXCLUSIVE_LANE_REASON_GROUPS.some((group) => group.filter((reason) => reasons.has(reason)).length > 1)) {
     return { state: "invalid" };
   }
   return { state: "valid", decision: record.decision, reasonCodes: [...reasons].sort() };
