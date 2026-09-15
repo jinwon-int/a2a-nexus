@@ -87,8 +87,7 @@ To inspect a narrower package surface, repeat `--package`:
 ```bash
 node scripts/build-release-candidate-evidence.mjs \
   --package packages/broker \
-  --package packages/docker-runner \
-  --package packages/openclaw-plugin-a2a
+  --package packages/docker-runner
 ```
 
 The package contents audit uses workspace `package.json` files plus tracked-file inventory. It intentionally avoids `npm pack` because pack lifecycle hooks could execute package scripts; actual package publication remains separately approval-gated.
@@ -111,7 +110,9 @@ Until an operator-approved release plan exists, all packages remain private and 
 
 - Breaking changes during `0.x` require a minor bump candidate (`0.MINOR.0`) and a CHANGELOG entry before any tag/release proposal.
 - Compatible features may use a minor bump candidate; fixes and documentation-only changes may use a patch candidate.
-- The default policy is lockstep candidate versions across broker, plugin, and runner until a package-owner decision records independent versioning.
+- The default policy is lockstep candidate versions across the current
+  workspace packages (`packages/*`) until a package-owner decision records
+  independent versioning.
 
 ### Stability tiers
 

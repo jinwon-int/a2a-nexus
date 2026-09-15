@@ -2,6 +2,11 @@
 
 > **Status:** repository analysis for the proposed packet and its completed
 > bounded Phase 1 contract/parser/evaluator/projector slices. Refs #1504.
+>
+> 2026-09-15: this pinned-base analysis is historical. Current source status:
+> the SQLite V1 adapter, startup/readiness/health runtime, and six
+> flag-gated primitives are implemented (default-off); see the dated
+> corrections atop `tasks.md` and `checklist.md`.
 
 ## Inputs
 
@@ -125,10 +130,27 @@ These must be resolved in a later source-design PR, not assumed here:
 None of these gaps prevents review of the semantic contract. All block their
 respective implementation/cutover stage.
 
+2026-09-15 source status: the SQLite schema/version, singleton ownership,
+outbox stream-key taxonomy, idempotency registry, and claim-graph
+source/projection rows are resolved by the implemented `tasks.md` sections
+3–4 (SQLite adapter, startup/readiness, flag-gated primitives). The clock
+row is partially covered (Slice O's bounded startup backward check with the
+`startupClockCheck` skip escape, plus time V1 durable floors; the current
+store still declares no per-deployment tolerance). The candidate shared
+backend remains unselected, and the Phase 7 cutover evidence packet remains
+future work.
+
 ## Analysis outcome
 
 - [x] Coherent enough for specification review.
-- [ ] Packet approved by the required reviewers/operators.
-- [ ] Runtime implementation authorized.
-- [ ] Adapter/tests implemented.
-- [ ] Migration or operational rollout authorized or complete.
+- [x] Packet approved by the required reviewers/operators (2026-08-22 KST;
+  `tasks.md` section 0).
+- [x] Runtime implementation authorized and executed as reviewed, merged
+  slices (`tasks.md` sections 3–4); §5 phases carry their own explicit
+  operator approvals; all flags default-off.
+- [x] Adapter/tests implemented (SQLite V1 adapter; inline and FIFO-worker
+  conformance per Decision W11; no shared adapter exists yet).
+- [ ] Migration or operational rollout authorized or complete. (Partially:
+  Phase 5 local rehearsal executed — Slice ZA — and the Phase 6 shadow
+  runtime implemented — Slice ZC; Phase 7 migration/cutover and rollout
+  remain separately unauthorized.)

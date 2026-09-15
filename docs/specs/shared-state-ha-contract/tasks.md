@@ -19,6 +19,26 @@
 > retention/prune execution, runtime health/endpoint and query integration,
 > migration, and operational rollout remain unchecked.
 > Refs #1504.
+>
+> **2026-09-15 source-status correction:** the paragraph above is preserved
+> as written but is stale where it lists "SQLite/shared adapter
+> implementations and their conformance" and runtime health/endpoint
+> integration as unchecked. Current source: sections 3–5 are implemented —
+> the SQLite V1 adapter and schema
+> (`packages/broker/src/shared-state-sqlite-adapter-v1.ts`,
+> `shared-state-sqlite-schema-v1.ts`), inline and FIFO-worker conformance
+> (the seven `shared-state-sqlite-*-target-v1.test.ts` targets plus
+> `packages/broker/src/shared-state-worker-mode/`; Decision W11), startup
+> checks and serving fence (`shared-state-serving-fence-v1.ts`), `/readyz`
+> and non-serving middleware (`shared-state-readyz-v1.ts`), `stateContract`
+> health (`shared-state-contract-health-v1.ts`), six flag-gated primitives
+> (Slices S–X), the Phase 5 rehearsal (Slice ZA), and the evidence-only
+> shadow runtime (Slice ZC, `shared-state-shadow-runtime-v1.ts`). Every flag
+> ships default-off: implemented flag-off source, not an activated serving
+> store; the shadow never drives decisions. The shared backend adapter,
+> retention/prune execution, runtime query integration, the Phase 2.x repeat
+> clauses that bind them, Phase 7 cutover, and operational rollout remain
+> exactly where their unchecked rows place them.
 
 ## 0. Spec-first packet
 
