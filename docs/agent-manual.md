@@ -191,6 +191,16 @@ merge: read back `MERGED` and the merge commit. Remove automatic `Closes` text
 when a PR implements only a slice of its parent issue. Track runtime rollout,
 observation windows and remaining acceptance criteria separately.
 
+For per-worker latency and receipt measurements, hub/operator requesters can
+read the advisory `GET /stats/workers` view
+(`a2a.worker-latency-profiles.v1`, consumption contract in
+[worker latency advisory](worker-latency-advisory.md)). Its receipt counters
+(source bytes, model requests, schema retries, requested/actual model coverage)
+are body-free aggregates: missing or truncated telemetry is reported as such,
+never as zero, and model comparisons are literal identifier equality only
+(alias-equivalent ids count as differences). It is tie-break/advisory data —
+never routing authority, success evidence, or an #1815 A/B attestation.
+
 ## Keeping this manual current
 
 **A usage-changing PR must update this manual and the affected detailed

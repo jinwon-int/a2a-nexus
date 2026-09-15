@@ -7,6 +7,8 @@ import { join } from "node:path";
 import { SqliteBrokerStateStore } from "./core/store.js";
 import { startTestServer, jsonHeaders, registerTestWorker } from "./server-test-helpers.js";
 
+const RECEIPT_TELEMETRY_SCHEMA_VERSION = "a2a.analysis-execution-telemetry.v1";
+
 function headers(extra: Record<string, string> = {}): Record<string, string> {
   return jsonHeaders({
     "x-a2a-edge-secret": "test-edge-secret",
@@ -34,7 +36,24 @@ test("GET /stats/workers returns advisory worker latency profiles for operators"
     });
     server.runtime.broker.claimTask("wlat-success", "latency-worker-a");
     server.runtime.broker.startTask("wlat-success", "latency-worker-a");
-    server.runtime.broker.completeTask("wlat-success", "latency-worker-a", { summary: "done" });
+    server.runtime.broker.completeTask("wlat-success", "latency-worker-a", {
+      summary: "done",
+      output: {
+        requestedModel: "k3[1m]",
+        requestedThinking: "high",
+        actualRuntimeModel: "k3[1m]",
+        effectiveModel: "k3[1m]",
+        effectiveThinking: "high",
+        sourceCarrierStats: { sourceFiles: 2, totalFiles: 2, totalBytes: 71_680 },
+        executionTelemetry: {
+          schemaVersion: RECEIPT_TELEMETRY_SCHEMA_VERSION,
+          source: "piri_progress_file",
+          elapsedMs: 158_600,
+          modelRequests: 3,
+          schemaRetries: 0,
+        },
+      },
+    });
 
     server.runtime.broker.createTask({
       id: "wlat-failed",
@@ -51,6 +70,23 @@ test("GET /stats/workers returns advisory worker latency profiles for operators"
     server.runtime.broker.failTask("wlat-failed", "latency-worker-b", {
       code: "handler_exit_nonzero",
       message: "handler failed",
+      details: {
+        bridgeFailure: {
+          code: "analysis_bridge_schema_unsatisfied",
+          requestedModel: "kimi-coding/k3",
+          actualRuntimeModel: "zai/glm-5.2",
+          excerpt: "raw bridge excerpt that must not reach stats",
+          sourceCarrierStats: { sourceFiles: 2, totalBytes: 4_096 },
+          executionTelemetry: {
+            schemaVersion: RECEIPT_TELEMETRY_SCHEMA_VERSION,
+            source: "claude_cli_envelope",
+            elapsedMs: 1_234,
+            modelRequests: 4,
+            schemaRetries: 2,
+            schemaRetryReasons: { extra_property: 2 },
+          },
+        },
+      },
     });
 
     const response = await fetch(`${server.baseUrl}/stats/workers`, { headers: headers() });
@@ -70,6 +106,26 @@ test("GET /stats/workers returns advisory worker latency profiles for operators"
     assert.equal(workerB.byStatus.failed, 1);
     assert.deepEqual(workerB.failureCodes.top, [{ code: "handler_exit_nonzero", count: 1 }]);
     assert.ok(workerA.latency.totalMs.p50Ms >= 0);
+
+    // #1815 receipt measurements project onto the operator response.
+    assert.deepEqual(body.coverage.receipts, { withCarrier: 2, structuredBridgeFailure: 1, resultOutput: 1, none: 0 });
+    assert.deepEqual(body.coverage.executionTelemetry, { observed: 2, missing: 0, invalid: 0, truncated: 0 });
+    assert.deepEqual(workerA.receipts.carriers, { structuredBridgeFailure: 0, resultOutput: 1, none: 0 });
+    assert.equal(workerA.receipts.sourceBytes.totalBytes.max, 71_680);
+    assert.equal(workerA.receipts.executionTelemetry.modelRequests.total, 3);
+    assert.equal(workerA.receipts.executionTelemetry.schemaRetries.tasksWithZero, 1);
+    assert.deepEqual(workerB.receipts.carriers, { structuredBridgeFailure: 1, resultOutput: 0, none: 0 });
+    assert.equal(workerB.receipts.executionTelemetry.schemaRetries.total, 2);
+    assert.deepEqual(workerB.receipts.executionTelemetry.schemaRetries.reasons, { extra_property: 2 });
+    assert.deepEqual(workerB.receipts.modelMetadata.requestedActualModelLiteralEquality, { bothObserved: 1, literalMatch: 0, literalDifference: 1 });
+    const serialized = JSON.stringify(body);
+    assert.ok(!serialized.includes("k3[1m]"));
+    assert.ok(!serialized.includes("kimi-coding/k3"));
+    assert.ok(!serialized.includes("zai/glm-5.2"));
+    assert.ok(!serialized.includes("raw bridge excerpt"));
+    assert.ok(serialized.includes("71680"), "aggregate byte counts appear as numbers, never bodies");
+    assert.equal(body.measurementPolicy.receiptCarrier.includes("one receipt per terminal task"), true);
+    assert.equal(body.measurementPolicy.modelComparison.includes("literal identifier equality only"), true);
   } finally {
     await server.close();
   }
