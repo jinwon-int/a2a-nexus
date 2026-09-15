@@ -932,14 +932,15 @@ function readGraphQuerySourceRowCount(
 
 /**
  * Strict namespace high-water for the closed `queryGraphSourceHighWater` read:
- * the greatest canonical nonnegative decimal source sequence recorded anywhere
+ * the greatest canonical positive decimal source sequence recorded anywhere
  * in ONE namespace, independent of source stream, compared as BigInt (never a
  * COUNT — a sparse or externally seeded ledger would make the row count lie —
  * and never plain TEXT order, where "10" sorts before "9").
  *
  * Unlike the append-path helper, this read has NO permissive fallback: every
  * stored sequence in the requested namespace must already be a canonical
- * nonnegative decimal within the existing 40-digit bound. Any malformed,
+ * positive decimal within the existing 40-digit bound. Zero is reserved for
+ * the result of an empty namespace, never a persisted source fact. Any malformed,
  * negative, fractional, oversized, or non-canonical row fails the whole
  * scoped read (`null` -> closed `authority_unavailable`); a valid maximum
  * elsewhere in the namespace does not rehabilitate it, invalid values are
@@ -959,7 +960,7 @@ function readGraphSourceHighWaterStrictly(
   for (const row of rows) {
     if (
       typeof row.source_sequence !== "string"
-      || !NON_NEGATIVE_DECIMAL_V1.test(row.source_sequence)
+      || !POSITIVE_DECIMAL_V1.test(row.source_sequence)
     ) {
       return null;
     }

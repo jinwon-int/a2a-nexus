@@ -811,7 +811,7 @@ test("high-water: ANY malformed stored sequence in the namespace fails closed wi
           ORDER BY source_fact_digest`,
       ).all(HIGH_WATER_NAMESPACE);
 
-    for (const malformed of ["007", "-5", "1.5", "9".repeat(41), "", "1e3"]) {
+    for (const malformed of ["0", "007", "-5", "1.5", "9".repeat(41), "", "1e3"]) {
       // Corrupt a NON-maximum row: a valid maximum elsewhere must not
       // rehabilitate the scoped read.
       fixture.db
@@ -988,5 +988,22 @@ test("high-water: lost ownership and a released adapter fail closed without muta
     assert.equal(storedSequenceCount(released.db, HIGH_WATER_NAMESPACE), 1);
   } finally {
     disposeFixture(released);
+  }
+});
+
+
+test("high-water: a zero source row is corruption, not an empty namespace", () => {
+  const fixture = makeFixture();
+  try {
+    const owner = readyAdapter(fixture.db);
+    assert.equal(observedHighWater(owner).sourceSequenceHighWater, "0");
+    insertRawSourceRow(fixture.db, highWaterFactDigest(1), "0");
+    const before = fixture.db.prepare("SELECT * FROM shared_state_graph_source").all();
+    assert.equal(highWaterUnavailable(owner.query(highWaterQueryRequest())), "authority_unavailable");
+    assert.deepEqual(fixture.db.prepare("SELECT * FROM shared_state_graph_source").all(), before);
+    fixture.db.prepare("UPDATE shared_state_graph_source SET source_sequence = '1' WHERE namespace = ?").run(HIGH_WATER_NAMESPACE);
+    assert.equal(observedHighWater(owner).sourceSequenceHighWater, "1");
+  } finally {
+    disposeFixture(fixture);
   }
 });
