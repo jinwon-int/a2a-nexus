@@ -171,8 +171,8 @@ export function startBrokerServerWithFactory<Options, Runtime extends BrokerLife
     console.log(`[a2a-broker] received ${signal}`);
     closeServer(signal);
   };
-  process.once("SIGINT", gracefulShutdown);
-  process.once("SIGTERM", gracefulShutdown);
+  process.on("SIGINT", gracefulShutdown);
+  process.on("SIGTERM", gracefulShutdown);
   process.on("unhandledRejection", (reason) => {
     console.error(JSON.stringify({
       level: "error",

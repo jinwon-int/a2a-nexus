@@ -200,7 +200,8 @@ test("#2129: reported elapsed includes the A2A_SHUTDOWN_DRAIN_MS pre-close drain
   }
 });
 
-test("#2129: duplicate shutdown signal mid-drain does not restart timing or run close twice", {
+for (const [firstSignal, secondSignal] of [["SIGTERM", "SIGINT"], ["SIGTERM", "SIGTERM"], ["SIGINT", "SIGINT"]] as const) {
+test(`#2129: ${firstSignal} then ${secondSignal} does not restart timing or run close twice`, {
   timeout: 20_000,
 }, async () => {
   const preDrainMs = 300;
@@ -212,17 +213,17 @@ test("#2129: duplicate shutdown signal mid-drain does not restart timing or run 
   const stdout = collectLines(child.stdout!);
   try {
     await waitForLine(child.stdout!, (line) => line === "ready", 8_000);
-    child.kill("SIGTERM");
+    child.kill(firstSignal);
     await waitForLine(
       child.stdout!,
-      (line) => line === `[a2a-broker] received SIGTERM, draining for ${preDrainMs}ms before close`,
+      (line) => line === `[a2a-broker] received ${firstSignal}, draining for ${preDrainMs}ms before close`,
       8_000,
     );
-    // A second shutdown signal on a different process.once slot mid-drain.
-    setTimeout(() => child.kill("SIGINT"), 100);
+    // Both repeated and mixed signals must retain the graceful shutdown handler.
+    setTimeout(() => child.kill(secondSignal), 100);
     await waitForLine(
       child.stdout!,
-      (line) => line.startsWith("[a2a-broker] SIGINT: shutdown already in progress"),
+      (line) => line.startsWith(`[a2a-broker] ${secondSignal}: shutdown already in progress`),
       8_000,
     );
     const finalLine = await waitForLine(
@@ -244,6 +245,7 @@ test("#2129: duplicate shutdown signal mid-drain does not restart timing or run 
     if (child.exitCode === null && child.signalCode === null) child.kill("SIGKILL");
   }
 });
+}
 
 test("#2129: persistence failure reports honest shutdown wording (not 'drain completed') and exits nonzero", {
   timeout: 20_000,
