@@ -321,6 +321,23 @@ Operational note:
 - Repeated `CancelTask` / `POST /tasks/:id/cancel` calls are idempotent. The broker returns the existing terminal task unchanged and keeps the original cancellation record.
 - Cancel terminal metadata is stored on `TaskRecord.cancellation` as `requestedAt`, `requestedBy`, optional `reason`, and optional `sourceTaskId`. `sourceTaskId` is set only for fan-out descendants and points to the immediate parent task that caused the child cancel.
 
+## Serving-fence recovery checks
+
+`node packages/broker/scripts/shared-state-fence-clear.mjs --file <fence.sqlite> --dry-run`
+checks file occupancy and running broker processes before reporting a recovery
+plan. Remove `--dry-run` only as part of an authorized recovery after the broker
+has stopped. The recovery command backs up the fence file and preserves its
+lifecycle epoch while clearing the owner token.
+
+The checks fail closed on inconclusive output: `lsof` can report no holders
+only with exit 1 and empty stdout/stderr; exit 0 must contain a recognized header
+and holder rows. `ps` must return a recognized header and parseable process rows
+without stderr. Empty, malformed, or contradictory output aborts before backup,
+audit writes, or owner-token changes. Broker detection includes bare
+`node dist/server.js`, repository-relative, and absolute entrypoint paths.
+A successful probe is a point-in-time check, not synchronization against a
+concurrent broker start; keep the broker stopped throughout recovery.
+
 ## Stale-task reaper
 
 The broker runs a periodic in-process stale-task reaper so that restart recovery
