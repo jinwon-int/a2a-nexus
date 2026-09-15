@@ -1,4 +1,5 @@
 import type { Server } from "node:http";
+import { performance } from "node:perf_hooks";
 
 /**
  * Default keepAliveTimeout for the HTTP server (62s). Chosen to exceed the default
@@ -84,33 +85,60 @@ export function startBrokerServerWithFactory<Options, Runtime extends BrokerLife
       || DEFAULT_STOP_GRACE_PERIOD_HINT_MS,
   );
 
+  // #2129: the shutdown-duration log line in closeServer is timed from the
+  // FIRST shutdown signal — not from closeServer itself — so the reported
+  // elapsed includes the configured A2A_SHUTDOWN_DRAIN_MS pre-close drain
+  // (e.g. 50s of drain + 5s of close must report ~55s against a 60s budget,
+  // not 5s). The monotonic clock keeps wall-clock adjustments (NTP) from
+  // skewing the measurement. The same anchor doubles as the in-progress flag:
+  // a duplicate shutdown signal must not re-anchor the timer or run the close
+  // sequence twice.
+  let shutdownAnchorMonotonicMs = 0;
+  let shutdownAnchorTaken = false;
+  const anchorShutdownStart = () => {
+    if (shutdownAnchorTaken) return;
+    shutdownAnchorTaken = true;
+    shutdownAnchorMonotonicMs = performance.now();
+  };
+
   const closeServer = (signal: NodeJS.Signals | "uncaughtException") => {
+    // Defensive: every entry point today goes through gracefulShutdown, which
+    // anchors at the first shutdown signal; anchor here as well so a direct
+    // future caller can never silently measure only part of the shutdown.
+    anchorShutdownStart();
     // #2129: T1 2026-09-12 — a container that could not finish draining
     // before the Compose kill timer fired was SIGKILLed mid-release, leaving
     // the shared-state serving fence's owner_token set and every subsequent
     // container fail closed with `ownership_conflict`. Logging how long the
-    // drain actually took (ending when the fence is released in
+    // shutdown actually took (first shutdown signal through fence release in
     // closeWorkerPersistence) makes a grace-period breach observable from the
     // broker's own logs instead of only inferable after the fact from
     // `docker events`/`docker inspect`.
-    const drainStartedAtMs = Date.now();
+    let persistenceCloseFailed = false;
     console.log(`[a2a-broker] ${signal}: stopping stale reaper and closing server`);
     runtime.stopStaleReaper();
     runtime.stopPoller();
     runtime.server.close(() => {
       void runtime.closeWorkerPersistence()
         .catch((error) => {
+          persistenceCloseFailed = true;
           console.error("[a2a-broker] worker-thread persistence shutdown failed:", error);
           process.exitCode = 1;
         })
         .finally(() => {
-          const elapsedMs = Date.now() - drainStartedAtMs;
-          const line = `[a2a-broker] drain completed in ${elapsedMs}ms (stop_grace_period budget: ${stopGracePeriodHintMs}ms)`;
+          const elapsedMs = Math.max(0, Math.round(performance.now() - shutdownAnchorMonotonicMs));
+          // A persistence failure must not be reported as "drain completed";
+          // say what actually ended the shutdown, same elapsed/budget shape.
+          const line = persistenceCloseFailed
+            ? `[a2a-broker] shutdown ended after persistence failure in ${elapsedMs}ms (stop_grace_period budget: ${stopGracePeriodHintMs}ms)`
+            : `[a2a-broker] drain completed in ${elapsedMs}ms (stop_grace_period budget: ${stopGracePeriodHintMs}ms)`;
           // Warn once the drain has used most of the configured budget: by
           // the time it fully exceeds the budget, Compose may already have
           // sent SIGKILL and this line might never flush, so the warning
-          // threshold is deliberately set below 100% of the budget.
-          if (stopGracePeriodHintMs > 0 && elapsedMs >= stopGracePeriodHintMs * 0.8) {
+          // threshold is deliberately set below 100% of the budget. Elapsed
+          // includes any A2A_SHUTDOWN_DRAIN_MS pre-close drain (#2129).
+          const nearBudget = stopGracePeriodHintMs > 0 && elapsedMs >= stopGracePeriodHintMs * 0.8;
+          if (nearBudget || persistenceCloseFailed) {
             console.warn(line);
           } else {
             console.log(line);
@@ -129,6 +157,11 @@ export function startBrokerServerWithFactory<Options, Runtime extends BrokerLife
   };
 
   const gracefulShutdown = (signal: NodeJS.Signals | "uncaughtException") => {
+    if (shutdownAnchorTaken) {
+      console.log(`[a2a-broker] ${signal}: shutdown already in progress; ignoring duplicate shutdown signal`);
+      return;
+    }
+    anchorShutdownStart();
     if (shutdownDrainMs > 0 && runtime.beginDrain) {
       console.log(`[a2a-broker] received ${signal}, draining for ${shutdownDrainMs}ms before close`);
       runtime.beginDrain();
@@ -138,8 +171,8 @@ export function startBrokerServerWithFactory<Options, Runtime extends BrokerLife
     console.log(`[a2a-broker] received ${signal}`);
     closeServer(signal);
   };
-  process.once("SIGINT", gracefulShutdown);
-  process.once("SIGTERM", gracefulShutdown);
+  process.on("SIGINT", gracefulShutdown);
+  process.on("SIGTERM", gracefulShutdown);
   process.on("unhandledRejection", (reason) => {
     console.error(JSON.stringify({
       level: "error",

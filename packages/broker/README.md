@@ -263,6 +263,20 @@ BROKER_MAX_AUDIT_EVENTS=
 STATE_FILE_MAX_BYTES=
 ```
 
+## Shutdown timing
+
+The shutdown duration starts with the first SIGINT or SIGTERM and includes the
+configured pre-close drain, connection close, and persistence cleanup. It uses
+a monotonic clock and warns when the total reaches 80% of the configured stop
+grace period hint (`A2A_STOP_GRACE_PERIOD_HINT_MS`). This hint does not control
+the container stop timer; an external SIGKILL can prevent the final log from
+appearing. Repeated SIGINT or SIGTERM during graceful shutdown are
+ignored; they do not restart the timer or run cleanup twice.
+
+If persistence cleanup fails, the final log reports the failed cleanup and the
+process exits nonzero instead of claiming that drain completed. These logs are
+shutdown observations, not proof that a serving fence was released safely.
+
 ## Request identity and rate limits
 
 Mutating routes now support broker-side requester verification using headers:

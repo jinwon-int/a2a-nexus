@@ -149,6 +149,13 @@ mapping is in [a2a-task-handler.mjs](../packages/broker/scripts/a2a-task-handler
 Analysis bridges and deterministic/fanout profiles have their own settings.
 Do not apply implementation budgets to all analysis paths by assumption.
 
+When observing a broker shutdown, the reported duration includes the pre-close
+drain and persistence cleanup from the first termination signal. Repeated
+SIGINT/SIGTERM signals are ignored while graceful shutdown is in progress. A
+failed persistence close produces a failure log and nonzero exit; do not treat
+it as a completed drain or proof of safe fence release. See
+[shutdown timing](../packages/broker/README.md#shutdown-timing).
+
 ## 4. Dispatch, read back and recover
 
 Only after the task's live effects are authorized and the environment has
