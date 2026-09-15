@@ -15,11 +15,12 @@
  * cold-started gate — or one another append authority has raced past — holds
  * a stale counter. On a `source_sequence_conflict` the gate probes upward
  * from its counter — rejected transactions allocate nothing and are cheap —
- * until the append is accepted. The counter is updated only monotonically
- * upward from committed appended/replayed results (BigInt comparison), so a
- * replayed historical fact returns that fact's ORIGINAL sequence without
- * regressing the warm cache into re-probing, and no high-water is ever
- * invented. The proper fix is a sequence-read query (§6 follow-up, open).
+ * until the append is accepted. Conflicts advance the candidate expectation;
+ * a successful appended/replayed result retains the greater of that tracked
+ * expectation and the returned committed sequence (BigInt comparison).
+ * A historical replay therefore returns its original sequence without
+ * regressing the warm cache. Rejected probes allocate no durable sequence.
+ * The proper fix is a sequence-read query (§6 follow-up, open).
  */
 
 import { BrokerError } from "./core/broker-error.js";

@@ -3738,8 +3738,9 @@ no local sequence is ever invented.
 
 The known trade-off, documented rather than hidden: `appendGraphSource`
 requires an `expectedSourceSequence` (namespace-wide optimistic CAS) and the
-adapter exposes no sequence read, so the gate tracks the high-water in memory,
-advancing it only monotonically from committed appended/replayed results — a
+adapter exposes no sequence read, so the gate tracks an expectation in memory.
+Conflicts advance that candidate; successful appended/replayed results retain
+the greater of the tracked expectation and the returned committed sequence. A
 replayed historical fact returns its original sequence and never regresses
 the warm cache into re-probing — and re-syncs by probing upward when needed:
 after a cold start, or whenever another append authority advances the
