@@ -173,6 +173,12 @@ a session that promises to resume. Do not invent a Nexus wait CLI.
 | Task failed but a PR or patch exists | Preserve the failed task record; recover and independently validate the artifact as a separate finalizer outcome. |
 | Projection failure or empty analysis | Verify source carriers and projection evidence; use [offline replay](operators.md#round-replay-before-live-re-dispatch-1302) before spending another live round. |
 
+Serving-fence recovery uses stricter fail-closed occupancy checks: ambiguous
+`lsof`/`ps` output aborts before any fence, backup or audit mutation. Bare and
+path-qualified `node dist/server.js` invocations count as a running broker.
+See [broker recovery checks](../packages/broker/README.md#serving-fence-recovery-checks)
+for accepted probe shapes and the requirement to keep the broker stopped.
+
 Terminal failure is not permission to replay side effects. Inspect retry lineage
 and existing artifacts before creating a corrected follow-up task.
 
