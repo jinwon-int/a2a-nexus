@@ -618,7 +618,9 @@ A succeeded result contains ONLY the namespace and the canonical nonnegative
 decimal `sourceSequenceHighWater` — the greatest stored source sequence
 anywhere in the namespace, independent of source stream, computed by exact
 BigInt comparison rather than a row count or TEXT order — and an empty
-namespace is honestly `0`. The read performs no mutation, clock advance, or
+namespace is honestly `0`. Each stored source fact must have a positive
+sequence; a persisted zero is corruption and fails the whole scoped read.
+The read performs no mutation, clock advance, or
 sequence allocation, reports no anchor, checkpoint, completeness, or write
 token, and fails closed on any malformed stored sequence in the requested
 namespace without normalization or a zero fallback; unrelated namespaces

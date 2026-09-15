@@ -1983,6 +1983,9 @@ performance, deployment, or issue closure.
 
 ### Decision Q4 — promote the closed query union to the broad async contract
 
+This entry records the original two-operation promotion. The later Decision
+Q4a below adds the third closed `queryGraphSourceHighWater` operation.
+
 Owner decision Q4 (2026-08-24 KST, `#1504`): Q1 now defines both closed query
 families and Q2/Q3 implement both against the inline SQLite adapter. The next
 source slice may therefore add the query member that section 6.1 has always
@@ -3957,7 +3960,9 @@ parser no longer assumes non-outbox means evidence path. The answer is the
 greatest canonical stored source sequence across the namespace, independent
 of broker/source stream, compared as a BigInt decimal — never a COUNT and
 never plain TEXT order. Every stored sequence in the REQUESTED namespace is
-validated against the existing closed bounds: ANY malformed, negative,
+validated as positive decimals against the existing closed bounds: zero is
+valid only for the result of an empty namespace, never a stored source fact.
+ANY malformed, zero, negative,
 fractional, oversized, or non-canonical row fails the whole scoped read
 closed (`authority_unavailable`), even where a different row would produce a
 valid maximum; values are never normalized, zero is never an error fallback,
@@ -4001,7 +4006,10 @@ the budget, budget exhaustion failing closed, and the unchanged failed-fence,
 default-off, and source-allocation behaviors; existing fence doubles gained
 the narrow new method where the conflict case exercises it.
 
+The strict SQLite high-water read scans the namespace source rows. The
+bounded retry removes gap-proportional append probing; it does not establish
+constant-time reads or measured production latency.
+
 Remaining conditions: no projection/prune integration, no public HTTP
-route, no policy or default activation, no CHANGELOG claim, no worker merge,
-and no issue closure. #1504 stays OPEN for HA/shared backend, query,
+route, and no policy or default activation. #1504 stays OPEN for HA/shared backend, query,
 retention, and observation; 488/489 remain as decided by W11.

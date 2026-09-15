@@ -220,8 +220,9 @@ authority, and a terminal transition fails whole with retryable
 `state_unavailable` when that authority is unavailable — never a local
 fallback. Since the #1504 cold-start resync change, a cold or raced gate
 resolves a stale sequence expectation with one durable high-water read plus a
-bounded compare-and-set retry (8-round budget): restart logs no longer show
-long runs of rejected `source_sequence_conflict` probes. A
+bounded compare-and-set retry (8-round budget). Rejected append attempts no
+longer grow with the sequence gap; the SQLite read still scans the namespace
+rows, so this is not a constant-time query or a measured fleet-latency claim. A
 `source_high_water_below_tracked_expectation` failure means the durable
 source ledger regressed below what the gate already observed — investigate
 the store (rollback, corruption, wrong file); do not simply retry. The flag
