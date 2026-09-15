@@ -350,16 +350,16 @@ approval boundaries.
 
 ## Success criteria
 
-- [ ] This spec packet exists at `docs/specs/bounded-pr-review-lifecycle/` (spec, clarify,
+- [x] This spec packet exists at `docs/specs/bounded-pr-review-lifecycle/` (spec, clarify,
   analyze, plan, tasks, checklist).
-- [ ] `IntentContractV1` canonicalization and `intentHash` stability/change rules are defined.
-- [ ] One global lineage budget covers all review/correction layers with terminal exhaustion.
-- [ ] Review-receipt binding (headSha/diffHash/intentHash/trusted author) is specified additively
+- [x] `IntentContractV1` canonicalization and `intentHash` stability/change rules are defined.
+- [x] One global lineage budget covers all review/correction layers with terminal exhaustion.
+- [x] Review-receipt binding (headSha/diffHash/intentHash/trusted author) is specified additively
   without weakening existing gates.
-- [ ] Finding ledger, resolution-review restrictions, appeal path, and drift guards are defined.
-- [ ] Rollout modes (`off`/`record`/`enforce`) and operator metrics are defined.
-- [ ] #1499 reconciliation is explicit.
-- [ ] All out-of-scope actions are explicitly excluded.
+- [x] Finding ledger, resolution-review restrictions, appeal path, and drift guards are defined.
+- [x] Rollout modes (`off`/`record`/`enforce`) and operator metrics are defined.
+- [x] #1499 reconciliation is explicit.
+- [x] All out-of-scope actions are explicitly excluded.
 
 ## Safety and approval boundaries
 
