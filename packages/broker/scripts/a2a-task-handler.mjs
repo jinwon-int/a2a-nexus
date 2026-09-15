@@ -361,21 +361,10 @@ function validatePayloadDiffHygiene(diffHygiene) {
   return Object.keys(policy).length > 0 ? policy : undefined;
 }
 
-// #1601: buildRunnerTask built the docker-runner prompt from task.message
-// (with a payload.prompt fallback) and silently dropped payload.focus. The
-// official patch-manifest recipe puts the detailed scope/test instructions in
-// focus, so the dispatched agent received only the generic message and edited
-// the wrong files (a real failed task showed a 570-byte prompt without focus,
-// and an independent __test.buildRunnerTask sentinel probe reported
-// focusReached:false). For github-propose-patch tasks only — taskMode already
-// trims surrounding whitespace, matching the readiness/no-write checks — a
-// nonempty string focus is carried into the runner prompt as a clearly labeled
-// section. Exact whitespace-trimmed equality with the effective message
-// dedupes; substring overlap never drops distinct instructions. Absent, blank
-// or non-string focus leaves the prompt byte-identical to the pre-#1601
-// output, so older manifests and non-patch modes stay backward compatible.
-// This is instruction delivery only: it infers no readiness or permission and
-// changes no lifecycle/bootstrap instruction, timeout, model or scope field.
+// #1601: preserve additional patch instructions in the Docker runner prompt.
+// taskMode already trims mode whitespace. Deduplicate only an exact trimmed
+// match with the effective message; substring overlap can contain distinct
+// instructions. Other modes and absent/malformed focus retain the old prompt.
 function runnerPromptFocusSection(mode, payload, effectiveMessage) {
   if (mode !== "github-propose-patch") return "";
   if (typeof payload.focus !== "string") return "";
