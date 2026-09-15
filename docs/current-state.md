@@ -121,7 +121,11 @@ separate explicit operator approval.
 
 ## Shared-State Runtime Reachability
 
-`packages/broker/src/shared-state-*` (the second SQLite stack, `a2a.shared-state.storage/v1`) is runtime-reachable only through the serving fence (`acquireSharedStateServingFenceForBrokerV1`); the adapter's 13 primitives and the eight conformance harnesses remain undeployed (no non-test importers) and are staged for the `#1504` HA wiring — see `#2081` for the pre-wiring query-scaling work.
+`packages/broker/src/shared-state-*` (the second SQLite stack, `a2a.shared-state.storage/v1`) is now source-reachable from broker startup rather than test-only: `server.ts` resolves the primitive/shadow flags at startup (all default-off; invalid values fail startup loudly), always acquires the serving fence (`acquireSharedStateServingFenceForBrokerV1` in `shared-state-serving-fence-v1.ts`, which imports and constructs the SQLite adapter and runs every operation inside a single `adapter.transact` boundary), and constructs the evidence-only shadow runtime (`shared-state-shadow-runtime-v1.ts`, same adapter, its own separate SQLite store) when `BROKER_SHADOW_STATE_V1` is on.
+
+Default-off flag-gated paths run through the serving fence: replay (`BROKER_SHARED_STATE_V1_REPLAY`, `consumeReplayNonce`), rate (`BROKER_SHARED_STATE_V1_RATE`, `reserveRateLimitCost`), lease (`BROKER_SHARED_STATE_V1_LEASE`), task-create idempotency (`BROKER_SHARED_STATE_V1_IDEMPOTENCY`), terminal-outbox append ordering (`BROKER_SHARED_STATE_V1_OUTBOX`), and terminal-task claim-graph source facts (`BROKER_SHARED_STATE_V1_GRAPH`). The shadow flag mirrors replay/rate decisions into that separate shadow store only — evidence-only, never decision-driving.
+
+This is implemented flag-off source, not a deployed or activated serving store: no full outbox/query/retention integration, no shared backend, and no HA is claimed, and the backend-neutral/SQLite conformance harnesses remain test evidence. The canonical record of completed source versus remaining conditions is the [shared-state HA contract checklist](specs/shared-state-ha-contract/checklist.md) (Refs #1504); the retention-governed snapshots below and the `#2081` pre-wiring query-scaling lane remain valid as history. Refs #1498, #2080, #1724.
 
 ## Snapshot retention
 
