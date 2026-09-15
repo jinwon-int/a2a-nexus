@@ -17,6 +17,7 @@ import {
   SqliteBrokerStateStore,
   emptySnapshot,
 } from "./core/store.js";
+import { taskLaneAssignmentSchema } from "./core/store-schemas.js";
 import type {
   CreateTaskRequest,
   TaskLaneReasonCode,
@@ -24,6 +25,8 @@ import type {
 } from "./core/types.js";
 import {
   FAST_LANE_READ_ONLY_ANALYSIS_MODES,
+  TASK_LANE_REASON_CODES,
+  TASK_LANE_REASON_CODES_COVER_CONTRACT,
   classifyTaskLane,
 } from "./task-lane-classifier.js";
 
@@ -410,4 +413,45 @@ test("legacy records without laneAssignment remain loadable and do not gain a re
     broker.listAuditEvents({ targetId: legacyTask.id, action: "task.lane_assigned" }).length,
     0,
   );
+});
+
+test("closed reason-code contract tuple matches the persistence schema mirror exactly", () => {
+  // The stats read path validates against TASK_LANE_REASON_CODES; persistence
+  // validates against taskLaneAssignmentSchema. Both must stay the same set.
+  assert.deepEqual(
+    [...TASK_LANE_REASON_CODES],
+    [...taskLaneAssignmentSchema.shape.reasonCodes.element.options],
+  );
+  assert.equal(TASK_LANE_REASON_CODES_COVER_CONTRACT, true);
+  assert.equal(TASK_LANE_REASON_CODES[0], "all_fast_conditions_met");
+});
+
+test("every reason the classifier can emit stays inside the closed contract tuple", () => {
+  const emitted = new Set<TaskLaneReasonCode>();
+  // Drive the classifier across every structured marker group and collect the
+  // reasons it actually records; none may fall outside the closed tuple.
+  const adversarial: CreateTaskRequest[] = [
+    request(),
+    request({ payload: { mode: "analysis-only" } }),
+    request({ payload: { mode: "propose-patch" } }),
+    request({ payload: { fanout: true } }),
+    request({ payload: { workers: ["a", "b"] } }),
+    request({ payload: { teamId: "t" } }),
+    request({ policyContext: { requiresApproval: true } }),
+    request({ payload: { sensitive: true } }),
+    request({ payload: { live: true } }),
+    request({ payload: { externalSend: true } }),
+    request({ payload: { credentials: "hint" } }),
+    request({ assignedWorkerId: "worker-b" }),
+    request({ parentRoundId: "round-1" }),
+  ];
+  for (const candidate of adversarial) {
+    for (const decision of [classify(candidate, undefined, ALLOW), classify(candidate, "mobile", ALLOW), classify(candidate, "persistent", undefined)]) {
+      for (const reason of decision.reasonCodes) emitted.add(reason);
+    }
+  }
+  assert.ok(emitted.size > 0);
+  for (const reason of emitted) {
+    assert.ok(TASK_LANE_REASON_CODES.includes(reason), `unexpected reason ${reason}`);
+  }
 });
