@@ -3738,11 +3738,15 @@ no local sequence is ever invented.
 
 The known trade-off, documented rather than hidden: `appendGraphSource`
 requires an `expectedSourceSequence` (namespace-wide optimistic CAS) and the
-adapter exposes no sequence read, so the gate tracks the high-water in memory
-and, after a restart's cold start, re-syncs by probing upward — rejected
-transactions allocate nothing and the probe runs at most once per process
-(the counter is warm afterwards); the proper fix is a sequence-read query,
-a §6 follow-up. Deliberately not in this slice: the projection-batch
+adapter exposes no sequence read, so the gate tracks an expectation in memory.
+Conflicts advance that candidate; successful appended/replayed results retain
+the greater of the tracked expectation and the returned committed sequence. A
+replayed historical fact returns its original sequence and never regresses
+the warm cache into re-probing — and re-syncs by probing upward when needed:
+after a cold start, or whenever another append authority advances the
+namespace. Rejected probe transactions allocate nothing. The proper fix is a
+sequence-read query, a §6 follow-up that remains open. Deliberately not in
+this slice: the projection-batch
 apply/rollback boundary (no read model consumes batches — the deterministic
 reversal acceptance is already provable at the adapter level in the
 conformance harnesses), the evidence-path query runtime wiring, `/health`
