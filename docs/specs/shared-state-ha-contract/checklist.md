@@ -10,6 +10,21 @@
 > Runtime/query integration, SQLite/shared adapter conformance,
 > retention/prune execution, migration, and operations remain open.
 > Refs #1504.
+>
+> **2026-09-15 current-source status** (the historical paragraph above is
+> preserved, not rewritten): the SQLite V1 adapter and schema
+> (`packages/broker/src/shared-state-sqlite-adapter-v1.ts`), serving fence
+> (`shared-state-serving-fence-v1.ts`), `/readyz` and non-serving middleware
+> (`packages/broker/src/server.ts`, covered by
+> `shared-state-readyz-v1.test.ts`), `stateContract` health
+> (`shared-state-contract-health-v1.ts`), all six flag-gated primitives, and
+> the evidence-only shadow runtime (`shared-state-shadow-runtime-v1.ts`) are
+> implemented and conformanced inline and through the FIFO worker
+> (`packages/broker/src/shared-state-worker-mode/`; Decision W11 in
+> `tasks.md`). This is implemented flag-off source, not an activated serving
+> store: every flag ships default-off and the shadow never drives decisions.
+> Still open: the shared-backend adapter, idempotency/outbox retention/prune
+> execution, runtime query integration, Phase 7 migration/cutover, and operations.
 
 ## A. Spec packet
 
@@ -20,7 +35,8 @@
 - [x] `plan.md` defines staged source, migration, cutover, and rollback gates.
 - [x] `tasks.md` contains deterministic implementation/test work.
 - [x] This checklist separates completed docs from future work.
-- [ ] Required spec-first packet approval is recorded.
+- [x] Required spec-first packet approval is recorded. (Operator approval
+  2026-08-22 KST; see `tasks.md` section 0.)
 
 ## B. Deployment truth
 
@@ -82,9 +98,14 @@ specified in `spec.md`.
   pins closed visibility/availability/reason/band/count vocabularies and
   whole-group aggregation floors; and binds only to the existing pure health
   declaration parser without adding a route or runtime collector.
-- [ ] Machine-readable V1 types/schemas implemented.
-- [ ] SQLite V1 adapter implemented.
-- [ ] Shared V1 adapter implemented.
+- [x] Machine-readable V1 types/schemas implemented (closed V1
+  schemas/parsers in `shared-state-storage-contract-v1.ts` and the
+  keyspace/time/idempotency/outbox/observability slices).
+- [x] SQLite V1 adapter implemented as flag-off source
+  (`shared-state-sqlite-adapter-v1.ts`; inline and FIFO-worker conformance
+  per Decision W11; not the serving store).
+- [ ] Shared V1 adapter implemented. (Correctly still open: no approved
+  conforming shared backend exists.)
 
 ## E. Startup/readiness/health
 
@@ -95,9 +116,15 @@ specified in `spec.md`.
 - [x] `/livez`, planned `/readyz`, and `/health` meanings are separated.
 - [x] Replay/rate reset risk and continuity signals are specified.
 - [x] Secret/identity-bearing health data is forbidden, including digests.
-- [ ] Startup grade/ownership code implemented.
-- [ ] `/readyz` and non-serving middleware implemented.
-- [ ] Runtime health signal implemented and leak-tested.
+- [x] Startup grade/ownership code implemented
+  (`shared-state-deployment-grade-v1.ts`,
+  `shared-state-startup-checks-v1.ts`, `shared-state-serving-fence-v1.ts`).
+- [x] `/readyz` and non-serving middleware implemented
+  (`packages/broker/src/server.ts`, covered by
+  `shared-state-readyz-v1.test.ts`).
+- [x] Runtime health signal implemented and leak-tested (`stateContract`
+  via `shared-state-contract-health-v1.ts` and the observability
+  projector/leak corpus).
 
 ## F. Deterministic local tests
 
@@ -276,23 +303,48 @@ specified in `spec.md`.
   non-serving middleware, and route status remain Phase 4 and are not proved
   here. `lock_timeout` and delayed-read had no prior coverage in the
   repository and are exercised for the first time.
-- [ ] Claim tests pass against a SQLite or shared adapter.
-- [ ] Idempotency tests pass against a SQLite or shared adapter.
-- [ ] Idempotency retention/prune execution is implemented and proven.
-- [ ] Outbox tests pass against a SQLite or shared adapter.
+2026-09-15: the combined SQLite/shared rows below are split so the SQLite
+portion can be evidenced from source without claiming a future shared
+backend. Shared-backend halves and every extra clause named in a row stay
+unchecked.
+
+- [x] Claim tests pass against a SQLite adapter (inline and FIFO
+  worker-writer conformance targets; Decision W11 in `tasks.md`).
+- [ ] Claim tests pass against a shared adapter.
+- [x] Idempotency tests pass against a SQLite adapter (inline and FIFO
+  worker-writer conformance targets; Decision W11).
+- [ ] Idempotency tests pass against a shared adapter.
+- [ ] Idempotency retention/prune execution is implemented and proven. (V1
+  has no idempotency/outbox delete path; those targets report `not-executed`.
+  The adapter already has replay/rate pruning.)
+- [x] Outbox tests pass against a SQLite adapter (inline and FIFO
+  worker-writer conformance targets; Decision W11).
+- [ ] Outbox tests pass against a shared adapter.
 - [ ] Outbox runtime/query reconciliation and retention/prune execution are
   implemented and proven.
-- [ ] Restart-continuity tests repeat and pass through a SQLite/shared adapter
-  with actual durability and adapter clock-floor persistence.
-- [ ] Partition/unavailable tests repeat and pass through a SQLite/shared
-  adapter against a real authority, and the Phase 4 route-level readiness
-  assertion is implemented/passing.
-- [ ] Exact expiry-boundary tests repeat and pass through a SQLite/shared
-  adapter, including authorized retention/prune execution at and after the
-  logical boundary.
-- [ ] Claim-graph/rollback tests repeat and pass through a SQLite/shared
-  adapter, including a real query surface rather than a test-only
-  evidence-path control.
+- [x] Restart-continuity tests repeat and pass through a SQLite adapter with
+  actual durability (real file-backed close/reopen) and adapter clock-floor
+  persistence.
+- [ ] Restart-continuity tests repeat through a shared adapter.
+- [x] Partition/unavailable tests repeat and pass through a SQLite adapter
+  against a real file-backed authority, including the measured real lock
+  collision, and the Phase 4 route-level readiness assertion is
+  implemented/passing (`tasks.md` section 4).
+- [ ] Partition/unavailable tests repeat through a shared adapter against a
+  genuinely partitioned live authority.
+- [x] Exact expiry-boundary tests repeat and pass through a SQLite adapter
+  (inline and FIFO worker-writer targets), which executes no
+  retention/prune by design.
+- [ ] Exact expiry-boundary tests repeat through a shared adapter.
+- [ ] Authorized retention/prune execution at and after the logical boundary
+  is implemented and proven.
+- [x] Claim-graph/rollback tests repeat and pass through a SQLite adapter
+  (inline and FIFO worker-writer targets) with real transactional rollback.
+- [ ] Claim-graph/rollback tests repeat through a shared adapter.
+- [ ] The repeated claim-graph conformance runs through a real query surface
+  rather than a test-only evidence-path control. (The adapter's V1
+  `queryGraphEvidencePath` query exists and is exercised separately; the
+  harness seam is still a test-only control — `tasks.md` section 2.7.)
 - [ ] Performance thresholds measured/approved.
 
 ## G. Migration/cutover
@@ -306,9 +358,13 @@ specified in `spec.md`.
 - [x] Unexportable volatile security state requires a non-serving safety
   window.
 - [x] Exact separate live actions are enumerated.
-- [ ] Local/offline migration rehearsal completed.
-- [ ] Production backup/read authorized.
-- [ ] Production migration/shadow authorized.
+- [x] Local/offline migration rehearsal completed (Slice ZA,
+  `scripts/migration-rehearsal-v1.mjs`, zero divergence).
+- [x] Production backup/read authorized (operator-approved Phase 6
+  preconditions, Slice ZB).
+- [ ] Production migration/shadow authorized. (The Phase 6 shadow
+  approval/deploy record lives on issue #1504; not asserted from source
+  here.)
 - [ ] Cutover gates satisfied and authorized.
 - [ ] Any migration or cutover executed.
 
@@ -319,7 +375,9 @@ specified in `spec.md`.
   graph source/checkpoint invariants are preserved.
 - [x] Unrepresentable rollback fails closed instead of losing data.
 - [x] Rollback sequence keeps one authority and restores traffic last.
-- [ ] Local failure-injection rollback rehearsal completed.
+- [x] Local failure-injection rollback rehearsal completed (Slice ZA stage
+  4: crash at every domain boundary plus rollback/re-migration, green after
+  every boundary).
 - [ ] Production rollback authorized or executed.
 
 ## I. Public truth and safety
@@ -340,9 +398,16 @@ specified in `spec.md`.
 ## J. Overall status
 
 - [x] Documentation/specification drafted.
-- [ ] Spec-first packet approved.
+- [x] Spec-first packet approved (2026-08-22 KST).
 - [ ] Runtime implementation complete.
 - [ ] Adapter conformance tests complete.
 - [ ] Migration complete.
 - [ ] Operational rollout complete.
 - [ ] `shared-state-ha` supported.
+
+2026-09-15 source status: V1 runtime implementation (startup, serving
+fence, `/readyz`, `stateContract` health, six flag-gated primitives) and
+SQLite inline/worker adapter conformance (Decision W11) are complete in
+source with every flag default-off — implemented source, not an activated
+serving store. The remaining gates above (runtime activation, shared
+adapter, migration, rollout, `shared-state-ha` support) stay unchecked.
