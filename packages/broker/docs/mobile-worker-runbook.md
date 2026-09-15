@@ -1,8 +1,14 @@
 # Mobile Worker Health Runbook
 
 > **mobilealpha**, **mobilebeta** — Team1 Hermes/Termux mobile workers running on Android
-> devices. These nodes connect via HTTP poll, may sleep briefly (Android Doze, lid
-> close, network suspend), and have a reduced capacity of 3 concurrent slots.
+> devices. These nodes connect via HTTP poll and may sleep briefly (Android Doze, lid
+> close, network suspend).
+>
+> **#2065 scope note:** there is **no enforced 3-task concurrency limit** for mobile
+> workers. Earlier revisions of this runbook described a "reduced capacity of 3
+> concurrent slots"; that overstated computed telemetry as an enforcement claim and
+> has been removed. The peer-status slot count does not set executor concurrency
+> or grant admission; policy and fast-lane decisions are unchanged.
 
 ## Detecting Mobile Workers
 
@@ -29,7 +35,7 @@ two mobile-specific fields for mobile workers:
 
 | Field | Type | Present When |
 |---|---|---|
-| `workerMode` | `"persistent"` \| `"mobile"` | Always; absent defaults to `"persistent"` |
+| `workerMode` | `"persistent"` \| `"mobile"` | When recorded; absent remains absent |
 | `mobileHealth` | `"health_ok"` \| `"stale"` \| `"disconnected"` | Only when `workerMode === "mobile"` |
 
 ### State Table
@@ -54,16 +60,29 @@ graph LR
 
 ## Thresholds (code constants)
 
+The mobile-specific constants drive `/dashboard`, `/workers/capacity` and
+their `mobileHealth` projection. Raw `GET /workers` and `GET /workers/:id`
+already use the common configured threshold and do not synthesize mobileHealth.
+Since #2065, `a2a.peer.status` also uses the common `workerOfflineAfterMs ??
+DEFAULT_WORKER_OFFLINE_AFTER_MS` (90 s) window with 10 advisory busy slots.
+A supplied legacy `mobileOfflineAfterMs` takes precedence for mobile workers
+only; `??` preserves explicit zero and overrides longer than the common window.
+
 | Constant | Value | Applies to |
 |---|---|---|
-| `DEFAULT_WORKER_OFFLINE_AFTER_MS` | 90,000 (90 s) | Persistent workers (server/VPS) |
-| `MOBILE_OFFLINE_AFTER_MS` | 30,000 (30 s) | Mobile workers (Termux/Hermes) |
-| `MOBILE_DISCONNECTED_AFTER_MS` | 90,000 (90 s) | Mobile workers — disconnected threshold |
+| `DEFAULT_WORKER_OFFLINE_AFTER_MS` | 90,000 (90 s) | Persistent workers on dashboard surfaces; every mode on `a2a.peer.status` (common default) |
+| `MOBILE_OFFLINE_AFTER_MS` | 30,000 (30 s) | Mobile workers on dashboard/mobileHealth surfaces; conversation-delivery liveness for all modes |
+| `MOBILE_DISCONNECTED_AFTER_MS` | 90,000 (90 s) | Mobile workers — disconnected threshold (dashboard/mobileHealth surfaces) |
+
+`getConversationDeliverySummary()` also uses both `MOBILE_*` constants for
+conversation-participant liveness across all worker modes (30 s online, up to
+90 s stale, then offline). That separate consumer is unchanged by this
+peer-status update.
 
 ## Code Locations
 
 - **Types**: `src/core/types.ts` — `WorkerMobileHealth`, `WorkerFleetSummary`, `WorkerCapacitySummaryItem`
-- **Stale detection**: `src/core/broker.ts` — `effectiveOfflineAfterMs()`, `computeWorkerMobileHealth()`, `isWorkerStale()`
+- **Stale detection**: `src/core/broker-worker-status.ts` — `effectiveOfflineAfterMs()`, `computeWorkerMobileHealth()`, `isWorkerStale()`
 - **Dashboard**: `src/core/broker.ts` — `getDashboard()` (workers section)
 - **Capacity**: `src/core/broker.ts` — `getWorkerCapacitySummary()` (per-item loop)
 
@@ -86,10 +105,18 @@ to avoid inflating high-churn event streams with per-worker metadata.
 1. **Mobile workers may briefly go stale** during Android Doze or after a network
    handoff. A single stale event is not cause for alarm; check `lastSeenAgeSec`
    to assess recency.
-2. **Capacity is limited** to 3 concurrent slots. A mobile worker reporting
-   `activeTaskCount: 3` is fully saturated.
-3. **Gateway reachability** is `false` when the worker is stale or disconnected;
-   the `PeerStatusService` will report `health: "stale"` or `health: "unreachable"`.
+2. **No per-mode concurrency limit is enforced.** There is no universal
+   "3 concurrent tasks" cap for mobile workers; `activeTaskCount` is computed
+   telemetry and does not read or set executor concurrency. The read-only
+   `a2a.peer.status` view additionally
+   reports an advisory busy hint (`active + queued` vs a fixed budget of 10,
+   identical for every mode) — it is telemetry, never an admission permission.
+3. **Surface semantics differ by design.** Dashboard/`mobileHealth` windows are
+   mode-aware (30 s / 90 s per the table above), while `a2a.peer.status` uses
+   the common 90 s window, so between 30 s and 90 s of heartbeat age a mobile
+   worker can be `stale` on the dashboard while `a2a.peer.status` still reports
+   `ok`. Past its resolved window, `a2a.peer.status` reports `health: "stale"`;
+   unregistered targets report `health: "unreachable"`.
 4. If a mobile worker remains disconnected for an extended period (>14 days by
    default retention), it becomes a cleanup candidate for `discoverCleanupCandidates`.
 
