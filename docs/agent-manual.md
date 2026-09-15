@@ -70,7 +70,9 @@ This public manual owns Nexus usage. Do not copy private inventory into this rep
 Save this template as a private `round.json`, replace every `REPLACE_*` value,
 and provide a current `readiness.json` collected for the selected worker.
 The example's host check only checks Node; choose an appropriate host smoke for
-your installation and require repository tests separately in `focus` and CI.
+your installation and require repository tests in `message` and CI. `focus` is
+optional additional detail (see below), never the only carrier of required
+scope.
 
 ```json
 {
@@ -83,14 +85,13 @@ your installation and require repository tests separately in `focus` and CI.
     "assignedWorkerId": "REPLACE_WORKER_ID",
     "intent": "propose_patch",
     "taskOrigin": "github",
-    "message": "Implement the specified issue, add regression coverage, and open a PR. The finalizer owns merge and issue closure.",
+    "message": "Implement REPLACE_PROBLEM_AND_EXPECTED_BEHAVIOR. Change only REPLACE_SOURCE_PATH and REPLACE_TEST_PATH. Add regression coverage and run REPLACE_REPOSITORY_TEST_COMMANDS from the repository root. Host acceptance below is only an environment smoke. Open a scoped PR; the finalizer owns review, merge and issue closure.",
     "payload": {
       "mode": "github-propose-patch",
       "repo": "REPLACE_OWNER/REPLACE_REPO",
       "issueUrl": "https://github.com/REPLACE_OWNER/REPLACE_REPO/issues/1",
       "baseBranch": "main",
       "title": "REPLACE_PR_TITLE",
-      "focus": "REPLACE_PROBLEM_BEHAVIOR_SCOPE_AND_REPOSITORY_TEST_COMMANDS",
       "timeoutMs": 6000000,
       "acceptance": {
         "command": ["node", "--version"],
@@ -116,6 +117,24 @@ prove the installed worker can run the patch.
   Acceptance runs through the **worker host handler**, whose working directory
   is not necessarily the runner's repository checkout. A repository-relative
   command there can fail after the PR was already created.
+- Keep `message` self-sufficient: put the complete essential problem, scope,
+  acceptance and repository test commands in `message` (it is the runner
+  prompt's head). Merging a source PR does **not** update installed workers;
+  Docker handler revisions without the #1601 focus-forwarding fix build the runner prompt from
+  `message` (or `payload.prompt`) alone and silently drop `payload.focus`, so
+  scope that lives only in `focus` may never reach the agent.
+- `payload.focus` may carry additional detail for `github-propose-patch` lanes,
+  but only after verifying the installed worker's handler revision forwards it
+  (#1601). Forwarding handlers append it as a labeled `Task focus:` section of
+  the runner prompt; the mode comparison trims surrounding whitespace like the
+  other patch-mode checks, and the section is omitted when focus is blank or
+  identical to the effective message after trimming. In the Docker runner
+  path, non-patch modes and older handler revisions omit focus; the host
+  patch bridge has its own prompt construction. The template above omits
+  optional focus so it also works with older Docker handlers. A readiness
+  profile — including the
+  `implementationCapability` gate below — implies nothing about focus
+  forwarding; only the installed handler revision does.
 - Declare related callers, tests, installation and documentation paths up front.
   Assign one finalizer to shared registries or CI files when lanes would conflict.
   If additional scope is needed, report it and prepare an explicitly revised
