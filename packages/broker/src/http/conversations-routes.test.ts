@@ -433,16 +433,17 @@ function injectTask(
   broker: InMemoryA2ABroker,
   taskId: string,
   status: "claimed" | "running" | "queued",
-  claimedBy: string | undefined,
+  targetWorkerId: string,
 ): void {
   // Minimal-but-shape-complete task record (mirrors the #1862 busy test above;
   // target.id keeps the retention reachability walk safe).
   (broker as unknown as { tasks: Map<string, Record<string, unknown>> }).tasks.set(taskId, {
     id: taskId,
     status,
-    claimedBy,
-    targetNodeId: claimedBy,
-    target: { id: claimedBy, kind: "node", role: "analyst" },
+    ...(status === "queued" ? {} : { claimedBy: targetWorkerId }),
+    assignedWorkerId: targetWorkerId,
+    targetNodeId: targetWorkerId,
+    target: { id: targetWorkerId, kind: "node", role: "analyst" },
     createdAt: new Date(FROZEN_CLOCK_MS).toISOString(),
     updatedAt: new Date(FROZEN_CLOCK_MS).toISOString(),
   });
@@ -524,7 +525,11 @@ test("claimed/running tasks mark recipients busy independently of age; queued-on
   registerLivenessWorker(broker, "worker-queued-only", "absent", new Date(FROZEN_CLOCK_MS).toISOString());
   injectTask(broker, "task-claimed-offline", "claimed", "worker-offline-busy");
   injectTask(broker, "task-running-online", "running", "worker-online-busy");
-  injectTask(broker, "task-queued-only", "queued", undefined);
+  injectTask(broker, "task-queued-only", "queued", "worker-queued-only");
+  const queuedTask = (broker as unknown as { tasks: Map<string, Record<string, unknown>> }).tasks.get("task-queued-only")!;
+  assert.equal(queuedTask.assignedWorkerId, "worker-queued-only");
+  assert.equal(queuedTask.targetNodeId, "worker-queued-only");
+  assert.equal(queuedTask.claimedBy, undefined, "queued work is assigned but not claimed");
 
   const conversationId = await openLadderConversation(broker, "msg-busy-1", [
     { kind: "worker", id: "worker-offline-busy", homeBrokerId: "broker-alpha" },
