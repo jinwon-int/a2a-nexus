@@ -15,15 +15,16 @@
 > preserved, not rewritten): the SQLite V1 adapter and schema
 > (`packages/broker/src/shared-state-sqlite-adapter-v1.ts`), serving fence
 > (`shared-state-serving-fence-v1.ts`), `/readyz` and non-serving middleware
-> (`shared-state-readyz-v1.ts`), `stateContract` health
+> (`packages/broker/src/server.ts`, covered by
+> `shared-state-readyz-v1.test.ts`), `stateContract` health
 > (`shared-state-contract-health-v1.ts`), all six flag-gated primitives, and
 > the evidence-only shadow runtime (`shared-state-shadow-runtime-v1.ts`) are
 > implemented and conformanced inline and through the FIFO worker
 > (`packages/broker/src/shared-state-worker-mode/`; Decision W11 in
 > `tasks.md`). This is implemented flag-off source, not an activated serving
 > store: every flag ships default-off and the shadow never drives decisions.
-> Still open: the shared-backend adapter, retention/prune execution, runtime
-> query integration, Phase 7 migration/cutover, and operations.
+> Still open: the shared-backend adapter, idempotency/outbox retention/prune
+> execution, runtime query integration, Phase 7 migration/cutover, and operations.
 
 ## A. Spec packet
 
@@ -119,7 +120,8 @@ specified in `spec.md`.
   (`shared-state-deployment-grade-v1.ts`,
   `shared-state-startup-checks-v1.ts`, `shared-state-serving-fence-v1.ts`).
 - [x] `/readyz` and non-serving middleware implemented
-  (`shared-state-readyz-v1.ts`).
+  (`packages/broker/src/server.ts`, covered by
+  `shared-state-readyz-v1.test.ts`).
 - [x] Runtime health signal implemented and leak-tested (`stateContract`
   via `shared-state-contract-health-v1.ts` and the observability
   projector/leak corpus).
@@ -313,7 +315,8 @@ unchecked.
   worker-writer conformance targets; Decision W11).
 - [ ] Idempotency tests pass against a shared adapter.
 - [ ] Idempotency retention/prune execution is implemented and proven. (V1
-  has no delete path; targets report `not-executed`.)
+  has no idempotency/outbox delete path; those targets report `not-executed`.
+  The adapter already has replay/rate pruning.)
 - [x] Outbox tests pass against a SQLite adapter (inline and FIFO
   worker-writer conformance targets; Decision W11).
 - [ ] Outbox tests pass against a shared adapter.
