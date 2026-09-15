@@ -11,12 +11,16 @@
  * `state_unavailable` so the terminal transition fails whole (§5.6 partition:
  * source append fails if its authority is unavailable).
  *
- * Cold-start resync, documented trade-off: the adapter exposes no sequence
- * read, so after a process restart the tracked counter is stale. On a
- * `source_sequence_conflict` the gate probes upward from its counter —
- * rejected transactions allocate nothing and are cheap — until the append is
- * accepted (at most once per process; the counter is warm afterwards). The
- * proper fix is a sequence-read query (§6 follow-up).
+ * Resync, documented trade-off: the adapter exposes no sequence read, so a
+ * cold-started gate — or one another append authority has raced past — holds
+ * a stale counter. On a `source_sequence_conflict` the gate probes upward
+ * from its counter — rejected transactions allocate nothing and are cheap —
+ * until the append is accepted. Conflicts advance the candidate expectation;
+ * a successful appended/replayed result retains the greater of that tracked
+ * expectation and the returned committed sequence (BigInt comparison).
+ * A historical replay therefore returns its original sequence without
+ * regressing the warm cache. Rejected probes allocate no durable sequence.
+ * The proper fix is a sequence-read query (§6 follow-up, open).
  */
 
 import { BrokerError } from "./core/broker-error.js";
@@ -62,8 +66,15 @@ export class SharedStateGraphSourceGateV1 {
       );
       if (outcome.outcome === "appended" || outcome.outcome === "replayed") {
         // The fact digest dedupes repeats, so a replayed answer is the same
-        // original sequence — no duplicate fact, no invented ordering.
-        this.#expectedSequence = BigInt(outcome.sourceSequence);
+        // original sequence — no duplicate fact, no invented ordering. The
+        // tracked counter moves only monotonically upward (BigInt compare):
+        // a replayed HISTORICAL fact must not regress the warm cache, or the
+        // next fresh append would re-probe expectations it has already
+        // passed. The replay itself still returns the original sequence.
+        const committed = BigInt(outcome.sourceSequence);
+        if (committed > this.#expectedSequence) {
+          this.#expectedSequence = committed;
+        }
         return { sequence: outcome.sourceSequence };
       }
       if (
