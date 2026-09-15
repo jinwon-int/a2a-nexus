@@ -100,8 +100,9 @@ prompt 원문·chain-of-thought·제한 자료 본문은 절대 포함하지 않
 - Receipt는 repo/PR/base·head SHA/diffHash/intentHash/author·reviewer/team/
   lane/findings/verdict/producedAt에 바인딩되며 receipt id = canonical core의
   sha256. 바인딩 필드 변조·self-review·미등록 키는 fail-closed.
-- Broker 표면은 **default-off**: `A2A_NCLEX_EVALUATION_KEYRING_FILE` 설정 시에만
-  등록되고 판독·구조 검증 실패는 startup fail. 라우트:
+- Broker 표면은 **default-off**: 위 상태 절의 옵션/환경변수 우선순위로
+  결정된 키링 경로가 비어 있지 않을 때만 등록된다. 판독·구조 검증 실패는
+  startup fail. 라우트:
   - `POST /nclex-evaluations/receipts` — operator 전용, 서명 검증 후 idempotent 저장
   - `GET /nclex-evaluations/receipts` — requester identity enforcement가 켜져 있으면
     hub/operator/analyst/researcher 역할을 요구한다. 본문을 제외한 선택 필드 목록만 반환한다
