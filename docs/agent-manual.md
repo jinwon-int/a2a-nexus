@@ -242,6 +242,14 @@ counts or zero; model comparisons are literal identifier equality only
 (alias-equivalent ids count as differences). It is tie-break/advisory data —
 never routing authority, success evidence, or an #1815 A/B attestation.
 
+The read-only `a2a.peer.status` RPC is advisory telemetry as well: since #2065
+it computes a common 90 s staleness window and a fixed 10-slot advisory busy
+budget (`active + queued`) for every `workerMode`, with only an explicitly
+supplied legacy `mobileOfflineAfterMs` still shortening the window for declared
+mobile workers. It is never an admission or routing authority, and the
+`/workers` dashboard, capacity, and `mobileHealth` surfaces keep their own
+mode-aware windows (see the broker README's peer-status section).
+
 ## Keeping this manual current
 
 **A usage-changing PR must update this manual and the affected detailed

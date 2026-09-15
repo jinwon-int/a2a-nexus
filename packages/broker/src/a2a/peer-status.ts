@@ -6,8 +6,21 @@
  */
 
 import type { InMemoryA2ABroker } from "../core/broker.js";
+import { DEFAULT_WORKER_OFFLINE_AFTER_MS } from "../core/broker-contracts.js";
 import { resolveTaskStalenessSignalMs } from "../core/broker-status-predicates.js";
 import type { TaskRecord } from "../core/types.js";
+
+/**
+ * Advisory busy threshold reported for every worker mode (#2065).
+ *
+ * `capacity.slotsTotal`/`capacity.slotsBusy` in the `a2a.peer.status` summary
+ * are computed read-only telemetry (`slotsBusy` = active(claimed/running) +
+ * queued). They are NOT executor concurrency, scheduling capacity, or an
+ * admission permission — real concurrency is governed elsewhere (task policy
+ * and worker capability profiles). All modes now share this single advisory
+ * total instead of the former mobile-3/persistent-10 split.
+ */
+const PEER_STATUS_ADVISORY_SLOTS_TOTAL = 10;
 
 // ---------------------------------------------------------------------------
 // Types (RFC §2)
@@ -38,7 +51,13 @@ export interface PeerStatusResponse {
   worker: {
     registered: boolean;
     lastHeartbeatAt?: number;
+    /** Wire field preserved verbatim; accepted values unchanged. */
     workerMode?: "persistent" | "mobile";
+    /**
+     * Advisory busy telemetry, identical for every mode: `slotsBusy` counts
+     * active(claimed/running) + queued tasks against a fixed `slotsTotal` of
+     * 10. Not executor concurrency, scheduling capacity, or permission.
+     */
     capacity?: {
       slotsTotal: number;
       slotsBusy: number;
@@ -118,13 +137,20 @@ export class PeerStatusService {
     private readonly options: {
       cacheTtlMs?: number;
       /**
-       * Milliseconds after which a persistent worker is considered stale.
-       * Default: 90_000 (90 s).
+       * Common milliseconds after which a worker is considered stale in this
+       * read-only view, for every `workerMode` (persistent, mobile, absent).
+       * Default: {@link DEFAULT_WORKER_OFFLINE_AFTER_MS} (90_000 = 90 s).
        */
       workerOfflineAfterMs?: number;
       /**
-       * Milliseconds after which a mobile worker is considered stale.
-       * Default: 30_000 (30 s) — mobile nodes may sleep briefly.
+       * @deprecated Mobile-only override retained for explicit backward
+       * compatibility (#2065). When supplied, it takes precedence over
+       * `workerOfflineAfterMs` for `workerMode === "mobile"` workers only;
+       * persistent and absent-mode workers ignore it. When absent, mobile
+       * workers use the common `workerOfflineAfterMs` default — no 30 s
+       * value is synthesized here anymore. This option only shapes the
+       * read-only `a2a.peer.status` view; the dashboard/`/workers` and
+       * capacity/mobileHealth surfaces keep their own mode-aware windows.
        */
       mobileOfflineAfterMs?: number;
     } = {},
@@ -226,10 +252,14 @@ export class PeerStatusService {
   private computeStatus(target: string, nowMs: number): PeerStatusResponse {
     const worker = this.broker.getWorker(target);
     const allTasks = this.broker.listTasks({ targetNodeId: target });
+    // Unified read-only staleness window (#2065): persistent, mobile and
+    // absent modes share `workerOfflineAfterMs ?? DEFAULT_WORKER_OFFLINE_AFTER_MS`.
+    // An explicitly supplied legacy `mobileOfflineAfterMs` keeps its historical
+    // mobile-only precedence; it is ignored for every other mode.
     const isMobile = worker?.workerMode === "mobile";
     const offlineAfterMs = isMobile
-      ? (this.options.mobileOfflineAfterMs ?? 30_000)
-      : (this.options.workerOfflineAfterMs ?? 90_000);
+      ? (this.options.mobileOfflineAfterMs ?? this.options.workerOfflineAfterMs ?? DEFAULT_WORKER_OFFLINE_AFTER_MS)
+      : (this.options.workerOfflineAfterMs ?? DEFAULT_WORKER_OFFLINE_AFTER_MS);
 
     const workerView = this.broker.getWorkerView(target, offlineAfterMs);
 
@@ -250,8 +280,10 @@ export class PeerStatusService {
       return nowMs - lastSignal >= 120_000; // 2 min stale threshold
     });
 
-    // Capacity: default 10 slots for persistent workers, 3 for mobile
-    const slotsTotal = isMobile ? 3 : 10;
+    // Advisory capacity telemetry only — identical for every mode (#2065).
+    // See PEER_STATUS_ADVISORY_SLOTS_TOTAL: this is a computed busy hint
+    // (active + queued), not executor concurrency or admission permission.
+    const slotsTotal = PEER_STATUS_ADVISORY_SLOTS_TOTAL;
     const slotsBusy = activeTasks.length + queuedTasks.length;
 
     // Health determination
@@ -261,7 +293,6 @@ export class PeerStatusService {
       staleTasks.length,
       slotsBusy,
       slotsTotal,
-      isMobile,
     );
 
     return {
@@ -296,14 +327,15 @@ export class PeerStatusService {
    *
    * Priority order (first match wins):
    * 1. unreachable – worker not registered at all
-   * 2. stale – worker heartbeat too old for its mode
-   * 3. busy – all capacity slots occupied (active + queued >= total)
+   * 2. stale – worker heartbeat older than the resolved (common, or explicit
+   *    legacy mobile-only) offline window
+   * 3. busy – the advisory slot budget is occupied (active + queued >= total)
    * 4. degraded – stale tasks exist (claim/running tasks with missed heartbeats)
    * 5. ok – everything nominal
    *
-   * Mobile workers use a shorter stale window (30 s default vs 90 s)
-   * and a smaller capacity (3 slots vs 10), reflecting the constraints
-   * of battery-powered / sleep-capable devices.
+   * Since #2065 the stale window and advisory slot total are computed the
+   * same way for every worker mode; only an explicitly supplied legacy
+   * `mobileOfflineAfterMs` still shortens the window, mobile-only.
    */
   private computeHealth(
     reachable: boolean,
@@ -311,7 +343,6 @@ export class PeerStatusService {
     staleTaskCount: number,
     occupiedSlots: number,
     totalSlots: number,
-    _isMobile: boolean,
   ): PeerHealth {
     if (!reachable) return "unreachable";
     if (workerStale) return "stale";

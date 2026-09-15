@@ -5,7 +5,7 @@
 > Tracks: jinwon-int/a2a-broker#42, jinwon-int/a2a-broker#180
 > Epic: jinwon-int/a2a-broker#39
 > Author date: 2026-04-25
-> Last revised: 2026-04-30 (#180: busy health, mobile worker mode, mobile-aware thresholds)
+> Last revised: 2026-09 (#2065: bounded worker-mode retirement — unified read-only defaults, advisory capacity)
 > Prereq for rollout: Phase 1–5 baseline green + regression lock held
 
 ---
@@ -50,10 +50,10 @@ interface PeerStatusResponse {
   worker: {
     registered: boolean;
     lastHeartbeatAt?: number;
-    workerMode?: "persistent" | "mobile";
-    capacity?: {               // optional, may be null if target does not advertise
-      slotsTotal: number;
-      slotsBusy: number;
+    workerMode?: "persistent" | "mobile";   // wire field preserved verbatim; accepted values unchanged
+    capacity?: {               // advisory busy telemetry, identical for every mode (#2065)
+      slotsTotal: number;      // fixed advisory budget (10); NOT executor concurrency
+      slotsBusy: number;       // active (claimed/running) + queued tasks
     };
   };
   tasks: {
@@ -83,25 +83,47 @@ Session text, tool call detail, transcripts, prompts, memory contents, and user 
 The `health` field follows a strict priority (first match wins):
 
 1. `unreachable` – worker not registered at all
-2. `stale` – worker heartbeat older than the mode-specific threshold
-3. `busy` – all capacity slots occupied (`active + queued >= slotsTotal`)
+2. `stale` – worker heartbeat older than the resolved offline window (common
+   default, or an explicitly supplied legacy mobile-only override; see §2.5)
+3. `busy` – the advisory slot budget is occupied (`active + queued >= slotsTotal`)
 4. `degraded` – stale tasks exist (claimed/running tasks with missed task heartbeats)
 5. `ok` – everything nominal
 
-### 2.5 Worker modes and capacity
+### 2.5 Worker modes and capacity (revised by #2065)
 
-Workers declare `workerMode` on registration and heartbeat:
+Workers declare `workerMode` on registration and heartbeat. The `workerMode`
+wire field is preserved verbatim and the accepted values (`"persistent"`,
+`"mobile"`) are unchanged. Since the bounded worker-mode retirement (#2065),
+this read-only RPC computes one common staleness window and one advisory busy
+budget for every mode:
 
-| Mode | Stale threshold (default) | Capacity (slotsTotal) | Use case |
-|------|---------------------------|------------------------|----------|
-| `persistent` (default) | 90 s | 10 | Always-on VPS / server |
-| `mobile` | 30 s | 3 | Battery-powered devices (Android/Termux, laptop) |
+| Mode | Stale threshold (read-only view) | Advisory capacity (slotsTotal) |
+|------|-----------------------------------|--------------------------------|
+| `persistent` (default) | `workerOfflineAfterMs \|\| 90_000` | 10 |
+| `mobile` | `mobileOfflineAfterMs \|\| workerOfflineAfterMs \|\| 90_000` | 10 |
+| absent (treated as persistent) | `workerOfflineAfterMs \|\| 90_000` | 10 |
 
-Mobile workers use shorter stale thresholds because brief offline windows from device sleep (Doze, network suspend, lid-close) are expected and should not trigger false-positive stale alerts. The reduced capacity (3 slots vs 10) reflects battery and CPU constraints of mobile devices.
+- `workerOfflineAfterMs` is the common default (`DEFAULT_WORKER_OFFLINE_AFTER_MS`,
+  90 s, from `core/broker-contracts.ts`) and now applies to mobile workers as
+  well. Absence no longer synthesizes the former 30-second mobile window.
+- `mobileOfflineAfterMs` remains as a **deprecated mobile-only override**:
+  explicitly supplied instances keep their historical precedence for mobile
+  workers, while persistent and absent-mode workers ignore the option.
+- `slotsBusy` is computed telemetry: active (claimed/running) **plus queued**
+  tasks against the fixed advisory total. A queued-only backlog of 10 tasks
+  reports `busy`. It is **not** executor concurrency, scheduling capacity, or
+  an admission permission — actual concurrency is governed by task policy and
+  worker capability profiles.
 
 A worker with no `workerMode` field is treated as `persistent`.
 
-The broker picks the stale threshold per-worker based on its declared mode at query time.
+**Scope of the retirement:** only this `a2a.peer.status` view is unified. The
+`/workers` dashboard, `GET /workers/capacity`, and the `mobileHealth`
+projection remain mode-aware (`MOBILE_OFFLINE_AFTER_MS` = 30 s,
+`MOBILE_DISCONNECTED_AFTER_MS` = 90 s). Callers must not treat the surfaces as
+interchangeable: a mobile worker can be `stale` on the dashboard while this
+RPC still reports `ok` between 30 s and 90 s of heartbeat age. Registration,
+policy classes, fastlane eligibility, and actual execution are untouched.
 
 ## 3. Transport
 
@@ -226,8 +248,8 @@ From `jinon86/a2a-broker#180`:
 
 - [x] `busy` health state when all capacity slots occupied → §2.2, §2.4
 - [x] `workerMode` field (`persistent` | `mobile`) in registration/heartbeat/response → §2.2, §2.5
-- [x] Mobile-aware stale threshold (30 s vs 90 s) → §2.5
-- [x] Mobile capacity (3 slots vs 10) → §2.5
+- [x] ~~Mobile-aware stale threshold (30 s vs 90 s)~~ → superseded by #2065: common 90 s read-only default with deprecated explicit mobile-only override → §2.5
+- [x] ~~Mobile capacity (3 slots vs 10)~~ → superseded by #2065: unified advisory 10-slot budget for every mode → §2.5
 - [x] Stale-over-busy priority documented → §2.4
 - [x] Caller semantics in README → README#peer-status-api
 

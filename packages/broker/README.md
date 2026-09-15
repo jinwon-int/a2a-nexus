@@ -75,7 +75,7 @@ map.
 - `docs/release-notes-7655e9d-a2a-livez-persistence.md` for the draft release notes covering the #1032/#1250 `/livez` diagnostics closeout and worker-thread SQLite persistence canary
 - `docs/socket-reuse-probe-policy.md` for the strict wall-clock gate policy that treats reused-socket idle-before-request-event tails as client/probe residuals when fresh and standalone `/livez` probes are clean
 - `docs/production-stabilization-20260429.md` for the live production closeout: SQLite hot-table cutover, stale-reaper threshold, worker session isolation, active-worker scope, and 502 mitigation notes
-- `docs/phase-8-peer-status-rfc.md` for the `a2a.peer.status` RPC design contract: health semantics, mobile-aware thresholding, busy detection, rate limiting, privacy summary-mode output, and caller guidance
+- `docs/phase-8-peer-status-rfc.md` for the `a2a.peer.status` RPC design contract: health semantics, unified read-only worker-mode thresholds with the deprecated mobile-only override (#2065), advisory busy detection, rate limiting, privacy summary-mode output, and caller guidance
 
 ## Peer status API (`a2a.peer.status`)
 
@@ -119,19 +119,44 @@ A lightweight JSON-RPC method for cheap, read-only worker health queries. Design
 | `ok`        | Worker registered, heartbeat fresh, free capacity |
 | `busy`      | Worker registered, heartbeat fresh, all capacity slots occupied (`active + queued >= slotsTotal`) |
 | `degraded`  | Worker registered, heartbeat fresh, but has stale tasks (claimed/running tasks with missed task heartbeats) |
-| `stale`     | Worker registered but last heartbeat exceeds the mode-specific threshold |
+| `stale`     | Worker registered but last heartbeat exceeds the resolved offline threshold (see [Worker modes](#worker-modes)) |
 | `unreachable` | Worker not registered at all |
 
-### Worker modes
+### Worker modes (read-only `a2a.peer.status` semantics, #2065)
 
-Workers declare `workerMode` on registration/heartbeat:
+Workers declare `workerMode` on registration/heartbeat. The `workerMode` wire
+field is echoed verbatim (`"persistent"`, `"mobile"`, or absent) and the
+accepted values are unchanged.
 
-| Mode         | Stale threshold | Capacity |
-|-------------|----------------|----------|
-| `persistent` (default) | 90 s | 10 slots |
-| `mobile`    | 30 s | 3 slots |
+`a2a.peer.status` computes one common read-only staleness window and one
+advisory busy budget for **every** mode:
 
-Mobile workers (Android/Termux, laptops) use shorter stale thresholds because brief offline windows from Doze, network suspend, or lid-close are expected. The reduced capacity reflects battery/CPU constraints.
+| Mode | Stale threshold | Advisory capacity |
+|-------------|--------------------------|--------------------------|
+| `persistent` (default) | `workerOfflineAfterMs` \|\| 90 s (`DEFAULT_WORKER_OFFLINE_AFTER_MS`) | 10 advisory slots |
+| `mobile` | `mobileOfflineAfterMs` \|\| `workerOfflineAfterMs` \|\| 90 s | 10 advisory slots |
+| absent (treated as persistent) | `workerOfflineAfterMs` \|\| 90 s | 10 advisory slots |
+
+- `workerOfflineAfterMs` is the common constructor option; it now applies to
+  mobile workers too. Absence no longer synthesizes a 30-second mobile window.
+- `mobileOfflineAfterMs` is a **deprecated mobile-only override retained for
+  explicit backward compatibility**. When explicitly supplied it keeps its
+  historical precedence for `workerMode: "mobile"` workers; persistent and
+  absent-mode workers ignore it.
+- `capacity.slotsTotal`/`capacity.slotsBusy` are computed read-only telemetry:
+  `slotsBusy` counts active (claimed/running) **plus queued** tasks against a
+  fixed advisory total of 10, identical for every mode. A queued-only backlog
+  of 10 tasks therefore reports `busy`. This is **not** executor concurrency,
+  scheduling capacity, or an admission permission; actual concurrency is
+  governed by task policy and worker capability profiles.
+
+**Not unified on purpose:** other mode-aware surfaces keep their own windows
+and thresholds. The `/workers` dashboard, `GET /workers/capacity`, and the
+`mobileHealth` projection still classify mobile workers with the 30 s
+(`MOBILE_OFFLINE_AFTER_MS`) and 90 s (`MOBILE_DISCONNECTED_AFTER_MS`) windows.
+Do not read `a2a.peer.status` and those surfaces as interchangeable; a mobile
+worker can legitimately be `stale` on the dashboard while `a2a.peer.status`
+still reports `ok` between 30 s and 90 s.
 
 ### Caller contract
 

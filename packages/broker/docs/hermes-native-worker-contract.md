@@ -148,6 +148,12 @@ These thresholds are defined in `broker.ts` as `MOBILE_OFFLINE_AFTER_MS`
 (30,000) and `MOBILE_DISCONNECTED_AFTER_MS` (90,000). Persistent (non-mobile)
 workers use `DEFAULT_WORKER_OFFLINE_AFTER_MS` (90,000).
 
+These mode-aware windows drive the broker dashboard/read-model surfaces only.
+The read-only `a2a.peer.status` RPC is computed separately: since #2065 it uses
+the common `DEFAULT_WORKER_OFFLINE_AFTER_MS` (90 s) window and a unified
+advisory 10-slot busy budget for every mode, honoring only an explicitly
+supplied legacy `mobileOfflineAfterMs` override for declared mobile workers.
+
 ### Read model
 
 The broker read model (`/dashboard`, `/workers/:id`, `/workers`) surfaces
