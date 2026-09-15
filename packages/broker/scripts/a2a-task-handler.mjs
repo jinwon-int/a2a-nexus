@@ -361,16 +361,31 @@ function validatePayloadDiffHygiene(diffHygiene) {
   return Object.keys(policy).length > 0 ? policy : undefined;
 }
 
+// #1601: preserve additional patch instructions in the Docker runner prompt.
+// taskMode already trims mode whitespace. Deduplicate only an exact trimmed
+// match with the effective message; substring overlap can contain distinct
+// instructions. Other modes and absent/malformed focus retain the old prompt.
+function runnerPromptFocusSection(mode, payload, effectiveMessage) {
+  if (mode !== "github-propose-patch") return "";
+  if (typeof payload.focus !== "string") return "";
+  const focus = payload.focus.trim();
+  if (!focus || focus === effectiveMessage) return "";
+  return `Task focus:\n${focus}`;
+}
+
 function buildRunnerTask(task, env = process.env) {
   const payload = taskPayload(task);
   const repo = safeText(payload.repo, "");
+  const mode = taskMode(task);
+  const effectiveMessage = safeText(task.message, safeText(payload.prompt, ""));
 
   const runnerTask = {
     id: safeText(task.id, `task-${Date.now()}`),
     intent: safeText(task.intent, "propose_patch"),
-    mode: taskMode(task),
+    mode,
     prompt: [
-      safeText(task.message, safeText(payload.prompt, "")),
+      effectiveMessage,
+      runnerPromptFocusSection(mode, payload, effectiveMessage),
       "Leave a Start marker before work begins and a PR, Done, or Block marker when work ends; return startCommentUrl plus prUrl, doneCommentUrl, or blockCommentUrl when available.",
       "Before creating a PR, fail closed if OpenClaw runtime/bootstrap context files would enter the branch or artifact evidence. Report the exact repo-relative offending paths, including any of: AGENTS.md, SOUL.md, USER.md, TOOLS.md, HEARTBEAT.md, IDENTITY.md, .openclaw/**.",
     ].filter(Boolean).join("\n\n"),

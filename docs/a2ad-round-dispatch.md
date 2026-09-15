@@ -248,6 +248,30 @@ Runtime/provider/model-tier pin matching stays scheduler policy (clause 4 in
 [implementation-lane-readiness](implementation-lane-readiness.md)) and is not
 enforced by the dispatcher; analysis and GitHub read-only lanes are unaffected.
 
+### Task focus delivery (#1601)
+
+`payload.focus` is instruction detail, not a contract boundary. Handler
+revisions that include the #1601 fix forward a nonempty string `focus` as a
+labeled `Task focus:` section inside the docker-runner prompt for
+`github-propose-patch` tasks only. The mode comparison trims surrounding
+whitespace like the patch-mode readiness and no-write checks; the section is
+omitted when focus is blank or identical to the effective message (`message`,
+else `payload.prompt`) after whitespace trimming. Forwarded focus has outer
+whitespace trimmed; internal multiline text and shell metacharacters stay
+literal. Absent, blank, or non-string focus leaves the Docker runner prompt
+unchanged, and non-patch modes in that path do not receive focus. The host
+patch bridge has its own prompt construction. This is instruction delivery
+only: it implies no readiness or
+GitHub-write permission beyond what the lane already has.
+
+Focus forwarding is a property of the **installed handler revision**, not of
+this source tree: merging the source PR does not update installed workers, and
+no readiness profile — including `implementationCapability` — implies that a
+worker forwards focus. Keep the complete essential problem, scope, acceptance,
+and repository test commands in lane `message`, which the Docker handler
+uses as the prompt head, and put only additional detail in `focus` after
+verifying the installed handler revision forwards it.
+
 ### Designated antithesis lanes (#1297)
 
 Ordinary A2A rounds may use a weak dialectic without switching to a full
