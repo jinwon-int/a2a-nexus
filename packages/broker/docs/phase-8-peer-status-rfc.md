@@ -99,9 +99,9 @@ budget for every mode:
 
 | Mode | Stale threshold (read-only view) | Advisory capacity (slotsTotal) |
 |------|-----------------------------------|--------------------------------|
-| `persistent` (default) | `workerOfflineAfterMs \|\| 90_000` | 10 |
-| `mobile` | `mobileOfflineAfterMs \|\| workerOfflineAfterMs \|\| 90_000` | 10 |
-| absent (treated as persistent) | `workerOfflineAfterMs \|\| 90_000` | 10 |
+| `persistent` (default) | `workerOfflineAfterMs ?? 90_000` | 10 |
+| `mobile` | `mobileOfflineAfterMs ?? workerOfflineAfterMs ?? 90_000` | 10 |
+| absent (same defaults) | `workerOfflineAfterMs ?? 90_000` | 10 |
 
 - `workerOfflineAfterMs` is the common default (`DEFAULT_WORKER_OFFLINE_AFTER_MS`,
   90 s, from `core/broker-contracts.ts`) and now applies to mobile workers as
@@ -109,21 +109,27 @@ budget for every mode:
 - `mobileOfflineAfterMs` remains as a **deprecated mobile-only override**:
   explicitly supplied instances keep their historical precedence for mobile
   workers, while persistent and absent-mode workers ignore the option.
+  Resolution uses `??`, so explicit zero and longer windows remain effective.
+
 - `slotsBusy` is computed telemetry: active (claimed/running) **plus queued**
   tasks against the fixed advisory total. A queued-only backlog of 10 tasks
   reports `busy`. It is **not** executor concurrency, scheduling capacity, or
-  an admission permission — actual concurrency is governed by task policy and
-  worker capability profiles.
+  an admission permission; this view neither reads nor sets executor concurrency.
 
-A worker with no `workerMode` field is treated as `persistent`.
+An absent `workerMode` uses the same defaults in this view and remains absent
+on the wire; it is not reclassified for policy or fast-lane eligibility.
 
 **Scope of the retirement:** only this `a2a.peer.status` view is unified. The
-`/workers` dashboard, `GET /workers/capacity`, and the `mobileHealth`
+`/dashboard` view, `GET /workers/capacity`, and the `mobileHealth`
 projection remain mode-aware (`MOBILE_OFFLINE_AFTER_MS` = 30 s,
 `MOBILE_DISCONNECTED_AFTER_MS` = 90 s). Callers must not treat the surfaces as
 interchangeable: a mobile worker can be `stale` on the dashboard while this
 RPC still reports `ok` between 30 s and 90 s of heartbeat age. Registration,
 policy classes, fastlane eligibility, and actual execution are untouched.
+
+Raw `GET /workers` and `GET /workers/:id` already use the common configured
+threshold for every mode and do not synthesize `mobileHealth`; these raw views
+are distinct from the dashboard and capacity summaries above.
 
 ## 3. Transport
 

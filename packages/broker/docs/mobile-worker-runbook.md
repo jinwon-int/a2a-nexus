@@ -7,8 +7,8 @@
 > **#2065 scope note:** there is **no enforced 3-task concurrency limit** for mobile
 > workers. Earlier revisions of this runbook described a "reduced capacity of 3
 > concurrent slots"; that overstated computed telemetry as an enforcement claim and
-> has been removed. Concurrency/admission is governed by task policy and worker
-> capability profiles — never by `workerMode` alone.
+> has been removed. The peer-status slot count does not set executor concurrency
+> or grant admission; policy and fast-lane decisions are unchanged.
 
 ## Detecting Mobile Workers
 
@@ -35,7 +35,7 @@ two mobile-specific fields for mobile workers:
 
 | Field | Type | Present When |
 |---|---|---|
-| `workerMode` | `"persistent"` \| `"mobile"` | Always; absent defaults to `"persistent"` |
+| `workerMode` | `"persistent"` \| `"mobile"` | When recorded; absent remains absent |
 | `mobileHealth` | `"health_ok"` \| `"stale"` \| `"disconnected"` | Only when `workerMode === "mobile"` |
 
 ### State Table
@@ -60,12 +60,13 @@ graph LR
 
 ## Thresholds (code constants)
 
-These constants drive the **broker dashboard surfaces** (`/workers` status,
-`mobileHealth`, capacity summary). They do **not** apply to the read-only
-`a2a.peer.status` view, which since #2065 uses the common
-`DEFAULT_WORKER_OFFLINE_AFTER_MS` (90 s) window and a unified advisory 10-slot
-busy budget for every mode unless an explicit legacy `mobileOfflineAfterMs`
-override is supplied to that service.
+The mobile-specific constants drive `/dashboard`, `/workers/capacity` and
+their `mobileHealth` projection. Raw `GET /workers` and `GET /workers/:id`
+already use the common configured threshold and do not synthesize mobileHealth.
+Since #2065, `a2a.peer.status` also uses the common `workerOfflineAfterMs ??
+DEFAULT_WORKER_OFFLINE_AFTER_MS` (90 s) window with 10 advisory busy slots.
+A supplied legacy `mobileOfflineAfterMs` takes precedence for mobile workers
+only; `??` preserves explicit zero and overrides longer than the common window.
 
 | Constant | Value | Applies to |
 |---|---|---|
@@ -76,7 +77,7 @@ override is supplied to that service.
 ## Code Locations
 
 - **Types**: `src/core/types.ts` — `WorkerMobileHealth`, `WorkerFleetSummary`, `WorkerCapacitySummaryItem`
-- **Stale detection**: `src/core/broker.ts` — `effectiveOfflineAfterMs()`, `computeWorkerMobileHealth()`, `isWorkerStale()`
+- **Stale detection**: `src/core/broker-worker-status.ts` — `effectiveOfflineAfterMs()`, `computeWorkerMobileHealth()`, `isWorkerStale()`
 - **Dashboard**: `src/core/broker.ts` — `getDashboard()` (workers section)
 - **Capacity**: `src/core/broker.ts` — `getWorkerCapacitySummary()` (per-item loop)
 
@@ -101,8 +102,8 @@ to avoid inflating high-churn event streams with per-worker metadata.
    to assess recency.
 2. **No per-mode concurrency limit is enforced.** There is no universal
    "3 concurrent tasks" cap for mobile workers; `activeTaskCount` is computed
-   telemetry. Admission and actual execution follow task policy and worker
-   capability profiles. The read-only `a2a.peer.status` view additionally
+   telemetry and does not read or set executor concurrency. The read-only
+   `a2a.peer.status` view additionally
    reports an advisory busy hint (`active + queued` vs a fixed budget of 10,
    identical for every mode) — it is telemetry, never an admission permission.
 3. **Surface semantics differ by design.** Dashboard/`mobileHealth` windows are

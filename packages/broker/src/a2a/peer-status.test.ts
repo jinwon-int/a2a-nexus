@@ -689,6 +689,47 @@ test("with neither option present, every mode uses the common 90000ms default â€
   }
 });
 
+test("explicit zero and longer mobile windows preserve nullish override precedence", (t) => {
+  const broker = createModeBroker();
+  for (const id of ["worker-persistent", "worker-mobile", "worker-absent"]) {
+    setLastSeenAt(broker, id, new Date(BASE_MS).toISOString());
+  }
+  let now = BASE_MS + 1;
+  t.mock.method(Date, "now", () => now);
+  for (const options of [
+    { workerOfflineAfterMs: 0 },
+    { workerOfflineAfterMs: 0, mobileOfflineAfterMs: 120_000 },
+    { workerOfflineAfterMs: 120_000, mobileOfflineAfterMs: 0 },
+  ]) {
+    const service = new PeerStatusService(broker, { cacheTtlMs: 0, ...options });
+    for (const [id, isMobile] of [["worker-persistent", false], ["worker-mobile", true], ["worker-absent", false]] as const) {
+      const limit = isMobile ? (options.mobileOfflineAfterMs ?? options.workerOfflineAfterMs) : options.workerOfflineAfterMs;
+      const result = service.query({ target: id }, "caller") as PeerStatusResponse;
+      assert.equal(result.health, limit === 0 ? "stale" : "ok", `${id}: ${JSON.stringify(options)}`);
+    }
+  }
+  const extended = new PeerStatusService(broker, { cacheTtlMs: 0, workerOfflineAfterMs: 45_000, mobileOfflineAfterMs: 120_000 });
+  now = BASE_MS + 120_000;
+  assert.equal((extended.query({ target: "worker-mobile" }, "caller") as PeerStatusResponse).health, "ok");
+  now += 1;
+  assert.equal((extended.query({ target: "worker-mobile" }, "caller") as PeerStatusResponse).health, "stale");
+});
+
+test("peer and raw worker views remain distinct from mobile dashboard and capacity health", (t) => {
+  const broker = createModeBroker();
+  setLastSeenAt(broker, "worker-mobile", new Date(BASE_MS).toISOString());
+  t.mock.method(Date, "now", () => BASE_MS + 45_000);
+  const peer = new PeerStatusService(broker).query({ target: "worker-mobile" }, "caller") as PeerStatusResponse;
+  assert.equal(peer.health, "ok");
+  assert.equal(broker.getWorkerView("worker-mobile", 90_000)?.status, "online");
+  const dashboard = broker.getDashboard().workers.byNode.find((row) => row.nodeId === "worker-mobile");
+  const capacity = broker.getWorkerCapacitySummary().items.find((row) => row.nodeId === "worker-mobile");
+  assert.equal(dashboard?.status, "stale");
+  assert.equal(dashboard?.mobileHealth, "stale");
+  assert.equal(capacity?.status, "stale");
+  assert.equal(capacity?.mobileHealth, "stale");
+});
+
 test("invalid heartbeat timestamps still classify as stale on this peer view (preserved behavior)", (t) => {
   const broker = createModeBroker();
   setLastSeenAt(broker, "worker-mobile", "not-a-timestamp");
@@ -736,7 +777,9 @@ test("mobile worker reports the unified advisory slot total (10) instead of 3 (#
   assert.equal(response.worker.capacity?.slotsBusy, 0);
 });
 
-test("mobile worker is not busy at 3 tasks and busy at the unified 10-slot advisory threshold, matching every mode (#2065)", () => {
+test("mobile worker is not busy at 3 tasks and busy at the unified 10-slot advisory threshold, matching every mode (#2065)", (t) => {
+  let now = Date.now();
+  t.mock.method(Date, "now", () => now);
   const broker = createModeBroker();
   const service = new PeerStatusService(broker, { cacheTtlMs: 0 });
 
@@ -765,6 +808,7 @@ test("mobile worker is not busy at 3 tasks and busy at the unified 10-slot advis
 
   // 10 queued tasks each: queued-only work occupies the advisory budget, so
   // every mode reports busy identically.
+  now += 1; // A zero-TTL cached view is still valid within the same millisecond.
   for (const targetId of ["worker-persistent", "worker-mobile", "worker-absent"]) {
     for (let i = 3; i < 10; i++) {
       broker.createTask({

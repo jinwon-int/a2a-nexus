@@ -133,9 +133,9 @@ advisory busy budget for **every** mode:
 
 | Mode | Stale threshold | Advisory capacity |
 |-------------|--------------------------|--------------------------|
-| `persistent` (default) | `workerOfflineAfterMs` \|\| 90 s (`DEFAULT_WORKER_OFFLINE_AFTER_MS`) | 10 advisory slots |
-| `mobile` | `mobileOfflineAfterMs` \|\| `workerOfflineAfterMs` \|\| 90 s | 10 advisory slots |
-| absent (treated as persistent) | `workerOfflineAfterMs` \|\| 90 s | 10 advisory slots |
+| `persistent` (default) | `workerOfflineAfterMs` ?? 90 s (`DEFAULT_WORKER_OFFLINE_AFTER_MS`) | 10 advisory slots |
+| `mobile` | `mobileOfflineAfterMs` ?? `workerOfflineAfterMs` ?? 90 s | 10 advisory slots |
+| absent (same defaults) | `workerOfflineAfterMs` ?? 90 s | 10 advisory slots |
 
 - `workerOfflineAfterMs` is the common constructor option; it now applies to
   mobile workers too. Absence no longer synthesizes a 30-second mobile window.
@@ -143,20 +143,26 @@ advisory busy budget for **every** mode:
   explicit backward compatibility**. When explicitly supplied it keeps its
   historical precedence for `workerMode: "mobile"` workers; persistent and
   absent-mode workers ignore it.
+  Resolution uses `??`, so explicit zero and longer windows remain effective.
+
 - `capacity.slotsTotal`/`capacity.slotsBusy` are computed read-only telemetry:
   `slotsBusy` counts active (claimed/running) **plus queued** tasks against a
   fixed advisory total of 10, identical for every mode. A queued-only backlog
   of 10 tasks therefore reports `busy`. This is **not** executor concurrency,
-  scheduling capacity, or an admission permission; actual concurrency is
-  governed by task policy and worker capability profiles.
+  scheduling capacity, or an admission permission; this view neither reads
+  nor sets executor concurrency.
 
 **Not unified on purpose:** other mode-aware surfaces keep their own windows
-and thresholds. The `/workers` dashboard, `GET /workers/capacity`, and the
+and thresholds. The `/dashboard` view, `GET /workers/capacity`, and the
 `mobileHealth` projection still classify mobile workers with the 30 s
 (`MOBILE_OFFLINE_AFTER_MS`) and 90 s (`MOBILE_DISCONNECTED_AFTER_MS`) windows.
 Do not read `a2a.peer.status` and those surfaces as interchangeable; a mobile
 worker can legitimately be `stale` on the dashboard while `a2a.peer.status`
 still reports `ok` between 30 s and 90 s.
+
+Raw `GET /workers` and `GET /workers/:id` already use the common configured
+threshold for every mode and do not synthesize `mobileHealth`; these raw views
+are distinct from the dashboard and capacity summaries above.
 
 ### Caller contract
 

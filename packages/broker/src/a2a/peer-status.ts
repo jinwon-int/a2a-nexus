@@ -16,8 +16,8 @@ import type { TaskRecord } from "../core/types.js";
  * `capacity.slotsTotal`/`capacity.slotsBusy` in the `a2a.peer.status` summary
  * are computed read-only telemetry (`slotsBusy` = active(claimed/running) +
  * queued). They are NOT executor concurrency, scheduling capacity, or an
- * admission permission — real concurrency is governed elsewhere (task policy
- * and worker capability profiles). All modes now share this single advisory
+ * admission permission; this view neither reads nor sets executor concurrency.
+ * All modes now share this single advisory
  * total instead of the former mobile-3/persistent-10 split.
  */
 const PEER_STATUS_ADVISORY_SLOTS_TOTAL = 10;
@@ -149,7 +149,7 @@ export class PeerStatusService {
        * persistent and absent-mode workers ignore it. When absent, mobile
        * workers use the common `workerOfflineAfterMs` default — no 30 s
        * value is synthesized here anymore. This option only shapes the
-       * read-only `a2a.peer.status` view; the dashboard/`/workers` and
+       * read-only `a2a.peer.status` view; the `/dashboard` and
        * capacity/mobileHealth surfaces keep their own mode-aware windows.
        */
       mobileOfflineAfterMs?: number;
@@ -335,7 +335,7 @@ export class PeerStatusService {
    *
    * Since #2065 the stale window and advisory slot total are computed the
    * same way for every worker mode; only an explicitly supplied legacy
-   * `mobileOfflineAfterMs` still shortens the window, mobile-only.
+   * `mobileOfflineAfterMs` overrides the window, mobile-only.
    */
   private computeHealth(
     reachable: boolean,

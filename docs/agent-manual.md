@@ -244,11 +244,14 @@ never routing authority, success evidence, or an #1815 A/B attestation.
 
 The read-only `a2a.peer.status` RPC is advisory telemetry as well: since #2065
 it computes a common 90 s staleness window and a fixed 10-slot advisory busy
-budget (`active + queued`) for every `workerMode`, with only an explicitly
-supplied legacy `mobileOfflineAfterMs` still shortening the window for declared
-mobile workers. It is never an admission or routing authority, and the
-`/workers` dashboard, capacity, and `mobileHealth` surfaces keep their own
-mode-aware windows (see the broker README's peer-status section).
+budget (`active + queued`) for every `workerMode`. The common
+`workerOfflineAfterMs` overrides the default; a supplied legacy
+`mobileOfflineAfterMs` takes precedence for declared mobile workers only.
+Resolution uses `??`, preserving explicit zero and longer windows. The
+`/dashboard`, `/workers/capacity`, and `mobileHealth` projections retain their
+mode-aware windows. Raw `GET /workers` and `GET /workers/:id` already use the
+common threshold and do not synthesize `mobileHealth`. See the
+[peer-status reference](../packages/broker/docs/phase-8-peer-status-rfc.md#25-worker-modes-and-capacity-revised-by-2065).
 
 The same `GET /stats/tasks` response also carries an advisory
 `laneCohorts` section (`a2a.task-lane-shadow-cohorts.v1`, contract in

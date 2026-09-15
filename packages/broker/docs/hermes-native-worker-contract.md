@@ -148,16 +148,20 @@ These thresholds are defined in `broker.ts` as `MOBILE_OFFLINE_AFTER_MS`
 (30,000) and `MOBILE_DISCONNECTED_AFTER_MS` (90,000). Persistent (non-mobile)
 workers use `DEFAULT_WORKER_OFFLINE_AFTER_MS` (90,000).
 
-These mode-aware windows drive the broker dashboard/read-model surfaces only.
+These mode-aware windows drive `/dashboard`, `/workers/capacity` and their
+`mobileHealth` projection.
 The read-only `a2a.peer.status` RPC is computed separately: since #2065 it uses
-the common `DEFAULT_WORKER_OFFLINE_AFTER_MS` (90 s) window and a unified
-advisory 10-slot busy budget for every mode, honoring only an explicitly
-supplied legacy `mobileOfflineAfterMs` override for declared mobile workers.
+the common `workerOfflineAfterMs ?? DEFAULT_WORKER_OFFLINE_AFTER_MS` (90 s)
+window and a unified advisory 10-slot busy budget for every mode. A supplied
+legacy `mobileOfflineAfterMs` takes precedence for mobile workers only. Explicit
+zero and longer windows are preserved by `??`; no execution permission changes.
 
 ### Read model
 
-The broker read model (`/dashboard`, `/workers/:id`, `/workers`) surfaces
-mobile health when `workerMode === "mobile"`:
+Dashboard and capacity summaries surface mobile health when
+`workerMode === "mobile"`. Raw `GET /workers/:id` and `GET /workers` instead
+use the common configured threshold and do not synthesize `mobileHealth`.
+The example below illustrates mobile health in an enriched summary:
 
 ```json
 {
