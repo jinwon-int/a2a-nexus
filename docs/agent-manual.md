@@ -122,8 +122,16 @@ prove the installed worker can run the patch.
   task; do not remove scope checks.
 - Do not combine a patch lane with `sourceOnly:true` or no-GitHub-write flags.
   Free-text “read only” instructions cannot neutralize a write-capable mode.
+- A `github-propose-patch` readiness row must also carry the canonical
+  `implementationCapability` profile with `availability: "canary_passed"`
+  (#1597); missing or unverified profiles fail dry-run before task creation.
+  See [implementation-lane-readiness](implementation-lane-readiness.md).
 - The CLI supports readiness overrides for exceptional documented cases. They
   are not the normal recipe and do not make an unverified worker capable.
+
+Patch-mode readiness and no-write checks trim surrounding mode whitespace,
+matching the worker handler; padding `github-propose-patch` does not bypass
+either boundary.
 
 ### Time budgets and overrides
 
@@ -172,6 +180,12 @@ a session that promises to resume. Do not invent a Nexus wait CLI.
 | Authentication error with turns/time remaining | Report authentication failure; increasing time limits is not a fix. |
 | Task failed but a PR or patch exists | Preserve the failed task record; recover and independently validate the artifact as a separate finalizer outcome. |
 | Projection failure or empty analysis | Verify source carriers and projection evidence; use [offline replay](operators.md#round-replay-before-live-re-dispatch-1302) before spending another live round. |
+
+Serving-fence recovery uses stricter fail-closed occupancy checks: ambiguous
+`lsof`/`ps` output aborts before any fence, backup or audit mutation. Bare and
+path-qualified `node dist/server.js` invocations count as a running broker.
+See [broker recovery checks](../packages/broker/README.md#serving-fence-recovery-checks)
+for accepted probe shapes and the requirement to keep the broker stopped.
 
 Terminal failure is not permission to replay side effects. Inspect retry lineage
 and existing artifacts before creating a corrected follow-up task.

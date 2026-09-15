@@ -575,7 +575,23 @@ function makeGitHubPatchManifest(brokerUrl) {
   return manifest;
 }
 
-function addPatchReadyWorker(manifest, workerId = 'workerDelta') {
+// Generic synthetic identity for tests only — never a real fleet provider or
+// model. The minimal canonical profile shape proves lastVerifiedAt/evidenceId
+// are optional for dispatcher proof (#1597).
+const TEST_CANARY_PROFILE = {
+  capable: true,
+  runtime: 'claude-native',
+  providerId: 'test-provider-a',
+  modelTier: 'test-tier-a',
+  availability: 'canary_passed',
+};
+
+function addPatchReadyWorker(manifest, workerId = 'workerDelta', options = {}) {
+  // Explicit null/array/string profiles must reach the row verbatim, so the
+  // presence check is 'in options' rather than a nullish-coalesce.
+  const profile = 'implementationCapability' in options
+    ? options.implementationCapability
+    : (options.omitProfile ? undefined : TEST_CANARY_PROFILE);
   manifest.workerReadiness = {
     rows: [
       {
@@ -589,6 +605,8 @@ function addPatchReadyWorker(manifest, workerId = 'workerDelta') {
         patchCommandProfile: 'claude-code',
         bridgeMode: 'patch',
         violations: [],
+        ...(profile === undefined ? {} : { implementationCapability: profile }),
+        ...options.row,
       },
     ],
   };
@@ -622,6 +640,246 @@ test('dry-run rejects github-propose-patch lanes whose readiness lacks PR capabi
 
   assert.equal(out.exitCode, 1);
   assert.ok(out.errors.some((e) => /#1034.*canOpenPullRequest/.test(e)), out.errors.join('\n'));
+});
+
+// ─── #1597: implementationCapability profile gate on github-propose-patch ────
+
+function patchCapabilityRowWithoutProfile(workerId = 'workerDelta') {
+  return {
+    node: workerId,
+    ok: true,
+    githubPatch: 'ok',
+    canPatchWorkspace: true,
+    canOpenPullRequest: true,
+    runnerTrustedOperator: true,
+    githubTokenFileReadable: true,
+    bridgeMode: 'patch',
+    violations: [],
+  };
+}
+
+test('dry-run rejects a patch-capable readiness row without an implementationCapability profile (#1597)', async () => {
+  const manifest = makeGitHubPatchManifest('http://unused');
+  manifest.workerReadiness = { rows: [patchCapabilityRowWithoutProfile()] };
+
+  const out = await runDispatch(manifest, { dryRun: true });
+
+  assert.equal(out.exitCode, 1);
+  assert.ok(
+    out.errors.some((e) => /#1597.*implementationCapability profile is missing or malformed/.test(e)),
+    out.errors.join('\n'),
+  );
+});
+
+test('missing profile fails closed with zero task-create calls (#1597)', async () => {
+  const broker = await startMockBroker({
+    post: (body, ctx) => {
+      ctx.store.set(body.id, { id: body.id, status: 'queued' });
+      return { status: 201, json: { task: { id: body.id, status: 'queued' } } };
+    },
+  });
+  try {
+    const manifest = makeGitHubPatchManifest(broker.url);
+    manifest.workerReadiness = { rows: [patchCapabilityRowWithoutProfile()] };
+    const out = await runDispatch(manifest, { fetchImpl: fetch, secret: SECRET });
+    assert.equal(out.exitCode, 1);
+    assert.equal(broker.getPostCalls(), 0, 'validation must reject before any POST /tasks');
+    assert.ok(out.errors.some((e) => /#1597/.test(e)), out.errors.join('\n'));
+  } finally {
+    await broker.close();
+  }
+});
+
+test('padded patch modes preserve readiness and no-write gates before task creation (#1597)', async () => {
+  const broker = await startMockBroker({
+    post: (body, ctx) => {
+      ctx.store.set(body.id, { id: body.id, status: 'queued' });
+      return { status: 201, json: { task: { id: body.id, status: 'queued' } } };
+    },
+  });
+  try {
+    for (const mode of [' github-propose-patch', 'github-propose-patch ', '\tgithub-propose-patch\n']) {
+      const missing = addPatchReadyWorker(makeGitHubPatchManifest(broker.url), 'workerDelta', { omitProfile: true });
+      missing.defaults.payload.mode = mode;
+      const before = broker.getPostCalls();
+      const dry = await runDispatch(missing, { dryRun: true });
+      const rejected = await runDispatch(missing, { fetchImpl: fetch, secret: SECRET });
+      assert.equal(dry.exitCode, 1);
+      assert.equal(rejected.exitCode, 1);
+      assert.ok(rejected.errors.some((error) => /#1597/.test(error)));
+      assert.equal(broker.getPostCalls(), before, 'padded modes must not bypass profile validation');
+
+      const valid = addPatchReadyWorker(makeGitHubPatchManifest(broker.url));
+      valid.defaults.payload.mode = mode;
+      assert.equal((await runDispatch(valid, { dryRun: true })).exitCode, 0);
+      const accepted = await runDispatch(valid, { fetchImpl: fetch, secret: SECRET });
+      assert.equal(accepted.exitCode, 0, accepted.errors.join('\n'));
+      assert.equal(broker.getPostCalls(), before + 1, 'equivalent valid modes retain handler-compatible behavior');
+
+      for (const flags of [
+        { noGitHubWrites: true }, { readOnlyValidation: true }, { noMutation: true },
+        { allowGitHubWrites: false }, { patchIntent: false }, { sourceOnly: true },
+      ]) {
+        const noWrite = addPatchReadyWorker(makeGitHubPatchManifest(broker.url));
+        noWrite.allowUnverifiedPatchWorkers = true;
+        Object.assign(noWrite.defaults.payload, { mode }, flags);
+        const blocked = await runDispatch(noWrite, { fetchImpl: fetch, secret: SECRET });
+        assert.equal(blocked.exitCode, 1, JSON.stringify(flags));
+        assert.ok(blocked.errors.some((error) => /write-capable/.test(error)));
+        assert.equal(broker.getPostCalls(), before + 1, 'readiness override cannot bypass no-write boundary');
+      }
+    }
+  } finally {
+    await broker.close();
+  }
+});
+
+test('dry-run rejects missing, malformed, disabled, and configured profiles (#1597)', async () => {
+  const base = { ...TEST_CANARY_PROFILE };
+  const cases = [
+    ['null profile', null, /implementationCapability profile is missing or malformed/],
+    ['array profile', [], /implementationCapability profile is missing or malformed/],
+    ['string profile', 'canary_passed', /implementationCapability profile is missing or malformed/],
+    ['disabled profile', { ...base, capable: false }, /capable is not true/],
+    ['string capable', { ...base, capable: 'true' }, /capable is not true/],
+    ['unknown runtime', { ...base, runtime: 'unknown' }, /runtime is not a recognized implementation runtime/],
+    ['unrecognized runtime', { ...base, runtime: 'mystery-runtime' }, /runtime is not a recognized implementation runtime/],
+    ['absent runtime', { ...base, runtime: undefined }, /runtime is not a recognized implementation runtime/],
+    ['blank provider', { ...base, providerId: '   ' }, /providerId is not recorded/],
+    ['absent provider', { capable: true, runtime: 'claude-native', modelTier: base.modelTier, availability: 'canary_passed' }, /providerId is not recorded/],
+    ['blank model tier', { ...base, modelTier: '' }, /modelTier is not recorded/],
+    ['absent model tier', { capable: true, runtime: 'claude-native', providerId: base.providerId, availability: 'canary_passed' }, /modelTier is not recorded/],
+    ['configured availability', { ...base, availability: 'configured' }, /availability is not canary_passed/],
+    ['entitlement_failed availability', { ...base, availability: 'entitlement_failed' }, /availability is not canary_passed/],
+    ['disabled availability', { ...base, availability: 'disabled' }, /availability is not canary_passed/],
+    ['unrecognized availability', { ...base, availability: 'ok' }, /availability is not canary_passed/],
+    ['absent availability', { capable: true, runtime: 'claude-native', providerId: base.providerId, modelTier: base.modelTier }, /availability is not canary_passed/],
+  ];
+
+  for (const [name, profile, pattern] of cases) {
+    const manifest = addPatchReadyWorker(makeGitHubPatchManifest('http://unused'), 'workerDelta', { implementationCapability: profile });
+    const out = await runDispatch(manifest, { dryRun: true });
+    assert.equal(out.exitCode, 1, `${name} profile must fail dry-run`);
+    assert.ok(out.errors.some((e) => pattern.test(e)), `${name}: expected ${pattern} in ${out.errors.join('\n')}`);
+  }
+
+  const absent = addPatchReadyWorker(makeGitHubPatchManifest('http://unused'), 'workerDelta', { omitProfile: true });
+  const absentOut = await runDispatch(absent, { dryRun: true });
+  assert.equal(absentOut.exitCode, 1, 'absent profile must fail dry-run');
+  assert.ok(absentOut.errors.some((e) => /implementationCapability profile is missing or malformed/.test(e)), absentOut.errors.join('\n'));
+});
+
+test('dry-run accepts canonical canary_passed profiles for every supported runtime (#1597)', async () => {
+  for (const runtime of ['claude-native', 'codex-native', 'provider-native']) {
+    const manifest = addPatchReadyWorker(makeGitHubPatchManifest('http://unused'), 'workerDelta', {
+      implementationCapability: { ...TEST_CANARY_PROFILE, runtime },
+    });
+    const out = await runDispatch(manifest, { dryRun: true });
+    assert.equal(out.exitCode, 0, `${runtime} profile must pass: ${out.errors.join('\n')}`);
+  }
+});
+
+test('canonical canary_passed profile dispatch proceeds to task creation (#1597)', async () => {
+  const broker = await startMockBroker({
+    post: (body, ctx) => {
+      ctx.store.set(body.id, { id: body.id, status: 'queued' });
+      return { status: 201, json: { task: { id: body.id, status: 'queued' } } };
+    },
+  });
+  try {
+    const manifest = addPatchReadyWorker(makeGitHubPatchManifest(broker.url));
+    const out = await runDispatch(manifest, { fetchImpl: fetch, secret: SECRET, verify: true });
+    assert.equal(out.exitCode, 0, out.errors.join('\n'));
+    assert.equal(broker.getPostCalls(), 1);
+  } finally {
+    await broker.close();
+  }
+});
+
+test("another worker's implementation profile cannot satisfy the selected worker (#1597)", async () => {
+  const manifest = makeGitHubPatchManifest('http://unused');
+  manifest.lanes = [
+    { target: { id: 'workerA', role: 'analyst' }, assignedWorkerId: 'workerA', message: 'Patch lane A' },
+    { target: { id: 'workerB', role: 'analyst' }, assignedWorkerId: 'workerB', message: 'Patch lane B' },
+  ];
+  manifest.workerReadiness = {
+    rows: [
+      patchCapabilityRowWithoutProfile('workerA'),
+      { ...patchCapabilityRowWithoutProfile('workerB'), implementationCapability: { ...TEST_CANARY_PROFILE } },
+    ],
+  };
+
+  const out = await runDispatch(manifest, { dryRun: true });
+
+  assert.equal(out.exitCode, 1);
+  assert.ok(out.errors.some((e) => /lanes\[0\].*#1597/.test(e)), out.errors.join('\n'));
+  assert.ok(out.errors.every((e) => !/lanes\[1\]/.test(e)), `lane B must pass: ${out.errors.join('\n')}`);
+
+  const onlyB = makeGitHubPatchManifest('http://unused');
+  onlyB.lanes[0] = { target: { id: 'workerB', role: 'analyst' }, assignedWorkerId: 'workerB', message: 'Patch lane B' };
+  onlyB.workerReadiness = manifest.workerReadiness;
+  const passing = await runDispatch(onlyB, { dryRun: true });
+  assert.equal(passing.exitCode, 0, `worker B's own profile must satisfy its lane: ${passing.errors.join('\n')}`);
+});
+
+test('valid implementation profile does not excuse invalid patch/PR evidence (#1597 x #1034)', async () => {
+  const cases = [
+    ['no PR capability', { canOpenPullRequest: false }, /#1034.*canOpenPullRequest/],
+    ['no patch bridge', { bridgeMode: 'sidecar' }, /#1034.*bridgeMode=patch/],
+    ['unreadable token', { githubTokenFileReadable: false }, /#1034.*githubTokenFileReadable/],
+  ];
+  for (const [name, rowOverrides, pattern] of cases) {
+    const manifest = addPatchReadyWorker(makeGitHubPatchManifest('http://unused'), 'workerDelta', { row: rowOverrides });
+    const out = await runDispatch(manifest, { dryRun: true });
+    assert.equal(out.exitCode, 1, `${name} must still fail dry-run`);
+    assert.ok(out.errors.some((e) => pattern.test(e)), `${name}: ${out.errors.join('\n')}`);
+  }
+});
+
+test('allowUnverified overrides remain the broad documented exceptional bypass (#1597)', async () => {
+  for (const key of ['allowUnverifiedPatchWorkers', 'allowUnverifiedGithubPatchWorkers']) {
+    const manifest = makeGitHubPatchManifest('http://unused');
+    manifest[key] = true;
+    const out = await runDispatch(manifest, { dryRun: true });
+    assert.equal(out.exitCode, 0, `${key} must keep skipping readiness proof entirely: ${out.errors.join('\n')}`);
+  }
+});
+
+test('profile rejection messages name the failing field without echoing values (#1597)', async () => {
+  const manifest = makeGitHubPatchManifest('http://unused');
+  manifest.workerReadiness = {
+    rows: [{
+      ...patchCapabilityRowWithoutProfile(),
+      implementationCapability: {
+        capable: false,
+        runtime: 'sk-leaky-runtime-marker',
+        providerId: 'leaky-provider-marker',
+        modelTier: 'leaky-tier-marker',
+        availability: 'entitlement_failed',
+      },
+    }],
+  };
+
+  const out = await runDispatch(manifest, { dryRun: true });
+
+  assert.equal(out.exitCode, 1);
+  const joined = out.errors.join('\n');
+  for (const marker of ['sk-leaky-runtime-marker', 'leaky-provider-marker', 'leaky-tier-marker', 'entitlement_failed']) {
+    assert.ok(!joined.includes(marker), `error output must not echo profile value '${marker}': ${joined}`);
+  }
+  assert.ok(/#1597/.test(joined));
+});
+
+test('analysis and github-verify lanes are unaffected by the implementation profile gate (#1597)', async () => {
+  const analysis = makeA2adAnalysisManifest('http://unused');
+  analysis.workerReadiness = { rows: [patchCapabilityRowWithoutProfile('worker-1')] };
+  const analysisOut = await runDispatch(analysis, { dryRun: true });
+  assert.equal(analysisOut.exitCode, 0, analysisOut.errors.join('\n'));
+
+  const verify = makeGitHubVerifyManifest('http://unused');
+  verify.workerReadiness = { rows: [patchCapabilityRowWithoutProfile('workerGamma')] };
+  const verifyOut = await runDispatch(verify, { dryRun: true });
+  assert.equal(verifyOut.exitCode, 0, verifyOut.errors.join('\n'));
 });
 
 test('dry-run rejects github-propose-patch lanes declared read-only/no-write (#889)', async () => {
