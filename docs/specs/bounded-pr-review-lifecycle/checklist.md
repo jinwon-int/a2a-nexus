@@ -125,6 +125,14 @@
 - [x] Forced ledger failure rolls back the lineage transition
 - [x] Schema version 12 is recorded only after new tables initialize
 - [x] No producer, HTTP mutation, completion/retry/finalizer hook, or live action
+- [x] Whole non-converging lineage reaches the terminal repeated-findings
+      reason through authenticated source methods, survives store reopen, and
+      exact source replay cannot increment counters or reset the budget
+      (`review-lineage-production-integration.test.ts`)
+- [x] Frozen-intent-changing correction fails closed at the durable admission
+      boundary (parser binding mismatch or stable subject conflict) without
+      overwriting the accepted subject, and an independent lineage progresses
+      unaffected (`review-lineage-production-integration.test.ts`)
 - [x] Producer completeness plus privacy/retention gate reviewed before live collection
 
 ## J. Producer completeness and privacy/retention plan (Phase 11)
