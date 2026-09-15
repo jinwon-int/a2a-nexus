@@ -196,3 +196,47 @@ test("GET /stats/workers works against the sqlite state store read path", async 
     rmSync(stateDir, { recursive: true, force: true });
   }
 });
+
+
+test("GET /stats/workers preserves invalid receipt coverage and overflow through JSON", async () => {
+  const server = await startTestServer({ edgeSecret: "test-edge-secret", enforceRequesterIdentity: true });
+  try {
+    const worker = "receipt-boundary-worker";
+    await registerTestWorker(server.baseUrl, worker, "analyst", "test-edge-secret");
+    const outputs = [
+      ...[Number.MAX_SAFE_INTEGER, 2, 1].map((value) => ({ executionTelemetry: {
+        schemaVersion: RECEIPT_TELEMETRY_SCHEMA_VERSION, source: "piri_progress_file",
+        modelRequests: value, schemaRetries: value, schemaRetryReasons: { other: value },
+      } })),
+      { sourceCarrierStats: { totalBytes: -1 }, executionTelemetry: {
+        schemaVersion: RECEIPT_TELEMETRY_SCHEMA_VERSION, source: "piri_progress_file",
+        modelRequests: "3", truncated: "true",
+      } },
+    ];
+    for (const [index, output] of outputs.entries()) {
+      const id = `receipt-json-${index}`;
+      server.runtime.broker.createTask({ id, intent: "analyze",
+        requester: { id: "operator-1", kind: "node", role: "operator" },
+        target: { id: worker, kind: "node", role: "analyst" }, assignedWorkerId: worker,
+        message: "fixture", payload: {},
+      });
+      server.runtime.broker.claimTask(id, worker);
+      server.runtime.broker.startTask(id, worker);
+      server.runtime.broker.completeTask(id, worker, { summary: "fixture", output });
+    }
+    const response = await fetch(`${server.baseUrl}/stats/workers`, { headers: headers() });
+    assert.equal(response.status, 200);
+    const body = await response.json();
+    const receipts = body.profiles[0].receipts;
+    assert.equal(receipts.sourceBytes.invalid, 1);
+    assert.equal(receipts.sourceBytes.missing, 3);
+    assert.equal(receipts.executionTelemetry.invalid, 1);
+    assert.equal(receipts.executionTelemetry.observed, 3);
+    assert.equal(receipts.executionTelemetry.modelRequests.total, null);
+    assert.equal(receipts.executionTelemetry.schemaRetries.total, null);
+    assert.equal(receipts.executionTelemetry.schemaRetries.reasons.other, null);
+    assert.equal(body.coverage.executionTelemetry.invalid, 1);
+  } finally {
+    await server.close();
+  }
+});

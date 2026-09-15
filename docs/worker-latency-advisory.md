@@ -35,18 +35,24 @@ terminal task with neither carrier is reported under `receipts.carriers.none` �
 absence is reported, never imputed:
 
 - `sourceBytes`: only the carrier's `sourceCarrierStats.totalBytes`, reported as
-  observed count + distribution, with `missing` counted separately. A fractional,
-  negative, non-finite or non-numeric value is not an observation.
+  observed count + distribution, with `missing` and `invalid` counted separately.
+  Missing means absent stats/counts; a present malformed stats object or a
+  fractional, negative, non-finite, unsafe or non-numeric count is invalid.
 - `executionTelemetry`: only well-formed `a2a.analysis-execution-telemetry.v1`
   objects from `piri_progress_file` or `claude_cli_envelope` count as observed;
-  wrong schema/source/shape counts as `invalid`, an absent object as `missing`,
+  wrong schema/source/shape or present invalid counts, known retry-reason values
+  or `truncated` types count as `invalid`; an absent object counts as `missing`,
   and `truncated: true` stays visible in `truncated`. An incomplete or truncated
   receipt is never treated as complete. `modelRequests` and `schemaRetries` are
   strict non-negative safe integers — an explicit valid zero is a real
   observation and stays distinct from absence. Retry reasons are aggregated
   under the bounded enum (`extra_property`, `missing_field`, `invalid_value`,
   `no_json_candidate`, `provider_failure`, `other`); unknown keys are dropped,
-  never emitted. No token or USD estimation is performed.
+  never emitted. Optional fields may be absent without invalidating the envelope.
+  Numeric totals (`modelRequests.total`, `schemaRetries.total` and each reason
+  total) become `null` when the exact sum exceeds JavaScript safe-integer range;
+  sample coverage and distributions remain available. Do not interpret that
+  `null` as zero. No token or USD estimation is performed.
 - `modelMetadata`: presence coverage for requested/actual/effective model and
   requested/effective thinking — counts only, never names. The equality
   counters compare **literal identifier equality only**: alias-equivalent ids
@@ -54,9 +60,11 @@ absence is reported, never imputed:
   literal difference is NOT by itself proof of a runtime mismatch. There is no
   "actual thinking" carrier; none is inferred.
 
-`coverage.receipts` / `coverage.executionTelemetry` aggregate the same
-classification over every in-window terminal task, including the unattributed
-ones counted in `tasksWithoutWorkerIdentity`.
+`coverage.receipts` includes every in-window terminal task, including the
+unattributed ones counted in `tasksWithoutWorkerIdentity`. Source-byte and
+telemetry classifications count tasks with a carrier; tasks without any carrier
+are counted separately in `receipts.carriers.none` / `coverage.receipts.none`.
+`coverage.executionTelemetry` uses the same carrier-conditioned denominator.
 
 ## What it does not do
 

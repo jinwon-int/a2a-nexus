@@ -348,6 +348,7 @@ test("receipt coverage separates missing carriers and missing telemetry from exp
   assert.deepEqual(profile.receipts.sourceBytes, {
     observed: 0,
     missing: 2,
+    invalid: 0,
     totalBytes: { count: 0, min: null, max: null, average: null, p50: null, p95: null },
   });
   assert.equal(profile.receipts.executionTelemetry.observed, 1);
@@ -364,7 +365,7 @@ test("malformed, non-finite, negative and fractional receipt numbers are rejecte
   const tasks = [
     // Fractional byte counts are not observations.
     task({ id: "t1", assignedWorkerId: "worker-a", result: { output: { sourceCarrierStats: { totalBytes: 1.5 } } } }),
-    // Valid telemetry envelope whose counts are strings/negatives → observed but uncounted.
+    // Present malformed counts invalidate the receipt rather than mimicking absence.
     task({
       id: "t2",
       assignedWorkerId: "worker-a",
@@ -399,11 +400,12 @@ test("malformed, non-finite, negative and fractional receipt numbers are rejecte
 
   assert.deepEqual(profile.receipts.sourceBytes, {
     observed: 0,
-    missing: 5, // every chosen carrier lacks a valid totalBytes
+    missing: 4,
+    invalid: 1, // present fractional bytes are distinct from absence
     totalBytes: { count: 0, min: null, max: null, average: null, p50: null, p95: null },
   });
-  assert.equal(profile.receipts.executionTelemetry.observed, 1);
-  assert.equal(profile.receipts.executionTelemetry.invalid, 3);
+  assert.equal(profile.receipts.executionTelemetry.observed, 0);
+  assert.equal(profile.receipts.executionTelemetry.invalid, 4);
   assert.equal(profile.receipts.executionTelemetry.missing, 1);
   assert.equal(profile.receipts.executionTelemetry.modelRequests.observed, 0, "string counts never coerce");
   assert.equal(profile.receipts.executionTelemetry.modelRequests.total, 0, "negatives never pollute totals");
@@ -490,4 +492,68 @@ test("malicious extra fields on carriers never reach the report", () => {
   assert.ok(!serialized.includes("forged_reason"));
   assert.ok(!serialized.includes("forgedMarker"));
   assert.ok(!serialized.includes("leak"));
+});
+
+
+function receiptForOutput(output: Record<string, unknown>) {
+  return aggregateWorkerLatencyProfiles([task({ id: "receipt-boundary", result: { output } })], []).profiles[0]!.receipts;
+}
+
+test("present invalid receipt fields stay distinct from omitted optional values", () => {
+  const empty = { schemaVersion: WORKER_RECEIPT_TELEMETRY_SCHEMA_VERSION, source: "piri_progress_file" };
+  const absent = receiptForOutput({ executionTelemetry: empty });
+  assert.equal(absent.executionTelemetry.observed, 1);
+  assert.equal(absent.executionTelemetry.invalid, 0);
+  assert.equal(absent.executionTelemetry.modelRequests.observed, 0);
+  for (const bad of [null, false, "3", -1, 1.5, NaN, Infinity, Number.MAX_SAFE_INTEGER + 1]) {
+    for (const key of ["modelRequests", "schemaRetries"]) {
+      const actual = receiptForOutput({ executionTelemetry: { ...empty, [key]: bad } });
+      assert.equal(actual.executionTelemetry.invalid, 1, `${key}: ${String(bad)}`);
+      assert.equal(actual.executionTelemetry.observed, 0);
+      assert.equal(actual.executionTelemetry.missing, 0);
+    }
+    const bytes = receiptForOutput({ sourceCarrierStats: { totalBytes: bad } }).sourceBytes;
+    assert.equal(bytes.invalid, 1);
+    assert.equal(bytes.missing, 0);
+    const reasons = receiptForOutput({ executionTelemetry: { ...empty, schemaRetryReasons: { other: bad } } });
+    assert.equal(reasons.executionTelemetry.invalid, 1);
+  }
+  for (const bad of [null, "true", 0, [], {}]) {
+    assert.equal(receiptForOutput({ executionTelemetry: { ...empty, truncated: bad } }).executionTelemetry.invalid, 1);
+  }
+  for (const bad of [null, [], "bad"]) {
+    assert.equal(receiptForOutput({ executionTelemetry: { ...empty, schemaRetryReasons: bad } }).executionTelemetry.invalid, 1);
+    assert.equal(receiptForOutput({ sourceCarrierStats: bad }).sourceBytes.invalid, 1);
+  }
+  assert.equal(receiptForOutput({}).sourceBytes.missing, 1);
+  assert.equal(receiptForOutput({ sourceCarrierStats: {} }).sourceBytes.missing, 1);
+  const zero = receiptForOutput({ sourceCarrierStats: { totalBytes: 0 }, executionTelemetry: { ...empty, truncated: false, modelRequests: 0, schemaRetries: 0 } });
+  assert.equal(zero.sourceBytes.observed, 1);
+  assert.equal(zero.executionTelemetry.modelRequests.observed, 1);
+  assert.equal(zero.executionTelemetry.modelRequests.total, 0);
+});
+
+test("receipt sums expose overflow without wrapping, clamping or rounded counts", () => {
+  function aggregate(values: number[]) {
+    return aggregateWorkerLatencyProfiles(values.map((value, index) => task({
+      id: `sum-${index}`, result: { output: {
+        sourceCarrierStats: { totalBytes: value },
+        executionTelemetry: observedTelemetry({ modelRequests: value, schemaRetries: value, schemaRetryReasons: { other: value } }),
+      } },
+    })), []).profiles[0]!.receipts;
+  }
+  const max = Number.MAX_SAFE_INTEGER;
+  const exact = aggregate([max - 2, 1, 1]);
+  assert.equal(exact.executionTelemetry.modelRequests.total, max);
+  assert.equal(exact.executionTelemetry.schemaRetries.total, max);
+  assert.equal(exact.executionTelemetry.schemaRetries.reasons.other, max);
+  const overflow = aggregate([max, 2, 1]);
+  assert.equal(overflow.executionTelemetry.modelRequests.observed, 3);
+  assert.equal(overflow.executionTelemetry.modelRequests.total, null);
+  assert.equal(overflow.executionTelemetry.schemaRetries.total, null);
+  assert.equal(overflow.executionTelemetry.schemaRetries.reasons.other, null);
+  assert.equal(overflow.sourceBytes.totalBytes.count, 3);
+  assert.equal(aggregate([max]).sourceBytes.totalBytes.average, max, "average must not lose precision by multiplying a Number by 1000");
+  assert.equal(aggregate([1, 2, 2]).sourceBytes.totalBytes.average, 1.667);
+  assert.equal(JSON.parse(JSON.stringify(overflow)).executionTelemetry.modelRequests.total, null);
 });

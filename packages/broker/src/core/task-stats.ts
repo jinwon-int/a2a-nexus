@@ -484,29 +484,32 @@ export interface WorkerReceiptCarrierCounts {
 export interface WorkerReceiptSourceBytes {
   /** Tasks whose chosen carrier carried a valid non-negative safe-integer totalBytes. */
   observed: number;
-  /** Tasks whose chosen carrier had no valid totalBytes (absent or malformed). */
+  /** Tasks whose chosen carrier omitted sourceCarrierStats or totalBytes. */
   missing: number;
+  /** Present source stats/counts rejected by strict shape/integer validation. */
+  invalid: number;
   totalBytes: ReceiptNumericDistribution;
 }
 
 export interface WorkerReceiptModelRequests {
   /** Observed telemetry samples carrying a valid modelRequests count. */
   observed: number;
-  /** Sum over those samples only — never padded with imputed zeros. */
-  total: number;
+  /** Sum over observed samples; null means the exact sum exceeds safe-integer range. */
+  total: number | null;
   distribution: ReceiptNumericDistribution;
 }
 
 export interface WorkerReceiptSchemaRetries {
   /** Observed telemetry samples carrying a valid schemaRetries count. */
   observed: number;
-  total: number;
+  /** null means the exact sum exceeds safe-integer range. */
+  total: number | null;
   /** Samples with a strictly positive count. */
   tasksWithRetries: number;
   /** Explicit valid zero counts — a real observation, distinct from absence. */
   tasksWithZero: number;
   /** Bounded-enum reason totals; unknown keys are dropped, never emitted. */
-  reasons: Partial<Record<WorkerReceiptSchemaRetryReason, number>>;
+  reasons: Partial<Record<WorkerReceiptSchemaRetryReason, number | null>>;
 }
 
 export interface WorkerReceiptTelemetry {
@@ -581,11 +584,17 @@ function parseReceiptTelemetry(value: unknown): ParsedReceiptTelemetry {
   if (!WORKER_RECEIPT_TELEMETRY_SOURCES.includes(carrier.source as WorkerReceiptTelemetrySource)) {
     return { state: "invalid" };
   }
+  for (const key of ["modelRequests", "schemaRetries"] as const) {
+    if (carrier[key] !== undefined && receiptCount(carrier[key]) === undefined) return { state: "invalid" };
+  }
+  if (carrier.truncated !== undefined && typeof carrier.truncated !== "boolean") return { state: "invalid" };
   const rawReasons = receiptObject(carrier.schemaRetryReasons);
+  if (carrier.schemaRetryReasons !== undefined && !rawReasons) return { state: "invalid" };
   const schemaRetryReasons: Partial<Record<WorkerReceiptSchemaRetryReason, number>> = {};
   if (rawReasons) {
     for (const reason of WORKER_RECEIPT_SCHEMA_RETRY_REASONS) {
       const count = receiptCount(rawReasons[reason]);
+      if (rawReasons[reason] !== undefined && count === undefined) return { state: "invalid" };
       if (count !== undefined) schemaRetryReasons[reason] = count;
     }
   }
@@ -602,7 +611,7 @@ type ReceiptCarrierKind = "structuredBridgeFailure" | "resultOutput";
 
 interface ReceiptCarrier {
   kind: ReceiptCarrierKind;
-  sourceCarrierStats: Record<string, unknown> | undefined;
+  sourceCarrierStats: unknown;
   telemetryRaw: unknown;
   requestedModel: unknown;
   requestedThinking: unknown;
@@ -614,7 +623,7 @@ interface ReceiptCarrier {
 function carrierFrom(kind: ReceiptCarrierKind, carrier: Record<string, unknown>): ReceiptCarrier {
   return {
     kind,
-    sourceCarrierStats: receiptObject(carrier.sourceCarrierStats),
+    sourceCarrierStats: carrier.sourceCarrierStats,
     telemetryRaw: carrier.executionTelemetry,
     requestedModel: carrier.requestedModel,
     requestedThinking: carrier.requestedThinking,
@@ -656,28 +665,38 @@ function summarizeReceiptSamples(values: readonly number[]): ReceiptNumericDistr
   if (sorted.length === 0) {
     return { count: 0, min: null, max: null, average: null, p50: null, p95: null };
   }
-  const sum = sorted.reduce((total, value) => total + value, 0);
+  const sum = sorted.reduce((total, value) => total + BigInt(value), 0n);
+  const count = BigInt(sorted.length);
+  // Round in integer arithmetic before converting back to the display number.
+  const scaledAverage = (sum * 1_000n + count / 2n) / count;
   return {
     count: sorted.length,
     min: sorted[0] ?? null,
     max: sorted.at(-1) ?? null,
-    average: Math.round((sum / sorted.length) * 1_000) / 1_000,
+    average: Number(scaledAverage / 1_000n) + Number(scaledAverage % 1_000n) / 1_000,
     p50: nearestRank(sorted, 50),
     p95: nearestRank(sorted, 95),
   };
 }
 
+/** Nonnegative inputs make overflow permanent; never wrap, clamp or silently round. */
+function addReceiptCounts(total: number | null, value: number): number | null {
+  if (total === null) return null;
+  const sum = total + value;
+  return Number.isSafeInteger(sum) ? sum : null;
+}
+
 interface WorkerReceiptTally extends WorkerReceiptProfile {
   byteSamples: number[];
   modelRequestSamples: number[];
-  schemaRetryReasonTotals: Map<WorkerReceiptSchemaRetryReason, number>;
+  schemaRetryReasonTotals: Map<WorkerReceiptSchemaRetryReason, number | null>;
   add(carrier: ReceiptCarrier | undefined): void;
 }
 
 function emptyReceiptTally(): WorkerReceiptTally {
   const tally: WorkerReceiptTally = {
     carriers: { structuredBridgeFailure: 0, resultOutput: 0, none: 0 },
-    sourceBytes: { observed: 0, missing: 0, totalBytes: { count: 0, min: null, max: null, average: null, p50: null, p95: null } },
+    sourceBytes: { observed: 0, missing: 0, invalid: 0, totalBytes: { count: 0, min: null, max: null, average: null, p50: null, p95: null } },
     executionTelemetry: {
       observed: 0,
       missing: 0,
@@ -706,8 +725,12 @@ function emptyReceiptTally(): WorkerReceiptTally {
       if (carrier.kind === "structuredBridgeFailure") tally.carriers.structuredBridgeFailure += 1;
       else tally.carriers.resultOutput += 1;
 
-      const totalBytes = receiptCount(carrier.sourceCarrierStats?.totalBytes);
-      if (totalBytes === undefined) tally.sourceBytes.missing += 1;
+      const stats = receiptObject(carrier.sourceCarrierStats);
+      const rawBytes = stats?.totalBytes;
+      const totalBytes = receiptCount(rawBytes);
+      if ((carrier.sourceCarrierStats !== undefined && !stats) || (rawBytes !== undefined && totalBytes === undefined)) {
+        tally.sourceBytes.invalid += 1;
+      } else if (totalBytes === undefined) tally.sourceBytes.missing += 1;
       else {
         tally.sourceBytes.observed += 1;
         tally.byteSamples.push(totalBytes);
@@ -721,20 +744,21 @@ function emptyReceiptTally(): WorkerReceiptTally {
         if (parsed.truncated) tally.executionTelemetry.truncated += 1;
         if (parsed.modelRequests !== undefined) {
           tally.executionTelemetry.modelRequests.observed += 1;
-          tally.executionTelemetry.modelRequests.total += parsed.modelRequests;
+          tally.executionTelemetry.modelRequests.total = addReceiptCounts(tally.executionTelemetry.modelRequests.total, parsed.modelRequests);
           tally.modelRequestSamples.push(parsed.modelRequests);
         }
         const retries = tally.executionTelemetry.schemaRetries;
         if (parsed.schemaRetries !== undefined) {
           retries.observed += 1;
-          retries.total += parsed.schemaRetries;
+          retries.total = addReceiptCounts(retries.total, parsed.schemaRetries);
           if (parsed.schemaRetries === 0) retries.tasksWithZero += 1;
           else retries.tasksWithRetries += 1;
         }
         for (const reason of WORKER_RECEIPT_SCHEMA_RETRY_REASONS) {
           const count = parsed.schemaRetryReasons[reason];
           if (count !== undefined) {
-            tally.schemaRetryReasonTotals.set(reason, (tally.schemaRetryReasonTotals.get(reason) ?? 0) + count);
+            const previous = tally.schemaRetryReasonTotals.get(reason);
+            tally.schemaRetryReasonTotals.set(reason, addReceiptCounts(previous === undefined ? 0 : previous, count));
           }
         }
       }
@@ -758,16 +782,17 @@ function emptyReceiptTally(): WorkerReceiptTally {
 }
 
 function receiptProfileFromTally(tally: WorkerReceiptTally): WorkerReceiptProfile {
-  const reasons: Partial<Record<WorkerReceiptSchemaRetryReason, number>> = {};
+  const reasons: Partial<Record<WorkerReceiptSchemaRetryReason, number | null>> = {};
   for (const reason of WORKER_RECEIPT_SCHEMA_RETRY_REASONS) {
     const count = tally.schemaRetryReasonTotals.get(reason);
-    if (count !== undefined && count > 0) reasons[reason] = count;
+    if (count !== undefined && (count === null || count > 0)) reasons[reason] = count;
   }
   return {
     carriers: { ...tally.carriers },
     sourceBytes: {
       observed: tally.sourceBytes.observed,
       missing: tally.sourceBytes.missing,
+      invalid: tally.sourceBytes.invalid,
       totalBytes: summarizeReceiptSamples(tally.byteSamples),
     },
     executionTelemetry: {
