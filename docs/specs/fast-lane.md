@@ -106,6 +106,42 @@ v1은 exact structured key만 본다. orchestration key는 값이 `false`여도 
 해석한다. exact key 목록은 broker-owned pure classifier가 계약의 실행
 원본이며 테스트가 각 그룹을 고정한다.
 
+## stats 조회: 섀도 코호트 집계 (기술적, advisory)
+
+`GET /stats/tasks` 응답에는 브로커가 기록한 섀도 판정의 코호트 집계인
+`laneCohorts`(`a2a.task-lane-shadow-cohorts.v1`)가 advisory로 포함된다.
+읽기 전용 순수 함수(`core/task-stats.ts`)로 계산되고 별도 루트/모듈 없이
+기존 응답에 붙는다. 인증·창(window) 파라미터·기존 필드는 전부 그대로다.
+
+- **입력은 브로커 소유 `TaskRecord.laneAssignment`뿐**이다. payload의
+  lane/fast-lane 힌트, 현재 워커 메타데이터, message/prose로 판정을
+  추론하지 않는다. requester가 payload에 넣은 위조 값은 코호트에 절대
+  반영되지 않는다.
+- **엄격한 닫힌집합 검증**(현재 분류기 계약 기준): 정확히 4개 키
+  (`version`/`mode`/`decision`/`reasonCodes`), `fast-lane.v1`/`shadow`,
+  decision은 `fast | full`, reasonCodes는 닫힌 코드 집합·중복 없음·비어
+  있지 않음, fast는 정확히 `["all_fast_conditions_met"]` 한 개, full은
+  all-clear 코드를 포함하지 않음. 이 외의 malformed/unknown/unsupported/
+  모순된 기록은 절대 observed fast/full로 강제 편입되지 않고 invalid로
+  분리 집계되며, raw 값(버전 문자열 포함)은 어디에도 반출되지 않는다.
+- **코호트별 노출**(빈 코호트도 명시적 0 구조로 출력, 결정적 정렬):
+  창 내 선택 태스크 수(활성 포함), terminal succeeded/failed/canceled 수,
+  reasonCounts(닫힌 집합으로 bounded, 태스크당 코드 1회로 deduped, 코드
+  정렬), 기존 수명주기 latency 분포·커버리지(상위 `latency` 뷰와 동일한
+  포함 창/최신 모노토닉 재시도 의미, 코호트의 terminal 태스크로 한정).
+- **커버리지 분리**: 사전 v1 레코드(laneAssignment 자체가 없는 legacy
+  absent)와 검증 실패 기록(invalid/unsupported)은 별개로 센다. 재조
+  (reconciliation) 항등식 `fast + full + legacyAbsent + invalidAssignment
+  = 창 내 전체 선택 태스크`가 항상 성립한다.
+- 감사 이벤트 iterable은 전체 뷰와 코호트 계산이 같은 행을 쓰도록 정확히
+  한 번 materialize한다(one-shot generator 안전).
+
+이 집계는 **기술적(descriptive) 기록일 뿐**이다: 모든 태스크는 여전히 full
+실행을 거치며, fast/full 코호트 간 시간·실패 차이는 판정 조건 자체가 다른
+모수적 선택 bias가 담긴 관측값이다. 인과적 속도 향상·품질 개선의 증거도,
+롤아웃 승인도 아니다. 실행 정책, 실제 칼나리/성능 검증, 경량화 추출 범위는
+#1601이 계속 소유한다.
+
 ## audit와 정책 순서
 
 성공한 신규 create는 `task.created` 직후 정확히 한 번

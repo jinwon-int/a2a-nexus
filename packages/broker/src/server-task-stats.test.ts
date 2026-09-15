@@ -1,8 +1,10 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { mkdtempSync, rmSync } from "node:fs";
+import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+
+import { BROKER_POLICY_SCHEMA, type BrokerPolicyDocument } from "a2a-policy-referee";
 
 import { SqliteBrokerStateStore } from "./core/store.js";
 import { startTestServer, jsonHeaders, registerTestWorker } from "./server-test-helpers.js";
@@ -15,6 +17,194 @@ function headers(extra: Record<string, string> = {}): Record<string, string> {
     ...extra,
   });
 }
+
+function allowPolicyFile(): string {
+  // A present allow document gives the classifier a policy decision, so a
+  // clean analyze task can actually land in the fast cohort.
+  const policy: BrokerPolicyDocument = {
+    schemaVersion: BROKER_POLICY_SCHEMA,
+    mode: "warn",
+    defaultAction: "allow",
+    rules: [],
+  };
+  const dir = mkdtempSync(join(tmpdir(), "lane-cohort-policy-"));
+  const path = join(dir, "broker-policy.json");
+  writeFileSync(path, JSON.stringify(policy));
+  return path;
+}
+
+async function registerPersistentWorker(server: { baseUrl: string }, nodeId: string): Promise<void> {
+  const res = await fetch(`${server.baseUrl}/workers/register`, {
+    method: "POST",
+    headers: jsonHeaders({
+      "x-a2a-edge-secret": "test-edge-secret",
+      "x-a2a-requester-id": nodeId,
+      "x-a2a-requester-role": "analyst",
+    }),
+    body: JSON.stringify({
+      nodeId,
+      role: "analyst",
+      workerMode: "persistent",
+      capabilities: {
+        canAnalyze: true,
+        canBackfill: false,
+        canPatchWorkspace: false,
+        canPromoteLive: false,
+        workspaceIds: ["test"],
+        environments: ["research"],
+      },
+    }),
+  });
+  assert.ok(res.status === 200 || res.status === 201, `worker register failed: ${res.status}`);
+}
+
+async function runCohortScenario(server: Awaited<ReturnType<typeof startTestServer>>): Promise<void> {
+  await registerPersistentWorker(server, "secret-cohort-worker");
+
+  // Clean analyze + read-only mode + persistent worker + allow policy = fast.
+  server.runtime.broker.createTask({
+    id: "stats-cohort-fast",
+    intent: "analyze",
+    requester: { id: "operator-1", kind: "node", role: "operator" },
+    target: { id: "secret-cohort-worker", kind: "node", role: "analyst" },
+    assignedWorkerId: "secret-cohort-worker",
+    message: "fast cohort",
+    payload: { mode: "analysis-only" },
+  });
+  server.runtime.broker.claimTask("stats-cohort-fast", "secret-cohort-worker");
+  server.runtime.broker.startTask("stats-cohort-fast", "secret-cohort-worker");
+  server.runtime.broker.completeTask("stats-cohort-fast", "secret-cohort-worker", { summary: "ok" });
+
+  // Missing payload.mode = full (mode_missing), otherwise identical.
+  server.runtime.broker.createTask({
+    id: "stats-cohort-full",
+    intent: "analyze",
+    requester: { id: "operator-1", kind: "node", role: "operator" },
+    target: { id: "secret-cohort-worker", kind: "node", role: "analyst" },
+    assignedWorkerId: "secret-cohort-worker",
+    message: "full cohort",
+    payload: {},
+  });
+  server.runtime.broker.claimTask("stats-cohort-full", "secret-cohort-worker");
+  server.runtime.broker.startTask("stats-cohort-full", "secret-cohort-worker");
+  server.runtime.broker.failTask("stats-cohort-full", "secret-cohort-worker", {
+    code: "handler_exit_nonzero",
+    message: "handler failed",
+  });
+}
+
+function assertCohortAggregate(body: {
+  total: number;
+  laneCohorts: {
+    schemaVersion: string;
+    viewMode: string;
+    executionPolicy: string;
+    coverage: { selectedTasks: number; validAssignments: number; legacyAbsent: number; invalidAssignment: number };
+    cohorts: {
+      fast: { tasks: number; terminal: Record<string, number>; reasonCounts: Record<string, number>; latency: { coverage: { terminalTasks: number; completeChains: number } } };
+      full: { tasks: number; terminal: Record<string, number>; reasonCounts: Record<string, number>; latency: { coverage: { terminalTasks: number; completeChains: number } } };
+    };
+  };
+  latency: { coverage: { terminalTasks: number } };
+}): void {
+  const cohorts = body.laneCohorts;
+  assert.equal(cohorts.schemaVersion, "a2a.task-lane-shadow-cohorts.v1");
+  assert.equal(cohorts.viewMode, "read_only_advisory");
+  assert.match(cohorts.executionPolicy, /all tasks still run full execution/);
+  assert.deepEqual(cohorts.coverage, {
+    selectedTasks: 2,
+    validAssignments: 2,
+    legacyAbsent: 0,
+    invalidAssignment: 0,
+  });
+  // Cohorts + missing + invalid reconcile across every selected task.
+  assert.equal(
+    cohorts.cohorts.fast.tasks + cohorts.cohorts.full.tasks
+      + cohorts.coverage.legacyAbsent + cohorts.coverage.invalidAssignment,
+    body.total,
+  );
+  assert.deepEqual(cohorts.cohorts.fast.terminal, { succeeded: 1, failed: 0, canceled: 0 });
+  assert.deepEqual(cohorts.cohorts.fast.reasonCounts, { all_fast_conditions_met: 1 });
+  assert.deepEqual(cohorts.cohorts.full.terminal, { succeeded: 0, failed: 1, canceled: 0 });
+  assert.deepEqual(cohorts.cohorts.full.reasonCounts, { mode_missing: 1 });
+  // Same lifecycle latency semantics as the overall view, per cohort.
+  assert.equal(cohorts.cohorts.fast.latency.coverage.terminalTasks, 1);
+  assert.equal(cohorts.cohorts.fast.latency.coverage.completeChains, 1);
+  assert.equal(cohorts.cohorts.full.latency.coverage.terminalTasks, 1);
+  assert.equal(cohorts.cohorts.full.latency.coverage.completeChains, 1);
+  assert.equal(body.latency.coverage.terminalTasks, 2);
+}
+
+test("GET /stats/tasks reports advisory fast-lane shadow cohorts without task or worker identifiers", async () => {
+  const server = await startTestServer({
+    edgeSecret: "test-edge-secret",
+    enforceRequesterIdentity: true,
+    brokerPolicyFile: allowPolicyFile(),
+  });
+  try {
+    await runCohortScenario(server);
+
+    const until = new Date(Date.now() + 60_000).toISOString();
+    const since = new Date(Date.now() - 60_000).toISOString();
+    const windowQuery = `since=${encodeURIComponent(since)}&until=${encodeURIComponent(until)}`;
+    const unauthenticated = await fetch(`${server.baseUrl}/stats/tasks?${windowQuery}`);
+    assert.equal(unauthenticated.status, 401);
+
+    const res = await fetch(`${server.baseUrl}/stats/tasks?${windowQuery}`, { headers: headers() });
+    if (res.status !== 200) {
+      assert.fail(`expected 200, got ${res.status}: ${await res.text()}`);
+    }
+    const body = await res.json() as Parameters<typeof assertCohortAggregate>[0];
+    assertCohortAggregate(body);
+
+    // Fixed schema surface: no task/worker/message/model identifiers anywhere
+    // in the added aggregate — only counts and closed reason codes.
+    assert.deepEqual(Object.keys(body.laneCohorts), [
+      "schemaVersion",
+      "viewMode",
+      "executionPolicy",
+      "measurementPolicy",
+      "coverage",
+      "cohorts",
+    ]);
+    assert.deepEqual(Object.keys(body.laneCohorts.cohorts.fast), ["tasks", "terminal", "reasonCounts", "latency"]);
+    const serialized = JSON.stringify(body.laneCohorts);
+    assert.equal(serialized.includes("secret-"), false);
+    assert.equal(serialized.includes("stats-cohort-"), false);
+    assert.equal(serialized.includes("fast cohort"), false);
+  } finally {
+    await server.close();
+  }
+});
+
+test("GET /stats/tasks shadow cohorts read equivalently from persisted SQLite hot tables", async () => {
+  const dir = mkdtempSync(join(tmpdir(), "a2a-task-stats-lane-cohorts-"));
+  const store = new SqliteBrokerStateStore(join(dir, "state.sqlite"), { loadSource: "hot-tables" });
+  const server = await startTestServer({
+    stateStore: store,
+    edgeSecret: "test-edge-secret",
+    enforceRequesterIdentity: true,
+    brokerPolicyFile: allowPolicyFile(),
+  });
+  try {
+    await runCohortScenario(server);
+
+    const until = new Date(Date.now() + 60_000).toISOString();
+    const since = new Date(Date.now() - 60_000).toISOString();
+    const res = await fetch(
+      `${server.baseUrl}/stats/tasks?since=${encodeURIComponent(since)}&until=${encodeURIComponent(until)}`,
+      { headers: headers() },
+    );
+    assert.equal(res.status, 200);
+    const body = await res.json() as Parameters<typeof assertCohortAggregate>[0];
+    assertCohortAggregate(body);
+    assert.equal(JSON.stringify(body).includes("secret-cohort-worker"), false);
+  } finally {
+    await server.close();
+    store.close();
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
 
 test("GET /stats/tasks returns read-only aggregate counts and omits worker identifiers", async () => {
   const server = await startTestServer({ edgeSecret: "test-edge-secret", enforceRequesterIdentity: true });

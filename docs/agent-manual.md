@@ -223,6 +223,17 @@ counts or zero; model comparisons are literal identifier equality only
 (alias-equivalent ids count as differences). It is tie-break/advisory data —
 never routing authority, success evidence, or an #1815 A/B attestation.
 
+The same `GET /stats/tasks` response also carries an advisory
+`laneCohorts` section (`a2a.task-lane-shadow-cohorts.v1`, contract in
+[fast lane spec](specs/fast-lane.md)): body-free fast/full shadow cohorts
+derived only from the broker-owned create-time `laneAssignment`. Legacy
+records without an assignment and invalid/unsupported assignments are counted
+separately and never coerced into an observed fast cohort; cohort + absent +
+invalid always reconciles to the window total. **Every task still runs full
+execution**; these cohorts are descriptive shadow data — not causal
+speedup/quality evidence and not rollout authorization. #1601 stays open for
+execution policy, real canary/performance validation and extraction scope.
+
 ## Keeping this manual current
 
 **A usage-changing PR must update this manual and the affected detailed
