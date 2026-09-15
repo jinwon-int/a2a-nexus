@@ -129,6 +129,10 @@ prove the installed worker can run the patch.
 - The CLI supports readiness overrides for exceptional documented cases. They
   are not the normal recipe and do not make an unverified worker capable.
 
+Patch-mode readiness and no-write checks trim surrounding mode whitespace,
+matching the worker handler; padding `github-propose-patch` does not bypass
+either boundary.
+
 ### Time budgets and overrides
 
 Current implementation defaults introduced by [PR #2158](https://github.com/jinwon-int/a2a-nexus/pull/2158):

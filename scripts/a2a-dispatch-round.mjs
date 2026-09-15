@@ -142,7 +142,7 @@ function deriveWorkspaceForLane(errors, tag, lane, defaults, payload, taskOrigin
 }
 
 function validateGitHubPatchWriteCapability(errors, tag, payload) {
-  if (!isPlainObject(payload) || payload.mode !== 'github-propose-patch') return;
+  if (!isPlainObject(payload) || !hasText(payload.mode) || payload.mode.trim() !== 'github-propose-patch') return;
 
   const hasNoWriteSignal = payload.readOnlyValidation === true
     || payload.noGitHubWrites === true
@@ -206,7 +206,7 @@ function readinessRowForLane(manifest, lane) {
 }
 
 function validateGitHubPatchReadiness(errors, tag, manifest, lane, payload) {
-  if (!isPlainObject(payload) || payload.mode !== 'github-propose-patch') return;
+  if (!isPlainObject(payload) || !hasText(payload.mode) || payload.mode.trim() !== 'github-propose-patch') return;
   if (manifest.allowUnverifiedPatchWorkers === true || manifest.allowUnverifiedGithubPatchWorkers === true) return;
 
   const row = readinessRowForLane(manifest, lane);

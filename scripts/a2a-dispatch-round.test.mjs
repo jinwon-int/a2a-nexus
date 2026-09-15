@@ -690,6 +690,50 @@ test('missing profile fails closed with zero task-create calls (#1597)', async (
   }
 });
 
+test('padded patch modes preserve readiness and no-write gates before task creation (#1597)', async () => {
+  const broker = await startMockBroker({
+    post: (body, ctx) => {
+      ctx.store.set(body.id, { id: body.id, status: 'queued' });
+      return { status: 201, json: { task: { id: body.id, status: 'queued' } } };
+    },
+  });
+  try {
+    for (const mode of [' github-propose-patch', 'github-propose-patch ', '\tgithub-propose-patch\n']) {
+      const missing = addPatchReadyWorker(makeGitHubPatchManifest(broker.url), 'workerDelta', { omitProfile: true });
+      missing.defaults.payload.mode = mode;
+      const before = broker.getPostCalls();
+      const dry = await runDispatch(missing, { dryRun: true });
+      const rejected = await runDispatch(missing, { fetchImpl: fetch, secret: SECRET });
+      assert.equal(dry.exitCode, 1);
+      assert.equal(rejected.exitCode, 1);
+      assert.ok(rejected.errors.some((error) => /#1597/.test(error)));
+      assert.equal(broker.getPostCalls(), before, 'padded modes must not bypass profile validation');
+
+      const valid = addPatchReadyWorker(makeGitHubPatchManifest(broker.url));
+      valid.defaults.payload.mode = mode;
+      assert.equal((await runDispatch(valid, { dryRun: true })).exitCode, 0);
+      const accepted = await runDispatch(valid, { fetchImpl: fetch, secret: SECRET });
+      assert.equal(accepted.exitCode, 0, accepted.errors.join('\n'));
+      assert.equal(broker.getPostCalls(), before + 1, 'equivalent valid modes retain handler-compatible behavior');
+
+      for (const flags of [
+        { noGitHubWrites: true }, { readOnlyValidation: true }, { noMutation: true },
+        { allowGitHubWrites: false }, { patchIntent: false }, { sourceOnly: true },
+      ]) {
+        const noWrite = addPatchReadyWorker(makeGitHubPatchManifest(broker.url));
+        noWrite.allowUnverifiedPatchWorkers = true;
+        Object.assign(noWrite.defaults.payload, { mode }, flags);
+        const blocked = await runDispatch(noWrite, { fetchImpl: fetch, secret: SECRET });
+        assert.equal(blocked.exitCode, 1, JSON.stringify(flags));
+        assert.ok(blocked.errors.some((error) => /write-capable/.test(error)));
+        assert.equal(broker.getPostCalls(), before + 1, 'readiness override cannot bypass no-write boundary');
+      }
+    }
+  } finally {
+    await broker.close();
+  }
+});
+
 test('dry-run rejects missing, malformed, disabled, and configured profiles (#1597)', async () => {
   const base = { ...TEST_CANARY_PROFILE };
   const cases = [

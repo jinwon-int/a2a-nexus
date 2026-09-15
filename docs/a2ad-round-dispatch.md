@@ -359,6 +359,10 @@ exists, the broker returns the stored record unchanged, marks the response with
 a `task.create_idempotent_hit` audit event. Dispatchers must count a marked
 response as `already-exists`, never as `created=1`.
 
+Patch-mode readiness and no-write checks trim surrounding mode whitespace,
+matching the worker handler; padding `github-propose-patch` does not bypass
+either boundary.
+
 ## Broker request contract
 
 For each lane the CLI issues a sequential `POST /tasks` (one at a time, to avoid
