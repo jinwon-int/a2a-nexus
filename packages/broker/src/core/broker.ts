@@ -73,9 +73,16 @@ import {
 } from "./broker-retention-selectors.js";
 // Re-exported to preserve the existing public surface; the thresholds now live
 // in broker-worker-status.js alongside the logic that classifies against them.
-// Also imported for the conversation delivery liveness resolver (#1862).
-import { MOBILE_DISCONNECTED_AFTER_MS, MOBILE_OFFLINE_AFTER_MS } from "./broker-worker-status.js";
-export { MOBILE_OFFLINE_AFTER_MS, MOBILE_DISCONNECTED_AFTER_MS } from "./broker-worker-status.js";
+// The neutral HEARTBEAT_LIVENESS_* names are exported alongside the unchanged
+// legacy MOBILE_* aliases (exact-value aliases, kept for legacy imports). The
+// conversation delivery liveness resolver (#1862) uses only the neutral names.
+import { HEARTBEAT_LIVENESS_OFFLINE_AFTER_MS, HEARTBEAT_LIVENESS_ONLINE_WINDOW_MS } from "./broker-worker-status.js";
+export {
+  HEARTBEAT_LIVENESS_OFFLINE_AFTER_MS,
+  HEARTBEAT_LIVENESS_ONLINE_WINDOW_MS,
+  MOBILE_DISCONNECTED_AFTER_MS,
+  MOBILE_OFFLINE_AFTER_MS,
+} from "./broker-worker-status.js";
 import {
   isoNow,
   uniqueIds,
@@ -1690,7 +1697,7 @@ export class InMemoryA2ABroker {
 
   /**
    * Delivery clarity for offline/stale/busy recipients (#1862 exit criteria):
-   * queue semantics made inspectable. Liveness mirrors the worker-status
+   * queue semantics made inspectable. Liveness mirrors the heartbeat-liveness
    * thresholds (<=30s online, <=90s stale, >90s offline; unregistered or
    * foreign-homed = unknown); busy = the worker currently holds claimed or
    * running tasks — busy never blocks conversation queuing.
@@ -1715,7 +1722,11 @@ export class InMemoryA2ABroker {
         if (!Number.isFinite(lastSeenMs)) return { liveness: "unknown", busy: busyWorkers.has(workerId) };
         const ageMs = nowMs - lastSeenMs;
         const liveness =
-          ageMs <= MOBILE_OFFLINE_AFTER_MS ? "online" : ageMs <= MOBILE_DISCONNECTED_AFTER_MS ? "stale" : "offline";
+          ageMs <= HEARTBEAT_LIVENESS_ONLINE_WINDOW_MS
+            ? "online"
+            : ageMs <= HEARTBEAT_LIVENESS_OFFLINE_AFTER_MS
+            ? "stale"
+            : "offline";
         return { liveness, busy: busyWorkers.has(workerId) };
       },
     });

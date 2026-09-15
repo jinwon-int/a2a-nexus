@@ -268,6 +268,16 @@ mode-aware windows. Raw `GET /workers` and `GET /workers/:id` already use the
 common threshold and do not synthesize `mobileHealth`. See the
 [peer-status reference](../packages/broker/docs/phase-8-peer-status-rfc.md#25-worker-modes-and-capacity-revised-by-2065).
 
+Conversation-recipient liveness (`GET /conversations/:id/delivery`) has always
+applied one universal ladder for every `workerMode` (≤30 s online, ≤90 s stale,
+then offline). It now names that ladder with the neutral
+`HEARTBEAT_LIVENESS_ONLINE_WINDOW_MS` / `HEARTBEAT_LIVENESS_OFFLINE_AFTER_MS`
+constants; the legacy `MOBILE_OFFLINE_AFTER_MS` / `MOBILE_DISCONNECTED_AFTER_MS`
+names remain deprecated exact-value aliases (30,000 / 90,000) so existing
+imports are unchanged. These constants describe only the existing
+conversation/legacy-health ladder — they are not defaults for raw `GET /workers`
+or `a2a.peer.status`, which keep the common 90 s window described above.
+
 The same `GET /stats/tasks` response also carries an advisory
 `laneCohorts` section (`a2a.task-lane-shadow-cohorts.v1`, contract in
 [fast lane spec](specs/fast-lane.md)): body-free fast/full shadow cohorts
