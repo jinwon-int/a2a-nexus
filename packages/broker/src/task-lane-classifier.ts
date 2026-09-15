@@ -10,6 +10,47 @@ import type {
 export const FAST_LANE_ASSIGNMENT_VERSION = "fast-lane.v1" as const;
 export const FAST_LANE_ASSIGNMENT_MODE = "shadow" as const;
 
+/**
+ * Closed v1 reason-code set, listed in the classifier's fixed evaluation
+ * order. Runtime contract source for strict consumers (read-model cohort
+ * aggregation); must stay in sync with `TaskLaneReasonCode` in
+ * `core/types.ts` and the persistence mirror in `core/store-schemas.ts`
+ * (`taskLaneAssignmentSchema`).
+ */
+export const TASK_LANE_REASON_CODES = [
+  "all_fast_conditions_met",
+  "requester_lane_facts_present",
+  "intent_not_analyze",
+  "mode_missing",
+  "mode_not_read_only_analysis",
+  "write_or_implementation_marker_present",
+  "worker_assignment_conflict",
+  "round_marker_present",
+  "fanout_marker_present",
+  "multi_worker_marker_present",
+  "delegated_workflow_marker_present",
+  "worker_mode_missing",
+  "worker_not_persistent",
+  "policy_decision_missing",
+  "policy_decision_unknown",
+  "policy_requires_approval",
+  "policy_denied",
+  "approval_marker_present",
+  "sensitive_marker_present",
+  "live_marker_present",
+  "external_send_marker_present",
+  "credential_access_marker_present",
+] as const;
+
+export const TASK_LANE_REASON_CODE_SET: ReadonlySet<TaskLaneReasonCode> = new Set(TASK_LANE_REASON_CODES);
+
+/** Fails to compile if the tuple above omits any closed-set reason code. */
+export const TASK_LANE_REASON_CODES_COVER_CONTRACT: [TaskLaneReasonCode] extends [
+  (typeof TASK_LANE_REASON_CODES)[number]
+]
+  ? true
+  : never = true;
+
 export const FAST_LANE_READ_ONLY_ANALYSIS_MODES = [
   "analysis-only",
   "read-only-analysis",

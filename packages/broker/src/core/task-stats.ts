@@ -1,4 +1,15 @@
-import type { AuditEvent, TaskRecord, TaskStatus } from "./types.js";
+import type {
+  AuditEvent,
+  TaskLaneDecision,
+  TaskLaneReasonCode,
+  TaskRecord,
+  TaskStatus,
+} from "./types.js";
+import {
+  FAST_LANE_ASSIGNMENT_MODE,
+  FAST_LANE_ASSIGNMENT_VERSION,
+  TASK_LANE_REASON_CODES,
+} from "../task-lane-classifier.js";
 
 const DEFAULT_MAX_WINDOW_MS = 7 * 24 * 60 * 60 * 1000;
 const DEFAULT_TOP_ROUNDS = 10;
@@ -79,6 +90,8 @@ export interface TaskStatsResponse {
   byWorkerClass: Record<string, number>;
   byRound: { top: TaskRoundStats[] };
   latency: TaskLifecycleLatencyResponse;
+  /** Body-free advisory fast-lane shadow cohorts (#1601); descriptive only. */
+  laneCohorts: TaskLaneShadowCohortsResponse;
 }
 
 export const TERMINAL_STATUSES = new Set<TaskStatus>(["succeeded", "failed", "canceled"]);
@@ -292,6 +305,183 @@ export function aggregateTaskLifecycleLatency(
   };
 }
 
+// ---- #1601 fast-lane shadow cohorts: body-free advisory measurements ------
+
+export const TASK_LANE_SHADOW_COHORTS_SCHEMA_VERSION = "a2a.task-lane-shadow-cohorts.v1" as const;
+
+const TASK_LANE_REASON_CODE_SET: ReadonlySet<TaskLaneReasonCode> = new Set(TASK_LANE_REASON_CODES);
+const FAST_LANE_ALL_CLEAR_REASON: TaskLaneReasonCode = "all_fast_conditions_met";
+const LANE_ASSIGNMENT_KEYS = "decision,mode,reasonCodes,version";
+
+export type LaneAssignmentValidity =
+  | { state: "absent" }
+  | { state: "invalid" }
+  | { state: "valid"; decision: TaskLaneDecision; reasonCodes: TaskLaneReasonCode[] };
+
+function laneAssignmentRecord(value: unknown): Record<string, unknown> | undefined {
+  if (typeof value !== "object" || value === null || Array.isArray(value)) return undefined;
+  return value as Record<string, unknown>;
+}
+
+// Each group is emitted by one mutually exclusive classifier branch. This
+// read-model check does not change the more permissive persistence schema.
+const EXCLUSIVE_LANE_REASON_GROUPS: readonly (readonly TaskLaneReasonCode[])[] = [
+  ["mode_missing", "mode_not_read_only_analysis"],
+  ["worker_mode_missing", "worker_not_persistent"],
+  ["policy_decision_missing", "policy_requires_approval", "policy_denied", "policy_decision_unknown"],
+];
+
+/**
+ * Strict closed-set validation of a broker-owned fast-lane shadow assignment
+ * against the current classifier contract: exactly the four recorded keys,
+ * `fast-lane.v1`/`shadow`, closed decision and reason-code sets, no duplicate
+ * codes, fast carrying exactly `["all_fast_conditions_met"]` and full never
+ * carrying the all-clear code or mutually exclusive classifier reasons.
+ * `undefined` is "absent" (legacy records created
+ * before fast-lane v1); everything else that fails validation is "invalid" —
+ * malformed, unknown, unsupported or contradictory assignments are never
+ * coerced into an observed fast/full cohort and no raw value is ever echoed.
+ */
+export function validateLaneAssignmentForStats(value: unknown): LaneAssignmentValidity {
+  if (value === undefined) return { state: "absent" };
+  const record = laneAssignmentRecord(value);
+  if (!record) return { state: "invalid" };
+  if (Object.keys(record).sort().join(",") !== LANE_ASSIGNMENT_KEYS) return { state: "invalid" };
+  if (record.version !== FAST_LANE_ASSIGNMENT_VERSION) return { state: "invalid" };
+  if (record.mode !== FAST_LANE_ASSIGNMENT_MODE) return { state: "invalid" };
+  if (record.decision !== "fast" && record.decision !== "full") return { state: "invalid" };
+  const rawReasons: unknown[] = Array.isArray(record.reasonCodes) ? record.reasonCodes : [];
+  if (rawReasons.length === 0) return { state: "invalid" };
+  const reasons = new Set<TaskLaneReasonCode>();
+  for (const reason of rawReasons) {
+    if (typeof reason !== "string" || !TASK_LANE_REASON_CODE_SET.has(reason as TaskLaneReasonCode)) {
+      return { state: "invalid" };
+    }
+    if (reasons.has(reason as TaskLaneReasonCode)) return { state: "invalid" };
+    reasons.add(reason as TaskLaneReasonCode);
+  }
+  if (record.decision === "fast") {
+    if (rawReasons.length !== 1 || rawReasons[0] !== FAST_LANE_ALL_CLEAR_REASON) return { state: "invalid" };
+  } else if (reasons.has(FAST_LANE_ALL_CLEAR_REASON)) {
+    return { state: "invalid" };
+  }
+  if (EXCLUSIVE_LANE_REASON_GROUPS.some((group) => group.filter((reason) => reasons.has(reason)).length > 1)) {
+    return { state: "invalid" };
+  }
+  return { state: "valid", decision: record.decision, reasonCodes: [...reasons].sort() };
+}
+
+export interface TaskLaneCohortStats {
+  /** Window-selected tasks with a valid assignment in this cohort (active tasks included). */
+  tasks: number;
+  terminal: { succeeded: number; failed: number; canceled: number };
+  /** Bounded closed-set reason totals, deduped per task, sorted by code; empty cohorts stay `{}`. */
+  reasonCounts: Partial<Record<TaskLaneReasonCode, number>>;
+  /** Same lifecycle latency semantics as the top-level view, scoped to this cohort's terminal tasks. */
+  latency: TaskLifecycleLatencyResponse;
+}
+
+export interface TaskLaneShadowCohortsResponse {
+  schemaVersion: typeof TASK_LANE_SHADOW_COHORTS_SCHEMA_VERSION;
+  viewMode: "read_only_advisory";
+  executionPolicy: "all tasks still run full execution; shadow cohorts change nothing";
+  measurementPolicy: {
+    source: "broker-owned TaskRecord.laneAssignment recorded at create time";
+    inference: "never inferred from payload hints, worker metadata, or message text";
+    validity: "strict closed-set validation against the current classifier contract; malformed/unknown/contradictory assignments are never observed as fast";
+    latency: "same inclusive window and latest monotonic attempt semantics as the overall lifecycle latency view";
+  };
+  coverage: {
+    /** fast.tasks + full.tasks + legacyAbsent + invalidAssignment always reconciles to this. */
+    selectedTasks: number;
+    validAssignments: number;
+    /** Records created before fast-lane v1: no laneAssignment at all. */
+    legacyAbsent: number;
+    /** laneAssignment present but rejected by strict validation. */
+    invalidAssignment: number;
+  };
+  /** Both cohorts are always emitted, even when empty. */
+  cohorts: { fast: TaskLaneCohortStats; full: TaskLaneCohortStats };
+}
+
+/**
+ * Descriptive, body-free advisory shadow cohorts over already-selected tasks.
+ * Reads only the broker-owned `TaskRecord.laneAssignment`; never infers from
+ * payload hints or worker metadata and never emits task/worker/message/model
+ * identifiers or any raw assignment value.
+ */
+export function aggregateTaskLaneShadowCohorts(
+  selectedTasks: Iterable<TaskRecord>,
+  auditEvents: Iterable<AuditEvent>,
+): TaskLaneShadowCohortsResponse {
+  // One-shot iterables are materialized exactly once; the same rows feed every
+  // cohort's lifecycle latency computation below.
+  const rows = Array.isArray(selectedTasks) ? selectedTasks : [...selectedTasks];
+  const events = Array.isArray(auditEvents) ? auditEvents : [...auditEvents];
+  const cohortTasks: Record<TaskLaneDecision, TaskRecord[]> = { fast: [], full: [] };
+  const reasonTotals: Record<TaskLaneDecision, Map<TaskLaneReasonCode, number>> = {
+    fast: new Map(),
+    full: new Map(),
+  };
+  let legacyAbsent = 0;
+  let invalidAssignment = 0;
+
+  for (const task of rows) {
+    const validity = validateLaneAssignmentForStats(task.laneAssignment);
+    if (validity.state === "absent") {
+      legacyAbsent += 1;
+      continue;
+    }
+    if (validity.state === "invalid") {
+      invalidAssignment += 1;
+      continue;
+    }
+    cohortTasks[validity.decision].push(task);
+    const totals = reasonTotals[validity.decision];
+    for (const reason of validity.reasonCodes) {
+      // Validation already deduped per task; count each code at most once.
+      totals.set(reason, (totals.get(reason) ?? 0) + 1);
+    }
+  }
+
+  const cohortStats = (decision: TaskLaneDecision): TaskLaneCohortStats => {
+    const tasks = cohortTasks[decision];
+    const terminal = { succeeded: 0, failed: 0, canceled: 0 };
+    for (const task of tasks) {
+      if (TERMINAL_STATUSES.has(task.status)) terminal[task.status as keyof typeof terminal] += 1;
+    }
+    const reasonCounts: Partial<Record<TaskLaneReasonCode, number>> = {};
+    for (const [reason, count] of [...reasonTotals[decision].entries()].sort(([a], [b]) => a.localeCompare(b))) {
+      reasonCounts[reason] = count;
+    }
+    return {
+      tasks: tasks.length,
+      terminal,
+      reasonCounts,
+      latency: aggregateTaskLifecycleLatency(tasks, events),
+    };
+  };
+
+  return {
+    schemaVersion: TASK_LANE_SHADOW_COHORTS_SCHEMA_VERSION,
+    viewMode: "read_only_advisory",
+    executionPolicy: "all tasks still run full execution; shadow cohorts change nothing",
+    measurementPolicy: {
+      source: "broker-owned TaskRecord.laneAssignment recorded at create time",
+      inference: "never inferred from payload hints, worker metadata, or message text",
+      validity: "strict closed-set validation against the current classifier contract; malformed/unknown/contradictory assignments are never observed as fast",
+      latency: "same inclusive window and latest monotonic attempt semantics as the overall lifecycle latency view",
+    },
+    coverage: {
+      selectedTasks: rows.length,
+      validAssignments: cohortTasks.fast.length + cohortTasks.full.length,
+      legacyAbsent,
+      invalidAssignment,
+    },
+    cohorts: { fast: cohortStats("fast"), full: cohortStats("full") },
+  };
+}
+
 function assertValidWindow(options: TaskStatsOptions): void {
   const { since, until } = options;
   if (!(since instanceof Date) || Number.isNaN(since.getTime())) {
@@ -420,6 +610,10 @@ export function aggregateTaskStats(tasks: Iterable<TaskRecord>, options: TaskSta
     .sort((a, b) => (b.failed - a.failed) || (b.total - a.total) || a.parentRoundId.localeCompare(b.parentRoundId))
     .slice(0, options.maxRoundGroups ?? DEFAULT_TOP_ROUNDS);
 
+  // Materialize a one-shot audit iterable exactly once so the overall latency
+  // view and every shadow cohort below read the same rows.
+  const auditEvents = options.auditEvents ? [...options.auditEvents] : [];
+
   return {
     window: { since: options.since.toISOString(), until: options.until.toISOString() },
     total,
@@ -429,7 +623,8 @@ export function aggregateTaskStats(tasks: Iterable<TaskRecord>, options: TaskSta
     byStage: sortRecord(byStage),
     byWorkerClass: sortRecord(byWorkerClass),
     byRound: { top },
-    latency: aggregateTaskLifecycleLatency(selectedTasks, options.auditEvents ?? []),
+    latency: aggregateTaskLifecycleLatency(selectedTasks, auditEvents),
+    laneCohorts: aggregateTaskLaneShadowCohorts(selectedTasks, auditEvents),
   };
 }
 
