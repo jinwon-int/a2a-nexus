@@ -59,17 +59,18 @@ function resultOf(value: Record<string, unknown>): Record<string, unknown> {
   return value.result as Record<string, unknown>;
 }
 
-test("pins the two closed query families and parses every synthetic fixture", () => {
+test("pins the three closed query families and parses every synthetic fixture", () => {
   assert.deepEqual(V.queryOperations, [
     "reconcileOutbox",
     "queryGraphEvidencePath",
+    "queryGraphSourceHighWater",
   ]);
   assert.equal(Object.isFrozen(V.queryOperations), true);
   assert.equal(fixture.fixtureVersion, 1);
   assert.equal(fixture.contractVersion, V.versions.contract);
   assert.equal(fixture.queryVersion, V.versions.query);
-  assert.equal(fixture.requests.length, 2);
-  assert.equal(fixture.results.length, 6);
+  assert.equal(fixture.requests.length, 3);
+  assert.equal(fixture.results.length, 8);
 
   for (const value of fixture.requests) {
     assert.equal(parseSharedStateQueryRequestV1(value).ok, true);
@@ -331,4 +332,194 @@ test("keeps query operation results closed and distinct", () => {
   const commitOnlyReason = result(5);
   commitOnlyReason.reasonCode = "ambiguous_commit";
   expectError(parseSharedStateQueryResultV1(commitOnlyReason), "invalid_value");
+});
+
+test("high-water requests name exactly the claim-graph namespace and consistency", () => {
+  const wrongNamespace = request(2);
+  inputOf(wrongNamespace).namespace = "broker.terminal-outbox";
+  expectError(
+    parseSharedStateQueryRequestV1(wrongNamespace),
+    "invalid_value",
+    ["input", "namespace"],
+  );
+
+  const inventedNamespace = request(2);
+  inputOf(inventedNamespace).namespace = "broker.claim-graph.aux";
+  expectError(
+    parseSharedStateQueryRequestV1(inventedNamespace),
+    "invalid_value",
+    ["input", "namespace"],
+  );
+
+  const wrongModel = request(2);
+  const highWaterRequired = inputOf(wrongModel).requiredConsistency as
+    Record<string, unknown>;
+  highWaterRequired.model = "monotonic-eventual";
+  expectError(
+    parseSharedStateQueryRequestV1(wrongModel),
+    "query_consistency_mismatch",
+    ["input", "requiredConsistency", "model"],
+  );
+
+  const wrongScope = request(2);
+  const highWaterScope = inputOf(wrongScope).requiredConsistency as
+    Record<string, unknown>;
+  highWaterScope.scope = "per-stream";
+  expectError(
+    parseSharedStateQueryRequestV1(wrongScope),
+    "query_consistency_mismatch",
+    ["input", "requiredConsistency", "scope"],
+  );
+
+  // No fake anchor, stream id, source fact, task id, projection, checkpoint,
+  // completeness, clock, raw SQL, or write token ever enters the request.
+  for (const field of [
+    "projectionVersion",
+    "claimSourceFactDigest",
+    "taskId",
+    "streamKeyDigest",
+    "checkpointSequence",
+    "completeness",
+    "writeToken",
+  ] as const) {
+    const anchored = request(2);
+    inputOf(anchored)[field] = "synthetic";
+    expectError(
+      parseSharedStateQueryRequestV1(anchored),
+      "unknown_field",
+      ["input", field],
+    );
+  }
+
+  const clockField = request(2);
+  inputOf(clockField).now = "2026-09-10T00:00:00.000Z";
+  expectError(
+    parseSharedStateQueryRequestV1(clockField),
+    "caller_clock_forbidden",
+    ["input", "now"],
+  );
+
+  const sqlField = request(2);
+  inputOf(sqlField).sql = "SELECT 1";
+  expectError(
+    parseSharedStateQueryRequestV1(sqlField),
+    "backend_command_forbidden",
+    ["input", "sql"],
+  );
+});
+
+test("high-water succeeded results carry only namespace and canonical sequence", () => {
+  const succeeded = result(6);
+  assert.equal(succeeded.operation, "queryGraphSourceHighWater");
+  assert.deepEqual(succeeded.achievedConsistency, {
+    model: "serializable",
+    scope: "per-namespace",
+  });
+  assert.deepEqual(Object.keys(resultOf(succeeded)).sort(), [
+    "namespace",
+    "sourceSequenceHighWater",
+  ]);
+  // Exact decimal string, above MAX_SAFE_INTEGER: never a Number, never a
+  // count, never a rounded value.
+  assert.equal(resultOf(succeeded).sourceSequenceHighWater, "9007199254740993");
+
+  const unavailable = result(7);
+  assert.equal(unavailable.status, "unavailable");
+  assert.equal(unavailable.achievedConsistency, null);
+
+  const unavailableWithClaim = result(7);
+  unavailableWithClaim.achievedConsistency = {
+    model: "serializable",
+    scope: "per-namespace",
+  };
+  expectError(
+    parseSharedStateQueryResultV1(unavailableWithClaim),
+    "query_consistency_mismatch",
+    ["achievedConsistency"],
+  );
+
+  const achievedScope = result(6);
+  const achieved = achievedScope.achievedConsistency as Record<string, unknown>;
+  achieved.scope = "per-stream";
+  expectError(
+    parseSharedStateQueryResultV1(achievedScope),
+    "query_consistency_mismatch",
+    ["achievedConsistency", "scope"],
+  );
+
+  // An outbox payload wearing the high-water operation is a crossed result.
+  const crossed = result(6);
+  crossed.result = structuredClone(resultOf(result(0)));
+  expectError(
+    parseSharedStateQueryResultV1(crossed),
+    "query_result_mismatch",
+    ["result"],
+  );
+
+  // An evidence-path payload wearing the high-water operation is crossed too.
+  const crossedEvidence = result(6);
+  crossedEvidence.result = structuredClone(resultOf(result(1)));
+  expectError(
+    parseSharedStateQueryResultV1(crossedEvidence),
+    "query_result_mismatch",
+    ["result"],
+  );
+
+  const extended = result(6);
+  resultOf(extended).lag = "0";
+  expectError(
+    parseSharedStateQueryResultV1(extended),
+    "query_result_mismatch",
+    ["result"],
+  );
+
+  const wrongResultNamespace = result(6);
+  resultOf(wrongResultNamespace).namespace = "other.namespace";
+  expectError(
+    parseSharedStateQueryResultV1(wrongResultNamespace),
+    "query_result_mismatch",
+    ["result"],
+  );
+});
+
+test("high-water sequence strings reject noncanonical, negative, fractional, and oversized values", () => {
+  for (const value of [
+    "007",
+    "-1",
+    "1.5",
+    "1e3",
+    "0x10",
+    "",
+    " ",
+    "1 ",
+    "+1",
+    "9".repeat(41),
+    0,
+    5,
+    null,
+  ]) {
+    const candidate = result(6);
+    resultOf(candidate).sourceSequenceHighWater = value as unknown as string;
+    const parsed = parseSharedStateQueryResultV1(candidate);
+    assert.equal(parsed.ok, false, `expected rejection for ${String(value)}`);
+    if (parsed.ok) return;
+    assert.ok(
+      [
+        "invalid_value",
+        "invalid_type",
+        "query_result_mismatch",
+      ].includes(parsed.error.code),
+      `unexpected code ${parsed.error.code} for ${String(value)}`,
+    );
+  }
+
+  // The bounds are the existing closed ones: 40 canonical digits parse.
+  const atBound = result(6);
+  resultOf(atBound).sourceSequenceHighWater = "9".repeat(40);
+  assert.equal(parseSharedStateQueryResultV1(atBound).ok, true);
+
+  // Canonical zero is the honest empty-namespace answer, not an error.
+  const zero = result(6);
+  resultOf(zero).sourceSequenceHighWater = "0";
+  assert.equal(parseSharedStateQueryResultV1(zero).ok, true);
 });

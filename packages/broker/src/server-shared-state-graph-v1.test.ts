@@ -32,13 +32,16 @@ import {
 /**
  * Wraps a real fence so every gate→fence `appendTaskRunGraphSource` call is
  * observable: one recorded entry per CAS append attempt against the adapter,
- * capturing the exact `expectedSourceSequence` string the gate sent.
+ * capturing the exact `expectedSourceSequence` string the gate sent, plus a
+ * counter for the narrow `queryGraphSourceHighWater` resync reads.
  */
 function trackedFence(fence: SharedStateServingFenceV1): {
   readonly tracked: SharedStateServingFenceV1;
   readonly expected: string[];
+  highWaterQueries(): number;
 } {
   const expected: string[] = [];
+  let highWaterQueries = 0;
   const tracked: SharedStateServingFenceV1 = {
     ...fence,
     appendTaskRunGraphSource(
@@ -54,8 +57,12 @@ function trackedFence(fence: SharedStateServingFenceV1): {
       expected.push(input.expectedSourceSequence);
       return fence.appendTaskRunGraphSource(input, nowMs);
     },
+    queryGraphSourceHighWater() {
+      highWaterQueries += 1;
+      return fence.queryGraphSourceHighWater();
+    },
   };
-  return { tracked, expected };
+  return { tracked, expected, highWaterQueries: () => highWaterQueries };
 }
 
 /** A deterministic terminal fact; distinct task ids hash to distinct facts. */
@@ -122,9 +129,10 @@ async function createAndCompleteTask(baseUrl: string, id: string): Promise<void>
 
 /**
  * Measures the durable namespace high-water by appending a fresh probe fact
- * through the very gate under test — its cold-start resync walks the tracked
- * sequence up to the durable mark, so the probe works regardless of prior
- * facts. Probe facts are part of the ledger; each probe allocates one.
+ * through the very gate under test — its cold-start resync resolves a stale
+ * expectation with one durable high-water read plus a bounded CAS retry, so
+ * the probe works regardless of prior facts. Probe facts are part of the
+ * ledger; each probe allocates one.
  */
 function probeHighWater(
   fence: SharedStateServingFenceV1,
@@ -194,7 +202,7 @@ test("sharedStateGraphV1 dedupes repeated terminal facts and keeps the high-wate
 
     // Restart on the same durable store: the second server's terminal
     // transitions continue ABOVE the pre-restart high-water (the gate's
-    // cold-start resync walks its counter up to the durable mark).
+    // cold-start resync reads the durable mark and retries the CAS once).
     const server2 = await startTestServer({
       brokerId: "brokeralpha",
       sharedStateGraphV1: true,
@@ -353,7 +361,7 @@ test("#1504 regression: interleaved old and new replays keep the tracked sequenc
   });
 });
 
-test("#1504 regression: after a reopen a cold gate resyncs, replays stay original, and the next fresh append is one call", async () => {
+test("#1504 regression: after a reopen a cold gate resyncs with one bounded read, replays stay original, and warm appends stay one call", async () => {
   await withTempDir(async (directory) => {
     const sharedStateFile = join(directory, "fence.sqlite");
     const first = openSharedStateServingFenceV1({ filePath: sharedStateFile });
@@ -370,7 +378,7 @@ test("#1504 regression: after a reopen a cold gate resyncs, replays stay origina
     const reopened = openSharedStateServingFenceV1({ filePath: sharedStateFile });
     assert.ok(reopened.ok);
     try {
-      const { tracked, expected } = trackedFence(reopened.value);
+      const { tracked, expected, highWaterQueries } = trackedFence(reopened.value);
       const gate2 = new SharedStateGraphSourceGateV1(() => tracked);
 
       // The cold gate replays the old fact: the adapter answers the durable
@@ -378,22 +386,28 @@ test("#1504 regression: after a reopen a cold gate resyncs, replays stay origina
       // returning the ORIGINAL sequence (never the current high-water).
       assert.equal(gate2.appendTerminalTaskFact(factOf("reopen-a")).sequence, "1");
       assert.deepEqual(expected, ["0"]);
+      assert.equal(highWaterQueries(), 0);
 
-      // Cold-start resync is still available: a fresh append probes its
-      // stale counter upward ("1", "2", "3") until accepted at 4.
+      // Cold-start resync is bounded: the fresh append conflicts once at the
+      // stale counter ("1"), reads the durable mark (3) once, and the SAME
+      // CAS retries at "3" and is accepted at 4 — three calls, not a probe
+      // walk.
       expected.length = 0;
       assert.equal(gate2.appendTerminalTaskFact(factOf("reopen-d")).sequence, "4");
-      assert.deepEqual(expected, ["1", "2", "3"]);
+      assert.deepEqual(expected, ["1", "3"]);
+      assert.equal(highWaterQueries(), 1);
 
       // A replayed historical fact does not drag the resynced counter back…
       expected.length = 0;
       assert.equal(gate2.appendTerminalTaskFact(factOf("reopen-b")).sequence, "2");
       assert.deepEqual(expected, ["4"]);
+      assert.equal(highWaterQueries(), 1);
 
       // …so the next fresh append is one CAS attempt again.
       expected.length = 0;
       assert.equal(gate2.appendTerminalTaskFact(factOf("reopen-e")).sequence, "5");
       assert.deepEqual(expected, ["4"]);
+      assert.equal(highWaterQueries(), 1);
     } finally {
       reopened.value.release();
     }

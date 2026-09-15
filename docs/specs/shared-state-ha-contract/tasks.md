@@ -3924,3 +3924,84 @@ demands it), the cutover mechanics (Phase 7), and any deployment action —
 enabling the shadow on the T1 broker is a separately authorized production
 deploy of a post-Phase-5 build with `BROKER_SHADOW_STATE_V1=on`. 488/489
 remain as decided by W11.
+
+### Decision Q4a — graph cold-start resync: closed `queryGraphSourceHighWater` query plus bounded gate retry (#1504, source-design choice)
+
+Concrete Q4-successor source design, recorded under the user-authorized
+open-issue implementation of #1504. This is a source-design choice, NOT a
+deployment approval, a policy/default activation, or a §5/§6 rollout stage:
+`BROKER_SHARED_STATE_V1_GRAPH` stays default-off, no serving-store promotion
+or live operation is authorized, and the parent issue stays OPEN for the
+HA/shared backend, query, retention, and observation acceptance work.
+
+The closed query union gains exactly one additive operation,
+`queryGraphSourceHighWater`, and the closed consistency-scope vocabulary
+gains `per-namespace`. Every existing operation shape, append consistency
+declaration, reason vocabulary, and `queryVersion` is unchanged. The request
+names the literal `broker.claim-graph` namespace and requires exactly
+`serializable` / `per-namespace`; a succeeded result contains ONLY the
+namespace and the canonical nonnegative decimal `sourceSequenceHighWater`,
+with an empty namespace honestly reported as `0`. The operation carries no
+anchor, stream id, source fact, task id, projection, checkpoint,
+completeness, clock, raw SQL, or write token field, and the strict parser
+rejects every extra field. Compatibility is additive only: parsers without
+this operation reject the unknown discriminant fail-closed — there is no
+automatic fallback and no mixed-version success claim. Existing golden
+fixture entries and their order are preserved; new entries are appended.
+
+The SQLite adapter implements the read inline: `BEGIN IMMEDIATE` with the
+owner token and lifecycle epoch verified inside the same serialization
+boundary (no TOCTOU), under an explicit per-operation dispatch branch — the
+query dispatcher no longer assumes non-graph means outbox, and the result
+parser no longer assumes non-outbox means evidence path. The answer is the
+greatest canonical stored source sequence across the namespace, independent
+of broker/source stream, compared as a BigInt decimal — never a COUNT and
+never plain TEXT order. Every stored sequence in the REQUESTED namespace is
+validated against the existing closed bounds: ANY malformed, negative,
+fractional, oversized, or non-canonical row fails the whole scoped read
+closed (`authority_unavailable`), even where a different row would produce a
+valid maximum; values are never normalized, zero is never an error fallback,
+and rows in unrelated namespaces cannot affect the scoped read. A successful
+read performs no insert, update, delete, clock-floor advance, or sequence
+allocation — the adapter stays ready. Lost ownership, a busy writer, a
+malformed store, and a released adapter reuse the existing closed failure
+semantics.
+
+The serving fence exposes one narrow fail-closed window,
+`queryGraphSourceHighWater()`, over the new query. The graph gate keeps the
+replay-first append attempt — a historical fact replays its ORIGINAL
+sequence in one CAS call, and the tracked maximum never regresses (the
+merged #2176 historical-replay-cache behavior is preserved). On a
+`source_sequence_conflict` the gate now reads the durable namespace maximum
+and retries the SAME CAS append at that value, bounded by an explicit
+conflict-retry budget (8 rounds) instead of the previous linear walk that
+needed one rejected probe per gap — 1,000,000 rejected appends for a cold
+gate meeting a durable high-water of 1,000,000. The query never authorizes
+an append: ownership and the compare-and-set stay enforced on the retry, a
+contender that advances the namespace between the read and the retry simply
+re-enters the same bounded cycle, and budget exhaustion fails closed. A
+durable high-water BELOW the already tracked expectation means the source
+ledger regressed under this gate (rollback or inconsistent store): the gate
+fails closed — it never resets its cache, never silently reallocates a
+historical sequence, and never regresses the cache on historical replay.
+
+Tests: strict request/result parsing and normalization with appended golden
+fixtures, rejecting wrong fields, wrong namespace, wrong consistency,
+crossed operation responses, and non-canonical/negative/fractional/oversized
+sequences; real SQLite empty→0; real appends above nine with
+replay-stays-original, a second authority advancing the namespace, and
+reopen persistence; a labeled direct sparse fixture above
+`MAX_SAFE_INTEGER` answered with the exact maximum (not COUNT, not TEXT
+order); malformed-sequence, lost-ownership, held-write-lock, and
+released-adapter fail-closed cases without mutation; a valid projection
+rollback leaving the source high-water untouched plus lock-release recovery;
+gate coverage for cold high-water 1000 and synthetic 1000001 (uncontended:
+one conflict + one read + one retry), a controlled concurrent append within
+the budget, budget exhaustion failing closed, and the unchanged failed-fence,
+default-off, and source-allocation behaviors; existing fence doubles gained
+the narrow new method where the conflict case exercises it.
+
+Remaining conditions: no projection/prune integration, no public HTTP
+route, no policy or default activation, no CHANGELOG claim, no worker merge,
+and no issue closure. #1504 stays OPEN for HA/shared backend, query,
+retention, and observation; 488/489 remain as decided by W11.
