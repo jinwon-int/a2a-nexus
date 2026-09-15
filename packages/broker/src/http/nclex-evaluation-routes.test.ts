@@ -119,6 +119,33 @@ async function post(store: NclexEvaluationReceiptStore, body: unknown) {
   return res;
 }
 
+function mergeReadyUrl(headSha: string, extraQuery = "") {
+  return new URL(
+    `http://127.0.0.1/nclex-evaluations/jinwon-int/nclex/145/merge-ready?headSha=${headSha}${extraQuery}`,
+  );
+}
+
+async function getMergeReady(store: NclexEvaluationReceiptStore, url: URL) {
+  const res = new CapturingResponse();
+  await handleNclexEvaluationRoutesIfMatched({
+    method: "GET",
+    path: url.pathname,
+    req: Readable.from([]) as never,
+    res: res as never,
+    url,
+    store,
+    keyring: KEYRING,
+    enforceRequesterIdentity: true,
+    requesterIdentity: { id: "operator-1", kind: "node", role: "operator" } as never,
+  });
+  assert.equal(res.statusCode, 200);
+  return JSON.parse(res.body);
+}
+
+async function postReceipt(store: NclexEvaluationReceiptStore, overrides: Record<string, unknown> = {}) {
+  return post(store, makeReceipt(overrides));
+}
+
 test("POST admits a valid signed receipt and stores it idempotently (#1724)", async () => {
   const { store } = ctxFor({ method: "POST", path: "/nclex-evaluations/receipts" });
   const receipt = makeReceipt();
@@ -197,6 +224,7 @@ test("merge-ready projection reflects stored fresh receipts and query facts (#17
   // no conflict, the PR is ready even though an old-head receipt lingers.
   assert.equal(body.ready, true, "stale receipts must not block a PR that otherwise meets every condition");
   assert.equal(body.freshPassCount, 2);
+  assert.equal(body.distinctReviewerCount, 2, "seoseo and nosuk are two distinct declared reviewers");
   assert.equal(body.staleReceiptCount, 1);
   assert.ok(!body.reasons.includes("stale_receipts_excluded:1"), "stale receipts must not appear as a blocking reason");
 
@@ -218,6 +246,82 @@ test("merge-ready projection reflects stored fresh receipts and query facts (#17
   const body2 = JSON.parse(res2.body);
   assert.equal(body2.ready, false);
   assert.ok(body2.reasons.includes("insufficient_fresh_signed_pass:1/3"));
+  assert.equal(body2.distinctReviewerCount, 1);
+  assert.ok(body2.reasons.includes("insufficient_independent_reviewers:1/3"));
+});
+
+test("distinct-reviewer quorum: repeated receipts from one reviewer cannot satisfy quorum (#1724)", async () => {
+  // Same declared node, separately signed receipts with different
+  // receiptId/producedAt/lane/team: raw count reaches 2 but the distinct
+  // declared reviewer count stays 1, so the PR is not ready.
+  const { store } = ctxFor({ method: "POST", path: "/nclex-evaluations/receipts" });
+  await postReceipt(store, { producedAt: "2026-08-06T09:00:00.000Z", lane: "content_clinical", team: "T1" });
+  await postReceipt(store, {
+    reviewerNodeId: "seoseo",
+    producedAt: "2026-08-06T09:05:00.000Z",
+    lane: "evidence_adversarial",
+    team: "cross-team",
+  });
+  assert.equal(store.count(), 2, "both receipts are separately admitted");
+
+  const body = await getMergeReady(store, mergeReadyUrl("a".repeat(40), "&gateGreen=1&authorDistinctApproval=1"));
+  assert.equal(body.ready, false);
+  assert.equal(body.receiptCount, 2);
+  assert.equal(body.freshPassCount, 2, "freshPassCount stays the raw qualifying PASS record count");
+  assert.equal(body.distinctReviewerCount, 1);
+  assert.ok(body.reasons.includes("insufficient_independent_reviewers:1/2"));
+  assert.ok(
+    !body.reasons.some((reason: string) => reason.startsWith("insufficient_fresh_signed_pass")),
+    "the raw count met its quorum; only the distinct count is short",
+  );
+});
+
+test("distinct-reviewer quorum: two separately signed reviewers are ready; high-risk needs three (#1724)", async () => {
+  const { store } = ctxFor({ method: "POST", path: "/nclex-evaluations/receipts" });
+  await postReceipt(store, { reviewerNodeId: "seoseo" });
+  await postReceipt(store, { reviewerNodeId: "nosuk", producedAt: "2026-08-06T09:05:00.000Z" });
+
+  const ready = await getMergeReady(store, mergeReadyUrl("a".repeat(40), "&gateGreen=1&authorDistinctApproval=1"));
+  assert.equal(ready.ready, true);
+  assert.equal(ready.freshPassCount, 2);
+  assert.equal(ready.distinctReviewerCount, 2);
+
+  const highRisk = await getMergeReady(
+    store,
+    mergeReadyUrl("a".repeat(40), "&risk=high-risk&gateGreen=1&authorDistinctApproval=1"),
+  );
+  assert.equal(highRisk.ready, false);
+  assert.ok(highRisk.reasons.includes("insufficient_independent_reviewers:2/3"));
+
+  await postReceipt(store, {
+    reviewerNodeId: "yukson",
+    producedAt: "2026-08-06T09:10:00.000Z",
+    team: "cross-team",
+    lane: "evidence_adversarial",
+  });
+  const met = await getMergeReady(store, mergeReadyUrl("a".repeat(40), "&risk=high-risk&gateGreen=1&authorDistinctApproval=1"));
+  assert.equal(met.ready, true);
+  assert.equal(met.distinctReviewerCount, 3);
+  assert.ok(!met.reasons.some((reason: string) => reason.startsWith("insufficient_")));
+});
+
+test("distinct-reviewer quorum: a duplicate reviewer's blocking finding still vetoes (#1724)", async () => {
+  const { store } = ctxFor({ method: "POST", path: "/nclex-evaluations/receipts" });
+  await postReceipt(store, { reviewerNodeId: "seoseo" });
+  await postReceipt(store, {
+    reviewerNodeId: "seoseo",
+    producedAt: "2026-08-06T09:05:00.000Z",
+    verdict: "BLOCK",
+    findings: [{ findingId: "F-1", blocking: true }],
+  });
+
+  const body = await getMergeReady(store, mergeReadyUrl("a".repeat(40), "&gateGreen=1&authorDistinctApproval=1"));
+  assert.equal(body.ready, false);
+  assert.equal(body.freshPassCount, 1, "only the PASS receipt qualifies");
+  assert.equal(body.distinctReviewerCount, 1);
+  assert.equal(body.blockingFindings, 1, "all fresh blocking findings are counted, duplicate reviewer or not");
+  assert.ok(body.reasons.includes("blocking_findings:1"));
+  assert.ok(body.reasons.includes("insufficient_independent_reviewers:1/2"));
 });
 
 test("POST persists a newly stored receipt through the persist hook (#1724)", async () => {

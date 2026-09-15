@@ -232,10 +232,32 @@ export function classifyReceipts({ receipts, currentHeadSha }) {
 }
 
 /**
+ * Distinct declared reviewer node IDs among the given receipts (#1724). Only
+ * a nonblank string `reviewerNodeId` counts, after `trim()`; comparison is
+ * case-sensitive with no unsourced alias normalization. Missing or malformed
+ * identities are never String-coerced into a vote, and receiptId, keyId,
+ * team or lane are never used as a fallback.
+ */
+function distinctReviewerIdCount(receipts) {
+  const ids = new Set();
+  for (const receipt of receipts) {
+    const id = receipt?.reviewerNodeId;
+    if (typeof id === "string" && id.trim() !== "") ids.add(id.trim());
+  }
+  return ids.size;
+}
+
+/**
  * Merge-ready read model. Ready requires: GitHub gate green, enough fresh
- * signed PASS receipts on the exact head (2 normal / 3 high-risk), zero
- * blocking findings, an author-distinct GitHub approval, and no merge
- * conflict. Returns { ready, reasons } — never throws on ordinary input.
+ * signed PASS receipts on the exact head (2 normal / 3 high-risk), enough
+ * DISTINCT declared reviewer node IDs among them (#1724), zero blocking
+ * findings, an author-distinct GitHub approval, and no merge conflict.
+ *
+ * `freshPassCount` stays the raw qualifying PASS record count; the additive
+ * `distinctReviewerCount` fails closed via `insufficient_independent_reviewers`
+ * when the distinct declared IDs are below quorum. Returns
+ * { ready, quorum, freshPassCount, distinctReviewerCount, staleReceiptCount,
+ * reasons } — never throws on ordinary input.
  */
 export function evaluateMergeReadiness({
   gateGreen,
@@ -250,10 +272,17 @@ export function evaluateMergeReadiness({
   const reasons = [];
   const { fresh, stale } = classifyReceipts({ receipts: receipts ?? [], currentHeadSha });
   const freshPasses = fresh.filter((receipt) => receipt.verdict === "PASS" && receipt.signed === true);
+  const distinctReviewerCount = distinctReviewerIdCount(freshPasses);
 
   if (gateGreen !== true) reasons.push("github_gate_not_green");
   if (freshPasses.length < quorum) {
     reasons.push(`insufficient_fresh_signed_pass:${freshPasses.length}/${quorum}`);
+  }
+  // #1724 additive distinct-reviewer quorum: `freshPassCount` above stays the
+  // raw qualifying PASS record count; this separate reason fails closed when
+  // the distinct declared reviewer node IDs among them are below quorum.
+  if (distinctReviewerCount < quorum) {
+    reasons.push(`insufficient_independent_reviewers:${distinctReviewerCount}/${quorum}`);
   }
   // Stale receipts are excluded from the vote and reported via staleReceiptCount,
   // not treated as a merge-ready veto (spec-aligned; matches merge-ready.ts). A
@@ -266,6 +295,7 @@ export function evaluateMergeReadiness({
     ready: reasons.length === 0,
     quorum,
     freshPassCount: freshPasses.length,
+    distinctReviewerCount,
     staleReceiptCount: stale.length,
     reasons,
   };

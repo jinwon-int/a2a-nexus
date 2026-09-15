@@ -62,12 +62,23 @@ receipt가 이 값들에 바인딩되므로 누락/형변형은 fail-closed.
 - receipt는 PR/headSha/diffHash/intentHash, author/reviewer, team/lane, finding,
   PASS/BLOCK을 묶는다. PR head가 바뀌면 기존 receipt는 stale로 분류돼 표결에서
   제외된다(`classifyReceipts`).
-- merge-ready 투영(`evaluateMergeReadiness`)은 호출자가 제공한 GitHub gate,
-  계정 승인, 충돌 여부와 동일 head의 signed PASS 레코드 수(normal 2 /
-  high-risk 3), blocking finding을 사용한다. GitHub 상태를 직접 조회하거나
-  검증하지 않으며, PASS 레코드 수만으로 서로 다른 reviewer의 정족수를
-  증명하지 않는다. 라우팅 규칙의 독립 reviewer 구성과 실제 GitHub 사실은
-  finalizer가 별도 증거로 확인해야 한다.
+- merge-ready 투영(offline `evaluateMergeReadiness`, 런타임 `projectMergeReady`)은
+  호출자가 제공한 GitHub gate, 계정 승인, 충돌 여부, blocking finding과 함께 두
+  개의 정족수 축을 보고한다. `freshPassCount`는 동일 head의 signed PASS 레코드
+  수(normal 2 / high-risk 3, 기존 `insufficient_fresh_signed_pass` 원인 유지)이고,
+  #1724에서 추가된 `distinctReviewerCount`는 그 레코드 안에서 서로 다른 declared
+  `reviewerNodeId`의 수다. distinct 수가 정족수 미달이면 가산 원인
+  `insufficient_independent_reviewers:n/quorum`을 낸다. GitHub 상태를 직접
+  조회하거나 검증하지 않는다.
+- 표결 규칙(#1724): 공백 아닌 문자열 `reviewerNodeId`(`trim()` 적용)만 한 표로
+  세고, 서로 다른 `receiptId`/`producedAt`/`lane`/`team`은 두 번째 표를 만들지
+  않는다. 노드 ID 비교는 대소문자 구별이며 근거 없는 alias 정규화는 하지 않는다.
+  결측·비문자열 identity는 String 강제 변환하지 않고 무시하고, `receiptId`·
+  `keyId`·`team`·`lane`을 대체 키로 쓰지 않는다.
+- 경계: 이 정족수는 선언된 노드 ID의 distinct 수일 뿐이다. 키↔노드 귀속(provenance),
+  레지스트리 허용 목록, 저자/공동저자 recusal 완전성, 임상·fleet 수용은 증명하지
+  않는다. 실제 GitHub 사실과 독립 reviewer 구성의 최종 확인은 finalizer가 별도
+  증거로 확인해야 한다.
 - A2A reviewer는 branch를 수정·merge하지 않는다. broker/finalizer가 ready를
   판정하고 별도 GitHub 권한 계정이 보호 규칙을 우회하지 않고 squash merge한다.
 
@@ -129,6 +140,10 @@ npm run check -w packages/nclex-evaluation
 npm run test -w packages/nclex-evaluation
 ```
 
+`npm run test -w packages/nclex-evaluation`은 receipt-contract 테스트와
+#1724 distinct-reviewer 정족수를 고정하는 `merge-ready` 도메인 테스트를 모두
+실행한다.
+
 브로커 라우트 위임 seam(이 명령은 seam을 검증할 뿐 라우트 활성화가 아니다 —
 등록은 실행 시점에 keyring 설정이 있을 때만 일어난다):
 
@@ -148,4 +163,8 @@ npm run check
 
 `scripts/nclex-content-pr-preset.test.mjs`가 고정한다: self-review 불가,
 head drift로 인한 stale receipt, manifest 불일치, 필드 누락/형변형,
-quorum 미달, co-author recusal, comment 형식.
+quorum 미달, co-author recusal, comment 형식, 그리고 #1724 distinct-reviewer
+정족수 — 동일 reviewer의 다른 receipt 메타데이터는 1표, whitespace 중복은
+축소, 대소문자 차이는 별개 노드, 결측/비문자열 identity 미포함(강제 변환
+없음, receiptId/team/lane 폴백 없음), stale·unsigned·BLOCK 무표, 원시
+`freshPassCount` 보존, 중복 reviewer의 blocking finding 거부권 유지.
