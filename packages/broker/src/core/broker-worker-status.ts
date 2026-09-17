@@ -1,12 +1,10 @@
-// Worker status, staleness, and mobile-health derivation extracted from
-// broker.ts. These are pure functions over worker records plus the heartbeat
+// Worker status and staleness derivation extracted from broker.ts. These are pure functions over worker records plus the heartbeat
 // liveness thresholds they classify against; they hold no broker state. The
 // thresholds live here with the logic that uses them and are re-exported from
 // broker.ts to preserve the existing public surface.
 import type {
   WorkerRecord,
   WorkerView,
-  WorkerMobileHealth,
   WorkerPlaneStatus,
   ManagementPlaneStatus,
 } from "./types.js";
@@ -16,12 +14,12 @@ import type {
  * retirement prerequisite): <= {@link HEARTBEAT_LIVENESS_ONLINE_WINDOW_MS}
  * online, up to {@link HEARTBEAT_LIVENESS_OFFLINE_AFTER_MS} stale, then
  * offline. These constants describe the EXISTING conversation-recipient
- * liveness ladder (`getConversationDeliverySummary`, every `workerMode`) and
- * the legacy `mobileHealth` ladder — they are NOT universal defaults for raw
- * `GET /workers` surfaces or `a2a.peer.status`, which resolve their own common
- * `workerOfflineAfterMs ?? DEFAULT_WORKER_OFFLINE_AFTER_MS` window, and NOT a
- * new timeout policy. Do not adopt them as defaults for new raw-worker or
- * peer-status surfaces.
+ * liveness ladder (`getConversationDeliverySummary`, every `workerMode`) —
+ * they are NOT universal defaults for raw `GET /workers` surfaces,
+ * `a2a.peer.status`, or the dashboard/capacity projections, which resolve
+ * their own common `workerOfflineAfterMs ?? DEFAULT_WORKER_OFFLINE_AFTER_MS`
+ * window, and NOT a new timeout policy. Do not adopt them as defaults for new
+ * raw-worker, projection, or peer-status surfaces.
  */
 export const HEARTBEAT_LIVENESS_ONLINE_WINDOW_MS = 30_000;
 
@@ -143,29 +141,4 @@ export function effectiveOfflineAfterMs(workerMode: string | undefined, defaultM
   return workerMode === "mobile" ? MOBILE_OFFLINE_AFTER_MS : defaultMs;
 }
 
-/**
- * Compute an enriched health status for a mobile worker.
- *
- * Returns `undefined` for persistent workers so callers that want compact
- * output (dashboard consumers, operator event lanes) can omit the field.
- *
- * Classification:
- * - `health_ok`:        heartbeat within mobile stale window (≤ 30s)
- * - `stale`:            heartbeat within extended window (30s < age ≤ 90s)
- * - `disconnected`:     heartbeat well beyond extended window (> 90s)
- */
-export function computeWorkerMobileHealth(
-  workerMode: string | undefined,
-  lastSeenAt: string | undefined,
-  nowMs: number,
-): WorkerMobileHealth | undefined {
-  if (workerMode !== "mobile") return undefined;
 
-  const lastSeenMs = lastSeenAt ? Date.parse(lastSeenAt) : NaN;
-  if (!Number.isFinite(lastSeenMs)) return "disconnected";
-
-  const ageMs = nowMs - lastSeenMs;
-  if (ageMs <= MOBILE_OFFLINE_AFTER_MS) return "health_ok";
-  if (ageMs <= MOBILE_DISCONNECTED_AFTER_MS) return "stale";
-  return "disconnected";
-}

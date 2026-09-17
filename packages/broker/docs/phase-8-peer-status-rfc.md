@@ -119,17 +119,14 @@ budget for every mode:
 An absent `workerMode` uses the same defaults in this view and remains absent
 on the wire; it is not reclassified for policy or fast-lane eligibility.
 
-**Scope of the retirement:** only this `a2a.peer.status` view is unified. The
-`/dashboard` view, `GET /workers/capacity`, and the `mobileHealth`
-projection remain mode-aware (`MOBILE_OFFLINE_AFTER_MS` = 30 s,
-`MOBILE_DISCONNECTED_AFTER_MS` = 90 s). Callers must not treat the surfaces as
-interchangeable: a mobile worker can be `stale` on the dashboard while this
-RPC still reports `ok` between 30 s and 90 s of heartbeat age. Registration,
-policy classes, fastlane eligibility, and actual execution are untouched.
-
-Raw `GET /workers` and `GET /workers/:id` already use the common configured
-threshold for every mode and do not synthesize `mobileHealth`; these raw views
-are distinct from the dashboard and capacity summaries above.
+**Scope of the retirement:** the `/dashboard` view and `GET /workers/capacity`
+are unified with this view as well: their projections compute staleness from
+the same common `workerOfflineAfterMs ?? 90_000` window for every mode and no
+longer synthesize the retired `mobileHealth` field. All read-only status
+surfaces now agree: a worker is `online`/`stale` identically on the dashboard,
+the capacity summary, raw `GET /workers` and `GET /workers/:id`, and this RPC.
+Registration, policy classes, fastlane eligibility, and actual execution are
+untouched.
 
 ## 3. Transport
 

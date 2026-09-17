@@ -235,6 +235,10 @@ test("server surfaces duplicate nodeId identity churn warnings on worker capacit
     const mobilebeta = capacity.items.find((item) => item.nodeId === nodeId);
     assert.equal(mobilebeta?.identityWarning?.code, "worker_identity_churn");
     assert.ok(mobilebeta?.identityWarning?.lastChangedFields.includes("workerMode"));
+    // #2065: the capacity projection uses the common offline window and no
+    // longer synthesizes the retired mobileHealth field.
+    assert.ok(mobilebeta, "capacity row for the churned worker expected");
+    assert.ok(!("mobileHealth" in mobilebeta), "capacity projections must not synthesize the retired mobileHealth field");
   } finally {
     await server.close();
   }

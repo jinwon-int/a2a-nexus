@@ -97,3 +97,35 @@ test("#1597: a worker that declared no profile omits the field rather than guess
   assert.ok(item);
   assert.equal("implementationCapability" in item, false);
 });
+
+test("#2065: declared-mobile workers use the common offline window and rows omit the retired mobileHealth field", () => {
+  const summary = buildWorkerCapacitySummary(
+    {
+      workers: [
+        { ...worker("workerAlpha"), workerMode: "mobile", lastSeenAt: new Date(NOW - 45_000).toISOString() },
+      ],
+      tasks: [],
+      identityWarnings: {},
+    },
+    { nowMs: NOW, workerOfflineAfterMs: 90_000 },
+  );
+
+  const item = summary.items.find((i) => i.nodeId === "workerAlpha");
+  assert.ok(item);
+  // 45s heartbeat age: online under the common 90s window. The retired
+  // mode-aware ladder would have flipped this row to "stale" at 30s.
+  assert.equal(item.status, "online", "declared-mobile worker stays online under the common 90s window at 45s");
+  assert.ok(!("mobileHealth" in item), "capacity rows must not synthesize the retired mobileHealth field");
+  // Past the common window the row goes stale like any other mode.
+  const staleSummary = buildWorkerCapacitySummary(
+    {
+      workers: [
+        { ...worker("workerAlpha"), workerMode: "mobile", lastSeenAt: new Date(NOW - 90_001).toISOString() },
+      ],
+      tasks: [],
+      identityWarnings: {},
+    },
+    { nowMs: NOW, workerOfflineAfterMs: 90_000 },
+  );
+  assert.equal(staleSummary.items.find((i) => i.nodeId === "workerAlpha")?.status, "stale");
+});

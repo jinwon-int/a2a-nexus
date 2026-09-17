@@ -10,8 +10,6 @@
 import { ageSecFromIso } from "./broker-helpers.js";
 import { taskStatusSinceAt } from "./broker-record-helpers.js";
 import {
-  computeWorkerMobileHealth,
-  effectiveOfflineAfterMs,
   isWorkerStale,
   isWorkerSubstantiveAnalysisReady,
 } from "./broker-worker-status.js";
@@ -68,9 +66,9 @@ export function buildWorkerCapacitySummary(
   let substantiveAnalysisReadyOnline = 0;
 
   const items: WorkerCapacitySummaryItem[] = workers.map((worker) => {
-    // Use mobile-aware stale threshold when the worker declares mobile mode
-    const effectiveOffline = effectiveOfflineAfterMs(worker.workerMode, workerOfflineAfterMs);
-    const workerIsStale = isWorkerStale(worker.lastSeenAt, effectiveOffline, nowMs);
+    // #2065: one common offline window for every mode — the same
+    // `workerOfflineAfterMs` raw GET /workers resolves; no mode-aware ladder.
+    const workerIsStale = isWorkerStale(worker.lastSeenAt, workerOfflineAfterMs, nowMs);
     const substantiveAnalysisReady = isWorkerSubstantiveAnalysisReady(worker);
     if (workerIsStale) {
       staleWorkers += 1;
@@ -126,7 +124,6 @@ export function buildWorkerCapacitySummary(
       runtimeFlavor: worker.capabilities.runtimeFlavor,
       gatewayRequired: worker.capabilities.gatewayRequired,
       substantiveAnalysisReady,
-      mobileHealth: computeWorkerMobileHealth(worker.workerMode, worker.lastSeenAt, nowMs),
       ...(identityWarning ? { identityWarning } : {}),
     };
   });

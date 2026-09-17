@@ -1306,7 +1306,7 @@ test("discoverCleanupCandidates risk notes correctly categorize actionable and n
 // Mobile worker health in broker-facing status
 // ---------------------------------------------------------------------------
 
-test("getWorkerCapacitySummary includes workerMode and mobileHealth for mobile workers", () => {
+test("getWorkerCapacitySummary keeps workerMode and never synthesizes the retired mobileHealth field", () => {
   const broker = new InMemoryA2ABroker();
   const nowMs = Date.now();
 
@@ -1326,22 +1326,23 @@ test("getWorkerCapacitySummary includes workerMode and mobileHealth for mobile w
     metadata: { runtime: "hermes-agent", transport: "http-poll" },
   });
 
-  // Recent heartbeat (within mobile 30s window)
+  // Recent heartbeat (well within the common 90s window)
   broker.heartbeatWorker("mobilealpha", { capabilities: { canAnalyze: true, canBackfill: false, canPatchWorkspace: false, canPromoteLive: false, workspaceIds: ["hermes-no-live"], environments: ["research"] } });
 
   const summary = broker.getWorkerCapacitySummary({ nowMs });
 
-  // Persistent worker: no mobileHealth, no workerMode
+  // Persistent worker: no workerMode, no mobileHealth
   const persistentItem = summary.items.find((i) => i.nodeId === "persistent-w1");
   assert.ok(persistentItem);
   assert.equal(persistentItem.workerMode, undefined);
-  assert.equal(persistentItem.mobileHealth, undefined);
+  assert.ok(!("mobileHealth" in persistentItem));
 
-  // Mobile worker (online): has workerMode and mobileHealth
+  // Mobile worker (online under the common window): keeps workerMode, no mobileHealth
   const mobileItem = summary.items.find((i) => i.nodeId === "mobilealpha");
   assert.ok(mobileItem);
   assert.equal(mobileItem.workerMode, "mobile");
-  assert.equal(mobileItem.mobileHealth, "health_ok");
+  assert.equal(mobileItem.status, "online");
+  assert.ok(!("mobileHealth" in mobileItem));
 });
 
 test("getWorkerCapacitySummary exposes runtimeFlavor and gatewayRequired for poll-only workers", () => {
@@ -1373,7 +1374,7 @@ test("getWorkerCapacitySummary exposes runtimeFlavor and gatewayRequired for pol
   assert.equal(item.gatewayRequired, false);
 });
 
-test("getWorkerCapacitySummary classifies mobile worker as stale beyond mobile threshold", () => {
+test("getWorkerCapacitySummary keeps a declared-mobile worker online under the common window at 35s", () => {
   const broker = new InMemoryA2ABroker();
 
   // Register a mobile worker at time zero
@@ -1385,8 +1386,9 @@ test("getWorkerCapacitySummary classifies mobile worker as stale beyond mobile t
     metadata: { runtime: "hermes-agent", transport: "http-poll" },
   });
 
-  // Advance time to 35s after registration — past mobile 30s window, within 90s extended window
-  // The broker "now" is set to lastSeenAt + 35_000 ms
+  // Advance time to 35s after registration — within the common 90s window.
+  // The retired mode-aware ladder would have flipped this row to "stale" at
+  // its 30s mobile window; the common window keeps it online.
   const worker = broker.getWorker("mobilebeta");
   assert.ok(worker);
   const workerSeenMs = Date.parse(worker.lastSeenAt);
@@ -1397,13 +1399,11 @@ test("getWorkerCapacitySummary classifies mobile worker as stale beyond mobile t
   const mobilebeta = summary.items.find((i) => i.nodeId === "mobilebeta");
   assert.ok(mobilebeta);
   assert.equal(mobilebeta.workerMode, "mobile");
-  // Mobile past 30s => stale, but not yet disconnected (within 90s)
-  assert.equal(mobilebeta.mobileHealth, "stale");
-  // Brokers' generic status reflects mobile-aware threshold
-  assert.equal(mobilebeta.status, "stale");
+  assert.equal(mobilebeta.status, "online", "declared-mobile worker stays online at 35s under the common 90s window");
+  assert.ok(!("mobileHealth" in mobilebeta));
 });
 
-test("getWorkerCapacitySummary classifies mobile worker as disconnected past extended threshold", () => {
+test("getWorkerCapacitySummary marks a declared-mobile worker stale past the common window", () => {
   const broker = new InMemoryA2ABroker();
 
   broker.registerWorker({
@@ -1417,7 +1417,7 @@ test("getWorkerCapacitySummary classifies mobile worker as disconnected past ext
   const worker = broker.getWorker("mobilebeta-disconnected");
   assert.ok(worker);
   const workerSeenMs = Date.parse(worker.lastSeenAt);
-  // 100s — well beyond both 30s mobile and 90s extended threshold
+  // 100s — well beyond the common 90s window
   const nowMs = workerSeenMs + 100_000;
 
   const summary = broker.getWorkerCapacitySummary({ nowMs });
@@ -1425,11 +1425,11 @@ test("getWorkerCapacitySummary classifies mobile worker as disconnected past ext
   const mobilebeta = summary.items.find((i) => i.nodeId === "mobilebeta-disconnected");
   assert.ok(mobilebeta);
   assert.equal(mobilebeta.workerMode, "mobile");
-  assert.equal(mobilebeta.mobileHealth, "disconnected");
+  assert.ok(!("mobileHealth" in mobilebeta));
   assert.equal(mobilebeta.status, "stale");
 });
 
-test("getDashboard includes workerMode and mobileHealth for mobile workers", () => {
+test("getDashboard keeps workerMode and never synthesizes the retired mobileHealth field", () => {
   const broker = new InMemoryA2ABroker();
 
   broker.registerWorker({
@@ -1453,17 +1453,17 @@ test("getDashboard includes workerMode and mobileHealth for mobile workers", () 
   const persistentNode = dashboard.workers.byNode.find((w) => w.nodeId === "persistent-w2");
   assert.ok(persistentNode);
   assert.equal(persistentNode.workerMode, undefined);
-  assert.equal(persistentNode.mobileHealth, undefined);
+  assert.ok(!("mobileHealth" in persistentNode));
 
-  // Mobile worker (online)
+  // Mobile worker (online under the common window)
   const mobileNode = dashboard.workers.byNode.find((w) => w.nodeId === "mobilealpha-dash");
   assert.ok(mobileNode);
   assert.equal(mobileNode.workerMode, "mobile");
-  assert.equal(mobileNode.mobileHealth, "health_ok");
   assert.equal(mobileNode.status, "online");
+  assert.ok(!("mobileHealth" in mobileNode));
 });
 
-test("getDashboard fleet worker counts use mobile-aware stale thresholds", () => {
+test("getDashboard fleet worker counts use the common window for declared-mobile workers", () => {
   const broker = new InMemoryA2ABroker();
 
   // Register one persistent and one mobile worker
@@ -1489,16 +1489,16 @@ test("getDashboard fleet worker counts use mobile-aware stale thresholds", () =>
   const mobileSeenMs = Date.parse(mobileWorker.lastSeenAt);
 
   // Advance time to 45s after registration:
-  //   - persistent worker still within 90s window => online
-  //   - mobile worker past its 30s window but within 90s extended => stale
+  //   - both workers sit inside the common 90s window => online. The retired
+  //     mode-aware ladder would have reported the mobile worker stale at 30s.
   const nowMs = Math.max(persistentSeenMs, mobileSeenMs) + 45_000;
 
   const dashboard = broker.getDashboard({ nowMs, offlineAfterMs: 90_000 });
 
-  // Fleet totals reflect mode-aware staleness
+  // Fleet totals reflect the common-window staleness
   assert.equal(dashboard.workers.total, 2);
-  assert.equal(dashboard.workers.online, 1, "persistent still online at 45s");
-  assert.equal(dashboard.workers.stale, 1, "mobile stale at 45s");
+  assert.equal(dashboard.workers.online, 2, "both workers online at 45s under the common window");
+  assert.equal(dashboard.workers.stale, 0, "no worker goes stale at 45s under the common window");
 
   const persistentNode = dashboard.workers.byNode.find((w) => w.nodeId === "persistent-a");
   const mobileNode = dashboard.workers.byNode.find((w) => w.nodeId === "mobilealpha-fleet");
@@ -1507,14 +1507,14 @@ test("getDashboard fleet worker counts use mobile-aware stale thresholds", () =>
 
   assert.equal(persistentNode.status, "online");
   assert.equal(persistentNode.workerMode, undefined);
-  assert.equal(persistentNode.mobileHealth, undefined);
+  assert.ok(!("mobileHealth" in persistentNode));
 
-  assert.equal(mobileNode.status, "stale");
+  assert.equal(mobileNode.status, "online", "declared-mobile worker stays online at 45s under the common window");
   assert.equal(mobileNode.workerMode, "mobile");
-  assert.equal(mobileNode.mobileHealth, "stale");
+  assert.ok(!("mobileHealth" in mobileNode));
 });
 
-test("computeWorkerMobileHealth returns undefined for persistent workers", () => {
+test("capacity rows for persistent workers carry no mode fields", () => {
   const broker = new InMemoryA2ABroker();
   broker.registerWorker({
     nodeId: "persistent-b",
@@ -1526,10 +1526,10 @@ test("computeWorkerMobileHealth returns undefined for persistent workers", () =>
   const item = summary.items.find((i) => i.nodeId === "persistent-b");
   assert.ok(item);
   assert.equal(item.workerMode, undefined);
-  assert.equal(item.mobileHealth, undefined);
+  assert.ok(!("mobileHealth" in item));
 });
 
-test("getWorkerCapacitySummary mobile fields present for mobile workers, absent for persistent", () => {
+test("getWorkerCapacitySummary keeps workerMode on mobile rows and never synthesizes mobileHealth", () => {
   const broker = new InMemoryA2ABroker();
 
   // Register a mix of mobile and persistent workers
@@ -1566,21 +1566,21 @@ test("getWorkerCapacitySummary mobile fields present for mobile workers, absent 
   const summary = broker.getWorkerCapacitySummary();
   assert.equal(summary.totals.workers, 4);
 
-  // Mobile items carry workerMode and mobileHealth
+  // Mobile items keep workerMode; the retired mobileHealth field is gone
   const mobilealpha = summary.items.find((i) => i.nodeId === "mobilealpha-mix");
   const mobilebeta = summary.items.find((i) => i.nodeId === "mobilebeta-mix");
   assert.ok(mobilealpha);
   assert.ok(mobilebeta);
   assert.equal(mobilealpha.workerMode, "mobile");
-  assert.ok(mobilealpha.mobileHealth); // could be "health_ok" or "stale" depending on timing
+  assert.ok(!("mobileHealth" in mobilealpha));
   assert.equal(mobilebeta.workerMode, "mobile");
-  assert.ok(mobilebeta.mobileHealth);
+  assert.ok(!("mobileHealth" in mobilebeta));
 
   // Persistent items have neither field
   assert.equal(summary.items.find((i) => i.nodeId === "persistent-c")?.workerMode, undefined);
-  assert.equal(summary.items.find((i) => i.nodeId === "persistent-c")?.mobileHealth, undefined);
+  assert.ok(!("mobileHealth" in summary.items.find((i) => i.nodeId === "persistent-c")!));
   assert.equal(summary.items.find((i) => i.nodeId === "persistent-d")?.workerMode, undefined);
-  assert.equal(summary.items.find((i) => i.nodeId === "persistent-d")?.mobileHealth, undefined);
+  assert.ok(!("mobileHealth" in summary.items.find((i) => i.nodeId === "persistent-d")!));
 });
 
 test("Hermes native worker submits redacted done evidence via completeTask", () => {
@@ -1671,7 +1671,7 @@ test("Hermes native worker submits redacted blocked evidence via failTask", () =
   assert.equal(result.error?.message, "Preflight no-live gate rejected live promotion attempt");
 });
 
-test("Hermes mobile worker transitions through health_ok, stale, disconnected", () => {
+test("Hermes declared-mobile worker follows the common window: online at 45s, stale past 90s", () => {
   const broker = new InMemoryA2ABroker();
 
   broker.registerWorker({
@@ -1696,21 +1696,23 @@ test("Hermes mobile worker transitions through health_ok, stale, disconnected", 
   assert.ok(worker);
   assert.equal(worker.status, "online");
   assert.equal(worker.workerMode, "mobile");
-  assert.equal(worker.mobileHealth, "health_ok");
+  assert.ok(!("mobileHealth" in worker));
 
+  // 45s: still inside the common 90s window — the retired mode-aware ladder
+  // would have reported this worker stale at its 30s mobile threshold.
   const staleNowMs = nowMs + 45_000;
   summary = broker.getWorkerCapacitySummary({ nowMs: staleNowMs });
   const staleWorker = summary.items.find((i) => i.nodeId === "hermes-health-tester");
   assert.ok(staleWorker);
-  assert.equal(staleWorker.status, "stale");
-  assert.equal(staleWorker.mobileHealth, "stale");
+  assert.equal(staleWorker.status, "online", "declared-mobile worker stays online at 45s under the common window");
+  assert.ok(!("mobileHealth" in staleWorker));
 
   const disconnectedNowMs = nowMs + 100_000;
   summary = broker.getWorkerCapacitySummary({ nowMs: disconnectedNowMs });
   const disconnectedWorker = summary.items.find((i) => i.nodeId === "hermes-health-tester");
   assert.ok(disconnectedWorker);
   assert.equal(disconnectedWorker.status, "stale");
-  assert.equal(disconnectedWorker.mobileHealth, "disconnected");
+  assert.ok(!("mobileHealth" in disconnectedWorker));
 });
 
 test("Hermes worker registration preserves runtimeFlavor and gatewayRequired in read model", () => {

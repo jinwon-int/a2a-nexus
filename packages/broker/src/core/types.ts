@@ -225,19 +225,6 @@ export type WorkerStatus = "online" | "stale";
 export type WorkerPlaneStatus = "online" | "unknown";
 export type ManagementPlaneStatus = "online" | "disconnected" | "unknown";
 
-/**
- * Enriched worker health state that surfaces mobile-mode details when the
- * worker is declared as `mobile`. Consumers should check `workerMode` first;
- * ``persistent`` workers always report `"health_ok"` or `"stale"`.
- *
- * | Value | Meaning |
- * |---|---|
- * | `"health_ok"` | Heartbeat within mobile stale window (>0 && <= 30s) |
- * | `"stale"` | Heartbeat beyond mobile stale window but still registered (>30s && <= 90s) |
- * | `"disconnected"` | Heartbeat well beyond extended threshold (>90s) or worker unregistered |
- * | `"unsupported_capability"` | Worker registered but declared capabilities cannot fulfil the lane's task type |
- */
-export type WorkerMobileHealth = "health_ok" | "stale" | "disconnected" | "unsupported_capability";
 export type WorkerRuntimeFlavor =
   | "gateway"
   | "termux-hermes"
@@ -1356,12 +1343,6 @@ export interface WorkerFleetSummary {
     lastSeenAgeSec: number;
     /** Declared operating mode; absent defaults to "persistent". */
     workerMode?: WorkerMode;
-    /**
-     * Enriched health for mobile workers. Present when `workerMode === "mobile"`
-     * and the broker has enough registry data to classify the state.
-     * Persistent workers omit this field to keep payloads compact.
-     */
-    mobileHealth?: WorkerMobileHealth;
   }>;
 }
 
@@ -1404,12 +1385,6 @@ export interface WorkerCapacitySummaryItem {
   runtimeFlavor?: WorkerRuntimeFlavor;
   /** False when this worker does not require Gateway/plugin internals to execute tasks. */
   gatewayRequired?: boolean;
-  /**
-   * Enriched health for mobile workers. Present when `workerMode === "mobile"`
-   * and the broker has enough registry data to classify the state.
-   * Persistent workers omit this field to keep payloads compact.
-   */
-  mobileHealth?: WorkerMobileHealth;
   /** Warning surfaced when a nodeId appears to be shared by conflicting runtimes. */
   identityWarning?: WorkerIdentityWarning;
   /**
