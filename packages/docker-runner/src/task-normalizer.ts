@@ -636,7 +636,11 @@ function buildDiffHygieneBlock(task: RunnerTask, baseBranch: string): string {
   return [
     `# Fail-closed diff hygiene gate (#1219).`,
     `CHANGED_PATHS="$( {`,
-    `  git status --porcelain | sed -E 's/^...//'`,
+    // #2188: plain `git status --porcelain` collapses a wholly-untracked
+    // directory to `?? dir/`, which can never match declared file paths and
+    // false-blocks new-files-only patch lanes. List untracked files
+    // individually so the scope matcher sees real paths.
+    `  git status --porcelain -uall | sed -E 's/^...//'`,
     `  git diff --name-only "origin/${baseBranch}...HEAD"`,
     `} | sed '/^$/d' | sort -u )"`,
     `printf 'diff_hygiene=started\\n' | tee -a /work/artifacts/summary.txt`,

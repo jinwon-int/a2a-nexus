@@ -1222,6 +1222,31 @@ test("buildContainerScript embeds declared-scope drift evidence and block mode",
   assert.match(script, /\[ "\$SCOPE_LEVEL" = block \]/);
 });
 
+test("buildContainerScript lists untracked files individually in the hygiene collection (#2188)", () => {
+  const task = normalizeTask({
+    id: "issue-2188-untracked-collapse",
+    intent: "patch",
+    mode: "github-propose-patch",
+    repo: "jinwon-int/a2a-nexus",
+    baseBranch: "main",
+    declaredScope: { paths: ["docs/specs/new-packet/spec.md"] },
+  });
+
+  const script = buildContainerScript(task);
+
+  // Regression (#2188): a wholly-untracked directory collapses to `?? dir/`
+  // under plain `git status --porcelain`, and the collapsed directory path can
+  // never match declared file paths — new-files-only patch lanes were
+  // scope-drift-blocked even with a perfectly in-scope diff. The diff-hygiene
+  // collection must list untracked files individually (`-uall`). The read-only
+  // guards intentionally keep plain porcelain (non-empty check only).
+  const hygieneBlock = script.match(/CHANGED_PATHS="\$\( \{[\s\S]*?\n\} \| sed '/);
+  assert.ok(hygieneBlock, "CHANGED_PATHS collection block must exist");
+  assert.match(hygieneBlock[0], /git status --porcelain -uall \| sed -E 's\/\^\.\.\.\/\/'/);
+  // The scope matcher still receives one path per line from the same variable.
+  assert.match(script, /done <<< "\$CHANGED_PATHS"/);
+});
+
 test("buildContainerScript enforces declaredScope.paths without a diffHygiene policy on patch lanes (#2136)", () => {
   const task = normalizeTask({
     id: "issue-2136-scope-enforce-no-policy",
