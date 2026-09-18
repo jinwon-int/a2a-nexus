@@ -190,17 +190,24 @@ export function sanitizeDetail(detail, { secret, limit = 300 } = {}) {
   return text.length > limit ? `${text.slice(0, limit - 3)}...` : text;
 }
 
-/** Deep-strip any secret-shaped key before a receipt leaves this module. */
-export function redactSecrets(value) {
-  if (Array.isArray(value)) return value.map(redactSecrets);
-  if (isPlainObject(value)) {
-    const out = {};
-    for (const [key, child] of Object.entries(value)) {
-      out[key] = SECRET_FIELD_PATTERN.test(key) ? '[REDACTED]' : redactSecrets(child);
+/** Deep-strip secret-shaped keys AND any literal occurrence of the secret. */
+export function redactSecrets(value, { secret } = {}) {
+  const scrub = (text) => (hasText(secret) && typeof text === 'string' && text.includes(secret)
+    ? text.replaceAll(secret, '[REDACTED]')
+    : text);
+  const walk = (node) => {
+    if (typeof node === 'string') return scrub(node);
+    if (Array.isArray(node)) return node.map(walk);
+    if (isPlainObject(node)) {
+      const out = {};
+      for (const [key, child] of Object.entries(node)) {
+        out[key] = SECRET_FIELD_PATTERN.test(key) ? '[REDACTED]' : walk(child);
+      }
+      return out;
     }
-    return out;
-  }
-  return value;
+    return node;
+  };
+  return walk(value);
 }
 
 function normalizeIso(value, fallbackIso) {
@@ -296,6 +303,22 @@ export function normalizeAssignRequest(raw) {
       lanes = raw.lanes.map((lane, index) => {
         if (!isPlainObject(lane)) {
           invalidFields.push(`lanes[${index}]`);
+          return null;
+        }
+        // kind/lanes contradiction fails closed: a request declaring
+        // 'analysis' must not smuggle write-capable patch lanes past the
+        // patch readiness gates, and vice versa (#2190 independent review).
+        const laneIntent = hasText(lane.intent) ? lane.intent.trim() : '';
+        const laneMode = isPlainObject(lane.payload) && hasText(lane.payload.mode) ? String(lane.payload.mode).trim() : '';
+        const laneIsPatch = laneIntent === 'propose_patch' || laneMode === 'github-propose-patch';
+        if (kind === 'analysis' && laneIsPatch) {
+          invalidFields.push(`lanes[${index}]`);
+          reasonCodes.push('kind_lane_mismatch');
+          return null;
+        }
+        if (kind === 'patch' && (laneIntent === 'analyze' || laneMode === 'analysis-only' || laneMode === 'github-verify' || laneMode === 'read-only-analysis')) {
+          invalidFields.push(`lanes[${index}]`);
+          reasonCodes.push('kind_lane_mismatch');
           return null;
         }
         const normalized = {};
@@ -424,11 +447,14 @@ export class JournalLockedError extends Error {
 }
 
 export class JournalConflictError extends Error {
-  constructor(requestId, existing) {
-    super(`request '${requestId}' already recorded with a different specification`);
+  constructor(requestId, existing, { corrupt = false } = {}) {
+    super(corrupt
+      ? `journal record for request '${requestId}' is corrupt; admission state unverifiable`
+      : `request '${requestId}' already recorded with a different specification`);
     this.name = 'JournalConflictError';
     this.requestId = requestId;
     this.existing = existing;
+    this.corrupt = corrupt;
   }
 }
 
@@ -517,7 +543,10 @@ export class TaskAssignJournal {
     const existing = this.read(requestId);
     if (existing) {
       if (existing.corrupt) {
-        throw new JournalConflictError(requestId, existing);
+        // A corrupt record is NOT a spec conflict: the write may have torn
+        // after tasks were created. Callers must map this to
+        // admission_unconfirmed/verify_admission, never to a new request id.
+        throw new JournalConflictError(requestId, existing, { corrupt: true });
       }
       if (existing.specDigest !== initial.specDigest) {
         throw new JournalConflictError(requestId, existing);
@@ -531,6 +560,7 @@ export class TaskAssignJournal {
       specDigest: initial.specDigest,
       kind: initial.kind,
       laneIds: initial.laneIds,
+      laneSummaries: initial.laneSummaries ?? [],
       brokerUrl: initial.brokerUrl,
       requesterId: initial.requesterId,
       selectedWorkerId: initial.selectedWorkerId ?? null,
@@ -560,14 +590,17 @@ export class TaskAssignJournal {
    * Run fn under an exclusive per-request lock. Concurrent callers receive
    * JournalLockedError (mapped to a blocked receipt by submitAssignment);
    * a lock older than lockTimeoutMs is treated as crash debris and broken.
+   * Release verifies ownership via a random token, so a slow (not crashed)
+   * holder whose lock was stale-broken cannot delete the new holder's lock.
    */
   async withLock(requestId, fn) {
     const lockPath = this.#lockPath(requestId);
     this.#assertNoSymlink(lockPath);
+    const token = crypto.randomBytes(12).toString('hex');
     try {
       const fd = fs.openSync(lockPath, 'wx', 0o600);
       try {
-        fs.writeFileSync(fd, JSON.stringify({ pid: process.pid, at: this.now() }), 'utf8');
+        fs.writeFileSync(fd, JSON.stringify({ pid: process.pid, at: this.now(), token }), 'utf8');
       } finally {
         fs.closeSync(fd);
       }
@@ -595,7 +628,10 @@ export class TaskAssignJournal {
       return await fn();
     } finally {
       try {
-        fs.unlinkSync(lockPath);
+        const held = JSON.parse(fs.readFileSync(lockPath, 'utf8'));
+        if (held?.token === token) fs.unlinkSync(lockPath);
+        // Token mismatch: a stale-broken takeover happened while we ran;
+        // leave the CURRENT holder's lock alone.
       } catch {
         /* best-effort release; a leftover lock expires via lockTimeoutMs */
       }
@@ -923,9 +959,27 @@ export function buildManifest({ request, context, selected }) {
     // the final authority over this row before any task is created.
     manifest.workerReadiness = { rows: [selected.record] };
   } else if (Array.isArray(request.workerPolicy?.readinessRecords) && request.workerPolicy.readinessRecords.length > 0) {
-    manifest.workerReadiness = { rows: request.workerPolicy.readinessRecords };
+    // Pass-through rows are filtered to the selected worker: rows for other
+    // workers must never become gate input for this lane (independent-review
+    // risk finding).
+    const rows = request.workerPolicy.readinessRecords.filter((row) => {
+      const id = hasText(row?.node) ? row.node : (hasText(row?.workerId) ? row.workerId : null);
+      return id === selected.workerId;
+    });
+    if (rows.length > 0) manifest.workerReadiness = { rows };
   }
   return manifest;
+}
+
+/** Persisted per-lane intent spec for resume-time field-level match. */
+function laneSummariesOf(validation, request, context) {
+  return (validation?.lanes ?? []).map((lane) => ({
+    laneId: lane.id,
+    requesterId: context.requester.id,
+    targetId: lane.target?.id ?? null,
+    intent: lane.intent ?? null,
+    repo: lane.payload?.repo ?? null,
+  }));
 }
 
 // ─── Timeline (S1 instrumentation, #2187 §4) ────────────────────────────────
@@ -1004,7 +1058,7 @@ export function existingTaskMatch(task, { requesterId, lane }) {
 
 // ─── Receipt assembly ───────────────────────────────────────────────────────
 
-function makeReceipt({
+function assembleReceipt({
   requestId,
   state,
   reasonCodes = [],
@@ -1020,6 +1074,7 @@ function makeReceipt({
   validationErrors,
   timeline,
   journalFile,
+  secret,
 }) {
   if (!ASSIGNEE_STATES.has(state)) throw new Error(`unknown assign state: ${state}`);
   if (!NEXT_ACTIONS.includes(nextAction)) throw new Error(`nextAction '${nextAction}' is not allowlisted`);
@@ -1053,7 +1108,10 @@ function makeReceipt({
     receipt.timings = timeline.durations();
   }
   if (journalFile) receipt.journalFile = journalFile;
-  return redactSecrets(receipt);
+  // Final scrub: mask secret-shaped keys AND any literal occurrence of the
+  // broker credential anywhere in the receipt (independent-review finding:
+  // redactSecrets alone only masked key names).
+  return redactSecrets(receipt, { secret });
 }
 
 function readinessSummary(readiness) {
@@ -1131,12 +1189,14 @@ export async function prepareAssignment({
   now = Date.now,
   ttlMs = DEFAULT_READINESS_TTL_MS,
 } = {}) {
+  // Every receipt from this call is scrubbed against the broker credential.
+  const emit = (opts) => assembleReceipt({ ...opts, secret });
   const timeline = createTimeline({ correlation: rawRequest?.correlation, now });
   timeline.mark('toolEntered');
 
   const normalized = normalizeAssignRequest(rawRequest);
   if (!normalized.ok) {
-    return makeReceipt({
+    return emit({
       requestId: hasText(rawRequest?.requestId) ? rawRequest.requestId : null,
       state: STATE_NEEDS_INPUT,
       reasonCodes: [...normalized.reasonCodes, ...(normalized.invalidFields.length > 0 ? ['invalid_request_fields'] : [])],
@@ -1151,7 +1211,7 @@ export async function prepareAssignment({
 
   if (!isPlainObject(context) || !hasText(context.brokerUrl) || !isPlainObject(context.requester)
     || !hasText(context.requester.id) || !hasText(context.requester.role)) {
-    return makeReceipt({
+    return emit({
       requestId: request.requestId,
       state: STATE_NEEDS_INPUT,
       reasonCodes: ['context_missing'],
@@ -1161,7 +1221,7 @@ export async function prepareAssignment({
     });
   }
   if (!A2A_REQUESTER_ROLES.includes(context.requester.role)) {
-    return makeReceipt({
+    return emit({
       requestId: request.requestId,
       state: STATE_NEEDS_INPUT,
       reasonCodes: ['requester_role_invalid'],
@@ -1170,10 +1230,13 @@ export async function prepareAssignment({
     });
   }
 
-  const readiness = await resolveReadiness({ request, mode, context, secret, fetchImpl, providedReadiness, now, ttlMs });
+  const readiness = mergeTrustedRecords(
+    await resolveReadiness({ request, mode, context, secret, fetchImpl, providedReadiness, now, ttlMs }),
+    request.workerPolicy?.readinessRecords,
+  );
   timeline.mark('readinessReady', { source: readiness.source });
   if (readiness.errors.length > 0) {
-    return makeReceipt({
+    return emit({
       requestId: request.requestId,
       state: STATE_BLOCKED,
       reasonCodes: [readiness.errors[0].code],
@@ -1186,7 +1249,7 @@ export async function prepareAssignment({
   }
   if (readiness.stale) {
     // Expired evidence never drives a submission decision (#2187 §2.5).
-    return makeReceipt({
+    return emit({
       requestId: request.requestId,
       state: STATE_BLOCKED,
       reasonCodes: ['readiness_expired'],
@@ -1200,7 +1263,7 @@ export async function prepareAssignment({
 
   const selection = selectWorker({ request, readiness });
   if (!selection.selected) {
-    return makeReceipt({
+    return emit({
       requestId: request.requestId,
       state: STATE_BLOCKED,
       reasonCodes: ['no_eligible_worker'],
@@ -1208,14 +1271,17 @@ export async function prepareAssignment({
       planDigest: specDigestOf(request),
       readiness: { ...readinessSummary(readiness), excluded: selection.excluded },
       timeline,
+      secret,
     });
   }
-  timeline.mark('readinessReady', { selectedWorkerId: selection.selected.workerId, rationale: selection.rationale });
+  // Single readinessReady mark (marked earlier with the collection source);
+  // selection evidence rides on the receipt's readiness block, not on a
+  // duplicate same-name event (independent-review finding).
 
   const manifest = buildManifest({ request, context, selected: selection.selected });
   const validation = validateManifest(manifest);
   if (validation.errors.length > 0) {
-    return makeReceipt({
+    return emit({
       requestId: request.requestId,
       state: STATE_NEEDS_INPUT,
       reasonCodes: ['manifest_validation_failed'],
@@ -1242,7 +1308,7 @@ export async function prepareAssignment({
       journalFile = `${request.requestId}.json`;
     } catch (error) {
       if (error instanceof JournalConflictError) {
-        return makeReceipt({
+        return emit({
           requestId: request.requestId,
           state: STATE_FAILED,
           reasonCodes: ['request_spec_conflict'],
@@ -1257,7 +1323,7 @@ export async function prepareAssignment({
 
   const reasonCodes = [...normalized.reasonCodes];
   if (request.kind === 'patch' && !request.target?.hostSmoke) reasonCodes.push('host_smoke_missing');
-  return makeReceipt({
+  return emit({
     requestId: request.requestId,
     state: STATE_PREPARED,
     reasonCodes,
@@ -1301,12 +1367,14 @@ export async function submitAssignment({
   maxRetries = DEFAULT_MAX_SUBMIT_RETRIES,
   retryCapMs = DEFAULT_RETRY_CAP_MS,
 } = {}) {
+  // Every receipt from this call is scrubbed against the broker credential.
+  const emit = (opts) => assembleReceipt({ ...opts, secret });
   const timeline = createTimeline({ correlation: rawRequest?.correlation, now });
   timeline.mark('toolEntered');
 
   const normalized = normalizeAssignRequest(rawRequest);
   if (!normalized.ok) {
-    return makeReceipt({
+    return emit({
       requestId: hasText(rawRequest?.requestId) ? rawRequest.requestId : null,
       state: STATE_NEEDS_INPUT,
       reasonCodes: [...normalized.reasonCodes, ...(normalized.invalidFields.length > 0 ? ['invalid_request_fields'] : [])],
@@ -1322,7 +1390,7 @@ export async function submitAssignment({
   if (!isPlainObject(context) || !hasText(context.brokerUrl) || !isPlainObject(context.requester)
     || !hasText(context.requester.id) || !hasText(context.requester.role)
     || !A2A_REQUESTER_ROLES.includes(context.requester.role)) {
-    return makeReceipt({
+    return emit({
       requestId: request.requestId,
       state: STATE_NEEDS_INPUT,
       reasonCodes: ['context_missing'],
@@ -1332,7 +1400,7 @@ export async function submitAssignment({
     });
   }
   if (!journal) {
-    return makeReceipt({
+    return emit({
       requestId: request.requestId,
       state: STATE_NEEDS_INPUT,
       reasonCodes: ['journal_required'],
@@ -1342,7 +1410,7 @@ export async function submitAssignment({
     });
   }
   if (execution !== 'submit') {
-    return makeReceipt({
+    return emit({
       requestId: request.requestId,
       state: STATE_BLOCKED,
       reasonCodes: ['prepare_only_no_submit'],
@@ -1352,7 +1420,7 @@ export async function submitAssignment({
     });
   }
   if (!hasText(secret)) {
-    return makeReceipt({
+    return emit({
       requestId: request.requestId,
       state: STATE_BLOCKED,
       reasonCodes: ['submit_not_authorized'],
@@ -1364,7 +1432,7 @@ export async function submitAssignment({
   }
   if (providedReadiness) {
     // Submit decisions must be based on fresh live evidence, not a caller snapshot.
-    return makeReceipt({
+    return emit({
       requestId: request.requestId,
       state: STATE_BLOCKED,
       reasonCodes: ['submit_requires_live_readiness'],
@@ -1392,7 +1460,20 @@ export async function submitAssignment({
         record = initial.record;
       } catch (error) {
         if (error instanceof JournalConflictError) {
-          return makeReceipt({
+          if (error.corrupt) {
+            // A torn record may mean tasks were already created — never
+            // steer the caller toward a fresh request id here.
+            return emit({
+              requestId: request.requestId,
+              state: STATE_ADMISSION_UNCONFIRMED,
+              reasonCodes: ['journal_record_corrupt'],
+              nextAction: 'verify_admission',
+              detail: sanitizeDetail(error.message),
+              planDigest,
+              timeline,
+            });
+          }
+          return emit({
             requestId: request.requestId,
             state: STATE_FAILED,
             reasonCodes: ['request_spec_conflict'],
@@ -1411,7 +1492,7 @@ export async function submitAssignment({
       );
       timeline.mark('readinessReady', { source: readiness.source });
       if (readiness.errors.length > 0) {
-        const receipt = makeReceipt({
+        const receipt = emit({
           requestId: request.requestId,
           state: STATE_BLOCKED,
           reasonCodes: [readiness.errors[0].code],
@@ -1428,7 +1509,7 @@ export async function submitAssignment({
 
       const selection = selectWorker({ request, readiness });
       if (!selection.selected) {
-        const receipt = makeReceipt({
+        const receipt = emit({
           requestId: request.requestId,
           state: STATE_BLOCKED,
           reasonCodes: ['no_eligible_worker'],
@@ -1446,7 +1527,7 @@ export async function submitAssignment({
       const manifest = buildManifest({ request, context, selected: selection.selected });
       const validation = validateManifest(manifest);
       if (validation.errors.length > 0) {
-        const receipt = makeReceipt({
+        const receipt = emit({
           requestId: request.requestId,
           state: STATE_NEEDS_INPUT,
           reasonCodes: ['manifest_validation_failed'],
@@ -1461,6 +1542,10 @@ export async function submitAssignment({
         return receipt;
       }
       timeline.mark('manifestValidated');
+      // Persist the intended lane spec so resume/verify compares the fetched
+      // task against what was INTENDED — never against itself (independent-
+      // review finding: self-comparison made matchVerified vacuous).
+      journal.update(request.requestId, { laneSummaries: laneSummariesOf(validation, request, context) });
 
       // ── Dispatch through the existing engine, with bounded recovery. ──
       timeline.mark('firstSubmit');
@@ -1469,7 +1554,6 @@ export async function submitAssignment({
       const laneStates = [];
       const taskIds = [];
       let attempt = 0;
-      let retryAfterMs = null;
       const lanes = validation.lanes;
 
       const dispatchOnce = async () => runDispatch(manifest, { fetchImpl, secret, dryRun: false, verify: false });
@@ -1478,29 +1562,47 @@ export async function submitAssignment({
       const retryable = (result) => result?.classification === CLASS_FAILED
         && (result.errorCode === 'network_error' || result.errorCode === 'http_429' || result.errorCode === 'rate_limited');
 
-      // Recovery loop: only for retryable failures, and only after a readback
-      // proves the lane task was NOT created (never blind-retry an ambiguous
-      // POST; never retry auth/schema failures).
+      // Recovery loop: ONLY the retryable-failed lanes, ONLY after a per-lane
+      // readback proves that lane's task was NOT created, and never re-POSTing
+      // lanes already admitted (independent-review finding: the previous loop
+      // re-ran the whole manifest and blind-retried later retryable lanes).
       let anyRetried = false;
-      while (attempt < maxRetries && outcome.results.some((r) => retryable(r))) {
-        const failedLane = outcome.results.find((r) => retryable(r));
-        const lane = lanes[failedLane.order - 1];
-        const { task, reachable } = await readbackLane({ fetchImpl, manifest, secret, laneId: lane.id });
-        if (reachable) {
-          // The task exists despite the failure classification — treat as
-          // ambiguous-but-present; do NOT re-POST.
-          failedLane.retryReclassified = 'task_present_after_failed_post';
-          break;
+      while (attempt < maxRetries) {
+        const retryableIndexes = outcome.results
+          .filter((r) => retryable(r))
+          .map((r) => r.order - 1);
+        if (retryableIndexes.length === 0) break;
+        const provenAbsent = [];
+        for (const idx of retryableIndexes) {
+          const lane = lanes[idx];
+          const { reachable } = await readbackLane({ fetchImpl, manifest, secret, laneId: lane.id });
+          if (reachable) {
+            // Ambiguous-but-present: do NOT re-POST this lane.
+            outcome.results[idx].retryReclassified = 'task_present_after_failed_post';
+          } else {
+            provenAbsent.push(idx);
+          }
         }
+        if (provenAbsent.length === 0) break;
         attempt += 1;
         anyRetried = true;
-        const waitMs = Math.min(Number.isFinite(failedLane.retryAfterMs) ? failedLane.retryAfterMs : 0, retryCapMs);
+        const maxRetryAfter = Math.max(0, ...retryableIndexes.map((idx) => (Number.isFinite(outcome.results[idx].retryAfterMs) ? outcome.results[idx].retryAfterMs : 0)));
+        const waitMs = Math.min(maxRetryAfter, retryCapMs);
         if (waitMs > 0) await new Promise((resolve) => setTimeout(resolve, waitMs));
-        outcome = await dispatchOnce();
-        if (attempt >= maxRetries) {
-          retryAfterMs = failedLane.retryAfterMs ?? null;
-          void retryAfterMs;
-        }
+        const retryManifest = { ...manifest, lanes: provenAbsent.map((idx) => lanes[idx]) };
+        const retryOutcome = await runDispatch(retryManifest, { fetchImpl, secret, dryRun: false, verify: false });
+        // Splice retry results back by LANE ID (the reduced manifest
+        // renumbers orders), keeping admitted lanes' original results.
+        outcome = {
+          ...outcome,
+          results: outcome.results.map((r) => {
+            const idx = r.order - 1;
+            if (!provenAbsent.includes(idx)) return r;
+            const rr = retryOutcome.results.find((x) => x.id === lanes[idx].id);
+            // Restore the ORIGINAL lane order: the reduced manifest renumbers.
+            return rr ? { ...rr, order: r.order } : r;
+          }),
+        };
       }
 
       // ── Map classifications → receipt states, with readback recovery. ──
@@ -1600,7 +1702,7 @@ export async function submitAssignment({
       if (taskIds.length > 0) {
         journal.update(request.requestId, { taskIds: Array.from(new Set([...(record.taskIds ?? []), ...taskIds])) });
       }
-      const receipt = makeReceipt({
+      const receipt = emit({
         requestId: request.requestId,
         state,
         reasonCodes: [
@@ -1612,7 +1714,7 @@ export async function submitAssignment({
           : state === STATE_ADMISSION_UNCONFIRMED ? 'verify_admission'
           : state === STATE_BLOCKED ? 'resolve_worker_readiness'
           : state === STATE_NEEDS_INPUT ? 'provide_missing_fields'
-          : 'none',
+          : (taskIds.length > 0 ? 'poll_task_readback' : 'none'),
         planDigest,
         taskIds,
         lanes: laneStates,
@@ -1626,7 +1728,7 @@ export async function submitAssignment({
     });
   } catch (error) {
     if (error instanceof JournalLockedError) {
-      return makeReceipt({
+      return emit({
         requestId: request.requestId,
         state: STATE_BLOCKED,
         reasonCodes: ['submit_in_progress'],
@@ -1662,11 +1764,13 @@ export async function resumeAssignment({
   secret,
   now = Date.now,
 } = {}) {
+  // Every receipt from this call is scrubbed against the broker credential.
+  const emit = (opts) => assembleReceipt({ ...opts, secret });
   const timeline = createTimeline({ correlation: {}, now });
   timeline.mark('toolEntered');
 
   if (!journal || !hasText(requestId)) {
-    return makeReceipt({
+    return emit({
       requestId: hasText(requestId) ? requestId : null,
       state: STATE_NEEDS_INPUT,
       reasonCodes: ['resume_input_missing'],
@@ -1677,7 +1781,7 @@ export async function resumeAssignment({
 
   const record = journal.read(requestId);
   if (!record) {
-    return makeReceipt({
+    return emit({
       requestId,
       state: STATE_BLOCKED,
       reasonCodes: ['resume_record_missing'],
@@ -1687,7 +1791,7 @@ export async function resumeAssignment({
     });
   }
   if (record.corrupt) {
-    return makeReceipt({
+    return emit({
       requestId,
       state: STATE_ADMISSION_UNCONFIRMED,
       reasonCodes: ['journal_record_corrupt'],
@@ -1698,7 +1802,7 @@ export async function resumeAssignment({
 
   const taskIds = Array.isArray(record.taskIds) ? record.taskIds : [];
   if (taskIds.length === 0) {
-    return makeReceipt({
+    return emit({
       requestId,
       state: STATE_PREPARED,
       reasonCodes: ['no_task_ids_recorded'],
@@ -1723,6 +1827,7 @@ export async function resumeAssignment({
     })),
   };
 
+  const summaries = Array.isArray(record.laneSummaries) ? record.laneSummaries : [];
   const lanes = [];
   let reachableCount = 0;
   for (const taskId of taskIds) {
@@ -1735,18 +1840,27 @@ export async function resumeAssignment({
     const status = (task.status ?? task.state ?? 'present').toString();
     const started = WORKER_STARTED_STATUSES.has(status.toLowerCase());
     if (started) timeline.mark('workerStarted', { taskId, observedStatus: status });
+    const summary = summaries.find((row) => row.laneId === taskId);
+    let matchVerified;
+    if (summary) {
+      // Real comparison: the journaled intent vs the fetched task.
+      matchVerified = existingTaskMatch(task, {
+        requesterId: summary.requesterId ?? record.requesterId,
+        lane: { target: { id: summary.targetId }, intent: summary.intent, payload: { repo: summary.repo } },
+      }).verified;
+    }
     lanes.push({
       laneId: taskId,
       taskId: task.id ?? taskId,
       state: STATE_EXISTING,
       brokerStatus: status,
-      matchVerified: existingTaskMatch(task, { requesterId: record.requesterId, lane: { target: { id: task.target?.id ?? task.assignedWorkerId }, intent: task.intent, payload: task.payload } }).verified || undefined,
+      ...(matchVerified !== undefined ? { matchVerified } : {}),
       ...(started ? { reasonCodes: ['worker_started_observed'] } : {}),
     });
   }
 
   const state = reachableCount === 0 ? STATE_ADMISSION_UNCONFIRMED : STATE_EXISTING;
-  const receipt = makeReceipt({
+  const receipt = emit({
     requestId,
     state,
     reasonCodes: state === STATE_ADMISSION_UNCONFIRMED ? ['readback_unavailable'] : [],

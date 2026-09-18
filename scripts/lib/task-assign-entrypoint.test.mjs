@@ -314,6 +314,174 @@ describe('canonicalize / timeline', () => {
   });
 });
 
+describe('independent-review round fixes (RED-verified)', () => {
+  it('rejects kind/lanes contradiction: analysis request cannot smuggle patch lanes', () => {
+    const result = normalizeAssignRequest(analysisRequest({
+      lanes: [{ intent: 'propose_patch', payload: { mode: 'github-propose-patch' } }],
+    }));
+    assert.equal(result.ok, false);
+    assert.ok(result.reasonCodes.includes('kind_lane_mismatch'));
+    const reverse = normalizeAssignRequest(patchRequest({ lanes: [{ intent: 'analyze', payload: { mode: 'analysis-only' } }] }));
+    assert.equal(reverse.ok, false);
+    assert.ok(reverse.reasonCodes.includes('kind_lane_mismatch'));
+  });
+
+  it('prepare applies trusted readiness records like submit (prepare/submit parity)', async () => {
+    const broker = await startMockBroker();
+    try {
+      const receipt = await prepareAssignment({
+        request: patchRequest({ workerPolicy: { readinessRecords: [patchReadinessRecord()] } }),
+        mode: 'live',
+        context: CONTEXT(broker.brokerUrl),
+        fetchImpl: fetch,
+        secret: SECRET,
+      });
+      assert.equal(receipt.state, STATE_PREPARED, JSON.stringify({ reasons: receipt.reasonCodes, excluded: receipt.readiness?.excluded }));
+      assert.equal(broker.counters.post, 0);
+    } finally {
+      await broker.close();
+    }
+  });
+
+  it('receipts scrub a literal secret occurrence in broker error detail', async () => {
+    const broker = await startMockBroker({
+      postScript: (call, body, req, res, { send }) => send(400, {
+        error: { code: 'bad_request', message: `echo back ${SECRET} leaked` },
+      }),
+    });
+    const dir = tmpJournalDir();
+    try {
+      const receipt = await submitAssignment({
+        request: analysisRequest(),
+        context: CONTEXT(broker.brokerUrl),
+        journal: new TaskAssignJournal({ dir }),
+        fetchImpl: fetch,
+        secret: SECRET,
+      });
+      assert.equal(receipt.state, STATE_FAILED);
+      assert.ok(!JSON.stringify(receipt).includes(SECRET), 'literal secret must be scrubbed from receipts');
+    } finally {
+      await broker.close();
+      fs.rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  it('lock release is token-verified: a stale-broken slow holder cannot delete the new lock', async () => {
+    const dir = tmpJournalDir();
+    try {
+      const journal = new TaskAssignJournal({ dir, lockTimeoutMs: 50 });
+      // Holder A takes the lock and (simulated) stalls past the timeout.
+      let releaseA;
+      const gate = new Promise((r) => { releaseA = r; });
+      const a = journal.withLock('token-lock', async () => gate);
+      const lockPath = path.join(dir, 'token-lock.lock');
+      const past = new Date(Date.now() - 60_000);
+      fs.utimesSync(lockPath, past, past); // A's lock now looks stale
+      // B breaks the stale lock and takes over.
+      let releaseB;
+      const gateB = new Promise((r) => { releaseB = r; });
+      const b = journal.withLock('token-lock', async () => gateB);
+      // A finally finishes — its release must NOT remove B's lock.
+      releaseA();
+      await a;
+      assert.ok(fs.existsSync(lockPath), "A's release must not delete B's lock");
+      releaseB();
+      await b;
+      assert.ok(!fs.existsSync(lockPath), "B's own release must remove B's lock");
+    } finally {
+      fs.rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  it('multi-lane partial failure: retry does not re-POST admitted lanes', async () => {
+    let call = 0;
+    const ids = ['assign-multi-lane:1', 'assign-multi-lane:2'];
+    const broker = await startMockBroker({
+      postScript: (postCall, body, req, res, { store, send }) => {
+        // POST #0: lane 1 created. POST #1: lane 2 network_error (socket
+        // destroyed). POST #2 (the scoped retry): only lane 2 arrives.
+        if (postCall === 0) {
+          store.set(body.id, { id: body.id, status: 'queued', requester: body.requester, target: body.target, intent: body.intent, payload: body.payload });
+          return send(201, { task: { id: body.id, status: 'queued' } });
+        }
+        if (postCall === 1) {
+          res.destroy();
+          return;
+        }
+        if (store.has(body.id)) return send(409, { error: { code: 'conflict' } });
+        store.set(body.id, { id: body.id, status: 'queued', requester: body.requester, target: body.target, intent: body.intent, payload: body.payload });
+        return send(201, { task: { id: body.id, status: 'queued' } });
+      },
+    });
+    const dir = tmpJournalDir();
+    void call;
+    try {
+      const receipt = await submitAssignment({
+        request: analysisRequest({ requestId: 'multi-lane', lanes: [{}, {}] }),
+        context: CONTEXT(broker.brokerUrl),
+        journal: new TaskAssignJournal({ dir }),
+        fetchImpl: fetch,
+        secret: SECRET,
+      });
+      assert.equal(receipt.state, STATE_ADMITTED, 'retry recovered lane 2; both lanes admitted');
+      const lane1 = receipt.lanes.find((l) => l.laneId === ids[0]);
+      const lane2 = receipt.lanes.find((l) => l.laneId === ids[1]);
+      assert.equal(lane1.state, STATE_ADMITTED);
+      assert.equal(lane2.state, STATE_ADMITTED);
+      assert.equal(broker.store.has(ids[0]), true);
+      // Exactly 3 POSTs: lane1, lane2(failed), lane2(retry) — lane1 never re-POSTed
+      // (its second arrival would 409, which the mock above would have counted).
+      assert.equal(broker.counters.post, 3);
+      assert.equal(receipt.nextAction.code, 'poll_task_readback', 'partial failure with taskIds must direct follow-up');
+    } finally {
+      await broker.close();
+      fs.rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  it('corrupt journal record on submit maps to admission_unconfirmed, never a new request id', async () => {
+    const dir = tmpJournalDir();
+    try {
+      const journal = new TaskAssignJournal({ dir });
+      fs.writeFileSync(path.join(dir, 'torn-record.json'), '{torn', 'utf8');
+      const receipt = await submitAssignment({
+        request: analysisRequest({ requestId: 'torn-record' }),
+        context: CONTEXT('http://127.0.0.1:9'),
+        journal,
+        fetchImpl: fetch,
+        secret: SECRET,
+      });
+      assert.equal(receipt.state, STATE_ADMISSION_UNCONFIRMED);
+      assert.equal(receipt.nextAction.code, 'verify_admission');
+      assert.ok(receipt.reasonCodes.includes('journal_record_corrupt'));
+    } finally {
+      fs.rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  it('prepare marks readinessReady exactly once (timeline shape parity with submit)', async () => {
+    const receipt = await prepareAssignment({
+      request: analysisRequest(),
+      mode: 'offline',
+      context: CONTEXT('http://127.0.0.1:9'),
+      readiness: { observedAt: new Date().toISOString(), records: [workerRow()] },
+    });
+    assert.equal(receipt.state, STATE_PREPARED);
+    const marks = receipt.timeline.filter((e) => e.event === 'readinessReady');
+    assert.equal(marks.length, 1, JSON.stringify(receipt.timeline));
+  });
+
+  it('pass-through readiness rows are filtered to the selected worker', () => {
+    const request = normalizeAssignRequest(analysisRequest({
+      workerPolicy: { readinessRecords: [patchReadinessRecord('worker-alpha'), patchReadinessRecord('worker-other')] },
+    })).request;
+    const context = { brokerUrl: 'http://127.0.0.1:9', requester: { id: 'test-hub', role: 'hub' } };
+    const manifest = buildManifest({ request, context, selected: { workerId: 'worker-alpha', record: undefined } });
+    const rows = manifest.workerReadiness?.rows ?? [];
+    assert.deepEqual(rows.map((r) => r.node), ['worker-alpha']);
+  });
+});
+
 describe('patchReadinessBlockers (screening mirror)', () => {
   it('fails closed on missing canary evidence', () => {
     assert.ok(patchReadinessBlockers(patchReadinessRecord('w', { implementationCapability: { capable: true, availability: 'configured' } })).length > 0);
@@ -940,7 +1108,9 @@ describe('resumeAssignment', () => {
       });
       assert.equal(resumed.state, STATE_EXISTING);
       const lane = resumed.lanes.find((l) => l.taskId === taskId);
-      assert.equal(lane.matchVerified, undefined, 'opaque records must not be claimed verified');
+      // With journaled lane summaries the resume path performs a REAL
+      // comparison; an opaque record cannot verify → explicit false.
+      assert.equal(lane.matchVerified, false, 'opaque records must not be claimed verified');
     } finally {
       await broker.close();
       fs.rmSync(dir, { recursive: true, force: true });
