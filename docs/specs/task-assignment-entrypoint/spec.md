@@ -139,16 +139,30 @@ readiness override.
 3. Timeouts/lost responses are never failures: exact-ID readback first; the
    bounded retry (network/429 only, default 1 retry, `Retry-After` honored up
    to 5 s) fires only after a readback proves the task was NOT created.
-4. Auth/schema/4xx failures never retry (`submit_failed_no_retry`).
+4. Auth/schema/4xx failures never retry (`submit_failed_no_retry`). In
+   multi-lane requests the bounded retry is SCOPED to the failed lanes via a
+   reduced manifest — admitted lanes are never re-POSTed, and every retried
+   lane's absence is proven by readback first. Retried results are spliced
+   back by lane id with the original lane order restored.
 5. Concurrent submits serialize on a per-request lock file; a second caller
-   gets `blocked/submit_in_progress` with ZERO POSTs. Crashed-holder locks
-   expire after 30 s. Crash-recovery: a journaled request without task ids
+   gets `blocked/submit_in_progress` with ZERO POSTS. Crashed-holder locks
+   expire after 30 s; release is token-verified so a slow (not crashed)
+   holder whose lock was stale-broken cannot delete the new holder's lock.
+   Crash-recovery: a journaled request without task ids
    resumes with the SAME lane ids; task ids are never re-minted.
 6. `accepted-unconfirmed` stays distinct: readback-confirmed → `admitted`
    (reason `durable_ack_unconfirmed_confirmed_via_readback`); unreachable →
    `admission_unconfirmed` with receipt retained.
 7. Default single lane; caller-supplied multi-lane keeps per-lane states and
-   never re-submits admitted lanes on resume. No cross-broker atomicity.
+   never re-submits admitted lanes on resume. No cross-broker atomicity. The
+   journal persists per-lane intent summaries (requester/target/intent/repo)
+   so resume-time field matching compares the fetched task against the
+   INTENDED spec — never against itself. Contradictory kind/lanes input
+   (e.g. kind `analysis` carrying a `github-propose-patch` lane) fails
+   normalization with `kind_lane_mismatch` instead of leaking past the patch
+   readiness gates. Pass-through readiness rows are filtered to the selected
+   worker. `context.originBrokerId` (trusted routing profile only) is stamped
+   into lane payloads because parent-round routing makes brokers require it.
 8. Journal/receipts are owner-only state; receipts deep-strip secret-shaped
    keys and sanitize all error detail (control chars stripped, length-capped,
    secret-redacted). Public diagnostics carry states/reasons/timestamps only.
