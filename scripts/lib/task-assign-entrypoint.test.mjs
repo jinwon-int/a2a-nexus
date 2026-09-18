@@ -42,6 +42,7 @@ import {
   patchReadinessBlockers,
   prepareAssignment,
   resumeAssignment,
+  selectWorker as selectWorker_,
   specDigestOf,
   stableJson,
   submitAssignment,
@@ -480,6 +481,140 @@ describe('independent-review round fixes (RED-verified)', () => {
     const rows = manifest.workerReadiness?.rows ?? [];
     assert.deepEqual(rows.map((r) => r.node), ['worker-alpha']);
   });
+});
+
+describe('r5 re-review round fixes (RED-verified)', () => {
+  it('prepare corrupt journal maps to admission_unconfirmed (parity with submit)', async () => {
+    const dir = tmpJournalDir();
+    try {
+      const journal = new TaskAssignJournal({ dir });
+      fs.writeFileSync(path.join(dir, 'torn-prepare.json'), '{torn', 'utf8');
+      const receipt = await prepareAssignment({
+        request: analysisRequest({ requestId: 'torn-prepare' }),
+        mode: 'offline',
+        context: CONTEXT('http://127.0.0.1:9'),
+        readiness: { observedAt: new Date().toISOString(), records: [workerRow()] },
+        journal,
+      });
+      assert.equal(receipt.state, STATE_ADMISSION_UNCONFIRMED);
+      assert.equal(receipt.nextAction.code, 'verify_admission');
+      assert.ok(receipt.reasonCodes.includes('journal_record_corrupt'));
+    } finally {
+      fs.rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  it('patch receipts carry the spec-required unknownFields list (non-empty)', async () => {
+    const receipt = await prepareAssignment({
+      request: patchRequest(),
+      mode: 'offline',
+      context: CONTEXT('http://127.0.0.1:9'),
+      readiness: { observedAt: new Date().toISOString(), records: [{ ...workerRow(), record: patchReadinessRecord() }] },
+    });
+    assert.equal(receipt.state, STATE_PREPARED);
+    assert.ok(Array.isArray(receipt.readiness.unknownFields) && receipt.readiness.unknownFields.includes('implementationCapability'));
+  });
+
+  it('partial failure keeps admitted lanes visible: overall admitted + partial_failure', async () => {
+    const broker = await startMockBroker({
+      postScript: (postCall, body, req, res, { store, send }) => {
+        if (postCall === 0) {
+          store.set(body.id, { id: body.id, status: 'queued', requester: body.requester, target: body.target, intent: body.intent, payload: body.payload });
+          return send(201, { task: { id: body.id, status: 'queued' } });
+        }
+        if (postCall === 1) return send(403, { error: { code: 'forbidden' } });
+        if (store.has(body.id)) return send(409, { error: { code: 'conflict' } });
+        store.set(body.id, { id: body.id, status: 'queued', requester: body.requester, target: body.target, intent: body.intent, payload: body.payload });
+        return send(201, { task: { id: body.id, status: 'queued' } });
+      },
+    });
+    const dir = tmpJournalDir();
+    try {
+      const receipt = await submitAssignment({
+        request: analysisRequest({ requestId: 'partial-out', lanes: [{}, {}] }),
+        context: CONTEXT(broker.brokerUrl),
+        journal: new TaskAssignJournal({ dir }),
+        fetchImpl: fetch,
+        secret: SECRET,
+      });
+      assert.equal(receipt.state, STATE_ADMITTED, 'created task must not be folded into failed');
+      assert.ok(receipt.reasonCodes.includes('partial_failure'));
+      assert.equal(receipt.lanes.some((l) => l.state === STATE_FAILED), true);
+      assert.equal(receipt.taskIds.length, 1);
+      assert.equal(receipt.nextAction.code, 'poll_task_readback');
+    } finally {
+      await broker.close();
+      fs.rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  it('live analysis selection honors a merged trusted record (OR, not AND)', () => {
+    // r5 NEW-4: a live observation with a MERGED trusted record must be
+    // eligible on the record's own verdict even when the view-level flag is
+    // false — the spec's OR, not a narrower AND.
+    const readiness = {
+      source: 'live',
+      observedAt: new Date().toISOString(),
+      stale: false,
+      observations: [{
+        workerId: 'worker-recorded',
+        status: 'online',
+        managementPlane: 'connected',
+        substantiveAnalysisReady: false,
+        lastSeenAt: null,
+        capabilities: null,
+        metadata: null,
+        observedAt: new Date().toISOString(),
+        source: 'broker:GET /workers',
+        record: { node: 'worker-recorded', ok: true },
+      }],
+      errors: [],
+      unknownFields: [],
+    };
+    const selection = selectWorker_({
+      request: normalizeAssignRequest(analysisRequest()).request,
+      readiness,
+      offlineEvaluator: () => ({ ok: true, violations: [] }),
+    });
+    assert.equal(selection.selected.workerId, 'worker-recorded');
+    const rationaleText = JSON.stringify(selection.rationale ?? null);
+    assert.ok(rationaleText !== null && rationaleText.includes('analysis capability confirmed'), `rationale=${rationaleText}`);
+    // And without the record, the same view stays excluded (fail closed).
+    const excluded = selectWorker_({
+      request: normalizeAssignRequest(analysisRequest()).request,
+      readiness: { ...readiness, observations: [{ ...readiness.observations[0], record: undefined }] },
+      offlineEvaluator: () => ({ ok: true, violations: [] }),
+    });
+    assert.equal(excluded.selected, null);
+    assert.equal(excluded.excluded[0].reasonCode, 'substantive_analysis_not_ready');
+  });
+
+  it('unparseable host timestamp is recorded missing, never fabricated from the tool clock', () => {
+    let tick = 5_000;
+    const timeline = createTimeline({ correlation: { requestReceivedAt: 'not-a-date' }, now: () => (tick += 10) });
+    const received = timeline.events.find((e) => e.event === 'requestReceived');
+    assert.equal(received.missing, true);
+    assert.equal(received.invalidHostTimestamp, true);
+    assert.equal(received.at, undefined);
+    assert.equal(timeline.durations().requestToFirstSubmitMs, null);
+  });
+
+  it('correlationId is sanitized (control chars stripped, length capped)', () => {
+    const timeline = createTimeline({
+      correlation: { requestReceivedAt: 900, correlationId: `bad\n\u0007${'x'.repeat(500)}` },
+      now: () => 1000,
+    });
+    const received = timeline.events.find((e) => e.event === 'requestReceived');
+    assert.ok(!/\n|[\u0000-\u001f]/.test(received.correlationId), 'control characters must be stripped');
+    assert.ok(received.correlationId.length <= 128);
+  });
+
+  it('normalizeAssignRequest accepts epoch-ms host timestamps', () => {
+    const result = normalizeAssignRequest(analysisRequest({ correlation: { requestReceivedAt: 1726618440000 } }));
+    assert.equal(result.ok, true);
+    assert.equal(result.request.correlation.requestReceivedAt, '2024-09-18T00:14:00.000Z');
+  });
+
 });
 
 describe('patchReadinessBlockers (screening mirror)', () => {
@@ -1049,7 +1184,8 @@ describe('resumeAssignment', () => {
       assert.deepEqual(resumed.taskIds, submitted.taskIds);
       assert.equal(broker.counters.post, posts, 'resume must never re-POST');
 
-      // Re-submitting the SAME spec finds the existing task instead of duplicating.
+      // Re-submitting the SAME spec short-circuits via the journal: no POST
+      // at all (broker 409 is a backstop, not the primary idempotency guard).
       const resubmitted = await submitAssignment({
         request,
         context: CONTEXT(broker.brokerUrl),
@@ -1059,9 +1195,9 @@ describe('resumeAssignment', () => {
       });
       assert.equal(resubmitted.state, STATE_EXISTING);
       assert.equal(resubmitted.lanes[0].matchVerified, true);
-      assert.equal(broker.counters.post, posts + 1, '409 conflict POST happens but no duplicate task is created');
+      assert.equal(broker.counters.post, posts, 'journal short-circuit must not POST at all');
       assert.equal(broker.store.size, 1);
-      assert.ok(!resubmitted.lanes[0].reasonCodes?.includes('existing_task_match_unverified'));
+      assert.ok(resubmitted.reasonCodes.includes('already_admitted_short_circuit'));
     } finally {
       await broker.close();
       fs.rmSync(dir, { recursive: true, force: true });
