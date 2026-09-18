@@ -66,6 +66,7 @@ budget justification.
 | `budget.timeoutMs` | optional | Passed through unchanged; env-resolved effective budgets are NOT resolvable here and stay unclaimed. |
 | `correlation.requestReceivedAt` / `.correlationId` | optional | Host-supplied S1 instrumentation input. |
 | `brokerUrl`, secrets | **rejected in request text** | Trusted host context only (`context.brokerUrl`, `context.secret`); presence in the request fails with `untrusted_broker_or_secret_input`. |
+| — (context) `originBrokerId` | optional, trusted context only | Local routing profile's broker id; stamped into lane payloads because parent-round routing auto-stamped by the dispatcher makes brokers require it. A value inside request text is ignored. |
 
 **Missing fields are returned in ONE batch** (`missingFields[]`, dotted
 paths); present-but-invalid values land in `invalidFields[]` of the same
