@@ -901,6 +901,13 @@ export function buildManifest({ request, context, selected }) {
     } else if (request.budget?.timeoutMs !== undefined) {
       built.payload.timeoutMs = request.budget.timeoutMs;
     }
+    // Parent-round routing is auto-stamped by the dispatcher's validateManifest;
+    // brokers that validate round metadata then require an originating broker
+    // id. It arrives ONLY from the trusted host context (local routing
+    // profile), never from request text (#2187 §2.1).
+    if (hasText(context.originBrokerId) && built.payload.originBrokerId === undefined) {
+      built.payload.originBrokerId = context.originBrokerId;
+    }
     return built;
   });
 
@@ -938,7 +945,9 @@ export function createTimeline({ correlation = {}, now = () => Date.now() } = {}
     events.push({ event: 'requestReceived', missing: true, source: 'host' });
   }
   if (correlation?.correlationId) {
-    events.push({ event: 'requestReceived', at: at(), correlationId: correlation.correlationId, note: 'correlation id assigned by host' });
+    // Correlation is ride-along metadata on the reception event — it must not
+    // create a second same-name timeline entry (double-counting downstream).
+    events[0].correlationId = correlation.correlationId;
   }
   let enteredAtMs = null;
   return {

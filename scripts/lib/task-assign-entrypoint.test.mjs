@@ -34,6 +34,7 @@ import {
   STATE_NEEDS_INPUT,
   STATE_PREPARED,
   TaskAssignJournal,
+  buildManifest,
   canonicalize,
   collectReadiness,
   createTimeline,
@@ -269,6 +270,28 @@ describe('canonicalize / timeline', () => {
   it('canonicalizes with sorted keys', () => {
     assert.equal(stableJson({ b: 1, a: { d: 2, c: [3, { f: 4, e: 5 }] } }), stableJson({ a: { c: [3, { e: 5, f: 4 }], d: 2 }, b: 1 }));
     assert.deepEqual(canonicalize({ z: 1, y: 2 }), { y: 2, z: 1 });
+  });
+
+  it('stamps trusted context.originBrokerId into lane payloads; absent context means absent field', () => {
+    const broker = { brokerUrl: 'http://127.0.0.1:9', requester: { id: 'test-hub', role: 'hub' } };
+    const request = normalizeAssignRequest(analysisRequest()).request;
+    const selected = { workerId: 'worker-alpha', record: undefined };
+    const withOrigin = buildManifest({ request, context: { ...broker, originBrokerId: 'gwakga' }, selected });
+    assert.equal(withOrigin.lanes[0].payload.originBrokerId, 'gwakga');
+    const without = buildManifest({ request, context: broker, selected });
+    assert.equal(without.lanes[0].payload.originBrokerId, undefined);
+    // A value inside request text must NOT leak into the manifest payload.
+    const hostile = normalizeAssignRequest(analysisRequest({ lanes: [{ payload: {} }], originBrokerId: 'spoofed' }));
+    const hostileManifest = buildManifest({ request: hostile.request, context: broker, selected });
+    assert.equal(hostileManifest.lanes[0].payload.originBrokerId, undefined);
+  });
+
+  it('records correlationId on the single requestReceived event, not a duplicate entry', () => {
+    const timeline = createTimeline({ correlation: { requestReceivedAt: 900, correlationId: 'corr-1' }, now: () => 1000 });
+    const received = timeline.events.filter((e) => e.event === 'requestReceived');
+    assert.equal(received.length, 1);
+    assert.equal(received[0].correlationId, 'corr-1');
+    assert.equal(received[0].missing, undefined);
   });
 
   it('records requestReceived as missing when the host provides no timestamp', () => {
