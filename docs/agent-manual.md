@@ -68,6 +68,40 @@ This public manual owns Nexus usage. Do not copy private inventory into this rep
 
 ## 3. Prepare and validate a patch manifest
 
+### Programmatic assignment entrypoint (#2187)
+
+Agents integrated through a host runtime can replace the manual
+prepare→dry-run→dispatch→readback ceremony with one library call. Import the
+facade from the same checkout revision as the broker you target:
+
+```js
+import { prepareAssignment, submitAssignment, resumeAssignment } from './scripts/lib/task-assign-entrypoint.mjs';
+```
+
+- `prepareAssignment` validates the request, collects readiness (live
+  GET-only, or an offline snapshot), and returns a validated manifest with
+  zero broker mutations. `submitAssignment` journals the request IDs and spec
+  digest BEFORE the first POST, dispatches through the same
+  `a2a-dispatch-round` engine, reads tasks back, and returns a durable
+  receipt; ambiguous outcomes stay `admission_unconfirmed` and existing tasks
+  are never duplicated. `resumeAssignment` recovers a journaled request by
+  `requestId` without minting new IDs.
+- Missing input fields are returned in one batch (`missingFields[]`),
+  `nextAction` codes are allowlisted, and error text is sanitized before it
+  reaches a receipt — treat the receipt as the interface, not broker
+  internals.
+- Broker URL and credentials still come ONLY from the trusted host context;
+  they are rejected inside request text. Patch lanes additionally require a
+  trusted readiness record satisfying the `implementationCapability` canary
+  gate (#1597); the live worker view alone never qualifies.
+
+The contract, state set and invariants are specified in
+[the entrypoint spec](specs/task-assignment-entrypoint/spec.md). There is no
+CLI for this facade by design (script budget #1485/#1503); hosts and skills
+import it directly.
+
+### Manual manifest recipe
+
 Save this template as a private `round.json`, replace every `REPLACE_*` value,
 and provide a current `readiness.json` collected for the selected worker.
 The example's host check only checks Node; choose an appropriate host smoke for

@@ -272,6 +272,12 @@
       "note": "Dependency-free unit tests for the #1507 read-only weekly merged-branch residue watchdog."
     },
     {
+      "file": "scripts/lib/task-assign-entrypoint.test.mjs",
+      "class": "gate",
+      "round": null,
+      "note": "Task-assignment entrypoint regression suite: #2187 prepare/submit/resume contracts, journal idempotency and recovery, admission readback, injection/secret safety."
+    },
+    {
       "file": "scripts/a2a-warn-log-aggregate.test.mjs",
       "class": "gate",
       "round": null,

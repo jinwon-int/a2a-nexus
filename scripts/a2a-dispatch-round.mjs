@@ -615,6 +615,7 @@ async function dispatchLane(fetchImpl, manifest, secret, lane) {
       status: res.status,
       errorCode: code ?? 'queue_drain_unconfirmed',
       detail: errorDetailOf(body, secret),
+      ...(retryAfterMsOf(res) !== undefined ? { retryAfterMs: retryAfterMsOf(res) } : {}),
     };
   }
 
@@ -626,12 +627,29 @@ async function dispatchLane(fetchImpl, manifest, secret, lane) {
     status: res.status,
     errorCode: errorCodeOf(body) ?? `http_${res.status}`,
     detail: errorDetailOf(body, secret),
+    ...(retryAfterMsOf(res) !== undefined ? { retryAfterMs: retryAfterMsOf(res) } : {}),
   };
 }
 
 function errorCodeOf(body) {
   if (isPlainObject(body) && isPlainObject(body.error) && hasText(body.error.code)) return body.error.code;
   return null;
+}
+
+/**
+ * Surface a Retry-After header (seconds or HTTP-date) as milliseconds, capped
+ * at 30s. Informational only: the dispatcher itself does not retry. Callers
+ * (e.g. the #2187 task-assignment entrypoint) use it to honor the server's
+ * pacing hint inside their own bounded retry budget.
+ */
+function retryAfterMsOf(res) {
+  const raw = res?.headers?.get?.('retry-after');
+  if (!hasText(raw)) return undefined;
+  const seconds = Number(raw.trim());
+  if (Number.isFinite(seconds) && seconds >= 0) return Math.min(seconds * 1000, 30_000);
+  const atMs = Date.parse(raw);
+  if (Number.isFinite(atMs)) return Math.max(0, Math.min(atMs - Date.now(), 30_000));
+  return undefined;
 }
 
 function errorDetailOf(body, secret) {
