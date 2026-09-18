@@ -713,7 +713,11 @@ export async function collectReadiness({
   } catch {
     return { source: 'live', observedAt, stale: false, observations: [], errors: [{ code: 'workers_read_invalid_body' }] };
   }
-  const list = Array.isArray(body) ? body : (Array.isArray(body?.workers) ? body.workers : (Array.isArray(body?.rows) ? body.rows : null));
+  const list = Array.isArray(body)
+    ? body
+    : (Array.isArray(body?.items) ? body.items
+      : (Array.isArray(body?.workers) ? body.workers
+        : (Array.isArray(body?.rows) ? body.rows : null)));
   if (!list) {
     return { source: 'live', observedAt, stale: false, observations: [], errors: [{ code: 'workers_read_invalid_body' }] };
   }

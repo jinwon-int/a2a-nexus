@@ -98,7 +98,7 @@ function patchReadinessRecord(workerId = 'worker-alpha', overrides = {}) {
  *   postScript(fn)    — (callIndex, body, req, res) custom POST behavior
  *   taskStatus        — status stored/returned for created tasks
  */
-function startMockBroker({ workers = [workerRow()], postScript = null, taskStatus = 'queued' } = {}) {
+function startMockBroker({ workers = [workerRow()], workersShape = 'items', postScript = null, taskStatus = 'queued' } = {}) {
   const store = new Map();
   const counters = { post: 0, getWorkers: 0, getTask: 0 };
   const server = http.createServer((req, res) => {
@@ -113,7 +113,10 @@ function startMockBroker({ workers = [workerRow()], postScript = null, taskStatu
       if (req.method === 'GET' && url === '/workers') {
         counters.getWorkers += 1;
         if (typeof workers === 'number') return send(workers, { error: { code: 'unavailable' } });
-        return send(200, workers);
+        // Default shape mirrors the canonical broker route: { items: [...] }
+        // (packages/broker/src/http/workers-read.ts). 'array' exercises the
+        // tolerated legacy shape.
+        return send(200, workersShape === 'array' ? workers : { items: workers });
       }
       if (req.method === 'POST' && url === '/tasks') {
         const call = counters.post++;
@@ -1022,6 +1025,39 @@ describe('TaskAssignJournal mechanics', () => {
 // ─── collectReadiness contract ──────────────────────────────────────────────
 
 describe('collectReadiness', () => {
+  it('parses the canonical { items: [...] } broker response shape', async () => {
+    const broker = await startMockBroker({ workers: [workerRow()] });
+    try {
+      const readiness = await collectReadiness({
+        mode: 'live',
+        fetchImpl: fetch,
+        brokerUrl: broker.brokerUrl,
+        authHeaders: AUTH_HEADERS,
+      });
+      assert.equal(readiness.observations.length, 1);
+      assert.equal(readiness.observations[0].workerId, 'worker-alpha');
+      assert.equal(readiness.errors.length, 0);
+    } finally {
+      await broker.close();
+    }
+  });
+
+  it('still tolerates the bare-array legacy shape', async () => {
+    const broker = await startMockBroker({ workers: [workerRow({ id: 'worker-legacy' })], workersShape: 'array' });
+    try {
+      const readiness = await collectReadiness({
+        mode: 'live',
+        fetchImpl: fetch,
+        brokerUrl: broker.brokerUrl,
+        authHeaders: AUTH_HEADERS,
+      });
+      assert.equal(readiness.observations.length, 1);
+      assert.equal(readiness.observations[0].workerId, 'worker-legacy');
+    } finally {
+      await broker.close();
+    }
+  });
+
   it('live mode GET-only: unknown API fields stay unknown, not guessed', async () => {
     const broker = await startMockBroker({ workers: [{ id: 'worker-bare' }] });
     try {
