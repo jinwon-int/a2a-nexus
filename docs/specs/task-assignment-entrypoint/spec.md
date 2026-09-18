@@ -101,7 +101,9 @@ next-action.
 ## Readiness collection & compatibility
 
 1. Broker URL and credentials come only from the trusted host context; never
-   copied from issues/manifests into receipts or the journal.
+   copied from issues/manifests into receipts or the journal. Receipts also
+   carry the patch kind's explicit `unknownFields[]` list (produced, not
+   just documented).
 2. Live mode: GET `{brokerUrl}/workers` (GET-only; same edge-secret headers as
    the dispatcher). Offline mode: caller-provided snapshot with `observedAt`;
    snapshots older than `ttlMs` (default 300 s) yield `blocked/readiness_expired`.

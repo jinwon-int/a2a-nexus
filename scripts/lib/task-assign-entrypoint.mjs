@@ -373,7 +373,10 @@ export function normalizeAssignRequest(raw) {
     else {
       correlation = {};
       if (raw.correlation.requestReceivedAt !== undefined) {
-        const ms = Date.parse(raw.correlation.requestReceivedAt);
+        // Host clocks may supply epoch ms or an ISO string — both accepted
+        // (r5 review risk: hosts that stamp Date.now() were rejected).
+        const value = raw.correlation.requestReceivedAt;
+        const ms = typeof value === 'number' ? value : Date.parse(value);
         if (Number.isFinite(ms)) correlation.requestReceivedAt = new Date(ms).toISOString();
         else invalidFields.push('correlation.requestReceivedAt');
       }
@@ -818,20 +821,16 @@ export function selectWorker({ request, readiness, offlineEvaluator = evaluateWo
       continue;
     }
     if (kind === 'analysis') {
-      if (observation.source === 'broker:GET /workers') {
-        if (observation.substantiveAnalysisReady !== true) {
-          excluded.push({ workerId, reasonCode: 'substantive_analysis_not_ready' });
-          continue;
-        }
-      } else if (observation.record) {
-        // Offline observation with a trusted readiness record: evaluate it.
+      if (observation.record) {
+        // A trusted readiness record (offline row, or merged into a live
+        // observation) qualifies on its own: record passes → eligible.
         const verdict = offlineEvaluator(observation.record, {});
         if (verdict?.ok !== true) {
           excluded.push({ workerId, reasonCode: 'offline_readiness_failed' });
           continue;
         }
       } else if (observation.substantiveAnalysisReady !== true) {
-        // View-shaped offline row: only the view-level signal is available;
+        // No trusted record: the view-level signal is the only evidence and
         // anything less fails closed.
         excluded.push({ workerId, reasonCode: 'substantive_analysis_not_ready' });
         continue;
@@ -992,22 +991,25 @@ function laneSummariesOf(validation, request, context) {
 export function createTimeline({ correlation = {}, now = () => Date.now() } = {}) {
   const events = [];
   const at = () => new Date(now()).toISOString();
-  if (correlation?.requestReceivedAt) {
+  if (correlation?.requestReceivedAt !== undefined && normalizeIso(correlation.requestReceivedAt, undefined) !== undefined) {
     // Lazy fallback: a present host timestamp must not consume a clock tick.
-    events.push({ event: 'requestReceived', at: normalizeIso(correlation.requestReceivedAt, undefined) ?? at(), source: 'host' });
+    events.push({ event: 'requestReceived', at: normalizeIso(correlation.requestReceivedAt, undefined), source: 'host' });
   } else {
-    events.push({ event: 'requestReceived', missing: true, source: 'host' });
+    // Missing OR unparseable host time: recorded as missing — the tool-entry
+    // clock never substitutes for it (instrumentation contract).
+    events.push({ event: 'requestReceived', missing: true, source: 'host', ...(correlation?.requestReceivedAt !== undefined ? { invalidHostTimestamp: true } : {}) });
   }
-  if (correlation?.correlationId) {
+  if (hasText(correlation?.correlationId)) {
     // Correlation is ride-along metadata on the reception event — it must not
     // create a second same-name timeline entry (double-counting downstream).
-    events[0].correlationId = correlation.correlationId;
+    // It is untrusted host-adjacent text: sanitize before embedding.
+    events[0].correlationId = sanitizeDetail(correlation.correlationId, { limit: 128 });
   }
   let enteredAtMs = null;
   return {
     events,
-    mark(event, extra = {}) {
-      const nowMs = now();
+    mark(event, extra = {}, atMsOverride) {
+      const nowMs = typeof atMsOverride === 'number' ? atMsOverride : now();
       if (event === 'toolEntered' && enteredAtMs === null) enteredAtMs = nowMs;
       events.push({ event, at: new Date(nowMs).toISOString(), ...extra });
     },
@@ -1153,11 +1155,12 @@ function computeUnknownFields(kind) {
 }
 
 async function resolveReadiness({ request, mode, context, secret, fetchImpl, providedReadiness, now, ttlMs }) {
+  const withUnknown = (readiness) => ({ ...readiness, unknownFields: computeUnknownFields(request.kind) });
   if (providedReadiness) {
-    return collectReadiness({ mode: 'offline', snapshot: providedReadiness, now, ttlMs });
+    return withUnknown(await collectReadiness({ mode: 'offline', snapshot: providedReadiness, now, ttlMs }));
   }
   if (mode === 'offline') {
-    return collectReadiness({ mode: 'offline', snapshot: null, now, ttlMs });
+    return withUnknown(await collectReadiness({ mode: 'offline', snapshot: null, now, ttlMs }));
   }
   const authHeaders = hasText(secret)
     ? {
@@ -1167,7 +1170,7 @@ async function resolveReadiness({ request, mode, context, secret, fetchImpl, pro
         'x-a2a-requester-role': context.requester.role,
       }
     : {};
-  return collectReadiness({ mode: 'live', fetchImpl, brokerUrl: context.brokerUrl, authHeaders, now, ttlMs });
+  return withUnknown(await collectReadiness({ mode: 'live', fetchImpl, brokerUrl: context.brokerUrl, authHeaders, now, ttlMs }));
 }
 
 // ─── Public entry points ────────────────────────────────────────────────────
@@ -1297,17 +1300,31 @@ export async function prepareAssignment({
   let journalFile;
   if (journal) {
     try {
-      journal.recordInitial(request.requestId, {
-        specDigest: specDigestOf(request),
-        kind: request.kind,
-        laneIds: validation.lanes.map((lane) => lane.id),
-        brokerUrl: context.brokerUrl,
-        requesterId: context.requester.id,
-        selectedWorkerId: selection.selected.workerId,
+      await journal.withLock(request.requestId, async () => {
+        journal.recordInitial(request.requestId, {
+          specDigest: specDigestOf(request),
+          kind: request.kind,
+          laneIds: plannedLaneIds(request),
+          laneSummaries: laneSummariesOf(validation, request, context),
+          brokerUrl: context.brokerUrl,
+          requesterId: context.requester.id,
+          selectedWorkerId: selection.selected.workerId,
+        });
       });
       journalFile = `${request.requestId}.json`;
     } catch (error) {
       if (error instanceof JournalConflictError) {
+        if (error.corrupt) {
+          // Parity with submit: a torn record may mean tasks already exist.
+          return emit({
+            requestId: request.requestId,
+            state: STATE_ADMISSION_UNCONFIRMED,
+            reasonCodes: ['journal_record_corrupt'],
+            nextAction: 'verify_admission',
+            detail: sanitizeDetail(error.message),
+            timeline,
+          });
+        }
         return emit({
           requestId: request.requestId,
           state: STATE_FAILED,
@@ -1486,6 +1503,17 @@ export async function submitAssignment({
         throw error;
       }
 
+      // Idempotent re-submit: same id + same digest with tasks already
+      // admitted/existing never re-POSTs — the broker's 409 is a backstop,
+      // not the primary guard (r5 review risk).
+      if (Array.isArray(record.taskIds) && record.taskIds.length > 0
+        && (record.admissionState === STATE_ADMITTED || record.admissionState === STATE_EXISTING)) {
+        const prior = await resumeAssignment({
+          requestId: request.requestId, journal, context, fetchImpl, secret, now,
+        });
+        return { ...prior, reasonCodes: [...prior.reasonCodes, 'already_admitted_short_circuit'] };
+      }
+
       const readiness = mergeTrustedRecords(
         await resolveReadiness({ request, mode: 'live', context, secret, fetchImpl, now, ttlMs }),
         request.workerPolicy?.readinessRecords,
@@ -1548,8 +1576,16 @@ export async function submitAssignment({
       journal.update(request.requestId, { laneSummaries: laneSummariesOf(validation, request, context) });
 
       // ── Dispatch through the existing engine, with bounded recovery. ──
-      timeline.mark('firstSubmit');
-      if (!record.firstSubmitAt) journal.update(request.requestId, { firstSubmitAt: new Date(now()).toISOString() });
+      const preDispatchMs = now();
+      let firstSubmitMarked = false;
+      const markFirstSubmit = (outcomeResults) => {
+        if (firstSubmitMarked) return;
+        if (outcomeResults.some((r) => r.classification !== CLASS_PREFLIGHT_EXCLUDED)) {
+          timeline.mark('firstSubmit', {}, preDispatchMs);
+          if (!record.firstSubmitAt) journal.update(request.requestId, { firstSubmitAt: new Date(preDispatchMs).toISOString() });
+          firstSubmitMarked = true;
+        }
+      };
 
       const laneStates = [];
       const taskIds = [];
@@ -1558,6 +1594,7 @@ export async function submitAssignment({
 
       const dispatchOnce = async () => runDispatch(manifest, { fetchImpl, secret, dryRun: false, verify: false });
       let outcome = await dispatchOnce();
+      markFirstSubmit(outcome.results);
 
       const retryable = (result) => result?.classification === CLASS_FAILED
         && (result.errorCode === 'network_error' || result.errorCode === 'http_429' || result.errorCode === 'rate_limited');
@@ -1682,12 +1719,15 @@ export async function submitAssignment({
       const failedCount = laneStates.filter((l) => l.state === STATE_FAILED).length;
       const unconfirmedCount = laneStates.filter((l) => l.state === STATE_ADMISSION_UNCONFIRMED).length;
       const existingCount = laneStates.filter((l) => l.state === STATE_EXISTING).length;
+      const successCount = admittedCount + existingCount;
+      const partialReasons = successCount > 0 && failedCount + unconfirmedCount > 0 ? ['partial_failure'] : [];
       let state;
-      if (failedCount > 0) state = STATE_FAILED;
-      else if (admittedCount === lanes.length) state = STATE_ADMITTED;
-      else if (unconfirmedCount > 0) state = STATE_ADMISSION_UNCONFIRMED;
-      else if (admittedCount + existingCount === lanes.length) state = STATE_EXISTING;
-      else state = STATE_BLOCKED;
+      if (admittedCount === lanes.length) state = STATE_ADMITTED;
+      else if (existingCount > 0 && successCount === lanes.length) state = STATE_EXISTING;
+      else if (unconfirmedCount > 0 && successCount === 0) state = STATE_ADMISSION_UNCONFIRMED;
+      else if (successCount > 0) state = admittedCount >= existingCount ? STATE_ADMITTED : STATE_EXISTING;
+      else if (failedCount > 0) state = STATE_FAILED;
+      else state = taskIds.length > 0 ? STATE_ADMISSION_UNCONFIRMED : STATE_BLOCKED;
 
       // Observed execution start only — never fabricated.
       const startedLane = laneStates.find((l) => l.taskId && l.state !== STATE_FAILED);
@@ -1707,6 +1747,7 @@ export async function submitAssignment({
         state,
         reasonCodes: [
           ...normalized.reasonCodes,
+          ...partialReasons,
           ...(anyRetried ? ['submit_retried_within_budget'] : []),
         ],
         nextAction: state === STATE_ADMITTED ? 'poll_task_readback'
