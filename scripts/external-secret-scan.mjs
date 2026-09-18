@@ -26,6 +26,9 @@ const EXACT_SYNTHETIC_FIXTURE_FILES = new Set([
   'packages/docker-runner/src/runner-manifest.test.ts',
   'packages/docker-runner/dist/scanner.test.js',
   'packages/docker-runner/src/scanner.test.ts',
+  // #2187 task-assignment entrypoint suite: the in-process 127.0.0.1 mock
+  // broker needs a synthetic edge-secret constant (never a real credential).
+  'scripts/lib/task-assign-entrypoint.test.mjs',
 ]);
 
 function isAllowedGitleaksFinding(finding) {
