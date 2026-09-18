@@ -298,9 +298,10 @@ budget (`active + queued`) for every `workerMode`. The common
 `workerOfflineAfterMs` overrides the default; a supplied legacy
 `mobileOfflineAfterMs` takes precedence for declared mobile workers only.
 Resolution uses `??`, preserving explicit zero and longer windows. The
-`/dashboard`, `/workers/capacity`, and `mobileHealth` projections retain their
-mode-aware windows. Raw `GET /workers` and `GET /workers/:id` already use the
-common threshold and do not synthesize `mobileHealth`. See the
+`/dashboard` and `/workers/capacity` projections use the same common
+`workerOfflineAfterMs ?? 90 s` window as raw `GET /workers` and
+`GET /workers/:id`, and none of these surfaces synthesize the retired
+`mobileHealth` field any more. See the
 [peer-status reference](../packages/broker/docs/phase-8-peer-status-rfc.md#25-worker-modes-and-capacity-revised-by-2065).
 
 Conversation-recipient liveness (`GET /conversations/:id/delivery`) has always

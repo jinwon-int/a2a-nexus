@@ -715,7 +715,7 @@ test("explicit zero and longer mobile windows preserve nullish override preceden
   assert.equal((extended.query({ target: "worker-mobile" }, "caller") as PeerStatusResponse).health, "stale");
 });
 
-test("peer and raw worker views remain distinct from mobile dashboard and capacity health", (t) => {
+test("dashboard and capacity projections share the common window with peer and raw worker views (#2065)", (t) => {
   const broker = createModeBroker();
   setLastSeenAt(broker, "worker-mobile", new Date(BASE_MS).toISOString());
   t.mock.method(Date, "now", () => BASE_MS + 45_000);
@@ -724,10 +724,13 @@ test("peer and raw worker views remain distinct from mobile dashboard and capaci
   assert.equal(broker.getWorkerView("worker-mobile", 90_000)?.status, "online");
   const dashboard = broker.getDashboard().workers.byNode.find((row) => row.nodeId === "worker-mobile");
   const capacity = broker.getWorkerCapacitySummary().items.find((row) => row.nodeId === "worker-mobile");
-  assert.equal(dashboard?.status, "stale");
-  assert.equal(dashboard?.mobileHealth, "stale");
-  assert.equal(capacity?.status, "stale");
-  assert.equal(capacity?.mobileHealth, "stale");
+  // The retired mode-aware ladder classified this row stale at 45s (30s
+  // mobile window) and synthesized mobileHealth: "stale". Every read-only
+  // surface now agrees on the common 90s window and no mobileHealth field.
+  assert.equal(dashboard?.status, "online", "dashboard projection uses the common 90s window at 45s");
+  assert.equal(capacity?.status, "online", "capacity projection uses the common 90s window at 45s");
+  assert.ok(dashboard && !("mobileHealth" in dashboard), "dashboard rows no longer synthesize mobileHealth");
+  assert.ok(capacity && !("mobileHealth" in capacity), "capacity rows no longer synthesize mobileHealth");
 });
 
 test("invalid heartbeat timestamps still classify as stale on this peer view (preserved behavior)", (t) => {

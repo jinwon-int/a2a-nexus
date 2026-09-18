@@ -11,8 +11,6 @@
 import { ageSecFromIso, countBy, sortedCopy } from "./broker-helpers.js";
 import { taskStatusSinceAt } from "./broker-record-helpers.js";
 import {
-  computeWorkerMobileHealth,
-  effectiveOfflineAfterMs,
   isWorkerStale,
 } from "./broker-worker-status.js";
 import type {
@@ -164,8 +162,10 @@ export function buildBrokerDashboard(
     }
   }
   const byNode = allWorkers.map((w) => {
-    const effectiveOffline = effectiveOfflineAfterMs(w.workerMode, offlineAfterMs);
-    const isStale = isWorkerStale(w.lastSeenAt, effectiveOffline, nowMs);
+    // #2065: one common offline window for every mode — the same configured
+    // window raw GET /workers resolves; no mode-aware ladder, no synthesized
+    // mobileHealth field.
+    const isStale = isWorkerStale(w.lastSeenAt, offlineAfterMs, nowMs);
     const status: WorkerFleetSummary["byNode"][number]["status"] = isStale ? "stale" : "online";
     if (isStale) {
       staleCount++;
@@ -181,7 +181,6 @@ export function buildBrokerDashboard(
       lastSeenAt: w.lastSeenAt,
       lastSeenAgeSec: ageSecFromIso(w.lastSeenAt, nowMs),
       workerMode: w.workerMode,
-      mobileHealth: computeWorkerMobileHealth(w.workerMode, w.lastSeenAt, nowMs),
     };
   });
   const workers: WorkerFleetSummary = {
