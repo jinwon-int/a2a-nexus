@@ -1,0 +1,203 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/jinwon-int/a2a-nexus/docs/specs/jev-recommendation-calibration/schemas/corpus-record.schema.json",
+  "title": "Jev Recommendation Calibration corpus record contract v1",
+  "$comment": "Spec-first packet for #2185. Documentation-only synthetic corpus contract; grants no runtime authority. Leakage-preventing by construction: the judgment-time input surface is closed (additionalProperties: false at every level) and declares no outcome, verdict, realized-latency, realized-cost, acceptance, success, or review-outcome field, so any such field fails schema validation. The label object is an annotation produced by the labeling protocol (current policy plus independent review); it is never a judgment input. The canonical single-record shape is $defs/record; the top level is the corpus envelope used by fixtures/jev-recommendation-calibration/corpus-sample.json.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["kind", "schemaVersion", "records"],
+  "properties": {
+    "kind": { "const": "JevRecommendationCalibrationCorpusSample" },
+    "schemaVersion": { "const": 1 },
+    "records": {
+      "type": "array",
+      "minItems": 1,
+      "maxItems": 200,
+      "items": { "$ref": "#/$defs/record" }
+    }
+  },
+  "$defs": {
+    "record": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "kind",
+        "schemaVersion",
+        "recordId",
+        "taxonomyType",
+        "observationDate",
+        "chronologicalSplit",
+        "group",
+        "judgmentTimeInput",
+        "label"
+      ],
+      "properties": {
+        "kind": { "const": "JevRecommendationCalibrationRecord" },
+        "schemaVersion": { "const": 1 },
+        "recordId": { "type": "string", "pattern": "^jrc-[0-9]{4}$" },
+        "taxonomyType": {
+          "enum": [
+            "simple_fix",
+            "docs_work",
+            "ambiguous_cause_analysis",
+            "independent_parallel_work",
+            "combined_write_scope",
+            "insufficient_information",
+            "readiness_unmet"
+          ]
+        },
+        "observationDate": { "type": "string", "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}$" },
+        "chronologicalSplit": { "enum": ["train", "calibration", "holdout"] },
+        "group": { "$ref": "#/$defs/group" },
+        "judgmentTimeInput": { "$ref": "#/$defs/judgmentTimeInput" },
+        "label": { "$ref": "#/$defs/label" }
+      }
+    },
+    "group": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["groupId", "groupKind"],
+      "properties": {
+        "groupId": { "type": "string", "pattern": "^grp-[a-z][a-z0-9-]{2,29}$" },
+        "groupKind": {
+          "enum": ["unique", "identical_work", "retry", "derived_case"]
+        },
+        "derivedFromRecordId": { "type": "string", "pattern": "^jrc-[0-9]{4}$" }
+      }
+    },
+    "judgmentTimeInput": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "requestClass",
+        "diffSizeBand",
+        "fileScopeBand",
+        "writeSurface",
+        "ambiguitySignals",
+        "parallelizableSignal",
+        "readinessSignal"
+      ],
+      "properties": {
+        "requestClass": {
+          "enum": [
+            "bug_report",
+            "docs_gap",
+            "feature_request",
+            "ops_observability",
+            "refactor_request",
+            "unclear_request"
+          ]
+        },
+        "diffSizeBand": {
+          "enum": [
+            "unknown",
+            "tiny_under_20_lines",
+            "small_20_200_lines",
+            "medium_200_1000_lines",
+            "large_over_1000_lines"
+          ]
+        },
+        "fileScopeBand": {
+          "enum": [
+            "unknown",
+            "single_file",
+            "few_files_2_5",
+            "many_files_6_20",
+            "cross_package"
+          ]
+        },
+        "writeSurface": {
+          "enum": [
+            "docs_only",
+            "single_component",
+            "multi_component",
+            "repo_wide_config"
+          ]
+        },
+        "ambiguitySignals": {
+          "type": "array",
+          "minItems": 1,
+          "maxItems": 4,
+          "uniqueItems": true,
+          "items": {
+            "enum": [
+              "missing_repro",
+              "conflicting_reports",
+              "undefined_scope",
+              "unclear_acceptance",
+              "none_reported"
+            ]
+          }
+        },
+        "parallelizableSignal": { "type": "boolean" },
+        "readinessSignal": {
+          "enum": ["ready", "prereq_missing", "environment_unavailable", "unknown"]
+        }
+      }
+    },
+    "label": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "policyVersion",
+        "workType",
+        "processingMethod",
+        "probability",
+        "confidenceBand",
+        "labelStatus",
+        "alternativeAcceptable",
+        "existingRuleComparison",
+        "reviewerAliases"
+      ],
+      "properties": {
+        "policyVersion": { "type": "string", "pattern": "^policy-v[1-9][0-9]*$" },
+        "workType": {
+          "enum": [
+            "bug_fix",
+            "docs_update",
+            "cause_analysis",
+            "parallel_independent",
+            "combined_write",
+            "defer"
+          ]
+        },
+        "processingMethod": {
+          "enum": [
+            "single_worker_sequential",
+            "parallel_workers",
+            "team1_orchestration",
+            "dry_run_first",
+            "defer_to_operator"
+          ]
+        },
+        "probability": { "type": "number", "minimum": 0, "maximum": 1 },
+        "confidenceBand": { "enum": ["low", "medium", "high"] },
+        "labelStatus": {
+          "enum": [
+            "policy_computed_review_pending",
+            "independently_reviewed",
+            "disputed_multiple_reasonable"
+          ]
+        },
+        "alternativeAcceptable": { "type": "boolean" },
+        "existingRuleComparison": {
+          "enum": [
+            "no_existing_rule_output",
+            "existing_rule_agreed",
+            "existing_rule_disagreed"
+          ]
+        },
+        "reviewerAliases": {
+          "type": "array",
+          "minItems": 0,
+          "maxItems": 4,
+          "uniqueItems": true,
+          "items": {
+            "type": "string",
+            "pattern": "^reviewer-[a-z]{3,12}-[0-9]{2}$"
+          }
+        }
+      }
+    }
+  }
+}
