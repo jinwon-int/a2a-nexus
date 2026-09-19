@@ -1,0 +1,300 @@
+{
+  "kind": "JevRecommendationCalibrationCorpusSample",
+  "schemaVersion": 1,
+  "records": [
+    {
+      "kind": "JevRecommendationCalibrationRecord",
+      "schemaVersion": 1,
+      "recordId": "jrc-0001",
+      "taxonomyType": "simple_fix",
+      "observationDate": "2026-06-02",
+      "chronologicalSplit": "train",
+      "group": { "groupId": "grp-unique-0001", "groupKind": "unique" },
+      "judgmentTimeInput": {
+        "requestClass": "bug_report",
+        "diffSizeBand": "tiny_under_20_lines",
+        "fileScopeBand": "single_file",
+        "writeSurface": "single_component",
+        "ambiguitySignals": ["none_reported"],
+        "parallelizableSignal": false,
+        "readinessSignal": "ready"
+      },
+      "label": {
+        "policyVersion": "policy-v1",
+        "workType": "bug_fix",
+        "processingMethod": "single_worker_sequential",
+        "probability": 0.9,
+        "confidenceBand": "high",
+        "labelStatus": "independently_reviewed",
+        "alternativeAcceptable": false,
+        "existingRuleComparison": "existing_rule_agreed",
+        "reviewerAliases": ["reviewer-alpha-01"]
+      }
+    },
+    {
+      "kind": "JevRecommendationCalibrationRecord",
+      "schemaVersion": 1,
+      "recordId": "jrc-0002",
+      "taxonomyType": "docs_work",
+      "observationDate": "2026-06-05",
+      "chronologicalSplit": "train",
+      "group": { "groupId": "grp-unique-0002", "groupKind": "unique" },
+      "judgmentTimeInput": {
+        "requestClass": "docs_gap",
+        "diffSizeBand": "tiny_under_20_lines",
+        "fileScopeBand": "single_file",
+        "writeSurface": "docs_only",
+        "ambiguitySignals": ["none_reported"],
+        "parallelizableSignal": false,
+        "readinessSignal": "ready"
+      },
+      "label": {
+        "policyVersion": "policy-v1",
+        "workType": "docs_update",
+        "processingMethod": "single_worker_sequential",
+        "probability": 0.85,
+        "confidenceBand": "high",
+        "labelStatus": "independently_reviewed",
+        "alternativeAcceptable": false,
+        "existingRuleComparison": "existing_rule_agreed",
+        "reviewerAliases": ["reviewer-alpha-01", "reviewer-bravo-02"]
+      }
+    },
+    {
+      "kind": "JevRecommendationCalibrationRecord",
+      "schemaVersion": 1,
+      "recordId": "jrc-0003",
+      "taxonomyType": "ambiguous_cause_analysis",
+      "observationDate": "2026-06-12",
+      "chronologicalSplit": "train",
+      "group": { "groupId": "grp-unique-0003", "groupKind": "unique" },
+      "judgmentTimeInput": {
+        "requestClass": "bug_report",
+        "diffSizeBand": "unknown",
+        "fileScopeBand": "unknown",
+        "writeSurface": "single_component",
+        "ambiguitySignals": ["missing_repro", "undefined_scope"],
+        "parallelizableSignal": false,
+        "readinessSignal": "unknown"
+      },
+      "label": {
+        "policyVersion": "policy-v1",
+        "workType": "cause_analysis",
+        "processingMethod": "dry_run_first",
+        "probability": 0.55,
+        "confidenceBand": "low",
+        "labelStatus": "disputed_multiple_reasonable",
+        "alternativeAcceptable": true,
+        "existingRuleComparison": "existing_rule_disagreed",
+        "reviewerAliases": ["reviewer-charlie-03", "reviewer-delta-04"]
+      }
+    },
+    {
+      "kind": "JevRecommendationCalibrationRecord",
+      "schemaVersion": 1,
+      "recordId": "jrc-0004",
+      "taxonomyType": "independent_parallel_work",
+      "observationDate": "2026-06-18",
+      "chronologicalSplit": "train",
+      "group": { "groupId": "grp-unique-0004", "groupKind": "unique" },
+      "judgmentTimeInput": {
+        "requestClass": "feature_request",
+        "diffSizeBand": "small_20_200_lines",
+        "fileScopeBand": "few_files_2_5",
+        "writeSurface": "multi_component",
+        "ambiguitySignals": ["none_reported"],
+        "parallelizableSignal": true,
+        "readinessSignal": "ready"
+      },
+      "label": {
+        "policyVersion": "policy-v1",
+        "workType": "parallel_independent",
+        "processingMethod": "parallel_workers",
+        "probability": 0.8,
+        "confidenceBand": "medium",
+        "labelStatus": "independently_reviewed",
+        "alternativeAcceptable": false,
+        "existingRuleComparison": "existing_rule_agreed",
+        "reviewerAliases": ["reviewer-alpha-01"]
+      }
+    },
+    {
+      "kind": "JevRecommendationCalibrationRecord",
+      "schemaVersion": 1,
+      "recordId": "jrc-0005",
+      "taxonomyType": "combined_write_scope",
+      "observationDate": "2026-06-25",
+      "chronologicalSplit": "train",
+      "group": { "groupId": "grp-unique-0005", "groupKind": "unique" },
+      "judgmentTimeInput": {
+        "requestClass": "refactor_request",
+        "diffSizeBand": "medium_200_1000_lines",
+        "fileScopeBand": "cross_package",
+        "writeSurface": "multi_component",
+        "ambiguitySignals": ["undefined_scope"],
+        "parallelizableSignal": false,
+        "readinessSignal": "ready"
+      },
+      "label": {
+        "policyVersion": "policy-v1",
+        "workType": "combined_write",
+        "processingMethod": "team1_orchestration",
+        "probability": 0.75,
+        "confidenceBand": "medium",
+        "labelStatus": "independently_reviewed",
+        "alternativeAcceptable": true,
+        "existingRuleComparison": "existing_rule_agreed",
+        "reviewerAliases": ["reviewer-bravo-02"]
+      }
+    },
+    {
+      "kind": "JevRecommendationCalibrationRecord",
+      "schemaVersion": 1,
+      "recordId": "jrc-0006",
+      "taxonomyType": "insufficient_information",
+      "observationDate": "2026-06-26",
+      "chronologicalSplit": "train",
+      "group": { "groupId": "grp-retry-0006", "groupKind": "retry" },
+      "judgmentTimeInput": {
+        "requestClass": "unclear_request",
+        "diffSizeBand": "unknown",
+        "fileScopeBand": "unknown",
+        "writeSurface": "single_component",
+        "ambiguitySignals": ["undefined_scope", "unclear_acceptance"],
+        "parallelizableSignal": false,
+        "readinessSignal": "unknown"
+      },
+      "label": {
+        "policyVersion": "policy-v1",
+        "workType": "defer",
+        "processingMethod": "defer_to_operator",
+        "probability": 0.4,
+        "confidenceBand": "low",
+        "labelStatus": "independently_reviewed",
+        "alternativeAcceptable": false,
+        "existingRuleComparison": "existing_rule_agreed",
+        "reviewerAliases": ["reviewer-charlie-03"]
+      }
+    },
+    {
+      "kind": "JevRecommendationCalibrationRecord",
+      "schemaVersion": 1,
+      "recordId": "jrc-0007",
+      "taxonomyType": "insufficient_information",
+      "observationDate": "2026-06-27",
+      "chronologicalSplit": "train",
+      "group": { "groupId": "grp-retry-0006", "groupKind": "retry" },
+      "judgmentTimeInput": {
+        "requestClass": "unclear_request",
+        "diffSizeBand": "unknown",
+        "fileScopeBand": "unknown",
+        "writeSurface": "single_component",
+        "ambiguitySignals": ["conflicting_reports"],
+        "parallelizableSignal": false,
+        "readinessSignal": "unknown"
+      },
+      "label": {
+        "policyVersion": "policy-v1",
+        "workType": "defer",
+        "processingMethod": "defer_to_operator",
+        "probability": 0.45,
+        "confidenceBand": "low",
+        "labelStatus": "policy_computed_review_pending",
+        "alternativeAcceptable": false,
+        "existingRuleComparison": "existing_rule_agreed",
+        "reviewerAliases": []
+      }
+    },
+    {
+      "kind": "JevRecommendationCalibrationRecord",
+      "schemaVersion": 1,
+      "recordId": "jrc-0008",
+      "taxonomyType": "readiness_unmet",
+      "observationDate": "2026-07-08",
+      "chronologicalSplit": "calibration",
+      "group": { "groupId": "grp-identical-0008", "groupKind": "identical_work" },
+      "judgmentTimeInput": {
+        "requestClass": "ops_observability",
+        "diffSizeBand": "small_20_200_lines",
+        "fileScopeBand": "few_files_2_5",
+        "writeSurface": "single_component",
+        "ambiguitySignals": ["none_reported"],
+        "parallelizableSignal": true,
+        "readinessSignal": "prereq_missing"
+      },
+      "label": {
+        "policyVersion": "policy-v1",
+        "workType": "defer",
+        "processingMethod": "defer_to_operator",
+        "probability": 0.7,
+        "confidenceBand": "medium",
+        "labelStatus": "independently_reviewed",
+        "alternativeAcceptable": false,
+        "existingRuleComparison": "no_existing_rule_output",
+        "reviewerAliases": ["reviewer-delta-04"]
+      }
+    },
+    {
+      "kind": "JevRecommendationCalibrationRecord",
+      "schemaVersion": 1,
+      "recordId": "jrc-0009",
+      "taxonomyType": "readiness_unmet",
+      "observationDate": "2026-07-10",
+      "chronologicalSplit": "calibration",
+      "group": { "groupId": "grp-identical-0008", "groupKind": "identical_work" },
+      "judgmentTimeInput": {
+        "requestClass": "ops_observability",
+        "diffSizeBand": "small_20_200_lines",
+        "fileScopeBand": "few_files_2_5",
+        "writeSurface": "single_component",
+        "ambiguitySignals": ["none_reported"],
+        "parallelizableSignal": true,
+        "readinessSignal": "prereq_missing"
+      },
+      "label": {
+        "policyVersion": "policy-v1",
+        "workType": "defer",
+        "processingMethod": "defer_to_operator",
+        "probability": 0.7,
+        "confidenceBand": "medium",
+        "labelStatus": "independently_reviewed",
+        "alternativeAcceptable": false,
+        "existingRuleComparison": "no_existing_rule_output",
+        "reviewerAliases": ["reviewer-delta-04"]
+      }
+    },
+    {
+      "kind": "JevRecommendationCalibrationRecord",
+      "schemaVersion": 1,
+      "recordId": "jrc-0010",
+      "taxonomyType": "simple_fix",
+      "observationDate": "2026-08-03",
+      "chronologicalSplit": "holdout",
+      "group": {
+        "groupId": "grp-derived-0010",
+        "groupKind": "derived_case",
+        "derivedFromRecordId": "jrc-0001"
+      },
+      "judgmentTimeInput": {
+        "requestClass": "bug_report",
+        "diffSizeBand": "small_20_200_lines",
+        "fileScopeBand": "few_files_2_5",
+        "writeSurface": "single_component",
+        "ambiguitySignals": ["none_reported"],
+        "parallelizableSignal": false,
+        "readinessSignal": "ready"
+      },
+      "label": {
+        "policyVersion": "policy-v1",
+        "workType": "bug_fix",
+        "processingMethod": "single_worker_sequential",
+        "probability": 0.8,
+        "confidenceBand": "medium",
+        "labelStatus": "policy_computed_review_pending",
+        "alternativeAcceptable": false,
+        "existingRuleComparison": "no_existing_rule_output",
+        "reviewerAliases": []
+      }
+    }
+  ]
+}
