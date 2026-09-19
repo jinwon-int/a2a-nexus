@@ -99,6 +99,7 @@ RUN cd packages/broker && node scripts/generate-build-info.mjs --runtime docker 
       --image-tag-prefix "$A2A_BROKER_IMAGE_TAG_PREFIX"
 COPY packages/broker/scripts/a2a-task-handler.mjs ./packages/broker/scripts/a2a-task-handler.mjs
 COPY packages/broker/scripts/worker-model-policy.mjs ./packages/broker/scripts/worker-model-policy.mjs
+COPY packages/broker/scripts/finalizer-tool-policy.mjs ./packages/broker/scripts/finalizer-tool-policy.mjs
 COPY packages/broker/scripts/hermes-a2a-analysis-bridge.mjs ./packages/broker/scripts/hermes-a2a-analysis-bridge.mjs
 RUN mkdir -p /var/lib/a2a-broker ./handlers ./handlers/lib \
   && cp packages/broker/scripts/a2a-task-handler.mjs ./handlers/a2a-task-handler.mjs \
@@ -106,6 +107,10 @@ RUN mkdir -p /var/lib/a2a-broker ./handlers ./handlers/lib \
   && cp packages/broker/scripts/lib/source-carriers.mjs ./handlers/lib/source-carriers.mjs \
   && cp packages/broker/scripts/lib/retrieval-snapshot-carriers.mjs ./handlers/lib/retrieval-snapshot-carriers.mjs \
   && cp packages/broker/scripts/lib/live-operation-adapter.mjs ./handlers/lib/live-operation-adapter.mjs \
+  && cp packages/broker/scripts/lib/analysis-execution-telemetry.mjs ./handlers/lib/analysis-execution-telemetry.mjs \
+  && cp packages/broker/scripts/finalizer-tool-policy.mjs ./handlers/finalizer-tool-policy.mjs \
+  && cp packages/broker/scripts/lib/utf8-byte-budget.mjs ./handlers/lib/utf8-byte-budget.mjs \
+  && cp packages/broker/scripts/lib/jev-classifier.mjs ./handlers/lib/jev-classifier.mjs \
   && cp packages/broker/scripts/hermes-a2a-analysis-bridge.mjs ./handlers/hermes-a2a-analysis-bridge.mjs \
   && chown -R node:node /app /var/lib/a2a-broker
 USER node
