@@ -382,7 +382,9 @@ Label status rules:
 5. Cross-group leak rejection: two records in DIFFERENT groups whose
    `requestText` is identical after normalization — NFKC, trim, collapse
    whitespace runs to one space, lower-case — are rejected, regardless of
-   split or exposure. This prevents translation/candidate grouping leaks.
+   split or exposure. This detects normalized exact copies across groups. It does not detect
+   arbitrary translations or paraphrases; semantic grouping still requires
+   independent review.
 
 ### Exposure, split and label-status gates
 

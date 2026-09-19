@@ -1025,3 +1025,61 @@ describe('validateCorpusRecord (single-record surface used by the projection)', 
     }
   });
 });
+
+// Append only surviving regression cases to final worker test file; imports are aliases to avoid collisions.
+import { test as corpusFinalizerTest } from 'node:test';
+import corpusFinalizerAssert from 'node:assert/strict';
+import {
+  validateRoutingCorpus as corpusFinalizerValidate,
+  routingCorpusDigest as corpusFinalizerDigest,
+  projectCorpusJudgmentInput as corpusFinalizerProject,
+} from './a2a-routing-corpus.mjs';
+const corpusFinalizerRecord = () => ({
+  caseId: 'finalizer-case', groupId: 'finalizer-group', variantId: 'en',
+  split: 'development', exposure: 'public_development', language: 'en', coverageTags: ['new_analysis'],
+  input: {
+    schemaVersion: 'a2a.routing-input.v1', catalogVersion: 'a2a.routing-templates.v1',
+    requestText: 'Ask an A2A worker to investigate the parser failure without code changes.',
+    candidateTemplateIds: ['new_analysis'],
+    hostContext: { interaction: 'user_request', operation: 'new_task', access: 'read_only' },
+  },
+  label: { status: 'draft', authorAlias: 'synthetic-author', reviewerAliases: [],
+    acceptableOutcomes: [{ decision: 'recommend', templateId: 'new_analysis', reasonCode: 'matched' }] },
+});
+const corpusFinalizerEnvelope = record => ({ schemaVersion: 'a2a.routing-corpus.v1', corpusVersion: 'finalizer-v1', catalogVersion: 'a2a.routing-templates.v1', records: [record] });
+corpusFinalizerTest('finalizer: label shape errors cannot be dropped or normalized away', () => {
+  for (const mutate of [
+    label => { label.synthetic_unknown_field = 'synthetic marker'; },
+    label => { delete label.status; },
+    label => { delete label.authorAlias; },
+    label => { delete label.reviewerAliases; },
+    label => { delete label.acceptableOutcomes; },
+  ]) {
+    const r = corpusFinalizerRecord(); mutate(r.label);
+    for (const fn of [corpusFinalizerValidate, corpusFinalizerDigest]) {
+      let out;
+      corpusFinalizerAssert.doesNotThrow(() => { out = fn(corpusFinalizerEnvelope(r)); });
+      corpusFinalizerAssert.equal(out.ok, false);
+      corpusFinalizerAssert.equal('digest' in out, false);
+    }
+    let projection;
+    corpusFinalizerAssert.doesNotThrow(() => { projection = corpusFinalizerProject(r); });
+    corpusFinalizerAssert.equal(projection.ok, false);
+    corpusFinalizerAssert.equal('value' in projection, false);
+  }
+});
+corpusFinalizerTest('finalizer: standalone judgment projection preserves split and exposure gates', () => {
+  for (const split of ['calibration', 'holdout']) {
+    const publicRecord = corpusFinalizerRecord();
+    publicRecord.split = split;
+    publicRecord.label.status = 'reviewed'; publicRecord.label.reviewerAliases = ['independent-reviewer'];
+    corpusFinalizerAssert.equal(corpusFinalizerValidate(corpusFinalizerEnvelope(publicRecord)).ok, false);
+    corpusFinalizerAssert.equal(corpusFinalizerProject(publicRecord).ok, false);
+    const privateDraft = corpusFinalizerRecord();
+    privateDraft.split = split; privateDraft.exposure = 'private_unexposed';
+    corpusFinalizerAssert.equal(corpusFinalizerValidate(corpusFinalizerEnvelope(privateDraft)).ok, false);
+    corpusFinalizerAssert.equal(corpusFinalizerProject(privateDraft).ok, false);
+    privateDraft.label.status = 'reviewed'; privateDraft.label.reviewerAliases = ['independent-reviewer'];
+    corpusFinalizerAssert.deepEqual(corpusFinalizerProject(privateDraft), { ok: true, value: privateDraft.input });
+  }
+});

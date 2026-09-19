@@ -10,7 +10,7 @@
 ## Baseline
 
 - Source baseline: `main@d622d7db4e1be032d6310c0a93f51de4d8655599` (issue #2196
-  names this revision; it is current main in this checkout).
+  records this historical foundation baseline).
 - Absence proof on base (RED for this contract lane), reproducible:
   - `git cat-file -e d622d7db:scripts/lib/a2a-routing-advice.mjs` → path absent;
   - `git grep -l 'a2a.routing-input.v1' d622d7db` → no match;

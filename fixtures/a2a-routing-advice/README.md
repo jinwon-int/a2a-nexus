@@ -43,8 +43,9 @@ Ground truth about this data — do not misrepresent it:
   file is NOT a blind holdout, NOT calibration data, and NOT a benchmark.
   External independent review and sealing are required before any private
   split of this corpus family could support evaluation claims.
-- **No model was run.** The corpus carries labels, not model outputs, and no
-  accuracy, quality, or speed claim is made or testable with this file.
+- **No routing-model benchmark was run.** An A2A implementation worker
+  generated these synthetic examples. Their labels are annotations, not
+  measured classifier outputs; this file establishes no accuracy or speed result.
 
 The `exposure` field is a caller assertion, not blinding proof: the corpus
 format cannot attest that a `private_unexposed` record was truly unseen.
