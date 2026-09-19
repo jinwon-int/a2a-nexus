@@ -19,6 +19,7 @@ import { payloadWithRetrievalSnapshotSourceCarriers } from "./lib/retrieval-snap
 import { normalizeAnalysisExecutionTelemetry } from "./lib/analysis-execution-telemetry.mjs";
 import { evaluateDeclaredWriteSetGate } from "../dist/core/runtime-safety-gates.js";
 import { runLiveOperationTask } from "./lib/live-operation-adapter.mjs";
+import { classifyTaskWithJev, resolveJevConfig } from "./lib/jev-classifier.mjs";
 
 const HANDLER_VERSION = "0.2.18";
 const SOURCE_PATH = fileURLToPath(import.meta.url);
@@ -2932,11 +2933,34 @@ async function readStdin() {
   return Buffer.concat(chunks).toString("utf8");
 }
 
+// JEV probe-vs-real-work observation (spec: docs/specs/jev-probe-gating/spec.md).
+// Classification-only hook at the async stdin CLI entry: an enabled+valid jev
+// config gets exactly one bounded attempt for generic_ack outcomes, and the
+// verdict is observed in-process only — it never alters the outcome, stdout,
+// or routing. Gate-off stays byte-identical; an enabled-but-invalid config
+// emits one deterministic, value-free stderr warning then behaves as gate-off.
+export async function observeJevForOutcome(task, outcome, { env = process.env, transport } = {}) {
+  const config = resolveJevConfig(env);
+  for (const warning of config.warnings) {
+    process.stderr.write(`${warning}\n`);
+  }
+  if (!config.enabled) {
+    return { attempted: false, reason: config.reason || "gate-off" };
+  }
+  const evidenceClass = outcome?.result?.output?.evidenceClass;
+  if (evidenceClass !== "generic_ack") {
+    return { attempted: false, reason: "not-generic-ack" };
+  }
+  const verdict = await classifyTaskWithJev(task, config, { transport });
+  return { attempted: true, verdict };
+}
+
 if (process.argv[1] === SOURCE_PATH) {
   try {
     const input = await readStdin();
     const task = JSON.parse(input || "null");
     const outcome = handleTask(task);
+    await observeJevForOutcome(task, outcome);
     process.stdout.write(`${JSON.stringify(outcome)}\n`);
     if (outcome.error) process.exitCode = 1;
   } catch (error) {

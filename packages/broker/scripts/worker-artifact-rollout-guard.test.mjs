@@ -55,6 +55,12 @@ const utf8ByteBudgetSource = `
 export function withinUtf8ByteBudget(payloadBytes, budgetBytes) { return payloadBytes <= budgetBytes; }
 `;
 
+const jevClassifierSource = `
+export function resolveJevConfig() { return { enabled: false }; }
+export function classifyTaskWithJev() { return null; }
+export function parseJevTimeoutMs() { return 1500; }
+`;
+
 function makeWorkerRoot({ bridgeHandlersContent = 'bridge-ok\n', handlersExecutable = true } = {}) {
   const root = mkdtempSync(join(tmpdir(), 'worker-artifact-'));
   const scripts = join(root, 'scripts');
@@ -81,6 +87,8 @@ function makeWorkerRoot({ bridgeHandlersContent = 'bridge-ok\n', handlersExecuta
     compatFinalizerToolPolicy: join(handlers, 'finalizer-tool-policy.mjs'),
     sourceUtf8ByteBudget: join(scripts, 'lib', 'utf8-byte-budget.mjs'),
     compatUtf8ByteBudget: join(handlers, 'lib', 'utf8-byte-budget.mjs'),
+    sourceJevClassifier: join(scripts, 'lib', 'jev-classifier.mjs'),
+    compatJevClassifier: join(handlers, 'lib', 'jev-classifier.mjs'),
     sourceBridge: join(scripts, 'hermes-a2a-analysis-bridge.mjs'),
     compatBridge: join(handlers, 'hermes-a2a-analysis-bridge.mjs'),
     sourceOnlyBridge: join(scripts, 'source-only-local-analysis-bridge.mjs'),
@@ -102,6 +110,8 @@ function makeWorkerRoot({ bridgeHandlersContent = 'bridge-ok\n', handlersExecuta
   writeFileSync(files.compatFinalizerToolPolicy, finalizerToolPolicySource);
   writeFileSync(files.sourceUtf8ByteBudget, utf8ByteBudgetSource);
   writeFileSync(files.compatUtf8ByteBudget, utf8ByteBudgetSource);
+  writeFileSync(files.sourceJevClassifier, jevClassifierSource);
+  writeFileSync(files.compatJevClassifier, jevClassifierSource);
   writeFileSync(files.sourceBridge, 'bridge-ok\n');
   writeFileSync(files.compatBridge, bridgeHandlersContent);
   writeFileSync(files.sourceOnlyBridge, 'source-only-bridge-ok\n');
@@ -220,6 +230,17 @@ test('deployed guard fails closed when utf8 byte budget support module is missin
   const output = JSON.parse(result.stdout);
   assert.equal(output.ok, false);
   assert.match(JSON.stringify(output.results), /lib\/utf8-byte-budget\.mjs/);
+  assert.equal(output.results.some((r) => r.guard === 'handler-support-compat-path' && r.ok === false), true);
+});
+
+test('deployed guard fails closed when jev classifier support module is missing from handlers compat path', () => {
+  const { root, files } = makeWorkerRoot();
+  rmSync(files.compatJevClassifier);
+  const result = runGuard(root);
+  assert.notEqual(result.status, 0);
+  const output = JSON.parse(result.stdout);
+  assert.equal(output.ok, false);
+  assert.match(JSON.stringify(output.results), /lib\/jev-classifier\.mjs/);
   assert.equal(output.results.some((r) => r.guard === 'handler-support-compat-path' && r.ok === false), true);
 });
 

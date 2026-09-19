@@ -5,7 +5,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
 
-import { __test, handleTask, validateWorkerModelEnvCandidatesForPatchProfile } from "./a2a-task-handler.mjs";
+import { __test, handleTask, observeJevForOutcome, validateWorkerModelEnvCandidatesForPatchProfile } from "./a2a-task-handler.mjs";
 import {
   ADVISORY_SIDECAR_ROUTING_POLICY,
   ALLOWED_WORKER_MODELS,
@@ -3373,4 +3373,97 @@ test("runner timeout override order remains env then payload then bounded defaul
   const input = task({ intent: "propose_patch", payload: { mode: "github-propose-patch", repo: "owner/repo", timeoutMs: 180000 } });
   assert.equal(__test.buildRunnerTask(input, {}).timeoutMs, 180000);
   assert.equal(__test.buildRunnerTask(input, { A2A_DOCKER_RUNNER_TASK_TIMEOUT_MS: "240000" }).timeoutMs, 240000);
+});
+
+// --- JEV probe-gating observation (#2185, docs/specs/jev-probe-gating) ---
+// The CLI hook is classification-only: gate-off stdout stays byte-identical to
+// history, and an enabled-but-invalid config may only add one deterministic,
+// value-free stderr warning. The masked golden strips the tree/timestamp
+// dependent result.handler.sourceSha256 and result.output.smoke.completedAt;
+// every other byte of the task-853 noop outcome is deterministic. These CLI
+// tests only ever run gate-off or invalid-config envs: the default transport is
+// a real fetch, so a valid trio is exercised exclusively through the direct
+// observeJevForOutcome unit test with a stub transport.
+
+const JEV_GOLDEN_TASK_JSON = "{\"id\":\"task-853\",\"intent\":\"noop\",\"assignedWorkerId\":\"workerdelta\",\"message\":\"source-only test\",\"payload\":{\"mode\":\"docker-broker-noop-smoke\",\"noOp\":true,\"runId\":\"run-853\",\"worker\":\"workerdelta\",\"sourceOnly\":true}}";
+const JEV_GOLDEN_MASKED_STDOUT = "{\"result\":{\"summary\":\"docker broker noop smoke completed task-853\",\"handler\":{\"name\":\"a2a-task-handler\",\"version\":\"0.2.18\",\"source\":\"repo:scripts/a2a-task-handler.mjs\",\"contract\":\"stdin A2A task JSON -> stdout WorkerHandlerOutcome JSON\",\"credentialFree\":true,\"hostNeutral\":true},\"lifecycle\":{\"intent\":\"noop\",\"mode\":\"docker-broker-noop-smoke\",\"taskId\":\"task-853\",\"proposalId\":\"\",\"exchangeId\":\"\"},\"output\":{\"message\":\"source-only test\",\"smoke\":{\"ok\":true,\"noOp\":true,\"runId\":\"run-853\",\"worker\":\"workerdelta\"},\"payloadKeys\":[\"mode\",\"noOp\",\"runId\",\"sourceOnly\",\"worker\"],\"effectiveModel\":\"openai-codex/gpt-5.6-sol\",\"effectiveThinking\":\"high\"}}}";
+const JEV_INVALID_CONFIG_WARNING = "jev: classification disabled (invalid-config)\n";
+
+function jevMaskedStdout(run) {
+  const parsed = JSON.parse(run.stdout);
+  delete parsed.result.handler.sourceSha256;
+  delete parsed.result.output.smoke.completedAt;
+  return JSON.stringify(parsed);
+}
+
+// Minimal deterministic child env for the CLI hook tests: only PATH crosses
+// the boundary, so the jev gate is controlled exclusively by the explicit
+// A2A_JEV_* overrides (absent vars always mean gate-off).
+function jevSpawnEnv(overrides = {}) {
+  return { PATH: process.env.PATH, ...overrides };
+}
+
+test("jev CLI hook: gate-off stdout stays byte-identical to the masked golden (#2185)", async () => {
+  const { spawnSync } = await import("node:child_process");
+  const { fileURLToPath } = await import("node:url");
+  const scriptPath = fileURLToPath(new URL("./a2a-task-handler.mjs", import.meta.url));
+  const result = spawnSync(process.execPath, [scriptPath], {
+    input: JEV_GOLDEN_TASK_JSON,
+    encoding: "utf8",
+    timeout: 120_000,
+    env: jevSpawnEnv({ A2A_JEV_CLASSIFY: "", A2A_JEV_ENDPOINT: "", A2A_JEV_KEYFILE: "" }),
+  });
+  assert.equal(result.status, 0, `gate-off run exited nonzero: ${result.stderr?.slice(0, 400)}`);
+  assert.equal(result.stderr, "", "gate-off stderr must stay empty");
+  assert.equal(jevMaskedStdout(result), JEV_GOLDEN_MASKED_STDOUT, "masked gate-off stdout diverged from the golden");
+});
+
+test("jev CLI hook: enabled-invalid config warns exactly once with gate-off-identical stdout (#2185)", async () => {
+  const { spawnSync } = await import("node:child_process");
+  const { fileURLToPath } = await import("node:url");
+  const scriptPath = fileURLToPath(new URL("./a2a-task-handler.mjs", import.meta.url));
+  const base = { input: JEV_GOLDEN_TASK_JSON, encoding: "utf8", timeout: 120_000 };
+  // Enabled but deliberately invalid (missing keyfile): config resolution must
+  // fail before any transport exists, so no real fetch can ever be attempted.
+  const invalid = spawnSync(process.execPath, [scriptPath], {
+    ...base,
+    env: jevSpawnEnv({
+      A2A_JEV_CLASSIFY: "1",
+      A2A_JEV_ENDPOINT: "https://jev.example.invalid/api/classify",
+      A2A_JEV_KEYFILE: "/nonexistent/jev-classifier-test-missing.key",
+    }),
+  });
+  const off = spawnSync(process.execPath, [scriptPath], {
+    ...base,
+    env: jevSpawnEnv({ A2A_JEV_CLASSIFY: "", A2A_JEV_ENDPOINT: "", A2A_JEV_KEYFILE: "" }),
+  });
+  assert.equal(invalid.status, 0, `invalid-config run exited nonzero: ${invalid.stderr?.slice(0, 400)}`);
+  assert.equal(off.status, 0, `same-run gate-off run exited nonzero: ${off.stderr?.slice(0, 400)}`);
+  assert.equal(invalid.stderr, JEV_INVALID_CONFIG_WARNING, "exactly one value-free warning line expected");
+  assert.equal(jevMaskedStdout(invalid), jevMaskedStdout(off), "invalid-config stdout must equal same-run gate-off stdout");
+});
+
+test("observeJevForOutcome performs exactly one bounded classification for generic_ack (#2185)", async (t) => {
+  const dir = mkdtempSync(join(tmpdir(), "jev-observe-hook-test-"));
+  t.after(() => rmSync(dir, { recursive: true, force: true }));
+  const keyfilePath = join(dir, "jev.key");
+  writeFileSync(keyfilePath, "synthetic-jev-key-material");
+  chmodSync(keyfilePath, 0o600);
+  const calls = [];
+  const transport = async (request) => {
+    calls.push(request);
+    return { status: 200, text: JSON.stringify({ is_real_work: true }) };
+  };
+  const env = {
+    A2A_JEV_CLASSIFY: "1",
+    A2A_JEV_ENDPOINT: "https://jev.example.invalid/api/classify",
+    A2A_JEV_KEYFILE: keyfilePath,
+  };
+  const outcome = { result: { output: { evidenceClass: "generic_ack" } } };
+  const observation = await observeJevForOutcome(JSON.parse(JEV_GOLDEN_TASK_JSON), outcome, { env, transport });
+  assert.equal(observation.attempted, true);
+  assert.deepEqual(observation.verdict, { ok: true, isRealWork: true, attempts: 1 });
+  assert.equal(calls.length, 1, "exactly one jev classification attempt, no retry");
+  assert.equal(calls[0].endpoint, "https://jev.example.invalid/api/classify");
+  assert.equal(calls[0].key, "synthetic-jev-key-material", "key must come from the owner-only keyfile at call time");
 });
