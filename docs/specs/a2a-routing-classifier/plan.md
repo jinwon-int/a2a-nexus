@@ -286,3 +286,169 @@ echo request text, unknown field names or identifier values.
   absence and mutation isolation.
 - **Gate weakening**: manifest change is purely additive; full gate run in
   Phase 5.
+
+## Slice 3 — deterministic offline routing-rules baseline (#2196)
+
+> Written before its code (spec-first). Scope: one conservative OFFLINE
+> deterministic natural-language routing-rules baseline on `main@62b83af`
+> (corpus slice merged via #2198). This slice is NOT the model, NOT the
+> private calibration/holdout seal, NOT the common embedding/cache engine
+> (fleet-skill-router #4 — nothing duplicated), NOT a producer execution
+> envelope, NOT prepare/dispatcher/runtime integration, NOT a live pilot. The
+> #2185/#2195 calibration spec is a different taxonomy/evaluation protocol and
+> is not implemented; #2185 stays closed; #2196 remains partially OPEN (PR
+> refs #2196, never closes it).
+
+### Baseline
+
+- Source baseline: `main@62b83af` (corpus slice merged via #2198).
+- Absence proof on base (RED for this rules lane), reproducible:
+  - `git cat-file -e 62b83af:scripts/lib/a2a-routing-rules.mjs` → path absent;
+  - `git grep -l 'a2a.routing-rules.v1' 62b83af` → no match.
+
+### Scope discipline
+
+Exactly six paths change in this slice. The frozen foundation
+`scripts/lib/a2a-routing-advice.mjs`, the frozen corpus module, all existing
+fixtures and all existing tests are REUSED, never modified. No CHANGELOG, no
+root bootstrap, no dependency/package/new CLI, no other files. No private
+fleet-skill-router or its 8-ID schema/holdout data is touched.
+
+| Path | Change |
+|---|---|
+| `docs/specs/a2a-routing-classifier/spec.md` | edit — rules-baseline slice section (written first) |
+| `docs/specs/a2a-routing-classifier/plan.md` | edit — this slice plan |
+| `scripts/lib/a2a-routing-rules.mjs` | new — pure synchronous deterministic rules classifier |
+| `scripts/lib/a2a-routing-rules.test.mjs` | new — positives/negations/quotes/context-matrix/corpus-replay/malformed-input suite |
+| `docs/agent-manual.md` | edit — optional OFFLINE rules-baseline entry only |
+| `scripts/release-gate-manifest.json` | edit — register the new test as `gate` (purely additive) |
+
+### Phase 1 — spec & plan (done first, in this PR)
+
+The rules slice section of `spec.md` fixes, before any code: the exported
+surface (`ROUTING_RULES_MODEL_VERSION = 'a2a.routing-rules.v1'`,
+`classifyRoutingWithRules`), the exact `{ok,value}`/`{ok,errors}` result
+contract, early candidate-width rejection, bounded deterministic
+preprocessing, quotation masking, the 16-step first-match rule ordering with
+its reason codes, negation scoping contrasts, the conservative defer taxonomy,
+the no-echo error surface, the plain-JSON boundary, and the acknowledged
+pending boundaries (private seal, common engine, producer envelope, prepare
+wiring, live pilot; no accuracy/speed/adoption claim; the development replay
+is not holdout/model-quality/latency evidence).
+
+### Phase 2 — library
+
+`scripts/lib/a2a-routing-rules.mjs`: synchronous, imports only the frozen
+foundation; reuses `validateRoutingInput`, `ROUTING_ADVICE_SCHEMA_VERSION`,
+`ROUTING_POLICY_VERSION`, `validateRoutingAdviceOutput`,
+`isRecommendationEligible`; builds the final advice with
+`modelVersion = ROUTING_RULES_MODEL_VERSION`, validates it, and returns the
+frozen value. No fs/network/process/clock, no module state, no
+model/provider/worker/prepare/dispatcher invocation, no corpus import/read/
+hardcoded table. Errors are stable codes with generic messages; the engine is
+wrapped fail-closed (`rules_output_rejected` guard, never an invalid
+`ok:true`).
+
+### Phase 3 — tests
+
+`scripts/lib/a2a-routing-rules.test.mjs` (node:test, offline):
+
+- ≥ 14 distinct anchored positives covering ALL seven templates in ko AND en,
+  fresh varied wording (not copied from the corpus);
+- negation-scope contrasts (do-not-delegate vs read-only-with-no-modify;
+  docs-only exclusions in both directions);
+- quoted-command-only texts (never a positive action), surrounding read
+  instructions around hostile quotes, malformed quotes → uncertain, quoted
+  authorization demands cannot override trusted context;
+- lexical substring false matches (`dispatch`, `패치노트`);
+- vague and compound requests → ambiguous; bare `continue` → ambiguous;
+- full trusted-context matrix per template (interaction × operation × access)
+  with eligibility verified against `isRecommendationEligible` and
+  `projectRoutingAdvice` (recommend ⇒ `template_descriptor`, never `blocked`);
+- candidate subset AND ordering sensitivity; removed/empty candidates;
+- spoofed approval/write claims in text cannot change host flags;
+- existing-task observe vs resume vs execution-retry contrasts;
+- malformed root/nested types, deep values, wide (8+ and 5000-item) candidate
+  lists, wrong versions, unknown fields → `ok:false`, no throws, no text echo;
+- determinism, input/result mutation isolation, frozen outputs;
+- module purity (imports only the frozen foundation; no forbidden tokens; no
+  fixture/corpus reference in the production source);
+- whole-corpus replay: all 173 public development records via
+  `validateRoutingCorpus` + `projectCorpusJudgmentInput` → `classifyRoutingWithRules`,
+  asserting the frozen output + candidate/context contracts for EVERY result
+  and reporting honest recommend/defer/not_a2a counts (no 100%-agreement
+  assertion, no label mapping, no fixture loading in production code).
+
+### Phase 4 — gate registration & manual
+
+1. `scripts/release-gate-manifest.json`: append the new test as
+   `class: "gate"` (no round id in filename). No entry removed or weakened.
+2. `docs/agent-manual.md`: optional OFFLINE rules-baseline subsection exposing
+   only the functions that actually exist, with the advisory-only boundary,
+   the conservative-defer semantics, and the pending-boundary acknowledgments.
+
+### Phase 5 — verification
+
+1. `node --test scripts/lib/a2a-routing-rules.test.mjs
+   scripts/lib/a2a-routing-advice.test.mjs
+   scripts/lib/a2a-routing-corpus.test.mjs
+   scripts/lib/task-assign-entrypoint.test.mjs` — record exact pass counts.
+2. `npm run check` (full release gate incl. manifest coverage sweep).
+3. `npm run scan:public-readiness`.
+4. Confirm no OpenClaw runtime/bootstrap context files (`AGENTS.md`,
+   `SOUL.md`, `USER.md`, `TOOLS.md`, `HEARTBEAT.md`, `IDENTITY.md`,
+   `.openclaw/**`) enter the changed-path set.
+
+### Later phases (NOT this slice — explicitly tracked, not claimed)
+
+1. Private grouped examples, independently reviewed and sealed for
+   calibration/holdout (Phase A seal).
+2. Common embedding/cache engine integration (fleet-skill-router #4) — the
+   rules baseline neither uses nor replaces it.
+3. Producer adapter with the execution/timeout result envelope; runtime
+   integration; offline prepare wiring; live pilot — each its own spec,
+   approval and gate. No deployment/activation/restart, no paid model calls,
+   no new server is authorized by this slice.
+
+### Risks & mitigations
+
+- **Rules mistaken for understanding**: docs and module comments state the
+  narrow support surface; unlisted phrasing defers conservatively.
+- **Keyword false positives**: rules require action+scope structure;
+  substring lookalikes tested (`dispatch`, `패치노트`); negation scoping tested.
+- **Defer mistaken for provider failure**: docs state `defer` is semantic;
+  the frozen reason enum has no provider/timeout code; the adapter envelope
+  is a separately specified future boundary.
+- **Development replay mistaken for evaluation**: the replay asserts output
+  contracts only, reports honest counts, and is explicitly labeled as neither
+  holdout, model-quality, nor latency evidence.
+- **Gate weakening**: manifest change is purely additive; full gate run in
+  Phase 5.
+
+### Finalizer regression additions (slice 3)
+
+Reproduced explicit write/read prohibition failures, unconditional delegation
+refusal failures, candidate-driven resolution of unresolved actions, reported
+completion treated as a request, and normalization truncation losing a trailing
+prohibition. Regressions cover these groups plus all128candidate subsets and
+read-only/docs-exclusion positives. Normalization now defers on expansion,
+competing actions stay ambiguous, and narrow negative/report patterns suppress
+positive intents. Corpus output counts remain descriptive, never accuracy.
+
+Independent review also reproduced explicit chat-only requests becoming tasks
+and tracking-resume requests discarding separately requested review/analysis.
+Regressions preserve the existing-review continuation contrast and candidate
+subsets. Foundation diagnostics are passed through without spreading; their
+arrays are not frozen or capped for unknown fields.
+
+After operator escalation and renewed merge instruction, the remaining
+resume-or-read alternative defect is fixed using explicit alternative clause
+separators. Eight bilingual/reversed examples cover all128candidate subsets
+and both candidate orders (2048calls); the prior independent768case reproducer
+is preserved unchanged. Additional independent review precedes publication.
+
+The renewed review reproduced destructive Korean connective splitting:
+`분석하고` lost its recognized action ending before a resume clause. Preserve
+that ending and recognize the explicit alternative form; regressions cover
+four action orders across128candidate subsets and both candidate orders
+(1024calls), plus same-existing-analysis and standalone-analysis controls.

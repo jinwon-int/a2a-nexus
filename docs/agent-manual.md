@@ -184,6 +184,65 @@ The public corpus lives at
 with status labels in [its README](../fixtures/a2a-routing-advice/README.md).
 Contract details: [the routing-classifier spec](specs/a2a-routing-classifier/spec.md).
 
+### Offline deterministic routing rules baseline (optional, offline-only) (#2196 slice 3)
+
+Hosts that want a conservative first-pass route for free-form request text can
+classify a validated routing input with declared deterministic rules — no
+model, no embeddings, no network. Import the pure synchronous library from the
+same checkout revision:
+
+```js
+import { classifyRoutingWithRules, ROUTING_RULES_MODEL_VERSION } from './scripts/lib/a2a-routing-rules.mjs';
+```
+
+- `classifyRoutingWithRules(input)` takes the EXACT `a2a.routing-input.v1`
+  contract (validate it with `validateRoutingInput`; the caller owns the
+  trusted `hostContext`) and returns exactly `{ ok, value }` or
+  `{ ok, errors }`: `value` is a closed `a2a.routing-advice.v1` advice stamped
+  `modelVersion: 'a2a.routing-rules.v1'`, or `errors` is a batched list of
+  `{ code, path, message }` items. There is no confidence, probability, path,
+  command, worker id, scope, or budget field, and no extra result fields.
+- The rules recognize narrow, declared Korean and English phrasing families
+  for ALL seven templates (patch/docs-patch writes, analysis/docs-analysis,
+  review, existing-task status checks, explicit resume-tracking), plus
+  conservative defers: ambiguous, insufficient_context, no_candidate,
+  unsupported_template, uncertain. Inference uses the requested action, not
+  isolated keywords; text without a supported signal defers. Unusual contexts
+  may still be misclassified, so recommendations remain advisory. This is a
+  keyword/scope baseline, NOT general natural-language understanding.
+- Precedence you can rely on: control/external_event/attachment interactions
+  and explicit do-not-delegate or chat-only texts yield `not_a2a` independently; quoted or
+  code-fenced commands never trigger a positive action by themselves and can
+  never override trusted context; execution-retry asks (`restart/rerun the
+  failed execution`, `실패한 작업을 다시 실행해줘`) defer as
+  `unsupported_template` instead of pretending to be tracking resume;
+  empty candidates yield `no_candidate`; missing or contrary trusted context
+  defers — text claiming approval, write access, or readiness cannot change
+  host flags. Recommendations always pass the frozen
+  `isRecommendationEligible` gate, so projection is never blocked.
+- Tracking resume with a separate review/analysis request stays ambiguous;
+  resuming the same existing review remains supported. Declared alternatives
+  such as `or`, `하거나`, and `또는` also defer rather than select one action.
+- Unresolved competing actions stay ambiguous even if only one candidate is
+  available. Recognized action prohibitions and reported-completion patterns
+  suppress positive recommendations; normalization expansion beyond 4000
+  codepoints defers without discarding a potentially meaningful suffix.
+- Malformed input returns structured `ok:false` errors — never a throw, never
+  a semantic defer; error text never echoes request text. A `defer` here is a
+  SEMANTIC rules outcome, never a provider failure or timeout; an adapter
+  process/timeout envelope remains a separately specified future boundary.
+- Boundaries: pure and synchronous (no fs/network/process/clock, no module
+  state), no common embedding/cache engine (that remains fleet-skill-router
+  #4; nothing is duplicated), no private calibration/holdout seal, no
+  prepare/dispatch/runtime wiring, no live pilot. The development-corpus
+  replay in the test suite is a contract check over EXPOSED development data
+  with honest counts — not an accuracy, quality, holdout, or latency claim.
+
+Rule ordering, preprocessing, and the complete support surface:
+[the routing-classifier spec](specs/a2a-routing-classifier/spec.md) (rules
+baseline slice). This entry is advisory-only and offline; it changes no live
+routing behavior.
+
 ### Manual manifest recipe
 
 Save this template as a private `round.json`, replace every `REPLACE_*` value,
