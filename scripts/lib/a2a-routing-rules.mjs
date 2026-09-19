@@ -383,9 +383,11 @@ const REPORTED_ACTION = /^(?:the|this|that|our|my)\b[^.!?]{0,100}\b(?:was|were|i
 
 // Resume's object may itself be a review/analysis, which is still one existing
 // task. A separate clause requesting read work must not be discarded merely
-// because the trusted operation is resume_existing.
+// because the trusted operation is resume_existing. Conjunctions and
+// alternatives both delimit independent requests; availability cannot choose
+// one side of an unresolved either/or request.
 function hasIndependentReadClause(text) {
-  const clauses = text.split(/[.!?;,]|\b(?:and|then|also|as well as)\b|그리고|별도로|하고/u);
+  const clauses = text.split(/[.!?;,]|\b(?:and|or|then|also|as well as)\b|그리고|별도로|하거나|하고|또는|혹은|아니면/u);
   return clauses.some((clause) => !RESUME_ASK.test(clause)
     && (REVIEW_ASK.test(clause) || ANALYSIS_ASK.test(clause)));
 }

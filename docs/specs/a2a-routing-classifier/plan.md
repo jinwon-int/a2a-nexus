@@ -440,3 +440,9 @@ and tracking-resume requests discarding separately requested review/analysis.
 Regressions preserve the existing-review continuation contrast and candidate
 subsets. Foundation diagnostics are passed through without spreading; their
 arrays are not frozen or capped for unknown fields.
+
+After operator escalation and renewed merge instruction, the remaining
+resume-or-read alternative defect is fixed using explicit alternative clause
+separators. Eight bilingual/reversed examples cover all128candidate subsets
+and both candidate orders (2048calls); the prior independent768case reproducer
+is preserved unchanged. Additional independent review precedes publication.

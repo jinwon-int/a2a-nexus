@@ -894,3 +894,22 @@ finalizerTest('review regression contrasts: same existing review continuation an
     const input=finalizerInput(text);input.hostContext.operation=operation;const result=finalizerClassify(input);finalizerAssert.equal(result.ok,true);finalizerAssert.equal(result.value.templateId,template);
   }
 });
+
+finalizerTest('operator follow-up: unresolved alternatives cannot choose tracking resume',()=>{
+  const alternatives = [
+    'Either resume monitoring the existing task or review PR #12; I have not decided.',
+    'Resume monitoring the existing task or investigate the database failure.',
+    'Review PR #12 or resume monitoring the existing task.',
+    '기존 작업 추적을 재개하거나 새 PR을 검토해줘.',
+    '기존 작업 추적을 재개해줘 또는 새 PR을 검토해줘.',
+    '새 PR을 검토하거나 기존 작업 추적을 재개해줘.',
+    '기존 작업 추적을 재개해줘 아니면 새 오류를 분석해줘.',
+    '기존 작업 추적을 재개해줘 혹은 새 PR을 검토해줘.',
+  ];
+  for(const text of alternatives) for(let bits=0;bits<128;bits++) for(const reverse of [false,true]) {
+    const ids=finalizerTemplates.filter((_,i)=>bits&(1<<i));if(reverse)ids.reverse();
+    const input=finalizerInput(text,ids);input.hostContext.operation='resume_existing';input.hostContext.access='read_only';
+    const result=finalizerClassify(input);finalizerAssert.equal(result.ok,true);finalizerAssert.equal(result.value.decision,'defer');
+    if(bits)finalizerAssert.equal(result.value.reasonCode,'ambiguous');
+  }
+});

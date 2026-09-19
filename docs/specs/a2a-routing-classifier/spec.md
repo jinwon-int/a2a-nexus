@@ -631,6 +631,9 @@ An explicit `chat only`, `just explain`, or `채팅으로만` request is
 such as `here` alone do not establish this intent. Existing review/analysis
 objects may be resumed, but separately delimited review/analysis asks remain
 competing work; host operation and candidate availability do not discard them.
+The declared separators include English `and`/`or` and Korean `하고`/`하거나`,
+`또는`, `혹은`, `아니면`; an unresolved tracking-resume versus separate read
+request defers in either ordering. This remains a bounded lexical rule.
 
 Before intent inference, explicit read-action prohibitions and the declared
 reported-completion sentence pattern defer. Explicit write prohibitions suppress

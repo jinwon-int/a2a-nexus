@@ -221,7 +221,8 @@ import { classifyRoutingWithRules, ROUTING_RULES_MODEL_VERSION } from './scripts
   host flags. Recommendations always pass the frozen
   `isRecommendationEligible` gate, so projection is never blocked.
 - Tracking resume with a separate review/analysis request stays ambiguous;
-  resuming the same existing review remains supported.
+  resuming the same existing review remains supported. Declared alternatives
+  such as `or`, `하거나`, and `또는` also defer rather than select one action.
 - Unresolved competing actions stay ambiguous even if only one candidate is
   available. Recognized action prohibitions and reported-completion patterns
   suppress positive recommendations; normalization expansion beyond 4000
