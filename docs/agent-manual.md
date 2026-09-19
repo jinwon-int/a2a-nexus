@@ -100,6 +100,44 @@ The contract, state set and invariants are specified in
 CLI for this facade by design (script budget #1485/#1503); hosts and skills
 import it directly.
 
+### Offline routing advice (optional, offline-only) (#2196 foundation slice)
+
+Hosts can validate a caller-supplied recommendation for one of seven routing
+templates and inspect the trusted host fields it still requires. Import the
+pure advisory library from the same checkout revision:
+
+```js
+import {
+  validateRoutingInput,
+  validateRoutingAdviceOutput,
+  projectRoutingAdvice,
+} from './scripts/lib/a2a-routing-advice.mjs';
+```
+
+- `validateRoutingInput` enforces the versioned closed input contract
+  (`a2a.routing-input.v1`): nonblank request text ≤ 4000 codepoints, pinned
+  catalog `a2a.routing-templates.v1`, unique candidate template ids, and a
+  closed trusted host context (`interaction`/`operation`/`access`). Host
+  context is explicit caller-owned data, never parsed from request text, and
+  never authentication or permission proof.
+- `validateRoutingAdviceOutput` checks closed advisory output
+  (`a2a.routing-advice.v1`) against that input and the caller's
+  `expectedModelVersion` (mismatch is rejected). There is no confidence,
+  probability, path, command, worker id, scope or budget field, and no
+  provider/timeout reason code — those belong to a later adapter envelope.
+- `projectRoutingAdvice` projects validated advice to a bounded descriptor
+  (`advisoryOnly: true`, `dispatchAllowed: false`) that only names the host
+  fields still required, or fails closed: context-violating recommendations
+  (wrong interaction, non-matching or `unspecified` operation, `read_only` or
+  `unspecified` access for write templates) yield a structured blocked
+  projection, never a plan for a new task. This slice calls no model, broker,
+  or `prepareAssignment`/`normalizeAssignRequest`; it returns advice metadata
+  only and claims no assignment readiness (catalog metadata is not a
+  #1597 readiness proof).
+
+Contract details and invariants: [the routing-classifier spec](specs/a2a-routing-classifier/spec.md).
+This entry is advisory-only and offline; it changes no live routing behavior.
+
 ### Manual manifest recipe
 
 Save this template as a private `round.json`, replace every `REPLACE_*` value,
