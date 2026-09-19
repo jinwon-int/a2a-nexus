@@ -290,6 +290,12 @@
       "note": "Offline corpus-validation contract tests for the #2196 Phase A corpus slice: closed a2a.routing-corpus.v1 envelope, integrity/leak rules, exposure and label-status gates, deterministic full-content SHA-256 digest, label-free judgment-input projection, no-echo safety, and whole-fixture execution of fixtures/a2a-routing-advice/development-corpus.json. Pure synchronous module (node:crypto + frozen foundation only); no round id in filename, kept as gate."
     },
     {
+      "file": "scripts/lib/a2a-routing-rules.test.mjs",
+      "class": "gate",
+      "round": null,
+      "note": "Offline deterministic routing-rules baseline tests for the #2196 slice 3: conservative ko/en intent rules for all seven templates producing closed a2a.routing-advice.v1 advice, negation/quote-injection contrasts, trusted-context matrix vs the frozen eligibility gates, candidate subset/ordering sensitivity, malformed-input/echo safety, determinism/mutation isolation, and a whole-corpus contract replay of the 173 public development records (honest counts, not an accuracy or holdout claim). Pure synchronous module importing only the frozen foundation; no round id in filename, kept as gate."
+    },
+    {
       "file": "scripts/a2a-warn-log-aggregate.test.mjs",
       "class": "gate",
       "round": null,
