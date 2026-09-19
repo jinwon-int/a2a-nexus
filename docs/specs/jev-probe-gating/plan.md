@@ -2,7 +2,9 @@
 
 ## Baseline
 
-- Branch `feat/jev-probe-gating` @ `d622d7d`, clean tree.
+- Branch `feat/jev-probe-gating` @ `b168619`; 889882e (spec trio) and
+  b168619 (registration-gap prep commit) have landed. Phase C classifier
+  lib + tests exist as untracked files at this plan refresh.
 - Handler sources live at `packages/broker/scripts/` (repo layout); `handlers/`
   is the in-image layout only.
 - Registration sites pinned:
@@ -26,9 +28,11 @@
 - Telemetry/bridge registration gaps: fixed as a SEPARATE prep commit on this
   branch (distinct concern; keeps the jev commit small and reviewable). The
   new `jev-classifier.mjs` registration rides the jev commit.
-- Approach A (reclassify at the broker stdin CLI entry) over approach B
-  (worker-process egress). B is revisited only if the CLI-entry egress
-  precondition is rejected.
+- Approach A (classification-only observation at the broker stdin CLI
+  entry; option-1 semantics selected by the owner) over approach B
+  (worker-process egress). The verdict is observed in-process and never
+  changes the produced output; re-routing is deferred to #2185. B is
+  revisited only if the CLI-entry egress precondition is rejected.
 - Verdict gate: boolean `is_real_work` only; no score thresholds in this
   slice.
 
@@ -61,7 +65,8 @@
 ### Phase D — CLI-entry hook
 
 1. After generic_ack at the stdin CLI entry (argv == SOURCE_PATH): one
-   attempt, `is_real_work` verdict gate, deterministic fallback.
+   attempt, `is_real_work` verdict observed; stdout stays byte-identical
+   in every mode (no re-route; deterministic fallback).
 2. Golden default-off byte-identity test; gate-on-invalid-config
    stderr-warning test.
 
@@ -85,5 +90,6 @@
 - **Silent misconfig**: gate-on-invalid-config prints one stderr warning
   before behaving like gate-off.
 - **Shared-repo discipline**: main is merge-queue protected; open PRs
-  #1802/#1799/#1784/#1789 untouched; no deploys/restarts in trains; seoseo-ai
-  gh credentials stay on the seoseo node.
+  #1802/#1799/#1784/#1789 untouched; no deploys/restarts in trains; GitHub
+  credentials stay on their owning operator node and are never copied into
+  this repo or its docs.

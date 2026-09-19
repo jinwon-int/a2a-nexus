@@ -23,37 +23,43 @@
 
 ## Phase B — registration-gap prep commit
 
-- [ ] Register `lib/analysis-execution-telemetry.mjs` (guard list + Dockerfile
+- [x] Register `lib/analysis-execution-telemetry.mjs` (guard list + Dockerfile
       handlers/ cp + guard-test fixture).
-- [ ] Register `finalizer-tool-policy.mjs` likewise (bridge import).
-- [ ] Register `lib/utf8-byte-budget.mjs` likewise (bridge import).
-- [ ] Guard test green; prep commit kept separate from jev changes.
+- [x] Register `finalizer-tool-policy.mjs` likewise (bridge import).
+- [x] Register `lib/utf8-byte-budget.mjs` likewise (bridge import).
+- [x] Guard test green; prep commit kept separate from jev changes.
 
 ## Phase C — classifier lib
 
-- [ ] `packages/broker/scripts/lib/jev-classifier.mjs`: gate parsing (disable
+- [x] `packages/broker/scripts/lib/jev-classifier.mjs`: gate parsing (disable
       tokens `''`/`none`/`null`/`undefined`, trimmed + case-insensitive),
       trio validity, timeout default 1500 clamp [250, 5000], model
       passthrough, injectable transport, single attempt.
-- [ ] Unit tests (`node --test`, stub transport, no network, synthetic
+- [x] Unit tests (`node --test`, stub transport, no network, synthetic
       fixtures).
 
 ## Phase D — CLI-entry hook
 
-- [ ] Hook after generic_ack at the stdin CLI entry (argv == SOURCE_PATH);
-      verdict accepted only as boolean-`is_real_work` JSON; otherwise keep
-      generic_ack.
-- [ ] Golden default-off byte-identity test; gate-on-invalid-config
+- [x] Classification-only hook after generic_ack at the stdin CLI entry
+      (argv == SOURCE_PATH); verdict accepted only as boolean-
+      `is_real_work` JSON and observed; output unchanged in every mode
+      (no re-route).
+- [x] Golden default-off byte-identity test; gate-on-invalid-config
       stderr-warning test.
 
 ## Local validation evidence
 
-- [ ] Registration guard green after `jev-classifier.mjs` registration
+- [x] Registration guard green after `jev-classifier.mjs` registration
       (all three sites).
-- [ ] Test manifest aligned (added tests joined into the single big
+- [x] Test manifest aligned (added tests joined into the single big
       `node --test` entry).
-- [ ] Root `npm test` green; broker `tsc -b` green.
-- [ ] Diff audit: no key/endpoint material; script budget flat; BUILD_INFO
+- [x] Root `npm test` green; broker `tsc -b` green.
+      Note: broker `tsc -b` green. Root `npm test` (= release-gate) stays
+      red on this node only at `external-secrets` (gitleaks/trufflehog
+      absent, fail-closed) plus 1 pre-existing lsof fence-clear failure,
+      both identical at the b168619 baseline worktree;
+      `npm run scan:public-readiness -- --strict-internal` is ok (warn-only).
+- [x] Diff audit: no key/endpoint material; script budget flat; BUILD_INFO
       stays `credentialFree: true` / `hostNeutral: true`.
 
 ## Explicitly NOT done here (separate approvals / #2185)
