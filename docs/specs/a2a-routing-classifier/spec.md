@@ -582,8 +582,9 @@ future boundary.
 ### Preprocessing (bounded, deterministic)
 
 `requestText` is normalized in a fixed order: Unicode NFKC → lower-case →
-collapse whitespace runs to one space → trim → hard cap at 4000 codepoints
-(the input contract's bound). Matching operates on this normalized form;
+collapse whitespace runs to one space → trim. If normalization expands beyond
+4000 codepoints, return `defer/uncertain` without truncating any text: a suffix
+may contain a prohibition. Matching operates on the complete bounded form;
 subsequence windows in patterns are bounded so no pattern exhibits
 catastrophic backtracking.
 
@@ -608,7 +609,7 @@ contraction, not a delimiter), and `‘…’`, `“…”`, `「…」` pairs. 
 | # | Rule | Outcome |
 |---|---|---|
 | 1 | `hostContext.interaction` ≠ `user_request` (control/external_event/attachment) | `not_a2a` / `not_applicable` — such interactions stay with the host and can never become new tasks from quoted or body keywords |
-| 2 | Explicit do-not-delegate / chat-only request (delegation negation + chat-only or self-handling markers) | `not_a2a` / `not_applicable` |
+| 2 | Explicit do-not-delegate request (no second chat/self-handling condition required), or the declared chat-only/self-handling contrasts | `not_a2a` / `not_applicable` |
 | 3 | General greeting/chat message (only greeting/thanks tokens) | `not_a2a` / `not_applicable` |
 | 4 | Unbalanced quote or fence marker | `defer` / `uncertain` |
 | 5 | Bare `continue`/`resume`/`계속`/`이어서`-style continuation with no object | `defer` / `ambiguous` — never mints a task or id, never grants readiness |
@@ -619,10 +620,16 @@ contraction, not a delimiter), and `‘…’`, `“…”`, `「…」` pairs. 
 | 10 | Resume signal about a tracking object (review/analysis/summary/`추적`/`관찰`…) | `recommend` intent `resume_existing` |
 | 11 | Unresolvable resume phrasing | `defer` / `uncertain` |
 | 12 | Observe signal (status/progress check of an existing task) | `recommend` intent `observe_existing`; observe + new-task ask → `defer`/`ambiguous` |
-| 13 | New-task intents (`new_patch`, `docs_patch`, `new_analysis`, `docs_analysis`, `review_readonly`) with negation scoping; vague-object markers → `defer/ambiguous`; multiple distinct intents → `defer/ambiguous` unless exactly one surviving intent is both in-candidate and eligible | single intent or `defer` / `ambiguous` |
+| 13 | New-task intents (`new_patch`, `docs_patch`, `new_analysis`, `docs_analysis`, `review_readonly`) with negation scoping; vague-object markers → `defer/ambiguous`; multiple distinct intents → `defer/ambiguous` regardless of which candidates or access permissions remain | single intent or `defer` / `ambiguous` |
 | 14 | Inferred template missing from non-empty candidates | `defer` / `unsupported_template` — the omitted template is never replaced by an available neighbor (inference is independent of candidate availability; candidate order never decides the route) |
 | 15 | Trusted-context eligibility (`isRecommendationEligible`) false — `unspecified`/contrary operation, existing-task operation with a new-task intent, write intent without `write_allowed` | `defer` / `insufficient_context` — missing or contrary trusted context defers; text cannot grant access |
 | 16 | Single eligible, in-candidate intent | `recommend` / `matched` |
+
+Before intent inference, explicit read-action prohibitions and the declared
+reported-completion sentence pattern defer. Explicit write prohibitions suppress
+write intents; English `do not fix` and Korean `수정하지 마` never become
+positive patch requests. These are bounded wording families, not a general
+negation or discourse parser.
 
 Negation scoping details (required contrasts): "read/review only, do not
 modify" keeps the requested read template; "fix the bug but do not touch the
@@ -645,9 +652,11 @@ commands.
 ### What the rules deliberately do NOT claim
 
 No general natural-language understanding, no learning, no embeddings, no
-model. Unlisted phrasing families, mixed-language mixtures, sarcasm, and
-long multi-ask compounds conservatively defer. The rule vocabulary above is
-the complete support surface; anything outside it is intended to defer.
+model. Unknown text without a supported signal defers. These lexical rules cannot
+guarantee correct interpretation of every mixed-language sentence, sarcasm,
+negation, or discourse context; matching a supported signal is advisory only.
+The regression corpus and explicit negative probes do not establish general
+language understanding or justify automatic execution.
 
 ### Acknowledged pending boundaries (never claimed by this slice)
 

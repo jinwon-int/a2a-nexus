@@ -424,3 +424,13 @@ wrapped fail-closed (`rules_output_rejected` guard, never an invalid
   holdout, model-quality, nor latency evidence.
 - **Gate weakening**: manifest change is purely additive; full gate run in
   Phase 5.
+
+### Finalizer regression additions (slice 3)
+
+Reproduced explicit write/read prohibition failures, unconditional delegation
+refusal failures, candidate-driven resolution of unresolved actions, reported
+completion treated as a request, and normalization truncation losing a trailing
+prohibition. Regressions cover these groups plus all128candidate subsets and
+read-only/docs-exclusion positives. Normalization now defers on expansion,
+competing actions stay ambiguous, and narrow negative/report patterns suppress
+positive intents. Corpus output counts remain descriptive, never accuracy.

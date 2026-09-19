@@ -760,14 +760,14 @@ describe('whole public development corpus replay (contract replay, not evaluatio
   // the corpus labels and are not an accuracy metric.
   const EXPECTED = {
     records: 173,
-    decision: { recommend: 93, not_a2a: 20, defer: 60 },
+    decision: { recommend: 91, not_a2a: 20, defer: 62 },
     reason: {
-      matched: 93,
+      matched: 91,
       unsupported_template: 12,
       no_candidate: 6,
       not_applicable: 20,
       insufficient_context: 21,
-      ambiguous: 21,
+      ambiguous: 23,
       uncertain: 0,
     },
   };
@@ -833,4 +833,45 @@ describe('whole public development corpus replay (contract replay, not evaluatio
   it('produces at least one outcome per decision class on the corpus', () => {
     assert.ok(decisions.recommend > 0 && decisions.not_a2a > 0 && decisions.defer > 0);
   });
+});
+
+// Independent finalizer regressions: each group failed the original worker
+// snapshot; canonical output and host eligibility remain enforced separately.
+import { test as finalizerTest } from 'node:test';
+import finalizerAssert from 'node:assert/strict';
+import { classifyRoutingWithRules as finalizerClassify } from './a2a-routing-rules.mjs';
+const finalizerTemplates = ['new_patch','docs_patch','new_analysis','docs_analysis','review_readonly','observe_existing','resume_existing'];
+function finalizerInput(requestText, candidateTemplateIds = finalizerTemplates) {
+  return {schemaVersion:'a2a.routing-input.v1',catalogVersion:'a2a.routing-templates.v1',requestText,candidateTemplateIds,hostContext:{interaction:'user_request',operation:'new_task',access:'write_allowed'}};
+}
+finalizerTest('finalizer: explicit write and read prohibitions are not positive actions',()=>{
+  for(const text of ['Do not fix the bug in the login code.','로그인 코드의 버그를 수정하지 마.','Do not review the PR.']) {
+    const result=finalizerClassify(finalizerInput(text));finalizerAssert.equal(result.ok,true);finalizerAssert.notEqual(result.value.decision,'recommend');
+  }
+});
+finalizerTest('finalizer: delegation refusal needs no second chat/self-handling phrase',()=>{
+  for(const text of ['Do not delegate. Fix the code.','이건 에이전트에게 맡기지 마. 코드 수정에 대해 대화만 하자.']) {
+    const result=finalizerClassify(finalizerInput(text));finalizerAssert.equal(result.ok,true);finalizerAssert.equal(result.value.decision,'not_a2a');
+  }
+});
+finalizerTest('finalizer: candidate removal cannot decide unresolved competing operations',()=>{
+  const text='Either review the PR or fix the code; I have not decided.';
+  for(let bits=0;bits<128;bits++) {
+    const result=finalizerClassify(finalizerInput(text,finalizerTemplates.filter((_,i)=>bits&(1<<i))));finalizerAssert.equal(result.ok,true);finalizerAssert.notEqual(result.value.decision,'recommend');
+  }
+});
+finalizerTest('finalizer: reported past actions are not new task requests',()=>{
+  for(const text of ['The code was fixed yesterday.','The PR review was finished yesterday.']) {
+    const result=finalizerClassify(finalizerInput(text));finalizerAssert.equal(result.ok,true);finalizerAssert.notEqual(result.value.decision,'recommend');
+  }
+});
+finalizerTest('finalizer: normalization expansion never drops a trailing delegation prohibition',()=>{
+  const text='Fix the code. '+'\ufdfa'.repeat(300)+' Do not delegate. Just explain.';
+  finalizerAssert.ok([...text].length<4000);finalizerAssert.ok([...text.normalize('NFKC')].length>4000);
+  const result=finalizerClassify(finalizerInput(text,['new_patch']));finalizerAssert.equal(result.ok,true);finalizerAssert.notEqual(result.value.decision,'recommend');
+});
+finalizerTest('finalizer: negative guards preserve explicit read-only and docs-exclusion positives',()=>{
+  for(const [text,template] of [['Fix the bug in the code, but do not touch the docs.','new_patch'],['Review PR #1 and PR #2 without modifying them.','review_readonly'],['문서만 수정해줘.','docs_patch'],['문서 내용을 읽고 분석만 해줘.','docs_analysis']]) {
+    const result=finalizerClassify(finalizerInput(text));finalizerAssert.equal(result.ok,true);finalizerAssert.equal(result.value.templateId,template);
+  }
 });

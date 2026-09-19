@@ -207,7 +207,8 @@ import { classifyRoutingWithRules, ROUTING_RULES_MODEL_VERSION } from './scripts
   review, existing-task status checks, explicit resume-tracking), plus
   conservative defers: ambiguous, insufficient_context, no_candidate,
   unsupported_template, uncertain. Inference uses the requested action, not
-  isolated keywords; unlisted phrasing defers rather than guesses. This is a
+  isolated keywords; text without a supported signal defers. Unusual contexts
+  may still be misclassified, so recommendations remain advisory. This is a
   keyword/scope baseline, NOT general natural-language understanding.
 - Precedence you can rely on: control/external_event/attachment interactions
   and explicit do-not-delegate/chat-only texts yield `not_a2a`; quoted or
@@ -219,6 +220,10 @@ import { classifyRoutingWithRules, ROUTING_RULES_MODEL_VERSION } from './scripts
   defers — text claiming approval, write access, or readiness cannot change
   host flags. Recommendations always pass the frozen
   `isRecommendationEligible` gate, so projection is never blocked.
+- Unresolved competing actions stay ambiguous even if only one candidate is
+  available. Recognized action prohibitions and reported-completion patterns
+  suppress positive recommendations; normalization expansion beyond 4000
+  codepoints defers without discarding a potentially meaningful suffix.
 - Malformed input returns structured `ok:false` errors — never a throw, never
   a semantic defer; error text never echoes request text. A `defer` here is a
   SEMANTIC rules outcome, never a provider failure or timeout; an adapter

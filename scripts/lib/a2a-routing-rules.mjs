@@ -77,15 +77,15 @@ function fail(errors) {
 
 /**
  * Deterministic bounded normalization: NFKC → lower-case → collapse
- * whitespace runs → trim → hard cap at the input contract's 4000-codepoint
- * bound (NFKC can slightly expand the text; the cap keeps every downstream
- * window and loop bounded). No locale-dependent casing.
+ * whitespace runs → trim. If normalization expands beyond the 4000-codepoint bound,
+ * defer without truncation: discarding a suffix could remove a prohibition.
+ * No locale-dependent casing.
  */
 function normalizeForRules(text) {
   let s = text.normalize('NFKC').toLowerCase().replace(/\s+/g, ' ').trim();
   const cps = [...s];
   if (cps.length > MAX_REQUEST_TEXT_CODEPOINTS) {
-    s = cps.slice(0, MAX_REQUEST_TEXT_CODEPOINTS).join('');
+    return null;
   }
   return s;
 }
@@ -340,7 +340,7 @@ function isGreetingOnly(normalized) {
 function detectSignals(text) {
   const docsScope = DOCS_SCOPE.test(text);
   const writeVerb = WRITE_VERB.test(text);
-  const writeNegated = WRITE_NEGATED.test(text);
+  const writeNegated = WRITE_NEGATED.test(text) || EXPLICIT_WRITE_PROHIBITION.test(text);
   const docsNegated = DOCS_NEGATED.test(text);
   const reviewAsk = REVIEW_ASK.test(text);
   const effectiveWrite = writeVerb && !writeNegated;
@@ -367,6 +367,15 @@ function detectSignals(text) {
 }
 
 const NEW_TASK_INTENTS = Object.freeze(['review_readonly', 'docs_patch', 'new_analysis', 'docs_analysis', 'new_patch']);
+
+// Negative requests are not positive action signals. The read-only contrast
+// "review the PR, do not modify it" remains handled by write suppression.
+const EXPLICIT_WRITE_PROHIBITION = /\b(?:do not|don['’]t|never)\s+(?:fix|patch|repair|resolve|correct|update|replace|overwrite|modify|edit|change|write)\b|(?:수정|편집|변경|작성|패치|갱신|교체|업데이트)\s*하지\s*(?:마|말|않)|고치지\s*(?:마|말|않)|(?:수정|편집|변경|작성)\s*없이/;
+const EXPLICIT_READ_PROHIBITION = /\b(?:do not|don['’]t|never)\s+(?:review|inspect|analy[sz]e|investigate|check|observe|monitor|resume|continue|track)\b|(?:검토|리뷰|분석|확인|관찰|추적|재개)\s*하지\s*(?:마|말|않)/;
+const EXPLICIT_NO_DELEGATION = /\b(?:do not|don['’]t|never)\s+(?:delegate|dispatch|assign)\b|\bno\s+delegation\b|(?:위임|할당|배정)\s*하지\s*(?:마|말|않)|맡기지\s*(?:마|말|않)/;
+// A reported completed action is not a new imperative. This intentionally
+// narrow rejection does not claim to parse arbitrary English discourse.
+const REPORTED_ACTION = /^(?:the|this|that|our|my)\b[^.!?]{0,100}\b(?:was|were|is|has been|have been)\s+(?:already\s+)?(?:fixed|patched|updated|reviewed|finished|completed|resolved)\b/;
 
 // ─── Advice synthesis (reusing the frozen output contract) ──────────────────
 
@@ -405,11 +414,12 @@ function classifyValidated(validatedInput) {
 
   // Bounded deterministic preprocessing + quotation masking.
   const normalized = normalizeForRules(validatedInput.requestText);
+  if (normalized === null) return buildAdvice(validatedInput, 'defer', null, 'uncertain');
   const unquoted = maskQuotedSegments(normalized);
   const text = unquoted.text;
 
   // 2. Explicit do-not-delegate / chat-only requests are not A2A.
-  if (DELEGATION_NEGATED.test(text) && (CHAT_ONLY.test(text) || SELF_HANDLING.test(text))) {
+  if (EXPLICIT_NO_DELEGATION.test(text) || (DELEGATION_NEGATED.test(text) && (CHAT_ONLY.test(text) || SELF_HANDLING.test(text)))) {
     return buildAdvice(validatedInput, 'not_a2a', null, 'not_applicable');
   }
   // 3. General greetings/chat are not A2A requests.
@@ -424,6 +434,10 @@ function classifyValidated(validatedInput) {
   //    task/id and never grants readiness.
   if (BARE_CONTINUE.test(text)) {
     return buildAdvice(validatedInput, 'defer', null, 'ambiguous');
+  }
+
+  if (EXPLICIT_READ_PROHIBITION.test(text) || REPORTED_ACTION.test(text)) {
+    return buildAdvice(validatedInput, 'defer', null, 'uncertain');
   }
 
   const s = detectSignals(text);
@@ -483,15 +497,8 @@ function classifyValidated(validatedInput) {
       return s.newAnalysis;
     });
     if (intents.length > 1) {
-      // Multiple competing operations defer as ambiguous, UNLESS exactly one
-      // of them is even admissible (in candidates AND trusted-context
-      // eligible) — the others cannot be routed at all.
-      const admissible = intents.filter((id) => candidates.includes(id) && isRecommendationEligible(validatedInput, id));
-      if (admissible.length === 1) {
-        intent = admissible[0];
-      } else {
-        return buildAdvice(validatedInput, 'defer', null, 'ambiguous');
-      }
+      // Candidate availability and access cannot resolve semantic ambiguity.
+      return buildAdvice(validatedInput, 'defer', null, 'ambiguous');
     } else if (intents.length === 1) {
       [intent] = intents;
     }
