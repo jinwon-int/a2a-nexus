@@ -633,7 +633,10 @@ objects may be resumed, but separately delimited review/analysis asks remain
 competing work; host operation and candidate availability do not discard them.
 The declared separators include English `and`/`or` and Korean `하고`/`하거나`,
 `또는`, `혹은`, `아니면`; an unresolved tracking-resume versus separate read
-request defers in either ordering. This remains a bounded lexical rule.
+request defers in either ordering. Korean connective endings remain in the
+left clause so recognized actions such as `분석하고`/`분석하거나` are not
+reduced to a bare noun. Existing analysis/review objects can still resume.
+This remains a bounded lexical rule.
 
 Before intent inference, explicit read-action prohibitions and the declared
 reported-completion sentence pattern defer. Explicit write prohibitions suppress

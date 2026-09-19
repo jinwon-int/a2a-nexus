@@ -446,3 +446,9 @@ resume-or-read alternative defect is fixed using explicit alternative clause
 separators. Eight bilingual/reversed examples cover all128candidate subsets
 and both candidate orders (2048calls); the prior independent768case reproducer
 is preserved unchanged. Additional independent review precedes publication.
+
+The renewed review reproduced destructive Korean connective splitting:
+`분석하고` lost its recognized action ending before a resume clause. Preserve
+that ending and recognize the explicit alternative form; regressions cover
+four action orders across128candidate subsets and both candidate orders
+(1024calls), plus same-existing-analysis and standalone-analysis controls.

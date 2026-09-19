@@ -237,7 +237,7 @@ const CODE_WRITE = new RegExp(
 // inside an object being observed/resumed). English "analysis" is excluded
 // when it names an artifact ("analysis task", "analysis run").
 const ANALYSIS_ASK = new RegExp(
-  '(분석해|분석만|분석 ?부탁|분석하고|분석을? ?(요청|부탁)|분석입니다|분석이 ?필요)'
+  '(분석해|분석만|분석 ?부탁|분석하고|분석하거나|분석을? ?(요청|부탁)|분석입니다|분석이 ?필요)'
   + '|\\banaly[sz]e\\b|\\binvestigat\\w*\\b|\\bdiagnos\\w*\\b'
   + '|\\banalys[ei]s\\b(?!\\s*(?:tasks?|jobs?|runs?|sessions?|workflows?))',
 );
@@ -387,7 +387,9 @@ const REPORTED_ACTION = /^(?:the|this|that|our|my)\b[^.!?]{0,100}\b(?:was|were|i
 // alternatives both delimit independent requests; availability cannot choose
 // one side of an unresolved either/or request.
 function hasIndependentReadClause(text) {
-  const clauses = text.split(/[.!?;,]|\b(?:and|or|then|also|as well as)\b|그리고|별도로|하거나|하고|또는|혹은|아니면/u);
+  // Keep Korean connective endings in the left clause: deleting 하고 would
+  // reduce the explicitly recognized action 분석하고 to the noun 분석.
+  const clauses = text.split(/[.!?;,]|\b(?:and|or|then|also|as well as)\b|그리고|별도로|(?<=하거나)|(?<=하고)|또는|혹은|아니면/u);
   return clauses.some((clause) => !RESUME_ASK.test(clause)
     && (REVIEW_ASK.test(clause) || ANALYSIS_ASK.test(clause)));
 }

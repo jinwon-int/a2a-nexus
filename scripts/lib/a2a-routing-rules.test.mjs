@@ -913,3 +913,17 @@ finalizerTest('operator follow-up: unresolved alternatives cannot choose trackin
     if(bits)finalizerAssert.equal(result.value.reasonCode,'ambiguous');
   }
 });
+
+finalizerTest('Korean independent analysis keeps its action ending across clause splitting',()=>{
+  for(const text of ['새 오류를 분석하고 기존 작업 추적을 재개해줘.','새 오류를 분석하거나 기존 작업 추적을 재개해줘.','기존 작업 추적을 재개하고 새 오류를 분석해줘.','기존 작업 추적을 재개하거나 새 오류를 분석해줘.']) for(let bits=0;bits<128;bits++) for(const reverse of [false,true]) {
+    const ids=finalizerTemplates.filter((_,i)=>bits&(1<<i));if(reverse)ids.reverse();
+    const input=finalizerInput(text,ids);input.hostContext.operation='resume_existing';input.hostContext.access='read_only';
+    const result=finalizerClassify(input);finalizerAssert.equal(result.ok,true);finalizerAssert.equal(result.value.decision,'defer');if(bits)finalizerAssert.equal(result.value.reasonCode,'ambiguous');
+  }
+});
+finalizerTest('Korean connective preservation does not turn existing analysis objects into new tasks',()=>{
+  for(const text of ['기존 분석 작업의 추적을 재개해줘.','Resume monitoring the existing analysis task.','Continue the existing code review.']) {
+    const input=finalizerInput(text);input.hostContext.operation='resume_existing';const result=finalizerClassify(input);finalizerAssert.equal(result.ok,true);finalizerAssert.equal(result.value.templateId,'resume_existing');
+  }
+  const result=finalizerClassify(finalizerInput('새 오류를 분석하고 원인을 알려줘.'));finalizerAssert.equal(result.value.templateId,'new_analysis');
+});
