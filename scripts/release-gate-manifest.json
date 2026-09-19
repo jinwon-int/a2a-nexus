@@ -278,6 +278,12 @@
       "note": "Task-assignment entrypoint regression suite: #2187 prepare/submit/resume contracts, journal idempotency and recovery, admission readback, injection/secret safety."
     },
     {
+      "file": "scripts/lib/a2a-routing-advice.test.mjs",
+      "class": "gate",
+      "round": null,
+      "note": "Offline routing-advice contract tests for the #2196 foundation slice: closed a2a.routing-input.v1/a2a.routing-advice.v1 contracts, seven-template immutable catalog, trusted-host-context eligibility gates, fail-closed bounded projection, injection/echo safety, and execution of the fixtures/a2a-routing-advice/contracts.json illustrative cases. Pure no-I/O module; no round id in filename, kept as gate."
+    },
+    {
       "file": "scripts/a2a-warn-log-aggregate.test.mjs",
       "class": "gate",
       "round": null,
