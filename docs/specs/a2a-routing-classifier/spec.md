@@ -566,7 +566,8 @@ future boundary.
   structured error result — never a throw, never a partial success, and never
   a semantic `defer`. Unknown/malformed input is `ok:false`, not a routing
   decision.
-- Foundation errors are reused by reference (frozen, bounded arrays); this
+- Foundation diagnostics are returned without argument spreading; these arrays
+  are not frozen or capped for unknown-field errors. This
   module performs no unbounded argument spread.
 - Plain JSON boundary: behavior is defined for plain JSON data only; this is
   NOT a getter/proxy sandbox and no code is evaluated.
@@ -609,7 +610,7 @@ contraction, not a delimiter), and `‘…’`, `“…”`, `「…」` pairs. 
 | # | Rule | Outcome |
 |---|---|---|
 | 1 | `hostContext.interaction` ≠ `user_request` (control/external_event/attachment) | `not_a2a` / `not_applicable` — such interactions stay with the host and can never become new tasks from quoted or body keywords |
-| 2 | Explicit do-not-delegate request (no second chat/self-handling condition required), or the declared chat-only/self-handling contrasts | `not_a2a` / `not_applicable` |
+| 2 | Explicit do-not-delegate or explicit chat-only request (neither requires the other), or the declared self-handling contrasts | `not_a2a` / `not_applicable` |
 | 3 | General greeting/chat message (only greeting/thanks tokens) | `not_a2a` / `not_applicable` |
 | 4 | Unbalanced quote or fence marker | `defer` / `uncertain` |
 | 5 | Bare `continue`/`resume`/`계속`/`이어서`-style continuation with no object | `defer` / `ambiguous` — never mints a task or id, never grants readiness |
@@ -617,13 +618,19 @@ contraction, not a delimiter), and `‘…’`, `“…”`, `「…」` pairs. 
 | 7 | Execution retry phrasing (restart/rerun/`다시 실행` of a failed/stopped run) | `defer` / `unsupported_template` — no execution-retry template exists; this is NOT tracking resume |
 | 8 | Observe + resume conflict (e.g. "check the existing task and resume it") | `defer` / `ambiguous` |
 | 9 | Resume signal about an execution object (sync/deploy/build/`갱신`/`이관`…) | `defer` / `unsupported_template` |
-| 10 | Resume signal about a tracking object (review/analysis/summary/`추적`/`관찰`…) | `recommend` intent `resume_existing` |
+| 10 | Resume signal about a tracking object (review/analysis/summary/`추적`/`관찰`…) | `resume_existing` intent; a separately delimited review/analysis ask or a write ask instead yields `defer/ambiguous` |
 | 11 | Unresolvable resume phrasing | `defer` / `uncertain` |
 | 12 | Observe signal (status/progress check of an existing task) | `recommend` intent `observe_existing`; observe + new-task ask → `defer`/`ambiguous` |
 | 13 | New-task intents (`new_patch`, `docs_patch`, `new_analysis`, `docs_analysis`, `review_readonly`) with negation scoping; vague-object markers → `defer/ambiguous`; multiple distinct intents → `defer/ambiguous` regardless of which candidates or access permissions remain | single intent or `defer` / `ambiguous` |
 | 14 | Inferred template missing from non-empty candidates | `defer` / `unsupported_template` — the omitted template is never replaced by an available neighbor (inference is independent of candidate availability; candidate order never decides the route) |
 | 15 | Trusted-context eligibility (`isRecommendationEligible`) false — `unspecified`/contrary operation, existing-task operation with a new-task intent, write intent without `write_allowed` | `defer` / `insufficient_context` — missing or contrary trusted context defers; text cannot grant access |
 | 16 | Single eligible, in-candidate intent | `recommend` / `matched` |
+
+An explicit `chat only`, `just explain`, or `채팅으로만` request is
+`not_a2a` without requiring a separate do-not-delegate phrase. Broad words
+such as `here` alone do not establish this intent. Existing review/analysis
+objects may be resumed, but separately delimited review/analysis asks remain
+competing work; host operation and candidate availability do not discard them.
 
 Before intent inference, explicit read-action prohibitions and the declared
 reported-completion sentence pattern defer. Explicit write prohibitions suppress

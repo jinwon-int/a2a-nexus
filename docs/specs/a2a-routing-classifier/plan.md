@@ -434,3 +434,9 @@ prohibition. Regressions cover these groups plus all128candidate subsets and
 read-only/docs-exclusion positives. Normalization now defers on expansion,
 competing actions stay ambiguous, and narrow negative/report patterns suppress
 positive intents. Corpus output counts remain descriptive, never accuracy.
+
+Independent review also reproduced explicit chat-only requests becoming tasks
+and tracking-resume requests discarding separately requested review/analysis.
+Regressions preserve the existing-review continuation contrast and candidate
+subsets. Foundation diagnostics are passed through without spreading; their
+arrays are not frozen or capped for unknown fields.

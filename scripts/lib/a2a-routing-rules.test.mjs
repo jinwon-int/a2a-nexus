@@ -875,3 +875,22 @@ finalizerTest('finalizer: negative guards preserve explicit read-only and docs-e
     const result=finalizerClassify(finalizerInput(text));finalizerAssert.equal(result.ok,true);finalizerAssert.equal(result.value.templateId,template);
   }
 });
+
+finalizerTest('review regression M1: explicit chat-only instructions need no delegation refusal',()=>{
+  for(const text of ['Chat only: review this PR.','채팅으로만 코드 검토해줘.','Just explain how to fix the bug in chat.']) for(let bits=0;bits<128;bits++) {
+    const input=finalizerInput(text,finalizerTemplates.filter((_,i)=>bits&(1<<i)));
+    const result=finalizerClassify(input);finalizerAssert.equal(result.ok,true);finalizerAssert.equal(result.value.decision,'not_a2a');
+  }
+});
+finalizerTest('review regression M2: resume cannot absorb separately requested read work',()=>{
+  for(const text of ['Resume monitoring the existing task and review PR #12.','Resume monitoring the existing task and investigate the unrelated database failure.','기존 작업 추적을 재개해줘. 별도로 새 PR도 검토해줘.']) for(let bits=0;bits<128;bits++) {
+    const input=finalizerInput(text,finalizerTemplates.filter((_,i)=>bits&(1<<i)));input.hostContext.operation='resume_existing';
+    const result=finalizerClassify(input);finalizerAssert.equal(result.ok,true);finalizerAssert.equal(result.value.decision,'defer');
+    if(bits)finalizerAssert.equal(result.value.reasonCode,'ambiguous');
+  }
+});
+finalizerTest('review regression contrasts: same existing review continuation and ordinary requests survive',()=>{
+  for(const [text,operation,template]of [['Continue the existing code review.','resume_existing','resume_existing'],['Resume monitoring the existing task.','resume_existing','resume_existing'],['Please review PR #12.','new_task','review_readonly'],['Please fix the login bug.','new_task','new_patch']]) {
+    const input=finalizerInput(text);input.hostContext.operation=operation;const result=finalizerClassify(input);finalizerAssert.equal(result.ok,true);finalizerAssert.equal(result.value.templateId,template);
+  }
+});

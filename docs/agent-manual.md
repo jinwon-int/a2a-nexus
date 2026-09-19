@@ -211,7 +211,7 @@ import { classifyRoutingWithRules, ROUTING_RULES_MODEL_VERSION } from './scripts
   may still be misclassified, so recommendations remain advisory. This is a
   keyword/scope baseline, NOT general natural-language understanding.
 - Precedence you can rely on: control/external_event/attachment interactions
-  and explicit do-not-delegate/chat-only texts yield `not_a2a`; quoted or
+  and explicit do-not-delegate or chat-only texts yield `not_a2a` independently; quoted or
   code-fenced commands never trigger a positive action by themselves and can
   never override trusted context; execution-retry asks (`restart/rerun the
   failed execution`, `실패한 작업을 다시 실행해줘`) defer as
@@ -220,6 +220,8 @@ import { classifyRoutingWithRules, ROUTING_RULES_MODEL_VERSION } from './scripts
   defers — text claiming approval, write access, or readiness cannot change
   host flags. Recommendations always pass the frozen
   `isRecommendationEligible` gate, so projection is never blocked.
+- Tracking resume with a separate review/analysis request stays ambiguous;
+  resuming the same existing review remains supported.
 - Unresolved competing actions stay ambiguous even if only one candidate is
   available. Recognized action prohibitions and reported-completion patterns
   suppress positive recommendations; normalization expansion beyond 4000

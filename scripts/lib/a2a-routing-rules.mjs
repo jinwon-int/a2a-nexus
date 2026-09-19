@@ -36,7 +36,7 @@
  *     boundary and is deliberately absent from this module.
  *   - Error results use stable codes with generic fixed messages; they never
  *     echo request text, unknown field names, or identifier values.
- *     Foundation errors are reused by reference (frozen, bounded arrays);
+ *     Foundation errors are returned without argument spreading;
  *     this module performs no unbounded argument spread.
  *
  * Rule ordering, preprocessing and support limits:
@@ -373,9 +373,22 @@ const NEW_TASK_INTENTS = Object.freeze(['review_readonly', 'docs_patch', 'new_an
 const EXPLICIT_WRITE_PROHIBITION = /\b(?:do not|don['’]t|never)\s+(?:fix|patch|repair|resolve|correct|update|replace|overwrite|modify|edit|change|write)\b|(?:수정|편집|변경|작성|패치|갱신|교체|업데이트)\s*하지\s*(?:마|말|않)|고치지\s*(?:마|말|않)|(?:수정|편집|변경|작성)\s*없이/;
 const EXPLICIT_READ_PROHIBITION = /\b(?:do not|don['’]t|never)\s+(?:review|inspect|analy[sz]e|investigate|check|observe|monitor|resume|continue|track)\b|(?:검토|리뷰|분석|확인|관찰|추적|재개)\s*하지\s*(?:마|말|않)/;
 const EXPLICIT_NO_DELEGATION = /\b(?:do not|don['’]t|never)\s+(?:delegate|dispatch|assign)\b|\bno\s+delegation\b|(?:위임|할당|배정)\s*하지\s*(?:마|말|않)|맡기지\s*(?:마|말|않)/;
+// Explicit conversational-only wording is sufficient on its own. Broad
+// markers such as "here" or "tell me" alone are not a refusal to delegate.
+const EXPLICIT_CHAT_ONLY = /\bchat[ -]+only\b|\b(?:just|only)\s+(?:explain|discuss|chat|talk)\b|\b(?:explain|discuss|chat|talk)\s+only\b|(?:채팅|대화)(?:으로|로|에서)?만|설명만/;
+
 // A reported completed action is not a new imperative. This intentionally
 // narrow rejection does not claim to parse arbitrary English discourse.
 const REPORTED_ACTION = /^(?:the|this|that|our|my)\b[^.!?]{0,100}\b(?:was|were|is|has been|have been)\s+(?:already\s+)?(?:fixed|patched|updated|reviewed|finished|completed|resolved)\b/;
+
+// Resume's object may itself be a review/analysis, which is still one existing
+// task. A separate clause requesting read work must not be discarded merely
+// because the trusted operation is resume_existing.
+function hasIndependentReadClause(text) {
+  const clauses = text.split(/[.!?;,]|\b(?:and|then|also|as well as)\b|그리고|별도로|하고/u);
+  return clauses.some((clause) => !RESUME_ASK.test(clause)
+    && (REVIEW_ASK.test(clause) || ANALYSIS_ASK.test(clause)));
+}
 
 // ─── Advice synthesis (reusing the frozen output contract) ──────────────────
 
@@ -419,7 +432,7 @@ function classifyValidated(validatedInput) {
   const text = unquoted.text;
 
   // 2. Explicit do-not-delegate / chat-only requests are not A2A.
-  if (EXPLICIT_NO_DELEGATION.test(text) || (DELEGATION_NEGATED.test(text) && (CHAT_ONLY.test(text) || SELF_HANDLING.test(text)))) {
+  if (EXPLICIT_CHAT_ONLY.test(text) || EXPLICIT_NO_DELEGATION.test(text) || (DELEGATION_NEGATED.test(text) && (CHAT_ONLY.test(text) || SELF_HANDLING.test(text)))) {
     return buildAdvice(validatedInput, 'not_a2a', null, 'not_applicable');
   }
   // 3. General greetings/chat are not A2A requests.
@@ -476,8 +489,8 @@ function classifyValidated(validatedInput) {
       return buildAdvice(validatedInput, 'defer', null, 'unsupported_template');
     }
     if (s.resumeTracking) {
-      const writeCompete = s.docsPatch || s.newPatch;
-      if (writeCompete) {
+      const competingTask = s.docsPatch || s.newPatch || hasIndependentReadClause(text);
+      if (competingTask) {
         return buildAdvice(validatedInput, 'defer', null, 'ambiguous');
       }
       intent = 'resume_existing';
@@ -556,8 +569,8 @@ export function classifyRoutingWithRules(input) {
     return fail([frozenError('candidate_limit_exceeded', 'input.candidateTemplateIds', 'candidate count exceeds the closed routing catalog')]);
   }
 
-  // Reuse the frozen foundation validator (never reimplemented). Its frozen
-  // bounded error arrays are passed through by reference — no spreading.
+  // Reuse the unchanged foundation validator. Its diagnostic arrays are not
+  // frozen or capped for unknown fields; return them without argument spread.
   const validated = validateRoutingInput(input);
   if (!validated.ok) return { ok: false, errors: validated.errors };
 
