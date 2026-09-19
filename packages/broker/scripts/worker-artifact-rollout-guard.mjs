@@ -51,6 +51,9 @@ const HANDLER_SUPPORT_FILENAMES = [
   'lib/source-carriers.mjs',
   'lib/retrieval-snapshot-carriers.mjs',
   'lib/live-operation-adapter.mjs',
+  'lib/analysis-execution-telemetry.mjs',
+  'finalizer-tool-policy.mjs',
+  'lib/utf8-byte-budget.mjs',
 ];
 const ANALYSIS_BRIDGE_BIN_VARS = ['A2A_PIRI_ANALYSIS_BIN', 'A2A_HERMES_ANALYSIS_BIN', 'A2A_OPENCLAW_ANALYSIS_BIN', 'OPENCLAW_BIN'];
 const UNSET_ENV_TOKENS = new Set(['', 'none', 'null', 'undefined']);
