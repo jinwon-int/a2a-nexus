@@ -230,12 +230,9 @@ function validateAcceptableOutcome(outcome, outcomePath, validatedInput, outcome
   }
   if (!shapeOk) return undefined;
 
-  const outcomeKey = canonicalJson({
-    decision: outcome.decision,
-    templateId: outcome.templateId,
-    reasonCode: outcome.reasonCode,
-  });
-  if (!isPlainObject(validatedInput)) return outcomeKey;
+  // Invalid input already rejects the record. Do not recursively inspect
+  // unvalidated outcome values merely to derive a duplicate key.
+  if (!isPlainObject(validatedInput)) return undefined;
 
   // Reuse the frozen foundation: validate a synthesized
   // `a2a.routing-advice.v1` output against the record's validated input with
@@ -256,8 +253,14 @@ function validateAcceptableOutcome(outcome, outcomePath, validatedInput, outcome
   );
   if (!foundation.ok) {
     outcomeErrors.push(error('outcome_invalid', outcomePath, 'acceptableOutcome was rejected by the frozen routing advice foundation contract'));
-    return outcomeKey;
+    return undefined;
   }
+  // The foundation has now bounded these fields to enum strings or null.
+  const outcomeKey = canonicalJson({
+    decision: foundation.value.decision,
+    templateId: foundation.value.templateId,
+    reasonCode: foundation.value.reasonCode,
+  });
   if (
     foundation.value.decision === 'recommend' &&
     !isRecommendationEligible(validatedInput, foundation.value.templateId)
@@ -326,6 +329,7 @@ function validateLabel(label, labelPath, inputPath, validatedInput, recordErrors
   }
 
   const outcomes = label.acceptableOutcomes;
+  const seenOutcomeKeys = new Set();
   if (!Array.isArray(outcomes)) {
     errors.push(error('invalid_acceptable_outcomes', `${labelPath}.acceptableOutcomes`, 'acceptableOutcomes must be an array of outcome objects'));
   } else {
@@ -335,7 +339,6 @@ function validateLabel(label, labelPath, inputPath, validatedInput, recordErrors
     if (outcomes.length > MAX_ACCEPTABLE_OUTCOMES) {
       errors.push(error('outcome_limit_exceeded', `${labelPath}.acceptableOutcomes`, `acceptableOutcomes must contain at most ${MAX_ACCEPTABLE_OUTCOMES} entries`));
     }
-    const seenOutcomeKeys = new Set();
     const inputOk = isPlainObject(validatedInput);
     outcomes.forEach((outcome, i) => {
       const outcomePath = `${labelPath}.acceptableOutcomes[${i}]`;
@@ -362,12 +365,9 @@ function validateLabel(label, labelPath, inputPath, validatedInput, recordErrors
       errors.push(error('review_requires_reviewer', `${labelPath}.reviewerAliases`, 'reviewed and disputed labels require at least one reviewer alias'));
     }
     if (status === 'disputed' && Array.isArray(outcomes)) {
-      const distinct = new Set(
-        outcomes
-          .filter((o) => isPlainObject(o) && OUTCOME_FIELDS.every((f) => f in o))
-          .map((o) => canonicalJson({ decision: o.decision, templateId: o.templateId, reasonCode: o.reasonCode })),
-      );
-      if (distinct.size < 2) {
+      // Reuse only the bounded keys validated above; malformed alternatives
+      // must not be traversed again by disputed-label accounting.
+      if (seenOutcomeKeys.size < 2) {
         errors.push(error('disputed_requires_alternatives', `${labelPath}.acceptableOutcomes`, 'a disputed label requires at least two distinct acceptableOutcomes'));
       }
     }

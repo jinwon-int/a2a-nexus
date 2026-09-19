@@ -1083,3 +1083,30 @@ corpusFinalizerTest('finalizer: standalone judgment projection preserves split a
     corpusFinalizerAssert.deepEqual(corpusFinalizerProject(privateDraft), { ok: true, value: privateDraft.input });
   }
 });
+
+corpusFinalizerTest('finalizer: malformed nested outcome values reject before canonical hashing', () => {
+  const nested = JSON.parse('{"nested":'.repeat(3000) + 'null' + '}'.repeat(3000));
+  for (const field of ['decision', 'templateId', 'reasonCode']) {
+    for (const status of ['draft', 'disputed']) {
+      for (const validInput of [true, false]) {
+        const r = corpusFinalizerRecord();
+        if (!validInput) r.input.hostContext.operation = 'invalid-operation';
+        if (status === 'disputed') {
+          r.label.status = status;
+          r.label.reviewerAliases = ['independent-reviewer'];
+          r.label.acceptableOutcomes.push({ decision: 'defer', templateId: null, reasonCode: 'uncertain' });
+        }
+        r.label.acceptableOutcomes[0][field] = nested;
+        for (const fn of [corpusFinalizerValidate, corpusFinalizerDigest]) {
+          let result;
+          corpusFinalizerAssert.doesNotThrow(() => { result = fn(corpusFinalizerEnvelope(r)); });
+          corpusFinalizerAssert.equal(result.ok, false);
+          corpusFinalizerAssert.equal('digest' in result, false);
+        }
+        let projection;
+        corpusFinalizerAssert.doesNotThrow(() => { projection = corpusFinalizerProject(r); });
+        corpusFinalizerAssert.equal(projection.ok, false);
+      }
+    }
+  }
+});
