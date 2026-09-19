@@ -220,6 +220,7 @@ function validateAcceptableOutcome(outcome, outcomePath, validatedInput, outcome
     if (!OUTCOME_FIELDS.includes(key)) {
       outcomeErrors.push(error('unknown_field', outcomePath, 'unexpected field'));
       shapeOk = false;
+      break;
     }
   }
   for (const field of OUTCOME_FIELDS) {
@@ -286,6 +287,7 @@ function validateLabel(label, labelPath, inputPath, validatedInput, recordErrors
   for (const key of Object.keys(label)) {
     if (!LABEL_FIELDS.includes(key)) {
       errors.push(error('unknown_field', labelPath, 'unexpected field'));
+      break;
     }
   }
   for (const field of LABEL_FIELDS) {
@@ -294,7 +296,7 @@ function validateLabel(label, labelPath, inputPath, validatedInput, recordErrors
     }
   }
   if (errors.length > 0) {
-    recordErrors.push(...errors);
+    for (const item of errors) recordErrors.push(item);
     return;
   }
 
@@ -313,7 +315,7 @@ function validateLabel(label, labelPath, inputPath, validatedInput, recordErrors
       errors.push(error('reviewer_alias_limit_exceeded', `${labelPath}.reviewerAliases`, `reviewerAliases must contain at most ${MAX_REVIEWER_ALIASES} entries`));
     }
     const seenReviewers = new Set();
-    reviewers.forEach((alias, i) => {
+    reviewers.slice(0, MAX_REVIEWER_ALIASES).forEach((alias, i) => {
       if (!isBoundedAlias(alias)) {
         errors.push(error('invalid_reviewer_alias', `${labelPath}.reviewerAliases[${i}]`, `reviewer aliases must be nonblank strings of at most ${MAX_ALIAS_CODEPOINTS} codepoints`));
         return;
@@ -340,7 +342,7 @@ function validateLabel(label, labelPath, inputPath, validatedInput, recordErrors
       errors.push(error('outcome_limit_exceeded', `${labelPath}.acceptableOutcomes`, `acceptableOutcomes must contain at most ${MAX_ACCEPTABLE_OUTCOMES} entries`));
     }
     const inputOk = isPlainObject(validatedInput);
-    outcomes.forEach((outcome, i) => {
+    outcomes.slice(0, MAX_ACCEPTABLE_OUTCOMES).forEach((outcome, i) => {
       const outcomePath = `${labelPath}.acceptableOutcomes[${i}]`;
       const outcomeKey = validateAcceptableOutcome(outcome, outcomePath, inputOk ? validatedInput : null, errors);
       if (outcomeKey !== undefined) {
@@ -356,7 +358,7 @@ function validateLabel(label, labelPath, inputPath, validatedInput, recordErrors
   const status = label.status;
   if (CORPUS_LABEL_STATUSES.includes(status)) {
     const reviewerCount = Array.isArray(reviewers)
-      ? reviewers.filter((r) => typeof r === 'string' && r.trim().length > 0).length
+      ? reviewers.slice(0, MAX_REVIEWER_ALIASES).filter((r) => typeof r === 'string' && r.trim().length > 0).length
       : 0;
     if (status === 'draft' && reviewers !== undefined && Array.isArray(reviewers) && reviewers.length > 0) {
       errors.push(error('draft_has_reviewers', `${labelPath}.reviewerAliases`, 'a draft label must not claim reviewers'));
@@ -372,7 +374,7 @@ function validateLabel(label, labelPath, inputPath, validatedInput, recordErrors
       }
     }
   }
-  recordErrors.push(...errors);
+  for (const item of errors) recordErrors.push(item);
 }
 
 // ─── Record validation ───────────────────────────────────────────────────────
@@ -391,6 +393,7 @@ export function validateCorpusRecord(record, path = 'record') {
   for (const key of Object.keys(record)) {
     if (!RECORD_FIELDS.includes(key)) {
       errors.push(error('unknown_field', path, 'unexpected field'));
+      break;
     }
   }
   for (const field of RECORD_FIELDS) {
@@ -427,7 +430,7 @@ export function validateCorpusRecord(record, path = 'record') {
       errors.push(error('tag_limit_exceeded', `${path}.coverageTags`, `coverageTags must contain at most ${COVERAGE_TAG_VOCABULARY.length} entries`));
     }
     const seenTags = new Set();
-    tags.forEach((tag, i) => {
+    tags.slice(0, COVERAGE_TAG_VOCABULARY.length).forEach((tag, i) => {
       if (typeof tag !== 'string' || !COVERAGE_TAG_VOCABULARY.includes(tag)) {
         errors.push(error('unknown_coverage_tag', `${path}.coverageTags[${i}]`, 'coverage tag is not in the closed vocabulary'));
         return;
@@ -443,7 +446,14 @@ export function validateCorpusRecord(record, path = 'record') {
   // foundation validator (never reimplemented here).
   const inputPath = `${path}.input`;
   let validatedInput = null;
-  const inputResult = validateRoutingInput(record.input);
+  // More candidates than the closed catalog can never be unique and known.
+  // Reject impossible widths before the frozen validator allocates per-item
+  // diagnostics; all admissible widths still use its unchanged contract.
+  const tooManyCandidates = Array.isArray(record.input?.candidateTemplateIds)
+    && record.input.candidateTemplateIds.length > ROUTING_TEMPLATE_IDS.length;
+  const inputResult = tooManyCandidates
+    ? { ok: false, errors: [error('candidate_limit_exceeded', 'input.candidateTemplateIds', 'candidate count exceeds the closed routing catalog')] }
+    : validateRoutingInput(record.input);
   if (!inputResult.ok) {
     for (const foundationError of inputResult.errors) {
       errors.push(error(foundationError.code, remapFoundationPath(foundationError.path, inputPath), foundationError.message));
@@ -515,6 +525,7 @@ export function validateRoutingCorpus(corpus) {
   for (const key of Object.keys(corpus)) {
     if (!ROOT_FIELDS.includes(key)) {
       errors.push(error('unknown_field', 'corpus', 'unexpected field'));
+      break;
     }
   }
   for (const field of ROOT_FIELDS) {
@@ -552,7 +563,7 @@ export function validateRoutingCorpus(corpus) {
     const result = validateCorpusRecord(record, `records[${i}]`);
     if (!result.ok) {
       invalidIndexes.add(i);
-      errors.push(...result.errors);
+      for (const item of result.errors) errors.push(item);
     } else {
       validatedRecords[i] = result.value;
     }

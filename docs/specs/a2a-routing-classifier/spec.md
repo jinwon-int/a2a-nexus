@@ -58,8 +58,7 @@ prepares or admits a task, and never elevates readiness.
   **later** phase. The ≥20 reviewed-by-tests fixture cases below are
   illustrative contract examples and do NOT complete Phase A. The corpus
   slice below ships only the offline validation infrastructure and a public
-  synthetic, draft-label, development-split corpus awaiting independent
-  review; it makes no blind-set claim.
+  synthetic, independently reviewed development-split corpus; it makes no blind-set claim.
 
 ## Closed input contract (`a2a.routing-input.v1`)
 
@@ -259,16 +258,16 @@ deliverable; the fixture count must never be presented as completing it.
 public synthetic development corpus defined in [the corpus slice
 section](#corpus-slice-2196-phase-a-slice-offline-corpus-validation-a2aroutingcorpusv1).
 It is exposed development data only: every record is `split: development`,
-`exposure: public_development`, `label.status: draft`, `authorAlias:
-corpus-author`, empty reviewers, awaiting independent review. It is NOT a
+`exposure: public_development`, `label.status: reviewed`, `authorAlias:
+corpus-author`, and reviewer alias `independent-corpus-reviewer-01`. It is NOT a
 blind holdout, NOT calibration data, and NOT evaluation evidence. See
 `fixtures/a2a-routing-advice/README.md`.
 
 ## Corpus slice (#2196, Phase A slice): offline corpus validation (`a2a.routing-corpus.v1`)
 
 > **Boundary**: corpus infrastructure plus exposed synthetic development data
-> only. NOT the full Phase A (the private calibration/holdout seal and
-> external independent review remain future work), NOT model classification,
+> only. NOT the full Phase A (new private examples, their independent review
+> and calibration/holdout seal remain future work), NOT model classification,
 > NOT model evaluation, and NOT any accuracy, quality or speed claim. This
 > section changes no live behavior and calls no model, provider, dispatcher or
 > `prepareAssignment`/`normalizeAssignRequest`.
@@ -364,8 +363,8 @@ Label status rules:
   alternatives) AND at least 1 distinct non-author reviewer.
 - Alias presence is DECLARED PROVENANCE ONLY. The format cannot prove that a
   reviewer is a distinct independent person or model, nor that any review
-  actually happened; actual independent review is performed separately by a
-  human finalizer. No review or reviewer may be invented at authoring time.
+  actually happened; actual independent review is performed separately and checked by the
+  finalizer. No review or reviewer may be invented at authoring time.
 
 ### Integrity rules (all structured rejections, batched)
 
@@ -461,10 +460,11 @@ review vs patch, observe vs resume vs new-task, do-not-delegate negation,
 quotes claiming authority, ambiguous and compound requests, missing trusted
 context, empty-candidate and unsupported-candidate cases, control,
 external-event and attachment interactions, and typos. ALL records are
-`development` / `public_development` / `draft` / `authorAlias: corpus-author`
-/ empty reviewers. Texts are human-readable synthetic bilingual examples with
+`development` / `public_development` / `reviewed` / `authorAlias: corpus-author`
+/ reviewer alias `independent-corpus-reviewer-01` (review provenance in README). Texts are human-readable synthetic bilingual examples with
 no private endpoints, paths, tokens, fleet identifiers, real user chats or
-production data — not 80 mechanical variable substitutions. The existing 27
+production data. The 80 topical groups remain substantially templated; their
+count is not evidence of semantic independence. The existing 27
 `contracts.json` cases remain illustrative and are NOT part of these group
 counts. A tiny private reviewed corpus may exist ONLY as an inline synthetic
 test fixture; it is not an actual blind-set claim. No model benchmark is run
@@ -475,7 +475,7 @@ in this slice.
 - `node --test scripts/lib/a2a-routing-corpus.test.mjs` executes the WHOLE
   fixture and asserts the ≥80 group / ≥160 base variant / ≥8 paired-group
   floors, full category coverage, no group leakage, and the required
-  exposure/draft truth; plus all negative injections and digest-sensitivity
+  exposure/review provenance; plus all negative injections and digest-sensitivity
   cases listed in the plan.
 - Base absence proof (RED): `git cat-file -e
   b0c7346f:scripts/lib/a2a-routing-corpus.mjs` → absent on the foundation
@@ -492,3 +492,10 @@ in this slice.
   `d622d7db` (reproducible via `git grep a2a.routing-input.v1 d622d7db` → no
   match; `git cat-file -e d622d7db:scripts/lib/a2a-routing-advice.mjs` →
   absent), the RED evidence for this contract lane.
+
+Malformed arrays above declared reviewer/outcome/tag caps are rejected and only
+bounded entries are inspected. Candidate lists wider than the seven-entry
+closed catalog are impossible valid inputs and are rejected before invoking
+the frozen input validator. Unknown keys produce a generic diagnostic per
+corpus-owned object; aggregated errors are appended without function-argument
+spread, including diagnostics returned by the frozen foundation.

@@ -27,9 +27,11 @@
         }
       },
       "label": {
-        "status": "draft",
+        "status": "reviewed",
         "authorAlias": "corpus-author",
-        "reviewerAliases": [],
+        "reviewerAliases": [
+          "independent-corpus-reviewer-01"
+        ],
         "acceptableOutcomes": [
           {
             "decision": "recommend",
@@ -64,9 +66,11 @@
         }
       },
       "label": {
-        "status": "draft",
+        "status": "reviewed",
         "authorAlias": "corpus-author",
-        "reviewerAliases": [],
+        "reviewerAliases": [
+          "independent-corpus-reviewer-01"
+        ],
         "acceptableOutcomes": [
           {
             "decision": "recommend",
@@ -101,9 +105,11 @@
         }
       },
       "label": {
-        "status": "draft",
+        "status": "reviewed",
         "authorAlias": "corpus-author",
-        "reviewerAliases": [],
+        "reviewerAliases": [
+          "independent-corpus-reviewer-01"
+        ],
         "acceptableOutcomes": [
           {
             "decision": "defer",
@@ -137,9 +143,11 @@
         }
       },
       "label": {
-        "status": "draft",
+        "status": "reviewed",
         "authorAlias": "corpus-author",
-        "reviewerAliases": [],
+        "reviewerAliases": [
+          "independent-corpus-reviewer-01"
+        ],
         "acceptableOutcomes": [
           {
             "decision": "recommend",
@@ -174,9 +182,11 @@
         }
       },
       "label": {
-        "status": "draft",
+        "status": "reviewed",
         "authorAlias": "corpus-author",
-        "reviewerAliases": [],
+        "reviewerAliases": [
+          "independent-corpus-reviewer-01"
+        ],
         "acceptableOutcomes": [
           {
             "decision": "recommend",
@@ -210,9 +220,11 @@
         }
       },
       "label": {
-        "status": "draft",
+        "status": "reviewed",
         "authorAlias": "corpus-author",
-        "reviewerAliases": [],
+        "reviewerAliases": [
+          "independent-corpus-reviewer-01"
+        ],
         "acceptableOutcomes": [
           {
             "decision": "recommend",
@@ -246,9 +258,11 @@
         }
       },
       "label": {
-        "status": "draft",
+        "status": "reviewed",
         "authorAlias": "corpus-author",
-        "reviewerAliases": [],
+        "reviewerAliases": [
+          "independent-corpus-reviewer-01"
+        ],
         "acceptableOutcomes": [
           {
             "decision": "recommend",
@@ -282,9 +296,11 @@
         }
       },
       "label": {
-        "status": "draft",
+        "status": "reviewed",
         "authorAlias": "corpus-author",
-        "reviewerAliases": [],
+        "reviewerAliases": [
+          "independent-corpus-reviewer-01"
+        ],
         "acceptableOutcomes": [
           {
             "decision": "recommend",
@@ -318,9 +334,11 @@
         }
       },
       "label": {
-        "status": "draft",
+        "status": "reviewed",
         "authorAlias": "corpus-author",
-        "reviewerAliases": [],
+        "reviewerAliases": [
+          "independent-corpus-reviewer-01"
+        ],
         "acceptableOutcomes": [
           {
             "decision": "recommend",
@@ -354,9 +372,11 @@
         }
       },
       "label": {
-        "status": "draft",
+        "status": "reviewed",
         "authorAlias": "corpus-author",
-        "reviewerAliases": [],
+        "reviewerAliases": [
+          "independent-corpus-reviewer-01"
+        ],
         "acceptableOutcomes": [
           {
             "decision": "recommend",
@@ -390,9 +410,11 @@
         }
       },
       "label": {
-        "status": "draft",
+        "status": "reviewed",
         "authorAlias": "corpus-author",
-        "reviewerAliases": [],
+        "reviewerAliases": [
+          "independent-corpus-reviewer-01"
+        ],
         "acceptableOutcomes": [
           {
             "decision": "recommend",
@@ -426,9 +448,11 @@
         }
       },
       "label": {
-        "status": "draft",
+        "status": "reviewed",
         "authorAlias": "corpus-author",
-        "reviewerAliases": [],
+        "reviewerAliases": [
+          "independent-corpus-reviewer-01"
+        ],
         "acceptableOutcomes": [
           {
             "decision": "recommend",
@@ -462,9 +486,11 @@
         }
       },
       "label": {
-        "status": "draft",
+        "status": "reviewed",
         "authorAlias": "corpus-author",
-        "reviewerAliases": [],
+        "reviewerAliases": [
+          "independent-corpus-reviewer-01"
+        ],
         "acceptableOutcomes": [
           {
             "decision": "recommend",
@@ -498,9 +524,11 @@
         }
       },
       "label": {
-        "status": "draft",
+        "status": "reviewed",
         "authorAlias": "corpus-author",
-        "reviewerAliases": [],
+        "reviewerAliases": [
+          "independent-corpus-reviewer-01"
+        ],
         "acceptableOutcomes": [
           {
             "decision": "recommend",
@@ -534,9 +562,11 @@
         }
       },
       "label": {
-        "status": "draft",
+        "status": "reviewed",
         "authorAlias": "corpus-author",
-        "reviewerAliases": [],
+        "reviewerAliases": [
+          "independent-corpus-reviewer-01"
+        ],
         "acceptableOutcomes": [
           {
             "decision": "recommend",
@@ -570,9 +600,11 @@
         }
       },
       "label": {
-        "status": "draft",
+        "status": "reviewed",
         "authorAlias": "corpus-author",
-        "reviewerAliases": [],
+        "reviewerAliases": [
+          "independent-corpus-reviewer-01"
+        ],
         "acceptableOutcomes": [
           {
             "decision": "recommend",
@@ -606,9 +638,11 @@
         }
       },
       "label": {
-        "status": "draft",
+        "status": "reviewed",
         "authorAlias": "corpus-author",
-        "reviewerAliases": [],
+        "reviewerAliases": [
+          "independent-corpus-reviewer-01"
+        ],
         "acceptableOutcomes": [
           {
             "decision": "recommend",
@@ -642,9 +676,11 @@
         }
       },
       "label": {
-        "status": "draft",
+        "status": "reviewed",
         "authorAlias": "corpus-author",
-        "reviewerAliases": [],
+        "reviewerAliases": [
+          "independent-corpus-reviewer-01"
+        ],
         "acceptableOutcomes": [
           {
             "decision": "recommend",
@@ -678,9 +714,11 @@
         }
       },
       "label": {
-        "status": "draft",
+        "status": "reviewed",
         "authorAlias": "corpus-author",
-        "reviewerAliases": [],
+        "reviewerAliases": [
+          "independent-corpus-reviewer-01"
+        ],
         "acceptableOutcomes": [
           {
             "decision": "recommend",
@@ -713,9 +751,11 @@
         }
       },
       "label": {
-        "status": "draft",
+        "status": "reviewed",
         "authorAlias": "corpus-author",
-        "reviewerAliases": [],
+        "reviewerAliases": [
+          "independent-corpus-reviewer-01"
+        ],
         "acceptableOutcomes": [
           {
             "decision": "defer",
@@ -749,9 +789,11 @@
         }
       },
       "label": {
-        "status": "draft",
+        "status": "reviewed",
         "authorAlias": "corpus-author",
-        "reviewerAliases": [],
+        "reviewerAliases": [
+          "independent-corpus-reviewer-01"
+        ],
         "acceptableOutcomes": [
           {
             "decision": "recommend",
@@ -785,9 +827,11 @@
         }
       },
       "label": {
-        "status": "draft",
+        "status": "reviewed",
         "authorAlias": "corpus-author",
-        "reviewerAliases": [],
+        "reviewerAliases": [
+          "independent-corpus-reviewer-01"
+        ],
         "acceptableOutcomes": [
           {
             "decision": "recommend",
@@ -821,9 +865,11 @@
         }
       },
       "label": {
-        "status": "draft",
+        "status": "reviewed",
         "authorAlias": "corpus-author",
-        "reviewerAliases": [],
+        "reviewerAliases": [
+          "independent-corpus-reviewer-01"
+        ],
         "acceptableOutcomes": [
           {
             "decision": "recommend",
@@ -858,9 +904,11 @@
         }
       },
       "label": {
-        "status": "draft",
+        "status": "reviewed",
         "authorAlias": "corpus-author",
-        "reviewerAliases": [],
+        "reviewerAliases": [
+          "independent-corpus-reviewer-01"
+        ],
         "acceptableOutcomes": [
           {
             "decision": "recommend",
@@ -894,9 +942,11 @@
         }
       },
       "label": {
-        "status": "draft",
+        "status": "reviewed",
         "authorAlias": "corpus-author",
-        "reviewerAliases": [],
+        "reviewerAliases": [
+          "independent-corpus-reviewer-01"
+        ],
         "acceptableOutcomes": [
           {
             "decision": "recommend",
@@ -930,9 +980,11 @@
         }
       },
       "label": {
-        "status": "draft",
+        "status": "reviewed",
         "authorAlias": "corpus-author",
-        "reviewerAliases": [],
+        "reviewerAliases": [
+          "independent-corpus-reviewer-01"
+        ],
         "acceptableOutcomes": [
           {
             "decision": "recommend",
@@ -966,9 +1018,11 @@
         }
       },
       "label": {
-        "status": "draft",
+        "status": "reviewed",
         "authorAlias": "corpus-author",
-        "reviewerAliases": [],
+        "reviewerAliases": [
+          "independent-corpus-reviewer-01"
+        ],
         "acceptableOutcomes": [
           {
             "decision": "recommend",
@@ -1003,9 +1057,11 @@
         }
       },
       "label": {
-        "status": "draft",
+        "status": "reviewed",
         "authorAlias": "corpus-author",
-        "reviewerAliases": [],
+        "reviewerAliases": [
+          "independent-corpus-reviewer-01"
+        ],
         "acceptableOutcomes": [
           {
             "decision": "defer",
@@ -1039,9 +1095,11 @@
         }
       },
       "label": {
-        "status": "draft",
+        "status": "reviewed",
         "authorAlias": "corpus-author",
-        "reviewerAliases": [],
+        "reviewerAliases": [
+          "independent-corpus-reviewer-01"
+        ],
         "acceptableOutcomes": [
           {
             "decision": "recommend",
@@ -1075,9 +1133,11 @@
         }
       },
       "label": {
-        "status": "draft",
+        "status": "reviewed",
         "authorAlias": "corpus-author",
-        "reviewerAliases": [],
+        "reviewerAliases": [
+          "independent-corpus-reviewer-01"
+        ],
         "acceptableOutcomes": [
           {
             "decision": "recommend",
@@ -1111,9 +1171,11 @@
         }
       },
       "label": {
-        "status": "draft",
+        "status": "reviewed",
         "authorAlias": "corpus-author",
-        "reviewerAliases": [],
+        "reviewerAliases": [
+          "independent-corpus-reviewer-01"
+        ],
         "acceptableOutcomes": [
           {
             "decision": "recommend",
@@ -1147,9 +1209,11 @@
         }
       },
       "label": {
-        "status": "draft",
+        "status": "reviewed",
         "authorAlias": "corpus-author",
-        "reviewerAliases": [],
+        "reviewerAliases": [
+          "independent-corpus-reviewer-01"
+        ],
         "acceptableOutcomes": [
           {
             "decision": "recommend",
@@ -1183,9 +1247,11 @@
         }
       },
       "label": {
-        "status": "draft",
+        "status": "reviewed",
         "authorAlias": "corpus-author",
-        "reviewerAliases": [],
+        "reviewerAliases": [
+          "independent-corpus-reviewer-01"
+        ],
         "acceptableOutcomes": [
           {
             "decision": "recommend",
@@ -1220,9 +1286,11 @@
         }
       },
       "label": {
-        "status": "draft",
+        "status": "reviewed",
         "authorAlias": "corpus-author",
-        "reviewerAliases": [],
+        "reviewerAliases": [
+          "independent-corpus-reviewer-01"
+        ],
         "acceptableOutcomes": [
           {
             "decision": "recommend",
@@ -1257,9 +1325,11 @@
         }
       },
       "label": {
-        "status": "draft",
+        "status": "reviewed",
         "authorAlias": "corpus-author",
-        "reviewerAliases": [],
+        "reviewerAliases": [
+          "independent-corpus-reviewer-01"
+        ],
         "acceptableOutcomes": [
           {
             "decision": "defer",
@@ -1293,9 +1363,11 @@
         }
       },
       "label": {
-        "status": "draft",
+        "status": "reviewed",
         "authorAlias": "corpus-author",
-        "reviewerAliases": [],
+        "reviewerAliases": [
+          "independent-corpus-reviewer-01"
+        ],
         "acceptableOutcomes": [
           {
             "decision": "recommend",
@@ -1329,9 +1401,11 @@
         }
       },
       "label": {
-        "status": "draft",
+        "status": "reviewed",
         "authorAlias": "corpus-author",
-        "reviewerAliases": [],
+        "reviewerAliases": [
+          "independent-corpus-reviewer-01"
+        ],
         "acceptableOutcomes": [
           {
             "decision": "recommend",
@@ -1365,9 +1439,11 @@
         }
       },
       "label": {
-        "status": "draft",
+        "status": "reviewed",
         "authorAlias": "corpus-author",
-        "reviewerAliases": [],
+        "reviewerAliases": [
+          "independent-corpus-reviewer-01"
+        ],
         "acceptableOutcomes": [
           {
             "decision": "recommend",
@@ -1401,9 +1477,11 @@
         }
       },
       "label": {
-        "status": "draft",
+        "status": "reviewed",
         "authorAlias": "corpus-author",
-        "reviewerAliases": [],
+        "reviewerAliases": [
+          "independent-corpus-reviewer-01"
+        ],
         "acceptableOutcomes": [
           {
             "decision": "recommend",
@@ -1437,9 +1515,11 @@
         }
       },
       "label": {
-        "status": "draft",
+        "status": "reviewed",
         "authorAlias": "corpus-author",
-        "reviewerAliases": [],
+        "reviewerAliases": [
+          "independent-corpus-reviewer-01"
+        ],
         "acceptableOutcomes": [
           {
             "decision": "recommend",
@@ -1473,9 +1553,11 @@
         }
       },
       "label": {
-        "status": "draft",
+        "status": "reviewed",
         "authorAlias": "corpus-author",
-        "reviewerAliases": [],
+        "reviewerAliases": [
+          "independent-corpus-reviewer-01"
+        ],
         "acceptableOutcomes": [
           {
             "decision": "recommend",
@@ -1509,9 +1591,11 @@
         }
       },
       "label": {
-        "status": "draft",
+        "status": "reviewed",
         "authorAlias": "corpus-author",
-        "reviewerAliases": [],
+        "reviewerAliases": [
+          "independent-corpus-reviewer-01"
+        ],
         "acceptableOutcomes": [
           {
             "decision": "recommend",
@@ -1546,9 +1630,11 @@
         }
       },
       "label": {
-        "status": "draft",
+        "status": "reviewed",
         "authorAlias": "corpus-author",
-        "reviewerAliases": [],
+        "reviewerAliases": [
+          "independent-corpus-reviewer-01"
+        ],
         "acceptableOutcomes": [
           {
             "decision": "recommend",
@@ -1582,9 +1668,11 @@
         }
       },
       "label": {
-        "status": "draft",
+        "status": "reviewed",
         "authorAlias": "corpus-author",
-        "reviewerAliases": [],
+        "reviewerAliases": [
+          "independent-corpus-reviewer-01"
+        ],
         "acceptableOutcomes": [
           {
             "decision": "recommend",
@@ -1618,9 +1706,11 @@
         }
       },
       "label": {
-        "status": "draft",
+        "status": "reviewed",
         "authorAlias": "corpus-author",
-        "reviewerAliases": [],
+        "reviewerAliases": [
+          "independent-corpus-reviewer-01"
+        ],
         "acceptableOutcomes": [
           {
             "decision": "recommend",
@@ -1654,9 +1744,11 @@
         }
       },
       "label": {
-        "status": "draft",
+        "status": "reviewed",
         "authorAlias": "corpus-author",
-        "reviewerAliases": [],
+        "reviewerAliases": [
+          "independent-corpus-reviewer-01"
+        ],
         "acceptableOutcomes": [
           {
             "decision": "recommend",
@@ -1690,9 +1782,11 @@
         }
       },
       "label": {
-        "status": "draft",
+        "status": "reviewed",
         "authorAlias": "corpus-author",
-        "reviewerAliases": [],
+        "reviewerAliases": [
+          "independent-corpus-reviewer-01"
+        ],
         "acceptableOutcomes": [
           {
             "decision": "recommend",
@@ -1726,9 +1820,11 @@
         }
       },
       "label": {
-        "status": "draft",
+        "status": "reviewed",
         "authorAlias": "corpus-author",
-        "reviewerAliases": [],
+        "reviewerAliases": [
+          "independent-corpus-reviewer-01"
+        ],
         "acceptableOutcomes": [
           {
             "decision": "recommend",
@@ -1762,9 +1858,11 @@
         }
       },
       "label": {
-        "status": "draft",
+        "status": "reviewed",
         "authorAlias": "corpus-author",
-        "reviewerAliases": [],
+        "reviewerAliases": [
+          "independent-corpus-reviewer-01"
+        ],
         "acceptableOutcomes": [
           {
             "decision": "recommend",
@@ -1798,9 +1896,11 @@
         }
       },
       "label": {
-        "status": "draft",
+        "status": "reviewed",
         "authorAlias": "corpus-author",
-        "reviewerAliases": [],
+        "reviewerAliases": [
+          "independent-corpus-reviewer-01"
+        ],
         "acceptableOutcomes": [
           {
             "decision": "recommend",
@@ -1834,9 +1934,11 @@
         }
       },
       "label": {
-        "status": "draft",
+        "status": "reviewed",
         "authorAlias": "corpus-author",
-        "reviewerAliases": [],
+        "reviewerAliases": [
+          "independent-corpus-reviewer-01"
+        ],
         "acceptableOutcomes": [
           {
             "decision": "recommend",
@@ -1870,9 +1972,11 @@
         }
       },
       "label": {
-        "status": "draft",
+        "status": "reviewed",
         "authorAlias": "corpus-author",
-        "reviewerAliases": [],
+        "reviewerAliases": [
+          "independent-corpus-reviewer-01"
+        ],
         "acceptableOutcomes": [
           {
             "decision": "recommend",
@@ -1906,9 +2010,11 @@
         }
       },
       "label": {
-        "status": "draft",
+        "status": "reviewed",
         "authorAlias": "corpus-author",
-        "reviewerAliases": [],
+        "reviewerAliases": [
+          "independent-corpus-reviewer-01"
+        ],
         "acceptableOutcomes": [
           {
             "decision": "recommend",
@@ -1942,9 +2048,11 @@
         }
       },
       "label": {
-        "status": "draft",
+        "status": "reviewed",
         "authorAlias": "corpus-author",
-        "reviewerAliases": [],
+        "reviewerAliases": [
+          "independent-corpus-reviewer-01"
+        ],
         "acceptableOutcomes": [
           {
             "decision": "recommend",
@@ -1978,9 +2086,11 @@
         }
       },
       "label": {
-        "status": "draft",
+        "status": "reviewed",
         "authorAlias": "corpus-author",
-        "reviewerAliases": [],
+        "reviewerAliases": [
+          "independent-corpus-reviewer-01"
+        ],
         "acceptableOutcomes": [
           {
             "decision": "recommend",
@@ -2014,9 +2124,11 @@
         }
       },
       "label": {
-        "status": "draft",
+        "status": "reviewed",
         "authorAlias": "corpus-author",
-        "reviewerAliases": [],
+        "reviewerAliases": [
+          "independent-corpus-reviewer-01"
+        ],
         "acceptableOutcomes": [
           {
             "decision": "recommend",
@@ -2050,9 +2162,11 @@
         }
       },
       "label": {
-        "status": "draft",
+        "status": "reviewed",
         "authorAlias": "corpus-author",
-        "reviewerAliases": [],
+        "reviewerAliases": [
+          "independent-corpus-reviewer-01"
+        ],
         "acceptableOutcomes": [
           {
             "decision": "recommend",
@@ -2086,9 +2200,11 @@
         }
       },
       "label": {
-        "status": "draft",
+        "status": "reviewed",
         "authorAlias": "corpus-author",
-        "reviewerAliases": [],
+        "reviewerAliases": [
+          "independent-corpus-reviewer-01"
+        ],
         "acceptableOutcomes": [
           {
             "decision": "recommend",
@@ -2122,9 +2238,11 @@
         }
       },
       "label": {
-        "status": "draft",
+        "status": "reviewed",
         "authorAlias": "corpus-author",
-        "reviewerAliases": [],
+        "reviewerAliases": [
+          "independent-corpus-reviewer-01"
+        ],
         "acceptableOutcomes": [
           {
             "decision": "recommend",
@@ -2158,9 +2276,11 @@
         }
       },
       "label": {
-        "status": "draft",
+        "status": "reviewed",
         "authorAlias": "corpus-author",
-        "reviewerAliases": [],
+        "reviewerAliases": [
+          "independent-corpus-reviewer-01"
+        ],
         "acceptableOutcomes": [
           {
             "decision": "recommend",
@@ -2194,9 +2314,11 @@
         }
       },
       "label": {
-        "status": "draft",
+        "status": "reviewed",
         "authorAlias": "corpus-author",
-        "reviewerAliases": [],
+        "reviewerAliases": [
+          "independent-corpus-reviewer-01"
+        ],
         "acceptableOutcomes": [
           {
             "decision": "recommend",
@@ -2230,9 +2352,11 @@
         }
       },
       "label": {
-        "status": "draft",
+        "status": "reviewed",
         "authorAlias": "corpus-author",
-        "reviewerAliases": [],
+        "reviewerAliases": [
+          "independent-corpus-reviewer-01"
+        ],
         "acceptableOutcomes": [
           {
             "decision": "recommend",
@@ -2267,9 +2391,11 @@
         }
       },
       "label": {
-        "status": "draft",
+        "status": "reviewed",
         "authorAlias": "corpus-author",
-        "reviewerAliases": [],
+        "reviewerAliases": [
+          "independent-corpus-reviewer-01"
+        ],
         "acceptableOutcomes": [
           {
             "decision": "recommend",
@@ -2304,9 +2430,11 @@
         }
       },
       "label": {
-        "status": "draft",
+        "status": "reviewed",
         "authorAlias": "corpus-author",
-        "reviewerAliases": [],
+        "reviewerAliases": [
+          "independent-corpus-reviewer-01"
+        ],
         "acceptableOutcomes": [
           {
             "decision": "defer",
@@ -2340,9 +2468,11 @@
         }
       },
       "label": {
-        "status": "draft",
+        "status": "reviewed",
         "authorAlias": "corpus-author",
-        "reviewerAliases": [],
+        "reviewerAliases": [
+          "independent-corpus-reviewer-01"
+        ],
         "acceptableOutcomes": [
           {
             "decision": "recommend",
@@ -2376,9 +2506,11 @@
         }
       },
       "label": {
-        "status": "draft",
+        "status": "reviewed",
         "authorAlias": "corpus-author",
-        "reviewerAliases": [],
+        "reviewerAliases": [
+          "independent-corpus-reviewer-01"
+        ],
         "acceptableOutcomes": [
           {
             "decision": "recommend",
@@ -2412,9 +2544,11 @@
         }
       },
       "label": {
-        "status": "draft",
+        "status": "reviewed",
         "authorAlias": "corpus-author",
-        "reviewerAliases": [],
+        "reviewerAliases": [
+          "independent-corpus-reviewer-01"
+        ],
         "acceptableOutcomes": [
           {
             "decision": "recommend",
@@ -2448,9 +2582,11 @@
         }
       },
       "label": {
-        "status": "draft",
+        "status": "reviewed",
         "authorAlias": "corpus-author",
-        "reviewerAliases": [],
+        "reviewerAliases": [
+          "independent-corpus-reviewer-01"
+        ],
         "acceptableOutcomes": [
           {
             "decision": "recommend",
@@ -2484,9 +2620,11 @@
         }
       },
       "label": {
-        "status": "draft",
+        "status": "reviewed",
         "authorAlias": "corpus-author",
-        "reviewerAliases": [],
+        "reviewerAliases": [
+          "independent-corpus-reviewer-01"
+        ],
         "acceptableOutcomes": [
           {
             "decision": "recommend",
@@ -2521,9 +2659,11 @@
         }
       },
       "label": {
-        "status": "draft",
+        "status": "reviewed",
         "authorAlias": "corpus-author",
-        "reviewerAliases": [],
+        "reviewerAliases": [
+          "independent-corpus-reviewer-01"
+        ],
         "acceptableOutcomes": [
           {
             "decision": "defer",
@@ -2557,9 +2697,11 @@
         }
       },
       "label": {
-        "status": "draft",
+        "status": "reviewed",
         "authorAlias": "corpus-author",
-        "reviewerAliases": [],
+        "reviewerAliases": [
+          "independent-corpus-reviewer-01"
+        ],
         "acceptableOutcomes": [
           {
             "decision": "recommend",
@@ -2594,9 +2736,11 @@
         }
       },
       "label": {
-        "status": "draft",
+        "status": "reviewed",
         "authorAlias": "corpus-author",
-        "reviewerAliases": [],
+        "reviewerAliases": [
+          "independent-corpus-reviewer-01"
+        ],
         "acceptableOutcomes": [
           {
             "decision": "recommend",
@@ -2630,9 +2774,11 @@
         }
       },
       "label": {
-        "status": "draft",
+        "status": "reviewed",
         "authorAlias": "corpus-author",
-        "reviewerAliases": [],
+        "reviewerAliases": [
+          "independent-corpus-reviewer-01"
+        ],
         "acceptableOutcomes": [
           {
             "decision": "recommend",
@@ -2666,9 +2812,11 @@
         }
       },
       "label": {
-        "status": "draft",
+        "status": "reviewed",
         "authorAlias": "corpus-author",
-        "reviewerAliases": [],
+        "reviewerAliases": [
+          "independent-corpus-reviewer-01"
+        ],
         "acceptableOutcomes": [
           {
             "decision": "recommend",
@@ -2702,9 +2850,11 @@
         }
       },
       "label": {
-        "status": "draft",
+        "status": "reviewed",
         "authorAlias": "corpus-author",
-        "reviewerAliases": [],
+        "reviewerAliases": [
+          "independent-corpus-reviewer-01"
+        ],
         "acceptableOutcomes": [
           {
             "decision": "recommend",
@@ -2738,9 +2888,11 @@
         }
       },
       "label": {
-        "status": "draft",
+        "status": "reviewed",
         "authorAlias": "corpus-author",
-        "reviewerAliases": [],
+        "reviewerAliases": [
+          "independent-corpus-reviewer-01"
+        ],
         "acceptableOutcomes": [
           {
             "decision": "recommend",
@@ -2774,9 +2926,11 @@
         }
       },
       "label": {
-        "status": "draft",
+        "status": "reviewed",
         "authorAlias": "corpus-author",
-        "reviewerAliases": [],
+        "reviewerAliases": [
+          "independent-corpus-reviewer-01"
+        ],
         "acceptableOutcomes": [
           {
             "decision": "recommend",
@@ -2810,9 +2964,11 @@
         }
       },
       "label": {
-        "status": "draft",
+        "status": "reviewed",
         "authorAlias": "corpus-author",
-        "reviewerAliases": [],
+        "reviewerAliases": [
+          "independent-corpus-reviewer-01"
+        ],
         "acceptableOutcomes": [
           {
             "decision": "recommend",
@@ -2845,9 +3001,11 @@
         }
       },
       "label": {
-        "status": "draft",
+        "status": "reviewed",
         "authorAlias": "corpus-author",
-        "reviewerAliases": [],
+        "reviewerAliases": [
+          "independent-corpus-reviewer-01"
+        ],
         "acceptableOutcomes": [
           {
             "decision": "defer",
@@ -2881,9 +3039,11 @@
         }
       },
       "label": {
-        "status": "draft",
+        "status": "reviewed",
         "authorAlias": "corpus-author",
-        "reviewerAliases": [],
+        "reviewerAliases": [
+          "independent-corpus-reviewer-01"
+        ],
         "acceptableOutcomes": [
           {
             "decision": "recommend",
@@ -2917,9 +3077,11 @@
         }
       },
       "label": {
-        "status": "draft",
+        "status": "reviewed",
         "authorAlias": "corpus-author",
-        "reviewerAliases": [],
+        "reviewerAliases": [
+          "independent-corpus-reviewer-01"
+        ],
         "acceptableOutcomes": [
           {
             "decision": "recommend",
@@ -2953,9 +3115,11 @@
         }
       },
       "label": {
-        "status": "draft",
+        "status": "reviewed",
         "authorAlias": "corpus-author",
-        "reviewerAliases": [],
+        "reviewerAliases": [
+          "independent-corpus-reviewer-01"
+        ],
         "acceptableOutcomes": [
           {
             "decision": "recommend",
@@ -2989,9 +3153,11 @@
         }
       },
       "label": {
-        "status": "draft",
+        "status": "reviewed",
         "authorAlias": "corpus-author",
-        "reviewerAliases": [],
+        "reviewerAliases": [
+          "independent-corpus-reviewer-01"
+        ],
         "acceptableOutcomes": [
           {
             "decision": "recommend",
@@ -3025,9 +3191,11 @@
         }
       },
       "label": {
-        "status": "draft",
+        "status": "reviewed",
         "authorAlias": "corpus-author",
-        "reviewerAliases": [],
+        "reviewerAliases": [
+          "independent-corpus-reviewer-01"
+        ],
         "acceptableOutcomes": [
           {
             "decision": "recommend",
@@ -3061,9 +3229,11 @@
         }
       },
       "label": {
-        "status": "draft",
+        "status": "reviewed",
         "authorAlias": "corpus-author",
-        "reviewerAliases": [],
+        "reviewerAliases": [
+          "independent-corpus-reviewer-01"
+        ],
         "acceptableOutcomes": [
           {
             "decision": "recommend",
@@ -3097,9 +3267,11 @@
         }
       },
       "label": {
-        "status": "draft",
+        "status": "reviewed",
         "authorAlias": "corpus-author",
-        "reviewerAliases": [],
+        "reviewerAliases": [
+          "independent-corpus-reviewer-01"
+        ],
         "acceptableOutcomes": [
           {
             "decision": "recommend",
@@ -3133,9 +3305,11 @@
         }
       },
       "label": {
-        "status": "draft",
+        "status": "reviewed",
         "authorAlias": "corpus-author",
-        "reviewerAliases": [],
+        "reviewerAliases": [
+          "independent-corpus-reviewer-01"
+        ],
         "acceptableOutcomes": [
           {
             "decision": "recommend",
@@ -3169,9 +3343,11 @@
         }
       },
       "label": {
-        "status": "draft",
+        "status": "reviewed",
         "authorAlias": "corpus-author",
-        "reviewerAliases": [],
+        "reviewerAliases": [
+          "independent-corpus-reviewer-01"
+        ],
         "acceptableOutcomes": [
           {
             "decision": "recommend",
@@ -3206,9 +3382,11 @@
         }
       },
       "label": {
-        "status": "draft",
+        "status": "reviewed",
         "authorAlias": "corpus-author",
-        "reviewerAliases": [],
+        "reviewerAliases": [
+          "independent-corpus-reviewer-01"
+        ],
         "acceptableOutcomes": [
           {
             "decision": "defer",
@@ -3242,14 +3420,16 @@
         }
       },
       "label": {
-        "status": "draft",
+        "status": "reviewed",
         "authorAlias": "corpus-author",
-        "reviewerAliases": [],
+        "reviewerAliases": [
+          "independent-corpus-reviewer-01"
+        ],
         "acceptableOutcomes": [
           {
-            "decision": "recommend",
-            "templateId": "resume_existing",
-            "reasonCode": "matched"
+            "decision": "defer",
+            "templateId": null,
+            "reasonCode": "unsupported_template"
           }
         ]
       }
@@ -3278,14 +3458,16 @@
         }
       },
       "label": {
-        "status": "draft",
+        "status": "reviewed",
         "authorAlias": "corpus-author",
-        "reviewerAliases": [],
+        "reviewerAliases": [
+          "independent-corpus-reviewer-01"
+        ],
         "acceptableOutcomes": [
           {
-            "decision": "recommend",
-            "templateId": "resume_existing",
-            "reasonCode": "matched"
+            "decision": "defer",
+            "templateId": null,
+            "reasonCode": "unsupported_template"
           }
         ]
       }
@@ -3313,9 +3495,11 @@
         }
       },
       "label": {
-        "status": "draft",
+        "status": "reviewed",
         "authorAlias": "corpus-author",
-        "reviewerAliases": [],
+        "reviewerAliases": [
+          "independent-corpus-reviewer-01"
+        ],
         "acceptableOutcomes": [
           {
             "decision": "defer",
@@ -3349,14 +3533,16 @@
         }
       },
       "label": {
-        "status": "draft",
+        "status": "reviewed",
         "authorAlias": "corpus-author",
-        "reviewerAliases": [],
+        "reviewerAliases": [
+          "independent-corpus-reviewer-01"
+        ],
         "acceptableOutcomes": [
           {
-            "decision": "recommend",
-            "templateId": "resume_existing",
-            "reasonCode": "matched"
+            "decision": "defer",
+            "templateId": null,
+            "reasonCode": "unsupported_template"
           }
         ]
       }
@@ -3385,14 +3571,16 @@
         }
       },
       "label": {
-        "status": "draft",
+        "status": "reviewed",
         "authorAlias": "corpus-author",
-        "reviewerAliases": [],
+        "reviewerAliases": [
+          "independent-corpus-reviewer-01"
+        ],
         "acceptableOutcomes": [
           {
-            "decision": "recommend",
-            "templateId": "resume_existing",
-            "reasonCode": "matched"
+            "decision": "defer",
+            "templateId": null,
+            "reasonCode": "unsupported_template"
           }
         ]
       }
@@ -3422,9 +3610,11 @@
         }
       },
       "label": {
-        "status": "draft",
+        "status": "reviewed",
         "authorAlias": "corpus-author",
-        "reviewerAliases": [],
+        "reviewerAliases": [
+          "independent-corpus-reviewer-01"
+        ],
         "acceptableOutcomes": [
           {
             "decision": "recommend",
@@ -3458,9 +3648,11 @@
         }
       },
       "label": {
-        "status": "draft",
+        "status": "reviewed",
         "authorAlias": "corpus-author",
-        "reviewerAliases": [],
+        "reviewerAliases": [
+          "independent-corpus-reviewer-01"
+        ],
         "acceptableOutcomes": [
           {
             "decision": "recommend",
@@ -3494,9 +3686,11 @@
         }
       },
       "label": {
-        "status": "draft",
+        "status": "reviewed",
         "authorAlias": "corpus-author",
-        "reviewerAliases": [],
+        "reviewerAliases": [
+          "independent-corpus-reviewer-01"
+        ],
         "acceptableOutcomes": [
           {
             "decision": "recommend",
@@ -3530,9 +3724,11 @@
         }
       },
       "label": {
-        "status": "draft",
+        "status": "reviewed",
         "authorAlias": "corpus-author",
-        "reviewerAliases": [],
+        "reviewerAliases": [
+          "independent-corpus-reviewer-01"
+        ],
         "acceptableOutcomes": [
           {
             "decision": "recommend",
@@ -3566,14 +3762,16 @@
         }
       },
       "label": {
-        "status": "draft",
+        "status": "reviewed",
         "authorAlias": "corpus-author",
-        "reviewerAliases": [],
+        "reviewerAliases": [
+          "independent-corpus-reviewer-01"
+        ],
         "acceptableOutcomes": [
           {
-            "decision": "recommend",
-            "templateId": "resume_existing",
-            "reasonCode": "matched"
+            "decision": "defer",
+            "templateId": null,
+            "reasonCode": "unsupported_template"
           }
         ]
       }
@@ -3602,14 +3800,16 @@
         }
       },
       "label": {
-        "status": "draft",
+        "status": "reviewed",
         "authorAlias": "corpus-author",
-        "reviewerAliases": [],
+        "reviewerAliases": [
+          "independent-corpus-reviewer-01"
+        ],
         "acceptableOutcomes": [
           {
-            "decision": "recommend",
-            "templateId": "resume_existing",
-            "reasonCode": "matched"
+            "decision": "defer",
+            "templateId": null,
+            "reasonCode": "unsupported_template"
           }
         ]
       }
@@ -3638,9 +3838,11 @@
         }
       },
       "label": {
-        "status": "draft",
+        "status": "reviewed",
         "authorAlias": "corpus-author",
-        "reviewerAliases": [],
+        "reviewerAliases": [
+          "independent-corpus-reviewer-01"
+        ],
         "acceptableOutcomes": [
           {
             "decision": "recommend",
@@ -3674,9 +3876,11 @@
         }
       },
       "label": {
-        "status": "draft",
+        "status": "reviewed",
         "authorAlias": "corpus-author",
-        "reviewerAliases": [],
+        "reviewerAliases": [
+          "independent-corpus-reviewer-01"
+        ],
         "acceptableOutcomes": [
           {
             "decision": "recommend",
@@ -3710,9 +3914,11 @@
         }
       },
       "label": {
-        "status": "draft",
+        "status": "reviewed",
         "authorAlias": "corpus-author",
-        "reviewerAliases": [],
+        "reviewerAliases": [
+          "independent-corpus-reviewer-01"
+        ],
         "acceptableOutcomes": [
           {
             "decision": "not_a2a",
@@ -3746,9 +3952,11 @@
         }
       },
       "label": {
-        "status": "draft",
+        "status": "reviewed",
         "authorAlias": "corpus-author",
-        "reviewerAliases": [],
+        "reviewerAliases": [
+          "independent-corpus-reviewer-01"
+        ],
         "acceptableOutcomes": [
           {
             "decision": "not_a2a",
@@ -3783,9 +3991,11 @@
         }
       },
       "label": {
-        "status": "draft",
+        "status": "reviewed",
         "authorAlias": "corpus-author",
-        "reviewerAliases": [],
+        "reviewerAliases": [
+          "independent-corpus-reviewer-01"
+        ],
         "acceptableOutcomes": [
           {
             "decision": "not_a2a",
@@ -3820,9 +4030,11 @@
         }
       },
       "label": {
-        "status": "draft",
+        "status": "reviewed",
         "authorAlias": "corpus-author",
-        "reviewerAliases": [],
+        "reviewerAliases": [
+          "independent-corpus-reviewer-01"
+        ],
         "acceptableOutcomes": [
           {
             "decision": "not_a2a",
@@ -3856,9 +4068,11 @@
         }
       },
       "label": {
-        "status": "draft",
+        "status": "reviewed",
         "authorAlias": "corpus-author",
-        "reviewerAliases": [],
+        "reviewerAliases": [
+          "independent-corpus-reviewer-01"
+        ],
         "acceptableOutcomes": [
           {
             "decision": "not_a2a",
@@ -3892,9 +4106,11 @@
         }
       },
       "label": {
-        "status": "draft",
+        "status": "reviewed",
         "authorAlias": "corpus-author",
-        "reviewerAliases": [],
+        "reviewerAliases": [
+          "independent-corpus-reviewer-01"
+        ],
         "acceptableOutcomes": [
           {
             "decision": "not_a2a",
@@ -3928,9 +4144,11 @@
         }
       },
       "label": {
-        "status": "draft",
+        "status": "reviewed",
         "authorAlias": "corpus-author",
-        "reviewerAliases": [],
+        "reviewerAliases": [
+          "independent-corpus-reviewer-01"
+        ],
         "acceptableOutcomes": [
           {
             "decision": "not_a2a",
@@ -3964,9 +4182,11 @@
         }
       },
       "label": {
-        "status": "draft",
+        "status": "reviewed",
         "authorAlias": "corpus-author",
-        "reviewerAliases": [],
+        "reviewerAliases": [
+          "independent-corpus-reviewer-01"
+        ],
         "acceptableOutcomes": [
           {
             "decision": "not_a2a",
@@ -4000,9 +4220,11 @@
         }
       },
       "label": {
-        "status": "draft",
+        "status": "reviewed",
         "authorAlias": "corpus-author",
-        "reviewerAliases": [],
+        "reviewerAliases": [
+          "independent-corpus-reviewer-01"
+        ],
         "acceptableOutcomes": [
           {
             "decision": "not_a2a",
@@ -4036,9 +4258,11 @@
         }
       },
       "label": {
-        "status": "draft",
+        "status": "reviewed",
         "authorAlias": "corpus-author",
-        "reviewerAliases": [],
+        "reviewerAliases": [
+          "independent-corpus-reviewer-01"
+        ],
         "acceptableOutcomes": [
           {
             "decision": "not_a2a",
@@ -4070,9 +4294,11 @@
         }
       },
       "label": {
-        "status": "draft",
+        "status": "reviewed",
         "authorAlias": "corpus-author",
-        "reviewerAliases": [],
+        "reviewerAliases": [
+          "independent-corpus-reviewer-01"
+        ],
         "acceptableOutcomes": [
           {
             "decision": "not_a2a",
@@ -4104,9 +4330,11 @@
         }
       },
       "label": {
-        "status": "draft",
+        "status": "reviewed",
         "authorAlias": "corpus-author",
-        "reviewerAliases": [],
+        "reviewerAliases": [
+          "independent-corpus-reviewer-01"
+        ],
         "acceptableOutcomes": [
           {
             "decision": "not_a2a",
@@ -4141,9 +4369,11 @@
         }
       },
       "label": {
-        "status": "draft",
+        "status": "reviewed",
         "authorAlias": "corpus-author",
-        "reviewerAliases": [],
+        "reviewerAliases": [
+          "independent-corpus-reviewer-01"
+        ],
         "acceptableOutcomes": [
           {
             "decision": "defer",
@@ -4183,9 +4413,11 @@
         }
       },
       "label": {
-        "status": "draft",
+        "status": "reviewed",
         "authorAlias": "corpus-author",
-        "reviewerAliases": [],
+        "reviewerAliases": [
+          "independent-corpus-reviewer-01"
+        ],
         "acceptableOutcomes": [
           {
             "decision": "defer",
@@ -4225,9 +4457,11 @@
         }
       },
       "label": {
-        "status": "draft",
+        "status": "reviewed",
         "authorAlias": "corpus-author",
-        "reviewerAliases": [],
+        "reviewerAliases": [
+          "independent-corpus-reviewer-01"
+        ],
         "acceptableOutcomes": [
           {
             "decision": "defer",
@@ -4267,9 +4501,11 @@
         }
       },
       "label": {
-        "status": "draft",
+        "status": "reviewed",
         "authorAlias": "corpus-author",
-        "reviewerAliases": [],
+        "reviewerAliases": [
+          "independent-corpus-reviewer-01"
+        ],
         "acceptableOutcomes": [
           {
             "decision": "defer",
@@ -4309,9 +4545,11 @@
         }
       },
       "label": {
-        "status": "draft",
+        "status": "reviewed",
         "authorAlias": "corpus-author",
-        "reviewerAliases": [],
+        "reviewerAliases": [
+          "independent-corpus-reviewer-01"
+        ],
         "acceptableOutcomes": [
           {
             "decision": "defer",
@@ -4351,9 +4589,11 @@
         }
       },
       "label": {
-        "status": "draft",
+        "status": "reviewed",
         "authorAlias": "corpus-author",
-        "reviewerAliases": [],
+        "reviewerAliases": [
+          "independent-corpus-reviewer-01"
+        ],
         "acceptableOutcomes": [
           {
             "decision": "defer",
@@ -4393,9 +4633,11 @@
         }
       },
       "label": {
-        "status": "draft",
+        "status": "reviewed",
         "authorAlias": "corpus-author",
-        "reviewerAliases": [],
+        "reviewerAliases": [
+          "independent-corpus-reviewer-01"
+        ],
         "acceptableOutcomes": [
           {
             "decision": "defer",
@@ -4435,9 +4677,11 @@
         }
       },
       "label": {
-        "status": "draft",
+        "status": "reviewed",
         "authorAlias": "corpus-author",
-        "reviewerAliases": [],
+        "reviewerAliases": [
+          "independent-corpus-reviewer-01"
+        ],
         "acceptableOutcomes": [
           {
             "decision": "defer",
@@ -4477,9 +4721,11 @@
         }
       },
       "label": {
-        "status": "draft",
+        "status": "reviewed",
         "authorAlias": "corpus-author",
-        "reviewerAliases": [],
+        "reviewerAliases": [
+          "independent-corpus-reviewer-01"
+        ],
         "acceptableOutcomes": [
           {
             "decision": "defer",
@@ -4519,9 +4765,11 @@
         }
       },
       "label": {
-        "status": "draft",
+        "status": "reviewed",
         "authorAlias": "corpus-author",
-        "reviewerAliases": [],
+        "reviewerAliases": [
+          "independent-corpus-reviewer-01"
+        ],
         "acceptableOutcomes": [
           {
             "decision": "defer",
@@ -4561,9 +4809,11 @@
         }
       },
       "label": {
-        "status": "draft",
+        "status": "reviewed",
         "authorAlias": "corpus-author",
-        "reviewerAliases": [],
+        "reviewerAliases": [
+          "independent-corpus-reviewer-01"
+        ],
         "acceptableOutcomes": [
           {
             "decision": "defer",
@@ -4598,9 +4848,11 @@
         }
       },
       "label": {
-        "status": "draft",
+        "status": "reviewed",
         "authorAlias": "corpus-author",
-        "reviewerAliases": [],
+        "reviewerAliases": [
+          "independent-corpus-reviewer-01"
+        ],
         "acceptableOutcomes": [
           {
             "decision": "defer",
@@ -4634,9 +4886,11 @@
         }
       },
       "label": {
-        "status": "draft",
+        "status": "reviewed",
         "authorAlias": "corpus-author",
-        "reviewerAliases": [],
+        "reviewerAliases": [
+          "independent-corpus-reviewer-01"
+        ],
         "acceptableOutcomes": [
           {
             "decision": "defer",
@@ -4671,9 +4925,11 @@
         }
       },
       "label": {
-        "status": "draft",
+        "status": "reviewed",
         "authorAlias": "corpus-author",
-        "reviewerAliases": [],
+        "reviewerAliases": [
+          "independent-corpus-reviewer-01"
+        ],
         "acceptableOutcomes": [
           {
             "decision": "defer",
@@ -4708,9 +4964,11 @@
         }
       },
       "label": {
-        "status": "draft",
+        "status": "reviewed",
         "authorAlias": "corpus-author",
-        "reviewerAliases": [],
+        "reviewerAliases": [
+          "independent-corpus-reviewer-01"
+        ],
         "acceptableOutcomes": [
           {
             "decision": "defer",
@@ -4745,9 +5003,11 @@
         }
       },
       "label": {
-        "status": "draft",
+        "status": "reviewed",
         "authorAlias": "corpus-author",
-        "reviewerAliases": [],
+        "reviewerAliases": [
+          "independent-corpus-reviewer-01"
+        ],
         "acceptableOutcomes": [
           {
             "decision": "defer",
@@ -4783,9 +5043,11 @@
         }
       },
       "label": {
-        "status": "draft",
+        "status": "reviewed",
         "authorAlias": "corpus-author",
-        "reviewerAliases": [],
+        "reviewerAliases": [
+          "independent-corpus-reviewer-01"
+        ],
         "acceptableOutcomes": [
           {
             "decision": "defer",
@@ -4823,14 +5085,16 @@
         }
       },
       "label": {
-        "status": "draft",
+        "status": "reviewed",
         "authorAlias": "corpus-author",
-        "reviewerAliases": [],
+        "reviewerAliases": [
+          "independent-corpus-reviewer-01"
+        ],
         "acceptableOutcomes": [
           {
-            "decision": "defer",
-            "templateId": null,
-            "reasonCode": "ambiguous"
+            "decision": "recommend",
+            "templateId": "docs_patch",
+            "reasonCode": "matched"
           }
         ]
       }
@@ -4863,14 +5127,16 @@
         }
       },
       "label": {
-        "status": "draft",
+        "status": "reviewed",
         "authorAlias": "corpus-author",
-        "reviewerAliases": [],
+        "reviewerAliases": [
+          "independent-corpus-reviewer-01"
+        ],
         "acceptableOutcomes": [
           {
-            "decision": "defer",
-            "templateId": null,
-            "reasonCode": "ambiguous"
+            "decision": "recommend",
+            "templateId": "docs_patch",
+            "reasonCode": "matched"
           }
         ]
       }
@@ -4902,14 +5168,16 @@
         }
       },
       "label": {
-        "status": "draft",
+        "status": "reviewed",
         "authorAlias": "corpus-author",
-        "reviewerAliases": [],
+        "reviewerAliases": [
+          "independent-corpus-reviewer-01"
+        ],
         "acceptableOutcomes": [
           {
-            "decision": "defer",
-            "templateId": null,
-            "reasonCode": "ambiguous"
+            "decision": "recommend",
+            "templateId": "docs_patch",
+            "reasonCode": "matched"
           }
         ]
       }
@@ -4939,9 +5207,11 @@
         }
       },
       "label": {
-        "status": "draft",
+        "status": "reviewed",
         "authorAlias": "corpus-author",
-        "reviewerAliases": [],
+        "reviewerAliases": [
+          "independent-corpus-reviewer-01"
+        ],
         "acceptableOutcomes": [
           {
             "decision": "defer",
@@ -4976,9 +5246,11 @@
         }
       },
       "label": {
-        "status": "draft",
+        "status": "reviewed",
         "authorAlias": "corpus-author",
-        "reviewerAliases": [],
+        "reviewerAliases": [
+          "independent-corpus-reviewer-01"
+        ],
         "acceptableOutcomes": [
           {
             "decision": "defer",
@@ -5013,9 +5285,11 @@
         }
       },
       "label": {
-        "status": "draft",
+        "status": "reviewed",
         "authorAlias": "corpus-author",
-        "reviewerAliases": [],
+        "reviewerAliases": [
+          "independent-corpus-reviewer-01"
+        ],
         "acceptableOutcomes": [
           {
             "decision": "defer",
@@ -5050,9 +5324,11 @@
         }
       },
       "label": {
-        "status": "draft",
+        "status": "reviewed",
         "authorAlias": "corpus-author",
-        "reviewerAliases": [],
+        "reviewerAliases": [
+          "independent-corpus-reviewer-01"
+        ],
         "acceptableOutcomes": [
           {
             "decision": "defer",
@@ -5085,9 +5361,11 @@
         }
       },
       "label": {
-        "status": "draft",
+        "status": "reviewed",
         "authorAlias": "corpus-author",
-        "reviewerAliases": [],
+        "reviewerAliases": [
+          "independent-corpus-reviewer-01"
+        ],
         "acceptableOutcomes": [
           {
             "decision": "defer",
@@ -5122,9 +5400,11 @@
         }
       },
       "label": {
-        "status": "draft",
+        "status": "reviewed",
         "authorAlias": "corpus-author",
-        "reviewerAliases": [],
+        "reviewerAliases": [
+          "independent-corpus-reviewer-01"
+        ],
         "acceptableOutcomes": [
           {
             "decision": "defer",
@@ -5159,9 +5439,11 @@
         }
       },
       "label": {
-        "status": "draft",
+        "status": "reviewed",
         "authorAlias": "corpus-author",
-        "reviewerAliases": [],
+        "reviewerAliases": [
+          "independent-corpus-reviewer-01"
+        ],
         "acceptableOutcomes": [
           {
             "decision": "defer",
@@ -5198,9 +5480,11 @@
         }
       },
       "label": {
-        "status": "draft",
+        "status": "reviewed",
         "authorAlias": "corpus-author",
-        "reviewerAliases": [],
+        "reviewerAliases": [
+          "independent-corpus-reviewer-01"
+        ],
         "acceptableOutcomes": [
           {
             "decision": "defer",
@@ -5237,9 +5521,11 @@
         }
       },
       "label": {
-        "status": "draft",
+        "status": "reviewed",
         "authorAlias": "corpus-author",
-        "reviewerAliases": [],
+        "reviewerAliases": [
+          "independent-corpus-reviewer-01"
+        ],
         "acceptableOutcomes": [
           {
             "decision": "defer",
@@ -5276,9 +5562,11 @@
         }
       },
       "label": {
-        "status": "draft",
+        "status": "reviewed",
         "authorAlias": "corpus-author",
-        "reviewerAliases": [],
+        "reviewerAliases": [
+          "independent-corpus-reviewer-01"
+        ],
         "acceptableOutcomes": [
           {
             "decision": "defer",
@@ -5315,9 +5603,11 @@
         }
       },
       "label": {
-        "status": "draft",
+        "status": "reviewed",
         "authorAlias": "corpus-author",
-        "reviewerAliases": [],
+        "reviewerAliases": [
+          "independent-corpus-reviewer-01"
+        ],
         "acceptableOutcomes": [
           {
             "decision": "defer",
@@ -5352,14 +5642,16 @@
         }
       },
       "label": {
-        "status": "draft",
+        "status": "reviewed",
         "authorAlias": "corpus-author",
-        "reviewerAliases": [],
+        "reviewerAliases": [
+          "independent-corpus-reviewer-01"
+        ],
         "acceptableOutcomes": [
           {
-            "decision": "defer",
-            "templateId": null,
-            "reasonCode": "ambiguous"
+            "decision": "recommend",
+            "templateId": "review_readonly",
+            "reasonCode": "matched"
           }
         ]
       }
@@ -5389,14 +5681,16 @@
         }
       },
       "label": {
-        "status": "draft",
+        "status": "reviewed",
         "authorAlias": "corpus-author",
-        "reviewerAliases": [],
+        "reviewerAliases": [
+          "independent-corpus-reviewer-01"
+        ],
         "acceptableOutcomes": [
           {
-            "decision": "defer",
-            "templateId": null,
-            "reasonCode": "ambiguous"
+            "decision": "recommend",
+            "templateId": "review_readonly",
+            "reasonCode": "matched"
           }
         ]
       }
@@ -5430,9 +5724,11 @@
         }
       },
       "label": {
-        "status": "draft",
+        "status": "reviewed",
         "authorAlias": "corpus-author",
-        "reviewerAliases": [],
+        "reviewerAliases": [
+          "independent-corpus-reviewer-01"
+        ],
         "acceptableOutcomes": [
           {
             "decision": "defer",
@@ -5471,9 +5767,11 @@
         }
       },
       "label": {
-        "status": "draft",
+        "status": "reviewed",
         "authorAlias": "corpus-author",
-        "reviewerAliases": [],
+        "reviewerAliases": [
+          "independent-corpus-reviewer-01"
+        ],
         "acceptableOutcomes": [
           {
             "decision": "defer",
@@ -5510,9 +5808,11 @@
         }
       },
       "label": {
-        "status": "draft",
+        "status": "reviewed",
         "authorAlias": "corpus-author",
-        "reviewerAliases": [],
+        "reviewerAliases": [
+          "independent-corpus-reviewer-01"
+        ],
         "acceptableOutcomes": [
           {
             "decision": "defer",
@@ -5549,9 +5849,11 @@
         }
       },
       "label": {
-        "status": "draft",
+        "status": "reviewed",
         "authorAlias": "corpus-author",
-        "reviewerAliases": [],
+        "reviewerAliases": [
+          "independent-corpus-reviewer-01"
+        ],
         "acceptableOutcomes": [
           {
             "decision": "defer",
@@ -5584,9 +5886,11 @@
         }
       },
       "label": {
-        "status": "draft",
+        "status": "reviewed",
         "authorAlias": "corpus-author",
-        "reviewerAliases": [],
+        "reviewerAliases": [
+          "independent-corpus-reviewer-01"
+        ],
         "acceptableOutcomes": [
           {
             "decision": "defer",
@@ -5621,9 +5925,11 @@
         }
       },
       "label": {
-        "status": "draft",
+        "status": "reviewed",
         "authorAlias": "corpus-author",
-        "reviewerAliases": [],
+        "reviewerAliases": [
+          "independent-corpus-reviewer-01"
+        ],
         "acceptableOutcomes": [
           {
             "decision": "defer",
@@ -5658,9 +5964,11 @@
         }
       },
       "label": {
-        "status": "draft",
+        "status": "reviewed",
         "authorAlias": "corpus-author",
-        "reviewerAliases": [],
+        "reviewerAliases": [
+          "independent-corpus-reviewer-01"
+        ],
         "acceptableOutcomes": [
           {
             "decision": "defer",
@@ -5693,9 +6001,11 @@
         }
       },
       "label": {
-        "status": "draft",
+        "status": "reviewed",
         "authorAlias": "corpus-author",
-        "reviewerAliases": [],
+        "reviewerAliases": [
+          "independent-corpus-reviewer-01"
+        ],
         "acceptableOutcomes": [
           {
             "decision": "defer",
@@ -5730,9 +6040,11 @@
         }
       },
       "label": {
-        "status": "draft",
+        "status": "reviewed",
         "authorAlias": "corpus-author",
-        "reviewerAliases": [],
+        "reviewerAliases": [
+          "independent-corpus-reviewer-01"
+        ],
         "acceptableOutcomes": [
           {
             "decision": "defer",
@@ -5767,9 +6079,11 @@
         }
       },
       "label": {
-        "status": "draft",
+        "status": "reviewed",
         "authorAlias": "corpus-author",
-        "reviewerAliases": [],
+        "reviewerAliases": [
+          "independent-corpus-reviewer-01"
+        ],
         "acceptableOutcomes": [
           {
             "decision": "defer",
@@ -5804,9 +6118,11 @@
         }
       },
       "label": {
-        "status": "draft",
+        "status": "reviewed",
         "authorAlias": "corpus-author",
-        "reviewerAliases": [],
+        "reviewerAliases": [
+          "independent-corpus-reviewer-01"
+        ],
         "acceptableOutcomes": [
           {
             "decision": "defer",
@@ -5841,9 +6157,11 @@
         }
       },
       "label": {
-        "status": "draft",
+        "status": "reviewed",
         "authorAlias": "corpus-author",
-        "reviewerAliases": [],
+        "reviewerAliases": [
+          "independent-corpus-reviewer-01"
+        ],
         "acceptableOutcomes": [
           {
             "decision": "defer",
@@ -5878,9 +6196,11 @@
         }
       },
       "label": {
-        "status": "draft",
+        "status": "reviewed",
         "authorAlias": "corpus-author",
-        "reviewerAliases": [],
+        "reviewerAliases": [
+          "independent-corpus-reviewer-01"
+        ],
         "acceptableOutcomes": [
           {
             "decision": "defer",
@@ -5915,9 +6235,11 @@
         }
       },
       "label": {
-        "status": "draft",
+        "status": "reviewed",
         "authorAlias": "corpus-author",
-        "reviewerAliases": [],
+        "reviewerAliases": [
+          "independent-corpus-reviewer-01"
+        ],
         "acceptableOutcomes": [
           {
             "decision": "defer",
@@ -5954,14 +6276,21 @@
         }
       },
       "label": {
-        "status": "draft",
+        "status": "reviewed",
         "authorAlias": "corpus-author",
-        "reviewerAliases": [],
+        "reviewerAliases": [
+          "independent-corpus-reviewer-01"
+        ],
         "acceptableOutcomes": [
           {
             "decision": "defer",
             "templateId": null,
             "reasonCode": "insufficient_context"
+          },
+          {
+            "decision": "recommend",
+            "templateId": "docs_analysis",
+            "reasonCode": "matched"
           }
         ]
       }
@@ -5993,14 +6322,21 @@
         }
       },
       "label": {
-        "status": "draft",
+        "status": "reviewed",
         "authorAlias": "corpus-author",
-        "reviewerAliases": [],
+        "reviewerAliases": [
+          "independent-corpus-reviewer-01"
+        ],
         "acceptableOutcomes": [
           {
             "decision": "defer",
             "templateId": null,
             "reasonCode": "insufficient_context"
+          },
+          {
+            "decision": "recommend",
+            "templateId": "docs_analysis",
+            "reasonCode": "matched"
           }
         ]
       }
@@ -6030,9 +6366,11 @@
         }
       },
       "label": {
-        "status": "draft",
+        "status": "reviewed",
         "authorAlias": "corpus-author",
-        "reviewerAliases": [],
+        "reviewerAliases": [
+          "independent-corpus-reviewer-01"
+        ],
         "acceptableOutcomes": [
           {
             "decision": "defer",
@@ -6067,9 +6405,11 @@
         }
       },
       "label": {
-        "status": "draft",
+        "status": "reviewed",
         "authorAlias": "corpus-author",
-        "reviewerAliases": [],
+        "reviewerAliases": [
+          "independent-corpus-reviewer-01"
+        ],
         "acceptableOutcomes": [
           {
             "decision": "defer",
@@ -6106,9 +6446,11 @@
         }
       },
       "label": {
-        "status": "draft",
+        "status": "reviewed",
         "authorAlias": "corpus-author",
-        "reviewerAliases": [],
+        "reviewerAliases": [
+          "independent-corpus-reviewer-01"
+        ],
         "acceptableOutcomes": [
           {
             "decision": "not_a2a",
@@ -6150,9 +6492,11 @@
         }
       },
       "label": {
-        "status": "draft",
+        "status": "reviewed",
         "authorAlias": "corpus-author",
-        "reviewerAliases": [],
+        "reviewerAliases": [
+          "independent-corpus-reviewer-01"
+        ],
         "acceptableOutcomes": [
           {
             "decision": "not_a2a",
@@ -6192,9 +6536,11 @@
         }
       },
       "label": {
-        "status": "draft",
+        "status": "reviewed",
         "authorAlias": "corpus-author",
-        "reviewerAliases": [],
+        "reviewerAliases": [
+          "independent-corpus-reviewer-01"
+        ],
         "acceptableOutcomes": [
           {
             "decision": "not_a2a",
@@ -6234,9 +6580,11 @@
         }
       },
       "label": {
-        "status": "draft",
+        "status": "reviewed",
         "authorAlias": "corpus-author",
-        "reviewerAliases": [],
+        "reviewerAliases": [
+          "independent-corpus-reviewer-01"
+        ],
         "acceptableOutcomes": [
           {
             "decision": "not_a2a",
@@ -6276,9 +6624,11 @@
         }
       },
       "label": {
-        "status": "draft",
+        "status": "reviewed",
         "authorAlias": "corpus-author",
-        "reviewerAliases": [],
+        "reviewerAliases": [
+          "independent-corpus-reviewer-01"
+        ],
         "acceptableOutcomes": [
           {
             "decision": "not_a2a",
@@ -6318,9 +6668,11 @@
         }
       },
       "label": {
-        "status": "draft",
+        "status": "reviewed",
         "authorAlias": "corpus-author",
-        "reviewerAliases": [],
+        "reviewerAliases": [
+          "independent-corpus-reviewer-01"
+        ],
         "acceptableOutcomes": [
           {
             "decision": "defer",
@@ -6360,9 +6712,11 @@
         }
       },
       "label": {
-        "status": "draft",
+        "status": "reviewed",
         "authorAlias": "corpus-author",
-        "reviewerAliases": [],
+        "reviewerAliases": [
+          "independent-corpus-reviewer-01"
+        ],
         "acceptableOutcomes": [
           {
             "decision": "defer",
@@ -6400,9 +6754,11 @@
         }
       },
       "label": {
-        "status": "draft",
+        "status": "reviewed",
         "authorAlias": "corpus-author",
-        "reviewerAliases": [],
+        "reviewerAliases": [
+          "independent-corpus-reviewer-01"
+        ],
         "acceptableOutcomes": [
           {
             "decision": "defer",

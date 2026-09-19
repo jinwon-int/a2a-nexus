@@ -150,8 +150,8 @@ doc language English.
 
 > Written before its code (spec-first). Scope: corpus infrastructure plus an
 > exposed synthetic development corpus ONLY. This slice is NOT the full
-> Phase A: no private calibration/holdout seal, no external independent
-> review (the finalizer performs review separately), no model classification,
+> Phase A: no private calibration/holdout seal. The finalizer independently
+> reviews development annotations; there is no model classification,
 > no model evaluation, no accuracy/quality/speed claim. PR refs #2196; does
 > not close it.
 
@@ -180,7 +180,7 @@ data or labels.
 | `scripts/lib/a2a-routing-corpus.mjs` | new — pure synchronous corpus validator + SHA-256 digest + judgment-input projection |
 | `scripts/lib/a2a-routing-corpus.test.mjs` | new — whole-fixture execution + adversarial/negative injections + digest sensitivity |
 | `fixtures/a2a-routing-advice/development-corpus.json` | new — public synthetic development corpus (≥80 groups, ≥160 base records, ≥8 paired groups) |
-| `fixtures/a2a-routing-advice/README.md` | new — corpus status labels (bilingual, synthetic, development-only, review pending, seal pending) |
+| `fixtures/a2a-routing-advice/README.md` | new — corpus status labels (bilingual, synthetic, development-only, review provenance, seal pending) |
 | `docs/agent-manual.md` | edit — optional OFFLINE corpus-validation entry only |
 | `scripts/release-gate-manifest.json` | edit — register the new test as `gate` (purely additive) |
 
@@ -217,19 +217,20 @@ echo request text, unknown field names or identifier values.
 
 ### Phase 3 — fixture, README, tests
 
-1. `fixtures/a2a-routing-advice/development-corpus.json`: hand-authored
+1. `fixtures/a2a-routing-advice/development-corpus.json`: author-generated
    synthetic bilingual situations across ≥80 groups (all seven templates;
    negation, quote_injection, ambiguous, compound, missing_context,
    unsupported_candidate, control, external_event, attachment, typo; empty
    candidates; subset pairs), every record development/public_development/
-   draft/corpus-author/empty reviewers. No private endpoints, paths, tokens,
+   initially draft/corpus-author/empty reviewers; finalizer review records
+   reviewed status and an actual independent-review alias. No private endpoints, paths, tokens,
    fleet identifiers, real user chats or production data.
 2. `fixtures/a2a-routing-advice/README.md`: bilingual corpus, synthetic,
-   exposed development only, labels awaiting independent review, Phase A
+   exposed development only, independent annotation review provenance, Phase A
    private calibration/holdout seal still pending; no blind-holdout claim.
 3. `scripts/lib/a2a-routing-corpus.test.mjs`: executes the whole fixture and
    asserts ≥80 groups / ≥160 base variants / ≥8 paired groups, all required
-   categories, no group leakage, exposure/draft truth. Negative injections:
+   categories, no group leakage, exposure/review provenance. Negative injections:
    duplicate ids; group split/exposure conflict; normalized-text duplicates
    across groups (Unicode NFKC + whitespace variants); same-variant
    text/context/language drift; reordered-candidate exact duplicates;
@@ -265,8 +266,9 @@ echo request text, unknown field names or identifier values.
 
 ### Later phases (NOT this slice — explicitly tracked, not claimed)
 
-1. External independent review of these draft labels by the finalizer, then
-   sealing of private calibration/holdout corpora under the same envelope.
+1. New private grouped examples, independently reviewed and sealed for
+   calibration/holdout under the same envelope. Exposed development records
+   cannot become a blind set by changing their split fields.
 2. Producer adapter and runtime integration (separate spec, approval, gate).
 3. Any model classification, evaluation or performance measurement over the
    corpus. None is authorized or performed by this slice.
@@ -274,8 +276,8 @@ echo request text, unknown field names or identifier values.
 ### Risks & mitigations
 
 - **Fixture mistaken for a blind set**: README, spec and manual state the
-  corpus is public, synthetic, exposed development data with draft labels;
-  tests assert the exposure/draft truth structurally.
+  corpus is public, synthetic, exposed development data with independently reviewed annotations;
+  tests assert the exposure/review provenance structurally.
 - **Digest mistaken for correctness proof**: docs state the digest proves
   integrity only; coverage summary carries counts, never scores.
 - **Label contamination of judgment input**: projection returns a defensive

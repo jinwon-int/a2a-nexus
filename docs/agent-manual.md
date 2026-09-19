@@ -174,7 +174,8 @@ import {
   request text, unknown field names, or identifier values. `exposure` is a
   caller assertion, not blinding proof; reviewer aliases are declared
   provenance, not review evidence. The public fixture corpus is synthetic,
-  exposed development data with draft labels awaiting independent review —
+  exposed development data with independently reviewed annotations (see the
+  fixture README for review provenance and uncertainty) —
   NOT a blind holdout; the private calibration/holdout seal and any model
   evaluation remain later Phase A work.
 

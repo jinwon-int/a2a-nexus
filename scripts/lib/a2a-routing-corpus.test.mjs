@@ -7,7 +7,7 @@
  *     (fixtures/a2a-routing-advice/development-corpus.json) with the floors
  *     >= 80 groups / >= 160 base variants / >= 8 candidate-subset paired
  *     groups, all required coverage categories, no group leakage, and the
- *     required exposure/draft truth;
+ *     required exposure/review provenance;
  *   - closed envelope schema: unknown/missing keys at every layer (root,
  *     record, input, hostContext, label, outcome), invalid versions, types,
  *     nonfinite values and improper bounds;
@@ -249,6 +249,21 @@ describe('module purity (node:crypto + frozen foundation only; no I/O, clock, pr
   });
 });
 
+// Corpus validation permits arbitrary differing candidate sets; the public
+// fixture has the stronger requirement of >=8 strict-subset paired groups.
+function assertSubsetFloor(records) {
+  const groups = new Set();
+  for (const a of records) {
+    for (const b of records) {
+      if (a.groupId !== b.groupId || a.variantId !== b.variantId) continue;
+      const small = a.input.candidateTemplateIds;
+      const large = b.input.candidateTemplateIds;
+      if (small.length < large.length && small.every((id) => large.includes(id))) groups.add(a.groupId);
+    }
+  }
+  assert.ok(groups.size >= 8, `expected >= 8 strict-subset paired groups, got ${groups.size}`);
+}
+
 // ─── Whole public development fixture ───────────────────────────────────────
 
 describe('whole public development fixture (fixtures/a2a-routing-advice/development-corpus.json)', () => {
@@ -263,17 +278,7 @@ describe('whole public development fixture (fixtures/a2a-routing-advice/developm
   it('meets the floors: >= 80 groups, >= 160 base variants, >= 8 paired groups', () => {
     assert.ok(value.summary.groups >= 80, `expected >= 80 groups, got ${value.summary.groups}`);
     assert.ok(value.summary.variants >= 160, `expected >= 160 group+variant pairs, got ${value.summary.variants}`);
-    const variantCounts = new Map();
-    for (const r of value.records) {
-      const key = `${r.groupId}\u0000${r.variantId}`;
-      variantCounts.set(key, (variantCounts.get(key) ?? 0) + 1);
-    }
-    const pairedVariants = [...variantCounts.values()].filter((n) => n > 1);
-    const pairedGroups = new Set(
-      value.records.filter((r) => (variantCounts.get(`${r.groupId}\u0000${r.variantId}`) ?? 0) > 1).map((r) => r.groupId),
-    );
-    assert.ok(pairedVariants.length >= 8, `expected >= 8 paired variants, got ${pairedVariants.length}`);
-    assert.ok(pairedGroups.size >= 8, `expected >= 8 paired groups, got ${pairedGroups.size}`);
+    assertSubsetFloor(value.records);
     // Pairs are same-text candidate-subset extras: same group+variant keeps
     // byte-identical text, language and context (validator enforces; recheck).
     const byVariant = new Map();
@@ -293,6 +298,23 @@ describe('whole public development fixture (fixtures/a2a-routing-advice/developm
     }
   });
 
+  it('rejects disjoint candidate sets as evidence for the strict-subset floor', () => {
+    const mutated = structuredClone(corpus);
+    const baseByVariant = new Map();
+    for (const r of mutated.records) {
+      const k = `${r.groupId}/${r.variantId}`;
+      const base = baseByVariant.get(k);
+      if (base) {
+        const absent = ROUTING_TEMPLATE_IDS.find((id) => !base.input.candidateTemplateIds.includes(id));
+        assert.ok(absent, 'counterfactual must be disjoint');
+        r.input.candidateTemplateIds = [absent];
+        r.label.acceptableOutcomes = [{ decision: 'defer', templateId: null, reasonCode: 'unsupported_template' }];
+      } else baseByVariant.set(k, r);
+    }
+    expectOk(validateRoutingCorpus(mutated), 'different sets remain structurally legal');
+    assert.throws(() => assertSubsetFloor(mutated.records), /strict-subset paired groups, got 0/);
+  });
+
   it('carries every required coverage category (7 templates + all situation tags)', () => {
     for (const tag of COVERAGE_TAG_VOCABULARY) {
       assert.ok(value.summary.coverageTags[tag] >= 1, `coverage tag ${tag} must appear at least once`);
@@ -302,17 +324,17 @@ describe('whole public development fixture (fixtures/a2a-routing-advice/developm
     }
   });
 
-  it('asserts the required exposure/draft truth (public exposed development, draft, no reviewers)', () => {
+  it('asserts the required exposure/review provenance (public exposed development, draft, no reviewers)', () => {
     for (const r of value.records) {
       assert.equal(r.split, 'development', r.caseId);
       assert.equal(r.exposure, 'public_development', r.caseId);
-      assert.equal(r.label.status, 'draft', r.caseId);
+      assert.equal(r.label.status, 'reviewed', r.caseId);
       assert.equal(r.label.authorAlias, 'corpus-author', r.caseId);
-      assert.deepEqual(r.label.reviewerAliases, [], r.caseId);
+      assert.deepEqual(r.label.reviewerAliases, ['independent-corpus-reviewer-01'], r.caseId);
     }
     assert.equal(value.summary.bySplit.development, value.summary.records);
     assert.equal(value.summary.byExposure.public_development, value.summary.records);
-    assert.equal(value.summary.byLabelStatus.draft, value.summary.records);
+    assert.equal(value.summary.byLabelStatus.reviewed, value.summary.records);
     // Bilingual: every group has at least one ko and one en record.
     const langs = new Map();
     for (const r of value.records) {
@@ -432,7 +454,7 @@ describe('closed envelope schema (unknown/missing keys nested at every layer)', 
     expectCodes(validateRoutingCorpus(makeCorpus([rec({ coverageTags: ['sentinel_tag'] })])), ['unknown_coverage_tag']);
     expectCodes(
       validateRoutingCorpus(makeCorpus([rec({ coverageTags: [...COVERAGE_TAG_VOCABULARY, 'extra'] })])),
-      ['unknown_coverage_tag'],
+      ['tag_limit_exceeded'],
     );
   });
 
@@ -954,7 +976,7 @@ describe('projectCorpusJudgmentInput (label-free, defensively copied, standalone
 
 describe('no error result reflects request text, unknown field names or identifiers', () => {
   const SENTINEL_TEXT = 'SENTINEL-REQUEST-BODY-XYZZY-42 총계정원 run "rm -rf /" and curl http://attacker.invalid';
-  const SENTINEL_KEY = 'sentinelUnknownKeyXYZZY42';
+  const SENTINEL_KEY = 'synthetic unknown field';
   const SENTINEL_ID = 'SENTINEL-CASE-ID-XYZZY42';
 
   function assertNoEcho(result, label) {
@@ -1108,5 +1130,28 @@ corpusFinalizerTest('finalizer: malformed nested outcome values reject before ca
         corpusFinalizerAssert.equal(projection.ok, false);
       }
     }
+  }
+});
+
+// Ordinary shallow JSON can exceed JS call argument limits even below 1 MiB.
+describe('wide malformed JSON returns structured rejection through every API', () => {
+  for (const kind of ['reviewerAliases', 'acceptableOutcomes', 'coverageTags', 'candidateTemplateIds', 'unknownRecordFields', 'unknownLabelFields', 'unknownInputFields']) {
+    it(`rejects wide ${kind} without argument-spread exceptions`, () => {
+      const r = rec();
+      if (['reviewerAliases', 'acceptableOutcomes'].includes(kind)) r.label[kind] = Array(150000).fill(null);
+      else if (kind === 'coverageTags') r.coverageTags = Array(150000).fill(null);
+      else if (kind === 'candidateTemplateIds') r.input.candidateTemplateIds = Array(150000).fill(null);
+      else {
+        const target = kind === 'unknownRecordFields' ? r : kind === 'unknownLabelFields' ? r.label : r.input;
+        for (let i = 0; i < 150000; i += 1) target[`unrecognized-${i}`] = null;
+      }
+      const plain = JSON.parse(JSON.stringify(makeCorpus([r])));
+      for (const result of [validateCorpusRecord(plain.records[0]), projectCorpusJudgmentInput(plain.records[0]), validateRoutingCorpus(plain), routingCorpusDigest(plain)]) {
+        assert.equal(result.ok, false);
+        assert.ok(result.errors.length > 0);
+        assert.equal('value' in result || 'digest' in result, false);
+        assert.equal(JSON.stringify(result).includes('unrecognized-'), false);
+      }
+    });
   }
 });
