@@ -100,6 +100,90 @@ The contract, state set and invariants are specified in
 CLI for this facade by design (script budget #1485/#1503); hosts and skills
 import it directly.
 
+### Offline routing advice (optional, offline-only) (#2196 foundation slice)
+
+Hosts can validate a caller-supplied recommendation for one of seven routing
+templates and inspect the trusted host fields it still requires. Import the
+pure advisory library from the same checkout revision:
+
+```js
+import {
+  validateRoutingInput,
+  validateRoutingAdviceOutput,
+  projectRoutingAdvice,
+} from './scripts/lib/a2a-routing-advice.mjs';
+```
+
+- `validateRoutingInput` enforces the versioned closed input contract
+  (`a2a.routing-input.v1`): nonblank request text ≤ 4000 codepoints, pinned
+  catalog `a2a.routing-templates.v1`, unique candidate template ids, and a
+  closed trusted host context (`interaction`/`operation`/`access`). Host
+  context is explicit caller-owned data, never parsed from request text, and
+  never authentication or permission proof.
+- `validateRoutingAdviceOutput` checks closed advisory output
+  (`a2a.routing-advice.v1`) against that input and the caller's
+  `expectedModelVersion` (mismatch is rejected). There is no confidence,
+  probability, path, command, worker id, scope or budget field, and no
+  provider/timeout reason code — those belong to a later adapter envelope.
+- `projectRoutingAdvice` projects validated advice to a bounded descriptor
+  (`advisoryOnly: true`, `dispatchAllowed: false`) that only names the host
+  fields still required, or fails closed: context-violating recommendations
+  (wrong interaction, non-matching or `unspecified` operation, `read_only` or
+  `unspecified` access for write templates) yield a structured blocked
+  projection, never a plan for a new task. This slice calls no model, broker,
+  or `prepareAssignment`/`normalizeAssignRequest`; it returns advice metadata
+  only and claims no assignment readiness (catalog metadata is not a
+  #1597 readiness proof).
+
+Contract details and invariants: [the routing-classifier spec](specs/a2a-routing-classifier/spec.md).
+This entry is advisory-only and offline; it changes no live routing behavior.
+
+### Offline routing corpus validation (optional, offline-only) (#2196 Phase A slice)
+
+Hosts that already hold a routing corpus envelope can validate it, compute its
+integrity digest, and extract label-free judgment inputs offline. Import the
+pure synchronous library from the same checkout revision:
+
+```js
+import {
+  validateRoutingCorpus,
+  routingCorpusDigest,
+  projectCorpusJudgmentInput,
+} from './scripts/lib/a2a-routing-corpus.mjs';
+```
+
+- `validateRoutingCorpus(corpus)` enforces the closed versioned envelope
+  (`a2a.routing-corpus.v1`): bounded identifiers, ≤ 2000 records, pinned
+  catalog, closed split/exposure/language/status/tag vocabularies, exact
+  `a2a.routing-input.v1` inputs, and closed labels whose acceptable outcomes
+  are re-validated through the advisory foundation (context-blocked
+  recommends are rejected). Integrity rules (unique case ids, group and
+  variant stability, duplicate-pair and cross-group normalized-text leak
+  rejection) and the exposure/label-status gates are enforced before a
+  frozen normalized value plus a body-free counts-only summary is returned.
+- `routingCorpusDigest(corpus)` returns a deterministic SHA-256 digest over
+  the FULL validated corpus content (recursive key sort, arrays preserved),
+  or a structured error — an invalid corpus never yields a digest. The
+  digest proves integrity only, never semantic correctness or group
+  independence.
+- `projectCorpusJudgmentInput(record)` validates one record and returns a
+  fresh defensive copy of ONLY its five closed input fields — labels, ids,
+  split, exposure and tags can never appear. No model, provider, dispatcher,
+  or `prepareAssignment` call exists in this slice.
+- Error results use stable codes with structural paths and never echo
+  request text, unknown field names, or identifier values. `exposure` is a
+  caller assertion, not blinding proof; reviewer aliases are declared
+  provenance, not review evidence. The public fixture corpus is synthetic,
+  exposed development data with independently reviewed annotations (see the
+  fixture README for review provenance and uncertainty) —
+  NOT a blind holdout; the private calibration/holdout seal and any model
+  evaluation remain later Phase A work.
+
+The public corpus lives at
+[fixtures/a2a-routing-advice/development-corpus.json](../fixtures/a2a-routing-advice/development-corpus.json)
+with status labels in [its README](../fixtures/a2a-routing-advice/README.md).
+Contract details: [the routing-classifier spec](specs/a2a-routing-classifier/spec.md).
+
 ### Manual manifest recipe
 
 Save this template as a private `round.json`, replace every `REPLACE_*` value,
