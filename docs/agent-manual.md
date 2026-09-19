@@ -102,10 +102,9 @@ import it directly.
 
 ### Offline routing advice (optional, offline-only) (#2196 foundation slice)
 
-Hosts that want a structured, offline hint about which of the seven known
-routing templates a request could plausibly map to — and which trusted host
-each template would still require — can import the pure advisory library from
-the same checkout revision:
+Hosts can validate a caller-supplied recommendation for one of seven routing
+templates and inspect the trusted host fields it still requires. Import the
+pure advisory library from the same checkout revision:
 
 ```js
 import {

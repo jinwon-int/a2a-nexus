@@ -134,7 +134,7 @@ Reason/decision consistency (anything else is invalid):
 
 | decision | allowed reasonCode |
 |---|---|
-| `recommend` | `template_match` (requires non-null `templateId` that is a member of `candidateTemplateIds`) |
+| `recommend` | `matched` (requires non-null `templateId` that is a member of `candidateTemplateIds`) |
 | `not_a2a` | `not_applicable` (requires `templateId: null`) |
 | `defer` | `ambiguous` \| `insufficient_context` \| `no_candidate` \| `unsupported_template` \| `uncertain` (requires `templateId: null`) |
 

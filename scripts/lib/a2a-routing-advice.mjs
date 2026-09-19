@@ -84,7 +84,7 @@ export const ROUTING_DECISIONS = Object.freeze([
  * failures are never representable as a successful advisory outcome here.
  */
 export const ROUTING_REASON_CODES = Object.freeze([
-  'template_match',
+  'matched',
   'not_applicable',
   'ambiguous',
   'insufficient_context',
@@ -95,7 +95,7 @@ export const ROUTING_REASON_CODES = Object.freeze([
 
 /** decision → allowed reasonCode values (anything else is invalid output). */
 export const REASON_CODES_BY_DECISION = Object.freeze({
-  recommend: Object.freeze(['template_match']),
+  recommend: Object.freeze(['matched']),
   not_a2a: Object.freeze(['not_applicable']),
   defer: Object.freeze(['ambiguous', 'insufficient_context', 'no_candidate', 'unsupported_template', 'uncertain']),
 });
@@ -192,7 +192,7 @@ export const ROUTING_TEMPLATES = deepFreeze(TEMPLATES);
  * caller-side mutation of the return value cannot change future behavior.
  */
 export function getRoutingTemplate(templateId) {
-  if (typeof templateId !== 'string') return null;
+  if (typeof templateId !== 'string' || !Object.hasOwn(ROUTING_TEMPLATES, templateId)) return null;
   const template = ROUTING_TEMPLATES[templateId];
   return template ? structuredClone(template) : null;
 }
@@ -244,6 +244,8 @@ const REQUIRED_HOST_FIELDS = deepFreeze({
     'requestId',
     'objective',
     'requestRef',
+    'host.sourceCarriers',
+    'host.ownershipContracts',
     'host.pullRequestReference',
     'host.revision',
     'host.workspaceMetadata',
@@ -269,13 +271,6 @@ export class RoutingAdviceError extends Error {
     this.code = code;
     this.errors = Object.freeze((errors ?? []).map((e) => Object.freeze({ ...e })));
   }
-}
-
-const MAX_PATH_KEY_CODEPOINTS = 80;
-
-function boundKey(key) {
-  const s = String(key);
-  return [...s].length <= MAX_PATH_KEY_CODEPOINTS ? s : `${[...s].slice(0, MAX_PATH_KEY_CODEPOINTS).join('')}…`;
 }
 
 function isPlainObject(value) {
@@ -316,7 +311,7 @@ export function validateRoutingInput(input) {
 
   for (const key of Object.keys(input)) {
     if (!INPUT_FIELDS.includes(key)) {
-      errors.push({ code: 'unknown_field', path: `input.${boundKey(key)}`, message: 'unexpected field' });
+      errors.push({ code: 'unknown_field', path: 'input', message: 'unexpected field' });
     }
   }
   for (const field of INPUT_FIELDS) {
@@ -364,7 +359,7 @@ export function validateRoutingInput(input) {
   } else {
     for (const key of Object.keys(ctx)) {
       if (!HOST_CONTEXT_FIELDS.includes(key)) {
-        errors.push({ code: 'unknown_field', path: `input.hostContext.${boundKey(key)}`, message: 'unexpected field' });
+        errors.push({ code: 'unknown_field', path: 'input.hostContext', message: 'unexpected field' });
       }
     }
     for (const field of HOST_CONTEXT_FIELDS) {
@@ -473,7 +468,7 @@ export function validateRoutingAdviceOutput(output, { input, expectedModelVersio
 
   for (const key of Object.keys(output)) {
     if (!OUTPUT_FIELDS.includes(key)) {
-      errors.push({ code: 'unknown_field', path: `output.${boundKey(key)}`, message: 'unexpected field (the output contract has no confidence, paths, commands, worker ids, scope or budgets)' });
+      errors.push({ code: 'unknown_field', path: 'output', message: 'unexpected field (the output contract has no confidence, paths, commands, worker ids, scope or budgets)' });
     }
   }
   for (const field of OUTPUT_FIELDS) {

@@ -34,7 +34,7 @@
         "schemaVersion": "a2a.routing-advice.v1",
         "decision": "recommend",
         "templateId": "new_patch",
-        "reasonCode": "template_match",
+        "reasonCode": "matched",
         "catalogVersion": "a2a.routing-templates.v1",
         "modelVersion": "advice-fixture-model.v1",
         "policyVersion": "a2a.routing-policy.v1"
@@ -64,7 +64,7 @@
         "schemaVersion": "a2a.routing-advice.v1",
         "decision": "recommend",
         "templateId": "docs_patch",
-        "reasonCode": "template_match",
+        "reasonCode": "matched",
         "catalogVersion": "a2a.routing-templates.v1",
         "modelVersion": "advice-fixture-model.v1",
         "policyVersion": "a2a.routing-policy.v1"
@@ -94,7 +94,7 @@
         "schemaVersion": "a2a.routing-advice.v1",
         "decision": "recommend",
         "templateId": "new_analysis",
-        "reasonCode": "template_match",
+        "reasonCode": "matched",
         "catalogVersion": "a2a.routing-templates.v1",
         "modelVersion": "advice-fixture-model.v1",
         "policyVersion": "a2a.routing-policy.v1"
@@ -124,7 +124,7 @@
         "schemaVersion": "a2a.routing-advice.v1",
         "decision": "recommend",
         "templateId": "docs_analysis",
-        "reasonCode": "template_match",
+        "reasonCode": "matched",
         "catalogVersion": "a2a.routing-templates.v1",
         "modelVersion": "advice-fixture-model.v1",
         "policyVersion": "a2a.routing-policy.v1"
@@ -153,7 +153,7 @@
         "schemaVersion": "a2a.routing-advice.v1",
         "decision": "recommend",
         "templateId": "review_readonly",
-        "reasonCode": "template_match",
+        "reasonCode": "matched",
         "catalogVersion": "a2a.routing-templates.v1",
         "modelVersion": "advice-fixture-model.v1",
         "policyVersion": "a2a.routing-policy.v1"
@@ -163,7 +163,7 @@
         "projection": "template_descriptor",
         "templateId": "review_readonly",
         "eligibility": "eligible",
-        "requiredHostFields": ["requestId", "objective", "requestRef", "host.pullRequestReference", "host.revision", "host.workspaceMetadata"]
+        "requiredHostFields": ["requestId", "objective", "requestRef", "host.sourceCarriers", "host.ownershipContracts", "host.pullRequestReference", "host.revision", "host.workspaceMetadata"]
       }
     },
     {
@@ -183,7 +183,7 @@
         "schemaVersion": "a2a.routing-advice.v1",
         "decision": "recommend",
         "templateId": "observe_existing",
-        "reasonCode": "template_match",
+        "reasonCode": "matched",
         "catalogVersion": "a2a.routing-templates.v1",
         "modelVersion": "advice-fixture-model.v1",
         "policyVersion": "a2a.routing-policy.v1"
@@ -215,7 +215,7 @@
         "schemaVersion": "a2a.routing-advice.v1",
         "decision": "recommend",
         "templateId": "resume_existing",
-        "reasonCode": "template_match",
+        "reasonCode": "matched",
         "catalogVersion": "a2a.routing-templates.v1",
         "modelVersion": "advice-fixture-model.v1",
         "policyVersion": "a2a.routing-policy.v1"
@@ -245,7 +245,7 @@
         "schemaVersion": "a2a.routing-advice.v1",
         "decision": "recommend",
         "templateId": "new_patch",
-        "reasonCode": "template_match",
+        "reasonCode": "matched",
         "catalogVersion": "a2a.routing-templates.v1",
         "modelVersion": "advice-fixture-model.v1",
         "policyVersion": "a2a.routing-policy.v1"
@@ -275,7 +275,7 @@
         "schemaVersion": "a2a.routing-advice.v1",
         "decision": "recommend",
         "templateId": "docs_patch",
-        "reasonCode": "template_match",
+        "reasonCode": "matched",
         "catalogVersion": "a2a.routing-templates.v1",
         "modelVersion": "advice-fixture-model.v1",
         "policyVersion": "a2a.routing-policy.v1"
@@ -302,7 +302,7 @@
         "schemaVersion": "a2a.routing-advice.v1",
         "decision": "recommend",
         "templateId": "new_patch",
-        "reasonCode": "template_match",
+        "reasonCode": "matched",
         "catalogVersion": "a2a.routing-templates.v1",
         "modelVersion": "advice-fixture-model.v1",
         "policyVersion": "a2a.routing-policy.v1"
@@ -329,7 +329,7 @@
         "schemaVersion": "a2a.routing-advice.v1",
         "decision": "recommend",
         "templateId": "new_patch",
-        "reasonCode": "template_match",
+        "reasonCode": "matched",
         "catalogVersion": "a2a.routing-templates.v1",
         "modelVersion": "advice-fixture-model.v1",
         "policyVersion": "a2a.routing-policy.v1"
@@ -356,7 +356,7 @@
         "schemaVersion": "a2a.routing-advice.v1",
         "decision": "recommend",
         "templateId": "new_analysis",
-        "reasonCode": "template_match",
+        "reasonCode": "matched",
         "catalogVersion": "a2a.routing-templates.v1",
         "modelVersion": "advice-fixture-model.v1",
         "policyVersion": "a2a.routing-policy.v1"
@@ -383,7 +383,7 @@
         "schemaVersion": "a2a.routing-advice.v1",
         "decision": "recommend",
         "templateId": "new_analysis",
-        "reasonCode": "template_match",
+        "reasonCode": "matched",
         "catalogVersion": "a2a.routing-templates.v1",
         "modelVersion": "advice-fixture-model.v1",
         "policyVersion": "a2a.routing-policy.v1"
@@ -410,7 +410,7 @@
         "schemaVersion": "a2a.routing-advice.v1",
         "decision": "recommend",
         "templateId": "new_analysis",
-        "reasonCode": "template_match",
+        "reasonCode": "matched",
         "catalogVersion": "a2a.routing-templates.v1",
         "modelVersion": "advice-fixture-model.v1",
         "policyVersion": "a2a.routing-policy.v1"
@@ -574,7 +574,7 @@
         "schemaVersion": "a2a.routing-advice.v1",
         "decision": "recommend",
         "templateId": "review_readonly",
-        "reasonCode": "template_match",
+        "reasonCode": "matched",
         "catalogVersion": "a2a.routing-templates.v1",
         "modelVersion": "some-other-model.v9",
         "policyVersion": "a2a.routing-policy.v1"
@@ -598,7 +598,7 @@
         "schemaVersion": "a2a.routing-advice.v1",
         "decision": "recommend",
         "templateId": "new_patch",
-        "reasonCode": "template_match",
+        "reasonCode": "matched",
         "catalogVersion": "a2a.routing-templates.v1",
         "modelVersion": "advice-fixture-model.v1",
         "policyVersion": "a2a.routing-policy.v1",
@@ -653,7 +653,7 @@
         "schemaVersion": "a2a.routing-advice.v1",
         "decision": "recommend",
         "templateId": "new_patch",
-        "reasonCode": "template_match",
+        "reasonCode": "matched",
         "catalogVersion": "a2a.routing-templates.v1",
         "modelVersion": "advice-fixture-model.v1",
         "policyVersion": "a2a.routing-policy.v1"
@@ -681,7 +681,7 @@
         "schemaVersion": "a2a.routing-advice.v1",
         "decision": "recommend",
         "templateId": "new_patch",
-        "reasonCode": "template_match",
+        "reasonCode": "matched",
         "catalogVersion": "a2a.routing-templates.v1",
         "modelVersion": "advice-fixture-model.v1",
         "policyVersion": "a2a.routing-policy.v1"

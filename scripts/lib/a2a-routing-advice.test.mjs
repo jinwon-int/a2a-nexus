@@ -80,7 +80,7 @@ function validOutput(templateId, overrides = {}) {
     schemaVersion: ROUTING_ADVICE_SCHEMA_VERSION,
     decision: 'recommend',
     templateId,
-    reasonCode: 'template_match',
+    reasonCode: 'matched',
     catalogVersion: ROUTING_CATALOG_VERSION,
     modelVersion: MODEL_VERSION,
     policyVersion: ROUTING_POLICY_VERSION,
@@ -413,7 +413,7 @@ describe('output contract (a2a.routing-advice.v1)', () => {
       'ambiguous', 'insufficient_context', 'no_candidate', 'uncertain', 'unsupported_template',
     ]);
     assert.deepEqual([...REASON_CODES_BY_DECISION.not_a2a], ['not_applicable']);
-    assert.deepEqual([...REASON_CODES_BY_DECISION.recommend], ['template_match']);
+    assert.deepEqual([...REASON_CODES_BY_DECISION.recommend], ['matched']);
   });
 
   it('does not mutate the caller output object and carries no cross-call state', () => {
@@ -475,7 +475,7 @@ describe('bounded, fail-closed projection', () => {
       docs_patch: ['requestId', 'objective', 'requestRef', 'target.repo', 'target.declaredScope.paths', 'target.repoTests'],
       new_analysis: ['requestId', 'objective', 'requestRef', 'host.sourceCarriers', 'host.ownershipContracts'],
       docs_analysis: ['requestId', 'objective', 'requestRef', 'host.sourceCarriers', 'host.ownershipContracts'],
-      review_readonly: ['requestId', 'objective', 'requestRef', 'host.pullRequestReference', 'host.revision', 'host.workspaceMetadata'],
+      review_readonly: ['requestId', 'objective', 'requestRef', 'host.sourceCarriers', 'host.ownershipContracts', 'host.pullRequestReference', 'host.revision', 'host.workspaceMetadata'],
       observe_existing: ['existingTaskReference'],
       resume_existing: ['existingRequestReference'],
     };
@@ -795,4 +795,65 @@ describe('fixture contracts (fixtures/a2a-routing-advice/contracts.json)', () =>
       }
     }
   });
+});
+
+// Independent finalizer regressions: derived from the task contract, not the
+// worker's fixture expectations. Public synthetic text only.
+import { test as finalizerTest } from 'node:test';
+import finalizerAssert from 'node:assert/strict';
+import * as finalizerRouting from './a2a-routing-advice.mjs';
+function finalizerContractPair(templateId = 'new_patch') {
+  return {
+    input: {
+      schemaVersion: 'a2a.routing-input.v1',
+      requestText: 'Public synthetic request for an offline recommendation.',
+      catalogVersion: 'a2a.routing-templates.v1',
+      candidateTemplateIds: [templateId],
+      hostContext: { interaction: 'user_request', operation: 'new_task', access: 'write_allowed' },
+    },
+    advice: {
+      schemaVersion: 'a2a.routing-advice.v1', decision: 'recommend', templateId,
+      reasonCode: 'matched', catalogVersion: 'a2a.routing-templates.v1',
+      modelVersion: 'independent-regression-v1', policyVersion: 'a2a.routing-policy.v1',
+    },
+    options: { expectedModelVersion: 'independent-regression-v1' },
+  };
+}
+finalizerTest('agreed matched reason projects a recommendation and rejects its unregistered alias', () => {
+  const {input, advice, options} = finalizerContractPair();
+  const result = finalizerRouting.projectRoutingAdvice(input, advice, options);
+  finalizerAssert.equal(result.projection, 'template_descriptor');
+  finalizerAssert.equal(result.dispatchAllowed, false);
+  finalizerAssert.equal(finalizerRouting.validateRoutingAdviceOutput({...advice, reasonCode:'template_match'}, {input, ...options}).ok, false);
+});
+finalizerTest('template lookup rejects inherited property names without throwing', () => {
+  for (const id of ['__proto__','constructor','toString','hasOwnProperty']) {
+    finalizerAssert.equal(finalizerRouting.getRoutingTemplate(id), null);
+  }
+});
+finalizerTest('unknown field names cannot reflect private request text into diagnostic records', () => {
+  const secret = 'SYNTHETIC_PRIVATE_REQUEST_MARKER';
+  const {input, advice, options} = finalizerContractPair();
+  for (const candidate of [
+    {...input, requestText:secret, [secret]:true},
+    {...input, requestText:secret, hostContext:{...input.hostContext,[secret]:true}},
+  ]) {
+    const result = finalizerRouting.validateRoutingInput(candidate);
+    finalizerAssert.equal(result.ok, false);
+    finalizerAssert.equal(JSON.stringify(result).includes(secret), false);
+    finalizerAssert.throws(() => finalizerRouting.projectRoutingAdvice(candidate, advice, options), error => {
+      finalizerAssert.equal(JSON.stringify(error).includes(secret), false);
+      return error.code === 'invalid_input';
+    });
+  }
+  const result = finalizerRouting.validateRoutingAdviceOutput({...advice,[secret]:true}, {input, ...options});
+  finalizerAssert.equal(result.ok, false);
+  finalizerAssert.equal(JSON.stringify(result).includes(secret), false);
+});
+finalizerTest('read-only review requires source and ownership plus PR revision and workspace metadata', () => {
+  const {input, advice, options} = finalizerContractPair('review_readonly');
+  const result = finalizerRouting.projectRoutingAdvice(input, advice, options);
+  for (const field of ['requestId','objective','requestRef','host.sourceCarriers','host.ownershipContracts','host.pullRequestReference','host.revision','host.workspaceMetadata']) {
+    finalizerAssert.ok(result.requiredHostFields.includes(field), `missing host requirement: ${field}`);
+  }
 });
