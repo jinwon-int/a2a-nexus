@@ -2,16 +2,22 @@
 
 > **Status**: offline slices only. This document specifies (1) the offline
 > foundation slice — a pure, no-I/O advisory library plus its contract tests,
-> fixtures and documentation — and (2) the Phase A **corpus-validation slice**
+> fixtures and documentation — (2) the Phase A **corpus-validation slice**
 > (see [Corpus slice](#corpus-slice-2196-phase-a-slice-offline-corpus-validation-a2aroutingcorpusv1)):
 > a pure, synchronous corpus-envelope validator, integrity digest and
-> judgment-input projection, plus a public synthetic development corpus. Neither
-> slice is the model, runtime integration, the full classifier, the private
-> Phase A calibration/holdout seal, or issue completion. Nothing here
-> authorizes dispatch, deploy, live routing change, or worker/broker mutation.
+> judgment-input projection, plus a public synthetic development corpus — and
+> (3) the **deterministic routing-rules baseline slice** (see [Rules baseline
+> slice](#rules-baseline-slice-2196-slice-3-deterministic-offline-routing-rules-a2arouting-rulesv1)):
+> a conservative, offline, keyword/scope-rule classifier that actually
+> classifies request text into the closed advisory vocabulary. No slice here
+> is the model, runtime integration, the full classifier, the private Phase A
+> calibration/holdout seal, or issue completion. Nothing here authorizes
+> dispatch, deploy, live routing change, or worker/broker mutation.
 >
 > Baselines: foundation slice `main@d622d7db4e1be032d6310c0a93f51de4d8655599`
-> (merged via #2197, `b0c7346f`); corpus slice on top of that foundation.
+> (merged via #2197, `b0c7346f`); corpus slice on top of that foundation
+> (merged via #2198, `62b83af`); rules baseline slice on top of the corpus
+> slice (`main@62b83af`).
 
 ## Problem
 
@@ -499,3 +505,176 @@ closed catalog are impossible valid inputs and are rejected before invoking
 the frozen input validator. Unknown keys produce a generic diagnostic per
 corpus-owned object; aggregated errors are appended without function-argument
 spread, including diagnostics returned by the frozen foundation.
+
+## Rules baseline slice (#2196, slice 3): deterministic offline routing rules (`a2a.routing-rules.v1`)
+
+> **Boundary**: one conservative, OFFLINE, deterministic natural-language
+> routing-rules baseline. This slice actually classifies `requestText` with
+> declared rules — it is NOT a wrapper accepting caller-supplied desired
+> labels, NOT a lookup of development corpus ids/texts, and NOT the model. It
+> is NOT general natural-language understanding: only narrow, declared Korean
+> and English phrasing families are recognized, and everything else
+> conservatively defers. The common embedding/cache engine remains
+> fleet-skill-router #4; this module deliberately shares no embedding or cache
+> machinery with it and duplicates none (pure keyword/scope rules only). The
+> private grouped calibration/holdout seal, the producer execution envelope,
+> offline prepare/entrypoint wiring and any live pilot remain future work. The
+> PR #2195/#2185 calibration specification is a DIFFERENT taxonomy and
+> evaluation protocol and is not implemented or claimed here (#2185 was
+> auto-closed after the spec-only PR #2195 and is not reopened; no evaluation
+> is claimed complete). #2196 remains partially OPEN; the implementing PR
+> refs #2196 and never closes it.
+
+### Goal and exported surface
+
+One pure, synchronous library, `scripts/lib/a2a-routing-rules.mjs`, importing
+ONLY the frozen foundation `scripts/lib/a2a-routing-advice.mjs`, exporting
+exactly:
+
+- `ROUTING_RULES_MODEL_VERSION` — the constant `'a2a.routing-rules.v1'`;
+- `classifyRoutingWithRules(input)` — classifies one routing input.
+
+The result is EXACTLY `{ ok: true, value }` or `{ ok: false, errors }` — no
+extra result fields:
+
+- `value` is a closed `a2a.routing-advice.v1` object, re-validated with
+  `validateRoutingAdviceOutput` using `expectedModelVersion =
+  ROUTING_RULES_MODEL_VERSION` and `policyVersion = ROUTING_POLICY_VERSION`
+  (reused constants; never reimplemented), and frozen;
+- `errors` is an array of `{ code, path, message }` items with stable codes
+  and generic fixed messages. Messages NEVER echo request text, unknown keys,
+  or identifier values.
+
+There is no confidence, probability, score, latency, path, command, worker id,
+scope or budget anywhere. There is no adapter process, timeout, or
+provider-failure representation: a `defer` here is a SEMANTIC outcome of the
+rules and never a provider failure (the frozen reason enum has no such code);
+the adapter result/process/timeout envelope remains a separately specified
+future boundary.
+
+### Input, purity, and error behavior
+
+- The input is the EXACT frozen `a2a.routing-input.v1` contract, validated by
+  the reused `validateRoutingInput` (caller-owned trusted `hostContext`
+  included). The module never parses context out of request text and never
+  infers trusted host flags from it; text claiming approval, write access,
+  readiness, urgency, or authorization cannot change host context.
+- A candidate list longer than the seven unique catalog entries is impossible
+  valid and is rejected early with `candidate_limit_exceeded` (before the
+  frozen validator allocates per-item diagnostics).
+- Every ordinary malformed parsed-JSON input returns a batched body-free
+  structured error result — never a throw, never a partial success, and never
+  a semantic `defer`. Unknown/malformed input is `ok:false`, not a routing
+  decision.
+- Foundation errors are reused by reference (frozen, bounded arrays); this
+  module performs no unbounded argument spread.
+- Plain JSON boundary: behavior is defined for plain JSON data only; this is
+  NOT a getter/proxy sandbox and no code is evaluated.
+- Purity: no filesystem, network, process, or clock effects; no module state
+  that survives a call; no model, provider, worker, `prepareAssignment`/
+  `normalizeAssignRequest`, or dispatcher invocation; fully synchronous and
+  deterministic (same input → same result). Input and result are
+  mutation-isolated (the foundation returns frozen normalized values).
+- Fail-closed guard: if the generated advice ever failed the frozen output
+  contract, the result is `ok:false` (`rules_output_rejected`) — never an
+  invalid `ok:true`.
+
+### Preprocessing (bounded, deterministic)
+
+`requestText` is normalized in a fixed order: Unicode NFKC → lower-case →
+collapse whitespace runs to one space → trim → hard cap at 4000 codepoints
+(the input contract's bound). Matching operates on this normalized form;
+subsequence windows in patterns are bounded so no pattern exhibits
+catastrophic backtracking.
+
+### Quotation masking
+
+Before any rule evaluation, quoted regions are masked: fenced ` ``` ` code
+blocks (balanced), backtick pairs, straight `"..."` pairs, straight `'...'`
+pairs (an ASCII apostrophe between Latin letters — e.g. `don't` — is a
+contraction, not a delimiter), and `‘…’`, `“…”`, `「…」` pairs. Then:
+
+- Commands occurring only inside quoted/fenced text never trigger a positive
+  action; the surrounding unmasked text must carry the ask.
+- An unbalanced quote/fence marker → `defer/uncertain` (malformed quotes are
+  never guessed through).
+- A signal that survives only inside quotes (quote-heavy text, or an empty
+  unmasked remainder) → `defer/insufficient_context`.
+- A quoted demand to ignore authorization, or a quoted claim of approval/
+  context switching, can never override the trusted host context.
+
+### Rule ordering (first match wins; documented support limits)
+
+| # | Rule | Outcome |
+|---|---|---|
+| 1 | `hostContext.interaction` ≠ `user_request` (control/external_event/attachment) | `not_a2a` / `not_applicable` — such interactions stay with the host and can never become new tasks from quoted or body keywords |
+| 2 | Explicit do-not-delegate / chat-only request (delegation negation + chat-only or self-handling markers) | `not_a2a` / `not_applicable` |
+| 3 | General greeting/chat message (only greeting/thanks tokens) | `not_a2a` / `not_applicable` |
+| 4 | Unbalanced quote or fence marker | `defer` / `uncertain` |
+| 5 | Bare `continue`/`resume`/`계속`/`이어서`-style continuation with no object | `defer` / `ambiguous` — never mints a task or id, never grants readiness |
+| 6 | Task-like signal with an EMPTY candidate list | `defer` / `no_candidate` — never invents a candidate |
+| 7 | Execution retry phrasing (restart/rerun/`다시 실행` of a failed/stopped run) | `defer` / `unsupported_template` — no execution-retry template exists; this is NOT tracking resume |
+| 8 | Observe + resume conflict (e.g. "check the existing task and resume it") | `defer` / `ambiguous` |
+| 9 | Resume signal about an execution object (sync/deploy/build/`갱신`/`이관`…) | `defer` / `unsupported_template` |
+| 10 | Resume signal about a tracking object (review/analysis/summary/`추적`/`관찰`…) | `recommend` intent `resume_existing` |
+| 11 | Unresolvable resume phrasing | `defer` / `uncertain` |
+| 12 | Observe signal (status/progress check of an existing task) | `recommend` intent `observe_existing`; observe + new-task ask → `defer`/`ambiguous` |
+| 13 | New-task intents (`new_patch`, `docs_patch`, `new_analysis`, `docs_analysis`, `review_readonly`) with negation scoping; vague-object markers → `defer/ambiguous`; multiple distinct intents → `defer/ambiguous` unless exactly one surviving intent is both in-candidate and eligible | single intent or `defer` / `ambiguous` |
+| 14 | Inferred template missing from non-empty candidates | `defer` / `unsupported_template` — the omitted template is never replaced by an available neighbor (inference is independent of candidate availability; candidate order never decides the route) |
+| 15 | Trusted-context eligibility (`isRecommendationEligible`) false — `unspecified`/contrary operation, existing-task operation with a new-task intent, write intent without `write_allowed` | `defer` / `insufficient_context` — missing or contrary trusted context defers; text cannot grant access |
+| 16 | Single eligible, in-candidate intent | `recommend` / `matched` |
+
+Negation scoping details (required contrasts): "read/review only, do not
+modify" keeps the requested read template; "fix the bug but do not touch the
+docs" stays `new_patch` (docs-only exclusion, not `docs_patch`); a docs-only
+change with code excluded stays `docs_patch`. Inference considers the actual
+requested action, not isolated keywords anywhere: "review the migration code
+without editing" → `review_readonly`; "update the docs" / `문서만 수정해줘` →
+`docs_patch` (no concrete file needed); `문서 내용을 읽고 분석만 해줘` →
+`docs_analysis`; "review the dispatch configuration" is not `new_patch`
+despite the `patch` substring; `패치노트` 검토 is a review, not a patch. Reviewing
+two PRs remains the same review type; deciding whether to review or patch is
+separate and ambiguous. `show/check status of the existing task` /
+`기존 작업 상태를 확인해줘` require the `observe_existing` host operation;
+explicit resume-tracking phrasing requires `resume_existing`; `restart/rerun
+the failed execution` / `실패한 작업을 다시 실행해줘` is NOT tracking resume and
+defers. A recognized task whose context makes every route ineligible returns
+a semantic defer — it never fabricates scope, workers, credentials, or
+commands.
+
+### What the rules deliberately do NOT claim
+
+No general natural-language understanding, no learning, no embeddings, no
+model. Unlisted phrasing families, mixed-language mixtures, sarcasm, and
+long multi-ask compounds conservatively defer. The rule vocabulary above is
+the complete support surface; anything outside it is intended to defer.
+
+### Acknowledged pending boundaries (never claimed by this slice)
+
+- The private grouped calibration/holdout seal (Phase A) is pending; the
+  public development corpus remains exposed development data.
+- The common embedding/cache engine remains fleet-skill-router #4; nothing
+  here duplicates or replaces it.
+- The producer execution envelope (adapter process, timeout, provider
+  failures) is a separately specified future boundary; `defer` is never a
+  disguised provider failure.
+- Offline `prepareAssignment`/entrypoint wiring, runtime integration, live
+  pilot, deployment, activation, restarts, paid model calls, and any new
+  server are out of scope and not authorized.
+- No accuracy, quality, speed, or adoption claim is made. The 173-record
+  public development-corpus replay in the test suite is a contract/behavior
+  replay over EXPOSED development data — not holdout evidence, not model
+  quality evidence, and not latency evidence — and reports honest
+  output/abstention counts without forcing semantic agreement with corpus
+  labels.
+
+### Rules slice verification
+
+- `node --test scripts/lib/a2a-routing-rules.test.mjs
+  scripts/lib/a2a-routing-advice.test.mjs
+  scripts/lib/a2a-routing-corpus.test.mjs
+  scripts/lib/task-assign-entrypoint.test.mjs`
+- `npm run check`; `npm run scan:public-readiness`.
+- Base absence proof (RED): `git cat-file -e
+  62b83af:scripts/lib/a2a-routing-rules.mjs` → absent on the corpus baseline;
+  `git grep -l 'a2a.routing-rules.v1' 62b83af` → no match.
