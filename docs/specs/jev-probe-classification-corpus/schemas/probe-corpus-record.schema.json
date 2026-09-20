@@ -1,0 +1,100 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/jinwon-int/a2a-nexus/docs/specs/jev-probe-classification-corpus/schemas/probe-corpus-record.schema.json",
+  "title": "JEV Probe-Classification corpus record contract v1",
+  "$comment": "Spec-first packet for #2206. Documentation-only synthetic corpus contract; grants no runtime authority. Leakage-preventing by construction: the judgment-time input surface is closed (additionalProperties: false at every level) and declares no outcome, verdict, realized-latency, realized-cost, acceptance, or success field, so any such field fails schema validation. The label object is an annotation produced by the labeling protocol (frozen policy plus independent review); it is never a judgment input. The canonical single-record shape is $defs/record; the top level is the corpus envelope used by fixtures/jev-probe-classification-corpus/corpus-sample.json.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["kind", "schemaVersion", "records"],
+  "properties": {
+    "kind": { "const": "JevProbeClassificationCorpusSample" },
+    "schemaVersion": { "const": 1 },
+    "records": {
+      "type": "array",
+      "minItems": 1,
+      "maxItems": 200,
+      "items": { "$ref": "#/$defs/record" }
+    }
+  },
+  "$defs": {
+    "record": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "kind",
+        "schemaVersion",
+        "recordId",
+        "observationDate",
+        "source",
+        "groupKind",
+        "split",
+        "judgmentTimeInput",
+        "label"
+      ],
+      "properties": {
+        "kind": { "const": "JevProbeClassificationRecord" },
+        "schemaVersion": { "const": 1 },
+        "recordId": { "type": "string", "pattern": "^jpc-[0-9]{4}$" },
+        "observationDate": { "type": "string", "format": "date" },
+        "source": { "enum": ["synthetic", "local_shadow", "broker_observed"] },
+        "groupKind": { "enum": ["unique", "identical_work", "retry", "derived_case"] },
+        "split": { "enum": ["train", "calibration", "holdout"] },
+        "derivedFromRecordId": { "type": "string", "pattern": "^jpc-[0-9]{4}$" },
+        "judgmentTimeInput": { "$ref": "#/$defs/judgmentTimeInput" },
+        "label": { "$ref": "#/$defs/label" }
+      }
+    },
+    "judgmentTimeInput": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "artifactIdsCount",
+        "payloadFilePresent",
+        "bundleFilesBand",
+        "messageWordsBand",
+        "requesterClass",
+        "timingClass"
+      ],
+      "properties": {
+        "artifactIdsCount": { "type": "integer", "minimum": 0, "maximum": 99 },
+        "payloadFilePresent": { "type": "boolean" },
+        "bundleFilesBand": { "enum": ["none", "1", "2-5", "6+"] },
+        "messageWordsBand": { "enum": ["0-3", "4-20", "21-100", "100+"] },
+        "requesterClass": { "enum": ["pipeline_health", "agent", "operator", "unknown"] },
+        "timingClass": { "enum": ["recurring_identical", "post_restart", "one_off"] }
+      }
+    },
+    "label": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "labelStatus",
+        "policyVersion",
+        "class",
+        "alternativeAcceptable"
+      ],
+      "properties": {
+        "labelStatus": {
+          "enum": [
+            "policy_computed_review_pending",
+            "independently_reviewed",
+            "disputed_multiple_reasonable",
+            "unlabeled_pending_policy"
+          ]
+        },
+        "policyVersion": { "type": "string", "minLength": 1 },
+        "class": { "enum": ["probe", "incomplete", "proceed", "defer"] },
+        "alternativeAcceptable": { "type": "boolean" },
+        "existingRuleComparison": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["ruleVersion", "class"],
+          "properties": {
+            "ruleVersion": { "type": "string", "minLength": 1 },
+            "class": { "enum": ["probe", "incomplete", "proceed", "defer"] }
+          }
+        }
+      }
+    }
+  }
+}
