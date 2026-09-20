@@ -19,9 +19,9 @@
     "timingClass": "one_off"
    },
    "label": {
-    "labelStatus": "unlabeled_pending_policy",
+    "labelStatus": "policy_computed_review_pending",
     "policyVersion": "probe-handling-policy@2026-09-21",
-    "class": "defer",
+    "class": "incomplete",
     "alternativeAcceptable": false
    }
   },
@@ -42,9 +42,9 @@
     "timingClass": "one_off"
    },
    "label": {
-    "labelStatus": "unlabeled_pending_policy",
+    "labelStatus": "policy_computed_review_pending",
     "policyVersion": "probe-handling-policy@2026-09-21",
-    "class": "defer",
+    "class": "incomplete",
     "alternativeAcceptable": false
    }
   },
@@ -65,9 +65,9 @@
     "timingClass": "one_off"
    },
    "label": {
-    "labelStatus": "unlabeled_pending_policy",
+    "labelStatus": "policy_computed_review_pending",
     "policyVersion": "probe-handling-policy@2026-09-21",
-    "class": "defer",
+    "class": "incomplete",
     "alternativeAcceptable": false
    }
   },
@@ -88,10 +88,10 @@
     "timingClass": "one_off"
    },
    "label": {
-    "labelStatus": "unlabeled_pending_policy",
+    "labelStatus": "policy_computed_review_pending",
     "policyVersion": "probe-handling-policy@2026-09-21",
-    "class": "defer",
-    "alternativeAcceptable": false
+    "class": "incomplete",
+    "alternativeAcceptable": true
    }
   },
   {
@@ -111,10 +111,10 @@
     "timingClass": "one_off"
    },
    "label": {
-    "labelStatus": "unlabeled_pending_policy",
+    "labelStatus": "policy_computed_review_pending",
     "policyVersion": "probe-handling-policy@2026-09-21",
-    "class": "defer",
-    "alternativeAcceptable": false
+    "class": "incomplete",
+    "alternativeAcceptable": true
    }
   },
   {
@@ -134,10 +134,10 @@
     "timingClass": "one_off"
    },
    "label": {
-    "labelStatus": "unlabeled_pending_policy",
+    "labelStatus": "policy_computed_review_pending",
     "policyVersion": "probe-handling-policy@2026-09-21",
-    "class": "defer",
-    "alternativeAcceptable": false
+    "class": "incomplete",
+    "alternativeAcceptable": true
    }
   },
   {
@@ -157,10 +157,10 @@
     "timingClass": "one_off"
    },
    "label": {
-    "labelStatus": "unlabeled_pending_policy",
+    "labelStatus": "policy_computed_review_pending",
     "policyVersion": "probe-handling-policy@2026-09-21",
-    "class": "defer",
-    "alternativeAcceptable": false
+    "class": "incomplete",
+    "alternativeAcceptable": true
    }
   },
   {
@@ -180,10 +180,10 @@
     "timingClass": "one_off"
    },
    "label": {
-    "labelStatus": "unlabeled_pending_policy",
+    "labelStatus": "policy_computed_review_pending",
     "policyVersion": "probe-handling-policy@2026-09-21",
-    "class": "defer",
-    "alternativeAcceptable": false
+    "class": "incomplete",
+    "alternativeAcceptable": true
    }
   },
   {
@@ -203,10 +203,10 @@
     "timingClass": "one_off"
    },
    "label": {
-    "labelStatus": "unlabeled_pending_policy",
+    "labelStatus": "policy_computed_review_pending",
     "policyVersion": "probe-handling-policy@2026-09-21",
-    "class": "defer",
-    "alternativeAcceptable": false
+    "class": "incomplete",
+    "alternativeAcceptable": true
    }
   },
   {
@@ -226,10 +226,10 @@
     "timingClass": "one_off"
    },
    "label": {
-    "labelStatus": "unlabeled_pending_policy",
+    "labelStatus": "policy_computed_review_pending",
     "policyVersion": "probe-handling-policy@2026-09-21",
-    "class": "defer",
-    "alternativeAcceptable": false
+    "class": "incomplete",
+    "alternativeAcceptable": true
    }
   },
   {
@@ -249,10 +249,10 @@
     "timingClass": "one_off"
    },
    "label": {
-    "labelStatus": "unlabeled_pending_policy",
+    "labelStatus": "policy_computed_review_pending",
     "policyVersion": "probe-handling-policy@2026-09-21",
-    "class": "defer",
-    "alternativeAcceptable": false
+    "class": "incomplete",
+    "alternativeAcceptable": true
    }
   },
   {
@@ -272,10 +272,10 @@
     "timingClass": "one_off"
    },
    "label": {
-    "labelStatus": "unlabeled_pending_policy",
+    "labelStatus": "policy_computed_review_pending",
     "policyVersion": "probe-handling-policy@2026-09-21",
-    "class": "defer",
-    "alternativeAcceptable": false
+    "class": "incomplete",
+    "alternativeAcceptable": true
    }
   },
   {
@@ -295,10 +295,10 @@
     "timingClass": "one_off"
    },
    "label": {
-    "labelStatus": "unlabeled_pending_policy",
+    "labelStatus": "policy_computed_review_pending",
     "policyVersion": "probe-handling-policy@2026-09-21",
-    "class": "defer",
-    "alternativeAcceptable": false
+    "class": "incomplete",
+    "alternativeAcceptable": true
    }
   },
   {
@@ -318,10 +318,10 @@
     "timingClass": "one_off"
    },
    "label": {
-    "labelStatus": "unlabeled_pending_policy",
+    "labelStatus": "policy_computed_review_pending",
     "policyVersion": "probe-handling-policy@2026-09-21",
-    "class": "defer",
-    "alternativeAcceptable": false
+    "class": "incomplete",
+    "alternativeAcceptable": true
    }
   },
   {
@@ -341,10 +341,10 @@
     "timingClass": "one_off"
    },
    "label": {
-    "labelStatus": "unlabeled_pending_policy",
+    "labelStatus": "policy_computed_review_pending",
     "policyVersion": "probe-handling-policy@2026-09-21",
-    "class": "defer",
-    "alternativeAcceptable": false
+    "class": "incomplete",
+    "alternativeAcceptable": true
    }
   },
   {
@@ -364,10 +364,10 @@
     "timingClass": "one_off"
    },
    "label": {
-    "labelStatus": "unlabeled_pending_policy",
+    "labelStatus": "policy_computed_review_pending",
     "policyVersion": "probe-handling-policy@2026-09-21",
-    "class": "defer",
-    "alternativeAcceptable": false
+    "class": "incomplete",
+    "alternativeAcceptable": true
    }
   },
   {
@@ -387,10 +387,10 @@
     "timingClass": "one_off"
    },
    "label": {
-    "labelStatus": "unlabeled_pending_policy",
+    "labelStatus": "policy_computed_review_pending",
     "policyVersion": "probe-handling-policy@2026-09-21",
-    "class": "defer",
-    "alternativeAcceptable": false
+    "class": "incomplete",
+    "alternativeAcceptable": true
    }
   },
   {
@@ -410,10 +410,10 @@
     "timingClass": "one_off"
    },
    "label": {
-    "labelStatus": "unlabeled_pending_policy",
+    "labelStatus": "policy_computed_review_pending",
     "policyVersion": "probe-handling-policy@2026-09-21",
-    "class": "defer",
-    "alternativeAcceptable": false
+    "class": "incomplete",
+    "alternativeAcceptable": true
    }
   },
   {
@@ -433,10 +433,10 @@
     "timingClass": "one_off"
    },
    "label": {
-    "labelStatus": "unlabeled_pending_policy",
+    "labelStatus": "policy_computed_review_pending",
     "policyVersion": "probe-handling-policy@2026-09-21",
-    "class": "defer",
-    "alternativeAcceptable": false
+    "class": "incomplete",
+    "alternativeAcceptable": true
    }
   },
   {
@@ -456,10 +456,10 @@
     "timingClass": "one_off"
    },
    "label": {
-    "labelStatus": "unlabeled_pending_policy",
+    "labelStatus": "policy_computed_review_pending",
     "policyVersion": "probe-handling-policy@2026-09-21",
-    "class": "defer",
-    "alternativeAcceptable": false
+    "class": "incomplete",
+    "alternativeAcceptable": true
    }
   },
   {
@@ -479,10 +479,10 @@
     "timingClass": "one_off"
    },
    "label": {
-    "labelStatus": "unlabeled_pending_policy",
+    "labelStatus": "policy_computed_review_pending",
     "policyVersion": "probe-handling-policy@2026-09-21",
-    "class": "defer",
-    "alternativeAcceptable": false
+    "class": "incomplete",
+    "alternativeAcceptable": true
    }
   },
   {
@@ -502,10 +502,10 @@
     "timingClass": "one_off"
    },
    "label": {
-    "labelStatus": "unlabeled_pending_policy",
+    "labelStatus": "policy_computed_review_pending",
     "policyVersion": "probe-handling-policy@2026-09-21",
-    "class": "defer",
-    "alternativeAcceptable": false
+    "class": "incomplete",
+    "alternativeAcceptable": true
    }
   },
   {
@@ -525,10 +525,10 @@
     "timingClass": "one_off"
    },
    "label": {
-    "labelStatus": "unlabeled_pending_policy",
+    "labelStatus": "policy_computed_review_pending",
     "policyVersion": "probe-handling-policy@2026-09-21",
-    "class": "defer",
-    "alternativeAcceptable": false
+    "class": "incomplete",
+    "alternativeAcceptable": true
    }
   },
   {
@@ -548,10 +548,10 @@
     "timingClass": "one_off"
    },
    "label": {
-    "labelStatus": "unlabeled_pending_policy",
+    "labelStatus": "policy_computed_review_pending",
     "policyVersion": "probe-handling-policy@2026-09-21",
-    "class": "defer",
-    "alternativeAcceptable": false
+    "class": "incomplete",
+    "alternativeAcceptable": true
    }
   },
   {
@@ -571,10 +571,10 @@
     "timingClass": "one_off"
    },
    "label": {
-    "labelStatus": "unlabeled_pending_policy",
+    "labelStatus": "policy_computed_review_pending",
     "policyVersion": "probe-handling-policy@2026-09-21",
-    "class": "defer",
-    "alternativeAcceptable": false
+    "class": "incomplete",
+    "alternativeAcceptable": true
    }
   },
   {
@@ -594,10 +594,10 @@
     "timingClass": "one_off"
    },
    "label": {
-    "labelStatus": "unlabeled_pending_policy",
+    "labelStatus": "policy_computed_review_pending",
     "policyVersion": "probe-handling-policy@2026-09-21",
-    "class": "defer",
-    "alternativeAcceptable": false
+    "class": "incomplete",
+    "alternativeAcceptable": true
    }
   },
   {
@@ -617,10 +617,10 @@
     "timingClass": "one_off"
    },
    "label": {
-    "labelStatus": "unlabeled_pending_policy",
+    "labelStatus": "policy_computed_review_pending",
     "policyVersion": "probe-handling-policy@2026-09-21",
-    "class": "defer",
-    "alternativeAcceptable": false
+    "class": "incomplete",
+    "alternativeAcceptable": true
    }
   },
   {
@@ -640,10 +640,10 @@
     "timingClass": "one_off"
    },
    "label": {
-    "labelStatus": "unlabeled_pending_policy",
+    "labelStatus": "policy_computed_review_pending",
     "policyVersion": "probe-handling-policy@2026-09-21",
-    "class": "defer",
-    "alternativeAcceptable": false
+    "class": "incomplete",
+    "alternativeAcceptable": true
    }
   },
   {
@@ -663,10 +663,10 @@
     "timingClass": "one_off"
    },
    "label": {
-    "labelStatus": "unlabeled_pending_policy",
+    "labelStatus": "policy_computed_review_pending",
     "policyVersion": "probe-handling-policy@2026-09-21",
-    "class": "defer",
-    "alternativeAcceptable": false
+    "class": "incomplete",
+    "alternativeAcceptable": true
    }
   },
   {
@@ -686,10 +686,10 @@
     "timingClass": "one_off"
    },
    "label": {
-    "labelStatus": "unlabeled_pending_policy",
+    "labelStatus": "policy_computed_review_pending",
     "policyVersion": "probe-handling-policy@2026-09-21",
-    "class": "defer",
-    "alternativeAcceptable": false
+    "class": "incomplete",
+    "alternativeAcceptable": true
    }
   },
   {
@@ -709,10 +709,10 @@
     "timingClass": "one_off"
    },
    "label": {
-    "labelStatus": "unlabeled_pending_policy",
+    "labelStatus": "policy_computed_review_pending",
     "policyVersion": "probe-handling-policy@2026-09-21",
-    "class": "defer",
-    "alternativeAcceptable": false
+    "class": "incomplete",
+    "alternativeAcceptable": true
    }
   },
   {
@@ -732,10 +732,10 @@
     "timingClass": "one_off"
    },
    "label": {
-    "labelStatus": "unlabeled_pending_policy",
+    "labelStatus": "policy_computed_review_pending",
     "policyVersion": "probe-handling-policy@2026-09-21",
-    "class": "defer",
-    "alternativeAcceptable": false
+    "class": "incomplete",
+    "alternativeAcceptable": true
    }
   },
   {
@@ -755,10 +755,10 @@
     "timingClass": "one_off"
    },
    "label": {
-    "labelStatus": "unlabeled_pending_policy",
+    "labelStatus": "policy_computed_review_pending",
     "policyVersion": "probe-handling-policy@2026-09-21",
-    "class": "defer",
-    "alternativeAcceptable": false
+    "class": "incomplete",
+    "alternativeAcceptable": true
    }
   },
   {
@@ -778,10 +778,10 @@
     "timingClass": "one_off"
    },
    "label": {
-    "labelStatus": "unlabeled_pending_policy",
+    "labelStatus": "policy_computed_review_pending",
     "policyVersion": "probe-handling-policy@2026-09-21",
-    "class": "defer",
-    "alternativeAcceptable": false
+    "class": "incomplete",
+    "alternativeAcceptable": true
    }
   },
   {
@@ -801,10 +801,10 @@
     "timingClass": "one_off"
    },
    "label": {
-    "labelStatus": "unlabeled_pending_policy",
+    "labelStatus": "policy_computed_review_pending",
     "policyVersion": "probe-handling-policy@2026-09-21",
-    "class": "defer",
-    "alternativeAcceptable": false
+    "class": "incomplete",
+    "alternativeAcceptable": true
    }
   },
   {
@@ -824,10 +824,10 @@
     "timingClass": "one_off"
    },
    "label": {
-    "labelStatus": "unlabeled_pending_policy",
+    "labelStatus": "policy_computed_review_pending",
     "policyVersion": "probe-handling-policy@2026-09-21",
-    "class": "defer",
-    "alternativeAcceptable": false
+    "class": "incomplete",
+    "alternativeAcceptable": true
    }
   },
   {
@@ -847,10 +847,10 @@
     "timingClass": "one_off"
    },
    "label": {
-    "labelStatus": "unlabeled_pending_policy",
+    "labelStatus": "policy_computed_review_pending",
     "policyVersion": "probe-handling-policy@2026-09-21",
-    "class": "defer",
-    "alternativeAcceptable": false
+    "class": "incomplete",
+    "alternativeAcceptable": true
    }
   },
   {
@@ -870,10 +870,10 @@
     "timingClass": "recurring_identical"
    },
    "label": {
-    "labelStatus": "unlabeled_pending_policy",
+    "labelStatus": "policy_computed_review_pending",
     "policyVersion": "probe-handling-policy@2026-09-21",
-    "class": "defer",
-    "alternativeAcceptable": false
+    "class": "incomplete",
+    "alternativeAcceptable": true
    }
   },
   {
@@ -893,10 +893,10 @@
     "timingClass": "recurring_identical"
    },
    "label": {
-    "labelStatus": "unlabeled_pending_policy",
+    "labelStatus": "policy_computed_review_pending",
     "policyVersion": "probe-handling-policy@2026-09-21",
-    "class": "defer",
-    "alternativeAcceptable": false
+    "class": "incomplete",
+    "alternativeAcceptable": true
    }
   },
   {
@@ -916,10 +916,10 @@
     "timingClass": "recurring_identical"
    },
    "label": {
-    "labelStatus": "unlabeled_pending_policy",
+    "labelStatus": "policy_computed_review_pending",
     "policyVersion": "probe-handling-policy@2026-09-21",
-    "class": "defer",
-    "alternativeAcceptable": false
+    "class": "incomplete",
+    "alternativeAcceptable": true
    }
   },
   {
@@ -939,10 +939,10 @@
     "timingClass": "one_off"
    },
    "label": {
-    "labelStatus": "unlabeled_pending_policy",
+    "labelStatus": "policy_computed_review_pending",
     "policyVersion": "probe-handling-policy@2026-09-21",
-    "class": "defer",
-    "alternativeAcceptable": false
+    "class": "incomplete",
+    "alternativeAcceptable": true
    }
   },
   {
@@ -962,10 +962,10 @@
     "timingClass": "one_off"
    },
    "label": {
-    "labelStatus": "unlabeled_pending_policy",
+    "labelStatus": "policy_computed_review_pending",
     "policyVersion": "probe-handling-policy@2026-09-21",
-    "class": "defer",
-    "alternativeAcceptable": false
+    "class": "incomplete",
+    "alternativeAcceptable": true
    }
   },
   {
@@ -985,10 +985,10 @@
     "timingClass": "one_off"
    },
    "label": {
-    "labelStatus": "unlabeled_pending_policy",
+    "labelStatus": "policy_computed_review_pending",
     "policyVersion": "probe-handling-policy@2026-09-21",
-    "class": "defer",
-    "alternativeAcceptable": false
+    "class": "incomplete",
+    "alternativeAcceptable": true
    }
   },
   {
@@ -1008,10 +1008,10 @@
     "timingClass": "one_off"
    },
    "label": {
-    "labelStatus": "unlabeled_pending_policy",
+    "labelStatus": "policy_computed_review_pending",
     "policyVersion": "probe-handling-policy@2026-09-21",
-    "class": "defer",
-    "alternativeAcceptable": false
+    "class": "incomplete",
+    "alternativeAcceptable": true
    }
   },
   {
@@ -1031,10 +1031,10 @@
     "timingClass": "one_off"
    },
    "label": {
-    "labelStatus": "unlabeled_pending_policy",
+    "labelStatus": "policy_computed_review_pending",
     "policyVersion": "probe-handling-policy@2026-09-21",
-    "class": "defer",
-    "alternativeAcceptable": false
+    "class": "incomplete",
+    "alternativeAcceptable": true
    }
   },
   {
@@ -1054,10 +1054,10 @@
     "timingClass": "recurring_identical"
    },
    "label": {
-    "labelStatus": "unlabeled_pending_policy",
+    "labelStatus": "policy_computed_review_pending",
     "policyVersion": "probe-handling-policy@2026-09-21",
-    "class": "defer",
-    "alternativeAcceptable": false
+    "class": "incomplete",
+    "alternativeAcceptable": true
    }
   },
   {
@@ -1077,10 +1077,10 @@
     "timingClass": "recurring_identical"
    },
    "label": {
-    "labelStatus": "unlabeled_pending_policy",
+    "labelStatus": "policy_computed_review_pending",
     "policyVersion": "probe-handling-policy@2026-09-21",
-    "class": "defer",
-    "alternativeAcceptable": false
+    "class": "incomplete",
+    "alternativeAcceptable": true
    }
   },
   {
@@ -1100,10 +1100,10 @@
     "timingClass": "recurring_identical"
    },
    "label": {
-    "labelStatus": "unlabeled_pending_policy",
+    "labelStatus": "policy_computed_review_pending",
     "policyVersion": "probe-handling-policy@2026-09-21",
-    "class": "defer",
-    "alternativeAcceptable": false
+    "class": "incomplete",
+    "alternativeAcceptable": true
    }
   },
   {
@@ -1123,10 +1123,10 @@
     "timingClass": "one_off"
    },
    "label": {
-    "labelStatus": "unlabeled_pending_policy",
+    "labelStatus": "policy_computed_review_pending",
     "policyVersion": "probe-handling-policy@2026-09-21",
-    "class": "defer",
-    "alternativeAcceptable": false
+    "class": "incomplete",
+    "alternativeAcceptable": true
    }
   },
   {
@@ -1146,10 +1146,10 @@
     "timingClass": "one_off"
    },
    "label": {
-    "labelStatus": "unlabeled_pending_policy",
+    "labelStatus": "policy_computed_review_pending",
     "policyVersion": "probe-handling-policy@2026-09-21",
-    "class": "defer",
-    "alternativeAcceptable": false
+    "class": "incomplete",
+    "alternativeAcceptable": true
    }
   },
   {
@@ -1169,10 +1169,10 @@
     "timingClass": "one_off"
    },
    "label": {
-    "labelStatus": "unlabeled_pending_policy",
+    "labelStatus": "policy_computed_review_pending",
     "policyVersion": "probe-handling-policy@2026-09-21",
-    "class": "defer",
-    "alternativeAcceptable": false
+    "class": "incomplete",
+    "alternativeAcceptable": true
    }
   },
   {
@@ -1192,10 +1192,10 @@
     "timingClass": "one_off"
    },
    "label": {
-    "labelStatus": "unlabeled_pending_policy",
+    "labelStatus": "policy_computed_review_pending",
     "policyVersion": "probe-handling-policy@2026-09-21",
-    "class": "defer",
-    "alternativeAcceptable": false
+    "class": "incomplete",
+    "alternativeAcceptable": true
    }
   },
   {
@@ -1215,10 +1215,10 @@
     "timingClass": "one_off"
    },
    "label": {
-    "labelStatus": "unlabeled_pending_policy",
+    "labelStatus": "policy_computed_review_pending",
     "policyVersion": "probe-handling-policy@2026-09-21",
-    "class": "defer",
-    "alternativeAcceptable": false
+    "class": "incomplete",
+    "alternativeAcceptable": true
    }
   },
   {
@@ -1238,10 +1238,10 @@
     "timingClass": "one_off"
    },
    "label": {
-    "labelStatus": "unlabeled_pending_policy",
+    "labelStatus": "policy_computed_review_pending",
     "policyVersion": "probe-handling-policy@2026-09-21",
-    "class": "defer",
-    "alternativeAcceptable": false
+    "class": "incomplete",
+    "alternativeAcceptable": true
    }
   },
   {
@@ -1261,10 +1261,10 @@
     "timingClass": "one_off"
    },
    "label": {
-    "labelStatus": "unlabeled_pending_policy",
+    "labelStatus": "policy_computed_review_pending",
     "policyVersion": "probe-handling-policy@2026-09-21",
-    "class": "defer",
-    "alternativeAcceptable": false
+    "class": "incomplete",
+    "alternativeAcceptable": true
    }
   },
   {
@@ -1284,10 +1284,10 @@
     "timingClass": "one_off"
    },
    "label": {
-    "labelStatus": "unlabeled_pending_policy",
+    "labelStatus": "policy_computed_review_pending",
     "policyVersion": "probe-handling-policy@2026-09-21",
-    "class": "defer",
-    "alternativeAcceptable": false
+    "class": "incomplete",
+    "alternativeAcceptable": true
    }
   },
   {
@@ -1307,9 +1307,9 @@
     "timingClass": "one_off"
    },
    "label": {
-    "labelStatus": "unlabeled_pending_policy",
+    "labelStatus": "policy_computed_review_pending",
     "policyVersion": "probe-handling-policy@2026-09-21",
-    "class": "defer",
+    "class": "incomplete",
     "alternativeAcceptable": false
    }
   },
@@ -1330,10 +1330,10 @@
     "timingClass": "one_off"
    },
    "label": {
-    "labelStatus": "unlabeled_pending_policy",
+    "labelStatus": "policy_computed_review_pending",
     "policyVersion": "probe-handling-policy@2026-09-21",
-    "class": "defer",
-    "alternativeAcceptable": false
+    "class": "incomplete",
+    "alternativeAcceptable": true
    }
   },
   {
@@ -1353,10 +1353,10 @@
     "timingClass": "one_off"
    },
    "label": {
-    "labelStatus": "unlabeled_pending_policy",
+    "labelStatus": "policy_computed_review_pending",
     "policyVersion": "probe-handling-policy@2026-09-21",
-    "class": "defer",
-    "alternativeAcceptable": false
+    "class": "incomplete",
+    "alternativeAcceptable": true
    }
   },
   {
@@ -1376,10 +1376,10 @@
     "timingClass": "one_off"
    },
    "label": {
-    "labelStatus": "unlabeled_pending_policy",
+    "labelStatus": "policy_computed_review_pending",
     "policyVersion": "probe-handling-policy@2026-09-21",
-    "class": "defer",
-    "alternativeAcceptable": false
+    "class": "incomplete",
+    "alternativeAcceptable": true
    }
   },
   {
@@ -1399,10 +1399,10 @@
     "timingClass": "recurring_identical"
    },
    "label": {
-    "labelStatus": "unlabeled_pending_policy",
+    "labelStatus": "policy_computed_review_pending",
     "policyVersion": "probe-handling-policy@2026-09-21",
-    "class": "defer",
-    "alternativeAcceptable": false
+    "class": "incomplete",
+    "alternativeAcceptable": true
    }
   },
   {
@@ -1422,10 +1422,10 @@
     "timingClass": "recurring_identical"
    },
    "label": {
-    "labelStatus": "unlabeled_pending_policy",
+    "labelStatus": "policy_computed_review_pending",
     "policyVersion": "probe-handling-policy@2026-09-21",
-    "class": "defer",
-    "alternativeAcceptable": false
+    "class": "incomplete",
+    "alternativeAcceptable": true
    }
   },
   {
@@ -1445,10 +1445,10 @@
     "timingClass": "recurring_identical"
    },
    "label": {
-    "labelStatus": "unlabeled_pending_policy",
+    "labelStatus": "policy_computed_review_pending",
     "policyVersion": "probe-handling-policy@2026-09-21",
-    "class": "defer",
-    "alternativeAcceptable": false
+    "class": "incomplete",
+    "alternativeAcceptable": true
    }
   },
   {
@@ -1468,10 +1468,10 @@
     "timingClass": "one_off"
    },
    "label": {
-    "labelStatus": "unlabeled_pending_policy",
+    "labelStatus": "policy_computed_review_pending",
     "policyVersion": "probe-handling-policy@2026-09-21",
-    "class": "defer",
-    "alternativeAcceptable": false
+    "class": "incomplete",
+    "alternativeAcceptable": true
    }
   },
   {
@@ -1491,10 +1491,10 @@
     "timingClass": "one_off"
    },
    "label": {
-    "labelStatus": "unlabeled_pending_policy",
+    "labelStatus": "policy_computed_review_pending",
     "policyVersion": "probe-handling-policy@2026-09-21",
-    "class": "defer",
-    "alternativeAcceptable": false
+    "class": "incomplete",
+    "alternativeAcceptable": true
    }
   },
   {
@@ -1514,10 +1514,10 @@
     "timingClass": "one_off"
    },
    "label": {
-    "labelStatus": "unlabeled_pending_policy",
+    "labelStatus": "policy_computed_review_pending",
     "policyVersion": "probe-handling-policy@2026-09-21",
-    "class": "defer",
-    "alternativeAcceptable": false
+    "class": "incomplete",
+    "alternativeAcceptable": true
    }
   },
   {
@@ -1537,10 +1537,10 @@
     "timingClass": "one_off"
    },
    "label": {
-    "labelStatus": "unlabeled_pending_policy",
+    "labelStatus": "policy_computed_review_pending",
     "policyVersion": "probe-handling-policy@2026-09-21",
-    "class": "defer",
-    "alternativeAcceptable": false
+    "class": "incomplete",
+    "alternativeAcceptable": true
    }
   },
   {
@@ -1560,10 +1560,10 @@
     "timingClass": "one_off"
    },
    "label": {
-    "labelStatus": "unlabeled_pending_policy",
+    "labelStatus": "policy_computed_review_pending",
     "policyVersion": "probe-handling-policy@2026-09-21",
-    "class": "defer",
-    "alternativeAcceptable": false
+    "class": "incomplete",
+    "alternativeAcceptable": true
    }
   },
   {
@@ -1583,10 +1583,10 @@
     "timingClass": "one_off"
    },
    "label": {
-    "labelStatus": "unlabeled_pending_policy",
+    "labelStatus": "policy_computed_review_pending",
     "policyVersion": "probe-handling-policy@2026-09-21",
-    "class": "defer",
-    "alternativeAcceptable": false
+    "class": "incomplete",
+    "alternativeAcceptable": true
    }
   },
   {
@@ -1606,10 +1606,10 @@
     "timingClass": "one_off"
    },
    "label": {
-    "labelStatus": "unlabeled_pending_policy",
+    "labelStatus": "policy_computed_review_pending",
     "policyVersion": "probe-handling-policy@2026-09-21",
-    "class": "defer",
-    "alternativeAcceptable": false
+    "class": "incomplete",
+    "alternativeAcceptable": true
    }
   },
   {
@@ -1629,10 +1629,10 @@
     "timingClass": "one_off"
    },
    "label": {
-    "labelStatus": "unlabeled_pending_policy",
+    "labelStatus": "policy_computed_review_pending",
     "policyVersion": "probe-handling-policy@2026-09-21",
-    "class": "defer",
-    "alternativeAcceptable": false
+    "class": "incomplete",
+    "alternativeAcceptable": true
    }
   },
   {
@@ -1652,10 +1652,10 @@
     "timingClass": "one_off"
    },
    "label": {
-    "labelStatus": "unlabeled_pending_policy",
+    "labelStatus": "policy_computed_review_pending",
     "policyVersion": "probe-handling-policy@2026-09-21",
-    "class": "defer",
-    "alternativeAcceptable": false
+    "class": "incomplete",
+    "alternativeAcceptable": true
    }
   },
   {
@@ -1675,10 +1675,10 @@
     "timingClass": "one_off"
    },
    "label": {
-    "labelStatus": "unlabeled_pending_policy",
+    "labelStatus": "policy_computed_review_pending",
     "policyVersion": "probe-handling-policy@2026-09-21",
-    "class": "defer",
-    "alternativeAcceptable": false
+    "class": "incomplete",
+    "alternativeAcceptable": true
    }
   },
   {
@@ -1698,10 +1698,10 @@
     "timingClass": "one_off"
    },
    "label": {
-    "labelStatus": "unlabeled_pending_policy",
+    "labelStatus": "policy_computed_review_pending",
     "policyVersion": "probe-handling-policy@2026-09-21",
-    "class": "defer",
-    "alternativeAcceptable": false
+    "class": "incomplete",
+    "alternativeAcceptable": true
    }
   },
   {
@@ -1721,10 +1721,10 @@
     "timingClass": "recurring_identical"
    },
    "label": {
-    "labelStatus": "unlabeled_pending_policy",
+    "labelStatus": "policy_computed_review_pending",
     "policyVersion": "probe-handling-policy@2026-09-21",
-    "class": "defer",
-    "alternativeAcceptable": false
+    "class": "incomplete",
+    "alternativeAcceptable": true
    }
   },
   {
@@ -1744,10 +1744,10 @@
     "timingClass": "recurring_identical"
    },
    "label": {
-    "labelStatus": "unlabeled_pending_policy",
+    "labelStatus": "policy_computed_review_pending",
     "policyVersion": "probe-handling-policy@2026-09-21",
-    "class": "defer",
-    "alternativeAcceptable": false
+    "class": "incomplete",
+    "alternativeAcceptable": true
    }
   },
   {
@@ -1767,10 +1767,10 @@
     "timingClass": "recurring_identical"
    },
    "label": {
-    "labelStatus": "unlabeled_pending_policy",
+    "labelStatus": "policy_computed_review_pending",
     "policyVersion": "probe-handling-policy@2026-09-21",
-    "class": "defer",
-    "alternativeAcceptable": false
+    "class": "incomplete",
+    "alternativeAcceptable": true
    }
   },
   {
@@ -1790,10 +1790,10 @@
     "timingClass": "one_off"
    },
    "label": {
-    "labelStatus": "unlabeled_pending_policy",
+    "labelStatus": "policy_computed_review_pending",
     "policyVersion": "probe-handling-policy@2026-09-21",
-    "class": "defer",
-    "alternativeAcceptable": false
+    "class": "incomplete",
+    "alternativeAcceptable": true
    }
   },
   {
@@ -1813,10 +1813,10 @@
     "timingClass": "one_off"
    },
    "label": {
-    "labelStatus": "unlabeled_pending_policy",
+    "labelStatus": "policy_computed_review_pending",
     "policyVersion": "probe-handling-policy@2026-09-21",
-    "class": "defer",
-    "alternativeAcceptable": false
+    "class": "incomplete",
+    "alternativeAcceptable": true
    }
   },
   {
@@ -1836,10 +1836,10 @@
     "timingClass": "one_off"
    },
    "label": {
-    "labelStatus": "unlabeled_pending_policy",
+    "labelStatus": "policy_computed_review_pending",
     "policyVersion": "probe-handling-policy@2026-09-21",
-    "class": "defer",
-    "alternativeAcceptable": false
+    "class": "incomplete",
+    "alternativeAcceptable": true
    }
   },
   {
@@ -1859,10 +1859,10 @@
     "timingClass": "one_off"
    },
    "label": {
-    "labelStatus": "unlabeled_pending_policy",
+    "labelStatus": "policy_computed_review_pending",
     "policyVersion": "probe-handling-policy@2026-09-21",
-    "class": "defer",
-    "alternativeAcceptable": false
+    "class": "incomplete",
+    "alternativeAcceptable": true
    }
   },
   {
@@ -1882,10 +1882,10 @@
     "timingClass": "one_off"
    },
    "label": {
-    "labelStatus": "unlabeled_pending_policy",
+    "labelStatus": "policy_computed_review_pending",
     "policyVersion": "probe-handling-policy@2026-09-21",
-    "class": "defer",
-    "alternativeAcceptable": false
+    "class": "incomplete",
+    "alternativeAcceptable": true
    }
   },
   {
@@ -1905,10 +1905,10 @@
     "timingClass": "one_off"
    },
    "label": {
-    "labelStatus": "unlabeled_pending_policy",
+    "labelStatus": "policy_computed_review_pending",
     "policyVersion": "probe-handling-policy@2026-09-21",
-    "class": "defer",
-    "alternativeAcceptable": false
+    "class": "incomplete",
+    "alternativeAcceptable": true
    }
   },
   {
@@ -1928,10 +1928,10 @@
     "timingClass": "one_off"
    },
    "label": {
-    "labelStatus": "unlabeled_pending_policy",
+    "labelStatus": "policy_computed_review_pending",
     "policyVersion": "probe-handling-policy@2026-09-21",
-    "class": "defer",
-    "alternativeAcceptable": false
+    "class": "incomplete",
+    "alternativeAcceptable": true
    }
   },
   {
@@ -1951,10 +1951,10 @@
     "timingClass": "one_off"
    },
    "label": {
-    "labelStatus": "unlabeled_pending_policy",
+    "labelStatus": "policy_computed_review_pending",
     "policyVersion": "probe-handling-policy@2026-09-21",
-    "class": "defer",
-    "alternativeAcceptable": false
+    "class": "incomplete",
+    "alternativeAcceptable": true
    }
   },
   {
@@ -1974,10 +1974,10 @@
     "timingClass": "one_off"
    },
    "label": {
-    "labelStatus": "unlabeled_pending_policy",
+    "labelStatus": "policy_computed_review_pending",
     "policyVersion": "probe-handling-policy@2026-09-21",
-    "class": "defer",
-    "alternativeAcceptable": false
+    "class": "incomplete",
+    "alternativeAcceptable": true
    }
   },
   {
@@ -1997,10 +1997,10 @@
     "timingClass": "one_off"
    },
    "label": {
-    "labelStatus": "unlabeled_pending_policy",
+    "labelStatus": "policy_computed_review_pending",
     "policyVersion": "probe-handling-policy@2026-09-21",
-    "class": "defer",
-    "alternativeAcceptable": false
+    "class": "incomplete",
+    "alternativeAcceptable": true
    }
   },
   {
@@ -2020,10 +2020,10 @@
     "timingClass": "one_off"
    },
    "label": {
-    "labelStatus": "unlabeled_pending_policy",
+    "labelStatus": "policy_computed_review_pending",
     "policyVersion": "probe-handling-policy@2026-09-21",
-    "class": "defer",
-    "alternativeAcceptable": false
+    "class": "incomplete",
+    "alternativeAcceptable": true
    }
   },
   {
@@ -2043,10 +2043,10 @@
     "timingClass": "one_off"
    },
    "label": {
-    "labelStatus": "unlabeled_pending_policy",
+    "labelStatus": "policy_computed_review_pending",
     "policyVersion": "probe-handling-policy@2026-09-21",
-    "class": "defer",
-    "alternativeAcceptable": false
+    "class": "incomplete",
+    "alternativeAcceptable": true
    }
   },
   {
@@ -2066,10 +2066,10 @@
     "timingClass": "one_off"
    },
    "label": {
-    "labelStatus": "unlabeled_pending_policy",
+    "labelStatus": "policy_computed_review_pending",
     "policyVersion": "probe-handling-policy@2026-09-21",
-    "class": "defer",
-    "alternativeAcceptable": false
+    "class": "incomplete",
+    "alternativeAcceptable": true
    }
   },
   {
@@ -2089,10 +2089,10 @@
     "timingClass": "one_off"
    },
    "label": {
-    "labelStatus": "unlabeled_pending_policy",
+    "labelStatus": "policy_computed_review_pending",
     "policyVersion": "probe-handling-policy@2026-09-21",
-    "class": "defer",
-    "alternativeAcceptable": false
+    "class": "incomplete",
+    "alternativeAcceptable": true
    }
   },
   {
@@ -2112,10 +2112,10 @@
     "timingClass": "one_off"
    },
    "label": {
-    "labelStatus": "unlabeled_pending_policy",
+    "labelStatus": "policy_computed_review_pending",
     "policyVersion": "probe-handling-policy@2026-09-21",
-    "class": "defer",
-    "alternativeAcceptable": false
+    "class": "incomplete",
+    "alternativeAcceptable": true
    }
   },
   {
@@ -2135,10 +2135,10 @@
     "timingClass": "one_off"
    },
    "label": {
-    "labelStatus": "unlabeled_pending_policy",
+    "labelStatus": "policy_computed_review_pending",
     "policyVersion": "probe-handling-policy@2026-09-21",
-    "class": "defer",
-    "alternativeAcceptable": false
+    "class": "incomplete",
+    "alternativeAcceptable": true
    }
   },
   {
@@ -2158,10 +2158,10 @@
     "timingClass": "one_off"
    },
    "label": {
-    "labelStatus": "unlabeled_pending_policy",
+    "labelStatus": "policy_computed_review_pending",
     "policyVersion": "probe-handling-policy@2026-09-21",
-    "class": "defer",
-    "alternativeAcceptable": false
+    "class": "incomplete",
+    "alternativeAcceptable": true
    }
   },
   {
@@ -2181,10 +2181,10 @@
     "timingClass": "one_off"
    },
    "label": {
-    "labelStatus": "unlabeled_pending_policy",
+    "labelStatus": "policy_computed_review_pending",
     "policyVersion": "probe-handling-policy@2026-09-21",
-    "class": "defer",
-    "alternativeAcceptable": false
+    "class": "incomplete",
+    "alternativeAcceptable": true
    }
   },
   {
@@ -2204,10 +2204,10 @@
     "timingClass": "one_off"
    },
    "label": {
-    "labelStatus": "unlabeled_pending_policy",
+    "labelStatus": "policy_computed_review_pending",
     "policyVersion": "probe-handling-policy@2026-09-21",
-    "class": "defer",
-    "alternativeAcceptable": false
+    "class": "incomplete",
+    "alternativeAcceptable": true
    }
   },
   {
@@ -2227,10 +2227,10 @@
     "timingClass": "one_off"
    },
    "label": {
-    "labelStatus": "unlabeled_pending_policy",
+    "labelStatus": "policy_computed_review_pending",
     "policyVersion": "probe-handling-policy@2026-09-21",
-    "class": "defer",
-    "alternativeAcceptable": false
+    "class": "incomplete",
+    "alternativeAcceptable": true
    }
   },
   {
@@ -2250,10 +2250,10 @@
     "timingClass": "one_off"
    },
    "label": {
-    "labelStatus": "unlabeled_pending_policy",
+    "labelStatus": "policy_computed_review_pending",
     "policyVersion": "probe-handling-policy@2026-09-21",
-    "class": "defer",
-    "alternativeAcceptable": false
+    "class": "incomplete",
+    "alternativeAcceptable": true
    }
   },
   {
@@ -2273,10 +2273,10 @@
     "timingClass": "one_off"
    },
    "label": {
-    "labelStatus": "unlabeled_pending_policy",
+    "labelStatus": "policy_computed_review_pending",
     "policyVersion": "probe-handling-policy@2026-09-21",
-    "class": "defer",
-    "alternativeAcceptable": false
+    "class": "incomplete",
+    "alternativeAcceptable": true
    }
   },
   {
@@ -2296,10 +2296,10 @@
     "timingClass": "one_off"
    },
    "label": {
-    "labelStatus": "unlabeled_pending_policy",
+    "labelStatus": "policy_computed_review_pending",
     "policyVersion": "probe-handling-policy@2026-09-21",
-    "class": "defer",
-    "alternativeAcceptable": false
+    "class": "incomplete",
+    "alternativeAcceptable": true
    }
   },
   {
@@ -2319,10 +2319,10 @@
     "timingClass": "recurring_identical"
    },
    "label": {
-    "labelStatus": "unlabeled_pending_policy",
+    "labelStatus": "policy_computed_review_pending",
     "policyVersion": "probe-handling-policy@2026-09-21",
-    "class": "defer",
-    "alternativeAcceptable": false
+    "class": "incomplete",
+    "alternativeAcceptable": true
    }
   },
   {
@@ -2342,10 +2342,10 @@
     "timingClass": "recurring_identical"
    },
    "label": {
-    "labelStatus": "unlabeled_pending_policy",
+    "labelStatus": "policy_computed_review_pending",
     "policyVersion": "probe-handling-policy@2026-09-21",
-    "class": "defer",
-    "alternativeAcceptable": false
+    "class": "incomplete",
+    "alternativeAcceptable": true
    }
   },
   {
@@ -2365,10 +2365,10 @@
     "timingClass": "recurring_identical"
    },
    "label": {
-    "labelStatus": "unlabeled_pending_policy",
+    "labelStatus": "policy_computed_review_pending",
     "policyVersion": "probe-handling-policy@2026-09-21",
-    "class": "defer",
-    "alternativeAcceptable": false
+    "class": "incomplete",
+    "alternativeAcceptable": true
    }
   },
   {
@@ -2388,10 +2388,10 @@
     "timingClass": "one_off"
    },
    "label": {
-    "labelStatus": "unlabeled_pending_policy",
+    "labelStatus": "policy_computed_review_pending",
     "policyVersion": "probe-handling-policy@2026-09-21",
-    "class": "defer",
-    "alternativeAcceptable": false
+    "class": "incomplete",
+    "alternativeAcceptable": true
    }
   },
   {
@@ -2411,10 +2411,10 @@
     "timingClass": "one_off"
    },
    "label": {
-    "labelStatus": "unlabeled_pending_policy",
+    "labelStatus": "policy_computed_review_pending",
     "policyVersion": "probe-handling-policy@2026-09-21",
-    "class": "defer",
-    "alternativeAcceptable": false
+    "class": "incomplete",
+    "alternativeAcceptable": true
    }
   },
   {
@@ -2434,10 +2434,10 @@
     "timingClass": "one_off"
    },
    "label": {
-    "labelStatus": "unlabeled_pending_policy",
+    "labelStatus": "policy_computed_review_pending",
     "policyVersion": "probe-handling-policy@2026-09-21",
-    "class": "defer",
-    "alternativeAcceptable": false
+    "class": "incomplete",
+    "alternativeAcceptable": true
    }
   },
   {
@@ -2457,10 +2457,10 @@
     "timingClass": "one_off"
    },
    "label": {
-    "labelStatus": "unlabeled_pending_policy",
+    "labelStatus": "policy_computed_review_pending",
     "policyVersion": "probe-handling-policy@2026-09-21",
-    "class": "defer",
-    "alternativeAcceptable": false
+    "class": "incomplete",
+    "alternativeAcceptable": true
    }
   },
   {
@@ -2480,10 +2480,10 @@
     "timingClass": "one_off"
    },
    "label": {
-    "labelStatus": "unlabeled_pending_policy",
+    "labelStatus": "policy_computed_review_pending",
     "policyVersion": "probe-handling-policy@2026-09-21",
-    "class": "defer",
-    "alternativeAcceptable": false
+    "class": "incomplete",
+    "alternativeAcceptable": true
    }
   },
   {
@@ -2503,10 +2503,10 @@
     "timingClass": "one_off"
    },
    "label": {
-    "labelStatus": "unlabeled_pending_policy",
+    "labelStatus": "policy_computed_review_pending",
     "policyVersion": "probe-handling-policy@2026-09-21",
-    "class": "defer",
-    "alternativeAcceptable": false
+    "class": "incomplete",
+    "alternativeAcceptable": true
    }
   },
   {
@@ -2526,10 +2526,10 @@
     "timingClass": "one_off"
    },
    "label": {
-    "labelStatus": "unlabeled_pending_policy",
+    "labelStatus": "policy_computed_review_pending",
     "policyVersion": "probe-handling-policy@2026-09-21",
-    "class": "defer",
-    "alternativeAcceptable": false
+    "class": "incomplete",
+    "alternativeAcceptable": true
    }
   },
   {
@@ -2549,10 +2549,10 @@
     "timingClass": "one_off"
    },
    "label": {
-    "labelStatus": "unlabeled_pending_policy",
+    "labelStatus": "policy_computed_review_pending",
     "policyVersion": "probe-handling-policy@2026-09-21",
-    "class": "defer",
-    "alternativeAcceptable": false
+    "class": "incomplete",
+    "alternativeAcceptable": true
    }
   },
   {
@@ -2572,10 +2572,10 @@
     "timingClass": "one_off"
    },
    "label": {
-    "labelStatus": "unlabeled_pending_policy",
+    "labelStatus": "policy_computed_review_pending",
     "policyVersion": "probe-handling-policy@2026-09-21",
-    "class": "defer",
-    "alternativeAcceptable": false
+    "class": "incomplete",
+    "alternativeAcceptable": true
    }
   },
   {
@@ -2595,10 +2595,10 @@
     "timingClass": "one_off"
    },
    "label": {
-    "labelStatus": "unlabeled_pending_policy",
+    "labelStatus": "policy_computed_review_pending",
     "policyVersion": "probe-handling-policy@2026-09-21",
-    "class": "defer",
-    "alternativeAcceptable": false
+    "class": "incomplete",
+    "alternativeAcceptable": true
    }
   },
   {
@@ -2618,10 +2618,10 @@
     "timingClass": "one_off"
    },
    "label": {
-    "labelStatus": "unlabeled_pending_policy",
+    "labelStatus": "policy_computed_review_pending",
     "policyVersion": "probe-handling-policy@2026-09-21",
-    "class": "defer",
-    "alternativeAcceptable": false
+    "class": "incomplete",
+    "alternativeAcceptable": true
    }
   },
   {
@@ -2641,10 +2641,10 @@
     "timingClass": "one_off"
    },
    "label": {
-    "labelStatus": "unlabeled_pending_policy",
+    "labelStatus": "policy_computed_review_pending",
     "policyVersion": "probe-handling-policy@2026-09-21",
-    "class": "defer",
-    "alternativeAcceptable": false
+    "class": "incomplete",
+    "alternativeAcceptable": true
    }
   },
   {
@@ -2664,10 +2664,10 @@
     "timingClass": "one_off"
    },
    "label": {
-    "labelStatus": "unlabeled_pending_policy",
+    "labelStatus": "policy_computed_review_pending",
     "policyVersion": "probe-handling-policy@2026-09-21",
-    "class": "defer",
-    "alternativeAcceptable": false
+    "class": "incomplete",
+    "alternativeAcceptable": true
    }
   },
   {
@@ -2687,10 +2687,10 @@
     "timingClass": "one_off"
    },
    "label": {
-    "labelStatus": "unlabeled_pending_policy",
+    "labelStatus": "policy_computed_review_pending",
     "policyVersion": "probe-handling-policy@2026-09-21",
-    "class": "defer",
-    "alternativeAcceptable": false
+    "class": "incomplete",
+    "alternativeAcceptable": true
    }
   },
   {
@@ -2710,10 +2710,10 @@
     "timingClass": "one_off"
    },
    "label": {
-    "labelStatus": "unlabeled_pending_policy",
+    "labelStatus": "policy_computed_review_pending",
     "policyVersion": "probe-handling-policy@2026-09-21",
-    "class": "defer",
-    "alternativeAcceptable": false
+    "class": "incomplete",
+    "alternativeAcceptable": true
    }
   },
   {
@@ -2733,10 +2733,10 @@
     "timingClass": "one_off"
    },
    "label": {
-    "labelStatus": "unlabeled_pending_policy",
+    "labelStatus": "policy_computed_review_pending",
     "policyVersion": "probe-handling-policy@2026-09-21",
-    "class": "defer",
-    "alternativeAcceptable": false
+    "class": "incomplete",
+    "alternativeAcceptable": true
    }
   },
   {
@@ -2756,10 +2756,10 @@
     "timingClass": "one_off"
    },
    "label": {
-    "labelStatus": "unlabeled_pending_policy",
+    "labelStatus": "policy_computed_review_pending",
     "policyVersion": "probe-handling-policy@2026-09-21",
-    "class": "defer",
-    "alternativeAcceptable": false
+    "class": "incomplete",
+    "alternativeAcceptable": true
    }
   },
   {
@@ -2779,10 +2779,10 @@
     "timingClass": "one_off"
    },
    "label": {
-    "labelStatus": "unlabeled_pending_policy",
+    "labelStatus": "policy_computed_review_pending",
     "policyVersion": "probe-handling-policy@2026-09-21",
-    "class": "defer",
-    "alternativeAcceptable": false
+    "class": "incomplete",
+    "alternativeAcceptable": true
    }
   },
   {
@@ -2802,10 +2802,10 @@
     "timingClass": "one_off"
    },
    "label": {
-    "labelStatus": "unlabeled_pending_policy",
+    "labelStatus": "policy_computed_review_pending",
     "policyVersion": "probe-handling-policy@2026-09-21",
-    "class": "defer",
-    "alternativeAcceptable": false
+    "class": "incomplete",
+    "alternativeAcceptable": true
    }
   },
   {
@@ -2825,9 +2825,9 @@
     "timingClass": "one_off"
    },
    "label": {
-    "labelStatus": "unlabeled_pending_policy",
+    "labelStatus": "policy_computed_review_pending",
     "policyVersion": "probe-handling-policy@2026-09-21",
-    "class": "defer",
+    "class": "incomplete",
     "alternativeAcceptable": false
    }
   },
@@ -2848,9 +2848,9 @@
     "timingClass": "one_off"
    },
    "label": {
-    "labelStatus": "unlabeled_pending_policy",
+    "labelStatus": "policy_computed_review_pending",
     "policyVersion": "probe-handling-policy@2026-09-21",
-    "class": "defer",
+    "class": "incomplete",
     "alternativeAcceptable": false
    }
   },
@@ -2871,10 +2871,10 @@
     "timingClass": "one_off"
    },
    "label": {
-    "labelStatus": "unlabeled_pending_policy",
+    "labelStatus": "policy_computed_review_pending",
     "policyVersion": "probe-handling-policy@2026-09-21",
-    "class": "defer",
-    "alternativeAcceptable": false
+    "class": "incomplete",
+    "alternativeAcceptable": true
    }
   },
   {
@@ -2894,10 +2894,10 @@
     "timingClass": "one_off"
    },
    "label": {
-    "labelStatus": "unlabeled_pending_policy",
+    "labelStatus": "policy_computed_review_pending",
     "policyVersion": "probe-handling-policy@2026-09-21",
-    "class": "defer",
-    "alternativeAcceptable": false
+    "class": "incomplete",
+    "alternativeAcceptable": true
    }
   },
   {
@@ -2917,10 +2917,10 @@
     "timingClass": "one_off"
    },
    "label": {
-    "labelStatus": "unlabeled_pending_policy",
+    "labelStatus": "policy_computed_review_pending",
     "policyVersion": "probe-handling-policy@2026-09-21",
-    "class": "defer",
-    "alternativeAcceptable": false
+    "class": "incomplete",
+    "alternativeAcceptable": true
    }
   },
   {
@@ -2940,9 +2940,9 @@
     "timingClass": "recurring_identical"
    },
    "label": {
-    "labelStatus": "unlabeled_pending_policy",
+    "labelStatus": "policy_computed_review_pending",
     "policyVersion": "probe-handling-policy@2026-09-21",
-    "class": "defer",
+    "class": "incomplete",
     "alternativeAcceptable": false
    }
   },
@@ -2963,9 +2963,9 @@
     "timingClass": "recurring_identical"
    },
    "label": {
-    "labelStatus": "unlabeled_pending_policy",
+    "labelStatus": "policy_computed_review_pending",
     "policyVersion": "probe-handling-policy@2026-09-21",
-    "class": "defer",
+    "class": "incomplete",
     "alternativeAcceptable": false
    }
   },
@@ -2986,9 +2986,9 @@
     "timingClass": "recurring_identical"
    },
    "label": {
-    "labelStatus": "unlabeled_pending_policy",
+    "labelStatus": "policy_computed_review_pending",
     "policyVersion": "probe-handling-policy@2026-09-21",
-    "class": "defer",
+    "class": "incomplete",
     "alternativeAcceptable": false
    }
   },
@@ -3009,9 +3009,9 @@
     "timingClass": "recurring_identical"
    },
    "label": {
-    "labelStatus": "unlabeled_pending_policy",
+    "labelStatus": "policy_computed_review_pending",
     "policyVersion": "probe-handling-policy@2026-09-21",
-    "class": "defer",
+    "class": "incomplete",
     "alternativeAcceptable": false
    }
   },
@@ -3032,10 +3032,10 @@
     "timingClass": "recurring_identical"
    },
    "label": {
-    "labelStatus": "unlabeled_pending_policy",
+    "labelStatus": "policy_computed_review_pending",
     "policyVersion": "probe-handling-policy@2026-09-21",
-    "class": "defer",
-    "alternativeAcceptable": false
+    "class": "incomplete",
+    "alternativeAcceptable": true
    }
   },
   {
@@ -3055,10 +3055,10 @@
     "timingClass": "recurring_identical"
    },
    "label": {
-    "labelStatus": "unlabeled_pending_policy",
+    "labelStatus": "policy_computed_review_pending",
     "policyVersion": "probe-handling-policy@2026-09-21",
-    "class": "defer",
-    "alternativeAcceptable": false
+    "class": "incomplete",
+    "alternativeAcceptable": true
    }
   },
   {
@@ -3078,10 +3078,10 @@
     "timingClass": "recurring_identical"
    },
    "label": {
-    "labelStatus": "unlabeled_pending_policy",
+    "labelStatus": "policy_computed_review_pending",
     "policyVersion": "probe-handling-policy@2026-09-21",
-    "class": "defer",
-    "alternativeAcceptable": false
+    "class": "incomplete",
+    "alternativeAcceptable": true
    }
   },
   {
@@ -3101,10 +3101,10 @@
     "timingClass": "recurring_identical"
    },
    "label": {
-    "labelStatus": "unlabeled_pending_policy",
+    "labelStatus": "policy_computed_review_pending",
     "policyVersion": "probe-handling-policy@2026-09-21",
-    "class": "defer",
-    "alternativeAcceptable": false
+    "class": "incomplete",
+    "alternativeAcceptable": true
    }
   },
   {
@@ -3124,10 +3124,10 @@
     "timingClass": "one_off"
    },
    "label": {
-    "labelStatus": "unlabeled_pending_policy",
+    "labelStatus": "policy_computed_review_pending",
     "policyVersion": "probe-handling-policy@2026-09-21",
-    "class": "defer",
-    "alternativeAcceptable": false
+    "class": "incomplete",
+    "alternativeAcceptable": true
    }
   },
   {
@@ -3147,10 +3147,10 @@
     "timingClass": "one_off"
    },
    "label": {
-    "labelStatus": "unlabeled_pending_policy",
+    "labelStatus": "policy_computed_review_pending",
     "policyVersion": "probe-handling-policy@2026-09-21",
-    "class": "defer",
-    "alternativeAcceptable": false
+    "class": "incomplete",
+    "alternativeAcceptable": true
    }
   },
   {
@@ -3170,10 +3170,10 @@
     "timingClass": "one_off"
    },
    "label": {
-    "labelStatus": "unlabeled_pending_policy",
+    "labelStatus": "policy_computed_review_pending",
     "policyVersion": "probe-handling-policy@2026-09-21",
-    "class": "defer",
-    "alternativeAcceptable": false
+    "class": "incomplete",
+    "alternativeAcceptable": true
    }
   },
   {
@@ -3193,10 +3193,10 @@
     "timingClass": "one_off"
    },
    "label": {
-    "labelStatus": "unlabeled_pending_policy",
+    "labelStatus": "policy_computed_review_pending",
     "policyVersion": "probe-handling-policy@2026-09-21",
-    "class": "defer",
-    "alternativeAcceptable": false
+    "class": "incomplete",
+    "alternativeAcceptable": true
    }
   },
   {
@@ -3216,10 +3216,10 @@
     "timingClass": "one_off"
    },
    "label": {
-    "labelStatus": "unlabeled_pending_policy",
+    "labelStatus": "policy_computed_review_pending",
     "policyVersion": "probe-handling-policy@2026-09-21",
-    "class": "defer",
-    "alternativeAcceptable": false
+    "class": "incomplete",
+    "alternativeAcceptable": true
    }
   },
   {
@@ -3239,10 +3239,10 @@
     "timingClass": "one_off"
    },
    "label": {
-    "labelStatus": "unlabeled_pending_policy",
+    "labelStatus": "policy_computed_review_pending",
     "policyVersion": "probe-handling-policy@2026-09-21",
-    "class": "defer",
-    "alternativeAcceptable": false
+    "class": "incomplete",
+    "alternativeAcceptable": true
    }
   },
   {
@@ -3262,10 +3262,10 @@
     "timingClass": "one_off"
    },
    "label": {
-    "labelStatus": "unlabeled_pending_policy",
+    "labelStatus": "policy_computed_review_pending",
     "policyVersion": "probe-handling-policy@2026-09-21",
-    "class": "defer",
-    "alternativeAcceptable": false
+    "class": "incomplete",
+    "alternativeAcceptable": true
    }
   },
   {
@@ -3285,10 +3285,10 @@
     "timingClass": "one_off"
    },
    "label": {
-    "labelStatus": "unlabeled_pending_policy",
+    "labelStatus": "policy_computed_review_pending",
     "policyVersion": "probe-handling-policy@2026-09-21",
-    "class": "defer",
-    "alternativeAcceptable": false
+    "class": "incomplete",
+    "alternativeAcceptable": true
    }
   },
   {
@@ -3308,10 +3308,10 @@
     "timingClass": "one_off"
    },
    "label": {
-    "labelStatus": "unlabeled_pending_policy",
+    "labelStatus": "policy_computed_review_pending",
     "policyVersion": "probe-handling-policy@2026-09-21",
-    "class": "defer",
-    "alternativeAcceptable": false
+    "class": "incomplete",
+    "alternativeAcceptable": true
    }
   },
   {
@@ -3331,10 +3331,10 @@
     "timingClass": "one_off"
    },
    "label": {
-    "labelStatus": "unlabeled_pending_policy",
+    "labelStatus": "policy_computed_review_pending",
     "policyVersion": "probe-handling-policy@2026-09-21",
-    "class": "defer",
-    "alternativeAcceptable": false
+    "class": "incomplete",
+    "alternativeAcceptable": true
    }
   },
   {
@@ -3354,10 +3354,10 @@
     "timingClass": "one_off"
    },
    "label": {
-    "labelStatus": "unlabeled_pending_policy",
+    "labelStatus": "policy_computed_review_pending",
     "policyVersion": "probe-handling-policy@2026-09-21",
-    "class": "defer",
-    "alternativeAcceptable": false
+    "class": "incomplete",
+    "alternativeAcceptable": true
    }
   },
   {
@@ -3377,10 +3377,10 @@
     "timingClass": "one_off"
    },
    "label": {
-    "labelStatus": "unlabeled_pending_policy",
+    "labelStatus": "policy_computed_review_pending",
     "policyVersion": "probe-handling-policy@2026-09-21",
-    "class": "defer",
-    "alternativeAcceptable": false
+    "class": "incomplete",
+    "alternativeAcceptable": true
    }
   },
   {
@@ -3400,10 +3400,10 @@
     "timingClass": "one_off"
    },
    "label": {
-    "labelStatus": "unlabeled_pending_policy",
+    "labelStatus": "policy_computed_review_pending",
     "policyVersion": "probe-handling-policy@2026-09-21",
-    "class": "defer",
-    "alternativeAcceptable": false
+    "class": "incomplete",
+    "alternativeAcceptable": true
    }
   },
   {
@@ -3423,10 +3423,10 @@
     "timingClass": "one_off"
    },
    "label": {
-    "labelStatus": "unlabeled_pending_policy",
+    "labelStatus": "policy_computed_review_pending",
     "policyVersion": "probe-handling-policy@2026-09-21",
-    "class": "defer",
-    "alternativeAcceptable": false
+    "class": "incomplete",
+    "alternativeAcceptable": true
    }
   },
   {
@@ -3446,10 +3446,10 @@
     "timingClass": "one_off"
    },
    "label": {
-    "labelStatus": "unlabeled_pending_policy",
+    "labelStatus": "policy_computed_review_pending",
     "policyVersion": "probe-handling-policy@2026-09-21",
-    "class": "defer",
-    "alternativeAcceptable": false
+    "class": "incomplete",
+    "alternativeAcceptable": true
    }
   },
   {
@@ -3469,10 +3469,10 @@
     "timingClass": "one_off"
    },
    "label": {
-    "labelStatus": "unlabeled_pending_policy",
+    "labelStatus": "policy_computed_review_pending",
     "policyVersion": "probe-handling-policy@2026-09-21",
-    "class": "defer",
-    "alternativeAcceptable": false
+    "class": "incomplete",
+    "alternativeAcceptable": true
    }
   },
   {
@@ -3492,10 +3492,10 @@
     "timingClass": "one_off"
    },
    "label": {
-    "labelStatus": "unlabeled_pending_policy",
+    "labelStatus": "policy_computed_review_pending",
     "policyVersion": "probe-handling-policy@2026-09-21",
-    "class": "defer",
-    "alternativeAcceptable": false
+    "class": "incomplete",
+    "alternativeAcceptable": true
    }
   },
   {
@@ -3515,10 +3515,10 @@
     "timingClass": "recurring_identical"
    },
    "label": {
-    "labelStatus": "unlabeled_pending_policy",
+    "labelStatus": "policy_computed_review_pending",
     "policyVersion": "probe-handling-policy@2026-09-21",
-    "class": "defer",
-    "alternativeAcceptable": false
+    "class": "incomplete",
+    "alternativeAcceptable": true
    }
   },
   {
@@ -3538,10 +3538,10 @@
     "timingClass": "recurring_identical"
    },
    "label": {
-    "labelStatus": "unlabeled_pending_policy",
+    "labelStatus": "policy_computed_review_pending",
     "policyVersion": "probe-handling-policy@2026-09-21",
-    "class": "defer",
-    "alternativeAcceptable": false
+    "class": "incomplete",
+    "alternativeAcceptable": true
    }
   },
   {
@@ -3561,10 +3561,10 @@
     "timingClass": "recurring_identical"
    },
    "label": {
-    "labelStatus": "unlabeled_pending_policy",
+    "labelStatus": "policy_computed_review_pending",
     "policyVersion": "probe-handling-policy@2026-09-21",
-    "class": "defer",
-    "alternativeAcceptable": false
+    "class": "incomplete",
+    "alternativeAcceptable": true
    }
   },
   {
@@ -3584,10 +3584,10 @@
     "timingClass": "one_off"
    },
    "label": {
-    "labelStatus": "unlabeled_pending_policy",
+    "labelStatus": "policy_computed_review_pending",
     "policyVersion": "probe-handling-policy@2026-09-21",
-    "class": "defer",
-    "alternativeAcceptable": false
+    "class": "incomplete",
+    "alternativeAcceptable": true
    }
   }
  ]

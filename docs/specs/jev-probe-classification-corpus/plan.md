@@ -34,8 +34,10 @@ threshold ledger committed before any holdout record is scored.
 
 ## Phase 2 — Labeling (separate slice)
 
-- [ ] Compute policy labels with the frozen `policyVersion`
-      (`policy_computed_review_pending`).
+- [x] Compute policy labels with the frozen `policyVersion`
+      (`policy_computed_review_pending`) — done for the 156 exploratory records;
+      frozen decision table and application report in
+      [labeling-policy-v1.md](./labeling-policy-v1.md).
 - [ ] Independent review per record under opaque reviewer aliases; terminal states
       `independently_reviewed` or `disputed_multiple_reasonable`; defer allowed.
 - [ ] Freeze the label ledger; no label changes after holdout scoring begins.
