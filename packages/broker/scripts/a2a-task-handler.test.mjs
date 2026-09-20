@@ -3386,7 +3386,7 @@ test("runner timeout override order remains env then payload then bounded defaul
 // observeJevForOutcome unit test with a stub transport.
 
 const JEV_GOLDEN_TASK_JSON = "{\"id\":\"task-853\",\"intent\":\"noop\",\"assignedWorkerId\":\"workerdelta\",\"message\":\"source-only test\",\"payload\":{\"mode\":\"docker-broker-noop-smoke\",\"noOp\":true,\"runId\":\"run-853\",\"worker\":\"workerdelta\",\"sourceOnly\":true}}";
-const JEV_GOLDEN_MASKED_STDOUT = "{\"result\":{\"summary\":\"docker broker noop smoke completed task-853\",\"handler\":{\"name\":\"a2a-task-handler\",\"version\":\"0.2.18\",\"source\":\"repo:scripts/a2a-task-handler.mjs\",\"contract\":\"stdin A2A task JSON -> stdout WorkerHandlerOutcome JSON\",\"credentialFree\":true,\"hostNeutral\":true},\"lifecycle\":{\"intent\":\"noop\",\"mode\":\"docker-broker-noop-smoke\",\"taskId\":\"task-853\",\"proposalId\":\"\",\"exchangeId\":\"\"},\"output\":{\"message\":\"source-only test\",\"smoke\":{\"ok\":true,\"noOp\":true,\"runId\":\"run-853\",\"worker\":\"workerdelta\"},\"payloadKeys\":[\"mode\",\"noOp\",\"runId\",\"sourceOnly\",\"worker\"],\"effectiveModel\":\"openai-codex/gpt-5.6-sol\",\"effectiveThinking\":\"high\"}}}";
+const JEV_GOLDEN_MASKED_STDOUT = "{\"result\":{\"summary\":\"docker broker noop smoke completed task-853\",\"handler\":{\"name\":\"a2a-task-handler\",\"version\":\"0.2.19\",\"source\":\"repo:scripts/a2a-task-handler.mjs\",\"contract\":\"stdin A2A task JSON -> stdout WorkerHandlerOutcome JSON\",\"credentialFree\":true,\"hostNeutral\":true},\"lifecycle\":{\"intent\":\"noop\",\"mode\":\"docker-broker-noop-smoke\",\"taskId\":\"task-853\",\"proposalId\":\"\",\"exchangeId\":\"\"},\"output\":{\"message\":\"source-only test\",\"smoke\":{\"ok\":true,\"noOp\":true,\"runId\":\"run-853\",\"worker\":\"workerdelta\"},\"payloadKeys\":[\"mode\",\"noOp\",\"runId\",\"sourceOnly\",\"worker\"],\"effectiveModel\":\"openai-codex/gpt-5.6-sol\",\"effectiveThinking\":\"high\"}}}";
 const JEV_INVALID_CONFIG_WARNING = "jev: classification disabled (invalid-config)\n";
 
 function jevMaskedStdout(run) {
@@ -3466,4 +3466,39 @@ test("observeJevForOutcome performs exactly one bounded classification for gener
   assert.equal(calls.length, 1, "exactly one jev classification attempt, no retry");
   assert.equal(calls[0].endpoint, "https://jev.example.invalid/api/classify");
   assert.equal(calls[0].key, "synthetic-jev-key-material", "key must come from the owner-only keyfile at call time");
+});
+
+test("jev CLI hook: enabled trio with an unreachable endpoint stays fail-open (G4 hook shape)", async (t) => {
+  const { spawnSync } = await import("node:child_process");
+  const { fileURLToPath } = await import("node:url");
+  const scriptPath = fileURLToPath(new URL("./a2a-task-handler.mjs", import.meta.url));
+  const dir = mkdtempSync(join(tmpdir(), "jev-g4-fail-open-test-"));
+  t.after(() => rmSync(dir, { recursive: true, force: true }));
+  const keyfilePath = join(dir, "jev.key");
+  writeFileSync(keyfilePath, "synthetic-jev-key-material");
+  chmodSync(keyfilePath, 0o600);
+  // Valid trio, but the endpoint refuses connections. The outcome must still
+  // be emitted byte-identically and the process must exit 0: observation
+  // failure never loses, alters, or fails the ack, and the hook runs after
+  // the stdout write (G4 ordering, boundaries-lane RIS1/RIS2).
+  const started = Date.now();
+  const result = spawnSync(process.execPath, [scriptPath], {
+    input: JEV_GOLDEN_TASK_JSON,
+    encoding: "utf8",
+    timeout: 120_000,
+    env: jevSpawnEnv({
+      A2A_JEV_CLASSIFY: "1",
+      A2A_JEV_ENDPOINT: "http://127.0.0.1:1/api/classify",
+      A2A_JEV_KEYFILE: keyfilePath,
+      A2A_JEV_TIMEOUT_MS: "250",
+    }),
+  });
+  const elapsed = Date.now() - started;
+  assert.equal(result.status, 0, `enabled-unreachable run exited nonzero: ${result.stderr?.slice(0, 400)}`);
+  assert.equal(result.stderr, "", "transport-error path must stay value-free and silent on stderr");
+  assert.equal(jevMaskedStdout(result), JEV_GOLDEN_MASKED_STDOUT, "enabled-unreachable stdout diverged from the golden");
+  // The clamped 250ms timeout bounds the observation window; the ack must not
+  // wait on anything beyond it (generous ceiling for scheduler jitter on the
+  // slowest CI runner).
+  assert.ok(elapsed < 15_000, `ack took ${elapsed}ms — observation appears to block the outcome`);
 });
