@@ -21,7 +21,7 @@ import { evaluateDeclaredWriteSetGate } from "../dist/core/runtime-safety-gates.
 import { runLiveOperationTask } from "./lib/live-operation-adapter.mjs";
 import { classifyTaskWithJev, resolveJevConfig } from "./lib/jev-classifier.mjs";
 
-const HANDLER_VERSION = "0.2.18";
+const HANDLER_VERSION = "0.2.19";
 const SOURCE_PATH = fileURLToPath(import.meta.url);
 const sourceSha256 = createHash("sha256").update(readFileSync(SOURCE_PATH)).digest("hex");
 
@@ -2956,13 +2956,17 @@ export async function observeJevForOutcome(task, outcome, { env = process.env, t
 }
 
 if (process.argv[1] === SOURCE_PATH) {
+  // Fail-open hook shape: the computed outcome is emitted BEFORE any jev
+  // observation, and the observation runs in its own try/catch — a jev
+  // timeout, throw, or configuration problem can never lose, delay past its
+  // clamped window, alter, or fail the emitted ack (boundaries-lane RIS1/RIS2
+  // from the 2026-09-20 A2AD round; docs/specs/jev-review-evidence-shadow/).
+  let emittedTask;
+  let emittedOutcome;
   try {
     const input = await readStdin();
-    const task = JSON.parse(input || "null");
-    const outcome = handleTask(task);
-    await observeJevForOutcome(task, outcome);
-    process.stdout.write(`${JSON.stringify(outcome)}\n`);
-    if (outcome.error) process.exitCode = 1;
+    emittedTask = JSON.parse(input || "null");
+    emittedOutcome = handleTask(emittedTask);
   } catch (error) {
     process.stdout.write(JSON.stringify({
       error: {
@@ -2972,5 +2976,15 @@ if (process.argv[1] === SOURCE_PATH) {
       },
     }) + "\n");
     process.exitCode = 1;
+  }
+  if (emittedOutcome !== undefined) {
+    process.stdout.write(`${JSON.stringify(emittedOutcome)}\n`);
+    if (emittedOutcome.error) process.exitCode = 1;
+    try {
+      await observeJevForOutcome(emittedTask, emittedOutcome);
+    } catch {
+      // Observation is telemetry-only; nothing here may alter the emitted
+      // outcome or the exit code.
+    }
   }
 }
