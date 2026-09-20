@@ -6,10 +6,12 @@
   documentation-only at this step.
 - `docs/specs/jev-review-evidence-shadow/` confirmed absent on main before
   this slice.
-- A2AD provenance: round `a2ad-jev-utilization-r1(-r1b/-r1c)-20260920-nosuk`
-  (seoseo broker, 2026-09-20); candidates C3/C4 ranked 1st/2nd of eight by
-  the opportunity lane; boundary findings from the boundaries lane are folded
-  into the spec's Prior-findings section.
+- A2AD provenance: the 2026-09-20 source-only utilization round on the
+  fleet's originating broker (task ids `jev-utilization-boundaries`,
+  `jev-utilization-opportunity-map-r1c`, `jev-utilization-opportunity-map-r1b`;
+  lane-to-worker mapping is private fleet data). Candidates C3/C4 ranked
+  1st/2nd of eight by the opportunity lane; boundary findings from the
+  boundaries lane are folded into the spec's Prior-findings section.
 - Line cites verified against `main@a66b8b60`
   (`a2a-task-handler.mjs`): `:784-801`, `:832-885`, `:888-915`,
   `:1115-1153`, `:1391-1425`, `:1631-1647`, `:2754-2825`, `:2886-2918`,
@@ -105,9 +107,10 @@
 - **Egress permission unknown** (probe-gating plan Risk): unchanged here; G2
   is the owner decision point.
 - **Budget pressure on worker analysis bridges**: the A2AD round showed large
-  single-file bundles can miss projection on some lanes (sogyo #2023 carrier
-  gap); wiring slices must include per-worker carrier regression checks
-  before enabling any shadow on those lanes.
+  single-file bundles can miss projection on some lanes (one analysis lane
+  lacked detached-carrier support, its known environment gap); wiring slices
+  must include per-worker carrier regression checks before enabling any
+  shadow on those lanes.
 - **Threshold freezing violation**: measured-in-code thresholds before
   holdout would breach the calibration contract; no thresholds are defined
   here.

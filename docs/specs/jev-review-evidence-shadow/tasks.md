@@ -7,11 +7,11 @@
       slice.
 - [x] Template trio read for mirroring
       (`docs/specs/jev-probe-gating/`).
-- [x] A2AD provenance recorded: round
-      `a2ad-jev-utilization-r1(-r1b/-r1c)-20260920-nosuk`, lanes
-      `jev-utilization-boundaries` (gongyung),
-      `jev-utilization-opportunity-map-r1c` (bangtong),
-      `jev-utilization-opportunity-map-r1b` (sogyo, partial).
+- [x] A2AD provenance recorded: the 2026-09-20 source-only utilization round
+      on the fleet's originating broker; task ids `jev-utilization-boundaries`,
+      `jev-utilization-opportunity-map-r1c`,
+      `jev-utilization-opportunity-map-r1b` (lane-to-worker mapping is private
+      fleet data, not reproduced here).
 - [x] Line cites verified on `main@a66b8b60` (`a2a-task-handler.mjs`
       `:784-801`, `:832-885`, `:888-915`, `:1115-1153`, `:1391-1425`,
       `:1631-1647`, `:2754-2825`, `:2886-2918`, `:2942-2976`).

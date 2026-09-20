@@ -5,11 +5,12 @@
 > code, no scripts, no dependency, and enables no lane or flag. Endpoint
 > values and key material are NEVER stored in these docs or the repo.
 >
-> Provenance: A2AD source-only round
-> `a2ad-jev-utilization-r1(-r1b/-r1c)-20260920-nosuk` (seoseo broker,
-> 2026-09-20). Lanes: `jev-utilization-boundaries` (gongyung, succeeded),
-> `jev-utilization-opportunity-map-r1c` (bangtong, succeeded),
-> `jev-utilization-opportunity-map-r1b` (sogyo, partial). Baseline: main @
+> Provenance: A2AD source-only utilization round dispatched 2026-09-20 on the
+> fleet's originating broker (three lanes: boundaries — succeeded;
+> opportunity — succeeded; opportunity retry — partial; task ids
+> `jev-utilization-boundaries`, `jev-utilization-opportunity-map-r1c`,
+> `jev-utilization-opportunity-map-r1b`). Lane-to-worker mapping is private
+> fleet operating data and is intentionally not reproduced here. Baseline: main @
 > `a66b8b60`. All `a2a-task-handler.mjs` line cites verified against that
 > revision.
 
@@ -40,7 +41,7 @@ probe-gating slice (`docs/specs/jev-probe-gating/`), extended from boolean
 
 ## Prior A2AD findings this packet must honor
 
-From the boundaries lane (gongyung):
+From the boundaries lane:
 
 - The CLI entry currently awaits `observeJevForOutcome` inside the same
   try/catch that produces the generic ack, and before the stdout write
@@ -55,7 +56,7 @@ From the boundaries lane (gongyung):
   accepts only a boolean `is_real_work` verdict — typed Noul/Choice/Score
   questions require a facade contract extension (gate item **G1**).
 
-From the opportunity lane (bangtong): C3 and C4 ranked first and second of
+From the opportunity lane (first attempt): C3 and C4 ranked first and second of
 eight candidates; both are *new review/evidence surfaces*, unrelated to
 probe-gating re-routing; both must start shadow-first with deterministic
 gates keeping final authority.
