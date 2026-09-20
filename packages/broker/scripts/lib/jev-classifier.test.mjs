@@ -276,3 +276,107 @@ test("classifyTaskWithJev reports keyfile-unreadable without calling transport (
   // The stat shape behind the resolve-time owner-only check stays a regular file.
   assert.equal(statSync(blankPath).isFile(), true);
 });
+
+// --- G1 typed-verdict contract (docs/specs/jev-review-evidence-shadow/) ---
+
+import { classifyTypedWithJev, normalizeTypedQuestions } from "./jev-classifier.mjs";
+
+const TYPED_QUESTIONS = [
+  { id: "receipt_state", type: "choice", instructions: "Receipt state for the projected sources.", labels: ["complete", "partial", "unreadable", "insufficient_information", "defer"] },
+  { id: "p_source_sufficient", type: "noul", instructions: "Probability that the projected sources are sufficient." },
+  { id: "receipt_fidelity", type: "score", instructions: "Carrier/projection fidelity score." },
+];
+
+test("G1 normalizeTypedQuestions builds the wire map without labels and rejects malformed input", () => {
+  const ok = normalizeTypedQuestions(TYPED_QUESTIONS);
+  assert.equal(ok.ok, true);
+  assert.deepEqual(Object.keys(ok.wire), ["receipt_state", "p_source_sufficient", "receipt_fidelity"]);
+  assert.deepEqual(ok.wire.receipt_state, { type: "choice", instructions: TYPED_QUESTIONS[0].instructions });
+  assert.equal(normalizeTypedQuestions([]).ok, false);
+  assert.equal(normalizeTypedQuestions([{ id: "a", type: "noul", instructions: "x" }, { id: "a", type: "noul", instructions: "y" }]).ok, false);
+  assert.equal(normalizeTypedQuestions([{ id: "a", type: "choice", instructions: "x" }]).ok, false, "choice requires labels");
+  assert.equal(normalizeTypedQuestions([{ id: "a", type: "noul" }]).ok, false, "instructions required");
+  assert.equal(normalizeTypedQuestions([{ id: "a", type: "quantum", instructions: "x" }]).ok, false, "unknown type rejected");
+});
+
+test("G1 resolveJevConfig honors an alternate gate variable with unchanged trio semantics", () => {
+  const config = resolveJevConfig({ A2A_JEV_RECEIPT_SHADOW: "1", A2A_JEV_ENDPOINT: SYNTHETIC_ENDPOINT, A2A_JEV_KEYFILE: "/nonexistent" }, "A2A_JEV_RECEIPT_SHADOW");
+  assert.equal(config.enabled, false, "unreadable keyfile disables");
+  const probeOnly = resolveJevConfig({ A2A_JEV_CLASSIFY: "1", A2A_JEV_ENDPOINT: SYNTHETIC_ENDPOINT, A2A_JEV_KEYFILE: "/nonexistent" }, "A2A_JEV_RECEIPT_SHADOW");
+  assert.equal(probeOnly.enabled, false, "probe gate must not enable the receipt shadow");
+});
+
+test("G1 classifyTypedWithJev happy path: one attempt, normalized typed answers, labels never on the wire", async (t) => {
+  const { keyfilePath } = makeKeyfile(t);
+  const transport = recordingTransport(() => ({
+    status: 200,
+    text: JSON.stringify({
+      answers: {
+        receipt_state: { choice: "complete", confidence: 0.82 },
+        p_source_sufficient: { noul: 0.91 },
+        receipt_fidelity: { score: 2.4, confidence: 0.6 },
+      },
+      model: "jev-latest",
+    }),
+  }));
+  const result = await classifyTypedWithJev({
+    config: { enabled: true, endpoint: SYNTHETIC_ENDPOINT, keyfilePath, timeoutMs: 1500, model: "jev-latest" },
+    state: "banded judgment-time state",
+    questions: TYPED_QUESTIONS,
+    transport,
+  });
+  assert.equal(result.ok, true);
+  assert.equal(result.attempts, 1);
+  assert.deepEqual(result.answers.receipt_state, { type: "choice", label: "complete", confidence: 0.82 });
+  assert.deepEqual(result.answers.p_source_sufficient, { type: "noul", probability: 0.91 });
+  assert.deepEqual(result.answers.receipt_fidelity, { type: "score", value: 2.4, confidence: 0.6 });
+  assert.equal(result.model, "jev-latest");
+  assert.equal(transport.calls.length, 1, "exactly one attempt, no retry");
+  const payload = transport.calls[0].payload;
+  assert.equal(payload.state, "banded judgment-time state");
+  assert.equal(payload.model, "jev-latest");
+  assert.equal(JSON.stringify(payload).includes("labels"), false, "closed label sets never leave the process");
+});
+
+test("G1 classifyTypedWithJev invalid verdicts: missing id, wrong shape, out of range, bad JSON", async (t) => {
+  const { keyfilePath } = makeKeyfile(t);
+  const config = { enabled: true, endpoint: SYNTHETIC_ENDPOINT, keyfilePath, timeoutMs: 1500 };
+  const cases = [
+    { answers: { receipt_state: { choice: "complete" } }, why: "missing requested ids" },
+    { answers: { receipt_state: { noul: 0.5 }, p_source_sufficient: { noul: 0.5 }, receipt_fidelity: { noul: 0.5 } }, why: "score answered as noul" },
+    { answers: { receipt_state: { choice: "banana" }, p_source_sufficient: { noul: 0.5 }, receipt_fidelity: { score: 1 } }, why: "choice label outside the closed set" },
+    { answers: { receipt_state: { choice: "complete" }, p_source_sufficient: { noul: 1.7 }, receipt_fidelity: { score: 1 } }, why: "noul out of range" },
+    { answers: { receipt_state: { choice: "complete", confidence: 3 }, p_source_sufficient: { noul: 0.5 }, receipt_fidelity: { score: 1 } }, why: "confidence out of range" },
+    { answers: "not-an-object", why: "answers not an object" },
+  ];
+  for (const { answers, why } of cases) {
+    const transport = recordingTransport(() => ({ status: 200, text: JSON.stringify({ answers }) }));
+    const result = await classifyTypedWithJev({ config, state: "s", questions: TYPED_QUESTIONS, transport });
+    assert.equal(result.ok, false, why);
+    assert.equal(result.reason, "invalid-verdict", why);
+    assert.equal(result.attempts, 1, why);
+    assert.equal(transport.calls.length, 1, why);
+  }
+  const badJson = recordingTransport(() => ({ status: 200, text: "{nope" }));
+  const badJsonResult = await classifyTypedWithJev({ config, state: "s", questions: TYPED_QUESTIONS, transport: badJson });
+  assert.equal(badJsonResult.reason, "invalid-verdict");
+});
+
+test("G1 classifyTypedWithJev failure discipline mirrors the boolean contract", async (t) => {
+  const { keyfilePath, dir } = makeKeyfile(t);
+  const config = { enabled: true, endpoint: SYNTHETIC_ENDPOINT, keyfilePath, timeoutMs: 1500 };
+  assert.equal((await classifyTypedWithJev({ config: { enabled: false }, state: "s", questions: TYPED_QUESTIONS })).reason, "disabled");
+  assert.equal((await classifyTypedWithJev({ config, state: "   ", questions: TYPED_QUESTIONS })).reason, "invalid-state");
+  assert.equal((await classifyTypedWithJev({ config, state: "s", questions: [] })).reason, "invalid-questions");
+  const unreadableConfig = { ...config, keyfilePath: join(dir, "missing.key") };
+  assert.equal((await classifyTypedWithJev({ config: unreadableConfig, state: "s", questions: TYPED_QUESTIONS })).reason, "keyfile-unreadable");
+
+  const timeoutTransport = recordingTransport(() => { throw Object.assign(new Error("timed out"), { name: "TimeoutError" }); });
+  assert.equal((await classifyTypedWithJev({ config, state: "s", questions: TYPED_QUESTIONS, transport: timeoutTransport })).reason, "timeout");
+
+  const refusedTransport = recordingTransport(() => { throw new Error("ECONNREFUSED"); });
+  assert.equal((await classifyTypedWithJev({ config, state: "s", questions: TYPED_QUESTIONS, transport: refusedTransport })).reason, "transport-error");
+
+  const httpTransport = recordingTransport(() => ({ status: 503, text: "" }));
+  assert.equal((await classifyTypedWithJev({ config, state: "s", questions: TYPED_QUESTIONS, transport: httpTransport })).reason, "http-error");
+});
