@@ -1,0 +1,244 @@
+{
+  "kind": "JevProbeClassificationCorpusSample",
+  "schemaVersion": 1,
+  "records": [
+    {
+      "kind": "JevProbeClassificationRecord",
+      "schemaVersion": 1,
+      "recordId": "jpc-0001",
+      "observationDate": "2026-09-01",
+      "source": "synthetic",
+      "groupKind": "unique",
+      "split": "train",
+      "judgmentTimeInput": {
+        "artifactIdsCount": 0,
+        "payloadFilePresent": false,
+        "bundleFilesBand": "none",
+        "messageWordsBand": "0-3",
+        "requesterClass": "pipeline_health",
+        "timingClass": "recurring_identical"
+      },
+      "label": {
+        "labelStatus": "independently_reviewed",
+        "policyVersion": "probe-handling-policy@2026-09-21",
+        "class": "probe",
+        "alternativeAcceptable": false,
+        "existingRuleComparison": { "ruleVersion": "handler-heuristics@2026-09-21", "class": "probe" }
+      }
+    },
+    {
+      "kind": "JevProbeClassificationRecord",
+      "schemaVersion": 1,
+      "recordId": "jpc-0002",
+      "observationDate": "2026-09-02",
+      "source": "synthetic",
+      "groupKind": "identical_work",
+      "split": "train",
+      "judgmentTimeInput": {
+        "artifactIdsCount": 0,
+        "payloadFilePresent": false,
+        "bundleFilesBand": "none",
+        "messageWordsBand": "0-3",
+        "requesterClass": "pipeline_health",
+        "timingClass": "post_restart"
+      },
+      "label": {
+        "labelStatus": "independently_reviewed",
+        "policyVersion": "probe-handling-policy@2026-09-21",
+        "class": "probe",
+        "alternativeAcceptable": false,
+        "existingRuleComparison": { "ruleVersion": "handler-heuristics@2026-09-21", "class": "probe" }
+      }
+    },
+    {
+      "kind": "JevProbeClassificationRecord",
+      "schemaVersion": 1,
+      "recordId": "jpc-0003",
+      "observationDate": "2026-09-08",
+      "source": "synthetic",
+      "groupKind": "retry",
+      "split": "calibration",
+      "judgmentTimeInput": {
+        "artifactIdsCount": 0,
+        "payloadFilePresent": false,
+        "bundleFilesBand": "none",
+        "messageWordsBand": "0-3",
+        "requesterClass": "pipeline_health",
+        "timingClass": "recurring_identical"
+      },
+      "label": {
+        "labelStatus": "policy_computed_review_pending",
+        "policyVersion": "probe-handling-policy@2026-09-21",
+        "class": "probe",
+        "alternativeAcceptable": false,
+        "existingRuleComparison": { "ruleVersion": "handler-heuristics@2026-09-21", "class": "probe" }
+      }
+    },
+    {
+      "kind": "JevProbeClassificationRecord",
+      "schemaVersion": 1,
+      "recordId": "jpc-0004",
+      "observationDate": "2026-09-15",
+      "source": "synthetic",
+      "groupKind": "unique",
+      "split": "holdout",
+      "judgmentTimeInput": {
+        "artifactIdsCount": 0,
+        "payloadFilePresent": false,
+        "bundleFilesBand": "none",
+        "messageWordsBand": "4-20",
+        "requesterClass": "agent",
+        "timingClass": "post_restart"
+      },
+      "label": {
+        "labelStatus": "unlabeled_pending_policy",
+        "policyVersion": "probe-handling-policy@2026-09-21",
+        "class": "defer",
+        "alternativeAcceptable": false
+      }
+    },
+    {
+      "kind": "JevProbeClassificationRecord",
+      "schemaVersion": 1,
+      "recordId": "jpc-0005",
+      "observationDate": "2026-09-03",
+      "source": "synthetic",
+      "groupKind": "unique",
+      "split": "train",
+      "judgmentTimeInput": {
+        "artifactIdsCount": 0,
+        "payloadFilePresent": false,
+        "bundleFilesBand": "none",
+        "messageWordsBand": "21-100",
+        "requesterClass": "agent",
+        "timingClass": "one_off"
+      },
+      "label": {
+        "labelStatus": "independently_reviewed",
+        "policyVersion": "probe-handling-policy@2026-09-21",
+        "class": "incomplete",
+        "alternativeAcceptable": false,
+        "existingRuleComparison": { "ruleVersion": "handler-heuristics@2026-09-21", "class": "incomplete" }
+      }
+    },
+    {
+      "kind": "JevProbeClassificationRecord",
+      "schemaVersion": 1,
+      "recordId": "jpc-0006",
+      "observationDate": "2026-09-04",
+      "source": "synthetic",
+      "groupKind": "derived_case",
+      "split": "train",
+      "derivedFromRecordId": "jpc-0005",
+      "judgmentTimeInput": {
+        "artifactIdsCount": 1,
+        "payloadFilePresent": false,
+        "bundleFilesBand": "1",
+        "messageWordsBand": "21-100",
+        "requesterClass": "agent",
+        "timingClass": "one_off"
+      },
+      "label": {
+        "labelStatus": "disputed_multiple_reasonable",
+        "policyVersion": "probe-handling-policy@2026-09-21",
+        "class": "incomplete",
+        "alternativeAcceptable": true,
+        "existingRuleComparison": { "ruleVersion": "handler-heuristics@2026-09-21", "class": "proceed" }
+      }
+    },
+    {
+      "kind": "JevProbeClassificationRecord",
+      "schemaVersion": 1,
+      "recordId": "jpc-0007",
+      "observationDate": "2026-09-09",
+      "source": "synthetic",
+      "groupKind": "retry",
+      "split": "calibration",
+      "judgmentTimeInput": {
+        "artifactIdsCount": 0,
+        "payloadFilePresent": false,
+        "bundleFilesBand": "none",
+        "messageWordsBand": "21-100",
+        "requesterClass": "operator",
+        "timingClass": "one_off"
+      },
+      "label": {
+        "labelStatus": "policy_computed_review_pending",
+        "policyVersion": "probe-handling-policy@2026-09-21",
+        "class": "incomplete",
+        "alternativeAcceptable": false
+      }
+    },
+    {
+      "kind": "JevProbeClassificationRecord",
+      "schemaVersion": 1,
+      "recordId": "jpc-0008",
+      "observationDate": "2026-09-16",
+      "source": "synthetic",
+      "groupKind": "unique",
+      "split": "holdout",
+      "judgmentTimeInput": {
+        "artifactIdsCount": 0,
+        "payloadFilePresent": false,
+        "bundleFilesBand": "none",
+        "messageWordsBand": "100+",
+        "requesterClass": "unknown",
+        "timingClass": "one_off"
+      },
+      "label": {
+        "labelStatus": "unlabeled_pending_policy",
+        "policyVersion": "probe-handling-policy@2026-09-21",
+        "class": "defer",
+        "alternativeAcceptable": false
+      }
+    },
+    {
+      "kind": "JevProbeClassificationRecord",
+      "schemaVersion": 1,
+      "recordId": "jpc-0009",
+      "observationDate": "2026-09-10",
+      "source": "synthetic",
+      "groupKind": "unique",
+      "split": "calibration",
+      "judgmentTimeInput": {
+        "artifactIdsCount": 2,
+        "payloadFilePresent": true,
+        "bundleFilesBand": "2-5",
+        "messageWordsBand": "21-100",
+        "requesterClass": "operator",
+        "timingClass": "one_off"
+      },
+      "label": {
+        "labelStatus": "independently_reviewed",
+        "policyVersion": "probe-handling-policy@2026-09-21",
+        "class": "proceed",
+        "alternativeAcceptable": false,
+        "existingRuleComparison": { "ruleVersion": "handler-heuristics@2026-09-21", "class": "proceed" }
+      }
+    },
+    {
+      "kind": "JevProbeClassificationRecord",
+      "schemaVersion": 1,
+      "recordId": "jpc-0010",
+      "observationDate": "2026-09-17",
+      "source": "synthetic",
+      "groupKind": "retry",
+      "split": "holdout",
+      "judgmentTimeInput": {
+        "artifactIdsCount": 3,
+        "payloadFilePresent": true,
+        "bundleFilesBand": "2-5",
+        "messageWordsBand": "21-100",
+        "requesterClass": "agent",
+        "timingClass": "one_off"
+      },
+      "label": {
+        "labelStatus": "independently_reviewed",
+        "policyVersion": "probe-handling-policy@2026-09-21",
+        "class": "proceed",
+        "alternativeAcceptable": false,
+        "existingRuleComparison": { "ruleVersion": "handler-heuristics@2026-09-21", "class": "incomplete" }
+      }
+    }
+  ]
+}
