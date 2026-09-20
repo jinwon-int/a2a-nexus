@@ -378,6 +378,11 @@ function validateManifest(manifest) {
   const defaults = isPlainObject(manifest.defaults) ? manifest.defaults : {};
   const total = lanesInput.length;
 
+  // S1 ceremony-latency instrumentation (#2207): the planning decision instant.
+  // Computed once per validation so every lane in the round shares the same
+  // timestamp; explicit manifest values below always win over the stamp.
+  const planDecidedAt = new Date().toISOString();
+
   const seenIds = new Set();
   const lanes = [];
 
@@ -420,6 +425,9 @@ function validateManifest(manifest) {
     if (merged.parentRoundId === undefined) payload.parentRoundId = roundId;
     if (merged.parentRoundTotal === undefined) payload.parentRoundTotal = total;
     if (merged.parentRoundOrder === undefined) payload.parentRoundOrder = order;
+    // S1 (#2207): stamp planDecidedAt only when the manifest left it unset
+    // (defaults.payload or lane.payload explicit values are never overwritten).
+    if (merged.planDecidedAt === undefined) payload.planDecidedAt = planDecidedAt;
 
     const taskOrigin = lane.taskOrigin ?? defaults.taskOrigin;
     const workspace = deriveWorkspaceForLane(errors, tag, lane, defaults, payload, taskOrigin);
