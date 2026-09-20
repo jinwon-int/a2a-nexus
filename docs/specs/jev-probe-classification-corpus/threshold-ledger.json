@@ -5,7 +5,7 @@
  "policyVersion": "probe-handling-policy@2026-09-21",
  "corpus": "docs/specs/jev-probe-classification-corpus/corpus-exploratory-v1.json",
  "capture": {
-  "source": "broker_observed (seoseo broker state, readonly; live broker_tasks + tombstones, deduped by task id)",
+  "source": "the fleet's originating broker state, readonly; live broker_tasks + tombstones, deduped by task id",
   "intentFilter": "analyze",
   "groupRule": "in-memory repetition grouping (never emitted); identical_work >=3 occurrences, retry ==2, unique ==1",
   "groupCap": 10,
