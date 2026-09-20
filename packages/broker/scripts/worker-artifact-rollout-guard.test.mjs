@@ -61,6 +61,15 @@ export function classifyTaskWithJev() { return null; }
 export function parseJevTimeoutMs() { return 1500; }
 `;
 
+const jevReviewShadowSource = `
+export function receiptShadowInputs() { return undefined; }
+export function reviewShadowInputs() { return undefined; }
+export function receiptShadowQuestions() { return []; }
+export function reviewShadowQuestions() { return []; }
+export async function observeReceiptShadow() { return { attempted: false }; }
+export async function observeReviewSufficiencyShadow() { return { attempted: false }; }
+`;
+
 function makeWorkerRoot({ bridgeHandlersContent = 'bridge-ok\n', handlersExecutable = true } = {}) {
   const root = mkdtempSync(join(tmpdir(), 'worker-artifact-'));
   const scripts = join(root, 'scripts');
@@ -89,6 +98,8 @@ function makeWorkerRoot({ bridgeHandlersContent = 'bridge-ok\n', handlersExecuta
     compatUtf8ByteBudget: join(handlers, 'lib', 'utf8-byte-budget.mjs'),
     sourceJevClassifier: join(scripts, 'lib', 'jev-classifier.mjs'),
     compatJevClassifier: join(handlers, 'lib', 'jev-classifier.mjs'),
+    sourceJevReviewShadow: join(scripts, 'lib', 'jev-review-shadow.mjs'),
+    compatJevReviewShadow: join(handlers, 'lib', 'jev-review-shadow.mjs'),
     sourceBridge: join(scripts, 'hermes-a2a-analysis-bridge.mjs'),
     compatBridge: join(handlers, 'hermes-a2a-analysis-bridge.mjs'),
     sourceOnlyBridge: join(scripts, 'source-only-local-analysis-bridge.mjs'),
@@ -112,6 +123,8 @@ function makeWorkerRoot({ bridgeHandlersContent = 'bridge-ok\n', handlersExecuta
   writeFileSync(files.compatUtf8ByteBudget, utf8ByteBudgetSource);
   writeFileSync(files.sourceJevClassifier, jevClassifierSource);
   writeFileSync(files.compatJevClassifier, jevClassifierSource);
+  writeFileSync(files.sourceJevReviewShadow, jevReviewShadowSource);
+  writeFileSync(files.compatJevReviewShadow, jevReviewShadowSource);
   writeFileSync(files.sourceBridge, 'bridge-ok\n');
   writeFileSync(files.compatBridge, bridgeHandlersContent);
   writeFileSync(files.sourceOnlyBridge, 'source-only-bridge-ok\n');

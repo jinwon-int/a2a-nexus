@@ -20,6 +20,12 @@ import { normalizeAnalysisExecutionTelemetry } from "./lib/analysis-execution-te
 import { evaluateDeclaredWriteSetGate } from "../dist/core/runtime-safety-gates.js";
 import { runLiveOperationTask } from "./lib/live-operation-adapter.mjs";
 import { classifyTaskWithJev, resolveJevConfig } from "./lib/jev-classifier.mjs";
+import {
+  observeReceiptShadow,
+  observeReviewSufficiencyShadow,
+  receiptShadowInputs,
+  reviewShadowInputs,
+} from "./lib/jev-review-shadow.mjs";
 
 const HANDLER_VERSION = "0.2.19";
 const SOURCE_PATH = fileURLToPath(import.meta.url);
@@ -2985,6 +2991,21 @@ if (process.argv[1] === SOURCE_PATH) {
     } catch {
       // Observation is telemetry-only; nothing here may alter the emitted
       // outcome or the exit code.
+    }
+    // Review-evidence shadow (C3/C4, docs/specs/jev-review-evidence-shadow/):
+    // each point is separately gated, telemetry-only, and runs after the ack
+    // is emitted. Failures are swallowed and outputs stay byte-identical.
+    try {
+      const inputs = receiptShadowInputs(emittedOutcome);
+      if (inputs) await observeReceiptShadow(inputs, { env: process.env });
+    } catch {
+      // C3 receipt shadow is telemetry-only.
+    }
+    try {
+      const reviewInputs = reviewShadowInputs(emittedOutcome);
+      if (reviewInputs) await observeReviewSufficiencyShadow(reviewInputs, { env: process.env });
+    } catch {
+      // C4 review-sufficiency shadow is telemetry-only.
     }
   }
 }

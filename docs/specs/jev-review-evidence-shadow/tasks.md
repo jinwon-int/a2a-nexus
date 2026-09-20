@@ -30,25 +30,31 @@
 
 ## Gate items (separately approved slices; NOT authorized by this packet)
 
-- [ ] **G1** — facade typed-verdict contract extension
+- [x] **G1** — facade typed-verdict contract extension
       (`lib/jev-classifier.mjs`): Noul/Choice/Score + confidence in-process;
-      boolean `is_real_work` preserved for probe-gating.
-- [ ] **G2** — owner transmission/privacy decision: closed banded fields
-      confirmed; task-body/source-content transmission rejected or a
-      specific redaction scheme approved.
+      boolean `is_real_work` preserved for probe-gating. Landed via the typed
+      facade slice (classifyTypedWithJev + normalizeTypedQuestions + gateVar
+      parameter).
+- [ ] **G2** — owner transmission/privacy decision: the operator-approved
+      input design for this packet is closed banded fields only (no task
+      body, no source contents); any future redaction scheme revision is a
+      new decision.
 - [ ] **G3** — #2185 arms A/B/C results + 2026-09-26 calibration review
       consumed as external evidence.
-- [ ] **G4** — fail-open hook-shape fix for the existing probe hook
+- [x] **G4** — fail-open hook-shape fix for the existing probe hook
       (exception isolation from the CLI outcome path; stdout ordering).
 
-## Wiring phases (each requires G1+G2+G4 and its own approval)
+## Wiring phases (implemented in this slice on top of G1+G4; activation stays
+## default-off and separately approved)
 
-- [ ] **Phase C** — C3 receipt shadow: hook after projection-failure
+- [x] **Phase C** — C3 receipt shadow: hook after projection-failure
       details, before bridge spawn; telemetry-only typed record;
       byte-identical outputs; golden gate-off identity test; stub-transport
-      tests; 3-site registration for any new support module.
-- [ ] **Phase D** — C4 review-sufficiency shadow: hook immediately before
-      `reviewValidationFromAnalysis`; same posture and test pattern.
+      tests; 3-site registration for the new support module
+      (`lib/jev-review-shadow.mjs`).
+- [x] **Phase D** — C4 review-sufficiency shadow: hook immediately before
+      `reviewValidationFromAnalysis` consumption; same posture and test
+      pattern.
 - [ ] **Phase E** — offline calibration join (out of runtime): shadow
       records into the calibration corpus protocol; any threshold returns as
       a separately approved default-off gate item.

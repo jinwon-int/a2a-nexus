@@ -3502,3 +3502,33 @@ test("jev CLI hook: enabled trio with an unreachable endpoint stays fail-open (G
   // slowest CI runner).
   assert.ok(elapsed < 15_000, `ack took ${elapsed}ms — observation appears to block the outcome`);
 });
+
+test("jev CLI hook: review-evidence shadow gates enabled stay byte-identical (C3/C4 wiring)", async (t) => {
+  const { spawnSync } = await import("node:child_process");
+  const { fileURLToPath } = await import("node:url");
+  const scriptPath = fileURLToPath(new URL("./a2a-task-handler.mjs", import.meta.url));
+  const dir = mkdtempSync(join(tmpdir(), "jev-c3c4-gates-test-"));
+  t.after(() => rmSync(dir, { recursive: true, force: true }));
+  const keyfilePath = join(dir, "jev.key");
+  writeFileSync(keyfilePath, "synthetic-jev-key-material");
+  chmodSync(keyfilePath, 0o600);
+  // Both review-evidence shadow gates enabled (unreachable endpoints, clamped
+  // timeout). The golden noop outcome carries neither projection nor review
+  // validation, so the shadows take the no-inputs path; either way the ack
+  // must stay byte-identical with exit 0 and silent stderr.
+  const result = spawnSync(process.execPath, [scriptPath], {
+    input: JEV_GOLDEN_TASK_JSON,
+    encoding: "utf8",
+    timeout: 120_000,
+    env: jevSpawnEnv({
+      A2A_JEV_RECEIPT_SHADOW: "1",
+      A2A_JEV_REVIEW_SHADOW: "1",
+      A2A_JEV_ENDPOINT: "http://127.0.0.1:1/api/classify",
+      A2A_JEV_KEYFILE: keyfilePath,
+      A2A_JEV_TIMEOUT_MS: "250",
+    }),
+  });
+  assert.equal(result.status, 0, `shadow-gates run exited nonzero: ${result.stderr?.slice(0, 400)}`);
+  assert.equal(result.stderr, "", "shadow gates must stay value-free and silent on stderr");
+  assert.equal(jevMaskedStdout(result), JEV_GOLDEN_MASKED_STDOUT, "shadow-gates stdout diverged from the golden");
+});
