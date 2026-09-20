@@ -1,0 +1,30 @@
+{
+ "kind": "JevProbeClassificationCorpusThresholdLedger",
+ "schemaVersion": 1,
+ "frozenAt": "2026-09-21",
+ "policyVersion": "probe-handling-policy@2026-09-21",
+ "corpus": "docs/specs/jev-probe-classification-corpus/corpus-exploratory-v1.json",
+ "capture": {
+  "source": "the fleet's originating broker state, readonly; live broker_tasks + tombstones, deduped by task id",
+  "intentFilter": "analyze",
+  "groupRule": "in-memory repetition grouping (never emitted); identical_work >=3 occurrences, retry ==2, unique ==1",
+  "groupCap": 10,
+  "privacy": "banded fields only; message text and any digests of it never left the broker host"
+ },
+ "splitBoundaries": {
+  "rule": "chronological 70/20/10 by observationDate",
+  "trainThrough": "2026-09-04",
+  "calibrationThrough": "2026-09-16",
+  "holdoutFrom": "2026-09-19",
+  "counts": {
+   "train": 115,
+   "calibration": 30,
+   "holdout": 11
+  }
+ },
+ "rules": [
+  "No holdout record may be scored before this ledger is committed.",
+  "Thresholds for arms A/B/C are frozen here before Phase 4 scoring; later changes restart Phase 3 with a new holdout window.",
+  "Labels are Phase 2 output; all records ship unlabeled_pending_policy until then."
+ ]
+}

@@ -1,0 +1,3594 @@
+{
+ "kind": "JevProbeClassificationCorpusSample",
+ "schemaVersion": 1,
+ "records": [
+  {
+   "kind": "JevProbeClassificationRecord",
+   "schemaVersion": 1,
+   "recordId": "jpc-0001",
+   "observationDate": "2026-05-13",
+   "source": "broker_observed",
+   "groupKind": "unique",
+   "split": "train",
+   "judgmentTimeInput": {
+    "artifactIdsCount": 0,
+    "payloadFilePresent": true,
+    "bundleFilesBand": "none",
+    "messageWordsBand": "4-20",
+    "requesterClass": "unknown",
+    "timingClass": "one_off"
+   },
+   "label": {
+    "labelStatus": "unlabeled_pending_policy",
+    "policyVersion": "probe-handling-policy@2026-09-21",
+    "class": "defer",
+    "alternativeAcceptable": false
+   }
+  },
+  {
+   "kind": "JevProbeClassificationRecord",
+   "schemaVersion": 1,
+   "recordId": "jpc-0002",
+   "observationDate": "2026-05-13",
+   "source": "broker_observed",
+   "groupKind": "unique",
+   "split": "train",
+   "judgmentTimeInput": {
+    "artifactIdsCount": 0,
+    "payloadFilePresent": true,
+    "bundleFilesBand": "none",
+    "messageWordsBand": "4-20",
+    "requesterClass": "unknown",
+    "timingClass": "one_off"
+   },
+   "label": {
+    "labelStatus": "unlabeled_pending_policy",
+    "policyVersion": "probe-handling-policy@2026-09-21",
+    "class": "defer",
+    "alternativeAcceptable": false
+   }
+  },
+  {
+   "kind": "JevProbeClassificationRecord",
+   "schemaVersion": 1,
+   "recordId": "jpc-0003",
+   "observationDate": "2026-05-14",
+   "source": "broker_observed",
+   "groupKind": "unique",
+   "split": "train",
+   "judgmentTimeInput": {
+    "artifactIdsCount": 0,
+    "payloadFilePresent": true,
+    "bundleFilesBand": "none",
+    "messageWordsBand": "4-20",
+    "requesterClass": "operator",
+    "timingClass": "one_off"
+   },
+   "label": {
+    "labelStatus": "unlabeled_pending_policy",
+    "policyVersion": "probe-handling-policy@2026-09-21",
+    "class": "defer",
+    "alternativeAcceptable": false
+   }
+  },
+  {
+   "kind": "JevProbeClassificationRecord",
+   "schemaVersion": 1,
+   "recordId": "jpc-0004",
+   "observationDate": "2026-08-13",
+   "source": "broker_observed",
+   "groupKind": "unique",
+   "split": "train",
+   "judgmentTimeInput": {
+    "artifactIdsCount": 0,
+    "payloadFilePresent": true,
+    "bundleFilesBand": "1",
+    "messageWordsBand": "21-100",
+    "requesterClass": "operator",
+    "timingClass": "one_off"
+   },
+   "label": {
+    "labelStatus": "unlabeled_pending_policy",
+    "policyVersion": "probe-handling-policy@2026-09-21",
+    "class": "defer",
+    "alternativeAcceptable": false
+   }
+  },
+  {
+   "kind": "JevProbeClassificationRecord",
+   "schemaVersion": 1,
+   "recordId": "jpc-0005",
+   "observationDate": "2026-08-13",
+   "source": "broker_observed",
+   "groupKind": "unique",
+   "split": "train",
+   "judgmentTimeInput": {
+    "artifactIdsCount": 0,
+    "payloadFilePresent": true,
+    "bundleFilesBand": "1",
+    "messageWordsBand": "21-100",
+    "requesterClass": "operator",
+    "timingClass": "one_off"
+   },
+   "label": {
+    "labelStatus": "unlabeled_pending_policy",
+    "policyVersion": "probe-handling-policy@2026-09-21",
+    "class": "defer",
+    "alternativeAcceptable": false
+   }
+  },
+  {
+   "kind": "JevProbeClassificationRecord",
+   "schemaVersion": 1,
+   "recordId": "jpc-0006",
+   "observationDate": "2026-08-13",
+   "source": "broker_observed",
+   "groupKind": "unique",
+   "split": "train",
+   "judgmentTimeInput": {
+    "artifactIdsCount": 0,
+    "payloadFilePresent": true,
+    "bundleFilesBand": "1",
+    "messageWordsBand": "21-100",
+    "requesterClass": "operator",
+    "timingClass": "one_off"
+   },
+   "label": {
+    "labelStatus": "unlabeled_pending_policy",
+    "policyVersion": "probe-handling-policy@2026-09-21",
+    "class": "defer",
+    "alternativeAcceptable": false
+   }
+  },
+  {
+   "kind": "JevProbeClassificationRecord",
+   "schemaVersion": 1,
+   "recordId": "jpc-0007",
+   "observationDate": "2026-08-13",
+   "source": "broker_observed",
+   "groupKind": "unique",
+   "split": "train",
+   "judgmentTimeInput": {
+    "artifactIdsCount": 0,
+    "payloadFilePresent": true,
+    "bundleFilesBand": "1",
+    "messageWordsBand": "21-100",
+    "requesterClass": "operator",
+    "timingClass": "one_off"
+   },
+   "label": {
+    "labelStatus": "unlabeled_pending_policy",
+    "policyVersion": "probe-handling-policy@2026-09-21",
+    "class": "defer",
+    "alternativeAcceptable": false
+   }
+  },
+  {
+   "kind": "JevProbeClassificationRecord",
+   "schemaVersion": 1,
+   "recordId": "jpc-0008",
+   "observationDate": "2026-08-13",
+   "source": "broker_observed",
+   "groupKind": "unique",
+   "split": "train",
+   "judgmentTimeInput": {
+    "artifactIdsCount": 0,
+    "payloadFilePresent": true,
+    "bundleFilesBand": "1",
+    "messageWordsBand": "21-100",
+    "requesterClass": "operator",
+    "timingClass": "one_off"
+   },
+   "label": {
+    "labelStatus": "unlabeled_pending_policy",
+    "policyVersion": "probe-handling-policy@2026-09-21",
+    "class": "defer",
+    "alternativeAcceptable": false
+   }
+  },
+  {
+   "kind": "JevProbeClassificationRecord",
+   "schemaVersion": 1,
+   "recordId": "jpc-0009",
+   "observationDate": "2026-08-13",
+   "source": "broker_observed",
+   "groupKind": "unique",
+   "split": "train",
+   "judgmentTimeInput": {
+    "artifactIdsCount": 0,
+    "payloadFilePresent": true,
+    "bundleFilesBand": "1",
+    "messageWordsBand": "21-100",
+    "requesterClass": "operator",
+    "timingClass": "one_off"
+   },
+   "label": {
+    "labelStatus": "unlabeled_pending_policy",
+    "policyVersion": "probe-handling-policy@2026-09-21",
+    "class": "defer",
+    "alternativeAcceptable": false
+   }
+  },
+  {
+   "kind": "JevProbeClassificationRecord",
+   "schemaVersion": 1,
+   "recordId": "jpc-0010",
+   "observationDate": "2026-08-13",
+   "source": "broker_observed",
+   "groupKind": "unique",
+   "split": "train",
+   "judgmentTimeInput": {
+    "artifactIdsCount": 0,
+    "payloadFilePresent": true,
+    "bundleFilesBand": "1",
+    "messageWordsBand": "21-100",
+    "requesterClass": "operator",
+    "timingClass": "one_off"
+   },
+   "label": {
+    "labelStatus": "unlabeled_pending_policy",
+    "policyVersion": "probe-handling-policy@2026-09-21",
+    "class": "defer",
+    "alternativeAcceptable": false
+   }
+  },
+  {
+   "kind": "JevProbeClassificationRecord",
+   "schemaVersion": 1,
+   "recordId": "jpc-0011",
+   "observationDate": "2026-08-13",
+   "source": "broker_observed",
+   "groupKind": "unique",
+   "split": "train",
+   "judgmentTimeInput": {
+    "artifactIdsCount": 0,
+    "payloadFilePresent": true,
+    "bundleFilesBand": "1",
+    "messageWordsBand": "21-100",
+    "requesterClass": "operator",
+    "timingClass": "one_off"
+   },
+   "label": {
+    "labelStatus": "unlabeled_pending_policy",
+    "policyVersion": "probe-handling-policy@2026-09-21",
+    "class": "defer",
+    "alternativeAcceptable": false
+   }
+  },
+  {
+   "kind": "JevProbeClassificationRecord",
+   "schemaVersion": 1,
+   "recordId": "jpc-0012",
+   "observationDate": "2026-08-14",
+   "source": "broker_observed",
+   "groupKind": "unique",
+   "split": "train",
+   "judgmentTimeInput": {
+    "artifactIdsCount": 0,
+    "payloadFilePresent": true,
+    "bundleFilesBand": "1",
+    "messageWordsBand": "21-100",
+    "requesterClass": "operator",
+    "timingClass": "one_off"
+   },
+   "label": {
+    "labelStatus": "unlabeled_pending_policy",
+    "policyVersion": "probe-handling-policy@2026-09-21",
+    "class": "defer",
+    "alternativeAcceptable": false
+   }
+  },
+  {
+   "kind": "JevProbeClassificationRecord",
+   "schemaVersion": 1,
+   "recordId": "jpc-0013",
+   "observationDate": "2026-08-14",
+   "source": "broker_observed",
+   "groupKind": "unique",
+   "split": "train",
+   "judgmentTimeInput": {
+    "artifactIdsCount": 0,
+    "payloadFilePresent": true,
+    "bundleFilesBand": "1",
+    "messageWordsBand": "21-100",
+    "requesterClass": "operator",
+    "timingClass": "one_off"
+   },
+   "label": {
+    "labelStatus": "unlabeled_pending_policy",
+    "policyVersion": "probe-handling-policy@2026-09-21",
+    "class": "defer",
+    "alternativeAcceptable": false
+   }
+  },
+  {
+   "kind": "JevProbeClassificationRecord",
+   "schemaVersion": 1,
+   "recordId": "jpc-0014",
+   "observationDate": "2026-08-14",
+   "source": "broker_observed",
+   "groupKind": "unique",
+   "split": "train",
+   "judgmentTimeInput": {
+    "artifactIdsCount": 0,
+    "payloadFilePresent": true,
+    "bundleFilesBand": "1",
+    "messageWordsBand": "21-100",
+    "requesterClass": "operator",
+    "timingClass": "one_off"
+   },
+   "label": {
+    "labelStatus": "unlabeled_pending_policy",
+    "policyVersion": "probe-handling-policy@2026-09-21",
+    "class": "defer",
+    "alternativeAcceptable": false
+   }
+  },
+  {
+   "kind": "JevProbeClassificationRecord",
+   "schemaVersion": 1,
+   "recordId": "jpc-0015",
+   "observationDate": "2026-08-14",
+   "source": "broker_observed",
+   "groupKind": "unique",
+   "split": "train",
+   "judgmentTimeInput": {
+    "artifactIdsCount": 0,
+    "payloadFilePresent": true,
+    "bundleFilesBand": "1",
+    "messageWordsBand": "21-100",
+    "requesterClass": "operator",
+    "timingClass": "one_off"
+   },
+   "label": {
+    "labelStatus": "unlabeled_pending_policy",
+    "policyVersion": "probe-handling-policy@2026-09-21",
+    "class": "defer",
+    "alternativeAcceptable": false
+   }
+  },
+  {
+   "kind": "JevProbeClassificationRecord",
+   "schemaVersion": 1,
+   "recordId": "jpc-0016",
+   "observationDate": "2026-08-14",
+   "source": "broker_observed",
+   "groupKind": "unique",
+   "split": "train",
+   "judgmentTimeInput": {
+    "artifactIdsCount": 0,
+    "payloadFilePresent": true,
+    "bundleFilesBand": "1",
+    "messageWordsBand": "21-100",
+    "requesterClass": "operator",
+    "timingClass": "one_off"
+   },
+   "label": {
+    "labelStatus": "unlabeled_pending_policy",
+    "policyVersion": "probe-handling-policy@2026-09-21",
+    "class": "defer",
+    "alternativeAcceptable": false
+   }
+  },
+  {
+   "kind": "JevProbeClassificationRecord",
+   "schemaVersion": 1,
+   "recordId": "jpc-0017",
+   "observationDate": "2026-08-14",
+   "source": "broker_observed",
+   "groupKind": "unique",
+   "split": "train",
+   "judgmentTimeInput": {
+    "artifactIdsCount": 0,
+    "payloadFilePresent": true,
+    "bundleFilesBand": "1",
+    "messageWordsBand": "21-100",
+    "requesterClass": "operator",
+    "timingClass": "one_off"
+   },
+   "label": {
+    "labelStatus": "unlabeled_pending_policy",
+    "policyVersion": "probe-handling-policy@2026-09-21",
+    "class": "defer",
+    "alternativeAcceptable": false
+   }
+  },
+  {
+   "kind": "JevProbeClassificationRecord",
+   "schemaVersion": 1,
+   "recordId": "jpc-0018",
+   "observationDate": "2026-08-14",
+   "source": "broker_observed",
+   "groupKind": "unique",
+   "split": "train",
+   "judgmentTimeInput": {
+    "artifactIdsCount": 0,
+    "payloadFilePresent": true,
+    "bundleFilesBand": "1",
+    "messageWordsBand": "21-100",
+    "requesterClass": "operator",
+    "timingClass": "one_off"
+   },
+   "label": {
+    "labelStatus": "unlabeled_pending_policy",
+    "policyVersion": "probe-handling-policy@2026-09-21",
+    "class": "defer",
+    "alternativeAcceptable": false
+   }
+  },
+  {
+   "kind": "JevProbeClassificationRecord",
+   "schemaVersion": 1,
+   "recordId": "jpc-0019",
+   "observationDate": "2026-08-14",
+   "source": "broker_observed",
+   "groupKind": "unique",
+   "split": "train",
+   "judgmentTimeInput": {
+    "artifactIdsCount": 0,
+    "payloadFilePresent": true,
+    "bundleFilesBand": "1",
+    "messageWordsBand": "21-100",
+    "requesterClass": "operator",
+    "timingClass": "one_off"
+   },
+   "label": {
+    "labelStatus": "unlabeled_pending_policy",
+    "policyVersion": "probe-handling-policy@2026-09-21",
+    "class": "defer",
+    "alternativeAcceptable": false
+   }
+  },
+  {
+   "kind": "JevProbeClassificationRecord",
+   "schemaVersion": 1,
+   "recordId": "jpc-0020",
+   "observationDate": "2026-08-14",
+   "source": "broker_observed",
+   "groupKind": "unique",
+   "split": "train",
+   "judgmentTimeInput": {
+    "artifactIdsCount": 0,
+    "payloadFilePresent": true,
+    "bundleFilesBand": "1",
+    "messageWordsBand": "21-100",
+    "requesterClass": "operator",
+    "timingClass": "one_off"
+   },
+   "label": {
+    "labelStatus": "unlabeled_pending_policy",
+    "policyVersion": "probe-handling-policy@2026-09-21",
+    "class": "defer",
+    "alternativeAcceptable": false
+   }
+  },
+  {
+   "kind": "JevProbeClassificationRecord",
+   "schemaVersion": 1,
+   "recordId": "jpc-0021",
+   "observationDate": "2026-08-14",
+   "source": "broker_observed",
+   "groupKind": "unique",
+   "split": "train",
+   "judgmentTimeInput": {
+    "artifactIdsCount": 0,
+    "payloadFilePresent": true,
+    "bundleFilesBand": "1",
+    "messageWordsBand": "21-100",
+    "requesterClass": "operator",
+    "timingClass": "one_off"
+   },
+   "label": {
+    "labelStatus": "unlabeled_pending_policy",
+    "policyVersion": "probe-handling-policy@2026-09-21",
+    "class": "defer",
+    "alternativeAcceptable": false
+   }
+  },
+  {
+   "kind": "JevProbeClassificationRecord",
+   "schemaVersion": 1,
+   "recordId": "jpc-0022",
+   "observationDate": "2026-08-14",
+   "source": "broker_observed",
+   "groupKind": "unique",
+   "split": "train",
+   "judgmentTimeInput": {
+    "artifactIdsCount": 0,
+    "payloadFilePresent": true,
+    "bundleFilesBand": "1",
+    "messageWordsBand": "21-100",
+    "requesterClass": "operator",
+    "timingClass": "one_off"
+   },
+   "label": {
+    "labelStatus": "unlabeled_pending_policy",
+    "policyVersion": "probe-handling-policy@2026-09-21",
+    "class": "defer",
+    "alternativeAcceptable": false
+   }
+  },
+  {
+   "kind": "JevProbeClassificationRecord",
+   "schemaVersion": 1,
+   "recordId": "jpc-0023",
+   "observationDate": "2026-08-14",
+   "source": "broker_observed",
+   "groupKind": "unique",
+   "split": "train",
+   "judgmentTimeInput": {
+    "artifactIdsCount": 0,
+    "payloadFilePresent": true,
+    "bundleFilesBand": "1",
+    "messageWordsBand": "21-100",
+    "requesterClass": "operator",
+    "timingClass": "one_off"
+   },
+   "label": {
+    "labelStatus": "unlabeled_pending_policy",
+    "policyVersion": "probe-handling-policy@2026-09-21",
+    "class": "defer",
+    "alternativeAcceptable": false
+   }
+  },
+  {
+   "kind": "JevProbeClassificationRecord",
+   "schemaVersion": 1,
+   "recordId": "jpc-0024",
+   "observationDate": "2026-08-14",
+   "source": "broker_observed",
+   "groupKind": "unique",
+   "split": "train",
+   "judgmentTimeInput": {
+    "artifactIdsCount": 0,
+    "payloadFilePresent": true,
+    "bundleFilesBand": "1",
+    "messageWordsBand": "21-100",
+    "requesterClass": "operator",
+    "timingClass": "one_off"
+   },
+   "label": {
+    "labelStatus": "unlabeled_pending_policy",
+    "policyVersion": "probe-handling-policy@2026-09-21",
+    "class": "defer",
+    "alternativeAcceptable": false
+   }
+  },
+  {
+   "kind": "JevProbeClassificationRecord",
+   "schemaVersion": 1,
+   "recordId": "jpc-0025",
+   "observationDate": "2026-08-14",
+   "source": "broker_observed",
+   "groupKind": "unique",
+   "split": "train",
+   "judgmentTimeInput": {
+    "artifactIdsCount": 0,
+    "payloadFilePresent": true,
+    "bundleFilesBand": "1",
+    "messageWordsBand": "21-100",
+    "requesterClass": "operator",
+    "timingClass": "one_off"
+   },
+   "label": {
+    "labelStatus": "unlabeled_pending_policy",
+    "policyVersion": "probe-handling-policy@2026-09-21",
+    "class": "defer",
+    "alternativeAcceptable": false
+   }
+  },
+  {
+   "kind": "JevProbeClassificationRecord",
+   "schemaVersion": 1,
+   "recordId": "jpc-0026",
+   "observationDate": "2026-08-14",
+   "source": "broker_observed",
+   "groupKind": "unique",
+   "split": "train",
+   "judgmentTimeInput": {
+    "artifactIdsCount": 0,
+    "payloadFilePresent": true,
+    "bundleFilesBand": "1",
+    "messageWordsBand": "21-100",
+    "requesterClass": "operator",
+    "timingClass": "one_off"
+   },
+   "label": {
+    "labelStatus": "unlabeled_pending_policy",
+    "policyVersion": "probe-handling-policy@2026-09-21",
+    "class": "defer",
+    "alternativeAcceptable": false
+   }
+  },
+  {
+   "kind": "JevProbeClassificationRecord",
+   "schemaVersion": 1,
+   "recordId": "jpc-0027",
+   "observationDate": "2026-08-14",
+   "source": "broker_observed",
+   "groupKind": "unique",
+   "split": "train",
+   "judgmentTimeInput": {
+    "artifactIdsCount": 0,
+    "payloadFilePresent": true,
+    "bundleFilesBand": "1",
+    "messageWordsBand": "21-100",
+    "requesterClass": "operator",
+    "timingClass": "one_off"
+   },
+   "label": {
+    "labelStatus": "unlabeled_pending_policy",
+    "policyVersion": "probe-handling-policy@2026-09-21",
+    "class": "defer",
+    "alternativeAcceptable": false
+   }
+  },
+  {
+   "kind": "JevProbeClassificationRecord",
+   "schemaVersion": 1,
+   "recordId": "jpc-0028",
+   "observationDate": "2026-08-14",
+   "source": "broker_observed",
+   "groupKind": "unique",
+   "split": "train",
+   "judgmentTimeInput": {
+    "artifactIdsCount": 0,
+    "payloadFilePresent": true,
+    "bundleFilesBand": "1",
+    "messageWordsBand": "21-100",
+    "requesterClass": "operator",
+    "timingClass": "one_off"
+   },
+   "label": {
+    "labelStatus": "unlabeled_pending_policy",
+    "policyVersion": "probe-handling-policy@2026-09-21",
+    "class": "defer",
+    "alternativeAcceptable": false
+   }
+  },
+  {
+   "kind": "JevProbeClassificationRecord",
+   "schemaVersion": 1,
+   "recordId": "jpc-0029",
+   "observationDate": "2026-08-14",
+   "source": "broker_observed",
+   "groupKind": "unique",
+   "split": "train",
+   "judgmentTimeInput": {
+    "artifactIdsCount": 0,
+    "payloadFilePresent": true,
+    "bundleFilesBand": "1",
+    "messageWordsBand": "21-100",
+    "requesterClass": "operator",
+    "timingClass": "one_off"
+   },
+   "label": {
+    "labelStatus": "unlabeled_pending_policy",
+    "policyVersion": "probe-handling-policy@2026-09-21",
+    "class": "defer",
+    "alternativeAcceptable": false
+   }
+  },
+  {
+   "kind": "JevProbeClassificationRecord",
+   "schemaVersion": 1,
+   "recordId": "jpc-0030",
+   "observationDate": "2026-08-14",
+   "source": "broker_observed",
+   "groupKind": "unique",
+   "split": "train",
+   "judgmentTimeInput": {
+    "artifactIdsCount": 0,
+    "payloadFilePresent": true,
+    "bundleFilesBand": "1",
+    "messageWordsBand": "21-100",
+    "requesterClass": "operator",
+    "timingClass": "one_off"
+   },
+   "label": {
+    "labelStatus": "unlabeled_pending_policy",
+    "policyVersion": "probe-handling-policy@2026-09-21",
+    "class": "defer",
+    "alternativeAcceptable": false
+   }
+  },
+  {
+   "kind": "JevProbeClassificationRecord",
+   "schemaVersion": 1,
+   "recordId": "jpc-0031",
+   "observationDate": "2026-08-14",
+   "source": "broker_observed",
+   "groupKind": "unique",
+   "split": "train",
+   "judgmentTimeInput": {
+    "artifactIdsCount": 0,
+    "payloadFilePresent": true,
+    "bundleFilesBand": "1",
+    "messageWordsBand": "21-100",
+    "requesterClass": "operator",
+    "timingClass": "one_off"
+   },
+   "label": {
+    "labelStatus": "unlabeled_pending_policy",
+    "policyVersion": "probe-handling-policy@2026-09-21",
+    "class": "defer",
+    "alternativeAcceptable": false
+   }
+  },
+  {
+   "kind": "JevProbeClassificationRecord",
+   "schemaVersion": 1,
+   "recordId": "jpc-0032",
+   "observationDate": "2026-08-14",
+   "source": "broker_observed",
+   "groupKind": "retry",
+   "split": "train",
+   "judgmentTimeInput": {
+    "artifactIdsCount": 0,
+    "payloadFilePresent": true,
+    "bundleFilesBand": "1",
+    "messageWordsBand": "21-100",
+    "requesterClass": "operator",
+    "timingClass": "one_off"
+   },
+   "label": {
+    "labelStatus": "unlabeled_pending_policy",
+    "policyVersion": "probe-handling-policy@2026-09-21",
+    "class": "defer",
+    "alternativeAcceptable": false
+   }
+  },
+  {
+   "kind": "JevProbeClassificationRecord",
+   "schemaVersion": 1,
+   "recordId": "jpc-0033",
+   "observationDate": "2026-08-14",
+   "source": "broker_observed",
+   "groupKind": "retry",
+   "split": "train",
+   "judgmentTimeInput": {
+    "artifactIdsCount": 0,
+    "payloadFilePresent": true,
+    "bundleFilesBand": "1",
+    "messageWordsBand": "21-100",
+    "requesterClass": "operator",
+    "timingClass": "one_off"
+   },
+   "label": {
+    "labelStatus": "unlabeled_pending_policy",
+    "policyVersion": "probe-handling-policy@2026-09-21",
+    "class": "defer",
+    "alternativeAcceptable": false
+   }
+  },
+  {
+   "kind": "JevProbeClassificationRecord",
+   "schemaVersion": 1,
+   "recordId": "jpc-0034",
+   "observationDate": "2026-08-14",
+   "source": "broker_observed",
+   "groupKind": "unique",
+   "split": "train",
+   "judgmentTimeInput": {
+    "artifactIdsCount": 0,
+    "payloadFilePresent": true,
+    "bundleFilesBand": "1",
+    "messageWordsBand": "21-100",
+    "requesterClass": "operator",
+    "timingClass": "one_off"
+   },
+   "label": {
+    "labelStatus": "unlabeled_pending_policy",
+    "policyVersion": "probe-handling-policy@2026-09-21",
+    "class": "defer",
+    "alternativeAcceptable": false
+   }
+  },
+  {
+   "kind": "JevProbeClassificationRecord",
+   "schemaVersion": 1,
+   "recordId": "jpc-0035",
+   "observationDate": "2026-08-14",
+   "source": "broker_observed",
+   "groupKind": "unique",
+   "split": "train",
+   "judgmentTimeInput": {
+    "artifactIdsCount": 0,
+    "payloadFilePresent": true,
+    "bundleFilesBand": "1",
+    "messageWordsBand": "21-100",
+    "requesterClass": "operator",
+    "timingClass": "one_off"
+   },
+   "label": {
+    "labelStatus": "unlabeled_pending_policy",
+    "policyVersion": "probe-handling-policy@2026-09-21",
+    "class": "defer",
+    "alternativeAcceptable": false
+   }
+  },
+  {
+   "kind": "JevProbeClassificationRecord",
+   "schemaVersion": 1,
+   "recordId": "jpc-0036",
+   "observationDate": "2026-08-14",
+   "source": "broker_observed",
+   "groupKind": "retry",
+   "split": "train",
+   "judgmentTimeInput": {
+    "artifactIdsCount": 0,
+    "payloadFilePresent": true,
+    "bundleFilesBand": "1",
+    "messageWordsBand": "21-100",
+    "requesterClass": "operator",
+    "timingClass": "one_off"
+   },
+   "label": {
+    "labelStatus": "unlabeled_pending_policy",
+    "policyVersion": "probe-handling-policy@2026-09-21",
+    "class": "defer",
+    "alternativeAcceptable": false
+   }
+  },
+  {
+   "kind": "JevProbeClassificationRecord",
+   "schemaVersion": 1,
+   "recordId": "jpc-0037",
+   "observationDate": "2026-08-14",
+   "source": "broker_observed",
+   "groupKind": "retry",
+   "split": "train",
+   "judgmentTimeInput": {
+    "artifactIdsCount": 0,
+    "payloadFilePresent": true,
+    "bundleFilesBand": "1",
+    "messageWordsBand": "21-100",
+    "requesterClass": "operator",
+    "timingClass": "one_off"
+   },
+   "label": {
+    "labelStatus": "unlabeled_pending_policy",
+    "policyVersion": "probe-handling-policy@2026-09-21",
+    "class": "defer",
+    "alternativeAcceptable": false
+   }
+  },
+  {
+   "kind": "JevProbeClassificationRecord",
+   "schemaVersion": 1,
+   "recordId": "jpc-0038",
+   "observationDate": "2026-08-14",
+   "source": "broker_observed",
+   "groupKind": "identical_work",
+   "split": "train",
+   "judgmentTimeInput": {
+    "artifactIdsCount": 0,
+    "payloadFilePresent": true,
+    "bundleFilesBand": "1",
+    "messageWordsBand": "21-100",
+    "requesterClass": "operator",
+    "timingClass": "recurring_identical"
+   },
+   "label": {
+    "labelStatus": "unlabeled_pending_policy",
+    "policyVersion": "probe-handling-policy@2026-09-21",
+    "class": "defer",
+    "alternativeAcceptable": false
+   }
+  },
+  {
+   "kind": "JevProbeClassificationRecord",
+   "schemaVersion": 1,
+   "recordId": "jpc-0039",
+   "observationDate": "2026-08-14",
+   "source": "broker_observed",
+   "groupKind": "identical_work",
+   "split": "train",
+   "judgmentTimeInput": {
+    "artifactIdsCount": 0,
+    "payloadFilePresent": true,
+    "bundleFilesBand": "1",
+    "messageWordsBand": "21-100",
+    "requesterClass": "operator",
+    "timingClass": "recurring_identical"
+   },
+   "label": {
+    "labelStatus": "unlabeled_pending_policy",
+    "policyVersion": "probe-handling-policy@2026-09-21",
+    "class": "defer",
+    "alternativeAcceptable": false
+   }
+  },
+  {
+   "kind": "JevProbeClassificationRecord",
+   "schemaVersion": 1,
+   "recordId": "jpc-0040",
+   "observationDate": "2026-08-14",
+   "source": "broker_observed",
+   "groupKind": "identical_work",
+   "split": "train",
+   "judgmentTimeInput": {
+    "artifactIdsCount": 0,
+    "payloadFilePresent": true,
+    "bundleFilesBand": "1",
+    "messageWordsBand": "21-100",
+    "requesterClass": "operator",
+    "timingClass": "recurring_identical"
+   },
+   "label": {
+    "labelStatus": "unlabeled_pending_policy",
+    "policyVersion": "probe-handling-policy@2026-09-21",
+    "class": "defer",
+    "alternativeAcceptable": false
+   }
+  },
+  {
+   "kind": "JevProbeClassificationRecord",
+   "schemaVersion": 1,
+   "recordId": "jpc-0041",
+   "observationDate": "2026-08-14",
+   "source": "broker_observed",
+   "groupKind": "unique",
+   "split": "train",
+   "judgmentTimeInput": {
+    "artifactIdsCount": 0,
+    "payloadFilePresent": true,
+    "bundleFilesBand": "1",
+    "messageWordsBand": "21-100",
+    "requesterClass": "operator",
+    "timingClass": "one_off"
+   },
+   "label": {
+    "labelStatus": "unlabeled_pending_policy",
+    "policyVersion": "probe-handling-policy@2026-09-21",
+    "class": "defer",
+    "alternativeAcceptable": false
+   }
+  },
+  {
+   "kind": "JevProbeClassificationRecord",
+   "schemaVersion": 1,
+   "recordId": "jpc-0042",
+   "observationDate": "2026-08-14",
+   "source": "broker_observed",
+   "groupKind": "unique",
+   "split": "train",
+   "judgmentTimeInput": {
+    "artifactIdsCount": 0,
+    "payloadFilePresent": true,
+    "bundleFilesBand": "1",
+    "messageWordsBand": "21-100",
+    "requesterClass": "operator",
+    "timingClass": "one_off"
+   },
+   "label": {
+    "labelStatus": "unlabeled_pending_policy",
+    "policyVersion": "probe-handling-policy@2026-09-21",
+    "class": "defer",
+    "alternativeAcceptable": false
+   }
+  },
+  {
+   "kind": "JevProbeClassificationRecord",
+   "schemaVersion": 1,
+   "recordId": "jpc-0043",
+   "observationDate": "2026-08-14",
+   "source": "broker_observed",
+   "groupKind": "unique",
+   "split": "train",
+   "judgmentTimeInput": {
+    "artifactIdsCount": 0,
+    "payloadFilePresent": true,
+    "bundleFilesBand": "1",
+    "messageWordsBand": "21-100",
+    "requesterClass": "operator",
+    "timingClass": "one_off"
+   },
+   "label": {
+    "labelStatus": "unlabeled_pending_policy",
+    "policyVersion": "probe-handling-policy@2026-09-21",
+    "class": "defer",
+    "alternativeAcceptable": false
+   }
+  },
+  {
+   "kind": "JevProbeClassificationRecord",
+   "schemaVersion": 1,
+   "recordId": "jpc-0044",
+   "observationDate": "2026-08-14",
+   "source": "broker_observed",
+   "groupKind": "unique",
+   "split": "train",
+   "judgmentTimeInput": {
+    "artifactIdsCount": 0,
+    "payloadFilePresent": true,
+    "bundleFilesBand": "1",
+    "messageWordsBand": "21-100",
+    "requesterClass": "operator",
+    "timingClass": "one_off"
+   },
+   "label": {
+    "labelStatus": "unlabeled_pending_policy",
+    "policyVersion": "probe-handling-policy@2026-09-21",
+    "class": "defer",
+    "alternativeAcceptable": false
+   }
+  },
+  {
+   "kind": "JevProbeClassificationRecord",
+   "schemaVersion": 1,
+   "recordId": "jpc-0045",
+   "observationDate": "2026-08-14",
+   "source": "broker_observed",
+   "groupKind": "unique",
+   "split": "train",
+   "judgmentTimeInput": {
+    "artifactIdsCount": 0,
+    "payloadFilePresent": true,
+    "bundleFilesBand": "1",
+    "messageWordsBand": "21-100",
+    "requesterClass": "operator",
+    "timingClass": "one_off"
+   },
+   "label": {
+    "labelStatus": "unlabeled_pending_policy",
+    "policyVersion": "probe-handling-policy@2026-09-21",
+    "class": "defer",
+    "alternativeAcceptable": false
+   }
+  },
+  {
+   "kind": "JevProbeClassificationRecord",
+   "schemaVersion": 1,
+   "recordId": "jpc-0046",
+   "observationDate": "2026-08-14",
+   "source": "broker_observed",
+   "groupKind": "identical_work",
+   "split": "train",
+   "judgmentTimeInput": {
+    "artifactIdsCount": 0,
+    "payloadFilePresent": true,
+    "bundleFilesBand": "1",
+    "messageWordsBand": "21-100",
+    "requesterClass": "operator",
+    "timingClass": "recurring_identical"
+   },
+   "label": {
+    "labelStatus": "unlabeled_pending_policy",
+    "policyVersion": "probe-handling-policy@2026-09-21",
+    "class": "defer",
+    "alternativeAcceptable": false
+   }
+  },
+  {
+   "kind": "JevProbeClassificationRecord",
+   "schemaVersion": 1,
+   "recordId": "jpc-0047",
+   "observationDate": "2026-08-14",
+   "source": "broker_observed",
+   "groupKind": "identical_work",
+   "split": "train",
+   "judgmentTimeInput": {
+    "artifactIdsCount": 0,
+    "payloadFilePresent": true,
+    "bundleFilesBand": "1",
+    "messageWordsBand": "21-100",
+    "requesterClass": "operator",
+    "timingClass": "recurring_identical"
+   },
+   "label": {
+    "labelStatus": "unlabeled_pending_policy",
+    "policyVersion": "probe-handling-policy@2026-09-21",
+    "class": "defer",
+    "alternativeAcceptable": false
+   }
+  },
+  {
+   "kind": "JevProbeClassificationRecord",
+   "schemaVersion": 1,
+   "recordId": "jpc-0048",
+   "observationDate": "2026-08-14",
+   "source": "broker_observed",
+   "groupKind": "identical_work",
+   "split": "train",
+   "judgmentTimeInput": {
+    "artifactIdsCount": 0,
+    "payloadFilePresent": true,
+    "bundleFilesBand": "1",
+    "messageWordsBand": "21-100",
+    "requesterClass": "operator",
+    "timingClass": "recurring_identical"
+   },
+   "label": {
+    "labelStatus": "unlabeled_pending_policy",
+    "policyVersion": "probe-handling-policy@2026-09-21",
+    "class": "defer",
+    "alternativeAcceptable": false
+   }
+  },
+  {
+   "kind": "JevProbeClassificationRecord",
+   "schemaVersion": 1,
+   "recordId": "jpc-0049",
+   "observationDate": "2026-08-14",
+   "source": "broker_observed",
+   "groupKind": "retry",
+   "split": "train",
+   "judgmentTimeInput": {
+    "artifactIdsCount": 0,
+    "payloadFilePresent": true,
+    "bundleFilesBand": "1",
+    "messageWordsBand": "21-100",
+    "requesterClass": "operator",
+    "timingClass": "one_off"
+   },
+   "label": {
+    "labelStatus": "unlabeled_pending_policy",
+    "policyVersion": "probe-handling-policy@2026-09-21",
+    "class": "defer",
+    "alternativeAcceptable": false
+   }
+  },
+  {
+   "kind": "JevProbeClassificationRecord",
+   "schemaVersion": 1,
+   "recordId": "jpc-0050",
+   "observationDate": "2026-08-14",
+   "source": "broker_observed",
+   "groupKind": "retry",
+   "split": "train",
+   "judgmentTimeInput": {
+    "artifactIdsCount": 0,
+    "payloadFilePresent": true,
+    "bundleFilesBand": "1",
+    "messageWordsBand": "21-100",
+    "requesterClass": "operator",
+    "timingClass": "one_off"
+   },
+   "label": {
+    "labelStatus": "unlabeled_pending_policy",
+    "policyVersion": "probe-handling-policy@2026-09-21",
+    "class": "defer",
+    "alternativeAcceptable": false
+   }
+  },
+  {
+   "kind": "JevProbeClassificationRecord",
+   "schemaVersion": 1,
+   "recordId": "jpc-0051",
+   "observationDate": "2026-08-14",
+   "source": "broker_observed",
+   "groupKind": "unique",
+   "split": "train",
+   "judgmentTimeInput": {
+    "artifactIdsCount": 0,
+    "payloadFilePresent": true,
+    "bundleFilesBand": "1",
+    "messageWordsBand": "21-100",
+    "requesterClass": "operator",
+    "timingClass": "one_off"
+   },
+   "label": {
+    "labelStatus": "unlabeled_pending_policy",
+    "policyVersion": "probe-handling-policy@2026-09-21",
+    "class": "defer",
+    "alternativeAcceptable": false
+   }
+  },
+  {
+   "kind": "JevProbeClassificationRecord",
+   "schemaVersion": 1,
+   "recordId": "jpc-0052",
+   "observationDate": "2026-08-14",
+   "source": "broker_observed",
+   "groupKind": "unique",
+   "split": "train",
+   "judgmentTimeInput": {
+    "artifactIdsCount": 0,
+    "payloadFilePresent": true,
+    "bundleFilesBand": "1",
+    "messageWordsBand": "21-100",
+    "requesterClass": "operator",
+    "timingClass": "one_off"
+   },
+   "label": {
+    "labelStatus": "unlabeled_pending_policy",
+    "policyVersion": "probe-handling-policy@2026-09-21",
+    "class": "defer",
+    "alternativeAcceptable": false
+   }
+  },
+  {
+   "kind": "JevProbeClassificationRecord",
+   "schemaVersion": 1,
+   "recordId": "jpc-0053",
+   "observationDate": "2026-08-15",
+   "source": "broker_observed",
+   "groupKind": "unique",
+   "split": "train",
+   "judgmentTimeInput": {
+    "artifactIdsCount": 0,
+    "payloadFilePresent": true,
+    "bundleFilesBand": "1",
+    "messageWordsBand": "21-100",
+    "requesterClass": "operator",
+    "timingClass": "one_off"
+   },
+   "label": {
+    "labelStatus": "unlabeled_pending_policy",
+    "policyVersion": "probe-handling-policy@2026-09-21",
+    "class": "defer",
+    "alternativeAcceptable": false
+   }
+  },
+  {
+   "kind": "JevProbeClassificationRecord",
+   "schemaVersion": 1,
+   "recordId": "jpc-0054",
+   "observationDate": "2026-08-15",
+   "source": "broker_observed",
+   "groupKind": "unique",
+   "split": "train",
+   "judgmentTimeInput": {
+    "artifactIdsCount": 0,
+    "payloadFilePresent": true,
+    "bundleFilesBand": "1",
+    "messageWordsBand": "21-100",
+    "requesterClass": "operator",
+    "timingClass": "one_off"
+   },
+   "label": {
+    "labelStatus": "unlabeled_pending_policy",
+    "policyVersion": "probe-handling-policy@2026-09-21",
+    "class": "defer",
+    "alternativeAcceptable": false
+   }
+  },
+  {
+   "kind": "JevProbeClassificationRecord",
+   "schemaVersion": 1,
+   "recordId": "jpc-0055",
+   "observationDate": "2026-08-15",
+   "source": "broker_observed",
+   "groupKind": "unique",
+   "split": "train",
+   "judgmentTimeInput": {
+    "artifactIdsCount": 0,
+    "payloadFilePresent": true,
+    "bundleFilesBand": "1",
+    "messageWordsBand": "21-100",
+    "requesterClass": "operator",
+    "timingClass": "one_off"
+   },
+   "label": {
+    "labelStatus": "unlabeled_pending_policy",
+    "policyVersion": "probe-handling-policy@2026-09-21",
+    "class": "defer",
+    "alternativeAcceptable": false
+   }
+  },
+  {
+   "kind": "JevProbeClassificationRecord",
+   "schemaVersion": 1,
+   "recordId": "jpc-0056",
+   "observationDate": "2026-08-16",
+   "source": "broker_observed",
+   "groupKind": "unique",
+   "split": "train",
+   "judgmentTimeInput": {
+    "artifactIdsCount": 0,
+    "payloadFilePresent": true,
+    "bundleFilesBand": "1",
+    "messageWordsBand": "21-100",
+    "requesterClass": "operator",
+    "timingClass": "one_off"
+   },
+   "label": {
+    "labelStatus": "unlabeled_pending_policy",
+    "policyVersion": "probe-handling-policy@2026-09-21",
+    "class": "defer",
+    "alternativeAcceptable": false
+   }
+  },
+  {
+   "kind": "JevProbeClassificationRecord",
+   "schemaVersion": 1,
+   "recordId": "jpc-0057",
+   "observationDate": "2026-08-16",
+   "source": "broker_observed",
+   "groupKind": "unique",
+   "split": "train",
+   "judgmentTimeInput": {
+    "artifactIdsCount": 0,
+    "payloadFilePresent": true,
+    "bundleFilesBand": "none",
+    "messageWordsBand": "21-100",
+    "requesterClass": "unknown",
+    "timingClass": "one_off"
+   },
+   "label": {
+    "labelStatus": "unlabeled_pending_policy",
+    "policyVersion": "probe-handling-policy@2026-09-21",
+    "class": "defer",
+    "alternativeAcceptable": false
+   }
+  },
+  {
+   "kind": "JevProbeClassificationRecord",
+   "schemaVersion": 1,
+   "recordId": "jpc-0058",
+   "observationDate": "2026-08-18",
+   "source": "broker_observed",
+   "groupKind": "unique",
+   "split": "train",
+   "judgmentTimeInput": {
+    "artifactIdsCount": 0,
+    "payloadFilePresent": true,
+    "bundleFilesBand": "1",
+    "messageWordsBand": "21-100",
+    "requesterClass": "operator",
+    "timingClass": "one_off"
+   },
+   "label": {
+    "labelStatus": "unlabeled_pending_policy",
+    "policyVersion": "probe-handling-policy@2026-09-21",
+    "class": "defer",
+    "alternativeAcceptable": false
+   }
+  },
+  {
+   "kind": "JevProbeClassificationRecord",
+   "schemaVersion": 1,
+   "recordId": "jpc-0059",
+   "observationDate": "2026-08-19",
+   "source": "broker_observed",
+   "groupKind": "retry",
+   "split": "train",
+   "judgmentTimeInput": {
+    "artifactIdsCount": 0,
+    "payloadFilePresent": true,
+    "bundleFilesBand": "2-5",
+    "messageWordsBand": "4-20",
+    "requesterClass": "operator",
+    "timingClass": "one_off"
+   },
+   "label": {
+    "labelStatus": "unlabeled_pending_policy",
+    "policyVersion": "probe-handling-policy@2026-09-21",
+    "class": "defer",
+    "alternativeAcceptable": false
+   }
+  },
+  {
+   "kind": "JevProbeClassificationRecord",
+   "schemaVersion": 1,
+   "recordId": "jpc-0060",
+   "observationDate": "2026-08-19",
+   "source": "broker_observed",
+   "groupKind": "retry",
+   "split": "train",
+   "judgmentTimeInput": {
+    "artifactIdsCount": 0,
+    "payloadFilePresent": true,
+    "bundleFilesBand": "2-5",
+    "messageWordsBand": "4-20",
+    "requesterClass": "operator",
+    "timingClass": "one_off"
+   },
+   "label": {
+    "labelStatus": "unlabeled_pending_policy",
+    "policyVersion": "probe-handling-policy@2026-09-21",
+    "class": "defer",
+    "alternativeAcceptable": false
+   }
+  },
+  {
+   "kind": "JevProbeClassificationRecord",
+   "schemaVersion": 1,
+   "recordId": "jpc-0061",
+   "observationDate": "2026-08-22",
+   "source": "broker_observed",
+   "groupKind": "identical_work",
+   "split": "train",
+   "judgmentTimeInput": {
+    "artifactIdsCount": 0,
+    "payloadFilePresent": true,
+    "bundleFilesBand": "1",
+    "messageWordsBand": "21-100",
+    "requesterClass": "agent",
+    "timingClass": "recurring_identical"
+   },
+   "label": {
+    "labelStatus": "unlabeled_pending_policy",
+    "policyVersion": "probe-handling-policy@2026-09-21",
+    "class": "defer",
+    "alternativeAcceptable": false
+   }
+  },
+  {
+   "kind": "JevProbeClassificationRecord",
+   "schemaVersion": 1,
+   "recordId": "jpc-0062",
+   "observationDate": "2026-08-22",
+   "source": "broker_observed",
+   "groupKind": "identical_work",
+   "split": "train",
+   "judgmentTimeInput": {
+    "artifactIdsCount": 0,
+    "payloadFilePresent": true,
+    "bundleFilesBand": "1",
+    "messageWordsBand": "21-100",
+    "requesterClass": "agent",
+    "timingClass": "recurring_identical"
+   },
+   "label": {
+    "labelStatus": "unlabeled_pending_policy",
+    "policyVersion": "probe-handling-policy@2026-09-21",
+    "class": "defer",
+    "alternativeAcceptable": false
+   }
+  },
+  {
+   "kind": "JevProbeClassificationRecord",
+   "schemaVersion": 1,
+   "recordId": "jpc-0063",
+   "observationDate": "2026-08-22",
+   "source": "broker_observed",
+   "groupKind": "identical_work",
+   "split": "train",
+   "judgmentTimeInput": {
+    "artifactIdsCount": 0,
+    "payloadFilePresent": true,
+    "bundleFilesBand": "1",
+    "messageWordsBand": "21-100",
+    "requesterClass": "agent",
+    "timingClass": "recurring_identical"
+   },
+   "label": {
+    "labelStatus": "unlabeled_pending_policy",
+    "policyVersion": "probe-handling-policy@2026-09-21",
+    "class": "defer",
+    "alternativeAcceptable": false
+   }
+  },
+  {
+   "kind": "JevProbeClassificationRecord",
+   "schemaVersion": 1,
+   "recordId": "jpc-0064",
+   "observationDate": "2026-08-22",
+   "source": "broker_observed",
+   "groupKind": "retry",
+   "split": "train",
+   "judgmentTimeInput": {
+    "artifactIdsCount": 0,
+    "payloadFilePresent": true,
+    "bundleFilesBand": "1",
+    "messageWordsBand": "21-100",
+    "requesterClass": "agent",
+    "timingClass": "one_off"
+   },
+   "label": {
+    "labelStatus": "unlabeled_pending_policy",
+    "policyVersion": "probe-handling-policy@2026-09-21",
+    "class": "defer",
+    "alternativeAcceptable": false
+   }
+  },
+  {
+   "kind": "JevProbeClassificationRecord",
+   "schemaVersion": 1,
+   "recordId": "jpc-0065",
+   "observationDate": "2026-08-22",
+   "source": "broker_observed",
+   "groupKind": "retry",
+   "split": "train",
+   "judgmentTimeInput": {
+    "artifactIdsCount": 0,
+    "payloadFilePresent": true,
+    "bundleFilesBand": "1",
+    "messageWordsBand": "21-100",
+    "requesterClass": "agent",
+    "timingClass": "one_off"
+   },
+   "label": {
+    "labelStatus": "unlabeled_pending_policy",
+    "policyVersion": "probe-handling-policy@2026-09-21",
+    "class": "defer",
+    "alternativeAcceptable": false
+   }
+  },
+  {
+   "kind": "JevProbeClassificationRecord",
+   "schemaVersion": 1,
+   "recordId": "jpc-0066",
+   "observationDate": "2026-08-22",
+   "source": "broker_observed",
+   "groupKind": "unique",
+   "split": "train",
+   "judgmentTimeInput": {
+    "artifactIdsCount": 0,
+    "payloadFilePresent": true,
+    "bundleFilesBand": "1",
+    "messageWordsBand": "21-100",
+    "requesterClass": "agent",
+    "timingClass": "one_off"
+   },
+   "label": {
+    "labelStatus": "unlabeled_pending_policy",
+    "policyVersion": "probe-handling-policy@2026-09-21",
+    "class": "defer",
+    "alternativeAcceptable": false
+   }
+  },
+  {
+   "kind": "JevProbeClassificationRecord",
+   "schemaVersion": 1,
+   "recordId": "jpc-0067",
+   "observationDate": "2026-08-22",
+   "source": "broker_observed",
+   "groupKind": "unique",
+   "split": "train",
+   "judgmentTimeInput": {
+    "artifactIdsCount": 0,
+    "payloadFilePresent": true,
+    "bundleFilesBand": "2-5",
+    "messageWordsBand": "21-100",
+    "requesterClass": "agent",
+    "timingClass": "one_off"
+   },
+   "label": {
+    "labelStatus": "unlabeled_pending_policy",
+    "policyVersion": "probe-handling-policy@2026-09-21",
+    "class": "defer",
+    "alternativeAcceptable": false
+   }
+  },
+  {
+   "kind": "JevProbeClassificationRecord",
+   "schemaVersion": 1,
+   "recordId": "jpc-0068",
+   "observationDate": "2026-08-22",
+   "source": "broker_observed",
+   "groupKind": "unique",
+   "split": "train",
+   "judgmentTimeInput": {
+    "artifactIdsCount": 0,
+    "payloadFilePresent": true,
+    "bundleFilesBand": "2-5",
+    "messageWordsBand": "21-100",
+    "requesterClass": "agent",
+    "timingClass": "one_off"
+   },
+   "label": {
+    "labelStatus": "unlabeled_pending_policy",
+    "policyVersion": "probe-handling-policy@2026-09-21",
+    "class": "defer",
+    "alternativeAcceptable": false
+   }
+  },
+  {
+   "kind": "JevProbeClassificationRecord",
+   "schemaVersion": 1,
+   "recordId": "jpc-0069",
+   "observationDate": "2026-08-22",
+   "source": "broker_observed",
+   "groupKind": "unique",
+   "split": "train",
+   "judgmentTimeInput": {
+    "artifactIdsCount": 0,
+    "payloadFilePresent": true,
+    "bundleFilesBand": "2-5",
+    "messageWordsBand": "21-100",
+    "requesterClass": "agent",
+    "timingClass": "one_off"
+   },
+   "label": {
+    "labelStatus": "unlabeled_pending_policy",
+    "policyVersion": "probe-handling-policy@2026-09-21",
+    "class": "defer",
+    "alternativeAcceptable": false
+   }
+  },
+  {
+   "kind": "JevProbeClassificationRecord",
+   "schemaVersion": 1,
+   "recordId": "jpc-0070",
+   "observationDate": "2026-08-22",
+   "source": "broker_observed",
+   "groupKind": "unique",
+   "split": "train",
+   "judgmentTimeInput": {
+    "artifactIdsCount": 0,
+    "payloadFilePresent": true,
+    "bundleFilesBand": "2-5",
+    "messageWordsBand": "21-100",
+    "requesterClass": "agent",
+    "timingClass": "one_off"
+   },
+   "label": {
+    "labelStatus": "unlabeled_pending_policy",
+    "policyVersion": "probe-handling-policy@2026-09-21",
+    "class": "defer",
+    "alternativeAcceptable": false
+   }
+  },
+  {
+   "kind": "JevProbeClassificationRecord",
+   "schemaVersion": 1,
+   "recordId": "jpc-0071",
+   "observationDate": "2026-08-22",
+   "source": "broker_observed",
+   "groupKind": "unique",
+   "split": "train",
+   "judgmentTimeInput": {
+    "artifactIdsCount": 0,
+    "payloadFilePresent": true,
+    "bundleFilesBand": "2-5",
+    "messageWordsBand": "21-100",
+    "requesterClass": "agent",
+    "timingClass": "one_off"
+   },
+   "label": {
+    "labelStatus": "unlabeled_pending_policy",
+    "policyVersion": "probe-handling-policy@2026-09-21",
+    "class": "defer",
+    "alternativeAcceptable": false
+   }
+  },
+  {
+   "kind": "JevProbeClassificationRecord",
+   "schemaVersion": 1,
+   "recordId": "jpc-0072",
+   "observationDate": "2026-08-22",
+   "source": "broker_observed",
+   "groupKind": "unique",
+   "split": "train",
+   "judgmentTimeInput": {
+    "artifactIdsCount": 0,
+    "payloadFilePresent": true,
+    "bundleFilesBand": "2-5",
+    "messageWordsBand": "21-100",
+    "requesterClass": "agent",
+    "timingClass": "one_off"
+   },
+   "label": {
+    "labelStatus": "unlabeled_pending_policy",
+    "policyVersion": "probe-handling-policy@2026-09-21",
+    "class": "defer",
+    "alternativeAcceptable": false
+   }
+  },
+  {
+   "kind": "JevProbeClassificationRecord",
+   "schemaVersion": 1,
+   "recordId": "jpc-0073",
+   "observationDate": "2026-08-22",
+   "source": "broker_observed",
+   "groupKind": "unique",
+   "split": "train",
+   "judgmentTimeInput": {
+    "artifactIdsCount": 0,
+    "payloadFilePresent": true,
+    "bundleFilesBand": "2-5",
+    "messageWordsBand": "21-100",
+    "requesterClass": "agent",
+    "timingClass": "one_off"
+   },
+   "label": {
+    "labelStatus": "unlabeled_pending_policy",
+    "policyVersion": "probe-handling-policy@2026-09-21",
+    "class": "defer",
+    "alternativeAcceptable": false
+   }
+  },
+  {
+   "kind": "JevProbeClassificationRecord",
+   "schemaVersion": 1,
+   "recordId": "jpc-0074",
+   "observationDate": "2026-08-22",
+   "source": "broker_observed",
+   "groupKind": "unique",
+   "split": "train",
+   "judgmentTimeInput": {
+    "artifactIdsCount": 0,
+    "payloadFilePresent": true,
+    "bundleFilesBand": "2-5",
+    "messageWordsBand": "21-100",
+    "requesterClass": "agent",
+    "timingClass": "one_off"
+   },
+   "label": {
+    "labelStatus": "unlabeled_pending_policy",
+    "policyVersion": "probe-handling-policy@2026-09-21",
+    "class": "defer",
+    "alternativeAcceptable": false
+   }
+  },
+  {
+   "kind": "JevProbeClassificationRecord",
+   "schemaVersion": 1,
+   "recordId": "jpc-0075",
+   "observationDate": "2026-08-22",
+   "source": "broker_observed",
+   "groupKind": "identical_work",
+   "split": "train",
+   "judgmentTimeInput": {
+    "artifactIdsCount": 0,
+    "payloadFilePresent": true,
+    "bundleFilesBand": "2-5",
+    "messageWordsBand": "21-100",
+    "requesterClass": "agent",
+    "timingClass": "recurring_identical"
+   },
+   "label": {
+    "labelStatus": "unlabeled_pending_policy",
+    "policyVersion": "probe-handling-policy@2026-09-21",
+    "class": "defer",
+    "alternativeAcceptable": false
+   }
+  },
+  {
+   "kind": "JevProbeClassificationRecord",
+   "schemaVersion": 1,
+   "recordId": "jpc-0076",
+   "observationDate": "2026-08-22",
+   "source": "broker_observed",
+   "groupKind": "identical_work",
+   "split": "train",
+   "judgmentTimeInput": {
+    "artifactIdsCount": 0,
+    "payloadFilePresent": true,
+    "bundleFilesBand": "2-5",
+    "messageWordsBand": "21-100",
+    "requesterClass": "agent",
+    "timingClass": "recurring_identical"
+   },
+   "label": {
+    "labelStatus": "unlabeled_pending_policy",
+    "policyVersion": "probe-handling-policy@2026-09-21",
+    "class": "defer",
+    "alternativeAcceptable": false
+   }
+  },
+  {
+   "kind": "JevProbeClassificationRecord",
+   "schemaVersion": 1,
+   "recordId": "jpc-0077",
+   "observationDate": "2026-08-22",
+   "source": "broker_observed",
+   "groupKind": "identical_work",
+   "split": "train",
+   "judgmentTimeInput": {
+    "artifactIdsCount": 0,
+    "payloadFilePresent": true,
+    "bundleFilesBand": "2-5",
+    "messageWordsBand": "21-100",
+    "requesterClass": "agent",
+    "timingClass": "recurring_identical"
+   },
+   "label": {
+    "labelStatus": "unlabeled_pending_policy",
+    "policyVersion": "probe-handling-policy@2026-09-21",
+    "class": "defer",
+    "alternativeAcceptable": false
+   }
+  },
+  {
+   "kind": "JevProbeClassificationRecord",
+   "schemaVersion": 1,
+   "recordId": "jpc-0078",
+   "observationDate": "2026-08-22",
+   "source": "broker_observed",
+   "groupKind": "unique",
+   "split": "train",
+   "judgmentTimeInput": {
+    "artifactIdsCount": 0,
+    "payloadFilePresent": true,
+    "bundleFilesBand": "2-5",
+    "messageWordsBand": "21-100",
+    "requesterClass": "agent",
+    "timingClass": "one_off"
+   },
+   "label": {
+    "labelStatus": "unlabeled_pending_policy",
+    "policyVersion": "probe-handling-policy@2026-09-21",
+    "class": "defer",
+    "alternativeAcceptable": false
+   }
+  },
+  {
+   "kind": "JevProbeClassificationRecord",
+   "schemaVersion": 1,
+   "recordId": "jpc-0079",
+   "observationDate": "2026-08-22",
+   "source": "broker_observed",
+   "groupKind": "unique",
+   "split": "train",
+   "judgmentTimeInput": {
+    "artifactIdsCount": 0,
+    "payloadFilePresent": true,
+    "bundleFilesBand": "2-5",
+    "messageWordsBand": "21-100",
+    "requesterClass": "agent",
+    "timingClass": "one_off"
+   },
+   "label": {
+    "labelStatus": "unlabeled_pending_policy",
+    "policyVersion": "probe-handling-policy@2026-09-21",
+    "class": "defer",
+    "alternativeAcceptable": false
+   }
+  },
+  {
+   "kind": "JevProbeClassificationRecord",
+   "schemaVersion": 1,
+   "recordId": "jpc-0080",
+   "observationDate": "2026-08-22",
+   "source": "broker_observed",
+   "groupKind": "unique",
+   "split": "train",
+   "judgmentTimeInput": {
+    "artifactIdsCount": 0,
+    "payloadFilePresent": true,
+    "bundleFilesBand": "2-5",
+    "messageWordsBand": "21-100",
+    "requesterClass": "agent",
+    "timingClass": "one_off"
+   },
+   "label": {
+    "labelStatus": "unlabeled_pending_policy",
+    "policyVersion": "probe-handling-policy@2026-09-21",
+    "class": "defer",
+    "alternativeAcceptable": false
+   }
+  },
+  {
+   "kind": "JevProbeClassificationRecord",
+   "schemaVersion": 1,
+   "recordId": "jpc-0081",
+   "observationDate": "2026-08-22",
+   "source": "broker_observed",
+   "groupKind": "unique",
+   "split": "train",
+   "judgmentTimeInput": {
+    "artifactIdsCount": 0,
+    "payloadFilePresent": true,
+    "bundleFilesBand": "2-5",
+    "messageWordsBand": "21-100",
+    "requesterClass": "agent",
+    "timingClass": "one_off"
+   },
+   "label": {
+    "labelStatus": "unlabeled_pending_policy",
+    "policyVersion": "probe-handling-policy@2026-09-21",
+    "class": "defer",
+    "alternativeAcceptable": false
+   }
+  },
+  {
+   "kind": "JevProbeClassificationRecord",
+   "schemaVersion": 1,
+   "recordId": "jpc-0082",
+   "observationDate": "2026-08-22",
+   "source": "broker_observed",
+   "groupKind": "unique",
+   "split": "train",
+   "judgmentTimeInput": {
+    "artifactIdsCount": 0,
+    "payloadFilePresent": true,
+    "bundleFilesBand": "6+",
+    "messageWordsBand": "21-100",
+    "requesterClass": "agent",
+    "timingClass": "one_off"
+   },
+   "label": {
+    "labelStatus": "unlabeled_pending_policy",
+    "policyVersion": "probe-handling-policy@2026-09-21",
+    "class": "defer",
+    "alternativeAcceptable": false
+   }
+  },
+  {
+   "kind": "JevProbeClassificationRecord",
+   "schemaVersion": 1,
+   "recordId": "jpc-0083",
+   "observationDate": "2026-08-31",
+   "source": "broker_observed",
+   "groupKind": "retry",
+   "split": "train",
+   "judgmentTimeInput": {
+    "artifactIdsCount": 0,
+    "payloadFilePresent": true,
+    "bundleFilesBand": "1",
+    "messageWordsBand": "21-100",
+    "requesterClass": "agent",
+    "timingClass": "one_off"
+   },
+   "label": {
+    "labelStatus": "unlabeled_pending_policy",
+    "policyVersion": "probe-handling-policy@2026-09-21",
+    "class": "defer",
+    "alternativeAcceptable": false
+   }
+  },
+  {
+   "kind": "JevProbeClassificationRecord",
+   "schemaVersion": 1,
+   "recordId": "jpc-0084",
+   "observationDate": "2026-08-31",
+   "source": "broker_observed",
+   "groupKind": "retry",
+   "split": "train",
+   "judgmentTimeInput": {
+    "artifactIdsCount": 0,
+    "payloadFilePresent": true,
+    "bundleFilesBand": "1",
+    "messageWordsBand": "21-100",
+    "requesterClass": "agent",
+    "timingClass": "one_off"
+   },
+   "label": {
+    "labelStatus": "unlabeled_pending_policy",
+    "policyVersion": "probe-handling-policy@2026-09-21",
+    "class": "defer",
+    "alternativeAcceptable": false
+   }
+  },
+  {
+   "kind": "JevProbeClassificationRecord",
+   "schemaVersion": 1,
+   "recordId": "jpc-0085",
+   "observationDate": "2026-08-31",
+   "source": "broker_observed",
+   "groupKind": "retry",
+   "split": "train",
+   "judgmentTimeInput": {
+    "artifactIdsCount": 0,
+    "payloadFilePresent": true,
+    "bundleFilesBand": "1",
+    "messageWordsBand": "21-100",
+    "requesterClass": "agent",
+    "timingClass": "one_off"
+   },
+   "label": {
+    "labelStatus": "unlabeled_pending_policy",
+    "policyVersion": "probe-handling-policy@2026-09-21",
+    "class": "defer",
+    "alternativeAcceptable": false
+   }
+  },
+  {
+   "kind": "JevProbeClassificationRecord",
+   "schemaVersion": 1,
+   "recordId": "jpc-0086",
+   "observationDate": "2026-08-31",
+   "source": "broker_observed",
+   "groupKind": "retry",
+   "split": "train",
+   "judgmentTimeInput": {
+    "artifactIdsCount": 0,
+    "payloadFilePresent": true,
+    "bundleFilesBand": "1",
+    "messageWordsBand": "21-100",
+    "requesterClass": "agent",
+    "timingClass": "one_off"
+   },
+   "label": {
+    "labelStatus": "unlabeled_pending_policy",
+    "policyVersion": "probe-handling-policy@2026-09-21",
+    "class": "defer",
+    "alternativeAcceptable": false
+   }
+  },
+  {
+   "kind": "JevProbeClassificationRecord",
+   "schemaVersion": 1,
+   "recordId": "jpc-0087",
+   "observationDate": "2026-08-31",
+   "source": "broker_observed",
+   "groupKind": "unique",
+   "split": "train",
+   "judgmentTimeInput": {
+    "artifactIdsCount": 0,
+    "payloadFilePresent": true,
+    "bundleFilesBand": "1",
+    "messageWordsBand": "21-100",
+    "requesterClass": "agent",
+    "timingClass": "one_off"
+   },
+   "label": {
+    "labelStatus": "unlabeled_pending_policy",
+    "policyVersion": "probe-handling-policy@2026-09-21",
+    "class": "defer",
+    "alternativeAcceptable": false
+   }
+  },
+  {
+   "kind": "JevProbeClassificationRecord",
+   "schemaVersion": 1,
+   "recordId": "jpc-0088",
+   "observationDate": "2026-08-31",
+   "source": "broker_observed",
+   "groupKind": "unique",
+   "split": "train",
+   "judgmentTimeInput": {
+    "artifactIdsCount": 0,
+    "payloadFilePresent": true,
+    "bundleFilesBand": "2-5",
+    "messageWordsBand": "100+",
+    "requesterClass": "agent",
+    "timingClass": "one_off"
+   },
+   "label": {
+    "labelStatus": "unlabeled_pending_policy",
+    "policyVersion": "probe-handling-policy@2026-09-21",
+    "class": "defer",
+    "alternativeAcceptable": false
+   }
+  },
+  {
+   "kind": "JevProbeClassificationRecord",
+   "schemaVersion": 1,
+   "recordId": "jpc-0089",
+   "observationDate": "2026-08-31",
+   "source": "broker_observed",
+   "groupKind": "unique",
+   "split": "train",
+   "judgmentTimeInput": {
+    "artifactIdsCount": 0,
+    "payloadFilePresent": true,
+    "bundleFilesBand": "2-5",
+    "messageWordsBand": "100+",
+    "requesterClass": "agent",
+    "timingClass": "one_off"
+   },
+   "label": {
+    "labelStatus": "unlabeled_pending_policy",
+    "policyVersion": "probe-handling-policy@2026-09-21",
+    "class": "defer",
+    "alternativeAcceptable": false
+   }
+  },
+  {
+   "kind": "JevProbeClassificationRecord",
+   "schemaVersion": 1,
+   "recordId": "jpc-0090",
+   "observationDate": "2026-08-31",
+   "source": "broker_observed",
+   "groupKind": "unique",
+   "split": "train",
+   "judgmentTimeInput": {
+    "artifactIdsCount": 0,
+    "payloadFilePresent": true,
+    "bundleFilesBand": "2-5",
+    "messageWordsBand": "100+",
+    "requesterClass": "agent",
+    "timingClass": "one_off"
+   },
+   "label": {
+    "labelStatus": "unlabeled_pending_policy",
+    "policyVersion": "probe-handling-policy@2026-09-21",
+    "class": "defer",
+    "alternativeAcceptable": false
+   }
+  },
+  {
+   "kind": "JevProbeClassificationRecord",
+   "schemaVersion": 1,
+   "recordId": "jpc-0091",
+   "observationDate": "2026-08-31",
+   "source": "broker_observed",
+   "groupKind": "unique",
+   "split": "train",
+   "judgmentTimeInput": {
+    "artifactIdsCount": 0,
+    "payloadFilePresent": true,
+    "bundleFilesBand": "2-5",
+    "messageWordsBand": "100+",
+    "requesterClass": "agent",
+    "timingClass": "one_off"
+   },
+   "label": {
+    "labelStatus": "unlabeled_pending_policy",
+    "policyVersion": "probe-handling-policy@2026-09-21",
+    "class": "defer",
+    "alternativeAcceptable": false
+   }
+  },
+  {
+   "kind": "JevProbeClassificationRecord",
+   "schemaVersion": 1,
+   "recordId": "jpc-0092",
+   "observationDate": "2026-08-31",
+   "source": "broker_observed",
+   "groupKind": "unique",
+   "split": "train",
+   "judgmentTimeInput": {
+    "artifactIdsCount": 0,
+    "payloadFilePresent": true,
+    "bundleFilesBand": "1",
+    "messageWordsBand": "100+",
+    "requesterClass": "agent",
+    "timingClass": "one_off"
+   },
+   "label": {
+    "labelStatus": "unlabeled_pending_policy",
+    "policyVersion": "probe-handling-policy@2026-09-21",
+    "class": "defer",
+    "alternativeAcceptable": false
+   }
+  },
+  {
+   "kind": "JevProbeClassificationRecord",
+   "schemaVersion": 1,
+   "recordId": "jpc-0093",
+   "observationDate": "2026-08-31",
+   "source": "broker_observed",
+   "groupKind": "unique",
+   "split": "train",
+   "judgmentTimeInput": {
+    "artifactIdsCount": 0,
+    "payloadFilePresent": true,
+    "bundleFilesBand": "2-5",
+    "messageWordsBand": "100+",
+    "requesterClass": "agent",
+    "timingClass": "one_off"
+   },
+   "label": {
+    "labelStatus": "unlabeled_pending_policy",
+    "policyVersion": "probe-handling-policy@2026-09-21",
+    "class": "defer",
+    "alternativeAcceptable": false
+   }
+  },
+  {
+   "kind": "JevProbeClassificationRecord",
+   "schemaVersion": 1,
+   "recordId": "jpc-0094",
+   "observationDate": "2026-08-31",
+   "source": "broker_observed",
+   "groupKind": "unique",
+   "split": "train",
+   "judgmentTimeInput": {
+    "artifactIdsCount": 0,
+    "payloadFilePresent": true,
+    "bundleFilesBand": "2-5",
+    "messageWordsBand": "100+",
+    "requesterClass": "agent",
+    "timingClass": "one_off"
+   },
+   "label": {
+    "labelStatus": "unlabeled_pending_policy",
+    "policyVersion": "probe-handling-policy@2026-09-21",
+    "class": "defer",
+    "alternativeAcceptable": false
+   }
+  },
+  {
+   "kind": "JevProbeClassificationRecord",
+   "schemaVersion": 1,
+   "recordId": "jpc-0095",
+   "observationDate": "2026-08-31",
+   "source": "broker_observed",
+   "groupKind": "unique",
+   "split": "train",
+   "judgmentTimeInput": {
+    "artifactIdsCount": 0,
+    "payloadFilePresent": true,
+    "bundleFilesBand": "2-5",
+    "messageWordsBand": "100+",
+    "requesterClass": "agent",
+    "timingClass": "one_off"
+   },
+   "label": {
+    "labelStatus": "unlabeled_pending_policy",
+    "policyVersion": "probe-handling-policy@2026-09-21",
+    "class": "defer",
+    "alternativeAcceptable": false
+   }
+  },
+  {
+   "kind": "JevProbeClassificationRecord",
+   "schemaVersion": 1,
+   "recordId": "jpc-0096",
+   "observationDate": "2026-08-31",
+   "source": "broker_observed",
+   "groupKind": "unique",
+   "split": "train",
+   "judgmentTimeInput": {
+    "artifactIdsCount": 0,
+    "payloadFilePresent": true,
+    "bundleFilesBand": "2-5",
+    "messageWordsBand": "100+",
+    "requesterClass": "agent",
+    "timingClass": "one_off"
+   },
+   "label": {
+    "labelStatus": "unlabeled_pending_policy",
+    "policyVersion": "probe-handling-policy@2026-09-21",
+    "class": "defer",
+    "alternativeAcceptable": false
+   }
+  },
+  {
+   "kind": "JevProbeClassificationRecord",
+   "schemaVersion": 1,
+   "recordId": "jpc-0097",
+   "observationDate": "2026-08-31",
+   "source": "broker_observed",
+   "groupKind": "unique",
+   "split": "train",
+   "judgmentTimeInput": {
+    "artifactIdsCount": 0,
+    "payloadFilePresent": true,
+    "bundleFilesBand": "2-5",
+    "messageWordsBand": "100+",
+    "requesterClass": "agent",
+    "timingClass": "one_off"
+   },
+   "label": {
+    "labelStatus": "unlabeled_pending_policy",
+    "policyVersion": "probe-handling-policy@2026-09-21",
+    "class": "defer",
+    "alternativeAcceptable": false
+   }
+  },
+  {
+   "kind": "JevProbeClassificationRecord",
+   "schemaVersion": 1,
+   "recordId": "jpc-0098",
+   "observationDate": "2026-08-31",
+   "source": "broker_observed",
+   "groupKind": "unique",
+   "split": "train",
+   "judgmentTimeInput": {
+    "artifactIdsCount": 0,
+    "payloadFilePresent": true,
+    "bundleFilesBand": "2-5",
+    "messageWordsBand": "100+",
+    "requesterClass": "agent",
+    "timingClass": "one_off"
+   },
+   "label": {
+    "labelStatus": "unlabeled_pending_policy",
+    "policyVersion": "probe-handling-policy@2026-09-21",
+    "class": "defer",
+    "alternativeAcceptable": false
+   }
+  },
+  {
+   "kind": "JevProbeClassificationRecord",
+   "schemaVersion": 1,
+   "recordId": "jpc-0099",
+   "observationDate": "2026-09-02",
+   "source": "broker_observed",
+   "groupKind": "retry",
+   "split": "train",
+   "judgmentTimeInput": {
+    "artifactIdsCount": 0,
+    "payloadFilePresent": true,
+    "bundleFilesBand": "2-5",
+    "messageWordsBand": "100+",
+    "requesterClass": "agent",
+    "timingClass": "one_off"
+   },
+   "label": {
+    "labelStatus": "unlabeled_pending_policy",
+    "policyVersion": "probe-handling-policy@2026-09-21",
+    "class": "defer",
+    "alternativeAcceptable": false
+   }
+  },
+  {
+   "kind": "JevProbeClassificationRecord",
+   "schemaVersion": 1,
+   "recordId": "jpc-0100",
+   "observationDate": "2026-09-02",
+   "source": "broker_observed",
+   "groupKind": "retry",
+   "split": "train",
+   "judgmentTimeInput": {
+    "artifactIdsCount": 0,
+    "payloadFilePresent": true,
+    "bundleFilesBand": "2-5",
+    "messageWordsBand": "100+",
+    "requesterClass": "agent",
+    "timingClass": "one_off"
+   },
+   "label": {
+    "labelStatus": "unlabeled_pending_policy",
+    "policyVersion": "probe-handling-policy@2026-09-21",
+    "class": "defer",
+    "alternativeAcceptable": false
+   }
+  },
+  {
+   "kind": "JevProbeClassificationRecord",
+   "schemaVersion": 1,
+   "recordId": "jpc-0101",
+   "observationDate": "2026-09-04",
+   "source": "broker_observed",
+   "groupKind": "identical_work",
+   "split": "train",
+   "judgmentTimeInput": {
+    "artifactIdsCount": 0,
+    "payloadFilePresent": true,
+    "bundleFilesBand": "2-5",
+    "messageWordsBand": "100+",
+    "requesterClass": "operator",
+    "timingClass": "recurring_identical"
+   },
+   "label": {
+    "labelStatus": "unlabeled_pending_policy",
+    "policyVersion": "probe-handling-policy@2026-09-21",
+    "class": "defer",
+    "alternativeAcceptable": false
+   }
+  },
+  {
+   "kind": "JevProbeClassificationRecord",
+   "schemaVersion": 1,
+   "recordId": "jpc-0102",
+   "observationDate": "2026-09-04",
+   "source": "broker_observed",
+   "groupKind": "identical_work",
+   "split": "train",
+   "judgmentTimeInput": {
+    "artifactIdsCount": 0,
+    "payloadFilePresent": true,
+    "bundleFilesBand": "2-5",
+    "messageWordsBand": "100+",
+    "requesterClass": "operator",
+    "timingClass": "recurring_identical"
+   },
+   "label": {
+    "labelStatus": "unlabeled_pending_policy",
+    "policyVersion": "probe-handling-policy@2026-09-21",
+    "class": "defer",
+    "alternativeAcceptable": false
+   }
+  },
+  {
+   "kind": "JevProbeClassificationRecord",
+   "schemaVersion": 1,
+   "recordId": "jpc-0103",
+   "observationDate": "2026-09-04",
+   "source": "broker_observed",
+   "groupKind": "identical_work",
+   "split": "train",
+   "judgmentTimeInput": {
+    "artifactIdsCount": 0,
+    "payloadFilePresent": true,
+    "bundleFilesBand": "2-5",
+    "messageWordsBand": "100+",
+    "requesterClass": "operator",
+    "timingClass": "recurring_identical"
+   },
+   "label": {
+    "labelStatus": "unlabeled_pending_policy",
+    "policyVersion": "probe-handling-policy@2026-09-21",
+    "class": "defer",
+    "alternativeAcceptable": false
+   }
+  },
+  {
+   "kind": "JevProbeClassificationRecord",
+   "schemaVersion": 1,
+   "recordId": "jpc-0104",
+   "observationDate": "2026-09-04",
+   "source": "broker_observed",
+   "groupKind": "unique",
+   "split": "train",
+   "judgmentTimeInput": {
+    "artifactIdsCount": 0,
+    "payloadFilePresent": true,
+    "bundleFilesBand": "2-5",
+    "messageWordsBand": "100+",
+    "requesterClass": "operator",
+    "timingClass": "one_off"
+   },
+   "label": {
+    "labelStatus": "unlabeled_pending_policy",
+    "policyVersion": "probe-handling-policy@2026-09-21",
+    "class": "defer",
+    "alternativeAcceptable": false
+   }
+  },
+  {
+   "kind": "JevProbeClassificationRecord",
+   "schemaVersion": 1,
+   "recordId": "jpc-0105",
+   "observationDate": "2026-09-04",
+   "source": "broker_observed",
+   "groupKind": "unique",
+   "split": "train",
+   "judgmentTimeInput": {
+    "artifactIdsCount": 0,
+    "payloadFilePresent": true,
+    "bundleFilesBand": "2-5",
+    "messageWordsBand": "100+",
+    "requesterClass": "operator",
+    "timingClass": "one_off"
+   },
+   "label": {
+    "labelStatus": "unlabeled_pending_policy",
+    "policyVersion": "probe-handling-policy@2026-09-21",
+    "class": "defer",
+    "alternativeAcceptable": false
+   }
+  },
+  {
+   "kind": "JevProbeClassificationRecord",
+   "schemaVersion": 1,
+   "recordId": "jpc-0106",
+   "observationDate": "2026-09-04",
+   "source": "broker_observed",
+   "groupKind": "unique",
+   "split": "train",
+   "judgmentTimeInput": {
+    "artifactIdsCount": 0,
+    "payloadFilePresent": true,
+    "bundleFilesBand": "1",
+    "messageWordsBand": "21-100",
+    "requesterClass": "agent",
+    "timingClass": "one_off"
+   },
+   "label": {
+    "labelStatus": "unlabeled_pending_policy",
+    "policyVersion": "probe-handling-policy@2026-09-21",
+    "class": "defer",
+    "alternativeAcceptable": false
+   }
+  },
+  {
+   "kind": "JevProbeClassificationRecord",
+   "schemaVersion": 1,
+   "recordId": "jpc-0107",
+   "observationDate": "2026-09-04",
+   "source": "broker_observed",
+   "groupKind": "unique",
+   "split": "train",
+   "judgmentTimeInput": {
+    "artifactIdsCount": 0,
+    "payloadFilePresent": true,
+    "bundleFilesBand": "1",
+    "messageWordsBand": "21-100",
+    "requesterClass": "agent",
+    "timingClass": "one_off"
+   },
+   "label": {
+    "labelStatus": "unlabeled_pending_policy",
+    "policyVersion": "probe-handling-policy@2026-09-21",
+    "class": "defer",
+    "alternativeAcceptable": false
+   }
+  },
+  {
+   "kind": "JevProbeClassificationRecord",
+   "schemaVersion": 1,
+   "recordId": "jpc-0108",
+   "observationDate": "2026-09-04",
+   "source": "broker_observed",
+   "groupKind": "unique",
+   "split": "train",
+   "judgmentTimeInput": {
+    "artifactIdsCount": 0,
+    "payloadFilePresent": true,
+    "bundleFilesBand": "1",
+    "messageWordsBand": "21-100",
+    "requesterClass": "agent",
+    "timingClass": "one_off"
+   },
+   "label": {
+    "labelStatus": "unlabeled_pending_policy",
+    "policyVersion": "probe-handling-policy@2026-09-21",
+    "class": "defer",
+    "alternativeAcceptable": false
+   }
+  },
+  {
+   "kind": "JevProbeClassificationRecord",
+   "schemaVersion": 1,
+   "recordId": "jpc-0109",
+   "observationDate": "2026-09-04",
+   "source": "broker_observed",
+   "groupKind": "retry",
+   "split": "train",
+   "judgmentTimeInput": {
+    "artifactIdsCount": 0,
+    "payloadFilePresent": true,
+    "bundleFilesBand": "1",
+    "messageWordsBand": "21-100",
+    "requesterClass": "agent",
+    "timingClass": "one_off"
+   },
+   "label": {
+    "labelStatus": "unlabeled_pending_policy",
+    "policyVersion": "probe-handling-policy@2026-09-21",
+    "class": "defer",
+    "alternativeAcceptable": false
+   }
+  },
+  {
+   "kind": "JevProbeClassificationRecord",
+   "schemaVersion": 1,
+   "recordId": "jpc-0110",
+   "observationDate": "2026-09-04",
+   "source": "broker_observed",
+   "groupKind": "retry",
+   "split": "train",
+   "judgmentTimeInput": {
+    "artifactIdsCount": 0,
+    "payloadFilePresent": true,
+    "bundleFilesBand": "1",
+    "messageWordsBand": "21-100",
+    "requesterClass": "agent",
+    "timingClass": "one_off"
+   },
+   "label": {
+    "labelStatus": "unlabeled_pending_policy",
+    "policyVersion": "probe-handling-policy@2026-09-21",
+    "class": "defer",
+    "alternativeAcceptable": false
+   }
+  },
+  {
+   "kind": "JevProbeClassificationRecord",
+   "schemaVersion": 1,
+   "recordId": "jpc-0111",
+   "observationDate": "2026-09-04",
+   "source": "broker_observed",
+   "groupKind": "unique",
+   "split": "train",
+   "judgmentTimeInput": {
+    "artifactIdsCount": 0,
+    "payloadFilePresent": true,
+    "bundleFilesBand": "1",
+    "messageWordsBand": "21-100",
+    "requesterClass": "agent",
+    "timingClass": "one_off"
+   },
+   "label": {
+    "labelStatus": "unlabeled_pending_policy",
+    "policyVersion": "probe-handling-policy@2026-09-21",
+    "class": "defer",
+    "alternativeAcceptable": false
+   }
+  },
+  {
+   "kind": "JevProbeClassificationRecord",
+   "schemaVersion": 1,
+   "recordId": "jpc-0112",
+   "observationDate": "2026-09-04",
+   "source": "broker_observed",
+   "groupKind": "unique",
+   "split": "train",
+   "judgmentTimeInput": {
+    "artifactIdsCount": 0,
+    "payloadFilePresent": true,
+    "bundleFilesBand": "2-5",
+    "messageWordsBand": "100+",
+    "requesterClass": "operator",
+    "timingClass": "one_off"
+   },
+   "label": {
+    "labelStatus": "unlabeled_pending_policy",
+    "policyVersion": "probe-handling-policy@2026-09-21",
+    "class": "defer",
+    "alternativeAcceptable": false
+   }
+  },
+  {
+   "kind": "JevProbeClassificationRecord",
+   "schemaVersion": 1,
+   "recordId": "jpc-0113",
+   "observationDate": "2026-09-04",
+   "source": "broker_observed",
+   "groupKind": "unique",
+   "split": "train",
+   "judgmentTimeInput": {
+    "artifactIdsCount": 0,
+    "payloadFilePresent": true,
+    "bundleFilesBand": "2-5",
+    "messageWordsBand": "100+",
+    "requesterClass": "operator",
+    "timingClass": "one_off"
+   },
+   "label": {
+    "labelStatus": "unlabeled_pending_policy",
+    "policyVersion": "probe-handling-policy@2026-09-21",
+    "class": "defer",
+    "alternativeAcceptable": false
+   }
+  },
+  {
+   "kind": "JevProbeClassificationRecord",
+   "schemaVersion": 1,
+   "recordId": "jpc-0114",
+   "observationDate": "2026-09-04",
+   "source": "broker_observed",
+   "groupKind": "unique",
+   "split": "train",
+   "judgmentTimeInput": {
+    "artifactIdsCount": 0,
+    "payloadFilePresent": true,
+    "bundleFilesBand": "2-5",
+    "messageWordsBand": "100+",
+    "requesterClass": "operator",
+    "timingClass": "one_off"
+   },
+   "label": {
+    "labelStatus": "unlabeled_pending_policy",
+    "policyVersion": "probe-handling-policy@2026-09-21",
+    "class": "defer",
+    "alternativeAcceptable": false
+   }
+  },
+  {
+   "kind": "JevProbeClassificationRecord",
+   "schemaVersion": 1,
+   "recordId": "jpc-0115",
+   "observationDate": "2026-09-04",
+   "source": "broker_observed",
+   "groupKind": "unique",
+   "split": "train",
+   "judgmentTimeInput": {
+    "artifactIdsCount": 0,
+    "payloadFilePresent": true,
+    "bundleFilesBand": "2-5",
+    "messageWordsBand": "100+",
+    "requesterClass": "operator",
+    "timingClass": "one_off"
+   },
+   "label": {
+    "labelStatus": "unlabeled_pending_policy",
+    "policyVersion": "probe-handling-policy@2026-09-21",
+    "class": "defer",
+    "alternativeAcceptable": false
+   }
+  },
+  {
+   "kind": "JevProbeClassificationRecord",
+   "schemaVersion": 1,
+   "recordId": "jpc-0116",
+   "observationDate": "2026-09-05",
+   "source": "broker_observed",
+   "groupKind": "unique",
+   "split": "calibration",
+   "judgmentTimeInput": {
+    "artifactIdsCount": 0,
+    "payloadFilePresent": true,
+    "bundleFilesBand": "2-5",
+    "messageWordsBand": "100+",
+    "requesterClass": "operator",
+    "timingClass": "one_off"
+   },
+   "label": {
+    "labelStatus": "unlabeled_pending_policy",
+    "policyVersion": "probe-handling-policy@2026-09-21",
+    "class": "defer",
+    "alternativeAcceptable": false
+   }
+  },
+  {
+   "kind": "JevProbeClassificationRecord",
+   "schemaVersion": 1,
+   "recordId": "jpc-0117",
+   "observationDate": "2026-09-05",
+   "source": "broker_observed",
+   "groupKind": "unique",
+   "split": "calibration",
+   "judgmentTimeInput": {
+    "artifactIdsCount": 0,
+    "payloadFilePresent": true,
+    "bundleFilesBand": "2-5",
+    "messageWordsBand": "100+",
+    "requesterClass": "operator",
+    "timingClass": "one_off"
+   },
+   "label": {
+    "labelStatus": "unlabeled_pending_policy",
+    "policyVersion": "probe-handling-policy@2026-09-21",
+    "class": "defer",
+    "alternativeAcceptable": false
+   }
+  },
+  {
+   "kind": "JevProbeClassificationRecord",
+   "schemaVersion": 1,
+   "recordId": "jpc-0118",
+   "observationDate": "2026-09-05",
+   "source": "broker_observed",
+   "groupKind": "unique",
+   "split": "calibration",
+   "judgmentTimeInput": {
+    "artifactIdsCount": 0,
+    "payloadFilePresent": true,
+    "bundleFilesBand": "2-5",
+    "messageWordsBand": "100+",
+    "requesterClass": "operator",
+    "timingClass": "one_off"
+   },
+   "label": {
+    "labelStatus": "unlabeled_pending_policy",
+    "policyVersion": "probe-handling-policy@2026-09-21",
+    "class": "defer",
+    "alternativeAcceptable": false
+   }
+  },
+  {
+   "kind": "JevProbeClassificationRecord",
+   "schemaVersion": 1,
+   "recordId": "jpc-0119",
+   "observationDate": "2026-09-05",
+   "source": "broker_observed",
+   "groupKind": "unique",
+   "split": "calibration",
+   "judgmentTimeInput": {
+    "artifactIdsCount": 0,
+    "payloadFilePresent": true,
+    "bundleFilesBand": "2-5",
+    "messageWordsBand": "100+",
+    "requesterClass": "operator",
+    "timingClass": "one_off"
+   },
+   "label": {
+    "labelStatus": "unlabeled_pending_policy",
+    "policyVersion": "probe-handling-policy@2026-09-21",
+    "class": "defer",
+    "alternativeAcceptable": false
+   }
+  },
+  {
+   "kind": "JevProbeClassificationRecord",
+   "schemaVersion": 1,
+   "recordId": "jpc-0120",
+   "observationDate": "2026-09-05",
+   "source": "broker_observed",
+   "groupKind": "unique",
+   "split": "calibration",
+   "judgmentTimeInput": {
+    "artifactIdsCount": 0,
+    "payloadFilePresent": true,
+    "bundleFilesBand": "2-5",
+    "messageWordsBand": "100+",
+    "requesterClass": "operator",
+    "timingClass": "one_off"
+   },
+   "label": {
+    "labelStatus": "unlabeled_pending_policy",
+    "policyVersion": "probe-handling-policy@2026-09-21",
+    "class": "defer",
+    "alternativeAcceptable": false
+   }
+  },
+  {
+   "kind": "JevProbeClassificationRecord",
+   "schemaVersion": 1,
+   "recordId": "jpc-0121",
+   "observationDate": "2026-09-05",
+   "source": "broker_observed",
+   "groupKind": "unique",
+   "split": "calibration",
+   "judgmentTimeInput": {
+    "artifactIdsCount": 0,
+    "payloadFilePresent": true,
+    "bundleFilesBand": "2-5",
+    "messageWordsBand": "100+",
+    "requesterClass": "operator",
+    "timingClass": "one_off"
+   },
+   "label": {
+    "labelStatus": "unlabeled_pending_policy",
+    "policyVersion": "probe-handling-policy@2026-09-21",
+    "class": "defer",
+    "alternativeAcceptable": false
+   }
+  },
+  {
+   "kind": "JevProbeClassificationRecord",
+   "schemaVersion": 1,
+   "recordId": "jpc-0122",
+   "observationDate": "2026-09-05",
+   "source": "broker_observed",
+   "groupKind": "unique",
+   "split": "calibration",
+   "judgmentTimeInput": {
+    "artifactIdsCount": 0,
+    "payloadFilePresent": true,
+    "bundleFilesBand": "2-5",
+    "messageWordsBand": "100+",
+    "requesterClass": "operator",
+    "timingClass": "one_off"
+   },
+   "label": {
+    "labelStatus": "unlabeled_pending_policy",
+    "policyVersion": "probe-handling-policy@2026-09-21",
+    "class": "defer",
+    "alternativeAcceptable": false
+   }
+  },
+  {
+   "kind": "JevProbeClassificationRecord",
+   "schemaVersion": 1,
+   "recordId": "jpc-0123",
+   "observationDate": "2026-09-05",
+   "source": "broker_observed",
+   "groupKind": "retry",
+   "split": "calibration",
+   "judgmentTimeInput": {
+    "artifactIdsCount": 0,
+    "payloadFilePresent": true,
+    "bundleFilesBand": "none",
+    "messageWordsBand": "100+",
+    "requesterClass": "operator",
+    "timingClass": "one_off"
+   },
+   "label": {
+    "labelStatus": "unlabeled_pending_policy",
+    "policyVersion": "probe-handling-policy@2026-09-21",
+    "class": "defer",
+    "alternativeAcceptable": false
+   }
+  },
+  {
+   "kind": "JevProbeClassificationRecord",
+   "schemaVersion": 1,
+   "recordId": "jpc-0124",
+   "observationDate": "2026-09-05",
+   "source": "broker_observed",
+   "groupKind": "retry",
+   "split": "calibration",
+   "judgmentTimeInput": {
+    "artifactIdsCount": 0,
+    "payloadFilePresent": true,
+    "bundleFilesBand": "none",
+    "messageWordsBand": "100+",
+    "requesterClass": "operator",
+    "timingClass": "one_off"
+   },
+   "label": {
+    "labelStatus": "unlabeled_pending_policy",
+    "policyVersion": "probe-handling-policy@2026-09-21",
+    "class": "defer",
+    "alternativeAcceptable": false
+   }
+  },
+  {
+   "kind": "JevProbeClassificationRecord",
+   "schemaVersion": 1,
+   "recordId": "jpc-0125",
+   "observationDate": "2026-09-06",
+   "source": "broker_observed",
+   "groupKind": "retry",
+   "split": "calibration",
+   "judgmentTimeInput": {
+    "artifactIdsCount": 0,
+    "payloadFilePresent": true,
+    "bundleFilesBand": "2-5",
+    "messageWordsBand": "21-100",
+    "requesterClass": "agent",
+    "timingClass": "one_off"
+   },
+   "label": {
+    "labelStatus": "unlabeled_pending_policy",
+    "policyVersion": "probe-handling-policy@2026-09-21",
+    "class": "defer",
+    "alternativeAcceptable": false
+   }
+  },
+  {
+   "kind": "JevProbeClassificationRecord",
+   "schemaVersion": 1,
+   "recordId": "jpc-0126",
+   "observationDate": "2026-09-06",
+   "source": "broker_observed",
+   "groupKind": "retry",
+   "split": "calibration",
+   "judgmentTimeInput": {
+    "artifactIdsCount": 0,
+    "payloadFilePresent": true,
+    "bundleFilesBand": "2-5",
+    "messageWordsBand": "21-100",
+    "requesterClass": "agent",
+    "timingClass": "one_off"
+   },
+   "label": {
+    "labelStatus": "unlabeled_pending_policy",
+    "policyVersion": "probe-handling-policy@2026-09-21",
+    "class": "defer",
+    "alternativeAcceptable": false
+   }
+  },
+  {
+   "kind": "JevProbeClassificationRecord",
+   "schemaVersion": 1,
+   "recordId": "jpc-0127",
+   "observationDate": "2026-09-06",
+   "source": "broker_observed",
+   "groupKind": "unique",
+   "split": "calibration",
+   "judgmentTimeInput": {
+    "artifactIdsCount": 0,
+    "payloadFilePresent": true,
+    "bundleFilesBand": "2-5",
+    "messageWordsBand": "21-100",
+    "requesterClass": "agent",
+    "timingClass": "one_off"
+   },
+   "label": {
+    "labelStatus": "unlabeled_pending_policy",
+    "policyVersion": "probe-handling-policy@2026-09-21",
+    "class": "defer",
+    "alternativeAcceptable": false
+   }
+  },
+  {
+   "kind": "JevProbeClassificationRecord",
+   "schemaVersion": 1,
+   "recordId": "jpc-0128",
+   "observationDate": "2026-09-11",
+   "source": "broker_observed",
+   "groupKind": "identical_work",
+   "split": "calibration",
+   "judgmentTimeInput": {
+    "artifactIdsCount": 0,
+    "payloadFilePresent": true,
+    "bundleFilesBand": "none",
+    "messageWordsBand": "0-3",
+    "requesterClass": "unknown",
+    "timingClass": "recurring_identical"
+   },
+   "label": {
+    "labelStatus": "unlabeled_pending_policy",
+    "policyVersion": "probe-handling-policy@2026-09-21",
+    "class": "defer",
+    "alternativeAcceptable": false
+   }
+  },
+  {
+   "kind": "JevProbeClassificationRecord",
+   "schemaVersion": 1,
+   "recordId": "jpc-0129",
+   "observationDate": "2026-09-11",
+   "source": "broker_observed",
+   "groupKind": "identical_work",
+   "split": "calibration",
+   "judgmentTimeInput": {
+    "artifactIdsCount": 0,
+    "payloadFilePresent": true,
+    "bundleFilesBand": "none",
+    "messageWordsBand": "0-3",
+    "requesterClass": "unknown",
+    "timingClass": "recurring_identical"
+   },
+   "label": {
+    "labelStatus": "unlabeled_pending_policy",
+    "policyVersion": "probe-handling-policy@2026-09-21",
+    "class": "defer",
+    "alternativeAcceptable": false
+   }
+  },
+  {
+   "kind": "JevProbeClassificationRecord",
+   "schemaVersion": 1,
+   "recordId": "jpc-0130",
+   "observationDate": "2026-09-11",
+   "source": "broker_observed",
+   "groupKind": "identical_work",
+   "split": "calibration",
+   "judgmentTimeInput": {
+    "artifactIdsCount": 0,
+    "payloadFilePresent": true,
+    "bundleFilesBand": "none",
+    "messageWordsBand": "0-3",
+    "requesterClass": "unknown",
+    "timingClass": "recurring_identical"
+   },
+   "label": {
+    "labelStatus": "unlabeled_pending_policy",
+    "policyVersion": "probe-handling-policy@2026-09-21",
+    "class": "defer",
+    "alternativeAcceptable": false
+   }
+  },
+  {
+   "kind": "JevProbeClassificationRecord",
+   "schemaVersion": 1,
+   "recordId": "jpc-0131",
+   "observationDate": "2026-09-11",
+   "source": "broker_observed",
+   "groupKind": "identical_work",
+   "split": "calibration",
+   "judgmentTimeInput": {
+    "artifactIdsCount": 0,
+    "payloadFilePresent": true,
+    "bundleFilesBand": "none",
+    "messageWordsBand": "0-3",
+    "requesterClass": "unknown",
+    "timingClass": "recurring_identical"
+   },
+   "label": {
+    "labelStatus": "unlabeled_pending_policy",
+    "policyVersion": "probe-handling-policy@2026-09-21",
+    "class": "defer",
+    "alternativeAcceptable": false
+   }
+  },
+  {
+   "kind": "JevProbeClassificationRecord",
+   "schemaVersion": 1,
+   "recordId": "jpc-0132",
+   "observationDate": "2026-09-12",
+   "source": "broker_observed",
+   "groupKind": "identical_work",
+   "split": "calibration",
+   "judgmentTimeInput": {
+    "artifactIdsCount": 0,
+    "payloadFilePresent": true,
+    "bundleFilesBand": "6+",
+    "messageWordsBand": "21-100",
+    "requesterClass": "operator",
+    "timingClass": "recurring_identical"
+   },
+   "label": {
+    "labelStatus": "unlabeled_pending_policy",
+    "policyVersion": "probe-handling-policy@2026-09-21",
+    "class": "defer",
+    "alternativeAcceptable": false
+   }
+  },
+  {
+   "kind": "JevProbeClassificationRecord",
+   "schemaVersion": 1,
+   "recordId": "jpc-0133",
+   "observationDate": "2026-09-12",
+   "source": "broker_observed",
+   "groupKind": "identical_work",
+   "split": "calibration",
+   "judgmentTimeInput": {
+    "artifactIdsCount": 0,
+    "payloadFilePresent": true,
+    "bundleFilesBand": "6+",
+    "messageWordsBand": "21-100",
+    "requesterClass": "operator",
+    "timingClass": "recurring_identical"
+   },
+   "label": {
+    "labelStatus": "unlabeled_pending_policy",
+    "policyVersion": "probe-handling-policy@2026-09-21",
+    "class": "defer",
+    "alternativeAcceptable": false
+   }
+  },
+  {
+   "kind": "JevProbeClassificationRecord",
+   "schemaVersion": 1,
+   "recordId": "jpc-0134",
+   "observationDate": "2026-09-12",
+   "source": "broker_observed",
+   "groupKind": "identical_work",
+   "split": "calibration",
+   "judgmentTimeInput": {
+    "artifactIdsCount": 0,
+    "payloadFilePresent": true,
+    "bundleFilesBand": "6+",
+    "messageWordsBand": "21-100",
+    "requesterClass": "operator",
+    "timingClass": "recurring_identical"
+   },
+   "label": {
+    "labelStatus": "unlabeled_pending_policy",
+    "policyVersion": "probe-handling-policy@2026-09-21",
+    "class": "defer",
+    "alternativeAcceptable": false
+   }
+  },
+  {
+   "kind": "JevProbeClassificationRecord",
+   "schemaVersion": 1,
+   "recordId": "jpc-0135",
+   "observationDate": "2026-09-12",
+   "source": "broker_observed",
+   "groupKind": "identical_work",
+   "split": "calibration",
+   "judgmentTimeInput": {
+    "artifactIdsCount": 0,
+    "payloadFilePresent": true,
+    "bundleFilesBand": "6+",
+    "messageWordsBand": "21-100",
+    "requesterClass": "operator",
+    "timingClass": "recurring_identical"
+   },
+   "label": {
+    "labelStatus": "unlabeled_pending_policy",
+    "policyVersion": "probe-handling-policy@2026-09-21",
+    "class": "defer",
+    "alternativeAcceptable": false
+   }
+  },
+  {
+   "kind": "JevProbeClassificationRecord",
+   "schemaVersion": 1,
+   "recordId": "jpc-0136",
+   "observationDate": "2026-09-13",
+   "source": "broker_observed",
+   "groupKind": "unique",
+   "split": "calibration",
+   "judgmentTimeInput": {
+    "artifactIdsCount": 0,
+    "payloadFilePresent": true,
+    "bundleFilesBand": "2-5",
+    "messageWordsBand": "100+",
+    "requesterClass": "agent",
+    "timingClass": "one_off"
+   },
+   "label": {
+    "labelStatus": "unlabeled_pending_policy",
+    "policyVersion": "probe-handling-policy@2026-09-21",
+    "class": "defer",
+    "alternativeAcceptable": false
+   }
+  },
+  {
+   "kind": "JevProbeClassificationRecord",
+   "schemaVersion": 1,
+   "recordId": "jpc-0137",
+   "observationDate": "2026-09-13",
+   "source": "broker_observed",
+   "groupKind": "unique",
+   "split": "calibration",
+   "judgmentTimeInput": {
+    "artifactIdsCount": 0,
+    "payloadFilePresent": true,
+    "bundleFilesBand": "2-5",
+    "messageWordsBand": "100+",
+    "requesterClass": "operator",
+    "timingClass": "one_off"
+   },
+   "label": {
+    "labelStatus": "unlabeled_pending_policy",
+    "policyVersion": "probe-handling-policy@2026-09-21",
+    "class": "defer",
+    "alternativeAcceptable": false
+   }
+  },
+  {
+   "kind": "JevProbeClassificationRecord",
+   "schemaVersion": 1,
+   "recordId": "jpc-0138",
+   "observationDate": "2026-09-13",
+   "source": "broker_observed",
+   "groupKind": "unique",
+   "split": "calibration",
+   "judgmentTimeInput": {
+    "artifactIdsCount": 0,
+    "payloadFilePresent": true,
+    "bundleFilesBand": "6+",
+    "messageWordsBand": "21-100",
+    "requesterClass": "operator",
+    "timingClass": "one_off"
+   },
+   "label": {
+    "labelStatus": "unlabeled_pending_policy",
+    "policyVersion": "probe-handling-policy@2026-09-21",
+    "class": "defer",
+    "alternativeAcceptable": false
+   }
+  },
+  {
+   "kind": "JevProbeClassificationRecord",
+   "schemaVersion": 1,
+   "recordId": "jpc-0139",
+   "observationDate": "2026-09-16",
+   "source": "broker_observed",
+   "groupKind": "unique",
+   "split": "calibration",
+   "judgmentTimeInput": {
+    "artifactIdsCount": 0,
+    "payloadFilePresent": true,
+    "bundleFilesBand": "2-5",
+    "messageWordsBand": "21-100",
+    "requesterClass": "operator",
+    "timingClass": "one_off"
+   },
+   "label": {
+    "labelStatus": "unlabeled_pending_policy",
+    "policyVersion": "probe-handling-policy@2026-09-21",
+    "class": "defer",
+    "alternativeAcceptable": false
+   }
+  },
+  {
+   "kind": "JevProbeClassificationRecord",
+   "schemaVersion": 1,
+   "recordId": "jpc-0140",
+   "observationDate": "2026-09-16",
+   "source": "broker_observed",
+   "groupKind": "unique",
+   "split": "calibration",
+   "judgmentTimeInput": {
+    "artifactIdsCount": 0,
+    "payloadFilePresent": true,
+    "bundleFilesBand": "2-5",
+    "messageWordsBand": "21-100",
+    "requesterClass": "operator",
+    "timingClass": "one_off"
+   },
+   "label": {
+    "labelStatus": "unlabeled_pending_policy",
+    "policyVersion": "probe-handling-policy@2026-09-21",
+    "class": "defer",
+    "alternativeAcceptable": false
+   }
+  },
+  {
+   "kind": "JevProbeClassificationRecord",
+   "schemaVersion": 1,
+   "recordId": "jpc-0141",
+   "observationDate": "2026-09-16",
+   "source": "broker_observed",
+   "groupKind": "unique",
+   "split": "calibration",
+   "judgmentTimeInput": {
+    "artifactIdsCount": 0,
+    "payloadFilePresent": true,
+    "bundleFilesBand": "2-5",
+    "messageWordsBand": "4-20",
+    "requesterClass": "operator",
+    "timingClass": "one_off"
+   },
+   "label": {
+    "labelStatus": "unlabeled_pending_policy",
+    "policyVersion": "probe-handling-policy@2026-09-21",
+    "class": "defer",
+    "alternativeAcceptable": false
+   }
+  },
+  {
+   "kind": "JevProbeClassificationRecord",
+   "schemaVersion": 1,
+   "recordId": "jpc-0142",
+   "observationDate": "2026-09-16",
+   "source": "broker_observed",
+   "groupKind": "unique",
+   "split": "calibration",
+   "judgmentTimeInput": {
+    "artifactIdsCount": 0,
+    "payloadFilePresent": true,
+    "bundleFilesBand": "2-5",
+    "messageWordsBand": "4-20",
+    "requesterClass": "operator",
+    "timingClass": "one_off"
+   },
+   "label": {
+    "labelStatus": "unlabeled_pending_policy",
+    "policyVersion": "probe-handling-policy@2026-09-21",
+    "class": "defer",
+    "alternativeAcceptable": false
+   }
+  },
+  {
+   "kind": "JevProbeClassificationRecord",
+   "schemaVersion": 1,
+   "recordId": "jpc-0143",
+   "observationDate": "2026-09-16",
+   "source": "broker_observed",
+   "groupKind": "unique",
+   "split": "calibration",
+   "judgmentTimeInput": {
+    "artifactIdsCount": 0,
+    "payloadFilePresent": true,
+    "bundleFilesBand": "1",
+    "messageWordsBand": "21-100",
+    "requesterClass": "operator",
+    "timingClass": "one_off"
+   },
+   "label": {
+    "labelStatus": "unlabeled_pending_policy",
+    "policyVersion": "probe-handling-policy@2026-09-21",
+    "class": "defer",
+    "alternativeAcceptable": false
+   }
+  },
+  {
+   "kind": "JevProbeClassificationRecord",
+   "schemaVersion": 1,
+   "recordId": "jpc-0144",
+   "observationDate": "2026-09-16",
+   "source": "broker_observed",
+   "groupKind": "unique",
+   "split": "calibration",
+   "judgmentTimeInput": {
+    "artifactIdsCount": 0,
+    "payloadFilePresent": true,
+    "bundleFilesBand": "1",
+    "messageWordsBand": "21-100",
+    "requesterClass": "operator",
+    "timingClass": "one_off"
+   },
+   "label": {
+    "labelStatus": "unlabeled_pending_policy",
+    "policyVersion": "probe-handling-policy@2026-09-21",
+    "class": "defer",
+    "alternativeAcceptable": false
+   }
+  },
+  {
+   "kind": "JevProbeClassificationRecord",
+   "schemaVersion": 1,
+   "recordId": "jpc-0145",
+   "observationDate": "2026-09-16",
+   "source": "broker_observed",
+   "groupKind": "unique",
+   "split": "calibration",
+   "judgmentTimeInput": {
+    "artifactIdsCount": 0,
+    "payloadFilePresent": true,
+    "bundleFilesBand": "2-5",
+    "messageWordsBand": "4-20",
+    "requesterClass": "operator",
+    "timingClass": "one_off"
+   },
+   "label": {
+    "labelStatus": "unlabeled_pending_policy",
+    "policyVersion": "probe-handling-policy@2026-09-21",
+    "class": "defer",
+    "alternativeAcceptable": false
+   }
+  },
+  {
+   "kind": "JevProbeClassificationRecord",
+   "schemaVersion": 1,
+   "recordId": "jpc-0146",
+   "observationDate": "2026-09-19",
+   "source": "broker_observed",
+   "groupKind": "unique",
+   "split": "holdout",
+   "judgmentTimeInput": {
+    "artifactIdsCount": 0,
+    "payloadFilePresent": true,
+    "bundleFilesBand": "6+",
+    "messageWordsBand": "21-100",
+    "requesterClass": "operator",
+    "timingClass": "one_off"
+   },
+   "label": {
+    "labelStatus": "unlabeled_pending_policy",
+    "policyVersion": "probe-handling-policy@2026-09-21",
+    "class": "defer",
+    "alternativeAcceptable": false
+   }
+  },
+  {
+   "kind": "JevProbeClassificationRecord",
+   "schemaVersion": 1,
+   "recordId": "jpc-0147",
+   "observationDate": "2026-09-19",
+   "source": "broker_observed",
+   "groupKind": "unique",
+   "split": "holdout",
+   "judgmentTimeInput": {
+    "artifactIdsCount": 0,
+    "payloadFilePresent": true,
+    "bundleFilesBand": "6+",
+    "messageWordsBand": "100+",
+    "requesterClass": "operator",
+    "timingClass": "one_off"
+   },
+   "label": {
+    "labelStatus": "unlabeled_pending_policy",
+    "policyVersion": "probe-handling-policy@2026-09-21",
+    "class": "defer",
+    "alternativeAcceptable": false
+   }
+  },
+  {
+   "kind": "JevProbeClassificationRecord",
+   "schemaVersion": 1,
+   "recordId": "jpc-0148",
+   "observationDate": "2026-09-19",
+   "source": "broker_observed",
+   "groupKind": "unique",
+   "split": "holdout",
+   "judgmentTimeInput": {
+    "artifactIdsCount": 0,
+    "payloadFilePresent": true,
+    "bundleFilesBand": "6+",
+    "messageWordsBand": "100+",
+    "requesterClass": "operator",
+    "timingClass": "one_off"
+   },
+   "label": {
+    "labelStatus": "unlabeled_pending_policy",
+    "policyVersion": "probe-handling-policy@2026-09-21",
+    "class": "defer",
+    "alternativeAcceptable": false
+   }
+  },
+  {
+   "kind": "JevProbeClassificationRecord",
+   "schemaVersion": 1,
+   "recordId": "jpc-0149",
+   "observationDate": "2026-09-19",
+   "source": "broker_observed",
+   "groupKind": "unique",
+   "split": "holdout",
+   "judgmentTimeInput": {
+    "artifactIdsCount": 0,
+    "payloadFilePresent": true,
+    "bundleFilesBand": "6+",
+    "messageWordsBand": "100+",
+    "requesterClass": "operator",
+    "timingClass": "one_off"
+   },
+   "label": {
+    "labelStatus": "unlabeled_pending_policy",
+    "policyVersion": "probe-handling-policy@2026-09-21",
+    "class": "defer",
+    "alternativeAcceptable": false
+   }
+  },
+  {
+   "kind": "JevProbeClassificationRecord",
+   "schemaVersion": 1,
+   "recordId": "jpc-0150",
+   "observationDate": "2026-09-19",
+   "source": "broker_observed",
+   "groupKind": "unique",
+   "split": "holdout",
+   "judgmentTimeInput": {
+    "artifactIdsCount": 0,
+    "payloadFilePresent": true,
+    "bundleFilesBand": "6+",
+    "messageWordsBand": "100+",
+    "requesterClass": "operator",
+    "timingClass": "one_off"
+   },
+   "label": {
+    "labelStatus": "unlabeled_pending_policy",
+    "policyVersion": "probe-handling-policy@2026-09-21",
+    "class": "defer",
+    "alternativeAcceptable": false
+   }
+  },
+  {
+   "kind": "JevProbeClassificationRecord",
+   "schemaVersion": 1,
+   "recordId": "jpc-0151",
+   "observationDate": "2026-09-19",
+   "source": "broker_observed",
+   "groupKind": "unique",
+   "split": "holdout",
+   "judgmentTimeInput": {
+    "artifactIdsCount": 0,
+    "payloadFilePresent": true,
+    "bundleFilesBand": "6+",
+    "messageWordsBand": "100+",
+    "requesterClass": "operator",
+    "timingClass": "one_off"
+   },
+   "label": {
+    "labelStatus": "unlabeled_pending_policy",
+    "policyVersion": "probe-handling-policy@2026-09-21",
+    "class": "defer",
+    "alternativeAcceptable": false
+   }
+  },
+  {
+   "kind": "JevProbeClassificationRecord",
+   "schemaVersion": 1,
+   "recordId": "jpc-0152",
+   "observationDate": "2026-09-19",
+   "source": "broker_observed",
+   "groupKind": "unique",
+   "split": "holdout",
+   "judgmentTimeInput": {
+    "artifactIdsCount": 0,
+    "payloadFilePresent": true,
+    "bundleFilesBand": "6+",
+    "messageWordsBand": "100+",
+    "requesterClass": "operator",
+    "timingClass": "one_off"
+   },
+   "label": {
+    "labelStatus": "unlabeled_pending_policy",
+    "policyVersion": "probe-handling-policy@2026-09-21",
+    "class": "defer",
+    "alternativeAcceptable": false
+   }
+  },
+  {
+   "kind": "JevProbeClassificationRecord",
+   "schemaVersion": 1,
+   "recordId": "jpc-0153",
+   "observationDate": "2026-09-20",
+   "source": "broker_observed",
+   "groupKind": "identical_work",
+   "split": "holdout",
+   "judgmentTimeInput": {
+    "artifactIdsCount": 0,
+    "payloadFilePresent": true,
+    "bundleFilesBand": "6+",
+    "messageWordsBand": "100+",
+    "requesterClass": "agent",
+    "timingClass": "recurring_identical"
+   },
+   "label": {
+    "labelStatus": "unlabeled_pending_policy",
+    "policyVersion": "probe-handling-policy@2026-09-21",
+    "class": "defer",
+    "alternativeAcceptable": false
+   }
+  },
+  {
+   "kind": "JevProbeClassificationRecord",
+   "schemaVersion": 1,
+   "recordId": "jpc-0154",
+   "observationDate": "2026-09-20",
+   "source": "broker_observed",
+   "groupKind": "identical_work",
+   "split": "holdout",
+   "judgmentTimeInput": {
+    "artifactIdsCount": 0,
+    "payloadFilePresent": true,
+    "bundleFilesBand": "6+",
+    "messageWordsBand": "100+",
+    "requesterClass": "agent",
+    "timingClass": "recurring_identical"
+   },
+   "label": {
+    "labelStatus": "unlabeled_pending_policy",
+    "policyVersion": "probe-handling-policy@2026-09-21",
+    "class": "defer",
+    "alternativeAcceptable": false
+   }
+  },
+  {
+   "kind": "JevProbeClassificationRecord",
+   "schemaVersion": 1,
+   "recordId": "jpc-0155",
+   "observationDate": "2026-09-20",
+   "source": "broker_observed",
+   "groupKind": "identical_work",
+   "split": "holdout",
+   "judgmentTimeInput": {
+    "artifactIdsCount": 0,
+    "payloadFilePresent": true,
+    "bundleFilesBand": "6+",
+    "messageWordsBand": "100+",
+    "requesterClass": "agent",
+    "timingClass": "recurring_identical"
+   },
+   "label": {
+    "labelStatus": "unlabeled_pending_policy",
+    "policyVersion": "probe-handling-policy@2026-09-21",
+    "class": "defer",
+    "alternativeAcceptable": false
+   }
+  },
+  {
+   "kind": "JevProbeClassificationRecord",
+   "schemaVersion": 1,
+   "recordId": "jpc-0156",
+   "observationDate": "2026-09-20",
+   "source": "broker_observed",
+   "groupKind": "unique",
+   "split": "holdout",
+   "judgmentTimeInput": {
+    "artifactIdsCount": 0,
+    "payloadFilePresent": true,
+    "bundleFilesBand": "6+",
+    "messageWordsBand": "100+",
+    "requesterClass": "agent",
+    "timingClass": "one_off"
+   },
+   "label": {
+    "labelStatus": "unlabeled_pending_policy",
+    "policyVersion": "probe-handling-policy@2026-09-21",
+    "class": "defer",
+    "alternativeAcceptable": false
+   }
+  }
+ ]
+}
