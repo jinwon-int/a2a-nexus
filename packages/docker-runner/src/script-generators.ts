@@ -542,6 +542,7 @@ printf 'command[%s].bytes=%s\n' ${shellQuote(String(index))} ${shellQuote(String
   }).join("\n");
 
   return `printf 'commands=%s\n' ${shellQuote(String(task.commands.length))} | tee -a /work/artifacts/summary.txt
+: > /work/.a2a-first-model-call || true
 ${commands}`;
 }
 

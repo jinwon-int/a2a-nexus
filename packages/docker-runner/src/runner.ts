@@ -1,6 +1,6 @@
 import { createHash } from "node:crypto";
 import { readFileSync } from "node:fs";
-import { chmod, chown, lstat, mkdir, open, writeFile, readdir, readFile, stat } from "node:fs/promises";
+import { chmod, chown, lstat, mkdir, open, writeFile, readdir, readFile, rename, stat, unlink } from "node:fs/promises";
 import { basename, join, relative, resolve } from "node:path";
 import { runContainerWithRetry } from "./container-retry.js";
 import { pruneFailureOutputLogs, writeFailureOutputLog } from "./failure-output-log.js";
@@ -307,6 +307,19 @@ export async function runTask(config: RunnerConfig, task: RunnerTask): Promise<R
       })
     : undefined;
   await writeSanitizedTaskArtifact(workDir, normalizedTask);
+  // S3 (#1601) ceremony-latency instrumentation: the container script touches
+  // /work/.a2a-first-model-call right before the first model call, so its mtime
+  // approximates the first-model-call time. Measurement-only: any read failure
+  // (marker absent on the commands=none path, unreadable, ...) leaves the field
+  // absent instead of failing the run.
+  let firstModelCallAt: string | undefined;
+  try {
+    const marker = await stat(join(workDir, ".a2a-first-model-call"));
+    firstModelCallAt = marker.mtime.toISOString();
+  } catch {
+    // Marker not present — field stays absent (additive run.json contract).
+  }
+  const evidenceAssemblyStartedAt = Date.now();
   // #2083: the five evidence reads are mutually independent — run them
   // concurrently instead of serially awaiting each one.
   const [claudeTurnBudgetArtifact, artifactEntries, postPatchVerification, diffHygiene, reproducibility] = await Promise.all([
@@ -316,6 +329,9 @@ export async function runTask(config: RunnerConfig, task: RunnerTask): Promise<R
     readArtifactJson<RunnerDiffHygieneEvidence>(workDir, "diff-hygiene.json", isDiffHygieneEvidence),
     buildReproducibilityMetadata(config, normalizedTask, workDir),
   ]);
+  // S3 (#1601): wall-clock ms spent assembling execution evidence (bounded
+  // artifact reads above). Integer ms; surfaced via run.json.
+  const evidenceAssemblyMs = Math.max(0, Math.round(Date.now() - evidenceAssemblyStartedAt));
   const claudeTurnBudget = claudeTurnBudgetArtifact
     ?? extractClaudeTurnBudgetDiagnostic(completed.stderr);
   const maxTurnsStopped = (
@@ -522,6 +538,38 @@ export async function runTask(config: RunnerConfig, task: RunnerTask): Promise<R
     };
     await writeArtifactManifest(workDir, result.artifactManifest);
   }
+
+  // S3 (#1601): merge ceremony-latency metrics into run.json additively and
+  // atomically (temp + rename). run.json must stay valid JSON for scanner/ops
+  // consumers; a merge failure here is telemetry-only and must never flip a
+  // finished run's verdict, so it is swallowed by design.
+  try {
+    const runJsonPath = join(workDir, "run.json");
+    let payload: Record<string, unknown>;
+    try {
+      payload = JSON.parse(await readFile(runJsonPath, "utf8")) as Record<string, unknown>;
+    } catch {
+      // Missing or malformed run.json: rebuild from the known base fields so
+      // the merged file remains a valid JSON object.
+      payload = { taskId: task.id, safeTaskId, runToken };
+    }
+    if (firstModelCallAt !== undefined) payload.firstModelCallAt = firstModelCallAt;
+    if (evidenceAssemblyMs !== undefined) payload.evidenceAssemblyMs = evidenceAssemblyMs;
+    const tmpPath = `${runJsonPath}.tmp-${runToken}`;
+    await writeFile(tmpPath, JSON.stringify(payload, null, 2), { mode: 0o600 });
+    try {
+      await rename(tmpPath, runJsonPath);
+    } catch (error) {
+      await unlink(tmpPath).catch(() => {});
+      throw error;
+    }
+  } catch {
+    // Non-fatal: run.json latency metrics are best-effort instrumentation.
+  }
+  // S3 (#1601): mirror the latency metrics onto the in-process result so
+  // direct callers see the same fields the run.json contract exposes.
+  if (firstModelCallAt !== undefined) result.firstModelCallAt = firstModelCallAt;
+  if (evidenceAssemblyMs !== undefined) result.evidenceAssemblyMs = evidenceAssemblyMs;
 
   return result;
 }

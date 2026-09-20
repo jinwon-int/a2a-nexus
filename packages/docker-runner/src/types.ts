@@ -1338,6 +1338,10 @@ export interface RunnerResult {
   resultSummary?: ResultSummary;
   /** Bounded, secret-free runner build metadata. Prefer resultSummary.runnerBuild for evidence payloads. */
   runnerBuild?: RunnerBuildMetadata;
+  /** S3 (#1601) ceremony-latency: ISO-8601 mtime of the first-model-call marker; absent when the marker was never created (e.g. commands=none). */
+  firstModelCallAt?: string;
+  /** S3 (#1601) ceremony-latency: wall-clock ms spent assembling execution evidence post-container. */
+  evidenceAssemblyMs?: number;
   /** @deprecated Prefer github.prUrl for structured evidence. */
   prUrl?: string;
   /** Candidate PR URLs observed in raw runner/bridge output; never canonical until GitHub metadata is verified. */

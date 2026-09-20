@@ -114,6 +114,7 @@ done
 test -n "$work_dir"
 mkdir -p "$work_dir/artifacts"
 cp -R "${artifactsDir}/." "$work_dir/artifacts/"
+: > "$work_dir/.a2a-first-model-call"
 if test -f "$work_dir/artifacts/.hardlink-diff"; then
   rm "$work_dir/artifacts/.hardlink-diff"
   ln "$work_dir/artifacts/claude-max-turn-checkpoint.diff" "$work_dir/artifacts/checkpoint-diff-hardlink"
@@ -153,6 +154,7 @@ exit 1
 async function runWithProbeEngine(
   configOverrides: Partial<RunnerConfig>,
   task: RunnerTask,
+  options: { touchFirstModelCallMarker?: boolean } = {},
 ): Promise<{ ranMarker: string; taskJsonModeFile: string; result?: unknown; error?: unknown }> {
   const executableTmpDir = fileURLToPath(new URL("../tmp/", import.meta.url));
   mkdirSync(executableTmpDir, { recursive: true });
@@ -174,7 +176,10 @@ done
 if test -n "$work_dir" && test -f "$work_dir/task.json"; then
   stat -c '%a' "$work_dir/task.json" > "${taskJsonModeFile}"
 fi
-exit 0
+${options.touchFirstModelCallMarker === false ? "" : `if test -n "$work_dir"; then
+  : > "$work_dir/.a2a-first-model-call"
+fi
+`}exit 0
 `);
   chmodSync(enginePath, 0o700);
 
@@ -1813,4 +1818,74 @@ test("jsonArgvToScript parse-error path single-quotes the message safely", () =>
   // double quotes, which would re-expose $()/backticks from the message.
   assert.doesNotMatch(script, /printf '[^']*' >&2 "/);
   assert.doesNotMatch(script, /\$\(touch/);
+});
+
+// ── S3 (#1601): first-model-call marker + run.json ceremony-latency metrics ──
+
+test("buildContainerScript stamps the first-model-call marker before commands run", () => {
+  const task: NormalizedRunnerTask = {
+    id: "first-model-marker",
+    intent: "propose_patch",
+    repos: [],
+    commands: ["true"],
+  };
+
+  const script = buildContainerScript(task);
+  assert.ok(script.includes(": > /work/.a2a-first-model-call"), "Expected first-model-call marker stamp in command script");
+  const markerAt = script.indexOf(": > /work/.a2a-first-model-call");
+  const headerAt = script.indexOf("commands=%s");
+  const firstCommandAt = script.indexOf("].sha256=");
+  assert.ok(headerAt >= 0 && markerAt > headerAt, "Marker must come after the commands count summary line");
+  assert.ok(firstCommandAt >= 0 && markerAt < firstCommandAt, "Marker must be stamped before the first command executes");
+});
+
+test("buildContainerScript omits the first-model-call marker on the commands=none path", () => {
+  const task: NormalizedRunnerTask = {
+    id: "no-commands-marker",
+    intent: "propose_patch",
+    repos: [],
+    commands: [],
+  };
+
+  const script = buildContainerScript(task);
+  assert.equal(script.includes(".a2a-first-model-call"), false, "commands=none path must never stamp the marker");
+});
+
+test("runTask records firstModelCallAt and evidenceAssemblyMs on the result and run.json", async () => {
+  const { result } = await runWithProbeEngine(
+    {},
+    { id: "latency-metrics", intent: "verify", commands: ["true"] },
+  );
+  assert.ok(result && typeof result === "object", "expected a RunnerResult from the probe-engine run");
+  const run = result as { workDir: string; firstModelCallAt?: string; evidenceAssemblyMs?: number };
+  assert.ok(run.firstModelCallAt, "expected firstModelCallAt on the returned result");
+  assert.ok(!Number.isNaN(Date.parse(run.firstModelCallAt as string)), "firstModelCallAt must be ISO-8601");
+  assert.equal(typeof run.evidenceAssemblyMs, "number");
+  assert.ok((run.evidenceAssemblyMs as number) >= 0);
+
+  const runJson = JSON.parse(readFileSync(join(run.workDir, "run.json"), "utf8")) as Record<string, unknown>;
+  assert.equal(runJson.firstModelCallAt, run.firstModelCallAt, "run.json must mirror the result marker timestamp");
+  assert.equal(runJson.evidenceAssemblyMs, run.evidenceAssemblyMs);
+  // Base contract fields survive the additive merge.
+  assert.equal(runJson.taskId, "latency-metrics");
+  assert.equal(typeof runJson.safeTaskId, "string");
+  assert.equal(typeof runJson.runToken, "string");
+  assert.ok(typeof runJson.createdAt === "string" && !Number.isNaN(Date.parse(runJson.createdAt as string)));
+});
+
+test("runTask leaves firstModelCallAt absent when the marker was never created", async () => {
+  const { result } = await runWithProbeEngine(
+    {},
+    { id: "latency-metrics-absent", intent: "verify", commands: ["true"] },
+    { touchFirstModelCallMarker: false },
+  );
+  assert.ok(result && typeof result === "object");
+  const run = result as { workDir: string; firstModelCallAt?: string; evidenceAssemblyMs?: number };
+  assert.equal(run.firstModelCallAt, undefined, "absent marker must leave firstModelCallAt unset");
+  // evidenceAssemblyMs is marker-independent evidence-assembly timing.
+  assert.equal(typeof run.evidenceAssemblyMs, "number");
+
+  const runJson = JSON.parse(readFileSync(join(run.workDir, "run.json"), "utf8")) as Record<string, unknown>;
+  assert.equal("firstModelCallAt" in runJson, false, "run.json must not carry a firstModelCallAt key without a marker");
+  assert.equal(typeof runJson.evidenceAssemblyMs, "number");
 });
