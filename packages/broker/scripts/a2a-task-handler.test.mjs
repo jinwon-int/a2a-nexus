@@ -3386,7 +3386,7 @@ test("runner timeout override order remains env then payload then bounded defaul
 // observeJevForOutcome unit test with a stub transport.
 
 const JEV_GOLDEN_TASK_JSON = "{\"id\":\"task-853\",\"intent\":\"noop\",\"assignedWorkerId\":\"workerdelta\",\"message\":\"source-only test\",\"payload\":{\"mode\":\"docker-broker-noop-smoke\",\"noOp\":true,\"runId\":\"run-853\",\"worker\":\"workerdelta\",\"sourceOnly\":true}}";
-const JEV_GOLDEN_MASKED_STDOUT = "{\"result\":{\"summary\":\"docker broker noop smoke completed task-853\",\"handler\":{\"name\":\"a2a-task-handler\",\"version\":\"0.2.19\",\"source\":\"repo:scripts/a2a-task-handler.mjs\",\"contract\":\"stdin A2A task JSON -> stdout WorkerHandlerOutcome JSON\",\"credentialFree\":true,\"hostNeutral\":true},\"lifecycle\":{\"intent\":\"noop\",\"mode\":\"docker-broker-noop-smoke\",\"taskId\":\"task-853\",\"proposalId\":\"\",\"exchangeId\":\"\"},\"output\":{\"message\":\"source-only test\",\"smoke\":{\"ok\":true,\"noOp\":true,\"runId\":\"run-853\",\"worker\":\"workerdelta\"},\"payloadKeys\":[\"mode\",\"noOp\",\"runId\",\"sourceOnly\",\"worker\"],\"effectiveModel\":\"openai-codex/gpt-5.6-sol\",\"effectiveThinking\":\"high\"}}}";
+const JEV_GOLDEN_MASKED_STDOUT = "{\"result\":{\"summary\":\"docker broker noop smoke completed task-853\",\"handler\":{\"name\":\"a2a-task-handler\",\"version\":\"0.2.20\",\"source\":\"repo:scripts/a2a-task-handler.mjs\",\"contract\":\"stdin A2A task JSON -> stdout WorkerHandlerOutcome JSON\",\"credentialFree\":true,\"hostNeutral\":true},\"lifecycle\":{\"intent\":\"noop\",\"mode\":\"docker-broker-noop-smoke\",\"taskId\":\"task-853\",\"proposalId\":\"\",\"exchangeId\":\"\"},\"output\":{\"message\":\"source-only test\",\"smoke\":{\"ok\":true,\"noOp\":true,\"runId\":\"run-853\",\"worker\":\"workerdelta\"},\"payloadKeys\":[\"mode\",\"noOp\",\"runId\",\"sourceOnly\",\"worker\"],\"effectiveModel\":\"openai-codex/gpt-5.6-sol\",\"effectiveThinking\":\"high\"}}}";
 const JEV_INVALID_CONFIG_WARNING = "jev: classification disabled (invalid-config)\n";
 
 function jevMaskedStdout(run) {
@@ -3443,7 +3443,7 @@ test("jev CLI hook: enabled-invalid config warns exactly once with gate-off-iden
   assert.equal(jevMaskedStdout(invalid), jevMaskedStdout(off), "invalid-config stdout must equal same-run gate-off stdout");
 });
 
-test("observeJevForOutcome performs exactly one bounded classification for generic_ack (#2185)", async (t) => {
+test("observeJevForOutcome performs exactly one bounded typed observation for generic_ack (#2219)", async (t) => {
   const dir = mkdtempSync(join(tmpdir(), "jev-observe-hook-test-"));
   t.after(() => rmSync(dir, { recursive: true, force: true }));
   const keyfilePath = join(dir, "jev.key");
@@ -3452,20 +3452,38 @@ test("observeJevForOutcome performs exactly one bounded classification for gener
   const calls = [];
   const transport = async (request) => {
     calls.push(request);
-    return { status: 200, text: JSON.stringify({ is_real_work: true }) };
+    return { status: 200, text: JSON.stringify({ answers: { is_probe: { noul: 0.9 } }, model: "jev-latest" }) };
   };
   const env = {
     A2A_JEV_CLASSIFY: "1",
-    A2A_JEV_ENDPOINT: "https://jev.example.invalid/api/classify",
+    A2A_JEV_ENDPOINT: "https://jev.example.invalid/v1/systemone",
     A2A_JEV_KEYFILE: keyfilePath,
+    A2A_JEV_MODEL: "jev-latest",
   };
+  const task = JSON.parse(JEV_GOLDEN_TASK_JSON);
   const outcome = { result: { output: { evidenceClass: "generic_ack" } } };
-  const observation = await observeJevForOutcome(JSON.parse(JEV_GOLDEN_TASK_JSON), outcome, { env, transport });
+  const observation = await observeJevForOutcome(task, outcome, { env, transport });
   assert.equal(observation.attempted, true);
-  assert.deepEqual(observation.verdict, { ok: true, isRealWork: true, attempts: 1 });
-  assert.equal(calls.length, 1, "exactly one jev classification attempt, no retry");
-  assert.equal(calls[0].endpoint, "https://jev.example.invalid/api/classify");
+  assert.equal(observation.verdict.ok, true);
+  assert.equal(observation.verdict.answers.is_probe.probability, 0.9);
+  assert.equal(observation.verdict.attempts, 1);
+  assert.equal(calls.length, 1, "exactly one jev observation attempt, no retry");
+  assert.equal(calls[0].endpoint, "https://jev.example.invalid/v1/systemone");
   assert.equal(calls[0].key, "synthetic-jev-key-material", "key must come from the owner-only keyfile at call time");
+  // Live-contract contrast (#2219): the wire payload is {state, model, questions} —
+  // the deployed /v1/systemone contract. The previous {description, intent} shape
+  // was rejected 400 api_usage_error.
+  const payload = calls[0].payload;
+  assert.deepEqual(Object.keys(payload).sort(), ["model", "questions", "state"]);
+  assert.equal(payload.model, "jev-latest");
+  assert.deepEqual(Object.keys(payload.questions), ["is_probe"]);
+  assert.equal(payload.questions.is_probe.type, "noul");
+  assert.ok(payload.questions.is_probe.instructions.length > 0, "probe definition must be present");
+  // Privacy: the state carries banded tokens only — never the message text.
+  assert.ok(payload.state.includes("point=probe"), "state must be the banded probe record");
+  assert.ok(payload.state.includes("artifact_ids=0"));
+  assert.ok(!payload.state.includes(task.message), "message text must never enter the state");
+  assert.ok(!JSON.stringify(payload).includes(task.message), "message text must never reach the jev wire payload");
 });
 
 test("jev CLI hook: enabled trio with an unreachable endpoint stays fail-open (G4 hook shape)", async (t) => {

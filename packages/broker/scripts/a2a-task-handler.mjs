@@ -19,7 +19,8 @@ import { payloadWithRetrievalSnapshotSourceCarriers } from "./lib/retrieval-snap
 import { normalizeAnalysisExecutionTelemetry } from "./lib/analysis-execution-telemetry.mjs";
 import { evaluateDeclaredWriteSetGate } from "../dist/core/runtime-safety-gates.js";
 import { runLiveOperationTask } from "./lib/live-operation-adapter.mjs";
-import { classifyTaskWithJev, resolveJevConfig } from "./lib/jev-classifier.mjs";
+import { classifyTypedWithJev, resolveJevConfig } from "./lib/jev-classifier.mjs";
+import { probeObservationQuestions, probeObservationState } from "./lib/jev-probe-observation.mjs";
 import {
   observeReceiptShadow,
   observeReviewSufficiencyShadow,
@@ -27,7 +28,7 @@ import {
   reviewShadowInputs,
 } from "./lib/jev-review-shadow.mjs";
 
-const HANDLER_VERSION = "0.2.19";
+const HANDLER_VERSION = "0.2.20";
 const SOURCE_PATH = fileURLToPath(import.meta.url);
 const sourceSha256 = createHash("sha256").update(readFileSync(SOURCE_PATH)).digest("hex");
 
@@ -2939,12 +2940,18 @@ async function readStdin() {
   return Buffer.concat(chunks).toString("utf8");
 }
 
-// JEV probe-vs-real-work observation (spec: docs/specs/jev-probe-gating/spec.md).
-// Classification-only hook at the async stdin CLI entry: an enabled+valid jev
-// config gets exactly one bounded attempt for generic_ack outcomes, and the
-// verdict is observed in-process only — it never alters the outcome, stdout,
-// or routing. Gate-off stays byte-identical; an enabled-but-invalid config
-// emits one deterministic, value-free stderr warning then behaves as gate-off.
+// JEV probe-vs-real-work observation (spec: docs/specs/jev-probe-gating/spec.md;
+// live-contract fix for #2219: the observation now posts the deployed
+// /v1/systemone typed contract {state, model, questions} via
+// classifyTypedWithJev — the previous {description, intent} payload matched no
+// deployed jev contract and was rejected 400 api_usage_error). The state is
+// closed banded fields only (lib/jev-probe-observation.mjs): the task body,
+// prompt, and source contents never leave the process. Classification-only
+// hook at the async stdin CLI entry: an enabled+valid jev config gets exactly
+// one bounded attempt for generic_ack outcomes, and the typed verdict is
+// observed in-process only — it never alters the outcome, stdout, or routing.
+// Gate-off stays byte-identical; an enabled-but-invalid config emits one
+// deterministic, value-free stderr warning then behaves as gate-off.
 export async function observeJevForOutcome(task, outcome, { env = process.env, transport } = {}) {
   const config = resolveJevConfig(env);
   for (const warning of config.warnings) {
@@ -2957,7 +2964,16 @@ export async function observeJevForOutcome(task, outcome, { env = process.env, t
   if (evidenceClass !== "generic_ack") {
     return { attempted: false, reason: "not-generic-ack" };
   }
-  const verdict = await classifyTaskWithJev(task, config, { transport });
+  const state = probeObservationState(task);
+  if (!state) {
+    return { attempted: false, reason: "invalid-state" };
+  }
+  const verdict = await classifyTypedWithJev({
+    config,
+    state,
+    questions: probeObservationQuestions(),
+    transport,
+  });
   return { attempted: true, verdict };
 }
 
