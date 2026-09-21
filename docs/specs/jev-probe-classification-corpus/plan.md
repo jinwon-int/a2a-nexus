@@ -38,9 +38,13 @@ threshold ledger committed before any holdout record is scored.
       (`policy_computed_review_pending`) — done for the 156 exploratory records;
       frozen decision table and application report in
       [labeling-policy-v1.md](./labeling-policy-v1.md).
-- [ ] Independent review per record under opaque reviewer aliases; terminal states
-      `independently_reviewed` or `disputed_multiple_reasonable`; defer allowed.
-- [ ] Freeze the label ledger; no label changes after holdout scoring begins.
+- [x] Independent review per record under opaque reviewer aliases; terminal states
+      `independently_reviewed` or `disputed_multiple_reasonable`; defer allowed —
+      done: 156/156 `independently_reviewed` (0 disputed, 0 defer) via
+      independent broker-backed worker review; coverage, evidence grades, and
+      reviewer findings in [review-ledger-v1.json](./review-ledger-v1.json).
+- [x] Freeze the label ledger; no label changes after holdout scoring begins —
+      frozen 2026-09-21 (`labelLedger.frozenAt` in review-ledger-v1.json).
 
 Exit gate: label ledger frozen; review coverage recorded; no outcome field present.
 

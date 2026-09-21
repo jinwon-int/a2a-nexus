@@ -1,0 +1,76 @@
+{
+ "kind": "JevProbeClassificationCorpusReviewLedger",
+ "schemaVersion": 1,
+ "policyVersion": "probe-handling-policy@2026-09-21",
+ "corpus": "corpus-exploratory-v1.json",
+ "reviewedAt": "2026-09-21",
+ "method": {
+  "description": "Per-record independent review per plan.md Phase 2: each record's class was independently re-derived from judgmentTimeInput alone under the frozen decision table by broker-backed analysis workers operating from a separate broker, then compared with the recorded label. Source-only, no-live; workers never saw this repository's runtime and returned structured verdicts.",
+  "evidence": "Every review execution is a broker task record with signed result provenance (EdDSA over rfc8785-jcs canonicalization) retained off-repo; opaque reviewer aliases only. Attempt counts per slice are recorded so aggregate attestations are never mistaken for itemized per-record lists.",
+  "collectorNote": "The labeling party collected and validated coverage but did not participate in any verdict; disputed or deferred records would have been carried as such."
+ },
+ "reviews": [
+  {
+   "slice": "s1",
+   "records": "jpc-0001..jpc-0032",
+   "recordCount": 32,
+   "reviewerAlias": "kappa-jev",
+   "verdicts": { "independently_reviewed": 32, "disputed_multiple_reasonable": 0, "defer": 0 },
+   "evidenceGrade": "per_record"
+  },
+  {
+   "slice": "s2",
+   "records": "jpc-0033..jpc-0064",
+   "recordCount": 32,
+   "reviewerAlias": "attested-aggregate",
+   "verdicts": { "independently_reviewed": 32, "disputed_multiple_reasonable": 0, "defer": 0 },
+   "evidenceGrade": "attested_aggregate",
+   "note": "Three executions across two workers (same broker), all attesting full per-record re-derivation with 32/32 agreement; the itemized per-record list was not emitted by the bridge output envelope, so the attestation is recorded at aggregate grade."
+  },
+  {
+   "slice": "s3",
+   "records": "jpc-0065..jpc-0096",
+   "recordCount": 32,
+   "reviewerAlias": "jrv-opaque-01",
+   "verdicts": { "independently_reviewed": 32, "disputed_multiple_reasonable": 0, "defer": 0 },
+   "evidenceGrade": "per_record"
+  },
+  {
+   "slice": "s4",
+   "records": "jpc-0097..jpc-0128",
+   "recordCount": 32,
+   "reviewerAlias": "halcyon-7",
+   "verdicts": { "independently_reviewed": 32, "disputed_multiple_reasonable": 0, "defer": 0 },
+   "evidenceGrade": "per_record"
+  },
+  {
+   "slice": "s5",
+   "records": "jpc-0129..jpc-0156",
+   "recordCount": 28,
+   "reviewerAlias": "attested-aggregate",
+   "verdicts": { "independently_reviewed": 28, "disputed_multiple_reasonable": 0, "defer": 0 },
+   "evidenceGrade": "attested_aggregate",
+   "note": "Three executions across two workers (same broker), all attesting full per-record re-derivation with 28/28 agreement; itemized list not emitted, recorded at aggregate grade."
+  }
+ ],
+ "coverage": {
+  "total": 156,
+  "independently_reviewed": 156,
+  "disputed_multiple_reasonable": 0,
+  "defer": 0,
+  "perRecordEvidence": 96,
+  "attestedAggregateEvidence": 60
+ },
+ "labelLedger": {
+  "frozenAt": "2026-09-21",
+  "rule": "No label changes after holdout scoring begins (plan.md Phase 2); any revision restarts Phase 3 with a new holdout window."
+ },
+ "carriedFindings": [
+  "requesterClass=unknown is absorbed by the rule-3 fallback without an explicit clause; a future policy revision should state its handling and the migration rule.",
+  "Records with a probe-like signature but payloadFilePresent=true fall to the fallback; the payload-presence condition in rule 1 should be revisited if real probe traffic is captured.",
+  "messageWordsBand is inert under the fallback, so band-derivation defects would be structurally undetected in this corpus; sample cross-checks against original captures are recommended before Phase 3.",
+  "The window contains no rule-1 (probe) or rule-2 (proceed) firings, so arm comparison on this corpus evaluates the fallback path almost exclusively; interpret Phase 3 class-agreement metrics accordingly.",
+  "alternativeAcceptable depends entirely on bundleFilesBand in this window; band derivation errors would flip the flag in bulk.",
+  "Full agreement between recorded labels and re-derivation cannot by itself rule out that labels were produced by the same table; the circularity note is recorded and Phase 3 arms provide the substantive test."
+ ]
+}
