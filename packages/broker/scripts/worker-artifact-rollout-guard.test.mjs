@@ -69,6 +69,11 @@ export function reviewShadowQuestions() { return []; }
 export async function observeReceiptShadow() { return { attempted: false }; }
 export async function observeReviewSufficiencyShadow() { return { attempted: false }; }
 `;
+const jevProbeObservationSource = `
+export function probeObservationInputs() { return undefined; }
+export function probeObservationQuestions() { return []; }
+export function probeObservationState() { return ''; }
+`;
 
 function makeWorkerRoot({ bridgeHandlersContent = 'bridge-ok\n', handlersExecutable = true } = {}) {
   const root = mkdtempSync(join(tmpdir(), 'worker-artifact-'));
@@ -100,6 +105,8 @@ function makeWorkerRoot({ bridgeHandlersContent = 'bridge-ok\n', handlersExecuta
     compatJevClassifier: join(handlers, 'lib', 'jev-classifier.mjs'),
     sourceJevReviewShadow: join(scripts, 'lib', 'jev-review-shadow.mjs'),
     compatJevReviewShadow: join(handlers, 'lib', 'jev-review-shadow.mjs'),
+    sourceJevProbeObservation: join(scripts, 'lib', 'jev-probe-observation.mjs'),
+    compatJevProbeObservation: join(handlers, 'lib', 'jev-probe-observation.mjs'),
     sourceBridge: join(scripts, 'hermes-a2a-analysis-bridge.mjs'),
     compatBridge: join(handlers, 'hermes-a2a-analysis-bridge.mjs'),
     sourceOnlyBridge: join(scripts, 'source-only-local-analysis-bridge.mjs'),
@@ -125,6 +132,8 @@ function makeWorkerRoot({ bridgeHandlersContent = 'bridge-ok\n', handlersExecuta
   writeFileSync(files.compatJevClassifier, jevClassifierSource);
   writeFileSync(files.sourceJevReviewShadow, jevReviewShadowSource);
   writeFileSync(files.compatJevReviewShadow, jevReviewShadowSource);
+  writeFileSync(files.sourceJevProbeObservation, jevProbeObservationSource);
+  writeFileSync(files.compatJevProbeObservation, jevProbeObservationSource);
   writeFileSync(files.sourceBridge, 'bridge-ok\n');
   writeFileSync(files.compatBridge, bridgeHandlersContent);
   writeFileSync(files.sourceOnlyBridge, 'source-only-bridge-ok\n');

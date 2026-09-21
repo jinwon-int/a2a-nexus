@@ -112,6 +112,7 @@ RUN mkdir -p /var/lib/a2a-broker ./handlers ./handlers/lib \
   && cp packages/broker/scripts/lib/utf8-byte-budget.mjs ./handlers/lib/utf8-byte-budget.mjs \
   && cp packages/broker/scripts/lib/jev-classifier.mjs ./handlers/lib/jev-classifier.mjs \
   && cp packages/broker/scripts/lib/jev-review-shadow.mjs ./handlers/lib/jev-review-shadow.mjs \
+  && cp packages/broker/scripts/lib/jev-probe-observation.mjs ./handlers/lib/jev-probe-observation.mjs \
   && cp packages/broker/scripts/hermes-a2a-analysis-bridge.mjs ./handlers/hermes-a2a-analysis-bridge.mjs \
   && chown -R node:node /app /var/lib/a2a-broker
 USER node
