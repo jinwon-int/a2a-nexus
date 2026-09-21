@@ -114,6 +114,30 @@ acknowledge terminals, mutate databases, move credentials, commit, or open PRs.
 If the bridge times out, fails, or does not return parseable JSON, the task fails
 closed instead of returning generic acceptance.
 
+### Analysis Session Reuse (#2209)
+
+By default, every analysis bridge invocation runs with a fresh per-task session
+id (`a2a-<node>-<taskId>-analysis`), so no conversation state is shared between
+tasks. Operators who want a warm conversation cache for lower first-token
+latency can explicitly opt in:
+
+```bash
+A2A_OPENCLAW_ANALYSIS_SESSION_REUSE=1
+```
+
+With reuse enabled, the first attempt runs with a fixed per-node session id
+(`a2a-<node>-analysis-reuse`). If that attempt fails with a retryable
+execution-failure code (`openclaw_analysis_timeout`,
+`openclaw_analysis_spawn_failed`, `openclaw_analysis_failed`,
+`openclaw_analysis_no_final_json`), the handler falls back exactly once to a
+fresh per-task session id, so a poisoned shared session cannot wedge a task
+permanently. Non-retryable outcomes (payload recovery loss, review validation,
+source projection, pre-bridge retrieval snapshot rejection) are returned
+untouched.
+
+An explicit `A2A_OPENCLAW_ANALYSIS_SESSION_ID` always wins in both modes and
+runs directly with no fallback.
+
 ### Finalizer Evidence Classification
 
 Before a broker finalizer counts A2A/A2AD child output as worker reasoning, run the

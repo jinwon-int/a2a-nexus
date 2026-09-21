@@ -2819,6 +2819,163 @@ process.exit(1);
   }
 });
 
+// #2209 — opt-in analysis session reuse (default OFF) 테스트.
+// fake bridge 가 argv 의 --session-id 를 jsonl 로 기록해 세 가지 계약을 검증한다:
+// (1) reuse 모드 첫 시도 = a2a-${nodeId}-analysis-reuse, (2) 명시적 세션 id 는
+// 두 모드에서 모두 우선하며 폴백 없음, (3) 재시도 가능 실패 시 per-task 세션으로
+// 정확히 한 번 폴백.
+test("analysis session reuse mode starts with the shared per-node session id (#2209)", () => {
+  const dir = mkdtempSync(join(tmpdir(), "a2a-analysis-session-reuse-"));
+  const bin = join(dir, "capture-bridge.mjs");
+  const log = join(dir, "invocations.jsonl");
+  const logLiteral = JSON.stringify(log);
+  writeFileSync(bin, `#!/usr/bin/env node
+import fs from "node:fs";
+const argv = process.argv.slice(2);
+const sessionId = argv[argv.indexOf("--session-id") + 1] || "";
+fs.appendFileSync(${logLiteral}, JSON.stringify({ sessionId }) + "\\n");
+const response = {
+  status: "done", summary: "ok", findings: [], risks: [], recommendations: [],
+  evidenceRefs: ["#2209"], bridgeAdapter: "claude_code",
+};
+process.stdout.write(JSON.stringify({ payloads: [{ text: JSON.stringify(response) }] }) + "\\n");
+`);
+  chmodSync(bin, 0o755);
+  try {
+    const result = handleTask({
+      id: "task-session-reuse-first",
+      intent: "analyze",
+      assignedWorkerId: "workerzeta",
+      message: "Analyze #2209 session reuse",
+      payload: {
+        mode: "github-read-only-validation",
+        repo: "jinwon-int/a2a-nexus",
+        sourceOnly: true,
+        readOnlyValidation: true,
+        noLive: true,
+        noGitHubWrites: true,
+      },
+    }, {
+      PATH: process.env.PATH,
+      A2A_EXECUTOR_MODE: "builtin",
+      A2A_OPENCLAW_ANALYSIS_ENABLED: "1",
+      A2A_OPENCLAW_ANALYSIS_BIN: bin,
+      A2A_OPENCLAW_ANALYSIS_TIMEOUT_SEC: "5",
+      A2A_NODE_ID: "workerzeta",
+      A2A_OPENCLAW_ANALYSIS_SESSION_REUSE: "1",
+    });
+
+    assert.equal(result.error, undefined, "successful reuse-mode first attempt must not trigger a fallback");
+    const invocations = readFileSync(log, "utf8").trim().split("\n").map((line) => JSON.parse(line));
+    assert.equal(invocations.length, 1, "success on the shared session must stay a single invocation");
+    assert.equal(invocations[0].sessionId, "a2a-workerzeta-analysis-reuse");
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test("explicit analysis session id wins in both modes and never falls back (#2209)", () => {
+  const dir = mkdtempSync(join(tmpdir(), "a2a-analysis-session-explicit-"));
+  const bin = join(dir, "always-failing-bridge.mjs");
+  const log = join(dir, "invocations.jsonl");
+  const logLiteral = JSON.stringify(log);
+  writeFileSync(bin, `#!/usr/bin/env node
+import fs from "node:fs";
+const argv = process.argv.slice(2);
+const sessionId = argv[argv.indexOf("--session-id") + 1] || "";
+fs.appendFileSync(${logLiteral}, JSON.stringify({ sessionId }) + "\\n");
+process.stderr.write("simulated eligible analysis failure\\n");
+process.exit(1);
+`);
+  chmodSync(bin, 0o755);
+  const baseTask = {
+    intent: "analyze",
+    assignedWorkerId: "workerzeta",
+    message: "Analyze #2209 explicit session override",
+    payload: {
+      mode: "github-read-only-validation",
+      repo: "jinwon-int/a2a-nexus",
+      sourceOnly: true,
+      readOnlyValidation: true,
+      noLive: true,
+      noGitHubWrites: true,
+    },
+  };
+  const baseEnv = {
+    PATH: process.env.PATH,
+    A2A_EXECUTOR_MODE: "builtin",
+    A2A_OPENCLAW_ANALYSIS_ENABLED: "1",
+    A2A_OPENCLAW_ANALYSIS_BIN: bin,
+    A2A_OPENCLAW_ANALYSIS_TIMEOUT_SEC: "5",
+    A2A_NODE_ID: "workerzeta",
+    A2A_OPENCLAW_ANALYSIS_SESSION_ID: "operator-pinned-session",
+  };
+  try {
+    for (const [label, extraEnv] of [
+      ["default", {}],
+      ["reuse", { A2A_OPENCLAW_ANALYSIS_SESSION_REUSE: "1" }],
+    ]) {
+      const result = handleTask({ ...baseTask, id: `task-session-explicit-${label}` }, { ...baseEnv, ...extraEnv });
+      assert.equal(result.error?.code, "openclaw_analysis_failed", `${label} mode keeps the structured outer failure code`);
+      const invocations = readFileSync(log, "utf8").trim().split("\n").map((line) => JSON.parse(line));
+      assert.equal(invocations.length, 1, `${label} mode must not add a fallback attempt`);
+      assert.equal(invocations[0].sessionId, "operator-pinned-session", `${label} mode must pass the explicit session id through`);
+      rmSync(log, { force: true });
+    }
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test("reuse-mode eligible failure falls back exactly once to a fresh per-task session (#2209)", () => {
+  const dir = mkdtempSync(join(tmpdir(), "a2a-analysis-session-fallback-"));
+  const bin = join(dir, "always-failing-bridge.mjs");
+  const log = join(dir, "invocations.jsonl");
+  const logLiteral = JSON.stringify(log);
+  writeFileSync(bin, `#!/usr/bin/env node
+import fs from "node:fs";
+const argv = process.argv.slice(2);
+const sessionId = argv[argv.indexOf("--session-id") + 1] || "";
+fs.appendFileSync(${logLiteral}, JSON.stringify({ sessionId }) + "\\n");
+process.stderr.write("simulated eligible analysis failure\\n");
+process.exit(1);
+`);
+  chmodSync(bin, 0o755);
+  try {
+    const result = handleTask({
+      id: "task-session-reuse-fallback",
+      intent: "analyze",
+      assignedWorkerId: "workerzeta",
+      message: "Analyze #2209 fallback discipline",
+      payload: {
+        mode: "github-read-only-validation",
+        repo: "jinwon-int/a2a-nexus",
+        sourceOnly: true,
+        readOnlyValidation: true,
+        noLive: true,
+        noGitHubWrites: true,
+      },
+    }, {
+      PATH: process.env.PATH,
+      A2A_EXECUTOR_MODE: "builtin",
+      A2A_OPENCLAW_ANALYSIS_ENABLED: "1",
+      A2A_OPENCLAW_ANALYSIS_BIN: bin,
+      A2A_OPENCLAW_ANALYSIS_TIMEOUT_SEC: "5",
+      A2A_NODE_ID: "workerzeta",
+      A2A_OPENCLAW_ANALYSIS_SESSION_REUSE: "1",
+    });
+
+    assert.equal(result.error?.code, "openclaw_analysis_failed", "final result keeps the last attempt's failure code");
+    const invocations = readFileSync(log, "utf8").trim().split("\n").map((line) => JSON.parse(line));
+    assert.deepEqual(invocations.map((entry) => entry.sessionId), [
+      "a2a-workerzeta-analysis-reuse",
+      "a2a-workerzeta-task-session-reuse-fallback-analysis",
+    ], "exactly one per-task fallback retry, no more");
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
 test("analysis handler tolerates bridges without the structured failure line", () => {
   const dir = mkdtempSync(join(tmpdir(), "a2a-analysis-bridge-plain-failure-"));
   const bin = join(dir, "plain-failing-bridge.mjs");
