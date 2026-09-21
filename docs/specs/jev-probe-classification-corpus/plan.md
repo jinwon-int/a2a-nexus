@@ -50,13 +50,24 @@ Exit gate: label ledger frozen; review coverage recorded; no outcome field prese
 
 ## Phase 3 — Arms A/B/C offline comparison (separate slice)
 
-- [ ] Arm A: existing deterministic rules (baseline, recorded as data).
-- [ ] Arm B: LLM classification under the fleet's model-cost accounting.
-- [ ] Arm C: jev classification via the landed typed facade.
-- [ ] Score on `train` + `calibration` only: per-class agreement, defer rate,
+- [x] Arm A: existing deterministic rules (baseline, recorded as data) —
+      handler-heuristics@2026-09-21 executed locally; outputs in
+      [arm-results-v1.json](./arm-results-v1.json).
+- [x] Arm B: LLM classification under the fleet's model-cost accounting —
+      broker-backed analysis worker (source-only, no-live); token usage and
+      bridge-reported cost recorded per arm in the results file.
+- [x] Arm C: jev classification via the landed typed facade — facade-equivalent
+      single-attempt contract executed through the fleet jev client on the
+      pilot node against the same closed banded surface; noul probabilities
+      recorded for calibration.
+- [x] Score on `train` + `calibration` only: per-class agreement, defer rate,
       calibration (Brier/ECE), per-requesterClass breakdown; exclude
-      identical-work/retry groups from independence statistics.
-- [ ] Freeze candidate selection + thresholds in the threshold ledger.
+      identical-work/retry groups from independence statistics — all metrics
+      in arm-results-v1.json; holdout not read.
+- [x] Freeze candidate selection + thresholds in the threshold ledger —
+      candidate: keep the existing deterministic rule; arm-C act threshold
+      0.80 (pre-frozen) recorded for any future adoption; interpretive
+      caveats recorded (`arms.candidate` in threshold-ledger.json).
 
 Exit gate: no holdout record read; ledger updated with candidate + thresholds.
 

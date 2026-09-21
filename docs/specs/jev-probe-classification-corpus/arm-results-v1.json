@@ -1,0 +1,2595 @@
+{
+ "kind": "JevProbeClassificationArmsResults",
+ "schemaVersion": 1,
+ "policyVersion": "probe-handling-policy@2026-09-21",
+ "scope": "train+calibration only (145 records); holdout not read (Phase 4 one-shot pending)",
+ "method": {
+  "armA": "existing deterministic rules (handler-heuristics@2026-09-21, behavior pinned by the Phase-0 fixture), executed locally; no probabilities",
+  "armB": "LLM classification by a broker-backed analysis worker on a separate broker (source-only, no-live), class taxonomy given as natural-language definitions only — the frozen banded decision table was withheld; per-record confidence where the reviewer stated it (73/145), remaining records class-attested at group level in the same signed task records Opaque reviewer alias: armb-judge-b1.",
+  "armC": "jev via the fleet client on the pilot node, single attempt per record (facade-equivalent contract), frozen noul questions + decide @THRESH=0.80 which pre-dates this corpus; input is the same closed banded profile rendered as state — original message text does not exist in the corpus by the redaction protocol"
+ },
+ "perRecord": [
+  {
+   "recordId": "jpc-0001",
+   "split": "train",
+   "groupKind": "unique",
+   "label": "incomplete",
+   "armA": "incomplete",
+   "armB": {
+    "class": "incomplete",
+    "confidence": 0.6
+   },
+   "armC": {
+    "class": "incomplete",
+    "p_probe": 0.24,
+    "p_incomplete": 0.07,
+    "p_complete": 0.61
+   }
+  },
+  {
+   "recordId": "jpc-0002",
+   "split": "train",
+   "groupKind": "unique",
+   "label": "incomplete",
+   "armA": "incomplete",
+   "armB": {
+    "class": "incomplete",
+    "confidence": 0.6
+   },
+   "armC": {
+    "class": "incomplete",
+    "p_probe": 0.21,
+    "p_incomplete": 0.07,
+    "p_complete": 0.6
+   }
+  },
+  {
+   "recordId": "jpc-0003",
+   "split": "train",
+   "groupKind": "unique",
+   "label": "incomplete",
+   "armA": "incomplete",
+   "armB": {
+    "class": "incomplete",
+    "confidence": 0.65
+   },
+   "armC": {
+    "class": "incomplete",
+    "p_probe": 0.2,
+    "p_incomplete": 0.07,
+    "p_complete": 0.67
+   }
+  },
+  {
+   "recordId": "jpc-0004",
+   "split": "train",
+   "groupKind": "unique",
+   "label": "incomplete",
+   "armA": "incomplete",
+   "armB": {
+    "class": "proceed",
+    "confidence": 0.8
+   },
+   "armC": {
+    "class": "incomplete",
+    "p_probe": 0.1,
+    "p_incomplete": 0.08,
+    "p_complete": 0.69
+   }
+  },
+  {
+   "recordId": "jpc-0005",
+   "split": "train",
+   "groupKind": "unique",
+   "label": "incomplete",
+   "armA": "incomplete",
+   "armB": {
+    "class": "proceed",
+    "confidence": 0.8
+   },
+   "armC": {
+    "class": "incomplete",
+    "p_probe": 0.11,
+    "p_incomplete": 0.07,
+    "p_complete": 0.66
+   }
+  },
+  {
+   "recordId": "jpc-0006",
+   "split": "train",
+   "groupKind": "unique",
+   "label": "incomplete",
+   "armA": "incomplete",
+   "armB": {
+    "class": "proceed",
+    "confidence": 0.8
+   },
+   "armC": {
+    "class": "incomplete",
+    "p_probe": 0.12,
+    "p_incomplete": 0.07,
+    "p_complete": 0.66
+   }
+  },
+  {
+   "recordId": "jpc-0007",
+   "split": "train",
+   "groupKind": "unique",
+   "label": "incomplete",
+   "armA": "incomplete",
+   "armB": {
+    "class": "proceed",
+    "confidence": 0.8
+   },
+   "armC": {
+    "class": "incomplete",
+    "p_probe": 0.11,
+    "p_incomplete": 0.08,
+    "p_complete": 0.72
+   }
+  },
+  {
+   "recordId": "jpc-0008",
+   "split": "train",
+   "groupKind": "unique",
+   "label": "incomplete",
+   "armA": "incomplete",
+   "armB": {
+    "class": "proceed",
+    "confidence": 0.8
+   },
+   "armC": {
+    "class": "incomplete",
+    "p_probe": 0.1,
+    "p_incomplete": 0.07,
+    "p_complete": 0.69
+   }
+  },
+  {
+   "recordId": "jpc-0009",
+   "split": "train",
+   "groupKind": "unique",
+   "label": "incomplete",
+   "armA": "incomplete",
+   "armB": {
+    "class": "proceed",
+    "confidence": 0.8
+   },
+   "armC": {
+    "class": "incomplete",
+    "p_probe": 0.1,
+    "p_incomplete": 0.08,
+    "p_complete": 0.67
+   }
+  },
+  {
+   "recordId": "jpc-0010",
+   "split": "train",
+   "groupKind": "unique",
+   "label": "incomplete",
+   "armA": "incomplete",
+   "armB": {
+    "class": "proceed",
+    "confidence": 0.8
+   },
+   "armC": {
+    "class": "incomplete",
+    "p_probe": 0.1,
+    "p_incomplete": 0.07,
+    "p_complete": 0.71
+   }
+  },
+  {
+   "recordId": "jpc-0011",
+   "split": "train",
+   "groupKind": "unique",
+   "label": "incomplete",
+   "armA": "incomplete",
+   "armB": {
+    "class": "proceed",
+    "confidence": 0.8
+   },
+   "armC": {
+    "class": "incomplete",
+    "p_probe": 0.11,
+    "p_incomplete": 0.07,
+    "p_complete": 0.67
+   }
+  },
+  {
+   "recordId": "jpc-0012",
+   "split": "train",
+   "groupKind": "unique",
+   "label": "incomplete",
+   "armA": "incomplete",
+   "armB": {
+    "class": "proceed",
+    "confidence": 0.8
+   },
+   "armC": {
+    "class": "incomplete",
+    "p_probe": 0.11,
+    "p_incomplete": 0.07,
+    "p_complete": 0.67
+   }
+  },
+  {
+   "recordId": "jpc-0013",
+   "split": "train",
+   "groupKind": "unique",
+   "label": "incomplete",
+   "armA": "incomplete",
+   "armB": {
+    "class": "proceed",
+    "confidence": 0.8
+   },
+   "armC": {
+    "class": "incomplete",
+    "p_probe": 0.11,
+    "p_incomplete": 0.08,
+    "p_complete": 0.66
+   }
+  },
+  {
+   "recordId": "jpc-0014",
+   "split": "train",
+   "groupKind": "unique",
+   "label": "incomplete",
+   "armA": "incomplete",
+   "armB": {
+    "class": "proceed",
+    "confidence": 0.8
+   },
+   "armC": {
+    "class": "incomplete",
+    "p_probe": 0.11,
+    "p_incomplete": 0.07,
+    "p_complete": 0.7
+   }
+  },
+  {
+   "recordId": "jpc-0015",
+   "split": "train",
+   "groupKind": "unique",
+   "label": "incomplete",
+   "armA": "incomplete",
+   "armB": {
+    "class": "proceed",
+    "confidence": 0.8
+   },
+   "armC": {
+    "class": "incomplete",
+    "p_probe": 0.1,
+    "p_incomplete": 0.07,
+    "p_complete": 0.7
+   }
+  },
+  {
+   "recordId": "jpc-0016",
+   "split": "train",
+   "groupKind": "unique",
+   "label": "incomplete",
+   "armA": "incomplete",
+   "armB": {
+    "class": "proceed",
+    "confidence": 0.8
+   },
+   "armC": {
+    "class": "incomplete",
+    "p_probe": 0.11,
+    "p_incomplete": 0.07,
+    "p_complete": 0.69
+   }
+  },
+  {
+   "recordId": "jpc-0017",
+   "split": "train",
+   "groupKind": "unique",
+   "label": "incomplete",
+   "armA": "incomplete",
+   "armB": {
+    "class": "proceed",
+    "confidence": 0.8
+   },
+   "armC": {
+    "class": "incomplete",
+    "p_probe": 0.1,
+    "p_incomplete": 0.06,
+    "p_complete": 0.68
+   }
+  },
+  {
+   "recordId": "jpc-0018",
+   "split": "train",
+   "groupKind": "unique",
+   "label": "incomplete",
+   "armA": "incomplete",
+   "armB": {
+    "class": "proceed",
+    "confidence": 0.8
+   },
+   "armC": {
+    "class": "incomplete",
+    "p_probe": 0.11,
+    "p_incomplete": 0.07,
+    "p_complete": 0.69
+   }
+  },
+  {
+   "recordId": "jpc-0019",
+   "split": "train",
+   "groupKind": "unique",
+   "label": "incomplete",
+   "armA": "incomplete",
+   "armB": {
+    "class": "proceed",
+    "confidence": 0.8
+   },
+   "armC": {
+    "class": "incomplete",
+    "p_probe": 0.11,
+    "p_incomplete": 0.06,
+    "p_complete": 0.67
+   }
+  },
+  {
+   "recordId": "jpc-0020",
+   "split": "train",
+   "groupKind": "unique",
+   "label": "incomplete",
+   "armA": "incomplete",
+   "armB": {
+    "class": "proceed",
+    "confidence": 0.8
+   },
+   "armC": {
+    "class": "incomplete",
+    "p_probe": 0.11,
+    "p_incomplete": 0.07,
+    "p_complete": 0.67
+   }
+  },
+  {
+   "recordId": "jpc-0021",
+   "split": "train",
+   "groupKind": "unique",
+   "label": "incomplete",
+   "armA": "incomplete",
+   "armB": {
+    "class": "proceed",
+    "confidence": 0.8
+   },
+   "armC": {
+    "class": "incomplete",
+    "p_probe": 0.11,
+    "p_incomplete": 0.07,
+    "p_complete": 0.66
+   }
+  },
+  {
+   "recordId": "jpc-0022",
+   "split": "train",
+   "groupKind": "unique",
+   "label": "incomplete",
+   "armA": "incomplete",
+   "armB": {
+    "class": "proceed",
+    "confidence": 0.8
+   },
+   "armC": {
+    "class": "incomplete",
+    "p_probe": 0.1,
+    "p_incomplete": 0.06,
+    "p_complete": 0.68
+   }
+  },
+  {
+   "recordId": "jpc-0023",
+   "split": "train",
+   "groupKind": "unique",
+   "label": "incomplete",
+   "armA": "incomplete",
+   "armB": {
+    "class": "proceed",
+    "confidence": 0.8
+   },
+   "armC": {
+    "class": "incomplete",
+    "p_probe": 0.11,
+    "p_incomplete": 0.08,
+    "p_complete": 0.68
+   }
+  },
+  {
+   "recordId": "jpc-0024",
+   "split": "train",
+   "groupKind": "unique",
+   "label": "incomplete",
+   "armA": "incomplete",
+   "armB": {
+    "class": "proceed",
+    "confidence": 0.8
+   },
+   "armC": {
+    "class": "incomplete",
+    "p_probe": 0.11,
+    "p_incomplete": 0.07,
+    "p_complete": 0.66
+   }
+  },
+  {
+   "recordId": "jpc-0025",
+   "split": "train",
+   "groupKind": "unique",
+   "label": "incomplete",
+   "armA": "incomplete",
+   "armB": {
+    "class": "proceed",
+    "confidence": 0.8
+   },
+   "armC": {
+    "class": "incomplete",
+    "p_probe": 0.11,
+    "p_incomplete": 0.07,
+    "p_complete": 0.67
+   }
+  },
+  {
+   "recordId": "jpc-0026",
+   "split": "train",
+   "groupKind": "unique",
+   "label": "incomplete",
+   "armA": "incomplete",
+   "armB": {
+    "class": "proceed",
+    "confidence": 0.8
+   },
+   "armC": {
+    "class": "incomplete",
+    "p_probe": 0.1,
+    "p_incomplete": 0.07,
+    "p_complete": 0.72
+   }
+  },
+  {
+   "recordId": "jpc-0027",
+   "split": "train",
+   "groupKind": "unique",
+   "label": "incomplete",
+   "armA": "incomplete",
+   "armB": {
+    "class": "proceed",
+    "confidence": 0.8
+   },
+   "armC": {
+    "class": "incomplete",
+    "p_probe": 0.11,
+    "p_incomplete": 0.06,
+    "p_complete": 0.71
+   }
+  },
+  {
+   "recordId": "jpc-0028",
+   "split": "train",
+   "groupKind": "unique",
+   "label": "incomplete",
+   "armA": "incomplete",
+   "armB": {
+    "class": "proceed",
+    "confidence": 0.8
+   },
+   "armC": {
+    "class": "incomplete",
+    "p_probe": 0.1,
+    "p_incomplete": 0.07,
+    "p_complete": 0.66
+   }
+  },
+  {
+   "recordId": "jpc-0029",
+   "split": "train",
+   "groupKind": "unique",
+   "label": "incomplete",
+   "armA": "incomplete",
+   "armB": {
+    "class": "proceed",
+    "confidence": 0.8
+   },
+   "armC": {
+    "class": "incomplete",
+    "p_probe": 0.11,
+    "p_incomplete": 0.07,
+    "p_complete": 0.67
+   }
+  },
+  {
+   "recordId": "jpc-0030",
+   "split": "train",
+   "groupKind": "unique",
+   "label": "incomplete",
+   "armA": "incomplete",
+   "armB": {
+    "class": "proceed",
+    "confidence": null
+   },
+   "armC": {
+    "class": "incomplete",
+    "p_probe": 0.11,
+    "p_incomplete": 0.07,
+    "p_complete": 0.71
+   }
+  },
+  {
+   "recordId": "jpc-0031",
+   "split": "train",
+   "groupKind": "unique",
+   "label": "incomplete",
+   "armA": "incomplete",
+   "armB": {
+    "class": "proceed",
+    "confidence": null
+   },
+   "armC": {
+    "class": "incomplete",
+    "p_probe": 0.11,
+    "p_incomplete": 0.07,
+    "p_complete": 0.69
+   }
+  },
+  {
+   "recordId": "jpc-0032",
+   "split": "train",
+   "groupKind": "retry",
+   "label": "incomplete",
+   "armA": "incomplete",
+   "armB": {
+    "class": "proceed",
+    "confidence": null
+   },
+   "armC": {
+    "class": "incomplete",
+    "p_probe": 0.1,
+    "p_incomplete": 0.07,
+    "p_complete": 0.66
+   }
+  },
+  {
+   "recordId": "jpc-0033",
+   "split": "train",
+   "groupKind": "retry",
+   "label": "incomplete",
+   "armA": "incomplete",
+   "armB": {
+    "class": "proceed",
+    "confidence": null
+   },
+   "armC": {
+    "class": "incomplete",
+    "p_probe": 0.12,
+    "p_incomplete": 0.07,
+    "p_complete": 0.7
+   }
+  },
+  {
+   "recordId": "jpc-0034",
+   "split": "train",
+   "groupKind": "unique",
+   "label": "incomplete",
+   "armA": "incomplete",
+   "armB": {
+    "class": "proceed",
+    "confidence": null
+   },
+   "armC": {
+    "class": "incomplete",
+    "p_probe": 0.11,
+    "p_incomplete": 0.07,
+    "p_complete": 0.72
+   }
+  },
+  {
+   "recordId": "jpc-0035",
+   "split": "train",
+   "groupKind": "unique",
+   "label": "incomplete",
+   "armA": "incomplete",
+   "armB": {
+    "class": "proceed",
+    "confidence": null
+   },
+   "armC": {
+    "class": "incomplete",
+    "p_probe": 0.11,
+    "p_incomplete": 0.06,
+    "p_complete": 0.69
+   }
+  },
+  {
+   "recordId": "jpc-0036",
+   "split": "train",
+   "groupKind": "retry",
+   "label": "incomplete",
+   "armA": "incomplete",
+   "armB": {
+    "class": "proceed",
+    "confidence": null
+   },
+   "armC": {
+    "class": "incomplete",
+    "p_probe": 0.11,
+    "p_incomplete": 0.07,
+    "p_complete": 0.69
+   }
+  },
+  {
+   "recordId": "jpc-0037",
+   "split": "train",
+   "groupKind": "retry",
+   "label": "incomplete",
+   "armA": "incomplete",
+   "armB": {
+    "class": "proceed",
+    "confidence": null
+   },
+   "armC": {
+    "class": "incomplete",
+    "p_probe": 0.11,
+    "p_incomplete": 0.07,
+    "p_complete": 0.68
+   }
+  },
+  {
+   "recordId": "jpc-0038",
+   "split": "train",
+   "groupKind": "identical_work",
+   "label": "incomplete",
+   "armA": "incomplete",
+   "armB": {
+    "class": "proceed",
+    "confidence": 0.85
+   },
+   "armC": {
+    "class": "incomplete",
+    "p_probe": 0.19,
+    "p_incomplete": 0.06,
+    "p_complete": 0.69
+   }
+  },
+  {
+   "recordId": "jpc-0039",
+   "split": "train",
+   "groupKind": "identical_work",
+   "label": "incomplete",
+   "armA": "incomplete",
+   "armB": {
+    "class": "proceed",
+    "confidence": 0.85
+   },
+   "armC": {
+    "class": "incomplete",
+    "p_probe": 0.18,
+    "p_incomplete": 0.07,
+    "p_complete": 0.66
+   }
+  },
+  {
+   "recordId": "jpc-0040",
+   "split": "train",
+   "groupKind": "identical_work",
+   "label": "incomplete",
+   "armA": "incomplete",
+   "armB": {
+    "class": "proceed",
+    "confidence": 0.85
+   },
+   "armC": {
+    "class": "incomplete",
+    "p_probe": 0.18,
+    "p_incomplete": 0.07,
+    "p_complete": 0.69
+   }
+  },
+  {
+   "recordId": "jpc-0041",
+   "split": "train",
+   "groupKind": "unique",
+   "label": "incomplete",
+   "armA": "incomplete",
+   "armB": {
+    "class": "proceed",
+    "confidence": null
+   },
+   "armC": {
+    "class": "incomplete",
+    "p_probe": 0.11,
+    "p_incomplete": 0.07,
+    "p_complete": 0.68
+   }
+  },
+  {
+   "recordId": "jpc-0042",
+   "split": "train",
+   "groupKind": "unique",
+   "label": "incomplete",
+   "armA": "incomplete",
+   "armB": {
+    "class": "proceed",
+    "confidence": null
+   },
+   "armC": {
+    "class": "incomplete",
+    "p_probe": 0.1,
+    "p_incomplete": 0.08,
+    "p_complete": 0.69
+   }
+  },
+  {
+   "recordId": "jpc-0043",
+   "split": "train",
+   "groupKind": "unique",
+   "label": "incomplete",
+   "armA": "incomplete",
+   "armB": {
+    "class": "proceed",
+    "confidence": null
+   },
+   "armC": {
+    "class": "incomplete",
+    "p_probe": 0.1,
+    "p_incomplete": 0.07,
+    "p_complete": 0.64
+   }
+  },
+  {
+   "recordId": "jpc-0044",
+   "split": "train",
+   "groupKind": "unique",
+   "label": "incomplete",
+   "armA": "incomplete",
+   "armB": {
+    "class": "proceed",
+    "confidence": null
+   },
+   "armC": {
+    "class": "incomplete",
+    "p_probe": 0.1,
+    "p_incomplete": 0.07,
+    "p_complete": 0.68
+   }
+  },
+  {
+   "recordId": "jpc-0045",
+   "split": "train",
+   "groupKind": "unique",
+   "label": "incomplete",
+   "armA": "incomplete",
+   "armB": {
+    "class": "proceed",
+    "confidence": null
+   },
+   "armC": {
+    "class": "incomplete",
+    "p_probe": 0.1,
+    "p_incomplete": 0.07,
+    "p_complete": 0.7
+   }
+  },
+  {
+   "recordId": "jpc-0046",
+   "split": "train",
+   "groupKind": "identical_work",
+   "label": "incomplete",
+   "armA": "incomplete",
+   "armB": {
+    "class": "proceed",
+    "confidence": 0.85
+   },
+   "armC": {
+    "class": "incomplete",
+    "p_probe": 0.18,
+    "p_incomplete": 0.07,
+    "p_complete": 0.69
+   }
+  },
+  {
+   "recordId": "jpc-0047",
+   "split": "train",
+   "groupKind": "identical_work",
+   "label": "incomplete",
+   "armA": "incomplete",
+   "armB": {
+    "class": "proceed",
+    "confidence": 0.85
+   },
+   "armC": {
+    "class": "incomplete",
+    "p_probe": 0.18,
+    "p_incomplete": 0.07,
+    "p_complete": 0.65
+   }
+  },
+  {
+   "recordId": "jpc-0048",
+   "split": "train",
+   "groupKind": "identical_work",
+   "label": "incomplete",
+   "armA": "incomplete",
+   "armB": {
+    "class": "proceed",
+    "confidence": 0.85
+   },
+   "armC": {
+    "class": "incomplete",
+    "p_probe": 0.2,
+    "p_incomplete": 0.08,
+    "p_complete": 0.68
+   }
+  },
+  {
+   "recordId": "jpc-0049",
+   "split": "train",
+   "groupKind": "retry",
+   "label": "incomplete",
+   "armA": "incomplete",
+   "armB": {
+    "class": "proceed",
+    "confidence": null
+   },
+   "armC": {
+    "class": "incomplete",
+    "p_probe": 0.12,
+    "p_incomplete": 0.07,
+    "p_complete": 0.69
+   }
+  },
+  {
+   "recordId": "jpc-0050",
+   "split": "train",
+   "groupKind": "retry",
+   "label": "incomplete",
+   "armA": "incomplete",
+   "armB": {
+    "class": "proceed",
+    "confidence": null
+   },
+   "armC": {
+    "class": "incomplete",
+    "p_probe": 0.1,
+    "p_incomplete": 0.07,
+    "p_complete": 0.67
+   }
+  },
+  {
+   "recordId": "jpc-0051",
+   "split": "train",
+   "groupKind": "unique",
+   "label": "incomplete",
+   "armA": "incomplete",
+   "armB": {
+    "class": "proceed",
+    "confidence": null
+   },
+   "armC": {
+    "class": "incomplete",
+    "p_probe": 0.1,
+    "p_incomplete": 0.07,
+    "p_complete": 0.68
+   }
+  },
+  {
+   "recordId": "jpc-0052",
+   "split": "train",
+   "groupKind": "unique",
+   "label": "incomplete",
+   "armA": "incomplete",
+   "armB": {
+    "class": "proceed",
+    "confidence": null
+   },
+   "armC": {
+    "class": "incomplete",
+    "p_probe": 0.11,
+    "p_incomplete": 0.07,
+    "p_complete": 0.66
+   }
+  },
+  {
+   "recordId": "jpc-0053",
+   "split": "train",
+   "groupKind": "unique",
+   "label": "incomplete",
+   "armA": "incomplete",
+   "armB": {
+    "class": "proceed",
+    "confidence": null
+   },
+   "armC": {
+    "class": "incomplete",
+    "p_probe": 0.11,
+    "p_incomplete": 0.07,
+    "p_complete": 0.67
+   }
+  },
+  {
+   "recordId": "jpc-0054",
+   "split": "train",
+   "groupKind": "unique",
+   "label": "incomplete",
+   "armA": "incomplete",
+   "armB": {
+    "class": "proceed",
+    "confidence": null
+   },
+   "armC": {
+    "class": "incomplete",
+    "p_probe": 0.1,
+    "p_incomplete": 0.07,
+    "p_complete": 0.68
+   }
+  },
+  {
+   "recordId": "jpc-0055",
+   "split": "train",
+   "groupKind": "unique",
+   "label": "incomplete",
+   "armA": "incomplete",
+   "armB": {
+    "class": "proceed",
+    "confidence": null
+   },
+   "armC": {
+    "class": "incomplete",
+    "p_probe": 0.1,
+    "p_incomplete": 0.07,
+    "p_complete": 0.66
+   }
+  },
+  {
+   "recordId": "jpc-0056",
+   "split": "train",
+   "groupKind": "unique",
+   "label": "incomplete",
+   "armA": "incomplete",
+   "armB": {
+    "class": "proceed",
+    "confidence": null
+   },
+   "armC": {
+    "class": "incomplete",
+    "p_probe": 0.1,
+    "p_incomplete": 0.07,
+    "p_complete": 0.69
+   }
+  },
+  {
+   "recordId": "jpc-0057",
+   "split": "train",
+   "groupKind": "unique",
+   "label": "incomplete",
+   "armA": "incomplete",
+   "armB": {
+    "class": "defer",
+    "confidence": 0.6
+   },
+   "armC": {
+    "class": "incomplete",
+    "p_probe": 0.11,
+    "p_incomplete": 0.07,
+    "p_complete": 0.62
+   }
+  },
+  {
+   "recordId": "jpc-0058",
+   "split": "train",
+   "groupKind": "unique",
+   "label": "incomplete",
+   "armA": "incomplete",
+   "armB": {
+    "class": "proceed",
+    "confidence": null
+   },
+   "armC": {
+    "class": "incomplete",
+    "p_probe": 0.11,
+    "p_incomplete": 0.07,
+    "p_complete": 0.69
+   }
+  },
+  {
+   "recordId": "jpc-0059",
+   "split": "train",
+   "groupKind": "retry",
+   "label": "incomplete",
+   "armA": "incomplete",
+   "armB": {
+    "class": "proceed",
+    "confidence": 0.68
+   },
+   "armC": {
+    "class": "incomplete",
+    "p_probe": 0.16,
+    "p_incomplete": 0.07,
+    "p_complete": 0.68
+   }
+  },
+  {
+   "recordId": "jpc-0060",
+   "split": "train",
+   "groupKind": "retry",
+   "label": "incomplete",
+   "armA": "incomplete",
+   "armB": {
+    "class": "proceed",
+    "confidence": 0.68
+   },
+   "armC": {
+    "class": "incomplete",
+    "p_probe": 0.16,
+    "p_incomplete": 0.07,
+    "p_complete": 0.7
+   }
+  },
+  {
+   "recordId": "jpc-0061",
+   "split": "train",
+   "groupKind": "identical_work",
+   "label": "incomplete",
+   "armA": "incomplete",
+   "armB": {
+    "class": "proceed",
+    "confidence": 0.74
+   },
+   "armC": {
+    "class": "incomplete",
+    "p_probe": 0.25,
+    "p_incomplete": 0.07,
+    "p_complete": 0.66
+   }
+  },
+  {
+   "recordId": "jpc-0062",
+   "split": "train",
+   "groupKind": "identical_work",
+   "label": "incomplete",
+   "armA": "incomplete",
+   "armB": {
+    "class": "proceed",
+    "confidence": 0.74
+   },
+   "armC": {
+    "class": "incomplete",
+    "p_probe": 0.26,
+    "p_incomplete": 0.07,
+    "p_complete": 0.65
+   }
+  },
+  {
+   "recordId": "jpc-0063",
+   "split": "train",
+   "groupKind": "identical_work",
+   "label": "incomplete",
+   "armA": "incomplete",
+   "armB": {
+    "class": "proceed",
+    "confidence": 0.74
+   },
+   "armC": {
+    "class": "incomplete",
+    "p_probe": 0.22,
+    "p_incomplete": 0.07,
+    "p_complete": 0.66
+   }
+  },
+  {
+   "recordId": "jpc-0064",
+   "split": "train",
+   "groupKind": "retry",
+   "label": "incomplete",
+   "armA": "incomplete",
+   "armB": {
+    "class": "proceed",
+    "confidence": 0.76
+   },
+   "armC": {
+    "class": "incomplete",
+    "p_probe": 0.13,
+    "p_incomplete": 0.07,
+    "p_complete": 0.65
+   }
+  },
+  {
+   "recordId": "jpc-0065",
+   "split": "train",
+   "groupKind": "retry",
+   "label": "incomplete",
+   "armA": "incomplete",
+   "armB": {
+    "class": "proceed",
+    "confidence": 0.76
+   },
+   "armC": {
+    "class": "incomplete",
+    "p_probe": 0.14,
+    "p_incomplete": 0.07,
+    "p_complete": 0.66
+   }
+  },
+  {
+   "recordId": "jpc-0066",
+   "split": "train",
+   "groupKind": "unique",
+   "label": "incomplete",
+   "armA": "incomplete",
+   "armB": {
+    "class": "proceed",
+    "confidence": 0.76
+   },
+   "armC": {
+    "class": "incomplete",
+    "p_probe": 0.13,
+    "p_incomplete": 0.07,
+    "p_complete": 0.68
+   }
+  },
+  {
+   "recordId": "jpc-0067",
+   "split": "train",
+   "groupKind": "unique",
+   "label": "incomplete",
+   "armA": "incomplete",
+   "armB": {
+    "class": "proceed",
+    "confidence": 0.82
+   },
+   "armC": {
+    "class": "incomplete",
+    "p_probe": 0.11,
+    "p_incomplete": 0.06,
+    "p_complete": 0.71
+   }
+  },
+  {
+   "recordId": "jpc-0068",
+   "split": "train",
+   "groupKind": "unique",
+   "label": "incomplete",
+   "armA": "incomplete",
+   "armB": {
+    "class": "proceed",
+    "confidence": 0.82
+   },
+   "armC": {
+    "class": "incomplete",
+    "p_probe": 0.12,
+    "p_incomplete": 0.07,
+    "p_complete": 0.69
+   }
+  },
+  {
+   "recordId": "jpc-0069",
+   "split": "train",
+   "groupKind": "unique",
+   "label": "incomplete",
+   "armA": "incomplete",
+   "armB": {
+    "class": "proceed",
+    "confidence": 0.82
+   },
+   "armC": {
+    "class": "incomplete",
+    "p_probe": 0.11,
+    "p_incomplete": 0.06,
+    "p_complete": 0.66
+   }
+  },
+  {
+   "recordId": "jpc-0070",
+   "split": "train",
+   "groupKind": "unique",
+   "label": "incomplete",
+   "armA": "incomplete",
+   "armB": {
+    "class": "proceed",
+    "confidence": 0.82
+   },
+   "armC": {
+    "class": "incomplete",
+    "p_probe": 0.11,
+    "p_incomplete": 0.06,
+    "p_complete": 0.66
+   }
+  },
+  {
+   "recordId": "jpc-0071",
+   "split": "train",
+   "groupKind": "unique",
+   "label": "incomplete",
+   "armA": "incomplete",
+   "armB": {
+    "class": "proceed",
+    "confidence": 0.82
+   },
+   "armC": {
+    "class": "incomplete",
+    "p_probe": 0.12,
+    "p_incomplete": 0.06,
+    "p_complete": 0.69
+   }
+  },
+  {
+   "recordId": "jpc-0072",
+   "split": "train",
+   "groupKind": "unique",
+   "label": "incomplete",
+   "armA": "incomplete",
+   "armB": {
+    "class": "proceed",
+    "confidence": 0.82
+   },
+   "armC": {
+    "class": "incomplete",
+    "p_probe": 0.12,
+    "p_incomplete": 0.08,
+    "p_complete": 0.68
+   }
+  },
+  {
+   "recordId": "jpc-0073",
+   "split": "train",
+   "groupKind": "unique",
+   "label": "incomplete",
+   "armA": "incomplete",
+   "armB": {
+    "class": "proceed",
+    "confidence": 0.82
+   },
+   "armC": {
+    "class": "incomplete",
+    "p_probe": 0.12,
+    "p_incomplete": 0.06,
+    "p_complete": 0.64
+   }
+  },
+  {
+   "recordId": "jpc-0074",
+   "split": "train",
+   "groupKind": "unique",
+   "label": "incomplete",
+   "armA": "incomplete",
+   "armB": {
+    "class": "proceed",
+    "confidence": 0.82
+   },
+   "armC": {
+    "class": "incomplete",
+    "p_probe": 0.11,
+    "p_incomplete": 0.07,
+    "p_complete": 0.66
+   }
+  },
+  {
+   "recordId": "jpc-0075",
+   "split": "train",
+   "groupKind": "identical_work",
+   "label": "incomplete",
+   "armA": "incomplete",
+   "armB": {
+    "class": "proceed",
+    "confidence": 0.78
+   },
+   "armC": {
+    "class": "incomplete",
+    "p_probe": 0.24,
+    "p_incomplete": 0.06,
+    "p_complete": 0.65
+   }
+  },
+  {
+   "recordId": "jpc-0076",
+   "split": "train",
+   "groupKind": "identical_work",
+   "label": "incomplete",
+   "armA": "incomplete",
+   "armB": {
+    "class": "proceed",
+    "confidence": 0.78
+   },
+   "armC": {
+    "class": "incomplete",
+    "p_probe": 0.24,
+    "p_incomplete": 0.07,
+    "p_complete": 0.68
+   }
+  },
+  {
+   "recordId": "jpc-0077",
+   "split": "train",
+   "groupKind": "identical_work",
+   "label": "incomplete",
+   "armA": "incomplete",
+   "armB": {
+    "class": "proceed",
+    "confidence": 0.78
+   },
+   "armC": {
+    "class": "incomplete",
+    "p_probe": 0.21,
+    "p_incomplete": 0.07,
+    "p_complete": 0.66
+   }
+  },
+  {
+   "recordId": "jpc-0078",
+   "split": "train",
+   "groupKind": "unique",
+   "label": "incomplete",
+   "armA": "incomplete",
+   "armB": {
+    "class": "proceed",
+    "confidence": 0.82
+   },
+   "armC": {
+    "class": "incomplete",
+    "p_probe": 0.11,
+    "p_incomplete": 0.07,
+    "p_complete": 0.67
+   }
+  },
+  {
+   "recordId": "jpc-0079",
+   "split": "train",
+   "groupKind": "unique",
+   "label": "incomplete",
+   "armA": "incomplete",
+   "armB": {
+    "class": "proceed",
+    "confidence": 0.82
+   },
+   "armC": {
+    "class": "incomplete",
+    "p_probe": 0.12,
+    "p_incomplete": 0.07,
+    "p_complete": 0.65
+   }
+  },
+  {
+   "recordId": "jpc-0080",
+   "split": "train",
+   "groupKind": "unique",
+   "label": "incomplete",
+   "armA": "incomplete",
+   "armB": {
+    "class": "proceed",
+    "confidence": 0.82
+   },
+   "armC": {
+    "class": "incomplete",
+    "p_probe": 0.12,
+    "p_incomplete": 0.06,
+    "p_complete": 0.69
+   }
+  },
+  {
+   "recordId": "jpc-0081",
+   "split": "train",
+   "groupKind": "unique",
+   "label": "incomplete",
+   "armA": "incomplete",
+   "armB": {
+    "class": "proceed",
+    "confidence": 0.82
+   },
+   "armC": {
+    "class": "incomplete",
+    "p_probe": 0.12,
+    "p_incomplete": 0.07,
+    "p_complete": 0.66
+   }
+  },
+  {
+   "recordId": "jpc-0082",
+   "split": "train",
+   "groupKind": "unique",
+   "label": "incomplete",
+   "armA": "incomplete",
+   "armB": {
+    "class": "proceed",
+    "confidence": 0.85
+   },
+   "armC": {
+    "class": "incomplete",
+    "p_probe": 0.11,
+    "p_incomplete": 0.07,
+    "p_complete": 0.67
+   }
+  },
+  {
+   "recordId": "jpc-0083",
+   "split": "train",
+   "groupKind": "retry",
+   "label": "incomplete",
+   "armA": "incomplete",
+   "armB": {
+    "class": "proceed",
+    "confidence": 0.76
+   },
+   "armC": {
+    "class": "incomplete",
+    "p_probe": 0.13,
+    "p_incomplete": 0.07,
+    "p_complete": 0.65
+   }
+  },
+  {
+   "recordId": "jpc-0084",
+   "split": "train",
+   "groupKind": "retry",
+   "label": "incomplete",
+   "armA": "incomplete",
+   "armB": {
+    "class": "proceed",
+    "confidence": 0.76
+   },
+   "armC": {
+    "class": "incomplete",
+    "p_probe": 0.13,
+    "p_incomplete": 0.07,
+    "p_complete": 0.69
+   }
+  },
+  {
+   "recordId": "jpc-0085",
+   "split": "train",
+   "groupKind": "retry",
+   "label": "incomplete",
+   "armA": "incomplete",
+   "armB": {
+    "class": "proceed",
+    "confidence": 0.76
+   },
+   "armC": {
+    "class": "incomplete",
+    "p_probe": 0.13,
+    "p_incomplete": 0.07,
+    "p_complete": 0.68
+   }
+  },
+  {
+   "recordId": "jpc-0086",
+   "split": "train",
+   "groupKind": "retry",
+   "label": "incomplete",
+   "armA": "incomplete",
+   "armB": {
+    "class": "proceed",
+    "confidence": 0.76
+   },
+   "armC": {
+    "class": "incomplete",
+    "p_probe": 0.13,
+    "p_incomplete": 0.07,
+    "p_complete": 0.66
+   }
+  },
+  {
+   "recordId": "jpc-0087",
+   "split": "train",
+   "groupKind": "unique",
+   "label": "incomplete",
+   "armA": "incomplete",
+   "armB": {
+    "class": "proceed",
+    "confidence": 0.76
+   },
+   "armC": {
+    "class": "incomplete",
+    "p_probe": 0.14,
+    "p_incomplete": 0.06,
+    "p_complete": 0.66
+   }
+  },
+  {
+   "recordId": "jpc-0088",
+   "split": "train",
+   "groupKind": "unique",
+   "label": "incomplete",
+   "armA": "incomplete",
+   "armB": {
+    "class": "proceed",
+    "confidence": null
+   },
+   "armC": {
+    "class": "incomplete",
+    "p_probe": 0.09,
+    "p_incomplete": 0.07,
+    "p_complete": 0.67
+   }
+  },
+  {
+   "recordId": "jpc-0089",
+   "split": "train",
+   "groupKind": "unique",
+   "label": "incomplete",
+   "armA": "incomplete",
+   "armB": {
+    "class": "proceed",
+    "confidence": null
+   },
+   "armC": {
+    "class": "incomplete",
+    "p_probe": 0.08,
+    "p_incomplete": 0.07,
+    "p_complete": 0.68
+   }
+  },
+  {
+   "recordId": "jpc-0090",
+   "split": "train",
+   "groupKind": "unique",
+   "label": "incomplete",
+   "armA": "incomplete",
+   "armB": {
+    "class": "proceed",
+    "confidence": null
+   },
+   "armC": {
+    "class": "incomplete",
+    "p_probe": 0.09,
+    "p_incomplete": 0.06,
+    "p_complete": 0.69
+   }
+  },
+  {
+   "recordId": "jpc-0091",
+   "split": "train",
+   "groupKind": "unique",
+   "label": "incomplete",
+   "armA": "incomplete",
+   "armB": {
+    "class": "proceed",
+    "confidence": null
+   },
+   "armC": {
+    "class": "incomplete",
+    "p_probe": 0.08,
+    "p_incomplete": 0.07,
+    "p_complete": 0.71
+   }
+  },
+  {
+   "recordId": "jpc-0092",
+   "split": "train",
+   "groupKind": "unique",
+   "label": "incomplete",
+   "armA": "incomplete",
+   "armB": {
+    "class": "proceed",
+    "confidence": null
+   },
+   "armC": {
+    "class": "incomplete",
+    "p_probe": 0.1,
+    "p_incomplete": 0.08,
+    "p_complete": 0.66
+   }
+  },
+  {
+   "recordId": "jpc-0093",
+   "split": "train",
+   "groupKind": "unique",
+   "label": "incomplete",
+   "armA": "incomplete",
+   "armB": {
+    "class": "proceed",
+    "confidence": null
+   },
+   "armC": {
+    "class": "incomplete",
+    "p_probe": 0.09,
+    "p_incomplete": 0.07,
+    "p_complete": 0.68
+   }
+  },
+  {
+   "recordId": "jpc-0094",
+   "split": "train",
+   "groupKind": "unique",
+   "label": "incomplete",
+   "armA": "incomplete",
+   "armB": {
+    "class": "proceed",
+    "confidence": null
+   },
+   "armC": {
+    "class": "incomplete",
+    "p_probe": 0.08,
+    "p_incomplete": 0.06,
+    "p_complete": 0.68
+   }
+  },
+  {
+   "recordId": "jpc-0095",
+   "split": "train",
+   "groupKind": "unique",
+   "label": "incomplete",
+   "armA": "incomplete",
+   "armB": {
+    "class": "proceed",
+    "confidence": null
+   },
+   "armC": {
+    "class": "incomplete",
+    "p_probe": 0.08,
+    "p_incomplete": 0.07,
+    "p_complete": 0.69
+   }
+  },
+  {
+   "recordId": "jpc-0096",
+   "split": "train",
+   "groupKind": "unique",
+   "label": "incomplete",
+   "armA": "incomplete",
+   "armB": {
+    "class": "proceed",
+    "confidence": null
+   },
+   "armC": {
+    "class": "incomplete",
+    "p_probe": 0.09,
+    "p_incomplete": 0.08,
+    "p_complete": 0.67
+   }
+  },
+  {
+   "recordId": "jpc-0097",
+   "split": "train",
+   "groupKind": "unique",
+   "label": "incomplete",
+   "armA": "incomplete",
+   "armB": {
+    "class": "proceed",
+    "confidence": null
+   },
+   "armC": {
+    "class": "incomplete",
+    "p_probe": 0.08,
+    "p_incomplete": 0.06,
+    "p_complete": 0.67
+   }
+  },
+  {
+   "recordId": "jpc-0098",
+   "split": "train",
+   "groupKind": "unique",
+   "label": "incomplete",
+   "armA": "incomplete",
+   "armB": {
+    "class": "proceed",
+    "confidence": null
+   },
+   "armC": {
+    "class": "incomplete",
+    "p_probe": 0.1,
+    "p_incomplete": 0.08,
+    "p_complete": 0.66
+   }
+  },
+  {
+   "recordId": "jpc-0099",
+   "split": "train",
+   "groupKind": "retry",
+   "label": "incomplete",
+   "armA": "incomplete",
+   "armB": {
+    "class": "proceed",
+    "confidence": null
+   },
+   "armC": {
+    "class": "incomplete",
+    "p_probe": 0.08,
+    "p_incomplete": 0.08,
+    "p_complete": 0.65
+   }
+  },
+  {
+   "recordId": "jpc-0100",
+   "split": "train",
+   "groupKind": "retry",
+   "label": "incomplete",
+   "armA": "incomplete",
+   "armB": {
+    "class": "proceed",
+    "confidence": null
+   },
+   "armC": {
+    "class": "incomplete",
+    "p_probe": 0.09,
+    "p_incomplete": 0.07,
+    "p_complete": 0.67
+   }
+  },
+  {
+   "recordId": "jpc-0101",
+   "split": "train",
+   "groupKind": "identical_work",
+   "label": "incomplete",
+   "armA": "incomplete",
+   "armB": {
+    "class": "proceed",
+    "confidence": null
+   },
+   "armC": {
+    "class": "incomplete",
+    "p_probe": 0.12,
+    "p_incomplete": 0.07,
+    "p_complete": 0.7
+   }
+  },
+  {
+   "recordId": "jpc-0102",
+   "split": "train",
+   "groupKind": "identical_work",
+   "label": "incomplete",
+   "armA": "incomplete",
+   "armB": {
+    "class": "proceed",
+    "confidence": null
+   },
+   "armC": {
+    "class": "incomplete",
+    "p_probe": 0.13,
+    "p_incomplete": 0.08,
+    "p_complete": 0.68
+   }
+  },
+  {
+   "recordId": "jpc-0103",
+   "split": "train",
+   "groupKind": "identical_work",
+   "label": "incomplete",
+   "armA": "incomplete",
+   "armB": {
+    "class": "proceed",
+    "confidence": null
+   },
+   "armC": {
+    "class": "incomplete",
+    "p_probe": 0.13,
+    "p_incomplete": 0.08,
+    "p_complete": 0.71
+   }
+  },
+  {
+   "recordId": "jpc-0104",
+   "split": "train",
+   "groupKind": "unique",
+   "label": "incomplete",
+   "armA": "incomplete",
+   "armB": {
+    "class": "proceed",
+    "confidence": null
+   },
+   "armC": {
+    "class": "incomplete",
+    "p_probe": 0.07,
+    "p_incomplete": 0.07,
+    "p_complete": 0.71
+   }
+  },
+  {
+   "recordId": "jpc-0105",
+   "split": "train",
+   "groupKind": "unique",
+   "label": "incomplete",
+   "armA": "incomplete",
+   "armB": {
+    "class": "proceed",
+    "confidence": null
+   },
+   "armC": {
+    "class": "incomplete",
+    "p_probe": 0.07,
+    "p_incomplete": 0.07,
+    "p_complete": 0.72
+   }
+  },
+  {
+   "recordId": "jpc-0106",
+   "split": "train",
+   "groupKind": "unique",
+   "label": "incomplete",
+   "armA": "incomplete",
+   "armB": {
+    "class": "proceed",
+    "confidence": null
+   },
+   "armC": {
+    "class": "incomplete",
+    "p_probe": 0.13,
+    "p_incomplete": 0.07,
+    "p_complete": 0.65
+   }
+  },
+  {
+   "recordId": "jpc-0107",
+   "split": "train",
+   "groupKind": "unique",
+   "label": "incomplete",
+   "armA": "incomplete",
+   "armB": {
+    "class": "proceed",
+    "confidence": null
+   },
+   "armC": {
+    "class": "incomplete",
+    "p_probe": 0.14,
+    "p_incomplete": 0.06,
+    "p_complete": 0.67
+   }
+  },
+  {
+   "recordId": "jpc-0108",
+   "split": "train",
+   "groupKind": "unique",
+   "label": "incomplete",
+   "armA": "incomplete",
+   "armB": {
+    "class": "proceed",
+    "confidence": null
+   },
+   "armC": {
+    "class": "incomplete",
+    "p_probe": 0.13,
+    "p_incomplete": 0.06,
+    "p_complete": 0.66
+   }
+  },
+  {
+   "recordId": "jpc-0109",
+   "split": "train",
+   "groupKind": "retry",
+   "label": "incomplete",
+   "armA": "incomplete",
+   "armB": {
+    "class": "proceed",
+    "confidence": null
+   },
+   "armC": {
+    "class": "incomplete",
+    "p_probe": 0.14,
+    "p_incomplete": 0.06,
+    "p_complete": 0.64
+   }
+  },
+  {
+   "recordId": "jpc-0110",
+   "split": "train",
+   "groupKind": "retry",
+   "label": "incomplete",
+   "armA": "incomplete",
+   "armB": {
+    "class": "proceed",
+    "confidence": null
+   },
+   "armC": {
+    "class": "incomplete",
+    "p_probe": 0.13,
+    "p_incomplete": 0.06,
+    "p_complete": 0.65
+   }
+  },
+  {
+   "recordId": "jpc-0111",
+   "split": "train",
+   "groupKind": "unique",
+   "label": "incomplete",
+   "armA": "incomplete",
+   "armB": {
+    "class": "proceed",
+    "confidence": null
+   },
+   "armC": {
+    "class": "incomplete",
+    "p_probe": 0.12,
+    "p_incomplete": 0.07,
+    "p_complete": 0.69
+   }
+  },
+  {
+   "recordId": "jpc-0112",
+   "split": "train",
+   "groupKind": "unique",
+   "label": "incomplete",
+   "armA": "incomplete",
+   "armB": {
+    "class": "proceed",
+    "confidence": null
+   },
+   "armC": {
+    "class": "incomplete",
+    "p_probe": 0.06,
+    "p_incomplete": 0.06,
+    "p_complete": 0.72
+   }
+  },
+  {
+   "recordId": "jpc-0113",
+   "split": "train",
+   "groupKind": "unique",
+   "label": "incomplete",
+   "armA": "incomplete",
+   "armB": {
+    "class": "proceed",
+    "confidence": null
+   },
+   "armC": {
+    "class": "incomplete",
+    "p_probe": 0.06,
+    "p_incomplete": 0.07,
+    "p_complete": 0.71
+   }
+  },
+  {
+   "recordId": "jpc-0114",
+   "split": "train",
+   "groupKind": "unique",
+   "label": "incomplete",
+   "armA": "incomplete",
+   "armB": {
+    "class": "proceed",
+    "confidence": null
+   },
+   "armC": {
+    "class": "incomplete",
+    "p_probe": 0.07,
+    "p_incomplete": 0.07,
+    "p_complete": 0.7
+   }
+  },
+  {
+   "recordId": "jpc-0115",
+   "split": "train",
+   "groupKind": "unique",
+   "label": "incomplete",
+   "armA": "incomplete",
+   "armB": {
+    "class": "proceed",
+    "confidence": null
+   },
+   "armC": {
+    "class": "incomplete",
+    "p_probe": 0.07,
+    "p_incomplete": 0.07,
+    "p_complete": 0.71
+   }
+  },
+  {
+   "recordId": "jpc-0116",
+   "split": "calibration",
+   "groupKind": "unique",
+   "label": "incomplete",
+   "armA": "incomplete",
+   "armB": {
+    "class": "proceed",
+    "confidence": null
+   },
+   "armC": {
+    "class": "incomplete",
+    "p_probe": 0.06,
+    "p_incomplete": 0.06,
+    "p_complete": 0.71
+   }
+  },
+  {
+   "recordId": "jpc-0117",
+   "split": "calibration",
+   "groupKind": "unique",
+   "label": "incomplete",
+   "armA": "incomplete",
+   "armB": {
+    "class": "proceed",
+    "confidence": null
+   },
+   "armC": {
+    "class": "incomplete",
+    "p_probe": 0.06,
+    "p_incomplete": 0.07,
+    "p_complete": 0.72
+   }
+  },
+  {
+   "recordId": "jpc-0118",
+   "split": "calibration",
+   "groupKind": "unique",
+   "label": "incomplete",
+   "armA": "incomplete",
+   "armB": {
+    "class": "proceed",
+    "confidence": null
+   },
+   "armC": {
+    "class": "incomplete",
+    "p_probe": 0.08,
+    "p_incomplete": 0.08,
+    "p_complete": 0.68
+   }
+  },
+  {
+   "recordId": "jpc-0119",
+   "split": "calibration",
+   "groupKind": "unique",
+   "label": "incomplete",
+   "armA": "incomplete",
+   "armB": {
+    "class": "proceed",
+    "confidence": null
+   },
+   "armC": {
+    "class": "incomplete",
+    "p_probe": 0.06,
+    "p_incomplete": 0.07,
+    "p_complete": 0.71
+   }
+  },
+  {
+   "recordId": "jpc-0120",
+   "split": "calibration",
+   "groupKind": "unique",
+   "label": "incomplete",
+   "armA": "incomplete",
+   "armB": {
+    "class": "proceed",
+    "confidence": null
+   },
+   "armC": {
+    "class": "incomplete",
+    "p_probe": 0.07,
+    "p_incomplete": 0.06,
+    "p_complete": 0.69
+   }
+  },
+  {
+   "recordId": "jpc-0121",
+   "split": "calibration",
+   "groupKind": "unique",
+   "label": "incomplete",
+   "armA": "incomplete",
+   "armB": {
+    "class": "proceed",
+    "confidence": null
+   },
+   "armC": {
+    "class": "incomplete",
+    "p_probe": 0.06,
+    "p_incomplete": 0.07,
+    "p_complete": 0.72
+   }
+  },
+  {
+   "recordId": "jpc-0122",
+   "split": "calibration",
+   "groupKind": "unique",
+   "label": "incomplete",
+   "armA": "incomplete",
+   "armB": {
+    "class": "proceed",
+    "confidence": null
+   },
+   "armC": {
+    "class": "incomplete",
+    "p_probe": 0.06,
+    "p_incomplete": 0.07,
+    "p_complete": 0.68
+   }
+  },
+  {
+   "recordId": "jpc-0123",
+   "split": "calibration",
+   "groupKind": "retry",
+   "label": "incomplete",
+   "armA": "incomplete",
+   "armB": {
+    "class": "incomplete",
+    "confidence": null
+   },
+   "armC": {
+    "class": "incomplete",
+    "p_probe": 0.08,
+    "p_incomplete": 0.07,
+    "p_complete": 0.68
+   }
+  },
+  {
+   "recordId": "jpc-0124",
+   "split": "calibration",
+   "groupKind": "retry",
+   "label": "incomplete",
+   "armA": "incomplete",
+   "armB": {
+    "class": "incomplete",
+    "confidence": null
+   },
+   "armC": {
+    "class": "incomplete",
+    "p_probe": 0.08,
+    "p_incomplete": 0.07,
+    "p_complete": 0.66
+   }
+  },
+  {
+   "recordId": "jpc-0125",
+   "split": "calibration",
+   "groupKind": "retry",
+   "label": "incomplete",
+   "armA": "incomplete",
+   "armB": {
+    "class": "proceed",
+    "confidence": null
+   },
+   "armC": {
+    "class": "incomplete",
+    "p_probe": 0.11,
+    "p_incomplete": 0.07,
+    "p_complete": 0.7
+   }
+  },
+  {
+   "recordId": "jpc-0126",
+   "split": "calibration",
+   "groupKind": "retry",
+   "label": "incomplete",
+   "armA": "incomplete",
+   "armB": {
+    "class": "proceed",
+    "confidence": null
+   },
+   "armC": {
+    "class": "incomplete",
+    "p_probe": 0.13,
+    "p_incomplete": 0.07,
+    "p_complete": 0.68
+   }
+  },
+  {
+   "recordId": "jpc-0127",
+   "split": "calibration",
+   "groupKind": "unique",
+   "label": "incomplete",
+   "armA": "incomplete",
+   "armB": {
+    "class": "proceed",
+    "confidence": null
+   },
+   "armC": {
+    "class": "incomplete",
+    "p_probe": 0.11,
+    "p_incomplete": 0.06,
+    "p_complete": 0.66
+   }
+  },
+  {
+   "recordId": "jpc-0128",
+   "split": "calibration",
+   "groupKind": "identical_work",
+   "label": "incomplete",
+   "armA": "incomplete",
+   "armB": {
+    "class": "probe",
+    "confidence": 0.7
+   },
+   "armC": {
+    "class": "incomplete",
+    "p_probe": 0.55,
+    "p_incomplete": 0.09,
+    "p_complete": 0.6
+   }
+  },
+  {
+   "recordId": "jpc-0129",
+   "split": "calibration",
+   "groupKind": "identical_work",
+   "label": "incomplete",
+   "armA": "incomplete",
+   "armB": {
+    "class": "probe",
+    "confidence": 0.7
+   },
+   "armC": {
+    "class": "incomplete",
+    "p_probe": 0.58,
+    "p_incomplete": 0.09,
+    "p_complete": 0.59
+   }
+  },
+  {
+   "recordId": "jpc-0130",
+   "split": "calibration",
+   "groupKind": "identical_work",
+   "label": "incomplete",
+   "armA": "incomplete",
+   "armB": {
+    "class": "probe",
+    "confidence": 0.7
+   },
+   "armC": {
+    "class": "incomplete",
+    "p_probe": 0.58,
+    "p_incomplete": 0.08,
+    "p_complete": 0.56
+   }
+  },
+  {
+   "recordId": "jpc-0131",
+   "split": "calibration",
+   "groupKind": "identical_work",
+   "label": "incomplete",
+   "armA": "incomplete",
+   "armB": {
+    "class": "probe",
+    "confidence": 0.7
+   },
+   "armC": {
+    "class": "incomplete",
+    "p_probe": 0.57,
+    "p_incomplete": 0.08,
+    "p_complete": 0.55
+   }
+  },
+  {
+   "recordId": "jpc-0132",
+   "split": "calibration",
+   "groupKind": "identical_work",
+   "label": "incomplete",
+   "armA": "incomplete",
+   "armB": {
+    "class": "proceed",
+    "confidence": 0.6
+   },
+   "armC": {
+    "class": "incomplete",
+    "p_probe": 0.15,
+    "p_incomplete": 0.07,
+    "p_complete": 0.69
+   }
+  },
+  {
+   "recordId": "jpc-0133",
+   "split": "calibration",
+   "groupKind": "identical_work",
+   "label": "incomplete",
+   "armA": "incomplete",
+   "armB": {
+    "class": "proceed",
+    "confidence": 0.6
+   },
+   "armC": {
+    "class": "incomplete",
+    "p_probe": 0.16,
+    "p_incomplete": 0.07,
+    "p_complete": 0.68
+   }
+  },
+  {
+   "recordId": "jpc-0134",
+   "split": "calibration",
+   "groupKind": "identical_work",
+   "label": "incomplete",
+   "armA": "incomplete",
+   "armB": {
+    "class": "proceed",
+    "confidence": 0.6
+   },
+   "armC": {
+    "class": "incomplete",
+    "p_probe": 0.15,
+    "p_incomplete": 0.07,
+    "p_complete": 0.7
+   }
+  },
+  {
+   "recordId": "jpc-0135",
+   "split": "calibration",
+   "groupKind": "identical_work",
+   "label": "incomplete",
+   "armA": "incomplete",
+   "armB": {
+    "class": "proceed",
+    "confidence": 0.6
+   },
+   "armC": {
+    "class": "incomplete",
+    "p_probe": 0.16,
+    "p_incomplete": 0.07,
+    "p_complete": 0.66
+   }
+  },
+  {
+   "recordId": "jpc-0136",
+   "split": "calibration",
+   "groupKind": "unique",
+   "label": "incomplete",
+   "armA": "incomplete",
+   "armB": {
+    "class": "proceed",
+    "confidence": null
+   },
+   "armC": {
+    "class": "incomplete",
+    "p_probe": 0.08,
+    "p_incomplete": 0.07,
+    "p_complete": 0.67
+   }
+  },
+  {
+   "recordId": "jpc-0137",
+   "split": "calibration",
+   "groupKind": "unique",
+   "label": "incomplete",
+   "armA": "incomplete",
+   "armB": {
+    "class": "proceed",
+    "confidence": null
+   },
+   "armC": {
+    "class": "incomplete",
+    "p_probe": 0.07,
+    "p_incomplete": 0.07,
+    "p_complete": 0.68
+   }
+  },
+  {
+   "recordId": "jpc-0138",
+   "split": "calibration",
+   "groupKind": "unique",
+   "label": "incomplete",
+   "armA": "incomplete",
+   "armB": {
+    "class": "proceed",
+    "confidence": null
+   },
+   "armC": {
+    "class": "incomplete",
+    "p_probe": 0.09,
+    "p_incomplete": 0.06,
+    "p_complete": 0.7
+   }
+  },
+  {
+   "recordId": "jpc-0139",
+   "split": "calibration",
+   "groupKind": "unique",
+   "label": "incomplete",
+   "armA": "incomplete",
+   "armB": {
+    "class": "proceed",
+    "confidence": null
+   },
+   "armC": {
+    "class": "incomplete",
+    "p_probe": 0.1,
+    "p_incomplete": 0.07,
+    "p_complete": 0.7
+   }
+  },
+  {
+   "recordId": "jpc-0140",
+   "split": "calibration",
+   "groupKind": "unique",
+   "label": "incomplete",
+   "armA": "incomplete",
+   "armB": {
+    "class": "proceed",
+    "confidence": null
+   },
+   "armC": {
+    "class": "incomplete",
+    "p_probe": 0.09,
+    "p_incomplete": 0.07,
+    "p_complete": 0.72
+   }
+  },
+  {
+   "recordId": "jpc-0141",
+   "split": "calibration",
+   "groupKind": "unique",
+   "label": "incomplete",
+   "armA": "incomplete",
+   "armB": {
+    "class": "proceed",
+    "confidence": null
+   },
+   "armC": {
+    "class": "incomplete",
+    "p_probe": 0.17,
+    "p_incomplete": 0.07,
+    "p_complete": 0.69
+   }
+  },
+  {
+   "recordId": "jpc-0142",
+   "split": "calibration",
+   "groupKind": "unique",
+   "label": "incomplete",
+   "armA": "incomplete",
+   "armB": {
+    "class": "proceed",
+    "confidence": null
+   },
+   "armC": {
+    "class": "incomplete",
+    "p_probe": 0.16,
+    "p_incomplete": 0.07,
+    "p_complete": 0.68
+   }
+  },
+  {
+   "recordId": "jpc-0143",
+   "split": "calibration",
+   "groupKind": "unique",
+   "label": "incomplete",
+   "armA": "incomplete",
+   "armB": {
+    "class": "proceed",
+    "confidence": null
+   },
+   "armC": {
+    "class": "incomplete",
+    "p_probe": 0.11,
+    "p_incomplete": 0.07,
+    "p_complete": 0.67
+   }
+  },
+  {
+   "recordId": "jpc-0144",
+   "split": "calibration",
+   "groupKind": "unique",
+   "label": "incomplete",
+   "armA": "incomplete",
+   "armB": {
+    "class": "proceed",
+    "confidence": null
+   },
+   "armC": {
+    "class": "incomplete",
+    "p_probe": 0.11,
+    "p_incomplete": 0.08,
+    "p_complete": 0.68
+   }
+  },
+  {
+   "recordId": "jpc-0145",
+   "split": "calibration",
+   "groupKind": "unique",
+   "label": "incomplete",
+   "armA": "incomplete",
+   "armB": {
+    "class": "proceed",
+    "confidence": null
+   },
+   "armC": {
+    "class": "incomplete",
+    "p_probe": 0.15,
+    "p_incomplete": 0.07,
+    "p_complete": 0.72
+   }
+  }
+ ],
+ "metrics": {
+  "n": 145,
+  "labels": {
+   "incomplete": 145
+  },
+  "armA": {
+   "ruleVersion": "handler-heuristics@2026-09-21",
+   "classDist": {
+    "incomplete": 145
+   },
+   "agreement": 1.0,
+   "deferRate": 0.0,
+   "perRequester": {
+    "operator": {
+     "n": 88,
+     "agreement": 1.0
+    },
+    "agent": {
+     "n": 50,
+     "agreement": 1.0
+    },
+    "unknown": {
+     "n": 7,
+     "agreement": 1.0
+    }
+   },
+   "independenceUniqueAgreement": 1.0
+  },
+  "armB": {
+   "transport": "a2a analyze worker (zai/glm-5.3-flash via bridge), 5 slices",
+   "classDist": {
+    "incomplete": 5,
+    "proceed": 135,
+    "defer": 1,
+    "probe": 4
+   },
+   "agreement": 0.0,
+   "deferRate": 0.0069,
+   "perRequester": {
+    "operator": {
+     "n": 88,
+     "agreement": 0.0
+    },
+    "agent": {
+     "n": 50,
+     "agreement": 0.0
+    },
+    "unknown": {
+     "n": 7,
+     "agreement": 0.0
+    }
+   },
+   "independenceUniqueAgreement": 0.0,
+   "confidenceCoverage": "73/145",
+   "eceBinaryOnExplicit": 0.7293,
+   "brierBinaryOnExplicit": 0.5888,
+   "tokens": {
+    "in": 157849,
+    "out": 67864,
+    "bridgeReportedCostUsd": 0
+   }
+  },
+  "armC": {
+   "transport": "fleet jev client, single attempt/record, frozen QUESTIONS+decide @THRESH=0.80 (pre-dates corpus)",
+   "classDist": {
+    "incomplete": 145
+   },
+   "agreement": 1.0,
+   "deferRate": 0.0,
+   "perRequester": {
+    "operator": {
+     "n": 88,
+     "agreement": 1.0
+    },
+    "agent": {
+     "n": 50,
+     "agreement": 1.0
+    },
+    "unknown": {
+     "n": 7,
+     "agreement": 1.0
+    }
+   },
+   "independenceUniqueAgreement": 1.0,
+   "brierMulticlass": 1.3474,
+   "eceBinaryOnPComplete": 0.676,
+   "tokens": {
+    "in": 79270,
+    "estCostUsd": 0.003329
+   },
+   "meanLatencyMs": 331
+  },
+  "independenceExcluded": {
+   "identical_work": 23,
+   "retry": 22,
+   "unique": 100
+  },
+  "holdoutRead": false
+ },
+ "costAccounting": {
+  "armA": {
+   "tokens": 0,
+   "usd": 0
+  },
+  "armB": {
+   "inputTokens": 157849,
+   "outputTokens": 67864,
+   "bridgeReportedCostUsd": 0,
+   "note": "bridge telemetry reports zero vendor cost for this model tier; token counts are the authoritative usage record"
+  },
+  "armC": {
+   "inputTokens": 79270,
+   "estimatedUsd": 0.003329,
+   "pricePerMTokIn": 0.042,
+   "meanLatencyMs": 331
+  }
+ }
+}

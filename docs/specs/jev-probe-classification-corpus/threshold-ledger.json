@@ -26,5 +26,50 @@
   "No holdout record may be scored before this ledger is committed.",
   "Thresholds for arms A/B/C are frozen here before Phase 4 scoring; later changes restart Phase 3 with a new holdout window.",
   "Labels are Phase 2 output; all records ship unlabeled_pending_policy until then."
- ]
+ ],
+ "arms": {
+  "kind": "Phase3ArmsComparisonOutcome",
+  "recordedAt": "2026-09-21",
+  "resultsFile": "arm-results-v1.json",
+  "scope": "train+calibration only (145 records); holdout untouched",
+  "perArm": {
+   "A_existing_rules": {
+    "agreement": 1.0,
+    "deferRate": 0.0,
+    "costUsd": 0,
+    "note": "degenerate agreement: predicts incomplete for every record, identical to every reviewed label"
+   },
+   "B_llm": {
+    "agreement": 0.0,
+    "deferRate": 0.0069,
+    "eceBinaryOnExplicit": 0.7293,
+    "tokens": {
+     "in": 157849,
+     "out": 67864
+    },
+    "note": "predicts proceed for 135/145 (payload presence read as actionable evidence), directly conflicting with the labeling policy's evidence standard; candidate rejected as a replacement"
+   },
+   "C_jev": {
+    "agreement": 1.0,
+    "brierMulticlass": 1.3474,
+    "eceBinaryOnPComplete": 0.676,
+    "estimatedUsd": 0.003329,
+    "meanLatencyMs": 331,
+    "note": "agrees with the existing rule at the frozen 0.80 act threshold; p_complete skews high but below act threshold on every record"
+   }
+  },
+  "candidate": {
+   "selection": "keep the existing deterministic rule",
+   "rationale": "arm A is the current behavior and matches all reviewed labels; arm C agrees with it at the pre-frozen 0.80 threshold and adds calibrated probabilities for future escalation gating; arm B as prompted diverges from the reviewed labels",
+   "thresholds": {
+    "armC_actAtNoul": 0.8,
+    "source": "frozen in the shadow gate before this corpus existed; not tuned on any corpus record"
+   },
+   "interpretiveCaveats": [
+    "every label in this window is incomplete, so 1.0-agreement arms are trivially aligned; the discriminating observation is arm B's divergence",
+    "no probe- or proceed-labeled records exist in the window, so rule-1/rule-2 paths of any arm are unexercised",
+    "Phase 4 holdout (11 records, same window) inherits the same degeneracy; its one-shot scoring stays gated but adds little discriminative power"
+   ]
+  }
+ }
 }
