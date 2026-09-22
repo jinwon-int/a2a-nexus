@@ -291,3 +291,73 @@ test('deployed guard fails closed when env file points at a missing node-specifi
   assert.equal(guardResult?.ok, false);
   assert.match(JSON.stringify(guardResult), /custom-source-analysis-bridge\.mjs/);
 });
+
+// ---------------------------------------------------------------------------
+// #2227 — handler module resolution smoke
+//
+// handler 0.2.20이 워크스페이스 의존성 a2a-attestation을 들여왔는데, 파일 복사
+// artifact에는 그 패키지가 없어 핸들러가 기동하자마자 ERR_MODULE_NOT_FOUND로
+// 죽었다. 경로·마커·정책 가드는 전부 exit=0으로 통과했다. 해소 스모크가 이
+// 결함 클래스를 배포 전에 잡는지 검증한다.
+
+const attestationImportSource = [
+  'import { retrievalSnapshotToSourceCarrier } from "a2a-attestation";',
+  'export function payloadWithRetrievalSnapshotSourceCarriers(payload) {',
+  '  void retrievalSnapshotToSourceCarrier;',
+  '  return payload;',
+  '}',
+  '',
+].join('\n');
+
+test('module resolution smoke is skipped for fixture trees without node_modules (#2227)', () => {
+  const { root } = makeWorkerRoot();
+  const result = runGuard(root);
+  assert.equal(result.status, 0, result.stderr || result.stdout);
+  const output = JSON.parse(result.stdout);
+  const smoke = output.results.find((r) => r.guard === 'handler-module-resolution');
+  assert.equal(smoke?.ok, true);
+  assert.equal(smoke?.detail?.checked, false);
+});
+
+test('module resolution smoke fails the guard when a workspace package is missing from the artifact (#2227)', () => {
+  const { root, files } = makeWorkerRoot();
+  // artifact 실측 상태 재현: node_modules는 있지만(zod 1개) a2a-attestation은 없다.
+  mkdirSync(join(root, 'node_modules'));
+  writeFileSync(files.sourceRetrievalSnapshotCarriers, attestationImportSource);
+  writeFileSync(files.compatRetrievalSnapshotCarriers, attestationImportSource);
+
+  const result = runGuard(root);
+  assert.notEqual(result.status, 0);
+  const output = JSON.parse(result.stdout);
+  const smoke = output.results.find((r) => r.guard === 'handler-module-resolution');
+  assert.equal(smoke?.ok, false);
+  assert.match(String(smoke?.error ?? ''), /failed to import/);
+  assert.match(JSON.stringify(smoke), /ERR_MODULE_NOT_FOUND/);
+});
+
+test('module resolution smoke passes and reports the imported build info when the workspace package ships (#2227)', () => {
+  const { root, files } = makeWorkerRoot();
+  mkdirSync(join(root, 'node_modules', 'a2a-attestation', 'dist'), { recursive: true });
+  writeFileSync(join(root, 'node_modules', 'a2a-attestation', 'package.json'), JSON.stringify({
+    name: 'a2a-attestation',
+    version: '0.1.0',
+    type: 'module',
+    main: 'dist/index.js',
+    exports: { '.': './dist/index.js' },
+  }));
+  writeFileSync(
+    join(root, 'node_modules', 'a2a-attestation', 'dist', 'index.js'),
+    'export function retrievalSnapshotToSourceCarrier(value) { return value; }\n',
+  );
+  writeFileSync(files.sourceRetrievalSnapshotCarriers, attestationImportSource);
+  writeFileSync(files.compatRetrievalSnapshotCarriers, attestationImportSource);
+
+  const result = runGuard(root);
+  assert.equal(result.status, 0, result.stderr || result.stdout);
+  const output = JSON.parse(result.stdout);
+  const smoke = output.results.find((r) => r.guard === 'handler-module-resolution');
+  assert.equal(smoke?.ok, true);
+  assert.equal(smoke?.detail?.checked, true);
+  assert.equal(smoke?.detail?.importedFrom, 'handlers (runtime copy)');
+  assert.equal(smoke?.detail?.importedBuildInfo?.version, '0.2.12');
+});
