@@ -165,14 +165,31 @@ function isGenericAck(result: TaskResult | undefined): boolean {
   return GENERIC_ACK.test(summary);
 }
 
+// #2218: 부정 키워드만으론 실질성의 증거가 아니다 — "no block findings",
+// "nothing to reject" 같은 요약은 부정 판정이 아니라 회수 보고다. 키워드가 들은
+// 문장에 부정어가 함께 있으면 그 문장은 증거로 세지 않는다.
+const NEGATIVE_SUBSTANCE = /block|fail|위반|결함|reject/i;
+const NEGATION = /\b(?:no|not|nothing|none|never|without|non)\b|없|아니|못|말고|불가/i;
+
+function summaryAssertsDefect(summary: string): boolean {
+  for (const sentence of summary.split(/(?<=[.!?。！？])\s+|\n+/)) {
+    if (!NEGATIVE_SUBSTANCE.test(sentence)) continue;
+    if (NEGATION.test(sentence)) continue;
+    return true;
+  }
+  return false;
+}
+
 function isSubstantiveNegative(result: TaskResult | undefined, verdict: string): boolean {
   const v = verdict.trim().toLowerCase();
   if (v !== "fail" && v !== "block") return false;
+  // 실질성은 구조화 필드(findings)와 결함을 서술하는 요약으로만 판단한다.
+  // note 길이(≥12자) 문자열 대리는 제거됐다 — 12자 한국어 인사말이 실질적 근거로
+  // 통과하고 12자 미만의 진짜 결함 지적이 generic ack 취급되는 결함(#2218).
   if (countFindings(result) > 0) return true;
-  const note = reviewNote(result);
   const summary = (result?.summary ?? "").trim();
-  if (note.length >= 12) return true;
-  return /block|fail|위반|결함|reject/i.test(summary);
+  if (!summary) return false;
+  return summaryAssertsDefect(summary);
 }
 
 /**

@@ -196,6 +196,68 @@ test("classifySameSourceRedispatch still needs a rerun for empty or generic ack 
   assert.equal(classifySameSourceRedispatch(broker.getTask(crash.id)!).action, "not_applicable");
 });
 
+test("classifySameSourceRedispatch does not treat negated summaries as substantive negatives (#2218)", () => {
+  const broker = new InMemoryA2ABroker();
+  setupWorker(broker);
+
+  // findings 없이 "no block findings" 요약만이면 회수 보고다 — BLOCK 회수 재실행이
+  // 억제되어선 안 된다(#2218 결함 재현).
+  const negated = reviewTask(broker);
+  broker.failTask(negated.id, REVIEWER, { code: "review_verdict_failed", message: "gate" }, {
+    negativeVerdictResult: {
+      summary: "no block findings",
+      validations: [{ kind: "review", nodeId: "reviewer-x", verdict: "fail", note: "clean" }],
+    } as never,
+  });
+  assert.deepEqual(classifySameSourceRedispatch(broker.getTask(negated.id)!), {
+    action: "needed",
+    reason: "empty_result",
+    reviewerNodeId: "reviewer-x",
+    verdict: "fail",
+    findingCount: 0,
+  });
+
+  const nothingToReject = reviewTask(broker);
+  broker.failTask(nothingToReject.id, REVIEWER, { code: "review_verdict_failed", message: "gate" }, {
+    negativeVerdictResult: {
+      summary: "nothing to reject",
+      validations: [{ kind: "review", nodeId: "reviewer-x", verdict: "fail", note: "clean" }],
+    } as never,
+  });
+  assert.equal(classifySameSourceRedispatch(broker.getTask(nothingToReject.id)!).action, "needed");
+});
+
+test("classifySameSourceRedispatch still skips a defect-asserting summary without findings (#2218)", () => {
+  const broker = new InMemoryA2ABroker();
+  setupWorker(broker);
+  const task = reviewTask(broker);
+  broker.failTask(task.id, REVIEWER, { code: "review_verdict_failed", message: "gate" }, {
+    // findings 배열은 비었지만 요약이 결함을 서술한다(11자) — 실질 부정으로 남는다.
+    negativeVerdictResult: {
+      summary: "결함 2건: 보기 중복",
+      validations: [{ kind: "review", nodeId: "reviewer-x", verdict: "fail", note: "핵심 요지" }],
+    } as never,
+  });
+  const decision = classifySameSourceRedispatch(broker.getTask(task.id)!);
+  assert.equal(decision.action, "skip");
+  assert.equal(decision.reason, "negative_verdict_preserved");
+  assert.equal(decision.findingCount, 0);
+});
+
+test("a long greeting note alone is not substantive negative evidence (#2218)", () => {
+  const broker = new InMemoryA2ABroker();
+  setupWorker(broker);
+  const task = reviewTask(broker);
+  broker.failTask(task.id, REVIEWER, { code: "review_verdict_failed", message: "gate" }, {
+    negativeVerdictResult: {
+      summary: "",
+      validations: [{ kind: "review", nodeId: "reviewer-x", verdict: "fail", note: "잘 부탁드립니다. 감사합니다." }],
+    } as never,
+  });
+  const decision = classifySameSourceRedispatch(broker.getTask(task.id)!);
+  assert.equal(decision.action, "needed");
+});
+
 test("a pass verdict still succeeds with no evidence field", () => {
   const broker = new InMemoryA2ABroker();
   setupWorker(broker);
