@@ -20,6 +20,10 @@ export const ALLOWED_WORKER_MODELS = Object.freeze([
   // Without this entry an env-pinned A2A_CLAUDE_MODEL=claude-opus-5 silently
   // falls back to DEFAULT_WORKER_MODEL in resolveWorkerModelInputs.
   "claude-opus-5",
+  // Claude Opus 5.5 claude-code worker lane (operator rollout 2026-09-23).
+  // Same silent-fallback hazard as claude-opus-5 above: without this entry the
+  // handler resolves DEFAULT_WORKER_MODEL and telemetry misreports the lane.
+  "claude-opus-5-5",
   "grok-4.20",
   // M3 fleet workers run minimax-m3 via the custom:minimax provider (#673).
   "minimax-m3",
