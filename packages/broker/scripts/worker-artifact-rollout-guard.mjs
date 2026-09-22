@@ -28,7 +28,8 @@ import { createHash } from 'node:crypto';
 import { existsSync, readFileSync, statSync } from 'node:fs';
 import { basename, isAbsolute, join, resolve, dirname } from 'node:path';
 import process from 'node:process';
-import { fileURLToPath } from 'node:url';
+import { spawnSync } from 'node:child_process';
+import { fileURLToPath, pathToFileURL } from 'node:url';
 
 // ---------------------------------------------------------------------------
 // helpers
@@ -395,6 +396,98 @@ guard('source-handler', () => {
     console.error(`[guard:source] ${handler.path} — ${size} bytes`);
   }
   return ok('source-handler', { path: handler.path, filename: handler.filename, size });
+});
+
+// Guard 1b: the handler entry and its transitive imports must actually RESOLVE
+// from the artifact layout. #2227: handler 0.2.20 introduced the workspace
+// dependency a2a-attestation, but a file-copy artifact never contains it, so
+// the handler died with ERR_MODULE_NOT_FOUND on startup while every
+// path/marker/policy guard below still passed (exit=0). Importing the entry in
+// a child node validates the whole module graph. Skipped (checked:false) only
+// when no node_modules exists above the handler — bare fixture/unpackaged
+// trees have nothing to resolve against.
+guard('handler-module-resolution', () => {
+  const deployed = findReadableHandler(handlersRoot);
+  const source = findReadableHandler(scriptsRoot);
+  const handler = deployed ?? source;
+  if (!handler) {
+    return ok('handler-module-resolution', { checked: false, reason: 'handler file missing (reported by source-handler)' });
+  }
+
+  let dir = dirname(handler.path);
+  let hasNodeModules = false;
+  for (;;) {
+    if (existsSync(join(dir, 'node_modules'))) {
+      hasNodeModules = true;
+      break;
+    }
+    const parent = dirname(dir);
+    if (parent === dir) break;
+    dir = parent;
+  }
+  if (!hasNodeModules) {
+    return ok('handler-module-resolution', {
+      checked: false,
+      reason: 'no node_modules above handler — nothing to resolve against (fixture or unpackaged tree)',
+      handlerPath: handler.path,
+    });
+  }
+
+  // The worker executes the handlers/ compat copy; validate that one when it
+  // exists, and fall back to the scripts copy otherwise.
+  const probe = [
+    'const mod = await import(',
+    JSON.stringify(pathToFileURL(handler.path).href),
+    ');\n',
+    'process.stdout.write(JSON.stringify({ name: mod.BUILD_INFO?.name ?? null, version: mod.BUILD_INFO?.version ?? null }));',
+  ].join('');
+
+  const child = spawnSync(process.execPath, ['--input-type=module', '--eval', probe], {
+    cwd: dirname(handler.path),
+    encoding: 'utf8',
+    timeout: 30000,
+  });
+
+  if (child.error) {
+    return fail('handler-module-resolution', `module resolution probe could not run: ${child.error.message}`, {
+      handlerPath: handler.path,
+    });
+  }
+
+  const stderrTail = (child.stderr ?? '').trim().slice(-2000);
+  if (child.status !== 0) {
+    const ended = child.status === null ? `signal ${child.signal}` : `exit ${child.status}`;
+    return fail('handler-module-resolution', `handler entry failed to import (${ended})`, {
+      handlerPath: handler.path,
+      stderrTail,
+      hint: 'a transitive import does not resolve — the artifact is missing a workspace package (e.g. a2a-attestation, #2227). Pack the workspace build output + node_modules link with the artifact, then re-run this guard.',
+    });
+  }
+
+  let imported = null;
+  try {
+    imported = JSON.parse((child.stdout ?? '').trim() || 'null');
+  } catch {
+    imported = null;
+  }
+
+  const fileVersion = parseBuildInfo(handler.content)?.version ?? null;
+  // 기대 버전 대비 드리프트 리포트(#2227): guard를 저장소에서 실행해 대상 artifact를
+  // 검사할 때 저장소 쪽 핸들러 버전을 함께 보여준다. 정보 제공용이며 실패로 세지
+  // 않는다 — 배포 진행 중인 노드는 정상적으로 구버전일 수 있다.
+  const repoScriptsHandler = findReadableHandler(join(brokerRoot, 'scripts'));
+  const expectedVersion = repoScriptsHandler && resolve(repoScriptsHandler.path) !== resolve(handler.path)
+    ? (parseBuildInfo(repoScriptsHandler.content)?.version ?? null)
+    : undefined;
+
+  return ok('handler-module-resolution', {
+    checked: true,
+    handlerPath: handler.path,
+    importedFrom: deployed ? 'handlers (runtime copy)' : 'scripts (source)',
+    importedBuildInfo: imported,
+    fileVersion,
+    ...(expectedVersion !== undefined ? { expectedVersion } : {}),
+  });
 });
 
 // Guard 2: Handlers compat path exists and matches source
