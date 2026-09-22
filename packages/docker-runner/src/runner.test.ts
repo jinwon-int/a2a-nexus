@@ -1216,6 +1216,20 @@ test("bootstrap guard blocks when banned files are present (pre-check)", () => {
   assert.ok(!script.includes("$repo_dir/$name"), "Guard evidence must not report absolute checkout paths as offending paths");
 });
 
+test("bootstrap guard passes tracked bootstrap files identical to base (a2a-nexus#2221)", () => {
+  const task: NormalizedRunnerTask = {
+    id: "bootstrap-guard-tracked-base",
+    intent: "propose_patch",
+    repos: [{ url: "jinwon-int/test-repo", path: "repo" }],
+    commands: [],
+  };
+  const script = buildContainerScript(task);
+  assert.ok(script.includes("bootstrap_tracked_base_clean"), "Expected base-identity pass-through helper in pre and post guards");
+  assert.ok(script.includes('base="${A2A_RUNNER_BASE_BRANCH:-main}"'), "Expected base branch env defaulting");
+  assert.ok(script.includes("git -C \"$repo_dir\" diff --quiet \"$base_ref\" -- \"$path\""), "Expected worktree-vs-base diff check");
+  assert.ok(script.includes("filter_branch_bootstrap_leaks"), "Expected the existing filter entry point to remain");
+});
+
 test("bootstrap guard allows only clean tracked AGENTS.md in Family Wiki read-only audit mode", () => {
   const task: NormalizedRunnerTask = {
     id: "family-wiki-readonly-audit",

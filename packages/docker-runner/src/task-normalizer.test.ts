@@ -261,6 +261,8 @@ test("generates PR-producing default commands for github-propose-patch mode with
   assert.ok(pipeline.includes("filter_branch_bootstrap_leaks"), "Expected ignored-file-aware branch-entry filter before PR creation");
   assert.ok(pipeline.includes("git -C \"$repo_dir\" ls-files -- \"$path\""), "Expected tracked bootstrap paths to block before PR creation");
   assert.ok(pipeline.includes("git -C \"$repo_dir\" status --porcelain -- \"$path\""), "Expected staged/unignored bootstrap paths to block before PR creation");
+  assert.ok(pipeline.includes("bootstrap_tracked_base_clean"), "Expected base-identity pass-through for tracked bootstrap files before PR creation");
+  assert.ok(pipeline.includes('base="${A2A_RUNNER_BASE_BRANCH:-main}"'), "Expected base branch env defaulting before PR creation");
   assert.ok(pipeline.includes("ARTIFACT_BOOTSTRAP_LEAKS_BEFORE_PR"), "Expected artifact evidence bootstrap leak re-check after agent execution");
   assert.ok(pipeline.includes("OpenClaw bootstrap context files appeared before PR creation or artifact evidence capture"), "Expected pre-PR bootstrap leak block evidence");
   assert.ok(pipeline.indexOf("BOOTSTRAP_BLOCK_PATHS") < pipeline.indexOf("git add -A"), "Expected bootstrap re-check before git add can stage runtime files");
