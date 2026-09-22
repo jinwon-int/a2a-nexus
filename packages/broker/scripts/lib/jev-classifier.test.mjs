@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { chmodSync, mkdtempSync, rmSync, statSync, writeFileSync } from "node:fs";
+import { chmodSync, mkdtempSync, readFileSync, rmSync, statSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
@@ -379,4 +379,23 @@ test("G1 classifyTypedWithJev failure discipline mirrors the boolean contract", 
 
   const httpTransport = recordingTransport(() => ({ status: 503, text: "" }));
   assert.equal((await classifyTypedWithJev({ config, state: "s", questions: TYPED_QUESTIONS, transport: httpTransport })).reason, "http-error");
+});
+
+// Regression: Node 24 removed the deprecated top-level `R_OK` named export from
+// `node:fs`, so `import { R_OK } from "node:fs"` throws at module load on Node 24
+// while still resolving on Node 22.  That made handler 0.2.20 unloadable on Node 24
+// nodes (Termux aarch64) while Node 22 nodes passed — a silent platform split.
+// Keep the module importable and pin the canonical `fs.constants` spelling.
+test("jev-classifier module source avoids deprecated node:fs constant named imports", () => {
+  const source = readFileSync(new URL("./jev-classifier.mjs", import.meta.url), "utf8");
+  const fsImports = source.match(/import \{[^}]*\} from "node:fs";/g) ?? [];
+  assert.ok(fsImports.length > 0, "expected at least one node:fs import");
+  for (const line of fsImports) {
+    assert.doesNotMatch(
+      line,
+      /\b(R_OK|W_OK|X_OK|F_OK)\b/,
+      `node:fs access constants must come from fs.constants, not a named import: ${line}`,
+    );
+  }
+  assert.match(source, /constants\.R_OK/, "expected accessSync to use constants.R_OK");
 });
