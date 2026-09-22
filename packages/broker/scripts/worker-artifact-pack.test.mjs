@@ -43,6 +43,7 @@ function makeFakeRepo() {
   const lib = join(scripts, 'lib');
   mkdirSync(lib, { recursive: true });
   mkdirSync(join(scripts, 'handlers'), { recursive: true }); // 실수로 생긴 중첩 디렉터리도 payload로 흡수되면 안 된다
+  mkdirSync(join(scripts, 'handlers', 'lib'), { recursive: true });
 
   writeFileSync(join(repo, 'package.json'), JSON.stringify({ name: 'fake-monorepo', workspaces: ['packages/*'] }));
   writeFileSync(join(scripts, 'a2a-task-handler.mjs'), HANDLER_SOURCE);
@@ -66,6 +67,27 @@ function makeFakeRepo() {
     name: 'a2a-attestation-core', version: '0.1.0', type: 'module', exports: { '.': './dist/index.js' },
   }));
   writeFileSync(join(core, 'dist', 'index.js'), 'export function coreHash(value) { return value; }\n');
+
+  // 워커 데몬 빌드 산출물(dist/worker.js + 상대 임포트) — packer가 클로저로 포장한다
+  const brokerDist = join(repo, 'packages', 'broker', 'dist');
+  mkdirSync(join(brokerDist, 'workers'), { recursive: true });
+  writeFileSync(join(brokerDist, 'worker.js'), [
+    "import { bootWorker } from './workers/boot.js';",
+    "import { coreHash } from 'a2a-attestation-core';",
+    'export const ready = bootWorker() && coreHash(\"w\");',
+    '',
+  ].join('\n'));
+  writeFileSync(join(brokerDist, 'workers', 'boot.js'), [
+    "import { stringSchema } from 'zod-shim';",
+    'export function bootWorker() { return !!stringSchema; }',
+    '',
+  ].join('\n'));
+
+  // 저장소 루트 node_modules의 실제 npm 패키지 — 워커 클로저가 요구하면 벤도링된다
+  const zod = join(repo, 'node_modules', 'zod-shim');
+  mkdirSync(zod, { recursive: true });
+  writeFileSync(join(zod, 'package.json'), JSON.stringify({ name: 'zod-shim', version: '1.0.0', type: 'module', main: 'index.js' }));
+  writeFileSync(join(zod, 'index.js'), 'export const stringSchema = () => true;\n');
 
   return { repo, scripts };
 }
@@ -108,18 +130,19 @@ test('packer ships payload, handlers mirror, and the transitive workspace packag
   }
 });
 
-test('packer reports external bare imports instead of guessing them (#2227)', () => {
+test('packer reports payload-level unknown externals without vendoring them (#2227)', () => {
   const { repo } = makeFakeRepo();
   try {
     const lib = join(repo, 'packages', 'broker', 'scripts', 'lib');
-    writeFileSync(join(lib, 'source-carriers.mjs'), 'import { z } from "zod";\nexport const stats = () => z.string();\n');
+    writeFileSync(join(lib, 'source-carriers.mjs'), 'import { x } from "left-pad";\nexport const stats = () => x;\n');
     const result = runPacker(repo);
     assert.equal(result.status, 0, result.stderr || result.stdout);
     const summary = JSON.parse(result.stdout);
-    assert.deepEqual(summary.packedWorkspaces, ['a2a-attestation', 'a2a-attestation-core']);
-    assert.equal(summary.externalDeps.some((d) => d.endsWith('→ zod')), true);
-    // 외부 npm 의존성은 임의로 포장하지 않는다
-    assert.equal(existsSync(join(repo, 'artifact', 'node_modules', 'zod')), false);
+    // payload의 미지 의존성은 리포트만 한다(임의 포장 금지) — 워커 클로저가 요구하는
+    // zod-shim은 벤도링되지만 payload의 left-pad는 대상이 아니다.
+    assert.equal(summary.externalDeps.some((d) => d.endsWith('→ left-pad')), true);
+    assert.equal(existsSync(join(repo, 'artifact', 'node_modules', 'left-pad')), false);
+    assert.equal(existsSync(join(repo, 'artifact', 'node_modules', 'zod-shim')), true);
   } finally {
     rmSync(repo, { recursive: true, force: true });
   }
@@ -149,6 +172,28 @@ test('--check plans without writing (#2227)', () => {
     assert.equal(summary.checkOnly, true);
     assert.deepEqual(summary.packedWorkspaces, ['a2a-attestation', 'a2a-attestation-core']);
     assert.equal(existsSync(join(repo, 'artifact')), false);
+  } finally {
+    rmSync(repo, { recursive: true, force: true });
+  }
+});
+
+test('packer ships the worker daemon closure and vendors its npm deps (#2227 확장)', () => {
+  const { repo } = makeFakeRepo();
+  try {
+    const result = runPacker(repo);
+    assert.equal(result.status, 0, result.stderr || result.stdout);
+    const summary = JSON.parse(result.stdout);
+    assert.equal(summary.workerDaemon, true);
+    const artifact = join(repo, 'artifact');
+    // 워커 엔트리 + 상대 임포트 클로저
+    assert.equal(existsSync(join(artifact, 'dist', 'worker.js')), true);
+    assert.equal(existsSync(join(artifact, 'dist', 'workers', 'boot.js')), true);
+    // 클로저의 npm 의존성은 저장소 node_modules에서 벤도링
+    assert.deepEqual(summary.vendoredNpmDeps, ['zod-shim']);
+    assert.equal(existsSync(join(artifact, 'node_modules', 'zod-shim', 'package.json')), true);
+    assert.equal(existsSync(join(artifact, 'node_modules', 'zod-shim', 'index.js')), true);
+    // 워크스페이스 패키지와 병존
+    assert.equal(existsSync(join(artifact, 'node_modules', 'a2a-attestation', 'dist', 'index.js')), true);
   } finally {
     rmSync(repo, { recursive: true, force: true });
   }
