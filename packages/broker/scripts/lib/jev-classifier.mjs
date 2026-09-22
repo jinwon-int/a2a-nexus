@@ -4,7 +4,7 @@
 // is read at call time; endpoint and key values are never embedded here or in
 // the deterministic, value-free warning text.
 
-import { accessSync, readFileSync, R_OK, statSync } from "node:fs";
+import { accessSync, constants, readFileSync, statSync } from "node:fs";
 
 export const JEV_DISABLE_TOKENS = new Set(["", "none", "null", "undefined"]);
 export const JEV_TIMEOUT_DEFAULT_MS = 1500;
@@ -49,7 +49,7 @@ function readableOwnerOnlyFile(value) {
     const stats = statSync(text);
     if (!stats.isFile()) return null;
     if ((stats.mode & 0o077) !== 0) return null;
-    accessSync(text, R_OK);
+    accessSync(text, constants.R_OK);
     return text;
   } catch {
     return null;
