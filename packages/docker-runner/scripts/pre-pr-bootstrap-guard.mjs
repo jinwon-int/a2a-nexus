@@ -7,13 +7,15 @@
  * Schema: a2a.runner.pre-pr-bootstrap-guard.v1
  *
  * Usage:
- *   node scripts/pre-pr-bootstrap-guard.mjs --repo-dir /path/to/repo
+ *   node scripts/pre-pr-bootstrap-guard.mjs --repo-dir /path/to/repo [--base-branch main]
  */
 
 import { existsSync } from "node:fs";
 import { resolve, relative, join } from "node:path";
 import { readdir, stat } from "node:fs/promises";
 import { spawnSync } from "node:child_process";
+
+const DEFAULT_BASE_BRANCH = "main";
 
 const BANNED_FILES = new Set([
   "AGENTS.md",
@@ -34,7 +36,7 @@ const BANNED_DIRS = new Set([
 function usage(exitCode = 2) {
   const stream = exitCode === 0 ? process.stdout : process.stderr;
   stream.write(
-    "Usage: node scripts/pre-pr-bootstrap-guard.mjs --repo-dir <path> [--artifacts-dir <path>]\n",
+    "Usage: node scripts/pre-pr-bootstrap-guard.mjs --repo-dir <path> [--artifacts-dir <path>] [--base-branch <name>]\n",
   );
   process.exit(exitCode);
 }
@@ -46,6 +48,7 @@ function parseArgs(argv) {
     if (arg === "--help" || arg === "-h") usage(0);
     if (arg === "--repo-dir") args.repoDir = argv[++i];
     else if (arg === "--artifacts-dir") args.artifactsDir = argv[++i];
+    else if (arg === "--base-branch") args.baseBranch = argv[++i];
     else throw new Error(`unknown argument: ${arg}`);
   }
   if (!args.repoDir) usage();
@@ -56,7 +59,7 @@ function parseArgs(argv) {
  * Recursively walk a directory for banned bootstrap paths.
  * Returns a sorted list of repo-relative offending paths.
  */
-async function collectBannedPaths(repoDir, artifactsDir) {
+async function collectBannedPaths(repoDir, artifactsDir, baseBranch) {
   const absolute = resolve(repoDir);
   const candidates = [];
 
@@ -76,7 +79,7 @@ async function collectBannedPaths(repoDir, artifactsDir) {
     }
   }
 
-  const offending = filterBranchEnteringPaths(absolute, candidates);
+  const offending = filterBranchEnteringPaths(absolute, candidates, baseBranch);
   if (artifactsDir) {
     offending.push(...await collectBannedArtifactPaths(artifactsDir));
   }
@@ -110,23 +113,54 @@ async function collectBannedArtifactPaths(artifactsDir) {
   return candidates;
 }
 
-function filterBranchEnteringPaths(repoDir, candidates) {
+function filterBranchEnteringPaths(repoDir, candidates, baseBranch) {
   if (candidates.length === 0) return [];
 
   // If this is not a Git checkout or Git is unavailable, fail closed and report
   // every discovered runtime/bootstrap path. Inside normal runner checkouts,
   // ignored untracked files are safe because broad `git add -A` will not stage
-  // them; tracked, staged, modified, or unignored untracked files are not safe.
+  // them; staged, modified, or unignored untracked files are not safe. A file
+  // tracked in the repository is only a leak when it differs from the base
+  // branch (agent-modified or committed onto the patch branch); a tracked copy
+  // identical to base is a legitimate repository artifact (a2a-nexus#2221).
+  // Base resolution failures fail closed and keep the path blocked.
   if (!isGitWorkTree(repoDir)) return [...candidates];
 
   return candidates.filter((candidate) => {
     const tracked = gitOutput(repoDir, ["ls-files", "--", candidate]);
-    if (tracked === undefined || tracked.trim()) return true;
+    if (tracked === undefined) return true;
+    if (tracked.trim()) {
+      return !isTrackedIdenticalToBase(repoDir, candidate, baseBranch);
+    }
 
     const pending = gitOutput(repoDir, ["status", "--porcelain", "--", candidate]);
     if (pending === undefined) return true;
     return pending.trim().length > 0;
   });
+}
+
+/**
+ * True when the working-tree copy of `path` is byte-identical to the base
+ * branch (`origin/<base-branch>`, falling back to `<base-branch>`). Unresolvable
+ * base refs return false so callers fail closed and keep the path blocked.
+ */
+function isTrackedIdenticalToBase(repoDir, path, baseBranch) {
+  const base = (baseBranch || DEFAULT_BASE_BRANCH).trim() || DEFAULT_BASE_BRANCH;
+  const ref = ["origin/" + base, base].find((candidate) => {
+    const result = spawnSync(
+      "git",
+      ["-C", repoDir, "rev-parse", "--verify", "--quiet", candidate + "^{commit}"],
+      { encoding: "utf8", stdio: ["ignore", "pipe", "ignore"], timeout: 5000 },
+    );
+    return result.status === 0 && Boolean(result.stdout.trim());
+  });
+  if (!ref) return false;
+  const diff = spawnSync("git", ["-C", repoDir, "diff", "--quiet", ref, "--", path], {
+    encoding: "utf8",
+    stdio: ["ignore", "pipe", "ignore"],
+    timeout: 5000,
+  });
+  return diff.status === 0;
 }
 
 function isGitWorkTree(repoDir) {
@@ -172,7 +206,7 @@ async function main() {
   const args = parseArgs(process.argv.slice(2));
   const absolute = resolve(args.repoDir);
 
-  const offending = await collectBannedPaths(absolute, args.artifactsDir);
+  const offending = await collectBannedPaths(absolute, args.artifactsDir, args.baseBranch);
 
   const output = {
     schemaVersion: "a2a.runner.pre-pr-bootstrap-guard.v1",

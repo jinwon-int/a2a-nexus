@@ -427,11 +427,32 @@ find_bootstrap_leaks() {
     done
   )
 }
+bootstrap_base_ref() {
+  base="${A2A_RUNNER_BASE_BRANCH:-main}"
+  if git rev-parse --verify --quiet "origin/$base" >/dev/null 2>&1; then
+    printf 'origin/%s' "$base"
+    return 0
+  fi
+  if git rev-parse --verify --quiet "$base" >/dev/null 2>&1; then
+    printf '%s' "$base"
+    return 0
+  fi
+  return 1
+}
+bootstrap_tracked_base_clean() {
+  path="$1"
+  base_ref="$(bootstrap_base_ref)" || return 1
+  git diff --quiet "$base_ref" -- "$path"
+}
 bootstrap_leaks="$(find_bootstrap_leaks . 2>/dev/null || true)"
 if [ -n "$bootstrap_leaks" ]; then
   unsafe_bootstrap_leaks=""
   while IFS= read -r leak; do
     [ -n "$leak" ] || continue
+    if [ -n "$(git ls-files -- "$leak")" ] && bootstrap_tracked_base_clean "$leak"; then
+      printf 'notice=tracked_base_bootstrap_retained %s\n' "$leak" | tee -a /work/artifacts/summary.txt
+      continue
+    fi
     if [ -e "$leak" ] && [ -z "$(git ls-files -- "$leak")" ] && git check-ignore -q -- "$leak"; then
       rm -rf -- "$leak"
       printf 'notice=scrubbed_ignored_openclaw_bootstrap %s

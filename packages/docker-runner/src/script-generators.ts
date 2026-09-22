@@ -372,6 +372,25 @@ is_allowed_tracked_bootstrap_path() {
   done
   return 1
 }
+bootstrap_base_ref() {
+  repo_dir="$1"
+  base="\${A2A_RUNNER_BASE_BRANCH:-main}"
+  if git -C "$repo_dir" rev-parse --verify --quiet "origin/$base" >/dev/null 2>&1; then
+    printf 'origin/%s' "$base"
+    return 0
+  fi
+  if git -C "$repo_dir" rev-parse --verify --quiet "$base" >/dev/null 2>&1; then
+    printf '%s' "$base"
+    return 0
+  fi
+  return 1
+}
+bootstrap_tracked_base_clean() {
+  repo_dir="$1"
+  path="$2"
+  base_ref="$(bootstrap_base_ref "$repo_dir")" || return 1
+  git -C "$repo_dir" diff --quiet "$base_ref" -- "$path"
+}
 find_bootstrap_leaks() {
   repo_dir="$1"
   (
@@ -407,6 +426,9 @@ filter_branch_bootstrap_leaks() {
       continue
     fi
     if [ -n "$(git -C "$repo_dir" ls-files -- "$path")" ] || [ -n "$(git -C "$repo_dir" status --porcelain -- "$path")" ]; then
+      if [ -n "$(git -C "$repo_dir" ls-files -- "$path")" ] && bootstrap_tracked_base_clean "$repo_dir" "$path"; then
+        continue
+      fi
       printf '%s\\n' "$path"
     fi
   done
@@ -466,6 +488,29 @@ if ! command -v is_allowed_tracked_bootstrap_path >/dev/null 2>&1; then
     return 1
   }
 fi
+if ! command -v bootstrap_base_ref >/dev/null 2>&1; then
+  bootstrap_base_ref() {
+    repo_dir="$1"
+    base="\${A2A_RUNNER_BASE_BRANCH:-main}"
+    if git -C "$repo_dir" rev-parse --verify --quiet "origin/$base" >/dev/null 2>&1; then
+      printf 'origin/%s' "$base"
+      return 0
+    fi
+    if git -C "$repo_dir" rev-parse --verify --quiet "$base" >/dev/null 2>&1; then
+      printf '%s' "$base"
+      return 0
+    fi
+    return 1
+  }
+fi
+if ! command -v bootstrap_tracked_base_clean >/dev/null 2>&1; then
+  bootstrap_tracked_base_clean() {
+    repo_dir="$1"
+    path="$2"
+    base_ref="$(bootstrap_base_ref "$repo_dir")" || return 1
+    git -C "$repo_dir" diff --quiet "$base_ref" -- "$path"
+  }
+fi
 if ! command -v find_bootstrap_leaks >/dev/null 2>&1; then
   find_bootstrap_leaks() {
     repo_dir="$1"
@@ -504,6 +549,9 @@ if ! command -v filter_branch_bootstrap_leaks >/dev/null 2>&1; then
         continue
       fi
       if [ -n "$(git -C "$repo_dir" ls-files -- "$path")" ] || [ -n "$(git -C "$repo_dir" status --porcelain -- "$path")" ]; then
+        if [ -n "$(git -C "$repo_dir" ls-files -- "$path")" ] && bootstrap_tracked_base_clean "$repo_dir" "$path"; then
+          continue
+        fi
         printf '%s\\n' "$path"
       fi
     done

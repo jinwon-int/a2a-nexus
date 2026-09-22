@@ -311,6 +311,108 @@ test("guard script blocks bootstrap files copied into artifact evidence", () => 
   }
 });
 
+// ---------------------------------------------------------------------------
+// a2a-nexus#2221 – tracked bootstrap files identical to base are repository
+// artifacts, not leaks; changed/new bootstrap files stay blocked.
+// ---------------------------------------------------------------------------
+
+function initRepoWithTrackedAgentsMd(dir: string): void {
+  spawnSync("git", ["init", "-b", "main"], { cwd: dir, encoding: "utf8", timeout: 5000 });
+  spawnSync("git", ["config", "user.email", "guard-test@example.com"], { cwd: dir, encoding: "utf8", timeout: 5000 });
+  spawnSync("git", ["config", "user.name", "guard-test"], { cwd: dir, encoding: "utf8", timeout: 5000 });
+  writeFileSync(join(dir, "AGENTS.md"), "# tracked repository agent contract\n");
+  writeFileSync(join(dir, "README.md"), "# test");
+  const add = spawnSync("git", ["add", "."], { cwd: dir, encoding: "utf8", timeout: 5000 });
+  assert.equal(add.status, 0, add.stderr);
+  const commit = spawnSync("git", ["commit", "-m", "init"], { cwd: dir, encoding: "utf8", timeout: 5000 });
+  assert.equal(commit.status, 0, commit.stderr);
+}
+
+test("guard script passes a tracked bootstrap file identical to the base branch", () => {
+  const dir = mkdtempSync(join(tmpdir(), "guard-tracked-base-clean-"));
+  try {
+    initRepoWithTrackedAgentsMd(dir);
+
+    const result = spawnSync(process.execPath, [GUARD_SCRIPT, "--repo-dir", dir], {
+      encoding: "utf8",
+      timeout: 5000,
+    });
+
+    assert.equal(result.status, 0, `Expected exit 0 for base-identical tracked AGENTS.md, got ${result.status}: ${result.stderr}${result.stdout}`);
+    const output = JSON.parse(result.stdout);
+    assert.equal(output.ok, true);
+    assert.equal(output.offendingPaths, undefined);
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test("guard script blocks a tracked bootstrap file modified in the worktree against base", () => {
+  const dir = mkdtempSync(join(tmpdir(), "guard-tracked-base-dirty-"));
+  try {
+    initRepoWithTrackedAgentsMd(dir);
+    writeFileSync(join(dir, "AGENTS.md"), "# tracked repository agent contract\n# agent-local drift\n");
+
+    const result = spawnSync(process.execPath, [GUARD_SCRIPT, "--repo-dir", dir], {
+      encoding: "utf8",
+      timeout: 5000,
+    });
+
+    assert.equal(result.status, 1, `Expected exit 1 for worktree-modified tracked AGENTS.md, got ${result.status}: ${result.stdout}`);
+    const output = JSON.parse(result.stdout);
+    assert.equal(output.ok, false);
+    assert.ok(output.offendingPaths.includes("AGENTS.md"), JSON.stringify(output.offendingPaths));
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test("guard script blocks a tracked bootstrap file committed ahead of base", () => {
+  const dir = mkdtempSync(join(tmpdir(), "guard-tracked-base-committed-"));
+  try {
+    initRepoWithTrackedAgentsMd(dir);
+    // Mirror the runner flow: the patch branch is created from base and the
+    // drift commit lands on the patch branch, so base stays behind.
+    const branch = spawnSync("git", ["checkout", "-b", "a2a-patch-branch"], { cwd: dir, encoding: "utf8", timeout: 5000 });
+    assert.equal(branch.status, 0, branch.stderr);
+    writeFileSync(join(dir, "AGENTS.md"), "# tracked repository agent contract\n# committed drift\n");
+    spawnSync("git", ["add", "AGENTS.md"], { cwd: dir, encoding: "utf8", timeout: 5000 });
+    const commit = spawnSync("git", ["commit", "-m", "drift"], { cwd: dir, encoding: "utf8", timeout: 5000 });
+    assert.equal(commit.status, 0, commit.stderr);
+
+    const result = spawnSync(process.execPath, [GUARD_SCRIPT, "--repo-dir", dir, "--base-branch", "main"], {
+      encoding: "utf8",
+      timeout: 5000,
+    });
+
+    assert.equal(result.status, 1, `Expected exit 1 for committed tracked AGENTS.md drift, got ${result.status}: ${result.stdout}`);
+    const output = JSON.parse(result.stdout);
+    assert.equal(output.ok, false);
+    assert.ok(output.offendingPaths.includes("AGENTS.md"), JSON.stringify(output.offendingPaths));
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test("guard script fails closed for tracked bootstrap files when the base branch is unresolvable", () => {
+  const dir = mkdtempSync(join(tmpdir(), "guard-tracked-no-base-"));
+  try {
+    initRepoWithTrackedAgentsMd(dir);
+
+    const result = spawnSync(process.execPath, [GUARD_SCRIPT, "--repo-dir", dir, "--base-branch", "does-not-exist"], {
+      encoding: "utf8",
+      timeout: 5000,
+    });
+
+    assert.equal(result.status, 1, `Expected exit 1 when base ref cannot be resolved, got ${result.status}: ${result.stdout}`);
+    const output = JSON.parse(result.stdout);
+    assert.equal(output.ok, false);
+    assert.ok(output.offendingPaths.includes("AGENTS.md"), JSON.stringify(output.offendingPaths));
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
 test("guard script exits 2 on missing repo-dir", () => {
   const result = spawnSync(process.execPath, [GUARD_SCRIPT], {
     encoding: "utf8",

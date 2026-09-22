@@ -23,23 +23,23 @@
     },
     {
       "name": "hermes-default",
-      "bytes": 15293,
-      "sha256": "19e08784fe43564c0324fd6da159e295c2a3369b87bbc151456567ae40a8d991"
+      "bytes": 15951,
+      "sha256": "cb56b577c9abec09b1c822a5baafa85e38c9150b3864e1b552c789367dde9354"
     },
     {
       "name": "hermes-native-no-subagents",
-      "bytes": 14700,
-      "sha256": "2e6a7e9bdeb1bed5d779827baadc7ea7ca0b9c82ccf3192d09c92369af01b403"
+      "bytes": 15358,
+      "sha256": "9e09d99ed6016e9ea9e6ef368586986c94d4696911b6bb118ce9c67795882069"
     },
     {
       "name": "openclaw-default",
-      "bytes": 21358,
-      "sha256": "d548b85d5cfae8694240fec1e4c4c4eb11401ad53f3ac752efa32c8d8668f58c"
+      "bytes": 22016,
+      "sha256": "e5f7d8343e5de150ee9340c541d2ff7213a04284e1d921ffc8fab5396a5d751e"
     },
     {
       "name": "openclaw-npm-fallback-no-subagents",
-      "bytes": 20818,
-      "sha256": "1a10f1ef892027a07e3cfdc5e0779874cd994aa05431181a5b0402e5bd8654a3"
+      "bytes": 21476,
+      "sha256": "b07b3a25a394300e94de538623bba7e553a3c707538d27edcfc6a15f0d1939bb"
     }
   ]
 }
