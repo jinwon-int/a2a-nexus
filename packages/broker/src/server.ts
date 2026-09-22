@@ -537,6 +537,11 @@ export function createBrokerServer(options: BrokerServerOptions = {}): BrokerSer
   // fails startup loudly; unset defers signature checks to the merge gate.
   const finalizerKeyringFile = options.finalizerKeyringFile ?? process.env.A2A_FINALIZER_KEYRING_FILE;
   const finalizerKeyring = finalizerKeyringFile ? loadFinalizerKeyringFile(finalizerKeyringFile) : undefined;
+  const fastLaneSkipReviewRound =
+    options.fastLaneSkipReviewRound ?? resolveBooleanEnv(process.env.A2A_FAST_LANE_SKIP_REVIEW_ROUND, false);
+  const fastLaneSingleWorkerFinalize =
+    options.fastLaneSingleWorkerFinalize ??
+    resolveBooleanEnv(process.env.A2A_FAST_LANE_SINGLE_WORKER_FINALIZE, false);
   const hotRuntimeLimits = resolveHotRuntimeLimits(options);
   const maxHotRuntimeNonTerminalTasks = hotRuntimeLimits.maxNonTerminalTasks;
   const maxHotRuntimeTerminalTasks = hotRuntimeLimits.maxTerminalTasks;
@@ -818,6 +823,8 @@ export function createBrokerServer(options: BrokerServerOptions = {}): BrokerSer
       injectedKnowledge,
       finalizerVerdictEnforcement,
       finalizerKeyring,
+      fastLaneSkipReviewRound,
+      fastLaneSingleWorkerFinalize,
       snapshotExtensions: pushNotificationSnapshotExtension,
     });
   if (options.broker && pushNotificationSnapshotExtension) {

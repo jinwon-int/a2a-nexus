@@ -219,7 +219,9 @@ export type AuditAction =
   | "conversation.opened"
   | "conversation.message.accepted"
   | "conversation.message.processed"
-  | "task.negative_verdict_preserved";
+  | "task.negative_verdict_preserved"
+  | "task.review_gate_skipped"
+  | "task.finalizer_admission_skipped";
 export type A2AWorkerEnvironment = "research" | "staging" | "live";
 export type WorkerStatus = "online" | "stale";
 export type WorkerPlaneStatus = "online" | "unknown";

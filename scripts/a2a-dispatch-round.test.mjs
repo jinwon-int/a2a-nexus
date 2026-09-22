@@ -131,6 +131,27 @@ test('validateManifest honors explicit parentRoundOrder in lane payload', () => 
   assert.equal(lanes[0].payload.parentRoundTotal, 2);
 });
 
+test('validateManifest stamps planDecidedAt identically on every lane when absent (#2207)', () => {
+  const { errors, lanes } = validateManifest(makeManifest('http://x', 3));
+  assert.deepEqual(errors, []);
+  for (const lane of lanes) {
+    assert.equal(typeof lane.payload.planDecidedAt, 'string');
+    assert.ok(!Number.isNaN(Date.parse(lane.payload.planDecidedAt)), 'planDecidedAt must parse as an ISO timestamp');
+    assert.equal(lane.payload.planDecidedAt, lanes[0].payload.planDecidedAt, 'every lane in a round shares one decision instant');
+  }
+  assert.ok(Date.parse(lanes[0].payload.planDecidedAt) <= Date.now() + 1000);
+});
+
+test('validateManifest never overwrites an explicit planDecidedAt (#2207)', () => {
+  const m = makeManifest('http://x', 2);
+  m.defaults.payload = { planDecidedAt: '2026-01-01T00:00:00.000Z' };
+  m.lanes[1].payload = { planDecidedAt: '2026-02-02T00:00:00.000Z' };
+  const { errors, lanes } = validateManifest(m);
+  assert.deepEqual(errors, []);
+  assert.equal(lanes[0].payload.planDecidedAt, '2026-01-01T00:00:00.000Z', 'defaults.payload stamp wins when lane does not set one');
+  assert.equal(lanes[1].payload.planDecidedAt, '2026-02-02T00:00:00.000Z', 'lane payload stamp wins over defaults');
+});
+
 test('validateManifest: absent retrieval blocks stay absent and produce no errors (#2017)', () => {
   const { errors, lanes } = validateManifest(makeManifest('http://x', 2));
   assert.equal(errors.length, 0);
@@ -263,6 +284,16 @@ test('dry-run validates and plans without network', async () => {
   assert.equal(out.exitCode, 0);
   assert.equal(out.mode, 'dry-run');
   assert.equal(out.lanes.length, 2);
+});
+
+test('dry-run plan exposes planDecidedAt in the planned payload (#2207)', async () => {
+  const out = await runDispatch(makeManifest('http://unused', 2), { dryRun: true });
+  assert.equal(out.exitCode, 0);
+  assert.equal(out.lanes.length, 2);
+  for (const planned of out.lanes) {
+    assert.equal(typeof planned.payload.planDecidedAt, 'string');
+    assert.equal(planned.payload.planDecidedAt, out.lanes[0].payload.planDecidedAt);
+  }
 });
 
 test('dry-run rejects duplicate lane ids', async () => {

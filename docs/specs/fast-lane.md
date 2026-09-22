@@ -2,8 +2,11 @@
 
 > **Status**: the create-time v1 shadow classifier and durable recording
 > contract are implemented source-only. Shadow mode changes no task behavior.
-> Canary, flag enablement, lightweight execution, and rollout remain
-> incomplete and require separate approval. Refs #1601.
+> The two opt-in lightweight flags (Q1 `fastLaneSkipReviewRound`, Q2
+> `fastLaneSingleWorkerFinalize`, #1601/#2208) are implemented source-only,
+> default off; off keeps completion byte-identical. Canary, operational flag
+> enablement, and rollout remain incomplete and require separate approval.
+> Refs #1601.
 
 ## 목적과 근거
 
@@ -172,7 +175,9 @@ bounded secret-safe 값이다. 그 뒤 warn-mode deny라면 기존
 | readiness lint의 경고성 단계 | readiness fail-closed 항목 |
 
 명시적 미결정: ① finalizer 라운드 생략 범위 — verdict 서명 검증은
-유지하되 독립 리뷰 라운드를 생략할지, ② 간이 evidence의 최소 필드.
+유지하되 독립 리뷰 라운드를 생략할지(→ #1601/#2208에서 결정: opt-in 플래그
+Q1 `A2A_FAST_LANE_SKIP_REVIEW_ROUND`·Q2 `A2A_FAST_LANE_SINGLE_WORKER_FINALIZE`
+로 구현, 기본 off), ② 간이 evidence의 최소 필드.
 lane 기록 필드는 이 slice에서 broker-owned top-level
 `TaskRecord.laneAssignment`로 결정되었고 requester-owned `payload.lane`은
 계약에서 제외되었다.
@@ -194,7 +199,8 @@ provenance, finalizer, policy enforcement, scheduling, execution 중 어느 것�
 
 1. 스펙 확정(완료) → 2. lane 판정+기록만 구현(완료, 동작 변경 없음,
 섀도) → 3. 칼나리로 판정 정확도 검증(미실시) → 4. 경량화 1개씩 opt-in
-플래그로 도입(미구현, 기본 동작 변경 없음) → 5. 벤치 재측정 + 실패율
+플래그로 도입(구현 — Q1/Q2 opt-in 2종 #1601/#2208, 기본 off로 완료 동작
+불변; 운영 플래그 활성화는 별도 승인) → 5. 벤치 재측정 + 실패율
 비악화 확인 → 6. 단계적 기본화.
 
 ## 성공 지표

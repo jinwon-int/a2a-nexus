@@ -1363,7 +1363,47 @@ function normalizeAnalysisBridgeFailure(detail) {
   return Object.fromEntries(Object.entries(normalized).filter(([, value]) => value !== undefined));
 }
 
+// #2209 — opt-in analysis session reuse. Default OFF: every analysis task keeps
+// its own per-task session id exactly as before. With
+// A2A_OPENCLAW_ANALYSIS_SESSION_REUSE=1 the first attempt reuses a fixed
+// per-node session id (warm conversation cache, lower latency); if that attempt
+// fails with a retryable execution-failure code the handler falls back exactly
+// once to a fresh per-task session id so a poisoned shared session cannot wedge
+// a task permanently. An explicit A2A_OPENCLAW_ANALYSIS_SESSION_ID always wins
+// and never falls back, in either mode.
+const OPENCLAW_ANALYSIS_SESSION_FALLBACK_RETRYABLE_CODES = new Set([
+  "openclaw_analysis_timeout",
+  "openclaw_analysis_spawn_failed",
+  "openclaw_analysis_failed",
+  "openclaw_analysis_no_final_json",
+]);
+
+function analysisBridgePerTaskSessionId(task, nodeId) {
+  return `a2a-${nodeId}-${safeText(task.id, String(Date.now()))}-analysis`;
+}
+
 function runOpenClawAnalysisBridge(task, env = process.env) {
+  const nodeId = safeText(env.A2A_NODE_ID || env.NODE_ID || env.WORKER_ID, "unknown-node");
+  const explicitSessionId = safeText(env.A2A_OPENCLAW_ANALYSIS_SESSION_ID, "");
+  if (explicitSessionId) {
+    // Explicit override: one direct run, no fallback (#2209).
+    return runOpenClawAnalysisBridgeOnce(task, env, explicitSessionId);
+  }
+  const perTaskSessionId = analysisBridgePerTaskSessionId(task, nodeId);
+  if (!isTruthyEnv(env.A2A_OPENCLAW_ANALYSIS_SESSION_REUSE)) {
+    return runOpenClawAnalysisBridgeOnce(task, env, perTaskSessionId);
+  }
+  const first = runOpenClawAnalysisBridgeOnce(task, env, `a2a-${nodeId}-analysis-reuse`);
+  if (!first.error || !OPENCLAW_ANALYSIS_SESSION_FALLBACK_RETRYABLE_CODES.has(first.error.code)) {
+    return first;
+  }
+  // Exactly one per-task fallback retry. Non-retryable outcomes (payload
+  // recovery loss, review validation, source projection, pre-bridge snapshot
+  // rejection) return untouched.
+  return runOpenClawAnalysisBridgeOnce(task, env, perTaskSessionId);
+}
+
+function runOpenClawAnalysisBridgeOnce(task, env = process.env, sessionId) {
   let payload = taskPayload(task);
   let suppliedSnapshotSources = [];
   try {
@@ -1384,10 +1424,6 @@ function runOpenClawAnalysisBridge(task, env = process.env) {
   const { thinking: effectiveThinking, fromPayload: thinkingFromPayload } = resolveWorkerThinking(task, env);
   const nodeId = safeText(env.A2A_NODE_ID || env.NODE_ID || env.WORKER_ID, "unknown-node");
   const timeoutSec = String(Math.max(1, Number(env.A2A_OPENCLAW_ANALYSIS_TIMEOUT_SEC || env.A2A_OPENCLAW_TIMEOUT_SEC || DEFAULT_OPENCLAW_TIMEOUT_SEC)));
-  const sessionId = safeText(
-    env.A2A_OPENCLAW_ANALYSIS_SESSION_ID,
-    `a2a-${nodeId}-${safeText(task.id, String(Date.now()))}-analysis`,
-  );
   const strictJsonInstruction = safeText(payload.strictJsonInstruction, "");
   const expectedSchema = payload.expectedSchema && typeof payload.expectedSchema === "object" && !Array.isArray(payload.expectedSchema)
     ? jsonForPrompt(payload.expectedSchema, 6000)
