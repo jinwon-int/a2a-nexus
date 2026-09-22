@@ -21,9 +21,12 @@
 // What it writes under --out:
 //   scripts/*.mjs, scripts/lib/*.mjs        payload copied from packages/broker/scripts (*.test.mjs excluded)
 //   handlers/*.mjs, handlers/lib/*.mjs      byte-identical runtime compat copies (guard compareCompatFile contract)
-//   dist/<runtime closure>                  compiled files the handler entry reaches via ../dist/… imports
-//                                           (packages/broker/dist build output — closure, not the whole 12 MB tree)
+//   dist/<runtime closure>                  compiled files the handler entry reaches via ../dist/… imports, PLUS
+//                                           the worker daemon closure from dist/worker.js when it exists — so one
+//                                           artifact carries BOTH runtime halves (#2227 제안 1 확장: 워커 코드도 artifact로)
 //   node_modules/<workspace-package>/        package.json + dist/ for every transitively needed workspace package
+//   node_modules/<npm-package>/              vendored real packages from the repo root node_modules when the worker
+//                                           closure needs them (e.g. zod) — workspace packages take precedence
 //
 // Exit codes: 0 ok · 1 packing failure (e.g. missing dist) · 2 usage error.
 // The JSON summary on stdout lists packed workspaces and any EXTERNAL (npm)
@@ -34,6 +37,7 @@ import { copyFileSync, existsSync, mkdirSync, readdirSync, readFileSync, statSyn
 import { join, relative, resolve, dirname } from 'node:path';
 import process from 'node:process';
 import { fileURLToPath } from 'node:url';
+import { cpSync } from 'node:fs';
 
 const scriptDir = dirname(fileURLToPath(import.meta.url));
 const VERBOSE = process.argv.includes('--verbose');
@@ -216,6 +220,7 @@ for (const src of payloadFiles) {
 
 // 2. Workspace deps of the payload graph.
 const packed = new Set();
+const vendored = new Set();
 for (const src of payloadFiles) {
   const content = readFileSync(src, 'utf8');
   for (const spec of scanBareImports(content)) {
@@ -233,11 +238,40 @@ const brokerDistRoot = join(repoRoot, 'packages', 'broker', 'dist');
 const distClosure = new Set();
 const distExternal = new Set();
 
+/** workspace → 팩, 저장소 node_modules의 실제 패키지 → 벤도링(+전이 추적), 둘 다 아니면 리포트. */
+function resolveRuntimeDep(name, fromLabel) {
+  if (workspaces.has(name)) {
+    packWorkspacePackage(name, workspaces, packed);
+    return;
+  }
+  const npmDir = join(repoRoot, 'node_modules', name);
+  if (!existsSync(npmDir) || !statSync(npmDir).isDirectory()) {
+    distExternal.add(`${fromLabel} → ${name}`);
+    return;
+  }
+  if (vendored.has(name)) return;
+  vendored.add(name);
+  if (!CHECK_ONLY) {
+    mkdirSync(dirname(join(artifactRoot, 'node_modules', name)), { recursive: true });
+    cpSync(npmDir, join(artifactRoot, 'node_modules', name), { recursive: true });
+  }
+  if (VERBOSE) console.error(`[pack] npm ${name} ← ${relative(repoRoot, npmDir)}`);
+  // 벤도링한 패키지 자신의 임포트도 전이 추적한다.
+  for (const file of listJsFiles(npmDir)) {
+    for (const spec of scanBareImports(readFileSync(file, 'utf8'))) {
+      if (spec === name) continue;
+      resolveRuntimeDep(spec, name);
+    }
+  }
+}
+
 function collectFromDistFile(file) {
   const content = readFileSync(file, 'utf8');
   for (const spec of scanBareImports(content)) {
-    if (workspaces.has(spec)) packWorkspacePackage(spec, workspaces, packed);
-    else distExternal.add(`${relative(brokerDistRoot, file)} → ${spec}`);
+    // dist 런타임이 실제 로드하는 코드의 의존성은 리포트가 아니라 해소한다:
+    // 워크스페이스면 포장, 저장소 node_modules에 있는 실제 npm 패키지면
+    // artifact로 벤도링한다(#2227 확장 — 워커 데몬을 artifact에서 구동).
+    resolveRuntimeDep(spec, relative(brokerDistRoot, file));
   }
   // relative imports stay inside dist
   const relSpecs = content.match(/from\s*['"](\.[^'\n]+)['"]|import\s*\(\s*['"](\.[^'\n]+)['"]\s*\)/g) ?? [];
@@ -268,6 +302,17 @@ for (const seed of distSeeds) {
     collectFromDistFile(seed);
   }
 }
+
+// Worker daemon closure — one artifact carries BOTH runtime halves. The
+// supervisor harness derives `node <A2A_WORKER_ROOT>/dist/worker.js`, so a
+// worker rooted at the artifact needs this file + its relative-import graph
+// (and their npm deps, vendored above via resolveRuntimeDep).
+const workerEntry = join(brokerDistRoot, 'worker.js');
+const workerDaemonShipped = existsSync(workerEntry);
+if (workerDaemonShipped && !distClosure.has(workerEntry)) {
+  distClosure.add(workerEntry);
+  collectFromDistFile(workerEntry);
+}
 for (const file of distClosure) {
   writeFile(file, join(artifactRoot, 'dist', relative(brokerDistRoot, file)));
 }
@@ -281,7 +326,9 @@ const summary = {
   handlersMirror: CHECK_ONLY ? 0 : payloadFiles.length,
   writtenFiles: CHECK_ONLY ? undefined : writtenFiles.length,
   distClosureFiles: distClosure.size,
+  workerDaemon: workerDaemonShipped,
   packedWorkspaces: [...packed].sort(),
+  vendoredNpmDeps: [...vendored].sort(),
   externalDeps: [...externalDeps].sort(),
   verify: `A2A_WORKER_ROOT=${artifactRoot} node ${join(payloadSourceDir, 'worker-artifact-rollout-guard.mjs')} --deployed`,
 };
