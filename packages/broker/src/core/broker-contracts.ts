@@ -226,6 +226,28 @@ export interface InMemoryA2ABrokerOptions {
    * time; absent = signature authenticity deferred to the repo merge gate.
    */
   finalizerKeyring?: FinalizerKeyring;
+  /**
+   * Fast-lane slice 4 (#1601/#2208) - Q1, opt-in, default off. When true, the
+   * broker terminal gate skips ONLY the review_* evidence throws
+   * (review_evidence_missing / review_not_independent /
+   * review_verdict_failed) for tasks whose laneAssignment.decision ===
+   * "fast". GitHub receipt errors are never skipped, and off keeps
+   * completion byte-identical. Note: a fast-lane task that opted into a
+   * review round via payload.review.required also has its review_*
+   * failure skipped when the flag is on — the flag is a deliberate
+   * operator decision to trade that round for latency.
+   * Falls back to A2A_FAST_LANE_SKIP_REVIEW_ROUND.
+   */
+  fastLaneSkipReviewRound?: boolean;
+  /**
+   * Fast-lane slice 4 (#1601/#2208) - Q2, opt-in, default off. When true,
+   * terminal-time finalizer-verdict admission is bypassed ONLY for fast-lane
+   * tasks whose normalized result carries NO finalizerVerdict. A present
+   * verdict always runs the full legacy admission including keyring
+   * signature verification; off keeps completion byte-identical. Falls back
+   * to A2A_FAST_LANE_SINGLE_WORKER_FINALIZE.
+   */
+  fastLaneSingleWorkerFinalize?: boolean;
   /** Optional lightweight profiling hook for broker internals. Listener errors are ignored. */
   profilingListener?: BrokerProfilingListener;
   /**

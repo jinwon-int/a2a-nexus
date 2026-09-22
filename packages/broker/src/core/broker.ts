@@ -493,6 +493,8 @@ export class InMemoryA2ABroker {
   private readonly injectedKnowledge?: InjectedKnowledgeSnapshot;
   private readonly finalizerVerdictEnforcement: FinalizerVerdictEnforcement;
   private readonly finalizerKeyring?: FinalizerKeyring;
+  private readonly fastLaneSkipReviewRound: boolean;
+  private readonly fastLaneSingleWorkerFinalize: boolean;
   private readonly workerHeartbeatPersistIntervalMs: number;
   private lastFullRetentionPersistAtMs = Date.now();
   /**
@@ -565,6 +567,8 @@ export class InMemoryA2ABroker {
     this.injectedKnowledge = options.injectedKnowledge;
     this.finalizerVerdictEnforcement = options.finalizerVerdictEnforcement ?? "off";
     this.finalizerKeyring = options.finalizerKeyring;
+    this.fastLaneSkipReviewRound = options.fastLaneSkipReviewRound ?? false;
+    this.fastLaneSingleWorkerFinalize = options.fastLaneSingleWorkerFinalize ?? false;
     this.workerHeartbeatPersistIntervalMs = Math.max(0, options.workerHeartbeatPersistIntervalMs ?? DEFAULT_WORKER_HEARTBEAT_PERSIST_INTERVAL_MS);
     this.retentionPolicy = normalizeBrokerRetentionPolicy(options.retention);
     this.maxRequeueAttempts = normalizeMaxRequeueAttempts(options.maxRequeueAttempts);
@@ -2716,6 +2720,8 @@ export class InMemoryA2ABroker {
       maxRequeueAttempts: this.maxRequeueAttempts,
       finalizerVerdictEnforcement: this.finalizerVerdictEnforcement,
       finalizerKeyring: this.finalizerKeyring,
+      fastLaneSkipReviewRound: this.fastLaneSkipReviewRound,
+      fastLaneSingleWorkerFinalize: this.fastLaneSingleWorkerFinalize,
       requireTask: (id) => this.requireTask(id),
       assertTaskWorker: (task, workerId, action) => this.assertTaskWorker(task, workerId, action),
       setTaskRecord: (task) => this.setTaskRecord(task),

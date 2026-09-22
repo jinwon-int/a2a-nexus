@@ -21,8 +21,10 @@ import { validateGithubTaskCompletionEvidence } from "./github-task-completion.j
 import { extractReviewVerdict, validateReviewEvidence } from "../worker-review.js";
 import {
   evaluateFinalizerVerdictAdmission,
+  type FinalizerVerdictAdmissionResult,
   type FinalizerVerdictEnforcement,
 } from "./finalizer-verdict-admission.js";
+import { isRecord } from "./value-guards.js";
 import type { FinalizerKeyring } from "a2a-attestation";
 import type { TaskUpdateReason } from "./broker-contracts.js";
 import type {
@@ -46,6 +48,18 @@ export interface TaskTerminalContext {
   finalizerVerdictEnforcement: FinalizerVerdictEnforcement;
   /** Registered finalizer keyring (#1383 V-c). When set, the accept-path verifies static-key verdict signatures in-broker. */
   finalizerKeyring?: FinalizerKeyring;
+  /**
+   * #1601/#2208 Q1 (A2A_FAST_LANE_SKIP_REVIEW_ROUND): opt-in fast-lane
+   * review-round skip. Default false — absent on hand-built test contexts,
+   * so every legacy path stays byte-identical.
+   */
+  fastLaneSkipReviewRound?: boolean;
+  /**
+   * #1601/#2208 Q2 (A2A_FAST_LANE_SINGLE_WORKER_FINALIZE): opt-in
+   * single-worker finalize. Default false; a present finalizerVerdict
+   * always runs the full legacy admission regardless of this flag.
+   */
+  fastLaneSingleWorkerFinalize?: boolean;
   requireTask(id: string): TaskRecord;
   assertTaskWorker(task: TaskRecord, workerId: string, action: string): void;
   setTaskRecord(task: TaskRecord): void;
@@ -159,11 +173,34 @@ export function completeTask(
       completionEvidenceError.code === "github_completion_receipt_invalid"
         ? completionEvidenceError.code
         : "github_completion_evidence_missing";
-    throw new BrokerError(
-      brokerErrorCode,
-      completionEvidenceError.message,
-      completionEvidenceError.details,
-    );
+    // #1601/#2208 Q1: opt-in fast-lane review-round skip. ONLY the three
+    // review_* gate codes are skippable, and only when the broker itself
+    // classified the task as `fast` at create (classifyTaskLane — never an
+    // operator or worker assertion). GitHub receipt failures and every
+    // other evidence error still throw. The #1815 preservation block above
+    // already ran unconditionally, so negative-verdict evidence survives on
+    // the record whether or not the gate skips. Flag-off is byte-identical.
+    if (
+      context.fastLaneSkipReviewRound === true &&
+      task.laneAssignment?.decision === "fast" &&
+      (brokerErrorCode === "review_evidence_missing" ||
+        brokerErrorCode === "review_not_independent" ||
+        brokerErrorCode === "review_verdict_failed")
+    ) {
+      context.appendAuditEvent({
+        actorId: workerId,
+        action: "task.review_gate_skipped",
+        targetType: "task",
+        targetId: task.id,
+        note: `fast-lane review round skipped: ${brokerErrorCode} (#1601/#2208)`,
+      });
+    } else {
+      throw new BrokerError(
+        brokerErrorCode,
+        completionEvidenceError.message,
+        completionEvidenceError.details,
+      );
+    }
   }
 
   // Accept-path finalizer-verdict admission (#1383 V-c). Runs BEFORE any
@@ -172,12 +209,34 @@ export function completeTask(
   // enforce blocks (fail-closed) with finalizer_verdict_invalid; warn records
   // an audit event and proceeds. Signature authenticity stays with the repo
   // merge gate (documented v0 boundary in contracts/a2a/finalizer-verdict.md).
-  const verdictAdmission = evaluateFinalizerVerdictAdmission({
-    task,
-    result: normalizedResult,
-    enforcement: context.finalizerVerdictEnforcement,
-    finalizerKeyring: context.finalizerKeyring,
-  });
+  // #1601/#2208 Q2: opt-in single-worker finalize admission bypass.
+  // Applies only when the broker classified the task `fast` at create AND
+  // the flag is on AND the result carries NO finalizerVerdict at all (the
+  // same isRecord presence check the admission itself uses). A present
+  // verdict — any shape, valid or not — runs the full legacy admission
+  // including keyring signature verification. Flag-off is byte-identical
+  // to the pre-#2208 accept path (#1383 V-c).
+  const skipFinalizerAdmission =
+    context.fastLaneSingleWorkerFinalize === true &&
+    task.laneAssignment?.decision === "fast" &&
+    !isRecord(normalizedResult.finalizerVerdict);
+  if (skipFinalizerAdmission) {
+    context.appendAuditEvent({
+      actorId: workerId,
+      action: "task.finalizer_admission_skipped",
+      targetType: "task",
+      targetId: task.id,
+      note: "fast-lane single-worker finalize: verdict admission skipped (#1601/#2208)",
+    });
+  }
+  const verdictAdmission: FinalizerVerdictAdmissionResult = skipFinalizerAdmission
+    ? { applies: false, ok: true, violations: [] }
+    : evaluateFinalizerVerdictAdmission({
+        task,
+        result: normalizedResult,
+        enforcement: context.finalizerVerdictEnforcement,
+        finalizerKeyring: context.finalizerKeyring,
+      });
   if (verdictAdmission.applies && !verdictAdmission.ok) {
     const detail = verdictAdmission.violations.join("; ");
     if (context.finalizerVerdictEnforcement === "enforce") {

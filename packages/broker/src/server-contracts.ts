@@ -278,6 +278,23 @@ export interface BrokerServerOptions extends BrokerRuntimeHotLimitOptions {
    */
   finalizerKeyringFile?: string;
   /**
+   * Fast-lane slice 4 (#1601/#2208) - Q1, opt-in, default off. Skips ONLY the
+   * broker-terminal review_* evidence throws for fast-lane tasks
+   * (laneAssignment.decision === "fast"); GitHub receipt errors and
+   * worker-side payload.review.required are unaffected. Falls back to
+   * A2A_FAST_LANE_SKIP_REVIEW_ROUND. Off keeps completion byte-identical.
+   */
+  fastLaneSkipReviewRound?: boolean;
+  /**
+   * Fast-lane slice 4 (#1601/#2208) - Q2, opt-in, default off. Bypasses
+   * terminal-time finalizer-verdict admission for fast-lane tasks whose
+   * result carries no finalizerVerdict; a present verdict always runs the
+   * full admission including keyring signature verification. Falls back to
+   * A2A_FAST_LANE_SINGLE_WORKER_FINALIZE. Off keeps completion
+   * byte-identical.
+   */
+  fastLaneSingleWorkerFinalize?: boolean;
+  /**
    * JSON trust-anchor file ({ "<brokerId>": "<SPKI public key PEM>" }) for
    * the cross-broker terminal-brief receiver. When set, every inbound
    * projection must carry a request-bound `senderProof` (a JWS over
