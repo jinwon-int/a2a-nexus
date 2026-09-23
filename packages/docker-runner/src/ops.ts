@@ -1,4 +1,5 @@
 import { constants } from "node:fs";
+import { createHash } from "node:crypto";
 import { access, mkdir, readdir, readFile, rm, rmdir, stat } from "node:fs/promises";
 
 import { runAgeMsFromMeta, walkRunDirs, type WalkedTaskRoot } from "./scanner.js";
@@ -9,6 +10,7 @@ import { promisify } from "node:util";
 const execFileP = promisify(execFile);
 import { join, resolve } from "node:path";
 import type { RunnerConfig, RunnerEngine } from "./types.js";
+import { CLAUDE_CREDENTIALS_FILE_MOUNT_TARGET } from "./config.js";
 import { DEFAULT_PROFILE_MOUNT_PATH, validateOpenClawProfileReadiness } from "./openclaw-profile-readiness.js";
 import type { OpenClawProfileReadinessInput } from "./openclaw-profile-readiness.js";
 
@@ -33,6 +35,8 @@ export interface DoctorReport {
   secretMountReadability: OpsCheck;
   baseImage: OpsCheck;
   githubPatch: OpsCheck;
+  /** #2234: claude-code only — expiry of the effective Claude OAuth credential vs the task timeout. */
+  claudeCredentialFreshness?: OpsCheck;
   /** Deploy-marker validation: checks whether the deployed revision matches an expected deploy marker. */
   deployMarker?: OpsCheck;
 }
@@ -260,6 +264,10 @@ export async function doctor(config: RunnerConfig): Promise<DoctorReport> {
   const githubPatch = checkGitHubPatchReadiness(config, { engine });
   const engineReady = docker.status === "ok" || podman.status === "ok";
   const checks = [runnerRevision, taskRoot, secretMount, extraMounts, secretMountReadability, baseImage, githubPatch];
+  const claudeCredentialFreshness = config.commandProfile === "claude-code"
+    ? await checkClaudeCredentialFreshness(config)
+    : undefined;
+  if (claudeCredentialFreshness) checks.push(claudeCredentialFreshness);
 
   // Deploy-marker is optional: only checked when buildMetadata.revision is provided.
   let deployMarker: OpsCheck | undefined;
@@ -280,6 +288,7 @@ export async function doctor(config: RunnerConfig): Promise<DoctorReport> {
     secretMountReadability,
     baseImage,
     githubPatch,
+    ...(claudeCredentialFreshness ? { claudeCredentialFreshness } : {}),
     ...(deployMarker ? { deployMarker } : {}),
   };
 }
@@ -682,6 +691,115 @@ export async function checkExtraMounts(config: RunnerConfig): Promise<OpsCheck> 
   }
 
   return { status: "ok", message: "extra mounts are readable", detail: { mounts: checked } };
+}
+
+/**
+ * The in-container CLI refreshes shortly before expiry, not exactly at it, so a
+ * credential that expires just after the task timeout can still be rotated.
+ */
+export const CLAUDE_CREDENTIAL_REFRESH_MARGIN_MS = 10 * 60 * 1000;
+
+function normalizeContainerPath(value: string): string {
+  return value.replace(/\/+/g, "/").replace(/\/$/, "") || "/";
+}
+
+/**
+ * #2234 slice 1: report whether the effective Claude Code OAuth credential
+ * outlives one task. If it expires inside the task timeout the in-container
+ * CLI refreshes it, which rotates the refresh token shared with host sessions.
+ *
+ * Only `claudeAiOauth.expiresAt` is read from the credential and only the
+ * expiry and status are reported: token values are never logged or returned.
+ * The dir-copy vs credentials-file comparison reports only whether the sha256
+ * digests differ, never the digests themselves.
+ */
+export async function checkClaudeCredentialFreshness(config: RunnerConfig, nowMs = Date.now()): Promise<OpsCheck> {
+  if (config.commandProfile !== "claude-code") {
+    return { status: "skip", message: "claude credential freshness applies only to the claude-code profile" };
+  }
+  const mounts = config.extraMounts ?? [];
+  const credentialsFileMount = mounts.find((mount) => normalizeContainerPath(mount.target) === CLAUDE_CREDENTIALS_FILE_MOUNT_TARGET);
+  const configDirMount = mounts.find((mount) => normalizeContainerPath(mount.target) === CLAUDE_CODE_PROFILE_MOUNT_PATH);
+  const configDir = configDirMount?.source ?? config.claudeCodeProfile?.configDir;
+  const dirCopyPath = configDir ? join(resolve(configDir), ".credentials.json") : undefined;
+  const effectivePath = credentialsFileMount ? resolve(credentialsFileMount.source) : dirCopyPath;
+  const taskTimeoutMs = config.defaultTimeoutMs;
+  const detail: Record<string, unknown> = {
+    source: credentialsFileMount ? "credentials_file_mount" : "config_dir_copy",
+    path: effectivePath,
+    taskTimeoutMs,
+    refreshMarginMs: CLAUDE_CREDENTIAL_REFRESH_MARGIN_MS,
+  };
+  const recommendation = "set A2A_DOCKER_RUNNER_CLAUDE_CREDENTIALS_FILE to the host .credentials.json instead of copying credentials into the config dir";
+
+  if (!effectivePath) {
+    return { status: "warn", message: "claude credential is missing: no Claude config dir or credentials file configured", detail: { ...detail, recommendation } };
+  }
+
+  let raw: Buffer;
+  try {
+    raw = await readFile(effectivePath);
+  } catch {
+    return { status: "warn", message: "claude credential is missing or unreadable", detail: { ...detail, recommendation } };
+  }
+
+  const expiresAtMs = parseClaudeOauthExpiresAt(raw);
+  if (expiresAtMs === undefined) {
+    return { status: "warn", message: "claude credential is unparseable: claudeAiOauth.expiresAt not found", detail: { ...detail, recommendation } };
+  }
+  detail.expiresAtMs = expiresAtMs;
+  detail.expiresAt = new Date(expiresAtMs).toISOString();
+  detail.remainingMs = expiresAtMs - nowMs;
+
+  let dirCopyDiffers = false;
+  if (credentialsFileMount && dirCopyPath) {
+    try {
+      const dirCopy = await readFile(dirCopyPath);
+      dirCopyDiffers = sha256Hex(dirCopy) !== sha256Hex(raw);
+      detail.dirCopyDiffers = dirCopyDiffers;
+    } catch {
+      // No copy in the config dir: nothing to compare.
+    }
+  }
+
+  let status: OpsStatus;
+  let message: string;
+  if (expiresAtMs <= nowMs) {
+    status = "warn";
+    message = "claude credential is already expired; the in-container CLI will refresh and rotate the shared OAuth token";
+  } else if (expiresAtMs <= nowMs + taskTimeoutMs + CLAUDE_CREDENTIAL_REFRESH_MARGIN_MS) {
+    status = "warn";
+    message = "claude credential expires within the runner task timeout plus refresh margin; the in-container CLI would refresh and rotate the shared OAuth token";
+  } else {
+    status = "ok";
+    message = "claude credential outlives the runner task timeout";
+  }
+  if (dirCopyDiffers) {
+    status = "warn";
+    message = `${message}; the config dir .credentials.json copy differs from the credentials file mount`;
+  }
+  if (status !== "ok") detail.recommendation = recommendation;
+  return { status, message, detail };
+}
+
+function parseClaudeOauthExpiresAt(raw: Buffer): number | undefined {
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(raw.toString("utf8"));
+  } catch {
+    return undefined;
+  }
+  if (!parsed || typeof parsed !== "object") return undefined;
+  const oauth = (parsed as Record<string, unknown>).claudeAiOauth;
+  if (!oauth || typeof oauth !== "object") return undefined;
+  const expiresAt = (oauth as Record<string, unknown>).expiresAt;
+  if (typeof expiresAt !== "number" || !Number.isFinite(expiresAt)) return undefined;
+  // Reject values outside the Date range so formatting the expiry can never throw.
+  return Number.isNaN(new Date(expiresAt).getTime()) ? undefined : expiresAt;
+}
+
+function sha256Hex(value: Buffer): string {
+  return createHash("sha256").update(value).digest("hex");
 }
 
 export function checkGitHubPatchReadiness(config: RunnerConfig, options: GitHubPatchReadinessOptions = {}): OpsCheck {

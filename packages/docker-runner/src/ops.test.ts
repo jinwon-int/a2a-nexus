@@ -4,7 +4,7 @@ import { chown, mkdtemp, mkdir, readFile, writeFile, utimes, stat, chmod } from 
 import { execFileSync, spawnSync } from "node:child_process";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { checkBaseImage, checkDeployedRevision, checkDeployMarker, checkExtraMounts, checkGitHubPatchReadiness, checkSecretMountContainerReadability, cleanup, dropsDacOverride, install, parseContainerUserRef, parseProbeKeyValues } from "./ops.js";
+import { CLAUDE_CREDENTIAL_REFRESH_MARGIN_MS, checkBaseImage, checkClaudeCredentialFreshness, checkDeployedRevision, checkDeployMarker, checkExtraMounts, checkGitHubPatchReadiness, checkSecretMountContainerReadability, cleanup, dropsDacOverride, install, parseContainerUserRef, parseProbeKeyValues } from "./ops.js";
 import type { RunnerConfig } from "./types.js";
 import { buildExampleReadinessInput } from "./openclaw-profile-readiness.js";
 import { projectClaudeCodeTurnBudgets } from "./config.js";
@@ -1293,4 +1293,159 @@ test("doctor base-image check pulls only when A2A_DOCKER_RUNNER_DOCTOR_PULL=1", 
     if (previousPull === undefined) delete process.env.A2A_DOCKER_RUNNER_DOCTOR_PULL;
     else process.env.A2A_DOCKER_RUNNER_DOCTOR_PULL = previousPull;
   }
+});
+
+// #2234 slice 1: synthetic credential fixtures with obviously-fake tokens.
+const FAKE_ACCESS_TOKEN = "fake-access-token-workerGamma";
+const FAKE_REFRESH_TOKEN = "fake-refresh-token-workerGamma";
+const CLAUDE_FRESHNESS_NOW_MS = Date.UTC(2026, 0, 1);
+const CLAUDE_FRESHNESS_TIMEOUT_MS = 90 * 60 * 1000;
+
+function fakeClaudeCredentials(expiresAt: number): string {
+  return JSON.stringify({
+    claudeAiOauth: { accessToken: FAKE_ACCESS_TOKEN, refreshToken: FAKE_REFRESH_TOKEN, expiresAt, scopes: ["user:inference"] },
+  });
+}
+
+function claudeFreshnessConfig(configDir: string, credentialsFile?: string): RunnerConfig {
+  return {
+    rootDir: "/tmp/a2a-test",
+    image: "a2a-docker-runner-cccb:latest",
+    defaultTimeoutMs: CLAUDE_FRESHNESS_TIMEOUT_MS,
+    commandProfile: "claude-code",
+    claudeCodeProfile: { configDir },
+    extraMounts: [
+      { source: configDir, target: "/run/secrets/claude-dir", readOnly: true },
+      ...(credentialsFile ? [{ source: credentialsFile, target: "/run/secrets/claude-credentials.json", readOnly: true }] : []),
+    ],
+  };
+}
+
+function assertNoTokenLeak(report: unknown): void {
+  const serialized = JSON.stringify(report);
+  assert.equal(serialized.includes(FAKE_ACCESS_TOKEN), false);
+  assert.equal(serialized.includes(FAKE_REFRESH_TOKEN), false);
+}
+
+test("#2234 claudeCredentialFreshness is ok when the credentials file outlives the task timeout", async () => {
+  const dir = await mkdtemp(join(tmpdir(), "a2a-claude-fresh-"));
+  const credentialsFile = join(dir, "host.credentials.json");
+  const expiresAt = CLAUDE_FRESHNESS_NOW_MS + CLAUDE_FRESHNESS_TIMEOUT_MS + CLAUDE_CREDENTIAL_REFRESH_MARGIN_MS + 60_000;
+  await writeFile(credentialsFile, fakeClaudeCredentials(expiresAt));
+
+  const report = await checkClaudeCredentialFreshness(claudeFreshnessConfig(join(dir, "claude-dir"), credentialsFile), CLAUDE_FRESHNESS_NOW_MS);
+  assert.equal(report.status, "ok");
+  const detail = report.detail as Record<string, unknown>;
+  assert.equal(detail.source, "credentials_file_mount");
+  assert.equal(detail.expiresAtMs, expiresAt);
+  assert.equal(detail.expiresAt, new Date(expiresAt).toISOString());
+  assert.equal(detail.taskTimeoutMs, CLAUDE_FRESHNESS_TIMEOUT_MS);
+  assertNoTokenLeak(report);
+});
+
+test("#2234 claudeCredentialFreshness warns when the credential expires within the task timeout", async () => {
+  const dir = await mkdtemp(join(tmpdir(), "a2a-claude-fresh-"));
+  await writeFile(join(dir, ".credentials.json"), fakeClaudeCredentials(CLAUDE_FRESHNESS_NOW_MS + 10 * 60 * 1000));
+
+  const report = await checkClaudeCredentialFreshness(claudeFreshnessConfig(dir), CLAUDE_FRESHNESS_NOW_MS);
+  assert.equal(report.status, "warn");
+  assert.match(report.message, /expires within the runner task timeout/);
+  assert.equal((report.detail as Record<string, unknown>).source, "config_dir_copy");
+  assertNoTokenLeak(report);
+});
+
+test("#2234 claudeCredentialFreshness warns when the credential is already expired", async () => {
+  const dir = await mkdtemp(join(tmpdir(), "a2a-claude-fresh-"));
+  await writeFile(join(dir, ".credentials.json"), fakeClaudeCredentials(CLAUDE_FRESHNESS_NOW_MS - 1));
+
+  const report = await checkClaudeCredentialFreshness(claudeFreshnessConfig(dir), CLAUDE_FRESHNESS_NOW_MS);
+  assert.equal(report.status, "warn");
+  assert.match(report.message, /already expired/);
+  assertNoTokenLeak(report);
+});
+
+test("#2234 claudeCredentialFreshness warns when the credential is missing or unparseable", async () => {
+  const dir = await mkdtemp(join(tmpdir(), "a2a-claude-fresh-"));
+  const missing = await checkClaudeCredentialFreshness(claudeFreshnessConfig(dir), CLAUDE_FRESHNESS_NOW_MS);
+  assert.equal(missing.status, "warn");
+  assert.match(missing.message, /missing or unreadable/);
+
+  await writeFile(join(dir, ".credentials.json"), `{"claudeAiOauth":{"refreshToken":"${FAKE_REFRESH_TOKEN}"`);
+  const truncated = await checkClaudeCredentialFreshness(claudeFreshnessConfig(dir), CLAUDE_FRESHNESS_NOW_MS);
+  assert.equal(truncated.status, "warn");
+  assert.match(truncated.message, /unparseable/);
+  assertNoTokenLeak(truncated);
+
+  await writeFile(join(dir, ".credentials.json"), JSON.stringify({ claudeAiOauth: { refreshToken: FAKE_REFRESH_TOKEN, expiresAt: "soon" } }));
+  const noExpiry = await checkClaudeCredentialFreshness(claudeFreshnessConfig(dir), CLAUDE_FRESHNESS_NOW_MS);
+  assert.equal(noExpiry.status, "warn");
+  assert.match(noExpiry.message, /unparseable/);
+  assertNoTokenLeak(noExpiry);
+});
+
+test("#2234 claudeCredentialFreshness warns when the dir copy and credentials file differ", async () => {
+  const dir = await mkdtemp(join(tmpdir(), "a2a-claude-fresh-"));
+  const configDir = join(dir, "claude-dir");
+  await mkdir(configDir);
+  const credentialsFile = join(dir, "host.credentials.json");
+  const fresh = fakeClaudeCredentials(CLAUDE_FRESHNESS_NOW_MS + 2 * CLAUDE_FRESHNESS_TIMEOUT_MS);
+  await writeFile(credentialsFile, fresh);
+  await writeFile(join(configDir, ".credentials.json"), fakeClaudeCredentials(CLAUDE_FRESHNESS_NOW_MS - 1000));
+
+  const report = await checkClaudeCredentialFreshness(claudeFreshnessConfig(configDir, credentialsFile), CLAUDE_FRESHNESS_NOW_MS);
+  assert.equal(report.status, "warn");
+  assert.match(report.message, /differs from the credentials file mount/);
+  const detail = report.detail as Record<string, unknown>;
+  assert.equal(detail.dirCopyDiffers, true);
+  assert.equal(detail.source, "credentials_file_mount");
+  assert.equal(JSON.stringify(report).match(/[0-9a-f]{64}/), null, "sha256 digests must not be reported");
+  assertNoTokenLeak(report);
+
+  await writeFile(join(configDir, ".credentials.json"), fresh);
+  const same = await checkClaudeCredentialFreshness(claudeFreshnessConfig(configDir, credentialsFile), CLAUDE_FRESHNESS_NOW_MS);
+  assert.equal(same.status, "ok");
+  assert.equal((same.detail as Record<string, unknown>).dirCopyDiffers, false);
+});
+
+test("#2234 claudeCredentialFreshness skips non claude-code profiles", async () => {
+  const report = await checkClaudeCredentialFreshness({ rootDir: "/tmp/a2a-test", image: "x", defaultTimeoutMs: 1000, commandProfile: "codex" });
+  assert.equal(report.status, "skip");
+});
+
+test("#2234 claudeCredentialFreshness warns inside the refresh margin just after the task timeout", async () => {
+  const dir = await mkdtemp(join(tmpdir(), "a2a-claude-fresh-"));
+  await writeFile(join(dir, ".credentials.json"), fakeClaudeCredentials(CLAUDE_FRESHNESS_NOW_MS + CLAUDE_FRESHNESS_TIMEOUT_MS + 60_000));
+
+  const report = await checkClaudeCredentialFreshness(claudeFreshnessConfig(dir), CLAUDE_FRESHNESS_NOW_MS);
+  assert.equal(report.status, "warn");
+  assert.match(report.message, /refresh margin/);
+  assert.equal((report.detail as Record<string, unknown>).refreshMarginMs, CLAUDE_CREDENTIAL_REFRESH_MARGIN_MS);
+  assertNoTokenLeak(report);
+});
+
+test("#2234 claudeCredentialFreshness treats an out-of-range expiresAt as unparseable instead of throwing", async () => {
+  const dir = await mkdtemp(join(tmpdir(), "a2a-claude-fresh-"));
+  for (const expiresAt of [1e20, -1e300, Number.MAX_SAFE_INTEGER]) {
+    await writeFile(join(dir, ".credentials.json"), fakeClaudeCredentials(expiresAt));
+    const report = await checkClaudeCredentialFreshness(claudeFreshnessConfig(dir), CLAUDE_FRESHNESS_NOW_MS);
+    assert.equal(report.status, "warn", `expiresAt=${expiresAt}`);
+    assert.match(report.message, /unparseable/);
+    assertNoTokenLeak(report);
+  }
+});
+
+test("#2234 claudeCredentialFreshness recognizes a non-canonical credentials mount target", async () => {
+  const dir = await mkdtemp(join(tmpdir(), "a2a-claude-fresh-"));
+  const credentialsFile = join(dir, "host.credentials.json");
+  await writeFile(credentialsFile, fakeClaudeCredentials(CLAUDE_FRESHNESS_NOW_MS + 24 * 60 * 60 * 1000));
+  const config = claudeFreshnessConfig(join(dir, "claude-dir"));
+  config.extraMounts = [
+    ...(config.extraMounts ?? []),
+    { source: credentialsFile, target: "/run/secrets//claude-credentials.json/", readOnly: true },
+  ];
+
+  const report = await checkClaudeCredentialFreshness(config, CLAUDE_FRESHNESS_NOW_MS);
+  assert.equal(report.status, "ok");
+  assert.equal((report.detail as Record<string, unknown>).source, "credentials_file_mount");
+  assertNoTokenLeak(report);
 });

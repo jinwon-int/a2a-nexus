@@ -1,4 +1,4 @@
-import { existsSync, readFileSync, realpathSync } from "node:fs";
+import { accessSync, existsSync, readFileSync, realpathSync, statSync } from "node:fs";
 import { access } from "node:fs/promises";
 import { constants } from "node:fs";
 import { spawnSync } from "node:child_process";
@@ -37,7 +37,8 @@ export type ExtraMountsConfigErrorCode =
   | "extra_mounts_entry_invalid"
   | "profile_mount_missing"
   | "profile_mount_source_conflict"
-  | "forbidden_writable_runtime_mount";
+  | "forbidden_writable_runtime_mount"
+  | "claude_credentials_file_invalid";
 
 /**
  * Configuration error for `A2A_DOCKER_RUNNER_EXTRA_MOUNTS_JSON` / profile mount
@@ -289,11 +290,11 @@ export function loadExtraMounts(env: NodeJS.ProcessEnv): RunnerExtraMount[] | un
       }];
     }
     if (profile === "claude-code") {
-      return [{
+      return withClaudeCredentialsFileMount([{
         source: env.A2A_DOCKER_RUNNER_CLAUDE_CONFIG_DIR || "/root/.claude",
         target: "/run/secrets/claude-dir",
         readOnly: true,
-      }];
+      }], env);
     }
     if (profile === "codex") {
       return [{
@@ -359,7 +360,51 @@ export function loadExtraMounts(env: NodeJS.ProcessEnv): RunnerExtraMount[] | un
   });
 
   validateProfileMountSelection(mounts, env);
+  if (normalizePatchCommandProfile(env.A2A_DOCKER_RUNNER_PATCH_COMMAND_PROFILE) === "claude-code") {
+    return withClaudeCredentialsFileMount(mounts, env);
+  }
   return mounts;
+}
+
+/** In-container path of the optional host Claude Code credentials file mount (#2234). */
+export const CLAUDE_CREDENTIALS_FILE_MOUNT_TARGET = "/run/secrets/claude-credentials.json";
+
+/**
+ * #2234 slice 1: when A2A_DOCKER_RUNNER_CLAUDE_CREDENTIALS_FILE is set for the
+ * claude-code profile, mount that host `.credentials.json` read-only as a
+ * single file so every task starts from the freshest host OAuth credential
+ * instead of a stale copy inside the config dir. Unset leaves mounts unchanged.
+ * Validation messages name the path only and never read file contents.
+ */
+function withClaudeCredentialsFileMount(mounts: RunnerExtraMount[], env: NodeJS.ProcessEnv): RunnerExtraMount[] {
+  const raw = env.A2A_DOCKER_RUNNER_CLAUDE_CREDENTIALS_FILE;
+  if (raw === undefined || raw.trim() === "") return mounts;
+  const source = raw.trim();
+  const invalid = (reason: string): ExtraMountsConfigError => new ExtraMountsConfigError(
+    "claude_credentials_file_invalid",
+    `invalid A2A_DOCKER_RUNNER_CLAUDE_CREDENTIALS_FILE: ${reason}`,
+  );
+  if (!source.startsWith("/")) throw invalid("must be an absolute path");
+  let isFile: boolean;
+  try {
+    isFile = statSync(source).isFile();
+  } catch {
+    throw invalid(`${source} does not exist or cannot be inspected`);
+  }
+  if (!isFile) throw invalid(`${source} is not a regular file`);
+  try {
+    accessSync(source, constants.R_OK);
+  } catch {
+    throw invalid(`${source} is not readable by the runner`);
+  }
+  const existing = mounts.filter((mount) => normalizeAbsolutePathForPolicy(mount.target) === CLAUDE_CREDENTIALS_FILE_MOUNT_TARGET);
+  if (existing.some((mount) =>
+    mount.readOnly === false
+    || normalizeAbsolutePathForPolicy(mount.source) !== normalizeAbsolutePathForPolicy(source))) {
+    throw invalid(`${CLAUDE_CREDENTIALS_FILE_MOUNT_TARGET} is already mounted from a different source or read-write`);
+  }
+  if (existing.length > 0) return mounts;
+  return [...mounts, { source, target: CLAUDE_CREDENTIALS_FILE_MOUNT_TARGET, readOnly: true }];
 }
 
 function validateProfileMountSelection(mounts: RunnerExtraMount[], env: NodeJS.ProcessEnv): void {

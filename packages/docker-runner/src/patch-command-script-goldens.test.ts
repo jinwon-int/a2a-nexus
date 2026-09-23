@@ -155,3 +155,21 @@ test("dist/profiles mirrors the checked-in profiles/ directory byte-for-byte", (
   }
   assert.deepEqual(readdirSync(PROFILE_SCRIPT_DIR).filter((name) => name.endsWith(".sh")).sort(), sourceNames);
 });
+
+test("#2234 claude-code goldens install the credentials file mount after the config dir copy", () => {
+  const cases = PATCH_COMMAND_SCRIPT_GOLDEN_CASES.filter(
+    (entry) => entry.env.A2A_DOCKER_RUNNER_PATCH_COMMAND_PROFILE === "claude-code",
+  );
+  assert.ok(cases.length >= 2);
+  for (const entry of cases) {
+    const golden = goldenText(entry.name);
+    const copyIndex = golden.indexOf("cp -a /run/secrets/claude-dir/. \"$CLAUDE_CONFIG_DIR/\"");
+    const guardIndex = golden.indexOf("if [ -f /run/secrets/claude-credentials.json ]; then");
+    const installIndex = golden.indexOf(
+      "install -m 0600 /run/secrets/claude-credentials.json \"$CLAUDE_CONFIG_DIR/.credentials.json\"",
+    );
+    assert.notEqual(copyIndex, -1, entry.name);
+    assert.ok(guardIndex > copyIndex, `${entry.name}: credentials install guard must follow the dir copy`);
+    assert.ok(installIndex > guardIndex, `${entry.name}: credentials install must be guarded`);
+  }
+});

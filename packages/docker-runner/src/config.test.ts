@@ -2038,3 +2038,101 @@ test("shipped worker environment templates do not mask the implementation defaul
     assert.match(buildClaudeCodePatchCommandScript(env), /export A2A_CLAUDE_CODE_TIMEOUT_SEC='5400'/, file);
   }
 });
+
+test("#2234 claude-code adds a read-only credentials file mount only when A2A_DOCKER_RUNNER_CLAUDE_CREDENTIALS_FILE is set", async () => {
+  const dir = mkdtempSync(join(tmpdir(), "a2a-claude-creds-"));
+  try {
+    const credentialsFile = join(dir, ".credentials.json");
+    writeFileSync(credentialsFile, JSON.stringify({ claudeAiOauth: { accessToken: "fake-access", refreshToken: "fake-refresh", expiresAt: 1 } }));
+
+    const unset = await loadConfig({
+      ...baseEnv,
+      A2A_DOCKER_RUNNER_PATCH_COMMAND_PROFILE: "claude-code",
+      A2A_DOCKER_RUNNER_CLAUDE_CONFIG_DIR: "/srv/claude-profile",
+    });
+    assert.deepEqual(unset.extraMounts, [
+      { source: "/srv/claude-profile", target: "/run/secrets/claude-dir", readOnly: true },
+    ]);
+
+    const set = await loadConfig({
+      ...baseEnv,
+      A2A_DOCKER_RUNNER_PATCH_COMMAND_PROFILE: "claude-code",
+      A2A_DOCKER_RUNNER_CLAUDE_CONFIG_DIR: "/srv/claude-profile",
+      A2A_DOCKER_RUNNER_CLAUDE_CREDENTIALS_FILE: credentialsFile,
+    });
+    assert.deepEqual(set.extraMounts, [
+      { source: "/srv/claude-profile", target: "/run/secrets/claude-dir", readOnly: true },
+      { source: credentialsFile, target: "/run/secrets/claude-credentials.json", readOnly: true },
+    ]);
+
+    const explicit = await loadConfig({
+      ...baseEnv,
+      A2A_DOCKER_RUNNER_PATCH_COMMAND_PROFILE: "claude-code",
+      A2A_DOCKER_RUNNER_EXTRA_MOUNTS_JSON: JSON.stringify([{ source: "/srv/claude-profile", target: "/run/secrets/claude-dir", readOnly: true }]),
+      A2A_DOCKER_RUNNER_CLAUDE_CREDENTIALS_FILE: credentialsFile,
+    });
+    assert.deepEqual(explicit.extraMounts?.at(-1), { source: credentialsFile, target: "/run/secrets/claude-credentials.json", readOnly: true });
+
+    const otherProfile = await loadConfig({
+      ...baseEnv,
+      A2A_DOCKER_RUNNER_PATCH_COMMAND_PROFILE: "codex",
+      A2A_DOCKER_RUNNER_CODEX_CONFIG_DIR: "/srv/codex-profile",
+      A2A_DOCKER_RUNNER_CLAUDE_CREDENTIALS_FILE: credentialsFile,
+    });
+    assert.equal(otherProfile.extraMounts?.some((mount) => mount.target === "/run/secrets/claude-credentials.json"), false);
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test("#2234 invalid A2A_DOCKER_RUNNER_CLAUDE_CREDENTIALS_FILE fails config validation without echoing contents", async () => {
+  const dir = mkdtempSync(join(tmpdir(), "a2a-claude-creds-"));
+  try {
+    const env = { ...baseEnv, A2A_DOCKER_RUNNER_PATCH_COMMAND_PROFILE: "claude-code" };
+    await assert.rejects(
+      loadConfig({ ...env, A2A_DOCKER_RUNNER_CLAUDE_CREDENTIALS_FILE: "relative/.credentials.json" }),
+      (error: Error & { code?: string }) => error.code === "claude_credentials_file_invalid" && /must be an absolute path/.test(error.message),
+    );
+    await assert.rejects(
+      loadConfig({ ...env, A2A_DOCKER_RUNNER_CLAUDE_CREDENTIALS_FILE: join(dir, "missing.json") }),
+      /A2A_DOCKER_RUNNER_CLAUDE_CREDENTIALS_FILE: .* does not exist/,
+    );
+    await assert.rejects(
+      loadConfig({ ...env, A2A_DOCKER_RUNNER_CLAUDE_CREDENTIALS_FILE: dir }),
+      /A2A_DOCKER_RUNNER_CLAUDE_CREDENTIALS_FILE: .* is not a regular file/,
+    );
+    const conflicting = join(dir, ".credentials.json");
+    writeFileSync(conflicting, "{\"claudeAiOauth\":{\"refreshToken\":\"fake-secret-refresh\"}}");
+    await assert.rejects(
+      loadConfig({
+        ...env,
+        A2A_DOCKER_RUNNER_CLAUDE_CREDENTIALS_FILE: conflicting,
+        A2A_DOCKER_RUNNER_EXTRA_MOUNTS_JSON: JSON.stringify([
+          { source: "/root/.claude", target: "/run/secrets/claude-dir", readOnly: true },
+          { source: "/srv/other.json", target: "/run/secrets/claude-credentials.json", readOnly: true },
+        ]),
+      }),
+      (error: Error) => /already mounted from a different source/.test(error.message) && !error.message.includes("fake-secret-refresh"),
+    );
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test("#2234 claude-code script installs the credentials file mount after the config dir copy", () => {
+  const script = buildClaudeCodePatchCommandScript({ A2A_DOCKER_RUNNER_PATCH_COMMAND_PROFILE: "claude-code" });
+  const copyIndex = script.indexOf("cp -a /run/secrets/claude-dir/. \"$CLAUDE_CONFIG_DIR/\"");
+  const installIndex = script.indexOf("install -m 0600 /run/secrets/claude-credentials.json \"$CLAUDE_CONFIG_DIR/.credentials.json\"");
+  assert.notEqual(copyIndex, -1);
+  assert.notEqual(installIndex, -1);
+  assert.ok(installIndex > copyIndex, "credentials file install must run after the directory copy");
+  assert.ok(installIndex > script.indexOf("chmod -R u+rwX \"$CLAUDE_CONFIG_DIR\""), "install must not be undone by the chmod sweep");
+  assert.ok(installIndex < script.indexOf("exec node \"$A2A_CLAUDE_PATCH_BRIDGE\""));
+  // An unreadable mount (container user != file owner) must fail classified, not as a bare set -e exit.
+  const guardStart = script.lastIndexOf("if ! ", installIndex);
+  assert.equal(guardStart, installIndex - "if ! ".length, "install must be wrapped in a failure guard");
+  const guarded = script.slice(guardStart, script.indexOf("claude_credentials_source=credentials_file_mount"));
+  assert.match(guarded, /error=claude_credentials_file_unreadable/);
+  assert.match(guarded, /failure_category=claude_credentials_unavailable/);
+  assert.match(guarded, /exit 2/);
+});
