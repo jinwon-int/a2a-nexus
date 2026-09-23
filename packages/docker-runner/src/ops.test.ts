@@ -7,7 +7,7 @@ import { join } from "node:path";
 import { CLAUDE_CREDENTIAL_REFRESH_MARGIN_MS, checkBaseImage, checkClaudeCredentialFreshness, checkDeployedRevision, checkDeployMarker, checkExtraMounts, checkGitHubPatchReadiness, checkSecretMountContainerReadability, cleanup, dropsDacOverride, install, parseContainerUserRef, parseProbeKeyValues } from "./ops.js";
 import type { RunnerConfig } from "./types.js";
 import { buildExampleReadinessInput } from "./openclaw-profile-readiness.js";
-import { projectClaudeCodeTurnBudgets } from "./config.js";
+import { loadConfig, projectClaudeCodeTurnBudgets } from "./config.js";
 
 function runGit(cwd: string, args: string[]): void {
   const result = spawnSync("git", args, {
@@ -336,6 +336,33 @@ test("GitHub patch readiness Claude Code profile reports bridge and credential m
   assert.equal(turnBudgets.activePatchMode, "agentic");
   assert.equal(turnBudgets.agenticPatch.effectiveMaxTurns, 80);
   assert.equal(turnBudgets.agenticPatch.source, "canonical_default");
+});
+
+test("#2235 GitHub patch readiness Claude Code profile projects the explicit effort without changing status", async () => {
+  const probe = () => ({
+    cliOnPath: true,
+    cliPath: "/usr/local/bin/claude",
+    cliVersionOk: true,
+    cliVersion: "2.1.191 (Claude Code)",
+    profileMountExists: true,
+    expectedMountPath: "/run/secrets/claude-dir",
+    bridgeExists: true,
+    bridgePath: "/opt/a2a-broker/scripts/claude-a2a-patch-bridge.mjs",
+    errors: [],
+  });
+  const cases: Array<{ env: Record<string, string>; expected: unknown }> = [
+    { env: { A2A_CLAUDE_EFFORT: "MEDIUM" }, expected: { configured: "medium", source: "A2A_CLAUDE_EFFORT" } },
+    { env: { A2A_CLAUDE_EFFORT: "extreme" }, expected: { configured: null, source: "invalid" } },
+    { env: { A2A_CLAUDE_EFFORT: "  " }, expected: { configured: null, source: "unset" } },
+    { env: { CLAUDE_CODE_EFFORT_LEVEL: "high" }, expected: { configured: null, source: "unset" } },
+  ];
+  for (const { env, expected } of cases) {
+    const fullEnv = { A2A_DOCKER_RUNNER_SKIP_ENGINE_DETECT: "1", A2A_DOCKER_RUNNER_PATCH_COMMAND_PROFILE: "claude-code", ...env };
+    const config = await loadConfig(fullEnv);
+    const report = checkGitHubPatchReadiness(config, { env: fullEnv, claudeCodeProfileProbe: probe });
+    assert.equal(report.status, "ok", JSON.stringify(env));
+    assert.deepEqual((report.detail as Record<string, unknown>).claudeEffort, expected, JSON.stringify(env));
+  }
 });
 
 test("GitHub patch readiness Claude Code profile failure includes cccb provisioning guidance", () => {

@@ -22,6 +22,11 @@
       "sha256": "422ef7073e32bb0a7ae3b0887f147480ac93dca2112322ebb1e506444190f0f9"
     },
     {
+      "name": "claude-code-effort",
+      "bytes": 4350,
+      "sha256": "a2ea8f981eb7e307034bd465b36e47d6e972498f522f848dbe9c1915a5b15d27"
+    },
+    {
       "name": "hermes-default",
       "bytes": 15951,
       "sha256": "cb56b577c9abec09b1c822a5baafa85e38c9150b3864e1b552c789367dde9354"

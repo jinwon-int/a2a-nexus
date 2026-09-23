@@ -59,6 +59,14 @@ export const PATCH_COMMAND_SCRIPT_GOLDEN_CASES = Object.freeze([
     },
   },
   {
+    name: "claude-code-effort",
+    env: {
+      A2A_DOCKER_RUNNER_PATCH_COMMAND_PROFILE: "claude-code",
+      A2A_CLAUDE_MODEL: "claude-opus-5-5",
+      A2A_CLAUDE_EFFORT: "medium",
+    },
+  },
+  {
     name: "hermes-default",
     env: {
       A2A_DOCKER_RUNNER_PATCH_COMMAND_PROFILE: "hermes",
