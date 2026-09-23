@@ -7,6 +7,14 @@
  * fresh exact-head signed PASS receipts count, stale receipts are reported
  * separately, blocking findings veto.
  *
+ * #1724 gap (a) — structural signature guard: a stored PASS receipt only
+ * votes when it still carries the admitted signature shape (nonblank
+ * receiptId, exactly one signature entry, nonblank protected/signature).
+ * Cryptographic JWS verification stays at admission; this guard exists
+ * because the snapshot-restore seam only checks receiptId presence, so a
+ * malformed restored row is excluded from the vote (never thrown on),
+ * matching the offline preset's `signed === true` gate.
+ *
  * #1724 distinct-reviewer quorum: on top of the raw `freshPassCount`, an
  * additive `distinctReviewerCount` counts the distinct declared reviewer node
  * IDs among the qualifying receipts, and `insufficient_independent_reviewers`
@@ -27,6 +35,7 @@ export interface MergeReadyInput {
 export interface MergeReadyProjection {
   ready: boolean;
   quorum: number;
+  /** Fresh, structurally signed PASS receipts that vote (#1724 gap (a) guard). */
   freshPassCount: number;
   /** Distinct declared reviewer node IDs among qualifying fresh PASS receipts (#1724). */
   distinctReviewerCount: number;
@@ -57,12 +66,42 @@ function distinctReviewerNodeIdCount(records: NclexReceiptRecord[]): number {
   return ids.size;
 }
 
+/**
+ * Structural signature guard (#1724 gap (a)). The offline preset votes only
+ * on PASS receipts with `signed === true`; runtime rows are structurally
+ * signed at admission, so the projection re-checks that admitted shape —
+ * nonblank `receiptId`, exactly one `signatures` entry, nonblank
+ * `protected`/`signature` — without re-verifying the JWS (admission's job,
+ * covered by the receipt-contract and route suites). Snapshot restore only
+ * checks receiptId presence, so malformed restored rows can reach this
+ * projection; they are excluded from the vote, never thrown on.
+ */
+function isStructurallySigned(record: NclexReceiptRecord): boolean {
+  const receipt: unknown = record?.receipt;
+  if (typeof receipt !== "object" || receipt === null) return false;
+  const { receiptId, signatures } = receipt as { receiptId?: unknown; signatures?: unknown };
+  if (typeof receiptId !== "string" || receiptId.trim() === "") return false;
+  if (!Array.isArray(signatures) || signatures.length !== 1) return false;
+  const entry: unknown = signatures[0];
+  if (typeof entry !== "object" || entry === null) return false;
+  const { protected: protectedHeader, signature } = entry as { protected?: unknown; signature?: unknown };
+  return (
+    typeof protectedHeader === "string" &&
+    protectedHeader.trim() !== "" &&
+    typeof signature === "string" &&
+    signature.trim() !== ""
+  );
+}
+
 export function projectMergeReady(records: NclexReceiptRecord[], input: MergeReadyInput): MergeReadyProjection {
   const quorum = QUORUM[input.risk];
   const head = input.currentHeadSha.toLowerCase();
   const fresh = records.filter((record) => record.receipt.headSha === head);
   const stale = records.filter((record) => record.receipt.headSha !== head);
-  const freshPasses = fresh.filter((record) => record.receipt.verdict === "PASS");
+  // #1724 gap (a): only structurally signed PASS receipts vote (see
+  // isStructurallySigned); unsigned/malformed PASS rows are excluded, never
+  // thrown on, mirroring the offline preset's `signed === true` gate.
+  const freshPasses = fresh.filter((record) => record.receipt.verdict === "PASS" && isStructurallySigned(record));
   const distinctReviewerCount = distinctReviewerNodeIdCount(freshPasses);
   const blockingFindings = fresh.reduce(
     (count, record) => count + record.receipt.findings.filter((finding) => finding.blocking).length,
@@ -73,7 +112,7 @@ export function projectMergeReady(records: NclexReceiptRecord[], input: MergeRea
   if (input.gateGreen !== true) reasons.push("github_gate_not_green");
   if (freshPasses.length < quorum) reasons.push(`insufficient_fresh_signed_pass:${freshPasses.length}/${quorum}`);
   // #1724 additive distinct-reviewer quorum: `freshPassCount` above stays the
-  // raw qualifying PASS record count; this separate reason fails closed when
+  // raw qualifying signed PASS record count; this separate reason fails closed when
   // the distinct declared reviewer node IDs among them are below quorum.
   if (distinctReviewerCount < quorum) {
     reasons.push(`insufficient_independent_reviewers:${distinctReviewerCount}/${quorum}`);

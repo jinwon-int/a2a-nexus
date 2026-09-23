@@ -3,12 +3,14 @@
  *
  * Pure domain coverage for `projectMergeReady`: quorum counts distinct
  * declared reviewer node IDs among qualifying fresh signed PASS receipts
- * while `freshPassCount` stays the raw record count; missing/malformed
- * identities never count (and are never String-coerced); stale and BLOCK
- * records never vote; and a duplicate reviewer's blocking finding still
- * vetoes. Receipts here are admitted-record shaped — the projection is a
- * read model, admission (signature verification) is covered by the route
- * and receipt-contract suites.
+ * while `freshPassCount` stays the raw signed-PASS record count;
+ * unsigned/malformed signature rows never vote (#1724 gap (a) structural
+ * guard); missing/malformed identities never count (and are never
+ * String-coerced); stale and BLOCK records never vote; and a duplicate
+ * reviewer's blocking finding still vetoes. Receipts here are
+ * admitted-record shaped — the projection is a read model, admission
+ * (cryptographic signature verification) is covered by the route and
+ * receipt-contract suites.
  */
 import test from "node:test";
 import assert from "node:assert/strict";
@@ -79,6 +81,21 @@ function recordWithIdentity(reviewerNodeId: unknown): NclexReceiptRecord {
 function recordWithoutIdentity(): NclexReceiptRecord {
   const base: Record<string, unknown> = { ...receipt() };
   delete base.reviewerNodeId;
+  return record(base as unknown as NclexSignedReceipt);
+}
+
+/**
+ * A record whose signature material deviates from the admitted shape (#1724
+ * gap (a)): the snapshot-restore seam only checks receiptId presence, so such
+ * rows can reach the projection without ever having been admitted. Pass
+ * `undefined` to strip the field entirely.
+ */
+function recordWithSignatureShape(receiptId: unknown, signatures: unknown): NclexReceiptRecord {
+  const base: Record<string, unknown> = { ...receipt() };
+  if (receiptId === undefined) delete base.receiptId;
+  else base.receiptId = receiptId;
+  if (signatures === undefined) delete base.signatures;
+  else base.signatures = signatures;
   return record(base as unknown as NclexSignedReceipt);
 }
 
@@ -232,3 +249,81 @@ test("a duplicate reviewer's blocking finding still vetoes (#1724)", () => {
   assert.ok(projection.reasons.includes("blocking_findings:1"));
   assert.ok(projection.reasons.includes("insufficient_independent_reviewers:1/2"));
 });
+
+test("unsigned or malformed PASS receipts never vote; admitted signed rows still do (#1724 gap a)", () => {
+  const malformed = [
+    recordWithSignatureShape(undefined, undefined), // signatures stripped entirely
+    recordWithSignatureShape("no-sigs", []), // empty signatures array
+    recordWithSignatureShape("multi-sigs", [
+      { protected: "prot", signature: "sig" },
+      { protected: "prot2", signature: "sig2" },
+    ]), // more than one signature entry
+    recordWithSignatureShape("blank-sig", [{ protected: "prot", signature: "   " }]), // blank signature
+    recordWithSignatureShape("blank-prot", [{ protected: "", signature: "sig" }]), // blank protected header
+    recordWithSignatureShape("   ", [{ protected: "prot", signature: "sig" }]), // blank receiptId
+  ];
+  const projection = projectMergeReady(malformed, input());
+  assert.equal(projection.freshPassCount, 0, "unsigned/malformed PASS rows are excluded from the vote");
+  assert.equal(projection.distinctReviewerCount, 0);
+  assert.equal(projection.ready, false);
+  assert.ok(projection.reasons.includes("insufficient_fresh_signed_pass:0/2"));
+  assert.ok(projection.reasons.includes("insufficient_independent_reviewers:0/2"));
+  assert.equal(projection.blockingFindings, 0, "malformed rows add no blocking findings");
+
+  // Mixing one admitted (signed) PASS with unsigned rows leaves both quorums short.
+  const mixed = projectMergeReady(
+    [record(receipt({ reviewerNodeId: "seoseo" })), recordWithSignatureShape("unsigned", undefined)],
+    input(),
+  );
+  assert.equal(mixed.freshPassCount, 1);
+  assert.equal(mixed.distinctReviewerCount, 1);
+  assert.equal(mixed.ready, false);
+  assert.ok(mixed.reasons.includes("insufficient_fresh_signed_pass:1/2"));
+  assert.ok(mixed.reasons.includes("insufficient_independent_reviewers:1/2"));
+
+  // Two admitted signed PASS receipts remain ready — the guard adds no new veto.
+  const signedReady = projectMergeReady(
+    [
+      record(receipt({ reviewerNodeId: "seoseo" })),
+      record(receipt({ reviewerNodeId: "nosuk", producedAt: "2026-08-06T09:05:00.000Z" })),
+    ],
+    input(),
+  );
+  assert.equal(signedReady.ready, true);
+  assert.equal(signedReady.freshPassCount, 2);
+  assert.deepEqual(signedReady.reasons, []);
+});
+
+test("unsigned PASS rows still report blocking findings but never vote (#1724 gap a)", () => {
+  const base: Record<string, unknown> = {
+    ...receipt({ reviewerNodeId: "seoseo", findings: [{ findingId: "F-9", blocking: true }] }),
+  };
+  delete base.signatures;
+  const unsignedBlocking = record(base as unknown as NclexSignedReceipt);
+
+  const projection = projectMergeReady([unsignedBlocking], input());
+  assert.equal(projection.freshPassCount, 0, "an unsigned PASS row never votes");
+  assert.equal(projection.blockingFindings, 1, "blocking findings still count across all fresh records");
+  assert.equal(projection.ready, false);
+  assert.ok(projection.reasons.includes("blocking_findings:1"));
+  assert.ok(projection.reasons.includes("insufficient_fresh_signed_pass:0/2"));
+});
+
+test("snapshot restore round-trip keeps unsigned rows non-voting (#1724 gap a)", () => {
+  const signed = record(receipt({ reviewerNodeId: "seoseo" }));
+  const unsignedBase: Record<string, unknown> = {
+    ...receipt({ reviewerNodeId: "nosuk", producedAt: "2026-08-06T09:05:00.000Z" }),
+  };
+  unsignedBase.signatures = []; // malformed restored row with a nonblank receiptId
+  const store = new NclexEvaluationReceiptStore([signed, record(unsignedBase as unknown as NclexSignedReceipt)]);
+
+  const projection = projectMergeReady(store.listByPr("jinwon-int/nclex", 145), input());
+  assert.equal(projection.freshPassCount, 1, "only the admitted signed PASS row votes");
+  assert.equal(projection.distinctReviewerCount, 1);
+  assert.equal(projection.ready, false);
+  assert.ok(projection.reasons.includes("insufficient_fresh_signed_pass:1/2"));
+
+  const again = new NclexEvaluationReceiptStore(store.listAll());
+  assert.deepEqual(projectMergeReady(again.listByPr("jinwon-int/nclex", 145), input()), projection);
+});
+
