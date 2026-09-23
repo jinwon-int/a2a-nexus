@@ -81,6 +81,7 @@ export function handleControlTowerRequest(ctx: OperatorDashboardRouteContext): v
     build: ctx.buildInfo.build,
     queue: dashboard.operatorSnapshot.taskStatusSummary,
     recovery: dashboard.operatorSnapshot.recoverySummary,
+    lane: dashboard.operatorSnapshot.laneSummary,
     attention: dashboard.attention,
     workerCapacity: ctx.broker.getWorkerCapacitySummary({
       workerOfflineAfterMs: ctx.workerOfflineAfterSec * 1000,

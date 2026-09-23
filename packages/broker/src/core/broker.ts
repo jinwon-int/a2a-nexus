@@ -327,6 +327,7 @@ import type {
   TaskApprovalTerminalRequest,
   TaskListFilters,
   TaskCheckpointState,
+  TaskLaneRejudgeRequest,
   TaskRecord,
   TaskReassignRequest,
   TaskResult,
@@ -2578,6 +2579,76 @@ export class InMemoryA2ABroker {
       this.persistState();
     });
     this.taskEvents.emit(task, "reassigned");
+    return task;
+  }
+
+  /**
+   * #1601 operator lane re-judgment: a hub/operator ruling that a create-time
+   * `fast` shadow classification was a misclassification and the task belongs
+   * in the `full` lane. The create-time `laneAssignment` is immutable (shadow
+   * records never mutate — cohort reconciliation depends on it), so the ruling
+   * lands in the separate `laneRejudgment` field and is audited as
+   * `task.lane_rejudged`. V1 corrects only fast -> full; the ruling is
+   * observational and changes no lifecycle, scheduling, or execution state.
+   */
+  rejudgeLaneTask(taskId: string, request: TaskLaneRejudgeRequest): TaskRecord {
+    const task = this.requireTask(taskId);
+    if (!request.actor?.id) {
+      throw new BrokerError("bad_request", "actor.id is required");
+    }
+    if (request.actor.role !== "hub" && request.actor.role !== "operator") {
+      throw new BrokerError("policy_denied", "task lane re-judgment requires a hub or operator actor");
+    }
+    if (request.decision !== "full") {
+      throw new BrokerError(
+        "bad_request",
+        `unsupported lane re-judgment decision "${String(request.decision)}": v1 only corrects fast -> full`,
+      );
+    }
+    if (!request.reasonCode?.trim()) {
+      throw new BrokerError("bad_request", "reasonCode is required");
+    }
+    if (isTerminalTaskStatus(task.status)) {
+      throw new BrokerError("invalid_transition", `cannot re-judge lane while status is ${task.status}`);
+    }
+    const assignment = task.laneAssignment;
+    if (!assignment) {
+      throw new BrokerError("invalid_transition", "task has no create-time lane assignment to re-judge");
+    }
+    if (assignment.decision !== "fast") {
+      throw new BrokerError(
+        "invalid_transition",
+        `create-time lane decision is "${assignment.decision}": nothing to correct`,
+      );
+    }
+    if (task.laneRejudgment) {
+      throw new BrokerError("invalid_transition", "task lane was already re-judged");
+    }
+
+    const now = isoNow();
+    task.laneRejudgment = {
+      at: now,
+      actorId: request.actor.id,
+      from: assignment.decision,
+      to: request.decision,
+      reasonCode: request.reasonCode,
+      ...(request.note ? { note: request.note } : {}),
+    };
+    task.updatedAt = now;
+    // #2077 step 1 pattern: record write + audit append + persist as one commit.
+    this.commitMutation(() => {
+      this.setTaskRecord(task);
+      this.appendAuditEvent({
+        actorId: request.actor.id,
+        action: "task.lane_rejudged",
+        targetType: "task",
+        targetId: task.id,
+        proposalId: task.proposalId,
+        note: JSON.stringify(task.laneRejudgment),
+      });
+      this.persistState();
+    });
+    this.taskEvents.emit(task, "rejudged");
     return task;
   }
 

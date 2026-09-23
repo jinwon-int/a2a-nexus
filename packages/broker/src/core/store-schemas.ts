@@ -240,6 +240,45 @@ export const taskLaneAssignmentSchema = z
   })
   .strict();
 
+/**
+ * #1601 operator lane re-judgment. Kept separate from the immutable
+ * taskLaneAssignmentSchema so the create-time shadow record (mode: "shadow")
+ * can never be rewritten by a re-judgment.
+ */
+export const taskLaneRejudgmentSchema = z
+  .object({
+    at: z.string().min(1),
+    actorId: z.string().min(1),
+    from: z.enum(["fast", "full"]),
+    to: z.enum(["fast", "full"]),
+    reasonCode: z.enum([
+      "all_fast_conditions_met",
+      "requester_lane_facts_present",
+      "intent_not_analyze",
+      "mode_missing",
+      "mode_not_read_only_analysis",
+      "write_or_implementation_marker_present",
+      "worker_assignment_conflict",
+      "round_marker_present",
+      "fanout_marker_present",
+      "multi_worker_marker_present",
+      "delegated_workflow_marker_present",
+      "worker_mode_missing",
+      "worker_not_persistent",
+      "policy_decision_missing",
+      "policy_decision_unknown",
+      "policy_requires_approval",
+      "policy_denied",
+      "approval_marker_present",
+      "sensitive_marker_present",
+      "live_marker_present",
+      "external_send_marker_present",
+      "credential_access_marker_present",
+    ]),
+    note: z.string().optional(),
+  })
+  .strict();
+
 export const taskLeaseStampV1Schema = z
   .object({
     /** Monotonic fencing token; only rises on claim (§5.3). */
@@ -269,6 +308,7 @@ export const taskSchema = z
     targetNodeId: z.string().min(1),
     payload: z.record(z.string(), z.unknown()),
     laneAssignment: taskLaneAssignmentSchema.optional(),
+    laneRejudgment: taskLaneRejudgmentSchema.optional(),
     updatedAt: z.string(),
     claimedAt: z.string().optional(),
     completedAt: z.string().optional(),

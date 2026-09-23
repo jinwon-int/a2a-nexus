@@ -209,6 +209,7 @@ export type AuditAction =
   | "task.created"
   | "task.create_idempotent_hit"
   | "task.lane_assigned"
+  | "task.lane_rejudged"
   | "task.approved"
   | "task.approval_rejected"
   | "task.policy_warned"
@@ -670,6 +671,29 @@ export interface TaskLaneAssignment {
 }
 
 /**
+ * #1601 operator re-judgment of a create-time fast-lane classification: a
+ * hub/operator ruling that a `fast` decision was a misclassification and the
+ * task belongs in the `full` lane. Stored as its own TaskRecord field so the
+ * create-time `TaskLaneAssignment` stays immutable (shadow mode never
+ * mutates) for cohort reconciliation (fast + full + legacy-absent +
+ * invalid-assignment windows).
+ */
+export interface TaskLaneRejudgment {
+  /** ISO timestamp of the re-judgment decision. */
+  at: string;
+  /** Hub/operator actor that made the decision. */
+  actorId: string;
+  /** Create-time decision being corrected. */
+  from: TaskLaneDecision;
+  /** Operator-decided lane; v1 re-judgment only corrects `fast` -> `full`. */
+  to: TaskLaneDecision;
+  /** Structured reason, same vocabulary as the create-time classifier. */
+  reasonCode: TaskLaneReasonCode;
+  /** Free-form operator context; never a lifecycle input. */
+  note?: string;
+}
+
+/**
  * #1504 §4 Slice U: V1 lease authority stamp carried on a claimed/running
  * task record while the default-off `BROKER_SHARED_STATE_V1_LEASE` flag is
  * `on`. The fields are the V1 adapter's claim response, re-presented verbatim
@@ -691,6 +715,12 @@ export interface TaskRecord extends A2ATaskRequest {
   payload: Record<string, unknown>;
   /** Broker-owned shadow classification; absent on records created before fast-lane v1. */
   laneAssignment?: TaskLaneAssignment;
+  /**
+   * Operator lane re-judgment (#1601). Deliberately SEPARATE from the
+   * immutable `laneAssignment`: re-judgment is a new decision about the same
+   * task, never a mutation of the create-time shadow record.
+   */
+  laneRejudgment?: TaskLaneRejudgment;
   /** Canonical parent round identifier for A2A discussion/round child tasks. */
   parentRoundId?: string;
   /** Total expected child tasks/workers in the parent round. */
@@ -886,6 +916,19 @@ export interface TaskReassignRequest {
   actor: A2APartyRef;
   targetNodeId?: string;
   assignedWorkerId?: string;
+  note?: string;
+}
+
+/**
+ * #1601 operator lane re-judgment request (POST /tasks/:id/rejudge-lane body).
+ * Hub/operator-gated; v1 only accepts decision "full" (correcting a fast
+ * misclassification). `reasonCode` is mandatory so the offline canary can
+ * trend misclassification causes without parsing free text.
+ */
+export interface TaskLaneRejudgeRequest {
+  actor: A2APartyRef;
+  decision: "full";
+  reasonCode: TaskLaneReasonCode;
   note?: string;
 }
 

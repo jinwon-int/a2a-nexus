@@ -537,6 +537,9 @@ export function createTasksDecisionRouteEntries(deps: RouteDeps<TasksDecisionRou
     entry("POST", ["tasks", ":id", "reject-approval"], "tasks.detail", "other", dispatch),
     entry("POST", ["tasks", ":id", "cancel"], "tasks.cancel", "other", dispatch),
     entry("POST", ["tasks", ":id", "reassign"], "tasks.reassign", "other", dispatch),
+    // #1601 lane re-judgment: no legacy classifier label of its own — the
+    // tasks/:id switch defaults it to tasks.detail (same as reject-approval).
+    entry("POST", ["tasks", ":id", "rejudge-lane"], "tasks.detail", "other", dispatch),
   ];
 }
 
