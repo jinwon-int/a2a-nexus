@@ -1,3 +1,4 @@
+import { SETTLED_TASK_STATUSES } from "../core/types.js";
 import type { BrokerExitCondition } from "../core/types.js";
 import type { TerminalTaskOutboxEvent, TerminalTaskEventPayload } from "../core/terminal-event-outbox.js";
 
@@ -99,7 +100,7 @@ export interface RoundCloseoutReconciliation {
 }
 
 const DEFAULT_STALE_AFTER_MS = 30 * 60 * 1000;
-const TERMINAL_STATUSES = new Set<RoundWorkerStatus>(["succeeded", "failed", "canceled", "blocked"]);
+const SETTLED_STATUSES = new Set<RoundWorkerStatus>(SETTLED_TASK_STATUSES);
 
 /**
  * Build a deterministic closeout view for one A2A round.
@@ -272,7 +273,7 @@ function classifyWorker(
   const ageMs = Math.max(0, options.nowMs - Date.parse(observation.updatedAt));
   const evidenceUrl = pickEvidenceUrl(observation.evidence);
 
-  if (!TERMINAL_STATUSES.has(observation.status)) {
+  if (!SETTLED_STATUSES.has(observation.status)) {
     if (ageMs >= options.staleAfterMs) {
       return {
         ...baseWorker(workerId, observation, ageMs, evidenceUrl),
@@ -408,15 +409,13 @@ function pickCompletionEvidenceUrl(evidence?: RoundEvidence): string | undefined
  * - no_change_block: failed/canceled + blockCommentUrl present (evidence-only Block)
  * - infra_failure:  failed/canceled with no prUrl, doneCommentUrl, or blockCommentUrl
  *
- * Returns undefined when the status is not terminal (caller must handle non-terminal).
+ * Returns undefined when the status is not settled (caller must handle unsettled lanes).
  */
 function classifyExitCondition(
   status: RoundWorkerStatus,
   evidence?: RoundEvidence,
 ): BrokerExitCondition | undefined {
-  if (status !== "succeeded" && status !== "failed" && status !== "canceled" && status !== "blocked") {
-    return undefined;
-  }
+  if (!SETTLED_STATUSES.has(status)) return undefined;
   const hasPr = Boolean(evidence?.prUrl);
   const hasDone = Boolean(evidence?.doneCommentUrl);
   const hasBlock = Boolean(evidence?.blockCommentUrl);

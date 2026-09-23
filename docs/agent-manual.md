@@ -243,6 +243,14 @@ Observe the `status` field; heartbeat timestamps alone are not progress.
 Retain a checkpoint or the environment's supported durable wait before ending
 a session that promises to resume. Do not invent a Nexus wait CLI.
 
+Task statuses follow the canonical lifecycle set (#2239). While in flight a
+task reports `queued`, `claimed` or `running`. A task is finished only when it
+reports a terminal status: `succeeded`, `failed` or `canceled`. `blocked` is
+not terminal — it means the task is parked awaiting operator approval; keep
+polling (or request the approval) instead of treating it as an outcome. If a
+poll keeps returning a status outside this set, treat it as an anomaly: do not
+assume completion, keep observing, and report the raw status.
+
 | Result or symptom | Next action |
 | --- | --- |
 | `accepted-unconfirmed`, transport timeout, ambiguous create response | Read the exact task ID before retrying. Do not mint a new ID merely to get a clean response. |

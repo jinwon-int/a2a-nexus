@@ -6,6 +6,7 @@ import type {
   TaskRecord,
   WorkerRecord,
 } from "./types.js";
+import { isTerminalTaskStatus } from "./broker-status-predicates.js";
 
 export interface ApplyBrokerExchangeMessageDecisionContext {
   workers: Map<string, WorkerRecord>;
@@ -80,7 +81,7 @@ function ensureBrokerExchangeTask(
   const assignedWorker = context.requireWorker(assignedWorkerId);
   const targetWorker = context.requireWorker(exchange.targetNodeId);
 
-  if (current && current.status !== "succeeded" && current.status !== "failed" && current.status !== "canceled") {
+  if (current && !isTerminalTaskStatus(current.status)) {
     if (
       current.targetNodeId !== exchange.targetNodeId ||
       current.assignedWorkerId !== assignedWorkerId

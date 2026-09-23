@@ -3,7 +3,7 @@ import { createHash } from "node:crypto";
 import type {
   TerminalTaskOutboxEvent,
   TerminalTaskReceiptStatus,
-  TerminalTaskStatus,
+  SettledTaskStatus,
 } from "../core/terminal-event-outbox.js";
 import { redactSensitive } from "./projection.js";
 import { isRecord } from "../core/value-guards.js";
@@ -81,7 +81,8 @@ export interface TerminalBriefGitHubEvidenceManifest {
   };
   terminalOutboxCursor?: string;
   taskEventId?: number;
-  terminalStatus?: TerminalTaskStatus;
+  /** Settled (terminal-or-blocked) status as recorded in the outbox event payload. */
+  terminalStatus?: SettledTaskStatus;
   receiptStatus?: TerminalTaskReceiptStatus;
   evidenceUrls: {
     pullRequest?: string;

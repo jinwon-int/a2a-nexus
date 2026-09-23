@@ -28,6 +28,7 @@ import type {
   TaskResult,
   TaskStatus,
 } from "../core/types.js";
+import { isTerminalTaskStatus } from "../core/broker-status-predicates.js";
 import type {
   GitHubDeliveryContext,
   GitHubIssueCommentEvent,
@@ -297,14 +298,8 @@ export interface ReplayStats {
   lifecycleWatermarks: number;
 }
 
-const TERMINAL_STATUSES: ReadonlySet<TaskStatus> = new Set<TaskStatus>([
-  "succeeded",
-  "failed",
-  "canceled",
-]);
-
 function isTerminal(status: TaskStatus): boolean {
-  return TERMINAL_STATUSES.has(status);
+  return isTerminalTaskStatus(status);
 }
 
 /**

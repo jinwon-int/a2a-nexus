@@ -50,6 +50,27 @@ export type TaskStatus =
   | "canceled";
 
 /**
+ * Canonical terminal task statuses (issue #2239): the task lifecycle has
+ * ended. `blocked` is intentionally NOT terminal — a blocked task is parked
+ * awaiting operator approval and can return to `queued` when approved.
+ */
+export const TERMINAL_TASK_STATUSES = [
+  "succeeded",
+  "failed",
+  "canceled",
+] as const;
+export type TerminalTaskStatus = (typeof TERMINAL_TASK_STATUSES)[number];
+
+/**
+ * Settled task statuses: terminal statuses plus `blocked`. Reporting and
+ * dedup sites (Terminal Brief outbox, round closeout, cross-broker
+ * projections) treat a blocked lane as settled for its current exchange leg;
+ * lifecycle gates must use {@link TERMINAL_TASK_STATUSES} instead.
+ */
+export const SETTLED_TASK_STATUSES = [...TERMINAL_TASK_STATUSES, "blocked"] as const;
+export type SettledTaskStatus = (typeof SETTLED_TASK_STATUSES)[number];
+
+/**
  * Broker closeout outcome classification (issue #471).
  *
  * Refines a terminal task status into evidence-aware categories for

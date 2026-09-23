@@ -2,6 +2,7 @@ import { z } from "zod";
 
 import { BrokerError } from "./broker-error.js";
 import { CURRENT_BROKER_STATE_VERSION } from "./store-contracts.js";
+import { SETTLED_TASK_STATUSES } from "./types.js";
 
 const TASK_ORIGIN_VALUES = ["github", "api", "sessions_send", "operator", "unknown"] as const;
 
@@ -394,7 +395,7 @@ export const terminalOutboxEventSchema = z
     payload: z
       .object({
         taskId: z.string().min(1),
-        status: z.enum(["succeeded", "failed", "canceled", "blocked"]),
+        status: z.enum(SETTLED_TASK_STATUSES),
         worker: z.string().optional(),
         repo: z.string().optional(),
         issue: z.number().int().nonnegative().optional(),
@@ -443,7 +444,7 @@ export const crossBrokerTerminalBriefProjectionSchema = z
     childTaskId: z.string().min(1).optional(),
     childRunId: z.string().min(1).optional(),
     childWorkerId: z.string().min(1).optional(),
-    status: z.enum(["succeeded", "failed", "canceled", "blocked"]),
+    status: z.enum(SETTLED_TASK_STATUSES),
     summary: z.string().optional(),
     taskBrief: z.string().optional(),
     terminalBriefTitle: z.string().optional(),

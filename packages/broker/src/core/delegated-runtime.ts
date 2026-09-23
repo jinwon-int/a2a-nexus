@@ -1,6 +1,7 @@
 import { randomUUID } from "node:crypto";
 
 import type { CreateTaskRequest, TaskRecord, TaskResult, TaskError } from "./types.js";
+import { isTerminalTaskStatus } from "./broker-status-predicates.js";
 
 // ---------------------------------------------------------------------------
 // State enum
@@ -164,7 +165,7 @@ class ManagedRun {
     });
 
     // Handle already-terminal tasks (idempotent create resume)
-    if (task.status === "succeeded" || task.status === "failed" || task.status === "canceled") {
+    if (isTerminalTaskStatus(task.status)) {
       this.onTaskUpdate({ task, final: true });
       return;
     }

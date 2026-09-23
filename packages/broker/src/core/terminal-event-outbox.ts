@@ -1,13 +1,13 @@
 import { BrokerError } from "./broker-error.js";
 import { isRecord } from "./value-guards.js";
 import { terminalOutboxPayloadIssueSchema } from "./store-schemas.js";
-import type { TaskRecord, TaskStatus } from "./types.js";
+import { SETTLED_TASK_STATUSES } from "./types.js";
+import type { SettledTaskStatus, TaskRecord, TaskStatus } from "./types.js";
 import type { TaskStatusEvent } from "./task-events.js";
 import type { CrossBrokerTerminalBriefProjection } from "./cross-broker-terminal-brief.js";
 import { RoundProgressTracker, applyRoundProgressMetadata } from "./round-progress-tracker.js";
 import { canonicalJsonString } from "../shared-state-idempotency-gate-v1.js";
 
-const TERMINAL_TASK_STATUSES = new Set<TaskStatus>(["succeeded", "failed", "canceled", "blocked"]);
 const TERMINAL_TASK_EVENT_KINDS = new Set<TaskStatusEvent["kind"]>(["succeeded", "failed", "canceled"]);
 const TERMINAL_TASK_ACK_INPUT_EVIDENCE = new Set<TerminalTaskOutboxAckInputEvidence>([
   "current_session_visible",
@@ -40,11 +40,11 @@ const MAX_TERMINAL_BRIEF_TITLE_CHARS = 240;
 export const DEFAULT_TERMINAL_TASK_OUTBOX_RETENTION = 1000;
 
 export type TerminalTaskEventKind = "task.terminal";
-export type TerminalTaskStatus = Extract<TaskStatus, "succeeded" | "failed" | "canceled" | "blocked">;
+export type { SettledTaskStatus };
 
 export interface TerminalTaskEventPayload {
   taskId: string;
-  status: TerminalTaskStatus;
+  status: SettledTaskStatus;
   /** Canonical Terminal Brief parent round id. Mirrors `run` for legacy consumers. */
   parentRoundId?: string;
   /** Broker that produced the Terminal Brief projection. */
@@ -290,7 +290,7 @@ export class TerminalTaskEventOutbox {
 
   enqueue(taskEvent: TaskStatusEvent, task: TaskRecord): TerminalTaskOutboxEvent | null {
     if (!TERMINAL_TASK_EVENT_KINDS.has(taskEvent.kind)) return null;
-    if (!isTerminalStatus(task.status)) return null;
+    if (!isSettledStatus(task.status)) return null;
     if (taskEvent.status !== task.status) return null;
     if (taskEvent.taskId !== task.id) return null;
 
@@ -743,8 +743,13 @@ export class TerminalTaskEventOutbox {
   }
 }
 
-export function isTerminalStatus(status: TaskStatus): status is TerminalTaskStatus {
-  return TERMINAL_TASK_STATUSES.has(status);
+/**
+ * Settled-status guard for terminal-event payloads (issue #2239): terminal
+ * statuses plus legacy `blocked` rows. Lifecycle gating must use
+ * {@link isTerminalTaskStatus} from broker-status-predicates instead.
+ */
+export function isSettledStatus(status: TaskStatus): status is SettledTaskStatus {
+  return (SETTLED_TASK_STATUSES as readonly string[]).includes(status);
 }
 
 export function isTerminalTaskOutboxAckEvidence(value: unknown): value is TerminalTaskOutboxAckEvidence {
@@ -844,7 +849,7 @@ export function buildTerminalTaskPayload(task: TaskRecord): TerminalTaskEventPay
   );
   const payload: TerminalTaskEventPayload = {
     taskId: task.id,
-    status: task.status as TerminalTaskStatus,
+    status: task.status as SettledTaskStatus,
     createdAt: task.createdAt,
     updatedAt: task.updatedAt,
   };

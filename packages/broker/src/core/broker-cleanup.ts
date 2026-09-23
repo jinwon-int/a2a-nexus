@@ -8,7 +8,8 @@ import type {
   SqliteHotRetentionApplyResult,
   SqliteHotRetentionPlan,
 } from "./store.js";
-import type { AuditEvent, TaskRecord } from "./types.js";
+import type { AuditEvent } from "./types.js";
+import { isTerminalTaskStatus } from "./broker-status-predicates.js";
 
 export type BrokerCleanupRiskClass = "low" | "medium" | "high";
 
@@ -120,7 +121,6 @@ const DEFAULT_CLEANUP_OPTIONS: Required<Omit<BrokerCleanupPlanOptions, "nowMs" |
 };
 
 const RISK_ORDER: BrokerCleanupRiskClass[] = ["low", "medium", "high"];
-const TERMINAL_TASK_STATUSES = new Set<TaskRecord["status"]>(["succeeded", "failed", "canceled"]);
 
 export function buildBrokerCleanupPlan(
   store: SqliteBrokerStateStore,
@@ -134,7 +134,7 @@ export function buildBrokerCleanupPlan(
   const tasks = store.readHotTasks({ maxRows: 2000 });
   const activeWorkerIds = new Set(
     tasks
-      .filter((task) => !TERMINAL_TASK_STATUSES.has(task.status))
+      .filter((task) => !isTerminalTaskStatus(task.status))
       .flatMap((task) => [task.assignedWorkerId, task.claimedBy].filter((value): value is string => Boolean(value))),
   );
   const protectedWorkerIds = [...new Set([...normalized.protectedWorkerIds, ...activeWorkerIds])].sort();

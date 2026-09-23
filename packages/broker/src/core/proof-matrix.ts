@@ -17,6 +17,7 @@ import type {
   TaskStatus,
 } from "../core/types.js";
 import type { AssignmentMode } from "../fixtures/team-assignment.js";
+import { isTerminalTaskStatus } from "./broker-status-predicates.js";
 
 export interface BrokerSnapshot {
   tasks: TaskRecord[];
@@ -404,7 +405,7 @@ export const ROUND16_OPERATOR_CHECKLIST: OperatorChecklistItem[] = [
 // ---------------------------------------------------------------------------
 
 function isTerminal(status: TaskStatus): boolean {
-  return status === "succeeded" || status === "failed" || status === "canceled";
+  return isTerminalTaskStatus(status);
 }
 
 function computeOverall(checks: ProofCheckResult[]): ProofVerdict {

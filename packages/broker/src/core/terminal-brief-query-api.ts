@@ -16,6 +16,7 @@ import type {
   TerminalTaskEventOutbox,
   TerminalTaskOutboxEvent,
 } from "./terminal-event-outbox.js";
+import { SETTLED_TASK_STATUSES } from "./types.js";
 
 // ---------------------------------------------------------------------------
 // Constants
@@ -526,8 +527,8 @@ export function summarizeTerminalBriefRounds(
 
   for (const [roundId, roundEvents] of sorted.slice(0, maxRounds)) {
     const total = roundEvents.length;
-    const terminalStatuses = new Set(["succeeded", "failed", "canceled", "blocked"]);
-    const completed = roundEvents.filter((eventToMatch) => terminalStatuses.has(eventToMatch.payload.status)).length;
+    const settledStatuses = new Set<string>(SETTLED_TASK_STATUSES);
+    const completed = roundEvents.filter((eventToMatch) => settledStatuses.has(eventToMatch.payload.status)).length;
     const acked = roundEvents.filter((eventToMatch) => eventToMatch.ack?.status === "receipt_confirmed").length;
     const erroredStatuses = new Set(["failed", "canceled", "blocked"]);
     const failed = roundEvents.filter(

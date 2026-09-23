@@ -1,12 +1,12 @@
 import { createHash } from "node:crypto";
 
-import type { TaskStatus } from "./types.js";
+import type { SettledTaskStatus } from "./types.js";
+import { isSettledTaskStatus } from "./broker-status-predicates.js";
 import { stableStringify } from "./value-guards.js";
 import {
   validateTerminalBriefMetadata as canonicalValidateTerminalBriefMetadata,
 } from "./terminal-brief-metadata.js";
 
-const TERMINAL_STATUSES = new Set<TaskStatus>(["succeeded", "failed", "canceled", "blocked"]);
 const MAX_SUMMARY_CHARS = 500;
 const MAX_BRIEF_CHARS = 160;
 const MAX_REASON_CHARS = 240;
@@ -78,7 +78,7 @@ export interface CrossBrokerTerminalBriefProjectionRequest {
   childWorkerId?: string;
   /** Backward-compatible alias accepted from compact handoff packets. */
   workerId?: string;
-  status: Extract<TaskStatus, "succeeded" | "failed" | "canceled" | "blocked">;
+  status: SettledTaskStatus;
   summary?: string;
   taskBrief?: string;
   /** Handoff broker's rendered operator-facing Terminal Brief title. */
@@ -107,7 +107,7 @@ export interface CrossBrokerTerminalBriefProjection {
   childRunId?: string;
   /** Worker that produced the child Terminal Brief, when distinct from the handoff broker. */
   childWorkerId?: string;
-  status: Extract<TaskStatus, "succeeded" | "failed" | "canceled" | "blocked">;
+  status: SettledTaskStatus;
   summary?: string;
   taskBrief?: string;
   /** Handoff broker's rendered operator-facing Terminal Brief title. */
@@ -343,7 +343,7 @@ function normalizeRequest(request: CrossBrokerTerminalBriefProjectionRequest): O
   const originBrokerId = normalizeToken(request.originBrokerId);
   const status = request.status;
   const completedAt = normalizeIso(request.completedAt);
-  if (!parentRoundId || !originBrokerId || !TERMINAL_STATUSES.has(status) || !completedAt) return undefined;
+  if (!parentRoundId || !originBrokerId || !isSettledTaskStatus(status) || !completedAt) return undefined;
   const brokerOfRecordId = normalizeToken(request.brokerOfRecordId);
   const childTaskId = normalizeToken(request.childTaskId);
   const childRunId = normalizeToken(request.childRunId);

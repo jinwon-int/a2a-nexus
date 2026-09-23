@@ -14,6 +14,7 @@
  * merges, deploys, live sends, ACKs, or DB mutations are performed.
  */
 
+import { SETTLED_TASK_STATUSES } from "./types.js";
 import type { TaskRecord, TaskStatus, BrokerExitCondition } from "./types.js";
 
 // ---------------------------------------------------------------------------
@@ -271,7 +272,7 @@ export type RoundVerdictActionPlan =
     };
 
 const DEFAULT_STALE_AFTER_MS = 30 * 60 * 1000;
-const TERMINAL_STATUSES = new Set<TaskStatus>(["succeeded", "failed", "canceled", "blocked"]);
+const SETTLED_STATUSES = new Set<TaskStatus>(SETTLED_TASK_STATUSES);
 const EVIDENCE_KEY_RE = /^(prUrl|doneUrl|doneCommentUrl|blockUrl|blockCommentUrl)$/;
 
 // ---------------------------------------------------------------------------
@@ -438,7 +439,7 @@ function classifyLane(
   const evidenceClass = classifyEvidenceClass(laneDef, latest, evidence);
 
   // 1. Timeout — non-terminal past deadline
-  if (hasTimeout && !TERMINAL_STATUSES.has(status) && nowMs >= timeoutAtMs) {
+  if (hasTimeout && !SETTLED_STATUSES.has(status) && nowMs >= timeoutAtMs) {
     return buildLaneResult(laneDef, {
       laneState: "timeout",
       taskIds,
@@ -455,7 +456,7 @@ function classifyLane(
   }
 
   // 2. Stale — non-terminal, not yet timeout, but stale
-  if (!TERMINAL_STATUSES.has(status)) {
+  if (!SETTLED_STATUSES.has(status)) {
     if (ageMs >= staleAfterMs) {
       return buildLaneResult(laneDef, {
         laneState: "stale",
@@ -947,7 +948,7 @@ function classifyExitCondition(
   status: TaskStatus,
   evidence: ExtractedEvidence,
 ): BrokerExitCondition | undefined {
-  if (!TERMINAL_STATUSES.has(status)) return undefined;
+  if (!SETTLED_STATUSES.has(status)) return undefined;
 
   const hasPr = Boolean(evidence.prUrl);
   const hasDone = Boolean(evidence.doneUrl);

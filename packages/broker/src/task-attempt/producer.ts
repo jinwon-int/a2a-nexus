@@ -27,6 +27,7 @@ import {
   type TaskAttemptRecordV1,
 } from "./record.js";
 import type { TaskAttemptSubmitResult } from "./store.js";
+import type { TerminalTaskStatus } from "../core/types.js";
 
 /**
  * Structural store surface the producer (and the broker wiring) consumes, so
@@ -43,7 +44,7 @@ export interface BrokerTerminalAttemptSnapshot {
   localTaskId: string;
   /** Broker-local broker identity (never enters the record; aliased). */
   localBrokerId: string;
-  status: "succeeded" | "failed" | "canceled";
+  status: TerminalTaskStatus;
   /** Set when the broker recorded an explicit cancellation kind. */
   cancellationKind?: "operator_cancel" | "superseded";
   /** True when the task had been claimed before reaching the terminal state. */
