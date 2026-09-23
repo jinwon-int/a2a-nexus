@@ -16,8 +16,10 @@ import {
   classifyReceipts,
   evaluateMergeReadiness,
   formatEvaluationComment,
+  refsManifestDigestSha256,
   routeEvaluation,
   validatePresetInput,
+  verifyRefsManifest,
 } from "./nclex-content-pr-preset.mjs";
 
 const HEAD_A = "a".repeat(40);
@@ -409,5 +411,104 @@ test("comment projection is the exact body-free contract line", () => {
   assert.throws(
     () => formatEvaluationComment({ nodeId: "seoseo", team: "T1", lane: "x", headSha: HEAD_A, verdict: "MAYBE", receiptId: "r" }),
     (e) => e.code === "comment_invalid",
+  );
+});
+
+// #1724 gap (b): the declared refsManifestSha256 is bound to the actual refs
+// manifest value — RFC 8785 (JCS) canonical digest, lowercase 64-hex, the same
+// sha256-over-canonical-JSON convention as signed receipt ids. The golden
+// digest was computed independently (python hashlib over the hand-built JCS
+// string) so a drift in the canonicalization convention is a visible break.
+const REFS_MANIFEST = {
+  schemaVersion: "nclex-refs-manifest.v1",
+  entries: [
+    { id: "pharm-01", url: "https://refs.example/pharm-01.pdf", license: "CC-BY-4.0", sha256: "a".repeat(64) },
+    { id: "safe-02", url: "https://refs.example/safe-02.pdf", license: "CC-BY-4.0", sha256: "b".repeat(64) },
+  ],
+};
+const REFS_MANIFEST_DIGEST = "77c653f124761888b63a3be5ebfd7511279a504f32b83b69d776bdb7a2cb350f";
+
+test("refs manifest digest: golden digest pins JCS; key insertion order is free, array order is content", () => {
+  assert.equal(refsManifestDigestSha256(REFS_MANIFEST), REFS_MANIFEST_DIGEST);
+
+  // Key insertion order (top level and inside entries) cannot change the digest.
+  const reordered = {
+    entries: REFS_MANIFEST.entries.map(({ sha256, url, license, id }) => ({ url, license, id, sha256 })),
+    schemaVersion: REFS_MANIFEST.schemaVersion,
+  };
+  assert.deepEqual(Object.keys(reordered), ["entries", "schemaVersion"], "the fixture really does reorder keys");
+  assert.equal(refsManifestDigestSha256(reordered), REFS_MANIFEST_DIGEST, "key order must not change the digest");
+
+  // Array order is content under JCS: reordered entries are a different manifest.
+  const reversed = { ...REFS_MANIFEST, entries: [...REFS_MANIFEST.entries].reverse() };
+  assert.notEqual(refsManifestDigestSha256(reversed), REFS_MANIFEST_DIGEST, "array reordering must change the digest");
+});
+
+test("verifyRefsManifest: matching declaration returns the validated input and the recomputed digest", () => {
+  const verified = verifyRefsManifest({
+    input: input({ refsManifestSha256: REFS_MANIFEST_DIGEST }),
+    refsManifest: REFS_MANIFEST,
+  });
+  assert.equal(verified.refsManifestSha256, REFS_MANIFEST_DIGEST, "the actual digest is echoed");
+  assert.equal(verified.input.headSha, HEAD_A, "the validated input is returned");
+  assert.equal(verified.input.refsManifestSha256, REFS_MANIFEST_DIGEST);
+
+  // The validated input chains straight into routing without re-validation.
+  const routed = routeEvaluation({ input: verified.input, registry: REGISTRY });
+  assert.equal(routed.reviewerTeam, "T1");
+  assert.equal(routed.lanes.length, 2);
+});
+
+test("verifyRefsManifest: declared digest mismatch fails closed as refs_manifest_invalid", () => {
+  const cases = [
+    ["declaration does not describe the manifest", REFS_MANIFEST, MANIFEST],
+    ["manifest is not the one declared", { ...REFS_MANIFEST, entries: [...REFS_MANIFEST.entries].reverse() }, REFS_MANIFEST_DIGEST],
+  ];
+  for (const [label, badManifest, declared] of cases) {
+    try {
+      verifyRefsManifest({ input: input({ refsManifestSha256: declared }), refsManifest: badManifest });
+      assert.fail(label + ": must throw");
+    } catch (error) {
+      assert.ok(error instanceof NclexPresetError, label);
+      assert.equal(error.code, "refs_manifest_invalid", label);
+      assert.equal(error.details.declared, declared.toLowerCase());
+      assert.ok(/^[0-9a-f]{64}$/.test(error.details.actual), "the actual digest is reported");
+      assert.notEqual(error.details.actual, error.details.declared, label);
+    }
+  }
+});
+
+test("verifyRefsManifest: non-manifest values and non-canonicalizable content fail closed", () => {
+  const cases = [
+    ["a JSON string is a value, not a manifest", '{"entries":[]}'],
+    ["a number is not a manifest", 42],
+    ["null is not a manifest", null],
+    ["a boolean is not a manifest", true],
+    ["a BigInt member is not RFC 8785 canonicalizable", { schemaVersion: 1n }],
+    ["a non-finite number is not RFC 8785 canonicalizable", { ratio: Number.NaN }],
+  ];
+  for (const [label, bad] of cases) {
+    assert.throws(
+      () => verifyRefsManifest({ input: input(), refsManifest: bad }),
+      (e) => e instanceof NclexPresetError && e.code === "refs_manifest_invalid",
+      label,
+    );
+  }
+});
+
+test("verifyRefsManifest: input re-validation runs first and never trusts a matching manifest", () => {
+  assert.throws(
+    () => verifyRefsManifest({ input: input({ headSha: "zzz" }), refsManifest: REFS_MANIFEST }),
+    (e) => e.code === "input_invalid",
+  );
+  const { authorNodeId, ...rest } = input();
+  assert.throws(
+    () => verifyRefsManifest({ input: rest, refsManifest: REFS_MANIFEST }),
+    (e) => e.code === "input_missing_fields",
+  );
+  assert.throws(
+    () => verifyRefsManifest({ input: input({ refsManifestSha256: "short" }), refsManifest: REFS_MANIFEST }),
+    (e) => e.code === "refs_manifest_invalid",
+    "a perfect manifest never rehabilitates a malformed declaration",
   );
 });

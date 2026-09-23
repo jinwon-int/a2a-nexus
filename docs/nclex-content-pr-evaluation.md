@@ -38,6 +38,14 @@ merge-ready 투영).
 `refsManifestSha256`(64-hex), `risk`(`normal`|`high-risk`). 전부 필수 검증 —
 receipt가 이 값들에 바인딩되므로 누락/형변형은 fail-closed.
 
+`verifyRefsManifest`(#1724 갭 b)는 선언된 `refsManifestSha256`를 실제 refs
+manifest 값에 바인딩한다. manifest를 RFC 8785(JCS)로 정규화해 SHA-256
+64-hex(소문자)를 계산하고 — signed receipt id와 같은 canonical-JSON 규약 —
+선언값과 다르면 `refs_manifest_invalid` fail-closed다. 키 순서와 공백은 digest를
+바꾸지 않고 배열 순서는 바꾸며, manifest는 JSON object/array만 수용하고 정규화
+불가 값도 같은 원인으로 실패한다. 반환값은 검증된 입력과 재계산 digest로, 이후
+라우팅에 재검증 없이 연결된다.
+
 ## 라우팅 규칙
 
 1. broker of record는 정확히 하나 — 팀↔브로커 불변(#633: team1→brokerAlpha,
@@ -97,6 +105,10 @@ prompt 원문·chain-of-thought·제한 자료 본문은 절대 포함하지 않
 - 공명 `/opt/nclex-refs/`는 read-only 자료 허브. task에는 자료 ID·SHA-256·
   페이지/절·검증할 주장·라이선스 분류만 담는다.
 - manifest mismatch(`refs_manifest_invalid`)와 허브/원문 접근 실패는 BLOCK.
+  #1724 갭 b부터 선언 `refsManifestSha256`는 형식 검증을 넘어 실값과 대조된다:
+  `refsManifestDigestSha256`(JCS 정규화 sha256 64-hex)와 불일치하면 같은
+  `refs_manifest_invalid`로 BLOCK된다. 64-hex 형식 적합만으로는 참조 manifest의
+  무결성을 증명하지 못한다.
 
 ## Signed receipt와 broker 통합 (#1724 slice 2-3)
 
