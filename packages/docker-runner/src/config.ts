@@ -1343,6 +1343,27 @@ function explicitClaudeTurnBudgetExports(env: NodeJS.ProcessEnv): string {
     .join("\n");
 }
 
+/** Effort levels the in-image bridge accepts for `--effort` (claude-runtime-flags.mjs). */
+export const CLAUDE_EFFORT_LEVELS = ["low", "medium", "high", "xhigh", "max"] as const;
+export type ClaudeEffortLevel = (typeof CLAUDE_EFFORT_LEVELS)[number];
+
+export interface RunnerClaudeEffortProjection {
+  configured: ClaudeEffortLevel | null;
+  source: "A2A_CLAUDE_EFFORT" | "unset" | "invalid";
+}
+
+/**
+ * Explicit opt-in only: A2A_CLAUDE_EFFORT is forwarded, CLAUDE_CODE_EFFORT_LEVEL
+ * is deliberately ignored because older Claude CLI builds reject `--effort`.
+ */
+export function projectClaudeCodeEffort(env: NodeJS.ProcessEnv): RunnerClaudeEffortProjection {
+  const raw = env.A2A_CLAUDE_EFFORT?.trim().toLowerCase();
+  if (!raw) return { configured: null, source: "unset" };
+  return (CLAUDE_EFFORT_LEVELS as readonly string[]).includes(raw)
+    ? { configured: raw as ClaudeEffortLevel, source: "A2A_CLAUDE_EFFORT" }
+    : { configured: null, source: "invalid" };
+}
+
 export function buildClaudeCodePatchCommandScript(env: NodeJS.ProcessEnv): string {
   const defaultModel = shellSingleQuote(env.A2A_CLAUDE_MODEL || env.A2A_OPENCLAW_MODEL || "sonnet");
   const defaultTimeout = shellSingleQuote(env.A2A_CLAUDE_TIMEOUT_SEC || env.A2A_OPENCLAW_TIMEOUT_SEC || DEFAULT_CLAUDE_CODE_TIMEOUT_SEC);
@@ -1361,7 +1382,11 @@ export function buildClaudeCodePatchCommandScript(env: NodeJS.ProcessEnv): strin
     : projectedBudgets.activePatchMode === "agentic"
       ? "agentic"
       : "single-shot";
-  const turnBudgetExports = explicitClaudeTurnBudgetExports(env);
+  const effort = projectClaudeCodeEffort(env).configured;
+  const turnBudgetExports = [
+    explicitClaudeTurnBudgetExports(env),
+    effort ? `export A2A_CLAUDE_EFFORT=${shellSingleQuote(effort)}` : "",
+  ].filter(Boolean).join("\n");
   return renderProfileScript("claude-code", {
     defaultModel,
     defaultTimeout,

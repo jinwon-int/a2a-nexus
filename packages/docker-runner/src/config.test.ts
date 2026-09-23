@@ -5,7 +5,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
 import { Script } from "node:vm";
-import { buildClaudeCodePatchCommandScript, buildCodexPatchCommandScript, buildPiriPatchCommandScript, loadContainedSubagentsConfig, loadConfig, loadEnvFile, mergeRunnerEnvFile, normalizePatchCommandProfile, projectClaudeCodeTurnBudgets, validateRunnerConfig } from "./config.js";
+import { buildClaudeCodePatchCommandScript, buildCodexPatchCommandScript, buildPiriPatchCommandScript, loadContainedSubagentsConfig, loadConfig, loadEnvFile, mergeRunnerEnvFile, normalizePatchCommandProfile, projectClaudeCodeEffort, projectClaudeCodeTurnBudgets, validateRunnerConfig } from "./config.js";
 import type { RunnerConfig } from "./types.js";
 
 const baseEnv = {
@@ -2029,6 +2029,35 @@ test("implementation model budgets leave container headroom and preserve shorter
   assert.equal((await loadConfig({ ...baseEnv, A2A_DOCKER_RUNNER_TIMEOUT_MS: "180000" })).defaultTimeoutMs, 180000);
 });
 
+
+test("#2235 claude-code script forwards only an explicit, valid A2A_CLAUDE_EFFORT", () => {
+  const exportCount = (env: NodeJS.ProcessEnv) =>
+    buildClaudeCodePatchCommandScript(env).split("\n").filter((line) => line.startsWith("export A2A_CLAUDE_EFFORT=")).length;
+  const baseline = buildClaudeCodePatchCommandScript({});
+
+  for (const value of ["medium", "MEDIUM", "  Medium  "]) {
+    const script = buildClaudeCodePatchCommandScript({ A2A_CLAUDE_EFFORT: value });
+    assert.equal(exportCount({ A2A_CLAUDE_EFFORT: value }), 1, value);
+    assert.match(script, /^export A2A_CLAUDE_EFFORT='medium'$/m, value);
+  }
+  for (const level of ["low", "high", "xhigh", "max"]) {
+    assert.match(buildClaudeCodePatchCommandScript({ A2A_CLAUDE_EFFORT: level }), new RegExp(`^export A2A_CLAUDE_EFFORT='${level}'$`, "m"));
+  }
+  // Joined with the turn-budget exports in the same substitution slot.
+  assert.match(
+    buildClaudeCodePatchCommandScript({ A2A_CLAUDE_CODE_MAX_TURNS: "40", A2A_CLAUDE_EFFORT: "high" }),
+    /^export A2A_CLAUDE_CODE_MAX_TURNS='40'\nexport A2A_CLAUDE_EFFORT='high'$/m,
+  );
+
+  for (const env of [{}, { A2A_CLAUDE_EFFORT: "" }, { A2A_CLAUDE_EFFORT: "   " }, { A2A_CLAUDE_EFFORT: "extreme" }, { CLAUDE_CODE_EFFORT_LEVEL: "high" }]) {
+    assert.equal(exportCount(env), 0, JSON.stringify(env));
+    assert.equal(buildClaudeCodePatchCommandScript(env), baseline, JSON.stringify(env));
+  }
+
+  assert.deepEqual(projectClaudeCodeEffort({ A2A_CLAUDE_EFFORT: "MEDIUM" }), { configured: "medium", source: "A2A_CLAUDE_EFFORT" });
+  assert.deepEqual(projectClaudeCodeEffort({ A2A_CLAUDE_EFFORT: "extreme" }), { configured: null, source: "invalid" });
+  assert.deepEqual(projectClaudeCodeEffort({ CLAUDE_CODE_EFFORT_LEVEL: "high" }), { configured: null, source: "unset" });
+});
 
 test("shipped worker environment templates do not mask the implementation defaults", () => {
   for (const file of ["../broker/.env.example", ".env.example"]) {

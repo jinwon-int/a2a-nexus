@@ -657,6 +657,17 @@ lane is agentic. The budget resolution order is mode-specific:
 | Deterministic single-shot diff/apply | `A2A_CLAUDE_CODE_DETERMINISTIC_MAX_TURNS`, backward-compatible `A2A_CLAUDE_CODE_PATCH_MAX_TURNS`, default | 6 per Claude invocation |
 | Fanout patch | `A2A_CLAUDE_CODE_FANOUT_MAX_TURNS`, default, hard cap | 40, capped at 200 |
 
+Claude reasoning effort is opt-in. When `A2A_CLAUDE_EFFORT` is set to one of
+`low`, `medium`, `high`, `xhigh` or `max` (trimmed, case-insensitive), the
+claude-code profile script exports it into the container and the bundled bridge
+passes `--effort <level>` to the `claude` CLI. Unset, blank or unrecognized
+values export nothing, so the CLI keeps its own default. `CLAUDE_CODE_EFFORT_LEVEL`
+is deliberately ignored: older Claude CLI builds reject an unknown `--effort`
+flag, so emitting it must stay an explicit runner-side choice, matching the
+bridge. `runner doctor` shows the result in the githubPatch check as
+`claudeEffort: { configured, source }`, where `source` is `A2A_CLAUDE_EFFORT`,
+`unset` or `invalid`.
+
 Codex, Piri and Claude Code Docker patch commands default to 90 minutes.
 Runner task/container defaults are 100 minutes, with a 120-minute outer worker
 handler budget. Explicit environment and per-task overrides retain their existing

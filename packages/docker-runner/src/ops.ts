@@ -10,7 +10,7 @@ import { promisify } from "node:util";
 const execFileP = promisify(execFile);
 import { join, resolve } from "node:path";
 import type { RunnerConfig, RunnerEngine } from "./types.js";
-import { CLAUDE_CREDENTIALS_FILE_MOUNT_TARGET } from "./config.js";
+import { CLAUDE_CREDENTIALS_FILE_MOUNT_TARGET, projectClaudeCodeEffort, type RunnerClaudeEffortProjection } from "./config.js";
 import { DEFAULT_PROFILE_MOUNT_PATH, validateOpenClawProfileReadiness } from "./openclaw-profile-readiness.js";
 import type { OpenClawProfileReadinessInput } from "./openclaw-profile-readiness.js";
 
@@ -67,6 +67,8 @@ export interface CleanupReport {
 
 export interface GitHubPatchReadinessOptions {
   engine?: RunnerEngine;
+  /** Env used only to tell an invalid A2A_CLAUDE_EFFORT from an unset one; defaults to process.env. */
+  env?: NodeJS.ProcessEnv;
   openclawProfileProbe?: (config: RunnerConfig, engine: RunnerEngine) => OpenClawProfileReadinessInput;
   hermesProfileProbe?: (config: RunnerConfig, engine: RunnerEngine) => HermesProfileReadinessInput;
   claudeCodeProfileProbe?: (config: RunnerConfig, engine: RunnerEngine) => ClaudeCodeProfileReadinessInput;
@@ -918,6 +920,16 @@ function checkHermesProfilePatchReadiness(config: RunnerConfig, options: GitHubP
 }
 
 
+/**
+ * The rendered commandScript is authoritative for what the container receives
+ * (it reflects any merged env file); the env only distinguishes invalid from unset.
+ */
+function describeClaudeEffort(config: RunnerConfig, env: NodeJS.ProcessEnv): RunnerClaudeEffortProjection {
+  const rendered = /^export A2A_CLAUDE_EFFORT='([a-z]+)'$/m.exec(config.commandScript ?? "")?.[1];
+  if (rendered) return projectClaudeCodeEffort({ A2A_CLAUDE_EFFORT: rendered });
+  return { configured: null, source: projectClaudeCodeEffort(env).source === "invalid" ? "invalid" : "unset" };
+}
+
 function checkClaudeCodeProfilePatchReadiness(config: RunnerConfig, options: GitHubPatchReadinessOptions): OpsCheck {
   if (!config.commandScript) {
     return {
@@ -945,6 +957,7 @@ function checkClaudeCodeProfilePatchReadiness(config: RunnerConfig, options: Git
     eval: false,
     containedSubagents: describeContainedSubagents(config),
     turnBudgets: config.claudeCodeProfile?.turnBudgets,
+    claudeEffort: describeClaudeEffort(config, options.env ?? process.env),
     failureCategory,
     summary: buildClaudeCodeProfileSummary(probeInput, failureCategory),
     checks,
