@@ -1,7 +1,10 @@
 import { readFile } from "node:fs/promises";
 import { existsSync } from "node:fs";
 import { buildEmbeddedModelTimeoutSummary, detectEmbeddedModelTimeoutNoFallback } from "./failure-classification.js";
-import type { GitHubCommentLedger, GitHubEvidence, NormalizedRunnerTask, RunnerConfig, RunnerResult } from "./types.js";
+import type { GitHubCommentLedger, GitHubEvidence, NormalizedRunnerTask, RunnerConfig, RunnerResult, RunnerTask } from "./types.js";
+
+/** Task fields that identify an issue evidence marker; satisfied by raw and normalized tasks. */
+type EvidenceMarkerTask = Pick<RunnerTask, "id" | "requestedBy" | "issueUrl" | "issue" | "issueNumber" | "repo" | "repos">;
 
 /**
  * Post a Start comment on the linked GitHub issue to begin an evidence round.
@@ -488,14 +491,14 @@ function extractStartCommentUrl(result: RunnerResult): string | undefined {
   return candidates[0];
 }
 
-function normalizeRepo(task: NormalizedRunnerTask): string | undefined {
-  const repo = task.repo ?? task.repos.find((candidate) => candidate.primary)?.url ?? task.repos[0]?.url;
+function normalizeRepo(task: EvidenceMarkerTask): string | undefined {
+  const repo = task.repo ?? task.repos?.find((candidate) => candidate.primary)?.url ?? task.repos?.[0]?.url;
   if (!repo) return undefined;
   const slug = parseGitHubRepoSlug(repo);
   return slug ?? repo;
 }
 
-function normalizeIssue(task: NormalizedRunnerTask): string | undefined {
+function normalizeIssue(task: EvidenceMarkerTask): string | undefined {
   if (task.issueUrl) {
     const match = task.issueUrl.match(/github\.com\/([^/]+\/[^/]+)\/issues\/(\d+)/);
     if (match) return `${match[1]}#${match[2]}`;
@@ -780,10 +783,31 @@ async function findExistingEvidenceComment(
   return match?.html_url;
 }
 
-function buildEvidenceMarker(task: NormalizedRunnerTask, outcome: "done" | "block"): string {
-  const taskId = (task.id || "task").replace(/[^A-Za-z0-9_.-]+/g, "_").slice(0, 120);
+function sanitizeMarkerTaskId(task: EvidenceMarkerTask): string {
+  return (task.id || "task").replace(/[^A-Za-z0-9_.-]+/g, "_").slice(0, 120);
+}
+
+function buildEvidenceMarker(task: EvidenceMarkerTask, outcome: "start" | "done" | "block"): string {
+  const taskId = sanitizeMarkerTaskId(task);
   const issue = (normalizeIssue(task) ?? "issue").replace(/[^A-Za-z0-9_.#/-]+/g, "_").slice(0, 160);
   return `<!-- a2a:github-evidence:v1 task=${taskId} issue=${issue} outcome=${outcome} -->`;
+}
+
+/**
+ * Build the literal Start comment body the container posts before patch
+ * execution. Line 1 stays exactly `Start`; line 2 is an outcome=start
+ * evidence marker and line 3 names the claimant so sessions sharing one
+ * GitHub account can tell which task/requester claimed the issue (#2246).
+ */
+export function buildIssueStartCommentBody(task: EvidenceMarkerTask): string {
+  // Angle brackets are neutralized so a hostile requester cannot open, close,
+  // or forge an evidence marker on the summary line.
+  const requestedBy = (safeOptionalText(task.requestedBy, 80) ?? "a2a-broker").replace(/[<>]/g, "_");
+  return [
+    "Start",
+    buildEvidenceMarker(task, "start"),
+    `Claimed by ${requestedBy} for task ${sanitizeMarkerTaskId(task)}`,
+  ].join("\n") + "\n";
 }
 
 function buildGitHubProjectionSafetyLines(lang: string): string[] {

@@ -3,7 +3,7 @@ import test from "node:test";
 import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { buildBlockCommentBody, buildCommentLedger, buildDoneCommentBody, buildStartCommentBody, collectGitHubEvidence, postStartComment } from "./github-evidence.js";
+import { buildBlockCommentBody, buildCommentLedger, buildDoneCommentBody, buildIssueStartCommentBody, buildStartCommentBody, collectGitHubEvidence, postStartComment } from "./github-evidence.js";
 import type { NormalizedRunnerTask, RunnerConfig } from "./types.js";
 
 const baseConfig: RunnerConfig = {
@@ -1245,4 +1245,71 @@ test("postStartComment dedupes per run, not per issue", async () => {
   } finally {
     globalThis.fetch = realFetch;
   }
+});
+
+// ---------------------------------------------------------------------------
+// Issue Start comment body: literal first line + claimant marker (#2246)
+// ---------------------------------------------------------------------------
+
+const EVIDENCE_MARKER_RE = /^<!-- a2a:github-evidence:v1 task=([A-Za-z0-9_.-]+) issue=([A-Za-z0-9_.#\/-]+) outcome=(start|done|block) -->$/;
+
+test("buildIssueStartCommentBody keeps literal Start first line and adds outcome=start marker", () => {
+  const body = buildIssueStartCommentBody({ ...baseTask, requestedBy: "workerGamma" });
+  assert.equal(body, [
+    "Start",
+    "<!-- a2a:github-evidence:v1 task=test-task issue=jinwon-int/test-repo#1 outcome=start -->",
+    "Claimed by workerGamma for task test-task",
+    "",
+  ].join("\n"));
+  const lines = body.split("\n");
+  assert.equal(lines[0], "Start");
+  const match = EVIDENCE_MARKER_RE.exec(lines[1] ?? "");
+  assert.ok(match, "Expected marker on line 2 to parse");
+  assert.equal(match?.[1], "test-task");
+  assert.equal(match?.[3], "start");
+  assert.equal(lines.length, 4, "Expected exactly three lines plus trailing newline");
+});
+
+test("buildIssueStartCommentBody defaults requester to a2a-broker", () => {
+  const body = buildIssueStartCommentBody({ ...baseTask, requestedBy: undefined });
+  assert.equal(body.split("\n")[2], "Claimed by a2a-broker for task test-task");
+});
+
+test("buildIssueStartCommentBody sanitizes hostile task ids and requesters", () => {
+  const body = buildIssueStartCommentBody({
+    ...baseTask,
+    id: "evil'\"$(rm -rf /)`x`\n--> <!-- outcome=done",
+    requestedBy: "workerGamma'\"$(id)\n--> <!-- a2a:github-evidence:v1 task=x issue=y outcome=done -->" + "z".repeat(200),
+  });
+  const lines = body.split("\n");
+  assert.equal(lines.length, 4, "Newlines in hostile input must not add lines");
+  assert.equal(lines[0], "Start");
+  const match = EVIDENCE_MARKER_RE.exec(lines[1] ?? "");
+  assert.ok(match, "Marker must still parse with hostile input");
+  assert.equal(match?.[3], "start");
+  assert.equal((body.match(/<!--/g) ?? []).length, 1, "Only one HTML comment may open");
+  assert.equal((body.match(/-->/g) ?? []).length, 1, "Only one HTML comment may close");
+  assert.ok(!/outcome=done/.test(lines[1] ?? ""), "Task id cannot forge a different outcome");
+  assert.ok(!/[<>]/.test(lines[2] ?? ""), "Summary line must not carry angle brackets");
+  assert.ok(!/[\n\r]/.test(lines[2] ?? ""), "Summary must be a single line");
+  assert.ok((lines[2] ?? "").length < 220, "Requester must be length capped");
+  assert.ok(!(lines[1] ?? "").includes("$("), "Marker must not carry shell substitution");
+});
+
+test("done/block evidence markers stay byte-identical after widening to start", () => {
+  const result = {
+    ok: false,
+    taskId: "test-task",
+    status: "failed" as const,
+    workDir: "/work/task",
+    exitCode: 1,
+    signal: null,
+    stdout: "",
+    stderr: "",
+    artifacts: [],
+  };
+  const block = buildBlockCommentBody(baseTask, result);
+  const done = buildDoneCommentBody(baseTask, { ...result, ok: true, status: "completed", exitCode: 0 });
+  assert.ok(block.includes("<!-- a2a:github-evidence:v1 task=test-task issue=jinwon-int/test-repo#1 outcome=block -->"));
+  assert.ok(done.includes("<!-- a2a:github-evidence:v1 task=test-task issue=jinwon-int/test-repo#1 outcome=done -->"));
 });
