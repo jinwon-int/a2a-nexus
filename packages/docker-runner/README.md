@@ -769,7 +769,11 @@ directory first (for `settings.json` etc.) and then installs that file as
 credential wins at every task start. Config validation (as the runner's own
 user) rejects a relative, missing, non-regular or unreadable path and fails
 closed — including for `doctor`/`cleanup` — so Docker never auto-creates a
-directory at a missing host path. Unset keeps the previous behavior.
+directory at a missing host path. The runner also passes this file as
+`--mount type=bind,source=<file>,target=/run/secrets/claude-credentials.json,readonly`
+instead of `-v`, so a file that disappears after validation makes `docker run`
+(or `podman run`) fail closed rather than creating a directory; the source path
+must not contain a comma. Unset keeps the previous behavior.
 
 The **container user** must be able to read the file. The host file is usually
 owner-only (`0600`), so run the container as its owner (for a root-owned file,

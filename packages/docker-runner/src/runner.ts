@@ -8,6 +8,7 @@ import { buildContainerScript, jsonArgvToScript } from "./script-generators.js";
 // Re-exported to preserve the public surface (runner.test.ts / engine-contract.test.ts
 // import these from ./runner.js); the implementations now live in script-generators.ts.
 export { buildContainerScript, jsonArgvToScript };
+import { CLAUDE_CREDENTIALS_FILE_MOUNT_TARGET } from "./config.js";
 import { normalizeTask } from "./task-normalizer.js";
 import { collectGitHubEvidence } from "./github-evidence.js";
 import { sanitizeSourcePublicExecutionPreflight } from "./source-public-preflight.js";
@@ -1055,6 +1056,17 @@ export function buildRunArgs(config: RunnerConfig, task: RunnerTask, workDir: st
   }
 
   for (const mount of config.extraMounts ?? []) {
+    const normalizedTarget = mount.target.replace(/\/+/g, "/").replace(/\/$/, "");
+    if (normalizedTarget === CLAUDE_CREDENTIALS_FILE_MOUNT_TARGET) {
+      // Single-file credential mount: `-v` would auto-create a root-owned
+      // directory at the host path if the file vanished after validation,
+      // breaking the host login. `--mount type=bind` fails closed instead.
+      if (mount.source.includes(",")) {
+        throw new Error(`Claude credentials file mount source must not contain a comma (cannot be expressed in --mount syntax): ${CLAUDE_CREDENTIALS_FILE_MOUNT_TARGET}`);
+      }
+      args.push("--mount", `type=bind,source=${mount.source},target=${CLAUDE_CREDENTIALS_FILE_MOUNT_TARGET},readonly`);
+      continue;
+    }
     const mode = mount.readOnly === false ? "rw" : "ro";
     args.push("-v", `${mount.source}:${mount.target}:${mode}`);
   }

@@ -1903,3 +1903,35 @@ test("runTask leaves firstModelCallAt absent when the marker was never created",
   assert.equal("firstModelCallAt" in runJson, false, "run.json must not carry a firstModelCallAt key without a marker");
   assert.equal(typeof runJson.evidenceAssemblyMs, "number");
 });
+
+test("buildRunArgs bind-mounts the Claude credentials file with --mount so a missing host file fails closed", () => {
+  const mountTask: RunnerTask = { id: "credentials-mount", intent: "propose_patch", commands: ["true"] };
+  const credentialsSource = "/home/workerGamma/.claude/.credentials.json";
+  const args = buildRunArgs({
+    ...baseConfig,
+    extraMounts: [
+      { source: "/srv/workerGamma/cache", target: "/work/cache", readOnly: true },
+      { source: credentialsSource, target: "/run/secrets/claude-credentials.json", readOnly: true },
+      { source: "/srv/workerGamma/scratch", target: "/work/scratch", readOnly: false },
+    ],
+  }, mountTask, "/tmp/a2a-credentials-mount", "run123");
+
+  const mountIndex = args.indexOf("--mount");
+  assert.notEqual(mountIndex, -1, "credentials file must use --mount");
+  assert.equal(args[mountIndex + 1], `type=bind,source=${credentialsSource},target=/run/secrets/claude-credentials.json,readonly`);
+  assert.equal(args.filter((arg) => arg === "--mount").length, 1);
+  assert.equal(args.some((arg) => arg.includes(`${credentialsSource}:`)), false, "credentials file must never use the -v form");
+  assert.equal(args[args.indexOf("/srv/workerGamma/cache:/work/cache:ro") - 1], "-v");
+  assert.equal(args[args.indexOf("/srv/workerGamma/scratch:/work/scratch:rw") - 1], "-v");
+});
+
+test("buildRunArgs rejects a Claude credentials file source containing a comma", () => {
+  const mountTask: RunnerTask = { id: "credentials-mount-comma", intent: "propose_patch", commands: ["true"] };
+  assert.throws(
+    () => buildRunArgs({
+      ...baseConfig,
+      extraMounts: [{ source: "/home/workerGamma/a,b/.credentials.json", target: "/run/secrets/claude-credentials.json", readOnly: true }],
+    }, mountTask, "/tmp/a2a-credentials-mount-comma", "run123"),
+    /must not contain a comma/,
+  );
+});
