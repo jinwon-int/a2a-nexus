@@ -609,7 +609,7 @@ Precedence is `commandScript > commandJson > commandProfile > commandTemplate`:
 | `A2A_DOCKER_RUNNER_PATCH_COMMAND_JSON` | `commandJson` | `/work/patch-command.sh` | JSON `{ "argv": [...], "env": {...} }` is converted into a quoted argv script. |
 | `A2A_DOCKER_RUNNER_PATCH_COMMAND_PROFILE=hermes` | generated `commandScript` | `/work/patch-command.sh` | Operator-only trusted-worker profile. Mounts `A2A_DOCKER_RUNNER_HERMES_CONFIG_DIR` (or `/root/.hermes`) read-only at `/run/secrets/hermes-dir`, then runs `hermes chat --query ... --quiet --yolo` in the checked-out repo. Explicit `A2A_HERMES_MODEL` / legacy `A2A_OPENCLAW_MODEL` overrides still win. When `A2A_DOCKER_RUNNER_MODEL_SOURCE=native`, the runner reads the copied Hermes profile `.env` / `config.yaml` for the model and fails closed if no safe model is found. |
 | `A2A_DOCKER_RUNNER_PATCH_COMMAND_PROFILE=openclaw` | generated `commandScript` | `/work/patch-command.sh` | Legacy operator-only trusted-worker profile. Mounts `A2A_DOCKER_RUNNER_OPENCLAW_CONFIG_DIR` (or the profile default when unset) read-only at `/run/secrets/openclaw-dir`, then runs `openclaw agent` in the checked-out repo. Explicit `A2A_OPENCLAW_MODEL` overrides still win. Default legacy behavior remains `openai-codex/gpt-5.5` so OAuth-backed Codex auth is used instead of same-name OpenAI API-key models. When `A2A_DOCKER_RUNNER_MODEL_SOURCE=native`, the runner reads the copied OpenClaw profile agent/default model and fails closed if no safe model is found. Do not present this profile or host-network mode as a public sandbox default. |
-| `A2A_DOCKER_RUNNER_PATCH_COMMAND_PROFILE=claude-code` (`cccb`) | generated `commandScript` | `/work/patch-command.sh` | Operator-only trusted-worker profile. Mounts `A2A_DOCKER_RUNNER_CLAUDE_CONFIG_DIR` (or `/root/.claude`) read-only at `/run/secrets/claude-dir`, then runs the bundled `claude-a2a-patch-bridge.mjs` through the `claude` CLI. The normal non-fanout implementation mode is agentic; deterministic single-shot and fanout modes are explicit alternatives. Use the `a2a-docker-runner-cccb:<runner-sha>` image; credentials are mounted at runtime only and are not baked into image layers. |
+| `A2A_DOCKER_RUNNER_PATCH_COMMAND_PROFILE=claude-code` (`cccb`) | generated `commandScript` | `/work/patch-command.sh` | Operator-only trusted-worker profile. Mounts `A2A_DOCKER_RUNNER_CLAUDE_CONFIG_DIR` (or `/root/.claude`) read-only at `/run/secrets/claude-dir` (plus, when set, `A2A_DOCKER_RUNNER_CLAUDE_CREDENTIALS_FILE` read-only at `/run/secrets/claude-credentials.json`), then runs the bundled `claude-a2a-patch-bridge.mjs` through the `claude` CLI. The normal non-fanout implementation mode is agentic; deterministic single-shot and fanout modes are explicit alternatives. Use the `a2a-docker-runner-cccb:<runner-sha>` image; credentials are mounted at runtime only and are not baked into image layers. |
 | `A2A_DOCKER_RUNNER_PATCH_COMMAND_PROFILE=codex` | generated `commandScript` | `/work/patch-command.sh` | Operator-only trusted-worker profile. The host source at `A2A_DOCKER_RUNNER_CODEX_CONFIG_DIR` (default `/var/lib/a2a-runner/codex-dir`) is copied to a task-scoped host temp directory, and only that clone is mounted read-write at `/run/secrets/codex-dir`. After `codex exec --ephemeral --json`, the host runner validates that only refreshable token fields/`last_refresh` changed and atomically writes back `auth.json` with the original owner and mode. `config.toml` and generated custom-agent files are discarded. The parent uses `gpt-5.6-sol`, reasoning `high`, approval `never`, and `danger-full-access` inside the external container boundary. Optional contained fanout keeps the parent unchanged, routes explorer/researcher to `gpt-5.6-luna`/`max`, and keeps implementer/verifier on Sol. Use `a2a-docker-runner-codex:<runner-sha>`; credentials are never baked into image layers or runner artifacts. |
 | `A2A_DOCKER_RUNNER_PATCH_COMMAND_TEMPLATE` | `commandTemplate` | `/work/patch-command.sh` | Legacy eval path; rejected for GitHub patch execution. |
 
@@ -743,7 +743,38 @@ export A2A_DOCKER_RUNNER_CLAUDE_CONFIG_DIR=/secure/operator/claude-config
 export A2A_DOCKER_RUNNER_IMAGE=a2a-docker-runner-cccb:<runner-sha>
 export A2A_CLAUDE_MODEL=sonnet
 export A2A_CLAUDE_TIMEOUT_SEC=3600
+# Recommended: mount the host credentials file instead of copying it.
+export A2A_DOCKER_RUNNER_CLAUDE_CREDENTIALS_FILE=/root/.claude/.credentials.json
 ```
+
+Host Claude Code sessions that share the same OAuth account refresh and rotate
+the token, so a `.credentials.json` copied once into the config directory goes
+stale and tasks then fail with "OAuth session expired and could not be
+refreshed". Set `A2A_DOCKER_RUNNER_CLAUDE_CREDENTIALS_FILE` to an absolute path
+of the host `.credentials.json` (regular, readable file) to mount it read-only
+at `/run/secrets/claude-credentials.json`; the profile script copies the config
+directory first (for `settings.json` etc.) and then installs that file as
+`$CLAUDE_CONFIG_DIR/.credentials.json` with mode `0600`, so the freshest host
+credential wins at every task start. Config validation (as the runner's own
+user) rejects a relative, missing, non-regular or unreadable path and fails
+closed — including for `doctor`/`cleanup` — so Docker never auto-creates a
+directory at a missing host path. Unset keeps the previous behavior.
+
+The **container user** must be able to read the file. The host file is usually
+owner-only (`0600`), so run the container as its owner (for a root-owned file,
+`A2A_DOCKER_RUNNER_USER=root`); otherwise the task stops with
+`error=claude_credentials_file_unreadable` before the model runs. Config
+validation cannot detect this because it runs as the host runner user.
+
+`runner doctor` reports a claude-code-only `claudeCredentialFreshness` check. It
+reads only `claudeAiOauth.expiresAt` from the effective credential (the
+credentials-file mount when configured, otherwise
+`<claude-dir>/.credentials.json`) and warns when it is missing, unparseable,
+already expired, or expires within the runner task timeout plus a 10-minute
+refresh margin (the in-container CLI would then refresh and rotate the shared
+token). A missing credentials *file* is reported by config validation instead. It also warns when the
+config-dir copy and the credentials file both exist and differ. Only the
+expiry timestamp and status are reported, never token values or digests.
 
 For the Codex profile, build the pinned Codex CLI image and mount a minimal
 node-local auth directory. Do not mount the whole host session/history tree:

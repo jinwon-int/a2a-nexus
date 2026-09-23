@@ -44,6 +44,17 @@ if [ -d /run/secrets/claude-dir ]; then
   cp -a /run/secrets/claude-dir/. "$CLAUDE_CONFIG_DIR/" 2>/dev/null || true
 fi
 chmod -R u+rwX "$CLAUDE_CONFIG_DIR"
+# #2234: a host credentials file mount (A2A_DOCKER_RUNNER_CLAUDE_CREDENTIALS_FILE)
+# overrides any stale copied credential so the freshest host OAuth token wins.
+if [ -f /run/secrets/claude-credentials.json ]; then
+  if ! install -m 0600 /run/secrets/claude-credentials.json "$CLAUDE_CONFIG_DIR/.credentials.json" 2>/dev/null; then
+    printf 'error=claude_credentials_file_unreadable\n' | tee -a /work/artifacts/summary.txt
+    printf 'failure_category=claude_credentials_unavailable\n' | tee -a /work/artifacts/summary.txt
+    printf 'The Claude credentials file mount is not readable by the container user (uid %s). Run the container as the file owner (A2A_DOCKER_RUNNER_USER) or make the file readable by that user.\n' "$(id -u)" | tee /work/artifacts/patch-command.log
+    exit 2
+  fi
+  printf 'claude_credentials_source=credentials_file_mount\n' | tee -a /work/artifacts/summary.txt
+fi
 export A2A_CLAUDE_CODE_PATCH_MODE=agentic
 # #1855 runner context: the runner pipeline owns the checkout/branch and the
 # deterministic post-steps (Auto-patch commit, push, gh pr create). The bridge
