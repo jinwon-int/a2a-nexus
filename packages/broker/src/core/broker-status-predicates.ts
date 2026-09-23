@@ -6,14 +6,42 @@ import type {
   ChangeProposal,
   TaskDiagnosticStatus,
   TaskRecord,
+  TaskStatus,
 } from "./types.js";
+
+/**
+ * Canonical terminal task statuses: the task has finished and will not change
+ * again. `blocked` is deliberately absent — it is the pre-approval state
+ * (created blocked -> approve -> queued, reject -> canceled), so a blocked task
+ * is waiting on an operator, not done.
+ */
+export const TERMINAL_TASK_STATUSES: ReadonlySet<TaskStatus> = new Set<TaskStatus>([
+  "succeeded",
+  "failed",
+  "canceled",
+]);
+
+/**
+ * Settled task statuses for reporting surfaces: terminal, or approval-pending
+ * (`blocked`). Use this where a lane should stop counting as "in flight"
+ * because it is either done or waiting on an operator. `blocked` is still not
+ * terminal; use {@link TERMINAL_TASK_STATUSES} for completion semantics.
+ */
+export const SETTLED_TASK_STATUSES: ReadonlySet<TaskStatus> = new Set<TaskStatus>([
+  ...TERMINAL_TASK_STATUSES,
+  "blocked",
+]);
 
 export function isTerminalExchangeStatus(status: A2AExchangeState["status"]): boolean {
   return status === "completed" || status === "failed";
 }
 
 export function isTerminalTaskStatus(status: TaskRecord["status"]): boolean {
-  return status === "succeeded" || status === "failed" || status === "canceled";
+  return TERMINAL_TASK_STATUSES.has(status);
+}
+
+export function isSettledTaskStatus(status: TaskRecord["status"]): boolean {
+  return SETTLED_TASK_STATUSES.has(status);
 }
 
 /**

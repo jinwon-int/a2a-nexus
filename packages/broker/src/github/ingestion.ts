@@ -21,6 +21,7 @@
  */
 
 import type { InMemoryA2ABroker } from "../core/broker.js";
+import { TERMINAL_TASK_STATUSES } from "../core/broker-status-predicates.js";
 import type {
   A2AExchangeIntent,
   CreateTaskRequest,
@@ -297,11 +298,7 @@ export interface ReplayStats {
   lifecycleWatermarks: number;
 }
 
-const TERMINAL_STATUSES: ReadonlySet<TaskStatus> = new Set<TaskStatus>([
-  "succeeded",
-  "failed",
-  "canceled",
-]);
+const TERMINAL_STATUSES: ReadonlySet<TaskStatus> = TERMINAL_TASK_STATUSES;
 
 function isTerminal(status: TaskStatus): boolean {
   return TERMINAL_STATUSES.has(status);

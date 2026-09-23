@@ -5,6 +5,7 @@ import type {
   TaskRecord,
   TaskStatus,
 } from "./types.js";
+import { TERMINAL_TASK_STATUSES } from "./broker-status-predicates.js";
 import {
   FAST_LANE_ASSIGNMENT_MODE,
   FAST_LANE_ASSIGNMENT_VERSION,
@@ -94,7 +95,7 @@ export interface TaskStatsResponse {
   laneCohorts: TaskLaneShadowCohortsResponse;
 }
 
-export const TERMINAL_STATUSES = new Set<TaskStatus>(["succeeded", "failed", "canceled"]);
+export const TERMINAL_STATUSES: ReadonlySet<TaskStatus> = TERMINAL_TASK_STATUSES;
 export const LIFECYCLE_ACTIONS = new Set<AuditEvent["action"]>([
   "task.created",
   "task.claimed",

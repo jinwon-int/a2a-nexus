@@ -4,8 +4,9 @@ import { buildCrossBrokerSenderProof } from "../a2a/cross-broker-sender-proof.js
 import type { CrossBrokerTerminalBriefProjectionRequest } from "./cross-broker-terminal-brief.js";
 import type { TerminalTaskOutboxEvent, TerminalTaskEventPayload } from "./terminal-event-outbox.js";
 import type { TaskStatus } from "./types.js";
+import { SETTLED_TASK_STATUSES } from "./broker-status-predicates.js";
 
-const TERMINAL_STATUSES = new Set<TaskStatus>(["succeeded", "failed", "canceled", "blocked"]);
+const TERMINAL_STATUSES: ReadonlySet<TaskStatus> = SETTLED_TASK_STATUSES;
 
 /**
  * Destination ack codes that are terminal for the individual event: retrying

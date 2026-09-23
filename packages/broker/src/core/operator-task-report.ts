@@ -1,5 +1,5 @@
 import type { TaskRecord, TaskStatus } from "./types.js";
-import { resolveTaskStalenessSignalMs } from "./broker-status-predicates.js";
+import { TERMINAL_TASK_STATUSES, resolveTaskStalenessSignalMs } from "./broker-status-predicates.js";
 import {
   normalizeTerminalTaskReceiptStatus,
   type TerminalTaskOutboxEvent,
@@ -85,7 +85,7 @@ export interface OperatorTaskReport {
 }
 
 const DEFAULT_STALE_AFTER_MS = 15 * 60 * 1000;
-const TERMINAL_STATUSES = new Set<TaskStatus>(["succeeded", "failed", "canceled"]);
+const TERMINAL_STATUSES = TERMINAL_TASK_STATUSES;
 
 export function buildOperatorTaskReport(tasks: TaskRecord[], options: OperatorTaskReportOptions = {}): OperatorTaskReport {
   const nowMs = options.nowMs ?? Date.now();

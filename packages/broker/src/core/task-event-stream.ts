@@ -1,6 +1,7 @@
 import { isRecord } from "./value-guards.js";
 import { CursorEventBuffer } from "./event-buffer.js";
-import type { AuditAction, AuditEvent, TaskRecord } from "./types.js";
+import type { AuditAction, AuditEvent, TaskRecord, TaskStatus } from "./types.js";
+import { TERMINAL_TASK_STATUSES } from "./broker-status-predicates.js";
 import { buildTerminalBriefTitle, buildTerminalTaskPayload } from "./terminal-event-outbox.js";
 import { RoundProgressTracker, applyRoundProgressMetadata } from "./round-progress-tracker.js";
 import type { TerminalTaskEventPayload } from "./terminal-event-outbox.js";
@@ -84,11 +85,7 @@ const TERMINAL_ACTIONS = new Set<AuditAction>([
  * outbox snapshots from older brokers may contain such rows; this set only
  * governs what is newly minted.
  */
-const NOTIFIABLE_TERMINAL_STATUSES = new Set<TerminalTaskEventStatus>([
-  "succeeded",
-  "failed",
-  "canceled",
-]);
+const NOTIFIABLE_TERMINAL_STATUSES: ReadonlySet<TaskStatus> = TERMINAL_TASK_STATUSES;
 const TASK_BRIEF_KEYS = ["githubIssueTitle", "taskTitle", "title", "taskBrief"] as const;
 const MAX_TASK_BRIEF_CHARS = 160;
 
@@ -430,7 +427,7 @@ function firstHttpUrl(...values: unknown[]): string | undefined {
 }
 
 function isNotifiableTerminalStatus(status: unknown): status is TerminalTaskEventStatus {
-  return typeof status === "string" && NOTIFIABLE_TERMINAL_STATUSES.has(status as TerminalTaskEventStatus);
+  return typeof status === "string" && NOTIFIABLE_TERMINAL_STATUSES.has(status as TaskStatus);
 }
 
 function normalizeTestSummary(value: unknown): TerminalTaskTestSummary | undefined {

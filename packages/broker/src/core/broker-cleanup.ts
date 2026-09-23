@@ -1,6 +1,7 @@
 import { createHash } from "node:crypto";
 
 import { DEFAULT_BROKER_RETENTION_POLICY } from "./broker.js";
+import { TERMINAL_TASK_STATUSES } from "./broker-status-predicates.js";
 import { DEFAULT_TERMINAL_TASK_OUTBOX_RETENTION } from "./terminal-event-outbox.js";
 import type {
   SqliteBrokerStateStore,
@@ -8,7 +9,7 @@ import type {
   SqliteHotRetentionApplyResult,
   SqliteHotRetentionPlan,
 } from "./store.js";
-import type { AuditEvent, TaskRecord } from "./types.js";
+import type { AuditEvent } from "./types.js";
 
 export type BrokerCleanupRiskClass = "low" | "medium" | "high";
 
@@ -120,7 +121,6 @@ const DEFAULT_CLEANUP_OPTIONS: Required<Omit<BrokerCleanupPlanOptions, "nowMs" |
 };
 
 const RISK_ORDER: BrokerCleanupRiskClass[] = ["low", "medium", "high"];
-const TERMINAL_TASK_STATUSES = new Set<TaskRecord["status"]>(["succeeded", "failed", "canceled"]);
 
 export function buildBrokerCleanupPlan(
   store: SqliteBrokerStateStore,

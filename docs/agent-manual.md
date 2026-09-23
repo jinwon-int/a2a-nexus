@@ -243,6 +243,11 @@ Observe the `status` field; heartbeat timestamps alone are not progress.
 Retain a checkpoint or the environment's supported durable wait before ending
 a session that promises to resume. Do not invent a Nexus wait CLI.
 
+When polling, the terminal task statuses are exactly `succeeded`, `failed` and
+`canceled`. `blocked` means the task is awaiting approval: it is not terminal,
+so report it as operator action needed and do not treat it as done. Log any
+unknown status and keep polling; never assume an unknown status is terminal.
+
 | Result or symptom | Next action |
 | --- | --- |
 | `accepted-unconfirmed`, transport timeout, ambiguous create response | Read the exact task ID before retrying. Do not mint a new ID merely to get a clean response. |

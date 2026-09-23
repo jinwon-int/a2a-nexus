@@ -4,6 +4,7 @@
 // normalizeTaskRecord guarantees is populated even for payload-only dispatches.
 
 import type { TaskRecord, TaskStatus } from "./types.js";
+import { TERMINAL_TASK_STATUSES } from "./broker-status-predicates.js";
 
 // Must enumerate every TaskStatus: byStatus is seeded from this list, so a
 // missing state would leave its counter undefined and yield NaN on increment.
@@ -18,7 +19,7 @@ const TASK_STATUSES: readonly TaskStatus[] = [
 ];
 
 /** Terminal lane states — a lane in one of these has finished for the round. */
-const TERMINAL_STATUSES: ReadonlySet<TaskStatus> = new Set<TaskStatus>(["succeeded", "failed", "canceled"]);
+const TERMINAL_STATUSES: ReadonlySet<TaskStatus> = TERMINAL_TASK_STATUSES;
 const MAX_PARENT_AGGREGATE_REPORT_ITEMS = 50;
 const MAX_EXACT_MISSING_ORDER_SCAN = 1000;
 

@@ -1,12 +1,13 @@
 import { createHash } from "node:crypto";
 
 import type { TaskStatus } from "./types.js";
+import { SETTLED_TASK_STATUSES } from "./broker-status-predicates.js";
 import { stableStringify } from "./value-guards.js";
 import {
   validateTerminalBriefMetadata as canonicalValidateTerminalBriefMetadata,
 } from "./terminal-brief-metadata.js";
 
-const TERMINAL_STATUSES = new Set<TaskStatus>(["succeeded", "failed", "canceled", "blocked"]);
+const TERMINAL_STATUSES: ReadonlySet<TaskStatus> = SETTLED_TASK_STATUSES;
 const MAX_SUMMARY_CHARS = 500;
 const MAX_BRIEF_CHARS = 160;
 const MAX_REASON_CHARS = 240;

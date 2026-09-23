@@ -15,6 +15,7 @@
  */
 
 import type { TaskRecord, TaskStatus, BrokerExitCondition } from "./types.js";
+import { SETTLED_TASK_STATUSES } from "./broker-status-predicates.js";
 
 // ---------------------------------------------------------------------------
 // Round Manifest (lane definitions)
@@ -271,7 +272,7 @@ export type RoundVerdictActionPlan =
     };
 
 const DEFAULT_STALE_AFTER_MS = 30 * 60 * 1000;
-const TERMINAL_STATUSES = new Set<TaskStatus>(["succeeded", "failed", "canceled", "blocked"]);
+const TERMINAL_STATUSES: ReadonlySet<TaskStatus> = SETTLED_TASK_STATUSES;
 const EVIDENCE_KEY_RE = /^(prUrl|doneUrl|doneCommentUrl|blockUrl|blockCommentUrl)$/;
 
 // ---------------------------------------------------------------------------
