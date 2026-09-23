@@ -17,6 +17,7 @@ import {
 } from "./store.js";
 import type { WorkerRecord } from "./types.js";
 import { registerWorker, createWorkerTask } from "./broker-test-helpers.js";
+import { BROKER_POLICY_SCHEMA, validateBrokerPolicyDocument } from "a2a-policy-referee";
 
 test("broker exchange threads can use SQLite runtime repositories without JSON hot hints", () => {
   const dir = mkdtempSync(join(tmpdir(), "a2a-broker-exchange-repo-"));
@@ -2037,3 +2038,81 @@ test("second complete after cancel does not overwrite lateEvidenceAfterCancel", 
   assert.equal(second.lateEvidenceAfterCancel?.result?.summary, "first late");
 });
 
+
+// #2239: the V1 graph terminal-fact authority must use the canonical terminal
+// predicate. `blocked` is the pre-approval state (approve -> queued, reject ->
+// canceled), so an approval-required task must not record a terminal fact
+// while it is only awaiting approval.
+function approvalGraphBroker() {
+  const facts: Array<{ taskId: string; status: string; completedAt: string }> = [];
+  const broker = new InMemoryA2ABroker(undefined, undefined, {
+    policyDocument: validateBrokerPolicyDocument({
+      schemaVersion: BROKER_POLICY_SCHEMA,
+      mode: "enforce",
+      defaultAction: "allow",
+      rules: [{ id: "approval-gate", workerClass: "*", requireApproval: true }],
+    }),
+    taskTerminalGraphSourceAuthority: (input) => {
+      facts.push({ ...input });
+      return { sequence: String(facts.length) };
+    },
+  });
+  registerWorker(broker, "workerGamma");
+  // The gate dedupes by fact digest, so count distinct facts per transition.
+  const distinctFacts = (taskId: string) => [
+    ...new Set(
+      facts
+        .filter((fact) => fact.taskId === taskId)
+        .map((fact) => `${fact.status}|${fact.completedAt}`),
+    ),
+  ];
+  return { broker, facts, distinctFacts };
+}
+
+test("#2239 V1 graph authority records no terminal fact for a blocked approval-required task and one after success", () => {
+  const { broker, facts, distinctFacts } = approvalGraphBroker();
+
+  const task = createWorkerTask(broker, "approval-graph-success", "workerGamma");
+  assert.equal(task.policyContext?.requiresApproval, true);
+  assert.equal(task.status, "blocked");
+  assert.deepEqual(distinctFacts(task.id), []);
+
+  const approved = broker.approveTask(task.id, {
+    actor: { id: "operator-a", kind: "node", role: "operator" },
+    approvalId: "approval-graph-1",
+    reason: "graph fact regression fixture",
+  });
+  assert.equal(approved.status, "queued");
+  assert.deepEqual(distinctFacts(task.id), []);
+
+  broker.claimTask(task.id, "workerGamma");
+  broker.startTask(task.id, "workerGamma");
+  const completed = broker.completeTask(task.id, "workerGamma", { summary: "done" });
+  assert.equal(completed.status, "succeeded");
+
+  const recorded = distinctFacts(task.id);
+  assert.equal(recorded.length, 1);
+  assert.ok(recorded[0].startsWith("succeeded|"));
+  assert.ok(facts.every((fact) => fact.status !== "blocked"));
+});
+
+test("#2239 V1 graph authority records exactly one fact when an approval-required task is rejected", () => {
+  const { broker, facts, distinctFacts } = approvalGraphBroker();
+
+  const task = createWorkerTask(broker, "approval-graph-reject", "workerGamma");
+  assert.equal(task.status, "blocked");
+  assert.deepEqual(distinctFacts(task.id), []);
+
+  const rejected = broker.rejectTaskApproval(task.id, {
+    actor: { id: "operator-a", kind: "node", role: "operator" },
+    approvalId: "approval-graph-rejected",
+    status: "rejected",
+    reason: "graph fact regression fixture",
+  });
+  assert.equal(rejected.status, "canceled");
+
+  const recorded = distinctFacts(task.id);
+  assert.equal(recorded.length, 1);
+  assert.ok(recorded[0].startsWith("canceled|"));
+  assert.ok(facts.every((fact) => fact.status !== "blocked"));
+});

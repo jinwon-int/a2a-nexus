@@ -355,7 +355,6 @@ import {
 
 import { BrokerError, REQUEUE_EXHAUSTED_ERROR_CODE, type BrokerErrorCode } from "./broker-error.js";
 import { canonicalJsonString } from "../shared-state-idempotency-gate-v1.js";
-import { isTerminalStatus } from "./terminal-event-outbox.js";
 import {
   DEFAULT_WORKER_HEARTBEAT_PERSIST_INTERVAL_MS,
   DEFAULT_WORKER_OFFLINE_AFTER_MS,
@@ -3304,7 +3303,7 @@ export class InMemoryA2ABroker {
         // #1504 §4 Slice X: the V1 claim-graph source authority — one fact
         // per terminal transition, deduped by the fact digest. A throw
         // fails the enclosing domain transaction (§5.6 partition).
-        if (this.taskTerminalGraphSourceAuthority && isTerminalStatus(task.status)) {
+        if (this.taskTerminalGraphSourceAuthority && isTerminalTaskStatus(task.status)) {
           this.taskTerminalGraphSourceAuthority({
             taskId: task.id,
             status: task.status,
