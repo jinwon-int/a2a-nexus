@@ -131,6 +131,21 @@ test("routing: high-risk requires three independent reviewers", () => {
   assert.equal(routed.lanes.length, 3);
 });
 
+test("routing: high-risk wraps the two contract lane kinds cyclically by design (#1724)", () => {
+  const routed = routeEvaluation({ input: input({ risk: "high-risk" }), registry: REGISTRY });
+  // The preset contract fixes exactly two lane kinds, so the third high-risk
+  // lane deliberately reuses `content_clinical` instead of inventing a kind.
+  // Independence is reviewer-based (distinct reviewerNodeId + cross-team
+  // expansion), never kind-based; laneIds stay unique regardless.
+  assert.deepEqual(
+    routed.lanes.map((lane) => lane.kind),
+    ["content_clinical", "evidence_adversarial", "content_clinical"],
+  );
+  assert.equal(new Set(routed.lanes.map((lane) => lane.reviewerNodeId)).size, 3, "three distinct reviewers");
+  assert.notEqual(routed.lanes[2].reviewerNodeId, routed.lanes[0].reviewerNodeId);
+  assert.equal(new Set(routed.lanes.map((lane) => lane.laneId)).size, 3, "laneIds stay unique despite the repeated kind");
+});
+
 test("routing fails closed when no independent quorum exists (self-review impossible)", () => {
   const soloRegistry = [{ nodeId: "dungae", team: "T2", formalReviewEligible: true }];
   assert.throws(

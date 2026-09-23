@@ -246,6 +246,13 @@ export function routeEvaluation({ input: rawInput, registry }) {
         ? TEAM_BROKER_INVARIANT.team1
         : TEAM_BROKER_INVARIANT.team2;
 
+  // #1724 gap (c): the preset contract pins exactly two lane kinds, so a
+  // high-risk quorum of 3 wraps them cyclically and the third lane reuses
+  // `content_clinical`. This is deliberate. Lane kinds classify review focus;
+  // reviewer independence comes from distinct reviewerNodeIds (enforced by
+  // `reviewer_duplicate` above) plus cross-team expansion, never from kind
+  // uniqueness. `laneId` embeds the reviewer node id, so lanes stay uniquely
+  // addressable even when the kind repeats.
   const laneKinds = NCLEX_CONTENT_PR_PRESET_V1.lanes;
   return {
     brokerOfRecord,

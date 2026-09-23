@@ -63,6 +63,12 @@ manifest 값에 바인딩한다. manifest를 RFC 8785(JCS)로 정규화해 SHA-2
 - `evidence_adversarial`: 근거-주장 정합성, 라이선스·유사도, 단서 누출,
   응시자 화면·렌더링, 게이트 재현.
 
+레인 kind는 위 두 종으로 계약 고정돼 있다. 고위험 quorum 3은 두 kind를 입력
+순서대로 순환 배정하므로 세 번째 레인은 `content_clinical`을 재사용한다 — 이는
+의도된 설계다. 독립성은 kind 고유성이 아니라 서로 다른 reviewer 구조 강제와
+cross-team 확대로 보장되며, `laneId`가 reviewer 노드 ID를 포함하므로 kind가
+겹쳐도 세 레인은 고유하게 식별된다(#1724 갭 (c) 문서화).
+
 예산 기본값(#1518 계약 재사용): correction generation 1, reviewer run 2.
 
 ## Receipt와 merge-ready
