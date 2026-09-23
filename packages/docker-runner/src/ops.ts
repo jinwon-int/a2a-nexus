@@ -241,7 +241,16 @@ function evaluateTaskRoot(
   return { expiredDirs, recentDirs, skippedDirs };
 }
 
-export async function doctor(config: RunnerConfig): Promise<DoctorReport> {
+export interface DoctorOptions {
+  /**
+   * Env merged by the CLI (env file included). Forwarded to GitHub patch
+   * readiness so an env-file-only invalid A2A_CLAUDE_EFFORT is reported as
+   * "invalid" instead of "unset"; defaults to process.env.
+   */
+  env?: NodeJS.ProcessEnv;
+}
+
+export async function doctor(config: RunnerConfig, options: DoctorOptions = {}): Promise<DoctorReport> {
   // #2083: independent probes run concurrently (the git-backed revision check
   // used to serialize four spawnSync calls ahead of every other probe).
   const [runnerRevision, docker, podman, taskRoot, secretMount, extraMounts, secretMountReadability] =
@@ -263,7 +272,7 @@ export async function doctor(config: RunnerConfig): Promise<DoctorReport> {
   const baseImage = (engine === "docker" ? docker : podman).status === "ok"
     ? await checkBaseImage(engine, config.image)
     : { status: "fail" as const, message: "no container engine available for base image check", detail: { image: config.image } };
-  const githubPatch = checkGitHubPatchReadiness(config, { engine });
+  const githubPatch = checkGitHubPatchReadiness(config, { engine, env: options.env });
   const engineReady = docker.status === "ok" || podman.status === "ok";
   const checks = [runnerRevision, taskRoot, secretMount, extraMounts, secretMountReadability, baseImage, githubPatch];
   const claudeCredentialFreshness = config.commandProfile === "claude-code"

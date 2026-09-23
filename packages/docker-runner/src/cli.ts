@@ -28,8 +28,11 @@ async function main(): Promise<void> {
   }
 
   if (command === "doctor") {
-    const config = await loadConfig(loadCliEnv({ A2A_DOCKER_RUNNER_SKIP_ENGINE_DETECT: "1" }));
-    console.log(JSON.stringify(await doctor(config), null, 2));
+    // Pass the merged env (env file included) so doctor can tell an env-file-only
+    // invalid A2A_CLAUDE_EFFORT apart from an unset one (#2238).
+    const env = loadCliEnv({ A2A_DOCKER_RUNNER_SKIP_ENGINE_DETECT: "1" });
+    const config = await loadConfig(env);
+    console.log(JSON.stringify(await doctor(config, { env }), null, 2));
     return;
   }
 
