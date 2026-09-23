@@ -3,7 +3,7 @@
 // without a bespoke projection. Keyed on the top-level task.parentRoundId, which
 // normalizeTaskRecord guarantees is populated even for payload-only dispatches.
 
-import type { TaskRecord, TaskStatus } from "./types.js";
+import { TERMINAL_TASK_STATUSES, type TaskRecord, type TaskStatus, type TerminalTaskStatus } from "./types.js";
 
 // Must enumerate every TaskStatus: byStatus is seeded from this list, so a
 // missing state would leave its counter undefined and yield NaN on increment.
@@ -18,7 +18,7 @@ const TASK_STATUSES: readonly TaskStatus[] = [
 ];
 
 /** Terminal lane states — a lane in one of these has finished for the round. */
-const TERMINAL_STATUSES: ReadonlySet<TaskStatus> = new Set<TaskStatus>(["succeeded", "failed", "canceled"]);
+const TERMINAL_STATUSES: ReadonlySet<TaskStatus> = new Set<TaskStatus>(TERMINAL_TASK_STATUSES);
 const MAX_PARENT_AGGREGATE_REPORT_ITEMS = 50;
 const MAX_EXACT_MISSING_ORDER_SCAN = 1000;
 
@@ -83,7 +83,7 @@ export interface RoundParentAggregateFailureReason {
 export interface RoundParentAggregatePendingLane {
   taskId: string;
   worker: string;
-  status: Exclude<TaskStatus, "succeeded" | "failed" | "canceled">;
+  status: Exclude<TaskStatus, TerminalTaskStatus>;
   reasonCode: "mobile_no_live_queued" | "queued_unclaimed" | "in_progress" | "blocked" | "pending_non_terminal";
 }
 
@@ -310,7 +310,7 @@ function summarizePendingLanes(tasks: readonly TaskRecord[]): RoundParentAggrega
       return {
         taskId: task.id,
         worker,
-        status: task.status as Exclude<TaskStatus, "succeeded" | "failed" | "canceled">,
+        status: task.status as Exclude<TaskStatus, TerminalTaskStatus>,
         reasonCode: pendingReasonCode(task.status, worker),
       };
     });

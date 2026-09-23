@@ -23,6 +23,8 @@
  *    implicit or absent.
  */
 
+import type { SettledTaskStatus } from "./types.js";
+
 // ---------------------------------------------------------------------------
 // Canonical metadata field interfaces
 // ---------------------------------------------------------------------------
@@ -241,8 +243,12 @@ export interface TerminalBriefProjectionMetadata {
   childWorkerId?: string;
 
   // ---- Terminal outcome ----
-  /** Terminal status. Must be one of succeeded, failed, canceled, blocked. */
-  status: "succeeded" | "failed" | "canceled" | "blocked";
+  /**
+   * Settled Terminal Brief outcome (#2239): `succeeded`, `failed` or
+   * `canceled` (terminal) or `blocked` (parked awaiting operator approval,
+   * non-terminal). Canonical set: `SETTLED_TASK_STATUSES` in `core/types.ts`.
+   */
+  status: SettledTaskStatus;
   /** Sanitised outcome summary (max 500 chars). */
   summary?: string;
   /** Sanitised task brief (max 160 chars). */

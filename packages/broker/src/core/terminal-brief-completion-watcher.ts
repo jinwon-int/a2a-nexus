@@ -1,7 +1,8 @@
+import { SETTLED_TASK_STATUSES } from "./types.js";
 import type {
   TerminalTaskOutboxEvent,
   TerminalTaskReceiptStatus,
-  TerminalTaskStatus,
+  SettledTaskStatus,
 } from "./terminal-event-outbox.js";
 import {
   classifyOutboxRows,
@@ -40,7 +41,7 @@ export interface TerminalBriefCompletionWatcherOptions {
 export interface TerminalBriefCompletionLane {
   worker: string;
   taskId?: string;
-  status?: TerminalTaskStatus;
+  status?: SettledTaskStatus;
   state: TerminalBriefCompletionLaneState;
   evidenceUrl?: string;
   receiptStatus?: TerminalTaskReceiptStatus;
@@ -119,7 +120,7 @@ const APPROVAL_SENSITIVE_ACTIONS_EXCLUDED = [
 ];
 
 const HTTPS_URL_RE = /^https:\/\/[^\s]+$/;
-const TERMINAL_STATUSES = new Set<TerminalTaskStatus>(["succeeded", "failed", "canceled", "blocked"]);
+const SETTLED_STATUSES = new Set<SettledTaskStatus>(SETTLED_TASK_STATUSES);
 const PROVIDER_ONLY_RECEIPT_STATUSES = new Set<TerminalTaskReceiptStatus>([
   "accepted",
   "started",
@@ -289,7 +290,7 @@ export function renderTerminalBriefCompletionPacketMarkdown(packet: TerminalBrie
 function normalizeEvents(events: TerminalTaskOutboxEvent[], parentRoundId?: string): TerminalTaskOutboxEvent[] {
   return events
     .filter((event) => event.kind === "task.terminal")
-    .filter((event) => TERMINAL_STATUSES.has(event.payload.status))
+    .filter((event) => SETTLED_STATUSES.has(event.payload.status))
     .filter((event) => !parentRoundId || event.payload.parentRoundId === parentRoundId)
     .slice()
     .sort((a, b) => {
@@ -428,7 +429,7 @@ function nextStepForDecision(decision: TerminalBriefCompletionDecision): string 
   return "wait for remaining worker Terminal Brief completion events";
 }
 
-function nextActionForLane(state: TerminalBriefCompletionLaneState, status?: TerminalTaskStatus): string {
+function nextActionForLane(state: TerminalBriefCompletionLaneState, status?: SettledTaskStatus): string {
   if (state === "ready") return "include lane in broker finalizer closeout candidate";
   if (state === "needs_evidence") return "recover PR/Done evidence before closeout";
   if (state === "conflict") return "dedupe or reconcile conflicting Terminal Brief evidence";

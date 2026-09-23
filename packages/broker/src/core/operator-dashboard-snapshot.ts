@@ -1,4 +1,4 @@
-import type { BrokerDashboard, TaskDiagnosticReport, TaskKind, TaskRecord, TaskStatus } from "./types.js";
+import { TERMINAL_TASK_STATUSES, type BrokerDashboard, type TaskDiagnosticReport, type TaskKind, type TaskRecord, type TaskStatus } from "./types.js";
 
 /**
  * Precomputed diagnostics shared between the dashboard snapshot and the alert
@@ -90,7 +90,7 @@ export function buildOperatorDashboardSnapshot(input: {
 }): OperatorDashboardSnapshot {
   const tasks = input.broker.listTasks();
   const byStatus = { ...input.dashboard.queue.byStatus } as Record<TaskStatus, number>;
-  const terminalStatuses = new Set<TaskStatus>(["succeeded", "failed", "canceled"]);
+  const terminalStatuses: ReadonlySet<TaskStatus> = new Set<TaskStatus>(TERMINAL_TASK_STATUSES);
   const activeStatuses = new Set<TaskStatus>(["blocked", "queued", "claimed", "running"]);
   const attentionItems: OperatorAttentionItem[] = [];
   const diagnosticsOptions = {

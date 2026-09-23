@@ -11,7 +11,7 @@ import { buildTerminalBriefFinalCountCloseoutCandidate } from "./terminal-brief-
 import type {
   TerminalTaskOutboxEvent,
   TerminalTaskReceiptStatus,
-  TerminalTaskStatus,
+  SettledTaskStatus,
 } from "./terminal-event-outbox.js";
 
 // ---------------------------------------------------------------------------
@@ -22,7 +22,7 @@ const NOW = "2026-05-20T11:30:00.000Z";
 
 function eventFor(
   worker: string,
-  status: TerminalTaskStatus,
+  status: SettledTaskStatus,
   options: {
     taskId?: string;
     receiptStatus?: TerminalTaskReceiptStatus;

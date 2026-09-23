@@ -8,7 +8,7 @@ import {
 import type {
   TerminalTaskOutboxEvent,
   TerminalTaskReceiptStatus,
-  TerminalTaskStatus,
+  SettledTaskStatus,
 } from "./terminal-event-outbox.js";
 
 const NOW = "2026-05-18T08:30:00.000Z";
@@ -17,7 +17,7 @@ const RECENT_CUTOFF_MS = Date.parse("2026-05-10T00:00:00.000Z");
 
 function eventFor(
   worker: string,
-  status: TerminalTaskStatus,
+  status: SettledTaskStatus,
   options: {
     taskId?: string;
     receiptStatus?: TerminalTaskReceiptStatus;

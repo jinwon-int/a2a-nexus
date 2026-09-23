@@ -1,4 +1,4 @@
-import type { TaskKind, TaskRecord, TaskStatus } from "./types.js";
+import { TERMINAL_TASK_STATUSES, type TaskKind, type TaskRecord, type TaskStatus } from "./types.js";
 import {
   analyzeTerminalOutboxBacklogRisk,
   type BacklogRiskLevel,
@@ -7,7 +7,7 @@ import {
   type TerminalOutboxBacklogThresholds,
 } from "./terminal-outbox-backlog-risk.js";
 
-const TERMINAL_STATUSES = new Set<TaskStatus>(["succeeded", "failed", "canceled"]);
+const TERMINAL_STATUSES: ReadonlySet<TaskStatus> = new Set<TaskStatus>(TERMINAL_TASK_STATUSES);
 const TASK_STATUSES: TaskStatus[] = ["blocked", "queued", "claimed", "running", "succeeded", "failed", "canceled"];
 const GITHUB_URL_RE = /^https:\/\/github\.com\/[A-Za-z0-9_.-]+\/[A-Za-z0-9_.-]+\/(?:pull|issues|tree)\/[^\s)\]}>'"]+$/;
 const GITHUB_ISSUE_RE = /^https:\/\/github\.com\/[A-Za-z0-9_.-]+\/[A-Za-z0-9_.-]+\/issues\/\d+(?:#issuecomment-\d+)?$/;

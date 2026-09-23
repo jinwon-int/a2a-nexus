@@ -11,14 +11,14 @@ import {
 } from "./terminal-brief-sidecar-integration-rehearsal.js";
 import type {
   TerminalTaskOutboxEvent,
-  TerminalTaskStatus,
+  SettledTaskStatus,
 } from "./terminal-event-outbox.js";
 
 const NOW = "2026-05-18T11:00:00.000Z";
 
 function eventFor(
   worker: string,
-  status: TerminalTaskStatus,
+  status: SettledTaskStatus,
   options: {
     taskId?: string;
     progress?: number;

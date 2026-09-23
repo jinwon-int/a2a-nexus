@@ -1,19 +1,31 @@
 // Terminal-status predicates and task diagnostic-status derivation extracted
 // from broker.ts. Pure functions over status enums plus task timing; they hold
 // no broker state.
+import { SETTLED_TASK_STATUSES, TERMINAL_TASK_STATUSES } from "./types.js";
 import type {
   A2AExchangeState,
   ChangeProposal,
+  SettledTaskStatus,
   TaskDiagnosticStatus,
   TaskRecord,
+  TerminalTaskStatus,
 } from "./types.js";
 
 export function isTerminalExchangeStatus(status: A2AExchangeState["status"]): boolean {
   return status === "completed" || status === "failed";
 }
 
-export function isTerminalTaskStatus(status: TaskRecord["status"]): boolean {
-  return status === "succeeded" || status === "failed" || status === "canceled";
+export function isTerminalTaskStatus(status: TaskRecord["status"]): status is TerminalTaskStatus {
+  return (TERMINAL_TASK_STATUSES as readonly string[]).includes(status);
+}
+
+/**
+ * Settled-status predicate (issue #2239): terminal statuses plus `blocked`
+ * (parked awaiting operator approval). Reporting/closeout sites use this;
+ * lifecycle gates must use {@link isTerminalTaskStatus} instead.
+ */
+export function isSettledTaskStatus(status: TaskRecord["status"]): status is SettledTaskStatus {
+  return (SETTLED_TASK_STATUSES as readonly string[]).includes(status);
 }
 
 /**

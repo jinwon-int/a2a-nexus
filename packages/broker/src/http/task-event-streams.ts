@@ -5,7 +5,7 @@ import { projectBrokerTask } from "../a2a/task-projection.js";
 import { InMemoryA2ABroker } from "../core/broker.js";
 import type { TaskUpdate } from "../core/broker.js";
 import type { TaskStatusEvent, TerminalTaskEvent } from "../core/task-events.js";
-import type { TaskRecord, TaskStatus } from "../core/types.js";
+import { TERMINAL_TASK_STATUSES, type TaskRecord, type TaskStatus } from "../core/types.js";
 
 import {
   attachSseConnectionCleanup,
@@ -365,5 +365,5 @@ export function handleTaskEventStream(
 }
 
 export function isTerminalSnapshotStatus(status: string): boolean {
-  return status === "succeeded" || status === "failed" || status === "canceled";
+  return (TERMINAL_TASK_STATUSES as readonly string[]).includes(status);
 }

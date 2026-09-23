@@ -2758,7 +2758,7 @@ export class InMemoryA2ABroker {
   private emitTaskAttemptRecord(task: TaskRecord): void {
     const store = this.taskAttemptRecordStore;
     if (store === undefined) return;
-    if (task.status !== "succeeded" && task.status !== "failed" && task.status !== "canceled") return;
+    if (!isTerminalTaskStatus(task.status)) return;
     try {
       const outcome = recordBrokerTerminalAttempt(store, {
         localTaskId: task.id,

@@ -1,4 +1,4 @@
-import type { A2AExchangeIntent, TaskOrigin, TaskStatus } from "./types.js";
+import type { A2AExchangeIntent, SettledTaskStatus, TaskOrigin, TaskStatus } from "./types.js";
 
 /**
  * Task lifecycle event kinds emitted by the broker. Mirrors the task-scoped
@@ -58,7 +58,13 @@ export interface TaskStatusEvent {
   metadata: TaskStatusEventMetadata;
 }
 
-export type TerminalTaskEventStatus = "succeeded" | "failed" | "canceled" | "blocked";
+/**
+ * Statuses carried by persisted terminal-task events. Alias of the canonical
+ * settled set (#2239): `blocked` survives here only because older brokers
+ * persisted such rows; new notifications are minted for terminal statuses
+ * only (see NOTIFIABLE_TERMINAL_STATUSES in task-event-stream.ts).
+ */
+export type TerminalTaskEventStatus = SettledTaskStatus;
 
 export interface TerminalTaskTestSummary {
   status?: "passed" | "failed" | "skipped" | "unknown";

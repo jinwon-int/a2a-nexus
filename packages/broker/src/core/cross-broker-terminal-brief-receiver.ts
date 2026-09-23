@@ -3,9 +3,7 @@ import { randomUUID } from "node:crypto";
 import { buildCrossBrokerSenderProof } from "../a2a/cross-broker-sender-proof.js";
 import type { CrossBrokerTerminalBriefProjectionRequest } from "./cross-broker-terminal-brief.js";
 import type { TerminalTaskOutboxEvent, TerminalTaskEventPayload } from "./terminal-event-outbox.js";
-import type { TaskStatus } from "./types.js";
-
-const TERMINAL_STATUSES = new Set<TaskStatus>(["succeeded", "failed", "canceled", "blocked"]);
+import { isSettledTaskStatus } from "./broker-status-predicates.js";
 
 /**
  * Destination ack codes that are terminal for the individual event: retrying
@@ -144,7 +142,7 @@ export function isParentOwnedCrossBrokerTerminalPayload(
   notificationOwnership: NonNullable<TerminalTaskEventPayload["notificationOwnership"]>;
   crossBrokerHandoff: NonNullable<TerminalTaskEventPayload["crossBrokerHandoff"]>;
 } {
-  if (!TERMINAL_STATUSES.has(payload.status)) return false;
+  if (!isSettledTaskStatus(payload.status)) return false;
   if (!payload.parentRoundId) return false;
   if (payload.notificationOwnership?.scope !== "parent-broker-only") return false;
   if (payload.notificationOwnership.ownerBrokerId !== config.destinationBrokerId) return false;

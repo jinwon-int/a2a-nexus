@@ -1,6 +1,7 @@
 import { BrokerError, type InMemoryA2ABroker } from "../core/broker.js";
 import { PushNotificationConfigStore, PushConfigError, redactPushConfigSecrets } from "./push-notification-config.js";
 import { assertRequesterCanSubscribeToTask, type RequesterIdentity } from "../core/request-security.js";
+import { isTerminalTaskStatus } from "../core/broker-status-predicates.js";
 import type { A2AExchangeVia, TaskListFilters, TaskRecord } from "../core/types.js";
 import type { AgentCard, AgentCapabilities } from "./agent-card.js";
 import { PEER_STATUS_VERBOSE_SCOPE, PeerStatusService, type PeerStatusRequest } from "./peer-status.js";
@@ -452,7 +453,7 @@ export function executeA2AJsonRpc(
         // TaskNotCancelableError. The broker core keeps terminal cancels
         // idempotent for internal multi-worker flows (superseded sibling
         // lanes); the A2A adapter enforces the spec error at the boundary.
-        if (cancelTarget.status === "succeeded" || cancelTarget.status === "failed" || cancelTarget.status === "canceled") {
+        if (isTerminalTaskStatus(cancelTarget.status)) {
           throw new BrokerError("invalid_transition", `task ${taskId} is terminal (${cancelTarget.status})`);
         }
         const actor = deriveActor(params, effectiveDefaultAgentIdentity(options), options.enforceRequesterIdentity);
@@ -914,7 +915,7 @@ export function executeSendMessage(
     if (!referenced) {
       throw new BrokerError("not_found", `task not found: ${a2aTaskId}`);
     }
-    if (referenced.status === "succeeded" || referenced.status === "failed" || referenced.status === "canceled") {
+    if (isTerminalTaskStatus(referenced.status)) {
       throw new BrokerError("unsupported_operation", `task ${a2aTaskId} is terminal (${referenced.status})`);
     }
     if (exchangeId && exchangeId !== referenced.exchangeId) {
@@ -1334,7 +1335,7 @@ export function resolveSubscribeToTaskTarget(
   if (!task) {
     throw new BrokerError("not_found", "task not found");
   }
-  if (task.status === "succeeded" || task.status === "failed" || task.status === "canceled") {
+  if (isTerminalTaskStatus(task.status)) {
     throw new BrokerError("unsupported_operation", `task ${taskId} is terminal (${task.status})`);
   }
   if (options.enforceRequesterIdentity) {

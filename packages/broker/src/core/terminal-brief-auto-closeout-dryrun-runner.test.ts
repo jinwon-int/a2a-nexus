@@ -8,7 +8,7 @@ import {
   type TerminalBriefAutoCloseoutDryRunRunnerInput,
 } from "./terminal-brief-auto-closeout-dryrun-runner.js";
 import type { AutoCloseoutPolicyMode } from "./terminal-brief-auto-closeout-planner.js";
-import type { TerminalTaskOutboxEvent, TerminalTaskStatus } from "./terminal-event-outbox.js";
+import type { TerminalTaskOutboxEvent, SettledTaskStatus } from "./terminal-event-outbox.js";
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -19,7 +19,7 @@ const RUN_ID = "a2a-team1-auto-closeout-dryrun-wiring-20260520T174311Z";
 
 function eventFor(
   worker: string,
-  status: TerminalTaskStatus,
+  status: SettledTaskStatus,
   options: {
     taskId?: string;
     progress?: number;
