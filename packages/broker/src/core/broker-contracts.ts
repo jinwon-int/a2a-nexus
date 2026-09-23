@@ -302,6 +302,7 @@ export type TaskUpdateReason =
   | "checkpointed"
   | "resumed"
   | "reassigned"
+  | "rejudged"
   | "requeued"
   | "dead_lettered"
   | "wake_planned"

@@ -1,6 +1,7 @@
 // Task decision write routes — the actor/operator-gated task mutations that do
 // NOT require worker HTTP-signature verification: POST
-// /tasks/:id/{resume,approve,reject-approval,cancel,reassign}. Extracted from the
+// /tasks/:id/{resume,approve,reject-approval,cancel,reassign,rejudge-lane}.
+// Extracted from the
 // server request closure into explicit-context handlers (continuing the #645
 // dispatcher migration). The worker-signed lifecycle actions (claim/start/...)
 // live separately because they need the server's signature-route closures.
@@ -19,6 +20,7 @@ import type {
   TaskApprovalRequest,
   TaskApprovalTerminalRequest,
   TaskCancelRequest,
+  TaskLaneRejudgeRequest,
   TaskRecord,
   TaskReassignRequest,
 } from "../core/types.js";
@@ -126,6 +128,14 @@ export async function handleReassignTaskRequest(ctx: TaskScopedContext): Promise
   sendTask(ctx, task);
 }
 
+/** POST /tasks/:id/rejudge-lane — operator fast-lane re-judgment (#1601, hub/operator). */
+export async function handleRejudgeLaneTaskRequest(ctx: TaskScopedContext): Promise<void> {
+  const body = await readActorGatedBody<TaskLaneRejudgeRequest>(ctx, "task.rejudge-lane", true);
+  const task = ctx.broker.rejudgeLaneTask(ctx.taskId, body);
+  await awaitDurablePersistenceAck(ctx.stateStore);
+  sendTask(ctx, task);
+}
+
 /** Route dispatcher for the actor/operator-gated task decision routes. */
 export async function handleTasksDecisionRouteIfMatched(
   ctx: TasksDecisionRouteContext,
@@ -152,6 +162,9 @@ export async function handleTasksDecisionRouteIfMatched(
       return true;
     case "reassign":
       await handleReassignTaskRequest(scoped);
+      return true;
+    case "rejudge-lane":
+      await handleRejudgeLaneTaskRequest(scoped);
       return true;
     default:
       return false;

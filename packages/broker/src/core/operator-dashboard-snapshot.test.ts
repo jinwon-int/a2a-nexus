@@ -98,3 +98,78 @@ test("buildOperatorDashboardSnapshot projects stuck, dead-letter, and requeue at
   assert.equal(snapshot.attentionItems[0].severity, "critical");
   assert.equal(snapshot.recoverySummary.retry.maxRequeueAttempts, 3);
 });
+
+test("buildOperatorDashboardSnapshot surfaces lane counts, re-judgments, and lane context on attention items (#1601/#2208)", () => {
+  const fast = task({ id: "fast", status: "queued" });
+  fast.laneAssignment = { version: "fast-lane.v1", mode: "shadow", decision: "fast", reasonCodes: ["all_fast_conditions_met"] };
+  const full = task({ id: "full", status: "running", claimedBy: "worker-a", targetNodeId: "worker-a" });
+  full.laneAssignment = { version: "fast-lane.v1", mode: "shadow", decision: "full", reasonCodes: ["multi_worker_marker_present"] };
+  const legacy = task({ id: "legacy", status: "queued" });
+  const dead = task({ id: "dead", status: "failed", error: { code: "exceeded_requeue_limit", message: "too stale" }, requeueCount: 3, completedAt: "2026-06-16T00:02:00.000Z" });
+  dead.laneAssignment = { version: "fast-lane.v1", mode: "shadow", decision: "fast", reasonCodes: ["all_fast_conditions_met"] };
+  dead.laneRejudgment = { at: "2026-06-16T00:01:00.000Z", actorId: "hub-1", from: "fast", to: "full", reasonCode: "multi_worker_marker_present", note: "prod-touching follow-up" };
+  const olderRejudged = task({ id: "older", status: "queued" });
+  olderRejudged.laneAssignment = { version: "fast-lane.v1", mode: "shadow", decision: "fast", reasonCodes: ["all_fast_conditions_met"] };
+  olderRejudged.laneRejudgment = { at: "2026-06-16T00:00:30.000Z", actorId: "hub-2", from: "fast", to: "full", reasonCode: "sensitive_marker_present" };
+
+  const tasks = [fast, full, legacy, dead, olderRejudged];
+  const reports = new Map(tasks.map((entry) => [entry.id, diagnostic({
+    taskId: entry.id,
+    diagnosticStatus: "active",
+    currentStatusDurationMs: 10_000,
+    brokerHints: { staleLease: false, staleWorker: false, cancellationRequested: false, requeued: false },
+  })]));
+
+  const snapshot = buildOperatorDashboardSnapshot({
+    broker: { listTasks: () => tasks, getTaskDiagnostics: (id) => reports.get(id)! },
+    dashboard,
+    staleReaper: { olderThanSec: 60, maxRequeueAttempts: 3 },
+  });
+
+  assert.deepEqual(snapshot.laneSummary, {
+    assigned: 4,
+    byDecision: { fast: 3, full: 1 },
+    rejudged: 2,
+    recentRejudgments: [
+      { taskId: "dead", status: "failed", at: "2026-06-16T00:01:00.000Z", actorId: "hub-1", from: "fast", to: "full", reasonCode: "multi_worker_marker_present", note: "prod-touching follow-up" },
+      { taskId: "older", status: "queued", at: "2026-06-16T00:00:30.000Z", actorId: "hub-2", from: "fast", to: "full", reasonCode: "sensitive_marker_present" },
+    ],
+  });
+  const deadLetter = snapshot.attentionItems.find((item) => item.taskId === "dead");
+  assert.equal(deadLetter?.laneDecision, "fast");
+  assert.equal(deadLetter?.laneRejudgedTo, "full");
+});
+
+test("lane summary bounds recentRejudgments to the newest 10 entries", () => {
+  const tasks: TaskRecord[] = [];
+  for (let index = 0; index < 12; index += 1) {
+    const entry = task({ id: `t-${String(index).padStart(2, "0")}`, status: "queued" });
+    entry.laneAssignment = { version: "fast-lane.v1", mode: "shadow", decision: "fast", reasonCodes: ["all_fast_conditions_met"] };
+    entry.laneRejudgment = {
+      at: `2026-06-16T00:00:${String(index).padStart(2, "0")}.000Z`,
+      actorId: "hub-1",
+      from: "fast",
+      to: "full",
+      reasonCode: "all_fast_conditions_met",
+    };
+    tasks.push(entry);
+  }
+  const reports = new Map(tasks.map((entry) => [entry.id, diagnostic({
+    taskId: entry.id,
+    diagnosticStatus: "active",
+    currentStatusDurationMs: 10_000,
+    brokerHints: { staleLease: false, staleWorker: false, cancellationRequested: false, requeued: false },
+  })]));
+
+  const snapshot = buildOperatorDashboardSnapshot({
+    broker: { listTasks: () => tasks, getTaskDiagnostics: (id) => reports.get(id)! },
+    dashboard,
+    staleReaper: { olderThanSec: 60, maxRequeueAttempts: 3 },
+  });
+
+  assert.equal(snapshot.laneSummary.assigned, 12);
+  assert.equal(snapshot.laneSummary.rejudged, 12);
+  assert.equal(snapshot.laneSummary.recentRejudgments.length, 10);
+  assert.equal(snapshot.laneSummary.recentRejudgments[0].taskId, "t-11");
+  assert.equal(snapshot.laneSummary.recentRejudgments[9].taskId, "t-02");
+});
