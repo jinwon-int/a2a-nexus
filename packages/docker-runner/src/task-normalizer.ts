@@ -1,4 +1,5 @@
 import type { NormalizedRunnerTask, RunnerDiffHygieneScopeDriftEvidence, RunnerDiffHygieneScopeMode, RunnerRepo, RunnerTask } from "./types.js";
+import { buildIssueStartCommentBody } from "./github-evidence.js";
 import { BOOTSTRAP_ALLOWED_TRACKED_ENV_VAR, parseBootstrapAllowedTrackedEnv } from "./script-generators.js";
 
 const GITHUB_REPO_SHORTHAND = /^[A-Za-z0-9_.-]+\/[A-Za-z0-9_.-]+$/;
@@ -365,7 +366,7 @@ function buildDefaultPatchCommands(task: RunnerTask, primaryRepo: RunnerRepo): s
   ].join("\n");
 
   const startCommentBlock = task.issueUrl ? [
-    `printf 'Start\\n' > /work/artifacts/issue-start-comment.md`,
+    shellWriteTextFile(buildIssueStartCommentBody(task), "/work/artifacts/issue-start-comment.md"),
     `if ! command -v gh >/dev/null 2>&1; then`,
     `  printf 'error=gh_unavailable_start_comment_required\\n' | tee -a /work/artifacts/summary.txt`,
     `  printf 'GitHub literal Start comment is required before patch execution, but gh is unavailable.\\n' | tee /work/artifacts/issue-start-comment-output.txt`,

@@ -1,5 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
+import { buildIssueStartCommentBody } from "./github-evidence.js";
 import { buildToolchainDetectedCommandsForRepo, defaultCheckoutPath, isPatchMode, normalizeRepoUrl, normalizeTask } from "./task-normalizer.js";
 
 test("normalizes GitHub shorthand repo URLs", () => {
@@ -226,7 +227,14 @@ test("generates PR-producing default commands for github-propose-patch mode with
   assert.ok(pipeline.includes("gh pr create"), "Expected PR create step");
   assert.ok(pipeline.includes("--body-file /work/artifacts/pr-body.md"), "Expected PR body file use");
   assert.ok(pipeline.includes("Closes #5"), "Expected same-repo closing keyword in PR body");
-  assert.ok(pipeline.includes("printf 'Start\\n' > /work/artifacts/issue-start-comment.md"), "Expected literal Start issue comment body");
+  const startBody = buildIssueStartCommentBody(task);
+  assert.ok(startBody.startsWith("Start\n"), "Expected literal Start first line");
+  const startB64 = Buffer.from(startBody, "utf8").toString("base64");
+  assert.ok(pipeline.includes(`printf '%s' '${startB64}' | base64 -d > /work/artifacts/issue-start-comment.md`), "Expected Start comment body with claimant marker written via base64");
+  assert.ok(!pipeline.includes("printf 'Start\\n' > /work/artifacts/issue-start-comment.md"), "Bare Start body must be replaced");
+  assert.ok(pipeline.includes("if ! command -v gh >/dev/null 2>&1; then"), "Expected unchanged gh availability check");
+  assert.ok(pipeline.includes("--body-file /work/artifacts/issue-start-comment.md 2>&1 | tee /work/artifacts/issue-start-comment-output.txt"), "Expected unchanged Start comment post");
+  assert.ok(pipeline.includes(`START_COMMENT_URL="$(grep -Eo 'https://github.com/[^[:space:]]+/issues/[0-9]+#issuecomment-[0-9]+' /work/artifacts/issue-start-comment-output.txt | tail -n 1 || true)"`), "Expected unchanged Start URL extraction");
   assert.ok(pipeline.includes("/work/artifacts/issue-start-comment.md"), "Expected start comment artifact");
   assert.ok(pipeline.indexOf("issue-start-comment.md") < pipeline.indexOf("patch-command.sh"), "Expected start comment before patch execution");
   assert.ok(pipeline.includes("error=gh_unavailable_start_comment_required"), "Expected gh-missing start comment to fail closed");

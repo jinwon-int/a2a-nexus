@@ -34,6 +34,11 @@ replay-suppression, redaction, and non-ACK boundary rules that make GitHub comme
 | `done`  | A non-PR task completed successfully             | Accompanies terminal `done` result|
 | `block` | The task was blocked (unsafe, impossible, etc.)  | Accompanies terminal `block` result|
 
+The runner's issue `start` comment keeps the literal first line `Start` and now carries an
+`<!-- a2a:github-evidence:v1 task=<id> issue=<repo#N> outcome=start -->` marker plus a one-line
+sanitized requester/task summary, so claimants are identifiable when sessions share one GitHub
+account. Dedupe lookups by marker are unaffected because the outcome is part of the marker.
+
 ## Idempotency and replay suppression
 
 Every evidence comment carries an **evidence key** derived from the task manifest:
