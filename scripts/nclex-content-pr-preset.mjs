@@ -8,7 +8,8 @@
  *
  * Boundaries (fail-closed by construction):
  * - pure and offline: no network, no GitHub/provider/broker calls — this
- *   module only computes routing, readiness, and comment projections;
+ *   module only computes routing, readiness, refs-manifest digest binding,
+ *   and comment projections;
  * - reviewers never touch the branch; the broker/finalizer judges readiness,
  *   and a separate GitHub-privileged account merges without bypassing branch
  *   protection;
@@ -19,6 +20,9 @@
  * binding, signed review receipts, and the bounded budget defaults
  * (maxCorrectionGenerations 1, maxReviewerRuns 2).
  */
+import { createHash } from "node:crypto";
+
+import { canonicalizeJson } from "./lib/a2a-offline-verify.mjs";
 import { TEAM_BROKER_INVARIANT, hasText } from "./a2a-routing-shared.mjs";
 
 export const NCLEX_CONTENT_PR_PRESET_V1 = Object.freeze({
@@ -132,6 +136,49 @@ export function validatePresetInput(input) {
     refsManifestSha256: String(input.refsManifestSha256).toLowerCase(),
     risk: input.risk,
   };
+}
+
+/**
+ * Canonical SHA-256 of a refs manifest (#1724 gap b): digest over the RFC 8785
+ * (JCS) canonicalization of the parsed manifest value — the same canonicalization
+ * convention the signed receipt contract uses for receipt ids — so key order and
+ * whitespace in the published manifest artifact cannot change the digest, while
+ * array order stays significant. Returns lowercase 64-hex, matching the declared
+ * `refsManifestSha256` input field.
+ */
+export function refsManifestDigestSha256(refsManifest) {
+  return createHash("sha256").update(canonicalizeJson(refsManifest), "utf8").digest("hex");
+}
+
+/**
+ * Bind the declared `refsManifestSha256` to the actual refs manifest value
+ * (#1724 gap b): 64-hex format validation alone never proved that the
+ * declaration matches the manifest the reviewer team will read. Fail-closed
+ * with `refs_manifest_invalid` — the code the docs already list as a BLOCK
+ * reason — when the manifest is not a JSON object/array or cannot be
+ * canonicalized, or when its canonical digest differs from the declaration.
+ * `input` is re-validated here (raw form), and the validated input is returned
+ * alongside the recomputed digest so callers can chain into routeEvaluation
+ * without a second validation pass.
+ */
+export function verifyRefsManifest({ input, refsManifest }) {
+  const validated = validatePresetInput(input);
+  if (!isPlainObject(refsManifest) && !Array.isArray(refsManifest)) {
+    fail("refs_manifest_invalid", "refs manifest must be a JSON object or array");
+  }
+  let actual;
+  try {
+    actual = refsManifestDigestSha256(refsManifest);
+  } catch {
+    fail("refs_manifest_invalid", "refs manifest must be a canonicalizable JSON value (RFC 8785)");
+  }
+  if (actual !== validated.refsManifestSha256) {
+    fail("refs_manifest_invalid", "declared refsManifestSha256 does not match the actual refs manifest digest", {
+      declared: validated.refsManifestSha256,
+      actual,
+    });
+  }
+  return { input: validated, refsManifestSha256: actual };
 }
 
 /**

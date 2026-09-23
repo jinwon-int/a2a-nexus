@@ -425,7 +425,7 @@
       "file": "scripts/nclex-content-pr-preset.test.mjs",
       "class": "gate",
       "round": null,
-      "note": "Contract tests for #1724 nclex_content_pr_v1: routing/recusal/quorum, exact-head receipt staleness, merge-ready read model, body-free comment projection, fail-closed fixtures."
+      "note": "Contract tests for #1724 nclex_content_pr_v1: routing/recusal/quorum, exact-head receipt staleness, merge-ready read model, body-free comment projection, fail-closed fixtures, refs-manifest digest binding (gap b: golden JCS digest, key-order freedom vs array-order significance, declared-mismatch and non-canonicalizable fail-closed)."
     },
     {
       "file": "scripts/nclex-content-pr-receipt.test.mjs",
