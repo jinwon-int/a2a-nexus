@@ -4,9 +4,13 @@
 > contract are implemented source-only. Shadow mode changes no task behavior.
 > The two opt-in lightweight flags (Q1 `fastLaneSkipReviewRound`, Q2
 > `fastLaneSingleWorkerFinalize`, #1601/#2208) are implemented source-only,
-> default off; off keeps completion byte-identical. Canary, operational flag
-> enablement, and rollout remain incomplete and require separate approval.
-> Refs #1601.
+> default off; off keeps completion byte-identical. Implemented source-only
+> so far: the stage-3 offline outcome canary (green), the operator lane
+> re-judgment API v1 (fast->full only, observational, audited
+> `task.lane_rejudged`), and the stage-5 offline bench re-measure gate
+> script. Live measurement, operational flag enablement, and rollout remain
+> incomplete and require separate approval per
+> docs/specs/fast-lane-default-expansion-gate.md. Refs #1601, #2208.
 
 ## 목적과 근거
 
@@ -192,16 +196,24 @@ lane 기록 필드는 이 slice에서 broker-owned top-level
 
 현재 shadow 결과는 status, assignment, claim, acceptance, evidence,
 provenance, finalizer, policy enforcement, scheduling, execution 중 어느 것도
-변경하지 않는다. 운영자 재판정 UI/API와 lightweight 동작은 아직 구현되지
-않았다.
+변경하지 않는다. 운영자 재판정 API는 구현되었다 — v1은 fast→full만
+허용하고, 판정은 별도 `laneRejudgment` 기록 + `task.lane_rejudged` audit으로
+남기며 관측적이다(생명주기/스케줄링 불변, 운영자 대시보드에 lane 판정/재판정
+상태 노출). lightweight 동작(Q1/Q2 플래그의 운영 활성화)은 여전히 기본
+off이며 활성화는 별도 승인이 필요하다.
 
 ## 롤아웃 (각 단계 승인)
 
 1. 스펙 확정(완료) → 2. lane 판정+기록만 구현(완료, 동작 변경 없음,
-섀도) → 3. 칼나리로 판정 정확도 검증(미실시) → 4. 경량화 1개씩 opt-in
+섀도) → 3. 칼나리로 판정 정확도 검증(offline canary 구현·green:
+`packages/broker/scripts/fast-lane-outcome-canary.mjs`; 운영 스냅샷 대상
+실행은 별도 승인) → 4. 경량화 1개씩 opt-in
 플래그로 도입(구현 — Q1/Q2 opt-in 2종 #1601/#2208, 기본 off로 완료 동작
 불변; 운영 플래그 활성화는 별도 승인) → 5. 벤치 재측정 + 실패율
-비악화 확인 → 6. 단계적 기본화.
+비악화 확인(offline 게이트 스크립트 구현:
+`packages/broker/scripts/fast-lane-bench-remeasure.mjs`; 측정 자체는 운영자
+별도 승인 단계, 판정 규칙은 `docs/specs/fast-lane-default-expansion-gate.md`)
+→ 6. 단계적 기본화.
 
 ## 성공 지표
 
