@@ -23,6 +23,7 @@ jobs:
   merge-successful-ci-pr:
     name: merge successful CI PR
     runs-on: ubuntu-latest
+    timeout-minutes: 10
     if: >-
       github.event.workflow_run.event == 'pull_request' &&
       github.event.workflow_run.conclusion == 'success'
