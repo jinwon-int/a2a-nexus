@@ -47,7 +47,7 @@ Prints the default NO-GO decision and required gates. Source-public execution is
 ```sh
 node scripts/a2a-source-dryrun-aggregator.mjs \
   --spec docs/dry-run/source-public-dryrun-schema.json \
-  --input fixtures/dry-run/team1-bangtong-dryrun-evidence.json
+  --input fixtures/dry-run/team1-workerGamma-dryrun-evidence.json
 ```
 
 Exits 0 for GO (all gates passed), exits 1 for NO-GO/BLOCK (any gate missing or failing).
@@ -57,7 +57,7 @@ Exits 0 for GO (all gates passed), exits 1 for NO-GO/BLOCK (any gate missing or 
 ```sh
 node scripts/a2a-source-dryrun-aggregator.mjs \
   --spec docs/dry-run/source-public-dryrun-schema.json \
-  --input fixtures/dry-run/team1-bangtong-dryrun-evidence.json \
+  --input fixtures/dry-run/team1-workerGamma-dryrun-evidence.json \
   --format markdown
 ```
 

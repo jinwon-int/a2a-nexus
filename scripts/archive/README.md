@@ -13,7 +13,7 @@ disagreed in practice.
 
 `scripts/run-release-gate.mjs` decides what to skip from the **`archived` flag on
 the manifest entry**, never from the path. A file can sit in this directory and
-still run on every release gate — 18 of them do today. Verify with:
+still run on every release gate — 18 of them did until 2026-09-24 (#2257 B2 set `archived: true` on all of them; `--include-archived` still runs them on demand). Verify with:
 
 ```bash
 node scripts/run-release-gate.mjs --list | grep scripts/archive/
