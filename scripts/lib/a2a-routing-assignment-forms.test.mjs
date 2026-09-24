@@ -181,18 +181,23 @@ describe('buildAssignmentRequest purity and closed shapes', () => {
     assert.equal(failure.ok, false);
     const serialized = JSON.stringify(failure);
     assert.ok(!serialized.includes(secret), 'secret value echoed');
-    // Exact-value check over every string leaf instead of a substring probe:
-    // `serialized.includes(<url literal>)` trips CodeQL
-    // js/incomplete-url-substring-sanitization, and the failure shape is
-    // exactly closed (asserted above), so membership here proves the broker
-    // URL is not echoed without a URL-substring sanitization pattern.
+    // Host-substring probe over every string leaf: the bare hostname literal
+    // carries no scheme, so it cannot trip CodeQL
+    // js/incomplete-url-substring-sanitization (which fires on URL literals
+    // used in `.includes` guards — including array membership checks), and it
+    // subsumes an exact-URL probe: any echo of the broker URL must contain
+    // its host.
     const leafStrings = (function collect(value) {
       if (typeof value === 'string') return [value];
       if (Array.isArray(value)) return value.flatMap(collect);
       if (value && typeof value === 'object') return Object.values(value).flatMap(collect);
       return [];
     })(failure);
-    assert.ok(!leafStrings.includes(brokerUrl), 'broker URL echoed');
+    const brokerHost = 'broker.internal.example';
+    assert.ok(
+      !leafStrings.some((leaf) => leaf.includes(brokerHost)),
+      'broker URL echoed',
+    );
     assert.ok(!serialized.includes('requesterWebhook'), 'unknown host key propagated');
   });
 });
