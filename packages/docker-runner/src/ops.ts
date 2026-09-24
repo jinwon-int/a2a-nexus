@@ -10,7 +10,7 @@ import { promisify } from "node:util";
 const execFileP = promisify(execFile);
 import { join, resolve } from "node:path";
 import type { RunnerConfig, RunnerEngine } from "./types.js";
-import { CLAUDE_CREDENTIALS_FILE_MOUNT_TARGET, projectClaudeCodeEffort, type RunnerClaudeEffortProjection } from "./config.js";
+import { CLAUDE_CREDENTIALS_FILE_MOUNT_TARGET, KNOWN_SERVICE_ENV_FILES, projectClaudeCodeEffort, type RunnerClaudeEffortProjection } from "./config.js";
 import { DEFAULT_PROFILE_MOUNT_PATH, validateOpenClawProfileReadiness } from "./openclaw-profile-readiness.js";
 import type { OpenClawProfileReadinessInput } from "./openclaw-profile-readiness.js";
 
@@ -39,6 +39,8 @@ export interface DoctorReport {
   claudeCredentialFreshness?: OpsCheck;
   /** Deploy-marker validation: checks whether the deployed revision matches an expected deploy marker. */
   deployMarker?: OpsCheck;
+  /** #2267: the service env file the CLI read — missing, or older than another known env file, is a warn. */
+  serviceEnvFile?: OpsCheck;
 }
 
 export interface InstallReport {
@@ -248,6 +250,69 @@ export interface DoctorOptions {
    * "invalid" instead of "unset"; defaults to process.env.
    */
   env?: NodeJS.ProcessEnv;
+  /**
+   * #2267: the service env file path the CLI resolved (flag, env var, or
+   * default). When given, doctor reports whether it exists and whether a
+   * newer known env file (e.g. the live systemd EnvironmentFile) was skipped.
+   */
+  envFile?: string;
+  /** Known env file paths to compare against; defaults to KNOWN_SERVICE_ENV_FILES. */
+  knownEnvFiles?: readonly string[];
+}
+
+export interface ServiceEnvFileCheckOptions {
+  envFile: string;
+  knownEnvFiles?: readonly string[];
+}
+
+/**
+ * #2267: report on the service env file the CLI actually read.
+ *
+ * Fleet nodes were found carrying a stale `/etc/default/openclaw-a2a-worker`
+ * (the CLI default) next to the live `/etc/default/a2a-hermes-worker`; running
+ * `cleanup`/`doctor` without `--env-file` then silently used the stale copy.
+ * Warn when the resolved file is missing or older than another known file.
+ */
+export async function checkServiceEnvFile(options: ServiceEnvFileCheckOptions): Promise<OpsCheck> {
+  const envFile = resolve(options.envFile);
+  const known = (options.knownEnvFiles ?? KNOWN_SERVICE_ENV_FILES)
+    .map((path) => resolve(path))
+    .filter((path) => path !== envFile);
+  const alternates: Array<{ path: string; mtime: string }> = [];
+  for (const path of known) {
+    try {
+      const info = await stat(path);
+      alternates.push({ path, mtime: info.mtime.toISOString() });
+    } catch {
+      // absent alternates are not interesting
+    }
+  }
+
+  let info: Awaited<ReturnType<typeof stat>>;
+  try {
+    info = await stat(envFile);
+  } catch (error) {
+    const detail = { path: envFile, alternates, error: errorMessage(error) };
+    if (alternates.length > 0) {
+      return {
+        status: "warn",
+        message: `service env file not found; process env only was used while another known env file exists — pass --env-file ${alternates[0]!.path} if that is the live one`,
+        detail,
+      };
+    }
+    return { status: "warn", message: "service env file not found; process env only was used", detail };
+  }
+
+  const mtime = info.mtime.toISOString();
+  const newer = alternates.filter((alt) => alt.mtime > mtime);
+  if (newer.length > 0) {
+    return {
+      status: "warn",
+      message: `service env file is older than ${newer[0]!.path}; if that is the live EnvironmentFile pass --env-file ${newer[0]!.path} (or A2A_DOCKER_RUNNER_ENV_FILE)`,
+      detail: { path: envFile, mtime, newerAlternates: newer, alternates },
+    };
+  }
+  return { status: "ok", message: "service env file is the newest known env file", detail: { path: envFile, mtime, alternates } };
 }
 
 export async function doctor(config: RunnerConfig, options: DoctorOptions = {}): Promise<DoctorReport> {
@@ -287,6 +352,13 @@ export async function doctor(config: RunnerConfig, options: DoctorOptions = {}):
     checks.push(deployMarker);
   }
 
+  // #2267: only the CLI knows which env file it resolved; warn-only.
+  let serviceEnvFile: OpsCheck | undefined;
+  if (options.envFile) {
+    serviceEnvFile = await checkServiceEnvFile({ envFile: options.envFile, knownEnvFiles: options.knownEnvFiles });
+    checks.push(serviceEnvFile);
+  }
+
   return {
     ok: engineReady && checks.every((check) => check.status !== "fail"),
     engine,
@@ -301,6 +373,7 @@ export async function doctor(config: RunnerConfig, options: DoctorOptions = {}):
     githubPatch,
     ...(claudeCredentialFreshness ? { claudeCredentialFreshness } : {}),
     ...(deployMarker ? { deployMarker } : {}),
+    ...(serviceEnvFile ? { serviceEnvFile } : {}),
   };
 }
 
