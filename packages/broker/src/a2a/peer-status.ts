@@ -140,8 +140,18 @@ export class PeerStatusService {
        * Default: {@link DEFAULT_WORKER_OFFLINE_AFTER_MS} (90_000 = 90 s).
        */
       workerOfflineAfterMs?: number;
+      /**
+       * Clock source for cache age, rate-limit windows, and the recompute cap.
+       * Default: `Date.now`. Tests inject a fake clock so cache-age assertions
+       * are exact instead of racing the wall clock (#2257 B5).
+       */
+      now?: () => number;
     } = {},
   ) {}
+
+  private now(): number {
+    return (this.options.now ?? Date.now)();
+  }
 
   get cacheTtlMs(): number {
     return this.options.cacheTtlMs ?? DEFAULT_CACHE_TTL_MS;
@@ -187,7 +197,7 @@ export class PeerStatusService {
 
     // Check cache
     const cached = this.cache.get(target);
-    const now = Date.now();
+    const now = this.now();
     if (cached && now - cached.computedAt <= maxCacheAge) {
       return this.buildDefaultResponse(cached.response, now - cached.computedAt, callerId, target);
     }
@@ -338,7 +348,7 @@ export class PeerStatusService {
 
   private checkRateLimit(callerId: string, target: string): PeerStatusError | null {
     const key = `${callerId}:${target}`;
-    const now = Date.now();
+    const now = this.now();
     let bucket = this.rateBuckets.get(key);
 
     if (!bucket || now - bucket.windowStart >= RATE_WINDOW_MS) {
@@ -379,7 +389,7 @@ export class PeerStatusService {
 
   private getRateLimitInfo(callerId: string, target: string): { remaining: number; resetAt: number } {
     const key = `${callerId}:${target}`;
-    const now = Date.now();
+    const now = this.now();
     const bucket = this.rateBuckets.get(key);
     const limit = RATE_LIMIT + RATE_BURST;
     const windowEnd = (bucket?.windowStart ?? now) + RATE_WINDOW_MS;

@@ -246,20 +246,30 @@ test("health is ok for a fresh registered worker with no tasks", () => {
 test("cache serves result within TTL", () => {
   const broker = createBroker();
   registerWorker(broker, "worker-a");
-  const service = new PeerStatusService(broker, { cacheTtlMs: 5000 });
+  // Fake clock (#2257 B5): the old assertion `cacheAgeMs <= 10` raced the wall
+  // clock and evicted a merge-queue group on a slow runner. It also could not
+  // tell a cache hit from a recompute, because a fresh compute reports 0 too.
+  // Advancing an injected clock makes the age exact and proves the hit.
+  let clock = 1_000_000;
+  const service = new PeerStatusService(broker, { cacheTtlMs: 5000, now: () => clock });
 
   // First query: fresh compute
   const first = service.query({ target: "worker-a" }, "caller");
   assert.ok(isPeerStatusResponse(first));
   assert.equal((first as PeerStatusResponse).cacheAgeMs, 0);
 
-  // Second query: cache hit (immediate)
+  // Second query 100 ms later (still inside the 5 s TTL): served from cache,
+  // and the reported age is exactly the elapsed fake time.
+  clock += 100;
   const second = service.query({ target: "worker-a" }, "caller");
   assert.ok(isPeerStatusResponse(second));
-  assert.ok(
-    (second as PeerStatusResponse).cacheAgeMs <= 10,
-    "cache age should be very small",
-  );
+  assert.equal((second as PeerStatusResponse).cacheAgeMs, 100, "cache hit must report the exact elapsed age");
+
+  // Past the TTL: recomputed, age resets to 0.
+  clock += 5_000;
+  const third = service.query({ target: "worker-a" }, "caller");
+  assert.ok(isPeerStatusResponse(third));
+  assert.equal((third as PeerStatusResponse).cacheAgeMs, 0, "expired entry must be recomputed");
 });
 
 test("a configured cacheTtlMs is honored when no per-request override is given (a2a-nexus#573 item 17)", async () => {
