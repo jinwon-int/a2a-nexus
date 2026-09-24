@@ -9,7 +9,11 @@
 > (3) the **deterministic routing-rules baseline slice** (see [Rules baseline
 > slice](#rules-baseline-slice-2196-slice-3-deterministic-offline-routing-rules-a2arouting-rulesv1)):
 > a conservative, offline, keyword/scope-rule classifier that actually
-> classifies request text into the closed advisory vocabulary. No slice here
+> classifies request text into the closed advisory vocabulary — and (4) the
+> **assignment-forms slice** (see [Assignment forms
+> slice](#assignment-forms-slice-2196-slice-4-routing-descriptors-to-validated-assignment-forms)):
+> a thin, offline, default-off converter from validated descriptors into
+> forms the existing #2187 entrypoints accept. No slice here
 > is the model, runtime integration, the full classifier, the private Phase A
 > calibration/holdout seal, or issue completion. Nothing here authorizes
 > dispatch, deploy, live routing change, or worker/broker mutation.
@@ -17,7 +21,8 @@
 > Baselines: foundation slice `main@d622d7db4e1be032d6310c0a93f51de4d8655599`
 > (merged via #2197, `b0c7346f`); corpus slice on top of that foundation
 > (merged via #2198, `62b83af`); rules baseline slice on top of the corpus
-> slice (`main@62b83af`).
+> slice (`main@62b83af`); assignment forms slice on top of the rules slice
+> (`main@67608baa`).
 
 ## Problem
 
@@ -680,9 +685,11 @@ language understanding or justify automatic execution.
 - The producer execution envelope (adapter process, timeout, provider
   failures) is a separately specified future boundary; `defer` is never a
   disguised provider failure.
-- Offline `prepareAssignment`/entrypoint wiring, runtime integration, live
-  pilot, deployment, activation, restarts, paid model calls, and any new
-  server are out of scope and not authorized.
+- Runtime integration, live pilot, deployment, activation, restarts, paid
+  model calls, and any new server are out of scope and not authorized.
+  Offline, default-off descriptor→entrypoint-form mapping is ratified as its
+  own slice (Phase C, assignment forms slice below); it authorizes no
+  dispatch, no runtime change, and no live behavior.
 - No accuracy, quality, speed, or adoption claim is made. The 173-record
   public development-corpus replay in the test suite is a contract/behavior
   replay over EXPOSED development data — not holdout evidence, not model
@@ -700,3 +707,143 @@ language understanding or justify automatic execution.
 - Base absence proof (RED): `git cat-file -e
   62b83af:scripts/lib/a2a-routing-rules.mjs` → absent on the corpus baseline;
   `git grep -l 'a2a.routing-rules.v1' 62b83af` → no match.
+
+## Assignment forms slice (#2196, slice 4): routing descriptors to validated assignment forms
+
+> **Boundary**: one thin, OFFLINE, default-off conversion layer from a
+> validated bounded descriptor (frozen `projectRoutingAdvice` output) into
+> request forms the EXISTING #2187 entrypoints already accept. This slice is
+> NOT a dispatcher, NOT a submit path, NOT a journal or readiness collector,
+> NOT a calibration or evaluation (#2185/#2195 taxonomy is different and
+> remains unclaimed), and NOT runtime integration. It performs zero POSTs and
+> zero network by default; the only network an entrypoint can perform behind
+> this layer is the entrypoint's own GET-only readback, and only when the
+> host explicitly supplies a fetch implementation. No live routing behavior,
+> deployment, or worker/broker mutation is authorized. #2196 remains
+> partially OPEN; the implementing PR refs #2196 and never closes it. One
+> slice, one PR; later Phase D/E calibration work depends on #2185
+> coordination and is NOT ratified here.
+
+### Goal and exported surface
+
+One thin library, `scripts/lib/a2a-routing-assignment-forms.mjs`, importing
+ONLY the frozen foundation `scripts/lib/a2a-routing-advice.mjs` and the
+existing entrypoint `scripts/lib/task-assign-entrypoint.mjs` (no dispatcher,
+journal, or readiness collector of its own), exporting exactly:
+
+- `ROUTING_FORMS_VERSION` — the constant `'a2a.routing-forms.v1'`;
+- `buildAssignmentRequest(descriptor, hostContext)` — a PURE, synchronous,
+  entrypoint-free conversion of a validated descriptor plus a trusted,
+  host-owned context into a raw request draft;
+- `prepareRoutingAssignment({ descriptor, hostContext, context, readiness,
+  journal, fetchImpl, secret, now, ttlMs })` — an async wrapper that fixes
+  `mode: 'offline'`, applies a default-off fetch guard, and delegates to the
+  existing `prepareAssignment` / `resumeAssignment` entrypoints, returning
+  their receipts unmodified.
+
+`buildAssignmentRequest` returns EXACTLY `{ ok: true, request }` or
+`{ ok: false, reasonCodes, missingFields, invalidFields }` — a closed shape,
+all arrays frozen. `request` is a plain draft object in the #2187 request
+vocabulary only: `requestId`, `kind` (from the template's frozen
+`assignmentKind`), `objective`, `requestRef`, and — for patch templates —
+`target.repo`, `target.declaredScope.paths`, `target.repoTests`. Optional
+host-provided `lanes` pass through unchanged so the entrypoint's own lane
+validation and `kind_lane_mismatch` fail-closed rules stay authoritative.
+
+### Closed host-context contract (dotted paths resolve against the host context)
+
+The descriptor's `requiredHostFields` names are dotted paths resolved
+directly against the trusted host context: `requestId`, `objective`,
+`requestRef` at the root; `target.repo`, `target.declaredScope.paths`,
+`target.repoTests` under `target`; `host.sourceCarriers`,
+`host.ownershipContracts`, `host.pullRequestReference`, `host.revision`,
+`host.workspaceMetadata` under `host`. Consequences, all fail-closed:
+
+- A missing or empty required host field makes the conversion fail with that
+  exact field name in `missingFields` — the same field vocabulary the
+  entrypoint itself reports — so escalation back to the host is predictable,
+  never surprising.
+- The analysis/review host contracts (`host.*`) are validated for presence
+  and passed as CONTEXT ONLY. Their values are NEVER copied into the request
+  draft (the #2187 request contract has no such fields), NEVER fabricated
+  from field names, and NEVER echoed into error text. Field names here are
+  names only.
+- Keys in the host context matching `brokerUrl` or the entrypoint's secret
+  pattern are rejected with `untrusted_broker_or_secret_input` before any
+  draft is built. Unknown keys are dropped, not propagated.
+- A descriptor that is not a well-formed frozen projection (wrong
+  `schemaVersion`, `advisoryOnly !== true`, `dispatchAllowed !== false`,
+  missing `projection`/`templateId`/`requiredHostFields`) fails with
+  `invalid_descriptor`. A descriptor whose `projection` is not
+  `template_descriptor` (`none` or `blocked`) is simply not convertible:
+  `projection_not_convertible`, never a synthesized plan.
+
+### Existing-reference resolution (observe/resume, zero POST)
+
+`observe_existing` / `resume_existing` templates have `mintsNewId: false`;
+existing references are host-owned and never minted. The ratified resolution
+is journal-lookup-first through the existing `resumeAssignment` entrypoint:
+the host-validated existing reference (`existingTaskReference` /
+`existingRequestReference`, must be a non-empty string matching the
+entrypoint's `^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$` request-id shape, mirrored
+locally because the pattern is not exported) becomes the `requestId`, and
+`resumeAssignment` performs the local `journal.read` lookup FIRST. With no
+journal record the receipt is `blocked` (`resume_record_missing`) with zero
+network. With a record, the entrypoint performs its own GET-only lane
+readback — zero POST on every path; the forms layer never issues a request
+itself and never chooses the readback-vs-journal alternative outside the
+entrypoint. A missing reference or `journal` fails as
+`existing_reference_missing` / `journal_missing` before anything is called.
+
+### Default-off and no-network posture
+
+- `prepareRoutingAssignment` has NO `mode` parameter: `mode: 'offline'` is
+  fixed. Live readiness collection is unreachable from this layer.
+- `fetchImpl` is never defaulted to a network-capable value. When the host
+  does not explicitly supply one, a throwing fetch guard is passed instead,
+  so any accidental network attempt fails loudly (the entrypoint's readback
+  then degrades to `admission_unconfirmed` / `readback_unavailable`, exactly
+  as it would without connectivity — the guard makes the attempt observable,
+  not silently different).
+- With no host-supplied readiness snapshot, offline readiness resolution
+  yields the entrypoint's own `offline_snapshot_missing` handling and a
+  `blocked` receipt with `nextAction: 'retry_prepare'` (the entrypoint's
+  offline branch) — the default-off posture produces honest incompleteness,
+  never a fabricated `prepared`.
+
+### Changed paths (exactly six, additive)
+
+| Path | Change |
+| --- | --- |
+| `docs/specs/a2a-routing-classifier/spec.md` | this section |
+| `docs/specs/a2a-routing-classifier/plan.md` | Slice 4 plan |
+| `scripts/lib/a2a-routing-assignment-forms.mjs` | new thin forms library |
+| `scripts/lib/a2a-routing-assignment-forms.test.mjs` | new adversarial/offline tests |
+| `docs/agent-manual.md` | 4th Appendix A subsection + quick-path stub, same style |
+| `scripts/release-gate-manifest.json` | one additive gate entry |
+
+The frozen foundation (`a2a-routing-advice.mjs`), the corpus module, the
+rules module, all existing tests and fixtures, and the entrypoint module are
+NOT modified. Legacy dispositions (#1597/#1724/#2234) remain deferred with no
+gate impact.
+
+### What the forms deliberately do NOT claim
+
+No dispatch, no submit, no automatic execution, no live readiness, no
+accuracy or calibration claim. `needs_input` / `blocked` receipts are
+honest incompleteness signals, not failures to hide. Passing a host
+eligibility gate does not mean the task SHOULD be dispatched; the host
+remains the sole authority. Phase D/E calibration/holdout work depends on
+#2185 coordination and is explicitly out of scope.
+
+### Assignment forms slice verification
+
+- Base absence proof (RED): `git cat-file -e
+  67608baa:scripts/lib/a2a-routing-assignment-forms.mjs` → absent on the
+  rules-slice baseline; same for the test file.
+- `node --test scripts/lib/a2a-routing-assignment-forms.test.mjs
+  scripts/lib/a2a-routing-advice.test.mjs
+  scripts/lib/a2a-routing-corpus.test.mjs
+  scripts/lib/a2a-routing-rules.test.mjs
+  scripts/lib/task-assign-entrypoint.test.mjs`
+- `npm run check`; `npm run scan:public-readiness`.
