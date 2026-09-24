@@ -19,9 +19,9 @@ A2A는 "작업을 접수하고, 격리된 워커에 넘기고, 최종 증거(PR/
 │ https://github.com/jinwon-int/a2a-broker                    │
 │                               │ https://github.com/jinwon-int/a2a-docker-runner
 ├───────────────────────────────┴──────────────────────────────┤
-│ openclaw-plugin-a2a                                           │
-│ OpenClaw Gateway adapter for broker request/status/cancel     │
-│ https://github.com/jinwon-int/openclaw-plugin-a2a            │
+│ harness bridges (packages/broker/scripts/*-a2a-*-bridge.mjs)  │
+│ Claude Code / Codex / Hermes / piri / OpenClaw — none is      │
+│ privileged; the former OpenClaw plugin package was retired    │
 └───────────────────────────────────────────────────────────────┘
 ```
 
@@ -32,7 +32,7 @@ A2A는 "작업을 접수하고, 격리된 워커에 넘기고, 최종 증거(PR/
 | `a2a-plane` | 전체 프로젝트 방향, 공개 준비 상태, 통합 문서 | 이슈 허브, 로드맵, release/readiness gates, contracts/examples/docs | 운영 중인 broker/worker 배포 | repository root, `docs/`, `contracts/`, `examples/` |
 | `a2a-broker` | task API와 worker registry를 실행하는 핵심 서비스 | task 생성/조회/취소, worker 등록/상태, terminal evidence 수집, GitHub evidence projection | 작업을 직접 실행하거나 PR을 만드는 것 | `packages/broker/` |
 | `a2a-docker-runner` | GitHub 작업을 컨테이너에서 안전하게 수행하는 워커 | repo checkout, Start/PR/Done/Block evidence, artifact 수집, bootstrap/private-context leak guard | broker API 소유, 장기 운영 상태 저장 | `packages/docker-runner/` |
-| `openclaw-plugin-a2a` | OpenClaw에서 A2A broker를 호출하는 통합 | OpenClaw request/status/cancel ↔ A2A broker protocol mapping, wake/event bridge | broker 자체 구현, runner 실행 환경 | `packages/openclaw-plugin-a2a/` |
+| harness bridges | 에이전트 하네스(Claude Code, Codex, Hermes, piri, OpenClaw)가 broker task를 받는 경로 | 하네스별 analysis/patch bridge 스크립트, [platform adapter contract](../contracts/a2a/platform-adapter-interface.md) 준수 | broker 자체 구현, runner 실행 환경 | `packages/broker/scripts/*-a2a-*-bridge.mjs` (구 `openclaw-plugin-a2a` 패키지는 retire됨) |
 
 ## 어떤 저장소부터 보면 되나?
 
@@ -41,7 +41,7 @@ A2A는 "작업을 접수하고, 격리된 워커에 넘기고, 최종 증거(PR/
 - **broker를 설치하거나 API를 붙이는 개발자**: `packages/broker/README.md`와 `contracts/a2a/`를 확인합니다.
 - **격리 패치 워커를 운영하는 사람**: `packages/docker-runner/README.md`를 확인하고, PR/Done/Block evidence 규칙을 따릅니다.
 - **OpenClaw가 아닌 HTTP worker를 붙이는 개발자**: [docs/specs/hermes-worker-integration/spec.md](specs/hermes-worker-integration/spec.md)에서 broker-agnostic worker 등록, heartbeat, polling, evidence alias를 확인하고, [Hermes reference worker dry-run](../examples/workers/hermes-reference-worker/README.md)로 loopback smoke를 확인합니다.
-- **OpenClaw Gateway 사용자**: `packages/openclaw-plugin-a2a/README.md`에서 broker 연결 설정과 안전 경계를 확인합니다.
+- **OpenClaw·Claude Code·Codex 등 하네스 사용자**: [docs/external-harness-quickstart.md](external-harness-quickstart.md)에서 bridge 연결 설정과 안전 경계를 확인합니다.
 
 ## 기본 작업 흐름
 
@@ -50,7 +50,7 @@ A2A는 "작업을 접수하고, 격리된 워커에 넘기고, 최종 증거(PR/
 3. `a2a-docker-runner` 같은 worker, 또는 Hermes-style HTTP worker가 격리/외부 런타임에서 작업을 수행합니다.
 4. worker는 `Start` marker 후 `PR`, `Done`, 또는 `Block` evidence를 남깁니다.
 5. broker와 plane 문서/이슈가 결과 URL과 artifact evidence를 모아 closeout합니다.
-6. OpenClaw를 쓰는 환경에서는 `openclaw-plugin-a2a`가 Gateway와 broker 사이의 adapter 역할을 합니다.
+6. 하네스(OpenClaw, Claude Code, Codex, Hermes, piri)를 쓰는 환경에서는 `packages/broker/scripts/`의 하네스별 bridge가 하네스와 broker 사이의 adapter 역할을 합니다.
 
 ## 모노레포 후보와 4개 저장소 이름의 관계
 

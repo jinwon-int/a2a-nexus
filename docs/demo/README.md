@@ -12,7 +12,7 @@ Welcome to the A2A Nexus demo packaging. This directory is the public-safe entry
 │  ┌─────────────────────────────────────────────────────────────┐  │
 │  │ packages/broker/              Task lifecycle, worker API    │  │
 │  │ packages/docker-runner/       Isolated GitHub patch worker  │  │
-│  │ packages/openclaw-plugin-a2a/ OpenClaw Gateway adapter      │  │
+│  │ packages/broker/scripts/      Per-harness bridge scripts    │  │
 │  ├─────────────────────────────────────────────────────────────┤  │
 │  │ contracts/a2a/                Shared task lifecycle types   │  │
 │  │ contracts/compatibility/      Baseline compatibility matrix │  │
@@ -23,10 +23,10 @@ Welcome to the A2A Nexus demo packaging. This directory is the public-safe entry
 │  └─────────────────────────────────────────────────────────────┘  │
 └───────────────────────────────────────────────────────────────────┘
 
-External repos (mapped into this monorepo for validation):
+Former split repos (archived, private provenance mirrors — not reachable):
   a2a-broker            → packages/broker/
   a2a-docker-runner     → packages/docker-runner/
-  openclaw-plugin-a2a   → packages/openclaw-plugin-a2a/
+  openclaw-plugin-a2a   → retired; harness bridges live in packages/broker/scripts/
 ```
 
 ## Demo paths

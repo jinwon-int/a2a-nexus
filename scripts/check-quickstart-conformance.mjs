@@ -30,7 +30,7 @@ if (quickstart) {
   expect(/Prerequisites/i.test(quickstart), 'quickstart: missing Prerequisites section');
   expect(/Run the local A2A Nexus broker/i.test(quickstart), 'quickstart: missing broker section');
   expect(/Start a dummy or echo worker/i.test(quickstart), 'quickstart: missing worker section');
-  expect(/Connect the reference OpenClaw plugin locally/i.test(quickstart), 'quickstart: missing plugin section');
+  expect(/Connect a harness/i.test(quickstart), 'quickstart: missing harness section');
   expect(/Submit a no-live test task/i.test(quickstart), 'quickstart: missing test task section');
   expect(/Verify public-readiness checks/i.test(quickstart), 'quickstart: missing verification section');
   expect(/Safety checklist/i.test(quickstart), 'quickstart: missing safety checklist');

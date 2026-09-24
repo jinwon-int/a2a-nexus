@@ -195,7 +195,6 @@ approval from broker-alpha.
 
 **Reference:** `docs/specs/mobile-alpha-hermes-worker-profile/spec.md`
 **Test:** `node --test scripts/check-mobile-alpha-hermes-worker-profile.test.mjs`
-**Plugin test:** `npx node --test packages/openclaw-plugin-a2a/tests/mobile-alpha-worker-profile-admission.test.ts`
 
 ---
 
@@ -225,8 +224,6 @@ node --test scripts/check-mobile-alpha-hermes-worker-profile.test.mjs
 # Native worker conformance fixture checks
 node --test scripts/check-native-worker-conformance.test.mjs
 
-# mobile-alpha admission tests (requires package build)
-cd packages/openclaw-plugin-a2a && npx node --test tests/mobile-alpha-worker-profile-admission.test.ts
 ```
 
 ### Local loopback smoke test

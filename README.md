@@ -168,41 +168,11 @@ Release decision prep:
 - [`docs/history/promotion-validation.md`](docs/history/promotion-validation.md)
 - [`CHANGELOG.md`](CHANGELOG.md)
 
-## Reference OpenClaw integration example
+## Harness integration
 
-Use safe placeholders only. Do not paste real broker URLs, tokens, node IDs, Telegram/provider IDs, or host paths into public docs or issue evidence.
+A2A Nexus ships no privileged harness package. Claude Code, Codex, Hermes, piri, and OpenClaw all meet the broker through the same contract via per-harness bridge scripts under `packages/broker/scripts/` (`*-a2a-analysis-bridge.mjs`, `*-a2a-patch-bridge.mjs`). Start with the [external harness quickstart](docs/external-harness-quickstart.md) and the [platform adapter contract](contracts/a2a/platform-adapter-interface.md); the former OpenClaw plugin package was retired in favour of that surface.
 
-```json
-{
-  "plugins": {
-    "entries": {
-      "a2a-broker-adapter": {
-        "enabled": true,
-        "config": {
-          "baseUrl": "http://127.0.0.1:8787",
-          "edgeSecret": "${A2A_EDGE_SECRET}",
-          "requester": {
-            "id": "local-openclaw-node",
-            "kind": "node",
-            "role": "operator"
-          },
-          "operatorEvents": {
-            "enabled": false,
-            "notification": {
-              "enabled": false
-            }
-          },
-          "wakeOnTask": {
-            "enabled": false
-          }
-        }
-      }
-    }
-  }
-}
-```
-
-Keep production connection details in private operator configuration, not in repository examples.
+Use safe placeholders only in examples. Keep production connection details (broker URLs, edge secrets, node IDs, Telegram/provider IDs, host paths) in private operator configuration, never in repository docs or issue evidence.
 
 ## Import policy
 

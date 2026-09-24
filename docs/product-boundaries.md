@@ -35,9 +35,10 @@ This inventory is the G0 baseline before any split. It records what exists today
 |---|---|---|---|---|---|
 | root | `@jinwon-int/a2a-nexus-monorepo` | `private: true`; workspace coordinator only. | No `exports`; scripts coordinate checks and release gates. | No package bin. | Must stay as monorepo coordinator until a separate topology decision changes it. |
 | `packages/broker/` | `a2a-broker` | `private: true`; canonical broker source. | No package `exports`/`bin`; runtime entrypoints are scripts such as `start`, `start:worker`, and build output under `dist/`. | Operational scripts only; not a published CLI surface. | Core. Do not split or publish without release/package approval and live-policy review. |
-| `packages/openclaw-plugin-a2a/` | `plugin-a2a` | `private: true`; reference integration adapter. | `.` / `./api` / `./config` / `./standalone-broker-client` / `./type-mapping` / `./plugin-id`; `./src/*` remains compatibility-risky and should not be expanded as public API. | `a2a-terminal-brief-sidecar`, `a2a-terminal-brief-openclaw-message`, `a2a-terminal-brief-hermes-mobileAlpha`. | Reference adapter. Future adapter products must preserve broker validation and write-set rules. |
 | `packages/docker-runner/` | `@openclaw/a2a-docker-runner` | `private: true`; isolated runner source. | No package `exports`; files candidate includes `dist`, `scripts`, README, LICENSE, package metadata. | `a2a-docker-runner`. | Candidate package only after runner package contents audit, disposable install smoke, and runner boundary evidence. |
 | `contracts/a2a/` + `fixtures/contract/` | Not a package today. | Contract candidate surface, not npm-published. | Markdown contracts and public-safe JSON fixtures. | Conformance checks under `test/conformance/`; verifier CLIs under `scripts/`. | Canonical upstream for feature products. Products consume pinned contracts; contracts do not consume products. |
+
+The former `packages/openclaw-plugin-a2a/` reference-adapter row was removed with the package: no harness ships as a privileged package, and harness integration is the per-harness bridge surface under `packages/broker/scripts/` bound by [the platform adapter contract](../contracts/a2a/platform-adapter-interface.md).
 
 ## Candidate extraction contract
 
