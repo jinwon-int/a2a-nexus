@@ -24,17 +24,60 @@ function makeRepo() {
   return root;
 }
 
-test('discoverScriptTests covers scripts/*.test.mjs and scripts/lib/*.test.mjs only', () => {
+test('discoverScriptTests covers scripts/, scripts/lib/ and scripts/a2a-timeout-cleanup/ test files only', () => {
   const root = makeRepo();
   fs.writeFileSync(path.join(root, 'scripts/root.test.mjs'), '');
   fs.writeFileSync(path.join(root, 'scripts/root.mjs'), '');
   fs.writeFileSync(path.join(root, 'scripts/lib/helper.test.mjs'), '');
   fs.mkdirSync(path.join(root, 'scripts/archive'), { recursive: true });
   fs.writeFileSync(path.join(root, 'scripts/archive/old.test.mjs'), '');
+  fs.mkdirSync(path.join(root, 'scripts/a2a-timeout-cleanup'), { recursive: true });
+  fs.writeFileSync(path.join(root, 'scripts/a2a-timeout-cleanup/cleanup.test.mjs'), '');
   assert.deepEqual(discoverScriptTests(root), [
+    'scripts/a2a-timeout-cleanup/cleanup.test.mjs',
     'scripts/lib/helper.test.mjs',
     'scripts/root.test.mjs',
   ]);
+});
+
+// #2257 B3: twelve `<x>:test` suites were "covered" only because a root
+// package.json script named them, yet no CI job runs ad-hoc npm scripts, so
+// they never executed (one had rotted against a missing fixture). A package
+// script mention is execution only when a tiered inventory step invokes it.
+test('a package.json script that merely names a test file is not coverage (#2257 B3)', () => {
+  const root = makeRepo();
+  fs.writeFileSync(path.join(root, 'scripts/orphan.test.mjs'), '');
+  writeJson(path.join(root, 'package.json'), {
+    scripts: { 'orphan:test': 'node --test scripts/orphan.test.mjs' },
+  });
+  const result = evaluateReleaseGateManifestCoverage(root);
+  assert.equal(result.ok, false);
+  assert.deepEqual(result.missing, ['scripts/orphan.test.mjs']);
+  assert.deepEqual(result.peerBlocked, []);
+});
+
+test('a tiered `npm run <script>` step expands to the files that script executes (#2257 B3)', () => {
+  const root = makeRepo();
+  fs.writeFileSync(path.join(root, 'scripts/tiering.test.mjs'), '');
+  writeJson(path.join(root, 'package.json'), {
+    scripts: { 'check:inventory': 'node scripts/inventory.mjs && node --test scripts/tiering.test.mjs' },
+  });
+  writeJson(path.join(root, 'docs/ops/release-gate-step-inventory.json'), {
+    entries: [{ name: 'inventory', command: 'npm', args: ['run', 'check:inventory'], tier: 'core' }],
+  });
+  const result = evaluateReleaseGateManifestCoverage(root);
+  assert.equal(result.ok, true, result.missing.join('\n'));
+});
+
+test('an archived manifest entry is skipped by the runner and therefore is not coverage (#2257 B2)', () => {
+  const root = makeRepo();
+  fs.writeFileSync(path.join(root, 'scripts/retired.test.mjs'), '');
+  writeJson(path.join(root, 'scripts/release-gate-manifest.json'), {
+    entries: [{ file: 'scripts/retired.test.mjs', class: 'gate', archived: true }],
+  });
+  const result = evaluateReleaseGateManifestCoverage(root);
+  assert.equal(result.ok, false);
+  assert.deepEqual(result.missing, ['scripts/retired.test.mjs']);
 });
 
 test('coverage fails closed and lists missing test files', () => {

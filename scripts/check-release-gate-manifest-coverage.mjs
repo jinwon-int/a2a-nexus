@@ -21,7 +21,7 @@ import { parseArgs } from 'node:util';
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
 const REPO_ROOT = path.resolve(HERE, '..');
-const DEFAULT_SCAN_DIRS = ['scripts', 'scripts/lib'];
+const DEFAULT_SCAN_DIRS = ['scripts', 'scripts/lib', 'scripts/a2a-timeout-cleanup'];
 
 function readJson(filePath) {
   return JSON.parse(fs.readFileSync(filePath, 'utf8'));
@@ -87,7 +87,9 @@ function collectManifestFiles(repoRoot) {
   const manifest = readJson(manifestPath);
   const files = new Set();
   for (const entry of Array.isArray(manifest.entries) ? manifest.entries : []) {
-    if (typeof entry?.file === 'string') files.add(entry.file);
+    // An archived entry is skipped by run-release-gate.mjs, so it is not
+    // execution and must not count as coverage (#2257 B2/B3).
+    if (typeof entry?.file === 'string' && entry.archived !== true) files.add(entry.file);
   }
   return files;
 }
@@ -103,27 +105,38 @@ function addCommandTokens(files, command, args = []) {
   }
 }
 
+function readPackageScripts(repoRoot) {
+  const pkgPath = path.join(repoRoot, 'package.json');
+  if (!fs.existsSync(pkgPath)) return {};
+  const pkg = readJson(pkgPath);
+  return pkg.scripts && typeof pkg.scripts === 'object' ? pkg.scripts : {};
+}
+
 function collectInventoryFiles(repoRoot) {
   const inventoryPath = path.join(repoRoot, 'docs/ops/release-gate-step-inventory.json');
   const files = new Set();
   if (!fs.existsSync(inventoryPath)) return files;
   const inventory = readJson(inventoryPath);
+  const packageScripts = readPackageScripts(repoRoot);
   for (const entry of Array.isArray(inventory.entries) ? inventory.entries : []) {
-    addCommandTokens(files, entry.command, Array.isArray(entry.args) ? entry.args : []);
+    const args = Array.isArray(entry.args) ? entry.args : [];
+    addCommandTokens(files, entry.command, args);
+    // A tiered step of the form `npm run <script>` executes that root
+    // package.json script, so the files it names are executed too (e.g.
+    // release-gate-inventory -> check:release-gate-inventory ->
+    // scripts/release-gate-tiering.test.mjs). Expand one level; an npm script
+    // that a tiered step does NOT invoke stays package.json-only evidence.
+    if (entry.command === 'npm' && args[0] === 'run' && typeof packageScripts[args[1]] === 'string') {
+      addCommandTokens(files, undefined, tokenize(packageScripts[args[1]]));
+    }
   }
   return files;
 }
 
 function collectPackageScriptFiles(repoRoot) {
   const files = new Set();
-  const packages = ['package.json'];
-  for (const rel of packages) {
-    const pkgPath = path.join(repoRoot, rel);
-    if (!fs.existsSync(pkgPath)) continue;
-    const pkg = readJson(pkgPath);
-    for (const command of Object.values(pkg.scripts ?? {})) {
-      addCommandTokens(files, undefined, tokenize(command));
-    }
+  for (const command of Object.values(readPackageScripts(repoRoot))) {
+    addCommandTokens(files, undefined, tokenize(command));
   }
   return files;
 }
@@ -156,12 +169,19 @@ export function evaluateReleaseGateManifestCoverage(repoRoot = REPO_ROOT) {
   const inventory = collectInventoryFiles(repoRoot);
   const packageScripts = collectPackageScriptFiles(repoRoot);
   const peerOptIns = collectPeerOptIns(repoRoot);
-  const registered = new Set([...releaseGateManifest, ...inventory, ...packageScripts]);
+  // Execution evidence for a test file is the manifest (test:release-gate) or
+  // the tier inventory (npm run check). A root package.json script that merely
+  // names the test file is not evidence: no CI job runs ad-hoc npm scripts, so
+  // twelve `<x>:test` suites sat unexecuted for months while this sweep called
+  // them covered (#2257 B3). package.json still counts for implementation
+  // peers, which is what the #1832 opt-in flow is about.
+  const executed = new Set([...releaseGateManifest, ...inventory]);
+  const registered = new Set([...executed, ...packageScripts]);
   const missing = [];
   const peerCovered = [];
   const peerBlocked = [];
   for (const file of discovered) {
-    if (registered.has(file)) continue;
+    if (executed.has(file)) continue;
     if (!registered.has(implementationPeer(file))) {
       missing.push(file);
       continue;
@@ -178,7 +198,7 @@ export function evaluateReleaseGateManifestCoverage(repoRoot = REPO_ROOT) {
   const discoveredSet = new Set(discovered);
   const staleOptIns = [...peerOptIns.keys()].filter((file) =>
     !discoveredSet.has(file)
-    || registered.has(file)
+    || executed.has(file)
     || !registered.has(implementationPeer(file))).sort();
   return {
     ok: allMissing.length === 0 && staleOptIns.length === 0,
