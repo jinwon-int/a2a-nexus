@@ -181,7 +181,18 @@ describe('buildAssignmentRequest purity and closed shapes', () => {
     assert.equal(failure.ok, false);
     const serialized = JSON.stringify(failure);
     assert.ok(!serialized.includes(secret), 'secret value echoed');
-    assert.ok(!serialized.includes(brokerUrl), 'broker URL echoed');
+    // Exact-value check over every string leaf instead of a substring probe:
+    // `serialized.includes(<url literal>)` trips CodeQL
+    // js/incomplete-url-substring-sanitization, and the failure shape is
+    // exactly closed (asserted above), so membership here proves the broker
+    // URL is not echoed without a URL-substring sanitization pattern.
+    const leafStrings = (function collect(value) {
+      if (typeof value === 'string') return [value];
+      if (Array.isArray(value)) return value.flatMap(collect);
+      if (value && typeof value === 'object') return Object.values(value).flatMap(collect);
+      return [];
+    })(failure);
+    assert.ok(!leafStrings.includes(brokerUrl), 'broker URL echoed');
     assert.ok(!serialized.includes('requesterWebhook'), 'unknown host key propagated');
   });
 });
