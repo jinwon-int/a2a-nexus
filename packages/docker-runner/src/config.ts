@@ -1045,9 +1045,12 @@ if ! command -v piri >/dev/null 2>&1; then
 fi
 # The mount is read-only while piri writes session/state beside its config, so
 # run against a container-local copy and keep the host credential dir intact.
-mkdir -p /work/piri-home
-cp -a /run/secrets/piri-dir /work/piri-home/.piri
-export HOME=/work/piri-home
+# #2256 A3: that copy lives on the container's own /tmp (a tmpfs under the
+# read-only rootfs), never on the host-bound /work.
+export HOME=/tmp/piri-home
+rm -rf "$HOME"
+install -d -m 0700 "$HOME"
+cp -a /run/secrets/piri-dir "$HOME/.piri"
 
 A2A_LIFECYCLE_GUARD_BIN=/work/a2a-piri-lifecycle-guard-bin
 mkdir -p "$A2A_LIFECYCLE_GUARD_BIN"
