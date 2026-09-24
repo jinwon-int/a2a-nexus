@@ -4,7 +4,7 @@
 
 Repository inspection confirms the broker already supports the lightweight worker pattern through existing infrastructure:
 
-- `packages/broker/src/core/types.ts`: `RegisterWorkerRequest` accepts arbitrary `metadata` (string-to-string map), `WorkerCapabilities` with boolean flags, and `workerMode`, allowing mobile-alpha's lightweight profile to register without new fields.
+- `packages/broker/src/core/types.ts`: `RegisterWorkerRequest` accepts arbitrary `metadata` (string-to-string map) and `WorkerCapabilities` with boolean flags, allowing mobile-alpha's lightweight profile to register without new fields. (The `workerMode` field this analysis originally listed was later retired by #2065; brokers tolerate but drop it.)
 - `packages/broker/src/core/broker.ts`: `registerWorker` and `heartbeatWorker` store and refresh metadata without validation against specific OpenClaw fields.
 - `packages/broker/src/server.ts`: `POST /workers/register`, `POST /workers/:nodeId/heartbeat`, `GET /tasks?worker=`, `POST /tasks/:id/evidence` all accept Hermes-style workers without modification.
 - `contracts/a2a/worker-registration.md` already documents `runtime=hermes-agent`, `transport=http-poll`, and `openClawRequired=false` metadata patterns.

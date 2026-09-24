@@ -27,11 +27,11 @@ function policyFile(doc: Partial<BrokerPolicyDocument> & Record<string, unknown>
   return path;
 }
 
-async function registerWorker(baseUrl: string, workerMode?: string): Promise<void> {
+async function registerWorker(baseUrl: string): Promise<void> {
   const res = await fetch(`${baseUrl}/workers/register`, {
     method: "POST",
     headers: jsonHeaders(),
-    body: JSON.stringify({ ...workerPayload("workerbeta"), ...(workerMode ? { workerMode } : {}) }),
+    body: JSON.stringify(workerPayload("workerbeta")),
   });
   assert.ok(res.status === 200 || res.status === 201, `worker register failed: ${res.status}`);
 }
@@ -88,7 +88,7 @@ test("HTTP create returns the broker-owned fast-lane shadow record without chang
     }),
   });
   try {
-    await registerWorker(server.baseUrl, "persistent");
+    await registerWorker(server.baseUrl);
     const body = {
       ...JSON.parse(taskBody("g1-fast-lane-shadow", "analyze")) as Record<string, unknown>,
       payload: { mode: "analysis-only" },
@@ -196,7 +196,7 @@ test("daily budget exhaustion denies the create over the cap under enforce (#135
   }
 });
 
-test("claim-time re-evaluation catches a worker whose class changed after create (#1355)", async () => {
+test("claim-time re-evaluation treats retired mobile-only rules as dead — every worker derives vps (#2065)", async () => {
   const server = await startTestServer({
     enforceRequesterIdentity: false,
     brokerPolicyFile: policyFile({
@@ -205,18 +205,13 @@ test("claim-time re-evaluation catches a worker whose class changed after create
     }),
   });
   try {
-    await registerWorker(server.baseUrl); // vps class — no rule matches, defaultAction allow
+    await registerWorker(server.baseUrl); // derives vps — the legacy mobile-only rule can never match
     const res = await postTask(server.baseUrl, "g1-claim-recheck", "chat");
     assert.equal(res.status, 201);
 
-    await registerWorker(server.baseUrl, "mobile"); // worker is now mobile class
-    assert.throws(
-      () => server.runtime.broker.claimTask("g1-claim-recheck", "workerbeta"),
-      /intent 'chat' is not allowed/,
-    );
+    assert.doesNotThrow(() => server.runtime.broker.claimTask("g1-claim-recheck", "workerbeta"));
     const audits = server.runtime.broker.listAuditEvents({ action: "task.policy_denied" });
-    assert.equal(audits.length, 1);
-    assert.equal(audits[0].targetId, "g1-claim-recheck");
+    assert.equal(audits.length, 0);
   } finally {
     await server.close();
   }

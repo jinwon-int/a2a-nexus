@@ -32,7 +32,6 @@ canonical fields:
   "role": "analyst",
   "displayName": "Hermes Agent Ref Worker",
   "brokerUrl": "http://<hermes-node>:<port>",
-  "workerMode": "mobile",
   "capabilities": {
     "canAnalyze": true,
     "canBackfill": false,
@@ -56,7 +55,6 @@ canonical fields:
 |-------|-------------|---------|
 | `capabilities.runtimeFlavor` | `"termux-hermes"` | Declares native Hermes runtime |
 | `capabilities.gatewayRequired` | `false` | No full OpenClaw Gateway on-device |
-| `workerMode` | `"mobile"` | Battery-powered; short stale window |
 | `capabilities.canPromoteLive` | `false` | Source-only; no live promotion |
 | `metadata.runtime` | `"hermes-agent"` | Self-descriptive runtime identifier |
 | `metadata.transport` | `"http-poll"` | HTTP long-poll transport (not SSE) |
@@ -138,37 +136,33 @@ in-memory liveness is updated on every request.
 
 ### Stale / disconnected thresholds
 
-| State | Time since last heartbeat | Meaning |
-|-------|--------------------------|---------|
-| `health_ok` | ≤ 30 s | Normal operation |
-| `stale` | 30 s – 90 s | Brief offline; tasks may still be claimed |
-| `disconnected` | > 90 s | Extended absence; likely fully offline |
+Since #2065 there is a single common staleness window for every worker,
+including Hermes native workers:
 
-These thresholds are defined in `broker.ts` as `MOBILE_OFFLINE_AFTER_MS`
-(30,000) and `MOBILE_DISCONNECTED_AFTER_MS` (90,000). Persistent (non-mobile)
-workers use `DEFAULT_WORKER_OFFLINE_AFTER_MS` (90,000).
-
-These mode-aware windows drive `/dashboard`, `/workers/capacity` and their
-`mobileHealth` projection.
-The read-only `a2a.peer.status` RPC is computed separately: since #2065 it uses
-the common `workerOfflineAfterMs ?? DEFAULT_WORKER_OFFLINE_AFTER_MS` (90 s)
-window and a unified advisory 10-slot busy budget for every mode. A supplied
-legacy `mobileOfflineAfterMs` takes precedence for mobile workers only. Explicit
-zero and longer windows are preserved by `??`; no execution permission changes.
+- Resolved window: `workerOfflineAfterMs ?? DEFAULT_WORKER_OFFLINE_AFTER_MS`
+  (90,000 ms), applied identically by raw `GET /workers`, `GET /workers/:id`,
+  `/dashboard`, `/workers/capacity`, and `a2a.peer.status`.
+- A worker whose heartbeat age exceeds the resolved window reports
+  `status: "stale"`; there is no separate mobile 30 s ladder.
+- The `HEARTBEAT_LIVENESS_ONLINE_WINDOW_MS` (30,000) /
+  `HEARTBEAT_LIVENESS_OFFLINE_AFTER_MS` (90,000) constants in
+  `broker-worker-status.ts` describe only the conversation-delivery ladder
+  (`getConversationDeliverySummary()`); they are not worker-staleness defaults.
+- The retired `MOBILE_OFFLINE_AFTER_MS` / `MOBILE_DISCONNECTED_AFTER_MS` names
+  and the legacy `mobileOfflineAfterMs` override precedence were removed
+  together with the `workerMode` field.
 
 ### Read model
 
-Dashboard and capacity summaries surface mobile health when
-`workerMode === "mobile"`. Raw `GET /workers/:id` and `GET /workers` instead
-use the common configured threshold and do not synthesize `mobileHealth`.
-The example below illustrates mobile health in an enriched summary:
+No read surface synthesizes a mobile-specific health field any more. Raw
+`GET /workers/:id` and `GET /workers`, `/dashboard`, `/workers/capacity`, and
+`a2a.peer.status` all share the common resolved window described above. The
+example below illustrates the record shape for a Hermes native worker:
 
 ```json
 {
   "nodeId": "mobilealpha",
   "status": "online",
-  "workerMode": "mobile",
-  "mobileHealth": "health_ok",
   "lastSeenAt": "2026-05-28T13:55:00.000Z",
   "capabilities": {
     "runtimeFlavor": "termux-hermes",
@@ -177,11 +171,9 @@ The example below illustrates mobile health in an enriched summary:
 }
 ```
 
-Possible `mobileHealth` values:
-- `"health_ok"` — heartbeat within mobile stale window
-- `"stale"` — heartbeat within extended stale window (30–90 s)
-- `"disconnected"` — heartbeat beyond extended window
-- `undefined` — not a mobile worker
+`status` is `"online"` within the resolved window and `"stale"` past it.
+`a2a.peer.status` reports `health: "ok"` / `"stale"` on the same window
+(`"unreachable"` for unregistered targets).
 
 ## Evidence Submission
 

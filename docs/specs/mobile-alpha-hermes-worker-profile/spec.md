@@ -15,7 +15,7 @@ it cannot safely execute.
 - **NodeId in practice:** `mobile-alpha` (Android Termux)
 - **Runtime:** Hermes Agent (non-OpenClaw, non-Docker-runner)
 - **Transport:** HTTP polling over Tailscale or local loopback
-- **workerMode:** `mobile` (30 s stale threshold, 1-3 capacity slots)
+- **Profile:** lightweight mobile-style profile (30 s heartbeat liveness window, 1-3 capacity slots; the former `workerMode` field was retired by #2065)
 - **dockerAvailable:** `false`
 - **openClawRequired:** `false`
 - **mustTreatAsDockerRunner:** `false`
@@ -86,7 +86,6 @@ A task is admissible for mobile-alpha only when **all** of the following hold.
 | `maxConcurrentTasks` | 1 (overridable to 2 with explicit config) |
 | `canRunHeavyProof` | `false` |
 | `canPushToGitHub` | `false` |
-| `workerMode` | `mobile` |
 | Heartbeat stale threshold | 30 s |
 | Max capacity slots | 3 |
 

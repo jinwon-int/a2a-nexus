@@ -53,7 +53,6 @@ function makeWorkerView(overrides: Partial<WorkerView> & { nodeId: string }): Wo
     displayName: undefined,
     brokerUrl: undefined,
     capabilities: { ...BASE_CAP, ...capabilities },
-    workerMode: "persistent",
     metadata: undefined,
     createdAt: "2026-01-01T00:00:00.000Z",
     updatedAt: "2026-01-01T00:00:00.000Z",

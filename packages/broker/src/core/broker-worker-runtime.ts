@@ -24,7 +24,6 @@ export function workerRegistrationMateriallyChanges(
     existing.role !== request.role ||
     existing.displayName !== request.displayName ||
     existing.brokerUrl !== request.brokerUrl ||
-    existing.workerMode !== request.workerMode ||
     existing.managementPlane !== request.managementPlane ||
     !workerCapabilitiesEqual(existing.capabilities, capabilities) ||
     !workerMetadataMateriallyEqual(existing.metadata, request.metadata);
@@ -42,7 +41,6 @@ export function buildRegisteredWorkerRecord(
     displayName: request.displayName,
     brokerUrl: request.brokerUrl,
     capabilities,
-    workerMode: request.workerMode,
     metadata: request.metadata,
     managementPlane: request.managementPlane,
     createdAt: existing?.createdAt ?? now,
@@ -59,7 +57,6 @@ export function workerHeartbeatRequestFromRegistration(
     displayName: request.displayName,
     brokerUrl: request.brokerUrl,
     capabilities,
-    workerMode: request.workerMode,
     metadata: request.metadata,
     managementPlane: request.managementPlane,
   };
@@ -80,7 +77,6 @@ export function applyWorkerHeartbeatRuntimeUpdate(
     : worker.capabilities;
   const nextDisplayName = request?.displayName ?? worker.displayName;
   const nextBrokerUrl = request?.brokerUrl ?? worker.brokerUrl;
-  const nextWorkerMode = request?.workerMode ?? worker.workerMode;
   const nextMetadata = request?.metadata ?? worker.metadata;
   const nextManagementPlane = request?.managementPlane ?? worker.managementPlane;
   const capabilitiesChanged =
@@ -92,7 +88,6 @@ export function applyWorkerHeartbeatRuntimeUpdate(
   const materialChange =
     nextDisplayName !== worker.displayName ||
     nextBrokerUrl !== worker.brokerUrl ||
-    nextWorkerMode !== worker.workerMode ||
     nextManagementPlane !== worker.managementPlane ||
     capabilitiesChanged ||
     metadataChanged;
@@ -100,7 +95,6 @@ export function applyWorkerHeartbeatRuntimeUpdate(
   worker.displayName = nextDisplayName;
   worker.brokerUrl = nextBrokerUrl;
   worker.capabilities = nextCapabilities;
-  worker.workerMode = nextWorkerMode;
   worker.metadata = nextMetadata;
   worker.managementPlane = nextManagementPlane;
   worker.updatedAt = now;

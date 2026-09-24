@@ -201,7 +201,6 @@ test("server surfaces duplicate nodeId identity churn warnings on worker capacit
     role: "analyst",
     displayName: "mobilebeta mobile worker",
     brokerUrl: "http://127.0.0.1:18787",
-    workerMode: "mobile",
     capabilities,
     metadata: { runtime: "hermes-agent", transport: "http-poll" },
   };
@@ -212,7 +211,6 @@ test("server surfaces duplicate nodeId identity churn warnings on worker capacit
         ...baseRegistration,
         displayName: "mobilebeta JS-pinned worker",
         brokerUrl: "http://127.0.0.1:18790",
-        workerMode: "persistent",
         metadata: { runtime: "claude-code", transport: "node-worker" },
       },
       baseRegistration,
@@ -234,7 +232,7 @@ test("server surfaces duplicate nodeId identity churn warnings on worker capacit
     const capacity = await capacityRes.json() as { items: Array<{ nodeId: string; identityWarning?: { code: string; lastChangedFields: string[] } }> };
     const mobilebeta = capacity.items.find((item) => item.nodeId === nodeId);
     assert.equal(mobilebeta?.identityWarning?.code, "worker_identity_churn");
-    assert.ok(mobilebeta?.identityWarning?.lastChangedFields.includes("workerMode"));
+    assert.ok(mobilebeta?.identityWarning?.lastChangedFields.includes("displayName"));
     // #2065: the capacity projection uses the common offline window and no
     // longer synthesizes the retired mobileHealth field.
     assert.ok(mobilebeta, "capacity row for the churned worker expected");
@@ -256,7 +254,6 @@ test("server accepts a broker-agnostic Hermes-style worker poll and evidence flo
         role: "analyst",
         displayName: "Hermes Agent Reference Worker",
         brokerUrl: "http://127.0.0.1:8787",
-        workerMode: "mobile",
         capabilities: {
           canAnalyze: true,
           canBackfill: false,
@@ -275,7 +272,6 @@ test("server accepts a broker-agnostic Hermes-style worker poll and evidence flo
     assert.equal(registerRes.status, 201);
     const registered = await registerRes.json() as WorkerRegistrationResponse;
     assert.equal(registered.nodeId, workerId);
-    assert.equal(registered.workerMode, "mobile");
     assert.deepEqual(registered.metadata, {
       runtime: "hermes-agent",
       openClawRequired: "false",

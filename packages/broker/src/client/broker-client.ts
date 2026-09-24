@@ -56,8 +56,6 @@ const A2ABrokerTaskLaneReasonCodeSchema = z.enum([
   "fanout_marker_present",
   "multi_worker_marker_present",
   "delegated_workflow_marker_present",
-  "worker_mode_missing",
-  "worker_not_persistent",
   "policy_decision_missing",
   "policy_decision_unknown",
   "policy_requires_approval",

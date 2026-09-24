@@ -381,9 +381,10 @@ test("busy and unregistered recipients classify explicitly in the delivery matri
 });
 
 // ---------------------------------------------------------------------------
-// #2065 retirement prerequisite: the conversation-recipient liveness ladder is
-// the universal heartbeat-liveness ladder (<=30s online, <=90s stale, >90s
-// offline), identical for every workerMode. These tests run against the real
+// #2065: the conversation-recipient liveness ladder is the universal
+// heartbeat-liveness ladder (<=30s online, <=90s stale, >90s offline) over the
+// single common offline window — the workerMode/mode-specific ladder is
+// retired. These tests run against the real
 // delivery route with a controlled clock (no sleeps): node:test mock timers
 // freeze Date so heartbeat ages are exact at the <= boundaries.
 // ---------------------------------------------------------------------------
@@ -391,8 +392,6 @@ test("busy and unregistered recipients classify explicitly in the delivery matri
 const LADDER_AGES = [0, 29_999, 30_000, 30_001, 89_999, 90_000, 90_001] as const;
 const LADDER_EXPECTED = ["online", "online", "online", "stale", "stale", "stale", "offline"] as const;
 const FROZEN_CLOCK_MS = 1_700_000_000_000;
-
-type LadderWorkerMode = "mobile" | "persistent" | "absent";
 
 function enableFrozenClock(t: import("node:test").TestContext, baseMs: number): void {
   t.mock.timers.enable({ apis: ["Date"] });
@@ -402,7 +401,6 @@ function enableFrozenClock(t: import("node:test").TestContext, baseMs: number): 
 function registerLivenessWorker(
   broker: InMemoryA2ABroker,
   nodeId: string,
-  workerMode: LadderWorkerMode,
   lastSeenAt: string,
 ): void {
   broker.registerWorker({
@@ -416,17 +414,13 @@ function registerLivenessWorker(
       workspaceIds: ["liveness-ws"],
       environments: ["research"],
     },
-    ...(workerMode === "absent" ? {} : { workerMode }),
     metadata: {},
   });
-  // Pin the exact heartbeat age for the frozen-clock matrix without touching
-  // the underlying registered workerMode representation.
+  // Pin the exact heartbeat age for the frozen-clock matrix.
   const workers = (broker as unknown as { workers: Map<string, { lastSeenAt: string }> }).workers;
   const record = workers.get(nodeId);
   assert.ok(record, `worker ${nodeId} must be registered in the broker hot table`);
   record.lastSeenAt = lastSeenAt;
-  const stored = broker.getWorker(nodeId);
-  assert.equal(stored?.workerMode, workerMode === "absent" ? undefined : workerMode);
 }
 
 function injectTask(
@@ -487,42 +481,38 @@ async function fetchDelivery(broker: InMemoryA2ABroker, conversationId: string) 
   return delivery.json;
 }
 
-test("delivery liveness ladder is identical for mobile, persistent, and absent workerMode across the boundary ages (controlled clock, no sleeps)", async (t) => {
+test("delivery liveness ladder follows the common window across the boundary ages (controlled clock, no sleeps)", async (t) => {
   enableFrozenClock(t, FROZEN_CLOCK_MS);
   const broker = new InMemoryA2ABroker(undefined, undefined, { brokerId: "broker-alpha" });
 
-  for (const workerMode of ["mobile", "persistent", "absent"] as const) {
-    for (const ageMs of LADDER_AGES) {
-      registerLivenessWorker(broker, `worker-${workerMode}-${ageMs}`, workerMode, new Date(FROZEN_CLOCK_MS - ageMs).toISOString());
-    }
+  for (const ageMs of LADDER_AGES) {
+    registerLivenessWorker(broker, `worker-${ageMs}`, new Date(FROZEN_CLOCK_MS - ageMs).toISOString());
   }
 
-  // One conversation per mode; 7 ages fit below the 8-recipient fanout bound.
-  for (const workerMode of ["mobile", "persistent", "absent"] as const) {
-    const recipients = LADDER_AGES.map((ageMs) => ({
-      kind: "worker" as const,
-      id: `worker-${workerMode}-${ageMs}`,
-      homeBrokerId: "broker-alpha",
-    }));
-    const conversationId = await openLadderConversation(broker, `msg-ladder-${workerMode}`, recipients);
-    const json = await fetchDelivery(broker, conversationId);
-    assert.equal(json.queueSemantics, "queued-until-polled; ttl-expiry-terminal; retry-is-poll-based");
-    LADDER_AGES.forEach((ageMs, index) => {
-      const view = recipientView(json, `worker-${workerMode}-${ageMs}`);
-      assert.equal(view.liveness, LADDER_EXPECTED[index], `${workerMode} age ${ageMs}ms must be ${LADDER_EXPECTED[index]}`);
-      assert.equal(view.busy, false, `${workerMode} age ${ageMs}ms holds no claimed/running task`);
-      assert.equal(view.queuedCount, 1, "queued regardless of liveness");
-    });
-  }
+  // 7 ages fit below the 8-recipient fanout bound.
+  const recipients = LADDER_AGES.map((ageMs) => ({
+    kind: "worker" as const,
+    id: `worker-${ageMs}`,
+    homeBrokerId: "broker-alpha",
+  }));
+  const conversationId = await openLadderConversation(broker, "msg-ladder-1", recipients);
+  const json = await fetchDelivery(broker, conversationId);
+  assert.equal(json.queueSemantics, "queued-until-polled; ttl-expiry-terminal; retry-is-poll-based");
+  LADDER_AGES.forEach((ageMs, index) => {
+    const view = recipientView(json, `worker-${ageMs}`);
+    assert.equal(view.liveness, LADDER_EXPECTED[index], `age ${ageMs}ms must be ${LADDER_EXPECTED[index]}`);
+    assert.equal(view.busy, false, `age ${ageMs}ms holds no claimed/running task`);
+    assert.equal(view.queuedCount, 1, "queued regardless of liveness");
+  });
 });
 
 test("claimed/running tasks mark recipients busy independently of age; queued-only tasks do not", async (t) => {
   enableFrozenClock(t, FROZEN_CLOCK_MS);
   const broker = new InMemoryA2ABroker(undefined, undefined, { brokerId: "broker-alpha" });
 
-  registerLivenessWorker(broker, "worker-offline-busy", "persistent", new Date(FROZEN_CLOCK_MS - 90_001).toISOString());
-  registerLivenessWorker(broker, "worker-online-busy", "mobile", new Date(FROZEN_CLOCK_MS).toISOString());
-  registerLivenessWorker(broker, "worker-queued-only", "absent", new Date(FROZEN_CLOCK_MS).toISOString());
+  registerLivenessWorker(broker, "worker-offline-busy", new Date(FROZEN_CLOCK_MS - 90_001).toISOString());
+  registerLivenessWorker(broker, "worker-online-busy", new Date(FROZEN_CLOCK_MS).toISOString());
+  registerLivenessWorker(broker, "worker-queued-only", new Date(FROZEN_CLOCK_MS).toISOString());
   injectTask(broker, "task-claimed-offline", "claimed", "worker-offline-busy");
   injectTask(broker, "task-running-online", "running", "worker-online-busy");
   injectTask(broker, "task-queued-only", "queued", "worker-queued-only");
@@ -571,13 +561,13 @@ test("unregistered, invalid-heartbeat, and foreign-home recipients classify unkn
   const broker = new InMemoryA2ABroker(undefined, undefined, { brokerId: "broker-alpha" });
 
   // Local busy worker whose id is ALSO targeted via a foreign homeBrokerId.
-  registerLivenessWorker(broker, "worker-shadow", "persistent", new Date(FROZEN_CLOCK_MS).toISOString());
+  registerLivenessWorker(broker, "worker-shadow", new Date(FROZEN_CLOCK_MS).toISOString());
   injectTask(broker, "task-running-shadow", "running", "worker-shadow");
   // Local worker with an unparseable heartbeat, idle.
-  registerLivenessWorker(broker, "worker-invalid", "mobile", new Date(FROZEN_CLOCK_MS).toISOString());
+  registerLivenessWorker(broker, "worker-invalid", new Date(FROZEN_CLOCK_MS).toISOString());
   (broker as unknown as { workers: Map<string, { lastSeenAt: string }> }).workers.get("worker-invalid")!.lastSeenAt = "not-a-timestamp";
   // Local worker with an unparseable heartbeat AND an independent busy task.
-  registerLivenessWorker(broker, "worker-invalid-busy", "persistent", new Date(FROZEN_CLOCK_MS).toISOString());
+  registerLivenessWorker(broker, "worker-invalid-busy", new Date(FROZEN_CLOCK_MS).toISOString());
   (broker as unknown as { workers: Map<string, { lastSeenAt: string }> }).workers.get("worker-invalid-busy")!.lastSeenAt = "also-not-a-timestamp";
   injectTask(broker, "task-running-invalid", "running", "worker-invalid-busy");
 

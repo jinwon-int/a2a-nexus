@@ -307,13 +307,6 @@ function parseWorkerRuntimeFlavor(value: unknown): RegisterWorkerRequest["capabi
   return undefined;
 }
 
-export function parseWorkerMode(value: unknown): RegisterWorkerRequest["workerMode"] | undefined {
-  if (typeof value !== "string") return undefined;
-  const normalized = value.trim().toLowerCase();
-  if (normalized === "persistent" || normalized === "mobile") return normalized;
-  return undefined;
-}
-
 function parseOptionalBoolean(value: unknown): boolean | undefined {
   if (typeof value === "boolean") return value;
   if (typeof value === "string") {

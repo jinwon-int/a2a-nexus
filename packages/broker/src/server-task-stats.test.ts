@@ -44,7 +44,6 @@ async function registerPersistentWorker(server: { baseUrl: string }, nodeId: str
     body: JSON.stringify({
       nodeId,
       role: "analyst",
-      workerMode: "persistent",
       capabilities: {
         canAnalyze: true,
         canBackfill: false,

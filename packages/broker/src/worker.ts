@@ -12,7 +12,6 @@ import {
   parsePartyRole,
   parsePositiveInt,
   parseWorkerCapabilities,
-  parseWorkerMode,
   parseWorkerRuntimeProfile,
   requiredEnv,
 } from "./workers/worker-env.js";
@@ -124,7 +123,6 @@ export function createWorkerConfigFromEnv(env: NodeJS.ProcessEnv = process.env):
     displayName: optionalTrimmed(env.WORKER_DISPLAY_NAME ?? env.A2A_WORKER_DISPLAY_NAME),
     brokerUrl: optionalTrimmed(env.WORKER_PUBLIC_URL ?? env.A2A_WORKER_PUBLIC_URL),
     capabilities,
-    workerMode: parseWorkerMode(env.WORKER_MODE ?? env.A2A_WORKER_MODE),
     metadata: withAnalysisProbeMetadata(buildWorkerMetadata(env, runtimeProfile), analysisProbe, env),
   };
 

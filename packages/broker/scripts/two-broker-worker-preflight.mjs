@@ -139,7 +139,6 @@ function summarizeWorker(worker) {
     role: worker.role ?? null,
     displayName: worker.displayName ?? null,
     lastSeenAt: worker.lastSeenAt ?? null,
-    workerMode: worker.workerMode ?? null,
     brokerId: worker.brokerId ?? worker.metadata?.brokerId ?? null,
     homeBrokerId: worker.homeBrokerId ?? worker.metadata?.homeBrokerId ?? null,
     teamId: worker.teamId ?? worker.metadata?.teamId ?? null,

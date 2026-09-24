@@ -27,7 +27,6 @@ const BASE_WORKER: WorkerView = {
     workspaceIds: ["private-workspace"],
     environments: ["research", "staging"],
   },
-  workerMode: "mobile",
   metadata: {
     teamId: "team1",
     edgeSecret: "should-not-leak",
@@ -101,7 +100,6 @@ test("worker capability card maps Team2 workerepsilon discovery to public AgentC
       workspaceIds: ["team2-private-workspace"],
       environments: ["research"],
     },
-    workerMode: "persistent",
     metadata: {
       teamId: "team2",
       terminalOutboxId: "private-terminal-id",

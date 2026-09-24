@@ -26,8 +26,8 @@ approval from broker-alpha.
 ### 1.1 Payload shape
 
 - [ ] Registration body contains `nodeId`, `role`, `displayName`, `brokerUrl`,
-      `workerMode`, `capabilities`, and `metadata`.
-- [ ] `workerMode` is `mobile`.
+      `capabilities`, and `metadata`. (#2065 retired the `workerMode` field;
+      brokers tolerate but drop it, so senders must not rely on it.)
 - [ ] `metadata.runtime` is `hermes-agent`.
 - [ ] `metadata.openClawRequired` is `"false"`.
 - [ ] `metadata.transport` is `http-poll`.
@@ -55,7 +55,8 @@ approval from broker-alpha.
 - [ ] Heartbeat metadata includes `runtime: hermes-agent` and `heartbeat: ok`.
 - [ ] After a simulated network drop or process restart, the worker re-registers
       and resumes heartbeat on the next loop iteration.
-- [ ] Heartbeat stale threshold is 30 seconds (`workerMode: mobile`).
+- [ ] Heartbeat stale threshold is 30 seconds (common liveness ladder, 30 s
+      online / 90 s offline).
 - [ ] Termux:Boot boot script (`.termux/boot/a2a-hermes-worker`) acquires wake
       lock before network access.
 
@@ -294,7 +295,7 @@ reference Done evidence.
   The fixture at `fixtures/native-worker/no-live-conformance.json` contains
   zero secret values.
 - Android Doze and Termux resource limits mean the worker may be slow or
-  temporarily unreachable. This is expected for `workerMode: mobile`.
+  temporarily unreachable. This is expected for the mobile-alpha profile.
 - Termux:Boot scripts are device-dependent; test on each target device.
 
 ---

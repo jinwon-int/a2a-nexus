@@ -51,8 +51,6 @@ export interface PeerStatusResponse {
   worker: {
     registered: boolean;
     lastHeartbeatAt?: number;
-    /** Wire field preserved verbatim; accepted values unchanged. */
-    workerMode?: "persistent" | "mobile";
     /**
      * Advisory busy telemetry, identical for every mode: `slotsBusy` counts
      * active(claimed/running) + queued tasks against a fixed `slotsTotal` of
@@ -137,22 +135,11 @@ export class PeerStatusService {
     private readonly options: {
       cacheTtlMs?: number;
       /**
-       * Common milliseconds after which a worker is considered stale in this
-       * read-only view, for every `workerMode` (persistent, mobile, absent).
+       * Milliseconds after which a worker is considered stale in this
+       * read-only view, for every registered worker.
        * Default: {@link DEFAULT_WORKER_OFFLINE_AFTER_MS} (90_000 = 90 s).
        */
       workerOfflineAfterMs?: number;
-      /**
-       * @deprecated Mobile-only override retained for explicit backward
-       * compatibility (#2065). When supplied, it takes precedence over
-       * `workerOfflineAfterMs` for `workerMode === "mobile"` workers only;
-       * persistent and absent-mode workers ignore it. When absent, mobile
-       * workers use the common `workerOfflineAfterMs` default — no 30 s
-       * value is synthesized here anymore. This option only shapes the
-       * read-only `a2a.peer.status` view; the `/dashboard` and
-       * capacity/mobileHealth surfaces keep their own mode-aware windows.
-       */
-      mobileOfflineAfterMs?: number;
     } = {},
   ) {}
 
@@ -252,14 +239,10 @@ export class PeerStatusService {
   private computeStatus(target: string, nowMs: number): PeerStatusResponse {
     const worker = this.broker.getWorker(target);
     const allTasks = this.broker.listTasks({ targetNodeId: target });
-    // Unified read-only staleness window (#2065): persistent, mobile and
-    // absent modes share `workerOfflineAfterMs ?? DEFAULT_WORKER_OFFLINE_AFTER_MS`.
-    // An explicitly supplied legacy `mobileOfflineAfterMs` keeps its historical
-    // mobile-only precedence; it is ignored for every other mode.
-    const isMobile = worker?.workerMode === "mobile";
-    const offlineAfterMs = isMobile
-      ? (this.options.mobileOfflineAfterMs ?? this.options.workerOfflineAfterMs ?? DEFAULT_WORKER_OFFLINE_AFTER_MS)
-      : (this.options.workerOfflineAfterMs ?? DEFAULT_WORKER_OFFLINE_AFTER_MS);
+    // Unified read-only staleness window (#2065): every registered worker
+    // shares `workerOfflineAfterMs ?? DEFAULT_WORKER_OFFLINE_AFTER_MS`.
+    const offlineAfterMs =
+      this.options.workerOfflineAfterMs ?? DEFAULT_WORKER_OFFLINE_AFTER_MS;
 
     const workerView = this.broker.getWorkerView(target, offlineAfterMs);
 
@@ -308,7 +291,6 @@ export class PeerStatusService {
       worker: {
         registered: isReachable,
         lastHeartbeatAt: worker ? Date.parse(worker.lastSeenAt) : undefined,
-        workerMode: worker?.workerMode,
         capacity: isReachable
           ? { slotsTotal, slotsBusy }
           : undefined,
@@ -327,15 +309,14 @@ export class PeerStatusService {
    *
    * Priority order (first match wins):
    * 1. unreachable – worker not registered at all
-   * 2. stale – worker heartbeat older than the resolved (common, or explicit
-   *    legacy mobile-only) offline window
+   * 2. stale – worker heartbeat older than the resolved common offline window
    * 3. busy – the advisory slot budget is occupied (active + queued >= total)
    * 4. degraded – stale tasks exist (claim/running tasks with missed heartbeats)
    * 5. ok – everything nominal
    *
    * Since #2065 the stale window and advisory slot total are computed the
-   * same way for every worker mode; only an explicitly supplied legacy
-   * `mobileOfflineAfterMs` overrides the window, mobile-only.
+   * same way for every worker; the legacy `mobileOfflineAfterMs` override is
+   * retired along with the workerMode distinction.
    */
   private computeHealth(
     reachable: boolean,
@@ -445,7 +426,6 @@ export class PeerStatusService {
       },
       worker: {
         registered: response.worker.registered,
-        ...(response.worker.workerMode !== undefined ? { workerMode: response.worker.workerMode } : {}),
         ...(response.worker.lastHeartbeatAt !== undefined
           ? { lastHeartbeatAt: response.worker.lastHeartbeatAt }
           : {}),

@@ -4,7 +4,6 @@ export interface A2AJsWorkerRegistration {
   nodeId: string;
   displayName: string;
   role: "analyst" | "hub" | "operator" | "live-trader";
-  workerMode: "external-sdk";
   runtimeFlavor: "a2a-js";
   capabilities: {
     canAnalyze: boolean;
@@ -39,7 +38,6 @@ export function mapAgentCardToWorkerRegistration(card: AgentCard, options: { nod
     nodeId: `${prefix}-${publicSafeId(card.name)}`,
     displayName: card.name,
     role: "analyst",
-    workerMode: "external-sdk",
     runtimeFlavor: "a2a-js",
     capabilities: {
       canAnalyze: card.skills.some((skill) => /analy[sz]e|research|task/i.test(`${skill.id} ${skill.name} ${skill.description}`)),

@@ -40,7 +40,6 @@ function registerPersistentWorker(broker: InMemoryA2ABroker, nodeId = "worker-1"
   broker.registerWorker({
     nodeId,
     role: "operator",
-    workerMode: "persistent",
     capabilities: {
       canAnalyze: true,
       canBackfill: false,

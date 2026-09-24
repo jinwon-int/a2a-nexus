@@ -328,7 +328,6 @@ function laneAssignmentRecord(value: unknown): Record<string, unknown> | undefin
 // read-model check does not change the more permissive persistence schema.
 const EXCLUSIVE_LANE_REASON_GROUPS: readonly (readonly TaskLaneReasonCode[])[] = [
   ["mode_missing", "mode_not_read_only_analysis"],
-  ["worker_mode_missing", "worker_not_persistent"],
   ["policy_decision_missing", "policy_requires_approval", "policy_denied", "policy_decision_unknown"],
 ];
 

@@ -1306,7 +1306,7 @@ test("discoverCleanupCandidates risk notes correctly categorize actionable and n
 // Mobile worker health in broker-facing status
 // ---------------------------------------------------------------------------
 
-test("getWorkerCapacitySummary keeps workerMode and never synthesizes the retired mobileHealth field", () => {
+test("getWorkerCapacitySummary never synthesizes the retired mobileHealth field", () => {
   const broker = new InMemoryA2ABroker();
   const nowMs = Date.now();
 
@@ -1321,7 +1321,6 @@ test("getWorkerCapacitySummary keeps workerMode and never synthesizes the retire
   broker.registerWorker({
     nodeId: "mobilealpha",
     role: "analyst",
-    workerMode: "mobile",
     capabilities: { canAnalyze: true, canBackfill: false, canPatchWorkspace: false, canPromoteLive: false, workspaceIds: ["hermes-no-live"], environments: ["research"] },
     metadata: { runtime: "hermes-agent", transport: "http-poll" },
   });
@@ -1331,16 +1330,14 @@ test("getWorkerCapacitySummary keeps workerMode and never synthesizes the retire
 
   const summary = broker.getWorkerCapacitySummary({ nowMs });
 
-  // Persistent worker: no workerMode, no mobileHealth
+  // Persistent worker: no mobileHealth
   const persistentItem = summary.items.find((i) => i.nodeId === "persistent-w1");
   assert.ok(persistentItem);
-  assert.equal(persistentItem.workerMode, undefined);
   assert.ok(!("mobileHealth" in persistentItem));
 
-  // Mobile worker (online under the common window): keeps workerMode, no mobileHealth
+  // Mobile worker (online under the common window): no mobileHealth
   const mobileItem = summary.items.find((i) => i.nodeId === "mobilealpha");
   assert.ok(mobileItem);
-  assert.equal(mobileItem.workerMode, "mobile");
   assert.equal(mobileItem.status, "online");
   assert.ok(!("mobileHealth" in mobileItem));
 });
@@ -1374,14 +1371,13 @@ test("getWorkerCapacitySummary exposes runtimeFlavor and gatewayRequired for pol
   assert.equal(item.gatewayRequired, false);
 });
 
-test("getWorkerCapacitySummary keeps a declared-mobile worker online under the common window at 35s", () => {
+test("getWorkerCapacitySummary keeps a poll worker online under the common window at 35s", () => {
   const broker = new InMemoryA2ABroker();
 
   // Register a mobile worker at time zero
   broker.registerWorker({
     nodeId: "mobilebeta",
     role: "analyst",
-    workerMode: "mobile",
     capabilities: { canAnalyze: true, canBackfill: false, canPatchWorkspace: false, canPromoteLive: false, workspaceIds: ["hermes-no-live"], environments: ["research"] },
     metadata: { runtime: "hermes-agent", transport: "http-poll" },
   });
@@ -1398,18 +1394,16 @@ test("getWorkerCapacitySummary keeps a declared-mobile worker online under the c
 
   const mobilebeta = summary.items.find((i) => i.nodeId === "mobilebeta");
   assert.ok(mobilebeta);
-  assert.equal(mobilebeta.workerMode, "mobile");
-  assert.equal(mobilebeta.status, "online", "declared-mobile worker stays online at 35s under the common 90s window");
+  assert.equal(mobilebeta.status, "online", "worker stays online at 35s under the common 90s window");
   assert.ok(!("mobileHealth" in mobilebeta));
 });
 
-test("getWorkerCapacitySummary marks a declared-mobile worker stale past the common window", () => {
+test("getWorkerCapacitySummary marks a disconnected worker stale past the common window", () => {
   const broker = new InMemoryA2ABroker();
 
   broker.registerWorker({
     nodeId: "mobilebeta-disconnected",
     role: "analyst",
-    workerMode: "mobile",
     capabilities: { canAnalyze: true, canBackfill: false, canPatchWorkspace: false, canPromoteLive: false, workspaceIds: ["hermes-no-live"], environments: ["research"] },
     metadata: { runtime: "hermes-agent", transport: "http-poll" },
   });
@@ -1424,12 +1418,11 @@ test("getWorkerCapacitySummary marks a declared-mobile worker stale past the com
 
   const mobilebeta = summary.items.find((i) => i.nodeId === "mobilebeta-disconnected");
   assert.ok(mobilebeta);
-  assert.equal(mobilebeta.workerMode, "mobile");
   assert.ok(!("mobileHealth" in mobilebeta));
   assert.equal(mobilebeta.status, "stale");
 });
 
-test("getDashboard keeps workerMode and never synthesizes the retired mobileHealth field", () => {
+test("getDashboard never synthesizes the retired mobileHealth field", () => {
   const broker = new InMemoryA2ABroker();
 
   broker.registerWorker({
@@ -1441,7 +1434,6 @@ test("getDashboard keeps workerMode and never synthesizes the retired mobileHeal
   broker.registerWorker({
     nodeId: "mobilealpha-dash",
     role: "analyst",
-    workerMode: "mobile",
     capabilities: { canAnalyze: true, canBackfill: false, canPatchWorkspace: false, canPromoteLive: false, workspaceIds: ["hermes-no-live"], environments: ["research"] },
     metadata: { runtime: "hermes-agent", transport: "http-poll" },
   });
@@ -1452,13 +1444,11 @@ test("getDashboard keeps workerMode and never synthesizes the retired mobileHeal
   // Persistent worker: no mobile fields
   const persistentNode = dashboard.workers.byNode.find((w) => w.nodeId === "persistent-w2");
   assert.ok(persistentNode);
-  assert.equal(persistentNode.workerMode, undefined);
   assert.ok(!("mobileHealth" in persistentNode));
 
   // Mobile worker (online under the common window)
   const mobileNode = dashboard.workers.byNode.find((w) => w.nodeId === "mobilealpha-dash");
   assert.ok(mobileNode);
-  assert.equal(mobileNode.workerMode, "mobile");
   assert.equal(mobileNode.status, "online");
   assert.ok(!("mobileHealth" in mobileNode));
 });
@@ -1475,7 +1465,6 @@ test("getDashboard fleet worker counts use the common window for declared-mobile
   broker.registerWorker({
     nodeId: "mobilealpha-fleet",
     role: "analyst",
-    workerMode: "mobile",
     capabilities: { canAnalyze: true, canBackfill: false, canPatchWorkspace: false, canPromoteLive: false, workspaceIds: ["hermes-no-live"], environments: ["research"] },
     metadata: { runtime: "hermes-agent", transport: "http-poll" },
   });
@@ -1506,11 +1495,9 @@ test("getDashboard fleet worker counts use the common window for declared-mobile
   assert.ok(mobileNode);
 
   assert.equal(persistentNode.status, "online");
-  assert.equal(persistentNode.workerMode, undefined);
   assert.ok(!("mobileHealth" in persistentNode));
 
-  assert.equal(mobileNode.status, "online", "declared-mobile worker stays online at 45s under the common window");
-  assert.equal(mobileNode.workerMode, "mobile");
+  assert.equal(mobileNode.status, "online", "worker stays online at 45s under the common window");
   assert.ok(!("mobileHealth" in mobileNode));
 });
 
@@ -1525,25 +1512,22 @@ test("capacity rows for persistent workers carry no mode fields", () => {
   const summary = broker.getWorkerCapacitySummary();
   const item = summary.items.find((i) => i.nodeId === "persistent-b");
   assert.ok(item);
-  assert.equal(item.workerMode, undefined);
   assert.ok(!("mobileHealth" in item));
 });
 
-test("getWorkerCapacitySummary keeps workerMode on mobile rows and never synthesizes mobileHealth", () => {
+test("getWorkerCapacitySummary never synthesizes the retired mobileHealth on capacity rows", () => {
   const broker = new InMemoryA2ABroker();
 
   // Register a mix of mobile and persistent workers
   broker.registerWorker({
     nodeId: "mobilealpha-mix",
     role: "analyst",
-    workerMode: "mobile",
     capabilities: { canAnalyze: true, canBackfill: false, canPatchWorkspace: false, canPromoteLive: false, workspaceIds: ["hermes-no-live"], environments: ["research"] },
     metadata: { runtime: "hermes-agent", transport: "http-poll" },
   });
   broker.registerWorker({
     nodeId: "mobilebeta-mix",
     role: "analyst",
-    workerMode: "mobile",
     capabilities: { canAnalyze: true, canBackfill: false, canPatchWorkspace: false, canPromoteLive: false, workspaceIds: ["hermes-no-live"], environments: ["research"] },
     metadata: { runtime: "hermes-agent", transport: "http-poll" },
   });
@@ -1566,20 +1550,16 @@ test("getWorkerCapacitySummary keeps workerMode on mobile rows and never synthes
   const summary = broker.getWorkerCapacitySummary();
   assert.equal(summary.totals.workers, 4);
 
-  // Mobile items keep workerMode; the retired mobileHealth field is gone
+  // The retired mobileHealth field is gone
   const mobilealpha = summary.items.find((i) => i.nodeId === "mobilealpha-mix");
   const mobilebeta = summary.items.find((i) => i.nodeId === "mobilebeta-mix");
   assert.ok(mobilealpha);
   assert.ok(mobilebeta);
-  assert.equal(mobilealpha.workerMode, "mobile");
   assert.ok(!("mobileHealth" in mobilealpha));
-  assert.equal(mobilebeta.workerMode, "mobile");
   assert.ok(!("mobileHealth" in mobilebeta));
 
   // Persistent items have neither field
-  assert.equal(summary.items.find((i) => i.nodeId === "persistent-c")?.workerMode, undefined);
   assert.ok(!("mobileHealth" in summary.items.find((i) => i.nodeId === "persistent-c")!));
-  assert.equal(summary.items.find((i) => i.nodeId === "persistent-d")?.workerMode, undefined);
   assert.ok(!("mobileHealth" in summary.items.find((i) => i.nodeId === "persistent-d")!));
 });
 
@@ -1589,7 +1569,6 @@ test("Hermes native worker submits redacted done evidence via completeTask", () 
   broker.registerWorker({
     nodeId: "hermes-evidence-tester",
     role: "analyst",
-    workerMode: "mobile",
     capabilities: {
       canAnalyze: true,
       canBackfill: false,
@@ -1634,7 +1613,6 @@ test("Hermes native worker submits redacted blocked evidence via failTask", () =
   broker.registerWorker({
     nodeId: "hermes-blocked-tester",
     role: "analyst",
-    workerMode: "mobile",
     capabilities: {
       canAnalyze: true,
       canBackfill: false,
@@ -1671,13 +1649,12 @@ test("Hermes native worker submits redacted blocked evidence via failTask", () =
   assert.equal(result.error?.message, "Preflight no-live gate rejected live promotion attempt");
 });
 
-test("Hermes declared-mobile worker follows the common window: online at 45s, stale past 90s", () => {
+test("Hermes worker follows the common window: online at 45s, stale past 90s", () => {
   const broker = new InMemoryA2ABroker();
 
   broker.registerWorker({
     nodeId: "hermes-health-tester",
     role: "analyst",
-    workerMode: "mobile",
     capabilities: {
       canAnalyze: true,
       canBackfill: false,
@@ -1695,7 +1672,6 @@ test("Hermes declared-mobile worker follows the common window: online at 45s, st
   const worker = summary.items.find((i) => i.nodeId === "hermes-health-tester");
   assert.ok(worker);
   assert.equal(worker.status, "online");
-  assert.equal(worker.workerMode, "mobile");
   assert.ok(!("mobileHealth" in worker));
 
   // 45s: still inside the common 90s window — the retired mode-aware ladder
@@ -1704,7 +1680,7 @@ test("Hermes declared-mobile worker follows the common window: online at 45s, st
   summary = broker.getWorkerCapacitySummary({ nowMs: staleNowMs });
   const staleWorker = summary.items.find((i) => i.nodeId === "hermes-health-tester");
   assert.ok(staleWorker);
-  assert.equal(staleWorker.status, "online", "declared-mobile worker stays online at 45s under the common window");
+  assert.equal(staleWorker.status, "online", "worker stays online at 45s under the common window");
   assert.ok(!("mobileHealth" in staleWorker));
 
   const disconnectedNowMs = nowMs + 100_000;
@@ -1742,7 +1718,6 @@ test("Hermes worker registration preserves runtimeFlavor and gatewayRequired in 
         runtimeFlavor: "termux-hermes",
         gatewayRequired: false,
       },
-      workerMode: "mobile",
       metadata: { runtime: "hermes-agent", transport: "http-poll" },
     });
 
@@ -1750,13 +1725,11 @@ test("Hermes worker registration preserves runtimeFlavor and gatewayRequired in 
     assert.equal(hot.length, 1);
     assert.equal(hot[0]?.capabilities.runtimeFlavor, "termux-hermes");
     assert.equal(hot[0]?.capabilities.gatewayRequired, false);
-    assert.equal(hot[0]?.workerMode, "mobile");
 
     const worker = broker.getWorker("hermes-read-model");
     assert.ok(worker);
     assert.equal(worker.capabilities.runtimeFlavor, "termux-hermes");
     assert.equal(worker.capabilities.gatewayRequired, false);
-    assert.equal(worker.workerMode, "mobile");
   } finally {
     rmSync(dir, { recursive: true, force: true });
   }

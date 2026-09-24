@@ -285,8 +285,7 @@ export interface TaskDiagnosticsOptions {
 export const DEFAULT_WORKER_HEARTBEAT_PERSIST_INTERVAL_MS = Number.POSITIVE_INFINITY;
 
 /**
- * Default milliseconds after which a persistent worker is considered stale.
- * @see WorkerMode
+ * Default milliseconds after which a worker is considered stale.
  */
 export const DEFAULT_WORKER_OFFLINE_AFTER_MS = 90_000;
 

@@ -20,7 +20,6 @@ import {
   type BrokerPolicyDocument,
 } from "a2a-policy-referee";
 import { evaluateImplementationReadiness, isImplementationTaskType } from "./scheduler-dry-run.js";
-import { effectiveOfflineAfterMs } from "./broker-worker-status.js";
 import { assertTransition, assertTaskOwnership } from "./broker-transition-guards.js";
 import { evaluateTaskReadiness, type TaskReadinessMode } from "../task-readiness.js";
 import type {
@@ -234,7 +233,6 @@ export function workerClassForPolicy(
     sourceOnly: payload?.sourceOnly === true,
     payloadMode: typeof payload?.mode === "string" ? payload.mode : undefined,
     workerFound: Boolean(worker),
-    workerMode: worker?.workerMode,
   });
 }
 
@@ -325,10 +323,7 @@ export function evaluateClaimImplementationReadiness(
     // requireWorker) first, but this function is exported and must not fail open.
     return { kind: "implementation", ready: false, blockers: "worker is not registered with this broker" };
   }
-  const view = context.getWorkerView(
-    workerId,
-    effectiveOfflineAfterMs(worker.workerMode, DEFAULT_A2A_ROUND_WORKER_OFFLINE_AFTER_MS),
-  );
+  const view = context.getWorkerView(workerId, DEFAULT_A2A_ROUND_WORKER_OFFLINE_AFTER_MS);
   if (!view) {
     return { kind: "implementation", ready: false, blockers: "worker is not registered with this broker" };
   }

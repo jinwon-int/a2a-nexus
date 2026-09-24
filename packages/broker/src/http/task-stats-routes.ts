@@ -47,7 +47,6 @@ export function workerClassForStatsTask(broker: InMemoryA2ABroker, task: TaskRec
     sourceOnly: task.payload?.sourceOnly === true,
     payloadMode: typeof task.payload?.mode === "string" ? task.payload.mode : undefined,
     workerFound: Boolean(worker),
-    workerMode: worker?.workerMode,
   });
 }
 

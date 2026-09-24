@@ -1486,7 +1486,6 @@ test("broker treats heartbeat timestamp metadata as non-material liveness churn"
       workspaceIds: ["mobile"],
       environments: ["research"],
     },
-    workerMode: "mobile",
     metadata: {
       runtime: "hermes-agent",
       transport: "http-poll",
@@ -1531,7 +1530,6 @@ test("broker treats repeated registration heartbeat timestamp metadata as non-ma
       workspaceIds: ["mobile"],
       environments: ["research" as const],
     },
-    workerMode: "mobile" as const,
     metadata: {
       runtime: "hermes-agent",
       transport: "http-poll",
@@ -2142,7 +2140,6 @@ test("broker preserves Hermes native worker capability metadata in hot read mode
         runtimeFlavor: "termux-hermes",
         gatewayRequired: false,
       },
-      workerMode: "mobile",
       metadata: {
         runtime: "hermes-agent",
         transport: "http-poll",

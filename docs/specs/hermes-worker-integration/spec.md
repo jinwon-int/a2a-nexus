@@ -14,7 +14,7 @@ Hermes Agent and other non-OpenClaw runtimes need a small, public-safe worker co
 
 ### In scope
 
-- Document the minimal worker registration payload: nodeId, role, displayName, capabilities, workerMode, metadata, and brokerUrl.
+- Document the minimal worker registration payload: nodeId, role, displayName, capabilities, metadata, and brokerUrl. (#2065 retired the `workerMode` field; brokers tolerate but drop it.)
 - Document heartbeat refresh with POST /workers/:nodeId/heartbeat.
 - Provide a broker-agnostic polling alias: GET /tasks?worker=<nodeId>&status=pending, mapped to the existing assigned-worker queued task read model.
 - Provide a terminal evidence alias: POST /tasks/:id/evidence, mapped to existing task completion/failure behavior.
@@ -43,7 +43,6 @@ Hermes Agent and other non-OpenClaw runtimes need a small, public-safe worker co
       "role": "analyst",
       "displayName": "Hermes Agent Reference Worker",
       "brokerUrl": "http://127.0.0.1:8787",
-      "workerMode": "mobile",
       "capabilities": {
         "canAnalyze": true,
         "canBackfill": false,
@@ -71,7 +70,7 @@ Hermes Agent and other non-OpenClaw runtimes need a small, public-safe worker co
       }
     }
 
-Heartbeat may refresh displayName, brokerUrl, capabilities, workerMode, or metadata. Missing fields keep their prior values.
+Heartbeat may refresh displayName, brokerUrl, capabilities, or metadata. Missing fields keep their prior values.
 
 ### Poll assigned pending work
 

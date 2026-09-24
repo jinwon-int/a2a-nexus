@@ -117,7 +117,6 @@ export function buildWorkerCapacitySummary(
       lastSeenAgeSec: ageSecFromIso(worker.lastSeenAt, nowMs),
       counts,
       latestTaskUpdatedAt,
-      workerMode: worker.workerMode,
       ...(worker.capabilities.implementationCapability
         ? { implementationCapability: worker.capabilities.implementationCapability }
         : {}),

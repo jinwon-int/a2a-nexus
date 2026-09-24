@@ -180,7 +180,6 @@ export function buildBrokerDashboard(
       activeTaskCount: activeTasksByNodeId.get(w.nodeId) ?? 0,
       lastSeenAt: w.lastSeenAt,
       lastSeenAgeSec: ageSecFromIso(w.lastSeenAt, nowMs),
-      workerMode: w.workerMode,
     };
   });
   const workers: WorkerFleetSummary = {

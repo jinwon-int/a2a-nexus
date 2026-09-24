@@ -10,7 +10,6 @@
     "workerId": "workerGamma",
     "runtime": "hermes-agent",
     "harness": "hermes",
-    "workerMode": "persistent",
     "capabilityUnderTest": "github-propose-patch",
     "brokerBoundary": "brokerAlpha broker-backed task, PR-first only"
   },

@@ -4,9 +4,9 @@
 
 Repository inspection shows the broker already has a runtime-neutral worker record:
 
-- packages/broker/src/core/types.ts defines RegisterWorkerRequest with nodeId, role, displayName, brokerUrl, capabilities, workerMode, and metadata.
+- packages/broker/src/core/types.ts defines RegisterWorkerRequest with nodeId, role, displayName, brokerUrl, capabilities, and metadata (the `workerMode` field this analysis originally listed was later retired by #2065; brokers tolerate but drop it).
 - packages/broker/src/core/broker.ts stores worker registration through registerWorker without OpenClaw-only fields.
-- heartbeatWorker can refresh displayName, brokerUrl, capabilities, workerMode, and metadata.
+- heartbeatWorker can refresh displayName, brokerUrl, capabilities, and metadata.
 - packages/broker/src/server.ts exposes POST /workers/register, POST /workers/:nodeId/heartbeat, GET /tasks, and task lifecycle routes.
 
 ## Gaps closed in Phase 1

@@ -97,7 +97,6 @@ export function workerIdentityFingerprint(
     role: request.role,
     displayName: request.displayName ?? null,
     brokerUrl: request.brokerUrl ?? null,
-    workerMode: request.workerMode ?? null,
     managementPlane: request.managementPlane ?? null,
     capabilities,
     metadata: materialWorkerMetadata(request.metadata),
@@ -113,7 +112,6 @@ export function workerIdentityChangedFields(
   if (existing.role !== request.role) fields.push("role");
   if (existing.displayName !== request.displayName) fields.push("displayName");
   if (existing.brokerUrl !== request.brokerUrl) fields.push("brokerUrl");
-  if (existing.workerMode !== request.workerMode) fields.push("workerMode");
   if (existing.managementPlane !== request.managementPlane) fields.push("managementPlane");
   if (!workerCapabilitiesEqual(existing.capabilities, capabilities)) fields.push("capabilities");
   if (!workerMetadataMateriallyEqual(existing.metadata, request.metadata)) fields.push("metadata");
