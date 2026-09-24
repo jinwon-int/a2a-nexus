@@ -1,6 +1,6 @@
 # A2A Current State
 
-> **Snapshot date:** 2026-07-13
+> **Snapshot date:** 2026-09-24
 > **Active coordination:** [a2a-nexus#1498](https://github.com/jinwon-int/a2a-nexus/issues/1498) (repository hardening umbrella; the monorepo canonical flip is complete — recorded below)
 > **Status:** public alpha, actual source-state canonical flip executed for `a2a-nexus` packages at source level; external/live execution-sensitive actions remain separated.
 
@@ -29,7 +29,7 @@ recorded below for continuity:
 
 | Issue | Owning repo | Purpose |
 | --- | --- | --- |
-| [a2a-nexus#553](https://github.com/jinwon-int/a2a-nexus/issues/553) | `a2a-nexus` | Closed 2026-06-11 (completed). Actual source-state canonical flip executed: `packages/broker`, `packages/docker-runner`, and `packages/openclaw-plugin-a2a` are `MONOREPO_PACKAGES_CANONICAL`. External/live execution-sensitive actions remain separated. |
+| [a2a-nexus#553](https://github.com/jinwon-int/a2a-nexus/issues/553) | `a2a-nexus` | Closed 2026-06-11 (completed). Actual source-state canonical flip executed: `packages/broker`, `packages/docker-runner`, and (at the time) `packages/openclaw-plugin-a2a` are `MONOREPO_PACKAGES_CANONICAL`; the plugin package was later retired. External/live execution-sensitive actions remain separated. |
 
 Recently completed broker-mode work is recorded for continuity only:
 `a2a-broker#1320` and `a2a-broker#1321` are not the active `a2a-plane`
@@ -48,9 +48,9 @@ Completed current-state and monorepo groundwork:
 | a2a-plane#506 (a2a-plane#506, internal tracker private) | `a2a-plane` | Closed parent wave: current-state integration and A2A effectiveness. |
 | a2a-plane#507 (a2a-plane#507, internal tracker private) | `a2a-plane` | Closed: current-state docs and checkout hygiene. |
 | a2a-plane#508 (a2a-plane#508, internal tracker private) | `a2a-plane` | Closed: no-live cross-repo integration smoke. |
-| [a2a-broker#1318](https://github.com/jinwon-int/a2a-broker/issues/1318) | `a2a-broker` | Closed: work-mode decision evidence across Team1/hybrid dispatch paths. |
-| [a2a-docker-runner#358](https://github.com/jinwon-int/a2a-docker-runner/issues/358) | `a2a-docker-runner` | Closed: read-only/no-change evidence on clean `main`. |
-| [openclaw-plugin-a2a#457](https://github.com/jinwon-int/openclaw-plugin-a2a/issues/457) | `openclaw-plugin-a2a` | Closed: requester-visible no-live status conformance fixture. |
+| a2a-broker#1318 (archived mirror, not reachable) | `a2a-broker` | Closed: work-mode decision evidence across Team1/hybrid dispatch paths. |
+| a2a-docker-runner#358 (archived mirror, not reachable) | `a2a-docker-runner` | Closed: read-only/no-change evidence on clean `main`. |
+| openclaw-plugin-a2a#457 (archived mirror, not reachable; package since retired) | `openclaw-plugin-a2a` | Closed: requester-visible no-live status conformance fixture. |
 | a2a-plane#511 (a2a-plane#511, internal tracker private) | `a2a-plane` | Closed: monorepo re-entry decision, staged umbrella rehearsal first. |
 | a2a-plane#513 (a2a-plane#513, internal tracker private) | `a2a-plane` | Closed: import rehearsal and mirror freshness checks. |
 | a2a-plane#514 (a2a-plane#514, internal tracker private) | `a2a-plane` | Closed: CI parity and package boundary matrix; split repo CI remains canonical. |

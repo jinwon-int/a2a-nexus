@@ -17,7 +17,7 @@ Reason:
 - `a2a-plane`:
 - `a2a-broker`:
 - `a2a-docker-runner`:
-- `openclaw-plugin-a2a`:
+- harness bridges (`packages/broker/scripts/*-a2a-*-bridge.mjs`):
 - worker/node config:
 - Wiki/runbooks:
 - other:

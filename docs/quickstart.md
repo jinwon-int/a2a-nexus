@@ -10,7 +10,7 @@ This guide is the external-reader path for a disposable local A2A Nexus broker p
 
 ### Supported install path
 
-Source-only install from this checkout is the **only supported install path** for the public alpha. All workspace packages (`packages/broker`, `packages/openclaw-plugin-a2a`, `packages/docker-runner`) are `private` and unpublished, so there is **no supported `npm install`, Docker image, or GHCR pull path** — those remain approval-gated and are not authorized by public repository visibility alone. Clone the repo, then build and run from `packages/*` as shown below. See [Product boundaries](product-boundaries.md) for the full supported-vs-unsupported surface.
+Source-only install from this checkout is the **only supported install path** for the public alpha. All workspace packages (`packages/broker`, `packages/docker-runner`, `packages/attestation`, `packages/policy-referee`, `packages/nclex-evaluation`) are `private` and unpublished, so there is **no supported `npm install`, Docker image, or GHCR pull path** — those remain approval-gated and are not authorized by public repository visibility alone. Clone the repo, then build and run from `packages/*` as shown below. See [Product boundaries](product-boundaries.md) for the full supported-vs-unsupported surface.
 
 Install dependencies without lifecycle scripts:
 
@@ -85,39 +85,9 @@ A detailed multi-endpoint probe script is available at:
 bash examples/demo/health-check.sh
 ```
 
-## 3. Connect the reference OpenClaw plugin locally
+## 3. Connect a harness (optional)
 
-Use placeholder-only configuration for local development. This verifies the reference integration path; it does not make OpenClaw a required runtime for A2A Nexus itself:
-
-```json
-{
-  "plugins": {
-    "entries": {
-      "a2a-broker-adapter": {
-        "enabled": true,
-        "config": {
-          "baseUrl": "http://127.0.0.1:8787",
-          "edgeSecret": "${A2A_EDGE_SECRET}",
-          "requester": {
-            "id": "local-openclaw-node",
-            "kind": "node",
-            "role": "operator"
-          },
-          "operatorEvents": {
-            "enabled": false,
-            "notification": {
-              "enabled": false
-            }
-          },
-          "wakeOnTask": {
-            "enabled": false
-          }
-        }
-      }
-    }
-  }
-}
-```
+The broker plus echo worker above is the complete quickstart path; no harness is required. When you want a real agent harness (Claude Code, Codex, Hermes, piri, OpenClaw, or your own) to take tasks from this loopback broker, follow the [external harness quickstart](external-harness-quickstart.md): every harness meets the broker through the same contract via the per-harness bridge scripts under `packages/broker/scripts/`, and none is privileged. The former OpenClaw plugin package was retired in favour of that surface.
 
 Never include real tokens, private hostnames, provider identifiers, Telegram chat IDs, or operator-specific paths in examples, screenshots, issue comments, or PR evidence.
 

@@ -10,7 +10,7 @@ The older split repositories (`a2a-plane`, `a2a-broker`, `openclaw-plugin-a2a`, 
 | --- | --- | --- |
 | [`jinwon-int/a2a-nexus`](https://github.com/jinwon-int/a2a-nexus) | Project overview, local quickstarts, cross-package coordination, compatibility/readiness docs, release/provenance gates, and issue routing | Canonical implementation source for A2A Nexus |
 | `packages/broker/` | Broker HTTP/JSON-RPC behavior, task API, worker registration, health/profile, broker CI | Broker runtime and API implementation |
-| `packages/openclaw-plugin-a2a/` | OpenClaw Gateway integration, adapter configuration, diagnostics, request/status/cancel mapping, event/wake bridge | Reference OpenClaw plugin implementation |
+| `packages/broker/scripts/*-a2a-*-bridge.mjs` | Harness integration (Claude Code, Codex, Hermes, piri, OpenClaw): analysis/patch bridges, adapter contract conformance | Per-harness bridge surface; no privileged harness package |
 | `packages/docker-runner/` | Isolated repository patch execution, worker bootstrap, artifact capture, PR/Done/Block evidence | Docker runner worker implementation |
 
 ## First Reader Path
@@ -28,7 +28,7 @@ Open unclear or cross-repo issues in `a2a-nexus` first. Once the implementation 
 
 - `source:a2a-plane`: monorepo-level public docs, roadmap, cross-package compatibility, release/provenance gates, security/readiness policy, examples, contracts, and topology decisions.
 - `source:a2a-broker`: broker HTTP/JSON-RPC behavior, task lifecycle, worker registry, persistence, health/profile endpoints, status/cancel semantics, and broker test failures.
-- `source:openclaw-plugin-a2a`: OpenClaw adapter configuration, diagnostics, Gateway integration behavior, request/status/cancel mapping, operator event handling, and plugin package issues.
+- Harness adapter behaviour (OpenClaw, Claude Code, Codex, Hermes, piri bridges) routes to `source:a2a-broker`; the former `source:openclaw-plugin-a2a` label is retired (see [issue routing](../issue-routing.md)).
 - `source:a2a-docker-runner`: isolated patch execution, repository checkout behavior, worker evidence, artifact capture, local runner configuration, container hardening, and runner package issues.
 
 When a change spans multiple package paths, keep the coordinating issue in `a2a-nexus` and link package-specific PR evidence from there.
