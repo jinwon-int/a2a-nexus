@@ -1,22 +1,24 @@
 # Mobile Worker Health Runbook
 
-> **mobilealpha**, **mobilebeta** — Team1 Hermes/Termux mobile workers running on Android
-> devices. These nodes connect via HTTP poll and may sleep briefly (Android Doze, lid
-> close, network suspend).
+> **mobilealpha**, **mobilebeta** — Team1/Team2 Hermes/Termux mobile workers running on
+> Android devices. These nodes connect via HTTP poll and may sleep briefly (Android
+> Doze, lid close, network suspend).
 >
-> **#2065 scope note:** there is **no enforced 3-task concurrency limit** for mobile
-> workers. Earlier revisions of this runbook described a "reduced capacity of 3
-> concurrent slots"; that overstated computed telemetry as an enforcement claim and
-> has been removed. The peer-status slot count does not set executor concurrency
-> or grant admission; policy and fast-lane decisions are unchanged.
+> **#2065 scope note:** the `workerMode` registration field and the mobile-specific
+> `mobileHealth` projection are **retired**. Brokers tolerate a supplied `workerMode`
+> value but drop it: registration/heartbeat no longer persist it and no read surface
+> echoes it. There is also **no enforced 3-task concurrency limit** for mobile
+> workers; earlier revisions of this runbook described a "reduced capacity of 3
+> concurrent slots", which overstated computed telemetry as an enforcement claim.
+> Policy and fast-lane decisions are unchanged by the retirement.
 
-## Detecting Mobile Workers
+## Identifying the mobile profile
 
-A worker is classified as **mobile** when its `WorkerRecord.workerMode` is `"mobile"`.
-Mobile workers are typically registered with:
+There is no broker-side "mobile" classification any more. mobilealpha and
+mobilebeta are identified by their node IDs and self-declared registration
+metadata, typically:
 
-- `runtimeFlavor: "termux-hermes"`
-- `workerMode: "mobile"`
+- `runtimeFlavor: "termux-hermes"` (metadata)
 - `canAnalyze: true`
 - `canPromoteLive: false`
 - no Docker runner requirement
@@ -30,70 +32,57 @@ payloads unless a separate approved proof-marker path is used.
 
 ## Health States (broker-facing status)
 
-The `WorkerFleetSummary.byNode` and `WorkerCapacitySummaryItem` responses include
-two mobile-specific fields for mobile workers:
-
-| Field | Type | Present When |
-|---|---|---|
-| `workerMode` | `"persistent"` \| `"mobile"` | When recorded; absent remains absent |
-| `mobileHealth` | `"health_ok"` \| `"stale"` \| `"disconnected"` | Only when `workerMode === "mobile"` |
+Every read surface — raw `GET /workers`, `GET /workers/:id`, `/dashboard`,
+`/workers/capacity`, and `a2a.peer.status` — resolves the same common window:
+`workerOfflineAfterMs ?? DEFAULT_WORKER_OFFLINE_AFTER_MS` (90 s). A worker is
+`stale` once its heartbeat age exceeds the resolved window; there is no separate
+mobile ladder and no synthesized `mobileHealth` field on any surface.
 
 ### State Table
 
 ```mermaid
 graph LR
-    A[Online] -->|>30s no heartbeat| B[Stale]
+    A[Online] -->|>90s no heartbeat| B[Stale]
     B -->|heartbeat received| A
-    B -->|>90s no heartbeat| C[Disconnected]
-    C -->|worker re-registers| A
+    B -->|worker re-registers| A
 ```
 
-| mobileHealth | lastSeenAgeSec | Meaning | Operator action |
+| `status` | lastSeenAgeSec | Meaning | Operator action |
 |---|---|---|---|
-| `health_ok` | ≤ 30s | Worker heartbeating normally within its mobile window | None |
-| `stale` | > 30s, ≤ 90s | Worker missed 1–2 heartbeat cycles; may be briefly sleeping or on battery | Check device connectivity if pattern persists |
-| `disconnected` | > 90s | Worker unreachable for an extended period; likely offline or power-cycled | Investigate device health; may have lost network or battery died |
+| `online` | ≤ 90 s (resolved window) | Worker heartbeating normally; brief Doze sleeps stay within the window | None |
+| `stale` | > resolved window | Worker unreachable beyond the window; likely offline, battery-dead, or network lost | Check device connectivity and battery |
 
-> **Note:** The generic `status` field (`"online"` / `"stale"`) reflects the
-> mobile-aware stale threshold (30s default). A worker with `status: "stale"`
-> and `mobileHealth: "health_ok"` should not occur — they are kept in sync.
+`a2a.peer.status` reports `health: "ok"` within the same window and
+`health: "stale"` past it; unregistered targets report `health: "unreachable"`.
+Because all surfaces share one window, the former "dashboard `stale` while
+`a2a.peer.status` still `ok`" divergence cannot occur.
 
 ## Thresholds (code constants)
 
-The mobile-specific constants drive `/dashboard`, `/workers/capacity` and
-their `mobileHealth` projection. Raw `GET /workers` and `GET /workers/:id`
-already use the common configured threshold and do not synthesize mobileHealth.
-Since #2065, `a2a.peer.status` also uses the common `workerOfflineAfterMs ??
-DEFAULT_WORKER_OFFLINE_AFTER_MS` (90 s) window with 10 advisory busy slots.
-A supplied legacy `mobileOfflineAfterMs` takes precedence for mobile workers
-only; `??` preserves explicit zero and overrides longer than the common window.
-
 | Constant | Value | Applies to |
 |---|---|---|
-| `DEFAULT_WORKER_OFFLINE_AFTER_MS` | 90,000 (90 s) | Persistent workers on dashboard surfaces; every mode on `a2a.peer.status` (common default) |
-| `HEARTBEAT_LIVENESS_ONLINE_WINDOW_MS` | 30,000 (30 s) | Neutral name for the pre-existing conversation-delivery online window (every mode) and the legacy `mobileHealth` ladder; **not** a raw `GET /workers` or `a2a.peer.status` default |
-| `HEARTBEAT_LIVENESS_OFFLINE_AFTER_MS` | 90,000 (90 s) | Neutral name for the pre-existing conversation-delivery stale→offline boundary (every mode) and the legacy `mobileHealth` ladder; **not** a raw `GET /workers` or `a2a.peer.status` default |
-| `MOBILE_OFFLINE_AFTER_MS` | 30,000 (30 s) | Deprecated exact-value alias of `HEARTBEAT_LIVENESS_ONLINE_WINDOW_MS`; legacy imports keep working unchanged |
-| `MOBILE_DISCONNECTED_AFTER_MS` | 90,000 (90 s) | Deprecated exact-value alias of `HEARTBEAT_LIVENESS_OFFLINE_AFTER_MS`; legacy imports keep working unchanged |
+| `DEFAULT_WORKER_OFFLINE_AFTER_MS` | 90,000 (90 s) | Default worker staleness window; every read surface resolves `workerOfflineAfterMs ??` this value |
+| `HEARTBEAT_LIVENESS_ONLINE_WINDOW_MS` | 30,000 (30 s) | Conversation-delivery online window (`getConversationDeliverySummary` ladder); **not** a worker-staleness default |
+| `HEARTBEAT_LIVENESS_OFFLINE_AFTER_MS` | 90,000 (90 s) | Conversation-delivery stale→offline boundary; **not** a worker-staleness default |
 
 `getConversationDeliverySummary()` classifies conversation-participant liveness
-for **every** worker mode with the neutral heartbeat-liveness ladder:
-`HEARTBEAT_LIVENESS_ONLINE_WINDOW_MS` (30 s online, inclusive) and
-`HEARTBEAT_LIVENESS_OFFLINE_AFTER_MS` (up to 90 s stale, inclusive, then
-offline). This is a migration-coupling rename only (#2065 retirement
-prerequisite): the deprecated `MOBILE_OFFLINE_AFTER_MS` /
-`MOBILE_DISCONNECTED_AFTER_MS` names remain exact-value aliases of the same
-values, so legacy imports behave identically and the ladder's behavior is
-unchanged. The conversation ladder stays separate from the `a2a.peer.status`
-window and from the raw/dashboard/capacity/mobileHealth surfaces described
-above; none of these constants is a universal default for other surfaces.
+with the neutral heartbeat-liveness ladder: `HEARTBEAT_LIVENESS_ONLINE_WINDOW_MS`
+(30 s online, inclusive) and `HEARTBEAT_LIVENESS_OFFLINE_AFTER_MS` (up to 90 s
+stale, inclusive, then offline). This ladder is migration-coupled naming only —
+it describes the pre-existing conversation/legacy-health behaviour and is not a
+default for raw `GET /workers`, `/dashboard`, `/workers/capacity`, or
+`a2a.peer.status`, which keep the common 90 s window described above. (The
+retirement removed the legacy `MOBILE_OFFLINE_AFTER_MS` /
+`MOBILE_DISCONNECTED_AFTER_MS` names together with the mobile-only override.)
 
 ## Code Locations
 
-- **Types**: `src/core/types.ts` — `WorkerMobileHealth`, `WorkerFleetSummary`, `WorkerCapacitySummaryItem`
-- **Stale detection**: `src/core/broker-worker-status.ts` — `effectiveOfflineAfterMs()`, `computeWorkerMobileHealth()`, `isWorkerStale()`
+- **Types**: `src/core/types.ts` — `WorkerFleetSummary`, `WorkerCapacitySummaryItem` (`workerOfflineAfterMs`)
+- **Stale detection**: `src/core/broker-worker-status.ts` — `isWorkerStale()`, `HEARTBEAT_LIVENESS_*` constants
+- **Common default**: `src/core/broker-contracts.ts` — `DEFAULT_WORKER_OFFLINE_AFTER_MS`, registration `workerOfflineAfterMs` option
 - **Dashboard**: `src/core/broker.ts` — `getDashboard()` (workers section)
-- **Capacity**: `src/core/broker.ts` — `getWorkerCapacitySummary()` (per-item loop)
+- **Capacity**: `src/core/broker.ts` — `getWorkerCapacitySummary()`
+- **Peer status**: `src/a2a/peer-status.ts` — `a2a.peer.status` (common window + 10 advisory busy slots)
 
 ## Known Mobile Workers
 
@@ -102,30 +91,22 @@ above; none of these constants is a universal default for other surfaces.
 | `mobilealpha` | Team1 | Termux (Android) | Non-docker Hermes research worker; accepts no-live/read-only analysis tasks. |
 | `mobilebeta` | Team2 | Termux (Android) | Non-docker Hermes research worker; accepts no-live/read-only analysis tasks. |
 
-## operatorEvents Payload Constraint
-
-The `mobileHealth` and `workerMode` fields are **only** present in the broker-facing
-status APIs (`getDashboard`, `getWorkerCapacitySummary`). They are **not** added
-to `TerminalTaskOutboxEvent` (the `operatorEvents` SSE/outbox payload), in order
-to avoid inflating high-churn event streams with per-worker metadata.
-
 ## Operational Notes
 
 1. **Mobile workers may briefly go stale** during Android Doze or after a network
    handoff. A single stale event is not cause for alarm; check `lastSeenAgeSec`
-   to assess recency.
+   to assess recency. Brief sleeps (≤ 90 s) usually stay within the common
+   window and never surface as `stale`.
 2. **No per-mode concurrency limit is enforced.** There is no universal
    "3 concurrent tasks" cap for mobile workers; `activeTaskCount` is computed
    telemetry and does not read or set executor concurrency. The read-only
-   `a2a.peer.status` view additionally
-   reports an advisory busy hint (`active + queued` vs a fixed budget of 10,
-   identical for every mode) — it is telemetry, never an admission permission.
-3. **Surface semantics differ by design.** Dashboard/`mobileHealth` windows are
-   mode-aware (30 s / 90 s per the table above), while `a2a.peer.status` uses
-   the common 90 s window, so between 30 s and 90 s of heartbeat age a mobile
-   worker can be `stale` on the dashboard while `a2a.peer.status` still reports
-   `ok`. Past its resolved window, `a2a.peer.status` reports `health: "stale"`;
-   unregistered targets report `health: "unreachable"`.
+   `a2a.peer.status` view additionally reports an advisory busy hint
+   (`active + queued` vs a fixed budget of 10, identical for every worker) —
+   it is telemetry, never an admission permission.
+3. **One window everywhere.** Raw, dashboard, capacity, and peer-status reads
+   share `workerOfflineAfterMs ?? 90 s`. A registered `workerOfflineAfterMs`
+   overrides the default; resolution uses `??`, preserving explicit zero and
+   windows longer than the default.
 4. If a mobile worker remains disconnected for an extended period (>14 days by
    default retention), it becomes a cleanup candidate for `discoverCleanupCandidates`.
 
@@ -149,8 +130,6 @@ to avoid inflating high-churn event streams with per-worker metadata.
         "nodeId": "mobilealpha",
         "role": "analyst",
         "status": "online",
-        "workerMode": "mobile",
-        "mobileHealth": "health_ok",
         "activeTaskCount": 1,
         "lastSeenAgeSec": 12
       },
@@ -158,10 +137,8 @@ to avoid inflating high-churn event streams with per-worker metadata.
         "nodeId": "mobilebeta",
         "role": "analyst",
         "status": "stale",
-        "workerMode": "mobile",
-        "mobileHealth": "stale",
         "activeTaskCount": 0,
-        "lastSeenAgeSec": 45
+        "lastSeenAgeSec": 145
       }
     ]
   }

@@ -366,7 +366,7 @@ test("default summary response stays allow-listed and contains no sensitive fiel
     "gateway shape should stay within the read-only summary contract",
   );
   assert.ok(
-    Object.keys(response.worker).every((key) => ["registered", "workerMode", "lastHeartbeatAt", "capacity"].includes(key)),
+    Object.keys(response.worker).every((key) => ["registered", "lastHeartbeatAt", "capacity"].includes(key)),
     "worker shape should stay within the read-only summary contract",
   );
   assert.deepEqual(Object.keys(response.tasks).sort(), ["active", "queued", "stale"]);
@@ -502,16 +502,14 @@ test("health is ok when some capacity remains", () => {
 // Tests: Worker modes (unified read-only retirement, a2a-nexus#2065)
 // ---------------------------------------------------------------------------
 
-/** Register a worker with an explicit (or absent) declared `workerMode`. */
-function registerModeWorker(
+/** Register a worker for common-window boundary coverage (mode distinction retired, #2065). */
+function registerWindowWorker(
   broker: InMemoryA2ABroker,
   nodeId: string,
-  workerMode?: "persistent" | "mobile",
 ): void {
   broker.registerWorker({
     nodeId,
     role: "analyst",
-    ...(workerMode ? { workerMode } : {}),
     capabilities: {
       canAnalyze: true,
       canBackfill: false,
@@ -532,16 +530,16 @@ function setLastSeenAt(broker: InMemoryA2ABroker, nodeId: string, value: string)
 
 const BASE_MS = Date.parse("2026-01-01T00:00:00.000Z");
 
-function createModeBroker(): InMemoryA2ABroker {
+function createWindowBroker(): InMemoryA2ABroker {
   const broker = createBroker();
-  registerModeWorker(broker, "worker-persistent", "persistent");
-  registerModeWorker(broker, "worker-mobile", "mobile");
-  registerModeWorker(broker, "worker-absent");
+  registerWindowWorker(broker, "worker-persistent");
+  registerWindowWorker(broker, "worker-mobile");
+  registerWindowWorker(broker, "worker-absent");
   return broker;
 }
 
-test("offline boundary is 90000ms online / 90001ms stale for persistent, mobile, and absent modes (#2065)", (t) => {
-  const broker = createModeBroker();
+test("offline boundary is 90000ms online / 90001ms stale for every registered worker (#2065)", (t) => {
+  const broker = createWindowBroker();
   for (const nodeId of ["worker-persistent", "worker-mobile", "worker-absent"]) {
     setLastSeenAt(broker, nodeId, new Date(BASE_MS).toISOString());
   }
@@ -574,41 +572,8 @@ test("offline boundary is 90000ms online / 90001ms stale for persistent, mobile,
   }
 });
 
-test("with both options present, legacy mobileOfflineAfterMs wins for mobile only (#2065)", (t) => {
-  const broker = createModeBroker();
-  for (const nodeId of ["worker-persistent", "worker-mobile", "worker-absent"]) {
-    setLastSeenAt(broker, nodeId, new Date(BASE_MS).toISOString());
-  }
-  const service = new PeerStatusService(broker, {
-    cacheTtlMs: 0,
-    workerOfflineAfterMs: 90_000,
-    mobileOfflineAfterMs: 45_000,
-  });
-
-  let now = BASE_MS;
-  t.mock.method(Date, "now", () => now);
-
-  now = BASE_MS + 45_001;
-  const shortWindow = {
-    persistent: service.query({ target: "worker-persistent", maxCacheAgeMs: 0 }, "caller"),
-    mobile: service.query({ target: "worker-mobile", maxCacheAgeMs: 0 }, "caller"),
-    absent: service.query({ target: "worker-absent", maxCacheAgeMs: 0 }, "caller"),
-  };
-  assert.equal((shortWindow.persistent as PeerStatusResponse).health, "ok", "persistent ignores the legacy mobile-only override");
-  assert.equal((shortWindow.mobile as PeerStatusResponse).health, "stale", "mobile honors the explicit legacy override at 45001ms");
-  assert.equal((shortWindow.absent as PeerStatusResponse).health, "ok", "absent mode ignores the legacy mobile-only override");
-
-  now = BASE_MS + 90_001;
-  const longWindow = {
-    persistent: service.query({ target: "worker-persistent", maxCacheAgeMs: 0 }, "caller"),
-    absent: service.query({ target: "worker-absent", maxCacheAgeMs: 0 }, "caller"),
-  };
-  assert.equal((longWindow.persistent as PeerStatusResponse).health, "stale", "persistent still uses the common 90s window");
-  assert.equal((longWindow.absent as PeerStatusResponse).health, "stale", "absent mode still uses the common 90s window");
-});
-
-test("with only the common workerOfflineAfterMs present, every mode uses it (#2065)", (t) => {
-  const broker = createModeBroker();
+test("with the common workerOfflineAfterMs present, every worker uses it (#2065)", (t) => {
+  const broker = createWindowBroker();
   for (const nodeId of ["worker-persistent", "worker-mobile", "worker-absent"]) {
     setLastSeenAt(broker, nodeId, new Date(BASE_MS).toISOString());
   }
@@ -630,37 +595,8 @@ test("with only the common workerOfflineAfterMs present, every mode uses it (#20
   }
 });
 
-test("with only the legacy mobileOfflineAfterMs present, mobile shortens while persistent/absent keep the 90s default (#2065)", (t) => {
-  const broker = createModeBroker();
-  for (const nodeId of ["worker-persistent", "worker-mobile", "worker-absent"]) {
-    setLastSeenAt(broker, nodeId, new Date(BASE_MS).toISOString());
-  }
-  const service = new PeerStatusService(broker, { cacheTtlMs: 0, mobileOfflineAfterMs: 45_000 });
-
-  let now = BASE_MS;
-  t.mock.method(Date, "now", () => now);
-
-  now = BASE_MS + 45_001;
-  const shortWindow = {
-    persistent: service.query({ target: "worker-persistent", maxCacheAgeMs: 0 }, "caller"),
-    mobile: service.query({ target: "worker-mobile", maxCacheAgeMs: 0 }, "caller"),
-    absent: service.query({ target: "worker-absent", maxCacheAgeMs: 0 }, "caller"),
-  };
-  assert.equal((shortWindow.mobile as PeerStatusResponse).health, "stale", "mobile honors the explicit legacy override");
-  assert.equal((shortWindow.persistent as PeerStatusResponse).health, "ok", "persistent ignores the legacy override");
-  assert.equal((shortWindow.absent as PeerStatusResponse).health, "ok", "absent mode ignores the legacy override");
-
-  now = BASE_MS + 90_001;
-  const longWindow = {
-    persistent: service.query({ target: "worker-persistent", maxCacheAgeMs: 0 }, "caller"),
-    absent: service.query({ target: "worker-absent", maxCacheAgeMs: 0 }, "caller"),
-  };
-  assert.equal((longWindow.persistent as PeerStatusResponse).health, "stale");
-  assert.equal((longWindow.absent as PeerStatusResponse).health, "stale");
-});
-
-test("with neither option present, every mode uses the common 90000ms default — no synthesized 30000ms mobile window (#2065)", (t) => {
-  const broker = createModeBroker();
+test("with no options, every worker uses the common 90000ms default — no synthesized 30000ms mobile window (#2065)", (t) => {
+  const broker = createWindowBroker();
   for (const nodeId of ["worker-persistent", "worker-mobile", "worker-absent"]) {
     setLastSeenAt(broker, nodeId, new Date(BASE_MS).toISOString());
   }
@@ -689,34 +625,22 @@ test("with neither option present, every mode uses the common 90000ms default �
   }
 });
 
-test("explicit zero and longer mobile windows preserve nullish override precedence", (t) => {
-  const broker = createModeBroker();
+test("workerOfflineAfterMs: 0 classifies every worker stale regardless of age (#2065)", (t) => {
+  const broker = createWindowBroker();
   for (const id of ["worker-persistent", "worker-mobile", "worker-absent"]) {
     setLastSeenAt(broker, id, new Date(BASE_MS).toISOString());
   }
   let now = BASE_MS + 1;
   t.mock.method(Date, "now", () => now);
-  for (const options of [
-    { workerOfflineAfterMs: 0 },
-    { workerOfflineAfterMs: 0, mobileOfflineAfterMs: 120_000 },
-    { workerOfflineAfterMs: 120_000, mobileOfflineAfterMs: 0 },
-  ]) {
-    const service = new PeerStatusService(broker, { cacheTtlMs: 0, ...options });
-    for (const [id, isMobile] of [["worker-persistent", false], ["worker-mobile", true], ["worker-absent", false]] as const) {
-      const limit = isMobile ? (options.mobileOfflineAfterMs ?? options.workerOfflineAfterMs) : options.workerOfflineAfterMs;
-      const result = service.query({ target: id }, "caller") as PeerStatusResponse;
-      assert.equal(result.health, limit === 0 ? "stale" : "ok", `${id}: ${JSON.stringify(options)}`);
-    }
+  const service = new PeerStatusService(broker, { cacheTtlMs: 0, workerOfflineAfterMs: 0 });
+  for (const id of ["worker-persistent", "worker-mobile", "worker-absent"]) {
+    const result = service.query({ target: id }, "caller") as PeerStatusResponse;
+    assert.equal(result.health, "stale", `${id}: zero offline window is immediately stale`);
   }
-  const extended = new PeerStatusService(broker, { cacheTtlMs: 0, workerOfflineAfterMs: 45_000, mobileOfflineAfterMs: 120_000 });
-  now = BASE_MS + 120_000;
-  assert.equal((extended.query({ target: "worker-mobile" }, "caller") as PeerStatusResponse).health, "ok");
-  now += 1;
-  assert.equal((extended.query({ target: "worker-mobile" }, "caller") as PeerStatusResponse).health, "stale");
 });
 
 test("dashboard and capacity projections share the common window with peer and raw worker views (#2065)", (t) => {
-  const broker = createModeBroker();
+  const broker = createWindowBroker();
   setLastSeenAt(broker, "worker-mobile", new Date(BASE_MS).toISOString());
   t.mock.method(Date, "now", () => BASE_MS + 45_000);
   const peer = new PeerStatusService(broker).query({ target: "worker-mobile" }, "caller") as PeerStatusResponse;
@@ -734,7 +658,7 @@ test("dashboard and capacity projections share the common window with peer and r
 });
 
 test("invalid heartbeat timestamps still classify as stale on this peer view (preserved behavior)", (t) => {
-  const broker = createModeBroker();
+  const broker = createWindowBroker();
   setLastSeenAt(broker, "worker-mobile", "not-a-timestamp");
   const service = new PeerStatusService(broker, { cacheTtlMs: 0 });
 
@@ -750,40 +674,22 @@ test("invalid heartbeat timestamps still classify as stale on this peer view (pr
   );
 });
 
-test("wire workerMode field is preserved verbatim with unchanged accepted values (#2065)", () => {
-  const broker = createModeBroker();
-  const service = new PeerStatusService(broker, { cacheTtlMs: 0 });
-
-  const declared = service.query({ target: "worker-persistent", maxCacheAgeMs: 0 }, "caller");
-  assert.ok(isPeerStatusResponse(declared));
-  assert.equal((declared as PeerStatusResponse).worker.workerMode, "persistent", "declared persistent stays on the wire");
-
-  const mobile = service.query({ target: "worker-mobile", maxCacheAgeMs: 0 }, "caller");
-  assert.ok(isPeerStatusResponse(mobile));
-  assert.equal((mobile as PeerStatusResponse).worker.workerMode, "mobile", "declared mobile stays on the wire");
-
-  const absent = service.query({ target: "worker-absent", maxCacheAgeMs: 0 }, "caller");
-  assert.ok(isPeerStatusResponse(absent));
-  assert.equal((absent as PeerStatusResponse).worker.workerMode, undefined, "absent mode stays absent on the wire");
-});
-
-test("mobile worker reports the unified advisory slot total (10) instead of 3 (#2065)", () => {
+test("worker reports the unified advisory slot total (10) instead of 3 (#2065)", () => {
   const broker = createBroker();
-  registerModeWorker(broker, "mobile-node", "mobile");
+  registerWindowWorker(broker, "mobile-node");
   const service = new PeerStatusService(broker, { cacheTtlMs: 0 });
 
   const result = service.query({ target: "mobile-node", maxCacheAgeMs: 0 }, "caller");
   assert.ok(isPeerStatusResponse(result));
   const response = result as PeerStatusResponse;
-  assert.equal(response.worker.workerMode, "mobile");
   assert.equal(response.worker.capacity?.slotsTotal, 10);
   assert.equal(response.worker.capacity?.slotsBusy, 0);
 });
 
-test("mobile worker is not busy at 3 tasks and busy at the unified 10-slot advisory threshold, matching every mode (#2065)", (t) => {
+test("workers are not busy at 3 tasks and busy at the unified 10-slot advisory threshold (#2065)", (t) => {
   let now = Date.now();
   t.mock.method(Date, "now", () => now);
-  const broker = createModeBroker();
+  const broker = createWindowBroker();
   const service = new PeerStatusService(broker, { cacheTtlMs: 0 });
 
   // 3 tasks each: the old mobile-3 advisory budget would report busy; the
@@ -833,12 +739,11 @@ test("mobile worker is not busy at 3 tasks and busy at the unified 10-slot advis
   }
 });
 
-test("persistent worker (default mode) has standard capacity", () => {
+test("worker with default registration has standard capacity", () => {
   const broker = createBroker();
   broker.registerWorker({
     nodeId: "server-node",
     role: "analyst",
-    // no workerMode → defaults to persistent
     capabilities: {
       canAnalyze: true,
       canBackfill: false,
@@ -853,7 +758,6 @@ test("persistent worker (default mode) has standard capacity", () => {
   const result = service.query({ target: "server-node" }, "caller");
   assert.ok(isPeerStatusResponse(result));
   const response = result as PeerStatusResponse;
-  assert.equal(response.worker.workerMode, undefined); // absent for default persistent
   assert.equal(response.worker.capacity?.slotsTotal, 10);
 });
 

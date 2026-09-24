@@ -293,14 +293,6 @@ export interface WorkerImplementationCapability {
 }
 
 /**
- * Declared operating mode of a worker node.
- * - `persistent`: always-on VPS / server (default if absent).
- * - `mobile`: battery-powered or sleep-capable device (Android/Termux, laptop).
- *   Mobile workers use shorter stale thresholds because brief offline
- *   windows are expected (Doze, network suspend, lid close).
- */
-export type WorkerMode = "persistent" | "mobile";
-/**
  * Where a task entered the broker. `unknown` is the backward-compatible default
  * for tasks created before this field existed or by callers that don't tag the
  * source. Downstream consumers use this to distinguish GitHub-driven
@@ -644,8 +636,6 @@ export type TaskLaneReasonCode =
   | "fanout_marker_present"
   | "multi_worker_marker_present"
   | "delegated_workflow_marker_present"
-  | "worker_mode_missing"
-  | "worker_not_persistent"
   | "policy_decision_missing"
   | "policy_decision_unknown"
   | "policy_requires_approval"
@@ -1038,8 +1028,6 @@ export interface WorkerRecord {
   displayName?: string;
   brokerUrl?: string;
   capabilities: WorkerCapabilities;
-  /** Declared operating mode. Defaults to "persistent" when absent. */
-  workerMode?: WorkerMode;
   metadata?: Record<string, string>;
   /** Management-plane reachability. Defaults to "unknown" when never reported. */
   managementPlane?: ManagementPlaneStatus;
@@ -1054,7 +1042,6 @@ export interface RegisterWorkerRequest {
   displayName?: string;
   brokerUrl?: string;
   capabilities: WorkerCapabilities;
-  workerMode?: WorkerMode;
   metadata?: Record<string, string>;
   /** Management-plane reachability. When absent defaults to "unknown". */
   managementPlane?: ManagementPlaneStatus;
@@ -1064,7 +1051,6 @@ export interface WorkerHeartbeatRequest {
   displayName?: string;
   brokerUrl?: string;
   capabilities?: WorkerCapabilities;
-  workerMode?: WorkerMode;
   metadata?: Record<string, string>;
   /**
    * Management-plane reachability reported by the worker.
@@ -1407,8 +1393,6 @@ export interface WorkerFleetSummary {
     activeTaskCount: number;
     lastSeenAt: string;
     lastSeenAgeSec: number;
-    /** Declared operating mode; absent defaults to "persistent". */
-    workerMode?: WorkerMode;
   }>;
 }
 
@@ -1437,8 +1421,6 @@ export interface WorkerCapacitySummaryItem {
     active: number;
   };
   latestTaskUpdatedAt?: string;
-  /** Declared operating mode; absent defaults to "persistent". */
-  workerMode?: WorkerMode;
   /**
    * The implementation capability profile the claim gate already enforces
    * (#1597). Projected here because choosing a worker for patch work is exactly

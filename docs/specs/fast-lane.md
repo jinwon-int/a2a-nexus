@@ -41,15 +41,16 @@ lane은 요청자 힌트가 아니라 **브로커가 create 시점에 판정**�
    patch/write/implementation/source-mutation 표시와 충돌하지 않는다.
 3. 대상과 assigned worker가 같은 단일 워커이고, round/fanout/multi-worker/
    parent-round/delegated team·workflow 표시가 없다.
-4. 등록된 워커가 `workerMode: "persistent"`를 명시한다. 기존 호환 기본값으로
-   workerMode가 생략된 워커는 정상 실행되지만 shadow 판정은 `full`이다.
-5. create-time G1 판정이 명시적으로 `allow`이다. 정책 문서가 없어 판정이
+4. create-time G1 판정이 명시적으로 `allow`이다. 정책 문서가 없어 판정이
    없는 기존 호환 경로도 정상 실행되지만 shadow 판정은 `full`이다.
-6. 승인 필요, 민감, live, 외부 전송, credential 접근 structured 표시가 없다.
+5. 승인 필요, 민감, live, 외부 전송, credential 접근 structured 표시가 없다.
+
+(#2065로 `workerMode`가 폐지되어 구(舊) 조건 4번 "등록 워커가
+`workerMode: \"persistent\"`를 명시"는 제거되었다. 워커 모드는 어떤 lane
+판정 입력도 아니다.)
 
 **full ceremony 유지 (하나라도 해당 시)**: propose_patch / implementation /
-라운드·팬아웃 / 모바일·간헐 워커(가용성 리스크, P0 F3) / 정책이 승인을
-요구하는 클래스 / 민감 표시.
+라운드·팬아웃 / 정책이 승인을 요구하는 클래스 / 민감 표시.
 
 `defaultAction`은 보수적으로 **full** — 판정 불가/누락 시 fast가 아니라 full.
 free-form `message`나 다른 prose는 판정 입력으로 읽거나 추론하지 않는다.
@@ -92,8 +93,6 @@ free-form `message`나 다른 prose는 판정 입력으로 읽거나 추론하�
 | `fanout_marker_present` | fanout 표시 |
 | `multi_worker_marker_present` | workers/participants/lanes 등 다중 워커 표시 |
 | `delegated_workflow_marker_present` | parent task, team, workflow, delegation, subagent, cross-broker/finalizer 표시 |
-| `worker_mode_missing` | 등록 workerMode가 없음 |
-| `worker_not_persistent` | 등록 workerMode가 persistent가 아님 |
 | `policy_decision_missing` | create-time G1 판정이 없음 |
 | `policy_decision_unknown` | 닫힌 G1 action 밖의 알 수 없는 판정 |
 | `policy_requires_approval` | G1 action이 require_approval |
@@ -165,8 +164,8 @@ bounded secret-safe 값이다. 그 뒤 warn-mode deny라면 기존
 - enforce-mode G1 deny는 기존대로 create 전에 거부된다. task record와
   lane audit은 없고 기존 `task.policy_denied`만 남는다.
 - require_approval은 기존대로 blocked task를 만들며 lane decision은 full이다.
-- 정책 문서 없음, legacy workerMode 없음, legacy task의 laneAssignment 없음은
-  모두 호환된다. 기존 record에 retroactive 판정/audit을 만들지 않는다.
+- 정책 문서 없음, legacy task의 laneAssignment 없음은 모두 호환된다.
+  기존 record에 retroactive 판정/audit을 만들지 않는다.
 
 ## fast lane에서 가벼워지는 것 / 절대 가벼워지지 않는 것
 
@@ -192,7 +191,8 @@ lane 기록 필드는 이 slice에서 broker-owned top-level
 - fast lane 태스크도 acceptance 실패 시 실패로 기록 — **간이 완료 없음**.
 - 오분류(실제로는 고위험)는 되돌릴 수 있어야 함: 운영자가 태스크를 full로
   재판정 가능.
-- 모바일/간헐 노드는 fast lane 대상에서 제외 (claim 게이트는 G1 정책 연계).
+- fast lane 판정은 워커 모드·기기 유형을 구분하지 않는다(#2065에서 모바일/간헐
+  노드 등급은 폐지됨). claim 게이트는 G1 정책 연계.
 
 현재 shadow 결과는 status, assignment, claim, acceptance, evidence,
 provenance, finalizer, policy enforcement, scheduling, execution 중 어느 것도

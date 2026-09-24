@@ -452,7 +452,6 @@ test("strict validation separates legacy absent from invalid assignments and nev
 test("mutually exclusive classifier reasons are invalid without rejecting independent dimensions", () => {
   const impossiblePairs: TaskLaneReasonCode[][] = [
     ["mode_missing", "mode_not_read_only_analysis"],
-    ["worker_mode_missing", "worker_not_persistent"],
     ["policy_decision_missing", "policy_requires_approval"],
     ["policy_decision_missing", "policy_denied"],
     ["policy_decision_missing", "policy_decision_unknown"],
@@ -461,7 +460,7 @@ test("mutually exclusive classifier reasons are invalid without rejecting indepe
     ["policy_denied", "policy_decision_unknown"],
   ];
   const validCombinations: TaskLaneReasonCode[][] = [
-    ["mode_missing", "worker_not_persistent", "policy_denied"],
+    ["mode_missing", "fanout_marker_present", "policy_denied"],
     ["fanout_marker_present", "sensitive_marker_present"],
     ["policy_requires_approval", "approval_marker_present"],
   ];
@@ -476,7 +475,7 @@ test("mutually exclusive classifier reasons are invalid without rejecting indepe
     chainedTask({ id: `reason-set-${index}`, laneAssignment: fullAssignment(reasons) }),
   ));
   assert.deepEqual(cohorts.coverage, {
-    selectedTasks: 11, validAssignments: 3, legacyAbsent: 0, invalidAssignment: 8,
+    selectedTasks: 10, validAssignments: 3, legacyAbsent: 0, invalidAssignment: 7,
   });
   assert.equal(cohorts.cohorts.fast.tasks, 0);
   assert.equal(cohorts.cohorts.full.tasks, 3);
@@ -514,7 +513,7 @@ test("shadow cohort output is deterministic under task-order permutations", () =
   const tasks = [
     chainedTask({ id: "fast-succeeded", laneAssignment: FAST_ASSIGNMENT }),
     chainedTask({ id: "fast-queued", status: "queued", laneAssignment: FAST_ASSIGNMENT }),
-    chainedTask({ id: "full-failed", status: "failed", laneAssignment: fullAssignment(["mode_missing", "worker_mode_missing"]) }),
+    chainedTask({ id: "full-failed", status: "failed", laneAssignment: fullAssignment(["mode_missing", "policy_denied"]) }),
     chainedTask({ id: "full-blocked", status: "blocked", laneAssignment: fullAssignment(["policy_requires_approval"]) }),
     chainedTask({ id: "absent-failed", status: "failed" }),
     chainedTask({ id: "invalid-canceled", status: "canceled", laneAssignment: { ...FAST_ASSIGNMENT, mode: "enforce" } as unknown as TaskLaneAssignment }),

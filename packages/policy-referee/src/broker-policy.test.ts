@@ -75,12 +75,13 @@ test("bad mode, defaultAction, schema, and budget values are rejected", () => {
 
 // --- worker class derivation ---
 
-test("deriveTaskWorkerClass mirrors the stats classes", () => {
-  assert.equal(deriveTaskWorkerClass({ sourceOnly: true, workerFound: true, workerMode: "mobile" }), "source-only");
+test("deriveTaskWorkerClass mirrors the stats classes (workerMode retired, #2065)", () => {
+  assert.equal(deriveTaskWorkerClass({ sourceOnly: true, workerFound: true }), "source-only");
   assert.equal(deriveTaskWorkerClass({ payloadMode: "source-only", workerFound: false }), "source-only");
   assert.equal(deriveTaskWorkerClass({ workerFound: false }), "unclassified");
-  assert.equal(deriveTaskWorkerClass({ workerFound: true, workerMode: "mobile" }), "mobile");
-  assert.equal(deriveTaskWorkerClass({ workerFound: true, workerMode: "persistent" }), "vps");
+  // #2065: every registered worker derives to the same "vps" class; the
+  // "mobile" class survives only as a still-valid policy-document axis.
+  assert.equal(deriveTaskWorkerClass({ workerFound: true }), "vps");
 });
 
 // --- evaluation engine (G1-b): the six G1-c paths ---

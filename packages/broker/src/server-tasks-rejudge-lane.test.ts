@@ -52,7 +52,6 @@ function seedRunningFastTask(
   broker.registerWorker({
     nodeId: "worker-1",
     role: "operator",
-    workerMode: "persistent",
     capabilities: {
       canAnalyze: true,
       canBackfill: false,

@@ -14,7 +14,7 @@ import type {
  * retirement prerequisite): <= {@link HEARTBEAT_LIVENESS_ONLINE_WINDOW_MS}
  * online, up to {@link HEARTBEAT_LIVENESS_OFFLINE_AFTER_MS} stale, then
  * offline. These constants describe the EXISTING conversation-recipient
- * liveness ladder (`getConversationDeliverySummary`, every `workerMode`) —
+ * liveness ladder (`getConversationDeliverySummary`) —
  * they are NOT universal defaults for raw `GET /workers` surfaces,
  * `a2a.peer.status`, or the dashboard/capacity projections, which resolve
  * their own common `workerOfflineAfterMs ?? DEFAULT_WORKER_OFFLINE_AFTER_MS`
@@ -26,29 +26,6 @@ export const HEARTBEAT_LIVENESS_ONLINE_WINDOW_MS = 30_000;
 /** See {@link HEARTBEAT_LIVENESS_ONLINE_WINDOW_MS}: stale→offline boundary of
  * the existing conversation/legacy-health ladder, not a universal default. */
 export const HEARTBEAT_LIVENESS_OFFLINE_AFTER_MS = 90_000;
-
-/**
- * Shorter stale window for mobile workers (Termux/Hermes, battery-powered).
- * Mobile nodes may briefly sleep (Doze, lid close, network suspend), so this
- * threshold reflects expected brief offline windows — 30 seconds.
- *
- * @deprecated Legacy mobile-only name kept as an EXACT-VALUE alias of the
- * neutral {@link HEARTBEAT_LIVENESS_ONLINE_WINDOW_MS} so existing imports
- * compile and behave identically. New code should prefer the neutral name;
- * neither constant is a universal raw-worker/`a2a.peer.status` default.
- */
-export const MOBILE_OFFLINE_AFTER_MS = HEARTBEAT_LIVENESS_ONLINE_WINDOW_MS;
-
-/**
- * Extended gap after which a mobile worker is considered fully disconnected
- * rather than merely stale. Workers exceeding this threshold without any
- * heartbeat are classified as `"disconnected"`.
- *
- * @deprecated Legacy mobile-only name kept as an EXACT-VALUE alias of the
- * neutral {@link HEARTBEAT_LIVENESS_OFFLINE_AFTER_MS} so existing imports
- * compile and behave identically. New code should prefer the neutral name.
- */
-export const MOBILE_DISCONNECTED_AFTER_MS = HEARTBEAT_LIVENESS_OFFLINE_AFTER_MS;
 
 export function computeWorkerStatus(
   lastSeenAt: string,
@@ -129,16 +106,6 @@ export function isWorkerStale(lastSeenAt: string, offlineAfterMs: number, nowMs:
   }
 
   return nowMs - lastSeenMs > offlineAfterMs;
-}
-
-/**
- * Compute the effective offline-after threshold for a worker based on its
- * declared `workerMode`. Mobile workers get a shorter window (30s default)
- * so the broker correctly classifies brief Doze/sleep gaps as "online" and
- * longer absences as "stale" or "disconnected".
- */
-export function effectiveOfflineAfterMs(workerMode: string | undefined, defaultMs: number): number {
-  return workerMode === "mobile" ? MOBILE_OFFLINE_AFTER_MS : defaultMs;
 }
 
 

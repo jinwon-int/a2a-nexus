@@ -4,7 +4,6 @@ import type {
   CreateTaskRequest,
   TaskLaneAssignment,
   TaskLaneReasonCode,
-  WorkerRecord,
 } from "./core/types.js";
 
 export const FAST_LANE_ASSIGNMENT_VERSION = "fast-lane.v1" as const;
@@ -29,8 +28,6 @@ export const TASK_LANE_REASON_CODES = [
   "fanout_marker_present",
   "multi_worker_marker_present",
   "delegated_workflow_marker_present",
-  "worker_mode_missing",
-  "worker_not_persistent",
   "policy_decision_missing",
   "policy_decision_unknown",
   "policy_requires_approval",
@@ -195,7 +192,6 @@ const CREDENTIAL_ACCESS_MARKER_KEYS = [
 
 export interface TaskLaneClassifierInput {
   request: CreateTaskRequest;
-  worker: Pick<WorkerRecord, "workerMode"> | null | undefined;
   policyDecision: BrokerPolicyDecision | undefined;
 }
 
@@ -206,7 +202,7 @@ export interface TaskLaneClassifierInput {
  * other free-form/prose field are intentionally ignored.
  */
 export function classifyTaskLane(input: TaskLaneClassifierInput): TaskLaneAssignment {
-  const { request, worker, policyDecision } = input;
+  const { request, policyDecision } = input;
   const payload = ownRecord(request.payload) ?? {};
   const rawRequest = request as CreateTaskRequest & Record<string, unknown>;
   const reasons: TaskLaneReasonCode[] = [];
@@ -258,12 +254,6 @@ export function classifyTaskLane(input: TaskLaneClassifierInput): TaskLaneAssign
       hasAnyOwn(payload, DELEGATED_WORKFLOW_KEYS),
     "delegated_workflow_marker_present",
   );
-
-  if (worker?.workerMode === undefined) {
-    reasons.push("worker_mode_missing");
-  } else if (worker.workerMode !== "persistent") {
-    reasons.push("worker_not_persistent");
-  }
 
   if (!policyDecision) {
     reasons.push("policy_decision_missing");

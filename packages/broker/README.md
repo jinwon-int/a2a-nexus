@@ -75,7 +75,7 @@ map.
 - `docs/release-notes-7655e9d-a2a-livez-persistence.md` for the draft release notes covering the #1032/#1250 `/livez` diagnostics closeout and worker-thread SQLite persistence canary
 - `docs/socket-reuse-probe-policy.md` for the strict wall-clock gate policy that treats reused-socket idle-before-request-event tails as client/probe residuals when fresh and standalone `/livez` probes are clean
 - `docs/production-stabilization-20260429.md` for the live production closeout: SQLite hot-table cutover, stale-reaper threshold, worker session isolation, active-worker scope, and 502 mitigation notes
-- `docs/phase-8-peer-status-rfc.md` for the `a2a.peer.status` RPC design contract: health semantics, unified read-only worker-mode thresholds with the deprecated mobile-only override (#2065), advisory busy detection, rate limiting, privacy summary-mode output, and caller guidance
+- `docs/phase-8-peer-status-rfc.md` for the `a2a.peer.status` RPC design contract: health semantics, the common read-only staleness window and advisory busy budget (#2065 retired all worker-mode distinction), rate limiting, privacy summary-mode output, and caller guidance
 
 ## Peer status API (`a2a.peer.status`)
 
@@ -104,7 +104,6 @@ A lightweight JSON-RPC method for cheap, read-only worker health queries. Design
   "worker": {
     "registered": true,
     "lastHeartbeatAt": 1716000000000,
-    "workerMode": "persistent",
     "capacity": { "slotsTotal": 10, "slotsBusy": 3 }
   },
   "tasks": { "active": 2, "queued": 1, "stale": 0 },
@@ -119,50 +118,40 @@ A lightweight JSON-RPC method for cheap, read-only worker health queries. Design
 | `ok`        | Worker registered, heartbeat fresh, free capacity |
 | `busy`      | Worker registered, heartbeat fresh, all capacity slots occupied (`active + queued >= slotsTotal`) |
 | `degraded`  | Worker registered, heartbeat fresh, but has stale tasks (claimed/running tasks with missed task heartbeats) |
-| `stale`     | Worker registered but last heartbeat exceeds the resolved offline threshold (see [Worker modes](#worker-modes)) |
+| `stale`     | Worker registered but last heartbeat exceeds the resolved offline threshold (see [Worker capacity](#worker-capacity)) |
 | `unreachable` | Worker not registered at all |
 
-### Worker modes
+### Worker capacity
 
-Workers declare `workerMode` on registration/heartbeat. The `workerMode` wire
-field is echoed verbatim (`"persistent"`, `"mobile"`, or absent) and the
-accepted values are unchanged.
+#2065 retired the `workerMode` distinction. Registration and heartbeat requests
+no longer persist a `workerMode` field and worker responses do not echo it;
+requests that still send the field are tolerated by lenient schema validation
+and silently dropped.
 
 `a2a.peer.status` computes one common read-only staleness window and one
-advisory busy budget for **every** mode:
+advisory busy budget for **every** worker:
 
-| Mode | Stale threshold | Advisory capacity |
-|-------------|--------------------------|--------------------------|
-| `persistent` (default) | `workerOfflineAfterMs` ?? 90 s (`DEFAULT_WORKER_OFFLINE_AFTER_MS`) | 10 advisory slots |
-| `mobile` | `mobileOfflineAfterMs` ?? `workerOfflineAfterMs` ?? 90 s | 10 advisory slots |
-| absent (same defaults) | `workerOfflineAfterMs` ?? 90 s | 10 advisory slots |
+| Stale threshold | Advisory capacity |
+|--------------------------|--------------------------|
+| `workerOfflineAfterMs` ?? 90 s (`DEFAULT_WORKER_OFFLINE_AFTER_MS`) | 10 advisory slots |
 
-- `workerOfflineAfterMs` is the common constructor option; it now applies to
-  mobile workers too. Absence no longer synthesizes a 30-second mobile window.
-- `mobileOfflineAfterMs` is a **deprecated mobile-only override retained for
-  explicit backward compatibility**. When explicitly supplied it keeps its
-  historical precedence for `workerMode: "mobile"` workers; persistent and
-  absent-mode workers ignore it.
-  Resolution uses `??`, so explicit zero and longer windows remain effective.
+- `workerOfflineAfterMs` is the common constructor option; resolution uses
+  `??`, so explicit zero and longer windows remain effective. The former
+  30-second mobile window and the `mobileOfflineAfterMs` override are retired
+  along with the `workerMode` field itself.
 
 - `capacity.slotsTotal`/`capacity.slotsBusy` are computed read-only telemetry:
   `slotsBusy` counts active (claimed/running) **plus queued** tasks against a
-  fixed advisory total of 10, identical for every mode. A queued-only backlog
-  of 10 tasks therefore reports `busy`. This is **not** executor concurrency,
-  scheduling capacity, or an admission permission; this view neither reads
-  nor sets executor concurrency.
+  fixed advisory total of 10. A queued-only backlog of 10 tasks therefore
+  reports `busy`. This is **not** executor concurrency, scheduling capacity, or
+  an admission permission; this view neither reads nor sets executor
+  concurrency.
 
-**Not unified on purpose:** other mode-aware surfaces keep their own windows
-and thresholds. The `/dashboard` view, `GET /workers/capacity`, and the
-`mobileHealth` projection still classify mobile workers with the 30 s
-(`MOBILE_OFFLINE_AFTER_MS`) and 90 s (`MOBILE_DISCONNECTED_AFTER_MS`) windows.
-Do not read `a2a.peer.status` and those surfaces as interchangeable; a mobile
-worker can legitimately be `stale` on the dashboard while `a2a.peer.status`
-still reports `ok` between 30 s and 90 s.
-
-Raw `GET /workers` and `GET /workers/:id` already use the common configured
-threshold for every mode and do not synthesize `mobileHealth`; these raw views
-are distinct from the dashboard and capacity summaries above.
+All read-only status surfaces agree: the `/dashboard` view,
+`GET /workers/capacity`, raw `GET /workers` and `GET /workers/:id`, and this
+RPC resolve the same common `workerOfflineAfterMs ?? 90_000` window for every
+worker and synthesize no mobile-specific fields. Do not assume historical
+mode-aware windows; they no longer exist.
 
 ### Caller contract
 
@@ -217,12 +206,13 @@ curl -s "$BROKER_URL/workers/capacity?stale_after_ms=120000" \
 
 If the command exits non-zero, pause dispatch and inspect the compact response instead of repeatedly fetching large `/tasks?detail=full` snapshots.
 
-The fixture-only mobile preflight tool was retired in #2065; its rollout command
-is no longer supported. This does not retire runtime `workerMode` behavior or
-change worker offline windows, implementation readiness, policy, or fast-lane
-eligibility. Use the capacity check above for current worker load; implementation
-assignments additionally require the verified profile described in
-[`implementation-lane readiness`](../../docs/implementation-lane-readiness.md).
+The fixture-only mobile preflight tool was retired in #2065 together with the
+`workerMode` field and the mobile-worker distinction; its rollout command is no
+longer supported and runtime worker mode no longer exists. Worker offline
+windows, implementation readiness, policy, and fast-lane eligibility are
+unchanged. Use the capacity check above for current worker load;
+implementation assignments additionally require the verified profile described
+in [`implementation-lane readiness`](../../docs/implementation-lane-readiness.md).
 
 ## What is included
 

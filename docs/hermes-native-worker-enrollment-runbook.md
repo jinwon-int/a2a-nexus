@@ -35,7 +35,6 @@ This runbook covers **enrollment** of a Hermes native worker into a non-loopback
 | Change | Before enrollment | After enrollment |
 |--------|------------------|-----------------|
 | Broker URL | `http://127.0.0.1:<port>` (loopback) | Production/staging broker URL |
-| `workerMode` | `mobile` (unchanged) | `mobile` (unchanged) |
 | Task scope | No-live test tasks only | Live approved tasks per GO/NO-GO gate |
 | Evidence | Loopback-validated fixtures | Production broker-visible evidence |
 | Heartbeat target | Local broker | Production broker |
@@ -140,7 +139,6 @@ curl -s -X POST <broker-url>/workers/register \
     "role": "analyst",
     "displayName": "Enrollment Preflight Probe",
     "brokerUrl": "<broker-url>",
-    "workerMode": "mobile",
     "capabilities": {"canAnalyze": true},
     "metadata": {"runtime": "hermes-agent", "openClawRequired": "false", "transport": "http-poll"}
   }'

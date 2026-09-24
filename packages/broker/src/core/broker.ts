@@ -72,16 +72,13 @@ import {
   pruneMapEntries,
 } from "./broker-retention-selectors.js";
 // Re-exported to preserve the existing public surface; the thresholds now live
-// in broker-worker-status.js alongside the logic that classifies against them.
-// The neutral HEARTBEAT_LIVENESS_* names are exported alongside the unchanged
-// legacy MOBILE_* aliases (exact-value aliases, kept for legacy imports). The
+// in broker-worker-status.js under their neutral names (#2065 retired the
+// legacy MOBILE_* aliases and the mode-aware offline-window helper). The
 // conversation delivery liveness resolver (#1862) uses only the neutral names.
 import { HEARTBEAT_LIVENESS_OFFLINE_AFTER_MS, HEARTBEAT_LIVENESS_ONLINE_WINDOW_MS } from "./broker-worker-status.js";
 export {
   HEARTBEAT_LIVENESS_OFFLINE_AFTER_MS,
   HEARTBEAT_LIVENESS_ONLINE_WINDOW_MS,
-  MOBILE_DISCONNECTED_AFTER_MS,
-  MOBILE_OFFLINE_AFTER_MS,
 } from "./broker-worker-status.js";
 import {
   isoNow,
@@ -2231,10 +2228,8 @@ export class InMemoryA2ABroker {
     // exists; require_approval merges into the existing blocked -> operator
     // approve -> queued flow regardless of mode (blocking is recoverable).
     const policyDecision = this.evaluateCreateTaskPolicy(normalizedRequest);
-    const assignedWorkerId = normalizedRequest.assignedWorkerId ?? normalizedRequest.target.id;
     const laneAssignment = classifyTaskLane({
       request: normalizedRequest,
-      worker: this.getWorker(assignedWorkerId),
       policyDecision,
     });
 

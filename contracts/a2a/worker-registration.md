@@ -22,19 +22,23 @@ The broker worker API also accepts runtime-neutral HTTP worker registration reco
 - `displayName`: human-readable public-safe worker label.
 - `brokerUrl`: local/test broker endpoint advertised by the worker; never include private production endpoints in public fixtures.
 - `capabilities`: normalized `WorkerCapabilities` object with booleans plus `workspaceIds` and `environments`.
-- `workerMode`: current accepted values are `persistent` and `mobile`; polling workers may use `mobile` until a v1 worker-mode expansion exists.
 - `metadata`: string-only public-safe hints such as `runtime=hermes-agent`, `transport=http-poll`, and `openClawRequired=false`.
 
-The read-only `a2a.peer.status` view uses a common 90,000 ms heartbeat window
-and 10 advisory busy slots for persistent, mobile and absent modes. It preserves
-the recorded `workerMode` field verbatim; absence is not rewritten on the wire.
-The constructor resolves a mobile window as `mobileOfflineAfterMs ??
-workerOfflineAfterMs ?? DEFAULT_WORKER_OFFLINE_AFTER_MS`; other modes ignore
-the deprecated mobile-only override. Explicit zero and longer windows remain
-valid overrides. Busy slots count active plus queued tasks and do not set
-executor concurrency or grant task admission. Registration, policy classes,
-fast-lane eligibility and the separate dashboard/capacity/mobileHealth windows
-are unchanged. See the [peer-status contract](../../packages/broker/docs/phase-8-peer-status-rfc.md#25-worker-modes-and-capacity-revised-by-2065).
+`workerMode` is **retired** (#2065). The registration/heartbeat request schema
+still tolerates the field on the wire (lenient passthrough validation), but the
+broker no longer persists it, does not echo it in worker views, and derives no
+behavior from it. New integrations must not send it.
+
+The read-only `a2a.peer.status` view uses one common window for every worker:
+`workerOfflineAfterMs ?? DEFAULT_WORKER_OFFLINE_AFTER_MS` (default 90,000 ms),
+plus 10 advisory busy slots. There is no mode-specific window and no
+mobile-only override; explicit zero and longer `workerOfflineAfterMs` values
+remain valid constructor overrides. Busy slots count active plus queued tasks
+and do not set executor concurrency or grant task admission. Registration,
+policy classes, and fast-lane eligibility do not read any worker mode. The
+`/dashboard` and `GET /workers/capacity` projections resolve the same common
+window pattern and synthesize no mobile-specific fields. See the
+[peer-status contract](../../packages/broker/docs/phase-8-peer-status-rfc.md#25-worker-capacity-and-advisory-slots).
 
 Generic worker task polling may use `GET /tasks?worker=<nodeId>&status=pending`. The server maps this to the existing `assignedWorkerId=<nodeId>&status=queued` read model. Generic terminal evidence may use `POST /tasks/:id/evidence`; `done` and `pr` outcomes complete the task, while `blocked` and `failed` outcomes fail it with redacted error evidence.
 

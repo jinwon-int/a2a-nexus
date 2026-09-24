@@ -50,8 +50,7 @@ interface PeerStatusResponse {
   worker: {
     registered: boolean;
     lastHeartbeatAt?: number;
-    workerMode?: "persistent" | "mobile";   // wire field preserved verbatim; accepted values unchanged
-    capacity?: {               // advisory busy telemetry, identical for every mode (#2065)
+    capacity?: {               // advisory busy telemetry, identical for every worker (#2065)
       slotsTotal: number;      // fixed advisory budget (10); NOT executor concurrency
       slotsBusy: number;       // active (claimed/running) + queued tasks
     };
@@ -83,49 +82,45 @@ Session text, tool call detail, transcripts, prompts, memory contents, and user 
 The `health` field follows a strict priority (first match wins):
 
 1. `unreachable` – worker not registered at all
-2. `stale` – worker heartbeat older than the resolved offline window (common
-   default, or an explicitly supplied legacy mobile-only override; see §2.5)
+2. `stale` – worker heartbeat older than the resolved common offline window
+   (see §2.5)
 3. `busy` – the advisory slot budget is occupied (`active + queued >= slotsTotal`)
 4. `degraded` – stale tasks exist (claimed/running tasks with missed task heartbeats)
 5. `ok` – everything nominal
 
-### 2.5 Worker modes and capacity (revised by #2065)
+### 2.5 Worker capacity and advisory slots
 
-Workers declare `workerMode` on registration and heartbeat. The `workerMode`
-wire field is preserved verbatim and the accepted values (`"persistent"`,
-`"mobile"`) are unchanged. Since the bounded worker-mode retirement (#2065),
+#2065 retired the `workerMode` distinction (and with it the mobile-only
+`mobileOfflineAfterMs` override and the synthesized `mobileHealth` field), so
 this read-only RPC computes one common staleness window and one advisory busy
-budget for every mode:
+budget for **every** worker:
 
-| Mode | Stale threshold (read-only view) | Advisory capacity (slotsTotal) |
-|------|-----------------------------------|--------------------------------|
-| `persistent` (default) | `workerOfflineAfterMs ?? 90_000` | 10 |
-| `mobile` | `mobileOfflineAfterMs ?? workerOfflineAfterMs ?? 90_000` | 10 |
-| absent (same defaults) | `workerOfflineAfterMs ?? 90_000` | 10 |
+| Stale threshold (read-only view) | Advisory capacity (slotsTotal) |
+|-----------------------------------|--------------------------------|
+| `workerOfflineAfterMs ?? 90_000` | 10 |
 
-- `workerOfflineAfterMs` is the common default (`DEFAULT_WORKER_OFFLINE_AFTER_MS`,
-  90 s, from `core/broker-contracts.ts`) and now applies to mobile workers as
-  well. Absence no longer synthesizes the former 30-second mobile window.
-- `mobileOfflineAfterMs` remains as a **deprecated mobile-only override**:
-  explicitly supplied instances keep their historical precedence for mobile
-  workers, while persistent and absent-mode workers ignore the option.
+- `workerOfflineAfterMs` is the common constructor option (default
+  `DEFAULT_WORKER_OFFLINE_AFTER_MS`, 90 s, from `core/broker-contracts.ts`).
   Resolution uses `??`, so explicit zero and longer windows remain effective.
+  There is no mode-specific window: the former 30-second mobile window and the
+  `mobileOfflineAfterMs` override are retired with the `workerMode` field.
 
 - `slotsBusy` is computed telemetry: active (claimed/running) **plus queued**
   tasks against the fixed advisory total. A queued-only backlog of 10 tasks
   reports `busy`. It is **not** executor concurrency, scheduling capacity, or
-  an admission permission; this view neither reads nor sets executor concurrency.
+  an admission permission; this view neither reads nor sets executor
+  concurrency.
 
-An absent `workerMode` uses the same defaults in this view and remains absent
-on the wire; it is not reclassified for policy or fast-lane eligibility.
+Registration and heartbeat requests no longer persist a `workerMode` field and
+worker responses do not echo it; requests that still send the field are
+tolerated by lenient schema validation and silently dropped.
 
 **Scope of the retirement:** the `/dashboard` view and `GET /workers/capacity`
-are unified with this view as well: their projections compute staleness from
-the same common `workerOfflineAfterMs ?? 90_000` window for every mode and no
-longer synthesize the retired `mobileHealth` field. All read-only status
+compute staleness from the same common `workerOfflineAfterMs ?? 90_000` window
+for every worker and synthesize no `mobileHealth` field. All read-only status
 surfaces now agree: a worker is `online`/`stale` identically on the dashboard,
 the capacity summary, raw `GET /workers` and `GET /workers/:id`, and this RPC.
-Registration, policy classes, fastlane eligibility, and actual execution are
+Registration, policy classes, fast-lane eligibility, and actual execution are
 untouched.
 
 ## 3. Transport
@@ -250,9 +245,9 @@ From `jinwon-int/a2a-broker#42`:
 From `jinon86/a2a-broker#180`:
 
 - [x] `busy` health state when all capacity slots occupied → §2.2, §2.4
-- [x] `workerMode` field (`persistent` | `mobile`) in registration/heartbeat/response → §2.2, §2.5
-- [x] ~~Mobile-aware stale threshold (30 s vs 90 s)~~ → superseded by #2065: common 90 s read-only default with deprecated explicit mobile-only override → §2.5
-- [x] ~~Mobile capacity (3 slots vs 10)~~ → superseded by #2065: unified advisory 10-slot budget for every mode → §2.5
+- [x] `workerMode` field (`persistent` | `mobile`) in registration/heartbeat/response → ~~§2.2, §2.5~~ retired by #2065: registration/heartbeat no longer persist the field and worker responses no longer echo it
+- [x] ~~Mobile-aware stale threshold (30 s vs 90 s)~~ → retired by #2065: one common `workerOfflineAfterMs ?? 90_000` read-only window for every worker, no mobile-only override → §2.5
+- [x] ~~Mobile capacity (3 slots vs 10)~~ → retired by #2065: unified advisory 10-slot budget for every worker → §2.5
 - [x] Stale-over-busy priority documented → §2.4
 - [x] Caller semantics in README → README#peer-status-api
 

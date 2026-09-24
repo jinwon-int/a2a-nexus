@@ -82,7 +82,6 @@ export function buildCleanupDryRunPlan(
         metadata: {
           nodeId: worker.nodeId,
           role: worker.role,
-          workerMode: worker.workerMode,
           lastSeenAt: worker.lastSeenAt,
           hasActiveTasks,
         },

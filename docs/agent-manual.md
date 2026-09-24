@@ -314,23 +314,20 @@ never routing authority, success evidence, or an #1815 A/B attestation.
 
 The read-only `a2a.peer.status` RPC is advisory telemetry as well: since #2065
 it computes a common 90 s staleness window and a fixed 10-slot advisory busy
-budget (`active + queued`) for every `workerMode`. The common
-`workerOfflineAfterMs` overrides the default; a supplied legacy
-`mobileOfflineAfterMs` takes precedence for declared mobile workers only.
-Resolution uses `??`, preserving explicit zero and longer windows. The
+budget (`active + queued`) for every worker. A registered
+`workerOfflineAfterMs` overrides the default; resolution uses `??`,
+preserving explicit zero and longer windows. The
 `/dashboard` and `/workers/capacity` projections use the same common
 `workerOfflineAfterMs ?? 90 s` window as raw `GET /workers` and
 `GET /workers/:id`, and none of these surfaces synthesize the retired
 `mobileHealth` field any more. See the
-[peer-status reference](../packages/broker/docs/phase-8-peer-status-rfc.md#25-worker-modes-and-capacity-revised-by-2065).
+[peer-status reference](../packages/broker/docs/phase-8-peer-status-rfc.md#25-worker-capacity-and-advisory-slots).
 
 Conversation-recipient liveness (`GET /conversations/:id/delivery`) has always
-applied one universal ladder for every `workerMode` (≤30 s online, ≤90 s stale,
-then offline). It now names that ladder with the neutral
+applied one universal ladder (≤30 s online, ≤90 s stale,
+then offline). It names that ladder with the neutral
 `HEARTBEAT_LIVENESS_ONLINE_WINDOW_MS` / `HEARTBEAT_LIVENESS_OFFLINE_AFTER_MS`
-constants; the legacy `MOBILE_OFFLINE_AFTER_MS` / `MOBILE_DISCONNECTED_AFTER_MS`
-names remain deprecated exact-value aliases (30,000 / 90,000) so existing
-imports are unchanged. These constants describe only the existing
+constants. These constants describe only the existing
 conversation/legacy-health ladder — they are not defaults for raw `GET /workers`
 or `a2a.peer.status`, which keep the common 90 s window described above.
 

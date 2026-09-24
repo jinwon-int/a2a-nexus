@@ -53,12 +53,10 @@ function request(overrides: Partial<CreateTaskRequest> = {}): CreateTaskRequest 
 
 function classify(
   taskRequest = request(),
-  workerMode: "persistent" | "mobile" | undefined = "persistent",
   policyDecision: BrokerPolicyDecision | undefined = ALLOW,
 ) {
   return classifyTaskLane({
     request: taskRequest,
-    worker: workerMode === undefined ? {} : { workerMode },
     policyDecision,
   });
 }
@@ -66,10 +64,9 @@ function classify(
 function assertFull(
   reason: TaskLaneReasonCode,
   taskRequest = request(),
-  workerMode: "persistent" | "mobile" | undefined = "persistent",
   policyDecision: BrokerPolicyDecision | undefined = ALLOW,
 ): void {
-  const result = classify(taskRequest, workerMode, policyDecision);
+  const result = classify(taskRequest, policyDecision);
   assert.equal(result.decision, "full");
   assert.ok(result.reasonCodes.includes(reason), JSON.stringify(result));
 }
@@ -81,11 +78,10 @@ function withPayload(
   return { ...base, payload: { ...(base.payload ?? {}), ...patch } };
 }
 
-function registerPersistentWorker(broker: InMemoryA2ABroker, nodeId = "worker-a"): void {
+function registerWorker(broker: InMemoryA2ABroker, nodeId = "worker-a"): void {
   broker.registerWorker({
     nodeId,
     role: "analyst",
-    workerMode: "persistent",
     capabilities: {
       canAnalyze: true,
       canBackfill: false,
@@ -101,7 +97,7 @@ function createBroker(
   options: { policyDocument?: BrokerPolicyDocument } = { policyDocument: ALLOW_POLICY },
 ): InMemoryA2ABroker {
   const broker = new InMemoryA2ABroker(undefined, undefined, options);
-  registerPersistentWorker(broker);
+  registerWorker(broker);
   return broker;
 }
 
@@ -156,21 +152,9 @@ test("single-worker and no-ceremony fallbacks cover assignment, round, fanout, t
   assertFull("delegated_workflow_marker_present", withPayload({ workflowId: "workflow-1" }));
 });
 
-test("registered worker must explicitly be persistent", () => {
-  const missing = classifyTaskLane({
-    request: request(),
-    worker: {},
-    policyDecision: ALLOW,
-  });
-  assert.equal(missing.decision, "full");
-  assert.ok(missing.reasonCodes.includes("worker_mode_missing"));
-  assertFull("worker_not_persistent", request(), "mobile");
-});
-
 test("create-time G1 decision must explicitly allow", () => {
   const missing = classifyTaskLane({
     request: request(),
-    worker: { workerMode: "persistent" },
     policyDecision: undefined,
   });
   assert.equal(missing.decision, "full");
@@ -178,15 +162,14 @@ test("create-time G1 decision must explicitly allow", () => {
   assertFull(
     "policy_decision_unknown",
     request(),
-    "persistent",
     { action: "unknown" } as unknown as BrokerPolicyDecision,
   );
-  assertFull("policy_requires_approval", request(), "persistent", {
+  assertFull("policy_requires_approval", request(), {
     action: "require_approval",
     ruleId: "approval",
     reason: "approval required",
   });
-  assertFull("policy_denied", request(), "persistent", {
+  assertFull("policy_denied", request(), {
     action: "deny",
     ruleId: "deny",
     reason: "denied",
@@ -347,7 +330,7 @@ test("JSON and SQLite persistence preserve the broker-owned lane field and audit
     const jsonBroker = new InMemoryA2ABroker(jsonStore, jsonStore.load(), {
       policyDocument: ALLOW_POLICY,
     });
-    registerPersistentWorker(jsonBroker);
+    registerWorker(jsonBroker);
     const jsonTask = jsonBroker.createTask(request({ id: "lane-json-restart" }));
 
     const jsonRestartStore = new JsonFileBrokerStateStore(jsonPath);
@@ -364,7 +347,7 @@ test("JSON and SQLite persistence preserve the broker-owned lane field and audit
     const sqliteBroker = new InMemoryA2ABroker(sqliteStore, sqliteStore.load(), {
       policyDocument: ALLOW_POLICY,
     });
-    registerPersistentWorker(sqliteBroker);
+    registerWorker(sqliteBroker);
     const sqliteTask = sqliteBroker.createTask(request({ id: "lane-sqlite-restart" }));
     sqliteStore.close();
 
@@ -446,7 +429,7 @@ test("every reason the classifier can emit stays inside the closed contract tupl
     request({ parentRoundId: "round-1" }),
   ];
   for (const candidate of adversarial) {
-    for (const decision of [classify(candidate, undefined, ALLOW), classify(candidate, "mobile", ALLOW), classify(candidate, "persistent", undefined)]) {
+    for (const decision of [classify(candidate, ALLOW), classify(candidate, undefined)]) {
       for (const reason of decision.reasonCodes) emitted.add(reason);
     }
   }

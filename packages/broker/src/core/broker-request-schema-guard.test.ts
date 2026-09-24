@@ -226,7 +226,6 @@ describe("worker registration request schema derived from workerSchema (#2051 it
       baseWorker({
         displayName: "Worker A",
         brokerUrl: "https://broker.test/",
-        workerMode: "persistent",
         managementPlane: "reachable",
         metadata: { platform: "linux", workerProfile: "broker-poll-only" },
       }),

@@ -61,7 +61,6 @@ The fixture records only non-secret facts:
 - `workerId`: `worker-gamma`
 - `runtime`: `hermes-agent`
 - `harness`: `hermes`
-- `workerMode`: `persistent`
 - Capability under test: `github-propose-patch`
 - Broker boundary: broker-alpha broker-backed task, PR-first only
 - PR is source-only: no deploy, no restart, no DB mutation, no Terminal ACK/replay, no provider/Telegram send, no secret movement

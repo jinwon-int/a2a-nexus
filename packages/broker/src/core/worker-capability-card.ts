@@ -3,7 +3,6 @@ import type {
   A2APartyRole,
   A2AWorkerEnvironment,
   WorkerCapabilities,
-  WorkerMode,
   WorkerStatus,
   WorkerView,
 } from "./types.js";
@@ -40,7 +39,6 @@ export interface WorkerCapabilityCard {
     id: string;
     name?: string;
     role: A2APartyRole;
-    mode: WorkerMode;
   };
   team: {
     teamId: WorkerRegistryTeamId;
@@ -94,7 +92,6 @@ export interface CreateWorkerCapabilityCardOptions {
   skills: AgentSkill[];
   visibility?: Partial<WorkerVisibilityFlags>;
   lane?: WorkerRegistryTeamId;
-  mode?: WorkerMode;
   containerized?: boolean;
   maxConcurrentTasks?: number;
   currentAssignedTasks?: number;
@@ -263,7 +260,6 @@ export function createWorkerCapabilityCard(
       id: worker.nodeId,
       name: worker.displayName,
       role: worker.role,
-      mode: options.mode ?? worker.workerMode ?? "persistent",
     },
     team: {
       teamId: options.teamId,

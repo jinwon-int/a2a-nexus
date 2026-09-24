@@ -14,7 +14,9 @@ import { readFileSync } from "node:fs";
 export const BROKER_POLICY_SCHEMA = "a2a.broker.policy.v1";
 export const BROKER_POLICY_MODES = ["warn", "enforce"] as const;
 export const BROKER_POLICY_DEFAULT_ACTIONS = ["allow", "deny"] as const;
-/** The closed anonymous worker-class axis (mirrors the /stats/tasks classes). */
+/** The closed anonymous worker-class axis (mirrors the /stats/tasks classes).
+ * "mobile" remains accepted so legacy committed policy documents still
+ * validate; since #2065 no live worker derives to it (see deriveTaskWorkerClass). */
 export const BROKER_POLICY_WORKER_CLASSES = ["mobile", "vps", "source-only", "unclassified"] as const;
 
 export type BrokerPolicyMode = (typeof BROKER_POLICY_MODES)[number];
@@ -233,11 +235,13 @@ export function deriveTaskWorkerClass(input: {
   sourceOnly?: boolean;
   payloadMode?: string;
   workerFound: boolean;
-  workerMode?: string;
 }): string {
   if (input.sourceOnly === true || input.payloadMode === "source-only") return "source-only";
   if (!input.workerFound) return "unclassified";
-  return input.workerMode === "mobile" ? "mobile" : "vps";
+  // #2065: the workerMode/mobile-worker distinction is retired; every
+  // registered worker derives to the same "vps" class. The "mobile" class
+  // stays in the policy axis only so legacy operator documents still validate.
+  return "vps";
 }
 
 /**

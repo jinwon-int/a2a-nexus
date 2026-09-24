@@ -78,7 +78,6 @@ test('fixture worker identity reflects Hermes/Android native worker', () => {
   assert.equal(worker.runtimeFlavor, 'termux-hermes');
   assert.equal(worker.openClawRequired, false);
   assert.equal(worker.dockerAvailable, false);
-  assert.equal(worker.workerMode, 'mobile');
   assert.equal(worker.transport, 'http-poll');
   assert.equal(worker.brokerUrlMode, 'loopback-only');
   assert.equal(worker.evidenceSchema, 'a2a.hermesWorker.localEvidence.v1');

@@ -1,53 +1,37 @@
-// #2065 retirement prerequisite: the pre-existing conversation/legacy-health
-// heartbeat liveness ladder gets neutral names (HEARTBEAT_LIVENESS_*), while
-// the legacy MOBILE_* constants remain deprecated exact-value aliases. These
-// tests pin the module and public-broker export values, the alias parity, and
-// the effectiveOfflineAfterMs precedence. The retired mobileHealth projection
-// ladder has no tests here because the helper no longer exists (#2065).
+// #2065: the workerMode/mobile-worker retirement collapsed the heartbeat
+// liveness ladder to its neutral names (HEARTBEAT_LIVENESS_*). These tests pin
+// the module and public-broker export values (30s online window, 90s offline
+// boundary) and the retired MOBILE_* aliases / effectiveOfflineAfterMs helper
+// are asserted gone from both surfaces.
 import assert from "node:assert/strict";
 import test from "node:test";
 
-import {
-  effectiveOfflineAfterMs,
-  HEARTBEAT_LIVENESS_OFFLINE_AFTER_MS,
-  HEARTBEAT_LIVENESS_ONLINE_WINDOW_MS,
-  MOBILE_DISCONNECTED_AFTER_MS,
-  MOBILE_OFFLINE_AFTER_MS,
-} from "./broker-worker-status.js";
-import {
-  HEARTBEAT_LIVENESS_OFFLINE_AFTER_MS as BROKER_HEARTBEAT_LIVENESS_OFFLINE_AFTER_MS,
-  HEARTBEAT_LIVENESS_ONLINE_WINDOW_MS as BROKER_HEARTBEAT_LIVENESS_ONLINE_WINDOW_MS,
-  MOBILE_DISCONNECTED_AFTER_MS as BROKER_MOBILE_DISCONNECTED_AFTER_MS,
-  MOBILE_OFFLINE_AFTER_MS as BROKER_MOBILE_OFFLINE_AFTER_MS,
-} from "./broker.js";
+import * as workerStatus from "./broker-worker-status.js";
+import * as broker from "./broker.js";
 
 test("neutral heartbeat-liveness constants pin the existing 30s/90s conversation ladder values", () => {
-  assert.equal(HEARTBEAT_LIVENESS_ONLINE_WINDOW_MS, 30_000);
-  assert.equal(HEARTBEAT_LIVENESS_OFFLINE_AFTER_MS, 90_000);
+  assert.equal(workerStatus.HEARTBEAT_LIVENESS_ONLINE_WINDOW_MS, 30_000);
+  assert.equal(workerStatus.HEARTBEAT_LIVENESS_OFFLINE_AFTER_MS, 90_000);
+  // Public broker surface re-exports the same values.
+  assert.equal(broker.HEARTBEAT_LIVENESS_ONLINE_WINDOW_MS, 30_000);
+  assert.equal(broker.HEARTBEAT_LIVENESS_OFFLINE_AFTER_MS, 90_000);
 });
 
-test("deprecated MOBILE_* constants are exact-value aliases on the module and public broker surfaces", () => {
-  // Module-level alias parity.
-  assert.equal(MOBILE_OFFLINE_AFTER_MS, HEARTBEAT_LIVENESS_ONLINE_WINDOW_MS);
-  assert.equal(MOBILE_DISCONNECTED_AFTER_MS, HEARTBEAT_LIVENESS_OFFLINE_AFTER_MS);
-  // Public broker surface: neutral and legacy re-exports stay in lockstep.
-  assert.equal(BROKER_HEARTBEAT_LIVENESS_ONLINE_WINDOW_MS, 30_000);
-  assert.equal(BROKER_HEARTBEAT_LIVENESS_OFFLINE_AFTER_MS, 90_000);
-  assert.equal(BROKER_MOBILE_OFFLINE_AFTER_MS, BROKER_HEARTBEAT_LIVENESS_ONLINE_WINDOW_MS);
-  assert.equal(BROKER_MOBILE_DISCONNECTED_AFTER_MS, BROKER_HEARTBEAT_LIVENESS_OFFLINE_AFTER_MS);
-});
-
-test("effectiveOfflineAfterMs keeps the legacy mobile 30s value against supplied common windows including 0 and 120000", () => {
-  // Declared mobile workers keep the legacy ladder value regardless of the
-  // supplied common window — including explicit zero and longer overrides.
-  // (Task-admission still consumes this helper; projections do not — #2065.)
-  assert.equal(effectiveOfflineAfterMs("mobile", HEARTBEAT_LIVENESS_ONLINE_WINDOW_MS), 30_000);
-  assert.equal(effectiveOfflineAfterMs("mobile", 0), 30_000);
-  assert.equal(effectiveOfflineAfterMs("mobile", 120_000), 30_000);
-  // Persistent and absent modes resolve the supplied common window verbatim;
-  // explicit zero stays zero (no falsy coalescing).
-  assert.equal(effectiveOfflineAfterMs("persistent", 0), 0);
-  assert.equal(effectiveOfflineAfterMs("persistent", 120_000), 120_000);
-  assert.equal(effectiveOfflineAfterMs(undefined, 0), 0);
-  assert.equal(effectiveOfflineAfterMs(undefined, 120_000), 120_000);
+test("retired workerMode-era exports are absent from the module and public broker surfaces", () => {
+  // The legacy MOBILE_* aliases and the mode-aware offline-window helper must
+  // be gone entirely — imports of them would fail to compile.
+  for (const surface of [workerStatus, broker]) {
+    assert.ok(
+      !("MOBILE_OFFLINE_AFTER_MS" in surface),
+      "MOBILE_OFFLINE_AFTER_MS must be retired (#2065)",
+    );
+    assert.ok(
+      !("MOBILE_DISCONNECTED_AFTER_MS" in surface),
+      "MOBILE_DISCONNECTED_AFTER_MS must be retired (#2065)",
+    );
+    assert.ok(
+      !("effectiveOfflineAfterMs" in surface),
+      "effectiveOfflineAfterMs must be retired (#2065)",
+    );
+  }
 });
