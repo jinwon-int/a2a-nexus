@@ -84,6 +84,33 @@ export const KNOWN_SERVICE_ENV_FILES: readonly string[] = [
   "/etc/default/a2a-hermes-worker",
 ];
 
+/** #2267 R2: opt-in workDir retention. Unset = no automatic cleanup (current fleet behaviour). */
+export const WORKDIR_TTL_ENV = "A2A_DOCKER_RUNNER_WORKDIR_TTL";
+/** systemd unit base name written by `install --cleanup-timer` (`<name>.service` + `<name>.timer`). */
+export const DEFAULT_CLEANUP_UNIT_NAME = "a2a-docker-runner-cleanup";
+export const DEFAULT_SYSTEMD_UNIT_DIR = "/etc/systemd/system";
+
+/** Parse a TTL like `14d`, `36h`, `30m`, `5000` (ms) into milliseconds. */
+export function parseTtlMs(value: string): number {
+  const match = value.trim().match(/^(\d+)(ms|s|m|h|d)?$/);
+  if (!match) throw new Error(`invalid ttl: ${value} (expected <n>[ms|s|m|h|d])`);
+  const amount = Number(match[1]);
+  const unit = match[2] ?? "ms";
+  const multipliers: Record<string, number> = { ms: 1, s: 1000, m: 60_000, h: 3_600_000, d: 86_400_000 };
+  return amount * multipliers[unit];
+}
+
+/**
+ * Configured workDir TTL (`A2A_DOCKER_RUNNER_WORKDIR_TTL`), or undefined when
+ * retention is not configured. Throws on an unparsable value so a typo never
+ * silently disables cleanup.
+ */
+export function resolveWorkdirTtl(env: NodeJS.ProcessEnv = process.env): { raw: string; ttlMs: number } | undefined {
+  const raw = env[WORKDIR_TTL_ENV]?.trim();
+  if (!raw) return undefined;
+  return { raw, ttlMs: parseTtlMs(raw) };
+}
+
 /**
  * Resolve the task root without loading the full runner config (#2267).
  * `cleanup` only needs the root directory; routing it through `loadConfig`
