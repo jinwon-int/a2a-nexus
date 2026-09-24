@@ -80,6 +80,45 @@ async function githubJson(token, url) {
   return res.json();
 }
 
+const PER_PAGE = 100;
+// A query that outgrows this many pages fails closed instead of silently
+// truncating (#2254): a silent truncation is exactly how the old single-page
+// fetch made the gate pass while older violations were still out there.
+const MAX_PAGES = 100;
+
+/**
+ * Fetch every page of a paginated GitHub list endpoint. Pagination must stay
+ * stable while we walk it, so callers pass `sort=created` — `created_at` is
+ * immutable, so unrelated issues being updated mid-pagination cannot shift
+ * page boundaries the way `sort=updated` can. Pages are deduped defensively,
+ * and a query exceeding `maxPages` throws rather than returning a truncated
+ * list (#2254: the old single-page fetch silently missed older violations
+ * whenever >100 closed items — issues and PRs mixed — were updated in the
+ * window, flipping the gate between pass and fail depending on fetch-time
+ * composition).
+ */
+export async function fetchAllPages(token, url, { maxPages = MAX_PAGES, perPage = PER_PAGE } = {}) {
+  const sep = url.includes('?') ? '&' : '?';
+  const all = [];
+  const seen = new Set();
+  for (let page = 1; page <= maxPages; page += 1) {
+    const items = await githubJson(token, `${url}${sep}per_page=${perPage}&page=${page}`);
+    if (!Array.isArray(items)) {
+      throw new Error(`GitHub API returned a non-array payload for ${url} (page ${page})`);
+    }
+    for (const item of items) {
+      const key = item.number ?? item.id;
+      if (seen.has(key)) continue;
+      seen.add(key);
+      all.push(item);
+    }
+    if (items.length < perPage) return all;
+  }
+  throw new Error(
+    `GitHub API pagination for ${url} exceeded ${maxPages} pages (${maxPages * perPage}+ items); failing closed instead of silently truncating`,
+  );
+}
+
 async function main() {
   const token = process.env.GITHUB_TOKEN;
   if (!token) {
@@ -92,14 +131,17 @@ async function main() {
   if (!Number.isFinite(days) || days <= 0) throw new Error('--days must be a positive number');
   const since = new Date(Date.now() - days * 24 * 60 * 60 * 1000).toISOString();
 
-  const issues = await githubJson(
+  // sort=created (an immutable field) keeps page boundaries stable while we
+  // walk the window; see fetchAllPages for why the single-page fetch this
+  // replaced silently dropped older violations (#2254).
+  const issues = await fetchAllPages(
     token,
-    `https://api.github.com/repos/${repo}/issues?state=closed&since=${since}&per_page=100`,
+    `https://api.github.com/repos/${repo}/issues?state=closed&since=${since}&sort=created&direction=desc`,
   );
   for (const issue of issues) {
     const labels = (issue.labels ?? []).map((label) => (typeof label === 'string' ? label : label.name));
     if (!issue.pull_request && labels.includes(EXCEPTION_LABEL) && issue.body && UNCHECKED_BOX.test(issue.body)) {
-      const comments = await githubJson(token, `${issue.comments_url}?per_page=100`);
+      const comments = await fetchAllPages(token, issue.comments_url);
       issue.commentBodies = comments.map((comment) => comment.body);
     }
   }
