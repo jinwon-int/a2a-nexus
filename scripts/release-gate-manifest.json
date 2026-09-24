@@ -462,6 +462,12 @@
       "class": "gate",
       "round": null,
       "note": "Broker<->dispatch shared retrieval-manifest contract test for the signed web-retrieval snapshot gateway (#2017, #2019)."
+    },
+    {
+      "file": "scripts/lib/a2a-routing-assignment-forms.test.mjs",
+      "class": "gate",
+      "round": null,
+      "note": "Offline routing assignment forms contract test (#2196 slice 4): closed build/prepare shapes, context-only host.*, journal-first resume, zero-POST posture."
     }
   ]
 }

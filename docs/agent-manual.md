@@ -112,6 +112,10 @@ import it directly.
 
 > Moved to [Appendix A: Offline routing reference](#appendix-a-offline-routing-reference) — content unchanged (docs-only relocation, no wording edits).
 
+### Offline routing assignment forms (optional, offline-only) (#2196 slice 4)
+
+> Moved to [Appendix A: Offline routing reference](#appendix-a-offline-routing-reference) — content unchanged (docs-only relocation, no wording edits).
+
 ### Manual manifest recipe
 
 Save this template as a private `round.json`, replace every `REPLACE_*` value,
@@ -488,6 +492,56 @@ Rule ordering, preprocessing, and the complete support surface:
 [the routing-classifier spec](specs/a2a-routing-classifier/spec.md) (rules
 baseline slice). This entry is advisory-only and offline; it changes no live
 routing behavior.
+
+### Offline routing assignment forms (optional, offline-only) (#2196 slice 4)
+
+Hosts holding a validated advisory routing descriptor can build the exact
+assignment request shape and prepare the assignment fully offline — the
+readiness GATE, never dispatch. Import the wrapper from the same checkout
+revision:
+
+```js
+import {
+  buildAssignmentRequest,
+  prepareRoutingAssignment,
+  ROUTING_FORMS_VERSION,
+} from './scripts/lib/a2a-routing-assignment-forms.mjs';
+```
+
+- `buildAssignmentRequest` is pure and synchronous and mirrors the entrypoint
+  projection contract: request text, pinned template catalog, template id,
+  lanes, and trusted host fields must satisfy the exact shapes
+  `prepareAssignment` consumes. Host context is CONTEXT-ONLY and presence
+  checks only — `host.*` values are never copied, echoed, or stored, unknown
+  keys are dropped, and a host field equal to the broker URL or a
+  secret-shaped key (`secret`, `token`, `password`, `authorization`,
+  `credential`) fails closed with `untrusted_broker_or_secret_input` naming
+  `request.<key>` BEFORE any draft is built.
+- Success returns a frozen closed `{ ok: true, request }`; validation failure
+  returns a frozen `{ ok: false, reasonCodes, missingFields, invalidFields }`
+  with exact dotted field names. `none`/`blocked` projections are rejected as
+  `projection_not_convertible` (a synthesized plan is never produced), and
+  existing-reference templates must carry the referenced task/journal fields
+  or fail with the exact missing names. There is no confidence, probability,
+  scope, budget, or dispatch field anywhere in the shape.
+- `prepareRoutingAssignment` has a FIXED offline posture (no mode parameter):
+  an existing request-journal record resumes via `resumeAssignment`
+  (journal-first), otherwise `prepareAssignment` runs with
+  `mode: 'offline'`. It never POSTs and never contacts a broker — the fetch
+  dependency must be injected, and omitting it throws at call time so a
+  network attempt cannot happen silently. Receipts are returned UNMODIFIED:
+  entrypoint reason codes and states (including `kind_lane_mismatch`, which
+  surfaces as a `needs_input` receipt) stay entrypoint-authoritative; this
+  wrapper adds forms plumbing only and never re-classifies.
+- Boundaries: a `prepared` receipt proves contract shapes and local journal
+  state only — no worker was contacted, no task created, no POST sent. It is
+  NOT a #1597 readiness proof, there is no runtime/CLI wiring, and live
+  routing behavior is unchanged.
+
+Contract details and invariants:
+[the routing-classifier spec](specs/a2a-routing-classifier/spec.md)
+(assignment-forms slice). This entry is advisory-only and offline; it changes
+no live routing behavior.
 
 ## Keeping this manual current
 

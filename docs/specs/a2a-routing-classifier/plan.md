@@ -452,3 +452,162 @@ The renewed review reproduced destructive Korean connective splitting:
 that ending and recognize the explicit alternative form; regressions cover
 four action orders across128candidate subsets and both candidate orders
 (1024calls), plus same-existing-analysis and standalone-analysis controls.
+
+## Slice 4 — assignment forms: routing descriptors to validated assignment requests (#2196)
+
+> Written before its code (spec-first). Scope: one thin, OFFLINE, default-off
+> conversion layer from a validated bounded descriptor (frozen
+> `projectRoutingAdvice` output) into request forms the EXISTING #2187
+> entrypoints already accept, on `main@67608baa` (rules slice merged). This
+> slice is NOT a dispatcher, NOT a submit path, NOT a journal or readiness
+> collector, NOT calibration or evaluation (#2185/#2195 taxonomy; Phase D/E
+> depends on #2185), NOT runtime integration, NOT a live pilot. It performs
+> zero POSTs and zero network by default. #2196 remains partially OPEN (PR
+> refs #2196, never closes it).
+
+### Baseline
+
+- Source baseline: `main@67608baa` (CI fix #2255; entrypoint #2187 surface
+  unchanged).
+- Absence proof on base (RED for this forms lane), reproducible:
+  - `git cat-file -e 67608baa:scripts/lib/a2a-routing-assignment-forms.mjs`
+    → path absent;
+  - `git cat-file -e 67608baa:scripts/lib/a2a-routing-assignment-forms.test.mjs`
+    → path absent.
+
+### Scope discipline
+
+Exactly six paths change in this slice. The frozen foundation
+`scripts/lib/a2a-routing-advice.mjs`, the corpus module, the rules module,
+the entrypoint module, all existing fixtures and all existing tests are
+REUSED, never modified. No CHANGELOG, no dependency/package/new CLI, no other
+files.
+
+| Path | Change |
+|---|---|
+| `docs/specs/a2a-routing-classifier/spec.md` | edit — assignment-forms slice section (written first) |
+| `docs/specs/a2a-routing-classifier/plan.md` | edit — this slice plan |
+| `scripts/lib/a2a-routing-assignment-forms.mjs` | new — thin pure conversion + offline prepare wrapper |
+| `scripts/lib/a2a-routing-assignment-forms.test.mjs` | new — offline adversarial suite (purity, closed shapes, no-echo, journal-first) |
+| `docs/agent-manual.md` | edit — 4th Appendix A subsection + §2 quick-path stub, same style |
+| `scripts/release-gate-manifest.json` | edit — register the new test as `gate` (purely additive) |
+
+### Phase 1 — spec & plan (done first, in this PR)
+
+The assignment-forms slice section of `spec.md` fixes, before any code: the
+exported surface (`ROUTING_FORMS_VERSION = 'a2a.routing-forms.v1'`,
+`buildAssignmentRequest`, `prepareRoutingAssignment`), the closed
+`{ok:true, request}` / `{ok:false, reasonCodes, missingFields, invalidFields}`
+contract with frozen arrays, the dotted-path host-context resolution against
+`requiredHostFields`, context-only handling of `host.*` values (presence
+checked, never copied or echoed), the
+`untrusted_broker_or_secret_input` guard, the `invalid_descriptor` /
+`projection_not_convertible` fail-closed outcomes, journal-lookup-first
+observe/resume resolution through the existing entrypoint, the fixed
+`mode: 'offline'` + throwing fetch guard default-off posture (offline
+readiness without a snapshot → the entrypoint's `blocked` +
+`nextAction: 'retry_prepare'`, never a fabricated `prepared`), and the
+changed-paths list above.
+
+### Phase 2 — library
+
+`scripts/lib/a2a-routing-assignment-forms.mjs`: imports ONLY the frozen
+foundation `a2a-routing-advice.mjs` and the existing
+`task-assign-entrypoint.mjs`. `buildAssignmentRequest` is pure and
+synchronous: validates descriptor invariants (`schemaVersion`,
+`advisoryOnly`, `dispatchAllowed`, `projection`, `templateId`,
+`requiredHostFields`), rejects brokerUrl/secret-shaped host-context keys,
+resolves dotted required fields, fails closed with stable reason codes, and
+on success builds a plain draft in the #2187 request vocabulary only
+(`requestId`, `kind` from the template's `assignmentKind`, `objective`,
+`requestRef`, patch-only `target.repo` / `target.declaredScope.paths` /
+`target.repoTests`; host `lanes` pass through for the entrypoint's own
+fail-closed validation). `prepareRoutingAssignment` fixes `mode: 'offline'`,
+passes a throwing fetch guard when the host supplies no `fetchImpl`, and
+delegates to `prepareAssignment` / `resumeAssignment`, returning receipts
+unmodified. No module state, no clock use of its own, no POST, no submit.
+
+### Phase 3 — tests
+
+`scripts/lib/a2a-routing-assignment-forms.test.mjs` (node:test +
+node:assert/strict, offline, no network):
+
+- module purity: imports only the frozen foundation + entrypoint; no
+  forbidden tokens (fs/network/child_process/env), no fixture loading;
+- `buildAssignmentRequest` purity (same args → deep-equal result; inputs not
+  mutated) and frozen closed shapes for both outcomes;
+- happy paths per template family: patch (kind `patch`, target.* fields),
+  analysis/review (kind `analysis`, host.* context-only — values never appear
+  in the draft), observe/resume (no `kind`, existing reference resolution);
+- adversarial descriptor: wrong `schemaVersion`, `advisoryOnly !== true`,
+  `dispatchAllowed !== false`, missing `projection`/`templateId`/
+  `requiredHostFields` → `invalid_descriptor`; `projection: 'none'`/`'blocked'`
+  → `projection_not_convertible`; never a synthesized plan;
+- adversarial host context: missing/empty required dotted fields → exact
+  names in `missingFields`; `brokerUrl` and secret-shaped keys (secret/
+  token/password/authorization/credential) → `untrusted_broker_or_secret_input`
+  with `invalidFields` entry `request.<key>`; unknown keys dropped, never
+  propagated; no host-value echo in any error text;
+- `prepareRoutingAssignment` offline posture: no `mode` param; missing
+  `fetchImpl` → throwing guard (entrypoint readback degrades to
+  `admission_unconfirmed`/`readback_unavailable`); no readiness snapshot →
+  `blocked` receipt with `offline_snapshot_missing` and
+  `nextAction: 'retry_prepare'`; host-supplied snapshot rides through
+  unmodified;
+- observe/resume journal-first: no journal record → `blocked`
+  `resume_record_missing` with `nextAction: 'none'`; corrupt record →
+  `admission_unconfirmed` `journal_record_corrupt`; record without taskIds →
+  `prepared` `no_task_ids_recorded` with `nextAction: 'retry_prepare'`;
+  missing reference/journal → fail-closed before any call;
+- host `lanes` passthrough: the entrypoint's own lane validation and
+  `kind_lane_mismatch` stay authoritative (assert via entrypoint receipt);
+- existing-reference shape enforced against the locally mirrored
+  `^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$` request-id pattern.
+
+### Phase 4 — gate registration & manual
+
+1. `scripts/release-gate-manifest.json`: append one additive entry for the
+   new test as `class: "gate"`, `round: null`. No entry removed or weakened.
+2. `docs/agent-manual.md`: 4th Appendix A subsection exposing only the
+   functions that actually exist, with the advisory-only boundary, the
+   context-only host.* handling, the fixed offline mode, the zero-POST
+   posture, and the "passing the gate ≠ authorization to dispatch" rule;
+   §2 gains the matching quick-path stub in the existing "Moved to
+   Appendix A" style.
+
+### Phase 5 — verification
+
+1. `node --test scripts/lib/a2a-routing-assignment-forms.test.mjs
+   scripts/lib/a2a-routing-advice.test.mjs
+   scripts/lib/a2a-routing-corpus.test.mjs
+   scripts/lib/a2a-routing-rules.test.mjs
+   scripts/lib/task-assign-entrypoint.test.mjs` — record exact pass counts.
+2. `npm run check` (full release gate incl. manifest coverage sweep).
+3. `npm run scan:public-readiness`.
+4. Confirm no OpenClaw runtime/bootstrap context files (`AGENTS.md`,
+   `SOUL.md`, `USER.md`, `TOOLS.md`, `HEARTBEAT.md`, `IDENTITY.md`,
+   `.openclaw/**`) enter the changed-path set.
+
+### Later phases (NOT this slice — explicitly tracked, not claimed)
+
+1. Submit (`assign` POST) as a separate entrypoint function — its own spec
+   and approval; this slice stops at `prepared`.
+2. Host eligibility-gate wiring and runtime integration — separately
+   specified; no deployment/activation/restart, no live routing.
+3. Phase D/E calibration/holdout (#2185 coordination) — different taxonomy,
+   explicitly out of scope here.
+
+### Risks & mitigations
+
+- **Forms mistaken for dispatch**: docs and module comments state the
+  prepare-only boundary; zero POST by construction (no submit call exists in
+  the module).
+- **Host context leakage**: `host.*` values are presence-checked only, never
+  copied into drafts or error text; no-echo tests cover every failure path.
+- **Secret-shaped keys smuggled in**: brokerUrl + secret-pattern keys fail
+  closed with `untrusted_broker_or_secret_input` before any draft is built.
+- **Fabricated readiness**: `mode: 'offline'` is fixed; without a snapshot
+  the entrypoint's own `blocked`/`retry_prepare` receipt is the only
+  outcome; tests assert no `prepared` without evidence.
+- **Gate weakening**: manifest change is purely additive; full gate run in
+  Phase 5.
