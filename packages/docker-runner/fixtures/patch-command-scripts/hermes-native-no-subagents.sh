@@ -34,10 +34,13 @@ if ! command -v hermes >/dev/null 2>&1; then
 fi
 printf 'hermes_cli=%s\n' "$(hermes --version | head -n 1)" | tee -a /work/artifacts/summary.txt
 
-export HOME=/work
-export HERMES_HOME=/work/.hermes
-rm -rf "$HERMES_HOME"
-mkdir -p "$HERMES_HOME"
+# #2256 A3: HOME lives on the container's own /tmp (a tmpfs under the
+# read-only rootfs), never on the host-bound /work, so the .env/auth.json
+# copies below cannot land on host disk or in the artifact scan surface.
+export HOME=/tmp/hermes-home
+export HERMES_HOME="$HOME/.hermes"
+rm -rf "$HOME"
+install -d -m 0700 "$HOME" "$HERMES_HOME"
 
 copy_file_if_exists() {
   src="$1"

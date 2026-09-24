@@ -28,13 +28,13 @@
     },
     {
       "name": "hermes-default",
-      "bytes": 15951,
-      "sha256": "cb56b577c9abec09b1c822a5baafa85e38c9150b3864e1b552c789367dde9354"
+      "bytes": 16192,
+      "sha256": "175077a70e2c71025d595f2e1135b282a81ab318a5907e50a69489d5632af81f"
     },
     {
       "name": "hermes-native-no-subagents",
-      "bytes": 15358,
-      "sha256": "9e09d99ed6016e9ea9e6ef368586986c94d4696911b6bb118ce9c67795882069"
+      "bytes": 15599,
+      "sha256": "7ce95302c9d3828f058ed471653615e11439d52e1b309d0f15b1e6ae6b6d19b3"
     },
     {
       "name": "openclaw-default",

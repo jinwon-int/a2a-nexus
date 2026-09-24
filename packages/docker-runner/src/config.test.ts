@@ -1,12 +1,13 @@
 import assert from "node:assert/strict";
 import { execFileSync } from "node:child_process";
-import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
 import { Script } from "node:vm";
 import { buildClaudeCodePatchCommandScript, buildCodexPatchCommandScript, buildPiriPatchCommandScript, loadContainedSubagentsConfig, loadConfig, loadEnvFile, mergeRunnerEnvFile, normalizePatchCommandProfile, projectClaudeCodeEffort, projectClaudeCodeTurnBudgets, validateRunnerConfig } from "./config.js";
 import type { RunnerConfig } from "./types.js";
+import { PROFILE_SCRIPT_DIR, PROFILE_SCRIPT_NAMES } from "./profile-scripts.js";
 
 const baseEnv = {
   A2A_DOCKER_RUNNER_SKIP_ENGINE_DETECT: "1",
@@ -531,8 +532,11 @@ test("Piri patch profile reserves git and GitHub lifecycle work for the outer ru
   assert.match(script, /piri -p /);
   assert.match(script, /--approve/);
   assert.match(script, /--no-session/);
-  // read-only mount → container-local copy keeps host credentials untouched
-  assert.match(script, /cp -a \/run\/secrets\/piri-dir \/work\/piri-home\/\.piri/);
+  // read-only mount → container-local copy keeps host credentials untouched,
+  // and that copy must live on the container's /tmp, not the host-bound /work (#2256 A3)
+  assert.match(script, /export HOME=\/tmp\/piri-home/);
+  assert.match(script, /cp -a \/run\/secrets\/piri-dir "\$HOME\/\.piri"/);
+  assert.doesNotMatch(script, /HOME=\/work/);
   assertBashScriptParses(script);
 });
 
@@ -1106,8 +1110,10 @@ test("loadConfig builds first-class Hermes patch profile", async () => {
   assert.equal(config.user, "1000:1000");
   assert.match(config.commandScript ?? "", /command -v hermes/);
   assert.match(config.commandScript ?? "", /hermes --version/);
-  assert.match(config.commandScript ?? "", /export HOME=\/work/);
-  assert.match(config.commandScript ?? "", /export HERMES_HOME=\/work\/\.hermes/);
+  // #2256 A3: HOME and HERMES_HOME live on the container's /tmp, never the host-bound /work
+  assert.match(config.commandScript ?? "", /export HOME=\/tmp\/hermes-home/);
+  assert.match(config.commandScript ?? "", /export HERMES_HOME="\$HOME\/\.hermes"/);
+  assert.doesNotMatch(config.commandScript ?? "", /HOME=\/work/);
   assert.match(config.commandScript ?? "", /export HERMES_WORKSPACE_DIR=\/work\/hermes-agent-workspace/);
   assert.doesNotMatch(config.commandScript ?? "", /rm -rf \/root\/\.hermes/);
   assert.match(config.commandScript ?? "", /copy_file_if_exists \/run\/secrets\/hermes-dir\/config\.yaml/);
@@ -2164,4 +2170,21 @@ test("#2234 claude-code script installs the credentials file mount after the con
   assert.match(guarded, /error=claude_credentials_file_unreadable/);
   assert.match(guarded, /failure_category=claude_credentials_unavailable/);
   assert.match(guarded, /exit 2/);
+});
+
+// #2256 A3: /work is the host-bound rw workDir. A profile that points HOME (or
+// a harness home such as HERMES_HOME) at /work copies credentials onto host
+// disk and into the artifact scan surface. hermes did (HOME=/work) and the piri
+// template did (HOME=/work/piri-home) until 2026-09-24; claude-code always used
+// /tmp. Pin every shipped profile script and the generated piri template.
+test("no runner profile points HOME at the host-bound /work (#2256 A3)", () => {
+  const offenders: string[] = [];
+  for (const name of PROFILE_SCRIPT_NAMES) {
+    const text = readFileSync(join(PROFILE_SCRIPT_DIR, `${name}.sh`), "utf8");
+    if (/HOME=\/work(\/|"|\s|$)/m.test(text)) offenders.push(`profiles/${name}.sh`);
+  }
+  const piri = buildPiriPatchCommandScript({});
+  if (/HOME=\/work(\/|"|\s|$)/m.test(piri)) offenders.push("piri template (config.ts)");
+  assert.deepEqual(offenders, []);
+  assert.ok(PROFILE_SCRIPT_NAMES.length >= 4, "expected the shipped profile set to be inspected");
 });
