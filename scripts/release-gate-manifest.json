@@ -65,31 +65,36 @@
       "file": "scripts/archive/check-team1-source-public-readiness-libero.test.mjs",
       "class": "gate",
       "round": null,
-      "note": "Team1 source public readiness; no round id in filename, kept as gate (conservative)."
+      "note": "Team1 source public readiness; no round id in filename, kept as gate (conservative). Archived 2026-09-24 (#2257 B2): the file already lives under scripts/archive/ (moved by an earlier retiring PR) and only this active entry kept it on every release gate.",
+      "archived": true
     },
     {
       "file": "scripts/archive/check-team1-evidence-nochange-hardening-libero.test.mjs",
       "class": "gate",
       "round": null,
-      "note": "Team1 evidence no-change hardening; no round id, kept as gate (conservative)."
+      "note": "Team1 evidence no-change hardening; no round id, kept as gate (conservative). Archived 2026-09-24 (#2257 B2): the file already lives under scripts/archive/ (moved by an earlier retiring PR) and only this active entry kept it on every release gate.",
+      "archived": true
     },
     {
       "file": "scripts/archive/check-team1-source-public-approval-packet-libero.test.mjs",
       "class": "gate",
       "round": null,
-      "note": "Team1 source public approval packet; no round id, kept as gate (conservative)."
+      "note": "Team1 source public approval packet; no round id, kept as gate (conservative). Archived 2026-09-24 (#2257 B2): the file already lives under scripts/archive/ (moved by an earlier retiring PR) and only this active entry kept it on every release gate.",
+      "archived": true
     },
     {
       "file": "scripts/archive/check-team1-source-dryrun-orchestrator-libero.test.mjs",
       "class": "gate",
       "round": null,
-      "note": "Team1 source dryrun orchestrator; no round id, kept as gate (conservative)."
+      "note": "Team1 source dryrun orchestrator; no round id, kept as gate (conservative). Archived 2026-09-24 (#2257 B2): the file already lives under scripts/archive/ (moved by an earlier retiring PR) and only this active entry kept it on every release gate.",
+      "archived": true
     },
     {
       "file": "scripts/archive/check-team1-source-public-approval-rehearsal-libero.test.mjs",
       "class": "gate",
       "round": null,
-      "note": "Team1 source public approval rehearsal; no round id, kept as gate (conservative)."
+      "note": "Team1 source public approval rehearsal; no round id, kept as gate (conservative). Archived 2026-09-24 (#2257 B2): the file already lives under scripts/archive/ (moved by an earlier retiring PR) and only this active entry kept it on every release gate.",
+      "archived": true
     },
     {
       "file": "scripts/a2a-source-public-approval-rehearsal.test.mjs",
@@ -101,7 +106,8 @@
       "file": "scripts/archive/check-team1-workerDelta-source-public-approval-rehearsal-libero.test.mjs",
       "class": "gate",
       "round": null,
-      "note": "Team1 workerDelta source public approval rehearsal; no round id, kept as gate (conservative)."
+      "note": "Team1 workerDelta source public approval rehearsal; no round id, kept as gate (conservative). Archived 2026-09-24 (#2257 B2): the file already lives under scripts/archive/ (moved by an earlier retiring PR) and only this active entry kept it on every release gate.",
+      "archived": true
     },
     {
       "file": "scripts/check-team2-source-public-approval-rehearsal.test.mjs",
@@ -113,13 +119,15 @@
       "file": "scripts/archive/check-team1-source-public-execution-orchestrator-libero.test.mjs",
       "class": "gate",
       "round": null,
-      "note": "Team1 source public execution orchestrator; no round id, kept as gate (conservative)."
+      "note": "Team1 source public execution orchestrator; no round id, kept as gate (conservative). Archived 2026-09-24 (#2257 B2): the file already lives under scripts/archive/ (moved by an earlier retiring PR) and only this active entry kept it on every release gate.",
+      "archived": true
     },
     {
       "file": "scripts/archive/check-team1-source-parent-round-dispatch-guardrails-libero.test.mjs",
       "class": "gate",
       "round": null,
-      "note": "Parent round dispatch guardrails; describes round dispatch mechanics, no specific round id, kept as gate (conservative)."
+      "note": "Parent round dispatch guardrails; describes round dispatch mechanics, no specific round id, kept as gate (conservative). Archived 2026-09-24 (#2257 B2): the file already lives under scripts/archive/ (moved by an earlier retiring PR) and only this active entry kept it on every release gate.",
+      "archived": true
     },
     {
       "file": "scripts/a2a-source-public-execution-orchestrator.test.mjs",
@@ -137,37 +145,43 @@
       "file": "scripts/archive/check-team2-final-go-no-go-semantics-libero.test.mjs",
       "class": "gate",
       "round": null,
-      "note": "Team2 final go/no-go semantics; no round id, kept as gate (conservative)."
+      "note": "Team2 final go/no-go semantics; no round id, kept as gate (conservative). Archived 2026-09-24 (#2257 B2): the file already lives under scripts/archive/ (moved by an earlier retiring PR) and only this active entry kept it on every release gate.",
+      "archived": true
     },
     {
       "file": "scripts/archive/check-team1-ops-stability-standards-libero.test.mjs",
       "class": "gate",
       "round": null,
-      "note": "Team1 ops stability standards; no round id, kept as gate (conservative)."
+      "note": "Team1 ops stability standards; no round id, kept as gate (conservative). Archived 2026-09-24 (#2257 B2): the file already lives under scripts/archive/ (moved by an earlier retiring PR) and only this active entry kept it on every release gate.",
+      "archived": true
     },
     {
       "file": "scripts/archive/check-team1-workerDelta-terminal-brief-activation-libero.test.mjs",
       "class": "gate",
       "round": null,
-      "note": "Team1 workerDelta terminal brief activation; no round id, kept as gate (conservative)."
+      "note": "Team1 workerDelta terminal brief activation; no round id, kept as gate (conservative). Archived 2026-09-24 (#2257 B2): the file already lives under scripts/archive/ (moved by an earlier retiring PR) and only this active entry kept it on every release gate.",
+      "archived": true
     },
     {
       "file": "scripts/archive/check-team2-terminal-brief-activation-libero.test.mjs",
       "class": "gate",
       "round": null,
-      "note": "Team2 terminal brief activation; no round id, kept as gate (conservative)."
+      "note": "Team2 terminal brief activation; no round id, kept as gate (conservative). Archived 2026-09-24 (#2257 B2): the file already lives under scripts/archive/ (moved by an earlier retiring PR) and only this active entry kept it on every release gate.",
+      "archived": true
     },
     {
       "file": "scripts/archive/check-team1-config-schema-skew-libero.test.mjs",
       "class": "gate",
       "round": null,
-      "note": "Team1 config schema skew; no round id, kept as gate (conservative)."
+      "note": "Team1 config schema skew; no round id, kept as gate (conservative). Archived 2026-09-24 (#2257 B2): the file already lives under scripts/archive/ (moved by an earlier retiring PR) and only this active entry kept it on every release gate.",
+      "archived": true
     },
     {
       "file": "scripts/archive/check-team2-config-schema-parity-libero.test.mjs",
       "class": "gate",
       "round": null,
-      "note": "Team2 config schema parity; no round id, kept as gate (conservative)."
+      "note": "Team2 config schema parity; no round id, kept as gate (conservative). Archived 2026-09-24 (#2257 B2): the file already lives under scripts/archive/ (moved by an earlier retiring PR) and only this active entry kept it on every release gate.",
+      "archived": true
     },
     {
       "file": "scripts/round-merge-preflight.test.mjs",
@@ -179,13 +193,15 @@
       "file": "scripts/archive/check-team1-workerDelta-public-readiness-gate-synthesis.test.mjs",
       "class": "gate",
       "round": null,
-      "note": "Team1 workerDelta public readiness gate synthesis; no round id, kept as gate (conservative)."
+      "note": "Team1 workerDelta public readiness gate synthesis; no round id, kept as gate (conservative). Archived 2026-09-24 (#2257 B2): the file already lives under scripts/archive/ (moved by an earlier retiring PR) and only this active entry kept it on every release gate.",
+      "archived": true
     },
     {
       "file": "scripts/archive/check-team1-workerDelta-db-lifecycle-cleanup-go-nogo.test.mjs",
       "class": "gate",
       "round": null,
-      "note": "Team1 workerDelta db lifecycle cleanup go/no-go; no round id, kept as gate (conservative)."
+      "note": "Team1 workerDelta db lifecycle cleanup go/no-go; no round id, kept as gate (conservative). Archived 2026-09-24 (#2257 B2): the file already lives under scripts/archive/ (moved by an earlier retiring PR) and only this active entry kept it on every release gate.",
+      "archived": true
     },
     {
       "file": "scripts/check-a2a-allhands-stability-closeout-gates.test.mjs",
@@ -203,13 +219,15 @@
       "file": "scripts/archive/check-team1-workerAlpha-residue-cleanup-go-nogo.test.mjs",
       "class": "gate",
       "round": null,
-      "note": "Team1 workerAlpha residue cleanup go/no-go; no round id, kept as gate (conservative)."
+      "note": "Team1 workerAlpha residue cleanup go/no-go; no round id, kept as gate (conservative). Archived 2026-09-24 (#2257 B2): the file already lives under scripts/archive/ (moved by an earlier retiring PR) and only this active entry kept it on every release gate.",
+      "archived": true
     },
     {
       "file": "scripts/archive/check-team1-workerDelta-go-nogo-evidence-pack.test.mjs",
       "class": "gate",
       "round": null,
-      "note": "Team1 workerDelta go/no-go evidence pack; no round id, kept as gate (conservative)."
+      "note": "Team1 workerDelta go/no-go evidence pack; no round id, kept as gate (conservative). Archived 2026-09-24 (#2257 B2): the file already lives under scripts/archive/ (moved by an earlier retiring PR) and only this active entry kept it on every release gate.",
+      "archived": true
     },
     {
       "file": "scripts/a2a-worker-readiness-preflight.test.mjs",
@@ -468,6 +486,90 @@
       "class": "gate",
       "round": null,
       "note": "Offline routing assignment forms contract test (#2196 slice 4): closed build/prepare shapes, context-only host.*, journal-first resume, zero-POST posture."
+    },
+    {
+      "file": "scripts/a2a-broker-id-routing.test.mjs",
+      "class": "gate",
+      "round": null,
+      "note": "Broker-id routing CLI (a2a-broker-id-routing.mjs); previously reachable only via npm routing:broker-id:test, which no CI job runs (#2257 B3)."
+    },
+    {
+      "file": "scripts/a2a-dispatch-round.test.mjs",
+      "class": "gate",
+      "round": null,
+      "note": "Dispatch round CLI with mock broker; previously only npm dispatch:round:test (#2257 B3)."
+    },
+    {
+      "file": "scripts/a2a-fleet-routing-guard.test.mjs",
+      "class": "gate",
+      "round": null,
+      "note": "Fleet routing guard; previously only npm fleet:routing-guard:test (#2257 B3)."
+    },
+    {
+      "file": "scripts/a2a-routing-shared.test.mjs",
+      "class": "gate",
+      "round": null,
+      "note": "Shared routing helpers; previously only npm routing:shared:test (#2257 B3)."
+    },
+    {
+      "file": "scripts/a2a-source-dryrun-aggregator.test.mjs",
+      "class": "gate",
+      "round": null,
+      "note": "Source-public dry-run aggregator; previously only npm a2a:source-dryrun:test (#2257 B3)."
+    },
+    {
+      "file": "scripts/a2a-source-public-final-go-nogo-gate.test.mjs",
+      "class": "gate",
+      "round": null,
+      "note": "Source-public final go/no-go gate; previously only npm a2a:final-go-nogo-gate:test (#2257 B3)."
+    },
+    {
+      "file": "scripts/a2a-team1-dispatch-guard.test.mjs",
+      "class": "gate",
+      "round": null,
+      "note": "Team1 dispatch guard; previously only npm check:team1-dispatch-guard (#2257 B3)."
+    },
+    {
+      "file": "scripts/check-a2a-nexus-842-advisory-sidecar-closeout-readiness-matrix.test.mjs",
+      "class": "gate",
+      "round": null,
+      "note": "Advisory sidecar closeout readiness matrix; previously only npm check:a2a-nexus-842-... (#2257 B3)."
+    },
+    {
+      "file": "scripts/check-broker-core-dependency-isolation.test.mjs",
+      "class": "gate",
+      "round": null,
+      "note": "Unit test for the broker-core dependency isolation checker (the checker itself is a tiered step); previously only npm check:broker-core-dependency-isolation:test (#2257 B3)."
+    },
+    {
+      "file": "scripts/check-broker-docker-hardening.test.mjs",
+      "class": "gate",
+      "round": null,
+      "note": "Unit test for the broker Docker hardening checker (the checker itself is a tiered step); previously only npm ...:test (#2257 B3)."
+    },
+    {
+      "file": "scripts/check-repo-protection-baseline.test.mjs",
+      "class": "gate",
+      "round": null,
+      "note": "Unit test for the repo protection baseline checker (the checker itself is a tiered step); previously only npm ...:test (#2257 B3)."
+    },
+    {
+      "file": "scripts/round-coordinator-dispatch.test.mjs",
+      "class": "gate",
+      "round": null,
+      "note": "Round coordinator dispatch; previously only npm dispatch:round:coordinator:test (#2257 B3)."
+    },
+    {
+      "file": "scripts/a2a-timeout-cleanup/a2a-readonly-broker-residue-report.test.mjs",
+      "class": "gate",
+      "round": null,
+      "note": "Timeout-cleanup read-only residue report; directory was outside the coverage sweep and no gate ran it (#2257 B3)."
+    },
+    {
+      "file": "scripts/a2a-timeout-cleanup/no-live-a2a-a2ad-health-check.test.mjs",
+      "class": "gate",
+      "round": null,
+      "note": "Timeout-cleanup no-live health check; directory was outside the coverage sweep and no gate ran it (#2257 B3)."
     }
   ]
 }
