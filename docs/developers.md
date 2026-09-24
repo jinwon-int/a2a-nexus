@@ -8,7 +8,10 @@
 | --- | --- | --- |
 | `packages/broker/` | Broker | Task lifecycle, worker registry, dispatch/readiness gates, durable evidence, broker API. |
 | `packages/docker-runner/` | Docker runner | Isolated execution, checkout hygiene, PR/Done/Block evidence, runner CLI/package. |
-| `packages/openclaw-plugin-a2a/` | OpenClaw plugin | Gateway adapter, request/status/cancel mapping, diagnostics, OpenClaw peer boundary. |
+| `packages/broker/scripts/*-a2a-*-bridge.mjs` | Harness bridges | Per-harness analysis/patch bridges (Claude Code, Codex, Hermes, piri); no harness is privileged and no harness package ships. |
+| `packages/attestation/` | Attestation | Verdict signing, evidence assembly, redaction/spawn gates. |
+| `packages/policy-referee/` | Policy referee | Declarative broker policy evaluation at create/claim time. |
+| `packages/nclex-evaluation/` | NCLEX evaluation | Content-PR evaluation preset and merge-ready projection. |
 | `contracts/`, `fixtures/` | Shared contracts | Cross-package contracts and public-safe fixtures only. |
 
 Do not import another package's internal `src/` path. Use package public

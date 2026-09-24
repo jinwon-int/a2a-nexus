@@ -40,7 +40,7 @@ Pick the smallest command that covers the touched surface, then run the PR check
 | Root release-gate inventory or script tiers | `npm run check:release-gate-inventory`; `node scripts/lib/script-surface-manifest.mjs` |
 | Broker source | `npm --workspace packages/broker run check`; focused broker `node --test ...` when a specific test is touched |
 | Docker runner source | `npm --workspace packages/docker-runner run check`; `npm --workspace packages/docker-runner test` |
-| OpenClaw plugin source | `npm --workspace packages/openclaw-plugin-a2a run check` |
+| Harness bridge scripts (`packages/broker/scripts/*-a2a-*-bridge.mjs`) | focused `node --test packages/broker/scripts/<bridge>.test.mjs`; `npm --workspace packages/broker test` for the full manifest |
 
 If the touched files span more than one row, run each focused command or skip directly to `npm run check`.
 
