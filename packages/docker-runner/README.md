@@ -530,7 +530,27 @@ The command returns JSON. Missing engine, missing image, and permission/daemon f
 ```bash
 A2A_DOCKER_RUNNER_ROOT=/var/lib/openclaw-a2a/tasks node dist/cli.js cleanup --ttl 2d --dry-run
 A2A_DOCKER_RUNNER_ROOT=/var/lib/openclaw-a2a/tasks node dist/cli.js cleanup --ttl 2d
+# or read the root from the live service env file / override it explicitly
+node dist/cli.js cleanup --env-file /etc/default/a2a-hermes-worker --ttl 14d --dry-run
+node dist/cli.js cleanup --root /var/lib/openclaw-a2a/tasks --ttl 14d --dry-run
 ```
+
+`cleanup` only resolves the task root (`--root` > `A2A_DOCKER_RUNNER_ROOT` > default); it does **not** run the full
+runner config validation, so a stale or profile-mismatched env file cannot block pruning (#2267).
+
+### Service env file drift (#2267)
+
+The CLI default env file is `/etc/default/openclaw-a2a-worker`, but runner nodes are deployed with
+`EnvironmentFile=/etc/default/a2a-hermes-worker`. If the default is a stale leftover from an earlier install,
+`doctor`/`cleanup` without `--env-file` silently read the stale copy. `doctor` now reports `serviceEnvFile`
+(`warn` when the file it read is missing or older than another known env file) and `cleanup` prints the same
+warning on stderr. Pass `--env-file <live file>` or set `A2A_DOCKER_RUNNER_ENV_FILE` on such nodes.
+
+Note: Node 22 pre-scans `--env-file <path>` even when it appears after the script path and aborts with
+`node: <path>: not found` (exit 9) if the file is missing — so a typo in `--env-file` never reaches the CLI.
+Use `A2A_DOCKER_RUNNER_ENV_FILE=<path>` if you need the CLI's own missing-file warning instead.
+
+Nothing schedules `cleanup` automatically yet; see #2267 for the retention/timer follow-up.
 
 ## Chaos E2E release gate
 

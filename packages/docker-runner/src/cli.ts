@@ -1,8 +1,8 @@
 #!/usr/bin/env node
 import { readFile } from "node:fs/promises";
-import { DEFAULT_SERVICE_ENV_FILE, loadConfig, mergeRunnerEnvFile } from "./config.js";
+import { DEFAULT_SERVICE_ENV_FILE, loadConfig, mergeRunnerEnvFile, resolveRootDir } from "./config.js";
 import { runEngineSmokeFixture } from "./engine-smoke.js";
-import { cleanup, doctor, install } from "./ops.js";
+import { checkServiceEnvFile, cleanup, doctor, install } from "./ops.js";
 import { runTask } from "./runner.js";
 import type { RunnerTask } from "./types.js";
 
@@ -32,7 +32,8 @@ async function main(): Promise<void> {
     // invalid A2A_CLAUDE_EFFORT apart from an unset one (#2238).
     const env = loadCliEnv({ A2A_DOCKER_RUNNER_SKIP_ENGINE_DETECT: "1" });
     const config = await loadConfig(env);
-    console.log(JSON.stringify(await doctor(config, { env }), null, 2));
+    // #2267: tell doctor which env file was read so it can flag a stale default.
+    console.log(JSON.stringify(await doctor(config, { env, envFile: resolveCliEnvFile() }), null, 2));
     return;
   }
 
@@ -43,10 +44,19 @@ async function main(): Promise<void> {
   }
 
   if (command === "cleanup") {
-    const config = await loadConfig(loadCliEnv({ A2A_DOCKER_RUNNER_SKIP_ENGINE_DETECT: "1" }));
+    // #2267: cleanup needs only the task root. Going through loadConfig made it
+    // fail on profile/mount validation (e.g. a stale default env file carrying a
+    // hermes EXTRA_MOUNTS_JSON) that has nothing to do with pruning workDirs.
+    const env = loadCliEnv();
+    const envFile = resolveCliEnvFile();
+    const rootDir = resolveRootDir(env, processFlag("--root"));
     const ttlMs = parseTtlMs(processFlag("--ttl", arg) ?? "24h");
     const dryRun = process.argv.includes("--dry-run");
-    console.log(JSON.stringify(await cleanup({ rootDir: config.rootDir, ttlMs, dryRun }), null, 2));
+    const envFileCheck = await checkServiceEnvFile({ envFile });
+    if (envFileCheck.status !== "ok") {
+      console.error(`warning: ${envFileCheck.message}`);
+    }
+    console.log(JSON.stringify(await cleanup({ rootDir, ttlMs, dryRun }), null, 2));
     return;
   }
 
@@ -76,9 +86,13 @@ function processFlag(name: string, fallback?: string): string | undefined {
   return fallback?.startsWith("--") ? undefined : fallback;
 }
 
+/** Service env file the CLI reads: `--env-file` > `A2A_DOCKER_RUNNER_ENV_FILE` > default. */
+function resolveCliEnvFile(): string {
+  return processFlag("--env-file") ?? process.env.A2A_DOCKER_RUNNER_ENV_FILE ?? DEFAULT_SERVICE_ENV_FILE;
+}
+
 function loadCliEnv(extra: NodeJS.ProcessEnv = {}): NodeJS.ProcessEnv {
-  const envFile = processFlag("--env-file") ?? process.env.A2A_DOCKER_RUNNER_ENV_FILE ?? DEFAULT_SERVICE_ENV_FILE;
-  return mergeRunnerEnvFile({ ...process.env, ...extra }, envFile);
+  return mergeRunnerEnvFile({ ...process.env, ...extra }, resolveCliEnvFile());
 }
 
 function readStdin(): Promise<string> {
@@ -97,7 +111,8 @@ Usage:
   a2a-docker-runner doctor [--env-file /etc/default/openclaw-a2a-worker]
   a2a-docker-runner smoke
   a2a-docker-runner install [--env-file /etc/default/openclaw-a2a-worker]
-  a2a-docker-runner cleanup [--env-file /etc/default/openclaw-a2a-worker] [--ttl 24h] [--dry-run]
+  a2a-docker-runner cleanup [--env-file /etc/default/a2a-hermes-worker] [--root /var/lib/openclaw-a2a/tasks] [--ttl 24h] [--dry-run]
+    (cleanup reads only A2A_DOCKER_RUNNER_ROOT / --root; it does not validate the full runner config)
   a2a-docker-runner run <task.json>
   cat task.json | a2a-docker-runner run -
 `);

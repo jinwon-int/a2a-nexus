@@ -72,6 +72,30 @@ const DEFAULT_PIRI_TIMEOUT_SEC = "5400";
 /** Baked into piri-runner images; the command script uses it unless overridden. */
 const DEFAULT_PIRI_OUTPUT_SCHEMA = "/etc/a2a-runner/piri-analysis-output.schema.json";
 export const DEFAULT_SERVICE_ENV_FILE = "/etc/default/openclaw-a2a-worker";
+/**
+ * #2267: service env files a fleet node may carry besides the CLI default.
+ * `a2a-hermes-worker` is the live systemd EnvironmentFile on runner nodes,
+ * while the default above can be a stale copy from an earlier install; doctor
+ * warns when the file the CLI actually read is missing or older than one of
+ * these.
+ */
+export const KNOWN_SERVICE_ENV_FILES: readonly string[] = [
+  DEFAULT_SERVICE_ENV_FILE,
+  "/etc/default/a2a-hermes-worker",
+];
+
+/**
+ * Resolve the task root without loading the full runner config (#2267).
+ * `cleanup` only needs the root directory; routing it through `loadConfig`
+ * made it fail on profile/mount validation that is irrelevant to pruning.
+ */
+export function resolveRootDir(env: NodeJS.ProcessEnv = process.env, override?: string): string {
+  const rootDir = override || env.A2A_DOCKER_RUNNER_ROOT || DEFAULT_ROOT;
+  if (!rootDir.startsWith("/")) {
+    throw new Error(`invalid task root: ${rootDir} (must be an absolute path starting with /)`);
+  }
+  return rootDir;
+}
 
 export function loadEnvFile(path: string): Record<string, string> {
   const parsed: Record<string, string> = {};
@@ -137,7 +161,7 @@ export async function loadConfig(env = process.env): Promise<RunnerConfig> {
   validatePatchCommandProfileSelection({ profile, expectedProfile, image });
 
   const config: RunnerConfig = {
-    rootDir: env.A2A_DOCKER_RUNNER_ROOT || DEFAULT_ROOT,
+    rootDir: env.A2A_DOCKER_RUNNER_ROOT || DEFAULT_ROOT, // validated below; resolveRootDir() is the lite path
     engine,
     image,
     buildMetadata: loadBuildMetadata(env, image),
