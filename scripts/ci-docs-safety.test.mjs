@@ -176,6 +176,40 @@ test('every setup-node block pins the same Node line, so npm cannot float (#2050
   assert.deepEqual([...versions], ['22'], `setup-node node-version drift: ${[...versions].join(', ')}`);
 });
 
+// Every workflow job must carry an explicit, bounded `timeout-minutes`
+// (#2257 B1). Without one GitHub applies its 360-minute default, so a hung
+// broker/TCK job bills six hours before it is cancelled. Observed 2026-09-24:
+// only codeql.yml and repository-hygiene-watchdog.yml set one; the other 24
+// jobs did not. The bound must be positive and at most 60 minutes — every
+// job here finishes in under two minutes, so anything larger is a leak.
+test('every workflow job declares a bounded timeout-minutes (#2257)', () => {
+  const workflowsDir = join(repoRoot, '.github/workflows');
+  const files = readdirSync(workflowsDir).filter((name) => name.endsWith('.yml') || name.endsWith('.yaml'));
+  assert.ok(files.length > 0);
+  const failures = [];
+  let jobs = 0;
+  for (const file of files) {
+    const text = readFileSync(join(workflowsDir, file), 'utf8');
+    const jobsSection = text.split(/\njobs:\n/)[1];
+    assert.ok(jobsSection, `${file}: expected a jobs: section`);
+    // Each job is a two-space-indented key; its body runs to the next such key.
+    const jobBlocks = jobsSection.split(/\n(?= {2}[a-z][a-z0-9_-]*:\s*$)/m);
+    for (const block of jobBlocks) {
+      const name = block.match(/^ {2}([a-z][a-z0-9_-]*):\s*$/m)?.[1];
+      if (!name) continue;
+      jobs += 1;
+      const timeout = block.match(/^ {4}timeout-minutes:\s*(\d+)\s*$/m)?.[1];
+      if (!timeout) {
+        failures.push(`${file}#${name}: missing job-level timeout-minutes`);
+      } else if (Number(timeout) < 1 || Number(timeout) > 60) {
+        failures.push(`${file}#${name}: timeout-minutes ${timeout} is outside 1..60`);
+      }
+    }
+  }
+  assert.ok(jobs >= 26, `expected to inspect every workflow job, saw ${jobs}`);
+  assert.deepEqual(failures, []);
+});
+
 test('package exposes tracked markdown link validation script', () => {
   const scripts = packageJson().scripts ?? {};
   assert.equal(scripts['check:markdown-links'], 'node scripts/check-markdown-links.mjs');
