@@ -1,6 +1,6 @@
 import { constants } from "node:fs";
 import { createHash } from "node:crypto";
-import { access, mkdir, readdir, readFile, rm, rmdir, stat } from "node:fs/promises";
+import { access, chmod, mkdir, readdir, readFile, rm, rmdir, stat, writeFile } from "node:fs/promises";
 
 import { runAgeMsFromMeta, walkRunDirs, type WalkedTaskRoot } from "./scanner.js";
 import { spawnSync } from "node:child_process";
@@ -10,7 +10,17 @@ import { promisify } from "node:util";
 const execFileP = promisify(execFile);
 import { join, resolve } from "node:path";
 import type { RunnerConfig, RunnerEngine } from "./types.js";
-import { CLAUDE_CREDENTIALS_FILE_MOUNT_TARGET, KNOWN_SERVICE_ENV_FILES, projectClaudeCodeEffort, type RunnerClaudeEffortProjection } from "./config.js";
+import {
+  CLAUDE_CREDENTIALS_FILE_MOUNT_TARGET,
+  DEFAULT_CLEANUP_UNIT_NAME,
+  DEFAULT_SYSTEMD_UNIT_DIR,
+  KNOWN_SERVICE_ENV_FILES,
+  WORKDIR_TTL_ENV,
+  parseTtlMs,
+  projectClaudeCodeEffort,
+  resolveWorkdirTtl,
+  type RunnerClaudeEffortProjection,
+} from "./config.js";
 import { DEFAULT_PROFILE_MOUNT_PATH, validateOpenClawProfileReadiness } from "./openclaw-profile-readiness.js";
 import type { OpenClawProfileReadinessInput } from "./openclaw-profile-readiness.js";
 
@@ -41,6 +51,173 @@ export interface DoctorReport {
   deployMarker?: OpsCheck;
   /** #2267: the service env file the CLI read — missing, or older than another known env file, is a warn. */
   serviceEnvFile?: OpsCheck;
+  /** #2267 R2: workDir retention — TTL configured and cleanup timer installed/active (warn-only). */
+  workdirRetention: OpsCheck;
+}
+
+export interface CleanupTimerOptions {
+  /** Absolute path of the built CLI (`dist/cli.js`) the unit will execute. */
+  cliPath: string;
+  /** Service env file passed as `--env-file` (the live systemd EnvironmentFile). */
+  envFile: string;
+  /** TTL string as accepted by `cleanup --ttl`, e.g. `14d`. Validated. */
+  ttl: string;
+  /** Directory for the unit files; defaults to /etc/systemd/system. */
+  unitDir?: string;
+  /** Unit base name; defaults to a2a-docker-runner-cleanup. */
+  unitName?: string;
+  /** systemd OnCalendar expression; defaults to `daily`. */
+  onCalendar?: string;
+  /** Node binary for ExecStart; defaults to process.execPath. */
+  nodePath?: string;
+}
+
+export interface CleanupTimerReport {
+  ok: boolean;
+  unitName: string;
+  service: string;
+  timer: string;
+  ttl: string;
+  ttlMs: number;
+  /** Files written or rewritten (empty when both already had the exact content). */
+  changed: string[];
+  /** Operator steps that are deliberately not automated (node mutation). */
+  nextSteps: string[];
+}
+
+function renderCleanupServiceUnit(options: Required<Pick<CleanupTimerOptions, "cliPath" | "envFile" | "ttl" | "nodePath">>): string {
+  return [
+    "[Unit]",
+    `Description=a2a-docker-runner workDir cleanup (TTL ${options.ttl}, #2267)`,
+    "Documentation=https://github.com/jinwon-int/a2a-nexus/issues/2267",
+    "",
+    "[Service]",
+    "Type=oneshot",
+    `ExecStart=${options.nodePath} ${options.cliPath} cleanup --env-file ${options.envFile} --ttl ${options.ttl}`,
+    "",
+  ].join("\n");
+}
+
+function renderCleanupTimerUnit(unitName: string, onCalendar: string): string {
+  return [
+    "[Unit]",
+    "Description=a2a-docker-runner workDir cleanup timer (#2267)",
+    "",
+    "[Timer]",
+    `OnCalendar=${onCalendar}`,
+    "RandomizedDelaySec=1h",
+    "Persistent=true",
+    `Unit=${unitName}.service`,
+    "",
+    "[Install]",
+    "WantedBy=timers.target",
+    "",
+  ].join("\n");
+}
+
+async function writeIfChanged(path: string, content: string): Promise<boolean> {
+  const current = await readFile(path, "utf8").catch(() => undefined);
+  if (current === content) return false;
+  await writeFile(path, content, { encoding: "utf8", mode: 0o644 });
+  // The mode above is subject to umask (fleet nodes run 0077); unit files must stay world-readable.
+  await chmod(path, 0o644);
+  return true;
+}
+
+/**
+ * #2267 R2: write `<unit>.service` + `<unit>.timer` for a periodic
+ * `cleanup --ttl <ttl>` run. Idempotent (content-compared). Deliberately does
+ * not call `systemctl`: enabling the timer is a node mutation the operator
+ * performs after reviewing a `cleanup --dry-run`.
+ */
+export async function installCleanupTimer(options: CleanupTimerOptions): Promise<CleanupTimerReport> {
+  const ttlMs = parseTtlMs(options.ttl);
+  const unitName = options.unitName ?? DEFAULT_CLEANUP_UNIT_NAME;
+  const unitDir = resolve(options.unitDir ?? DEFAULT_SYSTEMD_UNIT_DIR);
+  const cliPath = resolve(options.cliPath);
+  const envFile = resolve(options.envFile);
+  const nodePath = options.nodePath ?? process.execPath;
+  const onCalendar = options.onCalendar ?? "daily";
+  await mkdir(unitDir, { recursive: true });
+  const service = join(unitDir, `${unitName}.service`);
+  const timer = join(unitDir, `${unitName}.timer`);
+  const changed: string[] = [];
+  if (await writeIfChanged(service, renderCleanupServiceUnit({ cliPath, envFile, ttl: options.ttl, nodePath }))) changed.push(service);
+  if (await writeIfChanged(timer, renderCleanupTimerUnit(unitName, onCalendar))) changed.push(timer);
+  return {
+    ok: true,
+    unitName,
+    service,
+    timer,
+    ttl: options.ttl,
+    ttlMs,
+    changed,
+    nextSteps: [
+      `${nodePath} ${cliPath} cleanup --env-file ${envFile} --ttl ${options.ttl} --dry-run   # review candidates first`,
+      "systemctl daemon-reload",
+      `systemctl enable --now ${unitName}.timer`,
+      `systemctl list-timers ${unitName}.timer`,
+    ],
+  };
+}
+
+export interface WorkdirRetentionCheckOptions {
+  /** Env carrying A2A_DOCKER_RUNNER_WORKDIR_TTL; defaults to process.env. */
+  env?: NodeJS.ProcessEnv;
+  unitDir?: string;
+  unitName?: string;
+  /** systemctl probe, injectable for tests. Return undefined when systemctl is unavailable. */
+  systemctl?: (args: string[]) => { status: number | null; stdout: string } | undefined;
+}
+
+function defaultSystemctl(args: string[]): { status: number | null; stdout: string } | undefined {
+  const result = spawnSync("systemctl", args, { encoding: "utf8", timeout: 5_000 });
+  if (result.error) return undefined;
+  return { status: result.status, stdout: (result.stdout ?? "").trim() };
+}
+
+/**
+ * #2267 R2 doctor probe: is workDir retention configured and wired?
+ * warn-only — the fleet ran without any retention until 2026-09 and this must
+ * not flip doctor to fail on every node at once.
+ */
+export async function checkWorkdirRetention(options: WorkdirRetentionCheckOptions = {}): Promise<OpsCheck> {
+  const env = options.env ?? process.env;
+  let ttl: ReturnType<typeof resolveWorkdirTtl>;
+  try {
+    ttl = resolveWorkdirTtl(env);
+  } catch (error) {
+    return { status: "warn", message: `${WORKDIR_TTL_ENV} is set but invalid; cleanup timer would fail`, detail: { error: errorMessage(error) } };
+  }
+  if (!ttl) {
+    return {
+      status: "warn",
+      message: `no workDir retention configured (${WORKDIR_TTL_ENV} unset); task working directories accumulate until pruned by hand`,
+      detail: { hint: `set ${WORKDIR_TTL_ENV}=14d in the service env file and run: cli.js install --cleanup-timer` },
+    };
+  }
+  const unitName = options.unitName ?? DEFAULT_CLEANUP_UNIT_NAME;
+  const unitDir = resolve(options.unitDir ?? DEFAULT_SYSTEMD_UNIT_DIR);
+  const timerPath = join(unitDir, `${unitName}.timer`);
+  const servicePath = join(unitDir, `${unitName}.service`);
+  const detail: Record<string, unknown> = { ttl: ttl.raw, ttlMs: ttl.ttlMs, timer: timerPath, service: servicePath };
+  const [timerExists, serviceExists] = await Promise.all([
+    access(timerPath).then(() => true, () => false),
+    access(servicePath).then(() => true, () => false),
+  ]);
+  if (!timerExists || !serviceExists) {
+    return { status: "warn", message: `${WORKDIR_TTL_ENV}=${ttl.raw} but the cleanup timer unit is not installed; run: cli.js install --cleanup-timer`, detail };
+  }
+  const probe = options.systemctl ?? defaultSystemctl;
+  const active = probe(["is-active", `${unitName}.timer`]);
+  if (!active) {
+    return { status: "warn", message: "cleanup timer unit files exist but systemctl is unavailable to confirm it is active", detail };
+  }
+  detail.timerState = active.stdout || `exit ${active.status}`;
+  if (active.status === 0) {
+    return { status: "ok", message: `workDir retention ${ttl.raw} via ${unitName}.timer (active)`, detail };
+  }
+  return { status: "warn", message: `cleanup timer is installed but not active (${detail.timerState}); run: systemctl enable --now ${unitName}.timer`, detail };
 }
 
 export interface InstallReport {
@@ -258,6 +435,8 @@ export interface DoctorOptions {
   envFile?: string;
   /** Known env file paths to compare against; defaults to KNOWN_SERVICE_ENV_FILES. */
   knownEnvFiles?: readonly string[];
+  /** #2267 R2: override the systemd unit dir / probe for the workDir retention check (tests). */
+  workdirRetention?: Pick<WorkdirRetentionCheckOptions, "unitDir" | "unitName" | "systemctl">;
 }
 
 export interface ServiceEnvFileCheckOptions {
@@ -359,6 +538,10 @@ export async function doctor(config: RunnerConfig, options: DoctorOptions = {}):
     checks.push(serviceEnvFile);
   }
 
+  // #2267 R2: warn-only retention probe (TTL env + timer unit presence/state).
+  const workdirRetention = await checkWorkdirRetention({ env: options.env, ...options.workdirRetention });
+  checks.push(workdirRetention);
+
   return {
     ok: engineReady && checks.every((check) => check.status !== "fail"),
     engine,
@@ -374,6 +557,7 @@ export async function doctor(config: RunnerConfig, options: DoctorOptions = {}):
     ...(claudeCredentialFreshness ? { claudeCredentialFreshness } : {}),
     ...(deployMarker ? { deployMarker } : {}),
     ...(serviceEnvFile ? { serviceEnvFile } : {}),
+    workdirRetention,
   };
 }
 

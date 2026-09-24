@@ -550,7 +550,35 @@ Note: Node 22 pre-scans `--env-file <path>` even when it appears after the scrip
 `node: <path>: not found` (exit 9) if the file is missing — so a typo in `--env-file` never reaches the CLI.
 Use `A2A_DOCKER_RUNNER_ENV_FILE=<path>` if you need the CLI's own missing-file warning instead.
 
-Nothing schedules `cleanup` automatically yet; see #2267 for the retention/timer follow-up.
+### Opt-in workDir retention (#2267 R2)
+
+Nothing prunes task working directories unless you turn it on. Retention is opt-in per node:
+
+1. Set `A2A_DOCKER_RUNNER_WORKDIR_TTL=14d` in the live service env file (`/etc/default/a2a-hermes-worker` on fleet
+   runner nodes). `cleanup` then uses it as its default TTL (`--ttl` still wins; the legacy default without either is
+   `24h`).
+2. Write the timer units — this only writes `/etc/systemd/system/a2a-docker-runner-cleanup.{service,timer}`
+   (content-compared, idempotent) and **does not** call `systemctl`:
+
+   ```bash
+   node dist/cli.js install --env-file /etc/default/a2a-hermes-worker --cleanup-timer          # TTL from env file
+   node dist/cli.js install --env-file /etc/default/a2a-hermes-worker --cleanup-timer --ttl 7d # explicit TTL
+   node dist/cli.js install --cleanup-timer --ttl 14d --unit-dir /tmp/units                    # non-root preview
+   ```
+
+   The service runs `node <dist/cli.js> cleanup --env-file <env file> --ttl <ttl>` once a day
+   (`OnCalendar=daily`, `RandomizedDelaySec=1h`, `Persistent=true`).
+3. Review a dry run, then enable the timer yourself (node mutation, operator step):
+
+   ```bash
+   node dist/cli.js cleanup --env-file /etc/default/a2a-hermes-worker --dry-run
+   systemctl daemon-reload && systemctl enable --now a2a-docker-runner-cleanup.timer
+   systemctl list-timers a2a-docker-runner-cleanup.timer
+   ```
+
+`doctor` reports `workdirRetention` (warn-only): TTL unset, TTL set but units missing, units present but timer not
+active, or `ok` when the timer is active. The first activation on a node with months of backlog removes everything
+older than the TTL in one run — capture a dry-run manifest first if those directories are still wanted as evidence.
 
 ## Chaos E2E release gate
 
