@@ -1,6 +1,6 @@
 import { constants } from "node:fs";
 import { createHash } from "node:crypto";
-import { access, chmod, mkdir, readdir, readFile, rm, rmdir, stat, writeFile } from "node:fs/promises";
+import { access, chmod, copyFile, mkdir, readdir, readFile, rm, rmdir, stat, writeFile } from "node:fs/promises";
 
 import { runAgeMsFromMeta, walkRunDirs, type WalkedTaskRoot } from "./scanner.js";
 import { spawnSync } from "node:child_process";
@@ -8,7 +8,7 @@ import { execFile } from "node:child_process";
 import { promisify } from "node:util";
 
 const execFileP = promisify(execFile);
-import { join, resolve } from "node:path";
+import { basename, dirname, join, resolve } from "node:path";
 import type { RunnerConfig, RunnerEngine } from "./types.js";
 import {
   CLAUDE_CREDENTIALS_FILE_MOUNT_TARGET,
@@ -53,6 +53,8 @@ export interface DoctorReport {
   serviceEnvFile?: OpsCheck;
   /** #2267 R2: workDir retention — TTL configured and cleanup timer installed/active (warn-only). */
   workdirRetention: OpsCheck;
+  /** #2268: `<envFile>.*` backup copies — broad perms fail, unbounded count/age warn. Present when the CLI passed envFile. */
+  serviceEnvBackups?: OpsCheck;
 }
 
 export interface CleanupTimerOptions {
@@ -218,6 +220,200 @@ export async function checkWorkdirRetention(options: WorkdirRetentionCheckOption
     return { status: "ok", message: `workDir retention ${ttl.raw} via ${unitName}.timer (active)`, detail };
   }
   return { status: "warn", message: `cleanup timer is installed but not active (${detail.timerState}); run: systemctl enable --now ${unitName}.timer`, detail };
+}
+
+// ── #2268: service env file backups (secret copies) — inventory, rotation, doctor ──
+
+export const DEFAULT_ENV_BACKUP_KEEP = 5;
+export const DEFAULT_ENV_BACKUP_MAX_AGE_MS = 30 * 86_400_000;
+
+export interface ServiceEnvBackupEntry {
+  path: string;
+  bytes: number;
+  mode: string;
+  mtime: string;
+  ageDays: number;
+  /** group/other bits set — a secret copy readable beyond the owner. */
+  broadPerms: boolean;
+}
+
+export interface ServiceEnvBackupsOptions {
+  /** The live env file; backups are its siblings named `<basename>.<anything>`. */
+  envFile: string;
+  /** Newest backups always retained. Default 5. */
+  keep?: number;
+  /** Backups beyond `keep` are pruned only when older than this. Default 30d; 0 = prune all beyond keep. */
+  maxAgeMs?: number;
+  nowMs?: number;
+}
+
+/**
+ * Inventory `<envFile>.*` siblings (regular files only), newest first.
+ * Every deploy/rollback script on the fleet left `.bak-*`/`.rollback-*`
+ * copies next to the live file with four naming schemes and no rotation, so
+ * matching is by prefix, and age comes from mtime rather than the name.
+ */
+export async function listServiceEnvBackups(options: Pick<ServiceEnvBackupsOptions, "envFile" | "nowMs">): Promise<ServiceEnvBackupEntry[]> {
+  const envFile = resolve(options.envFile);
+  const dir = dirname(envFile);
+  const prefix = `${basename(envFile)}.`;
+  const nowMs = options.nowMs ?? Date.now();
+  const names = await readdir(dir).catch(() => [] as string[]);
+  const entries: ServiceEnvBackupEntry[] = [];
+  for (const name of names) {
+    if (!name.startsWith(prefix)) continue;
+    const path = join(dir, name);
+    let info: Awaited<ReturnType<typeof stat>>;
+    try {
+      info = await stat(path);
+    } catch {
+      continue;
+    }
+    if (!info.isFile()) continue;
+    entries.push({
+      path,
+      bytes: info.size,
+      mode: `0${(info.mode & 0o777).toString(8)}`,
+      mtime: info.mtime.toISOString(),
+      ageDays: Math.floor(Math.max(0, nowMs - info.mtimeMs) / 86_400_000),
+      broadPerms: (info.mode & 0o077) !== 0,
+    });
+  }
+  return entries.sort((a, b) => (a.mtime < b.mtime ? 1 : a.mtime > b.mtime ? -1 : a.path.localeCompare(b.path)));
+}
+
+export interface ServiceEnvBackupRotationPlan {
+  retained: ServiceEnvBackupEntry[];
+  prune: ServiceEnvBackupEntry[];
+}
+
+/** Retain the newest `keep`; of the rest, prune those older than `maxAgeMs` (all of them when maxAgeMs is 0). */
+export function planServiceEnvBackupRotation(
+  entries: ServiceEnvBackupEntry[],
+  options: Pick<ServiceEnvBackupsOptions, "keep" | "maxAgeMs" | "nowMs"> = {},
+): ServiceEnvBackupRotationPlan {
+  const keep = options.keep ?? DEFAULT_ENV_BACKUP_KEEP;
+  const maxAgeMs = options.maxAgeMs ?? DEFAULT_ENV_BACKUP_MAX_AGE_MS;
+  const nowMs = options.nowMs ?? Date.now();
+  const sorted = [...entries].sort((a, b) => (a.mtime < b.mtime ? 1 : a.mtime > b.mtime ? -1 : 0));
+  const retained: ServiceEnvBackupEntry[] = [];
+  const prune: ServiceEnvBackupEntry[] = [];
+  sorted.forEach((entry, index) => {
+    if (index < keep) {
+      retained.push(entry);
+      return;
+    }
+    const ageMs = nowMs - new Date(entry.mtime).getTime();
+    if (maxAgeMs === 0 || ageMs > maxAgeMs) prune.push(entry);
+    else retained.push(entry);
+  });
+  return { retained, prune };
+}
+
+export interface ServiceEnvBackupRotationReport {
+  ok: boolean;
+  dryRun: boolean;
+  envFile: string;
+  keep: number;
+  maxAgeMs: number;
+  total: number;
+  retained: string[];
+  /** Paths selected for pruning (and removed when not dryRun). */
+  pruned: string[];
+  broadPerms: string[];
+}
+
+/** Apply the rotation plan. Dry-run by default: nothing is deleted unless `dryRun: false`. */
+export async function rotateServiceEnvBackups(options: ServiceEnvBackupsOptions & { dryRun?: boolean }): Promise<ServiceEnvBackupRotationReport> {
+  const keep = options.keep ?? DEFAULT_ENV_BACKUP_KEEP;
+  const maxAgeMs = options.maxAgeMs ?? DEFAULT_ENV_BACKUP_MAX_AGE_MS;
+  const dryRun = options.dryRun ?? true;
+  const entries = await listServiceEnvBackups(options);
+  const plan = planServiceEnvBackupRotation(entries, { keep, maxAgeMs, nowMs: options.nowMs });
+  if (!dryRun) {
+    for (const entry of plan.prune) await rm(entry.path, { force: true });
+  }
+  return {
+    ok: true,
+    dryRun,
+    envFile: resolve(options.envFile),
+    keep,
+    maxAgeMs,
+    total: entries.length,
+    retained: plan.retained.map((e) => e.path),
+    pruned: plan.prune.map((e) => e.path),
+    broadPerms: entries.filter((e) => e.broadPerms).map((e) => e.path),
+  };
+}
+
+export interface ServiceEnvBackupCreateReport {
+  backup: string;
+  rotation: ServiceEnvBackupRotationReport;
+}
+
+/**
+ * The one backup helper deploy scripts should call: copy the live env file to
+ * `<envFile>.bak-<tag>-<UTC stamp>` with mode 0600, then rotate. The copy is
+ * always made; rotation honours `dryRun` (default true) so a script must opt
+ * into deleting older copies.
+ */
+export async function backupServiceEnvFile(options: ServiceEnvBackupsOptions & { tag: string; dryRun?: boolean }): Promise<ServiceEnvBackupCreateReport> {
+  const envFile = resolve(options.envFile);
+  const tag = options.tag.trim();
+  if (!/^[A-Za-z0-9._-]+$/.test(tag)) throw new Error(`invalid backup tag: ${options.tag} (use [A-Za-z0-9._-])`);
+  const stamp = new Date(options.nowMs ?? Date.now()).toISOString().replace(/[-:]/g, "").replace(/\.\d{3}Z$/, "Z");
+  const backup = `${envFile}.bak-${tag}-${stamp}`;
+  await copyFile(envFile, backup, constants.COPYFILE_EXCL);
+  await chmod(backup, 0o600);
+  const rotation = await rotateServiceEnvBackups({ ...options, envFile, dryRun: options.dryRun ?? true });
+  return { backup, rotation };
+}
+
+export interface ServiceEnvBackupsCheckOptions extends Pick<ServiceEnvBackupsOptions, "envFile" | "nowMs"> {
+  /** warn above this many backups. Default 5. */
+  maxCount?: number;
+  /** warn when the oldest backup is older than this. Default 30d. */
+  maxAgeMs?: number;
+}
+
+/**
+ * #2268 doctor probe. Backups are full copies of a secret-bearing file:
+ * broad permissions (group/other bits) are a `fail`; unbounded count or age
+ * is a `warn` with the prune command to run.
+ */
+export async function checkServiceEnvBackups(options: ServiceEnvBackupsCheckOptions): Promise<OpsCheck> {
+  const envFile = resolve(options.envFile);
+  const maxCount = options.maxCount ?? DEFAULT_ENV_BACKUP_KEEP;
+  const maxAgeMs = options.maxAgeMs ?? DEFAULT_ENV_BACKUP_MAX_AGE_MS;
+  const entries = await listServiceEnvBackups({ envFile, nowMs: options.nowMs });
+  const oldest = entries[entries.length - 1];
+  const detail: Record<string, unknown> = {
+    envFile,
+    count: entries.length,
+    maxCount,
+    maxAgeDays: Math.round(maxAgeMs / 86_400_000),
+    bytes: entries.reduce((sum, e) => sum + e.bytes, 0),
+    newest: entries[0]?.mtime,
+    oldest: oldest?.mtime,
+    oldestAgeDays: oldest?.ageDays,
+  };
+  if (entries.length === 0) return { status: "ok", message: "no service env file backups next to the live file", detail };
+  const broad = entries.filter((e) => e.broadPerms);
+  if (broad.length > 0) {
+    return {
+      status: "fail",
+      message: `${broad.length} service env backup(s) readable beyond the owner (secret copies); chmod 600 them`,
+      detail: { ...detail, broadPerms: broad.map((e) => `${e.path} ${e.mode}`) },
+    };
+  }
+  const hint = `cli.js env-backups --env-file ${envFile} --keep ${maxCount} --max-age ${Math.round(maxAgeMs / 86_400_000)}d --prune`;
+  if (entries.length > maxCount) {
+    return { status: "warn", message: `${entries.length} service env backups (> ${maxCount}); these are secret copies — prune with: ${hint}`, detail: { ...detail, hint } };
+  }
+  if (oldest && (options.nowMs ?? Date.now()) - new Date(oldest.mtime).getTime() > maxAgeMs) {
+    return { status: "warn", message: `oldest service env backup is ${oldest.ageDays}d old (> ${detail.maxAgeDays}d); prune with: ${hint}`, detail: { ...detail, hint } };
+  }
+  return { status: "ok", message: `${entries.length} service env backup(s), all 0600 and within retention`, detail };
 }
 
 export interface InstallReport {
@@ -533,9 +729,13 @@ export async function doctor(config: RunnerConfig, options: DoctorOptions = {}):
 
   // #2267: only the CLI knows which env file it resolved; warn-only.
   let serviceEnvFile: OpsCheck | undefined;
+  let serviceEnvBackups: OpsCheck | undefined;
   if (options.envFile) {
-    serviceEnvFile = await checkServiceEnvFile({ envFile: options.envFile, knownEnvFiles: options.knownEnvFiles });
-    checks.push(serviceEnvFile);
+    [serviceEnvFile, serviceEnvBackups] = await Promise.all([
+      checkServiceEnvFile({ envFile: options.envFile, knownEnvFiles: options.knownEnvFiles }),
+      checkServiceEnvBackups({ envFile: options.envFile }), // #2268
+    ]);
+    checks.push(serviceEnvFile, serviceEnvBackups);
   }
 
   // #2267 R2: warn-only retention probe (TTL env + timer unit presence/state).
@@ -557,6 +757,7 @@ export async function doctor(config: RunnerConfig, options: DoctorOptions = {}):
     ...(claudeCredentialFreshness ? { claudeCredentialFreshness } : {}),
     ...(deployMarker ? { deployMarker } : {}),
     ...(serviceEnvFile ? { serviceEnvFile } : {}),
+    ...(serviceEnvBackups ? { serviceEnvBackups } : {}),
     workdirRetention,
   };
 }

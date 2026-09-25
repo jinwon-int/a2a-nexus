@@ -577,7 +577,25 @@ Nothing prunes task working directories unless you turn it on. Retention is opt-
    ```
 
 `doctor` reports `workdirRetention` (warn-only): TTL unset, TTL set but units missing, units present but timer not
-active, or `ok` when the timer is active. The first activation on a node with months of backlog removes everything
+active, or `ok` when the timer is active.
+
+### Service env file backups (#2268)
+
+Every deploy/rollback left a full copy of the secret-bearing env file next to it (`<env-file>.bak-*`,
+`.rollback-*`, four naming schemes, 22–45 per node, never rotated). `doctor` now reports `serviceEnvBackups` for the
+env file it read: **fail** when any copy is readable beyond the owner (group/other bits), **warn** when there are more
+than 5 or the oldest is older than 30 days, otherwise `ok`.
+
+```bash
+node dist/cli.js env-backups --env-file /etc/default/a2a-hermes-worker                          # inventory + plan (dry-run)
+node dist/cli.js env-backups --env-file /etc/default/a2a-hermes-worker --keep 5 --max-age 30d --prune   # apply
+node dist/cli.js env-backups --env-file /etc/default/a2a-hermes-worker --create deploy-<sha> --prune    # deploy helper
+```
+
+Rotation keeps the newest `--keep` copies and prunes the rest only when older than `--max-age` (`0` = everything
+beyond `--keep`). `--create <tag>` is the helper deploy scripts should call instead of ad-hoc `cp`: it copies the live
+file to `<env-file>.bak-<tag>-<UTC stamp>` with mode 0600, refuses to overwrite, then applies the rotation (dry-run
+unless `--prune`). The live file is never modified. The first activation on a node with months of backlog removes everything
 older than the TTL in one run — capture a dry-run manifest first if those directories are still wanted as evidence.
 
 ## Chaos E2E release gate
