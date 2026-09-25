@@ -88,7 +88,8 @@ test("#2268 doctor reports serviceEnvBackups for the env file it read", async ()
     const { stdout } = await run(["doctor", "--env-file", envFile]);
     const report = JSON.parse(stdout) as DoctorOutput;
     assert.equal(report.serviceEnvBackups.status, "warn", report.serviceEnvBackups.message);
-    assert.match(report.serviceEnvBackups.message, /8 service env backups \(> 5\)/);
+    // 20d…160d old; keep 5 / 30d → 120d, 140d, 160d are prune candidates.
+    assert.match(report.serviceEnvBackups.message, /3 of 8 service env backups are beyond retention/);
   } finally {
     await rm(dir, { recursive: true, force: true });
   }

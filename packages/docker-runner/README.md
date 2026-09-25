@@ -583,8 +583,10 @@ active, or `ok` when the timer is active.
 
 Every deploy/rollback left a full copy of the secret-bearing env file next to it (`<env-file>.bak-*`,
 `.rollback-*`, four naming schemes, 22–45 per node, never rotated). `doctor` now reports `serviceEnvBackups` for the
-env file it read: **fail** when any copy is readable beyond the owner (group/other bits), **warn** when there are more
-than 5 or the oldest is older than 30 days, otherwise `ok`.
+env file it read: **fail** when any copy is readable beyond the owner (group/other bits), **warn** when the rotation
+below (`--keep 5 --max-age 30d`) would prune something, otherwise `ok`. The warning is judged by the same plan as
+`env-backups`, so applying its hinted command always clears it; extra copies within 30 days, or old copies among the
+newest 5, are retained by design and do not warn.
 
 ```bash
 node dist/cli.js env-backups --env-file /etc/default/a2a-hermes-worker                          # inventory + plan (dry-run)

@@ -96,17 +96,24 @@ test("#2268 backupServiceEnvFile copies with mode 0600, refuses to overwrite, va
   await assert.rejects(backupServiceEnvFile({ envFile, tag: "bad tag/../x", nowMs: NOW }), /invalid backup tag/);
 });
 
-test("#2268 doctor check: ok when few and tight, warn on count, warn on age, fail on broad perms, ok when none", async () => {
+test("#2268 doctor check: warn only when the rotation plan has prune candidates, fail on broad perms, ok when none", async () => {
   const { dir, envFile } = await fixture();
 
-  const many = await checkServiceEnvBackups({ envFile, nowMs: NOW, maxCount: 5, maxAgeMs: 365 * DAY });
-  assert.equal(many.status, "warn");
-  assert.match(many.message, /6 service env backups \(> 5\)/);
-  assert.match(String(many.detail?.hint), /env-backups --env-file .* --keep 5 --max-age 365d --prune/);
+  // ages newest-first: 0, 1, 56, 80, 84, 100 — keep 2, max-age 60d → 80/84/100 are prune candidates.
+  const beyond = await checkServiceEnvBackups({ envFile, nowMs: NOW, maxCount: 2, maxAgeMs: 60 * DAY });
+  assert.equal(beyond.status, "warn");
+  assert.match(beyond.message, /3 of 6 service env backups are beyond retention \(keep newest 2, then drop older than 60d\)/);
+  assert.match(String(beyond.detail?.hint), /env-backups --env-file .* --keep 2 --max-age 60d --prune/);
+  assert.equal(beyond.detail?.pruneCandidates, 3);
 
-  const old = await checkServiceEnvBackups({ envFile, nowMs: NOW, maxCount: 10, maxAgeMs: 30 * DAY });
-  assert.equal(old.status, "warn");
-  assert.match(old.message, /oldest service env backup is 100d old \(> 30d\)/);
+  // H4: more than `keep`, but everything beyond keep is within max-age → the rotation retains it, so no warn.
+  const overCountWithinAge = await checkServiceEnvBackups({ envFile, nowMs: NOW, maxCount: 2, maxAgeMs: 365 * DAY });
+  assert.equal(overCountWithinAge.status, "ok", JSON.stringify(overCountWithinAge));
+  assert.equal(overCountWithinAge.detail?.pruneCandidates, 0);
+
+  // H4: oldest is past max-age, but it is inside `keep` → retained by rotation, so no warn.
+  const oldButKept = await checkServiceEnvBackups({ envFile, nowMs: NOW, maxCount: 10, maxAgeMs: 30 * DAY });
+  assert.equal(oldButKept.status, "ok", JSON.stringify(oldButKept));
 
   const tight = await checkServiceEnvBackups({ envFile, nowMs: NOW, maxCount: 10, maxAgeMs: 365 * DAY });
   assert.equal(tight.status, "ok", JSON.stringify(tight));
@@ -123,4 +130,18 @@ test("#2268 doctor check: ok when few and tight, warn on count, warn on age, fai
   const none = await checkServiceEnvBackups({ envFile: lone, nowMs: NOW });
   assert.equal(none.status, "ok");
   assert.equal(none.detail?.count, 0);
+});
+
+test("#2268 H4 doctor/rotation parity: applying the hinted prune always clears the warn (fleet defaults keep 5 / 30d)", async () => {
+  const { envFile } = await fixture();
+  const before = await checkServiceEnvBackups({ envFile, nowMs: NOW });
+  assert.equal(before.status, "warn"); // 100d is beyond keep 5 and older than 30d
+  assert.equal(before.detail?.pruneCandidates, 1);
+
+  const rotated = await rotateServiceEnvBackups({ envFile, keep: 5, maxAgeMs: 30 * DAY, nowMs: NOW, dryRun: false });
+  assert.equal(rotated.pruned.length, 1);
+
+  const after = await checkServiceEnvBackups({ envFile, nowMs: NOW });
+  assert.equal(after.status, "ok", JSON.stringify(after));
+  assert.equal(after.detail?.count, 5);
 });

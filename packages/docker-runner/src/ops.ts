@@ -370,16 +370,19 @@ export async function backupServiceEnvFile(options: ServiceEnvBackupsOptions & {
 }
 
 export interface ServiceEnvBackupsCheckOptions extends Pick<ServiceEnvBackupsOptions, "envFile" | "nowMs"> {
-  /** warn above this many backups. Default 5. */
+  /** Retention `keep` the warning is judged against. Default 5. */
   maxCount?: number;
-  /** warn when the oldest backup is older than this. Default 30d. */
+  /** Retention `max-age` the warning is judged against. Default 30d. */
   maxAgeMs?: number;
 }
 
 /**
  * #2268 doctor probe. Backups are full copies of a secret-bearing file:
- * broad permissions (group/other bits) are a `fail`; unbounded count or age
- * is a `warn` with the prune command to run.
+ * broad permissions (group/other bits) are a `fail`. Retention is a `warn`
+ * only when the rotation plan for the same `--keep`/`--max-age` has prune
+ * candidates, so running the hinted command always clears the warning
+ * (#2268 H4: a count/oldest-age threshold warned on backups the rotation
+ * deliberately retains, and its hint was a no-op).
  */
 export async function checkServiceEnvBackups(options: ServiceEnvBackupsCheckOptions): Promise<OpsCheck> {
   const envFile = resolve(options.envFile);
@@ -406,12 +409,15 @@ export async function checkServiceEnvBackups(options: ServiceEnvBackupsCheckOpti
       detail: { ...detail, broadPerms: broad.map((e) => `${e.path} ${e.mode}`) },
     };
   }
-  const hint = `cli.js env-backups --env-file ${envFile} --keep ${maxCount} --max-age ${Math.round(maxAgeMs / 86_400_000)}d --prune`;
-  if (entries.length > maxCount) {
-    return { status: "warn", message: `${entries.length} service env backups (> ${maxCount}); these are secret copies — prune with: ${hint}`, detail: { ...detail, hint } };
-  }
-  if (oldest && (options.nowMs ?? Date.now()) - new Date(oldest.mtime).getTime() > maxAgeMs) {
-    return { status: "warn", message: `oldest service env backup is ${oldest.ageDays}d old (> ${detail.maxAgeDays}d); prune with: ${hint}`, detail: { ...detail, hint } };
+  const plan = planServiceEnvBackupRotation(entries, { keep: maxCount, maxAgeMs, nowMs: options.nowMs });
+  detail.pruneCandidates = plan.prune.length;
+  if (plan.prune.length > 0) {
+    const hint = `cli.js env-backups --env-file ${envFile} --keep ${maxCount} --max-age ${detail.maxAgeDays}d --prune`;
+    return {
+      status: "warn",
+      message: `${plan.prune.length} of ${entries.length} service env backups are beyond retention (keep newest ${maxCount}, then drop older than ${detail.maxAgeDays}d); these are secret copies — prune with: ${hint}`,
+      detail: { ...detail, hint },
+    };
   }
   return { status: "ok", message: `${entries.length} service env backup(s), all 0600 and within retention`, detail };
 }
