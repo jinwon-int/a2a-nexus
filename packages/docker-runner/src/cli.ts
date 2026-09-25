@@ -11,7 +11,15 @@ import {
   resolveWorkdirTtl,
 } from "./config.js";
 import { runEngineSmokeFixture } from "./engine-smoke.js";
-import { checkServiceEnvFile, cleanup, doctor, install, installCleanupTimer } from "./ops.js";
+import {
+  backupServiceEnvFile,
+  checkServiceEnvFile,
+  cleanup,
+  doctor,
+  install,
+  installCleanupTimer,
+  rotateServiceEnvBackups,
+} from "./ops.js";
 import { runTask } from "./runner.js";
 import type { RunnerTask } from "./types.js";
 
@@ -86,6 +94,25 @@ async function main(): Promise<void> {
     return;
   }
 
+  if (command === "env-backups") {
+    // #2268: inventory/rotate the secret-bearing `<envFile>.*` backup copies.
+    // Dry-run unless --prune; --create <tag> takes a fresh 0600 backup first.
+    const envFile = resolveCliEnvFile();
+    const keepFlag = processFlag("--keep");
+    const keep = keepFlag === undefined ? undefined : Number(keepFlag);
+    if (keep !== undefined && (!Number.isInteger(keep) || keep < 0)) throw new Error(`invalid --keep: ${keepFlag}`);
+    const maxAgeFlag = processFlag("--max-age");
+    const maxAgeMs = maxAgeFlag === undefined ? undefined : parseTtlMs(maxAgeFlag);
+    const dryRun = !process.argv.includes("--prune");
+    const tag = processFlag("--create");
+    if (process.argv.includes("--create") && !tag) throw new Error("--create needs a <tag>");
+    const result = tag
+      ? await backupServiceEnvFile({ envFile, tag, keep, maxAgeMs, dryRun })
+      : await rotateServiceEnvBackups({ envFile, keep, maxAgeMs, dryRun });
+    console.log(JSON.stringify(result, null, 2));
+    return;
+  }
+
   throw new Error(`unknown command: ${command}`);
 }
 
@@ -133,6 +160,10 @@ Usage:
   a2a-docker-runner cleanup [--env-file /etc/default/a2a-hermes-worker] [--root /var/lib/openclaw-a2a/tasks] [--ttl 24h] [--dry-run]
     (cleanup reads only A2A_DOCKER_RUNNER_ROOT / --root; it does not validate the full runner config;
      TTL precedence: --ttl > A2A_DOCKER_RUNNER_WORKDIR_TTL > 24h)
+  a2a-docker-runner env-backups [--env-file /etc/default/a2a-hermes-worker] [--keep 5] [--max-age 30d] [--prune] [--create <tag>]
+    (lists <env-file>.* backup copies and the rotation plan: keep the newest --keep, prune the rest older than
+     --max-age (0 = all beyond --keep). Dry-run unless --prune. --create <tag> first copies the live file to
+     <env-file>.bak-<tag>-<UTC stamp> with mode 0600 — the helper deploy scripts should use)
   a2a-docker-runner run <task.json>
   cat task.json | a2a-docker-runner run -
 `);
