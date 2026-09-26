@@ -4013,3 +4013,44 @@ constant-time reads or measured production latency.
 Remaining conditions: no projection/prune integration, no public HTTP
 route, and no policy or default activation. #1504 stays OPEN for HA/shared backend, query,
 retention, and observation; 488/489 remain as decided by W11.
+
+### Slice ZD — Phase 7 prerequisite P2: durable `stateShadow` evidence snapshot (#1504, source-only)
+
+The Phase 6 shadow counters are process-memory only. Every broker restart
+resets them, and the evidence for the window that just ended is lost: the
+09-11 evidence loss, the 09-22 container recreate, and the unattended T1 host
+reboots of 2026-09-12 and 2026-09-26 03:15 KST each ended a window with
+nothing on disk. Gate 4 ("shadow unexplained = 0") must not be decided from a
+chat message quoting a number that no longer exists.
+
+`packages/broker/scripts/shared-state-shadow-snapshot.mjs` is the Phase 7
+step A1 tool. It makes one loopback `GET /health` (or reads a saved body with
+`--input`). From the response it keeps only the allowlisted aggregate
+counters: `startedAtUnixMs`, plus `compared/matches/warmupMismatches/unexplained`
+per family. It checks the runtime invariant `compared = matches +
+warmupMismatches + unexplained`, then writes one JSON evidence file (mode
+0600, `wx` — never overwrites). Exit codes decide the step: `0` pass, `2` any
+unexplained (Phase 7 stops), `3` no usable evidence (read failed, block
+absent, malformed or inconsistent counters, write failed), `64` usage. The
+edge secret is read only from the environment; the script refuses it on argv
+so it cannot appear in `ps`. It is never printed or written.
+
+Phase 7 A1 usage (T1 host, immediately before the cutover stop):
+
+```bash
+node scripts/shared-state-shadow-snapshot.mjs \
+  --out backups/pre-phase7-replay-<ts>/state-shadow.json --label pre-phase7-replay
+```
+
+Tests (`scripts/shared-state-shadow-snapshot.test.mjs`, manifest step-19)
+cover:
+- the allowlist, including extra `/health` and `stateShadow` fields dropped;
+- absent, malformed, and inconsistent counters;
+- all four verdict/exit paths;
+- secret-on-argv refusal, and the env secret sent as a header but absent from
+  file, stdout, and stderr;
+- 0600 mode, no-overwrite, HTTP-error handling, and `--input -`.
+
+Remaining conditions: no runtime change, no deployment, no flag change. P1
+(replay/rate row prune), P3 (gate-4 lag interpretation), and P4 (rollback
+rehearsal) remain separate prerequisites. #1504 stays OPEN.
