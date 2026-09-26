@@ -4054,3 +4054,74 @@ cover:
 Remaining conditions: no runtime change, no deployment, no flag change. P1
 (replay/rate row prune), P3 (gate-4 lag interpretation), and P4 (rollback
 rehearsal) remain separate prerequisites. #1504 stays OPEN.
+
+### Slice ZE — Phase 7 prerequisite P1: offline replay/rate prune tool (#1504, source-only)
+
+`pruneSharedStateSqliteV1` (#2107/#2081) has had no runtime or operator
+caller. On T1 the shadow file grew to about 1.0 GB, roughly 65 MB/day since
+2026-09-10. Once Phase 7 turns serving V1 replay/rate on, the serving-fence
+file grows the same way, which lengthens fence backups and drains.
+
+**Choice: offline operator tool, not an in-broker timer.**
+- Both broker V1 connections use SQLite `timeout: 0`. A concurrent external
+  writer turns a serving transaction into `store_failure` → 503, and a shadow
+  observation into `unexplained`.
+- The shadow file is in rollback-journal mode, so even an external reader can
+  block its commit.
+- Phase 7 already stops the broker for a 15-minute drain. The tool runs there
+  and nowhere else.
+- A runtime periodic prune (same connection, no contention) is left as a
+  later, separately approved change.
+
+**What was added:**
+- Adapter:
+  - The prune predicates are extracted into shared constants.
+  - `countSharedStateSqlitePrunableV1` is a read-only twin of the prune using
+    the same predicates, so a dry-run plan equals the execution exactly.
+  - `readSharedStateSqliteClockFloorV1` reads the persisted clock floor.
+- `scripts/lib/shared-state-offline-guards.mjs`: the fail-closed `lsof`/`ps`
+  guards, moved verbatim out of `shared-state-fence-clear.mjs`. Behavior is
+  unchanged, and its 31 tests still pass.
+- `scripts/shared-state-v1-prune.mjs`:
+  - Runs the guards before opening the file, and refuses non-V1 files
+    without initializing a schema.
+  - Dry run by default: reads only, writes nothing.
+  - `--execute` first proves the audit log is writable, then backs up the
+    file plus `-wal`/`-shm` and runs `pruneSharedStateSqliteV1`. The committed
+    prune is audited (0600 JSON lines) before any optional `--vacuum`. A
+    failed VACUUM gets its own audit line and exit code 3; a rolled-back
+    prune is audited as `prune_rolled_back`.
+  - `--max-rate-window-sec` (the largest of `RATE_LIMIT_WINDOW_SEC` /
+    `WORKER_RATE_LIMIT_WINDOW_SEC`) is required, and the tool refuses unless
+    the retention is longer.
+  - A dry run leaves the directory exactly as it was: `-wal`/`-shm` files
+    created by its own read-only open are removed.
+  - A floor that is not canonical or not in range aborts the run. A hot
+    journal aborts with a recovery hint.
+
+**Cutoffs (spec: cleanup must not remove a logically active record):**
+- replay: min(wall clock, persisted floor). The adapter's effective now is
+  never below the floor.
+- rate: that value minus the retention (default 24h, minimum 1h). Retention
+  must exceed every configured rate window.
+- A store without a floor row is left alone.
+- Ownership, epoch, lease, and outbox rows are never touched.
+
+**Tests:**
+- `shared-state-sqlite-query-scaling-v1.test.ts`: count equals deletions,
+  count is read-only, boundaries and non-canonical rows, and the floor reader.
+- `scripts/shared-state-v1-prune.test.mjs` (manifest step-17):
+  - dry run writes nothing (digest unchanged);
+  - execute is exact, backed up, audited, and idempotent;
+  - the floor clamp with a wall clock ahead of or behind the floor;
+  - retention and vacuum;
+  - the no-floor store;
+  - holder, broker-process, and missing/garbled `lsof` abort with the file
+    untouched;
+  - non-V1 refusal and usage errors.
+
+**Remaining conditions:** running the tool against a T1 file is a
+separately approved operator action. plan.md lists prune of security data as
+not authorized by the plan, and checklist.md's "authorized retention/prune
+execution … implemented and proven" stays open until such a run is recorded.
+Runtime periodic prune is not implemented. #1504 stays OPEN.

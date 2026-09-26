@@ -3206,6 +3206,20 @@ export class SharedStateSqliteAdapterV1 {
   }
 }
 
+// Prune predicates, shared verbatim by `pruneSharedStateSqliteV1` and
+// `countSharedStateSqlitePrunableV1` so an operator dry-run counts exactly the
+// rows the prune would delete (#1504 P1). Only canonical decimal millisecond
+// values are ever matched; malformed rows are left alone. The single bound
+// parameter is the cutoff.
+const RATE_COST_PRUNE_WHERE = `length(event_at_unix_ms) <= 13
+          AND (event_at_unix_ms = '0'
+            OR (event_at_unix_ms GLOB '[1-9]*' AND event_at_unix_ms NOT GLOB '*[^0-9]*'))
+          AND CAST(event_at_unix_ms AS INTEGER) < ?`;
+const REPLAY_NONCE_PRUNE_WHERE = `length(expires_at_unix_ms) <= 13
+          AND (expires_at_unix_ms = '0'
+            OR (expires_at_unix_ms GLOB '[1-9]*' AND expires_at_unix_ms NOT GLOB '*[^0-9]*'))
+          AND CAST(expires_at_unix_ms AS INTEGER) < ?`;
+
 export interface SharedStateSqlitePruneResultV1 {
   readonly kind: "SharedStateSqlitePruneResultV1";
   readonly rateCostDeleted: number;
@@ -3241,19 +3255,11 @@ export function pruneSharedStateSqliteV1(
   try {
     const rateCost = preparedStmt(
       db,
-      `DELETE FROM shared_state_rate_cost
-        WHERE length(event_at_unix_ms) <= 13
-          AND (event_at_unix_ms = '0'
-            OR (event_at_unix_ms GLOB '[1-9]*' AND event_at_unix_ms NOT GLOB '*[^0-9]*'))
-          AND CAST(event_at_unix_ms AS INTEGER) < ?`,
+      `DELETE FROM shared_state_rate_cost WHERE ${RATE_COST_PRUNE_WHERE}`,
     ).run(Number(options.rateCostCutoffUnixMs));
     const nonce = preparedStmt(
       db,
-      `DELETE FROM shared_state_replay_nonce
-        WHERE length(expires_at_unix_ms) <= 13
-          AND (expires_at_unix_ms = '0'
-            OR (expires_at_unix_ms GLOB '[1-9]*' AND expires_at_unix_ms NOT GLOB '*[^0-9]*'))
-          AND CAST(expires_at_unix_ms AS INTEGER) < ?`,
+      `DELETE FROM shared_state_replay_nonce WHERE ${REPLAY_NONCE_PRUNE_WHERE}`,
     ).run(Number(options.nowUnixMs));
     db.exec("COMMIT");
     return Object.freeze({
@@ -3273,6 +3279,56 @@ export function pruneSharedStateSqliteV1(
       nonceDeleted: -1,
     });
   }
+}
+
+export interface SharedStateSqlitePrunableCountV1 {
+  readonly kind: "SharedStateSqlitePrunableCountV1";
+  readonly rateCostPrunable: number;
+  readonly rateCostTotal: number;
+  readonly noncePrunable: number;
+  readonly nonceTotal: number;
+}
+
+/**
+ * #1504 P1: read-only twin of `pruneSharedStateSqliteV1`. Counts the rows the
+ * prune WOULD delete for the same options, using the same predicates, plus
+ * the table totals, so an operator dry-run is exact rather than approximated.
+ * Never writes and never opens a transaction.
+ */
+export function countSharedStateSqlitePrunableV1(
+  db: DatabaseSync,
+  options: {
+    readonly nowUnixMs: bigint;
+    readonly rateCostCutoffUnixMs: bigint;
+  },
+): SharedStateSqlitePrunableCountV1 {
+  const count = (sql: string, ...params: number[]): number => {
+    const row = preparedStmt(db, sql).get(...params) as { n?: unknown } | undefined;
+    return Number(row?.n ?? 0);
+  };
+  return Object.freeze({
+    kind: "SharedStateSqlitePrunableCountV1",
+    rateCostPrunable: count(
+      `SELECT COUNT(*) AS n FROM shared_state_rate_cost WHERE ${RATE_COST_PRUNE_WHERE}`,
+      Number(options.rateCostCutoffUnixMs),
+    ),
+    rateCostTotal: count(`SELECT COUNT(*) AS n FROM shared_state_rate_cost`),
+    noncePrunable: count(
+      `SELECT COUNT(*) AS n FROM shared_state_replay_nonce WHERE ${REPLAY_NONCE_PRUNE_WHERE}`,
+      Number(options.nowUnixMs),
+    ),
+    nonceTotal: count(`SELECT COUNT(*) AS n FROM shared_state_replay_nonce`),
+  });
+}
+
+/**
+ * #1504 P1: the persisted clock floor (spec section 4.2), or `null` when the
+ * row is absent. The adapter's effective "now" is never below this floor, so
+ * a replay-nonce prune cutoff clamped to it can never delete a nonce the
+ * adapter still treats as active. Read-only.
+ */
+export function readSharedStateSqliteClockFloorV1(db: DatabaseSync): string | null {
+  return readClockFloor(db)?.persisted_floor_unix_ms ?? null;
 }
 
 /**

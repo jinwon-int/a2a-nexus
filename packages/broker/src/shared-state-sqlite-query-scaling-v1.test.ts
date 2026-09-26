@@ -19,7 +19,9 @@ import { DatabaseSync } from "node:sqlite";
 import test from "node:test";
 
 import {
+  countSharedStateSqlitePrunableV1,
   pruneSharedStateSqliteV1,
+  readSharedStateSqliteClockFloorV1,
   SHARED_STATE_SQLITE_ADAPTER_V1,
   SharedStateSqliteAdapterV1,
   type SharedStateSqliteAdapterResultV1,
@@ -167,6 +169,73 @@ test("prune removes out-of-window rate rows and expired nonces, keeps live ones"
       .prepare(`SELECT nonce_digest FROM shared_state_replay_nonce`)
       .all() as Array<{ nonce_digest: string }>;
     assert.deepEqual(remainingNonces.map((row) => row.nonce_digest), ["nonce-live"]);
+  } finally {
+    disposeFixture(fixture);
+  }
+});
+
+test("#1504 P1: count reports exactly what prune then deletes, and never writes", () => {
+  const fixture = makeFixture();
+  try {
+    const db = fixture.db;
+    const rate = db.prepare(
+      `INSERT INTO shared_state_rate_cost
+         (namespace, bucket_key_digest, event_at_unix_ms, cost, entry_ordinal)
+       VALUES (?, ?, ?, ?, ?)`,
+    );
+    const nonce = db.prepare(
+      `INSERT INTO shared_state_replay_nonce
+         (namespace, key_digest, nonce_digest, expires_at_unix_ms)
+       VALUES (?, ?, ?, ?)`,
+    );
+    rate.run(NAMESPACE, "b-old-1", "10", 1, 1);
+    rate.run(NAMESPACE, "b-old-2", "499", 1, 1);
+    rate.run(NAMESPACE, "b-edge", "500", 1, 1); // == cutoff: kept
+    rate.run(NAMESPACE, "b-live", "9000", 1, 1);
+    rate.run(NAMESPACE, "b-malformed", "00012", 1, 1); // non-canonical: never matched
+    nonce.run(NAMESPACE, "k", "n-expired", "500");
+    nonce.run(NAMESPACE, "k", "n-edge", "10000"); // == now: kept
+    nonce.run(NAMESPACE, "k", "n-live", "99999");
+    const options = { nowUnixMs: 10_000n, rateCostCutoffUnixMs: 500n };
+
+    const changesBefore = (db.prepare("SELECT total_changes() AS c").get() as { c: number }).c;
+    const counted = countSharedStateSqlitePrunableV1(db, options);
+    const changesAfter = (db.prepare("SELECT total_changes() AS c").get() as { c: number }).c;
+    assert.equal(changesAfter, changesBefore, "count is read-only");
+    assert.deepEqual(counted, {
+      kind: "SharedStateSqlitePrunableCountV1",
+      rateCostPrunable: 2,
+      rateCostTotal: 5,
+      noncePrunable: 1,
+      nonceTotal: 3,
+    });
+
+    const pruned = pruneSharedStateSqliteV1(db, options);
+    assert.equal(pruned.rateCostDeleted, counted.rateCostPrunable);
+    assert.equal(pruned.nonceDeleted, counted.noncePrunable);
+    const again = countSharedStateSqlitePrunableV1(db, options);
+    assert.equal(again.rateCostPrunable, 0);
+    assert.equal(again.noncePrunable, 0);
+    assert.equal(again.rateCostTotal, 3);
+    assert.equal(again.nonceTotal, 2);
+  } finally {
+    disposeFixture(fixture);
+  }
+});
+
+test("#1504 P1: clock floor reader returns null before open and the persisted floor after", () => {
+  const fixture = makeFixture();
+  try {
+    assert.equal(readSharedStateSqliteClockFloorV1(fixture.db), null);
+    const owner = readyAdapter(fixture.db);
+    committed(
+      owner.transact(rateCommand({ cost: 1, limit: 10, windowMs: 1_000 }), {
+        observedAtUnixMs: "123456",
+      }),
+    );
+    const floor = readSharedStateSqliteClockFloorV1(fixture.db);
+    assert.equal(typeof floor, "string");
+    assert.ok(BigInt(floor as string) >= 123456n, "floor tracks observed time");
   } finally {
     disposeFixture(fixture);
   }
