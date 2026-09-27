@@ -85,6 +85,15 @@ export class BrokerApiError extends Error {
 export const MAX_RECONNECT_DELAY_MS = 30_000;
 
 /**
+ * #2271: startup retries for the first broker contact — the number of retries
+ * AFTER the initial register/heartbeat attempt and the exponential base delay.
+ * Defaults give 1/2/4/8/16s (±25% jitter, ~31s worst case) before the worker
+ * gives up and exits non-zero for systemd to handle.
+ */
+export const DEFAULT_STARTUP_RETRY_ATTEMPTS = 5;
+export const DEFAULT_STARTUP_RETRY_BASE_MS = 1_000;
+
+/**
  * Sanitize a name the same way the piri analysis bridge sanitizes session
  * directory names (regex shared with the bridge's sanitizeName).
  */
@@ -328,6 +337,58 @@ export class A2ABrokerWorker {
     return processed;
   }
 
+  /**
+   * #2271: initial broker contact (register + first heartbeat) with bounded
+   * startup retries. Only connection-class failures (isBrokerConnectionError,
+   * the #1405 family) are retried — auth/validation errors still fail on the
+   * first attempt so configuration mistakes are not masked. Retries reuse
+   * computeReconnectDelayMs so startup matches the runtime reconnect backoff
+   * policy. Exhaustion emits one structured, machine-parsable log line
+   * (distinguishable from a plain crash) before rethrowing for the non-zero
+   * exit. A stop() during the retry wait leaves quietly.
+   */
+  private async connectWithStartupRetry(signal?: AbortSignal): Promise<void> {
+    const retryAttempts = Math.max(0, this.config.startupRetryAttempts ?? DEFAULT_STARTUP_RETRY_ATTEMPTS);
+    const baseMs = Math.max(0, this.config.startupRetryBaseMs ?? DEFAULT_STARTUP_RETRY_BASE_MS);
+    for (let failedAttempts = 0; ; failedAttempts += 1) {
+      if (this.stopping) {
+        return;
+      }
+      try {
+        await this.register();
+        await this.heartbeat();
+        if (failedAttempts > 0) {
+          console.log(`[worker:${this.workerId}] broker connection established after ${failedAttempts} startup retry(ies)`);
+        }
+        return;
+      } catch (error) {
+        if (this.stopping) {
+          return;
+        }
+        if (!isBrokerConnectionError(error) || failedAttempts >= retryAttempts) {
+          if (isBrokerConnectionError(error)) {
+            console.error(JSON.stringify({
+              level: "error",
+              component: "a2a-worker",
+              event: "startupConnectionRetryExhausted",
+              workerId: this.workerId,
+              totalAttempts: failedAttempts + 1,
+              retryAttempts,
+              message: error instanceof Error ? error.message : String(error),
+            }));
+          }
+          throw error;
+        }
+        const retryNumber = failedAttempts + 1;
+        const delayMs = computeReconnectDelayMs(baseMs, retryNumber);
+        console.log(`[worker:${this.workerId}] startup connection failed; retrying in ${delayMs}ms (retry ${retryNumber}/${retryAttempts})`);
+        await delay(delayMs, undefined, { signal }).catch(() => {
+          // stop() aborted the delay; the next loop turn observes this.stopping.
+        });
+      }
+    }
+  }
+
   async run(): Promise<void> {
     if (this.running) {
       throw new Error(`worker ${this.workerId} is already running`);
@@ -338,8 +399,19 @@ export class A2ABrokerWorker {
     // than cleared by a late `this.stopping = false`.
     this.stopping = false;
 
-    await this.register();
-    await this.heartbeat();
+    // #2271: the first contact with the broker used to exit non-zero on a
+    // single transient socket error (e.g. the tunnel restarting ahead of this
+    // worker in a scheduled self-update window), leaving recovery entirely to
+    // systemd's RestartSec. Retry the initial register+heartbeat with the same
+    // bounded jittered exponential family as the runtime reconnect path and
+    // only fail after the configured retries are exhausted.
+    const startupAbortController = new AbortController();
+    this.loopAbort = () => startupAbortController.abort();
+    try {
+      await this.connectWithStartupRetry(startupAbortController.signal);
+    } finally {
+      this.loopAbort = null;
+    }
 
     if (this.stopping) {
       console.log(`[worker:${this.workerId}] stop requested during startup; not entering poll loop`);
