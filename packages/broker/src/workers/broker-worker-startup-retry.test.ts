@@ -61,6 +61,22 @@ function brokerResponses(fetchImpl: (url: URL, init?: RequestInit) => Promise<Re
   };
 }
 
+/**
+ * Condition-based wait instead of a fixed sleep: CI runs test files with
+ * --test-concurrency=12, so a 5ms retry timer can be starved well past a
+ * fixed 100ms observation window on a loaded runner. Poll the observable
+ * condition with a generous deadline and fail loudly on timeout.
+ */
+async function waitFor(condition: () => boolean, what: string, deadlineMs = 5_000): Promise<void> {
+  const deadline = Date.now() + deadlineMs;
+  while (!condition()) {
+    if (Date.now() > deadline) {
+      throw new Error(`timed out after ${deadlineMs}ms waiting for ${what}`);
+    }
+    await new Promise((resolve) => setTimeout(resolve, 2));
+  }
+}
+
 test("defaults match the issue contract: 5 retries at a 1s exponential base", () => {
   assert.equal(DEFAULT_STARTUP_RETRY_ATTEMPTS, 5);
   assert.equal(DEFAULT_STARTUP_RETRY_BASE_MS, 1_000);
@@ -87,7 +103,7 @@ test("a transient connection error before the first heartbeat is retried, not fa
   }, { startupRetryBaseMs: 5 });
 
   const running = worker.run();
-  await new Promise((resolve) => setTimeout(resolve, 100));
+  await waitFor(() => enteredPollLoop, "the retried startup to reach the poll loop");
   await worker.stop();
   await running;
 
@@ -170,7 +186,7 @@ test("startup retry backoff grows exponentially inside the ±25% jitter band", a
   }), { startupRetryAttempts: 2, startupRetryBaseMs: 100 });
 
   const running = worker.run();
-  await new Promise((resolve) => setTimeout(resolve, 700));
+  await waitFor(() => stamps.length >= 3, "the two retried register attempts and the success");
   await worker.stop();
   await running;
 
