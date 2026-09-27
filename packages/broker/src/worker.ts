@@ -89,6 +89,18 @@ export interface BrokerWorkerConfig {
    * worker silently idle.
    */
   pollReadinessProbe?: boolean;
+  /**
+   * #2271: startup retries for the FIRST broker contact (register + first
+   * heartbeat). Transient connection-class failures (socket resets, a broker
+   * tunnel restarting ahead of the worker in a scheduled self-update window)
+   * are retried with the #1405 bounded jittered exponential family instead of
+   * exiting non-zero on the first attempt. `startupRetryAttempts` is the
+   * number of retries AFTER the initial attempt (default 5); only connection
+   * errors are retried — auth/validation failures still fail fast.
+   */
+  startupRetryAttempts?: number;
+  /** #2271: base delay for the startup retry backoff (default 1s → 1/2/4/8/16s). */
+  startupRetryBaseMs?: number;
   userAgent: string;
   handler: WorkerTaskHandler;
 }
