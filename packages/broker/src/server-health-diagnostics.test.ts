@@ -1409,6 +1409,7 @@ test("#2256 A5 resolveRequestTimeoutMs pins the Node default and validates overr
   assert.equal(resolveRequestTimeoutMs(0, 72_000), 0, "0 disables (Node semantics)");
   assert.equal(resolveRequestTimeoutMs(72_000, 72_000), 72_000, "equal to headersTimeout is allowed");
   assert.equal(resolveRequestTimeoutMs(120_000.9, 72_000), 120_000);
+  assert.equal(resolveRequestTimeoutMs(undefined, Number.NaN), 300_000, "NaN headers timeout does not poison the default");
   assert.throws(() => resolveRequestTimeoutMs(60_000, 72_000), /must be 0 or >= headersTimeout \(72000ms\)/);
   assert.throws(() => resolveRequestTimeoutMs(-1, 72_000), /expected 0 \(disabled\) or a positive integer/);
   assert.throws(() => resolveRequestTimeoutMs(Number.NaN, 72_000), /expected 0 \(disabled\) or a positive integer/);

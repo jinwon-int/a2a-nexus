@@ -21,7 +21,9 @@ export const HEADERS_TIMEOUT_MARGIN_MS = 10000;
  * protection) is a visible, tunable broker setting instead of an implicit
  * runtime default that could change across Node releases (#2256 A5).
  * `requestTimeout` covers receiving the request only; long-lived SSE
- * responses are not affected.
+ * responses are not affected. Node enforces it on its connection sweep
+ * (`connectionsCheckingInterval`, 30s by default), so the effective bound is
+ * the configured value plus up to one sweep interval.
  */
 export const DEFAULT_REQUEST_TIMEOUT_MS = 300_000;
 
@@ -33,11 +35,13 @@ export const DEFAULT_REQUEST_TIMEOUT_MS = 300_000;
  * headers timeout above 300s.
  */
 export function resolveRequestTimeoutMs(configured: number | undefined, headersTimeoutMs: number): number {
-  if (configured === undefined) return Math.max(DEFAULT_REQUEST_TIMEOUT_MS, headersTimeoutMs);
+  // A non-finite headers timeout (programmatic NaN) must not poison the default.
+  const headersBound = Number.isFinite(headersTimeoutMs) ? headersTimeoutMs : 0;
+  if (configured === undefined) return Math.max(DEFAULT_REQUEST_TIMEOUT_MS, headersBound);
   if (!Number.isFinite(configured) || configured < 0) {
     throw new Error(`invalid HTTP requestTimeout ${configured}ms: expected 0 (disabled) or a positive integer (A2A_SERVER_REQUEST_TIMEOUT_MS)`);
   }
-  if (configured > 0 && configured < headersTimeoutMs) {
+  if (configured > 0 && configured < headersBound) {
     throw new Error(`invalid HTTP requestTimeout ${configured}ms: must be 0 or >= headersTimeout (${headersTimeoutMs}ms) (A2A_SERVER_REQUEST_TIMEOUT_MS)`);
   }
   return Math.trunc(configured);
