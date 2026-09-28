@@ -5,7 +5,7 @@ import { execFileSync } from "node:child_process";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
 import { fileURLToPath } from "node:url";
-import { buildActionableError, buildContainerScript, buildRunArgs, extractClaudeTurnBudgetDiagnostic, extractPrUrl, extractPrUrls, extractPushedBranch, jsonArgvToScript, prepareWorkDirForContainerUser, redactAndBound, redactSecrets, runTask, shouldTreatDetectedPrUrlAsCanonical } from "./runner.js";
+import { TASK_ENV_VALUE_MAX_BYTES, buildActionableError, buildContainerScript, buildRunArgs, normalizeTaskEnvValue, extractClaudeTurnBudgetDiagnostic, extractPrUrl, extractPrUrls, extractPushedBranch, jsonArgvToScript, prepareWorkDirForContainerUser, redactAndBound, redactSecrets, runTask, shouldTreatDetectedPrUrlAsCanonical } from "./runner.js";
 import type { NormalizedRunnerTask, RunnerConfig, RunnerTask } from "./types.js";
 
 const baseConfig: RunnerConfig = {
@@ -385,6 +385,66 @@ test("task env allowlist rejects malformed env names", () => {
   assert.ok(!args.some((arg) => arg.startsWith("A2A_BAD=")));
   assert.ok(!args.some((arg) => arg.startsWith("A2A BAD=")));
   assert.ok(!args.some((arg) => arg.startsWith("1A2A_BAD=")));
+});
+
+// ── #2256 A5: task.env value validation ─────────────────────────────────────
+
+test("#2256 A5 task env values: oversized, control-char and non-scalar values are dropped by name only", () => {
+  const secretish = "sk-live-VALUE-MUST-NOT-BE-LOGGED";
+  const env = {
+    A2A_OK: "plain",
+    A2A_MULTILINE: "line1\nline2\tcol\r",
+    A2A_AT_LIMIT: "x".repeat(TASK_ENV_VALUE_MAX_BYTES),
+    A2A_TOO_BIG: "x".repeat(TASK_ENV_VALUE_MAX_BYTES + 1),
+    A2A_MULTIBYTE_TOO_BIG: "가".repeat(Math.floor(TASK_ENV_VALUE_MAX_BYTES / 3) + 1),
+    A2A_NUL: `a\u0000${secretish}`,
+    A2A_ESC: "\u001b[31mred",
+    A2A_DEL: "a\u007f",
+    A2A_NUMBER: 5,
+    A2A_BOOL: true,
+    A2A_OBJECT: { nested: secretish },
+    A2A_NULL: null,
+  } as unknown as Record<string, string>;
+  const task: NormalizedRunnerTask = { id: "env-values", intent: "propose_patch", repos: [], commands: [], env };
+
+  const warnings: string[] = [];
+  const originalWarn = console.warn;
+  console.warn = (...parts: unknown[]) => { warnings.push(parts.map(String).join(" ")); };
+  let args: string[];
+  try {
+    args = buildRunArgs(baseConfig, task, "/tmp/a2a-env-values", "run123");
+  } finally {
+    console.warn = originalWarn;
+  }
+
+  assert.ok(args.includes("A2A_OK=plain"));
+  assert.ok(args.includes("A2A_MULTILINE=line1\nline2\tcol\r"), "tab/LF/CR stay allowed");
+  assert.ok(args.includes(`A2A_AT_LIMIT=${"x".repeat(TASK_ENV_VALUE_MAX_BYTES)}`), "exactly the limit passes");
+  assert.ok(args.includes("A2A_NUMBER=5"), "finite numbers keep their previous stringification");
+  assert.ok(args.includes("A2A_BOOL=true"));
+  for (const dropped of ["A2A_TOO_BIG", "A2A_MULTIBYTE_TOO_BIG", "A2A_NUL", "A2A_ESC", "A2A_DEL", "A2A_OBJECT", "A2A_NULL"]) {
+    assert.ok(!args.some((arg) => arg.startsWith(`${dropped}=`)), `${dropped} must be dropped`);
+  }
+  const warning = warnings.find((line) => line.includes("failing validation"));
+  assert.ok(warning, warnings.join("\n"));
+  assert.match(warning, /A2A_TOO_BIG\(size\)/);
+  assert.match(warning, /A2A_MULTIBYTE_TOO_BIG\(size\)/);
+  assert.match(warning, /A2A_NUL\(control\)/);
+  assert.match(warning, /A2A_ESC\(control\)/);
+  assert.match(warning, /A2A_OBJECT\(type\)/);
+  assert.match(warning, /A2A_NULL\(type\)/);
+  assert.ok(!warnings.some((line) => line.includes(secretish)), "values are never logged");
+});
+
+test("#2256 A5 normalizeTaskEnvValue contract", () => {
+  assert.deepEqual(normalizeTaskEnvValue("v"), { ok: true, value: "v" });
+  assert.deepEqual(normalizeTaskEnvValue(0), { ok: true, value: "0" });
+  assert.deepEqual(normalizeTaskEnvValue(false), { ok: true, value: "false" });
+  assert.deepEqual(normalizeTaskEnvValue(Number.NaN), { ok: false, reason: "type" });
+  assert.deepEqual(normalizeTaskEnvValue(undefined), { ok: false, reason: "type" });
+  assert.deepEqual(normalizeTaskEnvValue(["a"]), { ok: false, reason: "type" });
+  assert.deepEqual(normalizeTaskEnvValue("\u0007"), { ok: false, reason: "control" });
+  assert.deepEqual(normalizeTaskEnvValue(""), { ok: true, value: "" });
 });
 
 // ── BUG-B2: PID 1 init ─────────────────────────────────────────────────────

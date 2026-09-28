@@ -15,6 +15,34 @@ export const DEFAULT_KEEPALIVE_TIMEOUT_MS = 62000;
  */
 export const HEADERS_TIMEOUT_MARGIN_MS = 10000;
 
+/**
+ * Default HTTP server `requestTimeout` (300s) — the Node.js default, pinned
+ * explicitly so the bound on receiving a full request (slow-body/slowloris
+ * protection) is a visible, tunable broker setting instead of an implicit
+ * runtime default that could change across Node releases (#2256 A5).
+ * `requestTimeout` covers receiving the request only; long-lived SSE
+ * responses are not affected.
+ */
+export const DEFAULT_REQUEST_TIMEOUT_MS = 300_000;
+
+/**
+ * Resolve the effective `requestTimeout`. `0` disables it (Node semantics).
+ * A positive value must be >= `headersTimeout` (a request cannot finish
+ * before its headers), otherwise startup fails closed with a clear message.
+ * The default is raised to `headersTimeout` when an operator configures a
+ * headers timeout above 300s.
+ */
+export function resolveRequestTimeoutMs(configured: number | undefined, headersTimeoutMs: number): number {
+  if (configured === undefined) return Math.max(DEFAULT_REQUEST_TIMEOUT_MS, headersTimeoutMs);
+  if (!Number.isFinite(configured) || configured < 0) {
+    throw new Error(`invalid HTTP requestTimeout ${configured}ms: expected 0 (disabled) or a positive integer (A2A_SERVER_REQUEST_TIMEOUT_MS)`);
+  }
+  if (configured > 0 && configured < headersTimeoutMs) {
+    throw new Error(`invalid HTTP requestTimeout ${configured}ms: must be 0 or >= headersTimeout (${headersTimeoutMs}ms) (A2A_SERVER_REQUEST_TIMEOUT_MS)`);
+  }
+  return Math.trunc(configured);
+}
+
 // Grace period after server.close() before force-closing lingering (e.g. SSE)
 // connections so a graceful shutdown cannot hang indefinitely.
 const SHUTDOWN_FORCE_CLOSE_MS = 5_000;
