@@ -177,7 +177,7 @@ import {
   normalizeTaskReadinessMode,
   type TaskReadinessMode,
 } from "../task-readiness.js";
-import { classifyTaskLane } from "../task-lane-classifier.js";
+import { TASK_LANE_REASON_CODE_SET, classifyTaskLane } from "../task-lane-classifier.js";
 import { TaskEventStream } from "./task-event-stream.js";
 import { RoundProgressTracker } from "./round-progress-tracker.js";
 import {
@@ -2602,6 +2602,13 @@ export class InMemoryA2ABroker {
     }
     if (!request.reasonCode?.trim()) {
       throw new BrokerError("bad_request", "reasonCode is required");
+    }
+    // The persisted laneRejudgment schema only admits the closed classifier
+    // reason codes; an unvalidated value would be accepted here, then make the
+    // task fail schema validation on the next load (quarantine / strict
+    // retention throw). Reject it at the write boundary instead (#2284).
+    if (!(TASK_LANE_REASON_CODE_SET as ReadonlySet<string>).has(request.reasonCode)) {
+      throw new BrokerError("bad_request", "reasonCode must be one of the task-lane reason codes");
     }
     if (isTerminalTaskStatus(task.status)) {
       throw new BrokerError("invalid_transition", `cannot re-judge lane while status is ${task.status}`);

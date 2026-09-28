@@ -17,7 +17,7 @@ import {
   SqliteBrokerStateStore,
   emptySnapshot,
 } from "./core/store.js";
-import { taskLaneAssignmentSchema } from "./core/store-schemas.js";
+import { RETIRED_TASK_LANE_REASON_CODES, taskLaneAssignmentSchema } from "./core/store-schemas.js";
 import type {
   CreateTaskRequest,
   TaskLaneReasonCode,
@@ -400,9 +400,11 @@ test("legacy records without laneAssignment remain loadable and do not gain a re
 
 test("closed reason-code contract tuple matches the persistence schema mirror exactly", () => {
   // The stats read path validates against TASK_LANE_REASON_CODES; persistence
-  // validates against taskLaneAssignmentSchema. Both must stay the same set.
+  // validates against taskLaneAssignmentSchema. Persistence is exactly the
+  // classifier contract plus the RETIRED codes old records may still carry
+  // (#2253 read compat) — nothing else.
   assert.deepEqual(
-    [...TASK_LANE_REASON_CODES],
+    [...RETIRED_TASK_LANE_REASON_CODES, ...TASK_LANE_REASON_CODES],
     [...taskLaneAssignmentSchema.shape.reasonCodes.element.options],
   );
   assert.equal(TASK_LANE_REASON_CODES_COVER_CONTRACT, true);
