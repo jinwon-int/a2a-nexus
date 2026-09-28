@@ -2063,4 +2063,7 @@ test("#2256 A4 runner JSON-key redaction needs a word boundary (no monkey:/keybo
   // camelCase keys stay redacted (review regression guard).
   const camel = redactSecrets('{"githubToken": "v1s"} authToken: v2s "clientSecret":"v3s" dbPassword: v4s "privateKey": "v5s" apiToken: v6s');
   for (const secret of ["v1s", "v2s", "v3s", "v4s", "v5s", "v6s"]) assert.equal(camel.includes(secret), false, camel);
+  const joined = redactSecrets('refreshtoken: j1s authtoken: j2s "privatekey": "j3s" dbpassword: j4s \'clientsecret\': \'j5s\' "turkey": "gravy" hockey: puck');
+  for (const secret of ["j1s", "j2s", "j3s", "j4s", "j5s"]) assert.equal(joined.includes(secret), false, joined);
+  assert.ok(joined.includes('"turkey": "gravy"') && joined.includes("hockey: puck"), joined);
 });

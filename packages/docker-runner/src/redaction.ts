@@ -9,17 +9,19 @@ const GITHUB_TOKEN_CLASSIC_PATTERN = new RegExp("gh[pousr]" + "_" + "[A-Za-z0-9_
 const GITHUB_TOKEN_PAT_PATTERN = new RegExp("github" + "_pat" + "_" + "[A-Za-z0-9_]{20,}", "g");
 
 /**
- * #2256 A4: JSON/YAML-key rules match case-insensitively, so without context
- * `monkey: banana` or `keyboard: x` matched on the `key` suffix. Skip a match
- * that starts mid-word in lower case (previous char is [a-z0-9] AND the matched
- * key starts lower-case); keep camelCase boundaries (`githubToken`,
- * `clientSecret`, `privateKey`) and separator-prefixed keys redacted.
+ * #2256 A4: JSON/YAML-key rules match case-insensitively, so `monkey: banana`
+ * matched on its `key` suffix. Skip ONLY when the whole word ending in the
+ * matched key is a known ordinary English word; every other joined form
+ * (`githubToken`, `refreshtoken`, `privatekey`, `dbpassword`, …) stays redacted.
  */
+const ORDINARY_KEY_WORDS = new Set(["monkey", "turkey", "hockey", "jockey", "whiskey", "donkey", "lackey", "malarkey", "hickey", "flunkey"]);
+
 function jsonKeyRedactor(replacementValue: string) {
   return (match: string, keyPart: string, offset: number, whole: string): string => {
-    const previous = offset > 0 ? whole[offset - 1]! : "";
-    const first = keyPart.replace(/^["']/, "")[0] ?? "";
-    if (/[a-z0-9]/.test(previous) && /[a-z]/.test(first)) return match;
+    const lead = /[A-Za-z]+$/.exec(whole.slice(0, offset))?.[0] ?? "";
+    const keyWord = /^["']?([A-Za-z]+)/.exec(keyPart)?.[1] ?? "";
+    const word = (keyPart.startsWith('"') || keyPart.startsWith("'") ? keyWord : lead + keyWord).toLowerCase();
+    if (ORDINARY_KEY_WORDS.has(word)) return match;
     return `${keyPart}${replacementValue}`;
   };
 }

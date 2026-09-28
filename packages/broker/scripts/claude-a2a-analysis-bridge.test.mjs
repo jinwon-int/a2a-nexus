@@ -1021,6 +1021,11 @@ test("#2256 A4 bridge redaction keeps identifiers and digests, redacts secrets",
   const ids = redact("nexus-2234-s2-bangtong-20260923T1305 SECRET_MOUNT_READABILITY_SCAN_ENTRY_LIMIT Zq9Zq9Zq9Zq9Zq9Zq9Zq9Zq9Zq9Zq9Zq9Zq9-x");
   assert.ok(ids.includes("nexus-2234-s2-bangtong-20260923T1305") && ids.includes("SECRET_MOUNT_READABILITY_SCAN_ENTRY_LIMIT"), ids);
   assert.equal(ids.includes("Zq9Zq9Zq9Zq9Zq9Zq9Zq9Zq9Zq9Zq9"), false, ids);
+  const tg = ["123456789", "AAHdqTcvCH1vGW-JxfSeofSAs0K5PALDsaw"].join(":");
+  const kebab = redact(`bot ${tg} ids a2a-nexus-2256-redaction-precision-scan-allowlist fix/2256-redaction-precision-scan-allowlist`);
+  assert.equal(kebab.includes("AAHdqTcvCH1vGW-JxfSeofSAs0K5PALDsaw"), false, `telegram token leaked: ${kebab}`);
+  assert.ok(kebab.includes("a2a-nexus-2256-redaction-precision-scan-allowlist"), kebab);
+  assert.ok(kebab.includes("fix/2256-redaction-precision-scan-allowlist"), kebab);
   for (const secret of [`AKIA${"Q".repeat(16)}`, "f".repeat(32), "Ab3dEf5hIj7lMn9pQr1tUv3x"]) {
     assert.equal(more.includes(secret), false, `leaked ${secret}: ${more}`);
   }
