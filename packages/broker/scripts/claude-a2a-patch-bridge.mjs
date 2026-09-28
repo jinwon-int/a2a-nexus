@@ -136,19 +136,28 @@ function childOutputExcerpt(child, perStreamLimit = 2000) {
 
 // Redact token-shaped strings and common auth assignments from any text we emit.
 // #2256 A4: one generic rule for both Claude bridges. Known token formats are
-// matched explicitly; the generic fallback redacts word-bounded runs of 32+
-// token characters but keeps 40/64-hex digests (commit SHAs, sha256), which are
-// evidence. The former patch-bridge {20,} fallback also redacted ordinary
+// matched explicitly (GitHub, sk-/xai-, sm_, AWS AKIA, z.ai hex.key); the
+// generic fallback redacts word-bounded runs of 32+ token characters but keeps
+// 40/64 lower-case hex digests (commit SHAs, sha256), which are evidence
+// (trade-off: a prefix-less lower-case 40-hex secret is not caught here), plus
+// 24+ char mixed-case+digit runs without hyphens. The former patch-bridge {20,} fallback also redacted ordinary
 // identifiers (e.g. `claude-a2a-patch-bridge`) and SHAs in Block evidence.
 function redactSecrets(value) {
   return safeText(value)
     .replace(/gh[pousr]_[A-Za-z0-9_]+/g, "[redacted-token]")
     .replace(/github_pat_[A-Za-z0-9_]+/g, "[redacted-token]")
-    .replace(/(?:sk|xai)-[A-Za-z0-9_-]{20,}/g, "[redacted-token]")
+    .replace(/\b(?:sk|xai)-[A-Za-z0-9_-]{20,}/g, "[redacted-token]")
     .replace(/\bsm_[A-Za-z0-9_-]{20,}/g, "[redacted-token]")
+    .replace(/\bAKIA[0-9A-Z]{16}\b/g, "[redacted-token]")
+    .replace(/\b[0-9a-f]{32}\.[A-Za-z0-9]{16}\b/g, "[redacted-token]")
     .replace(/\b(Authorization\s*[:=]\s*Bearer\s+)[^\s"']+/gi, "$1[redacted]")
     .replace(/\b(BROKER_EDGE_SECRET|A2A_EDGE_SECRET|EDGE_SECRET|TOKEN|SECRET|API[_-]?KEY|PASSWORD)=\S+/gi, "$1=[redacted]")
-    .replace(/\b(?![0-9a-f]{40}\b)(?![0-9a-f]{64}\b)[A-Za-z0-9_-]{32,}\b/g, "[redacted-secret-like]");
+    // Kebab/snake identifiers whose segments are all <= 20 chars (task ids,
+    // constant names) are evidence, not secrets; random tokens rarely split so.
+    .replace(/\b(?![0-9a-f]{40}\b)(?![0-9a-f]{64}\b)(?![A-Za-z0-9]{1,20}(?:[-_][A-Za-z0-9]{1,20})+\b)[A-Za-z0-9_-]{32,}\b/g, "[redacted-secret-like]")
+    // Shorter opaque tokens: 24+ chars with upper, lower AND digit and no
+    // hyphen (identifiers/task ids carry hyphens; SHAs have no upper case).
+    .replace(/\b(?=[A-Za-z0-9_]*[A-Z])(?=[A-Za-z0-9_]*[a-z])(?=[A-Za-z0-9_]*\d)[A-Za-z0-9_]{24,}\b/g, "[redacted-secret-like]");
 }
 
 const SAFE_CHILD_ENV_KEYS = new Set([

@@ -108,4 +108,11 @@ test("#2256 A4 failure excerpt keeps non-personal addresses, dates, versions and
   assert.match(excerpt, /\+123456789ms/);
   assert.doesNotMatch(excerpt, /alice@example\.org/);
   assert.doesNotMatch(excerpt, /10-1234-5678/);
+  const bypasses = redactAndBoundFailureExcerpt(
+    "call +82 10-1234-5678. or +1 415 555 0100: now x+821012345678 mail alicenoreply@gmail.com git@gmail.com alice@noreply.github.com.evil.com",
+    { maxLines: 5, maxChars: 2000 },
+  );
+  for (const leak of ["5678", "0100", "821012345678", "alicenoreply@", "git@gmail", "alice@noreply"]) {
+    assert.equal(bypasses.includes(leak), false, `${leak} leaked: ${bypasses}`);
+  }
 });
