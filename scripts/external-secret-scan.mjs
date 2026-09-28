@@ -1,46 +1,10 @@
 import { mkdirSync, readFileSync, rmSync } from 'node:fs';
 import { spawnSync } from 'node:child_process';
+import { partitionGitleaksFindings } from './lib/secret-scan-allowlist.mjs';
 
 function hasCommand(command) {
   const versionArgs = command === 'gitleaks' ? ['version'] : ['--version'];
   return spawnSync(command, versionArgs, { encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] }).status === 0;
-}
-
-const EXACT_SYNTHETIC_FIXTURE_FILES = new Set([
-  'packages/broker/dist/core/orchestration-intelligence-worker-subagent-spawn-bridge.test.js',
-  'packages/broker/dist/github/handoff-receiver.test.js',
-  'packages/broker/scripts/round-coordinator-closeout-dry-run.test.mjs',
-  'packages/broker/src/core/orchestration-intelligence-worker-subagent-spawn-bridge.test.ts',
-  'packages/broker/src/github/handoff-receiver.test.ts',
-  'packages/broker/src/server-live-task-admission.test.ts',
-  'packages/broker/dist/server-live-task-admission.test.js',
-  'packages/broker/src/core/broker-conversation.test.ts',
-  'packages/broker/dist/core/broker-conversation.test.js',
-  'packages/broker/src/core/handler-failure-class.test.ts',
-  'packages/broker/dist/core/handler-failure-class.test.js',
-  'packages/docker-runner/dist/engine-contract.test.js',
-  'packages/docker-runner/src/engine-contract.test.ts',
-  'packages/docker-runner/dist/github-evidence.test.js',
-  'packages/docker-runner/src/github-evidence.test.ts',
-  'packages/docker-runner/dist/runner-manifest.test.js',
-  'packages/docker-runner/src/runner-manifest.test.ts',
-  'packages/docker-runner/dist/scanner.test.js',
-  'packages/docker-runner/src/scanner.test.ts',
-  // #2187 task-assignment entrypoint suite: the in-process 127.0.0.1 mock
-  // broker needs a synthetic edge-secret constant (never a real credential).
-  'scripts/lib/task-assign-entrypoint.test.mjs',
-]);
-
-function isAllowedGitleaksFinding(finding) {
-  const file = String(finding.File ?? finding.file ?? '').replace(/^\.\//, '');
-
-  // NOTE: never allowlist on the Secret field — the scan runs with --redact,
-  // which rewrites every finding's Secret to "REDACTED", so a secret-based
-  // allowlist would accept every finding and neutralize the gate.
-  // Do not allowlist by broad path (dist/, tests/, *.test.*). A real
-  // credential pasted into generated output or a fixture must still fail the
-  // public-source gate unless it is listed as an exact synthetic fixture here.
-  return EXACT_SYNTHETIC_FIXTURE_FILES.has(file);
 }
 
 function runGitleaks() {
@@ -107,7 +71,11 @@ function runGitleaks() {
     }
   }
 
-  const disallowed = findings.filter((finding) => !isAllowedGitleaksFinding(finding));
+  // #2256 A5: allowlisted by exact (file, RuleID) with a maximum count.
+  const { allowed, disallowed, stale } = partitionGitleaksFindings(findings);
+  for (const entry of stale) {
+    console.warn(`gitleaks allowlist entry matched nothing (stale, remove it): ${entry.file} ${entry.rule}`);
+  }
   if (disallowed.length > 0) {
     console.error(`gitleaks found ${disallowed.length} non-allowlisted finding(s)`);
     for (const finding of disallowed) {
@@ -121,7 +89,7 @@ function runGitleaks() {
     process.exit(1);
   }
 
-  console.log(`gitleaks ok: ${findings.length} finding(s), ${findings.length - disallowed.length} exact synthetic fixture finding(s)`);
+  console.log(`gitleaks ok: ${findings.length} finding(s), ${allowed.length} exact synthetic fixture finding(s)`);
 }
 
 function runTrufflehog() {

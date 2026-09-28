@@ -87,8 +87,12 @@ function redactSecrets(value: string): string {
     .replace(/\btelegram:-?\d{6,}\b/gi, "telegram:<redacted-target>")
     .replace(/\b(?:chat[_-]?id|thread[_-]?id)[:=]-?\d{6,}\b/gi, (match) => `${match.split(/[:=]/)[0]}=<redacted-target>`)
     .replace(/\b(?:discord|slack):#[A-Za-z0-9._-]+\b/gi, (match) => `${match.split(":")[0]}:#<redacted-target>`)
-    .replace(/\b[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}\b/gi, "<redacted-email>")
-    .replace(/\+\d[\d .()-]{7,}\d/g, "<redacted-phone>")
+    // Personal addresses only: SSH remotes (`git@host:`) and no-reply
+    // addresses (commit trailers, GitHub noreply) are not personal contacts.
+    .replace(/\b(?!git@[A-Z0-9.-]+:)(?!noreply@)[A-Z0-9._%+-]+@(?!users\.noreply\.github\.com\b(?!\.))[A-Z0-9.-]+\.[A-Z]{2,}\b/gi, "<redacted-email>")
+    // Phone-shaped only: not part of a version (`1.4.0+2026…`), not an ISO
+    // date/offset (`+2026-09-28 …`), not a duration/number suffix (`+123ms`).
+    .replace(/(?<![\d.+])\+(?!\d{4}-\d{2}-\d{2})\d[\d .()-]{7,}\d(?!\w|[.:]\w|[ ()-]*\d)/g, "<redacted-phone>")
     // Private host paths that are useful locally but unsafe/noisy in repo-visible readback.
     .replace(/\/root\/\.openclaw(?:\/[^\s"',}]+)?/g, "<redacted-private-path>")
     .replace(/\/tmp\/openclaw-agent-workspace(?:\/[^\s"',}]+)?/g, "<redacted-private-path>")

@@ -986,3 +986,47 @@ test("standalone analysis sends the default 80-turn budget to Claude without pro
     rmSync(dir, { recursive: true, force: true });
   }
 });
+
+// ─── #2256 A4: unified bridge redaction (analysis + patch) ──────────────────
+
+function loadBridgeRedactor(file) {
+  const source = readFileSync(new URL(file, import.meta.url), "utf8");
+  const match = /\nfunction redactSecrets\(value\) \{\n[\s\S]*?\n\}\n/.exec(source);
+  assert.ok(match, `${file}: redactSecrets not found`);
+  const fn = new Function(`function safeText(value, fallback = "") { if (value === undefined || value === null) return fallback; return String(value); }\n${match[0]}\nreturn redactSecrets;`)();
+  return { text: match[0], fn };
+}
+
+test("#2256 A4 analysis and patch bridges share one redaction rule", () => {
+  const analysis = loadBridgeRedactor("./claude-a2a-analysis-bridge.mjs");
+  const patch = loadBridgeRedactor("./claude-a2a-patch-bridge.mjs");
+  assert.equal(analysis.text, patch.text, "bridge redactors drifted");
+});
+
+test("#2256 A4 bridge redaction keeps identifiers and digests, redacts secrets", () => {
+  const { fn: redact } = loadBridgeRedactor("./claude-a2a-patch-bridge.mjs");
+  const sha1 = "0123456789abcdef0123456789abcdef01234567";
+  const sha256 = "a".repeat(64);
+  const gh = ["ghp", "A".repeat(36)].join("_");
+  const sk = ["sk", "ant", "x".repeat(24)].join("-");
+  const opaque = "Zq9".repeat(12);
+  const out = redact(`claude-a2a-patch-bridge failed at ${sha1} digest ${sha256} token ${gh} key ${sk} blob ${opaque} TOKEN=abc Authorization: Bearer xyz`);
+  assert.ok(out.includes("claude-a2a-patch-bridge"), "ordinary identifiers under 32 chars survive");
+  assert.ok(out.includes(sha1) && out.includes(sha256), "40/64-hex digests survive");
+  for (const secret of [gh, sk, opaque, "TOKEN=abc", "Bearer xyz"]) {
+    assert.equal(out.includes(secret), false, `leaked ${secret}`);
+  }
+  const more = redact(`task-2256-redaction-precision-scan AKIA${"Q".repeat(16)} ${"f".repeat(32)}.${"Ab1".repeat(5)}x tok Ab3dEf5hIj7lMn9pQr1tUv3x`);
+  assert.ok(more.includes("task-2256-redaction-precision-scan"), `sk- rule needs a word boundary: ${more}`);
+  const ids = redact("nexus-2234-s2-bangtong-20260923T1305 SECRET_MOUNT_READABILITY_SCAN_ENTRY_LIMIT Zq9Zq9Zq9Zq9Zq9Zq9Zq9Zq9Zq9Zq9Zq9Zq9-x");
+  assert.ok(ids.includes("nexus-2234-s2-bangtong-20260923T1305") && ids.includes("SECRET_MOUNT_READABILITY_SCAN_ENTRY_LIMIT"), ids);
+  assert.equal(ids.includes("Zq9Zq9Zq9Zq9Zq9Zq9Zq9Zq9Zq9Zq9"), false, ids);
+  const tg = ["123456789", "AAHdqTcvCH1vGW-JxfSeofSAs0K5PALDsaw"].join(":");
+  const kebab = redact(`bot ${tg} ids a2a-nexus-2256-redaction-precision-scan-allowlist fix/2256-redaction-precision-scan-allowlist`);
+  assert.equal(kebab.includes("AAHdqTcvCH1vGW-JxfSeofSAs0K5PALDsaw"), false, `telegram token leaked: ${kebab}`);
+  assert.ok(kebab.includes("a2a-nexus-2256-redaction-precision-scan-allowlist"), kebab);
+  assert.ok(kebab.includes("fix/2256-redaction-precision-scan-allowlist"), kebab);
+  for (const secret of [`AKIA${"Q".repeat(16)}`, "f".repeat(32), "Ab3dEf5hIj7lMn9pQr1tUv3x"]) {
+    assert.equal(more.includes(secret), false, `leaked ${secret}: ${more}`);
+  }
+});

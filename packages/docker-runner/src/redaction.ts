@@ -8,6 +8,24 @@ export const RESULT_STREAM_LIMIT = 8_000;
 const GITHUB_TOKEN_CLASSIC_PATTERN = new RegExp("gh[pousr]" + "_" + "[A-Za-z0-9_]{20,}", "g");
 const GITHUB_TOKEN_PAT_PATTERN = new RegExp("github" + "_pat" + "_" + "[A-Za-z0-9_]{20,}", "g");
 
+/**
+ * #2256 A4: JSON/YAML-key rules match case-insensitively, so `monkey: banana`
+ * matched on its `key` suffix. Skip ONLY when the whole word ending in the
+ * matched key is a known ordinary English word; every other joined form
+ * (`githubToken`, `refreshtoken`, `privatekey`, `dbpassword`, …) stays redacted.
+ */
+const ORDINARY_KEY_WORDS = new Set(["monkey", "turkey", "hockey", "jockey", "whiskey", "donkey", "lackey", "malarkey", "hickey", "flunkey"]);
+
+function jsonKeyRedactor(replacementValue: string) {
+  return (match: string, keyPart: string, offset: number, whole: string): string => {
+    const lead = /[A-Za-z]+$/.exec(whole.slice(0, offset))?.[0] ?? "";
+    const keyWord = /^["']?([A-Za-z]+)/.exec(keyPart)?.[1] ?? "";
+    const word = (keyPart.startsWith('"') || keyPart.startsWith("'") ? keyWord : lead + keyWord).toLowerCase();
+    if (ORDINARY_KEY_WORDS.has(word)) return match;
+    return `${keyPart}${replacementValue}`;
+  };
+}
+
 export function redactSecrets(value: string): string {
   const brokerMarker = "[redacted]";
   return value.split(brokerMarker).map(redactSecretsSegment).join(brokerMarker);
@@ -18,8 +36,8 @@ function redactSecretsSegment(value: string): string {
     .replace(/[\u0000-\u0008\u000B\u000C\u000E-\u001F\u007F]/g, "<redacted-control>")
     .replace(/\b((?:[A-Z0-9]+[_-])*(?:TOKEN|SECRET|PASSWORD|KEY|API[_-]?KEY|APIKEY|ACCESS[_-]?TOKEN|EDGE[_-]?SECRET))\s*=\s*"(?:\\.|[^"\\\r\n])*"/gi, '$1="<redacted>"')
     .replace(/\b((?:[A-Z0-9]+[_-])*(?:TOKEN|SECRET|PASSWORD|KEY|API[_-]?KEY|APIKEY|ACCESS[_-]?TOKEN|EDGE[_-]?SECRET))\s*=\s*'(?:\\.|[^'\\\r\n])*'/gi, "$1='<redacted>'")
-    .replace(/(["']?(?:[A-Z0-9]+[_-])*(?:token|secret|password|key|api[_-]?key|apikey|access[_-]?token|edge[_-]?secret)["']?\s*:\s*)"(?:\\.|[^"\\\r\n])*"/gi, '$1"<redacted>"')
-    .replace(/(["']?(?:[A-Z0-9]+[_-])*(?:token|secret|password|key|api[_-]?key|apikey|access[_-]?token|edge[_-]?secret)["']?\s*:\s*)'(?:\\.|[^'\\\r\n])*'/gi, "$1'<redacted>'")
+    .replace(/(["']?(?:[A-Z0-9]+[_-])*(?:token|secret|password|key|api[_-]?key|apikey|access[_-]?token|edge[_-]?secret)["']?\s*:\s*)"(?:\\.|[^"\\\r\n])*"/gi, jsonKeyRedactor('"<redacted>"'))
+    .replace(/(["']?(?:[A-Z0-9]+[_-])*(?:token|secret|password|key|api[_-]?key|apikey|access[_-]?token|edge[_-]?secret)["']?\s*:\s*)'(?:\\.|[^'\\\r\n])*'/gi, jsonKeyRedactor("'<redacted>'"))
     // GitHub tokens (classic + fine-grained + PAT v2)
     .replace(GITHUB_TOKEN_CLASSIC_PATTERN, "<redacted-github-token>")
     .replace(GITHUB_TOKEN_PAT_PATTERN, "<redacted-github-token>")
@@ -47,7 +65,7 @@ function redactSecretsSegment(value: string): string {
     .replace(/(gh auth login --with-token\s+)\S+/gi, "$1<redacted>")
     // Generic key=value and JSON/YAML-style secrets (after API key patterns)
     .replace(/\b((?:[A-Z0-9]+[_-])*(?:TOKEN|SECRET|PASSWORD|KEY|API[_-]?KEY|APIKEY|ACCESS[_-]?TOKEN|EDGE[_-]?SECRET))\s*=\s*(?!<redacted)[^\s]+/gi, "$1=<redacted>")
-    .replace(/(["']?(?:[A-Z0-9]+[_-])*(?:token|secret|password|key|api[_-]?key|apikey|access[_-]?token|edge[_-]?secret)["']?\s*:\s*)(?!<redacted)[^"'\s,}]+/gi, "$1<redacted>")
+    .replace(/(["']?(?:[A-Z0-9]+[_-])*(?:token|secret|password|key|api[_-]?key|apikey|access[_-]?token|edge[_-]?secret)["']?\s*:\s*)(?!<redacted)[^"'\s,}]+/gi, jsonKeyRedactor("<redacted>"))
     // Shell variable assignments with secrets
     .replace(/((?:GH_TOKEN|GITHUB_TOKEN|NPM_TOKEN|A2A_TOKEN)=)['"]?[^'"\s]+['"]?/gi, "$1<redacted>");
 }
