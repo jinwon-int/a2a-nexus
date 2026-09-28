@@ -1,6 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { startTestServer, jsonHeaders, withEnv, registerTestWorker } from "./server-test-helpers.js";
+import { DEFAULT_REQUEST_TIMEOUT_MS, resolveRequestTimeoutMs } from "./server-lifecycle.js";
 import {
   parseSnapshotPayload,
   resetSnapshotQuarantineStats,
@@ -1397,4 +1398,64 @@ test("server reports snapshot quarantine counters on /health and warns once a re
     resetSnapshotQuarantineStats();
     await server.close();
   }
+});
+
+// ─── #2256 A5: explicit HTTP requestTimeout ─────────────────────────────────
+
+test("#2256 A5 resolveRequestTimeoutMs pins the Node default and validates overrides", () => {
+  assert.equal(DEFAULT_REQUEST_TIMEOUT_MS, 300_000);
+  assert.equal(resolveRequestTimeoutMs(undefined, 72_000), 300_000, "default is the Node default");
+  assert.equal(resolveRequestTimeoutMs(undefined, 400_000), 400_000, "default is raised to headersTimeout");
+  assert.equal(resolveRequestTimeoutMs(0, 72_000), 0, "0 disables (Node semantics)");
+  assert.equal(resolveRequestTimeoutMs(72_000, 72_000), 72_000, "equal to headersTimeout is allowed");
+  assert.equal(resolveRequestTimeoutMs(120_000.9, 72_000), 120_000);
+  assert.equal(resolveRequestTimeoutMs(undefined, Number.NaN), 300_000, "NaN headers timeout does not poison the default");
+  assert.throws(() => resolveRequestTimeoutMs(60_000, 72_000), /must be 0 or >= headersTimeout \(72000ms\)/);
+  assert.throws(() => resolveRequestTimeoutMs(-1, 72_000), /expected 0 \(disabled\) or a positive integer/);
+  assert.throws(() => resolveRequestTimeoutMs(Number.NaN, 72_000), /expected 0 \(disabled\) or a positive integer/);
+});
+
+test("#2256 A5 server requestTimeout defaults to 300s and is configurable via options and env", async () => {
+  const defaults = await withEnv({ A2A_SERVER_REQUEST_TIMEOUT_MS: undefined }, () => startTestServer());
+  try {
+    assert.equal(defaults.runtime.server.requestTimeout, 300_000);
+    const res = await fetch(`${defaults.baseUrl}/schedz`, { headers: { "x-a2a-edge-secret": "test-edge-secret" } });
+    assert.equal(res.status, 200);
+    const body = await res.json();
+    assert.equal(body.connections.httpServer.requestTimeoutMs, 300_000);
+  } finally {
+    await defaults.close();
+  }
+
+  const fromOption = await startTestServer({ requestTimeoutMs: 120_000 });
+  try {
+    assert.equal(fromOption.runtime.server.requestTimeout, 120_000);
+  } finally {
+    await fromOption.close();
+  }
+
+  const fromEnv = await withEnv({ A2A_SERVER_REQUEST_TIMEOUT_MS: "90000" }, () => startTestServer());
+  try {
+    assert.equal(fromEnv.runtime.server.requestTimeout, 90_000);
+  } finally {
+    await fromEnv.close();
+  }
+
+  const blankEnv = await withEnv({ A2A_SERVER_REQUEST_TIMEOUT_MS: " " }, () => startTestServer());
+  try {
+    assert.equal(blankEnv.runtime.server.requestTimeout, 300_000, "blank env keeps the default");
+  } finally {
+    await blankEnv.close();
+  }
+});
+
+test("#2256 A5 server refuses startup when requestTimeout is below headersTimeout", async () => {
+  await assert.rejects(
+    () => startTestServer({ headersTimeoutMs: 72_000, requestTimeoutMs: 10_000 }),
+    /invalid HTTP requestTimeout 10000ms: must be 0 or >= headersTimeout \(72000ms\)/,
+  );
+  await assert.rejects(
+    () => withEnv({ A2A_SERVER_REQUEST_TIMEOUT_MS: "not-a-number" }, () => startTestServer()),
+    /invalid HTTP requestTimeout NaNms/,
+  );
 });

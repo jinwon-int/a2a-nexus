@@ -966,6 +966,37 @@ const TASK_ENV_ALLOWED_KEYS = new Set([
 /** POSIX-ish env name syntax; blocks `-e` smuggling via `=`/whitespace in a key. */
 const TASK_ENV_KEY_SYNTAX = /^[A-Za-z_][A-Za-z0-9_]*$/;
 
+/**
+ * #2256 A5: upper bound for one task.env VALUE in UTF-8 bytes. Well under the
+ * kernel's per-string exec limit (MAX_ARG_STRLEN, 128 KiB), so an oversized
+ * value is rejected here with a named key instead of failing `docker run`
+ * with E2BIG or silently bloating every container's environment.
+ */
+export const TASK_ENV_VALUE_MAX_BYTES = 32 * 1024;
+
+/**
+ * C0 controls and DEL except tab/LF/CR. NUL makes spawn throw
+ * (ERR_INVALID_ARG_VALUE); the others have no legitimate use in a knob or
+ * correlation id and can corrupt logs/terminals downstream.
+ */
+const TASK_ENV_VALUE_FORBIDDEN_CONTROL = /[\u0000-\u0008\u000B\u000C\u000E-\u001F\u007F]/;
+
+/**
+ * Validate one task.env value. Strings pass through; finite numbers and
+ * booleans are stringified (what `${value}` produced before). Anything else,
+ * oversized values, and forbidden control characters are rejected — the
+ * caller drops the key and reports the key NAME only, never the value.
+ */
+export function normalizeTaskEnvValue(value: unknown): { ok: true; value: string } | { ok: false; reason: "type" | "size" | "control" } {
+  let text: string;
+  if (typeof value === "string") text = value;
+  else if ((typeof value === "number" && Number.isFinite(value)) || typeof value === "boolean") text = String(value);
+  else return { ok: false, reason: "type" };
+  if (Buffer.byteLength(text, "utf8") > TASK_ENV_VALUE_MAX_BYTES) return { ok: false, reason: "size" };
+  if (TASK_ENV_VALUE_FORBIDDEN_CONTROL.test(text)) return { ok: false, reason: "control" };
+  return { ok: true, value: text };
+}
+
 export function buildRunArgs(config: RunnerConfig, task: RunnerTask, workDir: string, runToken = createRunToken()): string[] {
   const containerName = buildContainerName(task.id, runToken);
   const args = [
@@ -1122,17 +1153,30 @@ export function buildRunArgs(config: RunnerConfig, task: RunnerTask, workDir: st
   // which may carry credentials) once per container build. Without this the
   // allowlist turns "my env var was ignored" into an unobservable failure.
   const droppedTaskEnvKeys: string[] = [];
+  const rejectedTaskEnvValues: string[] = [];
   for (const [key, value] of Object.entries(task.env ?? {})) {
     if (!isAllowedTaskEnvKey(key)) {
       droppedTaskEnvKeys.push(key);
       continue;
     }
-    args.push("-e", `${key}=${value}`);
+    const normalized = normalizeTaskEnvValue(value);
+    if (!normalized.ok) {
+      rejectedTaskEnvValues.push(`${key}(${normalized.reason})`);
+      continue;
+    }
+    args.push("-e", `${key}=${normalized.value}`);
   }
   if (droppedTaskEnvKeys.length > 0) {
     console.warn(
       `[a2a-docker-runner] task ${safeId(task.id)}: dropped ${droppedTaskEnvKeys.length} task.env ` +
         `key(s) not permitted by the task-env allowlist: ${droppedTaskEnvKeys.join(", ")}`,
+    );
+  }
+  if (rejectedTaskEnvValues.length > 0) {
+    // #2256 A5: key NAMES and a reason code only — never the value.
+    console.warn(
+      `[a2a-docker-runner] task ${safeId(task.id)}: dropped ${rejectedTaskEnvValues.length} task.env ` +
+        `value(s) failing validation (type/size>${TASK_ENV_VALUE_MAX_BYTES}B/control chars): ${rejectedTaskEnvValues.join(", ")}`,
     );
   }
 

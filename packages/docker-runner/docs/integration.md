@@ -161,6 +161,7 @@ shorter overrides. Host analysis time limits remain separate. See the
 - 허용: `A2A_` 접두 키 전체 (`A2A_OPENCLAW_MODEL`, `A2A_HERMES_THINKING`, `A2A_RUNNER_BASE_BRANCH`, `A2A_DOCKER_RUNNER_NO_LIVE`, …) + 상관 ID `RUN_ID` / `TRACE_ID`.
 - 차단: 그 외 전부. 특히 in-container 툴체인을 탈취할 수 있는 `PATH`, `BASH_ENV`, `ENV`, `LD_PRELOAD`, `LD_LIBRARY_PATH`, `GIT_CONFIG_*`, `GIT_SSH_COMMAND`, `GIT_PROXY_COMMAND`, `HTTP(S)_PROXY` / `ALL_PROXY` / `NO_PROXY` 는 절대 전달되지 않는다.
 - runner가 소유하는 예약 키(`GH_TOKEN`, `GH_CONFIG_DIR`, `A2A_PATCH_COMMAND*`, `A2A_CONTAINED_SUBAGENTS_*`, `A2A_SUBAGENT_CONTEXT_BRIEF` 등)는 `A2A_` 접두여도 태스크가 덮어쓸 수 없다.
+- 값 검증(#2256 A5): 허용된 키라도 값이 문자열·유한 숫자·불리언이 아니거나, UTF-8 32 KiB(`TASK_ENV_VALUE_MAX_BYTES`)를 넘거나, 탭·LF·CR을 제외한 제어문자(NUL, ESC, DEL 등)를 포함하면 **해당 키를 드롭**한다. 숫자와 불리언은 이전처럼 문자열로 바꿔 전달한다. 경고 로그에는 키 이름과 사유 코드(`type`/`size`/`control`)만 남기고 값은 기록하지 않는다.
 
 새 태스크 측 변수를 추가하려면 `A2A_` 접두를 사용한다.
 

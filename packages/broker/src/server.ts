@@ -69,8 +69,15 @@ import { createServer, type IncomingMessage, type RequestListener, type Server, 
 import {
   DEFAULT_KEEPALIVE_TIMEOUT_MS,
   HEADERS_TIMEOUT_MARGIN_MS,
+  resolveRequestTimeoutMs,
   startBrokerServerWithFactory,
 } from "./server-lifecycle.js";
+
+/** Unset/blank → undefined (use the default); anything else → Number (NaN is rejected downstream). */
+function parseOptionalEnvNumber(value: string | undefined): number | undefined {
+  if (value === undefined || value.trim() === "") return undefined;
+  return Number(value.trim());
+}
 import { readHostLoadSnapshot } from "./host-load-snapshot.js";
 import { readHttpServerDiagnostics } from "./http-server-diagnostics.js";
 import { OperatorEventStream } from "./operator-event-stream.js";
@@ -368,6 +375,26 @@ export function createBrokerServer(options: BrokerServerOptions = {}): BrokerSer
     workerKeyCount: Object.keys(a2aHttpSignatureKeyRegistry).length,
     allowInsecureDev,
   });
+  // HTTP server timeouts are resolved (and validated) here, before any store,
+  // monitor, or socket is opened, so a misconfigured timeout refuses startup
+  // without leaking resources (#2256 A5).
+  const httpKeepAliveTimeoutMs = options.keepAliveTimeoutMs ??
+    resolveIntegerOption(
+      undefined,
+      process.env.A2A_SERVER_KEEPALIVE_TIMEOUT_MS,
+      DEFAULT_KEEPALIVE_TIMEOUT_MS,
+    );
+  // headersTimeout must exceed keepAliveTimeout per Node.js runtime enforcement.
+  const httpHeadersTimeoutMs = options.headersTimeoutMs ??
+    resolveIntegerOption(
+      undefined,
+      process.env.A2A_SERVER_HEADERS_TIMEOUT_MS,
+      httpKeepAliveTimeoutMs + HEADERS_TIMEOUT_MARGIN_MS,
+    );
+  const httpRequestTimeoutMs = resolveRequestTimeoutMs(
+    options.requestTimeoutMs ?? parseOptionalEnvNumber(process.env.A2A_SERVER_REQUEST_TIMEOUT_MS),
+    httpHeadersTimeoutMs,
+  );
   const deploymentGrade = resolveSharedStateDeploymentGradeFromEnvV1();
   if (!deploymentGrade.ok) {
     throw new Error(
@@ -2183,19 +2210,11 @@ export function createBrokerServer(options: BrokerServerOptions = {}): BrokerSer
   // 5000ms, which forces every heartbeat (default 30s interval) to open a new
   // connection, contributing to TCP accept queue buildup and first-request latency
   // spikes documented in #1032.
-  server.keepAliveTimeout = options.keepAliveTimeoutMs ??
-    resolveIntegerOption(
-      undefined,
-      process.env.A2A_SERVER_KEEPALIVE_TIMEOUT_MS,
-      DEFAULT_KEEPALIVE_TIMEOUT_MS,
-    );
+  server.keepAliveTimeout = httpKeepAliveTimeoutMs;
   // headersTimeout must exceed keepAliveTimeout per Node.js runtime enforcement.
-  server.headersTimeout = options.headersTimeoutMs ??
-    resolveIntegerOption(
-      undefined,
-      process.env.A2A_SERVER_HEADERS_TIMEOUT_MS,
-      server.keepAliveTimeout + HEADERS_TIMEOUT_MARGIN_MS,
-    );
+  server.headersTimeout = httpHeadersTimeoutMs;
+  // #2256 A5: explicit request-receipt bound (Node default pinned; env-tunable).
+  server.requestTimeout = httpRequestTimeoutMs;
 
   // Stamp the Node HTTP request event before the main handler listener runs.
   server.prependListener("request", markHttpRequestEvent);

@@ -430,6 +430,15 @@ export interface BrokerServerOptions extends BrokerRuntimeHotLimitOptions {
    * Env: `A2A_SERVER_HEADERS_TIMEOUT_MS`.
    */
   headersTimeoutMs?: number;
+  /**
+   * HTTP server `requestTimeout` in ms: the bound on receiving one complete
+   * request (headers + body). `0` disables it. A positive value must be
+   * >= `headersTimeoutMs` or startup fails. Default: 300000ms (the Node.js
+   * default, pinned explicitly), raised to `headersTimeoutMs` if that is larger.
+   * Does not limit long-lived SSE responses.
+   * Env: `A2A_SERVER_REQUEST_TIMEOUT_MS` (#2256 A5).
+   */
+  requestTimeoutMs?: number;
 }
 
 export interface BrokerStaleReaperStatus {
