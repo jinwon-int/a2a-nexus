@@ -237,6 +237,17 @@ describe("fast-lane operator re-judgment (#1601/#2208)", () => {
       ),
       "bad_request",
     );
+    // #2284: only closed classifier codes may be persisted — retired, unknown,
+    // or padded values would make the task unloadable on the next restart.
+    for (const reasonCode of ["worker_mode_missing", "totally_bogus", " multi_worker_marker_present"]) {
+      expectBrokerError(
+        () => broker.rejudgeLaneTask(
+          task.id,
+          { actor: OPERATOR, decision: "full", reasonCode } as unknown as TaskLaneRejudgeRequest,
+        ),
+        "bad_request",
+      );
+    }
     assert.ok(!broker.getTask(task.id)?.laneRejudgment, "failed gates must not mutate the task");
   });
 
