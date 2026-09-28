@@ -4125,3 +4125,82 @@ separately approved operator action. plan.md lists prune of security data as
 not authorized by the plan, and checklist.md's "authorized retention/prune
 execution … implemented and proven" stays open until such a run is recorded.
 Runtime periodic prune is not implemented. #1504 stays OPEN.
+
+### Slice ZF — Phase 7 prerequisite P3: gate-4 lag interpretation for the replay/rate shadow (#1504, decision)
+
+Gate 4 (plan.md L127) reads "shadow divergence is zero and
+replication/checkpoint lag is zero". The Phase 6 text asks for "bounded zero
+lag at quiescence" (L117–118) but never gives a bound, and no document
+defines a lag metric for the replay/rate shadow. The lag definitions that do
+exist belong to other surfaces:
+- asynchronous projections: the claim graph (`lag == high-water - checkpoint`,
+  spec.md L600/L603/L605, lag bands L881; tasks.md Decision Q-series);
+- the outbox sequence high-water (spec.md L478);
+- cross-backend replication (plan.md Phases 8–10, checklist.md L355).
+
+**Decision.** For Phase 7 stages A (replay) and B (rate), the "lag" half of
+gate 4 is **identically zero by construction**, and there is nothing
+separate to measure.
+- The shadow comparison runs inside the request that made the live
+  decision. Replay is observed at `server.ts` L1244 (duplicate), L1250
+  (first) and L1257 (flag off). Rate is observed at L1584, before the 429
+  throw.
+- `observeReplay`/`observeRate` return `void` and call the synchronous
+  adapter `transact` on the shadow's own connection. The counters are updated
+  in the same call stack.
+- There is no queue, batch, checkpoint, or backlog that could fall behind.
+
+Gate 4 for stages A/B is therefore decided by the P2 evidence file (Slice ZD)
+alone. Exit 0 means both families have `unexplained = 0` and the invariant
+`compared = matches + warmupMismatches + unexplained` holds.
+
+**Two caveats the operator must read with that file:**
+- Requests that fail as `state_unavailable` (503) are rejected at
+  `server.ts` L1232/L1240, **before** any observation, so they are invisible
+  to the shadow counters. Gate 4 is only meaningful together with a zero
+  503 count from the broker log (plan step A7).
+- Mismatches in the first 300 s after a start are classified as
+  `warmupMismatches` (runtime `warmupMs`), not `unexplained`. A snapshot
+  taken inside the warm-up window is not evidence of a quiet shadow. The
+  evidence window must start after it.
+
+**Not covered:** stage C (lease/idempotency/outbox/graph). Those primitives
+have no shadow, and their lag (projection high-water vs checkpoint, outbox
+sequence) is a real, measurable quantity. Gate 4 stays open and unmet for
+them. checklist.md L355 (cross-backend journal) does not apply to the
+same-backend Phase 6 shadow.
+
+### Slice ZG — Phase 7 prerequisite P4: local rollback rehearsal (#1504, gate 7 evidence)
+
+`packages/broker/src/server-shared-state-rollback-rehearsal-v1.test.ts`
+rehearses the Phase 7 rollback on → off → on. It uses three real broker
+servers over **one** real SQLite serving-fence file with the shadow on,
+signed worker requests (`/workers/register`, strict HTTP-signature auth),
+and the V1 rate limiter on `/health`. Assertions, all passing (4/4
+consecutive runs locally):
+
+- **No 503 / `state_unavailable`** in any phase.
+- **Fence never regresses.** Every clean stop releases `owner_token`, and
+  every start bumps `lifecycle_epoch`, including the flag-off start.
+  `acquireSharedStateServingFenceForBrokerV1` runs regardless of flags. The
+  sequence is exactly E, E+1, E+2.
+- **V1 state survives the rollback.** A nonce consumed in phase A is
+  rejected again in phase C. The in-window rate cost exhausted in phase A
+  still returns 429 in phase C.
+- **Shadow `unexplained = 0`** in every phase.
+- **Known gaps, pinned as current behavior:**
+  1. With the flag off, the process-local replay cache and limiter start
+     empty. A nonce only V1 remembers is accepted (201), and a V1-exhausted
+     bucket admits (200).
+  2. Nonces consumed while the flag is off never reach V1, so the same
+     signed request is accepted again after re-cutover (201).
+
+  Both gaps close only when the stop-to-start gap exceeds the signature
+  expiry window and the rate window. This is the reason the plan's 15-minute
+  drain applies in **both** directions (cutover and rollback). A test flip
+  here means the Phase 7 rollback text must be re-read.
+
+**Scope:** in-process rehearsal with `startTestServer`. The real-SIGTERM
+drain path (`server-lifecycle.ts` `gracefulShutdown` → `closeServer` → fence
+release) is covered by the existing serving-fence child-process tests, not
+repeated here. No T1 action. #1504 stays OPEN.
