@@ -520,3 +520,81 @@ describe('kind_lane_mismatch stays entrypoint-authoritative', () => {
     assert.ok(receipt.reasonCodes.includes('kind_lane_mismatch'), JSON.stringify(receipt.reasonCodes));
   });
 });
+
+// ─── Spec parity (#2265, #2266) ─────────────────────────────────────────────
+
+const SPEC_URL = new URL('../../docs/specs/a2a-routing-classifier/spec.md', import.meta.url);
+
+function specSection(heading) {
+  const spec = fs.readFileSync(SPEC_URL, 'utf8');
+  const start = spec.indexOf(`\n${heading}\n`);
+  assert.ok(start >= 0, `spec section missing: ${heading}`);
+  const rest = spec.slice(start + heading.length + 2);
+  const end = rest.search(/\n#{2,3} /);
+  return end >= 0 ? rest.slice(0, end) : rest;
+}
+
+describe('forms reason codes match the spec named set (#2265)', () => {
+  const tableCodes = new Set(
+    specSection('### Forms reason codes (closed set, #2265)')
+      .split('\n')
+      .map((line) => /^\|\s*\d+[ab]?\s*\|\s*`([a-z_]+)`\s*\|/.exec(line))
+      .filter(Boolean)
+      .map((match) => match[1]),
+  );
+  const source = fs.readFileSync(new URL('./a2a-routing-assignment-forms.mjs', import.meta.url), 'utf8');
+  const sourceCodes = new Set();
+  for (const call of source.matchAll(/frozenFailure\(\s*\[([^\]]*)\]/g)) {
+    for (const code of call[1].matchAll(/'([a-z_]+)'/g)) sourceCodes.add(code[1]);
+  }
+
+  it('the spec table and the library raise exactly the same code set', () => {
+    assert.ok(sourceCodes.size > 0, 'no frozenFailure codes found in the library source');
+    assert.deepEqual([...tableCodes].sort(), [...sourceCodes].sort());
+  });
+
+  it('names the two lib-introduced codes verbatim', () => {
+    assert.ok(tableCodes.has('missing_required_fields'));
+    assert.ok(tableCodes.has('invalid_existing_reference'));
+  });
+
+  it('keeps forms codes disjoint from the frozen advice reason enum', async () => {
+    const { ROUTING_REASON_CODES } = await import('./a2a-routing-advice.mjs');
+    for (const code of tableCodes) assert.ok(!ROUTING_REASON_CODES.includes(code), code);
+  });
+
+  it('reports an untrusted key before a missing required field (spec ordering)', () => {
+    const result = buildAssignmentRequest(patchDescriptor(), { brokerUrl: 'http://127.0.0.1:9' });
+    assert.deepEqual([...result.reasonCodes], ['untrusted_broker_or_secret_input']);
+    assert.deepEqual([...result.missingFields], []);
+  });
+});
+
+describe('lane-mismatch receipt shape is the spec shape (#2266)', () => {
+  it('returns the entrypoint needs_input receipt described in the spec, with zero network', async () => {
+    specSection('### Lane-mismatch receipt shape (entrypoint-authoritative, #2266)');
+    let fetches = 0;
+    const built = buildAssignmentRequest(
+      analysisDescriptor(),
+      analysisHost({ lanes: [{ intent: 'propose_patch', payload: { mode: 'github-propose-patch' } }] }),
+    );
+    assert.equal(built.ok, true, 'the forms layer does not inspect lanes');
+    const receipt = await prepareRoutingAssignment({
+      descriptor: analysisDescriptor(),
+      hostContext: analysisHost({ lanes: [{ intent: 'propose_patch', payload: { mode: 'github-propose-patch' } }] }),
+      context: CONTEXT,
+      readiness: { observedAt: new Date().toISOString(), records: [workerRow()] },
+      fetchImpl: async () => { fetches += 1; throw new Error('must not fetch'); },
+    });
+    assert.equal(receipt.state, STATE_NEEDS_INPUT);
+    assert.deepEqual([...receipt.reasonCodes].sort(), ['invalid_request_fields', 'kind_lane_mismatch']);
+    assert.deepEqual([...receipt.missingFields], []);
+    assert.equal(receipt.nextAction.code, 'provide_missing_fields');
+    assert.equal(receipt.nextAction.detail, 'invalid fields: lanes[0]');
+    assert.deepEqual([...receipt.taskIds], []);
+    assert.deepEqual([...receipt.lanes], []);
+    assert.equal(receipt.planDigest, undefined);
+    assert.equal(receipt.readiness, undefined);
+    assert.equal(fetches, 0);
+  });
+});
