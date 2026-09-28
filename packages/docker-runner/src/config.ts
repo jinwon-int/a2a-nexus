@@ -197,12 +197,15 @@ export async function loadConfig(env = process.env): Promise<RunnerConfig> {
     memory: env.A2A_DOCKER_RUNNER_MEMORY || "2g",
     cpus: env.A2A_DOCKER_RUNNER_CPUS || "2",
     network: env.A2A_DOCKER_RUNNER_NETWORK || (trustedOperator && (profile === "openclaw" || profile === "hermes" || profile === "claude-code" || profile === "codex" || profile === "piri") ? "bridge" : "none"),
-    readOnlyRootFilesystem: normalizeDefaultTrue(env.A2A_DOCKER_RUNNER_READ_ONLY_ROOTFS, trustedOperator),
-    user: normalizeContainerUser(env.A2A_DOCKER_RUNNER_USER, trustedOperator),
+    // #2256 A2: hardened container defaults apply in BOTH modes (read-only
+    // rootfs + non-root uid). Public mode rejects explicit relaxations in
+    // validateRunnerConfig; trusted mode may relax them via explicit env.
+    readOnlyRootFilesystem: normalizeDefaultTrue(env.A2A_DOCKER_RUNNER_READ_ONLY_ROOTFS, true),
+    user: normalizeContainerUser(env.A2A_DOCKER_RUNNER_USER),
     trustedOperator,
     pidsLimit: env.A2A_DOCKER_RUNNER_PIDS_LIMIT || "512",
     noNewPrivileges: !isTruthy(env.A2A_DOCKER_RUNNER_ALLOW_PRIVILEGE_ESCALATION),
-    capDrop: parseCommaList(env.A2A_DOCKER_RUNNER_CAP_DROP),
+    capDrop: normalizeCapDrop(env.A2A_DOCKER_RUNNER_CAP_DROP),
     capAdd: parseCommaList(env.A2A_DOCKER_RUNNER_CAP_ADD),
     extraMounts,
     containedSubagents: loadContainedSubagentsConfig(env, patchCommand.commandProfile, profile),
@@ -269,6 +272,16 @@ export function validateRunnerConfig(config: RunnerConfig): void {
     }
     if (config.githubTokenFile) {
       errors.push("public safe-default policy rejects GitHub token file exposure; set A2A_DOCKER_RUNNER_TRUSTED_OPERATOR=1 for trusted GitHub side-effect lanes");
+    }
+    // #2256 A1/A2: public mode must never be weaker than trusted mode.
+    if (!capDropIncludesAll(config.capDrop)) {
+      errors.push("public safe-default policy requires --cap-drop ALL; unset A2A_DOCKER_RUNNER_CAP_DROP (default ALL) or set A2A_DOCKER_RUNNER_TRUSTED_OPERATOR=1 for capability-keeping lanes");
+    }
+    if (!config.user || isRootContainerUser(config.user)) {
+      errors.push("public safe-default policy rejects a root container user; unset A2A_DOCKER_RUNNER_USER (default 1000:1000) or set A2A_DOCKER_RUNNER_TRUSTED_OPERATOR=1 for root lanes");
+    }
+    if (config.readOnlyRootFilesystem !== true) {
+      errors.push("public safe-default policy requires a read-only root filesystem; unset A2A_DOCKER_RUNNER_READ_ONLY_ROOTFS (default on) or set A2A_DOCKER_RUNNER_TRUSTED_OPERATOR=1 for writable-rootfs lanes");
     }
   }
 
@@ -715,13 +728,42 @@ function normalizeDefaultTrue(value: string | undefined, enabledByDefault: boole
   return enabledByDefault;
 }
 
-function normalizeContainerUser(value: string | undefined, trustedOperator: boolean): string | undefined {
+/** Default non-root container user, applied in both modes (#2256 A2). */
+export const DEFAULT_CONTAINER_USER = "1000:1000";
+
+/**
+ * `root` / `0` is the explicit escape hatch and is represented as an unset
+ * user (runner images have no USER directive, so no `--user` runs as root).
+ * Public mode rejects it in validateRunnerConfig.
+ */
+function normalizeContainerUser(value: string | undefined): string | undefined {
   if (value !== undefined && value.trim() !== "") {
     const trimmed = value.trim();
-    if (/^(0|root)$/i.test(trimmed)) return undefined;
+    if (isRootContainerUser(trimmed)) return undefined;
     return trimmed;
   }
-  return trustedOperator ? "1000:1000" : undefined;
+  return DEFAULT_CONTAINER_USER;
+}
+
+/** `root`, `0`, `root:<group>`, or `0:<gid>` all run as uid 0. */
+export function isRootContainerUser(value: string): boolean {
+  return /^(0|root)(:.*)?$/i.test(value.trim());
+}
+
+/**
+ * #2256 A1: `--cap-drop ALL` by default. Unset/blank means `["ALL"]`; the
+ * explicit value `none` keeps the engine's default capability set (trusted
+ * mode only — public mode rejects it). Needed capabilities are re-added with
+ * `A2A_DOCKER_RUNNER_CAP_ADD` (trusted mode only).
+ */
+export function normalizeCapDrop(value: string | undefined): string[] {
+  if (value === undefined || value.trim() === "") return ["ALL"];
+  if (/^none$/i.test(value.trim())) return [];
+  return parseCommaList(value);
+}
+
+export function capDropIncludesAll(capDrop?: string[]): boolean {
+  return (capDrop ?? []).some((entry) => /^(cap_)?all$/i.test(entry.trim()));
 }
 
 function parseCommaList(value?: string): string[] {

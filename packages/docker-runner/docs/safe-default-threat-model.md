@@ -21,6 +21,9 @@ Public safe-default mode assumes task payloads and task commands may be adversar
 | Host network access | Reject `network: "host"`. |
 | Privilege escalation | Require `no-new-privileges`; reject `A2A_DOCKER_RUNNER_ALLOW_PRIVILEGE_ESCALATION=1`. |
 | Added Linux capabilities | Reject `capAdd` / `A2A_DOCKER_RUNNER_CAP_ADD`. |
+| Retained Linux capabilities | Default `--cap-drop ALL`; reject `A2A_DOCKER_RUNNER_CAP_DROP=none` or any list without `ALL` (#2256 A1). |
+| Root inside the container | Default `--user 1000:1000`; reject `A2A_DOCKER_RUNNER_USER=root` / `0` / `root:*` / `0:*` (#2256 A2). |
+| Writable root filesystem | Default `--read-only` + bounded `/tmp` tmpfs; reject `A2A_DOCKER_RUNNER_READ_ONLY_ROOTFS=0` (#2256 A2). |
 | Writable protected agent runtime/session mounts | Reuse the existing extra-mount preflight and reject writable `.openclaw`, `.hermes`, or `/run/secrets/*-dir` paths. |
 
 ## Trusted-operator mode
@@ -52,3 +55,11 @@ A2A_DOCKER_RUNNER_TRUSTED_OPERATOR=1
 ```
 
 Public examples and new deployments should omit that variable and stay on bridge/none networking with `no-new-privileges` enabled and no added capabilities.
+
+#2256 A1/A2: public safe-default mode used to default to a writable rootfs,
+the image's root user, and no dropped capabilities, which was weaker than
+trusted-operator mode. It now defaults to the same hardened floor as trusted
+mode (`--cap-drop ALL`, `--user 1000:1000`, `--read-only`) and rejects explicit
+relaxations. Public setups that set `A2A_DOCKER_RUNNER_USER=root`,
+`A2A_DOCKER_RUNNER_READ_ONLY_ROOTFS=0`, or `A2A_DOCKER_RUNNER_CAP_DROP=none`
+must remove them or become an explicit trusted-operator lane.

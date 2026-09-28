@@ -9,7 +9,12 @@ With `A2A_DOCKER_RUNNER_TRUSTED_OPERATOR=1` and an OpenClaw/Hermes/Claude profil
 - `--network bridge` by default. Host networking requires `A2A_DOCKER_RUNNER_NETWORK=host`.
 - `--read-only` root filesystem by default, plus a bounded writable `/tmp` tmpfs.
 - `--user 1000:1000` by default. Root requires `A2A_DOCKER_RUNNER_USER=root` or `A2A_DOCKER_RUNNER_USER=0`.
+- `--cap-drop ALL` by default (#2256 A1). Needed capabilities are re-added with `A2A_DOCKER_RUNNER_CAP_ADD`; `A2A_DOCKER_RUNNER_CAP_DROP=none` keeps the engine's default capability set.
 - `--security-opt no-new-privileges` remains default unless `A2A_DOCKER_RUNNER_ALLOW_PRIVILEGE_ESCALATION=1` is set.
+
+The read-only rootfs, non-root user, and `--cap-drop ALL` defaults are the
+same in public safe-default mode (#2256 A2). Public mode rejects every escape
+hatch below. `doctor` reports the effective values in `containerHardening`.
 
 ## Opt-in escape hatches
 
@@ -18,6 +23,8 @@ With `A2A_DOCKER_RUNNER_TRUSTED_OPERATOR=1` and an OpenClaw/Hermes/Claude profil
 | Host network | `A2A_DOCKER_RUNNER_NETWORK=host` |
 | Writable root filesystem | `A2A_DOCKER_RUNNER_READ_ONLY_ROOTFS=0` |
 | Root user | `A2A_DOCKER_RUNNER_USER=root` |
+| Keep engine default capabilities | `A2A_DOCKER_RUNNER_CAP_DROP=none` (or an explicit list without `ALL`; `doctor` warns) |
+| Add a capability | `A2A_DOCKER_RUNNER_CAP_ADD=<CAP>[,<CAP>]` |
 | Privilege escalation | `A2A_DOCKER_RUNNER_ALLOW_PRIVILEGE_ESCALATION=1` |
 
 ## Secret-mount ownership contract (`--cap-drop ALL` + container user)
@@ -50,3 +57,12 @@ Rules:
 ## Migration note
 
 Existing trusted workers that assumed host networking, root, or a writable root filesystem must set the corresponding explicit variable. This is a deliberate fail-closed hardening change for #1204.
+
+#2256 A1: an unset `A2A_DOCKER_RUNNER_CAP_DROP` used to mean "drop nothing"
+and now means `--cap-drop ALL`. Workers that already set
+`A2A_DOCKER_RUNNER_CAP_DROP=ALL` see no change. A worker that intentionally
+relied on the old unset behavior must set `A2A_DOCKER_RUNNER_CAP_DROP=none` or
+re-add specific capabilities with `A2A_DOCKER_RUNNER_CAP_ADD`. Because
+`--cap-drop ALL` removes `CAP_DAC_OVERRIDE`, run `doctor` after upgrading and
+fix any `secretMountReadability` failure by aligning secret ownership (above),
+not by relaxing capabilities.

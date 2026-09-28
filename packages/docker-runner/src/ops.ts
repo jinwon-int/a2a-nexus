@@ -16,6 +16,8 @@ import {
   DEFAULT_SYSTEMD_UNIT_DIR,
   KNOWN_SERVICE_ENV_FILES,
   WORKDIR_TTL_ENV,
+  capDropIncludesAll,
+  isRootContainerUser,
   parseTtlMs,
   projectClaudeCodeEffort,
   resolveWorkdirTtl,
@@ -43,6 +45,8 @@ export interface DoctorReport {
   extraMounts: OpsCheck;
   /** #1809/#2143 preflight: secret-mount readability under the container user + cap-drop contract. */
   secretMountReadability: OpsCheck;
+  /** #2256 A1/A2: effective container hardening (cap-drop/add, user, rootfs, no-new-privileges, network). */
+  containerHardening: OpsCheck;
   baseImage: OpsCheck;
   githubPatch: OpsCheck;
   /** #2234: claude-code only — expiry of the effective Claude OAuth credential vs the task timeout. */
@@ -720,7 +724,8 @@ export async function doctor(config: RunnerConfig, options: DoctorOptions = {}):
     : { status: "fail" as const, message: "no container engine available for base image check", detail: { image: config.image } };
   const githubPatch = checkGitHubPatchReadiness(config, { engine, env: options.env });
   const engineReady = docker.status === "ok" || podman.status === "ok";
-  const checks = [runnerRevision, taskRoot, secretMount, extraMounts, secretMountReadability, baseImage, githubPatch];
+  const containerHardening = checkContainerHardening(config);
+  const checks = [runnerRevision, taskRoot, secretMount, extraMounts, secretMountReadability, containerHardening, baseImage, githubPatch];
   const claudeCredentialFreshness = config.commandProfile === "claude-code"
     ? await checkClaudeCredentialFreshness(config)
     : undefined;
@@ -758,6 +763,7 @@ export async function doctor(config: RunnerConfig, options: DoctorOptions = {}):
     secretMount,
     extraMounts,
     secretMountReadability,
+    containerHardening,
     baseImage,
     githubPatch,
     ...(claudeCredentialFreshness ? { claudeCredentialFreshness } : {}),
@@ -1031,6 +1037,52 @@ export interface SecretMountReadabilityEntry {
 const SECRET_MOUNT_READABILITY_SCAN_ENTRY_LIMIT = 64;
 
 /**
+ * #2256 A1/A2: report the EFFECTIVE container hardening the runner will pass
+ * to `docker run`/`podman run`, so an operator never has to infer it from env.
+ * Relaxations are only reachable in trusted-operator mode (public mode fails
+ * config validation first). Warn-only: keeping capabilities (`--cap-drop`
+ * without ALL) warns; other trusted relaxations (root user, writable rootfs,
+ * privilege escalation, added capabilities) are listed in `detail.relaxations`
+ * because they can be intentional (for example a root-owned credential file).
+ */
+export function checkContainerHardening(config: RunnerConfig): OpsCheck {
+  const capDrop = config.capDrop ?? [];
+  const capAdd = config.capAdd ?? [];
+  const rawUser = config.user?.trim() ?? "";
+  const rootUser = !rawUser || isRootContainerUser(rawUser);
+  const relaxations: string[] = [];
+  if (!capDropIncludesAll(capDrop)) relaxations.push("cap_drop_without_all");
+  if (capAdd.length > 0) relaxations.push("cap_add");
+  if (rootUser) relaxations.push("root_user");
+  if (config.readOnlyRootFilesystem !== true) relaxations.push("writable_rootfs");
+  if (config.noNewPrivileges === false) relaxations.push("privilege_escalation_allowed");
+  const detail = {
+    mode: config.trustedOperator ? "trusted_operator" : "public_safe_default",
+    capDrop,
+    capAdd,
+    user: rawUser || "root (image default; --user not set)",
+    readOnlyRootFilesystem: config.readOnlyRootFilesystem === true,
+    noNewPrivileges: config.noNewPrivileges !== false,
+    network: config.network ?? "none",
+    relaxations,
+  };
+  if (!capDropIncludesAll(capDrop)) {
+    return {
+      status: "warn",
+      message: "container keeps Linux capabilities (--cap-drop ALL not set); unset A2A_DOCKER_RUNNER_CAP_DROP for the ALL default and re-add only needed caps via A2A_DOCKER_RUNNER_CAP_ADD",
+      detail,
+    };
+  }
+  return {
+    status: "ok",
+    message: relaxations.length === 0
+      ? "container runs hardened (--cap-drop ALL, non-root, read-only rootfs, no-new-privileges)"
+      : `container drops all capabilities; trusted-operator relaxations: ${relaxations.join(", ")}`,
+    detail,
+  };
+}
+
+/**
  * Preflight (#1809/#2143): under a DAC_OVERRIDE-dropping cap-drop, verify every
  * profile secret-mount source (and, for directories, their direct children)
  * is readable by the configured container user BEFORE a task fails inside the
@@ -1084,7 +1136,11 @@ export async function checkSecretMountContainerReadability(config: RunnerConfig)
   const problems: string[] = [];
   const statErrors: string[] = [];
 
-  const inspect = async (absolute: string, target: string | undefined, kind: "github_token" | "profile_mount") => {
+  // Contract: each mount source and, for a directory source, its DIRECT
+  // children only (depth 0 and 1). Deeper recursion made the report unbounded
+  // on large profile dirs (thousands of entries) once --cap-drop ALL became
+  // the default (#2256 A1).
+  const inspect = async (absolute: string, target: string | undefined, kind: "github_token" | "profile_mount", depth = 0) => {
     const info = await stat(absolute).catch((error: unknown) => {
       statErrors.push(`${absolute}: ${errorMessage(error)}`);
       return null;
@@ -1110,10 +1166,10 @@ export async function checkSecretMountContainerReadability(config: RunnerConfig)
     if (!verdict.readable) {
       problems.push(`${absolute} (owner ${info.uid}:${info.gid}, mode 0${(info.mode & 0o777).toString(8)}) is unreadable by container user ${config.user?.trim() || "root(assumed)"}`);
     }
-    if (isDirectory) {
+    if (isDirectory && depth === 0) {
       const children = await readdir(absolute).catch(() => [] as string[]);
       for (const child of children.slice(0, SECRET_MOUNT_READABILITY_SCAN_ENTRY_LIMIT)) {
-        await inspect(join(absolute, child), undefined, kind);
+        await inspect(join(absolute, child), undefined, kind, depth + 1);
       }
     }
   };

@@ -4,7 +4,7 @@ import { chown, mkdtemp, mkdir, readFile, writeFile, utimes, stat, chmod } from 
 import { execFileSync, spawnSync } from "node:child_process";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { CLAUDE_CREDENTIAL_REFRESH_MARGIN_MS, checkBaseImage, checkClaudeCredentialFreshness, checkDeployedRevision, checkDeployMarker, checkExtraMounts, checkGitHubPatchReadiness, checkSecretMountContainerReadability, cleanup, dropsDacOverride, install, parseContainerUserRef, parseProbeKeyValues } from "./ops.js";
+import { CLAUDE_CREDENTIAL_REFRESH_MARGIN_MS, checkBaseImage, checkClaudeCredentialFreshness, checkContainerHardening, checkDeployedRevision, checkDeployMarker, checkExtraMounts, checkGitHubPatchReadiness, checkSecretMountContainerReadability, cleanup, dropsDacOverride, install, parseContainerUserRef, parseProbeKeyValues } from "./ops.js";
 import type { RunnerConfig } from "./types.js";
 import { buildExampleReadinessInput } from "./openclaw-profile-readiness.js";
 import { loadConfig, projectClaudeCodeTurnBudgets } from "./config.js";
@@ -1475,4 +1475,52 @@ test("#2234 claudeCredentialFreshness recognizes a non-canonical credentials mou
   assert.equal(report.status, "ok");
   assert.equal((report.detail as Record<string, unknown>).source, "credentials_file_mount");
   assertNoTokenLeak(report);
+});
+
+// ─── #2256 A1/A2: effective container hardening + bounded readability scan ──
+
+test("#2256 doctor containerHardening reports the hardened default as ok", () => {
+  const report = checkContainerHardening(readabilityConfig({
+    capDrop: ["ALL"], user: "1000:1000", readOnlyRootFilesystem: true, noNewPrivileges: true, network: "none",
+  }));
+  assert.equal(report.status, "ok");
+  assert.deepEqual(report.detail?.capDrop, ["ALL"]);
+  assert.deepEqual(report.detail?.relaxations, []);
+  assert.equal(report.detail?.mode, "public_safe_default");
+  assert.equal(report.detail?.user, "1000:1000");
+});
+
+test("#2256 doctor containerHardening lists trusted relaxations and warns only on kept capabilities", () => {
+  const relaxed = checkContainerHardening(readabilityConfig({
+    trustedOperator: true, capDrop: ["ALL"], capAdd: ["SYS_ADMIN"], user: undefined, readOnlyRootFilesystem: false, noNewPrivileges: false,
+  }));
+  assert.equal(relaxed.status, "ok");
+  assert.deepEqual(relaxed.detail?.relaxations, ["cap_add", "root_user", "writable_rootfs", "privilege_escalation_allowed"]);
+  assert.equal(relaxed.detail?.mode, "trusted_operator");
+  assert.match(String(relaxed.detail?.user), /root/);
+
+  const keepsCaps = checkContainerHardening(readabilityConfig({ trustedOperator: true, capDrop: [], user: "1000:1000", readOnlyRootFilesystem: true }));
+  assert.equal(keepsCaps.status, "warn");
+  assert.match(keepsCaps.message, /--cap-drop ALL not set/);
+  assert.deepEqual(keepsCaps.detail?.relaxations, ["cap_drop_without_all"]);
+});
+
+test("#2256 secret-mount readability scans only direct children of a mounted directory", async () => {
+  const dir = await mkdtemp(join(tmpdir(), "a2a-secret-depth-"));
+  const profileDir = join(dir, "claude-dir");
+  await mkdir(join(profileDir, "projects", "deep"), { recursive: true });
+  await writeFile(join(profileDir, "settings.json"), "{}");
+  await writeFile(join(profileDir, "projects", "deep", "history.jsonl"), "{}");
+  await chmod(join(profileDir, "projects", "deep", "history.jsonl"), 0o600);
+
+  const report = await checkSecretMountContainerReadability(readabilityConfig({
+    capDrop: ["ALL"],
+    user: `${CURRENT_UID}:${CURRENT_UID}`,
+    extraMounts: [{ source: profileDir, target: "/run/secrets/claude-dir", readOnly: true }],
+  }));
+  const sources = (report.detail?.entries as Array<Record<string, unknown>>).map((entry) => String(entry.source));
+  assert.ok(sources.some((source) => source.endsWith("settings.json")), "direct child file is scanned");
+  assert.ok(sources.some((source) => source.endsWith("projects")), "direct child directory is scanned");
+  assert.ok(!sources.some((source) => source.includes(join("projects", "deep"))), `grandchildren must not be scanned: ${sources.join(",")}`);
+  assert.equal(sources.length, 3);
 });

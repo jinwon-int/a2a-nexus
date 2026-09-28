@@ -123,6 +123,7 @@ Public safe-default runner config treats task commands as untrusted:
 
 - `A2A_DOCKER_RUNNER_NETWORK` defaults to `none` unless an operator selects a reviewed network.
 - `A2A_DOCKER_RUNNER_GITHUB_TOKEN_FILE` is rejected unless `A2A_DOCKER_RUNNER_TRUSTED_OPERATOR=1`.
+- Containers run with `--cap-drop ALL`, `--user 1000:1000`, and a read-only root filesystem by default in both modes (#2256). Public mode rejects relaxing any of them; trusted-operator mode may relax them with explicit env (see [trusted-operator hardening](docs/trusted-operator-hardening.md)).
 - `buildRunArgs` defensively avoids mounting `/run/secrets/gh-hosts.yml` and filters `GH_TOKEN`/`GITHUB_TOKEN`-style credential env vars for untrusted task commands.
 
 Trusted GitHub PR/comment/push lanes must opt into `A2A_DOCKER_RUNNER_TRUSTED_OPERATOR=1` and should use short-lived, repo/branch-scoped credentials where possible. Log redaction is still required, but it is not treated as an exfiltration control.
@@ -150,7 +151,7 @@ Public/demo setups should start from the least-privilege path:
 
 - Use a GitHub token limited to the target repository and required PR/comment scopes; do not reuse an operator's broad personal token.
 - Keep tokens and agent auth in environment variables or read-only secret mounts. Do not put token values in task payloads, examples, prompts, artifacts, or GitHub comments.
-- Leave `A2A_DOCKER_RUNNER_TRUSTED_OPERATOR` unset for public/default workers. In this mode, pre-deploy validation rejects host networking, privilege-escalation opt-outs, and added Linux capabilities before a task container starts.
+- Leave `A2A_DOCKER_RUNNER_TRUSTED_OPERATOR` unset for public/default workers. In this mode, pre-deploy validation rejects host networking, privilege-escalation opt-outs, added or retained Linux capabilities, a root container user, and a writable root filesystem before a task container starts.
 - Treat `A2A_DOCKER_RUNNER_PATCH_COMMAND_PROFILE=openclaw` or `hermes`, host agent config mounts, and any host-network Docker/Podman mode as operator-only trusted-worker features. Internal workers that intentionally need those features must set `A2A_DOCKER_RUNNER_TRUSTED_OPERATOR=1` explicitly.
 - Writable extra mounts that target/source protected OpenClaw or Hermes runtime/session paths remain blocked in both public-safe and trusted-operator modes.
 - Use neutral placeholder paths in docs and fixtures, for example `/secure/operator/openclaw-config`, instead of real workstation or server home directories.
@@ -485,7 +486,12 @@ broker, GitHub, Telegram, OpenClaw Gateway, or Docker.
   direct children of mounted directories must be readable by the configured
   `A2A_DOCKER_RUNNER_USER`; owner mismatch without group/others read fails
   closed with ownership-alignment remediation (see
-  [trusted-operator hardening](docs/trusted-operator-hardening.md))
+  [trusted-operator hardening](docs/trusted-operator-hardening.md)); a
+  mounted directory is checked together with its direct children only
+- `containerHardening` (#2256): the effective `--cap-drop`/`--cap-add`,
+  `--user`, read-only rootfs, no-new-privileges, and network the runner will
+  pass to the engine, plus any trusted-operator `relaxations`; warns when
+  `--cap-drop ALL` is not in effect
 - configured base-image presence or pull readiness
 - `githubPatch` readiness for generic `github-propose-patch` execution; the
   OpenClaw profile path includes a no-secret container probe for the `openclaw`
@@ -845,7 +851,7 @@ must not contain a comma. Unset keeps the previous behavior.
 
 The **container user** must be able to read the file. The host file is usually
 owner-only (`0600`), so run the container as its owner (for a root-owned file,
-`A2A_DOCKER_RUNNER_USER=root`); otherwise the task stops with
+`A2A_DOCKER_RUNNER_USER=root`, trusted-operator mode only); otherwise the task stops with
 `error=claude_credentials_file_unreadable` before the model runs. Config
 validation cannot detect this because it runs as the host runner user.
 
