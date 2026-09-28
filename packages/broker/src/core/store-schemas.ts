@@ -208,12 +208,23 @@ export const taskWakeSchema = z
   })
   .passthrough();
 
+/**
+ * Reason codes the classifier no longer emits but that stored records may
+ * still carry (#2065/#2253 retired the worker-mode distinction). Accepted ONLY
+ * when reading persisted `laneAssignment` records so snapshots and hot rows
+ * written by an older broker keep loading instead of being quarantined; the
+ * classifier (`TASK_LANE_REASON_CODES`), the rejudge schema, and the strict
+ * task-stats read model do not accept them.
+ */
+export const RETIRED_TASK_LANE_REASON_CODES = ["worker_mode_missing", "worker_not_persistent"] as const;
+
 export const taskLaneAssignmentSchema = z
   .object({
     version: z.literal("fast-lane.v1"),
     mode: z.literal("shadow"),
     decision: z.enum(["fast", "full"]),
     reasonCodes: z.array(z.enum([
+      ...RETIRED_TASK_LANE_REASON_CODES,
       "all_fast_conditions_met",
       "requester_lane_facts_present",
       "intent_not_analyze",
