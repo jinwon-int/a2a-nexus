@@ -861,10 +861,23 @@ reads only `claudeAiOauth.expiresAt` from the effective credential (the
 credentials-file mount when configured, otherwise
 `<claude-dir>/.credentials.json`) and warns when it is missing, unparseable,
 already expired, or expires within the runner task timeout plus a 10-minute
-refresh margin (the in-container CLI would then refresh and rotate the shared
-token). A missing credentials *file* is reported by config validation instead. It also warns when the
+refresh margin. A missing credentials *file* is reported by config validation instead. It also warns when the
 config-dir copy and the credentials file both exist and differ. Only the
 expiry timestamp and status are reported, never token values or digests.
+
+**The container never refreshes the shared OAuth credential (#2234).** A
+refresh inside the container would rotate the refresh token that host Claude
+sessions also use, and the rotated token would be thrown away with the
+container. So the claude-code profile deletes `claudeAiOauth.refreshToken` and
+`refreshTokenExpiresAt` from its private tmpfs copy
+(`claude_credentials_refresh=disabled` in `summary.txt`; a copy that is not
+valid JSON stops the task with `failure_category=claude_credentials_unavailable`).
+Before starting a claude-code task, the runner checks that the access token
+outlives the task timeout plus the 10-minute margin. If it does not, the task
+is not started: the result is `outcome: block` with
+`failure_category=claude_credential_window` and `retryable=true`, and no
+workDir or container is created. Retry after a host Claude session refreshes
+the credential. The host credential file is only ever mounted read-only.
 
 For the Codex profile, build the pinned Codex CLI image and mount a minimal
 node-local auth directory. Do not mount the whole host session/history tree:

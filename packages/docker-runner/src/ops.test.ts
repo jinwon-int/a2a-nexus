@@ -4,7 +4,7 @@ import { chown, mkdtemp, mkdir, readFile, writeFile, utimes, stat, chmod } from 
 import { execFileSync, spawnSync } from "node:child_process";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { CLAUDE_CREDENTIAL_REFRESH_MARGIN_MS, checkBaseImage, checkClaudeCredentialFreshness, checkContainerHardening, checkDeployedRevision, checkDeployMarker, checkExtraMounts, checkGitHubPatchReadiness, checkSecretMountContainerReadability, cleanup, dropsDacOverride, install, parseContainerUserRef, parseProbeKeyValues } from "./ops.js";
+import { CLAUDE_CREDENTIAL_REFRESH_MARGIN_MS, checkBaseImage, checkClaudeCredentialFreshness, evaluateClaudeCredentialWindow, checkContainerHardening, checkDeployedRevision, checkDeployMarker, checkExtraMounts, checkGitHubPatchReadiness, checkSecretMountContainerReadability, cleanup, dropsDacOverride, install, parseContainerUserRef, parseProbeKeyValues } from "./ops.js";
 import type { RunnerConfig } from "./types.js";
 import { buildExampleReadinessInput } from "./openclaw-profile-readiness.js";
 import { loadConfig, projectClaudeCodeTurnBudgets } from "./config.js";
@@ -1555,4 +1555,45 @@ test("#2256 secret-mount readability bounds the report and scans breadth-first",
   assert.equal(report.detail?.truncated, true);
   assert.equal(report.detail?.entryLimit, 512);
   assert.ok(entries.slice(0, 14).some((entry) => String(entry.source).endsWith(".credentials.json")), "shallow credential file comes first");
+});
+
+// ─── #2234 slice 3: start gate ──────────────────────────────────────────────
+
+test("#2234 evaluateClaudeCredentialWindow blocks only a known too-short lifetime", async () => {
+  const dir = await mkdtemp(join(tmpdir(), "a2a-claude-window-"));
+  const cfg = claudeFreshnessConfig(dir);
+  const boundary = CLAUDE_FRESHNESS_NOW_MS + CLAUDE_FRESHNESS_TIMEOUT_MS + CLAUDE_CREDENTIAL_REFRESH_MARGIN_MS;
+
+  await writeFile(join(dir, ".credentials.json"), fakeClaudeCredentials(boundary));
+  const atBoundary = await evaluateClaudeCredentialWindow(cfg, CLAUDE_FRESHNESS_TIMEOUT_MS, CLAUDE_FRESHNESS_NOW_MS);
+  assert.equal(atBoundary.blocked, true, "exactly timeout+margin is not enough");
+
+  await writeFile(join(dir, ".credentials.json"), fakeClaudeCredentials(boundary + 1));
+  const justAfter = await evaluateClaudeCredentialWindow(cfg, CLAUDE_FRESHNESS_TIMEOUT_MS, CLAUDE_FRESHNESS_NOW_MS);
+  assert.equal(justAfter.blocked, false);
+  assert.equal(justAfter.remainingMs, CLAUDE_FRESHNESS_TIMEOUT_MS + CLAUDE_CREDENTIAL_REFRESH_MARGIN_MS + 1);
+
+  await writeFile(join(dir, ".credentials.json"), fakeClaudeCredentials(CLAUDE_FRESHNESS_NOW_MS - 1));
+  assert.equal((await evaluateClaudeCredentialWindow(cfg, CLAUDE_FRESHNESS_TIMEOUT_MS, CLAUDE_FRESHNESS_NOW_MS)).blocked, true, "expired");
+
+  // A per-task timeout longer than the default moves the boundary.
+  await writeFile(join(dir, ".credentials.json"), fakeClaudeCredentials(boundary + 1));
+  assert.equal((await evaluateClaudeCredentialWindow(cfg, CLAUDE_FRESHNESS_TIMEOUT_MS * 2, CLAUDE_FRESHNESS_NOW_MS)).blocked, true);
+
+  await writeFile(join(dir, ".credentials.json"), "not json");
+  const unparseable = await evaluateClaudeCredentialWindow(cfg, CLAUDE_FRESHNESS_TIMEOUT_MS, CLAUDE_FRESHNESS_NOW_MS);
+  assert.equal(unparseable.blocked, false, "unparseable is left to the profile's fail-closed check");
+  assert.equal(JSON.stringify(unparseable).includes(FAKE_ACCESS_TOKEN), false);
+
+  const missing = await evaluateClaudeCredentialWindow(claudeFreshnessConfig(join(dir, "absent")), CLAUDE_FRESHNESS_TIMEOUT_MS, CLAUDE_FRESHNESS_NOW_MS);
+  assert.equal(missing.blocked, false);
+});
+
+test("#2234 claudeCredentialFreshness no longer claims the container rotates the token", async () => {
+  const dir = await mkdtemp(join(tmpdir(), "a2a-claude-fresh-"));
+  await writeFile(join(dir, ".credentials.json"), fakeClaudeCredentials(CLAUDE_FRESHNESS_NOW_MS - 1));
+  const report = await checkClaudeCredentialFreshness(claudeFreshnessConfig(dir), CLAUDE_FRESHNESS_NOW_MS);
+  assert.equal(report.status, "warn");
+  assert.match(report.message, /deferred \(claude_credential_window\)/);
+  assert.doesNotMatch(report.message, /rotate/);
 });

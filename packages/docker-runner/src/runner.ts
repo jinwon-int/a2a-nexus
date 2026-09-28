@@ -10,6 +10,7 @@ import { buildContainerScript, jsonArgvToScript } from "./script-generators.js";
 export { buildContainerScript, jsonArgvToScript };
 import { CLAUDE_CREDENTIALS_FILE_MOUNT_TARGET } from "./config.js";
 import { normalizeTask } from "./task-normalizer.js";
+import { evaluateClaudeCredentialWindow } from "./ops.js";
 import { collectGitHubEvidence } from "./github-evidence.js";
 import { sanitizeSourcePublicExecutionPreflight } from "./source-public-preflight.js";
 import { expandTask, resolveTemplate, buildTemplateExpansionEvidence } from "./task-templates.js";
@@ -227,6 +228,17 @@ export async function runTask(config: RunnerConfig, task: RunnerTask): Promise<R
   }
 
   const normalizedTask = sanitizeSubagentContextBrief(normalizeTask(expandedTask ?? task));
+
+  // #2234 slice 3: the container cannot refresh the Claude OAuth credential
+  // (the profile strips the refresh token), so refuse to START a claude-code
+  // task whose access token would expire inside the task timeout + margin.
+  // Deferred before any workDir/container work; retry after a host session
+  // refreshes the credential.
+  if (config.commandProfile === "claude-code") {
+    const window = await evaluateClaudeCredentialWindow(config, normalizedTask.timeoutMs ?? config.defaultTimeoutMs);
+    if (window.blocked) return buildClaudeCredentialWindowBlockResult(task, window);
+  }
+
   const root = resolve(config.rootDir);
   const runToken = createRunToken();
   const safeTaskId = safeId(task.id);
@@ -888,6 +900,48 @@ function buildWorkerProfileBlockResult(
       issueUrl: task.issueUrl,
       taskId: task.id,
       outcome: "worker_profile_blocked",
+      validation: {
+        status: "failed",
+        exitCode: 4,
+        signal: null,
+        timedOut: false,
+        artifactCount: 0,
+      },
+      safetyState: {
+        noLiveProviderSend: true,
+        terminalAck: "not_attempted",
+        providerSendIsReceiptEvidence: false,
+      },
+    },
+  };
+}
+
+function buildClaudeCredentialWindowBlockResult(
+  task: RunnerTask,
+  window: { expiresAt?: string; requiredUntil: string },
+): RunnerResult {
+  const normalizedTask = normalizeTask(task);
+  const repo = normalizedTask.repos[0]?.url ?? task.repo ?? "";
+  const blockError = `claude credential expires at ${window.expiresAt ?? "unknown"}, before the task could finish (needs >= ${window.requiredUntil}); `
+    + "the container cannot refresh it (#2234), so the task was not started — retry after a host Claude session refreshes the credential";
+  return {
+    ok: false,
+    taskId: task.id,
+    status: "failed",
+    workDir: "",
+    exitCode: 4,
+    signal: null,
+    stdout: `blocked: ${blockError}`,
+    stderr: "error=claude_credential_window\nfailure_category=claude_credential_window\nretryable=true\n",
+    artifacts: [],
+    error: blockError,
+    github: {
+      schemaVersion: "a2a.runner.github-evidence.v1",
+      repo,
+      issue: task.issue ? (typeof task.issue === "number" ? `#${task.issue}` : String(task.issue)) : undefined,
+      issueUrl: task.issueUrl,
+      taskId: task.id,
+      outcome: "block",
       validation: {
         status: "failed",
         exitCode: 4,

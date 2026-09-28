@@ -55,6 +55,21 @@ if [ -f /run/secrets/claude-credentials.json ]; then
   fi
   printf 'claude_credentials_source=credentials_file_mount\n' | tee -a /work/artifacts/summary.txt
 fi
+# #2234 slice 3: the in-container CLI must never refresh the shared OAuth
+# credential (refreshing rotates the refresh token host sessions also use, and
+# the rotated token is discarded with the container). Strip the refresh-token
+# fields from the private tmpfs copy so the CLI cannot refresh; an expired
+# access token then fails closed inside the container only. The runner gates
+# task start on remaining access-token lifetime (claude_credential_window).
+if [ -f "$CLAUDE_CONFIG_DIR/.credentials.json" ]; then
+  if ! node -e 'const fs=require("node:fs");const p=process.argv[1];const d=JSON.parse(fs.readFileSync(p,"utf8"));const o=d&&typeof d==="object"?d.claudeAiOauth:undefined;if(o&&typeof o==="object"){delete o.refreshToken;delete o.refreshTokenExpiresAt;}fs.writeFileSync(p,JSON.stringify(d),{mode:0o600});fs.chmodSync(p,0o600);' "$CLAUDE_CONFIG_DIR/.credentials.json" 2>/dev/null; then
+    printf 'error=claude_credentials_unparseable\n' | tee -a /work/artifacts/summary.txt
+    printf 'failure_category=claude_credentials_unavailable\n' | tee -a /work/artifacts/summary.txt
+    printf 'The Claude credentials file is not valid JSON; refusing to run with a credential the runner cannot make refresh-safe.\n' | tee /work/artifacts/patch-command.log
+    exit 2
+  fi
+  printf 'claude_credentials_refresh=disabled\n' | tee -a /work/artifacts/summary.txt
+fi
 export A2A_CLAUDE_CODE_PATCH_MODE=fanout
 # #1855 runner context: the runner pipeline owns the checkout/branch and the
 # deterministic post-steps (Auto-patch commit, push, gh pr create). The bridge
