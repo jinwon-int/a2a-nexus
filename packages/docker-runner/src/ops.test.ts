@@ -4,7 +4,7 @@ import { chown, mkdtemp, mkdir, readFile, writeFile, utimes, stat, chmod } from 
 import { execFileSync, spawnSync } from "node:child_process";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { CLAUDE_CREDENTIAL_REFRESH_MARGIN_MS, checkBaseImage, checkClaudeCredentialFreshness, checkDeployedRevision, checkDeployMarker, checkExtraMounts, checkGitHubPatchReadiness, checkSecretMountContainerReadability, cleanup, dropsDacOverride, install, parseContainerUserRef, parseProbeKeyValues } from "./ops.js";
+import { CLAUDE_CREDENTIAL_REFRESH_MARGIN_MS, checkBaseImage, checkClaudeCredentialFreshness, checkContainerHardening, checkDeployedRevision, checkDeployMarker, checkExtraMounts, checkGitHubPatchReadiness, checkSecretMountContainerReadability, cleanup, dropsDacOverride, install, parseContainerUserRef, parseProbeKeyValues } from "./ops.js";
 import type { RunnerConfig } from "./types.js";
 import { buildExampleReadinessInput } from "./openclaw-profile-readiness.js";
 import { loadConfig, projectClaudeCodeTurnBudgets } from "./config.js";
@@ -1475,4 +1475,84 @@ test("#2234 claudeCredentialFreshness recognizes a non-canonical credentials mou
   assert.equal(report.status, "ok");
   assert.equal((report.detail as Record<string, unknown>).source, "credentials_file_mount");
   assertNoTokenLeak(report);
+});
+
+// ─── #2256 A1/A2: effective container hardening + bounded readability scan ──
+
+test("#2256 doctor containerHardening reports the hardened default as ok", () => {
+  const report = checkContainerHardening(readabilityConfig({
+    capDrop: ["ALL"], user: "1000:1000", readOnlyRootFilesystem: true, noNewPrivileges: true, network: "none",
+  }));
+  assert.equal(report.status, "ok");
+  assert.deepEqual(report.detail?.capDrop, ["ALL"]);
+  assert.deepEqual(report.detail?.relaxations, []);
+  assert.equal(report.detail?.mode, "public_safe_default");
+  assert.equal(report.detail?.user, "1000:1000");
+});
+
+test("#2256 doctor containerHardening lists trusted relaxations and warns only on kept capabilities", () => {
+  const relaxed = checkContainerHardening(readabilityConfig({
+    trustedOperator: true, capDrop: ["ALL"], capAdd: ["SYS_ADMIN"], user: undefined, readOnlyRootFilesystem: false, noNewPrivileges: false,
+  }));
+  assert.equal(relaxed.status, "ok");
+  assert.deepEqual(relaxed.detail?.relaxations, ["cap_add", "root_user", "writable_rootfs", "privilege_escalation_allowed"]);
+  assert.equal(relaxed.detail?.mode, "trusted_operator");
+  assert.match(String(relaxed.detail?.user), /root/);
+
+  const rootGroup = checkContainerHardening(readabilityConfig({ trustedOperator: true, capDrop: ["ALL"], user: "0:1000", readOnlyRootFilesystem: true }));
+  assert.deepEqual(rootGroup.detail?.relaxations, ["root_user"], "uid 0 with a group is still a root user");
+
+  const keepsCaps = checkContainerHardening(readabilityConfig({ trustedOperator: true, capDrop: [], user: "1000:1000", readOnlyRootFilesystem: true }));
+  assert.equal(keepsCaps.status, "warn");
+  assert.match(keepsCaps.message, /--cap-drop ALL not set/);
+  assert.deepEqual(keepsCaps.detail?.relaxations, ["cap_drop_without_all"]);
+});
+
+test("#2256 secret-mount readability scans nested credentials to depth 3 and no deeper", async () => {
+  const dir = await mkdtemp(join(tmpdir(), "a2a-secret-depth-"));
+  const profileDir = join(dir, "piri-dir");
+  await mkdir(join(profileDir, "agent"), { recursive: true });
+  await mkdir(join(profileDir, "a", "b", "c"), { recursive: true });
+  await writeFile(join(profileDir, "agent", "auth.json"), "{}");
+  await writeFile(join(profileDir, "a", "b", "c", "too-deep.json"), "{}");
+  const mismatchUid = CURRENT_UID === 4242 ? 4243 : 4242;
+  await chmod(join(profileDir, "agent", "auth.json"), 0o600);
+
+  const report = await checkSecretMountContainerReadability(readabilityConfig({
+    capDrop: ["ALL"],
+    user: `${mismatchUid}:${mismatchUid}`,
+    extraMounts: [{ source: profileDir, target: "/run/secrets/piri-dir", readOnly: true }],
+  }));
+  const entries = report.detail?.entries as Array<Record<string, unknown>>;
+  const sources = entries.map((entry) => String(entry.source));
+  const auth = entries.find((entry) => String(entry.source).endsWith(join("agent", "auth.json")));
+  assert.ok(auth, `depth-2 piri agent/auth.json must be scanned: ${sources.join(",")}`);
+  assert.equal(auth.readable, false);
+  assert.equal(report.status, "fail");
+  assert.ok(sources.some((source) => source.endsWith(join("a", "b", "c"))), "depth-3 directory is scanned");
+  assert.ok(!sources.some((source) => source.endsWith("too-deep.json")), "depth-4 entries are not scanned");
+  assert.equal(report.detail?.truncated, undefined);
+});
+
+test("#2256 secret-mount readability bounds the report and scans breadth-first", async () => {
+  const dir = await mkdtemp(join(tmpdir(), "a2a-secret-bound-"));
+  const profileDir = join(dir, "claude-dir");
+  await mkdir(profileDir);
+  await writeFile(join(profileDir, ".credentials.json"), "{}");
+  for (let i = 0; i < 12; i += 1) {
+    const sub = join(profileDir, `projects-${String(i).padStart(2, "0")}`);
+    await mkdir(sub);
+    for (let j = 0; j < 60; j += 1) await writeFile(join(sub, `h${j}.jsonl`), "{}");
+  }
+
+  const report = await checkSecretMountContainerReadability(readabilityConfig({
+    capDrop: ["ALL"],
+    user: `${CURRENT_UID}:${CURRENT_UID}`,
+    extraMounts: [{ source: profileDir, target: "/run/secrets/claude-dir", readOnly: true }],
+  }));
+  const entries = report.detail?.entries as Array<Record<string, unknown>>;
+  assert.equal(entries.length, 512);
+  assert.equal(report.detail?.truncated, true);
+  assert.equal(report.detail?.entryLimit, 512);
+  assert.ok(entries.slice(0, 14).some((entry) => String(entry.source).endsWith(".credentials.json")), "shallow credential file comes first");
 });
