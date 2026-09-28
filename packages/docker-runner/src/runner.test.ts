@@ -1995,3 +1995,61 @@ test("buildRunArgs rejects a Claude credentials file source containing a comma",
     /must not contain a comma/,
   );
 });
+
+// ─── #2234 slice 3: claude-code start gate + refresh-token strip ────────────
+
+test("#2234 runTask defers a claude-code task whose credential expires inside the task window", async () => {
+  const dir = mkdtempSync(join(tmpdir(), "a2a-claude-gate-"));
+  const creds = join(dir, "host.credentials.json");
+  writeFileSync(creds, JSON.stringify({ claudeAiOauth: { accessToken: "sk-ant-oat01-FAKEACCESS", refreshToken: "sk-ant-ort01-FAKEREFRESH", expiresAt: Date.now() + 60_000 } }));
+  const rootDir = mkdtempSync(join(tmpdir(), "a2a-claude-gate-root-"));
+  const config: RunnerConfig = {
+    ...baseConfig,
+    rootDir,
+    defaultTimeoutMs: 30 * 60 * 1000,
+    commandProfile: "claude-code",
+    extraMounts: [{ source: creds, target: "/run/secrets/claude-credentials.json", readOnly: true }],
+  };
+  const task: RunnerTask = { id: "claude-gate-1", intent: "propose_patch", repo: "example/widgets", commands: [] } as RunnerTask;
+  const result = await runTask(config, task);
+  assert.equal(result.ok, false);
+  assert.equal(result.github?.outcome, "block");
+  assert.match(result.stderr, /failure_category=claude_credential_window/);
+  assert.match(result.stderr, /retryable=true/);
+  assert.equal(result.workDir, "");
+  assert.deepEqual(readdirSyncSafe(rootDir), [], "no workDir is created for a deferred task");
+  const serialized = JSON.stringify(result);
+  assert.ok(!serialized.includes("FAKEACCESS") && !serialized.includes("FAKEREFRESH"), "token values never appear");
+});
+
+function readdirSyncSafe(path: string): string[] {
+  try {
+    return execFileSync("ls", ["-A", path], { encoding: "utf8" }).split("\n").filter(Boolean);
+  } catch {
+    return [];
+  }
+}
+
+test("#2234 claude-code profile strips refresh-token fields from the private credential copy", () => {
+  const profile = readFileSync(fileURLToPath(new URL("../profiles/claude-code.sh", import.meta.url)), "utf8");
+  const match = /node -e '([^']+)' "\$CLAUDE_CONFIG_DIR\/\.credentials\.json"/.exec(profile);
+  assert.ok(match, "strip snippet present in the profile");
+  const snippet = match[1]!;
+  const dir = mkdtempSync(join(tmpdir(), "a2a-claude-strip-"));
+  const file = join(dir, ".credentials.json");
+  writeFileSync(file, JSON.stringify({ claudeAiOauth: { accessToken: "A", refreshToken: "R", refreshTokenExpiresAt: 1, expiresAt: 2, scopes: ["s"] }, other: 1 }), { mode: 0o644 });
+  execFileSync(process.execPath, ["-e", snippet, file]);
+  const after = JSON.parse(readFileSync(file, "utf8"));
+  assert.deepEqual(after, { claudeAiOauth: { accessToken: "A", expiresAt: 2, scopes: ["s"] }, other: 1 });
+  assert.equal(statSync(file).mode & 0o777, 0o600);
+
+  const apiKeyOnly = join(dir, "api.json");
+  writeFileSync(apiKeyOnly, JSON.stringify({ primaryApiKey: "K" }));
+  execFileSync(process.execPath, ["-e", snippet, apiKeyOnly]);
+  assert.deepEqual(JSON.parse(readFileSync(apiKeyOnly, "utf8")), { primaryApiKey: "K" }, "non-OAuth credentials untouched");
+
+  const broken = join(dir, "broken.json");
+  writeFileSync(broken, "{not json");
+  assert.throws(() => execFileSync(process.execPath, ["-e", snippet, broken], { stdio: "pipe" }), (error: { status?: number }) => error.status === 3, "unparseable → exit 3");
+  assert.throws(() => execFileSync(process.execPath, ["-e", snippet, join(dir, "missing.json")], { stdio: "pipe" }), (error: { status?: number }) => error.status === 4, "unreadable → exit 4");
+});

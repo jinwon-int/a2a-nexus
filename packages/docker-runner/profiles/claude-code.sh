@@ -55,6 +55,24 @@ if [ -f /run/secrets/claude-credentials.json ]; then
   fi
   printf 'claude_credentials_source=credentials_file_mount\n' | tee -a /work/artifacts/summary.txt
 fi
+# #2234 slice 3: the in-container CLI must never refresh the shared OAuth
+# credential (refreshing rotates the refresh token host sessions also use, and
+# the rotated token is discarded with the container). Strip the refresh-token
+# fields from the private tmpfs copy so the CLI cannot refresh; an expired
+# access token then fails closed inside the container only. The runner gates
+# task start on remaining access-token lifetime (claude_credential_window).
+if [ -f "$CLAUDE_CONFIG_DIR/.credentials.json" ]; then
+  claude_strip_rc=0
+  node -e 'const fs=require("node:fs");const p=process.argv[1];let d;try{d=JSON.parse(fs.readFileSync(p,"utf8"));}catch(e){process.exit(e instanceof SyntaxError?3:4);}const o=d&&typeof d==="object"?d.claudeAiOauth:undefined;if(o&&typeof o==="object"){delete o.refreshToken;delete o.refreshTokenExpiresAt;}try{fs.writeFileSync(p,JSON.stringify(d),{mode:0o600});fs.chmodSync(p,0o600);}catch{process.exit(4);}' "$CLAUDE_CONFIG_DIR/.credentials.json" 2>/dev/null || claude_strip_rc=$?
+  if [ "$claude_strip_rc" -ne 0 ]; then
+    if [ "$claude_strip_rc" -eq 3 ]; then claude_strip_error=claude_credentials_unparseable; else claude_strip_error=claude_credentials_strip_failed; fi
+    printf 'error=%s\n' "$claude_strip_error" | tee -a /work/artifacts/summary.txt
+    printf 'failure_category=claude_credentials_unavailable\n' | tee -a /work/artifacts/summary.txt
+    printf 'Could not make the Claude credential copy refresh-safe (%s, exit %s); refusing to run.\n' "$claude_strip_error" "$claude_strip_rc" | tee /work/artifacts/patch-command.log
+    exit 2
+  fi
+  printf 'claude_credentials_refresh=disabled\n' | tee -a /work/artifacts/summary.txt
+fi
 export A2A_CLAUDE_CODE_PATCH_MODE=__A2A_PROFILE_patchMode__
 # #1855 runner context: the runner pipeline owns the checkout/branch and the
 # deterministic post-steps (Auto-patch commit, push, gh pr create). The bridge

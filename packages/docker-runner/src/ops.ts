@@ -1247,10 +1247,63 @@ export async function checkExtraMounts(config: RunnerConfig): Promise<OpsCheck> 
 }
 
 /**
- * The in-container CLI refreshes shortly before expiry, not exactly at it, so a
- * credential that expires just after the task timeout can still be rotated.
+ * Safety margin on top of the task timeout. The in-container CLI can no
+ * longer refresh (#2234 slice 3 strips the refresh token), so the access
+ * token must outlive the whole task plus this margin or the task is deferred.
  */
 export const CLAUDE_CREDENTIAL_REFRESH_MARGIN_MS = 10 * 60 * 1000;
+
+/** Where the effective Claude OAuth credential for a claude-code task lives. */
+export function resolveClaudeCredentialLocation(config: RunnerConfig): {
+  source: "credentials_file_mount" | "config_dir_copy";
+  effectivePath?: string;
+  dirCopyPath?: string;
+  hasFileMount: boolean;
+} {
+  const mounts = config.extraMounts ?? [];
+  const credentialsFileMount = mounts.find((mount) => normalizeContainerPath(mount.target) === CLAUDE_CREDENTIALS_FILE_MOUNT_TARGET);
+  const configDirMount = mounts.find((mount) => normalizeContainerPath(mount.target) === CLAUDE_CODE_PROFILE_MOUNT_PATH);
+  const configDir = configDirMount?.source ?? config.claudeCodeProfile?.configDir;
+  const dirCopyPath = configDir ? join(resolve(configDir), ".credentials.json") : undefined;
+  return {
+    source: credentialsFileMount ? "credentials_file_mount" : "config_dir_copy",
+    effectivePath: credentialsFileMount ? resolve(credentialsFileMount.source) : dirCopyPath,
+    dirCopyPath,
+    hasFileMount: Boolean(credentialsFileMount),
+  };
+}
+
+/**
+ * #2234 slice 3 start gate: a claude-code task may start only when the
+ * effective access token outlives `taskTimeoutMs + CLAUDE_CREDENTIAL_REFRESH_MARGIN_MS`.
+ * Returns `blocked: true` only for a KNOWN short/expired lifetime; a missing or
+ * unparseable credential is left to the profile's own fail-closed checks.
+ * Only `claudeAiOauth.expiresAt` is read; token values are never returned.
+ */
+export async function evaluateClaudeCredentialWindow(
+  config: RunnerConfig,
+  taskTimeoutMs: number,
+  nowMs = Date.now(),
+): Promise<{ blocked: boolean; expiresAt?: string; requiredUntil: string; remainingMs?: number }> {
+  const requiredUntilMs = nowMs + taskTimeoutMs + CLAUDE_CREDENTIAL_REFRESH_MARGIN_MS;
+  const requiredUntil = new Date(requiredUntilMs).toISOString();
+  const { effectivePath } = resolveClaudeCredentialLocation(config);
+  if (!effectivePath) return { blocked: false, requiredUntil };
+  let raw: Buffer;
+  try {
+    raw = await readFile(effectivePath);
+  } catch {
+    return { blocked: false, requiredUntil };
+  }
+  const expiresAtMs = parseClaudeOauthExpiresAt(raw);
+  if (expiresAtMs === undefined) return { blocked: false, requiredUntil };
+  return {
+    blocked: expiresAtMs <= requiredUntilMs,
+    expiresAt: new Date(expiresAtMs).toISOString(),
+    requiredUntil,
+    remainingMs: expiresAtMs - nowMs,
+  };
+}
 
 function normalizeContainerPath(value: string): string {
   return value.replace(/\/+/g, "/").replace(/\/$/, "") || "/";
@@ -1270,15 +1323,12 @@ export async function checkClaudeCredentialFreshness(config: RunnerConfig, nowMs
   if (config.commandProfile !== "claude-code") {
     return { status: "skip", message: "claude credential freshness applies only to the claude-code profile" };
   }
-  const mounts = config.extraMounts ?? [];
-  const credentialsFileMount = mounts.find((mount) => normalizeContainerPath(mount.target) === CLAUDE_CREDENTIALS_FILE_MOUNT_TARGET);
-  const configDirMount = mounts.find((mount) => normalizeContainerPath(mount.target) === CLAUDE_CODE_PROFILE_MOUNT_PATH);
-  const configDir = configDirMount?.source ?? config.claudeCodeProfile?.configDir;
-  const dirCopyPath = configDir ? join(resolve(configDir), ".credentials.json") : undefined;
-  const effectivePath = credentialsFileMount ? resolve(credentialsFileMount.source) : dirCopyPath;
+  const location = resolveClaudeCredentialLocation(config);
+  const { dirCopyPath, effectivePath } = location;
+  const credentialsFileMount = location.hasFileMount;
   const taskTimeoutMs = config.defaultTimeoutMs;
   const detail: Record<string, unknown> = {
-    source: credentialsFileMount ? "credentials_file_mount" : "config_dir_copy",
+    source: location.source,
     path: effectivePath,
     taskTimeoutMs,
     refreshMarginMs: CLAUDE_CREDENTIAL_REFRESH_MARGIN_MS,
@@ -1319,10 +1369,10 @@ export async function checkClaudeCredentialFreshness(config: RunnerConfig, nowMs
   let message: string;
   if (expiresAtMs <= nowMs) {
     status = "warn";
-    message = "claude credential is already expired; the in-container CLI will refresh and rotate the shared OAuth token";
+    message = "claude credential is already expired; claude-code tasks are deferred (claude_credential_window) until a host session refreshes it";
   } else if (expiresAtMs <= nowMs + taskTimeoutMs + CLAUDE_CREDENTIAL_REFRESH_MARGIN_MS) {
     status = "warn";
-    message = "claude credential expires within the runner task timeout plus refresh margin; the in-container CLI would refresh and rotate the shared OAuth token";
+    message = "claude credential expires within the runner task timeout plus refresh margin; claude-code tasks are deferred (claude_credential_window) until a host session refreshes it";
   } else {
     status = "ok";
     message = "claude credential outlives the runner task timeout";
