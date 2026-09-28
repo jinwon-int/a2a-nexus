@@ -580,7 +580,11 @@ function extractFirstMatch(result: RunnerResult, patterns: RegExp[]): string | u
   const text = `${result.stdout}\n${result.stderr}`;
   for (const pattern of patterns) {
     const match = text.match(pattern);
-    if (match?.[1]) return sanitizeCommentText(match[1]).slice(0, 200);
+    // Extracted values (branch names, SHAs, URLs) feed PR verification, so they
+    // keep the light pre-#2256-A4 sanitization: the full redactor's private-path
+    // rule would turn a branch like `feat/home/x` into `feat<private-dir>` and
+    // break head-ref matching. Only tokens/Authorization are scrubbed here.
+    if (match?.[1]) return sanitizeExtractedValue(match[1]).slice(0, 200);
   }
   return undefined;
 }
@@ -1301,7 +1305,21 @@ function sanitizeArtifactPath(path: string): string {
  * rewrite. It has no generic long-hex rule, so commit SHAs stay intact.
  */
 function sanitizeCommentText(text: string): string {
-  return sanitizeArtifactPath(redactSecrets(text));
+  return sanitizeArtifactPath(redactSecrets(stripAnsiSequences(text)));
+}
+
+/** Remove ANSI CSI/OSC escape sequences (colored test output) before redaction. */
+function stripAnsiSequences(text: string): string {
+  return text
+    .replace(/\u001b\][^\u0007\u001b]*(?:\u0007|\u001b\\)/g, "")
+    .replace(/\u001b\[[0-9;?]*[ -/]*[@-~]/g, "");
+}
+
+function sanitizeExtractedValue(text: string): string {
+  return sanitizeArtifactPath(text)
+    .replace(/gh[pousr]_[A-Za-z0-9_]{20,}/g, "<redacted-github-token>")
+    .replace(/github_pat_[A-Za-z0-9_]{20,}/g, "<redacted-github-token>")
+    .replace(/(Authorization:\s*(?:Bearer|token)\s+)[^\s]+/gi, "$1<redacted>");
 }
 
 function truncate(s: string, maxLen: number): string {

@@ -1337,3 +1337,23 @@ test("#2256 A4 block comment body runs the full runner secret redactor, keeps co
   }
   assert.ok(body.includes(sha), "commit SHAs must survive in GitHub evidence");
 });
+
+test("#2256 A4 comment text strips ANSI escapes instead of inflating them into markers", () => {
+  const body = buildBlockCommentBody(baseTask, {
+    ok: false, taskId: "t-ansi", status: "failed", workDir: "", exitCode: 1, signal: null,
+    stdout: "\u001b[31mFAIL\u001b[0m test/foo", stderr: "\u001b]0;title\u0007plain", artifacts: [],
+  });
+  assert.equal(body.includes("\u001b"), false);
+  assert.equal(body.includes("<redacted-control>"), false);
+  assert.ok(body.includes("FAIL"));
+});
+
+test("#2256 A4 extracted branch names keep path-like segments (verification input, not comment text)", async () => {
+  const task: NormalizedRunnerTask = { ...baseTask, intent: "verify", mode: "github-verify" };
+  const result = {
+    ok: true, taskId: "t-branch", status: "completed" as const, workDir: "/tmp",
+    exitCode: 0, signal: null, stdout: "pushed_branch=feat/home/landing\n", stderr: "", artifacts: [],
+  };
+  const evidence = await collectGitHubEvidence({ ...baseConfig, githubTokenFile: undefined }, task, result);
+  assert.equal(evidence?.branch, "feat/home/landing");
+});

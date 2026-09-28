@@ -83,7 +83,7 @@ Mobile clients (Android Termux, iOS) experience frequent brief disconnects. A mo
 
 **Broker changes:**
 1. Change `cache-control` from `no-cache` to `no-cache, no-store`
-2. Add `Access-Control-Allow-Origin: *` and related CORS headers for SSE route
+2. ~~Add `Access-Control-Allow-Origin: *` and related CORS headers for SSE route~~ — superseded by #2256 A5: SSE sends no CORS headers by default; exact origins listed in `A2A_SSE_ALLOWED_ORIGINS` are echoed with `Vary: Origin`, and the edge secret is never advertised as an allowed header
 3. Document recommended proxy timeouts for common platforms (nginx, Caddy, Cloudflare)
 
 ### Priority 3 — Client Guidance (addresses F2, F4, F7)
