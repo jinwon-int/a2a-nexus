@@ -1314,3 +1314,46 @@ test("done/block evidence markers stay byte-identical after widening to start", 
   assert.ok(block.includes("<!-- a2a:github-evidence:v1 task=test-task issue=jinwon-int/test-repo#1 outcome=block -->"));
   assert.ok(done.includes("<!-- a2a:github-evidence:v1 task=test-task issue=jinwon-int/test-repo#1 outcome=done -->"));
 });
+
+test("#2256 A4 block comment body runs the full runner secret redactor, keeps commit SHAs", () => {
+  const sk = ["sk", "live0123456789abcdefghijklmnopqrstuvwxyz"].join("-");
+  const xai = ["xai", "0123456789abcdefghijklmnopqrstuvwxyz0123456789"].join("-");
+  const sha = "fedcba9876543210fedcba9876543210fedcba98";
+  const leaky = `MY_SERVICE_TOKEN=supersecretvalue\n{"api_key": "jsonsecretvalue"}\n${sk}\n${xai}\ncommit ${sha}\nnotify telegram:-1001234567890\n/home/alice/.ssh/id_ed25519`;
+  const body = buildBlockCommentBody(baseTask, {
+    ok: false,
+    taskId: "t-a4",
+    status: "failed",
+    workDir: "",
+    exitCode: 1,
+    signal: null,
+    stdout: leaky,
+    stderr: leaky,
+    artifacts: [],
+    error: leaky,
+  });
+  for (const secret of ["supersecretvalue", "jsonsecretvalue", sk, xai, "-1001234567890", "/home/alice"]) {
+    assert.equal(body.includes(secret), false, `comment body leaked ${secret}`);
+  }
+  assert.ok(body.includes(sha), "commit SHAs must survive in GitHub evidence");
+});
+
+test("#2256 A4 comment text strips ANSI escapes instead of inflating them into markers", () => {
+  const body = buildBlockCommentBody(baseTask, {
+    ok: false, taskId: "t-ansi", status: "failed", workDir: "", exitCode: 1, signal: null,
+    stdout: "\u001b[31mFAIL\u001b[0m test/foo", stderr: "\u001b]0;title\u0007plain", artifacts: [],
+  });
+  assert.equal(body.includes("\u001b"), false);
+  assert.equal(body.includes("<redacted-control>"), false);
+  assert.ok(body.includes("FAIL"));
+});
+
+test("#2256 A4 extracted branch names keep path-like segments (verification input, not comment text)", async () => {
+  const task: NormalizedRunnerTask = { ...baseTask, intent: "verify", mode: "github-verify" };
+  const result = {
+    ok: true, taskId: "t-branch", status: "completed" as const, workDir: "/tmp",
+    exitCode: 0, signal: null, stdout: "pushed_branch=feat/home/landing\n", stderr: "", artifacts: [],
+  };
+  const evidence = await collectGitHubEvidence({ ...baseConfig, githubTokenFile: undefined }, task, result);
+  assert.equal(evidence?.branch, "feat/home/landing");
+});

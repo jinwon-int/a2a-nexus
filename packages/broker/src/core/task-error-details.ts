@@ -59,6 +59,14 @@ export interface FailureReadbackDetails {
 const GITHUB_CLASSIC_TOKEN_PATTERN = new RegExp("gh[pousr]" + "_" + "[A-Za-z0-9_]{20,}", "g");
 const GITHUB_FINE_GRAINED_TOKEN_PATTERN = new RegExp("github" + "_pat" + "_" + "[A-Za-z0-9_]{20,}", "g");
 
+/**
+ * Shared broker secret redactor for repo-visible text (failure readback and
+ * GitHub projections, #2256 A4). No generic long-hex rule: commit SHAs survive.
+ */
+export function redactSecretText(value: string): string {
+  return redactSecrets(value);
+}
+
 function redactSecrets(value: string): string {
   return value
     // GitHub tokens (classic, fine-grained, app/user/server tokens).

@@ -189,7 +189,20 @@ describe("redactSensitive", () => {
       (out as { details: string }).details.includes("ghp_"),
       false,
     );
-    assert.match((out as { details: string }).details, /\[REDACTED\]/);
+    assert.match((out as { details: string }).details, /<redacted-github-token>/);
+  });
+
+  it("#2256 A4: string values get the full broker secret redactor, commit SHAs survive", () => {
+    const sk = ["sk", "live0123456789abcdefghijklmnopqrstuv"].join("-");
+    const sha = "0123456789abcdef0123456789abcdef01234567";
+    const out = redactSensitive({
+      details: `Authorization: Bearer abc.def.ghi\nOPENAI key ${sk}\nMY_API_KEY=supersecretvalue\ncommit ${sha}\nping telegram:-1001234567890`,
+    }) as { details: string };
+    assert.equal(out.details.includes("abc.def.ghi"), false);
+    assert.equal(out.details.includes(sk), false);
+    assert.equal(out.details.includes("supersecretvalue"), false);
+    assert.equal(out.details.includes("-1001234567890"), false);
+    assert.ok(out.details.includes(sha), "40-hex commit SHAs are evidence and must survive");
   });
 
   it("recurses into nested objects and arrays", () => {

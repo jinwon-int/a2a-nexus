@@ -2,9 +2,9 @@ import assert from "node:assert/strict";
 import type { IncomingMessage, ServerResponse } from "node:http";
 import test from "node:test";
 
-import { writeSseEvent, writeSseResponseHeaders } from "./sse.js";
+import { resolveSseCorsOrigin, writeSseEvent, writeSseResponseHeaders } from "./sse.js";
 
-function createResponseDouble(): {
+function createResponseDouble(origin?: string): {
   res: ServerResponse<IncomingMessage>;
   writes: string[];
   statusCode: number | null;
@@ -19,6 +19,7 @@ function createResponseDouble(): {
   let writableEnded = false;
 
   const res = {
+    req: { headers: origin === undefined ? {} : { origin } },
     get writableEnded() {
       return writableEnded;
     },
@@ -65,11 +66,48 @@ test("SSE response helper writes event-stream headers and retry advisory (#788)"
     "cache-control": "no-cache, no-store, no-transform",
     connection: "keep-alive",
     "x-accel-buffering": "no",
-    "access-control-allow-origin": "*",
-    "access-control-allow-headers": "Last-Event-ID, x-a2a-requester-id, x-a2a-edge-secret",
   });
   assert.equal(response.flushed, true);
   assert.deepEqual(response.writes, ["retry: 3000\n\n"]);
+});
+
+test("#2256 A5 SSE sends no CORS headers by default and never advertises the edge secret", () => {
+  const previous = process.env.A2A_SSE_ALLOWED_ORIGINS;
+  delete process.env.A2A_SSE_ALLOWED_ORIGINS;
+  try {
+    const response = createResponseDouble("https://evil.example");
+    writeSseResponseHeaders(response.res);
+    const headers = response.headers ?? {};
+    assert.equal(headers["access-control-allow-origin"], undefined);
+    assert.equal(JSON.stringify(headers).includes("x-a2a-edge-secret"), false);
+  } finally {
+    if (previous === undefined) delete process.env.A2A_SSE_ALLOWED_ORIGINS;
+    else process.env.A2A_SSE_ALLOWED_ORIGINS = previous;
+  }
+});
+
+test("#2256 A5 SSE echoes only an allowlisted origin, with Vary: Origin", () => {
+  const previous = process.env.A2A_SSE_ALLOWED_ORIGINS;
+  process.env.A2A_SSE_ALLOWED_ORIGINS = "https://dash.example, https://ops.example";
+  try {
+    const allowed = createResponseDouble("https://ops.example");
+    writeSseResponseHeaders(allowed.res);
+    assert.equal(allowed.headers?.["access-control-allow-origin"], "https://ops.example");
+    assert.equal(allowed.headers?.vary, "Origin");
+    assert.equal(allowed.headers?.["access-control-allow-headers"], "Last-Event-ID");
+
+    const denied = createResponseDouble("https://evil.example");
+    writeSseResponseHeaders(denied.res);
+    assert.equal(denied.headers?.["access-control-allow-origin"], undefined);
+  } finally {
+    if (previous === undefined) delete process.env.A2A_SSE_ALLOWED_ORIGINS;
+    else process.env.A2A_SSE_ALLOWED_ORIGINS = previous;
+  }
+  assert.equal(resolveSseCorsOrigin("https://a.example", "https://a.example"), "https://a.example");
+  assert.equal(resolveSseCorsOrigin("https://a.example.evil", "https://a.example"), undefined, "exact match only");
+  assert.equal(resolveSseCorsOrigin("null", "null"), undefined, "opaque origins are never allowed");
+  assert.equal(resolveSseCorsOrigin(undefined, "https://a.example"), undefined);
+  assert.equal(resolveSseCorsOrigin("https://a.example", undefined), undefined);
 });
 
 test("SSE event helper serializes optional id, event name, and JSON data (#788)", () => {

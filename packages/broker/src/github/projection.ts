@@ -57,6 +57,7 @@
  */
 
 import type { TaskRecord, TaskStatus } from "../core/types.js";
+import { redactSecretText } from "../core/task-error-details.js";
 
 export type GitHubStatusMarker = "Start" | "Block" | "PR" | "Done";
 
@@ -203,8 +204,6 @@ function extractPullRequestUrl(task: TaskRecord): string | null {
 // ---------------------------------------------------------------------------
 
 const SENSITIVE_KEY_RE = /(token|secret|api[_-]?key|password|credential|authorization)/i;
-// Common token-like values worth scrubbing even when the key is innocuous.
-const TOKEN_VALUE_RE = /\b(?:ghp_|gho_|ghu_|ghs_|ghr_|github_pat_)[A-Za-z0-9_]+/g;
 
 export function redactSensitive(value: unknown): unknown {
   if (value === null || value === undefined) return value;
@@ -223,6 +222,12 @@ export function redactSensitive(value: unknown): unknown {
   return out;
 }
 
+/**
+ * #2256 A4: string values in GitHub projections get the same broker secret
+ * redactor as failure readback (GitHub/xai/sk/sm tokens, Authorization
+ * headers, key=value/JSON secrets, provider targets, emails/phones, private
+ * paths) instead of a GitHub-token-only pattern.
+ */
 function redactString(value: string): string {
-  return value.replace(TOKEN_VALUE_RE, "[REDACTED]");
+  return redactSecretText(value);
 }
