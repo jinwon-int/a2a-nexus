@@ -2050,5 +2050,6 @@ test("#2234 claude-code profile strips refresh-token fields from the private cre
 
   const broken = join(dir, "broken.json");
   writeFileSync(broken, "{not json");
-  assert.throws(() => execFileSync(process.execPath, ["-e", snippet, broken], { stdio: "pipe" }), "unparseable credential fails");
+  assert.throws(() => execFileSync(process.execPath, ["-e", snippet, broken], { stdio: "pipe" }), (error: { status?: number }) => error.status === 3, "unparseable → exit 3");
+  assert.throws(() => execFileSync(process.execPath, ["-e", snippet, join(dir, "missing.json")], { stdio: "pipe" }), (error: { status?: number }) => error.status === 4, "unreadable → exit 4");
 });

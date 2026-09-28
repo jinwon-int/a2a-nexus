@@ -62,10 +62,13 @@ fi
 # access token then fails closed inside the container only. The runner gates
 # task start on remaining access-token lifetime (claude_credential_window).
 if [ -f "$CLAUDE_CONFIG_DIR/.credentials.json" ]; then
-  if ! node -e 'const fs=require("node:fs");const p=process.argv[1];const d=JSON.parse(fs.readFileSync(p,"utf8"));const o=d&&typeof d==="object"?d.claudeAiOauth:undefined;if(o&&typeof o==="object"){delete o.refreshToken;delete o.refreshTokenExpiresAt;}fs.writeFileSync(p,JSON.stringify(d),{mode:0o600});fs.chmodSync(p,0o600);' "$CLAUDE_CONFIG_DIR/.credentials.json" 2>/dev/null; then
-    printf 'error=claude_credentials_unparseable\n' | tee -a /work/artifacts/summary.txt
+  claude_strip_rc=0
+  node -e 'const fs=require("node:fs");const p=process.argv[1];let d;try{d=JSON.parse(fs.readFileSync(p,"utf8"));}catch(e){process.exit(e instanceof SyntaxError?3:4);}const o=d&&typeof d==="object"?d.claudeAiOauth:undefined;if(o&&typeof o==="object"){delete o.refreshToken;delete o.refreshTokenExpiresAt;}try{fs.writeFileSync(p,JSON.stringify(d),{mode:0o600});fs.chmodSync(p,0o600);}catch{process.exit(4);}' "$CLAUDE_CONFIG_DIR/.credentials.json" 2>/dev/null || claude_strip_rc=$?
+  if [ "$claude_strip_rc" -ne 0 ]; then
+    if [ "$claude_strip_rc" -eq 3 ]; then claude_strip_error=claude_credentials_unparseable; else claude_strip_error=claude_credentials_strip_failed; fi
+    printf 'error=%s\n' "$claude_strip_error" | tee -a /work/artifacts/summary.txt
     printf 'failure_category=claude_credentials_unavailable\n' | tee -a /work/artifacts/summary.txt
-    printf 'The Claude credentials file is not valid JSON; refusing to run with a credential the runner cannot make refresh-safe.\n' | tee /work/artifacts/patch-command.log
+    printf 'Could not make the Claude credential copy refresh-safe (%s, exit %s); refusing to run.\n' "$claude_strip_error" "$claude_strip_rc" | tee /work/artifacts/patch-command.log
     exit 2
   fi
   printf 'claude_credentials_refresh=disabled\n' | tee -a /work/artifacts/summary.txt
