@@ -817,9 +817,13 @@ The forms layer has its **own** closed failure vocabulary. It is a separate
 namespace from the frozen advice enum `ROUTING_REASON_CODES` (`matched`,
 `not_applicable`, and the five `defer` reasons), which is unchanged: forms
 codes never appear in a `a2a.routing-advice.v1` output, and advice reasons
-never appear in a forms failure. Forms codes are also distinct from the
-entrypoint's receipt `reasonCodes`; when the forms layer succeeds, the
-entrypoint's receipt is returned unmodified and its codes are authoritative.
+never appear in a forms failure. Forms failures are also a separate
+**channel** from entrypoint receipts: a forms failure is the closed
+`{ ok: false, reasonCodes, missingFields, invalidFields }` shape with no
+`state`, and is returned before any entrypoint is called. A code may share
+its spelling with an entrypoint code (row 4). When the forms layer succeeds,
+the entrypoint receipt is returned unmodified and its codes are
+authoritative.
 
 Every forms failure carries **exactly one** code in `reasonCodes`. Checks run
 in the order below and the first failing check wins (fail-closed ordering), so
@@ -828,12 +832,12 @@ required field, and a missing reference is reported before a malformed one:
 
 | Order | Code | Raised by | `missingFields` / `invalidFields` | Relation to the entrypoint vocabulary |
 | --- | --- | --- | --- | --- |
-| 1 | `invalid_descriptor` | `buildAssignmentRequest` | `[]` / `[]` | none — descriptor is not a well-formed frozen projection (shape, `schemaVersion`, `advisoryOnly`, `dispatchAllowed`, `templateId`, `requiredHostFields`) |
-| 2 | `projection_not_convertible` | `buildAssignmentRequest` | `[]` / `[]` | none — `projection` is `none` or `blocked` |
+| 1 | `invalid_descriptor` | `buildAssignmentRequest` | `[]` / `[]` | none — descriptor is not a well-formed frozen projection (not an object, wrong `schemaVersion`, `advisoryOnly !== true`, `dispatchAllowed !== false`, missing/blank `projection` or `templateId`, `requiredHostFields` not a non-empty array of nonblank names) |
+| 2 | `projection_not_convertible` | `buildAssignmentRequest` | `[]` / `[]` | none — any nonblank `projection` other than `template_descriptor` (for example `none` or `blocked`) |
 | 3 | `invalid_descriptor` | `buildAssignmentRequest` | `[]` / `[]` | none — convertible projection without a pinned `template` object |
 | 4 | `untrusted_broker_or_secret_input` | `buildAssignmentRequest` | `[]` / `request.<key>` per offending key | same code and same `request.<key>` field naming as `normalizeAssignRequest` |
 | 5 | `invalid_descriptor` | `buildAssignmentRequest` | `[]` / `[]` | none — existing-reference template whose `requiredHostFields` names no `existingTaskReference` / `existingRequestReference` |
-| 6a | `missing_required_fields` | `buildAssignmentRequest` (new-task templates) | exact dotted required-field names / `[]` | the entrypoint expresses the same condition as a `needs_input` receipt whose `missingFields` uses the same names, with no dedicated reason code; the forms layer names it so a failure is never code-less |
+| 6a | `missing_required_fields` | `buildAssignmentRequest` (new-task templates) | exact dotted required-field names / `[]` | for request fields (`requestId`, `objective`, `requestRef`, `target.*`) the entrypoint reports the same condition as a `needs_input` receipt with the same `missingFields` names and no dedicated reason code (it may add a bare `target` entry when `target` is absent); `host.*` contract names are checked only by the forms layer. The forms layer names the condition so a failure is never code-less |
 | 6b | `existing_reference_missing` | `buildAssignmentRequest` (observe/resume templates) | exact required-field names / `[]` | none — existing references are host-owned; never minted |
 | 7 | `invalid_existing_reference` | `buildAssignmentRequest` (observe/resume templates) | `[]` / `request.requestId` | mirrors the entrypoint's request-id shape rejection (`invalidFields: ['requestId']` → `invalid_request_fields`) before `resumeAssignment` is called |
 | 8 | `journal_missing` | `prepareRoutingAssignment` (observe/resume templates, after a successful build) | `journal` / `[]` | none — raised before `resumeAssignment` is called |
@@ -861,6 +865,8 @@ wraps that code. A lane contradicts its kind when:
 - `kind: 'patch'` and the lane has `intent: 'analyze'` or `payload.mode` in
   `analysis-only` / `github-verify` / `read-only-analysis`.
 
+Both values are compared after trimming surrounding whitespace.
+
 Normalization then fails before any readiness resolution or network access,
 and `prepareRoutingAssignment` returns the entrypoint receipt unmodified,
 with this shape:
@@ -871,9 +877,13 @@ with this shape:
 | `reasonCodes` | contains `kind_lane_mismatch` (one entry per contradicting lane) and `invalid_request_fields` |
 | `missingFields` | whatever else normalization found missing (empty for an otherwise complete host context) |
 | `nextAction.code` | `provide_missing_fields` |
-| `nextAction.detail` | `invalid fields: lanes[<index>]`, listing lane indexes only and never lane content |
+| `nextAction.detail` | `invalid fields: <names>` — every normalization `invalidFields` entry, so `lanes[<index>]` for each contradicting lane (indexes only, never lane content) plus any other invalid field names |
 | `taskIds` / `lanes` | `[]` / `[]` |
 | `planDigest`, `readiness` | absent (normalization fails before planning or readiness) |
+
+The table lists the contract-relevant fields. Receipt fields common to every
+entrypoint receipt (for example `schemaVersion`, `requestId`, and the timeline)
+keep their usual meaning.
 
 Network and POST counts are both zero. Tests for this path cite this section
 rather than observed behavior.

@@ -567,12 +567,41 @@ describe('forms reason codes match the spec named set (#2265)', () => {
     const result = buildAssignmentRequest(patchDescriptor(), { brokerUrl: 'http://127.0.0.1:9' });
     assert.deepEqual([...result.reasonCodes], ['untrusted_broker_or_secret_input']);
     assert.deepEqual([...result.missingFields], []);
+    assert.deepEqual([...result.invalidFields], ['request.brokerUrl']);
+  });
+
+  it('reports a missing reference before a malformed one (spec ordering 6b before 7)', () => {
+    const missing = buildAssignmentRequest(
+      {
+        ...analysisDescriptor(),
+        templateId: 'resume_existing',
+        requiredHostFields: ['existingRequestReference'],
+        template: { mintsNewId: false },
+      },
+      {},
+    );
+    assert.deepEqual([...missing.reasonCodes], ['existing_reference_missing']);
+    assert.deepEqual([...missing.missingFields], ['existingRequestReference']);
+    const malformed = buildAssignmentRequest(
+      {
+        ...analysisDescriptor(),
+        templateId: 'resume_existing',
+        requiredHostFields: ['existingRequestReference'],
+        template: { mintsNewId: false },
+      },
+      { existingRequestReference: '../not-an-id' },
+    );
+    assert.deepEqual([...malformed.reasonCodes], ['invalid_existing_reference']);
+    assert.deepEqual([...malformed.invalidFields], ['request.requestId']);
   });
 });
 
 describe('lane-mismatch receipt shape is the spec shape (#2266)', () => {
   it('returns the entrypoint needs_input receipt described in the spec, with zero network', async () => {
-    specSection('### Lane-mismatch receipt shape (entrypoint-authoritative, #2266)');
+    const section = specSection('### Lane-mismatch receipt shape (entrypoint-authoritative, #2266)');
+    for (const pinned of ['`needs_input`', '`kind_lane_mismatch`', '`invalid_request_fields`', '`provide_missing_fields`']) {
+      assert.ok(section.includes(pinned), `spec receipt table must name ${pinned}`);
+    }
     let fetches = 0;
     const built = buildAssignmentRequest(
       analysisDescriptor(),
