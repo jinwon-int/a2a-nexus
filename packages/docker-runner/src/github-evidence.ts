@@ -1,6 +1,7 @@
 import { readFile } from "node:fs/promises";
 import { existsSync } from "node:fs";
 import { buildEmbeddedModelTimeoutSummary, detectEmbeddedModelTimeoutNoFallback } from "./failure-classification.js";
+import { redactSecrets } from "./redaction.js";
 import type { GitHubCommentLedger, GitHubEvidence, NormalizedRunnerTask, RunnerConfig, RunnerResult, RunnerTask } from "./types.js";
 
 /** Task fields that identify an issue evidence marker; satisfied by raw and normalized tasks. */
@@ -1293,11 +1294,14 @@ function sanitizeArtifactPath(path: string): string {
     .replace(/\/var\/folders\/[^\s)`]+/g, "<tmp-artifact>");
 }
 
+/**
+ * GitHub comment bodies are public egress (#2256 A4): run the runner's full
+ * secret redactor (GitHub/xai/sk/sm tokens, Authorization headers, key=value
+ * and JSON secrets, private paths, provider targets) before the artifact-path
+ * rewrite. It has no generic long-hex rule, so commit SHAs stay intact.
+ */
 function sanitizeCommentText(text: string): string {
-  return sanitizeArtifactPath(text)
-    .replace(/gh[pousr]_[A-Za-z0-9_]{20,}/g, "<redacted-github-token>")
-    .replace(/github_pat_[A-Za-z0-9_]{20,}/g, "<redacted-github-token>")
-    .replace(/(Authorization:\s*(?:Bearer|token)\s+)[^\s]+/gi, "$1<redacted>");
+  return sanitizeArtifactPath(redactSecrets(text));
 }
 
 function truncate(s: string, maxLen: number): string {
