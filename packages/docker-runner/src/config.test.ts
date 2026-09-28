@@ -1747,7 +1747,7 @@ test("#2256 A1/A2 public mode rejects explicit container relaxations", async () 
     () => loadConfig({ ...baseEnv, A2A_DOCKER_RUNNER_CAP_DROP: "NET_RAW" }),
     /public safe-default policy requires --cap-drop ALL/,
   );
-  for (const user of ["root", "0", "ROOT", "root:root", "0:0"]) {
+  for (const user of ["root", "0", "ROOT", "root:root", "0:0", "00", " 0 ", "000:0", "0:1000"]) {
     await assert.rejects(
       () => loadConfig({ ...baseEnv, A2A_DOCKER_RUNNER_USER: user }),
       /public safe-default policy rejects a root container user/,
@@ -1783,6 +1783,16 @@ test("#2256 A1/A2 trusted mode may relax container defaults only via explicit en
     A2A_DOCKER_RUNNER_CAP_DROP: "ALL,NET_RAW",
   });
   assert.deepEqual(explicitList.capDrop, ["ALL", "NET_RAW"]);
+  const canonical = await loadConfig({ ...baseEnv, A2A_DOCKER_RUNNER_CAP_DROP: "cap_all" });
+  assert.deepEqual(canonical.capDrop, ["ALL"], "all/CAP_ALL spellings are canonicalized to the engine literal");
+  await assert.rejects(
+    () => loadConfig({ ...baseEnv, A2A_DOCKER_RUNNER_TRUSTED_OPERATOR: "1", A2A_DOCKER_RUNNER_CAP_DROP: "none,ALL" }),
+    /A2A_DOCKER_RUNNER_CAP_DROP=none cannot be combined/,
+  );
+  const rootWithGroup = await loadConfig({ ...baseEnv, A2A_DOCKER_RUNNER_TRUSTED_OPERATOR: "1", A2A_DOCKER_RUNNER_USER: "0:1000" });
+  assert.equal(rootWithGroup.user, "0:1000", "an explicit gid on a root user is preserved");
+  const bareZeros = await loadConfig({ ...baseEnv, A2A_DOCKER_RUNNER_TRUSTED_OPERATOR: "1", A2A_DOCKER_RUNNER_USER: "00" });
+  assert.equal(bareZeros.user, undefined);
   assert.doesNotThrow(() => validateRunnerConfig(validConfig({ trustedOperator: true, capDrop: [], user: undefined, readOnlyRootFilesystem: false })));
 });
 

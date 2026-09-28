@@ -63,3 +63,11 @@ mode (`--cap-drop ALL`, `--user 1000:1000`, `--read-only`) and rejects explicit
 relaxations. Public setups that set `A2A_DOCKER_RUNNER_USER=root`,
 `A2A_DOCKER_RUNNER_READ_ONLY_ROOTFS=0`, or `A2A_DOCKER_RUNNER_CAP_DROP=none`
 must remove them or become an explicit trusted-operator lane.
+
+The container user must be able to write the task workDir. The runner
+`chown`s it to the container user when it can. That works for the reference
+setup, where the runner service runs as root with rootful Docker. With a
+non-root Docker runner, set `A2A_DOCKER_RUNNER_USER=<runner uid>:<runner gid>`
+so host-side artifact writes still succeed. Rootless Podman maps only
+container root to the runner uid, so public mode, which rejects root, is not
+supported there; use a rootful engine or an explicit trusted-operator lane.

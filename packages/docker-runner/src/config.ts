@@ -732,22 +732,24 @@ function normalizeDefaultTrue(value: string | undefined, enabledByDefault: boole
 export const DEFAULT_CONTAINER_USER = "1000:1000";
 
 /**
- * `root` / `0` is the explicit escape hatch and is represented as an unset
- * user (runner images have no USER directive, so no `--user` runs as root).
- * Public mode rejects it in validateRunnerConfig.
+ * Bare `root` / `0` is the explicit escape hatch and is represented as an
+ * unset user (runner images have no USER directive, so no `--user` runs as
+ * root). `root:<group>` / `0:<gid>` are passed through unchanged so an
+ * explicit group is not lost. Public mode rejects every uid-0 spelling in
+ * validateRunnerConfig.
  */
 function normalizeContainerUser(value: string | undefined): string | undefined {
   if (value !== undefined && value.trim() !== "") {
     const trimmed = value.trim();
-    if (isRootContainerUser(trimmed)) return undefined;
+    if (/^(0+|root)$/i.test(trimmed)) return undefined;
     return trimmed;
   }
   return DEFAULT_CONTAINER_USER;
 }
 
-/** `root`, `0`, `root:<group>`, or `0:<gid>` all run as uid 0. */
+/** Every spelling the engine resolves to uid 0: `root`, `0`, `00`, with or without `:<group>`. */
 export function isRootContainerUser(value: string): boolean {
-  return /^(0|root)(:.*)?$/i.test(value.trim());
+  return /^(0+|root)(:.*)?$/i.test(value.trim());
 }
 
 /**
@@ -758,8 +760,16 @@ export function isRootContainerUser(value: string): boolean {
  */
 export function normalizeCapDrop(value: string | undefined): string[] {
   if (value === undefined || value.trim() === "") return ["ALL"];
-  if (/^none$/i.test(value.trim())) return [];
-  return parseCommaList(value);
+  const entries = parseCommaList(value);
+  if (entries.some((entry) => /^none$/i.test(entry))) {
+    if (entries.length > 1) {
+      throw new Error("A2A_DOCKER_RUNNER_CAP_DROP=none cannot be combined with other capabilities");
+    }
+    return [];
+  }
+  // Engines only special-case the literal `ALL`; `all`/`CAP_ALL` would be
+  // rejected at `docker run` time, so canonicalize them here.
+  return entries.map((entry) => (/^(cap_)?all$/i.test(entry) ? "ALL" : entry));
 }
 
 export function capDropIncludesAll(capDrop?: string[]): boolean {

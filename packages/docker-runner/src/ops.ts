@@ -1035,6 +1035,10 @@ export interface SecretMountReadabilityEntry {
 }
 
 const SECRET_MOUNT_READABILITY_SCAN_ENTRY_LIMIT = 64;
+/** Deepest level scanned below a mount source (piri keeps `agent/auth.json` at depth 2). */
+const SECRET_MOUNT_READABILITY_MAX_DEPTH = 3;
+/** Total entries reported across all sources; keeps doctor JSON bounded (#2256). */
+const SECRET_MOUNT_READABILITY_TOTAL_ENTRY_LIMIT = 512;
 
 /**
  * #2256 A1/A2: report the EFFECTIVE container hardening the runner will pass
@@ -1136,11 +1140,18 @@ export async function checkSecretMountContainerReadability(config: RunnerConfig)
   const problems: string[] = [];
   const statErrors: string[] = [];
 
-  // Contract: each mount source and, for a directory source, its DIRECT
-  // children only (depth 0 and 1). Deeper recursion made the report unbounded
-  // on large profile dirs (thousands of entries) once --cap-drop ALL became
-  // the default (#2256 A1).
-  const inspect = async (absolute: string, target: string | undefined, kind: "github_token" | "profile_mount", depth = 0) => {
+  // Breadth-first, bounded scan (#2256): shallow entries (where credential
+  // files live, e.g. piri `agent/auth.json` at depth 2) are always checked
+  // before deep history/cache trees. Each directory contributes at most
+  // SECRET_MOUNT_READABILITY_SCAN_ENTRY_LIMIT children, nothing deeper than
+  // SECRET_MOUNT_READABILITY_MAX_DEPTH is visited, and the whole report stops
+  // at SECRET_MOUNT_READABILITY_TOTAL_ENTRY_LIMIT entries (`truncated: true`).
+  // The previous depth-first recursion had no depth or total bound and
+  // produced thousands of entries on a real Claude config dir.
+  type ScanItem = { absolute: string; target: string | undefined; kind: "github_token" | "profile_mount"; depth: number };
+  const queue: ScanItem[] = [];
+  let truncated = false;
+  const inspect = async ({ absolute, target, kind, depth }: ScanItem) => {
     const info = await stat(absolute).catch((error: unknown) => {
       statErrors.push(`${absolute}: ${errorMessage(error)}`);
       return null;
@@ -1166,19 +1177,30 @@ export async function checkSecretMountContainerReadability(config: RunnerConfig)
     if (!verdict.readable) {
       problems.push(`${absolute} (owner ${info.uid}:${info.gid}, mode 0${(info.mode & 0o777).toString(8)}) is unreadable by container user ${config.user?.trim() || "root(assumed)"}`);
     }
-    if (isDirectory && depth === 0) {
-      const children = await readdir(absolute).catch(() => [] as string[]);
+    if (isDirectory && depth < SECRET_MOUNT_READABILITY_MAX_DEPTH) {
+      const children = (await readdir(absolute).catch(() => [] as string[])).sort();
       for (const child of children.slice(0, SECRET_MOUNT_READABILITY_SCAN_ENTRY_LIMIT)) {
-        await inspect(join(absolute, child), undefined, kind, depth + 1);
+        queue.push({ absolute: join(absolute, child), target: undefined, kind, depth: depth + 1 });
       }
     }
   };
 
   for (const source of sources) {
-    await inspect(resolve(source.source), source.target, source.kind);
+    queue.push({ absolute: resolve(source.source), target: source.target, kind: source.kind, depth: 0 });
+  }
+  for (let index = 0; index < queue.length; index += 1) {
+    if (entries.length >= SECRET_MOUNT_READABILITY_TOTAL_ENTRY_LIMIT) {
+      truncated = true;
+      break;
+    }
+    await inspect(queue[index]!);
   }
 
   detail.entries = entries;
+  if (truncated) {
+    detail.truncated = true;
+    detail.entryLimit = SECRET_MOUNT_READABILITY_TOTAL_ENTRY_LIMIT;
+  }
   if (statErrors.length > 0) {
     detail.statErrors = statErrors;
     return { status: "fail", message: "secret mount source cannot be inspected", detail };

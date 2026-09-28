@@ -487,7 +487,8 @@ broker, GitHub, Telegram, OpenClaw Gateway, or Docker.
   `A2A_DOCKER_RUNNER_USER`; owner mismatch without group/others read fails
   closed with ownership-alignment remediation (see
   [trusted-operator hardening](docs/trusted-operator-hardening.md)); a
-  mounted directory is checked together with its direct children only
+  mounted directory is scanned breadth-first to depth 3, at most 64 children
+  per directory and 512 entries in total (`truncated: true` past the cap)
 - `containerHardening` (#2256): the effective `--cap-drop`/`--cap-add`,
   `--user`, read-only rootfs, no-new-privileges, and network the runner will
   pass to the engine, plus any trusted-operator `relaxations`; warns when
