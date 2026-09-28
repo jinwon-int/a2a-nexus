@@ -2060,4 +2060,7 @@ test("#2256 A4 runner JSON-key redaction needs a word boundary (no monkey:/keybo
   assert.ok(out.includes("keyboard: qwerty"), out);
   assert.equal(out.includes("s3cr3tvalue"), false, out);
   assert.equal(out.includes("abc123"), false, out);
+  // camelCase keys stay redacted (review regression guard).
+  const camel = redactSecrets('{"githubToken": "v1s"} authToken: v2s "clientSecret":"v3s" dbPassword: v4s "privateKey": "v5s" apiToken: v6s');
+  for (const secret of ["v1s", "v2s", "v3s", "v4s", "v5s", "v6s"]) assert.equal(camel.includes(secret), false, camel);
 });
