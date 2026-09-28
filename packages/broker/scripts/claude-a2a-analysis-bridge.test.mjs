@@ -986,3 +986,34 @@ test("standalone analysis sends the default 80-turn budget to Claude without pro
     rmSync(dir, { recursive: true, force: true });
   }
 });
+
+// ─── #2256 A4: unified bridge redaction (analysis + patch) ──────────────────
+
+function loadBridgeRedactor(file) {
+  const source = readFileSync(new URL(file, import.meta.url), "utf8");
+  const match = /\nfunction redactSecrets\(value\) \{\n[\s\S]*?\n\}\n/.exec(source);
+  assert.ok(match, `${file}: redactSecrets not found`);
+  const fn = new Function(`function safeText(value, fallback = "") { if (value === undefined || value === null) return fallback; return String(value); }\n${match[0]}\nreturn redactSecrets;`)();
+  return { text: match[0], fn };
+}
+
+test("#2256 A4 analysis and patch bridges share one redaction rule", () => {
+  const analysis = loadBridgeRedactor("./claude-a2a-analysis-bridge.mjs");
+  const patch = loadBridgeRedactor("./claude-a2a-patch-bridge.mjs");
+  assert.equal(analysis.text, patch.text, "bridge redactors drifted");
+});
+
+test("#2256 A4 bridge redaction keeps identifiers and digests, redacts secrets", () => {
+  const { fn: redact } = loadBridgeRedactor("./claude-a2a-patch-bridge.mjs");
+  const sha1 = "0123456789abcdef0123456789abcdef01234567";
+  const sha256 = "a".repeat(64);
+  const gh = ["ghp", "A".repeat(36)].join("_");
+  const sk = ["sk", "ant", "x".repeat(24)].join("-");
+  const opaque = "Zq9".repeat(12);
+  const out = redact(`claude-a2a-patch-bridge failed at ${sha1} digest ${sha256} token ${gh} key ${sk} blob ${opaque} TOKEN=abc Authorization: Bearer xyz`);
+  assert.ok(out.includes("claude-a2a-patch-bridge"), "ordinary identifiers under 32 chars survive");
+  assert.ok(out.includes(sha1) && out.includes(sha256), "40/64-hex digests survive");
+  for (const secret of [gh, sk, opaque, "TOKEN=abc", "Bearer xyz"]) {
+    assert.equal(out.includes(secret), false, `leaked ${secret}`);
+  }
+});

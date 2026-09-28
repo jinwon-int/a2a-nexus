@@ -135,12 +135,20 @@ function childOutputExcerpt(child, perStreamLimit = 2000) {
 }
 
 // Redact token-shaped strings and common auth assignments from any text we emit.
+// #2256 A4: one generic rule for both Claude bridges. Known token formats are
+// matched explicitly; the generic fallback redacts word-bounded runs of 32+
+// token characters but keeps 40/64-hex digests (commit SHAs, sha256), which are
+// evidence. The former patch-bridge {20,} fallback also redacted ordinary
+// identifiers (e.g. `claude-a2a-patch-bridge`) and SHAs in Block evidence.
 function redactSecrets(value) {
   return safeText(value)
     .replace(/gh[pousr]_[A-Za-z0-9_]+/g, "[redacted-token]")
+    .replace(/github_pat_[A-Za-z0-9_]+/g, "[redacted-token]")
+    .replace(/(?:sk|xai)-[A-Za-z0-9_-]{20,}/g, "[redacted-token]")
+    .replace(/\bsm_[A-Za-z0-9_-]{20,}/g, "[redacted-token]")
     .replace(/\b(Authorization\s*[:=]\s*Bearer\s+)[^\s"']+/gi, "$1[redacted]")
     .replace(/\b(BROKER_EDGE_SECRET|A2A_EDGE_SECRET|EDGE_SECRET|TOKEN|SECRET|API[_-]?KEY|PASSWORD)=\S+/gi, "$1=[redacted]")
-    .replace(/[A-Za-z0-9_-]{20,}/g, "[REDACTED]");
+    .replace(/\b(?![0-9a-f]{40}\b)(?![0-9a-f]{64}\b)[A-Za-z0-9_-]{32,}\b/g, "[redacted-secret-like]");
 }
 
 const SAFE_CHILD_ENV_KEYS = new Set([

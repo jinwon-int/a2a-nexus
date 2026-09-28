@@ -482,6 +482,12 @@
       "note": "Broker<->dispatch shared retrieval-manifest contract test for the signed web-retrieval snapshot gateway (#2017, #2019)."
     },
     {
+      "file": "scripts/lib/secret-scan-allowlist.test.mjs",
+      "class": "gate",
+      "round": null,
+      "note": "gitleaks synthetic-fixture allowlist keyed by exact (file, RuleID) with a max count (#2256 A5): extra or different-rule findings in a listed file fail."
+    },
+    {
       "file": "scripts/lib/a2a-routing-assignment-forms.test.mjs",
       "class": "gate",
       "round": null,

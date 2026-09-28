@@ -90,3 +90,22 @@ test("failure excerpt is unchanged when within budget", () => {
   const raw = "line-a\nline-b";
   assert.equal(redactAndBoundFailureExcerpt(raw, { maxLines: 5, maxChars: 100 }), raw);
 });
+
+test("#2256 A4 failure excerpt keeps non-personal addresses, dates, versions and durations", () => {
+  const raw = [
+    "remote: git@github.com:owner/repo.git",
+    "Co-Authored-By: Bot <noreply@anthropic.com>",
+    "author 247078695+someone@users.noreply.github.com",
+    "at +2026-09-28 12:34:56 build 1.4.0+20260928.1 took +123456789ms",
+    "contact alice@example.org or +82 10-1234-5678",
+  ].join("\n");
+  const excerpt = redactAndBoundFailureExcerpt(raw, { maxLines: 10, maxChars: 2000 });
+  assert.match(excerpt, /git@github\.com:owner\/repo\.git/);
+  assert.match(excerpt, /noreply@anthropic\.com/);
+  assert.match(excerpt, /users\.noreply\.github\.com/);
+  assert.match(excerpt, /\+2026-09-28 12:34:56/);
+  assert.match(excerpt, /1\.4\.0\+20260928\.1/);
+  assert.match(excerpt, /\+123456789ms/);
+  assert.doesNotMatch(excerpt, /alice@example\.org/);
+  assert.doesNotMatch(excerpt, /10-1234-5678/);
+});

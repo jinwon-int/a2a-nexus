@@ -18,8 +18,8 @@ function redactSecretsSegment(value: string): string {
     .replace(/[\u0000-\u0008\u000B\u000C\u000E-\u001F\u007F]/g, "<redacted-control>")
     .replace(/\b((?:[A-Z0-9]+[_-])*(?:TOKEN|SECRET|PASSWORD|KEY|API[_-]?KEY|APIKEY|ACCESS[_-]?TOKEN|EDGE[_-]?SECRET))\s*=\s*"(?:\\.|[^"\\\r\n])*"/gi, '$1="<redacted>"')
     .replace(/\b((?:[A-Z0-9]+[_-])*(?:TOKEN|SECRET|PASSWORD|KEY|API[_-]?KEY|APIKEY|ACCESS[_-]?TOKEN|EDGE[_-]?SECRET))\s*=\s*'(?:\\.|[^'\\\r\n])*'/gi, "$1='<redacted>'")
-    .replace(/(["']?(?:[A-Z0-9]+[_-])*(?:token|secret|password|key|api[_-]?key|apikey|access[_-]?token|edge[_-]?secret)["']?\s*:\s*)"(?:\\.|[^"\\\r\n])*"/gi, '$1"<redacted>"')
-    .replace(/(["']?(?:[A-Z0-9]+[_-])*(?:token|secret|password|key|api[_-]?key|apikey|access[_-]?token|edge[_-]?secret)["']?\s*:\s*)'(?:\\.|[^'\\\r\n])*'/gi, "$1'<redacted>'")
+    .replace(/((?<![A-Za-z0-9])["']?(?:[A-Z0-9]+[_-])*(?:token|secret|password|key|api[_-]?key|apikey|access[_-]?token|edge[_-]?secret)["']?\s*:\s*)"(?:\\.|[^"\\\r\n])*"/gi, '$1"<redacted>"')
+    .replace(/((?<![A-Za-z0-9])["']?(?:[A-Z0-9]+[_-])*(?:token|secret|password|key|api[_-]?key|apikey|access[_-]?token|edge[_-]?secret)["']?\s*:\s*)'(?:\\.|[^'\\\r\n])*'/gi, "$1'<redacted>'")
     // GitHub tokens (classic + fine-grained + PAT v2)
     .replace(GITHUB_TOKEN_CLASSIC_PATTERN, "<redacted-github-token>")
     .replace(GITHUB_TOKEN_PAT_PATTERN, "<redacted-github-token>")
@@ -47,7 +47,7 @@ function redactSecretsSegment(value: string): string {
     .replace(/(gh auth login --with-token\s+)\S+/gi, "$1<redacted>")
     // Generic key=value and JSON/YAML-style secrets (after API key patterns)
     .replace(/\b((?:[A-Z0-9]+[_-])*(?:TOKEN|SECRET|PASSWORD|KEY|API[_-]?KEY|APIKEY|ACCESS[_-]?TOKEN|EDGE[_-]?SECRET))\s*=\s*(?!<redacted)[^\s]+/gi, "$1=<redacted>")
-    .replace(/(["']?(?:[A-Z0-9]+[_-])*(?:token|secret|password|key|api[_-]?key|apikey|access[_-]?token|edge[_-]?secret)["']?\s*:\s*)(?!<redacted)[^"'\s,}]+/gi, "$1<redacted>")
+    .replace(/((?<![A-Za-z0-9])["']?(?:[A-Z0-9]+[_-])*(?:token|secret|password|key|api[_-]?key|apikey|access[_-]?token|edge[_-]?secret)["']?\s*:\s*)(?!<redacted)[^"'\s,}]+/gi, "$1<redacted>")
     // Shell variable assignments with secrets
     .replace(/((?:GH_TOKEN|GITHUB_TOKEN|NPM_TOKEN|A2A_TOKEN)=)['"]?[^'"\s]+['"]?/gi, "$1<redacted>");
 }

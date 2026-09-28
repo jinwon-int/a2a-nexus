@@ -2053,3 +2053,11 @@ test("#2234 claude-code profile strips refresh-token fields from the private cre
   assert.throws(() => execFileSync(process.execPath, ["-e", snippet, broken], { stdio: "pipe" }), (error: { status?: number }) => error.status === 3, "unparseable → exit 3");
   assert.throws(() => execFileSync(process.execPath, ["-e", snippet, join(dir, "missing.json")], { stdio: "pipe" }), (error: { status?: number }) => error.status === 4, "unreadable → exit 4");
 });
+
+test("#2256 A4 runner JSON-key redaction needs a word boundary (no monkey:/keyboard: noise)", () => {
+  const out = redactSecrets('{"monkey": "banana"} keyboard: qwerty "api_key": "s3cr3tvalue" token: abc123');
+  assert.ok(out.includes('"monkey": "banana"'), out);
+  assert.ok(out.includes("keyboard: qwerty"), out);
+  assert.equal(out.includes("s3cr3tvalue"), false, out);
+  assert.equal(out.includes("abc123"), false, out);
+});

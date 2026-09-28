@@ -273,19 +273,19 @@ process.exit(0);
   }
 });
 
-test('external secret scan keeps exact fixture allowlisting only in the scanner script (#1928)', () => {
+test('external secret scan keeps exact fixture allowlisting only in the scanner allowlist module (#1928, #2256)', () => {
   const config = readFileSync(join(repoRoot, '.gitleaks.toml'), 'utf8');
   const scanner = externalSecretScanText();
-  // Single source of truth: EXACT_SYNTHETIC_FIXTURE_FILES in the scanner
-  // script decides allowlisted paths; a [[allowlists]] paths block in
-  // .gitleaks.toml never reaches the exit decision (#1928).
-  for (const fixture of [
-    'packages/broker/src/server-live-task-admission.test.ts',
-    'packages/broker/dist/server-live-task-admission.test.js',
-  ]) {
-    assert.ok(scanner.includes(`'${fixture}'`), `${fixture} missing from exact scanner allowlist`);
-  }
-  assert.doesNotMatch(config, /^paths\s*=/m, '.gitleaks.toml must not carry a paths allowlist; use EXACT_SYNTHETIC_FIXTURE_FILES in scripts/external-secret-scan.mjs');
+  const allowlistModule = readFileSync(join(repoRoot, 'scripts/lib/secret-scan-allowlist.mjs'), 'utf8');
+  // Single source of truth: SYNTHETIC_FIXTURE_FINDINGS in
+  // scripts/lib/secret-scan-allowlist.mjs decides allowlisted (file, RuleID)
+  // pairs; a [[allowlists]] paths block in .gitleaks.toml never reaches the
+  // exit decision (#1928). Only tracked files are scanned (git archive), so
+  // dist/ entries are never needed.
+  assert.ok(allowlistModule.includes("'packages/broker/src/server-live-task-admission.test.ts'"), 'fixture missing from exact scanner allowlist');
+  assert.doesNotMatch(allowlistModule, /'[^']*\/dist\/[^']*'/, 'allowlist must not list dist/ paths');
+  assert.match(scanner, /partitionGitleaksFindings/, 'scanner must decide via the allowlist module');
+  assert.doesNotMatch(config, /^paths\s*=/m, '.gitleaks.toml must not carry a paths allowlist; use SYNTHETIC_FIXTURE_FINDINGS in scripts/lib/secret-scan-allowlist.mjs');
 });
 
 test('tracked markdown link checker rejects missing relative links', () => {
