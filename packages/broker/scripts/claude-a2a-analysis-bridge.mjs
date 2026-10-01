@@ -131,7 +131,7 @@ function childOutputExcerpt(child, perStreamLimit = 2000) {
 
 // #2256 A4: one generic rule for both Claude bridges. Known token formats are
 // matched explicitly (GitHub, sk-/xai-, sm_, AWS AKIA, z.ai hex.key); the
-// generic fallback redacts word-bounded runs of 32+ token characters but keeps
+// generic fallback redacts word-bounded runs of 24+ token characters but keeps
 // 40/64 lower-case hex digests (commit SHAs, sha256), which are evidence
 // (trade-off: a prefix-less lower-case 40-hex secret is not caught here), plus
 // 24+ char mixed-case+digit runs without hyphens. The former patch-bridge {20,} fallback also redacted ordinary
@@ -146,16 +146,23 @@ function redactSecrets(value) {
     .replace(/\b[0-9a-f]{32}\.[A-Za-z0-9]{16}\b/g, "[redacted-token]")
     .replace(/\b(Authorization\s*[:=]\s*Bearer\s+)[^\s"']+/gi, "$1[redacted]")
     .replace(/\b(BROKER_EDGE_SECRET|A2A_EDGE_SECRET|EDGE_SECRET|TOKEN|SECRET|API[_-]?KEY|PASSWORD)=\S+/gi, "$1=[redacted]")
-    // Whole-run generic fallback (a run is bounded by non-[\w-]). Kept: 40/64
-    // lower-case hex digests and kebab/snake identifiers (task ids, constants)
-    // whose segments are each <= 20 chars and never mix upper, lower AND digit
-    // — the mixed-segment test is what separates `nexus-2234-s2-…` from a
-    // base64url token such as a Telegram bot token that happens to contain `-`.
-    .replace(/(?<![\w-])[A-Za-z0-9_-]{32,}(?![\w-])/g, (run) => {
+    // Whole-run generic fallback (a run is bounded by non-[\w-]) from 24 chars
+    // (#2287: a {32,} floor let 24–31 char hyphenated base64url tokens slip
+    // past the `\b`-bounded rule below). Kept: 40/64 lower-case hex digests,
+    // camelCase/PascalCase words (each word 3+ letters, e.g.
+    // `validateBrokerStartupSecurity`), and kebab/snake identifiers (task ids,
+    // constants) whose segments are each <= 20 chars and either single-case or
+    // camelCase words. A segment that mixes upper and lower case any other way
+    // (`wOc`, `TIrJRyUSdR`) marks a base64url token such as a Telegram bot
+    // token that happens to contain `-`/`_`.
+    .replace(/(?<![\w-])[A-Za-z0-9_-]{24,}(?![\w-])/g, (run) => {
       if (/^(?:[0-9a-f]{40}|[0-9a-f]{64})$/.test(run)) return run;
+      const camelWords = (segment) => /^(?:[a-z]{2,}|[A-Z][a-z]{2,})(?:[A-Z][a-z]{2,})+$/.test(segment);
       const segments = run.split(/[-_]+/).filter(Boolean);
-      const identifierLike = segments.length >= 2 && segments.every((segment) =>
-        segment.length <= 20 && !(/[A-Z]/.test(segment) && /[a-z]/.test(segment) && /\d/.test(segment)));
+      const identifierLike = segments.length === 1
+        ? camelWords(segments[0])
+        : segments.length >= 2 && segments.every((segment) => segment.length <= 20
+          && (!(/[A-Z]/.test(segment) && /[a-z]/.test(segment)) || camelWords(segment)));
       return identifierLike ? run : "[redacted-secret-like]";
     })
     // Shorter opaque tokens: 24+ chars with upper, lower AND digit and no
