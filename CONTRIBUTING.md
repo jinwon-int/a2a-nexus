@@ -87,3 +87,9 @@ dependency bumps. Dependabot is configured to ignore major updates for both
 packages — raising either major starts with a toolchain issue (see #1414 for
 the policy origin), and a runtime-major move updates the images, the fleet,
 and `@types/node` together.
+
+Dockerfile base images are pinned as `tag@sha256` index digests
+(`node:22-alpine@sha256:…`, `node:22-bookworm-slim@sha256:…`). Dependabot's
+`docker` ecosystem proposes digest refreshes for the same tag and ignores Node
+majors under the same policy; a runtime-major move changes the tag and the
+digest together.
