@@ -268,6 +268,32 @@ test('Dockerfile base images are digest-pinned and watched by Dependabot (#2257 
   assert.deepEqual(failures, []);
 });
 
+// The paths-filter `root` output fans out to every package job, so it lists only
+// the .github paths that execute in CI. Non-executable .github metadata is
+// covered instead by the unconditional `check` job, whose release gate runs
+// every step that reads it. Narrowing `root` is sound only while both hold
+// (#1759, #2257 B4).
+test('root path filter fans out only on executable .github paths; check covers metadata (#2257 B4)', () => {
+  const ci = ciText();
+  const rootBlock = ci.match(/^ {12}root:\n((?: {14}.*\n)+)/m)?.[1];
+  assert.ok(rootBlock, 'paths-filter root block not found');
+  const rootPaths = [...rootBlock.matchAll(/^ {14}- '([^']+)'$/gm)].map((m) => m[1]);
+  assert.ok(rootPaths.includes('.github/workflows/**'), 'workflow edits must still fan out');
+  assert.ok(rootPaths.includes('.github/actions/**'), 'composite action edits must still fan out');
+  assert.ok(!rootPaths.includes('.github/**'), 'metadata-only .github changes must not fan out to every package job');
+
+  const checkJob = ci.match(/^ {2}check:\n((?: {4}.*\n|\s*\n|\s*#.*\n)+)/m)?.[1];
+  assert.ok(checkJob, 'check job not found');
+  assert.doesNotMatch(checkJob, /^ {4}if:/m, 'check job must run on every event');
+  assert.match(checkJob, /^ {6}- run: npm run check$/m);
+
+  const inventory = JSON.parse(readFileSync(join(repoRoot, 'docs/ops/release-gate-step-inventory.json'), 'utf8'));
+  const byName = new Map(inventory.entries.map((entry) => [entry.name, entry]));
+  for (const name of ['public-readiness', 'review-policy', 'repo-protection-baseline', 'ci-docs-safety-tests']) {
+    assert.ok(['core', 'public-readiness'].includes(byName.get(name)?.tier), `${name} must stay in a default release-gate tier`);
+  }
+});
+
 test('package exposes tracked markdown link validation script', () => {
   const scripts = packageJson().scripts ?? {};
   assert.equal(scripts['check:markdown-links'], 'node scripts/check-markdown-links.mjs');

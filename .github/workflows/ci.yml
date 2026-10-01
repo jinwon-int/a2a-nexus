@@ -97,12 +97,18 @@ jobs:
             root:
               - 'package.json'
               - 'package-lock.json'
-              # All of .github, not just workflows: the public-readiness scan in
-              # the check job scans .github file content (e.g. CODEOWNERS), so a
-              # .github-only change must not skip the job that scans it. PR
-              # #1759 changed only .github/CODEOWNERS, skipped check, and landed
-              # a strict-mode scan failure on main (found 2026-08-08).
-              - '.github/**'
+              # Only the .github paths that execute in CI fan out to every
+              # package job (#2257 B4). Non-executable metadata (CODEOWNERS,
+              # dependabot.yml, ISSUE_TEMPLATE, pull_request_template.md) is
+              # read solely by release-gate steps — public-readiness,
+              # review-policy, repo-protection-baseline, ci-docs-safety — and
+              # those run in the `check` job, which has no `if:` and so runs on
+              # every event. #1759 (CODEOWNERS-only, found 2026-08-08) was why
+              # '.github/**' used to live here; it predates `check` dropping its
+              # path filter, after which that coverage no longer depends on
+              # this list. scripts/ci-docs-safety.test.mjs pins both halves.
+              - '.github/workflows/**'
+              - '.github/actions/**'
               - '.gitleaks.toml'
 
   # ── Setup and dependency installation ───────────────────────────────
