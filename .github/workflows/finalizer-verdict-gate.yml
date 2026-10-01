@@ -20,6 +20,13 @@ on:
 permissions:
   contents: read
 
+# Superseded pushes to the same PR cancel the stale run (same convention as
+# ci.yml / tck-promoted-gate.yml). merge_group refs are unique per queue group,
+# so queue runs never cancel each other (#2257 B4).
+concurrency:
+  group: finalizer-verdict-gate-${{ github.ref }}
+  cancel-in-progress: true
+
 jobs:
   finalizer-verdict-gate:
     runs-on: ubuntu-latest

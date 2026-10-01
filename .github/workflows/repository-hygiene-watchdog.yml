@@ -23,6 +23,12 @@ permissions:
   pull-requests: read
   actions: read
 
+# Scheduled watchdog: overlapping manual/scheduled runs queue instead of
+# running twice (#2257 B4).
+concurrency:
+  group: repository-hygiene-watchdog
+  cancel-in-progress: false
+
 jobs:
   merged-branch-residue:
     runs-on: ubuntu-latest
