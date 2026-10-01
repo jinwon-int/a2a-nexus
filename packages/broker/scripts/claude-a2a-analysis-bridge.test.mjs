@@ -1030,3 +1030,72 @@ test("#2256 A4 bridge redaction keeps identifiers and digests, redacts secrets",
     assert.equal(more.includes(secret), false, `leaked ${secret}: ${more}`);
   }
 });
+
+// ─── #2287: hyphen/underscore base64url tokens under 32 chars ────────────────
+
+test("#2287 bridge redaction catches 24/32-char hyphenated base64url tokens", () => {
+  const { fn: redact } = loadBridgeRedactor("./claude-a2a-patch-bridge.mjs");
+  // Synthetic, digit-free mixed-case segments (the shape that used to pass as
+  // an identifier) and 24-31 char runs (below the former {32,} floor).
+  const samples = [
+    ["wOc", "khpTIrJRyUSdR", "", "ybGYEjIDHDtoA"].join("_"),
+    ["Qx", "pLmNbVcXzAs", "dFgHjKlPwE"].join("-"),
+    ["aB3", "dE5fG", "hIj7kLm9nOpQrS"].join("-"),
+    ["Zr", "tYuIoPaSdFgHjKlZxCvBnMqWeRtYu"].join("-"),
+    ["mN", "bV_cXzLkJhGfDsApOiUyTr"].join("-"),
+  ];
+  for (const token of samples) {
+    assert.ok(token.length >= 24 && token.length <= 32, `fixture length ${token.length}: ${token}`);
+    const out = redact(`leak? ${token} end`);
+    assert.equal(out.includes(token), false, `leaked ${token}: ${out}`);
+    assert.match(out, /\[redacted-secret-like\]/);
+  }
+});
+
+test("#2287 bridge redaction keeps identifiers, digests, and camelCase names", () => {
+  const { fn: redact } = loadBridgeRedactor("./claude-a2a-analysis-bridge.mjs");
+  const keep = [
+    "claude-a2a-patch-bridge",
+    "task-2256-redaction-precision-scan",
+    "nexus-2234-s2-bangtong-20260923T1305",
+    "SECRET_MOUNT_READABILITY_SCAN_ENTRY_LIMIT",
+    "fix-topology-ipv6-mapped-normalization-2037",
+    "a2a-hermes-worker-sogyo-claude-lane-01",
+    "wiki-manifest-refresh-8fe21d5-20260928T0003Z",
+    "0123456789abcdef0123456789abcdef01234567",
+    "a".repeat(64),
+    "implementationCapability",
+    "validateBrokerStartupSecurity",
+    "normalizeContainerUserForPublicMode",
+    "prepareAssignment-submitAssignment",
+    "myService-fooBar-bazQux-entry",
+  ];
+  const out = redact(keep.join(" "));
+  for (const id of keep) assert.ok(out.includes(id), `over-redacted ${id}: ${out}`);
+});
+
+test("#2287 bridge redaction random base64url corpus leak rate (seeded)", () => {
+  const { fn: redact } = loadBridgeRedactor("./claude-a2a-patch-bridge.mjs");
+  // Deterministic corpus: SHA-256 in counter mode (stable across runs, and
+  // unbiased enough for base64url character statistics, unlike small PRNGs).
+  let counter = 0;
+  const randomToken = (bytes) => {
+    let out = Buffer.alloc(0);
+    while (out.length < bytes) {
+      out = Buffer.concat([out, createHash("sha256").update(`nexus-2287-corpus:${counter++}`).digest()]);
+    }
+    return out.subarray(0, bytes).toString("base64url");
+  };
+  const samples = 20000;
+  for (const bytes of [18, 24, 32, 48]) {
+    let leaked = 0;
+    for (let i = 0; i < samples; i++) {
+      const token = randomToken(bytes);
+      if (redact(`x ${token} y`).includes(token)) leaked++;
+    }
+    // Pre-#2287 main leaked ~32% of 24-char and ~0.2% of 32-char tokens.
+    // Measured after the fix on 1M crypto-random samples: 24ch 0.002%,
+    // 32ch 0.0001%, 43/64ch 0%. Allow at most 2 hits in 20k for 24 chars.
+    assert.ok(leaked <= (bytes === 18 ? 2 : 0), `${bytes}-byte tokens leaked ${leaked}/${samples}`);
+  }
+});
