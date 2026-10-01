@@ -31,21 +31,7 @@ runs:
         node-version: "22"
         cache: npm
 
-    # Reuse ci.yml's node_modules cache (#2257 B4). The key is byte-identical to
-    # the one ci.yml's `setup` job saves, so a PR's TCK jobs restore the tree
-    # main already built instead of each running a cold `npm ci`. That is
-    # sound because no workspace declares an install lifecycle script and the
-    # lockfile has no nested packages/*/node_modules, so `npm ci` writes only
-    # the root node_modules this caches. scripts/ci-docs-safety.test.mjs pins
-    # the key and the cache-miss guard.
-    - uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6
-      id: npm-deps
-      with:
-        path: node_modules
-        key: node-modules-${{ runner.os }}-node22-${{ hashFiles('package-lock.json') }}
-
     - run: npm ci --include=dev
-      if: steps.npm-deps.outputs.cache-hit != 'true'
       shell: bash
 
     - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
