@@ -294,6 +294,52 @@ test('root path filter fans out only on executable .github paths; check covers m
   }
 });
 
+// Every `npm ci` in a workflow or local composite action runs only on a miss of
+// the one shared node_modules cache, so TCK jobs reuse the tree ci.yml's setup
+// job saved instead of each installing cold (#2257 B4). The key must stay
+// byte-identical everywhere or the caches silently stop being shared.
+test('every npm ci sits behind the shared node_modules cache key (#2257 B4)', () => {
+  const canonicalKey = "node-modules-${{ runner.os }}-node22-${{ hashFiles('package-lock.json') }}";
+  const ci = ciText();
+  assert.ok(ci.includes(`cache-key=${canonicalKey}`), 'ci.yml setup must publish the canonical cache key');
+  const files = [
+    ...readdirSync(join(repoRoot, '.github/workflows')).filter((n) => /\.ya?ml$/.test(n)).map((n) => `.github/workflows/${n}`),
+    ...readdirSync(join(repoRoot, '.github/actions')).map((n) => `.github/actions/${n}/action.yml`),
+  ];
+  const failures = [];
+  let installs = 0;
+  for (const file of files) {
+    const lines = readFileSync(join(repoRoot, file), 'utf8').split('\n');
+    lines.forEach((line, i) => {
+      if (!/^\s+- run: npm ci\b/.test(line)) return;
+      installs += 1;
+      const indent = line.match(/^\s*/)[0].length;
+      const stepBody = [];
+      for (let j = i + 1; j < lines.length && (lines[j].trim() === '' || lines[j].match(/^\s*/)[0].length > indent); j += 1) stepBody.push(lines[j]);
+      if (!stepBody.some((l) => l.trim() === "if: steps.npm-deps.outputs.cache-hit != 'true'")) {
+        failures.push(`${file}:${i + 1}: npm ci is not guarded by the npm-deps cache miss`);
+      }
+      const before = lines.slice(0, i).join('\n');
+      const cacheStep = before.lastIndexOf('id: npm-deps');
+      const stepStart = before.lastIndexOf('\n', cacheStep);
+      const cacheText = before.slice(stepStart);
+      const key = cacheText.match(/^\s+key: (.+)$/m)?.[1]?.trim();
+      if (cacheStep === -1 || !/actions\/cache@/.test(before.slice(before.lastIndexOf('- uses:', cacheStep)))) {
+        failures.push(`${file}:${i + 1}: no actions/cache npm-deps step before npm ci`);
+      } else if (key !== canonicalKey && key !== '${{ needs.setup.outputs.cache-key }}') {
+        failures.push(`${file}:${i + 1}: node_modules cache key drifted: ${key}`);
+      }
+    });
+  }
+  assert.ok(installs >= 13, `expected every npm ci, saw ${installs}`);
+  assert.deepEqual(failures, []);
+
+  // The promoted TCK jobs only run when their `changes` filter matches, so an
+  // edit to the setup action they all share must be part of that filter.
+  const gate = readFileSync(join(repoRoot, '.github/workflows/tck-promoted-gate.yml'), 'utf8');
+  assert.match(gate, /^ {14}- '\.github\/actions\/tck-promoted-setup\/\*\*'$/m);
+});
+
 test('package exposes tracked markdown link validation script', () => {
   const scripts = packageJson().scripts ?? {};
   assert.equal(scripts['check:markdown-links'], 'node scripts/check-markdown-links.mjs');

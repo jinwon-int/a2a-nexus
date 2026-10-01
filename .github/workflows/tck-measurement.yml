@@ -45,7 +45,15 @@ jobs:
         with:
           node-version: "22"
           cache: npm
+      # Same node_modules cache and key as ci.yml and tck-promoted-setup
+      # (#2257 B4); pinned by scripts/ci-docs-safety.test.mjs.
+      - uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6
+        id: npm-deps
+        with:
+          path: node_modules
+          key: node-modules-${{ runner.os }}-node22-${{ hashFiles('package-lock.json') }}
       - run: npm ci --include=dev
+        if: steps.npm-deps.outputs.cache-hit != 'true'
       - run: npm run build -w packages/broker
 
       - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
