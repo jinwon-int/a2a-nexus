@@ -210,6 +210,35 @@ test('every workflow job declares a bounded timeout-minutes (#2257)', () => {
   assert.deepEqual(failures, []);
 });
 
+// Every workflow declares a top-level `concurrency:` group (#2257 B4).
+// PR/queue-triggered workflows key the group on github.ref and cancel stale
+// runs (merge_group refs are unique per queue group, so queue runs never
+// cancel each other); schedule/dispatch-only workflows use a fixed group and
+// never cancel, so an overlapping manual run queues behind the scheduled one.
+test('every workflow declares a concurrency group (#2257 B4)', () => {
+  const workflowsDir = join(repoRoot, '.github/workflows');
+  const files = readdirSync(workflowsDir).filter((name) => name.endsWith('.yml') || name.endsWith('.yaml'));
+  assert.ok(files.length >= 8, `expected every workflow, saw ${files.length}`);
+  const failures = [];
+  for (const file of files) {
+    const text = readFileSync(join(workflowsDir, file), 'utf8');
+    const block = text.match(/^concurrency:\n((?: {2}.*\n)+)/m)?.[1];
+    if (!block) {
+      failures.push(`${file}: missing top-level concurrency`);
+      continue;
+    }
+    const group = block.match(/^ {2}group:\s*(.+)$/m)?.[1]?.trim();
+    const cancel = block.match(/^ {2}cancel-in-progress:\s*(true|false)\s*$/m)?.[1];
+    if (!group) failures.push(`${file}: concurrency without group`);
+    if (!cancel) failures.push(`${file}: concurrency without explicit cancel-in-progress`);
+    const prTriggered = /^ {2}(pull_request|merge_group):/m.test(text);
+    if (prTriggered && cancel === 'true' && !/github\.ref|head_sha/.test(group ?? '')) {
+      failures.push(`${file}: cancelling group must be keyed per ref, got ${group}`);
+    }
+  }
+  assert.deepEqual(failures, []);
+});
+
 test('package exposes tracked markdown link validation script', () => {
   const scripts = packageJson().scripts ?? {};
   assert.equal(scripts['check:markdown-links'], 'node scripts/check-markdown-links.mjs');

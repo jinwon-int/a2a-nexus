@@ -21,6 +21,12 @@ permissions:
   contents: read
   issues: read
 
+# Scheduled report: a manual dispatch overlapping the weekly run queues behind
+# it instead of running twice (#2257 B4).
+concurrency:
+  group: closeout-hygiene
+  cancel-in-progress: false
+
 jobs:
   closeout-hygiene:
     runs-on: ubuntu-latest
