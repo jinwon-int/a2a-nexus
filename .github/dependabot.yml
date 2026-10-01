@@ -14,6 +14,27 @@ updates:
       github-actions:
         patterns:
           - "*"
+  # Keep Dockerfile base images reproducible and current (#2257 B6). Every
+  # external FROM is pinned as tag@sha256 index digest, so builds are
+  # reproducible and Dependabot surfaces digest refreshes (security patches of
+  # the same tag) as reviewed PRs. Dependabot reads every file whose name
+  # contains "dockerfile" in the listed directories. Node majors follow the
+  # runtime-major alignment policy (#1414) and never arrive as grouped bumps.
+  - package-ecosystem: docker
+    directories:
+      - /packages/broker
+      - /packages/docker-runner/docker
+    schedule:
+      interval: weekly
+    commit-message:
+      prefix: deps
+    groups:
+      docker-base-images:
+        patterns:
+          - "*"
+    ignore:
+      - dependency-name: node
+        update-types: ["version-update:semver-major"]
   # Keep npm workspace dependencies visible through reviewed PRs. Minor/patch
   # updates are grouped to reduce noise; major updates stay separate.
   - package-ecosystem: npm

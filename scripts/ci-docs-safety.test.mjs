@@ -239,6 +239,35 @@ test('every workflow declares a concurrency group (#2257 B4)', () => {
   assert.deepEqual(failures, []);
 });
 
+// Every Dockerfile pins its external base images as tag@sha256 index digests
+// and Dependabot's docker ecosystem watches the directory it lives in, so
+// builds are reproducible and digest refreshes arrive as reviewed PRs. Node
+// majors stay ignored there, matching the runtime-major policy (#1414,
+// #2257 B6).
+test('Dockerfile base images are digest-pinned and watched by Dependabot (#2257 B6)', () => {
+  const dependabot = readFileSync(join(repoRoot, '.github/dependabot.yml'), 'utf8');
+  const dockerBlock = dependabot.split(/\n(?=  - package-ecosystem:)/).find((block) => /package-ecosystem: docker\b/.test(block));
+  assert.ok(dockerBlock, 'dependabot.yml needs a docker ecosystem entry');
+  assert.match(dockerBlock, /dependency-name: node\n\s+update-types: \["version-update:semver-major"\]/);
+  const watched = [...dockerBlock.matchAll(/^ {6}- (\/\S*)$/gm)].map((m) => m[1].replace(/^\//, ''));
+  const dockerfiles = ['packages/broker/Dockerfile', ...readdirSync(join(repoRoot, 'packages/docker-runner/docker'))
+    .filter((name) => /dockerfile/i.test(name))
+    .map((name) => `packages/docker-runner/docker/${name}`)];
+  assert.ok(dockerfiles.length >= 5, `expected every Dockerfile, saw ${dockerfiles.length}`);
+  const failures = [];
+  for (const file of dockerfiles) {
+    const dir = file.slice(0, file.lastIndexOf('/'));
+    if (!watched.includes(dir)) failures.push(`${file}: directory ${dir} not watched by dependabot docker`);
+    const text = readFileSync(join(repoRoot, file), 'utf8');
+    const stages = new Set([...text.matchAll(/^FROM\s+\S+\s+AS\s+(\S+)/gim)].map((m) => m[1].toLowerCase()));
+    for (const [, image] of text.matchAll(/^FROM\s+(?:--platform=\S+\s+)?(\S+)/gim)) {
+      if (stages.has(image.toLowerCase())) continue;
+      if (!/^[\w./-]+:[\w.-]+@sha256:[0-9a-f]{64}$/.test(image)) failures.push(`${file}: FROM ${image} is not tag@sha256-pinned`);
+    }
+  }
+  assert.deepEqual(failures, []);
+});
+
 test('package exposes tracked markdown link validation script', () => {
   const scripts = packageJson().scripts ?? {};
   assert.equal(scripts['check:markdown-links'], 'node scripts/check-markdown-links.mjs');
