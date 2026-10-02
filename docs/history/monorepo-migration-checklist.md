@@ -42,7 +42,7 @@ gate below must be satisfied with documented evidence.
 | AG-9 | **Consumer compatibility** | Quickstart conformance and release gate pass for an end-to-end workflow | Plane maintainer | 🟢 Passed (`test:release-gate` runs quickstart + closeout + matrix baselines) |
 | AG-10 | **Documentation migration** | `docs/ecosystem-guide.md` references monorepo as primary; legacy repos linked as archive | Plane maintainer | 🟡 In progress (migration under a2a-plane#240) |
 | AG-11 | **CODEOWNERS split** | Package-level CODEOWNERS entries defined for each workspace | Plane maintainer | 🟡 In progress (current CODEOWNERS is single-owner) |
-| AG-12 | **Operator sign-off** | Explicit operator approval comment on the cutover issue before any visibility/route change | Operator (seoseo) | 🔴 Pending — final gate |
+| AG-12 | **Operator sign-off** | Explicit operator approval comment on the cutover issue before any visibility/route change | Operator | 🔴 Pending — final gate |
 
 **Cutover declaration**: A comment on a2a-plane#240 (a2a-plane#240, internal tracker private) listing all gates and their evidence must pass AG-12 before the monorepo is declared canonical source. Until then, the legacy source repositories remain the fallback source of truth.
 

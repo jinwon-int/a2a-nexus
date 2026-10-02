@@ -4,7 +4,7 @@
   "run": "a2a-source-dryrun-orchestrator-20260510T133022Z",
   "parentIssue": "a2a-plane#197 (internal tracker, private)",
   "issue": "a2a-plane#198 (internal tracker, private)",
-  "lane": "team1-bangtong",
+  "lane": "team1-workerGamma",
   "failClosed": true,
   "defaultDecision": "NO-GO",
   "goDecisionRequires": [

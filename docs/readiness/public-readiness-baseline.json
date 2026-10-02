@@ -2,7 +2,7 @@
   "$schema": "https://example.invalid/a2a-nexus/public-readiness-baseline.schema.json",
   "purpose": "Ratchet baseline for allowed historical/evidence internal-node-identifier warnings only. Lower these counts whenever cleanup removes warnings; any non-allowlisted internal node identifier fails strict public-readiness.",
   "internalNodeIdentifier": {
-    "warningCount": 1138,
-    "fileCount": 105
+    "warningCount": 46,
+    "fileCount": 7
   }
 }

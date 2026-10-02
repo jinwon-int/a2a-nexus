@@ -63,7 +63,7 @@ It is the canonical workflow entry point; detailed references remain below.
 
 Operational subdirectories: [ops/](ops/) (ledgers, scorecards, machine-read
 registries), [demo/](demo/), [compatibility/](compatibility/),
-[security/](security/), [validation/](validation/), [roadmap/](roadmap/).
+[security/](security/), [validation/](validation/).
 
 ## Records (completed work)
 

@@ -1,7 +1,7 @@
 {
   "kind": "a2a.source-public-final-approval-packet-schema",
   "run": "a2a-source-public-execution-orchestrator-20260511T023207Z",
-  "lane": "Team1 libero lane for yukson",
+  "lane": "Team1 libero lane for workerDelta",
   "issue": "a2a-plane#220 (internal tracker, private)",
   "parentIssue": "a2a-plane#218 (internal tracker, private)",
   "failClosed": true,

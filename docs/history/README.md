@@ -31,3 +31,8 @@ decision below is kept because the docs-routing gate still reads it.
 | [`release-gate-diet-closeout.md`](release-gate-diet-closeout.md) | Release gate diet closeout (#1201; opt-in tiers since removed) |
 | [`terminal-brief-sidecar-default-on-inventory.md`](terminal-brief-sidecar-default-on-inventory.md) | Terminal brief sidecar default-on consolidation inventory |
 | [`terminal-brief-sidecar-default-on-consolidation.md`](terminal-brief-sidecar-default-on-consolidation.md) | Terminal brief default-on consolidation closeout |
+| [`script-retirement-inventory-2026-07.md`](script-retirement-inventory-2026-07.md) | Script retirement inventory (2026-07, #1288) |
+| [`team1-input-worker-alpha-2026-05-09.md`](team1-input-worker-alpha-2026-05-09.md) | Team1 roadmap input — workerAlpha (verification/safety gates, 2026-05-09) |
+| [`team1-input-worker-beta-2026-05-09.md`](team1-input-worker-beta-2026-05-09.md) | Team1 roadmap input — workerBeta (protocol contract/compatibility, 2026-05-09) |
+| [`team1-input-worker-gamma-2026-05-09.md`](team1-input-worker-gamma-2026-05-09.md) | Team1 roadmap input — workerGamma (developer experience/evidence, 2026-05-09) |
+| [`team1-input-worker-delta-2026-05-09.md`](team1-input-worker-delta-2026-05-09.md) | Team1 roadmap input — workerDelta (sequencing/governance review, 2026-05-09) |

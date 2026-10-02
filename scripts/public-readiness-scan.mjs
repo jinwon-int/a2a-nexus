@@ -12,6 +12,12 @@ const deny = [
   { kind: 'private-a2a-plane-link', severity: 'fail', re: /(?:https?:\/\/github\.com\/)?jinwon-int\/a2a-plane(?:[\/#]|$)/i },
   { kind: 'operator-personal-name', severity: 'fail', re: /\bSeo\s+Jin\s+On\b|\uC11C\uC9C4\uC6D0|(?:\uC11C\s*)?\uC9C4\uC6D0\s*\uB2D8/ },
   { kind: 'operator-private-channel', severity: 'fail', re: /Telegram\s+DM|private\s+DM\s+from/i },
+  // Identifier policy (#2258 C5, operator decision 2026-10-02): fleet node and
+  // person codenames below are redacted from public surfaces — use role-based
+  // names (e.g. workerAlpha..workerTheta, team2-broker) and `<checkout>` for
+  // private paths. The pseudonymous aliases `libero` / `workerDelta` and the
+  // public repository name `ccc-node` are accepted public identifiers and are
+  // deliberately not in this list.
   { kind: 'internal-node-identifier', severity: strictInternal ? 'fail' : 'warn', re: /\b(?:seoseo|nosuk|sogyo|bangtong|yukson|dungae|jingun|soonwook|daegyo|gwakga|gongmyoung|gongyung)\b/i },
   {
     kind: 'post-78261-readiness-claim', severity: 'fail',
@@ -24,7 +30,6 @@ const allowWarningPaths = [
   /^docs\/history\//,
   /^fixtures\//,
   /^docs\/validation\//,
-  /^docs\/roadmap\//,
   /^docs\/approval-rehearsal\//,
   /^docs\/dry-run\//,
   /^docs\/execution-orchestrator\//,
