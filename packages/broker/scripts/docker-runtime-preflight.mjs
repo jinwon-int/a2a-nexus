@@ -1,6 +1,9 @@
 #!/usr/bin/env node
 // Docker Compose runtime preflight for the production A2A Broker service.
 // Dry-run mode is CI-safe and validates repo-local compose invariants only.
+// Docker network naming is validated fail-closed end to end: an env dump or
+// other unsafe value in SERVICE_NAME must never reach a docker network name
+// (vps7 2026-10-02 incident - a whole env file became the network name).
 
 import { execFile } from 'node:child_process';
 import { readFile } from 'node:fs/promises';
@@ -15,8 +18,54 @@ export const REQUIRED = Object.freeze({
   hostPublish: '127.0.0.1:8787:8787',
   containerHost: '0.0.0.0',
   stateBind: '/var/lib/a2a-broker:/var/lib/a2a-broker',
+  stateBindTemplate: '${A2A_BROKER_STATE_DIR:-/var/lib/a2a-broker}:/var/lib/a2a-broker',
   legacyService: 'a2a-broker.service',
+  networkNameTemplate: '${SERVICE_NAME:-a2a-broker}-net',
+  networkName: 'a2a-broker-net',
 });
+
+// Docker names share one conservative character set: no whitespace (a whole
+// env dump pasted into SERVICE_NAME is the vps7 2026-10-02 incident shape and
+// must fail closed before it reaches `docker network create`), no shell
+// metacharacters, no leading separator, 63-char DNS-label cap.
+export const SAFE_DOCKER_NAME = /^[a-zA-Z0-9][a-zA-Z0-9_.-]{0,62}$/;
+
+export function isSafeDockerName(value) {
+  return typeof value === 'string' && SAFE_DOCKER_NAME.test(value);
+}
+
+export function checkServiceName(serviceName) {
+  if (serviceName === undefined || serviceName === '') {
+    return ok('SERVICE_NAME sanity', `SERVICE_NAME unset; compose default ${REQUIRED.serviceName} applies`);
+  }
+  return isSafeDockerName(serviceName)
+    ? ok('SERVICE_NAME sanity', `SERVICE_NAME=${serviceName}`)
+    : fail(
+        'SERVICE_NAME sanity',
+        `SERVICE_NAME must match ${SAFE_DOCKER_NAME} (no whitespace, newlines, or '=', 1-63 chars); ` +
+          `got ${JSON.stringify(serviceName).slice(0, 80)} - an env dump in SERVICE_NAME becomes the docker network name`,
+      );
+}
+
+export function checkLiveNetworks(networks, env) {
+  const attached = Object.keys(networks || {});
+  if (attached.length === 0) {
+    return fail('live network name', 'container has no docker network attached');
+  }
+  const unsafe = attached.filter((name) => !isSafeDockerName(name));
+  if (unsafe.length > 0) {
+    return fail(
+      'live network name',
+      `unsafe docker network name(s) ${JSON.stringify(unsafe)} - recreate from ${REQUIRED.networkNameTemplate} with a safe SERVICE_NAME`,
+    );
+  }
+  const serviceName = env?.SERVICE_NAME || REQUIRED.serviceName;
+  const expected = `${serviceName}-net`;
+  if (!attached.includes(expected)) {
+    return fail('live network name', `expected network ${expected} (SERVICE_NAME=${serviceName}), attached: ${attached.join(', ')}`);
+  }
+  return ok('live network name', `attached: ${attached.join(', ')}`);
+}
 
 function ok(check, detail) {
   return { ok: true, check, detail };
@@ -29,6 +78,11 @@ function fail(check, detail) {
 function hasComposeMapping(text, key, value) {
   const escaped = value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
   return new RegExp(`${key}:\\s*(?:["']?${escaped}["']?)`, 'm').test(text);
+}
+
+function hasComposeListItem(text, value) {
+  const escaped = value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  return new RegExp(`^\\s*-\\s*["']?${escaped}["']?\\s*$`, 'm').test(text);
 }
 
 export function checkComposeText(text, composePath = 'docker-compose.yml') {
@@ -47,6 +101,12 @@ export function checkComposeText(text, composePath = 'docker-compose.yml') {
   );
 
   checks.push(
+    hasComposeMapping(text, 'name', REQUIRED.networkNameTemplate) || hasComposeMapping(text, 'name', REQUIRED.networkName)
+      ? ok('compose network name', `network name stays ${REQUIRED.networkNameTemplate} (single validated SERVICE_NAME source)`)
+      : fail('compose network name', `network name must stay ${REQUIRED.networkNameTemplate} (networks.<alias>.name); arbitrary expansions bypass SERVICE_NAME validation`),
+  );
+
+  checks.push(
     text.includes(`"${REQUIRED.hostPublish}"`) || text.includes(`'${REQUIRED.hostPublish}'`) || text.includes(`- ${REQUIRED.hostPublish}`)
       ? ok('loopback publish', `ports includes ${REQUIRED.hostPublish}`)
       : fail('loopback publish', `ports must include ${REQUIRED.hostPublish}`),
@@ -59,9 +119,9 @@ export function checkComposeText(text, composePath = 'docker-compose.yml') {
   );
 
   checks.push(
-    text.includes(REQUIRED.stateBind)
-      ? ok('state bind mount', `volumes includes ${REQUIRED.stateBind}`)
-      : fail('state bind mount', `volumes must include ${REQUIRED.stateBind}`),
+    text.includes(REQUIRED.stateBind) || hasComposeListItem(text, REQUIRED.stateBindTemplate)
+      ? ok('state bind mount', `volumes includes ${REQUIRED.stateBindTemplate} (or the literal ${REQUIRED.stateBind})`)
+      : fail('state bind mount', `volumes must include ${REQUIRED.stateBindTemplate} or ${REQUIRED.stateBind}`),
   );
 
   return checks;
@@ -84,7 +144,7 @@ async function dockerInspect(container) {
   return parsed[0];
 }
 
-function checkContainerInspect(inspect, container) {
+export function checkContainerInspect(inspect, container) {
   const env = Object.fromEntries((inspect.Config?.Env || []).map((entry) => {
     const idx = entry.indexOf('=');
     return idx === -1 ? [entry, ''] : [entry.slice(0, idx), entry.slice(idx + 1)];
@@ -108,6 +168,7 @@ function checkContainerInspect(inspect, container) {
     inspect.State?.Health?.Status === 'healthy'
       ? ok('live health', 'container health is healthy')
       : fail('live health', `expected healthy, got ${inspect.State?.Health?.Status || inspect.State?.Status || 'unknown'}`),
+    checkLiveNetworks(inspect.NetworkSettings?.Networks, env),
   ];
 }
 
@@ -155,6 +216,7 @@ async function main() {
   const options = parseArgs(process.argv.slice(2));
   const composeText = await readFile(options.composePath, 'utf8');
   const checks = checkComposeText(composeText, options.composePath);
+  checks.push(checkServiceName(process.env.SERVICE_NAME));
 
   if (!options.dryRun) {
     try {
