@@ -2,7 +2,7 @@
 /**
  * Spec <-> broker conformance checker (#1304 M6-b).
  *
- * Spec: docs/spec/verifiable-delegation-contract-v0.md. The spec carries
+ * Spec: docs/specs/verifiable-delegation-contract-v0.md. The spec carries
  * machine-readable ```json conformance blocks; this checker extracts them and
  * compares every value against what it extracts from the broker SOURCE files
  * with tightly anchored patterns. Divergence in either direction turns CI
@@ -20,7 +20,7 @@
 import fs from "node:fs";
 import path from "node:path";
 
-export const SPEC_PATH = "docs/spec/verifiable-delegation-contract-v0.md";
+export const SPEC_PATH = "docs/specs/verifiable-delegation-contract-v0.md";
 const CONFORMANCE_FENCE = /```json conformance\n([\s\S]*?)```/g;
 
 /** Parse every ```json conformance block out of the spec markdown. */

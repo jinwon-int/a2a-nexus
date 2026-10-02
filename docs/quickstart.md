@@ -44,7 +44,7 @@ npm run build
 npm run start:local
 ```
 
-(If you skipped the root-level `npm run smoke:quickstart` step above, first run `cd packages/broker && npm ci --ignore-scripts --include=dev`.)
+The root `npm ci --ignore-scripts --include=dev` from the prerequisites already installs every workspace, so no separate install is needed in `packages/broker` — `npm run build` there works even if you skipped `npm run smoke:quickstart`.
 
 Use only loopback URLs such as `http://127.0.0.1:8787`. Do not substitute a production broker or restart a managed service.
 

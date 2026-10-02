@@ -603,7 +603,7 @@
       "consumer": "pr-gate",
       "retirement": "keep",
       "retirementCondition": "Retire only when a narrower owner-scoped gate demonstrably covers the same invariant; no removal while it runs on the default release-gate path.",
-      "note": "Spec<->broker conformance for docs/spec/verifiable-delegation-contract-v0.md (#1304 M6-b) — the delegation-contract spec must not drift from the broker source in either direction."
+      "note": "Spec<->broker conformance for docs/specs/verifiable-delegation-contract-v0.md (#1304 M6-b) — the delegation-contract spec must not drift from the broker source in either direction."
     },
     {
       "name": "current-state-drift",
