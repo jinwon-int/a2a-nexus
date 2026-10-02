@@ -112,6 +112,9 @@ test("success emits the OpenClaw envelope with the normalized contract and danso
 		assert.equal(response.executionTelemetry.toolCalls, 0);
 		assert.equal(response.executionTelemetry.costUsd, undefined, "danso cost is unknown, never reported as 0");
 		assert.ok(normalizeAnalysisExecutionTelemetry(response.executionTelemetry));
+		// #2303 item 5: content-free prompt/source byte counters ride along.
+		assert.ok(Number.isInteger(response.promptView.promptBytes) && response.promptView.promptBytes > 0);
+		assert.equal(response.promptView.sourceBytes, 0, "the success fixture carries no source carriers");
 	} finally {
 		fx.cleanup();
 	}
@@ -291,6 +294,27 @@ test("the prompt carries each source file's content exactly once (#2301)", () =>
 	assert.match(prompt, /"hasContent": true/);
 	assert.match(prompt, /Task message:\nreview src\/x\.mjs/);
 	assert.ok(Buffer.byteLength(prompt, "utf8") < 3 * Buffer.byteLength(content, "utf8") + 4096, "prompt is bounded by one content copy plus scaffolding");
+});
+
+// #2303 items 1-2+4: object-form and nested carriers used to leak their
+// content through the payload section and the worker message; the handler
+// label kept the original payload size after the rewrite.
+test("the prompt keeps object-form and nested carriers summarized too (#2303)", () => {
+	const content = "const canary2303 = 'nested-object-form-line';\n".repeat(30);
+	const payload = {
+		mode: "analysis-only",
+		sourceOnly: true,
+		repo: "jinwon-int/a2a-nexus",
+		sourceFiles: { files: [{ repo: "jinwon-int/a2a-nexus", path: "obj.md", content }] },
+		task: { sourceEvidence: [{ repo: "jinwon-int/a2a-nexus", path: "nested.md", content }] },
+	};
+	const json = JSON.stringify(payload, null, 2);
+	const message = `Complete this task.\n\nPayload JSON (full; ${json.length} chars):\n${json}\n\nTask message:\nreview`;
+	const prompt = __test.buildDansoPrompt({ message, payload, sourceBundle: { files: [], warnings: [] }, flags: {}, model: "glm-5.3-flash", effort: "high" });
+	assert.equal(prompt.split("nested-object-form-line").length - 1, 0, "object-form and nested carriers leak no content");
+	assert.match(prompt, /Payload JSON \(summarized; \d+ chars\):/, "worker-message label rewritten to the summarized size");
+	assert.ok(!prompt.includes(`(full; ${json.length} chars)`), "stale original-size label gone");
+	assert.match(prompt, /"contentOmitted": "source content omitted here/);
 });
 
 test("the default prompt budget keeps oversized tasks under the argv limit", () => {

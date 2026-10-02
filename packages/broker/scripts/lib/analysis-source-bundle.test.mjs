@@ -14,8 +14,11 @@ import {
 	declaredRequiredCarrierPath,
 	extractPayload,
 	messageForPrompt,
+	normalizePromptViewTelemetry,
 	payloadForPrompt,
 	payloadFromStructuredEnv,
+	promptViewTelemetry,
+	sourceCarrierBytes,
 } from "./analysis-source-bundle.mjs";
 
 function withRepo(fn) {
@@ -162,17 +165,110 @@ test("messageForPrompt rewrites only the embedded Payload JSON block", () => {
 	const json = JSON.stringify(payload, null, 2);
 	const message = `Task id: t1\n\nPayload JSON (full; ${json.length} chars):\n${json}\n\nTask message:\nreview a.txt`;
 	const rewritten = messageForPrompt(message, payload);
-	assert.ok(rewritten.startsWith("Task id: t1\n\nPayload JSON (full; "), "prefix kept");
+	// #2303 item 4: the handler's label sizes the original payload; the
+	// rewrite replaces it with the size of the block actually shown.
+	const summarized = `Payload JSON (summarized; ${JSON.stringify(payloadForPrompt(payload), null, 2).length} chars):`;
+	assert.ok(rewritten.startsWith(`Task id: t1\n\n${summarized}`), "prefix kept, label rewritten to the summarized size");
+	assert.ok(!rewritten.includes(`Payload JSON (full; ${json.length} chars)`), "the stale original-size label is gone");
 	assert.ok(rewritten.endsWith("\n\nTask message:\nreview a.txt"), "suffix kept");
 	assert.ok(!rewritten.includes("line of source"), "file content removed from the message");
 	assert.match(rewritten, /"path": "a\.txt"/);
 	assert.match(rewritten, /"bytes": \d+/);
-	// The excerpt form is also recognized; a truncated (unbalanced) block and a
-	// message without the marker pass through unchanged.
+	// The excerpt form is also recognized (label kept — it carries no stale
+	// number); a truncated (unbalanced) block and a message without the marker
+	// pass through unchanged.
 	const excerpt = `Payload JSON excerpt (10 chars max; full payload is in A2A_ANALYSIS_PAYLOAD_FILE):\n${json}`;
-	assert.ok(!messageForPrompt(excerpt, payload).includes("line of source"));
+	const excerptRewritten = messageForPrompt(excerpt, payload);
+	assert.ok(!excerptRewritten.includes("line of source"));
+	assert.ok(excerptRewritten.startsWith("Payload JSON excerpt (10 chars max;"), "excerpt label kept");
 	const truncated = `Payload JSON (full; 9 chars):\n${json.slice(0, 40)}`;
 	assert.equal(messageForPrompt(truncated, payload), truncated);
 	assert.equal(messageForPrompt("no payload here", payload), "no payload here");
 	assert.equal(messageForPrompt(undefined, payload), "");
+});
+
+// #2303 item 1: object-form carriers summarize exactly like arrays — the old
+// array-only guard let `{ files: [...] }` (and a single carrier object) carry
+// raw content through the payload section and the message block.
+test("payloadForPrompt summarizes object-form and single-object carriers (#2303)", () => {
+	const content = "object form\n".repeat(30);
+	const bytes = Buffer.byteLength(content, "utf8");
+	const payload = {
+		sourceFiles: { files: [{ repo: "o/r", path: "a.txt", content }], note: "kept" },
+		sourceEvidence: { repo: "o/r", path: "b.txt", content },
+	};
+	const before = JSON.stringify(payload);
+	const view = payloadForPrompt(payload);
+	assert.equal(JSON.stringify(payload), before, "input payload is not mutated");
+	assert.ok(!JSON.stringify(view).includes("object form"), "no carrier content survives");
+	assert.deepEqual(
+		view.sourceFiles,
+		{
+			files: [{ repo: "o/r", path: "a.txt", bytes, hasContent: true }],
+			note: "kept",
+			contentOmitted: "source content omitted here; it is shown exactly once in the Read-only source bundle sections",
+		},
+	);
+	assert.deepEqual(view.sourceEvidence, [{ repo: "o/r", path: "b.txt", bytes, hasContent: true }]);
+	assert.equal(view.sourceEvidenceContentOmitted, "source content omitted here; it is shown exactly once in the Read-only source bundle sections");
+});
+
+// #2303 item 2: carriers at unlisted positions used to pass straight through.
+test("payloadForPrompt rewrites carriers at unlisted nested positions (#2303)", () => {
+	const content = "nested\n".repeat(40);
+	const bytes = Buffer.byteLength(content, "utf8");
+	const payload = {
+		task: { sourceFiles: [{ path: "t.txt", content }], note: "kept" },
+		items: [
+			{ repo: "o/r", path: "i.txt", content },
+			{ deep: { sourceEvidence: [{ path: "d.txt", text: content }] } },
+		],
+	};
+	const view = payloadForPrompt(payload);
+	assert.ok(!JSON.stringify(view).includes("nested\n"), "no nested carrier content survives");
+	assert.equal(view.task.note, "kept");
+	assert.deepEqual(view.task.sourceFiles, [{ path: "t.txt", bytes, hasContent: true }]);
+	assert.deepEqual(view.items[0], { repo: "o/r", path: "i.txt", bytes, hasContent: true });
+	assert.deepEqual(view.items[1].deep.sourceEvidence, [{ path: "d.txt", bytes, hasContent: true }]);
+});
+
+// The nested walk is shape-targeted: only known carrier keys and carrier-shaped
+// items are rewritten, so an unrelated long string anywhere else survives.
+test("the nested walk leaves non-carrier long strings untouched (#2303)", () => {
+	const body = "long prose\n".repeat(50);
+	const payload = { brief: { title: "x", content: body }, notes: [body] };
+	const view = payloadForPrompt(payload);
+	assert.equal(view.brief.content, body);
+	assert.deepEqual(view.notes, [body]);
+});
+
+// #2303 item 3: an empty `content` must not hide a populated `text`.
+test("an empty content field does not hide a populated text field (#2303)", () => {
+	const payload = { sourceFiles: [{ path: "a.txt", content: "", text: "real body" }] };
+	const view = payloadForPrompt(payload);
+	assert.deepEqual(view.sourceFiles, [{ path: "a.txt", bytes: Buffer.byteLength("real body"), hasContent: true }]);
+	assert.equal(sourceCarrierBytes(payload), Buffer.byteLength("real body"));
+});
+
+// #2303 item 5: content-free byte counters over every carrier shape.
+test("sourceCarrierBytes and promptViewTelemetry count every carrier shape once (#2303)", () => {
+	const content = "x".repeat(100);
+	const payload = {
+		sourceBundle: { files: [{ repo: "o/r", path: "a.txt", content }] },
+		sourceFiles: { files: [{ path: "b.txt", text: content }] },
+		task: { sourceEvidence: [{ path: "c.txt", content }] },
+		items: [{ repo: "o/r", path: "d.txt", content }],
+	};
+	assert.equal(sourceCarrierBytes(payload), 400);
+	assert.equal(sourceCarrierBytes({}), 0);
+	assert.equal(sourceCarrierBytes(null), 0);
+	assert.deepEqual(promptViewTelemetry(payload, "프롬프트"), {
+		promptBytes: Buffer.byteLength("프롬프트", "utf8"),
+		sourceBytes: 400,
+	});
+	// normalizePromptViewTelemetry: bounded integer record in, junk out.
+	assert.deepEqual(normalizePromptViewTelemetry({ promptBytes: 10, sourceBytes: 400 }), { promptBytes: 10, sourceBytes: 400 });
+	assert.deepEqual(normalizePromptViewTelemetry({ promptBytes: 10, junk: "x" }), { promptBytes: 10 });
+	assert.equal(normalizePromptViewTelemetry({ junk: true }), undefined);
+	assert.equal(normalizePromptViewTelemetry("nope"), undefined);
 });

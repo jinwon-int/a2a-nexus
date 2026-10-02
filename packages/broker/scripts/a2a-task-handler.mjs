@@ -17,6 +17,7 @@ import {
 import { sourceCarrierStats } from "./lib/source-carriers.mjs";
 import { payloadWithRetrievalSnapshotSourceCarriers } from "./lib/retrieval-snapshot-carriers.mjs";
 import { normalizeAnalysisExecutionTelemetry } from "./lib/analysis-execution-telemetry.mjs";
+import { normalizePromptViewTelemetry } from "./lib/analysis-source-bundle.mjs";
 import { evaluateDeclaredWriteSetGate } from "../dist/core/runtime-safety-gates.js";
 import { runLiveOperationTask } from "./lib/live-operation-adapter.mjs";
 import { classifyTypedWithJev, resolveJevConfig } from "./lib/jev-classifier.mjs";
@@ -1647,6 +1648,10 @@ function runOpenClawAnalysisBridgeOnce(task, env = process.env, sessionId) {
     claudeModelArgumentApplied: typeof response.claudeModelArgumentApplied === "boolean" ? response.claudeModelArgumentApplied : undefined,
     modelInheritanceNote: safeText(response.modelInheritanceNote, undefined),
     executionTelemetry: normalizeAnalysisExecutionTelemetry(response.executionTelemetry),
+    // #2303 item 5: relay the bridge's content-free prompt/source byte
+    // counters into the analysis record so the prompt-view ratio is
+    // observable per task, not only in the bridge's own stdout.
+    promptView: normalizePromptViewTelemetry(response.promptView),
     doneCommentUrl: postGithubComment ? undefined : safeText(response.doneCommentUrl, undefined),
     blockCommentUrl: postGithubComment ? undefined : safeText(response.blockCommentUrl, undefined),
     startCommentUrl: postGithubComment ? undefined : safeText(response.startCommentUrl, undefined),

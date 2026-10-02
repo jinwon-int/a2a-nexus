@@ -11,6 +11,8 @@ import {
   sourceCarrierContent,
 } from "./lib/source-carriers.mjs";
 import { payloadWithRetrievalSnapshotSourceCarriers } from "./lib/retrieval-snapshot-carriers.mjs";
+// #2303 item 5: content-free prompt/source byte counters for the telemetry.
+import { promptViewTelemetry } from "./lib/analysis-source-bundle.mjs";
 import { sliceUtf8AtBoundary, truncateUtf8ToBytesSafe } from "./lib/utf8-byte-budget.mjs";
 
 const DEFAULT_TIMEOUT_SEC = 300;
@@ -1185,6 +1187,11 @@ function main() {
         ...promptBundle.sourceProjection,
       };
     }
+    // #2303 item 5: content-free byte counters so a quiet prompt-view
+    // regression (source content duplicated back into the prompt) is visible
+    // as a rising prompt/source ratio. The hermes prompt view keeps its own
+    // carrier policy; only the measurement is shared with the lib.
+    response.promptView = promptViewTelemetry(payload, promptBundle.prompt);
   } catch (error) {
     die(`invalid Hermes analysis JSON schema: ${error.message}`);
   }

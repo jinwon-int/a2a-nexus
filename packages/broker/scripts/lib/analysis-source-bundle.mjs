@@ -424,20 +424,56 @@ export function collectSourceBundle(payload, env, { prefix }) {
 
 const SOURCE_CARRIER_KEYS = ["sourceFiles", "sourceEvidence", "embeddedSourceEvidence"];
 const CONTENT_OMITTED_NOTE = "source content omitted here; it is shown exactly once in the Read-only source bundle sections";
+// #2303 item 2: the nested-carrier defense walks the whole payload; bound the
+// walk so a pathological (never JSON-real) depth cannot turn into a hang.
+const MAX_CARRIER_WALK_DEPTH = 24;
+
+/** First non-empty string: #2303 item 3 — an empty `content` must not hide a populated `text`. */
+function firstNonEmptyString(...values) {
+	for (const value of values) {
+		if (typeof value === "string" && value.length > 0) return value;
+	}
+	return "";
+}
+
+function carrierContent(item) {
+	return firstNonEmptyString(item.content, item.text);
+}
+
+/**
+ * A carrier-shaped item: an identifying field plus a string body it would
+ * carry into a prompt. The nested defense only rewrites these shapes, so an
+ * unrelated long string anywhere else in the payload survives untouched.
+ */
+function isCarrierShapedItem(item) {
+	if (!item || typeof item !== "object" || Array.isArray(item)) return false;
+	const identified = safeText(item.repo || item.repository || item.path || item.file || item.name, "") !== "";
+	return identified && carrierContent(item) !== "";
+}
+
+/** Object-form carrier (`{ files: [...] }`) — the shape summarizeSourceCarriersForPrompt already accepts. */
+function isFilesFormCarrier(value) {
+	return Boolean(value) && typeof value === "object" && !Array.isArray(value)
+		&& !isCarrierShapedItem(value) && value.files !== undefined;
+}
 
 function summarizeSourceCarrierItem(item) {
 	if (typeof item === "string") return { path: item, bytes: 0, hasContent: false };
 	if (!item || typeof item !== "object" || Array.isArray(item)) return null;
 	const repo = safeText(item.repo || item.repository, "");
 	const path = safeText(item.path || item.file || item.name, "");
-	const content = typeof item.content === "string" ? item.content : typeof item.text === "string" ? item.text : "";
+	const content = carrierContent(item);
 	const rawRef = item.contentRef ?? item.contentPath;
 	const contentRef = typeof rawRef === "object" && rawRef !== null ? safeText(rawRef.path || rawRef.file, "") : safeText(rawRef, "");
+	// Idempotent on an already-summarized item (bytes/hasContent carried over),
+	// so re-summarizing a summary never rewrites numbers toward zero.
+	const bytes = content ? Buffer.byteLength(content, "utf8") : (Number.isInteger(item.bytes) && item.bytes >= 0 ? item.bytes : 0);
+	const hasContent = content.length > 0 || item.hasContent === true;
 	return {
 		...(repo ? { repo } : {}),
 		...(path ? { path } : {}),
-		bytes: Buffer.byteLength(content, "utf8"),
-		hasContent: content.length > 0,
+		bytes,
+		hasContent,
 		...(contentRef ? { contentRef } : {}),
 		...(item.truncated ? { truncated: true } : {}),
 	};
@@ -453,6 +489,56 @@ export function summarizeSourceCarriersForPrompt(value) {
 	return { files, fileCount: files.length };
 }
 
+/**
+ * Rewrite one carrier-shaped value in place: arrays and single carrier objects
+ * become summary arrays (with the adjacent `<key>ContentOmitted` note),
+ * object-form carriers keep their shape with `files` replaced. Returns false
+ * when the value is not a carrier, leaving it for the nested walk.
+ */
+function summarizeCarrierEntry(node, key) {
+	const value = node[key];
+	if (value === undefined || value === null) return false;
+	// A single carrier object is a one-element carrier; toArray deliberately
+	// refuses bare objects, so wrap it here (#2303 item 1).
+	const files = isCarrierShapedItem(value)
+		? [summarizeSourceCarrierItem(value)]
+		: summarizeSourceCarriersForPrompt(value).files;
+	if (Array.isArray(value) || isCarrierShapedItem(value)) {
+		node[key] = files;
+		if (node[`${key}ContentOmitted`] === undefined) node[`${key}ContentOmitted`] = CONTENT_OMITTED_NOTE;
+	} else if (isFilesFormCarrier(value)) {
+		node[key] = { ...value, files, contentOmitted: CONTENT_OMITTED_NOTE };
+	} else {
+		return false;
+	}
+	return true;
+}
+
+/**
+ * #2303 item 2: carriers at unlisted positions (`payload.task.sourceFiles`, a
+ * carrier object inside an array) used to pass straight through with their
+ * content raw. One targeted walk — known carrier keys and carrier-shaped
+ * items only — closes that gap; each position is visited exactly once, so an
+ * already-rewritten value is never re-summarized.
+ */
+function normalizeNestedCarriers(node, depth) {
+	if (!node || typeof node !== "object" || depth > MAX_CARRIER_WALK_DEPTH) return;
+	if (Array.isArray(node)) {
+		for (let index = 0; index < node.length; index += 1) {
+			const item = node[index];
+			if (isCarrierShapedItem(item)) node[index] = summarizeSourceCarrierItem(item);
+			else normalizeNestedCarriers(item, depth + 1);
+		}
+		return;
+	}
+	for (const key of Object.keys(node)) {
+		if (SOURCE_CARRIER_KEYS.includes(key) && summarizeCarrierEntry(node, key)) continue;
+		const value = node[key];
+		if (isCarrierShapedItem(value)) node[key] = summarizeSourceCarrierItem(value);
+		else normalizeNestedCarriers(value, depth + 1);
+	}
+}
+
 /** Deep copy of `payload` with every source carrier's content replaced by a summary. */
 export function payloadForPrompt(payload) {
 	if (!payload || typeof payload !== "object" || Array.isArray(payload)) return payload ?? {};
@@ -464,11 +550,7 @@ export function payloadForPrompt(payload) {
 			contentOmitted: CONTENT_OMITTED_NOTE,
 		};
 	}
-	for (const key of SOURCE_CARRIER_KEYS) {
-		if (!Array.isArray(copy[key])) continue;
-		copy[key] = summarizeSourceCarriersForPrompt(copy[key]).files;
-		copy[`${key}ContentOmitted`] = CONTENT_OMITTED_NOTE;
-	}
+	normalizeNestedCarriers(copy, 1);
 	return copy;
 }
 
@@ -495,5 +577,57 @@ export function messageForPrompt(message, payload) {
 		// keep the resolved payload
 	}
 	const replacement = JSON.stringify(payloadForPrompt(embedded), null, 2);
-	return `${text.slice(0, start)}\n${replacement}${text.slice(jsonStart + jsonText.length)}`;
+	// #2303 item 4: the handler labels the block with the ORIGINAL payload
+	// size; rewrite that label so the number describes the block actually
+	// shown. The excerpt label carries no stale number and is kept as-is.
+	const relabeled = /Payload JSON \(full; \d+ chars\):/i.test(marker[0])
+		? `Payload JSON (summarized; ${replacement.length} chars):`
+		: marker[0];
+	return `${text.slice(0, marker.index)}${relabeled}\n${replacement}${text.slice(jsonStart + jsonText.length)}`;
+}
+
+// ---------------------------------------------------------------------------
+// #2303 item 5: the prompt view is fail-open by design (marker misses,
+// unbalanced excerpts, first-block-only rewrites keep the original text), so a
+// regression would quietly put content back into the prompt. These content-free
+// byte counters make that observable: prompt bytes vs. source bytes, attached
+// to the bridge telemetry by both analysis bridges.
+// ---------------------------------------------------------------------------
+
+function measureCarrierBytes(node, depth) {
+	if (!node || typeof node !== "object" || depth > MAX_CARRIER_WALK_DEPTH) return 0;
+	if (isCarrierShapedItem(node)) return Buffer.byteLength(carrierContent(node), "utf8");
+	if (Array.isArray(node)) {
+		let total = 0;
+		for (const item of node) total += measureCarrierBytes(item, depth + 1);
+		return total;
+	}
+	let total = 0;
+	for (const value of Object.values(node)) total += measureCarrierBytes(value, depth + 1);
+	return total;
+}
+
+/** Total utf8 bytes of source content across every carrier shape in `payload`. */
+export function sourceCarrierBytes(payload) {
+	if (!payload || typeof payload !== "object") return 0;
+	return measureCarrierBytes(payload, 0);
+}
+
+/** `{ promptBytes, sourceBytes }` for the bridge telemetry record. */
+export function promptViewTelemetry(payload, prompt) {
+	return {
+		promptBytes: Buffer.byteLength(String(prompt ?? ""), "utf8"),
+		sourceBytes: sourceCarrierBytes(payload),
+	};
+}
+
+/**
+ * Accept only a bounded non-negative-integer byte-count record — the handler
+ * relays `promptView` from a bridge response into its persisted analysis
+ * record, so anything else a bridge (or a tampered response) emits is dropped.
+ */
+export function normalizePromptViewTelemetry(value) {
+	if (!value || typeof value !== "object" || Array.isArray(value)) return undefined;
+	const entries = Object.entries(value).filter(([, count]) => Number.isInteger(count) && count >= 0);
+	return entries.length > 0 ? Object.fromEntries(entries) : undefined;
 }

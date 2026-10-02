@@ -51,6 +51,7 @@ import {
 	messageForPrompt,
 	payloadForPrompt,
 	payloadFromStructuredEnv,
+	promptViewTelemetry,
 	positiveIntegerEnv,
 	safeText,
 } from "./lib/analysis-source-bundle.mjs";
@@ -600,6 +601,10 @@ function main() {
 			actualRuntimeModel: config.model,
 			modelInheritanceMode: "bridge_env_pin",
 			executionTelemetry,
+			// #2303 item 5: content-free byte counters so a quiet prompt-view
+			// regression (source content duplicated back into the prompt) is
+			// visible as a rising prompt/source ratio.
+			promptView: promptViewTelemetry(payload, prompt),
 		};
 	} catch (error) {
 		bridgeError({
