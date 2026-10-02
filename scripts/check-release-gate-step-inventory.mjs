@@ -75,6 +75,13 @@ export function compareInventory({ inventory }) {
   for (const tier of DEFAULT_TIERS) {
     if (!validTiers.has(tier)) failures.push(`default release-gate tier is not declared: ${tier}`);
   }
+  // No declared-but-unknown or declared-but-empty tier (#2257 B6): an empty
+  // tier still reads as a runnable surface in docs and `--only-tier <tier>`
+  // then fails with "no entries selected".
+  for (const tier of inventory.tiers ?? []) {
+    if (!Object.hasOwn(TIER_CONSUMER, tier)) failures.push(`declared tier ${tier} is not a known release-gate tier`);
+    else if (!summary[tier]) failures.push(`declared tier ${tier} has no steps; remove it instead of keeping an empty tier`);
+  }
 
   const defaultEntries = inventory.entries.filter((entry) => DEFAULT_TIERS.includes(entry.tier));
   if (defaultEntries.length === 0) failures.push('default release-gate selection is empty');

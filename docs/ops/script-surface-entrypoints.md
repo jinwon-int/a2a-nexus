@@ -52,17 +52,16 @@ Use the root gate for ordinary pull requests:
 npm run check
 ```
 
-This is the default fail-closed PR gate. It executes the ordinary `core` and `public-readiness` release-gate tiers. Historical transition, approval-gated, and package-publication tiers remain available through explicit release-gate flags, but they are not hidden inside every ordinary PR run.
+This is the default fail-closed PR gate. It executes the `core` and `public-readiness` release-gate tiers, which are the only tiers — every inventoried step runs on this path. The former opt-in historical-transition, approval-gated and package-publication tiers were emptied in #1779 and removed in #2257 B6.
 
 Useful inspection commands:
 
 ```bash
 npm run release-gate -- --list
-npm run release-gate -- --all
-npm run release-gate -- --tier historical-transition
+npm run release-gate -- --only-tier core
 ```
 
-`--all` and opt-in tiers are evidence-gathering modes. They do not authorize an approval-sensitive action by themselves.
+Inspection and tier-narrowing modes are evidence-gathering only. They do not authorize an approval-sensitive action by themselves.
 
 ## Public candidate check
 
@@ -81,10 +80,9 @@ Add package-specific or release-specific checks when the candidate claims packag
 npm run check:packages
 npm run test:conformance
 npm run check:compatibility-baselines
-npm run release-gate -- --only-tier package-publication
 ```
 
-The package-publication tier is a policy/audit surface. It does **not** create tags, GitHub Releases, npm publishes, Docker/GHCR images, homepage metadata, production deployments, broker/Gateway/worker restarts, provider sends, DB/outbox/ACK/replay mutations, or secret movement.
+None of these checks — nor the default release gate — creates tags, GitHub Releases, npm publishes, Docker/GHCR images, homepage metadata, production deployments, broker/Gateway/worker restarts, provider sends, DB/outbox/ACK/replay mutations, or secret movement. Package publication stays a separate, explicitly approved action (the former `package-publication` release-gate tier was emptied in #1779 and removed in #2257 B6).
 
 ## Script cleanup rule
 
