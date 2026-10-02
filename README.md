@@ -14,28 +14,13 @@ For external readers, start here first:
 
 1. [Five-minute local quickstart](docs/quickstart.md) — disposable loopback broker plus echo worker path.
 2. [Public architecture](docs/architecture.md) — conceptual broker/worker/finalizer/evidence map with no private topology.
-3. [Product boundaries and extraction contract](docs/product-boundaries.md) — G0 core/product map before any feature repository split.
-4. [Trust boundaries and proof primitives](docs/trust-boundaries.md) — what Nexus evidence proves, what it does not prove, and which actions remain approval-gated.
-5. [Public contribution entry points](docs/contribution-entry-points.md) — safe first-task candidates for outside contributors.
-6. [Release and package readiness](docs/release-readiness.md) — checklist before any release, tag, npm, Docker, or GHCR decision.
-7. [Public alpha landing draft](docs/public-alpha-landing.md) — content draft only; no homepage metadata or deployment approval.
-8. [Verifiable analysis report sample](docs/verifiable-analysis-report.md) — offline-checkable report product slice with a public-safe fixture.
-9. [Agent work proof sample](docs/agent-work-proof.md) — source-only work-completion evidence bundle with offline verifier and public-safe fixture.
-10. [Escrow release proof sample](docs/escrow-proof.md) — source-only release-condition proof with no payment rail, custody, or funds movement.
-11. [Agent payment dispute packet sample](docs/agent-payment-dispute-packet.md) — source-only dispute evidence packet for user delegation, scope, completion, and release-decision proof.
+3. [Contributing guide](CONTRIBUTING.md) — workflow, review and public language rules; safe first tasks are in the [public contribution entry points](docs/contribution-entry-points.md).
+
+Everything else — boundaries, guides, readiness and product-slice samples — is grouped under [Reference](#reference) at the end.
 
 > **Status:** public alpha — the repository is publicly readable, but public visibility is not a production deployment, stable release, tag, package publish, homepage/docs-site launch, broad promotion, or live-action authorization. See [Current public alpha state](#current-public-alpha-state) for the remaining approval-gated actions.
 
 `a2a-nexus` is now the canonical implementation source for the broker, harness adapters, Docker runner, contracts, docs, examples, and readiness gates. The former split repositories are archived and private, kept for provenance only; package publication, releases, deployment, and visibility-related actions stay separately approval-gated. See the [topology decision record](docs/topology-decision-record.md) and the [history index](docs/history/README.md) for completed migration records.
-
-Additional project docs:
-
-- [A2A current state](docs/current-state.md) - current source state, ownership boundaries, and checkout hygiene.
-- [A2A operator guide](docs/operators.md) - approval points and finalizer boundaries.
-- [A2A developer guide](docs/developers.md) - package surfaces and local validation for rehearsal work.
-- [Public umbrella quickstart](docs/quickstart-public-umbrella.md) - repository map, issue routing, and local docs path.
-- [A2A Nexus positioning](docs/positioning.md) - landscape comparison, differentiators, and public-safe framing.
-- [External publicization roadmap](docs/publicization-roadmap.md) - gated publicization and release-readiness plan.
 
 ## Current public alpha state
 
@@ -67,14 +52,9 @@ npm run scan:external-secrets
 ```
 
 The full script-surface operator map lives in [`docs/ops/script-surface-entrypoints.md`](docs/ops/script-surface-entrypoints.md).
-Then follow the public docs path in this order:
+For deeper reading, continue with the [Reference](#reference) section below.
 
-1. [Public umbrella quickstart](docs/quickstart-public-umbrella.md)
-2. [Five-minute local quickstart](docs/quickstart.md)
-3. [A2A Nexus positioning](docs/positioning.md)
-4. [External publicization roadmap](docs/publicization-roadmap.md)
-
-This path uses safe placeholders only. Do not paste real broker URLs, tokens, private node IDs, provider IDs, Telegram IDs, host-local paths, raw session dumps, or production data into public issues, pull requests, docs, or artifacts.
+The docs on this path use safe placeholders only. Do not paste real broker URLs, tokens, private node IDs, provider IDs, Telegram IDs, host-local paths, raw session dumps, or production data into public issues, pull requests, docs, or artifacts.
 
 Historical coordination and completed migration records are summarized in [`docs/history/README.md`](docs/history/README.md), [`docs/history/public-readiness.md`](docs/history/public-readiness.md), and [`docs/current-state.md`](docs/current-state.md).
 
@@ -143,10 +123,7 @@ Historical completed trackers are consolidated in [`docs/history/README.md`](doc
 
 ## Five-minute local quickstart
 
-Start with the local-only quickstart:
-
-- [`docs/quickstart-public-umbrella.md`](docs/quickstart-public-umbrella.md)
-- [`docs/quickstart.md`](docs/quickstart.md)
+Start with the local-only quickstart linked under *start here* at the top; the [public umbrella quickstart](docs/quickstart-public-umbrella.md) adds the repository map and issue routing.
 
 The quickstart is designed as the external-reader path for a disposable local A2A Nexus broker and dummy/echo worker. If your checkout does not yet include the runnable broker or worker scripts described there, treat that as a documented blocker rather than substituting production services.
 
@@ -199,3 +176,32 @@ and fails closed when the external scanner prerequisite is missing.
 A2A Nexus uses a lightweight spec-first protocol for medium and large development/operations changes. Start with `docs/a2a-constitution.md`, then use the templates in `docs/spec-templates/` for feature specs, implementation plans, and task/evidence checklists.
 
 This process is documentation-only in its initial adoption phase and does not change runtime behavior or authorize deploy/restart/canary/DB/replay/release actions.
+
+## Reference
+
+**Boundaries and design**
+
+- [Product boundaries and extraction contract](docs/product-boundaries.md) — G0 core/product map before any feature repository split.
+- [Trust boundaries and proof primitives](docs/trust-boundaries.md) — what Nexus evidence proves, what it does not prove, and the canonical list of approval-gated actions.
+- [A2A Nexus positioning](docs/positioning.md) — landscape comparison, differentiators, and public-safe framing.
+- [A2A current state](docs/current-state.md) — current source state, ownership boundaries, and checkout hygiene.
+
+**Guides**
+
+- [Public umbrella quickstart](docs/quickstart-public-umbrella.md) — repository map, issue routing, and local docs path.
+- [A2A operator guide](docs/operators.md) — approval points and finalizer boundaries.
+- [A2A developer guide](docs/developers.md) — package surfaces and local validation for rehearsal work.
+- [Agent manual](docs/agent-manual.md) — commands, lane contracts and recovery steps for agents using Nexus.
+
+**Readiness and publication**
+
+- [Release and package readiness](docs/release-readiness.md) — checklist before any release, tag, npm, Docker, or GHCR decision.
+- [External publicization roadmap](docs/publicization-roadmap.md) — gated publicization and release-readiness plan.
+- [Public alpha landing draft](docs/public-alpha-landing.md) — content draft only; no homepage metadata or deployment approval.
+
+**Product-slice samples** (source-only, offline-verifiable, public-safe fixtures)
+
+- [Verifiable analysis report](docs/verifiable-analysis-report.md) — offline-checkable report product slice.
+- [Agent work proof](docs/agent-work-proof.md) — work-completion evidence bundle with an offline verifier.
+- [Escrow release proof](docs/escrow-proof.md) — release-condition proof with no payment rail, custody, or funds movement.
+- [Agent payment dispute packet](docs/agent-payment-dispute-packet.md) — dispute evidence for user delegation, scope, completion, and release decision.
