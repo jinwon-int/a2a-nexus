@@ -76,6 +76,58 @@ test("consistent adapter metadata keeps readiness (#1895)", () => {
   assert.equal(workerAnalysisAdapterMismatch(worker.metadata), undefined);
 });
 
+test("danso-wired workers are checked for stale piri labels and accepted when consistent (#2295)", () => {
+  const handlerPath = "/opt/a2a-broker-worker/scripts/danso-a2a-analysis-bridge.mjs";
+  const stale = workerRecord({ metadata: { harness: "piri", adapter: "piri-a2a-analysis-bridge", analysisHandlerPath: handlerPath } });
+  assert.equal(isWorkerSubstantiveAnalysisReady(stale), false);
+  assert.match(workerAnalysisAdapterMismatch(stale.metadata) ?? "", /mismatch/);
+  const consistent = workerRecord({ metadata: { harness: "danso", adapter: "danso-a2a-analysis-bridge", analysisHandlerPath: handlerPath } });
+  assert.equal(isWorkerSubstantiveAnalysisReady(consistent), true);
+  assert.equal(workerAnalysisAdapterMismatch(consistent.metadata), undefined);
+});
+
+test("probe resolves A2A_DANSO_ANALYSIS_BIN first and classifies it as danso (#2295)", () => {
+  const dir = mkdtempSync(join(tmpdir(), "a2a-danso-probe-"));
+  try {
+    const danso = join(dir, "danso-a2a-analysis-bridge.mjs");
+    const piri = join(dir, "piri-a2a-analysis-bridge.mjs");
+    writeFileSync(danso, "// danso bridge\n", "utf8");
+    writeFileSync(piri, "// piri bridge\n", "utf8");
+    const probe = probeAnalysisArtifactReadiness(
+      {
+        A2A_OPENCLAW_ANALYSIS_ENABLED: "1",
+        A2A_DANSO_ANALYSIS_BIN: danso,
+        A2A_PIRI_ANALYSIS_BIN: piri,
+        // Legacy claude hints must not outrank the resolved danso bridge.
+        A2A_CLAUDE_CODE_BIN: "/usr/bin/claude",
+      },
+      true,
+    );
+    assert.equal(probe.ready, true);
+    assert.equal(probe.handlerPath, danso);
+    assert.equal(probe.adapterClass, "danso");
+    const explicit = probeAnalysisArtifactReadiness(
+      { A2A_OPENCLAW_ANALYSIS_ENABLED: "1", A2A_DANSO_ANALYSIS_BIN: danso, A2A_WORKER_BRIDGE_ADAPTER: "danso" },
+      true,
+    );
+    assert.equal(explicit.adapterClass, "danso");
+    // A piri-wired node whose metadata mentions danso keeps its old class.
+    const piriNode = probeAnalysisArtifactReadiness(
+      {
+        A2A_OPENCLAW_ANALYSIS_ENABLED: "1",
+        A2A_PIRI_ANALYSIS_BIN: piri,
+        WORKER_METADATA_JSON: JSON.stringify({ note: "main session harness: danso" }),
+      },
+      true,
+    );
+    // (The temp dir name itself contains "danso" — the piri bridge inside it
+    // must still not be classified as danso.)
+    assert.notEqual(piriNode.adapterClass, "danso");
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
 test("intent-aware claude patch bridge serving analysis is consistent (#1895)", () => {
   // The claude patch bridge serves analysis in a read-only mode by design, so
   // a worker whose analysis handler IS the claude patch bridge is consistent.

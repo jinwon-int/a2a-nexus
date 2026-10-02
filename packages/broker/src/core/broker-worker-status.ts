@@ -75,7 +75,7 @@ export function isWorkerSubstantiveAnalysisReady(worker: WorkerRecord): boolean 
  * consistent — or carries no evaluable signal (legacy/unprobed workers stay
  * untouched, matching the analysisReady probe's non-darkening guarantee).
  */
-const ADAPTER_KEYWORDS = ["codex", "claude", "hermes", "piri"] as const;
+const ADAPTER_KEYWORDS = ["codex", "claude", "hermes", "piri", "danso"] as const;
 
 function adapterKeywordOf(value: string | undefined): string {
   const text = (value ?? "").toLowerCase();

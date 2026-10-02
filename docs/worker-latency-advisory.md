@@ -39,7 +39,7 @@ absence is reported, never imputed:
   Missing means absent stats/counts; a present malformed stats object or a
   fractional, negative, non-finite, unsafe or non-numeric count is invalid.
 - `executionTelemetry`: only well-formed `a2a.analysis-execution-telemetry.v1`
-  objects from `piri_progress_file` or `claude_cli_envelope` count as observed;
+  objects from `piri_progress_file`, `claude_cli_envelope`, or `danso_cli_usage` count as observed;
   wrong schema/source/shape or present invalid counts, known retry-reason values
   or `truncated` types count as `invalid`; an absent object counts as `missing`,
   and `truncated: true` stays visible in `truncated`. An incomplete or truncated

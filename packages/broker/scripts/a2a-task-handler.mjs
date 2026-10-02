@@ -773,6 +773,7 @@ function normalizeAnalysisBridgeAdapter(value) {
   if (["codex", "codex-cli", "codex-analysis"].includes(adapter)) return "codex";
   if (["claude", "claude-code", "claude_code"].includes(adapter)) return "claude_code";
   if (["piri", "pi"].includes(adapter)) return "piri";
+  if (["danso", "danso-cli"].includes(adapter)) return "danso";
   if (["hermes", "hermes-agent", "hermes-agent-source-only", "termux-hermes"].includes(adapter)) return "hermes";
   if (["openclaw", "openclaw-analysis"].includes(adapter)) return "openclaw";
   return "";
@@ -964,7 +965,14 @@ function analysisBridgeTelemetry(command, env = process.env) {
   // It is piri now because that is what the fleet actually runs
   // (CCC_AGENT_PROVIDER=piri on the worker nodes since 2026-08-05), and because
   // the openclaw default could only fail: see analysisBridgeCommand below.
-  const bridgeAdapter = detectAdapter(`${commandText}\n${commandName}`.toLowerCase()) || detectAdapter(envHints) || "piri";
+  // #2295: danso is detected from the resolved bridge's file name only — never
+  // from directory names or the legacy env hints, so a piri node whose
+  // metadata merely mentions danso (its main session harness) keeps its label.
+  const commandSignal = `${commandText}\n${commandName}`.toLowerCase();
+  const bridgeAdapter = detectAdapter(commandSignal)
+    || (commandName.toLowerCase().includes("danso") ? "danso" : "")
+    || detectAdapter(envHints)
+    || "piri";
   return {
     analysisKind: "analysis_bridge",
     bridgeAdapter,
@@ -992,6 +1000,11 @@ export const DEFAULT_ANALYSIS_BRIDGE = fileURLToPath(
 );
 
 function analysisBridgeCommand(env = process.env) {
+  // #2295: an explicit danso bridge wins so a danso node never has to point
+  // A2A_PIRI_ANALYSIS_BIN at a non-piri bridge. Keep in sync with
+  // analysisBridgeCommandForProbe (worker-metadata.ts).
+  const danso = safeText(env.A2A_DANSO_ANALYSIS_BIN, "");
+  if (danso) return danso;
   return safeText(
     env.A2A_PIRI_ANALYSIS_BIN,
     safeText(

@@ -333,6 +333,9 @@ function deriveWorkerRuntimeMetadata(bridgeBin: string): WorkerRuntimeMetadata {
   if (/codex-a2a-analysis-bridge\.mjs$/.test(bin)) {
     return { runtime: "codex", harness: "analysis-bridge", adapter: "codex-a2a-analysis-bridge" };
   }
+  if (/danso-a2a-analysis-bridge\.mjs$/.test(bin)) {
+    return { runtime: "danso", harness: "analysis-bridge", adapter: "danso-a2a-analysis-bridge" };
+  }
   return { runtime: "unknown", harness: "unknown", adapter: "unknown" };
 }
 

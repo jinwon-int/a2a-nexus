@@ -260,6 +260,19 @@ test("success receipts aggregate source bytes, model requests, retries and model
   assert.ok(!serialized.includes("k3[1m]"));
 });
 
+test("danso_cli_usage telemetry counts as an observed receipt source (#2295)", () => {
+  const output = { ...successOutput(), executionTelemetry: observedTelemetry({ source: "danso_cli_usage", modelRequests: 1, schemaRetries: undefined }) };
+  const tasks = [task({ id: "d1", assignedWorkerId: "worker-danso", result: { output } })];
+  const events = chainEvents("d1", { created: "2026-09-01T00:00:00.000Z", claimed: "2026-09-01T00:00:01.000Z", started: "2026-09-01T00:00:02.000Z", terminal: "2026-09-01T00:00:05.000Z" }, "succeeded");
+  const response = aggregateWorkerLatencyProfiles(tasks, events);
+  const profile = response.profiles[0];
+  assert.ok(profile);
+  assert.equal(profile.receipts.executionTelemetry.observed, 1);
+  assert.equal(profile.receipts.executionTelemetry.invalid, 0);
+  assert.equal(profile.receipts.executionTelemetry.modelRequests.total, 1);
+  assert.deepEqual(response.coverage.executionTelemetry, { observed: 1, missing: 0, invalid: 0, truncated: 0 });
+});
+
 test("structured bridge failure receipts win over preserved result output and count once", () => {
   const tasks = [
     task({
