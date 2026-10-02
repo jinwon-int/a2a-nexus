@@ -161,10 +161,50 @@ export function piriExecutionTelemetry(progressPath, elapsedMs) {
   };
 }
 
+/**
+ * Parse exactly one `<NAME>=<json object>` record from danso stderr. The danso
+ * process contract (docs/v0.md "Process contract") emits each record exactly
+ * once; a missing, duplicated, or malformed record yields undefined rather than
+ * a guess, so telemetry never double-counts or invents numbers.
+ */
+export function parseDansoStderrRecord(stderr, name) {
+  const prefix = `${name}=`;
+  const lines = String(stderr ?? "").split("\n").filter((line) => line.startsWith(prefix));
+  if (lines.length !== 1) return undefined;
+  try {
+    const parsed = JSON.parse(lines[0].slice(prefix.length));
+    return parsed && typeof parsed === "object" && !Array.isArray(parsed) ? parsed : undefined;
+  } catch {
+    return undefined;
+  }
+}
+
+/**
+ * #2295: danso reports per-run usage on stderr (`PIRI_USAGE`, Piri-compatible
+ * fields) plus a body-free `DANSO_TIMING` record. danso encodes unknown cost
+ * as zero for Piri schema compatibility — that is not a claim the run was free,
+ * so costUsd is deliberately not carried.
+ */
+export function dansoExecutionTelemetry(stderr, elapsedMs) {
+  const usage = parseDansoStderrRecord(stderr, "PIRI_USAGE") ?? {};
+  const timing = parseDansoStderrRecord(stderr, "DANSO_TIMING") ?? {};
+  return compact({
+    schemaVersion: ANALYSIS_EXECUTION_TELEMETRY_VERSION,
+    source: "danso_cli_usage",
+    elapsedMs: nonNegativeInteger(elapsedMs) ?? 0,
+    modelRequests: nonNegativeInteger(usage.requests),
+    inputTokens: nonNegativeInteger(usage.inputTokens),
+    outputTokens: nonNegativeInteger(usage.outputTokens),
+    cacheReadInputTokens: nonNegativeInteger(usage.cacheReadTokens),
+    cacheCreationInputTokens: nonNegativeInteger(usage.cacheWriteTokens),
+    toolCalls: nonNegativeInteger(timing.tool_calls),
+  });
+}
+
 export function normalizeAnalysisExecutionTelemetry(value) {
   if (!value || typeof value !== "object" || Array.isArray(value)) return undefined;
   if (value.schemaVersion !== ANALYSIS_EXECUTION_TELEMETRY_VERSION) return undefined;
-  if (!["claude_cli_envelope", "piri_progress_file"].includes(value.source)) return undefined;
+  if (!["claude_cli_envelope", "piri_progress_file", "danso_cli_usage"].includes(value.source)) return undefined;
   return compact({
     schemaVersion: ANALYSIS_EXECUTION_TELEMETRY_VERSION,
     source: value.source,

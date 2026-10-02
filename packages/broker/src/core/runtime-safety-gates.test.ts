@@ -239,6 +239,33 @@ test("worker runtime boundary enforces tunnel-only broker egress and workspace m
   });
 });
 
+test("worker runtime boundary derives danso analysis-bridge metadata from wiring (#2295)", () => {
+  const decision = evaluateWorkerRuntimeBoundary({
+    tunnelOnly: true,
+    brokerUrl: "http://127.0.0.1:18790",
+    taskWorkspaceId: "a2a-nexus",
+    registeredWorkspaceIds: ["a2a-nexus"],
+    bridgeBin: "/opt/a2a-broker-worker/scripts/danso-a2a-analysis-bridge.mjs",
+    reportedMetadata: { runtime: "danso", harness: "analysis-bridge", adapter: "danso-a2a-analysis-bridge" },
+  });
+
+  assert.equal(decision.allowed, true);
+  assert.deepEqual(decision.derivedMetadata, {
+    runtime: "danso",
+    harness: "analysis-bridge",
+    adapter: "danso-a2a-analysis-bridge",
+  });
+  // A stale piri claim on a danso-wired worker is refused.
+  const stale = evaluateWorkerRuntimeBoundary({
+    tunnelOnly: false,
+    brokerUrl: "http://127.0.0.1:18790",
+    registeredWorkspaceIds: [],
+    bridgeBin: "/opt/a2a-broker-worker/scripts/danso-a2a-analysis-bridge.mjs",
+    reportedMetadata: { runtime: "piri", harness: "analysis-bridge", adapter: "piri-a2a-analysis-bridge" },
+  });
+  assert.equal(stale.allowed, false);
+});
+
 test("worker runtime boundary accepts loopback tunnel and matching workspace", () => {
   const decision = evaluateWorkerRuntimeBoundary({
     tunnelOnly: true,

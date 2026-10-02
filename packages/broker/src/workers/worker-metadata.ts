@@ -118,6 +118,7 @@ const PROBE_ADAPTER_ALIASES: Record<string, string> = {
   claudecode: "claude_code",
   codex: "codex",
   hermes: "hermes",
+  danso: "danso",
   builtin: "builtin",
 };
 
@@ -150,6 +151,7 @@ const PROBE_DEFAULT_ANALYSIS_BRIDGE = fileURLToPath(
 
 function analysisBridgeCommandForProbe(env: NodeJS.ProcessEnv): string {
   return (
+    optionalTrimmed(env.A2A_DANSO_ANALYSIS_BIN) ??
     optionalTrimmed(env.A2A_PIRI_ANALYSIS_BIN) ??
     optionalTrimmed(env.A2A_HERMES_ANALYSIS_BIN) ??
     optionalTrimmed(env.A2A_OPENCLAW_ANALYSIS_BIN) ??
@@ -162,6 +164,11 @@ function analysisBridgeCommandForProbe(env: NodeJS.ProcessEnv): string {
 function deriveAnalysisAdapterClass(env: NodeJS.ProcessEnv, command: string): string {
   const explicit = normalizeProbeAdapter(env.A2A_ANALYSIS_BRIDGE_ADAPTER ?? env.A2A_WORKER_BRIDGE_ADAPTER);
   if (explicit) return explicit;
+  // #2295: danso only from the resolved bridge's FILE NAME (handler parity) —
+  // never from directory names or env hints, which may merely describe the
+  // node's main-session harness (e.g. a piri bridge under /opt/danso-tools/).
+  const commandName = (command.split(/[\\/]/).pop() ?? "").toLowerCase();
+  if (commandName.includes("danso") && !/codex|claude|hermes|piri/.test(commandName)) return "danso";
   const combined = [
     command,
     optionalTrimmed(env.A2A_CLAUDE_CODE_BIN) ?? "",

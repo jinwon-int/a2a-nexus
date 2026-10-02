@@ -2421,6 +2421,22 @@ test("analysis bridge adapter label detects each adapter from the command path (
 	assert.equal(__test.analysisBridgeTelemetry("/opt/x/codex-a2a-analysis-bridge.mjs", {}).bridgeAdapter, "codex");
 	assert.equal(__test.analysisBridgeTelemetry("/opt/x/hermes-a2a-analysis-bridge.mjs", {}).bridgeAdapter, "hermes");
 	assert.equal(__test.analysisBridgeTelemetry("/opt/x/piri-a2a-analysis-bridge.mjs", {}).bridgeAdapter, "piri");
+	assert.equal(__test.analysisBridgeTelemetry("/opt/x/danso-a2a-analysis-bridge.mjs", {}).bridgeAdapter, "danso");
+});
+
+test("danso adapter label comes from the bridge command, never from env hints (#2295)", () => {
+	// A piri-analysis node whose main session runs danso may mention danso in its
+	// metadata notes; that must not relabel the piri bridge run.
+	const hints = { WORKER_METADATA_JSON: JSON.stringify({ note: "main session harness: danso" }) };
+	assert.equal(__test.analysisBridgeTelemetry("/opt/x/piri-a2a-analysis-bridge.mjs", hints).bridgeAdapter, "piri");
+	assert.equal(__test.analysisBridgeTelemetry("/opt/bin/custom-wrapper.sh", hints).bridgeAdapter, "piri");
+	// A danso-named directory must not relabel a generic wrapper either.
+	assert.equal(__test.analysisBridgeTelemetry("/opt/danso-tools/custom-wrapper.sh", {}).bridgeAdapter, "piri");
+	// The danso bridge is labeled danso even when legacy claude hints linger.
+	const claudeHints = { A2A_CLAUDE_CODE_BIN: "/usr/bin/claude", A2A_WORKER_RUNTIME_FLAVOR: "claude-code" };
+	assert.equal(__test.analysisBridgeTelemetry("/opt/x/danso-a2a-analysis-bridge.mjs", claudeHints).bridgeAdapter, "danso");
+	// Explicit adapter env still wins.
+	assert.equal(__test.analysisBridgeTelemetry("/opt/x/whatever.mjs", { A2A_WORKER_BRIDGE_ADAPTER: "danso" }).bridgeAdapter, "danso");
 });
 
 test("analysis bridge adapter label falls back to env hints for generic wrapper commands (#1895)", () => {
@@ -3149,6 +3165,10 @@ test("normalizeAnalysisBridgeAdapter maps piri aliases (a2a-nexus#1745)", () => 
   assert.equal(__test.normalizeAnalysisBridgeAdapter("piri"), "piri");
   assert.equal(__test.normalizeAnalysisBridgeAdapter("pi"), "piri");
   assert.equal(__test.normalizeAnalysisBridgeAdapter("Piri"), "piri");
+  // #2295 danso aliases
+  assert.equal(__test.normalizeAnalysisBridgeAdapter("danso"), "danso");
+  assert.equal(__test.normalizeAnalysisBridgeAdapter("Danso"), "danso");
+  assert.equal(__test.normalizeAnalysisBridgeAdapter("danso_cli"), "danso");
   // 기존 어댑터 회귀 방지
   assert.equal(__test.normalizeAnalysisBridgeAdapter("claude-code"), "claude_code");
   assert.equal(__test.normalizeAnalysisBridgeAdapter("codex"), "codex");
@@ -3243,6 +3263,21 @@ test("hostPatchBridgeCommand prefers A2A_PIRI_BIN over legacy OPENCLAW_BIN", () 
     "/legacy/openclaw",
   );
   assert.equal(__test.hostPatchBridgeCommand({}), "");
+});
+
+test("A2A_DANSO_ANALYSIS_BIN outranks every other analysis bridge slot (#2295)", () => {
+  const command = __test.analysisBridgeCommand({
+    A2A_DANSO_ANALYSIS_BIN: "/opt/a2a-broker-worker/scripts/danso-a2a-analysis-bridge.mjs",
+    A2A_PIRI_ANALYSIS_BIN: "/opt/a2a-broker-worker/scripts/piri-a2a-analysis-bridge.mjs",
+    A2A_HERMES_ANALYSIS_BIN: "/opt/hermes-bridge.mjs",
+    OPENCLAW_BIN: "/legacy/openclaw",
+  });
+  assert.equal(command, "/opt/a2a-broker-worker/scripts/danso-a2a-analysis-bridge.mjs");
+  // Unset/blank danso slot leaves the existing precedence untouched.
+  assert.equal(
+    __test.analysisBridgeCommand({ A2A_DANSO_ANALYSIS_BIN: "  ", A2A_PIRI_ANALYSIS_BIN: "/p.mjs" }),
+    "/p.mjs",
+  );
 });
 
 test("analysisBridgeCommand does not inherit A2A_PIRI_BIN (patch slot)", () => {

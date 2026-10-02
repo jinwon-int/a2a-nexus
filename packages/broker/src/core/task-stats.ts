@@ -643,6 +643,7 @@ export const WORKER_RECEIPT_TELEMETRY_SCHEMA_VERSION = "a2a.analysis-execution-t
 export const WORKER_RECEIPT_TELEMETRY_SOURCES = Object.freeze([
   "piri_progress_file",
   "claude_cli_envelope",
+  "danso_cli_usage",
 ] as const);
 
 export type WorkerReceiptTelemetrySource = (typeof WORKER_RECEIPT_TELEMETRY_SOURCES)[number];
