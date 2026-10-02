@@ -294,6 +294,18 @@ test('root path filter fans out only on executable .github paths; check covers m
   }
 });
 
+// The promoted TCK jobs run only when tck-promoted-gate's `changes` filter
+// matches, so the composite setup action every one of them runs must be in that
+// filter — otherwise an edit to it skips exactly the jobs it changes (#2257 B4).
+test('tck-promoted-gate filter covers the shared tck-promoted-setup action (#2257 B4)', () => {
+  const gate = readFileSync(join(repoRoot, '.github/workflows/tck-promoted-gate.yml'), 'utf8');
+  assert.match(gate, /^ {6}- uses: \.\/\.github\/actions\/tck-promoted-setup$/m);
+  const tckBlock = gate.match(/^ {12}tck:\n((?: {14}.*\n)+)/m)?.[1];
+  assert.ok(tckBlock, 'tck filter block not found');
+  const paths = [...tckBlock.matchAll(/^ {14}- '([^']+)'$/gm)].map((m) => m[1]);
+  assert.ok(paths.includes('.github/actions/tck-promoted-setup/**'), 'action edits must run the promoted TCK jobs');
+});
+
 test('package exposes tracked markdown link validation script', () => {
   const scripts = packageJson().scripts ?? {};
   assert.equal(scripts['check:markdown-links'], 'node scripts/check-markdown-links.mjs');

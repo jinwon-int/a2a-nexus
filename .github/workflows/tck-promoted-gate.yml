@@ -62,6 +62,9 @@ jobs:
               - 'packages/broker/package.json'
               - 'docs/release-readiness.md'
               - '.github/workflows/tck-promoted-gate.yml'
+              # The shared setup every promoted job runs; an edit to it must
+              # exercise those jobs, not skip them (#2257 B4).
+              - '.github/actions/tck-promoted-setup/**'
 
   readiness-projection:
     name: TCK readiness projection is current
