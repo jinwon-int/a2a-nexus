@@ -9,6 +9,10 @@ summary with representative PR anchors; not every internal change is listed).
 This section is release-preparation documentation only — it does not publish,
 tag, deploy, or mutate any live state.
 
+**Update policy (#2258 C7):** this section is refreshed during release
+preparation, not on every merge, so it can trail `main`; the merged pull
+request list on GitHub is the complete record between refreshes.
+
 ### Added — host-side bootstrap-guard tracked-file allowlist
 
 - `A2A_DOCKER_RUNNER_BOOTSTRAP_ALLOWED_TRACKED`: host-side opt-in that lets the

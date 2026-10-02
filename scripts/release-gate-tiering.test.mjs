@@ -145,7 +145,8 @@ test('release-gate --list prints default tiered selection without running steps'
   // as one combined node --test step (doc-drift-lib-tests).
   // 53 -> 54: #2068 added the `hermes` native-worker conformance step.
   // 54 -> 55: #2084 added the json-schema-lite unit-test step.
-  assert.match(lines.at(-1), /release gate selected 55\/55 step\(s\)/);
+  // 55 -> 57: #2258 C7 added the public-language ratchet and its test.
+  assert.match(lines.at(-1), /release gate selected 57\/57 step\(s\)/);
   assert.ok(lines.some((line) => line.startsWith('external-secrets\tpublic-readiness\t')));
   assert.ok(lines.some((line) => line.startsWith('dependency-advisories\tpublic-readiness\t')));
   });
@@ -159,7 +160,8 @@ test('release-gate --all --list prints every tier including approval-only paths'
   // 55 -> 53: see the default --list test above.
   // 53 -> 54: #2068 added the `hermes` native-worker conformance step.
   // 54 -> 55: #2084 added the json-schema-lite unit-test step.
-  assert.match(lines.at(-1), /release gate selected 55\/55 step\(s\)/);
+  // 55 -> 57: #2258 C7 added the public-language ratchet and its test.
+  assert.match(lines.at(-1), /release gate selected 57\/57 step\(s\)/);
     assert.ok(lines.some((line) => line.startsWith('current-state-no-live-smoke\tcore\t')));
 });
 

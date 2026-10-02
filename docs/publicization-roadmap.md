@@ -82,7 +82,7 @@ npm run scan:external-secrets
 
 Then read the local quickstart path:
 
-1. [Public umbrella quickstart](quickstart/public-umbrella.md)
+1. [Public umbrella quickstart](quickstart-public-umbrella.md)
 2. [Five-minute local quickstart](quickstart.md)
 3. [A2A Nexus positioning](positioning.md)
 4. [External listing tracker](external-listings.md)

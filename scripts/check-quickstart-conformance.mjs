@@ -182,10 +182,10 @@ expect(/operator-only override/i.test(tradingCompose), 'trading compose: must te
 
 // ── Canonical issue routing must match a2a-nexus source of truth ────────────
 
-const publicUmbrella = readRel('docs/quickstart/public-umbrella.md') || '';
+const publicUmbrella = readRel('docs/quickstart-public-umbrella.md') || '';
 const issueRouting = readRel('docs/issue-routing.md') || '';
 for (const [doc, text] of [
-  ['docs/quickstart/public-umbrella.md', publicUmbrella],
+  ['docs/quickstart-public-umbrella.md', publicUmbrella],
   ['docs/issue-routing.md', issueRouting],
 ]) {
   expect(/a2a-nexus/.test(text), `${doc}: must name a2a-nexus as canonical implementation source`);

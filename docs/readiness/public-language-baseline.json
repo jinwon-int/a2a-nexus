@@ -1,0 +1,4 @@
+{
+  "purpose": "Ratchet for scripts/lib/check-public-language.mjs (#2258 C7, decision 5B): the number of tracked public Markdown files that contain Korean without a language declaration in their first lines. It may only go down — lower it whenever a file is declared, translated, or moved to docs/history/.",
+  "undeclaredKoreanDocs": 34
+}

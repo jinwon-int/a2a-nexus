@@ -134,7 +134,7 @@ This preserves the split-repo trust boundaries: the broker owns auth, assignment
 - All four repos remain PUBLIC.
 - `a2a-plane` continues as the umbrella/coordination surface.
 - Cross-repo compatibility baselines continue to be maintained in `docs/compatibility/`.
-- Issues continue to be routed per the repo map in `docs/quickstart/public-umbrella.md`.
+- Issues continue to be routed per the repo map in `docs/quickstart-public-umbrella.md`.
 - No repo visibility, release/tag, npm/Docker publication, production deploy, or credential movement occurs as a result of this decision.
 
 ---
@@ -221,5 +221,5 @@ No approval-gated action was performed in producing this document.
 - #489 (a2a-plane#489, internal tracker private) — Team1 roadmap implementation parent (closed)
 - [`docs/history/monorepo-migration-checklist.md`](history/monorepo-migration-checklist.md) — historical migration checklist and cutover proof (preserved)
 - [`docs/ecosystem-guide.md`](ecosystem-guide.md) — bilingual component guide with repo role mapping
-- [`docs/quickstart/public-umbrella.md`](quickstart/public-umbrella.md) — public umbrella and repo map
+- [`docs/quickstart-public-umbrella.md`](quickstart-public-umbrella.md) — public umbrella and repo map
 - [`README.md`](../README.md) — current source entrypoint with #473 reference
