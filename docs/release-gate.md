@@ -21,11 +21,8 @@ npm run check
 |---|---:|---|
 | `core` | Yes | Monorepo layout, packages, contract/conformance, runtime safety, compatibility, script-budget, and release-gate self-checks. |
 | `public-readiness` | Yes | Public-readiness scanners and current-state docs guards that must stay current even while the repo is private. |
-| `historical-transition` | No | Canonical/split-repo transition evidence gates retained for audit or targeted review. |
-| `approval-gated` | No | Operator-approval handoff/signoff packets; these are explicit approval surfaces, not ordinary PR smoke. |
-| `package-publication` | No | Release/package/tag publication policy checks; these do not imply publish approval. |
 
-The default selection currently runs 22 of 41 inventoried steps (`core` + `public-readiness`). Historical transition, approval, and package-publication paths remain available but are no longer hidden inside every ordinary PR gate.
+These are the only tiers, and the default selection runs every inventoried step (check the current count with `npm run release-gate -- --list`). The former opt-in tiers — `historical-transition`, `approval-gated`, `package-publication` — were emptied in #1779 (15 of their 20 steps had silently failed on main because nothing ran them) and removed in #2257 B6. `--only-tier`/`--tier` with one of those names now fails closed as an unknown tier. A gate worth keeping belongs on the default path; reintroducing a tier means adding it to `TIER_CONSUMER` in `scripts/lib/release-gate-steps.mjs` together with its first step, and the inventory check rejects a declared tier with no steps.
 
 Useful commands:
 
@@ -36,11 +33,8 @@ npm run check
 # Show the default selection without executing commands.
 npm run release-gate -- --list
 
-# Run every inventoried step, including historical/approval/publication gates.
-npm run release-gate -- --all
-
-# Add a specific opt-in tier to the default selection.
-npm run release-gate -- --tier historical-transition
+# Run only one tier (e.g. to iterate on a core failure).
+npm run release-gate -- --only-tier core
 ```
 
 ## External secret/history scan

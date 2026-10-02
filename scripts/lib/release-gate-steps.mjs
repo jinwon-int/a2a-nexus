@@ -12,6 +12,13 @@ export const VALID_RETIREMENT = new Set(['keep', 'candidate-after-review', 'manu
 // entrypoint; `consumer` names who runs it and is a coarser axis than `tier`
 // (core and public-readiness both collapse to pr-gate). TIER_CONSUMER pins the
 // consumer to the tier so the two axes cannot drift.
+//
+// TIER_CONSUMER is also the tier vocabulary: an inventory may declare only these
+// tiers, and every declared tier must hold at least one step. The opt-in tiers
+// (historical-transition, approval-gated, package-publication) and their
+// consumers were removed in #2257 B6 after #1779 emptied them — a gate parked in
+// an opt-in tier is a gate nobody runs (15 of 20 had silently failed on main).
+// Reintroducing a tier means adding it here together with its first step.
 export const VALID_OWNER = new Set([
   'broker',
   'release-gate-tooling',
@@ -21,18 +28,10 @@ export const VALID_OWNER = new Set([
   'monorepo-transition',
   'public-readiness',
 ]);
-export const VALID_CONSUMER = new Set([
-  'pr-gate',
-  'transition-audit',
-  'operator-approval',
-  'release-publication',
-]);
+export const VALID_CONSUMER = new Set(['pr-gate']);
 export const TIER_CONSUMER = {
   core: 'pr-gate',
   'public-readiness': 'pr-gate',
-  'historical-transition': 'transition-audit',
-  'approval-gated': 'operator-approval',
-  'package-publication': 'release-publication',
 };
 
 function fail(message) {
