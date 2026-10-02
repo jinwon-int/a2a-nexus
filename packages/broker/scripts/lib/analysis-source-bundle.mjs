@@ -410,3 +410,90 @@ export function collectSourceBundle(payload, env, { prefix }) {
 
 	return { files, warnings, limits: { maxFiles, maxFileBytes, maxTotalBytes, maxTreeEntries } };
 }
+
+// ---------------------------------------------------------------------------
+// #2301: prompt-side payload view. The worker handler embeds the full payload
+// JSON (source carriers included) in the task message, and bridges also print
+// a "Task payload JSON" section, so a bundle's file content used to reach the
+// model three times (payload section, worker message, source sections). The
+// 2026-10-02 danso canary paid for that with a 32.6KB prompt for 8KB of source
+// and a provider timeout. These helpers keep the structural payload but replace
+// every source carrier's content with {repo, path, bytes, hasContent} so file
+// content appears exactly once — in the bridge's read-only source sections.
+// ---------------------------------------------------------------------------
+
+const SOURCE_CARRIER_KEYS = ["sourceFiles", "sourceEvidence", "embeddedSourceEvidence"];
+const CONTENT_OMITTED_NOTE = "source content omitted here; it is shown exactly once in the Read-only source bundle sections";
+
+function summarizeSourceCarrierItem(item) {
+	if (typeof item === "string") return { path: item, bytes: 0, hasContent: false };
+	if (!item || typeof item !== "object" || Array.isArray(item)) return null;
+	const repo = safeText(item.repo || item.repository, "");
+	const path = safeText(item.path || item.file || item.name, "");
+	const content = typeof item.content === "string" ? item.content : typeof item.text === "string" ? item.text : "";
+	const rawRef = item.contentRef ?? item.contentPath;
+	const contentRef = typeof rawRef === "object" && rawRef !== null ? safeText(rawRef.path || rawRef.file, "") : safeText(rawRef, "");
+	return {
+		...(repo ? { repo } : {}),
+		...(path ? { path } : {}),
+		bytes: Buffer.byteLength(content, "utf8"),
+		hasContent: content.length > 0,
+		...(contentRef ? { contentRef } : {}),
+		...(item.truncated ? { truncated: true } : {}),
+	};
+}
+
+/** `{ files, fileCount }` summary of a carrier array or `{ files: [...] }` object. */
+export function summarizeSourceCarriersForPrompt(value) {
+	const files = [];
+	for (const item of toArray(value?.files ?? value)) {
+		const summary = summarizeSourceCarrierItem(item);
+		if (summary) files.push(summary);
+	}
+	return { files, fileCount: files.length };
+}
+
+/** Deep copy of `payload` with every source carrier's content replaced by a summary. */
+export function payloadForPrompt(payload) {
+	if (!payload || typeof payload !== "object" || Array.isArray(payload)) return payload ?? {};
+	const copy = structuredClone(payload);
+	if (copy.sourceBundle && typeof copy.sourceBundle === "object" && !Array.isArray(copy.sourceBundle)) {
+		copy.sourceBundle = {
+			...copy.sourceBundle,
+			files: summarizeSourceCarriersForPrompt(copy.sourceBundle).files,
+			contentOmitted: CONTENT_OMITTED_NOTE,
+		};
+	}
+	for (const key of SOURCE_CARRIER_KEYS) {
+		if (!Array.isArray(copy[key])) continue;
+		copy[key] = summarizeSourceCarriersForPrompt(copy[key]).files;
+		copy[`${key}ContentOmitted`] = CONTENT_OMITTED_NOTE;
+	}
+	return copy;
+}
+
+/**
+ * The worker message with its embedded `Payload JSON …:` block rewritten
+ * through `payloadForPrompt`. The block is located by the handler's marker and
+ * a string-aware balanced-JSON scan; a truncated (unbalanced) excerpt or a
+ * message without the marker is returned unchanged. When the embedded block
+ * parses, its own content is summarized so the rewrite never invents fields;
+ * otherwise `payload` (the bridge's resolved payload) is used.
+ */
+export function messageForPrompt(message, payload) {
+	const text = String(message ?? "");
+	const marker = /Payload JSON[^\n:]*:/i.exec(text);
+	if (!marker) return text;
+	const start = marker.index + marker[0].length;
+	const jsonText = extractBalancedJson(text, start);
+	if (!jsonText) return text;
+	const jsonStart = text.indexOf(jsonText, start);
+	let embedded = payload;
+	try {
+		embedded = JSON.parse(jsonText);
+	} catch {
+		// keep the resolved payload
+	}
+	const replacement = JSON.stringify(payloadForPrompt(embedded), null, 2);
+	return `${text.slice(0, start)}\n${replacement}${text.slice(jsonStart + jsonText.length)}`;
+}

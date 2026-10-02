@@ -273,6 +273,26 @@ test("prompts above the per-argument argv budget fail closed before spawn", () =
 	}
 });
 
+test("the prompt carries each source file's content exactly once (#2301)", () => {
+	const content = "const canary2301 = 'unique-source-line';\n".repeat(30);
+	const payload = {
+		mode: "analysis-only",
+		sourceOnly: true,
+		repo: "jinwon-int/a2a-nexus",
+		sourceBundle: { files: [{ repo: "jinwon-int/a2a-nexus", path: "src/x.mjs", content }] },
+	};
+	const json = JSON.stringify(payload, null, 2);
+	const message = `Complete this task.\n\nPayload JSON (full; ${json.length} chars):\n${json}\n\nTask message:\nreview src/x.mjs`;
+	const sourceBundle = { files: [{ repo: "jinwon-int/a2a-nexus", path: "src/x.mjs", content, truncated: false }], warnings: [] };
+	const prompt = __test.buildDansoPrompt({ message, payload, sourceBundle, flags: {}, model: "glm-5.3-flash", effort: "high" });
+	assert.equal(prompt.split("unique-source-line").length - 1, 30, "content appears once, in the source section only");
+	assert.match(prompt, /Task payload JSON \(source content summarized/);
+	assert.match(prompt, /Original worker message \(source content summarized\)/);
+	assert.match(prompt, /"hasContent": true/);
+	assert.match(prompt, /Task message:\nreview src\/x\.mjs/);
+	assert.ok(Buffer.byteLength(prompt, "utf8") < 3 * Buffer.byteLength(content, "utf8") + 4096, "prompt is bounded by one content copy plus scaffolding");
+});
+
 test("the default prompt budget keeps oversized tasks under the argv limit", () => {
 	const fx = fixture();
 	try {
