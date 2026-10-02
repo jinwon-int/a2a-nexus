@@ -25,3 +25,9 @@ decision below is kept because the docs-routing gate still reads it.
 | [`r6-terminal-brief-openclaw-routing-synthesis.md`](r6-terminal-brief-openclaw-routing-synthesis.md) | R6 Terminal Brief OpenClaw routing no-bypass synthesis |
 | [`release-evidence-v0.1.0-alpha.md`](release-evidence-v0.1.0-alpha.md) | v0.1.0-alpha release evidence packet (#1286, 2026-07-05) |
 | [`release-notes-r3.md`](release-notes-r3.md) | R3 Release Notes Draft |
+| [`public-source-readiness-audit-2026-05-27.md`](public-source-readiness-audit-2026-05-27.md) | Public source readiness audit (2026-05-27, pre-public-flip) |
+| [`warn-log-aggregation-2026-07-v2.md`](warn-log-aggregation-2026-07-v2.md) | V2 warn-log aggregation (2026-07-04) |
+| [`codeql-triage-2026-07.md`](codeql-triage-2026-07.md) | CodeQL triage — 2026-07 V1 organic observation round (#1264) |
+| [`release-gate-diet-closeout.md`](release-gate-diet-closeout.md) | Release gate diet closeout (#1201; opt-in tiers since removed) |
+| [`terminal-brief-sidecar-default-on-inventory.md`](terminal-brief-sidecar-default-on-inventory.md) | Terminal brief sidecar default-on consolidation inventory |
+| [`terminal-brief-sidecar-default-on-consolidation.md`](terminal-brief-sidecar-default-on-consolidation.md) | Terminal brief default-on consolidation closeout |
