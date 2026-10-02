@@ -24,16 +24,7 @@ If a proof of concept needs configuration, use placeholders such as `<local-dev-
 
 ## Hard safety boundary
 
-The following actions are not authorized by normal docs, issues, PRs, or local verification:
-
-- transferring repository ownership/visibility or making another visibility change
-- production deploys or Gateway/broker/worker restarts
-- production database mutation
-- live provider or Telegram sends
-- terminal-outbox ACK/replay mutation
-- creating or moving tags, GitHub Releases, npm publishes, Docker/image publication, or package publication
-- secret/credential movement, rotation, or disclosure
-- history rewrite or force push
+Normal docs, issues, PRs, or local verification do not authorize any action in the [approval boundaries table](docs/trust-boundaries.md#approval-boundaries) — deploys/restarts, production database or terminal-outbox mutation, live provider/Telegram sends, tags/releases/publication, credential movement, repository visibility/ownership changes, and history rewrites or force pushes.
 
 Explicit operator approval must name the exact action, target repository or artifact, and rollback/no-op boundary before any exception.
 

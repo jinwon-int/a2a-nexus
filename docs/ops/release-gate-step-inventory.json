@@ -442,6 +442,33 @@
       "note": "Public-readiness or visibility hygiene; do not retire as generic cleanup. Stays an npm alias: docs/ops/data-driven-validation-registry.json pins these exact args."
     },
     {
+      "name": "public-language",
+      "command": "node",
+      "args": [
+        "scripts/lib/check-public-language.mjs"
+      ],
+      "tier": "public-readiness",
+      "owner": "public-readiness",
+      "consumer": "pr-gate",
+      "retirement": "keep",
+      "retirementCondition": "Retire only when a narrower owner-scoped gate demonstrably covers the same invariant; no removal while it runs on the default release-gate path.",
+      "note": "#2258 C7 (decision 5B): ratchets tracked public Markdown that contains Korean without a language declaration near the top; the count may not exceed docs/readiness/public-language-baseline.json (CONTRIBUTING.md public language policy)."
+    },
+    {
+      "name": "public-language-test",
+      "command": "node",
+      "args": [
+        "--test",
+        "scripts/lib/check-public-language.test.mjs"
+      ],
+      "tier": "public-readiness",
+      "owner": "public-readiness",
+      "consumer": "pr-gate",
+      "retirement": "keep",
+      "retirementCondition": "Retire only when a narrower owner-scoped gate demonstrably covers the same invariant; no removal while it runs on the default release-gate path.",
+      "note": "#2258 C7: pins the public-language ratchet — declaration forms, docs/history and fixtures exemption, fail above / pass at-or-below baseline, bad baseline rejected."
+    },
+    {
       "name": "broker-core-dependency-isolation",
       "command": "node",
       "args": [

@@ -33,7 +33,7 @@ Additional project docs:
 - [A2A current state](docs/current-state.md) - current source state, ownership boundaries, and checkout hygiene.
 - [A2A operator guide](docs/operators.md) - approval points and finalizer boundaries.
 - [A2A developer guide](docs/developers.md) - package surfaces and local validation for rehearsal work.
-- [Public umbrella quickstart](docs/quickstart/public-umbrella.md) - repository map, issue routing, and local docs path.
+- [Public umbrella quickstart](docs/quickstart-public-umbrella.md) - repository map, issue routing, and local docs path.
 - [A2A Nexus positioning](docs/positioning.md) - landscape comparison, differentiators, and public-safe framing.
 - [External publicization roadmap](docs/publicization-roadmap.md) - gated publicization and release-readiness plan.
 
@@ -69,7 +69,7 @@ npm run scan:external-secrets
 The full script-surface operator map lives in [`docs/ops/script-surface-entrypoints.md`](docs/ops/script-surface-entrypoints.md).
 Then follow the public docs path in this order:
 
-1. [Public umbrella quickstart](docs/quickstart/public-umbrella.md)
+1. [Public umbrella quickstart](docs/quickstart-public-umbrella.md)
 2. [Five-minute local quickstart](docs/quickstart.md)
 3. [A2A Nexus positioning](docs/positioning.md)
 4. [External publicization roadmap](docs/publicization-roadmap.md)
@@ -126,15 +126,7 @@ docs/                            # public-readiness gates, quickstart, release n
 
 Treat every example as local-only unless a document says otherwise.
 
-**NO-GO without explicit operator approval:**
-
-- transferring repository ownership/visibility or making another visibility change
-- production deploys or Gateway/broker/worker restarts
-- production database or terminal-outbox mutation
-- live provider, Telegram, or notification sends
-- creating or moving tags, GitHub Releases, npm publishes, Docker/image publication, or package publication
-- secret/credential movement, rotation, disclosure, or raw credential evidence
-- history rewrite or force push
+**NO-GO without explicit operator approval:** every action in the [approval boundaries table](docs/trust-boundaries.md#approval-boundaries) — deploys/restarts, production data or terminal-outbox mutation, live sends, tags/releases/publication, credential movement, visibility changes, and history rewrites.
 
 Use redacted evidence in issues, pull requests, logs, and artifacts.
 
@@ -153,7 +145,7 @@ Historical completed trackers are consolidated in [`docs/history/README.md`](doc
 
 Start with the local-only quickstart:
 
-- [`docs/quickstart/public-umbrella.md`](docs/quickstart/public-umbrella.md)
+- [`docs/quickstart-public-umbrella.md`](docs/quickstart-public-umbrella.md)
 - [`docs/quickstart.md`](docs/quickstart.md)
 
 The quickstart is designed as the external-reader path for a disposable local A2A Nexus broker and dummy/echo worker. If your checkout does not yet include the runnable broker or worker scripts described there, treat that as a documented blocker rather than substituting production services.

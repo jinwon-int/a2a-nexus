@@ -74,8 +74,12 @@ When evidence cannot be collected, the proof object should say `missing` rather 
 | Move/rotate/disclose credentials or signing keys | No | Yes |
 | Publish tags, releases, npm packages, Docker/GHCR images, or homepage metadata | No | Yes |
 | Call provider, payment rail, Telegram, notification, or other live external side-effect surfaces | No | Yes |
+| Transfer repository ownership or change repository visibility | No | Yes |
+| Rewrite git history or force-push | No | Yes |
 
 A source-only approval packet or fixture is evidence for a future decision. It is not execution approval.
+
+This table is the canonical list of separately approval-gated actions (#2258 C7). Entry documents such as the [README](../README.md#alpha-and-safety-boundary) and [SECURITY.md](../SECURITY.md#hard-safety-boundary) link here instead of repeating it.
 
 ## Lane boundary matrix
 

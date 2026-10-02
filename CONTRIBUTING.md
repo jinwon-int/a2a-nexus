@@ -72,7 +72,7 @@ Use the **A2A spec-first change** issue template for Medium/Large work. Pull req
 
 ## Public language policy
 
-The default language for public-facing surfaces is English: README, docs intended for external readers, issue templates, PR templates, package metadata, and examples. A bilingual document is allowed when the document states that intent near the top, as in `docs/ecosystem-guide.md`.
+The default language for public-facing surfaces is English: README, docs intended for external readers, issue templates, PR templates, package metadata, and examples. A bilingual document is allowed when the document states that intent near the top, as in `docs/ecosystem-guide.md`. Operator runbooks and design specs may be written in Korean when they say so in their first lines (for example `> Language: Korean (operator runbook)`). `scripts/lib/check-public-language.mjs` runs in the release gate and ratchets the number of tracked Markdown files that contain Korean without such a declaration (`docs/readiness/public-language-baseline.json`): it may only go down, so new non-English docs must declare their language (#2258 C7).
 
 Historical records may preserve non-English approval quotes only when they are necessary audit evidence and are kept in `docs/history/` or other explicitly historical fixtures. New public docs should summarize private approvals in role-based English and link the relevant issue/approval record instead of copying personal-channel text.
 

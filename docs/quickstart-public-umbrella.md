@@ -15,12 +15,12 @@ The older split repositories (`a2a-plane`, `a2a-broker`, `openclaw-plugin-a2a`, 
 
 ## First Reader Path
 
-1. Read [`README.md`](../../README.md) for the canonical source status and repo map.
-2. Run the local-only [`five-minute quickstart`](../quickstart.md) when you want a disposable loopback broker plus echo worker path.
-3. Read the public-safe [`architecture overview`](../architecture.md) for the conceptual broker/worker/finalizer/evidence map.
-4. Use [`contribution entry points`](../contribution-entry-points.md) for safe first-task candidates.
-5. Use [`docs/external-harness-quickstart.md`](../external-harness-quickstart.md) when you are integrating a harness — Claude Code, Codex, Hermes, piri, or your own — against the [adapter contract](../../contracts/a2a/platform-adapter-interface.md).
-6. Check [`docs/compatibility/README.md`](../compatibility/README.md), [`docs/issue-routing.md`](../issue-routing.md), and [`docs/release-readiness.md`](../release-readiness.md) before making compatibility or release claims.
+1. Read [`README.md`](../README.md) for the canonical source status and repo map.
+2. Run the local-only [`five-minute quickstart`](quickstart.md) when you want a disposable loopback broker plus echo worker path.
+3. Read the public-safe [`architecture overview`](architecture.md) for the conceptual broker/worker/finalizer/evidence map.
+4. Use [`contribution entry points`](contribution-entry-points.md) for safe first-task candidates.
+5. Use [`docs/external-harness-quickstart.md`](external-harness-quickstart.md) when you are integrating a harness — Claude Code, Codex, Hermes, piri, or your own — against the [adapter contract](../contracts/a2a/platform-adapter-interface.md).
+6. Check [`docs/compatibility/README.md`](compatibility/README.md), [`docs/issue-routing.md`](issue-routing.md), and [`docs/release-readiness.md`](release-readiness.md) before making compatibility or release claims.
 
 ## Issue Routing
 
@@ -28,7 +28,7 @@ Open unclear or cross-repo issues in `a2a-nexus` first. Once the implementation 
 
 - `source:a2a-plane`: monorepo-level public docs, roadmap, cross-package compatibility, release/provenance gates, security/readiness policy, examples, contracts, and topology decisions.
 - `source:a2a-broker`: broker HTTP/JSON-RPC behavior, task lifecycle, worker registry, persistence, health/profile endpoints, status/cancel semantics, and broker test failures.
-- Harness adapter behaviour (OpenClaw, Claude Code, Codex, Hermes, piri bridges) routes to `source:a2a-broker`; the former `source:openclaw-plugin-a2a` label is retired (see [issue routing](../issue-routing.md)).
+- Harness adapter behaviour (OpenClaw, Claude Code, Codex, Hermes, piri bridges) routes to `source:a2a-broker`; the former `source:openclaw-plugin-a2a` label is retired (see [issue routing](issue-routing.md)).
 - `source:a2a-docker-runner`: isolated patch execution, repository checkout behavior, worker evidence, artifact capture, local runner configuration, container hardening, and runner package issues.
 
 When a change spans multiple package paths, keep the coordinating issue in `a2a-nexus` and link package-specific PR evidence from there.
