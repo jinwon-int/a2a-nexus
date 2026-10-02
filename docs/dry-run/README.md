@@ -1,6 +1,6 @@
 # A2A Nexus Source-Public Dry-Run Tooling
 
-Team1/bangtong lane: implements the source-public dry-run schema and aggregator/report command for deterministic GO/NO-GO evaluation.
+Team1/workerGamma lane: implements the source-public dry-run schema and aggregator/report command for deterministic GO/NO-GO evaluation.
 
 **Run:** `a2a-source-dryrun-orchestrator-20260510T133022Z`
 **Issue:** #198 (a2a-plane#198, internal tracker private)
@@ -80,8 +80,8 @@ node --test scripts/a2a-source-dryrun-aggregator.test.mjs
       "evidence": ["a2a-plane#198 (internal tracker, private)#gate-broker"],
       "evidencePacket": {
         "health": { "ok": true },
-        "expectedWorkers": ["bangtong"],
-        "onlineWorkerIds": ["bangtong"],
+        "expectedWorkers": ["workerGamma"],
+        "onlineWorkerIds": ["workerGamma"],
         "queue": { "queued": 0, "claimed": 0, "running": 0 },
         "stale": 0
       }

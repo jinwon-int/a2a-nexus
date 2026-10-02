@@ -30,7 +30,7 @@ The common failure chain is:
 Run the healthcheck from the repository root or pass `--worktree` explicitly:
 
 ```bash
-node scripts/pr-review-healthcheck.mjs --worktree /root/work/a2a/a2a-nexus --repo jinwon-int/a2a-nexus
+node scripts/pr-review-healthcheck.mjs --worktree <checkout> --repo jinwon-int/a2a-nexus
 ```
 
 The healthcheck is read-only by default. It reports:

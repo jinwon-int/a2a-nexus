@@ -4,7 +4,7 @@
   "run": "a2a-source-public-go-nogo-gate-20260511T052500Z",
   "parentIssue": "a2a-plane#225 (internal tracker, private)",
   "issue": "a2a-plane#226 (internal tracker, private)",
-  "lane": "team1-bangtong",
+  "lane": "team1-workerGamma",
   "failClosed": true,
   "defaultDecision": "NO_GO",
   "decisionOutputs": [
@@ -215,17 +215,17 @@
   ],
   "roundLanes": {
     "a2a-plane": {
-      "owner": "team1-bangtong",
+      "owner": "team1-workerGamma",
       "issue": "a2a-plane#226 (internal tracker, private)",
       "role": "Final go/no-go gate schema and operator approval packet aggregator"
     },
     "a2a-docker-runner": {
-      "owner": "team1-nosuk",
+      "owner": "team1-workerAlpha",
       "issue": "a2a-plane#195 (internal tracker, private)",
       "role": "Runner final release candidate tagging and CI gate capsule"
     },
     "a2a-broker": {
-      "owner": "team2-dungae",
+      "owner": "team2-broker",
       "issue": "a2a-plane#488 (internal tracker, private)",
       "role": "Broker final go/no-go gate ledger and approval intent record"
     }
