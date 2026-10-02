@@ -1952,7 +1952,8 @@ const response = {
   findings: ["bridge consumed signed snapshot carrier"],
   risks: [],
   recommendations: ["declare consumed snapshot in result.output.sources"],
-  evidenceRefs: [files[0].repo + ":" + files[0].path]
+  evidenceRefs: [files[0].repo + ":" + files[0].path],
+  promptView: { promptBytes: 1234, sourceBytes: 5678 }
 };
 process.stdout.write(JSON.stringify({ payloads: [{ text: JSON.stringify(response) }] }) + "\\n");
 `);
@@ -1989,6 +1990,9 @@ process.stdout.write(JSON.stringify({ payloads: [{ text: JSON.stringify(response
     assert.match(result.result.output.sources[0].sourceId, /^github-retrieval:sha256:[0-9a-f]{64}$/);
     assert.equal(result.result.output.sources[0].contentHash, snapshot.contentHash);
     assert.doesNotMatch(JSON.stringify(result.result.output.sources), /source-grounded analysis fixture/);
+    // #2303 item 5: the handler relays the bridge's content-free promptView
+    // byte counters into the analysis record.
+    assert.deepEqual(result.result.output.promptView, { promptBytes: 1234, sourceBytes: 5678 });
   } finally {
     rmSync(dir, { recursive: true, force: true });
   }

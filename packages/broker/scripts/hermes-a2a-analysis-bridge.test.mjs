@@ -545,6 +545,9 @@ test("Hermes A2A analysis bridge consumes sourceFiles as equivalent embedded evi
     assert.equal(payloadOut.sourceProjection.quality, "complete");
     assert.equal(payloadOut.sourceProjection.canonicalFileCount, 1);
     assert.equal(payloadOut.sourceProjection.requiredFilesMissing.length, 0);
+    // #2303 item 5: the bridge relays content-free prompt/source byte counters.
+    assert.ok(payloadOut.promptView.promptBytes > 0);
+    assert.equal(payloadOut.promptView.sourceBytes, Buffer.byteLength("CANARY_SOURCEFILES_MARKER\n" + "v".repeat(80)));
     assert.match(readFileSync(promptPath, "utf8"), /CANARY_SOURCEFILES_MARKER/);
   } finally {
     rmSync(tempDir, { recursive: true, force: true });
