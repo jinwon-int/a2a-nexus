@@ -13,6 +13,8 @@ import {
 	collectSourceBundle,
 	declaredRequiredCarrierPath,
 	extractPayload,
+	messageForPrompt,
+	payloadForPrompt,
 	payloadFromStructuredEnv,
 } from "./analysis-source-bundle.mjs";
 
@@ -122,4 +124,55 @@ test("contentRef failures stay fail-closed exactly like the piri bridge", () => 
 
 test("collectSourceBundle requires an explicit env prefix", () => {
 	assert.throws(() => collectSourceBundle({}, {}, {}), /requires an env prefix/);
+});
+
+// #2301: the prompt-side payload view keeps structure but never file content.
+test("payloadForPrompt replaces every source carrier's content with a summary", () => {
+	const content = "export const secretless = 1;\n".repeat(40);
+	const payload = {
+		mode: "analysis-only",
+		focus: "x",
+		sourceBundle: { files: [{ repo: "o/r", path: "src/a.mjs", content, truncated: true }], note: "kept" },
+		sourceFiles: [{ path: "b.txt", text: content }],
+		sourceEvidence: ["c.txt"],
+		embeddedSourceEvidence: [{ path: "d.txt", contentRef: { path: "payload-files/d.txt" } }],
+	};
+	const before = JSON.stringify(payload);
+	const view = payloadForPrompt(payload);
+	assert.equal(JSON.stringify(payload), before, "input payload is not mutated");
+	assert.equal(view.mode, "analysis-only");
+	assert.equal(view.focus, "x");
+	assert.equal(view.sourceBundle.note, "kept");
+	assert.deepEqual(view.sourceBundle.files, [{ repo: "o/r", path: "src/a.mjs", bytes: Buffer.byteLength(content), hasContent: true, truncated: true }]);
+	assert.deepEqual(view.sourceFiles, [{ path: "b.txt", bytes: Buffer.byteLength(content), hasContent: true }]);
+	assert.deepEqual(view.sourceEvidence, [{ path: "c.txt", bytes: 0, hasContent: false }]);
+	assert.equal(view.embeddedSourceEvidence[0].hasContent, false);
+	assert.equal(typeof view.embeddedSourceEvidence[0].contentRef, "string");
+	for (const key of ["sourceBundle", "sourceFiles", "sourceEvidence", "embeddedSourceEvidence"]) {
+		assert.ok(!JSON.stringify(view[key]).includes("secretless"), `${key} carries no content`);
+	}
+	assert.match(JSON.stringify(view), /content omitted here/);
+	assert.deepEqual(payloadForPrompt(null), {});
+	assert.deepEqual(payloadForPrompt({ plain: true }), { plain: true });
+});
+
+test("messageForPrompt rewrites only the embedded Payload JSON block", () => {
+	const content = "line of source\n".repeat(50);
+	const payload = { repo: "o/r", sourceBundle: { files: [{ repo: "o/r", path: "a.txt", content }] } };
+	const json = JSON.stringify(payload, null, 2);
+	const message = `Task id: t1\n\nPayload JSON (full; ${json.length} chars):\n${json}\n\nTask message:\nreview a.txt`;
+	const rewritten = messageForPrompt(message, payload);
+	assert.ok(rewritten.startsWith("Task id: t1\n\nPayload JSON (full; "), "prefix kept");
+	assert.ok(rewritten.endsWith("\n\nTask message:\nreview a.txt"), "suffix kept");
+	assert.ok(!rewritten.includes("line of source"), "file content removed from the message");
+	assert.match(rewritten, /"path": "a\.txt"/);
+	assert.match(rewritten, /"bytes": \d+/);
+	// The excerpt form is also recognized; a truncated (unbalanced) block and a
+	// message without the marker pass through unchanged.
+	const excerpt = `Payload JSON excerpt (10 chars max; full payload is in A2A_ANALYSIS_PAYLOAD_FILE):\n${json}`;
+	assert.ok(!messageForPrompt(excerpt, payload).includes("line of source"));
+	const truncated = `Payload JSON (full; 9 chars):\n${json.slice(0, 40)}`;
+	assert.equal(messageForPrompt(truncated, payload), truncated);
+	assert.equal(messageForPrompt("no payload here", payload), "no payload here");
+	assert.equal(messageForPrompt(undefined, payload), "");
 });

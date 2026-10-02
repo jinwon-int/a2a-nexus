@@ -48,6 +48,8 @@ import {
 	collectSourceBundle as collectSharedSourceBundle,
 	declaredRequiredCarrierPath,
 	extractPayload,
+	messageForPrompt,
+	payloadForPrompt,
 	payloadFromStructuredEnv,
 	positiveIntegerEnv,
 	safeText,
@@ -188,8 +190,11 @@ function buildDansoPrompt({ message, payload, sourceBundle, flags, model, effort
 		`OpenClaw-shaped session id: ${safeText(flags["session-id"], "")}`,
 		`Effective model requested by worker: ${model}`,
 		`Effective reasoning effort requested by worker: ${effort || "<provider default>"}`,
-		`Task payload JSON:\n${JSON.stringify(payload, null, 2)}`,
-		`Original worker message:\n${message}`,
+		// #2301: source carrier content is shown exactly once — in the source
+		// sections below — so the payload and the worker message only carry
+		// {repo, path, bytes} summaries of each file.
+		`Task payload JSON (source content summarized; inspect the source sections below):\n${JSON.stringify(payloadForPrompt(payload), null, 2)}`,
+		`Original worker message (source content summarized):\n${messageForPrompt(message, payload)}`,
 		`Read-only source bundle (${sourceBundle.files.length} files):`,
 		sourceSections.length ? sourceSections.join("\n\n") : "<no source files available>",
 		warningSection,
