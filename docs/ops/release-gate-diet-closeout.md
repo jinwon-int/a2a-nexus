@@ -5,10 +5,10 @@ Closeout evidence for #1201.
 > **Superseded in part.** The non-default tiers described below
 > (`historical-transition`, `approval-gated`, `package-publication`) were
 > emptied when the monorepo migration ceremony was retired in #1779, and the
-> `check:historical` aggregate npm script was deleted with them. The tier names
-> are still declared in `docs/ops/release-gate-step-inventory.json`, but they
-> now hold **zero** steps. This document is kept as the #1201 record; the
-> sections below are historical, not runnable instructions.
+> `check:historical` aggregate npm script was deleted with them. The empty tier
+> names were then removed from the inventory and from `TIER_CONSUMER` in
+> #2257 B6, so they are no longer valid tier names. This document is kept as the
+> #1201 record; the sections below are historical, not runnable instructions.
 
 ## Default gate
 
@@ -38,7 +38,8 @@ accidentally re-run the default tiers. It selected only:
 #1779 deleted every step in those tiers — they had rotted unobserved (15 of 20
 failed on main) — and deleted the `check:historical` script with them. **Do not
 run `npm run check:historical`; it no longer exists.** A non-default tier, if
-one is reintroduced, is selected directly:
+one is ever reintroduced (added to `TIER_CONSUMER` with its first step — the
+inventory check rejects an empty declared tier), is selected directly:
 
 ```bash
 node scripts/release-gate.mjs --only-tier <tier>

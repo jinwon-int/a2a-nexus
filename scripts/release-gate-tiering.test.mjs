@@ -27,9 +27,10 @@ const INVENTORY = join(REPO_ROOT, 'docs/ops/release-gate-step-inventory.json');
 const VALID_TIERS = new Set(Object.keys(TIER_CONSUMER));
 
 /**
- * A minimal inventory covering one default tier and two opt-in tiers, so the
- * tier-selection mechanism can be exercised independently of what the live
- * inventory happens to contain today.
+ * A minimal inventory with one step per tier, so the tier-selection mechanism
+ * (--tier / --only-tier) can be exercised independently of what the live
+ * inventory happens to contain today. The opt-in tiers this used to cover were
+ * removed in #2257 B6; the selection flags still operate on the two that remain.
  */
 function syntheticInventory() {
   const entry = (name, tier) => ({
@@ -47,8 +48,7 @@ function syntheticInventory() {
     tiers: [...VALID_TIERS],
     entries: [
       entry('synthetic-core', 'core'),
-      entry('synthetic-historical', 'historical-transition'),
-      entry('synthetic-approval', 'approval-gated'),
+      entry('synthetic-public-readiness', 'public-readiness'),
     ],
   };
 }
@@ -68,9 +68,8 @@ test('default release gate selects core and public-readiness tiers only', () => 
   assert.deepEqual(new Set(entries.map((entry) => entry.tier)), new Set(DEFAULT_TIERS));
   assert.ok(entries.some((entry) => entry.name === 'external-secrets'));
   assert.ok(entries.some((entry) => entry.name === 'release-gate-inventory'));
-  assert.equal(entries.some((entry) => entry.tier === 'historical-transition'), false);
-  assert.equal(entries.some((entry) => entry.tier === 'approval-gated'), false);
-  assert.equal(entries.some((entry) => entry.tier === 'package-publication'), false);
+  // Every declared tier is a default tier: there is no opt-in tier left (#2257 B6).
+  assert.deepEqual(inventory.tiers, DEFAULT_TIERS);
 });
 
 test('--all selects every inventory entry', () => {
@@ -87,28 +86,35 @@ test('--all selects every inventory entry', () => {
   for (const tier of Object.keys(summary)) assert.ok(VALID_TIERS.has(tier), `unknown tier ${tier}`);
 });
 
-test('--tier augments the default tier selection', () => {
-  const parsed = parseReleaseGateArgs(['--tier', 'historical-transition']);
+test('--tier augments the current tier selection', () => {
+  const parsed = parseReleaseGateArgs(['--only-tier', 'core', '--tier', 'public-readiness']);
   assert.equal(parsed.all, false);
-  assert.deepEqual(parsed.tiers, ['core', 'public-readiness', 'historical-transition']);
-  const entries = selectReleaseGateEntries(syntheticInventory(), parsed);
-  assert.ok(entries.some((entry) => entry.tier === 'historical-transition'));
-  assert.ok(entries.some((entry) => entry.tier === 'core'));
-  assert.equal(entries.some((entry) => entry.tier === 'approval-gated'), false);
+  assert.deepEqual(parsed.tiers, ['core', 'public-readiness']);
+  const summary = summarizeReleaseGateEntries(selectReleaseGateEntries(syntheticInventory(), parsed));
+  assert.deepEqual(summary, { core: 1, 'public-readiness': 1 });
 });
 
 test('--only-tier replaces the default selection', () => {
-  const parsed = parseReleaseGateArgs([
-    '--only-tier', 'historical-transition',
-    '--only-tier', 'approval-gated',
-    '--only-tier=package-publication',
-  ]);
-  assert.equal(parsed.all, false);
-  assert.deepEqual(parsed.tiers, ['historical-transition', 'approval-gated', 'package-publication']);
-  const summary = summarizeReleaseGateEntries(
-    selectReleaseGateEntries(syntheticInventory(), parsed),
-  );
-  assert.deepEqual(summary, { 'historical-transition': 1, 'approval-gated': 1 });
+  for (const argv of [['--only-tier', 'public-readiness'], ['--only-tier=public-readiness']]) {
+    const parsed = parseReleaseGateArgs(argv);
+    assert.equal(parsed.all, false);
+    assert.deepEqual(parsed.tiers, ['public-readiness']);
+    const summary = summarizeReleaseGateEntries(
+      selectReleaseGateEntries(syntheticInventory(), parsed),
+    );
+    assert.deepEqual(summary, { 'public-readiness': 1 });
+  }
+});
+
+test('a removed opt-in tier fails closed instead of selecting nothing (#2257 B6)', () => {
+  const inventory = loadReleaseGateInventory(INVENTORY);
+  for (const tier of ['historical-transition', 'approval-gated', 'package-publication']) {
+    assert.equal(Object.hasOwn(TIER_CONSUMER, tier), false, `${tier} must stay removed`);
+    assert.throws(
+      () => selectReleaseGateEntries(inventory, parseReleaseGateArgs(['--only-tier', tier])),
+      /unknown release-gate tier/,
+    );
+  }
 });
 
 test('the live inventory has no opt-in-only tier left', () => {
@@ -214,6 +220,20 @@ test('#1503: inventory guard fails closed on missing or inconsistent ownership m
   const r2 = compareInventory({ inventory: badConsumer });
   assert.equal(r2.ok, false);
   assert.ok(r2.failures.some((f) => f.includes('inconsistent with tier')));
+
+  // #2257 B6: a declared tier must be known and non-empty.
+  const emptyTier = structuredClone(base);
+  emptyTier.entries[1].tier = 'core';
+  emptyTier.entries[1].consumer = 'pr-gate';
+  const rEmpty = compareInventory({ inventory: emptyTier });
+  assert.equal(rEmpty.ok, false);
+  assert.ok(rEmpty.failures.some((f) => f.includes('declared tier public-readiness has no steps')));
+
+  const unknownTier = structuredClone(base);
+  unknownTier.tiers.push('historical-transition');
+  const rUnknown = compareInventory({ inventory: unknownTier });
+  assert.equal(rUnknown.ok, false);
+  assert.ok(rUnknown.failures.some((f) => f.includes('declared tier historical-transition is not a known release-gate tier')));
 
   const missingRetirementCondition = structuredClone(base);
   delete missingRetirementCondition.entries[0].retirementCondition;

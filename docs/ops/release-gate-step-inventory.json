@@ -1,13 +1,10 @@
 {
   "$schema": "https://example.invalid/a2a-nexus/release-gate-step-inventory.schema.json",
   "generatedFrom": "scripts/release-gate.mjs",
-  "purpose": "Executable tier classification for #880/#882. scripts/release-gate.mjs uses this inventory to run core/public-readiness gates by default while keeping historical transition, approval, and package-publication checks as explicit opt-in tiers. Each entry additionally declares owner (owning surface), consumer (who runs it: pr-gate/transition-audit/operator-approval/release-publication, consistent with tier), and retirementCondition (explicit trigger for the retirement disposition) for #1503 script-surface ownership.",
+  "purpose": "Executable tier classification for #880/#882. scripts/release-gate.mjs uses this inventory to run every step on the default PR path; the core and public-readiness tiers are the only tiers (the opt-in historical-transition, approval-gated and package-publication tiers were emptied by #1779 and removed in #2257 B6). Each entry additionally declares owner (owning surface), consumer (who runs it: pr-gate, consistent with tier), and retirementCondition (explicit trigger for the retirement disposition) for #1503 script-surface ownership.",
   "tiers": [
     "core",
-    "public-readiness",
-    "historical-transition",
-    "approval-gated",
-    "package-publication"
+    "public-readiness"
   ],
   "entries": [
     {
