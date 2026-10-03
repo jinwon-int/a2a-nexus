@@ -7,6 +7,8 @@ Agent work attestation toolkit (#1601 P2): "이 산출물을 어떤 에이전트
 - finalizer verdict signature + keyring (`finalizer-verdict-signature`)
 - deterministic evidence assembly (`worker-subagent-evidence-assembly`)
 - redaction gate (`worker-subagent-redaction`, `-redaction-gate`)
+- GitHub-egress secret redactor `redactSecrets` (`secret-redaction`, #2256 A4;
+  keeps commit SHAs — no generic long-token rule)
 - spawn-gate decision + orchestration policy + budget counter
 - result/retrieval provenance (`provenance`)
 

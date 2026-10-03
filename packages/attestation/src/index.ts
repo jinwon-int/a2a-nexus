@@ -5,8 +5,9 @@
  * signing + JCS canonicalization, finalizer verdict signature/keyring,
  * deterministic evidence assembly, redaction gate, spawn-gate decision,
  * subagent budget counter, orchestration policy, and result/retrieval
- * provenance. The broker consumes this package through its exports; the same
- * boundary serves a future standalone-repo extraction.
+ * provenance, plus the shared GitHub-egress secret redactor
+ * (`redactSecrets`, #2256 A4). The broker consumes this package through its
+ * exports; the same boundary serves a future standalone-repo extraction.
  */
 export * from "./agent-card-signing.js";
 export * from "./provenance.js";
@@ -14,6 +15,7 @@ export * from "./finalizer-verdict-signature.js";
 export * from "./worker-subagent-budget-counter.js";
 export * from "./worker-subagent-evidence-assembly.js";
 export * from "./worker-subagent-orchestration-policy.js";
+export * from "./secret-redaction.js";
 export * from "./worker-subagent-redaction.js";
 export * from "./worker-subagent-redaction-gate.js";
 export * from "./worker-subagent-spawn-gate-decision.js";

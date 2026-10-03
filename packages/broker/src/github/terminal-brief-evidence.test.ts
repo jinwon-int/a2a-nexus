@@ -13,6 +13,32 @@ import {
   type TerminalBriefGitHubCommentTarget,
 } from "./terminal-brief-evidence.js";
 
+// #2256 A4 per-egress fixture: every GitHub egress point must scrub these and
+// keep the 40-hex commit SHA. Token shapes are assembled at runtime so this
+// file never carries a literal secret-scanner hit.
+const EGRESS_SHA = "0123456789abcdef0123456789abcdef01234567";
+const EGRESS_SK = ["sk", "proj", "A1b2C3d4E5f6G7h8I9j0K1l2M3n4O5p6"].join("-");
+const EGRESS_BEARER = "eyJhbGciOiJIUzI1NiJ9.payload.signature";
+const EGRESS_ENV_VALUE = "env-secret-value-123";
+const EGRESS_TOKEN_VALUE = "tok-secret-value-456";
+const EGRESS_LINES = [
+  `key ${EGRESS_SK}`,
+  `Authorization: Bearer ${EGRESS_BEARER}`,
+  `OPENAI_API_KEY=${EGRESS_ENV_VALUE}`,
+  `token=${EGRESS_TOKEN_VALUE}`,
+  "log at /home/alice/.ssh/id_ed25519 and /root/.openclaw/agents/main/session.json",
+  `commit ${EGRESS_SHA}`,
+];
+
+function assertEgressRedacted(text: string): void {
+  for (const leak of [EGRESS_SK, EGRESS_BEARER, EGRESS_ENV_VALUE, EGRESS_TOKEN_VALUE, "/home/alice", "/root/.openclaw"]) {
+    assert.equal(text.includes(leak), false, `${leak} leaked: ${text}`);
+  }
+  assert.match(text, /<redacted-api-key>/);
+  assert.match(text, /<redacted-private-path>/);
+  assert.ok(text.includes(EGRESS_SHA), `commit SHA must survive: ${text}`);
+}
+
 function makeTerminalEvent(overrides: Partial<TerminalTaskOutboxEvent> = {}): TerminalTaskOutboxEvent {
   return {
     id: "terminal:task-1:succeeded:2026-05-11T00%3A00%3A00.000Z",
@@ -208,8 +234,43 @@ describe("Terminal Brief GitHub evidence projection", () => {
 
     assert.ok(projection);
     assert.doesNotMatch(projection.body, /ghp_[A-Za-z0-9]+/);
-    assert.match(projection.body, /\[REDACTED\]/);
+    assert.match(projection.body, /<redacted/);
     assert.doesNotMatch(JSON.stringify(projection.manifest), /ghp_[A-Za-z0-9]+/);
+  });
+
+  it("#2256 A4 egress fixture: secrets and private paths redacted in body and manifest, commit SHA kept", () => {
+    const projection = projectTerminalBriefGitHubEvidenceComment({
+      kind: "start",
+      repo: "acme/platform",
+      number: 42,
+      taskId: "task-1",
+      run: "run-1",
+      worker: "workerepsilon",
+      taskBrief: EGRESS_LINES.join("\n"),
+    });
+
+    assert.ok(projection);
+    assertEgressRedacted(projection.body);
+    assertEgressRedacted(JSON.stringify(projection.manifest));
+  });
+
+  it("#2256 A4 keeps the pre-shared-redactor coverage (Slack, short sk-, credential, Authorization schemes)", () => {
+    const slack = ["xoxb", "1234", "abcdEFGH"].join("-");
+    const shortSk = ["sk", "short1"].join("-");
+    const projection = projectTerminalBriefGitHubEvidenceComment({
+      kind: "start",
+      repo: "acme/platform",
+      number: 42,
+      taskId: "task-1",
+      run: "run-1",
+      worker: "workerepsilon",
+      taskBrief: `slack ${slack} key ${shortSk} credential: cred-value Authorization: Basic basic-value authorization=raw-auth-value`,
+    });
+
+    assert.ok(projection);
+    for (const leak of [slack, shortSk, "cred-value", "basic-value", "raw-auth-value"]) {
+      assert.equal(projection.body.includes(leak), false, `${leak} leaked: ${projection.body}`);
+    }
   });
 
   it("fails closed before projecting OpenClaw runtime/bootstrap paths into evidence", () => {

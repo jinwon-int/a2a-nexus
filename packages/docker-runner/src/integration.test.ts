@@ -2000,6 +2000,33 @@ test("buildTerminalEvidenceEvent: failed missing-evidence event keeps reason sho
   assert.ok(!serialized.includes("token=secret"));
 });
 
+test("buildTerminalEvidenceEvent: reason and alert use the runner's full redactSecrets (#2256 A4)", () => {
+  // Token shapes assembled at runtime so this file carries no scanner hits.
+  const ghToken = ["ghp", "a".repeat(36)].join("_");
+  const apiKey = `sk-${"b".repeat(40)}`;
+  const sha = "0123456789abcdef0123456789abcdef01234567";
+  const build = (error: string) => buildTerminalEvidenceEvent(
+    { ok: false, taskId: "task-redact", status: "failed", workDir: "/private/work", stdout: "", stderr: "", artifacts: [], error },
+    { id: "task-redact", payload: { repo: "jinwon-int/repo", issue: "84" } },
+    "workerBeta",
+    "2026-05-01T12:45:00.000Z",
+  );
+
+  const headers = build(`push failed Authorization: Bearer abc.def.ghi ${ghToken} ${apiKey}`);
+  const json = build(`config {"token": "json-secret-value"} at commit ${sha} GH_TOKEN=env-secret`);
+  for (const event of [headers, json]) {
+    const serialized = JSON.stringify(event);
+    for (const leak of ["abc.def.ghi", ghToken, apiKey, "json-secret-value", "env-secret"]) {
+      assert.equal(serialized.includes(leak), false, `${leak} leaked: ${serialized}`);
+    }
+    assert.ok((event.reason?.length ?? 0) <= 180);
+  }
+  assert.equal(headers.reason, "push failed Authorization: Bearer <redacted> <redacted-github-token> <redacted-api-key>");
+  // Existing compact-alert markers are unchanged; commit SHAs survive.
+  assert.equal(json.reason, `config {"token": "<redacted>"} at commit ${sha} <redacted-secret-env>`);
+  assert.ok(json.alert.body.includes(sha));
+});
+
 interface TerminalAckSmokeFixture {
   description: string;
   worker: string;

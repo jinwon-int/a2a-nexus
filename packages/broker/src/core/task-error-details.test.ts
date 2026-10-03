@@ -7,6 +7,32 @@ import { redactAndBoundFailureExcerpt } from "./task-error-details.js";
 const GITHUB_TOKEN = `ghp_${"a".repeat(36)}`;
 const API_KEY = `sk-${"b".repeat(40)}`;
 
+// #2256 A4 per-egress fixture: every GitHub egress point must scrub these and
+// keep the 40-hex commit SHA. Token shapes are assembled at runtime so this
+// file never carries a literal secret-scanner hit.
+const EGRESS_SHA = "0123456789abcdef0123456789abcdef01234567";
+const EGRESS_SK = ["sk", "proj", "A1b2C3d4E5f6G7h8I9j0K1l2M3n4O5p6"].join("-");
+const EGRESS_BEARER = "eyJhbGciOiJIUzI1NiJ9.payload.signature";
+const EGRESS_ENV_VALUE = "env-secret-value-123";
+const EGRESS_TOKEN_VALUE = "tok-secret-value-456";
+const EGRESS_LINES = [
+  `key ${EGRESS_SK}`,
+  `Authorization: Bearer ${EGRESS_BEARER}`,
+  `OPENAI_API_KEY=${EGRESS_ENV_VALUE}`,
+  `token=${EGRESS_TOKEN_VALUE}`,
+  "log at /home/alice/.ssh/id_ed25519 and /root/.openclaw/agents/main/session.json",
+  `commit ${EGRESS_SHA}`,
+];
+
+function assertEgressRedacted(text: string): void {
+  for (const leak of [EGRESS_SK, EGRESS_BEARER, EGRESS_ENV_VALUE, EGRESS_TOKEN_VALUE, "/home/alice", "/root/.openclaw"]) {
+    assert.equal(text.includes(leak), false, `${leak} leaked: ${text}`);
+  }
+  assert.match(text, /<redacted-api-key>/);
+  assert.match(text, /<redacted-private-path>/);
+  assert.ok(text.includes(EGRESS_SHA), `commit SHA must survive: ${text}`);
+}
+
 test("failure readback excerpt is bounded and redacted", () => {
   const raw = [
     `GH_TOKEN=${GITHUB_TOKEN}`,
@@ -115,4 +141,13 @@ test("#2256 A4 failure excerpt keeps non-personal addresses, dates, versions and
   for (const leak of ["5678", "0100", "821012345678", "alicenoreply@", "git@gmail", "alice@noreply"]) {
     assert.equal(bypasses.includes(leak), false, `${leak} leaked: ${bypasses}`);
   }
+});
+
+test("#2256 A4 failure readback egress fixture: secrets and private paths redacted, commit SHA kept", () => {
+  const normalized = normalizeTaskError({
+    code: "handler_exit_nonzero",
+    message: "handler exited",
+    details: { stage: "handler", excerpt: EGRESS_LINES.join("\n") },
+  });
+  assertEgressRedacted(String(normalized.details?.excerpt ?? ""));
 });

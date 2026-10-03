@@ -1,5 +1,7 @@
 import { createHash } from "node:crypto";
 
+import { redactSecrets } from "a2a-attestation";
+
 import type { InMemoryA2ABroker } from "../core/broker.js";
 import {
   peerHasHandoffScope,
@@ -389,10 +391,17 @@ export function renderHandoffEvidenceComment(result: Pick<HandoffReceiveResult, 
   return lines.join("\n");
 }
 
+/**
+ * #2256 A4: the shared a2a-attestation redactor plus the older handoff rules
+ * it does not cover (`authorization` values, quoted values containing spaces,
+ * short GitHub tokens), so this egress point only ever gains redaction. The
+ * older rules run first so quoted values are consumed whole;
+ * `Bearer`/`Basic`/`token` schemes are consumed together with their credential.
+ */
 export function redactHandoffText(value: string): string {
-  return value
-    .replace(/\b((?:edge[_-]?secret|secret|token|api[_-]?key|password|authorization))\s*[:=]\s*("[^"]*"|'[^']*'|`[^`]*`|[^\s,;]+)/gi, "$1=[REDACTED]")
-    .replace(/\b(?:ghp_|gho_|ghu_|ghs_|ghr_|github_pat_)[A-Za-z0-9_]+/g, "[REDACTED]");
+  return redactSecrets(value
+    .replace(/\b((?:edge[_-]?secret|secret|token|api[_-]?key|password|authorization))\s*[:=]\s*(?:(?:Bearer|Basic|token)\s+)?("[^"]*"|'[^']*'|`[^`]*`|[^\s,;]+)/gi, "$1=<redacted>")
+    .replace(/\b(?:ghp_|gho_|ghu_|ghs_|ghr_|github_pat_)[A-Za-z0-9_]+/g, "<redacted-github-token>"));
 }
 
 function manifestCandidateBlocks(text: string): string[] {
