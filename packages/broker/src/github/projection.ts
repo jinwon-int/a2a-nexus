@@ -42,10 +42,11 @@
  * Redaction (see `redactSensitive`):
  *   - Object keys matching /(token|secret|api[_-]?key|password|credential|
  *     authorization)/i have their value replaced with `[REDACTED]`.
- *   - Token-shaped substrings inside string values (`ghp_…`, `gho_…`,
- *     `ghu_…`, `ghs_…`, `ghr_…`, `github_pat_…`) are scrubbed regardless of
- *     the surrounding key, so accidental token leaks in summaries or output
- *     fields are caught.
+ *   - String values go through the shared a2a-attestation `redactSecrets`
+ *     (GitHub tokens, API keys, Authorization headers, key=value secrets,
+ *     contacts, private paths) regardless of the surrounding key, so
+ *     accidental leaks in summaries or output fields are caught. Commit SHAs
+ *     survive.
  *   - Redaction recurses into nested objects and arrays.
  *
  * Truncation:
@@ -56,8 +57,9 @@
  *     redacted markers always reach the wire even when the body is clipped.
  */
 
+import { redactSecrets } from "a2a-attestation";
+
 import type { TaskRecord, TaskStatus } from "../core/types.js";
-import { redactSecretText } from "../core/task-error-details.js";
 
 export type GitHubStatusMarker = "Start" | "Block" | "PR" | "Done";
 
@@ -223,11 +225,11 @@ export function redactSensitive(value: unknown): unknown {
 }
 
 /**
- * #2256 A4: string values in GitHub projections get the same broker secret
- * redactor as failure readback (GitHub/xai/sk/sm tokens, Authorization
- * headers, key=value/JSON secrets, provider targets, emails/phones, private
- * paths) instead of a GitHub-token-only pattern.
+ * #2256 A4: string values in GitHub projections get the shared a2a-attestation
+ * secret redactor, the same one failure readback uses (GitHub/xai/sk/sm tokens,
+ * Authorization headers, key=value/JSON secrets, provider targets,
+ * emails/phones, private paths) instead of a GitHub-token-only pattern.
  */
 function redactString(value: string): string {
-  return redactSecretText(value);
+  return redactSecrets(value);
 }

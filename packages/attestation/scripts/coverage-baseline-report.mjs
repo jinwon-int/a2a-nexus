@@ -13,6 +13,7 @@ const FLOORS = new Map([
   ['finalizer-verdict-signature.js', 80],
   ['worker-subagent-evidence-assembly.js', 80],
   ['worker-subagent-redaction-gate.js', 80],
+  ['secret-redaction.js', 90],
   // spawn-gate-decision has no in-package test (its coupled test stays in the
   // broker); coverage is asserted by the broker suite instead.
 ]);

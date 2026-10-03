@@ -1,5 +1,7 @@
 import { createHash } from "node:crypto";
 
+import { redactSecrets } from "a2a-attestation";
+
 import type {
   TerminalTaskOutboxEvent,
   TerminalTaskReceiptStatus,
@@ -536,11 +538,19 @@ function safeCrossBrokerHandoff(value: unknown): TerminalBriefGitHubEvidenceMani
   }) as TerminalBriefGitHubEvidenceManifest["crossBrokerHandoff"];
 }
 
+/**
+ * #2256 A4: the shared a2a-attestation redactor plus the older terminal-brief
+ * rules it does not cover (short or dash-bearing GitHub/`sk-` tokens, Slack
+ * `xox[abp]-` tokens, `authorization`/`credential` values), so this egress
+ * point only ever gains redaction. The older rules run first so quoted or
+ * multi-word values are consumed whole; `Bearer`/`Basic`/`token` schemes are
+ * consumed together with their credential.
+ */
 function redactCommentText(value: string): string {
-  return value
-    .replace(/\b(?:(?:ghp|gho|ghu|ghs|ghr)_|github_pat_)[-_A-Za-z0-9]+\b/g, "[REDACTED]")
-    .replace(/\b(?:sk|xox[abp])-[-_A-Za-z0-9]+\b/g, "[REDACTED]")
-    .replace(/\b(token|secret|password|api[_-]?key|authorization|credential)\s*[:=]\s*\S+/gi, "$1=[REDACTED]");
+  return redactSecrets(value
+    .replace(/\b(?:(?:ghp|gho|ghu|ghs|ghr)_|github_pat_)[-_A-Za-z0-9]+\b/g, "<redacted-github-token>")
+    .replace(/\b(?:sk|xox[abp])-[-_A-Za-z0-9]+\b/g, "<redacted-api-key>")
+    .replace(/\b(token|secret|password|api[_-]?key|authorization|credential)\s*[:=]\s*(?:(?:Bearer|Basic|token)\s+)?\S+/gi, "$1=<redacted>"));
 }
 
 function visitForUnsafePaths(value: unknown, found: Set<string>): void {

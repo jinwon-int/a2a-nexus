@@ -5,6 +5,7 @@ import { InMemoryA2ABroker } from "../core/broker.js";
 import {
   brokerbetabrokeralphaHandoffReceiver,
   parsebrokerbetabrokeralphaHandoffManifest,
+  redactHandoffText,
   renderHandoffEvidenceComment,
 } from "./handoff-receiver.js";
 import type { GitHubDeliveryContext, GitHubIssueCommentEvent, GitHubRepoRef, GitHubUserRef } from "./types.js";
@@ -15,6 +16,32 @@ const repo: GitHubRepoRef = {
   fullName: "jinwon-int/a2a-nexus",
 };
 const sender: GitHubUserRef = { login: "brokerbeta", id: 101, type: "User" };
+
+// #2256 A4 per-egress fixture: every GitHub egress point must scrub these and
+// keep the 40-hex commit SHA. Token shapes are assembled at runtime so this
+// file never carries a literal secret-scanner hit.
+const EGRESS_SHA = "0123456789abcdef0123456789abcdef01234567";
+const EGRESS_SK = ["sk", "proj", "A1b2C3d4E5f6G7h8I9j0K1l2M3n4O5p6"].join("-");
+const EGRESS_BEARER = "eyJhbGciOiJIUzI1NiJ9.payload.signature";
+const EGRESS_ENV_VALUE = "env-secret-value-123";
+const EGRESS_TOKEN_VALUE = "tok-secret-value-456";
+const EGRESS_LINES = [
+  `key ${EGRESS_SK}`,
+  `Authorization: Bearer ${EGRESS_BEARER}`,
+  `OPENAI_API_KEY=${EGRESS_ENV_VALUE}`,
+  `token=${EGRESS_TOKEN_VALUE}`,
+  "log at /home/alice/.ssh/id_ed25519 and /root/.openclaw/agents/main/session.json",
+  `commit ${EGRESS_SHA}`,
+];
+
+function assertEgressRedacted(text: string): void {
+  for (const leak of [EGRESS_SK, EGRESS_BEARER, EGRESS_ENV_VALUE, EGRESS_TOKEN_VALUE, "/home/alice", "/root/.openclaw"]) {
+    assert.equal(text.includes(leak), false, `${leak} leaked: ${text}`);
+  }
+  assert.match(text, /<redacted-api-key>/);
+  assert.match(text, /<redacted-private-path>/);
+  assert.ok(text.includes(EGRESS_SHA), `commit SHA must survive: ${text}`);
+}
 
 function registerWorker(broker: InMemoryA2ABroker, nodeId: string, metadata: Record<string, string> = {}): void {
   broker.registerWorker({
@@ -218,7 +245,29 @@ ${manifest()}`;
     assert.doesNotMatch(JSON.stringify(task.payload), new RegExp(token));
     assert.doesNotMatch(rendered, new RegExp(secret));
     assert.doesNotMatch(rendered, new RegExp(token));
-    assert.match(task.message ?? "", /edgeSecret=\[REDACTED\]/);
+    assert.match(task.message ?? "", /edgeSecret=<redacted>/);
+  });
+
+  it("#2256 A4 egress fixture: stored task message and evidence redact secrets/private paths, keep commit SHA", () => {
+    const broker = new InMemoryA2ABroker(undefined, undefined, { brokerId: "brokeralpha", teamId: "team1" });
+    registerWorker(broker, "workergamma");
+    const receiver = new brokerbetabrokeralphaHandoffReceiver({ broker });
+    const body = `/a2a assign workergamma --intent propose_patch -- closeout ${EGRESS_LINES.join(" ")}\n${manifest()}`;
+
+    const result = receiver.receiveIssueComment(comment(body), ctx("d1"));
+    const task = broker.getTask(result.targetTaskIds[0]!);
+    assert.ok(task);
+
+    assertEgressRedacted(task.message ?? "");
+    assertEgressRedacted(redactHandoffText(EGRESS_LINES.join("\n")));
+  });
+
+  it("#2256 A4 redactHandoffText keeps the pre-shared-redactor coverage", () => {
+    const shortToken = ["ghp", "short"].join("_");
+    const out = redactHandoffText(`authorization="Basic a b c" secret='two words' token: \`tick value\` ${shortToken}`);
+    for (const leak of ["Basic a b c", "two words", "tick value", shortToken]) {
+      assert.equal(out.includes(leak), false, `${leak} leaked: ${out}`);
+    }
   });
 
   it("accepts a structured manifest with a single explicit targetWorker", () => {

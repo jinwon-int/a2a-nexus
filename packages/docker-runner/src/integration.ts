@@ -8,6 +8,7 @@
  * Broker claim/heartbeat logic is NOT touched by this module.
  */
 
+import { redactSecrets } from "./redaction.js";
 import type { ArtifactManifest, GitHubCommentProjection, GitHubEvidence, ResultSummary, RunnerBuildMetadata, RunnerCrossBrokerHandoff, RunnerPolicyContext, RunnerTask } from "./types.js";
 
 // ── Handler payload shape (what the broker sends to the worker) ────────────
@@ -980,7 +981,7 @@ export function buildCanaryRecoveryAuditReport(
     acknowledged: ack.acknowledged,
     cursorComplete: ack.cursorComplete,
     operatorAction: selectCanaryRecoveryOperatorAction(event, ack),
-    reason: boundReason(!ack.acknowledged ? ack.reason : event.reason ?? ack.reason),
+    reason: boundSafeText(!ack.acknowledged ? ack.reason : event.reason ?? ack.reason),
     diagnostics,
     safetyState: event.safetyState,
     timestamps: event.timestamps,
@@ -1130,9 +1131,9 @@ function isBudgetLimitedResult(result: RawRunnerOutput): boolean {
 function safeContinuationRecommendation(result: RawRunnerOutput): string {
   const continuation = result.resultSummary?.continuation ?? result.artifactManifest?.continuation;
   const budget = result.resultSummary?.budget ?? result.artifactManifest?.budget;
-  const reason = budget?.reason ? ` (${boundReason(budget.reason)})` : "";
+  const reason = budget?.reason ? ` (${boundSafeText(budget.reason)})` : "";
   if (continuation?.recommended === true) {
-    const prompt = continuation.nextPrompt ? ` Suggested prompt: ${boundReason(continuation.nextPrompt)}` : "";
+    const prompt = continuation.nextPrompt ? ` Suggested prompt: ${boundSafeText(continuation.nextPrompt)}` : "";
     return `Review artifacts, then approve one bounded continuation task before resuming${reason}.${prompt}`.trim();
   }
   return `Review artifacts and budget evidence before deciding whether to start a new bounded task${reason}.`;
@@ -1217,7 +1218,7 @@ function buildTerminalAlert(input: {
             ? "Timeout"
             : "Needs review";
   const target = input.repo ?? input.issue ?? input.taskId;
-  const title = input.terminalBriefTitle ?? boundAlertPart(`A2A ${icon}: ${target}`, 96);
+  const title = input.terminalBriefTitle ?? boundSafeText(`A2A ${icon}: ${target}`, 96);
   const bodyParts = [
     `task=${input.taskId}`,
     `worker=${input.worker}`,
@@ -1237,7 +1238,7 @@ function buildTerminalAlert(input: {
   bodyParts.push(`reason=${reason}`);
   return omitUndefined({
     title,
-    body: boundAlertPart(bodyParts.join(" · "), 360),
+    body: boundSafeText(bodyParts.join(" · "), 360),
     url: input.url,
   }) as { title: string; body: string; url?: string };
 }
@@ -1284,7 +1285,7 @@ function buildTerminalBriefContext(
   );
   const hasValidProgress = sequence !== undefined && total !== undefined && sequence <= total;
   const subject = hasValidProgress ? `${workerLabel}(${sequence}/${total})` : workerLabel;
-  const title = boundAlertPart(`A2A Terminal Brief ${terminalBriefOutcomeLabel(status, evidenceKind)}: ${subject}`, 96);
+  const title = boundSafeText(`A2A Terminal Brief ${terminalBriefOutcomeLabel(status, evidenceKind)}: ${subject}`, 96);
   const summary = safeEvidenceText(brief?.summary ?? payload?.terminalBriefSummary, 240);
   const roundId = safeEvidenceText(brief?.roundId ?? parentRoundId, 120);
   const parentBroker = safeEvidenceText(brief?.parentBroker ?? payload?.parentBroker ?? originBrokerId, 80);
@@ -1341,18 +1342,6 @@ function compactIssueRef(issue?: string): string | undefined {
   return issue.startsWith("http://") || issue.startsWith("https://") ? undefined : issue;
 }
 
-function boundAlertPart(value: string, max: number): string {
-  const compact = value
-    .replace(/x-access-token:[^@\s]+@github\.com/g, "x-access-token:<redacted>@github.com")
-    .replace(/(token|password|secret|api[_-]?key)=\S+/gi, "$1=<redacted>")
-    .replace(/\b[A-Za-z_][A-Za-z0-9_]*(?:TOKEN|SECRET|PASSWORD)=\S+/g, "<redacted-secret-env>")
-    .replace(/\/[^\s:;,)]+(?:\/[^\s:;,)]+)+/g, "<path>")
-    .replace(/\s+/g, " ")
-    .trim();
-  if (compact.length <= max) return compact;
-  return `${compact.slice(0, Math.max(0, max - 3))}...`;
-}
-
 function buildTerminalReason(result: RawRunnerOutput, kind: TerminalEvidenceKind): string {
   if (kind === "PR") return "PR evidence is available for operator review.";
   if (kind === "Done") return "Done evidence was posted because no PR was needed.";
@@ -1367,25 +1356,35 @@ function shortSafeReason(result: RawRunnerOutput, fallback: string): string {
   const source = result.error ?? result.resultSummary?.stderr ?? result.resultSummary?.stdout;
   const firstLine = source?.split(/\r?\n/).map((line) => line.trim()).find(Boolean);
   if (!firstLine) return fallback;
-  return boundReason(firstLine);
+  return boundSafeText(firstLine);
 }
 
-function boundReason(value: string): string {
-  const compact = value
+const REASON_MAX_CHARS = 180;
+
+/**
+ * Single-line, bounded, redacted text for terminal evidence reasons and alert
+ * title/body parts (#2256 A4: previously two identical local copies). The
+ * compact alert rules (secret env assignments, multi-segment paths ->
+ * `<path>`) run first so existing output is unchanged; the runner's full
+ * `redactSecrets` then adds Authorization headers, GitHub/API tokens and
+ * JSON-style secrets before the length bound.
+ */
+function boundSafeText(value: string, max = REASON_MAX_CHARS): string {
+  const compact = redactSecrets(value
     .replace(/x-access-token:[^@\s]+@github\.com/g, "x-access-token:<redacted>@github.com")
     .replace(/(token|password|secret|api[_-]?key)=\S+/gi, "$1=<redacted>")
     .replace(/\b[A-Za-z_][A-Za-z0-9_]*(?:TOKEN|SECRET|PASSWORD)=\S+/g, "<redacted-secret-env>")
     .replace(/\/[^\s:;,)]+(?:\/[^\s:;,)]+)+/g, "<path>")
     .replace(/\s+/g, " ")
-    .trim();
-  if (compact.length <= 180) return compact;
-  return `${compact.slice(0, 177)}...`;
+    .trim());
+  if (compact.length <= max) return compact;
+  return `${compact.slice(0, Math.max(0, max - 3))}...`;
 }
 
 function safeEvidenceText(value: string | undefined, maxLen: number): string | undefined {
   const normalized = normalizeString(value);
   if (!normalized) return undefined;
-  const safe = boundReason(normalized);
+  const safe = boundSafeText(normalized);
   return safe.length <= maxLen ? safe : `${safe.slice(0, Math.max(0, maxLen - 3))}...`;
 }
 

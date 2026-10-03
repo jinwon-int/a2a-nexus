@@ -13,6 +13,32 @@ import {
 // Fixtures
 // ---------------------------------------------------------------------------
 
+// #2256 A4 per-egress fixture: every GitHub egress point must scrub these and
+// keep the 40-hex commit SHA. Token shapes are assembled at runtime so this
+// file never carries a literal secret-scanner hit.
+const EGRESS_SHA = "0123456789abcdef0123456789abcdef01234567";
+const EGRESS_SK = ["sk", "proj", "A1b2C3d4E5f6G7h8I9j0K1l2M3n4O5p6"].join("-");
+const EGRESS_BEARER = "eyJhbGciOiJIUzI1NiJ9.payload.signature";
+const EGRESS_ENV_VALUE = "env-secret-value-123";
+const EGRESS_TOKEN_VALUE = "tok-secret-value-456";
+const EGRESS_LINES = [
+  `key ${EGRESS_SK}`,
+  `Authorization: Bearer ${EGRESS_BEARER}`,
+  `OPENAI_API_KEY=${EGRESS_ENV_VALUE}`,
+  `token=${EGRESS_TOKEN_VALUE}`,
+  "log at /home/alice/.ssh/id_ed25519 and /root/.openclaw/agents/main/session.json",
+  `commit ${EGRESS_SHA}`,
+];
+
+function assertEgressRedacted(text: string): void {
+  for (const leak of [EGRESS_SK, EGRESS_BEARER, EGRESS_ENV_VALUE, EGRESS_TOKEN_VALUE, "/home/alice", "/root/.openclaw"]) {
+    assert.equal(text.includes(leak), false, `${leak} leaked: ${text}`);
+  }
+  assert.match(text, /<redacted-api-key>/);
+  assert.match(text, /<redacted-private-path>/);
+  assert.ok(text.includes(EGRESS_SHA), `commit SHA must survive: ${text}`);
+}
+
 function makeTask(overrides: Partial<TaskRecord> = {}): TaskRecord {
   return {
     id: "task-1",
@@ -220,5 +246,16 @@ describe("redactSensitive", () => {
     assert.equal(redactSensitive("plain"), "plain");
     assert.equal(redactSensitive(42), 42);
     assert.equal(redactSensitive(null), null);
+  });
+});
+
+describe("#2256 A4 projection egress fixture", () => {
+  it("redacts sk-/Bearer/KEY=value/token=/private paths in Block and Done bodies, keeps the SHA", () => {
+    const text = EGRESS_LINES.join("\n");
+    const block = projectTaskComment(makeTask({ status: "failed", error: { code: "exec_error", message: text } }));
+    const done = projectTaskComment(makeTask({ status: "succeeded", result: { summary: text, output: { log: text } } }));
+    assert.ok(block && done);
+    assertEgressRedacted(block.body);
+    assertEgressRedacted(done.body);
   });
 });
