@@ -14,7 +14,11 @@ routing requirements and executable local verification.
 - `receipt-contract.ts` — signed receipt contract (`nclex.content-pr.receipt.v1`),
   RFC 8785 JCS canonicalization via `a2a-attestation`, EdDSA verification,
   fail-closed validation (malformed cores, unknown key ids, invalid signatures,
-  self-review rejected).
+  self-review rejected). Restricted-artifact findings fail closed as
+  `receipt_restricted_artifact` (#1724): `note` is single-line and at most
+  280 characters, and `evidenceRef` must be reference-form
+  (`[namespace:]id[#locator]`, at most 160 characters). These caps are kept
+  identical with the offline module, and a cross-module parity test checks them.
 - `receipt-store.ts` — in-memory, receiptId-deduped store with snapshot
   restore support (persistence rides the broker's snapshot extension).
 - `merge-ready.ts` — pure merge-ready projection (quorum 2 normal / 3

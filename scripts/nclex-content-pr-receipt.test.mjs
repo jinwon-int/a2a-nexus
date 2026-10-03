@@ -2,14 +2,19 @@
 /**
  * Deterministic tests for the signed NCLEX evaluation receipt (#1724):
  * round-trip, exact-head binding, tamper and key failures, self-review
- * rejection, and staleness interplay with the preset's classifyReceipts.
+ * rejection, staleness interplay with the preset's classifyReceipts, and the
+ * restricted-artifact fail-closed fixture (bounded note, reference-form
+ * evidenceRef).
  */
 import test from "node:test";
 import assert from "node:assert/strict";
 import { generateKeyPairSync } from "node:crypto";
 
 import {
+  NCLEX_EVIDENCE_REF_MAX_CHARS,
+  NCLEX_FINDING_NOTE_MAX_CHARS,
   NCLEX_RECEIPT_SCHEMA,
+  NclexReceiptError,
   buildReceiptCore,
   receiptIdOf,
   signReceipt,
@@ -114,4 +119,89 @@ test("preset staleness consumes signed receipts: head drift excludes prior PASS"
   });
   assert.deepEqual(fresh.map((r) => r.receiptId), [passNew.receiptId]);
   assert.deepEqual(stale.map((r) => r.receiptId), [passOld.receiptId]);
+});
+
+// Restricted-artifact fail-closed fixture (#1724): a finding carries only a
+// short single-line note and a reference-form evidenceRef, never a verbatim
+// excerpt of restricted/factcheck-only material. These vectors are mirrored
+// verbatim in packages/nclex-evaluation/src/receipt-contract.test.ts, which
+// also imports this module to pin constant and verdict parity.
+const LONG_ID = "r".repeat(128);
+const RESTRICTED_ARTIFACT_VECTORS = {
+  acceptedEvidenceRefs: [
+    "packet:p.12",
+    "pharm-01",
+    "pharm-01#p.12",
+    `sha256:${"a".repeat(64)}#p.212-214`,
+    "b".repeat(64),
+    "refs:ati-pharm-2024/ch4#sec-2.1",
+    `refs:${LONG_ID}#${"s".repeat(26)}`, // exactly 160 chars
+  ],
+  rejectedEvidenceRefs: [
+    "see page 12 of the textbook",
+    "Patient presents with chest pain; give aspirin 325 mg",
+    "packet:p.12\nverbatim restricted paragraph",
+    "sha256:abc",
+    `sha256:${"A".repeat(64)}`,
+    "https://refs.example/pharm-01.pdf",
+    "#p.12",
+    "Packet:p.12",
+    `refs:${LONG_ID}#${"s".repeat(27)}`, // 161 chars
+  ],
+  acceptedNotes: ["minor wording", "  trimmed edge whitespace\n", "가".repeat(280)],
+  rejectedNotes: ["line one\nline two", "carriage\rreturn", "tab\tseparated", "unicode\u2028separator", "가".repeat(281)],
+};
+
+test("restricted artifact: reference-form evidenceRefs and bounded single-line notes are admitted", () => {
+  assert.equal(`refs:${LONG_ID}#${"s".repeat(26)}`.length, NCLEX_EVIDENCE_REF_MAX_CHARS);
+  assert.equal(NCLEX_FINDING_NOTE_MAX_CHARS, 280);
+  for (const evidenceRef of RESTRICTED_ARTIFACT_VECTORS.acceptedEvidenceRefs) {
+    const core = buildReceiptCore(coreFields({ findings: [{ findingId: "F-1", blocking: false, evidenceRef }] }));
+    assert.equal(core.findings[0].evidenceRef, evidenceRef, evidenceRef);
+  }
+  for (const note of RESTRICTED_ARTIFACT_VECTORS.acceptedNotes) {
+    const core = buildReceiptCore(coreFields({ findings: [{ findingId: "F-1", blocking: false, note }] }));
+    assert.equal(core.findings[0].note, note.trim());
+  }
+});
+
+test("restricted artifact: prose evidenceRefs and multi-line or oversized notes fail closed at build time", () => {
+  for (const evidenceRef of RESTRICTED_ARTIFACT_VECTORS.rejectedEvidenceRefs) {
+    assert.throws(
+      () => buildReceiptCore(coreFields({ findings: [{ findingId: "F-1", blocking: false, evidenceRef }] })),
+      (e) => e instanceof NclexReceiptError && e.code === "receipt_restricted_artifact",
+      JSON.stringify(evidenceRef),
+    );
+  }
+  for (const note of RESTRICTED_ARTIFACT_VECTORS.rejectedNotes) {
+    assert.throws(
+      () => buildReceiptCore(coreFields({ findings: [{ findingId: "F-1", blocking: false, note }] })),
+      (e) => e instanceof NclexReceiptError && e.code === "receipt_restricted_artifact",
+      JSON.stringify(note),
+    );
+  }
+});
+
+test("restricted artifact: a validly signed receipt smuggling a verbatim excerpt is rejected on verify", () => {
+  // signReceipt signs whatever core it is given, so a producer that bypasses
+  // buildReceiptCore can still emit a cryptographically valid receipt; the
+  // verifier must refuse it before any key lookup or signature check counts.
+  const keyring = { "seoseo-review-key-1": PUBLIC_PEM };
+  const signWith = (findings) =>
+    signReceipt({ ...buildReceiptCore(coreFields()), findings }, { privateKeyPem: PRIVATE_PEM, keyId: "seoseo-review-key-1" });
+  const excerpt = "Restricted source paragraph line 1.\nRestricted source paragraph line 2.";
+  assert.deepEqual(verifyReceipt(signWith([{ findingId: "F-1", blocking: true, note: excerpt }]), keyring), {
+    ok: false,
+    reason: "receipt_restricted_artifact",
+  });
+  const proseRef = signWith([{ findingId: "F-1", blocking: true, evidenceRef: "full restricted text pasted here" }]);
+  assert.deepEqual(verifyReceipt(proseRef, keyring), { ok: false, reason: "receipt_restricted_artifact" });
+});
+
+test("restricted artifact: undeclared finding fields never enter the signed core", () => {
+  const core = buildReceiptCore(
+    coreFields({ findings: [{ findingId: "F-1", blocking: false, evidenceRef: "pharm-01#p.12", excerpt: "verbatim body" }] }),
+  );
+  assert.deepEqual(Object.keys(core.findings[0]).sort(), ["blocking", "evidenceRef", "findingId", "note"]);
+  assert.equal(JSON.stringify(core).includes("verbatim body"), false);
 });

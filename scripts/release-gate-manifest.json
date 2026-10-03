@@ -443,13 +443,13 @@
       "file": "scripts/nclex-content-pr-preset.test.mjs",
       "class": "gate",
       "round": null,
-      "note": "Contract tests for #1724 nclex_content_pr_v1: routing/recusal/quorum, exact-head receipt staleness, merge-ready read model, body-free comment projection, fail-closed fixtures, refs-manifest digest binding (gap b: golden JCS digest, key-order freedom vs array-order significance, declared-mismatch and non-canonicalizable fail-closed), and the deliberate high-risk cyclic lane-kind wrap (gap c: two contract kinds, reviewer-based independence, laneIds stay unique)."
+      "note": "Contract tests for #1724 nclex_content_pr_v1: routing/recusal/quorum, exact-head receipt staleness, merge-ready read model, body-free comment projection, body-free check-run projection (formatter only: exact head_sha, success/failure/neutral conclusion mapping, notes/evidenceRefs/prompts never projected, head-mismatch fail-closed), fail-closed fixtures, refs-manifest digest binding (gap b: golden JCS digest, key-order freedom vs array-order significance, declared-mismatch and non-canonicalizable fail-closed), and the deliberate high-risk cyclic lane-kind wrap (gap c: two contract kinds, reviewer-based independence, laneIds stay unique)."
     },
     {
       "file": "scripts/nclex-content-pr-receipt.test.mjs",
       "class": "gate",
       "round": null,
-      "note": "Contract tests for #1724 signed evaluation receipt: JCS+JWS round-trip, exact-head tamper binding, key-ring failure modes, self-review rejection, preset staleness interplay."
+      "note": "Contract tests for #1724 signed evaluation receipt: JCS+JWS round-trip, exact-head tamper binding, key-ring failure modes, self-review rejection, preset staleness interplay, restricted-artifact fail-closed fixture (receipt_restricted_artifact: 280-char single-line note cap, reference-form evidenceRef grammar, signed-smuggle rejected on verify)."
     },
     {
       "file": "scripts/analysis-bridge-failure-signature-report.test.mjs",

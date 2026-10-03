@@ -24,6 +24,19 @@ export const NCLEX_RECEIPT_CANONICALIZATION = "rfc8785-jcs-v1";
 const SHA40 = /^[0-9a-f]{40}$/;
 const VERDICTS = new Set(["PASS", "BLOCK"]);
 
+// Restricted-artifact boundary (#1724): a finding carries only a short
+// single-line note and a reference-form evidenceRef (refs-manifest entry ID or
+// sha256 plus an optional page/section locator), never a verbatim excerpt of
+// restricted/factcheck-only material. Kept byte-identical with
+// packages/nclex-evaluation/src/receipt-contract.ts; that package's
+// receipt-contract.test.ts imports this module and pins the parity.
+export const NCLEX_FINDING_NOTE_MAX_CHARS = 280;
+export const NCLEX_EVIDENCE_REF_MAX_CHARS = 160;
+export const NCLEX_EVIDENCE_REF_PATTERN =
+  /^(?:([a-z][a-z0-9-]{0,31}):)?([A-Za-z0-9][A-Za-z0-9._/-]{0,127})(?:#([A-Za-z0-9][A-Za-z0-9._:/-]{0,63}))?$/;
+// C0/C1 controls (newline, CR, tab, ...) plus Unicode line/paragraph separators.
+const NOTE_FORBIDDEN_CHARS = /[\u0000-\u001f\u007f-\u009f\u2028\u2029]/;
+
 export class NclexReceiptError extends Error {
   constructor(code, message, details) {
     super(message);
@@ -39,6 +52,32 @@ function fail(code, message, details) {
 
 function isPlainObject(value) {
   return Boolean(value) && typeof value === "object" && !Array.isArray(value);
+}
+
+/**
+ * Restricted-artifact check for one finding's free-text fields (#1724). Runs on
+ * the trimmed value; a violation fails closed as `receipt_restricted_artifact`.
+ */
+function assertFindingCarriesNoRestrictedArtifact(finding) {
+  if (hasText(finding.note)) {
+    const note = finding.note.trim();
+    if (NOTE_FORBIDDEN_CHARS.test(note)) {
+      fail("receipt_restricted_artifact", "finding note must be a single line without control characters");
+    }
+    if ([...note].length > NCLEX_FINDING_NOTE_MAX_CHARS) {
+      fail("receipt_restricted_artifact", `finding note must be at most ${NCLEX_FINDING_NOTE_MAX_CHARS} characters`);
+    }
+  }
+  if (hasText(finding.evidenceRef)) {
+    const ref = finding.evidenceRef.trim();
+    const match = ref.length <= NCLEX_EVIDENCE_REF_MAX_CHARS ? NCLEX_EVIDENCE_REF_PATTERN.exec(ref) : null;
+    if (!match || (match[1] === "sha256" && !/^[0-9a-f]{64}$/.test(match[2] ?? ""))) {
+      fail(
+        "receipt_restricted_artifact",
+        "finding evidenceRef must be a reference ([namespace:]id[#locator], sha256:<64-hex>), not prose",
+      );
+    }
+  }
 }
 
 /**
@@ -84,6 +123,7 @@ export function buildReceiptCore({
   if (!Array.isArray(findings) || !findings.every((finding) => isPlainObject(finding) && hasText(finding.findingId))) {
     fail("receipt_invalid", "findings must be an array of objects with stable findingId");
   }
+  for (const finding of findings) assertFindingCarriesNoRestrictedArtifact(finding);
   if (!hasText(String(producedAt)) || Number.isNaN(Date.parse(producedAt))) {
     fail("receipt_invalid", "producedAt must be an ISO timestamp");
   }
