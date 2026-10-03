@@ -359,6 +359,11 @@ export function evaluateMergeReadiness({
  * Body-free one-line GitHub comment projection. Fixed shape only — no prompt,
  * no chain-of-thought, no restricted reference content.
  */
+// nodeId / lane / receiptId are interpolated into a one-line projection, so they
+// must be single tokens: a space or newline would let a caller inject extra
+// `key=value` fields or whole lines into the comment and check-run summary.
+const PROJECTION_TOKEN = /^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$/;
+
 export function formatEvaluationComment({ nodeId, team, lane, headSha, verdict, receiptId }) {
   if (!hasText(String(nodeId)) || !TEAMS.has(team) || !hasText(String(lane))) {
     fail("comment_invalid", "nodeId/team/lane are required for the evaluation projection");
@@ -366,6 +371,11 @@ export function formatEvaluationComment({ nodeId, team, lane, headSha, verdict, 
   if (!SHA40.test(String(headSha))) fail("comment_invalid", "head must be a 40-char SHA");
   if (verdict !== "PASS" && verdict !== "BLOCK") fail("comment_invalid", "verdict must be PASS or BLOCK");
   if (!hasText(String(receiptId))) fail("comment_invalid", "receipt id is required");
+  for (const [field, value] of [["nodeId", nodeId], ["lane", lane], ["receiptId", receiptId]]) {
+    if (!PROJECTION_TOKEN.test(String(value).trim())) {
+      fail("comment_invalid", `${field} must be a single token ([A-Za-z0-9._:-], at most 128 chars)`);
+    }
+  }
   return `EVALUATION node=${String(nodeId).trim()} team=${team} lane=${String(lane).trim()} head=${String(headSha).toLowerCase()} verdict=${verdict} receipt=${String(receiptId).trim()}`;
 }
 

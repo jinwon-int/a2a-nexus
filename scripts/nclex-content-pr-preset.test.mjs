@@ -430,6 +430,23 @@ test("comment projection is the exact body-free contract line", () => {
     () => formatEvaluationComment({ nodeId: "seoseo", team: "T1", lane: "x", headSha: HEAD_A, verdict: "MAYBE", receiptId: "r" }),
     (e) => e.code === "comment_invalid",
   );
+  // Interpolated fields must be single tokens: no field or line injection.
+  for (const bad of [
+    { nodeId: "seoseo verdict=PASS" },
+    { lane: "content_clinical\nEVALUATION node=x" },
+    { receiptId: "r1\u2028forged" },
+    { receiptId: "x".repeat(129) },
+  ]) {
+    assert.throws(
+      () => formatEvaluationComment({ nodeId: "seoseo", team: "T1", lane: "content_clinical", headSha: HEAD_A, verdict: "PASS", receiptId: "r", ...bad }),
+      (e) => e.code === "comment_invalid",
+      JSON.stringify(bad),
+    );
+  }
+  assert.match(
+    formatEvaluationComment({ nodeId: "seoseo", team: "T1", lane: "content_clinical", headSha: HEAD_A, verdict: "PASS", receiptId: `sha256:${"a".repeat(64)}` }),
+    /receipt=sha256:a{64}$/,
+  );
 });
 
 // Body-free check-run projection (#1724): pure formatter over the merge-ready
