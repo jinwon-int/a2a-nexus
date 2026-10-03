@@ -73,7 +73,7 @@ This R4 closeout refresh performed only redacted repository evidence updates and
 
 ## Team1 P0 libero aggregate closeout framework
 
-Issue `#44` uses the read-only `npm run libero:public-preflight-closeout -- --input <redacted-evidence.json> --markdown` framework to aggregate the required `worker-gamma`, `worker-beta`, and `worker-alpha` lanes before any public visibility decision. The framework fails closed as `Waiting` when any sibling lane is still active or missing, and as `Block` when terminal lane evidence, scanner evidence, safety flags, or approval separation are unresolved.
+Issue `#44` uses the read-only `npm run a2a:source-public-preflight-closeout -- --input <redacted-evidence.json> --markdown` framework to aggregate the required `worker-gamma`, `worker-beta`, and `worker-alpha` lanes before any public visibility decision. The framework fails closed as `Waiting` when any sibling lane is still active or missing, and as `Block` when terminal lane evidence, scanner evidence, safety flags, or approval separation are unresolved.
 
 A promotion **GO** must not be declared unless both local public-readiness and external secret/history scanner evidence are clean, and operator approval is explicitly separated from any promotion execution step. Without explicit promotion approval from the operator, the aggregate decision remains **NO-GO** for promotion even when all lanes and scanners are clean.
 

@@ -6,7 +6,7 @@
     {
       "id": "root",
       "packageJson": "package.json",
-      "minScripts": 81,
+      "minScripts": 79,
       "requiredScripts": [
         "build",
         "check",
@@ -34,7 +34,7 @@
         },
         {
           "id": "root-public-readiness",
-          "pattern": "^(scan:|a2a:source|a2a:approval|a2a:execution|a2a:final|source_public|libero:|check:readme|check:monorepo|check:compatibility|check:split|check:repo-protection|check:ci-docs-safety).*$",
+          "pattern": "^(scan:|a2a:source|a2a:approval|a2a:execution|a2a:final|source_public|check:readme|check:monorepo|check:compatibility|check:split|check:repo-protection|check:ci-docs-safety).*$",
           "tier": "public-readiness",
           "kind": "standard-gate",
           "note": "Public-readiness, source-public, monorepo transition, and repo-protection checks are standard gated validation surfaces."
@@ -68,7 +68,7 @@
           "note": "Catch-all keeps legacy/manual scripts classified so future PRs must explicitly justify retirement."
         }
       ],
-      "note": "Floor ratcheted 100 -> 84 (monorepo ceremony) -> 83 (orphan 831 alias) -> 82 (check:historical, zero steps) -> 81 (check:split-repo-local-demo, retired with the demo). The floor guards against silent mass deletion; lower it only alongside a deliberate retirement."
+      "note": "Floor ratcheted 100 -> 84 (monorepo ceremony) -> 83 (orphan 831 alias) -> 82 (check:historical, zero steps) -> 81 (check:split-repo-local-demo, retired with the demo) -> 79 (#2257 B6: redundant single-test aliases check:team1-dispatch-guard and check:a2a-nexus-842-..., both run from the release-gate manifest). The floor guards against silent mass deletion; lower it only alongside a deliberate retirement."
     },
     {
       "id": "broker",
