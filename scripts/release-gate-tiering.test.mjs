@@ -264,7 +264,10 @@ test('script surface manifest validates current root and broker package scripts'
   // Phase 5 migration/rollback rehearsal entrypoint (scripts/
   // migration-rehearsal-v1.mjs); mirrored in
   // scripts/check-script-budget.mjs BUDGETS.brokerNpmScripts.
-  assert.equal(byId.get('root')?.scriptCount, 81);
+  // #2257 B6: root 81→79 — check:team1-dispatch-guard and
+  // check:a2a-nexus-842-... were single-test aliases for tests the
+  // release-gate manifest already runs; mirrored in BUDGETS.rootNpmScripts.
+  assert.equal(byId.get('root')?.scriptCount, 79);
   assert.equal(byId.get('broker')?.scriptCount, 57);
   assert.ok((byId.get('root')?.kindCounts['required-gate'] ?? 0) >= 7);
   assert.ok((byId.get('broker')?.kindCounts['required-gate'] ?? 0) >= 7);
