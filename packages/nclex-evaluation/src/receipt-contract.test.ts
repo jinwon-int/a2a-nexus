@@ -4,6 +4,9 @@
  * The golden fixture below was produced by the OFFLINE module
  * (scripts/nclex-content-pr-receipt.mjs) — the TS verifier must accept its
  * exact JCS/JWS output, pinning one crypto path across both implementations.
+ * The restricted-artifact vectors are mirrored verbatim from
+ * scripts/nclex-content-pr-receipt.test.mjs, and a parity test imports the
+ * offline module itself so the two validators cannot drift.
  */
 import test from "node:test";
 import assert from "node:assert/strict";
@@ -12,7 +15,11 @@ import { generateKeyPairSync, sign as cryptoSign } from "node:crypto";
 import { canonicalizeJson } from "a2a-attestation";
 
 import {
+  NCLEX_EVIDENCE_REF_MAX_CHARS,
+  NCLEX_EVIDENCE_REF_PATTERN,
+  NCLEX_FINDING_NOTE_MAX_CHARS,
   NCLEX_RECEIPT_SCHEMA,
+  NclexReceiptValidationError,
   parseReceiptCore,
   receiptIdOf,
   verifySignedReceipt,
@@ -119,4 +126,122 @@ test("freshly signed receipt (TS-built core, offline-shaped signature) verifies"
   const receipt = { ...core, receiptId, signatures: [{ protected: protectedHeader, signature }] };
   const result = verifySignedReceipt(receipt, { k1: publicPem });
   assert.equal(result.ok, true);
+});
+
+// Restricted-artifact fail-closed fixture (#1724). Mirrored verbatim from
+// scripts/nclex-content-pr-receipt.test.mjs — keep both tables identical.
+const LONG_ID = "r".repeat(128);
+const RESTRICTED_ARTIFACT_VECTORS = {
+  acceptedEvidenceRefs: [
+    "packet:p.12",
+    "pharm-01",
+    "pharm-01#p.12",
+    `sha256:${"a".repeat(64)}#p.212-214`,
+    "b".repeat(64),
+    "refs:ati-pharm-2024/ch4#sec-2.1",
+    `refs:${LONG_ID}#${"s".repeat(26)}`, // exactly 160 chars
+  ],
+  rejectedEvidenceRefs: [
+    "see page 12 of the textbook",
+    "Patient presents with chest pain; give aspirin 325 mg",
+    "packet:p.12\nverbatim restricted paragraph",
+    "sha256:abc",
+    `sha256:${"A".repeat(64)}`,
+    "https://refs.example/pharm-01.pdf",
+    "#p.12",
+    "Packet:p.12",
+    `refs:${LONG_ID}#${"s".repeat(27)}`, // 161 chars
+  ],
+  acceptedNotes: ["minor wording", "  trimmed edge whitespace\n", "가".repeat(280)],
+  rejectedNotes: ["line one\nline two", "carriage\rreturn", "tab\tseparated", "unicode\u2028separator", "가".repeat(281)],
+};
+
+interface OfflineReceiptModule {
+  NCLEX_FINDING_NOTE_MAX_CHARS: number;
+  NCLEX_EVIDENCE_REF_MAX_CHARS: number;
+  NCLEX_EVIDENCE_REF_PATTERN: RegExp;
+  buildReceiptCore(fields: Record<string, unknown>): Record<string, unknown>;
+  signReceipt(core: Record<string, unknown>, key: { privateKeyPem: string; keyId: string }): Record<string, unknown>;
+}
+
+async function loadOfflineReceiptModule(): Promise<OfflineReceiptModule> {
+  // Computed specifier: the offline module is a plain .mjs script outside the
+  // TS program (same pattern as broker worker-analysis-readiness.test.ts).
+  const url = new URL("../../../scripts/nclex-content-pr-receipt.mjs", import.meta.url).href;
+  return (await import(url)) as OfflineReceiptModule;
+}
+
+function goldenCoreWith(findings: unknown[]): Record<string, unknown> {
+  const { receiptId: _receiptId, signatures: _signatures, ...core } = GOLDEN_RECEIPT;
+  return { ...core, findings };
+}
+
+function outcomeOf(run: () => unknown): string {
+  try {
+    run();
+    return "ok";
+  } catch (error) {
+    return (error as { code?: string }).code ?? "untyped";
+  }
+}
+
+test("restricted artifact: TS and offline validators share caps and evidenceRef grammar (#1724)", async () => {
+  const offline = await loadOfflineReceiptModule();
+  assert.equal(NCLEX_FINDING_NOTE_MAX_CHARS, 280);
+  assert.equal(NCLEX_EVIDENCE_REF_MAX_CHARS, 160);
+  assert.equal(offline.NCLEX_FINDING_NOTE_MAX_CHARS, NCLEX_FINDING_NOTE_MAX_CHARS);
+  assert.equal(offline.NCLEX_EVIDENCE_REF_MAX_CHARS, NCLEX_EVIDENCE_REF_MAX_CHARS);
+  assert.equal(offline.NCLEX_EVIDENCE_REF_PATTERN.source, NCLEX_EVIDENCE_REF_PATTERN.source);
+  assert.equal(offline.NCLEX_EVIDENCE_REF_PATTERN.flags, NCLEX_EVIDENCE_REF_PATTERN.flags);
+});
+
+test("restricted artifact: both validators reach the same verdict on every vector (#1724)", async () => {
+  const offline = await loadOfflineReceiptModule();
+  const cases: Array<{ finding: Record<string, unknown>; expected: string }> = [
+    ...RESTRICTED_ARTIFACT_VECTORS.acceptedEvidenceRefs.map((evidenceRef) => ({ finding: { evidenceRef }, expected: "ok" })),
+    ...RESTRICTED_ARTIFACT_VECTORS.rejectedEvidenceRefs.map((evidenceRef) => ({
+      finding: { evidenceRef },
+      expected: "receipt_restricted_artifact",
+    })),
+    ...RESTRICTED_ARTIFACT_VECTORS.acceptedNotes.map((note) => ({ finding: { note }, expected: "ok" })),
+    ...RESTRICTED_ARTIFACT_VECTORS.rejectedNotes.map((note) => ({ finding: { note }, expected: "receipt_restricted_artifact" })),
+  ];
+  for (const { finding, expected } of cases) {
+    const core = goldenCoreWith([{ findingId: "F-1", blocking: false, ...finding }]);
+    const label = JSON.stringify(finding);
+    assert.equal(outcomeOf(() => parseReceiptCore(core)), expected, `TS ${label}`);
+    assert.equal(outcomeOf(() => offline.buildReceiptCore(core)), expected, `offline ${label}`);
+  }
+  assert.throws(
+    () => parseReceiptCore(goldenCoreWith([{ findingId: "F-1", blocking: false, note: "a\nb" }])),
+    (error: unknown) => error instanceof NclexReceiptValidationError && error.code === "receipt_restricted_artifact",
+  );
+});
+
+test("restricted artifact: an offline-signed receipt smuggling a verbatim excerpt fails closed on the broker side (#1724)", async () => {
+  const offline = await loadOfflineReceiptModule();
+  const { privateKey, publicKey } = generateKeyPairSync("ed25519");
+  const privateKeyPem = privateKey.export({ type: "pkcs8", format: "pem" }) as string;
+  const keyring = { k1: publicKey.export({ type: "spki", format: "pem" }) as string };
+  // signReceipt signs whatever core it is handed, so a producer that bypasses
+  // buildReceiptCore can still emit a cryptographically valid receipt.
+  const base = offline.buildReceiptCore(goldenCoreWith([]));
+  const excerpt = offline.signReceipt(
+    { ...base, findings: [{ findingId: "F-1", blocking: true, note: "Restricted paragraph 1.\nRestricted paragraph 2." }] },
+    { privateKeyPem, keyId: "k1" },
+  );
+  assert.deepEqual(verifySignedReceipt(excerpt, keyring), { ok: false, reason: "receipt_restricted_artifact" });
+  const proseRef = offline.signReceipt(
+    { ...base, findings: [{ findingId: "F-1", blocking: true, evidenceRef: "full restricted text pasted here" }] },
+    { privateKeyPem, keyId: "k1" },
+  );
+  assert.deepEqual(verifySignedReceipt(proseRef, keyring), { ok: false, reason: "receipt_restricted_artifact" });
+});
+
+test("restricted artifact: undeclared finding fields never reach the parsed core (#1724)", () => {
+  const core = parseReceiptCore(
+    goldenCoreWith([{ findingId: "F-1", blocking: false, evidenceRef: "pharm-01#p.12", excerpt: "verbatim body" }]),
+  );
+  assert.deepEqual(core.findings, [{ findingId: "F-1", blocking: false, evidenceRef: "pharm-01#p.12" }]);
+  assert.equal(JSON.stringify(core).includes("verbatim body"), false);
 });

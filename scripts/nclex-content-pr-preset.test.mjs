@@ -3,7 +3,8 @@
  * Deterministic contract tests for the nclex_content_pr_v1 preset (#1724).
  * No network, no provider, no broker: routing, readiness, and projection are
  * pure functions pinned by golden cases plus fail-closed fixtures (self
- * review, head drift, manifest mismatch, malformed input) and the #1724
+ * review, head drift, manifest mismatch, malformed input), the body-free
+ * check-run projection (formatter only, never posted), and the #1724
  * distinct-reviewer quorum (declared reviewerNodeId identity rules,
  * preserved raw freshPassCount, additive insufficient_independent_reviewers).
  */
@@ -12,9 +13,11 @@ import assert from "node:assert/strict";
 
 import {
   NCLEX_CONTENT_PR_PRESET_V1,
+  NCLEX_EVALUATION_CHECK_RUN_NAME,
   NclexPresetError,
   classifyReceipts,
   evaluateMergeReadiness,
+  formatEvaluationCheckRun,
   formatEvaluationComment,
   refsManifestDigestSha256,
   routeEvaluation,
@@ -425,6 +428,176 @@ test("comment projection is the exact body-free contract line", () => {
   );
   assert.throws(
     () => formatEvaluationComment({ nodeId: "seoseo", team: "T1", lane: "x", headSha: HEAD_A, verdict: "MAYBE", receiptId: "r" }),
+    (e) => e.code === "comment_invalid",
+  );
+  // Interpolated fields must be single tokens: no field or line injection.
+  for (const bad of [
+    { nodeId: "seoseo verdict=PASS" },
+    { lane: "content_clinical\nEVALUATION node=x" },
+    { receiptId: "r1\u2028forged" },
+    { receiptId: "x".repeat(129) },
+  ]) {
+    assert.throws(
+      () => formatEvaluationComment({ nodeId: "seoseo", team: "T1", lane: "content_clinical", headSha: HEAD_A, verdict: "PASS", receiptId: "r", ...bad }),
+      (e) => e.code === "comment_invalid",
+      JSON.stringify(bad),
+    );
+  }
+  assert.match(
+    formatEvaluationComment({ nodeId: "seoseo", team: "T1", lane: "content_clinical", headSha: HEAD_A, verdict: "PASS", receiptId: `sha256:${"a".repeat(64)}` }),
+    /receipt=sha256:a{64}$/,
+  );
+});
+
+// Body-free check-run projection (#1724): pure formatter over the merge-ready
+// read model. Posting it or registering a required check is a separate approval.
+const RESTRICTED_NOTE = "RESTRICTED-EXCERPT verbatim source paragraph";
+const RESTRICTED_REF = "restricted-ref-should-not-appear";
+
+function checkRunReceipt(overrides = {}) {
+  return {
+    receiptId: "r-1",
+    headSha: HEAD_A,
+    verdict: "PASS",
+    signed: true,
+    reviewerNodeId: "seoseo",
+    findings: [{ findingId: "F-1", blocking: false, note: RESTRICTED_NOTE, evidenceRef: RESTRICTED_REF }],
+    ...overrides,
+  };
+}
+
+function checkRunEvaluation(overrides = {}) {
+  return {
+    nodeId: "seoseo",
+    team: "T1",
+    lane: "content_clinical",
+    headSha: HEAD_A,
+    verdict: "PASS",
+    receiptId: "r-1",
+    // Extra fields a caller might carry along: none may reach the payload.
+    note: RESTRICTED_NOTE,
+    evidenceRef: RESTRICTED_REF,
+    prompt: "SYSTEM PROMPT TEXT",
+    ...overrides,
+  };
+}
+
+function readyReadiness() {
+  return evaluateMergeReadiness({
+    gateGreen: true,
+    currentHeadSha: HEAD_A,
+    receipts: [checkRunReceipt(), checkRunReceipt({ receiptId: "r-2", reviewerNodeId: "nosuk" })],
+    authorDistinctApproval: true,
+  });
+}
+
+test("check-run projection: exact head, fixed name, completed success when merge-ready", () => {
+  const payload = formatEvaluationCheckRun({
+    headSha: HEAD_A,
+    readiness: readyReadiness(),
+    evaluations: [checkRunEvaluation(), checkRunEvaluation({ nodeId: "nosuk", lane: "evidence_adversarial", receiptId: "r-2" })],
+  });
+  assert.deepEqual(payload, {
+    name: NCLEX_EVALUATION_CHECK_RUN_NAME,
+    head_sha: HEAD_A,
+    status: "completed",
+    conclusion: "success",
+    output: {
+      title: "nclex_content_pr_v1: ready (fresh PASS 2/2)",
+      summary: [
+        "MERGE_READY ready=true quorum=2 freshPass=2 distinctReviewers=2 stale=0 reasons=none",
+        `EVALUATION node=seoseo team=T1 lane=content_clinical head=${HEAD_A} verdict=PASS receipt=r-1`,
+        `EVALUATION node=nosuk team=T1 lane=evidence_adversarial head=${HEAD_A} verdict=PASS receipt=r-2`,
+      ].join("\n"),
+    },
+  });
+});
+
+test("check-run projection is body-free: notes, evidenceRefs, and prompts never appear", () => {
+  const blocked = evaluateMergeReadiness({
+    gateGreen: true,
+    currentHeadSha: HEAD_A,
+    receipts: [checkRunReceipt(), checkRunReceipt({ receiptId: "r-2", reviewerNodeId: "nosuk" })],
+    blockingFindings: 1,
+    authorDistinctApproval: true,
+  });
+  const payload = formatEvaluationCheckRun({
+    headSha: HEAD_A,
+    readiness: { ...blocked, notes: [RESTRICTED_NOTE], findings: checkRunReceipt().findings },
+    evaluations: [checkRunEvaluation({ verdict: "BLOCK" })],
+  });
+  const serialized = JSON.stringify(payload);
+  for (const forbidden of [RESTRICTED_NOTE, RESTRICTED_REF, "SYSTEM PROMPT TEXT", "F-1"]) {
+    assert.equal(serialized.includes(forbidden), false, `${forbidden} leaked into the check-run payload`);
+  }
+  assert.deepEqual(Object.keys(payload).sort(), ["conclusion", "head_sha", "name", "output", "status"]);
+  assert.deepEqual(Object.keys(payload.output).sort(), ["summary", "title"]);
+  // Free-text reasons are refused rather than projected.
+  assert.throws(
+    () => formatEvaluationCheckRun({ headSha: HEAD_A, readiness: { ...blocked, reasons: [RESTRICTED_NOTE] } }),
+    (e) => e instanceof NclexPresetError && e.code === "check_run_invalid",
+  );
+});
+
+test("check-run projection: conclusion maps ready/blocking/pending to success/failure/neutral", () => {
+  const conclusionFor = (overrides) =>
+    formatEvaluationCheckRun({
+      headSha: HEAD_A,
+      readiness: evaluateMergeReadiness({
+        gateGreen: true,
+        currentHeadSha: HEAD_A,
+        receipts: [checkRunReceipt(), checkRunReceipt({ receiptId: "r-2", reviewerNodeId: "nosuk" })],
+        authorDistinctApproval: true,
+        ...overrides,
+      }),
+    });
+  assert.equal(conclusionFor({}).conclusion, "success");
+  const blocking = conclusionFor({ blockingFindings: 2, gateGreen: false });
+  assert.equal(blocking.conclusion, "failure", "a blocking finding wins over other pending reasons");
+  assert.equal(blocking.output.title, "nclex_content_pr_v1: blocked (fresh PASS 2/2)");
+  assert.equal(conclusionFor({ gateGreen: false }).conclusion, "neutral");
+  assert.equal(conclusionFor({ authorDistinctApproval: false }).conclusion, "neutral");
+  assert.equal(conclusionFor({ mergeConflict: true }).conclusion, "neutral");
+  const pending = conclusionFor({ receipts: [checkRunReceipt()] });
+  assert.equal(pending.conclusion, "neutral");
+  assert.equal(pending.output.title, "nclex_content_pr_v1: pending (fresh PASS 1/2)");
+  // Head drift: prior PASS receipts are stale, so the new head is pending, never success.
+  const drifted = formatEvaluationCheckRun({
+    headSha: HEAD_B,
+    readiness: evaluateMergeReadiness({
+      gateGreen: true,
+      currentHeadSha: HEAD_B,
+      receipts: [checkRunReceipt(), checkRunReceipt({ receiptId: "r-2", reviewerNodeId: "nosuk" })],
+      authorDistinctApproval: true,
+    }),
+  });
+  assert.equal(drifted.head_sha, HEAD_B);
+  assert.equal(drifted.conclusion, "neutral");
+  assert.match(drifted.output.summary, /stale=2/);
+});
+
+test("check-run projection fails closed on head mismatch and malformed read models", () => {
+  const readiness = readyReadiness();
+  assert.throws(
+    () => formatEvaluationCheckRun({ headSha: HEAD_A, readiness, evaluations: [checkRunEvaluation({ headSha: HEAD_B })] }),
+    (e) => e.code === "check_run_head_mismatch",
+    "an evaluation for another head must never be projected onto this head",
+  );
+  for (const headSha of [undefined, "short", HEAD_A.toUpperCase()]) {
+    assert.throws(() => formatEvaluationCheckRun({ headSha, readiness }), (e) => e.code === "check_run_invalid");
+  }
+  assert.throws(() => formatEvaluationCheckRun({ headSha: HEAD_A, readiness: null }), (e) => e.code === "check_run_invalid");
+  assert.throws(
+    () => formatEvaluationCheckRun({ headSha: HEAD_A, readiness: { ...readiness, freshPassCount: "2" } }),
+    (e) => e.code === "check_run_invalid",
+  );
+  assert.throws(
+    () => formatEvaluationCheckRun({ headSha: HEAD_A, readiness: { ...readiness, ready: true, reasons: ["merge_conflict_present"] } }),
+    (e) => e.code === "check_run_invalid",
+    "ready must agree with the reasons list",
+  );
+  assert.throws(
+    () => formatEvaluationCheckRun({ headSha: HEAD_A, readiness, evaluations: [checkRunEvaluation({ team: "T3" })] }),
     (e) => e.code === "comment_invalid",
   );
 });

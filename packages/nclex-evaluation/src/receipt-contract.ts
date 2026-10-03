@@ -7,8 +7,9 @@
  * identically here — one crypto stack, pinned by golden JCS vectors in both
  * test suites.
  *
- * Fail-closed: malformed cores, unknown key ids, invalid signatures, and
- * self-review are rejected; nothing is admitted on a soft error.
+ * Fail-closed: malformed cores, unknown key ids, invalid signatures,
+ * self-review, and restricted-artifact findings (oversized/multi-line notes,
+ * prose evidenceRefs) are rejected; nothing is admitted on a soft error.
  */
 import { createHash, createPublicKey, verify as cryptoVerify, type KeyObject } from "node:crypto";
 
@@ -20,6 +21,19 @@ export const NCLEX_RECEIPT_CANONICALIZATION = "rfc8785-jcs-v1";
 const SHA40 = /^[0-9a-f]{40}$/;
 const VERDICTS = new Set(["PASS", "BLOCK"]);
 const TEAMS = new Set(["T1", "T2", "cross-team"]);
+
+// Restricted-artifact boundary (#1724): a finding carries only a short
+// single-line note and a reference-form evidenceRef (refs-manifest entry ID or
+// sha256 plus an optional page/section locator), never a verbatim excerpt of
+// restricted/factcheck-only material. Kept byte-identical with
+// scripts/nclex-content-pr-receipt.mjs; receipt-contract.test.ts imports the
+// offline module and pins the parity.
+export const NCLEX_FINDING_NOTE_MAX_CHARS = 280;
+export const NCLEX_EVIDENCE_REF_MAX_CHARS = 160;
+export const NCLEX_EVIDENCE_REF_PATTERN =
+  /^(?:([a-z][a-z0-9-]{0,31}):)?([A-Za-z0-9][A-Za-z0-9._/-]{0,127})(?:#([A-Za-z0-9][A-Za-z0-9._:/-]{0,63}))?$/;
+// C0/C1 controls (newline, CR, tab, ...) plus Unicode line/paragraph separators.
+const NOTE_FORBIDDEN_CHARS = /[\u0000-\u001f\u007f-\u009f\u2028\u2029]/;
 
 export interface NclexReceiptFinding {
   findingId: string;
@@ -75,6 +89,32 @@ function fail(code: string, message: string): never {
   throw new NclexReceiptValidationError(code, message);
 }
 
+/**
+ * Restricted-artifact check for one finding's free-text fields (#1724). Runs on
+ * the trimmed value; a violation fails closed as `receipt_restricted_artifact`.
+ */
+function assertFindingCarriesNoRestrictedArtifact(finding: Record<string, unknown>): void {
+  if (hasText(finding.note)) {
+    const note = finding.note.trim();
+    if (NOTE_FORBIDDEN_CHARS.test(note)) {
+      fail("receipt_restricted_artifact", "finding note must be a single line without control characters");
+    }
+    if ([...note].length > NCLEX_FINDING_NOTE_MAX_CHARS) {
+      fail("receipt_restricted_artifact", `finding note must be at most ${NCLEX_FINDING_NOTE_MAX_CHARS} characters`);
+    }
+  }
+  if (hasText(finding.evidenceRef)) {
+    const ref = finding.evidenceRef.trim();
+    const match = ref.length <= NCLEX_EVIDENCE_REF_MAX_CHARS ? NCLEX_EVIDENCE_REF_PATTERN.exec(ref) : null;
+    if (!match || (match[1] === "sha256" && !/^[0-9a-f]{64}$/.test(match[2] ?? ""))) {
+      fail(
+        "receipt_restricted_artifact",
+        "finding evidenceRef must be a reference ([namespace:]id[#locator], sha256:<64-hex>), not prose",
+      );
+    }
+  }
+}
+
 /** Validate and normalize the signed core; throws NclexReceiptValidationError. */
 export function parseReceiptCore(value: unknown): NclexReceiptCore {
   if (!isPlainObject(value)) fail("receipt_malformed", "receipt core must be an object");
@@ -106,6 +146,7 @@ export function parseReceiptCore(value: unknown): NclexReceiptCore {
   ) {
     fail("receipt_invalid", "findings must be an array of objects with stable findingId");
   }
+  for (const finding of core.findings as Array<Record<string, unknown>>) assertFindingCarriesNoRestrictedArtifact(finding);
   if (!hasText(core.producedAt) || Number.isNaN(Date.parse(core.producedAt))) {
     fail("receipt_invalid", "producedAt must be an ISO timestamp");
   }

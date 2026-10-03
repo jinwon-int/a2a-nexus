@@ -105,6 +105,26 @@ EVALUATION node=<node> team=<T1|T2> lane=<lane> head=<40-char SHA> verdict=<PASS
 prompt 원문·chain-of-thought·제한 자료 본문은 절대 포함하지 않는다.
 `formatEvaluationComment`는 이 형식 외 출력을 만들 수 없다.
 
+check-run 투영(`formatEvaluationCheckRun`, `scripts/nclex-content-pr-preset.mjs`)은
+**formatter only**다. GitHub check-run 생성 API에 넘길 payload 객체만 반환하며
+GitHub를 호출하지 않는다. 그 payload를 실제로 게시하거나 required check로
+등록하는 일은 별도 승인 대상이다.
+
+- 입력: exact `headSha`(40-hex 소문자), merge-ready read model(`evaluateMergeReadiness`
+  또는 런타임 `projectMergeReady` 결과), 선택적으로 `formatEvaluationComment`와 같은
+  필드의 evaluation 목록.
+- 출력: `name`(`nclex_content_pr_v1` 고정), `head_sha`, `status: "completed"`,
+  `conclusion`, `output.title`, `output.summary`.
+- conclusion 매핑: `ready` → `success`, `blocking_findings:*` 원인이 있으면 `failure`,
+  그 밖의 미충족(정족수 대기, gate 미통과, 승인 누락, 충돌) → `neutral`.
+- body-free: summary는 `MERGE_READY ready=… quorum=… freshPass=… distinctReviewers=…
+  stale=… reasons=…` 한 줄과 위 `EVALUATION …` 줄만 담는다. finding note·
+  evidenceRef·prompt·제한 자료 본문은 입력 슬롯이 없다. 안정된 원인 코드 형식이
+  아닌 reason은 `check_run_invalid`로 거부한다.
+- exact head: 다른 head를 가리키는 evaluation은 `check_run_head_mismatch`로
+  fail-closed다. head가 바뀌면 이전 PASS는 stale이므로 새 head의 conclusion은
+  `success`가 될 수 없다.
+
 ## 근거 패킷 경계
 
 - GitHub에는 URL·라이선스·64자리 SHA-256 manifest만 둔다.
@@ -115,6 +135,21 @@ prompt 원문·chain-of-thought·제한 자료 본문은 절대 포함하지 않
   `refsManifestDigestSha256`(JCS 정규화 sha256 64-hex)와 불일치하면 같은
   `refs_manifest_invalid`로 BLOCK된다. 64-hex 형식 적합만으로는 참조 manifest의
   무결성을 증명하지 못한다.
+- restricted/factcheck-only 원문 전체를 task artifact·PR comment·receipt에 넣지
+  않는다. receipt finding의 자유 텍스트 필드는 offline 모듈과 브로커 검증기에서
+  같은 규칙으로 제한되고, 위반하면 `receipt_restricted_artifact`로 fail-closed다.
+  빌드 시점과 검증 시점 모두 적용되므로 이 규칙을 우회해 서명한 receipt도 수용되지
+  않는다.
+  - `note`: trim 후 최대 280자(code point), 한 줄. 개행·CR·탭 등 제어 문자와
+    U+2028/U+2029를 거부한다.
+  - `evidenceRef`: trim 후 최대 160자인 참조 형식 `[namespace:]id[#locator]`.
+    `namespace`는 `[a-z][a-z0-9-]{0,31}`, `id`는 `[A-Za-z0-9][A-Za-z0-9._/-]{0,127}`,
+    `locator`(페이지/절)는 `[A-Za-z0-9][A-Za-z0-9._:/-]{0,63}`이다.
+    `sha256:` namespace는 소문자 64-hex만 허용한다. 예: `packet:p.12`, `pharm-01#p.12`,
+    `sha256:<64-hex>#p.212-214`. 공백이 든 문장, URL, 개행은 거부된다.
+  - 이 제한은 구조적 상한이다. 짧은 문구의 의미까지 판정하지는 않으므로 reviewer는
+    여전히 자료 ID·SHA-256·페이지/절만 인용해야 한다. 이미 저장된 receipt에는
+    소급 적용되지 않는다(아래 롤백 절 참조).
 
 ## Signed receipt와 broker 통합 (#1724 slice 2-3)
 
@@ -141,6 +176,35 @@ prompt 원문·chain-of-thought·제한 자료 본문은 절대 포함하지 않
 - 저장은 broker snapshot extension에 탑재되어 재시작 후에도 복원된다.
 - A2A reviewer는 branch를 수정·merge하지 않는다는 경계는 route에도 동일하게
   적용 — merge 경로는 이 표면에 존재하지 않는다.
+
+## 롤백 / 비활성화
+
+이 절은 절차 설명일 뿐 실행 승인이 아니다. 운영 브로커에서 환경변수 변경,
+재시작, 키링 파일 수정, 상태 파일/DB 백업·편집 중 무엇이든 실행하려면 정확한 대상과
+rollback을 제시하고 별도 승인을 받은 운영자 작업으로 진행한다.
+
+- **끄기**: 브로커 환경에서 `A2A_NCLEX_EVALUATION_KEYRING_FILE`을 제거하고(공백만
+  있는 값도 미설정과 같다), 서버 옵션 `nclexEvaluationKeyringFile`도 넘기지 않은 채
+  브로커를 재시작한다. 키링 경로는 시작 시 한 번만 읽으므로 런타임 토글이나 hot
+  reload는 없다. 재시작 후에는 `/nclex-evaluations/*` 라우트, receipt 스토어,
+  snapshot extension이 모두 등록되지 않는다. 프리셋 스크립트는 원래 브로커와 무관하므로
+  끌 대상이 없다.
+- **이미 저장된 receipt**: 비활성화가 receipt를 즉시 지우지는 않지만, 꺼진 동안에는
+  적재·조회·투영되지 않는다. 또한 snapshot extension이 없으면 브로커가 쓰는 snapshot에
+  `nclexEvaluationReceipts` 필드가 포함되지 않는다. 따라서 이후 snapshot 쓰기에서 기존
+  receipt가 보존된다고 가정하지 않는다. 보존이 필요하면 끄기 전에 상태 파일/DB를
+  백업한다(별도 승인 대상). 다시 켜면 그때 로드된 snapshot에 남아 있는 행만 복원된다.
+  복원된 행은 서명을 재검증하지 않으며, 이후 추가된 수용 규칙(예:
+  `receipt_restricted_artifact`)도 소급 적용되지 않는다. head가 바뀌면 그 receipt는
+  stale이 되어 표결에서 빠진다.
+- **키 퇴역**: 키링 파일 `{ "keys": { "<kid>": "<spki pem>" } }`에서 해당 kid를 지우고
+  브로커를 재시작한다. 이후 그 kid로 서명된 제출은 `receipt_key_unknown`으로 거부된다.
+  로더는 빈 `keys`를 거부해 시작을 실패시키므로, 마지막 키를 퇴역하려면 위의 끄기
+  절차를 쓴다. 이미 저장된 receipt는 재검증하지 않으므로 퇴역한 키로 서명된 receipt도
+  같은 head에서 계속 표결에 들어간다. 키 유출 등으로 그 표를 무효화해야 하면 저장 상태에서
+  해당 receipt를 제거해야 하는데, 이는 DB/snapshot 편집(prune)이므로 별도 승인 대상이다.
+- **소스 롤백**: 이 기능은 기본 꺼짐이고 source-only이므로 관련 커밋을 revert하면
+  된다. check-run formatter는 아무것도 게시하지 않으므로 GitHub 측에서 되돌릴 상태가 없다.
 
 ## 로컬 검증 (현행 소스 기준)
 
@@ -181,8 +245,17 @@ npm run check
 
 `scripts/nclex-content-pr-preset.test.mjs`가 고정한다: self-review 불가,
 head drift로 인한 stale receipt, manifest 불일치, 필드 누락/형변형,
-quorum 미달, co-author recusal, comment 형식, 그리고 #1724 distinct-reviewer
+quorum 미달, co-author recusal, comment 형식, check-run 투영(body-free, exact
+head, conclusion 매핑, head 불일치 fail-closed), 그리고 #1724 distinct-reviewer
 정족수 — 동일 reviewer의 다른 receipt 메타데이터는 1표, whitespace 중복은
 축소, 대소문자 차이는 별개 노드, 결측/비문자열 identity 미포함(강제 변환
 없음, receiptId/team/lane 폴백 없음), stale·unsigned·BLOCK 무표, 원시
 `freshPassCount` 보존, 중복 reviewer의 blocking finding 거부권 유지.
+
+restricted artifact fixture는 `scripts/nclex-content-pr-receipt.test.mjs`와
+`packages/nclex-evaluation/src/receipt-contract.test.ts`가 같은 벡터 표로 고정한다.
+대상은 280자 초과·여러 줄·제어 문자가 든 note, 문장·URL·대문자/짧은 sha256 형태의
+evidenceRef, 160자 경계다. 규칙을 우회해 서명한 excerpt receipt는 검증 시
+`receipt_restricted_artifact`로 거부되고, 선언되지 않은 finding 필드는 서명 core에
+들어가지 않는다. 패키지 테스트는 offline 모듈을 직접 import해 두 검증기의 상한·문법
+상수와 벡터별 판정이 같은지도 확인한다.

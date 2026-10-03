@@ -359,6 +359,11 @@ export function evaluateMergeReadiness({
  * Body-free one-line GitHub comment projection. Fixed shape only — no prompt,
  * no chain-of-thought, no restricted reference content.
  */
+// nodeId / lane / receiptId are interpolated into a one-line projection, so they
+// must be single tokens: a space or newline would let a caller inject extra
+// `key=value` fields or whole lines into the comment and check-run summary.
+const PROJECTION_TOKEN = /^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$/;
+
 export function formatEvaluationComment({ nodeId, team, lane, headSha, verdict, receiptId }) {
   if (!hasText(String(nodeId)) || !TEAMS.has(team) || !hasText(String(lane))) {
     fail("comment_invalid", "nodeId/team/lane are required for the evaluation projection");
@@ -366,5 +371,79 @@ export function formatEvaluationComment({ nodeId, team, lane, headSha, verdict, 
   if (!SHA40.test(String(headSha))) fail("comment_invalid", "head must be a 40-char SHA");
   if (verdict !== "PASS" && verdict !== "BLOCK") fail("comment_invalid", "verdict must be PASS or BLOCK");
   if (!hasText(String(receiptId))) fail("comment_invalid", "receipt id is required");
+  for (const [field, value] of [["nodeId", nodeId], ["lane", lane], ["receiptId", receiptId]]) {
+    if (!PROJECTION_TOKEN.test(String(value).trim())) {
+      fail("comment_invalid", `${field} must be a single token ([A-Za-z0-9._:-], at most 128 chars)`);
+    }
+  }
   return `EVALUATION node=${String(nodeId).trim()} team=${team} lane=${String(lane).trim()} head=${String(headSha).toLowerCase()} verdict=${verdict} receipt=${String(receiptId).trim()}`;
+}
+
+export const NCLEX_EVALUATION_CHECK_RUN_NAME = "nclex_content_pr_v1";
+// Stable reason codes emitted by evaluateMergeReadiness / projectMergeReady,
+// optionally with a `:n` or `:n/m` count suffix. Anything else is refused so
+// free text can never reach the check-run summary.
+const READINESS_REASON = /^[a-z][a-z_]{0,63}(?::\d{1,6}(?:\/\d{1,6})?)?$/;
+const READINESS_COUNTS = ["quorum", "freshPassCount", "distinctReviewerCount", "staleReceiptCount"];
+
+/**
+ * Body-free GitHub check-run projection (#1724) — a pure formatter that
+ * returns the payload object for `POST /repos/{owner}/{repo}/check-runs`. It
+ * never calls GitHub; posting it or registering it as a required check is a
+ * separate approval.
+ *
+ * `readiness` is the merge-ready read model (evaluateMergeReadiness or the
+ * runtime projectMergeReady). Conclusion: ready → `success`; any
+ * `blocking_findings` reason → `failure`; otherwise (quorum pending, gate not
+ * green, approval missing, merge conflict) → `neutral`. `evaluations` are the
+ * same fields formatEvaluationComment takes and must all target `headSha`
+ * exactly; the summary carries only those comment lines plus readiness counts
+ * and reason codes — finding notes, evidenceRefs, prompts, and restricted
+ * reference text have no input slot.
+ */
+export function formatEvaluationCheckRun({ headSha, readiness, evaluations = [] }) {
+  if (!SHA40.test(String(headSha ?? ""))) fail("check_run_invalid", "head_sha must be a 40-char lowercase SHA");
+  const head = String(headSha);
+  if (!isPlainObject(readiness) || typeof readiness.ready !== "boolean") {
+    fail("check_run_invalid", "readiness must be a merge-ready read model with a boolean ready flag");
+  }
+  for (const field of READINESS_COUNTS) {
+    if (!Number.isSafeInteger(readiness[field]) || readiness[field] < 0) {
+      fail("check_run_invalid", `readiness.${field} must be a non-negative integer`);
+    }
+  }
+  if (!Array.isArray(readiness.reasons) || !readiness.reasons.every((reason) => READINESS_REASON.test(String(reason)))) {
+    fail("check_run_invalid", "readiness.reasons must be stable reason codes");
+  }
+  if (readiness.ready !== (readiness.reasons.length === 0)) {
+    fail("check_run_invalid", "readiness.ready must agree with an empty reasons list");
+  }
+  if (!Array.isArray(evaluations)) fail("check_run_invalid", "evaluations must be an array");
+  const lines = evaluations.map((evaluation) => {
+    if (!isPlainObject(evaluation) || String(evaluation.headSha ?? "").toLowerCase() !== head) {
+      fail("check_run_head_mismatch", "every projected evaluation must target the exact check-run head");
+    }
+    return formatEvaluationComment(evaluation);
+  });
+
+  const conclusion = readiness.ready
+    ? "success"
+    : readiness.reasons.some((reason) => reason.startsWith("blocking_findings:"))
+      ? "failure"
+      : "neutral";
+  const state = conclusion === "success" ? "ready" : conclusion === "failure" ? "blocked" : "pending";
+  const readinessLine =
+    `MERGE_READY ready=${readiness.ready} quorum=${readiness.quorum} freshPass=${readiness.freshPassCount}`
+    + ` distinctReviewers=${readiness.distinctReviewerCount} stale=${readiness.staleReceiptCount}`
+    + ` reasons=${readiness.reasons.length ? readiness.reasons.join(",") : "none"}`;
+  return {
+    name: NCLEX_EVALUATION_CHECK_RUN_NAME,
+    head_sha: head,
+    status: "completed",
+    conclusion,
+    output: {
+      title: `${NCLEX_EVALUATION_CHECK_RUN_NAME}: ${state} (fresh PASS ${readiness.freshPassCount}/${readiness.quorum})`,
+      summary: [readinessLine, ...lines].join("\n"),
+    },
+  };
 }
