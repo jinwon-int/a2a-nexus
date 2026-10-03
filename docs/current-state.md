@@ -148,7 +148,7 @@ These issues are completed and should not be treated as active blockers:
 | a2a-plane#479 (a2a-plane#479, internal tracker private) | Closed | Public release, version, and provenance checklist groundwork completed. |
 | a2a-plane#480 (a2a-plane#480, internal tracker private) | Closed | Local public demo and quickstart scenario completed. |
 | a2a-plane#75 (a2a-plane#75, internal tracker private) | Closed | Historical post-rename public-readiness parent; superseded by later public alpha and #506 work. |
-| [a2a-broker#294](https://github.com/jinwon-int/a2a-broker/issues/294) | Closed | Historical stability roadmap; do not cite as an active blocker. |
+| a2a-broker#294 (archived mirror, not reachable) | Closed | Historical stability roadmap; do not cite as an active blocker. |
 
 ## Ownership Boundaries
 
