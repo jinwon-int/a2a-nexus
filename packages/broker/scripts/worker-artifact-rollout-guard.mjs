@@ -23,10 +23,12 @@
 //   A2A_WORKER_ROOT / WORKER_ROOT — deployed worker root containing scripts/ and handlers/
 //   HANDLERS_ROOT             — override handlers/ directory (default: ./handlers)
 //   SCRIPTS_ROOT              — override scripts/ directory (default: ./scripts)
+//   DIST_ROOT                 — override dist/ directory scanned for workspace-package
+//                               imports (default: <worker root>/dist, --deployed only)
 
 import { createHash } from 'node:crypto';
-import { existsSync, readFileSync, statSync } from 'node:fs';
-import { basename, isAbsolute, join, resolve, dirname } from 'node:path';
+import { existsSync, readdirSync, readFileSync, realpathSync, statSync } from 'node:fs';
+import { basename, isAbsolute, join, relative, resolve, dirname } from 'node:path';
 import process from 'node:process';
 import { spawnSync } from 'node:child_process';
 import { fileURLToPath, pathToFileURL } from 'node:url';
@@ -58,6 +60,7 @@ const HANDLER_SUPPORT_FILENAMES = [
   'lib/jev-classifier.mjs',
   'lib/jev-review-shadow.mjs',
   'lib/jev-probe-observation.mjs',
+  'lib/analysis-source-bundle.mjs',
 ];
 const ANALYSIS_BRIDGE_BIN_VARS = ['A2A_PIRI_ANALYSIS_BIN', 'A2A_HERMES_ANALYSIS_BIN', 'A2A_OPENCLAW_ANALYSIS_BIN', 'OPENCLAW_BIN'];
 const UNSET_ENV_TOKENS = new Set(['', 'none', 'null', 'undefined']);
@@ -68,6 +71,9 @@ const handlersRoot = resolve(
 );
 const scriptsRoot = resolve(
   process.env.SCRIPTS_ROOT || (workerRoot ? join(workerRoot, 'scripts') : join(brokerRoot, 'scripts')),
+);
+const distRoot = resolve(
+  process.env.DIST_ROOT || (workerRoot ? join(workerRoot, 'dist') : join(brokerRoot, 'dist')),
 );
 
 function safeBasename(value) {
@@ -382,6 +388,160 @@ function parseBuildInfo(source) {
 }
 
 // ---------------------------------------------------------------------------
+// workspace dependency export helpers (#2311)
+// ---------------------------------------------------------------------------
+
+// Static `import … from "a2a-*"` / `export … from "a2a-*"` declarations. The
+// clause is matched structurally (default, `{ … }` across lines, `* as ns`) so a
+// match can never span two statements.
+const WORKSPACE_IMPORT_RE =
+  /(?<![\w$.])(import|export)\s+(type\s+)?(?:([\w$]+)\s*,\s*)?(?:\{([^{}]*)\}|(\*)(?:\s+as\s+[\w$]+)?|([\w$]+))\s*from\s*(['"])(a2a-[\w.-]+(?:\/[^'"\s]+)?)\7/g;
+
+function listDistJsFiles(root) {
+  const out = [];
+  const walk = (dir) => {
+    let entries;
+    try {
+      entries = readdirSync(dir, { withFileTypes: true });
+    } catch {
+      return;
+    }
+    entries.sort((a, b) => (a.name < b.name ? -1 : a.name > b.name ? 1 : 0));
+    for (const entry of entries) {
+      if (entry.name === 'node_modules') continue;
+      const full = join(dir, entry.name);
+      if (entry.isDirectory()) walk(full);
+      // *.test.js never link at worker runtime; skipping them keeps the scan
+      // small and avoids test-only import drift producing a rollout failure.
+      else if (entry.isFile() && entry.name.endsWith('.js') && !entry.name.endsWith('.test.js')) out.push(full);
+    }
+  };
+  walk(root);
+  return out;
+}
+
+function parseWorkspaceImports(source) {
+  const found = [];
+  if (!source.includes('a2a-')) return found;
+  for (const match of source.matchAll(WORKSPACE_IMPORT_RE)) {
+    const [, keyword, typeOnly, leadingDefault, braced, star, soleDefault, , specifier] = match;
+    if (typeOnly) continue;
+    const names = [];
+    if (keyword === 'import' && (leadingDefault || soleDefault)) names.push('default');
+    if (braced !== undefined) {
+      for (const raw of braced.replace(/\/\*[\s\S]*?\*\/|\/\/[^\n]*/g, '').split(',')) {
+        const item = raw.trim();
+        if (!item || /^type\s/.test(item)) continue;
+        const name = item.split(/\s+as\s+/)[0].trim();
+        if (/^[\w$]+$/.test(name)) names.push(name);
+      }
+    }
+    void star; // namespace import / `export *` requires no specific name
+    found.push({ specifier, names });
+  }
+  return found;
+}
+
+function splitPackageSpecifier(specifier) {
+  const slash = specifier.indexOf('/');
+  return slash === -1
+    ? { packageName: specifier, subpath: '.' }
+    : { packageName: specifier.slice(0, slash), subpath: `./${specifier.slice(slash + 1)}` };
+}
+
+function findPackageDir(startDir, packageName) {
+  // Mirror Node's bare-specifier lookup: nearest node_modules/<pkg> walking up
+  // from the importing dist tree.
+  let dir = startDir;
+  for (;;) {
+    const candidate = join(dir, 'node_modules', packageName);
+    if (existsSync(candidate)) return candidate;
+    const parent = dirname(dir);
+    if (parent === dir) return undefined;
+    dir = parent;
+  }
+}
+
+function resolveExportTarget(value) {
+  if (typeof value === 'string') return value;
+  if (Array.isArray(value)) {
+    for (const item of value) {
+      const target = resolveExportTarget(item);
+      if (target) return target;
+    }
+    return undefined;
+  }
+  if (value && typeof value === 'object') {
+    for (const condition of ['import', 'node', 'default']) {
+      if (condition in value) {
+        const target = resolveExportTarget(value[condition]);
+        if (target) return target;
+      }
+    }
+  }
+  return undefined;
+}
+
+function resolvePackageEntry(packageDir, subpath) {
+  let pkg = {};
+  const pkgText = readFileSafe(join(packageDir, 'package.json'));
+  if (pkgText !== undefined) {
+    try {
+      pkg = JSON.parse(pkgText) ?? {};
+    } catch {
+      return { error: 'package.json is not valid JSON' };
+    }
+  }
+  const { exports } = pkg;
+  let target;
+  if (exports !== undefined && exports !== null) {
+    const isSubpathMap = typeof exports === 'object' && !Array.isArray(exports)
+      && Object.keys(exports).some((key) => key.startsWith('.'));
+    if (isSubpathMap) target = resolveExportTarget(exports[subpath]);
+    else if (subpath === '.') target = resolveExportTarget(exports);
+    if (!target) return { error: `package.json exports has no import target for "${subpath}"` };
+  } else if (subpath !== '.') {
+    target = subpath;
+  } else {
+    const candidates = [pkg.main, 'dist/index.js', 'index.js'].filter((item) => typeof item === 'string' && item);
+    target = candidates.find((item) => existsSync(join(packageDir, item))) ?? candidates[0];
+  }
+  const entryPath = resolve(packageDir, target);
+  if (!existsSync(entryPath)) return { error: `entry file missing: ${target}` };
+  return { entryPath, version: typeof pkg.version === 'string' ? pkg.version : null };
+}
+
+function probeModuleExports(entries) {
+  // Import every resolved entry in ONE child node so a broken package cannot
+  // take the guard down and a hung top-level await is bounded by the timeout.
+  // Only export NAMES leave the child — never values.
+  const probe = [
+    `const entries = ${JSON.stringify(entries.map(({ key, entryPath }) => ({ key, href: pathToFileURL(entryPath).href })))};`,
+    'const out = {};',
+    'for (const { key, href } of entries) {',
+    '  try { out[key] = { ok: true, names: Object.keys(await import(href)).sort() }; }',
+    '  catch (error) { out[key] = { ok: false, error: `${error?.code ? `${error.code}: ` : ""}${String(error?.message ?? error).split("\\n")[0].slice(0, 300)}` }; }',
+    '}',
+    'process.stdout.write(JSON.stringify(out));',
+  ].join('\n');
+  const child = spawnSync(process.execPath, ['--input-type=module', '--eval', probe], {
+    cwd: distRoot,
+    encoding: 'utf8',
+    timeout: 30000,
+  });
+  if (child.error) return { error: `export probe could not run: ${child.error.message}` };
+  if (child.status !== 0) {
+    const ended = child.status === null ? `signal ${child.signal}` : `exit ${child.status}`;
+    return { error: `export probe failed (${ended})`, stderrTail: (child.stderr ?? '').trim().slice(-1000) };
+  }
+  try {
+    return { results: JSON.parse(child.stdout) };
+  } catch {
+    return { error: 'export probe produced unparseable output' };
+  }
+}
+
+// ---------------------------------------------------------------------------
 // guards
 // ---------------------------------------------------------------------------
 
@@ -488,6 +648,136 @@ guard('handler-module-resolution', () => {
     fileVersion,
     ...(expectedVersion !== undefined ? { expectedVersion } : {}),
   });
+});
+
+// Guard 1c: workspace packages in the deployed node_modules must provide every
+// name the deployed dist imports from them. #2311: a worker deploy refreshed
+// dist/ but left a months-old node_modules/a2a-attestation in place; dist now
+// imported `redactSecrets`, so dist/worker.js died at ESM link time
+// ("does not provide an export named …") right after every other guard passed.
+// handler-module-resolution only follows the handler graph, not dist/worker.js.
+guard('workspace-dependency-exports', () => {
+  const name = 'workspace-dependency-exports';
+  if (!DEPLOYED_CHECK) {
+    return ok(name, {
+      checked: false,
+      reason: 'deployed node_modules is only meaningful for a deployed worker root; use --deployed to require it',
+    });
+  }
+  if (!existsSync(distRoot)) {
+    return ok(name, {
+      checked: false,
+      reason: 'no dist/ under the worker root — nothing imports workspace packages (fixture or scripts-only tree)',
+      distRoot,
+    });
+  }
+
+  // package -> { subpaths: Map<subpath, Map<exportName, Set<importer>>> }
+  const required = new Map();
+  const files = listDistJsFiles(distRoot);
+  for (const file of files) {
+    const content = readFileSafe(file);
+    if (content === undefined) continue;
+    for (const { specifier, names } of parseWorkspaceImports(content)) {
+      const { packageName, subpath } = splitPackageSpecifier(specifier);
+      if (!required.has(packageName)) required.set(packageName, new Map());
+      const bySubpath = required.get(packageName);
+      if (!bySubpath.has(subpath)) bySubpath.set(subpath, new Map());
+      const byName = bySubpath.get(subpath);
+      for (const exportName of names) {
+        if (!byName.has(exportName)) byName.set(exportName, new Set());
+        byName.get(exportName).add(relative(distRoot, file));
+      }
+    }
+  }
+
+  if (required.size === 0) {
+    return ok(name, { checked: true, distRoot, scannedFiles: files.length, packages: [] });
+  }
+
+  // Node resolves bare specifiers from the importer's REAL path, so walk up
+  // from the realpath of dist/ (matters when dist/ is a symlinked release dir).
+  let lookupRoot = distRoot;
+  try {
+    lookupRoot = realpathSync(distRoot);
+  } catch {
+    lookupRoot = distRoot;
+  }
+  const packages = [];
+  const probeEntries = [];
+  for (const packageName of [...required.keys()].sort()) {
+    const packageDir = findPackageDir(lookupRoot, packageName);
+    for (const [subpath, byName] of [...required.get(packageName)].sort(([a], [b]) => (a < b ? -1 : a > b ? 1 : 0))) {
+      const record = {
+        package: packageName,
+        ...(subpath !== '.' ? { subpath } : {}),
+        requiredNames: byName.size,
+      };
+      packages.push(record);
+      if (!packageDir) {
+        record.ok = false;
+        record.error = `package not installed: node_modules/${packageName} not found from ${lookupRoot}`;
+        continue;
+      }
+      record.packageDir = packageDir;
+      const entry = resolvePackageEntry(packageDir, subpath);
+      if (entry.error) {
+        record.ok = false;
+        record.error = entry.error;
+        continue;
+      }
+      record.entry = entry.entryPath;
+      record.version = entry.version;
+      record.key = `${packageName}\u0000${subpath}`;
+      record.byName = byName;
+      probeEntries.push({ key: record.key, entryPath: entry.entryPath });
+    }
+  }
+
+  if (probeEntries.length > 0) {
+    const probe = probeModuleExports(probeEntries);
+    for (const record of packages) {
+      if (!record.key) continue;
+      const result = probe.results?.[record.key];
+      if (!result) {
+        record.ok = false;
+        record.error = probe.error ?? 'export probe returned no result';
+        if (probe.stderrTail) record.stderrTail = probe.stderrTail;
+      } else if (!result.ok) {
+        record.ok = false;
+        record.error = `package entry failed to import: ${result.error}`;
+      } else {
+        const available = new Set(result.names);
+        const missing = [...record.byName.keys()].filter((exportName) => !available.has(exportName)).sort();
+        record.ok = missing.length === 0;
+        if (missing.length > 0) {
+          record.missingExports = missing;
+          record.importers = Object.fromEntries(missing.map((exportName) => [
+            exportName,
+            [...record.byName.get(exportName)].sort().slice(0, 3),
+          ]));
+        }
+      }
+    }
+  }
+  for (const record of packages) {
+    delete record.key;
+    delete record.byName;
+  }
+
+  const failed = packages.filter((record) => !record.ok);
+  if (failed.length > 0) {
+    const summary = failed.map((record) => (record.missingExports
+      ? `${record.package}: missing ${record.missingExports.join(', ')}`
+      : `${record.package}: ${record.error}`)).join('; ');
+    return fail(name, `deployed workspace packages do not satisfy dist imports — ${summary}`, {
+      distRoot,
+      scannedFiles: files.length,
+      packages,
+      hint: 'node_modules workspace packages are stale or missing. Rebuild each from the same commit as dist (npm run build -w packages/<pkg>) and sync its dist/, src/, scripts/ and package.json (plus anything else its package.json "files" lists) into <worker root>/node_modules/<package name> before restarting the worker.',
+    });
+  }
+  return ok(name, { checked: true, distRoot, scannedFiles: files.length, packages });
 });
 
 // Guard 2: Handlers compat path exists and matches source
