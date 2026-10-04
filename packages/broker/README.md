@@ -308,6 +308,26 @@ Mutating routes now support broker-side requester verification using headers:
 
 With `ENFORCE_REQUESTER_IDENTITY=1`, `POST` routes verify that the requester header matches the node or actor declared in the route body or path.
 
+Requester headers are asserted by the caller. To bind the approver role on task
+approval decisions to a credential, set `A2A_APPROVER_ROLE_BINDING=enforce`
+(default `off`). Then `POST /tasks/:id/approve` and
+`POST /tasks/:id/reject-approval` require:
+
+- a valid A2A HTTP Signature (same `a2a-worker-v1` profile, key registry,
+  broker-id check and replay protection as worker routes, independent of
+  `A2A_HTTP_SIGNATURE_WORKER_AUTH`);
+- a signing key whose owner (`workerId`) equals `x-a2a-requester-id`;
+- a key record that explicitly declares `roles` containing the asserted
+  `hub`/`operator` role — legacy keys without `roles` cannot approve;
+- a body `actor` matching the signed requester, even when
+  `ENFORCE_REQUESTER_IDENTITY=0`.
+
+Failures return `401` with an `a2a_signature_approver_*` (or existing
+`a2a_signature_*`) code. `GET /health` reports the mode under
+`requestSecurity.approverRoleBinding`. Provision approver keys as dedicated
+registry records (for example `roles: ["operator"]`) held only by the approving
+principal, not by dispatching agents.
+
 Default rate limit:
 
 - `10` requests
@@ -330,6 +350,7 @@ RATE_LIMIT_MAX_REQUESTS=10
 WORKER_RATE_LIMIT_WINDOW_SEC=60
 WORKER_RATE_LIMIT_MAX_REQUESTS=60
 ENFORCE_REQUESTER_IDENTITY=1
+A2A_APPROVER_ROLE_BINDING=off
 TRUSTED_PROXY=0
 EDGE_SECRET=
 ```

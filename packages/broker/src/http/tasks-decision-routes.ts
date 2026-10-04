@@ -10,11 +10,14 @@ import type { IncomingMessage, ServerResponse } from "node:http";
 import { BrokerError, InMemoryA2ABroker } from "../core/broker.js";
 import type { BrokerStateStore } from "../core/store.js";
 import {
+  assertApproverRoleBound,
   assertRequesterCanSubscribeToTask,
   assertRequesterHasRole,
   assertRequesterMatchesParty,
   type RequesterIdentity,
+  type VerifiedApproverCredential,
 } from "../core/request-security.js";
+import type { ApproverRoleBindingMode } from "../server-contracts.js";
 import type {
   A2APartyRole,
   TaskApprovalRequest,
@@ -37,6 +40,15 @@ export interface TasksDecisionRouteContext {
   stateStore: BrokerStateStore;
   enforceRequesterIdentity: boolean;
   requesterIdentity: RequesterIdentity | null;
+  /** Request URL (provided by the route table's BrokerRequestContext). */
+  url?: URL;
+  /** Approver role binding for approve/reject-approval. Absent = "off". */
+  approverRoleBinding?: ApproverRoleBindingMode;
+  /**
+   * Verify the request's A2A HTTP Signature for approver role binding. Returns
+   * null when no signature headers are present; throws on an invalid signature.
+   */
+  verifyApproverCredential?: (req: IncomingMessage, url: URL | undefined) => Promise<VerifiedApproverCredential | null>;
 }
 
 type TaskScopedContext = TasksDecisionRouteContext & { taskId: string };
@@ -96,9 +108,26 @@ export async function handleResumeTaskRequest(ctx: TaskScopedContext): Promise<v
   sendTask(ctx, task);
 }
 
+/**
+ * Approver role binding (enforce): verify the signature before the body is
+ * parsed, then require the actor to match the bound requester identity even
+ * when ENFORCE_REQUESTER_IDENTITY is disabled.
+ */
+async function readApproverDecisionBody<T extends TaskActorRequest>(
+  ctx: TaskScopedContext,
+  scope: string,
+): Promise<T> {
+  if (ctx.approverRoleBinding !== "enforce") {
+    return readActorGatedBody<T>(ctx, scope, true);
+  }
+  const verified = ctx.verifyApproverCredential ? await ctx.verifyApproverCredential(ctx.req, ctx.url) : null;
+  assertApproverRoleBound(verified, ctx.requesterIdentity, scope);
+  return readActorGatedBody<T>({ ...ctx, enforceRequesterIdentity: true }, scope, true);
+}
+
 /** POST /tasks/:id/approve — approve a blocked task (hub/operator). */
 export async function handleApproveTaskRequest(ctx: TaskScopedContext): Promise<void> {
-  const body = await readActorGatedBody<TaskApprovalRequest>(ctx, "task.approve", true);
+  const body = await readApproverDecisionBody<TaskApprovalRequest>(ctx, "task.approve");
   const task = ctx.broker.approveTask(ctx.taskId, body);
   await awaitDurablePersistenceAck(ctx.stateStore);
   sendTask(ctx, task);
@@ -106,7 +135,7 @@ export async function handleApproveTaskRequest(ctx: TaskScopedContext): Promise<
 
 /** POST /tasks/:id/reject-approval — reject a blocked task's approval (hub/operator). */
 export async function handleRejectTaskApprovalRequest(ctx: TaskScopedContext): Promise<void> {
-  const body = await readActorGatedBody<TaskApprovalTerminalRequest>(ctx, "task.reject-approval", true);
+  const body = await readApproverDecisionBody<TaskApprovalTerminalRequest>(ctx, "task.reject-approval");
   const task = ctx.broker.rejectTaskApproval(ctx.taskId, body);
   await awaitDurablePersistenceAck(ctx.stateStore);
   sendTask(ctx, task);

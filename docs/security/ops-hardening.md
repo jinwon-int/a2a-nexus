@@ -107,6 +107,7 @@ node packages/broker/scripts/ops-hardening-audit.mjs --base-url http://127.0.0.1
 
 - **`EDGE_SECRET` / `A2A_EDGE_SECRET`**: Shared secret required by non-public endpoints. If unset, the broker will still start but public-discoverable endpoints and authenticated routes issue 401 without it.
 - **`ENFORCE_REQUESTER_IDENTITY`** (default `1`): When enabled, write endpoints validate `x-a2a-requester-id` / `x-a2a-requester-role` / `x-a2a-requester-kind` headers against the actor making the request. Operators running in trusted networks can disable, but this weakens the identity audit trail.
+- **`A2A_APPROVER_ROLE_BINDING`** (default `off`): `enforce` binds the `hub`/`operator` role on `POST /tasks/:id/approve` and `POST /tasks/:id/reject-approval` to an A2A HTTP Signature key whose registry record explicitly declares that role. Without it, the approver role is only as strong as the requester headers plus the edge secret. Keep approver keys separate from dispatcher and worker keys. See the [broker README](../../packages/broker/README.md#request-identity-and-rate-limits).
 - **`TRUSTED_PROXY`**: Set to `1` when the broker sits behind a reverse proxy that strips external `x-a2a-*` headers. Without this, rate-limiting key computation may produce incorrect results.
 
 ### Review-lineage correction authority

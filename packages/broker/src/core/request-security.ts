@@ -969,6 +969,65 @@ export function assertRequesterHasRole(
   }
 }
 
+/** A verified approver signing credential, as resolved by the server. */
+export interface VerifiedApproverCredential {
+  keyid: string;
+  /** Signing key owner (the key record's workerId). */
+  requesterId: string;
+  /** Roles the key record explicitly declares; undefined = legacy unrestricted key. */
+  roles: readonly A2APartyRole[] | undefined;
+}
+
+const APPROVER_ROLES: readonly A2APartyRole[] = ["hub", "operator"];
+
+/**
+ * Approver role binding (enforce mode): the hub/operator role asserted on a
+ * task approval decision must be bound to a signing credential, not only to
+ * requester headers. Fails closed when:
+ * - no verified signature is present,
+ * - the requester identity is missing or not a hub/operator role,
+ * - the signing key owner differs from the requester id,
+ * - the key record does not explicitly declare `roles` (legacy unrestricted
+ *   keys cannot approve), or the declared roles exclude the asserted role.
+ */
+export function assertApproverRoleBound(
+  verified: VerifiedApproverCredential | null,
+  identity: RequesterIdentity | null,
+  context: string,
+): void {
+  if (!verified) {
+    throw new BrokerError(
+      "unauthorized",
+      `a2a_signature_approver_required: ${context} requires an A2A HTTP Signature from an approver credential`,
+    );
+  }
+  const requester = requireRequesterIdentity(identity);
+  if (!requester.role || !APPROVER_ROLES.includes(requester.role)) {
+    throw new BrokerError(
+      "unauthorized",
+      `${context} requester role must be one of: ${APPROVER_ROLES.join(", ")}`,
+    );
+  }
+  if (verified.requesterId !== requester.id) {
+    throw new BrokerError(
+      "unauthorized",
+      `a2a_signature_approver_identity_mismatch: ${context} signing key owner does not match the requester`,
+    );
+  }
+  if (verified.roles === undefined) {
+    throw new BrokerError(
+      "unauthorized",
+      `a2a_signature_approver_role_unbound: ${context} signing key does not declare roles`,
+    );
+  }
+  if (!verified.roles.includes(requester.role)) {
+    throw new BrokerError(
+      "unauthorized",
+      `a2a_signature_approver_role_unbound: ${context} signing key is not authorized for role ${requester.role}`,
+    );
+  }
+}
+
 /**
  * Verify a GitHub webhook delivery against the shared webhook secret using
  * the X-Hub-Signature-256 header (HMAC-SHA256 over the raw request body).
