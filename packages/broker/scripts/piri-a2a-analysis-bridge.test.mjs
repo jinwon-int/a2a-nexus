@@ -342,6 +342,40 @@ test("full flow emits the OpenClaw envelope around schema-valid piri output", ()
 		assert.ok(dockerArgs.includes(`${join(configDir, "agent", "auth.json")}:/work/piri-home/.piri/agent/auth.json:ro`));
 		assert.doesNotMatch(dockerArgs.join(" "), /run\/secrets\/piri-dir|cp -a/);
 		assert.equal(existsSync(join(workRoot, "sess-1", "piri-home", ".piri", "agent", "auth.json")), false);
+		// piri reads the prompt file itself (@file); the prompt never rides argv.
+		const inner = dockerArgs[dockerArgs.length - 1];
+		assert.match(inner, /exec piri -p @\/work\/prompt\.md --model '[^']+' --thinking '[^']+' --approve /);
+		assert.doesNotMatch(inner, /\$\(cat /);
+	} finally {
+		rmSync(dir, { recursive: true, force: true });
+	}
+});
+
+test("docker lane hands a prompt above MAX_ARG_STRLEN to piri as @file, not argv", () => {
+	const dir = mkdtempSync(join(tmpdir(), "piri-bridge-bigprompt-"));
+	try {
+		const contract = { status: "done", summary: "ok", findings: [], risks: [], recommendations: [], evidenceRefs: [] };
+		const docker = makeFakeDocker(dir, { argsFile: join(dir, "docker-args.json"), stdout: `${JSON.stringify(contract)}\n` });
+		const workRoot = join(dir, "tasks");
+		const big = "x".repeat(70 * 1024);
+		const child = runBridge(
+			["agent", "--local", "--session-id", "sess-big", "--message", sampleMessage({ embeddedSourceEvidence: [{ path: "big.ts", content: big }] }), "--model", "m", "--thinking", "t", "--timeout", "30", "--json"],
+			{
+				A2A_PIRI_DOCKER_BIN: docker,
+				A2A_PIRI_WORK_ROOT: workRoot,
+				A2A_PIRI_CONFIG_DIR: makeConfigDir(dir),
+				A2A_PIRI_ANALYSIS_MAX_PROMPT_BYTES: String(256 * 1024),
+				A2A_PIRI_ANALYSIS_MAX_FILE_BYTES: String(192 * 1024),
+				A2A_PIRI_ANALYSIS_MAX_TOTAL_BYTES: String(256 * 1024),
+			},
+		);
+		assert.equal(child.status, 0, child.stderr);
+		const promptBytes = readFileSync(join(workRoot, "sess-big", "prompt.md")).length;
+		assert.ok(promptBytes > 128 * 1024, `prompt should exceed MAX_ARG_STRLEN, got ${promptBytes}`);
+		const dockerArgs = JSON.parse(readFileSync(join(dir, "docker-args.json"), "utf8"));
+		const inner = dockerArgs[dockerArgs.length - 1];
+		assert.match(inner, /exec piri -p @\/work\/prompt\.md /);
+		assert.ok(Buffer.byteLength(inner, "utf8") < 4096, "container command must not embed the prompt");
 	} finally {
 		rmSync(dir, { recursive: true, force: true });
 	}
