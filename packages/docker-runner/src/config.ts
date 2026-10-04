@@ -71,6 +71,30 @@ const DEFAULT_PIRI_THINKING = "high";
 const DEFAULT_PIRI_TIMEOUT_SEC = "5400";
 /** Baked into piri-runner images; the command script uses it unless overridden. */
 const DEFAULT_PIRI_OUTPUT_SCHEMA = "/etc/a2a-runner/piri-analysis-output.schema.json";
+/** Host dir mounted read-only at /run/secrets/danso-dir; must hold glm.env (#2315). */
+const DEFAULT_DANSO_CONFIG_DIR = "/var/lib/a2a-runner/danso-dir";
+const DEFAULT_DANSO_MODEL = "glm-5.3-flash";
+const DEFAULT_DANSO_EFFORT = "high";
+/** danso short-mode whole-run maximum is 3600s (danso docs/v0.md). */
+const DEFAULT_DANSO_PATCH_TIMEOUT_SEC = "3600";
+const MAX_DANSO_PATCH_TIMEOUT_SEC = 3600;
+/** danso short-mode turn maximum is 128 (default 48 is sized for chat, not patches). */
+const DEFAULT_DANSO_PATCH_MAX_TURNS = "128";
+const MAX_DANSO_PATCH_MAX_TURNS = 128;
+/**
+ * danso provider requests are non-streaming; 300 (danso's maximum) is what the
+ * #2295 analysis-lane canary needed at effort=high. Default 180 timed out.
+ */
+const DEFAULT_DANSO_PROVIDER_TIMEOUT_SECONDS = "300";
+const MAX_DANSO_PROVIDER_TIMEOUT_SECONDS = 300;
+/**
+ * danso refuses prompts over 65,536 bytes from argv, --prompt-file or stdin
+ * (jinwon-int/danso#207). The script checks this before invoking danso;
+ * raising it is only useful once danso's own cap is raised. 1 MiB is the
+ * --prompt-file read limit.
+ */
+const DEFAULT_DANSO_MAX_PROMPT_BYTES = "65536";
+const MAX_DANSO_MAX_PROMPT_BYTES = 1024 * 1024;
 export const DEFAULT_SERVICE_ENV_FILE = "/etc/default/openclaw-a2a-worker";
 /**
  * #2267: service env files a fleet node may carry besides the CLI default.
@@ -196,7 +220,7 @@ export async function loadConfig(env = process.env): Promise<RunnerConfig> {
     defaultTimeoutMs: Number(env.A2A_DOCKER_RUNNER_TIMEOUT_MS || DEFAULT_TIMEOUT_MS),
     memory: env.A2A_DOCKER_RUNNER_MEMORY || "2g",
     cpus: env.A2A_DOCKER_RUNNER_CPUS || "2",
-    network: env.A2A_DOCKER_RUNNER_NETWORK || (trustedOperator && (profile === "openclaw" || profile === "hermes" || profile === "claude-code" || profile === "codex" || profile === "piri") ? "bridge" : "none"),
+    network: env.A2A_DOCKER_RUNNER_NETWORK || (trustedOperator && (profile === "openclaw" || profile === "hermes" || profile === "claude-code" || profile === "codex" || profile === "piri" || profile === "danso") ? "bridge" : "none"),
     // #2256 A2: hardened container defaults apply in BOTH modes (read-only
     // rootfs + non-root uid). Public mode rejects explicit relaxations in
     // validateRunnerConfig; trusted mode may relax them via explicit env.
@@ -385,6 +409,13 @@ export function loadExtraMounts(env: NodeJS.ProcessEnv): RunnerExtraMount[] | un
       }
       return mounts;
     }
+    if (profile === "danso") {
+      return [{
+        source: env.A2A_DOCKER_RUNNER_DANSO_CONFIG_DIR || DEFAULT_DANSO_CONFIG_DIR,
+        target: "/run/secrets/danso-dir",
+        readOnly: true,
+      }];
+    }
     return undefined;
   }
 
@@ -521,6 +552,16 @@ function validateProfileMountSelection(mounts: RunnerExtraMount[], env: NodeJS.P
       "piri",
       "Piri",
     );
+    return;
+  }
+  if (profile === "danso") {
+    validateNamedProfileMountSelection(
+      mounts,
+      "/run/secrets/danso-dir",
+      env.A2A_DOCKER_RUNNER_DANSO_CONFIG_DIR,
+      "danso",
+      "danso",
+    );
   }
 }
 
@@ -567,8 +608,9 @@ function validateOpenClawRuntimeMount(mount: RunnerExtraMount, index: number): v
   const protectedCodexTarget = isProtectedRuntimePath("codex", target);
   const protectedPiriSource = isProtectedRuntimePath("piri", source);
   const protectedPiriTarget = isProtectedRuntimePath("piri", target);
+  const protectedDanso = isProtectedRuntimePath("danso", source) || isProtectedRuntimePath("danso", target);
 
-  if (writable && (protectedSource || protectedTarget || protectedHermesSource || protectedHermesTarget || protectedClaudeSource || protectedClaudeTarget || protectedCodexSource || protectedCodexTarget || protectedPiriSource || protectedPiriTarget)) {
+  if (writable && (protectedSource || protectedTarget || protectedHermesSource || protectedHermesTarget || protectedClaudeSource || protectedClaudeTarget || protectedCodexSource || protectedCodexTarget || protectedPiriSource || protectedPiriTarget || protectedDanso)) {
     throw new ExtraMountsConfigError(
       "forbidden_writable_runtime_mount",
       `invalid extra mount at index ${index}: writable agent runtime/session paths are forbidden; ` +
@@ -587,7 +629,7 @@ function normalizeAbsolutePathForPolicy(value: string): string {
 
 // #2083: one table + one matcher instead of five copy-pasted
 // isProtected*RuntimePath functions (same shape, different runtime name).
-const PROTECTED_RUNTIME_PROFILES = ["openclaw", "hermes", "claude", "codex", "piri"] as const;
+const PROTECTED_RUNTIME_PROFILES = ["openclaw", "hermes", "claude", "codex", "piri", "danso"] as const;
 type ProtectedRuntimeProfile = (typeof PROTECTED_RUNTIME_PROFILES)[number];
 
 const PROTECTED_RUNTIME_PATH_TABLE: Record<ProtectedRuntimeProfile, RegExp[]> = Object.fromEntries(
@@ -597,6 +639,11 @@ const PROTECTED_RUNTIME_PATH_TABLE: Record<ProtectedRuntimeProfile, RegExp[]> = 
       new RegExp(`^/root/.${name}(?:/|$)`),
       new RegExp(`^/home/[^/]+/.${name}(?:/|$)`),
       new RegExp(`^/run/secrets/${name}-dir(?:/|$)`),
+      // #2315: danso keeps its GLM env file under the XDG config dir
+      // (~/.config/danso/glm.env), not ~/.danso.
+      ...(name === "danso"
+        ? [new RegExp(`^/root/.config/${name}(?:/|$)`), new RegExp(`^/home/[^/]+/.config/${name}(?:/|$)`)]
+        : []),
     ],
   ]),
 ) as Record<ProtectedRuntimeProfile, RegExp[]>;
@@ -608,7 +655,7 @@ function isProtectedRuntimePath(profile: ProtectedRuntimeProfile, value: string)
 
 function loadPatchCommandConfig(
   env: NodeJS.ProcessEnv,
-): Pick<RunnerConfig, "commandScript" | "commandJson" | "commandTemplate" | "commandProfile" | "openclawProfile" | "hermesProfile" | "claudeCodeProfile" | "codexProfile" | "piriProfile"> {
+): Pick<RunnerConfig, "commandScript" | "commandJson" | "commandTemplate" | "commandProfile" | "openclawProfile" | "hermesProfile" | "claudeCodeProfile" | "codexProfile" | "piriProfile" | "dansoProfile"> {
   const commandScript = env.A2A_DOCKER_RUNNER_PATCH_COMMAND_SCRIPT || undefined;
   if (commandScript) return { commandScript };
 
@@ -659,6 +706,15 @@ function loadPatchCommandConfig(
       commandScript: buildPiriPatchCommandScript(env),
       piriProfile: {
         configDir: env.A2A_DOCKER_RUNNER_PIRI_CONFIG_DIR || DEFAULT_PIRI_CONFIG_DIR,
+      },
+    };
+  }
+  if (profile === "danso") {
+    return {
+      commandProfile: "danso",
+      commandScript: buildDansoPatchCommandScript(env),
+      dansoProfile: {
+        configDir: env.A2A_DOCKER_RUNNER_DANSO_CONFIG_DIR || DEFAULT_DANSO_CONFIG_DIR,
       },
     };
   }
@@ -870,6 +926,7 @@ export function normalizePatchCommandProfile(value?: string): RunnerCommandProfi
   if (normalized === "claude-code" || normalized === "claude" || normalized === "cccb") return "claude-code";
   if (normalized === "codex") return "codex";
   if (normalized === "piri" || normalized === "pi" || normalized === "piri-cli") return "piri";
+  if (normalized === "danso" || normalized === "danso-cli") return "danso";
   throw new Error(`unsupported A2A_DOCKER_RUNNER_PATCH_COMMAND_PROFILE: ${value}`);
 }
 
@@ -911,6 +968,7 @@ function inferRunnerImageProfileFamily(image: string): RunnerCommandProfile | un
   if (/(^|[/:])a2a-docker-runner-(?:cccb|claude-code)(?=[:@/]|$)/.test(normalized)) return "claude-code";
   if (/(^|[/:])a2a-docker-runner-codex(?=[:@/]|$)/.test(normalized)) return "codex";
   if (/(^|[/:])a2a-docker-runner-piri(?=[:@/]|$)/.test(normalized)) return "piri";
+  if (/(^|[/:])a2a-docker-runner-danso(?=[:@/]|$)/.test(normalized)) return "danso";
   return undefined;
 }
 
@@ -1335,6 +1393,47 @@ ${piriMemoryEnabled ? `  \${PIRI_MEMORY_ARGS[@]+"\${PIRI_MEMORY_ARGS[@]}"} \
 ` : ""}  ${piriFanoutEnabled ? `  \${PIRI_FANOUT_ARGS[@]+"\${PIRI_FANOUT_ARGS[@]}"}   ` : ""}\${PIRI_PROGRESS_ARGS[@]+\"\${PIRI_PROGRESS_ARGS[@]}\"} \
   \${PIRI_SCHEMA_ARGS[@]+\"\${PIRI_SCHEMA_ARGS[@]}\"}
 `;
+}
+
+/**
+ * danso patch-command script (a2a-nexus#2315), rendered from profiles/danso.sh.
+ *
+ * Same lane contract as piri: danso only edits files, the outer pipeline owns
+ * git/GitHub, and the git/gh lifecycle guard shims are installed where danso's
+ * rebuilt tool PATH finds them. The assignment is passed as
+ * `--prompt-file /work/artifacts/prompt.md` (never argv; jinwon-int/danso#206)
+ * and the lane rules as `--system-context-file`. The script fails closed when
+ * the baked danso lacks either flag. GLM credentials come from
+ * /run/secrets/danso-dir/glm.env (allowlisted keys only, never printed).
+ *
+ * Host-env defaults are validated here so a bad value fails at config load,
+ * not inside a claimed task.
+ */
+export function buildDansoPatchCommandScript(env: NodeJS.ProcessEnv): string {
+  const timeout = (env.A2A_DANSO_PATCH_TIMEOUT_SEC || DEFAULT_DANSO_PATCH_TIMEOUT_SEC).trim();
+  if (!/^[1-9]\d*$/.test(timeout) || Number(timeout) > MAX_DANSO_PATCH_TIMEOUT_SEC) {
+    throw new Error(`A2A_DANSO_PATCH_TIMEOUT_SEC must be an integer between 1 and ${MAX_DANSO_PATCH_TIMEOUT_SEC} (danso short-mode run limit)`);
+  }
+  const maxTurns = (env.A2A_DANSO_PATCH_MAX_TURNS || DEFAULT_DANSO_PATCH_MAX_TURNS).trim();
+  if (!/^[1-9]\d*$/.test(maxTurns) || Number(maxTurns) > MAX_DANSO_PATCH_MAX_TURNS) {
+    throw new Error(`A2A_DANSO_PATCH_MAX_TURNS must be an integer between 1 and ${MAX_DANSO_PATCH_MAX_TURNS} (danso short-mode turn limit)`);
+  }
+  const providerTimeout = (env.A2A_DANSO_PROVIDER_TIMEOUT_SECONDS || DEFAULT_DANSO_PROVIDER_TIMEOUT_SECONDS).trim();
+  if (!/^[1-9]\d*$/.test(providerTimeout) || Number(providerTimeout) > MAX_DANSO_PROVIDER_TIMEOUT_SECONDS) {
+    throw new Error(`A2A_DANSO_PROVIDER_TIMEOUT_SECONDS must be an integer between 1 and ${MAX_DANSO_PROVIDER_TIMEOUT_SECONDS} (danso per-request limit)`);
+  }
+  const maxPromptBytes = (env.A2A_DANSO_MAX_PROMPT_BYTES || DEFAULT_DANSO_MAX_PROMPT_BYTES).trim();
+  if (!/^[1-9]\d*$/.test(maxPromptBytes) || Number(maxPromptBytes) > MAX_DANSO_MAX_PROMPT_BYTES) {
+    throw new Error(`A2A_DANSO_MAX_PROMPT_BYTES must be an integer between 1 and ${MAX_DANSO_MAX_PROMPT_BYTES} (danso --prompt-file read limit)`);
+  }
+  return renderProfileScript("danso", {
+    defaultModel: shellSingleQuote(env.A2A_DANSO_MODEL || DEFAULT_DANSO_MODEL),
+    defaultEffort: shellSingleQuote(env.A2A_DANSO_EFFORT || DEFAULT_DANSO_EFFORT),
+    defaultTimeout: shellSingleQuote(timeout),
+    defaultMaxTurns: shellSingleQuote(maxTurns),
+    defaultProviderTimeout: shellSingleQuote(providerTimeout),
+    defaultMaxPromptBytes: shellSingleQuote(maxPromptBytes),
+  });
 }
 
 const CLAUDE_TURN_BUDGET_DEFAULTS = {

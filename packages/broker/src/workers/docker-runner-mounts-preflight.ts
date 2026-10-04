@@ -78,7 +78,7 @@ export function validateDockerRunnerProfileMount(
   }
 }
 
-export function normalizeDockerRunnerPatchProfile(value: unknown): "openclaw" | "hermes" | "claude-code" | undefined {
+export function normalizeDockerRunnerPatchProfile(value: unknown): "openclaw" | "hermes" | "claude-code" | "danso" | undefined {
   if (typeof value !== "string") {
     return undefined;
   }
@@ -86,6 +86,8 @@ export function normalizeDockerRunnerPatchProfile(value: unknown): "openclaw" | 
   if (normalized === "openclaw") return "openclaw";
   if (normalized === "hermes") return "hermes";
   if (normalized === "claude-code" || normalized === "claude" || normalized === "cccb") return "claude-code";
+  // #2315: same name set as the runner's normalizePatchCommandProfile.
+  if (normalized === "danso" || normalized === "danso-cli") return "danso";
   return undefined;
 }
 
@@ -105,6 +107,10 @@ export function isProtectedDockerRunnerMountPath(value: string): boolean {
     /^\/root\/\.claude(?:\/|$)/,
     /^\/home\/[^/]+\/\.claude(?:\/|$)/,
     /^\/run\/secrets\/claude-dir(?:\/|$)/,
+    // #2315: the danso GLM env file (host ~/.config/danso, container mount).
+    /^\/root\/\.config\/danso(?:\/|$)/,
+    /^\/home\/[^/]+\/\.config\/danso(?:\/|$)/,
+    /^\/run\/secrets\/danso-dir(?:\/|$)/,
   ].some((pattern) => pattern.test(normalized));
 }
 
@@ -148,5 +154,7 @@ export function validateDockerRunnerExtraMountsReadiness(env: NodeJS.ProcessEnv)
     validateDockerRunnerProfileMount(mounts, "/run/secrets/openclaw-dir", env.A2A_DOCKER_RUNNER_OPENCLAW_CONFIG_DIR, "openclaw", "OpenClaw");
   } else if (profile === "claude-code") {
     validateDockerRunnerProfileMount(mounts, "/run/secrets/claude-dir", env.A2A_DOCKER_RUNNER_CLAUDE_CONFIG_DIR, "claude-code", "Claude Code");
+  } else if (profile === "danso") {
+    validateDockerRunnerProfileMount(mounts, "/run/secrets/danso-dir", env.A2A_DOCKER_RUNNER_DANSO_CONFIG_DIR, "danso", "danso");
   }
 }

@@ -91,12 +91,16 @@ function normalizeTaskEnv(task: RunnerTask, allowNoChanges: boolean, primaryRepo
     // describe the context variant but are not Piri catalog ids, so preserve
     // the task-level selection while translating only those known aliases.
     env.A2A_PIRI_MODEL = PIRI_MODEL_ALIASES.get(model) ?? model;
+    // danso (#2315) takes the bare GLM id; profiles/danso.sh strips the
+    // zai/ prefix and [1m] alias itself, so the raw selection is passed on.
+    env.A2A_DANSO_MODEL = model;
   }
   if (thinking) {
     env.A2A_OPENCLAW_THINKING = thinking;
     env.A2A_HERMES_THINKING = thinking;
     env.A2A_CODEX_REASONING_EFFORT = thinking;
     env.A2A_PIRI_THINKING = thinking;
+    env.A2A_DANSO_EFFORT = thinking;
   }
   if (allowNoChanges) env.A2A_RUNNER_ALLOW_NO_CHANGES = "1";
   if (task.readOnlyValidation === true) env.A2A_RUNNER_READ_ONLY_VALIDATION = "1";

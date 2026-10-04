@@ -615,13 +615,15 @@ export class A2ABrokerWorker {
         return 0; // not present
       }
     };
-    // docker-runner root: <root>/<taskId>/*/artifacts/piri-progress.jsonl
+    // docker-runner root: <root>/<taskId>/*/artifacts/{piri,danso}-progress.jsonl
+    // (#2315: the danso patch profile writes body-free danso-progress.jsonl).
     const candidates: Array<Promise<number>> = [];
     try {
       const runDirs = await fsp.readdir(joinPath(runnerRoot, taskId), { withFileTypes: true });
       for (const runDir of runDirs) {
         if (!runDir.isDirectory()) continue;
         candidates.push(consider(joinPath(runnerRoot, taskId, runDir.name, "artifacts", "piri-progress.jsonl")));
+        candidates.push(consider(joinPath(runnerRoot, taskId, runDir.name, "artifacts", "danso-progress.jsonl")));
       }
     } catch {
       // root or task dir missing

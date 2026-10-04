@@ -526,10 +526,14 @@ function workerModelEnvCandidates(env = process.env) {
   // A2A_PIRI_MODEL. The active profile's lane env now leads; every other
   // profile keeps the historical order, with A2A_PIRI_MODEL appended so it
   // participates in the same preflight instead of being silently ignored.
-  const piriProfile = normalizedPatchCommandProfile(env) === "piri";
-  const laneCandidates = piriProfile
+  // #2315: the danso docker patch lane leads with its own A2A_DANSO_MODEL the
+  // same way; every other profile's order is unchanged.
+  const patchProfile = normalizedPatchCommandProfile(env);
+  const laneCandidates = patchProfile === "piri"
     ? [env.A2A_PIRI_MODEL, env.A2A_CODEX_MODEL, env.A2A_CLAUDE_MODEL]
-    : [env.A2A_CODEX_MODEL, env.A2A_CLAUDE_MODEL, env.A2A_PIRI_MODEL];
+    : patchProfile === "danso"
+      ? [env.A2A_DANSO_MODEL, env.A2A_CODEX_MODEL, env.A2A_CLAUDE_MODEL, env.A2A_PIRI_MODEL]
+      : [env.A2A_CODEX_MODEL, env.A2A_CLAUDE_MODEL, env.A2A_PIRI_MODEL];
   return [
     ...laneCandidates,
     env.A2A_OPENCLAW_MODEL,
@@ -582,9 +586,11 @@ function normalizedPatchCommandProfile(env = process.env) {
   if (profile === "hermes") return "hermes";
   if (profile === "openclaw") return "openclaw";
   if (profile === "piri") return "piri";
+  if (profile === "danso" || profile === "danso-cli") return "danso";
   const image = safeText(env.A2A_DOCKER_RUNNER_IMAGE, "").toLowerCase();
   if (image.includes("codex")) return "codex";
   if (image.includes("piri")) return "piri";
+  if (image.includes("danso")) return "danso";
   return image.includes("hermes") ? "hermes" : "";
 }
 

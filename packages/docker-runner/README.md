@@ -686,13 +686,15 @@ Precedence is `commandScript > commandJson > commandProfile > commandTemplate`:
 | `A2A_DOCKER_RUNNER_PATCH_COMMAND_PROFILE=openclaw` | generated `commandScript` | `/work/patch-command.sh` | Legacy operator-only trusted-worker profile. Mounts `A2A_DOCKER_RUNNER_OPENCLAW_CONFIG_DIR` (or the profile default when unset) read-only at `/run/secrets/openclaw-dir`, then runs `openclaw agent` in the checked-out repo. Explicit `A2A_OPENCLAW_MODEL` overrides still win. Default legacy behavior remains `openai-codex/gpt-5.5` so OAuth-backed Codex auth is used instead of same-name OpenAI API-key models. When `A2A_DOCKER_RUNNER_MODEL_SOURCE=native`, the runner reads the copied OpenClaw profile agent/default model and fails closed if no safe model is found. Do not present this profile or host-network mode as a public sandbox default. |
 | `A2A_DOCKER_RUNNER_PATCH_COMMAND_PROFILE=claude-code` (`cccb`) | generated `commandScript` | `/work/patch-command.sh` | Operator-only trusted-worker profile. Mounts `A2A_DOCKER_RUNNER_CLAUDE_CONFIG_DIR` (or `/root/.claude`) read-only at `/run/secrets/claude-dir` (plus, when set, `A2A_DOCKER_RUNNER_CLAUDE_CREDENTIALS_FILE` read-only at `/run/secrets/claude-credentials.json`), then runs the bundled `claude-a2a-patch-bridge.mjs` through the `claude` CLI. The normal non-fanout implementation mode is agentic; deterministic single-shot and fanout modes are explicit alternatives. Use the `a2a-docker-runner-cccb:<runner-sha>` image; credentials are mounted at runtime only and are not baked into image layers. |
 | `A2A_DOCKER_RUNNER_PATCH_COMMAND_PROFILE=codex` | generated `commandScript` | `/work/patch-command.sh` | Operator-only trusted-worker profile. The host source at `A2A_DOCKER_RUNNER_CODEX_CONFIG_DIR` (default `/var/lib/a2a-runner/codex-dir`) is copied to a task-scoped host temp directory, and only that clone is mounted read-write at `/run/secrets/codex-dir`. After `codex exec --ephemeral --json`, the host runner validates that only refreshable token fields/`last_refresh` changed and atomically writes back `auth.json` with the original owner and mode. `config.toml` and generated custom-agent files are discarded. The parent uses `gpt-5.6-sol`, reasoning `high`, approval `never`, and `danger-full-access` inside the external container boundary. Optional contained fanout keeps the parent unchanged, routes explorer/researcher to `gpt-5.6-luna`/`max`, and keeps implementer/verifier on Sol. Use `a2a-docker-runner-codex:<runner-sha>`; credentials are never baked into image layers or runner artifacts. |
+| `A2A_DOCKER_RUNNER_PATCH_COMMAND_PROFILE=danso` | generated `commandScript` | `/work/patch-command.sh` | Operator-only trusted-worker profile (#2315). Mounts `A2A_DOCKER_RUNNER_DANSO_CONFIG_DIR` (default `/var/lib/a2a-runner/danso-dir`) read-only at `/run/secrets/danso-dir`; that directory must hold `glm.env`. The script reads only `ZAI_API_KEY` and `DANSO_GLM_BASE_URL`/`DANSO_GLM_ENDPOINT`/`DANSO_GLM_THINKING` from it (never sourced, never printed) and runs `danso --provider glm --sandbox host -p` in the checkout. The assignment is passed as `--prompt-file /work/artifacts/prompt.md` and the lane rules as `--system-context-file`; a danso build without either flag (or `--tool-home`) fails closed with `danso_cli_upgrade_required` instead of falling back to argv. The git/gh lifecycle guard shims are placed on danso's rebuilt tool `PATH` via `--tool-home`. `A2A_DANSO_MODEL` (default `glm-5.3-flash`; `zai/` prefix and `[1m]` alias are stripped), `A2A_DANSO_EFFORT` (default `high`), `A2A_DANSO_PATCH_TIMEOUT_SEC` (default and maximum 3600, danso short mode), `A2A_DANSO_PATCH_MAX_TURNS` (default and maximum 128) and `A2A_DANSO_PROVIDER_TIMEOUT_SECONDS` (default and maximum 300). danso refuses prompts over 65,536 bytes however they are passed, so the script checks `prompt.md` first and fails with `danso_prompt_too_large` above `A2A_DANSO_MAX_PROMPT_BYTES` (default 65536). Body-free liveness goes to `artifacts/danso-progress.jsonl`. Use `a2a-docker-runner-danso:<danso-version>-<runner-sha>` built from `docker/danso-runner.Dockerfile`. |
 | `A2A_DOCKER_RUNNER_PATCH_COMMAND_TEMPLATE` | `commandTemplate` | `/work/patch-command.sh` | Legacy eval path; rejected for GitHub patch execution. |
 
 #### Where the generated profile scripts live (`profiles/`)
 
-The container scripts generated for the `codex`, `claude-code`, `hermes`, and
-`openclaw` profiles are checked in as real shell files under `profiles/`, not as
-TypeScript template literals (a2a-nexus#2049). Editing a runner script is a
+The container scripts generated for the `codex`, `claude-code`, `hermes`,
+`openclaw`, and `danso` profiles are checked in as real shell files under
+`profiles/`, not as TypeScript template literals (a2a-nexus#2049; `danso` was
+added directly as a profile file in #2315). Editing a runner script is a
 script diff, and `npm run lint` runs `bash -n` over each one.
 
 | Concern | Contract |
@@ -743,7 +745,9 @@ bridge. `runner doctor` shows the result in the githubPatch check as
 `claudeEffort: { configured, source }`, where `source` is `A2A_CLAUDE_EFFORT`,
 `unset` or `invalid`.
 
-Codex, Piri and Claude Code Docker patch commands default to 90 minutes.
+Codex, Piri and Claude Code Docker patch commands default to 90 minutes. The
+danso patch command defaults to 60 minutes, which is also danso's short-mode
+maximum (`A2A_DANSO_PATCH_TIMEOUT_SEC` rejects larger values).
 Runner task/container defaults are 100 minutes, with a 120-minute outer worker
 handler budget. Explicit environment and per-task overrides retain their existing
 precedence; upgrading source does not replace existing worker environment files.

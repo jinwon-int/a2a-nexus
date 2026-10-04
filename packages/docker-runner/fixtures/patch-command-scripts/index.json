@@ -45,6 +45,16 @@
       "name": "openclaw-npm-fallback-no-subagents",
       "bytes": 21476,
       "sha256": "b07b3a25a394300e94de538623bba7e553a3c707538d27edcfc6a15f0d1939bb"
+    },
+    {
+      "name": "danso-default",
+      "bytes": 16715,
+      "sha256": "05ae4a2503ffa53fa7f360f20569b9b4f335382ca52fb3583e7112b8f797099f"
+    },
+    {
+      "name": "danso-overrides",
+      "bytes": 16715,
+      "sha256": "8389ea9cd122dc537fbed34faedef3c3de3603d7cfb818ae36aac403ef6a42c6"
     }
   ]
 }

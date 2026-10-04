@@ -35,7 +35,7 @@ import { dirname, join } from "node:path";
  */
 
 /** Profiles whose container script lives in `profiles/<name>.sh`. */
-export type ProfileScriptName = "codex" | "claude-code" | "hermes" | "openclaw";
+export type ProfileScriptName = "codex" | "claude-code" | "hermes" | "openclaw" | "danso";
 
 /** Every extracted profile, in the order `config.ts` dispatches them. */
 export const PROFILE_SCRIPT_NAMES: readonly ProfileScriptName[] = Object.freeze([
@@ -43,6 +43,7 @@ export const PROFILE_SCRIPT_NAMES: readonly ProfileScriptName[] = Object.freeze(
   "hermes",
   "claude-code",
   "codex",
+  "danso",
 ]);
 
 /** Substitution token emitted for each interpolation slot in a profile script. */

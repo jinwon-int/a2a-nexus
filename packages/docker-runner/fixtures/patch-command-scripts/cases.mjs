@@ -101,4 +101,24 @@ export const PATCH_COMMAND_SCRIPT_GOLDEN_CASES = Object.freeze([
       A2A_DOCKER_RUNNER_MODEL_SOURCE: "native",
     },
   },
+  // danso patch profile (a2a-nexus#2315): added with the profile, not
+  // captured from a pre-extraction template.
+  {
+    name: "danso-default",
+    env: {
+      A2A_DOCKER_RUNNER_PATCH_COMMAND_PROFILE: "danso",
+    },
+  },
+  {
+    name: "danso-overrides",
+    env: {
+      A2A_DOCKER_RUNNER_PATCH_COMMAND_PROFILE: "danso",
+      A2A_DANSO_MODEL: "zai/glm-5.3",
+      A2A_DANSO_EFFORT: "medium",
+      A2A_DANSO_PATCH_TIMEOUT_SEC: "2700",
+      A2A_DANSO_PATCH_MAX_TURNS: "96",
+      A2A_DANSO_PROVIDER_TIMEOUT_SECONDS: "240",
+      A2A_DANSO_MAX_PROMPT_BYTES: "131072",
+    },
+  },
 ]);

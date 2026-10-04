@@ -112,7 +112,7 @@ export interface ExecutionProofSignature {
   signature: string;
 }
 
-export type RunnerCommandProfile = "openclaw" | "hermes" | "claude-code" | "codex" | "piri";
+export type RunnerCommandProfile = "openclaw" | "hermes" | "claude-code" | "codex" | "piri" | "danso";
 
 export interface RunnerOpenClawProfileConfig {
   /*
@@ -174,6 +174,11 @@ export interface RunnerCodexProfileConfig {
 }
 
 export interface RunnerPiriProfileConfig {
+  configDir: string;
+}
+
+export interface RunnerDansoProfileConfig {
+  /** Host dir mounted read-only at /run/secrets/danso-dir (holds glm.env). */
   configDir: string;
 }
 
@@ -245,6 +250,8 @@ export interface RunnerConfig {
   codexProfile?: RunnerCodexProfileConfig;
   /** Piri patch profile readiness metadata (a2a-nexus#1745 Phase 0). */
   piriProfile?: RunnerPiriProfileConfig;
+  /** danso patch profile readiness metadata (a2a-nexus#2315). */
+  dansoProfile?: RunnerDansoProfileConfig;
   /** Guarded in-container subagent policy for supported Docker patch profiles. */
   containedSubagents?: RunnerContainedSubagentsConfig;
   /** PEM private key file for opt-in execution-proof JWS signing. */
