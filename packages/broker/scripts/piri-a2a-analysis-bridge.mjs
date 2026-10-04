@@ -659,6 +659,13 @@ function runPiri({ prompt, model, thinking, timeoutSec, sessionId, env, native =
  * Docker lane: the task workdir is bind-mounted at /work so the model reads
  * the prompt from a file (no argv budget) and the content-free progress file
  * lands on the host while the task is still running.
+ *
+ * The prompt is handed over as piri's `@file` argument. Expanding it with
+ * `"$(cat /work/prompt.md)"` put the whole prompt in one argv string, so any
+ * prompt at or above Linux MAX_ARG_STRLEN (128 KiB) died with "Argument list
+ * too long" before piri started (A2A_PIRI_ANALYSIS_MAX_PROMPT_BYTES may be
+ * raised past that on docker nodes). `-p` never consumes an `@`-prefixed
+ * next argument; piri reads the file itself, in every released runner image.
  */
 function runPiriDocker({ model, thinking, timeoutSec, env, workDir, taskName, authFile }) {
 	const image = safeText(env.A2A_PIRI_RUNNER_IMAGE, DEFAULT_PIRI_IMAGE);
@@ -671,7 +678,7 @@ function runPiriDocker({ model, thinking, timeoutSec, env, workDir, taskName, au
 	const inner = [
 		"set -euo pipefail",
 		"export HOME=/work/piri-home",
-		`exec piri -p "$(cat /work/prompt.md)" --model ${shellQuote(model)} --thinking ${shellQuote(thinking)} --approve --no-session --output-schema ${IMAGE_SCHEMA_PATH} --progress-file /work/artifacts/piri-progress.jsonl`,
+		`exec piri -p @/work/prompt.md --model ${shellQuote(model)} --thinking ${shellQuote(thinking)} --approve --no-session --output-schema ${IMAGE_SCHEMA_PATH} --progress-file /work/artifacts/piri-progress.jsonl`,
 	].join(" && ");
 
 	const containerName = `a2a-piri-analysis-${taskName}-${Date.now()}`;
