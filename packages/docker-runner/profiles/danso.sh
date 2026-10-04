@@ -292,12 +292,31 @@ Final answer contract:
   the files you edited in 'evidenceRefs'.
 A2A_DANSO_CONTEXT_EOF
 fi
+# danso reads --system-context-file only as an owner-only bounded regular file
+# (mode exactly 0600, owned by the running uid, one link, <= 32768 bytes) and
+# otherwise exits 2 before any provider call ("system context requires an
+# owner-only bounded regular file", danso src/context.rs). The heredoc above
+# is created under the container's default umask (0644), so tighten it here.
+chmod 600 /work/artifacts/danso-system-context.md
 
-# Liveness for the broker heartbeat (lastProgressAt): danso -p emits a
-# body-free {"type":"danso_message_completed","version":1} frame per interim
-# assistant message; only those exact lines are copied to the progress file.
+# Liveness for the broker heartbeat (lastProgressAt). Once a progress file
+# exists its mtime is the authoritative stale signal for the task, so it must
+# move while danso works. danso -p (text mode) only frames interim assistant
+# TEXT, and a tool-only run (the common patch shape) emits none, which would
+# freeze lastProgressAt at start and let the broker reap a live task (#2315
+# first real-binary canary: 6 requests, 6 tool calls, 0 frames). --progress-jsonl
+# emits a body-free danso_progress frame on every tool start/settle and
+# --stream-requests a danso_request frame per provider request. danso
+# serializes those frames with sorted keys, so they are selected by parsed
+# .type, never by line prefix, and re-emitted compactly (they carry no body).
+# The same stdout also carries the JSONL session transcript (message bodies,
+# tool output); it goes to a private scratch file outside /work/artifacts,
+# the final assistant text is extracted to stdout as before, and the scratch
+# file is removed.
 A2A_DANSO_PROGRESS_FILE=/work/artifacts/danso-progress.jsonl
 : > "$A2A_DANSO_PROGRESS_FILE"
+A2A_DANSO_TRANSCRIPT=/work/.a2a-danso-transcript.jsonl
+( umask 077; : > "$A2A_DANSO_TRANSCRIPT" )
 
 # --sandbox host: the task container (cap-drop ALL, no-new-privileges,
 # read-only rootfs, non-root user) is the isolation boundary, as for codex
@@ -318,9 +337,15 @@ timeout --kill-after=30 "$((A2A_DANSO_PATCH_TIMEOUT_SEC + 60))" danso \
   --max-turns "$A2A_DANSO_PATCH_MAX_TURNS" \
   --provider-timeout-seconds "$A2A_DANSO_PROVIDER_TIMEOUT_SECONDS" \
   --timeout-seconds "$A2A_DANSO_PATCH_TIMEOUT_SEC" \
-  -p \
-  | tee >(grep --line-buffered -Fx '{"type":"danso_message_completed","version":1}' >> "$A2A_DANSO_PROGRESS_FILE" || true)
+  --progress-jsonl \
+  --stream-requests \
+  | tee "$A2A_DANSO_TRANSCRIPT" \
+  | jq -R --unbuffered -c 'fromjson? | select(type == "object" and (.type == "danso_progress" or .type == "danso_request"))' >> "$A2A_DANSO_PROGRESS_FILE"
 A2A_DANSO_EXIT="${PIPESTATUS[0]}"
+# Final answer: the last non-empty assistant text, as -p used to print it.
+jq -R -s -r '[split("\n")[] | fromjson? | select(type == "object" and .type == "message" and .message.role == "assistant") | ([.message.content[]? | select(.type == "text") | .text] | join("")) | select(length > 0)] | last // empty' "$A2A_DANSO_TRANSCRIPT" 2>/dev/null || true
+printf 'danso_progress_frames=%s\n' "$(wc -l < "$A2A_DANSO_PROGRESS_FILE" | tr -d ' ')" | tee -a /work/artifacts/summary.txt
+rm -f "$A2A_DANSO_TRANSCRIPT"
 set -e
 
 printf 'danso_exit=%s\n' "$A2A_DANSO_EXIT" | tee -a /work/artifacts/summary.txt

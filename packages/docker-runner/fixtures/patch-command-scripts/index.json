@@ -48,13 +48,13 @@
     },
     {
       "name": "danso-default",
-      "bytes": 16715,
-      "sha256": "05ae4a2503ffa53fa7f360f20569b9b4f335382ca52fb3583e7112b8f797099f"
+      "bytes": 18640,
+      "sha256": "d39d538ba414ec6f7593048176b949d070ed5d3c87a0eb2cbb241d6deb4283cf"
     },
     {
       "name": "danso-overrides",
-      "bytes": 16715,
-      "sha256": "8389ea9cd122dc537fbed34faedef3c3de3603d7cfb818ae36aac403ef6a42c6"
+      "bytes": 18640,
+      "sha256": "94c2c4e10bb8f69fef6abaa613ff25975088c1dc5502faf8b4201477fb32c2fc"
     }
   ]
 }
