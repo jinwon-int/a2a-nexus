@@ -107,6 +107,14 @@ export interface OperatorReplayWindow {
 
 
 export type A2AHttpSignatureWorkerAuthMode = "off" | "optional" | "strict";
+/**
+ * Approver role binding mode for operator decision routes
+ * (`POST /tasks/:id/approve`, `POST /tasks/:id/reject-approval`).
+ * - off: the approver role is taken from the requester headers (default/backwards compatible)
+ * - enforce: the approver must present a valid A2A HTTP Signature whose key record
+ *   explicitly declares `roles` containing the asserted hub/operator role
+ */
+export type ApproverRoleBindingMode = "off" | "enforce";
 export type A2AHttpSignatureWorkerKeySource = "empty" | "inline" | "file";
 
 export interface A2AHttpSignatureVerifiedWorker {
@@ -209,6 +217,12 @@ export interface BrokerServerOptions extends BrokerRuntimeHotLimitOptions {
    * Env: `A2A_HTTP_SIGNATURE_WORKER_AUTH`.
    */
   a2aHttpSignatureWorkerAuth?: A2AHttpSignatureWorkerAuthMode;
+  /**
+   * Bind the approver role on task approval decisions to a signing credential.
+   * See {@link ApproverRoleBindingMode}. Env: `A2A_APPROVER_ROLE_BINDING`.
+   * Default `off`.
+   */
+  approverRoleBinding?: ApproverRoleBindingMode;
   /** In-memory key registry for worker HTTP Signature verification. */
   a2aHttpSignatureKeyRegistry?: A2AHttpSignatureKeyRegistry;
   /** JSON file containing public worker HTTP Signature keys. Env: `A2A_HTTP_SIGNATURE_KEY_REGISTRY_FILE`. */
@@ -518,6 +532,7 @@ export interface BrokerServerRuntime {
     a2aHttpSignatureWorkerAuth: A2AHttpSignatureWorkerAuthMode;
     a2aHttpSignatureWorkerKeyCount: number;
     a2aHttpSignatureWorkerKeySource: A2AHttpSignatureWorkerKeySource;
+    approverRoleBinding: ApproverRoleBindingMode;
     githubWebhookSecret?: string;
     retentionPolicy: BrokerRetentionPolicy;
     maxSnapshotBytes: number;

@@ -6,6 +6,18 @@
 // runtime cycle).
 import { resolveBooleanEnv } from "./broker-runtime-config.js";
 import type { A2AHttpSignatureWorkerAuthMode } from "./server.js";
+import type { ApproverRoleBindingMode } from "./server-contracts.js";
+
+export function resolveApproverRoleBindingMode(value: string | undefined): ApproverRoleBindingMode {
+  const normalized = (value ?? "off").trim().toLowerCase();
+  if (normalized === "" || normalized === "off") {
+    return "off";
+  }
+  if (normalized === "enforce") {
+    return "enforce";
+  }
+  throw new Error("A2A_APPROVER_ROLE_BINDING must be one of: off, enforce");
+}
 
 export function resolveA2AHttpSignatureWorkerAuthMode(value: string | undefined): A2AHttpSignatureWorkerAuthMode {
   const normalized = (value ?? "off").trim().toLowerCase();

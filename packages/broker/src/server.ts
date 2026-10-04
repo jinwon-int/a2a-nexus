@@ -38,6 +38,7 @@ export type {
 } from "./server-contracts.js";
 import {
   resolveA2AHttpSignatureWorkerAuthMode,
+  resolveApproverRoleBindingMode,
   validateBrokerStartupSecurity,
 } from "./startup-security.js";
 import { resolveSharedStateDeploymentGradeFromEnvV1 } from "./shared-state-deployment-grade-v1.js";
@@ -175,6 +176,7 @@ import {
   type A2AWorkerRouteScope,
   type RateLimitDecision,
   type RequesterIdentity,
+  type VerifiedApproverCredential,
 } from "./core/request-security.js";
 import {
   DEFAULT_BROKER_STATE_MAX_BYTES,
@@ -342,6 +344,9 @@ export function createBrokerServer(options: BrokerServerOptions = {}): BrokerSer
   const liveApprovalSigningKey = options.liveApprovalSigningKey ?? process.env.A2A_LIVE_APPROVAL_SIGNING_KEY ?? "";
   const a2aHttpSignatureWorkerAuth = resolveA2AHttpSignatureWorkerAuthMode(
     options.a2aHttpSignatureWorkerAuth ?? process.env.A2A_HTTP_SIGNATURE_WORKER_AUTH,
+  );
+  const approverRoleBinding = resolveApproverRoleBindingMode(
+    options.approverRoleBinding ?? process.env.A2A_APPROVER_ROLE_BINDING,
   );
   const a2aHttpSignatureKeyRegistryFile = resolveStringOption(
     options.a2aHttpSignatureKeyRegistryFile,
@@ -1230,6 +1235,34 @@ export function createBrokerServer(options: BrokerServerOptions = {}): BrokerSer
       return null;
     }
 
+    const { keyid, requesterId, record: verifiedRecord } = await verifySignedA2ARequest(req, url);
+    return {
+      keyid,
+      requesterId,
+      publicKeyPem: verifiedRecord ? workerPublicKeyPemForKeyid(keyid, verifiedRecord) : undefined,
+      scopes: verifiedRecord?.scopes,
+    };
+  };
+
+  // Approver role binding (A2A_APPROVER_ROLE_BINDING=enforce): verify the
+  // approver's signature with the same profile, registry, broker-id check and
+  // replay protection as worker routes, independent of the worker-auth mode.
+  const verifyApproverCredential = async (
+    req: IncomingMessage,
+    url: URL | undefined,
+  ): Promise<VerifiedApproverCredential | null> => {
+    if (!hasA2AHttpSignatureHeaders(req)) {
+      return null;
+    }
+    const requestUrl = url ?? new URL(req.url ?? "/", `http://${headerValue(req, "host") ?? "localhost"}`);
+    const { keyid, requesterId, record } = await verifySignedA2ARequest(req, requestUrl);
+    return { keyid, requesterId, roles: record?.roles };
+  };
+
+  async function verifySignedA2ARequest(
+    req: IncomingMessage,
+    url: URL,
+  ): Promise<{ keyid: string; requesterId: string; record: (typeof a2aHttpSignatureKeyRegistry)[string] | undefined }> {
     const rawBody = await readRawBody(req);
     assertA2AContentDigestMatches(req, rawBody);
     const result = verifyA2AHttpSignature({
@@ -1290,14 +1323,12 @@ export function createBrokerServer(options: BrokerServerOptions = {}): BrokerSer
         throw new BrokerError("unauthorized", "a2a_signature_replay: nonce has already been used for this key id");
       }
     }
-    const verifiedRecord = a2aHttpSignatureKeyRegistry[result.keyid];
     return {
       keyid: result.keyid,
       requesterId: result.requesterId,
-      publicKeyPem: verifiedRecord ? workerPublicKeyPemForKeyid(result.keyid, verifiedRecord) : undefined,
-      scopes: verifiedRecord?.scopes,
+      record: a2aHttpSignatureKeyRegistry[result.keyid],
     };
-  };
+  }
 
   // The registry is fixed for the server's lifetime, so convert each worker
   // JWK to PEM once instead of on every signed request (five routes verify,
@@ -1482,7 +1513,7 @@ export function createBrokerServer(options: BrokerServerOptions = {}): BrokerSer
     ...createDialecticRouteEntries({ broker, stateStore }),
     ...createTasksReadRouteEntries({ broker, stateStore }),
     ...createTasksWakeRouteEntries({ broker, stateStore }),
-    ...createTasksDecisionRouteEntries({ broker, stateStore }),
+    ...createTasksDecisionRouteEntries({ broker, stateStore, approverRoleBinding, verifyApproverCredential }),
     ...createTasksWorkerRouteEntries({
       broker,
       stateStore,
@@ -1813,6 +1844,7 @@ export function createBrokerServer(options: BrokerServerOptions = {}): BrokerSer
             a2aHttpSignatureWorkerAuth,
             a2aHttpSignatureWorkerKeyCount: Object.keys(a2aHttpSignatureKeyRegistry).length,
             a2aHttpSignatureWorkerKeySource,
+            approverRoleBinding,
             rateLimitWindowSec,
             rateLimitMaxRequests,
             workerRateLimitWindowSec,
@@ -2281,6 +2313,7 @@ export function createBrokerServer(options: BrokerServerOptions = {}): BrokerSer
       a2aHttpSignatureWorkerAuth,
       a2aHttpSignatureWorkerKeyCount: Object.keys(a2aHttpSignatureKeyRegistry).length,
       a2aHttpSignatureWorkerKeySource,
+      approverRoleBinding,
       retentionPolicy,
       maxSnapshotBytes,
       maxHotRuntimeNonTerminalTasks,

@@ -239,7 +239,13 @@ Task statuses follow the canonical lifecycle set (#2239). While in flight a
 task reports `queued`, `claimed` or `running`. A task is finished only when it
 reports a terminal status: `succeeded`, `failed` or `canceled`. `blocked` is
 not terminal — it means the task is parked awaiting operator approval; keep
-polling (or request the approval) instead of treating it as an outcome. If a
+polling (or request the approval) instead of treating it as an outcome. Agents
+must not approve their own tasks. When the broker runs with
+`A2A_APPROVER_ROLE_BINDING=enforce`, `POST /tasks/:id/approve` and
+`POST /tasks/:id/reject-approval` accept only an A2A HTTP Signature from a key
+whose registry record explicitly declares the asserted `hub`/`operator` role;
+header-only or unscoped-key approvals return `401`
+(`a2a_signature_approver_*`). If a
 poll keeps returning a status outside this set, treat it as an anomaly: do not
 assume completion, keep observing, and report the raw status.
 
