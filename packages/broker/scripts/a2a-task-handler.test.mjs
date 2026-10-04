@@ -1064,6 +1064,48 @@ test("A2A_PIRI_MODEL joins the env candidate preflight on non-piri profiles (#21
   assert.equal(result.error.details.modelSource, "env");
 });
 
+test("danso patch command profile is recognized from env and runner image (#2315)", () => {
+  assert.equal(__test.normalizedPatchCommandProfile({ A2A_DOCKER_RUNNER_PATCH_COMMAND_PROFILE: "danso" }), "danso");
+  assert.equal(__test.normalizedPatchCommandProfile({ A2A_DOCKER_RUNNER_PATCH_COMMAND_PROFILE: "Danso" }), "danso");
+  assert.equal(__test.normalizedPatchCommandProfile({ A2A_DOCKER_RUNNER_IMAGE: "a2a-docker-runner-danso:0.1.0-abc1234" }), "danso");
+  // An explicit profile still wins over the image family; piri images stay piri.
+  assert.equal(__test.normalizedPatchCommandProfile({
+    A2A_DOCKER_RUNNER_PATCH_COMMAND_PROFILE: "piri",
+    A2A_DOCKER_RUNNER_IMAGE: "a2a-docker-runner-danso:0.1.0",
+  }), "piri");
+  assert.equal(__test.normalizedPatchCommandProfile({ A2A_DOCKER_RUNNER_IMAGE: "a2a-docker-runner-piri:v0.84.2-piri.1-cf2c218" }), "piri");
+});
+
+test("danso patch lane leads worker-model resolution with A2A_DANSO_MODEL (#2315)", () => {
+  const dansoEnv = {
+    A2A_DOCKER_RUNNER_PATCH_COMMAND_PROFILE: "danso",
+    A2A_DANSO_MODEL: "glm-5.3-flash",
+    A2A_PIRI_MODEL: "kimi-coding/k3",
+    A2A_CODEX_MODEL: "openai-codex/gpt-5.6-sol",
+    A2A_CLAUDE_MODEL: "claude-sonnet-5",
+  };
+  assert.deepEqual(__test.workerModelEnvCandidates(dansoEnv), [
+    "glm-5.3-flash",
+    "openai-codex/gpt-5.6-sol",
+    "claude-sonnet-5",
+    "kimi-coding/k3",
+  ]);
+  const resolved = __test.resolveWorkerModel(task({}), dansoEnv);
+  assert.equal(resolved.model, "zai/glm-5.3-flash");
+  const runnerTask = __test.buildRunnerTask(patchTask({}), dansoEnv);
+  assert.equal(runnerTask.workerModel, "zai/glm-5.3-flash");
+  assert.equal(validateWorkerModelEnvCandidatesForPatchProfile(patchTask({}), dansoEnv), null);
+
+  // Other profiles ignore A2A_DANSO_MODEL exactly as before.
+  const { A2A_DOCKER_RUNNER_PATCH_COMMAND_PROFILE: _ignored, ...withoutProfile } = dansoEnv;
+  assert.deepEqual(__test.workerModelEnvCandidates({ ...withoutProfile, A2A_DOCKER_RUNNER_PATCH_COMMAND_PROFILE: "piri" }).slice(0, 3), [
+    "kimi-coding/k3",
+    "openai-codex/gpt-5.6-sol",
+    "claude-sonnet-5",
+  ]);
+  assert.equal(__test.workerModelEnvCandidates(withoutProfile).includes("glm-5.3-flash"), false);
+});
+
 test("github-propose-patch + allowNoChanges=true sets runnerTask.allowNoChanges", () => {
   const runnerTask = __test.buildRunnerTask(patchTask({
     payload: { allowNoChanges: true },
