@@ -198,6 +198,15 @@ const at = (flag) => { const i = argv.indexOf(flag); return i >= 0 ? argv[i + 1]
 const toolHome = at("--tool-home");
 const guard = (bin, args) => spawnSync(toolHome + "/.cargo/bin/" + bin, args, { encoding: "utf8" });
 const promptFile = at("--prompt-file");
+// Mirror real danso (src/context.rs): the system context must be an
+// owner-only bounded regular file, otherwise exit 2 before any provider call.
+const ctxPath = at("--system-context-file");
+const ctx = ctxPath ? statSync(ctxPath) : undefined;
+if (!ctx || !ctx.isFile() || (ctx.mode & 0o777) !== 0o600 || ctx.nlink !== 1 || ctx.size > 32768
+    || (typeof process.geteuid === "function" && ctx.uid !== process.geteuid())) {
+  process.stderr.write("system context requires an owner-only bounded regular file\\n");
+  process.exit(2);
+}
 writeFileSync(process.env.FAKE_DANSO_RECORD, JSON.stringify({
   argv,
   argvMaxBytes: Math.max(...argv.map((a) => Buffer.byteLength(a))),
@@ -205,6 +214,7 @@ writeFileSync(process.env.FAKE_DANSO_RECORD, JSON.stringify({
   promptFile,
   promptFileBytes: promptFile ? statSync(promptFile).size : -1,
   systemContext: readFileSync(at("--system-context-file"), "utf8"),
+  systemContextMode: (statSync(at("--system-context-file")).mode & 0o777).toString(8),
   credentialMatches: process.env.ZAI_API_KEY === process.env.FAKE_EXPECTED_KEY,
   glmEndpoint: process.env.DANSO_GLM_ENDPOINT ?? null,
   unrelatedLeaked: process.env.UNRELATED_SECRET !== undefined,
@@ -213,9 +223,26 @@ writeFileSync(process.env.FAKE_DANSO_RECORD, JSON.stringify({
   gitBranchGuard: guard("git", ["branch", "evil"]).status,
   ghPrCreateGuard: guard("gh", ["pr", "create"]).status,
 }));
-process.stdout.write('{"type":"danso_text_delta","version":1,"text":"looking"}\\n');
-process.stdout.write('{"type":"danso_message_completed","version":1}\\n');
-process.stdout.write('{"status":"done","summary":"ok","findings":[],"risks":[],"recommendations":[],"evidenceRefs":[]}\\n');
+// Mirror real danso output modes (src/output.rs, src/cli.rs): -p conflicts
+// with --progress-jsonl; -p prints only the final text; --progress-jsonl
+// prints the JSONL transcript plus body-free frames with SORTED keys.
+const print = argv.includes("-p") || argv.includes("--print");
+const progressJsonl = argv.includes("--progress-jsonl");
+if (print && progressJsonl) { process.stderr.write("error: -p conflicts with --progress-jsonl\\n"); process.exit(2); }
+const finalText = '{"status":"done","summary":"ok","findings":[],"risks":[],"recommendations":[],"evidenceRefs":[]}';
+const msg = (text) => JSON.stringify({ message: { content: [{ text, type: "text" }], role: "assistant" }, type: "message" });
+if (progressJsonl) {
+  process.stdout.write(JSON.stringify({ message: { content: [{ text: "SECRET-PROMPT-BODY", type: "text" }], role: "user" }, type: "message" }) + "\\n");
+  if (argv.includes("--stream-requests")) process.stdout.write('{"elapsed_ms":5,"remaining":127,"sequence":1,"type":"danso_request","version":1}\\n');
+  process.stdout.write('{"phase":"started","sequence":1,"tool":"bash","type":"danso_progress","version":1}\\n');
+  process.stdout.write(JSON.stringify({ message: { content: [{ text: "TOOL-OUTPUT-BODY", type: "toolResult" }], role: "toolResult" }, type: "message" }) + "\\n");
+  process.stdout.write('{"phase":"settled","sequence":1,"success":true,"tool":"bash","type":"danso_progress","version":1}\\n');
+  process.stdout.write("not json at all\\n");
+  process.stdout.write(msg("") + "\\n");
+  process.stdout.write(msg(finalText) + "\\n");
+} else {
+  process.stdout.write(finalText + "\\n");
+}
 process.exit(Number(process.env.FAKE_DANSO_EXIT || "0"));
 `;
 
@@ -227,6 +254,7 @@ interface HarnessResult {
   record?: Record<string, unknown>;
   progress: string;
   patchLog: string;
+  transcriptLeft: boolean;
   root: string;
 }
 
@@ -274,7 +302,10 @@ function runDansoScript(options: {
     writeFileSync(scriptPath, script, { mode: 0o700 });
 
     const recordPath = join(root, "record.json");
-    const result = spawnSync("bash", [scriptPath], {
+    // Run under the container's default umask (022), not the caller's: an
+    // operator shell with umask 077 would hide a world-readable system context
+    // that real danso refuses (a2a-nexus#2315 first real-binary canary).
+    const result = spawnSync("bash", ["-c", 'umask 022; exec bash "$0"', scriptPath], {
       cwd: repo,
       encoding: "utf8",
       env: {
@@ -296,6 +327,7 @@ function runDansoScript(options: {
       record: existsSync(recordPath) ? JSON.parse(readFileSync(recordPath, "utf8")) : undefined,
       progress: existsSync(progressPath) ? readFileSync(progressPath, "utf8") : "",
       patchLog: existsSync(patchLogPath) ? readFileSync(patchLogPath, "utf8") : "",
+      transcriptLeft: existsSync(join(work, ".a2a-danso-transcript.jsonl")),
       root,
     };
   } finally {
@@ -312,6 +344,8 @@ test("a >128 KiB prompt reaches danso as a file, never as an argv element", () =
   assert.equal(run.status, 0, run.stderr);
   assert.ok(run.record, "fake danso was invoked");
   const record = run.record as Record<string, unknown>;
+  // danso refuses a system context that is not exactly 0600 (src/context.rs).
+  assert.equal(record.systemContextMode, "600");
   assert.equal(record.promptFileBytes, Buffer.byteLength(prompt));
   assert.match(String(record.promptFile), /\/work\/artifacts\/prompt\.md$/);
   assert.ok((record.argvMaxBytes as number) < 1024, `largest argv element ${record.argvMaxBytes}B`);
@@ -404,11 +438,23 @@ test("danso exit codes map onto failure categories and propagate", () => {
   }
 });
 
-test("progress file keeps only body-free danso_message_completed frames; final answer stays on stdout", () => {
+test("progress file gets body-free tool/request frames from --progress-jsonl; final answer stays on stdout; transcript is not kept", () => {
   const run = runDansoScript({ prompt: "fix it\n" });
   assert.equal(run.status, 0, run.stderr);
-  assert.equal(run.progress, '{"type":"danso_message_completed","version":1}\n');
+  const argv = (run.record as Record<string, unknown>).argv as string[];
+  assert.ok(argv.includes("--progress-jsonl") && argv.includes("--stream-requests"));
+  assert.ok(!argv.includes("-p"), "-p conflicts with --progress-jsonl in real danso");
+  const frames = run.progress.trim().split("\n").map((line) => JSON.parse(line) as Record<string, unknown>);
+  assert.deepEqual(frames.map((frame) => `${frame.type}:${frame.phase ?? ""}`), [
+    "danso_request:",
+    "danso_progress:started",
+    "danso_progress:settled",
+  ]);
+  assert.doesNotMatch(run.progress, /SECRET-PROMPT-BODY|TOOL-OUTPUT-BODY|"message"/);
   assert.match(run.stdout, /\{"status":"done","summary":"ok"/);
+  assert.doesNotMatch(run.stdout, /SECRET-PROMPT-BODY|TOOL-OUTPUT-BODY/);
+  assert.match(run.summary, /danso_progress_frames=3/);
+  assert.equal(run.transcriptLeft, false, "transcript scratch file removed");
 });
 
 test("model ids normalize to bare GLM ids; non-GLM models and bad efforts fail closed", () => {
