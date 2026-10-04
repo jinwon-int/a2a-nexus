@@ -1,6 +1,6 @@
 # Five-minute local quickstart
 
-This guide is the external-reader path for a disposable local A2A Nexus broker plus a dummy/echo worker. A2A Nexus is the independent broker/worker project; OpenClaw is used here as the first/reference integration only. Do not point this path at production brokers, production databases, live provider transports, Telegram accounts, or terminal outboxes.
+This guide is the external-reader path for a disposable local A2A Nexus broker plus a dummy/echo worker. A2A Nexus is the independent broker/worker project; no agent harness is required for this path, and none is privileged. Do not point this path at production brokers, production databases, live provider transports, Telegram accounts, or terminal outboxes.
 
 ## Prerequisites
 
@@ -26,13 +26,13 @@ npm run smoke:quickstart
 
 This builds all workspace packages and validates quickstart conformance and release-gate tests.
 
-If you are integrating a non-OpenClaw harness, use the external harness path after this local smoke:
+If you are integrating an agent harness (Claude Code, Codex, Hermes, piri, OpenClaw, or your own), use the external harness path after this local smoke:
 
 ~~~bash
 npm run check:external-harness-conformance
 ~~~
 
-The public-safe guide is external-harness-quickstart.md; it keeps OpenClaw as a reference integration only and validates the no-live fixture in fixtures/external-harness/no-live-conformance.json.
+The public-safe guide is [external-harness-quickstart.md](external-harness-quickstart.md); every harness meets the broker through the same adapter contract, and the check validates the no-live fixture in `fixtures/external-harness/no-live-conformance.json`.
 
 ## 1. Run the local A2A Nexus broker
 
@@ -168,7 +168,7 @@ This script stops Docker stacks, kills local broker processes, cleans state file
 - [Release and package readiness](release-readiness.md) — checklist before any release, tag, npm, Docker, or GHCR decision
 - [Demo overview](demo/README.md) — component map, demo paths, health checks, security rules
 - [Two-broker demo](demo/two-broker-demo.md) — cross-broker task handoff with Docker Compose
-- [External harness quickstart](external-harness-quickstart.md) — non-OpenClaw harness integration
+- [External harness quickstart](external-harness-quickstart.md) — agent harness integration (any harness)
 - [Promotion capstone](promotion-capstone.md) — CI-backed 5-minute and 20-minute no-live promotion-ready paths
 - [Canonical demo description](canonical-demo.md) — sequence diagram and evidence rules
 - [Ecosystem guide](ecosystem-guide.md) — full repository map and Korean/English terms
@@ -189,6 +189,6 @@ Before sharing evidence, confirm:
 - repository is public as of 2026-05-27; evidence is still redacted and no new visibility, transfer, publication, or promotion action occurred
 - no production deploy, Gateway/broker/worker restart, database mutation, provider send, Telegram send, terminal-outbox ACK, secret rotation, history rewrite, or force push occurred
 - evidence is redacted and does not include raw session dumps, private paths, hostnames, tokens, provider IDs, Telegram IDs, or OpenClaw runtime/bootstrap files
-- docs and issue/PR evidence introduce the project as A2A Nexus, with OpenClaw described only as the first/reference integration
+- docs and issue/PR evidence introduce the project as A2A Nexus, with no harness (OpenClaw included) presented as required or privileged
 - provider message id / send success is accepted-send evidence only — it is not requester-visible receipt, operator-visible receipt, human-seen proof, or terminal ACK
 - task submissions are replay-safe: a duplicate task id must produce the same terminal result without re-execution; workers must treat replayed task ids as idempotent
