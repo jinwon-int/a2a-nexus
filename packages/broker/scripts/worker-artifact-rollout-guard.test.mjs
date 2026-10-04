@@ -74,6 +74,9 @@ export function probeObservationInputs() { return undefined; }
 export function probeObservationQuestions() { return []; }
 export function probeObservationState() { return ''; }
 `;
+const analysisSourceBundleSource = `
+export function normalizePromptViewTelemetry() { return undefined; }
+`;
 
 function makeWorkerRoot({ bridgeHandlersContent = 'bridge-ok\n', handlersExecutable = true } = {}) {
   const root = mkdtempSync(join(tmpdir(), 'worker-artifact-'));
@@ -107,6 +110,8 @@ function makeWorkerRoot({ bridgeHandlersContent = 'bridge-ok\n', handlersExecuta
     compatJevReviewShadow: join(handlers, 'lib', 'jev-review-shadow.mjs'),
     sourceJevProbeObservation: join(scripts, 'lib', 'jev-probe-observation.mjs'),
     compatJevProbeObservation: join(handlers, 'lib', 'jev-probe-observation.mjs'),
+    sourceAnalysisSourceBundle: join(scripts, 'lib', 'analysis-source-bundle.mjs'),
+    compatAnalysisSourceBundle: join(handlers, 'lib', 'analysis-source-bundle.mjs'),
     sourceBridge: join(scripts, 'hermes-a2a-analysis-bridge.mjs'),
     compatBridge: join(handlers, 'hermes-a2a-analysis-bridge.mjs'),
     sourceOnlyBridge: join(scripts, 'source-only-local-analysis-bridge.mjs'),
@@ -134,6 +139,8 @@ function makeWorkerRoot({ bridgeHandlersContent = 'bridge-ok\n', handlersExecuta
   writeFileSync(files.compatJevReviewShadow, jevReviewShadowSource);
   writeFileSync(files.sourceJevProbeObservation, jevProbeObservationSource);
   writeFileSync(files.compatJevProbeObservation, jevProbeObservationSource);
+  writeFileSync(files.sourceAnalysisSourceBundle, analysisSourceBundleSource);
+  writeFileSync(files.compatAnalysisSourceBundle, analysisSourceBundleSource);
   writeFileSync(files.sourceBridge, 'bridge-ok\n');
   writeFileSync(files.compatBridge, bridgeHandlersContent);
   writeFileSync(files.sourceOnlyBridge, 'source-only-bridge-ok\n');
@@ -266,6 +273,17 @@ test('deployed guard fails closed when jev classifier support module is missing 
   assert.equal(output.results.some((r) => r.guard === 'handler-support-compat-path' && r.ok === false), true);
 });
 
+test('deployed guard fails closed when analysis source bundle support module is missing from handlers compat path (#2311)', () => {
+  const { root, files } = makeWorkerRoot();
+  rmSync(files.compatAnalysisSourceBundle);
+  const result = runGuard(root);
+  assert.notEqual(result.status, 0);
+  const output = JSON.parse(result.stdout);
+  assert.equal(output.ok, false);
+  assert.match(JSON.stringify(output.results), /lib\/analysis-source-bundle\.mjs/);
+  assert.equal(output.results.some((r) => r.guard === 'handler-support-compat-path' && r.ok === false), true);
+});
+
 test('deployed guard accepts a configured standard source-only analysis bridge', () => {
   const { root, files } = makeWorkerRoot();
   const result = runGuard(root, { A2A_HERMES_ANALYSIS_BIN: files.sourceOnlyBridge });
@@ -360,4 +378,124 @@ test('module resolution smoke passes and reports the imported build info when th
   assert.equal(smoke?.detail?.checked, true);
   assert.equal(smoke?.detail?.importedFrom, 'handlers (runtime copy)');
   assert.equal(smoke?.detail?.importedBuildInfo?.version, '0.2.12');
+});
+
+// ---------------------------------------------------------------------------
+// #2311 — workspace dependency export check
+//
+// 워커 배포가 dist/만 갱신하고 node_modules/a2a-attestation은 08-25 설치본으로
+// 남겨 두었다. dist가 redactSecrets를 import하면서 dist/worker.js가 ESM 링크
+// 단계에서 죽었는데, 가드는 11/11 통과했다. dist가 a2a-* 워크스페이스 패키지에서
+// named import하는 이름이 배포 node_modules 사본에 실제로 있는지 검증한다.
+
+// Multi-line, aliased, type-only and default/namespace shapes the scanner must handle.
+const distWorkerSource = [
+  'import { readFileSync } from "node:fs";',
+  'import {',
+  '  attestRun,',
+  '  redactSecrets as redactGithubEgress,',
+  '  type AttestationBundle,',
+  '} from "a2a-attestation";',
+  'import type { OnlyTypes } from "a2a-attestation";',
+  'import * as referee from "a2a-policy-referee";',
+  'export { scoreItem } from "a2a-nclex-evaluation";',
+  'void readFileSync; void attestRun; void redactGithubEgress; void referee;',
+  '',
+].join('\n');
+
+function writeWorkspacePackage(root, packageName, indexSource, { pkg } = {}) {
+  const dir = join(root, 'node_modules', packageName);
+  mkdirSync(join(dir, 'dist'), { recursive: true });
+  writeFileSync(join(dir, 'package.json'), JSON.stringify(pkg ?? {
+    name: packageName,
+    version: '0.1.0',
+    type: 'module',
+    exports: { '.': { types: './dist/index.d.ts', default: './dist/index.js' } },
+  }));
+  writeFileSync(join(dir, 'dist', 'index.js'), indexSource);
+  return dir;
+}
+
+function makeWorkerRootWithDist({ attestationIndex }) {
+  const fixture = makeWorkerRoot();
+  mkdirSync(join(fixture.root, 'dist', 'workers'), { recursive: true });
+  writeFileSync(join(fixture.root, 'dist', 'worker.js'), distWorkerSource);
+  // *.test.js never links at runtime and must not be scanned.
+  writeFileSync(join(fixture.root, 'dist', 'workers', 'worker.test.js'), 'import { testOnlyName } from "a2a-attestation";\n');
+  writeWorkspacePackage(fixture.root, 'a2a-attestation', attestationIndex);
+  writeWorkspacePackage(fixture.root, 'a2a-policy-referee', 'export const evaluatePolicy = () => true;\n');
+  writeWorkspacePackage(fixture.root, 'a2a-nclex-evaluation', 'export function scoreItem() { return 1; }\n', {
+    pkg: { name: 'a2a-nclex-evaluation', version: '0.2.0', type: 'module', main: 'dist/index.js' },
+  });
+  return fixture;
+}
+
+test('workspace dependency export check is skipped for deployed fixture trees without dist/ (#2311)', () => {
+  const { root } = makeWorkerRoot();
+  const result = runGuard(root);
+  assert.equal(result.status, 0, result.stderr || result.stdout);
+  const output = JSON.parse(result.stdout);
+  const check = output.results.find((r) => r.guard === 'workspace-dependency-exports');
+  assert.equal(check?.ok, true);
+  assert.equal(check?.detail?.checked, false);
+});
+
+test('workspace dependency export check fails naming the export a stale node_modules package lacks (#2311)', () => {
+  const { root } = makeWorkerRootWithDist({
+    // 08-25 설치본 재현: attestRun은 있지만 redactSecrets는 없다.
+    attestationIndex: 'export function attestRun() { return {}; }\n',
+  });
+  const result = runGuard(root);
+  assert.notEqual(result.status, 0);
+  const output = JSON.parse(result.stdout);
+  assert.equal(output.ok, false);
+  const check = output.results.find((r) => r.guard === 'workspace-dependency-exports');
+  assert.equal(check?.ok, false);
+  assert.match(String(check?.error ?? ''), /a2a-attestation: missing redactSecrets/);
+  const attestation = check.detail.packages.find((p) => p.package === 'a2a-attestation');
+  assert.deepEqual(attestation.missingExports, ['redactSecrets']);
+  assert.deepEqual(attestation.importers.redactSecrets, ['worker.js']);
+  // type-only and test-file imports are not runtime requirements.
+  assert.doesNotMatch(JSON.stringify(check), /AttestationBundle|OnlyTypes|testOnlyName/);
+  // other workspace packages still pass individually.
+  assert.equal(check.detail.packages.find((p) => p.package === 'a2a-nclex-evaluation')?.ok, true);
+  assert.equal(check.detail.packages.find((p) => p.package === 'a2a-policy-referee')?.ok, true);
+});
+
+test('workspace dependency export check passes when deployed packages match dist imports (#2311)', () => {
+  const { root } = makeWorkerRootWithDist({
+    attestationIndex: 'export function attestRun() { return {}; }\nexport function redactSecrets(text) { return text; }\n',
+  });
+  const result = runGuard(root);
+  assert.equal(result.status, 0, result.stderr || result.stdout);
+  const output = JSON.parse(result.stdout);
+  const check = output.results.find((r) => r.guard === 'workspace-dependency-exports');
+  assert.equal(check?.ok, true);
+  assert.equal(check?.detail?.checked, true);
+  assert.deepEqual(check.detail.packages.map((p) => [p.package, p.ok, p.requiredNames]), [
+    ['a2a-attestation', true, 2],
+    ['a2a-nclex-evaluation', true, 1],
+    ['a2a-policy-referee', true, 0],
+  ]);
+});
+
+test('workspace dependency export check fails closed when an imported workspace package is not installed (#2311)', () => {
+  const { root } = makeWorkerRootWithDist({
+    attestationIndex: 'export function attestRun() { return {}; }\nexport function redactSecrets(text) { return text; }\n',
+  });
+  rmSync(join(root, 'node_modules', 'a2a-policy-referee'), { recursive: true });
+  const result = runGuard(root);
+  assert.notEqual(result.status, 0);
+  const output = JSON.parse(result.stdout);
+  const check = output.results.find((r) => r.guard === 'workspace-dependency-exports');
+  assert.equal(check?.ok, false);
+  assert.match(String(check?.error ?? ''), /a2a-policy-referee: package not installed/);
+});
+
+test('workspace dependency export check never echoes env secret values (#2311)', () => {
+  const secret = 'fixture-SECRETVALUE-must-never-appear';
+  const { root } = makeWorkerRootWithDist({ attestationIndex: 'export function attestRun() { return {}; }\n' });
+  const result = runGuard(root, { GITHUB_TOKEN: secret, A2A_BROKER_TOKEN: secret });
+  assert.notEqual(result.status, 0);
+  assert.doesNotMatch(result.stdout + result.stderr, /SECRETVALUE/);
 });

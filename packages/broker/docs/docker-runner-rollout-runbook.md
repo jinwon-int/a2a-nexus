@@ -446,6 +446,44 @@ install -D -m 0644 \
   /opt/openclaw-a2a-worker/handlers/a2a-task-handler.mjs
 ```
 
+### 5.1.2 Workspace Package Sync Gate (#2311)
+
+worker artifact 배포가 `dist/`·`scripts/`·`handlers/` 만 갱신하고
+`node_modules/` 는 그대로 두면, 워크스페이스 패키지
+(`a2a-attestation`, `a2a-nclex-evaluation`, `a2a-policy-referee`) 의
+오래된 사본이 남는다. 새 `dist/` 가 그 사본에 없는 이름을 import 하면
+worker 는 restart 직후 ESM 링크 단계에서
+`does not provide an export named …` 로 종료된다.
+
+restart 전에 각 패키지를 **배포하는 `dist/` 와 같은 커밋**에서 빌드해
+worker root 의 `node_modules/` 로 동기화한다:
+
+```bash
+# repo checkout (배포 dist 와 같은 sha) 에서
+for pkg in attestation nclex-evaluation policy-referee; do
+  npm run build -w "packages/$pkg"
+done
+
+# worker root 로 동기화 — dist/, src/, scripts/, package.json
+# (그 외 패키지 package.json "files" 에 있는 항목도 함께)
+for pkg in attestation nclex-evaluation policy-referee; do
+  dst="/opt/openclaw-a2a-worker/node_modules/a2a-$pkg"
+  mkdir -p "$dst"
+  for item in dist src scripts package.json; do
+    [ -e "packages/$pkg/$item" ] || continue
+    rm -rf "$dst/$item"
+    cp -a "packages/$pkg/$item" "$dst/$item"
+  done
+done
+```
+
+`worker-artifact-rollout-guard.mjs --deployed` 의
+`workspace-dependency-exports` guard 가 이 상태를 검사한다. worker root 의
+`dist/**/*.js` 가 `a2a-*` 패키지에서 named import 하는 이름이
+`node_modules/<pkg>` 진입점(`package.json` `exports["."]` / `main`)에 모두
+있는지 확인하고, 없으면 패키지별 누락 export 이름과 import 하는 dist 파일을
+보고하며 실패한다. 패키지 디렉터리가 없어도 실패한다.
+
 ### 5.2 Enable Docker Runner (plugin-only scope)
 
 각 노드의 `/etc/default/openclaw-a2a-worker` 에 추가:
