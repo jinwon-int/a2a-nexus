@@ -1103,7 +1103,8 @@ export function buildRunArgs(config: RunnerConfig, task: RunnerTask, workDir: st
   if (config.githubTokenFile && config.trustedOperator) {
     // Only the mount is needed here: `githubAuthScript()` (script-generators.ts)
     // reads this mounted file INSIDE the container, copies it to
-    // /work/.config/gh/hosts.yml, and exports the real GH_CONFIG_DIR (a
+    // /tmp/a2a-gh/hosts.yml (never the host-bound /work, #2256 A3), and
+    // exports the real GH_CONFIG_DIR (a
     // directory, not this file path) plus GH_TOKEN. `GH_CONFIG_HOSTS` is not
     // a real `gh` CLI environment variable (the documented one is
     // `GH_CONFIG_DIR`, which must point at a directory containing a file

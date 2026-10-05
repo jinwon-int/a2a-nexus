@@ -249,10 +249,14 @@ case "$1" in
 esac
 ASKPASS
     chmod 700 /work/.a2a-bin/git-askpass
-    mkdir -p /work/.config/gh
-    cp /run/secrets/gh-hosts.yml /work/.config/gh/hosts.yml
-    chmod 600 /work/.config/gh/hosts.yml
-    export GH_CONFIG_DIR=/work/.config/gh
+    # Keep the gh config copy inside the container (/tmp is a tmpfs under
+    # read-only rootfs, otherwise the container's own --rm layer). /work is a
+    # host rw bind, so a copy there outlived the task on the worker host
+    # (a2a-nexus#2256 A3).
+    mkdir -p -m 700 /tmp/a2a-gh
+    cp /run/secrets/gh-hosts.yml /tmp/a2a-gh/hosts.yml
+    chmod 600 /tmp/a2a-gh/hosts.yml
+    export GH_CONFIG_DIR=/tmp/a2a-gh
     export GH_TOKEN="$token"
     export GIT_ASKPASS=/work/.a2a-bin/git-askpass
     export GIT_TERMINAL_PROMPT=0
