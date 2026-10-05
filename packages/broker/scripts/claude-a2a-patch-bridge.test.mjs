@@ -7,7 +7,9 @@ import { test } from "node:test";
 
 import {
   buildFanoutSubagentPrompt,
+  CLAUDE_ARGV_PROMPT_MAX_BYTES,
   captureMaxTurnCheckpoint,
+  claudePromptTransport,
   describeHunkHeaderMismatches,
   diagnoseHunkHeaderCounts,
   isSafeCheckpointRepoPath,
@@ -2579,4 +2581,166 @@ test("non-runner context keeps the Termux evidence contract unchanged", () => {
   } finally {
     rmSync(tempDir, { recursive: true, force: true });
   }
+});
+
+// ---------------------------------------------------------------------------
+// #2314: prompts too large for one argv string (MAX_ARG_STRLEN = 131072 bytes)
+// ---------------------------------------------------------------------------
+
+const MAX_ARG_STRLEN = 128 * 1024;
+
+function bridgeArgsWithMessageFile(messageFile) {
+  return bridgeArgs("__placeholder__").flatMap((arg, i, all) => {
+    if (arg === "--message") return ["--message-file"];
+    if (all[i - 1] === "--message") return [messageFile];
+    return [arg];
+  });
+}
+
+// Fake claude that takes its prompt from argv (`-p <prompt>`) or, when `-p` is
+// followed by another flag, from stdin — the real CLI's two input modes.
+function promptRecordingClaude(resultLines) {
+  return [
+    "import { readFileSync, writeFileSync } from 'node:fs';",
+    "const args = process.argv.slice(2);",
+    "const next = args[args.indexOf('-p') + 1];",
+    "const fromArgv = next !== undefined && !next.startsWith('--');",
+    "const prompt = fromArgv ? next : readFileSync(0, 'utf8');",
+    "writeFileSync(process.env.CAPTURE_RECORD_PATH, JSON.stringify({",
+    "  transport: fromArgv ? 'argv' : 'stdin',",
+    "  promptBytes: Buffer.byteLength(prompt),",
+    "  promptHasPadding: prompt.includes('PADDING-2314'),",
+    "  promptHead: prompt.slice(0, 200),",
+    "  argvMaxBytes: Math.max(...args.map((a) => Buffer.byteLength(a))),",
+    "  argvTotalBytes: args.reduce((n, a) => n + Buffer.byteLength(a) + 1, 0),",
+    "  hasPatchPreamble: prompt.includes('GitHub PATCH bridge'),",
+    "}));",
+    ...resultLines,
+  ];
+}
+
+test("claudePromptTransport keeps argv for normal prompts and switches to stdin above the margin", () => {
+  assert.ok(CLAUDE_ARGV_PROMPT_MAX_BYTES < MAX_ARG_STRLEN - 16 * 1024, "margin leaves room for wrapper text");
+  const small = claudePromptTransport("hello");
+  assert.deepEqual(small.promptArgs, ["-p", "hello"]);
+  assert.equal(small.input, undefined);
+  assert.equal(small.transport, "argv");
+
+  const atLimit = "a".repeat(CLAUDE_ARGV_PROMPT_MAX_BYTES);
+  assert.equal(claudePromptTransport(atLimit).transport, "argv");
+
+  // Multi-byte text is measured in UTF-8 bytes, not UTF-16 code units.
+  const multiByte = "가".repeat(Math.ceil(CLAUDE_ARGV_PROMPT_MAX_BYTES / 3) + 1);
+  assert.ok(multiByte.length < CLAUDE_ARGV_PROMPT_MAX_BYTES);
+  const viaStdin = claudePromptTransport(multiByte);
+  assert.deepEqual(viaStdin.promptArgs, ["-p"]);
+  assert.equal(viaStdin.input, multiByte);
+  assert.equal(viaStdin.transport, "stdin");
+});
+
+test("--message-file: a >128 KiB PATCH assignment reaches claude on stdin, never in argv", () => {
+  const tempDir = mkdtempSync(join(tmpdir(), "claude-patch-2314-patch-"));
+  const fakeClaudePath = join(tempDir, "fake-claude.mjs");
+  const recordPath = join(tempDir, "record.json");
+  const messageFile = join(tempDir, "assignment.md");
+  try {
+    writeFileSync(messageFile, `${patchMessage()}\n\nPADDING-2314 ${"x".repeat(200 * 1024)}`);
+    writeStubClaude(fakeClaudePath, promptRecordingClaude([
+      "const result = { status: 'pr_opened', summary: 'ok', prUrl: 'https://github.com/jinwon-int/example/pull/7', tests: [], filesChanged: ['a'], risks: [] };",
+      "console.log(JSON.stringify({ type: 'result', subtype: 'success', num_turns: 2, result: JSON.stringify(result) }));",
+    ]));
+    const result = spawnSync(bridgePath, bridgeArgsWithMessageFile(messageFile), {
+      encoding: "utf8",
+      env: { ...process.env, A2A_CLAUDE_MODEL: "", A2A_CLAUDE_EFFORT: "", A2A_CLAUDE_CODE_BIN: fakeClaudePath, CAPTURE_RECORD_PATH: recordPath },
+    });
+
+    assert.equal(result.status, 0, result.stderr);
+    const payload = JSON.parse(JSON.parse(result.stdout).payloads[0]?.text);
+    assert.equal(payload.status, "pr_opened");
+    const record = JSON.parse(readFileSync(recordPath, "utf8"));
+    assert.equal(record.transport, "stdin");
+    assert.ok(record.promptHasPadding, "the full assignment reached claude");
+    assert.ok(record.hasPatchPreamble, "patch hardening preamble still wraps the assignment");
+    assert.ok(record.promptBytes > MAX_ARG_STRLEN);
+    assert.ok(record.argvMaxBytes < 8 * 1024, `largest argv element ${record.argvMaxBytes}B`);
+    assert.ok(record.argvTotalBytes < MAX_ARG_STRLEN);
+  } finally {
+    rmSync(tempDir, { recursive: true, force: true });
+  }
+});
+
+test("--message-file: a >128 KiB ANALYSIS assignment reaches claude on stdin; small files keep argv", () => {
+  const tempDir = mkdtempSync(join(tmpdir(), "claude-patch-2314-analysis-"));
+  const fakeClaudePath = join(tempDir, "fake-claude.mjs");
+  const recordPath = join(tempDir, "record.json");
+  const messageFile = join(tempDir, "assignment.md");
+  try {
+    writeStubClaude(fakeClaudePath, promptRecordingClaude([
+      "const analysis = { status: 'done', summary: 'ok', findings: [], risks: [], recommendations: [], evidenceRefs: ['embedded:2314'] };",
+      "console.log(JSON.stringify({ type: 'result', subtype: 'success', result: JSON.stringify(analysis) }));",
+    ]));
+    const env = { ...process.env, A2A_CLAUDE_MODEL: "", A2A_CLAUDE_EFFORT: "", A2A_CLAUDE_CODE_BIN: fakeClaudePath, CAPTURE_RECORD_PATH: recordPath };
+
+    writeFileSync(messageFile, `${analysisMessage()}\nPADDING-2314 ${"y".repeat(200 * 1024)}`);
+    const large = spawnSync(bridgePath, bridgeArgsWithMessageFile(messageFile), { encoding: "utf8", env });
+    assert.equal(large.status, 0, large.stderr);
+    assert.equal(JSON.parse(JSON.parse(large.stdout).payloads[0]?.text).status, "done");
+    const largeRecord = JSON.parse(readFileSync(recordPath, "utf8"));
+    assert.equal(largeRecord.transport, "stdin");
+    assert.ok(largeRecord.promptHasPadding);
+    assert.ok(largeRecord.argvMaxBytes < 8 * 1024, `largest argv element ${largeRecord.argvMaxBytes}B`);
+
+    writeFileSync(messageFile, analysisMessage());
+    const small = spawnSync(bridgePath, bridgeArgsWithMessageFile(messageFile), { encoding: "utf8", env });
+    assert.equal(small.status, 0, small.stderr);
+    const smallRecord = JSON.parse(readFileSync(recordPath, "utf8"));
+    assert.equal(smallRecord.transport, "argv");
+    assert.match(smallRecord.promptHead, /Claude Code CLI-backed A2A analysis bridge/);
+  } finally {
+    rmSync(tempDir, { recursive: true, force: true });
+  }
+});
+
+test("--message-file is exclusive with --message and rejects unreadable or non-UTF-8 files without echoing them", () => {
+  const tempDir = mkdtempSync(join(tmpdir(), "claude-patch-2314-reject-"));
+  const fakeClaudePath = join(tempDir, "fake-claude.mjs");
+  const calledPath = join(tempDir, "called");
+  try {
+    writeStubClaude(fakeClaudePath, ["import { writeFileSync } from 'node:fs';", "writeFileSync(process.env.CALLED_PATH, '1');"]);
+    const env = { ...process.env, A2A_CLAUDE_CODE_BIN: fakeClaudePath, CALLED_PATH: calledPath };
+    const goodFile = join(tempDir, "ok.md");
+    writeFileSync(goodFile, analysisMessage());
+
+    const both = spawnSync(bridgePath, [...bridgeArgs(analysisMessage()), "--message-file", goodFile], { encoding: "utf8", env });
+    assert.equal(both.status, 1);
+    assert.match(both.stderr, /mutually exclusive/);
+
+    const missing = spawnSync(bridgePath, bridgeArgsWithMessageFile(join(tempDir, "absent.md")), { encoding: "utf8", env });
+    assert.equal(missing.status, 1);
+    assert.match(missing.stderr, /cannot read --message-file \(ENOENT\)/);
+
+    const badFile = join(tempDir, "bad.md");
+    writeFileSync(badFile, Buffer.concat([Buffer.from("SECRET-BODY-2314 "), Buffer.from([0xff, 0xfe, 0xfd])]));
+    const bad = spawnSync(bridgePath, bridgeArgsWithMessageFile(badFile), { encoding: "utf8", env });
+    assert.equal(bad.status, 1);
+    assert.match(bad.stderr, /not valid UTF-8/);
+    assert.doesNotMatch(bad.stderr, /SECRET-BODY-2314/);
+
+    const emptyFile = join(tempDir, "empty.md");
+    writeFileSync(emptyFile, "");
+    const empty = spawnSync(bridgePath, bridgeArgsWithMessageFile(emptyFile), { encoding: "utf8", env });
+    assert.equal(empty.status, 1);
+    assert.match(empty.stderr, /missing --message/);
+
+    assert.equal(existsSync(calledPath), false, "claude must not run on rejected input");
+  } finally {
+    rmSync(tempDir, { recursive: true, force: true });
+  }
+});
+
+test("the bridge carries the message-file capability marker the claude-code runner profile greps for", () => {
+  const source = readFileSync(bridgePath, "utf8");
+  assert.ok(source.includes("// a2a-bridge-capability: message-file\n"));
+  const profile = readFileSync(new URL("../../docker-runner/profiles/claude-code.sh", import.meta.url), "utf8");
+  assert.ok(profile.includes("grep -Fq 'a2a-bridge-capability: message-file' \"$A2A_CLAUDE_PATCH_BRIDGE\""));
 });

@@ -85,5 +85,24 @@ printf 'model_source=env profile=claude-code\n' | tee -a /work/artifacts/summary
 printf 'claude_config_bytes=%s\n' "$(du -sb "$CLAUDE_CONFIG_DIR" | awk '{print $1}')" | tee -a /work/artifacts/summary.txt
 # One node invocation reads task.json once and emits all three NUL-terminated fields.
 { IFS= read -r -d '' TASK_REPO; IFS= read -r -d '' TASK_ISSUE; IFS= read -r -d '' TASK_ISSUE_URL; } < <(node -e 'const fs=require("node:fs"); const task=JSON.parse(fs.readFileSync("/work/artifacts/task.json", "utf8")); for (const field of [task.repo, task.issue, task.issueUrl]) process.stdout.write(String(field || "").replace(/\n+$/, "") + "\0");')
-ASSIGNMENT="$(printf 'GitHub development assignment\nRepository: %s\nIssue: %s\nIssue URL: %s\n\n%s' "$TASK_REPO" "$TASK_ISSUE" "$TASK_ISSUE_URL" "$(cat /work/artifacts/prompt.md)")"
-exec node "$A2A_CLAUDE_PATCH_BRIDGE" agent --json --message "$ASSIGNMENT"
+# #2314: hand the assignment to the bridge as a file. One argv string is capped
+# at 131072 bytes (MAX_ARG_STRLEN), so `--message "$ASSIGNMENT"` fails with
+# E2BIG for large prompts. printf is a shell builtin, so building the file
+# never execs with the prompt in argv.
+A2A_CLAUDE_ASSIGNMENT_FILE=/tmp/claude-assignment.md
+printf 'GitHub development assignment\nRepository: %s\nIssue: %s\nIssue URL: %s\n\n%s' "$TASK_REPO" "$TASK_ISSUE" "$TASK_ISSUE_URL" "$(cat /work/artifacts/prompt.md)" > "$A2A_CLAUDE_ASSIGNMENT_FILE"
+A2A_CLAUDE_ASSIGNMENT_BYTES="$(wc -c < "$A2A_CLAUDE_ASSIGNMENT_FILE" | tr -d '[:space:]')"
+if grep -Fq 'a2a-bridge-capability: message-file' "$A2A_CLAUDE_PATCH_BRIDGE"; then
+  printf 'prompt_transport=file bytes=%s\n' "$A2A_CLAUDE_ASSIGNMENT_BYTES" | tee -a /work/artifacts/summary.txt
+  exec node "$A2A_CLAUDE_PATCH_BRIDGE" agent --json --message-file "$A2A_CLAUDE_ASSIGNMENT_FILE"
+fi
+# Bridges baked into images built before #2314 only accept --message. Keep the
+# argv path for them, but fail before exec instead of an opaque E2BIG.
+if [ "$A2A_CLAUDE_ASSIGNMENT_BYTES" -ge 131072 ]; then
+  printf 'error=claude_prompt_too_large bytes=%s max=131071\n' "$A2A_CLAUDE_ASSIGNMENT_BYTES" | tee -a /work/artifacts/summary.txt
+  printf 'failure_category=claude_prompt_too_large\n' | tee -a /work/artifacts/summary.txt
+  printf 'The assignment is %s bytes, and the Claude patch bridge in this runner image only accepts --message (one argv string, max 131071 bytes). Rebuild the runner image with a bridge that supports --message-file, or shorten the task message.\n' "$A2A_CLAUDE_ASSIGNMENT_BYTES" | tee /work/artifacts/patch-command.log
+  exit 2
+fi
+printf 'prompt_transport=argv bytes=%s\n' "$A2A_CLAUDE_ASSIGNMENT_BYTES" | tee -a /work/artifacts/summary.txt
+exec node "$A2A_CLAUDE_PATCH_BRIDGE" agent --json --message "$(cat "$A2A_CLAUDE_ASSIGNMENT_FILE")"

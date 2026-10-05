@@ -13,38 +13,38 @@
     },
     {
       "name": "claude-code-default",
-      "bytes": 5987,
-      "sha256": "f3c87160c6c5bb85ac37605fb5bcced889bea5c423a118b178e4de98cf00d5e1"
+      "bytes": 7605,
+      "sha256": "9ec066ac498eab0987fd6e82eec34e50aa3132e496c31351a8ef1e542503da66"
     },
     {
       "name": "claude-code-fanout-budgets",
-      "bytes": 6031,
-      "sha256": "26bf128c86fb5911f75e71993ccb214429ecd4cf3288440c844992f6c36dfd9c"
+      "bytes": 7649,
+      "sha256": "b1860bf835d15ad52eb6e9512dbe91eff9720325a6abbab07a2594b36b58e435"
     },
     {
       "name": "claude-code-effort",
-      "bytes": 6029,
-      "sha256": "a6517f4c3228268a8f8b0ab20ba74c51a300a0b4c53a7b3f83b1f0fa98157274"
+      "bytes": 7647,
+      "sha256": "23968601f954343a518641c4eaf75e4bfee61e938228eedbeb3b8fdfe3f3a61c"
     },
     {
       "name": "hermes-default",
-      "bytes": 16192,
-      "sha256": "175077a70e2c71025d595f2e1135b282a81ab318a5907e50a69489d5632af81f"
+      "bytes": 16936,
+      "sha256": "a06f24faa4e89f1b3c30418103d4ecf05c651904c6c068984e131f984cbdac26"
     },
     {
       "name": "hermes-native-no-subagents",
-      "bytes": 15599,
-      "sha256": "7ce95302c9d3828f058ed471653615e11439d52e1b309d0f15b1e6ae6b6d19b3"
+      "bytes": 16343,
+      "sha256": "5e6214b667713aa69c3ac2ff8461836218e7e455877a24d75d713fe1b27d9c36"
     },
     {
       "name": "openclaw-default",
-      "bytes": 22016,
-      "sha256": "e5f7d8343e5de150ee9340c541d2ff7213a04284e1d921ffc8fab5396a5d751e"
+      "bytes": 22786,
+      "sha256": "e6cd6296d7e134c541ace8f405ec6140bfaf5543a92f823b8309acfb34e156fd"
     },
     {
       "name": "openclaw-npm-fallback-no-subagents",
-      "bytes": 21476,
-      "sha256": "b07b3a25a394300e94de538623bba7e553a3c707538d27edcfc6a15f0d1939bb"
+      "bytes": 22246,
+      "sha256": "97fecfca85dc1e29ac21e6bd3c02d5cc375bcdcf8d1784b35d2ab14523b12c34"
     },
     {
       "name": "danso-default",
