@@ -689,6 +689,19 @@ Precedence is `commandScript > commandJson > commandProfile > commandTemplate`:
 | `A2A_DOCKER_RUNNER_PATCH_COMMAND_PROFILE=danso` | generated `commandScript` | `/work/patch-command.sh` | Operator-only trusted-worker profile (#2315). Mounts `A2A_DOCKER_RUNNER_DANSO_CONFIG_DIR` (default `/var/lib/a2a-runner/danso-dir`) read-only at `/run/secrets/danso-dir`; that directory must hold `glm.env`. The script reads only `ZAI_API_KEY` and `DANSO_GLM_BASE_URL`/`DANSO_GLM_ENDPOINT`/`DANSO_GLM_THINKING` from it (never sourced, never printed) and runs `danso --provider glm --sandbox host` in the checkout. The assignment is passed as `--prompt-file /work/artifacts/prompt.md` and the lane rules as `--system-context-file`; a danso build without either flag (or `--tool-home`) fails closed with `danso_cli_upgrade_required` instead of falling back to argv. The git/gh lifecycle guard shims are placed on danso's rebuilt tool `PATH` via `--tool-home`. `A2A_DANSO_MODEL` (default `glm-5.3-flash`; `zai/` prefix and `[1m]` alias are stripped), `A2A_DANSO_EFFORT` (default `high`), `A2A_DANSO_PATCH_TIMEOUT_SEC` (default and maximum 3600, danso short mode), `A2A_DANSO_PATCH_MAX_TURNS` (default and maximum 128) and `A2A_DANSO_PROVIDER_TIMEOUT_SECONDS` (default and maximum 300). danso refuses prompts over 65,536 bytes however they are passed, so the script checks `prompt.md` first and fails with `danso_prompt_too_large` above `A2A_DANSO_MAX_PROMPT_BYTES` (default 65536). Liveness: danso runs with `--progress-jsonl --stream-requests`; only the body-free `danso_progress` (tool start/settle) and `danso_request` (provider request) frames are written to `artifacts/danso-progress.jsonl`, and that file's mtime is the broker's task staleness signal (`lastProgressAt`). The JSONL session transcript stays in a scratch file outside `/work/artifacts` and is removed; `summary.txt` records `danso_progress_frames=N`. Use `a2a-docker-runner-danso:<danso-version>-<runner-sha>` built from `docker/danso-runner.Dockerfile`. |
 | `A2A_DOCKER_RUNNER_PATCH_COMMAND_TEMPLATE` | `commandTemplate` | `/work/patch-command.sh` | Legacy eval path; rejected for GitHub patch execution. |
 
+Prompt size and argv (#2314): Linux caps one argv string at 131,072 bytes
+(`MAX_ARG_STRLEN`), so a profile that passes the whole prompt as one argument
+fails with `E2BIG` before the CLI starts. The `claude-code` profile writes the
+assignment to `/tmp/claude-assignment.md` and passes `--message-file` when the
+bridge baked into the image carries the `a2a-bridge-capability: message-file`
+marker. The bridge then sends prompts over 96 KiB to `claude -p` on stdin.
+Images built before #2314 keep the `--message` argv path. On those images an
+assignment of 131,072 bytes or more fails before exec with
+`claude_prompt_too_large`. `summary.txt` records `prompt_transport=file|argv
+bytes=N`. The `hermes` and `openclaw` CLIs have no file input here, so their
+profiles fail before exec with `hermes_prompt_too_large` or
+`openclaw_prompt_too_large` at the same limit.
+
 The danso credential directory is a host-side copy: `A2A_DOCKER_RUNNER_DANSO_CONFIG_DIR`
 (default `/var/lib/a2a-runner/danso-dir`) is mounted read-only at `/run/secrets/danso-dir`
 and must hold `glm.env`. When that file is a copy of a credential kept elsewhere on the

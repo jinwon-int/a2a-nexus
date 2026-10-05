@@ -58,11 +58,26 @@ function killProcessGroup(pid, signal = "SIGKILL") {
 // When the timeout fires, the ENTIRE process group is killed.
 function spawnWithProcessGroupKill(bin, args, opts) {
   const timeoutMs = opts.timeout;
-  // stdin is explicitly closed ("ignore"): no caller writes to it, and leaving
-  // it open as a never-written pipe makes Claude Code CLI stall ~3 s waiting
-  // for piped input and emit a "no stdin data received" warning on stderr that
-  // then masks the real failure output in error excerpts (#1337 ENV1 residual).
-  const child = spawn(bin, args, { ...opts, detached: true, timeout: undefined, stdio: ["ignore", "pipe", "pipe"] });
+  const { input, ...spawnOpts } = opts;
+  const hasInput = typeof input === "string";
+  // stdin is closed ("ignore") unless the caller supplies `input`: leaving it
+  // open as a never-written pipe makes Claude Code CLI stall ~3 s waiting for
+  // piped input and emit a "no stdin data received" warning on stderr that then
+  // masks the real failure output in error excerpts (#1337 ENV1 residual).
+  // With `input` (#2314: prompts too large for one argv string) the pipe is
+  // written in full and closed immediately, so the CLI never waits on it.
+  const child = spawn(bin, args, {
+    ...spawnOpts,
+    detached: true,
+    timeout: undefined,
+    stdio: [hasInput ? "pipe" : "ignore", "pipe", "pipe"],
+  });
+  if (hasInput && child.stdin) {
+    // A child that exits before draining stdin raises EPIPE on the pipe; the
+    // exit status/stderr already carry the real failure, so do not crash.
+    child.stdin.on("error", () => {});
+    child.stdin.end(input, "utf8");
+  }
 
   let stdout = "";
   let stderr = "";
@@ -222,6 +237,48 @@ function die(message) {
 // still carry stale model env values.
 // Moved to ./lib/claude-runtime-flags.mjs so the analysis bridge applies the
 // exact same resolution instead of carrying a second copy that can drift.
+
+// #2314: Linux caps ONE argv string at MAX_ARG_STRLEN (131072 bytes including
+// the NUL). `claude -p <prompt>` with a prompt at or above that fails with
+// E2BIG ("Argument list too long") before the CLI starts. Prompts above this
+// margin go to `claude -p` on stdin instead (the CLI reads its prompt from
+// stdin when no prompt argument is given); smaller prompts keep the argv path.
+export const CLAUDE_ARGV_PROMPT_MAX_BYTES = 96 * 1024;
+
+export function claudePromptTransport(prompt) {
+  const text = safeText(prompt);
+  if (Buffer.byteLength(text, "utf8") <= CLAUDE_ARGV_PROMPT_MAX_BYTES) {
+    return { promptArgs: ["-p", text], input: undefined, transport: "argv" };
+  }
+  return { promptArgs: ["-p"], input: text, transport: "stdin" };
+}
+
+// Feature marker read by packages/docker-runner/profiles/claude-code.sh to
+// detect that the bridge baked into a runner image understands --message-file
+// (images built before #2314 do not). Keep this exact text.
+// a2a-bridge-capability: message-file
+
+// #2314: `--message-file <path>` reads the assignment from a UTF-8 file so the
+// runner never puts the whole prompt into one argv string. Mutually exclusive
+// with `--message`. Errors never echo file contents.
+function readBridgeMessage(flags) {
+  const file = flags["message-file"];
+  if (file === undefined) return safeText(flags.message, "");
+  if (flags.message !== undefined) die("--message and --message-file are mutually exclusive");
+  if (!safeText(file)) die("missing --message-file path");
+  let raw;
+  try {
+    raw = readFileSync(file);
+  } catch (error) {
+    die(`cannot read --message-file (${safeText(error?.code, "read_error")})`);
+  }
+  try {
+    return new TextDecoder("utf-8", { fatal: true }).decode(raw);
+  } catch {
+    die("--message-file is not valid UTF-8");
+  }
+  return "";
+}
 
 function parseArgs(argv) {
   const flags = { subcommand: argv[2] };
@@ -707,8 +764,9 @@ async function runClaudeAnalysis(prompt, flags, env = process.env) {
   const claudeRuntimeArgs = buildClaudeRuntimeArgs(flags, env);
 
   try {
+    const promptTransport = claudePromptTransport(prompt);
     const args = [
-      "-p", prompt,
+      ...promptTransport.promptArgs,
       ...claudeRuntimeArgs,
       "--output-format", "json",
       "--max-turns", String(turnBudget.effectiveMaxTurns),
@@ -720,6 +778,7 @@ async function runClaudeAnalysis(prompt, flags, env = process.env) {
       encoding: "utf8",
       maxBuffer,
       timeout: timeoutSec * 1000,
+      input: promptTransport.input,
     });
     const diagnostic = buildTurnBudgetDiagnostic(turnBudget, {
       outcome: "success",
@@ -912,9 +971,10 @@ async function runClaudePatch(prompt, flags, env, cwd, opts = {}) {
   // ~/.claude/agents/ roster is auto-discovered by Claude Code.
   const allowedTools = fanout ? "Task Bash Edit Write Read Glob Grep" : "Bash Edit Write Read Glob Grep";
   const fanoutPrompt = fanout ? buildFanoutSubagentPrompt(env) : "";
+  const promptTransport = claudePromptTransport(prompt);
   // NOTE: no --dangerously-skip-permissions: it is refused when running as root (the proot case).
   const args = [
-    "-p", prompt,
+    ...promptTransport.promptArgs,
     ...claudeRuntimeArgs,
     "--output-format", "json",
     "--allowedTools", allowedTools,
@@ -927,6 +987,7 @@ async function runClaudePatch(prompt, flags, env, cwd, opts = {}) {
     encoding: "utf8",
     maxBuffer,
     timeout: timeoutSec * 1000,
+    input: promptTransport.input,
   });
   const diagnostic = buildTurnBudgetDiagnostic(turnBudget, {
     outcome: "success",
@@ -2350,8 +2411,9 @@ async function callClaudeOnce(prompt, flags, env, cwd) {
   const turnBudget = resolveClaudeTurnBudget("deterministic-single-shot", env);
   const maxBuffer = positiveInteger(env.A2A_CLAUDE_CODE_MAX_OUTPUT_BYTES, 16 * 1024 * 1024);
   const claudeRuntimeArgs = buildClaudeRuntimeArgs(flags, env);
+  const promptTransport = claudePromptTransport(prompt);
   const args = [
-    "-p", prompt,
+    ...promptTransport.promptArgs,
     ...claudeRuntimeArgs,
     "--output-format", "json",
     "--max-turns", String(turnBudget.effectiveMaxTurns),
@@ -2363,6 +2425,7 @@ async function callClaudeOnce(prompt, flags, env, cwd) {
     encoding: "utf8",
     maxBuffer,
     timeout: timeoutSec * 1000,
+    input: promptTransport.input,
   });
   const diagnostic = buildTurnBudgetDiagnostic(turnBudget, {
     outcome: "success",
@@ -2411,8 +2474,9 @@ async function callClaudeCorrective(prompt, previousError, flags, env, cwd) {
   ].join("\n");
   const turnBudget = resolveClaudeTurnBudget("deterministic-single-shot", env);
   const maxBuffer = positiveInteger(env.A2A_CLAUDE_CODE_MAX_OUTPUT_BYTES, 16 * 1024 * 1024);
+  const promptTransport = claudePromptTransport(retryPrompt);
   const args = [
-    "-p", retryPrompt,
+    ...promptTransport.promptArgs,
     "--output-format", "json",
     "--max-turns", String(turnBudget.effectiveMaxTurns),
     "--tools", "Read Grep Glob",
@@ -2423,6 +2487,7 @@ async function callClaudeCorrective(prompt, previousError, flags, env, cwd) {
     encoding: "utf8",
     maxBuffer,
     timeout: timeoutSec * 1000,
+    input: promptTransport.input,
   });
   const diagnostic = buildTurnBudgetDiagnostic(turnBudget, {
     outcome: "success",
@@ -2789,7 +2854,7 @@ async function main() {
   const flags = parseArgs(process.argv);
   if (flags.subcommand !== "agent") die("expected OpenClaw-shaped subcommand: agent");
   if (!flags.json) die("expected --json flag");
-  const message = safeText(flags.message, "");
+  const message = readBridgeMessage(flags);
   if (!message) die("missing --message");
 
   if (isPatchIntent(message)) {

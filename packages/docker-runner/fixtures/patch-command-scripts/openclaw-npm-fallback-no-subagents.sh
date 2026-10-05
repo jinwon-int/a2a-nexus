@@ -367,6 +367,15 @@ A2A_OPENCLAW_PROMPT_EOF
 printf '\n--- A2A assignment ---\n' >> /work/artifacts/openclaw-prompt.md
 cat /work/artifacts/prompt.md >> /work/artifacts/openclaw-prompt.md
 
+# #2314: `openclaw agent --message` takes the prompt as ONE argv string, capped
+# at 131072 bytes (MAX_ARG_STRLEN). Fail before exec instead of an opaque E2BIG.
+OPENCLAW_ASSIGNMENT_BYTES="$(wc -c < /work/artifacts/openclaw-prompt.md | tr -d '[:space:]')"
+if [ "$OPENCLAW_ASSIGNMENT_BYTES" -ge 131072 ]; then
+  printf 'error=openclaw_prompt_too_large bytes=%s max=131071\n' "$OPENCLAW_ASSIGNMENT_BYTES" | tee -a /work/artifacts/summary.txt
+  printf 'failure_category=openclaw_prompt_too_large\n' | tee -a /work/artifacts/summary.txt
+  printf 'The OpenClaw assignment prompt is %s bytes; openclaw agent --message passes it as one argv string (max 131071 bytes). Shorten the task message.\n' "$OPENCLAW_ASSIGNMENT_BYTES" | tee /work/artifacts/patch-command.log
+  exit 2
+fi
 OPENCLAW_ASSIGNMENT_PROMPT="$(cat /work/artifacts/openclaw-prompt.md)"
 set +e
 openclaw agent \

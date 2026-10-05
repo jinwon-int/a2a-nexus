@@ -230,6 +230,15 @@ A2A_HERMES_PROMPT_EOF
 printf '\n--- A2A assignment ---\n' >> /work/artifacts/hermes-prompt.md
 cat /work/artifacts/prompt.md >> /work/artifacts/hermes-prompt.md
 
+# #2314: `hermes chat --query` takes the prompt as ONE argv string, capped at
+# 131072 bytes (MAX_ARG_STRLEN). Fail before exec instead of an opaque E2BIG.
+HERMES_ASSIGNMENT_BYTES="$(wc -c < /work/artifacts/hermes-prompt.md | tr -d '[:space:]')"
+if [ "$HERMES_ASSIGNMENT_BYTES" -ge 131072 ]; then
+  printf 'error=hermes_prompt_too_large bytes=%s max=131071\n' "$HERMES_ASSIGNMENT_BYTES" | tee -a /work/artifacts/summary.txt
+  printf 'failure_category=hermes_prompt_too_large\n' | tee -a /work/artifacts/summary.txt
+  printf 'The Hermes assignment prompt is %s bytes; hermes chat --query passes it as one argv string (max 131071 bytes). Shorten the task message.\n' "$HERMES_ASSIGNMENT_BYTES" | tee /work/artifacts/patch-command.log
+  exit 2
+fi
 HERMES_ASSIGNMENT_PROMPT="$(cat /work/artifacts/hermes-prompt.md)"
 set +e
 timeout "$A2A_HERMES_TIMEOUT_SEC" hermes chat \
