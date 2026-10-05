@@ -729,6 +729,19 @@ override, and fanout cap application before a task is claimed. It contains
 variable names and numeric values only, never raw environment contents or
 node-private paths.
 
+That projection is computed from runner source. The bridge that actually runs
+is the copy baked into the runner image, and an image built from older code
+keeps older defaults (#2320: a `cf2c218` image ran `analysis` 10 and
+`agentic-patch` 40 while the source said 80). The same in-image probe therefore
+reads the baked bridge's `CLAUDE_TURN_BUDGET_DEFAULTS` and sha256 into
+`doctor.githubPatch.detail.bridgeTurnBudgetDefaults` / `bridgeSha256`. The
+claude-code-only `doctor.claudeBridgeDefaults` check is `ok` when the image
+and runner defaults match. It is `warn` when they differ or cannot be read.
+The message says whether explicit env overrides mask the difference. Compare
+`bridgeSha256` with `git show <sha>:packages/broker/scripts/claude-a2a-patch-bridge.mjs | sha256sum`
+to tell which code an image carries. A drift does not change
+`githubPatch.status`. The fix is a runner image rebuilt from current main.
+
 Mode selection is: fanout when
 `A2A_DOCKER_RUNNER_CLAUDE_CODE_FANOUT_ENABLED=1`; otherwise an explicit
 `A2A_DOCKER_RUNNER_CLAUDE_CODE_PATCH_MODE` or

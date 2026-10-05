@@ -1436,7 +1436,7 @@ export function buildDansoPatchCommandScript(env: NodeJS.ProcessEnv): string {
   });
 }
 
-const CLAUDE_TURN_BUDGET_DEFAULTS = {
+export const CLAUDE_TURN_BUDGET_DEFAULTS = {
   analysis: 80,
   agenticPatch: 80,
   deterministicSingleShot: 6,
