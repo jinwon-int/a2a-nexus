@@ -42,6 +42,10 @@ export const DEFAULT_EXPECTATIONS = {
   root: "/opt/a2a-broker-worker",
   minSecretLength: 32,
   requiredHandlers: ["dist/worker.js", "a2a-task-handler.mjs", "hermes-a2a-analysis-bridge.mjs"],
+  // Handlers launched through an interpreter (systemd runs
+  // `/usr/bin/node /opt/a2a-broker-worker/dist/worker.js`), so they need only be
+  // present; live workers keep dist/worker.js at mode 0600 (#2328).
+  interpreterLaunchedHandlers: ["dist/worker.js"],
   teamBroker: TEAM_BROKER_INVARIANT,
 };
 
@@ -361,11 +365,17 @@ export function evaluateWorkerReadiness(record, expectations = {}) {
   }
 
   // 5. handler artifacts present AND executable (covers the #659 EACCES class).
+  // Interpreter-launched handlers (record `launchedVia`, or listed in
+  // interpreterLaunchedHandlers) are never spawned directly, so only presence
+  // is required for them (#2328).
   const handlers = Array.isArray(record?.handlers) ? record.handlers : [];
+  const interpreterLaunched = Array.isArray(exp.interpreterLaunchedHandlers) ? exp.interpreterLaunchedHandlers : [];
   for (const required of exp.requiredHandlers) {
     const match = findHandler(handlers, required);
     if (!match || match.present === false) {
       violations.push({ code: "handler_missing", reason: `required handler '${required}' is missing` });
+    } else if (hasText(match.launchedVia) || interpreterLaunched.includes(required)) {
+      continue;
     } else if (match.executable === false) {
       violations.push({ code: "handler_missing", reason: `required handler '${required}' is present but not executable (EACCES on spawn)` });
     }

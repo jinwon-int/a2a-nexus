@@ -79,6 +79,54 @@ test("a missing required handler is handler_missing", () => {
   assert.ok(codes(r).includes("handler_missing"));
 });
 
+test("interpreter-launched dist/worker.js at mode 0600 (executable:false) passes by default (#2328)", () => {
+  const r = evaluateWorkerReadiness(healthy({
+    handlers: [
+      { path: "/opt/a2a-broker-worker/dist/worker.js", present: true, executable: false },
+      { path: "/opt/a2a-broker-worker/scripts/a2a-task-handler.mjs", present: true, executable: true },
+      { path: "/opt/a2a-broker-worker/scripts/hermes-a2a-analysis-bridge.mjs", present: true, executable: true },
+    ],
+  }));
+  assert.equal(r.ok, true, JSON.stringify(r.violations));
+});
+
+test("directly spawned a2a-task-handler.mjs with executable:false still fails handler_missing (#2328)", () => {
+  const r = evaluateWorkerReadiness(healthy({
+    handlers: [
+      { path: "/opt/a2a-broker-worker/dist/worker.js", present: true, executable: false },
+      { path: "/opt/a2a-broker-worker/scripts/a2a-task-handler.mjs", present: true, executable: false },
+      { path: "/opt/a2a-broker-worker/scripts/hermes-a2a-analysis-bridge.mjs", present: true, executable: true },
+    ],
+  }));
+  assert.equal(r.ok, false);
+  assert.deepEqual(codes(r), ["handler_missing"]);
+  assert.match(r.violations[0].reason, /a2a-task-handler\.mjs' is present but not executable/);
+});
+
+test("a handler record with launchedVia is treated as interpreter-launched (#2328)", () => {
+  const r = evaluateWorkerReadiness(healthy({
+    handlers: [
+      { path: "/opt/a2a-broker-worker/dist/worker.js", present: true, executable: true },
+      { path: "/opt/a2a-broker-worker/scripts/a2a-task-handler.mjs", present: true, executable: false, launchedVia: "/usr/bin/node" },
+      { path: "/opt/a2a-broker-worker/scripts/hermes-a2a-analysis-bridge.mjs", present: true, executable: true },
+    ],
+  }));
+  assert.equal(r.ok, true, JSON.stringify(r.violations));
+});
+
+test("interpreterLaunchedHandlers: [] override makes dist/worker.js executable:false fail again (#2328)", () => {
+  const r = evaluateWorkerReadiness(healthy({
+    handlers: [
+      { path: "/opt/a2a-broker-worker/dist/worker.js", present: true, executable: false },
+      { path: "/opt/a2a-broker-worker/scripts/a2a-task-handler.mjs", present: true, executable: true },
+      { path: "/opt/a2a-broker-worker/scripts/hermes-a2a-analysis-bridge.mjs", present: true, executable: true },
+    ],
+  }), { interpreterLaunchedHandlers: [] });
+  assert.equal(r.ok, false);
+  assert.deepEqual(codes(r), ["handler_missing"]);
+  assert.match(r.violations[0].reason, /dist\/worker\.js' is present but not executable/);
+});
+
 test("an intent dispatcher requires its exact sibling default task handler", () => {
   const r = evaluateWorkerReadiness(healthy({
     node: "workerGamma",
