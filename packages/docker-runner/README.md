@@ -708,7 +708,7 @@ and must hold `glm.env`. When that file is a copy of a credential kept elsewhere
 host, re-copy it there after every key rotation — the read-only mount never picks up a
 rotated key on its own. The container user must be able to read it: directory `0700`,
 file `0600`, owned by the uid in `A2A_DOCKER_RUNNER_USER` (with `--cap-drop ALL` an
-ownership mismatch fails closed with `danso_config_mount_unreadable`). `runner doctor`
+ownership mismatch fails closed with `danso_config_mount_unreadable`). `node dist/cli.js doctor`
 reports this under `extraMounts` / `secretMountReadability`.
 
 #### Where the generated profile scripts live (`profiles/`)
@@ -776,7 +776,7 @@ passes `--effort <level>` to the `claude` CLI. Unset, blank or unrecognized
 values export nothing, so the CLI keeps its own default. `CLAUDE_CODE_EFFORT_LEVEL`
 is deliberately ignored: older Claude CLI builds reject an unknown `--effort`
 flag, so emitting it must stay an explicit runner-side choice, matching the
-bridge. `runner doctor` shows the result in the githubPatch check as
+bridge. `node dist/cli.js doctor` shows the result in the githubPatch check as
 `claudeEffort: { configured, source }`, where `source` is `A2A_CLAUDE_EFFORT`,
 `unset` or `invalid`.
 
@@ -895,7 +895,7 @@ owner-only (`0600`), so run the container as its owner (for a root-owned file,
 `error=claude_credentials_file_unreadable` before the model runs. Config
 validation cannot detect this because it runs as the host runner user.
 
-`runner doctor` reports a claude-code-only `claudeCredentialFreshness` check. It
+`node dist/cli.js doctor` reports a claude-code-only `claudeCredentialFreshness` check. It
 reads only `claudeAiOauth.expiresAt` from the effective credential (the
 credentials-file mount when configured, otherwise
 `<claude-dir>/.credentials.json`) and warns when it is missing, unparseable,
