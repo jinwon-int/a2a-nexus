@@ -190,8 +190,10 @@ test("container script installs and exposes mounted gh hosts.yml to gh CLI and g
   assert.ok(script.includes("gh pr update-branch --help"));
   assert.ok(script.includes("cli.github.com/packages"));
   assert.ok(script.includes("apt-get install -y gh"));
-  assert.ok(script.includes("cp /run/secrets/gh-hosts.yml /work/.config/gh/hosts.yml"));
-  assert.ok(script.includes("export GH_CONFIG_DIR=/work/.config/gh"));
+  assert.ok(script.includes("cp /run/secrets/gh-hosts.yml /tmp/a2a-gh/hosts.yml"));
+  assert.ok(script.includes("export GH_CONFIG_DIR=/tmp/a2a-gh"));
+  // #2256 A3: /work is a host rw bind, so the token copy must never land there.
+  assert.ok(!script.includes("/work/.config/gh"));
   assert.ok(script.includes('export GH_TOKEN="$token"'));
   assert.ok(script.includes("export GIT_ASKPASS=/work/.a2a-bin/git-askpass"));
 });

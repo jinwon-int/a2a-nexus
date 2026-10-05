@@ -230,8 +230,11 @@ runner 는 다음 docker args 를 추가한다:
 컨테이너 내 `run.sh` script 는 `gh-hosts.yml` 에서 활성 계정의 `oauth_token`
 값을 추출하여(`users:` 하위 다중 계정이 있어도 top-level 에 미러링된
 활성 계정 토큰을 우선한다) `GIT_ASKPASS` helper 로 등록하고, 파일을
-`/work/.config/gh/hosts.yml` 로 복사한 뒤 `GH_CONFIG_DIR=/work/.config/gh` 와
+컨테이너 내부 `/tmp/a2a-gh/hosts.yml` 로 복사한 뒤 `GH_CONFIG_DIR=/tmp/a2a-gh` 와
 `GH_TOKEN` 을 export 해 컨테이너 내부의 `gh` CLI 인증도 함께 구성한다.
+사본은 호스트 바인드인 `/work` 가 아니라 컨테이너 `/tmp`(read-only rootfs 에서는
+tmpfs, 아니면 `--rm` 으로 지워지는 컨테이너 레이어)에 두어 태스크가 끝난 뒤
+워커 호스트에 남지 않는다(a2a-nexus#2256 A3).
 원본 파일은 **read-only** 로 마운트되며, git 인증은 `x-access-token`
 username + token password 조합으로 수행한다.
 
