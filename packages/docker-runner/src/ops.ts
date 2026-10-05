@@ -9,9 +9,10 @@ import { promisify } from "node:util";
 
 const execFileP = promisify(execFile);
 import { basename, dirname, join, resolve } from "node:path";
-import type { RunnerConfig, RunnerEngine } from "./types.js";
+import type { RunnerClaudeTurnBudgetProjection, RunnerConfig, RunnerEngine } from "./types.js";
 import {
   CLAUDE_CREDENTIALS_FILE_MOUNT_TARGET,
+  CLAUDE_TURN_BUDGET_DEFAULTS,
   DEFAULT_CLEANUP_UNIT_NAME,
   DEFAULT_SYSTEMD_UNIT_DIR,
   KNOWN_SERVICE_ENV_FILES,
@@ -49,6 +50,8 @@ export interface DoctorReport {
   containerHardening: OpsCheck;
   baseImage: OpsCheck;
   githubPatch: OpsCheck;
+  /** #2320: claude-code only — image bridge turn defaults vs runner source defaults (warn-only). */
+  claudeBridgeDefaults?: OpsCheck;
   /** #2234: claude-code only — expiry of the effective Claude OAuth credential vs the task timeout. */
   claudeCredentialFreshness?: OpsCheck;
   /** Deploy-marker validation: checks whether the deployed revision matches an expected deploy marker. */
@@ -480,6 +483,10 @@ interface ClaudeCodeProfileReadinessInput {
   expectedMountPath: string;
   bridgeExists: boolean;
   bridgePath: string;
+  /** #2320: sha256 of the bridge baked into the image (compare with the git blob). */
+  bridgeSha256?: string;
+  /** #2320: raw `mode:turns,...` list parsed from the baked bridge's CLAUDE_TURN_BUDGET_DEFAULTS. */
+  bridgeTurnDefaults?: string;
   errors: string[];
 }
 
@@ -726,6 +733,9 @@ export async function doctor(config: RunnerConfig, options: DoctorOptions = {}):
   const engineReady = docker.status === "ok" || podman.status === "ok";
   const containerHardening = checkContainerHardening(config);
   const checks = [runnerRevision, taskRoot, secretMount, extraMounts, secretMountReadability, containerHardening, baseImage, githubPatch];
+  // #2320: warn-only drift between the image's baked bridge and runner source defaults.
+  const claudeBridgeDefaults = checkClaudeBridgeDefaults(config, githubPatch);
+  if (claudeBridgeDefaults) checks.push(claudeBridgeDefaults);
   const claudeCredentialFreshness = config.commandProfile === "claude-code"
     ? await checkClaudeCredentialFreshness(config)
     : undefined;
@@ -766,6 +776,7 @@ export async function doctor(config: RunnerConfig, options: DoctorOptions = {}):
     containerHardening,
     baseImage,
     githubPatch,
+    ...(claudeBridgeDefaults ? { claudeBridgeDefaults } : {}),
     ...(claudeCredentialFreshness ? { claudeCredentialFreshness } : {}),
     ...(deployMarker ? { deployMarker } : {}),
     ...(serviceEnvFile ? { serviceEnvFile } : {}),
@@ -1563,6 +1574,15 @@ function checkClaudeCodeProfilePatchReadiness(config: RunnerConfig, options: Git
     summary: buildClaudeCodeProfileSummary(probeInput, failureCategory),
     checks,
     bridgePath: probeInput.bridgePath,
+    ...(probeInput.bridgeSha256 ? { bridgeSha256: probeInput.bridgeSha256 } : {}),
+    ...(probeInput.bridgeExists
+      ? {
+        bridgeTurnBudgetDefaults: compareClaudeBridgeTurnDefaults(
+          parseClaudeBridgeTurnDefaults(probeInput.bridgeTurnDefaults),
+          config.claudeCodeProfile?.turnBudgets,
+        ),
+      }
+      : {}),
   };
 
   if (failureCategory === "ok") {
@@ -1783,6 +1803,111 @@ function buildHermesProfileSummary(input: HermesProfileReadinessInput, failureCa
 }
 
 
+/** Bridge mode key -> runner projection key (#2320). */
+const CLAUDE_BRIDGE_TURN_MODES = [
+  ["analysis", "analysis"],
+  ["agentic-patch", "agenticPatch"],
+  ["deterministic-single-shot", "deterministicSingleShot"],
+  ["fanout-patch", "fanoutPatch"],
+] as const;
+
+export type ClaudeBridgeTurnMode = (typeof CLAUDE_BRIDGE_TURN_MODES)[number][0];
+
+export interface ClaudeBridgeTurnDefaultsComparison {
+  schemaVersion: "a2a.runner.claude-bridge-turn-defaults.v1";
+  /** match: image and runner agree; drift: at least one mode differs; unknown: image defaults unreadable. */
+  status: "match" | "drift" | "unknown";
+  image: Partial<Record<ClaudeBridgeTurnMode, number>> | null;
+  runner: Record<ClaudeBridgeTurnMode, number>;
+  drift: Array<{
+    mode: ClaudeBridgeTurnMode;
+    image: number | null;
+    runner: number;
+    /** True when no explicit env override masks the difference, so the image default is what tasks get. */
+    effective: boolean;
+  }>;
+}
+
+/** Parse the probe's `mode:turns,...` list; returns null when nothing usable was read. */
+export function parseClaudeBridgeTurnDefaults(raw: string | undefined): Partial<Record<ClaudeBridgeTurnMode, number>> | null {
+  if (!raw) return null;
+  const known = new Set<string>(CLAUDE_BRIDGE_TURN_MODES.map(([mode]) => mode));
+  const parsed: Partial<Record<ClaudeBridgeTurnMode, number>> = {};
+  for (const part of raw.split(",")) {
+    const match = /^([a-z][a-z-]*):(\d{1,6})$/.exec(part.trim());
+    if (match && known.has(match[1]!)) parsed[match[1] as ClaudeBridgeTurnMode] = Number(match[2]);
+  }
+  return Object.keys(parsed).length ? parsed : null;
+}
+
+/**
+ * #2320: compare the turn-budget defaults baked into the image's bridge with
+ * the runner's source defaults (what the doctor turnBudgets projection
+ * assumes). An image built from older code silently runs older defaults.
+ */
+export function compareClaudeBridgeTurnDefaults(
+  image: Partial<Record<ClaudeBridgeTurnMode, number>> | null,
+  projection: RunnerClaudeTurnBudgetProjection | undefined,
+): ClaudeBridgeTurnDefaultsComparison {
+  const runner = Object.fromEntries(
+    CLAUDE_BRIDGE_TURN_MODES.map(([mode, key]) => [mode, CLAUDE_TURN_BUDGET_DEFAULTS[key]]),
+  ) as Record<ClaudeBridgeTurnMode, number>;
+  if (!image) {
+    return { schemaVersion: "a2a.runner.claude-bridge-turn-defaults.v1", status: "unknown", image: null, runner, drift: [] };
+  }
+  const drift = CLAUDE_BRIDGE_TURN_MODES.flatMap(([mode, key]) => {
+    const imageValue = image[mode] ?? null;
+    if (imageValue === runner[mode]) return [];
+    return [{
+      mode,
+      image: imageValue,
+      runner: runner[mode],
+      effective: projection ? projection[key].source === "canonical_default" : true,
+    }];
+  });
+  return {
+    schemaVersion: "a2a.runner.claude-bridge-turn-defaults.v1",
+    status: drift.length ? "drift" : "match",
+    image,
+    runner,
+    drift,
+  };
+}
+
+/**
+ * #2320 warn-only doctor check derived from the githubPatch probe (no second
+ * container run). githubPatch.status is deliberately unchanged: fan-out gates
+ * on it, and a default drift degrades turn limits rather than safety.
+ */
+export function checkClaudeBridgeDefaults(config: RunnerConfig, githubPatch: OpsCheck): OpsCheck | undefined {
+  if (config.commandProfile !== "claude-code") return undefined;
+  const comparison = githubPatch.detail?.bridgeTurnBudgetDefaults as ClaudeBridgeTurnDefaultsComparison | undefined;
+  const bridgeSha256 = githubPatch.detail?.bridgeSha256;
+  const detail = { image: config.image, ...(bridgeSha256 ? { bridgeSha256 } : {}), ...(comparison ? { comparison } : {}) };
+  if (!comparison) {
+    return { status: "skip", message: "Claude bridge defaults not compared: the image bridge was not probed", detail };
+  }
+  if (comparison.status === "match") {
+    return { status: "ok", message: "Claude bridge turn defaults in the image match the runner source", detail };
+  }
+  if (comparison.status === "unknown") {
+    return {
+      status: "warn",
+      message: "Claude bridge turn defaults in the image could not be read; rebuild the runner image from current main",
+      detail,
+    };
+  }
+  const effective = comparison.drift.filter((entry) => entry.effective);
+  const list = comparison.drift.map((entry) => `${entry.mode} image=${entry.image ?? "missing"} runner=${entry.runner}`).join(", ");
+  return {
+    status: "warn",
+    message: effective.length
+      ? `Claude bridge turn defaults in the image differ from the runner source (${list}); tasks use the image values — rebuild the runner image from current main`
+      : `Claude bridge turn defaults in the image differ from the runner source (${list}); masked by explicit env overrides — rebuild the runner image before removing them`,
+    detail,
+  };
+}
+
 function probeClaudeCodeProfileInContainer(config: RunnerConfig, engine: RunnerEngine): ClaudeCodeProfileReadinessInput {
   const args = [
     "run",
@@ -1830,6 +1955,8 @@ function probeClaudeCodeProfileInContainer(config: RunnerConfig, engine: RunnerE
     expectedMountPath: CLAUDE_CODE_PROFILE_MOUNT_PATH,
     bridgeExists: values.get("bridge_exists") === "1",
     bridgePath: boundedProbeValue(values.get("bridge_path"), 240) ?? CLAUDE_CODE_PATCH_BRIDGE_PATH,
+    bridgeSha256: boundedProbeValue(values.get("bridge_sha256"), 64),
+    bridgeTurnDefaults: boundedProbeValue(values.get("bridge_turn_defaults"), 240),
     errors: [],
   };
 }
@@ -2010,6 +2137,13 @@ const HERMES_PROFILE_PROBE_SCRIPT = [
 ].join("\n");
 
 
+// #2320: runs inside the runner image (node is always present there because
+// the Claude CLI needs it). Prints `mode:turns,...` from the baked bridge's
+// CLAUDE_TURN_BUDGET_DEFAULTS literal, in either the one-line object form of
+// older images or the multi-line Object.freeze form. No single quotes: the
+// program is embedded in a single-quoted shell argument.
+export const CLAUDE_BRIDGE_TURN_DEFAULTS_READER = String.raw`const s=require("fs").readFileSync(process.argv[1],"utf8");const m=/CLAUDE_TURN_BUDGET_DEFAULTS\s*=\s*(?:Object\.freeze\(\s*)?\{([^}]*)\}/.exec(s);if(m){const o=[];for(const p of m[1].matchAll(/["]?([a-z][a-z-]*)["]?\s*:\s*(\d+)/g))o.push(p[1]+":"+p[2]);process.stdout.write(o.join(","));}`;
+
 const CLAUDE_CODE_PROFILE_PROBE_SCRIPT = [
   "set -u",
   "cli_path=\"$(command -v claude 2>/dev/null || true)\"",
@@ -2027,8 +2161,13 @@ const CLAUDE_CODE_PROFILE_PROBE_SCRIPT = [
   "fi",
   "bridge_path=" + CLAUDE_CODE_PATCH_BRIDGE_PATH,
   "bridge_exists=0",
+  "bridge_sha256=\"\"",
+  "bridge_turn_defaults=\"\"",
   "if [ -f \"$bridge_path\" ]; then",
   "  bridge_exists=1",
+  "  bridge_sha256=\"$(sha256sum \"$bridge_path\" 2>/dev/null | cut -d ' ' -f 1 || true)\"",
+  // #2320: read the turn-budget defaults the baked bridge will actually use.
+  "  bridge_turn_defaults=\"$(node -e '" + CLAUDE_BRIDGE_TURN_DEFAULTS_READER + "' \"$bridge_path\" 2>/dev/null || true)\"",
   "fi",
   "printf 'cli_path=%s\\n' \"$cli_path\"",
   "printf 'cli_version_ok=%s\\n' \"$cli_version_ok\"",
@@ -2036,6 +2175,8 @@ const CLAUDE_CODE_PROFILE_PROBE_SCRIPT = [
   "printf 'profile_mount_exists=%s\\n' \"$profile_mount_exists\"",
   "printf 'bridge_exists=%s\\n' \"$bridge_exists\"",
   "printf 'bridge_path=%s\\n' \"$bridge_path\"",
+  "printf 'bridge_sha256=%s\\n' \"$bridge_sha256\"",
+  "printf 'bridge_turn_defaults=%s\\n' \"$bridge_turn_defaults\"",
 ].join("\n");
 
 const CODEX_PROFILE_PROBE_SCRIPT = [
