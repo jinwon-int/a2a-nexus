@@ -63,7 +63,9 @@ function parseArgs(argv) {
       readOnlyValidation: argv.includes("--read-only-validation"),
       crossBrokerHandoff: argv.includes("--cross-broker-handoff")
         ? {
-            parentRoundId: readOption(argv, "--handoff-parent-round-id") || readOption(argv, "--parent-round-id") || undefined,
+            // No fallback to --parent-round-id: the handoff must name the origin
+            // broker's parent round, never the local one (#2331).
+            parentRoundId: readOption(argv, "--handoff-parent-round-id") || undefined,
             originBrokerId: readOption(argv, "--handoff-origin-broker-id") || undefined,
             handoffBrokerId: readOption(argv, "--handoff-broker-id") || undefined,
             originTaskId: readOption(argv, "--handoff-origin-task-id") || undefined,
@@ -101,7 +103,12 @@ function usage() {
     "  --broker-of-record-id <id>",
     "  --origin-broker-id <id>",
     "  --operator-facing-owner <parent|child|local>",
-    "  --cross-broker-handoff",
+    "  --cross-broker-handoff       Requires --handoff-parent-round-id and --handoff-origin-task-id",
+    "  --handoff-parent-round-id <id>",
+    "                              Origin broker's parent round id; must differ from",
+    "                              the local --parent-round-id/--run-id",
+    "  --handoff-origin-task-id <id>",
+    "  --handoff-origin-broker-id <id>",
     "  --handoff-broker-id <id>",
     "  --handoff-child-worker-id <id>",
     "",
@@ -128,6 +135,7 @@ function usage() {
     "    --child-issue https://github.com/jinwon-int/a2a-broker/issues/1206 \\",
     "    --broker-of-record-id brokeralpha --origin-broker-id brokeralpha \\",
     "    --operator-facing-owner parent --cross-broker-handoff --handoff-broker-id brokerbeta \\",
+    "    --handoff-parent-round-id a2a-1032-parent-round --handoff-origin-task-id brokeralpha-parent-task-1 \\",
     "    --allow-no-changes --read-only-validation \\",
     "    --work-mode-decision fixtures/work-mode-pre-dispatch/team1-candidate-review.json --markdown",
   ].join("\n");

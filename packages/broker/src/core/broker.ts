@@ -453,6 +453,7 @@ export class InMemoryA2ABroker {
   private readonly capabilityCards: WorkerCapabilityCardRepository;
   private readonly snapshotExtensions: SnapshotExtensionRegistry;
   private readonly brokerId?: string;
+  private readonly knownBrokerIds: readonly string[];
   private readonly teamId?: string;
   private readonly taskReadinessMode: TaskReadinessMode;
   private readonly reviewLineageMode: ReviewLineageRolloutMode;
@@ -539,6 +540,9 @@ export class InMemoryA2ABroker {
     this.listeners = new BrokerListenerRegistry(options.profilingListener);
     this.snapshotExtensions = new SnapshotExtensionRegistry(options.snapshotExtensions);
     this.brokerId = normalizeOwnershipString(options.brokerId);
+    this.knownBrokerIds = (options.knownBrokerIds ?? [])
+      .map((id) => normalizeOwnershipString(id))
+      .filter((id): id is string => Boolean(id));
     this.teamId = normalizeOwnershipString(options.teamId);
     this.taskAttemptRecordStore = options.taskAttemptRecordStore;
     this.taskCreateIdempotencyAuthority = options.taskCreateIdempotencyAuthority;
@@ -583,6 +587,8 @@ export class InMemoryA2ABroker {
       maxEvents: options.maxTerminalTaskOutboxEvents,
       roundProgress,
       appendAuthority: options.terminalOutboxAppendAuthority,
+      brokerId: this.brokerId,
+      knownBrokerIds: this.knownBrokerIds,
     });
     this.crossBrokerTerminalBriefs = new CrossBrokerTerminalBriefProjectionStore([], {
       brokerId: this.brokerId,
@@ -2138,7 +2144,10 @@ export class InMemoryA2ABroker {
    * `idempotentReturn: true` (200 vs 201).
    */
   createTask(request: CreateTaskRequest): TaskRecord {
-    const normalizedGitHubRequest = normalizeGitHubPatchTaskRequest(request);
+    const normalizedGitHubRequest = normalizeGitHubPatchTaskRequest(request, {
+      brokerId: this.brokerId,
+      knownBrokerIds: this.knownBrokerIds,
+    });
     const brokerOfRecord = normalizeOwnershipString(normalizedGitHubRequest.brokerOfRecord) ?? this.brokerId;
     const roundNormalizedRequest = normalizeA2ARoundTaskRequest(normalizedGitHubRequest, brokerOfRecord);
     const normalizedRequest = {

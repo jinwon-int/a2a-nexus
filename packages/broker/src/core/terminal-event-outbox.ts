@@ -85,6 +85,15 @@ export interface TerminalTaskEventPayload {
     reason: string;
   };
   /**
+   * Present when the task claimed a parent notification owner that is neither
+   * this broker nor a configured known broker (A2A_KNOWN_BROKER_IDS); the
+   * brief stays locally owned instead of becoming an unroutable orphan.
+   */
+  notificationOwnershipFallback?: {
+    reason: "unknown_owner_broker";
+    claimedOwner: string;
+  };
+  /**
    * Parent broker completion sequence for this round (1-based numerator).
    * This is a succeeded-child count, not lane order or terminal-event order.
    * Only populated when the broker has a round progress counter; absent for
@@ -246,6 +255,19 @@ export interface TerminalTaskEventOutboxOptions {
     readonly eventId: string;
     readonly payload: string;
   }) => { readonly sequence: string };
+  /** Local broker id; always accepted as a notification owner. */
+  brokerId?: string;
+  /**
+   * Peer broker ids accepted as parent notification owners. Empty/unset keeps
+   * the known-broker guard inactive (legacy behavior).
+   */
+  knownBrokerIds?: readonly string[];
+}
+
+/** Broker identity used to validate parent notification owners. */
+export interface TerminalTaskPayloadOwnershipContext {
+  brokerId?: string;
+  knownBrokerIds?: readonly string[];
 }
 
 /**
@@ -269,6 +291,7 @@ export class TerminalTaskEventOutbox {
     readonly eventId: string;
     readonly payload: string;
   }) => { readonly sequence: string };
+  private readonly ownership: TerminalTaskPayloadOwnershipContext;
 
   /**
    * Bounded tracker of unique terminal canonical child task IDs per run/round
@@ -285,6 +308,7 @@ export class TerminalTaskEventOutbox {
     this.maxEvents = normalizePositiveInt(options.maxEvents, DEFAULT_TERMINAL_TASK_OUTBOX_RETENTION);
     this.maxSeen = this.maxEvents * 2;
     this.appendAuthority = options.appendAuthority;
+    this.ownership = { brokerId: options.brokerId, knownBrokerIds: options.knownBrokerIds };
     this.restoreSnapshot(options.events ?? []);
   }
 
@@ -305,12 +329,12 @@ export class TerminalTaskEventOutbox {
     // batch rolls back, so the domain transition fails whole (§5.5 partition:
     // producers fail the transaction when append is unavailable).
     if (this.appendAuthority) {
-      this.appendAuthority({ eventId: id, payload: canonicalJsonString(buildTerminalTaskPayload(task)) });
+      this.appendAuthority({ eventId: id, payload: canonicalJsonString(buildTerminalTaskPayload(task, this.ownership)) });
     }
 
     if (this.seen.has(id)) return null;
 
-    const payload = buildTerminalTaskPayload(task);
+    const payload = buildTerminalTaskPayload(task, this.ownership);
     applyRoundProgressMetadata(payload, this.terminalChildIds);
     applyTerminalBriefTitle(payload);
     applyTerminalBriefCompatibilityAliases(payload);
@@ -804,7 +828,27 @@ function ownerTokenNamesOrigin(owner?: string, originBrokerId?: string, localBro
   );
 }
 
-export function buildTerminalTaskPayload(task: TaskRecord): TerminalTaskEventPayload {
+/**
+ * True when the guard is configured and `owner` is neither the lifecycle
+ * broker-of-record, the local broker, nor a known broker. Such an owner (for
+ * example a requesting node id recorded as originBrokerId) can never receive
+ * a cross-broker projection, so a parent-owned brief would be orphaned (#2331).
+ */
+function isUnknownNotificationOwner(
+  owner: string | undefined,
+  lifecycleBrokerOfRecordId: string | undefined,
+  ownership: TerminalTaskPayloadOwnershipContext,
+): boolean {
+  const knownBrokerIds = ownership.knownBrokerIds ?? [];
+  if (!owner || knownBrokerIds.length === 0) return false;
+  if (sameBrokerToken(owner, lifecycleBrokerOfRecordId) || sameBrokerToken(owner, ownership.brokerId)) return false;
+  return !knownBrokerIds.some((known) => sameBrokerToken(owner, known));
+}
+
+export function buildTerminalTaskPayload(
+  task: TaskRecord,
+  ownership: TerminalTaskPayloadOwnershipContext = {},
+): TerminalTaskEventPayload {
   const output = isRecord(task.result?.output) ? task.result.output : {};
   const githubOutput = isRecord(output["github"]) ? output["github"] : {};
   const payloadTerminalBrief = isRecord(task.payload["terminalBrief"]) ? task.payload["terminalBrief"] : {};
@@ -920,9 +964,23 @@ export function buildTerminalTaskPayload(task: TaskRecord): TerminalTaskEventPay
     parentOwnedTerminalBrief ||
     ownerTokenMeansParent(operatorFacingOwner) ||
     ownerTokenNamesOrigin(operatorFacingOwner, originBrokerId, lifecycleBrokerOfRecordId);
-  const notificationOwnerBrokerId = parentOwnedByMetadata
+  const claimedNotificationOwnerBrokerId = parentOwnedByMetadata
     ? explicitNotificationOwnerBrokerId ?? originBrokerId ?? lifecycleBrokerOfRecordId
     : lifecycleBrokerOfRecordId;
+  const ownerFallback = parentOwnedByMetadata &&
+    isUnknownNotificationOwner(claimedNotificationOwnerBrokerId, lifecycleBrokerOfRecordId, ownership);
+  // Unknown owner: keep the brief locally owned (no handoff, no
+  // parent-broker-only scope) so the operator is still notified.
+  const parentOwned = parentOwnedByMetadata && !ownerFallback;
+  const notificationOwnerBrokerId = ownerFallback
+    ? lifecycleBrokerOfRecordId ?? firstSafeText(ownership.brokerId)
+    : claimedNotificationOwnerBrokerId;
+  if (ownerFallback && claimedNotificationOwnerBrokerId) {
+    payload.notificationOwnershipFallback = {
+      reason: "unknown_owner_broker",
+      claimedOwner: claimedNotificationOwnerBrokerId,
+    };
+  }
   if (notificationOwnerBrokerId) payload.brokerOfRecordId = notificationOwnerBrokerId;
   if (originBrokerId) payload.originBrokerId = originBrokerId;
   const parentRoundTotal = firstSafePositiveInt(
@@ -1051,15 +1109,16 @@ export function buildTerminalTaskPayload(task: TaskRecord): TerminalTaskEventPay
     outputTerminalBrief["handoffBrokerId"],
     outputMetadata["handoffBrokerId"],
   );
-  const effectiveHandoffBrokerId =
-    handoffBrokerId ??
-    (parentOwnedByMetadata &&
+  const effectiveHandoffBrokerId = ownerFallback
+    ? undefined
+    : handoffBrokerId ??
+    (parentOwned &&
     notificationOwnerBrokerId &&
     lifecycleBrokerOfRecordId &&
     !sameBrokerToken(notificationOwnerBrokerId, lifecycleBrokerOfRecordId)
       ? lifecycleBrokerOfRecordId
       : undefined);
-  const crossBrokerHandoff = buildCrossBrokerHandoff(
+  const crossBrokerHandoff = ownerFallback ? undefined : buildCrossBrokerHandoff(
     task.payload["crossBrokerHandoff"],
     payloadTerminalBrief["crossBrokerHandoff"],
     payloadMetadata["crossBrokerHandoff"],
@@ -1077,7 +1136,7 @@ export function buildTerminalTaskPayload(task: TaskRecord): TerminalTaskEventPay
   );
   if (crossBrokerHandoff) payload.crossBrokerHandoff = crossBrokerHandoff;
   if (
-    parentOwnedByMetadata &&
+    parentOwned &&
     notificationOwnerBrokerId &&
     (
       (lifecycleBrokerOfRecordId && !sameBrokerToken(notificationOwnerBrokerId, lifecycleBrokerOfRecordId)) ||

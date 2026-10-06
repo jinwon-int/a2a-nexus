@@ -4,6 +4,7 @@ import test from "node:test";
 import {
   DEFAULT_BROKER_HOT_RUNTIME_LIMITS,
   resolveBrokerId,
+  resolveKnownBrokerIds,
   resolveBrokerRetentionPolicy,
   resolveHotRuntimeLimits,
   resolveIntegerOption,
@@ -148,4 +149,19 @@ test("DEFAULT_BROKER_HOT_RUNTIME_LIMITS exports current server defaults", () => 
   assert.ok(DEFAULT_BROKER_HOT_RUNTIME_LIMITS.maxAuditEvents > 0);
   assert.ok(DEFAULT_BROKER_HOT_RUNTIME_LIMITS.maxHeartbeatAuditEvents > 0);
   assert.ok(DEFAULT_BROKER_HOT_RUNTIME_LIMITS.maxTerminalOutboxEvents > 0);
+});
+
+test("resolveKnownBrokerIds parses A2A_KNOWN_BROKER_IDS and stays inactive when unset (#2331)", () => {
+  withEnv({ A2A_KNOWN_BROKER_IDS: undefined }, () => {
+    assert.deepEqual(resolveKnownBrokerIds(undefined), []);
+  });
+  withEnv({ A2A_KNOWN_BROKER_IDS: "  " }, () => {
+    assert.deepEqual(resolveKnownBrokerIds(undefined), []);
+  });
+  withEnv({ A2A_KNOWN_BROKER_IDS: " brokeralpha, brokerbeta,,brokeralpha , bad id " }, () => {
+    assert.deepEqual(resolveKnownBrokerIds(undefined), ["brokeralpha", "brokerbeta"]);
+  });
+  withEnv({ A2A_KNOWN_BROKER_IDS: "brokeralpha" }, () => {
+    assert.deepEqual(resolveKnownBrokerIds(["brokergamma"]), ["brokergamma"], "explicit option wins over env");
+  });
 });

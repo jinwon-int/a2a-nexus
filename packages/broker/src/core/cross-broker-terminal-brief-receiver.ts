@@ -25,6 +25,9 @@ const PERMANENT_DESTINATION_REJECT_CODES = new Set([
   "stale_replay",
 ]);
 
+/** Per-owner breakdown cap for `parentOwnedForOtherOwner` (keeps poll logs bounded). */
+const MAX_OTHER_OWNER_BREAKDOWN_KEYS = 20;
+
 export interface CrossBrokerTerminalBriefReceiverConfig {
   sourceBrokerId: string;
   sourceBaseUrl: string;
@@ -97,6 +100,20 @@ export interface CrossBrokerTerminalBriefReceiverPollResult {
     code: string;
     reason: string;
   }>;
+  /** Count of `skipped` events per permanent reject code. Observability only. */
+  skippedByCode: Record<string, number>;
+  /**
+   * Fetched events scoped parent-broker-only whose owner is not this
+   * receiver's destination broker. A steady count here means parent-owned
+   * briefs are addressed to a broker no receiver relays to (#2331).
+   * Observability only: these events are still `ignored` as before.
+   */
+  parentOwnedForOtherOwner: {
+    count: number;
+    /** Per-owner counts, capped at 20 owners; `byOwnerTruncated` marks overflow. */
+    byOwner: Record<string, number>;
+    byOwnerTruncated: boolean;
+  };
 }
 
 export function buildCrossBrokerTerminalBriefProjectionFromEvent(
@@ -170,6 +187,8 @@ export async function pollCrossBrokerTerminalBriefReceiver(
       replayed: 0,
       blocked: [{ eventId: "source", code: `source_http_${sourceResponse.status}`, reason: "source terminal-outbox poll failed" }],
       skipped: [],
+      skippedByCode: {},
+      parentOwnedForOtherOwner: { count: 0, byOwner: {}, byOwnerTruncated: false },
     };
   }
 
@@ -181,6 +200,8 @@ export async function pollCrossBrokerTerminalBriefReceiver(
   let replayed = 0;
   const blocked: CrossBrokerTerminalBriefReceiverPollResult["blocked"] = [];
   const skipped: CrossBrokerTerminalBriefReceiverPollResult["skipped"] = [];
+  const skippedByCode = new Map<string, number>();
+  const otherOwners: OtherOwnerTally = { count: 0, byOwner: new Map(), byOwnerTruncated: false };
   // The cursor advances through accepted/ignored/permanently-skipped events
   // and freezes at the first retryable failure, so a wedged unrelated event
   // cannot starve newer events while retryable failures keep at-least-once
@@ -189,6 +210,7 @@ export async function pollCrossBrokerTerminalBriefReceiver(
   let lastSafeEventId: string | null = null;
 
   for (const event of events) {
+    countParentOwnedForOtherOwner(event, config.destinationBrokerId, otherOwners);
     const projection = buildCrossBrokerTerminalBriefProjectionFromEvent(event, config);
     if (!projection) {
       ignored += 1;
@@ -229,6 +251,7 @@ export async function pollCrossBrokerTerminalBriefReceiver(
     const reason = destinationBody.ack?.reason ?? "destination projection ingest failed";
     if (PERMANENT_DESTINATION_REJECT_CODES.has(code)) {
       skipped.push({ eventId: event.id, code, reason });
+      skippedByCode.set(code, (skippedByCode.get(code) ?? 0) + 1);
       if (!cursorFrozen) lastSafeEventId = event.id;
       continue;
     }
@@ -248,7 +271,39 @@ export async function pollCrossBrokerTerminalBriefReceiver(
     replayed,
     blocked,
     skipped,
+    skippedByCode: Object.fromEntries(skippedByCode),
+    parentOwnedForOtherOwner: {
+      count: otherOwners.count,
+      byOwner: Object.fromEntries(otherOwners.byOwner),
+      byOwnerTruncated: otherOwners.byOwnerTruncated,
+    },
   };
+}
+
+interface OtherOwnerTally {
+  count: number;
+  byOwner: Map<string, number>;
+  byOwnerTruncated: boolean;
+}
+
+function countParentOwnedForOtherOwner(
+  event: TerminalTaskOutboxEvent,
+  destinationBrokerId: string,
+  tally: OtherOwnerTally,
+): void {
+  const ownership = event?.payload?.notificationOwnership;
+  if (ownership?.scope !== "parent-broker-only") return;
+  const owner = token(ownership.ownerBrokerId)?.slice(0, 160) ?? "unknown";
+  if (owner === destinationBrokerId) return;
+  tally.count += 1;
+  const current = tally.byOwner.get(owner);
+  if (current !== undefined) {
+    tally.byOwner.set(owner, current + 1);
+  } else if (tally.byOwner.size < MAX_OTHER_OWNER_BREAKDOWN_KEYS) {
+    tally.byOwner.set(owner, 1);
+  } else {
+    tally.byOwnerTruncated = true;
+  }
 }
 
 function terminalOutboxUrl(config: CrossBrokerTerminalBriefReceiverConfig): string {

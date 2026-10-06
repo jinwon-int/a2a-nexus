@@ -183,6 +183,11 @@ export interface InMemoryA2ABrokerOptions {
    */
   brokerId?: string;
   /**
+   * Peer broker ids accepted as Terminal Brief parent/origin owners (#2331).
+   * Empty/unset keeps the known-broker guard inactive.
+   */
+  knownBrokerIds?: readonly string[];
+  /**
    * Stable team/tenant identity for ownership-guarded tasks. When a task
    * carries teamId metadata, lifecycle mutation is accepted only by a broker
    * configured with the same team id.

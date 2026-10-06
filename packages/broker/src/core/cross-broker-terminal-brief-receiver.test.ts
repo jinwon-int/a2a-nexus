@@ -453,3 +453,81 @@ function jsonResponse(status: number, body: unknown) {
     },
   };
 }
+
+test("#2331 receiver reports skippedByCode and parent-owned events for other owners without changing cursor/skip semantics", async () => {
+  const otherOwnerEvent = (id: string, ownerBrokerId: string) => event({
+    id,
+    payload: {
+      ...event().payload,
+      taskId: `${id}-task`,
+      brokerOfRecordId: ownerBrokerId,
+      notificationOwnership: { ...event().payload.notificationOwnership!, ownerBrokerId },
+    },
+  });
+  const events = [
+    event({ id: "terminal:orphan-1", payload: { ...event().payload, taskId: "orphan-1" } }),
+    otherOwnerEvent("terminal:other-2", "workerA"),
+    event({ id: "terminal:stale-3", payload: { ...event().payload, taskId: "stale-3" } }),
+    otherOwnerEvent("terminal:other-4", "workerA"),
+    event({ id: "terminal:orphan-5", payload: { ...event().payload, taskId: "orphan-5" } }),
+    otherOwnerEvent("terminal:other-6", "brokerGamma"),
+    event({ id: "terminal:local-7", payload: { ...event().payload, taskId: "local-7", notificationOwnership: undefined, crossBrokerHandoff: undefined, brokerOfRecordId: "brokerbeta" } }),
+  ];
+  const fetchImpl: CrossBrokerTerminalBriefReceiverFetch = async (url, init) => {
+    if (url.includes("/a2a/tasks/terminal-outbox")) {
+      return jsonResponse(200, { events, cursor: "terminal:local-7" });
+    }
+    const childTaskId = JSON.parse(init?.body ?? "{}").childTaskId as string;
+    if (childTaskId === "stale-3") {
+      return jsonResponse(409, { accepted: false, ack: { code: "stale_replay", reason: "already newer" } });
+    }
+    return jsonResponse(404, { accepted: false, ack: { code: "missing_parent", reason: "parent round is not present on this broker" } });
+  };
+
+  const result = await pollCrossBrokerTerminalBriefReceiver(CONFIG, fetchImpl);
+
+  assert.equal(result.ok, true);
+  assert.equal(result.fetched, 7);
+  assert.equal(result.posted, 3);
+  assert.equal(result.ignored, 4, "other-owner and local events are still ignored");
+  assert.equal(result.cursorToPersist, "terminal:local-7", "cursor still advances past permanently skipped events");
+  assert.deepEqual(result.blocked, []);
+  assert.deepEqual(result.skipped.map((entry) => entry.code), ["missing_parent", "stale_replay", "missing_parent"]);
+  assert.deepEqual(result.skippedByCode, { missing_parent: 2, stale_replay: 1 });
+  assert.deepEqual(result.parentOwnedForOtherOwner, {
+    count: 3,
+    byOwner: { workerA: 2, brokerGamma: 1 },
+    byOwnerTruncated: false,
+  });
+});
+
+test("#2331 receiver caps the other-owner breakdown at 20 owners and tolerates prototype-like owner ids", async () => {
+  const events = Array.from({ length: 23 }, (_, index) => event({
+    id: `terminal:other-${index}`,
+    payload: {
+      ...event().payload,
+      taskId: `other-${index}`,
+      notificationOwnership: {
+        ...event().payload.notificationOwnership!,
+        ownerBrokerId: index === 0 ? "__proto__" : index === 1 ? "constructor" : `owner-${index}`,
+      },
+    },
+  }));
+  const fetchImpl: CrossBrokerTerminalBriefReceiverFetch = async (url) => {
+    if (url.includes("/a2a/tasks/terminal-outbox")) {
+      return jsonResponse(200, { events, cursor: "terminal:other-22" });
+    }
+    throw new Error("destination should not be called");
+  };
+
+  const result = await pollCrossBrokerTerminalBriefReceiver(CONFIG, fetchImpl);
+
+  assert.equal(result.ignored, 23);
+  assert.equal(result.cursorToPersist, "terminal:other-22");
+  assert.equal(result.parentOwnedForOtherOwner.count, 23);
+  assert.equal(Object.keys(result.parentOwnedForOtherOwner.byOwner).length, 20);
+  assert.equal(result.parentOwnedForOtherOwner.byOwnerTruncated, true);
+  assert.equal(Object.getOwnPropertyDescriptor(result.parentOwnedForOtherOwner.byOwner, "__proto__")?.value, 1);
+  assert.equal(Object.getOwnPropertyDescriptor(result.parentOwnedForOtherOwner.byOwner, "constructor")?.value, 1);
+  assert.deepEqual(result.skippedByCode, {});
+});

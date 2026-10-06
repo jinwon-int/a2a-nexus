@@ -143,6 +143,7 @@ import { resolveWavePlanDagV2Mode } from "./core/wave-plan-dag-v2-mode.js";
 import { normalizePersistenceBackend, normalizeSqliteLoadSource } from "./persistence-options.js";
 import {
   resolveBrokerId,
+  resolveKnownBrokerIds,
   resolveBrokerRetentionPolicy,
   resolveHotRuntimeLimits,
   resolveIntegerOption,
@@ -620,6 +621,7 @@ export function createBrokerServer(options: BrokerServerOptions = {}): BrokerSer
   const peerStatusEnabled =
     options.peerStatusEnabled ?? resolveBooleanEnv(process.env.A2A_PEER_STATUS_ENABLED, false);
   const brokerId = resolveBrokerId(options.brokerId, serviceName);
+  const knownBrokerIds = resolveKnownBrokerIds(options.knownBrokerIds);
   const teamId = resolveStringOption(options.teamId, process.env.A2A_TEAM_ID);
   const buildInfo = resolveBrokerBuildInfo(options, serviceName);
 
@@ -843,6 +845,7 @@ export function createBrokerServer(options: BrokerServerOptions = {}): BrokerSer
       maxRequeueAttempts,
       workerHeartbeatPersistIntervalMs,
       brokerId,
+      knownBrokerIds,
       taskCreateIdempotencyAuthority,
       terminalOutboxAppendAuthority,
       taskTerminalGraphSourceAuthority,

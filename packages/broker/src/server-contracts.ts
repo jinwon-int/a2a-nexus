@@ -379,6 +379,12 @@ export interface BrokerServerOptions extends BrokerRuntimeHotLimitOptions {
   maxRequeueAttempts?: number;
   /** Optional broker identity exposed on health/worker registration and stamped onto new tasks as broker-of-record. Env: `A2A_BROKER_ID` or `BROKER_ID`. */
   brokerId?: string;
+  /**
+   * Peer broker ids accepted as Terminal Brief parent/origin owners. When non-empty, task creation rejects an
+   * explicit unknown `originBrokerId` and the terminal outbox keeps unknown-owner briefs local instead of minting
+   * parent-owned orphans. Env: comma-separated `A2A_KNOWN_BROKER_IDS` (unset = guard inactive).
+   */
+  knownBrokerIds?: string[];
   /** Team/tenant identity stamped onto new tasks for lifecycle ownership checks. Env: `A2A_TEAM_ID`. */
   teamId?: string;
   /** Definition-of-Ready lint rollout mode for patch/implementation task creation. Env: `A2A_TASK_READINESS_MODE` or `BROKER_TASK_READINESS_MODE` (`warn` default, `enforce` fail-closed). */

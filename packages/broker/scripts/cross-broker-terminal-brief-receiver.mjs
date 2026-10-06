@@ -108,6 +108,8 @@ async function once() {
     replayed: result.replayed,
     blocked: result.blocked,
     skipped: result.skipped,
+    skippedByCode: result.skippedByCode,
+    parentOwnedForOtherOwner: result.parentOwnedForOtherOwner,
     cursorToPersist: result.cursorToPersist,
   }, null, 2));
   return result;
