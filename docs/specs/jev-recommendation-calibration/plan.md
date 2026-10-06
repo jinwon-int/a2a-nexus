@@ -19,11 +19,14 @@ touched.
 
 ## Phase 1 — Corpus collection and redaction protocol (separate slice, not approved here)
 
-- [ ] Ratify the redaction protocol before any real record exists: no free-form text, no
+- [x] Ratify the redaction protocol before any real record exists: no free-form text, no
       digests of private text, no identities, no paths/URLs, no precise timestamps, no
       credentials; date-granularity timestamps only.
-- [ ] Ratify the judgment-time-only capture rule: a record is written from dispatch-time
+      _Ratified by the owner 2026-09-21 (recorded in #2206, comment 2026-09-20T16:53Z,
+      item 1; #2206 proposed this protocol for this plan's Phase 1)._
+- [x] Ratify the judgment-time-only capture rule: a record is written from dispatch-time
       information exclusively; outcome channels are structurally unable to append to it.
+      _Ratified in the same owner decision (#2206, item 1: judgment-time-only capture)._
 - [ ] Collect 100–200 initial exploratory records into the closed record shape.
 - [ ] Assign groups (`unique` / `identical_work` / `retry` / `derived_case`) at capture time.
 - [ ] Assign chronological `train` / `calibration` / `holdout` splits by `observationDate`;
