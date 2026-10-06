@@ -62,10 +62,13 @@ const ENV_PREFIX = "A2A_DANSO_ANALYSIS";
 const DEFAULT_TIMEOUT_SEC = 300;
 const MAX_DANSO_TIMEOUT_SEC = 3600; // danso short-mode whole-run maximum
 const DEFAULT_MAX_TURNS = 4;
-const DEFAULT_MAX_PROMPT_BYTES = 96 * 1024;
-// Linux MAX_ARG_STRLEN is 128 KiB per argument; danso takes the prompt as one
-// argv element. Fail closed above this line instead of surfacing E2BIG.
-const PROMPT_ARGV_LIMIT_BYTES = 120 * 1024;
+// danso rejects any prompt outside 1..65536 bytes ("prompt must be 1..65536
+// bytes") before making a model request, whether the prompt arrives via argv,
+// --prompt-file or stdin (#2332). This is also well under Linux MAX_ARG_STRLEN
+// (128 KiB per argument). The configured budget can lower the limit but never
+// raise it, so an oversized task is truncated instead of failing in danso.
+const DANSO_MAX_PROMPT_BYTES = 65536;
+const DEFAULT_MAX_PROMPT_BYTES = DANSO_MAX_PROMPT_BYTES;
 const DEFAULT_DANSO_PROVIDER = "glm";
 const DEFAULT_DANSO_MODEL = "glm-5.3-flash";
 const DEFAULT_DANSO_EFFORT = "high";
@@ -202,8 +205,15 @@ function buildDansoPrompt({ message, payload, sourceBundle, flags, model, effort
 	].join("\n\n");
 }
 
+function resolveDansoMaxPromptBytes(env) {
+	return Math.min(
+		DANSO_MAX_PROMPT_BYTES,
+		positiveIntegerEnv(env.A2A_DANSO_ANALYSIS_MAX_PROMPT_BYTES, DEFAULT_MAX_PROMPT_BYTES),
+	);
+}
+
 function applyDansoPromptBudget(prompt, env) {
-	const maxPromptBytes = positiveIntegerEnv(env.A2A_DANSO_ANALYSIS_MAX_PROMPT_BYTES, DEFAULT_MAX_PROMPT_BYTES);
+	const maxPromptBytes = resolveDansoMaxPromptBytes(env);
 	const promptBytes = Buffer.byteLength(prompt, "utf8");
 	if (promptBytes <= maxPromptBytes) return prompt;
 	const suffix = [
@@ -490,12 +500,14 @@ function main() {
 		buildDansoPrompt({ message, payload, sourceBundle, flags, model: config.model, effort: config.effort }),
 		env,
 	);
-	if (Buffer.byteLength(prompt, "utf8") > PROMPT_ARGV_LIMIT_BYTES) {
+	// Defensive invariant: the budget above is clamped to danso's limit, so this
+	// only fires if that clamp regresses. Fail before spawn rather than in danso.
+	if (Buffer.byteLength(prompt, "utf8") > DANSO_MAX_PROMPT_BYTES) {
 		bridgeError({
 			code: "analysis_bridge_invocation_invalid",
 			stage: "preflight",
 			failureShape: "handler_artifact_failure",
-			message: `danso prompt is ${Buffer.byteLength(prompt, "utf8")} bytes, above the ${PROMPT_ARGV_LIMIT_BYTES}-byte per-argument argv budget; lower A2A_DANSO_ANALYSIS_MAX_PROMPT_BYTES`,
+			message: `danso prompt is ${Buffer.byteLength(prompt, "utf8")} bytes, above danso's ${DANSO_MAX_PROMPT_BYTES}-byte prompt limit`,
 			elapsedMs: 0,
 			context: failureContext(),
 		});
@@ -630,6 +642,7 @@ export const __test = Object.freeze({
 	credentialAvailable,
 	buildDansoChildEnv,
 	buildDansoPrompt,
+	resolveDansoMaxPromptBytes,
 	applyDansoPromptBudget,
 	extractContractJson,
 	normalizeResponse,
