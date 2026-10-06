@@ -1873,3 +1873,112 @@ test("save sheds oldest terminal tasks into the canonical mirror within budget a
     temp.cleanup();
   }
 });
+
+type NclexReceiptEntry = NonNullable<BrokerSnapshot["nclexEvaluationReceipts"]>[number];
+
+function nclexReceiptFixture(): NclexReceiptEntry {
+  // The store persists receipts as an opaque passthrough sidecar; signature
+  // validity is the receipt store's concern, not the state store's.
+  return {
+    receipt: {
+      schema: "nclex-evaluation-receipt/v1",
+      canonicalization: "jcs",
+      receiptId: "receipt-hot-restart",
+      repo: "jinwon-int/nclex",
+      prNumber: 145,
+      baseSha: "c".repeat(40),
+      headSha: "a".repeat(40),
+      diffHash: "dh-1",
+      intentHash: "ih-1",
+      authorNodeId: "dungae",
+      reviewerNodeId: "seoseo",
+      team: "T1",
+      lane: "content_clinical",
+      verdict: "PASS",
+      findings: [],
+      producedAt: "2026-08-06T09:00:00.000Z",
+      signatures: [{ protected: "e30", signature: "sig" }],
+    } as unknown as NclexReceiptEntry["receipt"],
+    recordedAt: "2026-08-06T09:00:01.000Z",
+  };
+}
+
+function emptyHotSnapshot(): BrokerSnapshot {
+  return {
+    version: CURRENT_BROKER_STATE_VERSION,
+    exchanges: [],
+    exchangeMessages: [],
+    proposals: [],
+    artifacts: [],
+    validations: [],
+    workers: [],
+    tasks: [],
+    auditEvents: [],
+    tombstones: [],
+    terminalOutbox: [],
+    crossBrokerTerminalBriefs: [],
+    wavePlans: [],
+  };
+}
+
+test("SqliteBrokerStateStore hot-table load preserves canonical NCLEX evaluation receipts (#1724)", () => {
+  const temp = withTempFile("state.sqlite");
+  try {
+    // Same class of gap as #1446: receipts are a snapshot-only sidecar (no hot
+    // table), so a hot-tables restart must carry them from the canonical blob
+    // or recorded evaluation receipts vanish once the feature is enabled.
+    const entry = nclexReceiptFixture();
+    const store = new SqliteBrokerStateStore(temp.filePath, { loadSource: "hot-tables" });
+    store.save({ ...emptyHotSnapshot(), nclexEvaluationReceipts: [entry] });
+    store.close();
+
+    // Broker restart on the sqlite hot-tables backend.
+    const reloaded = new SqliteBrokerStateStore(temp.filePath, { loadSource: "hot-tables" });
+    assert.deepEqual(
+      reloaded.load().nclexEvaluationReceipts,
+      [entry],
+      "hot-tables load must carry canonical NCLEX evaluation receipts across a restart",
+    );
+    reloaded.close();
+  } finally {
+    temp.cleanup();
+  }
+});
+
+test("SqliteBrokerStateStore hint-carrying full save still writes NCLEX evaluation receipts to the canonical blob (#1724)", () => {
+  const temp = withTempFile("state.sqlite");
+  try {
+    // A hint-carrying full save skips the canonical blob rewrite unless
+    // snapshot-only sidecar state is present; receipts must veto that skip or
+    // the receipt is ACKed but never reaches disk.
+    const entry = nclexReceiptFixture();
+    const auditEvent = {
+      id: "audit-nclex-hint-1",
+      actorId: "worker-child",
+      action: "worker.heartbeat" as const,
+      targetType: "worker" as const,
+      targetId: "worker-child",
+      createdAt: "2026-08-06T09:00:03.000Z",
+    };
+    const store = new SqliteBrokerStateStore(temp.filePath);
+    store.save(emptyHotSnapshot());
+    store.save(
+      { ...emptyHotSnapshot(), auditEvents: [auditEvent], nclexEvaluationReceipts: [entry] },
+      { hotAuditEvents: [auditEvent] },
+    );
+    store.close();
+
+    const canonical = new SqliteBrokerStateStore(temp.filePath);
+    assert.deepEqual(
+      canonical.load().nclexEvaluationReceipts,
+      [entry],
+      "a hint-carrying save with receipts must still rewrite the canonical blob",
+    );
+    canonical.close();
+    const hot = new SqliteBrokerStateStore(temp.filePath, { loadSource: "hot-tables" });
+    assert.deepEqual(hot.load().nclexEvaluationReceipts, [entry], "hot-tables restart sees the saved receipts too");
+    hot.close();
+  } finally {
+    temp.cleanup();
+  }
+});
