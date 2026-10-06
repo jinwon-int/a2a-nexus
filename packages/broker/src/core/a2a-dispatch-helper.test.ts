@@ -1,5 +1,8 @@
 import assert from "node:assert/strict";
+import { spawnSync } from "node:child_process";
+import { dirname, resolve } from "node:path";
 import { test } from "node:test";
+import { fileURLToPath } from "node:url";
 import {
   buildA2ADispatchPlan,
   buildA2ADispatchTaskId,
@@ -64,6 +67,7 @@ test("buildA2ADispatchPlan supports explicit cross-team totals such as 8 lanes",
     originBrokerId: "brokeralpha",
     operatorFacingOwner: "parent",
     crossBrokerHandoff: {
+      parentRoundId: "brokeralpha-1032-parent-round",
       handoffBrokerId: "brokerbeta",
       childWorkerId: "workerepsilon",
       originBrokerId: "brokeralpha",
@@ -79,7 +83,7 @@ test("buildA2ADispatchPlan supports explicit cross-team totals such as 8 lanes",
   assert.equal(plan.taskPayload?.parentRoundOrder, 6);
   assert.equal(plan.taskPayload?.brokerOfRecordId, "brokeralpha");
   assert.equal(plan.taskPayload?.operatorFacingOwner, "parent");
-  assert.equal(plan.taskPayload?.crossBrokerHandoff?.parentRoundId, "a2a-1032-cross-team-round");
+  assert.equal(plan.taskPayload?.crossBrokerHandoff?.parentRoundId, "brokeralpha-1032-parent-round");
   assert.equal(plan.taskPayload?.crossBrokerHandoff?.handoffBrokerId, "brokerbeta");
   assert.equal(plan.roundManifest?.metadata?.parentRoundTotal, "8");
   assert.equal(plan.roundManifest?.expectedWorkers[0].metadata?.parentRoundOrder, "6");
@@ -185,6 +189,7 @@ test("Team2 execute-mode allows explicit brokerbeta cross-broker handoff", () =>
       originBrokerId: "brokeralpha",
       operatorFacingOwner: "parent",
       crossBrokerHandoff: {
+        parentRoundId: "brokeralpha-parent-round-1",
         handoffBrokerId: "brokerbeta",
         originBrokerId: "brokeralpha",
         originTaskId: "brokeralpha-parent-task-1",
@@ -244,4 +249,131 @@ test("buildA2ADispatchTaskId is deterministic for same Team2/common inputs", () 
   assert.equal(first.taskId, second.taskId);
   assert.notEqual(first.taskId, differentOrder.taskId);
   assert.match(first.taskId, /^team2-/);
+});
+
+const HANDOFF_SPEC = {
+  ...BASE_SPEC,
+  parentRoundId: "brokerbeta-child-round",
+  brokerOfRecordId: "brokerbeta",
+  originBrokerId: "brokeralpha",
+  operatorFacingOwner: "parent" as const,
+};
+const COMPLETE_HANDOFF = {
+  parentRoundId: "brokeralpha-parent-round",
+  originBrokerId: "brokeralpha",
+  handoffBrokerId: "brokerbeta",
+  originTaskId: "brokeralpha-parent-task-1",
+};
+
+function assertHandoffBlocked(plan: ReturnType<typeof buildA2ADispatchPlan>, pattern: RegExp): void {
+  assert.equal(plan.decision.value, "blocked");
+  assert.equal(plan.taskPayload, null);
+  assert.ok(
+    plan.decision.blockers.some((blocker) => blocker.startsWith("[cross_broker_handoff_parent]") && pattern.test(blocker)),
+    `expected a cross_broker_handoff_parent blocker matching ${pattern}, got ${JSON.stringify(plan.decision.blockers)}`,
+  );
+}
+
+test("#2331 cross-broker handoff without a handoff parentRoundId is blocked (no local parentRoundId fallback)", () => {
+  const { parentRoundId: _omitted, ...withoutParent } = COMPLETE_HANDOFF;
+  const plan = buildA2ADispatchPlan({ ...HANDOFF_SPEC, crossBrokerHandoff: withoutParent });
+
+  assertHandoffBlocked(plan, /crossBrokerHandoff\.parentRoundId is required/);
+});
+
+test("#2331 cross-broker handoff without originTaskId is blocked", () => {
+  const { originTaskId: _omitted, ...withoutOriginTask } = COMPLETE_HANDOFF;
+  const plan = buildA2ADispatchPlan({ ...HANDOFF_SPEC, crossBrokerHandoff: withoutOriginTask });
+
+  assertHandoffBlocked(plan, /originTaskId is required/);
+});
+
+test("#2331 cross-broker handoff naming the local parent round or run id is blocked as self-reference", () => {
+  const sameAsParent = buildA2ADispatchPlan({
+    ...HANDOFF_SPEC,
+    crossBrokerHandoff: { ...COMPLETE_HANDOFF, parentRoundId: HANDOFF_SPEC.parentRoundId },
+  });
+  assertHandoffBlocked(sameAsParent, /self-reference/);
+
+  const sameAsRun = buildA2ADispatchPlan({
+    ...HANDOFF_SPEC,
+    crossBrokerHandoff: { ...COMPLETE_HANDOFF, parentRoundId: HANDOFF_SPEC.runId },
+  });
+  assertHandoffBlocked(sameAsRun, /self-reference/);
+
+  const { parentRoundId: _local, ...specWithoutLocalParent } = HANDOFF_SPEC;
+  const defaultedToRun = buildA2ADispatchPlan({
+    ...specWithoutLocalParent,
+    crossBrokerHandoff: { ...COMPLETE_HANDOFF, parentRoundId: ` ${HANDOFF_SPEC.runId} ` },
+  });
+  assertHandoffBlocked(defaultedToRun, /self-reference/);
+});
+
+test("#2331 complete cross-broker handoff keeps the origin parent round in the task payload", () => {
+  const plan = buildA2ADispatchPlan({ ...HANDOFF_SPEC, crossBrokerHandoff: COMPLETE_HANDOFF });
+
+  assert.equal(plan.decision.value, "go");
+  assert.equal(plan.metadata.parentRoundId, "brokerbeta-child-round");
+  assert.deepEqual(plan.taskPayload?.crossBrokerHandoff, {
+    ...COMPLETE_HANDOFF,
+    childWorkerId: BASE_SPEC.worker,
+  });
+});
+
+const HELPER_CLI = resolve(dirname(fileURLToPath(import.meta.url)), "../../scripts/a2a-dispatch-helper.mjs");
+const CLI_BASE_ARGS = [
+  "--team-id", "team2",
+  "--worker", "workerepsilon",
+  "--lane", "2",
+  "--run-id", "a2a-team2-handoff-20260602T130000Z",
+  "--parent-round-id", "brokerbeta-child-round",
+  "--parent-issue", "https://github.com/jinwon-int/a2a-broker/issues/1032",
+  "--child-issue", "https://github.com/jinwon-int/a2a-broker/issues/1137",
+  "--broker-of-record-id", "brokerbeta",
+  "--origin-broker-id", "brokeralpha",
+  "--operator-facing-owner", "parent",
+  "--cross-broker-handoff",
+  "--handoff-broker-id", "brokerbeta",
+  "--handoff-origin-broker-id", "brokeralpha",
+];
+
+function runHelperCli(extraArgs: string[]) {
+  const result = spawnSync(process.execPath, [HELPER_CLI, ...CLI_BASE_ARGS, ...extraArgs, "--json"], { encoding: "utf8" });
+  return { status: result.status, plan: JSON.parse(result.stdout) as ReturnType<typeof buildA2ADispatchPlan> };
+}
+
+test("#2331 helper CLI blocks --cross-broker-handoff without --handoff-parent-round-id (no --parent-round-id fallback)", () => {
+  const { status, plan } = runHelperCli(["--handoff-origin-task-id", "brokeralpha-parent-task-1"]);
+
+  assert.equal(status, 1);
+  assertHandoffBlocked(plan, /crossBrokerHandoff\.parentRoundId is required/);
+});
+
+test("#2331 helper CLI blocks --cross-broker-handoff without --handoff-origin-task-id", () => {
+  const { status, plan } = runHelperCli(["--handoff-parent-round-id", "brokeralpha-parent-round"]);
+
+  assert.equal(status, 1);
+  assertHandoffBlocked(plan, /originTaskId is required/);
+});
+
+test("#2331 helper CLI blocks a self-referencing --handoff-parent-round-id", () => {
+  const { status, plan } = runHelperCli([
+    "--handoff-parent-round-id", "brokerbeta-child-round",
+    "--handoff-origin-task-id", "brokeralpha-parent-task-1",
+  ]);
+
+  assert.equal(status, 1);
+  assertHandoffBlocked(plan, /self-reference/);
+});
+
+test("#2331 helper CLI accepts a complete cross-broker handoff", () => {
+  const { status, plan } = runHelperCli([
+    "--handoff-parent-round-id", "brokeralpha-parent-round",
+    "--handoff-origin-task-id", "brokeralpha-parent-task-1",
+  ]);
+
+  assert.equal(status, 0);
+  assert.equal(plan.decision.value, "go");
+  assert.equal(plan.taskPayload?.crossBrokerHandoff?.parentRoundId, "brokeralpha-parent-round");
+  assert.equal(plan.taskPayload?.crossBrokerHandoff?.originTaskId, "brokeralpha-parent-task-1");
 });

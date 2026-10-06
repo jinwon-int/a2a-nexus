@@ -220,6 +220,33 @@ export function resolveA2AParentRoundMetadata(roundSpec: A2ADispatchSpec): {
   };
 }
 
+/**
+ * A cross-broker handoff must name the origin broker's parent round and task.
+ * Falling back to (or reusing) the local parent round makes the child round
+ * its own parent, which the parent broker fails closed as `missing_parent`
+ * and leaves the Terminal Brief orphaned (#2331).
+ */
+function crossBrokerHandoffIssues(roundSpec: A2ADispatchSpec, localParentRoundId: string | undefined): string[] {
+  const handoff = roundSpec.crossBrokerHandoff;
+  if (!handoff) return [];
+  const issues: string[] = [];
+  const handoffParentRoundId = handoff.parentRoundId?.trim();
+  if (!handoffParentRoundId) {
+    issues.push("crossBrokerHandoff.parentRoundId is required; provide --handoff-parent-round-id with the origin broker's parent round id");
+  } else {
+    const localIds = [localParentRoundId, roundSpec.parentRoundId, roundSpec.runId]
+      .map((value) => value?.trim())
+      .filter((value): value is string => Boolean(value));
+    if (localIds.includes(handoffParentRoundId)) {
+      issues.push("crossBrokerHandoff.parentRoundId must name the origin broker's parent round, not the local parentRoundId/runId (self-reference)");
+    }
+  }
+  if (!handoff.originTaskId?.trim()) {
+    issues.push("crossBrokerHandoff.originTaskId is required; provide --handoff-origin-task-id with the origin broker's parent task id");
+  }
+  return issues;
+}
+
 function normalizeWorkerList(workers: string[] | undefined): string[] {
   const seen = new Set<string>();
   const result: string[] = [];
@@ -357,6 +384,9 @@ export function buildA2ADispatchPlan(roundSpec: A2ADispatchSpec, config?: Partia
   for (const issue of parentRound.issues) {
     blockers.push(`[parent_round_metadata_populated] ${issue}`);
   }
+  for (const issue of crossBrokerHandoffIssues(roundSpec, parentRound.metadata?.parentRoundId)) {
+    blockers.push(`[cross_broker_handoff_parent] ${issue}`);
+  }
   if (!mergedConfig.dryRun && mergedConfig.execute) {
     warnings.push("[approval_boundary_respected] Execute mode active; write operations are permitted");
     if ((roundSpec.teamId === "team1" || roundSpec.teamId === "common") && !roundSpec.workModeDecision) {
@@ -403,6 +433,7 @@ export function buildA2ADispatchPlan(roundSpec: A2ADispatchSpec, config?: Partia
     );
   }
 
+  const handoffParentRoundId = roundSpec.crossBrokerHandoff?.parentRoundId?.trim();
   const taskPayload: A2ADispatchTaskPayload | null = parentRound.metadata && blockers.length === 0
     ? {
         taskId: deterministicTaskId.taskId,
@@ -424,10 +455,10 @@ export function buildA2ADispatchPlan(roundSpec: A2ADispatchSpec, config?: Partia
         operatorFacingOwner: roundSpec.operatorFacingOwner,
         workModeDecision: roundSpec.workModeDecision,
         ...(readOnly ? { readOnlyAudit: true as const, allowNoChanges: true as const, readOnlyValidation: true as const } : {}),
-        ...(roundSpec.crossBrokerHandoff
+        ...(roundSpec.crossBrokerHandoff && handoffParentRoundId
           ? {
               crossBrokerHandoff: {
-                parentRoundId: roundSpec.crossBrokerHandoff.parentRoundId ?? parentRound.metadata.parentRoundId,
+                parentRoundId: handoffParentRoundId,
                 originBrokerId: roundSpec.crossBrokerHandoff.originBrokerId,
                 handoffBrokerId: roundSpec.crossBrokerHandoff.handoffBrokerId,
                 originTaskId: roundSpec.crossBrokerHandoff.originTaskId,

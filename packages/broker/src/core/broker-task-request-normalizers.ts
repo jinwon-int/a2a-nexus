@@ -43,13 +43,40 @@ export function readPositiveInteger(value: unknown): number | undefined {
   return undefined;
 }
 
+/** Receiving-broker identity used to resolve Terminal Brief origin ownership. */
+export interface GithubPatchTaskRequestContext {
+  /** Receiving broker id (`A2A_BROKER_ID`); the default originBrokerId when configured. */
+  brokerId?: string;
+  /** Peer broker ids accepted as an explicit originBrokerId. Empty/unset disables the guard. */
+  knownBrokerIds?: readonly string[];
+}
+
 export function normalizeGithubPatchParentRoundPayload(
   payload: Record<string, unknown>,
-  context: { requesterId?: string },
+  context: GithubPatchTaskRequestContext & { requesterId?: string },
 ): { fields: Record<string, unknown>; issues: string[] } {
   const runId = readString(payload["runId"] ?? payload["run"] ?? payload["roundId"] ?? payload["round"]);
   const parentRoundId = readString(payload["parentRoundId"]) ?? runId;
-  const originBrokerId = readString(payload["originBrokerId"]) ?? context.requesterId;
+  const explicitOriginBrokerId = readString(payload["originBrokerId"]);
+  const brokerId = readString(context.brokerId);
+  // The requester is usually a node, not a broker: only legacy brokers without
+  // a configured identity fall back to it (#2331).
+  const originBrokerId = explicitOriginBrokerId ?? brokerId ?? context.requesterId;
+  // Case-insensitive like the terminal-outbox owner check, so both agree on
+  // which ids are known.
+  const knownBrokerIds = (context.knownBrokerIds ?? []).map((id) => id.trim().toLowerCase()).filter(Boolean);
+  const explicitOriginToken = explicitOriginBrokerId?.toLowerCase();
+  if (
+    explicitOriginToken &&
+    knownBrokerIds.length > 0 &&
+    explicitOriginToken !== brokerId?.toLowerCase() &&
+    !knownBrokerIds.includes(explicitOriginToken)
+  ) {
+    throw new BrokerError(
+      "bad_request",
+      "GitHub patch dispatch originBrokerId must be the receiving broker or a known broker id (A2A_KNOWN_BROKER_IDS)",
+    );
+  }
   const teamId = readString(payload["teamId"] ?? payload["teamScope"]);
   const teamDefaultTotal = teamId ? GITHUB_DISPATCH_TEAM_TOTALS[teamId] : undefined;
   const parentRoundTotal = readPositiveInteger(
@@ -103,7 +130,10 @@ export function normalizeGithubPatchParentRoundPayload(
   };
 }
 
-export function normalizeGitHubPatchTaskRequest(request: CreateTaskRequest): CreateTaskRequest {
+export function normalizeGitHubPatchTaskRequest(
+  request: CreateTaskRequest,
+  context: GithubPatchTaskRequestContext = {},
+): CreateTaskRequest {
   const payload = request.payload ?? {};
   const mode = readString(payload["mode"]);
   const repo = readString(payload["repo"]);
@@ -230,7 +260,7 @@ export function normalizeGitHubPatchTaskRequest(request: CreateTaskRequest): Cre
     payload["crossBrokerHandoff"] !== undefined,
   );
   const parentRoundPayload = hasParentRoundRoutingSignal
-    ? normalizeGithubPatchParentRoundPayload(payload, { requesterId: request.requester?.id })
+    ? normalizeGithubPatchParentRoundPayload(payload, { ...context, requesterId: request.requester?.id })
     : { fields: {}, issues: [] };
   if (parentRoundPayload.issues.length > 0) {
     throw new BrokerError("bad_request", `GitHub patch dispatch parent-round metadata invalid: ${parentRoundPayload.issues.join("; ")}`);

@@ -217,6 +217,22 @@ export function resolveBrokerId(explicit: string | undefined, serviceName: strin
   }) ?? serviceName;
 }
 
+/**
+ * Peer broker ids this broker accepts as parent/origin owners of a Terminal
+ * Brief (#2331). Env: comma-separated `A2A_KNOWN_BROKER_IDS`. Empty/unset
+ * returns `[]`, which keeps the known-broker guard inactive.
+ */
+export function resolveKnownBrokerIds(explicit: readonly string[] | string | undefined): string[] {
+  const raw = explicit ?? process.env.A2A_KNOWN_BROKER_IDS ?? "";
+  const values = typeof raw === "string" ? raw.split(",") : raw;
+  const known = new Set<string>();
+  for (const value of values) {
+    const id = sanitizeBuildToken(value, { fallback: undefined, unsafeFallback: undefined });
+    if (id) known.add(id);
+  }
+  return [...known];
+}
+
 function resolvePolicyNumber(
   explicit: number | undefined,
   fromEnv: string | undefined,
