@@ -187,6 +187,13 @@ export interface CrossBrokerTerminalBriefProjectionStoreOptions {
   parentBrokerOfRecord?(parentRoundId: string): string | undefined;
   now?(): Date;
   /**
+   * Maximum clock skew (ms) tolerated for a projection's `completedAt` /
+   * `emittedAt` ahead of this broker's clock. Defaults to 5 minutes. A
+   * future-dated `completedAt` would otherwise pre-empt the record key and turn
+   * the real, later projection into `stale_replay` (#2331 phase 2a).
+   */
+  maxFutureSkewMs?: number;
+  /**
    * Optional callback that returns Terminal Brief routing info for a parent
    * round. When the parent round has routing metadata (teamScope,
    * initiatingBrokerId) the store validates incoming projections against the
@@ -216,10 +223,18 @@ export class CrossBrokerTerminalBriefProjectionStore {
   }
 
   ingest(request: CrossBrokerTerminalBriefProjectionRequest): CrossBrokerTerminalBriefProjectionResult {
-    const now = (this.options.now?.() ?? new Date()).toISOString();
+    const nowDate = this.options.now?.() ?? new Date();
+    const now = nowDate.toISOString();
     const normalized = normalizeRequest(request);
     if (!normalized) {
       return reject("bad_request", "cross-broker Terminal Brief projection requires parentRoundId, originBrokerId, terminal status, and completedAt", now);
+    }
+    const futureLimitMs = nowDate.getTime() + resolveMaxFutureSkewMs(this.options.maxFutureSkewMs);
+    if (Date.parse(normalized.completedAt) > futureLimitMs) {
+      return reject("bad_request", "cross-broker Terminal Brief projection completedAt is in the future beyond the allowed clock skew", now);
+    }
+    if (normalized.emittedAt && Date.parse(normalized.emittedAt) > futureLimitMs) {
+      return reject("bad_request", "cross-broker Terminal Brief projection emittedAt is in the future beyond the allowed clock skew", now);
     }
 
     // Dispatch metadata preflight: require parentRoundId, originBrokerId,
@@ -431,6 +446,12 @@ function compareRecords(a: CrossBrokerTerminalBriefProjection, b: CrossBrokerTer
     || ((a.parentRoundOrder ?? Number.MAX_SAFE_INTEGER) - (b.parentRoundOrder ?? Number.MAX_SAFE_INTEGER))
     || (a.childTaskId ?? "").localeCompare(b.childTaskId ?? "")
     || (a.childWorkerId ?? "").localeCompare(b.childWorkerId ?? "");
+}
+
+const DEFAULT_MAX_FUTURE_SKEW_MS = 5 * 60_000;
+
+function resolveMaxFutureSkewMs(value: number | undefined): number {
+  return typeof value === "number" && Number.isFinite(value) && value >= 0 ? value : DEFAULT_MAX_FUTURE_SKEW_MS;
 }
 
 function normalizeToken(value: unknown): string | undefined {
