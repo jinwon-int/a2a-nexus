@@ -331,6 +331,10 @@ test("full flow emits the OpenClaw envelope around schema-valid piri output", ()
 		assert.equal(response.executionTelemetry.modelRequests, 3);
 		assert.equal(response.executionTelemetry.toolCalls, 1);
 		assert.equal(response.executionTelemetry.schemaRetries, 1);
+		// The retry marker above carries no errors field: it still counts as a
+		// schema retry, but its reason is unknown (other), not no_json_candidate
+		// (#1815 7b).
+		assert.deepEqual(response.executionTelemetry.schemaRetryReasons, { other: 1 });
 		assert.equal(response.executionTelemetry.inputTokens, 1200);
 		assert.equal(response.executionTelemetry.outputTokens, 340);
 		assert.equal(response.executionTelemetry.costUsd, 0.0042);
@@ -724,7 +728,6 @@ test("classifySchemaRetryErrors maps validator error shapes onto the bounded enu
 	// Empty error list: the model's text had no extractable JSON candidate at
 	// all (markdown/wrapper shape).
 	assert.equal(classifySchemaRetryErrors([]), "no_json_candidate");
-	assert.equal(classifySchemaRetryErrors(undefined), "no_json_candidate");
 	assert.equal(classifySchemaRetryErrors(["output candidate was not parseable JSON"]), "no_json_candidate");
 	// additionalProperties:false violations.
 	assert.equal(
@@ -761,6 +764,44 @@ test("classifySchemaRetryErrors maps validator error shapes onto the bounded enu
 	// unknown shapes fall into other, still bounded.
 	assert.equal(classifySchemaRetryErrors(["something novel happened"]), "other");
 	assert.ok(SCHEMA_RETRY_REASONS.includes("other"));
+});
+
+test("classifySchemaRetryErrors does not let schema field names masquerade as provider failures (#1815 7a)", () => {
+	// Genuine schema violations whose JSON-pointer path names a field called
+	// timeout*/provider* are value-shape violations, not provider failures.
+	assert.equal(classifySchemaRetryErrors(["/timeoutMs: Expected number"]), "invalid_value");
+	assert.equal(classifySchemaRetryErrors(["/provider: must be string"]), "invalid_value");
+	assert.equal(classifySchemaRetryErrors(["/rateLimit: Expected integer"]), "invalid_value");
+	assert.equal(classifySchemaRetryErrors(["/provider: Expected required property"]), "missing_field");
+	assert.equal(
+		classifySchemaRetryErrors(["/: must not have additional properties", "/timeoutMs: Expected number"]),
+		"extra_property",
+	);
+	// Provider text on a non-path line still wins, even alongside path lines
+	// that mention provider/timeout field names.
+	assert.equal(
+		classifySchemaRetryErrors(["/timeoutMs: Expected number", "request timeout after 120s"]),
+		"provider_failure",
+	);
+	assert.equal(classifySchemaRetryErrors(["rate limit exceeded"]), "provider_failure");
+});
+
+test("classifySchemaRetryErrors separates a missing errors field from an empty error list (#1815 7b)", () => {
+	// Explicit empty list: the validator ran and found no JSON candidate.
+	assert.equal(classifySchemaRetryErrors([]), "no_json_candidate");
+	// Missing / non-array errors: the marker carried no validator evidence, so
+	// the reason is unknown — never folded into no_json_candidate.
+	assert.equal(classifySchemaRetryErrors(undefined), "other");
+	assert.equal(classifySchemaRetryErrors(null), "other");
+	assert.equal(classifySchemaRetryErrors("/status: Expected string"), "other");
+	// A present list with no string entries is a malformed marker, not an
+	// observed "no JSON candidate".
+	assert.equal(classifySchemaRetryErrors([1, null]), "other");
+	// No new enum values were introduced.
+	assert.deepEqual(
+		[...SCHEMA_RETRY_REASONS],
+		["extra_property", "missing_field", "invalid_value", "no_json_candidate", "provider_failure", "other"],
+	);
 });
 
 test("piriExecutionTelemetry counts bounded retry reasons from progress markers (#1815)", () => {

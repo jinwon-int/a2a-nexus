@@ -23,14 +23,25 @@ export const SCHEMA_RETRY_REASONS = Object.freeze([
 
 /**
  * Classify one retry marker's error list into the bounded enum. The first
- * matching rule wins; an empty error list means the model's text contained no
- * extractable JSON candidate at all (markdown/wrapper shape).
+ * matching rule wins; an explicit empty error list means the model's text
+ * contained no extractable JSON candidate at all (markdown/wrapper shape).
+ *
+ * #1815 7b: a missing or non-array `errors` field (or a list with no string
+ * entries) carries no validator evidence at all, so it is `other` — it must
+ * not be folded into `no_json_candidate`, which would bias the distribution.
  */
 export function classifySchemaRetryErrors(errors) {
-  const listed = Array.isArray(errors) ? errors.filter((item) => typeof item === "string") : [];
-  if (listed.length === 0) return "no_json_candidate";
+  if (!Array.isArray(errors)) return "other";
+  if (errors.length === 0) return "no_json_candidate";
+  const listed = errors.filter((item) => typeof item === "string");
+  if (listed.length === 0) return "other";
   const text = listed.join("\n");
-  if (/provider|request failed|rate limit|timeout/i.test(text)) return "provider_failure";
+  // #1815 7a: provider-side failure text is matched only on lines that are not
+  // validator errors. Validator errors start with a JSON-pointer path
+  // ("/timeoutMs: Expected number", "/provider: must be string"); a field name
+  // containing provider/timeout is a schema violation, not a provider failure.
+  const nonPathText = listed.filter((line) => !line.trimStart().startsWith("/")).join("\n");
+  if (/provider|request failed|rate limit|timeout/i.test(nonPathText)) return "provider_failure";
   if (/not parseable JSON/i.test(text)) return "no_json_candidate";
   // additionalProperties:false violations. Deployed-field shapes first — the
   // pinned piri's TypeBox Compile emits "must not have additional
