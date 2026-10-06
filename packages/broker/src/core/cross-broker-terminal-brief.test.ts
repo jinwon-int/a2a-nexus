@@ -4,6 +4,7 @@ import assert from "node:assert/strict";
 import { InMemoryA2ABroker } from "./broker.js";
 import { emptySnapshot, type BrokerSnapshot, type BrokerStateStore } from "./store.js";
 import type { TerminalTaskOutboxEvent } from "./terminal-event-outbox.js";
+import { CrossBrokerTerminalBriefProjectionStore } from "./cross-broker-terminal-brief.js";
 
 function isProjectionRow(event: TerminalTaskOutboxEvent): boolean {
   return event.payload.notificationOwnership?.terminalAckPermittedByProjection === false;
@@ -1681,4 +1682,66 @@ test("cross-broker projections reach the canonical snapshot even when hot-persis
   assert.ok(fullSaves.length >= 1, "projection ingest must produce a full canonical save, not a hot-only save");
   const briefs = fullSaves.at(-1)?.briefs as { parentRoundId?: string }[] | undefined;
   assert.equal(briefs?.[0]?.parentRoundId, "round-parent", "the canonical save must carry the ingested projection");
+});
+
+// #2331 phase 2a: a future-dated completedAt used to pre-empt the record key so
+// the real, later projection was rejected stale_replay and permanently skipped.
+test("#2331 projection with completedAt beyond the clock-skew bound is rejected and cannot pre-empt the real one", () => {
+  const broker = new InMemoryA2ABroker(undefined, undefined, { brokerId: "parent-broker" });
+  createParentRound(broker);
+  const farFuture = new Date(Date.now() + 365 * 24 * 60 * 60_000).toISOString();
+
+  const forged = broker.ingestCrossBrokerTerminalBriefProjection(projection({
+    summary: "forged far-future projection",
+    completedAt: farFuture,
+    emittedAt: farFuture,
+  }));
+  assert.equal(forged.accepted, false);
+  assert.equal(forged.ack.code, "bad_request");
+  assert.match(forged.ack.reason, /completedAt is in the future/);
+
+  const real = broker.ingestCrossBrokerTerminalBriefProjection(projection({
+    summary: "real child terminal state",
+    completedAt: new Date(Date.now() - 60_000).toISOString(),
+    emittedAt: new Date(Date.now() - 59_000).toISOString(),
+  }));
+  assert.equal(real.accepted, true, "the real projection is not turned into stale_replay");
+  assert.equal(broker.getCrossBrokerTerminalBriefProjection("round-parent", "child-broker-a")?.summary, "real child terminal state");
+});
+
+test("#2331 projection clock-skew bound tolerates small skew and is configurable on the store", () => {
+  const now = new Date("2026-10-06T00:00:00.000Z");
+  const store = new CrossBrokerTerminalBriefProjectionStore([], {
+    brokerId: "parent-broker",
+    hasParentRound: () => true,
+    now: () => now,
+  });
+  const base = {
+    parentRoundId: "round-parent",
+    originBrokerId: "child-broker-a",
+    brokerOfRecordId: "parent-broker",
+    childTaskId: "child-task-1",
+    parentRoundTotal: 2,
+    parentRoundOrder: 1,
+    status: "succeeded" as const,
+  };
+  // Within the default 5-minute skew: accepted.
+  assert.equal(store.ingest({ ...base, completedAt: "2026-10-06T00:04:00.000Z" }).accepted, true);
+  // Beyond it: rejected bad_request.
+  const late = store.ingest({ ...base, childTaskId: "child-task-2", parentRoundOrder: 2, completedAt: "2026-10-06T00:06:00.000Z" });
+  assert.equal(late.accepted, false);
+  assert.equal(late.ack.code, "bad_request");
+  // emittedAt is bounded too.
+  const emitted = store.ingest({ ...base, childTaskId: "child-task-3", parentRoundOrder: 2, completedAt: "2026-10-05T23:59:00.000Z", emittedAt: "2026-10-06T01:00:00.000Z" });
+  assert.equal(emitted.accepted, false);
+  assert.match(emitted.ack.reason, /emittedAt is in the future/);
+
+  const strict = new CrossBrokerTerminalBriefProjectionStore([], {
+    brokerId: "parent-broker",
+    hasParentRound: () => true,
+    now: () => now,
+    maxFutureSkewMs: 0,
+  });
+  assert.equal(strict.ingest({ ...base, completedAt: "2026-10-06T00:00:00.000Z" }).accepted, true);
+  assert.equal(strict.ingest({ ...base, childTaskId: "child-task-9", completedAt: "2026-10-06T00:00:00.001Z" }).accepted, false);
 });
