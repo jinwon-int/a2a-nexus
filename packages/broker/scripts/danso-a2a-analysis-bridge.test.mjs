@@ -259,21 +259,34 @@ test("preflight failures stop before danso is spawned", () => {
 	}
 });
 
-test("prompts above the per-argument argv budget fail closed before spawn", () => {
+// #2332: danso rejects prompts above 65536 bytes before any model request, so
+// a configured budget above that limit must be clamped instead of letting the
+// oversized prompt reach danso and fail with modelRequests=0.
+test("a prompt budget override above danso's 65536-byte limit is clamped (#2332)", () => {
 	const fx = fixture();
 	try {
-		// The filler sits inside the payload, so the prompt carries it twice
-		// (payload JSON + original message) while the bridge argv stays < 128 KiB.
 		const big = `Analyze. Payload JSON: {"assignment":"${"가".repeat(25_000)}","repo":"jinwon-int/a2a-nexus"}`;
 		const result = runBridge({ ...fx.env, A2A_DANSO_ANALYSIS_MAX_PROMPT_BYTES: "400000" }, { message: big });
-		assert.equal(result.status, 1);
-		const error = bridgeErrorOf(result.stderr);
-		assert.equal(error.code, "analysis_bridge_invocation_invalid");
-		assert.match(result.stderr, /argv budget/);
-		assert.equal(fx.records().length, 0);
+		assert.equal(result.status, 0, result.stderr);
+		const [record] = fx.records();
+		const promptArg = record.argv.at(-1);
+		assert.ok(Buffer.byteLength(promptArg, "utf8") <= 65536, "prompt fits danso's limit");
+		assert.match(promptArg, /truncated by danso-a2a-analysis-bridge prompt budget: originalBytes=\d+ maxBytes=65536\./);
 	} finally {
 		fx.cleanup();
 	}
+});
+
+test("resolveDansoMaxPromptBytes defaults to danso's limit and only lets overrides lower it (#2332)", () => {
+	assert.equal(__test.resolveDansoMaxPromptBytes({}), 65536);
+	assert.equal(__test.resolveDansoMaxPromptBytes({ A2A_DANSO_ANALYSIS_MAX_PROMPT_BYTES: "98304" }), 65536);
+	assert.equal(__test.resolveDansoMaxPromptBytes({ A2A_DANSO_ANALYSIS_MAX_PROMPT_BYTES: "20000" }), 20000);
+	const prompt = __test.applyDansoPromptBudget("x".repeat(70 * 1024), {});
+	assert.ok(Buffer.byteLength(prompt, "utf8") <= 65536);
+	assert.match(prompt, /maxBytes=65536\.\]$/);
+	const small = __test.applyDansoPromptBudget("y".repeat(30_000), { A2A_DANSO_ANALYSIS_MAX_PROMPT_BYTES: "20000" });
+	assert.ok(Buffer.byteLength(small, "utf8") <= 20000);
+	assert.match(small, /maxBytes=20000\.\]$/);
 });
 
 test("the prompt carries each source file's content exactly once (#2301)", () => {
@@ -317,14 +330,14 @@ test("the prompt keeps object-form and nested carriers summarized too (#2303)", 
 	assert.match(prompt, /"contentOmitted": "source content omitted here/);
 });
 
-test("the default prompt budget keeps oversized tasks under the argv limit", () => {
+test("the default prompt budget keeps oversized tasks within danso's prompt limit", () => {
 	const fx = fixture();
 	try {
 		const big = `${MESSAGE}\n${"가".repeat(38_000)}`;
 		const result = runBridge(fx.env, { message: big });
 		assert.equal(result.status, 0, result.stderr);
 		const [record] = fx.records();
-		assert.ok(Buffer.byteLength(record.argv.at(-1), "utf8") <= 96 * 1024);
+		assert.ok(Buffer.byteLength(record.argv.at(-1), "utf8") <= 65536);
 		assert.match(record.argv.at(-1), /truncated by danso-a2a-analysis-bridge prompt budget/);
 	} finally {
 		fx.cleanup();
