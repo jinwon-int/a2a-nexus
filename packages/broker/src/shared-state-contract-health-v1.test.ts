@@ -15,6 +15,9 @@
  */
 
 import assert from "node:assert/strict";
+import { mkdtempSync, rmSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import test from "node:test";
 
 import {
@@ -231,3 +234,75 @@ test("an incoherent declaration (single writer, seven processes) fails closed", 
     assert.equal(projection.error.code, "health_declaration_invalid");
   }
 });
+
+function assertPrimitiveSource(primitive: Record<string, unknown>, adapter: boolean) {
+  assert.equal(primitive.source, adapter ? "adapter" : "process");
+  assert.equal(primitive.durability, adapter ? "durable" : "volatile");
+  assert.equal(primitive.continuity, adapter ? "preserved" : "reset");
+  assert.equal(primitive.resetRisk, !adapter);
+  assert.equal(primitive.lastResetReason, adapter ? null : "process_start");
+  if (adapter) assert.equal(primitive.epochAgeBand, "unknown");
+}
+
+for (const replay of [false, true]) {
+  for (const rate of [false, true]) {
+    test(`/health reports selected replay=${replay} rate=${rate} authorities (#2343)`, async () => {
+      await withEnv({
+        BROKER_SHARED_STATE_V1_REPLAY: replay ? "on" : "off",
+        BROKER_SHARED_STATE_V1_RATE: rate ? "on" : "off",
+      }, async () => {
+        const server = await startTestServer({ edgeSecret: "s" });
+        try {
+          const res = await fetch(`${server.baseUrl}/health`, {
+            headers: { "x-a2a-edge-secret": "s" },
+          });
+          assert.equal(res.status, 200);
+          const body = await res.json();
+          assert.equal(body.stateContractCatalog.visibility, "public-aggregate");
+          assertPrimitiveSource(body.stateContract.securityPrimitives.replay, replay);
+          assertPrimitiveSource(body.stateContract.securityPrimitives.rateLimit, rate);
+          // Lifecycle persistence remains a separate legacy store; switching
+          // security primitives is not a full-store or HA capability claim.
+          assert.equal(body.stateContract.adapter.backendClass, "legacy-sqlite");
+          assert.equal(body.stateContract.adapter.contractVersion, null);
+          assert.equal(body.stateContract.clock.continuity, "reset");
+          assert.equal(JSON.stringify(body.stateContract).includes("shared-state-v1.sqlite"), false);
+        } finally {
+          await server.close();
+        }
+      });
+    });
+  }
+}
+
+for (const enabled of [false, true]) {
+  test(`/health follows explicit primitive options=${enabled} over opposite env (#2343)`, async (t) => {
+    const directory = mkdtempSync(join(tmpdir(), "a2a-health-source-test-"));
+    t.after(() => rmSync(directory, { recursive: true, force: true }));
+    await withEnv({
+      BROKER_SHARED_STATE_V1_REPLAY: enabled ? "off" : "on",
+      BROKER_SHARED_STATE_V1_RATE: enabled ? "off" : "on",
+    }, async () => {
+      const server = await startTestServer({
+        edgeSecret: "s",
+        sharedStateReplayV1: enabled,
+        sharedStateRateV1: enabled,
+        sharedStateShadowV1: true,
+        shadowStateFile: join(directory, "shadow-v1.sqlite"),
+      });
+      try {
+        const res = await fetch(`${server.baseUrl}/health`, {
+          headers: { "x-a2a-edge-secret": "s" },
+        });
+        assert.equal(res.status, 200);
+        const body = await res.json();
+        assertPrimitiveSource(body.stateContract.securityPrimitives.replay, enabled);
+        assertPrimitiveSource(body.stateContract.securityPrimitives.rateLimit, enabled);
+        // An active shadow adapter alone must not be reported as authority.
+        assert.ok(body.stateShadow);
+      } finally {
+        await server.close();
+      }
+    });
+  });
+}

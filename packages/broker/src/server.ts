@@ -1976,6 +1976,8 @@ export function createBrokerServer(options: BrokerServerOptions = {}): BrokerSer
             reasonCodes: healthProbe.ready ? [] : [healthProbe.reasonCode],
             expectedProcessCount: servingGrade.expectedProcessCount,
             persistenceBackend,
+            replaySource: sharedStateReplayV1 ? "adapter" : "process",
+            rateLimitSource: sharedStateRateV1 ? "adapter" : "process",
             clockSafety: "safe",
             processUptimeSec: Math.round(process.uptime()),
             rateLimitDenied: rateLimitObservation.denied,

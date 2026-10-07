@@ -8,11 +8,10 @@
  * count becomes a one|multiple band) and its recursive leak preflight for
  * free; nothing reaches `/health` unless the catalog parser accepted it.
  *
- * Honesty boundaries (unchanged from Slice M): the serving store is
- * `legacy-process`, so `contractVersion` stays null, the V1 primitive domains
- * are `not-applicable` (`primitive-not-implemented`), and the security
- * primitives are the process-local replay cache and rate limiter, whose
- * cumulative counters are real and whose reset risk is real.
+ * Lifecycle persistence stays legacy, with a null contractVersion. Replay
+ * and rate-limit authority independently follow the selected serving path
+ * (process or V1 adapter); a shadow adapter is never serving authority.
+ * Cumulative observation counters remain process-scoped in either mode.
  *
  * Pure module: reads no clock, store, process, or environment. All inputs are
  * observed by the caller and passed in.
@@ -46,6 +45,24 @@ export interface RateLimitObservationInputV1 {
    * limiter cannot produce these, so the flag-off path stays at zero.
    */
   readonly storeErrors?: number;
+}
+
+function primitiveHealth(
+  source: SharedStateHealthProjectionV1["primitives"]["replay"]["source"],
+  processAgeBand: (typeof SV.ageBands)[number],
+  pressureBand: (typeof SV.pressureBands)[number],
+): SharedStateHealthProjectionV1["primitives"]["replay"] {
+  const adapter = source === "adapter";
+  return {
+    source,
+    durability: adapter ? "durable" : "volatile",
+    continuity: adapter ? "preserved" : "reset",
+    resetRisk: !adapter,
+    // Process uptime cannot establish the age of a durable security epoch.
+    epochAgeBand: adapter ? "unknown" : processAgeBand,
+    pressureBand,
+    lastResetReason: adapter ? null : "process_start",
+  };
 }
 
 function ageBandFromSeconds(ageSec: number): (typeof OV.ageBands)[number] {
@@ -87,8 +104,9 @@ function pressureBandFromDenials(denied: number, total: number): (typeof OV.pres
 /**
  * The full section 7.3/7.4 health DECLARATION — every field the catalog
  * candidate's `health` member requires, filled with what this deployment can
- * honestly claim. `legacy-process` means: no V1 adapter, null contract and
- * schema versions, no adapter clock authority, and no pending migration.
+ * honestly claim. The lifecycle adapter declaration remains independent of
+ * the selected replay/rate authorities. `legacy-process` has null contract
+ * and schema versions, no adapter clock authority, and no pending migration.
  */
 export function buildSharedStateHealthDeclarationV1(input: {
   readonly configuredGrade: string;
@@ -103,6 +121,8 @@ export function buildSharedStateHealthDeclarationV1(input: {
   readonly processUptimeSec: number;
   readonly rateLimitDenied: number;
   readonly rateLimitTotal: number;
+  readonly replaySource?: SharedStateHealthProjectionV1["primitives"]["replay"]["source"];
+  readonly rateLimitSource?: SharedStateHealthProjectionV1["primitives"]["rateLimit"]["source"];
 }): SharedStateHealthProjectionV1 {
   const epochAgeBand = ageBandFromSeconds(Math.max(0, input.processUptimeSec));
   const pressureBand = pressureBandFromDenials(input.rateLimitDenied, input.rateLimitTotal);
@@ -151,24 +171,8 @@ export function buildSharedStateHealthDeclarationV1(input: {
       negativeEvidenceAllowed: false,
     },
     primitives: {
-      replay: {
-        source: "process",
-        durability: "volatile",
-        continuity: "reset",
-        resetRisk: true,
-        epochAgeBand,
-        pressureBand,
-        lastResetReason: "process_start",
-      },
-      rateLimit: {
-        source: "process",
-        durability: "volatile",
-        continuity: "reset",
-        resetRisk: true,
-        epochAgeBand,
-        pressureBand,
-        lastResetReason: "process_start",
-      },
+      replay: primitiveHealth(input.replaySource ?? "process", epochAgeBand, pressureBand),
+      rateLimit: primitiveHealth(input.rateLimitSource ?? "process", epochAgeBand, pressureBand),
     },
   };
 }

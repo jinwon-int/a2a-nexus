@@ -823,6 +823,22 @@ payloads, claim text, artifact paths, credentials, database locations, or
 provider identifiers. Small-cardinality aggregates SHOULD be coarsened where
 they could reveal one actor.
 
+Runtime replay and rate-limit reporting (#2343) follows each primitive's
+resolved serving selection, independently of lifecycle persistence and
+shadow observations. The existing closed source vocabulary is
+`process | adapter`; `shared-state-v1` is not a source enum member.
+An enabled V1 primitive uses the serving fence's durable SQLite adapter and
+reports `source=adapter`, `durability=durable`, `continuity=preserved`,
+`resetRisk=false`, and `lastResetReason=null`. A disabled primitive retains
+`process`, `volatile`, `reset`, `resetRisk=true`, and `process_start`.
+Explicit server options override environment flags in both directions.
+`epochAgeBand=unknown` for adapter-backed primitives because process uptime
+does not measure the durable security epoch. Age for process primitives and
+the cumulative observation counters remain process-scoped; pressure remains
+the observed rate-denial share. The legacy lifecycle adapter declaration,
+clock continuity, deployment grade, and readiness rules are unchanged, so
+this reporting change makes no full V1 store or shared-state HA claim.
+
 ### 7.4 Closed observability catalog and projection boundaries
 
 The backend-neutral catalog identifier is
