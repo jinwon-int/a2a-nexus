@@ -51,17 +51,20 @@ function primitiveHealth(
   source: SharedStateHealthProjectionV1["primitives"]["replay"]["source"],
   processAgeBand: (typeof SV.ageBands)[number],
   pressureBand: (typeof SV.pressureBands)[number],
+  adapterDurability: "durable" | "volatile",
+  adapterRestartContinuity: "preserved" | "reset",
 ): SharedStateHealthProjectionV1["primitives"]["replay"] {
   const adapter = source === "adapter";
+  const preserved = adapter && adapterRestartContinuity === "preserved";
   return {
     source,
-    durability: adapter ? "durable" : "volatile",
-    continuity: adapter ? "preserved" : "reset",
-    resetRisk: !adapter,
+    durability: adapter ? adapterDurability : "volatile",
+    continuity: preserved ? "preserved" : "reset",
+    resetRisk: !preserved,
     // Process uptime cannot establish the age of a durable security epoch.
     epochAgeBand: adapter ? "unknown" : processAgeBand,
     pressureBand,
-    lastResetReason: adapter ? null : "process_start",
+    lastResetReason: preserved ? null : "process_start",
   };
 }
 
@@ -123,6 +126,8 @@ export function buildSharedStateHealthDeclarationV1(input: {
   readonly rateLimitTotal: number;
   readonly replaySource?: SharedStateHealthProjectionV1["primitives"]["replay"]["source"];
   readonly rateLimitSource?: SharedStateHealthProjectionV1["primitives"]["rateLimit"]["source"];
+  readonly adapterDurability?: "durable" | "volatile";
+  readonly adapterRestartContinuity?: "preserved" | "reset";
 }): SharedStateHealthProjectionV1 {
   const epochAgeBand = ageBandFromSeconds(Math.max(0, input.processUptimeSec));
   const pressureBand = pressureBandFromDenials(input.rateLimitDenied, input.rateLimitTotal);
@@ -171,8 +176,10 @@ export function buildSharedStateHealthDeclarationV1(input: {
       negativeEvidenceAllowed: false,
     },
     primitives: {
-      replay: primitiveHealth(input.replaySource ?? "process", epochAgeBand, pressureBand),
-      rateLimit: primitiveHealth(input.rateLimitSource ?? "process", epochAgeBand, pressureBand),
+      replay: primitiveHealth(input.replaySource ?? "process", epochAgeBand, pressureBand,
+        input.adapterDurability ?? "volatile", input.adapterRestartContinuity ?? "reset"),
+      rateLimit: primitiveHealth(input.rateLimitSource ?? "process", epochAgeBand, pressureBand,
+        input.adapterDurability ?? "volatile", input.adapterRestartContinuity ?? "reset"),
     },
   };
 }

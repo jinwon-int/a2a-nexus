@@ -235,23 +235,58 @@ test("an incoherent declaration (single writer, seven processes) fails closed", 
   }
 });
 
-function assertPrimitiveSource(primitive: Record<string, unknown>, adapter: boolean) {
+function assertPrimitiveSource(primitive: Record<string, unknown>, adapter: boolean, preserved = true, durable = true) {
   assert.equal(primitive.source, adapter ? "adapter" : "process");
-  assert.equal(primitive.durability, adapter ? "durable" : "volatile");
-  assert.equal(primitive.continuity, adapter ? "preserved" : "reset");
-  assert.equal(primitive.resetRisk, !adapter);
-  assert.equal(primitive.lastResetReason, adapter ? null : "process_start");
+  assert.equal(primitive.durability, adapter && durable ? "durable" : "volatile");
+  assert.equal(primitive.continuity, adapter && preserved ? "preserved" : "reset");
+  assert.equal(primitive.resetRisk, !(adapter && preserved));
+  assert.equal(primitive.lastResetReason, adapter && preserved ? null : "process_start");
   if (adapter) assert.equal(primitive.epochAgeBand, "unknown");
 }
 
+test("adapter health admits actual reset modes and rejects contradictory continuity (#2343)", () => {
+  for (const [durability, continuity, accepted] of [
+    ["durable", "preserved", true],
+    ["durable", "reset", true],
+    ["volatile", "reset", true],
+    ["volatile", "preserved", false],
+  ] as const) {
+    const health = buildSharedStateHealthDeclarationV1(declarationInput({
+      replaySource: "adapter",
+      rateLimitSource: "adapter",
+      adapterDurability: durability,
+      adapterRestartContinuity: continuity,
+    }));
+    const project = (value: typeof health) => buildSharedStatePublicObservabilityV1({
+      health: value,
+      clockContinuity: "reset",
+      replay: { accepted: 0, replayed: 0 },
+      rateLimit: { windowMs: 60_000, limit: 10, allowed: 0, denied: 0 },
+    });
+    assert.equal(project(health).ok, accepted);
+    if (accepted) {
+      for (const patch of continuity === "preserved"
+        ? [{ resetRisk: true }, { lastResetReason: "process_start" as const }]
+        : [{ resetRisk: false }, { lastResetReason: null }, { lastResetReason: "unknown" as const }]) {
+        assert.equal(project({
+          ...health,
+          primitives: { ...health.primitives, replay: { ...health.primitives.replay, ...patch } },
+        }).ok, false);
+      }
+    }
+  }
+});
+
 for (const replay of [false, true]) {
   for (const rate of [false, true]) {
-    test(`/health reports selected replay=${replay} rate=${rate} authorities (#2343)`, async () => {
+    test(`/health reports selected replay=${replay} rate=${rate} authorities (#2343)`, async (t) => {
+      const directory = mkdtempSync(join(tmpdir(), "a2a-health-source-test-"));
+      t.after(() => rmSync(directory, { recursive: true, force: true }));
       await withEnv({
         BROKER_SHARED_STATE_V1_REPLAY: replay ? "on" : "off",
         BROKER_SHARED_STATE_V1_RATE: rate ? "on" : "off",
       }, async () => {
-        const server = await startTestServer({ edgeSecret: "s" });
+        const server = await startTestServer({ edgeSecret: "s", sharedStateFile: join(directory, "serving.sqlite") });
         try {
           const res = await fetch(`${server.baseUrl}/health`, {
             headers: { "x-a2a-edge-secret": "s" },
@@ -289,6 +324,7 @@ for (const enabled of [false, true]) {
         sharedStateRateV1: enabled,
         sharedStateShadowV1: true,
         shadowStateFile: join(directory, "shadow-v1.sqlite"),
+        sharedStateFile: join(directory, "serving.sqlite"),
       });
       try {
         const res = await fetch(`${server.baseUrl}/health`, {
@@ -302,6 +338,44 @@ for (const enabled of [false, true]) {
         assert.ok(body.stateShadow);
       } finally {
         await server.close();
+      }
+    });
+  });
+}
+
+for (const mode of ["isolated", "persistent", "memory"] as const) {
+  test(`/health ${mode} adapter continuity matches real rate-state restart (#2343)`, async (t) => {
+    const directory = mkdtempSync(join(tmpdir(), "a2a-health-restart-test-"));
+    t.after(() => rmSync(directory, { recursive: true, force: true }));
+    await withEnv({ BROKER_SHARED_STATE_FILE: undefined }, async () => {
+      const options = {
+        edgeSecret: "s",
+        sharedStateReplayV1: true,
+        sharedStateRateV1: true,
+        rateLimitMaxRequests: 2,
+        rateLimitWindowSec: 3600,
+        ...(mode === "isolated" ? {} : {
+          sharedStateFile: mode === "memory" ? ":memory:" : join(directory, "serving.sqlite"),
+        }),
+      };
+      const first = await startTestServer(options);
+      const health = (baseUrl: string) => fetch(`${baseUrl}/health`, { headers: { "x-a2a-edge-secret": "s" } });
+      try {
+        const res = await health(first.baseUrl);
+        assert.equal(res.status, 200);
+        const contract = (await res.json()).stateContract;
+        assertPrimitiveSource(contract.securityPrimitives.replay, true, mode === "persistent", mode !== "memory");
+        assertPrimitiveSource(contract.securityPrimitives.rateLimit, true, mode === "persistent", mode !== "memory");
+        assert.equal((await health(first.baseUrl)).status, 200);
+        assert.equal((await health(first.baseUrl)).status, 429);
+      } finally {
+        await first.close();
+      }
+      const second = await startTestServer(options);
+      try {
+        assert.equal((await health(second.baseUrl)).status, mode === "persistent" ? 429 : 200);
+      } finally {
+        await second.close();
       }
     });
   });

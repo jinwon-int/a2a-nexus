@@ -181,7 +181,7 @@ function assertFixtureUntouched(file, { ownerToken, lifecycleEpoch = "3", acquir
 // Fail-closed path 1: a file-lock holder exists.
 // ---------------------------------------------------------------------------
 
-test("refuses to clear when a file lock holder exists on the fence file", { skip: SKIP_WITHOUT_LSOF }, async () => {
+test("refuses to clear when a file lock holder exists on the fence file", { skip: SKIP_WITHOUT_LSOF }, async (t) => {
   await withTempDir(async (directory) => {
     const file = createFenceFixture(directory, { ownerToken: "stale-owner-token" });
 
@@ -189,6 +189,16 @@ test("refuses to clear when a file lock holder exists on the fence file", { skip
     // exercising the actual lsof-based check, not a stub of it.
     const holderDb = new DatabaseSync(file, { timeout: 0 });
     try {
+      // Hosts with inaccessible mounts can emit lsof warnings even when a
+      // real holder is found. That correctly reaches the inconclusive guard,
+      // not this integration test's holder branch. Both paths retain their
+      // deterministic stub coverage below; never hide production warnings.
+      const probe = spawnSync("lsof", ["--", file], { encoding: "utf8" });
+      if (probe.status === 0 && probe.stderr.trim()) {
+        t.skip("real lsof emits warnings; holder and inconclusive-warning paths have stubbed coverage");
+        assertFixtureUntouched(file, { ownerToken: "stale-owner-token" });
+        return;
+      }
       const result = runScript(["--file", file, "--json"]);
       assert.notEqual(result.status, 0, `expected non-zero exit; stderr=${result.stderr}`);
       assert.match(result.stderr, /ABORT/);

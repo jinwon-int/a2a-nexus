@@ -1978,6 +1978,8 @@ export function createBrokerServer(options: BrokerServerOptions = {}): BrokerSer
             persistenceBackend,
             replaySource: sharedStateReplayV1 ? "adapter" : "process",
             rateLimitSource: sharedStateRateV1 ? "adapter" : "process",
+            adapterDurability: servingFence?.storageDurability ?? "volatile",
+            adapterRestartContinuity: servingFence?.restartContinuity ?? "reset",
             clockSafety: "safe",
             processUptimeSec: Math.round(process.uptime()),
             rateLimitDenied: rateLimitObservation.denied,

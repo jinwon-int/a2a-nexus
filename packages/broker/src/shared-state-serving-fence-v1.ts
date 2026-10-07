@@ -296,6 +296,9 @@ export type SharedStateServingFenceProbeV1 =
   };
 
 export interface SharedStateServingFenceV1 {
+  /** Secret-safe storage metadata; fresh isolated paths reset on restart. */
+  readonly storageDurability?: "durable" | "volatile";
+  readonly restartContinuity?: "preserved" | "reset";
   release(): void;
   probe(): SharedStateServingFenceProbeV1;
   /**
@@ -985,6 +988,8 @@ export function openSharedStateServingFenceV1(input: {
   return {
     ok: true,
     value: Object.freeze({
+      storageDurability: input.filePath === ":memory:" ? "volatile" : "durable",
+      restartContinuity: input.filePath === ":memory:" ? "reset" : "preserved",
       release(): void {
         if (released) return;
         released = true;
@@ -1619,9 +1624,10 @@ export function acquireSharedStateServingFenceForBrokerV1(input: {
     input.sharedStateFile !== undefined
     || Object.hasOwn(env, SHARED_STATE_SERVING_FENCE_V1.envKey);
   if (!explicit && input.injectedStore) {
-    return assertSharedStateServingFenceV1({
+    const fence = assertSharedStateServingFenceV1({
       filePath: isolatedSharedStateServingFencePathV1(),
     });
+    return Object.freeze({ ...fence, restartContinuity: "reset" as const });
   }
   const path = resolveSharedStateServingFencePathV1({
     ...(input.sharedStateFile === undefined
@@ -1641,9 +1647,10 @@ export function acquireSharedStateServingFenceForBrokerV1(input: {
       input.stateFile ===
       (input.defaultLegacyStateFile ?? SHARED_STATE_SERVING_FENCE_V1.defaultLegacyStateFile);
     if (!explicit && defaultLegacy) {
-      return assertSharedStateServingFenceV1({
+      const fence = assertSharedStateServingFenceV1({
         filePath: isolatedSharedStateServingFencePathV1(),
       });
+      return Object.freeze({ ...fence, restartContinuity: "reset" as const });
     }
     try {
       mkdirSync(directory, { recursive: true });

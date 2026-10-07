@@ -240,6 +240,8 @@ test("a missing default state directory isolates the fence", () => {
     injectedStore: false,
     env: {},
   });
+  assert.equal(fence.storageDurability, "durable");
+  assert.equal(fence.restartContinuity, "reset");
   fence.release();
 
   // The isolation branch must not have materialized the "default" directory.
