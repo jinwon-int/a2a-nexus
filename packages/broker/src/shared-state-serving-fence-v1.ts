@@ -980,6 +980,17 @@ export function openSharedStateServingFenceV1(input: {
     return fail(mapAdapterCode(opened.error.code));
   }
 
+  // SQLite accepts several URI spellings for memory databases. Attest the
+  // actual main database backing rather than guessing from the input path.
+  let fileBacked = false;
+  try {
+    fileBacked = db.prepare("PRAGMA database_list").all().some(
+      (row) => row.name === "main" && typeof row.file === "string" && row.file.length > 0,
+    );
+  } catch {
+    // Missing storage evidence must not become a durable-continuity claim.
+  }
+
   let released = false;
   // The probe runs on every request the server fences, so compile its
   // statement once; lazily inside the try so a prepare failure still reads
@@ -988,8 +999,8 @@ export function openSharedStateServingFenceV1(input: {
   return {
     ok: true,
     value: Object.freeze({
-      storageDurability: input.filePath === ":memory:" ? "volatile" : "durable",
-      restartContinuity: input.filePath === ":memory:" ? "reset" : "preserved",
+      storageDurability: fileBacked ? "durable" : "volatile",
+      restartContinuity: fileBacked ? "preserved" : "reset",
       release(): void {
         if (released) return;
         released = true;

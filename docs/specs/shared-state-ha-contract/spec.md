@@ -834,7 +834,10 @@ isolated fallback files (injected stores without an explicit fence path or
 a missing unconfigured default directory) remain physically durable but
 report `continuity=reset`, `resetRisk=true`, and `lastResetReason=process_start`
 because the next construction uses a different file. SQLite `:memory:`
-reports the same reset fields with `durability=volatile`. The health parser
+and URI memory forms report the same reset fields with `durability=volatile`.
+Backing is observed from SQLite's main database file metadata, rather than
+inferred from the configured filename. Unavailable backing evidence is
+conservatively reported as volatile/reset. The health parser
 admits these truthful adapter/reset combinations while still rejecting
 volatile preservation, preservation with reset risk, or reset without a
 process-start reason. A disabled primitive retains

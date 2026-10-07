@@ -28,7 +28,7 @@ selected V1 serving adapter reports `source: adapter`. A persistent file reports
 `durability: durable`, `continuity: preserved`, `resetRisk: false`, and
 `lastResetReason: null`. A fresh isolated fallback file reports `durable` with
 `reset` / `resetRisk: true` / `process_start`; SQLite `:memory:` reports the
-same reset risk with `durability: volatile`.
+same reset risk with `durability: volatile`, including SQLite URI memory forms.
 Off reports `process` / `volatile` / `reset`, with process-start reset risk.
 Explicit server options take precedence over environment flags; shadow-only
 observations never change the selected authority. Adapter epoch age is

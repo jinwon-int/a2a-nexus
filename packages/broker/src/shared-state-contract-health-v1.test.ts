@@ -343,7 +343,7 @@ for (const enabled of [false, true]) {
   });
 }
 
-for (const mode of ["isolated", "persistent", "memory"] as const) {
+for (const mode of ["isolated", "persistent", "memory", "memory-uri", "named-memory-uri"] as const) {
   test(`/health ${mode} adapter continuity matches real rate-state restart (#2343)`, async (t) => {
     const directory = mkdtempSync(join(tmpdir(), "a2a-health-restart-test-"));
     t.after(() => rmSync(directory, { recursive: true, force: true }));
@@ -355,7 +355,10 @@ for (const mode of ["isolated", "persistent", "memory"] as const) {
         rateLimitMaxRequests: 2,
         rateLimitWindowSec: 3600,
         ...(mode === "isolated" ? {} : {
-          sharedStateFile: mode === "memory" ? ":memory:" : join(directory, "serving.sqlite"),
+          sharedStateFile: mode === "memory" ? ":memory:"
+            : mode === "memory-uri" ? "file::memory:?cache=shared"
+            : mode === "named-memory-uri" ? `file:${join(directory, "named-memory")}?mode=memory&cache=shared`
+            : join(directory, "serving.sqlite"),
         }),
       };
       const first = await startTestServer(options);
@@ -364,8 +367,9 @@ for (const mode of ["isolated", "persistent", "memory"] as const) {
         const res = await health(first.baseUrl);
         assert.equal(res.status, 200);
         const contract = (await res.json()).stateContract;
-        assertPrimitiveSource(contract.securityPrimitives.replay, true, mode === "persistent", mode !== "memory");
-        assertPrimitiveSource(contract.securityPrimitives.rateLimit, true, mode === "persistent", mode !== "memory");
+        const durable = mode === "persistent" || mode === "isolated";
+        assertPrimitiveSource(contract.securityPrimitives.replay, true, mode === "persistent", durable);
+        assertPrimitiveSource(contract.securityPrimitives.rateLimit, true, mode === "persistent", durable);
         assert.equal((await health(first.baseUrl)).status, 200);
         assert.equal((await health(first.baseUrl)).status, 429);
       } finally {
