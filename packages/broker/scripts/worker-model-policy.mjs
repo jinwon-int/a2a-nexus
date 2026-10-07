@@ -13,6 +13,17 @@ export const ALLOWED_WORKER_MODELS = Object.freeze([
   "gpt-5.6-luna",
   "openai-codex/gpt-5.5",
   "gpt-5.5",
+  // GPT-6 generation Codex models (operator rollout 2026-10-07). They are only
+  // listed by Codex CLI >= 0.160.1; without these entries an env-pinned
+  // A2A_CODEX_MODEL=gpt-6.1-sol silently falls back to DEFAULT_WORKER_MODEL.
+  "openai-codex/gpt-6.1-sol",
+  "gpt-6.1-sol",
+  "openai-codex/gpt-6-sol",
+  "gpt-6-sol",
+  "openai-codex/gpt-6-luna",
+  "gpt-6-luna",
+  "openai-codex/gpt-6-astra",
+  "gpt-6-astra",
   // Current Claude Code ccc-node worker defaults.
   "claude-fable-5",
   "claude-sonnet-5",
@@ -129,6 +140,10 @@ export function canonicalizeWorkerModel(model) {
   if (value === "gpt-5.6-luna") return "openai-codex/gpt-5.6-luna";
   if (value === "gpt-5.6-sol") return "openai-codex/gpt-5.6-sol";
   if (value === "gpt-5.5") return "openai-codex/gpt-5.5";
+  if (value === "gpt-6.1-sol") return "openai-codex/gpt-6.1-sol";
+  if (value === "gpt-6-sol") return "openai-codex/gpt-6-sol";
+  if (value === "gpt-6-luna") return "openai-codex/gpt-6-luna";
+  if (value === "gpt-6-astra") return "openai-codex/gpt-6-astra";
   if (value === "custom:minimax/minimax-m3") return "minimax-m3";
   // Piri registry ids arrive bare when nodes configure them without the
   // provider prefix (#1802).

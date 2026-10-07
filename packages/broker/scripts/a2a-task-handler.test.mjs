@@ -254,6 +254,14 @@ test("unsupported workerModel fails closed before a patch attempt", () => {
     "gpt-5.6-luna",
     "openai-codex/gpt-5.5",
     "gpt-5.5",
+    "openai-codex/gpt-6.1-sol",
+    "gpt-6.1-sol",
+    "openai-codex/gpt-6-sol",
+    "gpt-6-sol",
+    "openai-codex/gpt-6-luna",
+    "gpt-6-luna",
+    "openai-codex/gpt-6-astra",
+    "gpt-6-astra",
     "claude-fable-5",
     "claude-sonnet-5",
     "claude-opus-5",
@@ -356,6 +364,14 @@ test("worker model policy module exposes auditable allowlist and fallbacks (#799
     "gpt-5.6-luna",
     "openai-codex/gpt-5.5",
     "gpt-5.5",
+    "openai-codex/gpt-6.1-sol",
+    "gpt-6.1-sol",
+    "openai-codex/gpt-6-sol",
+    "gpt-6-sol",
+    "openai-codex/gpt-6-luna",
+    "gpt-6-luna",
+    "openai-codex/gpt-6-astra",
+    "gpt-6-astra",
     "claude-fable-5",
     "claude-sonnet-5",
     "claude-opus-5",
@@ -3475,6 +3491,21 @@ test("Luna worker env and explicit task models never silently fall back to Sol",
     assert.equal(canonicalizeWorkerModel(model), "openai-codex/gpt-5.6-luna");
   }
   assert.ok(resolveWorkerModelInputs({ payloadModel: "gpt-unknown" }).error);
+});
+
+test("GPT-6 Codex worker models resolve as pinned and never silently fall back to Sol 5.6", () => {
+  for (const [bare, canonical] of [
+    ["gpt-6.1-sol", "openai-codex/gpt-6.1-sol"],
+    ["gpt-6-sol", "openai-codex/gpt-6-sol"],
+    ["gpt-6-luna", "openai-codex/gpt-6-luna"],
+    ["gpt-6-astra", "openai-codex/gpt-6-astra"],
+  ]) {
+    for (const model of [bare, canonical]) {
+      assert.equal(resolveWorkerModelInputs({ envModel: model }).model, model);
+      assert.equal(resolveWorkerModelInputs({ payloadModel: model }).model, model);
+      assert.equal(canonicalizeWorkerModel(model), canonical);
+    }
+  }
 });
 
 test("readStdin decodes multi-byte UTF-8 intact across pipe chunk boundaries (#2070)", async () => {
