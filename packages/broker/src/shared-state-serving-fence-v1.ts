@@ -317,6 +317,9 @@ export type SharedStateServingFenceProbeV1 =
   };
 
 export interface SharedStateServingFenceV1 {
+  /** Secret-safe storage metadata; fresh isolated paths reset on restart. */
+  readonly storageDurability?: "durable" | "volatile";
+  readonly restartContinuity?: "preserved" | "reset";
   release(): void;
   probe(): SharedStateServingFenceProbeV1;
   /**
@@ -1016,6 +1019,17 @@ export function openSharedStateServingFenceV1(input: {
     return fail(mapAdapterCode(opened.error.code));
   }
 
+  // SQLite accepts several URI spellings for memory databases. Attest the
+  // actual main database backing rather than guessing from the input path.
+  let fileBacked = false;
+  try {
+    fileBacked = db.prepare("PRAGMA database_list").all().some(
+      (row) => row.name === "main" && typeof row.file === "string" && row.file.length > 0,
+    );
+  } catch {
+    // Missing storage evidence must not become a durable-continuity claim.
+  }
+
   let released = false;
   // The probe runs on every request the server fences, so compile its
   // statement once; lazily inside the try so a prepare failure still reads
@@ -1051,6 +1065,8 @@ export function openSharedStateServingFenceV1(input: {
   return {
     ok: true,
     value: Object.freeze({
+      storageDurability: fileBacked ? "durable" : "volatile",
+      restartContinuity: fileBacked ? "preserved" : "reset",
       release(): void {
         if (released) return;
         released = true;
@@ -1710,9 +1726,10 @@ export function acquireSharedStateServingFenceForBrokerV1(input: {
     input.sharedStateFile !== undefined
     || Object.hasOwn(env, SHARED_STATE_SERVING_FENCE_V1.envKey);
   if (!explicit && input.injectedStore) {
-    return assertSharedStateServingFenceV1({
+    const fence = assertSharedStateServingFenceV1({
       filePath: isolatedSharedStateServingFencePathV1(),
     });
+    return Object.freeze({ ...fence, restartContinuity: "reset" as const });
   }
   const path = resolveSharedStateServingFencePathV1({
     ...(input.sharedStateFile === undefined
@@ -1732,9 +1749,10 @@ export function acquireSharedStateServingFenceForBrokerV1(input: {
       input.stateFile ===
       (input.defaultLegacyStateFile ?? SHARED_STATE_SERVING_FENCE_V1.defaultLegacyStateFile);
     if (!explicit && defaultLegacy) {
-      return assertSharedStateServingFenceV1({
+      const fence = assertSharedStateServingFenceV1({
         filePath: isolatedSharedStateServingFencePathV1(),
       });
+      return Object.freeze({ ...fence, restartContinuity: "reset" as const });
     }
     try {
       mkdirSync(directory, { recursive: true });

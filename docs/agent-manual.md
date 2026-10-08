@@ -21,6 +21,21 @@ instruction and the current automatic-loading limitation.
 A successful dispatch is task admission. A successful task still needs its
 artifacts checked. Neither is proof that a PR merged or a node was updated.
 
+For shared-state diagnostics, `/health.stateContract.securityPrimitives`
+reports replay and rate-limit authority independently. With the corresponding
+`BROKER_SHARED_STATE_V1_REPLAY` / `BROKER_SHARED_STATE_V1_RATE` flag on, the
+selected V1 serving adapter reports `source: adapter`. A persistent file reports
+`durability: durable`, `continuity: preserved`, `resetRisk: false`, and
+`lastResetReason: null`. A fresh isolated fallback file reports `durable` with
+`reset` / `resetRisk: true` / `process_start`; SQLite `:memory:` reports the
+same reset risk with `durability: volatile`, including SQLite URI memory forms.
+Off reports `process` / `volatile` / `reset`, with process-start reset risk.
+Explicit server options take precedence over environment flags; shadow-only
+observations never change the selected authority. Adapter epoch age is
+`unknown`; observation counters still reset with the process. These fields do
+not establish HA readiness or replace `/readyz`. See the
+[health contract](specs/shared-state-ha-contract/spec.md#73-secret-safe-signal-shape).
+
 ## 1. Check the version before adapting commands
 
 From the Nexus repository root:

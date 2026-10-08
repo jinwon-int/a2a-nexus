@@ -1919,12 +1919,14 @@ function validatePrimitiveHealth(
     }
     return null;
   }
-  if (
-    primitive.durability !== "durable" ||
-    primitive.continuity !== "preserved" ||
-    primitive.resetRisk ||
-    primitive.lastResetReason !== null
-  ) {
+  // Adapter selection alone does not prove restart continuity: an isolated
+  // file resets at each construction and SQLite :memory: is also volatile.
+  const preserved = primitive.durability === "durable" &&
+    primitive.continuity === "preserved" && !primitive.resetRisk &&
+    primitive.lastResetReason === null;
+  const reset = primitive.continuity === "reset" && primitive.resetRisk &&
+    primitive.lastResetReason === "process_start";
+  if (!preserved && !reset) {
     return contractError("invalid_capability_combination", path);
   }
   return null;
