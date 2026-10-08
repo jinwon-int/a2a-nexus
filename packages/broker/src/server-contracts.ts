@@ -17,6 +17,7 @@ import type { ReviewLineageRolloutMode } from "./core/review-lineage-store.js";
 import type { OperatorSummary } from "./http/dashboard-response.js";
 import type { TaskReadinessMode } from "./task-readiness.js";
 import type { SharedStateServingFenceProbeV1 } from "./shared-state-serving-fence-v1.js";
+import type { SharedStateRuntimePruneV1 } from "./shared-state-runtime-prune-v1.js";
 
 export interface BrokerBuildInfo {
   component: string;
@@ -144,6 +145,19 @@ export interface BrokerServerOptions extends BrokerRuntimeHotLimitOptions {
    * `BROKER_SHARED_STATE_V1_RATE` (`off` | `on`).
    */
   sharedStateRateV1?: boolean;
+  /**
+   * #2344: in-process periodic prune of expired V1 replay-nonce and rate-cost
+   * rows on the serving fence's own connection. Only active while the replay
+   * or rate primitive is on. Env: `BROKER_SHARED_STATE_V1_PRUNE` (`on` |
+   * `off`, default `on`), `BROKER_SHARED_STATE_V1_PRUNE_INTERVAL_MS` (default
+   * 60000), `BROKER_SHARED_STATE_V1_RATE_RETENTION_MS` (default 86400000;
+   * must exceed every rate window).
+   */
+  sharedStateRuntimePruneV1?: {
+    enabled?: boolean;
+    intervalMs?: number;
+    rateCostRetentionMs?: number;
+  };
   /**
    * #1504 Slice U: fence the worker task-claim lifecycle (claim grant,
    * heartbeat renewal, checkpoint/terminal mutations) through the V1 lease
@@ -495,6 +509,12 @@ export interface BrokerServerRuntime {
    * so a stolen row can be observed without waiting for the timer.
    */
   evaluateSharedStateLossMonitor: () => SharedStateServingFenceProbeV1;
+  /**
+   * #2344: the V1 runtime prune runner, or `undefined` when neither the
+   * replay nor the rate primitive is on (nothing accumulates). Tests call
+   * `runOnce` to prune without waiting for the timer.
+   */
+  sharedStateRuntimePrune: SharedStateRuntimePruneV1 | undefined;
   /** Run the stale-task reaper sweep once. Returns the number of requeued tasks. */
   runStaleReaperSweep: () => number;
   /** Stop the periodic stale-task reaper timer (if started). Safe to call multiple times. */

@@ -65,6 +65,11 @@ import {
   type SharedStateServingFenceV1,
 } from "./shared-state-serving-fence-v1.js";
 import { createSharedStateLossMonitorV1 } from "./shared-state-loss-monitor-v1.js";
+import {
+  createSharedStateRuntimePruneV1,
+  resolveSharedStateRuntimePruneConfigV1,
+  type SharedStateRuntimePruneV1,
+} from "./shared-state-runtime-prune-v1.js";
 import { buildSharedStateHealthDeclarationV1, buildSharedStatePublicObservabilityV1 } from "./shared-state-contract-health-v1.js";
 import { createServer, type IncomingMessage, type RequestListener, type Server, type ServerResponse } from "node:http";
 import {
@@ -498,6 +503,16 @@ export function createBrokerServer(options: BrokerServerOptions = {}): BrokerSer
       }
     }
   }
+  // #2344: in-process periodic prune of expired V1 replay-nonce and
+  // rate-cost rows. Only meaningful while a primitive that appends those rows
+  // is on; validated at startup like the flags above (invalid values throw).
+  const sharedStateRuntimePruneConfig = sharedStateReplayV1 || sharedStateRateV1
+    ? resolveSharedStateRuntimePruneConfigV1(
+      options.sharedStateRuntimePruneV1 ?? {},
+      process.env,
+      Math.max(Math.max(1, rateLimitWindowSec), Math.max(1, workerRateLimitWindowSec)) * 1000,
+    )
+    : undefined;
   // #1504 §4 Slice U: lease-primitive integration flag. Default-off keeps the
   // legacy-only task-claim path; `on` fences the worker task-claim lifecycle
   // (claim/heartbeat/checkpoint/terminal mutations) through the V1 lease
@@ -2239,6 +2254,17 @@ export function createBrokerServer(options: BrokerServerOptions = {}): BrokerSer
     },
   });
   lossMonitor.start();
+  // #2344: prune on the serving fence's own connection. The accessor
+  // resolves the CURRENT fence per run; a released fence reads as skipped.
+  const sharedStateRuntimePrune: SharedStateRuntimePruneV1 | undefined =
+    sharedStateRuntimePruneConfig === undefined
+      ? undefined
+      : createSharedStateRuntimePruneV1({
+        config: sharedStateRuntimePruneConfig,
+        prune: (rateCostRetentionMs, nowMs) =>
+          servingFence?.pruneExpiredRows({ rateCostRetentionMs }, nowMs),
+      });
+  sharedStateRuntimePrune?.start();
 
   // Configure keepAliveTimeout to exceed the heartbeat interval so worker heartbeat
   // TCP connections survive between beats and can be reused. The Node.js default is
@@ -2262,6 +2288,7 @@ export function createBrokerServer(options: BrokerServerOptions = {}): BrokerSer
   // path in startBrokerServer.
   server.on("close", () => {
     lossMonitor?.stop();
+    sharedStateRuntimePrune?.stop();
     stopStaleReaper();
     stopPoller();
     defaultAgentHandle?.stop();
@@ -2286,6 +2313,7 @@ export function createBrokerServer(options: BrokerServerOptions = {}): BrokerSer
     },
     isDraining: () => draining,
     evaluateSharedStateLossMonitor: inspectServingAuthority,
+    sharedStateRuntimePrune,
     runStaleReaperSweep,
     stopStaleReaper,
     getStaleReaperStatus,
