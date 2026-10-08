@@ -79,6 +79,8 @@ import { DatabaseSync, type StatementSync } from "node:sqlite";
 import {
   SHARED_STATE_SQLITE_ADAPTER_V1,
   SharedStateSqliteAdapterV1,
+  pruneSharedStateSqliteV1,
+  readSharedStateSqliteClockFloorV1,
   type SharedStateSqliteAdapterErrorCodeV1,
 } from "./shared-state-sqlite-adapter-v1.js";
 import {
@@ -236,6 +238,25 @@ export type SharedStateFenceGraphSourceOutcomeV1 =
 export type SharedStateFenceGraphHighWaterOutcomeV1 =
   | { readonly outcome: "observed"; readonly sourceSequenceHighWater: string }
   | { readonly outcome: "unavailable"; readonly reasonCode: string };
+
+/**
+ * #2344: outcome of one in-process physical prune of the append-only
+ * replay-nonce and rate-cost tables. `pruned` carries the per-table deletion
+ * counts and the cutoffs actually applied; `skipped` means nothing was
+ * attempted (fence released, ownership not held, adapter not ready, or no
+ * persisted clock floor yet); `failed` means the prune transaction rolled
+ * back. None of these outcomes ever affects a logical decision.
+ */
+export type SharedStateFencePruneOutcomeV1 =
+  | {
+      readonly outcome: "pruned";
+      readonly rateCostDeleted: number;
+      readonly nonceDeleted: number;
+      readonly nonceCutoffUnixMs: number;
+      readonly rateCostCutoffUnixMs: number;
+    }
+  | { readonly outcome: "skipped"; readonly reasonCode: string }
+  | { readonly outcome: "failed"; readonly reasonCode: string };
 
 /**
  * Outcome of one fence-mediated `consumeReplayNonce` (Slice S). Only a
@@ -441,6 +462,24 @@ export interface SharedStateServingFenceV1 {
    * `unavailable`; the caller must fail closed rather than guess.
    */
   queryGraphSourceHighWater(): SharedStateFenceGraphHighWaterOutcomeV1;
+  /**
+   * #2344: physical retention for the V1 replay-nonce and rate-cost tables on
+   * the fence's OWN connection (the same single-writer connection every V1
+   * decision uses), so it can never contend with the serving path the way an
+   * external process would under `timeout: 0`.
+   *
+   * The effective "now" is `min(nowMs, persisted clock floor)`. The adapter
+   * never evaluates a decision below the persisted floor, so a nonce that
+   * expired before that instant can never be active again; a backward wall
+   * clock only makes the prune delete less. Rate-cost rows are kept for
+   * `rateCostRetentionMs` before that instant; the caller guarantees the
+   * retention exceeds every rate window still being reserved against.
+   * Requires held ownership and a `ready` adapter; otherwise `skipped`.
+   */
+  pruneExpiredRows(
+    input: { readonly rateCostRetentionMs: number },
+    nowMs: number,
+  ): SharedStateFencePruneOutcomeV1;
 }
 
 function fail(
@@ -982,6 +1021,33 @@ export function openSharedStateServingFenceV1(input: {
   // statement once; lazily inside the try so a prepare failure still reads
   // as adapter_unavailable.
   let probeStatement: StatementSync | undefined;
+  const probe = (): SharedStateServingFenceProbeV1 => {
+    if (released) {
+      return Object.freeze({ ready: false, reasonCode: "adapter_unavailable" });
+    }
+    try {
+      probeStatement ??= db.prepare(
+        `SELECT owner_token FROM shared_state_ownership WHERE id = ?`,
+      );
+      const row: unknown = probeStatement.get(SHARED_STATE_SQLITE_ADAPTER_V1.ownershipRowId);
+      const token = ownershipTokenFromRow(row);
+      if (token === undefined) {
+        return Object.freeze({
+          ready: false,
+          reasonCode: "adapter_unavailable",
+        });
+      }
+      if (token !== ownerToken) {
+        return Object.freeze({ ready: false, reasonCode: "lost_fence" });
+      }
+      return Object.freeze({ ready: true });
+    } catch {
+      return Object.freeze({
+        ready: false,
+        reasonCode: "adapter_unavailable",
+      });
+    }
+  };
   return {
     ok: true,
     value: Object.freeze({
@@ -992,33 +1058,7 @@ export function openSharedStateServingFenceV1(input: {
         adapter.close();
         db.close();
       },
-      probe(): SharedStateServingFenceProbeV1 {
-        if (released) {
-          return Object.freeze({ ready: false, reasonCode: "adapter_unavailable" });
-        }
-        try {
-          probeStatement ??= db.prepare(
-            `SELECT owner_token FROM shared_state_ownership WHERE id = ?`,
-          );
-          const row: unknown = probeStatement.get(SHARED_STATE_SQLITE_ADAPTER_V1.ownershipRowId);
-          const token = ownershipTokenFromRow(row);
-          if (token === undefined) {
-            return Object.freeze({
-              ready: false,
-              reasonCode: "adapter_unavailable",
-            });
-          }
-          if (token !== ownerToken) {
-            return Object.freeze({ ready: false, reasonCode: "lost_fence" });
-          }
-          return Object.freeze({ ready: true });
-        } catch {
-          return Object.freeze({
-            ready: false,
-            reasonCode: "adapter_unavailable",
-          });
-        }
-      },
+      probe,
       consumeReplayNonce(
         input: { readonly keyid: string; readonly nonce: string; readonly ttlMs: number },
         nowMs: number,
@@ -1554,6 +1594,57 @@ export function openSharedStateServingFenceV1(input: {
           });
         } catch {
           return Object.freeze({ outcome: "unavailable", reasonCode: "store_failure" });
+        }
+      },
+      pruneExpiredRows(
+        input: { readonly rateCostRetentionMs: number },
+        nowMs: number,
+      ): SharedStateFencePruneOutcomeV1 {
+        if (released) {
+          return Object.freeze({ outcome: "skipped", reasonCode: "adapter_unavailable" });
+        }
+        if (
+          !Number.isSafeInteger(nowMs) || nowMs < 0
+          || !Number.isSafeInteger(input.rateCostRetentionMs) || input.rateCostRetentionMs <= 0
+        ) {
+          return Object.freeze({ outcome: "skipped", reasonCode: "invalid_prune_input" });
+        }
+        // Never write without held ownership, and never behind an adapter
+        // that has stopped being writable (failed/draining/closed).
+        const ownership = probe();
+        if (!ownership.ready) {
+          return Object.freeze({ outcome: "skipped", reasonCode: ownership.reasonCode });
+        }
+        if (adapter.lifecycle()?.state !== "ready") {
+          return Object.freeze({ outcome: "skipped", reasonCode: "adapter_not_ready" });
+        }
+        try {
+          const floor = readSharedStateSqliteClockFloorV1(db);
+          if (floor === null || !/^(0|[1-9][0-9]{0,15})$/.test(floor)) {
+            return Object.freeze({ outcome: "skipped", reasonCode: "no_clock_floor" });
+          }
+          const floorMs = Number(floor);
+          if (!Number.isSafeInteger(floorMs)) {
+            return Object.freeze({ outcome: "skipped", reasonCode: "no_clock_floor" });
+          }
+          const effectiveNowMs = Math.min(nowMs, floorMs);
+          const rateCostCutoffMs = Math.max(0, effectiveNowMs - input.rateCostRetentionMs);
+          const result = pruneSharedStateSqliteV1(db, {
+            nowUnixMs: BigInt(effectiveNowMs),
+            rateCostCutoffUnixMs: BigInt(rateCostCutoffMs),
+          });
+          if (result.rateCostDeleted < 0 || result.nonceDeleted < 0) {
+            return Object.freeze({ outcome: "failed", reasonCode: "store_failure" });
+          }
+          return Object.freeze({
+            outcome: "pruned",
+            rateCostDeleted: result.rateCostDeleted,
+            nonceDeleted: result.nonceDeleted,
+            nonceCutoffUnixMs: effectiveNowMs,
+            rateCostCutoffUnixMs: rateCostCutoffMs,
+          });
+        } catch {
+          return Object.freeze({ outcome: "failed", reasonCode: "store_failure" });
         }
       },
     }),
