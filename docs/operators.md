@@ -325,6 +325,42 @@ to source does not approve live schema execution, record-mode activation,
 deployment, restart, canary, real-lineage collection, independent review,
 finalizer closeout, or issue closeout.
 
+#### Operator client for create and cancel (#2274)
+
+Attaching the routes did not attach a caller. Until #2274 no client posted to
+them, so a broker in `record` mode kept `GET /review-lineages` at `count: 0`
+while real review loops ran outside it. The loop owner has to report lineage
+facts explicitly, because the broker never derives them from task terminal
+state (`producer-admission-v1.md`). `scripts/lib/review-lineage-client.mjs` is that
+explicit path for the two operator-owned sources:
+
+```bash
+# offline: build the IntentContractV1 and print intentHash/diffHash
+node scripts/lib/review-lineage-client.mjs binding --spec spec.json
+# POST /review-lineages; writes an owner-only record file (no secret)
+A2A_EDGE_SECRET=... node scripts/lib/review-lineage-client.mjs create --spec spec.json --out lineage.json
+# POST /review-lineages/{id}/operator-cancel with the recorded binding
+A2A_EDGE_SECRET=... node scripts/lib/review-lineage-client.mjs cancel --record lineage.json \
+  --decision-ref <ref> --detail "<why the loop was abandoned>"
+```
+
+The spec carries `brokerUrl`, `requesterId`, `dispatchRef`, `lineageId`,
+`goal`, `nonGoals`, `invariants`, `acceptanceCriteria`, `declaredPaths`,
+`baseSha`, `headSha`, and either `repo` (a checkout holding both commits) or
+`diffFile`; `budget` defaults to `DEFAULT_LINEAGE_BUDGET`. `diffHash` is the
+SHA-256 of the exact `git diff --no-color --no-ext-diff --no-renames
+--unified=3 <base> <head>` bytes with system and global git config
+neutralized. Every command accepts `--dry-run` except `binding`, which is
+always offline. The requester role is always `operator`; the edge secret comes
+from `A2A_EDGE_SECRET` only.
+
+Create plus cancel can only produce `canceled` terminals. That proves the
+recording path, but it is not scorecard evidence for `DEFAULT_LINEAGE_BUDGET`;
+convergence data needs the reviewer-signed `review-report` producer on the
+worker side, which is a later slice with its own worker rollout and key-scope
+approvals. Running the client against a live broker is an operator action on
+that broker and needs the usual approval.
+
 ### Lossless review-lineage observation contract (#1518 Phase 8)
 
 Phase 8 defines the input boundary needed before a record-mode adapter can be
