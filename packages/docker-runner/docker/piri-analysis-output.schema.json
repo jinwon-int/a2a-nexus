@@ -56,6 +56,41 @@
 					}
 				}
 			}
+		},
+		"reviewLineage": {
+			"type": "object",
+			"description": "Optional structured review-lineage block (a2a-nexus#2351). Requested by the worker prompt only when payload.reviewLineage binds the review lane; the worker producer validates it and posts a reviewer-signed review-report. A fail verdict without it is not reported.",
+			"additionalProperties": false,
+			"required": ["newFindings", "resolvedFindingIds", "reopenedFindingIds"],
+			"properties": {
+				"newFindings": {
+					"type": "array",
+					"maxItems": 100,
+					"items": {
+						"type": "object",
+						"additionalProperties": false,
+						"required": ["criterionRef", "evidenceRefs", "severity", "category", "blocking"],
+						"properties": {
+							"criterionRef": { "type": "string", "minLength": 1, "maxLength": 128 },
+							"evidenceRefs": { "type": "array", "minItems": 1, "items": { "type": "string", "minLength": 1, "maxLength": 512 } },
+							"severity": { "type": "string", "enum": ["critical", "major", "minor"] },
+							"category": { "type": "string", "enum": ["correctness", "security", "regression", "spec_ambiguity", "scope_drift", "style", "preference", "design", "other"] },
+							"blocking": { "type": "boolean" },
+							"justification": {
+								"type": "object",
+								"additionalProperties": false,
+								"required": ["kind", "detail"],
+								"properties": {
+									"kind": { "type": "string", "enum": ["introduced_regression", "critical_security", "unavailable_evidence"] },
+									"detail": { "type": "string", "minLength": 1 }
+								}
+							}
+						}
+					}
+				},
+				"resolvedFindingIds": { "type": "array", "maxItems": 100, "items": { "type": "string", "pattern": "^F-[0-9]+$" } },
+				"reopenedFindingIds": { "type": "array", "maxItems": 100, "items": { "type": "string", "pattern": "^F-[0-9]+$" } }
+			}
 		}
 	}
 }

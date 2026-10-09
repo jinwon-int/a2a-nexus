@@ -1099,3 +1099,37 @@ test("#2287 bridge redaction random base64url corpus leak rate (seeded)", () => 
     assert.ok(leaked <= (bytes === 18 ? 2 : 0), `${bytes}-byte tokens leaked ${leaked}/${samples}`);
   }
 });
+
+test("Claude bridge passes the structured reviewLineage block through and allows requested extra keys (#2351)", () => {
+  const tempDir = mkdtempSync(join(tmpdir(), "claude-a2a-bridge-lineage-"));
+  const fakeClaudePath = join(tempDir, "fake-claude.mjs");
+  const promptPath = join(tempDir, "prompt.txt");
+  const block = {
+    newFindings: [{ criterionRef: "AC-1", evidenceRefs: ["src/x.ts:10"], severity: "major", category: "correctness", blocking: true }],
+    resolvedFindingIds: [],
+    reopenedFindingIds: [],
+  };
+  try {
+    writeFileSync(fakeClaudePath, [
+      "#!/usr/bin/env node",
+      "import { writeFileSync } from 'node:fs';",
+      "const args = process.argv.slice(2);",
+      "writeFileSync(process.env.CAPTURE_PROMPT_PATH, args[args.indexOf('-p') + 1]);",
+      `const analysis = { status: 'done', summary: 'FAIL: lease dropped', findings: ['lease dropped'], risks: [], recommendations: [], evidenceRefs: ['src/x.ts:10'], verdict: 'fail', reviewLineage: ${JSON.stringify(block)}, ignored: 'x' };`,
+      "console.log(JSON.stringify({ type: 'result', subtype: 'success', result: JSON.stringify(analysis) }));",
+      "",
+    ].join("\n"));
+    chmodSync(fakeClaudePath, 0o755);
+    const result = spawnSync(bridgePath, bridgeArgs("Payload JSON:\n" + JSON.stringify({ mode: "analysis-only", noLive: true, sourceOnly: true })), {
+      encoding: "utf8",
+      env: { ...process.env, A2A_CLAUDE_MODEL: "", A2A_CLAUDE_EFFORT: "", A2A_CLAUDE_CODE_BIN: fakeClaudePath, CAPTURE_PROMPT_PATH: promptPath },
+    });
+    assert.equal(result.status, 0, result.stderr);
+    const payload = JSON.parse(JSON.parse(result.stdout).payloads[0].text);
+    assert.deepEqual(payload.reviewLineage, block);
+    assert.equal(payload.ignored, undefined, "other unknown keys are still dropped");
+    assert.match(readFileSync(promptPath, "utf8"), /request additional top-level keys \(verdict, reviewLineage\)/);
+  } finally {
+    rmSync(tempDir, { recursive: true, force: true });
+  }
+});

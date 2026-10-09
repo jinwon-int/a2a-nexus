@@ -1432,3 +1432,32 @@ test("Hermes A2A analysis bridge blocks without invoking Hermes when explicit PR
     rmSync(tempDir, { recursive: true, force: true });
   }
 });
+
+test("Hermes bridge passes the structured reviewLineage block through (#2351)", () => {
+  const tempDir = mkdtempSync(join(tmpdir(), "hermes-a2a-bridge-lineage-"));
+  const fakeHermesPath = join(tempDir, "fake-hermes.mjs");
+  const promptPath = join(tempDir, "prompt.txt");
+  const block = { newFindings: [], resolvedFindingIds: [], reopenedFindingIds: ["F-7"] };
+  try {
+    writeFileSync(fakeHermesPath, [
+      "#!/usr/bin/env node",
+      "import { writeFileSync } from 'node:fs';",
+      "const args = process.argv.slice(2);",
+      "const q = args.indexOf('-q');",
+      "writeFileSync(process.env.CAPTURE_PROMPT_PATH, q >= 0 ? args[q + 1] : args.join(' '));",
+      `console.log(JSON.stringify({ status: 'done', summary: 'PASS: fixed', findings: ['fixed'], risks: [], recommendations: [], evidenceRefs: ['src/x.ts:10'], verdict: 'pass', reviewLineage: ${JSON.stringify(block)} }));`,
+      "",
+    ].join("\n"));
+    chmodSync(fakeHermesPath, 0o755);
+    const result = spawnSync(process.execPath, openClawArgs("Payload JSON:\n" + JSON.stringify({ mode: "analysis-only", noLive: true, sourceOnly: true })), {
+      encoding: "utf8",
+      env: { ...process.env, HERMES_BIN: fakeHermesPath, HERMES_PROVIDER: "openai-codex", CAPTURE_PROMPT_PATH: promptPath },
+    });
+    assert.equal(result.status, 0, result.stderr);
+    const payload = JSON.parse(JSON.parse(result.stdout).payloads[0].text);
+    assert.deepEqual(payload.reviewLineage, block);
+    assert.match(readFileSync(promptPath, "utf8"), /request additional top-level keys \(verdict, reviewLineage\)/);
+  } finally {
+    rmSync(tempDir, { recursive: true, force: true });
+  }
+});

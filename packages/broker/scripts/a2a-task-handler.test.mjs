@@ -2217,6 +2217,121 @@ process.stdout.write(JSON.stringify({ text: JSON.stringify(response) }) + "\\n")
   }
 });
 
+// #2351: a lineage-bound review lane asks for the structured block and
+// forwards it in result.output for the worker producer; other lanes never do.
+function lineageReviewBridge(dir, { withBlock }) {
+  const bin = join(dir, "fake-lineage-bridge.mjs");
+  const promptFile = join(dir, "prompt.txt");
+  writeFileSync(bin, `#!/usr/bin/env node
+import { writeFileSync } from "node:fs";
+const args = process.argv.slice(2);
+writeFileSync(${JSON.stringify(promptFile)}, args[args.indexOf("--message") + 1] ?? "");
+const response = {
+  status: "done",
+  summary: "FAIL: the retry path drops the lease",
+  verdict: "fail",
+  findings: ["retry path drops the lease"],
+  risks: [], recommendations: [], evidenceRefs: ["src/x.ts:10"],
+  ${withBlock ? 'reviewLineage: { newFindings: [{ criterionRef: "AC-1", evidenceRefs: ["src/x.ts:10"], severity: "major", category: "correctness", blocking: true }], resolvedFindingIds: [], reopenedFindingIds: [] },' : ""}
+};
+process.stdout.write(JSON.stringify({ text: JSON.stringify(response) }) + "\\n");
+`);
+  chmodSync(bin, 0o755);
+  return { bin, promptFile };
+}
+
+const LINEAGE_BINDING = {
+  lineageId: "lineage-2351",
+  intentHash: `sha256:${"1".repeat(64)}`,
+  headSha: "b".repeat(40),
+  diffHash: `sha256:${"2".repeat(64)}`,
+};
+
+function lineageTask(payloadExtra) {
+  return {
+    id: "task-lineage-review",
+    intent: "analyze",
+    assignedWorkerId: "author-worker",
+    message: "Review the head bound to the lineage.",
+    payload: { mode: "analysis-only", sourceOnly: true, readOnlyValidation: true, review: { required: true }, ...payloadExtra },
+  };
+}
+
+function lineageEnv(bin) {
+  return {
+    PATH: process.env.PATH,
+    A2A_EXECUTOR_MODE: "builtin",
+    A2A_OPENCLAW_ANALYSIS_ENABLED: "1",
+    A2A_OPENCLAW_ANALYSIS_BIN: bin,
+    A2A_NODE_ID: "reviewer-node",
+  };
+}
+
+test("lineage-bound review: prompt asks for the structured block and the handler forwards it (#2351)", () => {
+  const dir = mkdtempSync(join(tmpdir(), "a2a-lineage-review-"));
+  try {
+    const { bin, promptFile } = lineageReviewBridge(dir, { withBlock: true });
+    const result = handleTask(lineageTask({ reviewLineage: LINEAGE_BINDING }), lineageEnv(bin));
+    assert.equal(result.error, undefined);
+    const prompt = readFileSync(promptFile, "utf8");
+    assert.match(prompt, /bound to a review lineage/);
+    assert.match(prompt, /"resolvedFindingIds"/);
+    assert.deepEqual(result.result.output.reviewLineage, {
+      newFindings: [{ criterionRef: "AC-1", evidenceRefs: ["src/x.ts:10"], severity: "major", category: "correctness", blocking: true }],
+      resolvedFindingIds: [],
+      reopenedFindingIds: [],
+    });
+    assert.equal(result.result.validations[0].verdict, "fail");
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test("lineage-bound review: handler output feeds the worker producer and the broker parser accepts it (#2351)", async () => {
+  const dir = mkdtempSync(join(tmpdir(), "a2a-lineage-review-chain-"));
+  try {
+    const { bin } = lineageReviewBridge(dir, { withBlock: true });
+    const task = lineageTask({ reviewLineage: LINEAGE_BINDING });
+    const result = handleTask(task, lineageEnv(bin));
+    assert.equal(result.error, undefined);
+    const { planReviewReport } = await import("../dist/workers/review-report-producer.js");
+    const { authorizeReviewerReviewLineageReport } = await import("../dist/review-lifecycle/review-report-source.js");
+    const plan = planReviewReport({ task, result: result.result, workerId: "reviewer-node" });
+    assert.equal(plan.kind, "report", JSON.stringify(plan));
+    assert.equal(plan.request.receipt.verdict, "fail");
+    assert.equal(plan.request.newFindings.length, 1);
+    assert.equal(plan.request.newFindings[0].blocking, true);
+    assert.doesNotThrow(() => authorizeReviewerReviewLineageReport(LINEAGE_BINDING.lineageId, plan.request, "reviewer-node"));
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test("lanes without a lineage binding neither ask for nor forward the block (#2351)", () => {
+  const dir = mkdtempSync(join(tmpdir(), "a2a-lineage-review-unbound-"));
+  try {
+    const { bin, promptFile } = lineageReviewBridge(dir, { withBlock: true });
+    const result = handleTask(lineageTask({}), lineageEnv(bin));
+    assert.equal(result.error, undefined);
+    assert.doesNotMatch(readFileSync(promptFile, "utf8"), /bound to a review lineage/);
+    assert.equal(result.result.output.reviewLineage, undefined);
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test("lineage-bound review without a block forwards nothing (the worker then skips a fail) (#2351)", () => {
+  const dir = mkdtempSync(join(tmpdir(), "a2a-lineage-review-noblock-"));
+  try {
+    const { bin } = lineageReviewBridge(dir, { withBlock: false });
+    const result = handleTask(lineageTask({ reviewLineage: LINEAGE_BINDING }), lineageEnv(bin));
+    assert.equal(result.error, undefined);
+    assert.equal(result.result.output.reviewLineage, undefined);
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
 test("review.required analysis bridge omits validation when verdict is absent (#1330)", () => {
   const dir = mkdtempSync(join(tmpdir(), "a2a-review-validation-absent-"));
   const bin = join(dir, "fake-review-bridge.mjs");

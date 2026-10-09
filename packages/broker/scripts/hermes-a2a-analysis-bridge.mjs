@@ -971,6 +971,7 @@ function buildHermesPrompt({ message, payload, sourceBundle, flags }) {
     "Use only the task text and the read-only source bundle below. If source evidence is insufficient, return status=blocked and explain the missing evidence.",
     "Return JSON only, no markdown, with exactly this shape:",
     '{"status":"done|blocked","summary":"...","findings":["..."],"risks":["..."],"recommendations":["..."],"evidenceRefs":["repo:path"],"sourceProjection":{"quality":"complete|partial|insufficient|zero_files"},"doneCommentUrl":"optional","blockCommentUrl":"optional","startCommentUrl":"optional"}',
+    "If the task instructions above request additional top-level keys (verdict, reviewLineage), include them exactly as specified.",
     "Human-readable text should be Korean unless quoting code, paths, or test output.",
     `OpenClaw-shaped session id: ${safeText(flags["session-id"], "")}`,
     `Effective model requested by worker: ${safeText(flags.model, "")}`,
@@ -1120,6 +1121,11 @@ function normalizeResponse(parsed, diagnostics = {}) {
     status,
     summary: safeText(parsed.summary, status === "blocked" ? "analysis blocked" : "analysis complete"),
     findings: normalizeStringArray(parsed.findings),
+    // #2351: the structured review-lineage block is validated by the worker
+    // producer; pass it through untouched so a fail verdict can be reported.
+    ...(parsed.reviewLineage && typeof parsed.reviewLineage === "object" && !Array.isArray(parsed.reviewLineage)
+      ? { reviewLineage: parsed.reviewLineage }
+      : {}),
     risks: normalizeStringArray(parsed.risks),
     recommendations: normalizeStringArray(parsed.recommendations),
     evidenceRefs: normalizeStringArray(parsed.evidenceRefs),

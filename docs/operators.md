@@ -403,9 +403,14 @@ the producer off.
 
 Live use needs separate approval for each of: worker rollout/restart, adding
 `review-lineage.report` to the key's scopes (keys that declare scopes need it),
-and dispatching lineage-bound lanes to a `record` broker. Handlers emit the
-structured block only once their prompt asks for it. That is a handler-side
-change outside this package.
+and dispatching lineage-bound lanes to a `record` broker.
+
+For a lineage-bound review lane, `a2a-task-handler.mjs` asks the model for the
+structured block and copies it into `result.output.reviewLineage`. The analysis
+bridges (claude, hermes, piri, danso; codex forwards the wrapped bridge's
+response) pass it through unchanged, and piri's output schema admits it. Lanes
+without `payload.reviewLineage` are neither asked for the block nor forward it.
+The worker producer remains the only validator.
 
 ### Lossless review-lineage observation contract (#1518 Phase 8)
 
