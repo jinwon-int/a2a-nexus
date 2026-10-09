@@ -17,6 +17,7 @@ import {
 import { SHARED_STATE_STORAGE_V1_VALUES as SV } from "./shared-state-storage-v1-values.js";
 import { SHARED_STATE_OBSERVABILITY_V1_VALUES as V } from "./shared-state-observability-v1-values.js";
 import { isRecord } from "./core/value-guards.js";
+import { errorResult } from "./shared-state-parse-kit-v1.js";
 
 export {
   SHARED_STATE_OBSERVABILITY_V1_VALUES,
@@ -621,13 +622,6 @@ function observabilityError(
   path: readonly (string | number)[] = [],
 ): SharedStateObservabilityErrorV1 {
   return Object.freeze({ code, path: Object.freeze([...path]) });
-}
-
-function errorResult<T>(
-  code: SharedStateObservabilityErrorCodeV1,
-  path: readonly (string | number)[] = [],
-): SharedStateObservabilityResultV1<T> {
-  return { ok: false, error: observabilityError(code, path) };
 }
 
 function findForbiddenField(

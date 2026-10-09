@@ -27,6 +27,11 @@ import {
 } from "./shared-state-outbox-v1-values.js";
 import { SHARED_STATE_STORAGE_V1_VALUES as V } from "./shared-state-storage-v1-values.js";
 import { isRecord } from "./core/value-guards.js";
+import {
+  errorResult,
+  firstDuplicate,
+  normalizedFieldName,
+} from "./shared-state-parse-kit-v1.js";
 
 export { SHARED_STATE_STORAGE_V1_VALUES } from "./shared-state-storage-v1-values.js";
 export {
@@ -1413,33 +1418,11 @@ const HEALTH_IDENTITY_FIELD_NAMES = new Set([
   "provenancepayload",
 ]);
 
-// Field names repeat heavily across commands, so memoize normalization.
-// Keys are caller-controlled: the cache clears at capacity instead of
-// growing without bound.
-const normalizedFieldNameCache = new Map<string, string>();
-
-function normalizedFieldName(value: string): string {
-  let normalized = normalizedFieldNameCache.get(value);
-  if (normalized === undefined) {
-    normalized = value.replace(/[-_]/g, "").toLowerCase();
-    if (normalizedFieldNameCache.size >= 4096) normalizedFieldNameCache.clear();
-    normalizedFieldNameCache.set(value, normalized);
-  }
-  return normalized;
-}
-
 function contractError(
   code: SharedStateContractErrorCodeV1,
   path: readonly (string | number)[] = [],
 ): SharedStateContractErrorV1 {
   return Object.freeze({ code, path: Object.freeze([...path]) });
-}
-
-function errorResult<T>(
-  code: SharedStateContractErrorCodeV1,
-  path: readonly (string | number)[] = [],
-): SharedStateParseResultV1<T> {
-  return { ok: false, error: contractError(code, path) };
 }
 
 interface ForbiddenFieldMatches {
@@ -1600,18 +1583,6 @@ function parseSchema<T>(
     return { ok: false, error: mapZodError(parsed.error) };
   }
   return { ok: true, value: parsed.data };
-}
-
-function firstDuplicate(
-  values: readonly string[],
-): number | null {
-  const seen = new Set<string>();
-  for (let index = 0; index < values.length; index += 1) {
-    const value = values[index];
-    if (seen.has(value)) return index;
-    seen.add(value);
-  }
-  return null;
 }
 
 function validateCapabilities(

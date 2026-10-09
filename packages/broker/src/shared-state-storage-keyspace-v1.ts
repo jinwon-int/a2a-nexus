@@ -10,6 +10,7 @@ import { createHash } from "node:crypto";
 
 import { SHARED_STATE_STORAGE_V1_VALUES as V } from "./shared-state-storage-v1-values.js";
 import { isRecord } from "./core/value-guards.js";
+import { errorResult, firstUnknownField } from "./shared-state-parse-kit-v1.js";
 
 export type SharedStateDigestDomainV1 = keyof typeof V.digestDomains;
 export type SharedStateKeyComponentTypeV1 =
@@ -71,8 +72,6 @@ export interface ParsedSharedStateDigestV1 {
   readonly digest: string;
 }
 
-type RecordValue = Record<string, unknown>;
-
 const UINT128_MAX = (1n << 128n) - 1n;
 const NAMESPACE_PATTERN = /^[a-z][a-z0-9]*(?:[.-][a-z0-9]+)*$/;
 const BYTE_HEX_PATTERN = /^(?:[0-9a-fA-F]{2})+$/;
@@ -85,24 +84,6 @@ const TOP_LEVEL_FIELDS = [
   "components",
 ] as const;
 const COMPONENT_FIELDS = ["field", "type", "value"] as const;
-
-function errorResult<T>(
-  code: SharedStateKeyspaceErrorCodeV1,
-  path: readonly (string | number)[] = [],
-): SharedStateKeyspaceResultV1<T> {
-  return {
-    ok: false,
-    error: Object.freeze({ code, path: Object.freeze([...path]) }),
-  };
-}
-
-function firstUnknownField(
-  value: RecordValue,
-  allowed: readonly string[],
-): string | null {
-  const allowedSet = new Set(allowed);
-  return Object.keys(value).filter((key) => !allowedSet.has(key)).sort()[0] ?? null;
-}
 
 function hasOnlyUnicodeScalars(value: string): boolean {
   for (let index = 0; index < value.length; index += 1) {

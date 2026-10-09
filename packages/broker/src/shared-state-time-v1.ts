@@ -8,6 +8,7 @@
 
 import { SHARED_STATE_TIME_V1_VALUES as V } from "./shared-state-time-v1-values.js";
 import { isRecord } from "./core/value-guards.js";
+import { errorResult, firstUnknownField } from "./shared-state-parse-kit-v1.js";
 
 export { SHARED_STATE_TIME_V1_VALUES } from "./shared-state-time-v1-values.js";
 
@@ -172,24 +173,6 @@ const CANONICAL_DECIMAL_PATTERN = /^(?:0|[1-9][0-9]*)$/;
 const MAX_TIMESTAMP = BigInt(V.limits.maxTimestampUnixMs);
 const MAX_DURATION = BigInt(V.limits.maxDurationMs);
 const MAX_TOLERANCE = BigInt(V.limits.maxBackwardSkewToleranceMs);
-
-function errorResult<T>(
-  code: SharedStateTimeErrorCodeV1,
-  path: readonly (string | number)[] = [],
-): SharedStateTimeResultV1<T> {
-  return {
-    ok: false,
-    error: Object.freeze({ code, path: Object.freeze([...path]) }),
-  };
-}
-
-function firstUnknownField(
-  value: RecordValue,
-  allowed: readonly string[],
-): string | null {
-  const allowedSet = new Set(allowed);
-  return Object.keys(value).filter((key) => !allowedSet.has(key)).sort()[0] ?? null;
-}
 
 function checkEnvelope(
   input: unknown,

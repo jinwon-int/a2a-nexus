@@ -6,15 +6,7 @@
  * does not collect runtime state, authorize an operator, or bind an endpoint.
  */
 
-function deepFreeze<T>(value: T): Readonly<T> {
-  if (value !== null && typeof value === "object" && !Object.isFrozen(value)) {
-    Object.freeze(value);
-    for (const nested of Object.values(value)) {
-      deepFreeze(nested);
-    }
-  }
-  return value;
-}
+import { deepFreeze } from "./shared-state-parse-kit-v1.js";
 
 const requirements = [
   {
