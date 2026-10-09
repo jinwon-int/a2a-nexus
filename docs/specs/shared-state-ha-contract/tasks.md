@@ -3496,7 +3496,7 @@ compatibility/regression/performance run. 488/489 remain as decided by W11.
 
 Slice S is the first of the six one-at-a-time primitive integrations. A new
 closed flag parser, `resolveSharedStateReplayPrimitiveModeV1` in
-`shared-state-replay-primitive-mode-v1.ts`, reads
+`shared-state-replay-primitive-mode-v1.ts` (since folded into `shared-state-on-off-flag-v1.ts`), reads
 `BROKER_SHARED_STATE_V1_REPLAY` (unset/empty `off`, `on`, anything else fails
 startup loudly — the wave-plan-dag/review-lineage posture). With the flag off
 (default), nothing changes: the process-local `A2AHttpSignatureReplayCache`
@@ -3535,7 +3535,7 @@ decided by W11.
 Slice T is the second of the six one-at-a-time primitive integrations and
 replays the Slice S pattern for the rate primitive. A new closed flag parser,
 `resolveSharedStateRatePrimitiveModeV1` in
-`shared-state-rate-primitive-mode-v1.ts`, reads `BROKER_SHARED_STATE_V1_RATE`
+`shared-state-rate-primitive-mode-v1.ts` (since folded into `shared-state-on-off-flag-v1.ts`), reads `BROKER_SHARED_STATE_V1_RATE`
 (unset/empty `off`, `on`, anything else fails startup loudly). With the flag
 off (default), nothing changes: the process-local `InMemoryRateLimiter` still
 answers every broker-edge rate-limit check, and the V1 counters stay zero.
@@ -3581,7 +3581,7 @@ Slice U integrates the lease primitive — all four commands, because a fence
 only means something if every authority transition checks it — and replays
 the S/T pattern with the task-claim lifecycle as the resource. A new closed
 flag parser, `resolveSharedStateLeasePrimitiveModeV1` in
-`shared-state-lease-primitive-mode-v1.ts`, reads `BROKER_SHARED_STATE_V1_LEASE`
+`shared-state-lease-primitive-mode-v1.ts` (since folded into `shared-state-on-off-flag-v1.ts`), reads `BROKER_SHARED_STATE_V1_LEASE`
 (unset/empty `off`, `on`, anything else fails startup loudly). With the flag
 off (default), nothing changes: the legacy claim path remains the whole story.
 
@@ -3634,7 +3634,7 @@ authority — the other five (wake, terminal, live-approval, review-lineage,
 cross-broker brief) remain on their current durable-but-partial sources and
 are later slices. A new closed flag parser,
 `resolveSharedStateIdempotencyPrimitiveModeV1` in
-`shared-state-idempotency-primitive-mode-v1.ts`, reads
+`shared-state-idempotency-primitive-mode-v1.ts` (since folded into `shared-state-on-off-flag-v1.ts`), reads
 `BROKER_SHARED_STATE_V1_IDEMPOTENCY` (unset/empty `off`, `on`, anything else
 fails startup loudly). With the flag off (default), the legacy same-id replay
 check is the whole story, unchanged.
@@ -3677,7 +3677,7 @@ decided by W11.
 Slice W integrates the outbox primitive's append/ordering authority for the
 primary local purpose (`task-terminal-notification`) of §5.5.1's single
 authority. A new closed flag parser, `resolveSharedStateOutboxPrimitiveModeV1`
-in `shared-state-outbox-primitive-mode-v1.ts`, reads
+in `shared-state-outbox-primitive-mode-v1.ts` (since folded into `shared-state-on-off-flag-v1.ts`), reads
 `BROKER_SHARED_STATE_V1_OUTBOX` (unset/empty `off`, `on`, anything else fails
 startup loudly). With the flag off (default), the in-memory outbox append path
 is the whole story, unchanged.
@@ -3721,7 +3721,7 @@ projection runner, no read-model consumer), so there is no current authority
 to upgrade. Slice X stands up the source-fact append authority — the first of
 §5.6's two atomic boundaries — with a real flag-gated producer. A new closed
 flag parser, `resolveSharedStateGraphPrimitiveModeV1` in
-`shared-state-graph-primitive-mode-v1.ts`, reads `BROKER_SHARED_STATE_V1_GRAPH`
+`shared-state-graph-primitive-mode-v1.ts` (since folded into `shared-state-on-off-flag-v1.ts`), reads `BROKER_SHARED_STATE_V1_GRAPH`
 (unset/empty `off`, `on`, anything else fails startup loudly). With the flag
 off (default), no graph source facts are produced.
 
@@ -3896,7 +3896,7 @@ the window plan; Phases 6 and 7 each remain individually authorized stages.
 With the 15-minute security-window plan approved (and recorded), Slice ZC
 implements the Phase 6 shadow runtime — the read-only mirror that gives
 Phase 6 its evidence. A new closed flag parser,
-`resolveSharedStateShadowModeV1` in `shared-state-shadow-mode-v1.ts`, reads
+`resolveSharedStateShadowModeV1` in `shared-state-shadow-mode-v1.ts` (since folded into `shared-state-on-off-flag-v1.ts`), reads
 `BROKER_SHADOW_STATE_V1` (unset/empty `off`, `on`, anything else fails
 startup loudly). With the flag off (default), nothing changes: no shadow
 observations, no shadow store, no `/health` block.

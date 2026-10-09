@@ -356,17 +356,9 @@ export function executeA2AJsonRpc(
         if (options.enforceRequesterIdentity) {
           requireTaskListRequester(options);
         }
-        let visible = options.broker
+        const visible = options.broker
           .listTasks(filters)
           .filter((task) => canReadTaskSnapshot(options, task));
-        if (specFilters?.specStatus) {
-          // Status matching happens at the projection boundary so projected
-          // subtleties are respected: a running task paused on an operator
-          // checkpoint satisfies TASK_STATE_INPUT_REQUIRED, a canceled task
-          // with a rejected approval outcome only satisfies TASK_STATE_REJECTED.
-          const wanted = specFilters.specStatus;
-          visible = visible.filter((task) => projectBrokerTask(task).status.state === wanted);
-        }
         if (options.responseShape === "spec") {
           // Proto ListTasksResponse: tasks + nextPageToken/pageSize/totalSize
           // are all REQUIRED. Spec ordering is status timestamp descending
@@ -489,18 +481,8 @@ export function executeA2AJsonRpc(
       // answer PushNotificationNotSupportedError (-32003) per the A2A 1.0
       // error-code mapping — the capability is absent, not the method.
       case "CreateTaskPushNotificationConfig": {
-        const store = options.pushNotificationConfigStore;
-        if (!store) {
-          // A2A 1.0 error-code mappings: an agent that does not support push
-          // notifications answers PushNotificationNotSupportedError (-32003),
-          // not method-not-found — the method exists, the capability does not.
-          return failure(
-            id,
-            -32003,
-            "push notifications are not supported",
-            a2aProtocolErrorData("PUSH_NOTIFICATION_NOT_SUPPORTED"),
-          );
-        }
+        const store = requirePushStore(id, options);
+        if (!(store instanceof PushNotificationConfigStore)) return store;
         const p = isRecord(params) ? params : {};
         const createTaskId = requirePushTaskId(params);
         requireAuthorizedTask(options, createTaskId);
@@ -518,36 +500,16 @@ export function executeA2AJsonRpc(
       }
 
       case "GetTaskPushNotificationConfig": {
-        const store = options.pushNotificationConfigStore;
-        if (!store) {
-          // A2A 1.0 error-code mappings: an agent that does not support push
-          // notifications answers PushNotificationNotSupportedError (-32003),
-          // not method-not-found — the method exists, the capability does not.
-          return failure(
-            id,
-            -32003,
-            "push notifications are not supported",
-            a2aProtocolErrorData("PUSH_NOTIFICATION_NOT_SUPPORTED"),
-          );
-        }
+        const store = requirePushStore(id, options);
+        if (!(store instanceof PushNotificationConfigStore)) return store;
         const getTaskId = requirePushTaskId(params);
         requireAuthorizedTask(options, getTaskId);
         return success(id, redactPushConfigSecrets(store.get(getTaskId, requireString(params, "id"))));
       }
 
       case "ListTaskPushNotificationConfigs": {
-        const store = options.pushNotificationConfigStore;
-        if (!store) {
-          // A2A 1.0 error-code mappings: an agent that does not support push
-          // notifications answers PushNotificationNotSupportedError (-32003),
-          // not method-not-found — the method exists, the capability does not.
-          return failure(
-            id,
-            -32003,
-            "push notifications are not supported",
-            a2aProtocolErrorData("PUSH_NOTIFICATION_NOT_SUPPORTED"),
-          );
-        }
+        const store = requirePushStore(id, options);
+        if (!(store instanceof PushNotificationConfigStore)) return store;
         const listTaskId = requirePushTaskId(params);
         requireAuthorizedTask(options, listTaskId);
         // Proto ListTaskPushNotificationConfigsResponse: configs + nextPageToken
@@ -559,18 +521,8 @@ export function executeA2AJsonRpc(
       }
 
       case "DeleteTaskPushNotificationConfig": {
-        const store = options.pushNotificationConfigStore;
-        if (!store) {
-          // A2A 1.0 error-code mappings: an agent that does not support push
-          // notifications answers PushNotificationNotSupportedError (-32003),
-          // not method-not-found — the method exists, the capability does not.
-          return failure(
-            id,
-            -32003,
-            "push notifications are not supported",
-            a2aProtocolErrorData("PUSH_NOTIFICATION_NOT_SUPPORTED"),
-          );
-        }
+        const store = requirePushStore(id, options);
+        if (!(store instanceof PushNotificationConfigStore)) return store;
         const delTaskId = requirePushTaskId(params);
         requireAuthorizedTask(options, delTaskId);
         store.delete(delTaskId, requireString(params, "id"));
@@ -1276,6 +1228,27 @@ function failure(id: JsonRpcId, code: number, message: string, data?: unknown): 
       data,
     },
   };
+}
+
+/**
+ * Shared guard for the four TaskPushNotificationConfig methods: returns the
+ * configured store, or the ready-to-send failure response when the capability
+ * is absent. A2A 1.0 error-code mappings: an agent that does not support push
+ * notifications answers PushNotificationNotSupportedError (-32003), not
+ * method-not-found — the method exists, the capability does not.
+ */
+function requirePushStore(
+  id: JsonRpcId,
+  options: ExecuteJsonRpcOptions,
+): PushNotificationConfigStore | JsonRpcFailure {
+  const store = options.pushNotificationConfigStore;
+  if (store) return store;
+  return failure(
+    id,
+    -32003,
+    "push notifications are not supported",
+    a2aProtocolErrorData("PUSH_NOTIFICATION_NOT_SUPPORTED"),
+  );
 }
 
 /**

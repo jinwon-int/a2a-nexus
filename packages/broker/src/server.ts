@@ -42,14 +42,12 @@ import {
   validateBrokerStartupSecurity,
 } from "./startup-security.js";
 import { resolveSharedStateDeploymentGradeFromEnvV1 } from "./shared-state-deployment-grade-v1.js";
-import { resolveSharedStateReplayPrimitiveModeV1 } from "./shared-state-replay-primitive-mode-v1.js";
-import { resolveSharedStateRatePrimitiveModeV1 } from "./shared-state-rate-primitive-mode-v1.js";
-import { resolveSharedStateLeasePrimitiveModeV1 } from "./shared-state-lease-primitive-mode-v1.js";
-import { resolveSharedStateIdempotencyPrimitiveModeV1 } from "./shared-state-idempotency-primitive-mode-v1.js";
-import { resolveSharedStateOutboxPrimitiveModeV1 } from "./shared-state-outbox-primitive-mode-v1.js";
-import { resolveSharedStateGraphPrimitiveModeV1 } from "./shared-state-graph-primitive-mode-v1.js";
+import {
+  SHARED_STATE_ON_OFF_FLAGS_V1,
+  resolveSharedStateOnOffFlagV1,
+  type SharedStateOnOffFlagDescriptorV1,
+} from "./shared-state-on-off-flag-v1.js";
 import { SharedStateGraphSourceGateV1 } from "./shared-state-graph-gate-v1.js";
-import { resolveSharedStateShadowModeV1 } from "./shared-state-shadow-mode-v1.js";
 import { SharedStateShadowRuntimeV1 } from "./shared-state-shadow-runtime-v1.js";
 import { createHash } from "node:crypto";
 import {
@@ -294,6 +292,22 @@ function resolveResultProvenanceCountersignMode(raw: string | undefined): "enfor
   );
 }
 
+/**
+ * Resolve one #1504 shared-state on/off flag to a boolean. An explicit option
+ * override wins; only when it is undefined is the flag's env var consulted.
+ * Invalid env values fail startup loudly (the shared resolver throws, naming
+ * the env var).
+ */
+function resolveOnOffFlag(
+  descriptor: SharedStateOnOffFlagDescriptorV1,
+  override: boolean | undefined,
+): boolean {
+  return resolveSharedStateOnOffFlagV1(
+    descriptor.envVar,
+    override === undefined ? process.env[descriptor.envVar] : override ? "on" : "off",
+  ) === "on";
+}
+
 export function createBrokerServer(options: BrokerServerOptions = {}): BrokerServerRuntime {
   const host = options.host ?? process.env.HOST ?? "0.0.0.0";
   const port = options.port ?? Number(process.env.PORT ?? 8787);
@@ -459,11 +473,10 @@ export function createBrokerServer(options: BrokerServerOptions = {}): BrokerSer
   // the process-local replay cache; `on` routes the worker HTTP-signature
   // replay check through the V1 adapter via the serving fence. Invalid
   // values fail startup loudly (the resolver throws).
-  const sharedStateReplayV1 = resolveSharedStateReplayPrimitiveModeV1(
-    options.sharedStateReplayV1 === undefined
-      ? process.env.BROKER_SHARED_STATE_V1_REPLAY
-      : options.sharedStateReplayV1 ? "on" : "off",
-  ) === "on";
+  const sharedStateReplayV1 = resolveOnOffFlag(
+    SHARED_STATE_ON_OFF_FLAGS_V1.replay,
+    options.sharedStateReplayV1,
+  );
   // Cumulative V1 replay outcomes for /health. Same bounded counters shape as
   // the process-local cache stats; when the flag is off these stay zero and
   // the local cache stats are reported instead.
@@ -472,11 +485,10 @@ export function createBrokerServer(options: BrokerServerOptions = {}): BrokerSer
   // process-local InMemoryRateLimiter; `on` routes the broker-edge rate-limit
   // check through the V1 adapter via the serving fence. Invalid values fail
   // startup loudly (the resolver throws).
-  const sharedStateRateV1 = resolveSharedStateRatePrimitiveModeV1(
-    options.sharedStateRateV1 === undefined
-      ? process.env.BROKER_SHARED_STATE_V1_RATE
-      : options.sharedStateRateV1 ? "on" : "off",
-  ) === "on";
+  const sharedStateRateV1 = resolveOnOffFlag(
+    SHARED_STATE_ON_OFF_FLAGS_V1.rate,
+    options.sharedStateRateV1,
+  );
   // Cumulative V1 rate outcomes for /health. When the flag is off these stay
   // zero and the local limiter snapshots are reported instead.
   const sharedStateRateV1Stats = { allowed: 0, denied: 0, storeErrors: 0 };
@@ -518,43 +530,38 @@ export function createBrokerServer(options: BrokerServerOptions = {}): BrokerSer
   // (claim/heartbeat/checkpoint/terminal mutations) through the V1 lease
   // authority via the serving fence. Invalid values fail startup loudly.
   // The gate itself is constructed after the serving fence is acquired.
-  const sharedStateLeaseV1 = resolveSharedStateLeasePrimitiveModeV1(
-    options.sharedStateLeaseV1 === undefined
-      ? process.env.BROKER_SHARED_STATE_V1_LEASE
-      : options.sharedStateLeaseV1 ? "on" : "off",
-  ) === "on";
+  const sharedStateLeaseV1 = resolveOnOffFlag(
+    SHARED_STATE_ON_OFF_FLAGS_V1.lease,
+    options.sharedStateLeaseV1,
+  );
   // #1504 §4 Slice V: idempotency-primitive integration flag. Default-off
   // keeps the legacy same-id replay path; `on` routes the task-create
   // authority through the V1 `executeIdempotent` via the serving fence.
-  const sharedStateIdempotencyV1 = resolveSharedStateIdempotencyPrimitiveModeV1(
-    options.sharedStateIdempotencyV1 === undefined
-      ? process.env.BROKER_SHARED_STATE_V1_IDEMPOTENCY
-      : options.sharedStateIdempotencyV1 ? "on" : "off",
-  ) === "on";
+  const sharedStateIdempotencyV1 = resolveOnOffFlag(
+    SHARED_STATE_ON_OFF_FLAGS_V1.idempotency,
+    options.sharedStateIdempotencyV1,
+  );
   // #1504 §4 Slice W: outbox-primitive integration flag. Default-off keeps
   // the in-memory outbox append path; `on` makes the V1 adapter the
   // append/ordering authority for local terminal events (§5.5).
-  const sharedStateOutboxV1 = resolveSharedStateOutboxPrimitiveModeV1(
-    options.sharedStateOutboxV1 === undefined
-      ? process.env.BROKER_SHARED_STATE_V1_OUTBOX
-      : options.sharedStateOutboxV1 ? "on" : "off",
-  ) === "on";
+  const sharedStateOutboxV1 = resolveOnOffFlag(
+    SHARED_STATE_ON_OFF_FLAGS_V1.outbox,
+    options.sharedStateOutboxV1,
+  );
   // #1504 §4 Slice X: graph-primitive integration flag. Default-off produces
   // no graph source facts; `on` routes the §5.6 source-fact append authority
   // for terminal task facts through the V1 adapter via the serving fence.
-  const sharedStateGraphV1 = resolveSharedStateGraphPrimitiveModeV1(
-    options.sharedStateGraphV1 === undefined
-      ? process.env.BROKER_SHARED_STATE_V1_GRAPH
-      : options.sharedStateGraphV1 ? "on" : "off",
-  ) === "on";
+  const sharedStateGraphV1 = resolveOnOffFlag(
+    SHARED_STATE_ON_OFF_FLAGS_V1.graph,
+    options.sharedStateGraphV1,
+  );
   // #1504 §5 Phase 6: live-shadow runtime flag. Default-off makes no shadow
   // observations; `on` mirrors replay/rate decisions into a SEPARATE shadow
   // store and classifies divergences — evidence-only, decision-neutral.
-  const sharedStateShadowV1 = resolveSharedStateShadowModeV1(
-    options.sharedStateShadowV1 === undefined
-      ? process.env.BROKER_SHADOW_STATE_V1
-      : options.sharedStateShadowV1 ? "on" : "off",
-  ) === "on";
+  const sharedStateShadowV1 = resolveOnOffFlag(
+    SHARED_STATE_ON_OFF_FLAGS_V1.shadow,
+    options.sharedStateShadowV1,
+  );
   // NCLEX evaluation receipt surface (#1724): default-off; a configured
   // keyring file that is unreadable or malformed fails startup loudly.
   // Domain moved to packages/nclex-evaluation (#1601 first slice); this is

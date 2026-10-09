@@ -9,6 +9,13 @@
 
 import { z } from "zod";
 import { isRecord } from "./core/value-guards.js";
+import {
+  deepFreeze,
+  errorResult,
+  firstDuplicate,
+  firstUnknownField,
+  mapZodError,
+} from "./shared-state-parse-kit-v1.js";
 
 import {
   parseSharedStateLogicalBoundaryV1,
@@ -145,8 +152,6 @@ export type SharedStateIdempotencyExpiryEvaluationV1 =
       };
     };
 
-type RecordValue = Record<string, unknown>;
-
 const NAMESPACE_PATTERN = /^[a-z][a-z0-9]*(?:[.-][a-z0-9]+)*$/;
 const RETENTION_POLICY_VERSION_PATTERN = /^[a-z0-9][a-z0-9._-]*$/;
 const AUTHORITY_ID_PATTERN = /^[a-z][a-z0-9]*(?:-[a-z0-9]+)*$/;
@@ -167,78 +172,6 @@ const REQUIRED_NON_EXPIRING_PRUNE_PRECONDITIONS = new Set<
   "retained-effects-provably-gone",
   "migration-and-rollback-preservation-proved",
 ]);
-
-function deepFreeze<T>(value: T): Readonly<T> {
-  if (value !== null && typeof value === "object" && !Object.isFrozen(value)) {
-    Object.freeze(value);
-    for (const nested of Object.values(value)) {
-      deepFreeze(nested);
-    }
-  }
-  return value;
-}
-
-function errorResult<T>(
-  code: SharedStateIdempotencyErrorCodeV1,
-  path: readonly (string | number)[] = [],
-): SharedStateIdempotencyResultV1<T> {
-  return {
-    ok: false,
-    error: Object.freeze({ code, path: Object.freeze([...path]) }),
-  };
-}
-
-function firstDuplicate(values: readonly string[]): number | null {
-  const seen = new Set<string>();
-  for (let index = 0; index < values.length; index += 1) {
-    if (seen.has(values[index])) return index;
-    seen.add(values[index]);
-  }
-  return null;
-}
-
-function firstUnknownField(
-  value: RecordValue,
-  allowed: readonly string[],
-): string | null {
-  // Single pass tracking the code-unit-first unknown key (same pick as
-  // filter().sort()[0]); the common all-known path allocates nothing.
-  let first: string | null = null;
-  for (const key of Object.keys(value)) {
-    if (allowed.includes(key)) continue;
-    if (first === null || key < first) first = key;
-  }
-  return first;
-}
-
-function mapZodError(
-  error: z.ZodError,
-): SharedStateIdempotencyErrorV1 {
-  const issues = [...error.issues].sort((left, right) => {
-    const leftPath = JSON.stringify(left.path);
-    const rightPath = JSON.stringify(right.path);
-    return leftPath.localeCompare(rightPath) ||
-      left.code.localeCompare(right.code);
-  });
-  const issue = issues[0];
-  if (!issue) return Object.freeze({ code: "invalid_value", path: [] });
-  const path = issue.path.map((segment) =>
-    typeof segment === "symbol"
-      ? (segment.description ?? "symbol")
-      : segment
-  );
-  if (issue.code === "unrecognized_keys") {
-    const key = [...issue.keys].sort()[0];
-    return Object.freeze({
-      code: "unknown_field",
-      path: Object.freeze([...path, key]),
-    });
-  }
-  return Object.freeze({
-    code: issue.code === "invalid_type" ? "invalid_type" : "invalid_value",
-    path: Object.freeze(path),
-  });
-}
 
 function validateCatalogMappings(
   catalog: SharedStateIdempotencyCatalogV1,

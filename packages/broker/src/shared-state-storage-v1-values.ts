@@ -7,15 +7,7 @@
  * detail.
  */
 
-function deepFreeze<T>(value: T): Readonly<T> {
-  if (value !== null && typeof value === "object" && !Object.isFrozen(value)) {
-    Object.freeze(value);
-    for (const nested of Object.values(value)) {
-      deepFreeze(nested);
-    }
-  }
-  return value;
-}
+import { deepFreeze } from "./shared-state-parse-kit-v1.js";
 
 export const SHARED_STATE_STORAGE_V1_VALUES = deepFreeze({
   versions: {

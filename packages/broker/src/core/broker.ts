@@ -202,6 +202,7 @@ import {
   wavePlanDagV2RehearsalOutcomeEntry,
   type WavePlanDagV2RecordStore,
   type WavePlanDagV2StoredEntry,
+  type WavePlanDagV2StoreAppendOk,
   type WavePlanDagV2StoreRejectionReason,
 } from "../wave-plan-dag-v2/record-store.js";
 import {
@@ -766,8 +767,7 @@ export class InMemoryA2ABroker {
     // land in wavePlanDagV2RecordDiagnostics() instead.
     const admission = admitIsolated(payload);
     if (!admission.ok) {
-      this.wavePlanDagV2Counts.rejected += 1;
-      this.wavePlanDagV2LastSkipReason = `manifest_rejected:${admission.reason}`;
+      this.rejectWavePlanDagV2(`manifest_rejected:${admission.reason}`);
       return undefined;
     }
     const entries: WavePlanDagV2StoredEntry[] = [
@@ -780,13 +780,23 @@ export class InMemoryA2ABroker {
 
     const result = store.append(entries);
     if (!result.ok) {
-      this.wavePlanDagV2Counts.rejected += 1;
-      this.wavePlanDagV2LastSkipReason = `${result.reason}:${result.message}`;
+      this.rejectWavePlanDagV2(`${result.reason}:${result.message}`);
       return undefined;
     }
+    this.commitWavePlanDagV2(result);
+    return entries;
+  }
+
+  /** Count one V2 rejection in the operator diagnostics and record its reason. */
+  private rejectWavePlanDagV2(reason: string): void {
+    this.wavePlanDagV2Counts.rejected += 1;
+    this.wavePlanDagV2LastSkipReason = reason;
+  }
+
+  /** Count one successful V2 ledger append (new rows + collapsed duplicates). */
+  private commitWavePlanDagV2(result: WavePlanDagV2StoreAppendOk): void {
     this.wavePlanDagV2Counts.appends += result.committed;
     this.wavePlanDagV2Counts.duplicates += result.skippedDuplicates;
-    return entries;
   }
 
   wavePlanDagV2RecordDiagnostics(): {
@@ -871,19 +881,16 @@ export class InMemoryA2ABroker {
       taskStatusOf: (taskId) => this.getTask(taskId)?.status ?? null,
     });
     if (!plan.ok) {
-      this.wavePlanDagV2Counts.rejected += 1;
-      this.wavePlanDagV2LastSkipReason = `stage_binding_rejected:${plan.reason}:${plan.message}`;
+      this.rejectWavePlanDagV2(`stage_binding_rejected:${plan.reason}:${plan.message}`);
       return plan;
     }
 
     const result = store.append([plan.entry]);
     if (!result.ok) {
-      this.wavePlanDagV2Counts.rejected += 1;
-      this.wavePlanDagV2LastSkipReason = `stage_binding_rejected:${result.reason}:${result.message}`;
+      this.rejectWavePlanDagV2(`stage_binding_rejected:${result.reason}:${result.message}`);
       return { ok: false, reason: result.reason, message: result.message };
     }
-    this.wavePlanDagV2Counts.appends += result.committed;
-    this.wavePlanDagV2Counts.duplicates += result.skippedDuplicates;
+    this.commitWavePlanDagV2(result);
     return {
       ok: true,
       entry: plan.entry,
@@ -924,8 +931,7 @@ export class InMemoryA2ABroker {
 
     const admission = admitIsolated(payload);
     if (!admission.ok) {
-      this.wavePlanDagV2Counts.rejected += 1;
-      this.wavePlanDagV2LastSkipReason = `receipt_payload_rejected:${admission.reason}`;
+      this.rejectWavePlanDagV2(`receipt_payload_rejected:${admission.reason}`);
       return { ok: false, reason: admission.reason, message: admission.message };
     }
     // Flow ordering: retention extends evidence the ledger already holds, so
@@ -935,8 +941,7 @@ export class InMemoryA2ABroker {
     );
     if (!manifestAdmittedOnLedger) {
       const reason: WavePlanDagV2StoreRejectionReason = "manifest_not_known";
-      this.wavePlanDagV2Counts.rejected += 1;
-      this.wavePlanDagV2LastSkipReason = `receipt_payload_rejected:${reason}`;
+      this.rejectWavePlanDagV2(`receipt_payload_rejected:${reason}`);
       return {
         ok: false,
         reason,
@@ -945,19 +950,16 @@ export class InMemoryA2ABroker {
     }
     const run = runWavePlanDagDryRunV2(admission, structuredClone(request));
     if (!run.ok) {
-      this.wavePlanDagV2Counts.rejected += 1;
-      this.wavePlanDagV2LastSkipReason = `receipt_payload_rejected:${run.reason}`;
+      this.rejectWavePlanDagV2(`receipt_payload_rejected:${run.reason}`);
       return { ok: false, reason: run.reason, message: run.message };
     }
     const entry = wavePlanDagV2ReceiptPayloadEntry(run.receipt);
     const result = store.append([entry]);
     if (!result.ok) {
-      this.wavePlanDagV2Counts.rejected += 1;
-      this.wavePlanDagV2LastSkipReason = `receipt_payload_rejected:${result.reason}:${result.message}`;
+      this.rejectWavePlanDagV2(`receipt_payload_rejected:${result.reason}:${result.message}`);
       return { ok: false, reason: result.reason, message: result.message };
     }
-    this.wavePlanDagV2Counts.appends += result.committed;
-    this.wavePlanDagV2Counts.duplicates += result.skippedDuplicates;
+    this.commitWavePlanDagV2(result);
     return { ok: true, entry, duplicated: result.skippedDuplicates > 0 };
   }
 
@@ -976,6 +978,22 @@ export class InMemoryA2ABroker {
     presentedReceipt: WavePlanDagV2ReceiptEvidenceV1 | null,
   ): { operator: WavePlanDagStageFrontierProjectionV1; public: WavePlanDagStageFrontierPublicV1 } | undefined {
     if (this.wavePlanDagV2Mode === "off") return undefined;
+    const { inputs } = this.wavePlanDagV2FrontierInputs(manifestDigest);
+    return wavePlanDagStageFrontierProjectionV1({ ...inputs, presentedReceipt });
+  }
+
+  /**
+   * Shared ledger reads behind both §6 frontier projections: the manifest's
+   * latest recorded rehearsal digest, its binding rows, and the live task
+   * status / subtree readers over the broker's visible task universe.
+   */
+  private wavePlanDagV2FrontierInputs(manifestDigest: string): {
+    store: WavePlanDagV2RecordStore | undefined;
+    inputs: Omit<
+      Parameters<typeof wavePlanDagStageFrontierProjectionV1>[0],
+      "presentedReceipt" | "latestReceiptPayloadRetained"
+    >;
+  } {
     const store = this.wavePlanDagV2Store;
     const receiptRows = (store?.rehearsalsOf(manifestDigest) ?? []).filter(
       (row): row is Extract<WavePlanDagV2StoredEntry, { entryType: "rehearsal_receipt_recorded" }> =>
@@ -985,15 +1003,17 @@ export class InMemoryA2ABroker {
       ? receiptRows[receiptRows.length - 1].receiptDigest
       : null;
     const childTasksByParent = this.wavePlanDagV2ChildTasksByParent();
-    return wavePlanDagStageFrontierProjectionV1({
-      manifestDigest,
-      bindings: store?.bindingsOf(manifestDigest) ?? [],
-      presentedReceipt,
-      latestReceiptDigest,
-      taskStatusOf: (taskId) => this.getTask(taskId)?.status ?? null,
-      subtreeLeafTaskIds: (taskId) =>
-        this.wavePlanDagV2SubtreeLeafTaskIds(taskId, childTasksByParent),
-    });
+    return {
+      store,
+      inputs: {
+        manifestDigest,
+        bindings: store?.bindingsOf(manifestDigest) ?? [],
+        latestReceiptDigest,
+        taskStatusOf: (taskId) => this.getTask(taskId)?.status ?? null,
+        subtreeLeafTaskIds: (taskId) =>
+          this.wavePlanDagV2SubtreeLeafTaskIds(taskId, childTasksByParent),
+      },
+    };
   }
 
   /**
@@ -1009,14 +1029,8 @@ export class InMemoryA2ABroker {
     manifestDigest: string,
   ): { operator: WavePlanDagStageFrontierProjectionV1; public: WavePlanDagStageFrontierPublicV1 } | undefined {
     if (this.wavePlanDagV2Mode === "off") return undefined;
-    const store = this.wavePlanDagV2Store;
-    const receiptRows = (store?.rehearsalsOf(manifestDigest) ?? []).filter(
-      (row): row is Extract<WavePlanDagV2StoredEntry, { entryType: "rehearsal_receipt_recorded" }> =>
-        row.entryType === "rehearsal_receipt_recorded",
-    );
-    const latestReceiptDigest = receiptRows.length > 0
-      ? receiptRows[receiptRows.length - 1].receiptDigest
-      : null;
+    const { store, inputs } = this.wavePlanDagV2FrontierInputs(manifestDigest);
+    const { latestReceiptDigest } = inputs;
     const latestPayload = store?.latestReceiptPayloadOf(manifestDigest);
     const retained =
       latestPayload !== undefined
@@ -1030,16 +1044,10 @@ export class InMemoryA2ABroker {
             stages: latestPayload.stages,
           }
         : null;
-    const childTasksByParent = this.wavePlanDagV2ChildTasksByParent();
     return wavePlanDagStageFrontierProjectionV1({
-      manifestDigest,
-      bindings: store?.bindingsOf(manifestDigest) ?? [],
+      ...inputs,
       presentedReceipt,
-      latestReceiptDigest,
       latestReceiptPayloadRetained: retained,
-      taskStatusOf: (taskId) => this.getTask(taskId)?.status ?? null,
-      subtreeLeafTaskIds: (taskId) =>
-        this.wavePlanDagV2SubtreeLeafTaskIds(taskId, childTasksByParent),
     });
   }
 
@@ -1187,19 +1195,27 @@ export class InMemoryA2ABroker {
     });
   }
 
+  /**
+   * Shared spine of the five authorized review-lineage writes. `authorize` is
+   * a thunk so the ordering is preserved exactly: default off mode remains
+   * inert before request/receipt validation, trusted context construction, or
+   * store access — nothing in the thunk runs until the mode and store gates
+   * have passed.
+   */
+  private async recordAuthorizedReviewLineage(
+    authorize: () => AuthorizedReviewLineageSourceV1,
+  ): Promise<ReviewLineageObservationApplicationResult | undefined> {
+    if (this.reviewLineageMode === "off") return undefined;
+    this.assertAuthorizedReviewLineageSourceStore();
+    return this.commitAuthorizedReviewLineageSource(authorize());
+  }
+
   async recordOperatorReviewLineageCreate(
     input: unknown,
     authenticatedOperatorId: string,
   ): Promise<ReviewLineageObservationApplicationResult | undefined> {
-    // Default off mode remains inert before request validation, trusted
-    // context construction, or store access.
-    if (this.reviewLineageMode === "off") return undefined;
-    this.assertAuthorizedReviewLineageSourceStore();
-    return this.commitAuthorizedReviewLineageSource(
-      authorizeOperatorReviewLineageCreate(
-        input,
-        authenticatedOperatorId,
-      ),
+    return this.recordAuthorizedReviewLineage(() =>
+      authorizeOperatorReviewLineageCreate(input, authenticatedOperatorId),
     );
   }
 
@@ -1208,16 +1224,8 @@ export class InMemoryA2ABroker {
     input: unknown,
     authenticatedOperatorId: string,
   ): Promise<ReviewLineageObservationApplicationResult | undefined> {
-    // Default off mode remains inert before request validation, trusted
-    // context construction, or store access.
-    if (this.reviewLineageMode === "off") return undefined;
-    this.assertAuthorizedReviewLineageSourceStore();
-    return this.commitAuthorizedReviewLineageSource(
-      authorizeOperatorReviewLineageCancel(
-        lineageId,
-        input,
-        authenticatedOperatorId,
-      ),
+    return this.recordAuthorizedReviewLineage(() =>
+      authorizeOperatorReviewLineageCancel(lineageId, input, authenticatedOperatorId),
     );
   }
 
@@ -1226,16 +1234,8 @@ export class InMemoryA2ABroker {
     input: unknown,
     authenticatedReviewerId: string,
   ): Promise<ReviewLineageObservationApplicationResult | undefined> {
-    // Default off mode remains inert before request/receipt validation,
-    // trusted context construction, or store access.
-    if (this.reviewLineageMode === "off") return undefined;
-    this.assertAuthorizedReviewLineageSourceStore();
-    return this.commitAuthorizedReviewLineageSource(
-      authorizeReviewerReviewLineageReport(
-        lineageId,
-        input,
-        authenticatedReviewerId,
-      ),
+    return this.recordAuthorizedReviewLineage(() =>
+      authorizeReviewerReviewLineageReport(lineageId, input, authenticatedReviewerId),
     );
   }
 
@@ -1244,16 +1244,8 @@ export class InMemoryA2ABroker {
     input: unknown,
     authenticatedOperatorId: string,
   ): Promise<ReviewLineageObservationApplicationResult | undefined> {
-    // Default off mode remains inert before request validation, trusted
-    // context construction, or store access.
-    if (this.reviewLineageMode === "off") return undefined;
-    this.assertAuthorizedReviewLineageSourceStore();
-    return this.commitAuthorizedReviewLineageSource(
-      authorizeOperatorReviewLineageCorrectionGeneration(
-        lineageId,
-        input,
-        authenticatedOperatorId,
-      ),
+    return this.recordAuthorizedReviewLineage(() =>
+      authorizeOperatorReviewLineageCorrectionGeneration(lineageId, input, authenticatedOperatorId),
     );
   }
 
@@ -1262,16 +1254,8 @@ export class InMemoryA2ABroker {
     input: unknown,
     authenticatedOperatorId: string,
   ): Promise<ReviewLineageObservationApplicationResult | undefined> {
-    // Default off mode remains inert before request validation, trusted
-    // context construction, or store access.
-    if (this.reviewLineageMode === "off") return undefined;
-    this.assertAuthorizedReviewLineageSourceStore();
-    return this.commitAuthorizedReviewLineageSource(
-      authorizeOperatorReviewLineageReviewerReplacement(
-        lineageId,
-        input,
-        authenticatedOperatorId,
-      ),
+    return this.recordAuthorizedReviewLineage(() =>
+      authorizeOperatorReviewLineageReviewerReplacement(lineageId, input, authenticatedOperatorId),
     );
   }
 
@@ -1532,19 +1516,30 @@ export class InMemoryA2ABroker {
     const { conversation, message } = openBrokerConversation(request, {
       now: () => this.conversationNow(),
       workerSignatureGate: this.conversationWorkerSignatureGate,
-      appendAuditEvent: (input) => this.appendAuditEvent({
-        actorId: input.actorId,
-        action: input.action as AuditAction,
-        targetType: input.targetType as AuditEvent["targetType"],
-        targetId: input.targetId,
-        note: input.note,
-      }),
+      appendAuditEvent: (input) => this.appendConversationAuditEvent(input),
       setConversationRecord: (conversation) => {
         this.conversations.set(conversation.conversationId, conversation);
       },
       persistState: () => this.persistState(),
     });
     return { conversation, messageId: message.messageId };
+  }
+
+  /** Audit adapter shared by the conversation open/accept engines (string-typed action/target on their side). */
+  private appendConversationAuditEvent(input: {
+    actorId: string;
+    action: string;
+    targetType: string;
+    targetId: string;
+    note?: string;
+  }): AuditEvent {
+    return this.appendAuditEvent({
+      actorId: input.actorId,
+      action: input.action as AuditAction,
+      targetType: input.targetType as AuditEvent["targetType"],
+      targetId: input.targetId,
+      note: input.note,
+    });
   }
 
   getConversation(conversationId: string): A2AConversationState | null {
@@ -1563,13 +1558,7 @@ export class InMemoryA2ABroker {
     const result = acceptBrokerConversationMessage(conversation, { envelope }, {
       now: () => this.conversationNow(),
       workerSignatureGate: this.conversationWorkerSignatureGate,
-      appendAuditEvent: (input) => this.appendAuditEvent({
-        actorId: input.actorId,
-        action: input.action as AuditAction,
-        targetType: input.targetType as AuditEvent["targetType"],
-        targetId: input.targetId,
-        note: input.note,
-      }),
+      appendAuditEvent: (input) => this.appendConversationAuditEvent(input),
       setConversationRecord: (updated) => {
         this.conversations.set(updated.conversationId, updated);
       },
@@ -1655,9 +1644,7 @@ export class InMemoryA2ABroker {
 
   /** Queue a message for relay to a peer broker (pull model, cursor-addressed). */
   enqueueConversationRelay(conversationId: string, messageId: string, destinationBrokerId: string): ConversationRelayOutboxEntry {
-    const conversation = this.requireConversation(conversationId);
-    const message = conversation.messagesById[messageId];
-    if (!message) throw new BrokerError("not_found", `conversation message ${messageId} not found`);
+    const { conversation, message } = this.requireConversationMessage(conversationId, messageId);
     const payload = buildConversationRelayPayload(this.conversationBrokerId, destinationBrokerId, conversation, message);
     return this.conversationRelayOutbox.enqueue({
       id: `relay-${conversationId}-${messageId}`,
@@ -1674,10 +1661,15 @@ export class InMemoryA2ABroker {
   }
 
   buildConversationRelayPayload(conversationId: string, messageId: string, destinationBrokerId: string): ConversationRelayPayload {
+    const { conversation, message } = this.requireConversationMessage(conversationId, messageId);
+    return buildConversationRelayPayload(this.conversationBrokerId, destinationBrokerId, conversation, message);
+  }
+
+  private requireConversationMessage(conversationId: string, messageId: string) {
     const conversation = this.requireConversation(conversationId);
     const message = conversation.messagesById[messageId];
     if (!message) throw new BrokerError("not_found", `conversation message ${messageId} not found`);
-    return buildConversationRelayPayload(this.conversationBrokerId, destinationBrokerId, conversation, message);
+    return { conversation, message };
   }
 
   /** Outbox pull for a peer (GET /peer/conversations/outbox). */
@@ -2074,8 +2066,13 @@ export class InMemoryA2ABroker {
   // Proposal write paths (#1289 L-broker-11): the six RBAC-gated lifecycle
   // writes moved to broker-proposal-write.ts with callback-injected state
   // effects. These public delegators keep the API and call sites unchanged.
+  //
+  // Every extracted-module context below captures only `this`-bound closures
+  // and readonly constructor-assigned fields, so each is built once on first
+  // use and reused (the consumers never mutate their context).
+  private proposalWriteContextMemo?: ProposalWriteContext;
   private proposalWriteContext(): ProposalWriteContext {
-    return {
+    return (this.proposalWriteContextMemo ??= {
       requireProposal: (id) => this.requireProposal(id),
       setProposalRecord: (proposal) => this.setProposalRecord(proposal),
       setArtifactRecord: (artifact) => this.setArtifactRecord(artifact),
@@ -2083,7 +2080,7 @@ export class InMemoryA2ABroker {
       appendAuditEvent: (input) => this.appendAuditEvent(input),
       persistState: () => this.persistState(),
       commitMutation: (fn) => this.commitMutation(fn),
-    };
+    });
   }
 
   createProposal(request: CreateProposalRequest): ChangeProposal {
@@ -2136,6 +2133,27 @@ export class InMemoryA2ABroker {
   }
 
   /**
+   * #2010: an idempotent return used to be indistinguishable from a fresh
+   * create — no flag, no audit. A fleet dispatcher replaying a fixed task id
+   * (the #2007 skills-intake incident) counted each silent return as
+   * created=1 and archived one round's result N times. Record the hit so
+   * replays are observable broker-side, then hand back the stored record.
+   */
+  private recordIdempotentCreateHit(existing: TaskRecord, requesterId: string): TaskRecord {
+    this.commitMutation(() => {
+      this.appendAuditEvent({
+        actorId: requesterId,
+        action: "task.create_idempotent_hit",
+        targetType: "task",
+        targetId: existing.id,
+        note: `idempotent create: requested id ${existing.id} returned the existing task in status ${existing.status}`,
+      });
+      this.persistState();
+    });
+    return existing;
+  }
+
+  /**
    * Create a task. When the request carries an id whose task already exists,
    * the stored record is returned unchanged (idempotent create) and a
    * `task.create_idempotent_hit` audit event is recorded (#2010) — the
@@ -2160,7 +2178,7 @@ export class InMemoryA2ABroker {
     this.assertTaskPayload(normalizedRequest);
 
     // Idempotent create: if a task with the requested id already exists, return it as-is.
-      if (normalizedRequest.id) {
+    if (normalizedRequest.id) {
       const existing = this.getTask(normalizedRequest.id);
       if (this.taskCreateIdempotencyAuthority) {
         // #1504 §4 Slice V: the V1 authority decides (§5.4 `executeIdempotent`
@@ -2182,41 +2200,11 @@ export class InMemoryA2ABroker {
               "task_create_idempotency_state_unavailable: the authority holds an outcome the task store cannot serve",
             );
           }
-          // #2010: an idempotent return used to be indistinguishable from a
-          // fresh create — no flag, no audit. A fleet dispatcher replaying a
-          // fixed task id (the #2007 skills-intake incident) counted each
-          // silent return as created=1 and archived one round's result N times.
-          // Record the hit so replays are observable broker-side.
-          this.commitMutation(() => {
-            this.appendAuditEvent({
-              actorId: normalizedRequest.requester.id,
-              action: "task.create_idempotent_hit",
-              targetType: "task",
-              targetId: existing.id,
-              note: `idempotent create: requested id ${existing.id} returned the existing task in status ${existing.status}`,
-            });
-            this.persistState();
-          });
-          return existing;
+          return this.recordIdempotentCreateHit(existing, normalizedRequest.requester.id);
         }
         // Executed on a fresh key: fall through to the guarded create.
       } else if (existing) {
-        // #2010: an idempotent return used to be indistinguishable from a
-        // fresh create — no flag, no audit. A fleet dispatcher replaying a
-        // fixed task id (the #2007 skills-intake incident) counted each
-        // silent return as created=1 and archived one round's result N times.
-        // Record the hit so replays are observable broker-side.
-        this.commitMutation(() => {
-          this.appendAuditEvent({
-            actorId: normalizedRequest.requester.id,
-            action: "task.create_idempotent_hit",
-            targetType: "task",
-            targetId: existing.id,
-            note: `idempotent create: requested id ${existing.id} returned the existing task in status ${existing.status}`,
-          });
-          this.persistState();
-        });
-        return existing;
+        return this.recordIdempotentCreateHit(existing, normalizedRequest.requester.id);
       }
     }
 
@@ -2302,7 +2290,7 @@ export class InMemoryA2ABroker {
     this.commitMutation(() => {
       this.setTaskRecord(task);
       if (task.exchangeId) {
-        this.linkTaskToExchange(task);
+        this.syncExchangeStateFromTask(task);
       }
       this.appendAuditEvent({
         actorId: task.requester.id,
@@ -2666,8 +2654,9 @@ export class InMemoryA2ABroker {
   // Task cancellation machinery (#1289 L-broker-13): moved to
   // broker-task-cancellation.ts with callback-injected state effects. The
   // private delegators stay because other extracted-module contexts bind them.
+  private taskCancellationContextMemo?: TaskCancellationContext;
   private taskCancellationContext(): TaskCancellationContext {
-    return {
+    return (this.taskCancellationContextMemo ??= {
       tasks: this.tasks,
       requireTask: (id) => this.requireTask(id),
       setTaskRecord: (task) => this.setTaskRecord(task),
@@ -2677,7 +2666,7 @@ export class InMemoryA2ABroker {
       persistState: () => this.persistState(),
       emitTaskEvent: (task, reason) => this.taskEvents.emit(task, reason),
       commitMutation: (fn) => this.commitMutation(fn),
-    };
+    });
   }
 
   cancelTask(taskId: string, request: TaskCancelRequest): TaskRecord {
@@ -2689,8 +2678,9 @@ export class InMemoryA2ABroker {
   // Operator approval decision pair (#1289 L-broker-12): moved to
   // broker-task-approval.ts with callback-injected state effects. These public
   // delegators keep the API and call sites unchanged.
+  private taskApprovalContextMemo?: TaskApprovalContext;
   private taskApprovalContext(): TaskApprovalContext {
-    return {
+    return (this.taskApprovalContextMemo ??= {
       requireTask: (id) => this.requireTask(id),
       setTaskRecord: (task) => this.setTaskRecord(task),
       syncExchangeStateFromTask: (task, nextStatus) => this.syncExchangeStateFromTask(task, nextStatus),
@@ -2699,7 +2689,7 @@ export class InMemoryA2ABroker {
       emitTaskEvent: (task, reason) => this.taskEvents.emit(task, reason),
       cancelTaskTree: (task, params) => this.cancelTaskTree(task, params),
       commitMutation: (fn) => this.commitMutation(fn),
-    };
+    });
   }
 
   approveTask(taskId: string, request: TaskApprovalRequest): TaskRecord {
@@ -2795,8 +2785,9 @@ export class InMemoryA2ABroker {
   // Worker terminal transitions (#1289 L-broker-15): moved to
   // broker-task-terminal.ts with callback-injected state effects; proposal
   // side-effects route through the extracted proposal-write delegators.
+  private taskTerminalContextMemo?: TaskTerminalContext;
   private taskTerminalContext(): TaskTerminalContext {
-    return {
+    return (this.taskTerminalContextMemo ??= {
       tasks: this.tasks,
       maxRequeueAttempts: this.maxRequeueAttempts,
       finalizerVerdictEnforcement: this.finalizerVerdictEnforcement,
@@ -2815,7 +2806,7 @@ export class InMemoryA2ABroker {
       submitValidationResult: (proposalId, request) => this.submitValidationResult(proposalId, request),
       applyProposalLocally: (proposalId, request) => this.applyProposalLocally(proposalId, request),
       commitMutation: (fn) => this.commitMutation(fn),
-    };
+    });
   }
 
   completeTask(taskId: string, workerId: string, result?: TaskResult): TaskRecord {
@@ -2950,8 +2941,9 @@ export class InMemoryA2ABroker {
   // Stale-task requeue engine (#1289 L-broker-10): the sweep moved to
   // broker-stale-task-requeue.ts with callback-injected state effects. These
   // delegators keep the public API and every call site unchanged.
+  private staleTaskRequeueContextMemo?: StaleTaskRequeueContext;
   private staleTaskRequeueContext(): StaleTaskRequeueContext {
-    return {
+    return (this.staleTaskRequeueContextMemo ??= {
       tasks: this.tasks,
       workers: this.workers,
       maxRequeueAttempts: this.maxRequeueAttempts,
@@ -2965,7 +2957,7 @@ export class InMemoryA2ABroker {
       emitTaskAttemptRecord: (task) => this.emitTaskAttemptRecord(task),
       cancelTask: (taskId, request) => this.cancelTask(taskId, request),
       commitMutation: (fn) => this.commitMutation(fn),
-    };
+    });
   }
 
   requeueStaleTasks(
@@ -3204,6 +3196,21 @@ export class InMemoryA2ABroker {
     const startedAtMs = Date.now();
     const startedAt = new Date(startedAtMs).toISOString();
     const hotSave = this.stateStore?.saveHotEntities;
+    // Every exit announces the change and emits one profiling sample; only
+    // the persistence mode and the retention/snapshot flags differ.
+    const finish = (
+      persistenceMode: "hot" | "durable-on-write" | "full",
+      flags: { retentionApplied: boolean; snapshotExported: boolean; saveHints: ReturnType<typeof countStateSaveHints> | undefined },
+    ): void => {
+      this.listeners.emitStateChange(change);
+      this.listeners.emitProfilingSample({
+        operation: "persistState",
+        startedAt,
+        durationMs: Date.now() - startedAtMs,
+        persistenceMode,
+        ...flags,
+      });
+    };
     if (
       !options?.forceFull &&
       hotSave &&
@@ -3213,18 +3220,10 @@ export class InMemoryA2ABroker {
       const hints = this.pendingHot.consumeAll();
       if (hints) {
         hotSave.call(this.stateStore, hints);
-        this.listeners.emitStateChange(change);
-        this.listeners.emitProfilingSample({
-          operation: "persistState",
-          startedAt,
-          durationMs: Date.now() - startedAtMs,
-          persistenceMode: "hot",
-          retentionApplied: false,
-          snapshotExported: false,
-          saveHints: countStateSaveHints(hints),
-        });
+        finish("hot", { retentionApplied: false, snapshotExported: false, saveHints: countStateSaveHints(hints) });
         return;
       }
+      // A null consumeAll() deliberately falls through to the full save below.
     } else if (
       !options?.forceFull &&
       hotSave &&
@@ -3236,16 +3235,7 @@ export class InMemoryA2ABroker {
       // mutation is already durable. Skip both the hot save and the full
       // snapshot export; the canonical blob still refreshes on the 5-minute
       // retention cadence below.
-      this.listeners.emitStateChange(change);
-      this.listeners.emitProfilingSample({
-        operation: "persistState",
-        startedAt,
-        durationMs: Date.now() - startedAtMs,
-        persistenceMode: "durable-on-write",
-        retentionApplied: false,
-        snapshotExported: false,
-        saveHints: undefined,
-      });
+      finish("durable-on-write", { retentionApplied: false, snapshotExported: false, saveHints: undefined });
       return;
     }
 
@@ -3254,12 +3244,7 @@ export class InMemoryA2ABroker {
     const snapshot = this.exportSnapshot();
     const hints = this.pendingHot.consumeRetained(snapshot);
     this.stateStore?.save(snapshot, hints);
-    this.listeners.emitStateChange(change);
-    this.listeners.emitProfilingSample({
-      operation: "persistState",
-      startedAt,
-      durationMs: Date.now() - startedAtMs,
-      persistenceMode: "full",
+    finish("full", {
       retentionApplied: true,
       snapshotExported: true,
       saveHints: hints ? countStateSaveHints(hints) : undefined,
@@ -3490,8 +3475,9 @@ export class InMemoryA2ABroker {
   // Checkpoint/interrupt cluster (#1289 L-broker-14): moved to
   // broker-task-checkpoint.ts with callback-injected state effects; the
   // heartbeat-audit throttle state stays class-owned behind two callbacks.
+  private taskCheckpointContextMemo?: TaskCheckpointContext;
   private taskCheckpointContext(): TaskCheckpointContext {
-    return {
+    return (this.taskCheckpointContextMemo ??= {
       requireTask: (id) => this.requireTask(id),
       assertTaskWorker: (task, workerId, action) => this.assertTaskWorker(task, workerId, action),
       setTaskRecord: (task) => this.setTaskRecord(task),
@@ -3505,7 +3491,7 @@ export class InMemoryA2ABroker {
       ),
       markHeartbeatAuditPersisted: (taskId, nowMs) => this.taskHeartbeatAuditPersist.markPersisted(taskId, nowMs),
       commitMutation: (fn) => this.commitMutation(fn),
-    };
+    });
   }
 
   checkpointTask(
@@ -3784,25 +3770,14 @@ export class InMemoryA2ABroker {
     });
   }
 
-  private linkTaskToExchange(task: TaskRecord): void {
-    if (!task.exchangeId) {
-      return;
-    }
-    const exchange = this.getExchange(task.exchangeId);
-    if (!exchange) {
-      return;
-    }
-    exchange.activeTaskId = task.id;
-    exchange.targetNodeId = task.targetNodeId;
-    exchange.assignedWorkerId = task.assignedWorkerId ?? task.targetNodeId;
-    exchange.target = task.target;
-    exchange.updatedAt = isoNow();
-    this.setExchangeRecord(exchange);
-  }
-
+  /**
+   * Mirror the task's routing fields onto its exchange. `nextStatus` is
+   * omitted on the create path (link only — the exchange keeps its status)
+   * and supplied by every lifecycle transition.
+   */
   private syncExchangeStateFromTask(
     task: TaskRecord,
-    nextStatus: A2AExchangeState["status"],
+    nextStatus?: A2AExchangeState["status"],
   ): void {
     if (!task.exchangeId) {
       return;
@@ -3815,7 +3790,9 @@ export class InMemoryA2ABroker {
     exchange.targetNodeId = task.targetNodeId;
     exchange.assignedWorkerId = task.assignedWorkerId ?? task.targetNodeId;
     exchange.target = task.target;
-    exchange.status = nextStatus;
+    if (nextStatus !== undefined) {
+      exchange.status = nextStatus;
+    }
     exchange.updatedAt = isoNow();
     this.setExchangeRecord(exchange);
   }
@@ -3823,8 +3800,9 @@ export class InMemoryA2ABroker {
   // Task admission gates (#1289 L-broker-9): the create/claim-time checks
   // moved to broker-task-admission.ts with callback-injected state effects.
   // These thin delegators keep every call site unchanged.
+  private taskAdmissionContextMemo?: TaskAdmissionContext;
   private taskAdmissionContext(): TaskAdmissionContext {
-    return {
+    return (this.taskAdmissionContextMemo ??= {
       brokerId: this.brokerId,
       teamId: this.teamId,
       taskReadinessMode: this.taskReadinessMode,
@@ -3836,7 +3814,7 @@ export class InMemoryA2ABroker {
       requireProposal: (id) => this.requireProposal(id),
       appendAuditEvent: (input) => this.appendAuditEvent(input),
       persistState: () => this.persistState(),
-    };
+    });
   }
 
   private assertTaskPayload(request: CreateTaskRequest): void {

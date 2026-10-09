@@ -328,38 +328,69 @@ export class TerminalTaskEventOutbox {
     // has evicted the id). A throw propagates: the enclosing commitMutation
     // batch rolls back, so the domain transition fails whole (§5.5 partition:
     // producers fail the transaction when append is unavailable).
+    //
+    // The authority payload is the sanitised task payload BEFORE the
+    // round-progress/title/alias decoration below, serialised eagerly so the
+    // later in-place mutation cannot leak into the authority's view. The same
+    // object is then reused for the outbox row (the builder is a pure
+    // projection of `task`, so one build serves both).
+    let payload: TerminalTaskEventPayload | undefined;
     if (this.appendAuthority) {
-      this.appendAuthority({ eventId: id, payload: canonicalJsonString(buildTerminalTaskPayload(task, this.ownership)) });
+      payload = buildTerminalTaskPayload(task, this.ownership);
+      this.appendAuthority({ eventId: id, payload: canonicalJsonString(payload) });
     }
 
     if (this.seen.has(id)) return null;
 
-    const payload = buildTerminalTaskPayload(task, this.ownership);
+    payload ??= buildTerminalTaskPayload(task, this.ownership);
     applyRoundProgressMetadata(payload, this.terminalChildIds);
     applyTerminalBriefTitle(payload);
     applyTerminalBriefCompatibilityAliases(payload);
-    const event: TerminalTaskOutboxEvent = {
+    const event = this.appendAcceptedEvent({
       id,
-      kind: "task.terminal",
       taskEventId: taskEvent.id,
       payload,
-      createdAt: taskEvent.timestamp,
+      at: taskEvent.timestamp,
+      ackReason: "terminal event accepted; awaiting current-session-visible/operator-visible evidence before ACK",
+    });
+    this.enforceRetention();
+    return event;
+  }
+
+  /**
+   * Materialise one freshly accepted outbox row (receipt `accepted`, pending
+   * ACK audit, zero attempts), index it, and mark its id seen. Retention is
+   * the caller's responsibility so the two-row cross-broker path can enforce
+   * it once after both rows land.
+   */
+  private appendAcceptedEvent(input: {
+    readonly id: string;
+    readonly taskEventId: number;
+    readonly payload: TerminalTaskEventPayload;
+    readonly at: string;
+    readonly ackReason: string;
+  }): TerminalTaskOutboxEvent {
+    const event: TerminalTaskOutboxEvent = {
+      id: input.id,
+      kind: "task.terminal",
+      taskEventId: input.taskEventId,
+      payload: input.payload,
+      createdAt: input.at,
       receipt: {
         status: "accepted",
-        updatedAt: taskEvent.timestamp,
+        updatedAt: input.at,
       },
-      ackAudit: buildAckAudit(payload, {
+      ackAudit: buildAckAudit(input.payload, {
         decision: "pending",
-        reason: "terminal event accepted; awaiting current-session-visible/operator-visible evidence before ACK",
-        updatedAt: taskEvent.timestamp,
+        reason: input.ackReason,
+        updatedAt: input.at,
         receiptStatus: "accepted",
       }),
       attempts: 0,
     };
     this.events.push(event);
     this.eventsById.set(event.id, event);
-    this.markSeen(id);
-    this.enforceRetention();
+    this.markSeen(input.id);
     return event;
   }
 
@@ -439,27 +470,13 @@ export class TerminalTaskEventOutbox {
     applyTerminalBriefTitle(payload);
     if (terminalBriefTitle) payload.terminalBriefTitle = terminalBriefTitle;
     applyTerminalBriefCompatibilityAliases(payload);
-    const event: TerminalTaskOutboxEvent = {
+    const event = this.appendAcceptedEvent({
       id,
-      kind: "task.terminal",
       taskEventId: 0,
       payload,
-      createdAt: projection.receivedAt,
-      receipt: {
-        status: "accepted",
-        updatedAt: projection.receivedAt,
-      },
-      ackAudit: buildAckAudit(payload, {
-        decision: "pending",
-        reason: "cross-broker terminal projection accepted as evidence only; create or update a separate parent-broker operator-facing row before ACK",
-        updatedAt: projection.receivedAt,
-        receiptStatus: "accepted",
-      }),
-      attempts: 0,
-    };
-    this.events.push(event);
-    this.eventsById.set(event.id, event);
-    this.markSeen(id);
+      at: projection.receivedAt,
+      ackReason: "cross-broker terminal projection accepted as evidence only; create or update a separate parent-broker operator-facing row before ACK",
+    });
     this.enqueueCrossBrokerOperatorFacingRow(projection, payload, stableId);
     this.enforceRetention();
     return event;
@@ -481,28 +498,13 @@ export class TerminalTaskEventOutbox {
       ...payload
     } = structuredClone(evidencePayload);
 
-    const event: TerminalTaskOutboxEvent = {
+    return this.appendAcceptedEvent({
       id,
-      kind: "task.terminal",
       taskEventId: 0,
       payload,
-      createdAt: projection.receivedAt,
-      receipt: {
-        status: "accepted",
-        updatedAt: projection.receivedAt,
-      },
-      ackAudit: buildAckAudit(payload, {
-        decision: "pending",
-        reason: "parent-broker operator-facing Terminal Brief row materialized from cross-broker projection; awaiting current-session-visible/operator-visible evidence before ACK",
-        updatedAt: projection.receivedAt,
-        receiptStatus: "accepted",
-      }),
-      attempts: 0,
-    };
-    this.events.push(event);
-    this.eventsById.set(event.id, event);
-    this.markSeen(id);
-    return event;
+      at: projection.receivedAt,
+      ackReason: "parent-broker operator-facing Terminal Brief row materialized from cross-broker projection; awaiting current-session-visible/operator-visible evidence before ACK",
+    });
   }
 
   subscribe(options: TerminalTaskOutboxSubscribeOptions = {}): TerminalTaskOutboxEvent[] {
