@@ -61,6 +61,67 @@ function assertReadAccess(ctx: ReviewLineageRouteContext, action: string): void 
   }
 }
 
+type LineageMutationResult = Awaited<
+  ReturnType<InMemoryA2ABroker["recordOperatorReviewLineageCancel"]>
+>;
+
+/**
+ * Shared tail of every POST mutation on this surface: read the exact JSON
+ * body, run the authenticated broker call, map adapter validation errors to
+ * 400, map the closed result-status set to 404/409, and reply 200 (replayed)
+ * or 201 (recorded). The per-route authentication gate stays at the call
+ * site so each route's authority rule remains visible next to its path.
+ */
+async function recordLineageMutation(
+  ctx: ReviewLineageRouteContext,
+  label: string,
+  record: (body: unknown) => Promise<LineageMutationResult>,
+  options: { missingIs404: boolean },
+): Promise<void> {
+  const body = await readJson(ctx.req);
+  if (!body) {
+    throw new BrokerError("bad_request", "request body is required");
+  }
+  let result: LineageMutationResult;
+  try {
+    result = await record(body);
+  } catch (error) {
+    if (
+      error instanceof SourceCarrierValidationError
+      || error instanceof ObservationValidationError
+    ) {
+      throw new BrokerError("bad_request", error.message);
+    }
+    throw error;
+  }
+  if (!result) {
+    throw new BrokerError(
+      "invalid_transition",
+      "review lineage recording is disabled",
+    );
+  }
+  if (options.missingIs404 && result.status === "missing_lineage") {
+    throw new BrokerError("not_found", "review lineage not found");
+  }
+  if (
+    result.status === "missing_lineage"
+    || result.status === "subject_conflict"
+    || result.status === "transition_rejected"
+    || result.status === "idempotency_conflict"
+  ) {
+    throw new BrokerError(
+      "invalid_transition",
+      `review lineage ${label} rejected: ${result.status}`,
+    );
+  }
+  sendJson(
+    ctx.res,
+    result.status === "replayed" ? 200 : 201,
+    { result },
+    { "cache-control": "no-store" },
+  );
+}
+
 export async function handleReviewLineageRoutesIfMatched(
   ctx: ReviewLineageRouteContext,
 ): Promise<boolean> {
@@ -90,47 +151,15 @@ export async function handleReviewLineageRoutesIfMatched(
       ["operator"],
       "review-lineage.create",
     );
-    const body = await readJson(ctx.req);
-    if (!body) {
-      throw new BrokerError("bad_request", "request body is required");
-    }
-    let result;
-    try {
-      result = await ctx.broker.recordOperatorReviewLineageCreate(
-        body,
-        ctx.requesterIdentity!.id,
-      );
-    } catch (error) {
-      if (
-        error instanceof SourceCarrierValidationError
-        || error instanceof ObservationValidationError
-      ) {
-        throw new BrokerError("bad_request", error.message);
-      }
-      throw error;
-    }
-    if (!result) {
-      throw new BrokerError(
-        "invalid_transition",
-        "review lineage recording is disabled",
-      );
-    }
-    if (
-      result.status === "missing_lineage"
-      || result.status === "subject_conflict"
-      || result.status === "transition_rejected"
-      || result.status === "idempotency_conflict"
-    ) {
-      throw new BrokerError(
-        "invalid_transition",
-        `review lineage create rejected: ${result.status}`,
-      );
-    }
-    sendJson(
-      ctx.res,
-      result.status === "replayed" ? 200 : 201,
-      { result },
-      { "cache-control": "no-store" },
+    await recordLineageMutation(
+      ctx,
+      "create",
+      (body) =>
+        ctx.broker.recordOperatorReviewLineageCreate(
+          body,
+          ctx.requesterIdentity!.id,
+        ),
+      { missingIs404: false },
     );
     return true;
   }
@@ -151,52 +180,17 @@ export async function handleReviewLineageRoutesIfMatched(
       ["operator"],
       "review-lineage.reviewer-replacement",
     );
-    const body = await readJson(ctx.req);
-    if (!body) {
-      throw new BrokerError("bad_request", "request body is required");
-    }
     const lineageId = decodeURIComponent(segments[0]);
-    let result;
-    try {
-      result =
-        await ctx.broker.recordOperatorReviewLineageReviewerReplacement(
+    await recordLineageMutation(
+      ctx,
+      "reviewer replacement",
+      (body) =>
+        ctx.broker.recordOperatorReviewLineageReviewerReplacement(
           lineageId,
           body,
           ctx.requesterIdentity!.id,
-        );
-    } catch (error) {
-      if (
-        error instanceof SourceCarrierValidationError
-        || error instanceof ObservationValidationError
-      ) {
-        throw new BrokerError("bad_request", error.message);
-      }
-      throw error;
-    }
-    if (!result) {
-      throw new BrokerError(
-        "invalid_transition",
-        "review lineage recording is disabled",
-      );
-    }
-    if (result.status === "missing_lineage") {
-      throw new BrokerError("not_found", "review lineage not found");
-    }
-    if (
-      result.status === "subject_conflict"
-      || result.status === "transition_rejected"
-      || result.status === "idempotency_conflict"
-    ) {
-      throw new BrokerError(
-        "invalid_transition",
-        `review lineage reviewer replacement rejected: ${result.status}`,
-      );
-    }
-    sendJson(
-      ctx.res,
-      result.status === "replayed" ? 200 : 201,
-      { result },
-      { "cache-control": "no-store" },
+        ),
+      { missingIs404: true },
     );
     return true;
   }
@@ -214,52 +208,17 @@ export async function handleReviewLineageRoutesIfMatched(
       ["operator"],
       "review-lineage.correction-generation",
     );
-    const body = await readJson(ctx.req);
-    if (!body) {
-      throw new BrokerError("bad_request", "request body is required");
-    }
     const lineageId = decodeURIComponent(segments[0]);
-    let result;
-    try {
-      result =
-        await ctx.broker.recordOperatorReviewLineageCorrectionGeneration(
+    await recordLineageMutation(
+      ctx,
+      "correction generation",
+      (body) =>
+        ctx.broker.recordOperatorReviewLineageCorrectionGeneration(
           lineageId,
           body,
           ctx.requesterIdentity!.id,
-        );
-    } catch (error) {
-      if (
-        error instanceof SourceCarrierValidationError
-        || error instanceof ObservationValidationError
-      ) {
-        throw new BrokerError("bad_request", error.message);
-      }
-      throw error;
-    }
-    if (!result) {
-      throw new BrokerError(
-        "invalid_transition",
-        "review lineage recording is disabled",
-      );
-    }
-    if (result.status === "missing_lineage") {
-      throw new BrokerError("not_found", "review lineage not found");
-    }
-    if (
-      result.status === "subject_conflict"
-      || result.status === "transition_rejected"
-      || result.status === "idempotency_conflict"
-    ) {
-      throw new BrokerError(
-        "invalid_transition",
-        `review lineage correction generation rejected: ${result.status}`,
-      );
-    }
-    sendJson(
-      ctx.res,
-      result.status === "replayed" ? 200 : 201,
-      { result },
-      { "cache-control": "no-store" },
+        ),
+      { missingIs404: true },
     );
     return true;
   }
@@ -267,6 +226,7 @@ export async function handleReviewLineageRoutesIfMatched(
     ctx.method === "POST"
     && segments.length === 2
     && segments[1] === "review-report"
+    && rest === `${segments[0]}/review-report`
   ) {
     // This source always requires an Ed25519 worker-registry result. Relaxed
     // requester identity cannot bypass it; a disabled signature verifier makes
@@ -284,51 +244,17 @@ export async function handleReviewLineageRoutesIfMatched(
       undefined,
       "review-lineage.report",
     );
-    const body = await readJson(ctx.req);
-    if (!body) {
-      throw new BrokerError("bad_request", "request body is required");
-    }
     const lineageId = decodeURIComponent(segments[0]);
-    let result;
-    try {
-      result = await ctx.broker.recordReviewerReviewLineageReport(
-        lineageId,
-        body,
-        verifiedReviewer.requesterId,
-      );
-    } catch (error) {
-      if (
-        error instanceof SourceCarrierValidationError
-        || error instanceof ObservationValidationError
-      ) {
-        throw new BrokerError("bad_request", error.message);
-      }
-      throw error;
-    }
-    if (!result) {
-      throw new BrokerError(
-        "invalid_transition",
-        "review lineage recording is disabled",
-      );
-    }
-    if (result.status === "missing_lineage") {
-      throw new BrokerError("not_found", "review lineage not found");
-    }
-    if (
-      result.status === "subject_conflict"
-      || result.status === "transition_rejected"
-      || result.status === "idempotency_conflict"
-    ) {
-      throw new BrokerError(
-        "invalid_transition",
-        `review lineage review report rejected: ${result.status}`,
-      );
-    }
-    sendJson(
-      ctx.res,
-      result.status === "replayed" ? 200 : 201,
-      { result },
-      { "cache-control": "no-store" },
+    await recordLineageMutation(
+      ctx,
+      "review report",
+      (body) =>
+        ctx.broker.recordReviewerReviewLineageReport(
+          lineageId,
+          body,
+          verifiedReviewer.requesterId,
+        ),
+      { missingIs404: true },
     );
     return true;
   }
@@ -336,6 +262,7 @@ export async function handleReviewLineageRoutesIfMatched(
     ctx.method === "POST"
     && segments.length === 2
     && segments[1] === "operator-cancel"
+    && rest === `${segments[0]}/operator-cancel`
   ) {
     // Unlike the broader read surface, the first authoritative source kind is
     // always identity-gated, including local/test configurations that relax
@@ -345,51 +272,17 @@ export async function handleReviewLineageRoutesIfMatched(
       ["operator"],
       "review-lineage.operator-cancel",
     );
-    const body = await readJson(ctx.req);
-    if (!body) {
-      throw new BrokerError("bad_request", "request body is required");
-    }
     const lineageId = decodeURIComponent(segments[0]);
-    let result;
-    try {
-      result = await ctx.broker.recordOperatorReviewLineageCancel(
-        lineageId,
-        body,
-        ctx.requesterIdentity!.id,
-      );
-    } catch (error) {
-      if (
-        error instanceof SourceCarrierValidationError
-        || error instanceof ObservationValidationError
-      ) {
-        throw new BrokerError("bad_request", error.message);
-      }
-      throw error;
-    }
-    if (!result) {
-      throw new BrokerError(
-        "invalid_transition",
-        "review lineage recording is disabled",
-      );
-    }
-    if (result.status === "missing_lineage") {
-      throw new BrokerError("not_found", "review lineage not found");
-    }
-    if (
-      result.status === "subject_conflict"
-      || result.status === "transition_rejected"
-      || result.status === "idempotency_conflict"
-    ) {
-      throw new BrokerError(
-        "invalid_transition",
-        `review lineage operator cancel rejected: ${result.status}`,
-      );
-    }
-    sendJson(
-      ctx.res,
-      result.status === "replayed" ? 200 : 201,
-      { result },
-      { "cache-control": "no-store" },
+    await recordLineageMutation(
+      ctx,
+      "operator cancel",
+      (body) =>
+        ctx.broker.recordOperatorReviewLineageCancel(
+          lineageId,
+          body,
+          ctx.requesterIdentity!.id,
+        ),
+      { missingIs404: true },
     );
     return true;
   }

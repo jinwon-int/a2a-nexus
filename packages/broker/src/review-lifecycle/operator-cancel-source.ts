@@ -7,17 +7,8 @@
  * issuer identity and create the process-local trusted context.
  */
 
-import {
-  projectAuthorizedReviewLineageSource,
-  type AuthorizedReviewLineageSourceV1,
-} from "./authorized-source.js";
-import {
-  REVIEW_LINEAGE_SOURCE_CARRIER_KIND,
-  SourceCarrierValidationError,
-  authorizeReviewLineageSourceCarrier,
-  createReviewLineageTrustedSourceContext,
-  type ReviewLineageSourceCarrierV1,
-} from "./source-carrier.js";
+import type { AuthorizedReviewLineageSourceV1 } from "./authorized-source.js";
+import { defineLineageSourceAdapter } from "./lineage-source-adapter.js";
 
 export const REVIEW_LINEAGE_OPERATOR_CANCEL_SOURCE_NAMESPACE =
   "broker-http:review-lineage-operator-cancel:v1" as const;
@@ -33,37 +24,6 @@ export interface OperatorReviewLineageCancelRequestV1 {
   detail: string;
 }
 
-const REQUEST_FIELDS = new Set([
-  "decisionRef",
-  "observedAt",
-  "binding",
-  "detail",
-]);
-
-function requestObject(input: unknown): Record<string, unknown> {
-  if (input === null || typeof input !== "object" || Array.isArray(input)) {
-    throw new SourceCarrierValidationError("invalid_object", "$request");
-  }
-  const request = input as Record<string, unknown>;
-  for (const field of Object.keys(request)) {
-    if (!REQUEST_FIELDS.has(field)) {
-      throw new SourceCarrierValidationError(
-        "unexpected_field",
-        `$request.${field}`,
-      );
-    }
-  }
-  for (const field of REQUEST_FIELDS) {
-    if (!Object.hasOwn(request, field)) {
-      throw new SourceCarrierValidationError(
-        "invalid_string",
-        `$request.${field}`,
-      );
-    }
-  }
-  return request;
-}
-
 /**
  * Bind one exact operator request to the Phase 13 carrier/context contract.
  *
@@ -71,36 +31,24 @@ function requestObject(input: unknown): Record<string, unknown> {
  * Neither producer/source-event identity nor authority can be supplied by the
  * request body.
  */
+const adapter = defineLineageSourceAdapter({
+  fields: ["decisionRef", "observedAt", "binding", "detail"],
+  refField: "decisionRef",
+  descriptor: {
+    sourceKind: "lineage_cancel_decided",
+    authorityKind: "operator",
+  },
+  namespace: REVIEW_LINEAGE_OPERATOR_CANCEL_SOURCE_NAMESPACE,
+  observation: (request) => ({
+    kind: "operator_cancel",
+    detail: request.detail as string,
+  }),
+});
+
 export function authorizeOperatorReviewLineageCancel(
   lineageId: string,
   input: unknown,
   authenticatedOperatorId: string,
 ): AuthorizedReviewLineageSourceV1 {
-  const request = requestObject(input);
-  const carrier: ReviewLineageSourceCarrierV1 = {
-    kind: REVIEW_LINEAGE_SOURCE_CARRIER_KIND,
-    sourceKind: "lineage_cancel_decided",
-    sourceEventRef: request.decisionRef as string,
-    lineageId,
-    observedAt: request.observedAt as string,
-    binding: request.binding as OperatorReviewLineageCancelRequestV1["binding"],
-    observation: {
-      kind: "operator_cancel",
-      detail: request.detail as string,
-    },
-  };
-  const context = createReviewLineageTrustedSourceContext({
-    authorityKind: "operator",
-    issuerId: authenticatedOperatorId,
-    sourceNamespace: REVIEW_LINEAGE_OPERATOR_CANCEL_SOURCE_NAMESPACE,
-  });
-  const fact = authorizeReviewLineageSourceCarrier(carrier, context);
-  return projectAuthorizedReviewLineageSource(
-    fact,
-    {
-      sourceKind: "lineage_cancel_decided",
-      authorityKind: "operator",
-    },
-    carrier.sourceEventRef,
-  );
+  return adapter(input, authenticatedOperatorId, lineageId);
 }
