@@ -412,3 +412,11 @@ test("dansoErrorCategory bounds unknown categories", () => {
 	assert.equal(__test.dansoErrorCategory('DANSO_ERROR={"version":1,"category":"<script>","exit_code":2}'), "other");
 	assert.equal(__test.dansoErrorCategory("nothing"), undefined);
 });
+
+test("normalizeResponse passes the structured reviewLineage block through (#2351)", () => {
+	const block = { newFindings: [], resolvedFindingIds: ["F-1"], reopenedFindingIds: [] };
+	const base = { status: "done", summary: "s", findings: ["f"], risks: [], recommendations: [], evidenceRefs: ["#1"], verdict: "pass" };
+	assert.deepEqual(__test.normalizeResponse({ ...base, reviewLineage: block }).reviewLineage, block);
+	assert.equal(__test.normalizeResponse({ ...base, reviewLineage: ["not", "an", "object"] }).reviewLineage, undefined);
+	assert.equal(__test.normalizeResponse(base).reviewLineage, undefined);
+});

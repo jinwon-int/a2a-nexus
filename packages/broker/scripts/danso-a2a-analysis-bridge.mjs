@@ -315,6 +315,11 @@ function normalizeResponse(parsed) {
 		status: statusRaw,
 		summary: safeText(parsed.summary, statusRaw === "blocked" ? "analysis blocked" : "analysis complete"),
 		findings: normalizeStringArray(parsed.findings),
+		// #2351: the structured review-lineage block is validated by the worker
+		// producer; pass it through untouched so a fail verdict can be reported.
+		...(parsed.reviewLineage && typeof parsed.reviewLineage === "object" && !Array.isArray(parsed.reviewLineage)
+		  ? { reviewLineage: parsed.reviewLineage }
+		  : {}),
 		risks: normalizeStringArray(parsed.risks),
 		recommendations: normalizeStringArray(parsed.recommendations),
 		evidenceRefs: normalizeStringArray(parsed.evidenceRefs),

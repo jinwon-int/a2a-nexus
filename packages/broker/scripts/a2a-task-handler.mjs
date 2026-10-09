@@ -813,7 +813,27 @@ function reviewInstructionForPrompt(task) {
     "This task has payload.review.required=true. Return a pass/fail recommendation with explicit reviewer evidence.",
     "Use an explicit top-level verdict field (\"pass\" or \"fail\") or begin summary with PASS: / FAIL: followed by the review note.",
     "If you cannot make a clear pass/fail determination from the provided source, do not invent one; explain the missing evidence instead.",
+    ...reviewLineageInstruction(task),
   ].join("\n");
+}
+
+function isLineageBoundReview(task) {
+  const binding = task?.payload?.reviewLineage;
+  return isReviewRequiredTask(task) && Boolean(binding) && typeof binding === "object" && !Array.isArray(binding);
+}
+
+// #2351: a lineage-bound review lane (payload.reviewLineage) reports its
+// verdict to the bounded review lineage. The worker posts it signed and
+// validates this block strictly; a fail verdict without it is not reported.
+function reviewLineageInstruction(task) {
+  if (!isLineageBoundReview(task)) return [];
+  return [
+    "This review is bound to a review lineage (payload.reviewLineage). Also return a top-level \"reviewLineage\" object:",
+    '{"newFindings":[{"criterionRef":"<acceptance criterion id from the frozen intent, e.g. AC-1>","evidenceRefs":["<path:line or other concrete reference>"],"severity":"critical|major|minor","category":"correctness|security|regression|spec_ambiguity|scope_drift|style|preference|design|other","blocking":true}],"resolvedFindingIds":[],"reopenedFindingIds":[]}',
+    "List only findings you can tie to concrete evidence; every finding needs at least one evidenceRef. A fail verdict must list the blocking findings behind it. Use empty arrays when there is nothing to report.",
+    "Do not assign ids to newFindings (the worker does). resolvedFindingIds/reopenedFindingIds may only contain F-<n> ids that appear in the payload.",
+    "In a resolution review, a new blocking finding also needs \"justification\":{\"kind\":\"introduced_regression|critical_security|unavailable_evidence\",\"detail\":\"...\"}; otherwise it is rejected as a moved goalpost.",
+  ];
 }
 
 function normalizeReviewVerdict(value) {
@@ -1640,6 +1660,11 @@ function runOpenClawAnalysisBridgeOnce(task, env = process.env, sessionId) {
     ...bridgeTelemetry,
     analysisStatus: status,
     findings: normalizeStringArray(response.findings),
+    // #2351: forwarded only for lineage-bound review lanes; the worker
+    // producer validates it before anything reaches the lineage.
+    ...(isLineageBoundReview(task) && response.reviewLineage && typeof response.reviewLineage === "object" && !Array.isArray(response.reviewLineage)
+      ? { reviewLineage: response.reviewLineage }
+      : {}),
     risks: normalizeStringArray(response.risks),
     recommendations: normalizeStringArray(response.recommendations),
     evidenceRefs: normalizeStringArray(response.evidenceRefs),

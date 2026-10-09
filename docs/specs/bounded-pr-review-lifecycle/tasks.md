@@ -511,8 +511,11 @@ terminal state.
       blocking finding → `correction_pending` while the task still fails on
       its verdict; missing scope and off mode are rejected without touching the
       task.
-- [ ] Handler prompts emit the structured `reviewLineage` block for
-      lineage-bound review lanes (handler side, outside this package).
+- [x] Handler prompt asks lineage-bound review lanes for the structured
+      `reviewLineage` block and forwards it to `result.output`; the claude,
+      hermes, piri and danso bridges pass it through and piri's output schema
+      admits it (#2351). A chain test feeds handler output into the producer
+      and the canonical broker parser.
 - [ ] Worker rollout/restart and the `review-lineage.report` key scope
       (separate approvals).
 - [ ] Operator `correction-generation` / `reviewer-replacement` commands in the

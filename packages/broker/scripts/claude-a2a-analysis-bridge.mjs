@@ -547,6 +547,11 @@ function normalizeResponse(parsed) {
     status,
     summary: safeText(parsed.summary, status === "blocked" ? "analysis blocked" : "analysis complete"),
     findings: normalizeStringArray(parsed.findings),
+    // #2351: the structured review-lineage block is validated by the worker
+    // producer; pass it through untouched so a fail verdict can be reported.
+    ...(parsed.reviewLineage && typeof parsed.reviewLineage === "object" && !Array.isArray(parsed.reviewLineage)
+      ? { reviewLineage: parsed.reviewLineage }
+      : {}),
     risks: normalizeStringArray(parsed.risks),
     recommendations: normalizeStringArray(parsed.recommendations),
     evidenceRefs: normalizeStringArray(parsed.evidenceRefs),
@@ -622,6 +627,7 @@ function buildClaudePrompt({ message, flags, payload }) {
     "If the evidence is insufficient, return status=blocked and name the missing evidence.",
     "Return JSON only, no markdown, with exactly this shape:",
     '{"status":"done|blocked","summary":"...","findings":["..."],"risks":["..."],"recommendations":["..."],"evidenceRefs":["..."],"doneCommentUrl":"optional","blockCommentUrl":"optional","startCommentUrl":"optional"}',
+    "If the task instructions above request additional top-level keys (verdict, reviewLineage), include them exactly as specified.",
     "All human-readable text should be Korean unless quoting code/test output.",
     `Session id: ${safeText(flags["session-id"], "")}`,
     `Requested model: ${safeText(flags.model, "")}`,

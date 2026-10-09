@@ -864,3 +864,24 @@ test("declaredRequiredCarrierPath returns empty when the payload is embedded (no
   assert.equal(__test.declaredRequiredCarrierPath(""), "");
   assert.equal(__test.declaredRequiredCarrierPath(undefined), "");
 });
+
+test("normalizeResponse passes the structured reviewLineage block through (#2351)", () => {
+	const block = { newFindings: [], resolvedFindingIds: ["F-1"], reopenedFindingIds: [] };
+	const base = { status: "done", summary: "s", findings: ["f"], risks: [], recommendations: [], evidenceRefs: ["#1"], verdict: "pass" };
+	assert.deepEqual(__test.normalizeResponse({ ...base, reviewLineage: block }).reviewLineage, block);
+	assert.equal(__test.normalizeResponse({ ...base, reviewLineage: ["not", "an", "object"] }).reviewLineage, undefined);
+	assert.equal(__test.normalizeResponse(base).reviewLineage, undefined);
+});
+
+test("piri output schema admits the reviewLineage block with the broker's finding enums (#2351)", () => {
+	const schema = JSON.parse(readFileSync(resolve(import.meta.dirname, "../../docker-runner/docker/piri-analysis-output.schema.json"), "utf8"));
+	const block = schema.properties.reviewLineage;
+	assert.equal(block.additionalProperties, false);
+	assert.deepEqual(block.required, ["newFindings", "resolvedFindingIds", "reopenedFindingIds"]);
+	const types = readFileSync(resolve(import.meta.dirname, "../src/review-lifecycle/types.ts"), "utf8");
+	const union = (name) => [...types.match(new RegExp(`export type ${name} =([^;]+);`))[1].matchAll(/"([a-z_]+)"/g)].map((m) => m[1]);
+	const item = block.properties.newFindings.items.properties;
+	assert.deepEqual(item.severity.enum, union("FindingSeverity"));
+	assert.deepEqual(item.category.enum, union("FindingCategory"));
+	assert.equal(block.properties.resolvedFindingIds.items.pattern, "^F-[0-9]+$");
+});
