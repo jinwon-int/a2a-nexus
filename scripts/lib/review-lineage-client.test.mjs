@@ -355,3 +355,166 @@ test('real broker (off mode): create is refused and the record stays pending', {
   assert.match(res.output.error, /disabled/);
   assert.equal(JSON.parse(fs.readFileSync(out, 'utf8')).state, 'pending');
 });
+
+// ─── Part 3: the full loop through the real broker (#2351) ──────────────────
+// create → signed fail report → correct (in scope) → signed pass report on the
+// new head → passed; plus a scope-drift correction, reviewer replacement and
+// the unconfirmed-correction guard. Reports are signed with the worker key and
+// built by the worker's own planReviewReport, so the lane binding printed by
+// `lane` is exactly what a lineage-bound review lane would carry.
+
+const WORKER = 'reviewerbeta';
+const WORKER_JWK = { crv: 'Ed25519', d: 'AaTuhLv-jaClRWi80aTnBCH7OaqKDTRI1-BhVY6n8hw', x: '5WS0NM-6IqCFjg6O1otAWtJV2H-1kdybf7nFp4PEzdY', kty: 'OKP' };
+const DIST_PRODUCER = path.join(ROOT, 'packages/broker/dist/workers/review-report-producer.js');
+const DIST_SIGNER = path.join(ROOT, 'packages/broker/dist/workers/worker-http-signature.js');
+const loopReason = fs.existsSync(DIST_SERVER) && fs.existsSync(DIST_PRODUCER) ? false : 'packages/broker/dist not built';
+
+function commitFiles(repo, files, message) {
+  for (const [file, body] of Object.entries(files)) {
+    fs.mkdirSync(path.dirname(path.join(repo, file)), { recursive: true });
+    fs.writeFileSync(path.join(repo, file), body);
+  }
+  git(repo, 'add', '.');
+  git(repo, 'commit', '-q', '-m', message);
+  return git(repo, 'rev-parse', 'HEAD');
+}
+
+async function loopBroker(t) {
+  const { createBrokerServer } = await import(DIST_SERVER);
+  const dir = tmpDir(t);
+  const runtime = createBrokerServer({
+    host: '127.0.0.1', port: 0, publicBaseUrl: 'http://127.0.0.1/',
+    sqliteFile: path.join(dir, 'broker.sqlite'), persistenceBackend: 'sqlite',
+    stateFile: path.join(dir, 'state.json'), staleReaperEnabled: false,
+    edgeSecret: SECRET, reviewLineageMode: 'record', brokerId: 'brokeralpha',
+    a2aHttpSignatureWorkerAuth: 'strict',
+    a2aHttpSignatureKeyRegistry: {
+      [`worker:${WORKER}:v1`]: { keyid: `worker:${WORKER}:v1`, workerId: WORKER, publicKeyJwk: { crv: 'Ed25519', x: WORKER_JWK.x, kty: 'OKP' }, scopes: ['review-lineage.report'] },
+    },
+  });
+  runtime.server.listen(0, '127.0.0.1');
+  await new Promise((resolve) => runtime.server.on('listening', resolve));
+  t.after(async () => {
+    await new Promise((resolve) => runtime.server.close(resolve));
+    await runtime.closeWorkerPersistence?.();
+  });
+  return `http://127.0.0.1:${runtime.server.address().port}`;
+}
+
+async function signedReport(url, lane, verdict, structured, taskId) {
+  const { planReviewReport } = await import(DIST_PRODUCER);
+  const { signA2AWorkerRequest } = await import(DIST_SIGNER);
+  const plan = planReviewReport({
+    task: { id: taskId, payload: { review: { required: true }, reviewLineage: lane } },
+    result: {
+      summary: verdict,
+      output: { findings: ['x'], ...(structured ? { reviewLineage: structured } : {}) },
+      validations: [{ kind: 'review', nodeId: WORKER, verdict, note: `review ${verdict}` }],
+    },
+    workerId: WORKER,
+  });
+  assert.equal(plan.kind, 'report', JSON.stringify(plan));
+  const target = new URL(`/review-lineages/${encodeURIComponent(lane.lineageId)}/review-report`, url);
+  const body = JSON.stringify(plan.request);
+  const headers = new Headers({ 'content-type': 'application/json', 'x-a2a-edge-secret': SECRET, 'x-a2a-requester-id': WORKER, 'x-a2a-requester-role': 'analyst' });
+  signA2AWorkerRequest({ method: 'POST', url: target, headers, body, config: { keyid: `worker:${WORKER}:v1`, privateKeyJwk: WORKER_JWK, brokerId: 'brokeralpha' } });
+  const res = await fetch(target, { method: 'POST', headers, body });
+  assert.equal(res.status, 201, await res.text());
+  return plan.request;
+}
+
+async function lineageState(url, id) {
+  return (await readLineages(url, id)).one?.lineage;
+}
+
+test('real broker: create → fail report → correct → pass report on the new head → passed', { skip: loopReason }, async (t) => {
+  const url = await loopBroker(t);
+  const dir = tmpDir(t);
+  const repo = path.join(dir, 'loop-repo');
+  fs.mkdirSync(repo);
+  git(repo, 'init', '-q');
+  const base = commitFiles(repo, { 'scripts/a.txt': 'one\n' }, 'base');
+  const head = commitFiles(repo, { 'scripts/a.txt': 'one\nbug\n' }, 'head');
+  const fixed = commitFiles(repo, { 'scripts/a.txt': 'one\nfixed\n' }, 'fix');
+  const specFile = path.join(dir, 'spec.json');
+  fs.writeFileSync(specFile, JSON.stringify({
+    brokerUrl: url, requesterId: 'operator-jingun', dispatchRef: 'round-2351-loop', lineageId: 'lineage-2351-loop',
+    goal: 'Close the review loop.', nonGoals: [], invariants: [],
+    acceptanceCriteria: [{ id: 'AC-1', text: 'No bug line.' }], declaredPaths: { allowed: ['scripts/**'] },
+    baseSha: base, headSha: head, repo,
+  }));
+  const record = path.join(dir, 'record.json');
+  const env = { A2A_EDGE_SECRET: SECRET };
+
+  const created = await run(['create', '--spec', specFile, '--out', record], { env });
+  assert.equal(created.exitCode, 0, JSON.stringify(created.output));
+  const lane1 = (await run(['lane', '--record', record])).output.reviewLineage;
+  assert.deepEqual(lane1, created.output.lane);
+
+  const failReport = await signedReport(url, lane1, 'fail', {
+    newFindings: [{ criterionRef: 'AC-1', evidenceRefs: ['scripts/a.txt:2'], severity: 'major', category: 'correctness', blocking: true }],
+    resolvedFindingIds: [], reopenedFindingIds: [],
+  }, 'task-review-1');
+  assert.equal((await lineageState(url, 'lineage-2351-loop')).state, 'correction_pending');
+
+  const corrected = await run(['correct', '--record', record, '--generation-ref', 'gen-1', '--head', fixed, '--repo', repo], { env });
+  assert.equal(corrected.exitCode, 0, JSON.stringify(corrected.output));
+  assert.equal(corrected.output.state, 'reviewing_resolution');
+  const lane2 = (await run(['lane', '--record', record])).output.reviewLineage;
+  assert.equal(lane2.headSha, fixed);
+  assert.notEqual(lane2.diffHash, lane1.diffHash);
+  assert.equal(JSON.parse(fs.readFileSync(record, 'utf8')).pendingCorrection, undefined);
+
+  await signedReport(url, lane2, 'pass', {
+    newFindings: [], resolvedFindingIds: [failReport.newFindings[0].findingId], reopenedFindingIds: [],
+  }, 'task-review-2');
+  const final = await lineageState(url, 'lineage-2351-loop');
+  assert.equal(final.state, 'passed');
+});
+
+test('real broker: an out-of-scope correction keeps correction_pending and the binding; replacement and guards', { skip: loopReason }, async (t) => {
+  const url = await loopBroker(t);
+  const dir = tmpDir(t);
+  const repo = path.join(dir, 'drift-repo');
+  fs.mkdirSync(repo);
+  git(repo, 'init', '-q');
+  const base = commitFiles(repo, { 'scripts/a.txt': 'one\n' }, 'base');
+  const head = commitFiles(repo, { 'scripts/a.txt': 'one\nbug\n' }, 'head');
+  const drift = commitFiles(repo, { 'docs/unrelated.md': 'drift\n' }, 'drift');
+  const specFile = path.join(dir, 'spec.json');
+  fs.writeFileSync(specFile, JSON.stringify({
+    brokerUrl: url, requesterId: 'operator-jingun', dispatchRef: 'round-2351-drift', lineageId: 'lineage-2351-drift',
+    goal: 'Reject drift.', nonGoals: [], invariants: [],
+    acceptanceCriteria: [{ id: 'AC-1', text: 'Stay in scripts.' }], declaredPaths: { allowed: ['scripts/**'] },
+    baseSha: base, headSha: head, repo,
+  }));
+  const record = path.join(dir, 'record.json');
+  const env = { A2A_EDGE_SECRET: SECRET };
+  assert.equal((await run(['create', '--spec', specFile, '--out', record], { env })).exitCode, 0);
+
+  const replaced = await run(['replace-reviewer', '--record', record, '--decision-ref', 'infra-1'], { env });
+  assert.equal(replaced.exitCode, 0, JSON.stringify(replaced.output));
+
+  const lane1 = (await run(['lane', '--record', record])).output.reviewLineage;
+  await signedReport(url, lane1, 'fail', {
+    newFindings: [{ criterionRef: 'AC-1', evidenceRefs: ['scripts/a.txt:2'], severity: 'major', category: 'correctness', blocking: true }],
+    resolvedFindingIds: [], reopenedFindingIds: [],
+  }, 'task-drift-1');
+
+  const dry = await run(['correct', '--record', record, '--generation-ref', 'gen-drift', '--head', drift, '--repo', repo, '--dry-run'], { env });
+  assert.deepEqual(dry.output.request.pathsChanged, ['docs/unrelated.md']);
+
+  const rejected = await run(['correct', '--record', record, '--generation-ref', 'gen-drift', '--head', drift, '--repo', repo], { env });
+  assert.equal(rejected.exitCode, 1);
+  assert.equal(rejected.output.state, 'correction_pending');
+  assert.deepEqual((await run(['lane', '--record', record])).output.reviewLineage, lane1, 'binding unchanged');
+  const state = await lineageState(url, 'lineage-2351-drift');
+  assert.equal(state.state, 'correction_pending');
+
+  // A sent-but-unconfirmed correction blocks a different generation.
+  const saved = JSON.parse(fs.readFileSync(record, 'utf8'));
+  fs.writeFileSync(record, JSON.stringify({ ...saved, pendingCorrection: { generationRef: 'gen-x' } }));
+  const blocked = await run(['correct', '--record', record, '--generation-ref', 'gen-y', '--head', drift, '--repo', repo], { env });
+  assert.equal(blocked.exitCode, 2);
+  assert.match(blocked.output.error, /gen-x is still unconfirmed/);
+});

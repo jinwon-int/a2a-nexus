@@ -518,8 +518,14 @@ terminal state.
       and the canonical broker parser.
 - [ ] Worker rollout/restart and the `review-lineage.report` key scope
       (separate approvals).
-- [ ] Operator `correction-generation` / `reviewer-replacement` commands in the
-      same client.
+- [x] Operator `correct` (correction-generation) and `replace-reviewer`
+      commands plus `lane` in the same client (#2351): diffHash vs the
+      contract base, changed paths current head → next head, the record's
+      binding advances only on `reviewing_resolution`, persisted-before-send
+      retry, and an unconfirmed-generation guard. Validated through the real
+      server: create → signed fail report → correct → signed pass report on
+      the new head → `passed`; an out-of-scope correction keeps
+      `correction_pending` and the binding.
 - [ ] Live use against a `record` broker as part of real review rounds
       (operator action; separate approval).
 
