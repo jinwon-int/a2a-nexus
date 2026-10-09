@@ -501,10 +501,20 @@ terminal state.
 - [x] Validated against the real broker in `record` mode on temporary SQLite:
       create 201 → identical replay 200 → changed payload rejected → cancel
       201 → state `canceled`; `off` mode refuses.
-- [ ] Reviewer-side `review-report` producer in the worker (Ed25519 issuer =
-      reviewer; `FindingV1` output; worker rollout and key-scope approvals).
-      Until it exists, create + cancel yields only `canceled` terminals, which
-      do not count toward the Phase 7 convergence evidence.
+- [x] Reviewer-side `review-report` producer in `A2ABrokerWorker` (#2351):
+      `payload.reviewLineage` binding, issuer = worker id, verdict from the
+      completion gate's review validation, findings only from the structured
+      `result.output.reviewLineage` block (a `fail` without it is not
+      reported), deterministic `F-<n>` ids, `reportRef = task:<id>`, posted
+      before complete/fail and never changing completion. Validated against
+      the real server with a signed worker: pass → `passed`; fail with a
+      blocking finding → `correction_pending` while the task still fails on
+      its verdict; missing scope and off mode are rejected without touching the
+      task.
+- [ ] Handler prompts emit the structured `reviewLineage` block for
+      lineage-bound review lanes (handler side, outside this package).
+- [ ] Worker rollout/restart and the `review-lineage.report` key scope
+      (separate approvals).
 - [ ] Operator `correction-generation` / `reviewer-replacement` commands in the
       same client.
 - [ ] Live use against a `record` broker as part of real review rounds

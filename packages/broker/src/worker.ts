@@ -90,6 +90,12 @@ export interface BrokerWorkerConfig {
    */
   pollReadinessProbe?: boolean;
   /**
+   * #2351: post a signed review-report for review lanes whose payload carries
+   * a `reviewLineage` binding (default true). The report never changes task
+   * completion; `false` disables the producer without touching the lane.
+   */
+  reviewLineageReports?: boolean;
+  /**
    * #2271: startup retries for the FIRST broker contact (register + first
    * heartbeat). Transient connection-class failures (socket resets, a broker
    * tunnel restarting ahead of the worker in a scheduled self-update window)
@@ -173,6 +179,7 @@ export function createWorkerConfigFromEnv(env: NodeJS.ProcessEnv = process.env):
       env.WORKER_POLL_READINESS_PROBE ?? env.A2A_WORKER_POLL_READINESS_PROBE,
       true,
     ),
+    reviewLineageReports: parseBooleanEnv(env.A2A_REVIEW_LINEAGE_REPORT_PRODUCER, true),
     userAgent: optionalTrimmed(env.WORKER_USER_AGENT ?? env.A2A_WORKER_USER_AGENT) ?? DEFAULT_USER_AGENT,
     handler: createWorkerHandlerFromEnv(env, handlerTimeoutMs, runtimeProfile),
   };

@@ -105,7 +105,13 @@ export function parseTaskReview(task: TaskRecord): ParsedTaskReview {
   return malformed("required must be a boolean when present");
 }
 
-function reviewValidation(result: TaskResult | undefined): TaskValidationPayload | undefined {
+/**
+ * The review-shaped validation of a submitted result: the first `kind:
+ * "review"` entry of `result.validations[]` when that array exists, else
+ * `result.validation`. Shared with the review-lineage report producer (#2351)
+ * so both read the same verdict.
+ */
+export function reviewValidation(result: TaskResult | undefined): TaskValidationPayload | undefined {
   if (!result) return undefined;
   if (Array.isArray(result.validations)) {
     return result.validations.find((validation) => validation?.kind === "review");
