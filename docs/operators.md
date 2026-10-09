@@ -342,7 +342,23 @@ A2A_EDGE_SECRET=... node scripts/lib/review-lineage-client.mjs create --spec spe
 # POST /review-lineages/{id}/operator-cancel with the recorded binding
 A2A_EDGE_SECRET=... node scripts/lib/review-lineage-client.mjs cancel --record lineage.json \
   --decision-ref <ref> --detail "<why the loop was abandoned>"
+# #2351: payload.reviewLineage for the next review lane (current head)
+node scripts/lib/review-lineage-client.mjs lane --record lineage.json
+# record an already committed correction: diffHash vs the contract base, changed
+# paths current head -> next head; the record advances only on acceptance
+A2A_EDGE_SECRET=... node scripts/lib/review-lineage-client.mjs correct --record lineage.json \
+  --generation-ref <ref> --head <next sha> --repo <checkout>
+# record an already classified infrastructure-failure reviewer replacement
+A2A_EDGE_SECRET=... node scripts/lib/review-lineage-client.mjs replace-reviewer --record lineage.json \
+  --decision-ref <ref>
 ```
+
+`correct` is accepted only from `correction_pending`. The record file keeps the
+lineage's current binding: it advances to the next head only when the broker
+reports `reviewing_resolution`. A forbidden or out-of-scope path keeps
+`correction_pending` and the previous head, and `correct` exits 1. Like
+`create`, a correction is persisted before it is sent and is resent unchanged
+on retry. A different generation is refused while one is still unconfirmed.
 
 The spec carries `brokerUrl`, `requesterId`, `dispatchRef`, `lineageId`,
 `goal`, `nonGoals`, `invariants`, `acceptanceCriteria`, `declaredPaths`,
@@ -350,7 +366,7 @@ The spec carries `brokerUrl`, `requesterId`, `dispatchRef`, `lineageId`,
 `diffFile`; `budget` defaults to `DEFAULT_LINEAGE_BUDGET`. `diffHash` is the
 SHA-256 of the exact `git diff --no-color --no-ext-diff --no-renames
 --unified=3 <base> <head>` bytes with system and global git config
-neutralized. Every command accepts `--dry-run` except `binding`, which is
+neutralized. Every posting command accepts `--dry-run`; `binding` and `lane` are
 always offline. The requester role is always `operator`; the edge secret comes
 from `A2A_EDGE_SECRET` only.
 

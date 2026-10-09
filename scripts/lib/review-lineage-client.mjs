@@ -125,13 +125,31 @@ export function diffHashFromBytes(bytes) {
   return 'sha256:' + createHash('sha256').update(bytes).digest('hex');
 }
 
+function gitEnv() {
+  return { ...process.env, GIT_CONFIG_NOSYSTEM: '1', GIT_CONFIG_GLOBAL: '/dev/null', LC_ALL: 'C' };
+}
+
+function requireCommits(repo, shas, spawn, env) {
+  for (const sha of shas) {
+    const probe = spawn('git', ['-C', repo, 'cat-file', '-e', `${sha}^{commit}`], { env });
+    if (probe.status !== 0) {
+      throw new ClientError(`commit ${sha.slice(0, 12)} is not present in ${repo}`);
+    }
+  }
+}
+
+/** Complete list of paths a correction changed (previous head -> next head). */
+export function changedPaths(repo, fromSha, toSha, spawn = spawnSync) {
+  const env = gitEnv();
+  requireCommits(repo, [fromSha, toSha], spawn, env);
+  const result = spawn('git', ['-C', repo, 'diff', '--name-only', '--no-renames', '-z', fromSha, toSha],
+    { env, maxBuffer: 64 * 1024 * 1024 });
+  if (result.status !== 0) throw new ClientError(`git diff --name-only failed for ${repo}`);
+  return Buffer.from(result.stdout).toString('utf8').split('\0').filter(Boolean);
+}
+
 export function canonicalPatch(repo, baseSha, headSha, spawn = spawnSync) {
-  const env = {
-    ...process.env,
-    GIT_CONFIG_NOSYSTEM: '1',
-    GIT_CONFIG_GLOBAL: '/dev/null',
-    LC_ALL: 'C',
-  };
+  const env = gitEnv();
   for (const sha of [baseSha, headSha]) {
     const probe = spawn('git', ['-C', repo, 'cat-file', '-e', `${sha}^{commit}`], { env });
     if (probe.status !== 0) {
@@ -218,21 +236,66 @@ export function buildCreateRequest(spec, { now, spawn } = {}) {
   };
 }
 
-export function buildCancelRequest(record, { decisionRef, detail, now } = {}) {
+/** The lineage's current subject as the record knows it (advanced by `correct`). */
+export function recordBinding(record) {
   if (!isPlainObject(record) || record.schema !== RECORD_SCHEMA) {
     throw new ClientError(`record must be a ${RECORD_SCHEMA} file written by create --out`);
   }
   requireText(record.lineageId, 'record.lineageId', IDENTIFIER_PATTERN);
   if (!isPlainObject(record.binding)) throw new ClientError('record.binding is missing');
   return {
+    intentHash: requireText(record.binding.intentHash, 'record.binding.intentHash'),
+    headSha: requireText(record.binding.headSha, 'record.binding.headSha', SHA_PATTERN),
+    diffHash: requireText(record.binding.diffHash, 'record.binding.diffHash'),
+  };
+}
+
+/** `task.payload.reviewLineage` for the next review lane on this lineage (#2351). */
+export function laneBinding(record) {
+  return { lineageId: record.lineageId, ...recordBinding(record) };
+}
+
+export function buildCancelRequest(record, { decisionRef, detail, now } = {}) {
+  return {
     decisionRef: requireText(decisionRef, '--decision-ref', IDENTIFIER_PATTERN),
     observedAt: utcNow(now),
-    binding: {
-      intentHash: requireText(record.binding.intentHash, 'record.binding.intentHash'),
-      headSha: requireText(record.binding.headSha, 'record.binding.headSha', SHA_PATTERN),
-      diffHash: requireText(record.binding.diffHash, 'record.binding.diffHash'),
-    },
+    binding: recordBinding(record),
     detail: requireText(detail, '--detail'),
+  };
+}
+
+/**
+ * Correction generation (#2351): an already committed next head on the same
+ * frozen intent. diffHash is recomputed against the contract base; the changed
+ * paths are those between the current head and the next head, which the
+ * broker classifies against the declared paths.
+ */
+export function buildCorrectionRequest(record, { generationRef, headSha, repo, now, spawn } = {}) {
+  const binding = recordBinding(record);
+  const baseSha = record?.request?.contract?.baseSha;
+  requireText(baseSha, 'record.request.contract.baseSha', SHA_PATTERN);
+  const nextHead = requireText(headSha, '--head', SHA_PATTERN);
+  if (nextHead === binding.headSha) throw new ClientError('--head equals the current head; nothing to record');
+  const checkout = requireText(repo, '--repo');
+  const pathsChanged = changedPaths(checkout, binding.headSha, nextHead, spawn);
+  if (pathsChanged.length === 0) throw new ClientError('the next head changes no paths relative to the current head');
+  return {
+    generationRef: requireText(generationRef, '--generation-ref', IDENTIFIER_PATTERN),
+    observedAt: utcNow(now),
+    binding,
+    headSha: nextHead,
+    diffHash: diffHashFromBytes(canonicalPatch(checkout, baseSha, nextHead, spawn)),
+    intentHash: binding.intentHash,
+    pathsChanged,
+  };
+}
+
+/** Reviewer replacement (#2351): an already classified infrastructure-failure decision. */
+export function buildReplacementRequest(record, { decisionRef, now } = {}) {
+  return {
+    decisionRef: requireText(decisionRef, '--decision-ref', IDENTIFIER_PATTERN),
+    observedAt: utcNow(now),
+    binding: recordBinding(record),
   };
 }
 
@@ -315,6 +378,9 @@ const USAGE = `Usage:
   review-lineage-client.mjs binding --spec <spec.json>
   review-lineage-client.mjs create  --spec <spec.json> --out <record.json> [--dry-run]
   review-lineage-client.mjs cancel  --record <record.json> --decision-ref <ref> --detail <text> [--dry-run]
+  review-lineage-client.mjs correct --record <record.json> --generation-ref <ref> --head <sha> --repo <checkout> [--dry-run]
+  review-lineage-client.mjs replace-reviewer --record <record.json> --decision-ref <ref> [--dry-run]
+  review-lineage-client.mjs lane    --record <record.json>
 The edge secret is read from A2A_EDGE_SECRET only.`;
 
 /** Testable entry point: returns { exitCode, output } and never prints the secret. */
@@ -330,6 +396,9 @@ export async function run(argv, { env = process.env, fetchImpl = globalThis.fetc
         record: { type: 'string' },
         'decision-ref': { type: 'string' },
         detail: { type: 'string' },
+        'generation-ref': { type: 'string' },
+        head: { type: 'string' },
+        repo: { type: 'string' },
         'dry-run': { type: 'boolean', default: false },
       },
       strict: true,
@@ -385,7 +454,8 @@ export async function run(argv, { env = process.env, fetchImpl = globalThis.fetc
       if (result.ok) writeRecord(values.out, { ...record, state: 'created', createStatus: result.status });
       return {
         exitCode: result.ok ? 0 : 1,
-        output: { ok: result.ok, command, lineageId, resumed, ...result, binding: request.binding },
+        output: { ok: result.ok, command, lineageId, resumed, ...result, binding: request.binding,
+          lane: { lineageId, ...request.binding } },
       };
     }
     if (command === 'cancel') {
@@ -399,6 +469,87 @@ export async function run(argv, { env = process.env, fetchImpl = globalThis.fetc
       }
       const edge = edgeCredential(env);
       const url = `${brokerUrl}/review-lineages/${encodeURIComponent(record.lineageId)}/operator-cancel`;
+      const result = await postOperatorSource(fetchImpl, url, edge, requesterId, request);
+      return { exitCode: result.ok ? 0 : 1, output: { ok: result.ok, command, lineageId: record.lineageId, ...result } };
+    }
+    if (command === 'lane') {
+      if (!values.record) throw new ClientError('--record is required');
+      const record = readJsonFile(values.record, 'record');
+      return { exitCode: 0, output: { ok: true, command, reviewLineage: laneBinding(record) } };
+    }
+    if (command === 'correct') {
+      if (!values.record) throw new ClientError('--record is required');
+      const record = readJsonFile(values.record, 'record');
+      const brokerUrl = brokerUrlOf(record.brokerUrl);
+      const requesterId = requireText(record.requesterId, 'record.requesterId', IDENTIFIER_PATTERN);
+      // Like create: a retry of the same generation resends the persisted
+      // request so the broker answers `replayed`, never a changed payload.
+      const pending = record.pendingCorrection;
+      const resumed = isPlainObject(pending) && pending.generationRef === values['generation-ref'];
+      if (isPlainObject(pending) && !resumed) {
+        // A sent-but-unconfirmed generation may already have moved the
+        // lineage; building a new one from the stale binding would conflict.
+        throw new ClientError(`correction ${pending.generationRef} is still unconfirmed; rerun correct with --generation-ref ${pending.generationRef} first`);
+      }
+      const request = resumed
+        ? pending
+        : buildCorrectionRequest(record, {
+          generationRef: values['generation-ref'], headSha: values.head, repo: values.repo, now, spawn,
+        });
+      if (values['dry-run']) {
+        return { exitCode: 0, output: { ok: true, command, dryRun: true, lineageId: record.lineageId, request } };
+      }
+      const edge = edgeCredential(env);
+      if (!resumed) writeRecord(values.record, { ...record, pendingCorrection: request });
+      const url = `${brokerUrl}/review-lineages/${encodeURIComponent(record.lineageId)}/correction-generation`;
+      const result = await postOperatorSource(fetchImpl, url, edge, requesterId, request);
+      if (!result.ok) {
+        return { exitCode: 1, output: { ok: false, command, lineageId: record.lineageId, resumed, ...result } };
+      }
+      if (!result.state) {
+        // Without the resulting state we cannot tell whether the head moved;
+        // keep the pending request so a rerun replays it and decides.
+        return { exitCode: 1, output: { ok: false, command, lineageId: record.lineageId, resumed, ...result, error: 'broker did not report the resulting state; rerun to replay' } };
+      }
+      const { pendingCorrection: _done, ...rest } = record;
+      // Only an accepted generation moves the lineage to the next head. A
+      // scope or forbidden-path rejection is recorded by the broker but keeps
+      // correction_pending and the previous head, so the binding stays.
+      const accepted = result.state === 'reviewing_resolution';
+      const next = accepted
+        ? {
+          ...rest,
+          binding: { intentHash: request.intentHash, headSha: request.headSha, diffHash: request.diffHash },
+          corrections: [...(Array.isArray(rest.corrections) ? rest.corrections : []),
+            { generationRef: request.generationRef, headSha: request.headSha, diffHash: request.diffHash }],
+        }
+        : rest;
+      writeRecord(values.record, next);
+      return {
+        exitCode: accepted ? 0 : 1,
+        output: {
+          ok: accepted,
+          command,
+          lineageId: record.lineageId,
+          resumed,
+          ...result,
+          ...(accepted
+            ? { lane: laneBinding(next) }
+            : { error: `correction not accepted: lineage state is ${result.state ?? 'unknown'} (scope/forbidden path, out of state, or budget)` }),
+        },
+      };
+    }
+    if (command === 'replace-reviewer') {
+      if (!values.record) throw new ClientError('--record is required');
+      const record = readJsonFile(values.record, 'record');
+      const request = buildReplacementRequest(record, { decisionRef: values['decision-ref'], now });
+      const brokerUrl = brokerUrlOf(record.brokerUrl);
+      const requesterId = requireText(record.requesterId, 'record.requesterId', IDENTIFIER_PATTERN);
+      if (values['dry-run']) {
+        return { exitCode: 0, output: { ok: true, command, dryRun: true, lineageId: record.lineageId, request } };
+      }
+      const edge = edgeCredential(env);
+      const url = `${brokerUrl}/review-lineages/${encodeURIComponent(record.lineageId)}/reviewer-replacement`;
       const result = await postOperatorSource(fetchImpl, url, edge, requesterId, request);
       return { exitCode: result.ok ? 0 : 1, output: { ok: result.ok, command, lineageId: record.lineageId, ...result } };
     }
