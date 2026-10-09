@@ -576,6 +576,12 @@
       "class": "gate",
       "round": null,
       "note": "Timeout-cleanup no-live health check; directory was outside the coverage sweep and no gate ran it (#2257 B3)."
+    },
+    {
+      "file": "scripts/lib/review-lineage-client.test.mjs",
+      "class": "gate",
+      "round": null,
+      "note": "Review-lineage operator client (lineage_create + operator_cancel) against a stub and, when dist is built, the real record-mode broker (#2274)."
     }
   ]
 }
