@@ -236,6 +236,13 @@ export function buildCancelRequest(record, { decisionRef, detail, now } = {}) {
   };
 }
 
+/** The edge secret comes from A2A_EDGE_SECRET only; exit 3 when it is unset. */
+function edgeCredential(env) {
+  const value = env.A2A_EDGE_SECRET;
+  if (!value) throw new ClientError('A2A_EDGE_SECRET is not set; refusing to post', 3);
+  return value;
+}
+
 function operatorHeaders(secret, requesterId) {
   return {
     'content-type': 'application/json',
@@ -344,8 +351,7 @@ export async function run(argv, { env = process.env, fetchImpl = globalThis.fetc
       if (values['dry-run']) {
         return { exitCode: 0, output: { ok: true, command, dryRun: true, lineageId, request: built.request } };
       }
-      const secret = env.A2A_EDGE_SECRET;
-      if (!secret) throw new ClientError('A2A_EDGE_SECRET is not set; refusing to post', 3);
+      const edge = edgeCredential(env);
       // The request is persisted before it is sent. A retry after a timeout or
       // crash must resend the identical bytes so the broker answers `replayed`;
       // rebuilding it would stamp a new createdAt/observedAt and turn an
@@ -375,7 +381,7 @@ export async function run(argv, { env = process.env, fetchImpl = globalThis.fetc
         request,
       };
       if (!resumed) writeRecord(values.out, record);
-      const result = await postOperatorSource(fetchImpl, `${brokerUrl}/review-lineages`, secret, requesterId, request);
+      const result = await postOperatorSource(fetchImpl, `${brokerUrl}/review-lineages`, edge, requesterId, request);
       if (result.ok) writeRecord(values.out, { ...record, state: 'created', createStatus: result.status });
       return {
         exitCode: result.ok ? 0 : 1,
@@ -391,10 +397,9 @@ export async function run(argv, { env = process.env, fetchImpl = globalThis.fetc
       if (values['dry-run']) {
         return { exitCode: 0, output: { ok: true, command, dryRun: true, lineageId: record.lineageId, request } };
       }
-      const secret = env.A2A_EDGE_SECRET;
-      if (!secret) throw new ClientError('A2A_EDGE_SECRET is not set; refusing to post', 3);
+      const edge = edgeCredential(env);
       const url = `${brokerUrl}/review-lineages/${encodeURIComponent(record.lineageId)}/operator-cancel`;
-      const result = await postOperatorSource(fetchImpl, url, secret, requesterId, request);
+      const result = await postOperatorSource(fetchImpl, url, edge, requesterId, request);
       return { exitCode: result.ok ? 0 : 1, output: { ok: result.ok, command, lineageId: record.lineageId, ...result } };
     }
     throw new ClientError(`unknown command: ${command ?? '(none)'}`);
