@@ -357,9 +357,55 @@ from `A2A_EDGE_SECRET` only.
 Create plus cancel can only produce `canceled` terminals. That proves the
 recording path, but it is not scorecard evidence for `DEFAULT_LINEAGE_BUDGET`;
 convergence data needs the reviewer-signed `review-report` producer on the
-worker side, which is a later slice with its own worker rollout and key-scope
-approvals. Running the client against a live broker is an operator action on
-that broker and needs the usual approval.
+worker side (below). Running the client against a live broker is an operator
+action on that broker and needs the usual approval.
+
+#### Worker review-report producer (#2351)
+
+The review-report route accepts only a report signed by the reviewer: the
+verified signing-key owner must equal `receipt.reviewerNodeId`. Handlers never
+hold the worker key, so the worker process posts it. `A2ABrokerWorker` does so
+for a review lane whose task payload carries the dispatcher's binding:
+
+```json
+"payload": {
+  "review": { "required": true, "authorWorkerId": "<author>" },
+  "reviewLineage": { "lineageId": "<id>", "intentHash": "sha256:…", "headSha": "<40 hex>", "diffHash": "sha256:…" }
+}
+```
+
+Copy `lineageId` and `binding` from the record file that `create --out` wrote.
+After the handler returns and the completion gate has read the review verdict,
+and before the task is completed (or failed on that verdict), the worker posts
+`POST /review-lineages/{lineageId}/review-report`:
+
+- `reviewerNodeId` is the worker id. A handler verdict whose `nodeId` differs is
+  not reported.
+- The verdict and note come from the same review validation the completion gate
+  reads. Findings come only from an optional structured block
+  `result.output.reviewLineage = { newFindings, resolvedFindingIds,
+  reopenedFindingIds }`. Each new finding is `{ criterionRef, evidenceRefs
+  (1+), severity, category, blocking, justification? }`. The worker assigns
+  deterministic `F-<n>` ids and computes the canonical signature.
+  Style/preference/design findings are sent as non-blocking.
+- A `pass` without the block is a complete report. A `fail` without a valid block
+  is not reported, so free-text `output.findings` never become ledger entries.
+- `reportRef` is `task:<taskId>`. A transport retry resends the same request and
+  gets `replayed`. A later re-run of the task is rejected as a changed payload,
+  and the first report stands.
+
+The report is observational. A skip, a broker rejection (off mode, missing
+`review-lineage.report` scope, stale binding) or a transport failure never
+changes task completion. Each outcome is logged as one body-free JSON line with
+`"event":"review_lineage_report"` and an `outcome` of `reported`, `skipped`,
+`rejected` or `failed`. Set `A2A_REVIEW_LINEAGE_REPORT_PRODUCER=false` to turn
+the producer off.
+
+Live use needs separate approval for each of: worker rollout/restart, adding
+`review-lineage.report` to the key's scopes (keys that declare scopes need it),
+and dispatching lineage-bound lanes to a `record` broker. Handlers emit the
+structured block only once their prompt asks for it. That is a handler-side
+change outside this package.
 
 ### Lossless review-lineage observation contract (#1518 Phase 8)
 

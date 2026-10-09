@@ -27,6 +27,7 @@ import {
   toTaskError,
 } from "./external-handler.js";
 import { signA2AWorkerRequest, workerPrivateKeyPem } from "./worker-http-signature.js";
+import { planReviewReport } from "./review-report-producer.js";
 import type { FetchLike } from "../worker.js";
 import type { BrokerWorkerConfig } from "../worker.js";
 import type {
@@ -80,6 +81,9 @@ export class BrokerApiError extends Error {
     this.name = "BrokerApiError";
   }
 }
+
+/** #2351: the lineage report must not hold up task completion for long. */
+const REVIEW_LINEAGE_REPORT_TIMEOUT_MS = 15_000;
 
 /** Ceiling for the jittered reconnect backoff (#1405). */
 export const MAX_RECONNECT_DELAY_MS = 30_000;
@@ -534,6 +538,12 @@ export class A2ABrokerWorker {
       }
 
       const completionEvidenceError = validateTaskCompletionEvidence(runningTask, outcome.result);
+      // #2351: a reviewer verdict on a lineage-bound lane is reported to the
+      // lineage before the task is completed or failed on that verdict. The
+      // report is observational: its outcome never changes what follows.
+      if (!completionEvidenceError || completionEvidenceError.code === "review_verdict_failed") {
+        await this.submitReviewLineageReport(runningTask, outcome.result);
+      }
       if (completionEvidenceError) {
         this.activeTaskId = null;
         // #1815 item 5: on a failed review verdict, submit the held result
@@ -564,6 +574,56 @@ export class A2ABrokerWorker {
       return true;
     } finally {
       this.activeTaskId = null;
+    }
+  }
+
+  /**
+   * #2351: signed review-report for a lineage-bound review lane. Never throws:
+   * a skip, a broker rejection, or a transport failure is logged as one
+   * body-free JSON line and the task proceeds exactly as before.
+   */
+  private async submitReviewLineageReport(task: TaskRecord, result: TaskResult | undefined): Promise<void> {
+    if (this.config.reviewLineageReports === false) return;
+    let plan;
+    try {
+      plan = planReviewReport({ task, result, workerId: this.workerId });
+    } catch (error) {
+      plan = { kind: "skip" as const, reason: "plan_error", detail: error instanceof Error ? error.name : "error" };
+    }
+    if (plan.kind === "none") return;
+    const base = { event: "review_lineage_report", workerId: this.workerId, taskId: task.id, lineageId: plan.lineageId ?? null };
+    if (plan.kind === "skip") {
+      console.warn(JSON.stringify({ ...base, outcome: "skipped", reason: plan.reason, ...(plan.detail ? { detail: plan.detail } : {}) }));
+      return;
+    }
+    const path = `/review-lineages/${encodeURIComponent(plan.lineageId)}/review-report`;
+    // One retry on a transport failure resends the identical request, which
+    // the broker answers as a replay if the first attempt landed.
+    for (let attempt = 1; attempt <= 2; attempt += 1) {
+      try {
+        const response = await this.requestJson<{ result?: { status?: string; state?: string } }>(path, {
+          method: "POST",
+          body: plan.request,
+          timeoutMs: REVIEW_LINEAGE_REPORT_TIMEOUT_MS,
+        });
+        console.log(JSON.stringify({
+          ...base,
+          outcome: "reported",
+          status: response?.result?.status ?? null,
+          state: response?.result?.state ?? null,
+          verdict: plan.request.receipt.verdict,
+          newFindings: plan.request.newFindings.length,
+        }));
+        return;
+      } catch (error) {
+        if (error instanceof BrokerApiError) {
+          console.warn(JSON.stringify({ ...base, outcome: "rejected", httpStatus: error.status, code: error.code }));
+          return;
+        }
+        if (attempt === 2) {
+          console.warn(JSON.stringify({ ...base, outcome: "failed", error: error instanceof Error ? error.name : "error" }));
+        }
+      }
     }
   }
 
