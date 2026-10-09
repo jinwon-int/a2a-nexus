@@ -484,6 +484,32 @@ replacement loop. `5/5` is source attachment, not live activation or issue
 closeout, and no finalizer, CodeQL, reviewer-independence, required-check, or
 approval gate is weakened.
 
+## Phase 19: First caller — operator client (#2274)
+
+Phases 14–18 attached the routes but no caller, so a `record` broker stayed at
+`count: 0` while real loops ran outside it (#2274, 2026-10-06 read). The loop
+owner must report facts explicitly; the broker still derives nothing from task
+terminal state.
+
+- [x] `scripts/lib/review-lineage-client.mjs` `binding` / `create` / `cancel` for
+      the two operator-owned sources, role fixed to `operator`, edge secret
+      from `A2A_EDGE_SECRET` only, owner-only record file without the secret.
+- [x] `intentHash` from the Phase-1 reference primitives; `diffHash` over the
+      exact canonical `git diff` bytes with system/global git config
+      neutralized; `DEFAULT_BUDGET` pinned to `DEFAULT_LINEAGE_BUDGET` by test.
+- [x] A replay counts as success only when its original outcome was `applied`.
+- [x] Validated against the real broker in `record` mode on temporary SQLite:
+      create 201 → identical replay 200 → changed payload rejected → cancel
+      201 → state `canceled`; `off` mode refuses.
+- [ ] Reviewer-side `review-report` producer in the worker (Ed25519 issuer =
+      reviewer; `FindingV1` output; worker rollout and key-scope approvals).
+      Until it exists, create + cancel yields only `canceled` terminals, which
+      do not count toward the Phase 7 convergence evidence.
+- [ ] Operator `correction-generation` / `reviewer-replacement` commands in the
+      same client.
+- [ ] Live use against a `record` broker as part of real review rounds
+      (operator action; separate approval).
+
 ## Validation commands (all phases as applicable)
 
 ```bash
