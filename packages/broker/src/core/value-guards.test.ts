@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import { createHash } from "node:crypto";
 import test from "node:test";
 
-import { isRecord, stableStringify } from "./value-guards.js";
+import { approvalNotExpired, approvedAtValid, coversAll, isRecord, stableId, stableStringify } from "./value-guards.js";
 
 // ---------------------------------------------------------------------------
 // #2047 — canonical-form pin for the shared `stableStringify`.
@@ -135,4 +135,42 @@ test("isRecord narrows plain objects only", () => {
   assert.equal(isRecord("a"), false);
   assert.equal(isRecord(1), false);
   assert.equal(isRecord(() => 0), false);
+});
+
+test("stableId is sha256(stableStringify) truncated to 24 hex under the prefix (#2350 A7)", () => {
+  const value = { b: [1, undefined], a: "x" };
+  const expected = `oi-${createHash("sha256").update(stableStringify(value)).digest("hex").slice(0, 24)}`;
+  assert.equal(stableId("oi", value), expected);
+  assert.match(stableId("p", value), /^p-[0-9a-f]{24}$/);
+  // key order must not matter; value changes must.
+  assert.equal(stableId("oi", { a: "x", b: [1, undefined] }), expected);
+  assert.notEqual(stableId("oi", { a: "y", b: [1, undefined] }), expected);
+  // pinned vector: moving the helper must not move any already-emitted id.
+  assert.equal(stableId("oi", { a: 1 }), "oi-015abd7f5cc57a2dd94b7590");
+});
+
+test("approvedAtValid / approvalNotExpired fail closed on unparseable input (#2350 A7)", () => {
+  const generatedAt = "2026-10-10T10:00:00.000Z";
+  assert.equal(approvedAtValid("2026-10-10T09:59:59.000Z", generatedAt), true);
+  assert.equal(approvedAtValid(generatedAt, generatedAt), true);
+  assert.equal(approvedAtValid("2026-10-10T10:00:01.000Z", generatedAt), false);
+  assert.equal(approvedAtValid(undefined, generatedAt), false);
+  assert.equal(approvedAtValid("not-a-date", generatedAt), false);
+  assert.equal(approvedAtValid("2026-10-10T09:00:00.000Z", "not-a-date"), false);
+
+  assert.equal(approvalNotExpired(undefined, generatedAt), true);
+  assert.equal(approvalNotExpired("", generatedAt), true);
+  assert.equal(approvalNotExpired("2026-10-10T10:00:01.000Z", generatedAt), true);
+  assert.equal(approvalNotExpired(generatedAt, generatedAt), false);
+  assert.equal(approvalNotExpired("2026-10-10T09:00:00.000Z", generatedAt), false);
+  assert.equal(approvalNotExpired("not-a-date", generatedAt), false);
+});
+
+test("coversAll requires every entry, trims supplied, and never covers from empty (#2350 A7)", () => {
+  assert.equal(coversAll(["a", "b"], ["b", " a "]), true);
+  assert.equal(coversAll(["a", "b"], ["a"]), false);
+  assert.equal(coversAll(["a"], []), false);
+  assert.equal(coversAll(["a"], undefined), false);
+  assert.equal(coversAll([], ["x"]), true);
+  assert.equal(coversAll([], []), false);
 });

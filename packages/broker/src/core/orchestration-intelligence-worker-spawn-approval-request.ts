@@ -1,11 +1,9 @@
-import { createHash } from "node:crypto";
-
 import {
   buildOIBrokerDispatchApprovalDecisionEvidencePacket,
   type OIBrokerDispatchApprovalDecisionEvidencePacket,
 } from "./orchestration-intelligence-broker-dispatch-approval-decision-evidence.js";
 import type { OIRuntimeReadinessEvidence } from "./orchestration-intelligence-runtime-readiness-gate.js";
-import { stableStringify } from "./value-guards.js";
+import { stableId } from "./value-guards.js";
 
 export type OIWorkerSpawnApprovalRequestState =
   | "worker_spawn_approval_request_ready"
@@ -513,6 +511,3 @@ function spawnApprovalRequestFor(
   };
 }
 
-function stableId(prefix: string, value: unknown): string {
-  return `${prefix}-${createHash("sha256").update(stableStringify(value)).digest("hex").slice(0, 24)}`;
-}

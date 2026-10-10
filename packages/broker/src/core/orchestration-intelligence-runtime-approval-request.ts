@@ -1,11 +1,9 @@
-import { createHash } from "node:crypto";
-
 import {
   buildOIRuntimeDesignReviewPacket,
   type OIRuntimeDesignReviewPacket,
 } from "./orchestration-intelligence-runtime-design-review.js";
 import type { OIRuntimeReadinessEvidence } from "./orchestration-intelligence-runtime-readiness-gate.js";
-import { stableStringify } from "./value-guards.js";
+import { stableId } from "./value-guards.js";
 
 export type OIRuntimeApprovalRequestState =
   | "approval_request_ready"
@@ -379,6 +377,3 @@ function requiredPhraseReady(phrase: string | undefined): boolean {
     && normalized.length >= 32;
 }
 
-function stableId(prefix: string, value: unknown): string {
-  return `${prefix}-${createHash("sha256").update(stableStringify(value)).digest("hex").slice(0, 24)}`;
-}
