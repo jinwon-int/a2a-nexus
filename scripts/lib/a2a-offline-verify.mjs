@@ -7,8 +7,15 @@
  * with only node:crypto, so a third party verifies attestations without the
  * broker or this monorepo's runtime. Both offline verifiers import from here so
  * they can never drift onto divergent crypto paths.
+ *
+ * Also hosts the shared bundle-verifier helpers (check list pass/fail, shape
+ * guards, JCS hashing, public-safety markers, CLI tail) that the source-only
+ * proof verifiers under scripts/ and scripts/lib/ previously each carried as
+ * byte-identical private copies (#2350 PR-3). Still node built-ins only.
  */
 import { createHash, createPublicKey, verify as cryptoVerify } from "node:crypto";
+import fs from "node:fs";
+import { parseArgs } from "node:util";
 
 /** RFC 8785 (JCS) — mirrors agent-card-signing.ts canonicalizeJson. */
 export function canonicalizeJson(value) {
@@ -121,4 +128,169 @@ export function kidOf(signatureEntry) {
   } catch {
     return null;
   }
+}
+
+// ---------------------------------------------------------------------------
+// Shared bundle-verifier helpers.
+// ---------------------------------------------------------------------------
+
+const HASH_RE = /^sha256:[a-f0-9]{64}$/;
+
+/** Append a passing check `{ id, ok: true }` to `checks`. */
+export function pass(checks, id) {
+  checks.push({ id, ok: true });
+}
+
+/** Append a failing check `{ id, ok: false, detail }` to `checks`. */
+export function fail(checks, id, detail) {
+  checks.push({ id, ok: false, detail });
+}
+
+export function isPlainObject(value) {
+  return value != null && typeof value === "object" && !Array.isArray(value);
+}
+
+/** True for a `sha256:<64 lowercase hex>` string. */
+export function isSha256(value) {
+  return typeof value === "string" && HASH_RE.test(value);
+}
+
+/** `sha256:` hash of the RFC 8785 canonical form of `value`. */
+export function hashObject(value) {
+  return sha256Prefix(canonicalizeJson(value));
+}
+
+/** JCS-equality of two values; false (never throws) when either cannot be canonicalized. */
+export function sameJcs(a, b) {
+  try {
+    return canonicalizeJson(a) === canonicalizeJson(b);
+  } catch {
+    return false;
+  }
+}
+
+/** Substrings that indicate private runtime paths/files leaked into a public-safe bundle. */
+export const FORBIDDEN_RUNTIME_STRINGS = [
+  "/root/",
+  "/home/",
+  "/Users/",
+  ".openclaw/",
+  "AGENTS.md",
+  "SOUL.md",
+  "USER.md",
+  "TOOLS.md",
+  "HEARTBEAT.md",
+  "IDENTITY.md",
+];
+
+/** Secret-like token/key patterns that must never appear in a public-safe bundle. */
+export const SECRET_LIKE_PATTERNS = [
+  /ghp_[A-Za-z0-9_]{20,}/,
+  /github_pat_[A-Za-z0-9_]+/,
+  /sk_live_[A-Za-z0-9]+/,
+  /rk_live_[A-Za-z0-9]+/,
+  /pk_live_[A-Za-z0-9]+/,
+  /xox[baprs]-[A-Za-z0-9-]+/,
+  /A2A_EDGE_SECRET=/,
+  /EDGE_SECRET=/,
+  /-----BEGIN (?:RSA |OPENSSH |EC |DSA )?PRIVATE KEY-----/,
+];
+
+/**
+ * Walk `value` and collect public-safety findings `{ id, marker, path }`:
+ * `private-runtime-marker` / `secret-like-string` for string leaves, and
+ * `telegram-id-field` / `provider-id-field` for populated object keys.
+ *
+ * `rawFieldMarkers` + `rawFieldFindingId` add an optional per-caller key check
+ * (the verifiers have historically used different marker sets and finding ids,
+ * so these are NOT defaulted — each caller passes exactly its own).
+ */
+export function unsafeStringFindings(value, {
+  trail = [],
+  forbiddenStrings = FORBIDDEN_RUNTIME_STRINGS,
+  secretPatterns = SECRET_LIKE_PATTERNS,
+  rawFieldMarkers = [],
+  rawFieldFindingId,
+} = {}) {
+  const findings = [];
+  const visit = (node, pathParts) => {
+    if (typeof node === "string") {
+      for (const marker of forbiddenStrings) {
+        if (node.includes(marker)) findings.push({ id: "private-runtime-marker", marker, path: pathParts.join(".") });
+      }
+      for (const pattern of secretPatterns) {
+        if (pattern.test(node)) findings.push({ id: "secret-like-string", marker: String(pattern), path: pathParts.join(".") });
+      }
+    } else if (Array.isArray(node)) {
+      node.forEach((item, index) => visit(item, [...pathParts, String(index)]));
+    } else if (node && typeof node === "object") {
+      for (const [key, item] of Object.entries(node)) {
+        const lower = key.toLowerCase();
+        if (item !== false && item !== null && item !== undefined) {
+          if (lower.includes("telegram") && lower.includes("id")) {
+            findings.push({ id: "telegram-id-field", marker: key, path: [...pathParts, key].join(".") });
+          }
+          if (lower.includes("provider") && lower.includes("id")) {
+            findings.push({ id: "provider-id-field", marker: key, path: [...pathParts, key].join(".") });
+          }
+          if (rawFieldMarkers.length > 0 && rawFieldMarkers.some((marker) => lower.includes(marker))) {
+            findings.push({ id: rawFieldFindingId, marker: key, path: [...pathParts, key].join(".") });
+          }
+        }
+        visit(item, [...pathParts, key]);
+      }
+    }
+  };
+  visit(value, trail);
+  return findings;
+}
+
+/**
+ * Shared CLI tail for the offline bundle verifiers:
+ * `<script> <input.json> --keyring <keyring.json> [--now ISO] [--json]`.
+ *
+ * Returns the process exit code: 2 on usage/read errors (message on stderr),
+ * otherwise 0 when `result.green` and 1 when not. `--json` prints the raw
+ * result; the text mode prints one `PASS`/`FAIL` line per check followed by
+ * a blank line and `summary(result)`.
+ */
+export function runVerifierCli(argv, { usage, inputLabel, verify, summary }) {
+  const { values, positionals } = parseArgs({
+    args: argv,
+    allowPositionals: true,
+    options: {
+      keyring: { type: "string" },
+      json: { type: "boolean", default: false },
+      now: { type: "string" },
+    },
+  });
+  const inputPath = positionals[0];
+  if (!inputPath || !values.keyring) {
+    process.stderr.write(`${usage}\n`);
+    return 2;
+  }
+  let input;
+  let keyring;
+  try {
+    input = JSON.parse(fs.readFileSync(inputPath, "utf8"));
+  } catch (err) {
+    process.stderr.write(`cannot read ${inputLabel}: ${err.message}\n`);
+    return 2;
+  }
+  try {
+    keyring = JSON.parse(fs.readFileSync(values.keyring, "utf8"));
+  } catch (err) {
+    process.stderr.write(`cannot read keyring: ${err.message}\n`);
+    return 2;
+  }
+  const result = verify(input, keyring, { now: values.now });
+  if (values.json) {
+    process.stdout.write(`${JSON.stringify(result, null, 2)}\n`);
+  } else {
+    for (const check of result.checks) {
+      process.stdout.write(`${check.ok ? "PASS" : "FAIL"}  ${check.id}${check.detail ? ` — ${check.detail}` : ""}\n`);
+    }
+    process.stdout.write(`\n${summary(result)}\n`);
+  }
+  return result.green ? 0 : 1;
 }

@@ -6,9 +6,17 @@
  * GO_CANDIDATE, NO_GO, or NEEDS_OPERATOR_APPROVAL. It never performs approval,
  * release, visibility, provider-send, deploy, restart, terminal ACK, or DB work.
  */
-import fs from 'node:fs';
-import path from 'node:path';
 import { parseArgs } from 'node:util';
+import {
+  RUNTIME_BOOTSTRAP_DENY_PATHS,
+  collectSpecHeadFailures,
+  evidenceEntries,
+  findUnredactedEvidence,
+  hasEvidence,
+  runGateCli,
+  unredactedEvidenceRules as baseUnredactedEvidenceRules,
+  unredactedReason,
+} from './lib/source-public-gate-kit.mjs';
 
 const { values } = parseArgs({
   options: {
@@ -20,41 +28,14 @@ const { values } = parseArgs({
 
 const decisionStates = new Set(['GO_CANDIDATE', 'NO_GO', 'NEEDS_OPERATOR_APPROVAL']);
 
+/** Shared rules plus the team2-only OpenClaw cache-boundary marker. */
 const unredactedEvidenceRules = [
-  {
-    kind: 'secret-assignment',
-    re: /\b[A-Z0-9_]*(?:TOKEN|SECRET|PASSWORD|API[_-]?KEY)[A-Z0-9_]*\s*=\s*['"]?(?!<|\$\{|YOUR_|redacted|REDACTED)[^'"\s#]{12,}/i,
-  },
-  { kind: 'github-token-shape', re: /\b(?:ghp|github_pat)_[A-Za-z0-9_]{20,}\b/ },
-  { kind: 'aws-access-key-shape', re: /\bAKIA[0-9A-Z]{16}\b/ },
-  { kind: 'absolute-private-path', re: /\/(?:home|Users)\/[^\s'")`]+|\/root\/private\/[^\s'")`]+/ },
-  { kind: 'raw-session-dump', re: /(?:^|\n)\s*(?:system|developer|assistant|user|tool)\s*<\|/i },
+  ...baseUnredactedEvidenceRules,
   { kind: 'openclaw-cache-boundary', re: /OPENCLAW_CACHE_BOUNDARY/ },
 ];
 
-function readJson(file) {
-  try {
-    return JSON.parse(fs.readFileSync(file, 'utf8'));
-  } catch (error) {
-    throw new Error(`cannot read JSON ${file}: ${error.message}`);
-  }
-}
-
 function asStatus(value) {
   return String(value || 'MISSING').trim().toUpperCase().replace(/-/g, '_');
-}
-
-function hasEvidence(gate) {
-  return Array.isArray(gate?.evidence) && gate.evidence.some((entry) => typeof entry === 'string' && entry.trim());
-}
-
-function evidenceEntries(gates) {
-  return Object.entries(gates || {}).flatMap(([gateId, gate]) => {
-    if (!Array.isArray(gate?.evidence)) return [];
-    return gate.evidence
-      .filter((entry) => typeof entry === 'string' && entry.trim())
-      .map((entry) => ({ gateId, entry }));
-  });
 }
 
 function denyPathMatcher(denyPath) {
@@ -86,9 +67,7 @@ function findDenyPathReferences(spec, input, gates) {
 }
 
 function validateSpec(spec) {
-  const failures = [];
-  if (spec.failClosed !== true) failures.push('spec.failClosed must be true');
-  if (spec.defaultDecision !== 'NO_GO') failures.push('spec.defaultDecision must be NO_GO');
+  const failures = collectSpecHeadFailures(spec, { defaultDecision: 'NO_GO' });
   for (const state of ['GO_CANDIDATE', 'NO_GO', 'NEEDS_OPERATOR_APPROVAL']) {
     if (!Array.isArray(spec.decisionStates) || !spec.decisionStates.includes(state)) {
       failures.push(`spec.decisionStates missing ${state}`);
@@ -108,7 +87,7 @@ function validateSpec(spec) {
   }
 
   if (!gates.has(spec.operatorApprovalGate)) failures.push('operatorApproval gate must be present but not required for rehearsal validity');
-  for (const requiredPath of ['AGENTS.md', 'SOUL.md', 'USER.md', 'TOOLS.md', 'HEARTBEAT.md', 'IDENTITY.md', '.openclaw/**']) {
+  for (const requiredPath of RUNTIME_BOOTSTRAP_DENY_PATHS) {
     if (!spec.runtimeBootstrapDenyPaths?.includes(requiredPath)) {
       failures.push(`runtimeBootstrapDenyPaths missing ${requiredPath}`);
     }
@@ -201,10 +180,8 @@ function validateInput(spec, input) {
     }
   }
 
-  for (const { gateId, entry } of evidenceEntries(gates)) {
-    for (const rule of unredactedEvidenceRules) {
-      if (rule.re.test(entry)) blockers.push({ gate: gateId, status: asStatus(gates[gateId]?.status), reason: `evidence is not redacted (${rule.kind})` });
-    }
+  for (const { gateId, kind } of findUnredactedEvidence(gates, unredactedEvidenceRules)) {
+    blockers.push({ gate: gateId, status: asStatus(gates[gateId]?.status), reason: unredactedReason(kind) });
   }
 
   const offendingPaths = findDenyPathReferences(spec, input, gates);
@@ -327,35 +304,18 @@ export function renderApprovalRehearsalMarkdown(report) {
   return lines.join('\n');
 }
 
-try {
-  const spec = readJson(path.resolve(values.spec));
-  const specFailures = validateSpec(spec);
-  if (specFailures.length) {
-    console.error(JSON.stringify({ ok: false, phase: 'spec', failures: specFailures }, null, 2));
-    process.exit(1);
-  }
-
-  if (!values.input) {
-    console.log(JSON.stringify({
-      ok: true,
-      phase: 'spec',
-      decision: spec.defaultDecision,
-      sourcePublicExecution: 'NO_GO',
-      approvalExecution: 'NOT_PERFORMED',
-      decisionStates: [...decisionStates],
-      requiredRehearsalGates: spec.requiredRehearsalGates,
-    }, null, 2));
-    process.exit(0);
-  }
-
-  const report = buildApprovalRehearsalReport(spec, readJson(path.resolve(values.input)));
-  if (values.format === 'markdown') {
-    (report.ok ? console.log : console.error)(renderApprovalRehearsalMarkdown(report));
-  } else {
-    (report.ok ? console.log : console.error)(JSON.stringify(report, null, 2));
-  }
-  process.exit(report.ok ? 0 : 1);
-} catch (error) {
-  console.error(JSON.stringify({ ok: false, error: error.message }, null, 2));
-  process.exit(1);
-}
+runGateCli({
+  values,
+  validateSpec,
+  specOnlyPayload: (spec) => ({
+    ok: true,
+    phase: 'spec',
+    decision: spec.defaultDecision,
+    sourcePublicExecution: 'NO_GO',
+    approvalExecution: 'NOT_PERFORMED',
+    decisionStates: [...decisionStates],
+    requiredRehearsalGates: spec.requiredRehearsalGates,
+  }),
+  buildReport: buildApprovalRehearsalReport,
+  renderMarkdown: renderApprovalRehearsalMarkdown,
+});

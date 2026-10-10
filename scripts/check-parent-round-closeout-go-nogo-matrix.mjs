@@ -10,9 +10,16 @@
  * changes, live provider sends, deploys, restarts, DB mutations, terminal ACKs,
  * or production closeout.
  */
-import fs from 'node:fs';
 import path from 'node:path';
 import { parseArgs } from 'node:util';
+import {
+  BASE_FORBIDDEN_LIVE_FLAGS,
+  RUNTIME_BOOTSTRAP_DENY_PATHS,
+  collectForbiddenLiveFlagFailures,
+  collectSpecHeadFailures,
+  readJson,
+  runGateCli,
+} from './lib/source-public-gate-kit.mjs';
 
 const { values } = parseArgs({
   options: {
@@ -23,28 +30,23 @@ const { values } = parseArgs({
   },
 });
 
-function readJson(file) {
-  try {
-    return JSON.parse(fs.readFileSync(file, 'utf8'));
-  } catch (error) {
-    throw new Error(`cannot read JSON ${file}: ${error.message}`);
-  }
-}
+/** Closeout-specific live flags on top of the shared base list (order preserved). */
+const forbiddenLiveFlags = [
+  ...BASE_FORBIDDEN_LIVE_FLAGS,
+  'parentIssueClose', 'credentialMovement', 'secretDisclosure',
+  'historicalOutboxReplay', 'releaseTagPublish',
+  'closeoutIssueClose', 'closeoutPrMerge', 'manualTerminalBriefAck',
+  'historicalOutboxAckReplay',
+];
 
 /**
  * Validate the schema itself is structurally sound.
  */
 function validateSpec(spec) {
-  const failures = [];
-  if (spec.failClosed !== true) failures.push('spec.failClosed must be true');
-  if (!spec.decisionOutputs || !Array.isArray(spec.decisionOutputs)) {
-    failures.push('spec.decisionOutputs must be an array');
-  } else {
-    for (const output of ['GO', 'NO_GO', 'BLOCKED']) {
-      if (!spec.decisionOutputs.includes(output)) failures.push(`spec.decisionOutputs missing ${output}`);
-    }
-  }
-  if (spec.defaultDecision !== 'NO_GO') failures.push('spec.defaultDecision must be NO_GO');
+  const failures = collectSpecHeadFailures(spec, {
+    decisionOutputs: ['GO', 'NO_GO', 'BLOCKED'],
+    defaultDecision: 'NO_GO',
+  });
   if (spec.sourcePublicExecution !== 'NO_GO') failures.push('spec.sourcePublicExecution must be NO_GO');
   if (!spec.allowedModes || !spec.allowedModes.includes('comment_only')) {
     failures.push('spec.allowedModes must include comment_only');
@@ -67,23 +69,11 @@ function validateSpec(spec) {
   }
 
   const denyPaths = new Set(spec.runtimeBootstrapDenyPaths || []);
-  for (const requiredPath of ['AGENTS.md', 'SOUL.md', 'USER.md', 'TOOLS.md', 'HEARTBEAT.md', 'IDENTITY.md', '.openclaw/**']) {
+  for (const requiredPath of RUNTIME_BOOTSTRAP_DENY_PATHS) {
     if (!denyPaths.has(requiredPath)) failures.push(`runtimeBootstrapDenyPaths missing ${requiredPath}`);
   }
 
-  const forbidden = new Set(spec.forbiddenLiveFlags || []);
-  for (const flag of [
-    'approvalExecution', 'releasePublication', 'repositoryVisibilityChange',
-    'productionDeploy', 'gatewayRestart', 'brokerRestart', 'workerRestart',
-    'terminalAck', 'liveProviderSend', 'productionDbMutation', 'forcePush',
-    'communityPost', 'automaticMerge', 'automaticApproval',
-    'parentIssueClose', 'credentialMovement', 'secretDisclosure',
-    'historicalOutboxReplay', 'releaseTagPublish',
-    'closeoutIssueClose', 'closeoutPrMerge', 'manualTerminalBriefAck',
-    'historicalOutboxAckReplay',
-  ]) {
-    if (!forbidden.has(flag)) failures.push(`forbiddenLiveFlags missing ${flag}`);
-  }
+  failures.push(...collectForbiddenLiveFlagFailures(spec, forbiddenLiveFlags));
 
   return failures;
 }
@@ -354,30 +344,12 @@ function verifyScenarioResult(scenarioName, expected, actual) {
   return failures;
 }
 
-try {
-  const specPath = path.resolve(values.spec);
-  const spec = readJson(specPath);
-  const specFailures = validateSpec(spec);
-  if (specFailures.length) {
-    console.error(JSON.stringify({ ok: false, phase: 'spec', failures: specFailures }, null, 2));
-    process.exit(1);
-  }
-
-  if (!values.fixture) {
-    // Schema-only validation, no fixture provided
-    console.log(JSON.stringify({
-      ok: true,
-      phase: 'spec',
-      decision: spec.defaultDecision,
-      decisionOutputs: spec.decisionOutputs,
-      sourcePublicExecution: spec.sourcePublicExecution,
-      gateCount: spec.gates.length,
-      requiredGates: spec.goDecisionRequires,
-    }, null, 2));
-    process.exit(0);
-  }
-
-  const fixturePath = path.resolve(values.fixture);
+/**
+ * Fixture validation body (runs after the shared spec load/validate/spec-only tail).
+ * Always prints to stdout; exit code reflects whether every scenario passed.
+ */
+function runFixtureValidation({ spec, specPath, values: opts }) {
+  const fixturePath = path.resolve(opts.fixture);
   const fixture = readJson(fixturePath);
 
   // Validate fixture structure
@@ -437,7 +409,7 @@ try {
     sourcePublicExecution: spec.sourcePublicExecution,
   };
 
-  if (values.format === 'markdown') {
+  if (opts.format === 'markdown') {
     const lines = [
       '# Parent-Round Closeout Go/No-Go Matrix Validation Report',
       '',
@@ -489,7 +461,21 @@ try {
   }
 
   process.exit(report.ok ? 0 : 1);
-} catch (error) {
-  console.error(JSON.stringify({ ok: false, error: error.message }, null, 2));
-  process.exit(1);
 }
+
+runGateCli({
+  values,
+  validateSpec,
+  hasInput: (opts) => Boolean(opts.fixture),
+  // Schema-only validation, no fixture provided
+  specOnlyPayload: (spec) => ({
+    ok: true,
+    phase: 'spec',
+    decision: spec.defaultDecision,
+    decisionOutputs: spec.decisionOutputs,
+    sourcePublicExecution: spec.sourcePublicExecution,
+    gateCount: spec.gates.length,
+    requiredGates: spec.goDecisionRequires,
+  }),
+  run: runFixtureValidation,
+});

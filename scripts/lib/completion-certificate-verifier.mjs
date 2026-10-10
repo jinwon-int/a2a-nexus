@@ -11,7 +11,7 @@
  * move secrets/keys, or ACK/replay Terminal Brief records.
  */
 
-import { canonicalizeJson, kidOf, verifyJwsSignature } from './a2a-offline-verify.mjs';
+import { canonicalizeJson, fail, isPlainObject, isSha256, kidOf, pass, verifyJwsSignature } from './a2a-offline-verify.mjs';
 
 export const COMPLETION_CERTIFICATE_SCHEMA = 'a2a.completion.certificate.v0';
 export const COMPLETION_CONDITIONS_SCHEMA = 'a2a.completion.conditions.v0';
@@ -30,24 +30,6 @@ export const REQUIRED_DOES_NOT_PROVE = [
   'legal-settlement',
   'analytical-correctness',
 ];
-
-const HASH_RE = /^sha256:[a-f0-9]{64}$/;
-
-function fail(checks, id, detail) {
-  checks.push({ id, ok: false, detail });
-}
-
-function pass(checks, id) {
-  checks.push({ id, ok: true });
-}
-
-function isPlainObject(value) {
-  return value != null && typeof value === 'object' && !Array.isArray(value);
-}
-
-function isSha256(value) {
-  return typeof value === 'string' && HASH_RE.test(value);
-}
 
 function hasArtifactBinding(subject = {}) {
   if (isSha256(subject.resultHash)) return true;
