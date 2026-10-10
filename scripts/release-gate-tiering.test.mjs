@@ -267,7 +267,9 @@ test('script surface manifest validates current root and broker package scripts'
   // #2257 B6: root 81→79 — check:team1-dispatch-guard and
   // check:a2a-nexus-842-... were single-test aliases for tests the
   // release-gate manifest already runs; mirrored in BUDGETS.rootNpmScripts.
-  assert.equal(byId.get('root')?.scriptCount, 79);
+  // #2350 D: root 79→58 — 21 `node --test` wrapper aliases retired; their
+  // test files run from the release-gate step inventory, so coverage is unchanged.
+  assert.equal(byId.get('root')?.scriptCount, 58);
   assert.equal(byId.get('broker')?.scriptCount, 57);
   assert.ok((byId.get('root')?.kindCounts['required-gate'] ?? 0) >= 7);
   assert.ok((byId.get('broker')?.kindCounts['required-gate'] ?? 0) >= 7);
