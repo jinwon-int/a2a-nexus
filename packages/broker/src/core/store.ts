@@ -1692,184 +1692,99 @@ export class SqliteBrokerStateStore implements BrokerStateStore {
     );
   }
 
+  /**
+   * The ten hot entity tables as the save path sees them (#2350 B3): which
+   * save-hint key feeds each, which snapshot array mirrors it, how to read a
+   * row's primary key, and the typed upsert. One list lets the incremental
+   * write, the full write and the hint-only write share a loop instead of
+   * carrying three hand-copied per-table sequences. Lane order is the former
+   * retention order; `broker_audit_events` keeps its heartbeat special case and
+   * `broker_terminal_outbox` is always pruned to the snapshot (never cleared),
+   * exactly as before.
+   */
+  private readonly hotEntityLanes: readonly HotEntityLane[] = [
+    hotEntityLane<A2AExchangeState>({ table: "broker_exchanges", hint: (h) => h?.hotExchanges, rows: (s) => s.exchanges, id: (r) => r.id, upsert: (rows) => this.upsertHotExchangesUnsafe(rows) }),
+    hotEntityLane<A2AExchangeMessageRecord>({ table: "broker_exchange_messages", hint: (h) => h?.hotExchangeMessages, rows: (s) => s.exchangeMessages, id: (r) => r.id, upsert: (rows) => this.upsertHotExchangeMessagesUnsafe(rows) }),
+    hotEntityLane<ChangeProposal>({ table: "broker_proposals", hint: (h) => h?.hotProposals, rows: (s) => s.proposals, id: (r) => r.id, upsert: (rows) => this.upsertHotProposalsUnsafe(rows) }),
+    hotEntityLane<ArtifactRecord>({ table: "broker_artifacts", hint: (h) => h?.hotArtifacts, rows: (s) => s.artifacts, id: (r) => r.id, upsert: (rows) => this.upsertHotArtifactsUnsafe(rows) }),
+    hotEntityLane<ValidationResult>({ table: "broker_validations", hint: (h) => h?.hotValidations, rows: (s) => s.validations, id: (r) => r.id, upsert: (rows) => this.upsertHotValidationsUnsafe(rows) }),
+    hotEntityLane<TaskRecord>({ table: "broker_tasks", hint: (h) => h?.hotTasks, rows: (s) => s.tasks, id: (r) => r.id, upsert: (rows) => this.upsertHotTasksUnsafe(rows) }),
+    hotEntityLane<TaskTombstone>({ table: "broker_tombstones", hint: (h) => h?.hotTombstones, rows: (s) => s.tombstones ?? [], id: (r) => r.taskId, upsert: (rows) => this.upsertHotTombstonesUnsafe(rows) }),
+    hotEntityLane<AuditEvent>({ table: "broker_audit_events", hint: (h) => h?.hotAuditEvents, rows: (s) => s.auditEvents, id: (r) => r.id, upsert: (rows) => this.upsertHotAuditEventsUnsafe(rows) }),
+    hotEntityLane<WorkerRecord>({ table: "broker_workers", hint: (h) => h?.hotWorkers, rows: (s) => s.workers, id: (r) => r.nodeId, upsert: (rows) => this.upsertHotWorkersUnsafe(rows) }),
+    hotEntityLane<TerminalTaskOutboxEvent>({ table: "broker_terminal_outbox", hint: (h) => h?.hotTerminalOutboxEvents, rows: (s) => s.terminalOutbox ?? [], id: (r) => r.id, upsert: (rows) => this.upsertHotTerminalOutboxUnsafe(rows) }),
+  ];
+
   private writeHotEntityTables(snapshot: BrokerSnapshot, hints?: BrokerStateSaveHints): void {
-    const hotExchangeHints = hints?.hotExchanges;
-    const hotExchangeMessageHints = hints?.hotExchangeMessages;
-    const hotProposalHints = hints?.hotProposals;
-    const hotArtifactHints = hints?.hotArtifacts;
-    const hotValidationHints = hints?.hotValidations;
-    const hotTaskHints = hints?.hotTasks;
-    const hotTombstoneHints = hints?.hotTombstones;
-    const hotAuditHints = hints?.hotAuditEvents;
-    const hotWorkerHints = hints?.hotWorkers;
-    const hotTerminalOutboxHints = hints?.hotTerminalOutboxEvents;
-    const incrementalHotWrite = hintsHasAnyEntries(hints);
-    if (incrementalHotWrite) {
-      if (hotExchangeHints !== undefined) {
-        this.applyCanonicalHotRetentionPlan("broker_exchanges", snapshot.exchanges.map((exchange) => exchange.id));
-        this.upsertHotExchangesUnsafe(hotExchangeHints);
-      }
-      if (hotExchangeMessageHints !== undefined) {
-        this.applyCanonicalHotRetentionPlan("broker_exchange_messages", snapshot.exchangeMessages.map((message) => message.id));
-        this.upsertHotExchangeMessagesUnsafe(hotExchangeMessageHints);
-      }
-      if (hotProposalHints !== undefined) {
-        this.applyCanonicalHotRetentionPlan("broker_proposals", snapshot.proposals.map((proposal) => proposal.id));
-        this.upsertHotProposalsUnsafe(hotProposalHints);
-      }
-      if (hotArtifactHints !== undefined) {
-        this.applyCanonicalHotRetentionPlan("broker_artifacts", snapshot.artifacts.map((artifact) => artifact.id));
-        this.upsertHotArtifactsUnsafe(hotArtifactHints);
-      }
-      if (hotValidationHints !== undefined) {
-        this.applyCanonicalHotRetentionPlan("broker_validations", snapshot.validations.map((validation) => validation.id));
-        this.upsertHotValidationsUnsafe(hotValidationHints);
-      }
-      if (hotTaskHints !== undefined) {
-        this.applyCanonicalHotRetentionPlan("broker_tasks", snapshot.tasks.map((task) => task.id));
-        this.upsertHotTasksUnsafe(hotTaskHints);
-      }
-      if (hotTombstoneHints !== undefined) {
-        this.applyCanonicalHotRetentionPlan("broker_tombstones", (snapshot.tombstones ?? []).map((tombstone) => tombstone.taskId));
-        this.upsertHotTombstonesUnsafe(hotTombstoneHints);
-      }
-      if (hotAuditHints !== undefined) {
-        const onlyHeartbeatAuditHints =
-          hotAuditHints.length > 0 &&
-          hotAuditHints.every(isHeartbeatAuditEvent);
-        if (!onlyHeartbeatAuditHints) {
-          this.applyCanonicalHotRetentionPlan("broker_audit_events", snapshot.auditEvents.map((event) => event.id));
+    if (hintsHasAnyEntries(hints)) {
+      for (const lane of this.hotEntityLanes) {
+        const hinted = lane.hint(hints);
+        if (hinted === undefined) continue;
+        if (lane.table === "broker_audit_events") {
+          this.writeHotAuditEventsIncrementalUnsafe(snapshot, hinted as AuditEvent[]);
+          continue;
         }
-        this.upsertHotAuditEventsUnsafe(hotAuditHints);
-        if (onlyHeartbeatAuditHints) {
-          this.pruneHotHeartbeatAuditEventsToMaxUnsafe(this.maxHotRuntimeHeartbeatAuditEvents);
-          this.pruneHotAuditEventsToMaxUnsafe(this.maxHotRuntimeAuditEvents);
-        }
-      }
-      if (hotWorkerHints !== undefined) {
-        this.applyCanonicalHotRetentionPlan("broker_workers", snapshot.workers.map((worker) => worker.nodeId));
-        this.upsertHotWorkersUnsafe(hotWorkerHints);
-      }
-      if (hotTerminalOutboxHints !== undefined) {
-        this.applyCanonicalHotRetentionPlan("broker_terminal_outbox", (snapshot.terminalOutbox ?? []).map((event) => event.id));
-        this.upsertHotTerminalOutboxUnsafe(hotTerminalOutboxHints);
+        this.pruneHotTableToRetainedIdsUnsafe(lane.table, lane.ids(lane.rows(snapshot)));
+        lane.upsert(hinted);
       }
       return;
     }
 
-    if (hotExchangeHints) {
-      this.applyCanonicalHotRetentionPlan("broker_exchanges", snapshot.exchanges.map((exchange) => exchange.id));
-    } else {
-      this.db.exec("DELETE FROM broker_exchanges;");
+    // Full write: a table with a (possibly empty) hint is pruned to the
+    // snapshot's ids, one without a hint is cleared outright, and the terminal
+    // outbox is always pruned. All prunes run before any upsert.
+    for (const lane of this.hotEntityLanes) {
+      if (lane.hint(hints) !== undefined || lane.table === "broker_terminal_outbox") {
+        this.pruneHotTableToRetainedIdsUnsafe(lane.table, lane.ids(lane.rows(snapshot)));
+      } else {
+        this.db.exec(`DELETE FROM ${lane.table};`);
+      }
     }
-    if (hotExchangeMessageHints) {
-      this.applyCanonicalHotRetentionPlan("broker_exchange_messages", snapshot.exchangeMessages.map((message) => message.id));
-    } else {
-      this.db.exec("DELETE FROM broker_exchange_messages;");
+    for (const lane of this.hotEntityLanes) {
+      lane.upsert(lane.hint(hints) ?? lane.rows(snapshot));
     }
-    if (hotProposalHints) {
-      this.applyCanonicalHotRetentionPlan("broker_proposals", snapshot.proposals.map((proposal) => proposal.id));
-    } else {
-      this.db.exec("DELETE FROM broker_proposals;");
-    }
-    if (hotArtifactHints) {
-      this.applyCanonicalHotRetentionPlan("broker_artifacts", snapshot.artifacts.map((artifact) => artifact.id));
-    } else {
-      this.db.exec("DELETE FROM broker_artifacts;");
-    }
-    if (hotValidationHints) {
-      this.applyCanonicalHotRetentionPlan("broker_validations", snapshot.validations.map((validation) => validation.id));
-    } else {
-      this.db.exec("DELETE FROM broker_validations;");
-    }
-    if (hotTaskHints) {
-      this.applyCanonicalHotRetentionPlan("broker_tasks", snapshot.tasks.map((task) => task.id));
-    } else {
-      this.db.exec("DELETE FROM broker_tasks;");
-    }
-    if (hotTombstoneHints) {
-      this.applyCanonicalHotRetentionPlan("broker_tombstones", (snapshot.tombstones ?? []).map((tombstone) => tombstone.taskId));
-    } else {
-      this.db.exec("DELETE FROM broker_tombstones;");
-    }
-    if (hotAuditHints) {
-      this.applyCanonicalHotRetentionPlan("broker_audit_events", snapshot.auditEvents.map((event) => event.id));
-    } else {
-      this.db.exec("DELETE FROM broker_audit_events;");
-    }
-    if (hotWorkerHints) {
-      this.applyCanonicalHotRetentionPlan("broker_workers", snapshot.workers.map((worker) => worker.nodeId));
-    } else {
-      this.db.exec("DELETE FROM broker_workers;");
-    }
-    this.applyCanonicalHotRetentionPlan("broker_terminal_outbox", (snapshot.terminalOutbox ?? []).map((event) => event.id));
+  }
 
-    this.upsertHotExchangesUnsafe(hotExchangeHints ?? snapshot.exchanges);
-    this.upsertHotExchangeMessagesUnsafe(hotExchangeMessageHints ?? snapshot.exchangeMessages);
-
-    this.upsertHotProposalsUnsafe(hotProposalHints ?? snapshot.proposals);
-    this.upsertHotArtifactsUnsafe(hotArtifactHints ?? snapshot.artifacts);
-    this.upsertHotValidationsUnsafe(hotValidationHints ?? snapshot.validations);
-
-    this.upsertHotTasksUnsafe(hotTaskHints ?? snapshot.tasks);
-
-    this.upsertHotTombstonesUnsafe(hotTombstoneHints ?? snapshot.tombstones ?? []);
-
-    this.upsertHotWorkersUnsafe(hotWorkerHints ?? snapshot.workers);
-
-    this.upsertHotAuditEventsUnsafe(hotAuditHints ?? snapshot.auditEvents);
-
-    this.upsertHotTerminalOutboxUnsafe(hotTerminalOutboxHints ?? snapshot.terminalOutbox ?? []);
+  private writeHotAuditEventsIncrementalUnsafe(snapshot: BrokerSnapshot, events: AuditEvent[]): void {
+    const onlyHeartbeatAuditHints = events.length > 0 && events.every(isHeartbeatAuditEvent);
+    if (!onlyHeartbeatAuditHints) {
+      this.pruneHotTableToRetainedIdsUnsafe("broker_audit_events", snapshot.auditEvents.map((event) => event.id));
+    }
+    this.upsertHotAuditEventsUnsafe(events);
+    if (onlyHeartbeatAuditHints) {
+      this.pruneHotHeartbeatAuditEventsToMaxUnsafe(this.maxHotRuntimeHeartbeatAuditEvents);
+      this.pruneHotAuditEventsToMaxUnsafe(this.maxHotRuntimeAuditEvents);
+    }
   }
 
   private writeHotEntityHintRows(hints: BrokerStateSaveHints): void {
-    if (hints.hotExchanges !== undefined) {
-      this.upsertHotExchangesUnsafe(hints.hotExchanges);
-    }
-    if (hints.hotExchangeMessages !== undefined) {
-      this.upsertHotExchangeMessagesUnsafe(hints.hotExchangeMessages);
-    }
-    if (hints.hotProposals !== undefined) {
-      this.upsertHotProposalsUnsafe(hints.hotProposals);
-    }
-    if (hints.hotArtifacts !== undefined) {
-      this.upsertHotArtifactsUnsafe(hints.hotArtifacts);
-    }
-    if (hints.hotValidations !== undefined) {
-      this.upsertHotValidationsUnsafe(hints.hotValidations);
-    }
-    if (hints.hotTasks !== undefined) {
-      this.upsertHotTasksUnsafe(hints.hotTasks);
-    }
-    if (hints.hotTombstones !== undefined) {
-      this.upsertHotTombstonesUnsafe(hints.hotTombstones);
-    }
-    if (hints.hotAuditEvents !== undefined) {
-      this.upsertHotAuditEventsUnsafe(hints.hotAuditEvents);
-      // Runtime audit repositories already prune on append. Avoid repeating
-      // count/delete scans on the hot-only persist path, which can sit on the
-      // heartbeat response-critical section under worker churn.
-    }
-    if (hints.hotWorkers !== undefined) {
-      this.upsertHotWorkersUnsafe(hints.hotWorkers);
-    }
-    if (hints.hotTerminalOutboxEvents !== undefined) {
-      this.upsertHotTerminalOutboxUnsafe(hints.hotTerminalOutboxEvents);
+    // Runtime audit repositories already prune on append, so the hot-only
+    // persist path never repeats count/delete scans here: it can sit on the
+    // heartbeat response-critical section under worker churn.
+    for (const lane of this.hotEntityLanes) {
+      const hinted = lane.hint(hints);
+      if (hinted !== undefined) lane.upsert(hinted);
     }
   }
 
-  private applyCanonicalHotRetentionPlan(
-    tableName: SqliteHotRetentionPlan["table"],
-    retainedIds: string[],
-  ): SqliteHotRetentionApplyResult {
+  /**
+   * Prune a hot table down to `retainedIds` with a single id scan. The former
+   * save-path route (`applyCanonicalHotRetentionPlan` ->
+   * `applyHotRetentionPlanUnsafe`) scanned the ids twice and ran a COUNT(*) to
+   * fill a result none of its callers read (#2350 B3). The operator
+   * retention-plan API keeps the result-bearing variant below.
+   */
+  private pruneHotTableToRetainedIdsUnsafe(table: SqliteHotEntityTable, retainedIds: readonly string[]): number {
     const retained = new Set(retainedIds);
-    const existingIds = this.readTableIds(tableName);
-    return this.applyHotRetentionPlanUnsafe({
-      table: tableName,
-      cutoffMs: 0,
-      retainedIds,
-      pruneIds: existingIds.filter((id) => !retained.has(id)),
-    });
+    const pruneIds = this.readTableIds(table).filter((id) => !retained.has(id));
+    if (pruneIds.length > 0) {
+      const primaryKeyColumn = this.hotRetentionPrimaryKeyColumn(table);
+      const placeholders = pruneIds.map(() => "?").join(", ");
+      // Placeholder arity varies with the prune batch, so this statement is
+      // deliberately not memoized (an unbounded set of SQL texts).
+      this.db.prepare(`DELETE FROM ${table} WHERE ${primaryKeyColumn} IN (${placeholders})`).run(...pruneIds);
+    }
+    return pruneIds.length;
   }
 
   private applyHotRetentionPlanUnsafe(plan: SqliteHotRetentionPlan): SqliteHotRetentionApplyResult {
@@ -2345,6 +2260,32 @@ function parseHotEntityPayloadSafe<T>(row: unknown, schema: z.ZodType<T>, tableN
     return [];
   }
   return [parsed.data];
+}
+
+/** One hot entity table as the save path sees it; see `SqliteBrokerStateStore.hotEntityLanes`. */
+interface HotEntityLane {
+  readonly table: SqliteHotEntityTable;
+  readonly hint: (hints: BrokerStateSaveHints | undefined) => unknown[] | undefined;
+  readonly rows: (snapshot: BrokerSnapshot) => unknown[];
+  readonly ids: (rows: unknown[]) => string[];
+  readonly upsert: (rows: unknown[]) => void;
+}
+
+/** Erase the row type so ten differently-typed lanes can share one list and one loop. */
+function hotEntityLane<T>(spec: {
+  table: SqliteHotEntityTable;
+  hint: (hints: BrokerStateSaveHints | undefined) => T[] | undefined;
+  rows: (snapshot: BrokerSnapshot) => T[];
+  id: (row: T) => string;
+  upsert: (rows: T[]) => void;
+}): HotEntityLane {
+  return {
+    table: spec.table,
+    hint: spec.hint,
+    rows: spec.rows,
+    ids: (rows) => (rows as T[]).map(spec.id),
+    upsert: (rows) => spec.upsert(rows as T[]),
+  };
 }
 
 function hintsHasAnyEntries(hints: BrokerStateSaveHints | undefined): boolean {

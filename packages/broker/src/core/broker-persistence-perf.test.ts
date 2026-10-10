@@ -307,3 +307,50 @@ test("readBrokerTask prefers the live map and still falls back to the store (P3)
     rmSync(dir, { recursive: true, force: true });
   }
 });
+
+/** Count id scans and COUNT(*) reads the store issues against one hot table. */
+function countHotTableReads(
+  store: SqliteBrokerStateStore,
+  table: string,
+): { readonly idScans: number; readonly countReads: number } {
+  const target = store as unknown as { stmt(sql: string): unknown };
+  const original = target.stmt.bind(target);
+  const state = { idScans: 0, countReads: 0 };
+  target.stmt = (sql: string) => {
+    if (sql.startsWith("SELECT") && sql.includes(` FROM ${table}`)) {
+      if (/COUNT\(\*\)/i.test(sql)) state.countReads += 1;
+      else if (/^SELECT \w+ AS id FROM /.test(sql)) state.idScans += 1;
+    }
+    return original(sql);
+  };
+  return state;
+}
+
+test("a hinted save prunes a hot table with one id scan and no COUNT(*) (#2350 B3)", () => {
+  const dir = tempDir("hot-prune");
+  const store = makeStore(dir);
+  const broker = makeBroker(store);
+  try {
+    registerWorker(broker, "w1");
+    const tasks = ["t1", "t2", "t3"].map((id) => createTask(broker, id, "w1"));
+    const snapshot = store.load();
+    const reads = countHotTableReads(store, "broker_tasks");
+
+    // Incremental (hinted) save: the table is pruned to the snapshot's ids
+    // then the hinted rows are upserted. The prune used to scan the ids twice
+    // and COUNT(*) the table for a result nobody read.
+    store.save({ ...snapshot, tasks }, { hotTasks: tasks });
+    assert.equal(reads.idScans, 1, "prune-to-retained must read the table ids exactly once");
+    assert.equal(reads.countReads, 0, "the save path must not COUNT(*) the table");
+    assert.deepEqual(store.readHotTasks({}).map((task) => task.id).sort(), ["t1", "t2", "t3"]);
+
+    // The prune still removes rows missing from the snapshot.
+    const before = reads.idScans;
+    store.save({ ...snapshot, tasks: tasks.slice(0, 2) }, { hotTasks: tasks.slice(0, 2) });
+    assert.equal(reads.idScans - before, 1);
+    assert.deepEqual(store.readHotTasks({}).map((task) => task.id).sort(), ["t1", "t2"]);
+  } finally {
+    store.close?.();
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
