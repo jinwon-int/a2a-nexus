@@ -45,7 +45,8 @@ appears nowhere in the tool.
       "assignedWorkerId": "worker-1",           // optional
       "intent": "pr-review",                    // optional if defaults.intent set
       "message": "Please review PR #123 ...",   // required, non-empty plain string
-      "payload": { "...": "..." }               // optional, merged over defaults.payload
+      "payload": { "...": "..." },              // optional, merged over defaults.payload
+      "reviewLineageRecord": "lineage.json"     // optional (#2358); see review-lineage binding below
     }
   ]
 }
@@ -59,6 +60,29 @@ appears nowhere in the tool.
 - Each create-task body is also auto-stamped with top-level `parentRoundId`,
   `parentRoundTotal`, and `parentRoundOrder` so brokers that validate round
   metadata outside `payload` see the same values.
+
+### Review-lineage binding (#2358)
+
+A review lane bound to a bounded review lineage (#2351) carries
+`payload.reviewLineage = {lineageId, intentHash, headSha, diffHash}`; the worker
+posts a reviewer-signed review report for it. Instead of pasting the output of
+`review-lineage-client.mjs lane`, set `lane.reviewLineageRecord` to the record
+file that `review-lineage-client.mjs create --out` wrote (relative paths resolve
+against the manifest file's directory). The CLI fills `payload.reviewLineage`
+from the record's current binding, so a binding advanced by `correct` is picked
+up automatically. Dry-run fails closed when:
+
+- the record cannot be read, is not an `a2a.review-lineage-client-record.v1`
+  file, or its `brokerUrl` differs from the manifest `brokerUrl` (a lineage
+  lives on the broker that created it);
+- the lane sets both `reviewLineageRecord` and `payload.reviewLineage` (in the
+  lane payload or `defaults.payload`);
+- `payload.reviewLineage`, however supplied, is not exactly the four fields in
+  the worker producer's formats, or the lane lacks `payload.review.required=true`
+  (without a review verdict the worker reports nothing).
+
+The CLI only reads the record; creating, correcting, and canceling a lineage stay
+explicit operator commands (see `docs/operators.md`).
 
 ### GitHub verify / read-only validation lanes
 

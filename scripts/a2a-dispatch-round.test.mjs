@@ -19,6 +19,7 @@ import {
   A2A_REQUESTER_ROLES,
 } from './a2a-dispatch-round.mjs';
 import { A2A_REQUESTER_ROLES as BROKER_REQUESTER_ROLES } from '../packages/broker/src/core/requester-role-contract.mjs';
+import { RECORD_SCHEMA } from './lib/review-lineage-client.mjs';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const SCRIPT = join(__dirname, 'a2a-dispatch-round.mjs');
@@ -1379,4 +1380,162 @@ test('repository README routes agents to an existing checkout manual', () => {
   assert.match(pointer, /\[agent manual\]\(docs\/agent-manual\.md\)/);
   const manual = readFileSync(join(repoRoot, 'docs/agent-manual.md'), 'utf8');
   assert.ok(manual.trim().length > 0, 'the discovered manual must exist and contain guidance');
+});
+
+// ─── #2358: review-lineage binding for review lanes (#2351 / #2274) ─────────
+
+const LINEAGE_BINDING = Object.freeze({
+  lineageId: 'lineage-2358-a',
+  intentHash: `sha256:${'a'.repeat(64)}`,
+  headSha: 'b'.repeat(40),
+  diffHash: `sha256:${'c'.repeat(64)}`,
+});
+
+function makeLineageReviewManifest(brokerUrl) {
+  const m = makeA2adAnalysisManifest(brokerUrl);
+  m.lanes = [m.lanes[0]];
+  m.lanes[0].payload = {
+    ...m.defaults.payload,
+    review: { required: true, authorWorkerId: 'author-a' },
+  };
+  return m;
+}
+
+function writeLineageRecord(dir, brokerUrl, overrides = {}) {
+  const record = {
+    schema: RECORD_SCHEMA,
+    brokerUrl,
+    requesterId: 'operator:test',
+    lineageId: LINEAGE_BINDING.lineageId,
+    binding: {
+      intentHash: LINEAGE_BINDING.intentHash,
+      headSha: LINEAGE_BINDING.headSha,
+      diffHash: LINEAGE_BINDING.diffHash,
+    },
+    ...overrides,
+  };
+  const path = join(dir, 'lineage.json');
+  writeFileSync(path, JSON.stringify(record));
+  return path;
+}
+
+test('dry-run accepts a lineage-bound review lane with a well-formed payload.reviewLineage (#2358)', async () => {
+  const m = makeLineageReviewManifest('http://unused');
+  m.lanes[0].payload.reviewLineage = { ...LINEAGE_BINDING };
+  const out = await runDispatch(m, { dryRun: true });
+  assert.equal(out.exitCode, 0, out.errors.join('\n'));
+  assert.deepEqual(out.lanes[0].payload.reviewLineage, LINEAGE_BINDING);
+});
+
+test('dry-run rejects a payload.reviewLineage the worker producer would skip as binding_invalid (#2358)', async () => {
+  const cases = [
+    [{ ...LINEAGE_BINDING, headSha: 'abc' }, /reviewLineage\.headSha/],
+    [{ ...LINEAGE_BINDING, intentHash: 'a'.repeat(64) }, /reviewLineage\.intentHash/],
+    [{ ...LINEAGE_BINDING, diffHash: 'sha256:XYZ' }, /reviewLineage\.diffHash/],
+    [{ ...LINEAGE_BINDING, lineageId: '-bad id' }, /reviewLineage\.lineageId/],
+    [{ ...LINEAGE_BINDING, extra: 1 }, /exactly \{lineageId, intentHash, headSha, diffHash\}/],
+    ['not-an-object', /exactly \{lineageId, intentHash, headSha, diffHash\}/],
+  ];
+  for (const [binding, pattern] of cases) {
+    const m = makeLineageReviewManifest('http://unused');
+    m.lanes[0].payload.reviewLineage = binding;
+    const out = await runDispatch(m, { dryRun: true });
+    assert.equal(out.exitCode, 1, JSON.stringify(binding));
+    assert.ok(out.errors.some((e) => pattern.test(e)), `${JSON.stringify(binding)}:\n${out.errors.join('\n')}`);
+  }
+});
+
+test('dry-run rejects payload.reviewLineage on a lane without payload.review.required (#2358)', async () => {
+  const m = makeLineageReviewManifest('http://unused');
+  m.lanes[0].payload.review = { required: false, authorWorkerId: 'author-a' };
+  m.lanes[0].payload.reviewLineage = { ...LINEAGE_BINDING };
+  const out = await runDispatch(m, { dryRun: true });
+  assert.equal(out.exitCode, 1);
+  assert.ok(out.errors.some((e) => /reviewLineage requires payload\.review\.required=true/.test(e)), out.errors.join('\n'));
+});
+
+test('reviewLineageRecord fills payload.reviewLineage from the record, relative to manifestDir (#2358)', async () => {
+  const dir = mkdtempSync(join(tmpdir(), 'a2a-dispatch-lineage-'));
+  try {
+    writeLineageRecord(dir, 'http://broker.example/');
+    const m = makeLineageReviewManifest('http://broker.example');
+    m.lanes[0].reviewLineageRecord = 'lineage.json';
+    const out = await runDispatch(m, { dryRun: true, manifestDir: dir });
+    assert.equal(out.exitCode, 0, out.errors.join('\n'));
+    assert.deepEqual(out.lanes[0].payload.reviewLineage, LINEAGE_BINDING);
+    const body = buildCreateTaskBody(m, validateManifest(m, { manifestDir: dir }).lanes[0]);
+    assert.deepEqual(body.payload.reviewLineage, LINEAGE_BINDING);
+    assert.equal('reviewLineageRecord' in body, false);
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test('reviewLineageRecord fails closed on a different broker, a conflicting binding, or a bad record (#2358)', async () => {
+  const dir = mkdtempSync(join(tmpdir(), 'a2a-dispatch-lineage-'));
+  try {
+    writeLineageRecord(dir, 'http://other-broker.example');
+    const wrongBroker = makeLineageReviewManifest('http://broker.example');
+    wrongBroker.lanes[0].reviewLineageRecord = 'lineage.json';
+    let out = await runDispatch(wrongBroker, { dryRun: true, manifestDir: dir });
+    assert.equal(out.exitCode, 1);
+    assert.ok(out.errors.some((e) => /record brokerUrl .* does not match manifest brokerUrl/.test(e)), out.errors.join('\n'));
+
+    writeLineageRecord(dir, 'http://broker.example');
+    const both = makeLineageReviewManifest('http://broker.example');
+    both.lanes[0].reviewLineageRecord = 'lineage.json';
+    both.lanes[0].payload.reviewLineage = { ...LINEAGE_BINDING };
+    out = await runDispatch(both, { dryRun: true, manifestDir: dir });
+    assert.equal(out.exitCode, 1);
+    assert.ok(out.errors.some((e) => /set either .*reviewLineageRecord or payload\.reviewLineage/.test(e)), out.errors.join('\n'));
+
+    const viaDefaults = makeLineageReviewManifest('http://broker.example');
+    viaDefaults.defaults.payload = { ...viaDefaults.defaults.payload, reviewLineage: { ...LINEAGE_BINDING } };
+    viaDefaults.lanes[0].reviewLineageRecord = 'lineage.json';
+    out = await runDispatch(viaDefaults, { dryRun: true, manifestDir: dir });
+    assert.equal(out.exitCode, 1);
+    assert.ok(out.errors.some((e) => /set either .*reviewLineageRecord or payload\.reviewLineage/.test(e)), out.errors.join('\n'));
+
+    writeLineageRecord(dir, 'http://broker.example', { schema: 'something-else' });
+    const badSchema = makeLineageReviewManifest('http://broker.example');
+    badSchema.lanes[0].reviewLineageRecord = 'lineage.json';
+    out = await runDispatch(badSchema, { dryRun: true, manifestDir: dir });
+    assert.equal(out.exitCode, 1);
+    assert.ok(out.errors.some((e) => /reviewLineageRecord: record must be a a2a\.review-lineage-client-record\.v1/.test(e)), out.errors.join('\n'));
+
+    const missing = makeLineageReviewManifest('http://broker.example');
+    missing.lanes[0].reviewLineageRecord = 'nope.json';
+    out = await runDispatch(missing, { dryRun: true, manifestDir: dir });
+    assert.equal(out.exitCode, 1);
+    assert.ok(out.errors.some((e) => /reviewLineageRecord: cannot read\/parse/.test(e)), out.errors.join('\n'));
+
+    const empty = makeLineageReviewManifest('http://broker.example');
+    empty.lanes[0].reviewLineageRecord = '';
+    out = await runDispatch(empty, { dryRun: true, manifestDir: dir });
+    assert.equal(out.exitCode, 1);
+    assert.ok(out.errors.some((e) => /reviewLineageRecord must be a non-empty path/.test(e)), out.errors.join('\n'));
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test('CLI resolves reviewLineageRecord relative to the manifest file (#2358)', () => {
+  const dir = mkdtempSync(join(tmpdir(), 'a2a-dispatch-lineage-'));
+  try {
+    writeLineageRecord(dir, 'http://broker.example');
+    const m = makeLineageReviewManifest('http://broker.example');
+    m.lanes[0].reviewLineageRecord = 'lineage.json';
+    const manifestPath = join(dir, 'manifest.json');
+    writeFileSync(manifestPath, JSON.stringify(m));
+    const env = { ...process.env };
+    delete env.A2A_EDGE_SECRET;
+    const proc = spawnSync(process.execPath, [SCRIPT, '--manifest', manifestPath, '--dry-run', '--json'], {
+      encoding: 'utf8', env, cwd: tmpdir(),
+    });
+    assert.equal(proc.status, 0, `${proc.stdout}\n${proc.stderr}`);
+    const outcome = JSON.parse(proc.stdout);
+    assert.deepEqual(outcome.plannedLanes[0].payload.reviewLineage, LINEAGE_BINDING);
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
 });

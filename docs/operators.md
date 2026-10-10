@@ -342,7 +342,8 @@ A2A_EDGE_SECRET=... node scripts/lib/review-lineage-client.mjs create --spec spe
 # POST /review-lineages/{id}/operator-cancel with the recorded binding
 A2A_EDGE_SECRET=... node scripts/lib/review-lineage-client.mjs cancel --record lineage.json \
   --decision-ref <ref> --detail "<why the loop was abandoned>"
-# #2351: payload.reviewLineage for the next review lane (current head)
+# #2351: payload.reviewLineage for the next review lane (current head);
+# or set lane.reviewLineageRecord=lineage.json in the dispatch-round manifest (#2358)
 node scripts/lib/review-lineage-client.mjs lane --record lineage.json
 # record an already committed correction: diffHash vs the contract base, changed
 # paths current head -> next head; the record advances only on acceptance
@@ -390,7 +391,9 @@ for a review lane whose task payload carries the dispatcher's binding:
 }
 ```
 
-Copy `lineageId` and `binding` from the record file that `create --out` wrote.
+Copy `lineageId` and `binding` from the record file that `create --out` wrote,
+or let `a2a-dispatch-round.mjs` fill the block from `lane.reviewLineageRecord`
+(#2358; dry-run checks the record's broker and the binding format).
 After the handler returns and the completion gate has read the review verdict,
 and before the task is completed (or failed on that verdict), the worker posts
 `POST /review-lineages/{lineageId}/review-report`:
