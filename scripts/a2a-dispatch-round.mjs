@@ -28,10 +28,12 @@
  */
 
 import fs from 'node:fs';
+import path from 'node:path';
 import { parseArgs } from 'node:util';
 
 import { A2A_REQUESTER_ROLES } from '../packages/broker/src/core/requester-role-contract.mjs';
 import { validateRetrievalManifestBlock } from '../packages/broker/src/retrieval/web-retrieval-contract.mjs';
+import { laneBinding } from './lib/review-lineage-client.mjs';
 
 // ─── Classifications ────────────────────────────────────────────────────────
 
@@ -279,6 +281,84 @@ function validateReviewLaneContract(errors, tag, lane, payload) {
   }
 }
 
+// #2358 (#2351/#2274): a lineage-bound review lane. These mirror the worker
+// producer's parseReviewLineageBinding (exact keys and formats) so a binding
+// the worker would skip as binding_invalid fails at dry-run, before any
+// provider call. The worker producer stays the authoritative validator.
+const LINEAGE_ID_PATTERN = /^[A-Za-z0-9][A-Za-z0-9._:@/-]{0,199}$/;
+const LINEAGE_HASH_PATTERN = /^sha256:[0-9a-f]{64}$/;
+const LINEAGE_SHA_PATTERN = /^[0-9a-f]{40}$/;
+const LINEAGE_BINDING_KEYS = ['lineageId', 'intentHash', 'headSha', 'diffHash'];
+
+function validateReviewLineageBinding(errors, tag, payload) {
+  const binding = payload.reviewLineage;
+  if (binding === undefined || binding === null) return;
+  const keys = isPlainObject(binding) ? Object.keys(binding) : [];
+  if (!isPlainObject(binding) || keys.length !== LINEAGE_BINDING_KEYS.length
+      || !LINEAGE_BINDING_KEYS.every((key) => keys.includes(key))) {
+    errors.push(`${tag}.payload.reviewLineage must be exactly {lineageId, intentHash, headSha, diffHash} (#2358; use review-lineage-client.mjs lane or lane.reviewLineageRecord)`);
+    return;
+  }
+  const checks = [
+    ['lineageId', LINEAGE_ID_PATTERN],
+    ['intentHash', LINEAGE_HASH_PATTERN],
+    ['headSha', LINEAGE_SHA_PATTERN],
+    ['diffHash', LINEAGE_HASH_PATTERN],
+  ];
+  for (const [key, pattern] of checks) {
+    if (typeof binding[key] !== 'string' || !pattern.test(binding[key])) {
+      errors.push(`${tag}.payload.reviewLineage.${key} has an invalid format (#2358)`);
+    }
+  }
+  const review = isPlainObject(payload.review) ? payload.review : null;
+  if (!review || review.required !== true) {
+    errors.push(`${tag}.payload.reviewLineage requires payload.review.required=true: without a review verdict the worker reports nothing (#2358)`);
+  }
+}
+
+function normalizedBrokerUrl(value) {
+  return typeof value === 'string' ? value.trim().replace(/\/+$/, '') : '';
+}
+
+// #2358: lane.reviewLineageRecord names the record file that
+// `review-lineage-client.mjs create --out` wrote. The binding comes from the
+// record exactly as the `lane` command prints it, so a hand-copied (or stale,
+// pre-`correct`) binding cannot drift from the lineage's current head.
+function resolveReviewLineageRecord(errors, tag, manifest, lane, defaultPayload, lanePayload, opts) {
+  if (lane.reviewLineageRecord === undefined) return undefined;
+  if (!hasText(lane.reviewLineageRecord)) {
+    errors.push(`${tag}.reviewLineageRecord must be a non-empty path to a review-lineage-client record (#2358)`);
+    return undefined;
+  }
+  if (lanePayload.reviewLineage !== undefined || defaultPayload.reviewLineage !== undefined) {
+    errors.push(`${tag}: set either ${tag}.reviewLineageRecord or payload.reviewLineage, not both (#2358)`);
+    return undefined;
+  }
+  const recordPath = path.resolve(opts.manifestDir ?? process.cwd(), lane.reviewLineageRecord);
+  const readFile = opts.readFile ?? ((file) => fs.readFileSync(file, 'utf8'));
+  let record;
+  try {
+    record = JSON.parse(readFile(recordPath));
+  } catch (error) {
+    errors.push(`${tag}.reviewLineageRecord: cannot read/parse ${lane.reviewLineageRecord}: ${error.message} (#2358)`);
+    return undefined;
+  }
+  let binding;
+  try {
+    binding = laneBinding(record);
+  } catch (error) {
+    errors.push(`${tag}.reviewLineageRecord: ${error.message} (#2358)`);
+    return undefined;
+  }
+  const recordBroker = normalizedBrokerUrl(record.brokerUrl);
+  const manifestBroker = normalizedBrokerUrl(manifest.brokerUrl);
+  if (recordBroker !== manifestBroker) {
+    errors.push(`${tag}.reviewLineageRecord: record brokerUrl '${recordBroker}' does not match manifest brokerUrl '${manifestBroker}'; the lineage lives on the broker that created it (#2358)`);
+    return undefined;
+  }
+  return binding;
+}
+
 function validateA2adOpinionLane(errors, tag, intent, payload, derived) {
   if (!isA2adSourceOnlyNoLiveLane(payload)) return;
   const mode = hasText(payload.mode) ? payload.mode.trim() : '';
@@ -343,7 +423,7 @@ function deriveLaneId(roundId, lane, order) {
  * Validate manifest shape. Returns { errors:[], lanes:[{order,id,...}] }.
  * Does no network. `lanes` is the normalized lane list (ids/orders stamped).
  */
-function validateManifest(manifest) {
+function validateManifest(manifest, opts = {}) {
   const errors = [];
 
   if (!isPlainObject(manifest)) {
@@ -422,6 +502,8 @@ function validateManifest(manifest) {
     // Merge defaults.payload then lane.payload (explicit values win), then
     // auto-stamp parent-round metadata for any field the manifest left unset.
     const payload = { ...merged };
+    const recordBinding = resolveReviewLineageRecord(errors, tag, manifest, lane, defaultPayload, lanePayload, opts);
+    if (recordBinding !== undefined) payload.reviewLineage = recordBinding;
     if (merged.parentRoundId === undefined) payload.parentRoundId = roundId;
     if (merged.parentRoundTotal === undefined) payload.parentRoundTotal = total;
     if (merged.parentRoundOrder === undefined) payload.parentRoundOrder = order;
@@ -441,6 +523,7 @@ function validateManifest(manifest) {
     const retrieval = lane.retrieval ?? defaults.retrieval;
     validateA2adOpinionLane(errors, tag, intent, payload, { terminalBrief });
     validateReviewLaneContract(errors, tag, lane, payload);
+    validateReviewLineageBinding(errors, tag, payload);
     validateGitHubPatchWriteCapability(errors, tag, payload);
     validateGitHubPatchReadiness(errors, tag, manifest, lane, payload);
     validateGitHubVerifyLane(errors, tag, lane, defaults, payload, { taskOrigin, workspace, terminalBrief });
@@ -780,8 +863,8 @@ function renderVerifyTable(verify) {
  * @returns {Promise<{ ok, exitCode, mode, errors, lanes, results, summary, verify }>}
  */
 async function runDispatch(manifest, opts = {}) {
-  const { fetchImpl, secret, dryRun = false, verify = false } = opts;
-  const { errors, lanes } = validateManifest(manifest);
+  const { fetchImpl, secret, dryRun = false, verify = false, manifestDir, readFile } = opts;
+  const { errors, lanes } = validateManifest(manifest, { manifestDir, readFile });
 
   if (errors.length > 0) {
     return { ok: false, exitCode: 1, mode: dryRun ? 'dry-run' : 'dispatch', errors, lanes: [], results: [], summary: null, verify: null };
@@ -1005,6 +1088,7 @@ async function main() {
     secret,
     dryRun,
     verify: values.verify,
+    manifestDir: path.dirname(path.resolve(values.manifest)),
   });
 
   printHuman(outcome, { json: values.json });
