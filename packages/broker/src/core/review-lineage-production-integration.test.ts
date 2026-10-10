@@ -1809,3 +1809,44 @@ test(
     }
   },
 );
+
+/** Count canonical snapshot payload reads issued through the store's statement cache. */
+function countSnapshotPayloadReads(store: SqliteBrokerStateStore): { readonly count: number } {
+  const target = store as unknown as { stmt(sql: string): unknown };
+  const original = target.stmt.bind(target);
+  const state = { count: 0 };
+  target.stmt = (sql: string) => {
+    if (sql.startsWith("SELECT payload FROM broker_snapshots")) state.count += 1;
+    return original(sql);
+  };
+  return state;
+}
+
+test("lineage writes after the legacy import marker exists skip the canonical snapshot read (#2350 B5)", async () => {
+  const { dir, dbFile } = tempDatabase("a2a-review-b5-legacy-import-");
+  try {
+    // Seed a canonical snapshot row without triggering the import marker, so the
+    // first lineage write below is the one that has to parse it.
+    const seed = new SqliteBrokerStateStore(dbFile, { deferReviewLineageImport: true });
+    seed.save({ ...emptySnapshot(), reviewLineages: [] });
+    seed.close();
+
+    const store = new SqliteBrokerStateStore(dbFile);
+    const reads = countSnapshotPayloadReads(store);
+
+    assert.equal((await store.applyReviewLineageObservation(createCommand())).status, "applied");
+    assert.equal(reads.count, 1, "first lineage write performs the one-time legacy import read");
+
+    const before = reads.count;
+    assert.equal((await store.applyReviewLineageObservation(cancelCommand())).status, "applied");
+    assert.equal(
+      reads.count - before,
+      0,
+      "once the import marker exists a lineage write must not re-read/parse the canonical snapshot",
+    );
+    assert.equal(store.listCanonicalReviewLineages()[0]?.state, "canceled");
+    store.close();
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
