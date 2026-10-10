@@ -60,7 +60,10 @@ const REQUIRED_DOES_NOT_PROVE = [
   'live-rail-execution',
 ];
 // Escrow-specific raw-field key check (see unsafeStringFindings in a2a-offline-verify.mjs).
-const RAW_CARD_FIELD_MARKERS = ['pan', 'cvv', 'cardnumber', 'rawcarddata'];
+// `paymenttoken` was present in the dispute-packet verifier but missing here
+// (unintentional drift, #2350 A4, owner decision 2026-10-10): a release proof
+// must not carry a raw payment token any more than raw card data.
+const RAW_CARD_FIELD_MARKERS = ['pan', 'cvv', 'cardnumber', 'rawcarddata', 'paymenttoken'];
 const RAW_CARD_FIELD_FINDING_ID = 'raw-card-field';
 
 function verifyShape(proof, checks) {
