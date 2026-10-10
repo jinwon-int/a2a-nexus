@@ -931,3 +931,46 @@ test("releases ownership through a real worker drain and close", async () => {
     await fixture.dispose();
   }
 });
+
+test("the worker protocol parser is the query validation at the thread boundary (#2350 B6)", () => {
+  // The adapter no longer re-parses a query request (every entry path already
+  // ran the contract parser), so the worker protocol must keep rejecting a
+  // malformed queryRequest itself — the adapter is not a backstop any more.
+  const envelope = (input: Record<string, unknown>) => ({
+    kind: SHARED_STATE_SQLITE_WORKER_PROTOCOL_V1.requestKind,
+    protocolVersion: SHARED_STATE_SQLITE_WORKER_PROTOCOL_V1.protocolVersion,
+    contractVersion: V.versions.contract,
+    ticket: "7",
+    command: "query",
+    queryRequest: {
+      kind: V.kinds.queryRequest,
+      contractVersion: V.versions.contract,
+      queryVersion: V.versions.query,
+      operation: V.queryOperations[2],
+      input,
+    },
+  });
+
+  const valid = parseSharedStateSqliteWorkerRequestV1(envelope({
+    namespace: "broker.claim-graph",
+    requiredConsistency: V.queryConsistency.queryGraphSourceHighWater,
+  }));
+  assert.equal(valid.ok, true, JSON.stringify(valid));
+
+  const wrongNamespace = parseSharedStateSqliteWorkerRequestV1(envelope({
+    namespace: "not-the-graph-namespace",
+    requiredConsistency: V.queryConsistency.queryGraphSourceHighWater,
+  }));
+  assert.equal(wrongNamespace.ok, false);
+  if (wrongNamespace.ok) throw new Error("unreachable");
+  assert.equal(wrongNamespace.error.code, "invalid_payload");
+
+  const extraField = parseSharedStateSqliteWorkerRequestV1(envelope({
+    namespace: "broker.claim-graph",
+    requiredConsistency: V.queryConsistency.queryGraphSourceHighWater,
+    unexpected: true,
+  }));
+  assert.equal(extraField.ok, false);
+  if (extraField.ok) throw new Error("unreachable");
+  assert.equal(extraField.error.code, "invalid_payload");
+});

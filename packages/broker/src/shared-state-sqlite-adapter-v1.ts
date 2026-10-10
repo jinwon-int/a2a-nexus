@@ -108,7 +108,6 @@ import { DatabaseSync, type StatementSync } from "node:sqlite";
 
 import {
   SHARED_STATE_STORAGE_V1_VALUES as V,
-  parseSharedStateQueryRequestV1,
   parseSharedStateStorageLifecycleV1,
   type SharedStateQueryRequestV1,
   type SharedStateQueryResultV1,
@@ -1597,19 +1596,27 @@ export class SharedStateSqliteAdapterV1 {
    * durable rows they authorize are observed in one SQLite serialization
    * boundary. This still proves nothing about a future FIFO worker, so
    * 488/489 remain open.
+   *
+   * Like `transact`, this trusts its typed argument: every entry path has
+   * already run `parseSharedStateQueryRequestV1` on the same value — the
+   * serving fence on the literal it builds, the query surface on the caller's
+   * request, and the worker protocol parser on anything that crossed the
+   * thread boundary. The adapter used to parse it a second (worker path:
+   * third) time and map any failure to `adapter_unavailable`; the schema is
+   * `.strict()` with no defaults or transforms, so the parsed copy was
+   * structurally identical to the input and the re-parse only cost time
+   * (#2350 B6).
    */
   query(
     request: SharedStateQueryRequestV1,
   ): SharedStateSqliteAdapterResultV1<SharedStateQueryResultV1> {
-    const parsed = parseSharedStateQueryRequestV1(request);
-    if (!parsed.ok) return failure("adapter_unavailable");
-    if (parsed.value.operation === "queryGraphEvidencePath") {
-      return this.#queryGraphEvidencePath(parsed.value);
+    if (request.operation === "queryGraphEvidencePath") {
+      return this.#queryGraphEvidencePath(request);
     }
-    if (parsed.value.operation === "queryGraphSourceHighWater") {
-      return this.#queryGraphSourceHighWater(parsed.value);
+    if (request.operation === "queryGraphSourceHighWater") {
+      return this.#queryGraphSourceHighWater(request);
     }
-    const input = parsed.value.input;
+    const input = request.input;
 
     const lifecycleEpoch = this.#lifecycleEpoch;
     if (this.#state !== "ready" || lifecycleEpoch === null) {
