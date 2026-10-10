@@ -446,6 +446,12 @@
       "note": "Contract tests for #1724 nclex_content_pr_v1: routing/recusal/quorum, exact-head receipt staleness, merge-ready read model, body-free comment projection, body-free check-run projection (formatter only: exact head_sha, success/failure/neutral conclusion mapping, notes/evidenceRefs/prompts never projected, head-mismatch fail-closed), fail-closed fixtures, refs-manifest digest binding (gap b: golden JCS digest, key-order freedom vs array-order significance, declared-mismatch and non-canonicalizable fail-closed), and the deliberate high-risk cyclic lane-kind wrap (gap c: two contract kinds, reviewer-based independence, laneIds stay unique)."
     },
     {
+      "file": "scripts/lib/nclex-lineage-spec.test.mjs",
+      "class": "gate",
+      "round": null,
+      "note": "Offline contract tests for #2362 NCLEX review-lineage spec: one lineage per (PR, role) with deterministic ids, frozen intent independent of head (correction keeps intent), RISK_CLASS role gating, fail-closed contract fields, review-lineage-client create compatibility, and CLI exit codes / 0600 output."
+    },
+    {
       "file": "scripts/nclex-content-pr-receipt.test.mjs",
       "class": "gate",
       "round": null,
