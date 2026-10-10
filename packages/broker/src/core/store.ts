@@ -519,8 +519,7 @@ export class SqliteBrokerStateStore implements BrokerStateStore {
   ):
     | ReviewLineageObservationApplicationResult
     | Promise<ReviewLineageObservationApplicationResult> {
-    const legacy = this.readCanonicalSnapshotSidecars().reviewLineages ?? [];
-    this.reviewLineageObservations.importLegacySnapshot(legacy);
+    this.ensureLegacyReviewLineagesImported();
     return this.reviewLineageObservations.apply(command);
   }
 
@@ -529,9 +528,27 @@ export class SqliteBrokerStateStore implements BrokerStateStore {
   ):
     | ReviewLineageObservationApplicationResult
     | Promise<ReviewLineageObservationApplicationResult> {
+    this.ensureLegacyReviewLineagesImported();
+    return this.reviewLineageObservations.applyAuthorizedSource(admission);
+  }
+
+  /**
+   * One-time compatibility import of the canonical snapshot's `reviewLineages`
+   * into the dedicated SQLite rows, run lazily before the first lineage write.
+   *
+   * `importLegacySnapshot` is already idempotent (it records a marker and
+   * returns `alreadyImported` afterwards), but it validates every legacy record
+   * *before* consulting the marker, and the caller had to parse the entire
+   * canonical snapshot payload just to hand it those records. That made every
+   * lineage write after the first pay a full snapshot zod parse plus a per-record
+   * zod parse for nothing (#2350 B5). Checking the marker first skips both; the
+   * marker is written on the first import even when it imports zero records, so
+   * the fast path is taken from the second write onward.
+   */
+  private ensureLegacyReviewLineagesImported(): void {
+    if (this.reviewLineageObservations.legacySnapshotImported()) return;
     const legacy = this.readCanonicalSnapshotSidecars().reviewLineages ?? [];
     this.reviewLineageObservations.importLegacySnapshot(legacy);
-    return this.reviewLineageObservations.applyAuthorizedSource(admission);
   }
 
   listCanonicalReviewLineages(): ReviewLineageRecord[] {
