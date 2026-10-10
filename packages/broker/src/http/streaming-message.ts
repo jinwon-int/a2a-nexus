@@ -75,31 +75,32 @@ export function parseSingleJsonRpcMethodRequestFromParsed(
 }
 
 /**
- * A2A 1.0 SendStreamingMessage response: an SSE stream where every data
- * payload is a JSON-RPC result envelope correlated by the request id. The
- * opening event carries the SendMessage result (context + task snapshot);
- * subsequent task-status-update events stream until the task is terminal.
- * SSE event ids reuse the broker's task-event sequence so Last-Event-Id
- * reconnects on /a2a/tasks/:id/events can resume the same stream.
+ * Shared SSE task stream (#2350 A8): the opening `task-snapshot` event, then
+ * `task-status-update` events until the task is terminal, with heartbeat and
+ * connection cleanup. SSE event ids reuse the broker's task-event sequence so
+ * Last-Event-Id reconnects on /a2a/tasks/:id/events can resume the same
+ * stream.
  *
  * `responseShape: "spec"` (clients that negotiated an A2A-Version header)
  * streams A2A 1.0 StreamResponse oneofs — { task } for the opening snapshot
  * and { statusUpdate } for subsequent events — while "legacy" keeps the
- * historical envelopes for header-less plugin clients.
+ * historical envelopes for header-less plugin clients. `legacySnapshotExtra`
+ * is spread into the legacy opening snapshot only (SendStreamingMessage adds
+ * the SendMessage result there; SubscribeToTask adds nothing).
  */
-export function handleStreamingMessageResponse(
+function streamTaskSse(
   req: IncomingMessage,
   res: ServerResponse<IncomingMessage>,
   params: {
     broker: InMemoryA2ABroker;
     rpcId: string | number | null;
-    sendResult: ReturnType<typeof executeSendMessage>;
     task: TaskRecord;
     heartbeatMs: number;
     responseShape?: "spec" | "legacy";
+    legacySnapshotExtra?: Record<string, unknown>;
   },
 ): void {
-  const { broker, rpcId, sendResult, task, heartbeatMs } = params;
+  const { broker, rpcId, task, heartbeatMs } = params;
   const spec = params.responseShape === "spec";
 
   writeSseResponseHeaders(res);
@@ -118,7 +119,7 @@ export function handleStreamingMessageResponse(
       spec
         ? specStreamTaskSnapshot(task, broker)
         : {
-            ...sendResult,
+            ...params.legacySnapshotExtra,
             task: projectBrokerTask(task),
             final: isTerminalSnapshotStatus(task.status),
           },
@@ -173,6 +174,28 @@ export function handleStreamingMessageResponse(
 }
 
 /**
+ * A2A 1.0 SendStreamingMessage response: an SSE stream where every data
+ * payload is a JSON-RPC result envelope correlated by the request id. The
+ * opening event carries the SendMessage result (context + task snapshot);
+ * subsequent task-status-update events stream until the task is terminal.
+ */
+export function handleStreamingMessageResponse(
+  req: IncomingMessage,
+  res: ServerResponse<IncomingMessage>,
+  params: {
+    broker: InMemoryA2ABroker;
+    rpcId: string | number | null;
+    sendResult: ReturnType<typeof executeSendMessage>;
+    task: TaskRecord;
+    heartbeatMs: number;
+    responseShape?: "spec" | "legacy";
+  },
+): void {
+  const { sendResult, ...stream } = params;
+  streamTaskSse(req, res, { ...stream, legacySnapshotExtra: sendResult });
+}
+
+/**
  * A2A 1.0 SubscribeToTask response for clients that accept
  * `text/event-stream`: the JSON-RPC POST upgrades to an SSE stream whose
  * opening event carries the task snapshot and subsequent
@@ -191,74 +214,5 @@ export function handleSubscribeToTaskStreamResponse(
     responseShape?: "spec" | "legacy";
   },
 ): void {
-  const { broker, rpcId, task, heartbeatMs } = params;
-  const spec = params.responseShape === "spec";
-
-  writeSseResponseHeaders(res);
-
-  const envelope = (result: Record<string, unknown>): Record<string, unknown> => ({
-    jsonrpc: "2.0",
-    id: rpcId,
-    result,
-  });
-
-  const snapshotSeq = broker.countBufferedTaskEvents(task.id);
-  writeSseEvent(
-    res,
-    "task-snapshot",
-    envelope(
-      spec
-        ? specStreamTaskSnapshot(task, broker)
-        : {
-            task: projectBrokerTask(task),
-            final: isTerminalSnapshotStatus(task.status),
-          },
-    ),
-    broker.formatSseEventId(task.id, snapshotSeq > 0 ? snapshotSeq : 0),
-  );
-
-  if (isTerminalSnapshotStatus(task.status)) {
-    res.end();
-    return;
-  }
-
-  let stopHeartbeat: () => void = () => undefined;
-  let unsubscribe: (() => void) | null = null;
-
-  const cleanup = (): void => {
-    stopHeartbeat();
-    if (unsubscribe) {
-      unsubscribe();
-      unsubscribe = null;
-    }
-  };
-
-  unsubscribe = broker.subscribeToTask(task.id, (update) => {
-    writeSseEvent(
-      res,
-      "task-status-update",
-      envelope(
-        spec
-          ? specStreamStatusUpdate(update.task, update.final)
-          : {
-              task: projectBrokerTask(update.task),
-              reason: update.reason,
-              final: update.final,
-            },
-      ),
-      broker.formatSseEventId(task.id, update.seq),
-    );
-    if (update.final) {
-      cleanup();
-      if (!res.writableEnded) {
-        res.end();
-      }
-    }
-  });
-
-  attachSseConnectionCleanup(req, res, cleanup);
-
-  if (heartbeatMs > 0) {
-    stopHeartbeat = startSseHeartbeat(res, heartbeatMs, cleanup);
-  }
+  streamTaskSse(req, res, params);
 }

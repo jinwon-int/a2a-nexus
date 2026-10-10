@@ -203,6 +203,20 @@ test("review lineage routes match exact path boundaries", async () => {
     )).handled,
     false,
   );
+  // #2350 A6: review-report and operator-cancel now apply the same exact
+  // `<id>/<action>` guard as the other three mutation routes.
+  for (const action of ["review-report", "operator-cancel"]) {
+    assert.equal(
+      (await route("POST", `/review-lineages/one/${action}/`)).handled,
+      false,
+      `${action} trailing slash`,
+    );
+    assert.equal(
+      (await route("POST", `/review-lineages/one//${action}`)).handled,
+      false,
+      `${action} empty id segment`,
+    );
+  }
   assert.equal((await route("GET", "/review-lineagesX")).handled, false);
 });
 
