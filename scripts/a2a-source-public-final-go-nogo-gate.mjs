@@ -13,9 +13,25 @@
  *
  * Source-public execution remains NO_GO pending explicit operator approval.
  */
-import fs from 'node:fs';
 import path from 'node:path';
 import { parseArgs } from 'node:util';
+import {
+  BASE_FORBIDDEN_LIVE_FLAGS,
+  buildGateResults,
+  collectForbiddenLiveFlagFailures,
+  collectRequiredGateBlockers,
+  collectRequiredGateSpecFailures,
+  collectSpecHeadFailures,
+  deriveIdempotencyKey,
+  findUnredactedEvidence,
+  gateStatus,
+  hasEvidence,
+  hashKey,
+  readJson,
+  redactKey,
+  runGateCli,
+  unredactedReason,
+} from './lib/source-public-gate-kit.mjs';
 
 const { values } = parseArgs({
   options: {
@@ -26,29 +42,6 @@ const { values } = parseArgs({
     mode: { type: 'string', default: 'dry-run' },
   },
 });
-
-function readJson(file) {
-  try {
-    return JSON.parse(fs.readFileSync(file, 'utf8'));
-  } catch (error) {
-    throw new Error(`cannot read JSON ${file}: ${error.message}`);
-  }
-}
-
-function hasEvidence(value) {
-  return Array.isArray(value?.evidence) && value.evidence.some((entry) => typeof entry === 'string' && entry.trim());
-}
-
-const unredactedEvidenceRules = [
-  {
-    kind: 'secret-assignment',
-    re: /\b[A-Z0-9_]*(?:TOKEN|SECRET|PASSWORD|API[_-]?KEY)[A-Z0-9_]*\s*=\s*['"]?(?!<|\$\{|YOUR_|redacted|REDACTED)[^'"\s#]{12,}/i,
-  },
-  { kind: 'github-token-shape', re: /\b(?:ghp|github_pat)_[A-Za-z0-9_]{20,}\b/ },
-  { kind: 'aws-access-key-shape', re: /\bAKIA[0-9A-Z]{16}\b/ },
-  { kind: 'absolute-private-path', re: /\/(?:home|Users)\/[^\s'")`]+|\/root\/private\/[^\s'")`]+/ },
-  { kind: 'raw-session-dump', re: /(?:^|\n)\s*(?:system|developer|assistant|user|tool)\s*<\|/i },
-];
 
 const mandatoryGoGates = [
   'orchestratorPlanBinding',
@@ -69,82 +62,14 @@ const mandatoryGoGates = [
  * Validate the final go/no-go gate schema itself is fail-closed.
  */
 function validateSpec(spec) {
-  const failures = [];
-  if (spec.failClosed !== true) failures.push('spec.failClosed must be true');
-  if (!spec.decisionOutputs || !Array.isArray(spec.decisionOutputs)) {
-    failures.push('spec.decisionOutputs must be an array');
-  } else {
-    for (const output of ['GO', 'NO_GO', 'BLOCKED']) {
-      if (!spec.decisionOutputs.includes(output)) failures.push(`spec.decisionOutputs missing ${output}`);
-    }
-  }
-  if (spec.defaultDecision !== 'NO_GO') failures.push('spec.defaultDecision must be NO_GO');
+  const failures = collectSpecHeadFailures(spec, {
+    decisionOutputs: ['GO', 'NO_GO', 'BLOCKED'],
+    defaultDecision: 'NO_GO',
+  });
   if (spec.sourcePublicExecution !== 'NO_GO') failures.push('spec.sourcePublicExecution must be NO_GO');
-  if (!Array.isArray(spec.goDecisionRequires) || spec.goDecisionRequires.length === 0) {
-    failures.push('spec.goDecisionRequires must list required GO gates');
-  }
-  if (!Array.isArray(spec.gates) || spec.gates.length === 0) failures.push('spec.gates must be non-empty');
-
-  const goDecisionRequires = new Set(spec.goDecisionRequires || []);
-  for (const id of mandatoryGoGates) {
-    if (!goDecisionRequires.has(id)) failures.push(`spec.goDecisionRequires missing mandatory gate: ${id}`);
-  }
-
-  const gates = new Map((spec.gates || []).map((gate) => [gate.id, gate]));
-  for (const id of spec.goDecisionRequires || []) {
-    const gate = gates.get(id);
-    if (!gate) {
-      failures.push(`required gate missing from spec.gates: ${id}`);
-      continue;
-    }
-    if (gate.failClosed !== true) failures.push(`${id}: failClosed must be true`);
-    if (gate.requiredForGo !== true) failures.push(`${id}: requiredForGo must be true`);
-    if (!gate.blockedWhenMissing) failures.push(`${id}: blockedWhenMissing is required`);
-    if (!hasEvidence(gate)) failures.push(`${id}: gate evidence requirements must be documented`);
-  }
-
-  const hygiene = gates.get('runtimeBootstrapHygiene');
-  if (hygiene) {
-    const denyPaths = new Set(hygiene.denyPaths || []);
-    for (const requiredPath of ['AGENTS.md', 'SOUL.md', 'USER.md', 'TOOLS.md', 'HEARTBEAT.md', 'IDENTITY.md', '.openclaw/**']) {
-      if (!denyPaths.has(requiredPath)) failures.push(`runtimeBootstrapHygiene.denyPaths missing ${requiredPath}`);
-    }
-  }
-
-  const forbidden = new Set(spec.forbiddenLiveFlags || []);
-  for (const flag of [
-    'approvalExecution', 'releasePublication', 'repositoryVisibilityChange',
-    'productionDeploy', 'gatewayRestart', 'brokerRestart', 'workerRestart',
-    'terminalAck', 'liveProviderSend', 'productionDbMutation', 'forcePush',
-    'communityPost', 'automaticMerge', 'automaticApproval',
-  ]) {
-    if (!forbidden.has(flag)) failures.push(`forbiddenLiveFlags missing ${flag}`);
-  }
-
+  failures.push(...collectRequiredGateSpecFailures(spec, mandatoryGoGates));
+  failures.push(...collectForbiddenLiveFlagFailures(spec, BASE_FORBIDDEN_LIVE_FLAGS));
   return failures;
-}
-
-/**
- * Derive an idempotency key for the final approval packet.
- */
-function deriveIdempotencyKey(run, lane, orchestratorPlanId) {
-  const components = [run, lane, orchestratorPlanId || 'unbound'].filter(Boolean);
-  return `a2a-final-gate-${components.join('-')}`;
-}
-
-function hashKey(key) {
-  let hash = 0;
-  for (let i = 0; i < key.length; i++) {
-    const char = key.charCodeAt(i);
-    hash = ((hash << 5) - hash) + char;
-    hash |= 0;
-  }
-  return `sha256:${Math.abs(hash).toString(16).padStart(8, '0')}`;
-}
-
-function redactKey(key) {
-  if (key.length <= 12) return `${key.substring(0, 4)}...`;
-  return `${key.substring(0, 12)}...`;
 }
 
 /**
@@ -233,7 +158,7 @@ function buildOperatorApprovalPacket(spec, orchestratorReport, gateMatrix, rcTag
 
   for (const id of spec.goDecisionRequires || []) {
     const gate = gateStatuses[id];
-    const status = String(gate?.status || 'MISSING').toUpperCase();
+    const status = gateStatus(gate);
     if (status === 'GO' && hasEvidence(gate)) {
       readyGates.push(id);
     } else {
@@ -288,41 +213,12 @@ function evaluateGates(spec, orchestratorReport, input) {
     blockers.push({ gate: 'orchestratorPlanBinding', reason: orchestratorOk.reason });
   }
 
-  // Evaluate each required gate
-  for (const id of spec.goDecisionRequires || []) {
-    const gate = gateStatuses[id];
-    const status = String(gate?.status || 'MISSING').toUpperCase();
-
-    if (id === 'orchestratorPlanBinding') {
-      // Check gate-level status regardless of deep validation outcome
-      if (status !== 'GO') {
-        blockers.push({ gate: id, status, reason: `status is ${status}` });
-      }
-      if (!hasEvidence(gate)) {
-        blockers.push({ gate: id, status, reason: 'redacted evidence link is missing' });
-      }
-      continue;
-    }
-
-    if (status !== 'GO') {
-      blockers.push({ gate: id, status, reason: `status is ${status}` });
-    }
-    if (!hasEvidence(gate)) {
-      blockers.push({ gate: id, status, reason: 'redacted evidence link is missing' });
-    }
-  }
+  // Evaluate each required gate (gate-level status/evidence only; no domain validation)
+  blockers.push(...collectRequiredGateBlockers(spec, gateStatuses));
 
   // Redaction checks
-  for (const [gateId, gate] of Object.entries(gateStatuses)) {
-    if (!Array.isArray(gate?.evidence)) continue;
-    for (const entry of gate.evidence) {
-      if (typeof entry !== 'string' || !entry.trim()) continue;
-      for (const rule of unredactedEvidenceRules) {
-        if (rule.re.test(entry)) {
-          blockers.push({ gate: gateId, reason: `evidence is not redacted (${rule.kind})` });
-        }
-      }
-    }
+  for (const { gateId, kind } of findUnredactedEvidence(gateStatuses)) {
+    blockers.push({ gate: gateId, reason: unredactedReason(kind) });
   }
 
   // Cross-lane evidence check
@@ -350,31 +246,16 @@ function evaluateGates(spec, orchestratorReport, input) {
  * Build the full final go/no-go gate report.
  */
 export function buildFinalGoNoGoReport(spec, input, orchestratorReport) {
-  const gateNames = new Map((spec.gates || []).map((gate) => [gate.id, gate.title]));
   const commitSha = input.commitSha || orchestratorReport?.executionPlan?.scannerBinding?.commitSha || 'unlocked';
   const orchestratorPlanId = orchestratorReport?.executionPlan?.idempotencyKeyHash || '';
 
-  const idempotencyKey = deriveIdempotencyKey(spec.run, spec.lane, orchestratorPlanId);
+  const idempotencyKey = deriveIdempotencyKey('a2a-final-gate', spec.run, spec.lane, orchestratorPlanId || 'unbound');
   const gateMatrix = buildGateMatrix(spec, input);
   const rcTagging = buildReleaseCandidateTagging(spec, orchestratorReport, commitSha);
   const ciCapsule = buildCiGateCapsule(spec, input);
   const approvalPacket = buildOperatorApprovalPacket(spec, orchestratorReport, gateMatrix, rcTagging, ciCapsule, idempotencyKey, input);
   const result = evaluateGates(spec, orchestratorReport, input);
-
-  // Build per-gate status summary
-  const gateResults = [];
-  for (const id of spec.goDecisionRequires || []) {
-    const gate = input.gates?.[id];
-    const status = String(gate?.status || 'MISSING').toUpperCase();
-    const evidenceUrls = Array.isArray(gate?.evidence) ? gate.evidence.filter((e) => typeof e === 'string') : [];
-    gateResults.push({
-      gate: id,
-      title: gateNames.get(id) || id,
-      status,
-      ok: status === 'GO' && evidenceUrls.length > 0,
-      evidenceCount: evidenceUrls.length,
-    });
-  }
+  const gateResults = buildGateResults(spec, input.gates);
 
   return {
     kind: 'a2a.source-public-final-go-nogo-gate-report',
@@ -494,58 +375,37 @@ export function renderFinalGoNoGoMarkdown(report) {
   return lines.join('\n');
 }
 
-try {
-  const specPath = path.resolve(values.spec);
-  const spec = readJson(specPath);
-  const specFailures = validateSpec(spec);
-  if (specFailures.length) {
-    console.error(JSON.stringify({ ok: false, phase: 'spec', failures: specFailures }, null, 2));
-    process.exit(1);
-  }
+runGateCli({
+  values,
+  validateSpec,
+  rejectMode: (spec, opts) => {
+    const requestedMode = opts.mode || 'dry-run';
+    if (spec.allowedModes.includes(requestedMode)) return null;
+    return `unsupported mode: ${requestedMode}. Allowed modes: ${spec.allowedModes.join(', ')}`;
+  },
+  hasInput: (opts) => Boolean(opts.orchestrator || opts.input),
+  specOnlyPayload: (spec, opts) => ({
+    ok: true,
+    phase: 'spec',
+    decision: spec.defaultDecision,
+    decisionOutputs: spec.decisionOutputs,
+    sourcePublicExecution: spec.sourcePublicExecution,
+    mode: opts.mode || 'dry-run',
+    requiredGates: spec.goDecisionRequires,
+  }),
+  loadInputs: (opts) => {
+    let orchestratorReport = null;
+    if (opts.orchestrator) {
+      orchestratorReport = readJson(path.resolve(opts.orchestrator));
+    }
 
-  const requestedMode = values.mode || 'dry-run';
-  if (!spec.allowedModes.includes(requestedMode)) {
-    console.error(JSON.stringify({
-      ok: false,
-      phase: 'spec',
-      error: `unsupported mode: ${requestedMode}. Allowed modes: ${spec.allowedModes.join(', ')}`,
-    }, null, 2));
-    process.exit(1);
-  }
+    let input = { gates: {} };
+    if (opts.input) {
+      input = readJson(path.resolve(opts.input));
+    }
 
-  if (!values.orchestrator && !values.input) {
-    console.log(JSON.stringify({
-      ok: true,
-      phase: 'spec',
-      decision: spec.defaultDecision,
-      decisionOutputs: spec.decisionOutputs,
-      sourcePublicExecution: spec.sourcePublicExecution,
-      mode: requestedMode,
-      requiredGates: spec.goDecisionRequires,
-    }, null, 2));
-    process.exit(0);
-  }
-
-  let orchestratorReport = null;
-  if (values.orchestrator) {
-    orchestratorReport = readJson(path.resolve(values.orchestrator));
-  }
-
-  let input = { gates: {} };
-  if (values.input) {
-    input = readJson(path.resolve(values.input));
-  }
-
-  const report = buildFinalGoNoGoReport(spec, input, orchestratorReport);
-
-  if (values.format === 'markdown') {
-    (report.ok ? console.log : console.error)(renderFinalGoNoGoMarkdown(report));
-  } else {
-    (report.ok ? console.log : console.error)(JSON.stringify(report, null, 2));
-  }
-
-  process.exit(report.ok ? 0 : 1);
-} catch (error) {
-  console.error(JSON.stringify({ ok: false, error: error.message }, null, 2));
-  process.exit(1);
-}
+    return [input, orchestratorReport];
+  },
+  buildReport: buildFinalGoNoGoReport,
+  renderMarkdown: renderFinalGoNoGoMarkdown,
+});
