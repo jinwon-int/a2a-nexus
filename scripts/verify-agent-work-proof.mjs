@@ -11,12 +11,17 @@
  * sends, releases, registry/badge writes, DB/ACK/replay actions, deploys,
  * restarts, visibility changes, or secret/key movement.
  */
-import fs from 'node:fs';
-import { parseArgs } from 'node:util';
-
 import { verifyAnalysisReportProductPackage } from './verify-analysis-report.mjs';
 import { verifyVerdict } from './verify-finalizer-verdict.mjs';
-import { canonicalizeJson, sha256Prefix } from './lib/a2a-offline-verify.mjs';
+import {
+  fail,
+  hashObject,
+  isPlainObject,
+  isSha256,
+  pass,
+  runVerifierCli,
+  unsafeStringFindings,
+} from './lib/a2a-offline-verify.mjs';
 import { verifyCertificationBatteryBundle } from './lib/certification-battery-verifier.mjs';
 import { verifyCompletionCertificate } from './lib/completion-certificate-verifier.mjs';
 
@@ -24,7 +29,6 @@ export const AGENT_WORK_PROOF_SCHEMA = 'a2a.agent-work-proof.bundle.v0';
 export const AGENT_WORK_PROOF_ARTIFACT_MANIFEST_SCHEMA = 'a2a.agent-work-proof.artifactManifest.v0';
 export const CANONICALIZATION = 'rfc8785-jcs-v1';
 
-const HASH_RE = /^sha256:[a-f0-9]{64}$/;
 const EXPECTED_ARTIFACTS = [
   'verifiable-analysis-report-product',
   'certification-battery-fixture',
@@ -38,88 +42,6 @@ const PUBLIC_SAFETY_FIELDS = [
   'containsPrivateKeys',
   'containsTelegramIds',
 ];
-const FORBIDDEN_RUNTIME_STRINGS = [
-  '/root/',
-  '/home/',
-  '/Users/',
-  '.openclaw/',
-  'AGENTS.md',
-  'SOUL.md',
-  'USER.md',
-  'TOOLS.md',
-  'HEARTBEAT.md',
-  'IDENTITY.md',
-];
-const SECRET_LIKE_PATTERNS = [
-  /ghp_[A-Za-z0-9_]{20,}/,
-  /github_pat_[A-Za-z0-9_]+/,
-  /sk_live_[A-Za-z0-9]+/,
-  /rk_live_[A-Za-z0-9]+/,
-  /pk_live_[A-Za-z0-9]+/,
-  /xox[baprs]-[A-Za-z0-9-]+/,
-  /A2A_EDGE_SECRET=/,
-  /EDGE_SECRET=/,
-  /-----BEGIN (?:RSA |OPENSSH |EC |DSA )?PRIVATE KEY-----/,
-];
-
-function pass(checks, id) {
-  checks.push({ id, ok: true });
-}
-
-function fail(checks, id, detail) {
-  checks.push({ id, ok: false, detail });
-}
-
-function isPlainObject(value) {
-  return value != null && typeof value === 'object' && !Array.isArray(value);
-}
-
-function isSha256(value) {
-  return typeof value === 'string' && HASH_RE.test(value);
-}
-
-function hashObject(value) {
-  return sha256Prefix(canonicalizeJson(value));
-}
-
-function sameJcs(a, b) {
-  try {
-    return canonicalizeJson(a) === canonicalizeJson(b);
-  } catch {
-    return false;
-  }
-}
-
-function unsafeStringFindings(value, trail = []) {
-  const findings = [];
-  const visit = (node, pathParts) => {
-    if (typeof node === 'string') {
-      for (const marker of FORBIDDEN_RUNTIME_STRINGS) {
-        if (node.includes(marker)) findings.push({ id: 'private-runtime-marker', marker, path: pathParts.join('.') });
-      }
-      for (const pattern of SECRET_LIKE_PATTERNS) {
-        if (pattern.test(node)) findings.push({ id: 'secret-like-string', marker: String(pattern), path: pathParts.join('.') });
-      }
-    } else if (Array.isArray(node)) {
-      node.forEach((item, index) => visit(item, [...pathParts, String(index)]));
-    } else if (node && typeof node === 'object') {
-      for (const [key, item] of Object.entries(node)) {
-        const lower = key.toLowerCase();
-        if (item !== false && item !== null && item !== undefined) {
-          if (lower.includes('telegram') && lower.includes('id')) {
-            findings.push({ id: 'telegram-id-field', marker: key, path: [...pathParts, key].join('.') });
-          }
-          if (lower.includes('provider') && lower.includes('id')) {
-            findings.push({ id: 'provider-id-field', marker: key, path: [...pathParts, key].join('.') });
-          }
-        }
-        visit(item, [...pathParts, key]);
-      }
-    }
-  };
-  visit(value, trail);
-  return findings;
-}
 
 function evidenceHashes(bundle) {
   return {
@@ -309,44 +231,12 @@ export function verifyAgentWorkProofBundle(bundle, keyring, opts = {}) {
 }
 
 function main(argv) {
-  const { values, positionals } = parseArgs({
-    args: argv,
-    allowPositionals: true,
-    options: {
-      keyring: { type: 'string' },
-      json: { type: 'boolean', default: false },
-      now: { type: 'string' },
-    },
+  return runVerifierCli(argv, {
+    usage: 'usage: verify-agent-work-proof.mjs <bundle.json> --keyring <keyring.json> [--now ISO] [--json]',
+    inputLabel: 'bundle',
+    verify: verifyAgentWorkProofBundle,
+    summary: (result) => (result.green ? 'GREEN — agent work proof bundle verified' : 'RED — agent work proof verification failed (fail-closed)'),
   });
-  const bundlePath = positionals[0];
-  if (!bundlePath || !values.keyring) {
-    process.stderr.write('usage: verify-agent-work-proof.mjs <bundle.json> --keyring <keyring.json> [--now ISO] [--json]\n');
-    return 2;
-  }
-  let bundle;
-  let keyring;
-  try {
-    bundle = JSON.parse(fs.readFileSync(bundlePath, 'utf8'));
-  } catch (err) {
-    process.stderr.write(`cannot read bundle: ${err.message}\n`);
-    return 2;
-  }
-  try {
-    keyring = JSON.parse(fs.readFileSync(values.keyring, 'utf8'));
-  } catch (err) {
-    process.stderr.write(`cannot read keyring: ${err.message}\n`);
-    return 2;
-  }
-  const result = verifyAgentWorkProofBundle(bundle, keyring, { now: values.now });
-  if (values.json) {
-    process.stdout.write(`${JSON.stringify(result, null, 2)}\n`);
-  } else {
-    for (const check of result.checks) {
-      process.stdout.write(`${check.ok ? 'PASS' : 'FAIL'}  ${check.id}${check.detail ? ` — ${check.detail}` : ''}\n`);
-    }
-    process.stdout.write(`\n${result.green ? 'GREEN — agent work proof bundle verified' : 'RED — agent work proof verification failed (fail-closed)'}\n`);
-  }
-  return result.green ? 0 : 1;
 }
 
 if (import.meta.url === `file://${process.argv[1]}`) {

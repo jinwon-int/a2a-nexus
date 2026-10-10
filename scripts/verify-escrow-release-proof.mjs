@@ -7,10 +7,15 @@
  * escrow/custody, call payment rails, decide chargeback liability, deploy a
  * webhook, contact providers, mutate broker state, or use secrets.
  */
-import fs from 'node:fs';
-import { parseArgs } from 'node:util';
-
-import { canonicalizeJson, sha256Prefix } from './lib/a2a-offline-verify.mjs';
+import {
+  fail,
+  hashObject,
+  isPlainObject,
+  isSha256,
+  pass,
+  runVerifierCli,
+  unsafeStringFindings,
+} from './lib/a2a-offline-verify.mjs';
 import { verifyAgentWorkProofBundle } from './verify-agent-work-proof.mjs';
 import { verifyVerdict } from './verify-finalizer-verdict.mjs';
 
@@ -18,7 +23,6 @@ export const ESCROW_RELEASE_PROOF_SCHEMA = 'a2a.escrow-release-proof.bundle.v0';
 export const ESCROW_RELEASE_CONDITION_SCHEMA = 'a2a.escrow-release.condition.v0';
 export const CANONICALIZATION = 'rfc8785-jcs-v1';
 
-const HASH_RE = /^sha256:[a-f0-9]{64}$/;
 const RELEASE_DECISIONS = ['release_authorized', 'release_rejected', 'release_pending'];
 const CONDITION_STATUSES = ['met', 'failed', 'blocked', 'inconclusive', 'pending'];
 const NON_AUTHORIZING_STATUSES = ['failed', 'blocked', 'inconclusive'];
@@ -55,83 +59,9 @@ const REQUIRED_DOES_NOT_PROVE = [
   'card-network-authorization',
   'live-rail-execution',
 ];
-const FORBIDDEN_RUNTIME_STRINGS = [
-  '/root/',
-  '/home/',
-  '/Users/',
-  '.openclaw/',
-  'AGENTS.md',
-  'SOUL.md',
-  'USER.md',
-  'TOOLS.md',
-  'HEARTBEAT.md',
-  'IDENTITY.md',
-];
-const SECRET_LIKE_PATTERNS = [
-  /ghp_[A-Za-z0-9_]{20,}/,
-  /github_pat_[A-Za-z0-9_]+/,
-  /sk_live_[A-Za-z0-9]+/,
-  /rk_live_[A-Za-z0-9]+/,
-  /pk_live_[A-Za-z0-9]+/,
-  /xox[baprs]-[A-Za-z0-9-]+/,
-  /A2A_EDGE_SECRET=/,
-  /EDGE_SECRET=/,
-  /-----BEGIN (?:RSA |OPENSSH |EC |DSA )?PRIVATE KEY-----/,
-];
-
-function pass(checks, id) {
-  checks.push({ id, ok: true });
-}
-
-function fail(checks, id, detail) {
-  checks.push({ id, ok: false, detail });
-}
-
-function isPlainObject(value) {
-  return value != null && typeof value === 'object' && !Array.isArray(value);
-}
-
-function isSha256(value) {
-  return typeof value === 'string' && HASH_RE.test(value);
-}
-
-function hashObject(value) {
-  return sha256Prefix(canonicalizeJson(value));
-}
-
-function unsafeStringFindings(value, trail = []) {
-  const findings = [];
-  const visit = (node, pathParts) => {
-    if (typeof node === 'string') {
-      for (const marker of FORBIDDEN_RUNTIME_STRINGS) {
-        if (node.includes(marker)) findings.push({ id: 'private-runtime-marker', marker, path: pathParts.join('.') });
-      }
-      for (const pattern of SECRET_LIKE_PATTERNS) {
-        if (pattern.test(node)) findings.push({ id: 'secret-like-string', marker: String(pattern), path: pathParts.join('.') });
-      }
-    } else if (Array.isArray(node)) {
-      node.forEach((item, index) => visit(item, [...pathParts, String(index)]));
-    } else if (node && typeof node === 'object') {
-      for (const [key, item] of Object.entries(node)) {
-        const lower = key.toLowerCase();
-        if (item !== false && item !== null && item !== undefined) {
-          if (lower.includes('telegram') && lower.includes('id')) {
-            findings.push({ id: 'telegram-id-field', marker: key, path: [...pathParts, key].join('.') });
-          }
-          if (lower.includes('provider') && lower.includes('id')) {
-            findings.push({ id: 'provider-id-field', marker: key, path: [...pathParts, key].join('.') });
-          }
-          if (['pan', 'cvv', 'cardnumber', 'rawcarddata'].some((marker) => lower.includes(marker))) {
-            findings.push({ id: 'raw-card-field', marker: key, path: [...pathParts, key].join('.') });
-          }
-        }
-        visit(item, [...pathParts, key]);
-      }
-    }
-  };
-  visit(value, trail);
-  return findings;
-}
+// Escrow-specific raw-field key check (see unsafeStringFindings in a2a-offline-verify.mjs).
+const RAW_CARD_FIELD_MARKERS = ['pan', 'cvv', 'cardnumber', 'rawcarddata'];
+const RAW_CARD_FIELD_FINDING_ID = 'raw-card-field';
 
 function verifyShape(proof, checks) {
   if (!isPlainObject(proof) || proof.schemaVersion !== ESCROW_RELEASE_PROOF_SCHEMA) {
@@ -159,7 +89,7 @@ function verifyPaymentBoundary(proof, checks) {
 function verifyPublicSafety(proof, checks) {
   const safety = proof?.publicSafety || {};
   const bad = PUBLIC_SAFETY_FIELDS.filter((field) => safety[field] !== false);
-  const unsafe = unsafeStringFindings(proof);
+  const unsafe = unsafeStringFindings(proof, { rawFieldMarkers: RAW_CARD_FIELD_MARKERS, rawFieldFindingId: RAW_CARD_FIELD_FINDING_ID });
   if (bad.length > 0 || unsafe.length > 0) {
     const details = [];
     if (bad.length > 0) details.push(`publicSafety fields must be false: ${bad.join(', ')}`);
@@ -358,44 +288,12 @@ export function verifyEscrowReleaseProof(proof, keyring, opts = {}) {
 }
 
 function main(argv) {
-  const { values, positionals } = parseArgs({
-    args: argv,
-    allowPositionals: true,
-    options: {
-      keyring: { type: 'string' },
-      json: { type: 'boolean', default: false },
-      now: { type: 'string' },
-    },
+  return runVerifierCli(argv, {
+    usage: 'usage: verify-escrow-release-proof.mjs <proof.json> --keyring <keyring.json> [--now ISO] [--json]',
+    inputLabel: 'proof',
+    verify: verifyEscrowReleaseProof,
+    summary: (result) => (result.releaseAllowed ? 'GREEN — release condition verified as authorized' : 'RED/PENDING — release is not authorized (fail-closed)'),
   });
-  const proofPath = positionals[0];
-  if (!proofPath || !values.keyring) {
-    process.stderr.write('usage: verify-escrow-release-proof.mjs <proof.json> --keyring <keyring.json> [--now ISO] [--json]\n');
-    return 2;
-  }
-  let proof;
-  let keyring;
-  try {
-    proof = JSON.parse(fs.readFileSync(proofPath, 'utf8'));
-  } catch (err) {
-    process.stderr.write(`cannot read proof: ${err.message}\n`);
-    return 2;
-  }
-  try {
-    keyring = JSON.parse(fs.readFileSync(values.keyring, 'utf8'));
-  } catch (err) {
-    process.stderr.write(`cannot read keyring: ${err.message}\n`);
-    return 2;
-  }
-  const result = verifyEscrowReleaseProof(proof, keyring, { now: values.now });
-  if (values.json) {
-    process.stdout.write(`${JSON.stringify(result, null, 2)}\n`);
-  } else {
-    for (const check of result.checks) {
-      process.stdout.write(`${check.ok ? 'PASS' : 'FAIL'}  ${check.id}${check.detail ? ` — ${check.detail}` : ''}\n`);
-    }
-    process.stdout.write(`\n${result.releaseAllowed ? 'GREEN — release condition verified as authorized' : 'RED/PENDING — release is not authorized (fail-closed)'}\n`);
-  }
-  return result.green ? 0 : 1;
 }
 
 if (import.meta.url === `file://${process.argv[1]}`) {

@@ -1,4 +1,11 @@
-import { canonicalizeJson, sha256Prefix } from './a2a-offline-verify.mjs';
+import {
+  fail,
+  hashObject,
+  isPlainObject,
+  isSha256,
+  pass,
+  unsafeStringFindings,
+} from './a2a-offline-verify.mjs';
 import { verifyVerdict } from '../verify-finalizer-verdict.mjs';
 import { verifyEscrowReleaseProof } from '../verify-escrow-release-proof.mjs';
 
@@ -7,7 +14,6 @@ export const MANDATE_SCHEMA = 'a2a.agent-payment-mandate.v0';
 export const SCOPE_DECISION_SCHEMA = 'a2a.payment-scope-decision.v0';
 export const CANONICALIZATION = 'rfc8785-jcs-v1';
 
-const HASH_RE = /^sha256:[a-f0-9]{64}$/;
 const RELEASE_DECISIONS = ['release_authorized', 'release_rejected', 'release_pending'];
 const SCOPE_DECISIONS = ['allowed', 'rejected', 'pending'];
 const SCOPE_STATUSES = ['passed', 'failed', 'pending', 'not_required'];
@@ -66,79 +72,10 @@ const AUTHORIZED_REASON_CODES = [
   'NO_TAMPER_DETECTED',
   'RELEASE_AUTHORIZED',
 ];
-const FORBIDDEN_RUNTIME_STRINGS = [
-  '/root/',
-  '/home/',
-  '/Users/',
-  '.openclaw/',
-  'AGENTS.md',
-  'SOUL.md',
-  'USER.md',
-  'TOOLS.md',
-  'HEARTBEAT.md',
-  'IDENTITY.md',
-];
-const SECRET_LIKE_PATTERNS = [
-  /ghp_[A-Za-z0-9_]{20,}/,
-  /github_pat_[A-Za-z0-9_]+/,
-  /sk_live_[A-Za-z0-9]+/,
-  /rk_live_[A-Za-z0-9]+/,
-  /pk_live_[A-Za-z0-9]+/,
-  /xox[baprs]-[A-Za-z0-9-]+/,
-  /A2A_EDGE_SECRET=/,
-  /EDGE_SECRET=/,
-  /-----BEGIN (?:RSA |OPENSSH |EC |DSA )?PRIVATE KEY-----/,
-];
-
-function pass(checks, id) {
-  checks.push({ id, ok: true });
-}
-
-function fail(checks, id, detail) {
-  checks.push({ id, ok: false, detail });
-}
-
-function isPlainObject(value) {
-  return value != null && typeof value === 'object' && !Array.isArray(value);
-}
-
-function isSha256(value) {
-  return typeof value === 'string' && HASH_RE.test(value);
-}
-
-function hashObject(value) {
-  return sha256Prefix(canonicalizeJson(value));
-}
-
-function unsafeStringFindings(value, trail = []) {
-  const findings = [];
-  const visit = (node, pathParts) => {
-    if (typeof node === 'string') {
-      for (const marker of FORBIDDEN_RUNTIME_STRINGS) {
-        if (node.includes(marker)) findings.push({ id: 'private-runtime-marker', marker, path: pathParts.join('.') });
-      }
-      for (const pattern of SECRET_LIKE_PATTERNS) {
-        if (pattern.test(node)) findings.push({ id: 'secret-like-string', marker: String(pattern), path: pathParts.join('.') });
-      }
-    } else if (Array.isArray(node)) {
-      node.forEach((item, index) => visit(item, [...pathParts, String(index)]));
-    } else if (node && typeof node === 'object') {
-      for (const [key, item] of Object.entries(node)) {
-        const lower = key.toLowerCase();
-        if (item !== false && item !== null && item !== undefined) {
-          if (lower.includes('telegram') && lower.includes('id')) findings.push({ id: 'telegram-id-field', marker: key, path: [...pathParts, key].join('.') });
-          if (lower.includes('provider') && lower.includes('id')) findings.push({ id: 'provider-id-field', marker: key, path: [...pathParts, key].join('.') });
-          if (['pan', 'cvv', 'cardnumber', 'rawcarddata', 'paymenttoken'].some((marker) => lower.includes(marker))) {
-            findings.push({ id: 'raw-payment-field', marker: key, path: [...pathParts, key].join('.') });
-          }
-        }
-        visit(item, [...pathParts, key]);
-      }
-    }
-  };
-  visit(value, trail);
-  return findings;
-}
+// Dispute-packet raw-field key check (see unsafeStringFindings in a2a-offline-verify.mjs).
+// Intentionally broader than the escrow verifier's set (adds 'paymenttoken') with its own finding id.
+const RAW_PAYMENT_FIELD_MARKERS = ['pan', 'cvv', 'cardnumber', 'rawcarddata', 'paymenttoken'];
+const RAW_PAYMENT_FIELD_FINDING_ID = 'raw-payment-field';
 
 function parseAmountCents(amount) {
   if (!isPlainObject(amount) || typeof amount.currency !== 'string' || typeof amount.value !== 'string') return undefined;
@@ -176,7 +113,7 @@ function verifyPaymentBoundary(packet, checks) {
 function verifyPublicSafety(packet, checks) {
   const safety = packet?.publicSafety || {};
   const bad = PUBLIC_SAFETY_FIELDS.filter((field) => safety[field] !== false);
-  const unsafe = unsafeStringFindings(packet);
+  const unsafe = unsafeStringFindings(packet, { rawFieldMarkers: RAW_PAYMENT_FIELD_MARKERS, rawFieldFindingId: RAW_PAYMENT_FIELD_FINDING_ID });
   if (bad.length > 0 || unsafe.length > 0) {
     const details = [];
     if (bad.length > 0) details.push(`publicSafety fields must be false: ${bad.join(', ')}`);

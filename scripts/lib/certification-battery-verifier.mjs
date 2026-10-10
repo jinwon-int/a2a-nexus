@@ -1,4 +1,13 @@
-import { canonicalizeJson, sha256Prefix } from './a2a-offline-verify.mjs';
+import {
+  canonicalizeJson,
+  fail,
+  FORBIDDEN_RUNTIME_STRINGS,
+  hashObject,
+  isPlainObject,
+  isSha256,
+  pass,
+  sameJcs,
+} from './a2a-offline-verify.mjs';
 
 export const BATTERY_PACK_SCHEMA = 'a2a.certification-battery.pack.v0';
 export const BATTERY_RESULT_SCHEMA = 'a2a.certification-battery.result.v0';
@@ -7,7 +16,6 @@ export const FINALIZER_VERDICT_SCHEMA = 'a2a.finalizer.verdict.v1';
 export const PRODUCT_ARTIFACT_CERTIFICATE_SCHEMA = 'a2a.product-artifact.certificate.v0';
 export const CANONICALIZATION = 'rfc8785-jcs-v1';
 
-const HASH_RE = /^sha256:[a-f0-9]{64}$/;
 const COMMIT_RE = /^[a-f0-9]{40}$/;
 const RESULT_STATUSES = new Set(['pass', 'fail', 'skip']);
 const CLAIM_STATUSES = new Set(['pass', 'fail', 'missing', 'not-evaluated']);
@@ -19,18 +27,9 @@ const CLAIM_KINDS = new Set([
   'reproducible-build',
   'independent-review',
 ]);
-const FORBIDDEN_RUNTIME_STRINGS = [
-  '/root/',
-  '/home/',
-  '/Users/',
-  '.openclaw/',
-  'AGENTS.md',
-  'SOUL.md',
-  'USER.md',
-  'TOOLS.md',
-  'HEARTBEAT.md',
-  'IDENTITY.md',
-];
+// Battery-local pattern set: it predates and is narrower than the shared
+// SECRET_LIKE_PATTERNS in a2a-offline-verify.mjs (no A2A_EDGE_SECRET= / EDGE_SECRET=).
+// Kept per-file so the battery check's behavior is unchanged.
 const SECRET_LIKE_PATTERNS = [
   /ghp_[A-Za-z0-9_]{20,}/,
   /github_pat_[A-Za-z0-9_]+/,
@@ -41,40 +40,12 @@ const SECRET_LIKE_PATTERNS = [
   /-----BEGIN (?:RSA |OPENSSH |EC |DSA )?PRIVATE KEY-----/,
 ];
 
-function isPlainObject(value) {
-  return value != null && typeof value === 'object' && !Array.isArray(value);
-}
-
-function isSha256(value) {
-  return typeof value === 'string' && HASH_RE.test(value);
-}
-
-function pass(checks, id) {
-  checks.push({ id, ok: true });
-}
-
-function fail(checks, id, detail) {
-  checks.push({ id, ok: false, detail });
-}
-
 function subjectHasImmutableBinding(subject) {
   return Boolean(
     subject
     && (COMMIT_RE.test(subject.commitSha || '')
       || (Array.isArray(subject.artifactHashes) && subject.artifactHashes.some(isSha256))),
   );
-}
-
-function sameJcs(a, b) {
-  try {
-    return canonicalizeJson(a) === canonicalizeJson(b);
-  } catch {
-    return false;
-  }
-}
-
-function hashObject(value) {
-  return sha256Prefix(canonicalizeJson(value));
 }
 
 function hashResultSansSelf(result) {
