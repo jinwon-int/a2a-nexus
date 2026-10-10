@@ -93,12 +93,35 @@ function fail(message) {
   throw new NclexLineageSpecError(message);
 }
 
+/**
+ * Remove HTML comments without a regex: repeat until stable so a comment
+ * reassembled by an inner removal (`<!<!---->--`) is removed too, and drop an
+ * unterminated `<!--` through the end of the value.
+ */
+export function stripHtmlComments(text) {
+  let current = String(text);
+  for (;;) {
+    let out = "";
+    let index = 0;
+    while (index < current.length) {
+      const start = current.indexOf("<!--", index);
+      if (start < 0) { out += current.slice(index); break; }
+      out += current.slice(index, start);
+      const end = current.indexOf("-->", start + 4);
+      if (end < 0) break;
+      index = end + 3;
+    }
+    if (out === current) return out;
+    current = out;
+  }
+}
+
 /** Same line grammar as nclex `tools/content_process.js` parsePrFields: `- KEY: value`. */
 export function parsePrFields(body) {
   const fields = {};
   for (const line of String(body ?? "").split("\n")) {
     const match = line.match(/^\s*-\s*([A-Z0-9_]+):\s*(.*?)\s*$/);
-    if (match) fields[match[1]] = match[2].replace(/<!--.*?-->/g, "").trim();
+    if (match) fields[match[1]] = stripHtmlComments(match[2]).trim();
   }
   return fields;
 }

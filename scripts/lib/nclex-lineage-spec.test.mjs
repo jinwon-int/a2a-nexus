@@ -16,6 +16,7 @@ import {
   main,
   nclexLineageId,
   parsePrFields,
+  stripHtmlComments,
 } from "./nclex-lineage-spec.mjs";
 import { buildCreateRequest, laneBinding } from "./review-lineage-client.mjs";
 
@@ -65,6 +66,16 @@ const intentOf = (s) => Object.fromEntries(INTENT_KEYS.map((k) => [k, s[k]]));
 test("parsePrFields matches the nclex `- KEY: value` grammar and strips HTML comments", () => {
   const fields = parsePrFields("- TASK_ID: T-1 <!-- note -->\n  - RISK_CLASS: high\nTASK_KIND: ignored (no dash)\n");
   assert.deepEqual(fields, { TASK_ID: "T-1", RISK_CLASS: "high" });
+});
+
+test("stripHtmlComments removes reassembled and unterminated comments (CodeQL incomplete sanitization)", () => {
+  assert.equal(stripHtmlComments("a <!-- x --> b <!-- y --> c"), "a  b  c");
+  assert.equal(stripHtmlComments("<!<!---->--x"), "");
+  assert.equal(stripHtmlComments("value <!-- unterminated"), "value ");
+  assert.equal(stripHtmlComments("no comment"), "no comment");
+  for (const input of ["<!<!---->-- tail -->ok", "<<!-- -->!-- a -->--> z", "<!-<!-- x -->- y -->"]) {
+    assert.ok(!stripHtmlComments(input).includes("<!--"), input);
+  }
 });
 
 test("lineage id is deterministic per (PR, role) and distinct across roles", () => {
