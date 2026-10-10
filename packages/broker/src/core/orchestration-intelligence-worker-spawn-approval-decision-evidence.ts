@@ -1,11 +1,9 @@
-import { createHash } from "node:crypto";
-
 import {
   buildOIWorkerSpawnApprovalRequestPacket,
   type OIWorkerSpawnApprovalRequestPacket,
 } from "./orchestration-intelligence-worker-spawn-approval-request.js";
 import type { OIRuntimeReadinessEvidence } from "./orchestration-intelligence-runtime-readiness-gate.js";
-import { stableStringify } from "./value-guards.js";
+import { approvalNotExpired, approvedAtValid, coversAll, stableId } from "./value-guards.js";
 
 export type OIWorkerSpawnApprovalDecisionEvidenceState =
   | "worker_spawn_approval_evidence_accepted"
@@ -317,13 +315,13 @@ function buildChecks(input: {
     },
     {
       id: "spawn_scope_matches_request",
-      status: scopeMatches(
+      status: coversAll(
         input.workerSpawnApprovalRequest.spawnApprovalRequest.requiredConditions,
         evidence?.spawnScope,
       )
         ? "pass"
         : "fail",
-      summary: scopeMatches(
+      summary: coversAll(
         input.workerSpawnApprovalRequest.spawnApprovalRequest.requiredConditions,
         evidence?.spawnScope,
       )
@@ -516,29 +514,3 @@ function acceptedDecisionForState(
   };
 }
 
-function approvedAtValid(approvedAt: string | undefined, generatedAt: string): boolean {
-  const approved = Date.parse(approvedAt ?? "");
-  const generated = Date.parse(generatedAt);
-  return Number.isFinite(approved) && Number.isFinite(generated) && approved <= generated;
-}
-
-function approvalNotExpired(expiresAt: string | undefined, generatedAt: string): boolean {
-  if (!expiresAt) return true;
-  const expiry = Date.parse(expiresAt);
-  const generated = Date.parse(generatedAt);
-  return Number.isFinite(expiry) && Number.isFinite(generated) && expiry > generated;
-}
-
-function scopeMatches(required: string[], supplied: string[] | undefined): boolean {
-  return coversAll(required, supplied);
-}
-
-function coversAll(required: string[], supplied: string[] | undefined): boolean {
-  if (!supplied?.length) return false;
-  const suppliedSet = new Set(supplied.map((item) => item.trim()));
-  return required.every((item) => suppliedSet.has(item));
-}
-
-function stableId(prefix: string, value: unknown): string {
-  return `${prefix}-${createHash("sha256").update(stableStringify(value)).digest("hex").slice(0, 24)}`;
-}

@@ -1,5 +1,4 @@
-import { createHash } from "node:crypto";
-import { stableStringify } from "./value-guards.js";
+import { stableId } from "./value-guards.js";
 
 import type {
   OIValidationScorePacket,
@@ -189,6 +188,3 @@ function recommendationForState(
   return "prepare_operator_review";
 }
 
-function stableId(prefix: string, value: unknown): string {
-  return `${prefix}-${createHash("sha256").update(stableStringify(value)).digest("hex").slice(0, 24)}`;
-}

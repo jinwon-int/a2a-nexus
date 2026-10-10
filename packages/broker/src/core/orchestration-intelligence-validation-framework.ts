@@ -1,5 +1,4 @@
-import { createHash } from "node:crypto";
-import { stableStringify } from "./value-guards.js";
+import { stableId } from "./value-guards.js";
 
 export type OIValidationScenarioId =
   | "wiki-large-refactor"
@@ -205,6 +204,3 @@ export function renderOIValidationFrameworkMarkdown(packet: OIValidationFramewor
   ].join("\n");
 }
 
-function stableId(prefix: string, value: unknown): string {
-  return `${prefix}-${createHash("sha256").update(stableStringify(value)).digest("hex").slice(0, 24)}`;
-}

@@ -1,5 +1,4 @@
-import { createHash } from "node:crypto";
-import { stableStringify } from "./value-guards.js";
+import { stableId } from "./value-guards.js";
 
 import {
   buildOIValidationFinalizerDecisionPacket,
@@ -281,6 +280,3 @@ function nextActionsForState(state: OIRuntimeReadinessGateState): string[] {
   return ["keep runtime executor disabled", "collect missing runtime readiness evidence before another gate review"];
 }
 
-function stableId(prefix: string, value: unknown): string {
-  return `${prefix}-${createHash("sha256").update(stableStringify(value)).digest("hex").slice(0, 24)}`;
-}

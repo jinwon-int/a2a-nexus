@@ -1,5 +1,4 @@
-import { createHash } from "node:crypto";
-import { stableStringify } from "./value-guards.js";
+import { stableId } from "./value-guards.js";
 
 import {
   buildOIValidationOperatorDecisionEvidencePacket,
@@ -184,6 +183,3 @@ function nextActionsForState(state: OIValidationFinalizerDecisionState): string[
   return ["revise candidate metrics or implementation", "rerun validation operator review request"];
 }
 
-function stableId(prefix: string, value: unknown): string {
-  return `${prefix}-${createHash("sha256").update(stableStringify(value)).digest("hex").slice(0, 24)}`;
-}
