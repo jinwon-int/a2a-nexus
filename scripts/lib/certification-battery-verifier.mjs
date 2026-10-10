@@ -7,6 +7,7 @@ import {
   isSha256,
   pass,
   sameJcs,
+  SECRET_LIKE_PATTERNS,
 } from './a2a-offline-verify.mjs';
 
 export const BATTERY_PACK_SCHEMA = 'a2a.certification-battery.pack.v0';
@@ -27,18 +28,11 @@ const CLAIM_KINDS = new Set([
   'reproducible-build',
   'independent-review',
 ]);
-// Battery-local pattern set: it predates and is narrower than the shared
-// SECRET_LIKE_PATTERNS in a2a-offline-verify.mjs (no A2A_EDGE_SECRET= / EDGE_SECRET=).
-// Kept per-file so the battery check's behavior is unchanged.
-const SECRET_LIKE_PATTERNS = [
-  /ghp_[A-Za-z0-9_]{20,}/,
-  /github_pat_[A-Za-z0-9_]+/,
-  /sk_live_[A-Za-z0-9]+/,
-  /rk_live_[A-Za-z0-9]+/,
-  /pk_live_[A-Za-z0-9]+/,
-  /xox[baprs]-[A-Za-z0-9-]+/,
-  /-----BEGIN (?:RSA |OPENSSH |EC |DSA )?PRIVATE KEY-----/,
-];
+// Secret-like patterns come from the shared SECRET_LIKE_PATTERNS in
+// a2a-offline-verify.mjs. The battery-local copy that omitted
+// `A2A_EDGE_SECRET=` / `EDGE_SECRET=` was unintentional drift from the
+// parallel-authored #1481–#1488 verifier batch (#2350 A4, owner decision
+// 2026-10-10): the contract never excluded those markers.
 
 function subjectHasImmutableBinding(subject) {
   return Boolean(

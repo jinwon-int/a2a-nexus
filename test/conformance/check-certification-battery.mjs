@@ -58,6 +58,10 @@ assertInvalid((candidate) => { candidate.batteryVerdict.kind = 'judgment'; }, 'b
 assertInvalid((candidate) => { candidate.batteryVerdict.assurance.doesNotProve.push('reproducibility'); }, 'battery-vs-judgment-boundary');
 assertInvalid((candidate) => { candidate.judgmentBoundaryExample.assurance.doesNotProve = ['analytical-correctness']; }, 'battery-vs-judgment-boundary');
 assertInvalid((candidate) => { candidate.productArtifactCertificateSample.claims[0].evidenceRef = 'battery-verdict:sha256:' + '2'.repeat(64); }, 'certificate-claims');
+// #2350 A4: the battery shares SECRET_LIKE_PATTERNS with the other offline
+// verifiers, so an edge-secret assignment in any string leaf must fail.
+assertInvalid((candidate) => { candidate.meta.issues.push('https://example.invalid/?A2A_EDGE_SECRET=redacted'); }, 'public-safe-text');
+assertInvalid((candidate) => { candidate.meta.issues.push('EDGE_SECRET=redacted'); }, 'public-safe-text');
 assertInvalid((candidate) => { candidate.productArtifactCertificateSample.assurance.doesNotProve = ['general-safety']; }, 'certificate-assurance-boundary');
 assertInvalid((candidate) => { candidate.extractionReadiness.decision = 'extraction-ready'; }, 'external-demand-ledger');
 assertInvalid((candidate) => { candidate.extractionReadiness.registryRequiredForValue = true; }, 'value-without-registry');

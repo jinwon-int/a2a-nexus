@@ -269,7 +269,11 @@ test('script surface manifest validates current root and broker package scripts'
   // release-gate manifest already runs; mirrored in BUDGETS.rootNpmScripts.
   // #2350 D: root 79→58 — 21 `node --test` wrapper aliases retired; their
   // test files run from the release-gate step inventory, so coverage is unchanged.
-  assert.equal(byId.get('root')?.scriptCount, 58);
+  // #2350 owner decision 2026-10-10: root 58→45 — 13 operator entry-point
+  // aliases with zero repo/CI/Wiki-runbook references retired (scripts stay
+  // runnable via `node scripts/<file>`); pr-review:healthcheck kept because
+  // the Wiki runbook a2a-nexus-pr-review-guardrails invokes it by name.
+  assert.equal(byId.get('root')?.scriptCount, 45);
   assert.equal(byId.get('broker')?.scriptCount, 57);
   assert.ok((byId.get('root')?.kindCounts['required-gate'] ?? 0) >= 7);
   assert.ok((byId.get('broker')?.kindCounts['required-gate'] ?? 0) >= 7);

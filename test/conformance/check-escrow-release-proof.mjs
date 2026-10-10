@@ -89,6 +89,10 @@ assertInvalid((candidate) => { candidate.paymentBoundary.rawCardDataPresent = tr
 assertInvalid((candidate) => { candidate.publicSafety.containsTokens = true; }, 'public-safe-bundle');
 assertInvalid((candidate) => { candidate.paymentProviderId = 'private-provider-123'; }, 'public-safe-bundle');
 assertInvalid((candidate) => { candidate.telegramChatId = '123456789'; }, 'public-safe-bundle');
+// #2350 A4: raw-field markers aligned with the dispute-packet verifier —
+// a raw payment token key is as disqualifying as raw card data.
+assertInvalid((candidate) => { candidate.paymentToken = 'tok_example'; }, 'public-safe-bundle');
+assertInvalid((candidate) => { candidate.cvv = '123'; }, 'public-safe-bundle');
 assertInvalid((candidate) => { candidate.cardNumber = 'redacted-card-placeholder'; }, 'public-safe-bundle');
 assertInvalid((candidate) => { candidate.agentWorkProof.evidence.completionCertificate.subject.workerId = 'worker:other'; }, 'agent-work-proof');
 assertInvalid((candidate) => { candidate.agentWorkProofHash = `sha256:${'0'.repeat(64)}`; }, 'agent-work-proof-hash');
