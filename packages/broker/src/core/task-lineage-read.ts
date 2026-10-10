@@ -62,7 +62,7 @@ const TASK_LINEAGE_INTENTS: readonly TaskKind[] = [
   "promote_to_live",
   "rollback_live",
 ];
-const TASK_LINEAGE_STATUSES: readonly TaskStatus[] = [
+export const TASK_LINEAGE_STATUSES: readonly TaskStatus[] = [
   "blocked",
   "queued",
   "claimed",
@@ -71,7 +71,7 @@ const TASK_LINEAGE_STATUSES: readonly TaskStatus[] = [
   "failed",
   "canceled",
 ];
-const TASK_LINEAGE_EDGE_TYPES = [
+export const TASK_LINEAGE_EDGE_TYPES = [
   "canonical_parent",
   "reference",
   "round_stamp",
@@ -87,13 +87,13 @@ const TASK_LINEAGE_ANOMALY_CODES = [
   "task_lineage.round_total_conflict",
 ] as const;
 
-const TASK_LINEAGE_INTENT_SET: ReadonlySet<TaskKind> =
+export const TASK_LINEAGE_INTENT_SET: ReadonlySet<TaskKind> =
   new Set(TASK_LINEAGE_INTENTS);
-const TASK_LINEAGE_STATUS_SET: ReadonlySet<TaskStatus> =
+export const TASK_LINEAGE_STATUS_SET: ReadonlySet<TaskStatus> =
   new Set(TASK_LINEAGE_STATUSES);
-const TASK_LINEAGE_EDGE_TYPE_SET: ReadonlySet<TaskLineageEdgeTypeV1> =
+export const TASK_LINEAGE_EDGE_TYPE_SET: ReadonlySet<TaskLineageEdgeTypeV1> =
   new Set(TASK_LINEAGE_EDGE_TYPES);
-const TASK_LINEAGE_ANOMALY_CODE_SET: ReadonlySet<TaskLineageAnomalyCodeV1> =
+export const TASK_LINEAGE_ANOMALY_CODE_SET: ReadonlySet<TaskLineageAnomalyCodeV1> =
   new Set(TASK_LINEAGE_ANOMALY_CODES);
 
 export type TaskLineageEdgeTypeV1 =
@@ -294,14 +294,14 @@ interface PageSlice<T> {
   page: TaskLineagePageV1;
 }
 
-function fail(
+export function fail(
   code: TaskLineageValidationCode,
   path: string,
 ): never {
   throw new TaskLineageValidationError(code, path);
 }
 
-function objectAt(
+export function objectAt(
   value: unknown,
   path: string,
 ): Record<string, unknown> {
@@ -311,7 +311,7 @@ function objectAt(
   return value as Record<string, unknown>;
 }
 
-function exactKeys(
+export function exactKeys(
   value: Record<string, unknown>,
   allowed: ReadonlySet<string>,
   path: string,
@@ -321,7 +321,7 @@ function exactKeys(
   }
 }
 
-function stringAt(
+export function stringAt(
   value: unknown,
   path: string,
   options: { max?: number; pattern?: RegExp } = {},
@@ -338,21 +338,21 @@ function stringAt(
   return value;
 }
 
-function identifierAt(value: unknown, path: string): string {
+export function identifierAt(value: unknown, path: string): string {
   return stringAt(value, path, {
     max: 512,
     pattern: IDENTIFIER_PATTERN,
   });
 }
 
-function optionalIdentifierAt(
+export function optionalIdentifierAt(
   value: unknown,
   path: string,
 ): string | undefined {
   return value === undefined ? undefined : identifierAt(value, path);
 }
 
-function timestampAt(
+export function timestampAt(
   value: unknown,
   path: string,
   canonicalize = false,
@@ -366,12 +366,12 @@ function timestampAt(
   return canonicalize ? new Date(parsed).toISOString() : timestamp;
 }
 
-function booleanAt(value: unknown, path: string): boolean {
+export function booleanAt(value: unknown, path: string): boolean {
   if (typeof value !== "boolean") fail("invalid_boolean", path);
   return value;
 }
 
-function integerAt(
+export function integerAt(
   value: unknown,
   path: string,
   minimum: number,
@@ -387,7 +387,7 @@ function integerAt(
   return value as number;
 }
 
-function enumAt<T extends string>(
+export function enumAt<T extends string>(
   value: unknown,
   allowed: ReadonlySet<T>,
   path: string,
@@ -398,7 +398,7 @@ function enumAt<T extends string>(
   return value as T;
 }
 
-function arrayAt(
+export function arrayAt(
   value: unknown,
   path: string,
   options: { min?: number; max?: number } = {},
@@ -413,7 +413,7 @@ function arrayAt(
   return value;
 }
 
-function uniqueEnumArrayAt<T extends string>(
+export function uniqueEnumArrayAt<T extends string>(
   value: unknown,
   allowed: ReadonlySet<T>,
   path: string,
@@ -625,505 +625,6 @@ export function parseTaskLineageCursorV1(
     queryHash,
     createdAt: timestampAt(value.createdAt, "$.cursor.createdAt"),
     taskIdHash,
-  };
-}
-
-function parseTaskLineageNodeAt(
-  input: unknown,
-  path: string,
-): TaskLineageNodeV1 {
-  const node = objectAt(input, path);
-  exactKeys(
-    node,
-    new Set([
-      "kind",
-      "taskId",
-      "parentTaskId",
-      "parentMissing",
-      "parentRoundId",
-      "referenceTaskIds",
-      "intent",
-      "status",
-      "requesterId",
-      "assignedWorkerId",
-      "createdAt",
-      "depth",
-    ]),
-    path,
-  );
-  if (node.kind !== TASK_LINEAGE_NODE_KIND) {
-    fail("invalid_enum", `${path}.kind`);
-  }
-  const parentTaskId =
-    node.parentTaskId === null
-      ? null
-      : identifierAt(node.parentTaskId, `${path}.parentTaskId`);
-  const parentMissing = booleanAt(
-    node.parentMissing,
-    `${path}.parentMissing`,
-  );
-  if (parentTaskId !== null && parentMissing) {
-    fail("invalid_boolean", `${path}.parentMissing`);
-  }
-  const referenceTaskIds = arrayAt(
-    node.referenceTaskIds,
-    `${path}.referenceTaskIds`,
-    { max: TASK_LINEAGE_MAX_REFERENCE_IDS_PER_NODE },
-  ).map((value, index) =>
-    identifierAt(value, `${path}.referenceTaskIds[${index}]`),
-  );
-  if (new Set(referenceTaskIds).size !== referenceTaskIds.length) {
-    fail("duplicate_value", `${path}.referenceTaskIds`);
-  }
-  return {
-    kind: TASK_LINEAGE_NODE_KIND,
-    taskId: identifierAt(node.taskId, `${path}.taskId`),
-    parentTaskId,
-    parentMissing,
-    ...(node.parentRoundId === undefined
-      ? {}
-      : {
-          parentRoundId: identifierAt(
-            node.parentRoundId,
-            `${path}.parentRoundId`,
-          ),
-        }),
-    referenceTaskIds,
-    intent: enumAt(node.intent, TASK_LINEAGE_INTENT_SET, `${path}.intent`),
-    status: enumAt(node.status, TASK_LINEAGE_STATUS_SET, `${path}.status`),
-    requesterId: identifierAt(node.requesterId, `${path}.requesterId`),
-    ...(node.assignedWorkerId === undefined
-      ? {}
-      : {
-          assignedWorkerId: identifierAt(
-            node.assignedWorkerId,
-            `${path}.assignedWorkerId`,
-          ),
-        }),
-    createdAt: timestampAt(node.createdAt, `${path}.createdAt`),
-    depth: integerAt(
-      node.depth,
-      `${path}.depth`,
-      0,
-      TASK_LINEAGE_HARD_MAX_DEPTH,
-    ),
-  };
-}
-
-export function parseTaskLineageNodeV1(input: unknown): TaskLineageNodeV1 {
-  return parseTaskLineageNodeAt(input, "$");
-}
-
-function parseTaskLineageChildAt(
-  input: unknown,
-  path: string,
-): TaskLineageChildV1 {
-  const child = objectAt(input, path);
-  exactKeys(child, new Set(["kind", "node", "edges", "rejoin"]), path);
-  if (child.kind !== TASK_LINEAGE_CHILD_KIND) {
-    fail("invalid_enum", `${path}.kind`);
-  }
-  return {
-    kind: TASK_LINEAGE_CHILD_KIND,
-    node: parseTaskLineageNodeAt(child.node, `${path}.node`),
-    edges: uniqueEnumArrayAt(
-      child.edges,
-      TASK_LINEAGE_EDGE_TYPE_SET,
-      `${path}.edges`,
-      TASK_LINEAGE_EDGE_TYPES.length,
-    ),
-    rejoin: booleanAt(child.rejoin, `${path}.rejoin`),
-  };
-}
-
-export function parseTaskLineageChildV1(input: unknown): TaskLineageChildV1 {
-  return parseTaskLineageChildAt(input, "$");
-}
-
-function parseTaskLineageChildrenAnchorAt(
-  input: unknown,
-  path: string,
-): TaskLineageChildrenAnchorV1 {
-  const anchor = objectAt(input, path);
-  exactKeys(
-    anchor,
-    new Set(["kind", "taskId", "parentRoundId"]),
-    path,
-  );
-  if (anchor.kind !== TASK_LINEAGE_CHILDREN_ANCHOR_KIND) {
-    fail("invalid_enum", `${path}.kind`);
-  }
-  const taskId = optionalIdentifierAt(anchor.taskId, `${path}.taskId`);
-  const parentRoundId = optionalIdentifierAt(
-    anchor.parentRoundId,
-    `${path}.parentRoundId`,
-  );
-  if (taskId && parentRoundId) fail("ambiguous_anchor", path);
-  if (!taskId && !parentRoundId) fail("unknown_anchor", path);
-  return taskId
-    ? { kind: TASK_LINEAGE_CHILDREN_ANCHOR_KIND, taskId }
-    : {
-        kind: TASK_LINEAGE_CHILDREN_ANCHOR_KIND,
-        parentRoundId: parentRoundId!,
-      };
-}
-
-function parseTaskLineagePageAt(
-  input: unknown,
-  path: string,
-): TaskLineagePageV1 {
-  const page = objectAt(input, path);
-  exactKeys(
-    page,
-    new Set(["kind", "limit", "returned", "nextCursor"]),
-    path,
-  );
-  if (page.kind !== TASK_LINEAGE_PAGE_KIND) {
-    fail("invalid_enum", `${path}.kind`);
-  }
-  const nextCursor =
-    page.nextCursor === null
-      ? null
-      : stringAt(page.nextCursor, `${path}.nextCursor`, {
-          max: TASK_LINEAGE_MAX_CURSOR_LENGTH,
-        });
-  if (nextCursor !== null) parseTaskLineageCursorV1(nextCursor);
-  return {
-    kind: TASK_LINEAGE_PAGE_KIND,
-    limit: integerAt(page.limit, `${path}.limit`, 1, TASK_LINEAGE_MAX_LIMIT),
-    returned: integerAt(
-      page.returned,
-      `${path}.returned`,
-      0,
-      TASK_LINEAGE_MAX_LIMIT,
-    ),
-    nextCursor,
-  };
-}
-
-export function parseTaskLineagePaginationV1(
-  input: unknown,
-): TaskLineagePaginationV1 {
-  const pagination = objectAt(input, "$");
-  exactKeys(pagination, new Set(["kind", "limit", "cursor"]), "$");
-  if (pagination.kind !== TASK_LINEAGE_PAGINATION_KIND) {
-    fail("invalid_enum", "$.kind");
-  }
-  const cursor =
-    pagination.cursor === undefined
-      ? undefined
-      : stringAt(pagination.cursor, "$.cursor", {
-          max: TASK_LINEAGE_MAX_CURSOR_LENGTH,
-        });
-  if (cursor !== undefined) parseTaskLineageCursorV1(cursor);
-  return {
-    kind: TASK_LINEAGE_PAGINATION_KIND,
-    limit: integerAt(
-      pagination.limit,
-      "$.limit",
-      1,
-      TASK_LINEAGE_MAX_LIMIT,
-    ),
-    ...(cursor ? { cursor } : {}),
-  };
-}
-
-export function parseTaskLineagePageV1(input: unknown): TaskLineagePageV1 {
-  return parseTaskLineagePageAt(input, "$");
-}
-
-function parseTaskLineageFiltersAt(
-  input: unknown,
-  path: string,
-): TaskLineageFiltersV1 {
-  const filters = objectAt(input, path);
-  exactKeys(
-    filters,
-    new Set(["kind", "parentRoundId", "intent", "status", "since", "until"]),
-    path,
-  );
-  if (filters.kind !== TASK_LINEAGE_FILTERS_KIND) {
-    fail("invalid_enum", `${path}.kind`);
-  }
-  const since =
-    filters.since === undefined
-      ? undefined
-      : timestampAt(filters.since, `${path}.since`, true);
-  const until =
-    filters.until === undefined
-      ? undefined
-      : timestampAt(filters.until, `${path}.until`, true);
-  if (
-    since !== undefined
-    && until !== undefined
-    && Date.parse(since) > Date.parse(until)
-  ) {
-    fail("invalid_timestamp", `${path}.until`);
-  }
-  return {
-    kind: TASK_LINEAGE_FILTERS_KIND,
-    ...(filters.parentRoundId === undefined
-      ? {}
-      : {
-          parentRoundId: identifierAt(
-            filters.parentRoundId,
-            `${path}.parentRoundId`,
-          ),
-        }),
-    ...(filters.intent === undefined
-      ? {}
-      : {
-          intent: enumAt(
-            filters.intent,
-            TASK_LINEAGE_INTENT_SET,
-            `${path}.intent`,
-          ),
-        }),
-    ...(filters.status === undefined
-      ? {}
-      : {
-          status: uniqueEnumArrayAt(
-            filters.status,
-            TASK_LINEAGE_STATUS_SET,
-            `${path}.status`,
-            TASK_LINEAGE_STATUSES.length,
-          ).sort(),
-        }),
-    ...(since ? { since } : {}),
-    ...(until ? { until } : {}),
-  };
-}
-
-export function parseTaskLineageFiltersV1(
-  input: unknown,
-): TaskLineageFiltersV1 {
-  return parseTaskLineageFiltersAt(input, "$");
-}
-
-function parseTaskLineageRoundCompletenessHintAt(
-  input: unknown,
-  path: string,
-): TaskLineageRoundCompletenessHintV1 {
-  const hint = objectAt(input, path);
-  exactKeys(
-    hint,
-    new Set([
-      "kind",
-      "parentRoundId",
-      "stampedTotal",
-      "observedChildren",
-      "complete",
-    ]),
-    path,
-  );
-  if (hint.kind !== TASK_LINEAGE_ROUND_HINT_KIND) {
-    fail("invalid_enum", `${path}.kind`);
-  }
-  return {
-    kind: TASK_LINEAGE_ROUND_HINT_KIND,
-    parentRoundId: identifierAt(
-      hint.parentRoundId,
-      `${path}.parentRoundId`,
-    ),
-    stampedTotal: integerAt(
-      hint.stampedTotal,
-      `${path}.stampedTotal`,
-      1,
-    ),
-    observedChildren: integerAt(
-      hint.observedChildren,
-      `${path}.observedChildren`,
-      0,
-    ),
-    complete: booleanAt(hint.complete, `${path}.complete`),
-  };
-}
-
-export function parseTaskLineageRoundCompletenessHintV1(
-  input: unknown,
-): TaskLineageRoundCompletenessHintV1 {
-  return parseTaskLineageRoundCompletenessHintAt(input, "$");
-}
-
-function parseTaskLineageAnomalyAt(
-  input: unknown,
-  path: string,
-): TaskLineageAnomalyV1 {
-  const anomaly = objectAt(input, path);
-  exactKeys(anomaly, new Set(["kind", "code", "count"]), path);
-  if (anomaly.kind !== TASK_LINEAGE_ANOMALY_KIND) {
-    fail("invalid_enum", `${path}.kind`);
-  }
-  return {
-    kind: TASK_LINEAGE_ANOMALY_KIND,
-    code: enumAt(
-      anomaly.code,
-      TASK_LINEAGE_ANOMALY_CODE_SET,
-      `${path}.code`,
-    ),
-    count: integerAt(anomaly.count, `${path}.count`, 1),
-  };
-}
-
-export function parseTaskLineageAnomalyV1(
-  input: unknown,
-): TaskLineageAnomalyV1 {
-  return parseTaskLineageAnomalyAt(input, "$");
-}
-
-function parseTaskLineageDiagnosticsAt(
-  input: unknown,
-  path: string,
-): TaskLineageDiagnosticsV1 {
-  const diagnostics = objectAt(input, path);
-  exactKeys(
-    diagnostics,
-    new Set([
-      "kind",
-      "source",
-      "scannedVisibleTasks",
-      "returnedNodes",
-      "anomalies",
-    ]),
-    path,
-  );
-  if (
-    diagnostics.kind !== TASK_LINEAGE_DIAGNOSTICS_KIND
-    || diagnostics.source !== "task_record_read_projection"
-  ) {
-    fail("invalid_enum", `${path}.kind`);
-  }
-  const anomalies = arrayAt(
-    diagnostics.anomalies,
-    `${path}.anomalies`,
-    { max: TASK_LINEAGE_MAX_DIAGNOSTIC_CODES },
-  ).map((value, index) =>
-    parseTaskLineageAnomalyAt(value, `${path}.anomalies[${index}]`),
-  );
-  const codes = anomalies.map((anomaly) => anomaly.code);
-  if (new Set(codes).size !== codes.length) {
-    fail("duplicate_value", `${path}.anomalies`);
-  }
-  return {
-    kind: TASK_LINEAGE_DIAGNOSTICS_KIND,
-    source: "task_record_read_projection",
-    scannedVisibleTasks: integerAt(
-      diagnostics.scannedVisibleTasks,
-      `${path}.scannedVisibleTasks`,
-      0,
-    ),
-    returnedNodes: integerAt(
-      diagnostics.returnedNodes,
-      `${path}.returnedNodes`,
-      0,
-      TASK_LINEAGE_MAX_LIMIT + 1,
-    ),
-    anomalies,
-  };
-}
-
-export function parseTaskLineageDiagnosticsV1(
-  input: unknown,
-): TaskLineageDiagnosticsV1 {
-  return parseTaskLineageDiagnosticsAt(input, "$");
-}
-
-export function parseTaskLineageChildrenV1(
-  input: unknown,
-): TaskLineageChildrenV1 {
-  const result = objectAt(input, "$");
-  exactKeys(
-    result,
-    new Set(["kind", "anchor", "children", "page", "round", "diagnostics"]),
-    "$",
-  );
-  if (result.kind !== TASK_LINEAGE_CHILDREN_KIND) {
-    fail("invalid_enum", "$.kind");
-  }
-  return {
-    kind: TASK_LINEAGE_CHILDREN_KIND,
-    anchor: parseTaskLineageChildrenAnchorAt(result.anchor, "$.anchor"),
-    children: arrayAt(result.children, "$.children", {
-      max: TASK_LINEAGE_MAX_LIMIT,
-    }).map((value, index) =>
-      parseTaskLineageChildAt(value, `$.children[${index}]`),
-    ),
-    page: parseTaskLineagePageAt(result.page, "$.page"),
-    ...(result.round === undefined
-      ? {}
-      : {
-          round: parseTaskLineageRoundCompletenessHintAt(
-            result.round,
-            "$.round",
-          ),
-        }),
-    diagnostics: parseTaskLineageDiagnosticsAt(
-      result.diagnostics,
-      "$.diagnostics",
-    ),
-  };
-}
-
-export function parseTaskLineageLineageV1(
-  input: unknown,
-): TaskLineageLineageV1 {
-  const result = objectAt(input, "$");
-  exactKeys(
-    result,
-    new Set([
-      "kind",
-      "lineage",
-      "truncated",
-      "rootReached",
-      "diagnostics",
-    ]),
-    "$",
-  );
-  if (result.kind !== TASK_LINEAGE_LINEAGE_KIND) {
-    fail("invalid_enum", "$.kind");
-  }
-  return {
-    kind: TASK_LINEAGE_LINEAGE_KIND,
-    lineage: arrayAt(result.lineage, "$.lineage", {
-      min: 1,
-      max: TASK_LINEAGE_HARD_MAX_DEPTH + 1,
-    }).map((value, index) =>
-      parseTaskLineageNodeAt(value, `$.lineage[${index}]`),
-    ),
-    truncated: booleanAt(result.truncated, "$.truncated"),
-    rootReached: booleanAt(result.rootReached, "$.rootReached"),
-    diagnostics: parseTaskLineageDiagnosticsAt(
-      result.diagnostics,
-      "$.diagnostics",
-    ),
-  };
-}
-
-export function parseTaskLineageLeavesV1(
-  input: unknown,
-): TaskLineageLeavesV1 {
-  const result = objectAt(input, "$");
-  exactKeys(
-    result,
-    new Set(["kind", "filters", "leaves", "page", "diagnostics"]),
-    "$",
-  );
-  if (result.kind !== TASK_LINEAGE_LEAVES_KIND) {
-    fail("invalid_enum", "$.kind");
-  }
-  return {
-    kind: TASK_LINEAGE_LEAVES_KIND,
-    filters: parseTaskLineageFiltersAt(result.filters, "$.filters"),
-    leaves: arrayAt(result.leaves, "$.leaves", {
-      max: TASK_LINEAGE_MAX_LIMIT,
-    }).map((value, index) =>
-      parseTaskLineageNodeAt(value, `$.leaves[${index}]`),
-    ),
-    page: parseTaskLineagePageAt(result.page, "$.page"),
-    diagnostics: parseTaskLineageDiagnosticsAt(
-      result.diagnostics,
-      "$.diagnostics",
-    ),
   };
 }
 
@@ -1621,7 +1122,7 @@ export function projectionFromTaskLineageReadIndex(
         (value) => value.task,
       );
       const round = roundHintFor(candidates.map((candidate) => candidate.task));
-      return parseTaskLineageChildrenV1({
+      return {
         kind: TASK_LINEAGE_CHILDREN_KIND,
         anchor: normalizedRequest.anchor,
         children: paged.items.map(
@@ -1635,7 +1136,7 @@ export function projectionFromTaskLineageReadIndex(
         page: paged.page,
         ...(round.hint ? { round: round.hint } : {}),
         diagnostics: diagnosticsFor(paged.items.length, round.anomalies),
-      });
+      };
     },
 
     lineage(
@@ -1673,13 +1174,13 @@ export function projectionFromTaskLineageReadIndex(
         depth += 1;
       }
 
-      return parseTaskLineageLineageV1({
+      return {
         kind: TASK_LINEAGE_LINEAGE_KIND,
         lineage,
         truncated,
         rootReached,
         diagnostics: diagnosticsFor(lineage.length),
-      });
+      };
     },
 
     leaves(
@@ -1745,13 +1246,13 @@ export function projectionFromTaskLineageReadIndex(
         query,
         (task) => task,
       );
-      return parseTaskLineageLeavesV1({
+      return {
         kind: TASK_LINEAGE_LEAVES_KIND,
         filters: normalizedRequest.filters,
         leaves: paged.items.map((task) => nodeFor(task, 0)),
         page: paged.page,
         diagnostics: diagnosticsFor(paged.items.length),
-      });
+      };
     },
   };
 }
