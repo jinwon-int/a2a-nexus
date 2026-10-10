@@ -177,6 +177,27 @@ GitHub를 호출하지 않는다. 그 payload를 실제로 게시하거나 requi
 - A2A reviewer는 branch를 수정·merge하지 않는다는 경계는 route에도 동일하게
   적용 — merge 경로는 이 표면에 존재하지 않는다.
 
+## Review lineage 부착 (#2362, #2274 scorecard)
+
+T2 리뷰 레인을 review lineage에 묶으면, 리뷰어 워커가 끝날 때 서명된 review-report를 보냅니다(#2351). 이렇게 쌓인 기록이 #2274 scorecard의 실제 terminal lineage가 됩니다. NCLEX 콘텐츠 PR은 다음 규칙으로 붙입니다.
+
+- **단위**: lineage 1개 = (PR, 역할) 1개입니다. lineage는 리뷰어 한 명의 흐름을 전제합니다(`review-lifecycle/lifecycle.ts`). 첫 `pass`에 열린 blocking finding이 없으면 `passed`로 끝나고, 이후 보고는 `report_out_of_state`가 됩니다. 그래서 같은 head의 병렬 역할 레인(`content_clinical`, `evidence_adversarial`, `high_risk_safety`)은 **lineage를 공유하면 안 됩니다**.
+- **고정 intent**: `scripts/lib/nclex-lineage-spec.mjs`가 head와 무관한 입력만으로 spec을 만듭니다. 입력은 PR 번호, 역할, PR 본문 8필드 계약(`TASK_ID`…`RISK_CLASS`)입니다. lineageId는 결정적으로 정합니다(`nclex-pr<N>-<role>`). NCLEX 자체 `intentContract`(head 의존)는 그대로 둡니다.
+- **절차** (`A2A_EDGE_SECRET`는 env로만 넘깁니다)
+  1. 첫 head를 dispatch하기 전에 역할마다 spec을 만들고 lineage를 생성합니다.
+     ```bash
+     node scripts/lib/nclex-lineage-spec.mjs --pr 624 --role content_clinical \
+       --base <base.sha> --head <head.sha> --body-file pr-body.md --repo /path/to/nclex \
+       --broker-url <T2 broker> --requester-id <operator id> --out spec-content-clinical.json
+     node scripts/lib/review-lineage-client.mjs create --spec spec-content-clinical.json \
+       --out lineage-pr624-content-clinical.json --dry-run   # 확인 후 --dry-run 제거
+     ```
+  2. 해당 역할 레인에 `reviewLineageRecord: <record 경로>`를 적고 `a2a-dispatch-round.mjs`로 보냅니다(#2359가 `payload.reviewLineage`를 채움). 레인 하나에는 record 하나만 씁니다.
+  3. 수정으로 새 head가 오면 lineage를 새로 만들지 않습니다. 같은 record로 `correct --record <record> --generation-ref <수정 커밋/코멘트 ref> --head <new head> --repo <checkout>`를 실행한 뒤 재리뷰 레인에 같은 record를 씁니다.
+- **bind하지 않는 경우**: 같은 (PR, head, 역할)에서 **이미 review-report가 나간 뒤의 재실행**은 bind하지 않습니다. 다시 bind하면 reviewer run이 부풀어 예산 데이터가 왜곡됩니다. 인프라 실패로 보고가 없었던 재실행은 같은 record로 bind해도 됩니다. 리뷰어 워커를 바꿔야 하면 operator가 `replace-reviewer --record <record> --decision-ref <ref>`로 기록합니다(예산은 초기화되지 않음).
+- **확인**: 워커 로그의 `"event":"review_lineage_report"` 줄(outcome `reported|skipped|rejected|failed`)과 `GET /review-lineages/<lineageId>`로 확인합니다.
+- **범위 밖**: broker 다중 리뷰어 quorum, enforce 모드, `DEFAULT_LINEAGE_BUDGET` 변경, T1 확대는 각각 별도 승인 대상입니다.
+
 ## 롤백 / 비활성화
 
 이 절은 절차 설명일 뿐 실행 승인이 아니다. 운영 브로커에서 환경변수 변경,
