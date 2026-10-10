@@ -12,7 +12,13 @@ import { deriveFindingId, planReviewReport } from "./review-report-producer.js";
 
 const WORKER = "reviewerbeta";
 const AUTHOR = "authoralpha";
-const NOW = () => new Date("2026-10-09T13:00:00.000Z");
+// Lineage wall-clock budget (BUDGET.maxWallClockSeconds = 6h) is checked
+// against the broker's real clock, so the contract must start relative to
+// "now" — a fixed 2026-10-09T12:00Z start blocked every run after 18:00Z
+// that day (budget_wall_clock → blocked_needs_operator).
+const START = new Date(Date.now() - 60 * 60 * 1000);
+const START_ISO = START.toISOString().replace(/\.\d{3}Z$/, "Z");
+const NOW = () => new Date(START.getTime() + 60 * 60 * 1000);
 const DIFF = `sha256:${"c".repeat(64)}`;
 
 function contract(lineageId: string) {
@@ -26,7 +32,7 @@ function contract(lineageId: string) {
     declaredPaths: { allowed: ["packages/broker/src/**"] },
     baseSha: "a".repeat(40),
     headSha: "b".repeat(40),
-    createdAt: "2026-10-09T12:00:00Z",
+    createdAt: START_ISO,
   };
   return { ...partial, intentHash: intentHash(partial as unknown as Record<string, unknown>) };
 }
@@ -82,7 +88,7 @@ test("pass without a structured block is a complete report bound to the worker i
   assert.equal(request.receipt.reviewerNodeId, WORKER);
   assert.equal(request.receipt.authorWorkerId, AUTHOR);
   assert.equal(request.receipt.findingLedgerRef, "ledger-l1");
-  assert.equal(request.receipt.submittedAt, "2026-10-09T13:00:00.000Z");
+  assert.equal(request.receipt.submittedAt, NOW().toISOString());
   assert.deepEqual(request.newFindings, []);
   // The canonical broker parser accepts it with the worker as trusted issuer.
   assert.doesNotThrow(() => authorizeReviewerReviewLineageReport("l1", request, WORKER));
