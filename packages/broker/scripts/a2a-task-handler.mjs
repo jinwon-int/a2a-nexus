@@ -1665,6 +1665,14 @@ function runOpenClawAnalysisBridgeOnce(task, env = process.env, sessionId) {
     ...(isLineageBoundReview(task) && response.reviewLineage && typeof response.reviewLineage === "object" && !Array.isArray(response.reviewLineage)
       ? { reviewLineage: response.reviewLineage }
       : {}),
+    // #2371: strict-JSON lanes report their verdict and requested extra keys
+    // (keyResults, reviewedKeyCount, ...) here whether or not payload.review
+    // is set; the bridge already bounds `structured`.
+    verdict: safeText(response.verdict, "") || undefined,
+    verdictRaw: safeText(response.verdictRaw, "") || undefined,
+    ...(response.structured && typeof response.structured === "object" && !Array.isArray(response.structured)
+      ? { structured: response.structured }
+      : {}),
     risks: normalizeStringArray(response.risks),
     recommendations: normalizeStringArray(response.recommendations),
     evidenceRefs: normalizeStringArray(response.evidenceRefs),

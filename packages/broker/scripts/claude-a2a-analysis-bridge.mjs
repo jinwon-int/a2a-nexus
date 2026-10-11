@@ -527,6 +527,86 @@ function extractAnalysisJsonFromClaudeOutput(stdout, preparsedOuter) {
   );
 }
 
+// #2371: strict-JSON lanes (strictJsonInstruction / requiredResultShape) ask
+// for extra top-level keys such as keyResults, reviewedKeyCount, headSha,
+// claimTaskId or lane. Everything the normalized shape below does not own is
+// carried in a bounded `structured` object instead of being discarded.
+const NORMALIZED_ANALYSIS_KEYS = new Set([
+  "status",
+  "summary",
+  "findings",
+  "risks",
+  "recommendations",
+  "evidenceRefs",
+  "verdict",
+  "reviewLineage",
+  "recoverySource",
+  "doneCommentUrl",
+  "blockCommentUrl",
+  "startCommentUrl",
+]);
+const STRUCTURED_MAX_BYTES = 64 * 1024;
+const STRUCTURED_MAX_DEPTH = 6;
+// Budget held back from the kept keys so the droppedKeys record always fits.
+const STRUCTURED_DROPPED_RESERVE_BYTES = 4 * 1024;
+const STRUCTURED_DROPPED_NAME_MAX_CHARS = 128;
+const VERDICT_RAW_MAX_CHARS = 32;
+
+function truncateChars(text, maxChars) {
+  const chars = Array.from(text);
+  return chars.length > maxChars ? chars.slice(0, maxChars).join("") : text;
+}
+
+// Stops descending once the limit is passed, so hostile nesting cannot blow
+// the stack.
+function exceedsJsonDepth(value, maxDepth) {
+  if (!value || typeof value !== "object") return false;
+  if (maxDepth <= 0) return true;
+  return Object.values(value).some((child) => exceedsJsonDepth(child, maxDepth - 1));
+}
+
+function structuredAnalysisKeys(parsed) {
+  // `structured` itself is depth 1, so a carried value may nest
+  // STRUCTURED_MAX_DEPTH - 1 levels.
+  const keyBudget = STRUCTURED_MAX_BYTES - STRUCTURED_DROPPED_RESERVE_BYTES;
+  const kept = [];
+  const dropped = [];
+  let bytes = 2; // "{}"
+  for (const [key, value] of Object.entries(parsed)) {
+    if (NORMALIZED_ANALYSIS_KEYS.has(key) && !(key === "verdict" && typeof value !== "string")) continue;
+    if (value === undefined) continue;
+    // droppedKeys is the bounded record's own marker; a model key with that
+    // name is reported rather than allowed to shadow it.
+    if (key === "droppedKeys" || exceedsJsonDepth(value, STRUCTURED_MAX_DEPTH - 1)) {
+      dropped.push(key);
+      continue;
+    }
+    const entryBytes = Buffer.byteLength(`${JSON.stringify(key)}:${JSON.stringify(value)},`, "utf8");
+    if (bytes + entryBytes > keyBudget) {
+      dropped.push(key);
+      continue;
+    }
+    bytes += entryBytes;
+    kept.push([key, value]);
+  }
+  if (!kept.length && !dropped.length) return undefined;
+  // Object.fromEntries defines own data properties, so a "__proto__" key from
+  // the model stays an inert field instead of rewriting the prototype.
+  const structured = Object.fromEntries(kept);
+  if (dropped.length) {
+    const droppedKeys = [];
+    for (const key of dropped) {
+      const name = truncateChars(key, STRUCTURED_DROPPED_NAME_MAX_CHARS);
+      const candidate = JSON.stringify({ droppedKeys: [...droppedKeys, name], droppedKeyCount: dropped.length });
+      if (Buffer.byteLength(candidate, "utf8") > STRUCTURED_DROPPED_RESERVE_BYTES) break;
+      droppedKeys.push(name);
+    }
+    structured.droppedKeys = droppedKeys;
+    structured.droppedKeyCount = dropped.length;
+  }
+  return structured;
+}
+
 function normalizeResponse(parsed) {
   if (!hasExplicitAnalysisJsonShape(parsed)) {
     throw new AnalysisBridgeFailure(
@@ -543,6 +623,10 @@ function normalizeResponse(parsed) {
     : ["fail", "failed", "block", "blocked", "reject", "rejected"].includes(verdictRaw)
       ? "fail"
       : "";
+  const verdictLiteral = typeof parsed.verdict === "string"
+    ? truncateChars(parsed.verdict.trim(), VERDICT_RAW_MAX_CHARS)
+    : "";
+  const structured = structuredAnalysisKeys(parsed);
   return {
     status,
     summary: safeText(parsed.summary, status === "blocked" ? "analysis blocked" : "analysis complete"),
@@ -556,6 +640,8 @@ function normalizeResponse(parsed) {
     recommendations: normalizeStringArray(parsed.recommendations),
     evidenceRefs: normalizeStringArray(parsed.evidenceRefs),
     ...(verdict ? { verdict } : {}),
+    ...(verdictLiteral ? { verdictRaw: verdictLiteral } : {}),
+    ...(structured ? { structured } : {}),
     recoverySource: safeText(parsed.recoverySource, "direct_stdout"),
     ...(safeText(parsed.doneCommentUrl, "") ? { doneCommentUrl: safeText(parsed.doneCommentUrl) } : {}),
     ...(safeText(parsed.blockCommentUrl, "") ? { blockCommentUrl: safeText(parsed.blockCommentUrl) } : {}),

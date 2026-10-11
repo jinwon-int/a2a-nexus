@@ -1133,3 +1133,70 @@ test("Claude bridge passes the structured reviewLineage block through and allows
     rmSync(tempDir, { recursive: true, force: true });
   }
 });
+
+function runStructuredBridge(prefix, analysis) {
+  const tempDir = mkdtempSync(join(tmpdir(), prefix));
+  try {
+    const fakeClaudePath = stubClaude(tempDir, [
+      `const analysis = ${JSON.stringify(analysis)};`,
+      "console.log(JSON.stringify({ type: 'result', subtype: 'success', result: JSON.stringify(analysis) }));",
+    ]);
+    const result = spawnSync(bridgePath, bridgeArgs("Payload JSON:\n" + JSON.stringify({ mode: "analysis-only", sourceOnly: true })), {
+      encoding: "utf8",
+      env: { ...process.env, A2A_CLAUDE_MODEL: "", A2A_CLAUDE_EFFORT: "", A2A_CLAUDE_CODE_BIN: fakeClaudePath },
+    });
+    assert.equal(result.status, 0, result.stderr);
+    return JSON.parse(JSON.parse(result.stdout).payloads[0].text);
+  } finally {
+    rmSync(tempDir, { recursive: true, force: true });
+  }
+}
+
+const STRICT_ANALYSIS_BASE = { status: "done", summary: "1 of 2 keys failed", findings: ["term.sepsis drift"], risks: [], recommendations: [], evidenceRefs: ["terms/sepsis.json:3"] };
+
+test("strict-JSON extra keys (keyResults, reviewedKeyCount, ...) survive normalizeResponse in `structured` (#2371)", () => {
+  const extras = {
+    keyResults: [{ key: "term.hypoxia", result: "pass" }, { key: "term.sepsis", result: "fail", reason: "ko gloss drift" }],
+    reviewedKeyCount: 2,
+    headSha: "c".repeat(40),
+    claimTaskId: "task-claim-2371",
+    lane: "terminology_bilingual",
+  };
+  const payload = runStructuredBridge("claude-a2a-bridge-structured-", { ...STRICT_ANALYSIS_BASE, verdict: "FAIL", ...extras });
+  assert.equal(payload.verdict, "fail");
+  assert.equal(payload.verdictRaw, "FAIL");
+  assert.deepEqual(payload.structured, extras);
+  assert.equal(payload.keyResults, undefined, "extra keys are carried under structured, not at top level");
+  assert.deepEqual(payload.findings, STRICT_ANALYSIS_BASE.findings);
+});
+
+test("verdictRaw is trimmed, capped at 32 chars, and kept for an unrecognised verdict (#2371)", () => {
+  const payload = runStructuredBridge("claude-a2a-bridge-verdictraw-", { ...STRICT_ANALYSIS_BASE, verdict: `  needs-changes ${"x".repeat(60)}` });
+  assert.equal(payload.verdict, undefined);
+  assert.equal(payload.verdictRaw, `needs-changes ${"x".repeat(18)}`);
+  assert.equal(payload.verdictRaw.length, 32);
+  assert.equal(payload.structured, undefined, "no extra keys means no structured block");
+});
+
+test("oversized or too-deep structured keys are dropped by name in structured.droppedKeys, never silently (#2371)", () => {
+  let deep = { leaf: true };
+  for (let i = 0; i < 6; i += 1) deep = { nested: deep };
+  const payload = runStructuredBridge("claude-a2a-bridge-structured-cap-", {
+    ...STRICT_ANALYSIS_BASE,
+    verdict: "pass",
+    keyResults: [{ key: "term.hypoxia", result: "pass" }],
+    reviewedKeyCount: 1,
+    hugeEvidence: "y".repeat(70 * 1024),
+    tooDeep: deep,
+    lane: "terminology_bilingual",
+  });
+  assert.equal(payload.verdict, "pass");
+  assert.deepEqual(payload.structured.keyResults, [{ key: "term.hypoxia", result: "pass" }]);
+  assert.equal(payload.structured.reviewedKeyCount, 1);
+  assert.equal(payload.structured.lane, "terminology_bilingual");
+  assert.equal(payload.structured.hugeEvidence, undefined);
+  assert.equal(payload.structured.tooDeep, undefined);
+  assert.deepEqual(payload.structured.droppedKeys, ["hugeEvidence", "tooDeep"]);
+  assert.equal(payload.structured.droppedKeyCount, 2);
+  assert.ok(Buffer.byteLength(JSON.stringify(payload.structured), "utf8") <= 64 * 1024);
+});
