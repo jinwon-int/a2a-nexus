@@ -2332,6 +2332,49 @@ test("lineage-bound review without a block forwards nothing (the worker then ski
   }
 });
 
+test("analysis-only strict-JSON lane carries verdict/verdictRaw/structured in result.output without payload.review (#2371)", () => {
+  const dir = mkdtempSync(join(tmpdir(), "a2a-structured-keys-"));
+  try {
+    const bin = join(dir, "fake-structured-bridge.mjs");
+    const structured = {
+      keyResults: [{ key: "term.hypoxia", result: "pass" }, { key: "term.sepsis", result: "fail", reason: "ko gloss drift" }],
+      reviewedKeyCount: 2,
+      headSha: "c".repeat(40),
+      claimTaskId: "task-claim-2371",
+      lane: "terminology_bilingual",
+    };
+    writeFileSync(bin, `#!/usr/bin/env node
+const response = {
+  status: "done",
+  summary: "1 of 2 keys failed",
+  findings: ["term.sepsis ko gloss drift"],
+  risks: [], recommendations: [], evidenceRefs: ["terms/sepsis.json:3"],
+  verdict: "fail",
+  verdictRaw: "FAIL",
+  structured: ${JSON.stringify(structured)},
+};
+process.stdout.write(JSON.stringify({ text: JSON.stringify(response) }) + "\\n");
+`);
+    chmodSync(bin, 0o755);
+    const task = {
+      id: "task-structured-2371",
+      intent: "analyze",
+      assignedWorkerId: "author-worker",
+      message: "Review the bilingual terminology keys and return strict JSON.",
+      payload: { mode: "analysis-only", sourceOnly: true, strictJsonInstruction: "Return keyResults per key." },
+    };
+    const result = handleTask(task, lineageEnv(bin));
+    assert.equal(result.error, undefined, JSON.stringify(result.error));
+    assert.equal(result.result.output.verdict, "fail");
+    assert.equal(result.result.output.verdictRaw, "FAIL");
+    assert.deepEqual(result.result.output.structured, structured);
+    assert.equal(result.result.output.reviewLineage, undefined, "reviewLineage stays lineage-bound");
+    assert.equal(result.result.validations, undefined, "no review validation without payload.review");
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
 test("review.required analysis bridge omits validation when verdict is absent (#1330)", () => {
   const dir = mkdtempSync(join(tmpdir(), "a2a-review-validation-absent-"));
   const bin = join(dir, "fake-review-bridge.mjs");
