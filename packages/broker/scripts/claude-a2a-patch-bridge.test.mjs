@@ -2738,6 +2738,44 @@ test("--message-file is exclusive with --message and rejects unreadable or non-U
   }
 });
 
+test("#2373 option 2: CLAUDE_CODE_OAUTH_TOKEN reaches the isolated Claude child and nothing else leaks with it", () => {
+  const tempDir = mkdtempSync(join(tmpdir(), "claude-analysis-oauth-env-"));
+  const fakeClaudePath = join(tempDir, "fake-claude.mjs");
+  const capturePath = join(tempDir, "claude-env.json");
+  try {
+    writeStubClaude(fakeClaudePath, [
+      "import { writeFileSync } from 'node:fs';",
+      "writeFileSync(process.env.CAPTURE_ENV_PATH, JSON.stringify({ token: process.env.CLAUDE_CODE_OAUTH_TOKEN || '', leaked: process.env.A2A_TEST_NOT_ALLOWLISTED || '' }));",
+      "const analysis = { status: 'done', summary: 'oauth env passthrough', findings: [], risks: [], recommendations: [], evidenceRefs: [] };",
+      "console.log(JSON.stringify({ type: 'result', subtype: 'success', result: JSON.stringify(analysis) }));",
+    ]);
+    const result = spawnSync(bridgePath, bridgeArgs(analysisMessage()), {
+      encoding: "utf8",
+      env: {
+        ...process.env,
+        A2A_CLAUDE_CODE_BIN: fakeClaudePath,
+        CLAUDE_CODE_OAUTH_TOKEN: "sk-ant-oat01-TEST-ONLY-passthrough",
+        A2A_TEST_NOT_ALLOWLISTED: "must-not-reach-claude",
+        CAPTURE_ENV_PATH: capturePath,
+      },
+    });
+    assert.equal(result.status, 0, result.stderr);
+    const captured = JSON.parse(readFileSync(capturePath, "utf8"));
+    assert.equal(captured.token, "sk-ant-oat01-TEST-ONLY-passthrough");
+    assert.equal(captured.leaked, "", "non-allowlisted env must still be dropped");
+    assert.equal(`${result.stdout}${result.stderr}`.includes("TEST-ONLY-passthrough"), false, "the bridge must never print the token");
+  } finally {
+    rmSync(tempDir, { recursive: true, force: true });
+  }
+});
+
+test("#2373 option 2: the bridge carries the oauth-token-env capability marker the claude-code runner profile greps for", () => {
+  const source = readFileSync(bridgePath, "utf8");
+  assert.ok(source.includes("// a2a-bridge-capability: oauth-token-env\n"));
+  const profile = readFileSync(new URL("../../docker-runner/profiles/claude-code.sh", import.meta.url), "utf8");
+  assert.ok(profile.includes("grep -Fq 'a2a-bridge-capability: oauth-token-env' \"$A2A_CLAUDE_PATCH_BRIDGE\""));
+});
+
 test("the bridge carries the message-file capability marker the claude-code runner profile greps for", () => {
   const source = readFileSync(bridgePath, "utf8");
   assert.ok(source.includes("// a2a-bridge-capability: message-file\n"));

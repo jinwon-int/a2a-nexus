@@ -196,6 +196,11 @@ const SAFE_CHILD_ENV_KEYS = new Set([
   "USER", "LOGNAME", "SHELL", "SSH_AUTH_SOCK", "XDG_CONFIG_HOME", "XDG_CACHE_HOME", "XDG_DATA_HOME",
   "CLAUDE_CONFIG_DIR", "CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC", "DISABLE_AUTOUPDATER",
   "CLAUDE_CODE_EFFORT_LEVEL",
+  // #2373 option 2: the runner profile exports a long-lived subscription OAuth
+  // token (from the read-only /run/secrets/claude-oauth-token mount) for the
+  // claude child; it must survive the session-isolation allowlist. The bridge
+  // never logs env values, and redactSecrets covers sk-ant-oat01- shapes.
+  "CLAUDE_CODE_OAUTH_TOKEN",
   // Termux/Android native workers: Claude Code subprocess shebangs resolve
   // `/usr/bin/env` only through termux-exec (injected via LD_PRELOAD). Dropping
   // these from the session-isolation env (#1129) breaks the child with
@@ -257,6 +262,12 @@ export function claudePromptTransport(prompt) {
 // detect that the bridge baked into a runner image understands --message-file
 // (images built before #2314 do not). Keep this exact text.
 // a2a-bridge-capability: message-file
+
+// #2373 option 2: feature marker read by packages/docker-runner/profiles/claude-code.sh
+// before it exports CLAUDE_CODE_OAUTH_TOKEN from the token-file mount. Images built
+// from a bridge without this marker fail closed (claude_oauth_token_bridge_unsupported)
+// instead of silently running with the /login credential. Keep this exact text.
+// a2a-bridge-capability: oauth-token-env
 
 // #2314: `--message-file <path>` reads the assignment from a UTF-8 file so the
 // runner never puts the whole prompt into one argv string. Mutually exclusive
