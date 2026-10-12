@@ -4,7 +4,7 @@ import { chown, mkdtemp, mkdir, readFile, writeFile, utimes, stat, chmod } from 
 import { execFileSync, spawnSync } from "node:child_process";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { CLAUDE_CREDENTIAL_REFRESH_MARGIN_MS, CLAUDE_HOST_REFRESH_STATE_FILE, checkBaseImage, checkClaudeCredentialFreshness, checkClaudeCredentialHostRefresh, checkClaudeOauthTokenFile, evaluateClaudeCredentialWindow, checkContainerHardening, checkDeployedRevision, checkDeployMarker, checkExtraMounts, checkGitHubPatchReadiness, checkSecretMountContainerReadability, cleanup, dropsDacOverride, install, parseContainerUserRef, parseProbeKeyValues } from "./ops.js";
+import { CLAUDE_CREDENTIAL_REFRESH_MARGIN_MS, CLAUDE_HOST_REFRESH_STATE_FILE, checkBaseImage, checkClaudeCredentialFreshness, checkClaudeCredentialHostRefresh, checkClaudeOauthTokenFile, evaluateClaudeCredentialWindow, checkContainerHardening, checkDeployedRevision, checkDeployMarker, checkExtraMounts, checkGitHubPatchReadiness, checkSecretMountContainerReadability, cleanup, dropsDacOverride, install, parseContainerUserRef, parseProbeKeyValues, summarizeUnreadablePaths } from "./ops.js";
 import type { RunnerConfig } from "./types.js";
 import { buildExampleReadinessInput } from "./openclaw-profile-readiness.js";
 import { loadConfig, projectClaudeCodeTurnBudgets } from "./config.js";
@@ -1101,6 +1101,17 @@ test("cleanup report preserves JSON shape with all fields", async () => {
 });
 
 // ---------------------------------------------------------------------------
+// #2377: message summarizer
+test("#2377 summarizeUnreadablePaths lists up to three unreadable paths and counts the rest", () => {
+  const entries = [
+    { source: "/s/a", readable: false }, { source: "/s/ok", readable: true },
+    { source: "/s/b", readable: false }, { source: "/s/c", readable: false }, { source: "/s/d", readable: false },
+  ];
+  assert.equal(summarizeUnreadablePaths(entries), "/s/a, /s/b, /s/c (+1 more)");
+  assert.equal(summarizeUnreadablePaths(entries.slice(0, 3)), "/s/a, /s/b");
+  assert.equal(summarizeUnreadablePaths([{ source: "/s/ok", readable: true }]), "");
+});
+
 // #1809/#2143 secret-mount readability preflight (cap-drop ALL + container user)
 // ---------------------------------------------------------------------------
 
@@ -1161,6 +1172,8 @@ test("secret-mount readability fails closed for uid-owned 0600 secret under cap-
   const entries = report.detail?.entries as Array<Record<string, unknown>>;
   const authEntry = entries.find((entry) => String(entry.source).endsWith("auth.json"));
   assert.ok(authEntry, "expected the inner profile file to be scanned");
+  // #2377: the one-line message names the offending path (paths only; owner/mode stay in detail.unreadable).
+  assert.ok(report.message.includes(String(authEntry.source)), `message should name ${authEntry.source}: ${report.message}`);
   assert.equal(authEntry.readable, false);
   assert.equal(authEntry.via, "others");
 });
