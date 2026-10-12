@@ -1,11 +1,11 @@
 import assert from "node:assert/strict";
 import { execFileSync } from "node:child_process";
-import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { chmodSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
 import { Script } from "node:vm";
-import { buildClaudeCodePatchCommandScript, buildCodexPatchCommandScript, buildPiriPatchCommandScript, loadContainedSubagentsConfig, loadConfig, loadEnvFile, mergeRunnerEnvFile, normalizePatchCommandProfile, projectClaudeCodeEffort, projectClaudeCodeTurnBudgets, validateRunnerConfig } from "./config.js";
+import { CLAUDE_OAUTH_TOKEN_MOUNT_TARGET, buildClaudeCodePatchCommandScript, buildCodexPatchCommandScript, buildPiriPatchCommandScript, loadContainedSubagentsConfig, loadConfig, loadEnvFile, mergeRunnerEnvFile, normalizePatchCommandProfile, projectClaudeCodeEffort, projectClaudeCodeTurnBudgets, validateRunnerConfig } from "./config.js";
 import type { RunnerConfig } from "./types.js";
 import { PROFILE_SCRIPT_DIR, PROFILE_SCRIPT_NAMES } from "./profile-scripts.js";
 
@@ -2322,5 +2322,187 @@ test("#2373 claudeHostRefresh rejects invalid argv JSON, shape, elements and out
       new RegExp(`${key} must be an integer between`),
       `${key}=${value}`,
     );
+  }
+});
+
+// ─── #2373 option 2: long-lived Claude OAuth token file ─────────────────────
+
+const FAKE_OAUTH_TOKEN = "sk-ant-oat01-TEST-ONLY";
+
+function writeOauthTokenFixture(dir: string, mode = 0o600): string {
+  const tokenFile = join(dir, "claude-oauth-token");
+  writeFileSync(tokenFile, `${FAKE_OAUTH_TOKEN}\n`, { mode });
+  chmodSync(tokenFile, mode);
+  return tokenFile;
+}
+
+test("#2373 option 2 A2A_DOCKER_RUNNER_CLAUDE_OAUTH_TOKEN_FILE unset leaves config and mounts unchanged", async () => {
+  const env = { ...baseEnv, A2A_DOCKER_RUNNER_PATCH_COMMAND_PROFILE: "claude-code", A2A_DOCKER_RUNNER_CLAUDE_CONFIG_DIR: "/srv/claude-profile" };
+  for (const value of [undefined, "", "  "]) {
+    const config = await loadConfig(value === undefined ? env : { ...env, A2A_DOCKER_RUNNER_CLAUDE_OAUTH_TOKEN_FILE: value });
+    assert.equal(config.claudeOauthTokenFile, undefined);
+    assert.equal(config.claudeOauthTokenMeta, undefined);
+    assert.equal("claudeOauthTokenFile" in config, false);
+    assert.deepEqual(config.extraMounts, [{ source: "/srv/claude-profile", target: "/run/secrets/claude-dir", readOnly: true }]);
+  }
+});
+
+test("#2373 option 2 a valid OAuth token file adds a read-only mount and config fields", async () => {
+  const dir = mkdtempSync(join(tmpdir(), "a2a-claude-oauth-"));
+  try {
+    const tokenFile = writeOauthTokenFixture(dir);
+    const env = {
+      ...baseEnv,
+      A2A_DOCKER_RUNNER_PATCH_COMMAND_PROFILE: "claude-code",
+      A2A_DOCKER_RUNNER_CLAUDE_CONFIG_DIR: "/srv/claude-profile",
+      A2A_DOCKER_RUNNER_CLAUDE_OAUTH_TOKEN_FILE: tokenFile,
+    };
+    const noMeta = await loadConfig(env);
+    assert.equal(CLAUDE_OAUTH_TOKEN_MOUNT_TARGET, "/run/secrets/claude-oauth-token");
+    assert.deepEqual(noMeta.extraMounts, [
+      { source: "/srv/claude-profile", target: "/run/secrets/claude-dir", readOnly: true },
+      { source: tokenFile, target: CLAUDE_OAUTH_TOKEN_MOUNT_TARGET, readOnly: true },
+    ]);
+    assert.equal(noMeta.claudeOauthTokenFile, tokenFile);
+    assert.equal(noMeta.claudeOauthTokenMeta, undefined);
+    assert.equal(JSON.stringify(noMeta).includes(FAKE_OAUTH_TOKEN), false, "config never carries the token value");
+
+    writeFileSync(`${tokenFile}.meta.json`, JSON.stringify({ issuedAt: "2026-10-12T00:00:00.000Z", expiresAt: "2027-10-12T00:00:00.000Z", note: "reissue yearly" }));
+    const withMeta = await loadConfig(env);
+    assert.deepEqual(withMeta.claudeOauthTokenMeta, { expiresAt: "2027-10-12T00:00:00.000Z", issuedAt: "2026-10-12T00:00:00.000Z" });
+
+    // Explicit mounts JSON + credentials file: both single-file mounts are appended.
+    const credentialsFile = join(dir, ".credentials.json");
+    writeFileSync(credentialsFile, "{}");
+    const explicit = await loadConfig({
+      ...env,
+      A2A_DOCKER_RUNNER_CLAUDE_CREDENTIALS_FILE: credentialsFile,
+      A2A_DOCKER_RUNNER_EXTRA_MOUNTS_JSON: JSON.stringify([{ source: "/srv/claude-profile", target: "/run/secrets/claude-dir", readOnly: true }]),
+    });
+    assert.deepEqual(explicit.extraMounts?.slice(1), [
+      { source: credentialsFile, target: "/run/secrets/claude-credentials.json", readOnly: true },
+      { source: tokenFile, target: CLAUDE_OAUTH_TOKEN_MOUNT_TARGET, readOnly: true },
+    ]);
+
+    const otherProfile = await loadConfig({ ...env, A2A_DOCKER_RUNNER_PATCH_COMMAND_PROFILE: "codex", A2A_DOCKER_RUNNER_CODEX_CONFIG_DIR: "/srv/codex-profile" });
+    assert.equal(otherProfile.claudeOauthTokenFile, undefined);
+    assert.equal(otherProfile.extraMounts?.some((mount) => mount.target === CLAUDE_OAUTH_TOKEN_MOUNT_TARGET), false);
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test("#2373 option 2 invalid A2A_DOCKER_RUNNER_CLAUDE_OAUTH_TOKEN_FILE fails config validation without echoing the token", async () => {
+  const dir = mkdtempSync(join(tmpdir(), "a2a-claude-oauth-"));
+  try {
+    const env = { ...baseEnv, A2A_DOCKER_RUNNER_PATCH_COMMAND_PROFILE: "claude-code" };
+    const rejects = async (value: string, pattern: RegExp): Promise<void> => {
+      await assert.rejects(
+        loadConfig({ ...env, A2A_DOCKER_RUNNER_CLAUDE_OAUTH_TOKEN_FILE: value }),
+        (error: Error & { code?: string }) => error.code === "claude_oauth_token_file_invalid"
+          && pattern.test(error.message)
+          && !error.message.includes(FAKE_OAUTH_TOKEN),
+        value,
+      );
+    };
+    await rejects("relative/claude-oauth-token", /must be an absolute path/);
+    await rejects(join(dir, "missing"), /does not exist/);
+    await rejects(dir, /is not a regular file/);
+
+    const commaDir = join(dir, "a,b");
+    mkdirSync(commaDir);
+    await rejects(writeOauthTokenFixture(commaDir), /must not contain a comma/);
+
+    const groupReadableDir = join(dir, "group");
+    mkdirSync(groupReadableDir);
+    await rejects(writeOauthTokenFixture(groupReadableDir, 0o640), /mode 0640 grants group\/other permissions/);
+    const worldReadableDir = join(dir, "world");
+    mkdirSync(worldReadableDir);
+    await rejects(writeOauthTokenFixture(worldReadableDir, 0o604), /mode 0604 grants group\/other permissions/);
+
+    const empty = join(dir, "empty-token");
+    writeFileSync(empty, "", { mode: 0o600 });
+    await rejects(empty, /is empty/);
+
+    const tokenFile = writeOauthTokenFixture(dir);
+    const metaPath = `${tokenFile}.meta.json`;
+    for (const meta of ["{not json", "[]", JSON.stringify({ issuedAt: "2026-10-12T00:00:00.000Z" }), JSON.stringify({ expiresAt: "soon" }), JSON.stringify({ expiresAt: "2027-10-12T00:00:00.000Z", issuedAt: 5 })]) {
+      writeFileSync(metaPath, meta);
+      await assert.rejects(
+        loadConfig({ ...env, A2A_DOCKER_RUNNER_CLAUDE_OAUTH_TOKEN_FILE: tokenFile }),
+        (error: Error & { code?: string }) => error.code === "claude_oauth_token_file_invalid"
+          && error.message.includes(metaPath)
+          && /is not valid token metadata/.test(error.message)
+          && !error.message.includes(FAKE_OAUTH_TOKEN),
+        meta,
+      );
+    }
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test("#2373 option 2 claude-code script exports the OAuth token after the dir copy and before the credentials file install", () => {
+  const script = buildClaudeCodePatchCommandScript({ A2A_DOCKER_RUNNER_PATCH_COMMAND_PROFILE: "claude-code" });
+  const copyIndex = script.indexOf("cp -a /run/secrets/claude-dir/. \"$CLAUDE_CONFIG_DIR/\"");
+  const tokenIndex = script.indexOf("if [ -e /run/secrets/claude-oauth-token ]; then");
+  const installIndex = script.indexOf("install -m 0600 /run/secrets/claude-credentials.json");
+  assert.ok(copyIndex !== -1 && tokenIndex > copyIndex, "token block runs after the dir copy");
+  assert.ok(installIndex > tokenIndex, "token block runs before the credentials file install");
+  const block = script.slice(tokenIndex, installIndex);
+  assert.match(block, /error=claude_oauth_token_unreadable/);
+  assert.match(block, /failure_category=claude_credentials_unavailable/);
+  assert.match(block, /export CLAUDE_CODE_OAUTH_TOKEN="\$\{claude_oauth_token\}"/);
+  assert.match(block, /claude_credentials_source=oauth_token_file/);
+  assert.doesNotMatch(block, /printf[^\n]*\$claude_oauth_token|echo[^\n]*\$claude_oauth_token|\$CLAUDE_CODE_OAUTH_TOKEN/, "the token is never echoed");
+});
+
+test("#2373 option 2 claude-code profile token block reads, trims and fails closed", () => {
+  const template = readFileSync(join(PROFILE_SCRIPT_DIR, "claude-code.sh"), "utf8");
+  const start = template.indexOf("if [ -e /run/secrets/claude-oauth-token ]; then");
+  const end = template.indexOf("\nfi\n", start) + "\nfi\n".length;
+  assert.ok(start !== -1 && end > start);
+  const dir = mkdtempSync(join(tmpdir(), "a2a-claude-oauth-profile-"));
+  try {
+    const artifacts = join(dir, "artifacts");
+    mkdirSync(artifacts);
+    const bridge = join(dir, "bridge.mjs");
+    writeFileSync(bridge, "// a2a-bridge-capability: oauth-token-env\n");
+    const tokenFile = join(dir, "claude-oauth-token");
+    // Rebase the fixed container paths onto the temp dir.
+    const snippet = template.slice(start, end)
+      .replaceAll("/run/secrets/claude-oauth-token", tokenFile)
+      .replaceAll("/work/artifacts", artifacts);
+    const run = (): { status: number | null; stdout: string; summary: string } => {
+      rmSync(join(artifacts, "summary.txt"), { force: true });
+      const script = `set -euo pipefail\nA2A_CLAUDE_PATCH_BRIDGE=${JSON.stringify(bridge)}\n${snippet}printf 'len=%s prefix=%s\\n' "\${#CLAUDE_CODE_OAUTH_TOKEN}" "\${CLAUDE_CODE_OAUTH_TOKEN:0:13}" > ${JSON.stringify(join(dir, "probe"))}\n`;
+      try {
+        const stdout = execFileSync("bash", ["-c", script], { encoding: "utf8", stdio: "pipe" });
+        return { status: 0, stdout, summary: readFileSync(join(artifacts, "summary.txt"), "utf8") };
+      } catch (error) {
+        const failed = error as { status: number | null; stdout: string };
+        return { status: failed.status, stdout: failed.stdout, summary: readFileSync(join(artifacts, "summary.txt"), "utf8") };
+      }
+    };
+
+    writeFileSync(tokenFile, ` ${FAKE_OAUTH_TOKEN}\r\nsecond-line\n`, { mode: 0o600 });
+    const ok = run();
+    assert.equal(ok.status, 0);
+    assert.equal(ok.summary, "claude_credentials_source=oauth_token_file\n");
+    assert.equal(readFileSync(join(dir, "probe"), "utf8"), `len=${FAKE_OAUTH_TOKEN.length} prefix=sk-ant-oat01-\n`, "first line exported, trimmed");
+    assert.equal(ok.stdout.includes(FAKE_OAUTH_TOKEN) || ok.summary.includes(FAKE_OAUTH_TOKEN), false, "token never printed");
+
+    writeFileSync(tokenFile, " \r\n", { mode: 0o600 });
+    const empty = run();
+    assert.equal(empty.status, 2);
+    assert.equal(empty.summary, "error=claude_oauth_token_unreadable\nfailure_category=claude_credentials_unavailable\n");
+
+    writeFileSync(bridge, "// legacy bridge\n");
+    writeFileSync(tokenFile, `${FAKE_OAUTH_TOKEN}\n`, { mode: 0o600 });
+    const legacy = run();
+    assert.equal(legacy.status, 2);
+    assert.equal(legacy.summary, "error=claude_oauth_token_bridge_unsupported\nfailure_category=claude_credentials_unavailable\n");
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
   }
 });

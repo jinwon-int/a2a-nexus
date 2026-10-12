@@ -4,7 +4,7 @@ import { chown, mkdtemp, mkdir, readFile, writeFile, utimes, stat, chmod } from 
 import { execFileSync, spawnSync } from "node:child_process";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { CLAUDE_CREDENTIAL_REFRESH_MARGIN_MS, CLAUDE_HOST_REFRESH_STATE_FILE, checkBaseImage, checkClaudeCredentialFreshness, checkClaudeCredentialHostRefresh, evaluateClaudeCredentialWindow, checkContainerHardening, checkDeployedRevision, checkDeployMarker, checkExtraMounts, checkGitHubPatchReadiness, checkSecretMountContainerReadability, cleanup, dropsDacOverride, install, parseContainerUserRef, parseProbeKeyValues } from "./ops.js";
+import { CLAUDE_CREDENTIAL_REFRESH_MARGIN_MS, CLAUDE_HOST_REFRESH_STATE_FILE, checkBaseImage, checkClaudeCredentialFreshness, checkClaudeCredentialHostRefresh, checkClaudeOauthTokenFile, evaluateClaudeCredentialWindow, checkContainerHardening, checkDeployedRevision, checkDeployMarker, checkExtraMounts, checkGitHubPatchReadiness, checkSecretMountContainerReadability, cleanup, dropsDacOverride, install, parseContainerUserRef, parseProbeKeyValues } from "./ops.js";
 import type { RunnerConfig } from "./types.js";
 import { buildExampleReadinessInput } from "./openclaw-profile-readiness.js";
 import { loadConfig, projectClaudeCodeTurnBudgets } from "./config.js";
@@ -1654,4 +1654,119 @@ test("#2373 claudeCredentialHostRefresh warns when the credential source is not 
   assert.equal(report.detail?.command, "claude");
   assert.equal(report.detail?.source, "config_dir_copy");
   assert.equal(JSON.stringify(report).includes("Reply with exactly"), false);
+});
+
+// ─── #2373 option 2: long-lived Claude OAuth token file doctor check ────────
+
+const FAKE_OAUTH_TOKEN = "sk-ant-oat01-TEST-ONLY";
+const DAY_MS = 24 * 60 * 60 * 1000;
+
+async function oauthTokenConfig(options: { mode?: number; content?: string; meta?: unknown; user?: string } = {}): Promise<{ config: RunnerConfig; tokenFile: string }> {
+  const dir = await mkdtemp(join(tmpdir(), "a2a-claude-oauth-doctor-"));
+  const tokenFile = join(dir, "claude-oauth-token");
+  await writeFile(tokenFile, options.content ?? `${FAKE_OAUTH_TOKEN}\n`, { mode: 0o600 });
+  await chmod(tokenFile, options.mode ?? 0o600);
+  if (options.meta !== undefined) await writeFile(`${tokenFile}.meta.json`, JSON.stringify(options.meta));
+  return {
+    tokenFile,
+    config: {
+      ...claudeFreshnessConfig(join(dir, "claude-dir")),
+      user: options.user ?? String(process.getuid?.() ?? 0),
+      claudeOauthTokenFile: tokenFile,
+    },
+  };
+}
+
+function assertNoOauthTokenLeak(report: unknown): void {
+  const serialized = JSON.stringify(report);
+  assert.equal(serialized.includes(FAKE_OAUTH_TOKEN), false, serialized);
+  assert.equal(serialized.includes("TEST-ONLY"), false, serialized);
+}
+
+test("#2373 option 2 claudeOauthTokenFile skips when the token file is not configured", async () => {
+  const dir = await mkdtemp(join(tmpdir(), "a2a-claude-oauth-doctor-"));
+  assert.deepEqual(await checkClaudeOauthTokenFile(claudeFreshnessConfig(dir)), { status: "skip", message: "not configured" });
+});
+
+test("#2373 option 2 claudeOauthTokenFile is ok with a 0600 single-line token and a far expiry", async () => {
+  const expiresAt = new Date(CLAUDE_FRESHNESS_NOW_MS + 300 * DAY_MS).toISOString();
+  const issuedAt = new Date(CLAUDE_FRESHNESS_NOW_MS - 65 * DAY_MS).toISOString();
+  const { config, tokenFile } = await oauthTokenConfig({ meta: { issuedAt, expiresAt, note: "annual" } });
+  const report = await checkClaudeOauthTokenFile(config, CLAUDE_FRESHNESS_NOW_MS);
+  assert.equal(report.status, "ok", report.message);
+  assert.deepEqual(report.detail, {
+    path: tokenFile,
+    mode: "0600",
+    ownerUid: process.getuid?.() ?? 0,
+    size: FAKE_OAUTH_TOKEN.length + 1,
+    containerUid: process.getuid?.() ?? 0,
+    ownerMatchesContainerUser: true,
+    prefixOk: true,
+    singleLine: true,
+    issuedAt,
+    expiresAt,
+    remainingDays: 300,
+  });
+  assertNoOauthTokenLeak(report);
+});
+
+test("#2373 option 2 claudeOauthTokenFile warns under 30 days or without a meta file", async () => {
+  const soon = await oauthTokenConfig({ meta: { expiresAt: new Date(CLAUDE_FRESHNESS_NOW_MS + 12 * DAY_MS).toISOString() } });
+  const soonReport = await checkClaudeOauthTokenFile(soon.config, CLAUDE_FRESHNESS_NOW_MS);
+  assert.equal(soonReport.status, "warn");
+  assert.match(soonReport.message, /expires in under 30 days/);
+  assert.equal(soonReport.detail?.remainingDays, 12);
+  assertNoOauthTokenLeak(soonReport);
+
+  const noMeta = await oauthTokenConfig();
+  const noMetaReport = await checkClaudeOauthTokenFile(noMeta.config, CLAUDE_FRESHNESS_NOW_MS);
+  assert.equal(noMetaReport.status, "warn");
+  assert.equal(noMetaReport.message, `expiry unknown — add ${noMeta.tokenFile}.meta.json with expiresAt`);
+  assertNoOauthTokenLeak(noMetaReport);
+});
+
+test("#2373 option 2 claudeOauthTokenFile fails when expired, group/world-readable, malformed or owned by another uid", async () => {
+  const expired = await oauthTokenConfig({ meta: { expiresAt: new Date(CLAUDE_FRESHNESS_NOW_MS - DAY_MS).toISOString() } });
+  const expiredReport = await checkClaudeOauthTokenFile(expired.config, CLAUDE_FRESHNESS_NOW_MS);
+  assert.equal(expiredReport.status, "fail");
+  assert.match(expiredReport.message, /expired; reissue it with `claude setup-token`/);
+  assertNoOauthTokenLeak(expiredReport);
+
+  const worldReadable = await oauthTokenConfig({ mode: 0o644, meta: { expiresAt: new Date(CLAUDE_FRESHNESS_NOW_MS + 300 * DAY_MS).toISOString() } });
+  const worldReport = await checkClaudeOauthTokenFile(worldReadable.config, CLAUDE_FRESHNESS_NOW_MS);
+  assert.equal(worldReport.status, "fail");
+  assert.match(worldReport.message, /mode grants group\/other permissions/);
+  assert.equal(worldReport.detail?.mode, "0644");
+  assertNoOauthTokenLeak(worldReport);
+
+  const multiLine = await oauthTokenConfig({ content: `${FAKE_OAUTH_TOKEN}\nextra\n` });
+  const multiReport = await checkClaudeOauthTokenFile(multiLine.config, CLAUDE_FRESHNESS_NOW_MS);
+  assert.equal(multiReport.status, "fail");
+  assert.equal(multiReport.detail?.singleLine, false);
+  assert.equal(multiReport.detail?.prefixOk, true);
+  assertNoOauthTokenLeak(multiReport);
+
+  const wrongPrefix = await oauthTokenConfig({ content: "sk-ant-api03-TEST-ONLY\n" });
+  const prefixReport = await checkClaudeOauthTokenFile(wrongPrefix.config, CLAUDE_FRESHNESS_NOW_MS);
+  assert.equal(prefixReport.status, "fail");
+  assert.equal(prefixReport.detail?.prefixOk, false);
+  assertNoOauthTokenLeak(prefixReport);
+
+  const otherOwner = await oauthTokenConfig({ user: "4242:4242" });
+  if ((process.getuid?.() ?? 0) !== 4242) {
+    const ownerReport = await checkClaudeOauthTokenFile(otherOwner.config, CLAUDE_FRESHNESS_NOW_MS);
+    assert.equal(ownerReport.status, "fail");
+    assert.match(ownerReport.message, /owner uid does not match the container user/);
+    assert.equal(ownerReport.detail?.ownerMatchesContainerUser, false);
+  }
+
+  const missing = await checkClaudeOauthTokenFile({ ...expired.config, claudeOauthTokenFile: join(tmpdir(), "a2a-missing-claude-oauth-token") }, CLAUDE_FRESHNESS_NOW_MS);
+  assert.equal(missing.status, "fail");
+});
+
+test("#2373 option 2 claudeCredentialFreshness skips when the OAuth token file is set", async () => {
+  const dir = await mkdtemp(join(tmpdir(), "a2a-claude-fresh-"));
+  await writeFile(join(dir, ".credentials.json"), fakeClaudeCredentials(CLAUDE_FRESHNESS_NOW_MS - 1));
+  const report = await checkClaudeCredentialFreshness({ ...claudeFreshnessConfig(dir), claudeOauthTokenFile: join(dir, "claude-oauth-token") }, CLAUDE_FRESHNESS_NOW_MS);
+  assert.deepEqual(report, { status: "skip", message: "superseded by the claude oauth token file" });
 });

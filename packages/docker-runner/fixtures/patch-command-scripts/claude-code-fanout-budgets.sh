@@ -44,6 +44,30 @@ if [ -d /run/secrets/claude-dir ]; then
   cp -a /run/secrets/claude-dir/. "$CLAUDE_CONFIG_DIR/" 2>/dev/null || true
 fi
 chmod -R u+rwX "$CLAUDE_CONFIG_DIR"
+# #2373 option 2: a long-lived OAuth token file (A2A_DOCKER_RUNNER_CLAUDE_OAUTH_TOKEN_FILE,
+# minted on the host with `claude setup-token`) is exported as
+# CLAUDE_CODE_OAUTH_TOKEN. Claude Code ranks that env token above the /login
+# credentials, so when both mounts are present the env token wins. The token is
+# never echoed, logged, or written anywhere. The bridge passes only allowlisted
+# env to the claude child, so require its capability marker or fail closed.
+if [ -e /run/secrets/claude-oauth-token ]; then
+  if ! grep -Fq 'a2a-bridge-capability: oauth-token-env' "$A2A_CLAUDE_PATCH_BRIDGE"; then
+    printf 'error=claude_oauth_token_bridge_unsupported\n' | tee -a /work/artifacts/summary.txt
+    printf 'failure_category=claude_credentials_unavailable\n' | tee -a /work/artifacts/summary.txt
+    printf 'The Claude patch bridge in this runner image does not pass CLAUDE_CODE_OAUTH_TOKEN to the claude CLI. Rebuild the runner image with a bridge that supports it, or unset A2A_DOCKER_RUNNER_CLAUDE_OAUTH_TOKEN_FILE.\n' | tee /work/artifacts/patch-command.log
+    exit 2
+  fi
+  claude_oauth_token="$(head -n 1 /run/secrets/claude-oauth-token 2>/dev/null | tr -d '[:space:]')" || claude_oauth_token=
+  if [ -z "$claude_oauth_token" ]; then
+    printf 'error=claude_oauth_token_unreadable\n' | tee -a /work/artifacts/summary.txt
+    printf 'failure_category=claude_credentials_unavailable\n' | tee -a /work/artifacts/summary.txt
+    printf 'The Claude OAuth token file mount is empty or not readable by the container user (uid %s). Run the container as the file owner (A2A_DOCKER_RUNNER_USER) and check the file content.\n' "$(id -u)" | tee /work/artifacts/patch-command.log
+    exit 2
+  fi
+  export CLAUDE_CODE_OAUTH_TOKEN="${claude_oauth_token}"
+  unset claude_oauth_token
+  printf 'claude_credentials_source=oauth_token_file\n' | tee -a /work/artifacts/summary.txt
+fi
 # #2234: a host credentials file mount (A2A_DOCKER_RUNNER_CLAUDE_CREDENTIALS_FILE)
 # overrides any stale copied credential so the freshest host OAuth token wins.
 if [ -f /run/secrets/claude-credentials.json ]; then

@@ -8,9 +8,9 @@ import { buildContainerScript, jsonArgvToScript } from "./script-generators.js";
 // Re-exported to preserve the public surface (runner.test.ts / engine-contract.test.ts
 // import these from ./runner.js); the implementations now live in script-generators.ts.
 export { buildContainerScript, jsonArgvToScript };
-import { CLAUDE_CREDENTIALS_FILE_MOUNT_TARGET } from "./config.js";
+import { CLAUDE_CREDENTIALS_FILE_MOUNT_TARGET, CLAUDE_OAUTH_TOKEN_MOUNT_TARGET } from "./config.js";
 import { normalizeTask } from "./task-normalizer.js";
-import { evaluateClaudeCredentialWindow } from "./ops.js";
+import { CLAUDE_CREDENTIAL_REFRESH_MARGIN_MS, evaluateClaudeCredentialWindow } from "./ops.js";
 import { formatClaudeHostRefreshSummary, maybeRefreshClaudeCredentialOnHost, type ClaudeHostRefreshResult } from "./claude-host-refresh.js";
 import { collectGitHubEvidence } from "./github-evidence.js";
 import { sanitizeSourcePublicExecutionPreflight } from "./source-public-preflight.js";
@@ -236,7 +236,20 @@ export async function runTask(config: RunnerConfig, task: RunnerTask): Promise<R
   // Deferred before any workDir/container work; retry after a host session
   // refreshes the credential. #2373: an opt-in host-side trigger may first
   // nudge the host CLI to refresh; the task proceeds only when it did.
-  if (config.commandProfile === "claude-code") {
+  // #2373 option 2: with a long-lived OAuth token file the /login credential is
+  // irrelevant, so both are skipped; only a KNOWN token expiry inside the task
+  // window (from `<token file>.meta.json`) defers the task.
+  if (config.commandProfile === "claude-code" && config.claudeOauthTokenFile) {
+    const taskTimeoutMs = normalizedTask.timeoutMs ?? config.defaultTimeoutMs;
+    const expiresAtMs = config.claudeOauthTokenMeta?.expiresAt ? Date.parse(config.claudeOauthTokenMeta.expiresAt) : Number.NaN;
+    const requiredUntilMs = Date.now() + taskTimeoutMs + CLAUDE_CREDENTIAL_REFRESH_MARGIN_MS;
+    if (Number.isFinite(expiresAtMs) && expiresAtMs <= requiredUntilMs) {
+      return buildClaudeOauthTokenWindowBlockResult(task, {
+        expiresAt: new Date(expiresAtMs).toISOString(),
+        requiredUntil: new Date(requiredUntilMs).toISOString(),
+      });
+    }
+  } else if (config.commandProfile === "claude-code") {
     const taskTimeoutMs = normalizedTask.timeoutMs ?? config.defaultTimeoutMs;
     const window = await evaluateClaudeCredentialWindow(config, taskTimeoutMs);
     if (window.blocked) {
@@ -927,12 +940,34 @@ function buildClaudeCredentialWindowBlockResult(
   window: { expiresAt?: string; requiredUntil: string },
   hostRefresh: ClaudeHostRefreshResult,
 ): RunnerResult {
-  const normalizedTask = normalizeTask(task);
-  const repo = normalizedTask.repos[0]?.url ?? task.repo ?? "";
   const hostRefreshSummary = formatClaudeHostRefreshSummary(hostRefresh);
   const blockError = `claude credential expires at ${window.expiresAt ?? "unknown"}, before the task could finish (needs >= ${window.requiredUntil}); `
     + "the container cannot refresh it (#2234), so the task was not started — retry after a host Claude session refreshes the credential"
     + ` (${hostRefreshSummary})`;
+  return buildClaudeStartGateBlockResult(
+    task,
+    blockError,
+    `error=claude_credential_window\nfailure_category=claude_credential_window\nretryable=true\n${hostRefreshSummary}\n`,
+  );
+}
+
+/** #2373 option 2: the long-lived OAuth token file (per its meta) expires inside the task window. */
+function buildClaudeOauthTokenWindowBlockResult(
+  task: RunnerTask,
+  window: { expiresAt: string; requiredUntil: string },
+): RunnerResult {
+  const blockError = `claude oauth token file expires at ${window.expiresAt}, before the task could finish (needs >= ${window.requiredUntil}); `
+    + "the task was not started — reissue the token on the host with `claude setup-token`, replace the token file and update expiresAt in its .meta.json";
+  return buildClaudeStartGateBlockResult(
+    task,
+    blockError,
+    "error=claude_oauth_token_window\nfailure_category=claude_oauth_token_window\nretryable=true\n",
+  );
+}
+
+function buildClaudeStartGateBlockResult(task: RunnerTask, blockError: string, stderr: string): RunnerResult {
+  const normalizedTask = normalizeTask(task);
+  const repo = normalizedTask.repos[0]?.url ?? task.repo ?? "";
   return {
     ok: false,
     taskId: task.id,
@@ -941,7 +976,7 @@ function buildClaudeCredentialWindowBlockResult(
     exitCode: 4,
     signal: null,
     stdout: `blocked: ${blockError}`,
-    stderr: `error=claude_credential_window\nfailure_category=claude_credential_window\nretryable=true\n${hostRefreshSummary}\n`,
+    stderr,
     artifacts: [],
     error: blockError,
     github: {
@@ -1152,14 +1187,16 @@ export function buildRunArgs(config: RunnerConfig, task: RunnerTask, workDir: st
 
   for (const mount of config.extraMounts ?? []) {
     const normalizedTarget = mount.target.replace(/\/+/g, "/").replace(/\/$/, "");
-    if (normalizedTarget === CLAUDE_CREDENTIALS_FILE_MOUNT_TARGET) {
+    if (normalizedTarget === CLAUDE_CREDENTIALS_FILE_MOUNT_TARGET || normalizedTarget === CLAUDE_OAUTH_TOKEN_MOUNT_TARGET) {
       // Single-file credential mount: `-v` would auto-create a root-owned
       // directory at the host path if the file vanished after validation,
       // breaking the host login. `--mount type=bind` fails closed instead.
+      // #2373 option 2: the OAuth token file uses the same form.
+      const label = normalizedTarget === CLAUDE_OAUTH_TOKEN_MOUNT_TARGET ? "Claude OAuth token file" : "Claude credentials file";
       if (mount.source.includes(",")) {
-        throw new Error(`Claude credentials file mount source must not contain a comma (cannot be expressed in --mount syntax): ${CLAUDE_CREDENTIALS_FILE_MOUNT_TARGET}`);
+        throw new Error(`${label} mount source must not contain a comma (cannot be expressed in --mount syntax): ${normalizedTarget}`);
       }
-      args.push("--mount", `type=bind,source=${mount.source},target=${CLAUDE_CREDENTIALS_FILE_MOUNT_TARGET},readonly`);
+      args.push("--mount", `type=bind,source=${mount.source},target=${normalizedTarget},readonly`);
       continue;
     }
     const mode = mount.readOnly === false ? "rw" : "ro";

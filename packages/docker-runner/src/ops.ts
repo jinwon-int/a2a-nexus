@@ -18,6 +18,7 @@ import {
   KNOWN_SERVICE_ENV_FILES,
   WORKDIR_TTL_ENV,
   capDropIncludesAll,
+  claudeOauthTokenMetaPath,
   isRootContainerUser,
   parseTtlMs,
   projectClaudeCodeEffort,
@@ -54,6 +55,8 @@ export interface DoctorReport {
   claudeBridgeDefaults?: OpsCheck;
   /** #2234: claude-code only — expiry of the effective Claude OAuth credential vs the task timeout. */
   claudeCredentialFreshness?: OpsCheck;
+  /** #2373 option 2: claude-code only — long-lived OAuth token file shape, permissions and expiry. */
+  claudeOauthTokenFile?: OpsCheck;
   /** #2373: claude-code (or configured) — opt-in host-side Claude credential refresh trigger. */
   claudeCredentialHostRefresh?: OpsCheck;
   /** Deploy-marker validation: checks whether the deployed revision matches an expected deploy marker. */
@@ -742,6 +745,11 @@ export async function doctor(config: RunnerConfig, options: DoctorOptions = {}):
     ? await checkClaudeCredentialFreshness(config)
     : undefined;
   if (claudeCredentialFreshness) checks.push(claudeCredentialFreshness);
+  // #2373 option 2: long-lived OAuth token file (skip when unset).
+  const claudeOauthTokenFile = config.commandProfile === "claude-code"
+    ? await checkClaudeOauthTokenFile(config)
+    : undefined;
+  if (claudeOauthTokenFile) checks.push(claudeOauthTokenFile);
   // #2373: reported for the claude-code profile, or whenever the trigger is configured.
   const claudeCredentialHostRefresh = config.commandProfile === "claude-code" || config.claudeHostRefresh
     ? await checkClaudeCredentialHostRefresh(config)
@@ -785,6 +793,7 @@ export async function doctor(config: RunnerConfig, options: DoctorOptions = {}):
     githubPatch,
     ...(claudeBridgeDefaults ? { claudeBridgeDefaults } : {}),
     ...(claudeCredentialFreshness ? { claudeCredentialFreshness } : {}),
+    ...(claudeOauthTokenFile ? { claudeOauthTokenFile } : {}),
     ...(claudeCredentialHostRefresh ? { claudeCredentialHostRefresh } : {}),
     ...(deployMarker ? { deployMarker } : {}),
     ...(serviceEnvFile ? { serviceEnvFile } : {}),
@@ -1404,6 +1413,10 @@ export async function checkClaudeCredentialFreshness(config: RunnerConfig, nowMs
   if (config.commandProfile !== "claude-code") {
     return { status: "skip", message: "claude credential freshness applies only to the claude-code profile" };
   }
+  // #2373 option 2: CLAUDE_CODE_OAUTH_TOKEN outranks the /login credential.
+  if (config.claudeOauthTokenFile) {
+    return { status: "skip", message: "superseded by the claude oauth token file" };
+  }
   const location = resolveClaudeCredentialLocation(config);
   const { dirCopyPath, effectivePath } = location;
   const credentialsFileMount = location.hasFileMount;
@@ -1464,6 +1477,106 @@ export async function checkClaudeCredentialFreshness(config: RunnerConfig, nowMs
   }
   if (status !== "ok") detail.recommendation = recommendation;
   return { status, message, detail };
+}
+
+/** Shape of a `claude setup-token` subscription OAuth token. */
+const CLAUDE_OAUTH_TOKEN_PATTERN = /^sk-ant-oat01-[A-Za-z0-9_-]+$/;
+/** Warn this many days before the OAuth token file expires (annual reissue). */
+export const CLAUDE_OAUTH_TOKEN_EXPIRY_WARN_DAYS = 30;
+const DAY_MS = 24 * 60 * 60 * 1000;
+
+/**
+ * #2373 option 2 doctor check for A2A_DOCKER_RUNNER_CLAUDE_OAUTH_TOKEN_FILE:
+ * file shape, permissions, owner vs the container user, and expiry from the
+ * optional `<file>.meta.json`. The token is read only to derive the booleans
+ * `prefixOk`/`singleLine`; neither the token nor any substring is reported.
+ */
+export async function checkClaudeOauthTokenFile(config: RunnerConfig, nowMs = Date.now()): Promise<OpsCheck> {
+  const tokenFile = config.claudeOauthTokenFile;
+  if (!tokenFile) return { status: "skip", message: "not configured" };
+  const detail: Record<string, unknown> = { path: tokenFile };
+  let info: Awaited<ReturnType<typeof stat>>;
+  try {
+    info = await stat(tokenFile);
+  } catch {
+    return { status: "fail", message: "claude oauth token file is missing or cannot be inspected", detail };
+  }
+  if (!info.isFile()) return { status: "fail", message: "claude oauth token file is not a regular file", detail };
+
+  const mode = info.mode & 0o777;
+  detail.mode = mode.toString(8).padStart(4, "0");
+  detail.ownerUid = info.uid;
+  detail.size = info.size;
+  const problems: string[] = [];
+  if ((mode & 0o077) !== 0) problems.push("mode grants group/other permissions (chmod 600)");
+
+  // Same container-user resolution as secretMountReadability: unset = image default root.
+  const rawUser = config.user?.trim() ?? "";
+  const containerUid = rawUser ? parseContainerUserRef(rawUser)?.uid : 0;
+  if (containerUid === undefined) {
+    detail.ownerCheck = "skipped: container user is not a numeric uid";
+  } else {
+    detail.containerUid = containerUid;
+    detail.ownerMatchesContainerUser = info.uid === containerUid;
+    if (info.uid !== containerUid) problems.push("owner uid does not match the container user (A2A_DOCKER_RUNNER_USER)");
+  }
+  if (info.size === 0) problems.push("file is empty");
+
+  let prefixOk = false;
+  let singleLine = false;
+  try {
+    const raw = await readFile(tokenFile, "utf8");
+    singleLine = !/[\r\n]/.test(raw.replace(/\r?\n$/, ""));
+    prefixOk = CLAUDE_OAUTH_TOKEN_PATTERN.test((raw.split(/\r?\n/)[0] ?? "").trim());
+  } catch {
+    problems.push("file is not readable by the runner");
+  }
+  detail.prefixOk = prefixOk;
+  detail.singleLine = singleLine;
+  if (!singleLine) problems.push("file is not a single line");
+  if (!prefixOk) problems.push("first line does not look like a `claude setup-token` OAuth token");
+
+  const metaPath = claudeOauthTokenMetaPath(tokenFile);
+  let expiresAtMs: number | undefined;
+  let metaMissing = false;
+  let metaText: string | undefined;
+  try {
+    metaText = await readFile(metaPath, "utf8");
+  } catch {
+    metaMissing = true;
+  }
+  if (metaText !== undefined) {
+    let meta: unknown;
+    try {
+      meta = JSON.parse(metaText);
+    } catch {
+      meta = undefined;
+    }
+    const record = meta && typeof meta === "object" && !Array.isArray(meta) ? meta as Record<string, unknown> : {};
+    if (typeof record.issuedAt === "string") detail.issuedAt = record.issuedAt;
+    const parsedExpiry = typeof record.expiresAt === "string" ? Date.parse(record.expiresAt) : Number.NaN;
+    if (Number.isFinite(parsedExpiry)) {
+      expiresAtMs = parsedExpiry;
+      detail.expiresAt = new Date(parsedExpiry).toISOString();
+      detail.remainingDays = Math.floor((parsedExpiry - nowMs) / DAY_MS);
+    } else {
+      problems.push(`${metaPath} has no valid expiresAt`);
+    }
+  }
+
+  if (problems.length > 0) {
+    return { status: "fail", message: `claude oauth token file is not usable: ${problems.join("; ")}`, detail };
+  }
+  if (expiresAtMs !== undefined && expiresAtMs <= nowMs) {
+    return { status: "fail", message: "claude oauth token file is expired; reissue it with `claude setup-token`", detail };
+  }
+  if (metaMissing) {
+    return { status: "warn", message: `expiry unknown — add ${metaPath} with expiresAt`, detail };
+  }
+  if (expiresAtMs !== undefined && expiresAtMs - nowMs < CLAUDE_OAUTH_TOKEN_EXPIRY_WARN_DAYS * DAY_MS) {
+    return { status: "warn", message: `claude oauth token file expires in under ${CLAUDE_OAUTH_TOKEN_EXPIRY_WARN_DAYS} days; reissue it with \`claude setup-token\``, detail };
+  }
+  return { status: "ok", message: "claude oauth token file is usable", detail };
 }
 
 function parseClaudeOauthExpiresAt(raw: Buffer): number | undefined {

@@ -2123,3 +2123,88 @@ test("#2256 A4 runner JSON-key redaction needs a word boundary (no monkey:/keybo
   for (const secret of ["j1s", "j2s", "j3s", "j4s", "j5s"]) assert.equal(joined.includes(secret), false, joined);
   assert.ok(joined.includes('"turkey": "gravy"') && joined.includes("hockey: puck"), joined);
 });
+
+// ─── #2373 option 2: long-lived Claude OAuth token file ─────────────────────
+
+test("#2373 option 2 buildRunArgs bind-mounts the Claude OAuth token file read-only with --mount", () => {
+  const mountTask: RunnerTask = { id: "oauth-token-mount", intent: "propose_patch", commands: ["true"] };
+  const tokenSource = "/etc/a2a/claude-oauth-token";
+  const args = buildRunArgs({
+    ...baseConfig,
+    extraMounts: [
+      { source: "/srv/claude-profile", target: "/run/secrets/claude-dir", readOnly: true },
+      { source: tokenSource, target: "/run/secrets/claude-oauth-token", readOnly: true },
+    ],
+  }, mountTask, "/tmp/a2a-oauth-token-mount", "run123");
+  const mountIndex = args.indexOf("--mount");
+  assert.notEqual(mountIndex, -1, "token file must use --mount");
+  assert.equal(args[mountIndex + 1], `type=bind,source=${tokenSource},target=/run/secrets/claude-oauth-token,readonly`);
+  assert.equal(args.some((arg) => arg.includes(`${tokenSource}:`)), false, "token file must never use the -v form");
+  assert.equal(args.some((arg) => /CLAUDE_CODE_OAUTH_TOKEN/.test(arg)), false, "token is never passed as docker run -e");
+
+  assert.throws(
+    () => buildRunArgs({
+      ...baseConfig,
+      extraMounts: [{ source: "/etc/a,b/claude-oauth-token", target: "/run/secrets/claude-oauth-token", readOnly: true }],
+    }, mountTask, "/tmp/a2a-oauth-token-mount", "run123"),
+    /Claude OAuth token file mount source must not contain a comma/,
+  );
+});
+
+function claudeOauthGateFixture(prefix: string): { config: RunnerConfig; rootDir: string; refreshMarker: string } {
+  const dir = mkdtempSync(join(tmpdir(), prefix));
+  const creds = join(dir, "host.credentials.json");
+  // An already-expired /login credential: without the token file this defers the task.
+  writeFileSync(creds, JSON.stringify({ claudeAiOauth: { accessToken: "sk-ant-oat01-FAKEACCESS", refreshToken: "sk-ant-ort01-FAKEREFRESH", expiresAt: Date.now() - 60_000 } }));
+  const tokenFile = join(dir, "claude-oauth-token");
+  writeFileSync(tokenFile, "sk-ant-oat01-TEST-ONLY\n", { mode: 0o600 });
+  const refreshMarker = join(dir, "host-refresh-ran");
+  const rootDir = join(dir, "root");
+  mkdirSync(rootDir);
+  return {
+    rootDir,
+    refreshMarker,
+    config: {
+      ...baseConfig,
+      rootDir,
+      defaultTimeoutMs: 30 * 60 * 1000,
+      commandProfile: "claude-code",
+      extraMounts: [
+        { source: creds, target: "/run/secrets/claude-credentials.json", readOnly: true },
+        { source: tokenFile, target: "/run/secrets/claude-oauth-token", readOnly: true },
+      ],
+      claudeHostRefresh: { argv: [process.execPath, "-e", "require('fs').writeFileSync(process.argv[1], '')", refreshMarker], timeoutMs: 30_000, minIntervalMs: 600_000 },
+      claudeOauthTokenFile: tokenFile,
+    },
+  };
+}
+
+test("#2373 option 2 runTask with a token file skips the credential window gate and the host refresh", async () => {
+  const { config, rootDir, refreshMarker } = claudeOauthGateFixture("a2a-claude-oauth-gate-");
+  const task: RunnerTask = { id: "claude-oauth-gate-1", intent: "verify", commands: ["true"] };
+  for (const meta of [undefined, { expiresAt: new Date(Date.now() + 365 * 24 * 3600 * 1000).toISOString() }]) {
+    const probe = await runWithProbeEngine({ ...config, ...(meta ? { claudeOauthTokenMeta: meta } : {}) }, task);
+    assert.equal(statSync(probe.ranMarker).isFile(), true, "container engine invoked: the expired .credentials.json no longer blocks");
+    const stderr = (probe.result as { stderr?: string } | undefined)?.stderr ?? "";
+    assert.doesNotMatch(stderr, /claude_credential_window|claude_oauth_token_window|host_refresh=/);
+  }
+  assert.throws(() => statSync(refreshMarker), "the host refresh command is never invoked");
+  assert.equal(readdirSyncSafe(rootDir).includes(".claude-host-refresh-state.json"), false, "no host refresh state is written");
+});
+
+test("#2373 option 2 runTask blocks with claude_oauth_token_window when the token expires inside the task window", async () => {
+  const { config, rootDir, refreshMarker } = claudeOauthGateFixture("a2a-claude-oauth-window-");
+  const expiresAt = new Date(Date.now() + 10 * 60 * 1000).toISOString();
+  const task: RunnerTask = { id: "claude-oauth-window-1", intent: "propose_patch", repo: "example/widgets", commands: [] } as RunnerTask;
+  const result = await runTask({ ...config, claudeOauthTokenMeta: { expiresAt } }, task);
+  assert.equal(result.ok, false);
+  assert.equal(result.github?.outcome, "block");
+  assert.equal(result.exitCode, 4);
+  assert.equal(result.workDir, "");
+  assert.equal(result.stderr, "error=claude_oauth_token_window\nfailure_category=claude_oauth_token_window\nretryable=true\n");
+  assert.match(result.error ?? "", new RegExp(`expires at ${expiresAt.replace(/[.]/g, "\\.")}`));
+  assert.match(result.error ?? "", /claude setup-token/);
+  assert.deepEqual(readdirSyncSafe(rootDir), [], "no workDir or host refresh state is created");
+  assert.throws(() => statSync(refreshMarker), "the host refresh command is never invoked");
+  assert.equal(JSON.stringify(result).includes("TEST-ONLY"), false, "token value never appears");
+});
