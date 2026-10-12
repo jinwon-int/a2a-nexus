@@ -54,6 +54,8 @@ export interface DoctorReport {
   claudeBridgeDefaults?: OpsCheck;
   /** #2234: claude-code only — expiry of the effective Claude OAuth credential vs the task timeout. */
   claudeCredentialFreshness?: OpsCheck;
+  /** #2373: claude-code (or configured) — opt-in host-side Claude credential refresh trigger. */
+  claudeCredentialHostRefresh?: OpsCheck;
   /** Deploy-marker validation: checks whether the deployed revision matches an expected deploy marker. */
   deployMarker?: OpsCheck;
   /** #2267: the service env file the CLI read — missing, or older than another known env file, is a warn. */
@@ -740,6 +742,11 @@ export async function doctor(config: RunnerConfig, options: DoctorOptions = {}):
     ? await checkClaudeCredentialFreshness(config)
     : undefined;
   if (claudeCredentialFreshness) checks.push(claudeCredentialFreshness);
+  // #2373: reported for the claude-code profile, or whenever the trigger is configured.
+  const claudeCredentialHostRefresh = config.commandProfile === "claude-code" || config.claudeHostRefresh
+    ? await checkClaudeCredentialHostRefresh(config)
+    : undefined;
+  if (claudeCredentialHostRefresh) checks.push(claudeCredentialHostRefresh);
 
   // Deploy-marker is optional: only checked when buildMetadata.revision is provided.
   let deployMarker: OpsCheck | undefined;
@@ -778,6 +785,7 @@ export async function doctor(config: RunnerConfig, options: DoctorOptions = {}):
     githubPatch,
     ...(claudeBridgeDefaults ? { claudeBridgeDefaults } : {}),
     ...(claudeCredentialFreshness ? { claudeCredentialFreshness } : {}),
+    ...(claudeCredentialHostRefresh ? { claudeCredentialHostRefresh } : {}),
     ...(deployMarker ? { deployMarker } : {}),
     ...(serviceEnvFile ? { serviceEnvFile } : {}),
     ...(serviceEnvBackups ? { serviceEnvBackups } : {}),
@@ -1314,6 +1322,68 @@ export async function evaluateClaudeCredentialWindow(
     requiredUntil,
     remainingMs: expiresAtMs - nowMs,
   };
+}
+
+/** #2373: rate-limit state of the host-side Claude refresh trigger, under `config.rootDir`. */
+export const CLAUDE_HOST_REFRESH_STATE_FILE = ".claude-host-refresh-state.json";
+
+export interface ClaudeHostRefreshState {
+  lastAttemptAt?: string;
+  lastExitCode?: number | null;
+  lastRefreshed?: boolean;
+}
+
+export function claudeHostRefreshStatePath(config: Pick<RunnerConfig, "rootDir">): string {
+  return join(resolve(config.rootDir), CLAUDE_HOST_REFRESH_STATE_FILE);
+}
+
+/** Missing or malformed state reads as `undefined` (no previous attempt). */
+export async function readClaudeHostRefreshState(config: Pick<RunnerConfig, "rootDir">): Promise<ClaudeHostRefreshState | undefined> {
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(await readFile(claudeHostRefreshStatePath(config), "utf8"));
+  } catch {
+    return undefined;
+  }
+  if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) return undefined;
+  const record = parsed as Record<string, unknown>;
+  const state: ClaudeHostRefreshState = {};
+  if (typeof record.lastAttemptAt === "string" && Number.isFinite(Date.parse(record.lastAttemptAt))) state.lastAttemptAt = record.lastAttemptAt;
+  if (typeof record.lastExitCode === "number" || record.lastExitCode === null) state.lastExitCode = record.lastExitCode;
+  if (typeof record.lastRefreshed === "boolean") state.lastRefreshed = record.lastRefreshed;
+  return state;
+}
+
+/**
+ * #2373 doctor check: is the opt-in host-side refresh trigger configured, and
+ * can it ever run? Reports only argv[0] — the rest of the argv may carry a
+ * prompt or flags the operator does not want in doctor output.
+ */
+export async function checkClaudeCredentialHostRefresh(config: RunnerConfig): Promise<OpsCheck> {
+  const hostRefresh = config.claudeHostRefresh;
+  if (!hostRefresh) return { status: "skip", message: "not configured" };
+  const state = await readClaudeHostRefreshState(config);
+  const detail: Record<string, unknown> = {
+    configured: true,
+    command: hostRefresh.argv[0],
+    timeoutMs: hostRefresh.timeoutMs,
+    minIntervalMs: hostRefresh.minIntervalMs,
+    ...(state?.lastAttemptAt !== undefined ? { lastAttemptAt: state.lastAttemptAt } : {}),
+    ...(state?.lastExitCode !== undefined ? { lastExitCode: state.lastExitCode } : {}),
+    ...(state?.lastRefreshed !== undefined ? { lastRefreshed: state.lastRefreshed } : {}),
+  };
+  if (config.commandProfile !== "claude-code") {
+    return { status: "warn", message: "host refresh trigger is configured but only runs for the claude-code profile", detail };
+  }
+  const location = resolveClaudeCredentialLocation(config);
+  if (location.source !== "credentials_file_mount") {
+    return {
+      status: "warn",
+      message: "host refresh trigger is configured but the claude credential source is not credentials_file_mount; the trigger never runs",
+      detail: { ...detail, source: location.source, recommendation: "set A2A_DOCKER_RUNNER_CLAUDE_CREDENTIALS_FILE to the host .credentials.json the host CLI refreshes" },
+    };
+  }
+  return { status: "ok", message: "host refresh trigger is configured for the claude_credential_window gate", detail };
 }
 
 function normalizeContainerPath(value: string): string {

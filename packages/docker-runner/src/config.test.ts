@@ -2265,3 +2265,62 @@ test("no runner profile points HOME at the host-bound /work (#2256 A3)", () => {
   assert.deepEqual(offenders, []);
   assert.ok(PROFILE_SCRIPT_NAMES.length >= 4, "expected the shipped profile set to be inspected");
 });
+
+// ─── #2373: opt-in host-side Claude credential refresh trigger ──────────────
+
+const CLAUDE_HOST_REFRESH_ARGV = ["claude", "-p", "Reply with exactly: ok", "--model", "haiku", "--max-turns", "1"];
+
+test("#2373 claudeHostRefresh is undefined when A2A_DOCKER_RUNNER_CLAUDE_HOST_REFRESH_ARGV is absent", async () => {
+  const config = await loadConfig({ A2A_DOCKER_RUNNER_SKIP_ENGINE_DETECT: "1" });
+  assert.equal(config.claudeHostRefresh, undefined);
+  assert.equal("claudeHostRefresh" in config, false);
+  const blank = await loadConfig({ A2A_DOCKER_RUNNER_SKIP_ENGINE_DETECT: "1", A2A_DOCKER_RUNNER_CLAUDE_HOST_REFRESH_ARGV: "  " });
+  assert.equal(blank.claudeHostRefresh, undefined);
+});
+
+test("#2373 claudeHostRefresh parses argv with default and explicit timeout/interval", async () => {
+  const defaults = await loadConfig({
+    A2A_DOCKER_RUNNER_SKIP_ENGINE_DETECT: "1",
+    A2A_DOCKER_RUNNER_CLAUDE_HOST_REFRESH_ARGV: JSON.stringify(CLAUDE_HOST_REFRESH_ARGV),
+  });
+  assert.deepEqual(defaults.claudeHostRefresh, { argv: CLAUDE_HOST_REFRESH_ARGV, timeoutMs: 120_000, minIntervalMs: 600_000 });
+
+  const tuned = await loadConfig({
+    A2A_DOCKER_RUNNER_SKIP_ENGINE_DETECT: "1",
+    A2A_DOCKER_RUNNER_CLAUDE_HOST_REFRESH_ARGV: JSON.stringify(CLAUDE_HOST_REFRESH_ARGV),
+    A2A_DOCKER_RUNNER_CLAUDE_HOST_REFRESH_TIMEOUT_MS: "5000",
+    A2A_DOCKER_RUNNER_CLAUDE_HOST_REFRESH_MIN_INTERVAL_MS: "86400000",
+  });
+  assert.deepEqual(tuned.claudeHostRefresh, { argv: CLAUDE_HOST_REFRESH_ARGV, timeoutMs: 5_000, minIntervalMs: 86_400_000 });
+});
+
+test("#2373 claudeHostRefresh rejects invalid argv JSON, shape, elements and out-of-bounds knobs", async () => {
+  const base = { A2A_DOCKER_RUNNER_SKIP_ENGINE_DETECT: "1" };
+  for (const [raw, pattern] of [
+    ["claude -p ok", /invalid A2A_DOCKER_RUNNER_CLAUDE_HOST_REFRESH_ARGV: must be a JSON array of strings/],
+    ["{\"argv\":[\"claude\"]}", /invalid A2A_DOCKER_RUNNER_CLAUDE_HOST_REFRESH_ARGV: must be a JSON array of strings/],
+    ["\"claude\"", /invalid A2A_DOCKER_RUNNER_CLAUDE_HOST_REFRESH_ARGV: must be a JSON array of strings/],
+    ["[]", /invalid A2A_DOCKER_RUNNER_CLAUDE_HOST_REFRESH_ARGV: must not be empty/],
+    ["[\"claude\", 1]", /invalid A2A_DOCKER_RUNNER_CLAUDE_HOST_REFRESH_ARGV: element 1 must be a string/],
+    ["[\"claude\", null]", /invalid A2A_DOCKER_RUNNER_CLAUDE_HOST_REFRESH_ARGV: element 1 must be a string/],
+    [JSON.stringify(["claude", "-p", "ok\nrm -rf /"]), /invalid A2A_DOCKER_RUNNER_CLAUDE_HOST_REFRESH_ARGV: element 2 must not contain a newline/],
+    [JSON.stringify([""]), /invalid A2A_DOCKER_RUNNER_CLAUDE_HOST_REFRESH_ARGV: element 0 \(the command\) must not be empty/],
+  ] as const) {
+    await assert.rejects(loadConfig({ ...base, A2A_DOCKER_RUNNER_CLAUDE_HOST_REFRESH_ARGV: raw }), pattern, raw);
+  }
+  const argv = JSON.stringify(CLAUDE_HOST_REFRESH_ARGV);
+  for (const [key, value] of [
+    ["A2A_DOCKER_RUNNER_CLAUDE_HOST_REFRESH_TIMEOUT_MS", "4999"],
+    ["A2A_DOCKER_RUNNER_CLAUDE_HOST_REFRESH_TIMEOUT_MS", "600001"],
+    ["A2A_DOCKER_RUNNER_CLAUDE_HOST_REFRESH_TIMEOUT_MS", "2m"],
+    ["A2A_DOCKER_RUNNER_CLAUDE_HOST_REFRESH_MIN_INTERVAL_MS", "59999"],
+    ["A2A_DOCKER_RUNNER_CLAUDE_HOST_REFRESH_MIN_INTERVAL_MS", "86400001"],
+    ["A2A_DOCKER_RUNNER_CLAUDE_HOST_REFRESH_MIN_INTERVAL_MS", "-1"],
+  ] as const) {
+    await assert.rejects(
+      loadConfig({ ...base, A2A_DOCKER_RUNNER_CLAUDE_HOST_REFRESH_ARGV: argv, [key]: value }),
+      new RegExp(`${key} must be an integer between`),
+      `${key}=${value}`,
+    );
+  }
+});

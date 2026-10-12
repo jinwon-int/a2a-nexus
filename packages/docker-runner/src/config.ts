@@ -6,6 +6,7 @@ import type {
   RunnerBuildMetadata,
   RunnerCommandProfile,
   RunnerConfig,
+  RunnerClaudeHostRefreshConfig,
   RunnerClaudePatchMode,
   RunnerClaudeTurnBudgetProjection,
   RunnerClaudeTurnBudgetValue,
@@ -210,6 +211,7 @@ export async function loadConfig(env = process.env): Promise<RunnerConfig> {
   const trustedOperator = isTruthy(env.A2A_DOCKER_RUNNER_TRUSTED_OPERATOR);
   const expectedProfile = normalizePatchCommandProfile(env.A2A_DOCKER_RUNNER_EXPECTED_PATCH_COMMAND_PROFILE);
   validatePatchCommandProfileSelection({ profile, expectedProfile, image });
+  const claudeHostRefresh = loadClaudeHostRefreshConfig(env);
 
   const config: RunnerConfig = {
     rootDir: env.A2A_DOCKER_RUNNER_ROOT || DEFAULT_ROOT, // validated below; resolveRootDir() is the lite path
@@ -240,6 +242,7 @@ export async function loadConfig(env = process.env): Promise<RunnerConfig> {
     egressTimeoutMs: parseOptionalPositiveInteger(env.A2A_DOCKER_RUNNER_EGRESS_TIMEOUT_MS, DEFAULT_EGRESS_TIMEOUT_MS, "A2A_DOCKER_RUNNER_EGRESS_TIMEOUT_MS"),
     failureLogMaxBytes: parseOptionalPositiveInteger(env.A2A_DOCKER_RUNNER_FAILURE_LOG_MAX_BYTES, DEFAULT_FAILURE_LOG_MAX_BYTES, "A2A_DOCKER_RUNNER_FAILURE_LOG_MAX_BYTES") ?? DEFAULT_FAILURE_LOG_MAX_BYTES,
     failureLogKeep: parseOptionalPositiveInteger(env.A2A_DOCKER_RUNNER_FAILURE_LOG_KEEP, DEFAULT_FAILURE_LOG_KEEP, "A2A_DOCKER_RUNNER_FAILURE_LOG_KEEP") ?? DEFAULT_FAILURE_LOG_KEEP,
+    ...(claudeHostRefresh ? { claudeHostRefresh } : {}),
     ...patchCommand,
   };
 
@@ -500,6 +503,51 @@ function withClaudeCredentialsFileMount(mounts: RunnerExtraMount[], env: NodeJS.
   }
   if (existing.length > 0) return mounts;
   return [...mounts, { source, target: CLAUDE_CREDENTIALS_FILE_MOUNT_TARGET, readOnly: true }];
+}
+
+export const DEFAULT_CLAUDE_HOST_REFRESH_TIMEOUT_MS = 120_000;
+export const DEFAULT_CLAUDE_HOST_REFRESH_MIN_INTERVAL_MS = 600_000;
+
+/**
+ * #2373: opt-in host-side Claude credential refresh trigger. The argv is a JSON
+ * array of strings spawned on the HOST without a shell when the
+ * claude_credential_window gate would defer a claude-code task. Unset returns
+ * undefined (gate behaviour unchanged). Validation messages never echo argv.
+ */
+export function loadClaudeHostRefreshConfig(env: NodeJS.ProcessEnv): RunnerClaudeHostRefreshConfig | undefined {
+  const raw = env.A2A_DOCKER_RUNNER_CLAUDE_HOST_REFRESH_ARGV;
+  if (raw === undefined || raw.trim() === "") return undefined;
+  const invalid = (reason: string): Error => new Error(`invalid A2A_DOCKER_RUNNER_CLAUDE_HOST_REFRESH_ARGV: ${reason}`);
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(raw);
+  } catch {
+    throw invalid("must be a JSON array of strings");
+  }
+  if (!Array.isArray(parsed)) throw invalid("must be a JSON array of strings");
+  if (parsed.length === 0) throw invalid("must not be empty");
+  parsed.forEach((element, index) => {
+    if (typeof element !== "string") throw invalid(`element ${index} must be a string`);
+    if (/[\r\n]/.test(element)) throw invalid(`element ${index} must not contain a newline`);
+  });
+  if ((parsed[0] as string).trim() === "") throw invalid("element 0 (the command) must not be empty");
+  return {
+    argv: parsed as string[],
+    timeoutMs: parseBoundedInteger(
+      env.A2A_DOCKER_RUNNER_CLAUDE_HOST_REFRESH_TIMEOUT_MS?.trim(),
+      DEFAULT_CLAUDE_HOST_REFRESH_TIMEOUT_MS,
+      5_000,
+      600_000,
+      "A2A_DOCKER_RUNNER_CLAUDE_HOST_REFRESH_TIMEOUT_MS",
+    ),
+    minIntervalMs: parseBoundedInteger(
+      env.A2A_DOCKER_RUNNER_CLAUDE_HOST_REFRESH_MIN_INTERVAL_MS?.trim(),
+      DEFAULT_CLAUDE_HOST_REFRESH_MIN_INTERVAL_MS,
+      60_000,
+      86_400_000,
+      "A2A_DOCKER_RUNNER_CLAUDE_HOST_REFRESH_MIN_INTERVAL_MS",
+    ),
+  };
 }
 
 function validateProfileMountSelection(mounts: RunnerExtraMount[], env: NodeJS.ProcessEnv): void {

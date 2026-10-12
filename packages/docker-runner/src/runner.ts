@@ -11,6 +11,7 @@ export { buildContainerScript, jsonArgvToScript };
 import { CLAUDE_CREDENTIALS_FILE_MOUNT_TARGET } from "./config.js";
 import { normalizeTask } from "./task-normalizer.js";
 import { evaluateClaudeCredentialWindow } from "./ops.js";
+import { formatClaudeHostRefreshSummary, maybeRefreshClaudeCredentialOnHost, type ClaudeHostRefreshResult } from "./claude-host-refresh.js";
 import { collectGitHubEvidence } from "./github-evidence.js";
 import { sanitizeSourcePublicExecutionPreflight } from "./source-public-preflight.js";
 import { expandTask, resolveTemplate, buildTemplateExpansionEvidence } from "./task-templates.js";
@@ -233,10 +234,15 @@ export async function runTask(config: RunnerConfig, task: RunnerTask): Promise<R
   // (the profile strips the refresh token), so refuse to START a claude-code
   // task whose access token would expire inside the task timeout + margin.
   // Deferred before any workDir/container work; retry after a host session
-  // refreshes the credential.
+  // refreshes the credential. #2373: an opt-in host-side trigger may first
+  // nudge the host CLI to refresh; the task proceeds only when it did.
   if (config.commandProfile === "claude-code") {
-    const window = await evaluateClaudeCredentialWindow(config, normalizedTask.timeoutMs ?? config.defaultTimeoutMs);
-    if (window.blocked) return buildClaudeCredentialWindowBlockResult(task, window);
+    const taskTimeoutMs = normalizedTask.timeoutMs ?? config.defaultTimeoutMs;
+    const window = await evaluateClaudeCredentialWindow(config, taskTimeoutMs);
+    if (window.blocked) {
+      const hostRefresh = await maybeRefreshClaudeCredentialOnHost(config, { ...window, taskTimeoutMs });
+      if (!hostRefresh.refreshed) return buildClaudeCredentialWindowBlockResult(task, window, hostRefresh);
+    }
   }
 
   const root = resolve(config.rootDir);
@@ -919,11 +925,14 @@ function buildWorkerProfileBlockResult(
 function buildClaudeCredentialWindowBlockResult(
   task: RunnerTask,
   window: { expiresAt?: string; requiredUntil: string },
+  hostRefresh: ClaudeHostRefreshResult,
 ): RunnerResult {
   const normalizedTask = normalizeTask(task);
   const repo = normalizedTask.repos[0]?.url ?? task.repo ?? "";
+  const hostRefreshSummary = formatClaudeHostRefreshSummary(hostRefresh);
   const blockError = `claude credential expires at ${window.expiresAt ?? "unknown"}, before the task could finish (needs >= ${window.requiredUntil}); `
-    + "the container cannot refresh it (#2234), so the task was not started — retry after a host Claude session refreshes the credential";
+    + "the container cannot refresh it (#2234), so the task was not started — retry after a host Claude session refreshes the credential"
+    + ` (${hostRefreshSummary})`;
   return {
     ok: false,
     taskId: task.id,
@@ -932,7 +941,7 @@ function buildClaudeCredentialWindowBlockResult(
     exitCode: 4,
     signal: null,
     stdout: `blocked: ${blockError}`,
-    stderr: "error=claude_credential_window\nfailure_category=claude_credential_window\nretryable=true\n",
+    stderr: `error=claude_credential_window\nfailure_category=claude_credential_window\nretryable=true\n${hostRefreshSummary}\n`,
     artifacts: [],
     error: blockError,
     github: {

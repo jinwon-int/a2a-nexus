@@ -918,6 +918,45 @@ is not started: the result is `outcome: block` with
 workDir or container is created. Retry after a host Claude session refreshes
 the credential. The host credential file is only ever mounted read-only.
 
+**Opt-in host-side refresh trigger (#2373).** The host Claude Code CLI only
+rewrites `.credentials.json` lazily — when a host session runs and the token is
+expired or inside the CLI's own refresh margin — so a host with no interactive
+sessions keeps deferring every claude-code task until an operator runs
+`claude -p` by hand. To let the gate nudge the host CLI itself, set:
+
+| Variable | Default | Meaning |
+| --- | --- | --- |
+| `A2A_DOCKER_RUNNER_CLAUDE_HOST_REFRESH_ARGV` | unset (trigger off) | JSON array of strings: the command to run **on the host** when the gate would defer. Non-array, empty, non-string or multi-line elements are rejected by config validation. |
+| `A2A_DOCKER_RUNNER_CLAUDE_HOST_REFRESH_TIMEOUT_MS` | `120000` (bounds `5000..600000`) | Hard timeout; the command is `SIGKILL`ed when it is exceeded. |
+| `A2A_DOCKER_RUNNER_CLAUDE_HOST_REFRESH_MIN_INTERVAL_MS` | `600000` (bounds `60000..86400000`) | Minimum time between attempts, tracked in `<task root>/.claude-host-refresh-state.json` (mode `0600`). |
+
+Example, in the worker's service env file:
+
+```bash
+A2A_DOCKER_RUNNER_CLAUDE_HOST_REFRESH_ARGV='["claude","-p","Reply with exactly: ok","--model","haiku","--max-turns","1"]'
+```
+
+The command runs on the host as the runner user, never inside a task
+container, without a shell, with stdin closed and only `HOME` and `PATH`
+inherited from the runner environment. Its stdout and stderr are discarded —
+never logged or stored — because they can carry model text or credential error
+bodies. It only runs when the gate would block, the credential source is the
+`A2A_DOCKER_RUNNER_CLAUDE_CREDENTIALS_FILE` mount (the file the host CLI
+rewrites), and the minimum interval has elapsed. Afterwards the runner re-reads
+only `claudeAiOauth.expiresAt`: if the expiry moved and the task window now
+fits, the task starts normally; otherwise it is deferred as before and the
+block stderr gains one line, `host_refresh=skipped:<reason>` (`not_configured`,
+`not_file_mount`, `rate_limited`) or
+`host_refresh=attempted exit=<code> timed_out=<bool> refreshed=false`, which is
+also appended to the block `error`. The trigger only helps when the host CLI
+actually refreshes; an exit 0 that leaves the credential unchanged (the CLI
+judged it still valid) is a normal outcome, not an error. `doctor` reports a
+`claudeCredentialHostRefresh` check: `skip` when unset, `ok` with the command
+name (argv[0] only), timeout, interval and the last attempt/exit/refresh from
+the state file, or `warn` when it is configured but the credential source is
+not the credentials-file mount (the trigger would never run). Unset keeps the
+previous behavior.
+
 For the Codex profile, build the pinned Codex CLI image and mount a minimal
 node-local auth directory. Do not mount the whole host session/history tree:
 

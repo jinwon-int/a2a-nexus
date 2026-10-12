@@ -2020,6 +2020,62 @@ test("#2234 runTask defers a claude-code task whose credential expires inside th
   assert.deepEqual(readdirSyncSafe(rootDir), [], "no workDir is created for a deferred task");
   const serialized = JSON.stringify(result);
   assert.ok(!serialized.includes("FAKEACCESS") && !serialized.includes("FAKEREFRESH"), "token values never appear");
+  assert.match(result.stderr, /^host_refresh=skipped:not_configured$/m, "unconfigured trigger is reported as skipped");
+});
+
+function claudeGateFixture(prefix: string, argvFor: (creds: string) => string[]): { config: RunnerConfig; rootDir: string } {
+  const dir = mkdtempSync(join(tmpdir(), prefix));
+  const creds = join(dir, "host.credentials.json");
+  writeFileSync(creds, JSON.stringify({ claudeAiOauth: { accessToken: "sk-ant-oat01-FAKEACCESS", refreshToken: "sk-ant-ort01-FAKEREFRESH", expiresAt: Date.now() + 60_000 } }));
+  const rootDir = join(dir, "root");
+  mkdirSync(rootDir);
+  return {
+    rootDir,
+    config: {
+      ...baseConfig,
+      rootDir,
+      defaultTimeoutMs: 30 * 60 * 1000,
+      commandProfile: "claude-code",
+      extraMounts: [{ source: creds, target: "/run/secrets/claude-credentials.json", readOnly: true }],
+      claudeHostRefresh: { argv: argvFor(creds), timeoutMs: 30_000, minIntervalMs: 600_000 },
+    },
+  };
+}
+
+test("#2373 runTask proceeds past the credential gate when the host refresh trigger refreshes the credential", async () => {
+  const rewrite = "const fs=require('fs');const p=process.argv[1];const c=JSON.parse(fs.readFileSync(p,'utf8'));"
+    + "c.claudeAiOauth.expiresAt=Date.now()+8*3600*1000;fs.writeFileSync(p,JSON.stringify(c));";
+  const { config, rootDir } = claudeGateFixture("a2a-claude-gate-refresh-", (creds) => [process.execPath, "-e", rewrite, creds]);
+  const task: RunnerTask = { id: "claude-gate-refresh-1", intent: "verify", commands: ["true"] };
+  // Fake `docker` on PATH: the engine running at all proves the gate let the task through.
+  const probe = await runWithProbeEngine(config, task);
+  assert.equal(statSync(probe.ranMarker).isFile(), true, "container engine invoked after the gate passed");
+  const stderr = (probe.result as { stderr?: string } | undefined)?.stderr ?? "";
+  assert.doesNotMatch(stderr, /claude_credential_window|host_refresh=/);
+  assert.ok(readdirSyncSafe(rootDir).includes("claude-gate-refresh-1"), "a task workDir is created once the gate passes");
+  const state = JSON.parse(readFileSync(join(rootDir, ".claude-host-refresh-state.json"), "utf8"));
+  assert.equal(state.lastRefreshed, true);
+});
+
+test("#2373 runTask still defers when the host refresh trigger does not refresh, with a host_refresh= line", async () => {
+  const { config, rootDir } = claudeGateFixture("a2a-claude-gate-noop-", () => [process.execPath, "-e", "process.exit(0)"]);
+  const task: RunnerTask = { id: "claude-gate-noop-1", intent: "propose_patch", repo: "example/widgets", commands: [] } as RunnerTask;
+  const result = await runTask(config, task);
+  assert.equal(result.ok, false);
+  assert.equal(result.github?.outcome, "block");
+  assert.match(result.stderr, /^error=claude_credential_window$/m);
+  assert.match(result.stderr, /^failure_category=claude_credential_window$/m);
+  assert.match(result.stderr, /^retryable=true$/m);
+  assert.match(result.stderr, /^host_refresh=attempted exit=0 timed_out=false refreshed=false$/m);
+  assert.match(result.error ?? "", /host_refresh=attempted exit=0 timed_out=false refreshed=false/);
+  assert.equal(result.workDir, "");
+  assert.deepEqual(readdirSyncSafe(rootDir), [".claude-host-refresh-state.json"], "only the rate-limit state file is written");
+
+  // A second deferral inside minIntervalMs does not re-run the host command.
+  const again = await runTask(config, { ...task, id: "claude-gate-noop-2" });
+  assert.match(again.stderr, /^host_refresh=skipped:rate_limited$/m);
+  const serialized = JSON.stringify([result, again]);
+  assert.ok(!serialized.includes("FAKEACCESS") && !serialized.includes("FAKEREFRESH"), "token values never appear");
 });
 
 function readdirSyncSafe(path: string): string[] {
