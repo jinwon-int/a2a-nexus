@@ -1238,11 +1238,21 @@ export async function checkSecretMountContainerReadability(config: RunnerConfig)
     detail.remediation = "align ownership: set A2A_DOCKER_RUNNER_USER to the secret owner (e.g. 1000:1000) or grant group/others read; keep --cap-drop ALL (#1809)";
     return {
       status: "fail",
-      message: `secret mounts unreadable by the container user under cap-drop (${problems.length} path${problems.length === 1 ? "" : "s"})`,
+      // #2377: name the offending paths in the message itself (paths only — owner/mode
+      // stay in detail.unreadable) so an operator reading the one-line status knows
+      // which file to fix without digging into detail.
+      message: `secret mounts unreadable by the container user under cap-drop (${problems.length} path${problems.length === 1 ? "" : "s"}): ${summarizeUnreadablePaths(entries)}`,
       detail,
     };
   }
   return { status: "ok", message: "secret mounts are readable by the container user under the configured cap-drop", detail };
+}
+
+/** #2377: up to three unreadable source paths for the one-line doctor message; the rest is counted. */
+export function summarizeUnreadablePaths(entries: ReadonlyArray<{ source: string; readable: boolean }>, limit = 3): string {
+  const paths = entries.filter((entry) => !entry.readable).map((entry) => entry.source);
+  const shown = paths.slice(0, limit).join(", ");
+  return paths.length > limit ? `${shown} (+${paths.length - limit} more)` : shown;
 }
 
 export async function checkExtraMounts(config: RunnerConfig): Promise<OpsCheck> {
