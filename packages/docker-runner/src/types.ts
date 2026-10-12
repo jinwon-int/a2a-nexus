@@ -132,6 +132,16 @@ export interface RunnerClaudeCodeProfileConfig {
   turnBudgets?: RunnerClaudeTurnBudgetProjection;
 }
 
+/** #2373: host-side Claude credential refresh trigger (runs on the HOST, never in the container). */
+export interface RunnerClaudeHostRefreshConfig {
+  /** Command argv spawned without a shell, e.g. ["claude","-p","Reply with exactly: ok"]. */
+  argv: string[];
+  /** Hard timeout; the child is SIGKILLed when it is exceeded. */
+  timeoutMs: number;
+  /** Minimum interval between attempts, enforced via the state file under rootDir. */
+  minIntervalMs: number;
+}
+
 export type RunnerClaudePatchMode = "agentic" | "deterministic-single-shot" | "fanout";
 export type RunnerClaudeTurnBudgetSource = "canonical_default" | "explicit_override";
 
@@ -246,6 +256,12 @@ export interface RunnerConfig {
   hermesProfile?: RunnerHermesProfileConfig;
   /** Claude Code patch profile readiness metadata. */
   claudeCodeProfile?: RunnerClaudeCodeProfileConfig;
+  /**
+   * #2373: opt-in HOST-side Claude credential refresh trigger, run at the
+   * claude_credential_window start gate (A2A_DOCKER_RUNNER_CLAUDE_HOST_REFRESH_ARGV).
+   * Unset = the gate only defers, exactly as before.
+   */
+  claudeHostRefresh?: RunnerClaudeHostRefreshConfig;
   /** Codex patch profile readiness metadata. */
   codexProfile?: RunnerCodexProfileConfig;
   /** Piri patch profile readiness metadata (a2a-nexus#1745 Phase 0). */

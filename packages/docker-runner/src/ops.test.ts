@@ -4,7 +4,7 @@ import { chown, mkdtemp, mkdir, readFile, writeFile, utimes, stat, chmod } from 
 import { execFileSync, spawnSync } from "node:child_process";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { CLAUDE_CREDENTIAL_REFRESH_MARGIN_MS, checkBaseImage, checkClaudeCredentialFreshness, evaluateClaudeCredentialWindow, checkContainerHardening, checkDeployedRevision, checkDeployMarker, checkExtraMounts, checkGitHubPatchReadiness, checkSecretMountContainerReadability, cleanup, dropsDacOverride, install, parseContainerUserRef, parseProbeKeyValues } from "./ops.js";
+import { CLAUDE_CREDENTIAL_REFRESH_MARGIN_MS, CLAUDE_HOST_REFRESH_STATE_FILE, checkBaseImage, checkClaudeCredentialFreshness, checkClaudeCredentialHostRefresh, evaluateClaudeCredentialWindow, checkContainerHardening, checkDeployedRevision, checkDeployMarker, checkExtraMounts, checkGitHubPatchReadiness, checkSecretMountContainerReadability, cleanup, dropsDacOverride, install, parseContainerUserRef, parseProbeKeyValues } from "./ops.js";
 import type { RunnerConfig } from "./types.js";
 import { buildExampleReadinessInput } from "./openclaw-profile-readiness.js";
 import { loadConfig, projectClaudeCodeTurnBudgets } from "./config.js";
@@ -1596,4 +1596,62 @@ test("#2234 claudeCredentialFreshness no longer claims the container rotates the
   assert.equal(report.status, "warn");
   assert.match(report.message, /deferred \(claude_credential_window\)/);
   assert.doesNotMatch(report.message, /rotate/);
+});
+
+// ─── #2373: opt-in host-side refresh trigger doctor check ───────────────────
+
+const HOST_REFRESH_ARGV = ["claude", "-p", "Reply with exactly: ok", "--model", "haiku", "--max-turns", "1"];
+
+test("#2373 claudeCredentialHostRefresh skips when the trigger is not configured", async () => {
+  const dir = await mkdtemp(join(tmpdir(), "a2a-claude-host-refresh-doctor-"));
+  const report = await checkClaudeCredentialHostRefresh(claudeFreshnessConfig(dir, join(dir, "host.credentials.json")));
+  assert.deepEqual(report, { status: "skip", message: "not configured" });
+});
+
+test("#2373 claudeCredentialHostRefresh is ok with a credentials file mount and reports only argv[0] plus state", async () => {
+  const dir = await mkdtemp(join(tmpdir(), "a2a-claude-host-refresh-doctor-"));
+  const credentialsFile = join(dir, "host.credentials.json");
+  await writeFile(credentialsFile, fakeClaudeCredentials(CLAUDE_FRESHNESS_NOW_MS + 1));
+  const rootDir = join(dir, "root");
+  const config: RunnerConfig = {
+    ...claudeFreshnessConfig(join(dir, "claude-dir"), credentialsFile),
+    rootDir,
+    claudeHostRefresh: { argv: HOST_REFRESH_ARGV, timeoutMs: 120_000, minIntervalMs: 600_000 },
+  };
+
+  const fresh = await checkClaudeCredentialHostRefresh(config);
+  assert.equal(fresh.status, "ok");
+  assert.deepEqual(fresh.detail, { configured: true, command: "claude", timeoutMs: 120_000, minIntervalMs: 600_000 });
+
+  await mkdir(rootDir, { recursive: true });
+  await writeFile(join(rootDir, CLAUDE_HOST_REFRESH_STATE_FILE), JSON.stringify({ lastAttemptAt: "2026-10-12T00:00:00.000Z", lastExitCode: 0, lastRefreshed: false }));
+  const withState = await checkClaudeCredentialHostRefresh(config);
+  assert.equal(withState.status, "ok");
+  assert.deepEqual(withState.detail, {
+    configured: true,
+    command: "claude",
+    timeoutMs: 120_000,
+    minIntervalMs: 600_000,
+    lastAttemptAt: "2026-10-12T00:00:00.000Z",
+    lastExitCode: 0,
+    lastRefreshed: false,
+  });
+  const serialized = JSON.stringify(withState);
+  for (const arg of ["\"-p\"", "Reply with exactly", "haiku", "--max-turns"]) assert.equal(serialized.includes(arg), false, `argv element ${arg} must not appear`);
+  assert.equal(Object.values(withState.detail ?? {}).some((value) => Array.isArray(value)), false, "no argv array in detail");
+  assertNoTokenLeak(withState);
+});
+
+test("#2373 claudeCredentialHostRefresh warns when the credential source is not a credentials file mount", async () => {
+  const dir = await mkdtemp(join(tmpdir(), "a2a-claude-host-refresh-doctor-"));
+  const config: RunnerConfig = {
+    ...claudeFreshnessConfig(dir),
+    claudeHostRefresh: { argv: HOST_REFRESH_ARGV, timeoutMs: 120_000, minIntervalMs: 600_000 },
+  };
+  const report = await checkClaudeCredentialHostRefresh(config);
+  assert.equal(report.status, "warn");
+  assert.match(report.message, /not credentials_file_mount; the trigger never runs/);
+  assert.equal(report.detail?.command, "claude");
+  assert.equal(report.detail?.source, "config_dir_copy");
+  assert.equal(JSON.stringify(report).includes("Reply with exactly"), false);
 });
