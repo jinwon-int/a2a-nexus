@@ -153,7 +153,11 @@ test("#2373 the host command gets only HOME and PATH from the runner env, no she
   }
   const keys = JSON.parse(readFileSync(out, "utf8")) as string[];
   assert.equal(keys.includes("A2A_HOST_REFRESH_TEST_SECRET"), false);
-  assert.ok(keys.every((key) => key === "HOME" || key === "PATH"), keys.join(","));
+  // Node propagates NODE_V8_COVERAGE to child processes when the test runner itself
+  // runs with --experimental-test-coverage (coverage:baseline); it is injected by the
+  // runtime, not passed by the runner, so it is the only extra key tolerated here.
+  const passedByRunner = keys.filter((key) => key !== "NODE_V8_COVERAGE");
+  assert.ok(passedByRunner.every((key) => key === "HOME" || key === "PATH"), keys.join(","));
 });
 
 test("#2373 (e) skipped when not blocked, not configured, or not a credentials file mount", async () => {

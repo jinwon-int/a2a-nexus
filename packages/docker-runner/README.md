@@ -930,7 +930,7 @@ sessions keeps deferring every claude-code task until an operator runs
 | `A2A_DOCKER_RUNNER_CLAUDE_HOST_REFRESH_TIMEOUT_MS` | `120000` (bounds `5000..600000`) | Hard timeout; the command is `SIGKILL`ed when it is exceeded. |
 | `A2A_DOCKER_RUNNER_CLAUDE_HOST_REFRESH_MIN_INTERVAL_MS` | `600000` (bounds `60000..86400000`) | Minimum time between attempts, tracked in `<task root>/.claude-host-refresh-state.json` (mode `0600`). |
 
-Example (as used on jingun), in the service env file:
+Example, in the worker's service env file:
 
 ```bash
 A2A_DOCKER_RUNNER_CLAUDE_HOST_REFRESH_ARGV='["claude","-p","Reply with exactly: ok","--model","haiku","--max-turns","1"]'
