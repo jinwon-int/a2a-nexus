@@ -2202,7 +2202,7 @@ test("#2373 option 2 runTask blocks with claude_oauth_token_window when the toke
   assert.equal(result.exitCode, 4);
   assert.equal(result.workDir, "");
   assert.equal(result.stderr, "error=claude_oauth_token_window\nfailure_category=claude_oauth_token_window\nretryable=true\n");
-  assert.match(result.error ?? "", new RegExp(`expires at ${expiresAt.replace(/[.]/g, "\\.")}`));
+  assert.ok((result.error ?? "").includes(`expires at ${expiresAt}`), "block error names the token expiry");
   assert.match(result.error ?? "", /claude setup-token/);
   assert.deepEqual(readdirSyncSafe(rootDir), [], "no workDir or host refresh state is created");
   assert.throws(() => statSync(refreshMarker), "the host refresh command is never invoked");
