@@ -684,7 +684,7 @@ Precedence is `commandScript > commandJson > commandProfile > commandTemplate`:
 | `A2A_DOCKER_RUNNER_PATCH_COMMAND_JSON` | `commandJson` | `/work/patch-command.sh` | JSON `{ "argv": [...], "env": {...} }` is converted into a quoted argv script. |
 | `A2A_DOCKER_RUNNER_PATCH_COMMAND_PROFILE=hermes` | generated `commandScript` | `/work/patch-command.sh` | Operator-only trusted-worker profile. Mounts `A2A_DOCKER_RUNNER_HERMES_CONFIG_DIR` (or `/root/.hermes`) read-only at `/run/secrets/hermes-dir`, then runs `hermes chat --query ... --quiet --yolo` in the checked-out repo. Explicit `A2A_HERMES_MODEL` / legacy `A2A_OPENCLAW_MODEL` overrides still win. When `A2A_DOCKER_RUNNER_MODEL_SOURCE=native`, the runner reads the copied Hermes profile `.env` / `config.yaml` for the model and fails closed if no safe model is found. |
 | `A2A_DOCKER_RUNNER_PATCH_COMMAND_PROFILE=openclaw` | generated `commandScript` | `/work/patch-command.sh` | Legacy operator-only trusted-worker profile. Mounts `A2A_DOCKER_RUNNER_OPENCLAW_CONFIG_DIR` (or the profile default when unset) read-only at `/run/secrets/openclaw-dir`, then runs `openclaw agent` in the checked-out repo. Explicit `A2A_OPENCLAW_MODEL` overrides still win. Default legacy behavior remains `openai-codex/gpt-5.5` so OAuth-backed Codex auth is used instead of same-name OpenAI API-key models. When `A2A_DOCKER_RUNNER_MODEL_SOURCE=native`, the runner reads the copied OpenClaw profile agent/default model and fails closed if no safe model is found. Do not present this profile or host-network mode as a public sandbox default. |
-| `A2A_DOCKER_RUNNER_PATCH_COMMAND_PROFILE=claude-code` (`cccb`) | generated `commandScript` | `/work/patch-command.sh` | Operator-only trusted-worker profile. Mounts `A2A_DOCKER_RUNNER_CLAUDE_CONFIG_DIR` (or `/root/.claude`) read-only at `/run/secrets/claude-dir` (plus, when set, `A2A_DOCKER_RUNNER_CLAUDE_CREDENTIALS_FILE` read-only at `/run/secrets/claude-credentials.json`), then runs the bundled `claude-a2a-patch-bridge.mjs` through the `claude` CLI. The normal non-fanout implementation mode is agentic; deterministic single-shot and fanout modes are explicit alternatives. Use the `a2a-docker-runner-cccb:<runner-sha>` image; credentials are mounted at runtime only and are not baked into image layers. |
+| `A2A_DOCKER_RUNNER_PATCH_COMMAND_PROFILE=claude-code` (`cccb`) | generated `commandScript` | `/work/patch-command.sh` | Operator-only trusted-worker profile. Mounts `A2A_DOCKER_RUNNER_CLAUDE_CONFIG_DIR` (or `/root/.claude`) read-only at `/run/secrets/claude-dir` (plus, when set, `A2A_DOCKER_RUNNER_CLAUDE_CREDENTIALS_FILE` read-only at `/run/secrets/claude-credentials.json` and `A2A_DOCKER_RUNNER_CLAUDE_OAUTH_TOKEN_FILE` read-only at `/run/secrets/claude-oauth-token`), then runs the bundled `claude-a2a-patch-bridge.mjs` through the `claude` CLI. The normal non-fanout implementation mode is agentic; deterministic single-shot and fanout modes are explicit alternatives. Use the `a2a-docker-runner-cccb:<runner-sha>` image; credentials are mounted at runtime only and are not baked into image layers. |
 | `A2A_DOCKER_RUNNER_PATCH_COMMAND_PROFILE=codex` | generated `commandScript` | `/work/patch-command.sh` | Operator-only trusted-worker profile. The host source at `A2A_DOCKER_RUNNER_CODEX_CONFIG_DIR` (default `/var/lib/a2a-runner/codex-dir`) is copied to a task-scoped host temp directory, and only that clone is mounted read-write at `/run/secrets/codex-dir`. After `codex exec --ephemeral --json`, the host runner validates that only refreshable token fields/`last_refresh` changed and atomically writes back `auth.json` with the original owner and mode. `config.toml` and generated custom-agent files are discarded. The parent uses `gpt-5.6-sol`, reasoning `high`, approval `never`, and `danger-full-access` inside the external container boundary. Optional contained fanout keeps the parent unchanged, routes explorer/researcher to `gpt-5.6-luna`/`max`, and keeps implementer/verifier on Sol. Use `a2a-docker-runner-codex:<runner-sha>`; credentials are never baked into image layers or runner artifacts. |
 | `A2A_DOCKER_RUNNER_PATCH_COMMAND_PROFILE=danso` | generated `commandScript` | `/work/patch-command.sh` | Operator-only trusted-worker profile (#2315). Mounts `A2A_DOCKER_RUNNER_DANSO_CONFIG_DIR` (default `/var/lib/a2a-runner/danso-dir`) read-only at `/run/secrets/danso-dir`; that directory must hold `glm.env`. The script reads only `ZAI_API_KEY` and `DANSO_GLM_BASE_URL`/`DANSO_GLM_ENDPOINT`/`DANSO_GLM_THINKING` from it (never sourced, never printed) and runs `danso --provider glm --sandbox host` in the checkout. The assignment is passed as `--prompt-file /work/artifacts/prompt.md` and the lane rules as `--system-context-file`; a danso build without either flag (or `--tool-home`) fails closed with `danso_cli_upgrade_required` instead of falling back to argv. The git/gh lifecycle guard shims are placed on danso's rebuilt tool `PATH` via `--tool-home`. `A2A_DANSO_MODEL` (default `glm-5.3-flash`; `zai/` prefix and `[1m]` alias are stripped), `A2A_DANSO_EFFORT` (default `high`), `A2A_DANSO_PATCH_TIMEOUT_SEC` (default and maximum 3600, danso short mode), `A2A_DANSO_PATCH_MAX_TURNS` (default and maximum 128) and `A2A_DANSO_PROVIDER_TIMEOUT_SECONDS` (default and maximum 300). danso refuses prompts over 65,536 bytes however they are passed, so the script checks `prompt.md` first and fails with `danso_prompt_too_large` above `A2A_DANSO_MAX_PROMPT_BYTES` (default 65536). Liveness: danso runs with `--progress-jsonl --stream-requests`; only the body-free `danso_progress` (tool start/settle) and `danso_request` (provider request) frames are written to `artifacts/danso-progress.jsonl`, and that file's mtime is the broker's task staleness signal (`lastProgressAt`). The JSONL session transcript stays in a scratch file outside `/work/artifacts` and is removed; `summary.txt` records `danso_progress_frames=N`. Use `a2a-docker-runner-danso:<danso-version>-<runner-sha>` built from `docker/danso-runner.Dockerfile`. |
 | `A2A_DOCKER_RUNNER_PATCH_COMMAND_TEMPLATE` | `commandTemplate` | `/work/patch-command.sh` | Legacy eval path; rejected for GitHub patch execution. |
@@ -956,6 +956,83 @@ name (argv[0] only), timeout, interval and the last attempt/exit/refresh from
 the state file, or `warn` when it is configured but the credential source is
 not the credentials-file mount (the trigger would never run). Unset keeps the
 previous behavior.
+
+**Opt-in long-lived OAuth token file (#2373 option 2).** The `/login`
+credential's access token lives about 8 hours, so the gate above defers
+claude-code tasks for long stretches on hosts without interactive sessions. An
+operator can instead run `claude setup-token` once on the host. It is
+interactive (it opens a browser login) and mints a **one-year** OAuth token for
+a Claude subscription. Claude Code reads that token from
+`CLAUDE_CODE_OAUTH_TOKEN`, and the token is valid for model requests only.
+Store it in a file and point the runner at it:
+
+| Variable | Default | Meaning |
+| --- | --- | --- |
+| `A2A_DOCKER_RUNNER_CLAUDE_OAUTH_TOKEN_FILE` | unset (feature off) | Absolute path of a regular, readable, non-empty file that holds the token on its first line. claude-code profile only. |
+
+```bash
+umask 077
+claude setup-token            # interactive; copy the printed sk-ant-oat01-... token
+install -m 0600 /dev/null /path/to/claude-oauth-token
+$EDITOR /path/to/claude-oauth-token   # paste the token as the only line
+cat > /path/to/claude-oauth-token.meta.json <<'JSON'
+{"issuedAt": "2026-10-12T00:00:00Z", "expiresAt": "2027-10-12T00:00:00Z", "note": "claude setup-token"}
+JSON
+# service env file:
+A2A_DOCKER_RUNNER_CLAUDE_OAUTH_TOKEN_FILE=/path/to/claude-oauth-token
+```
+
+Config validation rejects a relative, missing, non-regular, unreadable or empty
+path, a path containing a comma, and a file whose mode grants group/other
+**any** permission (`chmod 600` it). Errors report the path and mode, never the
+content. The file is passed as
+`--mount type=bind,source=<file>,target=/run/secrets/claude-oauth-token,readonly`,
+never as `docker run -e`, so the token does not show up in `docker inspect`.
+The container user must be able to read the file, so run the container as the
+file's owner. Inside the container the profile reads the first line, trims
+whitespace, and exports it as `CLAUDE_CODE_OAUTH_TOKEN`. It appends
+`claude_credentials_source=oauth_token_file` to `summary.txt` and never echoes,
+logs or writes the token anywhere else. An empty or unreadable file stops the
+task with `error=claude_oauth_token_unreadable`
+(`failure_category=claude_credentials_unavailable`). The patch bridge passes
+only allowlisted env vars to the `claude` child, so the profile also requires
+the bridge in the image to carry the `a2a-bridge-capability: oauth-token-env`
+marker. A bridge without it stops the task with
+`error=claude_oauth_token_bridge_unsupported` and the same failure category,
+before the token is read.
+
+**Precedence.** `CLAUDE_CODE_OAUTH_TOKEN` ranks above the `/login` credentials
+in Claude Code's authentication order. When both this file and
+`A2A_DOCKER_RUNNER_CLAUDE_CREDENTIALS_FILE` are set, the token wins. The
+credentials-file install and refresh-token strip still run unchanged. With the
+token file set, the runner skips the `claude_credential_window` gate and the
+host refresh trigger, because the `/login` credential no longer matters. The
+only start gate left is the token's own expiry: when the optional sibling
+`<token file>.meta.json` (`{"issuedAt"?: ISO, "expiresAt": ISO, "note"?: string}`)
+says the token expires before `now + task timeout + 10 minutes`, the task is
+not started. The result is `outcome: block` with
+`failure_category=claude_oauth_token_window` and `retryable=true`. Without a
+meta file the expiry is unknown and never blocks. A malformed meta file is a
+config error that names only the meta path.
+
+`doctor` reports a `claudeOauthTokenFile` check. It is `skip` when unset.
+Otherwise it checks that the file exists, is a regular file, has no group/other
+mode bits, is owned by the container user's uid (when `A2A_DOCKER_RUNNER_USER`
+is numeric, `root`, or unset), is non-empty and a single line, and that the
+first line looks like an `sk-ant-oat01-` token. Any of these failing is a
+`fail`. It reports only `mode`, `ownerUid`, `size` and the booleans `prefixOk`
+and `singleLine`, never the token or any part of it. From the meta file it
+reports `issuedAt`, `expiresAt` and `remainingDays`. An expired token is a
+`fail`. A missing meta file is a `warn` ("expiry unknown — add
+`<file>.meta.json` with expiresAt"), as is a token with under 30 days left.
+`claudeCredentialFreshness` reports `skip` ("superseded by the claude oauth
+token file") while the token file is set.
+
+**Annual reissue.** Before `expiresAt` (doctor warns 30 days ahead), run
+`claude setup-token` again on the host. Overwrite the token file in place,
+keeping mode `0600` and the same owner, and update `issuedAt`/`expiresAt` in
+the meta file. Each task reads the file fresh, so no restart is needed. Unset
+`A2A_DOCKER_RUNNER_CLAUDE_OAUTH_TOKEN_FILE` to return to the `/login` credential.
 
 For the Codex profile, build the pinned Codex CLI image and mount a minimal
 node-local auth directory. Do not mount the whole host session/history tree:

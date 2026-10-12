@@ -39,7 +39,8 @@ export type ExtraMountsConfigErrorCode =
   | "profile_mount_missing"
   | "profile_mount_source_conflict"
   | "forbidden_writable_runtime_mount"
-  | "claude_credentials_file_invalid";
+  | "claude_credentials_file_invalid"
+  | "claude_oauth_token_file_invalid";
 
 /**
  * Configuration error for `A2A_DOCKER_RUNNER_EXTRA_MOUNTS_JSON` / profile mount
@@ -212,6 +213,7 @@ export async function loadConfig(env = process.env): Promise<RunnerConfig> {
   const expectedProfile = normalizePatchCommandProfile(env.A2A_DOCKER_RUNNER_EXPECTED_PATCH_COMMAND_PROFILE);
   validatePatchCommandProfileSelection({ profile, expectedProfile, image });
   const claudeHostRefresh = loadClaudeHostRefreshConfig(env);
+  const claudeOauthToken = loadClaudeOauthTokenFileConfig(env);
 
   const config: RunnerConfig = {
     rootDir: env.A2A_DOCKER_RUNNER_ROOT || DEFAULT_ROOT, // validated below; resolveRootDir() is the lite path
@@ -243,6 +245,7 @@ export async function loadConfig(env = process.env): Promise<RunnerConfig> {
     failureLogMaxBytes: parseOptionalPositiveInteger(env.A2A_DOCKER_RUNNER_FAILURE_LOG_MAX_BYTES, DEFAULT_FAILURE_LOG_MAX_BYTES, "A2A_DOCKER_RUNNER_FAILURE_LOG_MAX_BYTES") ?? DEFAULT_FAILURE_LOG_MAX_BYTES,
     failureLogKeep: parseOptionalPositiveInteger(env.A2A_DOCKER_RUNNER_FAILURE_LOG_KEEP, DEFAULT_FAILURE_LOG_KEEP, "A2A_DOCKER_RUNNER_FAILURE_LOG_KEEP") ?? DEFAULT_FAILURE_LOG_KEEP,
     ...(claudeHostRefresh ? { claudeHostRefresh } : {}),
+    ...claudeOauthToken,
     ...patchCommand,
   };
 
@@ -381,11 +384,11 @@ export function loadExtraMounts(env: NodeJS.ProcessEnv): RunnerExtraMount[] | un
       }];
     }
     if (profile === "claude-code") {
-      return withClaudeCredentialsFileMount([{
+      return withClaudeOauthTokenFileMount(withClaudeCredentialsFileMount([{
         source: env.A2A_DOCKER_RUNNER_CLAUDE_CONFIG_DIR || "/root/.claude",
         target: "/run/secrets/claude-dir",
         readOnly: true,
-      }], env);
+      }], env), env);
     }
     if (profile === "codex") {
       return [{
@@ -459,7 +462,7 @@ export function loadExtraMounts(env: NodeJS.ProcessEnv): RunnerExtraMount[] | un
 
   validateProfileMountSelection(mounts, env);
   if (normalizePatchCommandProfile(env.A2A_DOCKER_RUNNER_PATCH_COMMAND_PROFILE) === "claude-code") {
-    return withClaudeCredentialsFileMount(mounts, env);
+    return withClaudeOauthTokenFileMount(withClaudeCredentialsFileMount(mounts, env), env);
   }
   return mounts;
 }
@@ -503,6 +506,108 @@ function withClaudeCredentialsFileMount(mounts: RunnerExtraMount[], env: NodeJS.
   }
   if (existing.length > 0) return mounts;
   return [...mounts, { source, target: CLAUDE_CREDENTIALS_FILE_MOUNT_TARGET, readOnly: true }];
+}
+
+/** In-container path of the optional long-lived Claude OAuth token file mount (#2373 option 2). */
+export const CLAUDE_OAUTH_TOKEN_MOUNT_TARGET = "/run/secrets/claude-oauth-token";
+
+/** Sibling metadata file of the OAuth token file: `<token file>.meta.json`. */
+export function claudeOauthTokenMetaPath(tokenFile: string): string {
+  return `${tokenFile}.meta.json`;
+}
+
+function claudeOauthTokenFileInvalid(reason: string): ExtraMountsConfigError {
+  return new ExtraMountsConfigError(
+    "claude_oauth_token_file_invalid",
+    `invalid A2A_DOCKER_RUNNER_CLAUDE_OAUTH_TOKEN_FILE: ${reason}`,
+  );
+}
+
+/**
+ * #2373 option 2: validate A2A_DOCKER_RUNNER_CLAUDE_OAUTH_TOKEN_FILE (a token
+ * minted on the host with `claude setup-token`). Returns the trimmed host path,
+ * or undefined when unset. Checks only path/stat metadata: the token is never
+ * read here, and error messages name the path and mode only.
+ */
+function resolveClaudeOauthTokenFile(env: NodeJS.ProcessEnv): string | undefined {
+  const raw = env.A2A_DOCKER_RUNNER_CLAUDE_OAUTH_TOKEN_FILE;
+  if (raw === undefined || raw.trim() === "") return undefined;
+  const source = raw.trim();
+  if (!source.startsWith("/")) throw claudeOauthTokenFileInvalid("must be an absolute path");
+  if (source.includes(",")) throw claudeOauthTokenFileInvalid(`${source} must not contain a comma (cannot be expressed in --mount syntax)`);
+  let info: ReturnType<typeof statSync>;
+  try {
+    info = statSync(source);
+  } catch {
+    throw claudeOauthTokenFileInvalid(`${source} does not exist or cannot be inspected`);
+  }
+  if (!info.isFile()) throw claudeOauthTokenFileInvalid(`${source} is not a regular file`);
+  try {
+    accessSync(source, constants.R_OK);
+  } catch {
+    throw claudeOauthTokenFileInvalid(`${source} is not readable by the runner`);
+  }
+  if ((info.mode & 0o077) !== 0) {
+    const mode = (info.mode & 0o777).toString(8).padStart(4, "0");
+    throw claudeOauthTokenFileInvalid(`${source} mode ${mode} grants group/other permissions; chmod 600 it`);
+  }
+  if (info.size === 0) throw claudeOauthTokenFileInvalid(`${source} is empty`);
+  return source;
+}
+
+/**
+ * #2373 option 2: when A2A_DOCKER_RUNNER_CLAUDE_OAUTH_TOKEN_FILE is set for the
+ * claude-code profile, mount the token file read-only as a single file at
+ * CLAUDE_OAUTH_TOKEN_MOUNT_TARGET. Unset leaves mounts unchanged.
+ */
+function withClaudeOauthTokenFileMount(mounts: RunnerExtraMount[], env: NodeJS.ProcessEnv): RunnerExtraMount[] {
+  const source = resolveClaudeOauthTokenFile(env);
+  if (!source) return mounts;
+  const existing = mounts.filter((mount) => normalizeAbsolutePathForPolicy(mount.target) === CLAUDE_OAUTH_TOKEN_MOUNT_TARGET);
+  if (existing.some((mount) =>
+    mount.readOnly === false
+    || normalizeAbsolutePathForPolicy(mount.source) !== normalizeAbsolutePathForPolicy(source))) {
+    throw claudeOauthTokenFileInvalid(`${CLAUDE_OAUTH_TOKEN_MOUNT_TARGET} is already mounted from a different source or read-write`);
+  }
+  if (existing.length > 0) return mounts;
+  return [...mounts, { source, target: CLAUDE_OAUTH_TOKEN_MOUNT_TARGET, readOnly: true }];
+}
+
+/**
+ * #2373 option 2: RunnerConfig fields for the claude-code OAuth token file.
+ * The optional `<token file>.meta.json` ({issuedAt?, expiresAt, note?}) feeds
+ * the start gate's expiry check; a malformed meta file names the path only.
+ */
+export function loadClaudeOauthTokenFileConfig(
+  env: NodeJS.ProcessEnv,
+): Pick<RunnerConfig, "claudeOauthTokenFile" | "claudeOauthTokenMeta"> {
+  if (normalizePatchCommandProfile(env.A2A_DOCKER_RUNNER_PATCH_COMMAND_PROFILE) !== "claude-code") return {};
+  const source = resolveClaudeOauthTokenFile(env);
+  if (!source) return {};
+  const metaPath = claudeOauthTokenMetaPath(source);
+  if (!existsSync(metaPath)) return { claudeOauthTokenFile: source };
+  const malformed = (): ExtraMountsConfigError => claudeOauthTokenFileInvalid(
+    `${metaPath} is not valid token metadata (expected JSON {"expiresAt": ISO string, "issuedAt"?: ISO string, "note"?: string})`,
+  );
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(readFileSync(metaPath, "utf8"));
+  } catch {
+    throw malformed();
+  }
+  if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) throw malformed();
+  const record = parsed as Record<string, unknown>;
+  const isIsoDate = (value: unknown): value is string => typeof value === "string" && Number.isFinite(Date.parse(value));
+  if (!isIsoDate(record.expiresAt)) throw malformed();
+  if (record.issuedAt !== undefined && !isIsoDate(record.issuedAt)) throw malformed();
+  if (record.note !== undefined && typeof record.note !== "string") throw malformed();
+  return {
+    claudeOauthTokenFile: source,
+    claudeOauthTokenMeta: {
+      expiresAt: record.expiresAt,
+      ...(record.issuedAt !== undefined ? { issuedAt: record.issuedAt } : {}),
+    },
+  };
 }
 
 export const DEFAULT_CLAUDE_HOST_REFRESH_TIMEOUT_MS = 120_000;

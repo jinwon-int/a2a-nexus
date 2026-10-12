@@ -142,7 +142,13 @@ export interface RunnerClaudeHostRefreshConfig {
   minIntervalMs: number;
 }
 
-export type RunnerClaudePatchMode = "agentic" | "deterministic-single-shot" | "fanout";
+/** #2373 option 2: operator-written metadata for the Claude OAuth token file (ISO timestamps). */
+export interface RunnerClaudeOauthTokenMeta {
+  expiresAt?: string;
+  issuedAt?: string;
+}
+
+export type RunnerClaudePatchMode ="agentic" | "deterministic-single-shot" | "fanout";
 export type RunnerClaudeTurnBudgetSource = "canonical_default" | "explicit_override";
 
 export interface RunnerClaudeTurnBudgetValue {
@@ -262,6 +268,15 @@ export interface RunnerConfig {
    * Unset = the gate only defers, exactly as before.
    */
   claudeHostRefresh?: RunnerClaudeHostRefreshConfig;
+  /**
+   * #2373 option 2: resolved host path of the long-lived Claude OAuth token
+   * file (A2A_DOCKER_RUNNER_CLAUDE_OAUTH_TOKEN_FILE), mounted read-only at
+   * /run/secrets/claude-oauth-token. When set, the claude_credential_window
+   * gate and the host refresh trigger are skipped. Never holds the token value.
+   */
+  claudeOauthTokenFile?: string;
+  /** #2373 option 2: parsed `<token file>.meta.json`; absent = expiry unknown. */
+  claudeOauthTokenMeta?: RunnerClaudeOauthTokenMeta;
   /** Codex patch profile readiness metadata. */
   codexProfile?: RunnerCodexProfileConfig;
   /** Piri patch profile readiness metadata (a2a-nexus#1745 Phase 0). */
