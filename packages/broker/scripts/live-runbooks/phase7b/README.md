@@ -8,7 +8,7 @@ separate collector node. Context: issue #1504 (shared-state/HA contract), #2369
 | File | Runs on | Purpose |
 |---|---|---|
 | `go.sh` | broker host | One-shot driver fired by an operator-installed timer at the approved window start: time guard → run-once marker → `run-b.sh reboot-hold` → dry-run → shadow window → `run-b.sh execute`. |
-| `run-b.sh` | broker host | `dry-run` (B0/B1), `execute` (B0..B8 with approved rollback), `reboot-hold <h>`, `reboot-release`. Generates `observe-b.sh` for the B8 observations. |
+| `run-b.sh` | broker host | `dry-run` (B0/B1), `execute` (B0..B8 with approved rollback), `reboot-hold <h>`, `reboot-release`. Generates a per-run `observe-b-<run>.sh` for the B8 observations. |
 | `collect-p7b.sh` | collector node | Read-only ssh capture; posts the execution result and the B8 pre-verdict to the issue. |
 | `test-run-b.sh`, `test-collect-p7b.sh` | CI / anywhere | Hermetic suites (every host probe stubbed). Run by `scripts/live-runbook-p7b.test.mjs`. |
 
@@ -32,8 +32,9 @@ r3 rules:
 
 - **Use persistent one-shot units for every deferred action.**
   - `schedule_persistent` writes `<unit>.service` and `<unit>.timer` under
-    `/etc/systemd/system` (`OnCalendar=` absolute time, `Persistent=true`), then
-    runs `daemon-reload` and `enable --now`.
+    `/etc/systemd/system` (`OnCalendar=` absolute time written in UTC with an
+    explicit `UTC` suffix, `Persistent=true`, `After=docker.service`), then runs
+    `daemon-reload` and `enable --now`.
   - The service carries `Environment=` for `HOME` and `P7B_*` (a system service
     has no login environment). Its `ExecStopPost=` disables and stops its own
     timer, so it fires exactly once.
@@ -43,8 +44,10 @@ r3 rules:
     mtime survives reboots, whereas `systemctl show` goes blank once a
     self-disabled one-shot is unloaded.
 - **`reboot-hold` cancels what is already scheduled.**
-  - It writes the hold first and schedules the persistent expiry
-    (`run-b.sh reboot-release`).
+  - It refuses when a hold is already present (50): one hold at a time.
+  - It writes the hold first and schedules the persistent expiry. The expiry
+    runs a plain `/bin/rm -f <hold>`, never a script from the checkout, so a
+    checkout that moves within the hold cannot leave the hold in place.
   - It checks that `apt-config dump` now reports `Automatic-Reboot "false"`.
   - Only then does it run `shutdown -c` if `/run/systemd/shutdown/scheduled`
     exists, and re-checks.
@@ -57,6 +60,11 @@ r3 rules:
   - A pending scheduled shutdown is a FAIL in both modes.
   - `Automatic-Reboot "true"` is a WARN in `dry-run` and a FAIL in `execute`.
     The B8 window is at least 24h, so it always contains the daily reboot time.
+- **Observations are per run and boot-safe.** Each run writes its own
+  `observe-b-<run>.sh`, and each row carries `run=`. The collector judges only
+  the newest run (its B6 tag), so a re-run in the same state directory does not
+  mix rows. A catch-up right after boot waits for readyz (`P7B_OBS_WAIT`,
+  default 300 s, then `P7B_OBS_SETTLE` 60 s) and records `waited_s=`.
 - **Observation rows carry `boot=` and `broker_started=`.** The collector
   reports a restart inside the window (epoch change, host boot or broker start
   after B6) as a caveat: that run is "no violations after a restart", not a
@@ -86,8 +94,10 @@ GO_PREFLIGHT=1 P7B_EXPECT_REV=<40-hex> ./go.sh
 ```
 
 `go.sh` holds the reboot for `P7B_HOLD_HOURS` (default 26). That covers the
-run, T+24h and margin. If `execute` succeeds, the hold stays until its
-persistent expiry timer runs `reboot-release`.
+run, T+24h and margin.
+- If the dry-run or the shadow check fails, or `execute` stops before a broker
+  change (rc 2/11/12/13), `go.sh` releases the hold at once.
+- Otherwise the hold stays until its persistent expiry timer removes it.
 
 ## Collector (collector node)
 

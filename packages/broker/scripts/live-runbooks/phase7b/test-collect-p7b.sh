@@ -10,8 +10,8 @@ PASS=0; FAIL=0
 ok()  { PASS=$((PASS+1)); echo "ok   - $1"; }
 bad() { FAIL=$((FAIL+1)); echo "FAIL - $1"; [ -n "${2:-}" ] && printf '       %s\n' "$2"; }
 
-# row <ts> <label> <rate_since_b6> [epoch] [503] [snapshot_rc] [age]
-row() { echo "$1 label=$2 snapshot_rc=${6:-0} state-shadow-snapshot: pass window=2026-10-12T01:15:44.642Z+1.0h replay=1/1 unexplained=0 rate=1/1 unexplained=0 503=${5:-0} state_unavailable=0 ownership_conflict=0 prune_fail=0 prune_lost_fence=0 ready={\"ready\":true,\"effectiveGrade\":\"single-process\",\"reasonCodes\":[]} token=1 epoch=${4:-23} rate_rows=$3 rate_since_b6=$3 newest_rate_age_s=${7:-2} fence_bytes=1 disk=76%"; }
+# row <ts> <label> <rate_since_b6> [epoch] [503] [snapshot_rc] [age]   (+ ROWX: extra trailing fields)
+row() { echo "$1 label=$2 snapshot_rc=${6:-0} state-shadow-snapshot: pass window=2026-10-12T01:15:44.642Z+1.0h replay=1/1 unexplained=0 rate=1/1 unexplained=0 503=${5:-0} state_unavailable=0 ownership_conflict=0 prune_fail=0 prune_lost_fence=0 ready={\"ready\":true,\"effectiveGrade\":\"single-process\",\"reasonCodes\":[]} token=1 epoch=${4:-23} rate_rows=$3 rate_since_b6=$3 newest_rate_age_s=${7:-2} fence_bytes=1 disk=76%${ROWX:+ $ROWX}"; }
 GO_OK='2026-10-12T10:21:05+0900 [execute] B8 timer T+24h at 2026-10-13 10:15:42 (persistent, next=Tue 2026-10-13 10:15:42 KST)
 2026-10-12T10:21:07+0900 EXIT=0'
 # raw <file> <obs-rows> <boot-local> <units> [live-started] [go]
@@ -19,7 +19,7 @@ raw() {
   { echo "##GO"; printf '%s\n' "${6:-$GO_OK}"
     echo "##SVC"; echo "Result=success"
     echo "##OBS"; [ -n "$2" ] && printf '%s\n' "$2"
-    echo "##B6"; echo "2026-10-12T01:15:42Z"
+    echo "##B6"; echo "${B6TAG:-20261012T100003-execute-1914670}"; echo "${B6ISO:-2026-10-12T01:15:42Z}"
     echo "##BOOT"; echo "$3"; echo "+0900"
     echo "##LIVE"; echo "${5:-2026-10-12T01:15:45.1Z} restarts=0 rev=7f23cd70e36abf942363dd367a39f7d123249935"; echo 'readyz={"ready":true}'
     echo "##UNITS"; [ -n "$4" ] && printf '%s\n' "$4"
@@ -40,9 +40,11 @@ R4="$(row 20261012T012105Z T+5m 141)
 $(row 20261012T021545Z T+1h 1541)
 $(row 20261012T071600Z T+6h 9234)
 $(row 20261012T131603Z T+12h 18463)"
-UPEND='a2a-p7b-observe-24h-20261012T100003 oncal=2026-10-13T10:15:42 stamp=2026-10-12T10:21:05 enabled=enabled last='
-URAN='a2a-p7b-observe-24h-20261012T100003 oncal=2026-10-13T10:15:42 stamp=2026-10-13T10:15:43 enabled=disabled last=Failed_with_result_exit-code.'
-UGONE='a2a-p7b-observe-24h-20261012T100003 oncal=2026-10-13T10:15:42 stamp=2026-10-12T10:21:05 enabled=disabled last='
+S() { date -d "$1" +%s; }
+T24S=$(S "2026-10-13 10:15:42 +0900")
+UPEND="a2a-p7b-observe-24h-20261012T100003 oncal_s=$T24S stamp_s=$(S '2026-10-12 10:21:05 +0900') enabled=enabled last="
+URAN="a2a-p7b-observe-24h-20261012T100003 oncal_s=$T24S stamp_s=$(S '2026-10-13 10:15:43 +0900') enabled=disabled last=Failed_with_result_exit-code."
+UGONE="a2a-p7b-observe-24h-20261012T100003 oncal_s=$T24S stamp_s=$(S '2026-10-12 10:21:05 +0900') enabled=disabled last="
 
 # 1. clean PASS: 5 rows, no restart → PASS, no caveat
 raw pass "$R4
@@ -54,20 +56,20 @@ has pass "fence_held=1" && ! has pass "token=1" && ok "fence owner flag scrubbed
 raw restart "$R4
 $(row 20261013T022639Z T+24h 36869 24)" "2026-10-13 03:15:23" "" "2026-10-12T18:15:37.524797998Z"
 judge restart b8
-expect restart "reboot inside the window → PASS with restart caveat" "Verdict\*\*: PASS" "단서\*\*: 관측 창 안 재시작" "epoch 23→24" "host boot 2026-10-13 03:15:23" "broker started 2026-10-12T18:15:37Z" "무중단 연속 24h 관측이 아니다"
+expect restart "reboot inside the window → PASS with restart caveat" "Verdict\*\*: PASS" "단서\*\*: 관측 창 안 재시작" "epoch 23→24" "host boot 2026-10-13 03:15:23 KST" "broker started 2026-10-12T18:15:37Z" "무중단 연속 24h 관측이 아니다"
 
 # 3. r2's 10:50 situation: reboot inside the window, no T+24h row, no persistent unit → timer_lost_reboot
 raw lost "$R4" "2026-10-13 03:15:23" ""
-judge lost b8; expect lost "missing T+24h + boot in window → INCOMPLETE timer_lost_reboot" "Verdict\*\*: INCOMPLETE" '분류\*\*: .timer_lost_reboot.' "관측 창 안 재부팅(2026-10-13 03:15:23" "임시 타이머였을 가능성"
+judge lost b8; expect lost "missing T+24h + boot in window → INCOMPLETE timer_lost_reboot" "Verdict\*\*: INCOMPLETE" '분류\*\*: .timer_lost_reboot.' "관측 창 안 재부팅(2026-10-13 03:15:23 KST" "임시 타이머였을 가능성"
 
 # 4. the persistent T+24h unit ran but wrote no row → observe_failed
 raw obsfail "$R4" "2026-09-26 03:15:23" "$URAN"
-judge obsfail b8; expect obsfail "T+24h unit ran, no row → INCOMPLETE observe_failed" "Verdict\*\*: INCOMPLETE" '분류\*\*: .observe_failed.' "Failed with result exit-code" "트리거 2026-10-13 10:15:43"
+judge obsfail b8; expect obsfail "T+24h unit ran, no row → INCOMPLETE observe_failed" "Verdict\*\*: INCOMPLETE" '분류\*\*: .observe_failed.' "Failed with result exit-code" "트리거 2026-10-13 10:15:43 KST"
 nothas obsfail '분류\*\*: .timer_lost_reboot.' "observe_failed is not mistaken for a lost timer"
 
 # 5. collector fired early: persistent unit still pending → not_due
 raw notdue "$R4" "2026-09-26 03:15:23" "$UPEND"
-NOW="2026-10-13 09:00 +0900" judge notdue b8; expect notdue "pending persistent timer → INCOMPLETE not_due" '분류\*\*: .not_due.' "영구 타이머 대기 중(2026-10-13 10:15:42)"
+NOW="2026-10-13 09:00 +0900" judge notdue b8; expect notdue "pending persistent timer → INCOMPLETE not_due" '분류\*\*: .not_due.' "영구 타이머 대기 중(2026-10-13 10:15:42 KST)"
 
 # 6. no boot, unit never ran, no next elapse → timer_not_fired
 raw notfired "$R4" "2026-09-26 03:15:23" "$UGONE"
@@ -76,6 +78,32 @@ judge notfired b8; expect notfired "no reboot, unit never ran → INCOMPLETE tim
 # 6b. reboot inside the window, persistent unit present but it never caught up → timer_lost_reboot (unit variant)
 raw caught "$R4" "2026-10-13 03:15:23" "$UGONE"
 judge caught b8; expect caught "boot in window, persistent unit never ran → timer_lost_reboot (따라잡지 못함)" '분류\*\*: .timer_lost_reboot.' "따라잡지 못함"
+
+# 6c. a second reboot AFTER T+24h must not hide the in-window one: rows carry boot= (#2379)
+ROWX="boot=20261012T181523Z broker_started=20261012T181537Z" R4B="$(row 20261012T131603Z T+12h 18463 24)"
+raw hidden "$(row 20261012T012105Z T+5m 141)
+$(row 20261012T021545Z T+1h 1541)
+$(row 20261012T071600Z T+6h 9234)
+$R4B" "2026-10-14 03:15:23" ""
+unset ROWX
+judge hidden b8; expect hidden "boot in window seen only in a row's boot= (collect-time boot is later) → timer_lost_reboot" '분류\*\*: .timer_lost_reboot.' "2026-10-13 03:15:23 KST" "broker started 20261012T181537Z"
+
+# 6d. two runs in one state dir: only the newest run (B6 tag) is judged, rows and units (#2379)
+OLD="$(ROWX=run=20261009T220003 row 20261009T130000Z T+1h 9999 22 3)"
+NEW="$(ROWX=run=20261012T100003 row 20261012T012105Z T+5m 141)
+$(ROWX=run=20261012T100003 row 20261012T021545Z T+1h 1541)"
+UOLD="a2a-p7b-observe-24h-20261009T220003 oncal_s=$(S '2026-10-10 22:15:00 +0900') stamp_s=$(S '2026-10-10 22:15:01 +0900') enabled=disabled last=Finished"
+raw mixed "$OLD
+$NEW" "2026-09-26 03:15:23" "$UOLD
+$UPEND"
+NOW="2026-10-12 12:00 +0900" judge mixed b8
+expect mixed "older run's rows/units ignored → judged on the newest run only (not_due, no 503 from the old run)" "Verdict\*\*: INCOMPLETE" '분류\*\*: .not_due.' "n=2 " "bad=0"
+nothas mixed "label=T+1h snapshot_rc=0 .* rate_since_b6=9999" "old run's row is not in the comment"
+
+# 6e. legacy (r2) rows without run= are still judged as a whole
+raw legacy "$R4
+$(row 20261013T011600Z T+24h 36869)" "2026-09-26 03:15:23" "" "" "" 
+B6TAG=20261012T100003-execute-1914670 judge legacy b8; expect legacy "rows without run= (r2) → judged as a whole" "Verdict\*\*: PASS" "n=5 "
 
 # 7. criteria violation wins over a missing row → FAIL
 raw viol "$(row 20261012T012105Z T+5m 141)

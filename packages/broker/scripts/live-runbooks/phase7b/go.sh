@@ -8,8 +8,8 @@
 #     r2 set the hold after a 03:15 reboot was already scheduled and lost T+24h)
 #   3 pre-check dry-run (B0/B1)  4 shadow window >= P7B_MIN_SHADOW_H
 #   5 run-b.sh execute (its own B0..B8 + approved rollback)
-# Any failure in 0..4 stops BEFORE any broker change; a failure in 3..4 also
-# releases the hold it set in 2.
+# Any failure in 0..4 stops BEFORE any broker change; a failure in 3..4, or an
+# execute that stops before a broker change (rc 2/11/12/13), releases the hold.
 # GO_PREFLIGHT=1: steps 3..4 only — no marker, no hold, no execute (rehearsal; the
 # dry-run then reports a pending reboot as FAIL and auto-reboot as WARN).
 #
@@ -44,8 +44,13 @@ notify() {
 }
 stop() { log "GO-ABORT($2): $1 — no broker change made"; [ "${GO_PREFLIGHT:-0}" = 1 ] || notify "❌ #1504 P7-B 사전 단계 중단: $1 (브로커 변경 없음)"; log "EXIT=$2"; exit "$2"; }
 HOLD_SET=0
+release_hold() { # <why>
+  [ "$HOLD_SET" = 1 ] || return 0
+  if "$RUNB" reboot-release >> "$GLOG" 2>&1; then log "reboot hold released ($1)"; HOLD_SET=0
+  else log "WARN: reboot-release FAILED ($1) — hold stays until its expiry timer"; notify "⚠️ #1504 P7-B 재부팅 보류 해제 실패($1) — 만료 타이머까지 유지"; fi
+}
 release_and_stop() { # <reason> <code>
-  if [ "$HOLD_SET" = 1 ]; then "$RUNB" reboot-release >> "$GLOG" 2>&1 && log "reboot hold released (pre-execute abort)"; fi
+  release_hold "pre-execute abort"
   stop "$1" "$2"
 }
 
@@ -86,5 +91,8 @@ P7B_EXPECT_REV=$REV P7B_WINDOW_START="$WIN_START" P7B_WINDOW_END="$WIN_END" P7B_
   "$RUNB" execute >> "$GLOG" 2>&1
 rc=$?
 log "execute finished rc=$rc"
+# 2 window · 11 B0 · 12/13 B1 stop before any broker change: the hold is no longer
+# needed. Every later code (B2+ stop-states, rollback, success) keeps it.
+case "$rc" in 2|11|12|13) release_hold "execute stopped before a broker change, rc=$rc" ;; esac
 log "EXIT=$rc"
 exit "$rc"

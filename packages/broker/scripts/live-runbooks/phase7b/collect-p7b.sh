@@ -41,13 +41,13 @@ else
   [ -n "${P7B_SSH_HOST:-}" ] || { echo "P7B_SSH_HOST is required"; exit 64; }
   # shellcheck disable=SC2029  # the remote dirs are expanded locally on purpose
   timeout 60 ssh -o BatchMode=yes -o ConnectTimeout=10 "$P7B_SSH_HOST" \
-    "D='${P7B_REMOTE_DIR:-/root/a2a-phase7b}' BRD='${P7B_REMOTE_BROKER_DIR:-}' UD='${P7B_REMOTE_UNIT_DIR:-/etc/systemd/system}' bash -s" > "$RAW" 2>&1 <<'REMOTE'
+    "D='${P7B_REMOTE_DIR:-/root/a2a-phase7b}' BRD='${P7B_REMOTE_BROKER_DIR:-}' UD='${P7B_REMOTE_UNIT_DIR:-/etc/systemd/system}' UP='${P7B_REMOTE_UNIT_PREFIX:-a2a-p7b}' bash -s" > "$RAW" 2>&1 <<'REMOTE'
 G=$(ls -t "$D"/go-*.log 2>/dev/null | head -1)
 echo "##GO";     [ -n "$G" ] && tail -80 "$G"
 echo "##SVC";    u=$(systemctl list-units --all --no-legend 'a2a-p7b*go.service' 2>/dev/null | awk '{print $1}' | head -1)
                  [ -n "$u" ] && systemctl show "$u" -p Result -p ExecMainStatus -p ExecMainStartTimestamp -p ExecMainExitTimestamp
 echo "##OBS";    cat "$D/observe.log" 2>/dev/null
-echo "##B6";     b=$(ls -t "$D"/B6-start-* 2>/dev/null | head -1); [ -n "$b" ] && cat "$b"
+echo "##B6";     b=$(ls -t "$D"/B6-start-* 2>/dev/null | head -1); [ -n "$b" ] && { echo "${b##*/B6-start-}"; cat "$b"; }
 echo "##BOOT";   uptime -s; date +%z
 echo "##LIVE";   docker inspect -f '{{.State.StartedAt}} restarts={{.RestartCount}} rev={{index .Config.Labels "org.opencontainers.image.revision"}}' a2a-broker
                  if [ -n "$BRD" ]; then echo "rate_line=$(grep -c '^BROKER_SHARED_STATE_V1_RATE=' "$BRD/.env")"; fi
@@ -55,9 +55,9 @@ echo "##LIVE";   docker inspect -f '{{.State.StartedAt}} restarts={{.RestartCoun
 # A finished self-disabling one-shot is unloaded, so `systemctl show` is blank for
 # it; the durable evidence is the Persistent= stamp file (mtime = last trigger,
 # survives reboot) and the journal's last Finished/Failed line.
-echo "##UNITS";  for t in "$UD"/a2a-p7b-*observe-*.timer; do [ -e "$t" ] || continue; n=$(basename "$t" .timer)
+echo "##UNITS";  for t in "$UD/$UP"-*observe-*.timer; do [ -e "$t" ] || continue; n=$(basename "$t" .timer)
                    st=/var/lib/systemd/timers/stamp-$n.timer
-                   echo "$n oncal=$(sed -n 's/^OnCalendar=//p' "$t" | head -1 | tr ' ' T) stamp=$( [ -e "$st" ] && date -r "$st" +%Y-%m-%dT%H:%M:%S || echo none) enabled=$(systemctl is-enabled "$n.timer" 2>/dev/null) last=$(journalctl -u "$n.service" -n 30 -o cat --no-pager 2>/dev/null | grep -E '^(Finished|Failed|.*Failed with result)' | tail -1 | cut -c1-80 | tr ' ' _)"; done
+                   echo "$n oncal_s=$(date -d "$(sed -n 's/^OnCalendar=//p' "$t" | head -1)" +%s 2>/dev/null || echo 0) stamp_s=$(stat -c %Y "$st" 2>/dev/null || echo 0) enabled=$(systemctl is-enabled "$n.timer" 2>/dev/null) last=$(journalctl -u "$n.service" -n 30 -o cat --no-pager 2>/dev/null | grep -E '^(Finished|Failed|.*Failed with result)' | tail -1 | cut -c1-80 | tr ' ' _)"; done
 echo "##TIMERS"; systemctl list-timers --all --no-legend | grep -i p7b
 echo "##HOLD";   ls /etc/apt/apt.conf.d/ | grep phase7 || echo none
 echo "##SCHED";  cat /run/systemd/shutdown/scheduled 2>/dev/null | tr '\n' ' ' || true; echo
@@ -68,42 +68,60 @@ fi
 sec() { awk -v s="##$1" '$0==s{f=1;next} /^##[A-Z0-9]+$/{f=0} f' "$RAW"; }
 # fence-owner flag is not a secret, but keep the "token=" notation out of public comments
 scrub() { sed -E 's/token=([01])/fence_held=\1/g; s/(EDGE_SECRET|SECRET|PASSWORD)=[^ ]*/\1=<redacted>/g'; }
-GO=$(sec GO); OBS=$(sec OBS)
+GO=$(sec GO)
+# Rows/units of the newest run only (#2379): B6 section = "<RUN_ID>\n<B6 ISO>".
+# r2 rows carry no run= field and are judged as a whole (legacy).
+TAG=$(sec B6 | sed -n 1p | grep -oE '^[0-9]{8}T[0-9]{6}' || true)
+OBS=$(sec OBS)
+if [ -n "$TAG" ] && printf '%s\n' "$OBS" | grep -q " run="; then OBS=$(printf '%s\n' "$OBS" | grep -E " run=$TAG( |$)"); fi
+UNITS=$(sec UNITS); [ -n "$TAG" ] && UNITS=$(printf '%s\n' "$UNITS" | grep -E -- "-$TAG " || true)
 EXITN=$(printf '%s\n' "$GO" | grep -oE 'EXIT=[0-9]+' | tail -1 | cut -d= -f2)
 T24=$(printf '%s\n' "$GO" | sed -nE 's/.*B8 timer T\+24h at ([0-9]{4}-[0-9]{2}-[0-9]{2} [0-9]{2}:[0-9]{2}:[0-9]{2}).*/\1/p' | tail -1)
 
-# Restart caveat (#2379): epoch change across rows, host boot or broker start after B6.
+z2s() { local z=$1; [[ "$z" =~ ^[0-9]{8}T[0-9]{6}Z$ ]] || return 1; date -u -d "${z:0:8} ${z:9:2}:${z:11:2}:${z:13:2}" +%s; }
+B6S=$(date -d "$(sec B6 | tail -1)" +%s 2>/dev/null || echo 0)
+BOOTZ=$(sec BOOT | sed -n 2p)
+# every host boot we know of: the rows' boot= values plus the boot at collect time
+boots_s() {
+  local z b
+  for z in $(printf '%s\n' "$OBS" | grep -oE '(^| )boot=[0-9TZ]+' | cut -d= -f2 | sort -u); do z2s "$z"; done
+  b=$(sec BOOT | sed -n 1p); [ -n "$b" ] && date -d "$b ${BOOTZ:-+0000}" +%s 2>/dev/null
+}
+fmt_s() { TZ=Asia/Seoul date -d "@$1" '+%Y-%m-%d %H:%M:%S KST'; }
+# Restart caveat: epoch change across rows, a host boot or broker start after B6.
 restart_caveat() {
-  local b6s boot bootz boots eps bst bsts out=""
-  b6s=$(date -d "$(sec B6 | tail -1)" +%s 2>/dev/null || echo "")
-  boot=$(sec BOOT | sed -n 1p); bootz=$(sec BOOT | sed -n 2p)
-  boots=$(date -d "$boot ${bootz:-+0000}" +%s 2>/dev/null || echo "")
+  local eps out="" b bs=() z bst bsts
   eps=$(printf '%s\n' "$OBS" | grep -oE '(^| )epoch=[0-9]+' | cut -d= -f2 | uniq | paste -sd'>' - | sed 's/>/→/g')
   [ "$(printf '%s' "$eps" | grep -c '→')" -gt 0 ] && out="epoch ${eps}"
-  if [ -n "$b6s" ] && [ -n "$boots" ] && [ "$boots" -gt "$b6s" ]; then out="${out:+$out · }host boot ${boot} ${bootz}"; fi
-  bst=$(sec LIVE | head -1 | cut -d' ' -f1); bsts=$(date -d "$bst" +%s 2>/dev/null || echo "")
-  if [ -n "$b6s" ] && [ -n "$bsts" ] && [ "$bsts" -gt $(( b6s + 300 )) ]; then out="${out:+$out · }broker started ${bst%%.*}Z"; fi
+  if [ "$B6S" -gt 0 ]; then
+    for b in $(boots_s | sort -un); do [ "$b" -gt "$B6S" ] && bs+=("$(fmt_s "$b")"); done
+    [ ${#bs[@]} -gt 0 ] && out="${out:+$out · }host boot ${bs[*]}"
+    bst=$(printf '%s\n' "$OBS" | grep -oE '(^| )broker_started=[0-9TZ]+' | cut -d= -f2 | sort -u | tail -1)
+    if [ -n "$bst" ]; then bsts=$(z2s "$bst" || echo 0)
+    else bst=$(sec LIVE | head -1 | cut -d' ' -f1); bsts=$(date -d "$bst" +%s 2>/dev/null || echo 0); bst="${bst%%.*}Z (live)"; fi
+    [ "$bsts" -gt $(( B6S + 300 )) ] && out="${out:+$out · }broker started ${bst}"
+  fi
   printf '%s' "$out"
 }
 ufield() { printf '%s' "$1" | grep -oE "(^| )$2=[^ ]*" | head -1 | sed -E "s/^ ?$2=//"; }
 missing24_cause() { # prints "<cause>|<사유>"
-  local u24 b6s t24s boot bootz boots oncal oncals stamp stamps last en now
-  u24=$(sec UNITS | grep -E 'observe-24h' | head -1)
-  b6s=$(date -d "$(sec B6 | tail -1)" +%s 2>/dev/null || echo 0)
-  boot=$(sec BOOT | sed -n 1p); bootz=$(sec BOOT | sed -n 2p)
-  boots=$(date -d "$boot ${bootz:-+0000}" +%s 2>/dev/null || echo 0)
-  t24s=$(date -d "$T24 ${bootz:-+0000}" +%s 2>/dev/null || echo 0)
-  oncal=$(ufield "$u24" oncal | tr T ' '); oncals=$(date -d "$oncal ${bootz:-+0000}" +%s 2>/dev/null || echo 0)
-  stamp=$(ufield "$u24" stamp | tr T ' '); stamps=$(date -d "$stamp ${bootz:-+0000}" +%s 2>/dev/null || echo 0)
+  local u24 t24s oncals stamps last en now b inwin=""
+  u24=$(printf '%s\n' "$UNITS" | grep -E 'observe-24h' | head -1)
+  oncals=$(ufield "$u24" oncal_s); oncals=${oncals:-0}
+  stamps=$(ufield "$u24" stamp_s); stamps=${stamps:-0}
   last=$(ufield "$u24" last | tr _ ' '); en=$(ufield "$u24" enabled)
+  t24s=$oncals; [ "$t24s" -gt 0 ] || t24s=$(date -d "$T24 ${BOOTZ:-+0000}" +%s 2>/dev/null || echo 0)
   now=$(date -d "${P7B_COLLECT_NOW:-now}" +%s)
+  for b in $(boots_s | sort -un); do
+    if [ "$B6S" -gt 0 ] && [ "$b" -gt "$B6S" ] && { [ "$t24s" = 0 ] || [ "$b" -le "$t24s" ]; }; then inwin=$(fmt_s "$b"); fi
+  done
   if [ -n "$u24" ] && [ "$oncals" -gt 0 ] && [ "$stamps" -ge "$oncals" ]; then
-    echo "observe_failed|T+24h 관측은 실행됐으나 행 없음 — 관측 실패(트리거 ${stamp}, journal: ${last:-없음}; 브로커 호스트 .snap-B8-T+24h.out 확인)"
+    echo "observe_failed|T+24h 관측은 실행됐으나 행 없음 — 관측 실패(트리거 $(fmt_s "$stamps"), journal: ${last:-없음}; 브로커 호스트 .snap-B8-T+24h-*.out 확인)"
   elif [ -n "$u24" ] && [ "$en" = enabled ] && [ "$oncals" -gt "$now" ]; then
-    echo "not_due|T+24h 관측 미도래 — 영구 타이머 대기 중(${oncal})"
-  elif [ "$boots" -gt "$b6s" ] && [ "$b6s" -gt 0 ] && { [ "$t24s" = 0 ] || [ "$boots" -le "$t24s" ]; }; then
-    if [ -z "$u24" ]; then echo "timer_lost_reboot|T+24h 관측 타이머 소실 — 관측 창 안 재부팅(${boot} ${bootz}), 영구 관측 유닛 없음(임시 타이머였을 가능성)"
-    else echo "timer_lost_reboot|T+24h 관측 미실행 — 관측 창 안 재부팅(${boot} ${bootz}) 후 영구 유닛이 따라잡지 못함(enabled=${en:-?}, stamp=${stamp:-none})"; fi
+    echo "not_due|T+24h 관측 미도래 — 영구 타이머 대기 중($(fmt_s "$oncals"))"
+  elif [ -n "$inwin" ]; then
+    if [ -z "$u24" ]; then echo "timer_lost_reboot|T+24h 관측 타이머 소실 — 관측 창 안 재부팅(${inwin}), 영구 관측 유닛 없음(임시 타이머였을 가능성)"
+    else echo "timer_lost_reboot|T+24h 관측 미실행 — 관측 창 안 재부팅(${inwin}) 후 영구 유닛이 따라잡지 못함(enabled=${en:-?})"; fi
   else
     echo "timer_not_fired|T+24h 관측 타이머 미발화 — 원인 확인 필요(관측 창 안 재부팅 없음, unit=${u24:+있음}${u24:-없음} enabled=${en:-?})"
   fi
@@ -166,7 +184,7 @@ else  # b8
     echo "**기준**([#2369 계획](https://github.com/jinwon-int/a2a-nexus/issues/2369#issuecomment-6105114498)): 각 관측에서 503·state_unavailable·ownership_conflict·prune_fail·prune_lost_fence = 0, snapshot_rc = 0, newest_rate_age_s ≤ 300, rate_since_b6 단조 증가, T+24h 행 존재. \`rate_rows\` 총량 감소는 실패 아님(24h 보존 prune)."
     echo "**요약**: \`$RES\`"
     echo; echo '```'; printf '%s\n' "$OBS" | scrub; echo '```'
-    echo; echo '```'; sec LIVE | scrub; echo "boot: $(sec BOOT | tr '\n' ' ')· B6: $(sec B6 | tail -1) · T+24h due: ${T24:-?}"; echo "units:"; sec UNITS; echo "reboot hold: $(sec HOLD | tr '\n' ' ')"; echo '```'
+    echo; echo '```'; sec LIVE | scrub; echo "boot: $(sec BOOT | tr '\n' ' ')· B6: $(sec B6 | tail -1) · T+24h due: ${T24:-?}"; echo "run: ${TAG:-legacy}"; echo "units:"; printf '%s\n' "$UNITS"; echo "reboot hold: $(sec HOLD | tr '\n' ' ')"; echo '```'
   } > "$MD"
   NOTE="#1504 P7-B B8 자동 판정: $VER — $WHY${CAVEAT:+ (단서: $CAVEAT)} (오너 확인 필요)"
 fi

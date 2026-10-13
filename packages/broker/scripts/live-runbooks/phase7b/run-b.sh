@@ -29,11 +29,12 @@
 #   P7B_APPROVAL='<owner phrase>' run-b.sh reboot-hold <hours 1..48>
 #       hold auto-reboot, cancel an already-scheduled reboot, persistent expiry.
 #   run-b.sh reboot-release
-#       remove the hold and disable hold-expiry timers (the expiry timer runs this).
+#       remove the hold and disable hold-expiry timers (manual / pre-execute abort;
+#       the persistent expiry timer itself runs a plain /bin/rm -f <hold>).
 # Exit codes: 0 ok · 2 window refused · 11 B0 · 12 B1 shadow unexplained≠0 ·
 #   13 B1 tool error/no evidence · 20..25 B2..B6 stop-states (see die sites) ·
 #   30..33 rollback problems · 40 rolled back ·
-#   51 hold file write · 52 hold-expiry unit · 53 scheduled reboot not cancelled ·
+#   50 hold already present · 51 hold file write · 52 hold-expiry unit · 53 scheduled reboot not cancelled ·
 #   54 hold not effective (apt-config still Automatic-Reboot=true) · 64 usage
 set -uo pipefail
 MODE="${1:-dry-run}"
@@ -122,10 +123,14 @@ reboot_checks() { # B0 part. ok → prints a note, 0 · FAIL → prints the reas
 # finishes, so it never fires twice. The files are kept as evidence.
 SAFE_ARG='^[A-Za-z0-9_./+:=@-]+$'
 schedule_persistent() { # <unit> <'YYYY-MM-DD HH:MM:SS' local> <description> <command> [args...] → prints next elapse
-  local u=$1 at=$2 desc=$3 a next envs; shift 3
+  local u=$1 at=$2 desc=$3 a next envs ats oncal; shift 3
   [[ "$u" =~ ^[A-Za-z0-9_.@-]+$ ]] || { echo "bad unit name '$u'"; return 1; }
   [[ "$at" =~ ^[0-9]{4}-[0-9]{2}-[0-9]{2}\ [0-9]{2}:[0-9]{2}:[0-9]{2}$ ]] || { echo "bad OnCalendar '$at'"; return 1; }
-  [ "$(date -d "$at" +%s 2>/dev/null || echo 0)" -gt "$(date +%s)" ] || { echo "OnCalendar '$at' is not in the future"; return 1; }
+  ats=$(date -d "$at" +%s 2>/dev/null || echo 0)
+  [ "$ats" -gt "$(date +%s)" ] || { echo "OnCalendar '$at' is not in the future"; return 1; }
+  # write an explicit UTC time: `date` follows the caller's TZ, systemd follows
+  # /etc/localtime — a bare local time would shift if the two differ
+  oncal="$(date -u -d "@$ats" '+%Y-%m-%d %H:%M:%S') UTC"
   [[ "$desc" =~ ^[A-Za-z0-9\ _.:+/#-]+$ ]] || { echo "unsafe description '$desc'"; return 1; }
   # ExecStart/Environment are written verbatim: refuse anything systemd would
   # re-interpret (%, $, quotes, whitespace)
@@ -133,18 +138,24 @@ schedule_persistent() { # <unit> <'YYYY-MM-DD HH:MM:SS' local> <description> <co
   for a in "$@" "${envs[@]}"; do [[ "$a" =~ $SAFE_ARG ]] || { echo "unsafe ExecStart/Environment value '$a'"; return 1; }; done
   if [ -e "$UNIT_DIR/$u.timer" ] || [ -e "$UNIT_DIR/$u.service" ]; then echo "unit $u already exists (never overwritten)"; return 1; fi
   ( umask 022
-    { printf '%s\n' "[Unit]" "Description=$desc (a2a-nexus#1504 P7-B one-shot, run $RUN_ID)" "" "[Service]" "Type=oneshot"
+    # After=docker.service: a Persistent= catch-up right after boot must not
+    # run before the broker's container runtime is up
+    { printf '%s\n' "[Unit]" "Description=$desc (a2a-nexus#1504 P7-B one-shot, run $RUN_ID)" \
+        "After=docker.service network-online.target" "Wants=network-online.target" "" "[Service]" "Type=oneshot"
       printf 'Environment=%s\n' "${envs[@]}"
       printf '%s\n' "ExecStart=$*" "ExecStopPost=-/bin/systemctl disable --now $u.timer"; } > "$UNIT_DIR/$u.service" &&
     printf '%s\n' "[Unit]" "Description=$desc (a2a-nexus#1504 P7-B one-shot, run $RUN_ID)" "" \
-      "[Timer]" "OnCalendar=$at" "AccuracySec=1min" "Persistent=true" "Unit=$u.service" "" \
+      "[Timer]" "OnCalendar=$oncal" "AccuracySec=1min" "Persistent=true" "Unit=$u.service" "" \
       "[Install]" "WantedBy=timers.target" > "$UNIT_DIR/$u.timer" ) || { echo "cannot write units in $UNIT_DIR"; return 1; }
   if ! { systemctl daemon-reload && systemctl enable --now "$u.timer"; } >/dev/null 2>&1; then
     rm -f "$UNIT_DIR/$u.timer" "$UNIT_DIR/$u.service"; systemctl daemon-reload >/dev/null 2>&1
     echo "systemctl enable --now $u.timer failed (units removed)"; return 1
   fi
   next=$(systemctl show "$u.timer" -p NextElapseUSecRealtime --value 2>/dev/null)
-  [ -n "$next" ] && [ "$next" != n/a ] || { echo "$u.timer enabled but has no next elapse"; return 1; }
+  if [ -z "$next" ] || [ "$next" = n/a ]; then
+    systemctl disable --now "$u.timer" >/dev/null 2>&1; rm -f "$UNIT_DIR/$u.timer" "$UNIT_DIR/$u.service"; systemctl daemon-reload >/dev/null 2>&1
+    echo "$u.timer enabled but has no next elapse (disabled, units removed)"; return 1
+  fi
   echo "$next"
 }
 
@@ -164,15 +175,21 @@ reboot_hold() { # <hours>
   local h="${1:-}" exp unit r s ar
   { [[ "$h" =~ ^[0-9]+$ ]] && [ "$h" -ge 1 ] && [ "$h" -le 48 ]; } || { echo "usage: $0 reboot-hold <hours 1..48>"; exit 64; }
   [ -n "${P7B_APPROVAL:-}" ] || { echo "P7B_APPROVAL(오너 승인 문구) 미지정"; exit 64; }
+  [[ "$P7B_APPROVAL" != *$'\n'* ]] || { echo "P7B_APPROVAL must be a single line"; exit 64; }
+  [[ "$REBOOT_HOLD" =~ $SAFE_ARG ]] || { echo "unsafe hold path $REBOOT_HOLD"; exit 64; }
+  # one hold at a time: a second hold would be released by the first one's expiry
+  [ -e "$REBOOT_HOLD" ] && { echo "reboot hold already present ($REBOOT_HOLD) — run-b.sh reboot-release first"; exit 50; }
   exp=$(date -d "+$h hours" '+%Y-%m-%d %H:%M:%S'); unit="$UNIT_PREFIX-hold-expire-${RUN_ID%%-*}"
   log "=== reboot-hold ${h}h until $exp · approval: ${P7B_APPROVAL}"
   { printf '%s\n' \
       "// a2a-nexus#1504 Phase 7-B: hold unattended auto-reboot — approval: ${P7B_APPROVAL}" \
       "// Security updates still install; only the automatic reboot is deferred (reboot-required stays pending)." \
-      "// Removed by the persistent timer ${unit}.timer (OnCalendar=${exp}) via: run-b.sh reboot-release" \
+      "// Removed by the persistent timer ${unit}.timer (${exp}) via: /bin/rm -f ${REBOOT_HOLD}" \
       'Unattended-Upgrade::Automatic-Reboot "false";' > "$REBOOT_HOLD"; } 2>/dev/null || die "보류 파일 작성 실패($REBOOT_HOLD)" 51
   chmod 644 "$REBOOT_HOLD" 2>/dev/null
-  r=$(schedule_persistent "$unit" "$exp" "P7-B reboot-hold expiry" "$SELF" reboot-release) \
+  # The expiry runs /bin/rm directly, never this script: a checkout that moves
+  # or disappears within the hold must not leave the hold in place forever.
+  r=$(schedule_persistent "$unit" "$exp" "P7-B reboot-hold expiry" /bin/rm -f "$REBOOT_HOLD") \
     || { rm -f "$REBOOT_HOLD"; die "보류 해제 영구 타이머 생성 실패: $r (보류 제거함)" 52; }
   log "hold-expiry timer $unit next=$r"
   ar=$(apt_auto_reboot)
@@ -281,16 +298,25 @@ rollback() { # <reason>  (approved: "#1504 P7-B 롤백승인")
 #   boot / broker_started (#2379)  host boot and container start (UTC); a value
 #                   later than B6 means the observation spans a restart.
 # Uses the same numeric predicate as the prune (CAST(event_at_unix_ms AS INTEGER)).
+#   run / waited_s (#2379)  run tag (rows of an older run in the same $D are
+#                   ignored by the collector) and seconds spent waiting for readyz
+#                   (a Persistent= catch-up right after boot waits up to
+#                   P7B_OBS_WAIT=300 s, then P7B_OBS_SETTLE=60 s for traffic).
+OBS_TAG="${RUN_ID%%-*}"
+OBS_SCRIPT="$D/observe-b-$OBS_TAG.sh"
 write_observe_script() { # uses $D $BR $C $FENCE $B6ISO
   local b6ms; b6ms=$(( $(date -d "$B6ISO" +%s) * 1000 ))
-  cat > "$D/observe-b.sh" <<EOS
+  cat > "$OBS_SCRIPT" <<EOS
 #!/bin/bash
 # #1504 Phase 7-B B8 observation (read-only). Generated by run-b.sh run $RUN_ID.
 set -u
-D=$D; L=\${1:-manual}; TS=\$(date -u +%Y%m%dT%H%M%SZ)
+D=$D; L=\${1:-manual}; RUN=$OBS_TAG
+W=0; while [ \$W -lt \${P7B_OBS_WAIT:-300} ] && ! curl -s -m 5 http://127.0.0.1:8787/readyz | grep -q '"ready":true'; do sleep 10; W=\$((W+10)); done
+[ \$W -gt 0 ] && sleep \${P7B_OBS_SETTLE:-60}
+TS=\$(date -u +%Y%m%dT%H%M%SZ)
 cd $BR || exit 3
 EDGE_SECRET=\$(docker inspect $C --format "{{range .Config.Env}}{{println .}}{{end}}" | sed -n "s/^EDGE_SECRET=//p" | head -1) \\
-  node scripts/shared-state-shadow-snapshot.mjs --base-url http://127.0.0.1:8787 --label "B8-\$L" --out "\$D/shadow-B8-\$L-\$TS.json" > "\$D/.snap-B8-\$L.out" 2>&1
+  node scripts/shared-state-shadow-snapshot.mjs --base-url http://127.0.0.1:8787 --label "B8-\$L" --out "\$D/shadow-B8-\$L-\$TS.json" > "\$D/.snap-B8-\$L-\$RUN.out" 2>&1
 RC=\$?
 LOGS=\$(docker logs --since $B6ISO $C 2>&1)
 C503=\$(printf "%s\n" "\$LOGS" | grep -c -- " 503"); CSU=\$(printf "%s\n" "\$LOGS" | grep -c state_unavailable); COC=\$(printf "%s\n" "\$LOGS" | grep -c ownership_conflict)
@@ -301,9 +327,9 @@ FENCE=\$(node -e 'const {DatabaseSync}=require("node:sqlite");const f=new Databa
 SZ=\$(stat -c %s $FENCE 2>/dev/null || echo 0)
 BOOT=\$(date -u -d "\$(uptime -s 2>/dev/null)" +%Y%m%dT%H%M%SZ 2>/dev/null || echo unknown)
 BST=\$(date -u -d "\$(docker inspect $C --format "{{.State.StartedAt}}" 2>/dev/null)" +%Y%m%dT%H%M%SZ 2>/dev/null || echo unknown)
-echo "\$TS label=\$L snapshot_rc=\$RC \$(tail -1 \$D/.snap-B8-\$L.out) 503=\$C503 state_unavailable=\$CSU ownership_conflict=\$COC prune_fail=\$PFAIL prune_lost_fence=\$PLOST ready=\$READY \$FENCE fence_bytes=\$SZ disk=\$(df --output=pcent / | tail -1 | tr -d " ") boot=\$BOOT broker_started=\$BST" >> "\$D/observe.log"
+echo "\$TS label=\$L snapshot_rc=\$RC \$(tail -1 \$D/.snap-B8-\$L-\$RUN.out) 503=\$C503 state_unavailable=\$CSU ownership_conflict=\$COC prune_fail=\$PFAIL prune_lost_fence=\$PLOST ready=\$READY \$FENCE fence_bytes=\$SZ disk=\$(df --output=pcent / | tail -1 | tr -d " ") boot=\$BOOT broker_started=\$BST run=\$RUN waited_s=\$W" >> "\$D/observe.log"
 EOS
-  chmod 700 "$D/observe-b.sh"
+  chmod 700 "$OBS_SCRIPT"
 }
 
 main() {
@@ -408,13 +434,13 @@ write_observe_script
 tfail=0
 for h in 1 6 12 24; do
   at=$(date -d "@$(( $(date -d "$B6ISO" +%s) + h*3600 ))" '+%Y-%m-%d %H:%M:%S')
-  if nx=$(schedule_persistent "$UNIT_PREFIX-observe-${h}h-${RUN_ID%%-*}" "$at" "P7-B B8 observation T+${h}h" "$D/observe-b.sh" "T+${h}h"); then
+  if nx=$(schedule_persistent "$UNIT_PREFIX-observe-${h}h-${RUN_ID%%-*}" "$at" "P7-B B8 observation T+${h}h" "$OBS_SCRIPT" "T+${h}h"); then
     log "B8 timer T+${h}h at $at (persistent, next=$nx)"
   else
     tfail=$((tfail+1)); log "B8 timer T+${h}h FAILED: $nx"
   fi
 done
-"$D/observe-b.sh" "T+5m" ; log "B8 T+5m: $(tail -1 "$D/observe.log")"
+"$OBS_SCRIPT" "T+5m" ; log "B8 T+5m: $(tail -1 "$D/observe.log")"
 [ "$tfail" = 0 ] || notify "⚠️ #1504 P7-B B8 관측 타이머 ${tfail}개 생성 실패 — 수동 관측 필요(run-b.log 확인)"
 notify "✅ #1504 P7-B 전환 완료 — rate V1 serving. $FS2, rate 행 ${R1}→${R2}, 5분 503/state_unavailable/ownership_conflict 0. 관측 타이머 T+1/6/12/24h(영구 유닛) 설정"
 log "=== execute done"

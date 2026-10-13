@@ -129,7 +129,8 @@ run w2 execute STUB_REV=$REV P7B_EXPECT_REV=$REV P7B_APPROVAL=x "P7B_WINDOW_STAR
 run w3 execute STUB_REV=$REV P7B_EXPECT_REV=$REV P7B_APPROVAL=x "P7B_WINDOW_START=2026-10-12 22:00 KST" "P7B_WINDOW_END=2026-10-12 23:00"; expect w3 2 "형식" "malformed window → 2"
 run w4 execute STUB_REV=$REV P7B_EXPECT_REV=$REV "$WS" "$WE"; expect w4 2 "P7B_APPROVAL" "missing approval phrase → 2"
 run w5 execute STUB_REV=$REV P7B_EXPECT_REV=$REV P7B_APPROVAL=x "P7B_WINDOW_START=2026-10-12 23:00" "P7B_WINDOW_END=2026-10-12 22:00"; expect w5 2 "이르거나" "end ≤ start → 2"
-for w in w0 w1 w2 w3 w4 w5; do has $w "B0 pass" && bad "$w refused before B0" "B0 ran"; done; ok "window refusals happen before B0"
+wb=0; for w in w0 w1 w2 w3 w4 w5; do has $w "B0 pass" && wb=1; done
+[ "$wb" = 0 ] && ok "window refusals happen before B0" || bad "window refusals happen before B0" "B0 ran"
 
 # 9. B8 observation script (r2 metrics + r3 boot/broker_started) against the fixture: 2 rows before B6, 3 after
 mkdir -p "$T/bin"
@@ -145,7 +146,8 @@ printf '#!/bin/bash\necho "{\\"ready\\":true}"\n' > "$T/bin/curl"; chmod +x "$T/
 P7B_SOURCE_ONLY=1 P7B_DIR="$T/d8" P7B_BROKER_DIR="$BR" P7B_SPOOL="$T/spool" T="$T" SUT="$SUT" bash -c '
   set -- execute; source "$SUT"; FENCE="$T/data/fence.sqlite"
   B6ISO=$(date -u -d "-10 min" +%Y-%m-%dT%H:%M:%SZ); write_observe_script' > "$T/out.b8gen" 2>&1
-T_MUT="$T/docker-mutations" PATH="$T/bin:$PATH" "$T/d8/observe-b.sh" T+test > "$T/out.b8run" 2>&1
+OBS8=$(ls "$T/d8"/observe-b-*.sh 2>/dev/null | head -1)
+T_MUT="$T/docker-mutations" PATH="$T/bin:$PATH" "${OBS8:-$T/d8/missing}" T+test > "$T/out.b8run" 2>&1
 L8=$(tail -1 "$T/d8/observe.log" 2>/dev/null)
 chk() { if printf '%s\n' "$L8" | grep -qE -- "$1"; then ok "B8: $2"; else bad "B8: $2" "line: $L8 $(cat "$T/out.b8gen" "$T/out.b8run")"; fi; }
 chk "rate_rows=5( |$)"            "total rate_rows kept (5)"
@@ -157,6 +159,15 @@ chk " 503=0 "                      "prune summary line does not trip the 503 gre
 chk "snapshot_rc=0 "              "B8 snapshot evidence written"
 chk " boot=[0-9]{8}T[0-9]{6}Z( |$)" "r3: host boot time recorded (UTC)"
 chk " broker_started=20261012T181537Z( |$)" "r3: broker container start recorded (UTC)"
+chk " run=[0-9]{8}T[0-9]{6} waited_s=0$" "r3: row carries the run tag and waited_s (readyz already up → 0)"
+[ -n "$OBS8" ] && [ "$(basename "$OBS8")" != observe-b.sh ] && ok "r3: observe script is per run (observe-b-<tag>.sh)" || bad "r3: per-run observe script" "$(ls "$T/d8")"
+grep -q 'P7B_OBS_WAIT:-300' "$OBS8" && grep -q 'readyz' "$OBS8" && ok "r3: observation waits for readyz before measuring (boot catch-up)" || bad "r3: readyz wait in observe script"
+# a catch-up right after boot: readyz down for the first two polls → waits, then measures
+printf '#!/bin/bash\nn=$(cat "$T/curl.n" 2>/dev/null || echo 0); echo $((n+1)) > "$T/curl.n"\n[ "$n" -ge 2 ] && echo "{\\"ready\\":true}"\nexit 0\n' > "$T/bin/curl"; rm -f "$T/curl.n"
+mkdir -p "$T/bin2"; printf '#!/bin/bash\nexit 0\n' > "$T/bin2/sleep"; chmod +x "$T/bin/curl" "$T/bin2/sleep"
+T="$T" T_MUT="$T/docker-mutations" PATH="$T/bin2:$T/bin:$PATH" "$OBS8" T+late > "$T/out.b8late" 2>&1
+L8=$(tail -1 "$T/d8/observe.log" 2>/dev/null)
+chk "label=T\+late .* waited_s=20$" "r3: boot catch-up waited for readyz (2 polls → waited_s=20) before the row"
 
 # ---- r3 (#2379) -------------------------------------------------------------
 SCHED="$T/sched"; mksched() { printf 'USEC=%s\nWARN_WALL=1\nMODE=reboot\n' "$(( ($(date +%s) + 3600) * 1000000 ))" > "$SCHED"; }
@@ -174,10 +185,12 @@ has rb4 "auto_reboot=false" && ok "hold present → auto_reboot=false reported" 
 AT=$(date -d '+2 hours' '+%Y-%m-%d %H:%M:%S')
 fn sp1 schedule_persistent a2a-p7b-observe-24h-test "$AT" "P7-B B8 observation T+24h" "$T/d/observe-b.sh" "T+24h"
 U="$T/units/sp1/a2a-p7b-observe-24h-test"
-if [ "$(rc sp1)" = 0 ] && grep -qx "OnCalendar=$AT" "$U.timer" && grep -qx "Persistent=true" "$U.timer" && grep -qx "WantedBy=timers.target" "$U.timer"; then
-  ok "persistent timer written (OnCalendar absolute, Persistent=true, WantedBy timers.target)"; else bad "persistent timer written" "$(cat "$T/out.sp1" "$U.timer" 2>&1)"; fi
+ATU="$(date -u -d "@$(date -d "$AT" +%s)" '+%Y-%m-%d %H:%M:%S') UTC"
+if [ "$(rc sp1)" = 0 ] && grep -qx "OnCalendar=$ATU" "$U.timer" && grep -qx "Persistent=true" "$U.timer" && grep -qx "WantedBy=timers.target" "$U.timer"; then
+  ok "persistent timer written (OnCalendar absolute UTC, Persistent=true, WantedBy timers.target)"; else bad "persistent timer written" "$(cat "$T/out.sp1" "$U.timer" 2>&1)"; fi
 grep -qx "ExecStart=$T/d/observe-b.sh T+24h" "$U.service" && grep -qx "ExecStopPost=-/bin/systemctl disable --now a2a-p7b-observe-24h-test.timer" "$U.service" \
   && ok "service runs the command once and disables its own timer" || bad "service ExecStart/ExecStopPost" "$(cat "$U.service")"
+grep -qx "After=docker.service network-online.target" "$U.service" && ok "service orders after docker (boot catch-up)" || bad "service After=docker" "$(cat "$U.service")"
 grep -qx "Environment=P7B_DIR=$T/d" "$U.service" && grep -q "^Environment=HOME=" "$U.service" && ok "service carries P7B_DIR/HOME (no login env under systemd)" || bad "service Environment" "$(cat "$U.service")"
 grep -q "systemctl enable --now a2a-p7b-observe-24h-test.timer" "$T/sys.sp1" && grep -q "systemctl daemon-reload" "$T/sys.sp1" && has sp1 "Wed 2026-10-14" \
   && ok "daemon-reload + enable --now, prints next elapse" || bad "enable sequence" "$(cat "$T/sys.sp1" "$T/out.sp1")"
@@ -189,7 +202,9 @@ fn sp5 schedule_persistent a2a-p7b-x "$AT" "x" /bin/true
 if [ "$(rc sp5)" = 1 ] && has sp5 "never overwritten" && [ "$(cat "$T/units/sp5/a2a-p7b-x.timer")" = keep ]; then ok "existing unit never overwritten"; else bad "existing unit never overwritten" "$(cat "$T/out.sp5")"; fi
 FN_ENV="STUB_ENABLE_FAIL=1" fn sp6 schedule_persistent a2a-p7b-x "$AT" "x" /bin/true
 if [ "$(rc sp6)" = 1 ] && has sp6 "units removed" && [ ! -e "$T/units/sp6/a2a-p7b-x.timer" ]; then ok "enable failure → units removed, rc 1"; else bad "enable failure cleanup" "$(cat "$T/out.sp6")"; ls "$T/units/sp6"; fi
-FN_ENV="STUB_NEXT=" fn sp7 schedule_persistent a2a-p7b-x "$AT" "x" /bin/true; expect sp7 1 "no next elapse" "enabled timer without a next elapse → rc 1"
+FN_ENV="STUB_NEXT=" fn sp7 schedule_persistent a2a-p7b-x "$AT" "x" /bin/true
+if [ "$(rc sp7)" = 1 ] && has sp7 "no next elapse" && [ ! -e "$T/units/sp7/a2a-p7b-x.timer" ] && grep -q "systemctl disable --now a2a-p7b-x.timer" "$T/sys.sp7"; then
+  ok "enabled timer without a next elapse → disabled, units removed, rc 1"; else bad "no next elapse cleanup" "$(cat "$T/out.sp7")"; fi
 
 # 12. reboot-hold / reboot-release
 run rh0 "reboot-hold" P7B_APPROVAL=x; expect rh0 64 "reboot-hold <hours" "reboot-hold without hours → 64"
@@ -197,9 +212,14 @@ run rh0b "reboot-hold 26"; expect rh0b 64 "P7B_APPROVAL" "reboot-hold without ap
 run rh1 "reboot-hold 26" P7B_APPROVAL=test STUB_HOLD="$T/hold-rh1"
 if [ "$(rc rh1)" = 0 ] && grep -qx 'Unattended-Upgrade::Automatic-Reboot "false";' "$T/hold-rh1" && grep -q "approval: test" "$T/hold-rh1"; then ok "reboot-hold writes the apt hold with the approval phrase"; else bad "reboot-hold writes hold" "$(tail -3 "$T/out.rh1")"; fi
 E1=$(ls "$T/units/rh1"/a2a-p7b-hold-expire-*.service 2>/dev/null | head -1)
-[ -n "$E1" ] && grep -qx "ExecStart=$SUT reboot-release" "$E1" && grep -qx "Persistent=true" "${E1%.service}.timer" \
-  && ok "hold expiry is a persistent timer running 'run-b.sh reboot-release'" || bad "hold expiry unit" "$(ls "$T/units/rh1" 2>&1; cat "$E1" 2>&1)"
-grep -q "^shutdown" "$T/sys.rh1" 2>/dev/null && bad "no pending reboot → shutdown -c not called" || ok "no pending reboot → shutdown -c not called"
+[ -n "$E1" ] && grep -qx "ExecStart=/bin/rm -f $T/hold-rh1" "$E1" && grep -qx "Persistent=true" "${E1%.service}.timer" \
+  && ok "hold expiry is a persistent timer running a plain '/bin/rm -f <hold>' (no checkout dependency)" || bad "hold expiry unit" "$(ls "$T/units/rh1" 2>&1; cat "$E1" 2>&1)"
+if grep -q "^shutdown" "$T/sys.rh1" 2>/dev/null; then bad "no pending reboot → shutdown -c not called"; else ok "no pending reboot → shutdown -c not called"; fi
+touch "$T/hold-rh6"
+run rh6 "reboot-hold 26" P7B_APPROVAL=test STUB_HOLD="$T/hold-rh6"; expect rh6 50 "already present" "a hold already present → 50 (no overlapping holds)"
+run rh7 "reboot-hold 26" "P7B_APPROVAL=line1
+line2" STUB_HOLD="$T/hold-rh7"
+if [ "$(rc rh7)" = 64 ] && [ ! -e "$T/hold-rh7" ]; then ok "multi-line approval phrase → 64, no hold written"; else bad "multi-line approval → 64" "rc=$(rc rh7)"; fi
 mksched
 run rh2 "reboot-hold 26" P7B_APPROVAL=test STUB_HOLD="$T/hold-rh2" STUB_SCHED="$SCHED" STUB_CANCEL_OK=1 STUB_RR="$T/rr"
 if [ "$(rc rh2)" = 0 ] && grep -q "shutdown -c" "$T/sys.rh2" && has rh2 "scheduled reboot cancelled" && [ ! -e "$SCHED" ] && [ -e "$T/hold-rh2" ]; then
@@ -257,6 +277,10 @@ gorun late "P7B_WINDOW_START=$(TZ=Asia/Seoul date -d '-45 min' '+%F %H:%M')"
 [ "$(cat "$T/rc.go-late")" = 5 ] && [ "$(calls late)" = "" ] && ok "go: fired past the guard → 5, nothing runs" || bad "go time guard" "rc=$(cat "$T/rc.go-late") calls=$(calls late)"
 gorun twice; gorun twice
 [ "$(cat "$T/rc.go-twice")" = 6 ] && ok "go: run-once marker → second fire 6" || bad "go marker" "rc=$(cat "$T/rc.go-twice")"
+gorun ex11 STUB_EXEC_RC=11
+[ "$(cat "$T/rc.go-ex11")" = 11 ] && [ "$(calls ex11)" = "reboot-hold 26,dry-run,execute,reboot-release" ] && ok "go: execute stops before a broker change (11) → hold released" || bad "go execute 11 release" "rc=$(cat "$T/rc.go-ex11") calls=$(calls ex11)"
+gorun ex40 STUB_EXEC_RC=40
+[ "$(cat "$T/rc.go-ex40")" = 40 ] && [ "$(calls ex40)" = "reboot-hold 26,dry-run,execute" ] && ok "go: rollback (40) keeps the hold until its expiry" || bad "go execute 40 keeps hold" "rc=$(cat "$T/rc.go-ex40") calls=$(calls ex40)"
 gorun hh P7B_HOLD_HOURS=30
 grep -qx "reboot-hold 30" "$T/calls.hh" && ok "go: P7B_HOLD_HOURS is passed to reboot-hold" || bad "go hold hours" "$(calls hh)"
 
