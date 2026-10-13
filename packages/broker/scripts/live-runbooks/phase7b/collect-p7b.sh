@@ -16,7 +16,7 @@
 # Env: P7B_SSH_HOST (required unless COLLECT_RAW) · P7B_REMOTE_DIR (default
 #   /root/a2a-phase7b) · P7B_REMOTE_BROKER_DIR (broker checkout for the .env RATE
 #   check; optional) · P7B_REMOTE_UNIT_DIR (default /etc/systemd/system) ·
-#   P7B_COLLECT_OUT (default $HOME/.claude/state/p7b-collect) · P7B_REPO / P7B_ISSUE
+#   P7B_REMOTE_UNIT_PREFIX (default a2a-p7b) · P7B_COLLECT_OUT (default $HOME/.claude/state/p7b-collect) · P7B_REPO / P7B_ISSUE
 #   (default jinwon-int/a2a-nexus #1504) · P7B_WIKI=1 to also open a Family Wiki
 #   LOG PR (needs wiki-agent; P7B_WIKI_NODE names the LOG id, default hostname -s)
 # COLLECT_DRY=1   print the comment instead of posting/notifying
@@ -57,7 +57,8 @@ echo "##LIVE";   docker inspect -f '{{.State.StartedAt}} restarts={{.RestartCoun
 # survives reboot) and the journal's last Finished/Failed line.
 echo "##UNITS";  for t in "$UD/$UP"-*observe-*.timer; do [ -e "$t" ] || continue; n=$(basename "$t" .timer)
                    st=/var/lib/systemd/timers/stamp-$n.timer
-                   echo "$n oncal_s=$(date -d "$(sed -n 's/^OnCalendar=//p' "$t" | head -1)" +%s 2>/dev/null || echo 0) stamp_s=$(stat -c %Y "$st" 2>/dev/null || echo 0) enabled=$(systemctl is-enabled "$n.timer" 2>/dev/null) last=$(journalctl -u "$n.service" -n 30 -o cat --no-pager 2>/dev/null | grep -E '^(Finished|Failed|.*Failed with result)' | tail -1 | cut -c1-80 | tr ' ' _)"; done
+                   oc=$(sed -n 's/^OnCalendar=//p' "$t" | head -1)
+                   echo "$n oncal_s=$( [ -n "$oc" ] && date -d "$oc" +%s 2>/dev/null || echo 0) stamp_s=$(stat -c %Y "$st" 2>/dev/null || echo 0) enabled=$(systemctl is-enabled "$n.timer" 2>/dev/null) last=$(journalctl -u "$n.service" -n 30 -o cat --no-pager 2>/dev/null | grep -E '^(Finished|Failed|.*Failed with result)' | tail -1 | cut -c1-80 | tr ' ' _)"; done
 echo "##TIMERS"; systemctl list-timers --all --no-legend | grep -i p7b
 echo "##HOLD";   ls /etc/apt/apt.conf.d/ | grep phase7 || echo none
 echo "##SCHED";  cat /run/systemd/shutdown/scheduled 2>/dev/null | tr '\n' ' ' || true; echo
@@ -154,7 +155,8 @@ if [ "$MODE" = result ]; then
   NOTE="#1504 P7-B 결과: $V"
 else  # b8
   if [ -z "$OBS" ]; then
-    log "b8: no observe.log (execution outcome exit=${EXITN:-none}); nothing to judge"; echo "no observe.log" > "$MD"
+    why="no observe.log"; [ -n "$TAG" ] && [ -n "$(sec OBS)" ] && why="no observation rows for the newest run $TAG (older runs' rows ignored)"
+    log "b8: $why (execution outcome exit=${EXITN:-none}); nothing to judge"; echo "$why" > "$MD"
     [ "${EXITN:-}" = 0 ] && notify "⚠️ #1504 P7-B B8 관측 로그 없음 — 확인 필요"
     [ "${COLLECT_DRY:-0}" = 1 ] && cat "$MD"; exit 0
   fi

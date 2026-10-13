@@ -159,9 +159,14 @@ schedule_persistent() { # <unit> <'YYYY-MM-DD HH:MM:SS' local> <description> <co
   echo "$next"
 }
 
-reboot_release() {
+reboot_release() { # → 0 released · 1 the hold file could not be removed (timers left alone)
   local t n=0
   rm -f "$REBOOT_HOLD"
+  if [ -e "$REBOOT_HOLD" ]; then
+    # keep the expiry timers: they are the only thing left that can remove it later
+    log "reboot hold NOT released: cannot remove $REBOOT_HOLD (expiry timers kept)"
+    notify "⚠️ #1504 P7-B 재부팅 보류 해제 실패 — $REBOOT_HOLD 삭제 불가, 수동 확인 필요"; return 1
+  fi
   for t in "$UNIT_DIR/$UNIT_PREFIX"-hold-expire-*.timer; do
     [ -e "$t" ] || continue
     systemctl disable --now "$(basename "$t")" >/dev/null 2>&1; n=$((n+1))
@@ -325,8 +330,10 @@ PLOST=\$(printf "%s\n" "\$LOGS" | grep -c "runtime prune: .*lost_fence")
 READY=\$(curl -s -m 5 http://127.0.0.1:8787/readyz | tr -d "\n" | cut -c1-80)
 FENCE=\$(node -e 'const {DatabaseSync}=require("node:sqlite");const f=new DatabaseSync("$FENCE",{readOnly:true});const r=f.prepare("SELECT owner_token IS NOT NULL AS t, lifecycle_epoch e FROM shared_state_ownership WHERE id=1").get();const n=f.prepare("SELECT COUNT(*) n FROM shared_state_rate_cost").get().n;const s=f.prepare("SELECT COUNT(*) n, MAX(CAST(event_at_unix_ms AS INTEGER)) m FROM shared_state_rate_cost WHERE CAST(event_at_unix_ms AS INTEGER) >= ?").get($b6ms);const age=s.m==null?"none":Math.round((Date.now()-Number(s.m))/1000);console.log("token="+(r.t?1:0)+" epoch="+r.e+" rate_rows="+n+" rate_since_b6="+s.n+" newest_rate_age_s="+age)' 2>/dev/null)
 SZ=\$(stat -c %s $FENCE 2>/dev/null || echo 0)
-BOOT=\$(date -u -d "\$(uptime -s 2>/dev/null)" +%Y%m%dT%H%M%SZ 2>/dev/null || echo unknown)
-BST=\$(date -u -d "\$(docker inspect $C --format "{{.State.StartedAt}}" 2>/dev/null)" +%Y%m%dT%H%M%SZ 2>/dev/null || echo unknown)
+BUR=\$(uptime -s 2>/dev/null); BOOT=unknown
+[ -n "\$BUR" ] && BOOT=\$(date -u -d "\$BUR" +%Y%m%dT%H%M%SZ 2>/dev/null || echo unknown)
+BSR=\$(docker inspect $C --format "{{.State.StartedAt}}" 2>/dev/null); BST=unknown
+[ -n "\$BSR" ] && BST=\$(date -u -d "\$BSR" +%Y%m%dT%H%M%SZ 2>/dev/null || echo unknown)
 echo "\$TS label=\$L snapshot_rc=\$RC \$(tail -1 \$D/.snap-B8-\$L-\$RUN.out) 503=\$C503 state_unavailable=\$CSU ownership_conflict=\$COC prune_fail=\$PFAIL prune_lost_fence=\$PLOST ready=\$READY \$FENCE fence_bytes=\$SZ disk=\$(df --output=pcent / | tail -1 | tr -d " ") boot=\$BOOT broker_started=\$BST run=\$RUN waited_s=\$W" >> "\$D/observe.log"
 EOS
   chmod 700 "$OBS_SCRIPT"
@@ -336,7 +343,7 @@ main() {
 case "$MODE" in
   dry-run|execute) ;;
   reboot-hold) reboot_hold "${2:-}" ;;
-  reboot-release) log "=== reboot-release"; reboot_release; exit 0 ;;
+  reboot-release) log "=== reboot-release"; reboot_release; exit $? ;;
   *) echo "usage: $0 dry-run|execute|reboot-hold <hours>|reboot-release"; exit 64 ;;
 esac
 [[ "$EXPECT_REV" =~ ^[0-9a-f]{40}$ ]] || { echo "P7B_EXPECT_REV must be the full 40-hex image revision to expect (got '${EXPECT_REV}')"; exit 64; }

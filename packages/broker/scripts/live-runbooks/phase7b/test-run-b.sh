@@ -159,6 +159,12 @@ chk " 503=0 "                      "prune summary line does not trip the 503 gre
 chk "snapshot_rc=0 "              "B8 snapshot evidence written"
 chk " boot=[0-9]{8}T[0-9]{6}Z( |$)" "r3: host boot time recorded (UTC)"
 chk " broker_started=20261012T181537Z( |$)" "r3: broker container start recorded (UTC)"
+# docker prints nothing (container missing) → broker_started=unknown, not "today 00:00Z"
+mkdir -p "$T/bin2"; printf '#!/bin/bash\ncase "$1" in inspect) exit 0 ;; logs) exit 0 ;; esac\nexit 99\n' > "$T/bin2/docker"
+chmod +x "$T/bin2/docker"
+T_MUT="$T/docker-mutations" PATH="$T/bin2:$T/bin:$PATH" "$OBS8" T+nodocker > "$T/out.b8nd" 2>&1
+chk0=$(tail -1 "$T/d8/observe.log" 2>/dev/null)
+printf '%s\n' "$chk0" | grep -q "label=T+nodocker .* broker_started=unknown " && ok "r3: missing container → broker_started=unknown (no false restart)" || bad "r3: broker_started unknown" "$chk0"
 chk " run=[0-9]{8}T[0-9]{6} waited_s=0$" "r3: row carries the run tag and waited_s (readyz already up → 0)"
 [ -n "$OBS8" ] && [ "$(basename "$OBS8")" != observe-b.sh ] && ok "r3: observe script is per run (observe-b-<tag>.sh)" || bad "r3: per-run observe script" "$(ls "$T/d8")"
 grep -q 'P7B_OBS_WAIT:-300' "$OBS8" && grep -q 'readyz' "$OBS8" && ok "r3: observation waits for readyz before measuring (boot catch-up)" || bad "r3: readyz wait in observe script"
@@ -234,6 +240,12 @@ run rh4 "reboot-hold 26" P7B_APPROVAL=test STUB_HOLD="$T/hold-rh4" STUB_APT_STUC
 if [ "$(rc rh4)" = 54 ] && [ ! -e "$T/hold-rh4" ]; then ok "hold not effective in apt-config → 54, hold removed"; else bad "hold not effective → 54" "rc=$(rc rh4) $(tail -2 "$T/out.rh4")"; fi
 run rh5 "reboot-hold 26" P7B_APPROVAL=test STUB_HOLD="$T/hold-rh5" STUB_ENABLE_FAIL=1
 if [ "$(rc rh5)" = 52 ] && [ ! -e "$T/hold-rh5" ]; then ok "expiry timer cannot be created → 52, hold removed (never an unbounded hold)"; else bad "expiry failure → 52" "rc=$(rc rh5) $(tail -2 "$T/out.rh5")"; fi
+# release cannot remove the hold → rc 1, expiry timers kept (they are the only remaining remover)
+mkdir -p "$T/ro-hold"; touch "$T/ro-hold/hold"; mkdir -p "$T/units/relf"; touch "$T/units/relf/a2a-p7b-hold-expire-20261012T100003.timer"
+P7B_SOURCE_ONLY=1 P7B_DIR="$T/d" P7B_BROKER_DIR="$BR" P7B_SPOOL="$T/spool" P7B_UNIT_DIR="$T/units/relf" SUT="$SUT" T="$T" NAME=relf STUBS="$STUBS" STUB_HOLD="$T/ro-hold/hold" bash -c '
+  set -- reboot-release; source "$SUT"; eval "$STUBS"; rm() { :; }; main reboot-release' > "$T/out.relf" 2>&1; echo $? > "$T/rc.relf"
+if [ "$(rc relf)" = 1 ] && has relf "NOT released" && ! grep -q "disable --now a2a-p7b-hold-expire" "$T/sys.relf" 2>/dev/null; then
+  ok "release that cannot remove the hold → rc 1, expiry timers kept"; else bad "release failure keeps timers" "rc=$(rc relf) $(cat "$T/out.relf")"; fi
 touch "$T/hold-rel"; mkdir -p "$T/units/rel"; touch "$T/units/rel/a2a-p7b-hold-expire-20261012T100003.timer"
 run rel reboot-release STUB_HOLD="$T/hold-rel"
 if [ "$(rc rel)" = 0 ] && [ ! -e "$T/hold-rel" ] && grep -q "systemctl disable --now a2a-p7b-hold-expire-20261012T100003.timer" "$T/sys.rel"; then
