@@ -152,8 +152,11 @@ The worker runtime executes its local agent over the packet. The procedure:
      most skills need none), `metadata` (string→string map), `allowed-tools`
      (space-separated);
    - layout: `scripts/` for deterministic executable steps, `references/`
-     for docs loaded on demand, `assets/` for output resources; multi-variant
-     skills organize references per variant.
+     for docs loaded on demand, `templates/` for output resources; multi-variant
+     skills organize references per variant. Do not ask for any other
+     top-level directory: the publisher accepts only `SKILL.md`, `scripts/`,
+     `references/` and `templates/`, and rejects anything else as
+     `envelope_path_invalid` (a revision that adds one is discarded).
 
    **C. Triggering quality (description is the router; failures = major)**
    - describes BOTH what the skill does and when to use it;

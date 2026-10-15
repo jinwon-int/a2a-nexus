@@ -39,6 +39,12 @@ const GIT_HEAD_SHA = /^[0-9a-f]{40}(?:[0-9a-f]{24})?$/;
 const RUBRIC_VERSION = /^\d{4}-\d{2}-\d{2}\.\d+$/;
 // docs: "Round cap: 2 revision rounds per skill lineage".
 const DOCUMENTED_ROUND_CAP = 2;
+// Top-level support directories the publisher accepts in a returned skill
+// (jinwon-int/ccc-node scripts/ccc-skill-promotion.py `_ALLOWED_SUPPORT_DIRS`).
+// Anything else is `envelope_path_invalid` and the whole revision is discarded
+// — the docs once recommended `assets/`, and 11 revisions were lost to it
+// (jinwon-int/ccc-node#1647, 2026-10-15).
+const PUBLISHER_SUPPORT_DIRS = new Set(['references', 'scripts', 'templates']);
 
 function isPlainObject(value) {
   return value !== null && typeof value === 'object' && !Array.isArray(value);
@@ -75,6 +81,23 @@ function validateFileSet(files, label, errors) {
       errors.push(`${label} has duplicate path '${file.path}'`);
     }
     seen.add(file.path);
+  }
+}
+
+// Paths are skill-relative (`SKILL.md`, `references/x.md`); a leading
+// `<skillName>/` segment is tolerated because fixtures carry it.
+function validateSupportDirs(files, skillName, label, errors) {
+  if (!Array.isArray(files)) return;
+  for (const file of files) {
+    if (!isPlainObject(file) || typeof file.path !== 'string') continue;
+    let parts = file.path.split('/');
+    if (parts.length > 1 && parts[0] === skillName) parts = parts.slice(1);
+    const ok = parts.length === 1
+      ? parts[0] === 'SKILL.md'
+      : PUBLISHER_SUPPORT_DIRS.has(parts[0]);
+    if (!ok) {
+      errors.push(`${label}['${file.path}'] is outside the publisher support dirs (SKILL.md, ${[...PUBLISHER_SUPPORT_DIRS].join('/, ')}/)`);
+    }
   }
 }
 
@@ -209,6 +232,7 @@ export function validateResult(result, packet) {
       errors.push('outcome=revised requires result.skillFiles');
     } else {
       validateFileSet(result.skillFiles, 'result.skillFiles', errors);
+      validateSupportDirs(result.skillFiles, result.skillName, 'result.skillFiles', errors);
     }
     if (result.dropRecommendation !== undefined) {
       errors.push('outcome=revised must not carry dropRecommendation (result shapes are exclusive)');
@@ -354,6 +378,11 @@ function buildNegativeCases(fixture) {
       errorContains: 'result.outcome',
     },
     {
+      name: 'result-path-outside-support-dirs',
+      ...revised((r) => { r.skillFiles.push({ path: `${r.skillName}/assets/report.md`, content: 'x' }); }),
+      errorContains: 'outside the publisher support dirs',
+    },
+    {
       name: 'result-skill-name-binding',
       ...revised((r) => { r.skillName = 'other-skill'; }),
       errorContains: 'not bound to packet.skillName',
@@ -423,8 +452,15 @@ function main() {
     'checker must be registered in run-conformance.mjs CHECKS');
   assert.ok(readFileSync(FIXTURES_MAP_PATH, 'utf8').includes('skills-intake-revise.json'),
     'fixture must be registered in check-contract-fixtures.mjs fixtureFiles');
-  assert.ok(readFileSync(DOC_PATH, 'utf8').includes('check-skills-intake-revise.mjs'),
+  const docText = readFileSync(DOC_PATH, 'utf8');
+  assert.ok(docText.includes('check-skills-intake-revise.mjs'),
     'docs/skills-intake-revise.md must reference this checker');
+  // The worker procedure is pasted into every revise packet: it must only
+  // name directories the publisher will accept (ccc-node#1647).
+  for (const match of docText.matchAll(/`([a-z][a-z0-9-]*)\/`/g)) {
+    assert.ok(PUBLISHER_SUPPORT_DIRS.has(match[1]),
+      `docs/skills-intake-revise.md recommends \`${match[1]}/\`, which the publisher rejects`);
+  }
 
   const packetCheck = validatePacket(fixture.validPacket);
   assert.deepEqual(packetCheck.errors, [], `valid packet must validate: ${packetCheck.errors.join('; ')}`);
