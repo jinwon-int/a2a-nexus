@@ -67,8 +67,12 @@ revision round. Task ids are unique per round
    re-runs every machine gate on the returned files regardless — a revision
    that reintroduces a gated pattern is discarded as a handler failure.
 6. Keep the layout discipline: `scripts/` for deterministic steps,
-   `references/` for on-demand docs, `assets/` for output resources; respect
-   the packet's size bounds (<=16 files, <=64KiB each).
+   `references/` for on-demand docs, `templates/` for output resources
+   (report/receipt/config templates). These three plus `SKILL.md` are the
+   only paths the publisher accepts — any other top-level directory
+   (for example an `assets` directory) is rejected as `envelope_path_invalid` and the
+   whole revision is discarded. Respect the packet's size bounds
+   (<=16 files, <=64KiB each).
 7. If the candidate is a single-incident checklist or otherwise cannot be
    generalized into a procedure a competent operator would keep (rubric area
    H), return `outcome: "drop_recommendation"` with the concrete reason

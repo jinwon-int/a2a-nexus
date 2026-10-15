@@ -425,6 +425,14 @@ function main() {
     'checker must be registered in run-conformance.mjs CHECKS');
   assert.ok(readFileSync(FIXTURES_MAP_PATH, 'utf8').includes('skills-intake-review.json'),
     'fixture must be registered in check-contract-fixtures.mjs fixtureFiles');
+  // Rubric B's layout line must only name directories the publisher accepts
+  // (jinwon-int/ccc-node scripts/ccc-skill-promotion.py `_ALLOWED_SUPPORT_DIRS`);
+  // recommending `assets/` cost 11 revisions (jinwon-int/ccc-node#1647).
+  const reviewDoc = readFileSync(DOC_PATH, 'utf8');
+  assert.ok(!reviewDoc.includes('`assets/`'),
+    'docs/skills-intake-review.md must not recommend `assets/` (publisher rejects it)');
+  assert.ok(reviewDoc.includes('`templates/`'),
+    'docs/skills-intake-review.md layout rule must name `templates/`');
   assert.ok(readFileSync(DOC_PATH, 'utf8').includes('check-skills-intake-review.mjs'),
     'docs/skills-intake-review.md must reference this checker');
 
