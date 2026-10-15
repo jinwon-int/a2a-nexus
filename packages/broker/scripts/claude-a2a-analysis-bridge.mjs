@@ -217,6 +217,12 @@ function buildClaudeChildEnv(env = process.env) {
   }
   if (!child.PATH && env.PATH) child.PATH = env.PATH;
   if (!child.HOME && env.HOME) child.HOME = env.HOME;
+  // ccc-node#2319 / #2383: an A2A lane is an automated session. Its SessionEnd
+  // distill (ccc-node claude/hooks/distill.sh) may still add facts, but must not
+  // replace the owner's bridge-thread ~/.claude/state/resume.md. The allowlist
+  // above strips the host value, so the verdict is declared here; an explicit
+  // host value (e.g. "write" for a deliberate owner lane) still wins.
+  child.CCC_DISTILL_RESUME_POLICY = env.CCC_DISTILL_RESUME_POLICY || "skip:a2a-lane";
   return child;
 }
 

@@ -260,6 +260,41 @@ test("Claude Code A2A analysis bridge does not pass broker/API secret env vars t
     assert.equal(childEnv.GITHUB_TOKEN, undefined);
     assert.equal(childEnv.Authorization, undefined);
     assert.equal(childEnv.CAPTURE_ENV_PATH, envCapturePath, "test capture env remains available");
+    // #2383: the lane declares itself automated so the node's distill hook keeps
+    // the owner's resume.md (ccc-node#2319); facts still flow.
+    assert.equal(childEnv.CCC_DISTILL_RESUME_POLICY, "skip:a2a-lane");
+  } finally {
+    rmSync(tempDir, { recursive: true, force: true });
+  }
+});
+
+test("Claude Code A2A analysis bridge lets an explicit host CCC_DISTILL_RESUME_POLICY win (#2383)", () => {
+  const tempDir = mkdtempSync(join(tmpdir(), "claude-a2a-bridge-resume-policy-"));
+  const fakeClaudePath = join(tempDir, "fake-claude.mjs");
+  const envCapturePath = join(tempDir, "child-env.json");
+  try {
+    writeFileSync(fakeClaudePath, [
+      "#!/usr/bin/env node",
+      "import { writeFileSync } from 'node:fs';",
+      "writeFileSync(process.env.CAPTURE_ENV_PATH, JSON.stringify(process.env));",
+      "const analysis = { status: 'done', summary: 'env captured', findings: [], risks: [], recommendations: [], evidenceRefs: [] };",
+      "console.log(JSON.stringify({ type: 'result', result: JSON.stringify(analysis) }));",
+      "",
+    ].join("\n"));
+    chmodSync(fakeClaudePath, 0o755);
+    const result = spawnSync(bridgePath, bridgeArgs("Payload JSON:\n" + JSON.stringify({ mode: "analysis-only" })), {
+      encoding: "utf8",
+      env: {
+        ...process.env,
+        A2A_CLAUDE_CODE_BIN: fakeClaudePath,
+        CAPTURE_ENV_PATH: envCapturePath,
+        CCC_DISTILL_RESUME_POLICY: "write",
+      },
+    });
+
+    assert.equal(result.status, 0, result.stderr);
+    const childEnv = JSON.parse(readFileSync(envCapturePath, "utf8"));
+    assert.equal(childEnv.CCC_DISTILL_RESUME_POLICY, "write");
   } finally {
     rmSync(tempDir, { recursive: true, force: true });
   }
