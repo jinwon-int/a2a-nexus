@@ -152,6 +152,7 @@ test("PATCH intent + stub claude returning a PR url -> envelope contains patch J
     writeStubClaude(fakeClaudePath, [
       "import { writeFileSync } from 'node:fs';",
       "writeFileSync(process.env.CAPTURE_CWD_PATH, process.cwd());",
+      "if (process.env.CAPTURE_ENV_PATH) writeFileSync(process.env.CAPTURE_ENV_PATH, JSON.stringify(process.env));",
       "const args = process.argv.slice(2);",
       "writeFileSync(process.env.CAPTURE_ARGS_PATH, JSON.stringify(args));",
       "const promptIndex = args.indexOf('-p');",
@@ -181,10 +182,14 @@ test("PATCH intent + stub claude returning a PR url -> envelope contains patch J
         A2A_CLAUDE_CODE_MAX_TURNS: "5",
         CAPTURE_CWD_PATH: cwdCapturePath,
         CAPTURE_ARGS_PATH: argsCapturePath,
+        CAPTURE_ENV_PATH: join(tempDir, "child-env.json"),
       },
     });
 
     assert.equal(result.status, 0, result.stderr);
+    // #2383: a patch lane is an automated session — the node's distill hook must
+    // keep the owner's resume.md (ccc-node#2319). Default verdict, no host value.
+    assert.equal(JSON.parse(readFileSync(join(tempDir, "child-env.json"), "utf8")).CCC_DISTILL_RESUME_POLICY, "skip:a2a-lane");
     const envelope = JSON.parse(result.stdout);
     assert.ok(Array.isArray(envelope.payloads));
     const payload = JSON.parse(envelope.payloads[0]?.text);
