@@ -7,7 +7,7 @@
  */
 
 import assert from "node:assert/strict";
-import { existsSync, mkdtempSync, rmSync } from "node:fs";
+import { existsSync, mkdtempSync, readdirSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import test from "node:test";
@@ -246,6 +246,75 @@ test("a missing default state directory isolates the fence", () => {
 
   // The isolation branch must not have materialized the "default" directory.
   assert.equal(existsSync(dirname(missingDefaultStateFile)), false);
+});
+
+function isolatedFenceDirs(root: string): string[] {
+  return readdirSync(root).filter((name) =>
+    name.startsWith(SHARED_STATE_SERVING_FENCE_V1.isolatedTempPrefix),
+  );
+}
+
+// #2386: isolated fences used to leave one `a2a-serving-fence-*` directory per
+// broker construction in the OS temp dir forever (17k entries on one worker
+// node). `os.tmpdir()` re-reads TMPDIR on every call, so point it at a private
+// root and count what is left after release.
+test("#2386: releasing an isolated injected-store fence removes its temp directory", async () => {
+  const root = mkdtempSync(join(tmpdir(), "a2a-fence-tmproot-"));
+  try {
+    await withEnv({ TMPDIR: root, BROKER_SHARED_STATE_FILE: undefined }, async () => {
+      const fence = acquireSharedStateServingFenceForBrokerV1({
+        stateFile: join(root, "unused-state.json"),
+        injectedStore: true,
+        env: {},
+      });
+      assert.equal(fence.restartContinuity, "reset");
+      assert.deepEqual(fence.probe(), { ready: true });
+      assert.equal(isolatedFenceDirs(root).length, 1);
+
+      fence.release();
+      assert.deepEqual(isolatedFenceDirs(root), []);
+      // Idempotent: a second release neither throws nor touches anything.
+      fence.release();
+      assert.deepEqual(isolatedFenceDirs(root), []);
+    });
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test("#2386: the missing-default isolation branch also removes its temp directory", async () => {
+  const root = mkdtempSync(join(tmpdir(), "a2a-fence-tmproot-"));
+  try {
+    await withEnv({ TMPDIR: root, BROKER_SHARED_STATE_FILE: undefined }, async () => {
+      const missingDefaultStateFile = join(root, "absent", "state.json");
+      const fence = acquireSharedStateServingFenceForBrokerV1({
+        stateFile: missingDefaultStateFile,
+        defaultLegacyStateFile: missingDefaultStateFile,
+        injectedStore: false,
+        env: {},
+      });
+      assert.equal(isolatedFenceDirs(root).length, 1);
+      fence.release();
+      assert.deepEqual(isolatedFenceDirs(root), []);
+      assert.equal(existsSync(dirname(missingDefaultStateFile)), false);
+    });
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test("#2386: closing a broker built on an injected store leaves no fence directory", async () => {
+  const root = mkdtempSync(join(tmpdir(), "a2a-fence-tmproot-"));
+  try {
+    await withEnv({ TMPDIR: root, BROKER_SHARED_STATE_FILE: undefined }, async () => {
+      const server = await startTestServer();
+      assert.equal(isolatedFenceDirs(root).length, 1);
+      await server.close();
+      assert.deepEqual(isolatedFenceDirs(root), []);
+    });
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
 });
 
 test("the real default legacy state file is still the production default", () => {

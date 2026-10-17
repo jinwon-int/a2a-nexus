@@ -4,9 +4,15 @@ import fs from 'node:fs';
 import os from 'node:os';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import test from 'node:test';
+import test, { after } from 'node:test';
 
 import { computeVerdict, classify, classifyLaneEvidence, citedEvidenceIds } from './a2ad-finalizer-gate.mjs';
+
+// #2386: remove every temp directory this file created once its tests finish.
+const tempDirs = [];
+after(() => {
+  for (const dir of tempDirs) fs.rmSync(dir, { recursive: true, force: true });
+});
 
 const repoRoot = dirname(dirname(fileURLToPath(import.meta.url)));
 const scriptPath = join(repoRoot, 'scripts', 'a2ad-finalizer-gate.mjs');
@@ -32,6 +38,7 @@ function lane(id, status, extra = {}) {
 
 function writeTmp(prefix, content) {
   const dir = fs.mkdtempSync(join(os.tmpdir(), 'a2ad-gate-'));
+  tempDirs.push(dir);
   const file = join(dir, prefix);
   fs.writeFileSync(file, content);
   return file;

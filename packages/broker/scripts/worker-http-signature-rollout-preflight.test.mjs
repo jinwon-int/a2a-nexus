@@ -1,10 +1,16 @@
-import test from 'node:test';
+import test, { after } from 'node:test';
 import assert from 'node:assert/strict';
 import { generateKeyPairSync } from 'node:crypto';
-import { mkdtempSync, writeFileSync } from 'node:fs';
+import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { spawnSync } from 'node:child_process';
+
+// #2386: remove every temp directory this file created once its tests finish.
+const tempDirs = [];
+after(() => {
+  for (const dir of tempDirs) rmSync(dir, { recursive: true, force: true });
+});
 
 const scriptPath = 'scripts/worker-http-signature-rollout-preflight.mjs';
 
@@ -18,6 +24,7 @@ function keyPair() {
 
 function writeRegistry(records) {
   const dir = mkdtempSync(join(tmpdir(), 'a2a-http-signature-registry-'));
+  tempDirs.push(dir);
   const path = join(dir, 'registry.json');
   writeFileSync(path, JSON.stringify(records, null, 2), 'utf8');
   return path;

@@ -4,9 +4,9 @@
 // blocked -> operator-approve -> queued flow, daily budget exhaustion,
 // claim-time class re-evaluation, backward compatibility (no document = all
 // allow), and loud startup failure on an invalid document.
-import test from "node:test";
+import test, { after } from "node:test";
 import assert from "node:assert/strict";
-import { mkdtempSync, writeFileSync } from "node:fs";
+import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
@@ -14,8 +14,15 @@ import { createBrokerServer } from "./server.js";
 import { BROKER_POLICY_SCHEMA, type BrokerPolicyDocument } from "a2a-policy-referee";
 import { createInMemoryStateStore, startTestServer, jsonHeaders, workerPayload } from "./server-test-helpers.js";
 
+// #2386: remove every temp directory this file created once its tests finish.
+const tempDirs: string[] = [];
+after(() => {
+  for (const dir of tempDirs) rmSync(dir, { recursive: true, force: true });
+});
+
 function policyFile(doc: Partial<BrokerPolicyDocument> & Record<string, unknown>): string {
   const dir = mkdtempSync(join(tmpdir(), "g1-policy-"));
+  tempDirs.push(dir);
   const path = join(dir, "broker-policy.json");
   writeFileSync(path, JSON.stringify({
     schemaVersion: BROKER_POLICY_SCHEMA,
