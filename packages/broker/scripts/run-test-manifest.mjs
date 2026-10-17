@@ -18,6 +18,8 @@ import { spawnSync } from 'node:child_process';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
+import { createRunTmpdir, describeCleanup } from '../../../scripts/lib/test-tmpdir.mjs';
+
 const HERE = dirname(fileURLToPath(import.meta.url));
 const PACKAGE_ROOT = resolve(HERE, '..');
 const MANIFEST_PATH = process.env.BROKER_TEST_MANIFEST_PATH || join(HERE, 'test-manifest.json');
@@ -66,19 +68,34 @@ function main() {
     for (const command of commands) console.log(command);
     return;
   }
-  for (const [index, command] of commands.entries()) {
-    const entry = manifest.entries[index];
-    if (isEntrySkipped(entry)) {
-      console.log(
-        `broker test manifest: step ${index + 1}/${commands.length}: skipped (${entry.skipWhenEnv}=1): ${command}`,
-      );
-      continue;
+  // #2386: one run-scoped TMPDIR for every step, removed when the run ends.
+  const runTmp = createRunTmpdir('a2a-broker-tests-');
+  let exitCode = 0;
+  try {
+    for (const [index, command] of commands.entries()) {
+      const entry = manifest.entries[index];
+      if (isEntrySkipped(entry)) {
+        console.log(
+          `broker test manifest: step ${index + 1}/${commands.length}: skipped (${entry.skipWhenEnv}=1): ${command}`,
+        );
+        continue;
+      }
+      console.log(`broker test manifest: step ${index + 1}/${commands.length}: ${command}`);
+      const result = spawnSync(command, { cwd: PACKAGE_ROOT, stdio: 'inherit', shell: true, env: runTmp.env });
+      if (result.error) {
+        console.error(`broker test manifest: failed to spawn step ${index + 1}: ${result.error.message}`);
+        exitCode = 1;
+        break;
+      }
+      if ((result.status ?? 1) !== 0) {
+        exitCode = result.status ?? 1;
+        break;
+      }
     }
-    console.log(`broker test manifest: step ${index + 1}/${commands.length}: ${command}`);
-    const result = spawnSync(command, { cwd: PACKAGE_ROOT, stdio: 'inherit', shell: true });
-    if (result.error) fail(`failed to spawn step ${index + 1}: ${result.error.message}`);
-    if ((result.status ?? 1) !== 0) process.exit(result.status ?? 1);
+  } finally {
+    console.log(describeCleanup('broker test manifest', runTmp.cleanup()));
   }
+  if (exitCode !== 0) process.exit(exitCode);
 }
 
 if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.url)) main();
