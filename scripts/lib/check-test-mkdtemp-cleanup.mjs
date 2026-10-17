@@ -3,24 +3,28 @@
 //
 // A test file "leaks" when it calls mkdtemp/mkdtempSync but contains none of
 // the cleanup markers below. Files that leaked when this guard landed are
-// listed in scripts/test-mkdtemp-cleanup-baseline.json and stay allowed; any
+// listed in scripts/lib/test-mkdtemp-cleanup-baseline.json and stay allowed; any
 // other leaking test file fails the gate. Fixing a baselined file is welcome:
 // the guard then reports it as removable from the baseline (a notice, not a
 // failure). The test runners also isolate TMPDIR per run (scripts/lib/
 // test-tmpdir.mjs), so this guard is about tests that run outside them too
 // (single-file `node --test`, IDEs, worker nodes).
 //
-// Usage: node scripts/check-test-mkdtemp-cleanup.mjs [--json] [--write-baseline]
+// Lives in scripts/lib/ so it does not count against the scripts/*.mjs budget
+// (scripts/check-script-budget.mjs).
+//
+// Usage: node scripts/lib/check-test-mkdtemp-cleanup.mjs [--json] [--write-baseline]
+import { spawnSync } from 'node:child_process';
 import { readFileSync, readdirSync, statSync, writeFileSync } from 'node:fs';
 import { dirname, join, relative, resolve, sep } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 const SCRIPT_DIR = dirname(fileURLToPath(import.meta.url));
-export const REPO_ROOT = resolve(SCRIPT_DIR, '..');
+export const REPO_ROOT = resolve(SCRIPT_DIR, '..', '..');
 export const BASELINE_PATH = join(SCRIPT_DIR, 'test-mkdtemp-cleanup-baseline.json');
 
 const TEST_FILE = /\.test\.(?:[cm]?js|[cm]?ts)$/;
-const SKIP_DIRS = new Set(['node_modules', 'dist', '.git', 'coverage', '.local']);
+const SKIP_DIRS = new Set(['node_modules', 'dist', '.git', 'coverage', '.local', '.tmp']);
 const MKDTEMP = /\bmkdtemp(?:Sync)?\s*\(/;
 // Any of these counts as the file taking responsibility for its temp dirs.
 export const CLEANUP_MARKERS = [
@@ -39,7 +43,23 @@ export function leaksTempDirs(source) {
   return !CLEANUP_MARKERS.some((marker) => marker.test(source));
 }
 
+// Tracked files only: `npm run check` materialises untracked copies of the tree
+// (e.g. .tmp/gitleaks-tracked-tree/), which must not count as new test files.
+// Outside a git work tree (fixtures) fall back to a directory walk.
+function gitTrackedTestFiles(root) {
+  const res = spawnSync('git', ['-C', root, 'ls-files', '-z'], { encoding: 'utf8' });
+  if (res.status !== 0 || typeof res.stdout !== 'string') return null;
+  const top = spawnSync('git', ['-C', root, 'rev-parse', '--show-toplevel'], { encoding: 'utf8' });
+  if (top.status !== 0 || resolve(top.stdout.trim()) !== resolve(root)) return null;
+  return res.stdout
+    .split('\0')
+    .filter((file) => file && TEST_FILE.test(file) && !file.split('/').some((part) => SKIP_DIRS.has(part)))
+    .sort();
+}
+
 export function listTestFiles(root = REPO_ROOT) {
+  const tracked = gitTrackedTestFiles(root);
+  if (tracked) return tracked;
   const out = [];
   const walk = (dir) => {
     for (const name of readdirSync(dir)) {
