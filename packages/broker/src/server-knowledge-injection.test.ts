@@ -1,9 +1,9 @@
 // Broker-owned anonymous memory injection (#1373 K1) — unit + integration.
 // Opt-in via payload.injectKnowledge; deterministic asOf-pinned snapshot;
 // fail-closed structural gate at load; fail-open per task.
-import test from "node:test";
+import test, { after } from "node:test";
 import assert from "node:assert/strict";
-import { mkdtempSync, writeFileSync } from "node:fs";
+import { mkdtempSync, writeFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
@@ -16,6 +16,16 @@ import {
   type InjectedKnowledgeSnapshot,
 } from "./core/broker-knowledge-injection.js";
 import { startTestServer, jsonHeaders, workerPayload } from "./server-test-helpers.js";
+
+// #2386: remove every temp dir this file creates.
+const trackedTempDirs: string[] = [];
+function trackTempDir(dir: string): string {
+  trackedTempDirs.push(dir);
+  return dir;
+}
+after(() => {
+  for (const dir of trackedTempDirs.splice(0)) rmSync(dir, { recursive: true, force: true });
+});
 
 function snapshot(overrides: Partial<InjectedKnowledgeSnapshot> & Record<string, unknown> = {}): InjectedKnowledgeSnapshot {
   return validateInjectedKnowledgeSnapshot({
@@ -32,7 +42,7 @@ function snapshot(overrides: Partial<InjectedKnowledgeSnapshot> & Record<string,
 }
 
 function snapshotFile(doc: Record<string, unknown>): string {
-  const dir = mkdtempSync(join(tmpdir(), "k1-knowledge-"));
+  const dir = trackTempDir(mkdtempSync(join(tmpdir(), "k1-knowledge-")));
   const file = join(dir, "injected-knowledge.json");
   writeFileSync(file, JSON.stringify(doc));
   return file;

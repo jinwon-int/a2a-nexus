@@ -1,4 +1,4 @@
-import test from 'node:test';
+import test, { after } from 'node:test';
 import assert from 'node:assert/strict';
 import { spawnSync } from 'node:child_process';
 import fs from 'node:fs';
@@ -13,11 +13,21 @@ import {
   validateAllowlist,
 } from './check-dependency-advisories.mjs';
 
+// #2386: remove every temp dir this file creates.
+const trackedTempDirs = [];
+function trackTempDir(dir) {
+  trackedTempDirs.push(dir);
+  return dir;
+}
+after(() => {
+  for (const dir of trackedTempDirs.splice(0)) fs.rmSync(dir, { recursive: true, force: true });
+});
+
 const repo = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const script = path.join(repo, 'scripts/check-dependency-advisories.mjs');
 
 function writeFixture(doc) {
-  const dir = fs.mkdtempSync(path.join(repo, 'node_modules/.tmp-advisory-'));
+  const dir = trackTempDir(fs.mkdtempSync(path.join(repo, 'node_modules/.tmp-advisory-')));
   const file = path.join(dir, 'audit.json');
   fs.writeFileSync(file, JSON.stringify(doc));
   return file;
@@ -30,7 +40,7 @@ test('summarizeAudit uses npm metadata vulnerability counts', () => {
 });
 
 function writeAllowlist(entries) {
-  const dir = fs.mkdtempSync(path.join(repo, 'node_modules/.tmp-advisory-'));
+  const dir = trackTempDir(fs.mkdtempSync(path.join(repo, 'node_modules/.tmp-advisory-')));
   const file = path.join(dir, 'allowlist.json');
   fs.writeFileSync(file, JSON.stringify(entries));
   return file;
@@ -162,7 +172,7 @@ test('unreadable audit file skips with reason instead of failing closed', () => 
 
 
 test('malformed explicit audit fixture fails instead of silently skipping', () => {
-  const dir = fs.mkdtempSync(path.join(repo, 'node_modules/.tmp-advisory-'));
+  const dir = trackTempDir(fs.mkdtempSync(path.join(repo, 'node_modules/.tmp-advisory-')));
   const file = path.join(dir, 'bad.json');
   fs.writeFileSync(file, '{not json');
   const res = spawnSync(process.execPath, [script, '--audit-json', file], { cwd: repo, encoding: 'utf8' });

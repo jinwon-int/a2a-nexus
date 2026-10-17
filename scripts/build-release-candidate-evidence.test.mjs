@@ -1,4 +1,4 @@
-import { test } from 'node:test';
+import { test, after } from 'node:test';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import os from 'node:os';
@@ -11,8 +11,18 @@ import {
   writeEvidenceFiles,
 } from './build-release-candidate-evidence.mjs';
 
+// #2386: remove every temp dir this file creates.
+const trackedTempDirs = [];
+function trackTempDir(dir) {
+  trackedTempDirs.push(dir);
+  return dir;
+}
+after(() => {
+  for (const dir of trackedTempDirs.splice(0)) fs.rmSync(dir, { recursive: true, force: true });
+});
+
 function makeFixtureRepo() {
-  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'a2a-rc-evidence-'));
+  const dir = trackTempDir(fs.mkdtempSync(path.join(os.tmpdir(), 'a2a-rc-evidence-')));
   fs.mkdirSync(path.join(dir, 'packages', 'example', 'src'), { recursive: true });
   fs.mkdirSync(path.join(dir, 'packages', 'example', 'node_modules', 'ignored'), { recursive: true });
   fs.writeFileSync(path.join(dir, 'package.json'), JSON.stringify({

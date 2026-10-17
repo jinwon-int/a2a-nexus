@@ -1,9 +1,19 @@
-import test from 'node:test';
+import test, { after } from 'node:test';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { spawnSync } from 'node:child_process';
+
+// #2386: remove every temp dir this file creates.
+const trackedTempDirs = [];
+function trackTempDir(dir) {
+  trackedTempDirs.push(dir);
+  return dir;
+}
+after(() => {
+  for (const dir of trackedTempDirs.splice(0)) fs.rmSync(dir, { recursive: true, force: true });
+});
 
 const repo = path.resolve(new URL('..', import.meta.url).pathname);
 const script = path.join(repo, 'scripts/check-runtime-hardening-docs.mjs');
@@ -16,7 +26,7 @@ const COMPLETE = {
 };
 
 function run(files) {
-  const cwd = fs.mkdtempSync(path.join(os.tmpdir(), 'hardening-docs-'));
+  const cwd = trackTempDir(fs.mkdtempSync(path.join(os.tmpdir(), 'hardening-docs-')));
   for (const [name, body] of Object.entries(files)) {
     const p = path.join(cwd, name);
     fs.mkdirSync(path.dirname(p), { recursive: true });

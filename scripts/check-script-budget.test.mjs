@@ -1,4 +1,4 @@
-import { test } from 'node:test';
+import { test, after } from 'node:test';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import os from 'node:os';
@@ -12,6 +12,16 @@ import {
   isCeremonyModule,
   BUDGETS,
 } from './check-script-budget.mjs';
+
+// #2386: remove every temp dir this file creates.
+const trackedTempDirs = [];
+function trackTempDir(dir) {
+  trackedTempDirs.push(dir);
+  return dir;
+}
+after(() => {
+  for (const dir of trackedTempDirs.splice(0)) fs.rmSync(dir, { recursive: true, force: true });
+});
 
 const BUDGET = { scriptsMjs: 10, rootNpmScripts: 5, brokerNpmScripts: 5 };
 
@@ -35,7 +45,7 @@ test('multiple overages are all reported', () => {
 });
 
 test('countTopLevelMjs counts top-level .mjs and ignores subdirs and other extensions', () => {
-  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'budget-'));
+  const dir = trackTempDir(fs.mkdtempSync(path.join(os.tmpdir(), 'budget-')));
   fs.writeFileSync(path.join(dir, 'a.mjs'), '');
   fs.writeFileSync(path.join(dir, 'b.mjs'), '');
   fs.writeFileSync(path.join(dir, 'c.js'), '');
@@ -103,7 +113,7 @@ test('isCeremonyModule leaves genuine lifecycle behaviour alone', () => {
 });
 
 test('listCoreModules walks subdirectories and excludes tests', () => {
-  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'core-budget-'));
+  const dir = trackTempDir(fs.mkdtempSync(path.join(os.tmpdir(), 'core-budget-')));
   fs.writeFileSync(path.join(dir, 'broker.ts'), '');
   fs.writeFileSync(path.join(dir, 'broker.test.ts'), '');
   fs.writeFileSync(path.join(dir, 'notes.md'), '');

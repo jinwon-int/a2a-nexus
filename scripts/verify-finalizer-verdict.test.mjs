@@ -1,4 +1,4 @@
-import test from "node:test";
+import test, { after } from "node:test";
 import assert from "node:assert/strict";
 import { generateKeyPairSync, sign, createPrivateKey } from "node:crypto";
 import { execFileSync } from "node:child_process";
@@ -9,6 +9,16 @@ import path from "node:path";
 import { verifyVerdict, VERDICT_SCHEMA, CANONICALIZATION } from "./verify-finalizer-verdict.mjs";
 import { canonicalizeJson } from "./lib/a2a-offline-verify.mjs";
 
+// #2386: remove every temp dir this file creates.
+const trackedTempDirs = [];
+function trackTempDir(dir) {
+  trackedTempDirs.push(dir);
+  return dir;
+}
+after(() => {
+  for (const dir of trackedTempDirs.splice(0)) fs.rmSync(dir, { recursive: true, force: true });
+});
+
 // --- S3 attested-identity test helpers: generate a CA (stand-in Fulcio root)
 // and a leaf cert whose SAN carries the OIDC subject, via openssl. Skips the
 // attester tests gracefully if openssl is unavailable.
@@ -17,7 +27,7 @@ let certCache;
 function attesterCerts() {
   if (certCache !== undefined) return certCache;
   try {
-    const dir = fs.mkdtempSync(path.join(os.tmpdir(), "s3-attester-"));
+    const dir = trackTempDir(fs.mkdtempSync(path.join(os.tmpdir(), "s3-attester-")));
     const run = (args) => execFileSync("openssl", args, { cwd: dir, stdio: "ignore" });
     run(["req", "-x509", "-newkey", "ed25519", "-keyout", "ca.key", "-out", "ca.crt", "-days", "3650", "-nodes", "-subj", "/CN=Test Fulcio Root"]);
     run(["req", "-new", "-newkey", "ed25519", "-keyout", "leaf.key", "-out", "leaf.csr", "-nodes", "-subj", "/CN=ephemeral"]);
@@ -38,7 +48,7 @@ let altCaCache;
 function attesterCertsAlt() {
   if (altCaCache !== undefined) return altCaCache;
   try {
-    const dir = fs.mkdtempSync(path.join(os.tmpdir(), "s3-attester-alt-"));
+    const dir = trackTempDir(fs.mkdtempSync(path.join(os.tmpdir(), "s3-attester-alt-")));
     execFileSync("openssl", ["req", "-x509", "-newkey", "ed25519", "-keyout", "ca.key", "-out", "ca.crt", "-days", "3650", "-nodes", "-subj", "/CN=Other Root"], { cwd: dir, stdio: "ignore" });
     altCaCache = { caPem: fs.readFileSync(path.join(dir, "ca.crt"), "utf8") };
   } catch {

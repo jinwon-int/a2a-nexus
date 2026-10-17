@@ -1,4 +1,4 @@
-import test from 'node:test';
+import test, { after } from 'node:test';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import path from 'node:path';
@@ -6,6 +6,16 @@ import { fileURLToPath } from 'node:url';
 import { spawnSync } from 'node:child_process';
 
 import { evaluateScorecard, evaluateScorecardWarnings, summarizeScorecardTrend, FAILURE_CATEGORIES } from './check-round-quality-scorecard.mjs';
+
+// #2386: remove every temp dir this file creates.
+const trackedTempDirs = [];
+function trackTempDir(dir) {
+  trackedTempDirs.push(dir);
+  return dir;
+}
+after(() => {
+  for (const dir of trackedTempDirs.splice(0)) fs.rmSync(dir, { recursive: true, force: true });
+});
 
 const repo = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const script = path.join(repo, 'scripts/check-round-quality-scorecard.mjs');
@@ -209,7 +219,7 @@ test('committed baseline scorecard validates and records the 2026-07 track', () 
 });
 
 test('cli fails closed on a malformed scorecard file', () => {
-  const tmp = path.join(fs.mkdtempSync(path.join(repo, 'node_modules/.tmp-scorecard-')), 'bad.json');
+  const tmp = path.join(trackTempDir(fs.mkdtempSync(path.join(repo, 'node_modules/.tmp-scorecard-'))), 'bad.json');
   fs.writeFileSync(tmp, JSON.stringify({ entries: [{ id: 'bad' }] }));
   const r = spawnSync(process.execPath, [script], {
     cwd: repo,

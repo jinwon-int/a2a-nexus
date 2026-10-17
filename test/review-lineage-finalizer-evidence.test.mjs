@@ -3,7 +3,7 @@ import { spawnSync } from 'node:child_process';
 import fs from 'node:fs';
 import os from 'node:os';
 import { dirname, join } from 'node:path';
-import test from 'node:test';
+import test, { after } from 'node:test';
 import { fileURLToPath } from 'node:url';
 
 import { computeVerdict } from '../scripts/a2ad-finalizer-gate.mjs';
@@ -11,6 +11,16 @@ import {
   evaluateReviewLineageFinalizerEvidence,
   validateReviewLineageFinalizerEvidence,
 } from '../scripts/lib/review-lineage-finalizer-evidence.mjs';
+
+// #2386: remove every temp dir this file creates.
+const trackedTempDirs = [];
+function trackTempDir(dir) {
+  trackedTempDirs.push(dir);
+  return dir;
+}
+after(() => {
+  for (const dir of trackedTempDirs.splice(0)) fs.rmSync(dir, { recursive: true, force: true });
+});
 
 const ROUND = 'a2a-nexus-issue1518-phase6-test';
 const ORIGINAL_HEAD = '1'.repeat(40);
@@ -143,7 +153,7 @@ function verdictOptions(extra = {}) {
 }
 
 function runCli(lineageContent) {
-  const dir = fs.mkdtempSync(join(os.tmpdir(), 'a2ad-lineage-gate-'));
+  const dir = trackTempDir(fs.mkdtempSync(join(os.tmpdir(), 'a2ad-lineage-gate-')));
   const tasksPath = join(dir, 'tasks.json');
   const draftPath = join(dir, 'draft.md');
   const lineagePath = join(dir, 'lineage.json');

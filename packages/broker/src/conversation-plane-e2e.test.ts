@@ -12,15 +12,25 @@
 // is real HTTP against real server instances, with peer credentials loaded
 // from a root-only registry file exactly as production does.
 import assert from "node:assert/strict";
-import { chmodSync, mkdtempSync, writeFileSync } from "node:fs";
+import { chmodSync, mkdtempSync, writeFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { once } from "node:events";
-import test from "node:test";
+import test, { after as afterAll } from "node:test";
 
 import { createBrokerServer, type BrokerServerRuntime } from "./server.js";
 import { JsonFileBrokerStateStore } from "./core/store.js";
 import { sha256Hex } from "./core/request-security.js";
+
+// #2386: remove every temp dir this file creates.
+const trackedTempDirs: string[] = [];
+function trackTempDir(dir: string): string {
+  trackedTempDirs.push(dir);
+  return dir;
+}
+afterAll(() => {
+  for (const dir of trackedTempDirs.splice(0)) rmSync(dir, { recursive: true, force: true });
+});
 
 const SECRET_ALPHA = "two-broker-alpha-secret";
 const SECRET_BETA = "two-broker-beta-secret";
@@ -47,7 +57,7 @@ async function startBroker(
   brokerId: string,
   peer: { brokerId: string; secret: string },
 ): Promise<TestBroker> {
-  const dir = mkdtempSync(join(tmpdir(), `a2a-conv-e2e-${brokerId}-`));
+  const dir = trackTempDir(mkdtempSync(join(tmpdir(), `a2a-conv-e2e-${brokerId}-`)));
   const stateFile = join(dir, "state.json");
   const peerRegistryFile = join(dir, "peer-credentials.json");
   writePeerRegistry(peerRegistryFile, peer.brokerId, peer.secret);

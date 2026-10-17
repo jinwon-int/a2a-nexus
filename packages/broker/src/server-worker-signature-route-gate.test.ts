@@ -1,13 +1,23 @@
-import test from "node:test";
+import test, { after } from "node:test";
 import assert from "node:assert/strict";
 import { createHash, createPrivateKey, createPublicKey, generateKeyPairSync, sign } from "node:crypto";
-import { mkdtempSync, writeFileSync } from "node:fs";
+import { mkdtempSync, writeFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { createBrokerServer } from "./server.js";
 import { buildA2AHttpSignatureBase } from "./core/request-security.js";
 import { signTaskResultProvenance, verifyTaskResultProvenance } from "a2a-attestation";
 import { createInMemoryStateStore, startTestServer, jsonHeaders, withEnv, workerPayload } from "./server-test-helpers.js";
+
+// #2386: remove every temp dir this file creates.
+const trackedTempDirs: string[] = [];
+function trackTempDir(dir: string): string {
+  trackedTempDirs.push(dir);
+  return dir;
+}
+after(() => {
+  for (const dir of trackedTempDirs.splice(0)) rmSync(dir, { recursive: true, force: true });
+});
 
 const routeGatePrivateJwk = {
   crv: "Ed25519",
@@ -93,7 +103,7 @@ function generatedPrivatePem(): string {
 
 function brokerSigningKeyFile(): string {
   const { privateKey } = generateKeyPairSync("ed25519");
-  const dir = mkdtempSync(join(tmpdir(), "g2-broker-signing-key-"));
+  const dir = trackTempDir(mkdtempSync(join(tmpdir(), "g2-broker-signing-key-")));
   const keyFile = join(dir, "broker-signing.pem");
   writeFileSync(keyFile, privateKey.export({ type: "pkcs8", format: "pem" }));
   return keyFile;
@@ -835,7 +845,7 @@ test("A2A HTTP Signature worker route gate rejects body digest mismatches and op
 
 
 test("strict A2A HTTP Signature worker route gate loads worker public keys from a registry file", async () => {
-  const dir = mkdtempSync(join(tmpdir(), "a2a-route-signature-registry-"));
+  const dir = trackTempDir(mkdtempSync(join(tmpdir(), "a2a-route-signature-registry-")));
   const registryFile = join(dir, "worker-public-keys.json");
   writeFileSync(registryFile, JSON.stringify(routeGateKeyRegistry));
 

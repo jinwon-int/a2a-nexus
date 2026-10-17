@@ -1,14 +1,24 @@
 import assert from 'node:assert/strict';
-import { mkdtempSync, writeFileSync, readFileSync } from 'node:fs';
+import { mkdtempSync, writeFileSync, readFileSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { execFileSync } from 'node:child_process';
-import test from 'node:test';
+import test, { after } from 'node:test';
+
+// #2386: remove every temp dir this file creates.
+const trackedTempDirs = [];
+function trackTempDir(dir) {
+  trackedTempDirs.push(dir);
+  return dir;
+}
+after(() => {
+  for (const dir of trackedTempDirs.splice(0)) rmSync(dir, { recursive: true, force: true });
+});
 
 const script = new URL('./round-closeout-report.mjs', import.meta.url).pathname;
 
 test('round closeout report emits per-lane JSON and markdown safely', () => {
-  const dir = mkdtempSync(join(tmpdir(), 'round-closeout-'));
+  const dir = trackTempDir(mkdtempSync(join(tmpdir(), 'round-closeout-')));
   const tasks = [
     { id: 'r-01-a', status: 'succeeded', assignedWorkerId: 'a', payload: { parentRoundOrder: 1 }, output: { analysisStatus: 'done', analysisSummary: 'recommendation risk evidence CI test acceptance implementation schema diff rollback source evidence', findings: ['ok'], evidenceRefs: ['e1'] } },
     { id: 'r-02-b', status: 'succeeded', assignedWorkerId: 'b', payload: { parentRoundOrder: 2, supplementOf: 'r-02' }, output: { analysisStatus: 'blocked', analysisSummary: 'source bundle 0 files blocked', sourceProjection: { quality: 'zero_files' } } },

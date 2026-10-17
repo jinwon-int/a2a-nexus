@@ -4,7 +4,7 @@
  * lineage per (nclex PR, role), frozen intent from head-independent inputs,
  * and spec compatibility with review-lineage-client `create`. Offline only.
  */
-import test from "node:test";
+import test, { after } from "node:test";
 import assert from "node:assert/strict";
 import fs from "node:fs";
 import os from "node:os";
@@ -19,6 +19,16 @@ import {
   stripHtmlComments,
 } from "./nclex-lineage-spec.mjs";
 import { buildCreateRequest, laneBinding } from "./review-lineage-client.mjs";
+
+// #2386: remove every temp dir this file creates.
+const trackedTempDirs = [];
+function trackTempDir(dir) {
+  trackedTempDirs.push(dir);
+  return dir;
+}
+after(() => {
+  for (const dir of trackedTempDirs.splice(0)) fs.rmSync(dir, { recursive: true, force: true });
+});
 
 const BASE = "a743e8461b5d03facbe07280a0ba255337d7b884";
 const HEAD_1 = "775b98622eb4ce267aa25e01eeb10870773ad00e";
@@ -42,7 +52,7 @@ function body(risk = "standard", overrides = {}) {
 }
 
 function tmpDiff(text = "diff --git a/content/x.json b/content/x.json\n+1\n") {
-  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "nclex-lineage-spec-"));
+  const dir = trackTempDir(fs.mkdtempSync(path.join(os.tmpdir(), "nclex-lineage-spec-")));
   const file = path.join(dir, "pr.diff");
   fs.writeFileSync(file, text);
   return file;
@@ -146,7 +156,7 @@ test("CLI: usage errors exit 2, contract errors exit 1, success writes a 0600 sp
   assert.match(err.text, /usage/);
   assert.equal(main(["--bogus", "x"], { stdout: sink(), stderr: sink() }), 2);
 
-  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "nclex-lineage-cli-"));
+  const dir = trackTempDir(fs.mkdtempSync(path.join(os.tmpdir(), "nclex-lineage-cli-")));
   const bodyFile = path.join(dir, "body.md");
   fs.writeFileSync(bodyFile, body());
   const diffFile = tmpDiff();

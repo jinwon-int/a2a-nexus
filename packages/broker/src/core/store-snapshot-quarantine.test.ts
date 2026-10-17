@@ -3,9 +3,9 @@
 // Invariant under test: one corrupt persisted record must not keep the broker
 // from starting. The record is skipped, logged, counted, and preserved in a
 // quarantine file; everything else loads.
-import { describe, it, beforeEach } from "node:test";
+import { describe, it, beforeEach, after } from "node:test";
 import assert from "node:assert/strict";
-import { mkdtempSync, readFileSync, readdirSync, writeFileSync } from "node:fs";
+import { mkdtempSync, readFileSync, readdirSync, writeFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
@@ -19,6 +19,16 @@ import {
   resetSnapshotQuarantineStats,
   serializeBrokerSnapshot,
 } from "./store-snapshot-io.js";
+
+// #2386: remove every temp dir this file creates.
+const trackedTempDirs: string[] = [];
+function trackTempDir(dir: string): string {
+  trackedTempDirs.push(dir);
+  return dir;
+}
+after(() => {
+  for (const dir of trackedTempDirs.splice(0)) rmSync(dir, { recursive: true, force: true });
+});
 
 const MAX_BYTES = 20_000_000;
 
@@ -66,7 +76,7 @@ describe("snapshot load isolation", () => {
 
     const parsed = parseSnapshotPayload(
       JSON.stringify(snapshot),
-      join(mkdtempSync(join(tmpdir(), "broker-quarantine-")), "state.json"),
+      join(trackTempDir(mkdtempSync(join(tmpdir(), "broker-quarantine-"))), "state.json"),
       MAX_BYTES,
     );
 
@@ -79,7 +89,7 @@ describe("snapshot load isolation", () => {
   });
 
   it("preserves the corrupt record in a quarantine file next to the snapshot", () => {
-    const dir = mkdtempSync(join(tmpdir(), "broker-quarantine-"));
+    const dir = trackTempDir(mkdtempSync(join(tmpdir(), "broker-quarantine-")));
     const statePath = join(dir, "state.json");
     const snapshot = healthySnapshotObject();
     (snapshot["proposals"] as unknown[]).push(poisonProposal("poisoned-proposal"));
@@ -101,7 +111,7 @@ describe("snapshot load isolation", () => {
   });
 
   it("lets the broker restart from a snapshot poisoned by a single record", () => {
-    const dir = mkdtempSync(join(tmpdir(), "broker-quarantine-"));
+    const dir = trackTempDir(mkdtempSync(join(tmpdir(), "broker-quarantine-")));
     const statePath = join(dir, "state.json");
     const snapshot = healthySnapshotObject();
     (snapshot["proposals"] as unknown[]).push(poisonProposal("poisoned-proposal"));
@@ -167,7 +177,7 @@ describe("snapshot quarantine observability", () => {
   });
 
   it("flips to degraded with a file reference and timestamp after a recovered load", () => {
-    const dir = mkdtempSync(join(tmpdir(), "broker-quarantine-health-"));
+    const dir = trackTempDir(mkdtempSync(join(tmpdir(), "broker-quarantine-health-")));
     const statePath = join(dir, "state.json");
     const snapshot = healthySnapshotObject();
     (snapshot["proposals"] as unknown[]).push(poisonProposal("poisoned-proposal"));

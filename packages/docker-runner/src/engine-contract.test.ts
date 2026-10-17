@@ -1,12 +1,22 @@
 import assert from "node:assert/strict";
 import { createHash } from "node:crypto";
-import test from "node:test";
-import { mkdtempSync } from "node:fs";
+import test, { after } from "node:test";
+import { mkdtempSync, rmSync } from "node:fs";
 import { readFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { buildContainerScript, buildRunArgs, jsonArgvToScript, materializeSubagentContextBrief, redactSecrets, runTask, sanitizeSubagentContextBrief } from "./runner.js";
 import type { RunnerConfig, RunnerTask } from "./types.js";
+
+// #2386: remove every temp dir this file creates.
+const trackedTempDirs: string[] = [];
+function trackTempDir(dir: string): string {
+  trackedTempDirs.push(dir);
+  return dir;
+}
+after(() => {
+  for (const dir of trackedTempDirs.splice(0)) rmSync(dir, { recursive: true, force: true });
+});
 
 const config: RunnerConfig = {
   rootDir: join(tmpdir(), "a2a-runner-contract"),
@@ -395,7 +405,7 @@ test("jsonArgvToScript handles special shell characters", () => {
 // ---------------------------------------------------------------------------
 
 test("missing engine failure is actionable and CI-safe", async () => {
-  const rootDir = mkdtempSync(join(tmpdir(), "a2a-missing-engine-"));
+  const rootDir = trackTempDir(mkdtempSync(join(tmpdir(), "a2a-missing-engine-")));
   const result = await runTask(
     {
       rootDir,
@@ -499,7 +509,7 @@ test("rejects an unredacted subagent brief before task.json and preserves broker
 });
 
 test("materializes the broker-redacted context brief in the mounted workspace and advertises its path (Phase-2 WS5)", async () => {
-  const workDir = mkdtempSync(join(tmpdir(), "a2a-ws5-brief-"));
+  const workDir = trackTempDir(mkdtempSync(join(tmpdir(), "a2a-ws5-brief-")));
   const brief = "# A2A sub-agent context brief\n\nAuthorization: Bearer [redacted]\nTOKEN=[redacted]";
   const taskWithBrief: RunnerTask = { ...task, subagentContextBrief: brief };
 

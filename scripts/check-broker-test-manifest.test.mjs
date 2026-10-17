@@ -1,12 +1,22 @@
-import test from 'node:test';
+import test, { after } from 'node:test';
 import assert from 'node:assert/strict';
 import { spawnSync } from 'node:child_process';
-import { mkdtempSync, readFileSync, writeFileSync } from 'node:fs';
+import { mkdtempSync, readFileSync, writeFileSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 import { commandsFromManifest, loadTestManifest } from '../packages/broker/scripts/run-test-manifest.mjs';
+
+// #2386: remove every temp dir this file creates.
+const trackedTempDirs = [];
+function trackTempDir(dir) {
+  trackedTempDirs.push(dir);
+  return dir;
+}
+after(() => {
+  for (const dir of trackedTempDirs.splice(0)) rmSync(dir, { recursive: true, force: true });
+});
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const REPO_ROOT = resolve(HERE, '..');
@@ -36,7 +46,7 @@ test('broker test manifest --list prints the exact command set without running t
 });
 
 test('broker test manifest runner propagates failing command exit codes', () => {
-  const dir = mkdtempSync(join(tmpdir(), 'broker-test-manifest-'));
+  const dir = trackTempDir(mkdtempSync(join(tmpdir(), 'broker-test-manifest-')));
   const manifestPath = join(dir, 'test-manifest.json');
   writeFileSync(manifestPath, JSON.stringify({
     entries: [

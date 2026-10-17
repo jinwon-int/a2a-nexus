@@ -1,4 +1,4 @@
-import test from 'node:test';
+import test, { after } from 'node:test';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import os from 'node:os';
@@ -9,13 +9,23 @@ import {
   evaluateReleaseGateManifestCoverage,
 } from './check-release-gate-manifest-coverage.mjs';
 
+// #2386: remove every temp dir this file creates.
+const trackedTempDirs = [];
+function trackTempDir(dir) {
+  trackedTempDirs.push(dir);
+  return dir;
+}
+after(() => {
+  for (const dir of trackedTempDirs.splice(0)) fs.rmSync(dir, { recursive: true, force: true });
+});
+
 function writeJson(filePath, value) {
   fs.mkdirSync(path.dirname(filePath), { recursive: true });
   fs.writeFileSync(filePath, `${JSON.stringify(value, null, 2)}\n`);
 }
 
 function makeRepo() {
-  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'release-gate-coverage-'));
+  const root = trackTempDir(fs.mkdtempSync(path.join(os.tmpdir(), 'release-gate-coverage-')));
   fs.mkdirSync(path.join(root, 'scripts/lib'), { recursive: true });
   fs.mkdirSync(path.join(root, 'docs/ops'), { recursive: true });
   writeJson(path.join(root, 'scripts/release-gate-manifest.json'), { entries: [] });

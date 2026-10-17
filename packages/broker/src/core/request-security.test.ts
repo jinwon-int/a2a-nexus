@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
-import test from "node:test";
-import { mkdtempSync, writeFileSync } from "node:fs";
+import test, { after } from "node:test";
+import { mkdtempSync, writeFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { createHmac, createPrivateKey, sign } from "node:crypto";
@@ -21,6 +21,16 @@ import {
   verifyA2AHttpSignature,
 } from "./request-security.js";
 import { A2A_REQUESTER_ROLES as SHARED_REQUESTER_ROLES } from "./requester-role-contract.mjs";
+
+// #2386: remove every temp dir this file creates.
+const trackedTempDirs: string[] = [];
+function trackTempDir(dir: string): string {
+  trackedTempDirs.push(dir);
+  return dir;
+}
+after(() => {
+  for (const dir of trackedTempDirs.splice(0)) rmSync(dir, { recursive: true, force: true });
+});
 
 function createRequest(params: {
   headers?: Record<string, string>;
@@ -268,7 +278,7 @@ const a2aKeyRegistry = {
 
 
 test("A2A HTTP Signature key registry loads validated public worker keys from a JSON file", () => {
-  const dir = mkdtempSync(join(tmpdir(), "a2a-signature-registry-"));
+  const dir = trackTempDir(mkdtempSync(join(tmpdir(), "a2a-signature-registry-")));
   const file = join(dir, "worker-public-keys.json");
   writeFileSync(file, JSON.stringify({
     "worker:workerbeta:v1": {
@@ -282,7 +292,7 @@ test("A2A HTTP Signature key registry loads validated public worker keys from a 
 });
 
 test("A2A HTTP Signature key registry rejects private key material and keyid mismatches", () => {
-  const dir = mkdtempSync(join(tmpdir(), "a2a-signature-registry-invalid-"));
+  const dir = trackTempDir(mkdtempSync(join(tmpdir(), "a2a-signature-registry-invalid-")));
   const privateFile = join(dir, "private-material.json");
   writeFileSync(privateFile, JSON.stringify({
     "worker:workerbeta:v1": {
@@ -329,7 +339,7 @@ test("A2A HTTP Signature key registry rejects private key material and keyid mis
 });
 
 test("A2A HTTP Signature key registry parses a per-key scope grant", () => {
-  const dir = mkdtempSync(join(tmpdir(), "a2a-signature-registry-scopes-"));
+  const dir = trackTempDir(mkdtempSync(join(tmpdir(), "a2a-signature-registry-scopes-")));
   const file = join(dir, "scoped-keys.json");
   writeFileSync(file, JSON.stringify({
     "worker:workerbeta:v1": {
@@ -349,7 +359,7 @@ test("A2A HTTP Signature key registry parses a per-key scope grant", () => {
 });
 
 test("A2A HTTP Signature key registry rejects unknown or malformed scope tokens", () => {
-  const dir = mkdtempSync(join(tmpdir(), "a2a-signature-registry-scopes-invalid-"));
+  const dir = trackTempDir(mkdtempSync(join(tmpdir(), "a2a-signature-registry-scopes-invalid-")));
   const unknownFile = join(dir, "unknown-scope.json");
   writeFileSync(unknownFile, JSON.stringify({
     "worker:workerbeta:v1": {
@@ -397,7 +407,7 @@ test("assertA2AWorkerScopeAllowed authorizes only the declared scopes and fails 
 });
 
 test("A2A HTTP Signature key registry parses and validates credential lifecycle metadata", () => {
-  const dir = mkdtempSync(join(tmpdir(), "a2a-signature-registry-lifecycle-"));
+  const dir = trackTempDir(mkdtempSync(join(tmpdir(), "a2a-signature-registry-lifecycle-")));
   const validFile = join(dir, "lifecycle.json");
   writeFileSync(validFile, JSON.stringify({
     "worker:workerbeta:v1": {
@@ -482,7 +492,7 @@ test("A2A HTTP Signature verifier rejects revoked keys and keys outside their va
 });
 
 test("A2A HTTP Signature key registry parses and validates allowed roles", () => {
-  const dir = mkdtempSync(join(tmpdir(), "a2a-signature-registry-roles-"));
+  const dir = trackTempDir(mkdtempSync(join(tmpdir(), "a2a-signature-registry-roles-")));
   const validFile = join(dir, "roles.json");
   writeFileSync(validFile, JSON.stringify({
     "worker:workerbeta:v1": {

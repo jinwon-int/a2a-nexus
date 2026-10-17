@@ -1,14 +1,24 @@
-import test from 'node:test';
+import test, { after } from 'node:test';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { spawnSync } from 'node:child_process';
 
+// #2386: remove every temp dir this file creates.
+const trackedTempDirs = [];
+function trackTempDir(dir) {
+  trackedTempDirs.push(dir);
+  return dir;
+}
+after(() => {
+  for (const dir of trackedTempDirs.splice(0)) fs.rmSync(dir, { recursive: true, force: true });
+});
+
 const repo = path.resolve(new URL('../..', import.meta.url).pathname);
 const script = path.join(repo, 'scanner/readiness/check-approval-records.mjs');
 function fixtureRoot(record) {
-  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'approval-record-'));
+  const dir = trackTempDir(fs.mkdtempSync(path.join(os.tmpdir(), 'approval-record-')));
   fs.mkdirSync(path.join(dir, 'fixtures/approvals'), { recursive: true });
   fs.copyFileSync(path.join(repo, 'fixtures/approvals/approval-record.schema.json'), path.join(dir, 'fixtures/approvals/approval-record.schema.json'));
   fs.writeFileSync(path.join(dir, 'fixtures/approvals/sample.json'), JSON.stringify(record, null, 2));

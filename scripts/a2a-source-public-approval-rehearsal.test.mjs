@@ -1,9 +1,19 @@
 import assert from 'node:assert/strict';
-import { mkdtempSync, writeFileSync } from 'node:fs';
+import { mkdtempSync, writeFileSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { spawnSync } from 'node:child_process';
-import test from 'node:test';
+import test, { after } from 'node:test';
+
+// #2386: remove every temp dir this file creates.
+const trackedTempDirs = [];
+function trackTempDir(dir) {
+  trackedTempDirs.push(dir);
+  return dir;
+}
+after(() => {
+  for (const dir of trackedTempDirs.splice(0)) rmSync(dir, { recursive: true, force: true });
+});
 
 const spec = 'docs/approval-rehearsal/source-public-approval-packet-schema.json';
 const script = 'scripts/a2a-source-public-approval-rehearsal.mjs';
@@ -25,7 +35,7 @@ const gateIds = [
 ];
 
 function inputPath(input) {
-  const dir = mkdtempSync(join(tmpdir(), 'a2a-approval-rehearsal-'));
+  const dir = trackTempDir(mkdtempSync(join(tmpdir(), 'a2a-approval-rehearsal-')));
   const file = join(dir, 'evidence.json');
   writeFileSync(file, JSON.stringify(input, null, 2));
   return file;

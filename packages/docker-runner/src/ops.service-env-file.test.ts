@@ -1,9 +1,20 @@
-import test from "node:test";
+import test, { after } from "node:test";
 import assert from "node:assert/strict";
 import { mkdtemp, utimes, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { checkServiceEnvFile } from "./ops.js";
+import { rmSync } from "node:fs";
+
+// #2386: remove every temp dir this file creates.
+const trackedTempDirs: string[] = [];
+function trackTempDir(dir: string): string {
+  trackedTempDirs.push(dir);
+  return dir;
+}
+after(() => {
+  for (const dir of trackedTempDirs.splice(0)) rmSync(dir, { recursive: true, force: true });
+});
 
 /**
  * #2267: fleet nodes carried a stale CLI-default env file next to the live
@@ -12,7 +23,7 @@ import { checkServiceEnvFile } from "./ops.js";
  */
 
 async function fixture(): Promise<{ dir: string; stale: string; live: string }> {
-  const dir = await mkdtemp(join(tmpdir(), "a2a-service-env-"));
+  const dir = trackTempDir(await mkdtemp(join(tmpdir(), "a2a-service-env-")));
   const stale = join(dir, "openclaw-a2a-worker");
   const live = join(dir, "a2a-hermes-worker");
   await writeFile(stale, "A2A_DOCKER_RUNNER_PATCH_COMMAND_PROFILE=hermes\n", "utf8");

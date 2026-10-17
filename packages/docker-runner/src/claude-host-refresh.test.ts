@@ -1,11 +1,21 @@
 import assert from "node:assert/strict";
-import { mkdtempSync, readFileSync, statSync, writeFileSync } from "node:fs";
+import { mkdtempSync, readFileSync, statSync, writeFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import test from "node:test";
+import test, { after } from "node:test";
 import { formatClaudeHostRefreshSummary, maybeRefreshClaudeCredentialOnHost } from "./claude-host-refresh.js";
 import { CLAUDE_HOST_REFRESH_STATE_FILE, evaluateClaudeCredentialWindow } from "./ops.js";
 import type { RunnerConfig } from "./types.js";
+
+// #2386: remove every temp dir this file creates.
+const trackedTempDirs: string[] = [];
+function trackTempDir(dir: string): string {
+  trackedTempDirs.push(dir);
+  return dir;
+}
+after(() => {
+  for (const dir of trackedTempDirs.splice(0)) rmSync(dir, { recursive: true, force: true });
+});
 
 // #2373: synthetic credential fixtures with obviously-fake tokens.
 const FAKE_ACCESS_TOKEN = "fake-access-token-host-refresh";
@@ -22,7 +32,7 @@ function writeCredentials(path: string, expiresAt: number): void {
 }
 
 function fixture(argvFor?: string[] | ((creds: string) => string[]), overrides: { timeoutMs?: number; minIntervalMs?: number; fileMount?: boolean } = {}): { config: RunnerConfig; creds: string; rootDir: string } {
-  const dir = mkdtempSync(join(tmpdir(), "a2a-claude-host-refresh-"));
+  const dir = trackTempDir(mkdtempSync(join(tmpdir(), "a2a-claude-host-refresh-")));
   const rootDir = join(dir, "root");
   const creds = join(dir, "host.credentials.json");
   writeCredentials(creds, Date.now() + 60_000);
@@ -142,7 +152,7 @@ test("#2373 a missing host command is a spawn error, not a throw", async () => {
 });
 
 test("#2373 the host command gets only HOME and PATH from the runner env, no shell", async () => {
-  const dir = mkdtempSync(join(tmpdir(), "a2a-claude-host-refresh-env-"));
+  const dir = trackTempDir(mkdtempSync(join(tmpdir(), "a2a-claude-host-refresh-env-")));
   const out = join(dir, "env.json");
   const { config } = fixture([process.execPath, "-e", "require('fs').writeFileSync(process.argv[1], JSON.stringify(Object.keys(process.env)))", out]);
   process.env.A2A_HOST_REFRESH_TEST_SECRET = "must-not-leak";

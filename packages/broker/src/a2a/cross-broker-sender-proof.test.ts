@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
-import { test } from "node:test";
+import { test, after } from "node:test";
 import { generateKeyPairSync } from "node:crypto";
-import { mkdtempSync, writeFileSync } from "node:fs";
+import { mkdtempSync, writeFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import {
@@ -10,6 +10,16 @@ import {
   loadCrossBrokerTrustAnchors,
   verifyCrossBrokerSenderProof,
 } from "./cross-broker-sender-proof.js";
+
+// #2386: remove every temp dir this file creates.
+const trackedTempDirs: string[] = [];
+function trackTempDir(dir: string): string {
+  trackedTempDirs.push(dir);
+  return dir;
+}
+after(() => {
+  for (const dir of trackedTempDirs.splice(0)) rmSync(dir, { recursive: true, force: true });
+});
 
 function keys() {
   const { privateKey, publicKey } = generateKeyPairSync("ed25519");
@@ -21,7 +31,7 @@ function keys() {
 
 test("trust anchors load from a pin file, rejecting empty ids and malformed pins", () => {
   const { pub } = keys();
-  const dir = mkdtempSync(join(tmpdir(), "a2a-xbroker-"));
+  const dir = trackTempDir(mkdtempSync(join(tmpdir(), "a2a-xbroker-")));
   const file = join(dir, "anchors.json");
   writeFileSync(file, JSON.stringify({ "peer-a": pub }));
   assert.ok(loadCrossBrokerTrustAnchors(file)?.has("peer-a"));

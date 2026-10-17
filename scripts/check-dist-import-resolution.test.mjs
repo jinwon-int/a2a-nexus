@@ -1,4 +1,4 @@
-import { test } from 'node:test';
+import { test, after } from 'node:test';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import os from 'node:os';
@@ -11,6 +11,16 @@ import {
   resolveSpecifier,
   collectUnresolved,
 } from './check-dist-import-resolution.mjs';
+
+// #2386: remove every temp dir this file creates.
+const trackedTempDirs = [];
+function trackTempDir(dir) {
+  trackedTempDirs.push(dir);
+  return dir;
+}
+after(() => {
+  for (const dir of trackedTempDirs.splice(0)) fs.rmSync(dir, { recursive: true, force: true });
+});
 
 const existsIn = (set) => (candidate) => set.has(candidate);
 
@@ -125,7 +135,7 @@ test('code embedded in a template literal is not ruled on', () => {
 });
 
 test('collectUnresolved reports the offending script, specifier and expected source', () => {
-  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'dist-import-'));
+  const root = trackTempDir(fs.mkdtempSync(path.join(os.tmpdir(), 'dist-import-')));
   const pkg = path.join(root, 'packages', 'broker');
   fs.mkdirSync(path.join(pkg, 'scripts'), { recursive: true });
   fs.mkdirSync(path.join(pkg, 'src', 'core'), { recursive: true });

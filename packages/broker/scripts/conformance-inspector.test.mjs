@@ -1,14 +1,24 @@
 import assert from 'node:assert/strict';
 import { execFileSync } from 'node:child_process';
-import { mkdtempSync, writeFileSync, readFileSync } from 'node:fs';
+import { mkdtempSync, writeFileSync, readFileSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import test from 'node:test';
+import test, { after } from 'node:test';
+
+// #2386: remove every temp dir this file creates.
+const trackedTempDirs = [];
+function trackTempDir(dir) {
+  trackedTempDirs.push(dir);
+  return dir;
+}
+after(() => {
+  for (const dir of trackedTempDirs.splice(0)) rmSync(dir, { recursive: true, force: true });
+});
 
 const script = new URL('./conformance-inspector.mjs', import.meta.url).pathname;
 
 test('conformance inspector bridge validates agent cards and writes artifacts', () => {
-  const dir = mkdtempSync(join(tmpdir(), 'inspector-'));
+  const dir = trackTempDir(mkdtempSync(join(tmpdir(), 'inspector-')));
   const cardPath = join(dir, 'agent-card.json');
   const out = join(dir, 'report.json');
   writeFileSync(cardPath, JSON.stringify({

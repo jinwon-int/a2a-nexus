@@ -1,4 +1,4 @@
-import test from "node:test";
+import test, { after as afterAll } from "node:test";
 import assert from "node:assert/strict";
 import { chmod, mkdir, mkdtemp, stat, utimes, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
@@ -10,6 +10,17 @@ import {
   planServiceEnvBackupRotation,
   rotateServiceEnvBackups,
 } from "./ops.js";
+import { rmSync } from "node:fs";
+
+// #2386: remove every temp dir this file creates.
+const trackedTempDirs: string[] = [];
+function trackTempDir(dir: string): string {
+  trackedTempDirs.push(dir);
+  return dir;
+}
+afterAll(() => {
+  for (const dir of trackedTempDirs.splice(0)) rmSync(dir, { recursive: true, force: true });
+});
 
 /** #2268: fleet nodes carried 22–45 `<envFile>.{bak,rollback}-*` secret copies each with no rotation. */
 
@@ -17,7 +28,7 @@ const DAY = 86_400_000;
 const NOW = new Date("2026-09-25T00:00:00Z").getTime();
 
 async function fixture(): Promise<{ dir: string; envFile: string }> {
-  const dir = await mkdtemp(join(tmpdir(), "a2a-env-backups-"));
+  const dir = trackTempDir(await mkdtemp(join(tmpdir(), "a2a-env-backups-")));
   const envFile = join(dir, "a2a-hermes-worker");
   await writeFile(envFile, "A2A_DOCKER_RUNNER_ROOT=/var/lib/openclaw-a2a/tasks\n", { mode: 0o600 });
   await chmod(envFile, 0o600);
@@ -124,7 +135,7 @@ test("#2268 doctor check: warn only when the rotation plan has prune candidates,
   assert.match(broad.message, /readable beyond the owner/);
   assert.deepEqual((broad.detail as { broadPerms: string[] }).broadPerms.length, 1);
 
-  const emptyDir = await mkdtemp(join(tmpdir(), "a2a-env-backups-empty-"));
+  const emptyDir = trackTempDir(await mkdtemp(join(tmpdir(), "a2a-env-backups-empty-")));
   const lone = join(emptyDir, "a2a-hermes-worker");
   await writeFile(lone, "x\n");
   const none = await checkServiceEnvBackups({ envFile: lone, nowMs: NOW });
