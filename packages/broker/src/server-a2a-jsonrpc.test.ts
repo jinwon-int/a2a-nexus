@@ -1,7 +1,18 @@
-import test from "node:test";
+import test, { after } from "node:test";
 import assert from "node:assert/strict";
 import { startTestServer, jsonHeaders, registerTestWorker, readSseEventsUntil, createInMemoryStateStore } from "./server-test-helpers.js";
 import { InMemoryA2ABroker } from "./core/broker.js";
+import { rmSync } from "node:fs";
+
+// #2386: remove every temp dir this file creates.
+const trackedTempDirs: string[] = [];
+function trackTempDir(dir: string): string {
+  trackedTempDirs.push(dir);
+  return dir;
+}
+after(() => {
+  for (const dir of trackedTempDirs.splice(0)) rmSync(dir, { recursive: true, force: true });
+});
 
 test("server exposes a public agent card on the well-known path", async () => {
   const server = await startTestServer({
@@ -249,7 +260,7 @@ test("agent card is served signed when a signing key is configured (A2A 1.0)", a
   const { verifyAgentCardSignature } = await import("a2a-attestation");
 
   const { privateKey, publicKey } = generateKeyPairSync("ed25519");
-  const keyDir = mkdtempSync(join(tmpdir(), "a2a-card-key-"));
+  const keyDir = trackTempDir(mkdtempSync(join(tmpdir(), "a2a-card-key-")));
   const keyFile = join(keyDir, "signing-key.pem");
   writeFileSync(keyFile, privateKey.export({ type: "pkcs8", format: "pem" }));
 
@@ -1045,7 +1056,7 @@ test("cross-broker receiver enforces request-bound proof of possession when anch
   const { buildCrossBrokerSenderProof } = await import("./a2a/cross-broker-sender-proof.js");
 
   const { privateKey, publicKey } = generateKeyPairSync("ed25519");
-  const dir = mkdtempSync(join(tmpdir(), "a2a-xbroker-trust-"));
+  const dir = trackTempDir(mkdtempSync(join(tmpdir(), "a2a-xbroker-trust-")));
   const anchorsFile = join(dir, "anchors.json");
   writeFileSync(
     anchorsFile,

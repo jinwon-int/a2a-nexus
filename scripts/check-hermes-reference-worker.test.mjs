@@ -1,9 +1,19 @@
-import test from 'node:test';
+import test, { after } from 'node:test';
 import assert from 'node:assert/strict';
 import { spawnSync } from 'node:child_process';
-import { chmodSync, mkdtempSync, readFileSync, writeFileSync } from 'node:fs';
+import { chmodSync, mkdtempSync, readFileSync, writeFileSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
+
+// #2386: remove every temp dir this file creates.
+const trackedTempDirs = [];
+function trackTempDir(dir) {
+  trackedTempDirs.push(dir);
+  return dir;
+}
+after(() => {
+  for (const dir of trackedTempDirs.splice(0)) rmSync(dir, { recursive: true, force: true });
+});
 
 const scriptPath = 'examples/workers/hermes-reference-worker/a2a_worker.py';
 const fixturePath = 'examples/workers/hermes-reference-worker/hermes-local-smoke-task.json';
@@ -74,7 +84,7 @@ test('Hermes reference worker persists local mobile-safe evidence manifests', ()
 });
 
 test('Hermes reference worker posts local evidence manifest as broker artifactIds', () => {
-  const dir = mkdtempSync(join(tmpdir(), 'a2a-mobile-artifact-ids-'));
+  const dir = trackTempDir(mkdtempSync(join(tmpdir(), 'a2a-mobile-artifact-ids-')));
   const program = String.raw`
 import json, os, runpy
 m = runpy.run_path('examples/workers/hermes-reference-worker/a2a_worker.py', run_name='a2a_worker_test')
@@ -121,8 +131,8 @@ print(json.dumps({'runOnce': result, 'evidenceBody': body}, ensure_ascii=False, 
 });
 
 test('Hermes reference worker uses isolated mobile workspace root when configured', () => {
-  const workRoot = mkdtempSync(join(tmpdir(), 'a2a-mobile-work-root-'));
-  const fallbackArtifactRoot = mkdtempSync(join(tmpdir(), 'a2a-mobile-fallback-artifacts-'));
+  const workRoot = trackTempDir(mkdtempSync(join(tmpdir(), 'a2a-mobile-work-root-')));
+  const fallbackArtifactRoot = trackTempDir(mkdtempSync(join(tmpdir(), 'a2a-mobile-fallback-artifacts-')));
   const program = String.raw`
 import json, os, pathlib, runpy
 m = runpy.run_path('examples/workers/hermes-reference-worker/a2a_worker.py', run_name='a2a_worker_test')
@@ -179,7 +189,7 @@ print(json.dumps({
 });
 
 test('Hermes reference worker can produce opt-in model-backed analysis JSON', () => {
-  const dir = mkdtempSync(join(tmpdir(), 'a2a-mobile-analysis-'));
+  const dir = trackTempDir(mkdtempSync(join(tmpdir(), 'a2a-mobile-analysis-')));
   const fakeBridge = join(dir, 'fake-mobile-analysis.py');
   const capturePath = join(dir, 'stdin.json');
   writeFileSync(fakeBridge, String.raw`#!/usr/bin/env python3
@@ -233,7 +243,7 @@ print(json.dumps(result, ensure_ascii=False, sort_keys=True))
 });
 
 test('Hermes reference worker fails closed when opt-in model bridge emits invalid JSON', () => {
-  const dir = mkdtempSync(join(tmpdir(), 'a2a-mobile-analysis-bad-'));
+  const dir = trackTempDir(mkdtempSync(join(tmpdir(), 'a2a-mobile-analysis-bad-')));
   const fakeBridge = join(dir, 'fake-bad-mobile-analysis.py');
   writeFileSync(fakeBridge, '#!/usr/bin/env python3\nprint("[Roadmap] prose is not JSON")\n');
   chmodSync(fakeBridge, 0o755);
@@ -267,7 +277,7 @@ print(json.dumps(result, ensure_ascii=False, sort_keys=True))
 });
 
 test('Hermes reference worker throttles mobile registration within TTL and re-registers after broker forgets worker', () => {
-  const dir = mkdtempSync(join(tmpdir(), 'a2a-mobile-registration-'));
+  const dir = trackTempDir(mkdtempSync(join(tmpdir(), 'a2a-mobile-registration-')));
   const program = String.raw`
 import json, os, pathlib, runpy
 m = runpy.run_path('examples/workers/hermes-reference-worker/a2a_worker.py', run_name='a2a_worker_test')
@@ -325,7 +335,7 @@ print(json.dumps({
 });
 
 test('Hermes reference worker fails closed when the same workerId lock is already held', () => {
-  const dir = mkdtempSync(join(tmpdir(), 'a2a-worker-lock-'));
+  const dir = trackTempDir(mkdtempSync(join(tmpdir(), 'a2a-worker-lock-')));
   const program = String.raw`
 import json, os, runpy
 m = runpy.run_path('examples/workers/hermes-reference-worker/a2a_worker.py', run_name='a2a_worker_test')

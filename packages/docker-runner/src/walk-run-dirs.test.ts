@@ -3,15 +3,26 @@
 // exactly once, plus non-directory entries and unreadable roots as explicit
 // classifications instead of silent skips.
 import assert from "node:assert/strict";
-import test from "node:test";
+import test, { after } from "node:test";
 import { mkdtemp, mkdir, writeFile, readFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
 import { walkRunDirs } from "./scanner.js";
+import { rmSync } from "node:fs";
+
+// #2386: remove every temp dir this file creates.
+const trackedTempDirs: string[] = [];
+function trackTempDir(dir: string): string {
+  trackedTempDirs.push(dir);
+  return dir;
+}
+after(() => {
+  for (const dir of trackedTempDirs.splice(0)) rmSync(dir, { recursive: true, force: true });
+});
 
 async function makeFixture(): Promise<string> {
-  const root = await mkdtemp(join(tmpdir(), "a2a-walk-"));
+  const root = trackTempDir(await mkdtemp(join(tmpdir(), "a2a-walk-")));
   // well-formed task root with two runs
   await mkdir(join(root, "task-a", "run-1"), { recursive: true });
   await writeFile(

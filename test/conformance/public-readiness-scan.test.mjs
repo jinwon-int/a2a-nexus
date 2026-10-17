@@ -1,14 +1,24 @@
-import test from 'node:test';
+import test, { after } from 'node:test';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { spawnSync } from 'node:child_process';
 
+// #2386: remove every temp dir this file creates.
+const trackedTempDirs = [];
+function trackTempDir(dir) {
+  trackedTempDirs.push(dir);
+  return dir;
+}
+after(() => {
+  for (const dir of trackedTempDirs.splice(0)) fs.rmSync(dir, { recursive: true, force: true });
+});
+
 const repo = path.resolve(new URL('../..', import.meta.url).pathname);
 const script = path.join(repo, 'scripts/public-readiness-scan.mjs');
 function run(files, env = {}) {
-  const cwd = fs.mkdtempSync(path.join(os.tmpdir(), 'public-readiness-'));
+  const cwd = trackTempDir(fs.mkdtempSync(path.join(os.tmpdir(), 'public-readiness-')));
   for (const [name, body] of Object.entries(files)) {
     const p = path.join(cwd, name); fs.mkdirSync(path.dirname(p), { recursive: true }); fs.writeFileSync(p, body);
   }

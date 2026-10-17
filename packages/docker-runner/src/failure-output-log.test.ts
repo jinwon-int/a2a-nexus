@@ -1,4 +1,4 @@
-import test from "node:test";
+import test, { after } from "node:test";
 import assert from "node:assert/strict";
 import { mkdtemp, mkdir, readFile, writeFile, utimes } from "node:fs/promises";
 import { tmpdir } from "node:os";
@@ -10,9 +10,20 @@ import {
   pruneFailureOutputLogs,
   writeFailureOutputLog,
 } from "./failure-output-log.js";
+import { rmSync } from "node:fs";
+
+// #2386: remove every temp dir this file creates.
+const trackedTempDirs: string[] = [];
+function trackTempDir(dir: string): string {
+  trackedTempDirs.push(dir);
+  return dir;
+}
+after(() => {
+  for (const dir of trackedTempDirs.splice(0)) rmSync(dir, { recursive: true, force: true });
+});
 
 test("writes combined redacted output for failed runs", async () => {
-  const workDir = await mkdtemp(join(tmpdir(), "a2a-failure-log-"));
+  const workDir = trackTempDir(await mkdtemp(join(tmpdir(), "a2a-failure-log-")));
   const path = await writeFailureOutputLog(workDir, {
     stdout: `run output with token=ghp_${"a".repeat(36)}`,
     stderr: "final error line",
@@ -26,13 +37,13 @@ test("writes combined redacted output for failed runs", async () => {
 });
 
 test("skips empty output", async () => {
-  const workDir = await mkdtemp(join(tmpdir(), "a2a-failure-log-"));
+  const workDir = trackTempDir(await mkdtemp(join(tmpdir(), "a2a-failure-log-")));
   const path = await writeFailureOutputLog(workDir, { stdout: "  \n ", stderr: "" });
   assert.equal(path, undefined);
 });
 
 test("bounds to the TAIL of long output without splitting code points", async () => {
-  const workDir = await mkdtemp(join(tmpdir(), "a2a-failure-log-"));
+  const workDir = trackTempDir(await mkdtemp(join(tmpdir(), "a2a-failure-log-")));
   const tail_marker = "TAIL-한글-마커-final-error";
   const path = await writeFailureOutputLog(workDir, {
     stdout: `${"head-".repeat(20000)}${"한".repeat(20000)}${tail_marker}`,
@@ -48,7 +59,7 @@ test("bounds to the TAIL of long output without splitting code points", async ()
 });
 
 test("prune keeps newest K failure logs across task/run dirs", async () => {
-  const root = await mkdtemp(join(tmpdir(), "a2a-failure-prune-"));
+  const root = trackTempDir(await mkdtemp(join(tmpdir(), "a2a-failure-prune-")));
   const now = Date.now() / 1000;
   for (let i = 0; i < 5; i += 1) {
     const runDir = join(root, `task-${i}`, `run-${i}`);

@@ -1,12 +1,22 @@
 import assert from "node:assert/strict";
-import { test } from "node:test";
-import { mkdtempSync, mkdirSync } from "node:fs";
+import { test, after } from "node:test";
+import { mkdtempSync, mkdirSync, rmSync } from "node:fs";
 import { readFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 
 import { parseArgs, dependenciesInstalled } from "./review-worktree-check.mjs";
+
+// #2386: remove every temp dir this file creates.
+const trackedTempDirs = [];
+function trackTempDir(dir) {
+  trackedTempDirs.push(dir);
+  return dir;
+}
+after(() => {
+  for (const dir of trackedTempDirs.splice(0)) rmSync(dir, { recursive: true, force: true });
+});
 
 test("review:check defaults to the broker workspace with install enabled", () => {
   assert.deepEqual(parseArgs([]), { workspaces: ["a2a-broker"], install: true });
@@ -25,7 +35,7 @@ test("review:check rejects unknown arguments and dangling --workspace", () => {
 });
 
 test("dependency detection requires @types/node, not just node_modules", () => {
-  const empty = mkdtempSync(join(tmpdir(), "review-check-"));
+  const empty = trackTempDir(mkdtempSync(join(tmpdir(), "review-check-")));
   assert.equal(dependenciesInstalled(empty), false, "no node_modules at all");
 
   mkdirSync(join(empty, "node_modules"));

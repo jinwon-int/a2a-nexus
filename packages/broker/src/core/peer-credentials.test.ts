@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
-import { test } from "node:test";
-import { chmodSync, mkdtempSync, writeFileSync } from "node:fs";
+import { test, after } from "node:test";
+import { chmodSync, mkdtempSync, writeFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import type { IncomingMessage } from "node:http";
@@ -16,6 +16,16 @@ import {
   resolvePeerFromRequest,
   sha256Hex,
 } from "./request-security.js";
+
+// #2386: remove every temp dir this file creates.
+const trackedTempDirs: string[] = [];
+function trackTempDir(dir: string): string {
+  trackedTempDirs.push(dir);
+  return dir;
+}
+after(() => {
+  for (const dir of trackedTempDirs.splice(0)) rmSync(dir, { recursive: true, force: true });
+});
 
 function fakeRequest(headers: Record<string, string>): IncomingMessage {
   return { headers } as unknown as IncomingMessage;
@@ -50,7 +60,7 @@ test("parsePeerCredentialRegistry fails closed on unknown scope tokens and empty
 });
 
 test("loadPeerCredentialRegistryFile fails closed on raw secrets and non-root-only permissions", () => {
-  const dir = mkdtempSync(join(tmpdir(), "a2a-peer-creds-"));
+  const dir = trackTempDir(mkdtempSync(join(tmpdir(), "a2a-peer-creds-")));
 
   const rawSecretFile = join(dir, "raw.json");
   writeFileSync(rawSecretFile, JSON.stringify({ p: { secret: "raw-value", scopes: ["handoff:status"] } }));

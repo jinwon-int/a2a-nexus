@@ -1,9 +1,19 @@
 import assert from "node:assert/strict";
 import { execFileSync } from "node:child_process";
-import { mkdtempSync, readFileSync, writeFileSync } from "node:fs";
+import { mkdtempSync, readFileSync, writeFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import test from "node:test";
+import test, { after } from "node:test";
+
+// #2386: remove every temp dir this file creates.
+const trackedTempDirs: string[] = [];
+function trackTempDir(dir: string): string {
+  trackedTempDirs.push(dir);
+  return dir;
+}
+after(() => {
+  for (const dir of trackedTempDirs.splice(0)) rmSync(dir, { recursive: true, force: true });
+});
 
 const SCRIPT = "scripts/rollout-receipt-evidence-guard.mjs";
 const EXPECTED_COMMIT = "123df9b19e2c600e826273f5b16117039aa44b6f";
@@ -25,7 +35,7 @@ function fixtureFor(worker: string) {
 }
 
 function writeFixture(value: unknown): string {
-  const dir = mkdtempSync(join(tmpdir(), "a2a-rollout-guard-"));
+  const dir = trackTempDir(mkdtempSync(join(tmpdir(), "a2a-rollout-guard-")));
   const file = join(dir, "merged-evidence.json");
   writeFileSync(file, JSON.stringify(value, null, 2));
   return file;

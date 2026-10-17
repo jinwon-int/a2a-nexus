@@ -8,7 +8,7 @@
  * Parent: a2a-broker#838
  */
 
-import { describe, it } from "node:test";
+import { describe, it, after } from "node:test";
 import assert from "node:assert/strict";
 import {
   appendBoundedOutput,
@@ -22,9 +22,19 @@ import {
   STDIO_DRAIN_GRACE_MS,
 } from "./container-retry.js";
 import type { RetryConfig } from "./container-retry.js";
-import { chmodSync, mkdirSync, mkdtempSync, readFileSync, writeFileSync, existsSync } from "node:fs";
+import { chmodSync, mkdirSync, mkdtempSync, readFileSync, writeFileSync, existsSync, rmSync } from "node:fs";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
+
+// #2386: remove every temp dir this file creates.
+const trackedTempDirs: string[] = [];
+function trackTempDir(dir: string): string {
+  trackedTempDirs.push(dir);
+  return dir;
+}
+after(() => {
+  for (const dir of trackedTempDirs.splice(0)) rmSync(dir, { recursive: true, force: true });
+});
 
 // ─── argsForAttempt: unique container name per retry ─────────────────────────
 
@@ -278,7 +288,7 @@ describe("runContainerWithRetry (single attempt)", () => {
 function makeFakeEngine(body: string): { enginePath: string; dir: string } {
   const executableTmpDir = fileURLToPath(new URL("../tmp/", import.meta.url));
   mkdirSync(executableTmpDir, { recursive: true });
-  const dir = mkdtempSync(join(executableTmpDir, "retry-engine-"));
+  const dir = trackTempDir(mkdtempSync(join(executableTmpDir, "retry-engine-")));
   const enginePath = join(dir, "fake-engine.sh");
   writeFileSync(enginePath, `#!/usr/bin/env bash\n${body}\n`);
   chmodSync(enginePath, 0o700);

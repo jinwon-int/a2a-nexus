@@ -1,9 +1,19 @@
 import assert from 'node:assert/strict';
-import { mkdtempSync, writeFileSync } from 'node:fs';
+import { mkdtempSync, writeFileSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { spawnSync } from 'node:child_process';
-import test from 'node:test';
+import test, { after } from 'node:test';
+
+// #2386: remove every temp dir this file creates.
+const trackedTempDirs = [];
+function trackTempDir(dir) {
+  trackedTempDirs.push(dir);
+  return dir;
+}
+after(() => {
+  for (const dir of trackedTempDirs.splice(0)) rmSync(dir, { recursive: true, force: true });
+});
 
 const spec = 'docs/readiness/fail-closed-gates.json';
 const script = 'scanner/readiness/fail-closed-gates.mjs';
@@ -19,7 +29,7 @@ const gateIds = [
 ];
 
 function inputPath(input) {
-  const dir = mkdtempSync(join(tmpdir(), 'a2a-readiness-gates-'));
+  const dir = trackTempDir(mkdtempSync(join(tmpdir(), 'a2a-readiness-gates-')));
   const file = join(dir, 'input.json');
   writeFileSync(file, JSON.stringify(input, null, 2));
   return file;

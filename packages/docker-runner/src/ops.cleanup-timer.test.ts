@@ -1,10 +1,21 @@
-import test from "node:test";
+import test, { after } from "node:test";
 import assert from "node:assert/strict";
 import { mkdtemp, readFile, stat } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { parseTtlMs, resolveWorkdirTtl } from "./config.js";
 import { checkWorkdirRetention, installCleanupTimer } from "./ops.js";
+import { rmSync } from "node:fs";
+
+// #2386: remove every temp dir this file creates.
+const trackedTempDirs: string[] = [];
+function trackTempDir(dir: string): string {
+  trackedTempDirs.push(dir);
+  return dir;
+}
+after(() => {
+  for (const dir of trackedTempDirs.splice(0)) rmSync(dir, { recursive: true, force: true });
+});
 
 /** #2267 R2: opt-in workDir retention — timer unit files + doctor probe. */
 
@@ -25,7 +36,7 @@ test("#2267 resolveWorkdirTtl is undefined when unset and throws on an invalid v
 });
 
 test("#2267 installCleanupTimer writes service+timer units, is idempotent, and never touches systemctl", async () => {
-  const unitDir = await mkdtemp(join(tmpdir(), "a2a-cleanup-timer-"));
+  const unitDir = trackTempDir(await mkdtemp(join(tmpdir(), "a2a-cleanup-timer-")));
   const options = {
     cliPath: "/opt/a2a-docker-runner/dist/cli.js",
     envFile: "/etc/default/a2a-hermes-worker",
@@ -66,7 +77,7 @@ test("#2267 installCleanupTimer writes service+timer units, is idempotent, and n
 });
 
 test("#2267 installCleanupTimer rejects an invalid TTL before writing anything", async () => {
-  const unitDir = await mkdtemp(join(tmpdir(), "a2a-cleanup-timer-"));
+  const unitDir = trackTempDir(await mkdtemp(join(tmpdir(), "a2a-cleanup-timer-")));
   await assert.rejects(
     installCleanupTimer({ cliPath: "/x/cli.js", envFile: "/x/env", ttl: "soon", unitDir }),
     /invalid ttl/,
@@ -82,7 +93,7 @@ test("#2267 workdir retention doctor: unset TTL warns with a hint", async () => 
 });
 
 test("#2267 workdir retention doctor: TTL set but units missing warns", async () => {
-  const unitDir = await mkdtemp(join(tmpdir(), "a2a-retention-"));
+  const unitDir = trackTempDir(await mkdtemp(join(tmpdir(), "a2a-retention-")));
   const report = await checkWorkdirRetention({ env: { A2A_DOCKER_RUNNER_WORKDIR_TTL: "14d" }, unitDir });
   assert.equal(report.status, "warn");
   assert.match(report.message, /timer unit is not installed/);
@@ -90,7 +101,7 @@ test("#2267 workdir retention doctor: TTL set but units missing warns", async ()
 });
 
 test("#2267 workdir retention doctor: installed + active timer is ok, inactive warns, no systemctl warns", async () => {
-  const unitDir = await mkdtemp(join(tmpdir(), "a2a-retention-"));
+  const unitDir = trackTempDir(await mkdtemp(join(tmpdir(), "a2a-retention-")));
   await installCleanupTimer({ cliPath: "/x/cli.js", envFile: "/x/env", ttl: "14d", unitDir });
   const env = { A2A_DOCKER_RUNNER_WORKDIR_TTL: "14d" };
 

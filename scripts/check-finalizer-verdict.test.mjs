@@ -1,4 +1,4 @@
-import test from "node:test";
+import test, { after } from "node:test";
 import assert from "node:assert/strict";
 import { generateKeyPairSync, sign } from "node:crypto";
 
@@ -10,6 +10,16 @@ import { createPrivateKey } from "node:crypto";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
+
+// #2386: remove every temp dir this file creates.
+const trackedTempDirs = [];
+function trackTempDir(dir) {
+  trackedTempDirs.push(dir);
+  return dir;
+}
+after(() => {
+  for (const dir of trackedTempDirs.splice(0)) fs.rmSync(dir, { recursive: true, force: true });
+});
 
 // Attester test support is inlined (not imported from the sibling .test.mjs) so
 // that file's tests are not re-registered when this file runs.
@@ -32,7 +42,7 @@ let s3Certs;
 function certsForGate() {
   if (s3Certs !== undefined) return s3Certs;
   try {
-    const dir = fs.mkdtempSync(path.join(os.tmpdir(), "s3-gate-"));
+    const dir = trackTempDir(fs.mkdtempSync(path.join(os.tmpdir(), "s3-gate-")));
     const run = (args) => execFileSync("openssl", args, { cwd: dir, stdio: "ignore" });
     run(["req", "-x509", "-newkey", "ed25519", "-keyout", "ca.key", "-out", "ca.crt", "-days", "3650", "-nodes", "-subj", "/CN=Test Fulcio Root"]);
     run(["req", "-new", "-newkey", "ed25519", "-keyout", "leaf.key", "-out", "leaf.csr", "-nodes", "-subj", "/CN=ephemeral"]);

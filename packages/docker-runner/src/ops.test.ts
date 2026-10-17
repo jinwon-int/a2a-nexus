@@ -1,4 +1,4 @@
-import test from "node:test";
+import test, { after } from "node:test";
 import assert from "node:assert/strict";
 import { chown, mkdtemp, mkdir, readFile, writeFile, utimes, stat, chmod } from "node:fs/promises";
 import { execFileSync, spawnSync } from "node:child_process";
@@ -8,6 +8,17 @@ import { CLAUDE_CREDENTIAL_REFRESH_MARGIN_MS, CLAUDE_HOST_REFRESH_STATE_FILE, ch
 import type { RunnerConfig } from "./types.js";
 import { buildExampleReadinessInput } from "./openclaw-profile-readiness.js";
 import { loadConfig, projectClaudeCodeTurnBudgets } from "./config.js";
+import { rmSync } from "node:fs";
+
+// #2386: remove every temp dir this file creates.
+const trackedTempDirs: string[] = [];
+function trackTempDir(dir: string): string {
+  trackedTempDirs.push(dir);
+  return dir;
+}
+after(() => {
+  for (const dir of trackedTempDirs.splice(0)) rmSync(dir, { recursive: true, force: true });
+});
 
 function runGit(cwd: string, args: string[]): void {
   const result = spawnSync("git", args, {
@@ -25,7 +36,7 @@ function runGit(cwd: string, args: string[]): void {
 }
 
 async function makeRevisionRepo(): Promise<{ repo: string; head: string }> {
-  const repo = await mkdtemp(join(tmpdir(), "a2a-revision-"));
+  const repo = trackTempDir(await mkdtemp(join(tmpdir(), "a2a-revision-")));
   runGit(repo, ["init", "-b", "main"]);
   await writeFile(join(repo, "package.json"), JSON.stringify({ version: "0.1.0" }));
   runGit(repo, ["add", "package.json"]);
@@ -94,7 +105,7 @@ test("deploy marker doctor fails when deployed revision mismatches the expected 
 });
 
 test("deploy marker doctor fails closed when not a git checkout", async () => {
-  const dir = await mkdtemp(join(tmpdir(), "a2a-deploy-marker-nongit-"));
+  const dir = trackTempDir(await mkdtemp(join(tmpdir(), "a2a-deploy-marker-nongit-")));
 
   const report = await checkDeployMarker("abc1234", dir);
 
@@ -789,7 +800,7 @@ test("extra mounts doctor skips when no mounts configured", async () => {
 });
 
 test("extra mounts doctor passes for readable extra mount", async () => {
-  const dir = await mkdtemp(join(tmpdir(), "a2a-extra-mount-"));
+  const dir = trackTempDir(await mkdtemp(join(tmpdir(), "a2a-extra-mount-")));
 
   const report = await checkExtraMounts({
     rootDir: "/tmp/a2a-test",
@@ -812,7 +823,7 @@ test("extra mounts doctor passes for readable extra mount", async () => {
 });
 
 test("extra mounts doctor passes for writable scratch mount", async () => {
-  const dir = await mkdtemp(join(tmpdir(), "a2a-extra-mount-scratch-"));
+  const dir = trackTempDir(await mkdtemp(join(tmpdir(), "a2a-extra-mount-scratch-")));
 
   const report = await checkExtraMounts({
     rootDir: "/tmp/a2a-test",
@@ -847,7 +858,7 @@ test("extra mounts doctor fails for non-existent source", async () => {
 });
 
 test("install is idempotent and validates task root plus read-only secret mount intent", async () => {
-  const dir = await mkdtemp(join(tmpdir(), "a2a-install-"));
+  const dir = trackTempDir(await mkdtemp(join(tmpdir(), "a2a-install-")));
   const root = join(dir, "tasks");
   const secret = join(dir, "hosts.yml");
   await writeFile(secret, "github.com:\n  oauth_token: test\n", { mode: 0o600 });
@@ -870,7 +881,7 @@ function runJson(createdAt: string): string {
 }
 
 test("cleanup removes expired run directories under nested task roots", async () => {
-  const root = await mkdtemp(join(tmpdir(), "a2a-cleanup-"));
+  const root = trackTempDir(await mkdtemp(join(tmpdir(), "a2a-cleanup-")));
   const now = Date.now();
 
   // Task root with two expired run dirs
@@ -901,7 +912,7 @@ test("cleanup removes expired run directories under nested task roots", async ()
 });
 
 test("cleanup preserves recent runs and keeps task root with active runs", async () => {
-  const root = await mkdtemp(join(tmpdir(), "a2a-cleanup-"));
+  const root = trackTempDir(await mkdtemp(join(tmpdir(), "a2a-cleanup-")));
   const now = Date.now();
 
   // Task root with one expired and one recent run dir
@@ -931,7 +942,7 @@ test("cleanup preserves recent runs and keeps task root with active runs", async
 });
 
 test("cleanup dry-run reports candidates without deleting", async () => {
-  const root = await mkdtemp(join(tmpdir(), "a2a-cleanup-"));
+  const root = trackTempDir(await mkdtemp(join(tmpdir(), "a2a-cleanup-")));
   const now = Date.now();
 
   const taskRoot = join(root, "task-dry");
@@ -953,7 +964,7 @@ test("cleanup dry-run reports candidates without deleting", async () => {
 });
 
 test("cleanup handles malformed entries inside task roots (non-directory, broken)", async () => {
-  const root = await mkdtemp(join(tmpdir(), "a2a-cleanup-"));
+  const root = trackTempDir(await mkdtemp(join(tmpdir(), "a2a-cleanup-")));
   const now = Date.now();
 
   const taskRoot = join(root, "task-weird");
@@ -981,7 +992,7 @@ test("cleanup handles malformed entries inside task roots (non-directory, broken
 });
 
 test("cleanup skips non-directory entries at root level", async () => {
-  const root = await mkdtemp(join(tmpdir(), "a2a-cleanup-"));
+  const root = trackTempDir(await mkdtemp(join(tmpdir(), "a2a-cleanup-")));
   const now = Date.now();
 
   const marker = join(root, "NOTES.md");
@@ -1001,7 +1012,7 @@ test("cleanup handles missing rootDir gracefully", async () => {
 });
 
 test("cleanup handles empty rootDir gracefully", async () => {
-  const root = await mkdtemp(join(tmpdir(), "a2a-cleanup-"));
+  const root = trackTempDir(await mkdtemp(join(tmpdir(), "a2a-cleanup-")));
 
   const report = await cleanup({ rootDir: root, ttlMs: 10_000 });
 
@@ -1011,7 +1022,7 @@ test("cleanup handles empty rootDir gracefully", async () => {
 });
 
 test("cleanup handles empty task root (no run dirs inside)", async () => {
-  const root = await mkdtemp(join(tmpdir(), "a2a-cleanup-"));
+  const root = trackTempDir(await mkdtemp(join(tmpdir(), "a2a-cleanup-")));
   const now = Date.now();
 
   // Create a task root with no run dirs — should be pruned if aged
@@ -1040,7 +1051,7 @@ test("cleanup handles empty task root (no run dirs inside)", async () => {
 });
 
 test("cleanup uses run.json.createdAt for age calculation", async () => {
-  const root = await mkdtemp(join(tmpdir(), "a2a-cleanup-"));
+  const root = trackTempDir(await mkdtemp(join(tmpdir(), "a2a-cleanup-")));
   const now = Date.now();
 
   // run.json says old, but mtime is recent → should use createdAt (expired)
@@ -1060,7 +1071,7 @@ test("cleanup uses run.json.createdAt for age calculation", async () => {
 });
 
 test("cleanup falls back to mtime when run.json is missing", async () => {
-  const root = await mkdtemp(join(tmpdir(), "a2a-cleanup-"));
+  const root = trackTempDir(await mkdtemp(join(tmpdir(), "a2a-cleanup-")));
   const now = Date.now();
 
   // No run.json, only mtime is old → should be expired based on mtime
@@ -1076,7 +1087,7 @@ test("cleanup falls back to mtime when run.json is missing", async () => {
 });
 
 test("cleanup report preserves JSON shape with all fields", async () => {
-  const root = await mkdtemp(join(tmpdir(), "a2a-cleanup-"));
+  const root = trackTempDir(await mkdtemp(join(tmpdir(), "a2a-cleanup-")));
   const now = Date.now();
 
   const taskRoot = join(root, "task-report");
@@ -1153,7 +1164,7 @@ test("parseContainerUserRef resolves uid, uid:gid, root, and rejects garbage", (
 });
 
 test("secret-mount readability fails closed for uid-owned 0600 secret under cap-drop ALL (#1809 fleet trap)", async () => {
-  const dir = await mkdtemp(join(tmpdir(), "a2a-secret-read-"));
+  const dir = trackTempDir(await mkdtemp(join(tmpdir(), "a2a-secret-read-")));
   const profileDir = join(dir, "piri-dir");
   await mkdir(profileDir);
   await writeFile(join(profileDir, "auth.json"), "{}");
@@ -1179,7 +1190,7 @@ test("secret-mount readability fails closed for uid-owned 0600 secret under cap-
 });
 
 test("secret-mount readability fails closed for implicit root without DAC_OVERRIDE", async () => {
-  const dir = await mkdtemp(join(tmpdir(), "a2a-secret-root-"));
+  const dir = trackTempDir(await mkdtemp(join(tmpdir(), "a2a-secret-root-")));
   const secret = join(dir, "gh-hosts.yml");
   await writeFile(secret, "github.com:\n  oauth_token: synthetic\n");
   await chmod(secret, 0o600);
@@ -1205,7 +1216,7 @@ test("secret-mount readability fails closed for implicit root without DAC_OVERRI
 });
 
 test("secret-mount readability passes when the container user owns the secret", async () => {
-  const dir = await mkdtemp(join(tmpdir(), "a2a-secret-owner-"));
+  const dir = trackTempDir(await mkdtemp(join(tmpdir(), "a2a-secret-owner-")));
   await writeFile(join(dir, "gh-hosts.yml"), "{}");
   await chmod(join(dir, "gh-hosts.yml"), 0o600);
 
@@ -1222,7 +1233,7 @@ test("secret-mount readability passes when the container user owns the secret", 
 });
 
 test("secret-mount readability passes via others-read bits when owner differs", async () => {
-  const dir = await mkdtemp(join(tmpdir(), "a2a-secret-others-"));
+  const dir = trackTempDir(await mkdtemp(join(tmpdir(), "a2a-secret-others-")));
   await writeFile(join(dir, "auth.json"), "{}");
   await chmod(join(dir, "auth.json"), 0o644);
   await chmod(dir, 0o755);
@@ -1240,7 +1251,7 @@ test("secret-mount readability passes via others-read bits when owner differs", 
 });
 
 test("secret-mount readability skips when cap-drop keeps DAC_OVERRIDE or no mounts exist", async () => {
-  const dir = await mkdtemp(join(tmpdir(), "a2a-secret-skip-"));
+  const dir = trackTempDir(await mkdtemp(join(tmpdir(), "a2a-secret-skip-")));
   await writeFile(join(dir, "auth.json"), "{}");
   await chmod(join(dir, "auth.json"), 0o600);
 
@@ -1260,7 +1271,7 @@ test("secret-mount readability skips when cap-drop keeps DAC_OVERRIDE or no moun
 });
 
 test("secret-mount readability warns for non-numeric container users instead of guessing", async () => {
-  const dir = await mkdtemp(join(tmpdir(), "a2a-secret-nameduser-"));
+  const dir = trackTempDir(await mkdtemp(join(tmpdir(), "a2a-secret-nameduser-")));
   await writeFile(join(dir, "auth.json"), "{}");
 
   const report = await checkSecretMountContainerReadability(readabilityConfig({
@@ -1280,7 +1291,7 @@ test("secret-mount readability warns for non-numeric container users instead of 
  * fails `image inspect` (image missing) while succeeding at `pull`.
  */
 async function installFakeEngine(logPath: string): Promise<string> {
-  const binDir = await mkdtemp(join(tmpdir(), "a2a-fake-engine-"));
+  const binDir = trackTempDir(await mkdtemp(join(tmpdir(), "a2a-fake-engine-")));
   const script = [
     "#!/bin/sh",
     `echo \"$*\" >> ${logPath}`,
@@ -1368,7 +1379,7 @@ function assertNoTokenLeak(report: unknown): void {
 }
 
 test("#2234 claudeCredentialFreshness is ok when the credentials file outlives the task timeout", async () => {
-  const dir = await mkdtemp(join(tmpdir(), "a2a-claude-fresh-"));
+  const dir = trackTempDir(await mkdtemp(join(tmpdir(), "a2a-claude-fresh-")));
   const credentialsFile = join(dir, "host.credentials.json");
   const expiresAt = CLAUDE_FRESHNESS_NOW_MS + CLAUDE_FRESHNESS_TIMEOUT_MS + CLAUDE_CREDENTIAL_REFRESH_MARGIN_MS + 60_000;
   await writeFile(credentialsFile, fakeClaudeCredentials(expiresAt));
@@ -1384,7 +1395,7 @@ test("#2234 claudeCredentialFreshness is ok when the credentials file outlives t
 });
 
 test("#2234 claudeCredentialFreshness warns when the credential expires within the task timeout", async () => {
-  const dir = await mkdtemp(join(tmpdir(), "a2a-claude-fresh-"));
+  const dir = trackTempDir(await mkdtemp(join(tmpdir(), "a2a-claude-fresh-")));
   await writeFile(join(dir, ".credentials.json"), fakeClaudeCredentials(CLAUDE_FRESHNESS_NOW_MS + 10 * 60 * 1000));
 
   const report = await checkClaudeCredentialFreshness(claudeFreshnessConfig(dir), CLAUDE_FRESHNESS_NOW_MS);
@@ -1395,7 +1406,7 @@ test("#2234 claudeCredentialFreshness warns when the credential expires within t
 });
 
 test("#2234 claudeCredentialFreshness warns when the credential is already expired", async () => {
-  const dir = await mkdtemp(join(tmpdir(), "a2a-claude-fresh-"));
+  const dir = trackTempDir(await mkdtemp(join(tmpdir(), "a2a-claude-fresh-")));
   await writeFile(join(dir, ".credentials.json"), fakeClaudeCredentials(CLAUDE_FRESHNESS_NOW_MS - 1));
 
   const report = await checkClaudeCredentialFreshness(claudeFreshnessConfig(dir), CLAUDE_FRESHNESS_NOW_MS);
@@ -1405,7 +1416,7 @@ test("#2234 claudeCredentialFreshness warns when the credential is already expir
 });
 
 test("#2234 claudeCredentialFreshness warns when the credential is missing or unparseable", async () => {
-  const dir = await mkdtemp(join(tmpdir(), "a2a-claude-fresh-"));
+  const dir = trackTempDir(await mkdtemp(join(tmpdir(), "a2a-claude-fresh-")));
   const missing = await checkClaudeCredentialFreshness(claudeFreshnessConfig(dir), CLAUDE_FRESHNESS_NOW_MS);
   assert.equal(missing.status, "warn");
   assert.match(missing.message, /missing or unreadable/);
@@ -1424,7 +1435,7 @@ test("#2234 claudeCredentialFreshness warns when the credential is missing or un
 });
 
 test("#2234 claudeCredentialFreshness warns when the dir copy and credentials file differ", async () => {
-  const dir = await mkdtemp(join(tmpdir(), "a2a-claude-fresh-"));
+  const dir = trackTempDir(await mkdtemp(join(tmpdir(), "a2a-claude-fresh-")));
   const configDir = join(dir, "claude-dir");
   await mkdir(configDir);
   const credentialsFile = join(dir, "host.credentials.json");
@@ -1453,7 +1464,7 @@ test("#2234 claudeCredentialFreshness skips non claude-code profiles", async () 
 });
 
 test("#2234 claudeCredentialFreshness warns inside the refresh margin just after the task timeout", async () => {
-  const dir = await mkdtemp(join(tmpdir(), "a2a-claude-fresh-"));
+  const dir = trackTempDir(await mkdtemp(join(tmpdir(), "a2a-claude-fresh-")));
   await writeFile(join(dir, ".credentials.json"), fakeClaudeCredentials(CLAUDE_FRESHNESS_NOW_MS + CLAUDE_FRESHNESS_TIMEOUT_MS + 60_000));
 
   const report = await checkClaudeCredentialFreshness(claudeFreshnessConfig(dir), CLAUDE_FRESHNESS_NOW_MS);
@@ -1464,7 +1475,7 @@ test("#2234 claudeCredentialFreshness warns inside the refresh margin just after
 });
 
 test("#2234 claudeCredentialFreshness treats an out-of-range expiresAt as unparseable instead of throwing", async () => {
-  const dir = await mkdtemp(join(tmpdir(), "a2a-claude-fresh-"));
+  const dir = trackTempDir(await mkdtemp(join(tmpdir(), "a2a-claude-fresh-")));
   for (const expiresAt of [1e20, -1e300, Number.MAX_SAFE_INTEGER]) {
     await writeFile(join(dir, ".credentials.json"), fakeClaudeCredentials(expiresAt));
     const report = await checkClaudeCredentialFreshness(claudeFreshnessConfig(dir), CLAUDE_FRESHNESS_NOW_MS);
@@ -1475,7 +1486,7 @@ test("#2234 claudeCredentialFreshness treats an out-of-range expiresAt as unpars
 });
 
 test("#2234 claudeCredentialFreshness recognizes a non-canonical credentials mount target", async () => {
-  const dir = await mkdtemp(join(tmpdir(), "a2a-claude-fresh-"));
+  const dir = trackTempDir(await mkdtemp(join(tmpdir(), "a2a-claude-fresh-")));
   const credentialsFile = join(dir, "host.credentials.json");
   await writeFile(credentialsFile, fakeClaudeCredentials(CLAUDE_FRESHNESS_NOW_MS + 24 * 60 * 60 * 1000));
   const config = claudeFreshnessConfig(join(dir, "claude-dir"));
@@ -1522,7 +1533,7 @@ test("#2256 doctor containerHardening lists trusted relaxations and warns only o
 });
 
 test("#2256 secret-mount readability scans nested credentials to depth 3 and no deeper", async () => {
-  const dir = await mkdtemp(join(tmpdir(), "a2a-secret-depth-"));
+  const dir = trackTempDir(await mkdtemp(join(tmpdir(), "a2a-secret-depth-")));
   const profileDir = join(dir, "piri-dir");
   await mkdir(join(profileDir, "agent"), { recursive: true });
   await mkdir(join(profileDir, "a", "b", "c"), { recursive: true });
@@ -1548,7 +1559,7 @@ test("#2256 secret-mount readability scans nested credentials to depth 3 and no 
 });
 
 test("#2256 secret-mount readability bounds the report and scans breadth-first", async () => {
-  const dir = await mkdtemp(join(tmpdir(), "a2a-secret-bound-"));
+  const dir = trackTempDir(await mkdtemp(join(tmpdir(), "a2a-secret-bound-")));
   const profileDir = join(dir, "claude-dir");
   await mkdir(profileDir);
   await writeFile(join(profileDir, ".credentials.json"), "{}");
@@ -1573,7 +1584,7 @@ test("#2256 secret-mount readability bounds the report and scans breadth-first",
 // ─── #2234 slice 3: start gate ──────────────────────────────────────────────
 
 test("#2234 evaluateClaudeCredentialWindow blocks only a known too-short lifetime", async () => {
-  const dir = await mkdtemp(join(tmpdir(), "a2a-claude-window-"));
+  const dir = trackTempDir(await mkdtemp(join(tmpdir(), "a2a-claude-window-")));
   const cfg = claudeFreshnessConfig(dir);
   const boundary = CLAUDE_FRESHNESS_NOW_MS + CLAUDE_FRESHNESS_TIMEOUT_MS + CLAUDE_CREDENTIAL_REFRESH_MARGIN_MS;
 
@@ -1603,7 +1614,7 @@ test("#2234 evaluateClaudeCredentialWindow blocks only a known too-short lifetim
 });
 
 test("#2234 claudeCredentialFreshness no longer claims the container rotates the token", async () => {
-  const dir = await mkdtemp(join(tmpdir(), "a2a-claude-fresh-"));
+  const dir = trackTempDir(await mkdtemp(join(tmpdir(), "a2a-claude-fresh-")));
   await writeFile(join(dir, ".credentials.json"), fakeClaudeCredentials(CLAUDE_FRESHNESS_NOW_MS - 1));
   const report = await checkClaudeCredentialFreshness(claudeFreshnessConfig(dir), CLAUDE_FRESHNESS_NOW_MS);
   assert.equal(report.status, "warn");
@@ -1616,13 +1627,13 @@ test("#2234 claudeCredentialFreshness no longer claims the container rotates the
 const HOST_REFRESH_ARGV = ["claude", "-p", "Reply with exactly: ok", "--model", "haiku", "--max-turns", "1"];
 
 test("#2373 claudeCredentialHostRefresh skips when the trigger is not configured", async () => {
-  const dir = await mkdtemp(join(tmpdir(), "a2a-claude-host-refresh-doctor-"));
+  const dir = trackTempDir(await mkdtemp(join(tmpdir(), "a2a-claude-host-refresh-doctor-")));
   const report = await checkClaudeCredentialHostRefresh(claudeFreshnessConfig(dir, join(dir, "host.credentials.json")));
   assert.deepEqual(report, { status: "skip", message: "not configured" });
 });
 
 test("#2373 claudeCredentialHostRefresh is ok with a credentials file mount and reports only argv[0] plus state", async () => {
-  const dir = await mkdtemp(join(tmpdir(), "a2a-claude-host-refresh-doctor-"));
+  const dir = trackTempDir(await mkdtemp(join(tmpdir(), "a2a-claude-host-refresh-doctor-")));
   const credentialsFile = join(dir, "host.credentials.json");
   await writeFile(credentialsFile, fakeClaudeCredentials(CLAUDE_FRESHNESS_NOW_MS + 1));
   const rootDir = join(dir, "root");
@@ -1656,7 +1667,7 @@ test("#2373 claudeCredentialHostRefresh is ok with a credentials file mount and 
 });
 
 test("#2373 claudeCredentialHostRefresh warns when the credential source is not a credentials file mount", async () => {
-  const dir = await mkdtemp(join(tmpdir(), "a2a-claude-host-refresh-doctor-"));
+  const dir = trackTempDir(await mkdtemp(join(tmpdir(), "a2a-claude-host-refresh-doctor-")));
   const config: RunnerConfig = {
     ...claudeFreshnessConfig(dir),
     claudeHostRefresh: { argv: HOST_REFRESH_ARGV, timeoutMs: 120_000, minIntervalMs: 600_000 },
@@ -1675,7 +1686,7 @@ const FAKE_OAUTH_TOKEN = "sk-ant-oat01-TEST-ONLY";
 const DAY_MS = 24 * 60 * 60 * 1000;
 
 async function oauthTokenConfig(options: { mode?: number; content?: string; meta?: unknown; user?: string } = {}): Promise<{ config: RunnerConfig; tokenFile: string }> {
-  const dir = await mkdtemp(join(tmpdir(), "a2a-claude-oauth-doctor-"));
+  const dir = trackTempDir(await mkdtemp(join(tmpdir(), "a2a-claude-oauth-doctor-")));
   const tokenFile = join(dir, "claude-oauth-token");
   await writeFile(tokenFile, options.content ?? `${FAKE_OAUTH_TOKEN}\n`, { mode: 0o600 });
   await chmod(tokenFile, options.mode ?? 0o600);
@@ -1697,7 +1708,7 @@ function assertNoOauthTokenLeak(report: unknown): void {
 }
 
 test("#2373 option 2 claudeOauthTokenFile skips when the token file is not configured", async () => {
-  const dir = await mkdtemp(join(tmpdir(), "a2a-claude-oauth-doctor-"));
+  const dir = trackTempDir(await mkdtemp(join(tmpdir(), "a2a-claude-oauth-doctor-")));
   assert.deepEqual(await checkClaudeOauthTokenFile(claudeFreshnessConfig(dir)), { status: "skip", message: "not configured" });
 });
 
@@ -1778,7 +1789,7 @@ test("#2373 option 2 claudeOauthTokenFile fails when expired, group/world-readab
 });
 
 test("#2373 option 2 claudeCredentialFreshness skips when the OAuth token file is set", async () => {
-  const dir = await mkdtemp(join(tmpdir(), "a2a-claude-fresh-"));
+  const dir = trackTempDir(await mkdtemp(join(tmpdir(), "a2a-claude-fresh-")));
   await writeFile(join(dir, ".credentials.json"), fakeClaudeCredentials(CLAUDE_FRESHNESS_NOW_MS - 1));
   const report = await checkClaudeCredentialFreshness({ ...claudeFreshnessConfig(dir), claudeOauthTokenFile: join(dir, "claude-oauth-token") }, CLAUDE_FRESHNESS_NOW_MS);
   assert.deepEqual(report, { status: "skip", message: "superseded by the claude oauth token file" });

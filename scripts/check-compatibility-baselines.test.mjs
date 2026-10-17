@@ -1,15 +1,25 @@
 import assert from 'node:assert/strict';
-import test from 'node:test';
-import { mkdtempSync, cpSync, writeFileSync } from 'node:fs';
+import test, { after } from 'node:test';
+import { mkdtempSync, cpSync, writeFileSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { spawnSync } from 'node:child_process';
+
+// #2386: remove every temp dir this file creates.
+const trackedTempDirs = [];
+function trackTempDir(dir) {
+  trackedTempDirs.push(dir);
+  return dir;
+}
+after(() => {
+  for (const dir of trackedTempDirs.splice(0)) rmSync(dir, { recursive: true, force: true });
+});
 
 const root = process.cwd();
 const script = path.join(root, 'scripts/check-compatibility-baselines.mjs');
 
 function runWithMatrix(matrix) {
-  const dir = mkdtempSync(path.join(tmpdir(), 'a2a-compat-'));
+  const dir = trackTempDir(mkdtempSync(path.join(tmpdir(), 'a2a-compat-')));
   cpSync(path.join(root, 'scripts'), path.join(dir, 'scripts'), { recursive: true });
   cpSync(path.join(root, 'contracts'), path.join(dir, 'contracts'), { recursive: true });
   writeFileSync(path.join(dir, 'contracts/compatibility/matrix.md'), matrix);

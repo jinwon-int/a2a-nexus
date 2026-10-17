@@ -1,7 +1,7 @@
-import test from "node:test";
+import test, { after } from "node:test";
 import assert from "node:assert/strict";
 import { createHash, generateKeyPairSync, sign } from "node:crypto";
-import { mkdtempSync, writeFileSync } from "node:fs";
+import { mkdtempSync, writeFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { spawnSync } from "node:child_process";
@@ -16,6 +16,16 @@ import {
   BROKER_COUNTERSIG_SCHEMA,
   RETRIEVAL_SNAPSHOT_SCHEMA,
 } from "./verify-analysis-report.mjs";
+
+// #2386: remove every temp dir this file creates.
+const trackedTempDirs = [];
+function trackTempDir(dir) {
+  trackedTempDirs.push(dir);
+  return dir;
+}
+after(() => {
+  for (const dir of trackedTempDirs.splice(0)) rmSync(dir, { recursive: true, force: true });
+});
 
 const CLAIMED_AT = "2026-07-06T00:00:00.000Z";
 const VERIFIED_AT = "2026-07-06T00:01:00.000Z";
@@ -127,7 +137,7 @@ test("K2 snapshot-only verifier validates a signed retrieval snapshot without a 
 test("K2 snapshot-only CLI mode verifies snapshots and fails closed on missing key (#1374)", () => {
   const ctx = makeCtx();
   const bundle = buildBundle(ctx);
-  const dir = mkdtempSync(join(tmpdir(), "a2a-snapshot-"));
+  const dir = trackTempDir(mkdtempSync(join(tmpdir(), "a2a-snapshot-")));
   const snapshotPath = join(dir, "snapshot.json");
   const keyringPath = join(dir, "keyring.json");
   const missingKeyringPath = join(dir, "missing-keyring.json");

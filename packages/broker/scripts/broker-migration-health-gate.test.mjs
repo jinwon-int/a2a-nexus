@@ -1,13 +1,23 @@
-import { describe, it } from 'node:test';
+import { describe, it, after } from 'node:test';
 import assert from 'node:assert/strict';
-import { mkdtempSync } from 'node:fs';
+import { mkdtempSync, rmSync } from 'node:fs';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
 import { DatabaseSync } from 'node:sqlite';
 import { runMigrationHealthGate } from './broker-migration-health-gate.mjs';
 
+// #2386: remove every temp dir this file creates.
+const trackedTempDirs = [];
+function trackTempDir(dir) {
+  trackedTempDirs.push(dir);
+  return dir;
+}
+after(() => {
+  for (const dir of trackedTempDirs.splice(0)) rmSync(dir, { recursive: true, force: true });
+});
+
 function createDb() {
-  const dir = mkdtempSync(join(tmpdir(), 'a2a-migration-gate-'));
+  const dir = trackTempDir(mkdtempSync(join(tmpdir(), 'a2a-migration-gate-')));
   const file = join(dir, 'state.sqlite');
   const db = new DatabaseSync(file);
   db.exec(`

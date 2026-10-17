@@ -1,4 +1,4 @@
-import { describe, it } from "node:test";
+import { describe, it, after } from "node:test";
 import assert from "node:assert/strict";
 import fs from "node:fs";
 import os from "node:os";
@@ -13,6 +13,16 @@ import {
   main,
   parseArgs,
 } from "./shared-state-shadow-snapshot.mjs";
+
+// #2386: remove every temp dir this file creates.
+const trackedTempDirs = [];
+function trackTempDir(dir) {
+  trackedTempDirs.push(dir);
+  return dir;
+}
+after(() => {
+  for (const dir of trackedTempDirs.splice(0)) fs.rmSync(dir, { recursive: true, force: true });
+});
 
 const STARTED = Date.parse("2026-09-26T03:15:42.531+09:00");
 const NOW = STARTED + 6 * 3_600_000;
@@ -44,7 +54,7 @@ function sink() {
 }
 
 function tmpDir() {
-  return fs.mkdtempSync(path.join(os.tmpdir(), "shadow-snapshot-"));
+  return trackTempDir(fs.mkdtempSync(path.join(os.tmpdir(), "shadow-snapshot-")));
 }
 
 function fakeFetch(body, { status = 200, seen = [] } = {}) {
