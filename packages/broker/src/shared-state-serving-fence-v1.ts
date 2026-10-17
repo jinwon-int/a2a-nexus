@@ -71,7 +71,7 @@
  */
 
 import { createHash, randomUUID } from "node:crypto";
-import { existsSync, mkdtempSync, mkdirSync } from "node:fs";
+import { existsSync, mkdtempSync, mkdirSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { DatabaseSync, type StatementSync } from "node:sqlite";
@@ -947,6 +947,51 @@ export function isolatedSharedStateServingFencePathV1(): string {
 }
 
 /**
+ * #2386: opens a fence on a fresh isolated temp file and owns that temp
+ * directory for the fence's lifetime. `release()` releases the fence first,
+ * then removes the directory (fence file plus WAL/SHM siblings), so every
+ * injected-store or missing-default broker no longer leaves an
+ * `a2a-serving-fence-*` directory behind in the OS temp dir. The directory is
+ * also removed when opening fails. Removal is best-effort: it never throws,
+ * so `release()` keeps its never-throws contract. Isolated fences are
+ * `restartContinuity: "reset"`, so nothing in the directory is meant to
+ * outlive the process.
+ */
+function acquireIsolatedSharedStateServingFenceV1(): SharedStateServingFenceV1 {
+  const filePath = isolatedSharedStateServingFencePathV1();
+  const directory = dirname(filePath);
+  const removeDirectory = (): void => {
+    try {
+      rmSync(directory, { recursive: true, force: true });
+    } catch {
+      // Best-effort temp cleanup must not mask the fence outcome.
+    }
+  };
+  let fence: SharedStateServingFenceV1;
+  try {
+    fence = assertSharedStateServingFenceV1({ filePath });
+  } catch (error) {
+    removeDirectory();
+    throw error;
+  }
+  let removed = false;
+  return Object.freeze({
+    ...fence,
+    restartContinuity: "reset" as const,
+    release(): void {
+      try {
+        fence.release();
+      } finally {
+        if (!removed) {
+          removed = true;
+          removeDirectory();
+        }
+      }
+    },
+  });
+}
+
+/**
  * Resolves the dedicated V1 fence file. A present empty string is a
  * misconfiguration, not an omitted default.
  */
@@ -1726,10 +1771,7 @@ export function acquireSharedStateServingFenceForBrokerV1(input: {
     input.sharedStateFile !== undefined
     || Object.hasOwn(env, SHARED_STATE_SERVING_FENCE_V1.envKey);
   if (!explicit && input.injectedStore) {
-    const fence = assertSharedStateServingFenceV1({
-      filePath: isolatedSharedStateServingFencePathV1(),
-    });
-    return Object.freeze({ ...fence, restartContinuity: "reset" as const });
+    return acquireIsolatedSharedStateServingFenceV1();
   }
   const path = resolveSharedStateServingFencePathV1({
     ...(input.sharedStateFile === undefined
@@ -1749,10 +1791,7 @@ export function acquireSharedStateServingFenceForBrokerV1(input: {
       input.stateFile ===
       (input.defaultLegacyStateFile ?? SHARED_STATE_SERVING_FENCE_V1.defaultLegacyStateFile);
     if (!explicit && defaultLegacy) {
-      const fence = assertSharedStateServingFenceV1({
-        filePath: isolatedSharedStateServingFencePathV1(),
-      });
-      return Object.freeze({ ...fence, restartContinuity: "reset" as const });
+      return acquireIsolatedSharedStateServingFenceV1();
     }
     try {
       mkdirSync(directory, { recursive: true });

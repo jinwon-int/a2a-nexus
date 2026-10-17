@@ -1,16 +1,23 @@
 import assert from 'node:assert/strict';
-import { mkdtempSync, writeFileSync } from 'node:fs';
+import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import test from 'node:test';
+import test, { after } from 'node:test';
 
 import {
   runGuard,
   classifyTaskEvidence,
 } from './a2a-skill-guard.mjs';
 
+// #2386: remove every temp directory this file created once its tests finish.
+const tempDirs = [];
+after(() => {
+  for (const dir of tempDirs) rmSync(dir, { recursive: true, force: true });
+});
+
 function tempFile(name, value) {
   const dir = mkdtempSync(join(tmpdir(), 'a2a-skill-guard-'));
+  tempDirs.push(dir);
   const p = join(dir, name);
   writeFileSync(p, typeof value === 'string' ? value : JSON.stringify(value, null, 2));
   return p;
