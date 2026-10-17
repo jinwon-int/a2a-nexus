@@ -21,6 +21,8 @@ import { spawnSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 import { dirname, join, resolve } from 'node:path';
 
+import { createRunTmpdir, describeCleanup } from './lib/test-tmpdir.mjs';
+
 const SCRIPT_DIR = dirname(fileURLToPath(import.meta.url));
 const REPO_ROOT = resolve(SCRIPT_DIR, '..');
 const MANIFEST_PATH = join(SCRIPT_DIR, 'release-gate-manifest.json');
@@ -143,10 +145,18 @@ function main() {
       (skipped.length ? ` (${skipped.length} archived, skipped)` : ''),
   );
 
-  const result = spawnSync(process.execPath, ['--test', ...active], {
-    stdio: 'inherit',
-    cwd: REPO_ROOT,
-  });
+  // #2386: route every test's mkdtemp into one run-scoped dir, removed below.
+  const runTmp = createRunTmpdir('a2a-release-gate-');
+  let result;
+  try {
+    result = spawnSync(process.execPath, ['--test', ...active], {
+      stdio: 'inherit',
+      cwd: REPO_ROOT,
+      env: runTmp.env,
+    });
+  } finally {
+    console.log(describeCleanup('release-gate', runTmp.cleanup()));
+  }
 
   if (result.error) {
     fail(`failed to spawn node --test: ${result.error.message}`);

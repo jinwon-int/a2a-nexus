@@ -588,6 +588,18 @@
       "class": "gate",
       "round": null,
       "note": "Review-lineage operator client (lineage_create + operator_cancel) against a stub and, when dist is built, the real record-mode broker (#2274)."
+    },
+    {
+      "file": "scripts/check-test-mkdtemp-cleanup.test.mjs",
+      "class": "gate",
+      "round": null,
+      "note": "Ratchet guard: no new test file may call mkdtemp without cleanup (#2386)."
+    },
+    {
+      "file": "scripts/lib/test-tmpdir.test.mjs",
+      "class": "gate",
+      "round": null,
+      "note": "Per-run TMPDIR isolation helper used by the test runners (#2386)."
     }
   ]
 }
