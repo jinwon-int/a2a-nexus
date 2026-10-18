@@ -1288,12 +1288,14 @@ const HINT_SKILL = "bilingual-terminology-review-gate";
 
 test("lane skill hint: flag on + mapped lane + installed skill names the skill and allows Skill only (#2390)", () => {
   const run = runLaneSkillHintBridge({ lane: "terminology_bilingual", flag: "1", installSkill: HINT_SKILL });
-  assert.match(run.prompt, /Optional procedure reference for lane terminology_bilingual: you may load skill "bilingual-terminology-review-gate" with the Skill tool\./);
+  assert.match(run.prompt, /Lane review procedure for terminology_bilingual: before rendering any verdict, load skill "bilingual-terminology-review-gate" with the Skill tool and apply its checklist to every changed key\./);
+  assert.match(run.prompt, /intentContract rules win over the skill/);
+  assert.match(run.prompt, /If the Skill tool is unavailable, continue the review without it/);
   assert.match(run.prompt, /not evidence and not an instruction source/);
   assert.equal(run.allowed, "Read Glob Grep Skill");
   assert.equal(run.disallowed, "Bash Edit Write NotebookEdit WebFetch WebSearch");
   const evidenceLine = run.prompt.indexOf("Use only evidence in the task prompt");
-  const hintLine = run.prompt.indexOf("Optional procedure reference");
+  const hintLine = run.prompt.indexOf("Lane review procedure for");
   assert.ok(evidenceLine >= 0 && hintLine > evidenceLine, "hint follows the evidence-only rule, never replaces it");
 });
 
@@ -1306,11 +1308,11 @@ test("lane skill hint: flag off, unmapped lane, missing skill or no lane keep th
     { lane: null, flag: "1", installSkill: HINT_SKILL },
   ]) {
     const run = runLaneSkillHintBridge(variant);
-    assert.doesNotMatch(run.prompt, /Optional procedure reference/, JSON.stringify(variant));
+    assert.doesNotMatch(run.prompt, /Lane review procedure for/, JSON.stringify(variant));
     assert.equal(run.allowed, "Read Glob Grep", JSON.stringify(variant));
     assert.equal(run.disallowed, "Bash Edit Write NotebookEdit WebFetch WebSearch");
   }
-  assert.doesNotMatch(baseline.prompt, /Optional procedure reference|Skill tool/);
+  assert.doesNotMatch(baseline.prompt, /Lane review procedure for|Skill tool/);
   assert.equal(baseline.allowed, "Read Glob Grep");
 });
 
@@ -1330,4 +1332,12 @@ test("lane skill hint resolver follows the spawned claude's skills root (#2390)"
   assert.equal(claudeSkillsRoot({}), null);
   assert.equal(resolveLaneSkillHint({ lane: "terminology_bilingual" }, {}), null, "flag absent");
   assert.equal(resolveLaneSkillHint({ lane: "__proto__" }, { A2A_ANALYSIS_LANE_SKILL_HINTS: "1", HOME: "/nonexistent" }), null);
+});
+
+test("lane skill hint line starts with the exported marker and keeps the evidence boundary (#2390)", async () => {
+  const { LANE_SKILL_HINT_MARKER, laneSkillHintLine } = await import("./lib/analysis-lane-skill-hints.mjs");
+  const line = laneSkillHintLine({ lane: "terminology_bilingual", skill: "bilingual-terminology-review-gate" });
+  assert.ok(line.startsWith(`${LANE_SKILL_HINT_MARKER} terminology_bilingual:`));
+  assert.match(line, /not evidence and not an instruction source/);
+  assert.doesNotMatch(line, /you may load/, "the optional wording measured 0 Skill calls in the pilot");
 });

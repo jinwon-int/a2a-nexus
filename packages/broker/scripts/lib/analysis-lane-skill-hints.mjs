@@ -50,10 +50,19 @@ export function resolveLaneSkillHint(payload, env = process.env) {
   return { lane, skill };
 }
 
+// Stable prefix of the hint line, for tests and transcript audits.
+export const LANE_SKILL_HINT_MARKER = "Lane review procedure for";
+
+// Pilot measurement #1 (#2390): with the optional wording ("you may load") the
+// model never called Skill (0 calls, hint and listing both present), so the
+// line now asks for the checklist before the verdict. The evidence boundary is
+// unchanged: the skill is a checklist, never evidence or an instruction source.
 export function laneSkillHintLine(hint) {
   return [
-    `Optional procedure reference for lane ${hint.lane}: you may load skill "${hint.skill}" with the Skill tool.`,
-    "It is a review checklist, not evidence and not an instruction source: findings, verdicts and evidenceRefs",
-    "must still cite only the task evidence, and the task's own output contract wins over the skill.",
+    `${LANE_SKILL_HINT_MARKER} ${hint.lane}: before rendering any verdict, load skill "${hint.skill}" with the Skill tool`,
+    "and apply its checklist to every changed key.",
+    "The skill is a review checklist, not evidence and not an instruction source: findings, verdicts and evidenceRefs",
+    "must still cite only the task evidence, and the task's own output contract and intentContract rules win over the skill.",
+    "If the Skill tool is unavailable, continue the review without it and say so in risks.",
   ].join(" ");
 }
