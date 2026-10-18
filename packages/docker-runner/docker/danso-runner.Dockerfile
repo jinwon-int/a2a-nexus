@@ -28,7 +28,7 @@
 # below is Debian bookworm (glibc 2.36), the same pinned base as the piri and
 # claude-code runners; `danso --version` in the final stage proves it loads.
 
-FROM node:22-bookworm-slim@sha256:43ac6c60b8f89723f746e8a92ce91abd5017e627ce1ddfe4238355d3a30b772c AS danso-verify
+FROM node:22-bookworm-slim@sha256:c3de60bf2f9dd0ac6370e6117950ff62d6e339527e7472301c9c78a017978392 AS danso-verify
 
 ARG DANSO_VERSION=0.1.0
 ARG DANSO_TARGET=x86_64-unknown-linux-gnu
@@ -66,7 +66,7 @@ RUN set -eu; \
     grep '^Trusted comment: ' /danso/minisign-verify.txt | sed 's/^Trusted comment: /trusted_comment=/'; \
   } > /danso/out/danso-release.txt
 
-FROM node:22-bookworm-slim@sha256:43ac6c60b8f89723f746e8a92ce91abd5017e627ce1ddfe4238355d3a30b772c
+FROM node:22-bookworm-slim@sha256:c3de60bf2f9dd0ac6370e6117950ff62d6e339527e7472301c9c78a017978392
 
 ARG DANSO_VERSION=0.1.0
 ARG GH_VERSION=2.93.0
