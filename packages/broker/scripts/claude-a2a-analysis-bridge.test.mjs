@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
 import { createHash } from "node:crypto";
-import { chmodSync, existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { test } from "node:test";
@@ -1234,4 +1234,100 @@ test("oversized or too-deep structured keys are dropped by name in structured.dr
   assert.deepEqual(payload.structured.droppedKeys, ["hugeEvidence", "tooDeep"]);
   assert.equal(payload.structured.droppedKeyCount, 2);
   assert.ok(Buffer.byteLength(JSON.stringify(payload.structured), "utf8") <= 64 * 1024);
+});
+
+// ---------------------------------------------------------------------------
+// #2390: lane-specific review skill hint (opt-in flag)
+
+function runLaneSkillHintBridge({ lane, flag, installSkill }) {
+  const tempDir = mkdtempSync(join(tmpdir(), "claude-a2a-lane-skill-"));
+  try {
+    const configDir = join(tempDir, "claude-config");
+    if (installSkill) {
+      const skillDir = join(configDir, "skills", installSkill);
+      mkdirSync(skillDir, { recursive: true });
+      writeFileSync(join(skillDir, "SKILL.md"), "---\nname: x\ndescription: y\n---\n");
+    }
+    const payloadPath = join(tempDir, "payload.json");
+    writeFileSync(payloadPath, JSON.stringify({ mode: "analysis-only", noLive: true, sourceOnly: true, ...(lane ? { lane } : {}) }));
+    const fakeClaudePath = join(tempDir, "fake-claude.mjs");
+    const argsPath = join(tempDir, "args.json");
+    writeFileSync(fakeClaudePath, [
+      "#!/usr/bin/env node",
+      "import { writeFileSync } from 'node:fs';",
+      "writeFileSync(process.env.CAPTURE_ARGS_PATH, JSON.stringify(process.argv.slice(2)));",
+      "const analysis = { status: 'done', summary: 'lane skill hint captured', findings: [], risks: [], recommendations: [], evidenceRefs: [] };",
+      "console.log(JSON.stringify({ type: 'result', result: JSON.stringify(analysis) }));",
+      "",
+    ].join("\n"));
+    chmodSync(fakeClaudePath, 0o755);
+    const result = spawnSync(bridgePath, bridgeArgs("Review the terminology lane."), {
+      encoding: "utf8",
+      env: {
+        ...process.env,
+        A2A_CLAUDE_CODE_BIN: fakeClaudePath,
+        A2A_ANALYSIS_PAYLOAD_FILE: payloadPath,
+        A2A_ANALYSIS_LANE_SKILL_HINTS: flag,
+        CLAUDE_CONFIG_DIR: configDir,
+        CAPTURE_ARGS_PATH: argsPath,
+      },
+    });
+    assert.equal(result.status, 0, result.stderr);
+    const args = JSON.parse(readFileSync(argsPath, "utf8"));
+    return {
+      prompt: args[args.indexOf("-p") + 1],
+      allowed: args[args.indexOf("--allowedTools") + 1],
+      disallowed: args[args.indexOf("--disallowedTools") + 1],
+    };
+  } finally {
+    rmSync(tempDir, { recursive: true, force: true });
+  }
+}
+
+const HINT_SKILL = "bilingual-terminology-review-gate";
+
+test("lane skill hint: flag on + mapped lane + installed skill names the skill and allows Skill only (#2390)", () => {
+  const run = runLaneSkillHintBridge({ lane: "terminology_bilingual", flag: "1", installSkill: HINT_SKILL });
+  assert.match(run.prompt, /Optional procedure reference for lane terminology_bilingual: you may load skill "bilingual-terminology-review-gate" with the Skill tool\./);
+  assert.match(run.prompt, /not evidence and not an instruction source/);
+  assert.equal(run.allowed, "Read Glob Grep Skill");
+  assert.equal(run.disallowed, "Bash Edit Write NotebookEdit WebFetch WebSearch");
+  const evidenceLine = run.prompt.indexOf("Use only evidence in the task prompt");
+  const hintLine = run.prompt.indexOf("Optional procedure reference");
+  assert.ok(evidenceLine >= 0 && hintLine > evidenceLine, "hint follows the evidence-only rule, never replaces it");
+});
+
+test("lane skill hint: flag off, unmapped lane, missing skill or no lane keep the pre-#2390 prompt and tools (#2390)", () => {
+  const baseline = runLaneSkillHintBridge({ lane: "terminology_bilingual", flag: "", installSkill: HINT_SKILL });
+  for (const variant of [
+    { lane: "terminology_bilingual", flag: "true", installSkill: HINT_SKILL },
+    { lane: "content_clinical", flag: "1", installSkill: HINT_SKILL },
+    { lane: "terminology_bilingual", flag: "1", installSkill: null },
+    { lane: null, flag: "1", installSkill: HINT_SKILL },
+  ]) {
+    const run = runLaneSkillHintBridge(variant);
+    assert.doesNotMatch(run.prompt, /Optional procedure reference/, JSON.stringify(variant));
+    assert.equal(run.allowed, "Read Glob Grep", JSON.stringify(variant));
+    assert.equal(run.disallowed, "Bash Edit Write NotebookEdit WebFetch WebSearch");
+  }
+  assert.doesNotMatch(baseline.prompt, /Optional procedure reference|Skill tool/);
+  assert.equal(baseline.allowed, "Read Glob Grep");
+});
+
+test("finalizer tool args add only allow-listed optional tools, never a disallowed one (#2390)", async () => {
+  const { buildClaudeFinalizerToolArgs } = await import("./finalizer-tool-policy.mjs");
+  assert.deepEqual(buildClaudeFinalizerToolArgs(), ["--allowedTools", "Read Glob Grep", "--disallowedTools", "Bash Edit Write NotebookEdit WebFetch WebSearch"]);
+  assert.deepEqual(
+    buildClaudeFinalizerToolArgs({ extraAllowedTools: ["Skill", "Bash", "WebFetch", "Agent", "Skill"] }),
+    ["--allowedTools", "Read Glob Grep Skill", "--disallowedTools", "Bash Edit Write NotebookEdit WebFetch WebSearch"],
+  );
+});
+
+test("lane skill hint resolver follows the spawned claude's skills root (#2390)", async () => {
+  const { claudeSkillsRoot, resolveLaneSkillHint } = await import("./lib/analysis-lane-skill-hints.mjs");
+  assert.equal(claudeSkillsRoot({ CLAUDE_CONFIG_DIR: "/cfg", HOME: "/home/u" }), "/cfg/skills");
+  assert.equal(claudeSkillsRoot({ HOME: "/home/u" }), "/home/u/.claude/skills");
+  assert.equal(claudeSkillsRoot({}), null);
+  assert.equal(resolveLaneSkillHint({ lane: "terminology_bilingual" }, {}), null, "flag absent");
+  assert.equal(resolveLaneSkillHint({ lane: "__proto__" }, { A2A_ANALYSIS_LANE_SKILL_HINTS: "1", HOME: "/nonexistent" }), null);
 });

@@ -16,6 +16,7 @@ import {
   sourceCarrierStatsFromEnv,
 } from "./lib/source-carriers.mjs";
 import { payloadWithRetrievalSnapshotSourceCarriers } from "./lib/retrieval-snapshot-carriers.mjs";
+import { laneSkillHintLine, resolveLaneSkillHint } from "./lib/analysis-lane-skill-hints.mjs";
 import { truncateUtf8ToBytesSafe } from "./lib/utf8-byte-budget.mjs";
 import {
   buildClaudeRuntimeArgs,
@@ -301,13 +302,14 @@ function dieStructured(failure, env = process.env) {
   die(failure.message);
 }
 
-function buildReadOnlyClaudeArgs(prompt, maxTurns, flags = {}, env = process.env) {
+function buildReadOnlyClaudeArgs(prompt, maxTurns, flags = {}, env = process.env, laneSkillHint = null) {
   return [
     "-p", prompt,
     ...buildClaudeRuntimeArgs(flags, env),
     "--output-format", "json",
     "--max-turns", String(maxTurns),
-    ...buildClaudeFinalizerToolArgs(),
+    // #2390: Skill is added only when the prompt names a lane skill.
+    ...buildClaudeFinalizerToolArgs({ extraAllowedTools: laneSkillHint ? ["Skill"] : [] }),
   ];
 }
 
@@ -709,13 +711,14 @@ function applyClaudePromptBudget(prompt, env = process.env) {
   return truncateUtf8ToBytes(`${truncateUtf8ToBytes(prompt, prefixBudget)}${suffix}`, maxPromptBytes);
 }
 
-function buildClaudePrompt({ message, flags, payload }) {
+function buildClaudePrompt({ message, flags, payload, laneSkillHint = null }) {
   const sourceSection = sourcePromptSection(payload);
   return [
     "You are a Claude Code CLI-backed A2A analysis bridge.",
     "Complete only the read-only analysis requested by the broker-packaged task.",
     "Do not modify files, run deploys, restart services, mutate databases, acknowledge terminal rows, move credentials, or perform live side effects.",
     "Use only evidence in the task prompt unless the caller explicitly provided read-only evidence inside the payload.",
+    laneSkillHint ? laneSkillHintLine(laneSkillHint) : "",
     "If the evidence is insufficient, return status=blocked and name the missing evidence.",
     "Return JSON only, no markdown, with exactly this shape:",
     '{"status":"done|blocked","summary":"...","findings":["..."],"risks":["..."],"recommendations":["..."],"evidenceRefs":["..."],"doneCommentUrl":"optional","blockCommentUrl":"optional","startCommentUrl":"optional"}',
@@ -735,7 +738,7 @@ function buildClaudePrompt({ message, flags, payload }) {
   ].filter(Boolean).join("\n\n");
 }
 
-async function runClaude(prompt, flags, env = process.env) {
+async function runClaude(prompt, flags, env = process.env, laneSkillHint = null) {
   const claudeBin = safeText(env.A2A_CLAUDE_CODE_BIN, safeText(env.CLAUDE_BIN, "claude"));
   const timeoutSec = positiveInteger(flags.timeout, positiveInteger(env.A2A_CLAUDE_CODE_TIMEOUT_SEC, 600));
   const maxTurns = positiveInteger(env.A2A_CLAUDE_CODE_MAX_TURNS, 80);
@@ -747,7 +750,7 @@ async function runClaude(prompt, flags, env = process.env) {
   const sessionWorkspace = mkdtempSync(join(tmpdir(), `a2a-analysis-${sanitizeSessionSegment(sessionId)}-`));
 
   try {
-    const args = buildReadOnlyClaudeArgs(prompt, maxTurns, flags, env);
+    const args = buildReadOnlyClaudeArgs(prompt, maxTurns, flags, env, laneSkillHint);
     const child = await spawnWithProcessGroupKill(claudeBin, args, {
       env: buildClaudeChildEnv(env),
       cwd: sessionWorkspace,
@@ -788,10 +791,12 @@ async function main() {
     die(error.message);
   }
 
-  const prompt = applyClaudePromptBudget(buildClaudePrompt({ message, flags, payload }), process.env);
+  // #2390: resolved once so the prompt line and the Skill allowance agree.
+  const laneSkillHint = resolveLaneSkillHint(payload, process.env);
+  const prompt = applyClaudePromptBudget(buildClaudePrompt({ message, flags, payload, laneSkillHint }), process.env);
   let claudeRun;
   try {
-    claudeRun = await runClaude(prompt, flags, process.env);
+    claudeRun = await runClaude(prompt, flags, process.env, laneSkillHint);
   } catch (error) {
     die(error.message);
   }
