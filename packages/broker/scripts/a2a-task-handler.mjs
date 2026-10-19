@@ -1575,6 +1575,11 @@ function runOpenClawAnalysisBridgeOnce(task, env = process.env, sessionId) {
   const promptPayloadLimit = Number.isSafeInteger(Number(env.A2A_ANALYSIS_PROMPT_PAYLOAD_LIMIT))
     ? Math.max(1000, Math.min(16000, Number(env.A2A_ANALYSIS_PROMPT_PAYLOAD_LIMIT)))
     : (strictJsonInstruction ? 8000 : 16000);
+  // #2393: preflight (missing artifact, harness pins) runs before any task or
+  // payload file is written, so a refused task leaves nothing on disk.
+  const baseCommand = analysisBridgeCommand(env);
+  const bridgePreflight = analysisBridgeArtifactPreflight(baseCommand, env);
+  if (bridgePreflight) return bridgePreflight;
   // 프롬프트가 payload 파일의 절대경로를 인라인하므로 프롬프트 구성보다 먼저 만든다.
   const bridgeFiles = writeAnalysisBridgeInputFiles(task, payload, env);
   // #2023: the handler must declare the payload carrier honestly so the bridge
@@ -1623,9 +1628,6 @@ function runOpenClawAnalysisBridgeOnce(task, env = process.env, sessionId) {
       : `Payload JSON excerpt (${promptPayloadLimit} chars max; full payload is in A2A_ANALYSIS_PAYLOAD_FILE):\n${payloadExcerpt}`,
   ].filter(Boolean).join("\n\n");
 
-  const baseCommand = analysisBridgeCommand(env);
-  const bridgePreflight = analysisBridgeArtifactPreflight(baseCommand, env);
-  if (bridgePreflight) return bridgePreflight;
   const baseArgs = [
     "agent",
     "--local",

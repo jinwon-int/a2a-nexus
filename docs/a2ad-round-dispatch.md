@@ -724,7 +724,11 @@ change (the only tightening: a `succeeded` lane whose own marker says
   parsed, `status=done` result (`analysis_json_parsed` / `prose_recovered`);
   `analysis_blocked` is `marked=false`. The worker handler stamps
   `error.details.completion.marked=false` (reason = error code) on every
-  analysis-bridge failure, including timeouts and preflight refusals. The
+  analysis-bridge failure, including timeouts and preflight refusals (the
+  worker then nests it under `error.details.nestedError` when it wraps the
+  nonzero exit as `handler_exit_nonzero`; a worker-level `handler_timeout` is
+  unmarked by definition). Feed the gate full task records (`?detail=full` or
+  `GET /tasks/:id`) — list reads drop `error.details`. The
   finalizer gate (`completion` block) and `a2ad-evidence-classifier`
   (`completion` summary, `unmarked_completion` class) list unmarked lanes in
   their own column, drop them from `scoredDenominator` (never a zero score),

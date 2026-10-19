@@ -135,13 +135,19 @@ function laneOutput(lane) {
 
 // #2393 completion marker. Bridges stamp output.completion on success; the
 // worker handler stamps error.details.completion (marked=false) on every
-// bridge failure. Records without either are pre-#2393 'legacy' lanes and are
-// treated exactly as before.
+// bridge failure, which the worker then nests under
+// error.details.nestedError when it wraps the nonzero handler exit
+// (handler_exit_nonzero). A worker-level handler_timeout killed the handler
+// before it could write anything, so it is unmarked by definition. Anything
+// else without a marker is a pre-#2393 'legacy' lane, treated as before.
+// Needs full task records (`?detail=full` / GET /tasks/:id): list reads drop
+// error.details.
 function laneCompletion(lane) {
   const output = laneOutput(lane);
   const error = lane.error ?? lane.result?.error ?? {};
-  const marker = [output?.completion, error?.details?.completion]
+  const marker = [output?.completion, error?.details?.completion, error?.details?.nestedError?.details?.completion]
     .find((value) => value && typeof value === 'object' && typeof value.marked === 'boolean');
+  if (!marker && error?.code === 'handler_timeout') return { state: 'unmarked', reason: 'handler_timeout' };
   if (!marker) return { state: 'legacy', reason: '' };
   return {
     state: marker.marked ? 'marked' : 'unmarked',

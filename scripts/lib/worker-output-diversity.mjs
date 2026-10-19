@@ -45,7 +45,7 @@ export function outputLineSet(output) {
 }
 
 // Two empty sets are identical (1.0): two lanes that both said nothing did
-// not disagree.
+// not disagree, and nothing in them is independent evidence either.
 export function lineJaccard(a, b) {
   if (a.size === 0 && b.size === 0) return 1;
   let intersection = 0;
@@ -87,25 +87,27 @@ export function computeWorkerOutputDiversity(entries, { threshold = DIVERSITY_DE
   }));
   const distinct = new Set(lanes.map((lane) => [...lane.lines].sort().join('\n')));
   const pairs = [];
+  let similarPairCount = 0;
   const byRelation = { same_runtime: [], cross_runtime: [], unknown_runtime: [] };
   for (let i = 0; i < lanes.length; i += 1) {
     for (let j = i + 1; j < lanes.length; j += 1) {
       const a = lanes[i];
       const b = lanes[j];
-      const jaccard = round4(lineJaccard(a.lines, b.lines));
+      const raw = lineJaccard(a.lines, b.lines);
       const relation = pairRelation(a, b);
-      byRelation[relation].push(jaccard);
-      pairs.push({ a: a.id, b: b.id, jaccard, relation, aRuntime: a.runtime, bRuntime: b.runtime });
+      byRelation[relation].push(raw);
+      // The threshold is applied to the unrounded value; only the report rounds.
+      if (raw >= threshold) similarPairCount += 1;
+      pairs.push({ a: a.id, b: b.id, jaccard: round4(raw), relation, aRuntime: a.runtime, bRuntime: b.runtime });
     }
   }
-  const similarPairCount = pairs.filter((pair) => pair.jaccard >= threshold).length;
   const result = {
     metric: DIVERSITY_METRIC,
     basis: 'findings+risks+recommendations lines (whitespace-normalized set)',
     threshold,
     n: lanes.length,
     n_distinct: distinct.size,
-    mean_line_jaccard: mean(pairs.map((pair) => pair.jaccard)),
+    mean_line_jaccard: mean([...byRelation.same_runtime, ...byRelation.cross_runtime, ...byRelation.unknown_runtime]),
     independence: lanes.length < 2 ? 'not_applicable' : (similarPairCount > 0 ? 'low' : 'ok'),
     similarPairCount,
     byRelation: Object.fromEntries(Object.entries(byRelation).map(([relation, values]) => [

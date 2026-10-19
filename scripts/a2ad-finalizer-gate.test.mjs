@@ -1318,3 +1318,38 @@ test('#2393 completion: an unmarked lane superseded by a substantive supplement 
   assert.equal(result.completion.unmarkedLanes[0].superseded, true);
   assert.deepEqual(result.completion.redispatchCandidates, []);
 });
+
+test('#2394 diversity: the similarity threshold is applied before rounding', () => {
+  // 8999/10000 lines shared rounds to 0.9 but is below the 0.9 threshold.
+  const shared = Array.from({ length: 8999 }, (_, i) => `line ${i}`);
+  const a = { findings: [...shared, ...Array.from({ length: 1001 }, (_, i) => `a ${i}`)] };
+  const b = { findings: shared };
+  const diversity = computeWorkerOutputDiversity([{ id: 'a', output: a }, { id: 'b', output: b }]);
+  assert.equal(diversity.pairs[0].jaccard, 0.8999);
+  const near = computeWorkerOutputDiversity([
+    { id: 'a', output: { findings: [...Array.from({ length: 89999 }, (_, i) => `l${i}`), ...Array.from({ length: 10001 }, (_, i) => `x${i}`)] } },
+    { id: 'b', output: { findings: Array.from({ length: 89999 }, (_, i) => `l${i}`) } },
+  ]);
+  assert.equal(near.pairs[0].jaccard, 0.9);
+  assert.equal(near.similarPairCount, 0);
+  assert.equal(near.independence, 'ok');
+});
+
+test('#2393 completion: real worker-wrapped failures (handler_exit_nonzero nestedError) and handler_timeout are unmarked', () => {
+  const tasks = [
+    lane('t-nw-1', 'succeeded', { top: { output: { ...analysisOutput(['finding']), completion: { marked: true, reason: 'analysis_json_parsed' } } } }),
+    // Shape src/workers/external-handler.ts handlerExitNonzeroError produces
+    // around the handler's own error record.
+    lane('t-nw-2', 'failed', { order: 2, top: { error: {
+      code: 'handler_exit_nonzero',
+      message: 'handler exited with code 1',
+      details: { stage: 'handler', nestedError: { code: 'openclaw_analysis_timeout', details: { completion: { marked: false, reason: 'openclaw_analysis_timeout' } } } },
+    } } }),
+    lane('t-nw-3', 'failed', { order: 3, top: { error: { code: 'handler_timeout', message: 'handler timed out' } } }),
+  ];
+  const result = computeVerdict(tasks, { round: ROUND, quorum: 1, draft: 't-nw-1' });
+  assert.equal(result.completion.unmarked, 2);
+  assert.equal(result.completion.scoredDenominator, 1);
+  assert.deepEqual(result.completion.redispatchCandidates, ['t-nw-2', 't-nw-3']);
+  assert.deepEqual(result.completion.unmarkedLanes.map((l) => l.reason), ['openclaw_analysis_timeout', 'handler_timeout']);
+});

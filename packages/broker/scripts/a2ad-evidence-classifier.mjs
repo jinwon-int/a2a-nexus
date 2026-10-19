@@ -326,13 +326,16 @@ function hasExplicitAnalysisRecovery(record) {
 }
 
 // #2393 completion marker: output.completion on bridge success,
-// error.details.completion (marked=false) on handler-recorded bridge failure.
+// error.details.completion (marked=false) on handler-recorded bridge failure —
+// nested under error.details.nestedError once the worker wraps the nonzero
+// handler exit. A worker-level handler_timeout is unmarked by definition.
 // No marker = pre-#2393 'legacy' record, classified exactly as before.
 export function recordCompletion(record) {
   const output = record?.output ?? record?.result?.output;
   const error = record?.error ?? record?.result?.error;
-  const marker = [output?.completion, error?.details?.completion]
+  const marker = [output?.completion, error?.details?.completion, error?.details?.nestedError?.details?.completion]
     .find((value) => value && typeof value === 'object' && !Array.isArray(value) && typeof value.marked === 'boolean');
+  if (!marker && error?.code === 'handler_timeout') return { state: 'unmarked', reason: 'handler_timeout' };
   if (!marker) return { state: 'legacy', reason: '' };
   return { state: marker.marked ? 'marked' : 'unmarked', reason: asText(marker.reason).trim().slice(0, 64) };
 }

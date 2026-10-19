@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { createHash } from "node:crypto";
-import { chmodSync, existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
@@ -4082,16 +4082,30 @@ test("#2393 handler downgrades a completion marker that claims a blocked analysi
   });
 });
 
-test("#2393 timeout fixture: completion.marked=false is recorded and the lane leaves the scored denominator", () => {
+test("#2393 timeout fixture: completion.marked=false is recorded and the lane leaves the scored denominator", async () => {
+  // The worker wraps a nonzero handler exit as handler_exit_nonzero with the
+  // handler's own error under details.nestedError — the shape broker records
+  // actually carry, so the classifier is fed that, not the raw handler error.
+  const { handlerExitNonzeroError } = await import("../dist/workers/external-handler.js");
   withHarnessBridge("setTimeout(() => {}, 20000);", ({ bin }) => {
     const result = handleTask(harnessAnalysisTask("task-2393-timeout"), harnessEnv(bin, { A2A_OPENCLAW_ANALYSIS_WATCHDOG_MS: "300" }));
     assert.equal(result.error.code, "openclaw_analysis_timeout");
     assert.equal(result.error.details.completion.marked, false);
     assert.equal(result.error.details.completion.reason, "openclaw_analysis_timeout");
     assert.ok(Number.isFinite(Date.parse(result.error.details.completion.at)));
+    const workerError = handlerExitNonzeroError({
+      command: "node",
+      args: ["a2a-task-handler.mjs"],
+      code: 1,
+      signal: null,
+      stdout: JSON.stringify({ error: result.error }),
+      stderr: "",
+    });
+    assert.equal(workerError.code, "handler_exit_nonzero");
 
     const report = classifyEvidenceBundle([
-      { id: "task-2393-timeout", taskId: "task-2393-timeout", workerId: "workerbeta", status: "failed", error: result.error },
+      { id: "task-2393-timeout", taskId: "task-2393-timeout", workerId: "workerbeta", status: "failed", error: workerError },
+      { id: "task-2393-killed", taskId: "task-2393-killed", workerId: "workergamma", status: "failed", error: { code: "handler_timeout", message: "handler timed out" } },
       {
         id: "task-2393-ok",
         taskId: "task-2393-ok",
@@ -4109,7 +4123,7 @@ test("#2393 timeout fixture: completion.marked=false is recorded and the lane le
       },
     ]);
     assert.equal(report.counts.substantive, 1);
-    assert.deepEqual(report.completion, { marked: 1, unmarked: 1, legacy: 0, scoredDenominator: 1, redispatchCandidates: ["task-2393-timeout"] });
+    assert.deepEqual(report.completion, { marked: 1, unmarked: 2, legacy: 0, scoredDenominator: 1, redispatchCandidates: ["task-2393-timeout", "task-2393-killed"] });
   });
 });
 
@@ -4125,6 +4139,16 @@ test("#2393 claim preflight: a bridge pin mismatch refuses the task without invo
     assert.ok(result.error.details.remedy);
     assert.equal(result.error.details.completion.marked, false);
     assert.equal(result.error.details.completion.reason, "analysis_bridge_harness_preflight_failed");
+  });
+});
+
+test("#2393 claim preflight refusal writes no task/payload files", () => {
+  withHarnessBridge(bridgeResponseBody({ status: "done", summary: "x", findings: ["x"], risks: [], recommendations: [], evidenceRefs: [] }), ({ dir, bin }) => {
+    const cwd = join(dir, "handler-cwd");
+    mkdirSync(cwd);
+    const result = handleTask(harnessAnalysisTask("task-2393-noleak"), harnessEnv(bin, { A2A_BRIDGE_PIN_SHA256: "0".repeat(64), A2A_HANDLER_CWD: cwd }));
+    assert.equal(result.error.code, "analysis_bridge_harness_preflight_failed");
+    assert.equal(existsSync(join(cwd, ".a2a-bridge")), false);
   });
 });
 

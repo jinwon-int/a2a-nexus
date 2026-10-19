@@ -161,6 +161,9 @@ function parseHandlerStdoutError(stdout: string): TaskError | undefined {
 const HANDLER_MISSING_NESTED_CODES = new Set([
   "openclaw_analysis_bridge_missing",
   "openclaw_analysis_spawn_failed",
+  // #2393: the deployed bridge/skills do not match the configured pins — an
+  // artifact problem on this worker, never a transient bridge error.
+  "analysis_bridge_harness_preflight_failed",
 ]);
 
 /** Nested codes that mean the bridge ran and produced output we could not use. */
