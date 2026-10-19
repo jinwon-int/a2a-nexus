@@ -1532,6 +1532,25 @@ test("#2256 doctor containerHardening lists trusted relaxations and warns only o
   assert.deepEqual(keepsCaps.detail?.relaxations, ["cap_drop_without_all"]);
 });
 
+test("#2395 doctor containerHardening reports unrestricted egress for bridge/host without changing status", () => {
+  const hardened = { trustedOperator: true, capDrop: ["ALL"], user: "1000:1000", readOnlyRootFilesystem: true, noNewPrivileges: true };
+  for (const network of ["bridge", "host"] as const) {
+    const report = checkContainerHardening(readabilityConfig({ ...hardened, network }));
+    assert.equal(report.status, "ok", `${network}: trusted relaxations stay warn-free`);
+    assert.deepEqual(report.detail?.relaxations, ["unrestricted_egress"]);
+    assert.deepEqual(report.detail?.egress, { mode: "unrestricted", allowlistConfigured: false, proxyWired: false });
+    assert.match(report.message, /unrestricted_egress/);
+  }
+
+  const allowlisted = checkContainerHardening(readabilityConfig({ ...hardened, network: "bridge", egressAllowlistHosts: ["api.github.com"] }));
+  assert.deepEqual(allowlisted.detail?.egress, { mode: "unrestricted", allowlistConfigured: true, proxyWired: false },
+    "an allowlist that run never enforces must not read as restricted");
+
+  const none = checkContainerHardening(readabilityConfig({ ...hardened, network: "none" }));
+  assert.deepEqual(none.detail?.relaxations, []);
+  assert.deepEqual(none.detail?.egress, { mode: "none", allowlistConfigured: false, proxyWired: false });
+});
+
 test("#2256 secret-mount readability scans nested credentials to depth 3 and no deeper", async () => {
   const dir = trackTempDir(await mkdtemp(join(tmpdir(), "a2a-secret-depth-")));
   const profileDir = join(dir, "piri-dir");

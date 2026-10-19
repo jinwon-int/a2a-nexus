@@ -1088,6 +1088,17 @@ export function checkContainerHardening(config: RunnerConfig): OpsCheck {
   if (rootUser) relaxations.push("root_user");
   if (config.readOnlyRootFilesystem !== true) relaxations.push("writable_rootfs");
   if (config.noNewPrivileges === false) relaxations.push("privilege_escalation_allowed");
+  // #2395: `bridge`/`host` give the task container direct outbound network.
+  // The egress allowlist proxy (#1374) is not started by `run`, so a configured
+  // allowlist does not restrict anything yet; report that instead of implying it.
+  const network = config.network ?? "none";
+  const egressUnrestricted = network === "bridge" || network === "host";
+  if (egressUnrestricted) relaxations.push("unrestricted_egress");
+  const egress = {
+    mode: egressUnrestricted ? "unrestricted" : network === "none" ? "none" : "unknown",
+    allowlistConfigured: (config.egressAllowlistHosts?.length ?? 0) > 0,
+    proxyWired: false,
+  };
   const detail = {
     mode: config.trustedOperator ? "trusted_operator" : "public_safe_default",
     capDrop,
@@ -1095,7 +1106,8 @@ export function checkContainerHardening(config: RunnerConfig): OpsCheck {
     user: rawUser || "root (image default; --user not set)",
     readOnlyRootFilesystem: config.readOnlyRootFilesystem === true,
     noNewPrivileges: config.noNewPrivileges !== false,
-    network: config.network ?? "none",
+    network,
+    egress,
     relaxations,
   };
   if (!capDropIncludesAll(capDrop)) {
