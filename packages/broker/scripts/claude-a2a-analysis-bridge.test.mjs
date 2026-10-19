@@ -7,6 +7,11 @@ import { join } from "node:path";
 import { test } from "node:test";
 
 import { CLAUDE_MODEL_TELEMETRY_CONTRACT } from "./lib/claude-model-telemetry.mjs";
+import {
+  analysisHarnessPreflight,
+  buildAnalysisHarness,
+  skillsTreeSha256FromRegistry,
+} from "./lib/analysis-harness-fingerprint.mjs";
 
 const bridgePath = new URL("./claude-a2a-analysis-bridge.mjs", import.meta.url).pathname;
 const patchBridgePath = new URL("./claude-a2a-patch-bridge.mjs", import.meta.url).pathname;
@@ -1340,4 +1345,127 @@ test("lane skill hint line starts with the exported marker and keeps the evidenc
   assert.ok(line.startsWith(`${LANE_SKILL_HINT_MARKER} terminology_bilingual:`));
   assert.match(line, /not evidence and not an instruction source/);
   assert.doesNotMatch(line, /you may load/, "the optional wording measured 0 Skill calls in the pilot");
+});
+
+// ─── #2393 harness fingerprint + completion marker ──────────────────────────
+// The bridge is run through process.execPath and the fake claude carries an
+// absolute node shebang so these cases also run on hosts without /usr/bin/env.
+
+
+function runBridgeWithAnalysis(analysis, extraEnv = {}) {
+  const tempDir = mkdtempSync(join(tmpdir(), "claude-a2a-harness-2393-"));
+  try {
+    const fakeClaudePath = join(tempDir, "fake-claude.mjs");
+    writeFileSync(fakeClaudePath, [
+      `#!${process.execPath}`,
+      `const analysis = ${JSON.stringify(analysis)};`,
+      "console.log(JSON.stringify({ type: 'result', subtype: 'success', result: JSON.stringify(analysis), num_turns: 1, duration_ms: 10 }));",
+      "",
+    ].join("\n"));
+    chmodSync(fakeClaudePath, 0o755);
+    const registry = join(tempDir, "registry.json");
+    writeFileSync(registry, JSON.stringify({
+      schema_version: 1,
+      skills: [
+        { name: "b-skill", tree_sha256: "b".repeat(64) },
+        { name: "a-skill", tree_sha256: "a".repeat(64) },
+        { name: "no-digest", tree_sha256: null },
+      ],
+    }));
+    const result = spawnSync(process.execPath, [bridgePath, ...bridgeArgs("Payload JSON:\n" + JSON.stringify({ mode: "analysis-only" }))], {
+      encoding: "utf8",
+      env: {
+        ...process.env,
+        A2A_CLAUDE_MODEL: "",
+        A2A_CLAUDE_EFFORT: "",
+        A2A_CLAUDE_CODE_BIN: fakeClaudePath,
+        A2A_BRIDGE_REVISION: "C12E20D2",
+        A2A_SKILLS_REGISTRY_PATH: registry,
+        ...extraEnv,
+      },
+    });
+    assert.equal(result.status, 0, result.stderr);
+    return { payload: JSON.parse(JSON.parse(result.stdout).payloads[0].text), registry: readFileSync(registry, "utf8") };
+  } finally {
+    rmSync(tempDir, { recursive: true, force: true });
+  }
+}
+
+const DONE_ANALYSIS = {
+  status: "done",
+  summary: "harness stamped",
+  findings: ["finding"],
+  risks: [],
+  recommendations: [],
+  evidenceRefs: ["ref"],
+  // A model-emitted marker must neither win nor ride along in `structured`.
+  completion: { marked: false, reason: "model-forged" },
+  harness: { harnessFingerprint: "f".repeat(64) },
+};
+
+test("#2393 bridge stamps a harness fingerprint and a marked completion on a parsed done result", () => {
+  const { payload } = runBridgeWithAnalysis(DONE_ANALYSIS);
+  const bridgeSha = createHash("sha256").update(readFileSync(bridgePath)).digest("hex");
+  assert.equal(payload.harness.fingerprintVersion, "a2a.harness-fingerprint.v1");
+  assert.equal(payload.harness.bridge, "c12e20d2");
+  assert.equal(payload.harness.bridgeFileSha256, bridgeSha);
+  assert.equal(payload.harness.runtime, "claude-code");
+  assert.equal(payload.harness.model, "requested:claude-code/default");
+  assert.equal(payload.harness.skillCount, 2);
+  assert.match(payload.harness.skillsTreeSha256, /^[0-9a-f]{64}$/);
+  assert.match(payload.harness.harnessFingerprint, /^[0-9a-f]{64}$/);
+  assert.notEqual(payload.harness.harnessFingerprint, "f".repeat(64));
+  assert.equal(payload.completion.marked, true);
+  assert.equal(payload.completion.reason, "analysis_json_parsed");
+  assert.ok(Number.isFinite(Date.parse(payload.completion.at)));
+  assert.equal(payload.structured, undefined);
+  // Pre-#2393 consumers keep their fields.
+  assert.equal(payload.status, "done");
+  assert.deepEqual(payload.findings, ["finding"]);
+  assert.equal(payload.bridgeAdapter, "claude_code");
+});
+
+test("#2393 bridge marks a blocked analysis as not completed", () => {
+  const { payload } = runBridgeWithAnalysis({ ...DONE_ANALYSIS, status: "blocked", completion: undefined });
+  assert.equal(payload.completion.marked, false);
+  assert.equal(payload.completion.reason, "analysis_blocked");
+  assert.match(payload.harness.harnessFingerprint, /^[0-9a-f]{64}$/);
+});
+
+test("#2393 harness fingerprint is deterministic and moves with model, skills and bridge bytes", () => {
+  const tempDir = mkdtempSync(join(tmpdir(), "claude-a2a-harness-lib-"));
+  try {
+    const bridgeFile = join(tempDir, "bridge.mjs");
+    writeFileSync(bridgeFile, "// v1\n");
+    const registry = join(tempDir, "registry.json");
+    const skills = [{ name: "x", tree_sha256: "1".repeat(64) }, { name: "y", tree_sha256: "2".repeat(64) }];
+    writeFileSync(registry, JSON.stringify({ skills }));
+    const env = { A2A_SKILLS_REGISTRY_PATH: registry };
+    const base = buildAnalysisHarness({ bridgeFile, runtime: "claude-code", model: "m1", env });
+    assert.deepEqual(buildAnalysisHarness({ bridgeFile, runtime: "claude-code", model: "m1", env }), base);
+    assert.equal(base.bridge, null);
+    assert.notEqual(buildAnalysisHarness({ bridgeFile, runtime: "claude-code", model: "m2", env }).harnessFingerprint, base.harnessFingerprint);
+
+    // Registry order does not matter; a changed tree digest does.
+    writeFileSync(registry, JSON.stringify({ skills: [...skills].reverse() }));
+    assert.equal(skillsTreeSha256FromRegistry(registry).sha256, base.skillsTreeSha256);
+    writeFileSync(registry, JSON.stringify({ skills: [skills[0], { name: "y", tree_sha256: "3".repeat(64) }] }));
+    assert.notEqual(buildAnalysisHarness({ bridgeFile, runtime: "claude-code", model: "m1", env }).harnessFingerprint, base.harnessFingerprint);
+
+    writeFileSync(bridgeFile, "// v2\n");
+    assert.notEqual(buildAnalysisHarness({ bridgeFile, runtime: "claude-code", model: "m1", env: {} }).bridgeFileSha256, base.bridgeFileSha256);
+    assert.deepEqual(skillsTreeSha256FromRegistry(undefined), { sha256: null, skillCount: 0, error: "unconfigured" });
+    assert.equal(skillsTreeSha256FromRegistry(join(tempDir, "missing.json")).error, "unreadable");
+
+    // Preflight: unset pins skip; every failing pin is reported with a remedy.
+    assert.deepEqual(analysisHarnessPreflight({ bridgeFile, env: {} }), { ok: true, failures: [] });
+    const bad = analysisHarnessPreflight({ bridgeFile, env: { A2A_BRIDGE_PIN_SHA256: "0".repeat(64), A2A_SKILLS_TREE_SHA256_PIN: "0".repeat(64) } });
+    assert.equal(bad.ok, false);
+    assert.deepEqual(bad.failures.map((failure) => failure.check), ["bridge_pin", "skills_tree_pin"]);
+    assert.ok(bad.failures.every((failure) => failure.remedy.length > 0));
+    const pinned = createHash("sha256").update(readFileSync(bridgeFile)).digest("hex");
+    assert.equal(analysisHarnessPreflight({ bridgeFile, env: { A2A_BRIDGE_PIN_SHA256: pinned.toUpperCase() } }).ok, true);
+  } finally {
+    rmSync(tempDir, { recursive: true, force: true });
+  }
 });

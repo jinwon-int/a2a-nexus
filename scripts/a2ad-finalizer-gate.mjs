@@ -31,6 +31,7 @@ import {
   evaluateReviewLineageFinalizerEvidence,
   readReviewLineageFinalizerEvidence,
 } from './lib/review-lineage-finalizer-evidence.mjs';
+import { computeWorkerOutputDiversity, renderDiversityLine } from './lib/worker-output-diversity.mjs';
 
 // ─── Lane status taxonomy ───────────────────────────────────────────────────
 
@@ -126,6 +127,36 @@ function supplementOf(lane) {
   const payload = lane.payload || {};
   const value = payload.supplementOf || payload.supersedesTaskId || payload.compactSupplementOf;
   return hasText(value) ? String(value).trim() : '';
+}
+
+function laneOutput(lane) {
+  return lane.output ?? lane.result?.output ?? {};
+}
+
+// #2393 completion marker. Bridges stamp output.completion on success; the
+// worker handler stamps error.details.completion (marked=false) on every
+// bridge failure. Records without either are pre-#2393 'legacy' lanes and are
+// treated exactly as before.
+function laneCompletion(lane) {
+  const output = laneOutput(lane);
+  const error = lane.error ?? lane.result?.error ?? {};
+  const marker = [output?.completion, error?.details?.completion]
+    .find((value) => value && typeof value === 'object' && typeof value.marked === 'boolean');
+  if (!marker) return { state: 'legacy', reason: '' };
+  return {
+    state: marker.marked ? 'marked' : 'unmarked',
+    reason: hasText(marker.reason) ? String(marker.reason).trim().slice(0, 64) : '',
+  };
+}
+
+function laneRuntime(lane) {
+  const output = laneOutput(lane);
+  return output.bridgeAdapter || output.harness?.runtime || output.bridgeReportedAdapter || null;
+}
+
+function laneModel(lane) {
+  const output = laneOutput(lane);
+  return output.actualRuntimeModel || output.harness?.model || output.effectiveModel || null;
 }
 
 function classifySourceProjectionEvidence(text) {
@@ -433,6 +464,16 @@ function classifyLaneEvidence(lane) {
       reason: 'docker_runner_failed / missing PR/Done/Block evidence contract',
     };
   }
+  if (statusBucket === 'succeeded' && laneCompletion(lane).state === 'unmarked') {
+    // #2393: output exists but the lane says it did not complete — never
+    // serve it as evidence. Only tightens: it could not count before either
+    // way unless the record was otherwise substantive.
+    return {
+      evidenceClass: 'missing_evidence',
+      countsTowardQuorum: false,
+      reason: `completion marker is marked=false (${laneCompletion(lane).reason || 'no reason'}); output is not completed evidence`,
+    };
+  }
   if (statusBucket === 'succeeded') return { evidenceClass: 'substantive', countsTowardQuorum: true, reason: '' };
   if (statusBucket === 'failed') return { evidenceClass: 'failed', countsTowardQuorum: false, reason: 'lane failed or blocked' };
   return { evidenceClass: 'missing_evidence', countsTowardQuorum: false, reason: 'lane is non-terminal' };
@@ -592,6 +633,41 @@ function computeVerdict(tasks, options) {
     supersededBy: l.__supersededBy,
   }));
 
+  // #2393 rule 2/4 (report-only): unmarked lanes are listed in their own
+  // column, excluded from the scored denominator (never a zero score), and
+  // flagged as redispatch candidates unless a substantive supplement already
+  // superseded them. Quorum reasons above are untouched.
+  const supersededIds = new Set(supersededLanes.map((l) => l.id));
+  const completionCounts = { marked: 0, unmarked: 0, legacy: 0 };
+  const unmarkedLanes = [];
+  for (const lane of lanes) {
+    const completion = laneCompletion(lane);
+    completionCounts[completion.state] += 1;
+    if (completion.state !== 'unmarked') continue;
+    unmarkedLanes.push({
+      taskId: lane.id,
+      status: String(lane.status || '').trim().toLowerCase() || 'unknown',
+      worker: workerOf(lane),
+      reason: completion.reason,
+      superseded: supersededIds.has(lane.id),
+    });
+  }
+  const completion = {
+    ...completionCounts,
+    scoredDenominator: lanes.length - completionCounts.unmarked,
+    unmarkedLanes,
+    redispatchCandidates: unmarkedLanes.filter((l) => !l.superseded).map((l) => l.taskId),
+  };
+
+  // #2394 (report-only): pairwise line-Jaccard over the lanes that counted
+  // toward quorum. Agreement is support, not independent proof.
+  const diversity = computeWorkerOutputDiversity(succeededLanes.map((l) => ({
+    id: l.id,
+    runtime: laneRuntime(l),
+    model: laneModel(l),
+    output: laneOutput(l),
+  })));
+
   const verdict = reasons.length === 0 ? 'FINAL' : 'BLOCKED';
 
   const result = {
@@ -610,6 +686,8 @@ function computeVerdict(tasks, options) {
     perTarget: perTarget != null ? perTargetReport : undefined,
     evidenceIdsCitedInDraft,
     reasons,
+    completion,
+    diversity,
   };
   if (lineageEvaluation != null) result.lineageEvidence = lineageEvaluation;
   return result;
@@ -653,6 +731,13 @@ function renderMissing(result) {
       lines.push(`  - ${lane.taskId} [${lane.status}]${lane.worker ? ` worker=${lane.worker}` : ''} class=${lane.evidenceClass} supersededBy=${lane.supersededBy}${lane.reason ? ` reason=${lane.reason}` : ''}`);
     }
   }
+  if (result.completion?.unmarked) {
+    lines.push(`Unmarked lanes (completion.marked=false; excluded from scored denominator ${result.completion.scoredDenominator}, not scored 0):`);
+    for (const lane of result.completion.unmarkedLanes) {
+      lines.push(`  - ${lane.taskId} [${lane.status}]${lane.worker ? ` worker=${lane.worker}` : ''}${lane.reason ? ` reason=${lane.reason}` : ''}${lane.superseded ? ' superseded' : ' redispatch-candidate'}`);
+    }
+  }
+  if (result.diversity) lines.push(renderDiversityLine(result.diversity));
   if (result.expectedTotal != null && result.laneCount < result.expectedTotal) {
     lines.push(`  ! dispatch gap: ${result.laneCount}/${result.expectedTotal} expected lanes present`);
   }
@@ -794,6 +879,7 @@ function main(argv) {
     if (!values.json) {
       writeBody(draft, values.out);
       process.stderr.write(`verdict: FINAL — quorum satisfied (${result.succeeded}/${result.effectiveQuorum} succeeded)\n`);
+      if (result.diversity?.n > 1) process.stderr.write(`${renderDiversityLine(result.diversity)}\n`);
     }
     return 0;
   }
@@ -847,6 +933,8 @@ function toJson(result) {
     missingLanes: result.missingLanes,
     supersededLanes: result.supersededLanes,
     evidenceIdsCitedInDraft: result.evidenceIdsCitedInDraft,
+    completion: result.completion,
+    diversity: result.diversity,
   };
   if (result.lineageEvidence != null) json.lineageEvidence = result.lineageEvidence;
   return json;

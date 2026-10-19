@@ -987,6 +987,8 @@ function main() {
 			actualRuntimeModel: model,
 			modelInheritanceMode: "bridge_env_pin",
 			executionTelemetry,
+			// #2393: harness fingerprint not implemented for this bridge yet.
+			harness: null,
 		};
 	} catch (error) {
 		bridgeError({

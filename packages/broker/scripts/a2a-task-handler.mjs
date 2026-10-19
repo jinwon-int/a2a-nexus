@@ -17,6 +17,7 @@ import {
 import { sourceCarrierStats } from "./lib/source-carriers.mjs";
 import { payloadWithRetrievalSnapshotSourceCarriers } from "./lib/retrieval-snapshot-carriers.mjs";
 import { normalizeAnalysisExecutionTelemetry } from "./lib/analysis-execution-telemetry.mjs";
+import { analysisHarnessPreflight } from "./lib/analysis-harness-fingerprint.mjs";
 import { normalizePromptViewTelemetry } from "./lib/analysis-source-bundle.mjs";
 import { evaluateDeclaredWriteSetGate } from "../dist/core/runtime-safety-gates.js";
 import { runLiveOperationTask } from "./lib/live-operation-adapter.mjs";
@@ -1066,11 +1067,27 @@ function resolveNodeScriptInvocation(command, args = [], env = process.env, runt
 
 function analysisBridgeArtifactPreflight(command, env = process.env) {
   const commandText = safeText(command, "");
-  if (!/\.(?:mjs|cjs|js)$/i.test(commandText)) return null;
-  if (!commandText.includes("/") && !commandText.includes("\\") && !commandText.startsWith(".")) return null;
+  const isScriptPath = /\.(?:mjs|cjs|js)$/i.test(commandText)
+    && (commandText.includes("/") || commandText.includes("\\") || commandText.startsWith("."));
+  if (!isScriptPath) {
+    // #2393: a configured pin cannot be verified against a bare command name;
+    // fail closed instead of silently skipping the pin.
+    if (!safeText(env.A2A_BRIDGE_PIN_SHA256, "")) return null;
+    return analysisHarnessPreflightError(commandText, null, [{
+      check: "bridge_pin",
+      expected: safeText(env.A2A_BRIDGE_PIN_SHA256, "").slice(0, 64),
+      actual: null,
+      remedy: "A2A_BRIDGE_PIN_SHA256 is set but the analysis bridge command is not a script path; point *_ANALYSIS_BIN at the bridge .mjs file.",
+    }]);
+  }
   const cwd = safeText(env.A2A_HANDLER_CWD || env.WORKER_HANDLER_CWD, process.cwd());
   const resolved = isAbsolute(commandText) ? commandText : resolve(cwd, commandText);
-  if (existsSync(resolved)) return null;
+  if (existsSync(resolved)) {
+    // #2393 claim preflight: pin drift is caught here, before the bridge (and
+    // so the model) is ever invoked. Unset pins are skipped.
+    const harness = analysisHarnessPreflight({ bridgeFile: resolved, env });
+    return harness.ok ? null : analysisHarnessPreflightError(commandText, resolved, harness.failures);
+  }
   return {
     error: {
       code: "openclaw_analysis_bridge_missing",
@@ -1079,6 +1096,29 @@ function analysisBridgeArtifactPreflight(command, env = process.env) {
         failureCategory: "missing_bridge_artifact",
         bridgeCommand: commandText,
         resolvedBridgeCommand: resolved,
+        buildInfo: BUILD_INFO,
+      },
+    },
+  };
+}
+
+function analysisHarnessPreflightError(commandText, resolved, failures) {
+  const bounded = failures.slice(0, 8).map((failure) => ({
+    check: safeText(failure.check, "unknown").slice(0, 64),
+    expected: safeText(failure.expected, "").slice(0, 64) || undefined,
+    actual: safeText(failure.actual, "").slice(0, 64) || undefined,
+    remedy: safeText(failure.remedy, "").slice(0, 240),
+  }));
+  return {
+    error: {
+      code: "analysis_bridge_harness_preflight_failed",
+      message: `analysis bridge harness preflight failed (no model call made): ${bounded.map((failure) => `${failure.check}: ${failure.remedy}`).join("; ")}`,
+      details: {
+        failureCategory: "harness_preflight",
+        bridgeCommand: commandText,
+        resolvedBridgeCommand: resolved || undefined,
+        failures: bounded,
+        remedy: bounded[0]?.remedy,
         buildInfo: BUILD_INFO,
       },
     },
@@ -1403,6 +1443,42 @@ function normalizeAnalysisBridgeFailure(detail) {
   return Object.fromEntries(Object.entries(normalized).filter(([, value]) => value !== undefined));
 }
 
+// #2393 trust boundary for the bridge-stamped harness/completion blocks: same
+// closed, bounded projection as bridgeFailure. `harness: null` (bridges that
+// do not fingerprint yet) is kept as an explicit null.
+const HARNESS_SHA256_RE = /^[0-9a-f]{64}$/;
+const HARNESS_REVISION_RE = /^[0-9a-f]{7,64}$/;
+
+function normalizeAnalysisHarness(value) {
+  if (value === null) return null;
+  if (!value || typeof value !== "object" || Array.isArray(value)) return undefined;
+  const sha = (field) => (typeof field === "string" && HARNESS_SHA256_RE.test(field) ? field : undefined);
+  const harness = {
+    fingerprintVersion: boundedBridgeFailureString(value.fingerprintVersion, BRIDGE_FAILURE_DETAIL_MAX),
+    bridge: typeof value.bridge === "string" && HARNESS_REVISION_RE.test(value.bridge) ? value.bridge : undefined,
+    bridgeFileSha256: sha(value.bridgeFileSha256),
+    runtime: boundedBridgeFailureString(value.runtime, BRIDGE_FAILURE_DETAIL_MAX),
+    model: boundedBridgeFailureString(value.model, 128),
+    skillsTreeSha256: sha(value.skillsTreeSha256),
+    skillCount: boundedBridgeFailureCount(value.skillCount),
+    harnessFingerprint: sha(value.harnessFingerprint),
+  };
+  if (!harness.harnessFingerprint) return undefined;
+  return Object.fromEntries(Object.entries(harness).filter(([, field]) => field !== undefined));
+}
+
+// A marker claiming completion for a non-done analysis is downgraded: only a
+// done lane can be marked, whatever the bridge says.
+function normalizeAnalysisCompletion(value, analysisStatus) {
+  if (!value || typeof value !== "object" || Array.isArray(value) || typeof value.marked !== "boolean") return undefined;
+  const at = boundedBridgeFailureString(value.at, 40);
+  return Object.fromEntries(Object.entries({
+    marked: value.marked && analysisStatus === "done",
+    at: at && Number.isFinite(Date.parse(at)) ? at : undefined,
+    reason: boundedBridgeFailureString(value.reason, BRIDGE_FAILURE_DETAIL_MAX),
+  }).filter(([, field]) => field !== undefined));
+}
+
 // #2209 — opt-in analysis session reuse. Default OFF: every analysis task keeps
 // its own per-task session id exactly as before. With
 // A2A_OPENCLAW_ANALYSIS_SESSION_REUSE=1 the first attempt reuses a fixed
@@ -1422,7 +1498,35 @@ function analysisBridgePerTaskSessionId(task, nodeId) {
   return `a2a-${nodeId}-${safeText(task.id, String(Date.now()))}-analysis`;
 }
 
+// #2393 rule 2: every analysis-bridge failure (timeout, nonzero exit, invalid
+// output, preflight refusal, validation) is an UNMARKED lane — reported
+// separately and a redispatch candidate, never served as evidence or scored 0.
+function withUnmarkedCompletion(result) {
+  if (!result?.error || typeof result.error !== "object") return result;
+  const details = result.error.details && typeof result.error.details === "object" && !Array.isArray(result.error.details)
+    ? result.error.details
+    : {};
+  return {
+    ...result,
+    error: {
+      ...result.error,
+      details: {
+        ...details,
+        completion: {
+          marked: false,
+          at: new Date().toISOString(),
+          reason: safeText(result.error.code, "analysis_bridge_failed").slice(0, 64),
+        },
+      },
+    },
+  };
+}
+
 function runOpenClawAnalysisBridge(task, env = process.env) {
+  return withUnmarkedCompletion(runOpenClawAnalysisBridgeAttempts(task, env));
+}
+
+function runOpenClawAnalysisBridgeAttempts(task, env = process.env) {
   const nodeId = safeText(env.A2A_NODE_ID || env.NODE_ID || env.WORKER_ID, "unknown-node");
   const explicitSessionId = safeText(env.A2A_OPENCLAW_ANALYSIS_SESSION_ID, "");
   if (explicitSessionId) {
@@ -1687,6 +1791,9 @@ function runOpenClawAnalysisBridgeOnce(task, env = process.env, sessionId) {
     claudeModelArgumentApplied: typeof response.claudeModelArgumentApplied === "boolean" ? response.claudeModelArgumentApplied : undefined,
     modelInheritanceNote: safeText(response.modelInheritanceNote, undefined),
     executionTelemetry: normalizeAnalysisExecutionTelemetry(response.executionTelemetry),
+    // #2393: bridge harness fingerprint + completion marker, closed field set.
+    harness: normalizeAnalysisHarness(response.harness),
+    completion: normalizeAnalysisCompletion(response.completion, status),
     // #2303 item 5: relay the bridge's content-free prompt/source byte
     // counters into the analysis record so the prompt-view ratio is
     // observable per task, not only in the bridge's own stdout.

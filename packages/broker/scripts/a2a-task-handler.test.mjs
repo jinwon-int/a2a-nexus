@@ -6,6 +6,7 @@ import { join } from "node:path";
 import test from "node:test";
 
 import { __test, handleTask, observeJevForOutcome, validateWorkerModelEnvCandidatesForPatchProfile } from "./a2a-task-handler.mjs";
+import { classifyEvidenceBundle } from "./a2ad-evidence-classifier.mjs";
 import {
   ADVISORY_SIDECAR_ROUTING_POLICY,
   ALLOWED_WORKER_MODELS,
@@ -3763,11 +3764,19 @@ for (const execution of ["bridge", "builtin"]) {
     assert.ok(note.length < 65536, "byte limit must not become a character limit");
     const outcome = boundedReviewOutcome({ verdict: "pass", summary: note, findings: ["short fallback"] }, execution);
     assert.equal(outcome.result, undefined);
-    assert.deepEqual(outcome.error, {
+    // #2393: a bridge-lane failure is stamped as an unmarked completion.
+    const { completion, ...details } = outcome.error.details;
+    assert.deepEqual({ ...outcome.error, details }, {
       code: "review_note_too_large",
       message: "selected review note exceeds the UTF-8 byte limit; no partial review emitted",
       details: { noteBytes: 65537, maxNoteBytes: 65536 },
     });
+    if (execution === "bridge") {
+      assert.equal(completion.marked, false);
+      assert.equal(completion.reason, "review_note_too_large");
+    } else {
+      assert.equal(completion, undefined);
+    }
   });
 
   test(`bounded review notes: ${execution} retains a long negative verdict`, async () => {
@@ -3979,4 +3988,168 @@ test("jev CLI hook: review-evidence shadow gates enabled stay byte-identical (C3
   assert.equal(result.status, 0, `shadow-gates run exited nonzero: ${result.stderr?.slice(0, 400)}`);
   assert.equal(result.stderr, "", "shadow gates must stay value-free and silent on stderr");
   assert.equal(jevMaskedStdout(result), JEV_GOLDEN_MASKED_STDOUT, "shadow-gates stdout diverged from the golden");
+});
+
+// ─── #2393 harness fingerprint / completion marker / claim preflight ───────
+
+function harnessAnalysisTask(id) {
+  return {
+    id,
+    intent: "analyze",
+    assignedWorkerId: "workerbeta",
+    message: "Analyze #2393 harness evidence",
+    payload: { mode: "analysis-only", sourceOnly: true, readOnlyValidation: true, noLive: true },
+  };
+}
+
+function withHarnessBridge(body, run) {
+  const dir = mkdtempSync(join(tmpdir(), "a2a-harness-2393-"));
+  try {
+    const bin = join(dir, "fake-a2a-analysis-bridge.mjs");
+    const invokedMarker = join(dir, "bridge-invoked");
+    writeFileSync(bin, `import { writeFileSync } from "node:fs";\nwriteFileSync(${JSON.stringify(invokedMarker)}, "1");\n${body}\n`);
+    return run({ dir, bin, invokedMarker });
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+}
+
+function harnessEnv(bin, extra = {}) {
+  return {
+    PATH: process.env.PATH,
+    A2A_EXECUTOR_MODE: "builtin",
+    A2A_OPENCLAW_ANALYSIS_ENABLED: "1",
+    A2A_OPENCLAW_ANALYSIS_BIN: bin,
+    A2A_OPENCLAW_ANALYSIS_TIMEOUT_SEC: "5",
+    A2A_NODE_ID: "workerbeta",
+    ...extra,
+  };
+}
+
+function bridgeResponseBody(response) {
+  return `process.stdout.write(JSON.stringify({ payloads: [{ text: JSON.stringify(${JSON.stringify(response)}) }] }));`;
+}
+
+const HARNESS_FIXTURE = {
+  fingerprintVersion: "a2a.harness-fingerprint.v1",
+  bridge: "c12e20d2",
+  bridgeFileSha256: "a".repeat(64),
+  runtime: "claude-code",
+  model: "claude-opus-test",
+  skillsTreeSha256: "b".repeat(64),
+  skillCount: 40,
+  harnessFingerprint: "c".repeat(64),
+};
+
+test("#2393 handler relays a bounded harness block and the completion marker", () => {
+  const response = {
+    status: "done",
+    summary: "harness relay",
+    findings: ["finding"],
+    risks: [],
+    recommendations: [],
+    evidenceRefs: ["ref"],
+    harness: { ...HARNESS_FIXTURE, bridgeFileSha256: "not-a-sha", injected: "x".repeat(5000) },
+    completion: { marked: true, at: "2026-10-19T00:00:00.000Z", reason: "analysis_json_parsed", extra: "dropped" },
+  };
+  withHarnessBridge(bridgeResponseBody(response), ({ bin }) => {
+    const result = handleTask(harnessAnalysisTask("task-2393-relay"), harnessEnv(bin));
+    assert.equal(result.error, undefined);
+    const { harness, completion } = result.result.output;
+    // Malformed sha and unknown keys drop off the closed field set.
+    const expectedHarness = { ...HARNESS_FIXTURE };
+    delete expectedHarness.bridgeFileSha256;
+    assert.deepEqual(harness, expectedHarness);
+    assert.deepEqual(completion, { marked: true, at: "2026-10-19T00:00:00.000Z", reason: "analysis_json_parsed" });
+  });
+});
+
+test("#2393 handler downgrades a completion marker that claims a blocked analysis completed", () => {
+  const response = {
+    status: "blocked",
+    summary: "evidence missing",
+    findings: [],
+    risks: ["missing source"],
+    recommendations: [],
+    evidenceRefs: [],
+    harness: null,
+    completion: { marked: true, reason: "forged" },
+  };
+  withHarnessBridge(bridgeResponseBody(response), ({ bin }) => {
+    const result = handleTask(harnessAnalysisTask("task-2393-forged"), harnessEnv(bin));
+    assert.equal(result.result.output.harness, null);
+    assert.equal(result.result.output.completion.marked, false);
+  });
+});
+
+test("#2393 timeout fixture: completion.marked=false is recorded and the lane leaves the scored denominator", () => {
+  withHarnessBridge("setTimeout(() => {}, 20000);", ({ bin }) => {
+    const result = handleTask(harnessAnalysisTask("task-2393-timeout"), harnessEnv(bin, { A2A_OPENCLAW_ANALYSIS_WATCHDOG_MS: "300" }));
+    assert.equal(result.error.code, "openclaw_analysis_timeout");
+    assert.equal(result.error.details.completion.marked, false);
+    assert.equal(result.error.details.completion.reason, "openclaw_analysis_timeout");
+    assert.ok(Number.isFinite(Date.parse(result.error.details.completion.at)));
+
+    const report = classifyEvidenceBundle([
+      { id: "task-2393-timeout", taskId: "task-2393-timeout", workerId: "workerbeta", status: "failed", error: result.error },
+      {
+        id: "task-2393-ok",
+        taskId: "task-2393-ok",
+        workerId: "workeralpha",
+        status: "succeeded",
+        output: {
+          analysisStatus: "done",
+          analysisSummary: "restart determinism gap",
+          findings: ["resume path lacks a restart test"],
+          risks: ["rollback untested"],
+          recommendations: ["add a test"],
+          evidenceRefs: ["src/core/broker.ts:1"],
+          completion: { marked: true, reason: "analysis_json_parsed" },
+        },
+      },
+    ]);
+    assert.equal(report.counts.substantive, 1);
+    assert.deepEqual(report.completion, { marked: 1, unmarked: 1, legacy: 0, scoredDenominator: 1, redispatchCandidates: ["task-2393-timeout"] });
+  });
+});
+
+test("#2393 claim preflight: a bridge pin mismatch refuses the task without invoking the bridge (0 model calls)", () => {
+  withHarnessBridge(bridgeResponseBody({ status: "done", summary: "should not run", findings: ["x"], risks: [], recommendations: [], evidenceRefs: [] }), ({ bin, invokedMarker }) => {
+    const result = handleTask(harnessAnalysisTask("task-2393-preflight"), harnessEnv(bin, { A2A_BRIDGE_PIN_SHA256: "0".repeat(64) }));
+    assert.equal(existsSync(invokedMarker), false, "bridge must not be spawned when preflight fails");
+    assert.equal(result.error.code, "analysis_bridge_harness_preflight_failed");
+    assert.match(result.error.message, /no model call made.*bridge_pin: Deployed analysis bridge differs/);
+    assert.equal(result.error.details.failureCategory, "harness_preflight");
+    assert.equal(result.error.details.failures[0].check, "bridge_pin");
+    assert.equal(result.error.details.failures[0].actual, createHash("sha256").update(readFileSync(bin)).digest("hex"));
+    assert.ok(result.error.details.remedy);
+    assert.equal(result.error.details.completion.marked, false);
+    assert.equal(result.error.details.completion.reason, "analysis_bridge_harness_preflight_failed");
+  });
+});
+
+test("#2393 claim preflight: matching pins pass and a skills registry mismatch is refused before the bridge", () => {
+  withHarnessBridge(bridgeResponseBody({ status: "done", summary: "ran", findings: ["x"], risks: [], recommendations: [], evidenceRefs: [] }), ({ dir, bin, invokedMarker }) => {
+    const pin = createHash("sha256").update(readFileSync(bin)).digest("hex");
+    const ok = handleTask(harnessAnalysisTask("task-2393-pin-ok"), harnessEnv(bin, { A2A_BRIDGE_PIN_SHA256: pin }));
+    assert.equal(ok.error, undefined);
+    assert.equal(existsSync(invokedMarker), true);
+    rmSync(invokedMarker);
+
+    const registry = join(dir, "registry.json");
+    writeFileSync(registry, JSON.stringify({ schema_version: 1, skills: [{ name: "a", tree_sha256: "d".repeat(64) }] }));
+    const refused = handleTask(harnessAnalysisTask("task-2393-skills"), harnessEnv(bin, {
+      A2A_SKILLS_REGISTRY_PATH: registry,
+      A2A_SKILLS_TREE_SHA256_PIN: "e".repeat(64),
+    }));
+    assert.equal(existsSync(invokedMarker), false);
+    assert.equal(refused.error.code, "analysis_bridge_harness_preflight_failed");
+    assert.equal(refused.error.details.failures[0].check, "skills_tree_pin");
+  });
+});
+
+test("#2393 claim preflight: a pin cannot be verified against a bare bridge command and fails closed", () => {
+  const result = handleTask(harnessAnalysisTask("task-2393-bare"), harnessEnv("openclaw", { A2A_BRIDGE_PIN_SHA256: "0".repeat(64) }));
+  assert.equal(result.error.code, "analysis_bridge_harness_preflight_failed");
+  assert.match(result.error.details.failures[0].remedy, /not a script path/);
 });

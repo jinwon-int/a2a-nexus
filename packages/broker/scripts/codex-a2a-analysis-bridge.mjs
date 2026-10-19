@@ -297,6 +297,9 @@ function transformEnvelope(stdout, flags) {
   const response = JSON.parse(envelope.payloads[0].text);
   response.bridgeAdapter = "codex";
   response.bridgeContractVersion = BRIDGE_CONTRACT_VERSION;
+  // #2393: the inner bridge stamps a claude-code harness fingerprint; this
+  // wrapper is not fingerprinted yet, so say so instead of inheriting it.
+  response.harness = null;
   response.requestedModel = safeText(flags.model, undefined);
   response.requestedThinking = safeText(flags.thinking, undefined);
   response.actualRuntimeModel = normalizedModel(flags.model);
