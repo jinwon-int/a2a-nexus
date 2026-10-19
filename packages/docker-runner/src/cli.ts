@@ -13,6 +13,7 @@ import {
 import { runEngineSmokeFixture } from "./engine-smoke.js";
 import {
   backupServiceEnvFile,
+  checkRunEnvParity,
   checkServiceEnvFile,
   cleanup,
   doctor,
@@ -48,9 +49,14 @@ async function main(): Promise<void> {
     // Pass the merged env (env file included) so doctor can tell an env-file-only
     // invalid A2A_CLAUDE_EFFORT apart from an unset one (#2238).
     const env = loadCliEnv({ A2A_DOCKER_RUNNER_SKIP_ENGINE_DETECT: "1" });
-    const config = await loadConfig(env);
+    const config = await loadConfig(env).catch((error: unknown) => {
+      // #2398: a config error caused by an env-file-only key never affects `run`
+      // (process env only); say so instead of reporting a runner-wide failure.
+      throw new Error(withRunEnvParityNote(error, resolveCliEnvFile()));
+    });
     // #2267: tell doctor which env file was read so it can flag a stale default.
-    console.log(JSON.stringify(await doctor(config, { env, envFile: resolveCliEnvFile() }), null, 2));
+    // #2398: `run` uses process.env only — pass it so doctor can flag env-file-only keys.
+    console.log(JSON.stringify(await doctor(config, { env, envFile: resolveCliEnvFile(), processEnv: process.env }), null, 2));
     return;
   }
 
@@ -137,6 +143,14 @@ function resolveCliEnvFile(): string {
 
 function loadCliEnv(extra: NodeJS.ProcessEnv = {}): NodeJS.ProcessEnv {
   return mergeRunnerEnvFile({ ...process.env, ...extra }, resolveCliEnvFile());
+}
+
+function withRunEnvParityNote(error: unknown, envFile: string): string {
+  const message = error instanceof Error ? error.message : String(error);
+  const parity = checkRunEnvParity({ envFile, processEnv: process.env });
+  if (parity.status !== "warn") return message;
+  const keys = (parity.detail?.fileOnlyRunnerKeys as string[] | undefined) ?? [];
+  return `${message}\n(doctor merged ${envFile}; these A2A_* keys come only from that file and are NOT seen by \`run\`, which uses the process env only: ${keys.join(", ")})`;
 }
 
 function readStdin(): Promise<string> {

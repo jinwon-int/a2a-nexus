@@ -17,6 +17,7 @@ import {
   DEFAULT_SYSTEMD_UNIT_DIR,
   KNOWN_SERVICE_ENV_FILES,
   WORKDIR_TTL_ENV,
+  loadEnvFile,
   capDropIncludesAll,
   claudeOauthTokenMetaPath,
   isRootContainerUser,
@@ -67,6 +68,8 @@ export interface DoctorReport {
   workdirRetention: OpsCheck;
   /** #2268: `<envFile>.*` backup copies — broad perms fail, unbounded count/age warn. Present when the CLI passed envFile. */
   serviceEnvBackups?: OpsCheck;
+  /** #2398: env-file-only A2A_* keys — doctor sees them, `run` (process env only) does not. Present when the CLI passed envFile and processEnv. */
+  runEnvParity?: OpsCheck;
 }
 
 export interface CleanupTimerOptions {
@@ -653,6 +656,12 @@ export interface DoctorOptions {
   envFile?: string;
   /** Known env file paths to compare against; defaults to KNOWN_SERVICE_ENV_FILES. */
   knownEnvFiles?: readonly string[];
+  /**
+   * #2398: the CLI's process env BEFORE the env-file merge. `run` and `smoke`
+   * load their config from this alone, so together with `envFile` doctor can
+   * report which env-file keys it validated but tasks will never see.
+   */
+  processEnv?: NodeJS.ProcessEnv;
   /** #2267 R2: override the systemd unit dir / probe for the workDir retention check (tests). */
   workdirRetention?: Pick<WorkdirRetentionCheckOptions, "unitDir" | "unitName" | "systemctl">;
 }
@@ -670,6 +679,57 @@ export interface ServiceEnvFileCheckOptions {
  * `cleanup`/`doctor` without `--env-file` then silently used the stale copy.
  * Warn when the resolved file is missing or older than another known file.
  */
+export interface RunEnvParityCheckOptions {
+  /** Service env file the CLI merged for doctor/install/cleanup. */
+  envFile: string;
+  /** Process env before that merge — the only input `run`/`smoke` use. */
+  processEnv: NodeJS.ProcessEnv;
+}
+
+/**
+ * #2398: `run` and `smoke` call `loadConfig()` on the process env only, while
+ * doctor/install/cleanup merge the service env file underneath it. An A2A_*
+ * key present only in that file is validated (or rejected) by doctor yet never
+ * applied to a task — e.g. a stale default file's EXTRA_MOUNTS_JSON made doctor
+ * fail while tasks were unaffected, and its MEMORY/CPUS read as applied while
+ * tasks ran on the 2g/2 defaults. Reports key names only, never values.
+ * Interactive runs (no runner keys in the process env) cannot be compared.
+ */
+export function checkRunEnvParity(options: RunEnvParityCheckOptions): OpsCheck {
+  const envFile = resolve(options.envFile);
+  const processEnv = options.processEnv;
+  const has = (key: string) => processEnv[key] !== undefined;
+  let fileEnv: Record<string, string>;
+  try {
+    fileEnv = loadEnvFile(envFile);
+  } catch {
+    return {
+      status: "ok",
+      message: "service env file not readable; doctor and run both use the process env only",
+      detail: { envFile },
+    };
+  }
+  const runnerKeysInProcessEnv = Object.keys(processEnv).filter((key) => key.startsWith("A2A_DOCKER_RUNNER_") && has(key)).length;
+  if (runnerKeysInProcessEnv === 0) {
+    return {
+      status: "skip",
+      message: "process env carries no A2A_DOCKER_RUNNER_* keys (interactive invocation?) — cannot tell which env-file keys `run` would miss; rerun doctor with the worker env",
+      detail: { envFile, envFileKeys: Object.keys(fileEnv).length },
+    };
+  }
+  const fileOnly = Object.keys(fileEnv).filter((key) => !has(key));
+  const fileOnlyRunnerKeys = fileOnly.filter((key) => key.startsWith("A2A_")).sort();
+  const detail = { envFile, fileOnlyRunnerKeys, fileOnlyOtherKeyCount: fileOnly.length - fileOnlyRunnerKeys.length };
+  if (fileOnlyRunnerKeys.length === 0) {
+    return { status: "ok", message: "every A2A_* key doctor read from the env file is also in the process env `run` uses", detail };
+  }
+  return {
+    status: "warn",
+    message: `${fileOnlyRunnerKeys.length} A2A_* key(s) come only from ${envFile}; doctor validated them but \`run\` reads the process env only and will NOT apply them: ${fileOnlyRunnerKeys.join(", ")} — move them to the worker's EnvironmentFile or remove them`,
+    detail,
+  };
+}
+
 export async function checkServiceEnvFile(options: ServiceEnvFileCheckOptions): Promise<OpsCheck> {
   const envFile = resolve(options.envFile);
   const known = (options.knownEnvFiles ?? KNOWN_SERVICE_ENV_FILES)
@@ -773,6 +833,11 @@ export async function doctor(config: RunnerConfig, options: DoctorOptions = {}):
     ]);
     checks.push(serviceEnvFile, serviceEnvBackups);
   }
+  // #2398: warn-only parity between what doctor validated and what `run` applies.
+  const runEnvParity = options.envFile && options.processEnv
+    ? checkRunEnvParity({ envFile: options.envFile, processEnv: options.processEnv })
+    : undefined;
+  if (runEnvParity) checks.push(runEnvParity);
 
   // #2267 R2: warn-only retention probe (TTL env + timer unit presence/state).
   const workdirRetention = await checkWorkdirRetention({ env: options.env, ...options.workdirRetention });
@@ -798,6 +863,7 @@ export async function doctor(config: RunnerConfig, options: DoctorOptions = {}):
     ...(deployMarker ? { deployMarker } : {}),
     ...(serviceEnvFile ? { serviceEnvFile } : {}),
     ...(serviceEnvBackups ? { serviceEnvBackups } : {}),
+    ...(runEnvParity ? { runEnvParity } : {}),
     workdirRetention,
   };
 }

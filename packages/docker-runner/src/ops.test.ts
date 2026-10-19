@@ -4,7 +4,7 @@ import { chown, mkdtemp, mkdir, readFile, writeFile, utimes, stat, chmod } from 
 import { execFileSync, spawnSync } from "node:child_process";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { CLAUDE_CREDENTIAL_REFRESH_MARGIN_MS, CLAUDE_HOST_REFRESH_STATE_FILE, checkBaseImage, checkClaudeCredentialFreshness, checkClaudeCredentialHostRefresh, checkClaudeOauthTokenFile, evaluateClaudeCredentialWindow, checkContainerHardening, checkDeployedRevision, checkDeployMarker, checkExtraMounts, checkGitHubPatchReadiness, checkSecretMountContainerReadability, cleanup, dropsDacOverride, install, parseContainerUserRef, parseProbeKeyValues, summarizeUnreadablePaths } from "./ops.js";
+import { CLAUDE_CREDENTIAL_REFRESH_MARGIN_MS, CLAUDE_HOST_REFRESH_STATE_FILE, checkBaseImage, checkClaudeCredentialFreshness, checkClaudeCredentialHostRefresh, checkClaudeOauthTokenFile, evaluateClaudeCredentialWindow, checkContainerHardening, checkRunEnvParity, checkDeployedRevision, checkDeployMarker, checkExtraMounts, checkGitHubPatchReadiness, checkSecretMountContainerReadability, cleanup, dropsDacOverride, install, parseContainerUserRef, parseProbeKeyValues, summarizeUnreadablePaths } from "./ops.js";
 import type { RunnerConfig } from "./types.js";
 import { buildExampleReadinessInput } from "./openclaw-profile-readiness.js";
 import { loadConfig, projectClaudeCodeTurnBudgets } from "./config.js";
@@ -1812,4 +1812,39 @@ test("#2373 option 2 claudeCredentialFreshness skips when the OAuth token file i
   await writeFile(join(dir, ".credentials.json"), fakeClaudeCredentials(CLAUDE_FRESHNESS_NOW_MS - 1));
   const report = await checkClaudeCredentialFreshness({ ...claudeFreshnessConfig(dir), claudeOauthTokenFile: join(dir, "claude-oauth-token") }, CLAUDE_FRESHNESS_NOW_MS);
   assert.deepEqual(report, { status: "skip", message: "superseded by the claude oauth token file" });
+});
+
+test("#2398 runEnvParity warns on env-file-only A2A_* keys that `run` never applies (names only)", async () => {
+  const dir = trackTempDir(await mkdtemp(join(tmpdir(), "a2a-run-env-parity-")));
+  const envFile = join(dir, "openclaw-a2a-worker");
+  await writeFile(envFile, [
+    "A2A_DOCKER_RUNNER_PATCH_COMMAND_PROFILE=claude-code",
+    "A2A_DOCKER_RUNNER_MEMORY=5g",
+    "export A2A_DOCKER_RUNNER_CPUS=4",
+    "A2A_DOCKER_RUNNER_EXTRA_MOUNTS_JSON=[{\"source\":\"/x\",\"target\":\"/run/secrets/piri-dir\"}]",
+    "GITHUB_TOKEN=not-a-real-token",
+    "",
+  ].join("\n"));
+  const processEnv = { A2A_DOCKER_RUNNER_PATCH_COMMAND_PROFILE: "claude-code", A2A_DOCKER_RUNNER_TRUSTED_OPERATOR: "1" };
+
+  const report = checkRunEnvParity({ envFile, processEnv });
+  assert.equal(report.status, "warn");
+  assert.deepEqual(report.detail?.fileOnlyRunnerKeys, [
+    "A2A_DOCKER_RUNNER_CPUS", "A2A_DOCKER_RUNNER_EXTRA_MOUNTS_JSON", "A2A_DOCKER_RUNNER_MEMORY",
+  ]);
+  assert.equal(report.detail?.fileOnlyOtherKeyCount, 1, "non-A2A keys are counted, not listed");
+  assert.match(report.message, /will NOT apply them/);
+  assert.doesNotMatch(JSON.stringify(report), /5g|not-a-real-token|piri-dir/, "values never leak into the report");
+
+  const aligned = checkRunEnvParity({ envFile, processEnv: {
+    ...processEnv, A2A_DOCKER_RUNNER_MEMORY: "5g", A2A_DOCKER_RUNNER_CPUS: "4", A2A_DOCKER_RUNNER_EXTRA_MOUNTS_JSON: "[]",
+  } });
+  assert.equal(aligned.status, "ok");
+  assert.deepEqual(aligned.detail?.fileOnlyRunnerKeys, []);
+
+  const interactive = checkRunEnvParity({ envFile, processEnv: { PATH: "/usr/bin", HOME: "/root" } });
+  assert.equal(interactive.status, "skip", "a shell without the worker env cannot be compared");
+
+  const missing = checkRunEnvParity({ envFile: join(dir, "absent"), processEnv });
+  assert.equal(missing.status, "ok");
 });
