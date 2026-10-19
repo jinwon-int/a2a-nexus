@@ -39,6 +39,8 @@ test("the fast cluster (artifact absent) classifies as handler_missing (#1597/#1
   assert.equal(classifyHandlerFailure({ diagnosticText: "code: 'MODULE_NOT_FOUND'" }), "handler_missing");
   // The handler's own preflight for a missing bridge artifact.
   assert.equal(classifyHandlerFailure({ nestedCode: "openclaw_analysis_bridge_missing" }), "handler_missing");
+  // #2393: a harness pin mismatch refuses before the bridge runs.
+  assert.equal(classifyHandlerFailure({ nestedCode: "analysis_bridge_harness_preflight_failed" }), "handler_missing");
 });
 
 test("the slow cluster (bridge ran, output unusable) classifies as handler_bridge_error (#1597/#1725)", () => {

@@ -467,6 +467,8 @@ function buildSourceBlockedResponse(sourceBlocked, fallbackSourceProjection) {
         recommendations: ["Retry with a compact canonical payload.sourceBundle.files[] packet or make the referenced source available to the analysis bridge."],
         evidenceRefs: sourceBlocked.evidenceRefs || [],
         ...(sourceProjection && typeof sourceProjection === "object" ? { sourceProjection } : {}),
+        // #2393: harness fingerprint not implemented for this bridge yet.
+        harness: null,
       }),
     }],
   };
@@ -1198,6 +1200,8 @@ function main() {
     // as a rising prompt/source ratio. The hermes prompt view keeps its own
     // carrier policy; only the measurement is shared with the lib.
     response.promptView = promptViewTelemetry(payload, promptBundle.prompt);
+    // #2393: harness fingerprint not implemented for this bridge yet.
+    response.harness = null;
   } catch (error) {
     die(`invalid Hermes analysis JSON schema: ${error.message}`);
   }

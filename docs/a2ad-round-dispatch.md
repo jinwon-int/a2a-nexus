@@ -713,6 +713,50 @@ contract is enforced in reverse: a conformance test in
 asserts both sides count exactly `substantive` toward quorum — any drift fails
 CI.
 
+### Completion marker, harness fingerprint and output diversity (#2393 / #2394)
+
+These are report-only additions; the quorum verdict and its reasons do not
+change (the only tightening: a `succeeded` lane whose own marker says
+`completion.marked=false` never counts).
+
+- **Completion marker.** The Claude analysis bridge stamps
+  `completion: { marked, at, reason }` on its result: `marked=true` only for a
+  parsed, `status=done` result (`analysis_json_parsed` / `prose_recovered`);
+  `analysis_blocked` is `marked=false`. The worker handler stamps
+  `error.details.completion.marked=false` (reason = error code) on every
+  analysis-bridge failure, including timeouts and preflight refusals (the
+  worker then nests it under `error.details.nestedError` when it wraps the
+  nonzero exit as `handler_exit_nonzero`; a worker-level `handler_timeout` is
+  unmarked by definition). Feed the gate full task records (`?detail=full` or
+  `GET /tasks/:id`) — list reads drop `error.details`. The
+  finalizer gate (`completion` block) and `a2ad-evidence-classifier`
+  (`completion` summary, `unmarked_completion` class) list unmarked lanes in
+  their own column, drop them from `scoredDenominator` (never a zero score),
+  and name `redispatchCandidates` — lanes with only unmarked results and no
+  superseding supplement. Redispatch itself stays behind the normal approval
+  gate. Records without a marker are `legacy` and behave as before.
+- **Harness fingerprint.** The Claude bridge also stamps
+  `harness: { fingerprintVersion, bridge, bridgeFileSha256, runtime, model,
+  skillsTreeSha256, skillCount, harnessFingerprint }`. `bridgeFileSha256` is
+  the sha256 of the bridge file that ran; `bridge` is the declared
+  `A2A_BRIDGE_REVISION` (metadata only); `skillsTreeSha256` digests the
+  per-skill `tree_sha256` entries of the registry at `A2A_SKILLS_REGISTRY_PATH`.
+  Codex/Hermes/Danso/Piri bridges report `harness: null` until they fingerprint.
+- **Claim preflight.** Before spawning a script bridge, the worker handler
+  checks the optional pins `A2A_BRIDGE_PIN_SHA256` (bridge file sha256) and
+  `A2A_SKILLS_TREE_SHA256_PIN` (registry digest). Any mismatch returns
+  `analysis_bridge_harness_preflight_failed` with every failing check and a
+  one-line remedy, and the bridge — so the model — is never invoked. Unset pins
+  are skipped. Auth and model-reachability probes are not part of this
+  preflight (they cost a live call).
+- **Diversity.** The gate's `diversity` block measures pairwise line Jaccard
+  over `findings ∪ risks ∪ recommendations` (whitespace-normalized sets) of the
+  lanes that counted toward quorum: `n`, `n_distinct`, `mean_line_jaccard`,
+  `pairs`, and `byRelation` split into `same_runtime` / `cross_runtime` /
+  `unknown_runtime`. `independence` is `low` when any pair reaches the 0.9
+  draft threshold. Agreement is support, not independent proof; collapsing
+  similar votes is a separate owner decision.
+
 ### Independent review author binding (#1518 / #1548)
 
 For a self-contained independent-review lane, declare the trusted author in the

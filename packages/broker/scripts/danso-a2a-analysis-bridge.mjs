@@ -622,6 +622,8 @@ function main() {
 			// regression (source content duplicated back into the prompt) is
 			// visible as a rising prompt/source ratio.
 			promptView: promptViewTelemetry(payload, prompt),
+			// #2393: harness fingerprint not implemented for this bridge yet.
+			harness: null,
 		};
 	} catch (error) {
 		bridgeError({

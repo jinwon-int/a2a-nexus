@@ -7,6 +7,12 @@ import { fileURLToPath } from 'node:url';
 import test, { after } from 'node:test';
 
 import { computeVerdict, classify, classifyLaneEvidence, citedEvidenceIds } from './a2ad-finalizer-gate.mjs';
+import {
+  computeWorkerOutputDiversity,
+  lineJaccard,
+  outputLineSet,
+  renderDiversityLine,
+} from './lib/worker-output-diversity.mjs';
 
 // #2386: remove every temp directory this file created once its tests finish.
 const tempDirs = [];
@@ -1174,4 +1180,176 @@ test('conformance: broker wave-evidence taxonomy and quorum predicate match the 
     { substantiveCount: 1 },
     'broker-derived count must reflect exactly the gate-substantive lanes',
   );
+});
+
+// ─── #2394 worker-output diversity (report-only) ────────────────────────────
+
+
+function analysisOutput(findings, extra = {}) {
+  return {
+    analysisStatus: 'done',
+    findings,
+    risks: extra.risks ?? [],
+    recommendations: extra.recommendations ?? [],
+    evidenceRefs: ['file.ts:1'],
+    ...(extra.bridgeAdapter ? { bridgeAdapter: extra.bridgeAdapter } : {}),
+  };
+}
+
+function diversityRound(outputs) {
+  return outputs.map((output, index) => lane(`t-div-${index + 1}`, 'succeeded', {
+    order: index + 1,
+    top: { output },
+  }));
+}
+
+test('#2394 diversity: three identical outputs collapse to n_distinct=1, mean_line_jaccard=1.0, independence low', () => {
+  const same = () => analysisOutput(['resume path lacks a restart test', 'retry budget is unbounded'], {
+    recommendations: ['add a restart determinism test'],
+    bridgeAdapter: 'claude_code',
+  });
+  const tasks = diversityRound([same(), same(), same()]);
+  const result = computeVerdict(tasks, { round: ROUND, draft: 't-div-1 t-div-2 t-div-3' });
+  // Measurement never changes the verdict: identical votes still meet quorum.
+  assert.equal(result.verdict, 'FINAL');
+  assert.equal(result.diversity.n, 3);
+  assert.equal(result.diversity.n_distinct, 1);
+  assert.equal(result.diversity.mean_line_jaccard, 1);
+  assert.equal(result.diversity.independence, 'low');
+  assert.equal(result.diversity.similarPairCount, 3);
+  assert.deepEqual(result.diversity.byRelation.same_runtime, { pairs: 3, mean_line_jaccard: 1 });
+  assert.equal(result.diversity.byRelation.cross_runtime.pairs, 0);
+});
+
+test('#2394 diversity: distinct outputs report a low mean and independence ok, split by runtime', () => {
+  const tasks = diversityRound([
+    analysisOutput(['resume path lacks a restart test'], { bridgeAdapter: 'claude_code' }),
+    analysisOutput(['sqlite migration is not idempotent'], { bridgeAdapter: 'codex' }),
+    analysisOutput(['resume path lacks a restart test', 'token bucket ignores clock skew'], { bridgeAdapter: 'claude_code' }),
+  ]);
+  const result = computeVerdict(tasks, { round: ROUND, draft: 't-div-1' });
+  assert.equal(result.verdict, 'FINAL');
+  assert.equal(result.diversity.n_distinct, 3);
+  assert.ok(result.diversity.mean_line_jaccard < 0.5, `mean ${result.diversity.mean_line_jaccard}`);
+  assert.equal(result.diversity.independence, 'ok');
+  // claude_code pair shares 1 of 2 lines; both claude↔codex pairs share none.
+  assert.deepEqual(result.diversity.byRelation.same_runtime, { pairs: 1, mean_line_jaccard: 0.5 });
+  assert.deepEqual(result.diversity.byRelation.cross_runtime, { pairs: 2, mean_line_jaccard: 0 });
+  assert.match(renderDiversityLine(result.diversity), /n=3 n_distinct=3 .*independence=ok/);
+});
+
+test('#2394 diversity: only quorum-counting lanes are compared; whitespace is normalized', () => {
+  assert.deepEqual([...outputLineSet({ findings: ['  a\n  b  '], risks: ['a b'], recommendations: [{ text: 'c' }] })], ['a b', 'c']);
+  assert.equal(lineJaccard(new Set(), new Set()), 1);
+  const tasks = [
+    ...diversityRound([analysisOutput(['x']), analysisOutput(['y'])]),
+    lane('t-div-wrapper', 'succeeded', { top: { output: { analysisStatus: 'done', summary: 'analysis-only completed', findings: [], risks: [], recommendations: [], evidenceRefs: [] } } }),
+  ];
+  const result = computeVerdict(tasks, { round: ROUND, quorum: 2, draft: 't-div-1' });
+  assert.equal(result.diversity.n, 2);
+  assert.equal(result.diversity.byRelation.unknown_runtime.pairs, 1);
+  assert.equal(computeWorkerOutputDiversity([]).independence, 'not_applicable');
+});
+
+test('#2394 diversity block is emitted in --json output', () => {
+  const tasks = diversityRound([analysisOutput(['x']), analysisOutput(['x'])]);
+  const file = writeTasks(tasks.slice(0, 2).map((t) => ({ ...t, payload: { ...t.payload, parentRoundTotal: 2 } })));
+  const res = runGate(['--tasks', file, '--round', ROUND, '--json']);
+  const json = JSON.parse(res.stdout);
+  assert.equal(json.diversity.n_distinct, 1);
+  assert.equal(json.diversity.independence, 'low');
+  assert.equal(json.completion.legacy, 2);
+});
+
+// ─── #2393 completion marker (report-only column) ───────────────────────────
+
+test('#2393 completion: an unmarked timeout lane is listed separately, leaves the scored denominator and is a redispatch candidate', () => {
+  const marked = (id, order) => lane(id, 'succeeded', {
+    order,
+    top: { output: { ...analysisOutput([`finding ${id}`]), completion: { marked: true, reason: 'analysis_json_parsed' } } },
+  });
+  const tasks = [
+    marked('t-cm-1', 1),
+    marked('t-cm-2', 2),
+    // Shape the worker handler records for a bridge timeout (#2393).
+    lane('t-cm-3', 'failed', {
+      order: 3,
+      top: { error: { code: 'openclaw_analysis_timeout', message: 'spawnSync node ETIMEDOUT', details: { completion: { marked: false, reason: 'openclaw_analysis_timeout' } } } },
+    }),
+  ];
+  const result = computeVerdict(tasks, { round: ROUND, draft: 't-cm-1 t-cm-2' });
+  // Quorum verdict and reasons are unchanged by the marker (non-scope: gate change).
+  const legacy = computeVerdict(tasks.map((t) => {
+    const copy = structuredClone(t);
+    delete copy.output?.completion;
+    delete copy.error?.details?.completion;
+    return copy;
+  }), { round: ROUND, draft: 't-cm-1 t-cm-2' });
+  assert.equal(result.verdict, legacy.verdict);
+  assert.deepEqual(result.reasons, legacy.reasons);
+  assert.equal(result.failed, 1);
+  assert.deepEqual(
+    { marked: result.completion.marked, unmarked: result.completion.unmarked, legacy: result.completion.legacy, scoredDenominator: result.completion.scoredDenominator },
+    { marked: 2, unmarked: 1, legacy: 0, scoredDenominator: 2 },
+  );
+  assert.deepEqual(result.completion.unmarkedLanes, [{
+    taskId: 't-cm-3', status: 'failed', worker: 'worker-t-cm-3', reason: 'openclaw_analysis_timeout', superseded: false,
+  }]);
+  assert.deepEqual(result.completion.redispatchCandidates, ['t-cm-3']);
+  assert.equal(legacy.completion.legacy, 3);
+});
+
+test('#2393 completion: a succeeded lane whose marker says marked=false never counts toward quorum', () => {
+  const evidence = classifyLaneEvidence(lane('t-cm-x', 'succeeded', {
+    top: { output: { ...analysisOutput(['real looking finding']), completion: { marked: false, reason: 'analysis_blocked' } } },
+  }));
+  assert.equal(evidence.countsTowardQuorum, false);
+  assert.equal(evidence.evidenceClass, 'missing_evidence');
+  assert.match(evidence.reason, /marked=false \(analysis_blocked\)/);
+});
+
+test('#2393 completion: an unmarked lane superseded by a substantive supplement is not a redispatch candidate', () => {
+  const tasks = [
+    lane('t-cs-1', 'failed', { top: { error: { code: 'openclaw_analysis_failed', details: { completion: { marked: false, reason: 'openclaw_analysis_failed' } } } } }),
+    lane('t-cs-2', 'succeeded', { order: 2, payload: { supplementOf: 't-cs-1' }, top: { output: analysisOutput(['supplement finding']) } }),
+  ];
+  const result = computeVerdict(tasks, { round: ROUND, quorum: 1, draft: 't-cs-2' });
+  assert.equal(result.completion.unmarked, 1);
+  assert.equal(result.completion.unmarkedLanes[0].superseded, true);
+  assert.deepEqual(result.completion.redispatchCandidates, []);
+});
+
+test('#2394 diversity: the similarity threshold is applied before rounding', () => {
+  // 8999/10000 lines shared rounds to 0.9 but is below the 0.9 threshold.
+  const shared = Array.from({ length: 8999 }, (_, i) => `line ${i}`);
+  const a = { findings: [...shared, ...Array.from({ length: 1001 }, (_, i) => `a ${i}`)] };
+  const b = { findings: shared };
+  const diversity = computeWorkerOutputDiversity([{ id: 'a', output: a }, { id: 'b', output: b }]);
+  assert.equal(diversity.pairs[0].jaccard, 0.8999);
+  const near = computeWorkerOutputDiversity([
+    { id: 'a', output: { findings: [...Array.from({ length: 89999 }, (_, i) => `l${i}`), ...Array.from({ length: 10001 }, (_, i) => `x${i}`)] } },
+    { id: 'b', output: { findings: Array.from({ length: 89999 }, (_, i) => `l${i}`) } },
+  ]);
+  assert.equal(near.pairs[0].jaccard, 0.9);
+  assert.equal(near.similarPairCount, 0);
+  assert.equal(near.independence, 'ok');
+});
+
+test('#2393 completion: real worker-wrapped failures (handler_exit_nonzero nestedError) and handler_timeout are unmarked', () => {
+  const tasks = [
+    lane('t-nw-1', 'succeeded', { top: { output: { ...analysisOutput(['finding']), completion: { marked: true, reason: 'analysis_json_parsed' } } } }),
+    // Shape src/workers/external-handler.ts handlerExitNonzeroError produces
+    // around the handler's own error record.
+    lane('t-nw-2', 'failed', { order: 2, top: { error: {
+      code: 'handler_exit_nonzero',
+      message: 'handler exited with code 1',
+      details: { stage: 'handler', nestedError: { code: 'openclaw_analysis_timeout', details: { completion: { marked: false, reason: 'openclaw_analysis_timeout' } } } },
+    } } }),
+    lane('t-nw-3', 'failed', { order: 3, top: { error: { code: 'handler_timeout', message: 'handler timed out' } } }),
+  ];
+  const result = computeVerdict(tasks, { round: ROUND, quorum: 1, draft: 't-nw-1' });
+  assert.equal(result.completion.unmarked, 2);
+  assert.equal(result.completion.scoredDenominator, 1);
+  assert.deepEqual(result.completion.redispatchCandidates, ['t-nw-2', 't-nw-3']);
+  assert.deepEqual(result.completion.unmarkedLanes.map((l) => l.reason), ['openclaw_analysis_timeout', 'handler_timeout']);
 });

@@ -74,6 +74,7 @@ export function probeObservationInputs() { return undefined; }
 export function probeObservationQuestions() { return []; }
 export function probeObservationState() { return ''; }
 `;
+const analysisHarnessFingerprintSource = `export const HARNESS_FINGERPRINT_VERSION = 'test';\n`;
 const analysisSourceBundleSource = `
 export function normalizePromptViewTelemetry() { return undefined; }
 `;
@@ -112,6 +113,8 @@ function makeWorkerRoot({ bridgeHandlersContent = 'bridge-ok\n', handlersExecuta
     compatJevProbeObservation: join(handlers, 'lib', 'jev-probe-observation.mjs'),
     sourceAnalysisSourceBundle: join(scripts, 'lib', 'analysis-source-bundle.mjs'),
     compatAnalysisSourceBundle: join(handlers, 'lib', 'analysis-source-bundle.mjs'),
+    sourceAnalysisHarnessFingerprint: join(scripts, 'lib', 'analysis-harness-fingerprint.mjs'),
+    compatAnalysisHarnessFingerprint: join(handlers, 'lib', 'analysis-harness-fingerprint.mjs'),
     sourceBridge: join(scripts, 'hermes-a2a-analysis-bridge.mjs'),
     compatBridge: join(handlers, 'hermes-a2a-analysis-bridge.mjs'),
     sourceOnlyBridge: join(scripts, 'source-only-local-analysis-bridge.mjs'),
@@ -141,6 +144,8 @@ function makeWorkerRoot({ bridgeHandlersContent = 'bridge-ok\n', handlersExecuta
   writeFileSync(files.compatJevProbeObservation, jevProbeObservationSource);
   writeFileSync(files.sourceAnalysisSourceBundle, analysisSourceBundleSource);
   writeFileSync(files.compatAnalysisSourceBundle, analysisSourceBundleSource);
+  writeFileSync(files.sourceAnalysisHarnessFingerprint, analysisHarnessFingerprintSource);
+  writeFileSync(files.compatAnalysisHarnessFingerprint, analysisHarnessFingerprintSource);
   writeFileSync(files.sourceBridge, 'bridge-ok\n');
   writeFileSync(files.compatBridge, bridgeHandlersContent);
   writeFileSync(files.sourceOnlyBridge, 'source-only-bridge-ok\n');

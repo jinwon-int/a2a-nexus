@@ -3,6 +3,7 @@ import { spawn } from "node:child_process";
 import { mkdtempSync, readFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { fileURLToPath } from "node:url";
 import {
   CLAUDE_FINALIZER_ALLOWED_TOOLS,
   CLAUDE_FINALIZER_DISALLOWED_TOOLS,
@@ -26,6 +27,7 @@ import {
   claudeInvocationModelTelemetry,
 } from "./lib/claude-model-telemetry.mjs";
 import { claudeExecutionTelemetry } from "./lib/analysis-execution-telemetry.mjs";
+import { analysisCompletionMarker, buildAnalysisHarness } from "./lib/analysis-harness-fingerprint.mjs";
 
 // Claude Code receives the prompt as one argv value (`-p <prompt>`). Linux
 // rejects an individual argument around 128 KiB even when ARG_MAX is larger,
@@ -230,6 +232,7 @@ function buildClaudeChildEnv(env = process.env) {
 const ANALYSIS_ALLOWED_TOOLS = CLAUDE_FINALIZER_ALLOWED_TOOLS;
 const ANALYSIS_DISALLOWED_TOOLS = CLAUDE_FINALIZER_DISALLOWED_TOOLS;
 const ANALYSIS_BRIDGE_CONTRACT_VERSION = "claude-a2a-analysis.v1";
+const BRIDGE_FILE = fileURLToPath(import.meta.url);
 
 // ---------------------------------------------------------------------------
 // Structured invalid-JSON failure contract (issue #1725, finding 1)
@@ -552,6 +555,10 @@ const NORMALIZED_ANALYSIS_KEYS = new Set([
   "doneCommentUrl",
   "blockCommentUrl",
   "startCommentUrl",
+  // #2393: bridge-stamped; a model-emitted copy must not ride along in
+  // `structured` where it could be mistaken for the real marker.
+  "harness",
+  "completion",
 ]);
 const STRUCTURED_MAX_BYTES = 64 * 1024;
 const STRUCTURED_MAX_DEPTH = 6;
@@ -821,6 +828,16 @@ async function main() {
         invocation: claudeRun.invocation,
       },
     );
+    // #2393: harness fingerprint + completion marker. Only a normally returned,
+    // parsed, status=done result is marked; failures exit nonzero before here
+    // and the handler records them as marked=false.
+    response.harness = buildAnalysisHarness({
+      bridgeFile: BRIDGE_FILE,
+      runtime: "claude-code",
+      model: response.actualRuntimeModel || (response.requestedModel ? `requested:${response.requestedModel}` : ""),
+      env: process.env,
+    });
+    response.completion = analysisCompletionMarker(response.status, response.recoverySource);
   } catch (error) {
     if (error instanceof AnalysisBridgeFailure) dieStructured(error, process.env);
     die(error.message);

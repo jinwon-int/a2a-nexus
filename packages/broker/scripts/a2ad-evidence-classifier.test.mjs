@@ -8,6 +8,7 @@ import {
   classifyEvidenceBundle,
   classifyEvidenceRecord,
   classifyEvidenceText,
+  renderMarkdownReport,
 } from './a2ad-evidence-classifier.mjs';
 
 const script = new URL('./a2ad-evidence-classifier.mjs', import.meta.url).pathname;
@@ -408,4 +409,39 @@ test('bundle classifier accepts broker polling result objects with items arrays 
   assert.equal(report.counts.read_only_validation_changed_repo, 1);
   assert.equal(report.classifications[0].workerId, 'workergamma');
   assert.equal(report.classifications[1].workerId, 'workerdelta');
+});
+
+test('#2393 an unmarked blocked analysis is not a worker opinion and leaves the scored denominator', () => {
+  const blocked = {
+    id: 'task-blocked',
+    taskId: 'task-blocked',
+    workerId: 'workerbeta',
+    status: 'succeeded',
+    output: {
+      analysisStatus: 'blocked',
+      analysisSummary: 'source bundle lacked the migration file',
+      findings: ['migration file missing from bundle'],
+      risks: ['cannot judge rollback'],
+      recommendations: ['resend with the migration file'],
+      evidenceRefs: [],
+      recoverySource: 'direct_stdout',
+      completion: { marked: false, reason: 'analysis_blocked' },
+    },
+  };
+  // Pre-#2393 the same record (no marker) counted as an explicit analysis.
+  const legacy = structuredClone(blocked);
+  delete legacy.output.completion;
+  assert.equal(classifyEvidenceRecord(legacy).classification, 'substantive');
+  assert.equal(classifyEvidenceRecord(legacy).completion, 'legacy');
+
+  const unmarked = classifyEvidenceRecord(blocked);
+  assert.equal(unmarked.classification, 'unmarked_completion');
+  assert.equal(unmarked.countsAsWorkerOpinion, false);
+  assert.equal(unmarked.underlyingClassification, 'substantive');
+  assert.deepEqual(unmarked.reasons, ['completion.reason=analysis_blocked']);
+
+  const report = classifyEvidenceBundle([blocked]);
+  assert.equal(report.ok, false);
+  assert.deepEqual(report.completion, { marked: 0, unmarked: 1, legacy: 0, scoredDenominator: 0, redispatchCandidates: ['task-blocked'] });
+  assert.match(renderMarkdownReport(report), /unmarked=1 \(excluded from scoredDenominator=0\); redispatchCandidates=task-blocked/);
 });

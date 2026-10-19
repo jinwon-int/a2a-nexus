@@ -325,7 +325,43 @@ function hasExplicitAnalysisRecovery(record) {
   return arrays.some((arr) => Array.isArray(arr) && arr.some((item) => typeof item === 'string' && item.trim()));
 }
 
+// #2393 completion marker: output.completion on bridge success,
+// error.details.completion (marked=false) on handler-recorded bridge failure —
+// nested under error.details.nestedError once the worker wraps the nonzero
+// handler exit. A worker-level handler_timeout is unmarked by definition.
+// No marker = pre-#2393 'legacy' record, classified exactly as before.
+export function recordCompletion(record) {
+  const output = record?.output ?? record?.result?.output;
+  const error = record?.error ?? record?.result?.error;
+  const marker = [output?.completion, error?.details?.completion, error?.details?.nestedError?.details?.completion]
+    .find((value) => value && typeof value === 'object' && !Array.isArray(value) && typeof value.marked === 'boolean');
+  if (!marker && error?.code === 'handler_timeout') return { state: 'unmarked', reason: 'handler_timeout' };
+  if (!marker) return { state: 'legacy', reason: '' };
+  return { state: marker.marked ? 'marked' : 'unmarked', reason: asText(marker.reason).trim().slice(0, 64) };
+}
+
 export function classifyEvidenceRecord(record, index = 0) {
+  const base = classifyEvidenceRecordBase(record, index);
+  const completion = recordCompletion(record);
+  if (completion.state === 'unmarked' && base.countsAsWorkerOpinion) {
+    // Output exists but the lane did not complete (e.g. analysis blocked):
+    // reported, rerun candidate, never a worker opinion and never a 0 score.
+    return {
+      workerId: base.workerId,
+      taskId: base.taskId,
+      ...nonSubstantiveClassification(
+        'unmarked_completion',
+        'completion.marked=false: output exists but the lane did not complete; report separately and rerun, do not count as worker opinion',
+        [`completion.reason=${completion.reason || 'unspecified'}`],
+      ),
+      underlyingClassification: base.classification,
+      completion: completion.state,
+    };
+  }
+  return { ...base, completion: completion.state };
+}
+
+function classifyEvidenceRecordBase(record, index = 0) {
   const workerId = record?.workerId ?? record?.assignedWorkerId ?? record?.worker?.id ?? record?.worker ?? record?.task?.assignedWorkerId ?? `record-${index + 1}`;
   const taskId = record?.taskId ?? record?.id ?? record?.task?.id ?? null;
   const structuredOutput = record?.output ?? record?.result?.output ?? record?.result;
@@ -429,11 +465,31 @@ export function classifyEvidenceBundle(input) {
   const finalizerBlockers = classifications
     .filter((item) => !item.countsAsWorkerOpinion)
     .flatMap((item) => item.blockers.map((blocker) => `${item.workerId}: ${blocker}`));
+  // #2393: unmarked records sit in their own column and leave the scored
+  // denominator; tasks whose every record is unmarked are redispatch
+  // candidates (execution stays behind the normal approval gate).
+  const completion = { marked: 0, unmarked: 0, legacy: 0 };
+  const taskStates = new Map();
+  for (const item of classifications) {
+    completion[item.completion] += 1;
+    if (!item.taskId) continue;
+    const states = taskStates.get(item.taskId) ?? new Set();
+    states.add(item.completion);
+    taskStates.set(item.taskId, states);
+  }
+  const redispatchCandidates = [...taskStates.entries()]
+    .filter(([, states]) => states.size === 1 && states.has('unmarked'))
+    .map(([taskId]) => taskId);
   return {
     ok: counts.substantive > 0,
     counts,
     classifications,
     finalizerBlockers,
+    completion: {
+      ...completion,
+      scoredDenominator: classifications.length - completion.unmarked,
+      redispatchCandidates,
+    },
   };
 }
 
@@ -465,6 +521,9 @@ export function renderMarkdownReport(report) {
   }
   lines.push('');
   lines.push(`substantive=${report.counts.substantive ?? 0}; finalizerBlockers=${report.finalizerBlockers.length}`);
+  if (report.completion?.unmarked) {
+    lines.push(`unmarked=${report.completion.unmarked} (excluded from scoredDenominator=${report.completion.scoredDenominator}); redispatchCandidates=${report.completion.redispatchCandidates.join(',') || 'none'}`);
+  }
   return `${lines.join('\n')}\n`;
 }
 

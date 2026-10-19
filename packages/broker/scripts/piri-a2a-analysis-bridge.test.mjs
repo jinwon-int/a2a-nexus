@@ -322,6 +322,8 @@ test("full flow emits the OpenClaw envelope around schema-valid piri output", ()
 			actualRuntimeModel: "kimi-coding/k3",
 			modelInheritanceMode: "bridge_env_pin",
 			executionTelemetry: response.executionTelemetry,
+			// #2393: piri does not fingerprint its harness yet and says so.
+			harness: null,
 		});
 		assert.equal(response.bridgeAdapter, "piri");
 		assert.equal(response.requestedModel, "m");
