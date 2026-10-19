@@ -557,6 +557,16 @@ The CLI default env file is `/etc/default/openclaw-a2a-worker`, but runner nodes
 (`warn` when the file it read is missing or older than another known env file) and `cleanup` prints the same
 warning on stderr. Pass `--env-file <live file>` or set `A2A_DOCKER_RUNNER_ENV_FILE` on such nodes.
 
+**`run` never reads the env file (#2398).** `run` and `smoke` load their config from the process env only —
+on worker nodes that is the systemd `EnvironmentFile` the worker inherits — while `doctor`, `install` and
+`cleanup` merge the CLI env file underneath it. A key present only in that file is therefore validated by
+`doctor` but never applied to a task: a stale default file's `A2A_DOCKER_RUNNER_EXTRA_MOUNTS_JSON` made
+`doctor` fail while tasks were unaffected, and its `A2A_DOCKER_RUNNER_MEMORY`/`CPUS` read as applied while
+tasks ran on the `2g`/`2` defaults. `doctor` now reports `runEnvParity` (`warn` listing the env-file-only
+`A2A_*` key names — never values; `skip` when the process env has no `A2A_DOCKER_RUNNER_*` keys, i.e. an
+interactive shell that cannot be compared), and a `doctor` config error names those keys too. Run `doctor`
+with the worker env to get a meaningful comparison.
+
 Note: Node 22 pre-scans `--env-file <path>` even when it appears after the script path and aborts with
 `node: <path>: not found` (exit 9) if the file is missing — so a typo in `--env-file` never reaches the CLI.
 Use `A2A_DOCKER_RUNNER_ENV_FILE=<path>` if you need the CLI's own missing-file warning instead.
