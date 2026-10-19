@@ -492,7 +492,11 @@ broker, GitHub, Telegram, OpenClaw Gateway, or Docker.
 - `containerHardening` (#2256): the effective `--cap-drop`/`--cap-add`,
   `--user`, read-only rootfs, no-new-privileges, and network the runner will
   pass to the engine, plus any trusted-operator `relaxations`; warns when
-  `--cap-drop ALL` is not in effect
+  `--cap-drop ALL` is not in effect. `detail.egress` (#2395) reports
+  `mode: unrestricted` for `bridge`/`host` networking (listed as the
+  `unrestricted_egress` relaxation), whether `A2A_DOCKER_RUNNER_EGRESS_ALLOWLIST_HOSTS`
+  is configured, and `proxyWired: false` — `run` does not start the egress
+  allowlist proxy yet, so a configured allowlist is not enforced
 - configured base-image presence or pull readiness
 - `githubPatch` readiness for generic `github-propose-patch` execution; the
   OpenClaw profile path includes a no-secret container probe for the `openclaw`
