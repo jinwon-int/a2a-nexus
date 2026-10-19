@@ -7,6 +7,7 @@ Trusted-operator mode is for OpenClaw/Hermes/Claude patch lanes that need host c
 With `A2A_DOCKER_RUNNER_TRUSTED_OPERATOR=1` and an OpenClaw/Hermes/Claude profile:
 
 - `--network bridge` by default. Host networking requires `A2A_DOCKER_RUNNER_NETWORK=host`.
+  `bridge` gives the task container unrestricted outbound network (`doctor` reports `unrestricted_egress`, #2397); the proposed allowlist proxy is in [egress-proxy-design.md](egress-proxy-design.md) (#2395).
 - `--read-only` root filesystem by default, plus a bounded writable `/tmp` tmpfs.
 - `--user 1000:1000` by default. Root requires `A2A_DOCKER_RUNNER_USER=root` or `A2A_DOCKER_RUNNER_USER=0`.
 - `--cap-drop ALL` by default (#2256 A1). Needed capabilities are re-added with `A2A_DOCKER_RUNNER_CAP_ADD`; `A2A_DOCKER_RUNNER_CAP_DROP=none` keeps the engine's default capability set.
