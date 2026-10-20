@@ -19,6 +19,7 @@ import test from "node:test";
 import {
   SHARED_STATE_SQLITE_SCHEMA_ERROR_CODES_V1,
   SHARED_STATE_SQLITE_SCHEMA_V1,
+  applySharedStateSqliteConnectionPragmasV1,
   applySharedStateSqliteSchemaV1,
   readSharedStateSqliteSchemaV1,
 } from "./shared-state-sqlite-schema-v1.js";
@@ -256,4 +257,23 @@ test("declares no adapter behavior and pins its closed vocabulary", () => {
     V.readinessReasonCodes.includes("schema_version_mismatch"),
     true,
   );
+});
+
+test("#2348: connection pragmas — probe is WAL+NORMAL (restart-durable), ack is WAL+FULL (power-loss-durable)", () => {
+  const directory = mkdtempSync(join(tmpdir(), "a2a-shared-state-pragmas-"));
+  try {
+    for (const [durability, expected] of [["probe", 1], ["ack", 2]] as const) {
+      const db = new DatabaseSync(join(directory, `${durability}.sqlite`));
+      try {
+        applySharedStateSqliteConnectionPragmasV1(db, { durability });
+        assert.equal((db.prepare("PRAGMA journal_mode").get() as { journal_mode: string }).journal_mode, "wal");
+        // 1 = NORMAL, 2 = FULL (https://sqlite.org/pragma.html#pragma_synchronous)
+        assert.equal((db.prepare("PRAGMA synchronous").get() as { synchronous: number }).synchronous, expected);
+      } finally {
+        db.close();
+      }
+    }
+  } finally {
+    rmSync(directory, { recursive: true, force: true });
+  }
 });
