@@ -366,7 +366,8 @@ The spec carries `brokerUrl`, `requesterId`, `dispatchRef`, `lineageId`,
 `baseSha`, `headSha`, and either `repo` (a checkout holding both commits) or
 `diffFile`; `budget` defaults to `DEFAULT_LINEAGE_BUDGET`. `diffHash` is the
 SHA-256 of the exact `git diff --no-color --no-ext-diff --no-renames
---unified=3 <base> <head>` bytes with system and global git config
+--unified=3 <base>...<head>` bytes (three-dot: merge-base to head, the same
+recipe as the requester's PR diff — #2362) with system and global git config
 neutralized. Every posting command accepts `--dry-run`; `binding` and `lane` are
 always offline. The requester role is always `operator`; the edge secret comes
 from `A2A_EDGE_SECRET` only.

@@ -24,9 +24,10 @@
  * Hashes reuse the Phase-1 reference primitives (test/conformance/lib/
  * canonical-json.mjs), which the broker's TypeScript port is locked to.
  * diffHash hashes the exact bytes of
- *   git diff --no-color --no-ext-diff --no-renames --unified=3 <base> <head>
- * with system/global git config neutralized so a user's diff settings cannot
- * change the patch.
+ *   git diff --no-color --no-ext-diff --no-renames --unified=3 <base>...<head>
+ * (three-dot: merge-base(base, head) -> head, the requester/GitHub PR recipe;
+ * #2362) with system/global git config neutralized so a user's diff settings
+ * cannot change the patch.
  *
  * Auth: the edge secret is read from A2A_EDGE_SECRET only (never a flag, never
  * printed or written to the record file); the requester role is always
@@ -156,9 +157,16 @@ export function canonicalPatch(repo, baseSha, headSha, spawn = spawnSync) {
       throw new ClientError(`commit ${sha.slice(0, 12)} is not present in ${repo}`);
     }
   }
+  // #2362: `<base>...<head>` (three-dot = merge-base(base, head) -> head) is the
+  // requester recipe (the nclex gate and GitHub's PR diff). The former two-dot
+  // form diffed the two commits directly, so when the default branch advanced
+  // after the PR branched (base no longer an ancestor of head) the patch picked
+  // up the base-side changes in reverse and diffHash diverged from the request
+  // (observed nclex#638: 55b37a84... vs c7accf15...). Identical bytes when base
+  // IS an ancestor, so existing lineages keep their hash.
   const result = spawn('git', [
     '-C', repo, 'diff', '--no-color', '--no-ext-diff', '--no-renames', '--unified=3',
-    baseSha, headSha,
+    `${baseSha}...${headSha}`,
   ], { env, maxBuffer: 256 * 1024 * 1024 });
   if (result.status !== 0) {
     throw new ClientError(`git diff failed for ${repo}`);

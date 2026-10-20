@@ -11,7 +11,8 @@
  *   insignificant whitespace) of every IntentContractV1 field except
  *   createdAt and intentHash.
  * - diffHash: SHA-256 over canonical patch bytes
- *   (`git diff --no-color --no-ext-diff --no-renames --unified=3 <base> <head>`).
+ *   (`git diff --no-color --no-ext-diff --no-renames --unified=3 <base>...<head>`,
+ *   three-dot = merge-base to head, the requester recipe; #2362).
  *   Commit metadata is not an input, so metadata-only HEAD changes leave
  *   diffHash unchanged (clarify Q2).
  */
