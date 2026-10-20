@@ -8,7 +8,8 @@
  * shared env-parse helpers it owns (optionalTrimmed, parseBooleanEnv).
  * worker.ts imports them back; only the required `export` keywords differ.
  */
-import { accessSync, constants as fsConstants, existsSync } from "node:fs";
+import { createHash } from "node:crypto";
+import { accessSync, constants as fsConstants, existsSync, readFileSync } from "node:fs";
 import { delimiter as pathDelimiter, isAbsolute, join as joinPath, resolve as resolvePath } from "node:path";
 import { fileURLToPath } from "node:url";
 import { readGeneratedBuildInfo } from "../broker-build-info.js";
@@ -102,13 +103,115 @@ export function buildWorkerMetadata(
 // to one side must move the other.
 // ---------------------------------------------------------------------------
 
+export interface AnalysisHarnessPreflightFailure {
+  check: string;
+  expected?: string;
+  actual?: string;
+  remedy: string;
+}
+
+export interface AnalysisHarnessPreflightResult {
+  ok: boolean;
+  failures: AnalysisHarnessPreflightFailure[];
+}
+
 export interface AnalysisArtifactProbe {
   /** False when the probe did not run (worker does not declare canAnalyze). */
   probed: boolean;
   ready: boolean;
-  reason?: "handler_artifact_missing" | "handler_adapter_mismatch";
+  reason?: "handler_artifact_missing" | "handler_adapter_mismatch" | "harness_preflight_failed";
   adapterClass?: string;
   handlerPath?: string;
+  /** #2401: harness pin preflight (bridge sha256 / skills tree) run against the resolved bridge. */
+  harnessPreflight?: AnalysisHarnessPreflightResult;
+}
+
+const SHA256_RE = /^[0-9a-f]{64}$/;
+
+function sha256Hex(input: string | Buffer): string {
+  return createHash("sha256").update(input).digest("hex");
+}
+
+function fileSha256(path: string | undefined): string | null {
+  const trimmed = optionalTrimmed(path);
+  if (!trimmed) return null;
+  try {
+    return sha256Hex(readFileSync(trimmed));
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Digest of a ccc-node skills registry — one `name\ttree_sha256` line per
+ * skill carrying a valid tree digest, sorted by name. Mirror of
+ * scripts/lib/analysis-harness-fingerprint.mjs skillsTreeSha256FromRegistry
+ * (the handler-side copy); `analysis-harness-preflight-parity.test` pins the
+ * two together.
+ */
+function skillsTreeSha256FromRegistry(path: string | undefined): { sha256: string | null; skillCount: number; error?: string } {
+  const trimmed = optionalTrimmed(path);
+  if (!trimmed) return { sha256: null, skillCount: 0, error: "unconfigured" };
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(readFileSync(trimmed, "utf8"));
+  } catch {
+    return { sha256: null, skillCount: 0, error: "unreadable" };
+  }
+  const skills = (parsed as { skills?: unknown } | null)?.skills;
+  if (!Array.isArray(skills)) return { sha256: null, skillCount: 0, error: "no_skills_array" };
+  const lines = skills
+    .filter((skill): skill is { name: string; tree_sha256: string } =>
+      typeof (skill as { name?: unknown })?.name === "string"
+      && SHA256_RE.test(String((skill as { tree_sha256?: unknown })?.tree_sha256 ?? "").trim()))
+    .map((skill) => `${skill.name}\t${skill.tree_sha256.trim()}`)
+    .sort();
+  return { sha256: sha256Hex(lines.map((line) => `${line}\n`).join("")), skillCount: lines.length };
+}
+
+/**
+ * #2401: the handler's claim preflight (scripts/lib/analysis-harness-fingerprint.mjs
+ * analysisHarnessPreflight) ported to the worker so a pin-mismatched worker
+ * stops advertising canAnalyze and never claims an analysis task — before this
+ * the check ran inside the handler, AFTER claim, so the worker kept taking
+ * tasks and failing them. Unset pins are skipped (same as the handler).
+ */
+export function probeAnalysisHarnessPreflight(env: NodeJS.ProcessEnv, bridgeFile: string): AnalysisHarnessPreflightResult {
+  const failures: AnalysisHarnessPreflightFailure[] = [];
+  const bridgePin = (optionalTrimmed(env.A2A_BRIDGE_PIN_SHA256) ?? "").toLowerCase();
+  if (bridgePin) {
+    const actual = fileSha256(bridgeFile);
+    if (!SHA256_RE.test(bridgePin)) {
+      failures.push({
+        check: "bridge_pin",
+        expected: bridgePin.slice(0, 64),
+        ...(actual ? { actual } : {}),
+        remedy: "A2A_BRIDGE_PIN_SHA256 must be a 64-char lower-case sha256; fix the worker env.",
+      });
+    } else if (actual !== bridgePin) {
+      failures.push({
+        check: "bridge_pin",
+        expected: bridgePin,
+        ...(actual ? { actual } : {}),
+        remedy: "Deployed analysis bridge differs from the pinned sha256; redeploy the pinned bridge or update A2A_BRIDGE_PIN_SHA256 after review.",
+      });
+    }
+  }
+  const skillsPin = (optionalTrimmed(env.A2A_SKILLS_TREE_SHA256_PIN) ?? "").toLowerCase();
+  if (skillsPin) {
+    const skills = skillsTreeSha256FromRegistry(env.A2A_SKILLS_REGISTRY_PATH);
+    if (skills.sha256 !== skillsPin) {
+      failures.push({
+        check: "skills_tree_pin",
+        expected: skillsPin.slice(0, 64),
+        ...(skills.sha256 ? { actual: skills.sha256 } : {}),
+        remedy: skills.sha256
+          ? "Installed skills registry digest differs from A2A_SKILLS_TREE_SHA256_PIN; resync skills or update the pin after review."
+          : `Skills registry unavailable (${skills.error}); set A2A_SKILLS_REGISTRY_PATH to the ccc-node skills/registry.json.`,
+      });
+    }
+  }
+  return { ok: failures.length === 0, failures };
 }
 
 const PROBE_ADAPTER_ALIASES: Record<string, string> = {
@@ -290,9 +393,15 @@ export function probeAnalysisArtifactReadiness(
         return false;
       }
     })();
-    return ready
-      ? { probed: true, ready: true, adapterClass, handlerPath: resolved }
-      : { probed: true, ready: false, reason: "handler_artifact_missing", adapterClass, handlerPath: resolved };
+    if (!ready) {
+      return { probed: true, ready: false, reason: "handler_artifact_missing", adapterClass, handlerPath: resolved };
+    }
+    // #2401: pin preflight on the bridge the handler will run. A failing pin
+    // withdraws canAnalyze instead of letting the handler refuse after claim.
+    const harnessPreflight = probeAnalysisHarnessPreflight(env, resolved);
+    return harnessPreflight.ok
+      ? { probed: true, ready: true, adapterClass, handlerPath: resolved, harnessPreflight }
+      : { probed: true, ready: false, reason: "harness_preflight_failed", adapterClass, handlerPath: resolved, harnessPreflight };
   }
 
   if (hasPathSeparator) {
@@ -318,6 +427,18 @@ export function withAnalysisProbeMetadata(
   out.analysisReady = probe.ready ? "true" : "false";
   if (probe.adapterClass) out.analysisAdapterClass = probe.adapterClass;
   if (probe.handlerPath) out.analysisHandlerPath = probe.handlerPath;
+  if (probe.harnessPreflight && !probe.harnessPreflight.ok) {
+    // #2401: bounded, secret-free (checks, digests, remedies only).
+    out.analysisHarnessPreflight = JSON.stringify({
+      ok: false,
+      failures: probe.harnessPreflight.failures.slice(0, 8).map((failure) => ({
+        check: failure.check.slice(0, 64),
+        ...(failure.expected ? { expected: failure.expected.slice(0, 64) } : {}),
+        ...(failure.actual ? { actual: failure.actual.slice(0, 64) } : {}),
+        remedy: failure.remedy.slice(0, 240),
+      })),
+    }).slice(0, 2000);
+  }
   if (!probe.ready) {
     out.analysisReadyReason = probe.reason ?? "handler_artifact_missing";
     // The probe only runs when canAnalyze was declared; keep the declaration

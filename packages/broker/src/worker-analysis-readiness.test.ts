@@ -8,12 +8,13 @@
 // substantiveAnalysisReady projection.
 import test from "node:test";
 import assert from "node:assert/strict";
-import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { createHash } from "node:crypto";
+import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
 import { createWorkerConfigFromEnv, probeAnalysisArtifactReadiness } from "./worker.js";
-import { withAnalysisProbeMetadata } from "./workers/worker-metadata.js";
+import { probeAnalysisHarnessPreflight, withAnalysisProbeMetadata } from "./workers/worker-metadata.js";
 import { isWorkerSubstantiveAnalysisReady, workerAnalysisAdapterMismatch } from "./core/broker-worker-status.js";
 import { buildWorkerCapacitySummary } from "./core/broker-worker-capacity.js";
 import type { WorkerRecord } from "./core/types.js";
@@ -217,6 +218,78 @@ test("probe mirrors the handler: a declared adapter selects the matching bridge,
     const metadata = withAnalysisProbeMetadata({}, contradiction, {});
     assert.equal(metadata?.analysisReady, "false");
     assert.equal(metadata?.analysisReadyReason, "handler_adapter_mismatch");
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test("#2401: a bridge pin mismatch withdraws canAnalyze with reason harness_preflight_failed and bounded metadata", () => {
+  const dir = mkdtempSync(join(tmpdir(), "a2a-preflight-probe-"));
+  try {
+    const bridge = join(dir, "claude-a2a-analysis-bridge.mjs");
+    writeFileSync(bridge, "// bridge v1\n", "utf8");
+    const actual = createHash("sha256").update(readFileSync(bridge)).digest("hex");
+    const mismatch = probeAnalysisArtifactReadiness(
+      { A2A_OPENCLAW_ANALYSIS_ENABLED: "1", A2A_HERMES_ANALYSIS_BIN: bridge, A2A_BRIDGE_PIN_SHA256: "0".repeat(64) },
+      true,
+    );
+    assert.equal(mismatch.ready, false);
+    assert.equal(mismatch.reason, "harness_preflight_failed");
+    assert.equal(mismatch.harnessPreflight?.failures[0]?.check, "bridge_pin");
+    assert.equal(mismatch.harnessPreflight?.failures[0]?.actual, actual);
+    const metadata = withAnalysisProbeMetadata({}, mismatch, {});
+    assert.equal(metadata?.analysisReady, "false");
+    assert.equal(metadata?.analysisReadyReason, "harness_preflight_failed");
+    const preflight = JSON.parse(metadata?.analysisHarnessPreflight ?? "{}") as { ok: boolean; failures: Array<{ check: string; remedy: string }> };
+    assert.equal(preflight.ok, false);
+    assert.match(preflight.failures[0]?.remedy ?? "", /pinned sha256/);
+
+    const match = probeAnalysisArtifactReadiness(
+      { A2A_OPENCLAW_ANALYSIS_ENABLED: "1", A2A_HERMES_ANALYSIS_BIN: bridge, A2A_BRIDGE_PIN_SHA256: actual },
+      true,
+    );
+    assert.equal(match.ready, true);
+    assert.equal(match.harnessPreflight?.ok, true);
+    assert.equal(withAnalysisProbeMetadata({}, match, {})?.analysisHarnessPreflight, undefined);
+
+    // Unset pins are skipped (same as the handler).
+    const unpinned = probeAnalysisArtifactReadiness({ A2A_OPENCLAW_ANALYSIS_ENABLED: "1", A2A_HERMES_ANALYSIS_BIN: bridge }, true);
+    assert.equal(unpinned.ready, true);
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test("#2401: the worker-side preflight port agrees with the handler's analysisHarnessPreflight (parity)", async () => {
+  const dir = mkdtempSync(join(tmpdir(), "a2a-preflight-parity-"));
+  try {
+    const bridge = join(dir, "codex-a2a-analysis-bridge.mjs");
+    writeFileSync(bridge, "// bridge\n", "utf8");
+    const registry = join(dir, "registry.json");
+    writeFileSync(registry, JSON.stringify({ skills: [
+      { name: "b-skill", tree_sha256: "b".repeat(64) },
+      { name: "a-skill", tree_sha256: "a".repeat(64) },
+      { name: "broken", tree_sha256: "not-a-digest" },
+    ] }), "utf8");
+    const mjsUrl = new URL("../scripts/lib/analysis-harness-fingerprint.mjs", import.meta.url).href;
+    const handlerSide = await import(mjsUrl) as {
+      analysisHarnessPreflight: (input: { bridgeFile: string; env: NodeJS.ProcessEnv }) => { ok: boolean; failures: Array<{ check: string; expected?: string; actual?: string; remedy: string }> };
+    };
+    for (const env of [
+      { A2A_BRIDGE_PIN_SHA256: "1".repeat(64), A2A_SKILLS_TREE_SHA256_PIN: "2".repeat(64), A2A_SKILLS_REGISTRY_PATH: registry },
+      { A2A_BRIDGE_PIN_SHA256: "xyz", A2A_SKILLS_TREE_SHA256_PIN: "2".repeat(64) },
+      { A2A_SKILLS_TREE_SHA256_PIN: "2".repeat(64), A2A_SKILLS_REGISTRY_PATH: join(dir, "missing.json") },
+      {},
+    ]) {
+      const theirs = handlerSide.analysisHarnessPreflight({ bridgeFile: bridge, env });
+      const ours = probeAnalysisHarnessPreflight(env, bridge);
+      assert.equal(ours.ok, theirs.ok);
+      assert.deepEqual(
+        ours.failures.map((f) => [f.check, f.expected ?? null, f.actual ?? null, f.remedy]),
+        theirs.failures.map((f) => [f.check, f.expected ?? null, f.actual ?? null, f.remedy]),
+        `env=${JSON.stringify(Object.keys(env))}`,
+      );
+    }
   } finally {
     rmSync(dir, { recursive: true, force: true });
   }
