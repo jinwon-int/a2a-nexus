@@ -90,7 +90,9 @@ export type RoundLaneEvidenceClass =
   | "queued_unclaimed"
   | "stale_or_missing_worker"
   | "non_substantive"
-  | "superseded_by_supplement";
+  | "superseded_by_supplement"
+  /** #2400: succeeded, but the lane's own completion marker says marked=false (#2393) — never substantive. */
+  | "completion_unmarked";
 
 export type RoundLaneReadinessStatus =
   | "missing"
@@ -524,7 +526,10 @@ function classifyLane(
 
   // 5. Succeeded
   if (status === "succeeded") {
-    if (isEvidenceRequired(laneDef) && evidenceClass !== "substantive") {
+    // #2400: a marked=false completion marker blocks the lane even when the
+    // lane does not require evidence — parity with a2ad-finalizer-gate.mjs,
+    // which never counts such a lane toward quorum.
+    if ((isEvidenceRequired(laneDef) && evidenceClass !== "substantive") || evidenceClass === "completion_unmarked") {
       return buildLaneResult(laneDef, {
         laneState: "blocked",
         taskIds,
@@ -535,7 +540,9 @@ function classifyLane(
           ...resultSummary,
           errorSummary: evidenceClass === "wrapper_only"
             ? "Wrapper-only task success is not substantive worker analysis"
-            : "Succeeded task did not include substantive worker analysis evidence",
+            : evidenceClass === "completion_unmarked"
+              ? `Succeeded task's completion marker is marked=false (${laneCompletion(latest).reason || "no reason"}); output is not completed evidence`
+              : "Succeeded task did not include substantive worker analysis evidence",
         },
         ageMs,
         updatedAt,
@@ -815,6 +822,9 @@ function classifyEvidenceClass(
   if (task.status === "succeeded") {
     if (hasOracleMismatchOutput(task)) return "oracle_mismatch";
     if (hasSourceBlockedOutput(task)) return "source_blocked";
+    // #2400 (parity with a2ad-finalizer-gate.mjs #2393): output exists but the
+    // lane says it did not complete — never serve it as substantive evidence.
+    if (laneCompletion(task).state === "unmarked") return "completion_unmarked";
     if (hasSubstantiveWorkerOutput(task)) return "substantive";
     if (isWrapperOnlySuccess(task)) return "wrapper_only";
     if (!isEvidenceRequired(laneDef) && evidence.allUrls.length > 0) return "substantive";
@@ -893,6 +903,28 @@ function collectResultText(task: TaskRecord): string {
   add(output["blockerFindings"]);
   add(output["nonBlockingFindings"]);
   return parts.join("\n");
+}
+
+/**
+ * #2393 completion marker, read from the same three locations as
+ * scripts/a2ad-finalizer-gate.mjs `laneCompletion` (#2400 parity): bridges
+ * stamp result.output.completion on success; the worker handler stamps
+ * error.details.completion (marked=false) on every bridge failure, which the
+ * worker nests under error.details.nestedError when it wraps a nonzero handler
+ * exit. A worker-level handler_timeout is unmarked by definition. Anything
+ * else without a marker is a pre-#2393 'legacy' lane.
+ */
+export function laneCompletion(task: TaskRecord): { state: "marked" | "unmarked" | "legacy"; reason: string } {
+  const output = (task.result?.output ?? {}) as Record<string, unknown>;
+  const details = (task.error?.details ?? {}) as Record<string, unknown>;
+  const nested = (details["nestedError"] as { details?: Record<string, unknown> } | undefined)?.details ?? {};
+  const marker = [output["completion"], details["completion"], nested["completion"]]
+    .find((value): value is { marked: boolean; reason?: unknown } =>
+      Boolean(value) && typeof value === "object" && typeof (value as { marked?: unknown }).marked === "boolean");
+  if (!marker && task.error?.code === "handler_timeout") return { state: "unmarked", reason: "handler_timeout" };
+  if (!marker) return { state: "legacy", reason: "" };
+  const reason = typeof marker.reason === "string" && marker.reason.trim() ? marker.reason.trim().slice(0, 64) : "";
+  return { state: marker.marked ? "marked" : "unmarked", reason };
 }
 
 function hasSubstantiveWorkerOutput(task: TaskRecord): boolean {
@@ -1051,6 +1083,7 @@ function buildSummary(lanes: ResultLane[]): RoundResultCollectorOutput["summary"
       case "non_substantive":
       case "stale_or_missing_worker":
       case "superseded_by_supplement":
+      case "completion_unmarked":
         counts.nonSubstantive++;
         break;
     }
@@ -1546,6 +1579,7 @@ function evidenceClassLabel(cls: RoundLaneEvidenceClass): string {
     case "stale_or_missing_worker": return "🕐 stale_or_missing_worker";
     case "non_substantive": return "❌ non_substantive";
     case "superseded_by_supplement": return "🔁 superseded_by_supplement";
+    case "completion_unmarked": return "🧩 completion_unmarked";
   }
 }
 

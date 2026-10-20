@@ -1353,3 +1353,34 @@ test('#2393 completion: real worker-wrapped failures (handler_exit_nonzero neste
   assert.deepEqual(result.completion.redispatchCandidates, ['t-nw-2', 't-nw-3']);
   assert.deepEqual(result.completion.unmarkedLanes.map((l) => l.reason), ['openclaw_analysis_timeout', 'handler_timeout']);
 });
+
+// #2400: the collector's gateVerdict is documented as a mirror of this gate.
+// Feed the same succeeded+marked=false lane to both and require the same answer.
+test('#2400 parity: collector and gate agree that a succeeded lane with marked=false is not quorum evidence', async () => {
+  const { collectRoundResults } = await import('../packages/broker/dist/core/round-result-collector.js');
+  const output = { ...analysisOutput(['real looking finding']), doneCommentUrl: 'https://github.com/o/r/issues/1#issuecomment-1' };
+  const cases = [
+    { name: 'marked=false', completion: { marked: false, reason: 'analysis_blocked' }, counts: false },
+    { name: 'marked=true', completion: { marked: true }, counts: true },
+    { name: 'legacy (no marker)', completion: undefined, counts: true },
+  ];
+  for (const c of cases) {
+    const laneOutput = c.completion ? { ...output, completion: c.completion } : output;
+    const gateLane = lane('t-par-1', 'succeeded', { worker: 'workerbeta', top: { output: laneOutput } });
+    const gate = classifyLaneEvidence(gateLane);
+    assert.equal(gate.countsTowardQuorum, c.counts, `gate: ${c.name}`);
+    const task = {
+      id: 't-par-1', intent: 'analyze', status: 'succeeded', targetNodeId: 'default', assignedWorkerId: 'workerbeta',
+      requester: { id: 'broker', kind: 'service' }, target: { id: 'default', kind: 'node' }, payload: {},
+      createdAt: '2026-05-26T10:00:00.000Z', updatedAt: '2026-05-26T11:30:00.000Z', completedAt: '2026-05-26T11:30:00.000Z',
+      result: { summary: 'done', output: laneOutput },
+    };
+    const collected = collectRoundResults(
+      { roundLabel: 'parity', lanes: [{ workerId: 'workerbeta', expectedOutcome: 'analysis' }] },
+      [task],
+      { nowMs: Date.parse('2026-05-26T12:00:00.000Z') },
+    );
+    assert.equal(collected.gateVerdict.succeeded, c.counts ? 1 : 0, `collector succeeded: ${c.name}`);
+    assert.equal(collected.lanes[0].evidenceClass === 'substantive', c.counts, `collector class: ${c.name} -> ${collected.lanes[0].evidenceClass}`);
+  }
+});
