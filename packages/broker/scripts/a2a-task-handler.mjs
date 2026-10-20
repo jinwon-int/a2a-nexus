@@ -1071,9 +1071,9 @@ function analysisBridgeCommand(env = process.env) {
   const candidates = analysisBridgeCandidates(env);
   // #2370: a declared adapter SELECTS the bridge. Before this it was only a
   // telemetry label, so a stale A2A_PIRI_ANALYSIS_BIN outranked the claude /
-  // codex bridge the node actually declared (soonwook, gongmyoung, nosuk
-  // 2026-10-11: piri/kimi ran without credentials, readiness still advertised
-  // the declared harness). The first candidate whose file name is that
+  // codex bridge the node actually declared (three fleet workers, 2026-10-11:
+  // piri/kimi ran without credentials while readiness still advertised the
+  // declared harness). The first candidate whose file name is that
   // runtime wins; when none is, the legacy precedence applies and
   // analysisBridgeArtifactPreflight fails closed on a contradicting runtime.
   const declared = declaredAnalysisBridgeAdapter(env);
