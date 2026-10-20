@@ -6,6 +6,7 @@ import { describe, it } from "node:test";
 import { deepEqual, equal, ok } from "node:assert/strict";
 import {
   collectRoundResults,
+  laneCompletion,
   buildRoundManifest,
   renderCompactEvidenceSummary,
   buildRoundCompletePayload,
@@ -1258,6 +1259,63 @@ describe("gateVerdict", () => {
 // ---------------------------------------------------------------------------
 // #920: Evidence quality and operator closeout UX — compact report / classification
 // ---------------------------------------------------------------------------
+
+describe("#2400 completion marker parity with a2ad-finalizer-gate", () => {
+  const nowMs = Date.parse("2026-05-26T12:00:00.000Z");
+  const substantiveOutput = { analysisStatus: "done", findings: ["real looking finding"], evidenceRefs: ["file.ts:1"], doneCommentUrl: "https://github.com/o/r/issues/1#issuecomment-1" };
+
+  it("a succeeded lane whose marker says marked=false is completion_unmarked and does not count as succeeded", () => {
+    const manifest: RoundManifest = { roundLabel: "test", lanes: [{ workerId: "workerbeta" }] };
+    const tasks: TaskRecord[] = [
+      makeTask({ id: "t-cm-1", intent: "analyze", status: "succeeded", updatedAt: "2026-05-26T11:30:00.000Z", completedAt: "2026-05-26T11:30:00.000Z",
+        result: makeResult({ output: { ...substantiveOutput, completion: { marked: false, reason: "analysis_blocked" } } }) }),
+    ];
+    const output = collectRoundResults(manifest, tasks, { nowMs });
+    const lane = output.lanes[0]!;
+    equal(lane.evidenceClass, "completion_unmarked");
+    equal(lane.laneState, "blocked");
+    ok(lane.errorSummary?.includes("marked=false (analysis_blocked)"));
+    equal(output.gateVerdict!.succeeded, 0);
+    equal(output.gateVerdict!.failed, 1);
+    equal(output.gateVerdict!.verdict, "BLOCKED");
+    equal(output.summary.substantiveEvidence, 0);
+  });
+
+  it("marked=true and legacy (no marker) lanes are unchanged — substantive and succeeded", () => {
+    const manifest: RoundManifest = { roundLabel: "test", lanes: [{ workerId: "workerbeta" }, { workerId: "workergamma" }] };
+    const tasks: TaskRecord[] = [
+      makeTask({ id: "t-cm-2", intent: "analyze", status: "succeeded", updatedAt: "2026-05-26T11:30:00.000Z", completedAt: "2026-05-26T11:30:00.000Z",
+        result: makeResult({ output: { ...substantiveOutput, completion: { marked: true } } }) }),
+      makeTask({ id: "t-cm-3", intent: "analyze", assignedWorkerId: "workergamma", status: "succeeded", updatedAt: "2026-05-26T11:30:00.000Z", completedAt: "2026-05-26T11:30:00.000Z",
+        result: makeResult({ output: substantiveOutput }) }),
+    ];
+    const output = collectRoundResults(manifest, tasks, { nowMs });
+    deepEqual(output.lanes.map((lane) => lane.evidenceClass), ["substantive", "substantive"]);
+    equal(output.gateVerdict!.succeeded, 2);
+    equal(output.gateVerdict!.verdict, "FINAL");
+  });
+
+  it("the marker also blocks a lane that does not require evidence (gate never counts marked=false)", () => {
+    // No expectedOutcome => isEvidenceRequired() is false for this lane.
+    const manifest: RoundManifest = { roundLabel: "test", lanes: [{ workerId: "workerbeta" }] };
+    const tasks: TaskRecord[] = [
+      makeTask({ id: "t-cm-4", status: "succeeded", updatedAt: "2026-05-26T11:30:00.000Z", completedAt: "2026-05-26T11:30:00.000Z",
+        result: makeResult({ output: { prUrl: "https://github.com/o/r/pull/1", completion: { marked: false, reason: "openclaw_analysis_timeout" } } }) }),
+    ];
+    const output = collectRoundResults(manifest, tasks, { nowMs });
+    equal(output.lanes[0]!.evidenceClass, "completion_unmarked");
+    equal(output.lanes[0]!.laneState, "blocked");
+    equal(output.gateVerdict!.succeeded, 0);
+  });
+
+  it("laneCompletion reads the three gate locations and the handler_timeout rule", () => {
+    equal(laneCompletion(makeTask({ id: "a", status: "succeeded", result: makeResult({ output: { completion: { marked: true } } }) })).state, "marked");
+    equal(laneCompletion(makeTask({ id: "b", status: "failed", error: { code: "openclaw_analysis_timeout", message: "t", details: { completion: { marked: false, reason: "openclaw_analysis_timeout" } } } })).reason, "openclaw_analysis_timeout");
+    equal(laneCompletion(makeTask({ id: "c", status: "failed", error: { code: "handler_exit_nonzero", message: "h", details: { nestedError: { code: "x", details: { completion: { marked: false, reason: "nested" } } } } } })).reason, "nested");
+    deepEqual(laneCompletion(makeTask({ id: "d", status: "failed", error: { code: "handler_timeout", message: "t" } })), { state: "unmarked", reason: "handler_timeout" });
+    deepEqual(laneCompletion(makeTask({ id: "e", status: "succeeded", result: makeResult({ output: { findings: ["x"] } }) })), { state: "legacy", reason: "" });
+  });
+});
 
 describe("#920 evidence quality and closeout UX", () => {
   it("classifies succeeded analysis tasks as substantive evidence", () => {
