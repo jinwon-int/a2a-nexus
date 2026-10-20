@@ -169,3 +169,36 @@ test("Codex A2A analysis bridge fails closed without minimal auth", () => {
     rmSync(dir, { recursive: true, force: true });
   }
 });
+
+test("Codex failure excerpt keeps stdout JSON error events when stderr only carries a warning (#2406)", () => {
+  const dir = mkdtempSync(join(tmpdir(), "codex-a2a-bridge-turn-failed-"));
+  const fakeCodex = join(dir, "fake-codex.mjs");
+  const configDir = join(dir, "codex-dir");
+  try {
+    mkdirSync(configDir);
+    writeFileSync(join(configDir, "auth.json"), JSON.stringify(sourceAuth), { mode: 0o600 });
+    writeFileSync(fakeCodex, [
+      "#!/usr/bin/env node",
+      "import { readFileSync } from 'node:fs';",
+      "readFileSync(0, 'utf8');",
+      "process.stderr.write('WARNING: proceeding, even though we could not create PATH aliases: Refusing to create helper binaries under temporary dir \"/tmp\"\\n');",
+      "console.log(JSON.stringify({ type: 'thread.started', thread_id: 'test' }));",
+      "console.log(JSON.stringify({ type: 'turn.failed', error: { message: '{\"status\":400,\"error\":{\"type\":\"invalid_request_error\",\"message\":\"The requested model is not supported.\"}}' } }));",
+      "process.exit(1);",
+    ].join("\n"));
+    chmodSync(fakeCodex, 0o755);
+
+    const result = spawnSync(bridgePath, bridgeArgs("Payload JSON:\n{}"), {
+      encoding: "utf8",
+      env: { ...process.env, A2A_CODEX_BIN: fakeCodex, A2A_CODEX_ANALYSIS_CONFIG_DIR: configDir },
+    });
+    assert.notEqual(result.status, 0);
+    assert.match(result.stderr, /Codex exited with 1/);
+    assert.match(result.stderr, /turn\.failed: .*The requested model is not supported/);
+    assert.match(result.stderr, /stderr: WARNING: proceeding/);
+    assert.match(result.stderr, /stdout: .*thread\.started/);
+    assert.ok(result.stderr.indexOf("turn.failed:") < result.stderr.indexOf("stderr: WARNING"), "stdout error events come first");
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});

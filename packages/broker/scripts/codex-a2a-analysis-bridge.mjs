@@ -90,6 +90,38 @@ function termuxChildEnv(env = process.env) {
   );
 }
 
+// #2406: Codex `--json` reports the real failure as stdout JSON events
+// (`{"type":"error",...}`, `{"type":"turn.failed",...}`) while stderr may carry
+// only a harmless warning (observed: "could not create PATH aliases"). A
+// stderr-or-stdout excerpt therefore hid a model-unsupported 400 behind the
+// warning. Keep BOTH streams (parity with the Claude bridge's
+// childOutputExcerpt, #1337 ENV1) and surface the stdout error events first.
+function codexStdoutErrorEvents(stdout, limit = 3) {
+  const events = [];
+  for (const line of safeText(stdout).split(/\r?\n/)) {
+    const trimmed = line.trim();
+    if (!trimmed.startsWith("{")) continue;
+    let event;
+    try { event = JSON.parse(trimmed); } catch { continue; }
+    const type = safeText(event?.type, "");
+    if (type !== "error" && type !== "turn.failed") continue;
+    const message = safeText(event?.error?.message ?? event?.message ?? event?.error, "");
+    events.push(`${type}: ${message || JSON.stringify(event).slice(0, 500)}`);
+    if (events.length >= limit) break;
+  }
+  return events;
+}
+
+function childOutputExcerpt(child, perStreamLimit = 2000) {
+  const parts = [];
+  for (const event of codexStdoutErrorEvents(child.stdout)) parts.push(event.slice(0, perStreamLimit));
+  const stderrText = safeText(child.stderr).trim();
+  const stdoutText = safeText(child.stdout).trim();
+  if (stderrText) parts.push(`stderr: ${stderrText.slice(0, perStreamLimit)}`);
+  if (stdoutText) parts.push(`stdout: ${stdoutText.slice(-perStreamLimit)}`);
+  return parts.join("\n") || "no output captured";
+}
+
 function extractCodexMessage(stdout) {
   let lastMessage = "";
   for (const line of safeText(stdout).split(/\r?\n/)) {
@@ -274,7 +306,7 @@ function runCodexAdapter() {
     });
     if (child.error) throw new Error(`Codex spawn failed: ${child.error.message}`);
     if (child.status !== 0) {
-      throw new Error(`Codex exited with ${child.status}: ${redactSecrets(child.stderr || child.stdout)}`);
+      throw new Error(`Codex exited with ${child.status}: ${redactSecrets(childOutputExcerpt(child))}`);
     }
     const result = extractCodexMessage(child.stdout);
     process.stdout.write(JSON.stringify({ type: "result", subtype: "success", result }));
@@ -328,7 +360,7 @@ function runBridge() {
     maxBuffer: 20 * 1024 * 1024,
   });
   if (child.error) throw new Error(`shared analysis bridge spawn failed: ${child.error.message}`);
-  if (child.status !== 0) throw new Error(redactSecrets(child.stderr || child.stdout));
+  if (child.status !== 0) throw new Error(redactSecrets(childOutputExcerpt(child)));
   process.stdout.write(transformEnvelope(child.stdout, flags));
 }
 
