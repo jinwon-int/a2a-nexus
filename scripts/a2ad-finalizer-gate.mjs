@@ -954,6 +954,8 @@ if (process.argv[1] && /a2ad-finalizer-gate(\.mjs)?$/.test(process.argv[1])) {
 export {
   computeVerdict,
   classify,
+  laneCompletion,
+  laneOutput,
   classifyLaneEvidence,
   readTasks,
   targetKey,

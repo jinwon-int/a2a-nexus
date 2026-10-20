@@ -199,14 +199,15 @@
       "args": [
         "--test",
         "scripts/a2ad-finalizer-gate.test.mjs",
-        "test/review-lineage-finalizer-evidence.test.mjs"
+        "test/review-lineage-finalizer-evidence.test.mjs",
+        "scripts/lib/a2ad-blind-view.test.mjs"
       ],
       "tier": "core",
       "owner": "broker",
       "consumer": "pr-gate",
       "retirement": "keep",
       "retirementCondition": "Retire only when another default PR gate verifies both legacy A2AD quorum behavior and the additive bounded-lineage fail-closed contract.",
-      "note": "#1518 Phase 6 offline finalizer tests: legacy quorum/draft behavior plus strict optional lineage evidence composition; source-only and no-live."
+      "note": "#1518 Phase 6 offline finalizer tests: legacy quorum/draft behavior plus strict optional lineage evidence composition; source-only and no-live. Also #2396 blind finalizer view (pre-anonymisation drops, identity masking, strict pick with flagged fallback, anonymous shadow record)."
     },
     {
       "name": "broker-policy-document",
