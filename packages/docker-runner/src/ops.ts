@@ -28,6 +28,16 @@ import {
 } from "./config.js";
 import { DEFAULT_PROFILE_MOUNT_PATH, validateOpenClawProfileReadiness } from "./openclaw-profile-readiness.js";
 import type { OpenClawProfileReadinessInput } from "./openclaw-profile-readiness.js";
+import {
+  checkEgressProxyReady,
+  egressEnabled,
+  egressNotReadyMessage,
+  egressStatePaths,
+  installEgressProxy,
+  type EgressExec,
+  type EgressInstallOptions,
+  type EgressInstallReport,
+} from "./egress-runtime.js";
 
 export type OpsStatus = "ok" | "warn" | "fail" | "skip";
 
@@ -66,6 +76,8 @@ export interface DoctorReport {
   serviceEnvFile?: OpsCheck;
   /** #2267 R2: workDir retention — TTL configured and cleanup timer installed/active (warn-only). */
   workdirRetention: OpsCheck;
+  /** #2395: present only when A2A_DOCKER_RUNNER_EGRESS_MODE is observe/enforce. */
+  egressProxy?: OpsCheck;
   /** #2268: `<envFile>.*` backup copies — broad perms fail, unbounded count/age warn. Present when the CLI passed envFile. */
   serviceEnvBackups?: OpsCheck;
   /** #2398: env-file-only A2A_* keys — doctor sees them, `run` (process env only) does not. Present when the CLI passed envFile and processEnv. */
@@ -441,6 +453,8 @@ export interface InstallReport {
   ok: boolean;
   created: string[];
   taskRoot: OpsCheck;
+  /** #2395: present only for `install --egress`. */
+  egress?: EgressInstallReport;
   secretMount: OpsCheck;
 }
 
@@ -642,6 +656,8 @@ function evaluateTaskRoot(
 }
 
 export interface DoctorOptions {
+  /** #2395: engine runner for the egress readiness probe; injectable for tests. */
+  egressExec?: EgressExec;
   /**
    * Env merged by the CLI (env file included). Forwarded to GitHub patch
    * readiness so an env-file-only invalid A2A_CLAUDE_EFFORT is reported as
@@ -843,6 +859,11 @@ export async function doctor(config: RunnerConfig, options: DoctorOptions = {}):
   const workdirRetention = await checkWorkdirRetention({ env: options.env, ...options.workdirRetention });
   checks.push(workdirRetention);
 
+  // #2395: egress mode on → `run` refuses tasks until the proxy is ready, so a
+  // not-ready proxy is a hard fail here too.
+  const egressProxy = egressEnabled(config) ? await checkEgressProxy(config, options.egressExec) : undefined;
+  if (egressProxy) checks.push(egressProxy);
+
   return {
     ok: engineReady && checks.every((check) => check.status !== "fail"),
     engine,
@@ -865,7 +886,19 @@ export async function doctor(config: RunnerConfig, options: DoctorOptions = {}):
     ...(serviceEnvBackups ? { serviceEnvBackups } : {}),
     ...(runEnvParity ? { runEnvParity } : {}),
     workdirRetention,
+    ...(egressProxy ? { egressProxy } : {}),
   };
+}
+
+/** #2395: same readiness probe `run` uses before starting a task. */
+export async function checkEgressProxy(config: RunnerConfig, exec?: EgressExec): Promise<OpsCheck> {
+  const readiness = await checkEgressProxyReady(config, exec);
+  const paths = egressStatePaths(config);
+  const detail = { ...readiness.detail, stateDir: paths.base, allowlistSize: config.egressProxyAllowlist?.length ?? 0 };
+  if (!readiness.ready) {
+    return { status: "fail", message: egressNotReadyMessage(readiness), detail: { ...detail, reason: readiness.reason } };
+  }
+  return { status: "ok", message: `egress proxy ready (${config.egressMode}) on ${readiness.detail.network}`, detail };
 }
 
 export async function checkDeployedRevision(cwd = process.cwd(), upstreamRef = "origin/main"): Promise<OpsCheck> {
@@ -1022,14 +1055,23 @@ export async function checkDeployMarker(
   };
 }
 
-export async function install(config: RunnerConfig): Promise<InstallReport> {
+export async function install(config: RunnerConfig, options: { egress?: boolean; egressOptions?: EgressInstallOptions } = {}): Promise<InstallReport> {
   const created: string[] = [];
   const root = resolve(config.rootDir);
   await mkdir(root, { recursive: true, mode: 0o700 });
   created.push(root);
   const taskRoot = await checkTaskRoot(root);
   const secretMount = await checkSecretMount(config.githubTokenFile);
-  return { ok: taskRoot.status !== "fail" && secretMount.status !== "fail", created, taskRoot, secretMount };
+  // #2395: `install --egress` creates the internal network and (re)creates the
+  // proxy container. Explicit opt-in only; plain `install` never touches it.
+  const egress = options.egress ? await installEgressProxy(config, options.egressOptions) : undefined;
+  return {
+    ok: taskRoot.status !== "fail" && secretMount.status !== "fail" && (egress?.ok ?? true),
+    created,
+    taskRoot,
+    secretMount,
+    ...(egress ? { egress } : {}),
+  };
 }
 
 async function checkEngine(engine: RunnerEngine): Promise<OpsCheck> {
@@ -1155,15 +1197,23 @@ export function checkContainerHardening(config: RunnerConfig): OpsCheck {
   if (config.readOnlyRootFilesystem !== true) relaxations.push("writable_rootfs");
   if (config.noNewPrivileges === false) relaxations.push("privilege_escalation_allowed");
   // #2395: `bridge`/`host` give the task container direct outbound network.
-  // The egress allowlist proxy (#1374) is not started by `run`, so a configured
-  // allowlist does not restrict anything yet; report that instead of implying it.
+  // With A2A_DOCKER_RUNNER_EGRESS_MODE on, the task network is the managed
+  // internal network and all egress goes through the allowlist proxy; proxy
+  // health is the separate `egressProxy` doctor check. `observe` still lets
+  // every public host through, so it stays a listed relaxation.
   const network = config.network ?? "none";
-  const egressUnrestricted = network === "bridge" || network === "host";
+  const proxyMode = egressEnabled(config) && network === config.egressNetwork;
+  const egressUnrestricted = !proxyMode && (network === "bridge" || network === "host");
   if (egressUnrestricted) relaxations.push("unrestricted_egress");
+  if (proxyMode && config.egressMode === "observe") relaxations.push("egress_observe_allows_public_hosts");
   const egress = {
-    mode: egressUnrestricted ? "unrestricted" : network === "none" ? "none" : "unknown",
-    allowlistConfigured: (config.egressAllowlistHosts?.length ?? 0) > 0,
-    proxyWired: false,
+    mode: proxyMode
+      ? `proxy-${config.egressMode}`
+      : egressUnrestricted ? "unrestricted" : network === "none" ? "none" : "unknown",
+    allowlistConfigured: proxyMode
+      ? (config.egressProxyAllowlist?.length ?? 0) > 0
+      : (config.egressAllowlistHosts?.length ?? 0) > 0,
+    proxyWired: proxyMode,
   };
   const detail = {
     mode: config.trustedOperator ? "trusted_operator" : "public_safe_default",

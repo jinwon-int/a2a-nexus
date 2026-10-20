@@ -1,9 +1,8 @@
 # Egress control for trusted patch lanes — design (#2395 stage 2)
 
-Status: **proxy component implemented (§5.4), not wired.** `src/egress-proxy.ts`
-and the container entry point `src/egress-proxy-main.ts` exist with hermetic tests;
-nothing in the runner starts the proxy or routes task containers through it, so
-runtime behaviour is unchanged. Runner wiring (§5.3) is the next PR.
+Status: **implemented behind `A2A_DOCKER_RUNNER_EGRESS_MODE` (default `off`).**
+Proxy component (§5.4, #2415) and runner wiring (§5.3, §5.6) are in. No node runs
+it until an operator sets the mode and runs `install --egress` (per-node approval).
 
 Stage 1 (#2397) made the gap visible:
 `doctor` reports `containerHardening.detail.egress.mode = "unrestricted"` and the
@@ -192,6 +191,42 @@ Implemented (`src/egress-proxy.ts`, `src/egress-proxy-main.ts`):
 
 A tool that ignores the proxy env fails closed (no route on the internal network);
 the PoC must confirm none of the required tools fall into that bucket.
+
+### 5.6 Runner wiring as implemented (stage 2b)
+
+Differences from §5.3 found while wiring, all fail-closed:
+
+- **Proxy allowlist env:** `A2A_DOCKER_RUNNER_EGRESS_PROXY_ALLOWLIST`, not
+  `A2A_DOCKER_RUNNER_EGRESS_ALLOWLIST_HOSTS` — the latter is validated as the K2
+  GitHub-retrieval list and rejects anything else. No profile base sets yet;
+  `enforce` requires the explicit list (derive it from observe logs).
+- **Credentials never in argv:** the proxy URL with the per-run token goes into a
+  0600 `--env-file` (docker `-e` values are visible in `ps`). The proxy reads
+  only `<runToken>.sha256` digests. Modes are set with explicit `chmod` so a
+  restrictive worker umask cannot make the digests unreadable to the proxy.
+- **State outside the task root:** `<root>-egress` by default. Under the task
+  root, `cleanup` would treat `credentials/` and `logs/` as expired run dirs.
+- **Proxy bundle, not the runner dir:** the runner install dir is root-only
+  (`0700`/`0600` on the fleet), so a non-root proxy cannot read it. `install
+  --egress` copies the three dependency-closed files (`egress-guards.js`,
+  `egress-proxy.js`, `egress-proxy-main.js`) plus an ESM `package.json` into
+  `<state>/proxy` and mounts that. The internal-range guards moved to
+  `egress-guards.ts` (re-exported from `egress-allowlist-proxy.ts`) to keep the
+  bundle closed; a test pins the closure. Re-run `install --egress` after a
+  runner deploy to pick up proxy changes.
+- **Readiness needs a healthcheck:** under `--restart unless-stopped` a
+  crash-looping proxy reports `Running=true` between restarts. The container
+  has a `/healthz` healthcheck and readiness requires `healthy` and not
+  `Restarting`; `install --egress` waits for it.
+- **Old images:** the Claude patch bridge carries an `egress-proxy-env`
+  capability marker; the claude-code profile fails closed without it when
+  `HTTPS_PROXY` is set.
+
+Verified on a host with Docker 29 using test-only names (removed afterwards):
+through the proxy `curl` → api.github.com 200 and `git ls-remote` OK;
+`curl --noproxy '*'` from the internal network had no route; plain-HTTP to
+`169.254.169.254` → 405; wrong token → 407; records attributed to the run id,
+with `wouldDeny` for a non-allowlisted host in observe.
 
 ## 6. Rollout
 

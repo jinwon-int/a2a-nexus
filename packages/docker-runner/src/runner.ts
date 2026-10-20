@@ -24,6 +24,7 @@ import {
   prepareCodexCredentialRuntime,
   withCodexCredentialRuntime,
 } from "./codex-credential-refresh.js";
+import { checkEgressProxyReady, egressEnabled, egressNotReadyMessage, prepareEgressRunCredentials } from "./egress-runtime.js";
 export { RESULT_STREAM_LIMIT, redactAndBound, redactSecrets } from "./redaction.js";
 import type { ArtifactEvidencePart, ArtifactManifest, ArtifactManifestEntry, ArtifactManifestStatus, CleanupRehearsalEvidence, GitHubCommentProjection, GitHubCommentProjectionKind, NormalizedRunnerTask, ResultSummary, RunnerBudgetEvidence, RunnerClaudeTurnBudgetDiagnostic, RunnerConfig, RunnerContainedSubagentRole, RunnerContinuationEvidence, RunnerDiffHygieneEvidence, RunnerEvidenceHints, RunnerPostPatchVerificationEvidence, RunnerReceiptTrace, RunnerReproducibilityMetadata, RunnerResult, RunnerSubagentReport, RunnerTask, SourcePublicApprovalDecision, SourcePublicApprovalPacket, SourcePublicApprovalRehearsal, SourcePublicExecutionPreflight } from "./types.js";
 
@@ -230,6 +231,15 @@ export async function runTask(config: RunnerConfig, task: RunnerTask): Promise<R
 
   const normalizedTask = sanitizeSubagentContextBrief(normalizeTask(expandedTask ?? task));
 
+  // #2395: with egress mode on, refuse to start (before any workDir, container,
+  // or model call) unless the internal network and the proxy are in place and
+  // the proxy runs in the same mode. A missing proxy would otherwise surface as
+  // an opaque in-container network failure after the run already started.
+  if (egressEnabled(config)) {
+    const readiness = await checkEgressProxyReady(config);
+    if (!readiness.ready) throw new Error(egressNotReadyMessage(readiness));
+  }
+
   // #2234 slice 3: the container cannot refresh the Claude OAuth credential
   // (the profile strips the refresh token), so refuse to START a claude-code
   // task whose access token would expire inside the task timeout + margin.
@@ -298,15 +308,26 @@ export async function runTask(config: RunnerConfig, task: RunnerTask): Promise<R
   const executionConfig = codexCredentialRuntime
     ? withCodexCredentialRuntime(config, codexCredentialRuntime)
     : config;
-  const args = buildRunArgs(executionConfig, normalizedTask, workDir, runToken);
-  // Load the execution-proof signing key BEFORE the container runs (BUG-B7).
-  // It used to be read at proof-build time, i.e. after a full task execution:
-  // a missing/unreadable key file threw out of runTask only once the container
-  // had already cloned, patched and possibly pushed a PR — burning the whole
-  // run on a config error that is knowable up front. Fail fast instead.
-  const proofSigningKeyPem = config.proofSigningKeyFile
-    ? readProofSigningKey(config.proofSigningKeyFile)
+  // #2395: per-run proxy credential; removed in every exit path below.
+  const egressCredentials = egressEnabled(executionConfig)
+    ? await prepareEgressRunCredentials(executionConfig, runToken)
     : undefined;
+  let args: string[];
+  let proofSigningKeyPem: string | undefined;
+  try {
+    args = buildRunArgs(executionConfig, normalizedTask, workDir, runToken, egressCredentials?.envFile);
+    // Load the execution-proof signing key BEFORE the container runs (BUG-B7).
+    // It used to be read at proof-build time, i.e. after a full task execution:
+    // a missing/unreadable key file threw out of runTask only once the container
+    // had already cloned, patched and possibly pushed a PR — burning the whole
+    // run on a config error that is knowable up front. Fail fast instead.
+    proofSigningKeyPem = config.proofSigningKeyFile
+      ? readProofSigningKey(config.proofSigningKeyFile)
+      : undefined;
+  } catch (error) {
+    await egressCredentials?.cleanup();
+    throw error;
+  }
   const timeoutMs = normalizedTask.timeoutMs ?? config.defaultTimeoutMs;
   const engine = config.engine ?? "docker";
   // Use retry harness for transient container failures.
@@ -329,6 +350,7 @@ export async function runTask(config: RunnerConfig, task: RunnerTask): Promise<R
     if (codexCredentialRuntime) {
       await cleanupCodexCredentialRuntime(codexCredentialRuntime);
     }
+    await egressCredentials?.cleanup();
   }
   const { result: completed, retryEvidence } = execution;
   const subagentReport = config.containedSubagents?.enabled
@@ -1095,7 +1117,13 @@ export function normalizeTaskEnvValue(value: unknown): { ok: true; value: string
   return { ok: true, value: text };
 }
 
-export function buildRunArgs(config: RunnerConfig, task: RunnerTask, workDir: string, runToken = createRunToken()): string[] {
+export function buildRunArgs(
+  config: RunnerConfig,
+  task: RunnerTask,
+  workDir: string,
+  runToken = createRunToken(),
+  egressEnvFile?: string,
+): string[] {
   const containerName = buildContainerName(task.id, runToken);
   const args = [
     "run",
@@ -1142,6 +1170,12 @@ export function buildRunArgs(config: RunnerConfig, task: RunnerTask, workDir: st
   }
   for (const cap of config.capAdd ?? []) {
     args.push("--cap-add", cap);
+  }
+  // #2395: proxy URL (with the per-run token) and proxy-only env come from a
+  // runner-written 0600 file, never argv (`ps` shows argv). Tasks cannot set
+  // these keys: task.env admits only A2A_-prefixed names.
+  if (egressEnvFile) {
+    args.push("--env-file", egressEnvFile);
   }
 
   if (config.githubTokenFile && config.trustedOperator) {

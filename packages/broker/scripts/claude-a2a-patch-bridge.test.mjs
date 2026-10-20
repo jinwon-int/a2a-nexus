@@ -2774,6 +2774,53 @@ test("#2373 option 2: CLAUDE_CODE_OAUTH_TOKEN reaches the isolated Claude child 
   }
 });
 
+test("a2a-nexus#2395: runner-set proxy env reaches the isolated Claude child; other env still does not", () => {
+  const tempDir = mkdtempSync(join(tmpdir(), "claude-patch-egress-env-"));
+  const fakeClaudePath = join(tempDir, "fake-claude.mjs");
+  const capturePath = join(tempDir, "claude-env.json");
+  const keys = ["HTTPS_PROXY", "HTTP_PROXY", "NO_PROXY", "https_proxy", "http_proxy", "no_proxy"];
+  try {
+    writeStubClaude(fakeClaudePath, [
+      "import { writeFileSync } from 'node:fs';",
+      `const keys = ${JSON.stringify(keys)};`,
+      "writeFileSync(process.env.CAPTURE_ENV_PATH, JSON.stringify({ proxy: Object.fromEntries(keys.map((k) => [k, process.env[k] ?? null])), leaked: process.env.A2A_TEST_NOT_ALLOWLISTED || '' }));",
+      "const analysis = { status: 'done', summary: 'egress env passthrough', findings: [], risks: [], recommendations: [], evidenceRefs: [] };",
+      "console.log(JSON.stringify({ type: 'result', subtype: 'success', result: JSON.stringify(analysis) }));",
+    ]);
+    const proxyUrl = "http://run-1:TEST-ONLY-egress-token-0123456789abcdef@a2a-egress-proxy:3128";
+    const result = spawnSync(bridgePath, bridgeArgs(analysisMessage()), {
+      encoding: "utf8",
+      env: {
+        ...process.env,
+        A2A_CLAUDE_CODE_BIN: fakeClaudePath,
+        HTTPS_PROXY: proxyUrl,
+        HTTP_PROXY: proxyUrl,
+        https_proxy: proxyUrl,
+        http_proxy: proxyUrl,
+        NO_PROXY: "",
+        no_proxy: "",
+        A2A_TEST_NOT_ALLOWLISTED: "must-not-reach-claude",
+        CAPTURE_ENV_PATH: capturePath,
+      },
+    });
+    assert.equal(result.status, 0, result.stderr);
+    const captured = JSON.parse(readFileSync(capturePath, "utf8"));
+    assert.deepEqual(captured.proxy, { HTTPS_PROXY: proxyUrl, HTTP_PROXY: proxyUrl, NO_PROXY: "", https_proxy: proxyUrl, http_proxy: proxyUrl, no_proxy: "" });
+    assert.equal(captured.leaked, "", "non-allowlisted env must still be dropped");
+    assert.equal(`${result.stdout}${result.stderr}`.includes("TEST-ONLY-egress-token"), false, "the bridge must never print the proxy credential");
+  } finally {
+    rmSync(tempDir, { recursive: true, force: true });
+  }
+});
+
+test("a2a-nexus#2395: the bridge carries the egress-proxy-env capability marker the claude-code runner profile greps for", () => {
+  const source = readFileSync(bridgePath, "utf8");
+  assert.ok(source.includes("// a2a-bridge-capability: egress-proxy-env\n"));
+  const profile = readFileSync(new URL("../../docker-runner/profiles/claude-code.sh", import.meta.url), "utf8");
+  assert.ok(profile.includes("grep -Fq 'a2a-bridge-capability: egress-proxy-env' \"$A2A_CLAUDE_PATCH_BRIDGE\""));
+  assert.ok(profile.includes("error=claude_egress_proxy_bridge_unsupported"));
+});
+
 test("#2373 option 2: the bridge carries the oauth-token-env capability marker the claude-code runner profile greps for", () => {
   const source = readFileSync(bridgePath, "utf8");
   assert.ok(source.includes("// a2a-bridge-capability: oauth-token-env\n"));

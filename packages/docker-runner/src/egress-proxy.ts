@@ -27,7 +27,8 @@ import { connect as netConnect, isIP, type Socket } from "node:net";
 import { join } from "node:path";
 import type { Duplex } from "node:stream";
 
-import { isDeniedInternalHostname, isDeniedInternalIp, type EgressResolvedAddress } from "./egress-allowlist-proxy.js";
+import type { EgressResolvedAddress } from "./egress-allowlist-proxy.js";
+import { isDeniedInternalHostname, isDeniedInternalIp } from "./egress-guards.js";
 
 export const EGRESS_PROXY_RECORD_SCHEMA = "a2a.egress.connect.v1" as const;
 export const EGRESS_PROXY_LOG_TRUNCATED_SCHEMA = "a2a.egress.log-truncated.v1" as const;

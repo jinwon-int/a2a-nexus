@@ -23,6 +23,14 @@ import {
   isDeniedInternalHostname,
   isDeniedInternalIp,
 } from "./egress-allowlist-proxy.js";
+import { EgressProxyConfigError, normalizeEgressProxyAllowlist } from "./egress-proxy.js";
+import {
+  DEFAULT_EGRESS_NETWORK,
+  DEFAULT_EGRESS_PROXY_NAME,
+  egressEnabled,
+  isValidEgressResourceName,
+  parseEgressMode,
+} from "./egress-runtime.js";
 import { DEFAULT_FAILURE_LOG_KEEP, DEFAULT_FAILURE_LOG_MAX_BYTES } from "./failure-output-log.js";
 import { renderProfileScript } from "./profile-scripts.js";
 
@@ -214,6 +222,7 @@ export async function loadConfig(env = process.env): Promise<RunnerConfig> {
   validatePatchCommandProfileSelection({ profile, expectedProfile, image });
   const claudeHostRefresh = loadClaudeHostRefreshConfig(env);
   const claudeOauthToken = loadClaudeOauthTokenFileConfig(env);
+  const egress = loadEgressConfig(env);
 
   const config: RunnerConfig = {
     rootDir: env.A2A_DOCKER_RUNNER_ROOT || DEFAULT_ROOT, // validated below; resolveRootDir() is the lite path
@@ -224,7 +233,10 @@ export async function loadConfig(env = process.env): Promise<RunnerConfig> {
     defaultTimeoutMs: Number(env.A2A_DOCKER_RUNNER_TIMEOUT_MS || DEFAULT_TIMEOUT_MS),
     memory: env.A2A_DOCKER_RUNNER_MEMORY || "2g",
     cpus: env.A2A_DOCKER_RUNNER_CPUS || "2",
-    network: env.A2A_DOCKER_RUNNER_NETWORK || (trustedOperator && (profile === "openclaw" || profile === "hermes" || profile === "claude-code" || profile === "codex" || profile === "piri" || profile === "danso") ? "bridge" : "none"),
+    // #2395: with egress mode on, the task network IS the managed internal
+    // network (no route out except the proxy); loadEgressConfig refuses an
+    // explicit A2A_DOCKER_RUNNER_NETWORK alongside it.
+    network: egress?.egressNetwork ?? (env.A2A_DOCKER_RUNNER_NETWORK || (trustedOperator && (profile === "openclaw" || profile === "hermes" || profile === "claude-code" || profile === "codex" || profile === "piri" || profile === "danso") ? "bridge" : "none")),
     // #2256 A2: hardened container defaults apply in BOTH modes (read-only
     // rootfs + non-root uid). Public mode rejects explicit relaxations in
     // validateRunnerConfig; trusted mode may relax them via explicit env.
@@ -245,6 +257,7 @@ export async function loadConfig(env = process.env): Promise<RunnerConfig> {
     failureLogMaxBytes: parseOptionalPositiveInteger(env.A2A_DOCKER_RUNNER_FAILURE_LOG_MAX_BYTES, DEFAULT_FAILURE_LOG_MAX_BYTES, "A2A_DOCKER_RUNNER_FAILURE_LOG_MAX_BYTES") ?? DEFAULT_FAILURE_LOG_MAX_BYTES,
     failureLogKeep: parseOptionalPositiveInteger(env.A2A_DOCKER_RUNNER_FAILURE_LOG_KEEP, DEFAULT_FAILURE_LOG_KEEP, "A2A_DOCKER_RUNNER_FAILURE_LOG_KEEP") ?? DEFAULT_FAILURE_LOG_KEEP,
     ...(claudeHostRefresh ? { claudeHostRefresh } : {}),
+    ...(egress ?? {}),
     ...claudeOauthToken,
     ...patchCommand,
   };
@@ -272,9 +285,12 @@ export function validateRunnerConfig(config: RunnerConfig): void {
     errors.push("rootDir must be a non-empty absolute path starting with /");
   }
 
-  if (config.network && !/^(bridge|host|none)$/.test(config.network)) {
+  const egressNetworkInUse = egressEnabled(config) && config.network === config.egressNetwork;
+  if (config.network && !egressNetworkInUse && !/^(bridge|host|none)$/.test(config.network)) {
     errors.push(`unsupported network mode: ${JSON.stringify(config.network)} (expected bridge, host, or none)`);
   }
+
+  validateEgressModeConfig(config, errors);
 
   validateEgressAllowlistConfig(config, errors);
 
@@ -1002,6 +1018,64 @@ function parseOptionalPositiveInteger(value: string | undefined, fallback: numbe
     throw new Error(`${label} must be a positive integer`);
   }
   return parsed || fallback;
+}
+
+/**
+ * #2395: patch-lane egress control. Returns undefined for mode `off` so the
+ * resulting config is byte-identical to the pre-#2395 shape.
+ */
+function loadEgressConfig(env: NodeJS.ProcessEnv): Pick<RunnerConfig, "egressMode" | "egressNetwork" | "egressProxyName" | "egressProxyAllowlist" | "egressStateDir"> | undefined {
+  const egressMode = parseEgressMode(env.A2A_DOCKER_RUNNER_EGRESS_MODE);
+  if (egressMode === "off") return undefined;
+  const egressNetwork = (env.A2A_DOCKER_RUNNER_EGRESS_NETWORK ?? "").trim() || DEFAULT_EGRESS_NETWORK;
+  const explicitNetwork = (env.A2A_DOCKER_RUNNER_NETWORK ?? "").trim();
+  if (explicitNetwork && explicitNetwork !== egressNetwork) {
+    throw new Error(
+      `A2A_DOCKER_RUNNER_NETWORK=${JSON.stringify(explicitNetwork)} conflicts with A2A_DOCKER_RUNNER_EGRESS_MODE=${egressMode}; ` +
+        "egress mode runs task containers on the managed internal network — unset one of them",
+    );
+  }
+  const stateDir = (env.A2A_DOCKER_RUNNER_EGRESS_STATE_DIR ?? "").trim();
+  return {
+    egressMode,
+    egressNetwork,
+    egressProxyName: (env.A2A_DOCKER_RUNNER_EGRESS_PROXY_NAME ?? "").trim() || DEFAULT_EGRESS_PROXY_NAME,
+    egressProxyAllowlist: parseCommaList(env.A2A_DOCKER_RUNNER_EGRESS_PROXY_ALLOWLIST),
+    ...(stateDir ? { egressStateDir: stateDir } : {}),
+  };
+}
+
+function validateEgressModeConfig(config: RunnerConfig, errors: string[]): void {
+  if (config.egressMode === undefined || config.egressMode === "off") return;
+  if (config.egressMode !== "observe" && config.egressMode !== "enforce") {
+    errors.push(`invalid egressMode: ${JSON.stringify(config.egressMode)} (expected off, observe, or enforce)`);
+    return;
+  }
+  if (!config.trustedOperator) {
+    errors.push("egress mode applies to trusted-operator patch lanes; public mode already runs with --network none");
+  }
+  for (const [label, name] of [["egress network", config.egressNetwork], ["egress proxy name", config.egressProxyName]] as const) {
+    if (!name || !isValidEgressResourceName(name)) {
+      errors.push(`invalid ${label}: ${JSON.stringify(name)} (expected a Docker resource name)`);
+    } else if (/^(bridge|host|none|default)$/.test(name)) {
+      errors.push(`${label} must be a dedicated managed name, not ${JSON.stringify(name)}`);
+    }
+  }
+  if (config.egressNetwork && config.egressNetwork === config.egressProxyName) {
+    errors.push("egress network and egress proxy name must differ");
+  }
+  if (config.egressStateDir !== undefined && !config.egressStateDir.startsWith("/")) {
+    errors.push(`egress state dir must be an absolute path: ${JSON.stringify(config.egressStateDir)}`);
+  }
+  let allowlist: string[] = [];
+  try {
+    allowlist = normalizeEgressProxyAllowlist(config.egressProxyAllowlist ?? []);
+  } catch (error) {
+    errors.push(error instanceof EgressProxyConfigError ? error.message : String(error));
+  }
+  if (config.egressMode === "enforce" && allowlist.length === 0) {
+    errors.push("A2A_DOCKER_RUNNER_EGRESS_MODE=enforce requires A2A_DOCKER_RUNNER_EGRESS_PROXY_ALLOWLIST (derive it from observe logs)");
+  }
 }
 
 function validateEgressAllowlistConfig(config: RunnerConfig, errors: string[]): void {
