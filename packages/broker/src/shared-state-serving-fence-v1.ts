@@ -99,6 +99,14 @@ import { SHARED_STATE_STORAGE_V1_VALUES as V } from "./shared-state-storage-v1-v
 export const SHARED_STATE_SERVING_FENCE_V1 = Object.freeze({
   kind: "SharedStateServingFenceV1",
   envKey: "BROKER_SHARED_STATE_FILE",
+  /**
+   * #2348: connection durability of the serving fence. `probe` (default) is
+   * WAL + synchronous=NORMAL — an acknowledged replay/rate commit survives a
+   * process restart but the last commits can roll back on host power loss.
+   * `ack` is WAL + synchronous=FULL (one fsync per commit). Measure the commit
+   * latency on the broker host before switching a live broker.
+   */
+  durabilityEnvKey: "BROKER_SHARED_STATE_FENCE_DURABILITY",
   defaultSuffix: ".shared-state-v1.sqlite",
   isolatedTempPrefix: "a2a-serving-fence-",
   isolatedTempFileName: "shared-state-v1.sqlite",
@@ -320,6 +328,8 @@ export interface SharedStateServingFenceV1 {
   /** Secret-safe storage metadata; fresh isolated paths reset on restart. */
   readonly storageDurability?: "durable" | "volatile";
   readonly restartContinuity?: "preserved" | "reset";
+  /** #2348: `probe` = synchronous=NORMAL (restart-durable), `ack` = synchronous=FULL (power-loss-durable). */
+  readonly connectionDurability?: SharedStateServingFenceDurabilityV1;
   release(): void;
   probe(): SharedStateServingFenceProbeV1;
   /**
@@ -957,7 +967,9 @@ export function isolatedSharedStateServingFencePathV1(): string {
  * `restartContinuity: "reset"`, so nothing in the directory is meant to
  * outlive the process.
  */
-function acquireIsolatedSharedStateServingFenceV1(): SharedStateServingFenceV1 {
+function acquireIsolatedSharedStateServingFenceV1(
+  durability: SharedStateServingFenceDurabilityV1 = "probe",
+): SharedStateServingFenceV1 {
   const filePath = isolatedSharedStateServingFencePathV1();
   const directory = dirname(filePath);
   const removeDirectory = (): void => {
@@ -969,7 +981,7 @@ function acquireIsolatedSharedStateServingFenceV1(): SharedStateServingFenceV1 {
   };
   let fence: SharedStateServingFenceV1;
   try {
-    fence = assertSharedStateServingFenceV1({ filePath });
+    fence = assertSharedStateServingFenceV1({ filePath, durability });
   } catch (error) {
     removeDirectory();
     throw error;
@@ -1026,6 +1038,29 @@ function mapAdapterCode(
   return isFenceErrorCode(code) ? code : "adapter_unavailable";
 }
 
+export type SharedStateServingFenceDurabilityV1 = "ack" | "probe";
+
+/**
+ * #2348: resolves the fence connection durability. An explicit option wins
+ * over `BROKER_SHARED_STATE_FENCE_DURABILITY`; `ack`/`full` select
+ * synchronous=FULL, `probe`/`normal` (or unset) keep the NORMAL default. Any
+ * other value is a misconfiguration and fails closed — a typo must not
+ * silently fall back to the weaker profile an operator meant to leave.
+ */
+export function resolveSharedStateServingFenceDurabilityV1(input: {
+  readonly durability?: SharedStateServingFenceDurabilityV1;
+  readonly env?: NodeJS.ProcessEnv;
+}): SharedStateServingFenceDurabilityV1 {
+  if (input.durability !== undefined) return input.durability;
+  const raw = (input.env ?? process.env)[SHARED_STATE_SERVING_FENCE_V1.durabilityEnvKey];
+  const value = (raw ?? "").trim().toLowerCase();
+  if (value === "" || value === "probe" || value === "normal") return "probe";
+  if (value === "ack" || value === "full") return "ack";
+  throw new Error(
+    `shared-state serving fence rejected: durability_misconfigured (${SHARED_STATE_SERVING_FENCE_V1.durabilityEnvKey} must be ack|full|probe|normal)`,
+  );
+}
+
 /**
  * Applies the V1 schema if needed and acquires exclusive ownership. The
  * caller must `release()` so a later process can acquire after a clean
@@ -1034,6 +1069,8 @@ function mapAdapterCode(
 export function openSharedStateServingFenceV1(input: {
   readonly filePath: string;
   readonly ownerToken?: string;
+  /** #2348: defaults to `probe` (synchronous=NORMAL); see SHARED_STATE_SERVING_FENCE_V1.durabilityEnvKey. */
+  readonly durability?: SharedStateServingFenceDurabilityV1;
 }): SharedStateServingFenceResultV1<SharedStateServingFenceV1> {
   let db: DatabaseSync;
   try {
@@ -1043,8 +1080,12 @@ export function openSharedStateServingFenceV1(input: {
   }
 
   // #2081: WAL so the request-path ownership probe never blocks behind a
-  // writer; NORMAL is the standard probe-connection pairing.
-  applySharedStateSqliteConnectionPragmasV1(db, { durability: "probe" });
+  // writer; NORMAL is the standard probe-connection pairing. #2348: the same
+  // connection also commits replay nonces and rate costs, so NORMAL means
+  // those commits are restart-durable, not power-loss-durable; `ack` (FULL)
+  // is the opt-in for hosts that need the latter.
+  const durability = input.durability ?? "probe";
+  applySharedStateSqliteConnectionPragmasV1(db, { durability });
 
   const applied = applySharedStateSqliteSchemaV1(db);
   if (!applied.ok) {
@@ -1112,6 +1153,7 @@ export function openSharedStateServingFenceV1(input: {
     value: Object.freeze({
       storageDurability: fileBacked ? "durable" : "volatile",
       restartContinuity: fileBacked ? "preserved" : "reset",
+      connectionDurability: durability,
       release(): void {
         if (released) return;
         released = true;
@@ -1738,8 +1780,12 @@ function describeFenceRejection(
 
 export function assertSharedStateServingFenceV1(input: {
   readonly filePath: string;
+  readonly durability?: SharedStateServingFenceDurabilityV1;
 }): SharedStateServingFenceV1 {
-  const fence = openSharedStateServingFenceV1({ filePath: input.filePath });
+  const fence = openSharedStateServingFenceV1({
+    filePath: input.filePath,
+    ...(input.durability === undefined ? {} : { durability: input.durability }),
+  });
   if (!fence.ok) {
     throw new Error(describeFenceRejection(input.filePath, fence.error.code));
   }
@@ -1765,13 +1811,19 @@ export function acquireSharedStateServingFenceForBrokerV1(input: {
    * into an unconditional `ownership_conflict` (#2051 item 5).
    */
   readonly defaultLegacyStateFile?: string;
+  /** #2348: explicit connection durability; otherwise BROKER_SHARED_STATE_FENCE_DURABILITY (default probe). */
+  readonly sharedStateFenceDurability?: SharedStateServingFenceDurabilityV1;
 }): SharedStateServingFenceV1 {
   const env = input.env ?? process.env;
+  const durability = resolveSharedStateServingFenceDurabilityV1({
+    ...(input.sharedStateFenceDurability === undefined ? {} : { durability: input.sharedStateFenceDurability }),
+    env,
+  });
   const explicit =
     input.sharedStateFile !== undefined
     || Object.hasOwn(env, SHARED_STATE_SERVING_FENCE_V1.envKey);
   if (!explicit && input.injectedStore) {
-    return acquireIsolatedSharedStateServingFenceV1();
+    return acquireIsolatedSharedStateServingFenceV1(durability);
   }
   const path = resolveSharedStateServingFencePathV1({
     ...(input.sharedStateFile === undefined
@@ -1791,7 +1843,7 @@ export function acquireSharedStateServingFenceForBrokerV1(input: {
       input.stateFile ===
       (input.defaultLegacyStateFile ?? SHARED_STATE_SERVING_FENCE_V1.defaultLegacyStateFile);
     if (!explicit && defaultLegacy) {
-      return acquireIsolatedSharedStateServingFenceV1();
+      return acquireIsolatedSharedStateServingFenceV1(durability);
     }
     try {
       mkdirSync(directory, { recursive: true });
@@ -1801,5 +1853,5 @@ export function acquireSharedStateServingFenceForBrokerV1(input: {
       );
     }
   }
-  return assertSharedStateServingFenceV1({ filePath: path.value });
+  return assertSharedStateServingFenceV1({ filePath: path.value, durability });
 }

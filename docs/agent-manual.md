@@ -26,7 +26,9 @@ reports replay and rate-limit authority independently. With the corresponding
 `BROKER_SHARED_STATE_V1_REPLAY` / `BROKER_SHARED_STATE_V1_RATE` flag on, the
 selected V1 serving adapter reports `source: adapter`. A persistent file reports
 `durability: durable`, `continuity: preserved`, `resetRisk: false`, and
-`lastResetReason: null`. A fresh isolated fallback file reports `durable` with
+`lastResetReason: null` — where `durable` means "survives a process restart";
+host power loss is covered only with `BROKER_SHARED_STATE_FENCE_DURABILITY=ack`
+(`synchronous=FULL`, #2348; default `probe` = NORMAL). A fresh isolated fallback file reports `durable` with
 `reset` / `resetRisk: true` / `process_start`; SQLite `:memory:` reports the
 same reset risk with `durability: volatile`, including SQLite URI memory forms.
 Off reports `process` / `volatile` / `reset`, with process-start reset risk.

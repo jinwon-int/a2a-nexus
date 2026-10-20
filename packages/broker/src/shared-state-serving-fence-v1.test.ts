@@ -18,6 +18,7 @@ import {
   acquireSharedStateServingFenceForBrokerV1,
   assertSharedStateServingFenceV1,
   openSharedStateServingFenceV1,
+  resolveSharedStateServingFenceDurabilityV1,
   resolveSharedStateServingFencePathV1,
 } from "./shared-state-serving-fence-v1.js";
 import {
@@ -342,5 +343,54 @@ test("an injected store without an explicit fence path still constructs", async 
     } finally {
       await server.close();
     }
+  });
+});
+
+test("#2348: fence connection durability defaults to probe (NORMAL) and opts into ack (FULL) via option or env", () => {
+  assert.equal(SHARED_STATE_SERVING_FENCE_V1.durabilityEnvKey, "BROKER_SHARED_STATE_FENCE_DURABILITY");
+  assert.equal(resolveSharedStateServingFenceDurabilityV1({ env: {} }), "probe");
+  assert.equal(resolveSharedStateServingFenceDurabilityV1({ env: { BROKER_SHARED_STATE_FENCE_DURABILITY: "normal" } }), "probe");
+  assert.equal(resolveSharedStateServingFenceDurabilityV1({ env: { BROKER_SHARED_STATE_FENCE_DURABILITY: " FULL " } }), "ack");
+  assert.equal(resolveSharedStateServingFenceDurabilityV1({ env: { BROKER_SHARED_STATE_FENCE_DURABILITY: "ack" } }), "ack");
+  // The explicit option wins over env.
+  assert.equal(resolveSharedStateServingFenceDurabilityV1({ durability: "probe", env: { BROKER_SHARED_STATE_FENCE_DURABILITY: "ack" } }), "probe");
+  // A typo fails closed instead of silently keeping the weaker profile.
+  assert.throws(
+    () => resolveSharedStateServingFenceDurabilityV1({ env: { BROKER_SHARED_STATE_FENCE_DURABILITY: "fulll" } }),
+    /durability_misconfigured/,
+  );
+
+  withTempDir((directory) => {
+    const byDefault = openSharedStateServingFenceV1({ filePath: join(directory, "default.sqlite") });
+    assert.equal(byDefault.ok, true);
+    if (!byDefault.ok) throw new Error("unreachable");
+    assert.equal(byDefault.value.connectionDurability, "probe");
+    byDefault.value.release();
+
+    const ack = openSharedStateServingFenceV1({ filePath: join(directory, "ack.sqlite"), durability: "ack" });
+    assert.equal(ack.ok, true);
+    if (!ack.ok) throw new Error("unreachable");
+    assert.equal(ack.value.connectionDurability, "ack");
+    ack.value.release();
+
+    const viaEnv = acquireSharedStateServingFenceForBrokerV1({
+      sharedStateFile: join(directory, "env.sqlite"),
+      stateFile: join(directory, "state.json"),
+      injectedStore: false,
+      env: { BROKER_SHARED_STATE_FENCE_DURABILITY: "ack" },
+    });
+    assert.equal(viaEnv.connectionDurability, "ack");
+    assert.equal(viaEnv.storageDurability, "durable");
+    viaEnv.release();
+
+    assert.throws(
+      () => acquireSharedStateServingFenceForBrokerV1({
+        sharedStateFile: join(directory, "bad.sqlite"),
+        stateFile: join(directory, "state.json"),
+        injectedStore: false,
+        env: { BROKER_SHARED_STATE_FENCE_DURABILITY: "sometimes" },
+      }),
+      /durability_misconfigured/,
+    );
   });
 });

@@ -815,6 +815,17 @@ The planned `stateContract` health/readiness projection is:
 }
 ```
 
+`durability: durable` on a file-backed adapter means an acknowledged commit
+survives a **process restart** (WAL + `synchronous=NORMAL`, the default fence
+connection profile — #2081). It does not by itself promise survival of **host
+power loss**: SQLite only makes an acknowledged commit power-loss-durable under
+`synchronous=FULL`, so the last committed replay nonces / rate costs can roll
+back after an OS crash and briefly reopen a replay window (#2348). Operators who
+need power-loss durability set `BROKER_SHARED_STATE_FENCE_DURABILITY=ack`
+(one fsync per commit; measure commit latency on the broker host first). The
+effective profile is reported by the fence as `connectionDurability`
+(`probe` | `ack`).
+
 Allowed reset reasons are `process_start`, `adapter_reopen`,
 `operator_reset`, `migration`, and `unknown`. The real output may add
 versioned aggregate fields, but it MUST NOT contain raw or hashed nonces,
