@@ -106,7 +106,7 @@ export interface AnalysisArtifactProbe {
   /** False when the probe did not run (worker does not declare canAnalyze). */
   probed: boolean;
   ready: boolean;
-  reason?: "handler_artifact_missing";
+  reason?: "handler_artifact_missing" | "handler_adapter_mismatch";
   adapterClass?: string;
   handlerPath?: string;
 }
@@ -118,6 +118,7 @@ const PROBE_ADAPTER_ALIASES: Record<string, string> = {
   claudecode: "claude_code",
   codex: "codex",
   hermes: "hermes",
+  piri: "piri",
   danso: "danso",
   builtin: "builtin",
 };
@@ -149,15 +150,60 @@ const PROBE_DEFAULT_ANALYSIS_BRIDGE = fileURLToPath(
   new URL("../../scripts/piri-a2a-analysis-bridge.mjs", import.meta.url),
 );
 
+// #2370 mirror of the handler's ANALYSIS_BRIDGE_RUNTIME_KEYWORDS: runtime from
+// the bridge FILE NAME only (codex before claude — the codex bridge wraps the
+// claude bridge and names its own runtime first).
+const PROBE_BRIDGE_RUNTIME_KEYWORDS: ReadonlyArray<readonly [string, string]> = [
+  ["codex", "codex"],
+  ["claude", "claude_code"],
+  ["hermes", "hermes"],
+  ["piri", "piri"],
+  ["danso", "danso"],
+  ["openclaw", "openclaw"],
+];
+
+function probeBridgeRuntimeFromName(command: string): string | undefined {
+  const name = (command.split(/[\\/]/).pop() ?? "").toLowerCase();
+  if (!name) return undefined;
+  for (const [keyword, adapter] of PROBE_BRIDGE_RUNTIME_KEYWORDS) {
+    if (name.includes(keyword)) return adapter;
+  }
+  return undefined;
+}
+
+/** Mirror of the handler's analysisBridgeCandidates: legacy precedence, blank slots skipped. */
+function analysisBridgeCandidatesForProbe(env: NodeJS.ProcessEnv): string[] {
+  const slots = [
+    optionalTrimmed(env.A2A_DANSO_ANALYSIS_BIN),
+    optionalTrimmed(env.A2A_PIRI_ANALYSIS_BIN),
+    optionalTrimmed(env.A2A_HERMES_ANALYSIS_BIN),
+    optionalTrimmed(env.A2A_OPENCLAW_ANALYSIS_BIN),
+    optionalTrimmed(env.OPENCLAW_BIN),
+  ].filter((value): value is string => Boolean(value));
+  return [...slots, PROBE_DEFAULT_ANALYSIS_BRIDGE];
+}
+
+/**
+ * Mirror of the handler's analysisBridgeCommand (#2370): a declared adapter
+ * selects the first candidate whose file name is that runtime; otherwise the
+ * legacy precedence applies. Must report the binary the handler will run.
+ */
 function analysisBridgeCommandForProbe(env: NodeJS.ProcessEnv): string {
-  return (
-    optionalTrimmed(env.A2A_DANSO_ANALYSIS_BIN) ??
-    optionalTrimmed(env.A2A_PIRI_ANALYSIS_BIN) ??
-    optionalTrimmed(env.A2A_HERMES_ANALYSIS_BIN) ??
-    optionalTrimmed(env.A2A_OPENCLAW_ANALYSIS_BIN) ??
-    optionalTrimmed(env.OPENCLAW_BIN) ??
-    PROBE_DEFAULT_ANALYSIS_BRIDGE
-  );
+  const candidates = analysisBridgeCandidatesForProbe(env);
+  const declared = normalizeProbeAdapter(env.A2A_ANALYSIS_BRIDGE_ADAPTER ?? env.A2A_WORKER_BRIDGE_ADAPTER);
+  if (declared) {
+    const match = candidates.find((candidate) => probeBridgeRuntimeFromName(candidate) === declared);
+    if (match) return match;
+  }
+  return candidates[0];
+}
+
+/** #2370 mirror of the handler's analysisBridgeAdapterMismatch. */
+function probeBridgeAdapterMismatch(env: NodeJS.ProcessEnv, command: string): boolean {
+  const declared = normalizeProbeAdapter(env.A2A_ANALYSIS_BRIDGE_ADAPTER ?? env.A2A_WORKER_BRIDGE_ADAPTER);
+  if (!declared || declared === "builtin") return false;
+  const resolved = probeBridgeRuntimeFromName(command);
+  return Boolean(resolved) && resolved !== declared;
 }
 
 /** Mirror of the execution handler's adapter telemetry heuristic. */
@@ -225,6 +271,11 @@ export function probeAnalysisArtifactReadiness(
   }
   const command = analysisBridgeCommandForProbe(env);
   const adapterClass = deriveAnalysisAdapterClass(env, command);
+  if (probeBridgeAdapterMismatch(env, command)) {
+    // #2370: the handler's preflight refuses this task; say so before dispatch
+    // instead of advertising the declared harness as ready.
+    return { probed: true, ready: false, reason: "handler_adapter_mismatch", adapterClass, handlerPath: command };
+  }
   const looksLikeScript = /\.(?:mjs|cjs|js)$/i.test(command);
   const hasPathSeparator = command.includes("/") || command.includes("\\") || command.startsWith(".");
 

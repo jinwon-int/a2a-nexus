@@ -13,6 +13,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 
 import { createWorkerConfigFromEnv, probeAnalysisArtifactReadiness } from "./worker.js";
+import { withAnalysisProbeMetadata } from "./workers/worker-metadata.js";
 import { isWorkerSubstantiveAnalysisReady, workerAnalysisAdapterMismatch } from "./core/broker-worker-status.js";
 import { buildWorkerCapacitySummary } from "./core/broker-worker-capacity.js";
 import type { WorkerRecord } from "./core/types.js";
@@ -180,6 +181,42 @@ test("present handler script artifact keeps canAnalyze and records wiring-derive
     assert.equal(metadata.analysisHandlerPath, handlerPath);
     assert.equal(metadata.analysisReadyReason, undefined);
     assert.equal(metadata.analysisDeclaredCanAnalyze, undefined);
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test("probe mirrors the handler: a declared adapter selects the matching bridge, a contradiction is not ready (#2370)", () => {
+  const dir = mkdtempSync(join(tmpdir(), "a2a-adapter-probe-"));
+  try {
+    const piri = join(dir, "piri-a2a-analysis-bridge.mjs");
+    const codex = join(dir, "codex-a2a-analysis-bridge.mjs");
+    writeFileSync(piri, "// piri bridge\n", "utf8");
+    writeFileSync(codex, "// codex bridge\n", "utf8");
+    // gongmyoung-like: declared codex, stale piri slot, codex bridge in the hermes slot.
+    const selected = probeAnalysisArtifactReadiness(
+      {
+        A2A_OPENCLAW_ANALYSIS_ENABLED: "1",
+        A2A_ANALYSIS_BRIDGE_ADAPTER: "codex",
+        A2A_PIRI_ANALYSIS_BIN: piri,
+        A2A_HERMES_ANALYSIS_BIN: codex,
+      },
+      true,
+    );
+    assert.equal(selected.ready, true);
+    assert.equal(selected.handlerPath, codex);
+    assert.equal(selected.adapterClass, "codex");
+    // soonwook-like: declared claude-code, only a piri slot — the handler preflight refuses, so does the probe.
+    const contradiction = probeAnalysisArtifactReadiness(
+      { A2A_OPENCLAW_ANALYSIS_ENABLED: "1", A2A_ANALYSIS_BRIDGE_ADAPTER: "claude-code", A2A_PIRI_ANALYSIS_BIN: piri },
+      true,
+    );
+    assert.equal(contradiction.ready, false);
+    assert.equal(contradiction.reason, "handler_adapter_mismatch");
+    assert.equal(contradiction.handlerPath, piri);
+    const metadata = withAnalysisProbeMetadata({}, contradiction, {});
+    assert.equal(metadata?.analysisReady, "false");
+    assert.equal(metadata?.analysisReadyReason, "handler_adapter_mismatch");
   } finally {
     rmSync(dir, { recursive: true, force: true });
   }

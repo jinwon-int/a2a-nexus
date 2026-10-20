@@ -1027,22 +1027,74 @@ export const DEFAULT_ANALYSIS_BRIDGE = fileURLToPath(
   new URL("./piri-a2a-analysis-bridge.mjs", import.meta.url),
 );
 
-function analysisBridgeCommand(env = process.env) {
-  // #2295: an explicit danso bridge wins so a danso node never has to point
-  // A2A_PIRI_ANALYSIS_BIN at a non-piri bridge. Keep in sync with
-  // analysisBridgeCommandForProbe (worker-metadata.ts).
-  const danso = safeText(env.A2A_DANSO_ANALYSIS_BIN, "");
-  if (danso) return danso;
-  return safeText(
+// #2370: the runtime a bridge belongs to, read from its FILE NAME only (never
+// from directory names or env hints — the #2295 danso rule generalized). The
+// in-repo bridges are named <runtime>-a2a-analysis-bridge.mjs; a wrapper such
+// as the codex bridge (which spawns the claude bridge internally) still names
+// its own runtime first, so the order below checks codex before claude.
+const ANALYSIS_BRIDGE_RUNTIME_KEYWORDS = Object.freeze([
+  ["codex", "codex"],
+  ["claude", "claude_code"],
+  ["hermes", "hermes"],
+  ["piri", "piri"],
+  ["danso", "danso"],
+  ["openclaw", "openclaw"],
+]);
+
+function analysisBridgeRuntimeFromName(command) {
+  const name = basename(safeText(command, "")).toLowerCase();
+  if (!name) return "";
+  for (const [keyword, adapter] of ANALYSIS_BRIDGE_RUNTIME_KEYWORDS) {
+    if (name.includes(keyword)) return adapter;
+  }
+  return "";
+}
+
+function declaredAnalysisBridgeAdapter(env = process.env) {
+  return normalizeAnalysisBridgeAdapter(env.A2A_ANALYSIS_BRIDGE_ADAPTER || env.A2A_WORKER_BRIDGE_ADAPTER);
+}
+
+// Legacy precedence (blank slots skipped): danso > piri > hermes > openclaw >
+// OPENCLAW_BIN > in-repo default. Keep in sync with
+// analysisBridgeCandidatesForProbe (worker-metadata.ts).
+function analysisBridgeCandidates(env = process.env) {
+  return [
+    env.A2A_DANSO_ANALYSIS_BIN,
     env.A2A_PIRI_ANALYSIS_BIN,
-    safeText(
-      env.A2A_HERMES_ANALYSIS_BIN,
-      safeText(
-        env.A2A_OPENCLAW_ANALYSIS_BIN,
-        safeText(env.OPENCLAW_BIN, DEFAULT_ANALYSIS_BRIDGE),
-      ),
-    ),
-  );
+    env.A2A_HERMES_ANALYSIS_BIN,
+    env.A2A_OPENCLAW_ANALYSIS_BIN,
+    env.OPENCLAW_BIN,
+  ].map((value) => safeText(value, "")).filter(Boolean).concat(DEFAULT_ANALYSIS_BRIDGE);
+}
+
+function analysisBridgeCommand(env = process.env) {
+  const candidates = analysisBridgeCandidates(env);
+  // #2370: a declared adapter SELECTS the bridge. Before this it was only a
+  // telemetry label, so a stale A2A_PIRI_ANALYSIS_BIN outranked the claude /
+  // codex bridge the node actually declared (three fleet workers, 2026-10-11:
+  // piri/kimi ran without credentials while readiness still advertised the
+  // declared harness). The first candidate whose file name is that
+  // runtime wins; when none is, the legacy precedence applies and
+  // analysisBridgeArtifactPreflight fails closed on a contradicting runtime.
+  const declared = declaredAnalysisBridgeAdapter(env);
+  if (declared) {
+    const match = candidates.find((candidate) => analysisBridgeRuntimeFromName(candidate) === declared);
+    if (match) return match;
+  }
+  // #2295: an explicit danso bridge wins so a danso node never has to point
+  // A2A_PIRI_ANALYSIS_BIN at a non-piri bridge.
+  return candidates[0];
+}
+
+// #2370: fail closed when the declared adapter and the resolved bridge's
+// runtime contradict each other (e.g. declared claude_code, only a piri slot
+// set). A bridge whose name carries no known runtime keyword is accepted.
+function analysisBridgeAdapterMismatch(command, env = process.env) {
+  const declared = declaredAnalysisBridgeAdapter(env);
+  if (!declared) return null;
+  const resolved = analysisBridgeRuntimeFromName(command);
+  if (!resolved || resolved === declared) return null;
+  return { declared, resolved };
 }
 
 function nodeExecutableForChild(env = process.env, runtime = process) {
@@ -1067,6 +1119,23 @@ function resolveNodeScriptInvocation(command, args = [], env = process.env, runt
 
 function analysisBridgeArtifactPreflight(command, env = process.env) {
   const commandText = safeText(command, "");
+  const mismatch = analysisBridgeAdapterMismatch(commandText, env);
+  if (mismatch) {
+    return {
+      error: {
+        code: "analysis_bridge_adapter_mismatch",
+        message: `analysis bridge adapter mismatch: the worker declares ${mismatch.declared} but the resolved bridge ${basename(commandText)} is a ${mismatch.resolved} bridge`,
+        details: {
+          failureCategory: "bridge_adapter_mismatch",
+          declaredAdapter: mismatch.declared,
+          resolvedAdapter: mismatch.resolved,
+          bridgeCommand: commandText,
+          remedy: `point a *_ANALYSIS_BIN slot at the ${mismatch.declared} bridge or remove the stale slot that resolves to ${basename(commandText)}, then restart the worker (#2370)`,
+          buildInfo: BUILD_INFO,
+        },
+      },
+    };
+  }
   const isScriptPath = /\.(?:mjs|cjs|js)$/i.test(commandText)
     && (commandText.includes("/") || commandText.includes("\\") || commandText.startsWith("."));
   if (!isScriptPath) {
@@ -3085,6 +3154,8 @@ export const __test = Object.freeze({
   resolveNodeScriptInvocation,
   hostPatchBridgeCommand,
   analysisBridgeCommand,
+  analysisBridgeArtifactPreflight,
+  analysisBridgeRuntimeFromName,
   resolveWorkerModel,
   workerModelEnvCandidates,
   resolveWorkerThinking,
