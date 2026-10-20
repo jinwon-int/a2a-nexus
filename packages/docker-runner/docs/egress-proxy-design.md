@@ -1,6 +1,11 @@
 # Egress control for trusted patch lanes — design (#2395 stage 2)
 
-Status: **design, not implemented.** Stage 1 (#2397) made the gap visible:
+Status: **proxy component implemented (§5.4), not wired.** `src/egress-proxy.ts`
+and the container entry point `src/egress-proxy-main.ts` exist with hermetic tests;
+nothing in the runner starts the proxy or routes task containers through it, so
+runtime behaviour is unchanged. Runner wiring (§5.3) is the next PR.
+
+Stage 1 (#2397) made the gap visible:
 `doctor` reports `containerHardening.detail.egress.mode = "unrestricted"` and the
 `unrestricted_egress` relaxation on every trusted worker. This document proposes
 how to close it. Nothing here changes runtime behaviour until a later PR ships the
@@ -141,12 +146,43 @@ Effective allowlist = profile base set ∪ `A2A_DOCKER_RUNNER_EGRESS_ALLOWLIST_H
 - Lifecycle is managed by `a2a-docker-runner install --egress` (create network +
   proxy container, idempotent) and reported by `doctor`.
 
+Implemented (`src/egress-proxy.ts`, `src/egress-proxy-main.ts`):
+
+- **CONNECT only.** Plain-HTTP proxy requests get `405` in both modes and are
+  logged as `method_not_allowed` with host/port, so observe still shows any task
+  that needs plain HTTP. (The design above only required this in `enforce`;
+  forwarding plain HTTP would add a second request path for no known need.)
+- **Decision order:** credentials → target syntax → internal hostname/IP literal
+  → policy (`enforce` denies here, `observe` records `wouldDeny`) → capacity →
+  DNS → reject if *any* resolved address is internal → connect to the checked
+  address (the pin is the connect address itself; there is no second lookup).
+  `enforce` never resolves a non-allowlisted name, so denied hosts leak no DNS.
+- **Per-run credentials:** `Proxy-Authorization: Basic <runId>:<password>`,
+  checked against `<credentialsDir>/<runId>.sha256` (hex SHA-256 of the
+  password, constant-time compare). The runner will write one file per run and
+  remove it afterwards; the proxy needs read-only access. The entry point refuses
+  to start without a credentials directory unless
+  `A2A_EGRESS_PROXY_ALLOW_UNAUTHENTICATED=1` (local PoC only).
+- **Records:** schema `a2a.egress.connect.v1` — `runId`, `method`, `host`,
+  `port`, `decision`, `reason` | `wouldDeny`, `resolvedIp`, `bytesUp`/`bytesDown`,
+  `durationMs`. No credentials, headers, or bodies. Day files
+  `egress-YYYY-MM-DD.jsonl` (mode 0600) capped per day with one
+  `a2a.egress.log-truncated.v1` marker; stdout when no log directory is set.
+- **Limits and lifecycle:** 10 s upstream connect timeout, 10 min tunnel idle
+  timeout, 256 concurrent tunnels (`503 capacity_exceeded` beyond), `GET /healthz`
+  for readiness, `closeTunnels()` on SIGTERM/SIGINT (CONNECT sockets are outside
+  the HTTP server's own connection tracking).
+- **Entry point env:** `A2A_EGRESS_PROXY_MODE` (required, `observe|enforce`),
+  `_LISTEN` (default `0.0.0.0:3128`), `_ALLOWLIST`, `_ALLOWED_PORTS` (default
+  `443`), `_CREDENTIALS_DIR`, `_LOG_DIR`, `_LOG_MAX_FILE_BYTES`. These belong to
+  the proxy container only; task containers never see them.
+
 ### 5.5 Tool compatibility to verify in the PoC
 
 | Tool | Proxy env support | Status |
 | --- | --- | --- |
-| `git` (HTTPS) | honours `https_proxy`/`HTTPS_PROXY` | expected OK |
-| `gh` | honours `HTTPS_PROXY` | expected OK |
+| `git` (HTTPS) | honours `https_proxy`/`HTTPS_PROXY` | OK on a host run against the proxy (answers the 407 challenge, then tunnels); container run pending |
+| `gh` | honours `HTTPS_PROXY` | OK on a host run against the proxy; container run pending |
 | `claude` CLI | documented `HTTPS_PROXY` support | verify (needs bridge allowlist change) |
 | `codex` CLI | Rust HTTP client; env proxy support expected | **verify**, including in-container token refresh |
 | danso / GLM client | depends on its HTTP client | **verify** |
