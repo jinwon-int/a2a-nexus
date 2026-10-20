@@ -13,18 +13,18 @@
     },
     {
       "name": "claude-code-default",
-      "bytes": 9482,
-      "sha256": "a43de879762b5b77318aec7c9704f90cef42aa64555d10fbf33854760c8f29e2"
+      "bytes": 10418,
+      "sha256": "d65360df3922130d44fa858f4a9ee151afeb1cca767c0c0b5a0dbd0a58c221c8"
     },
     {
       "name": "claude-code-fanout-budgets",
-      "bytes": 9526,
-      "sha256": "8df661f43f7190d4331994d1fcc5ea500d7f89a53ed557eeaa547ff2a650e3c8"
+      "bytes": 10462,
+      "sha256": "d8e5af82ee375a95e0ef4d88c09475adba9a282bb2c44ebfdfb158a3f5b52d3f"
     },
     {
       "name": "claude-code-effort",
-      "bytes": 9524,
-      "sha256": "2e6a93067d2030aa77c5666f974b22b1116e014b3dc7761a9723057f0b25d3f5"
+      "bytes": 10460,
+      "sha256": "7fd5e6ef01c6819990bb45a98bcc5f9fe10f3ec9d9e707916d3a954df6a7cdab"
     },
     {
       "name": "hermes-default",

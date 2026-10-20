@@ -44,6 +44,17 @@ if [ -d /run/secrets/claude-dir ]; then
   cp -a /run/secrets/claude-dir/. "$CLAUDE_CONFIG_DIR/" 2>/dev/null || true
 fi
 chmod -R u+rwX "$CLAUDE_CONFIG_DIR"
+# #2395: with A2A_DOCKER_RUNNER_EGRESS_MODE on, the runner puts this container on
+# an internal network whose only way out is its allowlist proxy (HTTPS_PROXY from
+# a runner-owned env file). A bridge without the egress marker strips the proxy
+# env from the claude child, which then has no route; fail closed with a named
+# cause instead of an opaque connection error.
+if [ -n "${HTTPS_PROXY:-}" ] && ! grep -Fq 'a2a-bridge-capability: egress-proxy-env' "$A2A_CLAUDE_PATCH_BRIDGE"; then
+  printf 'error=claude_egress_proxy_bridge_unsupported\n' | tee -a /work/artifacts/summary.txt
+  printf 'failure_category=egress_proxy_bridge_unsupported\n' | tee -a /work/artifacts/summary.txt
+  printf 'The Claude patch bridge in this runner image does not pass HTTPS_PROXY to the claude CLI. Rebuild the runner image with a bridge that supports it, or set A2A_DOCKER_RUNNER_EGRESS_MODE=off.\n' | tee /work/artifacts/patch-command.log
+  exit 2
+fi
 # #2373 option 2: a long-lived OAuth token file (A2A_DOCKER_RUNNER_CLAUDE_OAUTH_TOKEN_FILE,
 # minted on the host with `claude setup-token`) is exported as
 # CLAUDE_CODE_OAUTH_TOKEN. Claude Code ranks that env token above the /login

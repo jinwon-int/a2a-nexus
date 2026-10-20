@@ -300,6 +300,20 @@ export interface RunnerConfig {
   /** Per-request timeout for controlled source-retrieval egress fetches. */
   egressTimeoutMs?: number;
   /**
+   * #2395: patch-lane egress control. `off` (default) keeps the task network
+   * as configured; `observe`/`enforce` route task containers through the
+   * managed internal network and the allowlist CONNECT proxy.
+   */
+  egressMode?: "off" | "observe" | "enforce";
+  /** #2395: managed `--internal` Docker network the task containers join when egressMode is on. */
+  egressNetwork?: string;
+  /** #2395: proxy container name; also its alias on the internal network. */
+  egressProxyName?: string;
+  /** #2395: exact hostnames the proxy allows in `enforce` (separate from the K2 retrieval allowlist). */
+  egressProxyAllowlist?: string[];
+  /** #2395: host directory for proxy credentials, per-run env files, and proxy logs (outside rootDir). */
+  egressStateDir?: string;
+  /**
    * Escape hatch for github-propose-patch/propose_patch mode.
    * When set, injected as A2A_PATCH_COMMAND env var into containers.
    * Default commands for patch mode reference this to invoke a coding agent.

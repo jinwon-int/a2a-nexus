@@ -128,6 +128,33 @@ Public safe-default runner config treats task commands as untrusted:
 
 Trusted GitHub PR/comment/push lanes must opt into `A2A_DOCKER_RUNNER_TRUSTED_OPERATOR=1` and should use short-lived, repo/branch-scoped credentials where possible. Log redaction is still required, but it is not treated as an exfiltration control.
 
+### Patch-lane egress control (#2395, opt-in)
+
+Trusted patch lanes default to `--network bridge` (unrestricted outbound). Setting
+`A2A_DOCKER_RUNNER_EGRESS_MODE` routes them through a runner-managed allowlist
+CONNECT proxy instead (design: [egress-proxy-design](docs/egress-proxy-design.md)):
+
+| Env | Default | Meaning |
+| --- | --- | --- |
+| `A2A_DOCKER_RUNNER_EGRESS_MODE` | `off` | `off` = unchanged; `observe` = all public hosts allowed and logged; `enforce` = allowlist only. Internal ranges (RFC 1918, link-local incl. `169.254.169.254`, loopback, ULA) are denied in both. Trusted-operator mode only; conflicts with an explicit `A2A_DOCKER_RUNNER_NETWORK`. |
+| `A2A_DOCKER_RUNNER_EGRESS_PROXY_ALLOWLIST` | empty | Exact hostnames for `enforce` (required there). Separate from `A2A_DOCKER_RUNNER_EGRESS_ALLOWLIST_HOSTS`, which is the K2 retrieval allowlist. |
+| `A2A_DOCKER_RUNNER_EGRESS_NETWORK` | `a2a-egress-internal` | Managed `--internal` network the task containers join. |
+| `A2A_DOCKER_RUNNER_EGRESS_PROXY_NAME` | `a2a-egress-proxy` | Proxy container name and its alias on that network. |
+| `A2A_DOCKER_RUNNER_EGRESS_STATE_DIR` | `<root>-egress` | Proxy bundle, per-run credential digests, 0600 per-run env files, proxy logs. Kept outside the task root so `cleanup` never expires it. |
+
+- `a2a-docker-runner install --egress [--dry-run]` creates the network, stages
+  the proxy bundle, (re)creates the labelled proxy container (hardened, non-root,
+  healthchecked) and waits for it to be healthy. Recreating drops open tunnels.
+- With the mode on, `run` refuses to start a task (before any workDir or model
+  call) unless the network is internal and the proxy is running, healthy, on
+  that network, and in the same mode. `doctor` reports the same as `egressProxy`.
+- Each run gets a random proxy token: its SHA-256 digest goes where the proxy
+  reads it, the proxy URL goes into a 0600 `--env-file` (never argv), and both
+  are removed when the run ends. Tools that ignore the proxy env get no route.
+- The Claude patch bridge must carry the `egress-proxy-env` capability marker;
+  the claude-code profile fails closed (`claude_egress_proxy_bridge_unsupported`)
+  with an older image.
+
 Phase 2 can add generic analyze/backfill task support.
 
 ## CLI
@@ -494,9 +521,13 @@ broker, GitHub, Telegram, OpenClaw Gateway, or Docker.
   pass to the engine, plus any trusted-operator `relaxations`; warns when
   `--cap-drop ALL` is not in effect. `detail.egress` (#2395) reports
   `mode: unrestricted` for `bridge`/`host` networking (listed as the
-  `unrestricted_egress` relaxation), whether `A2A_DOCKER_RUNNER_EGRESS_ALLOWLIST_HOSTS`
-  is configured, and `proxyWired: false` — `run` does not start the egress
-  allowlist proxy yet, so a configured allowlist is not enforced
+  `unrestricted_egress` relaxation), whether an allowlist is configured, and
+  `proxyWired`. With `A2A_DOCKER_RUNNER_EGRESS_MODE` on it reports
+  `proxy-observe`/`proxy-enforce` and `proxyWired: true` (`observe` is listed
+  as the `egress_observe_allows_public_hosts` relaxation)
+- `egressProxy` (#2395, only with the egress mode on): the readiness probe `run`
+  uses — internal network, labelled proxy running and healthy on it, same mode;
+  `fail` names the reason (`network_missing`, `proxy_unhealthy`, …)
 - configured base-image presence or pull readiness
 - `githubPatch` readiness for generic `github-propose-patch` execution; the
   OpenClaw profile path includes a no-secret container probe for the `openclaw`

@@ -201,6 +201,11 @@ const SAFE_CHILD_ENV_KEYS = new Set([
   // claude child; it must survive the session-isolation allowlist. The bridge
   // never logs env values, and redactSecrets covers sk-ant-oat01- shapes.
   "CLAUDE_CODE_OAUTH_TOKEN",
+  // a2a-nexus#2395: with A2A_DOCKER_RUNNER_EGRESS_MODE on, the task container
+  // sits on an internal network whose only way out is the runner's allowlist
+  // proxy; the runner sets these from a runner-owned env file (tasks cannot).
+  // Without them the claude child has no route at all.
+  "HTTPS_PROXY", "HTTP_PROXY", "NO_PROXY", "https_proxy", "http_proxy", "no_proxy",
   // Termux/Android native workers: Claude Code subprocess shebangs resolve
   // `/usr/bin/env` only through termux-exec (injected via LD_PRELOAD). Dropping
   // these from the session-isolation env (#1129) breaks the child with
@@ -274,6 +279,13 @@ export function claudePromptTransport(prompt) {
 // from a bridge without this marker fail closed (claude_oauth_token_bridge_unsupported)
 // instead of silently running with the /login credential. Keep this exact text.
 // a2a-bridge-capability: oauth-token-env
+
+// a2a-nexus#2395: feature marker read by packages/docker-runner/profiles/claude-code.sh
+// when the runner routes the container through the egress proxy (HTTPS_PROXY set).
+// Bridges without it drop the proxy env from the claude child, which would then
+// have no route on the internal network, so the profile fails closed
+// (claude_egress_proxy_bridge_unsupported) instead. Keep this exact text.
+// a2a-bridge-capability: egress-proxy-env
 
 // #2314: `--message-file <path>` reads the assignment from a UTF-8 file so the
 // runner never puts the whole prompt into one argv string. Mutually exclusive

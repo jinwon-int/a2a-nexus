@@ -63,7 +63,14 @@ async function main(): Promise<void> {
   if (command === "install" || command === "setup") {
     const env = loadCliEnv({ A2A_DOCKER_RUNNER_SKIP_ENGINE_DETECT: "1" });
     const config = await loadConfig(env);
-    const report = await install(config);
+    // #2395: --egress creates the internal network + proxy container
+    // (A2A_DOCKER_RUNNER_EGRESS_MODE must be observe/enforce); --dry-run with
+    // --egress prints the engine commands without running them.
+    const report = await install(config, {
+      egress: process.argv.includes("--egress"),
+      egressOptions: { dryRun: process.argv.includes("--dry-run") },
+    });
+    if (report.egress && !report.egress.ok) process.exitCode = 1;
     // #2267 R2: opt-in periodic cleanup. Writes unit files only; enabling the
     // timer stays an explicit operator step (see report.cleanupTimer.nextSteps).
     if (process.argv.includes("--cleanup-timer")) {
@@ -171,6 +178,9 @@ Usage:
   a2a-docker-runner install [--env-file /etc/default/a2a-hermes-worker] [--cleanup-timer [--ttl 14d] [--unit-dir /etc/systemd/system]]
     (--cleanup-timer writes <unit>.service/.timer for a daily cleanup; TTL from --ttl or A2A_DOCKER_RUNNER_WORKDIR_TTL;
      enabling the timer is left to the operator — see cleanupTimer.nextSteps in the output)
+  a2a-docker-runner install --egress [--dry-run] [--env-file /etc/default/a2a-hermes-worker]
+    (#2395: needs A2A_DOCKER_RUNNER_EGRESS_MODE=observe|enforce; creates the --internal network and (re)creates the
+     labelled allowlist proxy container, then checks readiness; recreating drops open tunnels — run with no task in flight)
   a2a-docker-runner cleanup [--env-file /etc/default/a2a-hermes-worker] [--root /var/lib/openclaw-a2a/tasks] [--ttl 24h] [--dry-run]
     (cleanup reads only A2A_DOCKER_RUNNER_ROOT / --root; it does not validate the full runner config;
      TTL precedence: --ttl > A2A_DOCKER_RUNNER_WORKDIR_TTL > 24h)
