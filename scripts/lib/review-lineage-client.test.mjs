@@ -19,6 +19,7 @@ import {
   DEFAULT_BUDGET,
   RECORD_SCHEMA,
   buildCreateRequest,
+  canonicalPatch,
   diffHashFromBytes,
   run,
 } from './review-lineage-client.mjs';
@@ -108,7 +109,7 @@ test('binding: intentHash and diffHash follow the reference primitives over real
   assert.equal(binding.intentHash, contract.intentHash);
   assert.equal(binding.headSha, head);
   const patch = spawnSync('git', ['-C', repo, 'diff', '--no-color', '--no-ext-diff', '--no-renames',
-    '--unified=3', base, head], { encoding: 'utf8' }).stdout;
+    '--unified=3', `${base}...${head}`], { encoding: 'utf8' }).stdout;
   assert.ok(patch.length > 0);
   assert.equal(binding.diffHash, diffHash(patch), 'UTF-8 patch bytes hash like the reference text hash');
   assert.deepEqual(Object.keys(built.request).sort(), ['binding', 'budget', 'contract', 'dispatchRef', 'observedAt']);
@@ -517,4 +518,24 @@ test('real broker: an out-of-scope correction keeps correction_pending and the b
   const blocked = await run(['correct', '--record', record, '--generation-ref', 'gen-y', '--head', drift, '--repo', repo], { env });
   assert.equal(blocked.exitCode, 2);
   assert.match(blocked.output.error, /gen-x is still unconfirmed/);
+});
+
+test('binding: diffHash uses the three-dot (merge-base) recipe when the base branch advanced after the PR branched (#2362)', (t) => {
+  const repo = path.join(tmpDir(t), 'diverged');
+  fs.mkdirSync(repo, { recursive: true });
+  git(repo, 'init', '-q');
+  const base = commitFiles(repo, { 'scripts/a.txt': 'one\n' }, 'base');
+  const head = commitFiles(repo, { 'scripts/a.txt': 'one\nfeature\n' }, 'head');
+  // The default branch moves on after the PR branched: base' is NOT an ancestor of head.
+  git(repo, 'checkout', '-q', base);
+  const advancedBase = commitFiles(repo, { 'docs/other.md': 'main moved\n' }, 'main advanced');
+  const twoDot = spawnSync('git', ['-C', repo, 'diff', '--no-color', '--no-ext-diff', '--no-renames',
+    '--unified=3', advancedBase, head], { encoding: 'utf8' }).stdout;
+  const threeDot = spawnSync('git', ['-C', repo, 'diff', '--no-color', '--no-ext-diff', '--no-renames',
+    '--unified=3', `${advancedBase}...${head}`], { encoding: 'utf8' }).stdout;
+  assert.notEqual(twoDot, threeDot, 'fixture must actually diverge (two-dot drags docs/other.md in reverse)');
+  assert.ok(!threeDot.includes('docs/other.md'), 'three-dot sees only the PR side');
+  const patch = canonicalPatch(repo, advancedBase, head);
+  assert.equal(patch.toString('utf8'), threeDot);
+  assert.equal(diffHashFromBytes(patch), diffHash(threeDot));
 });
