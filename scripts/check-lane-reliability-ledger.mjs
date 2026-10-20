@@ -48,6 +48,20 @@ export function forbiddenIdentifierViolation(text) {
     ? 'text carries a worker/node/url/private identifier (anonymous classes only)'
     : undefined;
 }
+// #2396: identity-only masking for blind finalizer views. Same vocabulary as
+// AXIS_FORBIDDEN minus URLs: links are evidence and stay readable, while any
+// node/worker token inside them is still masked.
+const IDENTITY_TOKENS = new RegExp(`\\b(?:${KNOWN_NODE_WORDS.join('|')}|vps\\d+|worker-[a-z0-9_-]+|node-[a-z0-9_-]+)\\b`, 'gi');
+
+/** Replace worker/node identity tokens; returns the masked text and how many tokens were replaced. */
+export function maskForbiddenIdentifiers(text, replacement = '[node]') {
+  let count = 0;
+  const masked = String(text ?? '').replace(IDENTITY_TOKENS, () => {
+    count += 1;
+    return replacement;
+  });
+  return { text: masked, count };
+}
 const ISO_WINDOW = /^\d{4}-\d{2}(?:-\d{2})?$/;
 
 function isNonEmptyString(value) {

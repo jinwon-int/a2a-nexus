@@ -371,6 +371,31 @@ round is too weak for a consequential implementation direction or gate design:
    source verification, and approval boundaries. If antithesis finds a material
    defect, revise the plan or run another bounded round before implementation.
 
+**Blind candidate selection — shadow (#2396).** The selection in step 1 reads
+lanes whose records name the worker, runtime, and model. During the shadow
+period, when step 1 has two or more substantive candidates, make the pick twice:
+
+1. Record the usual pick (the lane id you would select today).
+2. Build a blind view from full task records (`GET /tasks/:id` or
+   `?detail=full`, as for the gate):
+   `node scripts/lib/a2ad-blind-view.mjs build --tasks <records.json> --round <planRoundId> --out <dir>`.
+   It drops failed, `completion.marked=false`, and empty lanes before
+   anonymising (reasons in the output), strips worker/runtime/model fields,
+   masks node and `worker-*` tokens and the lanes' own ids in the text, and gives
+   seed-stable ids (`sha1(target|round)`). Judge `<dir>/blind-bundle.md` only;
+   do not open `<dir>/id-map.json` first. Masking is deliberately broad (any
+   `node-*` token is masked), and links stay readable.
+3. Answer with one fenced ` ```pick ` block (`id`, `criterion`, `runnerUp`,
+   `runnerUpLoss`), then
+   `node scripts/lib/a2ad-blind-view.mjs resolve --out <dir> --verdict <file> --named-pick <laneId> --shadow-ledger docs/ops/finalizer-blind-shadow.jsonl`.
+   A malformed pick exits 1 with a named `fallbackReason`; there is no default.
+
+The step-1 decision stays the usual pick: dialectic-lite and the gate keep their
+worker attribution, and `resolve` maps the blind id back to lane and worker. The
+shadow record holds counts and agreement only (no lane, worker, or model ids).
+Whether the blind pick should become the default is an owner decision after the
+shadow period.
+
 The mini-cycle is optional for mechanical changes such as pure formatting,
 renames, or one-file documentation edits. If a planning round skips the mini-cycle
 after considering it, record a one-line reason in the PR or issue disposition so
