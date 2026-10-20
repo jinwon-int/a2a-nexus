@@ -19,7 +19,7 @@
  * - Every decision produces one structured record; tunnel records carry byte
  *   counts and duration. Records never contain credentials, headers, or bodies.
  */
-import { createHash, timingSafeEqual } from "node:crypto";
+import { createHash, randomBytes, timingSafeEqual } from "node:crypto";
 import { lookup } from "node:dns/promises";
 import { appendFileSync, mkdirSync, readFileSync, statSync } from "node:fs";
 import { createServer, type IncomingMessage, type Server, type ServerResponse } from "node:http";
@@ -75,7 +75,7 @@ export interface EgressProxyRecord {
 }
 
 /** Returns the run id the credentials belong to, or undefined when they are not valid. */
-export type EgressProxyAuthenticator = (username: string, password: string) => string | undefined;
+export type EgressProxyAuthenticator = (runId: string, token: string) => string | undefined;
 
 export interface EgressProxyOptions {
   mode: EgressProxyMode;
@@ -102,6 +102,12 @@ export class EgressProxyConfigError extends Error {
 
 const HOSTNAME_LABEL = /^[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?$/;
 const RUN_ID_PATTERN = /^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$/;
+/**
+ * Proxy credentials are runner-generated random tokens, not human passwords.
+ * The minimum length makes that assumption enforceable: a fast digest is only
+ * appropriate for high-entropy input (32 random bytes encode to 43 chars).
+ */
+export const EGRESS_PROXY_MIN_RUN_TOKEN_LENGTH = 32;
 
 function normalizeHost(host: string): string {
   return host.trim().toLowerCase().replace(/\.$/, "");
@@ -166,41 +172,56 @@ export function parseConnectTarget(target: string | undefined): EgressConnectTar
   return { host, port, ipFamily };
 }
 
-/** Decodes `Proxy-Authorization: Basic <base64(user:pass)>`. */
-export function parseProxyBasicAuth(header: string | string[] | undefined): { username: string; password: string } | undefined {
+/** Decodes `Proxy-Authorization: Basic <base64(runId:token)>`. */
+export function parseProxyBasicAuth(header: string | string[] | undefined): { runId: string; token: string } | undefined {
   if (typeof header !== "string") return undefined;
   const match = /^Basic\s+([A-Za-z0-9+/=]+)\s*$/i.exec(header);
   if (!match) return undefined;
   const decoded = Buffer.from(match[1]!, "base64").toString("utf8");
   const sep = decoded.indexOf(":");
   if (sep <= 0) return undefined;
-  return { username: decoded.slice(0, sep), password: decoded.slice(sep + 1) };
+  return { runId: decoded.slice(0, sep), token: decoded.slice(sep + 1) };
+}
+
+/** A fresh per-run proxy token: 32 random bytes, base64url (43 chars). */
+export function generateEgressProxyRunToken(): string {
+  return randomBytes(32).toString("base64url");
+}
+
+function tokenDigest(token: string): Buffer {
+  return createHash("sha256").update(token, "utf8").digest();
+}
+
+/**
+ * Hex SHA-256 digest of a runner-generated run token, written to
+ * `<runId>.sha256`. Throws for tokens shorter than
+ * `EGRESS_PROXY_MIN_RUN_TOKEN_LENGTH`.
+ */
+export function egressProxyRunTokenDigest(token: string): string {
+  if (token.length < EGRESS_PROXY_MIN_RUN_TOKEN_LENGTH) {
+    throw new EgressProxyConfigError(`egress proxy run token must be at least ${EGRESS_PROXY_MIN_RUN_TOKEN_LENGTH} characters (use generateEgressProxyRunToken)`);
+  }
+  return tokenDigest(token).toString("hex");
 }
 
 /**
  * Per-run credentials stored as `<dir>/<runId>.sha256` (hex SHA-256 of the
- * password). The runner writes one file per run and removes it afterwards; the
- * proxy only needs read access. The username is the run id.
+ * run's random token). The runner writes one file per run and removes it
+ * afterwards; the proxy only needs read access. The Basic username is the run id.
  */
 export function createCredentialDirAuthenticator(dir: string): EgressProxyAuthenticator {
-  return (username, password) => {
-    if (!RUN_ID_PATTERN.test(username) || username.includes("..")) return undefined;
+  return (runId, token) => {
+    if (!RUN_ID_PATTERN.test(runId) || runId.includes("..")) return undefined;
+    if (token.length < EGRESS_PROXY_MIN_RUN_TOKEN_LENGTH) return undefined;
     let expectedHex: string;
     try {
-      expectedHex = readFileSync(join(dir, `${username}.sha256`), "utf8").trim().toLowerCase();
+      expectedHex = readFileSync(join(dir, `${runId}.sha256`), "utf8").trim().toLowerCase();
     } catch {
       return undefined;
     }
     if (!/^[0-9a-f]{64}$/.test(expectedHex)) return undefined;
-    const actual = createHash("sha256").update(password, "utf8").digest();
-    const expected = Buffer.from(expectedHex, "hex");
-    return timingSafeEqual(actual, expected) ? username : undefined;
+    return timingSafeEqual(tokenDigest(token), Buffer.from(expectedHex, "hex")) ? runId : undefined;
   };
-}
-
-/** Hex SHA-256 digest to write into `<runId>.sha256` for a given proxy password. */
-export function egressProxyCredentialDigest(password: string): string {
-  return createHash("sha256").update(password, "utf8").digest("hex");
 }
 
 async function defaultResolveHost(hostname: string): Promise<EgressResolvedAddress[]> {
@@ -303,7 +324,7 @@ export function createEgressProxy(options: EgressProxyOptions): EgressProxy {
     if (!options.authenticate) return { runId: null };
     const creds = parseProxyBasicAuth(req.headers["proxy-authorization"]);
     if (!creds) return { runId: null, reason: "auth_required" };
-    const runId = options.authenticate(creds.username, creds.password);
+    const runId = options.authenticate(creds.runId, creds.token);
     return runId ? { runId } : { runId: null, reason: "auth_failed" };
   };
 

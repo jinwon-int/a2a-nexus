@@ -157,9 +157,11 @@ Implemented (`src/egress-proxy.ts`, `src/egress-proxy-main.ts`):
   DNS → reject if *any* resolved address is internal → connect to the checked
   address (the pin is the connect address itself; there is no second lookup).
   `enforce` never resolves a non-allowlisted name, so denied hosts leak no DNS.
-- **Per-run credentials:** `Proxy-Authorization: Basic <runId>:<password>`,
-  checked against `<credentialsDir>/<runId>.sha256` (hex SHA-256 of the
-  password, constant-time compare). The runner will write one file per run and
+- **Per-run credentials:** `Proxy-Authorization: Basic <runId>:<token>`,
+  checked against `<credentialsDir>/<runId>.sha256` (hex SHA-256 of the token,
+  constant-time compare). The token is runner-generated randomness
+  (`generateEgressProxyRunToken`, 32 bytes), never a human password, so a fast
+  digest is appropriate; tokens shorter than 32 characters are refused. The runner will write one file per run and
   remove it afterwards; the proxy needs read-only access. The entry point refuses
   to start without a credentials directory unless
   `A2A_EGRESS_PROXY_ALLOW_UNAUTHENTICATED=1` (local PoC only).

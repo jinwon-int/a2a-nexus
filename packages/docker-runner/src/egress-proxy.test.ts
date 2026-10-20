@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import { createHash } from "node:crypto";
 import { mkdtempSync, readFileSync, readdirSync, rmSync, statSync, writeFileSync } from "node:fs";
 import { request as httpRequest } from "node:http";
 import { connect as netConnect, createServer as createNetServer, type AddressInfo, type Server as NetServer, type Socket } from "node:net";
@@ -13,7 +14,9 @@ import {
   createJsonlEgressLog,
   EGRESS_PROXY_LOG_TRUNCATED_SCHEMA,
   EgressProxyConfigError,
-  egressProxyCredentialDigest,
+  egressProxyRunTokenDigest,
+  EGRESS_PROXY_MIN_RUN_TOKEN_LENGTH,
+  generateEgressProxyRunToken,
   normalizeEgressProxyAllowlist,
   parseConnectTarget,
   type EgressProxyOptions,
@@ -285,15 +288,17 @@ for (const mode of ["observe", "enforce"] as const) {
 
 test("proxy credentials are required, checked per run, and never logged", async () => {
   const dir = trackTempDir(mkdtempSync(join(tmpdir(), "egress-proxy-creds-")));
-  const secret = "s3cret-nonce-value";
-  writeFileSync(join(dir, "run-1.sha256"), `${egressProxyCredentialDigest(secret)}\n`);
+  const secret = generateEgressProxyRunToken();
+  const shortToken = "short-token";
+  writeFileSync(join(dir, "run-1.sha256"), `${egressProxyRunTokenDigest(secret)}\n`);
+  writeFileSync(join(dir, "run-short.sha256"), `${createHash("sha256").update(shortToken).digest("hex")}\n`);
   const h = await startProxy({ mode: "observe", authenticate: createCredentialDirAuthenticator(dir) });
   try {
     const none = await connectVia(h.port, "other.example:443");
     assert.equal(none.status, 407);
     assert.match(none.headers, /Proxy-Authenticate: Basic realm="a2a-egress"/);
     none.socket.destroy();
-    for (const auth of ["run-1:wrong", "run-2:" + secret, "../run-1:" + secret, "run-1"]) {
+    for (const auth of ["run-1:wrong", "run-2:" + secret, "../run-1:" + secret, `run-short:${shortToken}`, "run-1"]) {
       const bad = await connectVia(h.port, "other.example:443", { auth });
       assert.equal(bad.status, 407, auth);
       bad.socket.destroy();
@@ -304,7 +309,7 @@ test("proxy credentials are required, checked per run, and never logged", async 
     assert.equal(record.runId, "run-1");
     assert.deepEqual(
       h.records.filter((r) => r.decision === "deny").map((r) => r.reason),
-      ["auth_required", "auth_failed", "auth_failed", "auth_failed", "auth_required"],
+      ["auth_required", "auth_failed", "auth_failed", "auth_failed", "auth_failed", "auth_required"],
     );
     assert.ok(h.records.every((r) => r.runId === null || r.runId === "run-1"));
     assert.ok(!JSON.stringify(h.records).includes(secret));
@@ -464,4 +469,13 @@ test("parseEgressProxyEnv requires an explicit mode and proxy credentials", () =
   assert.equal(parsed.credentialsDir, "/run/egress-creds");
   assert.throws(() => parseEgressProxyEnv({ A2A_EGRESS_PROXY_MODE: "enforce", A2A_EGRESS_PROXY_ALLOW_UNAUTHENTICATED: "1", A2A_EGRESS_PROXY_ALLOWED_PORTS: "70000" }), /port/);
   assert.throws(() => parseEgressProxyEnv({ A2A_EGRESS_PROXY_MODE: "enforce", A2A_EGRESS_PROXY_ALLOW_UNAUTHENTICATED: "1", A2A_EGRESS_PROXY_ALLOWLIST: "10.0.0.1" }), EgressProxyConfigError);
+});
+
+test("run tokens are long random values and short tokens are refused", () => {
+  const a = generateEgressProxyRunToken();
+  const b = generateEgressProxyRunToken();
+  assert.notEqual(a, b);
+  assert.ok(a.length >= EGRESS_PROXY_MIN_RUN_TOKEN_LENGTH);
+  assert.match(egressProxyRunTokenDigest(a), /^[0-9a-f]{64}$/);
+  assert.throws(() => egressProxyRunTokenDigest("x".repeat(EGRESS_PROXY_MIN_RUN_TOKEN_LENGTH - 1)), EgressProxyConfigError);
 });
