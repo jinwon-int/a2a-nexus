@@ -17,6 +17,9 @@ import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { isDeepStrictEqual } from "node:util";
+import { analysisCompletionMarker, buildAnalysisHarness } from "./lib/analysis-harness-fingerprint.mjs";
+
+const BRIDGE_FILE = fileURLToPath(import.meta.url);
 
 const BRIDGE_CONTRACT_VERSION = "codex-a2a-analysis.v1";
 const SELF_PATH = fileURLToPath(import.meta.url);
@@ -329,12 +332,20 @@ function transformEnvelope(stdout, flags) {
   const response = JSON.parse(envelope.payloads[0].text);
   response.bridgeAdapter = "codex";
   response.bridgeContractVersion = BRIDGE_CONTRACT_VERSION;
-  // #2393: the inner bridge stamps a claude-code harness fingerprint; this
-  // wrapper is not fingerprinted yet, so say so instead of inheriting it.
-  response.harness = null;
+  // #2403: this wrapper fingerprints ITSELF (file sha256, runtime codex, the
+  // model it applied) and keeps the inner bridge's fingerprint alongside, so
+  // inheriting it never mislabels the runtime (#2393 reason for the old null).
+  const innerHarness = response.harness && typeof response.harness === "object" ? response.harness : null;
   response.requestedModel = safeText(flags.model, undefined);
   response.requestedThinking = safeText(flags.thinking, undefined);
   response.actualRuntimeModel = normalizedModel(flags.model);
+  response.harness = {
+    ...buildAnalysisHarness({ bridgeFile: BRIDGE_FILE, runtime: "codex", model: response.actualRuntimeModel, env: process.env }),
+    ...(innerHarness ? { innerHarness } : {}),
+  };
+  if (!(response.completion && typeof response.completion === "object")) {
+    response.completion = analysisCompletionMarker(response.status, response.recoverySource);
+  }
   response.modelInheritanceMode = "explicit";
   delete response.claudeModelArgumentApplied;
   response.modelInheritanceNote = "Codex bridge applies the requested model and reasoning explicitly to codex exec.";

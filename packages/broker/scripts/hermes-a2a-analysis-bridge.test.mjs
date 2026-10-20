@@ -125,6 +125,11 @@ test("Hermes A2A analysis bridge reads requested source files and returns OpenCl
     const text = envelope.payloads[0]?.text;
     const payload = JSON.parse(text);
     assert.equal(payload.status, "done");
+    // #2403: hermes fingerprints its own harness and marks completion.
+    assert.equal(payload.harness.fingerprintVersion, "a2a.harness-fingerprint.v1");
+    assert.equal(payload.harness.runtime, "hermes");
+    assert.match(payload.harness.bridgeFileSha256, /^[0-9a-f]{64}$/);
+    assert.equal(payload.completion.marked, true);
     assert.equal(payload.summary, "우측 파일 패널이 중앙 채팅 column에 종속되어 있다");
     assert.deepEqual(payload.recommendations, ["별도 fixed right rail container로 분리한다"]);
 
