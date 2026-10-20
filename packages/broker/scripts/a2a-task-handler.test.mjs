@@ -3501,6 +3501,66 @@ test("A2A_DANSO_ANALYSIS_BIN outranks every other analysis bridge slot (#2295)",
   );
 });
 
+test("a declared adapter selects the matching bridge over a stale piri slot (#2370)", () => {
+  // gongmyoung 2026-10-11: declared codex, hermes/openclaw slots at the codex bridge, stale piri slot.
+  assert.equal(
+    __test.analysisBridgeCommand({
+      A2A_ANALYSIS_BRIDGE_ADAPTER: "codex",
+      A2A_PIRI_ANALYSIS_BIN: "/opt/a2a-broker-worker/scripts/piri-a2a-analysis-bridge.mjs",
+      A2A_HERMES_ANALYSIS_BIN: "/opt/a2a-broker-worker/scripts/codex-a2a-analysis-bridge.mjs",
+      A2A_OPENCLAW_ANALYSIS_BIN: "/opt/a2a-broker-worker/scripts/codex-a2a-analysis-bridge.mjs",
+    }),
+    "/opt/a2a-broker-worker/scripts/codex-a2a-analysis-bridge.mjs",
+  );
+  // nosuk: declared claude-code, danso + piri slots set, claude bridge in the hermes/openclaw slots.
+  assert.equal(
+    __test.analysisBridgeCommand({
+      A2A_WORKER_BRIDGE_ADAPTER: "claude-code",
+      A2A_DANSO_ANALYSIS_BIN: "/opt/danso-tools/danso-a2a-analysis-bridge.mjs",
+      A2A_PIRI_ANALYSIS_BIN: "/opt/a2a-broker-worker/scripts/piri-a2a-analysis-bridge.mjs",
+      A2A_HERMES_ANALYSIS_BIN: "/opt/a2a-broker-worker/scripts/claude-a2a-analysis-bridge.mjs",
+    }),
+    "/opt/a2a-broker-worker/scripts/claude-a2a-analysis-bridge.mjs",
+  );
+  // No declared adapter: legacy precedence is untouched (danso > piri > ...).
+  assert.equal(
+    __test.analysisBridgeCommand({
+      A2A_DANSO_ANALYSIS_BIN: "/opt/danso-tools/danso-a2a-analysis-bridge.mjs",
+      A2A_PIRI_ANALYSIS_BIN: "/p.mjs",
+    }),
+    "/opt/danso-tools/danso-a2a-analysis-bridge.mjs",
+  );
+  // Declared piri keeps the piri slot even when a danso slot is present.
+  assert.equal(
+    __test.analysisBridgeCommand({
+      A2A_ANALYSIS_BRIDGE_ADAPTER: "piri",
+      A2A_DANSO_ANALYSIS_BIN: "/opt/danso-tools/danso-a2a-analysis-bridge.mjs",
+      A2A_PIRI_ANALYSIS_BIN: "/opt/a2a-broker-worker/scripts/piri-a2a-analysis-bridge.mjs",
+    }),
+    "/opt/a2a-broker-worker/scripts/piri-a2a-analysis-bridge.mjs",
+  );
+});
+
+test("preflight fails closed when the declared adapter contradicts the resolved bridge runtime (#2370)", () => {
+  // soonwook-like: declared claude-code but only a piri slot is configured.
+  const env = {
+    A2A_ANALYSIS_BRIDGE_ADAPTER: "claude-code",
+    A2A_PIRI_ANALYSIS_BIN: "/opt/a2a-broker-worker/scripts/piri-a2a-analysis-bridge.mjs",
+  };
+  const command = __test.analysisBridgeCommand(env);
+  assert.equal(command, env.A2A_PIRI_ANALYSIS_BIN, "legacy precedence still resolves the only slot");
+  const refused = __test.analysisBridgeArtifactPreflight(command, env);
+  assert.equal(refused?.error?.code, "analysis_bridge_adapter_mismatch");
+  assert.equal(refused.error.details.failureCategory, "bridge_adapter_mismatch");
+  assert.equal(refused.error.details.declaredAdapter, "claude_code");
+  assert.equal(refused.error.details.resolvedAdapter, "piri");
+  assert.match(refused.error.details.remedy, /claude_code bridge/);
+  // A bridge whose file name carries no runtime keyword is not a contradiction.
+  assert.equal(__test.analysisBridgeRuntimeFromName("/opt/custom/analysis-bridge.sh"), "");
+  assert.equal(__test.analysisBridgeRuntimeFromName("/opt/x/codex-a2a-analysis-bridge.mjs"), "codex");
+  assert.equal(__test.analysisBridgeRuntimeFromName("/opt/danso-tools/piri-a2a-analysis-bridge.mjs"), "piri");
+});
+
 test("analysisBridgeCommand does not inherit A2A_PIRI_BIN (patch slot)", () => {
   const command = __test.analysisBridgeCommand({
     A2A_PIRI_BIN: "/opt/a2a-broker-worker/scripts/piri-a2a-patch-bridge.mjs",
