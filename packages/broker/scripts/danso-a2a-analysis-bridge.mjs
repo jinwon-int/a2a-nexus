@@ -43,6 +43,8 @@ import { spawnSync } from "node:child_process";
 import { existsSync, mkdirSync, rmSync, statSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
+import { fileURLToPath } from "node:url";
+import { analysisCompletionMarker, buildAnalysisHarness } from "./lib/analysis-harness-fingerprint.mjs";
 import { dansoExecutionTelemetry, parseDansoStderrRecord } from "./lib/analysis-execution-telemetry.mjs";
 import {
 	collectSourceBundle as collectSharedSourceBundle,
@@ -57,6 +59,8 @@ import {
 } from "./lib/analysis-source-bundle.mjs";
 import { sourceCarrierStatsFromEnv } from "./lib/source-carriers.mjs";
 import { truncateUtf8ToBytesSafe } from "./lib/utf8-byte-budget.mjs";
+
+const BRIDGE_FILE = fileURLToPath(import.meta.url);
 
 const ENV_PREFIX = "A2A_DANSO_ANALYSIS";
 const DEFAULT_TIMEOUT_SEC = 300;
@@ -622,9 +626,10 @@ function main() {
 			// regression (source content duplicated back into the prompt) is
 			// visible as a rising prompt/source ratio.
 			promptView: promptViewTelemetry(payload, prompt),
-			// #2393: harness fingerprint not implemented for this bridge yet.
-			harness: null,
+			// #2403: harness fingerprint (this file's sha256, runtime danso, the pinned model).
+			harness: buildAnalysisHarness({ bridgeFile: BRIDGE_FILE, runtime: "danso", model: config.model, env: process.env }),
 		};
+		response.completion = analysisCompletionMarker(response.status, response.recoverySource);
 	} catch (error) {
 		bridgeError({
 			code: "analysis_bridge_invalid_shape",

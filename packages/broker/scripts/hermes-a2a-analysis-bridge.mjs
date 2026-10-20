@@ -3,6 +3,8 @@ import { spawnSync } from "node:child_process";
 import { closeSync, existsSync, fstatSync, openSync, readFileSync, readdirSync, readSync, statSync } from "node:fs";
 import { basename, isAbsolute, join, relative, resolve, sep } from "node:path";
 import { DatabaseSync } from "node:sqlite";
+import { fileURLToPath } from "node:url";
+import { analysisCompletionMarker, buildAnalysisHarness } from "./lib/analysis-harness-fingerprint.mjs";
 import { HERMES_FINALIZER_TOOLSETS } from "./finalizer-tool-policy.mjs";
 
 import {
@@ -14,6 +16,8 @@ import { payloadWithRetrievalSnapshotSourceCarriers } from "./lib/retrieval-snap
 // #2303 item 5: content-free prompt/source byte counters for the telemetry.
 import { promptViewTelemetry } from "./lib/analysis-source-bundle.mjs";
 import { sliceUtf8AtBoundary, truncateUtf8ToBytesSafe } from "./lib/utf8-byte-budget.mjs";
+
+const BRIDGE_FILE = fileURLToPath(import.meta.url);
 
 const DEFAULT_TIMEOUT_SEC = 300;
 const DEFAULT_MAX_FILES = 16;
@@ -467,8 +471,10 @@ function buildSourceBlockedResponse(sourceBlocked, fallbackSourceProjection) {
         recommendations: ["Retry with a compact canonical payload.sourceBundle.files[] packet or make the referenced source available to the analysis bridge."],
         evidenceRefs: sourceBlocked.evidenceRefs || [],
         ...(sourceProjection && typeof sourceProjection === "object" ? { sourceProjection } : {}),
-        // #2393: harness fingerprint not implemented for this bridge yet.
-        harness: null,
+        // #2403: fingerprint even the source-blocked answer so the lane is
+        // attributable; the completion marker says it did not complete.
+        harness: buildAnalysisHarness({ bridgeFile: BRIDGE_FILE, runtime: "hermes", model: "", env: process.env }),
+        completion: analysisCompletionMarker("blocked", undefined),
       }),
     }],
   };
@@ -1200,8 +1206,15 @@ function main() {
     // as a rising prompt/source ratio. The hermes prompt view keeps its own
     // carrier policy; only the measurement is shared with the lib.
     response.promptView = promptViewTelemetry(payload, promptBundle.prompt);
-    // #2393: harness fingerprint not implemented for this bridge yet.
-    response.harness = null;
+    // #2403: harness fingerprint (this file's sha256, runtime hermes, the
+    // model the response reports) + completion marker, like the Claude bridge.
+    response.harness = buildAnalysisHarness({
+      bridgeFile: BRIDGE_FILE,
+      runtime: "hermes",
+      model: response.actualRuntimeModel || (response.requestedModel ? `requested:${response.requestedModel}` : ""),
+      env: process.env,
+    });
+    response.completion = analysisCompletionMarker(response.status, response.recoverySource);
   } catch (error) {
     die(`invalid Hermes analysis JSON schema: ${error.message}`);
   }

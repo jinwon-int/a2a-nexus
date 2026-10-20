@@ -92,6 +92,15 @@ test(`Codex A2A analysis bridge applies ${model}/${effort} and returns the share
     assert.equal(payload.actualRuntimeModel, model);
     assert.equal(payload.requestedThinking, effort);
     assert.equal(payload.modelInheritanceMode, "explicit");
+    // #2403: the wrapper fingerprints itself and keeps the inner (claude) harness alongside.
+    assert.equal(payload.harness.fingerprintVersion, "a2a.harness-fingerprint.v1");
+    assert.equal(payload.harness.runtime, "codex");
+    assert.equal(payload.harness.model, model);
+    assert.match(payload.harness.bridgeFileSha256, /^[0-9a-f]{64}$/);
+    assert.match(payload.harness.harnessFingerprint, /^[0-9a-f]{64}$/);
+    assert.equal(payload.harness.innerHarness?.runtime, "claude-code");
+    assert.notEqual(payload.harness.harnessFingerprint, payload.harness.innerHarness?.harnessFingerprint);
+    assert.equal(payload.completion?.marked, true);
 
     const args = JSON.parse(readFileSync(argsPath, "utf8"));
     assert.deepEqual(args.slice(0, 2), ["exec", "--skip-git-repo-check"]);

@@ -33,9 +33,13 @@ import { spawnSync } from "node:child_process";
 import { existsSync, mkdirSync, readFileSync, readdirSync, realpathSync, rmSync, statSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { basename, dirname, isAbsolute, join, relative, resolve, sep } from "node:path";
+import { fileURLToPath } from "node:url";
+import { analysisCompletionMarker, buildAnalysisHarness } from "./lib/analysis-harness-fingerprint.mjs";
 import { piriExecutionTelemetry } from "./lib/analysis-execution-telemetry.mjs";
 import { sourceCarrierStatsFromEnv } from "./lib/source-carriers.mjs";
 import { sliceUtf8AtBoundary, truncateUtf8ToBytesSafe } from "./lib/utf8-byte-budget.mjs";
+
+const BRIDGE_FILE = fileURLToPath(import.meta.url);
 
 const DEFAULT_TIMEOUT_SEC = 300;
 const DEFAULT_MAX_FILES = 16;
@@ -987,9 +991,10 @@ function main() {
 			actualRuntimeModel: model,
 			modelInheritanceMode: "bridge_env_pin",
 			executionTelemetry,
-			// #2393: harness fingerprint not implemented for this bridge yet.
-			harness: null,
+			// #2403: harness fingerprint (this file's sha256, runtime piri, the pinned model).
+			harness: buildAnalysisHarness({ bridgeFile: BRIDGE_FILE, runtime: "piri", model, env: process.env }),
 		};
+		response.completion = analysisCompletionMarker(response.status, response.recoverySource);
 	} catch (error) {
 		bridgeError({
 			code: "analysis_bridge_invalid_shape",
