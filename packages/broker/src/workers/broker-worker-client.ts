@@ -29,7 +29,10 @@ import {
 import { signA2AWorkerRequest, workerPrivateKeyPem } from "./worker-http-signature.js";
 import { planReviewReport } from "./review-report-producer.js";
 import type { FetchLike } from "../worker.js";
-import type { BrokerWorkerConfig } from "../worker.js";
+import type { AnalysisReadinessSnapshot, BrokerWorkerConfig } from "../worker.js";
+
+/** #2401: intents the handler routes to the analysis bridge (isReadOnlyAnalysisTask). */
+const ANALYSIS_BRIDGE_INTENTS = new Set(["analyze", "verify", "validate_change"]);
 import type {
   TaskError,
   TaskRecord,
@@ -209,6 +212,10 @@ export class A2ABrokerWorker {
   private running = false;
   private stopping = false;
   private heartbeatInFlight = false;
+  // #2401: last analysis readiness snapshot (ready + reason); a change makes the
+  // next heartbeat re-advertise capabilities/metadata and gates analysis claims.
+  private lastAnalysisReadiness: { ready: boolean; reason?: string } | null = null;
+  private readvertiseWorker = false;
   private stopHeartbeatLoop: (() => void) | null = null;
   private loopAbort: (() => void) | null = null;
   private homeBrokerVerified = false;
@@ -242,21 +249,25 @@ export class A2ABrokerWorker {
   }
 
   async heartbeat(): Promise<WorkerView> {
+    // #2401: re-probe the analysis harness every heartbeat so a pin that drifts
+    // (or gets fixed) while the worker runs is re-advertised within one cycle.
+    this.refreshAnalysisReadiness();
     // #2082 C: name the actively-running task so the single worker heartbeat
     // sustains task liveness too (the broker stamps it only when the task is
     // still assigned and active). resolveTaskProgressAt is async now and
     // cached per heartbeat cycle.
     const activeTaskId = this.activeTaskId;
     const activeTaskLastProgressAt = activeTaskId ? await this.resolveTaskProgressAt(activeTaskId) : undefined;
+    const readvertise = !this.initialHeartbeatSent || this.readvertiseWorker;
     const body: WorkerHeartbeatRequest = {
-      ...(this.initialHeartbeatSent
-        ? {}
-        : {
+      ...(readvertise
+        ? {
             displayName: this.config.worker.displayName,
             brokerUrl: this.config.worker.brokerUrl,
             capabilities: this.config.worker.capabilities,
             metadata: this.config.worker.metadata,
-          }),
+          }
+        : {}),
       ...(activeTaskId ? { activeTaskId, activeTaskLastProgressAt } : {}),
     };
     const heartbeat = await this.requestJson<WorkerView>(`/workers/${encodeURIComponent(this.workerId)}/heartbeat`, {
@@ -264,7 +275,61 @@ export class A2ABrokerWorker {
       body,
     });
     this.initialHeartbeatSent = true;
+    this.readvertiseWorker = false;
     return heartbeat;
+  }
+
+  /**
+   * #2401: runs the configured analysis readiness probe. When ready/reason
+   * changed since the last run, the worker's advertised capabilities/metadata
+   * are replaced and the next heartbeat carries them. Returns the current
+   * readiness (true when no probe is configured).
+   */
+  private refreshAnalysisReadiness(): { ready: boolean; reason?: string } {
+    const refresh = this.config.analysisReadinessRefresh;
+    if (!refresh) return { ready: true };
+    let snapshot: AnalysisReadinessSnapshot;
+    try {
+      snapshot = refresh();
+    } catch (error) {
+      // A probe that throws must not take the worker down; keep the last
+      // advertisement and treat analysis as not ready for claims.
+      console.warn(`[worker:${this.workerId}] analysis readiness probe failed`, error);
+      return { ready: false, reason: "probe_error" };
+    }
+    const current = snapshot.probe.probed
+      ? { ready: snapshot.probe.ready, ...(snapshot.probe.reason ? { reason: snapshot.probe.reason } : {}) }
+      : { ready: true };
+    const previous = this.lastAnalysisReadiness;
+    if (previous && (previous.ready !== current.ready || previous.reason !== current.reason)) {
+      this.config.worker.capabilities = snapshot.capabilities;
+      this.config.worker.metadata = snapshot.metadata;
+      this.readvertiseWorker = true;
+      console.log(
+        `[worker:${this.workerId}] analysis readiness changed: ready=${current.ready}`
+        + (current.reason ? ` reason=${current.reason}` : "") + "; re-advertising on next heartbeat",
+      );
+    }
+    this.lastAnalysisReadiness = current;
+    return current;
+  }
+
+  /**
+   * #2401: claim gate for analysis-bound tasks (the handler's analysis bridge
+   * intents). A worker whose harness preflight fails must not claim them —
+   * otherwise it keeps taking tasks only to refuse them after claim and steals
+   * them from healthy workers. The handler-side preflight stays as the second
+   * line of defence.
+   */
+  private shouldSkipClaimForAnalysisReadiness(task: TaskRecord): boolean {
+    if (!this.config.analysisReadinessRefresh) return false;
+    if (!ANALYSIS_BRIDGE_INTENTS.has(String(task.intent ?? "").toLowerCase())) return false;
+    const readiness = this.lastAnalysisReadiness ?? this.refreshAnalysisReadiness();
+    if (readiness.ready) return false;
+    console.warn(
+      `[worker:${this.workerId}] not claiming ${task.id}: analysis readiness ${readiness.reason ?? "not_ready"} (#2401)`,
+    );
+    return true;
   }
 
   async getWorker(): Promise<WorkerView> {
@@ -332,6 +397,7 @@ export class A2ABrokerWorker {
     let processed = 0;
 
     for (const task of tasks) {
+      if (this.shouldSkipClaimForAnalysisReadiness(task)) continue;
       const handled = await this.processTask(task);
       if (handled) {
         processed += 1;

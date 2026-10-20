@@ -3,6 +3,7 @@ import {
   buildWorkerMetadata,
   withAnalysisProbeMetadata,
   probeAnalysisArtifactReadiness,
+  type AnalysisArtifactProbe,
   optionalTrimmed,
   parseBooleanEnv,
 } from "./workers/worker-metadata.js";
@@ -28,6 +29,7 @@ import {
 import type {
   A2APartyKind,
   RegisterWorkerRequest,
+  WorkerCapabilities,
 } from "./core/types.js";
 
 // Slice 6-8 re-exports: the extracted clusters keep their public surface on
@@ -109,6 +111,20 @@ export interface BrokerWorkerConfig {
   startupRetryBaseMs?: number;
   userAgent: string;
   handler: WorkerTaskHandler;
+  /**
+   * #2401: re-runs the analysis artifact + harness pin probe and returns the
+   * capabilities/metadata the worker should advertise now. The client calls it
+   * on every heartbeat (re-advertising when the result changes) and before
+   * claiming an analysis-bound task, so a pin-mismatched worker neither
+   * advertises canAnalyze nor claims analysis tasks until the pin is fixed.
+   */
+  analysisReadinessRefresh?: () => AnalysisReadinessSnapshot;
+}
+
+export interface AnalysisReadinessSnapshot {
+  probe: AnalysisArtifactProbe;
+  capabilities: WorkerCapabilities;
+  metadata?: Record<string, string>;
 }
 
 export function createWorkerConfigFromEnv(env: NodeJS.ProcessEnv = process.env): BrokerWorkerConfig {
@@ -129,19 +145,27 @@ export function createWorkerConfigFromEnv(env: NodeJS.ProcessEnv = process.env):
   // Gate the advertisement: never publish canAnalyze=true before the selected
   // handler artifact is verified (#1597). A failed probe flips the capability
   // to false and the reason survives in metadata for the broker projection.
-  const analysisProbe = probeAnalysisArtifactReadiness(env, baseCapabilities.canAnalyze === true);
-  const capabilities =
-    baseCapabilities.canAnalyze && analysisProbe.probed && !analysisProbe.ready
-      ? { ...baseCapabilities, canAnalyze: false }
-      : baseCapabilities;
+  const baseMetadata = buildWorkerMetadata(env, runtimeProfile);
+  const analysisReadinessRefresh = (): AnalysisReadinessSnapshot => {
+    const probe = probeAnalysisArtifactReadiness(env, baseCapabilities.canAnalyze === true);
+    return {
+      probe,
+      capabilities:
+        baseCapabilities.canAnalyze && probe.probed && !probe.ready
+          ? { ...baseCapabilities, canAnalyze: false }
+          : baseCapabilities,
+      metadata: withAnalysisProbeMetadata(baseMetadata, probe, env),
+    };
+  };
+  const initial = analysisReadinessRefresh();
 
   const worker: RegisterWorkerRequest = {
     nodeId: workerId,
     role,
     displayName: optionalTrimmed(env.WORKER_DISPLAY_NAME ?? env.A2A_WORKER_DISPLAY_NAME),
     brokerUrl: optionalTrimmed(env.WORKER_PUBLIC_URL ?? env.A2A_WORKER_PUBLIC_URL),
-    capabilities,
-    metadata: withAnalysisProbeMetadata(buildWorkerMetadata(env, runtimeProfile), analysisProbe, env),
+    capabilities: initial.capabilities,
+    metadata: initial.metadata,
   };
 
   return {
@@ -179,6 +203,7 @@ export function createWorkerConfigFromEnv(env: NodeJS.ProcessEnv = process.env):
       env.WORKER_POLL_READINESS_PROBE ?? env.A2A_WORKER_POLL_READINESS_PROBE,
       true,
     ),
+    analysisReadinessRefresh,
     reviewLineageReports: parseBooleanEnv(env.A2A_REVIEW_LINEAGE_REPORT_PRODUCER, true),
     userAgent: optionalTrimmed(env.WORKER_USER_AGENT ?? env.A2A_WORKER_USER_AGENT) ?? DEFAULT_USER_AGENT,
     handler: createWorkerHandlerFromEnv(env, handlerTimeoutMs, runtimeProfile),
