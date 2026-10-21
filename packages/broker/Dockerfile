@@ -1,4 +1,4 @@
-FROM node:22-alpine@sha256:0a7108bf6c7bf5de370ffb1a3ed6be93d405b43ff159f681a8d18c0e2bc2e402 AS deps
+FROM node:22-alpine@sha256:ce8d97f7cfc7c5386421eb932df20a29df99b1a7f469f6157d5c9956702ffadc AS deps
 WORKDIR /app
 # Workspace-aware install: the broker depends on the in-repo
 # a2a-policy-referee package (#1601 P1), so installs must run at the
@@ -32,7 +32,7 @@ COPY packages/broker/scripts/check-build-revision.mjs packages/broker/scripts/ch
 # tsc -b builds the policy-referee reference first (composite project refs).
 RUN npm run build -w packages/broker
 
-FROM node:22-alpine@sha256:0a7108bf6c7bf5de370ffb1a3ed6be93d405b43ff159f681a8d18c0e2bc2e402 AS runtime
+FROM node:22-alpine@sha256:ce8d97f7cfc7c5386421eb932df20a29df99b1a7f469f6157d5c9956702ffadc AS runtime
 ARG A2A_BROKER_VERSION=0.1.0
 ARG A2A_BROKER_REVISION
 ARG A2A_BROKER_CREATED
