@@ -3850,6 +3850,50 @@ for (const execution of ["bridge", "builtin"]) {
   });
 }
 
+test("bounded review notes: structured.review.note from the Claude bridge becomes the signed note (#2419)", () => {
+  const records = ["TEST-ITEM-1", "TEST-ITEM-2"].map((id, i) => `KO-EXPLANATION-V1 ${JSON.stringify({
+    item_id: id,
+    content_fingerprint: createHash("sha256").update(`structured-${i}`).digest("hex"),
+    checks: ["natural_korean", "case_reasoning"],
+    note: "Synthetic structured transport record for the signed review note.",
+  })}`);
+  const note = records.join("\n");
+  // Shape emitted by claude-a2a-analysis-bridge normalizeResponse(): the
+  // model's top-level `review` object is carried under `structured`.
+  const outcome = boundedReviewOutcome({
+    status: "done",
+    verdict: "pass",
+    summary: "PASS: short verdict sentence without the structured records",
+    findings: [],
+    structured: { review: { note } },
+  });
+  assert.equal(outcome.error, undefined);
+  assert.deepEqual(outcome.result.validations[0], { kind: "review", nodeId: "reviewer-node", verdict: "pass", note });
+});
+
+test("bounded review notes: a top-level review object still wins over structured.review (#2419)", () => {
+  const outcome = boundedReviewOutcome({
+    verdict: "pass",
+    review: { note: "top-level explicit record" },
+    structured: { review: { note: "structured record" } },
+    summary: "PASS: summary",
+  });
+  assert.equal(outcome.result.validations[0].note, "top-level explicit record");
+});
+
+test("bounded review notes: non-object structured.review falls back to the summary (#2419)", () => {
+  for (const value of [["array note"], "string note", null]) {
+    const outcome = boundedReviewOutcome({ verdict: "pass", structured: { review: value }, summary: "PASS: summary fallback" });
+    assert.equal(outcome.result.validations[0].note, "PASS: summary fallback");
+  }
+});
+
+test("bounded review notes: oversized structured.review.note fails closed without falling back (#2419)", () => {
+  const outcome = boundedReviewOutcome({ verdict: "pass", structured: { review: { note: "x".repeat(65537) } }, summary: "PASS: short summary" });
+  assert.equal(outcome.result, undefined);
+  assert.equal(outcome.error.code, "review_note_too_large");
+});
+
 test("bounded review notes: explicit note precedence survives without falling back on overflow", () => {
   const note = "Exact explicit record. ".repeat(100);
   const outcome = boundedReviewOutcome({ verdict: "pass", review: { note }, summary: "short summary" });

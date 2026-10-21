@@ -867,7 +867,14 @@ const MAX_REVIEW_NOTE_BYTES = 64 * 1024;
 
 function reviewValidationFromAnalysis(task, response, env = process.env) {
   if (!isReviewRequiredTask(task)) return undefined;
-  const review = response?.review && typeof response.review === "object" && !Array.isArray(response.review) ? response.review : {};
+  // #2419: the Claude analysis bridge carries a model-emitted top-level
+  // `review` object inside the bounded `structured` record (#2371), so a
+  // reviewer's explicit review.note must be read from there when the
+  // top-level copy is absent. A top-level review object still wins.
+  const isReviewObject = (value) => Boolean(value) && typeof value === "object" && !Array.isArray(value);
+  const review = isReviewObject(response?.review)
+    ? response.review
+    : isReviewObject(response?.structured?.review) ? response.structured.review : {};
   const textCandidates = [
     response?.verdict,
     review.verdict,
