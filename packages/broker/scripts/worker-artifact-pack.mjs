@@ -23,7 +23,8 @@
 //   handlers/*.mjs, handlers/lib/*.mjs      byte-identical runtime compat copies (guard compareCompatFile contract)
 //   dist/<runtime closure>                  compiled files the handler entry reaches via ../dist/… imports, PLUS
 //                                           the worker daemon closure from dist/worker.js when it exists — so one
-//                                           artifact carries BOTH runtime halves (#2227 제안 1 확장: 워커 코드도 artifact로)
+//                                           artifact carries BOTH runtime halves (#2227 제안 1 확장: 워커 코드도 artifact로),
+//                                           PLUS dist/build-info.json always (#2423: overwrite 배포 시 구 revision 잔존 방지)
 //   node_modules/<workspace-package>/        package.json + dist/ for every transitively needed workspace package
 //   node_modules/<npm-package>/              vendored real packages from the repo root node_modules when the worker
 //                                           closure needs them (e.g. zod) — workspace packages take precedence
@@ -318,6 +319,31 @@ for (const file of distClosure) {
 }
 for (const spec of distExternal) externalDeps.add(spec);
 
+// 4. Provenance metadata — always ship dist/build-info.json even though nothing
+//    in the import graph references it. Overwrite deploys leave a stale
+//    revision on the node when this file is omitted (#2423 / RB-416).
+const buildInfoSrc = join(brokerDistRoot, 'build-info.json');
+if (!existsSync(buildInfoSrc)) {
+  fail('dist/build-info.json is missing from the broker build output', {
+    path: buildInfoSrc,
+    hint: 'run `npm run build -w packages/broker` (or `node packages/broker/scripts/generate-build-info.mjs`), then re-run the packer (#2423)',
+  });
+}
+let buildInfoRevision;
+try {
+  const parsed = JSON.parse(readFileSync(buildInfoSrc, 'utf8'));
+  buildInfoRevision = typeof parsed?.revision === 'string' ? parsed.revision : undefined;
+} catch (error) {
+  fail('dist/build-info.json is unreadable or invalid JSON', {
+    path: buildInfoSrc,
+    error: error instanceof Error ? error.message : String(error),
+  });
+}
+if (!distClosure.has(buildInfoSrc)) {
+  distClosure.add(buildInfoSrc);
+  writeFile(buildInfoSrc, join(artifactRoot, 'dist', 'build-info.json'));
+}
+
 const summary = {
   ok: true,
   checkOnly: CHECK_ONLY,
@@ -327,6 +353,10 @@ const summary = {
   writtenFiles: CHECK_ONLY ? undefined : writtenFiles.length,
   distClosureFiles: distClosure.size,
   workerDaemon: workerDaemonShipped,
+  buildInfo: {
+    revision: buildInfoRevision,
+    path: 'dist/build-info.json',
+  },
   packedWorkspaces: [...packed].sort(),
   vendoredNpmDeps: [...vendored].sort(),
   externalDeps: [...externalDeps].sort(),

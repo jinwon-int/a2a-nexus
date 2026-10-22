@@ -79,14 +79,21 @@ const analysisSourceBundleSource = `
 export function normalizePromptViewTelemetry() { return undefined; }
 `;
 
-function makeWorkerRoot({ bridgeHandlersContent = 'bridge-ok\n', handlersExecutable = true } = {}) {
+function makeWorkerRoot({
+  bridgeHandlersContent = 'bridge-ok\n',
+  handlersExecutable = true,
+  buildInfoRevision = 'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa',
+  includeBuildInfo = true,
+} = {}) {
   const root = mkdtempSync(join(tmpdir(), 'worker-artifact-'));
   const scripts = join(root, 'scripts');
   const handlers = join(root, 'handlers');
+  const dist = join(root, 'dist');
   mkdirSync(scripts);
   mkdirSync(handlers);
   mkdirSync(join(scripts, 'lib'), { recursive: true });
   mkdirSync(join(handlers, 'lib'), { recursive: true });
+  if (includeBuildInfo) mkdirSync(dist, { recursive: true });
 
   const files = {
     sourceHandler: join(scripts, 'a2a-task-handler.mjs'),
@@ -150,6 +157,14 @@ function makeWorkerRoot({ bridgeHandlersContent = 'bridge-ok\n', handlersExecuta
   writeFileSync(files.compatBridge, bridgeHandlersContent);
   writeFileSync(files.sourceOnlyBridge, 'source-only-bridge-ok\n');
 
+  if (includeBuildInfo) {
+    files.buildInfo = join(dist, 'build-info.json');
+    writeFileSync(files.buildInfo, JSON.stringify({
+      revision: buildInfoRevision,
+      version: '0.1.0',
+    }));
+  }
+
   chmodSync(files.sourceHandler, 0o755);
   chmodSync(files.compatHandler, handlersExecutable ? 0o755 : 0o644);
   chmodSync(files.sourceBridge, 0o755);
@@ -161,7 +176,7 @@ function makeWorkerRoot({ bridgeHandlersContent = 'bridge-ok\n', handlersExecuta
 
 function runGuard(root, env = {}) {
   const childEnv = { ...process.env, A2A_WORKER_ROOT: root, ...env };
-  for (const key of ['A2A_PIRI_ANALYSIS_BIN', 'A2A_PIRI_BIN', 'A2A_HERMES_ANALYSIS_BIN', 'A2A_OPENCLAW_ANALYSIS_BIN', 'OPENCLAW_BIN', 'A2A_WORKER_ENV_PATH', 'WORKER_ENV_PATH']) {
+  for (const key of ['A2A_PIRI_ANALYSIS_BIN', 'A2A_PIRI_BIN', 'A2A_HERMES_ANALYSIS_BIN', 'A2A_OPENCLAW_ANALYSIS_BIN', 'OPENCLAW_BIN', 'A2A_WORKER_ENV_PATH', 'WORKER_ENV_PATH', 'A2A_WORKER_TARGET_REVISION']) {
     if (!(key in env)) delete childEnv[key];
   }
   return spawnSync(process.execPath, [guardPath, '--deployed'], {
@@ -436,9 +451,10 @@ function makeWorkerRootWithDist({ attestationIndex }) {
 }
 
 test('workspace dependency export check is skipped for deployed fixture trees without dist/ (#2311)', () => {
-  const { root } = makeWorkerRoot();
+  // includeBuildInfo:false keeps dist/ absent so this guard stays skipped;
+  // deployed-build-info will fail for this fixture — assert only the exports guard.
+  const { root } = makeWorkerRoot({ includeBuildInfo: false });
   const result = runGuard(root);
-  assert.equal(result.status, 0, result.stderr || result.stdout);
   const output = JSON.parse(result.stdout);
   const check = output.results.find((r) => r.guard === 'workspace-dependency-exports');
   assert.equal(check?.ok, true);
@@ -503,4 +519,49 @@ test('workspace dependency export check never echoes env secret values (#2311)',
   const result = runGuard(root, { GITHUB_TOKEN: secret, A2A_BROKER_TOKEN: secret });
   assert.notEqual(result.status, 0);
   assert.doesNotMatch(result.stdout + result.stderr, /SECRETVALUE/);
+});
+
+test('deployed guard fails closed when dist/build-info.json is missing (#2423)', () => {
+  const { root } = makeWorkerRoot({ includeBuildInfo: false });
+  const result = runGuard(root);
+  assert.notEqual(result.status, 0);
+  const output = JSON.parse(result.stdout);
+  assert.equal(output.ok, false);
+  assert.equal(output.results.some((r) => r.guard === 'deployed-build-info' && r.ok === false), true);
+  const check = output.results.find((r) => r.guard === 'deployed-build-info');
+  assert.match(String(check?.error ?? ''), /build-info\.json missing/);
+});
+
+test('deployed guard fails closed when dist/build-info.json revision is dirty (#2423)', () => {
+  const { root } = makeWorkerRoot({
+    buildInfoRevision: 'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa-dirty',
+  });
+  const result = runGuard(root);
+  assert.notEqual(result.status, 0);
+  const output = JSON.parse(result.stdout);
+  const check = output.results.find((r) => r.guard === 'deployed-build-info');
+  assert.equal(check?.ok, false);
+  assert.match(String(check?.error ?? ''), /clean 40-hex/);
+});
+
+test('deployed guard fails closed when build-info revision disagrees with A2A_WORKER_TARGET_REVISION (#2423)', () => {
+  const { root } = makeWorkerRoot();
+  const result = runGuard(root, {
+    A2A_WORKER_TARGET_REVISION: 'bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb',
+  });
+  assert.notEqual(result.status, 0);
+  const output = JSON.parse(result.stdout);
+  const check = output.results.find((r) => r.guard === 'deployed-build-info');
+  assert.equal(check?.ok, false);
+  assert.match(String(check?.error ?? ''), /A2A_WORKER_TARGET_REVISION/);
+});
+
+test('deployed guard passes deployed-build-info for a clean 40-hex revision (#2423)', () => {
+  const { root } = makeWorkerRoot();
+  const result = runGuard(root);
+  assert.equal(result.status, 0, result.stderr || result.stdout);
+  const output = JSON.parse(result.stdout);
+  const check = output.results.find((r) => r.guard === 'deployed-build-info');
+  assert.equal(check?.ok, true);
+  assert.equal(check?.detail?.revision, 'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa');
 });
