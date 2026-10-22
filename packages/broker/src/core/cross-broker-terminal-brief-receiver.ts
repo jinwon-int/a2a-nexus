@@ -30,6 +30,13 @@ const MAX_OTHER_OWNER_BREAKDOWN_KEYS = 20;
 
 export interface CrossBrokerTerminalBriefReceiverConfig {
   sourceBrokerId: string;
+  /**
+   * #2339 PR-6 rollout flag: when true, projections carry the minted origin
+   * (`crossBrokerHandoff.originBrokerId`) in `originBrokerId` instead of the
+   * producer. Leave unset until the destination broker runs PR-6, because an
+   * older destination rejects an origin equal to itself as `wrong_origin`.
+   */
+  emitMintedOriginBrokerId?: boolean;
   sourceBaseUrl: string;
   destinationBrokerId: string;
   destinationBaseUrl: string;
@@ -118,7 +125,7 @@ export interface CrossBrokerTerminalBriefReceiverPollResult {
 
 export function buildCrossBrokerTerminalBriefProjectionFromEvent(
   event: TerminalTaskOutboxEvent,
-  config: Pick<CrossBrokerTerminalBriefReceiverConfig, "sourceBrokerId" | "destinationBrokerId">,
+  config: Pick<CrossBrokerTerminalBriefReceiverConfig, "sourceBrokerId" | "destinationBrokerId" | "emitMintedOriginBrokerId">,
 ): CrossBrokerTerminalBriefProjectionRequest | null {
   const payload = event.payload;
   if (!isParentOwnedCrossBrokerTerminalPayload(payload, config)) return null;
@@ -131,9 +138,16 @@ export function buildCrossBrokerTerminalBriefProjectionFromEvent(
   if (!completedAt) return null;
 
   const handoffBrokerId = token(payload.crossBrokerHandoff?.handoffBrokerId) ?? config.sourceBrokerId;
+  // #2339 PR-6: `handoffBrokerId` always names the producer. `originBrokerId`
+  // keeps the legacy value (= producer) until the destination is known to
+  // accept the contract meaning (minted origin from the handoff envelope); the
+  // flag flips it per receiver after both brokers run PR-6.
+  const mintedOriginBrokerId = token(payload.crossBrokerHandoff?.originBrokerId);
+  const originBrokerId = config.emitMintedOriginBrokerId && mintedOriginBrokerId ? mintedOriginBrokerId : handoffBrokerId;
   return {
     parentRoundId: payload.parentRoundId,
-    originBrokerId: handoffBrokerId,
+    originBrokerId,
+    handoffBrokerId,
     brokerOfRecordId: payload.brokerOfRecordId ?? payload.notificationOwnership?.ownerBrokerId ?? config.destinationBrokerId,
     childTaskId: payload.taskId,
     childRunId: payload.run,

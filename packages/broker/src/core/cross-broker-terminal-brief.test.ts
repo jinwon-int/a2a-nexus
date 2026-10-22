@@ -1745,3 +1745,120 @@ test("#2331 projection clock-skew bound tolerates small skew and is configurable
   assert.equal(strict.ingest({ ...base, completedAt: "2026-10-06T00:00:00.000Z" }).accepted, true);
   assert.equal(strict.ingest({ ...base, childTaskId: "child-task-9", completedAt: "2026-10-06T00:00:00.001Z" }).accepted, false);
 });
+
+// ---------------------------------------------------------------------------
+// #2339 PR-6: originBrokerId (minted origin, contract meaning) vs
+// handoffBrokerId (producing / relaying broker). Legacy packets keep working.
+
+test("#2339 PR-6 explicit handoffBrokerId is stored, keyed and projected as the producer; a minted origin equal to the receiver is accepted", () => {
+  const broker = new InMemoryA2ABroker(undefined, undefined, { brokerId: "parent-broker" });
+  createParentRound(broker);
+
+  const result = broker.ingestCrossBrokerTerminalBriefProjection(projection({
+    originBrokerId: "parent-broker",
+    handoffBrokerId: "child-broker-a",
+  }));
+  assert.equal(result.accepted, true);
+  assert.equal(result.record.originBrokerId, "parent-broker");
+  assert.equal(result.record.handoffBrokerId, "child-broker-a");
+  assert.equal(result.record.handoffBrokerSource, "explicit");
+  assert.equal(result.record.id, "round-parent::child-broker-a::child-task-1");
+
+  const [row] = projectionRows(broker.getTerminalTaskEventOutbox().subscribe());
+  assert.deepEqual(row?.payload.crossBrokerHandoff, {
+    parentRoundId: "round-parent",
+    originBrokerId: "parent-broker",
+    handoffBrokerId: "child-broker-a",
+    originTaskId: "child-task-1",
+  });
+  assert.equal(row?.payload.worker, "child-broker-a");
+  assert.equal(broker.listCrossBrokerTerminalBriefProjections({ handoffBrokerId: "child-broker-a" }).length, 1);
+  assert.deepEqual(broker.getCrossBrokerTerminalBriefDiagnostics(), { legacyOriginAsHandoff: 0, explicitHandoffBroker: 1 });
+});
+
+test("#2339 PR-6 a legacy packet without handoffBrokerId reads originBrokerId as the producer and is counted", () => {
+  const broker = new InMemoryA2ABroker(undefined, undefined, { brokerId: "parent-broker" });
+  createParentRound(broker);
+
+  const result = broker.ingestCrossBrokerTerminalBriefProjection(projection());
+  assert.equal(result.accepted, true);
+  assert.equal(result.record.originBrokerId, "child-broker-a");
+  assert.equal(result.record.handoffBrokerId, "child-broker-a");
+  assert.equal(result.record.handoffBrokerSource, "legacy_origin");
+  // Same key as before PR-6: producer was already originBrokerId.
+  assert.equal(result.record.id, "round-parent::child-broker-a::child-task-1");
+  assert.deepEqual(broker.getCrossBrokerTerminalBriefDiagnostics(), { legacyOriginAsHandoff: 1, explicitHandoffBroker: 0 });
+});
+
+test("#2339 PR-6 wrong_origin is judged on the producer: a handoff broker equal to the receiver is refused", () => {
+  const broker = new InMemoryA2ABroker(undefined, undefined, { brokerId: "parent-broker" });
+  createParentRound(broker);
+
+  const refused = broker.ingestCrossBrokerTerminalBriefProjection(projection({
+    originBrokerId: "child-broker-a",
+    handoffBrokerId: "parent-broker",
+  }));
+  assert.equal(refused.accepted, false);
+  assert.equal(refused.ack.code, "wrong_origin");
+  assert.match(refused.ack.reason, /handoff broker must differ/);
+
+  // Legacy shape: originBrokerId == receiver with no handoffBrokerId is still
+  // the producer and is still refused — by the dispatch-metadata preflight,
+  // exactly as before PR-6 (allowLocalOrigin stays off for legacy packets).
+  const legacy = broker.ingestCrossBrokerTerminalBriefProjection(projection({ originBrokerId: "parent-broker" }));
+  assert.equal(legacy.accepted, false);
+  assert.equal(legacy.ack.code, "missing_dispatch_metadata");
+  assert.match(legacy.ack.reason, /must differ from the receiving broker/);
+  assert.equal(broker.listCrossBrokerTerminalBriefProjections().length, 0);
+});
+
+test("#2339 PR-6 routing_mismatch compares the parent round's handoff broker with handoffBrokerId, not originBrokerId", () => {
+  const routing = {
+    initiatingBrokerId: "parent-broker",
+    parentBrokerId: "parent-broker",
+    operatorFacingTerminalBriefSender: "parent-broker",
+    handoffBrokerId: "child-broker-a",
+    projectionDestinationBrokerId: "parent-broker",
+  };
+  const store = new CrossBrokerTerminalBriefProjectionStore([], {
+    brokerId: "parent-broker",
+    hasParentRound: () => true,
+    getParentRoundRouting: () => routing,
+  });
+
+  const mismatch = store.ingest(projection({ originBrokerId: "parent-broker", handoffBrokerId: "child-broker-b" }));
+  assert.equal(mismatch.accepted, false);
+  assert.equal(mismatch.ack.code, "routing_mismatch");
+  assert.match(mismatch.ack.reason, /handoffBrokerId "child-broker-b"/);
+
+  const matched = store.ingest(projection({ originBrokerId: "parent-broker", handoffBrokerId: "child-broker-a" }));
+  assert.equal(matched.accepted, true);
+  assert.equal(store.list({ handoffBrokerId: "child-broker-a" }).length, 1);
+});
+
+test("#2339 PR-6 a snapshot written before the split restores with a derived handoffBrokerId and still dedupes the same packet", () => {
+  const options = { brokerId: "parent-broker", hasParentRound: () => true };
+  const before = new CrossBrokerTerminalBriefProjectionStore([], options);
+  const stored = before.ingest(projection());
+  assert.equal(stored.accepted, true);
+
+  // Simulate a pre-PR-6 snapshot: no handoffBrokerId / handoffBrokerSource on disk.
+  const legacySnapshot = before.snapshot().map((record) => {
+    const { handoffBrokerId: _h, handoffBrokerSource: _s, ...rest } = record;
+    return rest as typeof record;
+  });
+  const after = new CrossBrokerTerminalBriefProjectionStore([], options);
+  after.restore(legacySnapshot);
+  const [restored] = after.list();
+  assert.equal(restored?.handoffBrokerId, "child-broker-a");
+  assert.equal(restored?.handoffBrokerSource, "legacy_origin");
+  assert.equal(restored?.id, "round-parent::child-broker-a::child-task-1");
+
+  const replay = after.ingest(projection());
+  assert.equal(replay.accepted, true);
+  assert.equal(replay.replayed, true, "same packet against a restored legacy record must be duplicate_replay, not stale_replay");
+  // The explicit form of the same packet converges on the same key too.
+  const explicit = after.ingest(projection({ handoffBrokerId: "child-broker-a" }));
+  assert.equal(explicit.accepted, true);
+  assert.equal(explicit.replayed, true);
+});

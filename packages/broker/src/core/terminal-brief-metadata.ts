@@ -463,8 +463,11 @@ export interface TerminalBriefValidationOptions {
    *
    * This is used for local parent rounds where the origin and receiving
    * broker are the same (e.g., Team2-local brokerbeta rounds carrying local-safe
-   * parent grouping metadata). Cross-broker projections should not set this
-   * flag; they still reject same-broker origin as "wrong_origin".
+   * parent grouping metadata). Cross-broker projections set it only when the
+   * packet names the producer explicitly (`handoffBrokerId`, #2339 PR-6): the
+   * minted origin may then be the receiving broker, and the "must differ"
+   * rule is applied to the producer instead. Legacy packets keep rejecting a
+   * same-broker origin as "wrong_origin".
    *
    * @default false
    */

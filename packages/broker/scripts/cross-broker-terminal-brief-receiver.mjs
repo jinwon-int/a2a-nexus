@@ -84,6 +84,9 @@ function buildConfig(cursor) {
     senderProofPrivateKeyPem: envSecretFile("CROSS_BROKER_SENDER_PROOF_PRIVATE_KEY_FILE"),
     senderProofBrokerId: process.env.CROSS_BROKER_SENDER_PROOF_BROKER_ID,
     senderProofKid: process.env.CROSS_BROKER_SENDER_PROOF_KID,
+    // #2339 PR-6: flip only after the destination broker runs PR-6 (it would
+    // otherwise reject a minted origin equal to itself as wrong_origin).
+    emitMintedOriginBrokerId: envBool("CROSS_BROKER_EMIT_MINTED_ORIGIN", false),
   };
 }
 
