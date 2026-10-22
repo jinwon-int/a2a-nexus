@@ -85,6 +85,25 @@ Every parent aggregation projection must carry these fields:
 | `isTerminalAck` | Must be `false`. |
 | `isReadReceipt` | Must be `false`. |
 
+### Projection ingest compatibility (2026-10, #2339 PR-6)
+
+The broker ingest (`POST` cross-broker projection) reads two broker fields with
+distinct meanings:
+
+- `originBrokerId` — the broker that minted the parent round (this table).
+- `handoffBrokerId` — the broker that produced or relayed the child Terminal
+  Brief. The receiving broker checks the handoff topology (`routing_mismatch`)
+  and the "must differ from the receiving broker" rule (`wrong_origin`)
+  against this field, and keys the stored record by it.
+
+Relays that predate this split put the producing broker in `originBrokerId`
+and send no `handoffBrokerId`. Such packets are still accepted: the producer
+is read from `originBrokerId`, the stored record is marked
+`handoffBrokerSource: "legacy_origin"`, and the ingest diagnostics count it as
+`legacyOriginAsHandoff`. A relay must therefore always send `handoffBrokerId`;
+it should send the minted origin in `originBrokerId` only once the destination
+accepts this contract meaning (rollout flag on the relay).
+
 ## Redaction boundary
 
 Parent Terminal Brief aggregation may include issue/PR URLs, bounded summaries, changed-file counts, check command names, and pass/fail status. It must not include secrets, raw provider payloads, host-private paths, full transcripts, internal runtime/bootstrap context files, live tokens, private database rows, or child worker logs.

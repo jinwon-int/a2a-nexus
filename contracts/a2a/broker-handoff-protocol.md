@@ -100,6 +100,13 @@ Terminal evidence is metadata only:
 
 Allowed terminal kinds are PR, Done, and Block. Evidence relay does not ACK terminal outbox rows and does not prove provider delivery by itself. ACK remains a separate operator/provider receipt flow.
 
+A child-broker relay of parent-owned terminal evidence (cross-broker projection)
+carries `handoffBrokerId` = the relaying/destination broker that owns the child
+task, and `originBrokerId` = the parent round's minted origin from the handoff
+envelope (see `parent-terminal-brief-aggregation.md`, "Projection ingest
+compatibility"). Older relays that sent only `originBrokerId` (= producer) are
+accepted by the parent broker and counted as legacy.
+
 ## Safety boundaries
 
 - Keep the repository private.

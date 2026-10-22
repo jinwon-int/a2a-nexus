@@ -54,10 +54,12 @@ export interface TerminalBriefDispatchValidationInput {
 export function validateTerminalBriefForDispatch(
   input: TerminalBriefDispatchValidationInput,
   receiverBrokerId?: string,
+  options?: { allowLocalOrigin?: boolean },
 ): TerminalBriefDispatchValidationResult {
   const canonical = canonicalValidateTerminalBriefMetadata(
     input as Record<string, unknown>,
     receiverBrokerId,
+    options?.allowLocalOrigin ? { allowLocalOrigin: true } : undefined,
   );
   const errors = canonical.issues
     .filter((i) => i.severity === "error")
@@ -65,11 +67,24 @@ export function validateTerminalBriefForDispatch(
   return { valid: errors.length === 0, errors };
 }
 
+export type CrossBrokerHandoffBrokerSource = "explicit" | "legacy_origin";
+
 export interface CrossBrokerTerminalBriefProjectionRequest {
   /** Parent round/task id owned by the receiving broker-of-record. */
   parentRoundId: string;
-  /** Broker that produced the child Terminal Brief. */
+  /**
+   * Broker that minted the parent round (contract meaning, see
+   * parent-terminal-brief-aggregation.md "Required projection fields").
+   * Legacy relays (before #2339 PR-6) put the producing broker here; when
+   * `handoffBrokerId` is absent this value is still read as the producer.
+   */
   originBrokerId: string;
+  /**
+   * Broker that produced / relayed the child Terminal Brief (#2339 PR-6).
+   * Optional on the wire for compatibility; absent → `originBrokerId` is the
+   * producer and the record is marked `handoffBrokerSource: "legacy_origin"`.
+   */
+  handoffBrokerId?: string;
   /** Receiving broker id the packet was addressed to. Required when the receiver has a broker id. */
   brokerOfRecordId?: string;
   childTaskId?: string;
@@ -102,6 +117,14 @@ export interface CrossBrokerTerminalBriefProjection {
   id: string;
   parentRoundId: string;
   originBrokerId: string;
+  /**
+   * Producing / relaying broker (#2339 PR-6). Always set by the store on
+   * ingest and restore; optional in the type only so snapshots written before
+   * the split still type-check and load.
+   */
+  handoffBrokerId?: string;
+  /** Whether `handoffBrokerId` came from the packet or was derived from `originBrokerId`. */
+  handoffBrokerSource?: CrossBrokerHandoffBrokerSource;
   brokerOfRecordId?: string;
   childTaskId?: string;
   childRunId?: string;
@@ -133,6 +156,15 @@ export interface CrossBrokerTerminalBriefProjection {
 export interface CrossBrokerTerminalBriefProjectionFilters {
   parentRoundId?: string;
   originBrokerId?: string;
+  handoffBrokerId?: string;
+}
+
+/** Ingest-side counters for operators (#2339 PR-6 rollout observation). */
+export interface CrossBrokerTerminalBriefProjectionDiagnostics {
+  /** Accepted packets that carried no `handoffBrokerId` (producer read from `originBrokerId`). */
+  legacyOriginAsHandoff: number;
+  /** Accepted packets that carried an explicit `handoffBrokerId`. */
+  explicitHandoffBroker: number;
 }
 
 export type CrossBrokerTerminalBriefProjectionResult =
@@ -212,6 +244,10 @@ export interface CrossBrokerTerminalBriefProjectionStoreOptions {
  */
 export class CrossBrokerTerminalBriefProjectionStore {
   private readonly records = new Map<string, CrossBrokerTerminalBriefProjection>();
+  private readonly diagnosticsCounters: CrossBrokerTerminalBriefProjectionDiagnostics = {
+    legacyOriginAsHandoff: 0,
+    explicitHandoffBroker: 0,
+  };
 
   constructor(
     records: CrossBrokerTerminalBriefProjection[] = [],
@@ -249,6 +285,10 @@ export class CrossBrokerTerminalBriefProjectionStore {
         parentRoundOrder: normalized.parentRoundOrder,
       },
       normalizeToken(this.options.brokerId),
+      // #2339 PR-6: with an explicit producer the minted origin may be this
+      // broker (v0 parent == origin); the producer check runs below on
+      // handoffBrokerId. Legacy packets keep the origin-must-differ rule.
+      { allowLocalOrigin: normalized.handoffBrokerSource === "explicit" },
     );
     if (!preflight.valid) {
       return reject("missing_dispatch_metadata", `Terminal Brief dispatch metadata validation failed: ${preflight.errors.join("; ")}`, now);
@@ -262,8 +302,11 @@ export class CrossBrokerTerminalBriefProjectionStore {
     if (receiverBrokerId && addressedBrokerId && addressedBrokerId !== receiverBrokerId) {
       return reject("wrong_origin", `projection addressed to broker-of-record ${addressedBrokerId}, not ${receiverBrokerId}`, now);
     }
-    if (receiverBrokerId && normalized.originBrokerId === receiverBrokerId) {
-      return reject("wrong_origin", "cross-broker projection origin must differ from receiving broker", now);
+    // #2339 PR-6: the producer (handoff broker) must be a different broker.
+    // `originBrokerId` (the minting broker) may legitimately equal the receiver
+    // once relays carry the contract meaning (v0 parent == origin).
+    if (receiverBrokerId && normalized.handoffBrokerId === receiverBrokerId) {
+      return reject("wrong_origin", "cross-broker projection handoff broker must differ from receiving broker", now);
     }
     if (!this.options.hasParentRound(normalized.parentRoundId)) {
       return reject("missing_parent", `parent round ${normalized.parentRoundId} is not present on this broker`, now);
@@ -278,8 +321,8 @@ export class CrossBrokerTerminalBriefProjectionStore {
     // against the expected cross-broker handoff topology.
     const routing = this.options.getParentRoundRouting?.(normalized.parentRoundId);
     if (routing) {
-      if (routing.handoffBrokerId && normalized.originBrokerId !== routing.handoffBrokerId) {
-        return reject("routing_mismatch", `projection originBrokerId "${normalized.originBrokerId}" does not match the parent round's handoff broker "${routing.handoffBrokerId}"`, now);
+      if (routing.handoffBrokerId && normalized.handoffBrokerId !== routing.handoffBrokerId) {
+        return reject("routing_mismatch", `projection handoffBrokerId "${normalized.handoffBrokerId}" does not match the parent round's handoff broker "${routing.handoffBrokerId}"`, now);
       }
       const addressedBroker = normalizeToken(normalized.brokerOfRecordId);
       if (addressedBroker && addressedBroker !== routing.parentBrokerId) {
@@ -323,7 +366,14 @@ export class CrossBrokerTerminalBriefProjectionStore {
       },
     };
     this.records.set(key, record);
+    if (record.handoffBrokerSource === "legacy_origin") this.diagnosticsCounters.legacyOriginAsHandoff += 1;
+    else this.diagnosticsCounters.explicitHandoffBroker += 1;
     return { accepted: true, replayed: false, record: structuredClone(record), ack: record.ack };
+  }
+
+  /** Process-local counters (reset on restart; not persisted in the snapshot). */
+  diagnostics(): CrossBrokerTerminalBriefProjectionDiagnostics {
+    return { ...this.diagnosticsCounters };
   }
 
   get(parentRoundId: string, originBrokerId: string): CrossBrokerTerminalBriefProjection | undefined {
@@ -337,6 +387,7 @@ export class CrossBrokerTerminalBriefProjectionStore {
     return [...this.records.values()]
       .filter((record) => !filters.parentRoundId || record.parentRoundId === filters.parentRoundId)
       .filter((record) => !filters.originBrokerId || record.originBrokerId === filters.originBrokerId)
+      .filter((record) => !filters.handoffBrokerId || record.handoffBrokerId === filters.handoffBrokerId)
       .sort(compareRecords)
       .map((record) => structuredClone(record));
   }
@@ -359,6 +410,9 @@ function normalizeRequest(request: CrossBrokerTerminalBriefProjectionRequest): O
   const status = request.status;
   const completedAt = normalizeIso(request.completedAt);
   if (!parentRoundId || !originBrokerId || !isSettledTaskStatus(status) || !completedAt) return undefined;
+  const explicitHandoffBrokerId = normalizeToken(request.handoffBrokerId);
+  const handoffBrokerId = explicitHandoffBrokerId ?? originBrokerId;
+  const handoffBrokerSource: CrossBrokerHandoffBrokerSource = explicitHandoffBrokerId ? "explicit" : "legacy_origin";
   const brokerOfRecordId = normalizeToken(request.brokerOfRecordId);
   const childTaskId = normalizeToken(request.childTaskId);
   const childRunId = normalizeToken(request.childRunId);
@@ -373,6 +427,8 @@ function normalizeRequest(request: CrossBrokerTerminalBriefProjectionRequest): O
   return {
     parentRoundId,
     originBrokerId,
+    handoffBrokerId,
+    handoffBrokerSource,
     ...(brokerOfRecordId ? { brokerOfRecordId } : {}),
     ...(childTaskId ? { childTaskId } : {}),
     ...(childRunId ? { childRunId } : {}),
@@ -400,8 +456,13 @@ function normalizeRecord(record: CrossBrokerTerminalBriefProjection): CrossBroke
     terminalBriefText: _terminalBriefText,
     ...rest
   } = record as CrossBrokerTerminalBriefProjection & { terminalBriefText?: unknown };
+  // Snapshots written before #2339 PR-6 carry no handoffBrokerId: the producer
+  // was stored in originBrokerId, so derive it and keep the record key stable.
+  const restoredHandoff = normalizeToken(record.handoffBrokerId);
   return {
     ...rest,
+    handoffBrokerId: restoredHandoff ?? rest.originBrokerId,
+    handoffBrokerSource: restoredHandoff ? (record.handoffBrokerSource === "legacy_origin" ? "legacy_origin" : "explicit") : "legacy_origin",
     ...(terminalBriefTitle ? { terminalBriefTitle } : {}),
     ...(parentRoundTotal ? { parentRoundTotal } : {}),
     ...(parentRoundOrder ? { parentRoundOrder } : {}),
@@ -429,20 +490,26 @@ function reject(code: CrossBrokerTerminalBriefRejectCode, reason: string, update
 }
 
 function digestProjection(record: ReturnType<typeof normalizeRequest> & {}): string {
-  return `sha256:${createHash("sha256").update(stableStringify(record)).digest("hex")}`;
+  // handoffBrokerId is part of the record key, not the content digest, so a
+  // packet stored before #2339 PR-6 still dedupes as duplicate_replay.
+  const { handoffBrokerId: _handoffBrokerId, handoffBrokerSource: _handoffBrokerSource, ...content } = record;
+  return `sha256:${createHash("sha256").update(stableStringify(content)).digest("hex")}`;
 }
 
-function recordKey(record: Pick<CrossBrokerTerminalBriefProjection, "parentRoundId" | "originBrokerId" | "childTaskId" | "childWorkerId" | "parentRoundOrder">): string {
+function recordKey(record: Pick<CrossBrokerTerminalBriefProjection, "parentRoundId" | "originBrokerId" | "handoffBrokerId" | "childTaskId" | "childWorkerId" | "parentRoundOrder">): string {
   const childKey = record.childTaskId
     ?? (record.childWorkerId ? `worker:${record.childWorkerId}` : undefined)
     ?? (record.parentRoundOrder ? `order:${record.parentRoundOrder}` : undefined)
     ?? "broker";
-  return `${record.parentRoundId}::${record.originBrokerId}::${childKey}`;
+  // Keyed by the producing broker; for legacy records that is originBrokerId,
+  // so keys written before #2339 PR-6 are unchanged.
+  return `${record.parentRoundId}::${record.handoffBrokerId ?? record.originBrokerId}::${childKey}`;
 }
 
 function compareRecords(a: CrossBrokerTerminalBriefProjection, b: CrossBrokerTerminalBriefProjection): number {
   return a.parentRoundId.localeCompare(b.parentRoundId)
     || a.originBrokerId.localeCompare(b.originBrokerId)
+    || (a.handoffBrokerId ?? a.originBrokerId).localeCompare(b.handoffBrokerId ?? b.originBrokerId)
     || ((a.parentRoundOrder ?? Number.MAX_SAFE_INTEGER) - (b.parentRoundOrder ?? Number.MAX_SAFE_INTEGER))
     || (a.childTaskId ?? "").localeCompare(b.childTaskId ?? "")
     || (a.childWorkerId ?? "").localeCompare(b.childWorkerId ?? "");

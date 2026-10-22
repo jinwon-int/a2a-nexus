@@ -69,7 +69,9 @@ test("buildCrossBrokerTerminalBriefProjectionFromEvent maps child broker event t
 
   assert.deepEqual(projection, {
     parentRoundId: "brokeralpha-parent-round",
+    // Legacy wire shape until CROSS_BROKER_EMIT_MINTED_ORIGIN flips (#2339 PR-6).
     originBrokerId: "brokerbeta",
+    handoffBrokerId: "brokerbeta",
     brokerOfRecordId: "brokeralpha",
     childTaskId: "brokerbeta-child-1",
     childRunId: "brokeralpha-parent-round",
@@ -85,6 +87,21 @@ test("buildCrossBrokerTerminalBriefProjectionFromEvent maps child broker event t
     parentRoundOrder: 6,
     terminalAck: false,
   });
+});
+
+test("#2339 PR-6 emitMintedOriginBrokerId sends the handoff envelope's minted origin in originBrokerId and the producer in handoffBrokerId", () => {
+  const projection = buildCrossBrokerTerminalBriefProjectionFromEvent(event(), { ...CONFIG, emitMintedOriginBrokerId: true });
+  assert.equal(projection?.originBrokerId, "brokeralpha");
+  assert.equal(projection?.handoffBrokerId, "brokerbeta");
+
+  // Without a minted origin on the event the producer stays in originBrokerId.
+  const base = event();
+  const stripped = event({
+    payload: { ...base.payload, crossBrokerHandoff: { ...base.payload.crossBrokerHandoff!, originBrokerId: "" } },
+  });
+  const fallback = buildCrossBrokerTerminalBriefProjectionFromEvent(stripped, { ...CONFIG, emitMintedOriginBrokerId: true });
+  assert.equal(fallback?.originBrokerId, "brokerbeta");
+  assert.equal(fallback?.handoffBrokerId, "brokerbeta");
 });
 
 test("pollCrossBrokerTerminalBriefReceiver posts parent-owned child events and advances cursor on success", async () => {
@@ -307,6 +324,7 @@ test("reverse direction: brokeralpha child event maps to a brokerbeta parent pro
   assert.deepEqual(projection, {
     parentRoundId: "brokerbeta-parent-round",
     originBrokerId: "brokeralpha",
+    handoffBrokerId: "brokeralpha",
     brokerOfRecordId: "brokerbeta",
     childTaskId: "brokeralpha-child-1",
     childRunId: "brokerbeta-parent-round",

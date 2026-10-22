@@ -441,8 +441,8 @@ export class TerminalTaskEventOutbox {
       originBrokerId: projection.originBrokerId,
       ...(projection.brokerOfRecordId ? { brokerOfRecordId: projection.brokerOfRecordId } : {}),
       run: projection.parentRoundId,
-      taskDescription: `Cross-broker Terminal Brief from ${projection.originBrokerId}`,
-      worker: projection.childWorkerId ?? projection.originBrokerId,
+      taskDescription: `Cross-broker Terminal Brief from ${projection.handoffBrokerId ?? projection.originBrokerId}`,
+      worker: projection.childWorkerId ?? projection.handoffBrokerId ?? projection.originBrokerId,
       ...(taskBrief ? { taskBrief } : {}),
       ...(evidenceUrl ? { doneUrl: evidenceUrl } : {}),
       ...(testSummary ? { testSummary } : {}),
@@ -454,7 +454,8 @@ export class TerminalTaskEventOutbox {
       crossBrokerHandoff: {
         parentRoundId: projection.parentRoundId,
         originBrokerId: parentBrokerId,
-        handoffBrokerId: projection.originBrokerId,
+        // #2339 PR-6: the producer is the handoff broker; legacy packets put it in originBrokerId.
+        handoffBrokerId: projection.handoffBrokerId ?? projection.originBrokerId,
         ...(projection.childTaskId ? { originTaskId: projection.childTaskId } : {}),
         ...(projection.childWorkerId ? { childWorkerId: projection.childWorkerId } : {}),
       },

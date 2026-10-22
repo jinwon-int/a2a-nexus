@@ -665,6 +665,11 @@ export class InMemoryA2ABroker {
     return result;
   }
 
+  /** #2339 PR-6 rollout counters: legacy (origin-as-producer) vs explicit handoff packets. */
+  getCrossBrokerTerminalBriefDiagnostics(): ReturnType<CrossBrokerTerminalBriefProjectionStore["diagnostics"]> {
+    return this.crossBrokerTerminalBriefs.diagnostics();
+  }
+
   listCrossBrokerTerminalBriefProjections(filters?: CrossBrokerTerminalBriefProjectionFilters): CrossBrokerTerminalBriefProjection[] {
     return this.crossBrokerTerminalBriefs.list(filters);
   }
