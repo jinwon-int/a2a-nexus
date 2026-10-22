@@ -82,6 +82,11 @@ function makeFakeRepo() {
     'export function bootWorker() { return !!stringSchema; }',
     '',
   ].join('\n'));
+  // provenance — import 그래프와 무관하게 항상 포장돼야 한다 (#2423)
+  writeFileSync(join(brokerDist, 'build-info.json'), JSON.stringify({
+    revision: 'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa',
+    version: '0.1.0',
+  }));
 
   // 저장소 루트 node_modules의 실제 npm 패키지 — 워커 클로저가 요구하면 벤도링된다
   const zod = join(repo, 'node_modules', 'zod-shim');
@@ -194,6 +199,43 @@ test('packer ships the worker daemon closure and vendors its npm deps (#2227 확
     assert.equal(existsSync(join(artifact, 'node_modules', 'zod-shim', 'index.js')), true);
     // 워크스페이스 패키지와 병존
     assert.equal(existsSync(join(artifact, 'node_modules', 'a2a-attestation', 'dist', 'index.js')), true);
+  } finally {
+    rmSync(repo, { recursive: true, force: true });
+  }
+});
+
+test('packer always ships dist/build-info.json even when nothing imports it (#2423)', () => {
+  const { repo } = makeFakeRepo();
+  try {
+    const result = runPacker(repo);
+    assert.equal(result.status, 0, result.stderr || result.stdout);
+    const summary = JSON.parse(result.stdout);
+    assert.equal(summary.ok, true);
+    assert.deepEqual(summary.buildInfo, {
+      revision: 'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa',
+      path: 'dist/build-info.json',
+    });
+    const artifactInfo = join(repo, 'artifact', 'dist', 'build-info.json');
+    assert.equal(existsSync(artifactInfo), true);
+    assert.equal(
+      JSON.parse(readFileSync(artifactInfo, 'utf8')).revision,
+      'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa',
+    );
+  } finally {
+    rmSync(repo, { recursive: true, force: true });
+  }
+});
+
+test('packer fails closed when dist/build-info.json is missing (#2423)', () => {
+  const { repo } = makeFakeRepo();
+  try {
+    rmSync(join(repo, 'packages', 'broker', 'dist', 'build-info.json'), { force: true });
+    const result = runPacker(repo);
+    assert.equal(result.status, 1);
+    const summary = JSON.parse(result.stdout);
+    assert.equal(summary.ok, false);
+    assert.match(summary.error, /build-info\.json is missing/);
+    assert.match(summary.hint, /generate-build-info|#2423/);
   } finally {
     rmSync(repo, { recursive: true, force: true });
   }
