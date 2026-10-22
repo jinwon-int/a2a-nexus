@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
 import { createHash } from "node:crypto";
-import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, statSync, symlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { test } from "node:test";
@@ -1468,4 +1468,218 @@ test("#2393 harness fingerprint is deterministic and moves with model, skills an
   } finally {
     rmSync(tempDir, { recursive: true, force: true });
   }
+});
+
+// ---------------------------------------------------------------------------
+// #2422: host-context isolation — the worker account's hooks, CLAUDE.md,
+// skills and MCP servers stay out of the lane; the lane skill (#2390) is
+// copied into the session workspace as a project skill.
+
+function settingSourcesOf(args) {
+  const positions = args.map((value, index) => (value === "--setting-sources" ? index : -1)).filter((index) => index >= 0);
+  return { positions, value: positions.length === 1 ? args[positions[0] + 1] : null };
+}
+
+test("#2422 every spawned claude gets --setting-sources project and --strict-mcp-config exactly once", () => {
+  const { childArgs } = runAnalysisBridgeCapturingArgs({ env: { A2A_CLAUDE_SETTING_SOURCES: "" } });
+  const sources = settingSourcesOf(childArgs);
+  assert.equal(sources.positions.length, 1);
+  assert.equal(sources.value, "project");
+  assert.equal(childArgs.filter((value) => value === "--strict-mcp-config").length, 1);
+  assert.ok(childArgs.indexOf("--setting-sources") < childArgs.indexOf("--output-format"), "isolation args precede the output contract");
+  assert.equal(childArgs[0], "-p");
+  assert.equal(childArgs[childArgs.indexOf("--allowedTools") + 1], "Read Glob Grep");
+});
+
+test("#2422 A2A_CLAUDE_SETTING_SOURCES is canonicalised, de-duplicated and validated", async () => {
+  const { resolveClaudeSettingSources, buildClaudeIsolationArgs, LEGACY_CLAUDE_SETTING_SOURCES } = await import("./lib/claude-session-isolation.mjs");
+  assert.deepEqual(resolveClaudeSettingSources({}), { sources: ["project"], note: null });
+  assert.deepEqual(resolveClaudeSettingSources({ A2A_CLAUDE_SETTING_SOURCES: "   " }), { sources: ["project"], note: null });
+  assert.deepEqual(resolveClaudeSettingSources({ A2A_CLAUDE_SETTING_SOURCES: "local, user ,project,user" }).sources, ["user", "project", "local"]);
+  assert.deepEqual(resolveClaudeSettingSources({ A2A_CLAUDE_SETTING_SOURCES: LEGACY_CLAUDE_SETTING_SOURCES }).sources, ["user", "project", "local"]);
+  const invalid = resolveClaudeSettingSources({ A2A_CLAUDE_SETTING_SOURCES: "project,bogus" });
+  assert.deepEqual(invalid.sources, ["project"]);
+  assert.match(invalid.note, /A2A_CLAUDE_SETTING_SOURCES ignored/);
+  assert.deepEqual(resolveClaudeSettingSources({ A2A_CLAUDE_SETTING_SOURCES: ",," }).sources, ["project"]);
+  assert.deepEqual(buildClaudeIsolationArgs({ A2A_CLAUDE_SETTING_SOURCES: "local,project" }), ["--setting-sources", "project,local", "--strict-mcp-config"]);
+  // The child never sees the knob itself (not in the allow-list) — only its effect.
+  const { childArgs } = runAnalysisBridgeCapturingArgs({ env: { A2A_CLAUDE_SETTING_SOURCES: "user , local" } });
+  assert.equal(settingSourcesOf(childArgs).value, "user,local");
+  const fallback = runAnalysisBridgeCapturingArgs({ env: { A2A_CLAUDE_SETTING_SOURCES: "everything" } });
+  assert.equal(settingSourcesOf(fallback.childArgs).value, "project");
+});
+
+test("#2422 materializeLaneSkill copies regular files only, bounded, into <workspace>/.claude/skills", async () => {
+  const { materializeLaneSkill } = await import("./lib/claude-session-isolation.mjs");
+  const tempDir = mkdtempSync(join(tmpdir(), "claude-a2a-isolation-"));
+  try {
+    const configDir = join(tempDir, "cfg");
+    const skillDir = join(configDir, "skills", "bilingual-terminology-review-gate");
+    mkdirSync(join(skillDir, "ref"), { recursive: true });
+    writeFileSync(join(skillDir, "SKILL.md"), "---\nname: x\ndescription: y\n---\nFIXTURE-SKILL-BODY\n");
+    writeFileSync(join(skillDir, "ref", "terms.txt"), "a\nb\n");
+    const workspace = join(tempDir, "ws");
+    mkdirSync(workspace);
+    const env = { CLAUDE_CONFIG_DIR: configDir };
+    const hint = { lane: "terminology_bilingual", skill: "bilingual-terminology-review-gate" };
+
+    const ok = materializeLaneSkill({ hint, env, workspace });
+    assert.equal(ok.ok, true, JSON.stringify(ok));
+    assert.equal(ok.files, 2);
+    assert.equal(readFileSync(join(workspace, ".claude", "skills", hint.skill, "SKILL.md"), "utf8"), readFileSync(join(skillDir, "SKILL.md"), "utf8"));
+    assert.equal(readFileSync(join(workspace, ".claude", "skills", hint.skill, "ref", "terms.txt"), "utf8"), "a\nb\n");
+    assert.equal(statSync(join(workspace, ".claude", "skills")).mode & 0o777, 0o700);
+    // A second copy into the same workspace is refused, never merged.
+    assert.equal(materializeLaneSkill({ hint, env, workspace }).ok, false);
+
+    // Bounds and refusals.
+    assert.match(materializeLaneSkill({ hint, env, workspace: join(tempDir, "ws2"), maxFiles: 1 }).reason, /more than 1 files/);
+    assert.match(materializeLaneSkill({ hint, env, workspace: join(tempDir, "ws3"), maxBytes: 4 }).reason, /more than 4 bytes/);
+    assert.match(materializeLaneSkill({ hint: { lane: "x", skill: "missing-skill" }, env, workspace: join(tempDir, "ws4") }).reason, /skill not readable|missing/);
+    assert.match(materializeLaneSkill({ hint: { lane: "x", skill: "../escape" }, env, workspace: join(tempDir, "ws5") }).reason, /invalid skill name/);
+    assert.match(materializeLaneSkill({ hint, env: {}, workspace: join(tempDir, "ws6") }).reason, /no skills root/);
+    assert.match(materializeLaneSkill({ hint, env, workspace: "" }).reason, /no workspace/);
+    symlinkSync(join(tempDir, "cfg"), join(skillDir, "ref", "link"));
+    const refused = materializeLaneSkill({ hint, env, workspace: join(tempDir, "ws7") });
+    assert.equal(refused.ok, false);
+    assert.match(refused.reason, /symlink refused: ref\/link/);
+    assert.equal(existsSync(join(tempDir, "ws7", ".claude")), false, "nothing is copied once a symlink is seen");
+    rmSync(join(skillDir, "ref", "link"));
+
+    // A skill *directory* that is itself a symlink (absolute or relative) is
+    // refused, never reproduced as a link in the workspace (review C1).
+    const linkedCfg = join(tempDir, "cfg-linked");
+    mkdirSync(join(linkedCfg, "skills"), { recursive: true });
+    symlinkSync(skillDir, join(linkedCfg, "skills", "abs-skill"));
+    symlinkSync(join("..", "..", "cfg", "skills", hint.skill), join(linkedCfg, "skills", "rel-skill"));
+    for (const name of ["abs-skill", "rel-skill"]) {
+      const ws = join(tempDir, `ws-${name}`);
+      mkdirSync(ws);
+      const result = materializeLaneSkill({ hint: { lane: "x", skill: name }, env: { CLAUDE_CONFIG_DIR: linkedCfg }, workspace: ws });
+      assert.equal(result.ok, false, name);
+      assert.equal(result.reason, "skill dir is a symlink", name);
+      assert.equal(existsSync(join(ws, ".claude")), false, name);
+    }
+    const skillMdLink = join(configDir, "skills", "md-link");
+    mkdirSync(skillMdLink);
+    symlinkSync(join(skillDir, "SKILL.md"), join(skillMdLink, "SKILL.md"));
+    assert.equal(materializeLaneSkill({ hint: { lane: "x", skill: "md-link" }, env, workspace: join(tempDir, "ws-md") }).reason, "SKILL.md is a symlink");
+
+    // A copy that fails half-way leaves no partial skill behind (review C2):
+    // with --setting-sources project claude would list it while the tool
+    // policy no longer allows Skill.
+    if (typeof process.getuid === "function" && process.getuid() !== 0) {
+      const partialWs = join(tempDir, "ws-partial");
+      mkdirSync(partialWs);
+      writeFileSync(join(skillDir, "ref", "zz-unreadable.txt"), "secret-ish\n");
+      chmodSync(join(skillDir, "ref", "zz-unreadable.txt"), 0o000);
+      const failed = materializeLaneSkill({ hint, env, workspace: partialWs });
+      chmodSync(join(skillDir, "ref", "zz-unreadable.txt"), 0o600);
+      rmSync(join(skillDir, "ref", "zz-unreadable.txt"));
+      assert.equal(failed.ok, false);
+      assert.match(failed.reason, /copy failed: EACCES/);
+      assert.equal(existsSync(join(partialWs, ".claude")), false, "partial copy removed");
+    }
+
+    // A pre-existing destination is refused without touching it.
+    const occupied = join(tempDir, "ws-occupied");
+    mkdirSync(join(occupied, ".claude", "skills", hint.skill), { recursive: true });
+    writeFileSync(join(occupied, ".claude", "skills", hint.skill, "keep.txt"), "keep");
+    assert.equal(materializeLaneSkill({ hint, env, workspace: occupied }).reason, "destination already exists");
+    assert.equal(readFileSync(join(occupied, ".claude", "skills", hint.skill, "keep.txt"), "utf8"), "keep");
+  } finally {
+    rmSync(tempDir, { recursive: true, force: true });
+  }
+});
+
+function runIsolatedLaneSkillBridge({ env = {}, corruptSkill = null } = {}) {
+  const tempDir = mkdtempSync(join(tmpdir(), "claude-a2a-lane-skill-iso-"));
+  try {
+    const configDir = join(tempDir, "claude-config");
+    const skillDir = join(configDir, "skills", HINT_SKILL);
+    mkdirSync(skillDir, { recursive: true });
+    writeFileSync(join(skillDir, "SKILL.md"), "---\nname: x\ndescription: y\n---\nFIXTURE-LANE-SKILL-BODY\n");
+    if (corruptSkill === "symlink") symlinkSync(configDir, join(skillDir, "escape"));
+    const payloadPath = join(tempDir, "payload.json");
+    writeFileSync(payloadPath, JSON.stringify({ mode: "analysis-only", noLive: true, sourceOnly: true, lane: "terminology_bilingual" }));
+    const fakeClaudePath = join(tempDir, "fake-claude.mjs");
+    const capturePath = join(tempDir, "capture.json");
+    writeFileSync(fakeClaudePath, [
+      "#!/usr/bin/env node",
+      "import { existsSync, readFileSync, writeFileSync, readdirSync } from 'node:fs';",
+      "import { join } from 'node:path';",
+      `const skillFile = join(process.cwd(), '.claude', 'skills', ${JSON.stringify(HINT_SKILL)}, 'SKILL.md');`,
+      "const projectSkill = existsSync(skillFile) ? readFileSync(skillFile, 'utf8') : null;",
+      "const entries = existsSync(join(process.cwd(), '.claude')) ? readdirSync(join(process.cwd(), '.claude'), { recursive: true }).sort() : [];",
+      "writeFileSync(process.env.CAPTURE_ARGS_PATH, JSON.stringify({ args: process.argv.slice(2), projectSkill, entries, cwd: process.cwd() }));",
+      "const analysis = { status: 'done', summary: 'isolation captured', findings: [], risks: [], recommendations: [], evidenceRefs: [] };",
+      "console.log(JSON.stringify({ type: 'result', result: JSON.stringify(analysis) }));",
+      "",
+    ].join("\n"));
+    chmodSync(fakeClaudePath, 0o755);
+    const result = spawnSync(bridgePath, bridgeArgs("Review the terminology lane."), {
+      encoding: "utf8",
+      env: {
+        ...process.env,
+        A2A_CLAUDE_CODE_BIN: fakeClaudePath,
+        A2A_ANALYSIS_PAYLOAD_FILE: payloadPath,
+        A2A_ANALYSIS_LANE_SKILL_HINTS: "1",
+        A2A_CLAUDE_SETTING_SOURCES: "",
+        CLAUDE_CONFIG_DIR: configDir,
+        CAPTURE_ARGS_PATH: capturePath,
+        ...env,
+      },
+    });
+    assert.equal(result.status, 0, result.stderr);
+    const capture = JSON.parse(readFileSync(capturePath, "utf8"));
+    return {
+      ...capture,
+      stderr: result.stderr,
+      prompt: capture.args[capture.args.indexOf("-p") + 1],
+      allowed: capture.args[capture.args.indexOf("--allowedTools") + 1],
+      settingSources: settingSourcesOf(capture.args).value,
+      workspaceGone: !existsSync(capture.cwd),
+    };
+  } finally {
+    rmSync(tempDir, { recursive: true, force: true });
+  }
+}
+
+test("#2422 under the isolated sources the lane skill is copied into the workspace as a project skill and Skill stays allowed", () => {
+  const run = runIsolatedLaneSkillBridge();
+  assert.equal(run.settingSources, "project");
+  assert.equal(run.allowed, "Read Glob Grep Skill");
+  assert.match(run.prompt, /Lane review procedure for terminology_bilingual/);
+  assert.match(run.projectSkill, /FIXTURE-LANE-SKILL-BODY/);
+  assert.deepEqual(run.entries, ["skills", join("skills", HINT_SKILL), join("skills", HINT_SKILL, "SKILL.md")]);
+  assert.equal(run.workspaceGone, true, "the workspace (and the copied skill) is removed after the run");
+  assert.doesNotMatch(run.stderr, /not materialized/);
+});
+
+test("#2422 with the legacy sources (user visible) the lane skill is not copied — it is already visible", () => {
+  const run = runIsolatedLaneSkillBridge({ env: { A2A_CLAUDE_SETTING_SOURCES: "user,project,local" } });
+  assert.equal(run.settingSources, "user,project,local");
+  assert.equal(run.allowed, "Read Glob Grep Skill");
+  assert.equal(run.projectSkill, null);
+  assert.deepEqual(run.entries, []);
+});
+
+test("#2422 a lane skill the bridge refuses to copy drops only the Skill tool and says so once on stderr", () => {
+  const run = runIsolatedLaneSkillBridge({ corruptSkill: "symlink" });
+  assert.equal(run.settingSources, "project");
+  assert.equal(run.allowed, "Read Glob Grep");
+  assert.equal(run.projectSkill, null);
+  assert.match(run.prompt, /If the Skill tool is unavailable, continue the review without it/);
+  assert.equal((run.stderr.match(/not materialized/g) || []).length, 1);
+  assert.match(run.stderr, /lane skill "bilingual-terminology-review-gate" not materialized \(symlink refused: escape\); continuing without the Skill tool/);
+  assert.doesNotMatch(run.stderr, /FIXTURE-LANE-SKILL-BODY/);
+});
+
+test("#2422 the lane skill root follows CLAUDE_CONFIG_DIR exactly like the hint resolver (same claudeSkillsRoot)", async () => {
+  const isolation = await import("./lib/claude-session-isolation.mjs");
+  const hints = await import("./lib/analysis-lane-skill-hints.mjs");
+  const source = readFileSync(new URL("./lib/claude-session-isolation.mjs", import.meta.url), "utf8");
+  assert.match(source, /import \{ claudeSkillsRoot \} from "\.\/analysis-lane-skill-hints\.mjs"/);
+  assert.equal(typeof isolation.materializeLaneSkill, "function");
+  assert.equal(hints.claudeSkillsRoot({ CLAUDE_CONFIG_DIR: "/cfg" }), "/cfg/skills");
 });

@@ -18,6 +18,12 @@ import {
 } from "./lib/source-carriers.mjs";
 import { payloadWithRetrievalSnapshotSourceCarriers } from "./lib/retrieval-snapshot-carriers.mjs";
 import { laneSkillHintLine, resolveLaneSkillHint } from "./lib/analysis-lane-skill-hints.mjs";
+import {
+  buildClaudeIsolationArgs,
+  materializeLaneSkill,
+  resolveClaudeSettingSources,
+  settingSourcesIncludeUser,
+} from "./lib/claude-session-isolation.mjs";
 import { truncateUtf8ToBytesSafe } from "./lib/utf8-byte-budget.mjs";
 import {
   buildClaudeRuntimeArgs,
@@ -309,6 +315,9 @@ function buildReadOnlyClaudeArgs(prompt, maxTurns, flags = {}, env = process.env
   return [
     "-p", prompt,
     ...buildClaudeRuntimeArgs(flags, env),
+    // #2422: keep the worker account's hooks, CLAUDE.md, skills and MCP
+    // servers out of the lane (see lib/claude-session-isolation.mjs).
+    ...buildClaudeIsolationArgs(env),
     "--output-format", "json",
     "--max-turns", String(maxTurns),
     // #2390: Skill is added only when the prompt names a lane skill.
@@ -757,7 +766,22 @@ async function runClaude(prompt, flags, env = process.env, laneSkillHint = null)
   const sessionWorkspace = mkdtempSync(join(tmpdir(), `a2a-analysis-${sanitizeSessionSegment(sessionId)}-`));
 
   try {
-    const args = buildReadOnlyClaudeArgs(prompt, maxTurns, flags, env, laneSkillHint);
+    // #2422: under the isolated setting sources the user skills root is not
+    // visible, so the lane review skill (#2390) is copied into the workspace
+    // as a project skill. When the copy is refused the prompt's hint line
+    // already tells the model to continue without the Skill tool, so only the
+    // tool allowance is dropped; the note is bounded and names no file text.
+    const settingSources = resolveClaudeSettingSources(env);
+    if (settingSources.note) process.stderr.write(`claude-a2a-analysis-bridge: ${settingSources.note}\n`);
+    let effectiveLaneSkillHint = laneSkillHint;
+    if (laneSkillHint && !settingSourcesIncludeUser(settingSources.sources)) {
+      const copied = materializeLaneSkill({ hint: laneSkillHint, env, workspace: sessionWorkspace });
+      if (!copied.ok) {
+        process.stderr.write(`claude-a2a-analysis-bridge: lane skill "${laneSkillHint.skill}" not materialized (${copied.reason}); continuing without the Skill tool\n`);
+        effectiveLaneSkillHint = null;
+      }
+    }
+    const args = buildReadOnlyClaudeArgs(prompt, maxTurns, flags, env, effectiveLaneSkillHint);
     const child = await spawnWithProcessGroupKill(claudeBin, args, {
       env: buildClaudeChildEnv(env),
       cwd: sessionWorkspace,
