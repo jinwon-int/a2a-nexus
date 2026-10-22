@@ -32,7 +32,7 @@ broker core(판정·outbox·receiver·http·store 스냅샷)와 dispatch helper�
 
 ## Broker / worker / finalizer roles
 
-- Broker of record / finalizer: T1(seoseo) 세션 또는 오너 지정.
+- Broker of record / finalizer: T1 broker 세션 또는 오너 지정.
 - Workers: 항목별 1 PR = 1 레인(세션 또는 A2A patch lane).
 - Libero/validator: 다른 계정의 exact-head 리뷰(gh-pr-flow).
 - Human approval owner: 오너 — 배포·모드 전환·키 배포.
