@@ -29,6 +29,7 @@ import {
   REVIEW_LINEAGE_AUTHORIZED_SOURCE_EVENT_TABLE,
   REVIEW_LINEAGE_OBSERVATION_LEDGER_TABLE,
   SqliteReviewLineageObservationStore,
+  enableWalJournalWithBusyRetry,
   type AuthorizedReviewLineageSourceAdmissionV1,
 } from "./review-lineage-observation-store.js";
 
@@ -751,6 +752,114 @@ test("two independent connections apply a concurrent command exactly once", asyn
   } finally {
     rmSync(dir, { recursive: true, force: true });
   }
+});
+
+/**
+ * Holds a RESERVED lock on a fresh rollback-journal file from another thread,
+ * which is the state a second store sees while the first one creates the
+ * schema (#2441). SQLite fails a WAL switch against that lock immediately,
+ * without consulting busy_timeout. The holder releases the lock after
+ * `releaseAfterMs`, or when it receives "release" if that is omitted.
+ */
+async function holdReservedLock(
+  dbFile: string,
+  releaseAfterMs?: number,
+): Promise<Worker> {
+  const worker = new Worker(`
+    const { parentPort, workerData } = require("node:worker_threads");
+    const { DatabaseSync } = require("node:sqlite");
+    const db = new DatabaseSync(workerData.dbFile);
+    db.exec("CREATE TABLE IF NOT EXISTS lock_seed (k TEXT)");
+    db.exec("BEGIN IMMEDIATE");
+    const release = () => {
+      db.exec("ROLLBACK");
+      db.close();
+      parentPort.postMessage("released");
+    };
+    parentPort.postMessage("locked");
+    if (workerData.releaseAfterMs === undefined) parentPort.once("message", release);
+    else setTimeout(release, workerData.releaseAfterMs);
+  `, { eval: true, workerData: { dbFile, releaseAfterMs } });
+  await new Promise<void>((resolve, reject) => {
+    worker.once("message", (message) => {
+      if (message === "locked") resolve();
+      else reject(new Error("lock holder did not report locked"));
+    });
+    worker.once("error", reject);
+  });
+  return worker;
+}
+
+function waitForRelease(worker: Worker): Promise<void> {
+  return new Promise<void>((resolve, reject) => {
+    worker.once("message", (message) => {
+      if (message === "released") resolve();
+      else reject(new Error(`unexpected lock holder message: ${String(message)}`));
+    });
+    worker.once("error", reject);
+  });
+}
+
+test("constructor waits out a concurrent RESERVED lock during the WAL switch (#2441)", async () => {
+  const { dir, dbFile } = tempDatabase();
+  try {
+    const holder = await holdReservedLock(dbFile, 150);
+    const released = waitForRelease(holder);
+    const started = Date.now();
+    // Without the retry this throws "database is locked" within milliseconds.
+    const store = new SqliteReviewLineageObservationStore(dbFile);
+    const elapsedMs = Date.now() - started;
+    try {
+      assert.ok(elapsedMs >= 100, `constructor returned after ${elapsedMs} ms, before the lock was released`);
+      assert.equal(store.countLedgerEntries(), 0);
+    } finally {
+      store.close();
+    }
+    await released;
+    await holder.terminate();
+
+    const probe = new DatabaseSync(dbFile);
+    try {
+      const row = probe.prepare("PRAGMA journal_mode").get() as { journal_mode?: string };
+      assert.equal(row.journal_mode, "wal");
+    } finally {
+      probe.close();
+    }
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test("WAL switch retry is bounded and rethrows SQLITE_BUSY after its deadline (#2441)", async () => {
+  const { dir, dbFile } = tempDatabase();
+  try {
+    const holder = await holdReservedLock(dbFile);
+    const db = new DatabaseSync(dbFile);
+    try {
+      const started = Date.now();
+      assert.throws(
+        () => enableWalJournalWithBusyRetry(db, { deadlineMs: 60, retryIntervalMs: 5 }),
+        (error: unknown) => (error as { errcode?: number }).errcode === 5,
+      );
+      assert.ok(Date.now() - started >= 60, "gave up before the deadline");
+    } finally {
+      db.close();
+    }
+    const released = waitForRelease(holder);
+    holder.postMessage("release");
+    await released;
+    await holder.terminate();
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test("WAL switch retry rethrows non-busy errors without waiting (#2441)", () => {
+  const db = new DatabaseSync(":memory:");
+  db.close();
+  const started = Date.now();
+  assert.throws(() => enableWalJournalWithBusyRetry(db, { deadlineMs: 5000 }));
+  assert.ok(Date.now() - started < 1000, "non-busy error was retried");
 });
 
 test("engine rejection is redacted, durable, and replayed without reevaluation", () => {
