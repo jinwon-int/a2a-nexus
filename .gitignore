@@ -1,4 +1,5 @@
-node_modules/
+# no trailing slash: also ignores a stray `node_modules` symlink (a symlink is not a directory to gitignore)
+node_modules
 dist/
 coverage/
 .env
