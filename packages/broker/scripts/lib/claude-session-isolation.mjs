@@ -64,6 +64,25 @@ export function buildClaudeIsolationArgs(env = process.env) {
   return ["--setting-sources", sources.join(","), "--strict-mcp-config"];
 }
 
+// Setting sources that read from the current working directory. When the cwd
+// is a repository checkout the task supplied (patch lanes clone the target
+// repo and run claude inside it), `project` and `local` would load that
+// repository's `.claude/settings*.json` hooks, CLAUDE.md and skills — i.e.
+// attacker-controlled configuration executed by the worker account.
+export const CWD_SCOPED_CLAUDE_SETTING_SOURCES = Object.freeze(["project", "local"]);
+
+// Isolation arguments for a `claude -p` whose cwd is untrusted (#2425). The
+// cwd-scoped sources are always stripped, whatever the knob says; the
+// remaining list may be empty, which the CLI accepts as "load no setting
+// source" (measured on Claude Code 2.1.305: a project SessionStart hook did
+// not run and the project CLAUDE.md was not injected under
+// `--setting-sources ""`, while both fired under `--setting-sources project`).
+export function buildClaudeIsolationArgsForUntrustedCwd(env = process.env) {
+  const { sources } = resolveClaudeSettingSources(env);
+  const kept = sources.filter((name) => !CWD_SCOPED_CLAUDE_SETTING_SOURCES.includes(name));
+  return ["--setting-sources", kept.join(","), "--strict-mcp-config"];
+}
+
 function walkRegularFiles(root, maxFiles, maxBytes) {
   const files = [];
   let bytes = 0;

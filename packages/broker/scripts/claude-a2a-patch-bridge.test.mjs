@@ -219,9 +219,56 @@ test("PATCH intent + stub claude returning a PR url -> envelope contains patch J
     // max-turns env override threaded through
     const args = JSON.parse(readFileSync(argsCapturePath, "utf8"));
     assert.equal(args[args.indexOf("--max-turns") + 1], "5");
+    // #2425: the cwd is the cloned target repo, so no cwd-scoped setting source
+    // (project/local) may be loaded — the repo's .claude/* must not configure
+    // hooks, CLAUDE.md or skills. Default knob (`project`) resolves to no source.
+    assert.deepEqual(settingSourcesOf(args), { count: 1, value: "" });
+    assert.equal(args.filter((value) => value === "--strict-mcp-config").length, 1);
   } finally {
     rmSync(tempDir, { recursive: true, force: true });
   }
+});
+
+// #2425 helper: the single `--setting-sources` value a spawned claude received.
+function settingSourcesOf(args) {
+  const positions = args.map((value, index) => (value === "--setting-sources" ? index : -1)).filter((index) => index >= 0);
+  return { count: positions.length, value: positions.length === 1 ? args[positions[0] + 1] : null };
+}
+
+test("#2425 PATCH lane keeps only non-cwd setting sources from the knob (legacy user,project,local -> user)", () => {
+  const tempDir = mkdtempSync(join(tmpdir(), "claude-patch-iso-knob-"));
+  const fakeClaudePath = join(tempDir, "fake-claude.mjs");
+  const argsCapturePath = join(tempDir, "claude-args.json");
+  try {
+    writeStubClaude(fakeClaudePath, [
+      "import { writeFileSync, mkdirSync } from 'node:fs';",
+      "import { join } from 'node:path';",
+      "writeFileSync(process.env.CAPTURE_ARGS_PATH, JSON.stringify(process.argv.slice(2)));",
+      "const result = { status: 'pr_opened', summary: 'ok', prUrl: 'https://github.com/jinwon-int/example/pull/1' };",
+      "console.log(JSON.stringify({ type: 'result', result: JSON.stringify(result) }));",
+    ]);
+    const result = spawnSync(bridgePath, bridgeArgs(patchMessage()), {
+      encoding: "utf8",
+      env: { ...process.env, A2A_CLAUDE_CODE_BIN: fakeClaudePath, CAPTURE_ARGS_PATH: argsCapturePath, A2A_CLAUDE_SETTING_SOURCES: "user,project,local" },
+    });
+    assert.equal(result.status, 0, result.stderr);
+    const args = JSON.parse(readFileSync(argsCapturePath, "utf8"));
+    assert.deepEqual(settingSourcesOf(args), { count: 1, value: "user" });
+    assert.equal(args.filter((value) => value === "--strict-mcp-config").length, 1);
+  } finally {
+    rmSync(tempDir, { recursive: true, force: true });
+  }
+});
+
+test("#2425 buildClaudeIsolationArgsForUntrustedCwd always strips project and local", async () => {
+  const { buildClaudeIsolationArgsForUntrustedCwd, buildClaudeIsolationArgs, CWD_SCOPED_CLAUDE_SETTING_SOURCES } = await import("./lib/claude-session-isolation.mjs");
+  assert.deepEqual([...CWD_SCOPED_CLAUDE_SETTING_SOURCES], ["project", "local"]);
+  assert.deepEqual(buildClaudeIsolationArgsForUntrustedCwd({}), ["--setting-sources", "", "--strict-mcp-config"]);
+  assert.deepEqual(buildClaudeIsolationArgsForUntrustedCwd({ A2A_CLAUDE_SETTING_SOURCES: "project,local" }), ["--setting-sources", "", "--strict-mcp-config"]);
+  assert.deepEqual(buildClaudeIsolationArgsForUntrustedCwd({ A2A_CLAUDE_SETTING_SOURCES: "user,project,local" }), ["--setting-sources", "user", "--strict-mcp-config"]);
+  assert.deepEqual(buildClaudeIsolationArgsForUntrustedCwd({ A2A_CLAUDE_SETTING_SOURCES: "bogus" }), ["--setting-sources", "", "--strict-mcp-config"]);
+  // The trusted-cwd variant (bridge-owned temp dir) keeps `project`.
+  assert.deepEqual(buildClaudeIsolationArgs({}), ["--setting-sources", "project", "--strict-mcp-config"]);
 });
 
 test("PATCH intent + stub claude returning NO evidence url -> bridge exits non-zero", () => {
@@ -389,6 +436,9 @@ test("ANALYSIS intent -> bridge behaves like the analysis bridge (no regression)
     const args = JSON.parse(readFileSync(argsPath, "utf8"));
     assert.equal(args[args.indexOf("--allowedTools") + 1], "Read Glob Grep");
     assert.equal(args[args.indexOf("--disallowedTools") + 1], "Bash Edit Write NotebookEdit WebFetch WebSearch");
+    // #2425: analysis mode runs in a bridge-owned temp dir — same isolation as the analysis bridge (#2422).
+    assert.deepEqual(settingSourcesOf(args), { count: 1, value: "project" });
+    assert.equal(args.filter((value) => value === "--strict-mcp-config").length, 1);
     // analysis mode must NOT inject the patch preamble
     assert.match(readFileSync(promptPath, "utf8"), /Claude Code CLI-backed A2A analysis bridge/);
     assert.doesNotMatch(readFileSync(promptPath, "utf8"), /GitHub PATCH bridge/);
@@ -766,6 +816,9 @@ test("SINGLE-SHOT happy path: 1 claude call, valid diff, deterministic plumbing 
     const args = JSON.parse(readFileSync(argsCapturePath, "utf8"));
     assert.equal(args[args.indexOf("--max-turns") + 1], "6");
     assert.equal(args[args.indexOf("--tools") + 1], "Read Grep Glob");
+    // #2425: cwd is the clone — no cwd-scoped setting source, strict MCP.
+    assert.deepEqual(settingSourcesOf(args), { count: 1, value: "" });
+    assert.equal(args.filter((value) => value === "--strict-mcp-config").length, 1);
   } finally {
     rmSync(tempDir, { recursive: true, force: true });
   }
