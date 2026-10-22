@@ -161,7 +161,7 @@ function makeWorkerRoot({ bridgeHandlersContent = 'bridge-ok\n', handlersExecuta
 
 function runGuard(root, env = {}) {
   const childEnv = { ...process.env, A2A_WORKER_ROOT: root, ...env };
-  for (const key of ['A2A_PIRI_ANALYSIS_BIN', 'A2A_PIRI_BIN', 'A2A_HERMES_ANALYSIS_BIN', 'A2A_OPENCLAW_ANALYSIS_BIN', 'OPENCLAW_BIN', 'A2A_WORKER_ENV_PATH', 'WORKER_ENV_PATH']) {
+  for (const key of ['A2A_PIRI_ANALYSIS_BIN', 'A2A_PIRI_BIN', 'A2A_HERMES_ANALYSIS_BIN', 'A2A_OPENCLAW_ANALYSIS_BIN', 'OPENCLAW_BIN', 'A2A_WORKER_ENV_PATH', 'WORKER_ENV_PATH', 'A2A_ROLLOUT_GUARD_STRICT_BRIDGE_ROOT']) {
     if (!(key in env)) delete childEnv[key];
   }
   return spawnSync(process.execPath, [guardPath, '--deployed'], {
@@ -503,4 +503,66 @@ test('workspace dependency export check never echoes env secret values (#2311)',
   const result = runGuard(root, { GITHUB_TOKEN: secret, A2A_BROKER_TOKEN: secret });
   assert.notEqual(result.status, 0);
   assert.doesNotMatch(result.stdout + result.stderr, /SECRETVALUE/);
+});
+
+// ---------------------------------------------------------------------------
+// #2429 — a configured analysis bridge that resolves outside the worker root
+// is never refreshed by an artifact rollout (gongyung ran a live checkout 229
+// commits behind main this way while `--deployed` kept passing).
+
+function makeOutsideBridge() {
+  const outside = mkdtempSync(join(tmpdir(), 'outside-checkout-'));
+  const bridge = join(outside, 'packages', 'broker', 'scripts', 'claude-a2a-analysis-bridge.mjs');
+  mkdirSync(dirname(bridge), { recursive: true });
+  writeFileSync(bridge, '#!/usr/bin/env node\nprocess.stdout.write("{}");\n');
+  chmodSync(bridge, 0o755);
+  return { outside, bridge };
+}
+
+test('deployed guard warns when a configured analysis bridge resolves outside the worker root (#2429)', () => {
+  const { root } = makeWorkerRoot();
+  const { outside, bridge } = makeOutsideBridge();
+  try {
+    const result = runGuard(root, { A2A_HERMES_ANALYSIS_BIN: bridge });
+    assert.equal(result.status, 0, result.stderr || result.stdout);
+    const output = JSON.parse(result.stdout);
+    const guardResult = output.results.find((r) => r.guard === 'configured-analysis-bridge-artifacts');
+    assert.equal(guardResult?.ok, true);
+    const check = guardResult.detail.checks.find((c) => c.name === 'A2A_HERMES_ANALYSIS_BIN');
+    assert.equal(check?.outsideWorkerRoot, true);
+    assert.equal(guardResult.detail.warnings.length, 1);
+    assert.match(guardResult.detail.warnings[0], /A2A_HERMES_ANALYSIS_BIN points outside the worker root/);
+    assert.match(guardResult.detail.warnings[0], /#2429/);
+  } finally {
+    rmSync(outside, { recursive: true, force: true });
+  }
+});
+
+test('deployed guard fails closed on an outside-root bridge when A2A_ROLLOUT_GUARD_STRICT_BRIDGE_ROOT=1 (#2429)', () => {
+  const { root } = makeWorkerRoot();
+  const { outside, bridge } = makeOutsideBridge();
+  try {
+    const result = runGuard(root, { A2A_HERMES_ANALYSIS_BIN: bridge, A2A_ROLLOUT_GUARD_STRICT_BRIDGE_ROOT: '1' });
+    assert.notEqual(result.status, 0);
+    const output = JSON.parse(result.stdout);
+    assert.equal(output.ok, false);
+    const guardResult = output.results.find((r) => r.guard === 'configured-analysis-bridge-artifacts');
+    assert.equal(guardResult?.ok, false);
+    assert.match(guardResult.error, /outside the worker root/);
+    assert.equal(guardResult.detail.failed[0].name, 'A2A_HERMES_ANALYSIS_BIN');
+  } finally {
+    rmSync(outside, { recursive: true, force: true });
+  }
+});
+
+test('deployed guard does not flag a bridge inside the worker root, even in strict mode (#2429)', () => {
+  const { root, files } = makeWorkerRoot();
+  const result = runGuard(root, { A2A_HERMES_ANALYSIS_BIN: files.sourceOnlyBridge, A2A_ROLLOUT_GUARD_STRICT_BRIDGE_ROOT: '1' });
+  assert.equal(result.status, 0, result.stderr || result.stdout);
+  const output = JSON.parse(result.stdout);
+  const guardResult = output.results.find((r) => r.guard === 'configured-analysis-bridge-artifacts');
+  assert.equal(guardResult?.ok, true);
+  const check = guardResult.detail.checks.find((c) => c.name === 'A2A_HERMES_ANALYSIS_BIN');
+  assert.equal(check?.outsideWorkerRoot, false);
+  assert.equal(guardResult.detail.warnings, undefined);
 });

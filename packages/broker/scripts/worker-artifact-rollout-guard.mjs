@@ -21,6 +21,8 @@
 //   OPENCLAW_BIN              — host OpenClaw bridge binary path
 //   A2A_WORKER_HANDLER_COMMAND / WORKER_HANDLER_COMMAND
 //   A2A_WORKER_ROOT / WORKER_ROOT — deployed worker root containing scripts/ and handlers/
+//   A2A_ROLLOUT_GUARD_STRICT_BRIDGE_ROOT — 1 to FAIL (not warn) when a configured
+//                               analysis bridge script resolves outside the worker root (#2429)
 //   HANDLERS_ROOT             — override handlers/ directory (default: ./handlers)
 //   SCRIPTS_ROOT              — override scripts/ directory (default: ./scripts)
 //   DIST_ROOT                 — override dist/ directory scanned for workspace-package
@@ -199,6 +201,27 @@ function isScriptBridgeCommand(value) {
 function resolveConfiguredBridgeCommand(value) {
   if (isAbsolute(value)) return value;
   return resolve(process.env.A2A_HANDLER_CWD || process.env.WORKER_HANDLER_CWD || workerRoot || brokerRoot, value);
+}
+
+// #2429: `--deployed` only verifies that a configured bridge exists and is
+// executable; it also passes when the path leaves the worker root entirely.
+const STRICT_BRIDGE_ROOT = /^(1|true|yes)$/i.test((process.env.A2A_ROLLOUT_GUARD_STRICT_BRIDGE_ROOT ?? '').trim());
+
+function realpathOrSelf(filePath) {
+  try {
+    return realpathSync(filePath);
+  } catch {
+    return resolve(filePath);
+  }
+}
+
+// undefined when there is no worker root to compare against (repo mode).
+function isOutsideWorkerRoot(filePath) {
+  if (!workerRoot) return undefined;
+  const root = realpathOrSelf(workerRoot);
+  const target = realpathOrSelf(filePath);
+  const rel = relative(root, target);
+  return rel === '' ? false : (rel.startsWith('..') || isAbsolute(rel));
 }
 
 function sha256(content) {
@@ -846,6 +869,7 @@ guard('configured-analysis-bridge-artifacts', () => {
     }
     const resolvedPath = resolveConfiguredBridgeCommand(item.value);
     const mode = executableBits(resolvedPath);
+    const outsideWorkerRoot = isOutsideWorkerRoot(resolvedPath);
     return {
       name: item.name,
       source: item.source,
@@ -853,6 +877,7 @@ guard('configured-analysis-bridge-artifacts', () => {
       commandName: basename(item.value),
       resolvedPath,
       mode: executableHint(mode),
+      ...(outsideWorkerRoot !== undefined ? { outsideWorkerRoot } : {}),
       ok: mode !== undefined && mode !== 0,
     };
   });
@@ -866,8 +891,25 @@ guard('configured-analysis-bridge-artifacts', () => {
     });
   }
 
+  // #2429: a bridge that lives outside the worker root is not refreshed by an
+  // artifact rollout (worker-artifact-pack + rsync), so the node silently runs
+  // whatever revision that other checkout happens to be at. gongyung ran a
+  // live git checkout 229 commits behind main this way. Warn by default; the
+  // strict knob fails the guard so a rollout gate can refuse the drift.
+  const drifted = checks.filter((check) => check.outsideWorkerRoot === true);
+  const warnings = drifted.map((check) => `${check.name} points outside the worker root (${check.resolvedPath}); artifact rollouts will not update this bridge (#2429)`);
+  if (drifted.length > 0 && STRICT_BRIDGE_ROOT) {
+    return fail('configured-analysis-bridge-artifacts', 'one or more configured analysis bridge scripts live outside the worker root (A2A_ROLLOUT_GUARD_STRICT_BRIDGE_ROOT=1)', {
+      failed: drifted,
+      warnings,
+      hint: 'point the bridge env vars at <worker root>/scripts/<bridge>.mjs so fleet artifact rollouts reach the analysis code (#2429)',
+      envPathChecked: deployedEnvPath ? '<configured>' : undefined,
+    });
+  }
+
   return ok('configured-analysis-bridge-artifacts', {
     checks,
+    ...(warnings.length ? { warnings } : {}),
     envPathChecked: deployedEnvPath ? '<configured>' : undefined,
   });
 });
