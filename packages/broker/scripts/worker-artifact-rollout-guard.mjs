@@ -27,6 +27,8 @@
 //   SCRIPTS_ROOT              — override scripts/ directory (default: ./scripts)
 //   DIST_ROOT                 — override dist/ directory scanned for workspace-package
 //                               imports (default: <worker root>/dist, --deployed only)
+//   A2A_WORKER_TARGET_REVISION — optional; when set, --deployed requires
+//                               dist/build-info.json.revision to match (#2423)
 
 import { createHash } from 'node:crypto';
 import { existsSync, readdirSync, readFileSync, realpathSync, statSync } from 'node:fs';
@@ -1141,6 +1143,66 @@ guard('docker-handler-inclusion', () => {
     hasHandlerCopy,
     supportFiles: HANDLER_SUPPORT_FILENAMES,
     hasHandlersDir,
+  });
+});
+
+// Guard: deployed build-info provenance (#2423). Overwrite deploys leave a
+// stale dist/build-info.json when the packer omits it; RB-416 treats
+// build-info.revision as the deploy-version authority, so --deployed must
+// require a clean 40-hex revision (never missing, never `-dirty`).
+const CLEAN_REVISION_RE = /^[0-9a-f]{40}$/i;
+
+guard('deployed-build-info', () => {
+  if (!DEPLOYED_CHECK) {
+    return ok('deployed-build-info', {
+      checked: false,
+      reason: 'deployed build-info is only required for a deployed worker root; use --deployed to require it',
+    });
+  }
+
+  const buildInfoPath = join(distRoot, 'build-info.json');
+  if (!existsSync(buildInfoPath)) {
+    return fail('deployed-build-info', `dist/build-info.json missing: ${buildInfoPath}`, {
+      hint: 're-pack with worker-artifact-pack.mjs so dist/build-info.json is always in the closure (#2423)',
+    });
+  }
+
+  let parsed;
+  try {
+    parsed = JSON.parse(readFileSync(buildInfoPath, 'utf8'));
+  } catch (error) {
+    return fail('deployed-build-info', `dist/build-info.json unreadable: ${buildInfoPath}`, {
+      error: error instanceof Error ? error.message : String(error),
+    });
+  }
+
+  const revision = typeof parsed?.revision === 'string' ? parsed.revision.trim() : '';
+  if (!revision) {
+    return fail('deployed-build-info', 'dist/build-info.json has no revision field', {
+      path: buildInfoPath,
+    });
+  }
+  if (revision.includes('-dirty') || !CLEAN_REVISION_RE.test(revision)) {
+    return fail(
+      'deployed-build-info',
+      `dist/build-info.json revision must be a clean 40-hex SHA (not -dirty), got "${revision}"`,
+      { path: buildInfoPath, revision },
+    );
+  }
+
+  const targetRevision = normalizeConfiguredEnvValue(process.env.A2A_WORKER_TARGET_REVISION ?? '');
+  if (targetRevision && targetRevision.toLowerCase() !== revision.toLowerCase()) {
+    return fail(
+      'deployed-build-info',
+      `dist/build-info.json revision=${revision} does not match A2A_WORKER_TARGET_REVISION=${targetRevision}`,
+      { path: buildInfoPath, revision, targetRevision },
+    );
+  }
+
+  return ok('deployed-build-info', {
+    path: buildInfoPath,
+    revision,
+    targetRevision: targetRevision || undefined,
   });
 });
 
