@@ -35,6 +35,7 @@ import { isAbsolute, join, relative, resolve, sep } from "node:path";
 import { pathToFileURL } from "node:url";
 import { buildClaudeFinalizerToolArgs } from "./finalizer-tool-policy.mjs";
 import { buildClaudeRuntimeArgs } from "./lib/claude-runtime-flags.mjs";
+import { buildClaudeIsolationArgs, buildClaudeIsolationArgsForUntrustedCwd } from "./lib/claude-session-isolation.mjs";
 import {
   attachClaudeModelTelemetry,
   claudeInvocationModelTelemetry,
@@ -797,6 +798,9 @@ async function runClaudeAnalysis(prompt, flags, env = process.env) {
     const args = [
       ...promptTransport.promptArgs,
       ...claudeRuntimeArgs,
+      // #2425: same host-context isolation as the analysis bridge (#2422). The
+      // cwd is a bridge-owned temp dir, so the `project` source is safe here.
+      ...buildClaudeIsolationArgs(env),
       "--output-format", "json",
       "--max-turns", String(turnBudget.effectiveMaxTurns),
       ...buildClaudeFinalizerToolArgs(),
@@ -1005,6 +1009,10 @@ async function runClaudePatch(prompt, flags, env, cwd, opts = {}) {
   const args = [
     ...promptTransport.promptArgs,
     ...claudeRuntimeArgs,
+    // #2425: the cwd is the cloned target repository, so the cwd-scoped
+    // setting sources are stripped — the repo's `.claude/*` must not configure
+    // hooks, CLAUDE.md or skills for the worker account.
+    ...buildClaudeIsolationArgsForUntrustedCwd(env),
     "--output-format", "json",
     "--allowedTools", allowedTools,
     "--max-turns", String(turnBudget.effectiveMaxTurns),
@@ -2444,6 +2452,8 @@ async function callClaudeOnce(prompt, flags, env, cwd) {
   const args = [
     ...promptTransport.promptArgs,
     ...claudeRuntimeArgs,
+    // #2425: cwd is the clone — cwd-scoped setting sources stripped.
+    ...buildClaudeIsolationArgsForUntrustedCwd(env),
     "--output-format", "json",
     "--max-turns", String(turnBudget.effectiveMaxTurns),
     "--tools", "Read Grep Glob",
