@@ -1,5 +1,7 @@
 # Tasks: cross-broker 부모 라운드 2단계 (#2339)
 
+> Language: Korean (design spec). 코드 식별자·경로는 원문(영문) 그대로 둔다.
+
 ## Preconditions
 
 - [x] 오너 설계 결정 기록(#2339, 2026-10-22).
