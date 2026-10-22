@@ -371,7 +371,7 @@ export const SHARED_STATE_OUTBOX_V1_VALUES = deepFreeze({
                 path:
                   "packages/broker/src/core/cross-broker-terminal-brief.ts",
                 symbol:
-                  "return `${record.parentRoundId}::${record.originBrokerId}::${childKey}`",
+                  "return `${record.parentRoundId}::${record.handoffBrokerId ?? record.originBrokerId}::${childKey}`",
                 proves: [
                   "stable-event-id",
                   "idempotent-retry",
