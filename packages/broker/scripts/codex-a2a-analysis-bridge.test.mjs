@@ -93,7 +93,7 @@ test(`Codex A2A analysis bridge applies ${model}/${effort} and returns the share
     assert.equal(payload.requestedThinking, effort);
     assert.equal(payload.modelInheritanceMode, "explicit");
     // #2403: the wrapper fingerprints itself and keeps the inner (claude) harness alongside.
-    assert.equal(payload.harness.fingerprintVersion, "a2a.harness-fingerprint.v1");
+    assert.equal(payload.harness.fingerprintVersion, "a2a.harness-fingerprint.v2");
     assert.equal(payload.harness.runtime, "codex");
     assert.equal(payload.harness.model, model);
     assert.match(payload.harness.bridgeFileSha256, /^[0-9a-f]{64}$/);

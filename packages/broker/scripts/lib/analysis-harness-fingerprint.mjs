@@ -21,7 +21,19 @@
 import { createHash } from "node:crypto";
 import { readFileSync } from "node:fs";
 
-export const HARNESS_FINGERPRINT_VERSION = "a2a.harness-fingerprint.v1";
+// v2 (#2426): the fingerprint also covers the Claude lane isolation mode
+// (#2422/#2424 `--setting-sources`, `--strict-mcp-config`) and whether the lane
+// skill (#2390) was materialized. Two lanes that ran with and without the host
+// account's hooks/CLAUDE.md/skills are different harnesses and must not read
+// as the same one in quorum/diversity judgements or receipts.
+export const HARNESS_FINGERPRINT_VERSION = "a2a.harness-fingerprint.v2";
+
+// Where the lane review skill came from for this run (Claude bridge only):
+//   materialized — copied into the session workspace as a project skill
+//   host         — visible through the `user` setting source, not copied
+//   dropped      — requested but the copy was refused; Skill tool withheld
+//   none         — the lane requested no skill
+export const LANE_SKILL_STATES = Object.freeze(["materialized", "host", "dropped", "none"]);
 
 const SHA256_RE = /^[0-9a-f]{64}$/;
 const REVISION_RE = /^[0-9a-f]{7,64}$/;
@@ -64,21 +76,41 @@ export function skillsTreeSha256FromRegistry(path) {
   return { sha256: sha256Hex(lines.map((line) => `${line}\n`).join("")), skillCount: lines.length };
 }
 
-function harnessFingerprint({ bridgeFileSha256, runtime, model, skillsTreeSha256 }) {
+// Bounded projection of the bridge's isolation inputs. `null` fields mean
+// "not applicable / not reported" (non-Claude bridges), which is itself a
+// fingerprint input distinct from an explicit value.
+export function normalizeHarnessIsolation(isolation) {
+  if (!isolation || typeof isolation !== "object" || Array.isArray(isolation)) {
+    return { settingSources: null, strictMcpConfig: null, laneSkill: null };
+  }
+  const rawSources = Array.isArray(isolation.settingSources)
+    ? isolation.settingSources.map((part) => text(part)).filter(Boolean).join(",")
+    : isolation.settingSources;
+  const settingSources = typeof rawSources === "string" ? rawSources.trim().slice(0, FIELD_MAX) : null;
+  const strictMcpConfig = typeof isolation.strictMcpConfig === "boolean" ? isolation.strictMcpConfig : null;
+  const laneSkill = LANE_SKILL_STATES.includes(isolation.laneSkill) ? isolation.laneSkill : null;
+  return { settingSources, strictMcpConfig, laneSkill };
+}
+
+function harnessFingerprint({ bridgeFileSha256, runtime, model, skillsTreeSha256, settingSources, strictMcpConfig, laneSkill }) {
   return sha256Hex(JSON.stringify([
     HARNESS_FINGERPRINT_VERSION,
     bridgeFileSha256 || "",
     runtime || "",
     model || "",
     skillsTreeSha256 || "",
+    settingSources,
+    strictMcpConfig,
+    laneSkill,
   ]));
 }
 
 // `harness` block for a normalized analysis result. The fingerprint covers the
-// bridge bytes that ran, the runtime, the applied model and the skills digest;
-// the declared revision is carried as metadata only (a copied bridge file
-// cannot prove which commit it came from — its sha256 can).
-export function buildAnalysisHarness({ bridgeFile, runtime, model, env = process.env }) {
+// bridge bytes that ran, the runtime, the applied model, the skills digest and
+// (v2, #2426) the isolation mode the bridge actually passed to the CLI; the
+// declared revision is carried as metadata only (a copied bridge file cannot
+// prove which commit it came from — its sha256 can).
+export function buildAnalysisHarness({ bridgeFile, runtime, model, isolation, env = process.env }) {
   const bridgeFileSha256 = fileSha256(bridgeFile);
   const revision = text(env.A2A_BRIDGE_REVISION).toLowerCase();
   const skills = skillsTreeSha256FromRegistry(env.A2A_SKILLS_REGISTRY_PATH);
@@ -87,6 +119,7 @@ export function buildAnalysisHarness({ bridgeFile, runtime, model, env = process
     runtime: text(runtime).slice(0, FIELD_MAX),
     model: text(model).slice(0, FIELD_MAX) || null,
     skillsTreeSha256: skills.sha256,
+    ...normalizeHarnessIsolation(isolation),
   };
   return {
     fingerprintVersion: HARNESS_FINGERPRINT_VERSION,

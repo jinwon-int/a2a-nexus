@@ -126,7 +126,7 @@ test("Hermes A2A analysis bridge reads requested source files and returns OpenCl
     const payload = JSON.parse(text);
     assert.equal(payload.status, "done");
     // #2403: hermes fingerprints its own harness and marks completion.
-    assert.equal(payload.harness.fingerprintVersion, "a2a.harness-fingerprint.v1");
+    assert.equal(payload.harness.fingerprintVersion, "a2a.harness-fingerprint.v2");
     assert.equal(payload.harness.runtime, "hermes");
     assert.match(payload.harness.bridgeFileSha256, /^[0-9a-f]{64}$/);
     assert.equal(payload.completion.marked, true);

@@ -774,11 +774,16 @@ async function runClaude(prompt, flags, env = process.env, laneSkillHint = null)
     const settingSources = resolveClaudeSettingSources(env);
     if (settingSources.note) process.stderr.write(`claude-a2a-analysis-bridge: ${settingSources.note}\n`);
     let effectiveLaneSkillHint = laneSkillHint;
+    // #2426: the harness fingerprint records where the lane skill came from.
+    let laneSkillState = laneSkillHint ? "host" : "none";
     if (laneSkillHint && !settingSourcesIncludeUser(settingSources.sources)) {
       const copied = materializeLaneSkill({ hint: laneSkillHint, env, workspace: sessionWorkspace });
       if (!copied.ok) {
         process.stderr.write(`claude-a2a-analysis-bridge: lane skill "${laneSkillHint.skill}" not materialized (${copied.reason}); continuing without the Skill tool\n`);
         effectiveLaneSkillHint = null;
+        laneSkillState = "dropped";
+      } else {
+        laneSkillState = "materialized";
       }
     }
     const args = buildReadOnlyClaudeArgs(prompt, maxTurns, flags, env, effectiveLaneSkillHint);
@@ -797,6 +802,12 @@ async function runClaude(prompt, flags, env = process.env, laneSkillHint = null)
     return {
       stdout: child.stdout,
       invocation: claudeInvocationModelTelemetry(args),
+      // #2426: isolation inputs as actually passed to the CLI, for the harness fingerprint.
+      isolation: {
+        settingSources: settingSources.sources.join(","),
+        strictMcpConfig: true,
+        laneSkill: laneSkillState,
+      },
     };
   } finally {
     rmSync(sessionWorkspace, { recursive: true, force: true });
@@ -859,6 +870,7 @@ async function main() {
       bridgeFile: BRIDGE_FILE,
       runtime: "claude-code",
       model: response.actualRuntimeModel || (response.requestedModel ? `requested:${response.requestedModel}` : ""),
+      isolation: claudeRun.isolation,
       env: process.env,
     });
     response.completion = analysisCompletionMarker(response.status, response.recoverySource);

@@ -1537,6 +1537,11 @@ function normalizeAnalysisHarness(value) {
     model: boundedBridgeFailureString(value.model, 128),
     skillsTreeSha256: sha(value.skillsTreeSha256),
     skillCount: boundedBridgeFailureCount(value.skillCount),
+    // #2426 (fingerprint v2): isolation inputs. `settingSources` may be the
+    // empty string (no sources at all), which is a real value and is kept.
+    settingSources: typeof value.settingSources === "string" ? value.settingSources.slice(0, BRIDGE_FAILURE_DETAIL_MAX) : undefined,
+    strictMcpConfig: typeof value.strictMcpConfig === "boolean" ? value.strictMcpConfig : undefined,
+    laneSkill: boundedBridgeFailureString(value.laneSkill, 32),
     harnessFingerprint: sha(value.harnessFingerprint),
   };
   if (!harness.harnessFingerprint) return undefined;
