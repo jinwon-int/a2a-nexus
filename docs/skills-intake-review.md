@@ -40,7 +40,7 @@ Dispatch manifest `lanes[].payload`:
 | Field | Type | Notes |
 |---|---|---|
 | `schema` | const `"skills.skill-intake-review.v1"` | |
-| `rubricVersion` | string | rubric id, e.g. `"2026-08-28.2"` |
+| `rubricVersion` | string | rubric id, e.g. `"2026-10-22.1"` |
 | `provenance` | object | `author_node`, `intake_pr` (number), `branch`, `head_sha`, `source_tree_sha256` |
 | `machineGate` | object | node-side gate results (secret scan, node-facts, dedup, structure lint, codex compat, claims) |
 | `skillFiles[]` | array | `{path, content}` — bounded: <=16 files, <=64KiB each (same caps as staging) |
@@ -99,7 +99,7 @@ compatibility).
       "message": "Review fleet-skills intake PR #18 (harness-managed-skill-catalog) per skills.skill-intake-review.v1; return the verdict JSON only.",
       "payload": {
         "schema": "skills.skill-intake-review.v1",
-        "rubricVersion": "2026-08-28.2",
+        "rubricVersion": "2026-10-22.1",
         "scope": "fleet-internal",
         "provenance": { "author_node": "<author-node>", "intake_pr": 18,
                         "branch": "skill-intake/<author-node>/<skill-name>-claude-<tree8>",
@@ -125,7 +125,7 @@ The worker runtime executes its local agent over the packet. The procedure:
 2. Apply the rubric in order; record a finding per failed check. Sources:
    the Agent Skills specification (agentskills.io/specification), the
    official `skill-creator` authoring guide (anthropics/skills), and the
-   fleet's own gates. Rubric version: `2026-08-28.2`.
+   fleet's own gates. Rubric version: `2026-10-22.1`.
 
    **A. Safety — Lack of Surprise** (any hit = blocker)
    - malware, exploit code, or content aiding unauthorized access, data
@@ -141,6 +141,13 @@ The worker runtime executes its local agent over the packet. The procedure:
      credentials, raw secrets, and exploitable detail remain blockers.
      The `public-elevation` scope applies the full clause above (that
      standard is reserved for skills headed to the public canon).
+   - **High-risk action blacklist** (rubric `2026-10-22.1`, ccc-node#2462
+     G4): a procedure that can run a destructive or irreversible command
+     (`rm -rf`, `git reset --hard`, force push, `DROP`/`TRUNCATE`, mass
+     `chmod`/`chown`, service stop/restart, secret rotation, bulk delete)
+     must either list it as forbidden or gate it behind an explicit
+     confirmation / dry-run step. An unguarded step = major; unguarded and
+     reachable from an unattended trigger (cron, hook, A2A lane) = blocker.
 
    **B. Spec conformance** (frontmatter + layout; failures = major unless
    cosmetic)
@@ -173,7 +180,12 @@ The worker runtime executes its local agent over the packet. The procedure:
    - imperative instructions with reasons instead of heavy-handed MUSTs;
    - input/output examples where format matters;
    - output templates defined when the artifact shape matters;
-   - general and transferable rather than narrowed to one past incident.
+   - general and transferable rather than narrowed to one past incident;
+   - **failure-mechanism encoding** (rubric `2026-10-22.1`, ccc-node#2462
+     G4): the failure paths the skill exists to prevent are written as
+     symptom → cause → counter-step, not as "be careful". A skill distilled
+     from an incident that encodes none of them = minor; a procedure that
+     repeats the incident's trigger without the guard = major.
 
    **F. Claims verifiability** (untraceable pinned claim = major)
    - every pinned version, exit code, HTTP status, or URL carries its own
