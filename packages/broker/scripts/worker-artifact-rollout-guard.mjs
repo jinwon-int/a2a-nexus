@@ -893,7 +893,7 @@ guard('configured-analysis-bridge-artifacts', () => {
 
   // #2429: a bridge that lives outside the worker root is not refreshed by an
   // artifact rollout (worker-artifact-pack + rsync), so the node silently runs
-  // whatever revision that other checkout happens to be at. gongyung ran a
+  // whatever revision that other checkout happens to be at. One Termux worker ran a
   // live git checkout 229 commits behind main this way. Warn by default; the
   // strict knob fails the guard so a rollout gate can refuse the drift.
   const drifted = checks.filter((check) => check.outsideWorkerRoot === true);

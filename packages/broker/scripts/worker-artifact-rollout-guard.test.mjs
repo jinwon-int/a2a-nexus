@@ -507,7 +507,7 @@ test('workspace dependency export check never echoes env secret values (#2311)',
 
 // ---------------------------------------------------------------------------
 // #2429 — a configured analysis bridge that resolves outside the worker root
-// is never refreshed by an artifact rollout (gongyung ran a live checkout 229
+// is never refreshed by an artifact rollout (a Termux worker ran a live checkout 229
 // commits behind main this way while `--deployed` kept passing).
 
 function makeOutsideBridge() {
