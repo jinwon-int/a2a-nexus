@@ -762,10 +762,19 @@ change (the only tightening: a `succeeded` lane whose own marker says
   gate. Records without a marker are `legacy` and behave as before.
 - **Harness fingerprint.** The Claude bridge also stamps
   `harness: { fingerprintVersion, bridge, bridgeFileSha256, runtime, model,
-  skillsTreeSha256, skillCount, harnessFingerprint }`. `bridgeFileSha256` is
+  skillsTreeSha256, skillCount, settingSources, strictMcpConfig, laneSkill,
+  harnessFingerprint }`. `bridgeFileSha256` is
   the sha256 of the bridge file that ran; `bridge` is the declared
   `A2A_BRIDGE_REVISION` (metadata only); `skillsTreeSha256` digests the
   per-skill `tree_sha256` entries of the registry at `A2A_SKILLS_REGISTRY_PATH`.
+  `fingerprintVersion` is `a2a.harness-fingerprint.v2` (#2426): the digest also
+  covers the lane isolation mode the bridge passed to the CLI —
+  `settingSources` (the resolved `--setting-sources` value, e.g. `project`),
+  `strictMcpConfig` and `laneSkill` (`materialized` / `host` / `dropped` /
+  `none`, #2390 lane skill origin) — so a lane that ran with the host
+  account's hooks and CLAUDE.md visible never shares a fingerprint with an
+  isolated one. Non-Claude bridges report these three as `null`. v1 and v2
+  fingerprints of the same bridge differ; compare only within one version.
   Codex/Hermes/Danso/Piri bridges report `harness: null` until they fingerprint.
 - **Claim preflight.** Before spawning a script bridge, the worker handler
   checks the optional pins `A2A_BRIDGE_PIN_SHA256` (bridge file sha256) and

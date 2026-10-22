@@ -326,7 +326,7 @@ test("full flow emits the OpenClaw envelope around schema-valid piri output", ()
 			harness: response.harness,
 			completion: response.completion,
 		});
-		assert.equal(response.harness.fingerprintVersion, "a2a.harness-fingerprint.v1");
+		assert.equal(response.harness.fingerprintVersion, "a2a.harness-fingerprint.v2");
 		assert.equal(response.harness.runtime, "piri");
 		assert.equal(response.harness.model, "kimi-coding/k3");
 		assert.match(response.harness.bridgeFileSha256, /^[0-9a-f]{64}$/);

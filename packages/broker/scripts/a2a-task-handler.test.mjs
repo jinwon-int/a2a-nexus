@@ -4135,13 +4135,17 @@ function bridgeResponseBody(response) {
 }
 
 const HARNESS_FIXTURE = {
-  fingerprintVersion: "a2a.harness-fingerprint.v1",
+  fingerprintVersion: "a2a.harness-fingerprint.v2",
   bridge: "c12e20d2",
   bridgeFileSha256: "a".repeat(64),
   runtime: "claude-code",
   model: "claude-opus-test",
   skillsTreeSha256: "b".repeat(64),
   skillCount: 40,
+  // #2426 (v2): isolation inputs ride along, bounded.
+  settingSources: "project",
+  strictMcpConfig: true,
+  laneSkill: "materialized",
   harnessFingerprint: "c".repeat(64),
 };
 

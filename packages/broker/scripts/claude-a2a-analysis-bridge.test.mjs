@@ -1406,13 +1406,17 @@ const DONE_ANALYSIS = {
 test("#2393 bridge stamps a harness fingerprint and a marked completion on a parsed done result", () => {
   const { payload } = runBridgeWithAnalysis(DONE_ANALYSIS);
   const bridgeSha = createHash("sha256").update(readFileSync(bridgePath)).digest("hex");
-  assert.equal(payload.harness.fingerprintVersion, "a2a.harness-fingerprint.v1");
+  assert.equal(payload.harness.fingerprintVersion, "a2a.harness-fingerprint.v2");
   assert.equal(payload.harness.bridge, "c12e20d2");
   assert.equal(payload.harness.bridgeFileSha256, bridgeSha);
   assert.equal(payload.harness.runtime, "claude-code");
   assert.equal(payload.harness.model, "requested:claude-code/default");
   assert.equal(payload.harness.skillCount, 2);
   assert.match(payload.harness.skillsTreeSha256, /^[0-9a-f]{64}$/);
+  // #2426 (v2): the isolation mode actually passed to the CLI is part of the harness.
+  assert.equal(payload.harness.settingSources, "project");
+  assert.equal(payload.harness.strictMcpConfig, true);
+  assert.equal(payload.harness.laneSkill, "none");
   assert.match(payload.harness.harnessFingerprint, /^[0-9a-f]{64}$/);
   assert.notEqual(payload.harness.harnessFingerprint, "f".repeat(64));
   assert.equal(payload.completion.marked, true);
@@ -1468,6 +1472,49 @@ test("#2393 harness fingerprint is deterministic and moves with model, skills an
   } finally {
     rmSync(tempDir, { recursive: true, force: true });
   }
+});
+
+test("#2426 harness fingerprint moves with the Claude lane isolation mode and is deterministic per mode", async () => {
+  const { normalizeHarnessIsolation, LANE_SKILL_STATES } = await import("./lib/analysis-harness-fingerprint.mjs");
+  const tempDir = mkdtempSync(join(tmpdir(), "claude-a2a-harness-2426-"));
+  try {
+    const bridgeFile = join(tempDir, "bridge.mjs");
+    writeFileSync(bridgeFile, "// v1\n");
+    const env = {};
+    const isolated = { settingSources: "project", strictMcpConfig: true, laneSkill: "none" };
+    const legacy = { settingSources: "user,project,local", strictMcpConfig: true, laneSkill: "host" };
+    const base = buildAnalysisHarness({ bridgeFile, runtime: "claude-code", model: "m1", isolation: isolated, env });
+    assert.equal(base.fingerprintVersion, "a2a.harness-fingerprint.v2");
+    assert.equal(base.settingSources, "project");
+    assert.equal(base.strictMcpConfig, true);
+    assert.equal(base.laneSkill, "none");
+    // Same mode → same fingerprint; array and string sources are the same input.
+    assert.deepEqual(buildAnalysisHarness({ bridgeFile, runtime: "claude-code", model: "m1", isolation: { ...isolated, settingSources: ["project"] }, env }), base);
+    // Different mode → different fingerprint, every input on its own.
+    const withLegacy = buildAnalysisHarness({ bridgeFile, runtime: "claude-code", model: "m1", isolation: legacy, env });
+    assert.notEqual(withLegacy.harnessFingerprint, base.harnessFingerprint);
+    assert.notEqual(buildAnalysisHarness({ bridgeFile, runtime: "claude-code", model: "m1", isolation: { ...isolated, strictMcpConfig: false }, env }).harnessFingerprint, base.harnessFingerprint);
+    assert.notEqual(buildAnalysisHarness({ bridgeFile, runtime: "claude-code", model: "m1", isolation: { ...isolated, laneSkill: "materialized" }, env }).harnessFingerprint, base.harnessFingerprint);
+    assert.notEqual(buildAnalysisHarness({ bridgeFile, runtime: "claude-code", model: "m1", isolation: { ...isolated, settingSources: "" }, env }).harnessFingerprint, base.harnessFingerprint);
+    // Not reported (non-Claude bridges) is its own value, not "project".
+    const unreported = buildAnalysisHarness({ bridgeFile, runtime: "claude-code", model: "m1", env });
+    assert.deepEqual([unreported.settingSources, unreported.strictMcpConfig, unreported.laneSkill], [null, null, null]);
+    assert.notEqual(unreported.harnessFingerprint, base.harnessFingerprint);
+    // Bounded projection: unknown lane-skill states and non-boolean flags are dropped to null.
+    assert.deepEqual(normalizeHarnessIsolation({ settingSources: " project ", strictMcpConfig: "yes", laneSkill: "bogus" }), { settingSources: "project", strictMcpConfig: null, laneSkill: null });
+    assert.deepEqual(normalizeHarnessIsolation(null), { settingSources: null, strictMcpConfig: null, laneSkill: null });
+    assert.deepEqual([...LANE_SKILL_STATES], ["materialized", "host", "dropped", "none"]);
+  } finally {
+    rmSync(tempDir, { recursive: true, force: true });
+  }
+
+  // End to end: the same fake claude run under the two modes yields two fingerprints.
+  const isolatedRun = runBridgeWithAnalysis(DONE_ANALYSIS).payload.harness;
+  const legacyRun = runBridgeWithAnalysis(DONE_ANALYSIS, { A2A_CLAUDE_SETTING_SOURCES: "user,project,local" }).payload.harness;
+  assert.equal(isolatedRun.settingSources, "project");
+  assert.equal(legacyRun.settingSources, "user,project,local");
+  assert.notEqual(isolatedRun.harnessFingerprint, legacyRun.harnessFingerprint);
+  assert.equal(runBridgeWithAnalysis(DONE_ANALYSIS).payload.harness.harnessFingerprint, isolatedRun.harnessFingerprint);
 });
 
 // ---------------------------------------------------------------------------
@@ -1634,6 +1681,7 @@ function runIsolatedLaneSkillBridge({ env = {}, corruptSkill = null } = {}) {
     const capture = JSON.parse(readFileSync(capturePath, "utf8"));
     return {
       ...capture,
+      harness: JSON.parse(JSON.parse(result.stdout).payloads[0].text).harness,
       stderr: result.stderr,
       prompt: capture.args[capture.args.indexOf("-p") + 1],
       allowed: capture.args[capture.args.indexOf("--allowedTools") + 1],
@@ -1654,6 +1702,7 @@ test("#2422 under the isolated sources the lane skill is copied into the workspa
   assert.deepEqual(run.entries, ["skills", join("skills", HINT_SKILL), join("skills", HINT_SKILL, "SKILL.md")]);
   assert.equal(run.workspaceGone, true, "the workspace (and the copied skill) is removed after the run");
   assert.doesNotMatch(run.stderr, /not materialized/);
+  assert.equal(run.harness.laneSkill, "materialized"); // #2426
 });
 
 test("#2422 with the legacy sources (user visible) the lane skill is not copied — it is already visible", () => {
@@ -1662,6 +1711,8 @@ test("#2422 with the legacy sources (user visible) the lane skill is not copied 
   assert.equal(run.allowed, "Read Glob Grep Skill");
   assert.equal(run.projectSkill, null);
   assert.deepEqual(run.entries, []);
+  assert.equal(run.harness.laneSkill, "host"); // #2426
+  assert.equal(run.harness.settingSources, "user,project,local");
 });
 
 test("#2422 a lane skill the bridge refuses to copy drops only the Skill tool and says so once on stderr", () => {
@@ -1673,6 +1724,7 @@ test("#2422 a lane skill the bridge refuses to copy drops only the Skill tool an
   assert.equal((run.stderr.match(/not materialized/g) || []).length, 1);
   assert.match(run.stderr, /lane skill "bilingual-terminology-review-gate" not materialized \(symlink refused: escape\); continuing without the Skill tool/);
   assert.doesNotMatch(run.stderr, /FIXTURE-LANE-SKILL-BODY/);
+  assert.equal(run.harness.laneSkill, "dropped"); // #2426
 });
 
 test("#2422 the lane skill root follows CLAUDE_CONFIG_DIR exactly like the hint resolver (same claudeSkillsRoot)", async () => {

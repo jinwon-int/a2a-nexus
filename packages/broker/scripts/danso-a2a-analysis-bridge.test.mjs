@@ -105,7 +105,7 @@ test("success emits the OpenClaw envelope with the normalized contract and danso
 		assert.deepEqual(response.findings, ["f1"]);
 		assert.equal(response.bridgeAdapter, "danso");
 		// #2403: danso fingerprints its own harness and marks completion.
-		assert.equal(response.harness.fingerprintVersion, "a2a.harness-fingerprint.v1");
+		assert.equal(response.harness.fingerprintVersion, "a2a.harness-fingerprint.v2");
 		assert.equal(response.harness.runtime, "danso");
 		assert.equal(response.harness.model, response.actualRuntimeModel);
 		assert.match(response.harness.bridgeFileSha256, /^[0-9a-f]{64}$/);
