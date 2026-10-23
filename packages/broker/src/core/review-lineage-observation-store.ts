@@ -334,6 +334,54 @@ function replayResult(
   return result;
 }
 
+/** SQLite primary result code for "database is locked". */
+const SQLITE_BUSY = 5;
+/** Matches the store's `busy_timeout`, so the WAL switch waits as long as any other statement would. */
+const WAL_SWITCH_BUSY_DEADLINE_MS = 5000;
+const WAL_SWITCH_BUSY_RETRY_INTERVAL_MS = 10;
+
+function isSqliteBusy(error: unknown): boolean {
+  if (typeof error !== "object" || error === null) return false;
+  // node:sqlite exposes the extended result code; the low byte is the primary code.
+  const errcode = (error as { errcode?: unknown }).errcode;
+  return typeof errcode === "number" && (errcode & 0xff) === SQLITE_BUSY;
+}
+
+/**
+ * Switch a file database to WAL, retrying while another connection holds a
+ * write lock (#2441).
+ *
+ * `busy_timeout` does not cover this pragma in every case. If another
+ * connection holds a RESERVED lock (for example, while a second store creates
+ * the schema on the same fresh file), SQLite returns SQLITE_BUSY at once
+ * without calling the busy handler. Waiting would risk a deadlock, so SQLite
+ * leaves the retry to the caller. Two stores opening one new file at the same
+ * time can then fail in the constructor within milliseconds. This loop is the
+ * caller-side retry, bounded the same way as `busy_timeout`. Errors other
+ * than SQLITE_BUSY are rethrown immediately.
+ */
+export function enableWalJournalWithBusyRetry(
+  db: DatabaseSync,
+  options: { deadlineMs?: number; retryIntervalMs?: number } = {},
+): void {
+  const deadlineMs = options.deadlineMs ?? WAL_SWITCH_BUSY_DEADLINE_MS;
+  const retryIntervalMs =
+    options.retryIntervalMs ?? WAL_SWITCH_BUSY_RETRY_INTERVAL_MS;
+  const deadline = Date.now() + deadlineMs;
+  let sleepCell: Int32Array | undefined;
+  for (;;) {
+    try {
+      db.exec("PRAGMA journal_mode = WAL");
+      return;
+    } catch (error) {
+      if (!isSqliteBusy(error) || Date.now() >= deadline) throw error;
+      // The constructor is synchronous, so block briefly instead of yielding.
+      sleepCell ??= new Int32Array(new SharedArrayBuffer(4));
+      Atomics.wait(sleepCell, 0, 0, retryIntervalMs);
+    }
+  }
+}
+
 export class SqliteReviewLineageObservationStore
 implements DurableReviewLineageObservationStore {
   private readonly db: DatabaseSync;
@@ -346,7 +394,7 @@ implements DurableReviewLineageObservationStore {
       : database;
     if (this.ownsDatabase) {
       this.db.exec("PRAGMA busy_timeout = 5000");
-      if (database !== ":memory:") this.db.exec("PRAGMA journal_mode = WAL");
+      if (database !== ":memory:") enableWalJournalWithBusyRetry(this.db);
     }
     this.initialize();
   }
