@@ -21,8 +21,12 @@
 //   OPENCLAW_BIN              — host OpenClaw bridge binary path
 //   A2A_WORKER_HANDLER_COMMAND / WORKER_HANDLER_COMMAND
 //   A2A_WORKER_ROOT / WORKER_ROOT — deployed worker root containing scripts/ and handlers/
+//   A2A_*_ANALYSIS_BIN / A2A_PIRI_BIN / A2A_PIRI_PATCH_BIN — analysis and host patch
+//                               bridge slots; the guard reports which slot the handler
+//                               actually selects for each lane (#2461)
 //   A2A_ROLLOUT_GUARD_STRICT_BRIDGE_ROOT — 1 to FAIL (not warn) when a configured
-//                               analysis bridge script resolves outside the worker root (#2429)
+//                               analysis or patch bridge script resolves outside the
+//                               worker root (#2429, #2461)
 //   HANDLERS_ROOT             — override handlers/ directory (default: ./handlers)
 //   SCRIPTS_ROOT              — override scripts/ directory (default: ./scripts)
 //   DIST_ROOT                 — override dist/ directory scanned for workspace-package
@@ -67,7 +71,27 @@ const HANDLER_SUPPORT_FILENAMES = [
   'lib/analysis-source-bundle.mjs',
   'lib/analysis-harness-fingerprint.mjs',
 ];
-const ANALYSIS_BRIDGE_BIN_VARS = ['A2A_PIRI_ANALYSIS_BIN', 'A2A_HERMES_ANALYSIS_BIN', 'A2A_OPENCLAW_ANALYSIS_BIN', 'OPENCLAW_BIN'];
+// #2461: these mirror the handler's bridge selection (a2a-task-handler.mjs
+// analysisBridgeCandidates / analysisBridgeCommand / hostPatchBridgeCommand).
+// Order is precedence. The parity test in worker-artifact-rollout-guard.test.mjs
+// compares the guard's choice with the handler's own functions, so a drift in
+// either file fails CI instead of silently mis-reporting the effective bridge.
+const ANALYSIS_BRIDGE_BIN_VARS = ['A2A_DANSO_ANALYSIS_BIN', 'A2A_PIRI_ANALYSIS_BIN', 'A2A_HERMES_ANALYSIS_BIN', 'A2A_OPENCLAW_ANALYSIS_BIN', 'OPENCLAW_BIN'];
+const PATCH_BRIDGE_BIN_VARS = ['A2A_PIRI_BIN', 'A2A_PIRI_PATCH_BIN', 'OPENCLAW_BIN'];
+const BRIDGE_BIN_VARS = [...new Set([...ANALYSIS_BRIDGE_BIN_VARS, ...PATCH_BRIDGE_BIN_VARS])];
+const BRIDGE_ADAPTER_VARS = ['A2A_ANALYSIS_BRIDGE_ADAPTER', 'A2A_WORKER_BRIDGE_ADAPTER'];
+// Runtime of the handler's DEFAULT_ANALYSIS_BRIDGE (piri-a2a-analysis-bridge.mjs).
+const DEFAULT_ANALYSIS_BRIDGE_RUNTIME = 'piri';
+const PATCH_BRIDGE_DISABLED_VARS = ['A2A_OPENCLAW_BRIDGE_DISABLED', 'A2A_PIRI_PATCH_BRIDGE_DISABLED'];
+// Same keyword order as the handler's ANALYSIS_BRIDGE_RUNTIME_KEYWORDS (#2370).
+const BRIDGE_RUNTIME_KEYWORDS = [
+  ['codex', 'codex'],
+  ['claude', 'claude_code'],
+  ['hermes', 'hermes'],
+  ['piri', 'piri'],
+  ['danso', 'danso'],
+  ['openclaw', 'openclaw'],
+];
 const UNSET_ENV_TOKENS = new Set(['', 'none', 'null', 'undefined']);
 const workerRoot = process.env.A2A_WORKER_ROOT || process.env.WORKER_ROOT;
 
@@ -180,18 +204,117 @@ function defaultDeployedEnvPath() {
 const deployedEnvPath = defaultDeployedEnvPath();
 const deployedEnv = parseEnvAssignments(deployedEnvPath);
 
-function configuredAnalysisBridgeBins() {
-  return ANALYSIS_BRIDGE_BIN_VARS.map((name) => {
-    const processValue = normalizeConfiguredEnvValue(process.env[name]);
-    const envFileValue = normalizeConfiguredEnvValue(deployedEnv[name]);
-    const value = processValue || envFileValue;
-    return {
-      name,
-      configured: !!value,
-      source: processValue ? 'process.env' : (envFileValue ? 'env-file' : 'unset'),
-      value,
-    };
+function configuredEnvValue(name) {
+  const processValue = normalizeConfiguredEnvValue(process.env[name]);
+  const envFileValue = normalizeConfiguredEnvValue(deployedEnv[name]);
+  return {
+    value: processValue || envFileValue,
+    source: processValue ? 'process.env' : (envFileValue ? 'env-file' : 'unset'),
+  };
+}
+
+function bridgeRoles(name) {
+  return [
+    ...(ANALYSIS_BRIDGE_BIN_VARS.includes(name) ? ['analysis'] : []),
+    ...(PATCH_BRIDGE_BIN_VARS.includes(name) ? ['patch'] : []),
+  ];
+}
+
+function configuredBridgeBins() {
+  return BRIDGE_BIN_VARS.map((name) => {
+    const { value, source } = configuredEnvValue(name);
+    return { name, roles: bridgeRoles(name), configured: !!value, source, value };
   }).filter((item) => item.configured);
+}
+
+// #2370 mirror: the runtime a bridge belongs to, from its FILE NAME only.
+function bridgeRuntimeFromName(command) {
+  const name = basename(String(command ?? '').trim()).toLowerCase();
+  if (!name) return '';
+  for (const [keyword, adapter] of BRIDGE_RUNTIME_KEYWORDS) {
+    if (name.includes(keyword)) return adapter;
+  }
+  return '';
+}
+
+// Mirror of the handler's normalizeAnalysisBridgeAdapter.
+function normalizeBridgeAdapter(value) {
+  const adapter = String(value ?? '').trim().toLowerCase().replace(/_/g, '-');
+  if (['codex', 'codex-cli', 'codex-analysis'].includes(adapter)) return 'codex';
+  if (['claude', 'claude-code', 'claude_code'].includes(adapter)) return 'claude_code';
+  if (['piri', 'pi'].includes(adapter)) return 'piri';
+  if (['danso', 'danso-cli'].includes(adapter)) return 'danso';
+  if (['hermes', 'hermes-agent', 'hermes-agent-source-only', 'termux-hermes'].includes(adapter)) return 'hermes';
+  if (['openclaw', 'openclaw-analysis'].includes(adapter)) return 'openclaw';
+  return '';
+}
+
+function isTruthyFlag(value) {
+  return /^(1|true|yes|on)$/i.test(String(value ?? '').trim());
+}
+
+// #2461: which slot the handler actually runs for each lane. `values` maps a
+// slot name to its configured value (blank = unset). Analysis: the first slot
+// whose file-name runtime matches the declared adapter, else precedence order;
+// no slot = the handler's in-repo default bridge (name null). Patch: first set
+// slot unless the host patch bridge is disabled.
+// Values are RAW (handler semantics: only blank/whitespace is unset, so a
+// literal `none` is a candidate the handler would try to run).
+function selectEffectiveBridges(values = {}) {
+  const pick = (name) => String(values[name] ?? '').trim();
+  // Handler: `A2A_ANALYSIS_BRIDGE_ADAPTER || A2A_WORKER_BRIDGE_ADAPTER` on the
+  // raw strings — a whitespace-only first var wins and normalizes to none.
+  const declaredRaw = BRIDGE_ADAPTER_VARS.map((name) => values[name]).find((value) => typeof value === 'string' && value !== '') || '';
+  const declaredAdapter = normalizeBridgeAdapter(declaredRaw);
+  const analysisCandidates = ANALYSIS_BRIDGE_BIN_VARS.filter((name) => pick(name));
+  let analysisName = null;
+  let selectedBy = 'default';
+  const declaredMatch = declaredAdapter
+    ? analysisCandidates.find((name) => bridgeRuntimeFromName(pick(name)) === declaredAdapter)
+    : undefined;
+  if (declaredMatch) {
+    analysisName = declaredMatch;
+    selectedBy = 'declared-adapter';
+  } else if (declaredAdapter && declaredAdapter === DEFAULT_ANALYSIS_BRIDGE_RUNTIME) {
+    // The handler appends its in-repo default bridge to the candidate list, so
+    // a declared piri adapter with no piri-named slot runs the default.
+    selectedBy = 'declared-adapter-default';
+  } else if (analysisCandidates.length > 0) {
+    analysisName = analysisCandidates[0];
+    selectedBy = 'precedence';
+  }
+  const analysisRuntime = analysisName ? bridgeRuntimeFromName(pick(analysisName)) : DEFAULT_ANALYSIS_BRIDGE_RUNTIME;
+  const adapterMismatch = Boolean(declaredAdapter && analysisRuntime && analysisRuntime !== declaredAdapter);
+
+  const patchDisabled = PATCH_BRIDGE_DISABLED_VARS.some((name) => isTruthyFlag(values[name]));
+  const patchName = patchDisabled ? null : (PATCH_BRIDGE_BIN_VARS.find((name) => pick(name)) || null);
+  const unsetToken = (name) => (name && UNSET_ENV_TOKENS.has(pick(name).toLowerCase()) ? pick(name) : undefined);
+  return {
+    analysis: {
+      name: analysisName,
+      literalUnsetToken: unsetToken(analysisName),
+      selectedBy,
+      runtime: analysisRuntime || undefined,
+      declaredAdapter: declaredAdapter || undefined,
+      adapterMismatch,
+    },
+    patch: {
+      name: patchName,
+      literalUnsetToken: unsetToken(patchName),
+      disabled: patchDisabled,
+    },
+  };
+}
+
+// Raw per-variable merge (process env wins over the deployed env file), with
+// no unset-token normalization — the handler sees the raw strings.
+function effectiveBridgeEnvValues() {
+  const values = {};
+  for (const name of [...BRIDGE_BIN_VARS, ...BRIDGE_ADAPTER_VARS, ...PATCH_BRIDGE_DISABLED_VARS]) {
+    const processValue = process.env[name];
+    values[name] = typeof processValue === 'string' && processValue !== '' ? processValue : (deployedEnv[name] ?? '');
+  }
+  return values;
 }
 
 function isScriptBridgeCommand(value) {
@@ -849,21 +972,98 @@ guard('bridge-compat-path', () => compareCompatFile({
 // Guard 3b: Any runtime-configured analysis bridge must exist in the deployed artifact.
 // This catches stale node-specific bridge env such as /opt/.../custom-source-analysis-bridge.mjs
 // before the worker claims a task and fails at handler runtime.
+// #2461: host patch bridge slots (A2A_PIRI_BIN, A2A_PIRI_PATCH_BIN) are checked too,
+// and the guard reports which slot the handler effectively selects per lane, so a
+// drift that only affects the slot actually being run cannot hide behind a
+// harmless one (a Termux worker kept running a live checkout through
+// A2A_PIRI_ANALYSIS_BIN / A2A_PIRI_PATCH_BIN after OPENCLAW_BIN was realigned).
+function effectiveSummary(selection, checks) {
+  const outsideFor = (name) => checks.find((check) => check.name === name)?.outsideWorkerRoot;
+  const analysisOutside = selection.analysis.name ? outsideFor(selection.analysis.name) : undefined;
+  const patchOutside = selection.patch.name ? outsideFor(selection.patch.name) : undefined;
+  return {
+    analysis: {
+      slot: selection.analysis.name,
+      selectedBy: selection.analysis.selectedBy,
+      ...(selection.analysis.literalUnsetToken ? { literalUnsetToken: true } : {}),
+      ...(selection.analysis.runtime ? { runtime: selection.analysis.runtime } : {}),
+      ...(selection.analysis.declaredAdapter ? { declaredAdapter: selection.analysis.declaredAdapter } : {}),
+      adapterMismatch: selection.analysis.adapterMismatch,
+      ...(analysisOutside !== undefined ? { outsideWorkerRoot: analysisOutside } : {}),
+    },
+    patch: {
+      slot: selection.patch.name,
+      ...(selection.patch.literalUnsetToken ? { literalUnsetToken: true } : {}),
+      disabled: selection.patch.disabled,
+      ...(patchOutside !== undefined ? { outsideWorkerRoot: patchOutside } : {}),
+    },
+  };
+}
+
+function shadowedBridgeNote(check, selection) {
+  const notes = [];
+  if (check.roles.includes('analysis')) {
+    notes.push(`analysis lane uses ${selection.analysis.name ?? 'the in-repo default bridge'}`);
+  }
+  if (check.roles.includes('patch')) {
+    notes.push(selection.patch.disabled ? 'host patch bridge is disabled' : `patch lane uses ${selection.patch.name}`);
+  }
+  return notes.join('; ');
+}
+
+function outsideRootWarning(check, selection) {
+  const prefix = `${check.name} points outside the worker root (${check.resolvedPath})`;
+  if (check.effectiveFor?.length) {
+    return `${prefix} and is the effective ${check.effectiveFor.join('+')} bridge the handler runs; artifact rollouts will not update it (#2429, #2461)`;
+  }
+  return `${prefix}; not selected now (${shadowedBridgeNote(check, selection)}), but artifact rollouts will not update it if it becomes effective (#2429)`;
+}
+
+// Warnings about the selection itself, independent of which slots exist.
+function selectionWarnings(selection) {
+  const warnings = [];
+  for (const lane of ['analysis', 'patch']) {
+    const { name, literalUnsetToken } = selection[lane];
+    if (literalUnsetToken) {
+      warnings.push(`${name} is set to the literal "${literalUnsetToken}"; the handler does not treat it as unset and selects it as the ${lane} bridge command, which fails at spawn — remove the line instead (#2461)`);
+    }
+  }
+  // #2370 mirror: the handler refuses analysis tasks when the declared adapter
+  // and the selected bridge's runtime contradict each other.
+  if (selection.analysis.adapterMismatch) {
+    warnings.push(`declared bridge adapter ${selection.analysis.declaredAdapter} has no matching *_ANALYSIS_BIN slot; the handler resolves ${selection.analysis.name ?? 'the in-repo default bridge'} (${selection.analysis.runtime}) and refuses analysis tasks with analysis_bridge_adapter_mismatch (#2370)`);
+  }
+  return warnings;
+}
+
 guard('configured-analysis-bridge-artifacts', () => {
-  const configured = configuredAnalysisBridgeBins();
+  const configured = configuredBridgeBins();
+  const selection = selectEffectiveBridges(effectiveBridgeEnvValues());
   if (configured.length === 0) {
+    const warnings = selectionWarnings(selection);
     return ok('configured-analysis-bridge-artifacts', {
       checked: false,
-      reason: 'no A2A_*_ANALYSIS_BIN/OPENCLAW_BIN bridge command configured in process env or deployed env file',
+      reason: 'no A2A_*_ANALYSIS_BIN/A2A_PIRI_BIN/A2A_PIRI_PATCH_BIN/OPENCLAW_BIN bridge command configured in process env or deployed env file',
+      effective: effectiveSummary(selection, []),
+      ...(warnings.length ? { warnings } : {}),
       envPathChecked: deployedEnvPath ? '<configured>' : undefined,
     });
   }
 
   const checks = configured.map((item) => {
+    const effectiveFor = [
+      ...(selection.analysis.name === item.name ? ['analysis'] : []),
+      ...(selection.patch.name === item.name ? ['patch'] : []),
+    ];
+    const base = {
+      name: item.name,
+      roles: item.roles,
+      ...(effectiveFor.length ? { effectiveFor } : {}),
+      source: item.source,
+    };
     if (!isScriptBridgeCommand(item.value)) {
       return {
-        name: item.name,
-        source: item.source,
+        ...base,
         commandKind: 'external-command',
         commandName: basename(item.value),
         ok: true,
@@ -873,8 +1073,7 @@ guard('configured-analysis-bridge-artifacts', () => {
     const mode = executableBits(resolvedPath);
     const outsideWorkerRoot = isOutsideWorkerRoot(resolvedPath);
     return {
-      name: item.name,
-      source: item.source,
+      ...base,
       commandKind: 'script-bridge',
       commandName: basename(item.value),
       resolvedPath,
@@ -883,15 +1082,25 @@ guard('configured-analysis-bridge-artifacts', () => {
       ok: mode !== undefined && mode !== 0,
     };
   });
+  const effective = effectiveSummary(selection, checks);
 
-  const failed = checks.filter((check) => !check.ok);
+  // Analysis slots fail closed (unchanged). Patch-only slots were never checked
+  // before #2461, so a broken one only warns: the host patch lane may be
+  // unused on a node, and the guard must not newly block existing rollouts.
+  const failed = checks.filter((check) => !check.ok && check.roles.includes('analysis'));
   if (failed.length > 0) {
     return fail('configured-analysis-bridge-artifacts', 'one or more configured analysis bridge script artifacts are missing or not executable', {
       failed,
+      effective,
+      ...(selectionWarnings(selection).length ? { warnings: selectionWarnings(selection) } : {}),
       hint: 'point node env at a deployed standard bridge such as scripts/source-only-local-analysis-bridge.mjs or scripts/hermes-a2a-analysis-bridge.mjs, or ship the custom bridge with the artifact',
       envPathChecked: deployedEnvPath ? '<configured>' : undefined,
     });
   }
+
+  const warnings = checks
+    .filter((check) => !check.ok)
+    .map((check) => `${check.name} (host patch bridge${check.effectiveFor?.includes('patch') ? ', effective' : ''}) is missing or not executable (${check.resolvedPath}); patch tasks that select it fail at spawn (#2461)`);
 
   // #2429: a bridge that lives outside the worker root is not refreshed by an
   // artifact rollout (worker-artifact-pack + rsync), so the node silently runs
@@ -899,18 +1108,23 @@ guard('configured-analysis-bridge-artifacts', () => {
   // live git checkout 229 commits behind main this way. Warn by default; the
   // strict knob fails the guard so a rollout gate can refuse the drift.
   const drifted = checks.filter((check) => check.outsideWorkerRoot === true);
-  const warnings = drifted.map((check) => `${check.name} points outside the worker root (${check.resolvedPath}); artifact rollouts will not update this bridge (#2429)`);
+  warnings.push(...drifted.map((check) => outsideRootWarning(check, selection)));
+
+  warnings.push(...selectionWarnings(selection));
+
   if (drifted.length > 0 && STRICT_BRIDGE_ROOT) {
-    return fail('configured-analysis-bridge-artifacts', 'one or more configured analysis bridge scripts live outside the worker root (A2A_ROLLOUT_GUARD_STRICT_BRIDGE_ROOT=1)', {
+    return fail('configured-analysis-bridge-artifacts', 'one or more configured analysis or patch bridge scripts live outside the worker root (A2A_ROLLOUT_GUARD_STRICT_BRIDGE_ROOT=1)', {
       failed: drifted,
+      effective,
       warnings,
-      hint: 'point the bridge env vars at <worker root>/scripts/<bridge>.mjs so fleet artifact rollouts reach the analysis code (#2429)',
+      hint: 'point the bridge env vars at <worker root>/scripts/<bridge>.mjs so fleet artifact rollouts reach the analysis and patch code (#2429, #2461)',
       envPathChecked: deployedEnvPath ? '<configured>' : undefined,
     });
   }
 
   return ok('configured-analysis-bridge-artifacts', {
     checks,
+    effective,
     ...(warnings.length ? { warnings } : {}),
     envPathChecked: deployedEnvPath ? '<configured>' : undefined,
   });
@@ -1029,7 +1243,9 @@ guard('executor-policy', () => {
 
   const bridgePolicies = {
     A2A_PIRI_BIN: envPresence('A2A_PIRI_BIN'),
+    A2A_PIRI_PATCH_BIN: envPresence('A2A_PIRI_PATCH_BIN'),
     OPENCLAW_BIN: envPresence('OPENCLAW_BIN'),
+    A2A_DANSO_ANALYSIS_BIN: envPresence('A2A_DANSO_ANALYSIS_BIN'),
     A2A_PIRI_ANALYSIS_BIN: envPresence('A2A_PIRI_ANALYSIS_BIN'),
     A2A_HERMES_ANALYSIS_BIN: envPresence('A2A_HERMES_ANALYSIS_BIN'),
     A2A_OPENCLAW_ANALYSIS_BIN: envPresence('A2A_OPENCLAW_ANALYSIS_BIN'),
