@@ -20,7 +20,7 @@
 - [x] idempotent(이벤트당 1개), `relayFallbackLocal` 카운터, `/health`.
 
 ## PR-1a/1b/1c 레지스트리
-- [ ] `ParentRoundRegistry` + sidecar 3지점 + hot-restart RED→GREEN.
+- [x] `ParentRoundRegistry` + sidecar 3지점 + hot-restart RED→GREEN (PR-1a; 판정 배선·mint API 없음).
 - [ ] `POST /a2a/parent-rounds`(operator/hub, idempotent/409) + helper 배선 + 폴백 제거.
 - [ ] handoff-receiver foreign 등록 + anchors(`originTaskId`).
 - [ ] 판정 배선 + `missing_anchor` + `parent_resolved_via` + 항목 2 필드.

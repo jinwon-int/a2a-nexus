@@ -181,6 +181,13 @@ import { TASK_LANE_REASON_CODE_SET, classifyTaskLane } from "../task-lane-classi
 import { TaskEventStream } from "./task-event-stream.js";
 import { RoundProgressTracker } from "./round-progress-tracker.js";
 import {
+  ParentRoundRegistry,
+  type ParentRoundAnchorResult,
+  type ParentRoundMintInput,
+  type ParentRoundMintResult,
+  type ParentRoundRegistryEntry,
+} from "./parent-round-registry.js";
+import {
   TerminalTaskEventOutbox,
   type TerminalTaskOutboxAckInput,
   type TerminalTaskOutboxEvent,
@@ -439,6 +446,11 @@ export class InMemoryA2ABroker {
   private readonly taskEventStream: TaskEventStream;
   private readonly terminalTaskEventOutbox: TerminalTaskEventOutbox;
   private readonly crossBrokerTerminalBriefs: CrossBrokerTerminalBriefProjectionStore;
+  /**
+   * #2339 PR-1a parent round registry. Held and persisted only: no projection
+   * or routing decision reads it until PR-1c, so behaviour is unchanged.
+   */
+  private readonly parentRounds = new ParentRoundRegistry();
   /** #2339 PR-5: relay-failure fallback rows created since process start (`/health`). */
   private relayFallbackLocal = 0;
   private readonly wavePlans = new WavePlanStore();
@@ -686,6 +698,33 @@ export class InMemoryA2ABroker {
   /** #2339 PR-5: relay-failure fallback rows created since process start. */
   getCrossBrokerRelayFallbackDiagnostics(): { relayFallbackLocal: number } {
     return { relayFallbackLocal: this.relayFallbackLocal };
+  }
+
+  /**
+   * #2339 PR-1a: register a parent round. Idempotent on round metadata
+   * (`replayed`), refuses a different round under the same id (`conflict`).
+   * The registry is snapshot-only state, so a change forces a full save
+   * (#1446 rule) or a hot-only save would lose it on restart.
+   */
+  mintParentRound(input: ParentRoundMintInput): ParentRoundMintResult {
+    const result = this.parentRounds.mint(input);
+    if (result.status === "minted") this.persistState(undefined, { forceFull: true });
+    return result;
+  }
+
+  /** #2339 PR-1a: record a child/origin task id that anchors a registered round. */
+  addParentRoundAnchor(parentRoundId: string, anchor: string): ParentRoundAnchorResult {
+    const result = this.parentRounds.addAnchor(parentRoundId, anchor);
+    if (result.status === "added") this.persistState(undefined, { forceFull: true });
+    return result;
+  }
+
+  getParentRound(parentRoundId: string): ParentRoundRegistryEntry | undefined {
+    return this.parentRounds.get(parentRoundId);
+  }
+
+  listParentRounds(): ParentRoundRegistryEntry[] {
+    return this.parentRounds.list();
   }
 
   /** #2339 PR-6 rollout counters: legacy (origin-as-producer) vs explicit handoff packets. */
@@ -3089,6 +3128,7 @@ export class InMemoryA2ABroker {
       tombstones: [...this.tombstones.values()],
       terminalOutbox: this.terminalTaskEventOutbox.snapshot(),
       crossBrokerTerminalBriefs: this.crossBrokerTerminalBriefs.snapshot(),
+      parentRounds: this.parentRounds.snapshot(),
       wavePlans: this.wavePlans.snapshot(),
       reviewLineages: this.reviewLineages.snapshot(),
       ...this.snapshotExtensions.collectFields(),
@@ -3202,6 +3242,7 @@ export class InMemoryA2ABroker {
 
     this.terminalTaskEventOutbox.restoreSnapshot(snapshot.terminalOutbox ?? []);
     this.crossBrokerTerminalBriefs.restore(snapshot.crossBrokerTerminalBriefs ?? []);
+    this.parentRounds.restore(snapshot.parentRounds ?? []);
     this.wavePlans.restore(snapshot.wavePlans ?? []);
     this.reviewLineages.restore(snapshot.reviewLineages ?? []);
 

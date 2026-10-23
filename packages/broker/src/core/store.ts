@@ -570,6 +570,7 @@ export class SqliteBrokerStateStore implements BrokerStateStore {
       tombstones: this.readHotTombstones(),
       terminalOutbox: this.readHotTerminalOutbox({ limit: this.maxHotRuntimeTerminalOutboxEvents }),
       crossBrokerTerminalBriefs: sidecars.crossBrokerTerminalBriefs ?? [],
+      parentRounds: sidecars.parentRounds ?? [],
       wavePlans: sidecars.wavePlans ?? [],
       reviewLineages: [],
     };
@@ -1423,16 +1424,22 @@ export class SqliteBrokerStateStore implements BrokerStateStore {
 
   /**
    * Snapshot-only sidecar fields that have no hot table (push-notification
-   * configs, wave plans, cross-broker Terminal Brief projections, and NCLEX
-   * evaluation receipts) live in
+   * configs, wave plans, cross-broker Terminal Brief projections, NCLEX
+   * evaluation receipts, and the parent round registry) live in
    * the canonical blob and must be carried into the
    * hot-table runtime snapshot, or a hot-tables restart silently drops them
    * (#1357 G3-d canary: a running wave plan vanished across a redeploy; #1446:
-   * same gap for projections; #1724: same gap for NCLEX evaluation receipts).
+   * same gap for projections; #1724: same gap for NCLEX evaluation receipts;
+   * #2339 PR-1a: the parent round registry is registered here from the start).
    */
   private readCanonicalSnapshotSidecars(): Pick<
     BrokerSnapshot,
-    "pushNotificationConfigs" | "wavePlans" | "reviewLineages" | "crossBrokerTerminalBriefs" | "nclexEvaluationReceipts"
+    | "pushNotificationConfigs"
+    | "wavePlans"
+    | "reviewLineages"
+    | "crossBrokerTerminalBriefs"
+    | "nclexEvaluationReceipts"
+    | "parentRounds"
   > {
     const row = this
       .stmt("SELECT payload FROM broker_snapshots WHERE id = 1")
@@ -1448,6 +1455,7 @@ export class SqliteBrokerStateStore implements BrokerStateStore {
         reviewLineages: canonical.reviewLineages,
         crossBrokerTerminalBriefs: canonical.crossBrokerTerminalBriefs,
         nclexEvaluationReceipts: canonical.nclexEvaluationReceipts,
+        parentRounds: canonical.parentRounds,
       };
     } catch {
       // Hot-table runtime loading must remain recoverable even when the legacy
@@ -1493,7 +1501,8 @@ export class SqliteBrokerStateStore implements BrokerStateStore {
         snapshot.pushNotificationConfigs !== undefined ||
         (snapshot.wavePlans?.length ?? 0) > 0 ||
         (snapshot.crossBrokerTerminalBriefs?.length ?? 0) > 0 ||
-        (snapshot.nclexEvaluationReceipts?.length ?? 0) > 0;
+        (snapshot.nclexEvaluationReceipts?.length ?? 0) > 0 ||
+        (snapshot.parentRounds?.length ?? 0) > 0;
       const skipFullSnapshot = hasHotHints && !hasSnapshotOnlySidecarState;
       const fit = this.writeSnapshotRow(snapshot, updatedAt, hints, { skipFullSnapshot });
       this.writeMetadata("state_version", String(CURRENT_BROKER_STATE_VERSION_VALUE));

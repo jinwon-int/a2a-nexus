@@ -55,6 +55,8 @@ export interface BrokerSnapshot {
   wavePlans?: PersistedWavePlan[];
   reviewLineages?: ReviewLineageRecord[];
   pushNotificationConfigs?: TaskPushNotificationConfig[];
+  /** Parent round registry (#2339 PR-1a); snapshot-only sidecar, no hot table. */
+  parentRounds?: import("./parent-round-registry.js").ParentRoundRegistryEntry[];
   /** NCLEX evaluation receipts (#1724); snapshot-extension field, passthrough schema. */
   nclexEvaluationReceipts?: Array<{
     receipt: import("a2a-nclex-evaluation").NclexSignedReceipt;
