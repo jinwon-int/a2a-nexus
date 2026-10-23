@@ -2513,9 +2513,15 @@ async function callClaudeCorrective(prompt, previousError, flags, env, cwd) {
   ].join("\n");
   const turnBudget = resolveClaudeTurnBudget("deterministic-single-shot", env);
   const maxBuffer = positiveInteger(env.A2A_CLAUDE_CODE_MAX_OUTPUT_BYTES, 16 * 1024 * 1024);
+  const claudeRuntimeArgs = buildClaudeRuntimeArgs(flags, env);
   const promptTransport = claudePromptTransport(retryPrompt);
   const args = [
     ...promptTransport.promptArgs,
+    // #2422: the retry must run on the same model/effort as callClaudeOnce.
+    ...claudeRuntimeArgs,
+    // #2422/#2425: cwd is the clone — cwd-scoped setting sources stripped, and
+    // the worker's CLAUDE.md/hooks/MCP stay out of the retry session too.
+    ...buildClaudeIsolationArgsForUntrustedCwd(env),
     "--output-format", "json",
     "--max-turns", String(turnBudget.effectiveMaxTurns),
     "--tools", "Read Grep Glob",

@@ -730,7 +730,9 @@ function writeDiffClaudeStub(path, diffText) {
 
 // Fake claude that returns different diffs on the 1st vs 2nd call. Used to
 // exercise the corrective-retry path (first call's diff fails `git apply --check`).
-function writeCorrectiveRetryClaudeStub(path, firstDiff, secondDiff, callCountPath) {
+// `argsCapturePrefix` (optional): each call's argv is written to
+// `<prefix>-<call number>.json` so a test can inspect the corrective call (#2422).
+function writeCorrectiveRetryClaudeStub(path, firstDiff, secondDiff, callCountPath, argsCapturePrefix = "") {
   const firstJson = JSON.stringify(firstDiff);
   const secondJson = JSON.stringify(secondDiff);
   const script = [
@@ -742,6 +744,9 @@ function writeCorrectiveRetryClaudeStub(path, firstDiff, secondDiff, callCountPa
     "}",
     "count += 1;",
     "writeFileSync(" + JSON.stringify(callCountPath) + ", String(count));",
+    ...(argsCapturePrefix
+      ? ["writeFileSync(" + JSON.stringify(argsCapturePrefix) + " + '-' + count + '.json', JSON.stringify(process.argv.slice(2)));"]
+      : []),
     "const diff = count === 1 ? " + firstJson + " : " + secondJson + ";",
     "const wrapped = '```diff\\n' + diff + '\\n```';",
     "const envelope = { type: 'result', subtype: 'success', result: wrapped };",
@@ -1072,6 +1077,65 @@ test("SINGLE-SHOT: commit identity falls back to the docker runner identity", ()
   }
 });
 
+// #2422: the corrective retry honours the A2A_CLAUDE_SETTING_SOURCES opt-in the
+// same way callClaudeOnce does — only `user` survives, because cwd is the clone.
+test("SINGLE-SHOT corrective retry keeps only the user setting source when opted in (#2422)", () => {
+  const tempDir = mkdtempSync(join(tmpdir(), "claude-singleshot-retry-sources-"));
+  const { workSeed } = setupLocalFakeOrigin(tempDir);
+  const fakeGitPath = join(tempDir, "fake-git.mjs");
+  const fakeGhPath = join(tempDir, "fake-gh.mjs");
+  const fakeClaudePath = join(tempDir, "fake-claude.mjs");
+  const callCountPath = join(tempDir, "call-count.txt");
+  const argsCapturePrefix = join(tempDir, "claude-args");
+  try {
+    writeFakeGitStub(fakeGitPath);
+    writeFakeGhStub(fakeGhPath);
+    const firstDiff = [
+      "diff --git a/no-such-file.txt b/no-such-file.txt",
+      "index 0000000..ce01362 100644",
+      "--- a/no-such-file.txt",
+      "+++ b/no-such-file.txt",
+      "@@ -0,0 +1 @@",
+      "+leaked",
+    ].join("\n");
+    const secondDiff = [
+      "diff --git a/hello.txt b/hello.txt",
+      "index ce01362..6b0f5f6 100644",
+      "--- a/hello.txt",
+      "+++ b/hello.txt",
+      "@@ -1 +1 @@",
+      "-hello world",
+      "+hello world (corrected on retry)",
+    ].join("\n");
+    writeCorrectiveRetryClaudeStub(fakeClaudePath, firstDiff, secondDiff, callCountPath, argsCapturePrefix);
+
+    const result = spawnSync(bridgePath, bridgeArgs(singleShotMessage()), {
+      encoding: "utf8",
+      env: {
+        ...process.env,
+        A2A_CLAUDE_CODE_BIN: fakeClaudePath,
+        A2A_CLAUDE_CODE_GIT_BIN: fakeGitPath,
+        A2A_CLAUDE_CODE_GH_BIN: fakeGhPath,
+        A2A_CLAUDE_CODE_PATCH_MODE: "single-shot",
+        A2A_CLAUDE_SETTING_SOURCES: "user,project,local",
+        FAKE_GIT_SEED_PATH: workSeed,
+        FAKE_GH_PR_URL: "https://github.com/jinwon-int/a2a-nexus/pull/1021",
+        REAL_GIT_BIN: "git",
+        REAL_GH_BIN: "gh",
+      },
+    });
+
+    assert.equal(result.status, 0, result.stderr);
+    assert.equal(Number(readFileSync(callCountPath, "utf8")), 2);
+    const correctiveArgs = JSON.parse(readFileSync(`${argsCapturePrefix}-2.json`, "utf8"));
+    assert.deepEqual(settingSourcesOf(correctiveArgs), { count: 1, value: "user" });
+    assert.equal(correctiveArgs.filter((value) => value === "--strict-mcp-config").length, 1);
+    assert.equal(correctiveArgs.includes("--model"), false, "no model configured -> no --model");
+  } finally {
+    rmSync(tempDir, { recursive: true, force: true });
+  }
+});
+
 test("SINGLE-SHOT corrective retry: first diff fails git apply --check, second diff applies -> prUrl with 2 calls", () => {
   const tempDir = mkdtempSync(join(tmpdir(), "claude-singleshot-retry-"));
   const { workSeed } = setupLocalFakeOrigin(tempDir);
@@ -1079,6 +1143,7 @@ test("SINGLE-SHOT corrective retry: first diff fails git apply --check, second d
   const fakeGhPath = join(tempDir, "fake-gh.mjs");
   const fakeClaudePath = join(tempDir, "fake-claude.mjs");
   const callCountPath = join(tempDir, "call-count.txt");
+  const argsCapturePrefix = join(tempDir, "claude-args");
   try {
     writeFakeGitStub(fakeGitPath);
     writeFakeGhStub(fakeGhPath);
@@ -1102,7 +1167,7 @@ test("SINGLE-SHOT corrective retry: first diff fails git apply --check, second d
       "-hello world",
       "+hello world (corrected on retry)",
     ].join("\n");
-    writeCorrectiveRetryClaudeStub(fakeClaudePath, firstDiff, secondDiff, callCountPath);
+    writeCorrectiveRetryClaudeStub(fakeClaudePath, firstDiff, secondDiff, callCountPath, argsCapturePrefix);
 
     const result = spawnSync(bridgePath, bridgeArgs(singleShotMessage()), {
       encoding: "utf8",
@@ -1128,10 +1193,21 @@ test("SINGLE-SHOT corrective retry: first diff fails git apply --check, second d
     assert.equal(payload.status, "pr_opened");
     assert.equal(payload.claudeCalls, 2, "payload must reflect 2 claude calls");
     assert.equal(payload.prUrl, "https://github.com/jinwon-int/a2a-nexus/pull/1021");
-    assert.equal(payload.actualRuntimeModel, undefined);
-    assert.equal(payload.claudeModelArgumentApplied, false);
-    assert.equal(payload.modelInheritanceMode, "metadata_only");
-    assert.match(payload.modelInheritanceNote, /output-producing invocation.*actual runtime model is unknown/);
+    // #2422: the corrective call produced the output, and it now carries the
+    // same runtime + isolation args as the first call. Before the fix it ran
+    // without --model (telemetry read metadata_only) and loaded the worker's
+    // CLAUDE.md/hooks/MCP plus the clone's .claude/* settings.
+    assert.equal(payload.actualRuntimeModel, "claude-sonnet-5");
+    assert.equal(payload.claudeModelArgumentApplied, true);
+    assert.equal(payload.modelInheritanceMode, "cli_argument");
+    const firstArgs = JSON.parse(readFileSync(`${argsCapturePrefix}-1.json`, "utf8"));
+    const correctiveArgs = JSON.parse(readFileSync(`${argsCapturePrefix}-2.json`, "utf8"));
+    for (const args of [firstArgs, correctiveArgs]) {
+      assert.equal(args[args.indexOf("--model") + 1], "claude-sonnet-5");
+      assert.deepEqual(settingSourcesOf(args), { count: 1, value: "" });
+      assert.equal(args.filter((value) => value === "--strict-mcp-config").length, 1);
+      assert.equal(args[args.indexOf("--tools") + 1], "Read Grep Glob");
+    }
   } finally {
     rmSync(tempDir, { recursive: true, force: true });
   }
