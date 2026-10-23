@@ -30,7 +30,7 @@
 - [x] 늦은 `completedAt` 우선 + `superseded` 보존 + retry child 테스트 — PR-3b.
 
 ## PR-4 sender-proof 모드
-- [ ] `off|record|enforce`, record 카운터, anchor 없는 enforce startup 거부.
+- [x] `off|record|enforce`, record 카운터, anchor 없는 enforce startup 거부 — PR-4(검증 broker는 최상위 `handoffBrokerId` 우선).
 
 ## 배포/전환 (별도 승인, 이 레포 PR 아님)
 - [ ] 1차 배포(PR-6·5) · 2차 배포(PR-1·3b) · `record` · 7일 창 · 동시 `enforce`.

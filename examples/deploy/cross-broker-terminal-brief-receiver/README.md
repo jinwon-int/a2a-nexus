@@ -61,7 +61,10 @@ performs provider sends, and never mutates child task lifecycle.
 - Sender-proof: once the destination pins the source broker's public key
   (`CROSS_BROKER_SENDER_PROOF_KEYS_FILE`), the receiver must be configured
   with `CROSS_BROKER_SENDER_PROOF_PRIVATE_KEY_FILE` or every projection
-  fails closed. Roll out sender-side config before pinning.
+  fails closed. Roll out sender-side config before pinning. The destination
+  can stage this with `A2A_CROSS_BROKER_SENDER_PROOF_MODE=record` (verify and
+  count in `/health` `crossBrokerSenderProof`, never reject) before `enforce`
+  (#2339 PR-4).
 - Credential provisioning/rotation and service enablement on live hosts are
   operator-approval-gated actions; this artifact only defines the shape.
 

@@ -157,7 +157,12 @@ import {
 import { createBrokerAgentCard } from "./a2a/agent-card.js";
 import { PushNotificationConfigStore } from "./a2a/push-notification-config.js";
 import { signAgentCard } from "a2a-attestation";
-import { loadCrossBrokerTrustAnchors, CrossBrokerNonceCache } from "./a2a/cross-broker-sender-proof.js";
+import {
+  loadCrossBrokerTrustAnchors,
+  CrossBrokerNonceCache,
+  CrossBrokerSenderProofCounters,
+  resolveCrossBrokerSenderProofMode,
+} from "./a2a/cross-broker-sender-proof.js";
 import { loadPeerCredentialRegistryFile, parsePeerHandoffScopeMode } from "./core/request-security.js";
 import { startDefaultAgent, type DefaultAgentHandle } from "./a2a/default-agent.js";
 import { PeerStatusService } from "./a2a/peer-status.js";
@@ -961,6 +966,17 @@ export function createBrokerServer(options: BrokerServerOptions = {}): BrokerSer
     options.crossBrokerSenderProofKeysFile ?? process.env.CROSS_BROKER_SENDER_PROOF_KEYS_FILE,
   );
   const crossBrokerNonceCache = crossBrokerTrustAnchors ? new CrossBrokerNonceCache() : undefined;
+  // #2339 PR-4: off | record | enforce for the projection ingest; startup
+  // refuses enforce without anchors. Conversation relay keeps its own
+  // anchors-present = verify rule.
+  const crossBrokerSenderProofMode = resolveCrossBrokerSenderProofMode(
+    options.crossBrokerSenderProofMode ?? process.env.A2A_CROSS_BROKER_SENDER_PROOF_MODE,
+    Boolean(crossBrokerTrustAnchors),
+  );
+  if (crossBrokerSenderProofMode === "record" && !crossBrokerTrustAnchors) {
+    console.warn("[a2a-broker] A2A_CROSS_BROKER_SENDER_PROOF_MODE=record without trust anchors: every projection is counted as unpinnedBroker");
+  }
+  const crossBrokerSenderProofCounters = new CrossBrokerSenderProofCounters();
   const peerCredentialsFile = options.peerCredentialsFile ?? process.env.A2A_PEER_CREDENTIALS_FILE;
   const peerCredentialRegistry = peerCredentialsFile
     ? loadPeerCredentialRegistryFile(peerCredentialsFile)
@@ -1464,6 +1480,8 @@ export function createBrokerServer(options: BrokerServerOptions = {}): BrokerSer
       stateStore,
       crossBrokerTrustAnchors,
       crossBrokerNonceCache,
+      crossBrokerSenderProofMode,
+      crossBrokerSenderProofCounters,
       peerCredentialRegistry,
       peerHandoffScopeMode,
     }),
@@ -1895,6 +1913,13 @@ export function createBrokerServer(options: BrokerServerOptions = {}): BrokerSer
           crossBrokerTerminalBriefs: {
             ...broker.getCrossBrokerTerminalBriefDiagnostics(),
             ...broker.getCrossBrokerRelayFallbackDiagnostics(),
+          },
+          // #2339 PR-4: rollout evidence for record -> enforce (spec: a 7-day
+          // window of missing=0, invalid=0 on both brokers before enforce).
+          crossBrokerSenderProof: {
+            mode: crossBrokerSenderProofMode,
+            anchorsConfigured: Boolean(crossBrokerTrustAnchors),
+            ...crossBrokerSenderProofCounters.snapshot(),
           },
           ...(stateStore instanceof SqliteBrokerStateStore
             ? {

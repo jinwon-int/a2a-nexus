@@ -22,6 +22,8 @@ import {
 import {
   verifyCrossBrokerSenderProof,
   type CrossBrokerNonceCache,
+  type CrossBrokerSenderProofCounters,
+  type CrossBrokerSenderProofMode,
   type CrossBrokerTrustAnchors,
 } from "../a2a/cross-broker-sender-proof.js";
 import { parseTerminalOutboxAckReceipt, parseTerminalOutboxReceiptUpdate } from "../request-parsers.js";
@@ -42,6 +44,13 @@ export interface A2ATerminalOutboxRouteContext {
   requesterIdentity: RequesterIdentity | null;
   crossBrokerTrustAnchors: CrossBrokerTrustAnchors | null;
   crossBrokerNonceCache: CrossBrokerNonceCache | undefined;
+  /**
+   * #2339 PR-4 sender-proof mode for the projection ingest. Absent keeps the
+   * legacy meaning (anchors configured = enforce, none = off).
+   */
+  crossBrokerSenderProofMode?: CrossBrokerSenderProofMode;
+  /** Outcome counters surfaced in `/health` (#2339 PR-4). */
+  crossBrokerSenderProofCounters?: CrossBrokerSenderProofCounters;
   /** Minimum-scope peer credential registry (null = peer auth not provisioned). */
   peerCredentialRegistry?: PeerCredentialRegistry | null;
   /** Peer handoff scope gate mode; defaults to `auto` (verify when presented). */
@@ -81,18 +90,26 @@ export async function handleCrossBrokerTerminalBriefIngestRequest(
   assertPeerScopeForRoute(ctx, "handoff:evidence", "cross-broker-terminal-brief.ingest");
 
   const body = await readJson(ctx.req);
-  if (ctx.crossBrokerTrustAnchors) {
-    // Anchors without the shared nonce cache would skip sender-proof verification
-    // entirely; fail closed rather than accept an unverified/replayable ingest
-    // (BUG-13).
-    if (!ctx.crossBrokerNonceCache) {
-      throw new Error("cross-broker trust anchors configured without a shared nonce cache");
-    }
-    const verdict = verifyCrossBrokerSenderProof(ctx.crossBrokerTrustAnchors, body, {
-      nonceCache: ctx.crossBrokerNonceCache,
-    });
-    if (!verdict.ok) {
-      throw new BrokerError("policy_denied", `cross-broker trust: ${verdict.reason}`);
+  const senderProofMode = ctx.crossBrokerSenderProofMode ?? (ctx.crossBrokerTrustAnchors ? "enforce" : "off");
+  if (senderProofMode !== "off") {
+    if (!ctx.crossBrokerTrustAnchors) {
+      // Only `record` reaches here: startup refuses `enforce` without anchors.
+      ctx.crossBrokerSenderProofCounters?.recordUnpinned();
+    } else {
+      // Anchors without the shared nonce cache would skip sender-proof
+      // verification entirely; fail closed rather than accept an
+      // unverified/replayable ingest (BUG-13).
+      if (!ctx.crossBrokerNonceCache) {
+        throw new Error("cross-broker trust anchors configured without a shared nonce cache");
+      }
+      const verdict = verifyCrossBrokerSenderProof(ctx.crossBrokerTrustAnchors, body, {
+        nonceCache: ctx.crossBrokerNonceCache,
+      });
+      ctx.crossBrokerSenderProofCounters?.record(verdict);
+      // `record` observes only: a failed proof is counted, never rejected.
+      if (!verdict.ok && senderProofMode === "enforce") {
+        throw new BrokerError("policy_denied", `cross-broker trust: ${verdict.reason}`);
+      }
     }
   }
   const result = broker.ingestCrossBrokerTerminalBriefProjection(

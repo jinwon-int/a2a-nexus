@@ -334,6 +334,12 @@ export interface BrokerServerOptions extends BrokerRuntimeHotLimitOptions {
    */
   crossBrokerSenderProofKeysFile?: string;
   /**
+   * #2339 PR-4: `off | record | enforce` for the cross-broker Terminal Brief
+   * ingest (env A2A_CROSS_BROKER_SENDER_PROOF_MODE). Unset = legacy meaning:
+   * anchors configured means enforce, otherwise off.
+   */
+  crossBrokerSenderProofMode?: string;
+  /**
    * JSON peer credential registry file mapping a peer broker id →
    * { secretSha256, scopes, status? } for minimum-scope cross-broker handoff
    * authorization (contracts/a2a/broker-handoff-protocol.md peer scopes
