@@ -358,9 +358,18 @@ export async function postOperatorSource(fetchImpl, url, secret, requesterId, bo
     ok: false,
     httpStatus: res.status,
     status,
-    error: [code, message].filter(Boolean).join(': ') || `unexpected response (http ${res.status})`,
+    ...(status === 'replayed' ? { originalOutcome: result?.originalOutcome ?? null } : {}),
+    error: [code, message].filter(Boolean).join(': ')
+      || (status === 'replayed'
+        ? `the broker recorded this event earlier as ${result?.originalOutcome ?? 'an unknown outcome'}, not applied`
+        : `unexpected response (http ${res.status})`),
   };
 }
+
+// Stable outcomes the broker records for an event it did not apply (#2443).
+// They are final: a replay answers the same outcome forever, and none of them
+// moved the lineage, so a client may stop waiting for them.
+const RECORDED_NOT_APPLIED = new Set(['transition_rejected', 'subject_conflict', 'missing_lineage']);
 
 function readJsonFile(path, label) {
   let text;
@@ -387,6 +396,7 @@ const USAGE = `Usage:
   review-lineage-client.mjs create  --spec <spec.json> --out <record.json> [--dry-run]
   review-lineage-client.mjs cancel  --record <record.json> --decision-ref <ref> --detail <text> [--dry-run]
   review-lineage-client.mjs correct --record <record.json> --generation-ref <ref> --head <sha> --repo <checkout> [--dry-run]
+  review-lineage-client.mjs correct --record <record.json> --generation-ref <pending ref> --abandon-pending [--dry-run]
   review-lineage-client.mjs replace-reviewer --record <record.json> --decision-ref <ref> [--dry-run]
   review-lineage-client.mjs lane    --record <record.json>
 The edge secret is read from A2A_EDGE_SECRET only.`;
@@ -407,6 +417,7 @@ export async function run(argv, { env = process.env, fetchImpl = globalThis.fetc
         'generation-ref': { type: 'string' },
         head: { type: 'string' },
         repo: { type: 'string' },
+        'abandon-pending': { type: 'boolean', default: false },
         'dry-run': { type: 'boolean', default: false },
       },
       strict: true,
@@ -494,6 +505,27 @@ export async function run(argv, { env = process.env, fetchImpl = globalThis.fetc
       // request so the broker answers `replayed`, never a changed payload.
       const pending = record.pendingCorrection;
       const resumed = isPlainObject(pending) && pending.generationRef === values['generation-ref'];
+      if (values['abandon-pending']) {
+        // Operator escape hatch (#2443) for a pending request the broker can
+        // never confirm, e.g. `idempotency_conflict`: the broker holds a
+        // different payload under the same source event. It changes only the
+        // local record: no network call, the broker keeps whatever it recorded,
+        // and the binding stays on the head the lineage last accepted.
+        if (!isPlainObject(pending)) throw new ClientError('--abandon-pending: the record has no pending correction');
+        if (!resumed) {
+          throw new ClientError(`--abandon-pending needs --generation-ref ${pending.generationRef} (the pending generation) to confirm the target`);
+        }
+        const { pendingCorrection: _abandoned, ...kept } = record;
+        const next = {
+          ...kept,
+          abandonedCorrections: [...(Array.isArray(kept.abandonedCorrections) ? kept.abandonedCorrections : []),
+            { generationRef: pending.generationRef, headSha: pending.headSha ?? null, diffHash: pending.diffHash ?? null,
+              reason: 'operator_abandoned', abandonedAt: utcNow(now) }],
+        };
+        if (!values['dry-run']) writeRecord(values.record, next);
+        return { exitCode: 0, output: { ok: true, command, lineageId: record.lineageId, abandoned: pending.generationRef,
+          dryRun: values['dry-run'], brokerContacted: false, lane: laneBinding(next) } };
+      }
       if (isPlainObject(pending) && !resumed) {
         // A sent-but-unconfirmed generation may already have moved the
         // lineage; building a new one from the stale binding would conflict.
@@ -510,9 +542,47 @@ export async function run(argv, { env = process.env, fetchImpl = globalThis.fetc
       const edge = edgeCredential(env);
       if (!resumed) writeRecord(values.record, { ...record, pendingCorrection: request });
       const url = `${brokerUrl}/review-lineages/${encodeURIComponent(record.lineageId)}/correction-generation`;
-      const result = await postOperatorSource(fetchImpl, url, edge, requesterId, request);
+      let result = await postOperatorSource(fetchImpl, url, edge, requesterId, request);
+      let confirmedByReplay = false;
+      if (!result.ok && result.status === null && (result.httpStatus === 409 || result.httpStatus === 404)) {
+        // A first-send rejection reaches us only as error text. When the broker
+        // recorded a stable outcome, resending the identical bytes answers it as
+        // a structured `replayed` result, so we decide from data, not a message.
+        const replay = await postOperatorSource(fetchImpl, url, edge, requesterId, request);
+        if (replay.status === 'replayed') {
+          result = replay;
+          confirmedByReplay = true;
+        }
+      }
+      if (!result.ok && result.status === 'replayed' && RECORDED_NOT_APPLIED.has(result.originalOutcome)) {
+        // The broker recorded this generation as not applied (#2443). That is
+        // final and it did not move the lineage, so the pending request no
+        // longer blocks a new generation; the binding stays on the last head
+        // the lineage accepted, and the rejection is kept in the record.
+        const { pendingCorrection: _rejected, ...kept } = record;
+        const next = {
+          ...kept,
+          rejectedCorrections: [...(Array.isArray(kept.rejectedCorrections) ? kept.rejectedCorrections : []),
+            { generationRef: request.generationRef, headSha: request.headSha, diffHash: request.diffHash,
+              outcome: result.originalOutcome, recordedAt: utcNow(now) }],
+        };
+        writeRecord(values.record, next);
+        return {
+          exitCode: 1,
+          output: {
+            ok: false, command, lineageId: record.lineageId, resumed, confirmedByReplay, ...result,
+            finalized: true,
+            error: `the broker recorded correction ${request.generationRef} as ${result.originalOutcome}; `
+              + 'the lineage keeps its previous head, and the pending request was cleared',
+            lane: laneBinding(next),
+          },
+        };
+      }
       if (!result.ok) {
-        return { exitCode: 1, output: { ok: false, command, lineageId: record.lineageId, resumed, ...result } };
+        const hint = /idempotency_conflict/.test(result.error ?? '')
+          ? { hint: `the broker holds a different request for this source event; after checking the lineage, rerun with --generation-ref ${request.generationRef} --abandon-pending to release the record` }
+          : {};
+        return { exitCode: 1, output: { ok: false, command, lineageId: record.lineageId, resumed, confirmedByReplay, ...result, ...hint } };
       }
       if (!result.state) {
         // Without the resulting state we cannot tell whether the head moved;

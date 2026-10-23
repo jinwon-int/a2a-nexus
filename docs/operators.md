@@ -361,6 +361,22 @@ reports `reviewing_resolution`. A forbidden or out-of-scope path keeps
 `create`, a correction is persisted before it is sent and is resent unchanged
 on retry. A different generation is refused while one is still unconfirmed.
 
+A correction the broker *recorded but did not apply* is final (#2443):
+`transition_rejected` (for example a second generation after
+`maxCorrectionGenerations` is spent, when the lineage is
+`blocked_needs_operator`), `subject_conflict`, or `missing_lineage`. A
+first-send rejection arrives only as a 409 message, so `correct` resends the
+identical bytes once and reads the structured `replayed` outcome. On such an
+outcome it clears `pendingCorrection`, keeps the binding on the last accepted
+head, appends the attempt to `rejectedCorrections`, and exits 1 with
+`finalized: true`; a new generation is then no longer refused. An
+`idempotency_conflict` (the broker holds a different request under the same
+source event) is never cleared automatically: after checking the lineage, the
+operator releases the record with
+`correct --record lineage.json --generation-ref <pending ref> --abandon-pending`,
+which changes only the local record (no broker call, no secret needed) and
+appends to `abandonedCorrections`.
+
 The spec carries `brokerUrl`, `requesterId`, `dispatchRef`, `lineageId`,
 `goal`, `nonGoals`, `invariants`, `acceptanceCriteria`, `declaredPaths`,
 `baseSha`, `headSha`, and either `repo` (a checkout holding both commits) or

@@ -587,7 +587,7 @@
       "file": "scripts/lib/review-lineage-client.test.mjs",
       "class": "gate",
       "round": null,
-      "note": "Review-lineage operator client (lineage_create + operator_cancel) against a stub and, when dist is built, the real record-mode broker (#2274)."
+      "note": "Review-lineage operator client (lineage_create + operator_cancel) against a stub and, when dist is built, the real record-mode broker (#2274); recorded-but-not-applied corrections are finalized and --abandon-pending releases an idempotency_conflict (#2443)."
     },
     {
       "file": "scripts/lib/check-test-mkdtemp-cleanup.test.mjs",

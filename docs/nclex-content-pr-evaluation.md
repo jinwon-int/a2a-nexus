@@ -194,6 +194,8 @@ T2 리뷰 레인을 review lineage에 묶으면, 리뷰어 워커가 끝날 때 
      ```
   2. 해당 역할 레인에 `reviewLineageRecord: <record 경로>`를 적고 `a2a-dispatch-round.mjs`로 보냅니다(#2359가 `payload.reviewLineage`를 채움). 레인 하나에는 record 하나만 씁니다.
   3. 수정으로 새 head가 오면 lineage를 새로 만들지 않습니다. 같은 record로 `correct --record <record> --generation-ref <수정 커밋/코멘트 ref> --head <new head> --repo <checkout>`를 실행한 뒤 재리뷰 레인에 같은 record를 씁니다.
+     - 기본 예산은 correction 1세대(`maxCorrectionGenerations: 1`)입니다. 1세대가 수락된 뒤 새 head에서 다시 fail이 나면 lineage가 `blocked_needs_operator`가 되고, 다음 `correct`는 `transition_rejected`로 기록됩니다. 이때 `correct`는 `finalized: true`로 exit 1을 내고 record의 pending을 정리합니다. binding은 마지막으로 수락된 head에 남으므로, 이후 레인에 그 record를 붙이면 head가 맞지 않는 binding이 실립니다. 그 PR의 이후 라운드는 bind하지 않습니다(#2443, nclex#760 5차 사례).
+     - `idempotency_conflict`로 pending이 풀리지 않으면 lineage를 확인한 뒤 `correct --record <record> --generation-ref <pending ref> --abandon-pending`으로 record만 정리합니다. 브로커는 바뀌지 않습니다.
 - **bind하지 않는 경우**: 같은 (PR, head, 역할)에서 **이미 review-report가 나간 뒤의 재실행**은 bind하지 않습니다. 다시 bind하면 reviewer run이 부풀어 예산 데이터가 왜곡됩니다. 인프라 실패로 보고가 없었던 재실행은 같은 record로 bind해도 됩니다. 리뷰어 워커를 바꿔야 하면 operator가 `replace-reviewer --record <record> --decision-ref <ref>`로 기록합니다(예산은 초기화되지 않음).
 - **확인**: 워커 로그의 `"event":"review_lineage_report"` 줄(outcome `reported|skipped|rejected|failed`)과 `GET /review-lineages/<lineageId>`로 확인합니다.
 - **범위 밖**: broker 다중 리뷰어 quorum, enforce 모드, `DEFAULT_LINEAGE_BUDGET` 변경, T1 확대는 각각 별도 승인 대상입니다.

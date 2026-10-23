@@ -539,3 +539,162 @@ test('binding: diffHash uses the three-dot (merge-base) recipe when the base bra
   assert.equal(patch.toString('utf8'), threeDot);
   assert.equal(diffHashFromBytes(patch), diffHash(threeDot));
 });
+
+// ─── Part 4: recorded-but-not-applied corrections (#2443) ───────────────────
+// A correction the broker recorded as not applied (transition_rejected,
+// subject_conflict, missing_lineage) is final. Before #2443 the client kept
+// pendingCorrection forever in that case, and every new generation was refused
+// as "still unconfirmed" with no way out (observed on nclex#760, 2026-10-23).
+
+function correctionRecord(dir, brokerUrl) {
+  const { repo, base, head } = makeRepo(dir);
+  fs.writeFileSync(path.join(repo, 'a.txt'), 'one\nTHREE\n');
+  git(repo, 'add', '.');
+  git(repo, 'commit', '-q', '-m', 'next');
+  const next = git(repo, 'rev-parse', 'HEAD');
+  const binding = { intentHash: `sha256:${'1'.repeat(64)}`, headSha: head, diffHash: `sha256:${'2'.repeat(64)}` };
+  const record = path.join(dir, 'record.json');
+  fs.writeFileSync(record, JSON.stringify({
+    schema: RECORD_SCHEMA, state: 'created', brokerUrl, requesterId: 'operator-jingun',
+    lineageId: 'lineage-2443', dispatchRef: 'round-2443', binding,
+    request: { contract: { baseSha: base } },
+  }));
+  return { record, repo, base, head, next, binding };
+}
+
+const rejectedOnce = (outcome) => {
+  let seen = 0;
+  return () => (seen++ === 0
+    ? { status: 409, payload: { error: { code: 'invalid_transition', message: `review lineage correction generation rejected: ${outcome}` } } }
+    : { status: 200, payload: { result: { status: 'replayed', lineageId: 'lineage-2443', originalOutcome: outcome } } });
+};
+
+test('correct: a first-send rejection is confirmed by one identical replay and clears the pending request', async (t) => {
+  const dir = tmpDir(t);
+  const broker = await stubBroker(t, rejectedOnce('transition_rejected'));
+  const { record, repo, next, binding } = correctionRecord(dir, broker.url);
+  const env = { A2A_EDGE_SECRET: SECRET };
+  const res = await run(['correct', '--record', record, '--generation-ref', 'gen-2', '--head', next, '--repo', repo], { env, now: FIXED_NOW });
+  assert.equal(res.exitCode, 1, 'not applied is still a failure for the caller');
+  assert.equal(res.output.finalized, true);
+  assert.equal(res.output.confirmedByReplay, true);
+  assert.equal(res.output.originalOutcome, 'transition_rejected');
+  assert.equal(broker.calls.length, 2);
+  assert.deepEqual(broker.calls[1].body, broker.calls[0].body, 'the confirmation resends identical bytes');
+  const saved = JSON.parse(fs.readFileSync(record, 'utf8'));
+  assert.equal(saved.pendingCorrection, undefined);
+  assert.deepEqual(saved.binding, binding, 'the binding stays on the last accepted head');
+  assert.deepEqual(saved.rejectedCorrections.map((r) => [r.generationRef, r.headSha, r.outcome]), [['gen-2', next, 'transition_rejected']]);
+  // A new generation is no longer blocked by the finalized one.
+  const again = await run(['correct', '--record', record, '--generation-ref', 'gen-3', '--head', next, '--repo', repo, '--dry-run'], { env });
+  assert.equal(again.exitCode, 0, JSON.stringify(again.output));
+});
+
+test('correct: resuming a pending request that the broker replays as not applied finalizes it in one call', async (t) => {
+  for (const outcome of ['transition_rejected', 'subject_conflict', 'missing_lineage']) {
+    const dir = tmpDir(t);
+    const broker = await stubBroker(t, () => ({ status: 200, payload: { result: { status: 'replayed', lineageId: 'lineage-2443', originalOutcome: outcome } } }));
+    const { record, next } = correctionRecord(dir, broker.url);
+    const pending = { generationRef: 'gen-old', observedAt: '2026-10-22T12:29:36.452Z', headSha: next, diffHash: `sha256:${'3'.repeat(64)}` };
+    const saved0 = JSON.parse(fs.readFileSync(record, 'utf8'));
+    fs.writeFileSync(record, JSON.stringify({ ...saved0, pendingCorrection: pending }));
+    const res = await run(['correct', '--record', record, '--generation-ref', 'gen-old'], { env: { A2A_EDGE_SECRET: SECRET } });
+    assert.equal(res.exitCode, 1, outcome);
+    assert.equal(res.output.finalized, true, outcome);
+    assert.equal(res.output.resumed, true);
+    assert.equal(broker.calls.length, 1, 'a structured replay needs no confirmation');
+    assert.deepEqual(broker.calls[0].body, pending, 'the persisted request is resent unchanged');
+    const saved = JSON.parse(fs.readFileSync(record, 'utf8'));
+    assert.equal(saved.pendingCorrection, undefined, outcome);
+    assert.equal(saved.rejectedCorrections[0].outcome, outcome);
+  }
+});
+
+test('correct: idempotency_conflict keeps the pending request and points at --abandon-pending', async (t) => {
+  const dir = tmpDir(t);
+  const conflict = () => ({ status: 409, payload: { error: { code: 'invalid_transition', message: 'review lineage correction generation rejected: idempotency_conflict' } } });
+  const broker = await stubBroker(t, conflict);
+  const { record, next, binding } = correctionRecord(dir, broker.url);
+  const pending = { generationRef: 'gen-4dc4', observedAt: '2026-10-22T12:00:42.277Z', headSha: next, diffHash: `sha256:${'4'.repeat(64)}` };
+  const saved0 = JSON.parse(fs.readFileSync(record, 'utf8'));
+  fs.writeFileSync(record, JSON.stringify({ ...saved0, pendingCorrection: pending }));
+  const env = { A2A_EDGE_SECRET: SECRET };
+
+  const res = await run(['correct', '--record', record, '--generation-ref', 'gen-4dc4'], { env });
+  assert.equal(res.exitCode, 1);
+  assert.equal(res.output.finalized, undefined);
+  assert.match(res.output.error, /idempotency_conflict/);
+  assert.match(res.output.hint, /--abandon-pending/);
+  assert.deepEqual(JSON.parse(fs.readFileSync(record, 'utf8')).pendingCorrection, pending, 'nothing is cleared on a conflict');
+
+  const wrong = await run(['correct', '--record', record, '--generation-ref', 'gen-other', '--abandon-pending'], { env });
+  assert.equal(wrong.exitCode, 2);
+  assert.match(wrong.output.error, /needs --generation-ref gen-4dc4/);
+
+  const calls = broker.calls.length;
+  const dry = await run(['correct', '--record', record, '--generation-ref', 'gen-4dc4', '--abandon-pending', '--dry-run'], {});
+  assert.equal(dry.exitCode, 0);
+  assert.deepEqual(JSON.parse(fs.readFileSync(record, 'utf8')).pendingCorrection, pending, 'dry-run writes nothing');
+
+  const abandoned = await run(['correct', '--record', record, '--generation-ref', 'gen-4dc4', '--abandon-pending'], { now: FIXED_NOW });
+  assert.equal(abandoned.exitCode, 0, JSON.stringify(abandoned.output));
+  assert.equal(abandoned.output.brokerContacted, false);
+  assert.equal(broker.calls.length, calls, 'abandoning never contacts the broker and needs no secret');
+  const saved = JSON.parse(fs.readFileSync(record, 'utf8'));
+  assert.equal(saved.pendingCorrection, undefined);
+  assert.deepEqual(saved.binding, binding);
+  assert.deepEqual(saved.abandonedCorrections, [{ generationRef: 'gen-4dc4', headSha: next, diffHash: pending.diffHash,
+    reason: 'operator_abandoned', abandonedAt: '2026-10-09T10:00:00.000Z' }]);
+});
+
+test('correct --abandon-pending refuses a record without a pending correction', async (t) => {
+  const dir = tmpDir(t);
+  const { record } = correctionRecord(dir, 'http://127.0.0.1:1');
+  const res = await run(['correct', '--record', record, '--generation-ref', 'gen-1', '--abandon-pending'], {});
+  assert.equal(res.exitCode, 2);
+  assert.match(res.output.error, /no pending correction/);
+});
+
+test('real broker: a second generation past the budget is recorded as rejected and the record is released (#2443)', { skip: loopReason }, async (t) => {
+  const url = await loopBroker(t);
+  const dir = tmpDir(t);
+  const repo = path.join(dir, 'budget-repo');
+  fs.mkdirSync(repo);
+  git(repo, 'init', '-q');
+  const base = commitFiles(repo, { 'scripts/a.txt': 'one\n' }, 'base');
+  const head = commitFiles(repo, { 'scripts/a.txt': 'one\nbug\n' }, 'head');
+  const fix1 = commitFiles(repo, { 'scripts/a.txt': 'one\nstill-bug\n' }, 'fix-1');
+  const fix2 = commitFiles(repo, { 'scripts/a.txt': 'one\nfixed\n' }, 'fix-2');
+  const specFile = path.join(dir, 'spec.json');
+  fs.writeFileSync(specFile, JSON.stringify({
+    brokerUrl: url, requesterId: 'operator-jingun', dispatchRef: 'round-2443-budget', lineageId: 'lineage-2443-budget',
+    goal: 'Second correction past the budget.', nonGoals: [], invariants: [],
+    acceptanceCriteria: [{ id: 'AC-1', text: 'No bug line.' }], declaredPaths: { allowed: ['scripts/**'] },
+    baseSha: base, headSha: head, repo,
+  }));
+  const record = path.join(dir, 'record.json');
+  const env = { A2A_EDGE_SECRET: SECRET };
+  assert.equal((await run(['create', '--spec', specFile, '--out', record], { env })).exitCode, 0);
+
+  const finding = { criterionRef: 'AC-1', evidenceRefs: ['scripts/a.txt:2'], severity: 'major', category: 'correctness', blocking: true };
+  const lane1 = (await run(['lane', '--record', record])).output.reviewLineage;
+  await signedReport(url, lane1, 'fail', { newFindings: [finding], resolvedFindingIds: [], reopenedFindingIds: [] }, 'task-budget-1');
+  const first = await run(['correct', '--record', record, '--generation-ref', 'gen-1', '--head', fix1, '--repo', repo], { env });
+  assert.equal(first.exitCode, 0, JSON.stringify(first.output));
+
+  const lane2 = (await run(['lane', '--record', record])).output.reviewLineage;
+  await signedReport(url, lane2, 'fail', { newFindings: [{ ...finding, evidenceRefs: ['scripts/a.txt:2', 'scripts/a.txt:1'] }], resolvedFindingIds: [], reopenedFindingIds: [] }, 'task-budget-2');
+  const stateBefore = (await lineageState(url, 'lineage-2443-budget')).state;
+
+  const second = await run(['correct', '--record', record, '--generation-ref', 'gen-2', '--head', fix2, '--repo', repo], { env });
+  t.diagnostic(`state before gen-2=${stateBefore} result=${JSON.stringify(second.output)}`);
+  assert.equal(second.exitCode, 1);
+  assert.equal(second.output.finalized, true, JSON.stringify(second.output));
+  const saved = JSON.parse(fs.readFileSync(record, 'utf8'));
+  assert.equal(saved.pendingCorrection, undefined, 'the rejected generation no longer blocks the record');
+  assert.equal(saved.binding.headSha, fix1, 'the binding stays on the last accepted head');
+  assert.equal(saved.rejectedCorrections.at(-1).generationRef, 'gen-2');
+
+  const blocked = await run(['correct', '--record', record, '--generation-ref', 'gen-3', '--head', fix2, '--repo', repo, '--dry-run'], { env });
+  assert.equal(blocked.exitCode, 0, 'a new generation is no longer refused as unconfirmed');
+});
