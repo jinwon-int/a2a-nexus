@@ -11,6 +11,7 @@
   "exclude": [
     "src/**/*.test.ts",
     "src/shared-state-*conformance-v1.ts",
+    "src/shared-state-conformance-common-v1.ts",
     "src/shared-state-sqlite-*conformance*.ts",
     "src/shared-state-sqlite-expiry-snapshot-v1.ts",
     "src/shared-state-worker-mode/**"
