@@ -25,6 +25,16 @@ const PERMANENT_DESTINATION_REJECT_CODES = new Set([
   "stale_replay",
 ]);
 
+/**
+ * #2339 PR-5 (contract routing gate 5): permanent rejects that mean the parent
+ * broker never recorded this child brief, so no operator saw it. Each one gets
+ * a child-local fallback row on the source broker. `stale_replay` is excluded:
+ * the parent already holds a newer projection for the same child.
+ */
+const RELAY_FALLBACK_REJECT_CODES = new Set(
+  [...PERMANENT_DESTINATION_REJECT_CODES].filter((code) => code !== "stale_replay"),
+);
+
 /** Per-owner breakdown cap for `parentOwnedForOtherOwner` (keeps poll logs bounded). */
 const MAX_OTHER_OWNER_BREAKDOWN_KEYS = 20;
 
@@ -109,6 +119,22 @@ export interface CrossBrokerTerminalBriefReceiverPollResult {
   }>;
   /** Count of `skipped` events per permanent reject code. Observability only. */
   skippedByCode: Record<string, number>;
+  /**
+   * #2339 PR-5: child-local relay-failure fallback rows newly created on the
+   * source broker in this poll (one per permanently rejected event).
+   */
+  relayFallbackLocal: number;
+  /** Fallback rows the source broker already held (retry after a crash or a cursor rewind). */
+  relayFallbackReplayed: number;
+  /**
+   * Fallback requests the source broker refused permanently
+   * (`source_not_found` after retention, `not_relayed`). The cursor still
+   * advances past them. A transient fallback failure is `blocked` instead.
+   */
+  relayFallbackFailed: Array<{
+    eventId: string;
+    code: string;
+  }>;
   /**
    * Fetched events scoped parent-broker-only whose owner is not this
    * receiver's destination broker. A steady count here means parent-owned
@@ -202,6 +228,9 @@ export async function pollCrossBrokerTerminalBriefReceiver(
       blocked: [{ eventId: "source", code: `source_http_${sourceResponse.status}`, reason: "source terminal-outbox poll failed" }],
       skipped: [],
       skippedByCode: {},
+      relayFallbackLocal: 0,
+      relayFallbackReplayed: 0,
+      relayFallbackFailed: [],
       parentOwnedForOtherOwner: { count: 0, byOwner: {}, byOwnerTruncated: false },
     };
   }
@@ -215,6 +244,9 @@ export async function pollCrossBrokerTerminalBriefReceiver(
   const blocked: CrossBrokerTerminalBriefReceiverPollResult["blocked"] = [];
   const skipped: CrossBrokerTerminalBriefReceiverPollResult["skipped"] = [];
   const skippedByCode = new Map<string, number>();
+  let relayFallbackLocal = 0;
+  let relayFallbackReplayed = 0;
+  const relayFallbackFailed: CrossBrokerTerminalBriefReceiverPollResult["relayFallbackFailed"] = [];
   const otherOwners: OtherOwnerTally = { count: 0, byOwner: new Map(), byOwnerTruncated: false };
   // The cursor advances through accepted/ignored/permanently-skipped events
   // and freezes at the first retryable failure, so a wedged unrelated event
@@ -264,6 +296,20 @@ export async function pollCrossBrokerTerminalBriefReceiver(
     const code = destinationBody.ack?.code ?? `destination_http_${destinationResponse.status}`;
     const reason = destinationBody.ack?.reason ?? "destination projection ingest failed";
     if (PERMANENT_DESTINATION_REJECT_CODES.has(code)) {
+      if (RELAY_FALLBACK_REJECT_CODES.has(code)) {
+        const fallback = await postRelayFallback(config, fetchImpl, { eventId: event.id, code, reason });
+        if (fallback.outcome === "blocked") {
+          // At-least-once for the fallback too: freeze here and retry the
+          // whole event next poll (the destination reject and the fallback
+          // row are both idempotent).
+          blocked.push({ eventId: event.id, code: fallback.code, reason: "source relay-fallback write failed" });
+          cursorFrozen = true;
+          continue;
+        }
+        if (fallback.outcome === "failed") relayFallbackFailed.push({ eventId: event.id, code: fallback.code });
+        else if (fallback.outcome === "created") relayFallbackLocal += 1;
+        else relayFallbackReplayed += 1;
+      }
       skipped.push({ eventId: event.id, code, reason });
       skippedByCode.set(code, (skippedByCode.get(code) ?? 0) + 1);
       if (!cursorFrozen) lastSafeEventId = event.id;
@@ -286,12 +332,53 @@ export async function pollCrossBrokerTerminalBriefReceiver(
     blocked,
     skipped,
     skippedByCode: Object.fromEntries(skippedByCode),
+    relayFallbackLocal,
+    relayFallbackReplayed,
+    relayFallbackFailed,
     parentOwnedForOtherOwner: {
       count: otherOwners.count,
       byOwner: Object.fromEntries(otherOwners.byOwner),
       byOwnerTruncated: otherOwners.byOwnerTruncated,
     },
   };
+}
+
+type RelayFallbackOutcome =
+  | { outcome: "created" | "replayed" }
+  | { outcome: "failed"; code: string }
+  | { outcome: "blocked"; code: string };
+
+/**
+ * Ask the source (child) broker to create the local fallback row. 201/200 are
+ * success. A 404/409 carrying the route's own status (`source_not_found`,
+ * `not_relayed`) is permanent. Anything else, including a 404 from a broker
+ * that predates the route, blocks so the event is retried.
+ */
+async function postRelayFallback(
+  config: CrossBrokerTerminalBriefReceiverConfig,
+  fetchImpl: CrossBrokerTerminalBriefReceiverFetch,
+  input: { eventId: string; code: string; reason: string },
+): Promise<RelayFallbackOutcome> {
+  const response = await fetchImpl(relayFallbackUrl(config), {
+    method: "POST",
+    headers: receiverHeaders(config, "source"),
+    body: JSON.stringify({
+      sourceEventId: input.eventId,
+      lastErrorCode: input.code,
+      lastErrorReason: input.reason,
+      attempts: 1,
+    }),
+  });
+  const body = await response.json().catch(() => ({})) as { status?: unknown };
+  if (response.ok && body.status === "created") return { outcome: "created" };
+  if (response.ok && body.status === "replayed") return { outcome: "replayed" };
+  if (
+    (response.status === 404 && body.status === "source_not_found")
+    || (response.status === 409 && body.status === "not_relayed")
+  ) {
+    return { outcome: "failed", code: body.status };
+  }
+  return { outcome: "blocked", code: `relay_fallback_http_${response.status}` };
 }
 
 interface OtherOwnerTally {
@@ -326,6 +413,10 @@ function terminalOutboxUrl(config: CrossBrokerTerminalBriefReceiverConfig): stri
   if (config.limit) url.searchParams.set("limit", String(config.limit));
   if (config.reconcileUnacked) url.searchParams.set("reconcile_unacked", "true");
   return url.toString();
+}
+
+function relayFallbackUrl(config: CrossBrokerTerminalBriefReceiverConfig): string {
+  return new URL("/a2a/tasks/terminal-outbox/relay-fallback", baseWithSlash(config.sourceBaseUrl)).toString();
 }
 
 function crossBrokerProjectionUrl(config: CrossBrokerTerminalBriefReceiverConfig): string {

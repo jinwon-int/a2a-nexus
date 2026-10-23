@@ -15,8 +15,9 @@
 - [ ] 계약 2종 문구, 4-case fixture 갱신, RED 로그.
 
 ## PR-5 로컬 fallback
-- [ ] 영구 실패 분류(기존 재시도/TTL 설정) → `relayFallback` row, 부모 타이틀 금지 테스트.
-- [ ] idempotent(이벤트당 1개), `relayFallbackLocal` 카운터, `/health`.
+- [x] 영구 실패 분류(부모 영구 거부 코드, `stale_replay` 제외 — spec §5 정정) → `relayFallback` row, 부모 타이틀 금지 테스트.
+- [x] 쓰기 경로 `POST /a2a/tasks/terminal-outbox/relay-fallback`(원본 이벤트에서 생성), 계약 라벨 제목.
+- [x] idempotent(이벤트당 1개), `relayFallbackLocal` 카운터, `/health`.
 
 ## PR-1a/1b/1c 레지스트리
 - [ ] `ParentRoundRegistry` + sidecar 3지점 + hot-restart RED→GREEN.

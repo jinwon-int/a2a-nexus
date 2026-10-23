@@ -42,6 +42,7 @@ export const REQUEST_ROUTE_GROUPS = [
   "a2a.tasks.terminal-outbox",
   "a2a.tasks.terminal-outbox.receipt",
   "a2a.tasks.terminal-outbox.ack",
+  "a2a.tasks.terminal-outbox.relay-fallback",
   "a2a.tasks.terminal-events",
   "a2a.operator-events",
   "a2a.cross-broker.terminal-briefs",
@@ -179,6 +180,7 @@ export function classifyRequestRoute(method: string | undefined, pathname: strin
   if (pathname === "/a2a/jsonrpc" || pathname === "/a2a/jsonrpc/") return "a2a.jsonrpc";
   if (pathname === "/a2a/tasks/terminal-outbox/receipt") return "a2a.tasks.terminal-outbox.receipt";
   if (pathname === "/a2a/tasks/terminal-outbox/ack") return "a2a.tasks.terminal-outbox.ack";
+  if (pathname === "/a2a/tasks/terminal-outbox/relay-fallback") return "a2a.tasks.terminal-outbox.relay-fallback";
   if (pathname === "/a2a/tasks/terminal-outbox") return "a2a.tasks.terminal-outbox";
   if (pathname === "/a2a/tasks/terminal-events") return "a2a.tasks.terminal-events";
   if (pathname === "/a2a/operator/events") return "a2a.operator-events";

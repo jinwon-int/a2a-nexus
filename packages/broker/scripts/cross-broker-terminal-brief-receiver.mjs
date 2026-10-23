@@ -112,6 +112,9 @@ async function once() {
     blocked: result.blocked,
     skipped: result.skipped,
     skippedByCode: result.skippedByCode,
+    relayFallbackLocal: result.relayFallbackLocal,
+    relayFallbackReplayed: result.relayFallbackReplayed,
+    relayFallbackFailed: result.relayFallbackFailed,
     parentOwnedForOtherOwner: result.parentOwnedForOtherOwner,
     cursorToPersist: result.cursorToPersist,
   }, null, 2));

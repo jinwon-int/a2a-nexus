@@ -126,7 +126,44 @@ export interface TerminalTaskEventPayload {
   terminalBriefTitle?: string;
   /** Compatibility alias consumed by older Terminal Brief renderers. */
   title?: string;
+  /**
+   * #2339 PR-5 (contract routing gate 5): present only on a child-local
+   * operator row created after the parent broker permanently rejected the
+   * relayed projection. The row is a failure-safety notice. It is never a
+   * parent-round Terminal Brief, so it carries no round id, lane order, or total.
+   */
+  relayFallback?: TerminalTaskRelayFallbackMetadata;
 }
+
+export interface TerminalTaskRelayFallbackMetadata {
+  scope: "local-fallback";
+  reason: "permanent_destination_reject";
+  /** Relay attempts that ended in the permanent reject (one rejected POST today). */
+  attempts: number;
+  /** Destination ack code that made the relay permanently fail, e.g. `missing_parent`. */
+  lastErrorCode: string;
+  lastErrorReason?: string;
+  parentRoundId: string;
+  parentBrokerId: string;
+  /** Outbox id of the parent-owned child event whose relay failed. */
+  sourceEventId: string;
+}
+
+export interface TerminalTaskRelayFallbackInput {
+  sourceEventId: string;
+  lastErrorCode: string;
+  lastErrorReason?: string;
+  attempts?: number;
+  at?: string;
+}
+
+export type TerminalTaskRelayFallbackResult =
+  | { status: "created"; event: TerminalTaskOutboxEvent }
+  /** Already recorded; `event` is absent once retention evicted the row. */
+  | { status: "replayed"; event?: TerminalTaskOutboxEvent }
+  | { status: "source_not_found" }
+  /** The source event is not a parent-owned cross-broker brief, so it is never relayed. */
+  | { status: "not_relayed" };
 
 export interface TerminalTaskOutboxEvent {
   /** Stable id for external notifier dedupe/replay. */
@@ -506,6 +543,85 @@ export class TerminalTaskEventOutbox {
       at: projection.receivedAt,
       ackReason: "parent-broker operator-facing Terminal Brief row materialized from cross-broker projection; awaiting current-session-visible/operator-visible evidence before ACK",
     });
+  }
+
+  /**
+   * #2339 PR-5: materialise the child-local operator row for a relay that the
+   * parent broker permanently rejected (contract routing gate 5).
+   *
+   * The row is built from the retained source event, not from caller input,
+   * so a relay process cannot inject content. It drops parent ownership and
+   * every round field (`parentRoundId`, `run`, order, total, progress,
+   * `crossBrokerHandoff`): the parent-only ownership rules forbid a child
+   * broker from rendering a parent-round title, and a row without parent
+   * ownership is never picked up by the relay again. The title uses the
+   * contract's explicit "Terminal Brief relay failure" label. One row per
+   * source event (`fallback:<sourceEventId>`), replayed on retry.
+   */
+  enqueueRelayFallback(input: TerminalTaskRelayFallbackInput): TerminalTaskRelayFallbackResult {
+    const stableId = `fallback:${input.sourceEventId}`;
+    const id = `terminal:${encodeURIComponent(stableId)}`;
+    const existing = this.eventsById.get(id);
+    if (existing) return { status: "replayed", event: existing };
+    if (this.seen.has(id)) return { status: "replayed" };
+
+    const source = this.eventsById.get(input.sourceEventId);
+    if (!source) return { status: "source_not_found" };
+    const src = source.payload;
+    const parentBrokerId = src.notificationOwnership?.ownerBrokerId;
+    const parentRoundId = src.parentRoundId ?? src.crossBrokerHandoff?.parentRoundId;
+    if (
+      src.notificationOwnership?.scope !== "parent-broker-only"
+      || !src.crossBrokerHandoff
+      || !parentBrokerId
+      || !parentRoundId
+    ) {
+      return { status: "not_relayed" };
+    }
+
+    const lastErrorCode = relayFallbackCode(input.lastErrorCode);
+    const lastErrorReason = sanitizeAckText(input.lastErrorReason, MAX_ACK_NOTE_CHARS);
+    const title = buildRelayFallbackTitle(src.worker ?? src.taskId, lastErrorCode);
+    const at = input.at ?? new Date().toISOString();
+    const payload: TerminalTaskEventPayload = {
+      taskId: src.taskId,
+      status: src.status,
+      ...(this.ownership.brokerId ? { brokerOfRecordId: this.ownership.brokerId } : {}),
+      ...(src.traceId ? { traceId: src.traceId } : {}),
+      ...(src.taskDescription ? { taskDescription: src.taskDescription } : {}),
+      ...(src.worker ? { worker: src.worker } : {}),
+      ...(src.repo ? { repo: src.repo } : {}),
+      ...(src.issue !== undefined ? { issue: src.issue } : {}),
+      ...(src.taskBrief ? { taskBrief: src.taskBrief } : {}),
+      ...(src.prUrl ? { prUrl: src.prUrl } : {}),
+      ...(src.doneUrl ? { doneUrl: src.doneUrl } : {}),
+      ...(src.blockUrl ? { blockUrl: src.blockUrl } : {}),
+      ...(src.testSummary ? { testSummary: src.testSummary } : {}),
+      createdAt: src.createdAt,
+      updatedAt: src.updatedAt,
+      ...(src.completedAt ? { completedAt: src.completedAt } : {}),
+      terminalBriefTitle: title,
+      title,
+      relayFallback: {
+        scope: "local-fallback",
+        reason: "permanent_destination_reject",
+        attempts: normalizePositiveInt(input.attempts, 1),
+        lastErrorCode,
+        ...(lastErrorReason ? { lastErrorReason } : {}),
+        parentRoundId,
+        parentBrokerId,
+        sourceEventId: input.sourceEventId,
+      },
+    };
+    const event = this.appendAcceptedEvent({
+      id,
+      taskEventId: source.taskEventId,
+      payload,
+      at,
+      ackReason: "child-local relay-failure fallback row (contract routing gate 5); awaiting current-session-visible/operator-visible evidence before ACK",
+    });
+    this.enforceRetention();
+    return { status: "created", event };
   }
 
   subscribe(options: TerminalTaskOutboxSubscribeOptions = {}): TerminalTaskOutboxEvent[] {
@@ -1470,6 +1586,27 @@ export function buildTerminalBriefTitle(payload: TerminalTaskEventPayload): stri
     return `A2A Terminal Brief ${label}: ${payload.worker}(진단: ${missingFields.join(", ")} 누락)`;
   }
   return `A2A Terminal Brief ${label}: ${payload.worker}`;
+}
+
+/** Contract title cap for operator-facing Terminal Brief titles. */
+const MAX_RELAY_FALLBACK_TITLE_CHARS = 80;
+const RELAY_FALLBACK_TITLE_PREFIX = "A2A Terminal Brief relay failure: ";
+
+/** Destination ack codes are closed-set tokens; anything else is reported as `unknown`. */
+function relayFallbackCode(value: unknown): string {
+  return typeof value === "string" && /^[a-z0-9_]{1,32}$/.test(value) ? value : "unknown";
+}
+
+/**
+ * Contract-labelled fallback title (terminal-brief-core-contract, no-local-send
+ * rule): "Terminal Brief relay failure", never a parent-round title, so no n/N.
+ * Truncates the worker label, not the code, to stay within the title cap.
+ */
+export function buildRelayFallbackTitle(worker: string, code: string): string {
+  const suffix = ` (${code})`;
+  const room = MAX_RELAY_FALLBACK_TITLE_CHARS - RELAY_FALLBACK_TITLE_PREFIX.length - suffix.length;
+  const label = (sanitizeRenderedTerminalBriefText(worker, room) ?? "worker").slice(0, room);
+  return `${RELAY_FALLBACK_TITLE_PREFIX}${label}${suffix}`;
 }
 
 function shouldPreserveParentRoundOrderInTitle(payload: TerminalTaskEventPayload): boolean {
