@@ -1773,7 +1773,14 @@ test("#2339 PR-6 explicit handoffBrokerId is stored, keyed and projected as the 
   });
   assert.equal(row?.payload.worker, "child-broker-a");
   assert.equal(broker.listCrossBrokerTerminalBriefProjections({ handoffBrokerId: "child-broker-a" }).length, 1);
-  assert.deepEqual(broker.getCrossBrokerTerminalBriefDiagnostics(), { legacyOriginAsHandoff: 0, explicitHandoffBroker: 1 });
+  assert.deepEqual(broker.getCrossBrokerTerminalBriefDiagnostics(), {
+    legacyOriginAsHandoff: 0,
+    explicitHandoffBroker: 1,
+    // #2339 PR-1c: an unregistered round still resolves through the legacy task-id fallback.
+    parentResolvedViaRegistry: 0,
+    parentResolvedViaLegacyTask: 1,
+    missingAnchor: 0,
+  });
 });
 
 test("#2339 PR-6 a legacy packet without handoffBrokerId reads originBrokerId as the producer and is counted", () => {
@@ -1787,7 +1794,13 @@ test("#2339 PR-6 a legacy packet without handoffBrokerId reads originBrokerId as
   assert.equal(result.record.handoffBrokerSource, "legacy_origin");
   // Same key as before PR-6: producer was already originBrokerId.
   assert.equal(result.record.id, "round-parent::child-broker-a::child-task-1");
-  assert.deepEqual(broker.getCrossBrokerTerminalBriefDiagnostics(), { legacyOriginAsHandoff: 1, explicitHandoffBroker: 0 });
+  assert.deepEqual(broker.getCrossBrokerTerminalBriefDiagnostics(), {
+    legacyOriginAsHandoff: 1,
+    explicitHandoffBroker: 0,
+    parentResolvedViaRegistry: 0,
+    parentResolvedViaLegacyTask: 1,
+    missingAnchor: 0,
+  });
 });
 
 test("#2339 PR-6 wrong_origin is judged on the producer: a handoff broker equal to the receiver is refused", () => {

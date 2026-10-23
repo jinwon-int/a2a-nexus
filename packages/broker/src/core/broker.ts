@@ -609,6 +609,20 @@ export class InMemoryA2ABroker {
     });
     this.crossBrokerTerminalBriefs = new CrossBrokerTerminalBriefProjectionStore([], {
       brokerId: this.brokerId,
+      // #2339 PR-1c: registered local-origin rounds are judged against the
+      // registry. foreign-handoff entries name a relay destination and never
+      // make this broker the parent. Unregistered rounds use the legacy
+      // task-id fallback below (spec: removed after 2 weeks of
+      // parent_resolved_via=legacy_task at 0, separate owner decision).
+      resolveRegisteredParentRound: (parentRoundId) => {
+        const entry = this.parentRounds.get(parentRoundId);
+        if (!entry || entry.kind !== "local-origin") return undefined;
+        return {
+          parentBrokerId: entry.parentBrokerId,
+          ...(entry.handoffBrokerId ? { handoffBrokerId: entry.handoffBrokerId } : {}),
+          anchors: entry.anchors,
+        };
+      },
       hasParentRound: (parentRoundId) => this.tasks.has(parentRoundId),
       parentBrokerOfRecord: (parentRoundId) => this.tasks.get(parentRoundId)?.brokerOfRecord,
       getParentRoundRouting: (parentRoundId) => {

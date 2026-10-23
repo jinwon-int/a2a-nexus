@@ -82,6 +82,13 @@ export interface A2ADispatchTaskPayload {
     originTaskId?: string;
     childWorkerId?: string;
   };
+  /**
+   * #2339 PR-1c (spec item 2): routing scope of the registered parent round,
+   * copied from the plan's mint request. The parent checks routing against
+   * its registry entry, so these are attribution, not authority.
+   */
+  teamScope?: string;
+  initiatingBrokerId?: string;
   workModeDecision?: A2AWorkModeDecisionEvidence;
 }
 
@@ -542,6 +549,12 @@ export function buildA2ADispatchPlan(roundSpec: A2ADispatchSpec, config?: Partia
                 originTaskId: roundSpec.crossBrokerHandoff.originTaskId,
                 childWorkerId: roundSpec.crossBrokerHandoff.childWorkerId ?? roundSpec.worker,
               },
+            }
+          : {}),
+        ...(parentRoundRegistration
+          ? {
+              initiatingBrokerId: parentRoundRegistration.mint.body.initiatingBrokerId,
+              ...(parentRoundRegistration.mint.body.teamScope ? { teamScope: parentRoundRegistration.mint.body.teamScope } : {}),
             }
           : {}),
       }

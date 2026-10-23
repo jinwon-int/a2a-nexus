@@ -199,6 +199,13 @@ accepted. 앵커가 비어 있는 항목(자식을 아직 안 보냄)에 온 pro
 `missing_anchor`(새 reject code)로 거부 — 미래 `completedAt` 선점 공격(L2 반론)을
 막는다. `routing_mismatch`는 이제 실제로 동작한다(항목 2).
 
+> **PR-1c 구현 메모 (2026-10-23).**
+> - 판정 순서: 레지스트리의 `local-origin` 항목이 있으면 **그 항목으로만** 판정한다. 순서는 `parentBrokerId == 받는 broker`(아니면 `wrong_origin`), 항목에 `handoffBrokerId`가 있으면 일치(아니면 `routing_mismatch`), `childTaskId` 또는 `originTaskId` ∈ anchors(아니면 `missing_anchor`, 빈 anchors 포함)다. 항목이 없으면 기존 `tasks.has` 경로를 **그대로** 쓴다. 따라서 이미 운영 중인 미등록 라운드의 동작은 바뀌지 않는다. `foreign-handoff` 항목은 부모로 보지 않는다.
+> - **항목 2(`routing_mismatch` 활성화)는 레지스트리 항목의 `handoffBrokerId`로 직접 검사**한다. `resolveTerminalBriefParentOriginRoute`의 기본 broker-팀 레지스트리는 여전히 자리표시자(`brokeralpha`/`brokerbeta`)라 실제 broker id로는 해석되지 않는다. resolver 레지스트리 배선은 별도 과제로 남긴다. helper는 자식 payload에 `teamScope`·`initiatingBrokerId`를 싣지만 이는 attribution이고, 판정 권한은 레지스트리에 있다.
+> - projection 요청에 `originTaskId`(선택)를 추가했다. receiver는 `crossBrokerHandoff.originTaskId`를 싣는다. content digest에서는 제외해 업그레이드 전에 저장된 레코드의 dedupe를 유지한다.
+> - `missing_anchor`는 receiver에서 영구 거부로 분류하고 PR-5 로컬 fallback 대상이다. **PR-1c 이전 receiver는 이 코드를 모르므로 재시도 대상으로 보고 cursor를 멈춘다.** 그래서 2차 배포는 broker와 receiver를 함께 반영한다.
+> - 위 "레지스트리에 없는 `parentRoundId`를 가진 cross-broker 자식은 `[cross_broker_handoff_parent]` blocker로 거부"는 helper 계획 단계의 규칙(1단계)으로 유지하고, broker `POST /tasks` 생성 거부는 하지 않는다. 생성 시점에 거부하면 레지스트리 도입 전 경로가 한꺼번에 막힌다.
+
 **legacy `tasks.has` 유지 기간.** 레지스트리 도입 PR에서는 `tasks.has` 폴백을 남기고
 receiver 카운터 `parent_resolved_via: registry | legacy_task`를 기록한다. 플릿에서
 `legacy_task`가 0인 상태로 2주가 지나면(별도 오너 결정) 폴백을 제거한다.

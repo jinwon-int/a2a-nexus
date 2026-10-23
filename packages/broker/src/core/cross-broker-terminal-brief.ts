@@ -21,7 +21,15 @@ export type CrossBrokerTerminalBriefRejectCode =
   | "stale_replay"
   | "terminal_ack_forbidden"
   | "missing_dispatch_metadata"
-  | "routing_mismatch";
+  | "routing_mismatch"
+  /**
+   * #2339 PR-1c: the parent round is registered here, but neither the child
+   * task id nor the origin task id is one of its anchors. This covers a round
+   * with no anchors yet (no child dispatched) and a child the parent never
+   * handed off. It blocks a payload-only claim on a registered round, such as
+   * a future `completedAt` that pre-empts the real child.
+   */
+  | "missing_anchor";
 
 export interface TerminalBriefDispatchValidationResult {
   valid: boolean;
@@ -88,6 +96,11 @@ export interface CrossBrokerTerminalBriefProjectionRequest {
   /** Receiving broker id the packet was addressed to. Required when the receiver has a broker id. */
   brokerOfRecordId?: string;
   childTaskId?: string;
+  /**
+   * Parent-side task that handed the child off (`crossBrokerHandoff.originTaskId`),
+   * #2339 PR-1c. Either this or `childTaskId` must be an anchor of a registered round.
+   */
+  originTaskId?: string;
   childRunId?: string;
   /** Worker that produced the child Terminal Brief, when distinct from the handoff broker. */
   childWorkerId?: string;
@@ -127,6 +140,8 @@ export interface CrossBrokerTerminalBriefProjection {
   handoffBrokerSource?: CrossBrokerHandoffBrokerSource;
   brokerOfRecordId?: string;
   childTaskId?: string;
+  /** Parent-side handoff task (#2339 PR-1c); not part of the content digest. */
+  originTaskId?: string;
   childRunId?: string;
   /** Worker that produced the child Terminal Brief, when distinct from the handoff broker. */
   childWorkerId?: string;
@@ -165,6 +180,23 @@ export interface CrossBrokerTerminalBriefProjectionDiagnostics {
   legacyOriginAsHandoff: number;
   /** Accepted packets that carried an explicit `handoffBrokerId`. */
   explicitHandoffBroker: number;
+  /** #2339 PR-1c `parent_resolved_via=registry`: accepted against a registered local-origin round. */
+  parentResolvedViaRegistry: number;
+  /** #2339 PR-1c `parent_resolved_via=legacy_task`: accepted via the legacy task-id fallback. */
+  parentResolvedViaLegacyTask: number;
+  /** #2339 PR-1c: rejected as `missing_anchor`. */
+  missingAnchor: number;
+}
+
+/**
+ * #2339 PR-1c: what the projection store needs from a registered parent round.
+ * Only `local-origin` rounds are resolved here. A `foreign-handoff` entry only
+ * names a relay destination, so it never makes this broker the parent.
+ */
+export interface RegisteredParentRound {
+  parentBrokerId: string;
+  handoffBrokerId?: string;
+  anchors: readonly string[];
 }
 
 export type CrossBrokerTerminalBriefProjectionResult =
@@ -215,6 +247,13 @@ export interface ParentRoundRoutingInfo {
 
 export interface CrossBrokerTerminalBriefProjectionStoreOptions {
   brokerId?: string;
+  /**
+   * #2339 PR-1c: the parent round registry, consulted first. A registered
+   * round is judged against its own record: parent broker, handoff broker, and
+   * anchors. `hasParentRound` / `parentBrokerOfRecord` / `getParentRoundRouting`
+   * remain the legacy fallback for rounds that were never registered.
+   */
+  resolveRegisteredParentRound?(parentRoundId: string): RegisteredParentRound | undefined;
   hasParentRound(parentRoundId: string): boolean;
   parentBrokerOfRecord?(parentRoundId: string): string | undefined;
   now?(): Date;
@@ -247,6 +286,9 @@ export class CrossBrokerTerminalBriefProjectionStore {
   private readonly diagnosticsCounters: CrossBrokerTerminalBriefProjectionDiagnostics = {
     legacyOriginAsHandoff: 0,
     explicitHandoffBroker: 0,
+    parentResolvedViaRegistry: 0,
+    parentResolvedViaLegacyTask: 0,
+    missingAnchor: 0,
   };
 
   constructor(
@@ -308,25 +350,54 @@ export class CrossBrokerTerminalBriefProjectionStore {
     if (receiverBrokerId && normalized.handoffBrokerId === receiverBrokerId) {
       return reject("wrong_origin", "cross-broker projection handoff broker must differ from receiving broker", now);
     }
-    if (!this.options.hasParentRound(normalized.parentRoundId)) {
-      return reject("missing_parent", `parent round ${normalized.parentRoundId} is not present on this broker`, now);
-    }
-    const parentBroker = normalizeToken(this.options.parentBrokerOfRecord?.(normalized.parentRoundId));
-    if (receiverBrokerId && parentBroker && parentBroker !== receiverBrokerId) {
-      return reject("wrong_origin", `parent round ${normalized.parentRoundId} belongs to broker-of-record ${parentBroker}`, now);
-    }
-
-    // Routing validation: when the parent round carries Terminal Brief routing
-    // metadata (teamScope, initiatingBrokerId), validate the incoming projection
-    // against the expected cross-broker handoff topology.
-    const routing = this.options.getParentRoundRouting?.(normalized.parentRoundId);
-    if (routing) {
-      if (routing.handoffBrokerId && normalized.handoffBrokerId !== routing.handoffBrokerId) {
-        return reject("routing_mismatch", `projection handoffBrokerId "${normalized.handoffBrokerId}" does not match the parent round's handoff broker "${routing.handoffBrokerId}"`, now);
+    // #2339 PR-1c: a registered round is judged against the broker's own
+    // record of it, never against payload claims. Rounds that were never
+    // registered keep the legacy task-id path unchanged.
+    const registered = this.options.resolveRegisteredParentRound?.(normalized.parentRoundId);
+    let parentResolvedVia: "registry" | "legacy_task";
+    if (registered) {
+      parentResolvedVia = "registry";
+      if (receiverBrokerId && registered.parentBrokerId !== receiverBrokerId) {
+        return reject("wrong_origin", `parent round ${normalized.parentRoundId} belongs to parent broker ${registered.parentBrokerId}`, now);
       }
-      const addressedBroker = normalizeToken(normalized.brokerOfRecordId);
-      if (addressedBroker && addressedBroker !== routing.parentBrokerId) {
-        return reject("routing_mismatch", `projection brokerOfRecordId "${addressedBroker}" does not match parent round's parent broker "${routing.parentBrokerId}"`, now);
+      if (registered.handoffBrokerId && normalized.handoffBrokerId !== registered.handoffBrokerId) {
+        return reject("routing_mismatch", `projection handoffBrokerId "${normalized.handoffBrokerId}" does not match the registered handoff broker "${registered.handoffBrokerId}"`, now);
+      }
+      const anchors = new Set(registered.anchors);
+      const anchored = (normalized.childTaskId !== undefined && anchors.has(normalized.childTaskId))
+        || (normalized.originTaskId !== undefined && anchors.has(normalized.originTaskId));
+      if (!anchored) {
+        this.diagnosticsCounters.missingAnchor += 1;
+        return reject(
+          "missing_anchor",
+          anchors.size === 0
+            ? `parent round ${normalized.parentRoundId} has no anchors yet; register the handed-off task before its projection`
+            : `neither childTaskId nor originTaskId is an anchor of parent round ${normalized.parentRoundId}`,
+          now,
+        );
+      }
+    } else {
+      parentResolvedVia = "legacy_task";
+      if (!this.options.hasParentRound(normalized.parentRoundId)) {
+        return reject("missing_parent", `parent round ${normalized.parentRoundId} is not present on this broker`, now);
+      }
+      const parentBroker = normalizeToken(this.options.parentBrokerOfRecord?.(normalized.parentRoundId));
+      if (receiverBrokerId && parentBroker && parentBroker !== receiverBrokerId) {
+        return reject("wrong_origin", `parent round ${normalized.parentRoundId} belongs to broker-of-record ${parentBroker}`, now);
+      }
+
+      // Routing validation: when the parent round carries Terminal Brief routing
+      // metadata (teamScope, initiatingBrokerId), validate the incoming projection
+      // against the expected cross-broker handoff topology.
+      const routing = this.options.getParentRoundRouting?.(normalized.parentRoundId);
+      if (routing) {
+        if (routing.handoffBrokerId && normalized.handoffBrokerId !== routing.handoffBrokerId) {
+          return reject("routing_mismatch", `projection handoffBrokerId "${normalized.handoffBrokerId}" does not match the parent round's handoff broker "${routing.handoffBrokerId}"`, now);
+        }
+        const addressedBroker = normalizeToken(normalized.brokerOfRecordId);
+        if (addressedBroker && addressedBroker !== routing.parentBrokerId) {
+          return reject("routing_mismatch", `projection brokerOfRecordId "${addressedBroker}" does not match parent round's parent broker "${routing.parentBrokerId}"`, now);
+        }
       }
     }
 
@@ -368,6 +439,8 @@ export class CrossBrokerTerminalBriefProjectionStore {
     this.records.set(key, record);
     if (record.handoffBrokerSource === "legacy_origin") this.diagnosticsCounters.legacyOriginAsHandoff += 1;
     else this.diagnosticsCounters.explicitHandoffBroker += 1;
+    if (parentResolvedVia === "registry") this.diagnosticsCounters.parentResolvedViaRegistry += 1;
+    else this.diagnosticsCounters.parentResolvedViaLegacyTask += 1;
     return { accepted: true, replayed: false, record: structuredClone(record), ack: record.ack };
   }
 
@@ -415,6 +488,7 @@ function normalizeRequest(request: CrossBrokerTerminalBriefProjectionRequest): O
   const handoffBrokerSource: CrossBrokerHandoffBrokerSource = explicitHandoffBrokerId ? "explicit" : "legacy_origin";
   const brokerOfRecordId = normalizeToken(request.brokerOfRecordId);
   const childTaskId = normalizeToken(request.childTaskId);
+  const originTaskId = normalizeToken(request.originTaskId);
   const childRunId = normalizeToken(request.childRunId);
   const childWorkerId = normalizeToken(request.childWorkerId ?? request.workerId);
   const emittedAt = normalizeIso(request.emittedAt);
@@ -431,6 +505,7 @@ function normalizeRequest(request: CrossBrokerTerminalBriefProjectionRequest): O
     handoffBrokerSource,
     ...(brokerOfRecordId ? { brokerOfRecordId } : {}),
     ...(childTaskId ? { childTaskId } : {}),
+    ...(originTaskId ? { originTaskId } : {}),
     ...(childRunId ? { childRunId } : {}),
     ...(childWorkerId ? { childWorkerId } : {}),
     status,
@@ -492,7 +567,14 @@ function reject(code: CrossBrokerTerminalBriefRejectCode, reason: string, update
 function digestProjection(record: ReturnType<typeof normalizeRequest> & {}): string {
   // handoffBrokerId is part of the record key, not the content digest, so a
   // packet stored before #2339 PR-6 still dedupes as duplicate_replay.
-  const { handoffBrokerId: _handoffBrokerId, handoffBrokerSource: _handoffBrokerSource, ...content } = record;
+  // originTaskId (#2339 PR-1c) is judgment input, not content: a relay that
+  // starts sending it must not turn an already-stored child into a new update.
+  const {
+    handoffBrokerId: _handoffBrokerId,
+    handoffBrokerSource: _handoffBrokerSource,
+    originTaskId: _originTaskId,
+    ...content
+  } = record;
   return `sha256:${createHash("sha256").update(stableStringify(content)).digest("hex")}`;
 }
 
