@@ -3165,6 +3165,7 @@ export const __test = Object.freeze({
   normalizedPatchCommandProfile,
   resolveNodeScriptInvocation,
   hostPatchBridgeCommand,
+  isOpenClawBridgeConfigured,
   analysisBridgeCommand,
   analysisBridgeArtifactPreflight,
   analysisBridgeRuntimeFromName,

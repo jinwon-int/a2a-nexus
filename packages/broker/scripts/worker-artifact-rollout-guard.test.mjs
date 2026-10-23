@@ -5,6 +5,7 @@ import { tmpdir } from 'node:os';
 import { join, resolve, dirname } from 'node:path';
 import { spawnSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
+import { __test as handlerInternals } from './a2a-task-handler.mjs';
 
 const testDir = dirname(fileURLToPath(import.meta.url));
 const guardPath = join(testDir, 'worker-artifact-rollout-guard.mjs');
@@ -174,9 +175,16 @@ function makeWorkerRoot({
   return { root, files };
 }
 
+const BRIDGE_ENV_KEYS = [
+  'A2A_DANSO_ANALYSIS_BIN', 'A2A_PIRI_ANALYSIS_BIN', 'A2A_HERMES_ANALYSIS_BIN', 'A2A_OPENCLAW_ANALYSIS_BIN',
+  'OPENCLAW_BIN', 'A2A_PIRI_BIN', 'A2A_PIRI_PATCH_BIN',
+  'A2A_ANALYSIS_BRIDGE_ADAPTER', 'A2A_WORKER_BRIDGE_ADAPTER',
+  'A2A_OPENCLAW_BRIDGE_DISABLED', 'A2A_PIRI_PATCH_BRIDGE_DISABLED',
+];
+
 function runGuard(root, env = {}) {
   const childEnv = { ...process.env, A2A_WORKER_ROOT: root, ...env };
-  for (const key of ['A2A_PIRI_ANALYSIS_BIN', 'A2A_PIRI_BIN', 'A2A_HERMES_ANALYSIS_BIN', 'A2A_OPENCLAW_ANALYSIS_BIN', 'OPENCLAW_BIN', 'A2A_WORKER_ENV_PATH', 'WORKER_ENV_PATH', 'A2A_WORKER_TARGET_REVISION', 'A2A_ROLLOUT_GUARD_STRICT_BRIDGE_ROOT']) {
+  for (const key of [...BRIDGE_ENV_KEYS, 'A2A_WORKER_ENV_PATH', 'WORKER_ENV_PATH', 'A2A_WORKER_TARGET_REVISION', 'A2A_ROLLOUT_GUARD_STRICT_BRIDGE_ROOT']) {
     if (!(key in env)) delete childEnv[key];
   }
   return spawnSync(process.execPath, [guardPath, '--deployed'], {
@@ -625,4 +633,273 @@ test('deployed guard does not flag a bridge inside the worker root, even in stri
   const check = guardResult.detail.checks.find((c) => c.name === 'A2A_HERMES_ANALYSIS_BIN');
   assert.equal(check?.outsideWorkerRoot, false);
   assert.equal(guardResult.detail.warnings, undefined);
+});
+
+// ---------------------------------------------------------------------------
+// #2461 — the guard checks the host patch bridge slots too and reports the
+// slot the handler EFFECTIVELY selects per lane. A Termux worker had
+// OPENCLAW_BIN realigned to the artifact while A2A_PIRI_ANALYSIS_BIN and
+// A2A_PIRI_PATCH_BIN (both higher precedence) still pointed at a live checkout;
+// the patch slot was never checked at all.
+
+function makeOutsideScripts(names) {
+  const outside = mkdtempSync(join(tmpdir(), 'outside-checkout-'));
+  const paths = {};
+  for (const name of names) {
+    const file = join(outside, 'packages', 'broker', 'scripts', name);
+    mkdirSync(dirname(file), { recursive: true });
+    writeFileSync(file, '#!/usr/bin/env node\nprocess.stdout.write("{}");\n');
+    chmodSync(file, 0o755);
+    paths[name] = file;
+  }
+  return { outside, paths };
+}
+
+function writeArtifactScript(root, name) {
+  const file = join(root, 'scripts', name);
+  writeFileSync(file, '#!/usr/bin/env node\nprocess.stdout.write("{}");\n');
+  chmodSync(file, 0o755);
+  return file;
+}
+
+function bridgeGuardResult(result) {
+  const output = JSON.parse(result.stdout);
+  return output.results.find((r) => r.guard === 'configured-analysis-bridge-artifacts');
+}
+
+test('deployed guard flags the effective analysis and patch bridges of the #2461 checkout drift', () => {
+  const { root } = makeWorkerRoot();
+  const artifactOpenclaw = writeArtifactScript(root, 'claude-a2a-analysis-bridge.mjs');
+  const { outside, paths } = makeOutsideScripts(['claude-a2a-analysis-bridge.mjs', 'claude-a2a-patch-bridge.mjs']);
+  try {
+    const envPath = join(root, 'worker.env');
+    writeFileSync(envPath, [
+      'A2A_WORKER_BRIDGE_ADAPTER=claude-code',
+      `OPENCLAW_BIN=${artifactOpenclaw}`,
+      `A2A_PIRI_ANALYSIS_BIN=${paths['claude-a2a-analysis-bridge.mjs']}`,
+      `A2A_PIRI_PATCH_BIN=${paths['claude-a2a-patch-bridge.mjs']}`,
+      '',
+    ].join('\n'));
+    const result = runGuard(root, { A2A_WORKER_ENV_PATH: envPath });
+    assert.equal(result.status, 0, result.stderr || result.stdout);
+    const guardResult = bridgeGuardResult(result);
+    assert.equal(guardResult.ok, true);
+    const { effective, checks, warnings } = guardResult.detail;
+    assert.equal(effective.analysis.slot, 'A2A_PIRI_ANALYSIS_BIN');
+    assert.equal(effective.analysis.selectedBy, 'declared-adapter');
+    assert.equal(effective.analysis.outsideWorkerRoot, true);
+    assert.equal(effective.patch.slot, 'A2A_PIRI_PATCH_BIN');
+    assert.equal(effective.patch.outsideWorkerRoot, true);
+    assert.deepEqual(checks.find((c) => c.name === 'A2A_PIRI_PATCH_BIN')?.roles, ['patch']);
+    assert.deepEqual(checks.find((c) => c.name === 'OPENCLAW_BIN')?.roles, ['analysis', 'patch']);
+    assert.equal(checks.find((c) => c.name === 'OPENCLAW_BIN')?.effectiveFor, undefined);
+    assert.equal(warnings.length, 2);
+    assert.match(warnings.join('\n'), /A2A_PIRI_ANALYSIS_BIN points outside the worker root .* effective analysis bridge/);
+    assert.match(warnings.join('\n'), /A2A_PIRI_PATCH_BIN points outside the worker root .* effective patch bridge/);
+  } finally {
+    rmSync(outside, { recursive: true, force: true });
+  }
+});
+
+test('deployed guard notes a shadowed outside-root patch slot without calling it effective (#2461)', () => {
+  const { root } = makeWorkerRoot();
+  const artifactPatch = writeArtifactScript(root, 'claude-a2a-patch-bridge.mjs');
+  const { outside, paths } = makeOutsideScripts(['claude-a2a-patch-bridge.mjs']);
+  try {
+    const result = runGuard(root, { A2A_PIRI_BIN: artifactPatch, A2A_PIRI_PATCH_BIN: paths['claude-a2a-patch-bridge.mjs'] });
+    assert.equal(result.status, 0, result.stderr || result.stdout);
+    const guardResult = bridgeGuardResult(result);
+    assert.equal(guardResult.detail.effective.patch.slot, 'A2A_PIRI_BIN');
+    assert.equal(guardResult.detail.effective.patch.outsideWorkerRoot, false);
+    assert.equal(guardResult.detail.warnings.length, 1);
+    assert.match(guardResult.detail.warnings[0], /A2A_PIRI_PATCH_BIN points outside the worker root/);
+    assert.match(guardResult.detail.warnings[0], /not selected now \(patch lane uses A2A_PIRI_BIN\)/);
+  } finally {
+    rmSync(outside, { recursive: true, force: true });
+  }
+});
+
+test('strict bridge-root mode fails closed on an outside-root patch bridge (#2461)', () => {
+  const { root } = makeWorkerRoot();
+  const { outside, paths } = makeOutsideScripts(['claude-a2a-patch-bridge.mjs']);
+  try {
+    const result = runGuard(root, { A2A_PIRI_PATCH_BIN: paths['claude-a2a-patch-bridge.mjs'], A2A_ROLLOUT_GUARD_STRICT_BRIDGE_ROOT: '1' });
+    assert.notEqual(result.status, 0);
+    const guardResult = bridgeGuardResult(result);
+    assert.equal(guardResult.ok, false);
+    assert.equal(guardResult.detail.failed[0].name, 'A2A_PIRI_PATCH_BIN');
+    assert.equal(guardResult.detail.effective.patch.slot, 'A2A_PIRI_PATCH_BIN');
+  } finally {
+    rmSync(outside, { recursive: true, force: true });
+  }
+});
+
+test('a missing patch-only bridge warns but does not fail the guard (#2461)', () => {
+  const { root } = makeWorkerRoot();
+  const result = runGuard(root, { A2A_PIRI_BIN: join(root, 'scripts', 'missing-patch-bridge.mjs') });
+  assert.equal(result.status, 0, result.stderr || result.stdout);
+  const guardResult = bridgeGuardResult(result);
+  assert.equal(guardResult.ok, true);
+  assert.equal(guardResult.detail.checks[0].ok, false);
+  assert.match(guardResult.detail.warnings[0], /A2A_PIRI_BIN \(host patch bridge, effective\) is missing or not executable/);
+});
+
+test('a disabled host patch bridge has no effective patch slot (#2461)', () => {
+  const { root } = makeWorkerRoot();
+  const { outside, paths } = makeOutsideScripts(['claude-a2a-patch-bridge.mjs']);
+  try {
+    const result = runGuard(root, { A2A_PIRI_PATCH_BIN: paths['claude-a2a-patch-bridge.mjs'], A2A_PIRI_PATCH_BRIDGE_DISABLED: '1' });
+    assert.equal(result.status, 0, result.stderr || result.stdout);
+    const guardResult = bridgeGuardResult(result);
+    assert.equal(guardResult.detail.effective.patch.slot, null);
+    assert.equal(guardResult.detail.effective.patch.disabled, true);
+    assert.match(guardResult.detail.warnings[0], /not selected now \(host patch bridge is disabled\)/);
+  } finally {
+    rmSync(outside, { recursive: true, force: true });
+  }
+});
+
+test('the declared adapter selects a lower-precedence analysis slot, and the guard follows it (#2370, #2461)', () => {
+  const { root } = makeWorkerRoot();
+  const piri = writeArtifactScript(root, 'piri-a2a-analysis-bridge.mjs');
+  const { outside, paths } = makeOutsideScripts(['claude-a2a-analysis-bridge.mjs']);
+  try {
+    const result = runGuard(root, {
+      A2A_WORKER_BRIDGE_ADAPTER: 'claude-code',
+      A2A_PIRI_ANALYSIS_BIN: piri,
+      A2A_HERMES_ANALYSIS_BIN: paths['claude-a2a-analysis-bridge.mjs'],
+    });
+    assert.equal(result.status, 0, result.stderr || result.stdout);
+    const guardResult = bridgeGuardResult(result);
+    assert.equal(guardResult.detail.effective.analysis.slot, 'A2A_HERMES_ANALYSIS_BIN');
+    assert.equal(guardResult.detail.effective.analysis.selectedBy, 'declared-adapter');
+    assert.equal(guardResult.detail.effective.analysis.adapterMismatch, false);
+    assert.equal(guardResult.detail.warnings.length, 1);
+    assert.match(guardResult.detail.warnings[0], /A2A_HERMES_ANALYSIS_BIN .* effective analysis\+?\w* bridge/);
+  } finally {
+    rmSync(outside, { recursive: true, force: true });
+  }
+});
+
+test('the guard warns when the declared adapter contradicts every analysis slot (#2370)', () => {
+  const { root } = makeWorkerRoot();
+  const piri = writeArtifactScript(root, 'piri-a2a-analysis-bridge.mjs');
+  const result = runGuard(root, { A2A_WORKER_BRIDGE_ADAPTER: 'claude-code', A2A_PIRI_ANALYSIS_BIN: piri });
+  assert.equal(result.status, 0, result.stderr || result.stdout);
+  const guardResult = bridgeGuardResult(result);
+  assert.equal(guardResult.detail.effective.analysis.adapterMismatch, true);
+  assert.match(guardResult.detail.warnings[0], /declared bridge adapter claude_code .* analysis_bridge_adapter_mismatch/);
+});
+
+test('A2A_DANSO_ANALYSIS_BIN is checked as the top-precedence analysis slot (#2461)', () => {
+  const { root } = makeWorkerRoot();
+  const result = runGuard(root, { A2A_DANSO_ANALYSIS_BIN: join(root, 'scripts', 'missing-danso-a2a-analysis-bridge.mjs') });
+  assert.notEqual(result.status, 0);
+  const guardResult = bridgeGuardResult(result);
+  assert.equal(guardResult.ok, false);
+  assert.equal(guardResult.detail.failed[0].name, 'A2A_DANSO_ANALYSIS_BIN');
+  assert.equal(guardResult.detail.effective.analysis.slot, 'A2A_DANSO_ANALYSIS_BIN');
+});
+
+test('process env outranks the deployed env file for the effective selection (#2461)', () => {
+  const { root } = makeWorkerRoot();
+  const artifactPatch = writeArtifactScript(root, 'claude-a2a-patch-bridge.mjs');
+  const { outside, paths } = makeOutsideScripts(['claude-a2a-patch-bridge.mjs']);
+  try {
+    const envPath = join(root, 'worker.env');
+    writeFileSync(envPath, `A2A_PIRI_BIN=${paths['claude-a2a-patch-bridge.mjs']}\n`);
+    const result = runGuard(root, { A2A_WORKER_ENV_PATH: envPath, A2A_PIRI_BIN: artifactPatch });
+    assert.equal(result.status, 0, result.stderr || result.stdout);
+    const guardResult = bridgeGuardResult(result);
+    const check = guardResult.detail.checks.find((c) => c.name === 'A2A_PIRI_BIN');
+    assert.equal(check.source, 'process.env');
+    assert.equal(guardResult.detail.effective.patch.outsideWorkerRoot, false);
+    assert.equal(guardResult.detail.warnings, undefined);
+  } finally {
+    rmSync(outside, { recursive: true, force: true });
+  }
+});
+
+// Parity: the guard's mirror must pick the same slot as the handler's own
+// selection functions. Distinct paths per slot let us map the handler's
+// returned command back to the slot name. Spec values: a runtime keyword
+// becomes an existing fixture bridge file; `raw:<v>` is passed literally.
+test('guard effective-bridge selection matches the handler selection functions (#2461 parity)', () => {
+  const { root } = makeWorkerRoot();
+  // File names carry only the runtime keyword (slot names would leak extra
+  // keywords such as "hermes"/"piri" into the runtime detection).
+  const slotIndex = (slot) => BRIDGE_ENV_KEYS.indexOf(slot);
+  const file = (slot, runtime) => join(root, 'scripts', `slot${slotIndex(slot)}-${runtime}-a2a-bridge.mjs`);
+  const cases = [
+    {},
+    { A2A_PIRI_ANALYSIS_BIN: 'piri' },
+    { A2A_PIRI_ANALYSIS_BIN: 'piri', A2A_HERMES_ANALYSIS_BIN: 'hermes', OPENCLAW_BIN: 'openclaw' },
+    { A2A_DANSO_ANALYSIS_BIN: 'danso', A2A_PIRI_ANALYSIS_BIN: 'piri' },
+    { A2A_WORKER_BRIDGE_ADAPTER: 'raw:claude-code', A2A_PIRI_ANALYSIS_BIN: 'piri', A2A_OPENCLAW_ANALYSIS_BIN: 'claude' },
+    { A2A_WORKER_BRIDGE_ADAPTER: 'raw:claude-code', A2A_PIRI_ANALYSIS_BIN: 'claude', OPENCLAW_BIN: 'claude' },
+    { A2A_ANALYSIS_BRIDGE_ADAPTER: 'raw:codex', A2A_WORKER_BRIDGE_ADAPTER: 'raw:claude-code', A2A_PIRI_ANALYSIS_BIN: 'claude', A2A_HERMES_ANALYSIS_BIN: 'codex' },
+    { A2A_WORKER_BRIDGE_ADAPTER: 'raw:hermes', A2A_PIRI_ANALYSIS_BIN: 'piri' },
+    // codex wrapper names that also mention claude: codex must win (keyword order).
+    { A2A_ANALYSIS_BRIDGE_ADAPTER: 'raw:codex', A2A_PIRI_ANALYSIS_BIN: 'claude', A2A_HERMES_ANALYSIS_BIN: 'codex-claude' },
+    { A2A_WORKER_BRIDGE_ADAPTER: 'raw:unknown-runtime', A2A_HERMES_ANALYSIS_BIN: 'hermes', OPENCLAW_BIN: 'openclaw' },
+    // declared piri with no piri-named slot: the handler's in-repo default wins.
+    { A2A_WORKER_BRIDGE_ADAPTER: 'raw:piri', A2A_PIRI_ANALYSIS_BIN: 'source-only' },
+    { A2A_WORKER_BRIDGE_ADAPTER: 'raw:piri', A2A_HERMES_ANALYSIS_BIN: 'hermes' },
+    // declared adapter with no slot at all: default bridge, mismatch.
+    { A2A_WORKER_BRIDGE_ADAPTER: 'raw:claude-code' },
+    // whitespace-only / unset-token first adapter var wins the raw `||`.
+    { A2A_ANALYSIS_BRIDGE_ADAPTER: 'raw:  ', A2A_WORKER_BRIDGE_ADAPTER: 'raw:hermes', A2A_PIRI_ANALYSIS_BIN: 'claude', A2A_HERMES_ANALYSIS_BIN: 'hermes' },
+    { A2A_ANALYSIS_BRIDGE_ADAPTER: 'raw:none', A2A_WORKER_BRIDGE_ADAPTER: 'raw:hermes', A2A_PIRI_ANALYSIS_BIN: 'claude', A2A_HERMES_ANALYSIS_BIN: 'hermes' },
+    // literal unset tokens are real candidates for the handler.
+    { A2A_DANSO_ANALYSIS_BIN: 'raw:none', A2A_PIRI_ANALYSIS_BIN: 'claude' },
+    { A2A_PIRI_BIN: 'raw:null', A2A_PIRI_PATCH_BIN: 'claude' },
+    { A2A_PIRI_ANALYSIS_BIN: 'raw:   ', A2A_HERMES_ANALYSIS_BIN: 'hermes' },
+    { OPENCLAW_BIN: 'openclaw' },
+    { A2A_PIRI_PATCH_BIN: 'claude', OPENCLAW_BIN: 'openclaw' },
+    { A2A_PIRI_BIN: 'piri', A2A_PIRI_PATCH_BIN: 'claude', OPENCLAW_BIN: 'openclaw' },
+    { A2A_PIRI_PATCH_BIN: 'claude', A2A_PIRI_PATCH_BRIDGE_DISABLED: 'raw:1' },
+    { OPENCLAW_BIN: 'openclaw', A2A_OPENCLAW_BRIDGE_DISABLED: 'raw:yes' },
+    { A2A_PIRI_BIN: 'piri', A2A_OPENCLAW_BRIDGE_DISABLED: 'raw:0' },
+  ];
+  for (const spec of cases) {
+    const env = {};
+    for (const [key, value] of Object.entries(spec)) {
+      if (value.startsWith('raw:')) {
+        env[key] = value.slice(4);
+      } else {
+        env[key] = file(key, value);
+        writeFileSync(env[key], '#!/usr/bin/env node\n');
+        chmodSync(env[key], 0o755);
+      }
+    }
+    const slotOf = (command) => (command
+      ? Object.keys(env).filter((key) => key.endsWith('_BIN')).find((key) => env[key].trim() === command) ?? null
+      : null);
+    const handlerAnalysis = handlerInternals.analysisBridgeCommand(env);
+    const expectedAnalysis = slotOf(handlerAnalysis);
+    const expectedPatch = handlerInternals.isOpenClawBridgeConfigured(env)
+      ? slotOf(handlerInternals.hostPatchBridgeCommand(env))
+      : null;
+    const expectedMismatch = handlerInternals.analysisBridgeArtifactPreflight(handlerAnalysis, env)?.error?.code === 'analysis_bridge_adapter_mismatch';
+    const result = runGuard(root, env);
+    const guardResult = bridgeGuardResult(result);
+    const label = JSON.stringify(spec);
+    assert.equal(guardResult.detail.effective.analysis.slot, expectedAnalysis, `analysis slot for ${label}`);
+    assert.equal(guardResult.detail.effective.patch.slot, expectedPatch, `patch slot for ${label}`);
+    assert.equal(guardResult.detail.effective.analysis.adapterMismatch, expectedMismatch, `adapter mismatch for ${label}`);
+    if (expectedMismatch) {
+      assert.match((guardResult.detail.warnings ?? []).join('\n'), /analysis_bridge_adapter_mismatch/, `mismatch warning for ${label}`);
+    }
+  }
+});
+
+test('the guard warns about a literal unset token the handler would run (#2461)', () => {
+  const { root } = makeWorkerRoot();
+  const claude = writeArtifactScript(root, 'claude-a2a-analysis-bridge.mjs');
+  const result = runGuard(root, { A2A_DANSO_ANALYSIS_BIN: 'none', A2A_PIRI_ANALYSIS_BIN: claude });
+  assert.equal(result.status, 0, result.stderr || result.stdout);
+  const guardResult = bridgeGuardResult(result);
+  assert.equal(guardResult.detail.effective.analysis.slot, 'A2A_DANSO_ANALYSIS_BIN');
+  assert.equal(guardResult.detail.effective.analysis.literalUnsetToken, true);
+  assert.match(guardResult.detail.warnings.join('\n'), /A2A_DANSO_ANALYSIS_BIN is set to the literal "none"/);
 });
