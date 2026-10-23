@@ -10,20 +10,50 @@
  */
 import test from "node:test";
 import assert from "node:assert/strict";
+import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 
 import {
   NCLEX_CONTENT_PR_PRESET_V1,
   NCLEX_EVALUATION_CHECK_RUN_NAME,
+  NCLEX_FLEET_NODES_FILE_ENV,
+  NCLEX_FLEET_NODES_SCHEMA,
   NclexPresetError,
   classifyReceipts,
   evaluateMergeReadiness,
   formatEvaluationCheckRun,
   formatEvaluationComment,
+  loadFleetNodeAllowlist,
+  parseFleetNodeAllowlist,
   refsManifestDigestSha256,
-  routeEvaluation,
-  validatePresetInput,
-  verifyRefsManifest,
+  routeEvaluation as routeEvaluationRaw,
+  validatePresetInput as validatePresetInputRaw,
+  verifyRefsManifest as verifyRefsManifestRaw,
 } from "./nclex-content-pr-preset.mjs";
+
+// #1724: the fleet node allowlist is configuration, never hardcoded in the
+// preset. This test-only document covers every node id the fixtures use; the
+// wrappers below pass it explicitly so the rest of the suite is unchanged.
+const FLEET = Object.freeze({
+  schema: "a2a.nclex.fleet-nodes.v1",
+  nodeIds: ["dungae", "soonwook", "seoseo", "nosuk", "yukson", "daegyo"],
+});
+const validatePresetInput = (value, options = {}) => validatePresetInputRaw(value, { fleetNodes: FLEET, ...options });
+const routeEvaluation = (args) => routeEvaluationRaw({ fleetNodes: FLEET, ...args });
+const verifyRefsManifest = (args) => verifyRefsManifestRaw({ fleetNodes: FLEET, ...args });
+
+function withFleetEnv(value, run) {
+  const previous = process.env[NCLEX_FLEET_NODES_FILE_ENV];
+  if (value === undefined) delete process.env[NCLEX_FLEET_NODES_FILE_ENV];
+  else process.env[NCLEX_FLEET_NODES_FILE_ENV] = value;
+  try {
+    return run();
+  } finally {
+    if (previous === undefined) delete process.env[NCLEX_FLEET_NODES_FILE_ENV];
+    else process.env[NCLEX_FLEET_NODES_FILE_ENV] = previous;
+  }
+}
 
 const HEAD_A = "a".repeat(40);
 const HEAD_B = "b".repeat(40);
@@ -80,6 +110,135 @@ test("input validation fails closed on missing fields and malformed hashes", () 
   assert.throws(
     () => validatePresetInput(rest),
     (e) => e.code === "input_missing_fields" && e.details.missing.includes("authorNodeId"),
+  );
+});
+
+test("fleet node allowlist: unconfigured fails closed before any field is accepted (#1724)", () => {
+  withFleetEnv(undefined, () => {
+    for (const run of [
+      () => validatePresetInputRaw(input()),
+      () => validatePresetInputRaw(input(), {}),
+      () => validatePresetInputRaw(input(), { fleetNodes: null }),
+      () => routeEvaluationRaw({ input: input(), registry: REGISTRY }),
+      () => verifyRefsManifestRaw({ input: input(), refsManifest: [] }),
+    ]) {
+      assert.throws(
+        run,
+        (e) => e instanceof NclexPresetError
+          && e.code === "author_allowlist_unconfigured"
+          && e.message.includes(NCLEX_FLEET_NODES_FILE_ENV),
+      );
+    }
+  });
+  withFleetEnv("   ", () => {
+    assert.throws(() => validatePresetInputRaw(input()), (e) => e.code === "author_allowlist_unconfigured", "blank env is unset");
+  });
+});
+
+test("fleet node allowlist: env file is the fallback and the explicit option wins (#1724)", () => {
+  const dir = mkdtempSync(join(tmpdir(), "nclex-fleet-nodes-"));
+  try {
+    const file = join(dir, "fleet-nodes.json");
+    writeFileSync(file, JSON.stringify({ schema: NCLEX_FLEET_NODES_SCHEMA, nodeIds: ["node-alpha", "node-beta"] }));
+    assert.deepEqual([...loadFleetNodeAllowlist(file)], ["node-alpha", "node-beta"]);
+    withFleetEnv(` ${file} `, () => {
+      assert.equal(validatePresetInputRaw(input({ authorNodeId: "node-alpha" })).authorNodeId, "node-alpha");
+      assert.throws(() => validatePresetInputRaw(input()), (e) => e.code === "author_node_unknown", "env list excludes the fixture author");
+      // Explicit option overrides the env file.
+      assert.equal(validatePresetInputRaw(input(), { fleetNodes: FLEET }).authorNodeId, "dungae");
+      assert.equal(validatePresetInputRaw(input(), { fleetNodes: ["dungae"] }).authorNodeId, "dungae");
+    });
+    withFleetEnv(join(dir, "missing.json"), () => {
+      assert.throws(() => validatePresetInputRaw(input()), (e) => e.code === "fleet_nodes_invalid");
+    });
+    writeFileSync(file, "{ not json");
+    withFleetEnv(file, () => {
+      assert.throws(() => validatePresetInputRaw(input()), (e) => e.code === "fleet_nodes_invalid");
+    });
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test("fleet node allowlist: malformed documents fail closed as fleet_nodes_invalid (#1724)", () => {
+  assert.ok(Object.isFrozen(parseFleetNodeAllowlist(FLEET)));
+  for (const bad of [
+    null,
+    [],
+    { nodeIds: ["node-alpha"] },
+    { schema: "a2a.nclex.fleet-nodes.v0", nodeIds: ["node-alpha"] },
+    { schema: NCLEX_FLEET_NODES_SCHEMA },
+    { schema: NCLEX_FLEET_NODES_SCHEMA, nodeIds: [] },
+    { schema: NCLEX_FLEET_NODES_SCHEMA, nodeIds: ["Node-Alpha"] },
+    { schema: NCLEX_FLEET_NODES_SCHEMA, nodeIds: [" node-alpha"] },
+    { schema: NCLEX_FLEET_NODES_SCHEMA, nodeIds: ["node alpha"] },
+    { schema: NCLEX_FLEET_NODES_SCHEMA, nodeIds: ["1node"] },
+    { schema: NCLEX_FLEET_NODES_SCHEMA, nodeIds: [42] },
+    { schema: NCLEX_FLEET_NODES_SCHEMA, nodeIds: ["node-alpha", "node-alpha"] },
+    { schema: NCLEX_FLEET_NODES_SCHEMA, nodeIds: Array.from({ length: 257 }, (_, i) => `node-${i}`) },
+  ]) {
+    assert.throws(() => parseFleetNodeAllowlist(bad), (e) => e.code === "fleet_nodes_invalid", JSON.stringify(bad)?.slice(0, 80));
+    assert.throws(() => validatePresetInputRaw(input(), { fleetNodes: bad ?? false }), (e) => e.code === "fleet_nodes_invalid");
+  }
+  // Plain id arrays given via the option obey the same id rules.
+  assert.throws(() => validatePresetInputRaw(input(), { fleetNodes: ["Dungae"] }), (e) => e.code === "fleet_nodes_invalid");
+  assert.throws(() => validatePresetInputRaw(input(), { fleetNodes: [] }), (e) => e.code === "fleet_nodes_invalid");
+});
+
+test("authorNodeId allowlist: every configured id passes exactly, trim() only (#1724)", () => {
+  for (const nodeId of FLEET.nodeIds) {
+    assert.equal(validatePresetInput(input({ authorNodeId: nodeId })).authorNodeId, nodeId, nodeId);
+  }
+  // Same trim() normalization as every other identity field; no case folding.
+  assert.equal(validatePresetInput(input({ authorNodeId: "  yukson " })).authorNodeId, "yukson");
+});
+
+test("authorNodeId allowlist: unknown, mis-cased, or aliased authors fail closed naming the allowed set (#1724)", () => {
+  for (const bad of ["Dungae", "DUNGAE", "host-alias-0", "dungae2", "worker:dungae:g2:v1", "brokerAlpha", "unknown-node"]) {
+    assert.throws(
+      () => validatePresetInput(input({ authorNodeId: bad })),
+      (e) =>
+        e instanceof NclexPresetError
+        && e.code === "author_node_unknown"
+        && e.details.field === "authorNodeId"
+        && e.details.value === bad
+        && e.details.allowed.length === FLEET.nodeIds.length
+        && e.message.includes(FLEET.nodeIds.join(", ")),
+      bad,
+    );
+  }
+  // routeEvaluation and verifyRefsManifest re-validate, so they inherit the gate.
+  assert.throws(() => routeEvaluation({ input: input({ authorNodeId: "Seoseo" }), registry: REGISTRY }), (e) => e.code === "author_node_unknown");
+  // Blank keeps its prior, more specific code.
+  assert.throws(() => validatePresetInput(input({ authorNodeId: "   " })), (e) => e.code === "input_invalid");
+});
+
+test("authorNodeId allowlist: co-authors must be fleet nodes too, so recusal can never be dodged by case (#1724)", () => {
+  assert.deepEqual(validatePresetInput(input({ coAuthorNodeIds: ["yukson", " nosuk "] })).coAuthorNodeIds, ["yukson", "nosuk"]);
+  for (const bad of ["Nosuk", "host-alias-2"]) {
+    assert.throws(
+      () => validatePresetInput(input({ coAuthorNodeIds: ["yukson", bad] })),
+      (e) => e.code === "author_node_unknown" && e.details.field === "coAuthorNodeIds" && e.details.value === bad,
+      bad,
+    );
+  }
+});
+
+test("reviewer side: registry rows outside the fleet allowlist never reach a reviewer lane (#1724)", () => {
+  const registry = [
+    { nodeId: "Seoseo", team: "T1", formalReviewEligible: true },
+    { nodeId: "host-alias-2", team: "T1", formalReviewEligible: true },
+    { nodeId: "intruder", team: "T1", formalReviewEligible: true },
+    { nodeId: "nosuk", team: "T1", formalReviewEligible: true },
+    { nodeId: "yukson", team: "T1", formalReviewEligible: true },
+    { nodeId: "dungae", team: "T2", formalReviewEligible: true },
+  ];
+  const routed = routeEvaluation({ input: input(), registry });
+  assert.deepEqual(routed.lanes.map((lane) => lane.reviewerNodeId), ["nosuk", "yukson"]);
+  assert.throws(
+    () => routeEvaluation({ input: input(), registry: registry.filter((row) => row.nodeId !== "yukson") }),
+    (e) => e.code === "insufficient_reviewers",
+    "non-fleet rows never fill a quorum",
   );
 });
 

@@ -7,9 +7,10 @@
  * identically here — one crypto stack, pinned by golden JCS vectors in both
  * test suites.
  *
- * Fail-closed: malformed cores, unknown key ids, invalid signatures,
- * self-review, and restricted-artifact findings (oversized/multi-line notes,
- * prose evidenceRefs) are rejected; nothing is admitted on a soft error.
+ * Fail-closed: malformed cores, unknown key ids, key ids not bound to the
+ * receipt's reviewer node, invalid signatures, self-review, and
+ * restricted-artifact findings (oversized/multi-line notes, prose
+ * evidenceRefs) are rejected; nothing is admitted on a soft error.
  */
 import { createHash, createPublicKey, verify as cryptoVerify, type KeyObject } from "node:crypto";
 
@@ -212,12 +213,56 @@ function kidOf(entry: { protected?: unknown }): string | null {
   }
 }
 
+// Reviewer key-id naming rule (#1724, owner decision 2026-10-23): a reviewer
+// receipt is signed by that reviewer node's worker key, `worker:<node>:<suffix>`
+// (e.g. `worker:<node>:g2:v1`) — the jinwon-int/nclex quorum convention
+// (`worker|broker:<node>:<ver>`). Kept byte-identical with
+// scripts/nclex-content-pr-receipt.mjs; receipt-contract.test.ts pins parity.
+export const NCLEX_REVIEWER_KEY_ID_PATTERN = /^worker:([a-z][a-z0-9-]{0,63}):([A-Za-z0-9][A-Za-z0-9._:-]{0,63})$/;
+// Role-scoped key ids (node-shaped or role-bound). These are never "legacy":
+// the unbound-key escape does not apply to them.
+const ROLE_SCOPED_KEY_ID = /^(?:worker|broker|finalizer):/i;
+
+export interface VerifyReceiptOptions {
+  /**
+   * Legacy/test escape (default false = strict). When true, a key id that is
+   * NOT role-scoped (no `worker:`/`broker:`/`finalizer:` prefix, e.g. the T2
+   * proof kid `nclex-eval-proof-1`) skips the key-id ↔ reviewerNodeId binding.
+   * Role-scoped key ids are always enforced. The broker never sets this.
+   */
+  allowUnboundKeyIds?: boolean;
+}
+
+/**
+ * Key-id ↔ reviewer binding (#1724). Returns null when bound, else the
+ * fail-closed reason: `receipt_key_unbound` (the kid is not a
+ * `worker:<node>:<suffix>` reviewer key) or `receipt_key_reviewer_mismatch`
+ * (the kid's node segment differs from the receipt's `reviewerNodeId`).
+ */
+function keyIdBindingFailure(kid: string, reviewerNodeId: string, options: VerifyReceiptOptions): string | null {
+  const match = NCLEX_REVIEWER_KEY_ID_PATTERN.exec(kid);
+  if (!match) {
+    if (options.allowUnboundKeyIds === true && !ROLE_SCOPED_KEY_ID.test(kid)) return null;
+    return "receipt_key_unbound";
+  }
+  return match[1] === reviewerNodeId ? null : "receipt_key_reviewer_mismatch";
+}
+
 export type VerifyReceiptResult =
   | { ok: true; receipt: NclexSignedReceipt }
   | { ok: false; reason: string };
 
-/** Verify a signed receipt against the keyring. Fail-closed, never throws. */
-export function verifySignedReceipt(value: unknown, keyring: NclexEvaluationKeyring): VerifyReceiptResult {
+/**
+ * Verify a signed receipt against the keyring. Fail-closed, never throws.
+ * The signing key id must be the reviewer's own worker key
+ * (`worker:<reviewerNodeId>:<suffix>`); see VerifyReceiptOptions for the
+ * explicit legacy/test escape.
+ */
+export function verifySignedReceipt(
+  value: unknown,
+  keyring: NclexEvaluationKeyring,
+  options: VerifyReceiptOptions = {},
+): VerifyReceiptResult {
   if (!isPlainObject(value)) return { ok: false, reason: "receipt_malformed" };
   const { receiptId, signatures, ...coreValue } = value as Record<string, unknown>;
   let core: NclexReceiptCore;
@@ -238,8 +283,13 @@ export function verifySignedReceipt(value: unknown, keyring: NclexEvaluationKeyr
     return { ok: false, reason: "receipt_signature_missing" };
   }
   const kid = kidOf(entry);
-  const pem = kid ? keyring[kid] : undefined;
-  if (!kid || !hasText(pem)) {
+  if (!kid) return { ok: false, reason: "receipt_key_unknown" };
+  // Binding runs before key lookup and signature checks: a receipt whose kid
+  // does not name its own reviewer node is refused whatever the keyring holds.
+  const bindingFailure = keyIdBindingFailure(kid, core.reviewerNodeId, options);
+  if (bindingFailure) return { ok: false, reason: bindingFailure };
+  const pem = keyring[kid];
+  if (!hasText(pem)) {
     return { ok: false, reason: "receipt_key_unknown" };
   }
   try {

@@ -37,7 +37,12 @@ class CapturingResponse extends EventEmitter {
 const { publicKey, privateKey } = generateKeyPairSync("ed25519");
 const PRIVATE_PEM = privateKey.export({ type: "pkcs8", format: "pem" }) as string;
 const PUBLIC_PEM = publicKey.export({ type: "spki", format: "pem" }) as string;
-const KEYRING: NclexEvaluationKeyring = { "review-key-1": PUBLIC_PEM };
+// #1724 key-id naming rule: each reviewer signs with its own worker key id
+// (`worker:<reviewerNodeId>:<suffix>`); the test reuses one key pair per kid.
+const reviewerKid = (reviewerNodeId: string) => `worker:${reviewerNodeId}:g2:v1`;
+const KEYRING: NclexEvaluationKeyring = Object.fromEntries(
+  ["seoseo", "nosuk", "yukson"].map((nodeId) => [reviewerKid(nodeId), PUBLIC_PEM]),
+);
 
 function makeReceipt(overrides: Record<string, unknown> = {}) {
   const core = parseReceiptCore({
@@ -59,7 +64,7 @@ function makeReceipt(overrides: Record<string, unknown> = {}) {
     ...overrides,
   });
   const protectedHeader = Buffer.from(
-    JSON.stringify({ alg: "EdDSA", kid: "review-key-1", canonicalization: "rfc8785-jcs-v1" }),
+    JSON.stringify({ alg: "EdDSA", kid: reviewerKid(core.reviewerNodeId), canonicalization: "rfc8785-jcs-v1" }),
     "utf8",
   ).toString("base64url");
   const payload = Buffer.from(canonicalizeJson(core), "utf8").toString("base64url");
@@ -170,6 +175,32 @@ test("POST rejects tampered and unsigned receipts fail-closed (#1724)", async ()
   await assert.rejects(post(store, noSig), (error: unknown) => {
     assert.ok(error instanceof BrokerError);
     assert.match(error.message, /receipt_signature_missing/);
+    return true;
+  });
+  assert.equal(store.count(), 0);
+});
+
+test("POST enforces the kid ↔ reviewerNodeId binding strictly, with no legacy escape (#1724)", async () => {
+  const { store } = ctxFor({ method: "POST", path: "/nclex-evaluations/receipts" });
+  const resign = (kid: string) => {
+    const { receiptId, signatures, ...core } = makeReceipt();
+    const protectedHeader = Buffer.from(
+      JSON.stringify({ alg: "EdDSA", kid, canonicalization: "rfc8785-jcs-v1" }),
+      "utf8",
+    ).toString("base64url");
+    const payload = Buffer.from(canonicalizeJson(core), "utf8").toString("base64url");
+    const signature = cryptoSign(null, Buffer.from(`${protectedHeader}.${payload}`, "utf8"), PRIVATE_PEM).toString("base64url");
+    return { ...core, receiptId, signatures: [{ protected: protectedHeader, signature }] };
+  };
+  // reviewerNodeId is seoseo; nosuk's key is in the keyring but cannot vouch for seoseo.
+  await assert.rejects(post(store, resign(reviewerKid("nosuk"))), (error: unknown) => {
+    assert.ok(error instanceof BrokerError);
+    assert.match(error.message, /receipt_key_reviewer_mismatch/);
+    return true;
+  });
+  await assert.rejects(post(store, resign("nclex-eval-proof-1")), (error: unknown) => {
+    assert.ok(error instanceof BrokerError);
+    assert.match(error.message, /receipt_key_unbound/);
     return true;
   });
   assert.equal(store.count(), 0);

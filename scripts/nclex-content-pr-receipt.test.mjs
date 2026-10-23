@@ -31,6 +31,8 @@ const PRIVATE_PEM = privateKey.export({ type: "pkcs8", format: "pem" });
 const PUBLIC_PEM = publicKey.export({ type: "spki", format: "pem" });
 const OTHER = generateKeyPairSync("ed25519");
 const OTHER_PUBLIC_PEM = OTHER.publicKey.export({ type: "spki", format: "pem" });
+// #1724 key-id naming rule: the reviewer signs with its own worker key id.
+const REVIEWER_KID = "worker:nosuk:g2:v1";
 
 function coreFields(overrides = {}) {
   return {
@@ -41,7 +43,7 @@ function coreFields(overrides = {}) {
     diffHash: "diffhash-1",
     intentHash: "intenthash-1",
     authorNodeId: "dungae",
-    reviewerNodeId: "seoseo",
+    reviewerNodeId: "nosuk",
     team: "T1",
     lane: "content_clinical",
     verdict: "PASS",
@@ -52,35 +54,77 @@ function coreFields(overrides = {}) {
 }
 
 function signedReceipt(overrides = {}) {
-  return signReceipt(buildReceiptCore(coreFields(overrides)), { privateKeyPem: PRIVATE_PEM, keyId: "seoseo-review-key-1" });
+  return signReceipt(buildReceiptCore(coreFields(overrides)), { privateKeyPem: PRIVATE_PEM, keyId: REVIEWER_KID });
 }
 
 test("receipt sign/verify round-trip binds every exact-head field", () => {
   const receipt = signedReceipt();
   assert.equal(receipt.schema, NCLEX_RECEIPT_SCHEMA);
   assert.equal(receipt.receiptId, receiptIdOf(buildReceiptCore(coreFields())));
-  const result = verifyReceipt(receipt, { "seoseo-review-key-1": PUBLIC_PEM });
-  assert.deepEqual(result, { ok: true, receiptId: receipt.receiptId, reviewerNodeId: "seoseo", verdict: "PASS" });
+  const result = verifyReceipt(receipt, { [REVIEWER_KID]: PUBLIC_PEM });
+  assert.deepEqual(result, { ok: true, receiptId: receipt.receiptId, reviewerNodeId: "nosuk", verdict: "PASS" });
 });
 
 test("tampering with any bound field breaks verification (exact-head binding)", () => {
   const receipt = signedReceipt();
   const tampered = { ...receipt, headSha: HEAD_B };
-  const result = verifyReceipt(tampered, { "seoseo-review-key-1": PUBLIC_PEM });
+  const result = verifyReceipt(tampered, { [REVIEWER_KID]: PUBLIC_PEM });
   assert.equal(result.ok, false);
   assert.equal(result.reason, "receipt_id_mismatch", "head drift changes the canonical core and receipt id");
 
   const sigTampered = { ...receipt, verdict: "BLOCK" };
-  const result2 = verifyReceipt(sigTampered, { "seoseo-review-key-1": PUBLIC_PEM });
+  const result2 = verifyReceipt(sigTampered, { [REVIEWER_KID]: PUBLIC_PEM });
   assert.equal(result2.ok, false);
 });
 
 test("unknown or wrong key fails closed", () => {
   const receipt = signedReceipt();
   assert.equal(verifyReceipt(receipt, {}).reason, "receipt_key_unknown");
-  const wrong = verifyReceipt(receipt, { "seoseo-review-key-1": OTHER_PUBLIC_PEM });
+  const wrong = verifyReceipt(receipt, { [REVIEWER_KID]: OTHER_PUBLIC_PEM });
   assert.equal(wrong.ok, false);
   assert.equal(wrong.reason, "receipt_signature_invalid");
+});
+
+test("key id must be the reviewer's own worker key (#1724 kid ↔ reviewerNodeId binding)", () => {
+  const signWith = (keyId, overrides = {}) =>
+    signReceipt(buildReceiptCore(coreFields(overrides)), { privateKeyPem: PRIVATE_PEM, keyId });
+  // Bound: node segment equals reviewerNodeId; any suffix shape (g2:v1, g2:v2) is allowed.
+  for (const kid of ["worker:nosuk:g2:v1", "worker:nosuk:g2:v2"]) {
+    assert.equal(verifyReceipt(signWith(kid), { [kid]: PUBLIC_PEM }).ok, true, kid);
+  }
+  // Mismatch: a real worker key of ANOTHER node cannot vouch for this reviewer.
+  const borrowed = signWith("worker:dungae:g2:v1", { authorNodeId: "yukson" });
+  assert.deepEqual(verifyReceipt(borrowed, { "worker:dungae:g2:v1": PUBLIC_PEM }), {
+    ok: false,
+    reason: "receipt_key_reviewer_mismatch",
+  });
+  // Case is not normalized: reviewer "nosuk" is not bound by a kid naming "Nosuk".
+  assert.equal(verifyReceipt(signWith("worker:Nosuk:g2:v1"), { "worker:Nosuk:g2:v1": PUBLIC_PEM }).reason, "receipt_key_unbound");
+  // Non-node / legacy kids fail closed by default, before any key lookup.
+  for (const kid of ["nclex-eval-proof-1", "seoseo-review-key-1", "k"]) {
+    assert.deepEqual(verifyReceipt(signWith(kid), { [kid]: PUBLIC_PEM }), { ok: false, reason: "receipt_key_unbound" }, kid);
+  }
+  // Role-scoped kids that are not reviewer worker keys are never accepted.
+  for (const kid of ["broker:seoseo:agent-card:v1", "finalizer:panel:v1", "worker:nosuk", "worker:nosuk:"]) {
+    const receipt = signWith(kid);
+    assert.equal(verifyReceipt(receipt, { [kid]: PUBLIC_PEM }).reason, "receipt_key_unbound", kid);
+    assert.equal(verifyReceipt(receipt, { [kid]: PUBLIC_PEM }, { allowUnboundKeyIds: true }).reason, "receipt_key_unbound", kid);
+  }
+});
+
+test("allowUnboundKeyIds is an explicit legacy/test escape that never relaxes node-shaped kids", () => {
+  const legacy = signReceipt(buildReceiptCore(coreFields()), { privateKeyPem: PRIVATE_PEM, keyId: "nclex-eval-proof-1" });
+  const keyring = { "nclex-eval-proof-1": PUBLIC_PEM };
+  assert.equal(verifyReceipt(legacy, keyring).reason, "receipt_key_unbound", "strict by default");
+  assert.equal(verifyReceipt(legacy, keyring, { allowUnboundKeyIds: false }).reason, "receipt_key_unbound");
+  assert.equal(verifyReceipt(legacy, keyring, { allowUnboundKeyIds: "yes" }).reason, "receipt_key_unbound", "only literal true opts in");
+  assert.equal(verifyReceipt(legacy, keyring, { allowUnboundKeyIds: true }).ok, true);
+  assert.equal(verifyReceipt(legacy, { "nclex-eval-proof-1": OTHER_PUBLIC_PEM }, { allowUnboundKeyIds: true }).reason, "receipt_signature_invalid");
+  const borrowed = signReceipt(buildReceiptCore(coreFields()), { privateKeyPem: PRIVATE_PEM, keyId: "worker:yukson:g2:v2" });
+  assert.equal(
+    verifyReceipt(borrowed, { "worker:yukson:g2:v2": PUBLIC_PEM }, { allowUnboundKeyIds: true }).reason,
+    "receipt_key_reviewer_mismatch",
+  );
 });
 
 test("self-review and malformed fields are rejected at build time", () => {
@@ -186,9 +230,9 @@ test("restricted artifact: a validly signed receipt smuggling a verbatim excerpt
   // signReceipt signs whatever core it is given, so a producer that bypasses
   // buildReceiptCore can still emit a cryptographically valid receipt; the
   // verifier must refuse it before any key lookup or signature check counts.
-  const keyring = { "seoseo-review-key-1": PUBLIC_PEM };
+  const keyring = { [REVIEWER_KID]: PUBLIC_PEM };
   const signWith = (findings) =>
-    signReceipt({ ...buildReceiptCore(coreFields()), findings }, { privateKeyPem: PRIVATE_PEM, keyId: "seoseo-review-key-1" });
+    signReceipt({ ...buildReceiptCore(coreFields()), findings }, { privateKeyPem: PRIVATE_PEM, keyId: REVIEWER_KID });
   const excerpt = "Restricted source paragraph line 1.\nRestricted source paragraph line 2.";
   assert.deepEqual(verifyReceipt(signWith([{ findingId: "F-1", blocking: true, note: excerpt }]), keyring), {
     ok: false,

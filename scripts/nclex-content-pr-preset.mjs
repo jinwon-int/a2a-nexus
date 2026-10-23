@@ -2,7 +2,7 @@
 /**
  * NCLEX content PR evaluation preset — `nclex_content_pr_v1` (#1724).
  *
- * Lets any of the 12 fleet nodes author NCLEX content PRs while a formal A2A
+ * Lets any configured fleet node author NCLEX content PRs while a formal A2A
  * team (T1 or T2, never the author's) performs exact-head verification and
  * evaluation, then projects merge-ready evidence back to GitHub.
  *
@@ -10,6 +10,8 @@
  * - pure and offline: no network, no GitHub/provider/broker calls — this
  *   module only computes routing, readiness, refs-manifest digest binding,
  *   and comment projections;
+ * - the only local read is the optional fleet-nodes allowlist file named by
+ *   A2A_NCLEX_FLEET_NODES_FILE (#1724); callers may pass the list instead;
  * - reviewers never touch the branch; the broker/finalizer judges readiness,
  *   and a separate GitHub-privileged account merges without bypassing branch
  *   protection;
@@ -21,6 +23,7 @@
  * (maxCorrectionGenerations 1, maxReviewerRuns 2).
  */
 import { createHash } from "node:crypto";
+import { readFileSync } from "node:fs";
 
 import { canonicalizeJson } from "./lib/a2a-offline-verify.mjs";
 import { TEAM_BROKER_INVARIANT, hasText } from "./a2a-routing-shared.mjs";
@@ -69,11 +72,102 @@ function isPlainObject(value) {
 }
 
 /**
+ * Fleet node allowlist configuration (#1724, owner decision 2026-10-23). The
+ * canonical node list is maintained outside this public repository (the
+ * operator's private fleet records cross-checked against the fleet keyring),
+ * so the preset never hardcodes node names: the caller supplies the list
+ * explicitly (`fleetNodes` option) or points `A2A_NCLEX_FLEET_NODES_FILE` at
+ * a JSON document `{ "schema": "a2a.nclex.fleet-nodes.v1", "nodeIds": [...] }`.
+ * Unconfigured fails closed as `author_allowlist_unconfigured`; a malformed
+ * document fails closed as `fleet_nodes_invalid`.
+ */
+export const NCLEX_FLEET_NODES_SCHEMA = "a2a.nclex.fleet-nodes.v1";
+export const NCLEX_FLEET_NODES_FILE_ENV = "A2A_NCLEX_FLEET_NODES_FILE";
+const FLEET_NODE_ID = /^[a-z][a-z0-9-]{0,63}$/;
+const MAX_FLEET_NODES = 256;
+
+function validateFleetNodeIds(nodeIds, source) {
+  if (!Array.isArray(nodeIds) || nodeIds.length === 0 || nodeIds.length > MAX_FLEET_NODES) {
+    fail("fleet_nodes_invalid", `${source}: nodeIds must be a non-empty array of at most ${MAX_FLEET_NODES} ids`);
+  }
+  for (const id of nodeIds) {
+    if (typeof id !== "string" || !FLEET_NODE_ID.test(id)) {
+      fail("fleet_nodes_invalid", `${source}: every node id must match ${FLEET_NODE_ID.source} (exact, lowercase)`);
+    }
+  }
+  if (new Set(nodeIds).size !== nodeIds.length) fail("fleet_nodes_invalid", `${source}: node ids must be unique`);
+  return Object.freeze([...nodeIds]);
+}
+
+/**
+ * Validate a fleet-nodes document and return its frozen node id list.
+ * Ids are taken verbatim (no trim, no case folding), so the document itself
+ * must already be canonical.
+ */
+export function parseFleetNodeAllowlist(document, source = "fleet nodes") {
+  if (!isPlainObject(document) || document.schema !== NCLEX_FLEET_NODES_SCHEMA) {
+    fail("fleet_nodes_invalid", `${source}: must be { "schema": "${NCLEX_FLEET_NODES_SCHEMA}", "nodeIds": [...] }`);
+  }
+  return validateFleetNodeIds(document.nodeIds, source);
+}
+
+/** Read and validate a fleet-nodes JSON file (local read only). */
+export function loadFleetNodeAllowlist(file) {
+  let parsed;
+  try {
+    parsed = JSON.parse(readFileSync(file, "utf8"));
+  } catch (error) {
+    fail("fleet_nodes_invalid", `fleet nodes file unreadable: ${error instanceof Error ? error.message : String(error)}`);
+  }
+  return parseFleetNodeAllowlist(parsed, "fleet nodes file");
+}
+
+/**
+ * Resolve the allowlist: explicit `fleetNodes` (a fleet-nodes document or a
+ * plain id array, validated the same way) wins; otherwise the env file;
+ * otherwise fail closed. Returns a Set for exact-match lookups.
+ */
+function resolveFleetNodes(fleetNodes, env = process.env) {
+  if (fleetNodes !== undefined && fleetNodes !== null) {
+    const ids = Array.isArray(fleetNodes)
+      ? validateFleetNodeIds(fleetNodes, "fleetNodes option")
+      : parseFleetNodeAllowlist(fleetNodes, "fleetNodes option");
+    return new Set(ids);
+  }
+  const file = typeof env?.[NCLEX_FLEET_NODES_FILE_ENV] === "string" ? env[NCLEX_FLEET_NODES_FILE_ENV].trim() : "";
+  if (file) return new Set(loadFleetNodeAllowlist(file));
+  fail(
+    "author_allowlist_unconfigured",
+    `fleet node allowlist is not configured: pass the fleetNodes option or set ${NCLEX_FLEET_NODES_FILE_ENV}`,
+  );
+}
+
+/**
+ * Fail closed unless `value` (trimmed) is exactly one of the configured fleet
+ * node ids. The offending value goes to `details` only, so the message stays
+ * bounded and always names the allowed set.
+ */
+function assertFleetAuthorNode(field, value, allowed) {
+  const id = String(value).trim();
+  if (!allowed.has(id)) {
+    fail(
+      "author_node_unknown",
+      `${field} must be a configured fleet node id (exact, lowercase): ${[...allowed].join(", ")}`,
+      { field, value: id.slice(0, 64), allowed: [...allowed] },
+    );
+  }
+}
+
+/**
  * Validate the preset input. Fail-closed: every required field must be
  * present and well-formed, because receipts bind to these values.
+ * `options.fleetNodes` supplies the author allowlist (see
+ * NCLEX_FLEET_NODES_SCHEMA); without it the env file is used, and an
+ * unconfigured allowlist fails closed before any field is accepted.
  */
-export function validatePresetInput(input) {
+export function validatePresetInput(input, { fleetNodes } = {}) {
   if (!isPlainObject(input)) fail("input_invalid", "preset input must be an object");
+  const allowed = resolveFleetNodes(fleetNodes);
   const missing = [];
   for (const field of [
     "repo",
@@ -111,6 +205,7 @@ export function validatePresetInput(input) {
     fail("refs_manifest_invalid", "refsManifestSha256 must be a 64-char lowercase sha256 hex");
   }
   if (!hasText(input.authorNodeId)) fail("input_invalid", "authorNodeId must be a non-empty string");
+  assertFleetAuthorNode("authorNodeId", input.authorNodeId, allowed);
   if (!Array.isArray(input.caseIds) || input.caseIds.length === 0 || !input.caseIds.every((id) => hasText(String(id)))) {
     fail("input_invalid", "caseIds must be a non-empty array of non-empty strings");
   }
@@ -122,6 +217,9 @@ export function validatePresetInput(input) {
   if (!Array.isArray(coAuthors) || !coAuthors.every((id) => hasText(String(id)))) {
     fail("input_invalid", "coAuthorNodeIds must be an array of non-empty strings when present");
   }
+  // Co-authors are authors: an unknown or mis-cased id would also silently
+  // miss recusal (recusal compares exact ids), so the same allowlist applies.
+  for (const id of coAuthors) assertFleetAuthorNode("coAuthorNodeIds", id, allowed);
   return {
     repo: input.repo.trim(),
     prNumber: input.prNumber,
@@ -161,8 +259,8 @@ export function refsManifestDigestSha256(refsManifest) {
  * alongside the recomputed digest so callers can chain into routeEvaluation
  * without a second validation pass.
  */
-export function verifyRefsManifest({ input, refsManifest }) {
-  const validated = validatePresetInput(input);
+export function verifyRefsManifest({ input, refsManifest, fleetNodes }) {
+  const validated = validatePresetInput(input, { fleetNodes });
   if (!isPlainObject(refsManifest) && !Array.isArray(refsManifest)) {
     fail("refs_manifest_invalid", "refs manifest must be a JSON object or array");
   }
@@ -186,19 +284,28 @@ export function verifyRefsManifest({ input, refsManifest }) {
  * concrete reviewer lanes. Recusal is enforced by construction: the author
  * and declared co-authors can never appear in a reviewer lane.
  *
- * registry: [{ nodeId, team: "T1"|"T2", formalReviewEligible: boolean }]
+ * registry: [{ nodeId, team: "T1"|"T2", formalReviewEligible: boolean }];
+ * rows whose nodeId is not in the configured fleet node allowlist
+ * (`fleetNodes` / A2A_NCLEX_FLEET_NODES_FILE, same as validatePresetInput)
+ * are ignored.
  * Returns { brokerOfRecord, reviewerTeam, quorum, lanes:[{laneId, kind, reviewerNodeId, brief}] }.
  */
-export function routeEvaluation({ input: rawInput, registry }) {
-  const input = validatePresetInput(rawInput);
+export function routeEvaluation({ input: rawInput, registry, fleetNodes }) {
+  const allowed = resolveFleetNodes(fleetNodes);
+  const input = validatePresetInput(rawInput, { fleetNodes: [...allowed] });
   if (!Array.isArray(registry)) fail("registry_invalid", "registry must be an array");
 
   const teamOf = new Map();
   const eligibleByTeam = { T1: [], T2: [] };
   for (const row of registry) {
     if (!isPlainObject(row) || !hasText(String(row.nodeId)) || !TEAMS.has(row.team)) continue;
-    teamOf.set(String(row.nodeId).trim(), row.team);
-    if (row.formalReviewEligible === true) eligibleByTeam[row.team].push(String(row.nodeId).trim());
+    const nodeId = String(row.nodeId).trim();
+    // Reviewer side of the #1724 allowlist: a registry row whose nodeId is not
+    // a configured fleet node id (exact, case-sensitive) is skipped like any
+    // other malformed row, so it can never reach a reviewer lane.
+    if (!allowed.has(nodeId)) continue;
+    teamOf.set(nodeId, row.team);
+    if (row.formalReviewEligible === true) eligibleByTeam[row.team].push(nodeId);
   }
 
   const recused = new Set([input.authorNodeId, ...input.coAuthorNodeIds]);
