@@ -10,9 +10,11 @@
 
 import {
   boundedCountSchemaV1,
+  createConformanceKeyDigestV1,
   createReportConformanceErrorClassV1,
   deepFreeze,
   seededDeterministicShuffleV1,
+  SharedStateConformancePromiseBarrierV1,
 } from "./shared-state-conformance-common-v1.js";
 
 import { z } from "zod";
@@ -20,7 +22,6 @@ import { z } from "zod";
 import {
   SHARED_STATE_STORAGE_V1_VALUES as V,
   compareSharedStateOutboxOrderingV1,
-  digestSharedStateKeyV1,
   evaluateSharedStateOutboxPolicyV1,
   evaluateSharedStateOutboxRetryBindingV1,
   parseSharedStateStorageLifecycleV1,
@@ -452,51 +453,13 @@ export interface SharedStateOutboxConformanceTargetFactoryV1 {
   create(): Promise<SharedStateOutboxConformanceTargetV1>;
 }
 
-export class ExplicitOutboxPromiseBarrierV1 {
-  readonly #expected: number;
-  #arrived = 0;
-  #released = false;
-  readonly #allArrived: Promise<void>;
-  readonly #gate: Promise<void>;
-  #resolveAllArrived!: () => void;
-  #resolveGate!: () => void;
-
+export class ExplicitOutboxPromiseBarrierV1
+  extends SharedStateConformancePromiseBarrierV1 {
   constructor(expected: number) {
-    if (
-      !Number.isSafeInteger(expected)
-      || expected <= 0
-      || expected > SHARED_STATE_OUTBOX_CONFORMANCE_V1.producerCount
-    ) {
-      fail("barrier_not_ready");
-    }
-    this.#expected = expected;
-    this.#allArrived = new Promise((resolve) => {
-      this.#resolveAllArrived = resolve;
+    super(expected, {
+      maxExpected: SHARED_STATE_OUTBOX_CONFORMANCE_V1.producerCount,
+      fail,
     });
-    this.#gate = new Promise((resolve) => {
-      this.#resolveGate = resolve;
-    });
-  }
-
-  async arriveAndWait(): Promise<void> {
-    if (this.#released || this.#arrived >= this.#expected) {
-      fail("barrier_not_ready");
-    }
-    this.#arrived += 1;
-    if (this.#arrived === this.#expected) this.#resolveAllArrived();
-    await this.#gate;
-  }
-
-  async waitUntilAllArrived(): Promise<void> {
-    await this.#allArrived;
-  }
-
-  release(): void {
-    if (this.#released || this.#arrived !== this.#expected) {
-      fail("barrier_not_ready");
-    }
-    this.#released = true;
-    this.#resolveGate();
   }
 }
 
@@ -619,6 +582,8 @@ type DigestDomain =
   | "broker.outbox.payload"
   | "broker.outbox.receipt-evidence";
 
+const keyDigest = createConformanceKeyDigestV1<DigestDomain>(fail);
+
 function digest(
   domain: DigestDomain,
   components: readonly {
@@ -627,14 +592,7 @@ function digest(
     readonly value: string;
   }[],
 ): string {
-  const result = digestSharedStateKeyV1({
-    keyspaceVersion: V.versions.keyspace,
-    domain,
-    namespace: OUTBOX_REGISTRATION.namespace,
-    components,
-  });
-  if (!result.ok) return fail("invalid_generated_command");
-  return result.value.digest;
+  return keyDigest(domain, OUTBOX_REGISTRATION.namespace, components);
 }
 
 interface GeneratedStream {

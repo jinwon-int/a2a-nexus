@@ -13,6 +13,10 @@
 import { z } from "zod";
 
 import {
+  SHARED_STATE_STORAGE_V1_VALUES as STORAGE_V,
+  digestSharedStateKeyV1,
+} from "./shared-state-storage-contract-v1.js";
+import {
   SHARED_STATE_TIME_V1_VALUES as TIME_V,
   evaluateSharedStateTimeV1,
   type SharedStateClockProfileV1,
@@ -165,5 +169,169 @@ export function createHarnessTimeEvaluatorV1(options: {
       commonEvaluation = result.value;
     }
     return commonEvaluation ?? fail("time_evaluator_mismatch");
+  };
+}
+
+/**
+ * The explicit promise barrier shared by the lease, idempotency and outbox
+ * harnesses (#2350 A9). Each harness subclasses it, passing only what differs:
+ * its own contender limit and its own `fail`.
+ */
+export class SharedStateConformancePromiseBarrierV1 {
+  readonly #expected: number;
+  readonly #fail: (code: "barrier_not_ready") => never;
+  #arrived = 0;
+  #released = false;
+  readonly #allArrived: Promise<void>;
+  readonly #gate: Promise<void>;
+  #resolveAllArrived!: () => void;
+  #resolveGate!: () => void;
+
+  constructor(
+    expected: number,
+    options: {
+      readonly maxExpected: number;
+      readonly fail: (code: "barrier_not_ready") => never;
+    },
+  ) {
+    const { maxExpected, fail } = options;
+    this.#fail = fail;
+    if (
+      !Number.isSafeInteger(expected)
+      || expected <= 0
+      || expected > maxExpected
+    ) {
+      fail("barrier_not_ready");
+    }
+    this.#expected = expected;
+    this.#allArrived = new Promise((resolve) => {
+      this.#resolveAllArrived = resolve;
+    });
+    this.#gate = new Promise((resolve) => {
+      this.#resolveGate = resolve;
+    });
+  }
+
+  async arriveAndWait(): Promise<void> {
+    if (this.#released || this.#arrived >= this.#expected) {
+      this.#fail("barrier_not_ready");
+    }
+    this.#arrived += 1;
+    if (this.#arrived === this.#expected) this.#resolveAllArrived();
+    await this.#gate;
+  }
+
+  async waitUntilAllArrived(): Promise<void> {
+    await this.#allArrived;
+  }
+
+  release(): void {
+    if (this.#released || this.#arrived !== this.#expected) {
+      this.#fail("barrier_not_ready");
+    }
+    this.#released = true;
+    this.#resolveGate();
+  }
+}
+
+/**
+ * The logical-millisecond fake clock shared by the lease and idempotency
+ * harnesses: starts at 0n, advances only by a bounded safe-integer step.
+ */
+export class SharedStateConformanceLogicalFakeClockV1 {
+  readonly #fail: (code: "target_operation_failed") => never;
+  #logicalMilliseconds = 0n;
+
+  constructor(fail: (code: "target_operation_failed") => never) {
+    this.#fail = fail;
+  }
+
+  readLogicalMilliseconds(): bigint {
+    return this.#logicalMilliseconds;
+  }
+
+  advanceExactlyBy(milliseconds: number): void {
+    if (
+      !Number.isSafeInteger(milliseconds)
+      || milliseconds < 0
+      || milliseconds > STORAGE_V.limits.maxDurationMs
+    ) {
+      this.#fail("target_operation_failed");
+    }
+    this.#logicalMilliseconds += BigInt(milliseconds);
+  }
+}
+
+/**
+ * The observed-Unix-millisecond fake clock shared by the expiry and
+ * restart-continuity harnesses. Harness-owned control, not an adapter clock
+ * API; only the initial instant and `fail` are harness-specific.
+ */
+export class SharedStateConformanceObservedFakeClockV1 {
+  readonly #fail: (code: "clock_control_failed") => never;
+  #observed: bigint;
+
+  constructor(
+    initialInstant: bigint,
+    fail: (code: "clock_control_failed") => never,
+  ) {
+    this.#observed = initialInstant;
+    this.#fail = fail;
+  }
+
+  readObservedUnixMilliseconds(): bigint {
+    return this.#observed;
+  }
+
+  advanceExactlyBy(milliseconds: number): void {
+    if (
+      !Number.isSafeInteger(milliseconds)
+      || milliseconds < 0
+      || milliseconds > STORAGE_V.limits.maxDurationMs
+    ) {
+      this.#fail("clock_control_failed");
+    }
+    this.#observed += BigInt(milliseconds);
+  }
+
+  observeExactlyAt(instant: bigint): void {
+    if (
+      instant < 0n
+      || instant > BigInt(TIME_V.limits.maxTimestampUnixMs)
+    ) {
+      this.#fail("clock_control_failed");
+    }
+    this.#observed = instant;
+  }
+}
+
+/** One canonical keyspace component, as every harness generates them. */
+export interface SharedStateConformanceKeyComponentV1 {
+  readonly field: string;
+  readonly type: "utf8" | "uint" | "bytes";
+  readonly value: string;
+}
+
+/**
+ * The keyspace digest helper (byte-identical in the claim-graph, expiry,
+ * partition and restart-continuity harnesses): digests under the storage V1
+ * keyspace version and maps any rejection to `invalid_generated_command`.
+ */
+export function createConformanceKeyDigestV1<Domain extends string>(
+  fail: (code: "invalid_generated_command") => never,
+): (
+  domain: Domain,
+  namespace: string,
+  components: readonly SharedStateConformanceKeyComponentV1[],
+) => string {
+  return (domain, namespace, components) => {
+    const parsed = digestSharedStateKeyV1({
+      keyspaceVersion: STORAGE_V.versions.keyspace,
+      domain,
+      namespace,
+      components,
+    });
+    if (!parsed.ok) return fail("invalid_generated_command");
+    return parsed.value.digest;
   };
 }

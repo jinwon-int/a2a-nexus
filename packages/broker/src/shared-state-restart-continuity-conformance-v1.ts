@@ -14,17 +14,18 @@
 
 import {
   boundedCountSchemaV1,
+  createConformanceKeyDigestV1,
   createHarnessTimeEvaluatorV1,
   createReportConformanceErrorClassV1,
   deepFreeze,
   seededDeterministicShuffleV1,
+  SharedStateConformanceObservedFakeClockV1,
 } from "./shared-state-conformance-common-v1.js";
 
 import { z } from "zod";
 
 import {
   SHARED_STATE_STORAGE_V1_VALUES as V,
-  digestSharedStateKeyV1,
   parseSharedStateStorageLifecycleV1,
   parseSharedStateTransactionCommandV1,
   parseSharedStateTransactionResultV1,
@@ -486,33 +487,13 @@ export interface SharedStateRestartContinuityConformanceClockV1 {
  * Harness-owned fake-clock control. It is not an adapter clock API.
  */
 export class InjectedRestartContinuityConformanceFakeClockV1
-implements SharedStateRestartContinuityConformanceClockV1 {
-  #observed: bigint = SHARED_STATE_RESTART_CONTINUITY_CONFORMANCE_V1
-    .initialInstant;
-
-  readObservedUnixMilliseconds(): bigint {
-    return this.#observed;
-  }
-
-  advanceExactlyBy(milliseconds: number): void {
-    if (
-      !Number.isSafeInteger(milliseconds)
-      || milliseconds < 0
-      || milliseconds > V.limits.maxDurationMs
-    ) {
-      fail("clock_control_failed");
-    }
-    this.#observed += BigInt(milliseconds);
-  }
-
-  observeExactlyAt(instant: bigint): void {
-    if (
-      instant < 0n
-      || instant > BigInt(TIME_V.limits.maxTimestampUnixMs)
-    ) {
-      fail("clock_control_failed");
-    }
-    this.#observed = instant;
+  extends SharedStateConformanceObservedFakeClockV1
+  implements SharedStateRestartContinuityConformanceClockV1 {
+  constructor() {
+    super(
+      SHARED_STATE_RESTART_CONTINUITY_CONFORMANCE_V1.initialInstant,
+      fail,
+    );
   }
 }
 
@@ -768,24 +749,7 @@ type DigestDomain =
   | "broker.claim-graph.projection-batch"
   | "broker.claim-graph.projection-inverse";
 
-function digest(
-  domain: DigestDomain,
-  namespace: string,
-  components: readonly {
-    readonly field: string;
-    readonly type: "utf8" | "uint" | "bytes";
-    readonly value: string;
-  }[],
-): string {
-  const parsed = digestSharedStateKeyV1({
-    keyspaceVersion: V.versions.keyspace,
-    domain,
-    namespace,
-    components,
-  });
-  if (!parsed.ok) return fail("invalid_generated_command");
-  return parsed.value.digest;
-}
+const digest = createConformanceKeyDigestV1<DigestDomain>(fail);
 
 function command<Selected extends Operation>(
   operation: Selected,

@@ -10,16 +10,18 @@
 
 import {
   boundedCountSchemaV1,
+  createConformanceKeyDigestV1,
   createSimpleConformanceErrorClassV1,
   deepFreeze,
   seededDeterministicShuffleV1,
+  SharedStateConformanceLogicalFakeClockV1,
+  SharedStateConformancePromiseBarrierV1,
 } from "./shared-state-conformance-common-v1.js";
 
 import { z } from "zod";
 
 import {
   SHARED_STATE_STORAGE_V1_VALUES as V,
-  digestSharedStateKeyV1,
   parseSharedStateStorageLifecycleV1,
   parseSharedStateTransactionCommandV1,
   parseSharedStateTransactionResultV1,
@@ -231,22 +233,10 @@ export interface SharedStateLeaseConformanceClockControlV1
 }
 
 export class InjectedDeterministicFakeClockV1
-implements SharedStateLeaseConformanceClockControlV1 {
-  #logicalMilliseconds = 0n;
-
-  readLogicalMilliseconds(): bigint {
-    return this.#logicalMilliseconds;
-  }
-
-  advanceExactlyBy(milliseconds: number): void {
-    if (
-      !Number.isSafeInteger(milliseconds)
-      || milliseconds < 0
-      || milliseconds > V.limits.maxDurationMs
-    ) {
-      fail("target_operation_failed");
-    }
-    this.#logicalMilliseconds += BigInt(milliseconds);
+  extends SharedStateConformanceLogicalFakeClockV1
+  implements SharedStateLeaseConformanceClockControlV1 {
+  constructor() {
+    super(fail);
   }
 }
 
@@ -280,51 +270,12 @@ export interface SharedStateLeaseConformanceTargetFactoryV1 {
   }): Promise<SharedStateLeaseConformanceTargetV1>;
 }
 
-export class ExplicitPromiseBarrierV1 {
-  readonly #expected: number;
-  #arrived = 0;
-  #released = false;
-  readonly #allArrived: Promise<void>;
-  readonly #gate: Promise<void>;
-  #resolveAllArrived!: () => void;
-  #resolveGate!: () => void;
-
+export class ExplicitPromiseBarrierV1 extends SharedStateConformancePromiseBarrierV1 {
   constructor(expected: number) {
-    if (
-      !Number.isSafeInteger(expected)
-      || expected <= 0
-      || expected > SHARED_STATE_LEASE_CONFORMANCE_V1.contenderCount
-    ) {
-      fail("barrier_not_ready");
-    }
-    this.#expected = expected;
-    this.#allArrived = new Promise((resolve) => {
-      this.#resolveAllArrived = resolve;
+    super(expected, {
+      maxExpected: SHARED_STATE_LEASE_CONFORMANCE_V1.contenderCount,
+      fail,
     });
-    this.#gate = new Promise((resolve) => {
-      this.#resolveGate = resolve;
-    });
-  }
-
-  async arriveAndWait(): Promise<void> {
-    if (this.#released || this.#arrived >= this.#expected) {
-      fail("barrier_not_ready");
-    }
-    this.#arrived += 1;
-    if (this.#arrived === this.#expected) this.#resolveAllArrived();
-    await this.#gate;
-  }
-
-  async waitUntilAllArrived(): Promise<void> {
-    await this.#allArrived;
-  }
-
-  release(): void {
-    if (this.#released || this.#arrived !== this.#expected) {
-      fail("barrier_not_ready");
-    }
-    this.#released = true;
-    this.#resolveGate();
   }
 }
 
@@ -355,25 +306,22 @@ function sameSnapshot(
   );
 }
 
+type DigestDomain =
+  | "broker.lease.resource-key"
+  | "broker.lease.owner-key"
+  | "broker.lease.mutation";
+
+const keyDigest = createConformanceKeyDigestV1<DigestDomain>(fail);
+
 function digest(
-  domain:
-    | "broker.lease.resource-key"
-    | "broker.lease.owner-key"
-    | "broker.lease.mutation",
+  domain: DigestDomain,
   components: readonly {
     readonly field: string;
     readonly type: "utf8" | "bytes";
     readonly value: string;
   }[],
 ): string {
-  const result = digestSharedStateKeyV1({
-    keyspaceVersion: V.versions.keyspace,
-    domain,
-    namespace: "broker.lease.conformance",
-    components,
-  });
-  if (!result.ok) fail("invalid_generated_command");
-  return result.value.digest;
+  return keyDigest(domain, "broker.lease.conformance", components);
 }
 
 const RESOURCE_KEY_DIGEST = digest("broker.lease.resource-key", [
