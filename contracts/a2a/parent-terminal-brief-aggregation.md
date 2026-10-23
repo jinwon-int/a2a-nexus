@@ -85,6 +85,29 @@ Every parent aggregation projection must carry these fields:
 | `isTerminalAck` | Must be `false`. |
 | `isReadReceipt` | Must be `false`. |
 
+### Registered parent rounds (2026-10, #2339 PR-1c)
+
+A parent round minted on the receiving broker (`POST /a2a/parent-rounds`,
+`kind: local-origin`) is judged against the broker's own registry entry,
+never against payload claims:
+
+- the entry's `parentBrokerId` must be the receiving broker (`wrong_origin`);
+- when the entry names a `handoffBrokerId`, the projection's producer must
+  match it (`routing_mismatch`);
+- the projection's `childTaskId` or `originTaskId` must be one of the entry's
+  anchors (`missing_anchor`). An entry without anchors accepts nothing, so a
+  payload-only packet cannot claim a registered round or pre-empt the real
+  child with a future `completedAt`.
+
+Rounds that were never registered keep the legacy task-id check
+(`missing_parent` when no task with that id exists), and the broker counts
+which path accepted each projection (`parentResolvedViaRegistry` /
+`parentResolvedViaLegacyTask` in `/health` `crossBrokerTerminalBriefs`). A
+`foreign-handoff` entry (registered by a destination broker's handoff
+receiver) names a relay destination and never makes that broker the parent.
+A task payload's `parentRoundId` / `crossBrokerHandoff` never creates a
+registry entry.
+
 ### Projection ingest compatibility (2026-10, #2339 PR-6)
 
 The broker ingest (`POST` cross-broker projection) reads two broker fields with

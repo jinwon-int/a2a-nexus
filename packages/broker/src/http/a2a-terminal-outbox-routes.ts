@@ -99,7 +99,9 @@ export async function handleCrossBrokerTerminalBriefIngestRequest(
     body as Parameters<typeof broker.ingestCrossBrokerTerminalBriefProjection>[0],
   );
   if (!result.accepted) {
-    const status = result.ack.code === "missing_parent" ? 404 : result.ack.code === "stale_replay" ? 409 : 400;
+    const status = result.ack.code === "missing_parent" || result.ack.code === "missing_anchor"
+      ? 404
+      : result.ack.code === "stale_replay" ? 409 : 400;
     sendJson(res, status, result);
     return;
   }

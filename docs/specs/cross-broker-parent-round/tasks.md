@@ -23,8 +23,8 @@
 - [x] `ParentRoundRegistry` + sidecar 3지점 + hot-restart RED→GREEN (PR-1a; 판정 배선·mint API 없음).
 - [x] `POST /a2a/parent-rounds`(operator/hub, idempotent/409) + anchors/GET 라우트 + helper 선행 요청 출력(source-only 유지, spec §1+2 정정). 폴백 제거는 #2331에서 완료.
 - [x] handoff-receiver foreign 등록 + anchors(자식 task id + `originTaskId`) — PR-1b.
-- [ ] 판정 배선 + `missing_anchor` + `parent_resolved_via` + 항목 2 필드.
-- [ ] 자기참조 `<round>-t2` → 여전히 `missing_parent` 회귀 (f).
+- [x] 판정 배선 + `missing_anchor` + `parent_resolved_via` + 항목 2 필드 — PR-1c(spec §1+2 PR-1c 메모).
+- [x] 자기참조 `<round>-t2` → 여전히 `missing_parent` 회귀 (f) — PR-1c 테스트.
 
 ## PR-3b 슬롯
 - [ ] 늦은 `completedAt` 우선 + `superseded` 보존 + retry child 테스트.

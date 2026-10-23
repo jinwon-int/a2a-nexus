@@ -441,3 +441,14 @@ test("#2339 PR-1b local and blocked plans carry no registration", () => {
   const { originTaskId: _omitted, ...withoutOriginTask } = COMPLETE_HANDOFF;
   assert.equal(buildA2ADispatchPlan({ ...HANDOFF_SPEC, crossBrokerHandoff: withoutOriginTask }).parentRoundRegistration, null);
 });
+
+test("#2339 PR-1c the child payload carries the registered round's teamScope and initiatingBrokerId (spec item 2)", () => {
+  const plan = buildA2ADispatchPlan({ ...HANDOFF_SPEC, parentRoundTotal: 8, crossBrokerHandoff: COMPLETE_HANDOFF });
+  assert.equal(plan.taskPayload?.initiatingBrokerId, "brokeralpha");
+  assert.equal(plan.taskPayload?.teamScope, "team2");
+
+  const common = buildA2ADispatchPlan({ ...HANDOFF_SPEC, teamId: "common", parentRoundTotal: 3, crossBrokerHandoff: COMPLETE_HANDOFF });
+  assert.equal(common.taskPayload?.initiatingBrokerId, "brokeralpha");
+  assert.equal(common.taskPayload?.teamScope, undefined);
+  assert.equal(buildA2ADispatchPlan({ ...BASE_SPEC }).taskPayload?.initiatingBrokerId, undefined, "local plans are unchanged");
+});

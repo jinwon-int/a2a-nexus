@@ -23,6 +23,11 @@ const PERMANENT_DESTINATION_REJECT_CODES = new Set([
   "missing_parent",
   "routing_mismatch",
   "stale_replay",
+  // #2339 PR-1c: the registered round does not anchor this child. Retrying
+  // the same event cannot succeed, and it gets a local fallback row (not
+  // stale_replay). A relay older than PR-1c does not know this code, treats it
+  // as retryable, and freezes its cursor, so deploy relays with the brokers.
+  "missing_anchor",
 ]);
 
 /**
@@ -176,6 +181,8 @@ export function buildCrossBrokerTerminalBriefProjectionFromEvent(
     handoffBrokerId,
     brokerOfRecordId: payload.brokerOfRecordId ?? payload.notificationOwnership?.ownerBrokerId ?? config.destinationBrokerId,
     childTaskId: payload.taskId,
+    // #2339 PR-1c: lets the parent match a registered round's origin-task anchor.
+    ...(token(payload.crossBrokerHandoff?.originTaskId) ? { originTaskId: token(payload.crossBrokerHandoff?.originTaskId) } : {}),
     childRunId: payload.run,
     childWorkerId: payload.crossBrokerHandoff?.childWorkerId ?? payload.worker,
     status: payload.status,

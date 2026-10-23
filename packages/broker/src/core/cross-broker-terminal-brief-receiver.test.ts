@@ -74,6 +74,8 @@ test("buildCrossBrokerTerminalBriefProjectionFromEvent maps child broker event t
     handoffBrokerId: "brokerbeta",
     brokerOfRecordId: "brokeralpha",
     childTaskId: "brokerbeta-child-1",
+    // #2339 PR-1c: the parent-side handoff task travels for anchor matching.
+    originTaskId: "brokeralpha-parent-task-1",
     childRunId: "brokeralpha-parent-round",
     childWorkerId: "workerzeta",
     status: "succeeded",
@@ -340,6 +342,7 @@ test("reverse direction: brokeralpha child event maps to a brokerbeta parent pro
     handoffBrokerId: "brokeralpha",
     brokerOfRecordId: "brokerbeta",
     childTaskId: "brokeralpha-child-1",
+    originTaskId: "brokerbeta-parent-task-1",
     childRunId: "brokerbeta-parent-round",
     childWorkerId: "workergamma",
     status: "succeeded",
@@ -637,4 +640,26 @@ test("#2339 PR-5 replayed fallback rows are counted separately from new rows", a
   assert.equal(result.ok, true);
   assert.equal(result.relayFallbackLocal, 0);
   assert.equal(result.relayFallbackReplayed, 2);
+});
+
+test("#2339 PR-1c missing_anchor is a permanent reject that gets a local fallback row", async () => {
+  const fallbackCodes: string[] = [];
+  const fetchImpl: CrossBrokerTerminalBriefReceiverFetch = async (url, init) => {
+    if (url.includes("/a2a/tasks/terminal-outbox/relay-fallback")) {
+      fallbackCodes.push(JSON.parse(init?.body ?? "{}").lastErrorCode as string);
+      return jsonResponse(201, { status: "created" });
+    }
+    if (url.includes("/a2a/tasks/terminal-outbox")) {
+      return jsonResponse(200, { events: [event()], cursor: "terminal:brokerbeta-child-1" });
+    }
+    return jsonResponse(404, { accepted: false, ack: { code: "missing_anchor", reason: "not an anchor" } });
+  };
+
+  const result = await pollCrossBrokerTerminalBriefReceiver(CONFIG, fetchImpl);
+
+  assert.equal(result.ok, true, "missing_anchor never freezes the cursor");
+  assert.equal(result.cursorToPersist, "terminal:brokerbeta-child-1");
+  assert.deepEqual(result.skippedByCode, { missing_anchor: 1 });
+  assert.deepEqual(fallbackCodes, ["missing_anchor"]);
+  assert.equal(result.relayFallbackLocal, 1);
 });
