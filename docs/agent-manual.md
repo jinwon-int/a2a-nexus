@@ -308,6 +308,10 @@ class, artifact/PR reference and remaining work. Host smoke or a generic ACK is
 not repository correctness or review consensus. For A2AD consensus reporting,
 consult `node scripts/a2ad-finalizer-gate.mjs --help` and the
 [finalizer guide](operators.md); this gate does not publish or merge anything.
+When a planning round's candidate selection has two or more substantive
+candidates, also run the blind-pick shadow and post its `blind-shadow` block in
+the closeout comment ([A2AD round dispatch](a2ad-round-dispatch.md), "Blind
+candidate selection — shadow", #2396).
 
 Compare the changed paths with declared scope. Review the current full PR head,
 run relevant tests and require green CI and independent review under the target

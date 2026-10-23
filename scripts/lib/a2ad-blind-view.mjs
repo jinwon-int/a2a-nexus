@@ -281,6 +281,15 @@ export function shadowRecord(idMap, resolution, namedPickLaneId, now = new Date(
   };
 }
 
+// #2396: a ledger line appended in one checkout is invisible to everyone else,
+// so `resolve` also writes a paste-ready fenced block for the round closeout
+// comment (issue/PR). The block carries the anonymous shadow record only.
+export const BLIND_SHADOW_BLOCK_FENCE = 'blind-shadow';
+
+export function shadowMarkdownBlock(shadow) {
+  return `\`\`\`${BLIND_SHADOW_BLOCK_FENCE}\n${JSON.stringify(shadow)}\n\`\`\`\n`;
+}
+
 function writeFileMode(file, content, mode) {
   fs.writeFileSync(file, content, { mode });
   fs.chmodSync(file, mode);
@@ -345,13 +354,19 @@ export function main(argv) {
       if (idMap.schema !== BLIND_VIEW_SCHEMA) throw new Error(`id-map schema mismatch: ${idMap.schema}`);
       const resolution = resolvePick(idMap, fs.readFileSync(values.verdict, 'utf8'));
       let shadow = null;
+      let shadowMarkdown = null;
       if (hasText(values['named-pick'])) {
         shadow = shadowRecord(idMap, resolution, values['named-pick'].trim());
         if (hasText(values['shadow-ledger'])) {
           fs.appendFileSync(values['shadow-ledger'], `${JSON.stringify(shadow)}\n`);
         }
+        shadowMarkdown = path.join(values.out, 'blind-shadow.md');
+        writeFileMode(shadowMarkdown, shadowMarkdownBlock(shadow), 0o644);
       }
-      process.stdout.write(`${JSON.stringify({ ...resolution, ...(shadow ? { shadow } : {}) })}\n`);
+      process.stdout.write(`${JSON.stringify({
+        ...resolution,
+        ...(shadow ? { shadow, shadowMarkdown } : {}),
+      })}\n`);
       return resolution.fallback ? 1 : 0;
     }
     throw new Error(`unknown command '${command}'`);
