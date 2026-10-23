@@ -31,6 +31,7 @@ import { handleReviewLineageRoutesIfMatched, type ReviewLineageRouteContext } fr
 import { handleNclexEvaluationRoutesIfMatched, type NclexEvaluationRouteContext } from "./nclex-evaluation-routes.js";
 import { handleA2ATaskStreamRouteIfMatched, type A2ATaskStreamRouteContext } from "./a2a-task-stream-routes.js";
 import { handleA2ATerminalOutboxRouteIfMatched, type A2ATerminalOutboxRouteContext } from "./a2a-terminal-outbox-routes.js";
+import { handleParentRoundRouteIfMatched, type ParentRoundRouteContext } from "./parent-round-routes.js";
 import {
   handleA2AStreamRouteIfMatched,
   type A2AStreamRouteContext,
@@ -240,6 +241,21 @@ export function createA2ATerminalOutboxRouteEntries(
     entry("POST", ["a2a", "tasks", "terminal-outbox", "receipt"], "a2a.tasks.terminal-outbox.receipt", "a2a", dispatch),
     entry("POST", ["a2a", "tasks", "terminal-outbox", "ack"], "a2a.tasks.terminal-outbox.ack", "a2a", dispatch),
     entry("POST", ["a2a", "tasks", "terminal-outbox", "relay-fallback"], "a2a.tasks.terminal-outbox.relay-fallback", "a2a", dispatch),
+  ];
+}
+
+// ---------------------------------------------------------------------------
+// 8b. Parent round registry (#2339 PR-1b)
+// ---------------------------------------------------------------------------
+
+export function createParentRoundRouteEntries(
+  deps: RouteDeps<ParentRoundRouteContext>,
+): BrokerRouteEntry[] {
+  const dispatch = (rc: BrokerRequestContext) => handleParentRoundRouteIfMatched({ ...rc, ...deps });
+  return [
+    entry("POST", ["a2a", "parent-rounds"], "a2a.parent-rounds", "a2a", dispatch),
+    entry("POST", ["a2a", "parent-rounds", ":id", "anchors"], "a2a.parent-rounds", "a2a", dispatch),
+    entry("GET", ["a2a", "parent-rounds", ":id"], "a2a.parent-rounds", "a2a", dispatch),
   ];
 }
 

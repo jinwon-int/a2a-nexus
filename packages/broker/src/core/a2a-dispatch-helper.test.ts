@@ -377,3 +377,67 @@ test("#2331 helper CLI accepts a complete cross-broker handoff", () => {
   assert.equal(plan.taskPayload?.crossBrokerHandoff?.parentRoundId, "brokeralpha-parent-round");
   assert.equal(plan.taskPayload?.crossBrokerHandoff?.originTaskId, "brokeralpha-parent-task-1");
 });
+
+// ---- #2339 PR-1b: parent round registration pre-steps (helper stays source-only)
+
+test("#2339 PR-1b cross-broker plan prints the mint and anchor requests to run first", () => {
+  const plan = buildA2ADispatchPlan({ ...HANDOFF_SPEC, parentRoundTotal: 8, crossBrokerHandoff: COMPLETE_HANDOFF });
+
+  assert.equal(plan.decision.value, "go");
+  assert.deepEqual(plan.parentRoundRegistration, {
+    mintingBrokerId: "brokeralpha",
+    mint: {
+      method: "POST",
+      path: "/a2a/parent-rounds",
+      body: {
+        parentRoundId: "brokeralpha-parent-round",
+        initiatingBrokerId: "brokeralpha",
+        teamScope: "team2",
+        handoffBrokerId: "brokerbeta",
+        parentRoundTotal: 8,
+      },
+    },
+    anchors: [
+      { method: "POST", path: "/a2a/parent-rounds/brokeralpha-parent-round/anchors", body: { anchor: "brokeralpha-parent-task-1" } },
+      { method: "POST", path: "/a2a/parent-rounds/brokeralpha-parent-round/anchors", body: { anchor: plan.deterministicTaskId.taskId } },
+    ],
+    expect: "mint 201 minted or 200 replayed, anchors 201 added or 200 present; a 409 conflict blocks the dispatch",
+  });
+  const registryActions = plan.dispatchActions.filter((action) => action.startsWith("[registry]"));
+  assert.equal(registryActions.length, 4);
+  assert.match(registryActions[0]!, /not performed by this helper/);
+  assert.ok(
+    plan.dispatchActions.indexOf(registryActions[0]!) < plan.dispatchActions.findIndex((action) => action.startsWith("[dispatch] broker /tasks")),
+    "registration is listed before task creation",
+  );
+  assert.equal(plan.metadata.sourceOnly, true);
+});
+
+test("#2339 PR-1b the minting broker falls back to --origin-broker-id and common omits teamScope", () => {
+  const { originBrokerId: _omitted, ...handoffWithoutOrigin } = COMPLETE_HANDOFF;
+  const plan = buildA2ADispatchPlan({
+    ...HANDOFF_SPEC,
+    teamId: "common",
+    parentRoundTotal: 3,
+    crossBrokerHandoff: handoffWithoutOrigin,
+  });
+
+  assert.equal(plan.parentRoundRegistration?.mintingBrokerId, "brokeralpha");
+  assert.equal(plan.parentRoundRegistration?.mint.body.teamScope, undefined);
+});
+
+test("#2339 PR-1b a cross-broker plan without any minting broker id is blocked", () => {
+  const { originBrokerId: _a, ...specWithoutOrigin } = HANDOFF_SPEC;
+  const { originBrokerId: _b, ...handoffWithoutOrigin } = COMPLETE_HANDOFF;
+  const plan = buildA2ADispatchPlan({ ...specWithoutOrigin, crossBrokerHandoff: handoffWithoutOrigin });
+
+  assert.equal(plan.decision.value, "blocked");
+  assert.equal(plan.parentRoundRegistration, null);
+  assert.ok(plan.decision.blockers.some((blocker) => blocker.startsWith("[parent_round_registry]")));
+});
+
+test("#2339 PR-1b local and blocked plans carry no registration", () => {
+  assert.equal(buildA2ADispatchPlan({ ...BASE_SPEC }).parentRoundRegistration, null);
+  const { originTaskId: _omitted, ...withoutOriginTask } = COMPLETE_HANDOFF;
+  assert.equal(buildA2ADispatchPlan({ ...HANDOFF_SPEC, crossBrokerHandoff: withoutOriginTask }).parentRoundRegistration, null);
+});

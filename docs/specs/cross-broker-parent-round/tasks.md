@@ -21,8 +21,8 @@
 
 ## PR-1a/1b/1c 레지스트리
 - [x] `ParentRoundRegistry` + sidecar 3지점 + hot-restart RED→GREEN (PR-1a; 판정 배선·mint API 없음).
-- [ ] `POST /a2a/parent-rounds`(operator/hub, idempotent/409) + helper 배선 + 폴백 제거.
-- [ ] handoff-receiver foreign 등록 + anchors(`originTaskId`).
+- [x] `POST /a2a/parent-rounds`(operator/hub, idempotent/409) + anchors/GET 라우트 + helper 선행 요청 출력(source-only 유지, spec §1+2 정정). 폴백 제거는 #2331에서 완료.
+- [x] handoff-receiver foreign 등록 + anchors(자식 task id + `originTaskId`) — PR-1b.
 - [ ] 판정 배선 + `missing_anchor` + `parent_resolved_via` + 항목 2 필드.
 - [ ] 자기참조 `<round>-t2` → 여전히 `missing_parent` 회귀 (f).
 

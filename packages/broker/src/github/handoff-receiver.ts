@@ -96,6 +96,19 @@ export interface HandoffEvidenceEntry {
   evidenceUrl?: string;
 }
 
+/**
+ * #2339 PR-1b: outcome of registering the envelope's parent round as a
+ * `foreign-handoff` registry entry on this (destination) broker. Observability
+ * only: task creation never depends on it, and nothing reads the entry for a
+ * delivery decision until PR-1c.
+ */
+export interface HandoffParentRoundRegistration {
+  status: "minted" | "replayed" | "conflict" | "invalid";
+  parentRoundId: string;
+  /** Anchors newly recorded: the created child task ids plus the origin task id. */
+  anchorsAdded: number;
+}
+
 export interface HandoffReceiveResult {
   accepted: boolean;
   replayed: boolean;
@@ -104,6 +117,7 @@ export interface HandoffReceiveResult {
   targetTaskIds: string[];
   evidence: HandoffEvidenceEntry[];
   evidenceCommentBody?: string;
+  parentRoundRegistration?: HandoffParentRoundRegistration;
 }
 
 const MANIFEST_KEYS = new Set([
@@ -242,17 +256,71 @@ export class brokerbetabrokeralphaHandoffReceiver {
       });
     }
 
+    const parentRoundRegistration = this.registerForeignParentRound(manifest, targetTaskIds);
     const result: HandoffReceiveResult = {
       accepted: true,
       replayed,
       manifest,
       targetTaskIds,
       evidence,
+      ...(parentRoundRegistration ? { parentRoundRegistration } : {}),
     };
     return {
       ...result,
       evidenceCommentBody: renderHandoffEvidenceComment(result),
     };
+  }
+
+  /**
+   * #2339 PR-1b (spec §1+2 mint path 2): an authenticated handoff envelope
+   * (webhook signature, plus the `handoff:create` peer scope when provisioned)
+   * that names a parent round registers it here as `foreign-handoff`. The entry
+   * tells the relay where the round belongs. This broker never receives
+   * projections for it. Anchors are the child task ids just created, plus
+   * the origin task id when the envelope carries one, recorded in the same
+   * redacted form as the task payload. A replayed envelope converges on the
+   * same entry. A malformed or conflicting round is reported, never thrown, so
+   * task creation is unchanged.
+   */
+  private registerForeignParentRound(
+    manifest: brokerbetabrokeralphaHandoffManifest,
+    targetTaskIds: readonly string[],
+  ): HandoffParentRoundRegistration | undefined {
+    const parentRoundId = normalizeString(manifest.parentRoundId);
+    if (!parentRoundId) return undefined;
+    const parentBrokerId = normalizeString(manifest.requestedByBroker) ?? this.requestedByBroker;
+    const parentRoundTotal = positiveIntFrom(manifest.parentRoundTotal);
+    let status: HandoffParentRoundRegistration["status"];
+    try {
+      status = this.broker.mintParentRound({
+        parentRoundId,
+        originBrokerId: parentBrokerId,
+        parentBrokerId,
+        initiatingBrokerId: parentBrokerId,
+        handoffBrokerId: this.brokerOfRecord,
+        ...(parentRoundTotal ? { parentRoundTotal } : {}),
+        kind: "foreign-handoff",
+        mintedBy: {
+          requesterId: normalizeString(manifest.requestingAgent) ?? this.requesterId,
+          role: "operator",
+        },
+      }).status;
+    } catch {
+      return { status: "invalid", parentRoundId, anchorsAdded: 0 };
+    }
+    if (status === "conflict") return { status, parentRoundId, anchorsAdded: 0 };
+
+    const sourceTaskId = normalizeString(manifest.sourceTaskId);
+    const anchors = [...targetTaskIds, ...(sourceTaskId ? [redactHandoffText(sourceTaskId)] : [])];
+    let anchorsAdded = 0;
+    for (const anchor of anchors) {
+      try {
+        if (this.broker.addParentRoundAnchor(parentRoundId, anchor).status === "added") anchorsAdded += 1;
+      } catch {
+        // A malformed anchor is skipped; the entry and the task stand.
+      }
+    }
+    return { status, parentRoundId, anchorsAdded };
   }
 
   private createTask(args: {

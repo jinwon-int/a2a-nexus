@@ -140,17 +140,42 @@ mintedAt, mintedBy: { requesterId, role }, anchors: Set<originTaskId>
 
 **mint 경로(2개뿐).**
 
-1. **local-origin**: 이 broker에서 라운드를 시작하는 dispatch. 명시 API
-   `POST /a2a/parent-rounds`(operator/hub 역할, `ENFORCE_REQUESTER_IDENTITY` 적용,
-   idempotent: 같은 `parentRoundId`+같은 메타 → 200 replayed, 다른 메타 → 409).
-   `a2a-dispatch-helper.{mjs,ts}`는 `--cross-broker-handoff`일 때 이 API를 먼저
-   호출하고 응답의 `parentRoundId`를 자식 payload에 싣는다. **`--parent-round-id`
-   폴백은 제거**(1단계에서 이미 handoff parentRoundId 누락·자기참조·`originTaskId`
-   부재를 차단함; 그 차단은 유지).
-2. **foreign-handoff**: handoff envelope(`broker-handoff-protocol.md` §Parent Terminal
-   Brief metadata — `parentRoundId`·`originBrokerId`·`parentBrokerId` 모두 필수)를
-   받은 destination broker가 자식 태스크를 만들면서 등록. 이 항목은 **projection
-   수신용이 아니라 relay 목적지 판정용**이다(자식 쪽은 projection을 받지 않는다).
+> **정정 (2026-10-23, PR-1b 구현 시 오너 결정).** 처음 안은 "dispatch helper가 mint API를
+> 먼저 **호출**하고 응답의 `parentRoundId`를 싣는다", "부모 anchors에 handoff 생성
+> **응답**의 destination task id를 넣는다"였다. 그러나 (a) dispatch helper는 HTTP를 부르지
+> 않는 source-only 계획 도구다(`--execute`도 실제 쓰기를 하지 않으며 안전 경계에 DB
+> 변경 금지가 명시돼 있다). (b) GitHub handoff lane에서 부모 broker는 생성 응답을 받지
+> 않는다(자식 receiver는 결과를 GitHub 증거 코멘트로만 남기고, 부모 쪽 소비자가 없다).
+> 또 "`--parent-round-id` 폴백 제거"가 가리키던 동작(handoff 부모 라운드가 없으면
+> 로컬 `--parent-round-id`로 대체)은 #2331 1단계에서 **이미 제거**됐다. 그래서 아래처럼
+> 바꿨다.
+
+1. **local-origin**: 명시 API `POST /a2a/parent-rounds`(hub/operator 역할,
+   `ENFORCE_REQUESTER_IDENTITY` 적용). origin·parent는 **이 broker**로 고정된다. 본문에
+   다른 값이 오면 400을 반환하고, `kind: "foreign-handoff"`도 400이다. 같은 메타는
+   200 `replayed`, 다른 메타는 409 `conflict`(기존 항목 반환), 새로 만들면 201 `minted`다.
+   본문: `parentRoundId`, `initiatingBrokerId?`(기본 이 broker), `teamScope?`,
+   `handoffBrokerId?`, `parentRoundTotal?`, `anchors?`. `mintedBy`는 요청자 identity다.
+   - 부모 anchor 경로: `POST /a2a/parent-rounds/:id/anchors {anchor}`(201 `added`,
+     200 `present`, 404 `unknown_round`, 409 `anchor_limit`). handoff를 보내는 쪽이 origin
+     task id와 자식 task id를 등록한다. 자식 task id는 결정적이라 미리 알 수 있다. helper
+     lane은 deterministic `taskId`이고, GitHub lane은 manifest `targetTaskId`(단건) 또는
+     `handoff-<idempotencyKey>-<worker>-<index>`다.
+   - 조회: `GET /a2a/parent-rounds/:id`(같은 역할).
+   - **dispatch helper는 source-only를 유지한다.** `--cross-broker-handoff` 계획은 위 mint
+     요청과 anchor 요청(origin task id + 이 계획의 자식 task id) 본문을
+     `parentRoundRegistration`과 `dispatchActions`의 선행 단계(`[registry] pre-step (not
+     performed by this helper)`)로 출력하고, 실행은 운영자/실행 주체가 한다. mint 대상
+     broker(`--handoff-origin-broker-id` 또는 `--origin-broker-id`)가 없으면
+     `[parent_round_registry]` blocker. `teamScope`는 helper 기본값 `common`이면 넣지 않는다.
+2. **foreign-handoff**: 인증된 handoff envelope(webhook 서명 + 프로비저닝 시
+   `handoff:create` peer scope)가 `parentRoundId`를 가지면, destination broker의
+   handoff receiver가 자식 태스크를 만든 뒤 등록한다. 이때 origin·parent·initiating은
+   `requestedByBroker`, `handoffBrokerId`는 이 broker이고, anchors는 만든 자식 task id와
+   `sourceTaskId`(태스크 payload의 `originTaskId`와 같은 redacted 형태)다. 이 항목은
+   **projection 수신용이 아니라 relay 목적지 판정용**이다(자식 쪽은 projection을 받지
+   않는다). replay된 envelope는 같은 항목으로 수렴한다. 형식 오류와 conflict는 결과의
+   `parentRoundRegistration`에 남길 뿐 **태스크 생성을 막지 않는다**.
 
 **payload만으로는 만들 수 없다.** `POST /tasks`의 `parentRoundId`·`crossBrokerHandoff`
 는 레지스트리를 **참조**할 뿐 생성하지 않는다. 레지스트리에 없는

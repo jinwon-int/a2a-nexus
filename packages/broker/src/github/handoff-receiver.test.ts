@@ -323,3 +323,89 @@ describe("handoff manifest parsing and evidence rendering", () => {
     assert.match(body, /status=blocked/);
   });
 });
+
+describe("#2339 PR-1b handoff receiver registers the envelope's parent round", () => {
+  const PARENT_ROUND = "a2a-r13-terminal-brief-realround-20260514T013556Z";
+  const parentManifest = (total = 7) => manifest(`parentRoundId: ${PARENT_ROUND}\nparentRoundTotal: ${total}\n`);
+
+  it("mints a foreign-handoff entry anchored on the created child tasks and the origin task", () => {
+    const broker = new InMemoryA2ABroker(undefined, undefined, { brokerId: "brokeralpha", teamId: "team1" });
+    registerWorker(broker, "workergamma");
+    registerWorker(broker, "workerdelta");
+    const receiver = new brokerbetabrokeralphaHandoffReceiver({ broker });
+    const body = `/a2a assign workergamma --intent propose_patch -- lane a\n/a2a assign workerdelta --intent validate_change -- lane b\n${parentManifest()}`;
+
+    const result = receiver.receiveIssueComment(comment(body), ctx("d1"));
+
+    assert.equal(result.accepted, true);
+    assert.deepEqual(result.parentRoundRegistration, { status: "minted", parentRoundId: PARENT_ROUND, anchorsAdded: 3 });
+    const entry = broker.getParentRound(PARENT_ROUND);
+    assert.ok(entry);
+    assert.equal(entry.kind, "foreign-handoff");
+    assert.equal(entry.originBrokerId, "brokerbeta");
+    assert.equal(entry.parentBrokerId, "brokerbeta");
+    assert.equal(entry.initiatingBrokerId, "brokerbeta");
+    assert.equal(entry.handoffBrokerId, "brokeralpha");
+    assert.equal(entry.parentRoundTotal, 7);
+    assert.deepEqual(entry.mintedBy, { requesterId: "brokerbeta", role: "operator" });
+    assert.deepEqual(entry.anchors, [
+      "a2a-plane#249 (internal tracker, private)",
+      ...result.targetTaskIds,
+    ].sort());
+    // The origin-task anchor matches the task payload's crossBrokerHandoff.originTaskId exactly.
+    const task = broker.getTask(result.targetTaskIds[0]!);
+    const handoff = task?.payload["crossBrokerHandoff"] as Record<string, unknown> | undefined;
+    assert.ok(entry.anchors.includes(handoff?.["originTaskId"] as string));
+  });
+
+  it("converges on a replayed envelope without adding anchors", () => {
+    const broker = new InMemoryA2ABroker(undefined, undefined, { brokerId: "brokeralpha", teamId: "team1" });
+    registerWorker(broker, "workergamma");
+    const receiver = new brokerbetabrokeralphaHandoffReceiver({ broker });
+    const body = `/a2a assign workergamma --intent propose_patch -- closeout\n${parentManifest()}`;
+
+    const first = receiver.receiveIssueComment(comment(body, 10), ctx("d1"));
+    const second = receiver.receiveIssueComment(comment(body, 11), ctx("d2"));
+
+    assert.equal(first.parentRoundRegistration?.status, "minted");
+    assert.deepEqual(second.parentRoundRegistration, { status: "replayed", parentRoundId: PARENT_ROUND, anchorsAdded: 0 });
+    assert.equal(broker.listParentRounds().length, 1);
+  });
+
+  it("reports a conflicting round without blocking task creation", () => {
+    const broker = new InMemoryA2ABroker(undefined, undefined, { brokerId: "brokeralpha", teamId: "team1" });
+    registerWorker(broker, "workergamma");
+    broker.mintParentRound({
+      parentRoundId: PARENT_ROUND,
+      originBrokerId: "brokerbeta",
+      parentBrokerId: "brokerbeta",
+      initiatingBrokerId: "brokerbeta",
+      handoffBrokerId: "brokeralpha",
+      parentRoundTotal: 3,
+      kind: "foreign-handoff",
+      mintedBy: { requesterId: "brokerbeta", role: "operator" },
+    });
+    const receiver = new brokerbetabrokeralphaHandoffReceiver({ broker });
+    const body = `/a2a assign workergamma --intent propose_patch -- closeout\n${parentManifest(7)}`;
+
+    const result = receiver.receiveIssueComment(comment(body), ctx("d1"));
+
+    assert.equal(result.accepted, true, "the handoff itself is unchanged");
+    assert.ok(broker.getTask(result.targetTaskIds[0]!));
+    assert.deepEqual(result.parentRoundRegistration, { status: "conflict", parentRoundId: PARENT_ROUND, anchorsAdded: 0 });
+    assert.equal(broker.getParentRound(PARENT_ROUND)?.parentRoundTotal, 3, "the existing entry is untouched");
+    assert.deepEqual(broker.getParentRound(PARENT_ROUND)?.anchors, []);
+  });
+
+  it("registers nothing for an envelope without a parent round", () => {
+    const broker = new InMemoryA2ABroker(undefined, undefined, { brokerId: "brokeralpha", teamId: "team1" });
+    registerWorker(broker, "workergamma");
+    const receiver = new brokerbetabrokeralphaHandoffReceiver({ broker });
+
+    const result = receiver.receiveIssueComment(comment(`/a2a assign workergamma --intent propose_patch -- x\n${manifest()}`), ctx("d1"));
+
+    assert.equal(result.accepted, true);
+    assert.equal(result.parentRoundRegistration, undefined);
+    assert.equal(broker.listParentRounds().length, 0);
+  });
+});
