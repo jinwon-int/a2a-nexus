@@ -108,6 +108,17 @@ receiver) names a relay destination and never makes that broker the parent.
 A task payload's `parentRoundId` / `crossBrokerHandoff` never creates a
 registry entry.
 
+### One projection per lane slot (2026-10, #2339 PR-3b)
+
+A parent round lane is the slot `(parentRoundId, handoffBrokerId,
+parentRoundOrder)`. When a different child (for example a retry
+`<round>-t2r2`) reports for an occupied slot, the projection with the later
+`completedAt` holds the slot. The displaced record is kept as `superseded`
+for audit and excluded from the aggregate (projection queries list only live
+records unless `include_superseded=true`). A child that completed at the same
+time or earlier is `stale_replay`. Resends of the same child keep the
+`duplicate_replay` / `stale_replay` rules.
+
 ### Projection ingest compatibility (2026-10, #2339 PR-6)
 
 The broker ingest (`POST` cross-broker projection) reads two broker fields with

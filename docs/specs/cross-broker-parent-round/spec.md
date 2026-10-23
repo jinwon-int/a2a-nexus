@@ -229,6 +229,12 @@ receiver 카운터 `parent_resolved_via: registry | legacy_task`를 기록한다
   집계·타이틀 numerator에 쓰이고, r1은 superseded.
 - 같은 child 식별자의 재전송은 기존 `duplicate_replay`/`stale_replay` 규칙 그대로.
 
+> **PR-3b 구현 메모 (2026-10-23).**
+> - "집계"는 projection 조회(`list`/`get`, `GET /a2a/cross-broker/terminal-briefs`)다. superseded 레코드는 여기서 빠지고 스냅샷에는 남는다(`include_superseded=true`로 감사 조회). 카운터는 `slotSuperseded`다.
+> - superseded된 child가 나중에 더 늦은 `completedAt`으로 다시 오면 슬롯을 되찾는다(규칙은 대칭: 슬롯에서 가장 늦은 `completedAt`이 이긴다).
+> - `parentRoundOrder`가 없는 projection은 수락 전 dispatch metadata 검사에서 이미 거부되므로, 수락되는 projection은 모두 슬롯을 가진다.
+> - 이미 부모 outbox에 생긴 r1의 운영자 row는 되돌리지 않는다(이미 보낸 알림). r2 row의 타이틀 numerator는 원래대로 슬롯 순서(`n/N`)다. 부모 outbox의 `parentRoundTerminalProgress`(종결 child 수)는 child task id 기준이라 r1·r2를 각각 센다. 슬롯 기준으로 바꾸는 것은 범위 밖이다.
+
 ### 4. sender-proof 필수화
 
 - 새 설정 `A2A_CROSS_BROKER_SENDER_PROOF_MODE = off | record | enforce`.

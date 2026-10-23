@@ -118,7 +118,9 @@ export function handleCrossBrokerTerminalBriefQueryRequest(ctx: A2ATerminalOutbo
 
   const parentRoundId = ctx.url.searchParams.get("parent_round_id") ?? undefined;
   const originBrokerId = ctx.url.searchParams.get("origin_broker_id") ?? undefined;
-  const records = ctx.broker.listCrossBrokerTerminalBriefProjections({ parentRoundId, originBrokerId });
+  // #2339 PR-3b: superseded slot records are audit-only; opt in to see them.
+  const includeSuperseded = booleanQueryParam(ctx.url, "include_superseded") ?? false;
+  const records = ctx.broker.listCrossBrokerTerminalBriefProjections({ parentRoundId, originBrokerId, includeSuperseded });
   sendJson(ctx.res, 200, {
     kind: "a2a.cross-broker.terminal-briefs",
     count: records.length,
