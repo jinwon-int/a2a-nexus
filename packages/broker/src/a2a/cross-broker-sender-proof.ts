@@ -126,7 +126,16 @@ export function buildCrossBrokerSenderProof(
 // Receiver verification
 // ---------------------------------------------------------------------------
 
-export type CrossBrokerVerdict = { ok: true; brokerId: string } | { ok: false; reason: string };
+/**
+ * Failure class for operator counters (#2339 PR-4): `missing` = no senderProof,
+ * `unpinned` = no trust anchor for the claimed broker, `invalid` = anything else
+ * (malformed, wrong broker, body hash, freshness, signature, replay).
+ */
+export type CrossBrokerVerdictFailure = "missing" | "unpinned" | "invalid";
+
+export type CrossBrokerVerdict =
+  | { ok: true; brokerId: string }
+  | { ok: false; reason: string; failure: CrossBrokerVerdictFailure };
 
 /**
  * Bounded replay cache: nonces seen within the freshness window, scoped per
@@ -165,21 +174,26 @@ export function verifyCrossBrokerSenderProof(
 ): CrossBrokerVerdict {
   const record = body && typeof body === "object" && !Array.isArray(body) ? (body as Record<string, unknown>) : null;
   if (!record) {
-    return { ok: false, reason: "projection body must be an object" };
+    return { ok: false, reason: "projection body must be an object", failure: "invalid" };
   }
   const handoff = record.crossBrokerHandoff as Record<string, unknown> | undefined;
+  // #2339 PR-4: projections name their producer in the top-level
+  // `handoffBrokerId` (PR-6). Read it before `originBrokerId`, which becomes
+  // the minted parent-round origin once relays emit the contract meaning
+  // (CROSS_BROKER_EMIT_MINTED_ORIGIN), and so would select the wrong anchor.
   const claimed =
     (typeof handoff?.handoffBrokerId === "string" && (handoff.handoffBrokerId as string)) ||
+    (typeof record.handoffBrokerId === "string" && record.handoffBrokerId) ||
     (typeof record.senderBrokerId === "string" && record.senderBrokerId) ||
     (typeof record.originBrokerId === "string" && record.originBrokerId) ||
     "";
   const claimedBrokerId = claimed.trim();
   if (!claimedBrokerId) {
-    return { ok: false, reason: "projection must claim a non-empty handoff/origin broker id" };
+    return { ok: false, reason: "projection must claim a non-empty handoff/origin broker id", failure: "invalid" };
   }
   const anchor = anchors.get(claimedBrokerId);
   if (!anchor) {
-    return { ok: false, reason: `no trust anchor pinned for broker "${claimedBrokerId}"` };
+    return { ok: false, reason: `no trust anchor pinned for broker "${claimedBrokerId}"`, failure: "unpinned" };
   }
 
   const proof = record.senderProof as CrossBrokerSenderProof | undefined;
@@ -190,24 +204,24 @@ export function verifyCrossBrokerSenderProof(
     typeof proof.protected !== "string" ||
     typeof proof.signature !== "string"
   ) {
-    return { ok: false, reason: "projection must carry a senderProof (request-bound proof of possession)" };
+    return { ok: false, reason: "projection must carry a senderProof (request-bound proof of possession)", failure: "missing" };
   }
   const { binding } = proof;
   if (binding.brokerId !== claimedBrokerId) {
-    return { ok: false, reason: "senderProof brokerId does not match the claimed broker id" };
+    return { ok: false, reason: "senderProof brokerId does not match the claimed broker id", failure: "invalid" };
   }
   if (binding.bodyHash !== crossBrokerBodyHash(record)) {
-    return { ok: false, reason: "senderProof bodyHash does not match the request body" };
+    return { ok: false, reason: "senderProof bodyHash does not match the request body", failure: "invalid" };
   }
 
   const now = options.now ?? Date.now();
   const windowMs = options.freshnessMs ?? DEFAULT_FRESHNESS_MS;
   const issuedAtMs = Date.parse(binding.issuedAt);
   if (!Number.isFinite(issuedAtMs) || Math.abs(now - issuedAtMs) > windowMs) {
-    return { ok: false, reason: "senderProof issuedAt is outside the freshness window" };
+    return { ok: false, reason: "senderProof issuedAt is outside the freshness window", failure: "invalid" };
   }
   if (!binding.nonce) {
-    return { ok: false, reason: "senderProof nonce is missing" };
+    return { ok: false, reason: "senderProof nonce is missing", failure: "invalid" };
   }
 
   let key: KeyObject;
@@ -216,16 +230,16 @@ export function verifyCrossBrokerSenderProof(
     key = createPublicKey(anchor);
     algorithm = algorithmForKey(key);
   } catch {
-    return { ok: false, reason: "pinned trust anchor key is unusable" };
+    return { ok: false, reason: "pinned trust anchor key is unusable", failure: "invalid" };
   }
   let header: Record<string, unknown>;
   try {
     header = JSON.parse(Buffer.from(proof.protected, "base64url").toString("utf8"));
   } catch {
-    return { ok: false, reason: "senderProof protected header is malformed" };
+    return { ok: false, reason: "senderProof protected header is malformed", failure: "invalid" };
   }
   if (header.alg !== algorithm.alg) {
-    return { ok: false, reason: "senderProof alg does not match the pinned key" };
+    return { ok: false, reason: "senderProof alg does not match the pinned key", failure: "invalid" };
   }
   const payload = base64url(canonicalizeJson(binding));
   let verified = false;
@@ -240,7 +254,7 @@ export function verifyCrossBrokerSenderProof(
     verified = false;
   }
   if (!verified) {
-    return { ok: false, reason: `senderProof signature does not verify against the pinned key for "${claimedBrokerId}"` };
+    return { ok: false, reason: `senderProof signature does not verify against the pinned key for "${claimedBrokerId}"`, failure: "invalid" };
   }
   // Replay check LAST: the nonce is committed to the cache only for a fully
   // verified proof. An invalid signature carrying a future valid nonce must
@@ -248,7 +262,69 @@ export function verifyCrossBrokerSenderProof(
   // cache key is scoped by broker id so two peers using the same nonce do
   // not produce cross-peer false positives.
   if (!options.nonceCache.checkAndAdd(claimedBrokerId, binding.nonce, now, windowMs)) {
-    return { ok: false, reason: "senderProof nonce was already used (replay)" };
+    return { ok: false, reason: "senderProof nonce was already used (replay)", failure: "invalid" };
   }
   return { ok: true, brokerId: claimedBrokerId };
+}
+
+/**
+ * #2339 PR-4: how the cross-broker Terminal Brief ingest treats sender proofs.
+ * - `off`: no verification.
+ * - `record`: verify against the trust anchors and count the outcome, but
+ *   never reject. This is the rollout stage before both brokers enforce.
+ * - `enforce`: reject anything that does not verify (policy_denied).
+ */
+export type CrossBrokerSenderProofMode = "off" | "record" | "enforce";
+
+/**
+ * Resolve `A2A_CROSS_BROKER_SENDER_PROOF_MODE`. Unset keeps the legacy
+ * meaning: an anchors file means `enforce`, no anchors file means `off`. An
+ * explicit mode wins. `enforce` without anchors is a startup error (fail
+ * closed), and so is any unknown value. `record` without anchors starts, but
+ * counts every projection as `unpinnedBroker`.
+ */
+export function resolveCrossBrokerSenderProofMode(
+  raw: string | undefined,
+  anchorsConfigured: boolean,
+): CrossBrokerSenderProofMode {
+  const value = raw?.trim().toLowerCase();
+  if (!value) return anchorsConfigured ? "enforce" : "off";
+  if (value !== "off" && value !== "record" && value !== "enforce") {
+    throw new Error(`A2A_CROSS_BROKER_SENDER_PROOF_MODE must be off, record, or enforce (got "${raw}")`);
+  }
+  if (value === "enforce" && !anchorsConfigured) {
+    throw new Error(
+      "A2A_CROSS_BROKER_SENDER_PROOF_MODE=enforce requires trust anchors, but CROSS_BROKER_SENDER_PROOF_KEYS_FILE is not configured. " +
+        "Provision the anchors file, or use record/off.",
+    );
+  }
+  return value;
+}
+
+/** Process-local sender-proof outcome counters for `/health` (#2339 PR-4). */
+export interface CrossBrokerSenderProofCounts {
+  verified: number;
+  missing: number;
+  invalid: number;
+  unpinnedBroker: number;
+}
+
+export class CrossBrokerSenderProofCounters {
+  private readonly counts: CrossBrokerSenderProofCounts = { verified: 0, missing: 0, invalid: 0, unpinnedBroker: 0 };
+
+  record(verdict: CrossBrokerVerdict): void {
+    if (verdict.ok) this.counts.verified += 1;
+    else if (verdict.failure === "missing") this.counts.missing += 1;
+    else if (verdict.failure === "unpinned") this.counts.unpinnedBroker += 1;
+    else this.counts.invalid += 1;
+  }
+
+  /** A projection that could not be checked because no anchors are configured. */
+  recordUnpinned(): void {
+    this.counts.unpinnedBroker += 1;
+  }
+
+  snapshot(): CrossBrokerSenderProofCounts {
+    return { ...this.counts };
+  }
 }

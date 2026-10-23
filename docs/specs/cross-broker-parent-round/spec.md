@@ -249,6 +249,12 @@ receiver 카운터 `parent_resolved_via: registry | legacy_task`를 기록한다
   7일(절대 종료일시는 롤아웃 이슈에 코멘트) → 양 broker **동시** `enforce`(별도 승인).
   한쪽만 enforce면 상대 broker의 전달이 끊기므로 금지(plan §Rollout).
 
+> **PR-4 구현 메모 (2026-10-23).**
+> - 카운터는 받는 broker의 `/health` `crossBrokerSenderProof: { mode, anchorsConfigured, verified, missing, invalid, unpinnedBroker }`에 있다(프로세스 시작 이후 누적). 분류는 다음과 같다. `missing`은 senderProof 없음, `unpinnedBroker`는 주장한 broker의 anchor 없음, `invalid`는 그 밖의 실패(형식, broker 불일치, body hash, 신선도, 서명, replay)다.
+> - 미설정이면 기존 의미(anchors 파일 있음 = `enforce`, 없음 = `off`)를 따르고, 명시하면 그 값이 우선한다(anchors가 있어도 `off`면 검사하지 않음). 알 수 없는 값이나 anchors 없는 `enforce`는 startup에서 거부한다. **anchors 없는 `record`는 기동을 허용**하고 모든 projection을 `unpinnedBroker`로 센다(키 배포 전 단계를 관측하기 위해, 경고 로그를 남김).
+> - 검증기가 서명 broker를 고를 때 **최상위 `handoffBrokerId`(PR-6)를 `originBrokerId`보다 먼저** 본다. 이전에는 `originBrokerId`로 폴백했기 때문에, `CROSS_BROKER_EMIT_MINTED_ORIGIN`을 켜면 부모 broker의 키로 검증하는 잠재 결함이 있었다.
+> - 모드는 cross-broker Terminal Brief 수집에만 적용한다. conversation relay 경로는 기존 규칙(anchors가 있으면 검증)을 유지한다.
+
 ## Scope
 
 ### In scope
