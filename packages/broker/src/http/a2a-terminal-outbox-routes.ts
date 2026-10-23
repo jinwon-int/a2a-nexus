@@ -1,6 +1,7 @@
 // A2A cross-broker + terminal-outbox routes (POST/GET
 // /a2a/cross-broker/terminal-briefs, GET /a2a/tasks/terminal-outbox, POST
-// /a2a/tasks/terminal-outbox/receipt, POST /a2a/tasks/terminal-outbox/ack),
+// /a2a/tasks/terminal-outbox/receipt, POST /a2a/tasks/terminal-outbox/ack,
+// POST /a2a/tasks/terminal-outbox/relay-fallback),
 // extracted from the server request closure into explicit-context handlers
 // (continuing the #645 dispatcher migration). The cross-broker ingest verifies
 // the sender proof against the server-loaded trust anchors and nonce cache, so
@@ -194,6 +195,53 @@ export async function handleTerminalOutboxAckRequest(ctx: A2ATerminalOutboxRoute
 }
 
 /**
+ * POST /a2a/tasks/terminal-outbox/relay-fallback — #2339 PR-5 (contract
+ * routing gate 5). The relay process calls this on its own (child) broker
+ * after the parent broker permanently rejected a relayed brief. Its caller
+ * and credentials are the same as the terminal-outbox subscribe route. The
+ * row is built from the retained source event, so the body only names that
+ * event and the reject code. Statuses: 201 created, 200 replayed,
+ * 404 `source_not_found`, 409 `not_relayed`.
+ */
+export async function handleTerminalOutboxRelayFallbackRequest(ctx: A2ATerminalOutboxRouteContext): Promise<void> {
+  if (ctx.enforceRequesterIdentity) {
+    assertRequesterHasRole(ctx.requesterIdentity, ["hub", "operator"], "task-terminal-outbox.relay-fallback");
+  }
+  assertPeerScopeForRoute(ctx, "handoff:status", "task-terminal-outbox.relay-fallback", { softEnforce: true });
+
+  const body = await readJson<{
+    sourceEventId?: unknown;
+    lastErrorCode?: unknown;
+    lastErrorReason?: unknown;
+    attempts?: unknown;
+  }>(ctx.req);
+  const sourceEventId = body?.sourceEventId;
+  if (typeof sourceEventId !== "string" || sourceEventId.length === 0 || sourceEventId.length > 512) {
+    throw new BrokerError("bad_request", "relay fallback requires a non-empty sourceEventId");
+  }
+  const lastErrorCode = body?.lastErrorCode;
+  if (typeof lastErrorCode !== "string" || lastErrorCode.length === 0) {
+    throw new BrokerError("bad_request", "relay fallback requires a non-empty lastErrorCode");
+  }
+  const result = ctx.broker.recordCrossBrokerRelayFallback({
+    sourceEventId,
+    lastErrorCode,
+    ...(typeof body?.lastErrorReason === "string" ? { lastErrorReason: body.lastErrorReason } : {}),
+    ...(typeof body?.attempts === "number" ? { attempts: body.attempts } : {}),
+  });
+  if (result.status === "source_not_found") {
+    sendJson(ctx.res, 404, { status: result.status });
+    return;
+  }
+  if (result.status === "not_relayed") {
+    sendJson(ctx.res, 409, { status: result.status });
+    return;
+  }
+  if (result.status === "created") await awaitDurablePersistenceAck(ctx.stateStore);
+  sendJson(ctx.res, result.status === "created" ? 201 : 200, result);
+}
+
+/**
  * Route dispatcher for the A2A cross-broker + terminal-outbox routes. Returns
  * true only when handled.
  */
@@ -218,6 +266,10 @@ export async function handleA2ATerminalOutboxRouteIfMatched(
   }
   if (ctx.method === "POST" && ctx.path === "/a2a/tasks/terminal-outbox/ack") {
     await handleTerminalOutboxAckRequest(ctx);
+    return true;
+  }
+  if (ctx.method === "POST" && ctx.path === "/a2a/tasks/terminal-outbox/relay-fallback") {
+    await handleTerminalOutboxRelayFallbackRequest(ctx);
     return true;
   }
   return false;

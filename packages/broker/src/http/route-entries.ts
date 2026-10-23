@@ -239,6 +239,7 @@ export function createA2ATerminalOutboxRouteEntries(
     entry("GET", ["a2a", "tasks", "terminal-outbox"], "a2a.tasks.terminal-outbox", "a2a", dispatch),
     entry("POST", ["a2a", "tasks", "terminal-outbox", "receipt"], "a2a.tasks.terminal-outbox.receipt", "a2a", dispatch),
     entry("POST", ["a2a", "tasks", "terminal-outbox", "ack"], "a2a.tasks.terminal-outbox.ack", "a2a", dispatch),
+    entry("POST", ["a2a", "tasks", "terminal-outbox", "relay-fallback"], "a2a.tasks.terminal-outbox.relay-fallback", "a2a", dispatch),
   ];
 }
 

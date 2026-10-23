@@ -179,7 +179,12 @@ test("pollCrossBrokerTerminalBriefReceiver skips missing_parent without pinning 
   // destination and never creates an implicit parent round. The event is
   // terminal for this lane — it must be reported as skipped and MUST NOT
   // freeze the cursor, so an orphaned/stale event cannot starve new events.
-  const fetchImpl: CrossBrokerTerminalBriefReceiverFetch = async (url) => {
+  const fallbackBodies: unknown[] = [];
+  const fetchImpl: CrossBrokerTerminalBriefReceiverFetch = async (url, init) => {
+    if (url.includes("/a2a/tasks/terminal-outbox/relay-fallback")) {
+      fallbackBodies.push(JSON.parse(init?.body ?? "{}"));
+      return jsonResponse(201, { status: "created" });
+    }
     if (url.includes("/a2a/tasks/terminal-outbox")) {
       return jsonResponse(200, { events: [event()], cursor: "terminal:brokerbeta-child-1" });
     }
@@ -203,6 +208,14 @@ test("pollCrossBrokerTerminalBriefReceiver skips missing_parent without pinning 
     eventId: "terminal:brokerbeta-child-1",
     code: "missing_parent",
     reason: "parent round brokeralpha-parent-round is not present on this broker",
+  }]);
+  // #2339 PR-5: the permanent reject also creates one child-local fallback row.
+  assert.equal(result.relayFallbackLocal, 1);
+  assert.deepEqual(fallbackBodies, [{
+    sourceEventId: "terminal:brokerbeta-child-1",
+    lastErrorCode: "missing_parent",
+    lastErrorReason: "parent round brokeralpha-parent-round is not present on this broker",
+    attempts: 1,
   }]);
 });
 
@@ -491,7 +504,12 @@ test("#2331 receiver reports skippedByCode and parent-owned events for other own
     otherOwnerEvent("terminal:other-6", "brokerGamma"),
     event({ id: "terminal:local-7", payload: { ...event().payload, taskId: "local-7", notificationOwnership: undefined, crossBrokerHandoff: undefined, brokerOfRecordId: "brokerbeta" } }),
   ];
+  const fallbackEventIds: string[] = [];
   const fetchImpl: CrossBrokerTerminalBriefReceiverFetch = async (url, init) => {
+    if (url.includes("/a2a/tasks/terminal-outbox/relay-fallback")) {
+      fallbackEventIds.push(JSON.parse(init?.body ?? "{}").sourceEventId as string);
+      return jsonResponse(201, { status: "created" });
+    }
     if (url.includes("/a2a/tasks/terminal-outbox")) {
       return jsonResponse(200, { events, cursor: "terminal:local-7" });
     }
@@ -512,6 +530,9 @@ test("#2331 receiver reports skippedByCode and parent-owned events for other own
   assert.deepEqual(result.blocked, []);
   assert.deepEqual(result.skipped.map((entry) => entry.code), ["missing_parent", "stale_replay", "missing_parent"]);
   assert.deepEqual(result.skippedByCode, { missing_parent: 2, stale_replay: 1 });
+  // #2339 PR-5: stale_replay means the parent already holds a newer projection, so no fallback.
+  assert.deepEqual(fallbackEventIds, ["terminal:orphan-1", "terminal:orphan-5"]);
+  assert.equal(result.relayFallbackLocal, 2);
   assert.deepEqual(result.parentOwnedForOtherOwner, {
     count: 3,
     byOwner: { workerA: 2, brokerGamma: 1 },
@@ -548,4 +569,72 @@ test("#2331 receiver caps the other-owner breakdown at 20 owners and tolerates p
   assert.equal(Object.getOwnPropertyDescriptor(result.parentOwnedForOtherOwner.byOwner, "__proto__")?.value, 1);
   assert.equal(Object.getOwnPropertyDescriptor(result.parentOwnedForOtherOwner.byOwner, "constructor")?.value, 1);
   assert.deepEqual(result.skippedByCode, {});
+});
+
+// ---- #2339 PR-5: relay-failure fallback outcomes ---------------------------
+
+function missingParentFetch(fallback: () => ReturnType<typeof jsonResponse>): CrossBrokerTerminalBriefReceiverFetch {
+  return async (url) => {
+    if (url.includes("/a2a/tasks/terminal-outbox/relay-fallback")) return fallback();
+    if (url.includes("/a2a/tasks/terminal-outbox")) {
+      return jsonResponse(200, {
+        events: [
+          event({ id: "terminal:first", payload: { ...event().payload, taskId: "first" } }),
+          event({ id: "terminal:second", payload: { ...event().payload, taskId: "second" } }),
+        ],
+        cursor: "terminal:second",
+      });
+    }
+    return jsonResponse(404, { accepted: false, ack: { code: "missing_parent", reason: "no parent" } });
+  };
+}
+
+test("#2339 PR-5 a transient fallback failure blocks and freezes the cursor before the event", async () => {
+  const result = await pollCrossBrokerTerminalBriefReceiver(CONFIG, missingParentFetch(() => jsonResponse(503, {})));
+
+  assert.equal(result.ok, false);
+  assert.equal(result.cursorToPersist, "terminal:old", "retry the first event next poll");
+  assert.deepEqual(result.blocked.map((entry) => [entry.eventId, entry.code]), [
+    ["terminal:first", "relay_fallback_http_503"],
+    ["terminal:second", "relay_fallback_http_503"],
+  ]);
+  assert.deepEqual(result.skipped, [], "an unresolved fallback is not a permanent skip");
+  assert.equal(result.relayFallbackLocal, 0);
+});
+
+test("#2339 PR-5 a source broker without the fallback route blocks instead of dropping the notice", async () => {
+  const result = await pollCrossBrokerTerminalBriefReceiver(
+    CONFIG,
+    missingParentFetch(() => jsonResponse(404, { error: "not_found" })),
+  );
+
+  assert.equal(result.ok, false);
+  assert.equal(result.blocked[0]?.code, "relay_fallback_http_404");
+  assert.equal(result.cursorToPersist, "terminal:old");
+});
+
+test("#2339 PR-5 permanent fallback refusals advance the cursor and are reported", async () => {
+  const result = await pollCrossBrokerTerminalBriefReceiver(
+    CONFIG,
+    missingParentFetch(() => jsonResponse(404, { status: "source_not_found" })),
+  );
+
+  assert.equal(result.ok, true);
+  assert.equal(result.cursorToPersist, "terminal:second");
+  assert.deepEqual(result.relayFallbackFailed, [
+    { eventId: "terminal:first", code: "source_not_found" },
+    { eventId: "terminal:second", code: "source_not_found" },
+  ]);
+  assert.deepEqual(result.skippedByCode, { missing_parent: 2 });
+});
+
+test("#2339 PR-5 replayed fallback rows are counted separately from new rows", async () => {
+  const result = await pollCrossBrokerTerminalBriefReceiver(
+    CONFIG,
+    missingParentFetch(() => jsonResponse(200, { status: "replayed" })),
+  );
+
+  assert.equal(result.ok, true);
+  assert.equal(result.relayFallbackLocal, 0);
+  assert.equal(result.relayFallbackReplayed, 2);
 });

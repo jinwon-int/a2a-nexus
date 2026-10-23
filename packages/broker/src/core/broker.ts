@@ -185,6 +185,8 @@ import {
   type TerminalTaskOutboxAckInput,
   type TerminalTaskOutboxEvent,
   type TerminalTaskOutboxReceiptUpdateInput,
+  type TerminalTaskRelayFallbackInput,
+  type TerminalTaskRelayFallbackResult,
 } from "./terminal-event-outbox.js";
 import { ConferenceRoomManager } from "./conference-room.js";
 import { WavePlanStore, type StalledWavePlan } from "./wave-plan-store.js";
@@ -437,6 +439,8 @@ export class InMemoryA2ABroker {
   private readonly taskEventStream: TaskEventStream;
   private readonly terminalTaskEventOutbox: TerminalTaskEventOutbox;
   private readonly crossBrokerTerminalBriefs: CrossBrokerTerminalBriefProjectionStore;
+  /** #2339 PR-5: relay-failure fallback rows created since process start (`/health`). */
+  private relayFallbackLocal = 0;
   private readonly wavePlans = new WavePlanStore();
   private readonly reviewLineages = new ReviewLineageStore();
   private readonly conferenceManager: ConferenceRoomManager;
@@ -663,6 +667,25 @@ export class InMemoryA2ABroker {
       this.persistState(undefined, { forceFull: true });
     }
     return result;
+  }
+
+  /**
+   * #2339 PR-5 (contract routing gate 5): create the child-local operator row
+   * for a relayed brief that the parent broker permanently rejected. Called by
+   * the relay process on this (child) broker; idempotent per source event.
+   */
+  recordCrossBrokerRelayFallback(input: TerminalTaskRelayFallbackInput): TerminalTaskRelayFallbackResult {
+    const result = this.terminalTaskEventOutbox.enqueueRelayFallback(input);
+    if (result.status === "created") {
+      this.relayFallbackLocal += 1;
+      this.persistTerminalTaskOutboxEvent(result.event);
+    }
+    return result;
+  }
+
+  /** #2339 PR-5: relay-failure fallback rows created since process start. */
+  getCrossBrokerRelayFallbackDiagnostics(): { relayFallbackLocal: number } {
+    return { relayFallbackLocal: this.relayFallbackLocal };
   }
 
   /** #2339 PR-6 rollout counters: legacy (origin-as-producer) vs explicit handoff packets. */

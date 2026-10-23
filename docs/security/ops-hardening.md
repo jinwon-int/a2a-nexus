@@ -89,6 +89,7 @@ node packages/broker/scripts/ops-hardening-audit.mjs --base-url http://127.0.0.1
 | `/tasks/terminal-outbox` | GET | Yes | Yes | No | Restricted to hub/operator role |
 | `/tasks/terminal-outbox/receipt` | POST | Yes | Yes | No | Restricted to hub/operator role |
 | `/tasks/terminal-outbox/ack` | POST | Yes | Yes | No | Restricted to hub/operator role |
+| `/tasks/terminal-outbox/relay-fallback` | POST | Yes | Yes | No | Restricted to hub/operator role; row built from the retained source event only |
 | `/a2a/tasks/:id/events` | GET | Yes | Yes | No | SSE stream; identity-bound |
 | `/a2a/operator/events` | GET | Yes | Yes | No | SSE stream; hub/operator role required |
 | `/review-lineages` | GET/POST | Yes | Yes | No | Read roles for GET; exact operator role for POST contract freeze |

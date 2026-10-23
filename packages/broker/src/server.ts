@@ -1883,6 +1883,13 @@ export function createBrokerServer(options: BrokerServerOptions = {}): BrokerSer
           requestPressure,
           retentionPolicy,
           maxSnapshotBytes,
+          // #2339: cross-broker relay counters since process start: PR-6
+          // legacy/explicit handoff packets ingested here (parent side) and
+          // PR-5 relay-failure fallback rows created here (child side).
+          crossBrokerTerminalBriefs: {
+            ...broker.getCrossBrokerTerminalBriefDiagnostics(),
+            ...broker.getCrossBrokerRelayFallbackDiagnostics(),
+          },
           ...(stateStore instanceof SqliteBrokerStateStore
             ? {
                 terminalOutboxDiagnostics: stateStore.readHotTerminalOutboxDiagnostics(),

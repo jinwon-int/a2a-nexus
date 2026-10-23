@@ -80,17 +80,53 @@ cross-broker Terminal Brief projection이 구조적으로 `missing_parent`로 �
 
 ### 5. relay 실패 로컬 fallback 알림 (계약 routing gate 5)
 
-- 자식/handoff broker의 relay(`cross-broker-terminal-brief-receiver.ts`)가
-  **재시도 예산 소진 또는 TTL 경과**로 한 이벤트를 영구 실패로 분류하면, 로컬
-  운영자 알림 row를 하나 만든다: scope는 `local-fallback`, 본문에
-  `relayFallback: { reason, attempts, lastErrorCode, parentRoundId, parentBrokerId }`.
-  **부모 라운드 타이틀(`n/N`)을 렌더하지 않는다** — 계약 §Parent-only
-  notification ownership 2·3. 제목은 unknown-total 형식의 자식 단건 제목.
-- relay 성공 후의 fallback 중복은 없다(성공 = suppressed, 기존 동작). 같은 이벤트에
-  fallback row는 최대 1개(idempotent, outbox 디듀프 키 `fallback:<eventId>`).
-- 카운터: receiver poll 요약에 `relayFallbackLocal`, `/health` 진단에 누적.
-- 영구 실패 기준은 기존 receiver 설정값(재시도 횟수·백오프·TTL)을 쓰고 새 knob를
-  만들지 않는다. 설정이 없으면 fallback도 없다(기본 동작 불변).
+> **정정 (2026-10-23, PR-5 구현 시 오너 결정).** 처음 안은 "기존 receiver
+> 설정값(재시도 횟수·백오프·TTL)으로 영구 실패를 판정하고 새 knob는 만들지
+> 않는다"였다. 그런데 receiver에는 재시도 횟수·TTL 설정이 없다. 있는 것은 poll
+> 간격·최대 백오프뿐이고, 일시 실패는 cursor를 멈춘 채 무기한 재시도한다.
+> 그대로 구현하면 동작이 없는 PR이 되므로 아래처럼 바꿨다. 제목도 처음 안의
+> "unknown-total 자식 단건 제목"은 `terminal-brief-core-contract.md`의 no-local-send
+> 규칙("Terminal Brief relay failure"로 명시, 부모 라운드 brief처럼 보이면 안 됨)과
+> 충돌하므로 계약 쪽을 따른다.
+
+- **영구 실패 기준**: 부모 broker가 이미 "영구 거부"로 분류한 ack 코드
+  (`PERMANENT_DESTINATION_REJECT_CODES`) 중 `stale_replay`를 뺀 것 — `missing_parent`,
+  `routing_mismatch`, `wrong_origin`, `bad_request`, `missing_dispatch_metadata`,
+  `terminal_ack_forbidden`. 부모가 그 brief를 기록하지 않았다는 뜻이라 운영자는
+  아무것도 받지 못한다. `stale_replay`는 부모가 이미 더 새 projection을 가진 경우라
+  제외한다. 새 knob는 없다. 일시 실패(전송 오류·5xx·unauthorized)는 지금처럼 cursor를
+  멈추고 재시도한다.
+- **쓰기 경로**: receiver는 별도 프로세스이므로 자기(자식) broker의 새 라우트
+  `POST /a2a/tasks/terminal-outbox/relay-fallback`을 부른다. 본문은
+  `{ sourceEventId, lastErrorCode, lastErrorReason?, attempts? }`뿐이고, row는 broker가
+  보유 중인 원본 이벤트로 만든다(relay가 내용을 주입할 수 없음). 인증은 terminal-outbox
+  subscribe와 같다(hub/operator, peer `handoff:status` verify-if-present). 응답:
+  201 `created`, 200 `replayed`, 404 `source_not_found`(보존 기간 경과), 409
+  `not_relayed`(parent-broker-only 이벤트가 아님 — 이미 로컬로 알림된 brief).
+- **row 모양**: 원본 이벤트에서 `notificationOwnership`·`crossBrokerHandoff`·
+  `parentRoundId`·`run`·`parentRoundTotal/Order/Progress`를 모두 뺀다. 그래서 부모
+  라운드 제목(`n/N`)이 생길 수 없고 relay가 이 row를 다시 집지도 않는다. `brokerOfRecordId`는
+  자식 broker. 본문 `relayFallback: { scope: "local-fallback", reason:
+  "permanent_destination_reject", attempts, lastErrorCode, lastErrorReason?,
+  parentRoundId, parentBrokerId, sourceEventId }`. `scope`는 처음 안처럼
+  `notificationOwnership.scope`에 두지 않고 `relayFallback` 안에 둔다(기존
+  `parent-broker-only` 소비자 의미를 바꾸지 않기 위해).
+- **제목**: `A2A Terminal Brief relay failure: <worker> (<lastErrorCode>)`, 80자 이내
+  (worker 라벨을 자름). 코드는 `[a-z0-9_]{1,32}`만 허용하고 나머지는 `unknown`.
+- **idempotent**: outbox id `terminal:` + `fallback:<sourceEventId>`. 같은 이벤트는 몇
+  번을 다시 보내도 row 1개(cursor 되감기·재시도 포함, 첫 거부 코드 유지).
+- **fallback 쓰기 실패**: 404/409에 라우트 자체 status가 실려 오면 영구로 보고
+  `relayFallbackFailed`에 남긴 뒤 cursor를 넘긴다. 그 밖의 실패(5xx, 전송 오류, 라우트가
+  없는 구형 broker의 404)는 `blocked`(`relay_fallback_http_<status>`)로 cursor를 멈춰
+  재시도한다. 따라서 **broker를 receiver보다 먼저(또는 같이) 배포**해야 한다.
+- relay 성공 시 fallback은 없다(기존대로 suppressed).
+- **카운터**: receiver poll 요약에 `relayFallbackLocal`(새로 만든 row)·
+  `relayFallbackReplayed`·`relayFallbackFailed`. `/health`의
+  `crossBrokerTerminalBriefs.relayFallbackLocal`(프로세스 시작 후 누적; 같은 블록에
+  PR-6의 `legacyOriginAsHandoff`·`explicitHandoffBroker`도 노출).
+- **배포 영향**: PR-1(레지스트리) 반영 전에는 cross-broker 자식 brief가 부모에서 전부
+  `missing_parent`로 끝나므로, 배포 직후부터 그 brief마다 자식 broker에 로컬 fallback
+  알림이 하나씩 생긴다. 지금 조용히 사라지는 알림이 보이게 되는 것이 의도한 효과다.
 
 ### 1+2. 부모 라운드 레지스트리 (owner/origin 분리 + foreign 분류 + `originTaskId` 앵커)
 
@@ -196,8 +232,8 @@ receiver 카운터 `parent_resolved_via: registry | legacy_task`를 기록한다
 
 - [ ] (6) 계약·코드·테스트에서 `originBrokerId`는 mint origin, `handoffBrokerId`는
       producer. 구형 packet은 `legacy_origin_as_handoff` 카운터와 함께 수락.
-- [ ] (5) relay 영구 실패 fixture → 로컬 fallback row 1개, 부모 타이틀 없음, 성공
-      경로 fixture → fallback 0.
+- [ ] (5) 부모 영구 거부(`stale_replay` 제외) → 자식 broker 로컬 fallback row 1개,
+      부모 타이틀 없음, 계약 라벨 제목. 성공 경로 → fallback 0. 재시도·되감기에도 1개.
 - [ ] (1+2) 정식 handoff 4-case fixture(계약 표)에서 case 2·4의 자식 projection이
       부모 broker에서 **accepted**. 자기참조 `<round>-t2` projection은 여전히
       `missing_parent`(1단계 회귀 (f) 유지). payload만 있는 태스크는 레지스트리를
