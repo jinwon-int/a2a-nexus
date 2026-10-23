@@ -76,15 +76,44 @@ export async function handleParentRoundMintRequest(ctx: ParentRoundRouteContext)
   const parentRoundId = optionalString(body, "parentRoundId");
   if (!parentRoundId) throw new BrokerError("bad_request", "parentRoundId is required");
 
-  const teamScope = optionalString(body, "teamScope");
-  const handoffBrokerId = optionalString(body, "handoffBrokerId");
+  let teamScope = optionalString(body, "teamScope");
+  let handoffBrokerId = optionalString(body, "handoffBrokerId");
+  const initiatingBrokerId = optionalString(body, "initiatingBrokerId") ?? ctx.brokerId;
+  // #2339 spec item 2: with a configured broker-team registry, the round's
+  // routing must agree with the parent-origin resolver. The resolver fills a
+  // missing handoff broker, and the registry entry then activates
+  // routing_mismatch for the round. Without a registry the placeholder
+  // default would misjudge real broker ids, so nothing is checked.
+  if (teamScope) {
+    const resolved = ctx.broker.resolveConfiguredParentOriginRoute(initiatingBrokerId, teamScope);
+    if (resolved && !resolved.ok) {
+      throw new BrokerError("bad_request", `teamScope does not resolve to a route: ${resolved.code}: ${resolved.reason}`);
+    }
+    if (resolved?.ok) {
+      const { route } = resolved;
+      if (route.parentBrokerId !== ctx.brokerId.toLowerCase()) {
+        throw new BrokerError("bad_request", `teamScope routes the parent to ${route.parentBrokerId}, not this broker (${ctx.brokerId})`);
+      }
+      const routedHandoff = route.handoff?.handoffBrokerId;
+      if (handoffBrokerId && handoffBrokerId.toLowerCase() !== routedHandoff) {
+        throw new BrokerError(
+          "bad_request",
+          routedHandoff
+            ? `handoffBrokerId ${handoffBrokerId} does not match the routed handoff broker ${routedHandoff}`
+            : `teamScope ${route.requestedTeamScope} is local-only; it has no handoff broker`,
+        );
+      }
+      handoffBrokerId = handoffBrokerId ?? routedHandoff;
+      teamScope = route.requestedTeamScope;
+    }
+  }
   let result: ReturnType<InMemoryA2ABroker["mintParentRound"]>;
   try {
     result = ctx.broker.mintParentRound({
       parentRoundId,
       originBrokerId: ctx.brokerId,
       parentBrokerId: ctx.brokerId,
-      initiatingBrokerId: optionalString(body, "initiatingBrokerId") ?? ctx.brokerId,
+      initiatingBrokerId,
       ...(teamScope ? { teamScope } : {}),
       ...(handoffBrokerId ? { handoffBrokerId } : {}),
       ...(typeof total === "number" ? { parentRoundTotal: total } : {}),

@@ -188,6 +188,13 @@ export interface InMemoryA2ABrokerOptions {
    */
   knownBrokerIds?: readonly string[];
   /**
+   * #2339 (spec item 2): the Terminal Brief broker-team registry for the
+   * parent-origin route resolver (`A2A_TERMINAL_BRIEF_BROKER_TEAMS`). Unset
+   * keeps the resolver's placeholder default and skips registry-backed route
+   * checks.
+   */
+  terminalBriefBrokerTeams?: readonly import("./terminal-brief-routing.js").TerminalBriefBrokerTeamRegistration[];
+  /**
    * Stable team/tenant identity for ownership-guarded tasks. When a task
    * carries teamId metadata, lifecycle mutation is accepted only by a broker
    * configured with the same team id.
