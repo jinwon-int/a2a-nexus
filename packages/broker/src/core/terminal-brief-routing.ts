@@ -230,7 +230,7 @@ export function resolveTerminalBriefParentOriginRoute(
 
 /**
  * #2339 (spec item 2): parse `A2A_TERMINAL_BRIEF_BROKER_TEAMS`, for example
- * `seoseo=team1,gwakga=team2`, into the resolver's broker-team registry.
+ * `brokeralpha=team1,brokerbeta=team2`, into the resolver's broker-team registry.
  * Unset or blank returns undefined: callers keep the placeholder default and
  * skip registry-backed checks. Malformed input throws so a broker never runs
  * with a half-parsed topology: an unknown team, an empty or duplicate broker
