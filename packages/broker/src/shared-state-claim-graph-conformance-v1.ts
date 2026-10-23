@@ -16,6 +16,7 @@
 
 import {
   boundedCountSchemaV1,
+  createConformanceKeyDigestV1,
   createReportConformanceErrorClassV1,
   deepFreeze,
   seededDeterministicShuffleV1,
@@ -25,7 +26,6 @@ import { z } from "zod";
 
 import {
   SHARED_STATE_STORAGE_V1_VALUES as V,
-  digestSharedStateKeyV1,
   parseSharedStateStorageLifecycleV1,
   parseSharedStateTransactionCommandV1,
   parseSharedStateTransactionResultV1,
@@ -421,24 +421,7 @@ type DigestDomain =
   | "broker.claim-graph.projection-inverse"
   | "broker.claim-graph.rollback-batch-key";
 
-function digest(
-  domain: DigestDomain,
-  namespace: string,
-  components: readonly {
-    readonly field: string;
-    readonly type: "utf8" | "uint" | "bytes";
-    readonly value: string;
-  }[],
-): string {
-  const parsed = digestSharedStateKeyV1({
-    keyspaceVersion: V.versions.keyspace,
-    domain,
-    namespace,
-    components,
-  });
-  if (!parsed.ok) return fail("invalid_generated_command");
-  return parsed.value.digest;
-}
+const digest = createConformanceKeyDigestV1<DigestDomain>(fail);
 
 function command<Selected extends Operation>(
   operation: Selected,

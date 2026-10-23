@@ -11,16 +11,18 @@
 
 import {
   boundedCountSchemaV1,
+  createConformanceKeyDigestV1,
   createReportConformanceErrorClassV1,
   deepFreeze,
   seededDeterministicShuffleV1,
+  SharedStateConformanceLogicalFakeClockV1,
+  SharedStateConformancePromiseBarrierV1,
 } from "./shared-state-conformance-common-v1.js";
 
 import { z } from "zod";
 
 import {
   SHARED_STATE_STORAGE_V1_VALUES as V,
-  digestSharedStateKeyV1,
   evaluateSharedStateIdempotencyExpiryV1,
   parseSharedStateStorageLifecycleV1,
   parseSharedStateTransactionCommandV1,
@@ -272,22 +274,10 @@ export interface SharedStateIdempotencyConformanceClockControlV1
 }
 
 export class InjectedIdempotencyDeterministicFakeClockV1
-implements SharedStateIdempotencyConformanceClockControlV1 {
-  #logicalMilliseconds = 0n;
-
-  readLogicalMilliseconds(): bigint {
-    return this.#logicalMilliseconds;
-  }
-
-  advanceExactlyBy(milliseconds: number): void {
-    if (
-      !Number.isSafeInteger(milliseconds)
-      || milliseconds < 0
-      || milliseconds > V.limits.maxDurationMs
-    ) {
-      fail("target_operation_failed");
-    }
-    this.#logicalMilliseconds += BigInt(milliseconds);
+  extends SharedStateConformanceLogicalFakeClockV1
+  implements SharedStateIdempotencyConformanceClockControlV1 {
+  constructor() {
+    super(fail);
   }
 }
 
@@ -312,53 +302,14 @@ export interface SharedStateIdempotencyConformanceTargetFactoryV1 {
   }): Promise<SharedStateIdempotencyConformanceTargetV1>;
 }
 
-export class ExplicitIdempotencyPromiseBarrierV1 {
-  readonly #expected: number;
-  #arrived = 0;
-  #released = false;
-  readonly #allArrived: Promise<void>;
-  readonly #gate: Promise<void>;
-  #resolveAllArrived!: () => void;
-  #resolveGate!: () => void;
-
+export class ExplicitIdempotencyPromiseBarrierV1
+  extends SharedStateConformancePromiseBarrierV1 {
   constructor(expected: number) {
-    if (
-      !Number.isSafeInteger(expected)
-      || expected <= 0
-      || expected
-        > SHARED_STATE_IDEMPOTENCY_CONFORMANCE_V1
-          .sameFingerprintContenderCount
-    ) {
-      fail("barrier_not_ready");
-    }
-    this.#expected = expected;
-    this.#allArrived = new Promise((resolve) => {
-      this.#resolveAllArrived = resolve;
+    super(expected, {
+      maxExpected:
+        SHARED_STATE_IDEMPOTENCY_CONFORMANCE_V1.sameFingerprintContenderCount,
+      fail,
     });
-    this.#gate = new Promise((resolve) => {
-      this.#resolveGate = resolve;
-    });
-  }
-
-  async arriveAndWait(): Promise<void> {
-    if (this.#released || this.#arrived >= this.#expected) {
-      fail("barrier_not_ready");
-    }
-    this.#arrived += 1;
-    if (this.#arrived === this.#expected) this.#resolveAllArrived();
-    await this.#gate;
-  }
-
-  async waitUntilAllArrived(): Promise<void> {
-    await this.#allArrived;
-  }
-
-  release(): void {
-    if (this.#released || this.#arrived !== this.#expected) {
-      fail("barrier_not_ready");
-    }
-    this.#released = true;
-    this.#resolveGate();
   }
 }
 
@@ -439,6 +390,8 @@ type DigestDomain =
   | "broker.outbox.event-key"
   | "broker.outbox.payload";
 
+const keyDigest = createConformanceKeyDigestV1<DigestDomain>(fail);
+
 function digest(
   domain: DigestDomain,
   components: readonly {
@@ -447,14 +400,7 @@ function digest(
     readonly value: string;
   }[],
 ): string {
-  const result = digestSharedStateKeyV1({
-    keyspaceVersion: V.versions.keyspace,
-    domain,
-    namespace: IDEMPOTENCY_REGISTRATION.namespace,
-    components,
-  });
-  if (!result.ok) return fail("invalid_generated_command");
-  return result.value.digest;
+  return keyDigest(domain, IDEMPOTENCY_REGISTRATION.namespace, components);
 }
 
 const IDEMPOTENCY_KEY_DIGEST = digest("broker.idempotency.key", [
