@@ -157,6 +157,7 @@ import {
 import { createBrokerAgentCard } from "./a2a/agent-card.js";
 import { PushNotificationConfigStore } from "./a2a/push-notification-config.js";
 import { signAgentCard } from "a2a-attestation";
+import { parseTerminalBriefBrokerTeams } from "./core/terminal-brief-routing.js";
 import {
   loadCrossBrokerTrustAnchors,
   CrossBrokerNonceCache,
@@ -650,6 +651,12 @@ export function createBrokerServer(options: BrokerServerOptions = {}): BrokerSer
     options.peerStatusEnabled ?? resolveBooleanEnv(process.env.A2A_PEER_STATUS_ENABLED, false);
   const brokerId = resolveBrokerId(options.brokerId, serviceName);
   const knownBrokerIds = resolveKnownBrokerIds(options.knownBrokerIds);
+  const terminalBriefBrokerTeams = parseTerminalBriefBrokerTeams(
+    options.terminalBriefBrokerTeams ?? process.env.A2A_TERMINAL_BRIEF_BROKER_TEAMS,
+  );
+  if (terminalBriefBrokerTeams && !terminalBriefBrokerTeams.some((entry) => entry.brokerId === brokerId.toLowerCase())) {
+    throw new Error(`A2A_TERMINAL_BRIEF_BROKER_TEAMS does not list this broker ("${brokerId}")`);
+  }
   const teamId = resolveStringOption(options.teamId, process.env.A2A_TEAM_ID);
   const buildInfo = resolveBrokerBuildInfo(options, serviceName);
 
@@ -874,6 +881,7 @@ export function createBrokerServer(options: BrokerServerOptions = {}): BrokerSer
       workerHeartbeatPersistIntervalMs,
       brokerId,
       knownBrokerIds,
+      ...(terminalBriefBrokerTeams ? { terminalBriefBrokerTeams } : {}),
       taskCreateIdempotencyAuthority,
       terminalOutboxAppendAuthority,
       taskTerminalGraphSourceAuthority,
@@ -1916,6 +1924,10 @@ export function createBrokerServer(options: BrokerServerOptions = {}): BrokerSer
           },
           // #2339 PR-4: rollout evidence for record -> enforce (spec: a 7-day
           // window of missing=0, invalid=0 on both brokers before enforce).
+          // #2339 spec item 2: null = resolver placeholder (route checks skipped).
+          terminalBriefRouting: {
+            brokerTeams: terminalBriefBrokerTeams ?? null,
+          },
           crossBrokerSenderProof: {
             mode: crossBrokerSenderProofMode,
             anchorsConfigured: Boolean(crossBrokerTrustAnchors),

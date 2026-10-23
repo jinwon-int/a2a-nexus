@@ -227,3 +227,35 @@ export function resolveTerminalBriefParentOriginRoute(
     },
   };
 }
+
+/**
+ * #2339 (spec item 2): parse `A2A_TERMINAL_BRIEF_BROKER_TEAMS`, for example
+ * `seoseo=team1,gwakga=team2`, into the resolver's broker-team registry.
+ * Unset or blank returns undefined: callers keep the placeholder default and
+ * skip registry-backed checks. Malformed input throws so a broker never runs
+ * with a half-parsed topology: an unknown team, an empty or duplicate broker
+ * id, or two brokers for one team (the resolver would pick one at random).
+ */
+export function parseTerminalBriefBrokerTeams(
+  raw: string | undefined,
+): TerminalBriefBrokerTeamRegistration[] | undefined {
+  const value = raw?.trim();
+  if (!value) return undefined;
+  const brokers: TerminalBriefBrokerTeamRegistration[] = [];
+  for (const part of value.split(",")) {
+    const [brokerRaw, teamRaw, ...rest] = part.split("=");
+    const brokerId = brokerRaw?.trim().toLowerCase();
+    const teamId = teamRaw?.trim().toLowerCase();
+    if (!brokerId || rest.length > 0 || (teamId !== "team1" && teamId !== "team2")) {
+      throw new Error(`A2A_TERMINAL_BRIEF_BROKER_TEAMS entry "${part.trim()}" must be <brokerId>=team1|team2`);
+    }
+    if (brokers.some((broker) => broker.brokerId === brokerId)) {
+      throw new Error(`A2A_TERMINAL_BRIEF_BROKER_TEAMS lists broker "${brokerId}" twice`);
+    }
+    if (brokers.some((broker) => broker.teamId === teamId)) {
+      throw new Error(`A2A_TERMINAL_BRIEF_BROKER_TEAMS maps two brokers to ${teamId}`);
+    }
+    brokers.push({ brokerId, teamId });
+  }
+  return brokers;
+}

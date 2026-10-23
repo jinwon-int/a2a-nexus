@@ -340,6 +340,13 @@ export interface BrokerServerOptions extends BrokerRuntimeHotLimitOptions {
    */
   crossBrokerSenderProofMode?: string;
   /**
+   * #2339 (spec item 2): Terminal Brief broker-team registry, for example
+   * `seoseo=team1,gwakga=team2` (env A2A_TERMINAL_BRIEF_BROKER_TEAMS).
+   * Malformed input refuses to start. Unset keeps the resolver placeholder
+   * and skips registry-backed route checks.
+   */
+  terminalBriefBrokerTeams?: string;
+  /**
    * JSON peer credential registry file mapping a peer broker id →
    * { secretSha256, scopes, status? } for minimum-scope cross-broker handoff
    * authorization (contracts/a2a/broker-handoff-protocol.md peer scopes

@@ -282,6 +282,8 @@ import { readExchange, readExchanges } from "./broker-exchange-read.js";
 import {
   resolveTerminalBriefParentOriginRoute,
   normalizeTerminalBriefTeamScope,
+  type TerminalBriefBrokerTeamRegistration,
+  type TerminalBriefParentOriginRouteResult,
 } from "./terminal-brief-routing.js";
 import type { ArtifactRuntimeRepository } from "./artifact-repository.js";
 import type { AuditRuntimeRepository } from "./audit-repository.js";
@@ -471,6 +473,8 @@ export class InMemoryA2ABroker {
   private readonly snapshotExtensions: SnapshotExtensionRegistry;
   private readonly brokerId?: string;
   private readonly knownBrokerIds: readonly string[];
+  /** #2339: configured broker-team registry; undefined = resolver placeholder default. */
+  private readonly terminalBriefBrokerTeams?: readonly TerminalBriefBrokerTeamRegistration[];
   private readonly teamId?: string;
   private readonly taskReadinessMode: TaskReadinessMode;
   private readonly reviewLineageMode: ReviewLineageRolloutMode;
@@ -557,6 +561,7 @@ export class InMemoryA2ABroker {
     this.listeners = new BrokerListenerRegistry(options.profilingListener);
     this.snapshotExtensions = new SnapshotExtensionRegistry(options.snapshotExtensions);
     this.brokerId = normalizeOwnershipString(options.brokerId);
+    this.terminalBriefBrokerTeams = options.terminalBriefBrokerTeams;
     this.knownBrokerIds = (options.knownBrokerIds ?? [])
       .map((id) => normalizeOwnershipString(id))
       .filter((id): id is string => Boolean(id));
@@ -636,7 +641,11 @@ export class InMemoryA2ABroker {
         );
         const initiatingBrokerId = (payload["initiatingBrokerId"] as string)?.trim();
         if (!teamScope || !initiatingBrokerId) return undefined;
-        const result = resolveTerminalBriefParentOriginRoute({ initiatingBrokerId, requestedTeamScope: teamScope });
+        const result = resolveTerminalBriefParentOriginRoute({
+          initiatingBrokerId,
+          requestedTeamScope: teamScope,
+          ...(this.terminalBriefBrokerTeams ? { brokers: this.terminalBriefBrokerTeams } : {}),
+        });
         if (!result.ok) return undefined;
         return {
           initiatingBrokerId: result.route.initiatingBrokerId,
@@ -731,6 +740,27 @@ export class InMemoryA2ABroker {
     const result = this.parentRounds.addAnchor(parentRoundId, anchor);
     if (result.status === "added") this.persistState(undefined, { forceFull: true });
     return result;
+  }
+
+  /**
+   * #2339 (spec item 2): resolve a parent-origin route against the configured
+   * broker-team registry. Returns undefined when no registry is configured,
+   * because the placeholder default would misjudge real broker ids.
+   */
+  resolveConfiguredParentOriginRoute(
+    initiatingBrokerId: string,
+    teamScope: string,
+  ): TerminalBriefParentOriginRouteResult | undefined {
+    if (!this.terminalBriefBrokerTeams) return undefined;
+    return resolveTerminalBriefParentOriginRoute({
+      initiatingBrokerId,
+      requestedTeamScope: teamScope,
+      brokers: this.terminalBriefBrokerTeams,
+    });
+  }
+
+  getTerminalBriefBrokerTeams(): readonly TerminalBriefBrokerTeamRegistration[] | undefined {
+    return this.terminalBriefBrokerTeams;
   }
 
   getParentRound(parentRoundId: string): ParentRoundRegistryEntry | undefined {
