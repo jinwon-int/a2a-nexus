@@ -482,6 +482,26 @@ export const terminalOutboxEventSchema = z
   })
   .passthrough();
 
+/**
+ * #2339 PR-1a parent round registry entry. Structural check only; the
+ * registry's own restore() normalizes and drops anything it cannot trust.
+ */
+export const parentRoundRegistryEntrySchema = z
+  .object({
+    parentRoundId: z.string().min(1),
+    originBrokerId: z.string().min(1),
+    parentBrokerId: z.string().min(1),
+    initiatingBrokerId: z.string().min(1),
+    teamScope: z.string().min(1).optional(),
+    handoffBrokerId: z.string().min(1).optional(),
+    parentRoundTotal: z.number().int().positive().optional(),
+    kind: z.enum(["local-origin", "foreign-handoff"]),
+    mintedAt: z.string().min(1),
+    mintedBy: z.object({ requesterId: z.string().min(1), role: z.string().min(1) }).passthrough(),
+    anchors: z.array(z.string().min(1)),
+  })
+  .passthrough();
+
 export const crossBrokerTerminalBriefProjectionSchema = z
   .object({
     id: z.string().min(1),
@@ -785,6 +805,7 @@ export const brokerSnapshotSchema = z
     wavePlans: z.array(persistedWavePlanSchema).optional().default([]),
     reviewLineages: z.array(reviewLineageRecordSchema).optional().default([]),
     pushNotificationConfigs: z.array(pushNotificationConfigSchema).optional(),
+    parentRounds: z.array(parentRoundRegistryEntrySchema).optional().default([]),
   })
   .passthrough();
 
@@ -812,6 +833,7 @@ export const SNAPSHOT_RECORD_SCHEMAS = {
   wavePlans: persistedWavePlanSchema,
   reviewLineages: reviewLineageRecordSchema,
   pushNotificationConfigs: pushNotificationConfigSchema,
+  parentRounds: parentRoundRegistryEntrySchema,
 } as const;
 
 export type SnapshotRecordCollection = keyof typeof SNAPSHOT_RECORD_SCHEMAS;
