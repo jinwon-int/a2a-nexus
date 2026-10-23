@@ -19,6 +19,7 @@ import {
   NCLEX_EVIDENCE_REF_PATTERN,
   NCLEX_FINDING_NOTE_MAX_CHARS,
   NCLEX_RECEIPT_SCHEMA,
+  NCLEX_REVIEWER_KEY_ID_PATTERN,
   NclexReceiptValidationError,
   parseReceiptCore,
   receiptIdOf,
@@ -57,9 +58,15 @@ const GOLDEN_RECEIPT = {
 } as const;
 
 const KEYRING = { "seoseo-review-key-1": GOLDEN_PUBLIC_PEM };
+// The golden predates the #1724 key-id naming rule: its kid
+// (`seoseo-review-key-1`) is not `worker:<reviewerNodeId>:<suffix>` and the
+// offline private key is not kept, so it cannot be re-signed. It still pins the
+// shared JCS/JWS crypto path, verified through the explicit legacy escape; the
+// strict default refuses it (see the key-id binding tests below).
+const LEGACY_KID = { allowUnboundKeyIds: true } as const;
 
 test("offline-module golden receipt verifies identically on the broker side (#1724)", () => {
-  const result = verifySignedReceipt(GOLDEN_RECEIPT, KEYRING);
+  const result = verifySignedReceipt(GOLDEN_RECEIPT, KEYRING, LEGACY_KID);
   assert.equal(result.ok, true);
   if (result.ok) {
     assert.equal(result.receipt.receiptId, GOLDEN_RECEIPT.receiptId);
@@ -75,21 +82,21 @@ test("receiptIdOf matches the offline canonical hash for the golden core", () =>
 
 test("tampered golden receipt fails closed with a stable reason", () => {
   const tampered = { ...GOLDEN_RECEIPT, headSha: "b".repeat(40) };
-  const result = verifySignedReceipt(tampered, KEYRING);
+  const result = verifySignedReceipt(tampered, KEYRING, LEGACY_KID);
   assert.equal(result.ok, false);
   if (!result.ok) assert.equal(result.reason, "receipt_id_mismatch");
 
   const sigTampered = { ...GOLDEN_RECEIPT, verdict: "BLOCK" };
-  const result2 = verifySignedReceipt(sigTampered, KEYRING);
+  const result2 = verifySignedReceipt(sigTampered, KEYRING, LEGACY_KID);
   assert.equal(result2.ok, false);
 
-  assert.deepEqual(verifySignedReceipt(GOLDEN_RECEIPT, {}).ok, false);
+  assert.deepEqual(verifySignedReceipt(GOLDEN_RECEIPT, {}, LEGACY_KID), { ok: false, reason: "receipt_key_unknown" });
   assert.deepEqual(verifySignedReceipt(null, KEYRING).ok, false);
   const selfReview = {
     ...GOLDEN_RECEIPT,
     reviewerNodeId: "dungae",
   };
-  const selfResult = verifySignedReceipt(selfReview, KEYRING);
+  const selfResult = verifySignedReceipt(selfReview, KEYRING, LEGACY_KID);
   assert.equal(selfResult.ok, false);
   if (!selfResult.ok) assert.equal(selfResult.reason, "receipt_self_review");
 });
@@ -107,8 +114,8 @@ test("freshly signed receipt (TS-built core, offline-shaped signature) verifies"
     headSha: "d".repeat(40),
     diffHash: "dh",
     intentHash: "ih",
-    authorNodeId: "author",
-    reviewerNodeId: "reviewer",
+    authorNodeId: "dungae",
+    reviewerNodeId: "nosuk",
     team: "T2",
     lane: "evidence_adversarial",
     verdict: "BLOCK",
@@ -118,13 +125,13 @@ test("freshly signed receipt (TS-built core, offline-shaped signature) verifies"
   const receiptId = receiptIdOf(core);
   // Rebuild the JWS the same way the offline module does (JCS protected+payload, Ed25519).
   const protectedHeader = Buffer.from(
-    JSON.stringify({ alg: "EdDSA", kid: "k1", canonicalization: "rfc8785-jcs-v1" }),
+    JSON.stringify({ alg: "EdDSA", kid: "worker:nosuk:g2:v1", canonicalization: "rfc8785-jcs-v1" }),
     "utf8",
   ).toString("base64url");
   const payload = Buffer.from(canonicalizeJson(core), "utf8").toString("base64url");
   const signature = cryptoSign(null, Buffer.from(`${protectedHeader}.${payload}`, "utf8"), privatePem).toString("base64url");
   const receipt = { ...core, receiptId, signatures: [{ protected: protectedHeader, signature }] };
-  const result = verifySignedReceipt(receipt, { k1: publicPem });
+  const result = verifySignedReceipt(receipt, { "worker:nosuk:g2:v1": publicPem });
   assert.equal(result.ok, true);
 });
 
@@ -244,4 +251,101 @@ test("restricted artifact: undeclared finding fields never reach the parsed core
   );
   assert.deepEqual(core.findings, [{ findingId: "F-1", blocking: false, evidenceRef: "pharm-01#p.12" }]);
   assert.equal(JSON.stringify(core).includes("verbatim body"), false);
+});
+
+// Key-id ↔ reviewerNodeId binding (#1724, owner decision 2026-10-23): reviewer
+// receipts must be signed by `worker:<reviewerNodeId>:<suffix>`.
+const BINDING_PAIR = generateKeyPairSync("ed25519");
+const BINDING_PRIVATE_PEM = BINDING_PAIR.privateKey.export({ type: "pkcs8", format: "pem" }) as string;
+const BINDING_PUBLIC_PEM = BINDING_PAIR.publicKey.export({ type: "spki", format: "pem" }) as string;
+
+function signedWithKid(kid: string, overrides: Record<string, unknown> = {}) {
+  const core = parseReceiptCore({ ...goldenCoreWith([]), reviewerNodeId: "nosuk", ...overrides });
+  const protectedHeader = Buffer.from(
+    JSON.stringify({ alg: "EdDSA", kid, canonicalization: "rfc8785-jcs-v1" }),
+    "utf8",
+  ).toString("base64url");
+  const payload = Buffer.from(canonicalizeJson(core), "utf8").toString("base64url");
+  const signature = cryptoSign(null, Buffer.from(`${protectedHeader}.${payload}`, "utf8"), BINDING_PRIVATE_PEM).toString(
+    "base64url",
+  );
+  return { ...core, receiptId: receiptIdOf(core), signatures: [{ protected: protectedHeader, signature }] };
+}
+
+function reasonOf(result: ReturnType<typeof verifySignedReceipt>): string {
+  return result.ok ? "ok" : result.reason;
+}
+
+test("key-id binding: the reviewer's own worker key verifies, any suffix shape (#1724)", () => {
+  for (const kid of ["worker:nosuk:g2:v1", "worker:nosuk:g2:v2", "worker:nosuk:v3"]) {
+    const result = verifySignedReceipt(signedWithKid(kid), { [kid]: BINDING_PUBLIC_PEM });
+    assert.equal(reasonOf(result), "ok", kid);
+  }
+});
+
+test("key-id binding: another node's worker key is a specific mismatch, never admitted (#1724)", () => {
+  const kid = "worker:dungae:g2:v1";
+  // A cryptographically valid signature by a key present in the keyring still
+  // fails when the kid names a different node than reviewerNodeId.
+  const borrowed = signedWithKid(kid, { authorNodeId: "yukson" });
+  assert.deepEqual(verifySignedReceipt(borrowed, { [kid]: BINDING_PUBLIC_PEM }), {
+    ok: false,
+    reason: "receipt_key_reviewer_mismatch",
+  });
+  // The legacy escape never relaxes a node-shaped kid.
+  assert.equal(
+    reasonOf(verifySignedReceipt(borrowed, { [kid]: BINDING_PUBLIC_PEM }, { allowUnboundKeyIds: true })),
+    "receipt_key_reviewer_mismatch",
+  );
+});
+
+test("key-id binding: non-node kids fail closed unless the explicit escape is passed (#1724)", () => {
+  for (const kid of ["nclex-eval-proof-1", "seoseo-review-key-1", "k1"]) {
+    const receipt = signedWithKid(kid);
+    const keyring = { [kid]: BINDING_PUBLIC_PEM };
+    assert.deepEqual(verifySignedReceipt(receipt, keyring), { ok: false, reason: "receipt_key_unbound" }, kid);
+    assert.equal(reasonOf(verifySignedReceipt(receipt, keyring, { allowUnboundKeyIds: false })), "receipt_key_unbound", kid);
+    assert.equal(reasonOf(verifySignedReceipt(receipt, keyring, { allowUnboundKeyIds: true })), "ok", kid);
+  }
+  assert.deepEqual(verifySignedReceipt(GOLDEN_RECEIPT, KEYRING), { ok: false, reason: "receipt_key_unbound" });
+});
+
+test("key-id binding: role-scoped kids that are not reviewer worker keys are always unbound (#1724)", () => {
+  for (const kid of [
+    "broker:seoseo:agent-card:v1",
+    "finalizer:panel:v1",
+    "Worker:nosuk:g2:v1",
+    "worker:Nosuk:g2:v1",
+    "worker:nosuk",
+    "worker:nosuk:",
+    "worker::g2:v1",
+  ]) {
+    const receipt = signedWithKid(kid);
+    for (const options of [{}, { allowUnboundKeyIds: true }]) {
+      assert.equal(reasonOf(verifySignedReceipt(receipt, { [kid]: BINDING_PUBLIC_PEM }, options)), "receipt_key_unbound", kid);
+    }
+  }
+});
+
+test("key-id binding: TS and offline verifiers share the kid rule and reach the same verdicts (#1724)", async () => {
+  const offline = (await loadOfflineReceiptModule()) as OfflineReceiptModule & {
+    NCLEX_REVIEWER_KEY_ID_PATTERN: RegExp;
+    verifyReceipt(
+      receipt: unknown,
+      keyring: Record<string, string>,
+      options?: { allowUnboundKeyIds?: boolean },
+    ): { ok: boolean; reason?: string };
+  };
+  assert.equal(offline.NCLEX_REVIEWER_KEY_ID_PATTERN.source, NCLEX_REVIEWER_KEY_ID_PATTERN.source);
+  assert.equal(offline.NCLEX_REVIEWER_KEY_ID_PATTERN.flags, NCLEX_REVIEWER_KEY_ID_PATTERN.flags);
+  const base = offline.buildReceiptCore({ ...goldenCoreWith([]), reviewerNodeId: "nosuk" });
+  for (const kid of ["worker:nosuk:g2:v1", "worker:dungae:g2:v1", "nclex-eval-proof-1", "broker:seoseo:agent-card:v1"]) {
+    const receipt = offline.signReceipt(base, { privateKeyPem: BINDING_PRIVATE_PEM, keyId: kid });
+    const keyring = { [kid]: BINDING_PUBLIC_PEM };
+    for (const options of [{}, { allowUnboundKeyIds: true }]) {
+      const offlineResult = offline.verifyReceipt(receipt, keyring, options);
+      const offlineReason = offlineResult.ok ? "ok" : offlineResult.reason;
+      assert.equal(reasonOf(verifySignedReceipt(receipt, keyring, options)), offlineReason, `${kid} ${JSON.stringify(options)}`);
+    }
+  }
 });

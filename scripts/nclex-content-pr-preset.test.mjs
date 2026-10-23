@@ -14,6 +14,7 @@ import assert from "node:assert/strict";
 import {
   NCLEX_CONTENT_PR_PRESET_V1,
   NCLEX_EVALUATION_CHECK_RUN_NAME,
+  NCLEX_FLEET_NODE_IDS,
   NclexPresetError,
   classifyReceipts,
   evaluateMergeReadiness,
@@ -80,6 +81,71 @@ test("input validation fails closed on missing fields and malformed hashes", () 
   assert.throws(
     () => validatePresetInput(rest),
     (e) => e.code === "input_missing_fields" && e.details.missing.includes("authorNodeId"),
+  );
+});
+
+test("authorNodeId allowlist: exactly the 12 canonical fleet node ids (#1724 owner decision)", () => {
+  assert.deepEqual(
+    [...NCLEX_FLEET_NODE_IDS],
+    [
+      "seoseo", "dungae", "sogyo", "nosuk", "bangtong", "yukson",
+      "soonwook", "gwakga", "jingun", "gongmyoung", "gongyung", "daegyo",
+    ],
+  );
+  assert.ok(Object.isFrozen(NCLEX_FLEET_NODE_IDS));
+  for (const nodeId of NCLEX_FLEET_NODE_IDS) {
+    assert.equal(validatePresetInput(input({ authorNodeId: nodeId })).authorNodeId, nodeId, nodeId);
+  }
+  // Same trim() normalization as every other identity field; no case folding.
+  assert.equal(validatePresetInput(input({ authorNodeId: "  yukson " })).authorNodeId, "yukson");
+});
+
+test("authorNodeId allowlist: unknown, mis-cased, or aliased authors fail closed naming the allowed set (#1724)", () => {
+  for (const bad of ["Dungae", "DUNGAE", "vps0", "seo-s20-fe", "dungae2", "worker:dungae:g2:v1", "brokerAlpha", "unknown-node"]) {
+    assert.throws(
+      () => validatePresetInput(input({ authorNodeId: bad })),
+      (e) =>
+        e instanceof NclexPresetError
+        && e.code === "author_node_unknown"
+        && e.details.field === "authorNodeId"
+        && e.details.value === bad
+        && e.details.allowed.length === 12
+        && e.message.includes(NCLEX_FLEET_NODE_IDS.join(", ")),
+      bad,
+    );
+  }
+  // routeEvaluation and verifyRefsManifest re-validate, so they inherit the gate.
+  assert.throws(() => routeEvaluation({ input: input({ authorNodeId: "Seoseo" }), registry: REGISTRY }), (e) => e.code === "author_node_unknown");
+  // Blank keeps its prior, more specific code.
+  assert.throws(() => validatePresetInput(input({ authorNodeId: "   " })), (e) => e.code === "input_invalid");
+});
+
+test("authorNodeId allowlist: co-authors must be fleet nodes too, so recusal can never be dodged by case (#1724)", () => {
+  assert.deepEqual(validatePresetInput(input({ coAuthorNodeIds: ["yukson", " nosuk "] })).coAuthorNodeIds, ["yukson", "nosuk"]);
+  for (const bad of ["Nosuk", "vps2"]) {
+    assert.throws(
+      () => validatePresetInput(input({ coAuthorNodeIds: ["yukson", bad] })),
+      (e) => e.code === "author_node_unknown" && e.details.field === "coAuthorNodeIds" && e.details.value === bad,
+      bad,
+    );
+  }
+});
+
+test("reviewer side: registry rows outside the fleet allowlist never reach a reviewer lane (#1724)", () => {
+  const registry = [
+    { nodeId: "Seoseo", team: "T1", formalReviewEligible: true },
+    { nodeId: "vps2", team: "T1", formalReviewEligible: true },
+    { nodeId: "intruder", team: "T1", formalReviewEligible: true },
+    { nodeId: "nosuk", team: "T1", formalReviewEligible: true },
+    { nodeId: "yukson", team: "T1", formalReviewEligible: true },
+    { nodeId: "dungae", team: "T2", formalReviewEligible: true },
+  ];
+  const routed = routeEvaluation({ input: input(), registry });
+  assert.deepEqual(routed.lanes.map((lane) => lane.reviewerNodeId), ["nosuk", "yukson"]);
+  assert.throws(
+    () => routeEvaluation({ input: input(), registry: registry.filter((row) => row.nodeId !== "yukson") }),
+    (e) => e.code === "insufficient_reviewers",
+    "non-fleet rows never fill a quorum",
   );
 });
 

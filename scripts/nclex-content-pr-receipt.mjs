@@ -37,6 +37,27 @@ export const NCLEX_EVIDENCE_REF_PATTERN =
 // C0/C1 controls (newline, CR, tab, ...) plus Unicode line/paragraph separators.
 const NOTE_FORBIDDEN_CHARS = /[\u0000-\u001f\u007f-\u009f\u2028\u2029]/;
 
+// Reviewer key-id naming rule (#1724): `worker:<reviewerNodeId>:<suffix>`
+// (e.g. `worker:dungae:g2:v1`). Kept byte-identical with
+// packages/nclex-evaluation/src/receipt-contract.ts; that package's
+// receipt-contract.test.ts imports this module and pins the parity.
+export const NCLEX_REVIEWER_KEY_ID_PATTERN = /^worker:([a-z][a-z0-9-]{0,63}):([A-Za-z0-9][A-Za-z0-9._:-]{0,63})$/;
+const ROLE_SCOPED_KEY_ID = /^(?:worker|broker|finalizer):/i;
+
+/**
+ * Key-id \u2194 reviewer binding (#1724): null when bound, else
+ * `receipt_key_unbound` or `receipt_key_reviewer_mismatch`. The explicit
+ * `allowUnboundKeyIds` legacy/test escape only skips non-role-scoped kids.
+ */
+function keyIdBindingFailure(kid, reviewerNodeId, options) {
+  const match = NCLEX_REVIEWER_KEY_ID_PATTERN.exec(kid);
+  if (!match) {
+    if (options?.allowUnboundKeyIds === true && !ROLE_SCOPED_KEY_ID.test(kid)) return null;
+    return "receipt_key_unbound";
+  }
+  return match[1] === reviewerNodeId ? null : "receipt_key_reviewer_mismatch";
+}
+
 export class NclexReceiptError extends Error {
   constructor(code, message, details) {
     super(message);
@@ -186,8 +207,10 @@ export function signReceipt(core, { privateKeyPem, keyId }) {
 /**
  * Verify a signed receipt against a keyring ({ keyId: publicKeyPem }).
  * Fail-closed with a stable reason code; never throws on malformed input.
+ * The kid must be `worker:<reviewerNodeId>:<suffix>`; `options.allowUnboundKeyIds`
+ * (default false) is the explicit legacy/test escape for non-role-scoped kids.
  */
-export function verifyReceipt(receipt, keyring) {
+export function verifyReceipt(receipt, keyring, options = {}) {
   if (!isPlainObject(receipt)) return { ok: false, reason: "receipt_malformed" };
   let core;
   try {
@@ -204,8 +227,11 @@ export function verifyReceipt(receipt, keyring) {
   }
   const [entry] = receipt.signatures;
   const kid = kidOf(entry);
-  const keyPem = isPlainObject(keyring) ? keyring[kid ?? ""] : undefined;
-  if (!kid || typeof keyPem !== "string" || !hasText(keyPem)) {
+  if (!kid) return { ok: false, reason: "receipt_key_unknown" };
+  const bindingFailure = keyIdBindingFailure(kid, core.reviewerNodeId, options);
+  if (bindingFailure) return { ok: false, reason: bindingFailure };
+  const keyPem = isPlainObject(keyring) ? keyring[kid] : undefined;
+  if (typeof keyPem !== "string" || !hasText(keyPem)) {
     return { ok: false, reason: "receipt_key_unknown" };
   }
   if (!verifyJwsSignature(core, entry, keyPem)) {

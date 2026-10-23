@@ -19,6 +19,14 @@ routing requirements and executable local verification.
   280 characters, and `evidenceRef` must be reference-form
   (`[namespace:]id[#locator]`, at most 160 characters). These caps are kept
   identical with the offline module, and a cross-module parity test checks them.
+  Key-id binding (#1724): the signing `kid` must be
+  `worker:<reviewerNodeId>:<suffix>` (`NCLEX_REVIEWER_KEY_ID_PATTERN`, e.g.
+  `worker:dungae:g2:v1`); another node's kid fails as
+  `receipt_key_reviewer_mismatch`, and a non-reviewer kid (legacy node-less,
+  `broker:`/`finalizer:` role keys, malformed) fails as `receipt_key_unbound`.
+  Strict by default; `verifySignedReceipt(value, keyring, { allowUnboundKeyIds:
+  true })` is an explicit legacy/test escape for node-less kids only, which the
+  broker never passes.
 - `receipt-store.ts` — in-memory, receiptId-deduped store with snapshot
   restore support (persistence rides the broker's snapshot extension).
 - `merge-ready.ts` — pure merge-ready projection (quorum 2 normal / 3
@@ -31,9 +39,11 @@ routing requirements and executable local verification.
   and never String-coerced; `receiptId`/`keyId`/`team`/`lane` are never a
   fallback. Below quorum the additive
   `insufficient_independent_reviewers:n/quorum` reason fails closed. This
-  establishes distinct declared node IDs only: it does not verify
-  caller-supplied GitHub facts, key-to-node provenance, registry allowlists,
-  or author/co-author recusal completeness.
+  establishes distinct declared node IDs only; admitted receipts are bound to
+  the reviewer's own keyring kid (above), but the projection does not verify
+  caller-supplied GitHub facts, operator keyring provenance, the fleet node
+  allowlist (enforced by the offline preset), or author/co-author recusal
+  completeness.
 - `load-keyring.ts` — keyring file loading with the original error contract.
 
 The offline signing tool that produces receipts is root-level

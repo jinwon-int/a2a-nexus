@@ -45,6 +45,33 @@ export const NCLEX_CONTENT_PR_PRESET_V1 = Object.freeze({
   sideEffectPolicy: "finalizer-only",
 });
 
+/**
+ * Canonical fleet node ids (#1724, owner decision 2026-10-23): the single
+ * source of the `authorNodeId` allowlist. Matching is exact and
+ * case-sensitive after `trim()` — no alias or case normalization, so
+ * `Dungae` or a host alias like `vps0` is rejected. Source of record: the
+ * Family Wiki node list cross-checked against the shared public keyrings
+ * (binding table on #1724). seoseo and gwakga are broker-only nodes: they may
+ * author content PRs but carry no worker reviewer key, so formal review
+ * eligibility stays a registry fact (`formalReviewEligible`), not a property
+ * of this list.
+ */
+export const NCLEX_FLEET_NODE_IDS = Object.freeze([
+  "seoseo",
+  "dungae",
+  "sogyo",
+  "nosuk",
+  "bangtong",
+  "yukson",
+  "soonwook",
+  "gwakga",
+  "jingun",
+  "gongmyoung",
+  "gongyung",
+  "daegyo",
+]);
+const FLEET_NODE_IDS = new Set(NCLEX_FLEET_NODE_IDS);
+
 const SHA40 = /^[0-9a-f]{40}$/;
 const SHA64 = /^[0-9a-f]{64}$/;
 const RISK_LEVELS = new Set(["normal", "high-risk"]);
@@ -66,6 +93,22 @@ function fail(code, message, details) {
 
 function isPlainObject(value) {
   return Boolean(value) && typeof value === "object" && !Array.isArray(value);
+}
+
+/**
+ * Fail closed unless `value` (trimmed) is exactly one of the canonical fleet
+ * node ids. The offending value goes to `details` only, so the message stays
+ * bounded and always names the allowed set.
+ */
+function assertFleetAuthorNode(field, value) {
+  const id = String(value).trim();
+  if (!FLEET_NODE_IDS.has(id)) {
+    fail(
+      "author_node_unknown",
+      `${field} must be a canonical fleet node id (exact, lowercase): ${NCLEX_FLEET_NODE_IDS.join(", ")}`,
+      { field, value: id.slice(0, 64), allowed: [...NCLEX_FLEET_NODE_IDS] },
+    );
+  }
 }
 
 /**
@@ -111,6 +154,7 @@ export function validatePresetInput(input) {
     fail("refs_manifest_invalid", "refsManifestSha256 must be a 64-char lowercase sha256 hex");
   }
   if (!hasText(input.authorNodeId)) fail("input_invalid", "authorNodeId must be a non-empty string");
+  assertFleetAuthorNode("authorNodeId", input.authorNodeId);
   if (!Array.isArray(input.caseIds) || input.caseIds.length === 0 || !input.caseIds.every((id) => hasText(String(id)))) {
     fail("input_invalid", "caseIds must be a non-empty array of non-empty strings");
   }
@@ -122,6 +166,9 @@ export function validatePresetInput(input) {
   if (!Array.isArray(coAuthors) || !coAuthors.every((id) => hasText(String(id)))) {
     fail("input_invalid", "coAuthorNodeIds must be an array of non-empty strings when present");
   }
+  // Co-authors are authors: an unknown or mis-cased id would also silently
+  // miss recusal (recusal compares exact ids), so the same allowlist applies.
+  for (const id of coAuthors) assertFleetAuthorNode("coAuthorNodeIds", id);
   return {
     repo: input.repo.trim(),
     prNumber: input.prNumber,
@@ -186,7 +233,8 @@ export function verifyRefsManifest({ input, refsManifest }) {
  * concrete reviewer lanes. Recusal is enforced by construction: the author
  * and declared co-authors can never appear in a reviewer lane.
  *
- * registry: [{ nodeId, team: "T1"|"T2", formalReviewEligible: boolean }]
+ * registry: [{ nodeId, team: "T1"|"T2", formalReviewEligible: boolean }];
+ * rows whose nodeId is not in NCLEX_FLEET_NODE_IDS are ignored.
  * Returns { brokerOfRecord, reviewerTeam, quorum, lanes:[{laneId, kind, reviewerNodeId, brief}] }.
  */
 export function routeEvaluation({ input: rawInput, registry }) {
@@ -197,8 +245,13 @@ export function routeEvaluation({ input: rawInput, registry }) {
   const eligibleByTeam = { T1: [], T2: [] };
   for (const row of registry) {
     if (!isPlainObject(row) || !hasText(String(row.nodeId)) || !TEAMS.has(row.team)) continue;
-    teamOf.set(String(row.nodeId).trim(), row.team);
-    if (row.formalReviewEligible === true) eligibleByTeam[row.team].push(String(row.nodeId).trim());
+    const nodeId = String(row.nodeId).trim();
+    // Reviewer side of the #1724 allowlist: a registry row whose nodeId is not
+    // a canonical fleet node id (exact, case-sensitive) is skipped like any
+    // other malformed row, so it can never reach a reviewer lane.
+    if (!FLEET_NODE_IDS.has(nodeId)) continue;
+    teamOf.set(nodeId, row.team);
+    if (row.formalReviewEligible === true) eligibleByTeam[row.team].push(nodeId);
   }
 
   const recused = new Set([input.authorNodeId, ...input.coAuthorNodeIds]);

@@ -11,6 +11,7 @@ export {
   NCLEX_FINDING_NOTE_MAX_CHARS,
   NCLEX_EVIDENCE_REF_MAX_CHARS,
   NCLEX_EVIDENCE_REF_PATTERN,
+  NCLEX_REVIEWER_KEY_ID_PATTERN,
   NclexReceiptValidationError,
   parseReceiptCore,
   receiptIdOf,
@@ -21,6 +22,7 @@ export type {
   NclexReceiptCore,
   NclexReceiptFinding,
   NclexSignedReceipt,
+  VerifyReceiptOptions,
   VerifyReceiptResult,
 } from "./receipt-contract.js";
 export { NclexEvaluationReceiptStore } from "./receipt-store.js";
