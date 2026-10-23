@@ -704,13 +704,17 @@ test("cross-broker mixed succeeded and failed projections: numerator counts term
   }));
   assert.equal(failed.accepted, true);
 
-  // Second projection: succeeded
+  // Second projection: succeeded. Both share parent slot 1 (a retry of the
+  // failed lane), so since #2339 PR-3b the retry must complete later to take
+  // the slot. The failed record is then kept as superseded.
   const succeeded = broker.ingestCrossBrokerTerminalBriefProjection(projection({
     originBrokerId: "brokeralpha",
     childTaskId: "succeeded-child",
     childWorkerId: "workergamma",
     parentRoundTotal: "7",
     status: "succeeded",
+    completedAt: "2026-05-13T01:05:00.000Z",
+    emittedAt: "2026-05-13T01:05:01.000Z",
   }));
   assert.equal(succeeded.accepted, true);
 
@@ -1780,6 +1784,7 @@ test("#2339 PR-6 explicit handoffBrokerId is stored, keyed and projected as the 
     parentResolvedViaRegistry: 0,
     parentResolvedViaLegacyTask: 1,
     missingAnchor: 0,
+    slotSuperseded: 0,
   });
 });
 
@@ -1800,6 +1805,7 @@ test("#2339 PR-6 a legacy packet without handoffBrokerId reads originBrokerId as
     parentResolvedViaRegistry: 0,
     parentResolvedViaLegacyTask: 1,
     missingAnchor: 0,
+    slotSuperseded: 0,
   });
 });
 

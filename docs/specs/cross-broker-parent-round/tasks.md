@@ -27,7 +27,7 @@
 - [x] 자기참조 `<round>-t2` → 여전히 `missing_parent` 회귀 (f) — PR-1c 테스트.
 
 ## PR-3b 슬롯
-- [ ] 늦은 `completedAt` 우선 + `superseded` 보존 + retry child 테스트.
+- [x] 늦은 `completedAt` 우선 + `superseded` 보존 + retry child 테스트 — PR-3b.
 
 ## PR-4 sender-proof 모드
 - [ ] `off|record|enforce`, record 카운터, anchor 없는 enforce startup 거부.

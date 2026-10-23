@@ -166,12 +166,25 @@ export interface CrossBrokerTerminalBriefProjection {
   parentRoundTotal?: number;
   /** 1-based worker/task order within the parent round (title numerator). */
   parentRoundOrder?: number;
+  /**
+   * #2339 PR-3b: set when a different child with a later `completedAt` took
+   * this record's `(parentRoundId, handoffBrokerId, parentRoundOrder)` slot,
+   * for example a retry child `<round>-t2r2`. The record is kept for audit
+   * and excluded from list/get, so it no longer counts toward the aggregate.
+   */
+  superseded?: {
+    /** Record key of the projection that took the slot. */
+    by: string;
+    at: string;
+  };
 }
 
 export interface CrossBrokerTerminalBriefProjectionFilters {
   parentRoundId?: string;
   originBrokerId?: string;
   handoffBrokerId?: string;
+  /** #2339 PR-3b: include superseded slot records (audit). Default false. */
+  includeSuperseded?: boolean;
 }
 
 /** Ingest-side counters for operators (#2339 PR-6 rollout observation). */
@@ -186,6 +199,8 @@ export interface CrossBrokerTerminalBriefProjectionDiagnostics {
   parentResolvedViaLegacyTask: number;
   /** #2339 PR-1c: rejected as `missing_anchor`. */
   missingAnchor: number;
+  /** #2339 PR-3b: slot records superseded by a later different child (e.g. a retry). */
+  slotSuperseded: number;
 }
 
 /**
@@ -289,6 +304,7 @@ export class CrossBrokerTerminalBriefProjectionStore {
     parentResolvedViaRegistry: 0,
     parentResolvedViaLegacyTask: 0,
     missingAnchor: 0,
+    slotSuperseded: 0,
   };
 
   constructor(
@@ -422,6 +438,24 @@ export class CrossBrokerTerminalBriefProjectionStore {
       return reject("stale_replay", "projection is older than the stored parentRoundId/originBrokerId aggregate", now);
     }
 
+    // #2339 PR-3b: one live projection per (parentRoundId, handoffBrokerId,
+    // parentRoundOrder) slot. A different child in an occupied slot, such as a
+    // retry child `<round>-t2r2`, wins only with a later completedAt. The
+    // records it displaces are kept as superseded (audit), not deleted.
+    const slotRivals = this.liveSlotRivals(normalized, key);
+    const newCompletedAt = Date.parse(normalized.completedAt);
+    const strongestRival = slotRivals.reduce<CrossBrokerTerminalBriefProjection | undefined>(
+      (best, [, rival]) => (!best || Date.parse(rival.completedAt) > Date.parse(best.completedAt) ? rival : best),
+      undefined,
+    );
+    if (strongestRival && newCompletedAt <= Date.parse(strongestRival.completedAt)) {
+      return reject(
+        "stale_replay",
+        `parent round slot ${normalized.parentRoundOrder} is held by a projection that completed at the same time or later`,
+        now,
+      );
+    }
+
     const record: CrossBrokerTerminalBriefProjection = {
       id: key,
       ...normalized,
@@ -437,6 +471,10 @@ export class CrossBrokerTerminalBriefProjectionStore {
       },
     };
     this.records.set(key, record);
+    for (const [rivalKey, rival] of slotRivals) {
+      this.records.set(rivalKey, { ...rival, superseded: { by: key, at: now } });
+      this.diagnosticsCounters.slotSuperseded += 1;
+    }
     if (record.handoffBrokerSource === "legacy_origin") this.diagnosticsCounters.legacyOriginAsHandoff += 1;
     else this.diagnosticsCounters.explicitHandoffBroker += 1;
     if (parentResolvedVia === "registry") this.diagnosticsCounters.parentResolvedViaRegistry += 1;
@@ -449,8 +487,30 @@ export class CrossBrokerTerminalBriefProjectionStore {
     return { ...this.diagnosticsCounters };
   }
 
+  /**
+   * #2339 PR-3b: live records of other children in the same
+   * (parentRoundId, handoffBrokerId, parentRoundOrder) slot. A projection
+   * without an order has no slot.
+   */
+  private liveSlotRivals(
+    normalized: Pick<CrossBrokerTerminalBriefProjection, "parentRoundId" | "handoffBrokerId" | "originBrokerId" | "parentRoundOrder">,
+    key: string,
+  ): Array<[string, CrossBrokerTerminalBriefProjection]> {
+    // Returns map keys with the records: a restored record's `id` can predate
+    // the current key formula (#2339 PR-6), so the map key is the write target.
+    if (normalized.parentRoundOrder === undefined) return [];
+    const handoff = normalized.handoffBrokerId ?? normalized.originBrokerId;
+    return [...this.records.entries()]
+      .filter(([candidateKey, candidate]) => candidateKey !== key
+        && !candidate.superseded
+        && candidate.parentRoundId === normalized.parentRoundId
+        && (candidate.handoffBrokerId ?? candidate.originBrokerId) === handoff
+        && candidate.parentRoundOrder === normalized.parentRoundOrder);
+  }
+
   get(parentRoundId: string, originBrokerId: string): CrossBrokerTerminalBriefProjection | undefined {
     const record = [...this.records.values()]
+      .filter((candidate) => !candidate.superseded)
       .filter((candidate) => candidate.parentRoundId === parentRoundId && candidate.originBrokerId === originBrokerId)
       .sort(compareRecords)[0];
     return record ? structuredClone(record) : undefined;
@@ -458,6 +518,7 @@ export class CrossBrokerTerminalBriefProjectionStore {
 
   list(filters: CrossBrokerTerminalBriefProjectionFilters = {}): CrossBrokerTerminalBriefProjection[] {
     return [...this.records.values()]
+      .filter((record) => filters.includeSuperseded === true || !record.superseded)
       .filter((record) => !filters.parentRoundId || record.parentRoundId === filters.parentRoundId)
       .filter((record) => !filters.originBrokerId || record.originBrokerId === filters.originBrokerId)
       .filter((record) => !filters.handoffBrokerId || record.handoffBrokerId === filters.handoffBrokerId)
@@ -473,7 +534,8 @@ export class CrossBrokerTerminalBriefProjectionStore {
   }
 
   snapshot(): CrossBrokerTerminalBriefProjection[] {
-    return this.list();
+    // Superseded slot records persist for audit (#2339 PR-3b).
+    return this.list({ includeSuperseded: true });
   }
 }
 
