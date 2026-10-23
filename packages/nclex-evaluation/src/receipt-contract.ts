@@ -215,7 +215,7 @@ function kidOf(entry: { protected?: unknown }): string | null {
 
 // Reviewer key-id naming rule (#1724, owner decision 2026-10-23): a reviewer
 // receipt is signed by that reviewer node's worker key, `worker:<node>:<suffix>`
-// (e.g. `worker:dungae:g2:v1`) — the jinwon-int/nclex quorum convention
+// (e.g. `worker:<node>:g2:v1`) — the jinwon-int/nclex quorum convention
 // (`worker|broker:<node>:<ver>`). Kept byte-identical with
 // scripts/nclex-content-pr-receipt.mjs; receipt-contract.test.ts pins parity.
 export const NCLEX_REVIEWER_KEY_ID_PATTERN = /^worker:([a-z][a-z0-9-]{0,63}):([A-Za-z0-9][A-Za-z0-9._:-]{0,63})$/;

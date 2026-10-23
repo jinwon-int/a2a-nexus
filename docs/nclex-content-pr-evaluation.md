@@ -39,16 +39,27 @@ merge-ready 투영).
 receipt가 이 값들에 바인딩되므로 누락/형변형은 fail-closed.
 
 `authorNodeId` 허용 목록(#1724, 2026-10-23 오너 결정): `authorNodeId`와
-`coAuthorNodeIds`의 각 값은 `trim()` 뒤 정본 fleet 노드 ID 12개 중 하나와
-정확히(대소문자 구별) 같아야 한다 — `seoseo, dungae, sogyo, nosuk, bangtong,
-yukson, soonwook, gwakga, jingun, gongmyoung, gongyung, daegyo`. 목록의 단일 출처는
-`scripts/nclex-content-pr-preset.mjs`의 `NCLEX_FLEET_NODE_IDS`이며, 정본은 Family
-Wiki 노드 목록과 공유 공개 keyring을 대조한 #1724 바인딩 표다. 대문자 변형
-(`Dungae`), 호스트 별칭(`vps0`), key id 등은 `author_node_unknown`으로 fail-closed되고,
-오류 메시지는 허용 집합을 나열한다(입력값은 `details`에만 64자 이내로 남는다).
-공동저자에도 같은 목록을 적용한다 — recusal은 정확한 ID 비교라서 대소문자만 다른
-공동저자 ID는 제척을 우회할 수 있기 때문이다. 공백뿐인 값은 기존대로
-`input_invalid`다.
+`coAuthorNodeIds`의 각 값은 `trim()` 뒤 **설정된** fleet 노드 ID 중 하나와
+정확히(대소문자 구별) 같아야 한다. 정본 노드 목록은 공개 저장소에 두지 않는다 —
+운영자의 비공개 fleet 기록과 fleet keyring을 대조해 관리하며, 프리셋은 노드 이름을
+하드코딩하지 않고 실행 시 설정으로 받는다.
+
+- 설정 형식: `{ "schema": "a2a.nclex.fleet-nodes.v1", "nodeIds": ["<node>", …] }`.
+  `nodeIds`는 비어 있지 않고(최대 256개), 각 ID가 `^[a-z][a-z0-9-]{0,63}$`(소문자,
+  trim·대소문자 변환 없음)에 맞으며, 중복이 없어야 한다. 위반은 `fleet_nodes_invalid`.
+- 공급 경로(우선순위 순): ① `validatePresetInput(input, { fleetNodes })`,
+  `routeEvaluation({ input, registry, fleetNodes })`,
+  `verifyRefsManifest({ input, refsManifest, fleetNodes })`의 `fleetNodes` 옵션(위
+  문서 객체 또는 ID 배열), ② 환경변수 `A2A_NCLEX_FLEET_NODES_FILE`이 가리키는 JSON
+  파일(로컬 읽기만, 호출마다 다시 읽음). 파일 판독 실패도 `fleet_nodes_invalid`다.
+- 미설정이면 어떤 필드도 수용하기 전에 `author_allowlist_unconfigured`로
+  fail-closed다. 이 프리셋을 호출하는 자동화(워크플로·스크립트)는 현재 없고 호출자는
+  운영자 실행과 테스트뿐이므로, 허용 목록 없이 통과시키는 대신 실패를 택했다.
+- 대문자 변형, 호스트 별칭, key id처럼 목록에 없는 값은 `author_node_unknown`으로
+  fail-closed되고, 오류 메시지는 설정된 허용 집합을 나열한다(입력값은 `details`에만
+  64자 이내로 남는다). 공동저자에도 같은 목록을 적용한다 — recusal은 정확한 ID
+  비교라서 대소문자만 다른 공동저자 ID는 제척을 우회할 수 있기 때문이다. 공백뿐인
+  값은 기존대로 `input_invalid`다.
 
 `verifyRefsManifest`(#1724 갭 b)는 선언된 `refsManifestSha256`를 실제 refs
 manifest 값에 바인딩한다. manifest를 RFC 8785(JCS)로 정규화해 SHA-256
@@ -66,10 +77,10 @@ manifest 값에 바인딩한다. manifest를 RFC 8785(JCS)로 정규화해 SHA-2
    quorum을 채울 수 있는 팀을 선택한다.
 3. 저자와 `coAuthorNodeIds`는 reviewer에서 구조적으로 제척된다(도달 시
    `recusal_violation` fail-closed). reviewer는 서로 다른 노드 2명.
-   레지스트리 행 중 `nodeId`가 `NCLEX_FLEET_NODE_IDS`에 없는 행(대소문자 변형·별칭
-   포함)은 형식 불량 행과 같이 무시되므로 reviewer 레인에 도달하지 않는다. 리뷰
-   자격 자체는 여전히 레지스트리의 `formalReviewEligible`이 정한다 — seoseo·gwakga는
-   브로커 전용 노드(출제만 가능, worker 리뷰 키 없음)지만 이 구분은 프리셋이 아니라
+   레지스트리 행 중 `nodeId`가 설정된 fleet 노드 허용 목록에 없는 행(대소문자
+   변형·별칭 포함)은 형식 불량 행과 같이 무시되므로 reviewer 레인에 도달하지 않는다.
+   리뷰 자격 자체는 여전히 레지스트리의 `formalReviewEligible`이 정한다 — 브로커
+   전용 노드는 출제만 가능하고 worker 리뷰 키가 없지만, 이 구분은 프리셋이 아니라
    레지스트리 데이터로 관리한다.
 4. 팀 내 quorum 미달 또는 `high-risk`(quorum 3)는 cross-team으로 확대하고, 그래도
    미달이면 `insufficient_reviewers`로 실패 — self-review로 떨어지지 않는다.
@@ -110,9 +121,9 @@ cross-team 확대로 보장되며, `laneId`가 reviewer 노드 ID를 포함하�
   시점에 서명 key id가 `worker:<reviewerNodeId>:<suffix>`로 reviewer 노드에
   바인딩돼야 하므로(아래 Signed receipt 절), 수용된 receipt의 `reviewerNodeId`는
   키링에 등록된 그 노드의 worker 키로 서명된 것이다. 저자 ID는 프리셋 입력 단계에서
-  12노드 허용 목록으로 검증된다. 반면 키링에 어떤 kid를 올릴지(키↔노드 실제
+  설정된 fleet 노드 허용 목록으로 검증된다. 반면 키링에 어떤 kid를 올릴지(키↔노드 실제
   소유)는 운영자 키링 관리의 책임이고, 브로커 receipt 검증기는 `authorNodeId`·
-  `reviewerNodeId`를 12노드 목록과 대조하지 않으며, 저자/공동저자 recusal 완전성과
+  `reviewerNodeId`를 fleet 노드 허용 목록과 대조하지 않으며, 저자/공동저자 recusal 완전성과
   임상·fleet 수용도 증명하지 않는다. 실제 GitHub 사실과 독립 reviewer 구성의 최종
   확인은 finalizer가 별도 증거로 확인해야 한다.
 - A2A reviewer는 branch를 수정·merge하지 않는다. broker/finalizer가 ready를
@@ -188,7 +199,7 @@ GitHub를 호출하지 않는다. 그 payload를 실제로 게시하거나 requi
   sha256. 바인딩 필드 변조·self-review·미등록 키는 fail-closed.
 - **key id 명명·바인딩 규칙(#1724, 2026-10-23 오너 결정)**: reviewer receipt의
   서명 key id(JWS protected header `kid`)는 `worker:<reviewerNodeId>:<suffix>`여야
-  한다(예: `worker:dungae:g2:v1`, 회전 시 `worker:yukson:g2:v2`). jinwon-int/nclex의
+  한다(예: `worker:<node>:g2:v1`, 키 회전 시 `worker:<node>:g2:v2`). jinwon-int/nclex의
   quorum 규약(`worker|broker:<node>:<ver>`)과 같은 형식이다. 문법은
   `NCLEX_REVIEWER_KEY_ID_PATTERN` =
   `^worker:([a-z][a-z0-9-]{0,63}):([A-Za-z0-9][A-Za-z0-9._:-]{0,63})$`이고, offline
@@ -200,7 +211,7 @@ GitHub를 호출하지 않는다. 그 payload를 실제로 게시하거나 requi
     노드의 실제 worker 키로 유효하게 서명했어도 거부된다.
   - `receipt_key_unbound`: kid가 reviewer worker 키 형식이 아니다 — 노드 없는
     legacy kid(예: T2 실증의 `nclex-eval-proof-1`), `broker:…`/`finalizer:…` 같은
-    역할 키, `Worker:`·`worker:Nosuk:…`·suffix 누락 같은 형식 오류.
+    역할 키, `Worker:`·`worker:<Node>:…`(대문자)·suffix 누락 같은 형식 오류.
   - **호환성 선택**: 엄격 적용이 기본이다. 브로커 라우트는 옵션 없이 호출하므로
     legacy escape가 없다. `verifySignedReceipt(value, keyring, { allowUnboundKeyIds:
     true })`(offline `verifyReceipt`의 세 번째 인자도 같다)는 테스트·과거 증거 재검증
@@ -324,9 +335,10 @@ head, conclusion 매핑, head 불일치 fail-closed), 그리고 #1724 distinct-r
 축소, 대소문자 차이는 별개 노드, 결측/비문자열 identity 미포함(강제 변환
 없음, receiptId/team/lane 폴백 없음), stale·unsigned·BLOCK 무표, 원시
 `freshPassCount` 보존, 중복 reviewer의 blocking finding 거부권 유지. 또한
-`authorNodeId`·`coAuthorNodeIds` 12노드 허용 목록(대소문자 변형·별칭 거부, 오류가
-허용 집합을 나열)과 허용 목록 밖 레지스트리 행이 reviewer 레인에 도달하지 않음을
-고정한다.
+`authorNodeId`·`coAuthorNodeIds` 설정 기반 허용 목록(대소문자 변형·별칭 거부, 오류가
+허용 집합을 나열), 허용 목록 밖 레지스트리 행이 reviewer 레인에 도달하지 않음,
+미설정 시 `author_allowlist_unconfigured`, 옵션 우선·환경변수 파일 대체 경로, 형식이
+잘못된 설정 문서의 `fleet_nodes_invalid`를 고정한다.
 
 key id ↔ `reviewerNodeId` 바인딩은 `scripts/nclex-content-pr-receipt.test.mjs`,
 `packages/nclex-evaluation/src/receipt-contract.test.ts`,
@@ -334,7 +346,7 @@ key id ↔ `reviewerNodeId` 바인딩은 `scripts/nclex-content-pr-receipt.test.
 키는 통과, 다른 노드 키는 `receipt_key_reviewer_mismatch`, 노드 없는 kid는 기본
 `receipt_key_unbound`(명시적 `allowUnboundKeyIds`에서만 통과), 역할 키·형식 오류는
 escape와 무관하게 거부, 브로커 라우트는 escape 없이 엄격. 키 ID 규칙 이전에 만든
-골든 receipt(kid `seoseo-review-key-1`, 개인키 미보관)는 공유 JCS/JWS 경로 고정용으로
+골든 receipt(노드 없는 legacy kid, 개인키 미보관)는 공유 JCS/JWS 경로 고정용으로
 유지하며 escape로만 검증하고, 기본 검증에서는 `receipt_key_unbound`로 거부됨을
 확인한다.
 

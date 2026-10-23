@@ -21,7 +21,7 @@ routing requirements and executable local verification.
   identical with the offline module, and a cross-module parity test checks them.
   Key-id binding (#1724): the signing `kid` must be
   `worker:<reviewerNodeId>:<suffix>` (`NCLEX_REVIEWER_KEY_ID_PATTERN`, e.g.
-  `worker:dungae:g2:v1`); another node's kid fails as
+  `worker:<node>:g2:v1`); another node's kid fails as
   `receipt_key_reviewer_mismatch`, and a non-reviewer kid (legacy node-less,
   `broker:`/`finalizer:` role keys, malformed) fails as `receipt_key_unbound`.
   Strict by default; `verifySignedReceipt(value, keyring, { allowUnboundKeyIds:

@@ -38,7 +38,7 @@ export const NCLEX_EVIDENCE_REF_PATTERN =
 const NOTE_FORBIDDEN_CHARS = /[\u0000-\u001f\u007f-\u009f\u2028\u2029]/;
 
 // Reviewer key-id naming rule (#1724): `worker:<reviewerNodeId>:<suffix>`
-// (e.g. `worker:dungae:g2:v1`). Kept byte-identical with
+// (e.g. `worker:<node>:g2:v1`). Kept byte-identical with
 // packages/nclex-evaluation/src/receipt-contract.ts; that package's
 // receipt-contract.test.ts imports this module and pins the parity.
 export const NCLEX_REVIEWER_KEY_ID_PATTERN = /^worker:([a-z][a-z0-9-]{0,63}):([A-Za-z0-9][A-Za-z0-9._:-]{0,63})$/;
