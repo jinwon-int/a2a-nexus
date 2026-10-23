@@ -389,12 +389,21 @@ period, when step 1 has two or more substantive candidates, make the pick twice:
    `runnerUpLoss`), then
    `node scripts/lib/a2ad-blind-view.mjs resolve --out <dir> --verdict <file> --named-pick <laneId> --shadow-ledger docs/ops/finalizer-blind-shadow.jsonl`.
    A malformed pick exits 1 with a named `fallbackReason`; there is no default.
+4. **Publish the record.** `resolve --named-pick` also writes
+   `<dir>/blind-shadow.md`, a fenced ` ```blind-shadow ` block holding the same
+   anonymous record as the ledger line (path in the `shadowMarkdown` output
+   field). Paste it into the round closeout comment on the issue or PR. The
+   ledger file is a local append in whichever checkout ran `resolve`; it is not
+   committed, so the posted block is the durable record that the owner's
+   decision reads. Count records with a GitHub search for `blind-shadow`.
 
 The step-1 decision stays the usual pick: dialectic-lite and the gate keep their
 worker attribution, and `resolve` maps the blind id back to lane and worker. The
 shadow record holds counts and agreement only (no lane, worker, or model ids).
 Whether the blind pick should become the default is an owner decision after the
-shadow period.
+shadow period. The period restarted on 2026-10-23 (owner decision on #2396):
+it runs 14 days from the merge of the change that added step 4, because no
+eligible round and no record occurred in the first window (10-20 to 10-23).
 
 The mini-cycle is optional for mechanical changes such as pure formatting,
 renames, or one-file documentation edits. If a planning round skips the mini-cycle

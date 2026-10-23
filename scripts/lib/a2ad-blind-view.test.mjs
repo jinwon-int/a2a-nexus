@@ -184,7 +184,14 @@ test('CLI build writes a 0600 id map, resolve exits 1 on fallback and appends th
     { encoding: 'utf8' },
   );
   assert.equal(ok.status, 0, ok.stderr);
-  assert.equal(JSON.parse(ok.stdout).resolved.laneId, idMap.candidates.A.laneId);
+  const okOut = JSON.parse(ok.stdout);
+  assert.equal(okOut.resolved.laneId, idMap.candidates.A.laneId);
+  // #2396: a paste-ready closeout block, identical to the ledger line.
+  assert.equal(okOut.shadowMarkdown, join(out, 'blind-shadow.md'));
+  const block = fs.readFileSync(okOut.shadowMarkdown, 'utf8');
+  assert.match(block, /^```blind-shadow\n\{.*\}\n```\n$/);
+  assert.deepEqual(JSON.parse(block.split('\n')[1]), okOut.shadow);
+  assert.doesNotMatch(block, new RegExp(idMap.candidates.A.laneId));
 
   fs.writeFileSync(verdictFile, 'I think A is best.\n');
   const bad = spawnSync(
@@ -194,6 +201,14 @@ test('CLI build writes a 0600 id map, resolve exits 1 on fallback and appends th
   );
   assert.equal(bad.status, 1);
   assert.equal(JSON.parse(bad.stdout).fallbackReason, 'no_pick_block');
+
+  const noShadow = spawnSync(
+    process.execPath,
+    [scriptPath, 'resolve', '--out', join(dir, 'view'), '--verdict', verdictFile],
+    { encoding: 'utf8' },
+  );
+  assert.equal(noShadow.status, 1);
+  assert.equal(JSON.parse(noShadow.stdout).shadowMarkdown, undefined, 'no --named-pick -> no shadow block');
 
   const records = fs.readFileSync(ledger, 'utf8').trim().split('\n').map((line) => JSON.parse(line));
   assert.deepEqual(records.map((r) => [r.agree, r.fallback]), [[true, false], [null, true]]);
