@@ -85,6 +85,29 @@ export interface A2ADispatchTaskPayload {
   workModeDecision?: A2AWorkModeDecisionEvidence;
 }
 
+/**
+ * #2339 PR-1b: registry requests the operator (or the executing dispatcher)
+ * must run against the minting broker before the child task is created. The
+ * helper stays source-only: it prints these requests and performs none of them.
+ */
+export interface A2AParentRoundRegistrationPlan {
+  /** Broker that mints the parent round (the handoff's origin broker). */
+  mintingBrokerId: string;
+  mint: {
+    method: "POST";
+    path: "/a2a/parent-rounds";
+    body: {
+      parentRoundId: string;
+      initiatingBrokerId: string;
+      teamScope?: string;
+      handoffBrokerId?: string;
+      parentRoundTotal: number;
+    };
+  };
+  anchors: Array<{ method: "POST"; path: string; body: { anchor: string } }>;
+  expect: string;
+}
+
 export interface A2ADispatchPlan {
   kind: "a2a-broker.a2a-dispatch-plan.v1";
   version: 1;
@@ -119,6 +142,8 @@ export interface A2ADispatchPlan {
   };
   roundManifest: RoundManifest | null;
   roundManifestProjection: RoundManifestProjection | null;
+  /** Present for an unblocked cross-broker handoff plan (#2339 PR-1b). */
+  parentRoundRegistration: A2AParentRoundRegistrationPlan | null;
 }
 
 const DEFAULT_CONFIG: A2ADispatchConfig = {
@@ -245,6 +270,44 @@ function crossBrokerHandoffIssues(roundSpec: A2ADispatchSpec, localParentRoundId
     issues.push("crossBrokerHandoff.originTaskId is required; provide --handoff-origin-task-id with the origin broker's parent task id");
   }
   return issues;
+}
+
+/** The broker that must mint the handoff's parent round before dispatch (#2339 PR-1b). */
+function parentRoundMintingBroker(roundSpec: A2ADispatchSpec): string | undefined {
+  return roundSpec.crossBrokerHandoff?.originBrokerId?.trim() || roundSpec.originBrokerId?.trim() || undefined;
+}
+
+function buildParentRoundRegistrationPlan(
+  roundSpec: A2ADispatchSpec,
+  parentRound: A2AParentRoundDispatchMetadata,
+  childTaskId: string,
+): A2AParentRoundRegistrationPlan | null {
+  const handoff = roundSpec.crossBrokerHandoff;
+  const parentRoundId = handoff?.parentRoundId?.trim();
+  const mintingBrokerId = parentRoundMintingBroker(roundSpec);
+  if (!handoff || !parentRoundId || !mintingBrokerId) return null;
+  const handoffBrokerId = handoff.handoffBrokerId?.trim();
+  const anchorPath = `/a2a/parent-rounds/${encodeURIComponent(parentRoundId)}/anchors`;
+  const anchors = [handoff.originTaskId?.trim(), childTaskId]
+    .filter((anchor): anchor is string => Boolean(anchor))
+    .map((anchor) => ({ method: "POST" as const, path: anchorPath, body: { anchor } }));
+  return {
+    mintingBrokerId,
+    mint: {
+      method: "POST",
+      path: "/a2a/parent-rounds",
+      body: {
+        parentRoundId,
+        initiatingBrokerId: mintingBrokerId,
+        // `common` is the helper default, not a team scope (spec item 2).
+        ...(roundSpec.teamId !== "common" ? { teamScope: roundSpec.teamId } : {}),
+        ...(handoffBrokerId ? { handoffBrokerId } : {}),
+        parentRoundTotal: parentRound.parentRoundTotal,
+      },
+    },
+    anchors,
+    expect: "mint 201 minted or 200 replayed, anchors 201 added or 200 present; a 409 conflict blocks the dispatch",
+  };
 }
 
 function normalizeWorkerList(workers: string[] | undefined): string[] {
@@ -387,6 +450,9 @@ export function buildA2ADispatchPlan(roundSpec: A2ADispatchSpec, config?: Partia
   for (const issue of crossBrokerHandoffIssues(roundSpec, parentRound.metadata?.parentRoundId)) {
     blockers.push(`[cross_broker_handoff_parent] ${issue}`);
   }
+  if (roundSpec.crossBrokerHandoff && !parentRoundMintingBroker(roundSpec)) {
+    blockers.push("[parent_round_registry] the minting (origin) broker id is required; provide --handoff-origin-broker-id or --origin-broker-id");
+  }
   if (!mergedConfig.dryRun && mergedConfig.execute) {
     warnings.push("[approval_boundary_respected] Execute mode active; write operations are permitted");
     if ((roundSpec.teamId === "team1" || roundSpec.teamId === "common") && !roundSpec.workModeDecision) {
@@ -412,6 +478,18 @@ export function buildA2ADispatchPlan(roundSpec: A2ADispatchSpec, config?: Partia
     dispatchActions.push("[work-mode] decision: not supplied; dry-run planning only");
   }
 
+  const parentRoundRegistration = blockers.length === 0 && parentRound.metadata
+    ? buildParentRoundRegistrationPlan(roundSpec, parentRound.metadata, deterministicTaskId.taskId)
+    : null;
+  if (parentRoundRegistration) {
+    dispatchActions.push(
+      `[registry] pre-step (not performed by this helper): POST ${sanitizeText(parentRoundRegistration.mintingBrokerId)} ${parentRoundRegistration.mint.path} parentRoundId=${sanitizeText(parentRoundRegistration.mint.body.parentRoundId)}`,
+    );
+    for (const anchor of parentRoundRegistration.anchors) {
+      dispatchActions.push(`[registry] pre-step: POST ${sanitizeText(anchor.path)} anchor=${sanitizeText(anchor.body.anchor)}`);
+    }
+    dispatchActions.push(`[registry] ${parentRoundRegistration.expect}`);
+  }
   dispatchActions.push(`[dispatch] broker /tasks: plan for ${deterministicTaskId.shortId}`);
   if (blockers.length > 0) {
     dispatchActions.push("[dispatch] createTask: blocked by preflight failures");
@@ -501,6 +579,7 @@ export function buildA2ADispatchPlan(roundSpec: A2ADispatchSpec, config?: Partia
     },
     roundManifest: manifestResult?.manifest ?? null,
     roundManifestProjection: manifestResult?.projection ?? null,
+    parentRoundRegistration,
   };
 }
 

@@ -228,6 +228,7 @@ import {
   createNclexEvaluationRouteEntries,
   createA2ATaskStreamRouteEntries,
   createA2ATerminalOutboxRouteEntries,
+  createParentRoundRouteEntries,
   createA2AStreamRouteEntries,
   createOperatorDashboardRouteEntries,
   createOperatorReportingReadRouteEntries,
@@ -1465,6 +1466,11 @@ export function createBrokerServer(options: BrokerServerOptions = {}): BrokerSer
       crossBrokerNonceCache,
       peerCredentialRegistry,
       peerHandoffScopeMode,
+    }),
+    ...createParentRoundRouteEntries({
+      broker,
+      stateStore,
+      brokerId,
     }),
     ...createA2AStreamRouteEntries({
       broker,
