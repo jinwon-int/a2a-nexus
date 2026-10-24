@@ -47,6 +47,11 @@ const allowWarningPaths = [
   // without hiding anything. Downgrade is internal-node-identifier only —
   // every other rule still fails on this file.
   /^\.github\/CODEOWNERS$/,
+  // auto-merge.yml's TRUSTED_AUTHORS must name the real fleet GitHub logins
+  // (#2428: external-author PRs are never auto-merged), and `seoseo-ai`
+  // substring-matches a node name for the same reason as CODEOWNERS above.
+  // Downgrade is internal-node-identifier only on this one file.
+  /^\.github\/workflows\/auto-merge\.yml$/,
 ];
 
 function walk(dir) {
