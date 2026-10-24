@@ -120,6 +120,38 @@ test('auto-merge squashes, because main requires linear history (#2050)', () => 
   assert.doesNotMatch(command, /(^|\s)--rebase(\s|$)/);
 });
 
+// a2a-nexus#2428: an external fork PR was auto-merged after one approval.
+// Run the workflow's own selection script against a fake PR list so the
+// author filter is pinned by behaviour, not by grep.
+test('auto-merge never selects an external-author PR (#2428)', () => {
+  const autoMerge = readFileSync(join(repoRoot, '.github/workflows/auto-merge.yml'), 'utf8');
+  assert.match(autoMerge, /--json [^\n]*\bauthor\b/, 'gh pr list must request the author field');
+  const block = autoMerge.match(/python3 - <<'PY'[^\n]*\n([\s\S]*?)\n\s*PY\n/);
+  assert.ok(block, 'expected the inline PR-selection python block');
+  const lines = block[1].split('\n');
+  const indent = Math.min(...lines.filter((l) => l.trim()).map((l) => l.match(/^ */)[0].length));
+  const script = lines.map((l) => l.slice(indent)).join('\n');
+  const dir = mkdtempSync(join(tmpdir(), 'auto-merge-'));
+  const head = 'a'.repeat(40);
+  const pr = (number, login, extra = {}) => ({
+    number, isDraft: false, headRefOid: head, mergeStateStatus: 'CLEAN', title: 't', url: 'u',
+    author: login === null ? null : { login }, ...extra,
+  });
+  writeFileSync(join(dir, 'prs.json'), JSON.stringify([
+    pr(1, 'jinon86'), pr(2, 'dbdefault'), pr(3, 'app/dependabot'), pr(4, null),
+    pr(5, 'seoseo-ai'), pr(6, 'jinon86', { mergeStateStatus: 'BLOCKED' }), pr(7, 'JINON86'),
+  ]));
+  const result = spawnSync('python3', ['-'], {
+    input: script, encoding: 'utf8',
+    env: { ...process.env, HEAD_SHA: head, OPEN_PRS_JSON: join(dir, 'prs.json') },
+  });
+  rmSync(dir, { recursive: true, force: true });
+  assert.equal(result.status, 0, result.stderr);
+  assert.deepEqual(result.stdout.trim().split('\n'), ['1', '3', '5']);
+  assert.match(result.stderr, /PR #2: author 'dbdefault' is external/);
+  assert.match(result.stderr, /PR #4: author '<unknown>' is external/);
+});
+
 // #2050 item 3. package.json declared `packageManager` while no workflow
 // enforced or even checked it, so the npm CI ran was the image's npm by
 // coincidence. `corepack enable` was rejected in favour of a zero-network
