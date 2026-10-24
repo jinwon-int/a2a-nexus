@@ -2,6 +2,12 @@
 # mergeStateStatus == "CLEAN", which is only meaningful when `main` branch
 # protection marks reviews and required checks as required. See
 # docs/branch-protection.md for the required ruleset state and how to verify it.
+#
+# Second invariant (a2a-nexus#2428): only PRs authored by a fleet account or a
+# fleet dependency bot are auto-merged. An external fork PR stays open for an
+# explicit owner decision even after it is approved and green — on 2026-10-22
+# an unaffiliated account's PR to the worker artifact scripts was merged this
+# way after a single approval. Extend TRUSTED_AUTHORS only by PR.
 name: auto-merge
 
 on:
@@ -40,15 +46,24 @@ jobs:
             --repo "$REPO" \
             --state open \
             --base main \
-            --json number,isDraft,headRefOid,mergeStateStatus,title,url \
+            --json number,isDraft,headRefOid,mergeStateStatus,title,url,author \
             > /tmp/open-prs.json
 
           python3 - <<'PY' > /tmp/auto-merge-prs.txt
           import json
           import os
 
+          import sys
+
+          TRUSTED_AUTHORS = {
+              "jinon86",
+              "seoseo-ai",
+              "app/dependabot",
+              "app/jinwon-deps-bot",
+              "app/github-actions",
+          }
           head_sha = os.environ["HEAD_SHA"]
-          with open("/tmp/open-prs.json", encoding="utf-8") as f:
+          with open(os.environ.get("OPEN_PRS_JSON", "/tmp/open-prs.json"), encoding="utf-8") as f:
               prs = json.load(f)
 
           for pr in prs:
@@ -61,6 +76,11 @@ jobs:
               # is no conflict. Without this gate the workflow would attempt to
               # merge unreviewed PRs if branch protection were ever relaxed.
               if pr.get("mergeStateStatus") != "CLEAN":
+                  continue
+              author = ((pr.get("author") or {}).get("login") or "").strip()
+              if author not in TRUSTED_AUTHORS:
+                  print(f"skip PR #{pr.get('number')}: author {author or '<unknown>'!r} is external; "
+                        "needs an explicit owner decision (a2a-nexus#2428)", file=sys.stderr)
                   continue
               number = pr.get("number")
               if number is not None:
