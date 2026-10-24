@@ -741,7 +741,7 @@ test('a missing patch-only bridge warns but does not fail the guard (#2461)', ()
   const guardResult = bridgeGuardResult(result);
   assert.equal(guardResult.ok, true);
   assert.equal(guardResult.detail.checks[0].ok, false);
-  assert.match(guardResult.detail.warnings[0], /A2A_PIRI_BIN \(host patch bridge, effective\) is missing or not executable/);
+  assert.match(guardResult.detail.warnings[0], /A2A_PIRI_BIN \(host patch bridge, effective\) is missing/);
 });
 
 test('a disabled host patch bridge has no effective patch slot (#2461)', () => {
@@ -902,4 +902,70 @@ test('the guard warns about a literal unset token the handler would run (#2461)'
   assert.equal(guardResult.detail.effective.analysis.slot, 'A2A_DANSO_ANALYSIS_BIN');
   assert.equal(guardResult.detail.effective.analysis.literalUnsetToken, true);
   assert.match(guardResult.detail.warnings.join('\n'), /A2A_DANSO_ANALYSIS_BIN is set to the literal "none"/);
+});
+
+// ---------------------------------------------------------------------------
+// #2463 — script bridges run as `node <script>`; the exec bit is not required.
+
+test('a readable 0600 script bridge passes even as a shadowed analysis slot (#2463)', () => {
+  const { root } = makeWorkerRoot();
+  const claude = writeArtifactScript(root, 'claude-a2a-analysis-bridge.mjs');
+  const danso = writeArtifactScript(root, 'danso-a2a-analysis-bridge.mjs');
+  chmodSync(danso, 0o600);
+  const result = runGuard(root, {
+    A2A_WORKER_BRIDGE_ADAPTER: 'claude-code',
+    A2A_DANSO_ANALYSIS_BIN: danso,
+    A2A_HERMES_ANALYSIS_BIN: claude,
+  });
+  assert.equal(result.status, 0, result.stderr || result.stdout);
+  const guardResult = bridgeGuardResult(result);
+  assert.equal(guardResult.ok, true);
+  const check = guardResult.detail.checks.find((c) => c.name === 'A2A_DANSO_ANALYSIS_BIN');
+  assert.equal(check.ok, true);
+  assert.equal(check.status, 'readable');
+  assert.equal(check.mode, 'not-executable');
+  assert.equal(guardResult.detail.effective.analysis.slot, 'A2A_HERMES_ANALYSIS_BIN');
+  assert.equal(guardResult.detail.warnings, undefined);
+});
+
+test('an effective 0600 script bridge passes too — the handler spawns node, not the file (#2463)', () => {
+  const { root } = makeWorkerRoot();
+  const claude = writeArtifactScript(root, 'claude-a2a-analysis-bridge.mjs');
+  chmodSync(claude, 0o600);
+  const result = runGuard(root, { A2A_HERMES_ANALYSIS_BIN: claude });
+  assert.equal(result.status, 0, result.stderr || result.stdout);
+  assert.equal(bridgeGuardResult(result).ok, true);
+});
+
+test('a script bridge path that is a directory fails closed (#2463)', () => {
+  const { root } = makeWorkerRoot();
+  const dir = join(root, 'scripts', 'dir-a2a-analysis-bridge.mjs');
+  mkdirSync(dir);
+  const result = runGuard(root, { A2A_HERMES_ANALYSIS_BIN: dir });
+  assert.notEqual(result.status, 0);
+  const guardResult = bridgeGuardResult(result);
+  assert.equal(guardResult.ok, false);
+  assert.equal(guardResult.detail.failed[0].status, 'not-a-file');
+});
+
+test('an unreadable script bridge fails closed (#2463)', { skip: process.getuid?.() === 0 ? 'root bypasses R_OK' : false }, () => {
+  const { root } = makeWorkerRoot();
+  const claude = writeArtifactScript(root, 'claude-a2a-analysis-bridge.mjs');
+  chmodSync(claude, 0o000);
+  try {
+    const result = runGuard(root, { A2A_HERMES_ANALYSIS_BIN: claude });
+    assert.notEqual(result.status, 0);
+    const guardResult = bridgeGuardResult(result);
+    assert.equal(guardResult.detail.failed[0].status, 'unreadable');
+    assert.match(guardResult.error, /missing or not readable/);
+  } finally {
+    chmodSync(claude, 0o644);
+  }
+});
+
+test('a missing script bridge reports status missing (#2463)', () => {
+  const { root } = makeWorkerRoot();
+  const result = runGuard(root, { A2A_HERMES_ANALYSIS_BIN: join(root, 'scripts', 'absent-a2a-analysis-bridge.mjs') });
+  assert.notEqual(result.status, 0);
+  assert.equal(bridgeGuardResult(result).detail.failed[0].status, 'missing');
 });

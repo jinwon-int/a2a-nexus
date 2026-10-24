@@ -35,7 +35,7 @@
 //                               dist/build-info.json.revision to match (#2423)
 
 import { createHash } from 'node:crypto';
-import { existsSync, readdirSync, readFileSync, realpathSync, statSync } from 'node:fs';
+import { accessSync, constants as fsConstants, existsSync, readdirSync, readFileSync, realpathSync, statSync } from 'node:fs';
 import { basename, isAbsolute, join, relative, resolve, dirname } from 'node:path';
 import process from 'node:process';
 import { spawnSync } from 'node:child_process';
@@ -366,6 +366,21 @@ function executableBits(filePath) {
     return statSync(filePath).mode & 0o111;
   } catch {
     return undefined;
+  }
+}
+
+// #2463: script bridges (.mjs/.cjs/.js) are run as `node <script>` by the
+// handler (resolveNodeScriptInvocation), and the broker readiness probe
+// (worker-metadata.ts) admits them on exists + R_OK. The exec bit is therefore
+// not required; requiring it here failed the guard on a shadowed 0600 bridge
+// that both runtime consumers accept.
+function scriptBridgeStatus(filePath) {
+  try {
+    if (!statSync(filePath).isFile()) return 'not-a-file';
+    accessSync(filePath, fsConstants.R_OK);
+    return 'readable';
+  } catch (error) {
+    return error?.code === 'ENOENT' ? 'missing' : 'unreadable';
   }
 }
 
@@ -1071,15 +1086,18 @@ guard('configured-analysis-bridge-artifacts', () => {
     }
     const resolvedPath = resolveConfiguredBridgeCommand(item.value);
     const mode = executableBits(resolvedPath);
+    const status = scriptBridgeStatus(resolvedPath);
     const outsideWorkerRoot = isOutsideWorkerRoot(resolvedPath);
     return {
       ...base,
       commandKind: 'script-bridge',
       commandName: basename(item.value),
       resolvedPath,
+      status,
+      // informational only since #2463 — the handler runs the script via node
       mode: executableHint(mode),
       ...(outsideWorkerRoot !== undefined ? { outsideWorkerRoot } : {}),
-      ok: mode !== undefined && mode !== 0,
+      ok: status === 'readable',
     };
   });
   const effective = effectiveSummary(selection, checks);
@@ -1089,7 +1107,7 @@ guard('configured-analysis-bridge-artifacts', () => {
   // unused on a node, and the guard must not newly block existing rollouts.
   const failed = checks.filter((check) => !check.ok && check.roles.includes('analysis'));
   if (failed.length > 0) {
-    return fail('configured-analysis-bridge-artifacts', 'one or more configured analysis bridge script artifacts are missing or not executable', {
+    return fail('configured-analysis-bridge-artifacts', 'one or more configured analysis bridge script artifacts are missing or not readable', {
       failed,
       effective,
       ...(selectionWarnings(selection).length ? { warnings: selectionWarnings(selection) } : {}),
@@ -1100,7 +1118,7 @@ guard('configured-analysis-bridge-artifacts', () => {
 
   const warnings = checks
     .filter((check) => !check.ok)
-    .map((check) => `${check.name} (host patch bridge${check.effectiveFor?.includes('patch') ? ', effective' : ''}) is missing or not executable (${check.resolvedPath}); patch tasks that select it fail at spawn (#2461)`);
+    .map((check) => `${check.name} (host patch bridge${check.effectiveFor?.includes('patch') ? ', effective' : ''}) is ${check.status} (${check.resolvedPath}); patch tasks that select it fail at spawn (#2461)`);
 
   // #2429: a bridge that lives outside the worker root is not refreshed by an
   // artifact rollout (worker-artifact-pack + rsync), so the node silently runs
