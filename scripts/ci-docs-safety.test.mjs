@@ -205,7 +205,7 @@ test('every setup-node block pins the same Node line, so npm cannot float (#2050
     );
   }
   assert.ok(blocks > 0, 'expected at least one setup-node block');
-  assert.deepEqual([...versions], ['22'], `setup-node node-version drift: ${[...versions].join(', ')}`);
+  assert.deepEqual([...versions], ['^22.23.4'], `setup-node node-version drift: ${[...versions].join(', ')}`);
 });
 
 // Every workflow job must carry an explicit, bounded `timeout-minutes`
