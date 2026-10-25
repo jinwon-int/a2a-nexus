@@ -127,6 +127,15 @@ export interface TerminalTaskEventPayload {
   /** Compatibility alias consumed by older Terminal Brief renderers. */
   title?: string;
   /**
+   * #2467: present only when an acceptance-review task failed its verdict gate
+   * (`status: "failed"` + `error.code: "review_verdict_failed"`). The task
+   * still FAILS (#2016 contract unchanged); this only lets the Terminal Brief
+   * title say "판정(<verdict>)" instead of "실패", because a negative review
+   * verdict is the gate working, not a lifecycle failure. Closed set so the
+   * title never carries worker-controlled free text.
+   */
+  reviewVerdict?: TerminalBriefReviewVerdict;
+  /**
    * #2339 PR-5 (contract routing gate 5): present only on a child-local
    * operator row created after the parent broker permanently rejected the
    * relayed projection. The row is a failure-safety notice. It is never a
@@ -1016,6 +1025,8 @@ export function buildTerminalTaskPayload(
     createdAt: task.createdAt,
     updatedAt: task.updatedAt,
   };
+  const reviewVerdict = resolveTerminalBriefReviewVerdict(task);
+  if (reviewVerdict) payload.reviewVerdict = reviewVerdict;
   const explicitParentRoundId = firstSafeText(
     task.payload["parentRoundId"],
     payloadTerminalBrief["parentRoundId"],
@@ -1557,9 +1568,45 @@ const TERMINAL_BRIEF_STATUS_LABELS: Record<string, string> = {
   blocked: "차단",
 };
 
+/**
+ * #2467: closed set of negative review verdicts a Terminal Brief title may
+ * name. `revise`/`reject` are the skills-intake publisher verdicts carried in
+ * the preserved result output; `fail`/`block` are the generic validation
+ * verdicts used when no publisher verdict is present.
+ */
+export const TERMINAL_BRIEF_REVIEW_VERDICTS = ["revise", "reject", "fail", "block"] as const;
+export type TerminalBriefReviewVerdict = (typeof TERMINAL_BRIEF_REVIEW_VERDICTS)[number];
+
+function asTerminalBriefReviewVerdict(value: unknown): TerminalBriefReviewVerdict | undefined {
+  if (typeof value !== "string") return undefined;
+  const normalized = value.trim().toLowerCase();
+  return (TERMINAL_BRIEF_REVIEW_VERDICTS as readonly string[]).includes(normalized)
+    ? (normalized as TerminalBriefReviewVerdict)
+    : undefined;
+}
+
+/**
+ * #2467: derive the review verdict label for a task that failed ONLY because
+ * its acceptance-review verdict was not "pass". Every other failure (handler
+ * crash, review_evidence_missing, review_not_independent, timeout) returns
+ * undefined so the title keeps the "실패" label.
+ */
+export function resolveTerminalBriefReviewVerdict(task: TaskRecord): TerminalBriefReviewVerdict | undefined {
+  if (task.status !== "failed" || task.error?.code !== "review_verdict_failed") return undefined;
+  const evidence = task.negativeVerdictEvidence;
+  const preservedOutput = isRecord(evidence?.result?.output) ? evidence.result.output : {};
+  const details = isRecord(task.error.details) ? task.error.details : {};
+  for (const candidate of [preservedOutput["verdict"], evidence?.verdict, details["verdict"]]) {
+    const verdict = asTerminalBriefReviewVerdict(candidate);
+    if (verdict) return verdict;
+  }
+  return "fail";
+}
+
 export function buildTerminalBriefTitle(payload: TerminalTaskEventPayload): string | undefined {
   if (!payload.worker) return undefined;
-  const label = TERMINAL_BRIEF_STATUS_LABELS[payload.status] ?? "완료";
+  const reviewVerdict = payload.status === "failed" ? asTerminalBriefReviewVerdict(payload.reviewVerdict) : undefined;
+  const label = reviewVerdict ? `판정(${reviewVerdict})` : TERMINAL_BRIEF_STATUS_LABELS[payload.status] ?? "완료";
   const preserveParentOrder = shouldPreserveParentRoundOrderInTitle(payload);
   const displayProgress = preserveParentOrder ? payload.parentRoundOrder ?? payload.parentRoundProgress : payload.parentRoundProgress;
   const total = payload.parentRoundTotal;

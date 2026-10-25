@@ -46,6 +46,14 @@ Example: `A2A Terminal Brief 완료: worker-delta(완료 2)` (no denominator)
 
 `<상태>` uses bounded status labels defined by the parent contract (e.g., `진행중`, `차단됨`, `취소됨`).
 
+### Review verdict gate (#2467)
+
+An acceptance-review task that fails **only** its verdict gate (`status: failed`, `error.code: review_verdict_failed`) uses `판정(<verdict>)` instead of `실패`, where `<verdict>` is one of the closed set `revise`, `reject`, `fail`, `block` (preserved publisher verdict first, then the validation verdict, else `fail`).
+
+Example: `A2A Terminal Brief 판정(revise): worker-delta(완료 1/1)`
+
+The task status, error code, and preserved negative-verdict evidence are unchanged (#2016); only the operator-facing label differs. Every other failure — handler crash, `review_evidence_missing`, `review_not_independent`, timeout — keeps `실패`.
+
 ### Constraints
 
 | Rule | Value |
