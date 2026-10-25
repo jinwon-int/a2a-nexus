@@ -9,6 +9,7 @@ import test from "node:test";
 
 import { InMemoryA2ABroker } from "./broker.js";
 import { classifySameSourceRedispatch, extractReviewVerdict } from "../worker-review.js";
+import { buildTerminalBriefTitle } from "./terminal-event-outbox.js";
 import type { TaskRecord } from "./types.js";
 
 const AUTHOR = "author-node";
@@ -266,4 +267,91 @@ test("a pass verdict still succeeds with no evidence field", () => {
   const record = broker.getTask(task.id)!;
   assert.equal(record.status, "succeeded");
   assert.equal(record.negativeVerdictEvidence, undefined);
+});
+
+// #2467: a review_verdict_failed task is the gate working, not a lifecycle
+// failure. The task still FAILS (#2016 contract above), but the Terminal Brief
+// title names the verdict instead of the generic "실패" label. Any other
+// failure keeps "실패".
+function terminalBriefTitleFor(broker: InMemoryA2ABroker, taskId: string): string | undefined {
+  const event = broker.getTerminalTaskEventOutbox().subscribe().find((row) => row.payload.taskId === taskId);
+  assert.ok(event, `terminal outbox row for ${taskId}`);
+  return event.payload.terminalBriefTitle;
+}
+
+test("#2467 review_verdict_failed brief title names the preserved publisher verdict, task still fails", () => {
+  const broker = new InMemoryA2ABroker();
+  setupWorker(broker);
+  const task = reviewTask(broker, { roundId: "intake-round", roundTotal: 1 });
+  const held = failResult("fail");
+  (held.output as Record<string, unknown>)["verdict"] = "revise";
+
+  broker.failTask(task.id, REVIEWER, { code: "review_verdict_failed", message: 'task review verdict is "fail" (requires "pass")' }, {
+    negativeVerdictResult: held as never,
+  });
+
+  const failed = broker.getTask(task.id)!;
+  assert.equal(failed.status, "failed", "gate unchanged");
+  assert.equal(failed.error?.code, "review_verdict_failed");
+  const event = broker.getTerminalTaskEventOutbox().subscribe().find((row) => row.payload.taskId === task.id)!;
+  assert.equal(event.payload.status, "failed", "outbox status unchanged");
+  assert.equal(event.payload.reviewVerdict, "revise");
+  const title = event.payload.terminalBriefTitle ?? "";
+  assert.ok(title.startsWith(`A2A Terminal Brief 판정(revise): ${REVIEWER}`), title);
+  assert.doesNotMatch(title, /실패/);
+  assert.ok(title.length <= 80, `title within contract cap: ${title.length}`);
+});
+
+test("#2467 review_verdict_failed without a publisher verdict falls back to the validation verdict", () => {
+  const broker = new InMemoryA2ABroker();
+  setupWorker(broker);
+  const task = reviewTask(broker);
+
+  broker.failTask(task.id, REVIEWER, { code: "review_verdict_failed", message: "gate" }, {
+    negativeVerdictResult: failResult("fail") as never,
+  });
+
+  assert.equal(terminalBriefTitleFor(broker, task.id), `A2A Terminal Brief 판정(fail): ${REVIEWER}`);
+});
+
+test("#2467 review_verdict_failed with no preserved evidence still renders a bounded verdict label", () => {
+  const broker = new InMemoryA2ABroker();
+  setupWorker(broker);
+  const task = reviewTask(broker);
+
+  broker.failTask(task.id, REVIEWER, {
+    code: "review_verdict_failed",
+    message: "gate",
+    details: { verdict: "<script>owned</script>" },
+  });
+
+  assert.equal(terminalBriefTitleFor(broker, task.id), `A2A Terminal Brief 판정(fail): ${REVIEWER}`);
+});
+
+test("#2467 non-verdict failures keep the 실패 label", () => {
+  for (const code of ["review_evidence_missing", "review_not_independent", "handler_failed"]) {
+    const broker = new InMemoryA2ABroker();
+    setupWorker(broker);
+    const task = reviewTask(broker);
+    broker.failTask(task.id, REVIEWER, { code, message: "boom" });
+    const event = broker.getTerminalTaskEventOutbox().subscribe().find((row) => row.payload.taskId === task.id)!;
+    assert.equal(event.payload.reviewVerdict, undefined, code);
+    assert.equal(event.payload.terminalBriefTitle, `A2A Terminal Brief 실패: ${REVIEWER}`, code);
+  }
+});
+
+test("#2467 buildTerminalBriefTitle ignores reviewVerdict outside failed status or the closed set", () => {
+  const base = { taskId: "t", worker: "w", createdAt: "2026-10-26T00:00:00Z", updatedAt: "2026-10-26T00:00:00Z" };
+  assert.equal(
+    buildTerminalBriefTitle({ ...base, status: "succeeded", reviewVerdict: "revise" }),
+    "A2A Terminal Brief 완료: w",
+  );
+  assert.equal(
+    buildTerminalBriefTitle({ ...base, status: "failed", reviewVerdict: "approve" as never }),
+    "A2A Terminal Brief 실패: w",
+  );
+  assert.equal(
+    buildTerminalBriefTitle({ ...base, status: "failed", reviewVerdict: "reject", parentRoundProgress: 0, parentRoundTotal: 3 }),
+    "A2A Terminal Brief 판정(reject): w(완료 0/3)",
+  );
 });
