@@ -1,4 +1,4 @@
-FROM node:22-bookworm-slim@sha256:a6385bc33f0f9d6a08482c87f52baee537a9184e2b47dea1ed97caac62f8960c
+FROM node:22-bookworm-slim@sha256:de170b39439eb0e5a3444ad7d60b015614a381e10fecae2e30ec9e735122f38d
 
 ARG CODEX_PACKAGE=@openai/codex@0.144.1
 ARG GH_VERSION=2.93.0
