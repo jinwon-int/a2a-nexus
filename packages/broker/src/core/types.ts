@@ -1548,3 +1548,5 @@ export type {
   DelegatedRunHandle,
   BrokerTaskBridge,
 } from "./delegated-runtime.js";
+
+// #2474 demo: core-only change must run promoted TCK jobs (throwaway PR, not for merge).
