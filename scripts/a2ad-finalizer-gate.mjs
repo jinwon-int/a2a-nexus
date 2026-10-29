@@ -675,6 +675,7 @@ function computeVerdict(tasks, options) {
   })));
 
   const verdict = reasons.length === 0 ? 'FINAL' : 'BLOCKED';
+  const blindShadow = blindShadowHint(succeededLanes, round);
 
   const result = {
     verdict,
@@ -694,9 +695,38 @@ function computeVerdict(tasks, options) {
     reasons,
     completion,
     diversity,
+    blindShadow,
   };
   if (lineageEvaluation != null) result.lineageEvidence = lineageEvaluation;
   return result;
+}
+
+// #2396 (report-only): blind-pick shadow eligibility hint. The gate cannot
+// tell a plan-round collection step from any other round (task records carry
+// no such marker), so it only reports that the round *would* qualify — two or
+// more substantive lanes that the blind view would also keep (completion not
+// marked=false). `a2ad-blind-view.mjs build` re-checks and may still drop an
+// empty lane. Never touches verdict, reasons, or the exit code.
+const BLIND_SHADOW_PROCEDURE = 'docs/a2ad-round-dispatch.md#plan-round-mini-cycle-1297';
+
+function blindShadowHint(succeededLanes, round) {
+  const candidates = succeededLanes.filter((l) => laneCompletion(l).state !== 'unmarked').length;
+  const eligible = candidates >= 2;
+  const hint = {
+    eligible,
+    candidates,
+    appliesTo: 'plan-round step 1 (collect) candidate selection only',
+    procedure: BLIND_SHADOW_PROCEDURE,
+  };
+  if (eligible) {
+    const roundArg = /^[\w.:@-]+$/.test(String(round)) ? String(round) : '<planRoundId>';
+    hint.command = `node scripts/lib/a2ad-blind-view.mjs build --tasks <records.json> --round ${roundArg} --out <dir>`;
+  }
+  return hint;
+}
+
+function renderBlindShadowLine(hint) {
+  return `blind-shadow: eligible (${hint.candidates} substantive candidates) — if this is a plan-round step-1 selection, also make the blind pick and post its blind-shadow block (${hint.procedure})`;
 }
 
 // Find which succeeded-lane ids are actually referenced in the draft body.
@@ -784,6 +814,14 @@ Draft / publication:
   --dry-run              print would-post body + missing-evidence list, no verdict side effects
   --json                 emit machine-readable verdict JSON
   --help                 show this help
+
+Blind-pick shadow (#2396, report-only):
+  The verdict carries a blindShadow hint (--json field; a stderr line when
+  eligible). eligible=true means two or more substantive candidates the blind
+  view would keep. If the round is a plan-round step-1 selection, also make the
+  blind pick and post its blind-shadow block:
+  ${BLIND_SHADOW_PROCEDURE}
+  The hint never changes the verdict, reasons, or exit code.
 
 Exit codes:
   0  FINAL (quorum satisfied) — or --allow-preliminary / --dry-run
@@ -873,6 +911,7 @@ function main(argv) {
       process.stdout.write('=== gate evaluation ===\n');
       process.stdout.write(`verdict (informational): ${result.verdict}\n`);
       process.stdout.write(`${renderMissing(result)}\n`);
+      if (result.blindShadow?.eligible) process.stdout.write(`${renderBlindShadowLine(result.blindShadow)}\n`);
     }
     return 0;
   }
@@ -886,6 +925,7 @@ function main(argv) {
       writeBody(draft, values.out);
       process.stderr.write(`verdict: FINAL — quorum satisfied (${result.succeeded}/${result.effectiveQuorum} succeeded)\n`);
       if (result.diversity?.n > 1) process.stderr.write(`${renderDiversityLine(result.diversity)}\n`);
+      if (result.blindShadow?.eligible) process.stderr.write(`${renderBlindShadowLine(result.blindShadow)}\n`);
     }
     return 0;
   }
@@ -906,6 +946,7 @@ function main(argv) {
     process.stderr.write('verdict: BLOCKED — must NOT publish A2AD consensus result\n');
     for (const reason of result.reasons) process.stderr.write(`  - ${reason}\n`);
     process.stderr.write(`${renderMissing(result)}\n`);
+    if (result.blindShadow?.eligible) process.stderr.write(`${renderBlindShadowLine(result.blindShadow)}\n`);
   }
   return 1;
 }
@@ -941,6 +982,7 @@ function toJson(result) {
     evidenceIdsCitedInDraft: result.evidenceIdsCitedInDraft,
     completion: result.completion,
     diversity: result.diversity,
+    blindShadow: result.blindShadow,
   };
   if (result.lineageEvidence != null) json.lineageEvidence = result.lineageEvidence;
   return json;

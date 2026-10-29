@@ -373,7 +373,12 @@ round is too weak for a consequential implementation direction or gate design:
 
 **Blind candidate selection — shadow (#2396).** The selection in step 1 reads
 lanes whose records name the worker, runtime, and model. During the shadow
-period, when step 1 has two or more substantive candidates, make the pick twice:
+period, when step 1 has two or more substantive candidates, make the pick twice.
+`scripts/a2ad-finalizer-gate.mjs` flags such a round: its verdict carries a
+report-only `blindShadow` hint (`eligible`, `candidates`, and the `build`
+command; a `blind-shadow: eligible` stderr line in text mode). The gate cannot
+tell a plan round from other rounds, so the hint means "would qualify"; the
+verdict and exit code are unchanged.
 
 1. Record the usual pick (the lane id you would select today).
 2. Build a blind view from full task records (`GET /tasks/:id` or

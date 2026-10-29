@@ -1384,3 +1384,61 @@ test('#2400 parity: collector and gate agree that a succeeded lane with marked=f
     assert.equal(collected.lanes[0].evidenceClass === 'substantive', c.counts, `collector class: ${c.name} -> ${collected.lanes[0].evidenceClass}`);
   }
 });
+
+// #2396: blind-pick shadow eligibility hint. Report-only — it never changes the
+// verdict, reasons, or exit code; it only tells the finalizer that a plan-round
+// step-1 selection would qualify for the blind-pick shadow.
+test('#2396 blind-shadow hint: eligible with two or more marked substantive candidates', () => {
+  const tasks = [
+    lane('bs-1', 'succeeded', { top: { output: { ...analysisOutput(['thesis A']), completion: { marked: true } } } }),
+    lane('bs-2', 'succeeded', { top: { output: analysisOutput(['thesis B']) } }),
+    lane('bs-3', 'succeeded', { top: { output: { ...analysisOutput(['thesis C']), completion: { marked: false, reason: 'analysis_blocked' } } } }),
+  ];
+  const result = computeVerdict(tasks, { round: ROUND, quorum: 2, draft: 'Cites bs-1 bs-2.' });
+  assert.equal(result.blindShadow.eligible, true);
+  assert.equal(result.blindShadow.candidates, 2, 'unmarked lane is not a blind-view candidate');
+  assert.match(result.blindShadow.appliesTo, /plan-round/);
+  assert.match(result.blindShadow.procedure, /a2ad-round-dispatch\.md#plan-round-mini-cycle-1297$/);
+  assert.match(result.blindShadow.command, new RegExp(`a2ad-blind-view\\.mjs build --tasks <records\\.json> --round ${ROUND} --out <dir>`));
+});
+
+test('#2396 blind-shadow hint: not eligible with fewer than two candidates and carries no command', () => {
+  const tasks = [
+    lane('bs-1', 'succeeded', { top: { output: analysisOutput(['thesis A']) } }),
+    lane('bs-2', 'failed'),
+  ];
+  const result = computeVerdict(tasks, { round: ROUND, quorum: 1, draft: 'Cites bs-1.' });
+  assert.equal(result.blindShadow.eligible, false);
+  assert.equal(result.blindShadow.candidates, 1);
+  assert.equal(result.blindShadow.command, undefined);
+});
+
+test('#2396 blind-shadow hint is additive: --json carries it, verdict and exit code unchanged', () => {
+  const items = [
+    lane('bs-1', 'succeeded', { top: { output: analysisOutput(['thesis A']) } }),
+    lane('bs-2', 'succeeded', { top: { output: analysisOutput(['thesis B']) } }),
+    lane('bs-3', 'queued'),
+  ];
+  const blocked = runGate(['--tasks', writeTasks(items), '--round', ROUND, '--json'], 'Cites bs-1.');
+  assert.equal(blocked.status, 1, 'pending lane still blocks finality');
+  const parsed = JSON.parse(blocked.stdout);
+  assert.equal(parsed.verdict, 'BLOCKED');
+  assert.equal(parsed.blindShadow.eligible, true);
+  assert.equal(parsed.blindShadow.candidates, 2);
+
+  const finalItems = [
+    lane('bs-1', 'succeeded', { total: 2, top: { output: analysisOutput(['thesis A']) } }),
+    lane('bs-2', 'succeeded', { total: 2, top: { output: analysisOutput(['thesis B']) } }),
+  ];
+  const final = runGate(['--tasks', writeTasks(finalItems), '--round', ROUND], 'Cites bs-1 bs-2.');
+  assert.equal(final.status, 0, final.stderr);
+  assert.equal(final.stdout.trim(), 'Cites bs-1 bs-2.', 'published draft body is untouched');
+  assert.match(final.stderr, /blind-shadow: eligible \(2 substantive candidates\)/);
+});
+
+test('#2396 --help points finalizers at the blind-pick shadow procedure', () => {
+  const result = spawnSync(process.execPath, [scriptPath, '--help'], { encoding: 'utf8' });
+  assert.equal(result.status, 0);
+  assert.match(result.stdout, /blindShadow/);
+  assert.match(result.stdout, /docs\/a2ad-round-dispatch\.md#plan-round-mini-cycle-1297/);
+});
